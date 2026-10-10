@@ -2265,6 +2265,24 @@ class Media3FlowVideoSink(
         return all(greaterThanEqual(targetOrigin, ivec2(0))) &&
           all(lessThanEqual(targetOrigin, limit));
       }
+      // The reduced luma map only searches whole pixels; fit its local SAD bowl without widening the search.
+      const float SUBPIXEL_MIN_CURVATURE = ${MEDIA3_FLOW_SUBPIXEL_MIN_CURVATURE};
+      float subpixelOffset(float minusCost, float centerCost, float plusCost) {
+        if (centerCost > minusCost || centerCost > plusCost) return 0.0;
+        float curvature = minusCost - 2.0 * centerCost + plusCost;
+        if (curvature <= SUBPIXEL_MIN_CURVATURE) return 0.0;
+        return clamp(0.5 * (minusCost - plusCost) / curvature, -0.5, 0.5);
+      }
+      float refineSubpixelAxis(ivec2 origin, ivec2 bestOffset, ivec2 axis, int radius, ivec2 limit, float centerCost) {
+        ivec2 minusOffset = bestOffset - axis;
+        ivec2 plusOffset = bestOffset + axis;
+        if (any(greaterThan(abs(minusOffset), ivec2(radius))) ||
+            any(greaterThan(abs(plusOffset), ivec2(radius))) ||
+            !offsetIsValid(origin, minusOffset, limit) || !offsetIsValid(origin, plusOffset, limit)) return 0.0;
+        float minusCost = blockSad(origin, minusOffset, 1);
+        float plusCost = blockSad(origin, plusOffset, 1);
+        return subpixelOffset(minusCost, centerCost, plusCost);
+      }
       void main() {
         ivec2 cell = ivec2(gl_GlobalInvocationID.xy);
         ivec2 grid = imageSize(uFlow);
@@ -2296,7 +2314,10 @@ class Media3FlowVideoSink(
             if (cost < best) { best = cost; bestOffset = offset; }
           }
         }
-        imageStore(uFlow, cell, vec4(vec2(bestOffset), best, 1.0));
+        vec2 refinedOffset = vec2(bestOffset);
+        refinedOffset.x += refineSubpixelAxis(origin, bestOffset, ivec2(1, 0), uRadius, limit, best);
+        refinedOffset.y += refineSubpixelAxis(origin, bestOffset, ivec2(0, 1), uRadius, limit, best);
+        imageStore(uFlow, cell, vec4(refinedOffset, best, 1.0));
       }
     """
 

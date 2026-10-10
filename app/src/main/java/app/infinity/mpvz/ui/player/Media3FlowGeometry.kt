@@ -11,6 +11,7 @@ internal const val MEDIA3_FLOW_GRID_STEP = 6
 internal const val MEDIA3_FLOW_BLOCK_SIZE = 8
 /** Motion-search radius in reduced-image pixels; retained from the smooth 1fda64fe baseline. */
 internal const val MEDIA3_FLOW_SEARCH_RADIUS = 4
+internal const val MEDIA3_FLOW_SUBPIXEL_MIN_CURVATURE = 0.00001f
 
 internal data class Media3FlowGridSize(val width: Int, val height: Int)
 
@@ -48,6 +49,16 @@ internal object Media3FlowGeometry {
 
   /** Block-matching vectors describe the center of each sampled patch, not its top-left corner. */
   fun motionGridAnchorOffset(): Float = MEDIA3_FLOW_BLOCK_SIZE / 2f
+
+  /** Fits a parabola through three SAD costs and returns a stable half-pixel correction. */
+  fun parabolicSubpixelOffset(minusCost: Float, centerCost: Float, plusCost: Float): Float {
+    if (!minusCost.isFinite() || !centerCost.isFinite() || !plusCost.isFinite() ||
+      centerCost > minusCost || centerCost > plusCost
+    ) return 0f
+    val curvature = minusCost - 2f * centerCost + plusCost
+    if (curvature <= MEDIA3_FLOW_SUBPIXEL_MIN_CURVATURE) return 0f
+    return (0.5f * (minusCost - plusCost) / curvature).coerceIn(-0.5f, 0.5f)
+  }
 
   /** Geometry for the custom sink's visible blit; Crop adjusts UVs, Fit letterboxes, Stretch fills. */
   fun blitGeometry(

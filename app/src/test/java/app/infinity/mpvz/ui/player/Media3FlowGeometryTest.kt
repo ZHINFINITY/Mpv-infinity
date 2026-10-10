@@ -12,6 +12,28 @@ class Media3FlowGeometryTest {
   }
 
   @Test
+  fun parabolicMotionRefinementRecoversFractionalOffsetsAndRejectsUnstableCosts() {
+    assertEquals(0.25f, Media3FlowGeometry.parabolicSubpixelOffset(1.5625f, 0.0625f, 0.5625f), 0.0001f)
+    assertEquals(-0.25f, Media3FlowGeometry.parabolicSubpixelOffset(0.5625f, 0.0625f, 1.5625f), 0.0001f)
+    assertEquals(0f, Media3FlowGeometry.parabolicSubpixelOffset(0.2f, 0.2f, 0.2f), 0f)
+    assertEquals(0f, Media3FlowGeometry.parabolicSubpixelOffset(0.2f, 0.3f, 0.1f), 0f)
+  }
+
+  @Test
+  fun motionShaderRefinesOnlyTheExistingIntegerMatchNeighborhood() {
+    val shader = Media3FlowVideoSink.FLOW_COMPUTE_SHADER
+    assertTrue(shader.contains("const float SUBPIXEL_MIN_CURVATURE = ${MEDIA3_FLOW_SUBPIXEL_MIN_CURVATURE};"))
+    assertTrue(shader.contains("float refineSubpixelAxis("))
+    assertTrue(shader.contains("any(greaterThan(abs(minusOffset), ivec2(radius)))"))
+    assertTrue(shader.contains("any(greaterThan(abs(plusOffset), ivec2(radius)))"))
+    assertTrue(shader.contains("refinedOffset.x += refineSubpixelAxis"))
+    assertTrue(shader.contains("refinedOffset.y += refineSubpixelAxis"))
+    assertTrue(shader.contains("imageStore(uFlow, cell, vec4(refinedOffset, best, 1.0));"))
+    assertTrue(shader.contains("if (abs(dx) > uRadius) continue;"))
+    assertTrue(shader.contains("if (abs(dy) > uRadius) continue;"))
+  }
+
+  @Test
   fun fullHdSourceUsesReducedMotionGrid() {
     assertEquals(Media3FlowMotionSize(480, 270), Media3FlowGeometry.motionSize(1920, 1080, 480))
   }
@@ -76,7 +98,7 @@ class Media3FlowGeometryTest {
   fun motionConfidenceKeepsBaselineBehaviorOnLowTextureRegions() {
     val motionShader = Media3FlowVideoSink.FLOW_COMPUTE_SHADER
     val synthesisShader = Media3FlowVideoSink.SYNTH_COMPUTE_SHADER
-    assertTrue(motionShader.contains("imageStore(uFlow, cell, vec4(vec2(bestOffset), best, 1.0));"))
+    assertTrue(motionShader.contains("imageStore(uFlow, cell, vec4(refinedOffset, best, 1.0));"))
     assertFalse(motionShader.contains("textureEnergy"))
     assertTrue(synthesisShader.contains("return consistency * matchQuality * valid;"))
     assertFalse(synthesisShader.contains("textureConfidence"))
