@@ -11,6 +11,8 @@ import tempfile
 ROOT = Path(__file__).resolve().parents[2]
 PREPARE = ROOT / "scripts/prepare-mpvflow.py"
 BUILD = ROOT / "scripts/build-mpvflow-mpv-runtime.sh"
+PLAYBACK_SESSION = ROOT / "app/src/main/java/app/infinity/mpvz/ui/player/PlaybackSession.kt"
+MPV_VIEW = ROOT / "app/src/main/java/app/infinity/mpvz/ui/player/MPVView.kt"
 
 sys.dont_write_bytecode = True
 spec = importlib.util.spec_from_file_location("prepare_mpvflow", PREPARE)
@@ -60,6 +62,54 @@ required_fragments = (
 )
 for fragment in required_fragments:
     assert fragment in build, f"native build must require Android Vulkan/SPIR-V support: missing {fragment!r}"
+
+session_source = PLAYBACK_SESSION.read_text(encoding="utf-8")
+initialize_order = (
+    "MPVLib.create(context.applicationContext)",
+    "initOptions()",
+    "MPVLib.init()",
+    "postInitOptions()",
+)
+initialize_positions = [session_source.index(marker) for marker in initialize_order]
+assert initialize_positions == sorted(initialize_positions), (
+    "GPU renderer options must be applied after mpv_create and before mpv_initialize"
+)
+option_setter = session_source.split("fun setOptionString(", 1)[1].split("\n  }", 1)[0]
+assert "withCore(-1, allowInitializing = true)" in option_setter, (
+    "PlaybackSession must admit renderer option writes during core initialization"
+)
+core_gate = session_source.split("private inline fun <T> withCore(", 1)[1].split(
+    "private inline fun <T> withReadyCore(", 1
+)[0]
+assert "_state.value.phase == PlaybackPhase.INITIALIZING" in core_gate, (
+    "withCore must permit libmpv option writes in the INITIALIZING phase"
+)
+
+view_source = MPV_VIEW.read_text(encoding="utf-8")
+init_options = view_source.split("override fun initOptions()", 1)[1].split(
+    "override fun observeProperties()", 1
+)[0]
+renderer_option_order = (
+    'PlaybackSession.setOptionString("gpu-api", backend.gpuApi)',
+    'PlaybackSession.setOptionString("gpu-context", backend.gpuContext)',
+    "PlaybackSession.setVideoOutput(backend.vo)",
+)
+renderer_positions = [init_options.index(marker) for marker in renderer_option_order]
+assert renderer_positions == sorted(renderer_positions), (
+    "MPV Flow must apply gpu-api, gpu-context, then vo during initOptions"
+)
+flow_selector = view_source.split("val flowRequiresVulkan =", 1)[1].split(
+    "val gpuNextEnabled =", 1
+)[0]
+for marker in (
+    "BuildConfig.MPV_HAS_MPVFLOW",
+    "BuildConfig.MPV_SUPPORTS_VULKAN",
+    "!decoderPreferences.rifeFrameInterpolation.get()",
+    "PlaybackEngineMode.NATIVE",
+):
+    assert marker in flow_selector, f"Flow Vulkan selection must retain guard {marker!r}"
+for marker in ('vo = "gpu-next"', 'gpuApi = "vulkan"', 'gpuContext = "androidvk"'):
+    assert marker in view_source, f"MPV Flow Vulkan backend must configure {marker!r}"
 
 start_marker = "<<'PY'\n"
 start = build.index(start_marker) + len(start_marker)
