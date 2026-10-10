@@ -8,12 +8,16 @@ import kotlin.math.roundToInt
 /** Reduced dimensions for motion estimation; source/output textures stay at source dimensions. */
 internal data class Media3FlowMotionSize(val width: Int, val height: Int)
 
-internal const val MEDIA3_FLOW_GRID_STEP = 4
+internal const val MEDIA3_FLOW_GRID_STEP = 6
 internal const val MEDIA3_FLOW_BLOCK_SIZE = 8
-/** Coarse candidate spacing in reduced-image pixels; retained from the smooth 1fda64fe baseline. */
-internal const val MEDIA3_FLOW_COARSE_SEARCH_STEP = 4
-/** Maximum displacement considered by the first stage, in reduced-image pixels. */
-internal const val MEDIA3_FLOW_EXTENDED_SEARCH_RADIUS = 8
+internal const val MEDIA3_FLOW_COARSE_BLOCK_SIZE = 4
+internal const val MEDIA3_FLOW_COARSE_GRID_STEP = 3
+/** Each pyramid level samples candidates every two pixels before a full-resolution local refinement. */
+internal const val MEDIA3_FLOW_SEARCH_CANDIDATE_STEP = 2
+/** Coarse search radius is measured at half resolution; fine search is centered on scaled coarse hypotheses. */
+internal const val MEDIA3_FLOW_COARSE_SEARCH_RADIUS = 4
+internal const val MEDIA3_FLOW_FINE_SEARCH_RADIUS = 2
+internal const val MEDIA3_FLOW_FINE_PRIOR_SCALE = 2f
 internal const val MEDIA3_FLOW_SUBPIXEL_MIN_CURVATURE = 0.00001f
 internal const val MEDIA3_FLOW_VISIBILITY_CONFIDENCE_START = 0.15f
 internal const val MEDIA3_FLOW_VISIBILITY_CONFIDENCE_END = 0.45f
@@ -63,6 +67,12 @@ internal object Media3FlowGeometry {
       width = (processingWidth - MEDIA3_FLOW_BLOCK_SIZE) / MEDIA3_FLOW_GRID_STEP + 1,
       height = (processingHeight - MEDIA3_FLOW_BLOCK_SIZE) / MEDIA3_FLOW_GRID_STEP + 1,
     )
+  }
+
+  /** A 2× box-reduced luma level; odd dimensions round up so every source pixel contributes. */
+  fun coarseMotionSize(processingWidth: Int, processingHeight: Int): Media3FlowMotionSize {
+    require(processingWidth > 0 && processingHeight > 0) { "Processing dimensions must be positive" }
+    return Media3FlowMotionSize((processingWidth + 1) / 2, (processingHeight + 1) / 2)
   }
 
   /** Block-matching vectors describe the center of each sampled patch, not its top-left corner. */

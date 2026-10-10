@@ -268,6 +268,7 @@ class Media3FlowVideoSink(
   private class FrameSlot {
     var colorTexture = 0
     var lumaTexture = 0
+    var coarseLumaTexture = 0
     var ptsUs = C.TIME_UNSET
     var inUse = false
   }
@@ -275,6 +276,8 @@ class Media3FlowVideoSink(
   private class MotionPairSlot {
     var forwardTexture = 0
     var backwardTexture = 0
+    var coarseForwardTexture = 0
+    var coarseBackwardTexture = 0
     var frame0PtsUs = C.TIME_UNSET
     var frame1PtsUs = C.TIME_UNSET
     var available = false
@@ -1174,6 +1177,44 @@ class Media3FlowVideoSink(
     coverageStatsAvailable = false
   }
 
+  private fun dispatchMotionLevel(
+    sourceLumaTexture: Int,
+    targetLumaTexture: Int,
+    outputFlowTexture: Int,
+    priorFlowTexture: Int,
+    levelSize: Media3FlowMotionSize,
+    blockSize: Int,
+    gridStep: Int,
+    searchRadius: Int,
+    priorCount: Int,
+    usePrior: Boolean,
+    priorScale: Float,
+    stage: String,
+  ) {
+    GLES31.glUniform2i(GLES31.glGetUniformLocation(flowProgram, "uSize"), levelSize.width, levelSize.height)
+    GLES31.glUniform1i(GLES31.glGetUniformLocation(flowProgram, "uBlock"), blockSize)
+    GLES31.glUniform1i(GLES31.glGetUniformLocation(flowProgram, "uStep"), gridStep)
+    GLES31.glUniform1i(GLES31.glGetUniformLocation(flowProgram, "uSearchRadius"), searchRadius)
+    GLES31.glUniform1i(
+      GLES31.glGetUniformLocation(flowProgram, "uSearchStep"),
+      MEDIA3_FLOW_SEARCH_CANDIDATE_STEP,
+    )
+    GLES31.glUniform1i(GLES31.glGetUniformLocation(flowProgram, "uPriorCount"), priorCount)
+    GLES31.glUniform1i(GLES31.glGetUniformLocation(flowProgram, "uUsePrior"), if (usePrior) 1 else 0)
+    GLES31.glUniform1f(GLES31.glGetUniformLocation(flowProgram, "uPriorScale"), priorScale)
+    checkGlError("$stage motion uniforms", frameProbeOnly = true)
+
+    GLES31.glBindImageTexture(0, sourceLumaTexture, 0, false, 0, GLES31.GL_READ_ONLY, GLES30.GL_RGBA8)
+    GLES31.glBindImageTexture(1, targetLumaTexture, 0, false, 0, GLES31.GL_READ_ONLY, GLES30.GL_RGBA8)
+    GLES31.glBindImageTexture(2, outputFlowTexture, 0, false, 0, GLES31.GL_WRITE_ONLY, GLES30.GL_RGBA16F)
+    GLES31.glBindImageTexture(3, priorFlowTexture, 0, false, 0, GLES31.GL_READ_ONLY, GLES30.GL_RGBA16F)
+    checkGlError("$stage motion bind images", frameProbeOnly = true)
+    GLES31.glDispatchCompute(ceil(gridWidth / 8.0).toInt(), ceil(gridHeight / 8.0).toInt(), 1)
+    checkGlError("$stage motion dispatch", frameProbeOnly = true)
+    GLES31.glMemoryBarrier(GLES31.GL_SHADER_IMAGE_ACCESS_BARRIER_BIT)
+    checkGlError("$stage motion barrier", frameProbeOnly = true)
+  }
+
   private fun analyzeNewestPair() {
     if (!flowAvailable || sourceFrames.size < 2) {
       lastBypassReason = "gpu_flow_unavailable"
@@ -1207,47 +1248,73 @@ class Media3FlowVideoSink(
     try {
       GLES31.glUseProgram(flowProgram)
       checkGlError("motion glUseProgram", frameProbeOnly = true)
-      val sizeLocation = GLES31.glGetUniformLocation(flowProgram, "uSize")
-      checkGlError("motion lookup uSize", frameProbeOnly = true)
-      GLES31.glUniform2i(sizeLocation, processingWidth, processingHeight)
-      checkGlError("motion uniform uSize", frameProbeOnly = true)
-      val blockLocation = GLES31.glGetUniformLocation(flowProgram, "uBlock")
-      checkGlError("motion lookup uBlock", frameProbeOnly = true)
-      GLES31.glUniform1i(blockLocation, MEDIA3_FLOW_BLOCK_SIZE)
-      checkGlError("motion uniform uBlock", frameProbeOnly = true)
-      val stepLocation = GLES31.glGetUniformLocation(flowProgram, "uStep")
-      checkGlError("motion lookup uStep", frameProbeOnly = true)
-      GLES31.glUniform1i(stepLocation, MEDIA3_FLOW_GRID_STEP)
-      checkGlError("motion uniform uStep", frameProbeOnly = true)
-      val coarseStepLocation = GLES31.glGetUniformLocation(flowProgram, "uCoarseStep")
-      checkGlError("motion lookup uCoarseStep", frameProbeOnly = true)
-      GLES31.glUniform1i(coarseStepLocation, MEDIA3_FLOW_COARSE_SEARCH_STEP)
-      checkGlError("motion uniform uCoarseStep", frameProbeOnly = true)
-      GLES31.glBindImageTexture(0, frame0.lumaTexture, 0, false, 0, GLES31.GL_READ_ONLY, GLES30.GL_RGBA8)
-      checkGlError("forward motion bind input 0", frameProbeOnly = true)
-      GLES31.glBindImageTexture(1, frame1.lumaTexture, 0, false, 0, GLES31.GL_READ_ONLY, GLES30.GL_RGBA8)
-      checkGlError("forward motion bind input 1", frameProbeOnly = true)
-      GLES31.glBindImageTexture(2, reusable.forwardTexture, 0, false, 0, GLES31.GL_WRITE_ONLY, GLES30.GL_RGBA16F)
-      checkGlError("forward motion bind output", frameProbeOnly = true)
+      val coarseSize = Media3FlowGeometry.coarseMotionSize(processingWidth, processingHeight)
+      val fullSize = Media3FlowMotionSize(processingWidth, processingHeight)
       stageQuery = beginGpuTimerQuery(FlowGpuStage.MOTION_FORWARD, frame0.ptsUs, frame1.ptsUs, queryGeneration)
-      GLES31.glDispatchCompute(ceil(gridWidth / 8.0).toInt(), ceil(gridHeight / 8.0).toInt(), 1)
-      checkGlError("forward motion dispatch", frameProbeOnly = true)
-      GLES31.glMemoryBarrier(GLES31.GL_SHADER_IMAGE_ACCESS_BARRIER_BIT)
-      checkGlError("forward motion barrier", frameProbeOnly = true)
+      dispatchMotionLevel(
+        frame0.coarseLumaTexture,
+        frame1.coarseLumaTexture,
+        reusable.coarseForwardTexture,
+        reusable.forwardTexture,
+        coarseSize,
+        MEDIA3_FLOW_COARSE_BLOCK_SIZE,
+        MEDIA3_FLOW_COARSE_GRID_STEP,
+        MEDIA3_FLOW_COARSE_SEARCH_RADIUS,
+        priorCount = 1,
+        usePrior = false,
+        priorScale = 0f,
+        stage = "forward coarse",
+      )
+      dispatchMotionLevel(
+        frame0.lumaTexture,
+        frame1.lumaTexture,
+        reusable.forwardTexture,
+        reusable.coarseForwardTexture,
+        fullSize,
+        MEDIA3_FLOW_BLOCK_SIZE,
+        MEDIA3_FLOW_GRID_STEP,
+        MEDIA3_FLOW_FINE_SEARCH_RADIUS,
+        priorCount = 6,
+        usePrior = true,
+        priorScale = MEDIA3_FLOW_FINE_PRIOR_SCALE,
+        stage = "forward fine",
+      )
+      GLES31.glMemoryBarrier(GLES31.GL_SHADER_IMAGE_ACCESS_BARRIER_BIT or GLES31.GL_TEXTURE_FETCH_BARRIER_BIT)
+      checkGlError("forward motion texture barrier", frameProbeOnly = true)
       endGpuTimerQuery(stageQuery)
       stageQuery = null
 
-      GLES31.glBindImageTexture(0, frame1.lumaTexture, 0, false, 0, GLES31.GL_READ_ONLY, GLES30.GL_RGBA8)
-      checkGlError("backward motion bind input 0", frameProbeOnly = true)
-      GLES31.glBindImageTexture(1, frame0.lumaTexture, 0, false, 0, GLES31.GL_READ_ONLY, GLES30.GL_RGBA8)
-      checkGlError("backward motion bind input 1", frameProbeOnly = true)
-      GLES31.glBindImageTexture(2, reusable.backwardTexture, 0, false, 0, GLES31.GL_WRITE_ONLY, GLES30.GL_RGBA16F)
-      checkGlError("backward motion bind output", frameProbeOnly = true)
       stageQuery = beginGpuTimerQuery(FlowGpuStage.MOTION_BACKWARD, frame0.ptsUs, frame1.ptsUs, queryGeneration)
-      GLES31.glDispatchCompute(ceil(gridWidth / 8.0).toInt(), ceil(gridHeight / 8.0).toInt(), 1)
-      checkGlError("backward motion dispatch", frameProbeOnly = true)
+      dispatchMotionLevel(
+        frame1.coarseLumaTexture,
+        frame0.coarseLumaTexture,
+        reusable.coarseBackwardTexture,
+        reusable.backwardTexture,
+        coarseSize,
+        MEDIA3_FLOW_COARSE_BLOCK_SIZE,
+        MEDIA3_FLOW_COARSE_GRID_STEP,
+        MEDIA3_FLOW_COARSE_SEARCH_RADIUS,
+        priorCount = 1,
+        usePrior = false,
+        priorScale = 0f,
+        stage = "backward coarse",
+      )
+      dispatchMotionLevel(
+        frame1.lumaTexture,
+        frame0.lumaTexture,
+        reusable.backwardTexture,
+        reusable.coarseBackwardTexture,
+        fullSize,
+        MEDIA3_FLOW_BLOCK_SIZE,
+        MEDIA3_FLOW_GRID_STEP,
+        MEDIA3_FLOW_FINE_SEARCH_RADIUS,
+        priorCount = 6,
+        usePrior = true,
+        priorScale = MEDIA3_FLOW_FINE_PRIOR_SCALE,
+        stage = "backward fine",
+      )
       GLES31.glMemoryBarrier(GLES31.GL_SHADER_IMAGE_ACCESS_BARRIER_BIT or GLES31.GL_TEXTURE_FETCH_BARRIER_BIT)
-      checkGlError("backward motion barrier", frameProbeOnly = true)
+      checkGlError("backward motion texture barrier", frameProbeOnly = true)
       endGpuTimerQuery(stageQuery)
       stageQuery = null
       checkGlError("motion estimate")
@@ -1535,11 +1602,18 @@ class Media3FlowVideoSink(
     checkGlError("luma lookup uSize", frameProbeOnly = true)
     GLES31.glUniform2i(sizeLocation, processingWidth, processingHeight)
     checkGlError("luma uniform uSize", frameProbeOnly = true)
+    val coarseSize = Media3FlowGeometry.coarseMotionSize(processingWidth, processingHeight)
+    val coarseSizeLocation = GLES31.glGetUniformLocation(lumaProgram, "uCoarseSize")
+    checkGlError("luma lookup uCoarseSize", frameProbeOnly = true)
+    GLES31.glUniform2i(coarseSizeLocation, coarseSize.width, coarseSize.height)
+    checkGlError("luma uniform uCoarseSize", frameProbeOnly = true)
     GLES31.glBindImageTexture(0, slot.lumaTexture, 0, false, 0, GLES31.GL_WRITE_ONLY, GLES30.GL_RGBA8)
     checkGlError("luma bind output image", frameProbeOnly = true)
+    GLES31.glBindImageTexture(1, slot.coarseLumaTexture, 0, false, 0, GLES31.GL_WRITE_ONLY, GLES30.GL_RGBA8)
+    checkGlError("luma bind coarse output image", frameProbeOnly = true)
     val downsampleQuery = beginGpuTimerQuery(FlowGpuStage.DOWNSAMPLE)
     try {
-      GLES31.glDispatchCompute(ceil(processingWidth / 8.0).toInt(), ceil(processingHeight / 8.0).toInt(), 1)
+      GLES31.glDispatchCompute(ceil(coarseSize.width / 8.0).toInt(), ceil(coarseSize.height / 8.0).toInt(), 1)
       checkGlError("luma dispatch", frameProbeOnly = true)
       GLES31.glMemoryBarrier(GLES31.GL_SHADER_IMAGE_ACCESS_BARRIER_BIT or GLES31.GL_TEXTURE_FETCH_BARRIER_BIT)
       checkGlError("luma barrier", frameProbeOnly = true)
@@ -1582,6 +1656,7 @@ class Media3FlowVideoSink(
     processingWidth = width
     processingHeight = height
     val motionGridSize = Media3FlowGeometry.motionGridSize(width, height)
+    val coarseMotionSize = Media3FlowGeometry.coarseMotionSize(width, height)
     gridWidth = motionGridSize.width
     gridHeight = motionGridSize.height
     outputTexture = createTexture(GLES20.GL_TEXTURE_2D, sourceWidth, sourceHeight, GLES30.GL_RGBA8)
@@ -1594,12 +1669,20 @@ class Media3FlowVideoSink(
           height,
           GLES30.GL_RGBA8,
         )
+        coarseLumaTexture = createTexture(
+          GLES20.GL_TEXTURE_2D,
+          coarseMotionSize.width,
+          coarseMotionSize.height,
+          GLES30.GL_RGBA8,
+        )
       }
     }
     repeat(MAX_MOTION_PAIRS) {
       motionPairs += MotionPairSlot().apply {
         forwardTexture = createTexture(GLES20.GL_TEXTURE_2D, gridWidth, gridHeight, GLES30.GL_RGBA16F)
         backwardTexture = createTexture(GLES20.GL_TEXTURE_2D, gridWidth, gridHeight, GLES30.GL_RGBA16F)
+        coarseForwardTexture = createTexture(GLES20.GL_TEXTURE_2D, gridWidth, gridHeight, GLES30.GL_RGBA16F)
+        coarseBackwardTexture = createTexture(GLES20.GL_TEXTURE_2D, gridWidth, gridHeight, GLES30.GL_RGBA16F)
       }
     }
     initializeCoverageBuffers()
@@ -1629,11 +1712,14 @@ class Media3FlowVideoSink(
     framePool.forEach { slot ->
       deleteTexture(slot.colorTexture)
       deleteTexture(slot.lumaTexture)
+      deleteTexture(slot.coarseLumaTexture)
     }
     framePool.clear()
     motionPairs.forEach { slot ->
       deleteTexture(slot.forwardTexture)
       deleteTexture(slot.backwardTexture)
+      deleteTexture(slot.coarseForwardTexture)
+      deleteTexture(slot.coarseBackwardTexture)
     }
     motionPairs.clear()
     deleteTexture(outputTexture)
@@ -2256,20 +2342,32 @@ class Media3FlowVideoSink(
       void main() { outColor = texture(uImage, uTextureOffset + vUv * uTextureScale); }
     """
 
-    private const val LUMA_COMPUTE_SHADER = """
+    internal const val LUMA_COMPUTE_SHADER = """
       #version 310 es
       layout(local_size_x = 8, local_size_y = 8) in;
       precision highp float;
       layout(binding = 0) uniform sampler2D uColor;
       layout(rgba8, binding = 0) writeonly uniform highp image2D uLuma;
+      layout(rgba8, binding = 1) writeonly uniform highp image2D uCoarseLuma;
       uniform ivec2 uSize;
+      uniform ivec2 uCoarseSize;
       void main() {
-        ivec2 p = ivec2(gl_GlobalInvocationID.xy);
-        if (any(greaterThanEqual(p, uSize))) return;
-        vec2 uv = (vec2(p) + vec2(0.5)) / vec2(uSize);
-        vec3 c = texture(uColor, uv).rgb;
-        float y = dot(c, vec3(0.2126, 0.7152, 0.0722));
-        imageStore(uLuma, p, vec4(y, 0.0, 0.0, 1.0));
+        ivec2 coarsePoint = ivec2(gl_GlobalInvocationID.xy);
+        if (any(greaterThanEqual(coarsePoint, uCoarseSize))) return;
+        float sum = 0.0;
+        float count = 0.0;
+        for (int y = 0; y < 2; y++) {
+          for (int x = 0; x < 2; x++) {
+            ivec2 p = coarsePoint * 2 + ivec2(x, y);
+            if (any(greaterThanEqual(p, uSize))) continue;
+            vec2 uv = (vec2(p) + vec2(0.5)) / vec2(uSize);
+            float luma = dot(texture(uColor, uv).rgb, vec3(0.2126, 0.7152, 0.0722));
+            imageStore(uLuma, p, vec4(luma, 0.0, 0.0, 1.0));
+            sum += luma;
+            count += 1.0;
+          }
+        }
+        imageStore(uCoarseLuma, coarsePoint, vec4(sum / max(count, 1.0), 0.0, 0.0, 1.0));
       }
     """
 
@@ -2280,10 +2378,15 @@ class Media3FlowVideoSink(
       layout(rgba8, binding = 0) readonly uniform highp image2D uSource;
       layout(rgba8, binding = 1) readonly uniform highp image2D uTarget;
       layout(rgba16f, binding = 2) writeonly uniform highp image2D uFlow;
+      layout(rgba16f, binding = 3) readonly uniform highp image2D uPriorFlow;
       uniform ivec2 uSize;
       uniform int uBlock;
       uniform int uStep;
-      uniform int uCoarseStep;
+      uniform int uSearchRadius;
+      uniform int uSearchStep;
+      uniform int uPriorCount;
+      uniform int uUsePrior;
+      uniform float uPriorScale;
       float blockSad(ivec2 origin, ivec2 offset, int stride) {
         float sad = 0.0;
         float samples = 0.0;
@@ -2301,7 +2404,6 @@ class Media3FlowVideoSink(
         return all(greaterThanEqual(targetOrigin, ivec2(0))) &&
           all(lessThanEqual(targetOrigin, limit));
       }
-      const int MAX_EXTENDED_SEARCH_RADIUS = ${MEDIA3_FLOW_EXTENDED_SEARCH_RADIUS};
       const float SUBPIXEL_MIN_CURVATURE = ${MEDIA3_FLOW_SUBPIXEL_MIN_CURVATURE};
       float subpixelOffset(float minusCost, float centerCost, float plusCost) {
         if (centerCost > minusCost || centerCost > plusCost) return 0.0;
@@ -2309,15 +2411,20 @@ class Media3FlowVideoSink(
         if (curvature <= SUBPIXEL_MIN_CURVATURE) return 0.0;
         return clamp(0.5 * (minusCost - plusCost) / curvature, -0.5, 0.5);
       }
-      float refineSubpixelAxis(ivec2 origin, ivec2 bestOffset, ivec2 axis, int radius, ivec2 limit, float centerCost) {
+      float refineSubpixelAxis(ivec2 origin, ivec2 bestOffset, ivec2 axis, ivec2 limit, float centerCost) {
         ivec2 minusOffset = bestOffset - axis;
         ivec2 plusOffset = bestOffset + axis;
-        if (any(greaterThan(abs(minusOffset), ivec2(radius))) ||
-            any(greaterThan(abs(plusOffset), ivec2(radius))) ||
-            !offsetIsValid(origin, minusOffset, limit) || !offsetIsValid(origin, plusOffset, limit)) return 0.0;
+        if (!offsetIsValid(origin, minusOffset, limit) || !offsetIsValid(origin, plusOffset, limit)) return 0.0;
         float minusCost = blockSad(origin, minusOffset, 1);
         float plusCost = blockSad(origin, plusOffset, 1);
         return subpixelOffset(minusCost, centerCost, plusCost);
+      }
+      ivec2 priorCellOffset(int seed) {
+        if (seed == 1) return ivec2(-1, 0);
+        if (seed == 2) return ivec2(1, 0);
+        if (seed == 3) return ivec2(0, -1);
+        if (seed == 4) return ivec2(0, 1);
+        return ivec2(0);
       }
       void main() {
         ivec2 cell = ivec2(gl_GlobalInvocationID.xy);
@@ -2325,50 +2432,49 @@ class Media3FlowVideoSink(
         if (any(greaterThanEqual(cell, grid))) return;
         ivec2 limit = max(uSize - ivec2(uBlock), ivec2(0));
         ivec2 origin = min(cell * uStep, limit);
-        int extendedRadius = min(uCoarseStep * 2, MAX_EXTENDED_SEARCH_RADIUS);
-        float coarseBest = 1e20;
-        ivec2 coarseOffset = ivec2(0);
-        // Preserve the baseline's 25 coarse candidates while covering twice the displacement range.
-        for (int dy = -extendedRadius; dy <= extendedRadius; dy += uCoarseStep) {
-          for (int dx = -extendedRadius; dx <= extendedRadius; dx += uCoarseStep) {
-            ivec2 offset = ivec2(dx, dy);
-            if (!offsetIsValid(origin, offset, limit)) continue;
-            float cost = blockSad(origin, offset, 2);
-            if (cost < coarseBest) { coarseBest = cost; coarseOffset = offset; }
+        float predictorBest = 1e20;
+        ivec2 predictedOffset = ivec2(0);
+        for (int seed = 0; seed < 6; seed++) {
+          if (seed >= uPriorCount) break;
+          vec2 prediction = vec2(0.0);
+          if (uUsePrior != 0 && seed < 5) {
+            ivec2 priorCell = clamp(cell + priorCellOffset(seed), ivec2(0), imageSize(uPriorFlow) - ivec2(1));
+            prediction = imageLoad(uPriorFlow, priorCell).xy * uPriorScale;
           }
-        }
-        // Use the coarse winner as a predictor, refine at half the offset spacing, then do the full-SAD 3x3 fit.
-        int refinementRadius = max(uCoarseStep / 2, 1);
-        float refinementBest = 1e20;
-        ivec2 refinedCoarseOffset = coarseOffset;
-        for (int dy = coarseOffset.y - refinementRadius; dy <= coarseOffset.y + refinementRadius; dy += 2) {
-          if (abs(dy) > extendedRadius) continue;
-          for (int dx = coarseOffset.x - refinementRadius; dx <= coarseOffset.x + refinementRadius; dx += 2) {
-            if (abs(dx) > extendedRadius) continue;
-            ivec2 offset = ivec2(dx, dy);
-            if (!offsetIsValid(origin, offset, limit)) continue;
-            float refinementCost = blockSad(origin, offset, 2);
-            if (refinementCost < refinementBest) {
-              refinementBest = refinementCost;
-              refinedCoarseOffset = offset;
+          ivec2 baseOffset = ivec2(round(prediction));
+          float seedBest = 1e20;
+          ivec2 seedOffset = baseOffset;
+          for (int dy = -uSearchRadius; dy <= uSearchRadius; dy += uSearchStep) {
+            for (int dx = -uSearchRadius; dx <= uSearchRadius; dx += uSearchStep) {
+              ivec2 offset = baseOffset + ivec2(dx, dy);
+              if (!offsetIsValid(origin, offset, limit)) continue;
+              float cost = blockSad(origin, offset, 2);
+              if (cost < seedBest) {
+                seedBest = cost;
+                seedOffset = offset;
+              }
             }
           }
+          if (seedBest < predictorBest) {
+            predictorBest = seedBest;
+            predictedOffset = seedOffset;
+          }
         }
+
+        // The coarse winner, four neighboring coarse vectors, and zero motion remain separate fine-level hypotheses.
         float best = 1e20;
-        ivec2 bestOffset = refinedCoarseOffset;
-        for (int dy = refinedCoarseOffset.y - 1; dy <= refinedCoarseOffset.y + 1; dy++) {
-          if (abs(dy) > extendedRadius) continue;
-          for (int dx = refinedCoarseOffset.x - 1; dx <= refinedCoarseOffset.x + 1; dx++) {
-            if (abs(dx) > extendedRadius) continue;
-            ivec2 offset = ivec2(dx, dy);
+        ivec2 bestOffset = predictedOffset;
+        for (int dy = -1; dy <= 1; dy++) {
+          for (int dx = -1; dx <= 1; dx++) {
+            ivec2 offset = predictedOffset + ivec2(dx, dy);
             if (!offsetIsValid(origin, offset, limit)) continue;
             float cost = blockSad(origin, offset, 1);
             if (cost < best) { best = cost; bestOffset = offset; }
           }
         }
         vec2 refinedOffset = vec2(bestOffset);
-        refinedOffset.x += refineSubpixelAxis(origin, bestOffset, ivec2(1, 0), extendedRadius, limit, best);
-        refinedOffset.y += refineSubpixelAxis(origin, bestOffset, ivec2(0, 1), extendedRadius, limit, best);
+        refinedOffset.x += refineSubpixelAxis(origin, bestOffset, ivec2(1, 0), limit, best);
+        refinedOffset.y += refineSubpixelAxis(origin, bestOffset, ivec2(0, 1), limit, best);
         imageStore(uFlow, cell, vec4(refinedOffset, best, 1.0));
       }
     """

@@ -1,11 +1,29 @@
 package app.infinity.mpvz.ui.player
 
-import org.junit.Assert.assertTrue
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class Media3FlowSynthesisPolicyTest {
   private val shader = Media3FlowVideoSink.SYNTH_COMPUTE_SHADER
+
+  @Test
+  fun motionEstimationBuildsABoxReducedPyramidAndUsesSeparatePriorFields() {
+    val lumaShader = Media3FlowVideoSink.LUMA_COMPUTE_SHADER
+    val motionShader = Media3FlowVideoSink.FLOW_COMPUTE_SHADER
+
+    assertTrue(lumaShader.contains("layout(rgba8, binding = 1) writeonly uniform highp image2D uCoarseLuma;"))
+    assertTrue(lumaShader.contains("ivec2 p = coarsePoint * 2 + ivec2(x, y);"))
+    assertTrue(lumaShader.contains("sum / max(count, 1.0)"))
+    assertTrue(motionShader.contains("layout(rgba16f, binding = 3) readonly uniform highp image2D uPriorFlow;"))
+    assertTrue(motionShader.contains("imageLoad(uPriorFlow, priorCell).xy * uPriorScale"))
+    assertTrue(motionShader.contains("if (seed == 1) return ivec2(-1, 0);"))
+    assertTrue(motionShader.contains("if (seed == 4) return ivec2(0, 1);"))
+    assertTrue(motionShader.contains("if (uUsePrior != 0 && seed < 5)"))
+    assertEquals(4, MEDIA3_FLOW_COARSE_SEARCH_RADIUS)
+    assertEquals(2, MEDIA3_FLOW_FINE_SEARCH_RADIUS)
+  }
 
   @Test
   fun reliabilityUsesTheKnownGoodBaselineErrorRanges() {

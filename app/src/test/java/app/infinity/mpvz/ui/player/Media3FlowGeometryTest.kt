@@ -8,9 +8,43 @@ import org.junit.Test
 
 class Media3FlowGeometryTest {
   @Test
-  fun motionSearchUsesFourPixelCoarseStepAndEightPixelMaximumRange() {
-    assertEquals(4, MEDIA3_FLOW_COARSE_SEARCH_STEP)
-    assertEquals(8, MEDIA3_FLOW_EXTENDED_SEARCH_RADIUS)
+  fun motionSearchUsesHalfResolutionCoarseRangeAndSmallFineRefinement() {
+    assertEquals(6, MEDIA3_FLOW_GRID_STEP)
+    assertEquals(4, MEDIA3_FLOW_COARSE_BLOCK_SIZE)
+    assertEquals(3, MEDIA3_FLOW_COARSE_GRID_STEP)
+    assertEquals(4, MEDIA3_FLOW_COARSE_SEARCH_RADIUS)
+    assertEquals(2, MEDIA3_FLOW_FINE_SEARCH_RADIUS)
+    assertEquals(2, MEDIA3_FLOW_SEARCH_CANDIDATE_STEP)
+    assertEquals(2f, MEDIA3_FLOW_FINE_PRIOR_SCALE)
+  }
+
+  @Test
+  fun coarsePyramidRoundsOddDimensionsUpAndProjectsVectorsBackToFullScale() {
+    assertEquals(Media3FlowMotionSize(200, 113), Media3FlowGeometry.coarseMotionSize(400, 225))
+    assertEquals(Media3FlowGridSize(66, 37), Media3FlowGeometry.motionGridSize(400, 225))
+    assertEquals(2f, MEDIA3_FLOW_FINE_PRIOR_SCALE)
+  }
+
+  @Test
+  fun coarseAndFinePatchOriginsStayAlignedAtOddAndEvenBoundaries() {
+    val dimensions = listOf(16 to 16, 17 to 31, 400 to 225, 640 to 360, 721 to 359)
+    for ((width, height) in dimensions) {
+      val grid = Media3FlowGeometry.motionGridSize(width, height)
+      val coarseWidth = (width + 1) / 2
+      val coarseHeight = (height + 1) / 2
+      for (cellX in 0 until grid.width) {
+        val fineOrigin = (cellX * MEDIA3_FLOW_GRID_STEP).coerceAtMost(width - MEDIA3_FLOW_BLOCK_SIZE)
+        val coarseOrigin = (cellX * MEDIA3_FLOW_COARSE_GRID_STEP)
+          .coerceAtMost(coarseWidth - MEDIA3_FLOW_COARSE_BLOCK_SIZE) * 2
+        assertEquals("x anchor mismatch at ${width}x${height}, cell $cellX", fineOrigin, coarseOrigin)
+      }
+      for (cellY in 0 until grid.height) {
+        val fineOrigin = (cellY * MEDIA3_FLOW_GRID_STEP).coerceAtMost(height - MEDIA3_FLOW_BLOCK_SIZE)
+        val coarseOrigin = (cellY * MEDIA3_FLOW_COARSE_GRID_STEP)
+          .coerceAtMost(coarseHeight - MEDIA3_FLOW_COARSE_BLOCK_SIZE) * 2
+        assertEquals("y anchor mismatch at ${width}x${height}, cell $cellY", fineOrigin, coarseOrigin)
+      }
+    }
   }
 
   @Test
@@ -91,8 +125,8 @@ class Media3FlowGeometryTest {
   fun fourHundredPixelProcessingUsesOverlappingEightByEightPatches() {
     val processingSize = Media3FlowGeometry.motionSize(1920, 1080, 400)
     assertEquals(Media3FlowMotionSize(400, 225), processingSize)
-    assertEquals(Media3FlowGridSize(99, 55), Media3FlowGeometry.motionGridSize(processingSize.width, processingSize.height))
-    assertEquals(4, MEDIA3_FLOW_GRID_STEP)
+    assertEquals(Media3FlowGridSize(66, 37), Media3FlowGeometry.motionGridSize(processingSize.width, processingSize.height))
+    assertEquals(6, MEDIA3_FLOW_GRID_STEP)
     assertEquals(8, MEDIA3_FLOW_BLOCK_SIZE)
   }
 
@@ -104,13 +138,13 @@ class Media3FlowGeometryTest {
   @Test
   fun motionGridUsesOnlyValidRegularBlockOriginsAtDivisibleAndNonDivisibleSizes() {
     val nonDivisibleGrid = Media3FlowGeometry.motionGridSize(640, 360)
-    assertEquals(Media3FlowGridSize(159, 89), nonDivisibleGrid)
-    assertEquals(632, (nonDivisibleGrid.width - 1) * MEDIA3_FLOW_GRID_STEP)
-    assertEquals(352, (nonDivisibleGrid.height - 1) * MEDIA3_FLOW_GRID_STEP)
+    assertEquals(Media3FlowGridSize(106, 59), nonDivisibleGrid)
+    assertEquals(630, (nonDivisibleGrid.width - 1) * MEDIA3_FLOW_GRID_STEP)
+    assertEquals(348, (nonDivisibleGrid.height - 1) * MEDIA3_FLOW_GRID_STEP)
     assertTrue((nonDivisibleGrid.width - 1) * MEDIA3_FLOW_GRID_STEP <= 640 - MEDIA3_FLOW_BLOCK_SIZE)
     assertTrue((nonDivisibleGrid.height - 1) * MEDIA3_FLOW_GRID_STEP <= 360 - MEDIA3_FLOW_BLOCK_SIZE)
 
-    assertEquals(Media3FlowGridSize(157, 89), Media3FlowGeometry.motionGridSize(632, 362))
+    assertEquals(Media3FlowGridSize(105, 60), Media3FlowGeometry.motionGridSize(632, 362))
   }
 
   @Test
@@ -151,15 +185,21 @@ class Media3FlowGeometryTest {
   }
 
   @Test
-  fun motionConfidenceKeepsBaselineBehaviorOnLowTextureRegions() {
+  fun motionSearchRefinesScaledCoarseAndNeighborHypothesesInsteadOfSearchingOneWideLevel() {
     val motionShader = Media3FlowVideoSink.FLOW_COMPUTE_SHADER
     val synthesisShader = Media3FlowVideoSink.SYNTH_COMPUTE_SHADER
     assertTrue(motionShader.contains("imageStore(uFlow, cell, vec4(refinedOffset, best, 1.0));"))
-    assertTrue(motionShader.contains("int extendedRadius = min(uCoarseStep * 2, MAX_EXTENDED_SEARCH_RADIUS);"))
-    assertTrue(motionShader.contains("for (int dy = -extendedRadius; dy <= extendedRadius; dy += uCoarseStep)"))
-    assertTrue(motionShader.contains("int refinementRadius = max(uCoarseStep / 2, 1);"))
-    assertTrue(motionShader.contains("float refinementCost = blockSad(origin, offset, 2);"))
+    assertTrue(motionShader.contains("uniform int uSearchRadius;"))
+    assertTrue(motionShader.contains("uniform int uUsePrior;"))
+    assertTrue(motionShader.contains("uniform float uPriorScale;"))
+    assertTrue(motionShader.contains("for (int seed = 0; seed < 6; seed++)"))
+    assertTrue(motionShader.contains("priorCellOffset(seed)"))
+    assertTrue(motionShader.contains("imageLoad(uPriorFlow, priorCell).xy * uPriorScale"))
+    assertTrue(motionShader.contains("seed < 5"))
+    assertTrue(motionShader.contains("ivec2 baseOffset = ivec2(round(prediction));"))
+    assertTrue(motionShader.contains("for (int dy = -uSearchRadius; dy <= uSearchRadius; dy += uSearchStep)"))
     assertTrue(motionShader.contains("refinedOffset.x += refineSubpixelAxis"))
+    assertFalse(motionShader.contains("MAX_EXTENDED_SEARCH_RADIUS"))
     assertFalse(motionShader.contains("textureEnergy"))
     assertTrue(synthesisShader.contains("return consistency * matchQuality * valid;"))
     assertFalse(synthesisShader.contains("textureConfidence"))
