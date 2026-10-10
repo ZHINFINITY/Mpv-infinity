@@ -141,7 +141,21 @@ bool queryAhbImageSupport(FlowContext *context, VkImageUsageFlags usage,
     imageInfo.usage = usage;
     imageInfo.flags = 0;
 
-    const VkResult result = vkGetPhysicalDeviceImageFormatProperties2(
+    if (!context->vulkan->get_proc_addr)
+        return false;
+    auto getImageFormatProperties2 =
+        reinterpret_cast<PFN_vkGetPhysicalDeviceImageFormatProperties2>(
+            context->vulkan->get_proc_addr(
+                context->vulkan->instance, "vkGetPhysicalDeviceImageFormatProperties2"));
+    if (!getImageFormatProperties2) {
+        getImageFormatProperties2 =
+            reinterpret_cast<PFN_vkGetPhysicalDeviceImageFormatProperties2>(
+                context->vulkan->get_proc_addr(
+                    context->vulkan->instance, "vkGetPhysicalDeviceImageFormatProperties2KHR"));
+    }
+    if (!getImageFormatProperties2)
+        return false;
+    const VkResult result = getImageFormatProperties2(
         context->vulkan->phys_device, &imageInfo, &imageProperties);
     if (result != VK_SUCCESS)
         return false;

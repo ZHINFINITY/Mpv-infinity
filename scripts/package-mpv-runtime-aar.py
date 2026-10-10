@@ -13,6 +13,7 @@ import zipfile
 REQUIRED_LIBS = {
     "librife_vfi.so",
     "libmpv.so",
+    "libplacebo.so",
     "libavcodec.so",
     "libavfilter.so",
     "libavformat.so",
@@ -23,7 +24,7 @@ REQUIRED_LIBS = {
     "libc++_shared.so",
 }
 FLOW_REQUIRED_LIBS = REQUIRED_LIBS - {"librife_vfi.so"}
-NEW_RUNTIME_LIBS = {"librife_vfi.so"}
+NEW_RUNTIME_LIBS = {"librife_vfi.so", "libplacebo.so"}
 PRESERVE_FROM_MPV_INFINITY = {"libplayer.so"}
 KNOWN_SYSTEM_LIBS = {
     "libandroid.so", "libc.so", "libdl.so", "libEGL.so", "libGLESv1_CM.so",
@@ -53,6 +54,17 @@ def assert_arm64_library(path: Path) -> None:
         raise SystemExit(f"Expected an arm64-v8a ELF shared library: {path.name}")
 
 
+def dynamic_defined_symbols(path: Path) -> set[str]:
+    text = readelf("--dyn-syms", "--wide", str(path))
+    symbols: set[str] = set()
+    for line in text.splitlines():
+        fields = line.split()
+        if (len(fields) >= 8 and fields[-4] in {"GLOBAL", "WEAK"}
+                and fields[-3] == "DEFAULT" and fields[-2] != "UND"):
+            symbols.add(fields[-1].split("@", 1)[0])
+    return symbols
+
+
 def elf_version_tags(path: Path) -> set[str]:
     text = readelf("--version-info", "--wide", str(path))
     return set(re.findall(r"\bName:\s+(LIBAV[A-Z0-9_]+_\d+)\b", text))
@@ -69,7 +81,7 @@ def main() -> None:
     )
     args = parser.parse_args()
     required_libs = FLOW_REQUIRED_LIBS if args.without_rife else REQUIRED_LIBS
-    new_runtime_libs = set() if args.without_rife else NEW_RUNTIME_LIBS
+    new_runtime_libs = NEW_RUNTIME_LIBS - ({"librife_vfi.so"} if args.without_rife else set())
     apk_path = args.runtime_apk.resolve()
     aar_path = args.mpv_aar.resolve()
     if not apk_path.is_file() or not aar_path.is_file():
@@ -100,6 +112,17 @@ def main() -> None:
         for name, blob in entries.items():
             (temp / name).write_bytes(blob)
             assert_arm64_library(temp / name)
+        placebo_exports = dynamic_defined_symbols(temp / "libplacebo.so")
+        required_placebo_exports = {
+            "pl_vulkan_default_params", "pl_vulkan_create", "pl_vulkan_destroy",
+            "pl_vulkan_wrap", "pl_vulkan_hold_ex", "pl_vulkan_release_ex",
+        }
+        missing_placebo_exports = sorted(required_placebo_exports - placebo_exports)
+        if missing_placebo_exports:
+            raise SystemExit(
+                "The runtime libplacebo.so does not export the Vulkan API required by Media3 JNI: "
+                + ", ".join(missing_placebo_exports)
+            )
         player_file = temp / "libplayer.so"
         player_file.write_bytes(original_entries[player_name][1])
         assert_arm64_library(player_file)
@@ -157,7 +180,7 @@ def main() -> None:
             os.unlink(temp_name)
 
     print(f"Overlay complete: {aar_path}")
-    print("Preserved MPV∞ libplayer.so; replaced/added arm64 MPV, FFmpeg, and matching libc++_shared runtime libraries.")
+    print("Preserved MPV∞ libplayer.so; replaced/added arm64 MPV, libplacebo, FFmpeg, and matching libc++_shared runtime libraries.")
     if args.without_rife:
         print("Packaged the MPVFlow runtime without the RIFE native library.")
     print(f"Validated FFmpeg ABI tags: {', '.join(sorted(required_tags)) or 'none exposed by the JNI bridge'}")

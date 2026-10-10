@@ -23,11 +23,12 @@ python3 - \
   "$BUILDSCRIPTS/include/ci.sh" \
   "$BUILDSCRIPTS/include/depinfo.sh" \
   "$BUILDSCRIPTS/include/download-deps.sh" \
-  "$BUILDSCRIPTS/scripts/libplacebo.sh" <<'PY'
+  "$BUILDSCRIPTS/scripts/libplacebo.sh" \
+  "$MPV_BUILDER_DIR/app/src/main/jni/Android.mk" <<'PY'
 from pathlib import Path
 import sys
 
-ci_path, depinfo_path, download_path, libplacebo_path = map(Path, sys.argv[1:])
+ci_path, depinfo_path, download_path, libplacebo_path, android_mk_path = map(Path, sys.argv[1:])
 lines = ci_path.read_text().splitlines()
 expected = [
     'msg "Fetching mpv"',
@@ -85,10 +86,38 @@ if libplacebo_script.count(opengl_option) != 1:
     raise SystemExit(f"Expected one Vulkan-enabled libplacebo setup in {libplacebo_path}")
 libplacebo_path.write_text(libplacebo_script.replace(
     opengl_option,
-    "\t-Dvulkan=enabled -Dopengl=enabled -Ddemos=false",
+    "\t-Dvulkan=enabled -Dopengl=enabled -Ddefault_library=shared -Ddemos=false",
     1,
 ))
-print("Enabled OpenGL support in libplacebo for the GLES Flow compute backend")
+print("Built Vulkan-enabled libplacebo as a shared library for verified Media3 JNI linking; kept OpenGL for normal MPV rendering")
+
+android_mk = android_mk_path.read_text()
+mpv_block = """include $(CLEAR_VARS)
+LOCAL_MODULE := libmpv
+LOCAL_SRC_FILES := $(PREFIX)/lib/libmpv.so
+LOCAL_EXPORT_C_INCLUDES := $(PREFIX)/include
+include $(PREBUILT_SHARED_LIBRARY)
+"""
+if android_mk.count(mpv_block) != 1:
+    raise SystemExit(f"Expected exactly one libmpv prebuilt module in {android_mk_path}")
+android_mk = android_mk.replace(
+    mpv_block,
+    mpv_block + "\n" + """include $(CLEAR_VARS)
+LOCAL_MODULE := libplacebo
+LOCAL_SRC_FILES := $(PREFIX)/lib/libplacebo.so
+include $(PREBUILT_SHARED_LIBRARY)
+""",
+    1,
+)
+mpv_player_dependencies = "LOCAL_SHARED_LIBRARIES := swscale avcodec mpv"
+if android_mk.count(mpv_player_dependencies) != 1:
+    raise SystemExit(f"Expected exactly one libplayer dependency list in {android_mk_path}")
+android_mk_path.write_text(android_mk.replace(
+    mpv_player_dependencies,
+    "LOCAL_SHARED_LIBRARIES := swscale avcodec mpv placebo",
+    1,
+))
+print("Registered libplacebo.so in ndk-build and linked it into libplayer so the runtime APK stages it")
 
 depinfo = depinfo_path.read_text()
 qairt_dependency = "dep_mpv=(ffmpeg libass lua libplacebo qairt)"

@@ -60,9 +60,8 @@ target_compile_options(qjs_runtime PRIVATE -funsigned-char)
 target_link_libraries(qjs_runtime dl m)
 mpvinfinity_optimize_native_target(qjs_runtime)
 
-# Native Media3 shares the same clean-room motion pipeline as MPV Flow. The
-# selected mpv AAR exports the pinned libplacebo Vulkan API; link that exact
-# runtime so both routes execute the same SPIR-V pl_pass implementation.
+# Native Media3 shares the same clean-room motion pipeline as MPV Flow. Link
+# only to a verified libplacebo Vulkan API exported by the selected MPV AAR.
 option(MPVFLOW_ENABLE_VULKAN_BACKEND "Build the shared Vulkan Media3 Flow backend" OFF)
 set(MPVFLOW_MPV_AAR "${CMAKE_CURRENT_SOURCE_DIR}/../../../libs/mpvlib.aar"
     CACHE FILEPATH "Selected mpv AAR whose libplacebo API backs Media3 Flow")
@@ -75,14 +74,76 @@ if(MPVFLOW_ENABLE_VULKAN_BACKEND)
         INPUT "${MPVFLOW_MPV_AAR}"
         DESTINATION "${MPVFLOW_AAR_EXTRACT_DIR}"
         PATTERNS "jni/${ANDROID_ABI}/libmpv.so")
+    set(MPVFLOW_PLACEBO_SO "${MPVFLOW_AAR_EXTRACT_DIR}/jni/${ANDROID_ABI}/libplacebo.so")
     set(MPVFLOW_MPV_SO "${MPVFLOW_AAR_EXTRACT_DIR}/jni/${ANDROID_ABI}/libmpv.so")
-    if(NOT EXISTS "${MPVFLOW_MPV_SO}")
-        message(FATAL_ERROR "Selected mpv AAR has no libmpv.so for ${ANDROID_ABI}")
+    execute_process(
+        COMMAND "${CMAKE_COMMAND}" -E tar tf "${MPVFLOW_MPV_AAR}"
+        RESULT_VARIABLE MPVFLOW_AAR_LIST_RESULT
+        OUTPUT_VARIABLE MPVFLOW_AAR_ENTRIES
+        ERROR_VARIABLE MPVFLOW_AAR_LIST_ERROR)
+    if(NOT MPVFLOW_AAR_LIST_RESULT EQUAL 0)
+        message(FATAL_ERROR "Cannot inspect selected MPV AAR ${MPVFLOW_MPV_AAR}: ${MPVFLOW_AAR_LIST_ERROR}")
+    endif()
+    string(REPLACE "\r" "" MPVFLOW_AAR_ENTRIES "${MPVFLOW_AAR_ENTRIES}")
+    string(REPLACE "\n" ";" MPVFLOW_AAR_ENTRIES "${MPVFLOW_AAR_ENTRIES}")
+    set(MPVFLOW_HAS_PLACEBO_SO FALSE)
+    foreach(MPVFLOW_AAR_ENTRY IN LISTS MPVFLOW_AAR_ENTRIES)
+        if(MPVFLOW_AAR_ENTRY STREQUAL "jni/${ANDROID_ABI}/libplacebo.so")
+            set(MPVFLOW_HAS_PLACEBO_SO TRUE)
+            break()
+        endif()
+    endforeach()
+    if(MPVFLOW_HAS_PLACEBO_SO)
+        file(ARCHIVE_EXTRACT
+            INPUT "${MPVFLOW_MPV_AAR}"
+            DESTINATION "${MPVFLOW_AAR_EXTRACT_DIR}"
+            PATTERNS "jni/${ANDROID_ABI}/libplacebo.so")
+        set(MPVFLOW_PLACEBO_API_SO "${MPVFLOW_PLACEBO_SO}")
+    elseif(EXISTS "${MPVFLOW_MPV_SO}")
+        # Existing project AARs may statically include and export libplacebo.
+        # The custom Flow runtime instead packages libplacebo.so explicitly.
+        set(MPVFLOW_PLACEBO_API_SO "${MPVFLOW_MPV_SO}")
+    else()
+        message(FATAL_ERROR "Selected MPV AAR has neither libplacebo.so nor libmpv.so for ${ANDROID_ABI}")
     endif()
 
-    add_library(mpvflow_placebo_from_aar SHARED IMPORTED GLOBAL)
-    set_target_properties(mpvflow_placebo_from_aar PROPERTIES
-        IMPORTED_LOCATION "${MPVFLOW_MPV_SO}")
+    if(CMAKE_NM)
+        set(MPVFLOW_NM_TOOL "${CMAKE_NM}")
+    else()
+        find_program(MPVFLOW_NM_TOOL NAMES llvm-nm nm)
+    endif()
+    if(NOT MPVFLOW_NM_TOOL)
+        message(FATAL_ERROR "Cannot verify exported Vulkan API in ${MPVFLOW_PLACEBO_API_SO}: llvm-nm/nm unavailable")
+    endif()
+    execute_process(
+        COMMAND "${MPVFLOW_NM_TOOL}" -D --defined-only "${MPVFLOW_PLACEBO_API_SO}"
+        RESULT_VARIABLE MPVFLOW_NM_RESULT
+        OUTPUT_VARIABLE MPVFLOW_PLACEBO_EXPORTS
+        ERROR_VARIABLE MPVFLOW_NM_ERROR)
+    if(NOT MPVFLOW_NM_RESULT EQUAL 0)
+        message(FATAL_ERROR "Cannot inspect Vulkan API exports in ${MPVFLOW_PLACEBO_API_SO}: ${MPVFLOW_NM_ERROR}")
+    endif()
+    string(REPLACE "\r" "" MPVFLOW_PLACEBO_EXPORTS "${MPVFLOW_PLACEBO_EXPORTS}")
+    string(REPLACE "\n" ";" MPVFLOW_PLACEBO_EXPORT_LINES "${MPVFLOW_PLACEBO_EXPORTS}")
+    foreach(MPVFLOW_REQUIRED_PLACEBO_SYMBOL IN ITEMS
+            pl_vulkan_default_params pl_vulkan_create pl_vulkan_destroy
+            pl_vulkan_wrap pl_vulkan_hold_ex pl_vulkan_release_ex)
+        set(MPVFLOW_SYMBOL_EXPORTED FALSE)
+        foreach(MPVFLOW_EXPORT_LINE IN LISTS MPVFLOW_PLACEBO_EXPORT_LINES)
+            if(MPVFLOW_EXPORT_LINE MATCHES "[ \t]${MPVFLOW_REQUIRED_PLACEBO_SYMBOL}(@[^ \t]+)?$")
+                set(MPVFLOW_SYMBOL_EXPORTED TRUE)
+                break()
+            endif()
+        endforeach()
+        if(NOT MPVFLOW_SYMBOL_EXPORTED)
+            message(FATAL_ERROR
+                "Selected MPV AAR library ${MPVFLOW_PLACEBO_API_SO} does not export ${MPVFLOW_REQUIRED_PLACEBO_SYMBOL}; refusing to build a nonfunctional Vulkan backend")
+        endif()
+    endforeach()
+
+    add_library(mpvflow_placebo_api_from_aar SHARED IMPORTED GLOBAL)
+    set_target_properties(mpvflow_placebo_api_from_aar PROPERTIES
+        IMPORTED_LOCATION "${MPVFLOW_PLACEBO_API_SO}")
 
     add_library(media3flow_vulkan SHARED
         media3flow_vulkan_jni.cpp
@@ -97,7 +158,7 @@ if(MPVFLOW_ENABLE_VULKAN_BACKEND)
         "${CMAKE_CURRENT_SOURCE_DIR}/third_party/libplacebo/include"
         "${CMAKE_CURRENT_SOURCE_DIR}/mpvflow")
     target_link_libraries(media3flow_vulkan PRIVATE
-        mpvflow_placebo_from_aar
+        mpvflow_placebo_api_from_aar
         android
         EGL
         GLESv3
