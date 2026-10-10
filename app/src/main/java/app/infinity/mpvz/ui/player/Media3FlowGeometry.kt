@@ -7,10 +7,15 @@ import kotlin.math.roundToInt
 /** Reduced dimensions for motion estimation; source/output textures stay at source dimensions. */
 internal data class Media3FlowMotionSize(val width: Int, val height: Int)
 
-internal const val MEDIA3_FLOW_GRID_STEP = 6
+internal const val MEDIA3_FLOW_GRID_STEP = 4
 internal const val MEDIA3_FLOW_BLOCK_SIZE = 8
-/** Motion-search radius in reduced-image pixels; retained from the smooth 1fda64fe baseline. */
-internal const val MEDIA3_FLOW_SEARCH_RADIUS = 4
+/** Coarse candidate spacing in reduced-image pixels; retained from the smooth 1fda64fe baseline. */
+internal const val MEDIA3_FLOW_COARSE_SEARCH_STEP = 4
+/** Maximum displacement considered by the first stage, in reduced-image pixels. */
+internal const val MEDIA3_FLOW_EXTENDED_SEARCH_RADIUS = 8
+internal const val MEDIA3_FLOW_SUBPIXEL_MIN_CURVATURE = 0.00001f
+internal const val MEDIA3_FLOW_VISIBILITY_CONFIDENCE_START = 0.15f
+internal const val MEDIA3_FLOW_VISIBILITY_CONFIDENCE_END = 0.45f
 
 internal data class Media3FlowGridSize(val width: Int, val height: Int)
 
@@ -55,6 +60,42 @@ internal object Media3FlowGeometry {
 
   /** Block-matching vectors describe the center of each sampled patch, not its top-left corner. */
   fun motionGridAnchorOffset(): Float = MEDIA3_FLOW_BLOCK_SIZE / 2f
+
+  /** Fits a parabola through three neighboring SAD costs; unstable or non-minimum fits stay integer. */
+  fun parabolicSubpixelOffset(minusCost: Float, centerCost: Float, plusCost: Float): Float {
+    if (!minusCost.isFinite() || !centerCost.isFinite() || !plusCost.isFinite() ||
+      centerCost > minusCost || centerCost > plusCost
+    ) return 0f
+    val curvature = minusCost - 2f * centerCost + plusCost
+    if (curvature <= MEDIA3_FLOW_SUBPIXEL_MIN_CURVATURE) return 0f
+    return (0.5f * (minusCost - plusCost) / curvature).coerceIn(-0.5f, 0.5f)
+  }
+
+  /** Returns the visibility-weighted source-1 mix, or null when neither warp is trustworthy. */
+  fun sourceVisibilityBlendAlpha(alpha: Float, confidence0: Float, confidence1: Float): Float? {
+    if (!alpha.isFinite() || !confidence0.isFinite() || !confidence1.isFinite()) return null
+    val t = alpha.coerceIn(0f, 1f)
+    val visible0 = smoothstep(
+      MEDIA3_FLOW_VISIBILITY_CONFIDENCE_START,
+      MEDIA3_FLOW_VISIBILITY_CONFIDENCE_END,
+      confidence0,
+    )
+    val visible1 = smoothstep(
+      MEDIA3_FLOW_VISIBILITY_CONFIDENCE_START,
+      MEDIA3_FLOW_VISIBILITY_CONFIDENCE_END,
+      confidence1,
+    )
+    val weight0 = (1f - t) * visible0
+    val weight1 = t * visible1
+    val total = weight0 + weight1
+    if (total <= 0.0001f) return null
+    return (weight1 / total).coerceIn(0f, 1f)
+  }
+
+  private fun smoothstep(edge0: Float, edge1: Float, value: Float): Float {
+    val t = ((value - edge0) / (edge1 - edge0)).coerceIn(0f, 1f)
+    return t * t * (3f - 2f * t)
+  }
 
   /** Initial target-to-endpoint displacements from forward/backward endpoint flow fields. */
   fun targetTimeEndpointOffsets(

@@ -17,11 +17,18 @@ class Media3FlowSynthesisPolicyTest {
   }
 
   @Test
-  fun fallbackStillRequiresBothDirectionsAndKeepsBoundsAndMotionEdgeGuards() {
-    assertTrue(shader.contains("float confidence = min(confidence0, confidence1);"))
-    assertTrue(shader.contains("if (confidence < 0.15)"))
+  fun oneReliableSourceCanCoverAnOcclusionButTwoUnreliableSourcesStillFallback() {
+    assertTrue(shader.contains("float confidence = max(confidence0, confidence1);"))
+    assertTrue(shader.contains("if (confidence < VISIBILITY_CONFIDENCE_START)"))
+    assertTrue(shader.contains("float visibility0 = smoothstep(VISIBILITY_CONFIDENCE_START, VISIBILITY_CONFIDENCE_END, confidence0);"))
+    assertTrue(shader.contains("float visibility1 = smoothstep(VISIBILITY_CONFIDENCE_START, VISIBILITY_CONFIDENCE_END, confidence1);"))
+    assertTrue(shader.contains("if (weightSum <= 0.0001) {"))
+    assertTrue(shader.contains("float cycleError0 = length(forwardAtSource.xy + backwardAtForwardEndpoint.xy);"))
+    assertTrue(shader.contains("float cycleError1 = length(backwardAtTarget.xy + forwardAtBackwardEndpoint.xy);"))
     assertTrue(shader.contains("float valid0 = inBounds(uv0Raw);"))
     assertTrue(shader.contains("float valid1 = inBounds(uv1Raw);"))
+    assertTrue(shader.contains("valid0 *= inBounds(cyclePoint0 / vec2(uMotionSize));"))
+    assertTrue(shader.contains("valid1 *= inBounds(cyclePoint1 / vec2(uMotionSize));"))
     assertTrue(shader.contains("if (localMotionDisagreementSq > FLOW_EDGE_START_SQUARED)"))
   }
 }

@@ -116,21 +116,22 @@ class Media3FlowVideoSink(
   private val coverageSamples = ArrayDeque<FlowCoverageSample>()
   private val generatedWallTimes = ArrayDeque<Long>()
   private val renderTaskPending = AtomicBoolean(false)
-  private var choreographer: Choreographer? = null
-  private var frameCallbackScheduled = false
+  private val renderRequestVersion = AtomicLong(0L)
+  private val renderFrameTimeNanos = AtomicLong(NO_FRAME_TIME_NANOS)
+  private val mainHandler = Handler(Looper.getMainLooper())
+  @Volatile private var choreographer: Choreographer? = null
+  private val frameCallbackScheduled = AtomicBoolean(false)
   private val displayFrameCallback = Choreographer.FrameCallback { frameTimeNanos ->
-    frameCallbackScheduled = false
+    frameCallbackScheduled.set(false)
     if (!disposed && running) {
-      runCatching { renderAtDisplayFrame(frameTimeNanos) }
-        .onFailure { reportError(it) }
+      requestRenderAtDisplayFrame(frameTimeNanos)
       scheduleDisplayFrame()
     }
   }
   private val fallbackFrameRunnable = Runnable {
-    frameCallbackScheduled = false
+    frameCallbackScheduled.set(false)
     if (!disposed && running) {
-      runCatching { renderAtDisplayFrame(null) }
-        .onFailure { reportError(it) }
+      requestRenderAtDisplayFrame(null)
       scheduleDisplayFrame()
     }
   }
@@ -520,39 +521,69 @@ class Media3FlowVideoSink(
   }
 
   private fun postOneShotRender() {
-    if (!renderTaskPending.compareAndSet(false, true)) return
+    requestRenderAtDisplayFrame(null)
+  }
+
+  /** Latest-vsync-wins: a blocked swap coalesces requests instead of queuing stale catch-up renders. */
+  private fun requestRenderAtDisplayFrame(frameTimeNanos: Long?) {
+    renderFrameTimeNanos.set(frameTimeNanos ?: NO_FRAME_TIME_NANOS)
+    renderRequestVersion.incrementAndGet()
+    if (renderTaskPending.compareAndSet(false, true)) postRenderTask()
+  }
+
+  private fun postRenderTask() {
     val accepted = glHandler.post {
+      val requestVersion = renderRequestVersion.get()
+      val frameTimeNanos = renderFrameTimeNanos.get().takeUnless { it == NO_FRAME_TIME_NANOS }
       try {
-        if (!disposed && initialized) renderAtDisplayFrame(null)
+        if (!disposed && initialized) renderAtDisplayFrame(frameTimeNanos)
       } catch (error: RuntimeException) {
         reportError(error)
       } finally {
         renderTaskPending.set(false)
+        if (renderRequestVersion.get() != requestVersion &&
+          renderTaskPending.compareAndSet(false, true)
+        ) {
+          postRenderTask()
+        }
       }
     }
     if (!accepted) renderTaskPending.set(false)
   }
 
-  /** Schedules one output at each display vsync, rather than assuming Media3's work loop is 120 Hz. */
+  /** Schedule vsync on the main looper so the GL thread can keep its next deadline visible while swap blocks. */
   private fun scheduleDisplayFrame() {
-    if (!running || disposed || !outputAvailable || sourceFrames.isEmpty() || frameCallbackScheduled) return
-    val currentChoreographer = choreographer ?: runCatching { Choreographer.getInstance() }
-      .onFailure { Log.w(logTag, "Choreographer unavailable; using bounded timer pacing", it) }
-      .getOrNull()
-      ?.also { choreographer = it }
-    frameCallbackScheduled = true
-    if (currentChoreographer != null) {
-      currentChoreographer.postFrameCallback(displayFrameCallback)
-    } else {
-      val delayMs = (1_000f / targetFps).roundToLong().coerceAtLeast(1L)
-      if (!glHandler.postDelayed(fallbackFrameRunnable, delayMs)) frameCallbackScheduled = false
+    if (!running || disposed || !outputAvailable || storedFrameCount <= 0 ||
+      !frameCallbackScheduled.compareAndSet(false, true)
+    ) return
+    val registerCallback = Runnable {
+      if (!running || disposed || !outputAvailable || storedFrameCount <= 0) {
+        frameCallbackScheduled.set(false)
+      } else {
+        val currentChoreographer = choreographer ?: runCatching { Choreographer.getInstance() }
+          .onFailure { Log.w(logTag, "Choreographer unavailable; using bounded timer pacing", it) }
+          .getOrNull()
+          ?.also { choreographer = it }
+        if (currentChoreographer != null) {
+          currentChoreographer.postFrameCallback(displayFrameCallback)
+        } else {
+          val delayMs = (1_000f / targetFps).roundToLong().coerceAtLeast(1L)
+          if (!glHandler.postDelayed(fallbackFrameRunnable, delayMs)) frameCallbackScheduled.set(false)
+        }
+      }
+    }
+    if (Looper.myLooper() == Looper.getMainLooper()) {
+      registerCallback.run()
+    } else if (!mainHandler.post(registerCallback)) {
+      frameCallbackScheduled.set(false)
     }
   }
 
   private fun cancelDisplayFrame() {
-    if (frameCallbackScheduled) choreographer?.removeFrameCallback(displayFrameCallback)
+    if (frameCallbackScheduled.getAndSet(false)) {
+      mainHandler.post { choreographer?.removeFrameCallback(displayFrameCallback) }
+    }
     glHandler.removeCallbacks(fallbackFrameRunnable)
-    frameCallbackScheduled = false
   }
 
   private fun renderAtDisplayFrame(frameTimeNanos: Long?) {
@@ -1188,10 +1219,10 @@ class Media3FlowVideoSink(
       checkGlError("motion lookup uStep", frameProbeOnly = true)
       GLES31.glUniform1i(stepLocation, MEDIA3_FLOW_GRID_STEP)
       checkGlError("motion uniform uStep", frameProbeOnly = true)
-      val radiusLocation = GLES31.glGetUniformLocation(flowProgram, "uRadius")
-      checkGlError("motion lookup uRadius", frameProbeOnly = true)
-      GLES31.glUniform1i(radiusLocation, MEDIA3_FLOW_SEARCH_RADIUS)
-      checkGlError("motion uniform uRadius", frameProbeOnly = true)
+      val coarseStepLocation = GLES31.glGetUniformLocation(flowProgram, "uCoarseStep")
+      checkGlError("motion lookup uCoarseStep", frameProbeOnly = true)
+      GLES31.glUniform1i(coarseStepLocation, MEDIA3_FLOW_COARSE_SEARCH_STEP)
+      checkGlError("motion uniform uCoarseStep", frameProbeOnly = true)
       GLES31.glBindImageTexture(0, frame0.lumaTexture, 0, false, 0, GLES31.GL_READ_ONLY, GLES30.GL_RGBA8)
       checkGlError("forward motion bind input 0", frameProbeOnly = true)
       GLES31.glBindImageTexture(1, frame1.lumaTexture, 0, false, 0, GLES31.GL_READ_ONLY, GLES30.GL_RGBA8)
@@ -2157,6 +2188,7 @@ class Media3FlowVideoSink(
     private const val FLOW_COVERAGE_BINDING = 3
     private const val INTERFRAME_CHANGE_DIAGNOSTIC_LUMA_THRESHOLD = 0.01f
     private const val STATIC_BLEND_LUMA_DELTA_THRESHOLD = 0.018f
+    private const val NO_FRAME_TIME_NANOS = Long.MIN_VALUE
     private const val GL_TIME_ELAPSED_EXT = 0x88BF
     private const val GL_GPU_DISJOINT_EXT = 0x8FBB
     private const val GL_SYNC_GPU_COMMANDS_COMPLETE = 0x9117
@@ -2247,7 +2279,7 @@ class Media3FlowVideoSink(
       uniform ivec2 uSize;
       uniform int uBlock;
       uniform int uStep;
-      uniform int uRadius;
+      uniform int uCoarseStep;
       float blockSad(ivec2 origin, ivec2 offset, int stride) {
         float sad = 0.0;
         float samples = 0.0;
@@ -2265,38 +2297,75 @@ class Media3FlowVideoSink(
         return all(greaterThanEqual(targetOrigin, ivec2(0))) &&
           all(lessThanEqual(targetOrigin, limit));
       }
+      const int MAX_EXTENDED_SEARCH_RADIUS = ${MEDIA3_FLOW_EXTENDED_SEARCH_RADIUS};
+      const float SUBPIXEL_MIN_CURVATURE = ${MEDIA3_FLOW_SUBPIXEL_MIN_CURVATURE};
+      float subpixelOffset(float minusCost, float centerCost, float plusCost) {
+        if (centerCost > minusCost || centerCost > plusCost) return 0.0;
+        float curvature = minusCost - 2.0 * centerCost + plusCost;
+        if (curvature <= SUBPIXEL_MIN_CURVATURE) return 0.0;
+        return clamp(0.5 * (minusCost - plusCost) / curvature, -0.5, 0.5);
+      }
+      float refineSubpixelAxis(ivec2 origin, ivec2 bestOffset, ivec2 axis, int radius, ivec2 limit, float centerCost) {
+        ivec2 minusOffset = bestOffset - axis;
+        ivec2 plusOffset = bestOffset + axis;
+        if (any(greaterThan(abs(minusOffset), ivec2(radius))) ||
+            any(greaterThan(abs(plusOffset), ivec2(radius))) ||
+            !offsetIsValid(origin, minusOffset, limit) || !offsetIsValid(origin, plusOffset, limit)) return 0.0;
+        float minusCost = blockSad(origin, minusOffset, 1);
+        float plusCost = blockSad(origin, plusOffset, 1);
+        return subpixelOffset(minusCost, centerCost, plusCost);
+      }
       void main() {
         ivec2 cell = ivec2(gl_GlobalInvocationID.xy);
         ivec2 grid = imageSize(uFlow);
         if (any(greaterThanEqual(cell, grid))) return;
         ivec2 limit = max(uSize - ivec2(uBlock), ivec2(0));
         ivec2 origin = min(cell * uStep, limit);
+        int extendedRadius = min(uCoarseStep * 2, MAX_EXTENDED_SEARCH_RADIUS);
         float coarseBest = 1e20;
         ivec2 coarseOffset = ivec2(0);
-        // Keep the compact ±4 analysis-pixel search used by the smooth baseline.
-        for (int dy = -8; dy <= 8; dy += 2) {
-          if (abs(dy) > uRadius) continue;
-          for (int dx = -8; dx <= 8; dx += 2) {
-            if (abs(dx) > uRadius) continue;
+        // Preserve the baseline's 25 coarse candidates while covering twice the displacement range.
+        for (int dy = -extendedRadius; dy <= extendedRadius; dy += uCoarseStep) {
+          for (int dx = -extendedRadius; dx <= extendedRadius; dx += uCoarseStep) {
             ivec2 offset = ivec2(dx, dy);
             if (!offsetIsValid(origin, offset, limit)) continue;
             float cost = blockSad(origin, offset, 2);
             if (cost < coarseBest) { coarseBest = cost; coarseOffset = offset; }
           }
         }
+        // Use the coarse winner as a predictor, refine at half the offset spacing, then do the full-SAD 3x3 fit.
+        int refinementRadius = max(uCoarseStep / 2, 1);
+        float refinementBest = 1e20;
+        ivec2 refinedCoarseOffset = coarseOffset;
+        for (int dy = coarseOffset.y - refinementRadius; dy <= coarseOffset.y + refinementRadius; dy += 2) {
+          if (abs(dy) > extendedRadius) continue;
+          for (int dx = coarseOffset.x - refinementRadius; dx <= coarseOffset.x + refinementRadius; dx += 2) {
+            if (abs(dx) > extendedRadius) continue;
+            ivec2 offset = ivec2(dx, dy);
+            if (!offsetIsValid(origin, offset, limit)) continue;
+            float refinementCost = blockSad(origin, offset, 2);
+            if (refinementCost < refinementBest) {
+              refinementBest = refinementCost;
+              refinedCoarseOffset = offset;
+            }
+          }
+        }
         float best = 1e20;
-        ivec2 bestOffset = coarseOffset;
-        for (int dy = coarseOffset.y - 1; dy <= coarseOffset.y + 1; dy++) {
-          if (abs(dy) > uRadius) continue;
-          for (int dx = coarseOffset.x - 1; dx <= coarseOffset.x + 1; dx++) {
-            if (abs(dx) > uRadius) continue;
+        ivec2 bestOffset = refinedCoarseOffset;
+        for (int dy = refinedCoarseOffset.y - 1; dy <= refinedCoarseOffset.y + 1; dy++) {
+          if (abs(dy) > extendedRadius) continue;
+          for (int dx = refinedCoarseOffset.x - 1; dx <= refinedCoarseOffset.x + 1; dx++) {
+            if (abs(dx) > extendedRadius) continue;
             ivec2 offset = ivec2(dx, dy);
             if (!offsetIsValid(origin, offset, limit)) continue;
             float cost = blockSad(origin, offset, 1);
             if (cost < best) { best = cost; bestOffset = offset; }
           }
         }
-        imageStore(uFlow, cell, vec4(vec2(bestOffset), best, 1.0));
+        vec2 refinedOffset = vec2(bestOffset);
+        refinedOffset.x += refineSubpixelAxis(origin, bestOffset, ivec2(1, 0), extendedRadius, limit, best);
+        refinedOffset.y += refineSubpixelAxis(origin, bestOffset, ivec2(0, 1), extendedRadius, limit, best);
+        imageStore(uFlow, cell, vec4(refinedOffset, best, 1.0));
       }
     """
 
@@ -2325,6 +2394,8 @@ class Media3FlowVideoSink(
       const float CYCLE_ERROR_END = 6.0;
       const float MATCH_ERROR_START = 0.04;
       const float MATCH_ERROR_END = 0.35;
+      const float VISIBILITY_CONFIDENCE_START = ${MEDIA3_FLOW_VISIBILITY_CONFIDENCE_START};
+      const float VISIBILITY_CONFIDENCE_END = ${MEDIA3_FLOW_VISIBILITY_CONFIDENCE_END};
       const float STATIC_VECTOR_PROBE_THRESHOLD = 0.5;
       const float INTERFRAME_CHANGE_DIAGNOSTIC_LUMA_THRESHOLD = ${INTERFRAME_CHANGE_DIAGNOSTIC_LUMA_THRESHOLD};
       const float STATIC_BLEND_LUMA_DELTA_THRESHOLD = ${STATIC_BLEND_LUMA_DELTA_THRESHOLD};
@@ -2423,27 +2494,45 @@ class Media3FlowVideoSink(
             vec4 backwardAtTarget = flowAt(source1Point, 1);
             source0Point = motionPoint + flowToFrame0(uAlpha, forwardAtSource.xy, backwardAtTarget.xy);
             source1Point = motionPoint + flowToFrame1(uAlpha, forwardAtSource.xy, backwardAtTarget.xy);
-            float cycleError = length(forwardAtSource.xy + backwardAtTarget.xy);
+            vec2 cyclePoint0 = source0Point + forwardAtSource.xy;
+            vec2 cyclePoint1 = source1Point + backwardAtTarget.xy;
+            vec4 backwardAtForwardEndpoint = flowAt(cyclePoint0, 1);
+            vec4 forwardAtBackwardEndpoint = flowAt(cyclePoint1, 0);
+            float cycleError0 = length(forwardAtSource.xy + backwardAtForwardEndpoint.xy);
+            float cycleError1 = length(backwardAtTarget.xy + forwardAtBackwardEndpoint.xy);
             vec2 uv0Raw = uv + (source0Point - motionPoint) / vec2(uMotionSize);
             vec2 uv1Raw = uv + (source1Point - motionPoint) / vec2(uMotionSize);
             float valid0 = inBounds(uv0Raw);
             float valid1 = inBounds(uv1Raw);
+            valid0 *= inBounds(cyclePoint0 / vec2(uMotionSize));
+            valid1 *= inBounds(cyclePoint1 / vec2(uMotionSize));
             vec2 uv0 = clamp(uv0Raw, vec2(0.0), vec2(1.0));
             vec2 uv1 = clamp(uv1Raw, vec2(0.0), vec2(1.0));
             vec4 c0 = texture(uFrame0, uv0);
             vec4 c1 = texture(uFrame1, uv1);
             forwardAtSource.z = max(forwardAtSource.z, forwardAtMid.z);
             backwardAtTarget.z = max(backwardAtTarget.z, backwardAtMid.z);
-            float confidence0 = flowReliability(forwardAtSource, cycleError, valid0);
-            float confidence1 = flowReliability(backwardAtTarget, cycleError, valid1);
-            // Confidence decides whether to trust motion; it must not distort the source-time blend.
-            float confidence = min(confidence0, confidence1);
-            if (confidence < 0.15) {
+            float confidence0 = flowReliability(forwardAtSource, cycleError0, valid0);
+            float confidence1 = flowReliability(backwardAtTarget, cycleError1, valid1);
+            // Treat each endpoint as a candidate visibility source: equal confidence preserves alpha,
+            // while a disoccluded or out-of-bounds endpoint yields to its valid counterpart.
+            float confidence = max(confidence0, confidence1);
+            if (confidence < VISIBILITY_CONFIDENCE_START) {
               imageStore(uOutput, p, uAlpha < 0.5 ? source0 : source1);
               pixelClass = 2u;
             } else {
-              imageStore(uOutput, p, mix(c0, c1, uAlpha));
-              pixelClass = 1u;
+              float visibility0 = smoothstep(VISIBILITY_CONFIDENCE_START, VISIBILITY_CONFIDENCE_END, confidence0);
+              float visibility1 = smoothstep(VISIBILITY_CONFIDENCE_START, VISIBILITY_CONFIDENCE_END, confidence1);
+              float weight0 = (1.0 - uAlpha) * visibility0;
+              float weight1 = uAlpha * visibility1;
+              float weightSum = weight0 + weight1;
+              if (weightSum <= 0.0001) {
+                imageStore(uOutput, p, uAlpha < 0.5 ? source0 : source1);
+                pixelClass = 2u;
+              } else {
+                imageStore(uOutput, p, mix(c0, c1, weight1 / weightSum));
+                pixelClass = 1u;
+              }
             }
           }
           if (uCoverageEnabled != 0 && staticChange >= INTERFRAME_CHANGE_DIAGNOSTIC_LUMA_THRESHOLD) {

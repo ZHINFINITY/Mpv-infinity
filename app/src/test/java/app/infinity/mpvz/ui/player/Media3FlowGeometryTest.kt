@@ -2,18 +2,46 @@ package app.infinity.mpvz.ui.player
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class Media3FlowGeometryTest {
   @Test
-  fun motionSearchKeepsTheKnownGoodBoundedAnalysisRadius() {
-    assertEquals(4, MEDIA3_FLOW_SEARCH_RADIUS)
+  fun motionSearchUsesFourPixelCoarseStepAndEightPixelMaximumRange() {
+    assertEquals(4, MEDIA3_FLOW_COARSE_SEARCH_STEP)
+    assertEquals(8, MEDIA3_FLOW_EXTENDED_SEARCH_RADIUS)
+  }
+
+  @Test
+  fun parabolicMotionRefinementRecoversFractionalOffsetsAndRejectsUnstableCosts() {
+    assertEquals(0.25f, Media3FlowGeometry.parabolicSubpixelOffset(1.5625f, 0.0625f, 0.5625f), 0.0001f)
+    assertEquals(-0.25f, Media3FlowGeometry.parabolicSubpixelOffset(0.5625f, 0.0625f, 1.5625f), 0.0001f)
+    assertEquals(0f, Media3FlowGeometry.parabolicSubpixelOffset(0.2f, 0.2f, 0.2f), 0f)
+    assertEquals(0f, Media3FlowGeometry.parabolicSubpixelOffset(0.2f, 0.3f, 0.1f), 0f)
+    assertEquals(0f, Media3FlowGeometry.parabolicSubpixelOffset(Float.NaN, 0.1f, 0.2f), 0f)
+  }
+
+  @Test
+  fun sourceVisibilityPreservesNormalTimingButSelectsTheReliableOcclusionSide() {
+    assertEquals(0.25f, Media3FlowGeometry.sourceVisibilityBlendAlpha(0.25f, 1f, 1f)!!, 0.0001f)
+    assertEquals(1f, Media3FlowGeometry.sourceVisibilityBlendAlpha(0.5f, 0.1f, 1f)!!, 0f)
+    assertEquals(0f, Media3FlowGeometry.sourceVisibilityBlendAlpha(0.5f, 1f, 0.1f)!!, 0f)
+    assertNull(Media3FlowGeometry.sourceVisibilityBlendAlpha(0.5f, 0.14f, 0.14f))
   }
 
   @Test
   fun fullHdSourceUsesReducedMotionGrid() {
     assertEquals(Media3FlowMotionSize(480, 270), Media3FlowGeometry.motionSize(1920, 1080, 480))
+  }
+
+  @Test
+  fun fourHundredPixelProcessingUsesOverlappingEightByEightPatches() {
+    val processingSize = Media3FlowGeometry.motionSize(1920, 1080, 400)
+    assertEquals(Media3FlowMotionSize(400, 225), processingSize)
+    assertEquals(Media3FlowGridSize(99, 55), Media3FlowGeometry.motionGridSize(processingSize.width, processingSize.height))
+    assertEquals(4, MEDIA3_FLOW_GRID_STEP)
+    assertEquals(8, MEDIA3_FLOW_BLOCK_SIZE)
   }
 
   @Test
@@ -24,13 +52,13 @@ class Media3FlowGeometryTest {
   @Test
   fun motionGridUsesOnlyValidRegularBlockOriginsAtDivisibleAndNonDivisibleSizes() {
     val nonDivisibleGrid = Media3FlowGeometry.motionGridSize(640, 360)
-    assertEquals(Media3FlowGridSize(106, 59), nonDivisibleGrid)
-    assertEquals(630, (nonDivisibleGrid.width - 1) * MEDIA3_FLOW_GRID_STEP)
-    assertEquals(348, (nonDivisibleGrid.height - 1) * MEDIA3_FLOW_GRID_STEP)
+    assertEquals(Media3FlowGridSize(159, 89), nonDivisibleGrid)
+    assertEquals(632, (nonDivisibleGrid.width - 1) * MEDIA3_FLOW_GRID_STEP)
+    assertEquals(352, (nonDivisibleGrid.height - 1) * MEDIA3_FLOW_GRID_STEP)
     assertTrue((nonDivisibleGrid.width - 1) * MEDIA3_FLOW_GRID_STEP <= 640 - MEDIA3_FLOW_BLOCK_SIZE)
     assertTrue((nonDivisibleGrid.height - 1) * MEDIA3_FLOW_GRID_STEP <= 360 - MEDIA3_FLOW_BLOCK_SIZE)
 
-    assertEquals(Media3FlowGridSize(105, 60), Media3FlowGeometry.motionGridSize(632, 362))
+    assertEquals(Media3FlowGridSize(157, 89), Media3FlowGeometry.motionGridSize(632, 362))
   }
 
   @Test
@@ -75,7 +103,12 @@ class Media3FlowGeometryTest {
   fun motionConfidenceKeepsBaselineBehaviorOnLowTextureRegions() {
     val motionShader = Media3FlowVideoSink.FLOW_COMPUTE_SHADER
     val synthesisShader = Media3FlowVideoSink.SYNTH_COMPUTE_SHADER
-    assertTrue(motionShader.contains("imageStore(uFlow, cell, vec4(vec2(bestOffset), best, 1.0));"))
+    assertTrue(motionShader.contains("imageStore(uFlow, cell, vec4(refinedOffset, best, 1.0));"))
+    assertTrue(motionShader.contains("int extendedRadius = min(uCoarseStep * 2, MAX_EXTENDED_SEARCH_RADIUS);"))
+    assertTrue(motionShader.contains("for (int dy = -extendedRadius; dy <= extendedRadius; dy += uCoarseStep)"))
+    assertTrue(motionShader.contains("int refinementRadius = max(uCoarseStep / 2, 1);"))
+    assertTrue(motionShader.contains("float refinementCost = blockSad(origin, offset, 2);"))
+    assertTrue(motionShader.contains("refinedOffset.x += refineSubpixelAxis"))
     assertFalse(motionShader.contains("textureEnergy"))
     assertTrue(synthesisShader.contains("return consistency * matchQuality * valid;"))
     assertFalse(synthesisShader.contains("textureConfidence"))
@@ -86,12 +119,14 @@ class Media3FlowGeometryTest {
   @Test
   fun synthesisUsesConfidenceAsAGateAndPreservesSourceTimeBlendWeights() {
     val shader = Media3FlowVideoSink.SYNTH_COMPUTE_SHADER
-    assertTrue(shader.contains("float confidence = min(confidence0, confidence1);"))
-    assertTrue(shader.contains("if (confidence < 0.15) {"))
-    assertTrue(shader.contains("imageStore(uOutput, p, mix(c0, c1, uAlpha));"))
+    assertTrue(shader.contains("float confidence = max(confidence0, confidence1);"))
+    assertTrue(shader.contains("if (confidence < VISIBILITY_CONFIDENCE_START) {"))
+    assertTrue(shader.contains("float weight0 = (1.0 - uAlpha) * visibility0;"))
+    assertTrue(shader.contains("float weight1 = uAlpha * visibility1;"))
+    assertTrue(shader.contains("mix(c0, c1, weight1 / weightSum)"))
     assertFalse(shader.contains("colorMismatch"))
-    assertFalse(shader.contains("(1.0 - uAlpha) * confidence0"))
-    assertFalse(shader.contains("uAlpha * confidence1"))
+    assertTrue(shader.contains("float cycleError0 = length(forwardAtSource.xy + backwardAtForwardEndpoint.xy);"))
+    assertTrue(shader.contains("float cycleError1 = length(backwardAtTarget.xy + forwardAtBackwardEndpoint.xy);"))
   }
 
   @Test
@@ -116,7 +151,7 @@ class Media3FlowGeometryTest {
     assertTrue(shader.contains("staticVectorClass = 2u;"))
     assertTrue(shader.contains("staticVectorClass = staticConfidence >= 0.15 ? 3u : 4u;"))
     assertTrue(shader.contains("counts.w = staticVectorClass;"))
-    assertTrue(shader.contains("imageStore(uOutput, p, mix(c0, c1, uAlpha));"))
+    assertTrue(shader.contains("imageStore(uOutput, p, mix(c0, c1, weight1 / weightSum));"))
     assertTrue(shader.contains("imageStore(uOutput, p, uAlpha < 0.5 ? source0 : source1);"))
     assertTrue(shader.contains("imageStore(uOutput, p, mix(source0, source1, uAlpha));"))
     assertFalse(main.contains("return;"))
