@@ -1663,14 +1663,11 @@ class Media3FlowVideoSink(
       Media3FlowVulkanNative.nativeDestroyContext(flowVulkanContext)
       flowVulkanContext = 0L
     }
-    intArrayOf(copyProgram, blitProgram, lumaProgram, flowProgram, synthProgram)
+    intArrayOf(copyProgram, blitProgram)
       .filter { it != 0 }
       .forEach { GLES20.glDeleteProgram(it) }
     copyProgram = 0
     blitProgram = 0
-    lumaProgram = 0
-    flowProgram = 0
-    synthProgram = 0
     if (gpuTimerQueryIds.isNotEmpty()) {
       GLES30.glDeleteQueries(gpuTimerQueryIds.size, gpuTimerQueryIds, 0)
     }

@@ -7,6 +7,7 @@ import pathlib
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 SINK = (ROOT / "app/src/main/java/app/infinity/mpvz/ui/player/Media3FlowVideoSink.kt").read_text(encoding="utf-8")
 NATIVE = (ROOT / "app/src/main/java/app/infinity/mpvz/ui/player/Media3FlowVulkanNative.kt").read_text(encoding="utf-8")
+NATIVE_ENGINE = (ROOT / "app/src/main/java/app/infinity/mpvz/ui/player/NativeMedia3Engine.kt").read_text(encoding="utf-8")
 JNI = (ROOT / "app/src/main/cpp/media3flow_vulkan_jni.cpp").read_text(encoding="utf-8")
 GPU = (ROOT / "app/src/main/cpp/mpvflow/mpvflow_gpu.c").read_text(encoding="utf-8")
 MPV_VIEW = (ROOT / "app/src/main/java/app/infinity/mpvz/ui/player/MPVView.kt").read_text(encoding="utf-8")
@@ -16,7 +17,10 @@ MPV_PATCH = (ROOT / "app/src/main/cpp/mpvflow/mpvflow-vo-gpu-next.patch").read_t
 # Native Media3 may use GLES for decoder SurfaceTexture capture and final display only.
 for marker in ("copyExternalTexture(", "drawTexture(", "GLES20.glFinish()", "interpolation=Vulkan"):
     assert marker in SINK, f"Native Media3 must retain its capture/display-only GLES stage: {marker}"
-for forbidden in ("GLES31", "#version 310 es", "glDispatchCompute", "glBindImageTexture", "glMemoryBarrier", "FlowCoverageBuffer"):
+for forbidden in (
+    "GLES31", "#version 310 es", "glDispatchCompute", "glBindImageTexture", "glMemoryBarrier",
+    "FlowCoverageBuffer", "lumaProgram", "flowProgram", "synthProgram",
+):
     assert forbidden not in SINK, f"Obsolete GLES interpolation compute remains in Media3 sink: {forbidden}"
 
 # Both routes dispatch through the exact same libplacebo-backed Vulkan flow implementation.
@@ -37,6 +41,7 @@ for marker in (
     assert marker in JNI, f"Vulkan HardwareBuffer bridge is missing required contract: {marker}"
 assert "external fun nativeCreateContext" in NATIVE
 assert "external fun nativeAnalyzePair" in NATIVE
+assert "media3FlowSink?.takeIf { it.isPreflightAvailable() }" in NATIVE_ENGINE
 
 # MPV Flow is Vulkan-only, automatically selects gpu-next/Vulkan, and never advertises GLES compute.
 assert "forceForMpvFlow = flowRequiresVulkan" in MPV_VIEW
