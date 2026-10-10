@@ -189,10 +189,16 @@ cd "$BUILDSCRIPTS"
 ./include/ci.sh build
 MPV_PREFIX="$BUILDSCRIPTS/prefix/arm64/usr/local/lib"
 MPV_LIBRARY="$MPV_PREFIX/libmpv.so"
+MPV_BUILD_DIR="$BUILDSCRIPTS/deps/mpv/_build-arm64"
+MPV_DEPENDENCIES="$MPV_BUILD_DIR/meson-info/intro-dependencies.json"
 PLACEBO_LIBRARY="$MPV_PREFIX/libplacebo.so"
 PLACEBO_PC="$MPV_PREFIX/pkgconfig/libplacebo.pc"
 [[ -f "$MPV_LIBRARY" && -f "$PLACEBO_LIBRARY" && -f "$PLACEBO_PC" ]] || {
   echo "MPVFlow native prefix is missing libmpv, libplacebo, or libplacebo.pc" >&2
+  exit 1
+}
+[[ -f "$MPV_DEPENDENCIES" ]] || {
+  echo "MPVFlow MPV Meson dependency metadata is missing: $MPV_DEPENDENCIES" >&2
   exit 1
 }
 PLACEBO_VERSION="$(sed -n 's/^Version: *//p' "$PLACEBO_PC")"
@@ -201,11 +207,28 @@ if ! readelf -d "$MPV_LIBRARY" | grep -Eq 'Shared library: \[libplacebo\.so([.][
   echo "MPVFlow libmpv.so must dynamically use the shared libplacebo.so runtime" >&2
   exit 1
 fi
-if ! strings "$MPV_LIBRARY" | grep -Fq "$PLACEBO_VERSION"; then
-  echo "MPVFlow libmpv.so compile-time libplacebo version does not match libplacebo.so ($PLACEBO_VERSION)" >&2
-  exit 1
-fi
-echo "Verified libmpv.so uses shared libplacebo $PLACEBO_VERSION, matching Native Media3 Flow"
+python3 - "$MPV_DEPENDENCIES" "$PLACEBO_VERSION" <<'PY'
+import json
+import sys
+
+metadata_path, expected_version = sys.argv[1:]
+with open(metadata_path, encoding="utf-8") as metadata_file:
+    dependencies = json.load(metadata_file)
+placebo_dependencies = [dependency for dependency in dependencies if dependency.get("name") == "libplacebo"]
+if len(placebo_dependencies) != 1:
+    raise SystemExit(
+        "MPVFlow MPV Meson metadata must report exactly one libplacebo dependency; "
+        f"found {len(placebo_dependencies)} in {metadata_path}"
+    )
+actual_version = placebo_dependencies[0].get("version")
+if actual_version != expected_version:
+    raise SystemExit(
+        "MPVFlow MPV was configured against libplacebo "
+        f"{actual_version}, but the shared runtime is {expected_version}"
+    )
+print(f"Verified MPV Meson libplacebo dependency version {actual_version}")
+PY
+echo "Verified libmpv.so dynamically uses shared libplacebo $PLACEBO_VERSION, matching Native Media3 Flow"
 APK="$(find "$MPV_BUILDER_DIR/app/build/outputs/apk" -type f -path '*/debug/*' -name '*arm64-v8a-debug*.apk' -print -quit)"
 if [[ -z "$APK" ]]; then
   echo "Android MPVFlow runtime build finished but no arm64-v8a debug APK was found" >&2

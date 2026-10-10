@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib.util
+import json
 from pathlib import Path
 import subprocess
 import sys
@@ -96,13 +97,54 @@ required_fragments = (
     "-Dvulkan=enabled",
     'export MPVFLOW_ROOT="$ROOT"',
     "libSPIRV.a libglslang.a libglslang-default-resource-limits.a",
+    'MPV_BUILD_DIR="$BUILDSCRIPTS/deps/mpv/_build-arm64"',
+    'MPV_DEPENDENCIES="$MPV_BUILD_DIR/meson-info/intro-dependencies.json"',
     'PLACEBO_PC="$MPV_PREFIX/pkgconfig/libplacebo.pc"',
     'PLACEBO_VERSION="$(sed -n \'s/^Version: *//p\' "$PLACEBO_PC")"',
     'readelf -d "$MPV_LIBRARY"',
-    'strings "$MPV_LIBRARY"',
+    'python3 - "$MPV_DEPENDENCIES" "$PLACEBO_VERSION"',
+    'dependency.get("name") == "libplacebo"',
+    'actual_version != expected_version',
+    'Verified MPV Meson libplacebo dependency version',
 )
 for fragment in required_fragments:
     assert fragment in build, f"native build must require Android Vulkan/SPIR-V support: missing {fragment!r}"
+assert 'strings "$MPV_LIBRARY"' not in build, (
+    "the native build must validate MPV's configured dependency, not search libmpv for the player-only version string"
+)
+version_guard_start = 'python3 - "$MPV_DEPENDENCIES" "$PLACEBO_VERSION" <<\'PY\'\n'
+version_guard = build.split(version_guard_start, 1)[1].split("\nPY\n", 1)[0]
+with tempfile.TemporaryDirectory(prefix="mpvflow-placebo-version-test-") as temporary:
+    dependencies_file = Path(temporary) / "intro-dependencies.json"
+    dependencies_file.write_text(
+        json.dumps([{"name": "libplacebo", "version": "7.374.0"}]),
+        encoding="utf-8",
+    )
+    matching = subprocess.run(
+        [sys.executable, "-", str(dependencies_file), "7.374.0"],
+        input=version_guard,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert matching.returncode == 0, f"matching MPV/libplacebo metadata must pass: {matching.stderr}"
+    mismatching = subprocess.run(
+        [sys.executable, "-", str(dependencies_file), "7.371.0"],
+        input=version_guard,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert mismatching.returncode != 0, "a real MPV/libplacebo Meson version mismatch must fail closed"
+    dependencies_file.write_text("[]\n", encoding="utf-8")
+    missing = subprocess.run(
+        [sys.executable, "-", str(dependencies_file), "7.374.0"],
+        input=version_guard,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert missing.returncode != 0, "missing MPV libplacebo dependency metadata must fail closed"
 
 session_source = PLAYBACK_SESSION.read_text(encoding="utf-8")
 initialize_order = (
