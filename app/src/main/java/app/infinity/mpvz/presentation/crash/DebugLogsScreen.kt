@@ -11,8 +11,13 @@ package app.infinity.mpvz.presentation.crash
 
 import android.content.Context
 import android.content.Intent
+import android.net.Uri
 import android.os.Process
+import android.provider.DocumentsContract
 import android.util.Log
+import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.ExperimentalFoundationApi
@@ -73,9 +78,21 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
+import java.io.IOException
 
 private const val DEBUG_LOG_POLL_INTERVAL_MS = 1_500L
 private const val DEBUG_LOG_TAG = "MpvInfinityDebugLogs"
+
+private enum class DebugLogFolderExportMode(val fileNamePrefix: String) {
+  Visible("visible-logs"),
+  AllAccessibleLogcat("all-logcat"),
+}
+
+private data class PendingDebugLogFolderExport(
+  val mode: DebugLogFolderExportMode,
+  val deviceInfo: String,
+  val visibleText: String? = null,
+)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -94,10 +111,56 @@ internal fun DebugLogsScreen(onNavigateBack: () -> Unit) {
   var isPaused by remember { mutableStateOf(false) }
   var autoScrollEnabled by remember { mutableStateOf(true) }
   var menuExpanded by remember { mutableStateOf(false) }
+  var pendingFolderExport by remember { mutableStateOf<PendingDebugLogFolderExport?>(null) }
   var clearedAt by remember { mutableStateOf(0L) }
   var readError by remember { mutableStateOf<String?>(null) }
   var hasLoadedOnce by remember { mutableStateOf(false) }
   var readSource by remember { mutableStateOf("") }
+
+  val folderPickerLauncher =
+    rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { treeUri ->
+      val pending = pendingFolderExport
+      pendingFolderExport = null
+      if (treeUri != null && pending != null) {
+        scope.launch {
+          val result =
+            withContext(Dispatchers.IO) {
+              runCatching {
+                val capture =
+                  if (pending.mode == DebugLogFolderExportMode.AllAccessibleLogcat) {
+                    DebugLogReader.readAllAccessibleLogcat()
+                  } else {
+                    null
+                  }
+                val text =
+                  when (pending.mode) {
+                    DebugLogFolderExportMode.Visible -> pending.visibleText.orEmpty()
+                    DebugLogFolderExportMode.AllAccessibleLogcat ->
+                      formatAllAccessibleLogcatExport(pending.deviceInfo, requireNotNull(capture))
+                  }
+                val fileName = saveDebugLogFileToTree(context, treeUri, pending.mode, text)
+                fileName to capture?.exitCode
+              }
+            }
+          result
+            .onSuccess { (fileName, exitCode) ->
+              val message =
+                if (exitCode != null && exitCode != 0) {
+                  "Saved $fileName; Logcat returned exit code $exitCode (some data may be restricted)."
+                } else {
+                  "Saved $fileName to the selected folder."
+                }
+              Toast.makeText(context, message, Toast.LENGTH_LONG).show()
+            }.onFailure { error ->
+              Toast.makeText(
+                context,
+                "Could not save logs: ${error.message ?: "folder access failed"}",
+                Toast.LENGTH_LONG,
+              ).show()
+            }
+        }
+      }
+    }
 
   // Generate one guaranteed app-side event before the first read. Besides being useful context,
   // this makes it obvious when a vendor is preventing the app from reading its own logcat.
@@ -246,6 +309,34 @@ internal fun DebugLogsScreen(onNavigateBack: () -> Unit) {
               expanded = menuExpanded,
               onDismissRequest = { menuExpanded = false },
             ) {
+              DropdownMenuItem(
+                text = { Text("Save all accessible Logcat to folder") },
+                leadingIcon = { Icon(Icons.RoundedFilled.Download, contentDescription = null) },
+                onClick = {
+                  menuExpanded = false
+                  pendingFolderExport =
+                    PendingDebugLogFolderExport(
+                      mode = DebugLogFolderExportMode.AllAccessibleLogcat,
+                      deviceInfo = CrashActivity.collectDeviceInfo(),
+                    )
+                  folderPickerLauncher.launch(null)
+                },
+              )
+              DropdownMenuItem(
+                text = { Text("Save visible logs to folder") },
+                leadingIcon = { Icon(Icons.RoundedFilled.Download, contentDescription = null) },
+                enabled = filteredEntries.isNotEmpty(),
+                onClick = {
+                  menuExpanded = false
+                  pendingFolderExport =
+                    PendingDebugLogFolderExport(
+                      mode = DebugLogFolderExportMode.Visible,
+                      deviceInfo = CrashActivity.collectDeviceInfo(),
+                      visibleText = visibleText(includeDeviceInfo = true),
+                    )
+                  folderPickerLauncher.launch(null)
+                },
+              )
               DropdownMenuItem(
                 text = { Text("Share visible logs") },
                 leadingIcon = { Icon(Icons.RoundedFilled.Share, contentDescription = null) },
@@ -688,4 +779,32 @@ private fun exportDebugLogs(
       chooserTitle,
     ),
   )
+}
+
+private fun saveDebugLogFileToTree(
+  context: Context,
+  treeUri: Uri,
+  mode: DebugLogFolderExportMode,
+  text: String,
+): String {
+  val resolver = context.contentResolver
+  val directoryUri =
+    DocumentsContract.buildDocumentUriUsingTree(
+      treeUri,
+      DocumentsContract.getTreeDocumentId(treeUri),
+    )
+  val fileName = "Mpv∞-${mode.fileNamePrefix}-${System.currentTimeMillis()}.txt"
+  val documentUri =
+    DocumentsContract.createDocument(resolver, directoryUri, "text/plain", fileName)
+      ?: throw IOException("The selected folder did not create a log file")
+
+  try {
+    val output = resolver.openOutputStream(documentUri, "wt")
+      ?: throw IOException("The selected folder could not open the log file")
+    output.bufferedWriter(Charsets.UTF_8).use { writer -> writer.write(text) }
+  } catch (error: Exception) {
+    runCatching { DocumentsContract.deleteDocument(resolver, documentUri) }
+    throw error
+  }
+  return fileName
 }

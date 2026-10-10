@@ -12,6 +12,9 @@ internal object Media3FlowVulkanNative {
 
   external fun nativeCreateContext(): Long
 
+  /** Returns the Vulkan driver's required Android buffer usage for the selected image role. */
+  external fun nativeGetRequiredHardwareBufferUsage(context: Long, output: Boolean): Long
+
   external fun nativeCreateFrameImage(
     context: Long,
     buffer: HardwareBuffer,

@@ -79,6 +79,14 @@ fun DecodersSheet(
         )
       }
       LazyColumn {
+        if (selectedTab != 2 && isVulkanActive && !directMediaCodecAllowed) {
+          item(key = "hwplus-unavailable-info") {
+            Text(
+              "HW+ is unavailable in this Vulkan build because direct MediaCodec-to-Vulkan import " +
+                "is not enabled. HW still uses hardware decoding through a copy path.",
+            )
+          }
+        }
         if (selectedTab == 2) {
           item(key = "native-active") {
             AudioTrackRow(

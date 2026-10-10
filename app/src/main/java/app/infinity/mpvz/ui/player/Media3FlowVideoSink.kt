@@ -221,6 +221,8 @@ class Media3FlowVideoSink(
   private var gridHeight = 0
   private var outputTexture = 0
   private var flowVulkanContext = 0L
+  private var inputRequiredHardwareBufferUsage = 0L
+  private var outputRequiredHardwareBufferUsage = 0L
   private var outputHardwareBuffer: HardwareBuffer? = null
   private var outputImageHandle = 0L
   private var flowAvailable = false
@@ -255,11 +257,20 @@ class Media3FlowVideoSink(
           !deviceSupportsVulkanFlow(appContext) -> "vulkan_compute_unavailable"
           else -> {
             flowVulkanContext = Media3FlowVulkanNative.nativeCreateContext()
-            when {
-              flowVulkanContext == 0L -> "vulkan_context_or_compute_setup_failed"
-              !preflightSharedImage(output = false) -> "vulkan_hardwarebuffer_input_preflight_failed"
-              !preflightSharedImage(output = true) -> "vulkan_hardwarebuffer_output_preflight_failed"
-              else -> null
+            if (flowVulkanContext == 0L) {
+              "vulkan_context_or_compute_setup_failed"
+            } else {
+              inputRequiredHardwareBufferUsage =
+                Media3FlowVulkanNative.nativeGetRequiredHardwareBufferUsage(flowVulkanContext, output = false)
+              outputRequiredHardwareBufferUsage =
+                Media3FlowVulkanNative.nativeGetRequiredHardwareBufferUsage(flowVulkanContext, output = true)
+              when {
+                inputRequiredHardwareBufferUsage == 0L -> "vulkan_hardwarebuffer_input_usage_query_failed"
+                outputRequiredHardwareBufferUsage == 0L -> "vulkan_hardwarebuffer_output_usage_query_failed"
+                !preflightSharedImage(output = false) -> "vulkan_hardwarebuffer_input_preflight_failed"
+                !preflightSharedImage(output = true) -> "vulkan_hardwarebuffer_output_preflight_failed"
+                else -> null
+              }
             }
           }
         }
@@ -325,7 +336,22 @@ class Media3FlowVideoSink(
   fun isPreflightAvailable(): Boolean = preflightAvailable && !disposed
 
   private fun createSharedHardwareBuffer(width: Int, height: Int, role: String): HardwareBuffer {
-    val usage = HardwareBuffer.USAGE_GPU_SAMPLED_IMAGE or HardwareBuffer.USAGE_GPU_COLOR_OUTPUT
+    val baseUsage = HardwareBuffer.USAGE_GPU_SAMPLED_IMAGE or HardwareBuffer.USAGE_GPU_COLOR_OUTPUT
+    val driverRequiredUsage =
+      when {
+        role.startsWith("output") -> outputRequiredHardwareBufferUsage
+        else -> inputRequiredHardwareBufferUsage
+      }
+    if (flowVulkanContext != 0L && driverRequiredUsage == 0L) {
+      throw IllegalStateException("Vulkan did not provide required AHardwareBuffer usage for $role")
+    }
+    val usage = baseUsage or driverRequiredUsage
+    logFlowRecordOnce(
+      "ahb-usage-$role",
+      Log.INFO,
+      "event=ahb_usage state=allocation image_role=$role base_usage=0x${baseUsage.toString(16)} " +
+        "required_ahb_usage=0x${driverRequiredUsage.toString(16)} buffer_usage=0x${usage.toString(16)}",
+    )
     return try {
       HardwareBuffer.create(width, height, HardwareBuffer.RGBA_8888, 1, usage)
     } catch (error: RuntimeException) {

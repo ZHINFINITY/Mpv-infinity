@@ -367,4 +367,33 @@ class DebugLogRepositoryTest {
     assertTrue(summary.contains("target 60 fps"))
     assertTrue(!summary.contains("displayed"))
   }
+
+  @Test
+  fun allAccessibleLogcatCommandRequestsEveryBufferWithoutPidOrTailLimits() {
+    val command = DebugLogReader.allAccessibleLogcatCommand()
+
+    assertEquals(listOf("logcat", "-b", "all", "-d", "-v", "threadtime"), command)
+    assertTrue(command.none { it.startsWith("--pid") })
+    assertTrue(!command.contains("-t"))
+  }
+
+  @Test
+  fun allAccessibleExportPreservesRawLinesPastTheViewerRetentionLimit() {
+    val rawLines =
+      (0 until DEBUG_LOG_ENTRY_LIMIT + 2).map { index ->
+        "raw-log-line-$index pid=${if (index == 0) 9876 else 1234}"
+      }
+    val export =
+      formatAllAccessibleLogcatExport(
+        deviceInfo = "Device: test",
+        capture = DebugLogcatCapture(lines = rawLines, exitCode = 1),
+      )
+
+    assertTrue(export.contains("Logcat: all accessible buffers"))
+    assertTrue(export.contains("Command exit code: 1"))
+    assertTrue(export.contains("Captured raw lines: ${rawLines.size}"))
+    assertTrue(export.contains(rawLines.first()))
+    assertTrue(export.contains(rawLines.last()))
+    assertEquals(rawLines.size, export.lineSequence().count { it.startsWith("raw-log-line-") })
+  }
 }

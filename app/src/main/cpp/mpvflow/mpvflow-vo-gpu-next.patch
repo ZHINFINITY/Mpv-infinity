@@ -19,7 +19,7 @@ index bd3d1aa1ec..e5301791b7 100644
  
  #if HAVE_GL && defined(PL_HAVE_OPENGL)
  #include <libplacebo/opengl.h>
-@@ -155,6 +157,16 @@ struct priv {
+@@ -155,6 +157,18 @@ struct priv {
      bool frame_pending;
      bool paused;
  
@@ -32,6 +32,8 @@ index bd3d1aa1ec..e5301791b7 100644
 +    bool flow_active_logged;
 +    bool flow_init_attempted;
 +    unsigned int flow_bypass_logged_mask;
++    bool flow_queue_state_logged;
++    const char *flow_queue_last_state;
 +
      pl_options pars;
      struct m_config_cache *opts_cache;
@@ -471,6 +473,14 @@ index bd3d1aa1ec..e5301791b7 100644
  static bool draw_frame(struct vo *vo, struct vo_frame *frame)
  {
      struct priv *p = vo->priv;
+@@ -1351,5 +1674,6 @@ static bool draw_frame(struct vo *vo, struct vo_frame *frame)
+     bool will_redraw = frame->display_synced && frame->num_vsyncs > 1;
+     bool cache_frame = will_redraw || frame->still || p->paused;
+     bool can_interpolate = opts->interpolation && frame->display_synced &&
+-                           !frame->still && frame->num_frames > 1 && !p->paused;
++                           !frame->still &&
++                           (frame->num_frames > 1 || p->next_opts->mpvflow) && !p->paused;
+     double pts_offset = can_interpolate ? frame->ideal_frame_vsync : 0;
 @@ -1401,6 +1724,7 @@ static bool draw_frame(struct vo *vo, struct vo_frame *frame)
          int id = frame->frame_id + n;
  
@@ -487,9 +497,34 @@ index bd3d1aa1ec..e5301791b7 100644
  
          pl_queue_push(p->queue, &(struct pl_source_frame) {
              .pts = mpi->pts,
-@@ -1749,7 +2074,10 @@ static bool draw_frame(struct vo *vo, struct vo_frame *frame)
+@@ -1749,7 +2074,35 @@ static bool draw_frame(struct vo *vo, struct vo_frame *frame)
  
      // Render frame
++    if (p->next_opts->mpvflow) {
++        const char *queue_state = !opts->interpolation ? "interpolation_disabled" :
++            !frame->display_synced ? "display_sync_unavailable" :
++            frame->still ? "still_frame" :
++            p->paused ? "paused" :
++            !can_interpolate ? "cadence_gate_closed" :
++            mix.num_frames < 2 ? "waiting_for_temporal_pair" :
++            "temporal_pair_available";
++        if (!p->flow_queue_state_logged ||
++            !p->flow_queue_last_state ||
++            strcmp(p->flow_queue_last_state, queue_state) != 0) {
++            MP_INFO(vo, "MPVFLOW_DIAGNOSTIC event=queue_state state=%s "
++                    "vo_frame_batch=%d display_synced=%d interpolation=%d "
++                    "can_interpolate=%d mix_frames=%d vsync_duration_ms=%.3f "
++                    "pts_offset_ms=%.3f target_fps=%d\n",
++                    queue_state, frame->num_frames, frame->display_synced,
++                    opts->interpolation, can_interpolate, mix.num_frames,
++                    frame->ideal_frame_vsync_duration * 1000.0,
++                    pts_offset * 1000.0, p->next_opts->mpvflow_target_fps);
++            p->flow_queue_last_state = queue_state;
++            p->flow_queue_state_logged = true;
++        }
++    } else {
++        p->flow_queue_state_logged = false;
++    }
      stats_time_start(p->stats, "render");
 -    bool render_ok = pl_render_image_mix(p->rr, &mix, &target, &params);
 +    bool flow_synthesized = false;

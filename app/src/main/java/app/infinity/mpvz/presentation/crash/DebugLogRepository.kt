@@ -54,6 +54,11 @@ internal data class DebugLogSnapshot(
   val rawLineCount: Int,
 )
 
+internal data class DebugLogcatCapture(
+  val lines: List<String>,
+  val exitCode: Int,
+)
+
 /**
  * Reads the current process' logcat in a device-tolerant way.
  *
@@ -143,6 +148,15 @@ internal object DebugLogReader {
     failures += fallback.errorMessage("fallback logcat")
     throw IOException(failures.filter { it.isNotBlank() }.joinToString("; ").ifBlank { "Unable to read logcat" })
   }
+
+  /** Reads every Logcat buffer the OS permits this app process to access, without viewer filters. */
+  fun readAllAccessibleLogcat(): DebugLogcatCapture {
+    val result = runCommand(allAccessibleLogcatCommand())
+    return DebugLogcatCapture(lines = result.lines, exitCode = result.exitCode)
+  }
+
+  internal fun allAccessibleLogcatCommand(): List<String> =
+    listOf("logcat", "-b", "all", "-d", "-v", "threadtime")
 
   internal fun parseForTesting(
     lines: List<String>,
@@ -285,6 +299,25 @@ internal object DebugLogReader {
   }
 }
 
+internal fun formatAllAccessibleLogcatExport(
+  deviceInfo: String,
+  capture: DebugLogcatCapture,
+): String =
+  buildString {
+    appendLine(deviceInfo.trimEnd())
+    appendLine()
+    appendLine("Logcat: all accessible buffers (logcat -b all -d -v threadtime)")
+    appendLine("Scope: current circular buffers; Android may restrict access to other processes")
+    appendLine("Command exit code: ${capture.exitCode}")
+    appendLine("Captured raw lines: ${capture.lines.size}")
+    appendLine()
+    if (capture.lines.isEmpty()) {
+      appendLine("No log lines were returned; the platform may restrict Logcat access or the buffers may be empty.")
+    } else {
+      capture.lines.forEach { appendLine(it) }
+    }
+  }.trimEnd()
+
 internal fun retainDebugLogEntries(entries: List<DebugLogEntry>): List<DebugLogEntry> {
   if (entries.size <= DEBUG_LOG_ENTRY_LIMIT) return entries
 
@@ -349,6 +382,7 @@ private fun DebugLogEntry.isFlowStartupRecord(): Boolean =
     message.contains("event=renderer_init", ignoreCase = true) ||
     message.contains("event=compute_capabilities", ignoreCase = true) ||
     message.contains("event=vulkan_context", ignoreCase = true) ||
+    message.contains("event=queue_state", ignoreCase = true) ||
     message.contains("event=preflight", ignoreCase = true) ||
     message.contains("media3_flow_route", ignoreCase = true)
 

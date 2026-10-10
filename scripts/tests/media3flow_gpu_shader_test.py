@@ -40,7 +40,16 @@ assert "get_proc_addr" in JNI
 assert '"vkGetPhysicalDeviceImageFormatProperties2KHR"' in JNI
 assert "vkGetPhysicalDeviceImageFormatProperties2(\n" not in JNI, "Android Vulkan entry point must be loaded, not directly linked"
 assert "external fun nativeCreateContext" in NATIVE
+assert "external fun nativeGetRequiredHardwareBufferUsage" in NATIVE
 assert "external fun nativeAnalyzePair" in NATIVE
+assert "nativeGetRequiredHardwareBufferUsage(flowVulkanContext, output = false)" in SINK
+assert "nativeGetRequiredHardwareBufferUsage(flowVulkanContext, output = true)" in SINK
+assert "baseUsage or driverRequiredUsage" in SINK
+assert "vulkan_hardwarebuffer_input_usage_query_failed" in SINK
+assert "vulkan_hardwarebuffer_output_usage_query_failed" in SINK
+assert "queryAhbImageSupport(context, usage, nullptr, &requiredAhbUsage, role)" in JNI
+assert "stage=hardwarebuffer_usage_mismatch" in JNI
+assert "event=ahb_usage state=required" in JNI
 assert "media3FlowSink?.takeIf { it.isPreflightAvailable() }" in NATIVE_ENGINE
 
 # The JNI library must link only against a real AAR export provider; missing API is fatal.
