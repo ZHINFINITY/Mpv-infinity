@@ -116,13 +116,13 @@ object DecoderPreferencesScreen : Screen {
         selectedPlaybackEngine != PlaybackEngineMode.NATIVE
     val mpvFlowAvailable =
       BuildConfig.MPV_HAS_MPVFLOW &&
+        isVulkanSupported &&
         !frameInterpolationConfigOwned &&
         !rendererBackendConfigOwned &&
-        gpuNext &&
-        !useVulkan &&
         !anime4kActivePreference &&
         selectedPlaybackEngine != PlaybackEngineMode.NATIVE
-    val nativeMedia3FlowAvailable = selectedPlaybackEngine == PlaybackEngineMode.NATIVE
+    val nativeMedia3FlowSelected = selectedPlaybackEngine == PlaybackEngineMode.NATIVE
+    val nativeMedia3FlowAvailable = nativeMedia3FlowSelected && isVulkanSupported
     var showGpuNextWarning by remember { mutableStateOf(false) }
     var anime4kExpanded by remember { mutableStateOf(false) }
     Scaffold(
@@ -461,13 +461,16 @@ object DecoderPreferencesScreen : Screen {
                   Text(
                     stringResource(
                       when {
-                        nativeMedia3FlowAvailable -> R.string.pref_decoder_mpvflow_summary_native_engine
+                        nativeMedia3FlowSelected && !isVulkanSupported ->
+                          R.string.pref_decoder_mpvflow_summary_vulkan_unavailable
+                        nativeMedia3FlowSelected -> R.string.pref_decoder_mpvflow_summary_native_engine
                         !BuildConfig.MPV_HAS_MPVFLOW -> R.string.pref_decoder_mpvflow_summary_unavailable
                         frameInterpolationConfigOwned -> R.string.pref_decoder_mpvflow_summary_config_owned
                         rendererBackendConfigOwned -> R.string.pref_decoder_mpvflow_summary_config_owned
                         rifeFrameInterpolationEnabled -> R.string.pref_decoder_mpvflow_summary_rife_selected
-                        !gpuNext || useVulkan || anime4kActivePreference ->
-                          R.string.pref_decoder_mpvflow_summary_requires_gpu_next_opengl
+                        !isVulkanSupported -> R.string.pref_decoder_mpvflow_summary_vulkan_unavailable
+                        anime4kActivePreference ->
+                          R.string.pref_decoder_mpvflow_summary_requires_gpu_next_vulkan
                         else -> R.string.pref_decoder_mpvflow_summary
                       },
                     ),

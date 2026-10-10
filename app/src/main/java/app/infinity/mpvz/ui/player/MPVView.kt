@@ -406,7 +406,7 @@ class MPVView(
           frameInterpolationConfigOwned -> "mpv_config_owns_options"
           anime4kActive -> "anime4k_active"
           !RendererBackendPolicy.canUseDirectGpuFlow(backend.vo, backend.gpuApi) ->
-            "requires_gpu_next_opengl"
+            "requires_gpu_next_vulkan"
           decoderPreferences.playbackEngine.get() == PlaybackEngineMode.NATIVE -> "native_engine_selected"
           else -> "unsupported_configuration"
         }
@@ -866,15 +866,18 @@ class MPVView(
     }
   }
 
-  private fun shouldUseVulkan(ignoreForcedOpenGlFallback: Boolean = false): Boolean {
+  private fun shouldUseVulkan(
+    ignoreForcedOpenGlFallback: Boolean = false,
+    forceForMpvFlow: Boolean = false,
+  ): Boolean {
     val canUseVulkan =
       RendererBackendPolicy.canUseVulkan(
         buildIncludesVulkan = BuildConfig.MPV_SUPPORTS_VULKAN,
         deviceSupportsVulkan = VulkanCapabilities.isDeviceSupported(context),
-        userEnabledVulkan = decoderPreferences.useVulkan.get(),
+        userEnabledVulkan = decoderPreferences.useVulkan.get() || forceForMpvFlow,
         forceOpenGlFallback = forceOpenGlFallback && !ignoreForcedOpenGlFallback,
       )
-    if (decoderPreferences.useVulkan.get() && !canUseVulkan) {
+    if ((decoderPreferences.useVulkan.get() || forceForMpvFlow) && !canUseVulkan) {
       Log.w(TAG, "Vulkan is unavailable for this build or device. Forcing OpenGL.")
     }
     return canUseVulkan
@@ -891,8 +894,19 @@ class MPVView(
     val anime4kEnabled =
       decoderPreferences.enableAnime4K.get() &&
         (decoderPreferences.anime4kMode.get() != "OFF")
-    val gpuNextEnabled = decoderPreferences.gpuNext.get()
-    val vulkanEnabled = shouldUseVulkan(ignoreForcedOpenGlFallback)
+    val flowRequiresVulkan =
+      decoderPreferences.mpvFlowFrameInterpolation.get() &&
+        !decoderPreferences.rifeFrameInterpolation.get() &&
+        BuildConfig.MPV_HAS_MPVFLOW &&
+        BuildConfig.MPV_SUPPORTS_VULKAN &&
+        !MpvConfigOverridePolicy.ownsAny(MpvConfigControlledFeatures.FRAME_INTERPOLATION) &&
+        !anime4kEnabled &&
+        decoderPreferences.playbackEngine.get() != PlaybackEngineMode.NATIVE
+    val gpuNextEnabled = decoderPreferences.gpuNext.get() || flowRequiresVulkan
+    val vulkanEnabled = shouldUseVulkan(
+      ignoreForcedOpenGlFallback = ignoreForcedOpenGlFallback,
+      forceForMpvFlow = flowRequiresVulkan,
+    )
 
     if (anime4kEnabled && gpuNextEnabled && !vulkanEnabled) {
       return RenderBackendSelection(

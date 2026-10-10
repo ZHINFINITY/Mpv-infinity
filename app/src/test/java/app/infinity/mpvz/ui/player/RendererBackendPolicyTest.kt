@@ -8,9 +8,9 @@ import org.junit.Test
 
 class RendererBackendPolicyTest {
   @Test
-  fun directGpuFlowRequiresGpuNextWithOpenGl() {
-    assertEquals(true, RendererBackendPolicy.canUseDirectGpuFlow("gpu-next", "opengl"))
-    assertEquals(false, RendererBackendPolicy.canUseDirectGpuFlow("gpu-next", "vulkan"))
+  fun directGpuFlowRequiresGpuNextWithVulkan() {
+    assertEquals(true, RendererBackendPolicy.canUseDirectGpuFlow("gpu-next", "vulkan"))
+    assertEquals(false, RendererBackendPolicy.canUseDirectGpuFlow("gpu-next", "opengl"))
     assertEquals(false, RendererBackendPolicy.canUseDirectGpuFlow("gpu", "opengl"))
   }
 

@@ -87,6 +87,12 @@ android {
       buildConfigField("boolean", "SCOPED_STORAGE_ONLY", "false")
       buildConfigField("boolean", "MPV_SUPPORTS_VULKAN", "true")
       buildConfigField("boolean", "MPV_SUPPORTS_MEDIACODEC_VULKAN", "false")
+      externalNativeBuild {
+        cmake {
+          arguments += "-DMPVFLOW_ENABLE_VULKAN_BACKEND=ON"
+          arguments += "-DMPVFLOW_MPV_AAR=${projectDir}/libs/mpvlib.aar"
+        }
+      }
     }
 
     create("noVulkan") {
@@ -96,6 +102,11 @@ android {
       buildConfigField("boolean", "SCOPED_STORAGE_ONLY", "false")
       buildConfigField("boolean", "MPV_SUPPORTS_VULKAN", "false")
       buildConfigField("boolean", "MPV_SUPPORTS_MEDIACODEC_VULKAN", "false")
+      externalNativeBuild {
+        cmake {
+          arguments += "-DMPVFLOW_ENABLE_VULKAN_BACKEND=OFF"
+        }
+      }
     }
 
     create("fongmi") {
@@ -105,6 +116,12 @@ android {
       buildConfigField("boolean", "SCOPED_STORAGE_ONLY", "false")
       buildConfigField("boolean", "MPV_SUPPORTS_VULKAN", "true")
       buildConfigField("boolean", "MPV_SUPPORTS_MEDIACODEC_VULKAN", "true")
+      externalNativeBuild {
+        cmake {
+          arguments += "-DMPVFLOW_ENABLE_VULKAN_BACKEND=ON"
+          arguments += "-DMPVFLOW_MPV_AAR=${projectDir}/libs/mpvlib-fongmi.aar"
+        }
+      }
     }
   }
 

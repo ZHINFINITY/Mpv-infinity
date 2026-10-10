@@ -196,7 +196,7 @@ class NativeMedia3Engine(
   private val appContext = context.applicationContext
   private val logTag = "Mpv∞-Media3"
   private val flowDeviceSupported =
-    enableMedia3Flow && Media3FlowVideoSink.deviceSupportsGles31(appContext)
+    enableMedia3Flow && Media3FlowVideoSink.deviceSupportsVulkanFlow(appContext)
   private val media3FlowSink = if (flowDeviceSupported) {
     Media3FlowVideoSink(appContext, media3FlowTargetFps, ::publishFlowDiagnostics)
   } else {
@@ -209,13 +209,13 @@ class NativeMedia3Engine(
         enabled = true,
         targetFps = media3FlowTargetFps,
         state = "unavailable",
-        bypassReason = "gles31_unavailable",
+        bypassReason = "vulkan_hardwarebuffer_unavailable",
       )
       media3FlowSink?.isPreflightAvailable() != true -> Media3FlowDiagnostics(
         enabled = true,
         targetFps = media3FlowTargetFps,
         state = "unavailable",
-        bypassReason = "egl_preflight_failed",
+        bypassReason = "vulkan_hardwarebuffer_preflight_failed",
       )
       else -> Media3FlowDiagnostics(
         enabled = true,
@@ -232,7 +232,7 @@ class NativeMedia3Engine(
         logTag,
         "media3_flow_route enabled=${diagnostics.enabled} state=${diagnostics.state} " +
           "reason=${diagnostics.bypassReason ?: "none"} targetFps=${diagnostics.targetFps} " +
-          "deviceGles31Supported=$flowDeviceSupported sinkCreated=${media3FlowSink != null}",
+          "deviceVulkanFlowSupported=$flowDeviceSupported sinkCreated=${media3FlowSink != null}",
       )
     }
   }
@@ -1263,10 +1263,11 @@ class NativeMedia3Engine(
   }
 
   private fun createRenderersFactory(): RenderersFactory {
-    val factory: DefaultRenderersFactory = media3FlowSink?.let { Media3FlowRenderersFactory(appContext, it) }
+    val factory: DefaultRenderersFactory = media3FlowSink?.takeIf { it.isPreflightAvailable() }
+      ?.let { Media3FlowRenderersFactory(appContext, it) }
       ?: DefaultRenderersFactory(appContext)
     // Keep platform/extension codecs and Media3's standard renderer candidates available for
-    // HDR, DRM, unsupported geometry, and formats rejected by the Flow sink's EGL/GLES preflight.
+    // HDR, DRM, unsupported geometry, or failed Vulkan/HardwareBuffer preflight.
     factory.setExtensionRendererMode(DefaultRenderersFactory.EXTENSION_RENDERER_MODE_ON)
     factory.setEnableDecoderFallback(true)
     return factory.withAssSupport(assHandler)

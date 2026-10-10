@@ -16,7 +16,7 @@
 #define FLOW_BLOCK 8
 #define FLOW_STEP 4
 #define FLOW_REDUCTIONS 8
-#define FLOW_DEFAULT_MAX_DIM 480
+#define FLOW_DEFAULT_MAX_DIM 640
 #define FLOW_DEFAULT_RADIUS 8
 
 struct FlowLevel {
@@ -32,6 +32,7 @@ struct MPVFlowGPUContext {
     int search_radius;
     pl_fmt fmt_rgba16f;
     pl_fmt fmt_rgba8;
+    pl_pass pass_preprocess;
     pl_pass pass_luma;
     pl_pass pass_downsample;
     pl_pass pass_reduce_first;
@@ -51,192 +52,99 @@ struct MPVFlowGPUPair {
     pl_tex scene[FLOW_REDUCTIONS];
 };
 
-/* Pass uniforms are ordinary GLSL uniforms. This avoids Vulkan-only push
- * constant syntax and works with GLES 3.1 as well as desktop OpenGL. */
-static const struct pl_var flow_vars[] = {
-    { .name = "cfg", .type = PL_VAR_SINT, .dim_v = 4, .dim_m = 1, .dim_a = 1 },
-    { .name = "timestep", .type = PL_VAR_FLOAT, .dim_v = 1, .dim_m = 1, .dim_a = 1 },
+/* All compute passes target libplacebo's Vulkan/SPIR-V backend. Constants use
+ * one std430-compatible push-constant block; descriptor bindings are explicit
+ * and unique within each pass. */
+struct FlowPushConstants {
+    int32_t cfg[4];
+    float timestep;
 };
-
-static const char shader_luma[] =
-    "#version 310 es\n"
-    "precision highp float; precision highp int;\n"
-    "uniform highp sampler2D inTex;\n"
-    "layout(rgba16f) writeonly uniform highp image2D outTex;\n"
-    "uniform ivec4 cfg; uniform float timestep;\n"
+_Static_assert(sizeof(struct FlowPushConstants) == 20, "Flow push-constant ABI");
+static const char shader_preprocess[] =
+    "#version 450\n"
+    "layout(set=0,binding=0) uniform sampler2D inTex;\n"
+    "layout(set=0,binding=1,rgba8) writeonly uniform image2D outTex;\n"
+    "layout(push_constant) uniform FlowPush { ivec4 cfg; float timestep; } pc;\n"
     "layout(local_size_x=8, local_size_y=8) in;\n"
-    "void main(){ ivec2 p=ivec2(gl_GlobalInvocationID.xy);"
-    " if(any(greaterThanEqual(p,cfg.xy))) return;"
-    " vec3 c=texelFetch(inTex,p,0).rgb;"
-    " float y=dot(c,vec3(0.299,0.587,0.114));"
-    " imageStore(outTex,p,vec4(y,0.0,0.0,1.0)); }\n";
+    "void main(){ ivec2 p=ivec2(gl_GlobalInvocationID.xy); if(any(greaterThanEqual(p,pc.cfg.xy))) return; vec2 uv=(vec2(p)+vec2(0.5))/vec2(pc.cfg.xy); imageStore(outTex,p,texture(inTex,uv)); }\n"
+;
+static const char shader_luma[] =
+    "#version 450\n"
+    "layout(set=0,binding=0) uniform sampler2D inTex;\n"
+    "layout(set=0,binding=1,rgba16f) writeonly uniform image2D outTex;\n"
+    "layout(push_constant) uniform FlowPush { ivec4 cfg; float timestep; } pc;\n"
+    "layout(local_size_x=8, local_size_y=8) in;\n"
+    "void main(){ ivec2 p=ivec2(gl_GlobalInvocationID.xy); if(any(greaterThanEqual(p,pc.cfg.xy))) return; vec3 c=texelFetch(inTex,p,0).rgb; float y=dot(c,vec3(0.299,0.587,0.114)); imageStore(outTex,p,vec4(y,0.0,0.0,1.0)); }\n"
+;
 
 static const char shader_downsample[] =
-    "#version 310 es\n"
-    "precision highp float; precision highp int;\n"
-    "layout(rgba16f) readonly uniform highp image2D inTex;\n"
-    "layout(rgba16f) writeonly uniform highp image2D outTex;\n"
-    "uniform ivec4 cfg; uniform float timestep;\n"
+    "#version 450\n"
+    "layout(set=0,binding=0,rgba16f) readonly uniform image2D inTex;\n"
+    "layout(set=0,binding=1,rgba16f) writeonly uniform image2D outTex;\n"
+    "layout(push_constant) uniform FlowPush { ivec4 cfg; float timestep; } pc;\n"
     "layout(local_size_x=8, local_size_y=8) in;\n"
-    "void main(){ ivec2 p=ivec2(gl_GlobalInvocationID.xy);"
-    " if(any(greaterThanEqual(p,cfg.xy))) return; ivec2 sz=imageSize(inTex);"
-    " float s=0.0; float n=0.0; for(int y=0;y<2;y++) for(int x=0;x<2;x++){"
-    " ivec2 q=p*2+ivec2(x,y); if(all(lessThan(q,sz))){s+=imageLoad(inTex,q).r;n+=1.0;}}"
-    " imageStore(outTex,p,vec4(s/max(n,1.0),0.0,0.0,1.0)); }\n";
+    "void main(){ ivec2 p=ivec2(gl_GlobalInvocationID.xy); if(any(greaterThanEqual(p,pc.cfg.xy))) return; ivec2 sz=imageSize(inTex); float s=0.0; float n=0.0; for(int y=0;y<2;y++) for(int x=0;x<2;x++){ ivec2 q=p*2+ivec2(x,y); if(all(lessThan(q,sz))){s+=imageLoad(inTex,q).r;n+=1.0;}} imageStore(outTex,p,vec4(s/max(n,1.0),0.0,0.0,1.0)); }\n"
+;
 
 static const char shader_reduce_first[] =
-    "#version 310 es\n"
-    "precision highp float; precision highp int;\n"
-    "layout(rgba16f) readonly uniform highp image2D aTex;\n"
-    "layout(rgba16f) readonly uniform highp image2D bTex;\n"
-    "layout(rgba16f) writeonly uniform highp image2D outTex;\n"
-    "uniform ivec4 cfg; uniform float timestep;\n"
+    "#version 450\n"
+    "layout(set=0,binding=0,rgba16f) readonly uniform image2D aTex;\n"
+    "layout(set=0,binding=1,rgba16f) readonly uniform image2D bTex;\n"
+    "layout(set=0,binding=2,rgba16f) writeonly uniform image2D outTex;\n"
+    "layout(push_constant) uniform FlowPush { ivec4 cfg; float timestep; } pc;\n"
     "layout(local_size_x=8, local_size_y=8) in;\n"
-    "void main(){ ivec2 p=ivec2(gl_GlobalInvocationID.xy);"
-    " if(any(greaterThanEqual(p,cfg.xy))) return; ivec2 sz=imageSize(aTex);"
-    " float s=0.0; float n=0.0; for(int y=0;y<16;y++) for(int x=0;x<16;x++){"
-    " ivec2 q=p*16+ivec2(x,y); if(all(lessThan(q,sz))){"
-    " s+=abs(imageLoad(aTex,q).r-imageLoad(bTex,q).r); n+=1.0; }}"
-    " imageStore(outTex,p,vec4(s/max(n,1.0),0.0,0.0,1.0)); }\n";
+    "void main(){ ivec2 p=ivec2(gl_GlobalInvocationID.xy); if(any(greaterThanEqual(p,pc.cfg.xy))) return; ivec2 sz=imageSize(aTex); float s=0.0; float n=0.0; for(int y=0;y<16;y++) for(int x=0;x<16;x++){ ivec2 q=p*16+ivec2(x,y); if(all(lessThan(q,sz))){ s+=abs(imageLoad(aTex,q).r-imageLoad(bTex,q).r); n+=1.0; }} imageStore(outTex,p,vec4(s/max(n,1.0),0.0,0.0,1.0)); }\n"
+;
 
 static const char shader_reduce[] =
-    "#version 310 es\n"
-    "precision highp float; precision highp int;\n"
-    "layout(rgba16f) readonly uniform highp image2D inTex;\n"
-    "layout(rgba16f) writeonly uniform highp image2D outTex;\n"
-    "uniform ivec4 cfg; uniform float timestep;\n"
+    "#version 450\n"
+    "layout(set=0,binding=0,rgba16f) readonly uniform image2D inTex;\n"
+    "layout(set=0,binding=1,rgba16f) writeonly uniform image2D outTex;\n"
+    "layout(push_constant) uniform FlowPush { ivec4 cfg; float timestep; } pc;\n"
     "layout(local_size_x=8, local_size_y=8) in;\n"
-    "void main(){ ivec2 p=ivec2(gl_GlobalInvocationID.xy);"
-    " if(any(greaterThanEqual(p,cfg.xy))) return; ivec2 sz=imageSize(inTex);"
-    " float s=0.0; float n=0.0; for(int y=0;y<16;y++) for(int x=0;x<16;x++){"
-    " ivec2 q=p*16+ivec2(x,y); if(all(lessThan(q,sz))){s+=imageLoad(inTex,q).r;n+=1.0;}}"
-    " imageStore(outTex,p,vec4(s/max(n,1.0),0.0,0.0,1.0)); }\n";
+    "void main(){ ivec2 p=ivec2(gl_GlobalInvocationID.xy); if(any(greaterThanEqual(p,pc.cfg.xy))) return; ivec2 sz=imageSize(inTex); float s=0.0; float n=0.0; for(int y=0;y<16;y++) for(int x=0;x<16;x++){ ivec2 q=p*16+ivec2(x,y); if(all(lessThan(q,sz))){s+=imageLoad(inTex,q).r;n+=1.0;}} imageStore(outTex,p,vec4(s/max(n,1.0),0.0,0.0,1.0)); }\n"
+;
 
-/* One output vector per half-block-grid location. Candidate block SAD is
- * searched locally at the coarsest level, then around the doubled parent-level
- * estimate. cfg=(width,height,radius,has_parent). */
 static const char shader_flow[] =
-    "#version 310 es\n"
-    "precision highp float; precision highp int;\n"
-    "layout(rgba16f) readonly uniform highp image2D srcTex;\n"
-    "layout(rgba16f) readonly uniform highp image2D dstTex;\n"
-    "layout(rgba16f) readonly uniform highp image2D parentTex;\n"
-    "layout(rgba16f) writeonly uniform highp image2D flowTex;\n"
-    "uniform ivec4 cfg; uniform float timestep;\n"
+    "#version 450\n"
+    "layout(set=0,binding=0,rgba16f) readonly uniform image2D srcTex;\n"
+    "layout(set=0,binding=1,rgba16f) readonly uniform image2D dstTex;\n"
+    "layout(set=0,binding=2,rgba16f) readonly uniform image2D parentTex;\n"
+    "layout(set=0,binding=3,rgba16f) writeonly uniform image2D flowTex;\n"
+    "layout(push_constant) uniform FlowPush { ivec4 cfg; float timestep; } pc;\n"
     "layout(local_size_x=8, local_size_y=8) in;\n"
-    "int sadAt(ivec2 p,ivec2 d,ivec2 sz,int cutoff){ int cost=0;"
-    " for(int y=0;y<8;y++) for(int x=0;x<8;x++){"
-    " float a=imageLoad(srcTex,p+ivec2(x,y)).r;"
-    " float b=imageLoad(dstTex,p+ivec2(x,y)+d).r;"
-    " cost+=int(abs(a-b)*255.0+0.5); if(cost>cutoff) return cost; } return cost; }\n"
-    "float subpixelOffset(float minusCost,float centerCost,float plusCost){"
-    " float curvature=minusCost-2.0*centerCost+plusCost;"
-    " if(centerCost>minusCost||centerCost>plusCost||curvature<=0.0001) return 0.0;"
-    " return clamp(0.5*(minusCost-plusCost)/curvature,-0.5,0.5); }\n"
-    "float refineAxis(ivec2 p,ivec2 v,ivec2 axis,ivec2 sz,int centerCost){"
-    " ivec2 m=v-axis,q=v+axis;"
-    " if(any(lessThan(p+m,ivec2(0)))||any(lessThan(p+q,ivec2(0)))||"
-    " any(greaterThan(p+m,sz-ivec2(8)))||any(greaterThan(p+q,sz-ivec2(8)))) return 0.0;"
-    " int cm=sadAt(p,m,sz,2147483647),cp=sadAt(p,q,sz,2147483647);"
-    " return subpixelOffset(float(cm),float(centerCost),float(cp)); }\n"
-    "void main(){ ivec2 g=ivec2(gl_GlobalInvocationID.xy); ivec2 grid=imageSize(flowTex);"
-    " if(any(greaterThanEqual(g,grid))) return; ivec2 sz=cfg.xy;"
-    " ivec2 p=min(g*4,sz-ivec2(8)); ivec2 center=ivec2(0);"
-    " if(cfg.w!=0){ ivec2 pg=imageSize(parentTex);"
-    " vec2 pc=vec2(p)*0.5/4.0; ivec2 a=clamp(ivec2(floor(pc)),ivec2(0),pg-1);"
-    " ivec2 b=min(a+1,pg-1); vec2 f=fract(pc);"
-    " vec2 top=mix(imageLoad(parentTex,a).rg,imageLoad(parentTex,ivec2(b.x,a.y)).rg,f.x);"
-    " vec2 bot=mix(imageLoad(parentTex,ivec2(a.x,b.y)).rg,imageLoad(parentTex,b).rg,f.x);"
-    " center=ivec2(round(mix(top,bot,f.y)*2.0)); }"
-    " center=clamp(center,-p,sz-ivec2(8)-p); int radius=cfg.z;"
-    " ivec2 lo=max(-p,center-ivec2(radius));"
-    " ivec2 hi=min(sz-ivec2(8)-p,center+ivec2(radius));"
-    " ivec2 bestVector=center;"
-    " int best=sadAt(p,bestVector,sz,2147483647),second=2147483647;"
-    " for(int dy=-8;dy<=8;dy++) for(int dx=-8;dx<=8;dx++){"
-    " if(abs(dx)>radius||abs(dy)>radius) continue; ivec2 d=center+ivec2(dx,dy);"
-    " if(any(lessThan(d,lo))||any(greaterThan(d,hi))||all(equal(d,bestVector))) continue;"
-    " int c=sadAt(p,d,sz,second); if(c<best){second=best;best=c;bestVector=d;}"
-    " else if(c<second) second=c; }"
-    " vec2 refined=vec2(bestVector);"
-    " refined.x+=refineAxis(p,bestVector,ivec2(1,0),sz,best);"
-    " refined.y+=refineAxis(p,bestVector,ivec2(0,1),sz,best);"
-    " float uniqueness=second<2147483647?clamp(float(second-best)/max(float(second),1.0),0.0,1.0):0.0;"
-    " imageStore(flowTex,g,vec4(refined,float(best)/(64.0*255.0),uniqueness)); }\n";
+    "int sadAt(ivec2 p,ivec2 d,ivec2 sz,int cutoff){ int cost=0; for(int y=0;y<8;y++) for(int x=0;x<8;x++){ float a=imageLoad(srcTex,p+ivec2(x,y)).r; float b=imageLoad(dstTex,p+ivec2(x,y)+d).r; cost+=int(abs(a-b)*255.0+0.5); if(cost>cutoff) return cost; } return cost; }\n"
+    "float subpixelOffset(float minusCost,float centerCost,float plusCost){ float curvature=minusCost-2.0*centerCost+plusCost; if(centerCost>minusCost||centerCost>plusCost||curvature<=0.0001) return 0.0; return clamp(0.5*(minusCost-plusCost)/curvature,-0.5,0.5); }\n"
+    "float refineAxis(ivec2 p,ivec2 v,ivec2 axis,ivec2 sz,int centerCost){ ivec2 m=v-axis,q=v+axis; if(any(lessThan(p+m,ivec2(0)))||any(lessThan(p+q,ivec2(0)))|| any(greaterThan(p+m,sz-ivec2(8)))||any(greaterThan(p+q,sz-ivec2(8)))) return 0.0; int cm=sadAt(p,m,sz,2147483647),cp=sadAt(p,q,sz,2147483647); return subpixelOffset(float(cm),float(centerCost),float(cp)); }\n"
+    "void main(){ ivec2 g=ivec2(gl_GlobalInvocationID.xy); ivec2 grid=imageSize(flowTex); if(any(greaterThanEqual(g,grid))) return; ivec2 sz=pc.cfg.xy; ivec2 p=min(g*4,sz-ivec2(8)); ivec2 center=ivec2(0); if(pc.cfg.w!=0){ ivec2 pg=imageSize(parentTex); vec2 pc=vec2(p)*0.5/4.0; ivec2 a=clamp(ivec2(floor(pc)),ivec2(0),pg-1); ivec2 b=min(a+1,pg-1); vec2 f=fract(pc); vec2 top=mix(imageLoad(parentTex,a).rg,imageLoad(parentTex,ivec2(b.x,a.y)).rg,f.x); vec2 bot=mix(imageLoad(parentTex,ivec2(a.x,b.y)).rg,imageLoad(parentTex,b).rg,f.x); center=ivec2(round(mix(top,bot,f.y)*2.0)); } center=clamp(center,-p,sz-ivec2(8)-p); int radius=pc.cfg.z; ivec2 lo=max(-p,center-ivec2(radius)); ivec2 hi=min(sz-ivec2(8)-p,center+ivec2(radius)); ivec2 bestVector=center; int best=sadAt(p,bestVector,sz,2147483647),second=2147483647; for(int dy=-8;dy<=8;dy++) for(int dx=-8;dx<=8;dx++){ if(abs(dx)>radius||abs(dy)>radius) continue; ivec2 d=center+ivec2(dx,dy); if(any(lessThan(d,lo))||any(greaterThan(d,hi))||all(equal(d,bestVector))) continue; int c=sadAt(p,d,sz,second); if(c<best){second=best;best=c;bestVector=d;} else if(c<second) second=c; } vec2 refined=vec2(bestVector); refined.x+=refineAxis(p,bestVector,ivec2(1,0),sz,best); refined.y+=refineAxis(p,bestVector,ivec2(0,1),sz,best); float uniqueness=second<2147483647?clamp(float(second-best)/max(float(second),1.0),0.0,1.0):0.0; imageStore(flowTex,g,vec4(refined,float(best)/(64.0*255.0),uniqueness)); }\n"
+;
 
 static const char shader_synthesize[] =
-    "#version 310 es\n"
-    "precision highp float; precision highp int;\n"
-    "uniform highp sampler2D frame0; uniform highp sampler2D frame1;\n"
-    "layout(rgba16f) readonly uniform highp image2D fwdTex;\n"
-    "layout(rgba16f) readonly uniform highp image2D backTex;\n"
-    "layout(rgba16f) readonly uniform highp image2D sceneTex;\n"
-    "layout(rgba16f) readonly uniform highp image2D luma0Tex;\n"
-    "layout(rgba16f) readonly uniform highp image2D luma1Tex;\n"
-    "layout(rgba8) writeonly uniform highp image2D outTex;\n"
-    "uniform ivec4 cfg; uniform float timestep;\n"
+    "#version 450\n"
+    "layout(set=0,binding=0) uniform sampler2D frame0; layout(set=0,binding=1) uniform sampler2D frame1;\n"
+    "layout(set=0,binding=2,rgba16f) readonly uniform image2D fwdTex;\n"
+    "layout(set=0,binding=3,rgba16f) readonly uniform image2D backTex;\n"
+    "layout(set=0,binding=4,rgba16f) readonly uniform image2D sceneTex;\n"
+    "layout(set=0,binding=5,rgba16f) readonly uniform image2D luma0Tex;\n"
+    "layout(set=0,binding=6,rgba16f) readonly uniform image2D luma1Tex;\n"
+    "layout(set=0,binding=7,rgba8) writeonly uniform image2D outTex;\n"
+    "layout(push_constant) uniform FlowPush { ivec4 cfg; float timestep; } pc;\n"
     "layout(local_size_x=8, local_size_y=8) in;\n"
     "vec4 flowImageAt(ivec2 p,int direction){ return direction==0?imageLoad(fwdTex,p):imageLoad(backTex,p); }\n"
-    "float lumaAt(vec2 p,int direction){ ivec2 sz=direction==0?imageSize(luma0Tex):imageSize(luma1Tex);"
-    " ivec2 q=clamp(ivec2(round(p)),ivec2(0),sz-1); return direction==0?imageLoad(luma0Tex,q).r:imageLoad(luma1Tex,q).r; }\n"
-    "vec4 flowAtEdgeAware(vec2 p,int direction){ ivec2 sz=imageSize(fwdTex); vec2 g=clamp(p/4.0,vec2(0.0),vec2(sz-1));"
-    " ivec2 a=ivec2(floor(g)); ivec2 b=min(a+1,sz-1); vec2 t=fract(g);"
-    " vec4 v00=flowImageAt(a,direction),v10=flowImageAt(ivec2(b.x,a.y),direction);"
-    " vec4 v01=flowImageAt(ivec2(a.x,b.y),direction),v11=flowImageAt(b,direction);"
-    " float s00=(1.0-t.x)*(1.0-t.y),s10=t.x*(1.0-t.y),s01=(1.0-t.x)*t.y,s11=t.x*t.y;"
-    " ivec2 lumaSize=direction==0?imageSize(luma0Tex):imageSize(luma1Tex);"
-    " ivec2 c00=min(a*4,lumaSize-8)+4,c10=min(ivec2(b.x,a.y)*4,lumaSize-8)+4;"
-    " ivec2 c01=min(ivec2(a.x,b.y)*4,lumaSize-8)+4,c11=min(b*4,lumaSize-8)+4;"
-    " float guide=lumaAt(p,direction),d00=lumaAt(vec2(c00),direction)-guide;"
-    " float d10=lumaAt(vec2(c10),direction)-guide,d01=lumaAt(vec2(c01),direction)-guide;"
-    " float d11=lumaAt(vec2(c11),direction)-guide;"
-    " float variance=s00*d00*d00+s10*d10*d10+s01*d01*d01+s11*d11*d11; float safeVariance=max(variance,0.000001);"
-    " float w00=s00*exp(-(d00*d00)/safeVariance),w10=s10*exp(-(d10*d10)/safeVariance);"
-    " float w01=s01*exp(-(d01*d01)/safeVariance),w11=s11*exp(-(d11*d11)/safeVariance);"
-    " float total=w00+w10+w01+w11; return total>0.000001?(v00*w00+v10*w10+v01*w01+v11*w11)/total:flowImageAt(a,direction); }\n"
-    "vec4 colorAt(highp sampler2D s,vec2 p){ ivec2 sz=textureSize(s,0); p=clamp(p,vec2(0.0),vec2(sz-1));"
-    " ivec2 a=ivec2(floor(p)); ivec2 b=min(a+1,sz-1); vec2 t=fract(p);"
-    " return mix(mix(texelFetch(s,a,0),texelFetch(s,ivec2(b.x,a.y),0),t.x),"
-    " mix(texelFetch(s,ivec2(a.x,b.y),0),texelFetch(s,b,0),t.x),t.y); }\n"
+    "float lumaAt(vec2 p,int direction){ ivec2 sz=direction==0?imageSize(luma0Tex):imageSize(luma1Tex); ivec2 q=clamp(ivec2(round(p)),ivec2(0),sz-1); return direction==0?imageLoad(luma0Tex,q).r:imageLoad(luma1Tex,q).r; }\n"
+    "vec4 flowAtEdgeAware(vec2 p,int direction){ ivec2 sz=imageSize(fwdTex); vec2 g=clamp(p/4.0,vec2(0.0),vec2(sz-1)); ivec2 a=ivec2(floor(g)); ivec2 b=min(a+1,sz-1); vec2 t=fract(g); vec4 v00=flowImageAt(a,direction),v10=flowImageAt(ivec2(b.x,a.y),direction); vec4 v01=flowImageAt(ivec2(a.x,b.y),direction),v11=flowImageAt(b,direction); float s00=(1.0-t.x)*(1.0-t.y),s10=t.x*(1.0-t.y),s01=(1.0-t.x)*t.y,s11=t.x*t.y; ivec2 lumaSize=direction==0?imageSize(luma0Tex):imageSize(luma1Tex); ivec2 c00=min(a*4,lumaSize-8)+4,c10=min(ivec2(b.x,a.y)*4,lumaSize-8)+4; ivec2 c01=min(ivec2(a.x,b.y)*4,lumaSize-8)+4,c11=min(b*4,lumaSize-8)+4; float guide=lumaAt(p,direction),d00=lumaAt(vec2(c00),direction)-guide; float d10=lumaAt(vec2(c10),direction)-guide,d01=lumaAt(vec2(c01),direction)-guide; float d11=lumaAt(vec2(c11),direction)-guide; float variance=s00*d00*d00+s10*d10*d10+s01*d01*d01+s11*d11*d11; float safeVariance=max(variance,0.000001); float w00=s00*exp(-(d00*d00)/safeVariance),w10=s10*exp(-(d10*d10)/safeVariance); float w01=s01*exp(-(d01*d01)/safeVariance),w11=s11*exp(-(d11*d11)/safeVariance); float total=w00+w10+w01+w11; return total>0.000001?(v00*w00+v10*w10+v01*w01+v11*w11)/total:flowImageAt(a,direction); }\n"
+    "vec4 colorAt(sampler2D s,vec2 p){ ivec2 sz=textureSize(s,0); p=clamp(p,vec2(0.0),vec2(sz-1)); ivec2 a=ivec2(floor(p)); ivec2 b=min(a+1,sz-1); vec2 t=fract(p); return mix(mix(texelFetch(s,a,0),texelFetch(s,ivec2(b.x,a.y),0),t.x), mix(texelFetch(s,ivec2(a.x,b.y),0),texelFetch(s,b,0),t.x),t.y); }\n"
     "float pointInBounds(vec2 p,ivec2 sz){ return step(0.0,p.x)*step(p.x,float(sz.x-1))*step(0.0,p.y)*step(p.y,float(sz.y-1)); }\n"
-    "float reliability(vec4 flow,float cycle,float valid){"
-    " float cycleQuality=1.0-smoothstep(1.0,6.0,cycle); float matchQuality=1.0-smoothstep(0.04,0.35,flow.z);"
-    " float uniqueQuality=0.5+0.5*smoothstep(0.02,0.35,flow.w);"
-    " return cycleQuality*matchQuality*uniqueQuality*valid; }\n"
-    "void main(){ ivec2 p=ivec2(gl_GlobalInvocationID.xy); if(any(greaterThanEqual(p,cfg.xy))) return;"
-    " float cut=imageLoad(sceneTex,ivec2(0)).r;"
-    " if(cut>0.1882353){ vec4 c; if(timestep<=0.5) c=texelFetch(frame0,p,0); else c=texelFetch(frame1,p,0); imageStore(outTex,p,c); return; }"
-    " vec2 fp=vec2(p); vec4 f=flowAtEdgeAware(fp,0),b=flowAtEdgeAware(fp,1);"
-    " vec2 a=fp-timestep*f.xy,z=fp-(1.0-timestep)*b.xy;"
-    " for(int i=0;i<2;i++){ f=flowAtEdgeAware(a,0); a=fp-timestep*f.xy;"
-    " b=flowAtEdgeAware(z,1); z=fp-(1.0-timestep)*b.xy; }"
-    " f=flowAtEdgeAware(a,0); b=flowAtEdgeAware(z,1);"
-    " vec2 cycle0=a+f.xy,cycle1=z+b.xy; vec4 backAt0=flowAtEdgeAware(cycle0,1);"
-    " vec4 forwardAt1=flowAtEdgeAware(cycle1,0); float cycleError0=length(f.xy+backAt0.xy);"
-    " float cycleError1=length(b.xy+forwardAt1.xy); vec4 ca=colorAt(frame0,a); vec4 cb=colorAt(frame1,z);"
-    " float valid0=pointInBounds(a,cfg.xy)*pointInBounds(cycle0,cfg.xy);"
-    " float valid1=pointInBounds(z,cfg.xy)*pointInBounds(cycle1,cfg.xy);"
-    " float confidence0=reliability(f,cycleError0,valid0);"
-    " float confidence1=reliability(b,cycleError1,valid1);"
-    " float confidence=max(confidence0,confidence1); vec4 outc;"
-    " if(confidence<0.15){ outc=timestep<0.5?texelFetch(frame0,p,0):texelFetch(frame1,p,0); }"
-    " else { float visibility0=smoothstep(0.15,0.45,confidence0),visibility1=smoothstep(0.15,0.45,confidence1);"
-    " float weight0=(1.0-timestep)*visibility0,weight1=timestep*visibility1,total=weight0+weight1;"
-    " float lumaDelta=abs(dot(ca.rgb,vec3(0.299,0.587,0.114))-dot(cb.rgb,vec3(0.299,0.587,0.114)));"
-    " bool boundaryConflict=lumaDelta>0.12;"
-    " if(boundaryConflict&&confidence0>confidence1+0.10) outc=ca;"
-    " else if(boundaryConflict&&confidence1>confidence0+0.10) outc=cb;"
-    " else if(boundaryConflict) outc=timestep<0.5?texelFetch(frame0,p,0):texelFetch(frame1,p,0);"
-    " else outc=total>0.0001?mix(ca,cb,weight1/total):(timestep<0.5?texelFetch(frame0,p,0):texelFetch(frame1,p,0)); }"
-    " outc.a=1.0; imageStore(outTex,p,outc); }\n";
+    "float reliability(vec4 flow,float cycle,float valid){ float cycleQuality=1.0-smoothstep(1.0,6.0,cycle); float matchQuality=1.0-smoothstep(0.04,0.35,flow.z); float uniqueQuality=0.5+0.5*smoothstep(0.02,0.35,flow.w); return cycleQuality*matchQuality*uniqueQuality*valid; }\n"
+    "void main(){ ivec2 p=ivec2(gl_GlobalInvocationID.xy); if(any(greaterThanEqual(p,pc.cfg.xy))) return; float cut=imageLoad(sceneTex,ivec2(0)).r; if(cut>0.1882353){ vec4 c; if(pc.timestep<=0.5) c=texelFetch(frame0,p,0); else c=texelFetch(frame1,p,0); imageStore(outTex,p,c); return; } vec2 fp=vec2(p); vec4 f=flowAtEdgeAware(fp,0),b=flowAtEdgeAware(fp,1); vec2 a=fp-pc.timestep*f.xy,z=fp-(1.0-pc.timestep)*b.xy; for(int i=0;i<2;i++){ f=flowAtEdgeAware(a,0); a=fp-pc.timestep*f.xy; b=flowAtEdgeAware(z,1); z=fp-(1.0-pc.timestep)*b.xy; } f=flowAtEdgeAware(a,0); b=flowAtEdgeAware(z,1); vec2 cycle0=a+f.xy,cycle1=z+b.xy; vec4 backAt0=flowAtEdgeAware(cycle0,1); vec4 forwardAt1=flowAtEdgeAware(cycle1,0); float cycleError0=length(f.xy+backAt0.xy); float cycleError1=length(b.xy+forwardAt1.xy); vec4 ca=colorAt(frame0,a); vec4 cb=colorAt(frame1,z); float valid0=pointInBounds(a,pc.cfg.xy)*pointInBounds(cycle0,pc.cfg.xy); float valid1=pointInBounds(z,pc.cfg.xy)*pointInBounds(cycle1,pc.cfg.xy); float confidence0=reliability(f,cycleError0,valid0); float confidence1=reliability(b,cycleError1,valid1); float confidence=max(confidence0,confidence1); vec4 outc; if(confidence<0.15){ outc=pc.timestep<0.5?texelFetch(frame0,p,0):texelFetch(frame1,p,0); } else { float visibility0=smoothstep(0.15,0.45,confidence0),visibility1=smoothstep(0.15,0.45,confidence1); float weight0=(1.0-pc.timestep)*visibility0,weight1=pc.timestep*visibility1,total=weight0+weight1; float lumaDelta=abs(dot(ca.rgb,vec3(0.299,0.587,0.114))-dot(cb.rgb,vec3(0.299,0.587,0.114))); bool boundaryConflict=lumaDelta>0.12; if(boundaryConflict&&confidence0>confidence1+0.10) outc=ca; else if(boundaryConflict&&confidence1>confidence0+0.10) outc=cb; else if(boundaryConflict) outc=pc.timestep<0.5?texelFetch(frame0,p,0):texelFetch(frame1,p,0); else outc=total>0.0001?mix(ca,cb,weight1/total):(pc.timestep<0.5?texelFetch(frame0,p,0):texelFetch(frame1,p,0)); } outc.a=1.0; imageStore(outTex,p,outc); }\n"
+;
 
 static pl_pass make_pass(pl_gpu gpu, const char *glsl,
                          struct pl_desc *descs, int ndesc)
 {
     return pl_pass_create(gpu, pl_pass_params(
         .type = PL_PASS_COMPUTE,
-        .variables = (struct pl_var *) flow_vars,
-        .num_variables = (int) (sizeof(flow_vars) / sizeof(flow_vars[0])),
+        .push_constants_size = sizeof(struct FlowPushConstants),
         .descriptors = descs,
         .num_descriptors = ndesc,
         .glsl_shader = glsl));
@@ -262,15 +170,14 @@ static bool run_pass(MPVFlowGPUContext *ctx, pl_pass pass,
 {
     if (!pass || w <= 0 || h <= 0)
         return false;
-    struct pl_var_update updates[2] = {
-        { .index = 0, .data = cfg },
-        { .index = 1, .data = &t },
+    struct FlowPushConstants push = {
+        .cfg = { cfg[0], cfg[1], cfg[2], cfg[3] },
+        .timestep = t,
     };
     struct pl_pass_run_params run = {
         .pass = pass,
-        .var_updates = updates,
-        .num_var_updates = 2,
         .desc_bindings = bindings,
+        .push_constants = &push,
         .compute_groups = { (w + 7) / 8, (h + 7) / 8, 1 },
     };
     (void) nbindings; /* descriptor array length is fixed by the pass */
@@ -346,8 +253,11 @@ MPVFlowGPUContext *mpvflow_gpu_create(pl_gpu gpu,
         *status = MPVFLOW_GPU_INVALID;
     if (!gpu)
         return NULL;
-    if (!gpu->glsl.compute || !gpu->glsl.gles || gpu->glsl.version < 310 ||
-        gpu->glsl.vulkan) {
+    if (!gpu->glsl.compute || !gpu->glsl.vulkan || gpu->glsl.version < 450) {
+        if (status) *status = MPVFLOW_GPU_UNSUPPORTED_API;
+        return NULL;
+    }
+    if (gpu->limits.max_pushc_size < sizeof(struct FlowPushConstants)) {
         if (status) *status = MPVFLOW_GPU_UNSUPPORTED_API;
         return NULL;
     }
@@ -389,9 +299,14 @@ MPVFlowGPUContext *mpvflow_gpu_create(pl_gpu gpu,
         return NULL;
     }
 
+    struct pl_desc preprocess_desc[] = {
+        { .name = "inTex", .type = PL_DESC_SAMPLED_TEX, .binding = 0 },
+        { .name = "outTex", .type = PL_DESC_STORAGE_IMG, .binding = 1,
+          .access = PL_DESC_ACCESS_WRITEONLY },
+    };
     struct pl_desc luma_desc[] = {
         { .name = "inTex", .type = PL_DESC_SAMPLED_TEX, .binding = 0 },
-        { .name = "outTex", .type = PL_DESC_STORAGE_IMG, .binding = 0,
+        { .name = "outTex", .type = PL_DESC_STORAGE_IMG, .binding = 1,
           .access = PL_DESC_ACCESS_WRITEONLY },
     };
     struct pl_desc down_desc[] = {
@@ -427,26 +342,27 @@ MPVFlowGPUContext *mpvflow_gpu_create(pl_gpu gpu,
     struct pl_desc synth_desc[] = {
         { .name = "frame0", .type = PL_DESC_SAMPLED_TEX, .binding = 0 },
         { .name = "frame1", .type = PL_DESC_SAMPLED_TEX, .binding = 1 },
-        { .name = "fwdTex", .type = PL_DESC_STORAGE_IMG, .binding = 0,
+        { .name = "fwdTex", .type = PL_DESC_STORAGE_IMG, .binding = 2,
           .access = PL_DESC_ACCESS_READONLY },
-        { .name = "backTex", .type = PL_DESC_STORAGE_IMG, .binding = 1,
+        { .name = "backTex", .type = PL_DESC_STORAGE_IMG, .binding = 3,
           .access = PL_DESC_ACCESS_READONLY },
-        { .name = "sceneTex", .type = PL_DESC_STORAGE_IMG, .binding = 2,
+        { .name = "sceneTex", .type = PL_DESC_STORAGE_IMG, .binding = 4,
           .access = PL_DESC_ACCESS_READONLY },
-        { .name = "luma0Tex", .type = PL_DESC_STORAGE_IMG, .binding = 3,
+        { .name = "luma0Tex", .type = PL_DESC_STORAGE_IMG, .binding = 5,
           .access = PL_DESC_ACCESS_READONLY },
-        { .name = "luma1Tex", .type = PL_DESC_STORAGE_IMG, .binding = 4,
+        { .name = "luma1Tex", .type = PL_DESC_STORAGE_IMG, .binding = 6,
           .access = PL_DESC_ACCESS_READONLY },
-        { .name = "outTex", .type = PL_DESC_STORAGE_IMG, .binding = 5,
+        { .name = "outTex", .type = PL_DESC_STORAGE_IMG, .binding = 7,
           .access = PL_DESC_ACCESS_WRITEONLY },
     };
+    ctx->pass_preprocess = make_pass(gpu, shader_preprocess, preprocess_desc, 2);
     ctx->pass_luma = make_pass(gpu, shader_luma, luma_desc, 2);
     ctx->pass_downsample = make_pass(gpu, shader_downsample, down_desc, 2);
     ctx->pass_reduce_first = make_pass(gpu, shader_reduce_first, first_desc, 3);
     ctx->pass_reduce = make_pass(gpu, shader_reduce, reduce_desc, 2);
     ctx->pass_flow = make_pass(gpu, shader_flow, flow_desc, 4);
     ctx->pass_synthesize = make_pass(gpu, shader_synthesize, synth_desc, 8);
-    if (!ctx->pass_luma || !ctx->pass_downsample || !ctx->pass_reduce_first ||
+    if (!ctx->pass_preprocess || !ctx->pass_luma || !ctx->pass_downsample || !ctx->pass_reduce_first ||
         !ctx->pass_reduce || !ctx->pass_flow || !ctx->pass_synthesize) {
         mpvflow_gpu_destroy(ctx);
         if (status) *status = MPVFLOW_GPU_UNSUPPORTED_SHADER;
@@ -461,6 +377,7 @@ void mpvflow_gpu_destroy(MPVFlowGPUContext *ctx)
 {
     if (!ctx)
         return;
+    if (ctx->pass_preprocess) pl_pass_destroy(ctx->gpu, &ctx->pass_preprocess);
     if (ctx->pass_luma) pl_pass_destroy(ctx->gpu, &ctx->pass_luma);
     if (ctx->pass_downsample) pl_pass_destroy(ctx->gpu, &ctx->pass_downsample);
     if (ctx->pass_reduce_first) pl_pass_destroy(ctx->gpu, &ctx->pass_reduce_first);
@@ -468,6 +385,44 @@ void mpvflow_gpu_destroy(MPVFlowGPUContext *ctx)
     if (ctx->pass_flow) pl_pass_destroy(ctx->gpu, &ctx->pass_flow);
     if (ctx->pass_synthesize) pl_pass_destroy(ctx->gpu, &ctx->pass_synthesize);
     free(ctx);
+}
+
+enum MPVFlowGPUResult mpvflow_gpu_prepare_input(MPVFlowGPUContext *ctx,
+                                                pl_tex input,
+                                                pl_tex *prepared_out)
+{
+    if (prepared_out)
+        *prepared_out = NULL;
+    if (!ctx || !input || !prepared_out)
+        return MPVFLOW_GPU_INVALID;
+    if (!input->params.sampleable || input->params.w < FLOW_BLOCK ||
+        input->params.h < FLOW_BLOCK)
+        return MPVFLOW_GPU_UNSUPPORTED_FORMAT;
+
+    int source_w = (int) input->params.w;
+    int source_h = (int) input->params.h;
+    double scale = fmin(1.0, (double) ctx->max_dimension /
+                              fmax((double) source_w, (double) source_h));
+    int w = (int) lround(source_w * scale);
+    int h = (int) lround(source_h * scale);
+    if (w < FLOW_BLOCK || h < FLOW_BLOCK)
+        return MPVFLOW_GPU_UNSUPPORTED_DIMENSION;
+
+    pl_tex prepared = create_texture(ctx, w, h, ctx->fmt_rgba8, true);
+    if (!prepared)
+        return MPVFLOW_GPU_UNSUPPORTED_FORMAT;
+    struct pl_desc_binding bindings[] = {
+        { .object = input, .address_mode = PL_TEX_ADDRESS_CLAMP,
+          .sample_mode = PL_TEX_SAMPLE_LINEAR },
+        { .object = prepared },
+    };
+    int cfg[4] = { w, h, 0, 0 };
+    if (!run_pass(ctx, ctx->pass_preprocess, bindings, 2, cfg, 0.0f, w, h)) {
+        destroy_tex(ctx, &prepared);
+        return MPVFLOW_GPU_ERROR;
+    }
+    *prepared_out = prepared;
+    return MPVFLOW_GPU_OK;
 }
 
 enum MPVFlowGPUResult mpvflow_gpu_analyze_pair(MPVFlowGPUContext *ctx,

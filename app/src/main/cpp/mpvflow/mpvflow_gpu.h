@@ -38,14 +38,24 @@ struct MPVFlowGPUConfig {
 };
 
 /*
- * Create passes and scratch-format capability checks for an already-current
- * libplacebo GPU. This function never creates/destroys the GPU or GL context.
+ * Create Vulkan/SPIR-V passes and scratch-format capability checks for an
+ * existing libplacebo GPU. This function never creates/destroys the GPU.
  * On failure, status distinguishes unsupported compute/formats from errors.
  */
 MPVFlowGPUContext *mpvflow_gpu_create(pl_gpu gpu,
                                       const struct MPVFlowGPUConfig *config,
                                       enum MPVFlowGPUResult *status);
 void mpvflow_gpu_destroy(MPVFlowGPUContext *context);
+
+/*
+ * Downscale a sampleable RGB texture to the context's bounded working size.
+ * The returned RGBA8 texture is owned by the caller and must be destroyed with
+ * pl_tex_destroy after all pairs using it have been released. Pixels stay on
+ * the Vulkan device; no CPU readback or upload occurs.
+ */
+enum MPVFlowGPUResult mpvflow_gpu_prepare_input(MPVFlowGPUContext *context,
+                                                pl_tex input,
+                                                pl_tex *prepared_out);
 
 /*
  * Analyze a pair of ordinary, sampleable, 2D RGB pl_tex textures containing

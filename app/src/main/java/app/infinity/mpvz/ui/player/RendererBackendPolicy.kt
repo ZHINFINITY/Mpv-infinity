@@ -29,7 +29,7 @@ internal object RendererBackendPolicy {
   fun canUseDirectGpuFlow(
     renderer: String,
     gpuApi: String,
-  ): Boolean = renderer == "gpu-next" && gpuApi == "opengl"
+  ): Boolean = renderer == "gpu-next" && gpuApi == "vulkan"
 
   fun gpuFlowHwdecMode(hardwareDecodingEnabled: Boolean): String =
     if (hardwareDecodingEnabled) "mediacodec,no" else "no"

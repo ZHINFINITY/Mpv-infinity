@@ -1,20 +1,20 @@
 package app.infinity.mpvz.ui.player
 
-import android.app.ActivityManager
 import android.content.Context
 import android.content.pm.ApplicationInfo
 import android.graphics.Bitmap
 import android.graphics.SurfaceTexture
+import android.hardware.HardwareBuffer
 import android.hardware.display.DisplayManager
 import android.opengl.EGL14
 import android.opengl.EGLExt
 import android.opengl.GLES11Ext
 import android.opengl.GLES20
 import android.opengl.GLES30
-import android.opengl.GLES31
 import android.os.Handler
 import android.os.HandlerThread
 import android.os.Looper
+import android.os.Build
 import android.os.SystemClock
 import android.util.Log
 import android.view.Choreographer
@@ -28,6 +28,7 @@ import androidx.media3.common.util.Size
 import androidx.media3.common.util.TimestampIterator
 import androidx.media3.exoplayer.video.VideoFrameMetadataListener
 import androidx.media3.exoplayer.video.VideoSink
+import app.infinity.mpvz.BuildConfig
 import app.infinity.mpvz.preferences.effectiveMpvFlowMaxDimension
 import app.infinity.mpvz.preferences.effectiveMpvFlowTargetFps
 import java.nio.ByteBuffer
@@ -40,7 +41,6 @@ import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
 import kotlin.math.abs
-import kotlin.math.ceil
 import kotlin.math.max
 import kotlin.math.roundToLong
 
@@ -112,8 +112,6 @@ class Media3FlowVideoSink(
   private val gpuDurationSamplesNs = Array(FlowGpuStage.values().size) { ArrayDeque<Long>() }
   private val cpuTimingLock = Any()
   private val cpuDurationSamplesNs = Array(FlowCpuStage.values().size) { ArrayDeque<Long>() }
-  private val coverageBuffers = ArrayList<CoverageBufferSlot>(COVERAGE_BUFFER_COUNT)
-  private val coverageSamples = ArrayDeque<FlowCoverageSample>()
   private val generatedWallTimes = ArrayDeque<Long>()
   private val renderTaskPending = AtomicBoolean(false)
   private val renderRequestVersion = AtomicLong(0L)
@@ -182,10 +180,6 @@ class Media3FlowVideoSink(
   private var disjointGpuTimerResults = 0L
   private var zeroGpuTimerResults = 0L
   private var skippedGpuTimerQueries = 0L
-  private var coverageStatsAvailable = false
-  private var coverageDispatchCount = 0L
-  private var skippedCoverageSamples = 0L
-  private var invalidCoverageSamples = 0L
   private var lastMetricsAtNs = 0L
   private var lastTimingLogAtNs = 0L
   private var lastFlowSummaryLogAtNs = 0L
@@ -214,29 +208,73 @@ class Media3FlowVideoSink(
   private var inputSurface: Surface? = null
   private var copyProgram = 0
   private var blitProgram = 0
-  private var lumaProgram = 0
-  private var flowProgram = 0
-  private var synthProgram = 0
   private var framebuffer = 0
   private var graphicsProgramsCompiled = false
-  private var computeProgramsCompiled = false
   private var frameWidth = 0
   private var frameHeight = 0
   private var processingWidth = 0
   private var processingHeight = 0
   private var gridWidth = 0
   private var gridHeight = 0
-  private var quarterPyramidAvailable = false
   private var outputTexture = 0
+  private var flowVulkanContext = 0L
+  private var outputHardwareBuffer: HardwareBuffer? = null
+  private var outputImageHandle = 0L
   private var flowAvailable = false
   @Volatile private var preflightAvailable = false
 
   init {
-    preflightAvailable = runCatching { runOnGlThreadSync { ensureEgl(preflightOnly = true) } }.getOrDefault(false)
-    if (!preflightAvailable) Log.w(logTag, "GLES preflight failed; the stock Media3 renderer will be used")
+    preflightAvailable = runCatching {
+      runOnGlThreadSync {
+      if (!ensureEgl() || !deviceSupportsVulkanFlow(appContext)) return@runOnGlThreadSync false
+        flowVulkanContext = Media3FlowVulkanNative.nativeCreateContext()
+        if (flowVulkanContext == 0L) return@runOnGlThreadSync false
+        val inputReady = preflightSharedImage(output = false)
+        val outputReady = inputReady && preflightSharedImage(output = true)
+        if (!outputReady) {
+          Media3FlowVulkanNative.nativeDestroyContext(flowVulkanContext)
+          flowVulkanContext = 0L
+        }
+        outputReady
+      }
+    }.getOrDefault(false)
+    if (!preflightAvailable) Log.w(logTag, "Vulkan/HardwareBuffer preflight failed; the stock Media3 renderer will be used")
   }
 
   fun isPreflightAvailable(): Boolean = preflightAvailable && !disposed
+
+  private fun createSharedHardwareBuffer(width: Int, height: Int): HardwareBuffer =
+    HardwareBuffer.create(
+      width,
+      height,
+      HardwareBuffer.RGBA_8888,
+      1,
+      HardwareBuffer.USAGE_GPU_SAMPLED_IMAGE or HardwareBuffer.USAGE_GPU_COLOR_OUTPUT,
+    )
+
+  private fun preflightSharedImage(output: Boolean): Boolean {
+    if (flowVulkanContext == 0L || !makePbufferCurrent()) return false
+    val buffer = runCatching { createSharedHardwareBuffer(16, 16) }.getOrNull() ?: return false
+    var imageHandle = 0L
+    var texture = 0
+    return try {
+      imageHandle = Media3FlowVulkanNative.nativeCreateFrameImage(
+        flowVulkanContext, buffer, 16, 16, output,
+      )
+      if (imageHandle == 0L) return false
+      texture = Media3FlowVulkanNative.nativeCreateEglTexture(buffer)
+      texture != 0 && GLES20.glGetError() == GLES20.GL_NO_ERROR
+    } catch (error: RuntimeException) {
+      Log.w(logTag, "Shared Vulkan/EGL HardwareBuffer preflight failed", error)
+      false
+    } finally {
+      if (texture != 0) deleteTexture(texture)
+      if (imageHandle != 0L) {
+        Media3FlowVulkanNative.nativeDestroyImage(flowVulkanContext, imageHandle)
+      }
+      buffer.close()
+    }
+  }
 
   private data class PendingInput(
     val ptsUs: Long,
@@ -256,32 +294,16 @@ class Media3FlowVideoSink(
     val generation: Long,
   )
 
-  private class CoverageBufferSlot {
-    var bufferId = 0
-    var fenceSync = 0L
-    var groupCount = 0
-    var byteSize = 0
-    var expectedPixelCount = 0L
-    var framePtsUs = C.TIME_UNSET
-    var presented = false
-  }
-
   private class FrameSlot {
+    var hardwareBuffer: HardwareBuffer? = null
+    var nativeImageHandle = 0L
     var colorTexture = 0
-    var lumaTexture = 0
-    var coarseLumaTexture = 0
-    var quarterLumaTexture = 0
     var ptsUs = C.TIME_UNSET
     var inUse = false
   }
 
   private class MotionPairSlot {
-    var forwardTexture = 0
-    var backwardTexture = 0
-    var coarseForwardTexture = 0
-    var coarseBackwardTexture = 0
-    var quarterForwardTexture = 0
-    var quarterBackwardTexture = 0
+    var nativePairHandle = 0L
     var frame0PtsUs = C.TIME_UNSET
     var frame1PtsUs = C.TIME_UNSET
     var available = false
@@ -597,7 +619,6 @@ class Media3FlowVideoSink(
     if (!initialized || disposed || !outputAvailable) return
     if (!ensureEgl() || !makePbufferCurrent()) return
     pollGpuTimerQueries()
-    pollCoverageBuffers()
     val speed = playbackSpeed
     val clock = playbackClock
     val nowElapsedUs = SystemClock.elapsedRealtimeNanos() / 1_000L
@@ -706,7 +727,7 @@ class Media3FlowVideoSink(
   }
 
   private fun configureInputSurface(width: Int, height: Int) {
-    check(ensureEgl()) { "No GLES 3.1 context for Media3 Flow" }
+    check(ensureEgl()) { "No GLES 3.0 capture/presentation context for Media3 Flow" }
     if (inputSurfaceTexture == null) {
       inputTextureId = createTexture(
         GLES11Ext.GL_TEXTURE_EXTERNAL_OES,
@@ -792,12 +813,12 @@ class Media3FlowVideoSink(
     copyExternalTexture(slot.colorTexture, transform)
     if (flowAvailable) {
       try {
-        dispatchLuma(slot)
+        prepareSharedFrame(slot)
       } catch (error: RuntimeException) {
         flowAvailable = false
-        lastBypassReason = "luma_pass_error"
+        lastBypassReason = "vulkan_frame_prepare_error"
         lastState = "source_fallback"
-        Log.w(logTag, "Luma preprocessing failed; keeping source-frame playback", error)
+        Log.w(logTag, "Vulkan frame preparation failed; keeping source-frame playback", error)
       }
     }
     slot.ptsUs = ptsUs
@@ -827,10 +848,14 @@ class Media3FlowVideoSink(
     first.inUse = false
     first.ptsUs = C.TIME_UNSET
     motionPairs.filter { it.frame0PtsUs == expiredPts || it.frame1PtsUs == expiredPts }
-      .forEach { it.available = false; it.frame0PtsUs = C.TIME_UNSET; it.frame1PtsUs = C.TIME_UNSET }
+      .forEach {
+        releaseMotionPair(it)
+        it.frame0PtsUs = C.TIME_UNSET
+        it.frame1PtsUs = C.TIME_UNSET
+      }
   }
 
-  private fun initializeMotionGpuTimerQueries() {
+  private fun initializeGpuTimerQueries() {
     if (gpuTimerQueryIds.isNotEmpty()) return
     val extensionCount = IntArray(1)
     GLES30.glGetIntegerv(GLES30.GL_NUM_EXTENSIONS, extensionCount, 0)
@@ -838,7 +863,7 @@ class Media3FlowVideoSink(
       GLES30.glGetStringi(GLES20.GL_EXTENSIONS, index) == "GL_EXT_disjoint_timer_query"
     }
     if (!hasTimerExtension) {
-      Log.i(logTag, "GPU elapsed timer queries unavailable; reporting command-submit time only")
+      Log.i(logTag, "Presentation GPU timer queries unavailable; Vulkan flow GPU duration is not sampled")
       return
     }
     val ids = IntArray(MAX_GPU_TIMER_QUERIES)
@@ -1008,226 +1033,13 @@ class Media3FlowVideoSink(
     )
   }
 
-  private fun pixelCoverageSnapshot(): FlowPixelCoverageStats =
-    Media3FlowDiagnosticMath.summarizeCoverage(coverageSamples.toList()).copy(
-      skippedSamples = skippedCoverageSamples,
-      invalidSamples = invalidCoverageSamples,
-    )
-
-  private fun markCoverageFramePresented(framePtsUs: Long) {
-    coverageBuffers.firstOrNull { it.fenceSync != 0L && it.framePtsUs == framePtsUs }?.presented = true
-  }
-
-  private fun initializeCoverageBuffers() {
-    if (coverageBuffers.isNotEmpty()) return
-    val ids = IntArray(COVERAGE_BUFFER_COUNT)
-    GLES31.glGenBuffers(ids.size, ids, 0)
-    val validIds = ids.filter { it != 0 }
-    if (validIds.isEmpty()) {
-      Log.w(logTag, "Could not allocate Flow coverage buffers; pixel coverage will be unavailable")
-      return
-    }
-    validIds.forEach { id ->
-      GLES31.glBindBuffer(GLES31.GL_SHADER_STORAGE_BUFFER, id)
-      GLES31.glBufferData(
-        GLES31.GL_SHADER_STORAGE_BUFFER,
-        COVERAGE_BYTES_PER_GROUP,
-        null,
-        GLES30.GL_DYNAMIC_READ,
-      )
-      coverageBuffers += CoverageBufferSlot().apply {
-        bufferId = id
-        byteSize = COVERAGE_BYTES_PER_GROUP
-      }
-    }
-    GLES31.glBindBuffer(GLES31.GL_SHADER_STORAGE_BUFFER, 0)
-    coverageStatsAvailable = true
-  }
-
-  private fun acquireCoverageBuffer(framePtsUs: Long): CoverageBufferSlot? {
-    coverageDispatchCount++
-    if (coverageDispatchCount % COVERAGE_SAMPLE_INTERVAL != 0L) return null
-    if (!coverageStatsAvailable) {
-      skippedCoverageSamples++
-      return null
-    }
-    val slot = coverageBuffers.firstOrNull { it.fenceSync == 0L }
-    if (slot == null) {
-      skippedCoverageSamples++
-      return null
-    }
-    val groupsX = ceil(frameWidth / 8.0).toInt()
-    val groupsY = ceil(frameHeight / 8.0).toInt()
-    val groupsLong = groupsX.toLong() * groupsY.toLong()
-    val byteSizeLong = groupsLong * COVERAGE_BYTES_PER_GROUP
-    if (groupsLong <= 0L || byteSizeLong > Int.MAX_VALUE) {
-      skippedCoverageSamples++
-      return null
-    }
-    val byteSize = byteSizeLong.toInt()
-    GLES31.glBindBuffer(GLES31.GL_SHADER_STORAGE_BUFFER, slot.bufferId)
-    if (slot.byteSize != byteSize) {
-      GLES31.glBufferData(GLES31.GL_SHADER_STORAGE_BUFFER, byteSize, null, GLES30.GL_DYNAMIC_READ)
-      slot.byteSize = byteSize
-    }
-    GLES31.glBindBufferBase(GLES31.GL_SHADER_STORAGE_BUFFER, FLOW_COVERAGE_BINDING, slot.bufferId)
-    slot.groupCount = groupsLong.toInt()
-    slot.expectedPixelCount = frameWidth.toLong() * frameHeight.toLong()
-    slot.framePtsUs = framePtsUs
-    slot.presented = false
-    return slot
-  }
-
-  private fun pollCoverageBuffers() {
-    if (!coverageStatsAvailable) return
-    for (slot in coverageBuffers) {
-      val fence = slot.fenceSync
-      if (fence == 0L) continue
-      val waitResult = GLES31.glClientWaitSync(fence, 0, 0L)
-      if (waitResult == GL_TIMEOUT_EXPIRED) continue
-      GLES31.glDeleteSync(fence)
-      slot.fenceSync = 0L
-      if (waitResult != GL_ALREADY_SIGNALED && waitResult != GL_CONDITION_SATISFIED) {
-        invalidCoverageSamples++
-        continue
-      }
-      if (!slot.presented) {
-        skippedCoverageSamples++
-        continue
-      }
-      GLES31.glBindBuffer(GLES31.GL_SHADER_STORAGE_BUFFER, slot.bufferId)
-      try {
-        val mapped = runCatching {
-          GLES31.glMapBufferRange(
-            GLES31.GL_SHADER_STORAGE_BUFFER,
-            0,
-            slot.byteSize,
-            GLES30.GL_MAP_READ_BIT,
-          ) as? ByteBuffer
-        }.getOrNull()
-        if (mapped == null) {
-          invalidCoverageSamples++
-          continue
-        }
-        val data = mapped.order(ByteOrder.nativeOrder())
-        var warped = 0L
-        var sourceFallback = 0L
-        var staticBlend = 0L
-        var staticVectorLikelyMotion = 0L
-        var staticVectorUncertainMotion = 0L
-        var staticVectorNearZeroConfident = 0L
-        var staticVectorNearZeroUncertain = 0L
-        var interframeChangedWarp = 0L
-        var interframeChangedSourceFallback = 0L
-        var interframeChangedStaticBlend = 0L
-        var interframeChangedPixels = 0L
-        for (group in 0 until slot.groupCount) {
-          val offset = group * COVERAGE_BYTES_PER_GROUP
-          warped += data.getInt(offset).toLong() and 0xFFFF_FFFFL
-          sourceFallback += data.getInt(offset + Int.SIZE_BYTES).toLong() and 0xFFFF_FFFFL
-          staticBlend += data.getInt(offset + 2 * Int.SIZE_BYTES).toLong() and 0xFFFF_FFFFL
-          interframeChangedWarp += data.getInt(offset + 4 * Int.SIZE_BYTES).toLong() and 0xFFFF_FFFFL
-          interframeChangedSourceFallback += data.getInt(offset + 5 * Int.SIZE_BYTES).toLong() and 0xFFFF_FFFFL
-          interframeChangedStaticBlend += data.getInt(offset + 6 * Int.SIZE_BYTES).toLong() and 0xFFFF_FFFFL
-          interframeChangedPixels += data.getInt(offset + 7 * Int.SIZE_BYTES).toLong() and 0xFFFF_FFFFL
-          when (data.getInt(offset + 3 * Int.SIZE_BYTES)) {
-            1 -> staticVectorLikelyMotion++
-            2 -> staticVectorUncertainMotion++
-            3 -> staticVectorNearZeroConfident++
-            4 -> staticVectorNearZeroUncertain++
-          }
-        }
-        val staticVectorProbeSamples = staticVectorLikelyMotion + staticVectorUncertainMotion +
-          staticVectorNearZeroConfident + staticVectorNearZeroUncertain
-        val interframeChangedOutcomePixels = interframeChangedWarp + interframeChangedSourceFallback +
-          interframeChangedStaticBlend
-        val unmapped = runCatching { GLES31.glUnmapBuffer(GLES31.GL_SHADER_STORAGE_BUFFER) }.getOrDefault(false)
-        if (!unmapped || warped + sourceFallback + staticBlend != slot.expectedPixelCount ||
-          staticVectorProbeSamples > slot.groupCount.toLong() || staticVectorProbeSamples > staticBlend ||
-          interframeChangedPixels != interframeChangedOutcomePixels ||
-          interframeChangedPixels > slot.expectedPixelCount
-        ) {
-          invalidCoverageSamples++
-          continue
-        }
-        coverageSamples.addLast(
-          FlowCoverageSample(
-            motionWarpPixels = warped,
-            sourceFrameFallbackPixels = sourceFallback,
-            staticBlendPixels = staticBlend,
-            staticVectorLikelyMotionSamples = staticVectorLikelyMotion,
-            staticVectorUncertainMotionSamples = staticVectorUncertainMotion,
-            staticVectorNearZeroConfidentSamples = staticVectorNearZeroConfident,
-            staticVectorNearZeroUncertainSamples = staticVectorNearZeroUncertain,
-            interframeChangedPixels = interframeChangedPixels,
-            interframeChangedWarpPixels = interframeChangedWarp,
-            interframeChangedSourceFallbackPixels = interframeChangedSourceFallback,
-            interframeChangedStaticBlendPixels = interframeChangedStaticBlend,
-          ),
-        )
-        while (coverageSamples.size > COVERAGE_HISTORY_SIZE) coverageSamples.removeFirst()
-      } finally {
-        GLES31.glBindBuffer(GLES31.GL_SHADER_STORAGE_BUFFER, 0)
-      }
-    }
-  }
-
-  private fun destroyCoverageBuffers() {
-    coverageBuffers.forEach { slot ->
-      if (slot.fenceSync != 0L) GLES31.glDeleteSync(slot.fenceSync)
-      if (slot.bufferId != 0) GLES31.glDeleteBuffers(1, intArrayOf(slot.bufferId), 0)
-    }
-    coverageBuffers.clear()
-    coverageStatsAvailable = false
-  }
-
-  private fun dispatchMotionLevel(
-    sourceLumaTexture: Int,
-    targetLumaTexture: Int,
-    outputFlowTexture: Int,
-    priorFlowTexture: Int,
-    levelSize: Media3FlowMotionSize,
-    blockSize: Int,
-    gridStep: Int,
-    searchRadius: Int,
-    priorCount: Int,
-    usePrior: Boolean,
-    priorScale: Float,
-    priorCellScale: Float,
-    stage: String,
-  ) {
-    GLES31.glUniform2i(GLES31.glGetUniformLocation(flowProgram, "uSize"), levelSize.width, levelSize.height)
-    GLES31.glUniform1i(GLES31.glGetUniformLocation(flowProgram, "uBlock"), blockSize)
-    GLES31.glUniform1i(GLES31.glGetUniformLocation(flowProgram, "uStep"), gridStep)
-    GLES31.glUniform1i(GLES31.glGetUniformLocation(flowProgram, "uSearchRadius"), searchRadius)
-    GLES31.glUniform1i(
-      GLES31.glGetUniformLocation(flowProgram, "uSearchStep"),
-      MEDIA3_FLOW_SEARCH_CANDIDATE_STEP,
-    )
-    GLES31.glUniform1i(GLES31.glGetUniformLocation(flowProgram, "uPriorCount"), priorCount)
-    GLES31.glUniform1i(GLES31.glGetUniformLocation(flowProgram, "uUsePrior"), if (usePrior) 1 else 0)
-    GLES31.glUniform1f(GLES31.glGetUniformLocation(flowProgram, "uPriorScale"), priorScale)
-    GLES31.glUniform1f(GLES31.glGetUniformLocation(flowProgram, "uPriorCellScale"), priorCellScale)
-    checkGlError("$stage motion uniforms", frameProbeOnly = true)
-
-    GLES31.glBindImageTexture(0, sourceLumaTexture, 0, false, 0, GLES31.GL_READ_ONLY, GLES30.GL_RGBA8)
-    GLES31.glBindImageTexture(1, targetLumaTexture, 0, false, 0, GLES31.GL_READ_ONLY, GLES30.GL_RGBA8)
-    GLES31.glBindImageTexture(2, outputFlowTexture, 0, false, 0, GLES31.GL_WRITE_ONLY, GLES30.GL_RGBA16F)
-    GLES31.glBindImageTexture(3, priorFlowTexture, 0, false, 0, GLES31.GL_READ_ONLY, GLES30.GL_RGBA16F)
-    checkGlError("$stage motion bind images", frameProbeOnly = true)
-    val outputGrid = Media3FlowGeometry.motionGridSize(levelSize.width, levelSize.height, blockSize, gridStep)
-    GLES31.glDispatchCompute(ceil(outputGrid.width / 8.0).toInt(), ceil(outputGrid.height / 8.0).toInt(), 1)
-    checkGlError("$stage motion dispatch", frameProbeOnly = true)
-    GLES31.glMemoryBarrier(GLES31.GL_SHADER_IMAGE_ACCESS_BARRIER_BIT)
-    checkGlError("$stage motion barrier", frameProbeOnly = true)
-  }
+  private fun pixelCoverageSnapshot(): FlowPixelCoverageStats = FlowPixelCoverageStats()
 
   private fun analyzeNewestPair() {
     if (!flowAvailable || sourceFrames.size < 2) {
-      lastBypassReason = "gpu_flow_unavailable"
+      lastBypassReason = "vulkan_flow_unavailable"
       return
     }
-    pollGpuTimerQueries()
     val frame0 = sourceFrames.elementAt(sourceFrames.size - 2)
     val frame1 = sourceFrames.last()
     val deltaUs = frame1.ptsUs - frame0.ptsUs
@@ -1235,7 +1047,10 @@ class Media3FlowVideoSink(
       lastBypassReason = if (deltaUs <= 0L) "invalid_source_delta" else "source_meets_target"
       return
     }
-    if (motionPairs.any { it.available && it.frame0PtsUs == frame0.ptsUs && it.frame1PtsUs == frame1.ptsUs }) return
+    if (motionPairs.any {
+        it.available && it.frame0PtsUs == frame0.ptsUs && it.frame1PtsUs == frame1.ptsUs
+      }
+    ) return
     val reusable = motionPairs.firstOrNull {
       !it.available || retentionBoundaryUs(latestPositionUs) >= it.frame1PtsUs
     }
@@ -1243,143 +1058,33 @@ class Media3FlowVideoSink(
       lastBypassReason = "motion_pair_queue_full"
       return
     }
-    reusable.available = false
+    releaseMotionPair(reusable)
     reusable.frame0PtsUs = frame0.ptsUs
     reusable.frame1PtsUs = frame1.ptsUs
     reusable.motionEstimateGpuMs = null
     reusable.motionForwardGpuMs = null
     reusable.motionBackwardGpuMs = null
     val startNs = System.nanoTime()
-    val queryGeneration = streamGeneration
-    var stageQuery: PendingGpuTimerQuery? = null
-    try {
-      GLES31.glUseProgram(flowProgram)
-      checkGlError("motion glUseProgram", frameProbeOnly = true)
-      val coarseSize = Media3FlowGeometry.coarseMotionSize(processingWidth, processingHeight)
-      val quarterSize = Media3FlowGeometry.quarterMotionSize(processingWidth, processingHeight)
-      val fullSize = Media3FlowMotionSize(processingWidth, processingHeight)
-      stageQuery = beginGpuTimerQuery(FlowGpuStage.MOTION_FORWARD, frame0.ptsUs, frame1.ptsUs, queryGeneration)
-      if (quarterPyramidAvailable) {
-        dispatchMotionLevel(
-          frame0.quarterLumaTexture,
-          frame1.quarterLumaTexture,
-          reusable.quarterForwardTexture,
-          reusable.coarseForwardTexture,
-          quarterSize,
-          MEDIA3_FLOW_QUARTER_BLOCK_SIZE,
-          MEDIA3_FLOW_QUARTER_GRID_STEP,
-          MEDIA3_FLOW_QUARTER_SEARCH_RADIUS,
-          priorCount = 1,
-          usePrior = false,
-          priorScale = 0f,
-          priorCellScale = 0f,
-          stage = "forward quarter",
-        )
-      }
-      dispatchMotionLevel(
-        frame0.coarseLumaTexture,
-        frame1.coarseLumaTexture,
-        reusable.coarseForwardTexture,
-        if (quarterPyramidAvailable) reusable.quarterForwardTexture else reusable.forwardTexture,
-        coarseSize,
-        MEDIA3_FLOW_COARSE_BLOCK_SIZE,
-        MEDIA3_FLOW_COARSE_GRID_STEP,
-        MEDIA3_FLOW_FINE_SEARCH_RADIUS,
-        priorCount = if (quarterPyramidAvailable) 6 else 1,
-        usePrior = quarterPyramidAvailable,
-        priorScale = if (quarterPyramidAvailable) MEDIA3_FLOW_FINE_PRIOR_SCALE else 0f,
-        priorCellScale = MEDIA3_FLOW_MID_PRIOR_CELL_SCALE,
-        stage = "forward half",
+    val nativePair = runCatching {
+      Media3FlowVulkanNative.nativeAnalyzePair(
+        flowVulkanContext, frame0.nativeImageHandle, frame1.nativeImageHandle,
       )
-      dispatchMotionLevel(
-        frame0.lumaTexture,
-        frame1.lumaTexture,
-        reusable.forwardTexture,
-        reusable.coarseForwardTexture,
-        fullSize,
-        MEDIA3_FLOW_BLOCK_SIZE,
-        MEDIA3_FLOW_GRID_STEP,
-        MEDIA3_FLOW_FINE_SEARCH_RADIUS,
-        priorCount = 6,
-        usePrior = true,
-        priorScale = MEDIA3_FLOW_FINE_PRIOR_SCALE,
-        priorCellScale = MEDIA3_FLOW_FINE_PRIOR_CELL_SCALE,
-        stage = "forward fine",
-      )
-      GLES31.glMemoryBarrier(GLES31.GL_SHADER_IMAGE_ACCESS_BARRIER_BIT or GLES31.GL_TEXTURE_FETCH_BARRIER_BIT)
-      checkGlError("forward motion texture barrier", frameProbeOnly = true)
-      endGpuTimerQuery(stageQuery)
-      stageQuery = null
-
-      stageQuery = beginGpuTimerQuery(FlowGpuStage.MOTION_BACKWARD, frame0.ptsUs, frame1.ptsUs, queryGeneration)
-      if (quarterPyramidAvailable) {
-        dispatchMotionLevel(
-          frame1.quarterLumaTexture,
-          frame0.quarterLumaTexture,
-          reusable.quarterBackwardTexture,
-          reusable.coarseBackwardTexture,
-          quarterSize,
-          MEDIA3_FLOW_QUARTER_BLOCK_SIZE,
-          MEDIA3_FLOW_QUARTER_GRID_STEP,
-          MEDIA3_FLOW_QUARTER_SEARCH_RADIUS,
-          priorCount = 1,
-          usePrior = false,
-          priorScale = 0f,
-          priorCellScale = 0f,
-          stage = "backward quarter",
-        )
-      }
-      dispatchMotionLevel(
-        frame1.coarseLumaTexture,
-        frame0.coarseLumaTexture,
-        reusable.coarseBackwardTexture,
-        if (quarterPyramidAvailable) reusable.quarterBackwardTexture else reusable.backwardTexture,
-        coarseSize,
-        MEDIA3_FLOW_COARSE_BLOCK_SIZE,
-        MEDIA3_FLOW_COARSE_GRID_STEP,
-        MEDIA3_FLOW_FINE_SEARCH_RADIUS,
-        priorCount = if (quarterPyramidAvailable) 6 else 1,
-        usePrior = quarterPyramidAvailable,
-        priorScale = if (quarterPyramidAvailable) MEDIA3_FLOW_FINE_PRIOR_SCALE else 0f,
-        priorCellScale = MEDIA3_FLOW_MID_PRIOR_CELL_SCALE,
-        stage = "backward half",
-      )
-      dispatchMotionLevel(
-        frame1.lumaTexture,
-        frame0.lumaTexture,
-        reusable.backwardTexture,
-        reusable.coarseBackwardTexture,
-        fullSize,
-        MEDIA3_FLOW_BLOCK_SIZE,
-        MEDIA3_FLOW_GRID_STEP,
-        MEDIA3_FLOW_FINE_SEARCH_RADIUS,
-        priorCount = 6,
-        usePrior = true,
-        priorScale = MEDIA3_FLOW_FINE_PRIOR_SCALE,
-        priorCellScale = MEDIA3_FLOW_FINE_PRIOR_CELL_SCALE,
-        stage = "backward fine",
-      )
-      GLES31.glMemoryBarrier(GLES31.GL_SHADER_IMAGE_ACCESS_BARRIER_BIT or GLES31.GL_TEXTURE_FETCH_BARRIER_BIT)
-      checkGlError("backward motion texture barrier", frameProbeOnly = true)
-      endGpuTimerQuery(stageQuery)
-      stageQuery = null
-      checkGlError("motion estimate")
-      reusable.available = true
-      lastMotionSubmitMs = (System.nanoTime() - startNs) / 1_000_000f
-      reusable.motionEstimateSubmitMs = lastMotionSubmitMs
-      reusable.motionEstimateGpuMs = null
-      lastBypassReason = null
-      lastState = "motion_estimated"
-    } catch (error: RuntimeException) {
+    }.getOrDefault(0L)
+    lastMotionSubmitMs = (System.nanoTime() - startNs) / 1_000_000f
+    reusable.motionEstimateSubmitMs = lastMotionSubmitMs
+    if (nativePair == 0L) {
       reusable.available = false
       flowAvailable = false
-      lastMotionSubmitMs = (System.nanoTime() - startNs) / 1_000_000f
-      lastBypassReason = "motion_pass_error"
+      lastBypassReason = "vulkan_motion_analysis_error"
       lastState = "source_fallback"
-      Log.w(logTag, "Motion pass failed; disabling GPU interpolation for this stream and retaining source frames", error)
-    } finally {
-      endGpuTimerQuery(stageQuery)
+      Log.w(logTag, "Vulkan motion analysis failed; retaining source-frame playback")
+      return
     }
+    reusable.nativePairHandle = nativePair
+    reusable.available = true
+    lastMotionGpuMs = null
+    lastBypassReason = null
+    lastState = "motion_estimated_vulkan"
   }
 
   private fun renderAtPosition(positionUs: Long, speed: Float, frameTimeNanos: Long?) {
@@ -1460,7 +1165,6 @@ class Media3FlowVideoSink(
     }
     if (submitted) {
       if (synthesized) {
-        markCoverageFramePresented(targetPtsUs)
         generatedFrames++
         generatedWallTimes.addLast(System.nanoTime())
         while (generatedWallTimes.size > OUTPUT_RATE_WINDOW) generatedWallTimes.removeFirst()
@@ -1499,60 +1203,12 @@ class Media3FlowVideoSink(
 
   private fun dispatchSynthesis(a: FrameSlot, b: FrameSlot, pair: MotionPairSlot, targetPtsUs: Long) {
     val alpha = Media3FlowCadence.interpolationAlpha(a.ptsUs, b.ptsUs, targetPtsUs) ?: return
-    val coverageSlot = acquireCoverageBuffer(targetPtsUs)
-    GLES31.glUseProgram(synthProgram)
-    bindTextureUnit(0, a.colorTexture)
-    bindTextureUnit(1, b.colorTexture)
-    bindTextureUnit(2, a.lumaTexture)
-    bindTextureUnit(3, b.lumaTexture)
-    GLES31.glUniform1i(GLES31.glGetUniformLocation(synthProgram, "uFrame0"), 0)
-    GLES31.glUniform1i(GLES31.glGetUniformLocation(synthProgram, "uFrame1"), 1)
-    GLES31.glUniform1i(GLES31.glGetUniformLocation(synthProgram, "uLuma0"), 2)
-    GLES31.glUniform1i(GLES31.glGetUniformLocation(synthProgram, "uLuma1"), 3)
-    GLES31.glUniform2i(GLES31.glGetUniformLocation(synthProgram, "uSize"), frameWidth, frameHeight)
-    GLES31.glUniform2i(GLES31.glGetUniformLocation(synthProgram, "uMotionSize"), processingWidth, processingHeight)
-    GLES31.glUniform2i(GLES31.glGetUniformLocation(synthProgram, "uGrid"), gridWidth, gridHeight)
-    GLES31.glUniform1i(GLES31.glGetUniformLocation(synthProgram, "uStep"), MEDIA3_FLOW_GRID_STEP)
-    GLES31.glUniform1f(
-      GLES31.glGetUniformLocation(synthProgram, "uGridAnchorOffset"),
-      Media3FlowGeometry.motionGridAnchorOffset(),
-    )
-    GLES31.glUniform1f(GLES31.glGetUniformLocation(synthProgram, "uAlpha"), alpha)
-    GLES31.glUniform1i(
-      GLES31.glGetUniformLocation(synthProgram, "uCoverageEnabled"),
-      if (coverageSlot != null) 1 else 0,
-    )
-    (coverageSlot ?: coverageBuffers.firstOrNull())?.let {
-      GLES31.glBindBufferBase(GLES31.GL_SHADER_STORAGE_BUFFER, FLOW_COVERAGE_BINDING, it.bufferId)
+    check(flowVulkanContext != 0L && pair.nativePairHandle != 0L && outputImageHandle != 0L) {
+      "Media3 Flow Vulkan synthesis resources are unavailable"
     }
-    GLES31.glBindImageTexture(0, pair.forwardTexture, 0, false, 0, GLES31.GL_READ_ONLY, GLES30.GL_RGBA16F)
-    GLES31.glBindImageTexture(1, pair.backwardTexture, 0, false, 0, GLES31.GL_READ_ONLY, GLES30.GL_RGBA16F)
-    GLES31.glBindImageTexture(2, outputTexture, 0, false, 0, GLES31.GL_WRITE_ONLY, GLES30.GL_RGBA8)
-    val synthesisQuery = beginGpuTimerQuery(
-      FlowGpuStage.CONSISTENCY_AND_WARP,
-      pair.frame0PtsUs,
-      pair.frame1PtsUs,
-    )
-    var dispatchSubmitted = false
-    try {
-      GLES31.glDispatchCompute(ceil(frameWidth / 8.0).toInt(), ceil(frameHeight / 8.0).toInt(), 1)
-      var barrierBits = GLES31.GL_SHADER_IMAGE_ACCESS_BARRIER_BIT or GLES31.GL_TEXTURE_FETCH_BARRIER_BIT
-      if (coverageSlot != null) {
-        barrierBits = barrierBits or GLES31.GL_SHADER_STORAGE_BARRIER_BIT or GLES31.GL_BUFFER_UPDATE_BARRIER_BIT
-      }
-      GLES31.glMemoryBarrier(barrierBits)
-      dispatchSubmitted = true
-    } finally {
-      endGpuTimerQuery(synthesisQuery)
-    }
-    if (coverageSlot != null) {
-      if (dispatchSubmitted) {
-        val fence = runCatching { GLES31.glFenceSync(GL_SYNC_GPU_COMMANDS_COMPLETE, 0) }.getOrDefault(0L)
-        if (fence != 0L) coverageSlot.fenceSync = fence else skippedCoverageSamples++
-      } else {
-        skippedCoverageSamples++
-      }
-    }
+    check(Media3FlowVulkanNative.nativeSynthesize(
+      flowVulkanContext, pair.nativePairHandle, alpha, outputImageHandle,
+    )) { "Shared Vulkan frame synthesis failed" }
   }
 
   private fun drawSourceFrame(slot: FrameSlot, presentationTimeNs: Long, ptsUs: Long): Boolean =
@@ -1635,43 +1291,14 @@ class Media3FlowVideoSink(
     checkGlError("input copy unbind framebuffer", frameProbeOnly = true)
   }
 
-  private fun dispatchLuma(slot: FrameSlot) {
-    GLES31.glUseProgram(lumaProgram)
-    checkGlError("luma glUseProgram", frameProbeOnly = true)
-    bindTextureUnit(0, slot.colorTexture)
-    checkGlError("luma bind color texture", frameProbeOnly = true)
-    val colorLocation = GLES31.glGetUniformLocation(lumaProgram, "uColor")
-    checkGlError("luma lookup uColor", frameProbeOnly = true)
-    GLES31.glUniform1i(colorLocation, 0)
-    checkGlError("luma uniform uColor", frameProbeOnly = true)
-    val sizeLocation = GLES31.glGetUniformLocation(lumaProgram, "uSize")
-    checkGlError("luma lookup uSize", frameProbeOnly = true)
-    GLES31.glUniform2i(sizeLocation, processingWidth, processingHeight)
-    checkGlError("luma uniform uSize", frameProbeOnly = true)
-    val coarseSize = Media3FlowGeometry.coarseMotionSize(processingWidth, processingHeight)
-    val quarterSize = Media3FlowGeometry.quarterMotionSize(processingWidth, processingHeight)
-    val coarseSizeLocation = GLES31.glGetUniformLocation(lumaProgram, "uCoarseSize")
-    checkGlError("luma lookup uCoarseSize", frameProbeOnly = true)
-    GLES31.glUniform2i(coarseSizeLocation, coarseSize.width, coarseSize.height)
-    checkGlError("luma uniform uCoarseSize", frameProbeOnly = true)
-    val quarterSizeLocation = GLES31.glGetUniformLocation(lumaProgram, "uQuarterSize")
-    checkGlError("luma lookup uQuarterSize", frameProbeOnly = true)
-    GLES31.glUniform2i(quarterSizeLocation, quarterSize.width, quarterSize.height)
-    checkGlError("luma uniform uQuarterSize", frameProbeOnly = true)
-    GLES31.glBindImageTexture(0, slot.lumaTexture, 0, false, 0, GLES31.GL_WRITE_ONLY, GLES30.GL_RGBA8)
-    checkGlError("luma bind output image", frameProbeOnly = true)
-    GLES31.glBindImageTexture(1, slot.coarseLumaTexture, 0, false, 0, GLES31.GL_WRITE_ONLY, GLES30.GL_RGBA8)
-    checkGlError("luma bind coarse output image", frameProbeOnly = true)
-    GLES31.glBindImageTexture(2, slot.quarterLumaTexture, 0, false, 0, GLES31.GL_WRITE_ONLY, GLES30.GL_RGBA8)
-    checkGlError("luma bind quarter output image", frameProbeOnly = true)
-    val downsampleQuery = beginGpuTimerQuery(FlowGpuStage.DOWNSAMPLE)
-    try {
-      GLES31.glDispatchCompute(ceil(quarterSize.width / 8.0).toInt(), ceil(quarterSize.height / 8.0).toInt(), 1)
-      checkGlError("luma dispatch", frameProbeOnly = true)
-      GLES31.glMemoryBarrier(GLES31.GL_SHADER_IMAGE_ACCESS_BARRIER_BIT or GLES31.GL_TEXTURE_FETCH_BARRIER_BIT)
-      checkGlError("luma barrier", frameProbeOnly = true)
-    } finally {
-      endGpuTimerQuery(downsampleQuery)
+  private fun prepareSharedFrame(slot: FrameSlot) {
+    check(flowVulkanContext != 0L && slot.nativeImageHandle != 0L) {
+      "Media3 Flow frame is not backed by a Vulkan-shared HardwareBuffer"
+    }
+    // EGL writes the imported AHardwareBuffer; complete those writes before Vulkan takes ownership.
+    GLES20.glFinish()
+    check(Media3FlowVulkanNative.nativePrepareFrame(flowVulkanContext, slot.nativeImageHandle)) {
+      "Vulkan could not stage the shared decoder frame"
     }
   }
 
@@ -1683,10 +1310,10 @@ class Media3FlowVideoSink(
       first.inUse = false
       first.ptsUs = C.TIME_UNSET
       motionPairs.filter { it.frame0PtsUs == expiredPts || it.frame1PtsUs == expiredPts }
-        .forEach { it.available = false; it.frame0PtsUs = C.TIME_UNSET; it.frame1PtsUs = C.TIME_UNSET }
+        .forEach { releaseMotionPair(it) }
     }
     motionPairs.filter { it.available && retentionBoundaryUs >= it.frame1PtsUs }
-      .forEach { it.available = false; it.frame0PtsUs = C.TIME_UNSET; it.frame1PtsUs = C.TIME_UNSET }
+      .forEach { releaseMotionPair(it) }
     storedFrameCount = sourceFrames.size
   }
 
@@ -1709,61 +1336,81 @@ class Media3FlowVideoSink(
     processingWidth = width
     processingHeight = height
     val motionGridSize = Media3FlowGeometry.motionGridSize(width, height)
-    val coarseMotionSize = Media3FlowGeometry.coarseMotionSize(width, height)
-    val quarterMotionSize = Media3FlowGeometry.quarterMotionSize(width, height)
-    val coarseGridSize = Media3FlowGeometry.motionGridSize(
-      coarseMotionSize.width, coarseMotionSize.height,
-      MEDIA3_FLOW_COARSE_BLOCK_SIZE, MEDIA3_FLOW_COARSE_GRID_STEP,
-    )
-    quarterPyramidAvailable = quarterMotionSize.width >= MEDIA3_FLOW_QUARTER_BLOCK_SIZE &&
-      quarterMotionSize.height >= MEDIA3_FLOW_QUARTER_BLOCK_SIZE
-    val quarterGridSize = if (quarterPyramidAvailable) Media3FlowGeometry.motionGridSize(
-      quarterMotionSize.width, quarterMotionSize.height,
-      MEDIA3_FLOW_QUARTER_BLOCK_SIZE, MEDIA3_FLOW_QUARTER_GRID_STEP,
-    ) else Media3FlowGridSize(0, 0)
     gridWidth = motionGridSize.width
     gridHeight = motionGridSize.height
-    outputTexture = createTexture(GLES20.GL_TEXTURE_2D, sourceWidth, sourceHeight, GLES30.GL_RGBA8)
+    if (flowVulkanContext == 0L && deviceSupportsVulkanFlow(appContext)) {
+      flowVulkanContext = runCatching { Media3FlowVulkanNative.nativeCreateContext() }.getOrDefault(0L)
+    }
+    var allSharedImagesReady = flowVulkanContext != 0L
+    var outputBuffer: HardwareBuffer? = null
+    var outputHandle = 0L
+    var outputGlTexture = 0
+    if (flowVulkanContext != 0L) {
+      outputBuffer = runCatching { createSharedHardwareBuffer(sourceWidth, sourceHeight) }.getOrNull()
+      if (outputBuffer != null) {
+        outputHandle = runCatching {
+          Media3FlowVulkanNative.nativeCreateFrameImage(
+            flowVulkanContext, outputBuffer, sourceWidth, sourceHeight, true,
+          )
+        }.getOrDefault(0L)
+        if (outputHandle != 0L) {
+          outputGlTexture = runCatching {
+            Media3FlowVulkanNative.nativeCreateEglTexture(outputBuffer)
+          }.getOrDefault(0)
+        }
+      }
+    }
+    if (outputHandle == 0L || outputGlTexture == 0) {
+      allSharedImagesReady = false
+      if (outputGlTexture != 0) deleteTexture(outputGlTexture)
+      if (outputHandle != 0L && flowVulkanContext != 0L) {
+        Media3FlowVulkanNative.nativeDestroyImage(flowVulkanContext, outputHandle)
+      }
+      outputBuffer?.close()
+      outputBuffer = null
+      outputHandle = 0L
+      outputGlTexture = createTexture(GLES20.GL_TEXTURE_2D, sourceWidth, sourceHeight, GLES30.GL_RGBA8)
+    }
+    this.outputHardwareBuffer = outputBuffer
+    outputImageHandle = outputHandle
+    outputTexture = outputGlTexture
     repeat(MAX_STORED_FRAMES) {
-      framePool += FrameSlot().apply {
-        colorTexture = createTexture(GLES20.GL_TEXTURE_2D, sourceWidth, sourceHeight, GLES30.GL_RGBA8)
-        lumaTexture = createTexture(
-          GLES20.GL_TEXTURE_2D,
-          width,
-          height,
-          GLES30.GL_RGBA8,
-        )
-        coarseLumaTexture = createTexture(
-          GLES20.GL_TEXTURE_2D,
-          coarseMotionSize.width,
-          coarseMotionSize.height,
-          GLES30.GL_RGBA8,
-        )
-        quarterLumaTexture = createTexture(
-          GLES20.GL_TEXTURE_2D,
-          quarterMotionSize.width,
-          quarterMotionSize.height,
-          GLES30.GL_RGBA8,
-        )
+      val buffer = if (flowVulkanContext != 0L) {
+        runCatching { createSharedHardwareBuffer(sourceWidth, sourceHeight) }.getOrNull()
+      } else null
+      var imageHandle = 0L
+      var texture = 0
+      if (buffer != null) {
+        imageHandle = runCatching {
+          Media3FlowVulkanNative.nativeCreateFrameImage(
+            flowVulkanContext, buffer, sourceWidth, sourceHeight, false,
+          )
+        }.getOrDefault(0L)
+        if (imageHandle != 0L) {
+          texture = runCatching { Media3FlowVulkanNative.nativeCreateEglTexture(buffer) }.getOrDefault(0)
+        }
+      }
+      if (imageHandle == 0L || texture == 0) {
+        allSharedImagesReady = false
+        if (texture != 0) deleteTexture(texture)
+        if (imageHandle != 0L && flowVulkanContext != 0L) {
+          Media3FlowVulkanNative.nativeDestroyImage(flowVulkanContext, imageHandle)
+        }
+        buffer?.close()
+        framePool += FrameSlot().apply {
+          colorTexture = createTexture(GLES20.GL_TEXTURE_2D, sourceWidth, sourceHeight, GLES30.GL_RGBA8)
+        }
+      } else {
+        framePool += FrameSlot().apply {
+          hardwareBuffer = buffer
+          nativeImageHandle = imageHandle
+          colorTexture = texture
+        }
       }
     }
-    repeat(MAX_MOTION_PAIRS) {
-      motionPairs += MotionPairSlot().apply {
-        forwardTexture = createTexture(GLES20.GL_TEXTURE_2D, gridWidth, gridHeight, GLES30.GL_RGBA16F)
-        backwardTexture = createTexture(GLES20.GL_TEXTURE_2D, gridWidth, gridHeight, GLES30.GL_RGBA16F)
-        coarseForwardTexture = createTexture(GLES20.GL_TEXTURE_2D, coarseGridSize.width, coarseGridSize.height, GLES30.GL_RGBA16F)
-        coarseBackwardTexture = createTexture(GLES20.GL_TEXTURE_2D, coarseGridSize.width, coarseGridSize.height, GLES30.GL_RGBA16F)
-        quarterForwardTexture = if (quarterPyramidAvailable) {
-          createTexture(GLES20.GL_TEXTURE_2D, quarterGridSize.width, quarterGridSize.height, GLES30.GL_RGBA16F)
-        } else 0
-        quarterBackwardTexture = if (quarterPyramidAvailable) {
-          createTexture(GLES20.GL_TEXTURE_2D, quarterGridSize.width, quarterGridSize.height, GLES30.GL_RGBA16F)
-        } else 0
-      }
-    }
-    initializeCoverageBuffers()
-    flowAvailable = lumaProgram != 0 && flowProgram != 0 && synthProgram != 0
-    if (!flowAvailable) lastBypassReason = "compute_shader_unavailable"
+    repeat(MAX_MOTION_PAIRS) { motionPairs += MotionPairSlot() }
+    flowAvailable = allSharedImagesReady && framePool.size == MAX_STORED_FRAMES
+    if (!flowAvailable) lastBypassReason = "vulkan_shared_image_unavailable"
     setOutputFrameRate()
     publishDiagnostics(if (flowAvailable) "gpu_ready" else "source_fallback", lastBypassReason, force = true)
   }
@@ -1772,6 +1419,7 @@ class Media3FlowVideoSink(
     sourceFrames.forEach { it.inUse = false; it.ptsUs = C.TIME_UNSET }
     sourceFrames.clear()
     motionPairs.forEach {
+      releaseMotionPair(it)
       it.available = false
       it.frame0PtsUs = C.TIME_UNSET
       it.frame1PtsUs = C.TIME_UNSET
@@ -1784,37 +1432,44 @@ class Media3FlowVideoSink(
     storedFrameCount = 0
   }
 
-  private fun destroyFrameResources() {
-    framePool.forEach { slot ->
-      deleteTexture(slot.colorTexture)
-      deleteTexture(slot.lumaTexture)
-      deleteTexture(slot.coarseLumaTexture)
-      deleteTexture(slot.quarterLumaTexture)
+  private fun releaseMotionPair(slot: MotionPairSlot) {
+    val handle = slot.nativePairHandle
+    slot.nativePairHandle = 0L
+    slot.available = false
+    slot.frame0PtsUs = C.TIME_UNSET
+    slot.frame1PtsUs = C.TIME_UNSET
+    if (handle != 0L && flowVulkanContext != 0L) {
+      runCatching { Media3FlowVulkanNative.nativeReleasePair(flowVulkanContext, handle) }
+        .onFailure { Log.w(logTag, "Unable to release a Vulkan motion pair", it) }
     }
-    framePool.clear()
-    motionPairs.forEach { slot ->
-      deleteTexture(slot.forwardTexture)
-      deleteTexture(slot.backwardTexture)
-      deleteTexture(slot.coarseForwardTexture)
-      deleteTexture(slot.coarseBackwardTexture)
-      deleteTexture(slot.quarterForwardTexture)
-      deleteTexture(slot.quarterBackwardTexture)
-    }
-    motionPairs.clear()
-    deleteTexture(outputTexture)
-    outputTexture = 0
   }
 
-  private fun ensureEgl(preflightOnly: Boolean = false): Boolean {
-    if (eglReady) {
-      if (!preflightOnly && !computeProgramsCompiled) {
-        if (!makePbufferCurrent()) return false
-        compileComputePrograms()
-        initializeMotionGpuTimerQueries()
-        computeProgramsCompiled = true
+  private fun destroyFrameResources() {
+    motionPairs.forEach { releaseMotionPair(it) }
+    motionPairs.clear()
+    framePool.forEach { slot ->
+      deleteTexture(slot.colorTexture)
+      slot.colorTexture = 0
+      if (slot.nativeImageHandle != 0L && flowVulkanContext != 0L) {
+        Media3FlowVulkanNative.nativeDestroyImage(flowVulkanContext, slot.nativeImageHandle)
       }
-      return eglReady
+      slot.nativeImageHandle = 0L
+      slot.hardwareBuffer?.close()
+      slot.hardwareBuffer = null
     }
+    framePool.clear()
+    deleteTexture(outputTexture)
+    outputTexture = 0
+    if (outputImageHandle != 0L && flowVulkanContext != 0L) {
+      Media3FlowVulkanNative.nativeDestroyImage(flowVulkanContext, outputImageHandle)
+    }
+    outputImageHandle = 0L
+    outputHardwareBuffer?.close()
+    outputHardwareBuffer = null
+  }
+
+  private fun ensureEgl(): Boolean {
+    if (eglReady) return true
     if (eglDisplay == EGL14.EGL_NO_DISPLAY) {
       eglDisplay = EGL14.eglGetDisplay(EGL14.EGL_DEFAULT_DISPLAY)
       if (eglDisplay == EGL14.EGL_NO_DISPLAY) return false
@@ -1837,17 +1492,7 @@ class Media3FlowVideoSink(
       eglConfig = configs[0]
     }
     if (eglContext == EGL14.EGL_NO_CONTEXT) {
-      val contextAttributes = if (
-        EGL14.eglQueryString(eglDisplay, EGL14.EGL_EXTENSIONS).orEmpty().contains("EGL_KHR_create_context")
-      ) {
-        intArrayOf(
-          EGL14.EGL_CONTEXT_CLIENT_VERSION, 3,
-          EGL_CONTEXT_MINOR_VERSION_KHR, 1,
-          EGL14.EGL_NONE,
-        )
-      } else {
-        intArrayOf(EGL14.EGL_CONTEXT_CLIENT_VERSION, 3, EGL14.EGL_NONE)
-      }
+      val contextAttributes = intArrayOf(EGL14.EGL_CONTEXT_CLIENT_VERSION, 3, EGL14.EGL_NONE)
       eglContext = EGL14.eglCreateContext(
         eglDisplay,
         checkNotNull(eglConfig),
@@ -1868,26 +1513,21 @@ class Media3FlowVideoSink(
     }
     if (!makePbufferCurrent()) return false
     val glVersion = GLES20.glGetString(GLES20.GL_VERSION).orEmpty()
-    if (!isGles31(glVersion)) {
-      lastBypassReason = "gles31_required"
+    if (!glVersion.contains("OpenGL ES 3.")) {
+      lastBypassReason = "gles3_capture_unavailable"
       return false
     }
     if (!eglInfoLogged) {
       Log.i(
         logTag,
-        "GLES context ready version=$glVersion vendor=${GLES20.glGetString(GLES20.GL_VENDOR)} renderer=${GLES20.glGetString(GLES20.GL_RENDERER)}",
+        "GLES capture/presentation context ready version=$glVersion; interpolation=Vulkan",
       )
-      logQualcommExtensionSupport()
       eglInfoLogged = true
     }
     if (!graphicsProgramsCompiled) {
       compileGraphicsPrograms()
+      initializeGpuTimerQueries()
       graphicsProgramsCompiled = true
-    }
-    if (!preflightOnly && !computeProgramsCompiled) {
-      compileComputePrograms()
-      initializeMotionGpuTimerQueries()
-      computeProgramsCompiled = true
     }
     if (framebuffer == 0) {
       val ids = IntArray(1)
@@ -1901,13 +1541,6 @@ class Media3FlowVideoSink(
   private fun compileGraphicsPrograms() {
     copyProgram = linkProgram(COPY_VERTEX_SHADER, COPY_EXTERNAL_FRAGMENT_SHADER)
     blitProgram = linkProgram(COPY_VERTEX_SHADER, BLIT_FRAGMENT_SHADER)
-  }
-
-  private fun compileComputePrograms() {
-    lumaProgram = linkComputeProgram(LUMA_COMPUTE_SHADER)
-    flowProgram = linkComputeProgram(FLOW_COMPUTE_SHADER)
-    synthProgram = linkComputeProgram(SYNTH_COMPUTE_SHADER)
-    flowAvailable = lumaProgram != 0 && flowProgram != 0 && synthProgram != 0
   }
 
   private fun makePbufferCurrent(): Boolean =
@@ -1961,7 +1594,7 @@ class Media3FlowVideoSink(
     GLES20.glTexParameteri(target, GLES20.GL_TEXTURE_WRAP_T, GLES20.GL_CLAMP_TO_EDGE)
     checkGlError("texture wrap T", debugProbeOnly = true)
     if (target == GLES20.GL_TEXTURE_2D) {
-      // GLES 3.1 only permits immutable texture objects in glBindImageTexture.
+      // The GL texture is used only for decoder capture and final presentation.
       // All compute input/output and sampled 2D images use one immutable mip level.
       GLES30.glTexStorage2D(target, 1, internalFormat, width, height)
       checkGlError("immutable texture allocation format=0x${internalFormat.toString(16)} size=${width}x$height", debugProbeOnly = true)
@@ -2010,23 +1643,6 @@ class Media3FlowVideoSink(
     return program
   }
 
-  private fun linkComputeProgram(source: String): Int {
-    val shader = compileShader(GLES31.GL_COMPUTE_SHADER, source)
-    if (shader == 0) return 0
-    val program = GLES20.glCreateProgram()
-    GLES20.glAttachShader(program, shader)
-    GLES20.glLinkProgram(program)
-    val status = IntArray(1)
-    GLES20.glGetProgramiv(program, GLES20.GL_LINK_STATUS, status, 0)
-    GLES20.glDeleteShader(shader)
-    if (status[0] == 0) {
-      Log.w(logTag, "Compute shader link failed: ${GLES20.glGetProgramInfoLog(program)}")
-      GLES20.glDeleteProgram(program)
-      return 0
-    }
-    return program
-  }
-
   private fun compileShader(type: Int, source: String): Int {
     val shader = GLES20.glCreateShader(type)
     GLES20.glShaderSource(shader, source)
@@ -2043,7 +1659,10 @@ class Media3FlowVideoSink(
 
   private fun destroyGlResources() {
     destroyFrameResources()
-    destroyCoverageBuffers()
+    if (flowVulkanContext != 0L) {
+      Media3FlowVulkanNative.nativeDestroyContext(flowVulkanContext)
+      flowVulkanContext = 0L
+    }
     intArrayOf(copyProgram, blitProgram, lumaProgram, flowProgram, synthProgram)
       .filter { it != 0 }
       .forEach { GLES20.glDeleteProgram(it) }
@@ -2156,58 +1775,32 @@ class Media3FlowVideoSink(
     val inputSize = currentFormat?.let { "${it.width}x${it.height}" } ?: "unknown"
     val gpuTiming = diagnostics.gpuTimings
     val cpuTiming = diagnostics.cpuTimings
-    val coverage = diagnostics.pixelCoverage
     val gpuElapsed = when {
-      !gpuTimerQueriesSupported -> "unsupported"
-      diagnostics.motionEstimateGpuMs == null -> "pending"
+      diagnostics.motionEstimateGpuMs == null -> "not_sampled_vulkan"
       else -> "${formatLogFloat(diagnostics.motionEstimateGpuMs * 1_000f)}us"
     }
     val confidence = diagnostics.confidence?.let { formatLogFloat(it) } ?: "n/a"
-    val gpuStages = "downsample=${formatFlowDuration(gpuTiming.downsample)} " +
-      "motionF=${formatFlowDuration(gpuTiming.motionForward)} motionB=${formatFlowDuration(gpuTiming.motionBackward)} " +
-      "consistencyWarp=${formatFlowDuration(gpuTiming.consistencyAndWarp)} " +
-      "presentation=${formatFlowDuration(gpuTiming.presentationDraw)}"
+    val gpuStages = "presentation=${formatFlowDuration(gpuTiming.presentationDraw)}"
     val cpuStages = "queueWait=${formatFlowDuration(cpuTiming.inputQueueWait)} " +
       "frameHandler=${formatFlowDuration(cpuTiming.frameHandlerCall)} " +
       "eglSwapWait=${formatFlowDuration(cpuTiming.eglSwapWait)}"
-    val coverageSummary = "samples=${coverage.samples} warp=${coverage.motionWarpPixels}(${formatFlowPercent(coverage.motionWarpPercent)}%) " +
-      "sourceFallback=${coverage.sourceFrameFallbackPixels}(${formatFlowPercent(coverage.sourceFrameFallbackPercent)}%) " +
-      "staticBlend=${coverage.staticBlendPixels}(${formatFlowPercent(coverage.staticBlendPercent)}%) " +
-      "interframeChangedPixels=${coverage.interframeChangedPixels}/${coverage.sampledPixels}" +
-      "(${formatFlowPercent(coverage.interframeChangedFramePercent)}%ofFrame,weightedAbsRgbDeltaMin=$INTERFRAME_CHANGE_DIAGNOSTIC_LUMA_THRESHOLD," +
-      "staticBlendCut=$STATIC_BLEND_LUMA_DELTA_THRESHOLD) " +
-      "changedOutcomesDenom=${coverage.interframeChangedPixels} " +
-      "changedWarp=${coverage.interframeChangedWarpPixels}(${formatFlowPercent(coverage.interframeChangedWarpPercent)}%) " +
-      "changedSourceFallback=${coverage.interframeChangedSourceFallbackPixels}" +
-      "(${formatFlowPercent(coverage.interframeChangedSourceFallbackPercent)}%) " +
-      "changedStaticBlend=${coverage.interframeChangedStaticBlendPixels}" +
-      "(${formatFlowPercent(coverage.interframeChangedStaticBlendPercent)}%) " +
-      "pixels=${coverage.sampledPixels} skipped=${coverage.skippedSamples} invalid=${coverage.invalidSamples} " +
-      "sampleEveryDispatch=$COVERAGE_SAMPLE_INTERVAL " +
-      "staticVectorProbe=${coverage.staticVectorProbeSamples}(magnitudeCutoffProcessingPx=0.5,reliabilityCutoff=0.15) " +
-      "likely=${coverage.staticVectorLikelyMotionSamples}(${formatFlowPercent(coverage.staticVectorLikelyMotionPercent)}%) " +
-      "uncertain=${coverage.staticVectorUncertainMotionSamples}(${formatFlowPercent(coverage.staticVectorUncertainMotionPercent)}%) " +
-      "nearZeroConfident=${coverage.staticVectorNearZeroConfidentSamples} " +
-      "(${formatFlowPercent(coverage.staticVectorNearZeroConfidentPercent)}%) " +
-      "nearZeroUncertain=${coverage.staticVectorNearZeroUncertainSamples} " +
-      "(${formatFlowPercent(coverage.staticVectorNearZeroUncertainPercent)}%)"
     Log.i(
       logTag,
-      "flow_summary state=${diagnostics.state} bypass=${diagnostics.bypassReason ?: "none"} " +
+        "flow_summary backend=vulkan-spirv state=${diagnostics.state} bypass=${diagnostics.bypassReason ?: "none"} " +
         "positionUs=$latestPositionUs speed=${formatLogFloat(playbackSpeed)} " +
         "sourceFps=${formatLogFloat(diagnostics.sourceFps)} targetFps=${diagnostics.targetFps} " +
         "eglSwapFps=${formatLogFloat(diagnostics.outputFps)} generatedFps=${formatLogFloat(diagnostics.generatedFps)} " +
         "generatedTotal=${diagnostics.generatedFrames} dropsTotal=${diagnostics.droppedFrames} " +
         "missedOutputTicksTotal=${diagnostics.missedOutputTicks} skippedTotal=${diagnostics.skippedFrames} " +
         "input=$inputSize processing=${diagnostics.processingWidth}x${diagnostics.processingHeight} " +
-        "motionPyramid=${if (quarterPyramidAvailable) "quarter>half>full" else "half>full"} " +
+        "motionPyramid=quarter>half>full " +
         "motionGrid=${diagnostics.motionGridWidth}x${diagnostics.motionGridHeight} " +
         "motionSubmitCpuMs=${formatLogFloat(diagnostics.motionEstimateSubmitMs)} " +
         "motionGpuElapsed=$gpuElapsed gpuTimerStatus=${gpuTiming.status} " +
         "gpuQueryCounts=valid:${gpuTiming.validResults},pending:${gpuTiming.pendingResults}," +
         "disjoint:${gpuTiming.disjointResultsDiscarded},zero:${gpuTiming.zeroDurationResults}," +
         "skipped:${gpuTiming.skippedBecausePoolFull} gpuStagesUs={$gpuStages} " +
-        "cpuStagesUs={$cpuStages} coverage={$coverageSummary} " +
+        "cpuStagesUs={$cpuStages} coverage=unavailable_vulkan_ssbo_readback_disabled " +
         "confidence=$confidence displayReportedHz=${formatLogFloat(displayRefreshRate(appContext))} " +
         "displayModeInitialHz=${formatLogFloat(displayHz)} surfaceHintFps=${formatLogFloat(outputFrameRateHintFps)} " +
         "matchContentPreference=$matchContentFrameRatePreferenceLabel " +
@@ -2251,10 +1844,6 @@ class Media3FlowVideoSink(
     } ?: "n/a"
     return "${value(summary.averageUs)}/${value(summary.p95Us)}/${value(summary.maximumUs)}us(n=${summary.sampleCount})"
   }
-
-  private fun formatFlowPercent(value: Float?): String = value?.let {
-    String.format(java.util.Locale.US, "%.1f", it)
-  } ?: "n/a"
 
   private fun logTimingTrace(
     positionUs: Long,
@@ -2309,13 +1898,6 @@ class Media3FlowVideoSink(
     }
   }
 
-  private fun isGles31(version: String): Boolean {
-    val match = GLES_VERSION_REGEX.find(version) ?: return false
-    val major = match.groupValues[1].toIntOrNull() ?: return false
-    val minor = match.groupValues[2].toIntOrNull() ?: return false
-    return major > 3 || (major == 3 && minor >= 1)
-  }
-
   private fun <T> runOnGlThreadSync(timeoutMs: Long = GL_INIT_TIMEOUT_MS, block: () -> T): T {
     if (Looper.myLooper() == glThread.looper) return block()
     val latch = CountDownLatch(1)
@@ -2351,23 +1933,10 @@ class Media3FlowVideoSink(
     private const val MAX_GPU_TIMER_QUERIES = 64
     private const val GPU_TIMING_HISTORY_SIZE = 90
     private const val CPU_TIMING_HISTORY_SIZE = 90
-    private const val COVERAGE_BUFFER_COUNT = 3
-    private const val COVERAGE_HISTORY_SIZE = 12
-    private const val COVERAGE_SAMPLE_INTERVAL = 8L
-    private const val COVERAGE_BYTES_PER_GROUP = 8 * Int.SIZE_BYTES
-    private const val FLOW_COVERAGE_BINDING = 3
-    private const val INTERFRAME_CHANGE_DIAGNOSTIC_LUMA_THRESHOLD = 0.01f
-    private const val STATIC_BLEND_LUMA_DELTA_THRESHOLD = 0.018f
     private const val NO_FRAME_TIME_NANOS = Long.MIN_VALUE
     private const val GL_TIME_ELAPSED_EXT = 0x88BF
     private const val GL_GPU_DISJOINT_EXT = 0x8FBB
-    private const val GL_SYNC_GPU_COMMANDS_COMPLETE = 0x9117
-    private const val GL_ALREADY_SIGNALED = 0x911A
-    private const val GL_TIMEOUT_EXPIRED = 0x911B
-    private const val GL_CONDITION_SATISFIED = 0x911C
     private const val EGL_OPENGL_ES3_BIT_KHR = 0x0040
-    private const val EGL_CONTEXT_MINOR_VERSION_KHR = 0x30FB
-    private val GLES_VERSION_REGEX = Regex("OpenGL ES (\\d+)\\.(\\d+)")
 
     @JvmStatic
     fun supportsFormat(format: Format): Boolean {
@@ -2382,10 +1951,9 @@ class Media3FlowVideoSink(
     }
 
     @JvmStatic
-    fun deviceSupportsGles31(context: Context): Boolean = runCatching {
-      val manager = context.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
-      manager.deviceConfigurationInfo.reqGlEsVersion >= 0x0003_0001
-    }.getOrDefault(false)
+    fun deviceSupportsVulkanFlow(context: Context): Boolean =
+      BuildConfig.MPV_SUPPORTS_VULKAN && Build.VERSION.SDK_INT >= 26 &&
+        context.packageManager.hasSystemFeature("android.hardware.vulkan.version")
 
     private const val COPY_VERTEX_SHADER = """
       #version 300 es
@@ -2422,400 +1990,7 @@ class Media3FlowVideoSink(
       void main() { outColor = texture(uImage, uTextureOffset + vUv * uTextureScale); }
     """
 
-    internal const val LUMA_COMPUTE_SHADER = """
-      #version 310 es
-      layout(local_size_x = 8, local_size_y = 8) in;
-      precision highp float;
-      layout(binding = 0) uniform sampler2D uColor;
-      layout(rgba8, binding = 0) writeonly uniform highp image2D uLuma;
-      layout(rgba8, binding = 1) writeonly uniform highp image2D uCoarseLuma;
-      layout(rgba8, binding = 2) writeonly uniform highp image2D uQuarterLuma;
-      uniform ivec2 uSize;
-      uniform ivec2 uCoarseSize;
-      uniform ivec2 uQuarterSize;
-      void main() {
-        ivec2 quarterPoint = ivec2(gl_GlobalInvocationID.xy);
-        if (any(greaterThanEqual(quarterPoint, uQuarterSize))) return;
-        float quarterSum = 0.0;
-        float quarterCount = 0.0;
-        for (int halfY = 0; halfY < 2; halfY++) {
-          for (int halfX = 0; halfX < 2; halfX++) {
-            ivec2 halfPoint = quarterPoint * 2 + ivec2(halfX, halfY);
-            if (any(greaterThanEqual(halfPoint, uCoarseSize))) continue;
-            float halfSum = 0.0;
-            float halfCount = 0.0;
-            for (int y = 0; y < 2; y++) {
-              for (int x = 0; x < 2; x++) {
-                ivec2 p = halfPoint * 2 + ivec2(x, y);
-                if (any(greaterThanEqual(p, uSize))) continue;
-                vec2 uv = (vec2(p) + vec2(0.5)) / vec2(uSize);
-                float luma = dot(texture(uColor, uv).rgb, vec3(0.2126, 0.7152, 0.0722));
-                imageStore(uLuma, p, vec4(luma, 0.0, 0.0, 1.0));
-                halfSum += luma;
-                halfCount += 1.0;
-              }
-            }
-            float halfLuma = halfSum / max(halfCount, 1.0);
-            imageStore(uCoarseLuma, halfPoint, vec4(halfLuma, 0.0, 0.0, 1.0));
-            quarterSum += halfSum;
-            quarterCount += halfCount;
-          }
-        }
-        imageStore(uQuarterLuma, quarterPoint, vec4(quarterSum / max(quarterCount, 1.0), 0.0, 0.0, 1.0));
-      }
-    """
 
-    internal const val FLOW_COMPUTE_SHADER = """
-      #version 310 es
-      layout(local_size_x = 8, local_size_y = 8) in;
-      precision highp float;
-      layout(rgba8, binding = 0) readonly uniform highp image2D uSource;
-      layout(rgba8, binding = 1) readonly uniform highp image2D uTarget;
-      layout(rgba16f, binding = 2) writeonly uniform highp image2D uFlow;
-      layout(rgba16f, binding = 3) readonly uniform highp image2D uPriorFlow;
-      uniform ivec2 uSize;
-      uniform int uBlock;
-      uniform int uStep;
-      uniform int uSearchRadius;
-      uniform int uSearchStep;
-      uniform int uPriorCount;
-      uniform int uUsePrior;
-      uniform float uPriorScale;
-      uniform float uPriorCellScale;
-      float blockSad(ivec2 origin, ivec2 offset, int stride) {
-        float sad = 0.0;
-        float samples = 0.0;
-        for (int y = 0; y < uBlock; y += stride) {
-          for (int x = 0; x < uBlock; x += stride) {
-            ivec2 p = origin + ivec2(x, y);
-            sad += abs(imageLoad(uSource, p).r - imageLoad(uTarget, p + offset).r);
-            samples += 1.0;
-          }
-        }
-        return sad / max(samples, 1.0);
-      }
-      bool offsetIsValid(ivec2 origin, ivec2 offset, ivec2 limit) {
-        ivec2 targetOrigin = origin + offset;
-        return all(greaterThanEqual(targetOrigin, ivec2(0))) &&
-          all(lessThanEqual(targetOrigin, limit));
-      }
-      const float SUBPIXEL_MIN_CURVATURE = ${MEDIA3_FLOW_SUBPIXEL_MIN_CURVATURE};
-      float subpixelOffset(float minusCost, float centerCost, float plusCost) {
-        if (centerCost > minusCost || centerCost > plusCost) return 0.0;
-        float curvature = minusCost - 2.0 * centerCost + plusCost;
-        if (curvature <= SUBPIXEL_MIN_CURVATURE) return 0.0;
-        return clamp(0.5 * (minusCost - plusCost) / curvature, -0.5, 0.5);
-      }
-      float refineSubpixelAxis(ivec2 origin, ivec2 bestOffset, ivec2 axis, ivec2 limit, float centerCost) {
-        ivec2 minusOffset = bestOffset - axis;
-        ivec2 plusOffset = bestOffset + axis;
-        if (!offsetIsValid(origin, minusOffset, limit) || !offsetIsValid(origin, plusOffset, limit)) return 0.0;
-        float minusCost = blockSad(origin, minusOffset, 1);
-        float plusCost = blockSad(origin, plusOffset, 1);
-        return subpixelOffset(minusCost, centerCost, plusCost);
-      }
-      ivec2 priorCellOffset(int seed) {
-        if (seed == 1) return ivec2(-1, 0);
-        if (seed == 2) return ivec2(1, 0);
-        if (seed == 3) return ivec2(0, -1);
-        if (seed == 4) return ivec2(0, 1);
-        return ivec2(0);
-      }
-      void main() {
-        ivec2 cell = ivec2(gl_GlobalInvocationID.xy);
-        ivec2 grid = imageSize(uFlow);
-        if (any(greaterThanEqual(cell, grid))) return;
-        ivec2 limit = max(uSize - ivec2(uBlock), ivec2(0));
-        ivec2 origin = min(cell * uStep, limit);
-        float predictorBest = 1e20;
-        ivec2 predictedOffset = ivec2(0);
-        for (int seed = 0; seed < 6; seed++) {
-          if (seed >= uPriorCount) break;
-          vec2 prediction = vec2(0.0);
-          if (uUsePrior != 0 && seed < 5) {
-            ivec2 mappedParent = ivec2(round(vec2(cell) * uPriorCellScale));
-            ivec2 priorCell = clamp(mappedParent + priorCellOffset(seed), ivec2(0), imageSize(uPriorFlow) - ivec2(1));
-            prediction = imageLoad(uPriorFlow, priorCell).xy * uPriorScale;
-          }
-          ivec2 baseOffset = clamp(ivec2(round(prediction)), -origin, limit - origin);
-          float seedBest = 1e20;
-          ivec2 seedOffset = baseOffset;
-          for (int dy = -uSearchRadius; dy <= uSearchRadius; dy += uSearchStep) {
-            for (int dx = -uSearchRadius; dx <= uSearchRadius; dx += uSearchStep) {
-              ivec2 offset = baseOffset + ivec2(dx, dy);
-              if (!offsetIsValid(origin, offset, limit)) continue;
-              float cost = blockSad(origin, offset, 2);
-              if (cost < seedBest) {
-                seedBest = cost;
-                seedOffset = offset;
-              }
-            }
-          }
-          if (seedBest < predictorBest) {
-            predictorBest = seedBest;
-            predictedOffset = seedOffset;
-          }
-        }
-
-        // The coarse winner, four neighboring coarse vectors, and zero motion remain separate fine-level hypotheses.
-        float best = 1e20;
-        float secondBest = 1e20;
-        ivec2 bestOffset = predictedOffset;
-        for (int dy = -1; dy <= 1; dy++) {
-          for (int dx = -1; dx <= 1; dx++) {
-            ivec2 offset = predictedOffset + ivec2(dx, dy);
-            if (!offsetIsValid(origin, offset, limit)) continue;
-            float cost = blockSad(origin, offset, 1);
-            if (cost < best) { secondBest = best; best = cost; bestOffset = offset; }
-            else if (cost < secondBest) { secondBest = cost; }
-          }
-        }
-        vec2 refinedOffset = vec2(bestOffset);
-        refinedOffset.x += refineSubpixelAxis(origin, bestOffset, ivec2(1, 0), limit, best);
-        refinedOffset.y += refineSubpixelAxis(origin, bestOffset, ivec2(0, 1), limit, best);
-        float uniqueness = secondBest < 1e19 ? clamp((secondBest - best) / max(secondBest, 0.0001), 0.0, 1.0) : 0.0;
-        imageStore(uFlow, cell, vec4(refinedOffset, best, uniqueness));
-      }
-    """
-
-    internal const val SYNTH_COMPUTE_SHADER = """
-      #version 310 es
-      layout(local_size_x = 8, local_size_y = 8) in;
-      precision highp float;
-      layout(binding = 0) uniform sampler2D uFrame0;
-      layout(binding = 1) uniform sampler2D uFrame1;
-      layout(binding = 2) uniform sampler2D uLuma0;
-      layout(binding = 3) uniform sampler2D uLuma1;
-      layout(rgba16f, binding = 0) readonly uniform highp image2D uForward;
-      layout(rgba16f, binding = 1) readonly uniform highp image2D uBackward;
-      layout(rgba8, binding = 2) writeonly uniform highp image2D uOutput;
-      uniform ivec2 uSize;
-      uniform ivec2 uMotionSize;
-      uniform ivec2 uGrid;
-      uniform int uStep;
-      uniform float uGridAnchorOffset;
-      uniform float uAlpha;
-      uniform int uCoverageEnabled;
-      layout(std430, binding = 3) writeonly buffer FlowCoverageBuffer { uvec4 coverage[]; };
-      shared uint coverageClass[64];
-      shared uint interframeChangedClass[64];
-      // Preserve the visually clean baseline calibration; bidirectional confidence and
-      // the bounds/edge guards below remain stricter than that baseline.
-      const float CYCLE_ERROR_START = 1.0;
-      const float CYCLE_ERROR_END = 6.0;
-      const float MATCH_ERROR_START = 0.04;
-      const float MATCH_ERROR_END = 0.35;
-      const float VISIBILITY_CONFIDENCE_START = ${MEDIA3_FLOW_VISIBILITY_CONFIDENCE_START};
-      const float VISIBILITY_CONFIDENCE_END = ${MEDIA3_FLOW_VISIBILITY_CONFIDENCE_END};
-      const float STATIC_VECTOR_PROBE_THRESHOLD = 0.5;
-      const float INTERFRAME_CHANGE_DIAGNOSTIC_LUMA_THRESHOLD = ${INTERFRAME_CHANGE_DIAGNOSTIC_LUMA_THRESHOLD};
-      const float STATIC_BLEND_LUMA_DELTA_THRESHOLD = ${STATIC_BLEND_LUMA_DELTA_THRESHOLD};
-      vec4 flowImageAt(ivec2 p, int direction) {
-        return direction == 0 ? imageLoad(uForward, p) : imageLoad(uBackward, p);
-      }
-      vec4 flowAt(vec2 p, int direction) {
-        vec2 gridPos = (p - vec2(uGridAnchorOffset)) / float(uStep);
-        gridPos = clamp(gridPos, vec2(0.0), vec2(uGrid - ivec2(1)));
-        ivec2 a = clamp(ivec2(floor(gridPos)), ivec2(0), uGrid - 1);
-        ivec2 b = min(a + ivec2(1), uGrid - 1);
-        vec2 t = fract(gridPos);
-        vec4 flow00 = flowImageAt(ivec2(a.x, a.y), direction);
-        vec4 flow10 = flowImageAt(ivec2(b.x, a.y), direction);
-        vec4 flow01 = flowImageAt(ivec2(a.x, b.y), direction);
-        vec4 flow11 = flowImageAt(ivec2(b.x, b.y), direction);
-        vec4 top = mix(flow00, flow10, t.x);
-        vec4 bottom = mix(flow01, flow11, t.x);
-        vec4 interpolated = mix(top, bottom, t.y);
-        return interpolated;
-      }
-      float flowGuideAt(vec2 uv, int direction) {
-        return direction == 0 ? texture(uLuma0, uv).r : texture(uLuma1, uv).r;
-      }
-      vec4 flowAtEdgeAware(vec2 p, int direction) {
-        vec2 gridPos = (p - vec2(uGridAnchorOffset)) / float(uStep);
-        gridPos = clamp(gridPos, vec2(0.0), vec2(uGrid - ivec2(1)));
-        ivec2 a = clamp(ivec2(floor(gridPos)), ivec2(0), uGrid - 1);
-        ivec2 b = min(a + ivec2(1), uGrid - 1);
-        vec2 t = fract(gridPos);
-        vec4 flow00 = flowImageAt(ivec2(a.x, a.y), direction);
-        vec4 flow10 = flowImageAt(ivec2(b.x, a.y), direction);
-        vec4 flow01 = flowImageAt(ivec2(a.x, b.y), direction);
-        vec4 flow11 = flowImageAt(ivec2(b.x, b.y), direction);
-        float spatial00 = (1.0 - t.x) * (1.0 - t.y);
-        float spatial10 = t.x * (1.0 - t.y);
-        float spatial01 = (1.0 - t.x) * t.y;
-        float spatial11 = t.x * t.y;
-        vec2 anchor00 = (vec2(a) * float(uStep) + vec2(uGridAnchorOffset)) / vec2(uMotionSize);
-        vec2 anchor10 = (vec2(b.x, a.y) * float(uStep) + vec2(uGridAnchorOffset)) / vec2(uMotionSize);
-        vec2 anchor01 = (vec2(a.x, b.y) * float(uStep) + vec2(uGridAnchorOffset)) / vec2(uMotionSize);
-        vec2 anchor11 = (vec2(b) * float(uStep) + vec2(uGridAnchorOffset)) / vec2(uMotionSize);
-        float guide = flowGuideAt(clamp(p / vec2(uMotionSize), vec2(0.0), vec2(1.0)), direction);
-        float delta00 = flowGuideAt(anchor00, direction) - guide;
-        float delta10 = flowGuideAt(anchor10, direction) - guide;
-        float delta01 = flowGuideAt(anchor01, direction) - guide;
-        float delta11 = flowGuideAt(anchor11, direction) - guide;
-        float variance = spatial00 * delta00 * delta00 + spatial10 * delta10 * delta10 +
-          spatial01 * delta01 * delta01 + spatial11 * delta11 * delta11;
-        float safeVariance = max(variance, 0.000001);
-        float weight00 = spatial00 * exp(-(delta00 * delta00) / safeVariance);
-        float weight10 = spatial10 * exp(-(delta10 * delta10) / safeVariance);
-        float weight01 = spatial01 * exp(-(delta01 * delta01) / safeVariance);
-        float weight11 = spatial11 * exp(-(delta11 * delta11) / safeVariance);
-        float totalWeight = weight00 + weight10 + weight01 + weight11;
-        if (totalWeight <= 0.000001) return flowAt(p, direction);
-        return (flow00 * weight00 + flow10 * weight10 + flow01 * weight01 + flow11 * weight11) / totalWeight;
-      }
-      float inBounds(vec2 uv) {
-        return step(0.0, uv.x) * step(uv.x, 1.0) * step(0.0, uv.y) * step(uv.y, 1.0);
-      }
-      float flowReliability(vec4 flow, float cycleError, float valid) {
-        float consistency = 1.0 - smoothstep(CYCLE_ERROR_START, CYCLE_ERROR_END, cycleError);
-        float matchQuality = 1.0 - smoothstep(MATCH_ERROR_START, MATCH_ERROR_END, flow.z);
-        float uniqueQuality = 0.5 + 0.5 * smoothstep(0.02, 0.35, flow.w);
-        return consistency * matchQuality * uniqueQuality * valid;
-      }
-      // Algebraic bidirectional target-time initialization; no learned residual or visibility net.
-      vec2 flowToFrame0(float t, vec2 forward, vec2 backward) {
-        float oneMinusT = 1.0 - t;
-        return -oneMinusT * t * forward + t * t * backward;
-      }
-      vec2 flowToFrame1(float t, vec2 forward, vec2 backward) {
-        float oneMinusT = 1.0 - t;
-        return oneMinusT * oneMinusT * forward - t * oneMinusT * backward;
-      }
-      void main() {
-        ivec2 p = ivec2(gl_GlobalInvocationID.xy);
-        uint pixelClass = 0u;
-        uint staticVectorClass = 0u;
-        uint changedPixelClass = 0u;
-        if (all(lessThan(p, uSize))) {
-          vec2 point = vec2(p) + vec2(0.5);
-          vec2 uv = point / vec2(uSize);
-          vec2 motionPoint = point * vec2(uMotionSize) / vec2(uSize);
-          vec4 source0 = texture(uFrame0, uv);
-          vec4 source1 = texture(uFrame1, uv);
-          float staticChange = dot(abs(source0.rgb - source1.rgb), vec3(0.2126, 0.7152, 0.0722));
-          if (staticChange < STATIC_BLEND_LUMA_DELTA_THRESHOLD) {
-            imageStore(uOutput, p, mix(source0, source1, uAlpha));
-            pixelClass = 3u;
-            // Sample the existing vectors at one pixel per workgroup; this probe never writes color.
-            if (uCoverageEnabled != 0 && gl_LocalInvocationIndex == 0u) {
-              vec4 staticForward = flowAt(motionPoint, 0);
-              vec4 staticBackward = flowAt(motionPoint, 1);
-              float staticCycleError = length(staticForward.xy + staticBackward.xy);
-              float staticConfidence = min(
-                flowReliability(staticForward, staticCycleError, 1.0),
-                flowReliability(staticBackward, staticCycleError, 1.0)
-              );
-              float staticVectorMagnitude = max(length(staticForward.xy), length(staticBackward.xy));
-              if (staticVectorMagnitude <= STATIC_VECTOR_PROBE_THRESHOLD) {
-                staticVectorClass = staticConfidence >= 0.15 ? 3u : 4u;
-              } else if (staticConfidence >= 0.15) {
-                staticVectorClass = 1u;
-              } else {
-                staticVectorClass = 2u;
-              }
-            }
-          } else {
-            // Guide each endpoint field with its own source image so vectors from the two sides
-            // of a foreground/background edge are not averaged into a third motion hypothesis.
-            vec4 forwardAtMid = flowAtEdgeAware(motionPoint, 0);
-            vec4 backwardAtMid = flowAtEdgeAware(motionPoint, 1);
-            vec2 source0Point = motionPoint + flowToFrame0(uAlpha, forwardAtMid.xy, backwardAtMid.xy);
-            vec2 source1Point = motionPoint + flowToFrame1(uAlpha, forwardAtMid.xy, backwardAtMid.xy);
-            vec4 forwardAtSource = flowAtEdgeAware(source0Point, 0);
-            vec4 backwardAtTarget = flowAtEdgeAware(source1Point, 1);
-            source0Point = motionPoint + flowToFrame0(uAlpha, forwardAtSource.xy, backwardAtTarget.xy);
-            source1Point = motionPoint + flowToFrame1(uAlpha, forwardAtSource.xy, backwardAtTarget.xy);
-            vec2 cyclePoint0 = source0Point + forwardAtSource.xy;
-            vec2 cyclePoint1 = source1Point + backwardAtTarget.xy;
-            // Keep cycle checks in the same appearance layer as the endpoint warp;
-            // plain bilinear sampling can mix foreground and background at occlusion edges.
-            vec4 backwardAtForwardEndpoint = flowAtEdgeAware(cyclePoint0, 1);
-            vec4 forwardAtBackwardEndpoint = flowAtEdgeAware(cyclePoint1, 0);
-            float cycleError0 = length(forwardAtSource.xy + backwardAtForwardEndpoint.xy);
-            float cycleError1 = length(backwardAtTarget.xy + forwardAtBackwardEndpoint.xy);
-            vec2 uv0Raw = uv + (source0Point - motionPoint) / vec2(uMotionSize);
-            vec2 uv1Raw = uv + (source1Point - motionPoint) / vec2(uMotionSize);
-            float valid0 = inBounds(uv0Raw);
-            float valid1 = inBounds(uv1Raw);
-            valid0 *= inBounds(cyclePoint0 / vec2(uMotionSize));
-            valid1 *= inBounds(cyclePoint1 / vec2(uMotionSize));
-            vec2 uv0 = clamp(uv0Raw, vec2(0.0), vec2(1.0));
-            vec2 uv1 = clamp(uv1Raw, vec2(0.0), vec2(1.0));
-            vec4 c0 = texture(uFrame0, uv0);
-            vec4 c1 = texture(uFrame1, uv1);
-            forwardAtSource.z = max(forwardAtSource.z, forwardAtMid.z);
-            backwardAtTarget.z = max(backwardAtTarget.z, backwardAtMid.z);
-            forwardAtSource.w = min(forwardAtSource.w, forwardAtMid.w);
-            backwardAtTarget.w = min(backwardAtTarget.w, backwardAtMid.w);
-            float confidence0 = flowReliability(forwardAtSource, cycleError0, valid0);
-            float confidence1 = flowReliability(backwardAtTarget, cycleError1, valid1);
-            // Treat each endpoint as a candidate visibility source: equal confidence preserves alpha,
-            // while a disoccluded or out-of-bounds endpoint yields to its valid counterpart.
-            float confidence = max(confidence0, confidence1);
-            if (confidence < VISIBILITY_CONFIDENCE_START) {
-              imageStore(uOutput, p, uAlpha < 0.5 ? source0 : source1);
-              pixelClass = 2u;
-            } else {
-              float visibility0 = smoothstep(VISIBILITY_CONFIDENCE_START, VISIBILITY_CONFIDENCE_END, confidence0);
-              float visibility1 = smoothstep(VISIBILITY_CONFIDENCE_START, VISIBILITY_CONFIDENCE_END, confidence1);
-              float weight0 = (1.0 - uAlpha) * visibility0;
-              float weight1 = uAlpha * visibility1;
-              float weightSum = weight0 + weight1;
-              if (weightSum <= 0.0001) {
-                imageStore(uOutput, p, uAlpha < 0.5 ? source0 : source1);
-                pixelClass = 2u;
-              } else {
-                float targetAppearanceDelta = abs(
-                  dot(c0.rgb, vec3(0.2126, 0.7152, 0.0722)) -
-                  dot(c1.rgb, vec3(0.2126, 0.7152, 0.0722))
-                );
-                bool targetBoundaryConflict = targetAppearanceDelta > 0.12;
-                if (targetBoundaryConflict && confidence0 > confidence1 + 0.10) {
-                  imageStore(uOutput, p, c0);
-                  pixelClass = 1u;
-                } else if (targetBoundaryConflict && confidence1 > confidence0 + 0.10) {
-                  imageStore(uOutput, p, c1);
-                  pixelClass = 1u;
-                } else if (targetBoundaryConflict) {
-                  imageStore(uOutput, p, uAlpha < 0.5 ? source0 : source1);
-                  pixelClass = 2u;
-                } else {
-                  imageStore(uOutput, p, mix(c0, c1, weight1 / weightSum));
-                  pixelClass = 1u;
-                }
-              }
-            }
-          }
-          if (uCoverageEnabled != 0 && staticChange >= INTERFRAME_CHANGE_DIAGNOSTIC_LUMA_THRESHOLD) {
-            changedPixelClass = pixelClass;
-          }
-        }
-        if (uCoverageEnabled != 0) {
-          coverageClass[gl_LocalInvocationIndex] = pixelClass;
-          interframeChangedClass[gl_LocalInvocationIndex] = changedPixelClass;
-          barrier();
-          if (gl_LocalInvocationIndex == 0u) {
-            uvec4 counts = uvec4(0u);
-            uvec4 changedCounts = uvec4(0u);
-            for (uint index = 0u; index < 64u; index++) {
-              if (coverageClass[index] == 1u) counts.x++;
-              else if (coverageClass[index] == 2u) counts.y++;
-              else if (coverageClass[index] == 3u) counts.z++;
-              if (interframeChangedClass[index] == 1u) changedCounts.x++;
-              else if (interframeChangedClass[index] == 2u) changedCounts.y++;
-              else if (interframeChangedClass[index] == 3u) changedCounts.z++;
-              if (interframeChangedClass[index] != 0u) changedCounts.w++;
-            }
-            uint groupIndex = gl_WorkGroupID.y * gl_NumWorkGroups.x + gl_WorkGroupID.x;
-            counts.w = staticVectorClass;
-            coverage[groupIndex * 2u] = counts;
-            coverage[groupIndex * 2u + 1u] = changedCounts;
-          }
-        }
-      }
-    """
   }
 
   @androidx.annotation.RequiresApi(30)

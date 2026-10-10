@@ -50,7 +50,7 @@ index bd3d1aa1ec..e5301791b7 100644
  const struct m_sub_options gl_next_conf = {
      .opts = (const struct m_option[]) {
 +        {"mpvflow", OPT_BOOL(mpvflow)},
-+        {"mpvflow-max-dimension", OPT_INT(mpvflow_max_dimension), M_RANGE(8, 480)},
++        {"mpvflow-max-dimension", OPT_INT(mpvflow_max_dimension), M_RANGE(8, 640)},
          {"sub-hdr-peak", OPT_CHOICE(sub_hdr_peak, {"auto", 0}, {"sdr", PL_COLOR_SDR_WHITE}),
              M_RANGE(10, 10000)},
          {"image-subs-hdr-peak", OPT_CHOICE(image_subs_hdr_peak, {"sdr", PL_COLOR_SDR_WHITE},
@@ -58,7 +58,7 @@ index bd3d1aa1ec..e5301791b7 100644
          {0},
      },
      .defaults = &(struct gl_next_opts) {
-+        .mpvflow_max_dimension = 480,
++        .mpvflow_max_dimension = 640,
          .border_background = BACKGROUND_COLOR,
          .background_blur_radius = 16.0f,
          .inter_preserve = true,
@@ -112,7 +112,7 @@ index bd3d1aa1ec..e5301791b7 100644
 +        return;
 +
 +    struct MPVFlowGPUConfig config = {
-+        .max_dimension = 480,
++        .max_dimension = 640,
 +        .search_radius = 8,
 +    };
 +    enum MPVFlowGPUResult status = MPVFLOW_GPU_INVALID;
@@ -133,7 +133,7 @@ index bd3d1aa1ec..e5301791b7 100644
 +    p->flow_gpu = ctx;
 +    p->flow_input_fmt = input_fmt;
 +    p->flow_init_logged = true;
-+    MP_INFO(vo, "MPVFLOW_GPU_DIAGNOSTIC event=init enabled=yes backend=opengl-es "
++    MP_INFO(vo, "MPVFLOW_GPU_DIAGNOSTIC event=init enabled=yes backend=vulkan-spirv "
 +            "compute=yes max_dimension=%d search_radius=%d "
 +            "cpu_filter=no cpu_readback=no\n",
 +            p->next_opts->mpvflow_max_dimension, config.search_radius);
@@ -360,7 +360,7 @@ index bd3d1aa1ec..e5301791b7 100644
 +                    stats_time_end(p->stats, "mpvflow-render");
 +                    if (ok) {
 +                        if (!p->flow_active_logged) {
-+                            MP_INFO(vo, "MPVFLOW_GPU_DIAGNOSTIC event=active backend=opengl-es "
++                            MP_INFO(vo, "MPVFLOW_GPU_DIAGNOSTIC event=active backend=vulkan-spirv "
 +                                    "input_path=%s source=%dx%d processing=%dx%d "
 +                                    "motion=yes synthesized=yes cpu_filter=no cpu_readback=no\n",
 +                                    fp0->hwdec ? "direct-hw-surface" : "software-upload",
