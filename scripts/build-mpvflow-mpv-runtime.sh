@@ -128,7 +128,7 @@ libplacebo_path.write_text(libplacebo_script.replace(libplacebo_setup, libplaceb
 print("Cross-built static Android glslang and required Vulkan/SPIR-V compilation in shared libplacebo; retained OpenGL")
 
 mpv_script = mpv_script_path.read_text()
-mpv_vulkan_option = "\t\t-Dmanpage-build=disabled\n"
+mpv_vulkan_option = "\t-Dmanpage-build=disabled\n"
 if mpv_script.count(mpv_vulkan_option) != 1:
     raise SystemExit(f"Expected one MPV Meson options block in {mpv_script_path}")
 mpv_script_path.write_text(mpv_script.replace(

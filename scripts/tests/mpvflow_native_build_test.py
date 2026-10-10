@@ -155,7 +155,15 @@ with tempfile.TemporaryDirectory(prefix="mpvflow-builder-patch-test-") as tempor
         "LOCAL_SHARED_LIBRARIES := swscale avcodec mpv\n",
         encoding="utf-8",
     )
-    mpv.write_text("\t\t-Dmanpage-build=disabled\n", encoding="utf-8")
+    mpv.write_text(
+        'unset CC CXX # meson wants these unset\n'
+        'meson setup $build --cross-file "$prefix_dir"/crossfile.txt \\\n'
+        '\t--default-library shared \\\n'
+        '\t-Diconv=disabled -Dlua=enabled \\\n'
+        '\t-Dlibmpv=true -Dcplayer=false \\\n'
+        '\t-Dmanpage-build=disabled\n',
+        encoding="utf-8",
+    )
     result = subprocess.run(
         [sys.executable, "-", str(ci), str(depinfo), str(downloads), str(libplacebo), str(android_mk), str(mpv)],
         input=builder_patcher,
@@ -170,7 +178,10 @@ with tempfile.TemporaryDirectory(prefix="mpvflow-builder-patch-test-") as tempor
     patched_placebo = libplacebo.read_text(encoding="utf-8")
     assert "-Dglslang=enabled" in patched_placebo and "-Dvulkan=enabled" in patched_placebo
     assert "cmake --install" in patched_placebo and "libSPIRV.a" in patched_placebo
-    assert "-Dvulkan=enabled" in mpv.read_text(encoding="utf-8"), "MPV must fail the build if Vulkan is unavailable"
+    patched_mpv = mpv.read_text(encoding="utf-8")
+    assert "\t-Dmanpage-build=disabled -Dvulkan=enabled\n" in patched_mpv, (
+        "MPV Vulkan must be enabled in the pinned Meson options block"
+    )
     assert "--arch arm64" in ci.read_text(encoding="utf-8"), "native build must remain arm64-only"
 
 print("MPVFlow Android Vulkan/glslang native-build regression tests passed")
