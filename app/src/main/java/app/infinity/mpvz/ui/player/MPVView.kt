@@ -252,7 +252,7 @@ class MPVView(
         BuildConfig.MPV_HAS_RIFE &&
         rifeModelDirectory != null &&
         !frameInterpolationConfigOwned
-    val mpvFlowFrameInterpolationEnabled =
+    val mpvFlowFrameInterpolationCandidate =
       mpvFlowFrameInterpolationPreference &&
         !rifeFrameInterpolationPreference &&
         BuildConfig.MPV_HAS_MPVFLOW &&
@@ -260,6 +260,43 @@ class MPVView(
         !anime4kActive &&
         RendererBackendPolicy.canUseDirectGpuFlow(backend.vo, backend.gpuApi) &&
         decoderPreferences.playbackEngine.get() != PlaybackEngineMode.NATIVE
+    // Flow consumes gpu-next's before/after frame mix and needs a display-timed output tick between
+    // source PTS values. Keep this scoped to the Flow path; the config-ownership gate above prevents
+    // overriding an explicit mpv.conf interpolation or video-sync choice.
+    val flowInterpolationRc =
+      if (mpvFlowFrameInterpolationCandidate) {
+        PlaybackSession.setOptionString("interpolation", "yes")
+      } else {
+        null
+      }
+    val flowVideoSyncRc =
+      if (mpvFlowFrameInterpolationCandidate) {
+        PlaybackSession.setOptionString("video-sync", "display-resample")
+      } else {
+        null
+      }
+    val flowTimingOptionsReady = flowInterpolationRc == 0 && flowVideoSyncRc == 0
+    if (mpvFlowFrameInterpolationCandidate && !flowTimingOptionsReady) {
+      val resetInterpolationRc = PlaybackSession.setOptionString("interpolation", "no")
+      val resetVideoSyncRc = PlaybackSession.setOptionString("video-sync", "audio")
+      Log.e(
+        TAG,
+        "MPVFLOW_DIAGNOSTIC event=timing_config state=failed " +
+          "interpolation_rc=$flowInterpolationRc video_sync_rc=$flowVideoSyncRc " +
+          "rollback_interpolation_rc=$resetInterpolationRc rollback_video_sync_rc=$resetVideoSyncRc " +
+          "fallback=source_passthrough",
+      )
+    }
+    val mpvFlowFrameInterpolationEnabled =
+      mpvFlowFrameInterpolationCandidate && flowTimingOptionsReady
+    if (mpvFlowFrameInterpolationEnabled) {
+      Log.i(
+        TAG,
+        "MPVFLOW_DIAGNOSTIC event=timing_config state=applied " +
+          "interpolation_rc=$flowInterpolationRc video_sync_rc=$flowVideoSyncRc " +
+          "video_sync=display-resample",
+      )
+    }
     val frameInterpolationEnabled = rifeFrameInterpolationEnabled || mpvFlowFrameInterpolationEnabled
     interpolationOutputFrameRate =
       when {

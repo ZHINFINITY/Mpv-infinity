@@ -130,6 +130,25 @@ view_source = MPV_VIEW.read_text(encoding="utf-8")
 init_options = view_source.split("override fun initOptions()", 1)[1].split(
     "override fun observeProperties()", 1
 )[0]
+timing_candidate = init_options.split("val mpvFlowFrameInterpolationCandidate =", 1)[1].split(
+    "val flowInterpolationRc", 1
+)[0]
+assert "!frameInterpolationConfigOwned" in timing_candidate, (
+    "MPV Flow timing must not override interpolation or sync options owned by mpv.conf"
+)
+for marker in (
+    'PlaybackSession.setOptionString("interpolation", "yes")',
+    'PlaybackSession.setOptionString("video-sync", "display-resample")',
+    "val mpvFlowFrameInterpolationEnabled =",
+    "mpvFlowFrameInterpolationCandidate && flowTimingOptionsReady",
+    'PlaybackSession.setOptionString("interpolation", "no")',
+    'PlaybackSession.setOptionString("video-sync", "audio")',
+    "fallback=source_passthrough",
+):
+    assert marker in init_options, f"MPV Flow must establish and safely gate its display cadence: missing {marker!r}"
+assert init_options.index('PlaybackSession.setOptionString("interpolation", "yes")') < init_options.index(
+    'PlaybackSession.setOptionString("mpvflow",'
+), "the GPU frame mixer must be configured before enabling Flow synthesis"
 renderer_option_order = (
     'PlaybackSession.setOptionString("gpu-api", backend.gpuApi)',
     'PlaybackSession.setOptionString("gpu-context", backend.gpuContext)',
@@ -170,9 +189,9 @@ mpv_conf_source = MPV_CONF_POLICY.read_text(encoding="utf-8")
 frame_interpolation_ownership = mpv_conf_source.split("val FRAME_INTERPOLATION =", 1)[1].split(
     "\n    )", 1
 )[0]
-for option in ("gpu-api", "gpu-context"):
+for option in ("gpu-api", "gpu-context", "interpolation", "video-sync"):
     assert f'"{option}"' in frame_interpolation_ownership, (
-        f"mpv.conf-owned {option} must disable MPV Flow rather than select an unsupported backend"
+        f"mpv.conf-owned {option} must disable MPV Flow rather than override the configured path"
     )
 policy_source = POLICY.read_text(encoding="utf-8")
 flow_hwdec_policy = policy_source.split("fun gpuFlowHwdecMode(", 1)[1].split(
