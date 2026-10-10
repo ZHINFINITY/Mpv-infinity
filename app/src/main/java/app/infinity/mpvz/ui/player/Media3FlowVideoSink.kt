@@ -2265,24 +2265,6 @@ class Media3FlowVideoSink(
         return all(greaterThanEqual(targetOrigin, ivec2(0))) &&
           all(lessThanEqual(targetOrigin, limit));
       }
-      // The reduced luma map only searches whole pixels; fit its local SAD bowl without widening the search.
-      const float SUBPIXEL_MIN_CURVATURE = ${MEDIA3_FLOW_SUBPIXEL_MIN_CURVATURE};
-      float subpixelOffset(float minusCost, float centerCost, float plusCost) {
-        if (centerCost > minusCost || centerCost > plusCost) return 0.0;
-        float curvature = minusCost - 2.0 * centerCost + plusCost;
-        if (curvature <= SUBPIXEL_MIN_CURVATURE) return 0.0;
-        return clamp(0.5 * (minusCost - plusCost) / curvature, -0.5, 0.5);
-      }
-      float refineSubpixelAxis(ivec2 origin, ivec2 bestOffset, ivec2 axis, int radius, ivec2 limit, float centerCost) {
-        ivec2 minusOffset = bestOffset - axis;
-        ivec2 plusOffset = bestOffset + axis;
-        if (any(greaterThan(abs(minusOffset), ivec2(radius))) ||
-            any(greaterThan(abs(plusOffset), ivec2(radius))) ||
-            !offsetIsValid(origin, minusOffset, limit) || !offsetIsValid(origin, plusOffset, limit)) return 0.0;
-        float minusCost = blockSad(origin, minusOffset, 1);
-        float plusCost = blockSad(origin, plusOffset, 1);
-        return subpixelOffset(minusCost, centerCost, plusCost);
-      }
       void main() {
         ivec2 cell = ivec2(gl_GlobalInvocationID.xy);
         ivec2 grid = imageSize(uFlow);
@@ -2314,10 +2296,7 @@ class Media3FlowVideoSink(
             if (cost < best) { best = cost; bestOffset = offset; }
           }
         }
-        vec2 refinedOffset = vec2(bestOffset);
-        refinedOffset.x += refineSubpixelAxis(origin, bestOffset, ivec2(1, 0), uRadius, limit, best);
-        refinedOffset.y += refineSubpixelAxis(origin, bestOffset, ivec2(0, 1), uRadius, limit, best);
-        imageStore(uFlow, cell, vec4(refinedOffset, best, 1.0));
+        imageStore(uFlow, cell, vec4(vec2(bestOffset), best, 1.0));
       }
     """
 
@@ -2340,7 +2319,6 @@ class Media3FlowVideoSink(
       layout(std430, binding = 3) writeonly buffer FlowCoverageBuffer { uvec4 coverage[]; };
       shared uint coverageClass[64];
       shared uint interframeChangedClass[64];
-      const float MAX_MATCH_ERROR = 0.34;
       // Preserve the visually clean baseline calibration; bidirectional confidence and
       // the bounds/edge guards below remain stricter than that baseline.
       const float CYCLE_ERROR_START = 1.0;
@@ -2351,7 +2329,6 @@ class Media3FlowVideoSink(
       const float INTERFRAME_CHANGE_DIAGNOSTIC_LUMA_THRESHOLD = ${INTERFRAME_CHANGE_DIAGNOSTIC_LUMA_THRESHOLD};
       const float STATIC_BLEND_LUMA_DELTA_THRESHOLD = ${STATIC_BLEND_LUMA_DELTA_THRESHOLD};
       const float FLOW_EDGE_START_SQUARED = 9.0;
-      const float FLOW_EDGE_END_SQUARED = 81.0;
       vec4 flowImageAt(ivec2 p, int direction) {
         return direction == 0 ? imageLoad(uForward, p) : imageLoad(uBackward, p);
       }
@@ -2376,17 +2353,14 @@ class Media3FlowVideoSink(
           max(horizontalTop, horizontalBottom),
           max(verticalLeft, verticalRight)
         );
-        float edgePenalty = smoothstep(FLOW_EDGE_START_SQUARED, FLOW_EDGE_END_SQUARED, localMotionDisagreementSq);
         // Do not average foreground and background vectors across a motion boundary.
         if (localMotionDisagreementSq > FLOW_EDGE_START_SQUARED) {
           ivec2 nearestCell = ivec2(t.x < 0.5 ? a.x : b.x, t.y < 0.5 ? a.y : b.y);
           vec4 nearestFlow = flowImageAt(nearestCell, direction);
           interpolated.xy = nearestFlow.xy;
-          // A low-SAD vector can still belong to the other object at an occlusion edge.
-          interpolated.z = max(nearestFlow.z, MAX_MATCH_ERROR * edgePenalty);
+          // Keep edge fallback decisions tied to measured match and cycle error, not a synthetic penalty.
+          interpolated.z = nearestFlow.z;
           interpolated.w = nearestFlow.w;
-        } else {
-          interpolated.z = max(interpolated.z, MAX_MATCH_ERROR * edgePenalty);
         }
         return interpolated;
       }

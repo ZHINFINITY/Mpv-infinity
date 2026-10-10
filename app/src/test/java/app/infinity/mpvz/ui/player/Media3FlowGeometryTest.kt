@@ -12,28 +12,6 @@ class Media3FlowGeometryTest {
   }
 
   @Test
-  fun parabolicMotionRefinementRecoversFractionalOffsetsAndRejectsUnstableCosts() {
-    assertEquals(0.25f, Media3FlowGeometry.parabolicSubpixelOffset(1.5625f, 0.0625f, 0.5625f), 0.0001f)
-    assertEquals(-0.25f, Media3FlowGeometry.parabolicSubpixelOffset(0.5625f, 0.0625f, 1.5625f), 0.0001f)
-    assertEquals(0f, Media3FlowGeometry.parabolicSubpixelOffset(0.2f, 0.2f, 0.2f), 0f)
-    assertEquals(0f, Media3FlowGeometry.parabolicSubpixelOffset(0.2f, 0.3f, 0.1f), 0f)
-  }
-
-  @Test
-  fun motionShaderRefinesOnlyTheExistingIntegerMatchNeighborhood() {
-    val shader = Media3FlowVideoSink.FLOW_COMPUTE_SHADER
-    assertTrue(shader.contains("const float SUBPIXEL_MIN_CURVATURE = ${MEDIA3_FLOW_SUBPIXEL_MIN_CURVATURE};"))
-    assertTrue(shader.contains("float refineSubpixelAxis("))
-    assertTrue(shader.contains("any(greaterThan(abs(minusOffset), ivec2(radius)))"))
-    assertTrue(shader.contains("any(greaterThan(abs(plusOffset), ivec2(radius)))"))
-    assertTrue(shader.contains("refinedOffset.x += refineSubpixelAxis"))
-    assertTrue(shader.contains("refinedOffset.y += refineSubpixelAxis"))
-    assertTrue(shader.contains("imageStore(uFlow, cell, vec4(refinedOffset, best, 1.0));"))
-    assertTrue(shader.contains("if (abs(dx) > uRadius) continue;"))
-    assertTrue(shader.contains("if (abs(dy) > uRadius) continue;"))
-  }
-
-  @Test
   fun fullHdSourceUsesReducedMotionGrid() {
     assertEquals(Media3FlowMotionSize(480, 270), Media3FlowGeometry.motionSize(1920, 1080, 480))
   }
@@ -68,37 +46,36 @@ class Media3FlowGeometryTest {
   fun synthesisSelectsOneVectorAcrossLocalMotionDiscontinuities() {
     val shader = Media3FlowVideoSink.SYNTH_COMPUTE_SHADER
     assertTrue(shader.contains("float localMotionDisagreementSq = max("))
-    assertTrue(shader.contains("float edgePenalty = smoothstep(FLOW_EDGE_START_SQUARED, FLOW_EDGE_END_SQUARED, localMotionDisagreementSq);"))
     assertTrue(shader.contains("if (localMotionDisagreementSq > FLOW_EDGE_START_SQUARED) {"))
     assertTrue(shader.contains("ivec2 nearestCell = ivec2(t.x < 0.5 ? a.x : b.x, t.y < 0.5 ? a.y : b.y);"))
     assertTrue(shader.contains("interpolated.xy = nearestFlow.xy;"))
-    assertTrue(shader.contains("interpolated.z = max(nearestFlow.z, MAX_MATCH_ERROR * edgePenalty);"))
+    assertTrue(shader.contains("interpolated.z = nearestFlow.z;"))
     assertTrue(shader.contains("interpolated.w = nearestFlow.w;"))
-    assertTrue(shader.contains("interpolated.z = max(interpolated.z, MAX_MATCH_ERROR * edgePenalty);"))
+    assertFalse(shader.contains("MAX_MATCH_ERROR * edgePenalty"))
     assertTrue(shader.contains("forwardAtSource.z = max(forwardAtSource.z, forwardAtMid.z);"))
     assertTrue(shader.contains("backwardAtTarget.z = max(backwardAtTarget.z, backwardAtMid.z);"))
     assertTrue(shader.contains("float matchQuality = 1.0 - smoothstep(MATCH_ERROR_START, MATCH_ERROR_END, flow.z);"))
   }
 
   @Test
-  fun severeNeighboringMotionConflictRejectsAnOtherwiseLowSadNearestVector() {
+  fun edgeDisagreementDoesNotInventMatchErrorButMeasuredPoorMatchesStillFail() {
     val shader = Media3FlowVideoSink.SYNTH_COMPUTE_SHADER
-    assertTrue(shader.contains("const float MAX_MATCH_ERROR = 0.34;"))
     assertTrue(shader.contains("const float FLOW_EDGE_START_SQUARED = 9.0;"))
-    assertTrue(shader.contains("const float FLOW_EDGE_END_SQUARED = 81.0;"))
-    assertTrue(shader.contains("interpolated.z = max(nearestFlow.z, MAX_MATCH_ERROR * edgePenalty);"))
+    assertTrue(shader.contains("interpolated.z = nearestFlow.z;"))
+    assertFalse(shader.contains("FLOW_EDGE_END_SQUARED"))
+    assertFalse(shader.contains("MAX_MATCH_ERROR * edgePenalty"))
 
-    val edgePenalty = smoothstep(9f, 81f, 81f)
-    val edgeMatchError = maxOf(0.01f, 0.34f * edgePenalty)
-    val matchQuality = 1f - smoothstep(0.04f, 0.35f, edgeMatchError)
-    assertTrue("A 9-pixel vector conflict must not pass the 0.15 warp-confidence gate", matchQuality < 0.15f)
+    val goodMeasuredMatchQuality = 1f - smoothstep(0.04f, 0.35f, 0.01f)
+    val poorMeasuredMatchQuality = 1f - smoothstep(0.04f, 0.35f, 0.34f)
+    assertTrue("A reliable selected edge vector must remain eligible for warping", goodMeasuredMatchQuality >= 0.15f)
+    assertTrue("The existing match-error gate must still reject poor vectors", poorMeasuredMatchQuality < 0.15f)
   }
 
   @Test
   fun motionConfidenceKeepsBaselineBehaviorOnLowTextureRegions() {
     val motionShader = Media3FlowVideoSink.FLOW_COMPUTE_SHADER
     val synthesisShader = Media3FlowVideoSink.SYNTH_COMPUTE_SHADER
-    assertTrue(motionShader.contains("imageStore(uFlow, cell, vec4(refinedOffset, best, 1.0));"))
+    assertTrue(motionShader.contains("imageStore(uFlow, cell, vec4(vec2(bestOffset), best, 1.0));"))
     assertFalse(motionShader.contains("textureEnergy"))
     assertTrue(synthesisShader.contains("return consistency * matchQuality * valid;"))
     assertFalse(synthesisShader.contains("textureConfidence"))
