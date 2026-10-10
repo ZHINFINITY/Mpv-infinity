@@ -12,3 +12,4 @@ cc -std=c11 -O2 -Wall -Wextra -Werror \
 python3 "$ROOT/scripts/tests/mpvflow_gpu_shader_test.py"
 python3 "$ROOT/scripts/tests/media3flow_gpu_shader_test.py"
 python3 "$ROOT/scripts/tests/mpvflow_diagnostics_test.py"
+python3 "$ROOT/scripts/tests/mpvflow_native_build_test.py"

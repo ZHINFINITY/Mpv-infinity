@@ -9,6 +9,8 @@ import subprocess
 
 ROOT = Path(__file__).resolve().parents[1]
 VENDOR = ROOT / "app/src/main/cpp/mpvflow"
+MPV_VULKAN_DEPENDENCY = "vulkan = dependency('vulkan', version: '>= 1.3.238', required: vulkan_opt)"
+ANDROID_VULKAN_DEPENDENCY = "vulkan = dependency('vulkan', required: vulkan_opt)"
 
 
 def base_sources_close(meson: str) -> int:
@@ -44,6 +46,14 @@ def base_sources_close(meson: str) -> int:
     raise SystemExit("Could not find end of mpv base source list")
 
 
+def enable_android_vulkan_dependency(meson: str) -> str:
+    if meson.count(MPV_VULKAN_DEPENDENCY) != 1:
+        raise SystemExit("Pinned MPV Vulkan dependency check changed; refusing an unverified Android Vulkan build")
+    if "vulkan/vulkan_core.h" not in meson or "VK_VERSION_1_3" not in meson:
+        raise SystemExit("Pinned MPV Vulkan header-version guard is missing; refusing an unverified Android Vulkan build")
+    return meson.replace(MPV_VULKAN_DEPENDENCY, ANDROID_VULKAN_DEPENDENCY, 1)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--mpv-dir", required=True, type=Path)
@@ -70,6 +80,7 @@ def main() -> None:
 
     vo = vo_path.read_text()
     meson = meson_path.read_text()
+    meson = enable_android_vulkan_dependency(meson)
     vo_marker = "MPVFLOW_GPU_INTEGRATION"
     meson_marker = "# MPVFLOW_ANDROID_GPU"
     if vo_marker not in vo:
