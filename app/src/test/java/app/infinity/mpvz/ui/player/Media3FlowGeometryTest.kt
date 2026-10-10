@@ -26,6 +26,32 @@ class Media3FlowGeometryTest {
   }
 
   @Test
+  fun threeLevelPyramidMapsChildMotionCellsIntoTheirActualParentGrids() {
+    assertEquals(Media3FlowMotionSize(100, 57), Media3FlowGeometry.quarterMotionSize(400, 225))
+    assertEquals(
+      Media3FlowGridSize(16, 9),
+      Media3FlowGeometry.motionGridSize(100, 57, MEDIA3_FLOW_QUARTER_BLOCK_SIZE, MEDIA3_FLOW_QUARTER_GRID_STEP),
+    )
+    assertEquals(Media3FlowGridSize(66, 37), Media3FlowGeometry.motionGridSize(200, 113, 4, 3))
+    assertEquals(0.25f, Media3FlowGeometry.priorCellScale(3, 6), 0f)
+    assertEquals(1f, Media3FlowGeometry.priorCellScale(6, 3), 0f)
+    assertEquals(2f, MEDIA3_FLOW_FINE_PRIOR_SCALE)
+  }
+
+  @Test
+  fun lumaAndMotionAnalysisUseThreeDistinctPyramidLevels() {
+    val lumaShader = Media3FlowVideoSink.LUMA_COMPUTE_SHADER
+    val motionShader = Media3FlowVideoSink.FLOW_COMPUTE_SHADER
+    assertTrue(lumaShader.contains("layout(rgba8, binding = 2) writeonly uniform highp image2D uQuarterLuma;"))
+    assertTrue(lumaShader.contains("for (int halfY = 0; halfY < 2; halfY++)"))
+    assertTrue(lumaShader.contains("imageStore(uQuarterLuma, quarterPoint"))
+    assertTrue(motionShader.contains("vec2(cell) * uPriorCellScale"))
+    assertEquals(8, MEDIA3_FLOW_QUARTER_BLOCK_SIZE)
+    assertEquals(6, MEDIA3_FLOW_QUARTER_GRID_STEP)
+    assertEquals(4, MEDIA3_FLOW_QUARTER_SEARCH_RADIUS)
+  }
+
+  @Test
   fun coarseAndFinePatchOriginsStayAlignedAtOddAndEvenBoundaries() {
     val dimensions = listOf(16 to 16, 17 to 31, 400 to 225, 640 to 360, 721 to 359)
     for ((width, height) in dimensions) {
@@ -107,6 +133,22 @@ class Media3FlowGeometryTest {
   }
 
   @Test
+  fun crossingOppositeMotionLayersDoNotAverageIntoAStationaryVector() {
+    val candidates = listOf(
+      Media3FlowGuideSample(Media3FlowVector(16f, 1f), 0.85f, 0.25f),
+      Media3FlowGuideSample(Media3FlowVector(16f, 1f), 0.85f, 0.25f),
+      Media3FlowGuideSample(Media3FlowVector(-16f, -1f), 0.15f, 0.25f),
+      Media3FlowGuideSample(Media3FlowVector(-16f, -1f), 0.15f, 0.25f),
+    )
+
+    val forwardLayer = Media3FlowGeometry.edgeAwareVectorSample(0.85f, candidates)
+    val reverseLayer = Media3FlowGeometry.edgeAwareVectorSample(0.15f, candidates)
+
+    assertTrue("The foreground motion must retain its positive displacement", forwardLayer.x > 12f)
+    assertTrue("The crossing background/object must retain its negative displacement", reverseLayer.x < -12f)
+  }
+
+  @Test
   fun sourceVisibilityPreservesNormalTimingButSelectsTheReliableOcclusionSide() {
     assertEquals(0.25f, Media3FlowGeometry.sourceVisibilityBlendAlpha(0.25f, 1f, 1f)!!, 0.0001f)
     assertEquals(1f, Media3FlowGeometry.sourceVisibilityBlendAlpha(0.5f, 0.1f, 1f)!!, 0f)
@@ -169,6 +211,7 @@ class Media3FlowGeometryTest {
     assertTrue(shader.contains("forwardAtSource.z = max(forwardAtSource.z, forwardAtMid.z);"))
     assertTrue(shader.contains("backwardAtTarget.z = max(backwardAtTarget.z, backwardAtMid.z);"))
     assertTrue(shader.contains("float matchQuality = 1.0 - smoothstep(MATCH_ERROR_START, MATCH_ERROR_END, flow.z);"))
+    assertTrue(shader.contains("float uniqueQuality = 0.5 + 0.5 * smoothstep(0.02, 0.35, flow.w);"))
   }
 
   @Test
@@ -188,7 +231,10 @@ class Media3FlowGeometryTest {
   fun motionSearchRefinesScaledCoarseAndNeighborHypothesesInsteadOfSearchingOneWideLevel() {
     val motionShader = Media3FlowVideoSink.FLOW_COMPUTE_SHADER
     val synthesisShader = Media3FlowVideoSink.SYNTH_COMPUTE_SHADER
-    assertTrue(motionShader.contains("imageStore(uFlow, cell, vec4(refinedOffset, best, 1.0));"))
+    assertTrue(motionShader.contains("imageStore(uFlow, cell, vec4(refinedOffset, best, uniqueness));"))
+    assertTrue(motionShader.contains("float secondBest = 1e20;"))
+    assertTrue(motionShader.contains("uniform float uPriorCellScale;"))
+    assertTrue(motionShader.contains("vec2(cell) * uPriorCellScale"))
     assertTrue(motionShader.contains("uniform int uSearchRadius;"))
     assertTrue(motionShader.contains("uniform int uUsePrior;"))
     assertTrue(motionShader.contains("uniform float uPriorScale;"))
@@ -196,12 +242,12 @@ class Media3FlowGeometryTest {
     assertTrue(motionShader.contains("priorCellOffset(seed)"))
     assertTrue(motionShader.contains("imageLoad(uPriorFlow, priorCell).xy * uPriorScale"))
     assertTrue(motionShader.contains("seed < 5"))
-    assertTrue(motionShader.contains("ivec2 baseOffset = ivec2(round(prediction));"))
+    assertTrue(motionShader.contains("ivec2 baseOffset = clamp(ivec2(round(prediction)), -origin, limit - origin);"))
     assertTrue(motionShader.contains("for (int dy = -uSearchRadius; dy <= uSearchRadius; dy += uSearchStep)"))
     assertTrue(motionShader.contains("refinedOffset.x += refineSubpixelAxis"))
     assertFalse(motionShader.contains("MAX_EXTENDED_SEARCH_RADIUS"))
     assertFalse(motionShader.contains("textureEnergy"))
-    assertTrue(synthesisShader.contains("return consistency * matchQuality * valid;"))
+    assertTrue(synthesisShader.contains("return consistency * matchQuality * uniqueQuality * valid;"))
     assertFalse(synthesisShader.contains("textureConfidence"))
     assertTrue(synthesisShader.contains("vec4 interpolated = mix(top, bottom, t.y);"))
     assertFalse(synthesisShader.contains("nearestCell"))
@@ -215,7 +261,9 @@ class Media3FlowGeometryTest {
     assertTrue(shader.contains("float weight0 = (1.0 - uAlpha) * visibility0;"))
     assertTrue(shader.contains("float weight1 = uAlpha * visibility1;"))
     assertTrue(shader.contains("mix(c0, c1, weight1 / weightSum)"))
-    assertFalse(shader.contains("colorMismatch"))
+    assertTrue(shader.contains("bool targetBoundaryConflict = targetAppearanceDelta > 0.12;"))
+    assertTrue(shader.contains("confidence0 > confidence1 + 0.10"))
+    assertTrue(shader.contains("if (targetBoundaryConflict)"))
     assertTrue(shader.contains("float cycleError0 = length(forwardAtSource.xy + backwardAtForwardEndpoint.xy);"))
     assertTrue(shader.contains("float cycleError1 = length(backwardAtTarget.xy + forwardAtBackwardEndpoint.xy);"))
   }

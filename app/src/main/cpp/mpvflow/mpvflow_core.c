@@ -585,6 +585,15 @@ static void synthesize_rows(struct synthesis_job *job)
             }
             float consistency = hypotf(fdx + bdx, fdy + bdy);
             consistency_sum += consistency;
+            size_t output_index = ((size_t)y * pair->width + x) * 3;
+            /* Preserve locally static content exactly, even when neighboring
+             * motion layers produce uncertain vectors across a thin contour. */
+            if (memcmp(job->frame0 + output_index,
+                       job->frame1 + output_index, 3) == 0) {
+                memcpy(job->output + output_index,
+                       job->frame0 + output_index, 3);
+                continue;
+            }
             float color_a[3], color_b[3];
             sample_rgb24(job->frame0, pair->width, pair->height, ax, ay, color_a);
             sample_rgb24(job->frame1, pair->width, pair->height, bx, by, color_b);
@@ -608,7 +617,6 @@ static void synthesize_rows(struct synthesis_job *job)
                 weight_b = job->timestep;
                 weight_sum = 1.0f;
             }
-            size_t output_index = ((size_t)y * pair->width + x) * 3;
             for (int channel = 0; channel < 3; channel++) {
                 float value = (color_a[channel] * weight_a +
                                color_b[channel] * weight_b) / weight_sum;

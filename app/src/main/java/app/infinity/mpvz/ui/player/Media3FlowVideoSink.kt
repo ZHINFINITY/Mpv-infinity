@@ -226,6 +226,7 @@ class Media3FlowVideoSink(
   private var processingHeight = 0
   private var gridWidth = 0
   private var gridHeight = 0
+  private var quarterPyramidAvailable = false
   private var outputTexture = 0
   private var flowAvailable = false
   @Volatile private var preflightAvailable = false
@@ -269,6 +270,7 @@ class Media3FlowVideoSink(
     var colorTexture = 0
     var lumaTexture = 0
     var coarseLumaTexture = 0
+    var quarterLumaTexture = 0
     var ptsUs = C.TIME_UNSET
     var inUse = false
   }
@@ -278,6 +280,8 @@ class Media3FlowVideoSink(
     var backwardTexture = 0
     var coarseForwardTexture = 0
     var coarseBackwardTexture = 0
+    var quarterForwardTexture = 0
+    var quarterBackwardTexture = 0
     var frame0PtsUs = C.TIME_UNSET
     var frame1PtsUs = C.TIME_UNSET
     var available = false
@@ -1189,6 +1193,7 @@ class Media3FlowVideoSink(
     priorCount: Int,
     usePrior: Boolean,
     priorScale: Float,
+    priorCellScale: Float,
     stage: String,
   ) {
     GLES31.glUniform2i(GLES31.glGetUniformLocation(flowProgram, "uSize"), levelSize.width, levelSize.height)
@@ -1202,6 +1207,7 @@ class Media3FlowVideoSink(
     GLES31.glUniform1i(GLES31.glGetUniformLocation(flowProgram, "uPriorCount"), priorCount)
     GLES31.glUniform1i(GLES31.glGetUniformLocation(flowProgram, "uUsePrior"), if (usePrior) 1 else 0)
     GLES31.glUniform1f(GLES31.glGetUniformLocation(flowProgram, "uPriorScale"), priorScale)
+    GLES31.glUniform1f(GLES31.glGetUniformLocation(flowProgram, "uPriorCellScale"), priorCellScale)
     checkGlError("$stage motion uniforms", frameProbeOnly = true)
 
     GLES31.glBindImageTexture(0, sourceLumaTexture, 0, false, 0, GLES31.GL_READ_ONLY, GLES30.GL_RGBA8)
@@ -1209,7 +1215,8 @@ class Media3FlowVideoSink(
     GLES31.glBindImageTexture(2, outputFlowTexture, 0, false, 0, GLES31.GL_WRITE_ONLY, GLES30.GL_RGBA16F)
     GLES31.glBindImageTexture(3, priorFlowTexture, 0, false, 0, GLES31.GL_READ_ONLY, GLES30.GL_RGBA16F)
     checkGlError("$stage motion bind images", frameProbeOnly = true)
-    GLES31.glDispatchCompute(ceil(gridWidth / 8.0).toInt(), ceil(gridHeight / 8.0).toInt(), 1)
+    val outputGrid = Media3FlowGeometry.motionGridSize(levelSize.width, levelSize.height, blockSize, gridStep)
+    GLES31.glDispatchCompute(ceil(outputGrid.width / 8.0).toInt(), ceil(outputGrid.height / 8.0).toInt(), 1)
     checkGlError("$stage motion dispatch", frameProbeOnly = true)
     GLES31.glMemoryBarrier(GLES31.GL_SHADER_IMAGE_ACCESS_BARRIER_BIT)
     checkGlError("$stage motion barrier", frameProbeOnly = true)
@@ -1249,21 +1256,40 @@ class Media3FlowVideoSink(
       GLES31.glUseProgram(flowProgram)
       checkGlError("motion glUseProgram", frameProbeOnly = true)
       val coarseSize = Media3FlowGeometry.coarseMotionSize(processingWidth, processingHeight)
+      val quarterSize = Media3FlowGeometry.quarterMotionSize(processingWidth, processingHeight)
       val fullSize = Media3FlowMotionSize(processingWidth, processingHeight)
       stageQuery = beginGpuTimerQuery(FlowGpuStage.MOTION_FORWARD, frame0.ptsUs, frame1.ptsUs, queryGeneration)
+      if (quarterPyramidAvailable) {
+        dispatchMotionLevel(
+          frame0.quarterLumaTexture,
+          frame1.quarterLumaTexture,
+          reusable.quarterForwardTexture,
+          reusable.coarseForwardTexture,
+          quarterSize,
+          MEDIA3_FLOW_QUARTER_BLOCK_SIZE,
+          MEDIA3_FLOW_QUARTER_GRID_STEP,
+          MEDIA3_FLOW_QUARTER_SEARCH_RADIUS,
+          priorCount = 1,
+          usePrior = false,
+          priorScale = 0f,
+          priorCellScale = 0f,
+          stage = "forward quarter",
+        )
+      }
       dispatchMotionLevel(
         frame0.coarseLumaTexture,
         frame1.coarseLumaTexture,
         reusable.coarseForwardTexture,
-        reusable.forwardTexture,
+        if (quarterPyramidAvailable) reusable.quarterForwardTexture else reusable.forwardTexture,
         coarseSize,
         MEDIA3_FLOW_COARSE_BLOCK_SIZE,
         MEDIA3_FLOW_COARSE_GRID_STEP,
-        MEDIA3_FLOW_COARSE_SEARCH_RADIUS,
-        priorCount = 1,
-        usePrior = false,
-        priorScale = 0f,
-        stage = "forward coarse",
+        MEDIA3_FLOW_FINE_SEARCH_RADIUS,
+        priorCount = if (quarterPyramidAvailable) 6 else 1,
+        usePrior = quarterPyramidAvailable,
+        priorScale = if (quarterPyramidAvailable) MEDIA3_FLOW_FINE_PRIOR_SCALE else 0f,
+        priorCellScale = MEDIA3_FLOW_MID_PRIOR_CELL_SCALE,
+        stage = "forward half",
       )
       dispatchMotionLevel(
         frame0.lumaTexture,
@@ -1277,6 +1303,7 @@ class Media3FlowVideoSink(
         priorCount = 6,
         usePrior = true,
         priorScale = MEDIA3_FLOW_FINE_PRIOR_SCALE,
+        priorCellScale = MEDIA3_FLOW_FINE_PRIOR_CELL_SCALE,
         stage = "forward fine",
       )
       GLES31.glMemoryBarrier(GLES31.GL_SHADER_IMAGE_ACCESS_BARRIER_BIT or GLES31.GL_TEXTURE_FETCH_BARRIER_BIT)
@@ -1285,19 +1312,37 @@ class Media3FlowVideoSink(
       stageQuery = null
 
       stageQuery = beginGpuTimerQuery(FlowGpuStage.MOTION_BACKWARD, frame0.ptsUs, frame1.ptsUs, queryGeneration)
+      if (quarterPyramidAvailable) {
+        dispatchMotionLevel(
+          frame1.quarterLumaTexture,
+          frame0.quarterLumaTexture,
+          reusable.quarterBackwardTexture,
+          reusable.coarseBackwardTexture,
+          quarterSize,
+          MEDIA3_FLOW_QUARTER_BLOCK_SIZE,
+          MEDIA3_FLOW_QUARTER_GRID_STEP,
+          MEDIA3_FLOW_QUARTER_SEARCH_RADIUS,
+          priorCount = 1,
+          usePrior = false,
+          priorScale = 0f,
+          priorCellScale = 0f,
+          stage = "backward quarter",
+        )
+      }
       dispatchMotionLevel(
         frame1.coarseLumaTexture,
         frame0.coarseLumaTexture,
         reusable.coarseBackwardTexture,
-        reusable.backwardTexture,
+        if (quarterPyramidAvailable) reusable.quarterBackwardTexture else reusable.backwardTexture,
         coarseSize,
         MEDIA3_FLOW_COARSE_BLOCK_SIZE,
         MEDIA3_FLOW_COARSE_GRID_STEP,
-        MEDIA3_FLOW_COARSE_SEARCH_RADIUS,
-        priorCount = 1,
-        usePrior = false,
-        priorScale = 0f,
-        stage = "backward coarse",
+        MEDIA3_FLOW_FINE_SEARCH_RADIUS,
+        priorCount = if (quarterPyramidAvailable) 6 else 1,
+        usePrior = quarterPyramidAvailable,
+        priorScale = if (quarterPyramidAvailable) MEDIA3_FLOW_FINE_PRIOR_SCALE else 0f,
+        priorCellScale = MEDIA3_FLOW_MID_PRIOR_CELL_SCALE,
+        stage = "backward half",
       )
       dispatchMotionLevel(
         frame1.lumaTexture,
@@ -1311,6 +1356,7 @@ class Media3FlowVideoSink(
         priorCount = 6,
         usePrior = true,
         priorScale = MEDIA3_FLOW_FINE_PRIOR_SCALE,
+        priorCellScale = MEDIA3_FLOW_FINE_PRIOR_CELL_SCALE,
         stage = "backward fine",
       )
       GLES31.glMemoryBarrier(GLES31.GL_SHADER_IMAGE_ACCESS_BARRIER_BIT or GLES31.GL_TEXTURE_FETCH_BARRIER_BIT)
@@ -1603,17 +1649,24 @@ class Media3FlowVideoSink(
     GLES31.glUniform2i(sizeLocation, processingWidth, processingHeight)
     checkGlError("luma uniform uSize", frameProbeOnly = true)
     val coarseSize = Media3FlowGeometry.coarseMotionSize(processingWidth, processingHeight)
+    val quarterSize = Media3FlowGeometry.quarterMotionSize(processingWidth, processingHeight)
     val coarseSizeLocation = GLES31.glGetUniformLocation(lumaProgram, "uCoarseSize")
     checkGlError("luma lookup uCoarseSize", frameProbeOnly = true)
     GLES31.glUniform2i(coarseSizeLocation, coarseSize.width, coarseSize.height)
     checkGlError("luma uniform uCoarseSize", frameProbeOnly = true)
+    val quarterSizeLocation = GLES31.glGetUniformLocation(lumaProgram, "uQuarterSize")
+    checkGlError("luma lookup uQuarterSize", frameProbeOnly = true)
+    GLES31.glUniform2i(quarterSizeLocation, quarterSize.width, quarterSize.height)
+    checkGlError("luma uniform uQuarterSize", frameProbeOnly = true)
     GLES31.glBindImageTexture(0, slot.lumaTexture, 0, false, 0, GLES31.GL_WRITE_ONLY, GLES30.GL_RGBA8)
     checkGlError("luma bind output image", frameProbeOnly = true)
     GLES31.glBindImageTexture(1, slot.coarseLumaTexture, 0, false, 0, GLES31.GL_WRITE_ONLY, GLES30.GL_RGBA8)
     checkGlError("luma bind coarse output image", frameProbeOnly = true)
+    GLES31.glBindImageTexture(2, slot.quarterLumaTexture, 0, false, 0, GLES31.GL_WRITE_ONLY, GLES30.GL_RGBA8)
+    checkGlError("luma bind quarter output image", frameProbeOnly = true)
     val downsampleQuery = beginGpuTimerQuery(FlowGpuStage.DOWNSAMPLE)
     try {
-      GLES31.glDispatchCompute(ceil(coarseSize.width / 8.0).toInt(), ceil(coarseSize.height / 8.0).toInt(), 1)
+      GLES31.glDispatchCompute(ceil(quarterSize.width / 8.0).toInt(), ceil(quarterSize.height / 8.0).toInt(), 1)
       checkGlError("luma dispatch", frameProbeOnly = true)
       GLES31.glMemoryBarrier(GLES31.GL_SHADER_IMAGE_ACCESS_BARRIER_BIT or GLES31.GL_TEXTURE_FETCH_BARRIER_BIT)
       checkGlError("luma barrier", frameProbeOnly = true)
@@ -1657,6 +1710,17 @@ class Media3FlowVideoSink(
     processingHeight = height
     val motionGridSize = Media3FlowGeometry.motionGridSize(width, height)
     val coarseMotionSize = Media3FlowGeometry.coarseMotionSize(width, height)
+    val quarterMotionSize = Media3FlowGeometry.quarterMotionSize(width, height)
+    val coarseGridSize = Media3FlowGeometry.motionGridSize(
+      coarseMotionSize.width, coarseMotionSize.height,
+      MEDIA3_FLOW_COARSE_BLOCK_SIZE, MEDIA3_FLOW_COARSE_GRID_STEP,
+    )
+    quarterPyramidAvailable = quarterMotionSize.width >= MEDIA3_FLOW_QUARTER_BLOCK_SIZE &&
+      quarterMotionSize.height >= MEDIA3_FLOW_QUARTER_BLOCK_SIZE
+    val quarterGridSize = if (quarterPyramidAvailable) Media3FlowGeometry.motionGridSize(
+      quarterMotionSize.width, quarterMotionSize.height,
+      MEDIA3_FLOW_QUARTER_BLOCK_SIZE, MEDIA3_FLOW_QUARTER_GRID_STEP,
+    ) else Media3FlowGridSize(0, 0)
     gridWidth = motionGridSize.width
     gridHeight = motionGridSize.height
     outputTexture = createTexture(GLES20.GL_TEXTURE_2D, sourceWidth, sourceHeight, GLES30.GL_RGBA8)
@@ -1675,14 +1739,26 @@ class Media3FlowVideoSink(
           coarseMotionSize.height,
           GLES30.GL_RGBA8,
         )
+        quarterLumaTexture = createTexture(
+          GLES20.GL_TEXTURE_2D,
+          quarterMotionSize.width,
+          quarterMotionSize.height,
+          GLES30.GL_RGBA8,
+        )
       }
     }
     repeat(MAX_MOTION_PAIRS) {
       motionPairs += MotionPairSlot().apply {
         forwardTexture = createTexture(GLES20.GL_TEXTURE_2D, gridWidth, gridHeight, GLES30.GL_RGBA16F)
         backwardTexture = createTexture(GLES20.GL_TEXTURE_2D, gridWidth, gridHeight, GLES30.GL_RGBA16F)
-        coarseForwardTexture = createTexture(GLES20.GL_TEXTURE_2D, gridWidth, gridHeight, GLES30.GL_RGBA16F)
-        coarseBackwardTexture = createTexture(GLES20.GL_TEXTURE_2D, gridWidth, gridHeight, GLES30.GL_RGBA16F)
+        coarseForwardTexture = createTexture(GLES20.GL_TEXTURE_2D, coarseGridSize.width, coarseGridSize.height, GLES30.GL_RGBA16F)
+        coarseBackwardTexture = createTexture(GLES20.GL_TEXTURE_2D, coarseGridSize.width, coarseGridSize.height, GLES30.GL_RGBA16F)
+        quarterForwardTexture = if (quarterPyramidAvailable) {
+          createTexture(GLES20.GL_TEXTURE_2D, quarterGridSize.width, quarterGridSize.height, GLES30.GL_RGBA16F)
+        } else 0
+        quarterBackwardTexture = if (quarterPyramidAvailable) {
+          createTexture(GLES20.GL_TEXTURE_2D, quarterGridSize.width, quarterGridSize.height, GLES30.GL_RGBA16F)
+        } else 0
       }
     }
     initializeCoverageBuffers()
@@ -1713,6 +1789,7 @@ class Media3FlowVideoSink(
       deleteTexture(slot.colorTexture)
       deleteTexture(slot.lumaTexture)
       deleteTexture(slot.coarseLumaTexture)
+      deleteTexture(slot.quarterLumaTexture)
     }
     framePool.clear()
     motionPairs.forEach { slot ->
@@ -1720,6 +1797,8 @@ class Media3FlowVideoSink(
       deleteTexture(slot.backwardTexture)
       deleteTexture(slot.coarseForwardTexture)
       deleteTexture(slot.coarseBackwardTexture)
+      deleteTexture(slot.quarterForwardTexture)
+      deleteTexture(slot.quarterBackwardTexture)
     }
     motionPairs.clear()
     deleteTexture(outputTexture)
@@ -2121,6 +2200,7 @@ class Media3FlowVideoSink(
         "generatedTotal=${diagnostics.generatedFrames} dropsTotal=${diagnostics.droppedFrames} " +
         "missedOutputTicksTotal=${diagnostics.missedOutputTicks} skippedTotal=${diagnostics.skippedFrames} " +
         "input=$inputSize processing=${diagnostics.processingWidth}x${diagnostics.processingHeight} " +
+        "motionPyramid=${if (quarterPyramidAvailable) "quarter>half>full" else "half>full"} " +
         "motionGrid=${diagnostics.motionGridWidth}x${diagnostics.motionGridHeight} " +
         "motionSubmitCpuMs=${formatLogFloat(diagnostics.motionEstimateSubmitMs)} " +
         "motionGpuElapsed=$gpuElapsed gpuTimerStatus=${gpuTiming.status} " +
@@ -2349,25 +2429,39 @@ class Media3FlowVideoSink(
       layout(binding = 0) uniform sampler2D uColor;
       layout(rgba8, binding = 0) writeonly uniform highp image2D uLuma;
       layout(rgba8, binding = 1) writeonly uniform highp image2D uCoarseLuma;
+      layout(rgba8, binding = 2) writeonly uniform highp image2D uQuarterLuma;
       uniform ivec2 uSize;
       uniform ivec2 uCoarseSize;
+      uniform ivec2 uQuarterSize;
       void main() {
-        ivec2 coarsePoint = ivec2(gl_GlobalInvocationID.xy);
-        if (any(greaterThanEqual(coarsePoint, uCoarseSize))) return;
-        float sum = 0.0;
-        float count = 0.0;
-        for (int y = 0; y < 2; y++) {
-          for (int x = 0; x < 2; x++) {
-            ivec2 p = coarsePoint * 2 + ivec2(x, y);
-            if (any(greaterThanEqual(p, uSize))) continue;
-            vec2 uv = (vec2(p) + vec2(0.5)) / vec2(uSize);
-            float luma = dot(texture(uColor, uv).rgb, vec3(0.2126, 0.7152, 0.0722));
-            imageStore(uLuma, p, vec4(luma, 0.0, 0.0, 1.0));
-            sum += luma;
-            count += 1.0;
+        ivec2 quarterPoint = ivec2(gl_GlobalInvocationID.xy);
+        if (any(greaterThanEqual(quarterPoint, uQuarterSize))) return;
+        float quarterSum = 0.0;
+        float quarterCount = 0.0;
+        for (int halfY = 0; halfY < 2; halfY++) {
+          for (int halfX = 0; halfX < 2; halfX++) {
+            ivec2 halfPoint = quarterPoint * 2 + ivec2(halfX, halfY);
+            if (any(greaterThanEqual(halfPoint, uCoarseSize))) continue;
+            float halfSum = 0.0;
+            float halfCount = 0.0;
+            for (int y = 0; y < 2; y++) {
+              for (int x = 0; x < 2; x++) {
+                ivec2 p = halfPoint * 2 + ivec2(x, y);
+                if (any(greaterThanEqual(p, uSize))) continue;
+                vec2 uv = (vec2(p) + vec2(0.5)) / vec2(uSize);
+                float luma = dot(texture(uColor, uv).rgb, vec3(0.2126, 0.7152, 0.0722));
+                imageStore(uLuma, p, vec4(luma, 0.0, 0.0, 1.0));
+                halfSum += luma;
+                halfCount += 1.0;
+              }
+            }
+            float halfLuma = halfSum / max(halfCount, 1.0);
+            imageStore(uCoarseLuma, halfPoint, vec4(halfLuma, 0.0, 0.0, 1.0));
+            quarterSum += halfSum;
+            quarterCount += halfCount;
           }
         }
-        imageStore(uCoarseLuma, coarsePoint, vec4(sum / max(count, 1.0), 0.0, 0.0, 1.0));
+        imageStore(uQuarterLuma, quarterPoint, vec4(quarterSum / max(quarterCount, 1.0), 0.0, 0.0, 1.0));
       }
     """
 
@@ -2387,6 +2481,7 @@ class Media3FlowVideoSink(
       uniform int uPriorCount;
       uniform int uUsePrior;
       uniform float uPriorScale;
+      uniform float uPriorCellScale;
       float blockSad(ivec2 origin, ivec2 offset, int stride) {
         float sad = 0.0;
         float samples = 0.0;
@@ -2438,10 +2533,11 @@ class Media3FlowVideoSink(
           if (seed >= uPriorCount) break;
           vec2 prediction = vec2(0.0);
           if (uUsePrior != 0 && seed < 5) {
-            ivec2 priorCell = clamp(cell + priorCellOffset(seed), ivec2(0), imageSize(uPriorFlow) - ivec2(1));
+            ivec2 mappedParent = ivec2(round(vec2(cell) * uPriorCellScale));
+            ivec2 priorCell = clamp(mappedParent + priorCellOffset(seed), ivec2(0), imageSize(uPriorFlow) - ivec2(1));
             prediction = imageLoad(uPriorFlow, priorCell).xy * uPriorScale;
           }
-          ivec2 baseOffset = ivec2(round(prediction));
+          ivec2 baseOffset = clamp(ivec2(round(prediction)), -origin, limit - origin);
           float seedBest = 1e20;
           ivec2 seedOffset = baseOffset;
           for (int dy = -uSearchRadius; dy <= uSearchRadius; dy += uSearchStep) {
@@ -2463,19 +2559,22 @@ class Media3FlowVideoSink(
 
         // The coarse winner, four neighboring coarse vectors, and zero motion remain separate fine-level hypotheses.
         float best = 1e20;
+        float secondBest = 1e20;
         ivec2 bestOffset = predictedOffset;
         for (int dy = -1; dy <= 1; dy++) {
           for (int dx = -1; dx <= 1; dx++) {
             ivec2 offset = predictedOffset + ivec2(dx, dy);
             if (!offsetIsValid(origin, offset, limit)) continue;
             float cost = blockSad(origin, offset, 1);
-            if (cost < best) { best = cost; bestOffset = offset; }
+            if (cost < best) { secondBest = best; best = cost; bestOffset = offset; }
+            else if (cost < secondBest) { secondBest = cost; }
           }
         }
         vec2 refinedOffset = vec2(bestOffset);
         refinedOffset.x += refineSubpixelAxis(origin, bestOffset, ivec2(1, 0), limit, best);
         refinedOffset.y += refineSubpixelAxis(origin, bestOffset, ivec2(0, 1), limit, best);
-        imageStore(uFlow, cell, vec4(refinedOffset, best, 1.0));
+        float uniqueness = secondBest < 1e19 ? clamp((secondBest - best) / max(secondBest, 0.0001), 0.0, 1.0) : 0.0;
+        imageStore(uFlow, cell, vec4(refinedOffset, best, uniqueness));
       }
     """
 
@@ -2572,7 +2671,8 @@ class Media3FlowVideoSink(
       float flowReliability(vec4 flow, float cycleError, float valid) {
         float consistency = 1.0 - smoothstep(CYCLE_ERROR_START, CYCLE_ERROR_END, cycleError);
         float matchQuality = 1.0 - smoothstep(MATCH_ERROR_START, MATCH_ERROR_END, flow.z);
-        return consistency * matchQuality * valid;
+        float uniqueQuality = 0.5 + 0.5 * smoothstep(0.02, 0.35, flow.w);
+        return consistency * matchQuality * uniqueQuality * valid;
       }
       // Algebraic bidirectional target-time initialization; no learned residual or visibility net.
       vec2 flowToFrame0(float t, vec2 forward, vec2 backward) {
@@ -2647,6 +2747,8 @@ class Media3FlowVideoSink(
             vec4 c1 = texture(uFrame1, uv1);
             forwardAtSource.z = max(forwardAtSource.z, forwardAtMid.z);
             backwardAtTarget.z = max(backwardAtTarget.z, backwardAtMid.z);
+            forwardAtSource.w = min(forwardAtSource.w, forwardAtMid.w);
+            backwardAtTarget.w = min(backwardAtTarget.w, backwardAtMid.w);
             float confidence0 = flowReliability(forwardAtSource, cycleError0, valid0);
             float confidence1 = flowReliability(backwardAtTarget, cycleError1, valid1);
             // Treat each endpoint as a candidate visibility source: equal confidence preserves alpha,
@@ -2665,8 +2767,24 @@ class Media3FlowVideoSink(
                 imageStore(uOutput, p, uAlpha < 0.5 ? source0 : source1);
                 pixelClass = 2u;
               } else {
-                imageStore(uOutput, p, mix(c0, c1, weight1 / weightSum));
-                pixelClass = 1u;
+                float targetAppearanceDelta = abs(
+                  dot(c0.rgb, vec3(0.2126, 0.7152, 0.0722)) -
+                  dot(c1.rgb, vec3(0.2126, 0.7152, 0.0722))
+                );
+                bool targetBoundaryConflict = targetAppearanceDelta > 0.12;
+                if (targetBoundaryConflict && confidence0 > confidence1 + 0.10) {
+                  imageStore(uOutput, p, c0);
+                  pixelClass = 1u;
+                } else if (targetBoundaryConflict && confidence1 > confidence0 + 0.10) {
+                  imageStore(uOutput, p, c1);
+                  pixelClass = 1u;
+                } else if (targetBoundaryConflict) {
+                  imageStore(uOutput, p, uAlpha < 0.5 ? source0 : source1);
+                  pixelClass = 2u;
+                } else {
+                  imageStore(uOutput, p, mix(c0, c1, weight1 / weightSum));
+                  pixelClass = 1u;
+                }
               }
             }
           }

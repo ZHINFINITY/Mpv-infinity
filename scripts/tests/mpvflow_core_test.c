@@ -25,6 +25,30 @@ static void fill_texture(uint8_t *frame, int width, int height, int rect_x)
         }
     }
 }
+static void fill_crossing_scene(uint8_t *frame, int width, int height, int second_frame)
+{
+    for (int y = 0; y < height; y++) {
+        for (int x = 0; x < width; x++) {
+            int background = 24 + ((x * 3 + y * 5) % 40);
+            size_t i = ((size_t)y * width + x) * 3;
+            frame[i] = (uint8_t)background;
+            frame[i + 1] = (uint8_t)(background + 12);
+            frame[i + 2] = (uint8_t)(background - 12);
+            int red_x = second_frame ? 60 : 20;
+            int blue_x = second_frame ? 20 : 60;
+            if (x >= red_x && x < red_x + 12 && y >= 20 && y < 36) {
+                frame[i] = 240;
+                frame[i + 1] = 38;
+                frame[i + 2] = 24;
+            }
+            if (x >= blue_x && x < blue_x + 12 && y >= 20 && y < 36) {
+                frame[i] = 24;
+                frame[i + 1] = 40;
+                frame[i + 2] = 240;
+            }
+        }
+    }
+}
 static void test_translation_is_compensated(void)
 {
     const int width = 96, height = 64;
@@ -48,6 +72,91 @@ static void test_translation_is_compensated(void)
     assert(out[center + 1] < 90);
     assert(stats.mean_motion_pixels > 0.1);
     assert(mpvflow_synthesize_rgb24(context, pair, a, b, 0.75f, out, NULL) == MPVFLOW_OK);
+    mpvflow_pair_destroy(pair);
+    mpvflow_destroy(context);
+    free(a);
+    free(b);
+    free(out);
+}
+static void test_revealed_background_does_not_extend_the_translating_object(void)
+{
+    const int width = 96, height = 64;
+    size_t bytes = (size_t)width * height * 3;
+    uint8_t *a = malloc(bytes), *b = malloc(bytes), *out = malloc(bytes);
+    assert(a && b && out);
+    fill_texture(a, width, height, 24);
+    fill_texture(b, width, height, 32);
+    MPVFlowContext *context = mpvflow_create(8, 8);
+    assert(context);
+    MPVFlowPair *pair = NULL;
+    assert(mpvflow_analyze_pair(context, a, b, width, height, &pair, NULL) == MPVFLOW_OK);
+    assert(mpvflow_synthesize_rgb24(context, pair, a, b, 0.5f, out, NULL) == MPVFLOW_OK);
+    size_t newly_revealed = ((size_t)27 * width + 20) * 3;
+    size_t translated_object = ((size_t)27 * width + 28) * 3;
+    assert(out[newly_revealed] < 120);
+    assert(out[translated_object] > 180);
+    assert(out[translated_object + 1] < 90);
+    mpvflow_pair_destroy(pair);
+    mpvflow_destroy(context);
+    free(a);
+    free(b);
+    free(out);
+}
+static void test_one_pixel_contour_stays_separate_from_background(void)
+{
+    const int width = 96, height = 64;
+    size_t bytes = (size_t)width * height * 3;
+    uint8_t *a = malloc(bytes), *b = malloc(bytes), *out = malloc(bytes);
+    assert(a && b && out);
+    fill_texture(a, width, height, 24);
+    fill_texture(b, width, height, 32);
+    for (int y = 8; y < 56; y++) {
+        size_t i = ((size_t)y * width + 12) * 3;
+        memset(a + i, 0, 3);
+        memset(b + i, 0, 3);
+    }
+    MPVFlowContext *context = mpvflow_create(8, 8);
+    assert(context);
+    MPVFlowPair *pair = NULL;
+    assert(mpvflow_analyze_pair(context, a, b, width, height, &pair, NULL) == MPVFLOW_OK);
+    assert(mpvflow_synthesize_rgb24(context, pair, a, b, 0.5f, out, NULL) == MPVFLOW_OK);
+    size_t contour = ((size_t)27 * width + 12) * 3;
+    size_t left_neighbor = ((size_t)27 * width + 11) * 3;
+    size_t right_neighbor = ((size_t)27 * width + 13) * 3;
+    assert(out[contour] < 24);
+    assert(out[left_neighbor] > 12);
+    assert(out[right_neighbor] > 12);
+    mpvflow_pair_destroy(pair);
+    mpvflow_destroy(context);
+    free(a);
+    free(b);
+    free(out);
+}
+static void test_crossing_motion_fixture_retains_both_object_appearances(void)
+{
+    const int width = 96, height = 64;
+    size_t bytes = (size_t)width * height * 3;
+    uint8_t *a = malloc(bytes), *b = malloc(bytes), *out = malloc(bytes);
+    assert(a && b && out);
+    fill_crossing_scene(a, width, height, 0);
+    fill_crossing_scene(b, width, height, 1);
+    MPVFlowContext *context = mpvflow_create(8, 8);
+    assert(context);
+    MPVFlowPair *pair = NULL;
+    struct MPVFlowStats stats = {0};
+    assert(mpvflow_analyze_pair(context, a, b, width, height, &pair, &stats) == MPVFLOW_OK);
+    assert(mpvflow_synthesize_rgb24(context, pair, a, b, 0.5f, out, NULL) == MPVFLOW_OK);
+    int red_pixels = 0, blue_pixels = 0;
+    for (int y = 20; y < 36; y++) {
+        for (int x = 15; x < 78; x++) {
+            size_t i = ((size_t)y * width + x) * 3;
+            red_pixels += out[i] > 150 && out[i + 1] < 100 && out[i + 2] < 100;
+            blue_pixels += out[i + 2] > 150 && out[i + 1] < 100 && out[i] < 100;
+        }
+    }
+    assert(stats.mean_motion_pixels > 2.0);
+    assert(red_pixels > 50);
+    assert(blue_pixels > 50);
     mpvflow_pair_destroy(pair);
     mpvflow_destroy(context);
     free(a);
@@ -194,6 +303,9 @@ static void test_adaptive_dimension_reduces_under_pressure_and_recovers_slowly(v
 int main(void)
 {
     test_translation_is_compensated();
+    test_revealed_background_does_not_extend_the_translating_object();
+    test_one_pixel_contour_stays_separate_from_background();
+    test_crossing_motion_fixture_retains_both_object_appearances();
     test_identical_frames_are_preserved();
     test_parallel_synthesis_is_deterministic();
     test_parallel_analysis_is_deterministic();

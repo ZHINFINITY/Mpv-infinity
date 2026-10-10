@@ -35,14 +35,35 @@ synthesis = shader_source("shader_synthesize")
 
 require(flow, "float(best)/(64.0*255.0)", "flow vectors must retain normalized block-match error")
 require(synthesis, "vec4 flowAtEdgeAware(vec2 p,int direction)", "synthesis must guide vector sampling by source appearance")
-require(synthesis, "layout(r32f) readonly uniform highp image2D luma0Tex;", "frame-0 luma must be available to synthesis")
-require(synthesis, "layout(r32f) readonly uniform highp image2D luma1Tex;", "frame-1 luma must be available to synthesis")
+require(synthesis, "layout(rgba16f) readonly uniform highp image2D luma0Tex;", "frame-0 luma must use the supported storage format")
+require(synthesis, "layout(rgba16f) readonly uniform highp image2D luma1Tex;", "frame-1 luma must use the supported storage format")
 require(synthesis, "cycleError0=length(f.xy+backAt0.xy)", "forward warp must be checked against reverse flow at its endpoint")
 require(synthesis, "cycleError1=length(b.xy+forwardAt1.xy)", "backward warp must be checked against forward flow at its endpoint")
 require(synthesis, "pointInBounds(a,cfg.xy)*pointInBounds(cycle0,cfg.xy)", "out-of-frame endpoint samples must be rejected")
 require(synthesis, "float confidence=max(confidence0,confidence1)", "visibility must retain the more reliable endpoint")
 require(synthesis, "weight0=(1.0-timestep)*visibility0,weight1=timestep*visibility1", "visible endpoint weights must preserve temporal alpha")
-require(synthesis, "return cycleQuality*matchQuality*valid;", "endpoint reliability must not share a photometric occlusion penalty")
+require(synthesis, "return cycleQuality*matchQuality*uniqueQuality*valid;", "endpoint reliability must include match uniqueness")
+require(flow, "float(second-best)/max(float(second),1.0)", "flow vectors must report best-vs-runner-up match uniqueness")
+require(flow, "refineAxis(p,bestVector,ivec2(1,0)", "GPU flow vectors must be fractionally refined")
+require(flow, "center=clamp(center,-p,sz-ivec2(8)-p)", "coarse predictors must be clamped before border-local refinement")
+require(synthesis, "bool boundaryConflict=lumaDelta>0.12", "target-time synthesis must classify conflicting endpoint appearances")
+require(synthesis, "if(boundaryConflict&&confidence0>confidence1+0.10)", "motion-boundary synthesis must select the more reliable visible source")
+require(SOURCE, 'pl_find_named_fmt(gpu, "rgba16f")', "MPV Flow must use the supported RGBA16F storage path")
+assert "r32f" not in SOURCE.lower(), "MPV Flow must not require the optional R32F image format"
+
+def boundary_source(alpha: float, luma0: float, luma1: float, confidence0: float, confidence1: float):
+    """Small synthetic reference for the shader's contour visibility decision."""
+    if abs(luma0 - luma1) > 0.12:
+        if confidence0 > confidence1 + 0.10:
+            return 0
+        if confidence1 > confidence0 + 0.10:
+            return 1
+        return 0 if alpha < 0.5 else 1
+    return None
+
+assert boundary_source(0.5, 0.9, 0.1, 0.9, 0.3) == 0, "revealed foreground must prefer its reliable endpoint"
+assert boundary_source(0.75, 0.9, 0.1, 0.6, 0.6) == 1, "ambiguous crossing contours must avoid blending and use the nearer source"
+assert boundary_source(0.5, 0.31, 0.34, 0.8, 0.8) is None, "similar appearances must preserve ordinary temporal blending"
 require(SOURCE, '.name = "luma0Tex", .type = PL_DESC_STORAGE_IMG, .binding = 3', "frame-0 luma descriptor binding mismatch")
 require(SOURCE, '.name = "luma1Tex", .type = PL_DESC_STORAGE_IMG, .binding = 4', "frame-1 luma descriptor binding mismatch")
 require(SOURCE, '.name = "outTex", .type = PL_DESC_STORAGE_IMG, .binding = 5', "synthesis output descriptor binding mismatch")

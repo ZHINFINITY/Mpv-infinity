@@ -18,6 +18,11 @@ internal const val MEDIA3_FLOW_SEARCH_CANDIDATE_STEP = 2
 internal const val MEDIA3_FLOW_COARSE_SEARCH_RADIUS = 4
 internal const val MEDIA3_FLOW_FINE_SEARCH_RADIUS = 2
 internal const val MEDIA3_FLOW_FINE_PRIOR_SCALE = 2f
+internal const val MEDIA3_FLOW_QUARTER_BLOCK_SIZE = 8
+internal const val MEDIA3_FLOW_QUARTER_GRID_STEP = 6
+internal const val MEDIA3_FLOW_QUARTER_SEARCH_RADIUS = 4
+internal const val MEDIA3_FLOW_MID_PRIOR_CELL_SCALE = 0.25f
+internal const val MEDIA3_FLOW_FINE_PRIOR_CELL_SCALE = 1f
 internal const val MEDIA3_FLOW_SUBPIXEL_MIN_CURVATURE = 0.00001f
 internal const val MEDIA3_FLOW_VISIBILITY_CONFIDENCE_START = 0.15f
 internal const val MEDIA3_FLOW_VISIBILITY_CONFIDENCE_END = 0.45f
@@ -59,13 +64,19 @@ internal object Media3FlowGeometry {
     )
   }
 
-  fun motionGridSize(processingWidth: Int, processingHeight: Int): Media3FlowGridSize {
-    require(processingWidth >= MEDIA3_FLOW_BLOCK_SIZE && processingHeight >= MEDIA3_FLOW_BLOCK_SIZE) {
+  fun motionGridSize(
+    processingWidth: Int,
+    processingHeight: Int,
+    blockSize: Int = MEDIA3_FLOW_BLOCK_SIZE,
+    gridStep: Int = MEDIA3_FLOW_GRID_STEP,
+  ): Media3FlowGridSize {
+    require(blockSize > 0 && gridStep > 0) { "Motion block and grid step must be positive" }
+    require(processingWidth >= blockSize && processingHeight >= blockSize) {
       "Processing dimensions must fit a motion block"
     }
     return Media3FlowGridSize(
-      width = (processingWidth - MEDIA3_FLOW_BLOCK_SIZE) / MEDIA3_FLOW_GRID_STEP + 1,
-      height = (processingHeight - MEDIA3_FLOW_BLOCK_SIZE) / MEDIA3_FLOW_GRID_STEP + 1,
+      width = (processingWidth - blockSize) / gridStep + 1,
+      height = (processingHeight - blockSize) / gridStep + 1,
     )
   }
 
@@ -73,6 +84,18 @@ internal object Media3FlowGeometry {
   fun coarseMotionSize(processingWidth: Int, processingHeight: Int): Media3FlowMotionSize {
     require(processingWidth > 0 && processingHeight > 0) { "Processing dimensions must be positive" }
     return Media3FlowMotionSize((processingWidth + 1) / 2, (processingHeight + 1) / 2)
+  }
+
+  /** A 4× box-reduced level for wider-range motion hypotheses. */
+  fun quarterMotionSize(processingWidth: Int, processingHeight: Int): Media3FlowMotionSize {
+    require(processingWidth > 0 && processingHeight > 0) { "Processing dimensions must be positive" }
+    return Media3FlowMotionSize((processingWidth + 3) / 4, (processingHeight + 3) / 4)
+  }
+
+  /** Child cell index projected into a parent grid after the 2× pyramid scale change. */
+  fun priorCellScale(childGridStep: Int, parentGridStep: Int): Float {
+    require(childGridStep > 0 && parentGridStep > 0) { "Grid steps must be positive" }
+    return childGridStep / (2f * parentGridStep)
   }
 
   /** Block-matching vectors describe the center of each sampled patch, not its top-left corner. */
