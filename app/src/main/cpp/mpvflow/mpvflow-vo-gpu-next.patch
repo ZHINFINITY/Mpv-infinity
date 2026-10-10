@@ -79,7 +79,7 @@ index bd3d1aa1ec..e5301791b7 100644
      struct osd_state subs;
      uint64_t osd_sync;
      struct ra_hwdec *hwdec;
-@@ -567,6 +587,185 @@ struct frame_priv {
+@@ -567,6 +587,208 @@ struct frame_priv {
      struct pl_frame el_frame;
  };
  
@@ -288,7 +288,7 @@ index bd3d1aa1ec..e5301791b7 100644
  static int plane_data_from_imgfmt(struct pl_plane_data out_data[4],
                                    struct pl_bit_encoding *out_bits,
                                    enum mp_imgfmt imgfmt, bool use_uint)
-@@ -1107,6 +1279,8 @@ static bool map_frame(pl_gpu gpu, pl_tex *tex, const struct pl_source_frame *src
+@@ -1107,6 +1302,8 @@ static bool map_frame(pl_gpu gpu, pl_tex *tex, const struct pl_source_frame *src
      update_lut(p, &p->next_opts->image_lut);
      frame->lut = p->next_opts->image_lut.lut;
      frame->lut_type = p->next_opts->image_lut.type;
@@ -297,7 +297,7 @@ index bd3d1aa1ec..e5301791b7 100644
      return true;
  }
  
-@@ -1116,6 +1289,7 @@ static void unmap_frame(pl_gpu gpu, struct pl_frame *frame,
+@@ -1116,6 +1312,7 @@ static void unmap_frame(pl_gpu gpu, struct pl_frame *frame,
      struct mp_image *mpi = src->frame_data;
      struct frame_priv *fp = mpi->priv;
      struct priv *p = fp->vo->priv;
@@ -305,7 +305,7 @@ index bd3d1aa1ec..e5301791b7 100644
      for (int i = 0; i < MP_ARRAY_SIZE(fp->subs.entries); i++) {
          pl_tex tex = fp->subs.entries[i].tex;
          if (tex)
-@@ -1133,6 +1307,8 @@ static void unmap_frame(pl_gpu gpu, struct pl_frame *frame,
+@@ -1133,6 +1330,8 @@ static void unmap_frame(pl_gpu gpu, struct pl_frame *frame,
  static void discard_frame(const struct pl_source_frame *src)
  {
      struct mp_image *mpi = src->frame_data;
@@ -314,7 +314,7 @@ index bd3d1aa1ec..e5301791b7 100644
      talloc_free(mpi);
  }
  
-@@ -1339,6 +1515,156 @@ static void update_tm_viz(struct pl_color_map_params *params,
+@@ -1339,6 +1538,156 @@ static void update_tm_viz(struct pl_color_map_params *params,
  static void update_hook_opts_dynamic(struct priv *p, const struct pl_hook *hook,
                                       const struct mp_image *mpi);
  
@@ -471,7 +471,7 @@ index bd3d1aa1ec..e5301791b7 100644
  static bool draw_frame(struct vo *vo, struct vo_frame *frame)
  {
      struct priv *p = vo->priv;
-@@ -1401,6 +1701,7 @@ static bool draw_frame(struct vo *vo, struct vo_frame *frame)
+@@ -1401,6 +1724,7 @@ static bool draw_frame(struct vo *vo, struct vo_frame *frame)
          int id = frame->frame_id + n;
  
          if (p->want_reset) {
@@ -479,7 +479,7 @@ index bd3d1aa1ec..e5301791b7 100644
              pl_queue_reset(p->queue);
              p->last_pts = 0.0;
              p->last_id = 0;
-@@ -1420,6 +1721,7 @@ static bool draw_frame(struct vo *vo, struct vo_frame *frame)
+@@ -1420,6 +1744,7 @@ static bool draw_frame(struct vo *vo, struct vo_frame *frame)
          struct frame_priv *fp = talloc_zero(mpi, struct frame_priv);
          mpi->priv = fp;
          fp->vo = vo;
@@ -487,7 +487,7 @@ index bd3d1aa1ec..e5301791b7 100644
  
          pl_queue_push(p->queue, &(struct pl_source_frame) {
              .pts = mpi->pts,
-@@ -1749,7 +2051,10 @@ static bool draw_frame(struct vo *vo, struct vo_frame *frame)
+@@ -1749,7 +2074,10 @@ static bool draw_frame(struct vo *vo, struct vo_frame *frame)
  
      // Render frame
      stats_time_start(p->stats, "render");
@@ -499,7 +499,7 @@ index bd3d1aa1ec..e5301791b7 100644
      stats_time_end(p->stats, "render");
      if (!render_ok) {
          MP_ERR(vo, "Failed rendering frame!\n");
-@@ -1777,7 +2082,8 @@ static bool draw_frame(struct vo *vo, struct vo_frame *frame)
+@@ -1777,7 +2105,8 @@ static bool draw_frame(struct vo *vo, struct vo_frame *frame)
      }
      mp_mutex_unlock(&vo->params_mutex);
  
@@ -509,7 +509,7 @@ index bd3d1aa1ec..e5301791b7 100644
      valid = true;
      // fall through
  
-@@ -2464,6 +2770,10 @@ static void uninit(struct vo *vo)
+@@ -2464,6 +2793,10 @@ static void uninit(struct vo *vo)
          pl_gpu_finish(p->gpu);
  
      pl_queue_destroy(&p->queue); // destroy this first
@@ -520,7 +520,7 @@ index bd3d1aa1ec..e5301791b7 100644
      for (int i = 0; i < MP_ARRAY_SIZE(p->osd_state.entries); i++)
          pl_tex_destroy(p->gpu, &p->osd_state.entries[i].tex);
      for (int i = 0; i < p->num_sub_tex; i++)
-@@ -2844,6 +3154,7 @@ static void update_render_options(struct vo *vo)
+@@ -2844,6 +3177,7 @@ static void update_render_options(struct vo *vo)
      struct priv *p = vo->priv;
      pl_options pars = p->pars;
      const struct gl_video_opts *opts = p->opts_cache->opts;
@@ -528,7 +528,7 @@ index bd3d1aa1ec..e5301791b7 100644
      pars->params.background_color[0] = opts->background_color.r / 255.0;
      pars->params.background_color[1] = opts->background_color.g / 255.0;
      pars->params.background_color[2] = opts->background_color.b / 255.0;
-@@ -2875,7 +3186,8 @@ static void update_render_options(struct vo *vo)
+@@ -2875,7 +3209,8 @@ static void update_render_options(struct vo *vo)
      pars->params.upscaler = map_scaler(p, SCALER_SCALE);
      pars->params.downscaler = map_scaler(p, SCALER_DSCALE);
      pars->params.plane_upscaler = map_scaler(p, SCALER_CSCALE);
