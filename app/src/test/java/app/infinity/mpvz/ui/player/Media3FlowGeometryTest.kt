@@ -167,10 +167,12 @@ class Media3FlowGeometryTest {
     val atFrame0 = Media3FlowGeometry.targetTimeEndpointOffsets(0f, forward, backward)
     val atFrame1 = Media3FlowGeometry.targetTimeEndpointOffsets(1f, forward, backward)
 
-    assertEquals(Media3FlowVector(0f, 0f), atFrame0.frame0)
+    assertEquals(0f, atFrame0.frame0.x, 0.0001f)
+    assertEquals(0f, atFrame0.frame0.y, 0.0001f)
     assertEquals(forward, atFrame0.frame1)
     assertEquals(backward, atFrame1.frame0)
-    assertEquals(Media3FlowVector(0f, 0f), atFrame1.frame1)
+    assertEquals(0f, atFrame1.frame1.x, 0.0001f)
+    assertEquals(0f, atFrame1.frame1.y, 0.0001f)
   }
 
   private fun smoothstep(edge0: Float, edge1: Float, value: Float): Float {
