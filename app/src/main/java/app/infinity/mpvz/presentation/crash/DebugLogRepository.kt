@@ -21,6 +21,7 @@ import java.util.Locale
 internal const val DEBUG_LOG_ENTRY_LIMIT = 1_500
 private const val RIFE_DIAGNOSTIC_ENTRY_RESERVE = 500
 private const val MPVFLOW_DIAGNOSTIC_ENTRY_RESERVE = 500
+private const val NATIVE_MEDIA3_FLOW_DIAGNOSTIC_ENTRY_RESERVE = 250
 
 internal enum class DebugLogLevel(
   val code: String,
@@ -304,7 +305,11 @@ internal fun retainDebugLogEntries(entries: List<DebugLogEntry>): List<DebugLogE
     entries
       .filter(DebugLogEntry::isMpvFlowDiagnostic)
       .takeLast(MPVFLOW_DIAGNOSTIC_ENTRY_RESERVE)
-  val diagnostics = (rifeDiagnostics + mpvFlowDiagnostics).distinctBy(DebugLogEntry::id)
+  val nativeMedia3FlowDiagnostics =
+    entries
+      .filter(DebugLogEntry::isNativeMedia3FlowDiagnostic)
+      .takeLast(NATIVE_MEDIA3_FLOW_DIAGNOSTIC_ENTRY_RESERVE)
+  val diagnostics = (rifeDiagnostics + mpvFlowDiagnostics + nativeMedia3FlowDiagnostics).distinctBy(DebugLogEntry::id)
   val recentCapacity = (DEBUG_LOG_ENTRY_LIMIT - diagnostics.size).coerceAtLeast(0)
   return (entries.takeLast(recentCapacity) + diagnostics)
     .distinctBy(DebugLogEntry::id)
@@ -319,7 +324,12 @@ internal fun DebugLogEntry.isRifeDiagnostic(): Boolean =
 internal fun DebugLogEntry.isMpvFlowDiagnostic(): Boolean =
   tag.contains("vf_mpvflow", ignoreCase = true) ||
     message.contains("MPVFLOW_DIAGNOSTIC", ignoreCase = true) ||
+    message.contains("MPVFLOW_GPU_DIAGNOSTIC", ignoreCase = true) ||
     message.contains("vf_mpvflow", ignoreCase = true)
+
+internal fun DebugLogEntry.isNativeMedia3FlowDiagnostic(): Boolean =
+  message.contains("media3_flow_route", ignoreCase = true) ||
+    message.contains("flow_summary", ignoreCase = true)
 
 internal fun formatMpvFlowTimingSummary(entries: List<DebugLogEntry>): String {
   val pair =

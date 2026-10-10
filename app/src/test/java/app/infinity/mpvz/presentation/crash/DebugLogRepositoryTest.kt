@@ -159,6 +159,80 @@ class DebugLogRepositoryTest {
   }
 
   @Test
+  fun classifiesAndPreservesMpvGpuFlowRuntimeDiagnostics() {
+    val rendererEntries =
+      listOf(
+        "MPVFLOW_GPU_DIAGNOSTIC event=init state=initialized backend=vulkan-spirv target_fps=120 reason=ready",
+        "MPVFLOW_GPU_DIAGNOSTIC event=active state=synthesized backend=vulkan-spirv target_fps=120 reason=motion_pair",
+        "MPVFLOW_DIAGNOSTIC event=config requested_enabled=true runtime_state=not_verified",
+      ).mapIndexed { index, message ->
+        DebugLogEntry(
+          id = "renderer-$index",
+          timeMillis = index.toLong(),
+          timestamp = "00:00:00.000",
+          level = DebugLogLevel.Info,
+          tag = "mpv",
+          message = message,
+        )
+      }
+    val recentEntries =
+      (0 until DEBUG_LOG_ENTRY_LIMIT).map { index ->
+        DebugLogEntry(
+          id = "recent-$index",
+          timeMillis = 10L + index,
+          timestamp = "00:00:00.000",
+          level = DebugLogLevel.Info,
+          tag = "Playback",
+          message = "routine playback log $index",
+        )
+      }
+
+    val retained = retainDebugLogEntries(rendererEntries + recentEntries)
+
+    assertEquals(3, rendererEntries.count(DebugLogEntry::isMpvFlowDiagnostic))
+    assertEquals(3, retained.count(DebugLogEntry::isMpvFlowDiagnostic))
+    assertTrue(retained.any { it.id == "renderer-0" })
+    assertTrue(retained.any { it.id == "renderer-1" })
+    assertTrue(retained.any { it.id == "renderer-2" })
+  }
+
+  @Test
+  fun classifiesAndPreservesNativeMedia3FlowRouteAndSummary() {
+    val flowEntries =
+      listOf(
+        "media3_flow_route enabled=true state=ready reason=selected",
+        "flow_summary backend=vulkan-spirv state=passthrough bypass=hdr target_fps=120",
+      ).mapIndexed { index, message ->
+        DebugLogEntry(
+          id = "media3-flow-$index",
+          timeMillis = index.toLong(),
+          timestamp = "00:00:00.000",
+          level = DebugLogLevel.Info,
+          tag = "Mpv∞-Media3",
+          message = message,
+        )
+      }
+    val recentEntries =
+      (0 until DEBUG_LOG_ENTRY_LIMIT).map { index ->
+        DebugLogEntry(
+          id = "media3-recent-$index",
+          timeMillis = 10L + index,
+          timestamp = "00:00:00.000",
+          level = DebugLogLevel.Info,
+          tag = "Playback",
+          message = "routine playback log $index",
+        )
+      }
+
+    val retained = retainDebugLogEntries(flowEntries + recentEntries)
+
+    assertEquals(2, flowEntries.count(DebugLogEntry::isNativeMedia3FlowDiagnostic))
+    assertEquals(2, retained.count(DebugLogEntry::isNativeMedia3FlowDiagnostic))
+    assertTrue(retained.any { it.id == "media3-flow-0" })
+    assertTrue(retained.any { it.id == "media3-flow-1" })
+  }
+
+  @Test
   fun formatsMeasuredPairCostWithoutCallingItDisplayedFrameRate() {
     val entry =
       DebugLogEntry(

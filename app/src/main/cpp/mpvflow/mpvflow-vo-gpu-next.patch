@@ -2,11 +2,12 @@ diff --git a/video/out/vo_gpu_next.c b/video/out/vo_gpu_next.c
 index bd3d1aa1ec..e5301791b7 100644
 --- a/video/out/vo_gpu_next.c
 +++ b/video/out/vo_gpu_next.c
-@@ -19,6 +19,7 @@
+@@ -19,6 +19,8 @@
  
  #include <sys/stat.h>
  #include <time.h>
 +#include <math.h>
++#include <string.h>
  
  #include <libplacebo/colorspace.h>
  #include <libplacebo/options.h>
@@ -18,7 +19,7 @@ index bd3d1aa1ec..e5301791b7 100644
  
  #if HAVE_GL && defined(PL_HAVE_OPENGL)
  #include <libplacebo/opengl.h>
-@@ -155,6 +157,14 @@ struct priv {
+@@ -155,6 +157,16 @@ struct priv {
      bool frame_pending;
      bool paused;
  
@@ -29,11 +30,13 @@ index bd3d1aa1ec..e5301791b7 100644
 +    pl_fmt flow_input_fmt;
 +    bool flow_init_logged;
 +    bool flow_active_logged;
++    bool flow_init_attempted;
++    unsigned int flow_bypass_logged_mask;
 +
      pl_options pars;
      struct m_config_cache *opts_cache;
      struct m_config_cache *next_opts_cache;
-@@ -182,8 +192,11 @@ struct priv {
+@@ -182,8 +192,12 @@ struct priv {
  
  static void update_render_options(struct vo *vo);
  static void update_lut(struct priv *p, struct user_lut *lut);
@@ -42,23 +45,26 @@ index bd3d1aa1ec..e5301791b7 100644
  struct gl_next_opts {
 +    bool mpvflow;
 +    int mpvflow_max_dimension;
++    int mpvflow_target_fps;
      bool delayed_peak;
      int sub_hdr_peak;
      int image_subs_hdr_peak;
-@@ -211,6 +224,8 @@ const struct m_opt_choice_alternatives lut_types[] = {
+@@ -211,6 +224,9 @@ const struct m_opt_choice_alternatives lut_types[] = {
  #define OPT_BASE_STRUCT struct gl_next_opts
  const struct m_sub_options gl_next_conf = {
      .opts = (const struct m_option[]) {
 +        {"mpvflow", OPT_BOOL(mpvflow)},
 +        {"mpvflow-max-dimension", OPT_INT(mpvflow_max_dimension), M_RANGE(8, 640)},
++        {"mpvflow-target-fps", OPT_INT(mpvflow_target_fps), M_RANGE(1, 240)},
          {"sub-hdr-peak", OPT_CHOICE(sub_hdr_peak, {"auto", 0}, {"sdr", PL_COLOR_SDR_WHITE}),
              M_RANGE(10, 10000)},
          {"image-subs-hdr-peak", OPT_CHOICE(image_subs_hdr_peak, {"sdr", PL_COLOR_SDR_WHITE},
-@@ -237,6 +252,7 @@ const struct m_sub_options gl_next_conf = {
+@@ -237,6 +252,8 @@ const struct m_sub_options gl_next_conf = {
          {0},
      },
      .defaults = &(struct gl_next_opts) {
 +        .mpvflow_max_dimension = 640,
++        .mpvflow_target_fps = 60,
          .border_background = BACKGROUND_COLOR,
          .background_blur_radius = 16.0f,
          .inter_preserve = true,
@@ -73,7 +79,7 @@ index bd3d1aa1ec..e5301791b7 100644
      struct osd_state subs;
      uint64_t osd_sync;
      struct ra_hwdec *hwdec;
-@@ -567,6 +587,158 @@ struct frame_priv {
+@@ -567,6 +587,185 @@ struct frame_priv {
      struct pl_frame el_frame;
  };
  
@@ -96,9 +102,6 @@ index bd3d1aa1ec..e5301791b7 100644
 +static void flow_update_context(struct vo *vo)
 +{
 +    struct priv *p = vo->priv;
-+    if (!p->gpu)
-+        return;
-+
 +    if (!p->next_opts->mpvflow) {
 +        flow_release_pair(p);
 +        mpvflow_gpu_destroy(p->flow_gpu);
@@ -106,10 +109,22 @@ index bd3d1aa1ec..e5301791b7 100644
 +        p->flow_input_fmt = NULL;
 +        p->flow_init_logged = false;
 +        p->flow_active_logged = false;
++        p->flow_init_attempted = false;
++        p->flow_bypass_logged_mask = 0;
 +        return;
 +    }
-+    if (p->flow_gpu)
++    if (p->flow_gpu || p->flow_init_attempted)
 +        return;
++    if (!p->gpu) {
++        if (!p->flow_init_logged) {
++            MP_WARN(vo, "MPVFLOW_DIAGNOSTIC event=renderer_init state=unavailable "
++                    "backend=unavailable target_fps=%d reason=gpu_context_missing cpu_fallback=no\n",
++                    p->next_opts->mpvflow_target_fps);
++            p->flow_init_logged = true;
++        }
++        return;
++    }
++    p->flow_init_attempted = true;
 +
 +    struct MPVFlowGPUConfig config = {
 +        .max_dimension = 640,
@@ -121,22 +136,40 @@ index bd3d1aa1ec..e5301791b7 100644
 +                                   PL_FMT_CAP_SAMPLEABLE | PL_FMT_CAP_RENDERABLE);
 +    if (!ctx || !input_fmt) {
 +        mpvflow_gpu_destroy(ctx);
-+        if (!p->flow_init_logged) {
-+            MP_WARN(vo, "MPVFLOW_GPU_DIAGNOSTIC event=init enabled=yes status=%d input_rgba8=%d; "
-+                    "Flow will pass source frames through without CPU fallback.\n",
-+                    status, !!input_fmt);
-+            p->flow_init_logged = true;
-+        }
++        const char *backend = p->gpu->glsl.vulkan ? "vulkan" : "non_vulkan";
++        const char *reason = !ctx ? "gpu_compute_initialization_failed" : "input_rgba8_format_unavailable";
++        MP_WARN(vo, "MPVFLOW_DIAGNOSTIC event=renderer_init state=unavailable backend=%s "
++                "target_fps=%d reason=%s status=%d input_rgba8=%d cpu_fallback=no\n",
++                backend, p->next_opts->mpvflow_target_fps, reason, status, !!input_fmt);
++        p->flow_init_logged = true;
 +        return;
 +    }
 +
 +    p->flow_gpu = ctx;
 +    p->flow_input_fmt = input_fmt;
 +    p->flow_init_logged = true;
-+    MP_INFO(vo, "MPVFLOW_GPU_DIAGNOSTIC event=init enabled=yes backend=vulkan-spirv "
-+            "compute=yes max_dimension=%d search_radius=%d "
++    MP_INFO(vo, "MPVFLOW_DIAGNOSTIC event=renderer_init state=initialized backend=vulkan-spirv "
++            "target_fps=%d reason=ready status=0 max_dimension=%d search_radius=%d "
 +            "cpu_filter=no cpu_readback=no\n",
-+            p->next_opts->mpvflow_max_dimension, config.search_radius);
++            p->next_opts->mpvflow_target_fps, p->next_opts->mpvflow_max_dimension,
++            config.search_radius);
++}
++
++static void flow_log_passthrough(struct vo *vo, const char *reason, int status)
++{
++    struct priv *p = vo->priv;
++    unsigned int reason_class =
++        !strcmp(reason, "no_temporal_pair") ? 1u :
++        !strcmp(reason, "gpu_context_unavailable") ? 2u :
++        !strcmp(reason, "no_source_frame") ? 4u : 8u;
++    if (p->flow_bypass_logged_mask & reason_class)
++        return;
++    p->flow_bypass_logged_mask |= reason_class;
++    const char *backend = p->flow_gpu ? "vulkan-spirv" :
++        (p->gpu ? (p->gpu->glsl.vulkan ? "vulkan" : "non_vulkan") : "unavailable");
++    MP_INFO(vo, "MPVFLOW_DIAGNOSTIC event=output state=passthrough backend=%s "
++            "target_fps=%d reason=%s status=%d cpu_fallback=no\n",
++            backend, p->next_opts->mpvflow_target_fps, reason, status);
 +}
 +
 +static bool flow_prepare_input(struct vo *vo, struct pl_frame *frame,
@@ -172,7 +205,7 @@ index bd3d1aa1ec..e5301791b7 100644
 +    if (!reason && (source_w < 8 || source_h < 8))
 +        reason = "dimensions_below_block_size";
 +    if (reason) {
-+        MP_DBG(vo, "MPVFLOW_GPU_DIAGNOSTIC event=bypass reason=%s\n", reason);
++        MP_DBG(vo, "MPVFLOW_DIAGNOSTIC component=gpu event=bypass reason=%s\n", reason);
 +        return false;
 +    }
 +
@@ -188,7 +221,7 @@ index bd3d1aa1ec..e5301791b7 100644
 +        .renderable = true,
 +    ));
 +    if (!texture) {
-+        MP_DBG(vo, "MPVFLOW_GPU_DIAGNOSTIC event=bypass reason=input_texture_allocation\n");
++        MP_DBG(vo, "MPVFLOW_DIAGNOSTIC component=gpu event=bypass reason=input_texture_allocation\n");
 +        return false;
 +    }
 +
@@ -207,7 +240,7 @@ index bd3d1aa1ec..e5301791b7 100644
 +    stats_time_end(p->stats, "mpvflow-input");
 +    if (!ok) {
 +        pl_tex_destroy(p->gpu, &texture);
-+        MP_DBG(vo, "MPVFLOW_GPU_DIAGNOSTIC event=bypass reason=input_render\n");
++        MP_DBG(vo, "MPVFLOW_DIAGNOSTIC component=gpu event=bypass reason=input_render\n");
 +        return false;
 +    }
 +
@@ -232,10 +265,11 @@ index bd3d1aa1ec..e5301791b7 100644
  static int plane_data_from_imgfmt(struct pl_plane_data out_data[4],
                                    struct pl_bit_encoding *out_bits,
                                    enum mp_imgfmt imgfmt, bool use_uint)
-@@ -1107,6 +1279,7 @@ static bool map_frame(pl_gpu gpu, pl_tex *tex, const struct pl_source_frame *src
+@@ -1107,6 +1279,8 @@ static bool map_frame(pl_gpu gpu, pl_tex *tex, const struct pl_source_frame *src
      update_lut(p, &p->next_opts->image_lut);
      frame->lut = p->next_opts->image_lut.lut;
      frame->lut_type = p->next_opts->image_lut.type;
++    flow_update_context(vo);
 +    flow_prepare_input(vo, frame, mpi, fp);
      return true;
  }
@@ -257,7 +291,7 @@ index bd3d1aa1ec..e5301791b7 100644
      talloc_free(mpi);
  }
  
-@@ -1339,6 +1515,130 @@ static void update_tm_viz(struct pl_color_map_params *params,
+@@ -1339,6 +1515,156 @@ static void update_tm_viz(struct pl_color_map_params *params,
  static void update_hook_opts_dynamic(struct priv *p, const struct pl_hook *hook,
                                       const struct mp_image *mpi);
  
@@ -268,6 +302,9 @@ index bd3d1aa1ec..e5301791b7 100644
 +{
 +    struct priv *p = vo->priv;
 +    *synthesized = false;
++    flow_update_context(vo);
++    const char *bypass_reason = p->flow_gpu ? "no_temporal_pair" : "gpu_context_unavailable";
++    int bypass_status = MPVFLOW_GPU_OK;
 +
 +    int nearest = -1;
 +    int before = -1;
@@ -302,8 +339,17 @@ index bd3d1aa1ec..e5301791b7 100644
 +        float par1 = image1->pixel_aspect_ratio > 0 ? image1->pixel_aspect_ratio : 1.0f;
 +        bool metadata_compatible = pl_color_space_equal(&image0->color, &image1->color) &&
 +            fabsf(par0 - par1) < 0.0001f;
-+        if (!metadata_compatible)
-+            MP_DBG(vo, "MPVFLOW_GPU_DIAGNOSTIC event=bypass reason=incompatible_pair_metadata\n");
++        if (!metadata_compatible) {
++            bypass_reason = "incompatible_pair_metadata";
++            MP_DBG(vo, "MPVFLOW_DIAGNOSTIC component=gpu event=bypass reason=incompatible_pair_metadata\n");
++        } else if (!fp0 || !fp1) {
++            bypass_reason = "frame_metadata_unavailable";
++        } else if (!fp0->flow_input || !fp1->flow_input) {
++            bypass_reason = "input_unavailable";
++        } else if (fp0->flow_w != fp1->flow_w || fp0->flow_h != fp1->flow_h ||
++                   fp0->flow_source_w != fp1->flow_source_w || fp0->flow_source_h != fp1->flow_source_h) {
++            bypass_reason = "incompatible_input_dimensions";
++        }
 +
 +        if (t > 0.0f && t < 1.0f && fp0 && fp1 && metadata_compatible &&
 +            fp0->flow_input && fp1->flow_input &&
@@ -323,7 +369,9 @@ index bd3d1aa1ec..e5301791b7 100644
 +                    p->flow_pair_ids[0] = fp0->frame_id;
 +                    p->flow_pair_ids[1] = fp1->frame_id;
 +                } else {
-+                    MP_DBG(vo, "MPVFLOW_GPU_DIAGNOSTIC event=bypass reason=pair_analysis status=%d\n",
++                    bypass_reason = "pair_analysis_failed";
++                    bypass_status = status;
++                    MP_DBG(vo, "MPVFLOW_DIAGNOSTIC component=gpu event=bypass reason=pair_analysis status=%d\n",
 +                           status);
 +                }
 +            }
@@ -360,9 +408,10 @@ index bd3d1aa1ec..e5301791b7 100644
 +                    stats_time_end(p->stats, "mpvflow-render");
 +                    if (ok) {
 +                        if (!p->flow_active_logged) {
-+                            MP_INFO(vo, "MPVFLOW_GPU_DIAGNOSTIC event=active backend=vulkan-spirv "
-+                                    "input_path=%s source=%dx%d processing=%dx%d "
-+                                    "motion=yes synthesized=yes cpu_filter=no cpu_readback=no\n",
++                            MP_INFO(vo, "MPVFLOW_DIAGNOSTIC event=output state=synthesized backend=vulkan-spirv "
++                                    "target_fps=%d reason=motion_pair input_path=%s source=%dx%d processing=%dx%d "
++                                    "motion=yes cpu_filter=no cpu_readback=no\n",
++                                    p->next_opts->mpvflow_target_fps,
 +                                    fp0->hwdec ? "direct-hw-surface" : "software-upload",
 +                                    fp0->flow_source_w, fp0->flow_source_h,
 +                                    fp0->flow_w, fp0->flow_h);
@@ -371,18 +420,29 @@ index bd3d1aa1ec..e5301791b7 100644
 +                        *synthesized = true;
 +                        return true;
 +                    }
-+                    MP_DBG(vo, "MPVFLOW_GPU_DIAGNOSTIC event=bypass reason=synthesized_render\n");
++                    bypass_reason = "synthesized_output_render_failed";
++                    MP_DBG(vo, "MPVFLOW_DIAGNOSTIC component=gpu event=bypass reason=synthesized_render\n");
++                } else {
++                    bypass_reason = output ? "synthesis_failed" : "synthesis_output_missing";
++                    bypass_status = status;
++                }
 +                }
 +            }
 +        }
-+    }
 +
 +    // This is a direct source-frame pass-through, not the CPU `vf_mpvflow`
 +    // filter and not mpv's temporal blend fallback.
-+    MP_DBG(vo, "MPVFLOW_GPU_DIAGNOSTIC event=bypass reason=no_usable_gpu_pair\n");
-+    if (nearest >= 0)
-+        return pl_render_image(p->rr, mix->frames[nearest], target, params);
-+    return pl_render_image(p->rr, NULL, target, params);
++    MP_DBG(vo, "MPVFLOW_DIAGNOSTIC component=gpu event=bypass reason=no_usable_gpu_pair\n");
++    if (nearest >= 0) {
++        bool ok = pl_render_image(p->rr, mix->frames[nearest], target, params);
++        if (ok)
++            flow_log_passthrough(vo, bypass_reason, bypass_status);
++        return ok;
++    }
++    bool ok = pl_render_image(p->rr, NULL, target, params);
++    if (ok)
++        flow_log_passthrough(vo, "no_source_frame", bypass_status);
++    return ok;
 +}
 +
  static bool draw_frame(struct vo *vo, struct vo_frame *frame)

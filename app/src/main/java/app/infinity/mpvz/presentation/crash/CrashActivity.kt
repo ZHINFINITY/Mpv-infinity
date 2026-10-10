@@ -243,6 +243,7 @@ class CrashActivity : AppCompatActivity() {
           .lineSequence()
           .filter { line ->
             line.contains("MPVFLOW_DIAGNOSTIC", ignoreCase = true) ||
+              line.contains("MPVFLOW_GPU_DIAGNOSTIC", ignoreCase = true) ||
               line.contains("vf_mpvflow", ignoreCase = true)
           }.joinToString("\n")
       logcat.appendLine()
@@ -256,6 +257,8 @@ class CrashActivity : AppCompatActivity() {
           .lineSequence()
           .filter { line ->
             listOf(
+              "media3_flow_route",
+              "flow_summary",
               "Mpv∞-Media3",
               "ExoPlayer",
               "Media3",

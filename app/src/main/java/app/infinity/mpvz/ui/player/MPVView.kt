@@ -333,15 +333,22 @@ class MPVView(
 
     val mpvFlowRendererOptionResult =
       if (BuildConfig.MPV_HAS_MPVFLOW && !MpvConfigOverridePolicy.isOwnedByMpvConf("mpvflow")) {
-        val enabledResult =
-          PlaybackSession.setOptionString("mpvflow", if (mpvFlowFrameInterpolationEnabled) "yes" else "no")
+        val targetFpsResult =
+          if (mpvFlowFrameInterpolationEnabled) {
+            PlaybackSession.setOptionString("mpvflow-target-fps", mpvFlowTargetFps.toString())
+          } else {
+            null
+          }
         val dimensionResult =
           if (mpvFlowFrameInterpolationEnabled) {
             PlaybackSession.setOptionString("mpvflow-max-dimension", mpvFlowMaxDimension.toString())
           } else {
             null
           }
-        "enabled=$enabledResult max_dimension=${dimensionResult ?: "unchanged"}"
+        val enabledResult =
+          PlaybackSession.setOptionString("mpvflow", if (mpvFlowFrameInterpolationEnabled) "yes" else "no")
+        "mpvflow_rc=$enabledResult target_fps_rc=${targetFpsResult ?: "unchanged"} " +
+          "max_dimension_rc=${dimensionResult ?: "unchanged"}"
       } else {
         null
       }
@@ -418,7 +425,8 @@ class MPVView(
         }
       Log.i(
         TAG,
-        "MPVFLOW_DIAGNOSTIC event=config enabled=$mpvFlowFrameInterpolationEnabled " +
+        "MPVFLOW_DIAGNOSTIC event=config requested_enabled=$mpvFlowFrameInterpolationEnabled " +
+          "runtime_state=not_verified " +
           "requested_target_fps=${decoderPreferences.mpvFlowTargetFps.get()} " +
           "effective_target_fps=$mpvFlowTargetFps display_refresh_hz=${display?.refreshRate ?: 0f} " +
           "renderer=${backend.vo} gpu_api=${backend.gpuApi} " +
