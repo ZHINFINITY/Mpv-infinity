@@ -1390,8 +1390,12 @@ class Media3FlowVideoSink(
     GLES31.glUseProgram(synthProgram)
     bindTextureUnit(0, a.colorTexture)
     bindTextureUnit(1, b.colorTexture)
+    bindTextureUnit(2, a.lumaTexture)
+    bindTextureUnit(3, b.lumaTexture)
     GLES31.glUniform1i(GLES31.glGetUniformLocation(synthProgram, "uFrame0"), 0)
     GLES31.glUniform1i(GLES31.glGetUniformLocation(synthProgram, "uFrame1"), 1)
+    GLES31.glUniform1i(GLES31.glGetUniformLocation(synthProgram, "uLuma0"), 2)
+    GLES31.glUniform1i(GLES31.glGetUniformLocation(synthProgram, "uLuma1"), 3)
     GLES31.glUniform2i(GLES31.glGetUniformLocation(synthProgram, "uSize"), frameWidth, frameHeight)
     GLES31.glUniform2i(GLES31.glGetUniformLocation(synthProgram, "uMotionSize"), processingWidth, processingHeight)
     GLES31.glUniform2i(GLES31.glGetUniformLocation(synthProgram, "uGrid"), gridWidth, gridHeight)
@@ -1537,7 +1541,7 @@ class Media3FlowVideoSink(
     try {
       GLES31.glDispatchCompute(ceil(processingWidth / 8.0).toInt(), ceil(processingHeight / 8.0).toInt(), 1)
       checkGlError("luma dispatch", frameProbeOnly = true)
-      GLES31.glMemoryBarrier(GLES31.GL_SHADER_IMAGE_ACCESS_BARRIER_BIT)
+      GLES31.glMemoryBarrier(GLES31.GL_SHADER_IMAGE_ACCESS_BARRIER_BIT or GLES31.GL_TEXTURE_FETCH_BARRIER_BIT)
       checkGlError("luma barrier", frameProbeOnly = true)
     } finally {
       endGpuTimerQuery(downsampleQuery)
@@ -2375,6 +2379,8 @@ class Media3FlowVideoSink(
       precision highp float;
       layout(binding = 0) uniform sampler2D uFrame0;
       layout(binding = 1) uniform sampler2D uFrame1;
+      layout(binding = 2) uniform sampler2D uLuma0;
+      layout(binding = 3) uniform sampler2D uLuma1;
       layout(rgba16f, binding = 0) readonly uniform highp image2D uForward;
       layout(rgba16f, binding = 1) readonly uniform highp image2D uBackward;
       layout(rgba8, binding = 2) writeonly uniform highp image2D uOutput;
@@ -2416,6 +2422,43 @@ class Media3FlowVideoSink(
         vec4 bottom = mix(flow01, flow11, t.x);
         vec4 interpolated = mix(top, bottom, t.y);
         return interpolated;
+      }
+      float flowGuideAt(vec2 uv, int direction) {
+        return direction == 0 ? texture(uLuma0, uv).r : texture(uLuma1, uv).r;
+      }
+      vec4 flowAtEdgeAware(vec2 p, int direction) {
+        vec2 gridPos = (p - vec2(uGridAnchorOffset)) / float(uStep);
+        gridPos = clamp(gridPos, vec2(0.0), vec2(uGrid - ivec2(1)));
+        ivec2 a = clamp(ivec2(floor(gridPos)), ivec2(0), uGrid - 1);
+        ivec2 b = min(a + ivec2(1), uGrid - 1);
+        vec2 t = fract(gridPos);
+        vec4 flow00 = flowImageAt(ivec2(a.x, a.y), direction);
+        vec4 flow10 = flowImageAt(ivec2(b.x, a.y), direction);
+        vec4 flow01 = flowImageAt(ivec2(a.x, b.y), direction);
+        vec4 flow11 = flowImageAt(ivec2(b.x, b.y), direction);
+        float spatial00 = (1.0 - t.x) * (1.0 - t.y);
+        float spatial10 = t.x * (1.0 - t.y);
+        float spatial01 = (1.0 - t.x) * t.y;
+        float spatial11 = t.x * t.y;
+        vec2 anchor00 = (vec2(a) * float(uStep) + vec2(uGridAnchorOffset)) / vec2(uMotionSize);
+        vec2 anchor10 = (vec2(b.x, a.y) * float(uStep) + vec2(uGridAnchorOffset)) / vec2(uMotionSize);
+        vec2 anchor01 = (vec2(a.x, b.y) * float(uStep) + vec2(uGridAnchorOffset)) / vec2(uMotionSize);
+        vec2 anchor11 = (vec2(b) * float(uStep) + vec2(uGridAnchorOffset)) / vec2(uMotionSize);
+        float guide = flowGuideAt(clamp(p / vec2(uMotionSize), vec2(0.0), vec2(1.0)), direction);
+        float delta00 = flowGuideAt(anchor00, direction) - guide;
+        float delta10 = flowGuideAt(anchor10, direction) - guide;
+        float delta01 = flowGuideAt(anchor01, direction) - guide;
+        float delta11 = flowGuideAt(anchor11, direction) - guide;
+        float variance = spatial00 * delta00 * delta00 + spatial10 * delta10 * delta10 +
+          spatial01 * delta01 * delta01 + spatial11 * delta11 * delta11;
+        float safeVariance = max(variance, 0.000001);
+        float weight00 = spatial00 * exp(-(delta00 * delta00) / safeVariance);
+        float weight10 = spatial10 * exp(-(delta10 * delta10) / safeVariance);
+        float weight01 = spatial01 * exp(-(delta01 * delta01) / safeVariance);
+        float weight11 = spatial11 * exp(-(delta11 * delta11) / safeVariance);
+        float totalWeight = weight00 + weight10 + weight01 + weight11;
+        if (totalWeight <= 0.000001) return flowAt(p, direction);
+        return (flow00 * weight00 + flow10 * weight10 + flow01 * weight01 + flow11 * weight11) / totalWeight;
       }
       float inBounds(vec2 uv) {
         return step(0.0, uv.x) * step(uv.x, 1.0) * step(0.0, uv.y) * step(uv.y, 1.0);
@@ -2468,12 +2511,14 @@ class Media3FlowVideoSink(
               }
             }
           } else {
-            vec4 forwardAtMid = flowAt(motionPoint, 0);
-            vec4 backwardAtMid = flowAt(motionPoint, 1);
+            // Guide each endpoint field with its own source image so vectors from the two sides
+            // of a foreground/background edge are not averaged into a third motion hypothesis.
+            vec4 forwardAtMid = flowAtEdgeAware(motionPoint, 0);
+            vec4 backwardAtMid = flowAtEdgeAware(motionPoint, 1);
             vec2 source0Point = motionPoint + flowToFrame0(uAlpha, forwardAtMid.xy, backwardAtMid.xy);
             vec2 source1Point = motionPoint + flowToFrame1(uAlpha, forwardAtMid.xy, backwardAtMid.xy);
-            vec4 forwardAtSource = flowAt(source0Point, 0);
-            vec4 backwardAtTarget = flowAt(source1Point, 1);
+            vec4 forwardAtSource = flowAtEdgeAware(source0Point, 0);
+            vec4 backwardAtTarget = flowAtEdgeAware(source1Point, 1);
             source0Point = motionPoint + flowToFrame0(uAlpha, forwardAtSource.xy, backwardAtTarget.xy);
             source1Point = motionPoint + flowToFrame1(uAlpha, forwardAtSource.xy, backwardAtTarget.xy);
             vec2 cyclePoint0 = source0Point + forwardAtSource.xy;

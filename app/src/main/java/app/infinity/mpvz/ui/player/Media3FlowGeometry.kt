@@ -1,5 +1,6 @@
 package app.infinity.mpvz.ui.player
 
+import kotlin.math.exp
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.roundToInt
@@ -20,6 +21,12 @@ internal const val MEDIA3_FLOW_VISIBILITY_CONFIDENCE_END = 0.45f
 internal data class Media3FlowGridSize(val width: Int, val height: Int)
 
 internal data class Media3FlowVector(val x: Float, val y: Float)
+
+internal data class Media3FlowGuideSample(
+  val vector: Media3FlowVector,
+  val guideValue: Float,
+  val spatialWeight: Float,
+)
 
 internal data class Media3FlowEndpointOffsets(
   val frame0: Media3FlowVector,
@@ -69,6 +76,39 @@ internal object Media3FlowGeometry {
     val curvature = minusCost - 2f * centerCost + plusCost
     if (curvature <= MEDIA3_FLOW_SUBPIXEL_MIN_CURVATURE) return 0f
     return (0.5f * (minusCost - plusCost) / curvature).coerceIn(-0.5f, 0.5f)
+  }
+
+  /**
+   * Reference for the synthesis shader's local-variance-normalized, source-luma-guided blend.
+   * Spatial bilinear weights are retained within one appearance layer and suppressed across an
+   * image edge, so independent foreground/background vectors are not averaged into a third flow.
+   */
+  fun edgeAwareVectorSample(queryGuide: Float, candidates: List<Media3FlowGuideSample>): Media3FlowVector {
+    require(candidates.isNotEmpty()) { "At least one flow candidate is required" }
+    require(queryGuide.isFinite() && candidates.all {
+      it.guideValue.isFinite() && it.spatialWeight.isFinite() && it.spatialWeight >= 0f
+    }) { "Flow guide samples must be finite and have non-negative spatial weights" }
+
+    val spatialTotal = candidates.sumOf { it.spatialWeight.toDouble() }.toFloat()
+    if (spatialTotal <= 0f) return candidates.first().vector
+    val squaredDifferences = candidates.map { sample ->
+      val difference = sample.guideValue - queryGuide
+      difference * difference
+    }
+    val variance = candidates.indices.sumOf { index ->
+      (candidates[index].spatialWeight / spatialTotal * squaredDifferences[index]).toDouble()
+    }.toFloat()
+    val normalizedVariance = max(variance, 0.000001f)
+    val weights = candidates.indices.map { index ->
+      candidates[index].spatialWeight *
+        exp((-squaredDifferences[index] / normalizedVariance).toDouble()).toFloat()
+    }
+    val weightTotal = weights.sumOf { it.toDouble() }.toFloat()
+    if (weightTotal <= 0f) return candidates.first().vector
+    return Media3FlowVector(
+      x = candidates.indices.sumOf { (candidates[it].vector.x * weights[it]).toDouble() }.toFloat() / weightTotal,
+      y = candidates.indices.sumOf { (candidates[it].vector.y * weights[it]).toDouble() }.toFloat() / weightTotal,
+    )
   }
 
   /** Returns the visibility-weighted source-1 mix, or null when neither warp is trustworthy. */

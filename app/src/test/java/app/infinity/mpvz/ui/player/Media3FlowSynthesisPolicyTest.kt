@@ -32,4 +32,20 @@ class Media3FlowSynthesisPolicyTest {
     assertTrue(shader.contains("valid1 *= inBounds(cyclePoint1 / vec2(uMotionSize));"))
     assertFalse(shader.contains("nearestCell"))
   }
+
+  @Test
+  fun vectorFieldUsesPerSourceLumaGuidanceWithoutHardCellSnapping() {
+    assertTrue(shader.contains("uniform sampler2D uLuma0;"))
+    assertTrue(shader.contains("uniform sampler2D uLuma1;"))
+    assertTrue(shader.contains("float flowGuideAt(vec2 uv, int direction)"))
+    assertTrue(shader.contains("vec4 flowAtEdgeAware(vec2 p, int direction)"))
+    assertTrue(shader.contains("float variance = spatial00 * delta00 * delta00"))
+    assertTrue(shader.contains("exp(-(delta00 * delta00) / safeVariance)"))
+    assertTrue(shader.contains("flowAtEdgeAware(motionPoint, 0)"))
+    assertTrue(shader.contains("flowAtEdgeAware(motionPoint, 1)"))
+    assertTrue(shader.contains("flowAtEdgeAware(source0Point, 0)"))
+    assertTrue(shader.contains("flowAtEdgeAware(source1Point, 1)"))
+    assertTrue(shader.contains("if (totalWeight <= 0.000001) return flowAt(p, direction);"))
+    assertFalse(shader.contains("nearestCell"))
+  }
 }

@@ -23,11 +23,63 @@ class Media3FlowGeometryTest {
   }
 
   @Test
+  fun sourceAppearanceGuidanceDoesNotAverageForegroundAndBackgroundIntoFalseMotion() {
+    val candidates = listOf(
+      Media3FlowGuideSample(Media3FlowVector(12f, 0f), 0.8f, 0.25f),
+      Media3FlowGuideSample(Media3FlowVector(12f, 0f), 0.8f, 0.25f),
+      Media3FlowGuideSample(Media3FlowVector(0f, 0f), 0.2f, 0.25f),
+      Media3FlowGuideSample(Media3FlowVector(0f, 0f), 0.2f, 0.25f),
+    )
+
+    val foreground = Media3FlowGeometry.edgeAwareVectorSample(0.8f, candidates)
+    val background = Media3FlowGeometry.edgeAwareVectorSample(0.2f, candidates)
+
+    assertTrue("Foreground pixels should retain the foreground displacement", foreground.x > 9f)
+    assertTrue("Background pixels should retain the background displacement", background.x < 3f)
+  }
+
+  @Test
+  fun appearanceGuidancePreservesBilinearSamplingInsideOneMotionLayer() {
+    val blended = Media3FlowGeometry.edgeAwareVectorSample(
+      queryGuide = 0.4f,
+      candidates = listOf(
+        Media3FlowGuideSample(Media3FlowVector(0f, 0f), 0.4f, 0.5625f),
+        Media3FlowGuideSample(Media3FlowVector(4f, 0f), 0.4f, 0.1875f),
+        Media3FlowGuideSample(Media3FlowVector(8f, 0f), 0.4f, 0.1875f),
+        Media3FlowGuideSample(Media3FlowVector(12f, 0f), 0.4f, 0.0625f),
+      ),
+    )
+
+    assertEquals(3f, blended.x, 0.0001f)
+    assertEquals(0f, blended.y, 0f)
+  }
+
+  @Test
+  fun foregroundToBackgroundGuideTransitionIsMonotoneAndNeverCreatesOutOfRangeFlow() {
+    val candidates = listOf(
+      Media3FlowGuideSample(Media3FlowVector(12f, -2f), 0.8f, 0.25f),
+      Media3FlowGuideSample(Media3FlowVector(12f, -2f), 0.8f, 0.25f),
+      Media3FlowGuideSample(Media3FlowVector(0f, 3f), 0.2f, 0.25f),
+      Media3FlowGuideSample(Media3FlowVector(0f, 3f), 0.2f, 0.25f),
+    )
+    val transitions = (0..12).map { index ->
+      val guide = 0.2f + index / 12f * 0.6f
+      Media3FlowGeometry.edgeAwareVectorSample(guide, candidates)
+    }
+
+    assertTrue(transitions.zipWithNext().all { (left, right) -> left.x <= right.x })
+    assertTrue(transitions.all { it.x in 0f..12f && it.y in -2f..3f })
+    assertTrue(transitions.zipWithNext().all { (left, right) -> right.x - left.x < 3f })
+  }
+
+  @Test
   fun sourceVisibilityPreservesNormalTimingButSelectsTheReliableOcclusionSide() {
     assertEquals(0.25f, Media3FlowGeometry.sourceVisibilityBlendAlpha(0.25f, 1f, 1f)!!, 0.0001f)
     assertEquals(1f, Media3FlowGeometry.sourceVisibilityBlendAlpha(0.5f, 0.1f, 1f)!!, 0f)
     assertEquals(0f, Media3FlowGeometry.sourceVisibilityBlendAlpha(0.5f, 1f, 0.1f)!!, 0f)
     assertNull(Media3FlowGeometry.sourceVisibilityBlendAlpha(0.5f, 0.14f, 0.14f))
+    assertEquals(0f, Media3FlowGeometry.sourceVisibilityBlendAlpha(0f, 0.8f, 0.1f)!!, 0f)
+    assertEquals(1f, Media3FlowGeometry.sourceVisibilityBlendAlpha(1f, 0.1f, 0.8f)!!, 0f)
   }
 
   @Test
