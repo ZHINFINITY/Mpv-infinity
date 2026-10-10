@@ -123,10 +123,54 @@ class Media3FlowGeometryTest {
   }
 
   @Test
-  fun synthesisSubtractsBackwardFlowWhenSamplingFrameOne() {
+  fun synthesisUsesBidirectionalTargetTimeFlowForBothEndpointWarps() {
     val shader = Media3FlowVideoSink.SYNTH_COMPUTE_SHADER
-    assertTrue(shader.contains("source1Point = motionPoint - (1.0 - uAlpha) * backwardAtMid.xy;"))
-    assertTrue(shader.contains("source1Point = motionPoint - (1.0 - uAlpha) * backwardAtTarget.xy;"))
+    assertTrue(shader.contains("return -oneMinusT * t * forward + t * t * backward;"))
+    assertTrue(shader.contains("return oneMinusT * oneMinusT * forward - t * oneMinusT * backward;"))
+    assertTrue(shader.contains("source0Point = motionPoint + flowToFrame0(uAlpha, forwardAtMid.xy, backwardAtMid.xy);"))
+    assertTrue(shader.contains("source1Point = motionPoint + flowToFrame1(uAlpha, forwardAtMid.xy, backwardAtMid.xy);"))
+    assertTrue(shader.contains("source0Point = motionPoint + flowToFrame0(uAlpha, forwardAtSource.xy, backwardAtTarget.xy);"))
+    assertTrue(shader.contains("source1Point = motionPoint + flowToFrame1(uAlpha, forwardAtSource.xy, backwardAtTarget.xy);"))
+  }
+
+  @Test
+  fun targetTimeBidirectionalOffsetsReduceToLinearTranslation() {
+    val offsets = Media3FlowGeometry.targetTimeEndpointOffsets(
+      alpha = 0.25f,
+      forward = Media3FlowVector(8f, -4f),
+      backward = Media3FlowVector(-8f, 4f),
+    )
+
+    assertEquals(-2f, offsets.frame0.x, 0.0001f)
+    assertEquals(1f, offsets.frame0.y, 0.0001f)
+    assertEquals(6f, offsets.frame1.x, 0.0001f)
+    assertEquals(-3f, offsets.frame1.y, 0.0001f)
+  }
+
+  @Test
+  fun targetTimeBidirectionalOffsetsUseTheOppositeFlowWhenDirectionsDiffer() {
+    val offsets = Media3FlowGeometry.targetTimeEndpointOffsets(
+      alpha = 0.5f,
+      forward = Media3FlowVector(10f, 0f),
+      backward = Media3FlowVector(-6f, 0f),
+    )
+
+    assertEquals(-4f, offsets.frame0.x, 0.0001f)
+    assertEquals(4f, offsets.frame1.x, 0.0001f)
+  }
+
+  @Test
+  fun targetTimeBidirectionalOffsetsReachBothSourceFramesAtTheEndpoints() {
+    val forward = Media3FlowVector(9f, -2f)
+    val backward = Media3FlowVector(-7f, 3f)
+
+    val atFrame0 = Media3FlowGeometry.targetTimeEndpointOffsets(0f, forward, backward)
+    val atFrame1 = Media3FlowGeometry.targetTimeEndpointOffsets(1f, forward, backward)
+
+    assertEquals(Media3FlowVector(0f, 0f), atFrame0.frame0)
+    assertEquals(forward, atFrame0.frame1)
+    assertEquals(backward, atFrame1.frame0)
+    assertEquals(Media3FlowVector(0f, 0f), atFrame1.frame1)
   }
 
   private fun smoothstep(edge0: Float, edge1: Float, value: Float): Float {

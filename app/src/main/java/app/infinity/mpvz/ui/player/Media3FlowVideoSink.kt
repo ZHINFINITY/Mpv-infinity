@@ -2372,6 +2372,15 @@ class Media3FlowVideoSink(
         float matchQuality = 1.0 - smoothstep(MATCH_ERROR_START, MATCH_ERROR_END, flow.z);
         return consistency * matchQuality * valid;
       }
+      // Algebraic bidirectional target-time initialization; no learned residual or visibility net.
+      vec2 flowToFrame0(float t, vec2 forward, vec2 backward) {
+        float oneMinusT = 1.0 - t;
+        return -oneMinusT * t * forward + t * t * backward;
+      }
+      vec2 flowToFrame1(float t, vec2 forward, vec2 backward) {
+        float oneMinusT = 1.0 - t;
+        return oneMinusT * oneMinusT * forward - t * oneMinusT * backward;
+      }
       void main() {
         ivec2 p = ivec2(gl_GlobalInvocationID.xy);
         uint pixelClass = 0u;
@@ -2408,12 +2417,12 @@ class Media3FlowVideoSink(
           } else {
             vec4 forwardAtMid = flowAt(motionPoint, 0);
             vec4 backwardAtMid = flowAt(motionPoint, 1);
-            vec2 source0Point = motionPoint - uAlpha * forwardAtMid.xy;
-            vec2 source1Point = motionPoint - (1.0 - uAlpha) * backwardAtMid.xy;
+            vec2 source0Point = motionPoint + flowToFrame0(uAlpha, forwardAtMid.xy, backwardAtMid.xy);
+            vec2 source1Point = motionPoint + flowToFrame1(uAlpha, forwardAtMid.xy, backwardAtMid.xy);
             vec4 forwardAtSource = flowAt(source0Point, 0);
             vec4 backwardAtTarget = flowAt(source1Point, 1);
-            source0Point = motionPoint - uAlpha * forwardAtSource.xy;
-            source1Point = motionPoint - (1.0 - uAlpha) * backwardAtTarget.xy;
+            source0Point = motionPoint + flowToFrame0(uAlpha, forwardAtSource.xy, backwardAtTarget.xy);
+            source1Point = motionPoint + flowToFrame1(uAlpha, forwardAtSource.xy, backwardAtTarget.xy);
             float cycleError = length(forwardAtSource.xy + backwardAtTarget.xy);
             vec2 uv0Raw = uv + (source0Point - motionPoint) / vec2(uMotionSize);
             vec2 uv1Raw = uv + (source1Point - motionPoint) / vec2(uMotionSize);

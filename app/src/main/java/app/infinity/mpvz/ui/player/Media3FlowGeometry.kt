@@ -14,6 +14,13 @@ internal const val MEDIA3_FLOW_SEARCH_RADIUS = 4
 
 internal data class Media3FlowGridSize(val width: Int, val height: Int)
 
+internal data class Media3FlowVector(val x: Float, val y: Float)
+
+internal data class Media3FlowEndpointOffsets(
+  val frame0: Media3FlowVector,
+  val frame1: Media3FlowVector,
+)
+
 internal data class Media3FlowBlitGeometry(
   val viewportX: Int,
   val viewportY: Int,
@@ -48,6 +55,26 @@ internal object Media3FlowGeometry {
 
   /** Block-matching vectors describe the center of each sampled patch, not its top-left corner. */
   fun motionGridAnchorOffset(): Float = MEDIA3_FLOW_BLOCK_SIZE / 2f
+
+  /** Initial target-to-endpoint displacements from forward/backward endpoint flow fields. */
+  fun targetTimeEndpointOffsets(
+    alpha: Float,
+    forward: Media3FlowVector,
+    backward: Media3FlowVector,
+  ): Media3FlowEndpointOffsets {
+    val t = alpha.coerceIn(0f, 1f)
+    val oneMinusT = 1f - t
+    return Media3FlowEndpointOffsets(
+      frame0 = Media3FlowVector(
+        x = -oneMinusT * t * forward.x + t * t * backward.x,
+        y = -oneMinusT * t * forward.y + t * t * backward.y,
+      ),
+      frame1 = Media3FlowVector(
+        x = oneMinusT * oneMinusT * forward.x - t * oneMinusT * backward.x,
+        y = oneMinusT * oneMinusT * forward.y - t * oneMinusT * backward.y,
+      ),
+    )
+  }
 
   /** Geometry for the custom sink's visible blit; Crop adjusts UVs, Fit letterboxes, Stretch fills. */
   fun blitGeometry(
