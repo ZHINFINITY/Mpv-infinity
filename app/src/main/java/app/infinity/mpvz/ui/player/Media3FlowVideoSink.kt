@@ -2629,8 +2629,10 @@ class Media3FlowVideoSink(
             source1Point = motionPoint + flowToFrame1(uAlpha, forwardAtSource.xy, backwardAtTarget.xy);
             vec2 cyclePoint0 = source0Point + forwardAtSource.xy;
             vec2 cyclePoint1 = source1Point + backwardAtTarget.xy;
-            vec4 backwardAtForwardEndpoint = flowAt(cyclePoint0, 1);
-            vec4 forwardAtBackwardEndpoint = flowAt(cyclePoint1, 0);
+            // Keep cycle checks in the same appearance layer as the endpoint warp;
+            // plain bilinear sampling can mix foreground and background at occlusion edges.
+            vec4 backwardAtForwardEndpoint = flowAtEdgeAware(cyclePoint0, 1);
+            vec4 forwardAtBackwardEndpoint = flowAtEdgeAware(cyclePoint1, 0);
             float cycleError0 = length(forwardAtSource.xy + backwardAtForwardEndpoint.xy);
             float cycleError1 = length(backwardAtTarget.xy + forwardAtBackwardEndpoint.xy);
             vec2 uv0Raw = uv + (source0Point - motionPoint) / vec2(uMotionSize);

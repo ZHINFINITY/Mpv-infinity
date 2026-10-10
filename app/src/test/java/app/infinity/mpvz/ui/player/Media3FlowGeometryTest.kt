@@ -221,6 +221,17 @@ class Media3FlowGeometryTest {
   }
 
   @Test
+  fun cycleConsistencyUsesAppearanceGuidedVectorsAtBothOcclusionBoundaries() {
+    val shader = Media3FlowVideoSink.SYNTH_COMPUTE_SHADER
+
+    assertTrue(shader.contains("vec4 backwardAtForwardEndpoint = flowAtEdgeAware(cyclePoint0, 1);"))
+    assertTrue(shader.contains("vec4 forwardAtBackwardEndpoint = flowAtEdgeAware(cyclePoint1, 0);"))
+    assertTrue(shader.contains("vec4 flowAtEdgeAware(vec2 p, int direction)"))
+    assertFalse(shader.contains("vec4 backwardAtForwardEndpoint = flowAt(cyclePoint0, 1);"))
+    assertFalse(shader.contains("vec4 forwardAtBackwardEndpoint = flowAt(cyclePoint1, 0);"))
+  }
+
+  @Test
   fun sampledCoverageClassifiesWarpFallbackAndStaticBlendWithoutEarlyReturns() {
     val shader = Media3FlowVideoSink.SYNTH_COMPUTE_SHADER
     val main = shader.substringAfter("void main()")

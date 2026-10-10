@@ -144,7 +144,7 @@ static const char shader_flow[] =
     " if(abs(dx)>radius||abs(dy)>radius) continue; ivec2 d=center+ivec2(dx,dy);"
     " if(any(lessThan(d,lo))||any(greaterThan(d,hi))||all(equal(d,bv))) continue;"
     " int c=sadAt(p,d,sz,best); if(c<best||(c==best&&abs(d.x)+abs(d.y)<abs(bv.x)+abs(bv.y))){best=c;bv=d;} }"
-    " imageStore(flowTex,g,vec4(vec2(bv),0.0,1.0)); }\n";
+    " imageStore(flowTex,g,vec4(vec2(bv),float(best)/(64.0*255.0),1.0)); }\n";
 
 static const char shader_synthesize[] =
     "#version 310 es\n"
@@ -153,34 +153,58 @@ static const char shader_synthesize[] =
     "layout(rgba16f) readonly uniform highp image2D fwdTex;\n"
     "layout(rgba16f) readonly uniform highp image2D backTex;\n"
     "layout(r32f) readonly uniform highp image2D sceneTex;\n"
+    "layout(r32f) readonly uniform highp image2D luma0Tex;\n"
+    "layout(r32f) readonly uniform highp image2D luma1Tex;\n"
     "layout(rgba8) writeonly uniform highp image2D outTex;\n"
     "uniform ivec4 cfg; uniform float timestep;\n"
     "layout(local_size_x=8, local_size_y=8) in;\n"
-    "vec2 flowAtForward(vec2 p){ ivec2 sz=imageSize(fwdTex); vec2 g=clamp(p/4.0,vec2(0.0),vec2(sz-1));"
+    "vec4 flowImageAt(ivec2 p,int direction){ return direction==0?imageLoad(fwdTex,p):imageLoad(backTex,p); }\n"
+    "float lumaAt(vec2 p,int direction){ ivec2 sz=direction==0?imageSize(luma0Tex):imageSize(luma1Tex);"
+    " ivec2 q=clamp(ivec2(round(p)),ivec2(0),sz-1); return direction==0?imageLoad(luma0Tex,q).r:imageLoad(luma1Tex,q).r; }\n"
+    "vec4 flowAtEdgeAware(vec2 p,int direction){ ivec2 sz=imageSize(fwdTex); vec2 g=clamp(p/4.0,vec2(0.0),vec2(sz-1));"
     " ivec2 a=ivec2(floor(g)); ivec2 b=min(a+1,sz-1); vec2 t=fract(g);"
-    " vec2 x=mix(imageLoad(fwdTex,a).rg,imageLoad(fwdTex,ivec2(b.x,a.y)).rg,t.x);"
-    " vec2 y=mix(imageLoad(fwdTex,ivec2(a.x,b.y)).rg,imageLoad(fwdTex,b).rg,t.x); return mix(x,y,t.y); }\n"
-    "vec2 flowAtBackward(vec2 p){ ivec2 sz=imageSize(backTex); vec2 g=clamp(p/4.0,vec2(0.0),vec2(sz-1));"
-    " ivec2 a=ivec2(floor(g)); ivec2 b=min(a+1,sz-1); vec2 t=fract(g);"
-    " vec2 x=mix(imageLoad(backTex,a).rg,imageLoad(backTex,ivec2(b.x,a.y)).rg,t.x);"
-    " vec2 y=mix(imageLoad(backTex,ivec2(a.x,b.y)).rg,imageLoad(backTex,b).rg,t.x); return mix(x,y,t.y); }\n"
+    " vec4 v00=flowImageAt(a,direction),v10=flowImageAt(ivec2(b.x,a.y),direction);"
+    " vec4 v01=flowImageAt(ivec2(a.x,b.y),direction),v11=flowImageAt(b,direction);"
+    " float s00=(1.0-t.x)*(1.0-t.y),s10=t.x*(1.0-t.y),s01=(1.0-t.x)*t.y,s11=t.x*t.y;"
+    " ivec2 lumaSize=direction==0?imageSize(luma0Tex):imageSize(luma1Tex);"
+    " ivec2 c00=min(a*4,lumaSize-8)+4,c10=min(ivec2(b.x,a.y)*4,lumaSize-8)+4;"
+    " ivec2 c01=min(ivec2(a.x,b.y)*4,lumaSize-8)+4,c11=min(b*4,lumaSize-8)+4;"
+    " float guide=lumaAt(p,direction),d00=lumaAt(vec2(c00),direction)-guide;"
+    " float d10=lumaAt(vec2(c10),direction)-guide,d01=lumaAt(vec2(c01),direction)-guide;"
+    " float d11=lumaAt(vec2(c11),direction)-guide;"
+    " float variance=s00*d00*d00+s10*d10*d10+s01*d01*d01+s11*d11*d11; float safeVariance=max(variance,0.000001);"
+    " float w00=s00*exp(-(d00*d00)/safeVariance),w10=s10*exp(-(d10*d10)/safeVariance);"
+    " float w01=s01*exp(-(d01*d01)/safeVariance),w11=s11*exp(-(d11*d11)/safeVariance);"
+    " float total=w00+w10+w01+w11; return total>0.000001?(v00*w00+v10*w10+v01*w01+v11*w11)/total:flowImageAt(a,direction); }\n"
     "vec4 colorAt(highp sampler2D s,vec2 p){ ivec2 sz=textureSize(s,0); p=clamp(p,vec2(0.0),vec2(sz-1));"
     " ivec2 a=ivec2(floor(p)); ivec2 b=min(a+1,sz-1); vec2 t=fract(p);"
     " return mix(mix(texelFetch(s,a,0),texelFetch(s,ivec2(b.x,a.y),0),t.x),"
     " mix(texelFetch(s,ivec2(a.x,b.y),0),texelFetch(s,b,0),t.x),t.y); }\n"
+    "float pointInBounds(vec2 p,ivec2 sz){ return step(0.0,p.x)*step(p.x,float(sz.x-1))*step(0.0,p.y)*step(p.y,float(sz.y-1)); }\n"
+    "float reliability(vec4 flow,float cycle,float valid){"
+    " float cycleQuality=1.0-smoothstep(1.0,6.0,cycle); float matchQuality=1.0-smoothstep(0.04,0.35,flow.z);"
+    " return cycleQuality*matchQuality*valid; }\n"
     "void main(){ ivec2 p=ivec2(gl_GlobalInvocationID.xy); if(any(greaterThanEqual(p,cfg.xy))) return;"
     " float cut=imageLoad(sceneTex,ivec2(0)).r;"
     " if(cut>0.1882353){ vec4 c; if(timestep<=0.5) c=texelFetch(frame0,p,0); else c=texelFetch(frame1,p,0); imageStore(outTex,p,c); return; }"
-    " vec2 fp=vec2(p); vec2 f=flowAtForward(fp); vec2 b=flowAtBackward(fp);"
-    " vec2 a=fp-timestep*f; vec2 z=fp-(1.0-timestep)*b;"
-    " for(int i=0;i<2;i++){ f=flowAtForward(a); a=fp-timestep*f;"
-    " b=flowAtBackward(z); z=fp-(1.0-timestep)*b; }"
-    " float consistency=length(f+b); vec4 ca=colorAt(frame0,a); vec4 cb=colorAt(frame1,z);"
-    " float photo=(abs(ca.r-cb.r)+abs(ca.g-cb.g)+abs(ca.b-cb.b))/3.0;"
-    " float confidence=clamp(1.0-consistency/4.0,0.0,1.0)*clamp(1.0-photo/0.3764706,0.0,1.0);"
-    " float wa=(1.0-timestep)*confidence+(timestep<=0.5?1.0-confidence:0.0);"
-    " float wb=timestep*confidence+(timestep>0.5?1.0-confidence:0.0);"
-    " vec4 outc=(ca*wa+cb*wb)/max(wa+wb,0.00001); outc.a=1.0; imageStore(outTex,p,outc); }\n";
+    " vec2 fp=vec2(p); vec4 f=flowAtEdgeAware(fp,0),b=flowAtEdgeAware(fp,1);"
+    " vec2 a=fp-timestep*f.xy,z=fp-(1.0-timestep)*b.xy;"
+    " for(int i=0;i<2;i++){ f=flowAtEdgeAware(a,0); a=fp-timestep*f.xy;"
+    " b=flowAtEdgeAware(z,1); z=fp-(1.0-timestep)*b.xy; }"
+    " f=flowAtEdgeAware(a,0); b=flowAtEdgeAware(z,1);"
+    " vec2 cycle0=a+f.xy,cycle1=z+b.xy; vec4 backAt0=flowAtEdgeAware(cycle0,1);"
+    " vec4 forwardAt1=flowAtEdgeAware(cycle1,0); float cycleError0=length(f.xy+backAt0.xy);"
+    " float cycleError1=length(b.xy+forwardAt1.xy); vec4 ca=colorAt(frame0,a); vec4 cb=colorAt(frame1,z);"
+    " float valid0=pointInBounds(a,cfg.xy)*pointInBounds(cycle0,cfg.xy);"
+    " float valid1=pointInBounds(z,cfg.xy)*pointInBounds(cycle1,cfg.xy);"
+    " float confidence0=reliability(f,cycleError0,valid0);"
+    " float confidence1=reliability(b,cycleError1,valid1);"
+    " float confidence=max(confidence0,confidence1); vec4 outc;"
+    " if(confidence<0.15){ outc=timestep<0.5?texelFetch(frame0,p,0):texelFetch(frame1,p,0); }"
+    " else { float visibility0=smoothstep(0.15,0.45,confidence0),visibility1=smoothstep(0.15,0.45,confidence1);"
+    " float weight0=(1.0-timestep)*visibility0,weight1=timestep*visibility1,total=weight0+weight1;"
+    " outc=total>0.0001?mix(ca,cb,weight1/total):(timestep<0.5?texelFetch(frame0,p,0):texelFetch(frame1,p,0)); }"
+    " outc.a=1.0; imageStore(outTex,p,outc); }\n";
 
 static pl_pass make_pass(pl_gpu gpu, const char *glsl,
                          struct pl_desc *descs, int ndesc)
@@ -388,7 +412,11 @@ MPVFlowGPUContext *mpvflow_gpu_create(pl_gpu gpu,
           .access = PL_DESC_ACCESS_READONLY },
         { .name = "sceneTex", .type = PL_DESC_STORAGE_IMG, .binding = 2,
           .access = PL_DESC_ACCESS_READONLY },
-        { .name = "outTex", .type = PL_DESC_STORAGE_IMG, .binding = 3,
+        { .name = "luma0Tex", .type = PL_DESC_STORAGE_IMG, .binding = 3,
+          .access = PL_DESC_ACCESS_READONLY },
+        { .name = "luma1Tex", .type = PL_DESC_STORAGE_IMG, .binding = 4,
+          .access = PL_DESC_ACCESS_READONLY },
+        { .name = "outTex", .type = PL_DESC_STORAGE_IMG, .binding = 5,
           .access = PL_DESC_ACCESS_WRITEONLY },
     };
     ctx->pass_luma = make_pass(gpu, shader_luma, luma_desc, 2);
@@ -396,7 +424,7 @@ MPVFlowGPUContext *mpvflow_gpu_create(pl_gpu gpu,
     ctx->pass_reduce_first = make_pass(gpu, shader_reduce_first, first_desc, 3);
     ctx->pass_reduce = make_pass(gpu, shader_reduce, reduce_desc, 2);
     ctx->pass_flow = make_pass(gpu, shader_flow, flow_desc, 4);
-    ctx->pass_synthesize = make_pass(gpu, shader_synthesize, synth_desc, 6);
+    ctx->pass_synthesize = make_pass(gpu, shader_synthesize, synth_desc, 8);
     if (!ctx->pass_luma || !ctx->pass_downsample || !ctx->pass_reduce_first ||
         !ctx->pass_reduce || !ctx->pass_flow || !ctx->pass_synthesize) {
         mpvflow_gpu_destroy(ctx);
@@ -562,7 +590,7 @@ enum MPVFlowGPUResult mpvflow_gpu_synthesize(MPVFlowGPUContext *ctx,
         return MPVFLOW_GPU_UNSUPPORTED;
     struct FlowLevel *full = (struct FlowLevel *) &pair->level[0];
     int cfg[4] = { pair->w, pair->h, 0, 0 };
-    struct pl_desc_binding sb[6] = {
+    struct pl_desc_binding sb[8] = {
         { .object = pair->input[0], .address_mode = PL_TEX_ADDRESS_CLAMP,
           .sample_mode = PL_TEX_SAMPLE_NEAREST },
         { .object = pair->input[1], .address_mode = PL_TEX_ADDRESS_CLAMP,
@@ -570,9 +598,11 @@ enum MPVFlowGPUResult mpvflow_gpu_synthesize(MPVFlowGPUContext *ctx,
         { .object = full->forward },
         { .object = full->backward },
         { .object = pair->scene[pair->reductions - 1] },
+        { .object = full->luma[0] },
+        { .object = full->luma[1] },
         { .object = out },
     };
-    if (!run_pass(ctx, ctx->pass_synthesize, sb, 6, cfg, t, pair->w, pair->h))
+    if (!run_pass(ctx, ctx->pass_synthesize, sb, 8, cfg, t, pair->w, pair->h))
         return MPVFLOW_GPU_ERROR;
     *output = out;
     return MPVFLOW_GPU_OK;

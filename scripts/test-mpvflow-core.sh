@@ -9,3 +9,4 @@ cc -std=c11 -O2 -Wall -Wextra -Werror \
   "$ROOT/scripts/tests/mpvflow_core_test.c" \
   -pthread -lm -o "$OUT"
 "$OUT"
+python3 "$ROOT/scripts/tests/mpvflow_gpu_shader_test.py"
