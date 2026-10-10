@@ -195,6 +195,9 @@ class Media3FlowVideoSink(
   private var eglInfoLogged = false
   private var lastState = "waiting"
   private var lastBypassReason: String? = null
+  private val loggedFlowDiagnosticKeys = mutableSetOf<String>()
+  private var firstSuccessfulPairDiagnosticLogged = false
+  private var lastLoggedOutputDiagnosticSignature: String? = null
 
   private var eglDisplay = EGL14.EGL_NO_DISPLAY
   private var eglContext = EGL14.EGL_NO_CONTEXT
@@ -222,50 +225,201 @@ class Media3FlowVideoSink(
   private var outputImageHandle = 0L
   private var flowAvailable = false
   @Volatile private var preflightAvailable = false
+  @Volatile var preflightFailureReason: String? = null
+    private set
 
   init {
-    preflightAvailable = runCatching {
+    logFlowRecordOnce(
+      "flow-config",
+      Log.INFO,
+      "event=config requested_enabled=true renderer=native-media3 capture=gles3 compute_backend=vulkan " +
+        "target_fps=$targetFps source_pts=media3_decoder sync_mode=1x hardware_decoder=media3 " +
+        "cpu_readback=no",
+    )
+    val buildSupportsVulkan = BuildConfig.MPV_SUPPORTS_VULKAN
+    val apiLevelSupported = Build.VERSION.SDK_INT >= 26
+    val vulkanFeatureAvailable = appContext.packageManager.hasSystemFeature("android.hardware.vulkan.version")
+    if (!buildSupportsVulkan || !apiLevelSupported || !vulkanFeatureAvailable) {
+      logFlowRecordOnce(
+        "device-vulkan-capability",
+        Log.WARN,
+        "event=capability_check state=unavailable stage=device_support_predicate " +
+          "build_supports_vulkan=$buildSupportsVulkan sdk_int=${Build.VERSION.SDK_INT} " +
+          "required_sdk=26 vulkan_version_feature=$vulkanFeatureAvailable reason=vulkan_compute_unavailable",
+      )
+    }
+    val preflightResult = runCatching {
       runOnGlThreadSync {
-      if (!ensureEgl() || !deviceSupportsVulkanFlow(appContext)) return@runOnGlThreadSync false
-        flowVulkanContext = Media3FlowVulkanNative.nativeCreateContext()
-        if (flowVulkanContext == 0L) return@runOnGlThreadSync false
-        val inputReady = preflightSharedImage(output = false)
-        val outputReady = inputReady && preflightSharedImage(output = true)
-        if (!outputReady) {
+        val reason = when {
+          !ensureEgl() -> "egl_capture_setup_failed"
+          !deviceSupportsVulkanFlow(appContext) -> "vulkan_compute_unavailable"
+          else -> {
+            flowVulkanContext = Media3FlowVulkanNative.nativeCreateContext()
+            when {
+              flowVulkanContext == 0L -> "vulkan_context_or_compute_setup_failed"
+              !preflightSharedImage(output = false) -> "vulkan_hardwarebuffer_input_preflight_failed"
+              !preflightSharedImage(output = true) -> "vulkan_hardwarebuffer_output_preflight_failed"
+              else -> null
+            }
+          }
+        }
+        if (reason != null && flowVulkanContext != 0L) {
           Media3FlowVulkanNative.nativeDestroyContext(flowVulkanContext)
           flowVulkanContext = 0L
         }
-        outputReady
+        reason
       }
-    }.getOrDefault(false)
-    if (!preflightAvailable) Log.w(logTag, "Vulkan/HardwareBuffer preflight failed; the stock Media3 renderer will be used")
+    }
+    preflightFailureReason = preflightResult.getOrElse { error ->
+      logFlowRecordOnce(
+        "preflight-initialization-exception",
+        Log.ERROR,
+        "event=preflight state=failed stage=initialization reason=preflight_exception",
+        error,
+      )
+      "preflight_exception"
+    }
+    preflightAvailable = preflightFailureReason == null
+    if (preflightAvailable) {
+      logFlowRecordOnce(
+        "preflight-ready",
+        Log.INFO,
+        "event=preflight state=ready backend=vulkan-spirv target_fps=$targetFps " +
+          "input_ahb=imported output_ahb=imported source_pts=media3_decoder sync_mode=1x",
+      )
+    }
+    if (!preflightAvailable) {
+      if (preflightResult.isFailure && flowVulkanContext != 0L) {
+        runCatching {
+          runOnGlThreadSync {
+            Media3FlowVulkanNative.nativeDestroyContext(flowVulkanContext)
+            flowVulkanContext = 0L
+          }
+        }
+      }
+      logFlowRecordOnce(
+        "preflight-final-failure",
+        Log.ERROR,
+        "event=preflight state=failed stage=final reason=${preflightFailureReason ?: "unknown"} " +
+          "fallback=stock_media3_renderer",
+      )
+    }
+  }
+
+  private fun logFlowRecordOnce(
+    key: String,
+    priority: Int,
+    details: String,
+    error: Throwable? = null,
+  ) {
+    val shouldLog = synchronized(loggedFlowDiagnosticKeys) { loggedFlowDiagnosticKeys.add(key) }
+    if (!shouldLog) return
+    val message = "MPVFLOW_DIAGNOSTIC component=native-media3 $details"
+    when {
+      error != null && priority >= Log.ERROR -> Log.e(logTag, message, error)
+      error != null -> Log.w(logTag, message, error)
+      else -> Log.println(priority, logTag, message)
+    }
   }
 
   fun isPreflightAvailable(): Boolean = preflightAvailable && !disposed
 
-  private fun createSharedHardwareBuffer(width: Int, height: Int): HardwareBuffer =
-    HardwareBuffer.create(
-      width,
-      height,
-      HardwareBuffer.RGBA_8888,
-      1,
-      HardwareBuffer.USAGE_GPU_SAMPLED_IMAGE or HardwareBuffer.USAGE_GPU_COLOR_OUTPUT,
-    )
+  private fun createSharedHardwareBuffer(width: Int, height: Int, role: String): HardwareBuffer {
+    val usage = HardwareBuffer.USAGE_GPU_SAMPLED_IMAGE or HardwareBuffer.USAGE_GPU_COLOR_OUTPUT
+    return try {
+      HardwareBuffer.create(width, height, HardwareBuffer.RGBA_8888, 1, usage)
+    } catch (error: RuntimeException) {
+      logFlowRecordOnce(
+        "ahb-allocation-$role",
+        Log.ERROR,
+        "event=ahb_import state=failed stage=AHardwareBuffer.create image_role=$role " +
+          "width=$width height=$height format=rgba8 usage=0x${usage.toString(16)}",
+        error,
+      )
+      throw error
+    }
+  }
 
   private fun preflightSharedImage(output: Boolean): Boolean {
-    if (flowVulkanContext == 0L || !makePbufferCurrent()) return false
-    val buffer = runCatching { createSharedHardwareBuffer(16, 16) }.getOrNull() ?: return false
+    val role = if (output) "output" else "input"
+    if (flowVulkanContext == 0L) {
+      logFlowRecordOnce(
+        "preflight-$role-context",
+        Log.ERROR,
+        "event=preflight state=failed role=$role stage=vulkan_context reason=missing",
+      )
+      return false
+    }
+    if (!makePbufferCurrent()) {
+      logFlowRecordOnce(
+        "preflight-$role-egl-current",
+        Log.ERROR,
+        "event=preflight state=failed role=$role stage=egl_make_current reason=failed " +
+          "egl_error=0x${EGL14.eglGetError().toString(16)}",
+      )
+      return false
+    }
+    val buffer = try {
+      createSharedHardwareBuffer(16, 16, "$role-preflight")
+    } catch (error: RuntimeException) {
+      logFlowRecordOnce(
+        "preflight-$role-ahb-allocation",
+        Log.ERROR,
+        "event=preflight state=failed role=$role stage=ahardwarebuffer_allocate reason=exception",
+        error,
+      )
+      return false
+    }
     var imageHandle = 0L
     var texture = 0
     return try {
       imageHandle = Media3FlowVulkanNative.nativeCreateFrameImage(
         flowVulkanContext, buffer, 16, 16, output,
       )
-      if (imageHandle == 0L) return false
+      if (imageHandle == 0L) {
+        logFlowRecordOnce(
+          "preflight-$role-vulkan-import",
+          Log.ERROR,
+          "event=preflight state=failed role=$role stage=vulkan_ahardwarebuffer_import " +
+            "reason=native_import_rejected width=16 height=16 format=rgba8 usage=0x${buffer.usage.toString(16)}",
+        )
+        return false
+      }
       texture = Media3FlowVulkanNative.nativeCreateEglTexture(buffer)
-      texture != 0 && GLES20.glGetError() == GLES20.GL_NO_ERROR
+      if (texture == 0) {
+        logFlowRecordOnce(
+          "preflight-$role-egl-import",
+          Log.ERROR,
+          "event=preflight state=failed role=$role stage=egl_ahardwarebuffer_import " +
+            "reason=native_import_rejected width=16 height=16 format=rgba8 usage=0x${buffer.usage.toString(16)}",
+        )
+        return false
+      }
+      val glError = GLES20.glGetError()
+      if (glError != GLES20.GL_NO_ERROR) {
+        logFlowRecordOnce(
+          "preflight-$role-egl-texture-validation",
+          Log.ERROR,
+          "event=preflight state=failed role=$role stage=egl_texture_validation " +
+            "reason=gl_error_0x${glError.toString(16)} texture_id=$texture",
+        )
+        return false
+      }
+      logFlowRecordOnce(
+        "preflight-$role-ready",
+        Log.INFO,
+        "event=preflight state=ready role=$role stage=vulkan_and_egl_ahardwarebuffer_import " +
+          "width=16 height=16 format=rgba8 usage=0x${buffer.usage.toString(16)} " +
+          "native_image_handle_present=true egl_texture_id=$texture",
+      )
+      true
     } catch (error: RuntimeException) {
-      Log.w(logTag, "Shared Vulkan/EGL HardwareBuffer preflight failed", error)
+      logFlowRecordOnce(
+        "preflight-$role-exception",
+        Log.ERROR,
+        "event=preflight state=failed role=$role stage=hardwarebuffer_import reason=exception",
+        error,
+      )
       false
     } finally {
       if (texture != 0) deleteTexture(texture)
@@ -785,7 +939,13 @@ class Media3FlowVideoSink(
       }
       droppedFrames.incrementAndGet()
       dispatchListener { it.onFrameDropped() }
-      Log.w(logTag, "Input frame capture failed; dropping this frame", error)
+      logFlowRecordOnce(
+        "input-frame-capture-failure",
+        Log.ERROR,
+        "event=input_frame state=failed stage=onInputFrameAvailable fallback=drop_frame " +
+          "source_pts_us=${lastInputPtsUs.takeIf { it != C.TIME_UNSET } ?: "unknown"}",
+        error,
+      )
       reportError(error)
     } finally {
       synchronized(inputLock) {
@@ -818,7 +978,13 @@ class Media3FlowVideoSink(
         flowAvailable = false
         lastBypassReason = "vulkan_frame_prepare_error"
         lastState = "source_fallback"
-        Log.w(logTag, "Vulkan frame preparation failed; keeping source-frame playback", error)
+        logFlowRecordOnce(
+          "vulkan-frame-prepare-failure",
+          Log.ERROR,
+          "event=prepare_frame state=failed stage=prepareSharedFrame source_pts_us=$ptsUs " +
+            "target_fps=$targetFps fallback=original_media3_source_frames",
+          error,
+        )
       }
     }
     slot.ptsUs = ptsUs
@@ -1077,7 +1243,14 @@ class Media3FlowVideoSink(
       flowAvailable = false
       lastBypassReason = "vulkan_motion_analysis_error"
       lastState = "source_fallback"
-      Log.w(logTag, "Vulkan motion analysis failed; retaining source-frame playback")
+      logFlowRecordOnce(
+        "first-pair-analysis-failure",
+        Log.ERROR,
+        "event=source_pair state=failed backend=vulkan-spirv stage=nativeAnalyzePair " +
+          "source_pts0_us=${frame0.ptsUs} source_pts1_us=${frame1.ptsUs} source_delta_us=$deltaUs " +
+          "target_fps=$targetFps playback_speed=${formatLogFloat(playbackSpeed)} " +
+          "reason=vulkan_motion_analysis_error fallback=original_media3_source_frames",
+      )
       return
     }
     reusable.nativePairHandle = nativePair
@@ -1085,6 +1258,17 @@ class Media3FlowVideoSink(
     lastMotionGpuMs = null
     lastBypassReason = null
     lastState = "motion_estimated_vulkan"
+    if (!firstSuccessfulPairDiagnosticLogged) {
+      firstSuccessfulPairDiagnosticLogged = true
+      logFlowRecordOnce(
+        "first-source-pair-ready",
+        Log.INFO,
+        "event=source_pair state=ready backend=vulkan-spirv " +
+          "source_pts0_us=${frame0.ptsUs} source_pts1_us=${frame1.ptsUs} source_delta_us=$deltaUs " +
+          "target_fps=$targetFps playback_speed=${formatLogFloat(playbackSpeed)} " +
+          "timestamp_source=media3_decoder_pts",
+      )
+    }
   }
 
   private fun renderAtPosition(positionUs: Long, speed: Float, frameTimeNanos: Long?) {
@@ -1190,6 +1374,22 @@ class Media3FlowVideoSink(
     allowFirstFrameBeforeStarted = false
     lastState = if (synthesized && submitted) "gpu_interpolated" else "source_frame_fallback"
     if (synthesized && submitted) lastBypassReason = null
+    val outputState = if (synthesized && submitted) "synthesized" else "passthrough"
+    val outputReason = lastBypassReason ?: if (outputState == "synthesized") "motion_pair_ready" else "source_frame_due"
+    val outputSignature = "$outputState|$outputReason"
+    if (outputSignature != lastLoggedOutputDiagnosticSignature) {
+      lastLoggedOutputDiagnosticSignature = outputSignature
+      val alpha = bracket?.let { Media3FlowCadence.interpolationAlpha(it.first.ptsUs, it.second.ptsUs, targetPtsUs) }
+      val outputMessage =
+        "MPVFLOW_DIAGNOSTIC component=native-media3 event=output state=$outputState backend=vulkan-spirv " +
+          "reason=$outputReason target_fps=$targetFps speed=${formatLogFloat(speed)} " +
+          "source_pts_us=${sourceFrame.ptsUs} source_pts0_us=${bracket?.first?.ptsUs ?: "none"} " +
+          "source_pts1_us=${bracket?.second?.ptsUs ?: "none"} target_pts_us=$targetPtsUs " +
+          "interpolation_alpha=${alpha?.let(::formatLogFloat) ?: "none"} " +
+          "fallback_source_frame_pts_us=${if (outputState == "passthrough") sourceFrame.ptsUs else "none"} " +
+          "timestamp_source=media3_decoder_pts sync_mode=1x"
+      Log.println(if (outputState == "synthesized") Log.INFO else Log.WARN, logTag, outputMessage)
+    }
   }
 
   private fun findSourcePair(frames: List<FrameSlot>, targetPtsUs: Long): Pair<FrameSlot, FrameSlot>? {
@@ -1346,17 +1546,49 @@ class Media3FlowVideoSink(
     var outputHandle = 0L
     var outputGlTexture = 0
     if (flowVulkanContext != 0L) {
-      outputBuffer = runCatching { createSharedHardwareBuffer(sourceWidth, sourceHeight) }.getOrNull()
+      outputBuffer = runCatching { createSharedHardwareBuffer(sourceWidth, sourceHeight, "output") }.getOrNull()
       if (outputBuffer != null) {
         outputHandle = runCatching {
           Media3FlowVulkanNative.nativeCreateFrameImage(
             flowVulkanContext, outputBuffer, sourceWidth, sourceHeight, true,
           )
+        }.onFailure { error ->
+          logFlowRecordOnce(
+            "image-create-output-exception-$sourceWidth-$sourceHeight",
+            Log.ERROR,
+            "event=ahb_import state=failed stage=nativeCreateFrameImage image_role=output " +
+              "width=$sourceWidth height=$sourceHeight reason=exception",
+            error,
+          )
         }.getOrDefault(0L)
+        if (outputHandle == 0L) {
+          logFlowRecordOnce(
+            "image-create-output-rejected-$sourceWidth-$sourceHeight",
+            Log.ERROR,
+            "event=ahb_import state=failed stage=nativeCreateFrameImage image_role=output " +
+              "width=$sourceWidth height=$sourceHeight reason=import_rejected",
+          )
+        }
         if (outputHandle != 0L) {
           outputGlTexture = runCatching {
             Media3FlowVulkanNative.nativeCreateEglTexture(outputBuffer)
+          }.onFailure { error ->
+            logFlowRecordOnce(
+              "egl-image-create-output-exception-$sourceWidth-$sourceHeight",
+              Log.ERROR,
+              "event=egl_import state=failed stage=nativeCreateEglTexture image_role=output " +
+                "width=$sourceWidth height=$sourceHeight reason=exception",
+              error,
+            )
           }.getOrDefault(0)
+          if (outputGlTexture == 0) {
+            logFlowRecordOnce(
+              "egl-image-create-output-rejected-$sourceWidth-$sourceHeight",
+              Log.ERROR,
+              "event=egl_import state=failed stage=nativeCreateEglTexture image_role=output " +
+                "width=$sourceWidth height=$sourceHeight reason=import_rejected",
+            )
+          }
         }
       }
     }
@@ -1376,7 +1608,7 @@ class Media3FlowVideoSink(
     outputTexture = outputGlTexture
     repeat(MAX_STORED_FRAMES) {
       val buffer = if (flowVulkanContext != 0L) {
-        runCatching { createSharedHardwareBuffer(sourceWidth, sourceHeight) }.getOrNull()
+        runCatching { createSharedHardwareBuffer(sourceWidth, sourceHeight, "input") }.getOrNull()
       } else null
       var imageHandle = 0L
       var texture = 0
@@ -1385,9 +1617,43 @@ class Media3FlowVideoSink(
           Media3FlowVulkanNative.nativeCreateFrameImage(
             flowVulkanContext, buffer, sourceWidth, sourceHeight, false,
           )
+        }.onFailure { error ->
+          logFlowRecordOnce(
+            "image-create-input-exception-$sourceWidth-$sourceHeight",
+            Log.ERROR,
+            "event=ahb_import state=failed stage=nativeCreateFrameImage image_role=input " +
+              "width=$sourceWidth height=$sourceHeight reason=exception",
+            error,
+          )
         }.getOrDefault(0L)
+        if (imageHandle == 0L) {
+          logFlowRecordOnce(
+            "image-create-input-rejected-$sourceWidth-$sourceHeight",
+            Log.ERROR,
+            "event=ahb_import state=failed stage=nativeCreateFrameImage image_role=input " +
+              "width=$sourceWidth height=$sourceHeight reason=import_rejected",
+          )
+        }
         if (imageHandle != 0L) {
-          texture = runCatching { Media3FlowVulkanNative.nativeCreateEglTexture(buffer) }.getOrDefault(0)
+          texture = runCatching { Media3FlowVulkanNative.nativeCreateEglTexture(buffer) }
+            .onFailure { error ->
+              logFlowRecordOnce(
+                "egl-image-create-input-exception-$sourceWidth-$sourceHeight",
+                Log.ERROR,
+                "event=egl_import state=failed stage=nativeCreateEglTexture image_role=input " +
+                  "width=$sourceWidth height=$sourceHeight reason=exception",
+                error,
+              )
+            }
+            .getOrDefault(0)
+          if (texture == 0) {
+            logFlowRecordOnce(
+              "egl-image-create-input-rejected-$sourceWidth-$sourceHeight",
+              Log.ERROR,
+              "event=egl_import state=failed stage=nativeCreateEglTexture image_role=input " +
+                "width=$sourceWidth height=$sourceHeight reason=import_rejected",
+            )
+          }
         }
       }
       if (imageHandle == 0L || texture == 0) {
@@ -1410,7 +1676,26 @@ class Media3FlowVideoSink(
     }
     repeat(MAX_MOTION_PAIRS) { motionPairs += MotionPairSlot() }
     flowAvailable = allSharedImagesReady && framePool.size == MAX_STORED_FRAMES
-    if (!flowAvailable) lastBypassReason = "vulkan_shared_image_unavailable"
+    if (flowAvailable) {
+      logFlowRecordOnce(
+        "shared-image-pool-ready-$sourceWidth-$sourceHeight",
+        Log.INFO,
+        "event=renderer_init state=ready backend=vulkan-spirv target_fps=$targetFps " +
+          "source=$sourceWidth x $sourceHeight input_images=${framePool.count { it.nativeImageHandle != 0L }} " +
+          "required_input_images=$MAX_STORED_FRAMES output_image_present=${outputImageHandle != 0L} " +
+          "hardware_decoder=media3 source_pts=media3_decoder_pts sync_mode=1x",
+      )
+    } else {
+      lastBypassReason = "vulkan_shared_image_unavailable"
+      logFlowRecordOnce(
+        "shared-image-pool-failure-$sourceWidth-$sourceHeight",
+        Log.ERROR,
+        "event=renderer_init state=unavailable stage=shared_image_pool reason=vulkan_shared_image_unavailable " +
+          "backend=vulkan-spirv source=$sourceWidth x $sourceHeight " +
+          "input_images=${framePool.count { it.nativeImageHandle != 0L }} required_input_images=$MAX_STORED_FRAMES " +
+          "output_image_present=${outputImageHandle != 0L} fallback=stock_media3_renderer",
+      )
+    }
     setOutputFrameRate()
     publishDiagnostics(if (flowAvailable) "gpu_ready" else "source_fallback", lastBypassReason, force = true)
   }
@@ -1472,9 +1757,28 @@ class Media3FlowVideoSink(
     if (eglReady) return true
     if (eglDisplay == EGL14.EGL_NO_DISPLAY) {
       eglDisplay = EGL14.eglGetDisplay(EGL14.EGL_DEFAULT_DISPLAY)
-      if (eglDisplay == EGL14.EGL_NO_DISPLAY) return false
+      if (eglDisplay == EGL14.EGL_NO_DISPLAY) {
+        logFlowRecordOnce(
+          "egl-get-display",
+          Log.ERROR,
+          "event=egl_context state=failed stage=eglGetDisplay egl_error=0x${EGL14.eglGetError().toString(16)}",
+        )
+        return false
+      }
       val version = IntArray(2)
-      if (!EGL14.eglInitialize(eglDisplay, version, 0, version, 1)) return false
+      if (!EGL14.eglInitialize(eglDisplay, version, 0, version, 1)) {
+        logFlowRecordOnce(
+          "egl-initialize",
+          Log.ERROR,
+          "event=egl_context state=failed stage=eglInitialize egl_error=0x${EGL14.eglGetError().toString(16)}",
+        )
+        return false
+      }
+      logFlowRecordOnce(
+        "egl-initialize-ready",
+        Log.INFO,
+        "event=egl_context state=ready stage=eglInitialize egl_major=${version[0]} egl_minor=${version[1]}",
+      )
     }
     if (eglConfig == null) {
       val configAttributes = intArrayOf(
@@ -1488,7 +1792,15 @@ class Media3FlowVideoSink(
       )
       val configs = arrayOfNulls<android.opengl.EGLConfig>(1)
       val configCount = IntArray(1)
-      if (!EGL14.eglChooseConfig(eglDisplay, configAttributes, 0, configs, 0, 1, configCount, 0) || configCount[0] == 0) return false
+      if (!EGL14.eglChooseConfig(eglDisplay, configAttributes, 0, configs, 0, 1, configCount, 0) || configCount[0] == 0) {
+        logFlowRecordOnce(
+          "egl-choose-config",
+          Log.ERROR,
+          "event=egl_context state=failed stage=eglChooseConfig config_count=${configCount[0]} " +
+            "requested_es=3 requested_window_and_pbuffer=true egl_error=0x${EGL14.eglGetError().toString(16)}",
+        )
+        return false
+      }
       eglConfig = configs[0]
     }
     if (eglContext == EGL14.EGL_NO_CONTEXT) {
@@ -1500,7 +1812,15 @@ class Media3FlowVideoSink(
         contextAttributes,
         0,
       )
-      if (eglContext == EGL14.EGL_NO_CONTEXT) return false
+      if (eglContext == EGL14.EGL_NO_CONTEXT) {
+        logFlowRecordOnce(
+          "egl-create-context",
+          Log.ERROR,
+          "event=egl_context state=failed stage=eglCreateContext client_version=3 " +
+            "egl_error=0x${EGL14.eglGetError().toString(16)}",
+        )
+        return false
+      }
     }
     if (pbufferSurface == EGL14.EGL_NO_SURFACE) {
       pbufferSurface = EGL14.eglCreatePbufferSurface(
@@ -1509,18 +1829,42 @@ class Media3FlowVideoSink(
         intArrayOf(EGL14.EGL_WIDTH, 1, EGL14.EGL_HEIGHT, 1, EGL14.EGL_NONE),
         0,
       )
-      if (pbufferSurface == EGL14.EGL_NO_SURFACE) return false
+      if (pbufferSurface == EGL14.EGL_NO_SURFACE) {
+        logFlowRecordOnce(
+          "egl-create-pbuffer",
+          Log.ERROR,
+          "event=egl_context state=failed stage=eglCreatePbufferSurface width=1 height=1 " +
+            "egl_error=0x${EGL14.eglGetError().toString(16)}",
+        )
+        return false
+      }
     }
-    if (!makePbufferCurrent()) return false
+    if (!makePbufferCurrent()) {
+      logFlowRecordOnce(
+        "egl-make-pbuffer-current",
+        Log.ERROR,
+        "event=egl_context state=failed stage=eglMakeCurrent target=pbuffer " +
+          "egl_error=0x${EGL14.eglGetError().toString(16)}",
+      )
+      return false
+    }
     val glVersion = GLES20.glGetString(GLES20.GL_VERSION).orEmpty()
     if (!glVersion.contains("OpenGL ES 3.")) {
       lastBypassReason = "gles3_capture_unavailable"
+      logFlowRecordOnce(
+        "egl-gles-version",
+        Log.ERROR,
+        "event=egl_context state=failed stage=gles_version_validation gl_version=${glVersion.replace(' ', '_')} " +
+          "required=OpenGL_ES_3 capture=gles3 compute=vulkan",
+      )
       return false
     }
     if (!eglInfoLogged) {
-      Log.i(
-        logTag,
-        "GLES capture/presentation context ready version=$glVersion; interpolation=Vulkan",
+      logFlowRecordOnce(
+        "egl-gles-version-ready",
+        Log.INFO,
+        "event=egl_context state=ready stage=gles_version_validation gl_version=${glVersion.replace(' ', '_')} " +
+          "capture=gles3 interpolation=Vulkan interpolation_compute=vulkan",
       )
       eglInfoLogged = true
     }
@@ -1533,23 +1877,91 @@ class Media3FlowVideoSink(
       val ids = IntArray(1)
       GLES20.glGenFramebuffers(1, ids, 0)
       framebuffer = ids[0]
+      val glError = GLES20.glGetError()
+      if (framebuffer == 0 || glError != GLES20.GL_NO_ERROR) {
+        logFlowRecordOnce(
+          "egl-framebuffer-create",
+          Log.ERROR,
+          "event=egl_context state=failed stage=glGenFramebuffers framebuffer_id=$framebuffer " +
+            "gl_error=0x${glError.toString(16)}",
+        )
+      }
     }
     eglReady = copyProgram != 0 && blitProgram != 0 && framebuffer != 0
+    if (!eglReady) {
+      logFlowRecordOnce(
+        "egl-graphics-pipeline-validation",
+        Log.ERROR,
+        "event=egl_context state=failed stage=graphics_pipeline_validation " +
+          "input_copy_program=$copyProgram presentation_blit_program=$blitProgram framebuffer=$framebuffer",
+      )
+    } else {
+      logFlowRecordOnce(
+        "egl-graphics-pipeline-ready",
+        Log.INFO,
+        "event=egl_context state=ready stage=graphics_pipeline_validation " +
+          "input_copy_program=$copyProgram presentation_blit_program=$blitProgram framebuffer=$framebuffer",
+      )
+    }
     return eglReady
   }
 
   private fun compileGraphicsPrograms() {
-    copyProgram = linkProgram(COPY_VERTEX_SHADER, COPY_EXTERNAL_FRAGMENT_SHADER)
-    blitProgram = linkProgram(COPY_VERTEX_SHADER, BLIT_FRAGMENT_SHADER)
+    copyProgram = linkProgram("input_external_texture_copy", COPY_VERTEX_SHADER, COPY_EXTERNAL_FRAGMENT_SHADER)
+    blitProgram = linkProgram("presentation_blit", COPY_VERTEX_SHADER, BLIT_FRAGMENT_SHADER)
   }
 
-  private fun makePbufferCurrent(): Boolean =
-    eglDisplay != EGL14.EGL_NO_DISPLAY && eglContext != EGL14.EGL_NO_CONTEXT &&
-      pbufferSurface != EGL14.EGL_NO_SURFACE &&
-      EGL14.eglMakeCurrent(eglDisplay, pbufferSurface, pbufferSurface, eglContext)
+  private fun makePbufferCurrent(): Boolean {
+    if (eglDisplay == EGL14.EGL_NO_DISPLAY || eglContext == EGL14.EGL_NO_CONTEXT ||
+      pbufferSurface == EGL14.EGL_NO_SURFACE
+    ) {
+      logFlowRecordOnce(
+        "egl-make-pbuffer-current",
+        Log.ERROR,
+        "event=egl_context state=failed stage=eglMakeCurrent target=pbuffer " +
+          "display_ready=${eglDisplay != EGL14.EGL_NO_DISPLAY} " +
+          "context_ready=${eglContext != EGL14.EGL_NO_CONTEXT} " +
+          "surface_ready=${pbufferSurface != EGL14.EGL_NO_SURFACE}",
+      )
+      return false
+    }
+    val current = EGL14.eglMakeCurrent(eglDisplay, pbufferSurface, pbufferSurface, eglContext)
+    if (!current) {
+      logFlowRecordOnce(
+        "egl-make-pbuffer-current",
+        Log.ERROR,
+        "event=egl_context state=failed stage=eglMakeCurrent target=pbuffer " +
+          "egl_error=0x${EGL14.eglGetError().toString(16)}",
+      )
+    }
+    return current
+  }
 
-  private fun makeWindowCurrent(): Boolean =
-    windowSurface != EGL14.EGL_NO_SURFACE && EGL14.eglMakeCurrent(eglDisplay, windowSurface, windowSurface, eglContext)
+  private fun makeWindowCurrent(): Boolean {
+    if (windowSurface == EGL14.EGL_NO_SURFACE || eglDisplay == EGL14.EGL_NO_DISPLAY ||
+      eglContext == EGL14.EGL_NO_CONTEXT
+    ) {
+      logFlowRecordOnce(
+        "egl-make-window-current",
+        Log.ERROR,
+        "event=egl_context state=failed stage=eglMakeCurrent target=window " +
+          "display_ready=${eglDisplay != EGL14.EGL_NO_DISPLAY} " +
+          "context_ready=${eglContext != EGL14.EGL_NO_CONTEXT} " +
+          "surface_ready=${windowSurface != EGL14.EGL_NO_SURFACE}",
+      )
+      return false
+    }
+    val current = EGL14.eglMakeCurrent(eglDisplay, windowSurface, windowSurface, eglContext)
+    if (!current) {
+      logFlowRecordOnce(
+        "egl-make-window-current",
+        Log.ERROR,
+        "event=egl_context state=failed stage=eglMakeCurrent target=window " +
+          "egl_error=0x${EGL14.eglGetError().toString(16)}",
+      )
+    }
+    return current
+  }
 
   private fun destroyWindowSurface() {
     if (windowSurface != EGL14.EGL_NO_SURFACE && eglDisplay != EGL14.EGL_NO_DISPLAY) {
@@ -1561,7 +1973,16 @@ class Media3FlowVideoSink(
   private fun createWindowSurface() {
     destroyWindowSurface()
     val surface = outputSurface ?: return
-    if (!outputAvailable || !surface.isValid) return
+    if (!outputAvailable || !surface.isValid) {
+      if (outputAvailable && !surface.isValid) {
+        logFlowRecordOnce(
+          "egl-window-surface-invalid",
+          Log.WARN,
+          "event=egl_context state=unavailable stage=window_surface_validation reason=surface_invalid",
+        )
+      }
+      return
+    }
     windowSurface = EGL14.eglCreateWindowSurface(
       eglDisplay,
       checkNotNull(eglConfig),
@@ -1571,8 +1992,19 @@ class Media3FlowVideoSink(
     )
     if (windowSurface == EGL14.EGL_NO_SURFACE) {
       outputAvailable = false
+      logFlowRecordOnce(
+        "egl-window-surface-create",
+        Log.ERROR,
+        "event=egl_context state=failed stage=eglCreateWindowSurface " +
+          "surface_valid=${surface.isValid} egl_error=0x${EGL14.eglGetError().toString(16)}",
+      )
       reportError(IllegalStateException("Unable to create Media3 Flow EGL window surface"))
     } else {
+      logFlowRecordOnce(
+        "egl-window-surface-ready",
+        Log.INFO,
+        "event=egl_context state=ready stage=eglCreateWindowSurface output_surface_valid=true",
+      )
       setOutputFrameRate()
       currentFormat?.let { format -> dispatchListener { it.onVideoSizeChanged(videoSize(format)) } }
     }
@@ -1623,11 +2055,26 @@ class Media3FlowVideoSink(
     checkGlError("fullscreen disable vertex attribute", frameProbeOnly = true)
   }
 
-  private fun linkProgram(vertexSource: String, fragmentSource: String): Int {
-    val vertex = compileShader(GLES20.GL_VERTEX_SHADER, vertexSource)
-    val fragment = compileShader(GLES20.GL_FRAGMENT_SHADER, fragmentSource)
-    if (vertex == 0 || fragment == 0) return 0
+  private fun linkProgram(stage: String, vertexSource: String, fragmentSource: String): Int {
+    val vertex = compileShader("$stage.vertex", GLES20.GL_VERTEX_SHADER, vertexSource)
+    val fragment = compileShader("$stage.fragment", GLES20.GL_FRAGMENT_SHADER, fragmentSource)
+    if (vertex == 0 || fragment == 0) {
+      if (vertex != 0) GLES20.glDeleteShader(vertex)
+      if (fragment != 0) GLES20.glDeleteShader(fragment)
+      return 0
+    }
     val program = GLES20.glCreateProgram()
+    if (program == 0) {
+      logFlowRecordOnce(
+        "gles-create-program-$stage",
+        Log.ERROR,
+        "event=egl_context state=failed stage=glCreateProgram shader_program=$stage " +
+          "gl_error=0x${GLES20.glGetError().toString(16)}",
+      )
+      GLES20.glDeleteShader(vertex)
+      GLES20.glDeleteShader(fragment)
+      return 0
+    }
     GLES20.glAttachShader(program, vertex)
     GLES20.glAttachShader(program, fragment)
     GLES20.glLinkProgram(program)
@@ -1636,21 +2083,42 @@ class Media3FlowVideoSink(
     GLES20.glDeleteShader(vertex)
     GLES20.glDeleteShader(fragment)
     if (status[0] == 0) {
-      Log.w(logTag, "Graphics shader link failed: ${GLES20.glGetProgramInfoLog(program)}")
+      val driverLog = GLES20.glGetProgramInfoLog(program).replace('\n', ' ').take(512).replace(' ', '_')
+      logFlowRecordOnce(
+        "gles-link-program-$stage",
+        Log.ERROR,
+        "event=egl_context state=failed stage=glLinkProgram shader_program=$stage " +
+          "program_id=$program driver_log=$driverLog",
+      )
       GLES20.glDeleteProgram(program)
       return 0
     }
     return program
   }
 
-  private fun compileShader(type: Int, source: String): Int {
+  private fun compileShader(stage: String, type: Int, source: String): Int {
     val shader = GLES20.glCreateShader(type)
+    if (shader == 0) {
+      logFlowRecordOnce(
+        "gles-create-shader-$stage",
+        Log.ERROR,
+        "event=egl_context state=failed stage=glCreateShader shader_stage=$stage " +
+          "shader_type=0x${type.toString(16)} gl_error=0x${GLES20.glGetError().toString(16)}",
+      )
+      return 0
+    }
     GLES20.glShaderSource(shader, source)
     GLES20.glCompileShader(shader)
     val status = IntArray(1)
     GLES20.glGetShaderiv(shader, GLES20.GL_COMPILE_STATUS, status, 0)
     if (status[0] == 0) {
-      Log.w(logTag, "Shader compile failed: ${GLES20.glGetShaderInfoLog(shader)}")
+      val driverLog = GLES20.glGetShaderInfoLog(shader).replace('\n', ' ').take(512).replace(' ', '_')
+      logFlowRecordOnce(
+        "gles-compile-shader-$stage",
+        Log.ERROR,
+        "event=egl_context state=failed stage=glCompileShader shader_stage=$stage " +
+          "shader_id=$shader shader_type=0x${type.toString(16)} driver_log=$driverLog",
+      )
       GLES20.glDeleteShader(shader)
       return 0
     }
@@ -1890,8 +2358,15 @@ class Media3FlowVideoSink(
       errors += error
       error = GLES20.glGetError()
     }
-    check(errors.isEmpty()) {
-      "$stage GLES error(s) ${errors.joinToString { "0x${it.toString(16)}" }}"
+    if (errors.isNotEmpty()) {
+      val codes = errors.joinToString(",") { "0x${it.toString(16)}" }
+      logFlowRecordOnce(
+        "gles-operation-${stage.replace(' ', '_')}",
+        Log.ERROR,
+        "event=egl_runtime state=failed stage=gles_operation operation=${stage.replace(' ', '_')} " +
+          "gl_errors=$codes error_count=${errors.size}",
+      )
+      throw IllegalStateException("$stage GLES error(s) $codes")
     }
   }
 

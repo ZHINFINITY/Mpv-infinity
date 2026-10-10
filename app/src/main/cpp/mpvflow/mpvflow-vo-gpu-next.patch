@@ -131,16 +131,39 @@ index bd3d1aa1ec..e5301791b7 100644
 +        .search_radius = 8,
 +    };
 +    enum MPVFlowGPUResult status = MPVFLOW_GPU_INVALID;
-+    MPVFlowGPUContext *ctx = mpvflow_gpu_create(p->gpu, &config, &status);
++    struct MPVFlowGPUCreateDiagnostics create_diagnostics = {0};
++    MPVFlowGPUContext *ctx = mpvflow_gpu_create(p->gpu, &config, &status,
++                                                &create_diagnostics);
 +    pl_fmt input_fmt = pl_find_fmt(p->gpu, PL_FMT_UNORM, 4, 8, 8,
 +                                   PL_FMT_CAP_SAMPLEABLE | PL_FMT_CAP_RENDERABLE);
 +    if (!ctx || !input_fmt) {
 +        mpvflow_gpu_destroy(ctx);
 +        const char *backend = p->gpu->glsl.vulkan ? "vulkan" : "non_vulkan";
 +        const char *reason = !ctx ? "gpu_compute_initialization_failed" : "input_rgba8_format_unavailable";
++        const char *capability_failure =
++            !p->gpu->glsl.compute ? "glsl_compute" :
++            !p->gpu->glsl.vulkan ? "glsl_vulkan" :
++            p->gpu->glsl.version < 450 ? "glsl_version" :
++            p->gpu->limits.max_pushc_size < 20 ? "max_pushc_size" : "none";
 +        MP_WARN(vo, "MPVFLOW_DIAGNOSTIC event=renderer_init state=unavailable backend=%s "
-+                "target_fps=%d reason=%s status=%d input_rgba8=%d cpu_fallback=no\n",
-+                backend, p->next_opts->mpvflow_target_fps, reason, status, !!input_fmt);
++                "target_fps=%d reason=%s status=%d input_rgba8=%d cpu_fallback=no "
++                "capability_failure=%s glsl_compute=%d glsl_vulkan=%d glsl_version=%d "
++                "max_pushc_size=%zu required_pushc_size=%zu max_tex_2d_dim=%u "
++                "max_group_threads=%u max_group_size=%ux%ux%u compute_queues=%u "
++                "create_stage=%s failed_pass_mask=0x%x rgba16f_found=%d rgba16f_caps=0x%x "
++                "rgba8_found=%d rgba8_caps=0x%x input_fmt=%s input_fmt_caps=0x%x\n",
++                backend, p->next_opts->mpvflow_target_fps, reason, status, !!input_fmt,
++                capability_failure, p->gpu->glsl.compute, p->gpu->glsl.vulkan,
++                p->gpu->glsl.version, p->gpu->limits.max_pushc_size,
++                create_diagnostics.required_pushc_size,
++                p->gpu->limits.max_tex_2d_dim, p->gpu->glsl.max_group_threads,
++                p->gpu->glsl.max_group_size[0], p->gpu->glsl.max_group_size[1],
++                p->gpu->glsl.max_group_size[2], p->gpu->limits.compute_queues,
++                create_diagnostics.stage ? create_diagnostics.stage : "unknown",
++                create_diagnostics.failed_pass_mask, create_diagnostics.rgba16f_found,
++                create_diagnostics.rgba16f_caps, create_diagnostics.rgba8_found,
++                create_diagnostics.rgba8_caps, input_fmt && input_fmt->name ? input_fmt->name : "missing",
++                input_fmt ? input_fmt->caps : 0);
 +        p->flow_init_logged = true;
 +        return;
 +    }

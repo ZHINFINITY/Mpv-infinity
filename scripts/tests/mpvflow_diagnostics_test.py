@@ -30,14 +30,20 @@ assert PATCH.count("flow_update_context(vo);") >= 3, "initialization must be che
 
 # Retain/capture both previously named GPU records and the unified current record prefix.
 require(LOG_REPOSITORY, 'message.contains("MPVFLOW_GPU_DIAGNOSTIC", ignoreCase = true)', "log retention must recognize legacy GPU Flow records")
-require(CRASH_ACTIVITY, 'line.contains("MPVFLOW_GPU_DIAGNOSTIC", ignoreCase = true)', "crash export must include legacy GPU Flow records")
+require(CRASH_ACTIVITY, "selectMpvFlowDiagnosticLines(logcat.toString())", "crash export must use the shared Flow diagnostic selector")
 require(LOG_REPOSITORY, 'message.contains("MPVFLOW_DIAGNOSTIC", ignoreCase = true)', "log retention must recognize unified runtime records")
 require(LOG_REPOSITORY, "isNativeMedia3FlowDiagnostic", "log retention must preserve Native Media3 Flow route and summary records")
 require(CRASH_ACTIVITY, '"media3_flow_route"', "crash export must explicitly include Native Media3 route records")
 require(CRASH_ACTIVITY, '"flow_summary"', "crash export must explicitly include Native Media3 flow summaries")
+require(MPV_VIEW, '"MPVFLOW_DIAGNOSTIC event=renderer_config', "startup must record the applied MPV renderer settings")
+require(MPV_VIEW, "option_order=gpu-api>gpu-context>vo", "startup must record the actual Vulkan renderer-option order")
 
 # Ensure renderer tuning is written before turning the option on so init logs its actual target.
 target_index = MPV_VIEW.index('"mpvflow-target-fps", mpvFlowTargetFps.toString()')
 enable_index = MPV_VIEW.index('"mpvflow", if (mpvFlowFrameInterpolationEnabled) "yes" else "no"')
 assert target_index < enable_index, "target FPS must be configured before enabling the renderer"
+gpu_api_index = MPV_VIEW.index('PlaybackSession.setOptionString("gpu-api", backend.gpuApi)')
+gpu_context_index = MPV_VIEW.index('PlaybackSession.setOptionString("gpu-context", backend.gpuContext)')
+renderer_index = MPV_VIEW.index('PlaybackSession.setVideoOutput(backend.vo)')
+assert gpu_api_index < gpu_context_index < renderer_index, "Vulkan API/context must be applied before creating the selected VO"
 print("MPV Flow runtime diagnostics and capture regression tests passed")

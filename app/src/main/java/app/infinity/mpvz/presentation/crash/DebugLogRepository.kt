@@ -18,10 +18,13 @@ import java.util.Calendar
 import java.util.Date
 import java.util.Locale
 
-internal const val DEBUG_LOG_ENTRY_LIMIT = 1_500
+internal const val DEBUG_LOG_ENTRY_LIMIT = 5_000
 private const val RIFE_DIAGNOSTIC_ENTRY_RESERVE = 500
 private const val MPVFLOW_DIAGNOSTIC_ENTRY_RESERVE = 500
 private const val NATIVE_MEDIA3_FLOW_DIAGNOSTIC_ENTRY_RESERVE = 250
+private const val FLOW_STARTUP_ENTRY_PIN_COUNT = 16
+private const val FLOW_RENDERER_CONFIG_PIN_COUNT = 8
+private const val FLOW_FAILURE_ENTRY_PIN_COUNT = 128
 
 internal enum class DebugLogLevel(
   val code: String,
@@ -54,6 +57,8 @@ internal data class DebugLogSnapshot(
 /**
  * Reads the current process' logcat in a device-tolerant way.
  *
+ * By default, each read consumes the device's full current (finite, circular) Logcat buffer;
+ * limiting it to a recent tail can evict Flow startup diagnostics before the viewer is opened.
  * Some vendor logcat binaries either do not support --pid or emit a slightly different
  * formatting even when a format is requested. The primary path uses Android's process filter;
  * if that produces no usable entries, a second pass reads a wider snapshot and filters the
@@ -61,8 +66,7 @@ internal data class DebugLogSnapshot(
  * still surfaced instead of being silently discarded.
  */
 internal object DebugLogReader {
-  // Player startup and codec traces can be very verbose. A small tail evicts the earlier
-  // MpvCatalogDiag search/resolver entries before the user opens the viewer.
+  // Explicit test/debug limits only; normal reads omit `-t` and request the complete Logcat ring.
   private const val PRIMARY_RAW_LIMIT = 10_000
   private const val FALLBACK_RAW_LIMIT = 20_000
 
@@ -89,21 +93,14 @@ internal object DebugLogReader {
   fun readSnapshot(maxRawLines: Int? = null): DebugLogSnapshot {
     val pid = Process.myPid()
     val failures = mutableListOf<String>()
-    val primaryRawLimit = maxRawLines?.coerceIn(1, PRIMARY_RAW_LIMIT) ?: PRIMARY_RAW_LIMIT
-    val fallbackRawLimit = maxRawLines?.coerceIn(primaryRawLimit, FALLBACK_RAW_LIMIT) ?: FALLBACK_RAW_LIMIT
+    val primaryRawLimit = maxRawLines?.coerceIn(1, PRIMARY_RAW_LIMIT)
+    val fallbackRawLimit = maxRawLines?.coerceIn(primaryRawLimit ?: 1, FALLBACK_RAW_LIMIT)
 
-    val primary =
-      runCommand(
-        listOf(
-          "logcat",
-          "--pid=$pid",
-          "-v",
-          "threadtime",
-          "-d",
-          "-t",
-          primaryRawLimit.toString(),
-        ),
-      )
+    val primaryCommand = buildList {
+      addAll(listOf("logcat", "--pid=$pid", "-v", "threadtime", "-d"))
+      primaryRawLimit?.let { addAll(listOf("-t", it.toString())) }
+    }
+    val primary = runCommand(primaryCommand)
 
     if (primary.exitCode == 0) {
       val parsed = parseLines(primary.lines, expectedPid = pid, allowRawFallback = true)
@@ -118,17 +115,11 @@ internal object DebugLogReader {
       failures += primary.errorMessage("process-filtered logcat")
     }
 
-    val fallback =
-      runCommand(
-        listOf(
-          "logcat",
-          "-v",
-          "threadtime",
-          "-d",
-          "-t",
-          fallbackRawLimit.toString(),
-        ),
-      )
+    val fallbackCommand = buildList {
+      addAll(listOf("logcat", "-v", "threadtime", "-d"))
+      fallbackRawLimit?.let { addAll(listOf("-t", it.toString())) }
+    }
+    val fallback = runCommand(fallbackCommand)
 
     if (fallback.exitCode == 0) {
       val parsed = parseLines(fallback.lines, expectedPid = pid, allowRawFallback = false)
@@ -302,13 +293,12 @@ internal fun retainDebugLogEntries(entries: List<DebugLogEntry>): List<DebugLogE
       .filter(DebugLogEntry::isRifeDiagnostic)
       .takeLast(RIFE_DIAGNOSTIC_ENTRY_RESERVE)
   val mpvFlowDiagnostics =
-    entries
-      .filter(DebugLogEntry::isMpvFlowDiagnostic)
-      .takeLast(MPVFLOW_DIAGNOSTIC_ENTRY_RESERVE)
+    retainPinnedFlowDiagnostics(entries.filter(DebugLogEntry::isMpvFlowDiagnostic), MPVFLOW_DIAGNOSTIC_ENTRY_RESERVE)
   val nativeMedia3FlowDiagnostics =
-    entries
-      .filter(DebugLogEntry::isNativeMedia3FlowDiagnostic)
-      .takeLast(NATIVE_MEDIA3_FLOW_DIAGNOSTIC_ENTRY_RESERVE)
+    retainPinnedFlowDiagnostics(
+      entries.filter(DebugLogEntry::isNativeMedia3FlowDiagnostic),
+      NATIVE_MEDIA3_FLOW_DIAGNOSTIC_ENTRY_RESERVE,
+    )
   val diagnostics = (rifeDiagnostics + mpvFlowDiagnostics + nativeMedia3FlowDiagnostics).distinctBy(DebugLogEntry::id)
   val recentCapacity = (DEBUG_LOG_ENTRY_LIMIT - diagnostics.size).coerceAtLeast(0)
   return (entries.takeLast(recentCapacity) + diagnostics)
@@ -323,13 +313,64 @@ internal fun DebugLogEntry.isRifeDiagnostic(): Boolean =
 
 internal fun DebugLogEntry.isMpvFlowDiagnostic(): Boolean =
   tag.contains("vf_mpvflow", ignoreCase = true) ||
+    tag.contains("MpvInfinityFlowVk", ignoreCase = true) ||
     message.contains("MPVFLOW_DIAGNOSTIC", ignoreCase = true) ||
     message.contains("MPVFLOW_GPU_DIAGNOSTIC", ignoreCase = true) ||
     message.contains("vf_mpvflow", ignoreCase = true)
 
 internal fun DebugLogEntry.isNativeMedia3FlowDiagnostic(): Boolean =
-  message.contains("media3_flow_route", ignoreCase = true) ||
+  tag.contains("MpvInfinityFlowVk", ignoreCase = true) ||
+    tag.contains("Mpv∞-Media3Flow", ignoreCase = true) ||
+    message.contains("component=native-media3", ignoreCase = true) ||
+    message.contains("media3_flow_route", ignoreCase = true) ||
     message.contains("flow_summary", ignoreCase = true)
+
+private fun retainPinnedFlowDiagnostics(
+  entries: List<DebugLogEntry>,
+  reserve: Int,
+): List<DebugLogEntry> {
+  if (entries.size <= reserve) return entries
+  val startup = entries.filter(DebugLogEntry::isFlowStartupRecord).take(FLOW_STARTUP_ENTRY_PIN_COUNT)
+  val latestRendererConfigs =
+    entries
+      .filter { it.message.contains("event=renderer_config", ignoreCase = true) }
+      .takeLast(FLOW_RENDERER_CONFIG_PIN_COUNT)
+  val failures = entries.filter(DebugLogEntry::isFlowFailureRecord).takeLast(FLOW_FAILURE_ENTRY_PIN_COUNT)
+  val pinned = (startup + latestRendererConfigs + failures).distinctBy(DebugLogEntry::id)
+  val tailCapacity = (reserve - pinned.size).coerceAtLeast(0)
+  return (pinned + entries.takeLast(tailCapacity))
+    .distinctBy(DebugLogEntry::id)
+    .sortedBy(DebugLogEntry::timeMillis)
+}
+
+private fun DebugLogEntry.isFlowStartupRecord(): Boolean =
+  message.contains("event=config", ignoreCase = true) ||
+    message.contains("event=renderer_config", ignoreCase = true) ||
+    message.contains("event=renderer_init", ignoreCase = true) ||
+    message.contains("event=compute_capabilities", ignoreCase = true) ||
+    message.contains("event=vulkan_context", ignoreCase = true) ||
+    message.contains("event=preflight", ignoreCase = true) ||
+    message.contains("media3_flow_route", ignoreCase = true)
+
+private fun DebugLogEntry.isFlowFailureRecord(): Boolean =
+  message.contains("state=failed", ignoreCase = true) ||
+    message.contains("state=unavailable", ignoreCase = true) ||
+    message.contains("state=passthrough", ignoreCase = true) ||
+    message.contains("state=source_fallback", ignoreCase = true) ||
+    message.contains("event=auto_fallback", ignoreCase = true)
+
+/** Curated export section; the unfiltered Logcat text is separately kept intact. */
+internal fun selectMpvFlowDiagnosticLines(logcat: String): String =
+  logcat.lineSequence()
+    .filter { line ->
+      listOf(
+        "MPVFLOW_DIAGNOSTIC",
+        "MPVFLOW_GPU_DIAGNOSTIC",
+        "vf_mpvflow",
+        "MpvInfinityFlowVk",
+      ).any { marker -> line.contains(marker, ignoreCase = true) }
+    }
+    .joinToString("\n")
 
 internal fun formatMpvFlowTimingSummary(entries: List<DebugLogEntry>): String {
   val pair =

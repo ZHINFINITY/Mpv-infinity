@@ -362,9 +362,9 @@ object PlaybackSession : MPVLib.EventObserver {
     updateState { it.copy(surfaceAttached = false) }
   }
 
-  fun setVideoOutput(videoOutput: String) {
+  fun setVideoOutput(videoOutput: String): Int {
     desiredVideoOutput = videoOutput
-    withCore(Unit, allowInitializing = true) {
+    return withCore(-1, allowInitializing = true) {
       MPVLib.setOptionString("vo", videoOutput)
     }
   }

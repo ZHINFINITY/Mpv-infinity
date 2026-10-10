@@ -267,9 +267,31 @@ class MPVView(
         mpvFlowFrameInterpolationEnabled -> mpvFlowTargetFps.toDouble()
         else -> null
       }
-    PlaybackSession.setVideoOutput(backend.vo)
-    PlaybackSession.setOptionString("gpu-api", backend.gpuApi)
-    PlaybackSession.setOptionString("gpu-context", backend.gpuContext)
+    // These options are consumed while the VO creates its libplacebo context.
+    // Apply them before `vo`; otherwise gpu-next can keep its default OpenGL GPU.
+    val gpuApiApplyResult = PlaybackSession.setOptionString("gpu-api", backend.gpuApi)
+    val gpuContextApplyResult = PlaybackSession.setOptionString("gpu-context", backend.gpuContext)
+    val rendererApplyResult = PlaybackSession.setVideoOutput(backend.vo)
+    val gpuApiOwner = if (MpvConfigOverridePolicy.isOwnedByMpvConf("gpu-api")) "mpv.conf" else "app"
+    val gpuContextOwner = if (MpvConfigOverridePolicy.isOwnedByMpvConf("gpu-context")) "mpv.conf" else "app"
+    val rendererConfigState =
+      when {
+        gpuApiApplyResult != 0 || gpuContextApplyResult != 0 || rendererApplyResult != 0 -> "failed"
+        gpuApiOwner == "mpv.conf" || gpuContextOwner == "mpv.conf" -> "delegated"
+        else -> "applied"
+      }
+    Log.i(
+      TAG,
+      "MPVFLOW_DIAGNOSTIC event=renderer_config state=$rendererConfigState " +
+        "requested_renderer=${backend.vo} requested_gpu_api=${backend.gpuApi} " +
+        "requested_gpu_context=${backend.gpuContext} " +
+        "option_order=gpu-api>gpu-context>vo gpu_api_rc=$gpuApiApplyResult " +
+        "gpu_context_rc=$gpuContextApplyResult vo_rc=$rendererApplyResult " +
+        "gpu_api_owner=$gpuApiOwner gpu_context_owner=$gpuContextOwner " +
+        "effective_gpu_api=${PlaybackSession.getPropertyString("gpu-api") ?: "unavailable"} " +
+        "effective_gpu_context=${PlaybackSession.getPropertyString("gpu-context") ?: "unavailable"} " +
+        "effective_renderer=${PlaybackSession.getPropertyString("vo") ?: "unavailable"}",
+    )
 
     val hdrScreenOutputEnabled = decoderPreferences.hdrScreenOutput.get()
     val isLinearAvailable = useVulkan && backend.vo == "gpu-next"

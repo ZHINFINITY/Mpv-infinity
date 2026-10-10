@@ -238,14 +238,7 @@ class CrashActivity : AppCompatActivity() {
             line.contains("rife", ignoreCase = true) ||
               line.contains("vf_rife", ignoreCase = true)
           }.joinToString("\n")
-      val mpvFlowLines =
-        logcat
-          .lineSequence()
-          .filter { line ->
-            line.contains("MPVFLOW_DIAGNOSTIC", ignoreCase = true) ||
-              line.contains("MPVFLOW_GPU_DIAGNOSTIC", ignoreCase = true) ||
-              line.contains("vf_mpvflow", ignoreCase = true)
-          }.joinToString("\n")
+      val mpvFlowLines = selectMpvFlowDiagnosticLines(logcat.toString())
       logcat.appendLine()
       logcat.appendLine("===== RIFE interpolation diagnostics =====")
       logcat.appendLine(if (rifeLines.isBlank()) "No RIFE diagnostics captured." else rifeLines)
@@ -259,6 +252,7 @@ class CrashActivity : AppCompatActivity() {
             listOf(
               "media3_flow_route",
               "flow_summary",
+              "MpvInfinityFlowVk",
               "Mpv∞-Media3",
               "ExoPlayer",
               "Media3",

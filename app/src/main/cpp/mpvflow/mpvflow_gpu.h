@@ -10,6 +10,7 @@
 
 #include <libplacebo/gpu.h>
 #include <stdbool.h>
+#include <stddef.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -29,6 +30,28 @@ enum MPVFlowGPUResult {
     MPVFLOW_GPU_OK = 0,
 };
 
+enum MPVFlowGPUPassMask {
+    MPVFLOW_GPU_PASS_PREPROCESS = 1u << 0,
+    MPVFLOW_GPU_PASS_LUMA = 1u << 1,
+    MPVFLOW_GPU_PASS_DOWNSAMPLE = 1u << 2,
+    MPVFLOW_GPU_PASS_REDUCE_FIRST = 1u << 3,
+    MPVFLOW_GPU_PASS_REDUCE = 1u << 4,
+    MPVFLOW_GPU_PASS_MOTION = 1u << 5,
+    MPVFLOW_GPU_PASS_SYNTHESIZE = 1u << 6,
+};
+
+struct MPVFlowGPUCreateDiagnostics {
+    /* Static stage name; valid for the lifetime of the process. */
+    const char *stage;
+    size_t max_pushc_size;
+    size_t required_pushc_size;
+    uint32_t failed_pass_mask;
+    uint32_t rgba16f_caps;
+    uint32_t rgba8_caps;
+    bool rgba16f_found;
+    bool rgba8_found;
+};
+
 struct MPVFlowGPUConfig {
     /* Largest accepted input dimension; defaults to 480 when <= 0 and is
      * conservatively hard-capped at 480 in this initial implementation. */
@@ -44,7 +67,8 @@ struct MPVFlowGPUConfig {
  */
 MPVFlowGPUContext *mpvflow_gpu_create(pl_gpu gpu,
                                       const struct MPVFlowGPUConfig *config,
-                                      enum MPVFlowGPUResult *status);
+                                      enum MPVFlowGPUResult *status,
+                                      struct MPVFlowGPUCreateDiagnostics *diagnostics);
 void mpvflow_gpu_destroy(MPVFlowGPUContext *context);
 
 /*

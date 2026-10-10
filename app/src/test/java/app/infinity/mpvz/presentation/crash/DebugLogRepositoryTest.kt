@@ -233,6 +233,122 @@ class DebugLogRepositoryTest {
   }
 
   @Test
+  fun pinsInitialRendererStateAndLatestFailuresAfterLargeUnrelatedLogcatFlood() {
+    fun entry(id: String, time: Long, tag: String, message: String) =
+      DebugLogEntry(
+        id = id,
+        timeMillis = time,
+        timestamp = "00:00:00.000",
+        level = if (message.contains("state=failed") || message.contains("state=unavailable")) {
+          DebugLogLevel.Error
+        } else {
+          DebugLogLevel.Info
+        },
+        tag = tag,
+        message = message,
+      )
+
+    val startup =
+      listOf(
+        entry("mpv-config", 1L, "mpv", "MPVFLOW_DIAGNOSTIC event=config requested_enabled=true renderer=gpu-next gpu_api=vulkan"),
+        entry("mpv-renderer-config", 2L, "mpv", "MPVFLOW_DIAGNOSTIC event=renderer_config state=applied renderer=gpu-next gpu_api=vulkan gpu_context=androidvk option_order=gpu-api>gpu-context>vo gpu_api_rc=0 gpu_context_rc=0 vo_rc=0"),
+        entry("mpv-renderer", 3L, "mpv", "MPVFLOW_DIAGNOSTIC event=renderer_init state=unavailable backend=vulkan target_fps=120 reason=gpu_compute_initialization_failed"),
+        entry("native-vulkan", 4L, "MpvInfinityFlowVk", "MPVFLOW_DIAGNOSTIC component=native-media3 event=vulkan_context state=requested api=vulkan"),
+        entry("native-renderer", 5L, "MpvInfinityFlowVk", "MPVFLOW_DIAGNOSTIC component=native-media3 event=renderer_init state=ready backend=vulkan-spirv"),
+      )
+    val unrelatedFlood =
+      (0 until DEBUG_LOG_ENTRY_LIMIT + 2_000).map { index ->
+        entry("codec-$index", 10L + index, "MediaCodec", "routine codec buffer trace $index")
+      }
+    val repetitiveFlowNoise =
+      (0 until 900).map { index ->
+        entry("flow-noise-$index", 20_000L + index, "mpv", "MPVFLOW_DIAGNOSTIC event=timing_sample sample=$index")
+      }
+    val latestFailures =
+      listOf(
+        entry("mpv-latest-failure", 30_001L, "mpv", "MPVFLOW_DIAGNOSTIC event=output state=passthrough reason=gpu_context_unavailable source_pts=8.000000"),
+        entry("native-latest-failure", 30_002L, "MpvInfinityFlowVk", "MPVFLOW_DIAGNOSTIC component=native-media3 event=ahb_import state=failed stage=vkBindImageMemory vk_result=-100"),
+      )
+
+    val retained = retainDebugLogEntries(startup + unrelatedFlood + repetitiveFlowNoise + latestFailures)
+
+    assertTrue(retained.size <= DEBUG_LOG_ENTRY_LIMIT)
+    assertTrue(retained.any { it.id == "mpv-config" })
+    assertTrue(retained.any { it.id == "mpv-renderer-config" })
+    assertTrue(retained.any { it.id == "mpv-renderer" })
+    assertTrue(retained.any { it.id == "native-vulkan" })
+    assertTrue(retained.any { it.id == "native-renderer" })
+    assertTrue(retained.any { it.id == "mpv-latest-failure" })
+    assertTrue(retained.any { it.id == "native-latest-failure" })
+    assertTrue(retained.any { it.id == "codec-${DEBUG_LOG_ENTRY_LIMIT + 1_999}" })
+  }
+
+  @Test
+  fun pinsLatestRendererConfigOutsideTheFirstStartupWindow() {
+    fun entry(id: String, time: Long, message: String) =
+      DebugLogEntry(
+        id = id,
+        timeMillis = time,
+        timestamp = "00:00:00.000",
+        level = DebugLogLevel.Info,
+        tag = "mpv",
+        message = message,
+      )
+
+    val earlierStartup =
+      (0 until 20).map { index ->
+        entry(
+          "old-startup-$index",
+          index.toLong(),
+          "MPVFLOW_DIAGNOSTIC event=renderer_init state=initialized session=$index",
+        )
+      }
+    val latestRendererConfig =
+      entry(
+        "latest-renderer-config",
+        21L,
+        "MPVFLOW_DIAGNOSTIC event=renderer_config state=applied requested_renderer=gpu-next " +
+          "requested_gpu_api=vulkan requested_gpu_context=androidvk " +
+          "option_order=gpu-api>gpu-context>vo gpu_api_rc=0 gpu_context_rc=0 vo_rc=0",
+      )
+    val flowNoise =
+      (0 until DEBUG_LOG_ENTRY_LIMIT + 2_000).map { index ->
+        entry("flow-noise-$index", 100L + index, "MPVFLOW_DIAGNOSTIC event=timing_sample sample=$index")
+      }
+
+    val retained = retainDebugLogEntries(earlierStartup + latestRendererConfig + flowNoise)
+
+    assertTrue(retained.size <= DEBUG_LOG_ENTRY_LIMIT)
+    assertTrue(retained.any { it.id == latestRendererConfig.id })
+    assertTrue(retained.any { it.id == "flow-noise-${DEBUG_LOG_ENTRY_LIMIT + 1_999}" })
+  }
+
+  @Test
+  fun parsesAndExportsNativeVulkanDiagnosticsAlongsideTheUnfilteredLogcat() {
+    val rawLogcat =
+      listOf(
+        "10-11 01:02:03.000 123 456 I mpv: MPVFLOW_DIAGNOSTIC event=config requested_enabled=true gpu_api=vulkan",
+        "10-11 01:02:03.001 123 456 I mpv: MPVFLOW_DIAGNOSTIC event=renderer_config state=applied renderer=gpu-next gpu_api=vulkan gpu_context=androidvk option_order=gpu-api>gpu-context>vo gpu_api_rc=0 gpu_context_rc=0 vo_rc=0",
+        "10-11 01:02:03.002 123 456 I MpvInfinityFlowVk: MPVFLOW_DIAGNOSTIC component=native-media3 event=compute_capabilities glsl_compute=1 glsl_vulkan=1",
+        "10-11 01:02:03.003 123 456 E MpvInfinityFlowVk: MPVFLOW_DIAGNOSTIC component=native-media3 event=ahb_import state=failed stage=vkGetAndroidHardwareBufferPropertiesANDROID vk_result=-100",
+        "10-11 01:02:03.004 123 456 I Playback: unrelated decoder detail remains in full Logcat",
+      )
+    val parsed = DebugLogReader.parseForTesting(rawLogcat, expectedPid = 123, allowRawFallback = false)
+    val retained = retainDebugLogEntries(parsed)
+    val selected = selectMpvFlowDiagnosticLines(rawLogcat.joinToString("\n"))
+
+    assertEquals(4, retained.count(DebugLogEntry::isMpvFlowDiagnostic))
+    assertEquals(2, retained.count(DebugLogEntry::isNativeMedia3FlowDiagnostic))
+    assertTrue(selected.contains("event=config"))
+    assertTrue(selected.contains("event=renderer_config"))
+    assertTrue(selected.contains("option_order=gpu-api>gpu-context>vo"))
+    assertTrue(selected.contains("event=compute_capabilities"))
+    assertTrue(selected.contains("stage=vkGetAndroidHardwareBufferPropertiesANDROID"))
+    assertTrue(!selected.contains("unrelated decoder detail"))
+    assertTrue(rawLogcat.last().contains("unrelated decoder detail"))
+  }
+
+  @Test
   fun formatsMeasuredPairCostWithoutCallingItDisplayedFrameRate() {
     val entry =
       DebugLogEntry(
