@@ -147,7 +147,9 @@ if(MPVFLOW_ENABLE_VULKAN_BACKEND)
 
     add_library(media3flow_vulkan SHARED
         media3flow_vulkan_jni.cpp
-        mpvflow/mpvflow_gpu.c)
+        mpvflow/mpvflow_gpu.c
+        mpvflow/mpvflow_opencl.c
+        mpvflow/mpvflow_opencl_vk_bridge.c)
     set_target_properties(media3flow_vulkan PROPERTIES
         C_STANDARD 11
         C_STANDARD_REQUIRED ON
@@ -163,6 +165,7 @@ if(MPVFLOW_ENABLE_VULKAN_BACKEND)
         EGL
         GLESv3
         log
+        dl
         vulkan)
     mpvinfinity_optimize_native_target(media3flow_vulkan)
 endif()

@@ -57,6 +57,7 @@ import app.infinity.mpvz.preferences.MpvConfigOverride
 import app.infinity.mpvz.preferences.RIFE_PROCESSING_RESOLUTION_OPTIONS
 import app.infinity.mpvz.preferences.RIFE_TARGET_FPS_OPTIONS
 import app.infinity.mpvz.preferences.MPVFLOW_TARGET_FPS_OPTIONS
+import app.infinity.mpvz.preferences.MpvFlowComputeApi
 import app.infinity.mpvz.preferences.preference.collectAsState
 import app.infinity.mpvz.presentation.Screen
 import app.infinity.mpvz.ui.icons.Icon
@@ -92,11 +93,14 @@ object DecoderPreferencesScreen : Screen {
     val rifeProcessingResolution by preferences.rifeProcessingResolution.collectAsState()
     val mpvFlowFrameInterpolationEnabled by preferences.mpvFlowFrameInterpolation.collectAsState()
     val mpvFlowTargetFps by preferences.mpvFlowTargetFps.collectAsState()
+    val mpvFlowComputeApi by preferences.mpvFlowComputeApi.collectAsState()
     val storedConfigOverrides by advancedPreferences.mpvConfOverrides.collectAsState()
     val configOwnedOptions =
       remember(storedConfigOverrides) { MpvConfigOverride.resolveOptionNames(storedConfigOverrides) }
     val profileConfigOwned = "profile" in configOwnedOptions
     val rendererBackendConfigOwned = setOf("gpu-api", "gpu-context").any(configOwnedOptions::contains)
+    val mpvFlowComputeApiConfigOwned =
+      selectedPlaybackEngine != PlaybackEngineMode.NATIVE && "mpvflow-compute-api" in configOwnedOptions
     val decoderConfigOwned = MpvConfigControlledFeatures.HARDWARE_DECODER.any(configOwnedOptions::contains)
     val frameInterpolationConfigOwned =
       MpvConfigControlledFeatures.FRAME_INTERPOLATION.any(configOwnedOptions::contains)
@@ -486,25 +490,45 @@ object DecoderPreferencesScreen : Screen {
                 },
               )
 
-              if (BuildConfig.MPV_HAS_MPVFLOW) {
+              if (BuildConfig.MPV_HAS_MPVFLOW || nativeMedia3FlowSelected) {
                 PreferenceDivider()
-                Column(
-                  modifier =
-                    Modifier
-                      .fillMaxWidth()
-                      .settingsSearchTarget(R.string.pref_decoder_mpvflow_compute_api_title)
-                      .padding(horizontal = 24.dp, vertical = 12.dp),
-                ) {
-                  Text(
-                    text = stringResource(R.string.pref_decoder_mpvflow_compute_api_title),
-                    style = MaterialTheme.typography.titleSmall,
-                  )
-                  Text(
-                    text = stringResource(R.string.pref_decoder_mpvflow_compute_api_summary),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.outline,
-                  )
-                }
+                ListPreference(
+                  modifier = Modifier.settingsSearchTarget(R.string.pref_decoder_mpvflow_compute_api_title),
+                  value = mpvFlowComputeApi,
+                  onValueChange = preferences.mpvFlowComputeApi::set,
+                  values = MpvFlowComputeApi.entries,
+                  enabled =
+                    (mpvFlowAvailable || nativeMedia3FlowAvailable || mpvFlowFrameInterpolationEnabled) &&
+                      !mpvFlowComputeApiConfigOwned,
+                  valueToText = { api ->
+                    AnnotatedString(
+                      context.getString(
+                        when (api) {
+                          MpvFlowComputeApi.AUTO -> R.string.pref_decoder_mpvflow_compute_api_auto
+                          MpvFlowComputeApi.OPENCL -> R.string.pref_decoder_mpvflow_compute_api_opencl
+                          MpvFlowComputeApi.VULKAN -> R.string.pref_decoder_mpvflow_compute_api_vulkan
+                        },
+                      ),
+                    )
+                  },
+                  title = { Text(stringResource(R.string.pref_decoder_mpvflow_compute_api_title)) },
+                  summary = {
+                    Text(
+                      stringResource(
+                        when {
+                          mpvFlowComputeApiConfigOwned ->
+                            R.string.pref_decoder_mpvflow_compute_api_summary_config_owned
+                          mpvFlowComputeApi == MpvFlowComputeApi.AUTO ->
+                            R.string.pref_decoder_mpvflow_compute_api_summary_auto
+                          mpvFlowComputeApi == MpvFlowComputeApi.OPENCL ->
+                            R.string.pref_decoder_mpvflow_compute_api_summary_opencl
+                          else -> R.string.pref_decoder_mpvflow_compute_api_summary_vulkan
+                        },
+                      ),
+                      color = MaterialTheme.colorScheme.outline,
+                    )
+                  },
+                )
               }
 
               PreferenceDivider()

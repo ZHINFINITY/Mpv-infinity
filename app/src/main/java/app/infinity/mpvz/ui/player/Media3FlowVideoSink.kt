@@ -31,6 +31,7 @@ import androidx.media3.exoplayer.video.VideoSink
 import app.infinity.mpvz.BuildConfig
 import app.infinity.mpvz.preferences.effectiveMpvFlowMaxDimension
 import app.infinity.mpvz.preferences.effectiveMpvFlowTargetFps
+import app.infinity.mpvz.preferences.MpvFlowComputeApi
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.nio.FloatBuffer
@@ -102,6 +103,7 @@ private data class FlowFrameRateSurfacePolicy(
 class Media3FlowVideoSink(
   context: Context,
   requestedTargetFps: Int,
+  private val requestedComputeApi: MpvFlowComputeApi,
   private val onDiagnostics: (Media3FlowDiagnostics) -> Unit,
 ) : VideoSink {
   private val appContext = context.applicationContext
@@ -280,7 +282,8 @@ class Media3FlowVideoSink(
           !ensureEgl() -> "egl_capture_setup_failed"
           !deviceSupportsVulkanFlow(appContext) -> "vulkan_compute_unavailable"
           else -> {
-            flowVulkanContext = Media3FlowVulkanNative.nativeCreateContext(maxDimension)
+            flowVulkanContext =
+              Media3FlowVulkanNative.nativeCreateContext(maxDimension, requestedComputeApi.nativeValue)
             if (flowVulkanContext == 0L) {
               "vulkan_context_or_compute_setup_failed"
             } else {
@@ -1668,7 +1671,7 @@ class Media3FlowVideoSink(
     gridHeight = motionGridSize.height
     if (flowVulkanContext == 0L && deviceSupportsVulkanFlow(appContext)) {
       flowVulkanContext = runCatching {
-        Media3FlowVulkanNative.nativeCreateContext(maxDimension)
+        Media3FlowVulkanNative.nativeCreateContext(maxDimension, requestedComputeApi.nativeValue)
       }.getOrDefault(0L)
     }
     var allSharedImagesReady = flowVulkanContext != 0L

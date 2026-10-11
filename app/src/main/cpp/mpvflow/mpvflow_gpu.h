@@ -34,6 +34,12 @@ enum MPVFlowGPUResult {
     MPVFLOW_GPU_OK = 0,
 };
 
+enum MPVFlowGPUComputeAPI {
+    MPVFLOW_GPU_COMPUTE_AUTO = 0,
+    MPVFLOW_GPU_COMPUTE_OPENCL = 1,
+    MPVFLOW_GPU_COMPUTE_VULKAN = 2,
+};
+
 enum MPVFlowGPUPassMask {
     MPVFLOW_GPU_PASS_PREPROCESS = 1u << 0,
     MPVFLOW_GPU_PASS_LUMA = 1u << 1,
@@ -85,6 +91,8 @@ struct MPVFlowGPUTimingStats {
 };
 
 struct MPVFlowGPUConfig {
+    /* Auto prefers a fully initialized OpenCL interop backend, then Vulkan. */
+    enum MPVFlowGPUComputeAPI compute_api;
     /* Largest motion-analysis dimension; defaults to 640 when <= 0 and is
      * hard-capped at 640. Synthesized color output remains source-resolution. */
     int max_dimension;
@@ -102,6 +110,9 @@ MPVFlowGPUContext *mpvflow_gpu_create(pl_gpu gpu,
                                       enum MPVFlowGPUResult *status,
                                       struct MPVFlowGPUCreateDiagnostics *diagnostics);
 void mpvflow_gpu_destroy(MPVFlowGPUContext *context);
+/* Returns the resolved runtime backend (OpenCL or Vulkan), never the Auto request. */
+enum MPVFlowGPUComputeAPI mpvflow_gpu_get_compute_api(MPVFlowGPUContext *context);
+const char *mpvflow_gpu_get_compute_api_name(MPVFlowGPUContext *context);
 
 /* Poll completed libplacebo GPU timestamps without waiting for the device. */
 void mpvflow_gpu_get_timing_stats(MPVFlowGPUContext *context,

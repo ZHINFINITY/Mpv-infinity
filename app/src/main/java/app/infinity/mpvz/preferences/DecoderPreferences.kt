@@ -26,6 +26,12 @@ internal fun normalizeRifeTargetFps(value: Int): Int =
 internal val MPVFLOW_TARGET_FPS_OPTIONS = listOf(48, 60, 72, 90, 96, 120, 144)
 internal const val DEFAULT_MPVFLOW_TARGET_FPS = 60
 
+enum class MpvFlowComputeApi(val nativeValue: Int) {
+  AUTO(0),
+  OPENCL(1),
+  VULKAN(2),
+}
+
 internal fun normalizeMpvFlowTargetFps(value: Int): Int =
   MPVFLOW_TARGET_FPS_OPTIONS.minByOrNull { kotlin.math.abs(it.toLong() - value.toLong()) }
     ?: DEFAULT_MPVFLOW_TARGET_FPS
@@ -78,6 +84,7 @@ class DecoderPreferences(
     preferenceStore.getInt("rife_processing_resolution", DEFAULT_RIFE_PROCESSING_RESOLUTION)
   val mpvFlowFrameInterpolation = preferenceStore.getBoolean("mpvflow_frame_interpolation", false)
   val mpvFlowTargetFps = preferenceStore.getInt("mpvflow_target_fps", DEFAULT_MPVFLOW_TARGET_FPS)
+  val mpvFlowComputeApi = preferenceStore.getEnum("mpvflow_compute_api", MpvFlowComputeApi.AUTO)
 
   val debanding = preferenceStore.getEnum("debanding", Debanding.None)
   val debandIterations = preferenceStore.getInt("deband_iterations", 1)

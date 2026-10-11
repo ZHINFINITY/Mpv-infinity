@@ -1,0 +1,120 @@
+/*
+ * SPDX-License-Identifier: AGPL-3.0-or-later
+ *
+ * Vulkan <-> OpenCL bridge for GPU_DATA_BUFFER AHardwareBuffers. These APIs
+ * create one BLOB AHardwareBuffer allocation, import that allocation as a
+ * VkBuffer and as an mpvflow OpenCL buffer, and copy to/from pl_tex using only
+ * Vulkan transfer commands. No image/AHB is ever interpreted as linear bytes.
+ */
+#ifndef MPV_INFINITY_MPVFLOW_OPENCL_VK_BRIDGE_H
+#define MPV_INFINITY_MPVFLOW_OPENCL_VK_BRIDGE_H
+
+#include <stddef.h>
+#include <stdint.h>
+#include <libplacebo/gpu.h>
+#include "mpvflow_opencl.h"
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+typedef struct MPVFlowOpenCLVkBridge MPVFlowOpenCLVkBridge;
+typedef struct MPVFlowOpenCLVkBuffer MPVFlowOpenCLVkBuffer;
+
+enum MPVFlowOpenCLVkBridgeStatus {
+    MPVFLOW_OPENCL_VK_BRIDGE_OK = 0,
+    MPVFLOW_OPENCL_VK_BRIDGE_INVALID = -1,
+    MPVFLOW_OPENCL_VK_BRIDGE_UNSUPPORTED = -2,
+    MPVFLOW_OPENCL_VK_BRIDGE_VULKAN_ERROR = -3,
+    MPVFLOW_OPENCL_VK_BRIDGE_OPENCL_ERROR = -4,
+    MPVFLOW_OPENCL_VK_BRIDGE_BUSY = -5,
+};
+
+/*
+ * Create a bridge over an existing Vulkan-backed pl_gpu and OpenCL context.
+ * Both objects are borrowed and must outlive the bridge and all its buffers.
+ * On failure, error_out (when supplied) receives an explicit diagnostic.
+ */
+MPVFlowOpenCLVkBridge *mpvflow_opencl_vk_bridge_create(
+    pl_gpu gpu, MPVFlowOpenCLContext *opencl,
+    char *error_out, size_t error_capacity);
+
+/* Fails with BUSY unless every child buffer has first been destroyed. */
+enum MPVFlowOpenCLVkBridgeStatus mpvflow_opencl_vk_bridge_destroy(
+    MPVFlowOpenCLVkBridge *bridge);
+
+/* Last diagnostic for an operation on this context (process-owned storage). */
+const char *mpvflow_opencl_vk_bridge_last_error(
+    const MPVFlowOpenCLVkBridge *bridge);
+
+/*
+ * Allocate and import a single-layer BLOB AHardwareBuffer. Logical RGBA8 frame
+ * dimensions and row stride are stored separately from the BLOB descriptor.
+ * The buffer size is bounded to 256 MiB and each dimension to 4096. The access
+ * mode is passed unchanged to mpvflow_opencl_import_ahardwarebuffer. Imported
+ * buffers start foreign-owned; before the first Vulkan copy, the caller marks
+ * the unused OpenCL side complete. Later Vulkan copies are fence-waited before
+ * returning, so the caller may then start OpenCL work directly.
+ */
+enum MPVFlowOpenCLVkBridgeStatus mpvflow_opencl_vk_buffer_create(
+    MPVFlowOpenCLVkBridge *bridge, uint32_t frame_width,
+    uint32_t frame_height, enum MPVFlowOpenCLAccess access,
+    MPVFlowOpenCLVkBuffer **buffer_out);
+
+/*
+ * Destroy only after OpenCL work has completed and
+ * mpvflow_opencl_vk_buffer_opencl_finished() has been called for the last
+ * OpenCL access. Vulkan/AHB/OpenCL objects are released in dependency order.
+ */
+enum MPVFlowOpenCLVkBridgeStatus mpvflow_opencl_vk_buffer_destroy(
+    MPVFlowOpenCLVkBuffer *buffer);
+
+/* Borrowed OpenCL wrapper, owned/released by the bridge buffer. */
+MPVFlowOpenCLBuffer *mpvflow_opencl_vk_buffer_get_opencl(
+    MPVFlowOpenCLVkBuffer *buffer);
+uint32_t mpvflow_opencl_vk_buffer_width(const MPVFlowOpenCLVkBuffer *buffer);
+uint32_t mpvflow_opencl_vk_buffer_height(const MPVFlowOpenCLVkBuffer *buffer);
+uint32_t mpvflow_opencl_vk_buffer_row_stride(const MPVFlowOpenCLVkBuffer *buffer);
+
+/*
+ * Call before queuing OpenCL work that will touch this buffer. This records that
+ * completion must be explicitly confirmed before the next Vulkan use/destruction.
+ */
+enum MPVFlowOpenCLVkBridgeStatus mpvflow_opencl_vk_buffer_opencl_started(
+    MPVFlowOpenCLVkBuffer *buffer);
+
+/* Call only after the OpenCL queue has completed all work touching this buffer
+ * (the current mpvflow OpenCL pair/synthesis APIs are blocking and call
+ * clFinish before returning). This is the explicit host-side OpenCL -> Vulkan
+ * synchronization point; it does not call or emulate clFinish. The next
+ * Vulkan copy performs the foreign-family acquire barrier and waits for its
+ * fence before returning.
+ */
+enum MPVFlowOpenCLVkBridgeStatus mpvflow_opencl_vk_buffer_opencl_finished(
+    MPVFlowOpenCLVkBuffer *buffer);
+
+/*
+ * GPU-only VkImageToBuffer copy. Source must be a 2D, single-sample,
+ * VK_FORMAT_R8G8B8A8_UNORM pl_tex with TRANSFER_SRC usage and exact dimensions.
+ * On return the Vulkan fence has signaled and the buffer is released to the
+ * foreign queue family for OpenCL use. The fence is waited before return.
+ */
+enum MPVFlowOpenCLVkBridgeStatus mpvflow_opencl_vk_copy_texture_to_buffer(
+    MPVFlowOpenCLVkBridge *bridge, pl_tex source,
+    MPVFlowOpenCLVkBuffer *destination);
+
+/*
+ * GPU-only VkBufferToImage copy. Destination must be a 2D, single-sample,
+ * VK_FORMAT_R8G8B8A8_UNORM pl_tex with TRANSFER_DST usage and exact dimensions.
+ * It may be uninitialized (UNDEFINED layout); in that case it is transitioned
+ * directly to TRANSFER_DST_OPTIMAL and then GENERAL before release.
+ * The buffer must have been marked complete after OpenCL clFinish.
+ */
+enum MPVFlowOpenCLVkBridgeStatus mpvflow_opencl_vk_copy_buffer_to_texture(
+    MPVFlowOpenCLVkBridge *bridge, MPVFlowOpenCLVkBuffer *source,
+    pl_tex destination);
+
+#ifdef __cplusplus
+}
+#endif
+#endif /* MPV_INFINITY_MPVFLOW_OPENCL_VK_BRIDGE_H */

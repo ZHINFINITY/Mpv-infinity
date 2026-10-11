@@ -6,6 +6,8 @@
  * transfers, pixel reads, or CPU-side synthesis occur here.
  */
 #include "mpvflow_gpu.h"
+#include "mpvflow_opencl.h"
+#include "mpvflow_opencl_vk_bridge.h"
 
 #include <libplacebo/vulkan.h>
 
@@ -62,6 +64,10 @@ struct FlowLevel {
 
 struct MPVFlowGPUContext {
     pl_gpu gpu;                 /* borrowed */
+    enum MPVFlowGPUComputeAPI requested_compute_api;
+    enum MPVFlowGPUComputeAPI compute_api;
+    MPVFlowOpenCLContext *opencl;
+    MPVFlowOpenCLVkBridge *opencl_bridge;
     int max_dimension;
     int search_radius;
     uint32_t compute_queue_family;
@@ -87,6 +93,12 @@ struct MPVFlowGPUContext {
 
 struct MPVFlowGPUPair {
     MPVFlowGPUContext *owner;
+    MPVFlowOpenCLPair *opencl_pair;
+    MPVFlowOpenCLVkBuffer *opencl_analysis[2];
+    MPVFlowOpenCLVkBuffer *opencl_source[2];
+    MPVFlowOpenCLVkBuffer *opencl_output;
+    pl_tex opencl_source_identity[2]; /* borrowed; pair-scoped immutable frames */
+    bool opencl_source_cache_ready;
     pl_tex input[2];            /* borrowed from caller */
     pl_tex output;              /* owned, reused for each timestep */
     int w, h;
@@ -259,9 +271,10 @@ static void flow_timer_poll_and_report(MPVFlowGPUContext *ctx)
     ctx->timing_window_start_ns = now;
 }
 
-/* All compute passes target libplacebo's Vulkan/SPIR-V backend. Constants use
- * one std430-compatible push-constant block; descriptor bindings are explicit
- * and unique within each pass. */
+/* Vulkan preprocessing and Vulkan-fallback passes target libplacebo's
+ * Vulkan/SPIR-V backend. The selected OpenCL path lives in mpvflow_opencl.c.
+ * Constants use one std430-compatible push-constant block; descriptor bindings
+ * are explicit and unique within each Vulkan pass. */
 struct FlowPushConstants {
     int32_t cfg[4];
     float timestep;
@@ -361,11 +374,13 @@ static pl_pass make_pass(pl_gpu gpu, const char *glsl,
 }
 
 static pl_tex create_texture_ex(MPVFlowGPUContext *ctx, int w, int h, pl_fmt fmt,
-                                bool sampleable, bool blit_src, const char *stage)
+                                bool sampleable, bool blit_src, bool blit_dst,
+                                const char *stage)
 {
     pl_tex texture = pl_tex_create(ctx->gpu, pl_tex_params(
         .w = w, .h = h, .d = 0, .format = fmt,
-        .sampleable = sampleable, .storable = true, .blit_src = blit_src));
+        .sampleable = sampleable, .storable = true,
+        .blit_src = blit_src, .blit_dst = blit_dst));
     if (!texture)
         flow_log_once(ctx, FLOW_DIAG_TEXTURE_ALLOC, PL_LOG_WARN,
                       "MPVFLOW_DIAGNOSTIC event=compute_runtime state=failed stage=%s "
@@ -377,7 +392,7 @@ static pl_tex create_texture_ex(MPVFlowGPUContext *ctx, int w, int h, pl_fmt fmt
 static pl_tex create_texture(MPVFlowGPUContext *ctx, int w, int h, pl_fmt fmt,
                              bool sampleable, const char *stage)
 {
-    return create_texture_ex(ctx, w, h, fmt, sampleable, false, stage);
+    return create_texture_ex(ctx, w, h, fmt, sampleable, false, false, stage);
 }
 
 static void destroy_tex(MPVFlowGPUContext *ctx, pl_tex *tex)
@@ -464,6 +479,44 @@ static void destroy_pair_textures(MPVFlowGPUContext *ctx,
 {
     if (!pair)
         return;
+    if (ctx && ctx->opencl && ctx->opencl_bridge &&
+        (pair->opencl_pair || pair->opencl_analysis[0] || pair->opencl_analysis[1] ||
+         pair->opencl_source[0] || pair->opencl_source[1] || pair->opencl_output)) {
+        enum MPVFlowOpenCLStatus finished = mpvflow_opencl_finish(ctx->opencl);
+        if (finished == MPVFLOW_OPENCL_OK) {
+            MPVFlowOpenCLVkBuffer *buffers[] = {
+                pair->opencl_analysis[0], pair->opencl_analysis[1],
+                pair->opencl_source[0], pair->opencl_source[1], pair->opencl_output,
+            };
+            for (size_t i = 0; i < sizeof(buffers) / sizeof(buffers[0]); i++) {
+                if (buffers[i])
+                    (void) mpvflow_opencl_vk_buffer_opencl_finished(buffers[i]);
+            }
+            if (pair->opencl_pair)
+                mpvflow_opencl_pair_release(ctx->opencl, pair->opencl_pair);
+            MPVFlowOpenCLVkBuffer **owned[] = {
+                &pair->opencl_analysis[0], &pair->opencl_analysis[1],
+                &pair->opencl_source[0], &pair->opencl_source[1], &pair->opencl_output,
+            };
+            for (size_t i = 0; i < sizeof(owned) / sizeof(owned[0]); i++) {
+                if (*owned[i]) {
+                    enum MPVFlowOpenCLVkBridgeStatus status =
+                        mpvflow_opencl_vk_buffer_destroy(*owned[i]);
+                    if (status != MPVFLOW_OPENCL_VK_BRIDGE_OK)
+                        flow_log(ctx->gpu, PL_LOG_ERR,
+                                 "MPVFLOW_DIAGNOSTIC event=opencl_buffer_release state=failed status=%d",
+                                 status);
+                }
+                *owned[i] = NULL;
+            }
+        } else {
+            flow_log(ctx->gpu, PL_LOG_ERR,
+                     "MPVFLOW_DIAGNOSTIC event=opencl_buffer_release state=deferred reason=queue_finish_failed status=%d",
+                     finished);
+        }
+        if (finished == MPVFLOW_OPENCL_OK)
+            pair->opencl_pair = NULL;
+    }
     destroy_tex(ctx, &pair->output);
     for (int i = 0; i < FLOW_LEVELS; i++) {
         destroy_tex(ctx, &pair->level[i].luma[0]);
@@ -486,6 +539,14 @@ MPVFlowGPUContext *mpvflow_gpu_create(pl_gpu gpu,
         *status = MPVFLOW_GPU_INVALID;
     if (!gpu) {
         if (diagnostics) diagnostics->stage = "gpu_missing";
+        return NULL;
+    }
+    const enum MPVFlowGPUComputeAPI requested_api = config
+        ? config->compute_api : MPVFLOW_GPU_COMPUTE_AUTO;
+    if (requested_api < MPVFLOW_GPU_COMPUTE_AUTO ||
+        requested_api > MPVFLOW_GPU_COMPUTE_VULKAN) {
+        if (diagnostics) diagnostics->stage = "compute_api_validation";
+        if (status) *status = MPVFLOW_GPU_INVALID;
         return NULL;
     }
     if (diagnostics) {
@@ -529,6 +590,8 @@ MPVFlowGPUContext *mpvflow_gpu_create(pl_gpu gpu,
         return NULL;
     }
     ctx->gpu = gpu;
+    ctx->requested_compute_api = requested_api;
+    ctx->compute_api = MPVFLOW_GPU_COMPUTE_VULKAN;
     pl_vulkan vk = pl_vulkan_get(gpu);
     ctx->compute_queue_family = vk ? vk->queue_compute.index : UINT32_MAX;
     ctx->compute_timestamps_supported = flow_compute_timestamp_capabilities(
@@ -587,6 +650,84 @@ MPVFlowGPUContext *mpvflow_gpu_create(pl_gpu gpu,
         free(ctx);
         if (status) *status = MPVFLOW_GPU_UNSUPPORTED_FORMAT;
         return NULL;
+    }
+
+    if (requested_api != MPVFLOW_GPU_COMPUTE_VULKAN) {
+        struct MPVFlowOpenCLConfig opencl_config = {
+            .search_radius = ctx->search_radius,
+            .max_dimension = ctx->max_dimension,
+        };
+        enum MPVFlowOpenCLStatus opencl_status = MPVFLOW_OPENCL_ERROR;
+        const char *build_log = NULL;
+        char bridge_error[256] = {0};
+        ctx->opencl = mpvflow_opencl_create(&opencl_config, &opencl_status, &build_log);
+        if (ctx->opencl) {
+            ctx->opencl_bridge = mpvflow_opencl_vk_bridge_create(
+                gpu, ctx->opencl, bridge_error, sizeof(bridge_error));
+        }
+        MPVFlowOpenCLVkBuffer *probe = NULL;
+        enum MPVFlowOpenCLVkBridgeStatus probe_status = MPVFLOW_OPENCL_VK_BRIDGE_UNSUPPORTED;
+        if (ctx->opencl_bridge) {
+            probe_status = mpvflow_opencl_vk_buffer_create(
+                ctx->opencl_bridge, 8, 8, MPVFLOW_OPENCL_READ_WRITE, &probe);
+            if (probe_status == MPVFLOW_OPENCL_VK_BRIDGE_OK && probe) {
+                if (mpvflow_opencl_finish(ctx->opencl) != MPVFLOW_OPENCL_OK ||
+                    mpvflow_opencl_vk_buffer_opencl_finished(probe) !=
+                        MPVFLOW_OPENCL_VK_BRIDGE_OK) {
+                    probe_status = MPVFLOW_OPENCL_VK_BRIDGE_OPENCL_ERROR;
+                } else {
+                    probe_status = mpvflow_opencl_vk_buffer_destroy(probe);
+                    if (probe_status == MPVFLOW_OPENCL_VK_BRIDGE_OK)
+                        probe = NULL;
+                }
+            }
+        }
+        if (ctx->opencl && ctx->opencl_bridge &&
+            probe_status == MPVFLOW_OPENCL_VK_BRIDGE_OK && !probe) {
+            ctx->compute_api = MPVFLOW_GPU_COMPUTE_OPENCL;
+            flow_log(gpu, PL_LOG_INFO,
+                     "MPVFLOW_DIAGNOSTIC event=compute_backend state=ready requested_api=%d "
+                     "effective_api=opencl interop=qcom_ahardwarebuffer_host_ptr "
+                     "shared_storage=android_hardware_buffer probe=passed cpu_readback=no",
+                     requested_api);
+        } else {
+            flow_log(gpu, requested_api == MPVFLOW_GPU_COMPUTE_AUTO ? PL_LOG_WARN : PL_LOG_ERR,
+                     "MPVFLOW_DIAGNOSTIC event=compute_backend state=unavailable requested_api=%d "
+                     "candidate=opencl opencl_status=%d bridge_status=%d bridge_error=%s "
+                     "build_log=%s action=%s",
+                     requested_api, opencl_status, probe_status,
+                     bridge_error[0] ? bridge_error : "none",
+                     build_log ? build_log : "none",
+                     requested_api == MPVFLOW_GPU_COMPUTE_AUTO ? "fallback_vulkan" : "fail_initialization");
+            if (probe && ctx->opencl) {
+                if (mpvflow_opencl_finish(ctx->opencl) == MPVFLOW_OPENCL_OK &&
+                    mpvflow_opencl_vk_buffer_opencl_finished(probe) ==
+                        MPVFLOW_OPENCL_VK_BRIDGE_OK &&
+                    mpvflow_opencl_vk_buffer_destroy(probe) ==
+                        MPVFLOW_OPENCL_VK_BRIDGE_OK)
+                    probe = NULL;
+            }
+            if (ctx->opencl_bridge) {
+                if (mpvflow_opencl_vk_bridge_destroy(ctx->opencl_bridge) ==
+                    MPVFLOW_OPENCL_VK_BRIDGE_OK)
+                    ctx->opencl_bridge = NULL;
+            }
+            if (ctx->opencl && !ctx->opencl_bridge) {
+                mpvflow_opencl_destroy(ctx->opencl);
+                ctx->opencl = NULL;
+            }
+            if (requested_api == MPVFLOW_GPU_COMPUTE_OPENCL) {
+                if (diagnostics) diagnostics->stage = "opencl_initialization";
+                mpvflow_gpu_destroy(ctx);
+                if (status) *status = MPVFLOW_GPU_UNSUPPORTED_API;
+                return NULL;
+            }
+        }
+    } else {
+        flow_log(gpu, PL_LOG_INFO,
+                 "MPVFLOW_DIAGNOSTIC event=compute_backend state=ready requested_api=%d "
+                 "effective_api=vulkan reason=explicit_vulkan",
+                 requested_api);
     }
 
     struct pl_desc preprocess_desc[] = {
@@ -728,7 +869,38 @@ void mpvflow_gpu_destroy(MPVFlowGPUContext *ctx)
     if (ctx->pass_synthesize) pl_pass_destroy(ctx->gpu, &ctx->pass_synthesize);
     for (int i = 0; i < FLOW_TIMER_COUNT; i++)
         pl_timer_destroy(ctx->gpu, &ctx->timers[i].timer);
+    if (ctx->opencl_bridge) {
+        enum MPVFlowOpenCLVkBridgeStatus bridge_status =
+            mpvflow_opencl_vk_bridge_destroy(ctx->opencl_bridge);
+        if (bridge_status != MPVFLOW_OPENCL_VK_BRIDGE_OK) {
+            flow_log(ctx->gpu, PL_LOG_ERR,
+                     "MPVFLOW_DIAGNOSTIC event=opencl_context_release state=deferred "
+                     "reason=bridge_busy status=%d resources_retained=yes",
+                     bridge_status);
+            return;
+        }
+        ctx->opencl_bridge = NULL;
+    }
+    if (ctx->opencl)
+        mpvflow_opencl_destroy(ctx->opencl);
     free(ctx);
+}
+
+enum MPVFlowGPUComputeAPI mpvflow_gpu_get_compute_api(MPVFlowGPUContext *ctx)
+{
+    return ctx ? ctx->compute_api : MPVFLOW_GPU_COMPUTE_VULKAN;
+}
+
+const char *mpvflow_gpu_get_compute_api_name(MPVFlowGPUContext *ctx)
+{
+    if (!ctx)
+        return "unavailable";
+    switch (ctx->compute_api) {
+    case MPVFLOW_GPU_COMPUTE_OPENCL: return "opencl-qcom";
+    case MPVFLOW_GPU_COMPUTE_VULKAN: return "vulkan-spirv";
+    case MPVFLOW_GPU_COMPUTE_AUTO: break;
+    }
+    return "unresolved";
 }
 
 void mpvflow_gpu_get_timing_stats(MPVFlowGPUContext *ctx,
@@ -793,8 +965,9 @@ enum MPVFlowGPUResult mpvflow_gpu_prepare_input(MPVFlowGPUContext *ctx,
         return MPVFLOW_GPU_UNSUPPORTED_DIMENSION;
     }
 
-    pl_tex prepared = create_texture(ctx, w, h, ctx->fmt_rgba8, true,
-                                     "prepared_input_rgba8");
+    pl_tex prepared = create_texture_ex(ctx, w, h, ctx->fmt_rgba8, true,
+                                        ctx->compute_api == MPVFLOW_GPU_COMPUTE_OPENCL,
+                                        false, "prepared_input_rgba8");
     if (!prepared) {
         flow_log_once(ctx, FLOW_DIAG_PREPARE_INPUT, PL_LOG_WARN,
                       "MPVFLOW_DIAGNOSTIC event=prepare_input state=failed stage=prepared_texture_allocation "
@@ -818,6 +991,101 @@ enum MPVFlowGPUResult mpvflow_gpu_prepare_input(MPVFlowGPUContext *ctx,
         return MPVFLOW_GPU_ERROR;
     }
     *prepared_out = prepared;
+    return MPVFLOW_GPU_OK;
+}
+
+static enum MPVFlowGPUResult flow_opencl_analyze_pair(MPVFlowGPUContext *ctx,
+                                                       MPVFlowGPUPair *pair,
+                                                       pl_tex frame0, pl_tex frame1)
+{
+    const uint32_t width = (uint32_t) frame0->params.w;
+    const uint32_t height = (uint32_t) frame0->params.h;
+    for (int i = 0; i < 2; i++) {
+        enum MPVFlowOpenCLVkBridgeStatus create_status =
+            mpvflow_opencl_vk_buffer_create(ctx->opencl_bridge, width, height,
+                MPVFLOW_OPENCL_READ_ONLY, &pair->opencl_analysis[i]);
+        if (create_status != MPVFLOW_OPENCL_VK_BRIDGE_OK ||
+            !pair->opencl_analysis[i]) {
+            const char *bridge_error =
+                mpvflow_opencl_vk_bridge_last_error(ctx->opencl_bridge);
+            flow_log(ctx->gpu, PL_LOG_WARN,
+                     "MPVFLOW_DIAGNOSTIC event=compute_backend state=runtime_fallback "
+                     "stage=opencl_analysis_buffer_allocation frame=%d width=%u height=%u status=%d reason=%s",
+                     i, width, height, create_status,
+                     bridge_error ? bridge_error : "none");
+            return MPVFLOW_GPU_ERROR;
+        }
+    }
+    for (int i = 0; i < 2; i++) {
+        enum MPVFlowOpenCLVkBridgeStatus ready_status =
+            mpvflow_opencl_vk_buffer_opencl_finished(pair->opencl_analysis[i]);
+        if (ready_status != MPVFLOW_OPENCL_VK_BRIDGE_OK)
+            return MPVFLOW_GPU_ERROR;
+    }
+
+    enum MPVFlowOpenCLVkBridgeStatus bridge_status =
+        mpvflow_opencl_vk_copy_texture_to_buffer(ctx->opencl_bridge, frame0,
+                                                  pair->opencl_analysis[0]);
+    if (bridge_status == MPVFLOW_OPENCL_VK_BRIDGE_OK)
+        bridge_status = mpvflow_opencl_vk_copy_texture_to_buffer(
+            ctx->opencl_bridge, frame1, pair->opencl_analysis[1]);
+    if (bridge_status != MPVFLOW_OPENCL_VK_BRIDGE_OK) {
+        flow_log(ctx->gpu, PL_LOG_WARN,
+                 "MPVFLOW_DIAGNOSTIC event=compute_backend state=runtime_fallback "
+                 "stage=opencl_analysis_upload status=%d reason=%s",
+                 bridge_status, mpvflow_opencl_vk_bridge_last_error(ctx->opencl_bridge));
+        return MPVFLOW_GPU_ERROR;
+    }
+
+    for (int i = 0; i < 2; i++) {
+        bridge_status = mpvflow_opencl_vk_buffer_opencl_started(
+            pair->opencl_analysis[i]);
+        if (bridge_status != MPVFLOW_OPENCL_VK_BRIDGE_OK)
+            return MPVFLOW_GPU_ERROR;
+    }
+
+    enum MPVFlowOpenCLStatus opencl_status = mpvflow_opencl_analyze_pair(
+        ctx->opencl,
+        mpvflow_opencl_vk_buffer_get_opencl(pair->opencl_analysis[0]),
+        mpvflow_opencl_vk_buffer_get_opencl(pair->opencl_analysis[1]),
+        &pair->opencl_pair);
+    if (opencl_status != MPVFLOW_OPENCL_OK) {
+        (void) mpvflow_opencl_finish(ctx->opencl);
+        flow_log(ctx->gpu, PL_LOG_WARN,
+                 "MPVFLOW_DIAGNOSTIC event=compute_backend state=runtime_fallback "
+                 "stage=opencl_pair_analysis status=%d cpu_readback=no",
+                 opencl_status);
+        return MPVFLOW_GPU_ERROR;
+    }
+    if (mpvflow_opencl_finish(ctx->opencl) != MPVFLOW_OPENCL_OK) {
+        flow_log(ctx->gpu, PL_LOG_ERR,
+                 "MPVFLOW_DIAGNOSTIC event=compute_backend state=runtime_error "
+                 "stage=opencl_pair_analysis_queue_finish");
+        return MPVFLOW_GPU_ERROR;
+    }
+    for (int i = 0; i < 2; i++) {
+        bridge_status = mpvflow_opencl_vk_buffer_opencl_finished(
+            pair->opencl_analysis[i]);
+        if (bridge_status != MPVFLOW_OPENCL_VK_BRIDGE_OK) {
+            flow_log(ctx->gpu, PL_LOG_ERR,
+                     "MPVFLOW_DIAGNOSTIC event=compute_backend state=runtime_error "
+                     "stage=opencl_analysis_handoff frame=%d status=%d",
+                     i, bridge_status);
+            return MPVFLOW_GPU_ERROR;
+        }
+    }
+    pair->w = (int) width;
+    pair->h = (int) height;
+    if (ctx->motion_log_w != pair->w || ctx->motion_log_h != pair->h) {
+        flow_log(ctx->gpu, PL_LOG_INFO,
+                 "MPVFLOW_DIAGNOSTIC component=mpvflow event=motion_geometry state=ready "
+                 "backend=opencl-qcom processing=%dx%d analysis_max_dimension=%d "
+                 "motion_search_passes_per_pair=bidirectional_pyramid "
+                 "source_pts_preserved=caller_owned cpu_readback=no",
+                 pair->w, pair->h, ctx->max_dimension);
+        ctx->motion_log_w = pair->w;
+        ctx->motion_log_h = pair->h;
+    }
     return MPVFLOW_GPU_OK;
 }
 
@@ -872,6 +1140,28 @@ enum MPVFlowGPUResult mpvflow_gpu_analyze_pair(MPVFlowGPUContext *ctx,
     pair->input[1] = frame1;
     pair->w = p0->w;
     pair->h = p0->h;
+    if (ctx->compute_api == MPVFLOW_GPU_COMPUTE_OPENCL) {
+        enum MPVFlowGPUResult opencl_result =
+            flow_opencl_analyze_pair(ctx, pair, frame0, frame1);
+        if (opencl_result == MPVFLOW_GPU_OK) {
+            *pair_out = pair;
+            return MPVFLOW_GPU_OK;
+        }
+        destroy_pair_textures(ctx, pair);
+        if (pair->opencl_pair || pair->opencl_analysis[0] || pair->opencl_analysis[1]) {
+            free(pair);
+            return MPVFLOW_GPU_ERROR;
+        }
+        if (ctx->requested_compute_api != MPVFLOW_GPU_COMPUTE_AUTO) {
+            free(pair);
+            return opencl_result;
+        }
+        flow_log(ctx->gpu, PL_LOG_WARN,
+                 "MPVFLOW_DIAGNOSTIC event=compute_backend state=fallback "
+                 "requested_api=auto from=opencl-qcom to=vulkan-spirv "
+                 "stage=pair_analysis reason=interop_or_compute_failure");
+        ctx->compute_api = MPVFLOW_GPU_COMPUTE_VULKAN;
+    }
     if (!allocate_pair_textures(ctx, pair)) {
         flow_log_once(ctx, FLOW_DIAG_ANALYZE_PAIR, PL_LOG_WARN,
                       "MPVFLOW_DIAGNOSTIC event=analyze_pair state=failed stage=pair_scratch_texture_allocation "
@@ -1002,6 +1292,218 @@ void mpvflow_gpu_pair_release(MPVFlowGPUContext *ctx, MPVFlowGPUPair *pair)
     free(pair);
 }
 
+static bool flow_opencl_clear_source_cache(MPVFlowGPUContext *ctx,
+                                           MPVFlowGPUPair *pair)
+{
+    if (!pair)
+        return false;
+    if (mpvflow_opencl_finish(ctx->opencl) != MPVFLOW_OPENCL_OK)
+        return false;
+    for (int i = 0; i < 2; i++) {
+        if (pair->opencl_source[i]) {
+            enum MPVFlowOpenCLVkBridgeStatus status =
+                mpvflow_opencl_vk_buffer_opencl_finished(pair->opencl_source[i]);
+            if (status != MPVFLOW_OPENCL_VK_BRIDGE_OK) {
+                flow_log(ctx->gpu, PL_LOG_ERR,
+                         "MPVFLOW_DIAGNOSTIC event=opencl_source_cache state=handoff_failed index=%d status=%d",
+                         i, status);
+                return false;
+            }
+            status = mpvflow_opencl_vk_buffer_destroy(pair->opencl_source[i]);
+            if (status != MPVFLOW_OPENCL_VK_BRIDGE_OK) {
+                flow_log(ctx->gpu, PL_LOG_ERR,
+                         "MPVFLOW_DIAGNOSTIC event=opencl_source_cache state=release_failed index=%d status=%d",
+                         i, status);
+                return false;
+            }
+            pair->opencl_source[i] = NULL;
+        }
+        pair->opencl_source_identity[i] = NULL;
+    }
+    pair->opencl_source_cache_ready = false;
+    return true;
+}
+
+static enum MPVFlowGPUResult flow_opencl_upload_full_resolution_source(
+    MPVFlowGPUContext *ctx, pl_tex source, MPVFlowOpenCLVkBuffer *destination,
+    const char *stage)
+{
+    const int width = (int) source->params.w;
+    const int height = (int) source->params.h;
+    pl_tex rgba8 = create_texture_ex(ctx, width, height, ctx->fmt_rgba8,
+                                     true, true, false, stage);
+    if (!rgba8)
+        return MPVFLOW_GPU_UNSUPPORTED_FORMAT;
+    struct pl_desc_binding bindings[] = {
+        { .object = source, .address_mode = PL_TEX_ADDRESS_CLAMP,
+          .sample_mode = PL_TEX_SAMPLE_LINEAR },
+        { .object = rgba8 },
+    };
+    int cfg[4] = { width, height, 0, 0 };
+    bool dispatched = run_pass(ctx, ctx->pass_preprocess, bindings, 2, cfg,
+                               0.0f, width, height, "preprocess_full_resolution_source");
+    enum MPVFlowOpenCLVkBridgeStatus status = dispatched
+        ? mpvflow_opencl_vk_copy_texture_to_buffer(ctx->opencl_bridge, rgba8, destination)
+        : MPVFLOW_OPENCL_VK_BRIDGE_VULKAN_ERROR;
+    destroy_tex(ctx, &rgba8);
+    if (status != MPVFLOW_OPENCL_VK_BRIDGE_OK) {
+        flow_log(ctx->gpu, PL_LOG_WARN,
+                 "MPVFLOW_DIAGNOSTIC event=compute_backend state=runtime_fallback "
+                 "stage=%s status=%d reason=%s cpu_readback=no",
+                 stage, status,
+                 mpvflow_opencl_vk_bridge_last_error(ctx->opencl_bridge)
+                    ? mpvflow_opencl_vk_bridge_last_error(ctx->opencl_bridge) : "none");
+        return MPVFLOW_GPU_ERROR;
+    }
+    return MPVFLOW_GPU_OK;
+}
+
+static enum MPVFlowGPUResult flow_opencl_synthesize(
+    MPVFlowGPUContext *ctx, MPVFlowGPUPair *pair,
+    pl_tex source0, pl_tex source1, float timestep)
+{
+    const int width = (int) source0->params.w;
+    const int height = (int) source0->params.h;
+    if (width > 4096 || height > 4096)
+        return MPVFLOW_GPU_UNSUPPORTED_DIMENSION;
+
+    if (!pair->opencl_source_cache_ready ||
+        pair->opencl_source_identity[0] != source0 ||
+        pair->opencl_source_identity[1] != source1 ||
+        !pair->opencl_source[0] || !pair->opencl_source[1] ||
+        mpvflow_opencl_vk_buffer_width(pair->opencl_source[0]) != (uint32_t) width ||
+        mpvflow_opencl_vk_buffer_height(pair->opencl_source[0]) != (uint32_t) height) {
+        if (!flow_opencl_clear_source_cache(ctx, pair))
+            return MPVFLOW_GPU_ERROR;
+        pair->opencl_source[0] = NULL;
+        pair->opencl_source[1] = NULL;
+        enum MPVFlowOpenCLVkBridgeStatus create_status =
+            mpvflow_opencl_vk_buffer_create(ctx->opencl_bridge, (uint32_t) width,
+                (uint32_t) height, MPVFLOW_OPENCL_READ_ONLY, &pair->opencl_source[0]);
+        if (create_status == MPVFLOW_OPENCL_VK_BRIDGE_OK)
+            create_status = mpvflow_opencl_vk_buffer_create(ctx->opencl_bridge,
+                (uint32_t) width, (uint32_t) height, MPVFLOW_OPENCL_READ_ONLY,
+                &pair->opencl_source[1]);
+        if (create_status != MPVFLOW_OPENCL_VK_BRIDGE_OK) {
+            flow_log(ctx->gpu, PL_LOG_WARN,
+                     "MPVFLOW_DIAGNOSTIC event=compute_backend state=runtime_fallback "
+                     "stage=opencl_full_resolution_source_allocation status=%d reason=%s",
+                     create_status,
+                     mpvflow_opencl_vk_bridge_last_error(ctx->opencl_bridge)
+                        ? mpvflow_opencl_vk_bridge_last_error(ctx->opencl_bridge) : "none");
+            return MPVFLOW_GPU_ERROR;
+        }
+        for (int i = 0; i < 2; i++) {
+            enum MPVFlowOpenCLVkBridgeStatus ready_status =
+                mpvflow_opencl_vk_buffer_opencl_finished(pair->opencl_source[i]);
+            if (ready_status != MPVFLOW_OPENCL_VK_BRIDGE_OK)
+                return MPVFLOW_GPU_ERROR;
+        }
+        enum MPVFlowGPUResult upload = flow_opencl_upload_full_resolution_source(
+            ctx, source0, pair->opencl_source[0], "opencl_full_resolution_frame0");
+        if (upload == MPVFLOW_GPU_OK)
+            upload = flow_opencl_upload_full_resolution_source(
+                ctx, source1, pair->opencl_source[1], "opencl_full_resolution_frame1");
+        if (upload != MPVFLOW_GPU_OK)
+            return upload;
+        pair->opencl_source_identity[0] = source0;
+        pair->opencl_source_identity[1] = source1;
+        pair->opencl_source_cache_ready = true;
+    }
+
+    if (pair->opencl_output &&
+        (mpvflow_opencl_vk_buffer_width(pair->opencl_output) != (uint32_t) width ||
+         mpvflow_opencl_vk_buffer_height(pair->opencl_output) != (uint32_t) height)) {
+        if (mpvflow_opencl_finish(ctx->opencl) != MPVFLOW_OPENCL_OK ||
+            mpvflow_opencl_vk_buffer_opencl_finished(pair->opencl_output) !=
+                MPVFLOW_OPENCL_VK_BRIDGE_OK)
+            return MPVFLOW_GPU_ERROR;
+        enum MPVFlowOpenCLVkBridgeStatus destroy_status =
+            mpvflow_opencl_vk_buffer_destroy(pair->opencl_output);
+        if (destroy_status != MPVFLOW_OPENCL_VK_BRIDGE_OK)
+            return MPVFLOW_GPU_ERROR;
+        pair->opencl_output = NULL;
+    }
+    if (!pair->opencl_output) {
+        enum MPVFlowOpenCLVkBridgeStatus create_status =
+            mpvflow_opencl_vk_buffer_create(ctx->opencl_bridge, (uint32_t) width,
+                (uint32_t) height, MPVFLOW_OPENCL_WRITE_ONLY, &pair->opencl_output);
+        if (create_status != MPVFLOW_OPENCL_VK_BRIDGE_OK) {
+            flow_log(ctx->gpu, PL_LOG_WARN,
+                     "MPVFLOW_DIAGNOSTIC event=compute_backend state=runtime_fallback "
+                     "stage=opencl_full_resolution_output_allocation status=%d reason=%s",
+                     create_status,
+                     mpvflow_opencl_vk_bridge_last_error(ctx->opencl_bridge)
+                        ? mpvflow_opencl_vk_bridge_last_error(ctx->opencl_bridge) : "none");
+            return MPVFLOW_GPU_ERROR;
+        }
+        enum MPVFlowOpenCLVkBridgeStatus ready_status =
+            mpvflow_opencl_vk_buffer_opencl_finished(pair->opencl_output);
+        if (ready_status != MPVFLOW_OPENCL_VK_BRIDGE_OK) {
+            flow_log(ctx->gpu, PL_LOG_WARN,
+                     "MPVFLOW_DIAGNOSTIC event=compute_backend state=runtime_fallback "
+                     "stage=opencl_full_resolution_output_initial_handoff status=%d reason=%s",
+                     ready_status,
+                     mpvflow_opencl_vk_bridge_last_error(ctx->opencl_bridge)
+                        ? mpvflow_opencl_vk_bridge_last_error(ctx->opencl_bridge) : "none");
+            return MPVFLOW_GPU_ERROR;
+        }
+    }
+
+    for (int i = 0; i < 2; i++) {
+        enum MPVFlowOpenCLVkBridgeStatus start_status =
+            mpvflow_opencl_vk_buffer_opencl_started(pair->opencl_source[i]);
+        if (start_status != MPVFLOW_OPENCL_VK_BRIDGE_OK)
+            return MPVFLOW_GPU_ERROR;
+    }
+    enum MPVFlowOpenCLVkBridgeStatus output_start_status =
+        mpvflow_opencl_vk_buffer_opencl_started(pair->opencl_output);
+    if (output_start_status != MPVFLOW_OPENCL_VK_BRIDGE_OK)
+        return MPVFLOW_GPU_ERROR;
+
+    enum MPVFlowOpenCLStatus opencl_status = mpvflow_opencl_synthesize(
+        ctx->opencl, pair->opencl_pair,
+        mpvflow_opencl_vk_buffer_get_opencl(pair->opencl_source[0]),
+        mpvflow_opencl_vk_buffer_get_opencl(pair->opencl_source[1]),
+        mpvflow_opencl_vk_buffer_get_opencl(pair->opencl_output), timestep);
+    if (opencl_status != MPVFLOW_OPENCL_OK) {
+        if (mpvflow_opencl_finish(ctx->opencl) == MPVFLOW_OPENCL_OK) {
+            for (int i = 0; i < 2; i++)
+                (void) mpvflow_opencl_vk_buffer_opencl_finished(pair->opencl_source[i]);
+            (void) mpvflow_opencl_vk_buffer_opencl_finished(pair->opencl_output);
+        }
+        flow_log(ctx->gpu, PL_LOG_WARN,
+                 "MPVFLOW_DIAGNOSTIC event=compute_backend state=runtime_fallback "
+                 "stage=opencl_synthesis status=%d cpu_readback=no",
+                 opencl_status);
+        return MPVFLOW_GPU_ERROR;
+    }
+    if (mpvflow_opencl_finish(ctx->opencl) != MPVFLOW_OPENCL_OK)
+        return MPVFLOW_GPU_ERROR;
+    for (int i = 0; i < 2; i++) {
+        enum MPVFlowOpenCLVkBridgeStatus status =
+            mpvflow_opencl_vk_buffer_opencl_finished(pair->opencl_source[i]);
+        if (status != MPVFLOW_OPENCL_VK_BRIDGE_OK)
+            return MPVFLOW_GPU_ERROR;
+    }
+    enum MPVFlowOpenCLVkBridgeStatus bridge_status =
+        mpvflow_opencl_vk_buffer_opencl_finished(pair->opencl_output);
+    if (bridge_status != MPVFLOW_OPENCL_VK_BRIDGE_OK)
+        return MPVFLOW_GPU_ERROR;
+    bridge_status = mpvflow_opencl_vk_copy_buffer_to_texture(
+        ctx->opencl_bridge, pair->opencl_output, pair->output);
+    if (bridge_status != MPVFLOW_OPENCL_VK_BRIDGE_OK) {
+        flow_log(ctx->gpu, PL_LOG_WARN,
+                 "MPVFLOW_DIAGNOSTIC event=compute_backend state=runtime_fallback "
+                 "stage=opencl_output_download status=%d reason=%s cpu_readback=no",
+                 bridge_status,
+                 mpvflow_opencl_vk_bridge_last_error(ctx->opencl_bridge)
+                    ? mpvflow_opencl_vk_bridge_last_error(ctx->opencl_bridge) : "none");
+        return MPVFLOW_GPU_ERROR;
+    }
+    return MPVFLOW_GPU_OK;
+}
+
 enum MPVFlowGPUResult mpvflow_gpu_synthesize(MPVFlowGPUContext *ctx,
                                              MPVFlowGPUPair *pair,
                                              pl_tex source0,
@@ -1050,7 +1552,9 @@ enum MPVFlowGPUResult mpvflow_gpu_synthesize(MPVFlowGPUContext *ctx,
     if (!pair->output || pair->output_w != output_w || pair->output_h != output_h) {
         destroy_tex(ctx, &pair->output);
         pair->output = create_texture_ex(ctx, output_w, output_h, ctx->fmt_rgba8,
-                                         true, true, "full_resolution_pair_output");
+                                         true, true,
+                                         ctx->compute_api == MPVFLOW_GPU_COMPUTE_OPENCL,
+                                         "full_resolution_pair_output");
         pair->output_w = pair->output ? output_w : 0;
         pair->output_h = pair->output ? output_h : 0;
         if (!pair->output) {
@@ -1060,6 +1564,37 @@ enum MPVFlowGPUResult mpvflow_gpu_synthesize(MPVFlowGPUContext *ctx,
                           output_w, output_h, pair->w, pair->h);
             return MPVFLOW_GPU_UNSUPPORTED_FORMAT;
         }
+    }
+    if (pair->opencl_pair) {
+        enum MPVFlowGPUResult result =
+            flow_opencl_synthesize(ctx, pair, source0, source1, t);
+        if (result == MPVFLOW_GPU_OK) {
+            *output = pair->output;
+            return MPVFLOW_GPU_OK;
+        }
+        if (ctx->requested_compute_api != MPVFLOW_GPU_COMPUTE_AUTO)
+            return result;
+
+        const pl_tex analysis0 = pair->input[0];
+        const pl_tex analysis1 = pair->input[1];
+        flow_log(ctx->gpu, PL_LOG_WARN,
+                 "MPVFLOW_DIAGNOSTIC event=compute_backend state=fallback "
+                 "requested_api=auto from=opencl-qcom to=vulkan-spirv "
+                 "stage=full_resolution_synthesis reason=interop_or_compute_failure");
+        ctx->compute_api = MPVFLOW_GPU_COMPUTE_VULKAN;
+        destroy_pair_textures(ctx, pair);
+        if (pair->opencl_pair || pair->opencl_analysis[0] || pair->opencl_analysis[1] ||
+            pair->opencl_source[0] || pair->opencl_source[1] || pair->opencl_output)
+            return result;
+
+        MPVFlowGPUPair *vulkan_pair = NULL;
+        enum MPVFlowGPUResult analysis_status =
+            mpvflow_gpu_analyze_pair(ctx, analysis0, analysis1, &vulkan_pair);
+        if (analysis_status != MPVFLOW_GPU_OK || !vulkan_pair)
+            return analysis_status;
+        *pair = *vulkan_pair;
+        free(vulkan_pair);
+        return mpvflow_gpu_synthesize(ctx, pair, source0, source1, t, output);
     }
     pl_tex out = pair->output;
     struct FlowLevel *full = (struct FlowLevel *) &pair->level[0];

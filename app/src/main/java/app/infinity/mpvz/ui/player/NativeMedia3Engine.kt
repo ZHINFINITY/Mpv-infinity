@@ -45,6 +45,7 @@ import androidx.media3.extractor.ExtractorsFactory
 import androidx.media3.ui.CaptionStyleCompat
 import androidx.media3.ui.PlayerView
 import app.infinity.mpvz.ui.player.LibassSubtitleSurfaceView
+import app.infinity.mpvz.preferences.MpvFlowComputeApi
 import androidx.media3.subtitle.libass.LibassSubtitleRenderer
 import io.github.peerless2012.ass.media.AssHandler
 import io.github.peerless2012.ass.media.kt.withAssMkvSupport
@@ -192,13 +193,14 @@ class NativeMedia3Engine(
   context: Context,
   enableMedia3Flow: Boolean = false,
   media3FlowTargetFps: Int = 60,
+  media3FlowComputeApi: MpvFlowComputeApi = MpvFlowComputeApi.AUTO,
 ) {
   private val appContext = context.applicationContext
   private val logTag = "Mpv∞-Media3"
   private val flowDeviceSupported =
     enableMedia3Flow && Media3FlowVideoSink.deviceSupportsVulkanFlow(appContext)
   private val media3FlowSink = if (flowDeviceSupported) {
-    Media3FlowVideoSink(appContext, media3FlowTargetFps, ::publishFlowDiagnostics)
+    Media3FlowVideoSink(appContext, media3FlowTargetFps, media3FlowComputeApi, ::publishFlowDiagnostics)
   } else {
     null
   }

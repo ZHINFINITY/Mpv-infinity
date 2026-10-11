@@ -31,6 +31,10 @@ enum class MpvConfigOverride(
         "vulkan-swap-mode",
       ),
   ),
+  FLOW_COMPUTE(
+    preferenceKey = "flow_compute",
+    optionNames = setOf("mpvflow-compute-api"),
+  ),
   DECODER(
     preferenceKey = "decoder",
     optionNames =

@@ -65,10 +65,12 @@ for marker in (
         "Native Media3 sync-FD handoffs must preserve safe queue ordering and bounded resource pressure: "
         f"{marker}"
     )
-assert ".blit_src = blit_src" in GPU and 'ctx, output_w, output_h, ctx->fmt_rgba8,\n                                         true, true, "full_resolution_pair_output"' in GPU, (
-    "the full-resolution synthesized Flow output must advertise blit-source capability before Media3 copies it"
+assert ".blit_src = blit_src" in GPU and ".blit_dst = blit_dst" in GPU and (
+    'ctx, output_w, output_h, ctx->fmt_rgba8,\n                                         true, true,\n                                         ctx->compute_api == MPVFLOW_GPU_COMPUTE_OPENCL,' in GPU
+), (
+    "full-resolution output must enable Vulkan transfer usage for OpenCL interop while retaining blit capabilities"
 )
-assert "nativeCreateContext(maxDimension)" in SINK
+assert "nativeCreateContext(maxDimension, requestedComputeApi.nativeValue)" in SINK
 assert "config.max_dimension = std::max(160, std::min(640, static_cast<int>(requestedMaxDimension)))" in JNI
 assert "source0->texture, source1->texture" in JNI
 assert "nativeHoldImageForExternal(flowVulkanContext, slot.nativeImageHandle)" in SINK
@@ -137,12 +139,13 @@ assert '"libplacebo.so"' in AAR_PACKAGE
 assert "dynamic_defined_symbols" in AAR_PACKAGE
 assert "pl_vulkan_release_ex" in AAR_PACKAGE
 
-# MPV Flow is Vulkan-only, automatically selects gpu-next/Vulkan, and never advertises GLES compute.
+# MPV Flow keeps Vulkan rendering but can dispatch its motion/synthesis kernels through QCOM OpenCL.
 assert "forceForMpvFlow = flowRequiresVulkan" in MPV_VIEW
 assert 'gpuApi == "vulkan"' in POLICY
 assert '"requires_gpu_next_vulkan"' in MPV_VIEW
 assert "requires_gpu_next_opengl" not in MPV_VIEW
-assert "backend=vulkan-spirv" in MPV_PATCH
+assert "from=opencl-qcom to=vulkan-spirv" in GPU
+assert "renderer_api=vulkan compute_api=%s" in MPV_PATCH
 assert "backend=opengl-es" not in MPV_PATCH
 assert "gpu->glsl.vulkan" in GPU
 assert 'PlaybackSession.setOptionString("display-fps-override", displayRefreshRate.hz.toString())' in MPV_VIEW

@@ -50,6 +50,27 @@ for bad_meson in (
     else:
         raise AssertionError("unexpected MPV Vulkan source changes must fail closed")
 
+vulkan_context = (
+    "before\n"
+    "    const char *opt_extensions[] = {\n"
+    "        VK_KHR_DYNAMIC_RENDERING_EXTENSION_NAME,\n"
+    "    };\n"
+    "after\n"
+)
+patched_vulkan_context = prepare.enable_android_external_memory_extensions(vulkan_context)
+assert '"VK_ANDROID_external_memory_android_hardware_buffer"' in patched_vulkan_context
+assert '"VK_EXT_queue_family_foreign"' in patched_vulkan_context
+assert patched_vulkan_context.startswith("before\n") and patched_vulkan_context.endswith("after\n")
+assert prepare.enable_android_external_memory_extensions(patched_vulkan_context) == patched_vulkan_context, (
+    "Android Vulkan interop extensions must be requested idempotently"
+)
+try:
+    prepare.enable_android_external_memory_extensions("no optional extension list\n")
+except SystemExit:
+    pass
+else:
+    raise AssertionError("unexpected MPV Vulkan extension-list changes must fail closed")
+
 placebo_meson = (
     "spirv = cxx.find_library('SPIRV', required: required, static: static, dirs: vulkan_lib_dirs)\n"
     "glslang_deps += spirv\n"
@@ -106,8 +127,25 @@ for bad_timer_source in (
         raise AssertionError("unexpected libplacebo timer-ring layout must fail closed")
 
 build = BUILD.read_text(encoding="utf-8")
+prepare_source = PREPARE.read_text(encoding="utf-8")
+assert 'VO_PATCH = VENDOR / "mpvflow-vo-gpu-next.patch"' in prepare_source, (
+    "MPV source preparation must keep the custom VO patch path explicit"
+)
+assert '"--input", str(VO_PATCH)' in prepare_source, (
+    "MPV source preparation must never derive its patch input from the positional native-source list"
+)
+assert '"--input", str(required[2])' not in prepare_source, (
+    "adding OpenCL sources must not silently redirect the mpv patch command"
+)
 prepare_call = 'python3 "$ROOT/scripts/prepare-mpvflow.py" --mpv-dir "$BUILDSCRIPTS/deps/mpv" --libplacebo-dir "$BUILDSCRIPTS/deps/libplacebo"'
 assert prepare_call in build, "the native build must patch pinned libplacebo before compilation"
+native_cmake = (ROOT / "app/src/main/cpp/CMakeLists.txt").read_text(encoding="utf-8")
+for source in (
+    "mpvflow/mpvflow_opencl.c",
+    "mpvflow/mpvflow_opencl_vk_bridge.c",
+):
+    assert source in native_cmake, f"Native Media3 CMake target must compile the real OpenCL backend: {source}"
+assert "\n        dl\n" in native_cmake, "Native Media3 must link the runtime dlopen dependency"
 vo_patch = (ROOT / "app/src/main/cpp/mpvflow/mpvflow-vo-gpu-next.patch").read_text(encoding="utf-8")
 for marker in (
     "event=swapchain_wait stage=acquire",
@@ -299,21 +337,95 @@ for marker in (
     "R.string.pref_decoder_mpvflow_compute_api_title",
 ):
     assert marker in decoder_screen, f"the Decoder screen must truthfully distinguish Flow rendering and compute: missing {marker!r}"
-compute_status_start = decoder_screen.index("R.string.pref_decoder_mpvflow_compute_api_title")
-compute_status_end = decoder_screen.index("PreferenceDivider()", compute_status_start)
-compute_status = decoder_screen[compute_status_start:compute_status_end]
-assert "ListPreference(" not in compute_status and "onValueChange" not in compute_status, (
-    "Vulkan-only compute capability must be informational, not a dead selector"
-)
+compute_title_position = decoder_screen.index("R.string.pref_decoder_mpvflow_compute_api_title")
+compute_selector_start = decoder_screen.rfind("ListPreference(", 0, compute_title_position)
+compute_selector_end = decoder_screen.index("PreferenceDivider()", compute_selector_start)
+compute_selector = decoder_screen[compute_selector_start:compute_selector_end]
+for marker in (
+    "ListPreference(",
+    "onValueChange = preferences.mpvFlowComputeApi::set",
+    "values = MpvFlowComputeApi.entries",
+    "!mpvFlowComputeApiConfigOwned",
+    "MpvFlowComputeApi.OPENCL",
+    "MpvFlowComputeApi.VULKAN",
+):
+    assert marker in compute_selector, f"the compute selector must persist real backend choices: missing {marker!r}"
 resource_source = STRING_RESOURCES.read_text(encoding="utf-8")
-assert "Vulkan only (fixed)" in resource_source and "OpenCL is not implemented" in resource_source, (
-    "the Flow compute row must disclose its real backend and the missing OpenCL implementation"
-)
+for marker in (
+    "Auto prefers the Qualcomm OpenCL AHardwareBuffer backend",
+    "cl_qcom_android_ahardwarebuffer_host_ptr",
+    "No Vulkan compute fallback is used for this explicit choice",
+    "Force Vulkan/SPIR-V compute",
+):
+    assert marker in resource_source, f"compute API choice must have accurate user-facing semantics: missing {marker!r}"
 assert "Decoder input may use MediaCodec direct mode or mediacodec-copy" in resource_source, (
     "Flow settings must distinguish decoder-input copy mode from interpolation compute"
 )
 assert "synthesized output stays GPU-side with no CPU pixel readback" in resource_source, (
     "Flow settings must state the actual synthesized-output path"
+)
+
+flow_gpu_source = (ROOT / "app/src/main/cpp/mpvflow/mpvflow_gpu.c").read_text(encoding="utf-8")
+opencl_source = (ROOT / "app/src/main/cpp/mpvflow/mpvflow_opencl.c").read_text(encoding="utf-8")
+bridge_source = (ROOT / "app/src/main/cpp/mpvflow/mpvflow_opencl_vk_bridge.c").read_text(encoding="utf-8")
+media3_jni_source = (ROOT / "app/src/main/cpp/media3flow_vulkan_jni.cpp").read_text(encoding="utf-8")
+cmake_source = (ROOT / "app/src/main/cpp/CMakeLists.txt").read_text(encoding="utf-8")
+manifest_source = (ROOT / "app/src/main/AndroidManifest.xml").read_text(encoding="utf-8")
+for marker in (
+    "#define MPVFLOW_GRID_STEP 4",
+    "int radius = has ? 2 : c->search_radius;",
+    "inline float subpixel_offset",
+    "sample_coarse(coarse,cgw,cgh",
+    "flow_at_edge_aware(forward,backward",
+    "flow_at_bilinear(forward,backward",
+    "inline float reliability(float4 flow,float cycle,float valid)",
+    "cycle_error0",
+    "boundary_conflict",
+    "(float)best/(64.0f*255.0f),uniqueness",
+    "SET_ARG(c->synth_kernel, 10, luma0)",
+    "SET_ARG(c->synth_kernel, 15, dstride)",
+):
+    assert marker in opencl_source, (
+        f"OpenCL motion and artifact safeguards must match Vulkan Flow: missing {marker!r}"
+    )
+for marker in (
+    "mpvflow_opencl_create(",
+    "mpvflow_opencl_vk_bridge_create(",
+    "effective_api=opencl",
+    "flow_opencl_analyze_pair(",
+    "flow_opencl_synthesize(",
+    "requested_api=auto from=opencl-qcom to=vulkan-spirv",
+):
+    assert marker in flow_gpu_source, f"MPVFlow must dispatch a real OpenCL backend with explicit fallback: missing {marker!r}"
+assert 'cl_qcom_android_ahardwarebuffer_host_ptr' in opencl_source, (
+    "OpenCL must import shared Android HardwareBuffer storage rather than exposing a disconnected compute toggle"
+)
+opencl_synthesis = flow_gpu_source.split("static enum MPVFlowGPUResult flow_opencl_synthesize(", 1)[1].split(
+    "enum MPVFlowGPUResult mpvflow_gpu_synthesize(", 1
+)[0]
+new_output_buffer = opencl_synthesis.split("if (!pair->opencl_output) {", 1)[1].split(
+    "for (int i = 0; i < 2; i++)", 1
+)[0]
+assert "mpvflow_opencl_vk_buffer_create" in new_output_buffer and \
+       "mpvflow_opencl_vk_buffer_opencl_finished(pair->opencl_output)" in new_output_buffer, (
+    "a newly created OpenCL output buffer must be marked foreign-ready before its first OpenCL access"
+)
+assert 'cl_qcom_ext_host_ptr' in opencl_source and 'has_extension(exts, MPVFLOW_BASE_EXTENSION)' in opencl_source, (
+    "OpenCL must verify the Qualcomm base host-pointer extension required by its AHardwareBuffer import ABI"
+)
+assert "vkCmdCopyImageToBuffer" in bridge_source and "vkCmdCopyBufferToImage" in bridge_source, (
+    "the OpenCL interop path must transfer textures using synchronized GPU-only Vulkan copies"
+)
+for source in ("mpvflow/mpvflow_opencl.c", "mpvflow/mpvflow_opencl_vk_bridge.c"):
+    assert source in cmake_source, f"Native Media3 must compile {source}"
+assert "dl" in cmake_source and 'android:name="libOpenCL.so"' in manifest_source and 'android:required="false"' in manifest_source, (
+    "OpenCL must be dynamically loaded as an optional Android vendor library"
+)
+assert "flow_compute_api=%s" in media3_jni_source and "renderer_api=vulkan flow_compute_api=%s" in media3_jni_source, (
+    "Native Media3 diagnostics must distinguish Vulkan rendering from the effective Flow compute backend"
+)
+assert "AHardwareBuffer_lock" not in bridge_source and "clEnqueueReadBuffer" not in opencl_source, (
+    "Flow must not add CPU pixel readback to the OpenCL backend"
 )
 frame_interpolation_ownership = mpv_conf_source.split("val FRAME_INTERPOLATION =", 1)[1].split(
     "\n    )", 1

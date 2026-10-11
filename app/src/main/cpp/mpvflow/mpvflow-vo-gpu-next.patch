@@ -5,7 +5,7 @@
 +#include <string.h>
 @@ -52,0 +55,1 @@
 +#include "mpvflow_gpu.h"
-@@ -157,0 +161,46 @@
+@@ -157,0 +161,47 @@
 +    // MPVFLOW_GPU_INTEGRATION
 +    MPVFlowGPUContext *flow_gpu;
 +    MPVFlowGPUPair *flow_pair;
@@ -18,6 +18,7 @@
 +    bool flow_queue_state_logged;
 +    const char *flow_queue_last_state;
 +    int flow_max_dimension;
++    int flow_compute_api;
 +    bool flow_pending_synthesized;
 +    bool flow_pending_display_synced;
 +    int flow_geometry_w;
@@ -54,17 +55,20 @@
 +
 @@ -184,0 +214,1 @@
 +static void flow_update_context(struct vo *vo);
-@@ -186,0 +217,3 @@
+@@ -186,0 +217,4 @@
 +    bool mpvflow;
 +    int mpvflow_max_dimension;
 +    int mpvflow_target_fps;
-@@ -213,0 +247,3 @@
++    int mpvflow_compute_api;
+@@ -213,0 +247,4 @@
 +        {"mpvflow", OPT_BOOL(mpvflow)},
 +        {"mpvflow-max-dimension", OPT_INT(mpvflow_max_dimension), M_RANGE(8, 640)},
 +        {"mpvflow-target-fps", OPT_INT(mpvflow_target_fps), M_RANGE(1, 240)},
-@@ -239,0 +276,2 @@
++        {"mpvflow-compute-api", OPT_INT(mpvflow_compute_api), M_RANGE(0, 2)},
+@@ -239,0 +276,3 @@
 +        .mpvflow_max_dimension = 640,
 +        .mpvflow_target_fps = 60,
++        .mpvflow_compute_api = MPVFLOW_GPU_COMPUTE_AUTO,
 @@ -560,0 +599,6 @@
 +    uint64_t frame_id;
 +    pl_tex flow_source;
@@ -72,7 +76,7 @@
 +    int flow_cap;
 +    int flow_w, flow_h;
 +    int flow_source_w, flow_source_h;
-@@ -569,0 +614,337 @@
+@@ -569,0 +614,345 @@
 +static void flow_release_pair(struct priv *p)
 +{
 +    if (p->flow_pair)
@@ -93,6 +97,7 @@
 +{
 +    struct priv *p = vo->priv;
 +    const int requested_dimension = MPCLAMP(p->next_opts->mpvflow_max_dimension, 8, 640);
++    const int requested_compute_api = p->next_opts->mpvflow_compute_api;
 +    if (!p->next_opts->mpvflow) {
 +        flow_release_pair(p);
 +        mpvflow_gpu_destroy(p->flow_gpu);
@@ -137,12 +142,14 @@
 +        p->flow_cadence_pair_cache_reuses = 0;
 +        return;
 +    }
-+    if (p->flow_max_dimension != requested_dimension) {
++    if (p->flow_max_dimension != requested_dimension ||
++        p->flow_compute_api != requested_compute_api) {
 +        flow_release_pair(p);
 +        mpvflow_gpu_destroy(p->flow_gpu);
 +        p->flow_gpu = NULL;
 +        p->flow_input_fmt = NULL;
 +        p->flow_max_dimension = requested_dimension;
++        p->flow_compute_api = requested_compute_api;
 +        p->flow_init_attempted = false;
 +        p->flow_geometry_w = p->flow_geometry_h = 0;
 +        p->flow_timing_last_report_ns = 0;
@@ -182,6 +189,7 @@
 +    p->flow_init_attempted = true;
 +
 +    struct MPVFlowGPUConfig config = {
++        .compute_api = (enum MPVFlowGPUComputeAPI) p->next_opts->mpvflow_compute_api,
 +        .max_dimension = requested_dimension,
 +        .search_radius = 8,
 +    };
@@ -226,10 +234,11 @@
 +    p->flow_gpu = ctx;
 +    p->flow_input_fmt = input_fmt;
 +    p->flow_init_logged = true;
-+    MP_INFO(vo, "MPVFLOW_DIAGNOSTIC event=renderer_init state=initialized backend=vulkan-spirv "
-+            "target_fps=%d reason=ready status=0 max_dimension=%d search_radius=%d "
++    MP_INFO(vo, "MPVFLOW_DIAGNOSTIC event=renderer_init state=initialized backend=%s "
++            "target_fps=%d requested_compute_api=%d reason=ready status=0 max_dimension=%d search_radius=%d "
 +            "cpu_filter=no synthesized_output_cpu_readback=no\n",
-+            p->next_opts->mpvflow_target_fps, config.max_dimension,
++            mpvflow_gpu_get_compute_api_name(ctx), p->next_opts->mpvflow_target_fps,
++            config.compute_api, config.max_dimension,
 +            config.search_radius);
 +}
 +
@@ -268,11 +277,14 @@
 +            "ready";
 +        MP_INFO(vo, "MPVFLOW_DIAGNOSTIC component=mpvflow event=gpu_timing api=Vulkan "
 +                "timer_source=libplacebo_timestamp stage=%s result_status=%s "
++                "timing_scope=libplacebo_vulkan_passes opencl_queue_timing=included_by_host_wait_only "
++                "flow_compute_api=%s "
 +                "timestamp_supported=%d compute_queue_family=%u queue_timestamp_valid_bits=%u "
 +                "timestamp_period_ns=%.6f timestamp_compute_and_graphics=%d timer_created=%d "
 +                "dispatches_total=%llu completed_total=%llu unresolved_dispatches_total=%llu "
 +                "average_us=%.2f maximum_us=%.2f sample_scope=lifetime poll=nonblocking\n",
-+                names[i], result_status, stats.compute_timestamps_supported,
++                names[i], result_status, mpvflow_gpu_get_compute_api_name(p->flow_gpu),
++                stats.compute_timestamps_supported,
 +                stats.compute_queue_family, stats.compute_timestamp_valid_bits,
 +                stats.timestamp_period_ns, stats.timestamp_compute_and_graphics,
 +                stage->timer_created, (unsigned long long) stage->dispatches,
@@ -291,9 +303,9 @@
 +    if (p->flow_bypass_logged_mask & reason_class)
 +        return;
 +    p->flow_bypass_logged_mask |= reason_class;
-+    const char *backend = p->flow_gpu ? "vulkan-spirv" :
++    const char *backend = p->flow_gpu ? mpvflow_gpu_get_compute_api_name(p->flow_gpu) :
 +        (p->gpu ? (p->gpu->glsl.vulkan ? "vulkan" : "non_vulkan") : "unavailable");
-+    MP_INFO(vo, "MPVFLOW_DIAGNOSTIC event=output state=passthrough backend=%s "
++    MP_INFO(vo, "MPVFLOW_DIAGNOSTIC event=output state=passthrough renderer_api=vulkan compute_api=%s "
 +            "target_fps=%d reason=%s status=%d cpu_fallback=no\n",
 +            backend, p->next_opts->mpvflow_target_fps, reason, status);
 +}
@@ -418,7 +430,7 @@
 @@ -1135,0 +1433,2 @@
 +    struct frame_priv *fp = mpi->priv;
 +    flow_release_frame(fp->vo, fp);
-@@ -1341,0 +1641,169 @@
+@@ -1341,0 +1641,170 @@
 +static bool flow_render_frame(struct vo *vo, const struct pl_frame_mix *mix,
 +                              struct pl_frame *target,
 +                              const struct pl_render_params *params,
@@ -550,9 +562,10 @@
 +                    stats_time_end(p->stats, "mpvflow-render");
 +                    if (ok) {
 +                        if (!p->flow_active_logged) {
-+                            MP_INFO(vo, "MPVFLOW_DIAGNOSTIC event=output state=synthesized backend=vulkan-spirv "
++                            MP_INFO(vo, "MPVFLOW_DIAGNOSTIC event=output state=synthesized renderer_api=vulkan compute_api=%s "
 +                                    "target_fps=%d reason=motion_pair input_path=%s source=%dx%d motion_analysis=%dx%d "
 +                                    "synthesized_output=%dx%d motion=yes cpu_filter=no synthesized_output_cpu_readback=no\n",
++                                    mpvflow_gpu_get_compute_api_name(p->flow_gpu),
 +                                    p->next_opts->mpvflow_target_fps,
 +                                    fp0->hwdec ? "direct-hw-surface" : "software-upload",
 +                                    fp0->flow_source_w, fp0->flow_source_h,

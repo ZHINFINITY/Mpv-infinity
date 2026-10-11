@@ -10,7 +10,7 @@ internal object Media3FlowVulkanNative {
     System.loadLibrary("media3flow_vulkan")
   }
 
-  external fun nativeCreateContext(maxDimension: Int): Long
+  external fun nativeCreateContext(maxDimension: Int, requestedComputeApi: Int): Long
 
   /** Returns the Vulkan driver's required Android buffer usage for the selected image role. */
   external fun nativeGetRequiredHardwareBufferUsage(context: Long, output: Boolean): Long

@@ -1,12 +1,12 @@
 /*
  * SPDX-License-Identifier: AGPL-3.0-or-later
  *
- * Native Media3 adapter for the shared MPV Flow Vulkan compute pipeline.
+ * Native Media3 adapter for Vulkan-rendered MPV Flow with selectable compute.
  * Decoder frames remain in Android HardwareBuffers; GLES is used only by the
  * existing SurfaceTexture/FBO capture and final presentation stages. All
- * downscale, motion analysis, and frame synthesis execute as Vulkan SPIR-V
- * passes through the same libplacebo API and mpvflow_gpu implementation as the
- * MPV route. No pixel data is read back to the CPU.
+ * downscale and renderer handoff use libplacebo/Vulkan; Flow motion analysis
+ * and synthesis dispatch through the selected OpenCL or Vulkan backend. No
+ * pixel data is read back to the CPU.
  */
 #include <jni.h>
 #include <android/hardware_buffer.h>
@@ -979,7 +979,15 @@ SharedImage *createSharedImage(FlowContext *context, JNIEnv *env, jobject javaBu
 
 extern "C" JNIEXPORT jlong JNICALL
 Java_app_infinity_mpvz_ui_player_Media3FlowVulkanNative_nativeCreateContext(
-    JNIEnv *, jobject, jint requestedMaxDimension) {
+    JNIEnv *, jobject, jint requestedMaxDimension, jint requestedComputeApi) {
+    if (requestedComputeApi < MPVFLOW_GPU_COMPUTE_AUTO ||
+        requestedComputeApi > MPVFLOW_GPU_COMPUTE_VULKAN) {
+        logFlow(ANDROID_LOG_ERROR,
+                "MPVFLOW_DIAGNOSTIC component=native-media3 event=renderer_init state=unavailable "
+                "stage=compute_api_validation requested_compute_api=%d reason=invalid_compute_api",
+                requestedComputeApi);
+        return 0;
+    }
     const char *extensions[] = {
         VK_ANDROID_EXTERNAL_MEMORY_ANDROID_HARDWARE_BUFFER_EXTENSION_NAME,
         "VK_EXT_queue_family_foreign",
@@ -1007,10 +1015,10 @@ Java_app_infinity_mpvz_ui_player_Media3FlowVulkanNative_nativeCreateContext(
     }
     logFlow(ANDROID_LOG_INFO,
             "MPVFLOW_DIAGNOSTIC component=native-media3 event=vulkan_context state=requested "
-            "api=vulkan async_compute=0 async_transfer=0 queue_count=1 "
+            "renderer_api=vulkan requested_compute_api=%d async_compute=0 async_transfer=0 queue_count=1 "
             "analysis_max_dimension=%d "
             "required_extensions=VK_ANDROID_external_memory_android_hardware_buffer,VK_EXT_queue_family_foreign",
-            requestedMaxDimension);
+            requestedComputeApi, requestedMaxDimension);
     pl_vulkan vulkan = pl_vulkan_create(placeboLog, &params);
     if (!vulkan) {
         logFlow(ANDROID_LOG_ERROR,
@@ -1041,6 +1049,7 @@ Java_app_infinity_mpvz_ui_player_Media3FlowVulkanNative_nativeCreateContext(
         return 0;
     }
     MPVFlowGPUConfig config{};
+    config.compute_api = static_cast<MPVFlowGPUComputeAPI>(requestedComputeApi);
     config.max_dimension = std::max(160, std::min(640, static_cast<int>(requestedMaxDimension)));
     config.search_radius = 8;
     MPVFlowGPUResult status = MPVFLOW_GPU_INVALID;
@@ -1049,11 +1058,11 @@ Java_app_infinity_mpvz_ui_player_Media3FlowVulkanNative_nativeCreateContext(
     if (!context->flow) {
         logFlow(ANDROID_LOG_ERROR,
                 "MPVFLOW_DIAGNOSTIC component=native-media3 event=renderer_init state=unavailable "
-                "stage=mpvflow_gpu_create create_stage=%s status=%d api_version=%u "
+                "renderer_api=vulkan requested_compute_api=%d stage=mpvflow_gpu_create create_stage=%s status=%d api_version=%u "
                 "glsl_compute=%d glsl_vulkan=%d glsl_version=%d max_pushc_size=%zu "
                 "max_tex_2d_dim=%u compute_queues=%u failed_pass_mask=0x%x "
                 "rgba16f_found=%d rgba16f_caps=0x%x rgba8_found=%d rgba8_caps=0x%x",
-                createDiagnostics.stage ? createDiagnostics.stage : "unknown", status,
+                requestedComputeApi, createDiagnostics.stage ? createDiagnostics.stage : "unknown", status,
                 vulkan->api_version, vulkan->gpu->glsl.compute, vulkan->gpu->glsl.vulkan,
                 vulkan->gpu->glsl.version, vulkan->gpu->limits.max_pushc_size,
                 vulkan->gpu->limits.max_tex_2d_dim, vulkan->gpu->limits.compute_queues,
@@ -1079,12 +1088,14 @@ Java_app_infinity_mpvz_ui_player_Media3FlowVulkanNative_nativeCreateContext(
                                           timerObjectCount == timingStats.stage_count;
     logFlow(vulkanTimestampSupported ? ANDROID_LOG_INFO : ANDROID_LOG_WARN,
             "MPVFLOW_DIAGNOSTIC component=native-media3 event=vulkan_timing_capability state=%s "
-            "api=Vulkan source=libplacebo_timestamp_query compute_queue_family=%u "
+            "api=Vulkan source=libplacebo_timestamp_query timing_scope=libplacebo_vulkan_passes "
+            "flow_compute_api=%s opencl_queue_timing=included_by_host_wait_only compute_queue_family=%u "
             "timestamp_period_ns=%.6f timestamp_compute_and_graphics=%d "
             "compute_queue_timestamp_valid_bits=%u device_timestamp_supported=%d "
             "timer_objects=%u timer_stages=%u nonblocking=1 "
             "fallback=CPU_submission_and_successful_EGL_swap_cadence reason=%s",
             vulkanTimestampSupported ? "supported" : "unsupported",
+            mpvflow_gpu_get_compute_api_name(context->flow),
             context->computeQueueFamily, context->timestampPeriodNs,
             context->timestampComputeAndGraphics, context->computeTimestampValidBits,
             context->computeTimestampsSupported, timerObjectCount, timingStats.stage_count,
@@ -1094,12 +1105,13 @@ Java_app_infinity_mpvz_ui_player_Media3FlowVulkanNative_nativeCreateContext(
             timerObjectCount != timingStats.stage_count ? "libplacebo_timer_object_creation_failed" : "none");
     logFlow(ANDROID_LOG_INFO,
             "MPVFLOW_DIAGNOSTIC component=native-media3 event=renderer_init state=ready "
-                "backend=vulkan-spirv api_version=%u compute_queue_family=%u compute_queue_count=%u "
+                "renderer_api=vulkan flow_compute_api=%s api_version=%u compute_queue_family=%u compute_queue_count=%u "
                 "glsl_compute=%d glsl_vulkan=%d glsl_version=%d max_pushc_size=%zu "
                 "analysis_max_dimension=%d hardware_max_texture_dimension=%u compute_queues=%u ahb_extension_enabled=%d "
             "foreign_queue_extension_enabled=%d compute_queue_timestamp_valid_bits=%u "
             "timestamp_period_ns=%.6f timestamp_compute_and_graphics=%d vulkan_timing_supported=%d "
             "hardware_decoder=media3 hardware_buffers=android cpu_readback=no",
+            mpvflow_gpu_get_compute_api_name(context->flow),
             vulkan->api_version, vulkan->queue_compute.index, vulkan->queue_compute.count,
             vulkan->gpu->glsl.compute, vulkan->gpu->glsl.vulkan, vulkan->gpu->glsl.version,
                 vulkan->gpu->limits.max_pushc_size, config.max_dimension,
@@ -1297,9 +1309,11 @@ Java_app_infinity_mpvz_ui_player_Media3FlowVulkanNative_nativePrepareFrame(
     }
     logFlowOnce(context, DIAG_PREPARE_READY, ANDROID_LOG_INFO,
                 "MPVFLOW_DIAGNOSTIC component=native-media3 event=prepare_frame state=ready "
-                "backend=vulkan-spirv image_role=%s source=%dx%d prepared=%ux%u "
+                "renderer_api=vulkan flow_compute_api=%s preprocess_api=vulkan-libplacebo "
+                "image_role=%s source=%dx%d prepared=%ux%u "
                 "format=%s sampleable=%d cpu_readback=no "
                 "source_image_ownership=vulkan_until_external_read_or_reuse",
+                mpvflow_gpu_get_compute_api_name(context->flow),
                 image->output ? "output" : "input", image->width, image->height,
                 image->prepared->params.w, image->prepared->params.h,
                 image->prepared->params.format ? image->prepared->params.format->name : "missing",
@@ -1363,16 +1377,19 @@ Java_app_infinity_mpvz_ui_player_Media3FlowVulkanNative_nativeAnalyzePair(
     if (result != MPVFLOW_GPU_OK || !pair) {
         logFlowOnce(context, DIAG_ANALYZE_FAILURE, ANDROID_LOG_ERROR,
                     "MPVFLOW_DIAGNOSTIC component=native-media3 event=analyze_pair state=failed "
-                    "stage=mpvflow_gpu_analyze_pair status=%d frame0=%ux%u frame1=%ux%u "
-                    "backend=vulkan-spirv",
-                    result, frame0->prepared->params.w, frame0->prepared->params.h,
+                    "stage=mpvflow_gpu_analyze_pair renderer_api=vulkan flow_compute_api=%s "
+                    "status=%d frame0=%ux%u frame1=%ux%u",
+                    mpvflow_gpu_get_compute_api_name(context->flow), result,
+                    frame0->prepared->params.w, frame0->prepared->params.h,
                     frame1->prepared->params.w, frame1->prepared->params.h);
         return 0;
     }
     context->pairs.insert(pair);
     logFlowOnce(context, DIAG_ANALYZE_READY, ANDROID_LOG_INFO,
                 "MPVFLOW_DIAGNOSTIC component=native-media3 event=analyze_pair state=ready "
-                "backend=vulkan-spirv dimensions=%ux%u frames=2 output=GPU-resident cpu_readback=no",
+                "renderer_api=vulkan flow_compute_api=%s dimensions=%ux%u frames=2 "
+                "output=GPU-resident cpu_readback=no",
+                mpvflow_gpu_get_compute_api_name(context->flow),
                 frame0->prepared->params.w, frame0->prepared->params.h);
     return reinterpret_cast<jlong>(pair);
 }
@@ -1466,8 +1483,9 @@ Java_app_infinity_mpvz_ui_player_Media3FlowVulkanNative_nativeSynthesize(
     }
     logFlowOnce(context, DIAG_SYNTH_READY, ANDROID_LOG_INFO,
                 "MPVFLOW_DIAGNOSTIC component=native-media3 event=synthesize state=returned_to_display "
-                "backend=vulkan-spirv timestep=%.9g output=%dx%d sample_mode=linear "
+                "renderer_api=vulkan flow_compute_api=%s timestep=%.9g output=%dx%d sample_mode=linear "
                 "command_completion=%s cpu_readback=no",
+                mpvflow_gpu_get_compute_api_name(context->flow),
                 timestep, output->width, output->height,
                 output->lastHoldUsedSyncFd ? "sync_fd_handoff" : "pl_gpu_finish_fallback");
     return JNI_TRUE;
