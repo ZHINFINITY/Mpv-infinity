@@ -33,6 +33,10 @@ data class FlowCpuTimingStats(
   val frameHandlerCall: FlowDurationSummary = FlowDurationSummary(),
   /** CPU time inside eglSwapBuffers; GPU draw time is reported separately. */
   val eglSwapWait: FlowDurationSummary = FlowDurationSummary(),
+  /** CPU time to stage an input and enqueue Vulkan work; not GPU completion time. */
+  val vulkanInputPrepare: FlowDurationSummary = FlowDurationSummary(),
+  /** CPU time to enqueue synthesis and the output handoff; not GPU completion time. */
+  val vulkanSynthesisSubmit: FlowDurationSummary = FlowDurationSummary(),
 )
 
 data class FlowPixelCoverageStats(

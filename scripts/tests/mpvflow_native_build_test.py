@@ -179,8 +179,12 @@ assert "!frameInterpolationConfigOwned" in timing_candidate, (
     "MPV Flow timing must not override interpolation or sync options owned by mpv.conf"
 )
 for marker in (
+    'PlaybackSession.setOptionString("display-fps-override", displayRefreshRate.hz.toString())',
     'PlaybackSession.setOptionString("interpolation", "yes")',
     'PlaybackSession.setOptionString("video-sync", "display-resample")',
+    "displayRefreshRate != null",
+    "flowDisplayFpsOverrideRc == 0",
+    "currentDisplayRefreshRate()",
     "val mpvFlowFrameInterpolationEnabled =",
     "mpvFlowFrameInterpolationCandidate && flowTimingOptionsReady",
     'PlaybackSession.setOptionString("interpolation", "no")',
@@ -199,6 +203,13 @@ renderer_option_order = (
 renderer_positions = [init_options.index(marker) for marker in renderer_option_order]
 assert renderer_positions == sorted(renderer_positions), (
     "MPV Flow must apply gpu-api, gpu-context, then vo during initOptions"
+)
+display_override_position = init_options.index(
+    'PlaybackSession.setOptionString("display-fps-override", displayRefreshRate.hz.toString())'
+)
+vo_creation_position = init_options.index("PlaybackSession.setVideoOutput(backend.vo)")
+assert display_override_position < vo_creation_position, (
+    "MPV Flow must provide Android display FPS before VO creation and display-synced frame timing"
 )
 flow_selector = view_source.split("val flowRequiresVulkan =", 1)[1].split(
     "val gpuNextEnabled =", 1
@@ -231,7 +242,7 @@ mpv_conf_source = MPV_CONF_POLICY.read_text(encoding="utf-8")
 frame_interpolation_ownership = mpv_conf_source.split("val FRAME_INTERPOLATION =", 1)[1].split(
     "\n    )", 1
 )[0]
-for option in ("gpu-api", "gpu-context", "interpolation", "video-sync"):
+for option in ("gpu-api", "gpu-context", "interpolation", "video-sync", "display-fps-override"):
     assert f'"{option}"' in frame_interpolation_ownership, (
         f"mpv.conf-owned {option} must disable MPV Flow rather than override the configured path"
     )

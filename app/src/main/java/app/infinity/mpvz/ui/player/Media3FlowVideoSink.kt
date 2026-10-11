@@ -465,7 +465,13 @@ class Media3FlowVideoSink(
   private data class FrameToken(val ptsUs: Long, val generation: Long, val releaseTimestampNs: Long)
   private data class PlaybackClock(val positionUs: Long, val elapsedRealtimeUs: Long)
   private enum class FlowGpuStage { DOWNSAMPLE, MOTION_FORWARD, MOTION_BACKWARD, CONSISTENCY_AND_WARP, PRESENTATION_DRAW }
-  private enum class FlowCpuStage { INPUT_QUEUE_WAIT, FRAME_HANDLER_CALL, EGL_SWAP_WAIT }
+  private enum class FlowCpuStage {
+    INPUT_QUEUE_WAIT,
+    FRAME_HANDLER_CALL,
+    EGL_SWAP_WAIT,
+    VULKAN_INPUT_PREPARE,
+    VULKAN_SYNTHESIS_SUBMIT,
+  }
   private data class PendingGpuTimerQuery(
     val id: Int,
     val stage: FlowGpuStage,
@@ -1222,6 +1228,8 @@ class Media3FlowVideoSink(
       inputQueueWait = summary(FlowCpuStage.INPUT_QUEUE_WAIT),
       frameHandlerCall = summary(FlowCpuStage.FRAME_HANDLER_CALL),
       eglSwapWait = summary(FlowCpuStage.EGL_SWAP_WAIT),
+      vulkanInputPrepare = summary(FlowCpuStage.VULKAN_INPUT_PREPARE),
+      vulkanSynthesisSubmit = summary(FlowCpuStage.VULKAN_SYNTHESIS_SUBMIT),
     )
   }
 
@@ -1432,9 +1440,14 @@ class Media3FlowVideoSink(
     check(flowVulkanContext != 0L && pair.nativePairHandle != 0L && outputImageHandle != 0L) {
       "Media3 Flow Vulkan synthesis resources are unavailable"
     }
-    check(Media3FlowVulkanNative.nativeSynthesize(
-      flowVulkanContext, pair.nativePairHandle, alpha, outputImageHandle,
-    )) { "Shared Vulkan frame synthesis failed" }
+    val submitStartNs = System.nanoTime()
+    try {
+      check(Media3FlowVulkanNative.nativeSynthesize(
+        flowVulkanContext, pair.nativePairHandle, alpha, outputImageHandle,
+      )) { "Shared Vulkan frame synthesis failed" }
+    } finally {
+      recordCpuDuration(FlowCpuStage.VULKAN_SYNTHESIS_SUBMIT, (System.nanoTime() - submitStartNs).coerceAtLeast(0L))
+    }
   }
 
   private fun drawSourceFrame(slot: FrameSlot, presentationTimeNs: Long, ptsUs: Long): Boolean =
@@ -1521,10 +1534,15 @@ class Media3FlowVideoSink(
     check(flowVulkanContext != 0L && slot.nativeImageHandle != 0L) {
       "Media3 Flow frame is not backed by a Vulkan-shared HardwareBuffer"
     }
-    // EGL writes the imported AHardwareBuffer; complete those writes before Vulkan takes ownership.
-    GLES20.glFinish()
-    check(Media3FlowVulkanNative.nativePrepareFrame(flowVulkanContext, slot.nativeImageHandle)) {
-      "Vulkan could not stage the shared decoder frame"
+    // The JNI bridge exports the GLES native fence and makes Vulkan wait on it
+    // asynchronously; the reverse handoff is a Vulkan sync-FD / EGL server wait.
+    val prepareStartNs = System.nanoTime()
+    try {
+      check(Media3FlowVulkanNative.nativePrepareFrame(flowVulkanContext, slot.nativeImageHandle)) {
+        "Vulkan could not stage the shared decoder frame"
+      }
+    } finally {
+      recordCpuDuration(FlowCpuStage.VULKAN_INPUT_PREPARE, (System.nanoTime() - prepareStartNs).coerceAtLeast(0L))
     }
   }
 
@@ -2272,9 +2290,11 @@ class Media3FlowVideoSink(
     }
     val confidence = diagnostics.confidence?.let { formatLogFloat(it) } ?: "n/a"
     val gpuStages = "presentation=${formatFlowDuration(gpuTiming.presentationDraw)}"
-    val cpuStages = "queueWait=${formatFlowDuration(cpuTiming.inputQueueWait)} " +
+    val cpuStages = "media3InputQueue=${formatFlowDuration(cpuTiming.inputQueueWait)} " +
       "frameHandler=${formatFlowDuration(cpuTiming.frameHandlerCall)} " +
-      "eglSwapWait=${formatFlowDuration(cpuTiming.eglSwapWait)}"
+      "eglSwapWait=${formatFlowDuration(cpuTiming.eglSwapWait)} " +
+      "inputPrepareSubmit=${formatFlowDuration(cpuTiming.vulkanInputPrepare)} " +
+      "synthesisSubmit=${formatFlowDuration(cpuTiming.vulkanSynthesisSubmit)}"
     Log.i(
       logTag,
         "flow_summary backend=vulkan-spirv state=${diagnostics.state} bypass=${diagnostics.bypassReason ?: "none"} " +

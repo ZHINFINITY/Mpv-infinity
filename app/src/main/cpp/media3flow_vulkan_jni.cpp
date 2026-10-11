@@ -24,12 +24,15 @@
 
 #include <algorithm>
 #include <atomic>
+#include <chrono>
 #include <cstdarg>
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
 #include <mutex>
 #include <unordered_set>
+#include <unistd.h>
+#include <vector>
 
 #ifndef VK_QUEUE_FAMILY_FOREIGN_EXT
 #define VK_QUEUE_FAMILY_FOREIGN_EXT 0xfffffffd
@@ -49,6 +52,18 @@ struct SharedImage {
     int height = 0;
     bool output = false;
     bool heldByExternal = true;
+    bool lastHoldUsedSyncFd = false;
+};
+
+struct PendingHoldFence {
+    uint64_t sequence = 0;
+    VkSemaphore semaphore = VK_NULL_HANDLE;
+    EGLSyncKHR eglSync = EGL_NO_SYNC_KHR;
+};
+
+struct PendingReleaseSemaphore {
+    uint64_t retireAfterSequence = 0;
+    VkSemaphore semaphore = VK_NULL_HANDLE;
 };
 
 struct FlowContext {
@@ -56,10 +71,31 @@ struct FlowContext {
     pl_vulkan vulkan = nullptr;
     MPVFlowGPUContext *flow = nullptr;
     PFN_vkGetAndroidHardwareBufferPropertiesANDROID getBufferProperties = nullptr;
+    PFN_vkImportSemaphoreFdKHR importSemaphoreFd = nullptr;
+    PFN_vkGetSemaphoreFdKHR getSemaphoreFd = nullptr;
+    PFNEGLCREATESYNCKHRPROC createEglSync = nullptr;
+    PFNEGLDESTROYSYNCKHRPROC destroyEglSync = nullptr;
+    PFNEGLCLIENTWAITSYNCKHRPROC clientWaitEglSync = nullptr;
+    PFNEGLWAITSYNCKHRPROC waitEglSync = nullptr;
+    PFNEGLDUPNATIVEFENCEFDANDROIDPROC dupNativeFenceFd = nullptr;
+    EGLDisplay eglDisplay = EGL_NO_DISPLAY;
     std::unordered_set<SharedImage *> images;
     std::unordered_set<MPVFlowGPUPair *> pairs;
+    std::vector<PendingHoldFence> pendingHoldFences;
+    std::vector<PendingReleaseSemaphore> pendingReleaseSemaphores;
     std::mutex mutex;
     uint64_t diagnosticMask = 0;
+    uint64_t holdSequence = 0;
+    uint64_t completedSequence = 0;
+    uint64_t asyncHoldCount = 0;
+    uint64_t asyncReleaseCount = 0;
+    uint64_t fallbackHoldCount = 0;
+    uint64_t fallbackReleaseCount = 0;
+    uint64_t cpuSyncWaitCount = 0;
+    uint64_t cpuSyncWaitTotalNs = 0;
+    uint64_t cpuSyncWaitMaxNs = 0;
+    uint32_t syncOperationsSinceSummary = 0;
+    bool syncFdInteropReady = false;
 };
 
 enum FlowDiagnosticBit : uint64_t {
@@ -79,6 +115,9 @@ enum FlowDiagnosticBit : uint64_t {
     DIAG_OUTPUT_FORMAT_READY = 1ull << 13,
     DIAG_INPUT_CREATE_RETURN_FAILURE = 1ull << 14,
     DIAG_OUTPUT_CREATE_RETURN_FAILURE = 1ull << 15,
+    DIAG_SYNC_CAPABILITY = 1ull << 16,
+    DIAG_SYNC_FAILURE = 1ull << 17,
+    DIAG_SYNC_BACKPRESSURE = 1ull << 18,
 };
 
 enum EglDiagnosticBit : uint32_t {
@@ -158,22 +197,252 @@ bool hasEnabledDeviceExtension(pl_vulkan vulkan, const char *name) {
     return false;
 }
 
-bool holdImageForExternal(FlowContext *context, SharedImage *image) {
+bool hasEglExtension(const char *extensions, const char *name) {
+    if (!extensions || !name || !*name)
+        return false;
+    const size_t length = std::strlen(name);
+    for (const char *item = extensions; (item = std::strstr(item, name)); item += length) {
+        const bool beginsToken = item == extensions || item[-1] == ' ';
+        const bool endsToken = item[length] == '\0' || item[length] == ' ';
+        if (beginsToken && endsToken)
+            return true;
+    }
+    return false;
+}
+
+void initializeExternalSync(FlowContext *context) {
+    if (!context || !context->vulkan)
+        return;
+    context->eglDisplay = eglGetCurrentDisplay();
+    const char *eglExtensions = context->eglDisplay != EGL_NO_DISPLAY
+        ? eglQueryString(context->eglDisplay, EGL_EXTENSIONS) : nullptr;
+    const bool hasNativeFence = hasEglExtension(eglExtensions, "EGL_ANDROID_native_fence_sync");
+    const bool hasServerWait = hasEglExtension(eglExtensions, "EGL_ANDROID_wait_sync") ||
+                               hasEglExtension(eglExtensions, "EGL_KHR_wait_sync");
+    context->createEglSync = reinterpret_cast<PFNEGLCREATESYNCKHRPROC>(
+        eglGetProcAddress("eglCreateSyncKHR"));
+    context->destroyEglSync = reinterpret_cast<PFNEGLDESTROYSYNCKHRPROC>(
+        eglGetProcAddress("eglDestroySyncKHR"));
+    context->clientWaitEglSync = reinterpret_cast<PFNEGLCLIENTWAITSYNCKHRPROC>(
+        eglGetProcAddress("eglClientWaitSyncKHR"));
+    context->waitEglSync = reinterpret_cast<PFNEGLWAITSYNCKHRPROC>(
+        eglGetProcAddress("eglWaitSyncKHR"));
+    context->dupNativeFenceFd = reinterpret_cast<PFNEGLDUPNATIVEFENCEFDANDROIDPROC>(
+        eglGetProcAddress("eglDupNativeFenceFDANDROID"));
+    context->importSemaphoreFd = reinterpret_cast<PFN_vkImportSemaphoreFdKHR>(
+        vkGetDeviceProcAddr(context->vulkan->device, "vkImportSemaphoreFdKHR"));
+    context->getSemaphoreFd = reinterpret_cast<PFN_vkGetSemaphoreFdKHR>(
+        vkGetDeviceProcAddr(context->vulkan->device, "vkGetSemaphoreFdKHR"));
+
+    auto getSemaphoreProperties = reinterpret_cast<PFN_vkGetPhysicalDeviceExternalSemaphoreProperties>(
+        context->vulkan->get_proc_addr(context->vulkan->instance,
+                                       "vkGetPhysicalDeviceExternalSemaphoreProperties"));
+    if (!getSemaphoreProperties) {
+        getSemaphoreProperties = reinterpret_cast<PFN_vkGetPhysicalDeviceExternalSemaphoreProperties>(
+            context->vulkan->get_proc_addr(context->vulkan->instance,
+                                           "vkGetPhysicalDeviceExternalSemaphorePropertiesKHR"));
+    }
+    VkExternalSemaphoreProperties semaphoreProperties{};
+    semaphoreProperties.sType = VK_STRUCTURE_TYPE_EXTERNAL_SEMAPHORE_PROPERTIES;
+    if (getSemaphoreProperties) {
+        VkPhysicalDeviceExternalSemaphoreInfo semaphoreInfo{};
+        semaphoreInfo.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTERNAL_SEMAPHORE_INFO;
+        semaphoreInfo.handleType = VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_SYNC_FD_BIT;
+        getSemaphoreProperties(context->vulkan->phys_device, &semaphoreInfo,
+                               &semaphoreProperties);
+    }
+    const VkExternalSemaphoreFeatureFlags requiredFeatures =
+        VK_EXTERNAL_SEMAPHORE_FEATURE_IMPORTABLE_BIT |
+        VK_EXTERNAL_SEMAPHORE_FEATURE_EXPORTABLE_BIT;
+    const bool vkSyncFdEnabled = hasEnabledDeviceExtension(
+        context->vulkan, VK_KHR_EXTERNAL_SEMAPHORE_FD_EXTENSION_NAME);
+    const bool vkSyncFdSupported = getSemaphoreProperties &&
+        (semaphoreProperties.compatibleHandleTypes &
+         VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_SYNC_FD_BIT) &&
+        (semaphoreProperties.externalSemaphoreFeatures & requiredFeatures) == requiredFeatures;
+    const bool eglFunctionsReady = context->createEglSync && context->destroyEglSync &&
+        context->clientWaitEglSync && context->waitEglSync && context->dupNativeFenceFd;
+    const bool oneQueue = context->vulkan->queue_graphics.index ==
+                          context->vulkan->queue_compute.index;
+    context->syncFdInteropReady = context->eglDisplay != EGL_NO_DISPLAY &&
+        hasNativeFence && hasServerWait && eglFunctionsReady && vkSyncFdEnabled &&
+        vkSyncFdSupported && context->importSemaphoreFd && context->getSemaphoreFd && oneQueue;
+    logFlow(ANDROID_LOG_INFO,
+            "MPVFLOW_DIAGNOSTIC component=native-media3 event=sync_capability state=%s "
+            "mode=%s egl_native_fence=%d egl_server_wait=%d egl_functions=%d "
+            "vk_sync_fd_enabled=%d vk_import_export=%d graphics_queue_family=%u "
+            "compute_queue_family=%u same_queue=%d",
+            context->syncFdInteropReady ? "ready" : "fallback",
+            context->syncFdInteropReady ? "sync_fd_gpu_handoff" : "glFinish_pl_gpu_finish",
+            hasNativeFence, hasServerWait, eglFunctionsReady, vkSyncFdEnabled,
+            vkSyncFdSupported, context->vulkan->queue_graphics.index,
+            context->vulkan->queue_compute.index, oneQueue);
+}
+
+constexpr size_t kMaxPendingInteropFences = 64;
+
+VkSemaphore createInteropSemaphore(FlowContext *context, bool exportable) {
+    VkExportSemaphoreCreateInfo exportInfo{};
+    exportInfo.sType = VK_STRUCTURE_TYPE_EXPORT_SEMAPHORE_CREATE_INFO;
+    exportInfo.handleTypes = VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_SYNC_FD_BIT;
+    VkSemaphoreCreateInfo createInfo{};
+    createInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
+    createInfo.pNext = exportable ? &exportInfo : nullptr;
+    VkSemaphore semaphore = VK_NULL_HANDLE;
+    if (vkCreateSemaphore(context->vulkan->device, &createInfo, nullptr, &semaphore) != VK_SUCCESS)
+        return VK_NULL_HANDLE;
+    return semaphore;
+}
+
+int createEglNativeFenceFd(FlowContext *context) {
+    if (!context || context->eglDisplay == EGL_NO_DISPLAY ||
+        eglGetCurrentDisplay() != context->eglDisplay ||
+        eglGetCurrentContext() == EGL_NO_CONTEXT || !context->createEglSync ||
+        !context->destroyEglSync || !context->dupNativeFenceFd)
+        return -1;
+    const EGLint attributes[] = {
+        EGL_SYNC_NATIVE_FENCE_FD_ANDROID, EGL_NO_NATIVE_FENCE_FD_ANDROID, EGL_NONE,
+    };
+    EGLSyncKHR fence = context->createEglSync(
+        context->eglDisplay, EGL_SYNC_NATIVE_FENCE_ANDROID, attributes);
+    if (fence == EGL_NO_SYNC_KHR)
+        return -1;
+    glFlush();
+    const int fd = context->dupNativeFenceFd(context->eglDisplay, fence);
+    context->destroyEglSync(context->eglDisplay, fence);
+    return fd;
+}
+
+void logSyncSummaryIfReady(FlowContext *context) {
+    if (!context || context->syncOperationsSinceSummary < 120)
+        return;
+    context->syncOperationsSinceSummary = 0;
+    logFlow(ANDROID_LOG_INFO,
+            "MPVFLOW_DIAGNOSTIC component=native-media3 event=sync_handoff_summary "
+            "mode=%s async_release=%llu async_hold=%llu fallback_release=%llu "
+            "fallback_hold=%llu cpu_sync_wait_count=%llu cpu_sync_wait_total_ms=%.3f "
+            "cpu_sync_wait_max_ms=%.3f pending_release_semaphores=%zu pending_hold_fences=%zu",
+            context->syncFdInteropReady ? "sync_fd_gpu_handoff" : "glFinish_pl_gpu_finish",
+            static_cast<unsigned long long>(context->asyncReleaseCount),
+            static_cast<unsigned long long>(context->asyncHoldCount),
+            static_cast<unsigned long long>(context->fallbackReleaseCount),
+            static_cast<unsigned long long>(context->fallbackHoldCount),
+            static_cast<unsigned long long>(context->cpuSyncWaitCount),
+            context->cpuSyncWaitTotalNs / 1000000.0,
+            context->cpuSyncWaitMaxNs / 1000000.0,
+            context->pendingReleaseSemaphores.size(), context->pendingHoldFences.size());
+}
+
+void recordCpuSyncWait(FlowContext *context,
+                       std::chrono::steady_clock::time_point started) {
+    if (!context)
+        return;
+    const uint64_t elapsed = static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::nanoseconds>(
+        std::chrono::steady_clock::now() - started).count());
+    ++context->cpuSyncWaitCount;
+    context->cpuSyncWaitTotalNs += elapsed;
+    context->cpuSyncWaitMaxNs = std::max(context->cpuSyncWaitMaxNs, elapsed);
+}
+
+void reapCompletedInterop(FlowContext *context) {
+    if (!context || !context->syncFdInteropReady)
+        return;
+    for (auto it = context->pendingHoldFences.begin(); it != context->pendingHoldFences.end();) {
+        const EGLint status = context->clientWaitEglSync(
+            context->eglDisplay, it->eglSync, 0, 0);
+        if (status == EGL_CONDITION_SATISFIED_KHR) {
+            context->completedSequence = std::max(context->completedSequence, it->sequence);
+            context->destroyEglSync(context->eglDisplay, it->eglSync);
+            vkDestroySemaphore(context->vulkan->device, it->semaphore, nullptr);
+            it = context->pendingHoldFences.erase(it);
+        } else {
+            if (status != EGL_TIMEOUT_EXPIRED_KHR)
+                logFlowOnce(context, DIAG_SYNC_FAILURE, ANDROID_LOG_WARN,
+                            "MPVFLOW_DIAGNOSTIC component=native-media3 event=sync_handoff state=fallback "
+                            "stage=egl_fence_reap reason=client_wait_error egl_status=0x%x",
+                            status);
+            ++it;
+        }
+    }
+    for (auto it = context->pendingReleaseSemaphores.begin();
+         it != context->pendingReleaseSemaphores.end();) {
+        if (it->retireAfterSequence <= context->completedSequence) {
+            vkDestroySemaphore(context->vulkan->device, it->semaphore, nullptr);
+            it = context->pendingReleaseSemaphores.erase(it);
+        } else {
+            ++it;
+        }
+    }
+}
+
+bool waitForOldestInteropFence(FlowContext *context) {
+    if (!context || !context->syncFdInteropReady || context->pendingHoldFences.empty())
+        return false;
+    const auto started = std::chrono::steady_clock::now();
+    const EGLint status = context->clientWaitEglSync(
+        context->eglDisplay, context->pendingHoldFences.front().eglSync,
+        0, EGL_FOREVER_KHR);
+    recordCpuSyncWait(context, started);
+    if (status != EGL_CONDITION_SATISFIED_KHR) {
+        logFlowOnce(context, DIAG_SYNC_FAILURE, ANDROID_LOG_ERROR,
+                    "MPVFLOW_DIAGNOSTIC component=native-media3 event=sync_handoff state=fallback "
+                    "stage=interop_backpressure reason=egl_client_wait_failed egl_status=0x%x",
+                    status);
+        return false;
+    }
+    logFlowOnce(context, DIAG_SYNC_BACKPRESSURE, ANDROID_LOG_WARN,
+                "MPVFLOW_DIAGNOSTIC component=native-media3 event=sync_handoff state=backpressure_wait "
+                "stage=oldest_gpu_fence reason=interop_resource_cap");
+    reapCompletedInterop(context);
+    return true;
+}
+
+void drainPendingInterop(FlowContext *context) {
+    if (!context || !context->vulkan)
+        return;
+    const auto started = std::chrono::steady_clock::now();
+    pl_gpu_finish(context->vulkan->gpu);
+    if (context->eglDisplay != EGL_NO_DISPLAY &&
+        eglGetCurrentDisplay() == context->eglDisplay &&
+        eglGetCurrentContext() != EGL_NO_CONTEXT)
+        glFinish();
+    recordCpuSyncWait(context, started);
+    for (const PendingHoldFence &pending : context->pendingHoldFences) {
+        if (pending.eglSync != EGL_NO_SYNC_KHR)
+            context->destroyEglSync(context->eglDisplay, pending.eglSync);
+        if (pending.semaphore != VK_NULL_HANDLE)
+            vkDestroySemaphore(context->vulkan->device, pending.semaphore, nullptr);
+    }
+    context->pendingHoldFences.clear();
+    for (const PendingReleaseSemaphore &pending : context->pendingReleaseSemaphores) {
+        if (pending.semaphore != VK_NULL_HANDLE)
+            vkDestroySemaphore(context->vulkan->device, pending.semaphore, nullptr);
+    }
+    context->pendingReleaseSemaphores.clear();
+    context->completedSequence = context->holdSequence;
+}
+
+bool holdImageForExternal(FlowContext *context, SharedImage *image,
+                          bool forceSynchronous = false) {
     if (!context || !image || !image->texture)
         return false;
     if (image->heldByExternal)
         return true;
 
-    VkSemaphoreCreateInfo semaphoreInfo{};
-    semaphoreInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
-    VkSemaphore semaphore = VK_NULL_HANDLE;
-    const VkResult semaphoreResult = vkCreateSemaphore(
-        context->vulkan->device, &semaphoreInfo, nullptr, &semaphore);
-    if (semaphoreResult != VK_SUCCESS) {
+    if (context->syncFdInteropReady) {
+        reapCompletedInterop(context);
+        if (context->pendingHoldFences.size() >= kMaxPendingInteropFences ||
+            context->pendingReleaseSemaphores.size() >= kMaxPendingInteropFences)
+            if (!waitForOldestInteropFence(context))
+                drainPendingInterop(context);
+    }
+    const bool useSyncFd = context->syncFdInteropReady && !forceSynchronous;
+    VkSemaphore semaphore = createInteropSemaphore(context, useSyncFd);
+    if (semaphore == VK_NULL_HANDLE) {
         logFlowOnce(context, DIAG_OWNERSHIP_FAILURE, ANDROID_LOG_ERROR,
                     "MPVFLOW_DIAGNOSTIC component=native-media3 event=ownership state=failed "
-                    "stage=external_release_semaphore vk_result=%d image_role=%s",
-                    semaphoreResult, image->output ? "output" : "input");
+                    "stage=external_release_semaphore image_role=%s",
+                    image->output ? "output" : "input");
         return false;
     }
 
@@ -184,15 +453,101 @@ bool holdImageForExternal(FlowContext *context, SharedImage *image) {
     holdParams.semaphore.sem = semaphore;
     holdParams.semaphore.value = 0;
     const bool held = pl_vulkan_hold_ex(context->vulkan->gpu, &holdParams);
-    // pl_gpu_finish waits for the release barrier and its signal semaphore.
-    pl_gpu_finish(context->vulkan->gpu);
-    vkDestroySemaphore(context->vulkan->device, semaphore, nullptr);
     image->heldByExternal = held;
-    if (!held)
+    image->lastHoldUsedSyncFd = false;
+    if (!held) {
+        drainPendingInterop(context);
+        vkDestroySemaphore(context->vulkan->device, semaphore, nullptr);
         logFlowOnce(context, DIAG_OWNERSHIP_FAILURE, ANDROID_LOG_ERROR,
                     "MPVFLOW_DIAGNOSTIC component=native-media3 event=ownership state=failed "
                     "stage=libplacebo_hold_to_external image_role=%s layout=general queue_family=%u",
                     image->output ? "output" : "input", (unsigned int) VK_QUEUE_FAMILY_FOREIGN_EXT);
+        return false;
+    }
+
+    const uint64_t sequence = ++context->holdSequence;
+    if (useSyncFd) {
+        VkSemaphoreGetFdInfoKHR fdInfo{};
+        fdInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_GET_FD_INFO_KHR;
+        fdInfo.semaphore = semaphore;
+        fdInfo.handleType = VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_SYNC_FD_BIT;
+        int fd = -1;
+        const VkResult exportResult = context->getSemaphoreFd(
+            context->vulkan->device, &fdInfo, &fd);
+        if (exportResult == VK_SUCCESS && fd == -1) {
+            // VK_SYNC_FD exports may use -1 to represent an already-signaled
+            // binary semaphore; the Vulkan ownership barrier has completed.
+            context->completedSequence = std::max(context->completedSequence, sequence);
+            vkDestroySemaphore(context->vulkan->device, semaphore, nullptr);
+            image->lastHoldUsedSyncFd = true;
+            ++context->asyncHoldCount;
+            ++context->syncOperationsSinceSummary;
+            logFlowOnce(context, DIAG_SYNC_CAPABILITY, ANDROID_LOG_INFO,
+                        "MPVFLOW_DIAGNOSTIC component=native-media3 event=sync_handoff state=async "
+                        "mode=vulkan_sync_fd_already_signaled queue_family=%u",
+                        context->vulkan->queue_graphics.index);
+            reapCompletedInterop(context);
+            logSyncSummaryIfReady(context);
+            return true;
+        }
+        if (exportResult == VK_SUCCESS && fd >= 0) {
+            const EGLint attributes[] = {
+                EGL_SYNC_NATIVE_FENCE_FD_ANDROID, fd, EGL_NONE,
+            };
+            EGLSyncKHR eglSync = context->createEglSync(
+                context->eglDisplay, EGL_SYNC_NATIVE_FENCE_ANDROID, attributes);
+            if (eglSync != EGL_NO_SYNC_KHR) {
+                const EGLint waitResult = context->waitEglSync(context->eglDisplay, eglSync, 0);
+                if (waitResult == EGL_TRUE) {
+                    context->pendingHoldFences.push_back({ sequence, semaphore, eglSync });
+                    image->lastHoldUsedSyncFd = true;
+                    ++context->asyncHoldCount;
+                    ++context->syncOperationsSinceSummary;
+                    logFlowOnce(context, DIAG_SYNC_CAPABILITY, ANDROID_LOG_INFO,
+                                "MPVFLOW_DIAGNOSTIC component=native-media3 event=sync_handoff state=async "
+                                "mode=vulkan_sync_fd_to_egl_server_wait queue_family=%u",
+                                context->vulkan->queue_graphics.index);
+                    reapCompletedInterop(context);
+                    logSyncSummaryIfReady(context);
+                    return true;
+                }
+                context->destroyEglSync(context->eglDisplay, eglSync);
+            } else {
+                close(fd);
+            }
+        } else if (fd >= 0) {
+            close(fd);
+        }
+        const auto started = std::chrono::steady_clock::now();
+        pl_gpu_finish(context->vulkan->gpu);
+        recordCpuSyncWait(context, started);
+        context->completedSequence = std::max(context->completedSequence, sequence);
+        vkDestroySemaphore(context->vulkan->device, semaphore, nullptr);
+        ++context->fallbackHoldCount;
+        ++context->syncOperationsSinceSummary;
+        logFlowOnce(context, DIAG_SYNC_FAILURE, ANDROID_LOG_WARN,
+                    "MPVFLOW_DIAGNOSTIC component=native-media3 event=sync_handoff state=fallback "
+                    "stage=vulkan_signal_export_or_egl_wait reason=interop_call_failed "
+                    "fallback=pl_gpu_finish");
+        reapCompletedInterop(context);
+        logSyncSummaryIfReady(context);
+        return true;
+    }
+
+    const auto started = std::chrono::steady_clock::now();
+    pl_gpu_finish(context->vulkan->gpu);
+    recordCpuSyncWait(context, started);
+    context->completedSequence = std::max(context->completedSequence, sequence);
+    vkDestroySemaphore(context->vulkan->device, semaphore, nullptr);
+    ++context->fallbackHoldCount;
+    ++context->syncOperationsSinceSummary;
+    if (!forceSynchronous)
+        logFlowOnce(context, DIAG_SYNC_FAILURE, ANDROID_LOG_WARN,
+                    "MPVFLOW_DIAGNOSTIC component=native-media3 event=sync_handoff state=fallback "
+                    "stage=vulkan_to_egl reason=sync_fd_capability_unavailable "
+                    "fallback=pl_gpu_finish");
+    reapCompletedInterop(context);
+    logSyncSummaryIfReady(context);
     return image->heldByExternal;
 }
 
@@ -201,12 +556,68 @@ bool releaseImageToVulkan(FlowContext *context, SharedImage *image) {
         return false;
     if (!image->heldByExternal)
         return true;
+    if (eglGetCurrentContext() == EGL_NO_CONTEXT ||
+        eglGetCurrentDisplay() != context->eglDisplay)
+        return false;
+
+    if (context->syncFdInteropReady) {
+        reapCompletedInterop(context);
+        if (context->pendingReleaseSemaphores.size() >= kMaxPendingInteropFences ||
+            context->pendingHoldFences.size() >= kMaxPendingInteropFences)
+            if (!waitForOldestInteropFence(context))
+                drainPendingInterop(context);
+        const int fd = createEglNativeFenceFd(context);
+        VkSemaphore semaphore = fd >= 0 ? createInteropSemaphore(context, true) : VK_NULL_HANDLE;
+        if (semaphore != VK_NULL_HANDLE) {
+            VkImportSemaphoreFdInfoKHR importInfo{};
+            importInfo.sType = VK_STRUCTURE_TYPE_IMPORT_SEMAPHORE_FD_INFO_KHR;
+            importInfo.semaphore = semaphore;
+            importInfo.flags = VK_SEMAPHORE_IMPORT_TEMPORARY_BIT;
+            importInfo.handleType = VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_SYNC_FD_BIT;
+            importInfo.fd = fd;
+            const VkResult importResult = context->importSemaphoreFd(
+                context->vulkan->device, &importInfo);
+            if (importResult == VK_SUCCESS) {
+                struct pl_vulkan_release_params releaseParams{};
+                releaseParams.tex = image->texture;
+                releaseParams.layout = VK_IMAGE_LAYOUT_GENERAL;
+                releaseParams.qf = VK_QUEUE_FAMILY_FOREIGN_EXT;
+                releaseParams.semaphore.sem = semaphore;
+                releaseParams.semaphore.value = 0;
+                pl_vulkan_release_ex(context->vulkan->gpu, &releaseParams);
+                image->heldByExternal = false;
+                context->pendingReleaseSemaphores.push_back({
+                    context->holdSequence + 1, semaphore,
+                });
+                ++context->asyncReleaseCount;
+                ++context->syncOperationsSinceSummary;
+                reapCompletedInterop(context);
+                logSyncSummaryIfReady(context);
+                return true;
+            }
+            close(fd); // Ownership transfers only when vkImportSemaphoreFdKHR succeeds.
+            vkDestroySemaphore(context->vulkan->device, semaphore, nullptr);
+        } else if (fd >= 0) {
+            close(fd);
+        }
+        logFlowOnce(context, DIAG_SYNC_FAILURE, ANDROID_LOG_WARN,
+                    "MPVFLOW_DIAGNOSTIC component=native-media3 event=sync_handoff state=fallback "
+                    "stage=egl_to_vulkan reason=native_fence_export_or_semaphore_import_failed "
+                    "fallback=glFinish");
+    }
+
+    const auto started = std::chrono::steady_clock::now();
+    glFinish();
+    recordCpuSyncWait(context, started);
     struct pl_vulkan_release_params releaseParams{};
     releaseParams.tex = image->texture;
     releaseParams.layout = VK_IMAGE_LAYOUT_GENERAL;
     releaseParams.qf = VK_QUEUE_FAMILY_FOREIGN_EXT;
     pl_vulkan_release_ex(context->vulkan->gpu, &releaseParams);
     image->heldByExternal = false;
+    ++context->fallbackReleaseCount;
+    ++context->syncOperationsSinceSummary;
+    logSyncSummaryIfReady(context);
     return true;
 }
 
@@ -217,7 +628,7 @@ void destroyImage(FlowContext *context, SharedImage *image) {
         pl_tex_destroy(context->vulkan->gpu, &image->prepared);
     if (image->texture) {
         if (!image->heldByExternal)
-            (void) holdImageForExternal(context, image);
+            (void) holdImageForExternal(context, image, true);
         pl_tex_destroy(context->vulkan->gpu, &image->texture);
     }
     if (image->image)
@@ -568,12 +979,17 @@ Java_app_infinity_mpvz_ui_player_Media3FlowVulkanNative_nativeCreateContext(
         VK_ANDROID_EXTERNAL_MEMORY_ANDROID_HARDWARE_BUFFER_EXTENSION_NAME,
         "VK_EXT_queue_family_foreign",
     };
+    const char *optionalExtensions[] = {
+        VK_KHR_EXTERNAL_SEMAPHORE_FD_EXTENSION_NAME,
+    };
     struct pl_vulkan_params params = pl_vulkan_default_params;
     params.async_compute = false;
     params.async_transfer = false;
     params.queue_count = 1;
     params.extensions = extensions;
     params.num_extensions = sizeof(extensions) / sizeof(extensions[0]);
+    params.opt_extensions = optionalExtensions;
+    params.num_opt_extensions = sizeof(optionalExtensions) / sizeof(optionalExtensions[0]);
     struct pl_log_params logParams{};
     logParams.log_cb = placeboLogCallback;
     logParams.log_level = PL_LOG_INFO;
@@ -600,6 +1016,7 @@ Java_app_infinity_mpvz_ui_player_Media3FlowVulkanNative_nativeCreateContext(
     auto *context = new FlowContext();
     context->placeboLog = placeboLog;
     context->vulkan = vulkan;
+    initializeExternalSync(context);
     context->getBufferProperties = reinterpret_cast<PFN_vkGetAndroidHardwareBufferPropertiesANDROID>(
         vkGetDeviceProcAddr(vulkan->device, "vkGetAndroidHardwareBufferPropertiesANDROID"));
     if (!context->getBufferProperties) {
@@ -830,8 +1247,7 @@ Java_app_infinity_mpvz_ui_player_Media3FlowVulkanNative_nativePrepareFrame(
     const MPVFlowGPUResult status = mpvflow_gpu_prepare_input(
         context->flow, image->texture, &image->prepared);
     if (status != MPVFLOW_GPU_OK) {
-        pl_gpu_finish(context->vulkan->gpu);
-        (void) holdImageForExternal(context, image);
+        (void) holdImageForExternal(context, image, true);
         logFlowOnce(context, DIAG_PREPARE_FAILURE, ANDROID_LOG_ERROR,
                     "MPVFLOW_DIAGNOSTIC component=native-media3 event=prepare_frame state=failed "
                     "stage=mpvflow_gpu_prepare_input status=%d image_role=%s width=%d height=%d "
@@ -934,7 +1350,7 @@ Java_app_infinity_mpvz_ui_player_Media3FlowVulkanNative_nativeSynthesize(
     const MPVFlowGPUResult result = mpvflow_gpu_synthesize(
         context->flow, pair, timestep, &synthesized);
     if (result != MPVFLOW_GPU_OK || !synthesized) {
-        (void) holdImageForExternal(context, output);
+        (void) holdImageForExternal(context, output, true);
         logFlowOnce(context, DIAG_SYNTH_FAILURE, ANDROID_LOG_ERROR,
                     "MPVFLOW_DIAGNOSTIC component=native-media3 event=synthesize state=failed "
                     "stage=mpvflow_gpu_synthesize status=%d synthesized_texture_present=%d "
@@ -957,8 +1373,9 @@ Java_app_infinity_mpvz_ui_player_Media3FlowVulkanNative_nativeSynthesize(
     logFlowOnce(context, DIAG_SYNTH_READY, ANDROID_LOG_INFO,
                 "MPVFLOW_DIAGNOSTIC component=native-media3 event=synthesize state=returned_to_display "
                 "backend=vulkan-spirv timestep=%.9g output=%dx%d sample_mode=linear "
-                "command_completion=pl_gpu_finish cpu_readback=no",
-                timestep, output->width, output->height);
+                "command_completion=%s cpu_readback=no",
+                timestep, output->width, output->height,
+                output->lastHoldUsedSyncFd ? "sync_fd_handoff" : "pl_gpu_finish_fallback");
     return JNI_TRUE;
 }
 
@@ -971,7 +1388,9 @@ Java_app_infinity_mpvz_ui_player_Media3FlowVulkanNative_nativeReleasePair(
         return;
     std::lock_guard<std::mutex> guard(context->mutex);
     if (context->pairs.erase(pair)) {
-        pl_gpu_finish(context->vulkan->gpu);
+        // libplacebo retains command-referenced Vulkan textures until the queue
+        // completion callbacks drop their references; a device-wide finish here
+        // unnecessarily serialized every retired motion pair with the CPU.
         mpvflow_gpu_pair_release(context->flow, pair);
     }
 }
@@ -997,10 +1416,10 @@ Java_app_infinity_mpvz_ui_player_Media3FlowVulkanNative_nativeDestroyContext(
         return;
     {
         std::lock_guard<std::mutex> guard(context->mutex);
+        drainPendingInterop(context);
         for (MPVFlowGPUPair *pair : context->pairs)
             mpvflow_gpu_pair_release(context->flow, pair);
         context->pairs.clear();
-        pl_gpu_finish(context->vulkan->gpu);
         for (SharedImage *image : context->images)
             destroyImage(context, image);
         context->images.clear();

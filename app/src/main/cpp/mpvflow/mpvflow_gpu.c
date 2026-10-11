@@ -187,18 +187,24 @@ static pl_pass make_pass(pl_gpu gpu, const char *glsl,
         .glsl_shader = glsl));
 }
 
-static pl_tex create_texture(MPVFlowGPUContext *ctx, int w, int h, pl_fmt fmt,
-                             bool sampleable, const char *stage)
+static pl_tex create_texture_ex(MPVFlowGPUContext *ctx, int w, int h, pl_fmt fmt,
+                                bool sampleable, bool blit_src, const char *stage)
 {
     pl_tex texture = pl_tex_create(ctx->gpu, pl_tex_params(
         .w = w, .h = h, .d = 0, .format = fmt,
-        .sampleable = sampleable, .storable = true));
+        .sampleable = sampleable, .storable = true, .blit_src = blit_src));
     if (!texture)
         flow_log_once(ctx, FLOW_DIAG_TEXTURE_ALLOC, PL_LOG_WARN,
                       "MPVFLOW_DIAGNOSTIC event=compute_runtime state=failed stage=%s "
                       "reason=texture_allocation width=%d height=%d format=%s sampleable=%d storable=1",
                       stage, w, h, fmt ? fmt->name : "missing", sampleable);
     return texture;
+}
+
+static pl_tex create_texture(MPVFlowGPUContext *ctx, int w, int h, pl_fmt fmt,
+                             bool sampleable, const char *stage)
+{
+    return create_texture_ex(ctx, w, h, fmt, sampleable, false, stage);
 }
 
 static void destroy_tex(MPVFlowGPUContext *ctx, pl_tex *tex)
@@ -238,7 +244,8 @@ static bool allocate_pair_textures(MPVFlowGPUContext *ctx,
                                    MPVFlowGPUPair *pair)
 {
     int w = pair->w, h = pair->h;
-    pair->output = create_texture(ctx, w, h, ctx->fmt_rgba8, true, "pair_output");
+    pair->output = create_texture_ex(ctx, w, h, ctx->fmt_rgba8, true, true,
+                                     "pair_output");
     if (!pair->output)
         return false;
     for (int i = 0; i < FLOW_LEVELS && w >= FLOW_BLOCK && h >= FLOW_BLOCK; i++) {

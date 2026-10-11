@@ -2476,9 +2476,11 @@ private fun NativeStatsPageOverlay(
               color = Color.White,
             )
             Text(
-              "Flow CPU avg/p95/max: input queue ${formatFlowDuration(flowCpu.inputQueueWait)} · " +
+              "Flow CPU avg/p95/max: Media3 input queue ${formatFlowDuration(flowCpu.inputQueueWait)} · " +
                 "handler call ${formatFlowDuration(flowCpu.frameHandlerCall)} · " +
-                "EGL swap wait ${formatFlowDuration(flowCpu.eglSwapWait)}",
+                "EGL swap ${formatFlowDuration(flowCpu.eglSwapWait)} · " +
+                "input Vulkan submit ${formatFlowDuration(flowCpu.vulkanInputPrepare)} · " +
+                "synthesis submit ${formatFlowDuration(flowCpu.vulkanSynthesisSubmit)}",
               style = MaterialTheme.typography.bodySmall,
               color = Color.White,
             )

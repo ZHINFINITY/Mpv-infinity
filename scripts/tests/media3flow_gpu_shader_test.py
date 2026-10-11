@@ -18,8 +18,9 @@ RUNTIME_BUILD = (ROOT / "scripts/build-mpvflow-mpv-runtime.sh").read_text(encodi
 AAR_PACKAGE = (ROOT / "scripts/package-mpv-runtime-aar.py").read_text(encoding="utf-8")
 
 # Native Media3 may use GLES for decoder SurfaceTexture capture and final display only.
-for marker in ("copyExternalTexture(", "drawTexture(", "GLES20.glFinish()", "interpolation=Vulkan"):
+for marker in ("copyExternalTexture(", "drawTexture(", "interpolation=Vulkan"):
     assert marker in SINK, f"Native Media3 must retain its capture/display-only GLES stage: {marker}"
+assert "GLES20.glFinish()" not in SINK, "input capture must use the native-fence Vulkan handoff instead of a CPU-wide GLES finish"
 for forbidden in (
     "GLES31", "#version 310 es", "glDispatchCompute", "glBindImageTexture", "glMemoryBarrier",
     "FlowCoverageBuffer", "lumaProgram", "flowProgram", "synthProgram",
@@ -31,6 +32,8 @@ for marker in ("nativePrepareFrame(", "nativeAnalyzePair(", "nativeSynthesize(",
     assert marker in SINK, f"Media3 sink is missing its Vulkan JNI dispatch: {marker}"
 for marker in (
     "pl_vulkan_create(", "pl_vulkan_wrap(", "pl_vulkan_release_ex(", "pl_vulkan_hold_ex(",
+    "VK_KHR_EXTERNAL_SEMAPHORE_FD_EXTENSION_NAME", "vkImportSemaphoreFdKHR", "vkGetSemaphoreFdKHR",
+    "eglDupNativeFenceFDANDROID", "eglWaitSyncKHR", "sync_handoff_summary",
     "VK_EXTERNAL_MEMORY_HANDLE_TYPE_ANDROID_HARDWARE_BUFFER_BIT_ANDROID",
     "VK_QUEUE_FAMILY_FOREIGN_EXT", "mpvflow_gpu_create(", "mpvflow_gpu_prepare_input(",
     "mpvflow_gpu_analyze_pair(", "mpvflow_gpu_synthesize(",
@@ -39,6 +42,27 @@ for marker in (
 assert "get_proc_addr" in JNI
 assert '"vkGetPhysicalDeviceImageFormatProperties2KHR"' in JNI
 assert "vkGetPhysicalDeviceImageFormatProperties2(\n" not in JNI, "Android Vulkan entry point must be loaded, not directly linked"
+pair_release = JNI.split("Java_app_infinity_mpvz_ui_player_Media3FlowVulkanNative_nativeReleasePair(", 1)[1].split(
+    "Java_app_infinity_mpvz_ui_player_Media3FlowVulkanNative_nativeDestroyImage(", 1
+)[0]
+assert "pl_gpu_finish(" not in pair_release, "retiring a motion pair must not serialize the Vulkan queue with a CPU finish"
+assert "context->pendingReleaseSemaphores" in JNI and "context->pendingHoldFences" in JNI, (
+    "sync-FD semaphores must remain alive until their GPU completion fences are reaped"
+)
+for marker in (
+    "params.async_compute = false",
+    "params.async_transfer = false",
+    "waitForOldestInteropFence(",
+    "EGL_FOREVER_KHR",
+    "cpu_sync_wait_total_ms",
+):
+    assert marker in JNI, (
+        "Native Media3 sync-FD handoffs must preserve safe queue ordering and bounded resource pressure: "
+        f"{marker}"
+    )
+assert ".blit_src = blit_src" in GPU and 'ctx, w, h, ctx->fmt_rgba8, true, true,\n                                     "pair_output"' in GPU, (
+    "the synthesized Flow pair texture must advertise blit-source capability before Media3 copies it"
+)
 assert "external fun nativeCreateContext" in NATIVE
 assert "external fun nativeGetRequiredHardwareBufferUsage" in NATIVE
 assert "external fun nativeAnalyzePair" in NATIVE
@@ -76,4 +100,6 @@ assert "requires_gpu_next_opengl" not in MPV_VIEW
 assert "backend=vulkan-spirv" in MPV_PATCH
 assert "backend=opengl-es" not in MPV_PATCH
 assert "gpu->glsl.vulkan" in GPU
-print("Media3 and MPV Flow use Vulkan/SPIR-V; JNI refuses unexported libplacebo APIs and GLES is capture/display-only")
+assert 'PlaybackSession.setOptionString("display-fps-override", displayRefreshRate.hz.toString())' in MPV_VIEW
+assert "display_refresh_source=" in MPV_VIEW
+print("Media3 and MPV Flow use Vulkan/SPIR-V with async native-fence handoffs, validated blit capabilities, and explicit display cadence")

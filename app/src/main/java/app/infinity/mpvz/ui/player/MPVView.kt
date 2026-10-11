@@ -10,9 +10,11 @@
 package app.infinity.mpvz.ui.player
 
 import android.content.Context
+import android.hardware.display.DisplayManager
 import android.os.Environment
 import android.util.AttributeSet
 import android.util.Log
+import android.view.Display
 import android.view.KeyCharacterMap
 import android.view.KeyEvent
 import androidx.core.view.WindowInsetsCompat
@@ -55,6 +57,16 @@ internal fun resolveSurfaceFrameRateHint(
   interpolationFrameRate?.takeIf { it.isFinite() && it > 0.0 }
     ?: sourceFrameRate?.takeIf { it.isFinite() && it > 0.0 }
 
+internal fun resolveFlowDisplayRefreshRateHz(
+  viewRefreshRateHz: Float?,
+  displayManagerRefreshRateHz: Float?,
+): Float? =
+  sequenceOf(viewRefreshRateHz, displayManagerRefreshRateHz)
+    .filterNotNull()
+    .firstOrNull { it.isFinite() && it in 20f..360f }
+
+private data class FlowDisplayRefreshRate(val hz: Float, val source: String)
+
 class MPVView(
   context: Context,
   attributes: AttributeSet,
@@ -77,6 +89,21 @@ class MPVView(
   private var rifeModelDirectory: String? = null
   private var interpolationOutputFrameRate: Double? = null
 
+  private fun currentDisplayRefreshRate(): FlowDisplayRefreshRate? {
+    val viewDisplay = display
+    val displayId = viewDisplay?.displayId ?: Display.DEFAULT_DISPLAY
+    val managerDisplay = context.getSystemService(DisplayManager::class.java)?.getDisplay(displayId)
+    val viewRate = viewDisplay?.refreshRate
+    val managerRate = managerDisplay?.refreshRate
+    val resolved = resolveFlowDisplayRefreshRateHz(viewRate, managerRate) ?: return null
+    val source = if (viewRate != null && viewRate.isFinite() && viewRate in 20f..360f) {
+      "attached_display"
+    } else {
+      "display_manager"
+    }
+    return FlowDisplayRefreshRate(resolved, source)
+  }
+
   /**
    * Configures the process-wide player and binds this view as its current rendering surface.
    * Re-entering the player reuses the live core; it never creates a second native instance.
@@ -97,10 +124,11 @@ class MPVView(
     val requestedRifeTargetFps = normalizeRifeTargetFps(decoderPreferences.rifeTargetFps.get())
     val requestedRifeProcessingResolution =
       normalizeRifeProcessingResolution(decoderPreferences.rifeProcessingResolution.get())
+    val displayRefreshRate = currentDisplayRefreshRate()
     val requestedMpvFlowTargetFps =
       effectiveMpvFlowTargetFps(
         decoderPreferences.mpvFlowTargetFps.get(),
-        display?.refreshRate ?: 0f,
+        displayRefreshRate?.hz ?: 0f,
       )
     rifeModelDirectory =
       if (rifeRequested && BuildConfig.MPV_HAS_RIFE && !frameInterpolationConfigOwned) {
@@ -236,10 +264,11 @@ class MPVView(
     val rifeFrameInterpolationPreference = decoderPreferences.rifeFrameInterpolation.get()
     val mpvFlowFrameInterpolationPreference = decoderPreferences.mpvFlowFrameInterpolation.get()
     val rifeTargetFps = normalizeRifeTargetFps(decoderPreferences.rifeTargetFps.get())
+    val displayRefreshRate = currentDisplayRefreshRate()
     val mpvFlowTargetFps =
       effectiveMpvFlowTargetFps(
         decoderPreferences.mpvFlowTargetFps.get(),
-        display?.refreshRate ?: 0f,
+        displayRefreshRate?.hz ?: 0f,
       )
     val mpvFlowMaxDimension = effectiveMpvFlowMaxDimension(mpvFlowTargetFps)
     val rifeProcessingResolution =
@@ -260,6 +289,15 @@ class MPVView(
         !anime4kActive &&
         RendererBackendPolicy.canUseDirectGpuFlow(backend.vo, backend.gpuApi) &&
         decoderPreferences.playbackEngine.get() != PlaybackEngineMode.NATIVE
+    val flowDisplayFpsOverrideRc =
+      when {
+        mpvFlowFrameInterpolationCandidate && displayRefreshRate != null ->
+          PlaybackSession.setOptionString("display-fps-override", displayRefreshRate.hz.toString())
+        mpvFlowFrameInterpolationCandidate -> null
+        !MpvConfigOverridePolicy.isOwnedByMpvConf("display-fps-override") ->
+          PlaybackSession.setOptionString("display-fps-override", "0")
+        else -> null
+      }
     // Flow consumes gpu-next's before/after frame mix and needs a display-timed output tick between
     // source PTS values. Keep this scoped to the Flow path; the config-ownership gate above prevents
     // overriding an explicit mpv.conf interpolation or video-sync choice.
@@ -275,15 +313,23 @@ class MPVView(
       } else {
         null
       }
-    val flowTimingOptionsReady = flowInterpolationRc == 0 && flowVideoSyncRc == 0
+    val flowTimingOptionsReady =
+      flowInterpolationRc == 0 &&
+        flowVideoSyncRc == 0 &&
+        flowDisplayFpsOverrideRc == 0 &&
+        displayRefreshRate != null
     if (mpvFlowFrameInterpolationCandidate && !flowTimingOptionsReady) {
       val resetInterpolationRc = PlaybackSession.setOptionString("interpolation", "no")
       val resetVideoSyncRc = PlaybackSession.setOptionString("video-sync", "audio")
+      val resetDisplayFpsOverrideRc = PlaybackSession.setOptionString("display-fps-override", "0")
       Log.e(
         TAG,
         "MPVFLOW_DIAGNOSTIC event=timing_config state=failed " +
           "interpolation_rc=$flowInterpolationRc video_sync_rc=$flowVideoSyncRc " +
+          "display_fps_override_rc=${flowDisplayFpsOverrideRc ?: "unavailable"} " +
+          "display_refresh_hz=${displayRefreshRate?.hz ?: "unavailable"} " +
           "rollback_interpolation_rc=$resetInterpolationRc rollback_video_sync_rc=$resetVideoSyncRc " +
+          "rollback_display_fps_override_rc=$resetDisplayFpsOverrideRc " +
           "fallback=source_passthrough",
       )
     }
@@ -294,7 +340,9 @@ class MPVView(
         TAG,
         "MPVFLOW_DIAGNOSTIC event=timing_config state=applied " +
           "interpolation_rc=$flowInterpolationRc video_sync_rc=$flowVideoSyncRc " +
-          "video_sync=display-resample",
+          "display_fps_override_rc=$flowDisplayFpsOverrideRc " +
+          "display_refresh_hz=${displayRefreshRate?.hz} " +
+          "display_refresh_source=${displayRefreshRate?.source} video_sync=display-resample",
       )
     }
     val frameInterpolationEnabled = rifeFrameInterpolationEnabled || mpvFlowFrameInterpolationEnabled
@@ -459,7 +507,8 @@ class MPVView(
           "RIFE_DIAGNOSTIC event=config enabled=$rifeFrameInterpolationEnabled " +
             "target_fps=$rifeTargetFps max_dimension=$rifeProcessingResolution " +
             "resolution_mode=$resolutionMode",
-          "display_refresh_hz=${display?.refreshRate ?: 0f} renderer=${backend.vo} " +
+          "display_refresh_hz=${displayRefreshRate?.hz ?: 0f} " +
+          "display_refresh_source=${displayRefreshRate?.source ?: "unavailable"} renderer=${backend.vo} " +
             "gpu_api=${backend.gpuApi} software_decode_required=$rifeFrameInterpolationEnabled",
           "filter_set_result=${filterOptionResult ?: "skipped"} reason=$reason",
         ).joinToString(" ")
@@ -495,7 +544,8 @@ class MPVView(
         "MPVFLOW_DIAGNOSTIC event=config requested_enabled=$mpvFlowFrameInterpolationEnabled " +
           "runtime_state=not_verified " +
           "requested_target_fps=${decoderPreferences.mpvFlowTargetFps.get()} " +
-          "effective_target_fps=$mpvFlowTargetFps display_refresh_hz=${display?.refreshRate ?: 0f} " +
+          "effective_target_fps=$mpvFlowTargetFps display_refresh_hz=${displayRefreshRate?.hz ?: 0f} " +
+          "display_refresh_source=${displayRefreshRate?.source ?: "unavailable"} " +
           "renderer=${backend.vo} gpu_api=${backend.gpuApi} " +
           "hardware_decode_mode=$interpolationHwdecDiagnostic " +
           "cpu_filter_fallback=disabled " +

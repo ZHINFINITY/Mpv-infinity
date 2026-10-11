@@ -82,6 +82,8 @@ require(CRASH_ACTIVITY, '"media3_flow_route"', "crash export must explicitly inc
 require(CRASH_ACTIVITY, '"flow_summary"', "crash export must explicitly include Native Media3 flow summaries")
 require(MPV_VIEW, '"MPVFLOW_DIAGNOSTIC event=renderer_config', "startup must record the applied MPV renderer settings")
 require(MPV_VIEW, "option_order=gpu-api>gpu-context>vo", "startup must record the actual Vulkan renderer-option order")
+require(MPV_VIEW, 'PlaybackSession.setOptionString("display-fps-override", displayRefreshRate.hz.toString())', "Flow must provide MPV with the Android display refresh rate")
+require(MPV_VIEW, "display_refresh_source=", "MPV Flow logs must identify where the display refresh rate was resolved")
 require(DECODERS_SHEET, "HW+ is unavailable in this Vulkan build", "the decoder sheet must explain the standard build's supported HW-copy route")
 require(DEBUG_LOGS_SCREEN, 'ActivityResultContracts.OpenDocumentTree()', "debug logs must let users select a destination folder")
 require(DEBUG_LOGS_SCREEN, 'Save all accessible Logcat to folder', "debug logs must expose an unfiltered all-buffer folder export")

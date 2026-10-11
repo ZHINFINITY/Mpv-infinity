@@ -28,4 +28,21 @@ class MpvSurfaceFrameRateHintTest {
   fun invalidRatesProduceNoSurfaceHint() {
     assertNull(resolveSurfaceFrameRateHint(0.0, -1.0))
   }
+
+  @Test
+  fun displayRefreshResolverPrefersTheAttachedDisplay() {
+    assertEquals(120f, resolveFlowDisplayRefreshRateHz(120f, 60f)!!, 0f)
+  }
+
+  @Test
+  fun displayRefreshResolverFallsBackToDisplayManager() {
+    assertEquals(90f, resolveFlowDisplayRefreshRateHz(null, 90f)!!, 0f)
+    assertEquals(90f, resolveFlowDisplayRefreshRateHz(Float.NaN, 90f)!!, 0f)
+  }
+
+  @Test
+  fun displayRefreshResolverRejectsOutOfRangeValues() {
+    assertNull(resolveFlowDisplayRefreshRateHz(0f, 0f))
+    assertNull(resolveFlowDisplayRefreshRateHz(500f, -1f))
+  }
 }
