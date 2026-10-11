@@ -354,6 +354,7 @@ class NativeMedia3Engine(
   val hasRenderedFirstFrame: StateFlow<Boolean> = _hasRenderedFirstFrame.asStateFlow()
   val currentPlayer: Player get() = player
   var onEnded: (() -> Unit)? = null
+  var onPlaybackError: ((PlaybackException) -> Unit)? = null
   private var endedUri: Uri? = null
   private var metadataChapters: List<NativeChapter> = emptyList()
   private var preparationStartedAtMs: Long = 0L
@@ -498,6 +499,10 @@ class NativeMedia3Engine(
     }
     override fun onPlayerError(error: PlaybackException) {
       Log.e(logTag, "player error uri=${player.currentMediaItem?.localConfiguration?.uri}", error)
+      onPlaybackError?.let { callback ->
+        runCatching { callback(error) }
+          .onFailure { Log.e(logTag, "Native playback error callback failed", it) }
+      }
     }
 
     override fun onCues(cueGroup: CueGroup) {

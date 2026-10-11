@@ -72,6 +72,7 @@ import androidx.documentfile.provider.DocumentFile
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.media3.common.C
+import androidx.media3.common.PlaybackException
 import androidx.lifecycle.repeatOnLifecycle
 import app.infinity.mpvz.R
 import app.infinity.mpvz.catalog.StreamWatchHistory
@@ -204,6 +205,7 @@ class PlayerActivity :
       media3FlowTargetFps = decoderPreferences.mpvFlowTargetFps.get(),
     ).also {
       it.onEnded = { runOnUiThread { handleNativePlaybackEnded() } }
+      it.onPlaybackError = { error -> runOnUiThread { handleNativePlaybackError(error) } }
     }
   }
   val nativePlaybackSnapshot get() = nativeEngine.snapshot
@@ -384,6 +386,24 @@ class PlayerActivity :
       (autoplay || viewModel.shouldRepeatPlaylist()) && viewModel.hasNext() -> playNextQueueItem()
       else -> finishAtEofIfRequested()
     }
+  }
+
+  private fun handleNativePlaybackError(error: PlaybackException) {
+    if (activeEngineMode != PlaybackEngineMode.NATIVE || !ownsPlaybackSession() || isFinishing || isDestroyed) return
+    val causeClassNames = buildList {
+      val seen = mutableSetOf<Throwable>()
+      var cause: Throwable? = error
+      while (cause != null && seen.add(cause)) {
+        add(cause.javaClass.name)
+        cause = cause.cause
+      }
+    }
+    if (!NativePlaybackRecoveryPolicy.shouldFallbackToMpv(error.errorCodeName, causeClassNames)) return
+
+    Log.w("Mpv∞-PlayerActivity", "Native decoder/media parsing failed; switching this item to MPV (${error.errorCodeName})")
+    viewModel.showToast("Native could not decode this video; switching to MPV.")
+    // The engine handoff snapshots the current position and play/pause state before reloading.
+    selectEngineForCurrentVideo(PlaybackEngineMode.MPV)
   }
 
   override fun nativeSetZoom(zoom: Float) = nativeEngine.setZoom(zoom)
@@ -855,7 +875,7 @@ class PlayerActivity :
             }.coerceAtLeast(0L)
           val outgoingPlaying =
             if (outgoingEngine == PlaybackEngineMode.NATIVE) {
-              nativeEngine.currentPlayer.isPlaying
+              nativeEngine.currentPlayer.playWhenReady
             } else {
               PlaybackSession.getPropertyBoolean("pause") == false
             }
