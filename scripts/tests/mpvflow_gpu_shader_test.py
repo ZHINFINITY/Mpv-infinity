@@ -53,11 +53,13 @@ require(preprocess, "texture(inTex,uv)", "preprocess must keep scaling on the GP
 
 flow = shaders["shader_flow"]
 synthesis = shaders["shader_synthesize"]
-require(flow, "for(int ring=1;ring<=radius;ring++)", "motion search must prioritize candidates center-out without changing its configured radius")
+require(flow, "for(int ring=1;ring<=radius&&!stopOnCenterTie;ring++)", "motion search must stop only after an exact zero-cost tie makes later candidates irrelevant")
 require(flow, "if(max(abs(dx),abs(dy))!=ring) continue", "center-out rings must enumerate each Chebyshev-radius candidate exactly once")
 require(flow, "if(any(lessThan(d,lo))||any(greaterThan(d,hi))) continue", "center-out search must retain edge-clipped bounds")
 require(flow, "d.y<bestVector.y||(d.y==bestVector.y&&d.x<bestVector.x)", "out-of-order equal-cost winners must retain the legacy row-major tie-break")
-require(flow, "sadAt(p,d,sz,best==0?0:second)", "zero-cost matches must prune only redundant SAD reads while still checking every candidate for an equally good match")
+require(flow, "sadAt(p,d,sz,best==0?0:second)", "zero-cost matches must keep exact SAD pruning while checking for a real tie")
+require(flow, "if(best==0&&second==0){ if(all(equal(bestVector,center))){stopOnCenterTie=true;continue;}", "a tied center winner must terminate search without changing its vector or confidence")
+require(flow, "d.y>bestVector.y||(d.y==bestVector.y&&d.x>=bestVector.x)", "once a non-center zero-cost tie is known, only lexicographically earlier vectors may affect the legacy tie-break")
 require(flow, "int radius=pc.cfg.z", "center-out must retain the original full configured motion radius")
 require(flow, "float(best)/(64.0*255.0)", "flow vectors must retain normalized block-match error")
 require(synthesis, "vec4 flowAtEdgeAware(vec2 p,int direction)", "synthesis must guide vector sampling by source appearance")
@@ -135,7 +137,7 @@ for radius in range(1, 9):
             )
 
 
-def block_search(src, dst, p, center, radius, center_out):
+def block_search(src, dst, p, center, radius, center_out, prune_ambiguous_zero=False):
     height, width = len(src), len(src[0])
     lo_x = max(-p[0], center[0] - radius)
     hi_x = min(width - 8 - p[0], center[0] + radius)
@@ -151,6 +153,11 @@ def block_search(src, dst, p, center, radius, center_out):
     for candidate in candidates:
         if candidate == center:
             continue
+        if prune_ambiguous_zero and best == 0 and second == 0:
+            if best_vector == center:
+                break
+            if (candidate[1], candidate[0]) >= (best_vector[1], best_vector[0]):
+                continue
         cost, sample_reads = sad_at(src, dst, p, candidate, 0 if center_out and best == 0 else second)
         reads += sample_reads
         if center_out and best == 0:
@@ -209,7 +216,25 @@ exact_cases = (
     (repetitive_texture, shifted(repetitive_texture, 2, 0), (8, 8), (0, 0), 8, "repetitive stripes"),
     (ambiguous_texture, ambiguous_texture, (24, 16), (0, 0), 8, "ambiguous flat patch"),
 )
-optimized_reads = reference_reads = 0
+case_rng = random.Random(0xA11CE)
+randomized_cases = []
+for index in range(24):
+    dx, dy = case_rng.randrange(-4, 5), case_rng.randrange(-4, 5)
+    px, py = case_rng.randrange(25), case_rng.randrange(17)
+    cx = min(max(case_rng.randrange(-3, 4), -px), len(random_texture[0]) - 8 - px)
+    cy = min(max(case_rng.randrange(-3, 4), -py), len(random_texture) - 8 - py)
+    randomized_cases.append(
+        (
+            random_texture,
+            shifted(random_texture, dx, dy),
+            (px, py),
+            (cx, cy),
+            4,
+            f"seeded random translated block {index}",
+        )
+    )
+exact_cases += tuple(randomized_cases)
+optimized_reads = reference_reads = center_out_reads = 0
 for src, dst, p, center, radius, label in exact_cases:
     height, width = len(src), len(src[0])
     lo_x, hi_x = max(-p[0], center[0] - radius), min(width - 8 - p[0], center[0] + radius)
@@ -219,12 +244,19 @@ for src, dst, p, center, radius, label in exact_cases:
     assert len(optimized_order) == len(set(optimized_order)), f"{label}: center-out order must not duplicate candidates"
     assert set(optimized_order) == reference_set, f"{label}: center-out order must retain the entire clipped candidate set"
     reference = block_search(src, dst, p, center, radius, center_out=False)
-    optimized = block_search(src, dst, p, center, radius, center_out=True)
+    center_out = block_search(src, dst, p, center, radius, center_out=True)
+    optimized = block_search(src, dst, p, center, radius, center_out=True, prune_ambiguous_zero=True)
     assert optimized[:3] == reference[:3], f"{label}: vector, normalized best SAD and confidence must exactly match the row-major reference"
+    assert optimized[:3] == center_out[:3], f"{label}: exact tie pruning must preserve the full center-out result"
+    assert optimized[3] <= center_out[3], f"{label}: exact tie pruning must not add SAD pixel comparisons"
+    if label in ("repetitive stripes", "ambiguous flat patch"):
+        assert optimized[3] < center_out[3], f"{label}: proven zero-cost ambiguity must prune later SAD comparisons"
     reference_reads += reference[3]
     optimized_reads += optimized[3]
+    center_out_reads += center_out[3]
 
 print(f"Exact center-out SAD regression: candidates and vectors match; pixel comparisons {reference_reads}->{optimized_reads}")
+print(f"Exact ambiguous-tie SAD pruning: pixel comparisons {center_out_reads}->{optimized_reads}")
 
 
 def boundary_source(alpha: float, luma0: float, luma1: float, confidence0: float, confidence1: float):
