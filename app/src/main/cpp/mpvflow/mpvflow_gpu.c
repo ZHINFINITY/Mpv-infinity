@@ -833,6 +833,10 @@ MPVFlowGPUContext *mpvflow_gpu_create(pl_gpu gpu,
         char bridge_error[256] = {0};
         ctx->opencl = mpvflow_opencl_create(&opencl_config, &opencl_status, &build_log);
         if (ctx->opencl) {
+            const char *runtime_info = mpvflow_opencl_get_runtime_info(ctx->opencl);
+            flow_log(gpu, PL_LOG_INFO,
+                     "MPVFLOW_DIAGNOSTIC event=opencl_device %s",
+                     runtime_info ? runtime_info : "details=unavailable");
             ctx->opencl_bridge = mpvflow_opencl_vk_bridge_create(
                 gpu, ctx->opencl, bridge_error, sizeof(bridge_error));
         }
@@ -1207,12 +1211,7 @@ static enum MPVFlowGPUResult flow_opencl_analyze_pair(MPVFlowGPUContext *ctx,
                  opencl_status);
         return MPVFLOW_GPU_ERROR;
     }
-    if (mpvflow_opencl_finish(ctx->opencl) != MPVFLOW_OPENCL_OK) {
-        flow_log(ctx->gpu, PL_LOG_ERR,
-                 "MPVFLOW_DIAGNOSTIC event=compute_backend state=runtime_error "
-                 "stage=opencl_pair_analysis_queue_finish");
-        return MPVFLOW_GPU_ERROR;
-    }
+    /* analyze_pair already completes its queue before returning success. */
     for (int i = 0; i < 2; i++) {
         bridge_status = mpvflow_opencl_vk_buffer_opencl_finished(
             pair->opencl_analysis[i]);
@@ -1628,8 +1627,7 @@ static enum MPVFlowGPUResult flow_opencl_synthesize(
                  opencl_status);
         return MPVFLOW_GPU_ERROR;
     }
-    if (mpvflow_opencl_finish(ctx->opencl) != MPVFLOW_OPENCL_OK)
-        return MPVFLOW_GPU_ERROR;
+    /* synthesize already completes its queue before returning success. */
     for (int i = 0; i < 2; i++) {
         enum MPVFlowOpenCLVkBridgeStatus status =
             mpvflow_opencl_vk_buffer_opencl_finished(pair->opencl_source[i]);

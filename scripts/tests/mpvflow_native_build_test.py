@@ -403,15 +403,34 @@ assert 'cl_qcom_android_ahardwarebuffer_host_ptr' in opencl_source, (
 opencl_buffer_creation = opencl_source.split("static enum MPVFlowOpenCLStatus make_buffer(", 1)[1].split(
     "enum MPVFlowOpenCLStatus mpvflow_opencl_import_ahardwarebuffer(", 1
 )[0]
-assert "desc_in->allocation_bytes, &desc, &err" in opencl_buffer_creation, (
-    "QCOM clCreateBuffer imports must use the actual nonzero AHardwareBuffer BLOB allocation size"
+assert "flags = CL_MEM_USE_HOST_PTR | CL_MEM_EXT_HOST_PTR_QCOM" in opencl_buffer_creation and \
+       "c->clCreateBuffer(c->context, flags, 0, &desc, &err)" in opencl_buffer_creation, (
+    "QCOM AHardwareBuffer imports must match the public Adreno host_ptr call shape: size zero and no explicit access qualifier"
+)
+assert "desc_in->allocation_bytes, &desc, &err" not in opencl_buffer_creation, (
+    "the validated BLOB allocation size must not be substituted for the QCOM extension's size argument"
 )
 assert "*cl_create_error_out = err" in opencl_buffer_creation, (
     "the raw vendor clCreateBuffer error must be preserved for device-side diagnosis"
 )
-assert "cl_error_available=%d" in bridge_source and "cl_error=%d size=%zu desc=" in bridge_source, (
-    "OpenCL AHardwareBuffer import failures must report the raw API result and validated descriptor"
+assert "cl_error_available=%d" in bridge_source and \
+       "qcom_size_arg=0 qcom_access_flags=default" in bridge_source and \
+       "ahb_allocation_bytes=%zu desc=" in bridge_source, (
+    "OpenCL import failures must distinguish the QCOM call arguments from the validated AHardwareBuffer descriptor"
 )
+for marker in (
+    "clGetPlatformInfo",
+    "CL_PLATFORM_VERSION",
+    "CL_DEVICE_VERSION",
+    "CL_DRIVER_VERSION",
+    "CL_DEVICE_OPENCL_C_VERSION",
+    "device_extensions",
+    "mpvflow_opencl_get_runtime_info",
+    "event=opencl_device",
+):
+    assert marker in opencl_source or marker in flow_gpu_source, (
+        f"OpenCL platform/device/driver/extension identity must be logged: missing {marker!r}"
+    )
 opencl_synthesis = flow_gpu_source.split("static enum MPVFlowGPUResult flow_opencl_synthesize(", 1)[1].split(
     "enum MPVFlowGPUResult mpvflow_gpu_synthesize(", 1
 )[0]
@@ -446,6 +465,21 @@ for marker in (
 assert "probe=kernel_interop_roundtrip" in flow_gpu_source
 assert "opencl_status_valid=%d" in interop_probe, (
     "an OpenCL status must not be reported as a returned error when buffer import failed before OpenCL execution"
+)
+opencl_analyze_wrapper = flow_gpu_source.split("static enum MPVFlowGPUResult flow_opencl_analyze_pair(", 1)[1].split(
+    "enum MPVFlowGPUResult mpvflow_gpu_analyze_pair(", 1
+)[0]
+assert opencl_analyze_wrapper.count("mpvflow_opencl_finish(ctx->opencl)") == 1, (
+    "analysis must retain its failure drain but avoid a duplicate finish after successful internal completion"
+)
+opencl_synthesize_wrapper = flow_gpu_source.split("static enum MPVFlowGPUResult flow_opencl_synthesize(", 1)[1].split(
+    "enum MPVFlowGPUResult mpvflow_gpu_synthesize(", 1
+)[0]
+assert "if (mpvflow_opencl_finish(ctx->opencl) == MPVFLOW_OPENCL_OK)" in opencl_synthesize_wrapper, (
+    "failed OpenCL synthesis must still finish before returning shared buffers to Vulkan"
+)
+assert opencl_synthesize_wrapper.count("mpvflow_opencl_finish(ctx->opencl)") == 2, (
+    "synthesis must retain only its geometry/error cleanup finishes and avoid a duplicate success-path finish"
 )
 for marker in (
     "flow_init_retry_count < 2",

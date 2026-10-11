@@ -547,11 +547,13 @@ enum MPVFlowOpenCLVkBridgeStatus mpvflow_opencl_vk_buffer_create(
     if (cl_status != MPVFLOW_OPENCL_OK) {
         set_error(b,
                   "OpenCL AHardwareBuffer import failed (wrapper_status=%d cl_error_available=%d "
-                  "cl_error=%d size=%zu desc={format=%u width=%u height=%u stride=%u layers=%u "
+                  "cl_error=%d qcom_size_arg=0 qcom_access_flags=default "
+                  "qcom_flags=USE_HOST_PTR|EXT_HOST_PTR_QCOM wrapper_access=%d "
+                  "ahb_allocation_bytes=%zu desc={format=%u width=%u height=%u stride=%u layers=%u "
                   "usage=0x%llx frame=%ux%u row_stride=%u})",
                   (int)cl_status,
                   cl_create_buffer_error != MPVFLOW_OPENCL_CL_ERROR_NOT_RETURNED,
-                  (int)cl_create_buffer_error, cl_desc.allocation_bytes,
+                  (int)cl_create_buffer_error, (int)access, cl_desc.allocation_bytes,
                   cl_desc.format, cl_desc.ahb_width, cl_desc.ahb_height,
                   cl_desc.ahb_stride, cl_desc.layers,
                   (unsigned long long)cl_desc.usage, cl_desc.frame_width,

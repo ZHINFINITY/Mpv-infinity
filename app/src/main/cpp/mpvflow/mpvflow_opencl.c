@@ -37,6 +37,14 @@ typedef struct _cl_event *cl_event;
 #define CL_DEVICE_NOT_FOUND -1
 #define CL_DEVICE_TYPE_GPU (1ULL << 2)
 #define CL_DEVICE_EXTENSIONS 0x1030u
+#define CL_PLATFORM_VERSION 0x0901u
+#define CL_PLATFORM_NAME 0x0902u
+#define CL_PLATFORM_VENDOR 0x0903u
+#define CL_DEVICE_NAME 0x102Bu
+#define CL_DEVICE_VENDOR 0x102Cu
+#define CL_DRIVER_VERSION 0x102Du
+#define CL_DEVICE_VERSION 0x102Fu
+#define CL_DEVICE_OPENCL_C_VERSION 0x103Du
 #define CL_PROGRAM_BUILD_LOG 0x1183u
 #define CL_MEM_READ_WRITE (1ULL << 0)
 #define CL_MEM_WRITE_ONLY (1ULL << 1)
@@ -67,6 +75,7 @@ struct cl_mem_ahardwarebuffer_host_ptr_qcom {
 
 typedef cl_int (*PFN_clGetPlatformIDs)(cl_uint, cl_platform_id *, cl_uint *);
 typedef cl_int (*PFN_clGetDeviceIDs)(cl_platform_id, cl_device_type, cl_uint, cl_device_id *, cl_uint *);
+typedef cl_int (*PFN_clGetPlatformInfo)(cl_platform_id, cl_platform_info, size_t, void *, size_t *);
 typedef cl_int (*PFN_clGetDeviceInfo)(cl_device_id, cl_device_info, size_t, void *, size_t *);
 typedef cl_context (*PFN_clCreateContext)(const cl_context_properties *, cl_uint, const cl_device_id *, void (*)(const char *, const void *, size_t, void *), void *, cl_int *);
 typedef cl_int (*PFN_clReleaseContext)(cl_context);
@@ -152,9 +161,22 @@ struct MPVFlowOpenCLContext {
     cl_kernel synth_kernel;
     int search_radius;
     int max_dimension;
+    char platform_name[128];
+    char platform_vendor[128];
+    char platform_version[128];
+    char device_name[128];
+    char device_vendor[128];
+    char device_version[128];
+    char driver_version[128];
+    char opencl_c_version[128];
+    char device_extensions[2048];
+    size_t device_extensions_length;
+    int device_extensions_truncated;
+    char runtime_info[3200];
 #define MPVFLOW_CL_FN(name) PFN_##name name
     MPVFLOW_CL_FN(clGetPlatformIDs);
     MPVFLOW_CL_FN(clGetDeviceIDs);
+    MPVFLOW_CL_FN(clGetPlatformInfo);
     MPVFLOW_CL_FN(clGetDeviceInfo);
     MPVFLOW_CL_FN(clCreateContext);
     MPVFLOW_CL_FN(clReleaseContext);
@@ -208,6 +230,56 @@ static int has_extension(const char *list, const char *name)
     return 0;
 }
 
+static void copy_info_string(char *dst, size_t capacity, const char *src, size_t bytes)
+{
+    if (!dst || !capacity)
+        return;
+    dst[0] = '\0';
+    if (!src)
+        return;
+    size_t length = 0;
+    while (length < bytes && src[length] != '\0')
+        length++;
+    if (length >= capacity)
+        length = capacity - 1;
+    memcpy(dst, src, length);
+    dst[length] = '\0';
+}
+
+static void query_platform_string(MPVFlowOpenCLContext *c, cl_platform_info key,
+                                  char *dst, size_t capacity)
+{
+    size_t bytes = 0;
+    char *value;
+    if (!c->clGetPlatformInfo || !c->platform || !capacity ||
+        c->clGetPlatformInfo(c->platform, key, 0, NULL, &bytes) != CL_SUCCESS ||
+        !bytes || bytes > 4096)
+        return;
+    value = calloc(bytes + 1, 1);
+    if (!value)
+        return;
+    if (c->clGetPlatformInfo(c->platform, key, bytes, value, NULL) == CL_SUCCESS)
+        copy_info_string(dst, capacity, value, bytes);
+    free(value);
+}
+
+static void query_device_string(MPVFlowOpenCLContext *c, cl_device_info key,
+                                char *dst, size_t capacity)
+{
+    size_t bytes = 0;
+    char *value;
+    if (!c->clGetDeviceInfo || !c->device || !capacity ||
+        c->clGetDeviceInfo(c->device, key, 0, NULL, &bytes) != CL_SUCCESS ||
+        !bytes || bytes > 4096)
+        return;
+    value = calloc(bytes + 1, 1);
+    if (!value)
+        return;
+    if (c->clGetDeviceInfo(c->device, key, bytes, value, NULL) == CL_SUCCESS)
+        copy_info_string(dst, capacity, value, bytes);
+    free(value);
+}
+
 static void context_cleanup(MPVFlowOpenCLContext *c)
 {
     if (!c) return;
@@ -229,7 +301,7 @@ static int load_opencl(MPVFlowOpenCLContext *c)
     if (!c->library) c->library = dlopen("libOpenCL.so.1", RTLD_NOW | RTLD_LOCAL);
     if (!c->library) return 0;
 #define LOAD_CL(name) do { *(void **)(&c->name) = dlsym(c->library, #name); if (!c->name) return 0; } while (0)
-    LOAD_CL(clGetPlatformIDs); LOAD_CL(clGetDeviceIDs); LOAD_CL(clGetDeviceInfo);
+    LOAD_CL(clGetPlatformIDs); LOAD_CL(clGetDeviceIDs); LOAD_CL(clGetPlatformInfo); LOAD_CL(clGetDeviceInfo);
     LOAD_CL(clCreateContext); LOAD_CL(clReleaseContext); LOAD_CL(clCreateCommandQueue);
     LOAD_CL(clReleaseCommandQueue); LOAD_CL(clCreateProgramWithSource); LOAD_CL(clBuildProgram);
     LOAD_CL(clGetProgramBuildInfo); LOAD_CL(clReleaseProgram); LOAD_CL(clCreateKernel);
@@ -290,6 +362,17 @@ MPVFlowOpenCLContext *mpvflow_opencl_create(const struct MPVFlowOpenCLConfig *co
                     if (has_extension(exts, MPVFLOW_BASE_EXTENSION) &&
                         has_extension(exts, MPVFLOW_EXTENSION)) {
                         c->platform = platforms[i]; c->device = devices[j];
+                        size_t extension_length = bytes;
+                        if (extension_length && exts[extension_length - 1] == '\0')
+                            extension_length--;
+                        c->device_extensions_length = extension_length;
+                        size_t extension_copy = extension_length;
+                        if (extension_copy >= sizeof(c->device_extensions)) {
+                            extension_copy = sizeof(c->device_extensions) - 1;
+                            c->device_extensions_truncated = 1;
+                        }
+                        memcpy(c->device_extensions, exts, extension_copy);
+                        c->device_extensions[extension_copy] = '\0';
                         free(exts); break;
                     }
                 }
@@ -304,6 +387,15 @@ MPVFlowOpenCLContext *mpvflow_opencl_create(const struct MPVFlowOpenCLConfig *co
         context_cleanup(c);
         return NULL;
     }
+    query_platform_string(c, CL_PLATFORM_NAME, c->platform_name, sizeof(c->platform_name));
+    query_platform_string(c, CL_PLATFORM_VENDOR, c->platform_vendor, sizeof(c->platform_vendor));
+    query_platform_string(c, CL_PLATFORM_VERSION, c->platform_version, sizeof(c->platform_version));
+    query_device_string(c, CL_DEVICE_NAME, c->device_name, sizeof(c->device_name));
+    query_device_string(c, CL_DEVICE_VENDOR, c->device_vendor, sizeof(c->device_vendor));
+    query_device_string(c, CL_DEVICE_VERSION, c->device_version, sizeof(c->device_version));
+    query_device_string(c, CL_DRIVER_VERSION, c->driver_version, sizeof(c->driver_version));
+    query_device_string(c, CL_DEVICE_OPENCL_C_VERSION, c->opencl_c_version,
+                        sizeof(c->opencl_c_version));
     const cl_context_properties props[] = { CL_CONTEXT_PLATFORM, (cl_context_properties)c->platform, 0 };
     c->context = c->clCreateContext(props, 1, &c->device, NULL, NULL, &err);
     if (!c->context || err != CL_SUCCESS) { context_cleanup(c); return NULL; }
@@ -339,6 +431,31 @@ MPVFlowOpenCLContext *mpvflow_opencl_create(const struct MPVFlowOpenCLConfig *co
     }
     if (status) *status = MPVFLOW_OPENCL_OK;
     return c;
+}
+
+const char *mpvflow_opencl_get_runtime_info(MPVFlowOpenCLContext *context)
+{
+    if (!context)
+        return NULL;
+    (void)snprintf(context->runtime_info, sizeof(context->runtime_info),
+                   "platform_name=\"%s\" platform_vendor=\"%s\" platform_version=\"%s\" "
+                   "device_name=\"%s\" device_vendor=\"%s\" device_version=\"%s\" "
+                   "driver_version=\"%s\" opencl_c_version=\"%s\" "
+                   "qcom_ext_host_ptr=%d qcom_android_ahb_host_ptr=%d "
+                   "extensions_bytes=%zu extensions_truncated=%d extensions=\"%s\"",
+                   context->platform_name[0] ? context->platform_name : "unavailable",
+                   context->platform_vendor[0] ? context->platform_vendor : "unavailable",
+                   context->platform_version[0] ? context->platform_version : "unavailable",
+                   context->device_name[0] ? context->device_name : "unavailable",
+                   context->device_vendor[0] ? context->device_vendor : "unavailable",
+                   context->device_version[0] ? context->device_version : "unavailable",
+                   context->driver_version[0] ? context->driver_version : "unavailable",
+                   context->opencl_c_version[0] ? context->opencl_c_version : "unavailable",
+                   has_extension(context->device_extensions, MPVFLOW_BASE_EXTENSION),
+                   has_extension(context->device_extensions, MPVFLOW_EXTENSION),
+                   context->device_extensions_length, context->device_extensions_truncated,
+                   context->device_extensions);
+    return context->runtime_info;
 }
 
 void mpvflow_opencl_destroy(MPVFlowOpenCLContext *context)
@@ -393,15 +510,18 @@ static enum MPVFlowOpenCLStatus make_buffer(MPVFlowOpenCLContext *c,
     desc.ext_host_ptr.allocation_type = CL_MEM_ANDROID_AHARDWAREBUFFER_HOST_PTR_QCOM;
     desc.ext_host_ptr.host_cache_policy = CL_MEM_HOST_WRITEBACK_QCOM;
     desc.ahb_ptr = ahb;
-    switch (access) {
-    case MPVFLOW_OPENCL_READ_ONLY: flags = CL_MEM_READ_ONLY; break;
-    case MPVFLOW_OPENCL_WRITE_ONLY: flags = CL_MEM_WRITE_ONLY; break;
-    case MPVFLOW_OPENCL_READ_WRITE: flags = CL_MEM_READ_WRITE; break;
-    default: free(b); return MPVFLOW_OPENCL_INVALID;
+    if (access != MPVFLOW_OPENCL_READ_ONLY &&
+        access != MPVFLOW_OPENCL_WRITE_ONLY &&
+        access != MPVFLOW_OPENCL_READ_WRITE) {
+        free(b);
+        return MPVFLOW_OPENCL_INVALID;
     }
-    b->mem = c->clCreateBuffer(c->context,
-                               flags | CL_MEM_USE_HOST_PTR | CL_MEM_EXT_HOST_PTR_QCOM,
-                               desc_in->allocation_bytes, &desc, &err);
+    /* Match the QCOM AHardwareBuffer host_ptr call shape used by MNN's Adreno
+     * path: the external-allocation descriptor carries the AHB, size is zero,
+     * and no explicit access qualifier is added to the two required host flags.
+     * Keep allocation_bytes for descriptor validation and failure diagnostics. */
+    flags = CL_MEM_USE_HOST_PTR | CL_MEM_EXT_HOST_PTR_QCOM;
+    b->mem = c->clCreateBuffer(c->context, flags, 0, &desc, &err);
     if (cl_create_error_out)
         *cl_create_error_out = err;
     if (!b->mem || err != CL_SUCCESS) { free(b); return MPVFLOW_OPENCL_ERROR; }
