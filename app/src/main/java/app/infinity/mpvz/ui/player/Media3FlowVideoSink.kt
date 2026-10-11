@@ -1676,7 +1676,8 @@ class Media3FlowVideoSink(
     val width = motionSize.width
     val height = motionSize.height
     if (sourceWidth == frameWidth && sourceHeight == frameHeight &&
-      width == processingWidth && height == processingHeight && framePool.isNotEmpty()
+      width == processingWidth && height == processingHeight && framePool.isNotEmpty() &&
+      flowAvailable
     ) return
     clearSourceFrames()
     destroyFrameResources()

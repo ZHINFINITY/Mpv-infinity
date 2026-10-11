@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import pathlib
+import re
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 SINK = (ROOT / "app/src/main/java/app/infinity/mpvz/ui/player/Media3FlowVideoSink.kt").read_text(encoding="utf-8")
@@ -98,6 +99,13 @@ assert ".blit_src = blit_src" in GPU and ".blit_dst = blit_dst" in GPU and (
 )
 assert "nativeCreateContext(maxDimension, requestedComputeApi.nativeValue)" in SINK
 assert "config.max_dimension = std::max(160, std::min(640, static_cast<int>(requestedMaxDimension)))" in JNI
+resource_setup = SINK.split("  private fun ensureProcessingResources(", 1)[1].split(
+    "\n  private fun clearSourceFrames(", 1
+)[0]
+resource_reuse_guard = resource_setup.split("if (sourceWidth == frameWidth", 1)[1].split(") return", 1)[0]
+assert re.search(r"framePool\.isNotEmpty\(\)\s*&&\s*flowAvailable", resource_reuse_guard), (
+    "same-resolution stream initialization must retry shared resources after Flow has fallen back"
+)
 assert "source0->texture, source1->texture" in JNI
 assert "nativeHoldImageForExternal(flowVulkanContext, slot.nativeImageHandle)" in SINK
 assert "eglSwapIntervalZeroApplied = EGL14.eglSwapInterval(eglDisplay, 0)" in SINK
