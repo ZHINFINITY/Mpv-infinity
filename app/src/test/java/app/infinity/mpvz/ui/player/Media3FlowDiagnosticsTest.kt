@@ -30,39 +30,43 @@ class Media3FlowDiagnosticsTest {
   @Test
   fun vulkanTimerStatesDistinguishUnsupportedPendingAndCompletedResults() {
     assertEquals(
-      "unsupported_timestamp_queue",
-      Media3FlowDiagnosticMath.vulkanTimerStageStatus(0, true, 3L, 0L),
+      "unsupported_timestamp_capability",
+      Media3FlowDiagnosticMath.vulkanTimerStageStatus(false, true, 3L, 0L),
     )
     assertEquals(
       "pending_or_dropped",
-      Media3FlowDiagnosticMath.vulkanTimerStageStatus(32, true, 2L, 0L),
+      Media3FlowDiagnosticMath.vulkanTimerStageStatus(true, true, 2L, 0L),
     )
     assertEquals(
       "ready",
-      Media3FlowDiagnosticMath.vulkanTimerStageStatus(32, true, 2L, 1L),
+      Media3FlowDiagnosticMath.vulkanTimerStageStatus(true, true, 2L, 1L),
     )
     assertEquals(
       "unsupported_libplacebo_timer",
-      Media3FlowDiagnosticMath.vulkanTimerStageStatus(32, false, 0L, 0L),
+      Media3FlowDiagnosticMath.vulkanTimerStageStatus(true, false, 0L, 0L),
     )
   }
 
   @Test
   fun vulkanSnapshotReportsStageAveragesAndUnresolvedQueriesWithoutCallingThemExactPending() {
-    val snapshot = LongArray(23).apply {
-      this[0] = 1L
-      this[1] = 32L
-      this[2] = 4L
+    val snapshot = LongArray(27).apply {
+      this[0] = 2L
+      this[1] = 1L
+      this[2] = 1_000L // 1 ns timestamp period, represented as picoseconds
+      this[3] = 0L
+      this[4] = 32L
+      this[5] = 2L
+      this[6] = 4L
       for (stage in 0 until 4) {
-        val offset = 3 + stage * 5
+        val offset = 7 + stage * 5
         this[offset] = 1L
       }
-      val preprocessOffset = 3
+      val preprocessOffset = 7
       this[preprocessOffset + 1] = 2L
       this[preprocessOffset + 2] = 2L
       this[preprocessOffset + 3] = 1_000_000L
       this[preprocessOffset + 4] = 900_000L
-      val motionOffset = 3 + 2 * 5
+      val motionOffset = 7 + 2 * 5
       this[motionOffset + 1] = 3L
       this[motionOffset + 2] = 0L
     }
@@ -70,7 +74,11 @@ class Media3FlowDiagnosticsTest {
     val timings = Media3FlowDiagnosticMath.parseVulkanTimingSnapshot(snapshot)
 
     assertEquals("ready", timings.status)
+    assertEquals(true, timings.timestampsSupported)
     assertEquals(32, timings.timestampValidBits)
+    assertEquals(1.0, timings.timestampPeriodNs, 0.0001)
+    assertEquals(false, timings.timestampComputeAndGraphics)
+    assertEquals(2, timings.computeQueueFamily)
     assertEquals("ready", timings.preprocess.status)
     assertEquals(2L, timings.preprocess.completedSamples)
     assertEquals(500.0, timings.preprocess.averageUs!!, 0.001)
@@ -81,20 +89,46 @@ class Media3FlowDiagnosticsTest {
   }
 
   @Test
-  fun vulkanSnapshotNamesUnsupportedQueueAndRejectsUnknownSchema() {
-    val unsupported = LongArray(23).apply {
-      this[0] = 1L
-      this[1] = 0L
-      this[2] = 4L
-      for (stage in 0 until 4) this[3 + stage * 5] = 1L
+  fun vulkanSnapshotUsesComputeAndGraphicsSupportEvenWhenQueueValidBitsAreZero() {
+    val supportedByDeviceLimits = LongArray(27).apply {
+      this[0] = 2L
+      this[1] = 1L
+      this[2] = 1_000L
+      this[3] = 1L
+      this[4] = 0L
+      this[5] = 2L
+      this[6] = 4L
+      for (stage in 0 until 4) this[7 + stage * 5] = 1L
     }
     assertEquals(
-      "unsupported_timestamp_queue",
-      Media3FlowDiagnosticMath.parseVulkanTimingSnapshot(unsupported).status,
+      "supported_waiting_for_dispatch",
+      Media3FlowDiagnosticMath.parseVulkanTimingSnapshot(supportedByDeviceLimits).status,
+    )
+    assertEquals(
+      0,
+      Media3FlowDiagnosticMath.parseVulkanTimingSnapshot(supportedByDeviceLimits).timestampValidBits,
+    )
+
+    val unsupportedQueue = supportedByDeviceLimits.copyOf().apply {
+      this[1] = 0L
+      this[3] = 0L
+    }
+    assertEquals(
+      "unsupported_compute_queue_timestamp",
+      Media3FlowDiagnosticMath.parseVulkanTimingSnapshot(unsupportedQueue).status,
+    )
+    val unsupportedPeriod = supportedByDeviceLimits.copyOf().apply {
+      this[2] = 0L
+      this[4] = 48L
+      this[3] = 1L
+    }
+    assertEquals(
+      "unsupported_timestamp_period",
+      Media3FlowDiagnosticMath.parseVulkanTimingSnapshot(unsupportedPeriod).status,
     )
     assertEquals(
       "unsupported_snapshot_schema",
-      Media3FlowDiagnosticMath.parseVulkanTimingSnapshot(longArrayOf(2L)).status,
+      Media3FlowDiagnosticMath.parseVulkanTimingSnapshot(longArrayOf(3L)).status,
     )
     assertEquals(
       "snapshot_unavailable",

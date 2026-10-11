@@ -765,7 +765,7 @@ class Media3FlowVideoSink(
     requestRenderAtDisplayFrame(null)
   }
 
-  /** Latest-vsync-wins: a blocked swap coalesces requests instead of queuing stale catch-up renders. */
+  /** Latest-vsync-wins: a blocked swap coalesces display requests instead of replaying stale vsyncs. */
   private fun requestRenderAtDisplayFrame(frameTimeNanos: Long?) {
     renderFrameTimeNanos.set(frameTimeNanos ?: NO_FRAME_TIME_NANOS)
     renderRequestVersion.incrementAndGet()
@@ -781,8 +781,14 @@ class Media3FlowVideoSink(
       } catch (error: RuntimeException) {
         reportError(error)
       } finally {
+        val latestRequestVersion = renderRequestVersion.get()
+        val latestRequestIsOneShot = renderFrameTimeNanos.get() == NO_FRAME_TIME_NANOS
         renderTaskPending.set(false)
-        if (renderRequestVersion.get() != requestVersion &&
+        if (Media3FlowCadence.shouldImmediatelyResubmitCoalescedRender(
+            requestVersion,
+            latestRequestVersion,
+            latestRequestIsOneShot,
+          ) &&
           renderTaskPending.compareAndSet(false, true)
         ) {
           postRenderTask()
@@ -2436,7 +2442,11 @@ class Media3FlowVideoSink(
         "motionGrid=${diagnostics.motionGridWidth}x${diagnostics.motionGridHeight} " +
         "motionSubmitCpuMs=${formatLogFloat(diagnostics.motionEstimateSubmitMs)} " +
         "motionPassVulkanAvg=$gpuElapsed vulkanTimerStatus=${vulkanTiming.status} " +
+        "computeTimestampSupported=${vulkanTiming.timestampsSupported} " +
+        "computeQueueFamily=${vulkanTiming.computeQueueFamily} " +
         "computeTimestampValidBits=${vulkanTiming.timestampValidBits} " +
+        "timestampPeriodNs=${String.format(java.util.Locale.US, "%.6f", vulkanTiming.timestampPeriodNs)} " +
+        "timestampComputeAndGraphics=${vulkanTiming.timestampComputeAndGraphics} " +
         "vulkanStagesUs={$vulkanStages} " +
         "glesTimerStatus=${glesTiming.status} glesQueryCounts=valid:${glesTiming.validResults}," +
         "pending:${glesTiming.pendingResults},disjoint:${glesTiming.disjointResultsDiscarded}," +

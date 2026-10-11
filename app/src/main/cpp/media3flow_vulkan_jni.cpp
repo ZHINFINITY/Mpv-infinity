@@ -70,7 +70,11 @@ struct FlowContext {
     pl_log placeboLog = nullptr;
     pl_vulkan vulkan = nullptr;
     MPVFlowGPUContext *flow = nullptr;
+    uint32_t computeQueueFamily = UINT32_MAX;
     uint32_t computeTimestampValidBits = 0;
+    bool computeTimestampsSupported = false;
+    bool timestampComputeAndGraphics = false;
+    double timestampPeriodNs = 0.0;
     PFN_vkGetAndroidHardwareBufferPropertiesANDROID getBufferProperties = nullptr;
     PFN_vkImportSemaphoreFdKHR importSemaphoreFd = nullptr;
     PFN_vkGetSemaphoreFdKHR getSemaphoreFd = nullptr;
@@ -1063,28 +1067,38 @@ Java_app_infinity_mpvz_ui_player_Media3FlowVulkanNative_nativeCreateContext(
     }
     MPVFlowGPUTimingStats timingStats{};
     mpvflow_gpu_get_timing_stats(context->flow, &timingStats);
+    context->computeQueueFamily = timingStats.compute_queue_family;
     context->computeTimestampValidBits = timingStats.compute_timestamp_valid_bits;
+    context->computeTimestampsSupported = timingStats.compute_timestamps_supported;
+    context->timestampComputeAndGraphics = timingStats.timestamp_compute_and_graphics;
+    context->timestampPeriodNs = timingStats.timestamp_period_ns;
     uint32_t timerObjectCount = 0;
     for (uint32_t i = 0; i < timingStats.stage_count; i++)
         timerObjectCount += timingStats.stages[i].timer_created;
-    const bool vulkanTimestampSupported = context->computeTimestampValidBits > 0 &&
+    const bool vulkanTimestampSupported = context->computeTimestampsSupported &&
                                           timerObjectCount == timingStats.stage_count;
     logFlow(vulkanTimestampSupported ? ANDROID_LOG_INFO : ANDROID_LOG_WARN,
             "MPVFLOW_DIAGNOSTIC component=native-media3 event=vulkan_timing_capability state=%s "
             "api=Vulkan source=libplacebo_timestamp_query compute_queue_family=%u "
-            "timestamp_valid_bits=%u timer_objects=%u timer_stages=%u nonblocking=1 "
+            "timestamp_period_ns=%.6f timestamp_compute_and_graphics=%d "
+            "compute_queue_timestamp_valid_bits=%u device_timestamp_supported=%d "
+            "timer_objects=%u timer_stages=%u nonblocking=1 "
             "fallback=CPU_submission_and_successful_EGL_swap_cadence reason=%s",
             vulkanTimestampSupported ? "supported" : "unsupported",
-            vulkan->queue_compute.index, context->computeTimestampValidBits,
-            timerObjectCount, timingStats.stage_count,
-            context->computeTimestampValidBits == 0 ? "compute_queue_timestampValidBits_zero" :
+            context->computeQueueFamily, context->timestampPeriodNs,
+            context->timestampComputeAndGraphics, context->computeTimestampValidBits,
+            context->computeTimestampsSupported, timerObjectCount, timingStats.stage_count,
+            context->timestampPeriodNs <= 0.0 ? "device_timestamp_period_zero" :
+            !context->timestampComputeAndGraphics && context->computeTimestampValidBits == 0
+                ? "compute_queue_timestampValidBits_zero" :
             timerObjectCount != timingStats.stage_count ? "libplacebo_timer_object_creation_failed" : "none");
     logFlow(ANDROID_LOG_INFO,
             "MPVFLOW_DIAGNOSTIC component=native-media3 event=renderer_init state=ready "
                 "backend=vulkan-spirv api_version=%u compute_queue_family=%u compute_queue_count=%u "
                 "glsl_compute=%d glsl_vulkan=%d glsl_version=%d max_pushc_size=%zu "
                 "analysis_max_dimension=%d hardware_max_texture_dimension=%u compute_queues=%u ahb_extension_enabled=%d "
-            "foreign_queue_extension_enabled=%d compute_timestamp_valid_bits=%u vulkan_timing_supported=%d "
+            "foreign_queue_extension_enabled=%d compute_queue_timestamp_valid_bits=%u "
+            "timestamp_period_ns=%.6f timestamp_compute_and_graphics=%d vulkan_timing_supported=%d "
             "hardware_decoder=media3 hardware_buffers=android cpu_readback=no",
             vulkan->api_version, vulkan->queue_compute.index, vulkan->queue_compute.count,
             vulkan->gpu->glsl.compute, vulkan->gpu->glsl.vulkan, vulkan->gpu->glsl.version,
@@ -1092,7 +1106,8 @@ Java_app_infinity_mpvz_ui_player_Media3FlowVulkanNative_nativeCreateContext(
             vulkan->gpu->limits.max_tex_2d_dim, vulkan->gpu->limits.compute_queues,
             hasEnabledDeviceExtension(vulkan, VK_ANDROID_EXTERNAL_MEMORY_ANDROID_HARDWARE_BUFFER_EXTENSION_NAME),
             hasEnabledDeviceExtension(vulkan, "VK_EXT_queue_family_foreign"),
-            context->computeTimestampValidBits, vulkanTimestampSupported);
+            context->computeTimestampValidBits, context->timestampPeriodNs,
+            context->timestampComputeAndGraphics, vulkanTimestampSupported);
     return reinterpret_cast<jlong>(context);
 }
 
@@ -1496,13 +1511,18 @@ Java_app_infinity_mpvz_ui_player_Media3FlowVulkanNative_nativeGetVulkanTimingSta
     std::lock_guard<std::mutex> guard(context->mutex);
     MPVFlowGPUTimingStats stats{};
     mpvflow_gpu_get_timing_stats(context->flow, &stats);
-    constexpr jsize headerFields = 3;
+    constexpr jsize headerFields = 7;
     constexpr jsize stageFields = 5;
     constexpr jsize valueCount = headerFields + MPVFLOW_GPU_STAGE_COUNT * stageFields;
     jlong values[valueCount]{};
-    values[0] = 1; // JNI snapshot schema version
-    values[1] = stats.compute_timestamp_valid_bits;
-    values[2] = stats.stage_count;
+    values[0] = 2; // JNI snapshot schema version
+    values[1] = stats.compute_timestamps_supported ? 1 : 0;
+    values[2] = static_cast<jlong>(stats.timestamp_period_ns * 1000.0 + 0.5); // picoseconds per tick
+    values[3] = stats.timestamp_compute_and_graphics ? 1 : 0;
+    values[4] = stats.compute_timestamp_valid_bits;
+    values[5] = stats.compute_queue_family == UINT32_MAX
+        ? -1 : static_cast<jlong>(stats.compute_queue_family);
+    values[6] = stats.stage_count;
     for (uint32_t i = 0; i < stats.stage_count && i < MPVFLOW_GPU_STAGE_COUNT; i++) {
         const auto &stage = stats.stages[i];
         const jsize offset = headerFields + static_cast<jsize>(i) * stageFields;

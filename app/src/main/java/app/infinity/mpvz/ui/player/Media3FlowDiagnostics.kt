@@ -37,7 +37,11 @@ data class FlowVulkanStageTiming(
 
 data class FlowVulkanTimingStats(
   val status: String = "unsupported_context",
+  val timestampsSupported: Boolean = false,
   val timestampValidBits: Int = 0,
+  val timestampPeriodNs: Double = 0.0,
+  val timestampComputeAndGraphics: Boolean = false,
+  val computeQueueFamily: Int = -1,
   val preprocess: FlowVulkanStageTiming = FlowVulkanStageTiming(),
   val analysis: FlowVulkanStageTiming = FlowVulkanStageTiming(),
   val motion: FlowVulkanStageTiming = FlowVulkanStageTiming(),
@@ -109,18 +113,18 @@ internal data class FlowCoverageSample(
 )
 
 internal object Media3FlowDiagnosticMath {
-  private const val VULKAN_TIMING_SCHEMA_VERSION = 1L
+  private const val VULKAN_TIMING_SCHEMA_VERSION = 2L
   private const val VULKAN_TIMING_STAGE_COUNT = 4
-  private const val VULKAN_TIMING_HEADER_SIZE = 3
+  private const val VULKAN_TIMING_HEADER_SIZE = 7
   private const val VULKAN_TIMING_STAGE_SIZE = 5
 
   fun vulkanTimerStageStatus(
-    timestampValidBits: Int,
+    timestampsSupported: Boolean,
     timerCreated: Boolean,
     dispatches: Long,
     completedSamples: Long,
   ): String = when {
-    timestampValidBits <= 0 -> "unsupported_timestamp_queue"
+    !timestampsSupported -> "unsupported_timestamp_capability"
     !timerCreated -> "unsupported_libplacebo_timer"
     completedSamples > 0L -> "ready"
     dispatches > 0L -> "pending_or_dropped"
@@ -131,11 +135,21 @@ internal object Media3FlowDiagnosticMath {
     val expectedSize = VULKAN_TIMING_HEADER_SIZE + VULKAN_TIMING_STAGE_COUNT * VULKAN_TIMING_STAGE_SIZE
     if (values == null) return FlowVulkanTimingStats(status = "snapshot_unavailable")
     if (values.size != expectedSize || values[0] != VULKAN_TIMING_SCHEMA_VERSION ||
-      values[2] != VULKAN_TIMING_STAGE_COUNT.toLong()
+      values[6] != VULKAN_TIMING_STAGE_COUNT.toLong()
     ) {
       return FlowVulkanTimingStats(status = "unsupported_snapshot_schema")
     }
-    val timestampValidBits = values[1].coerceIn(0L, Int.MAX_VALUE.toLong()).toInt()
+    val timestampsSupported = values[1] != 0L
+    val timestampPeriodNs = values[2].coerceAtLeast(0L).toDouble() / 1_000.0
+    val timestampComputeAndGraphics = values[3] != 0L
+    val timestampValidBits = values[4].coerceIn(0L, Int.MAX_VALUE.toLong()).toInt()
+    val computeQueueFamily = values[5].takeIf { it in 0L..Int.MAX_VALUE.toLong() }?.toInt() ?: -1
+    val capabilityStatus = when {
+      timestampPeriodNs <= 0.0 -> "unsupported_timestamp_period"
+      !timestampComputeAndGraphics && timestampValidBits <= 0 -> "unsupported_compute_queue_timestamp"
+      !timestampsSupported -> "unsupported_timestamp_capability"
+      else -> "supported"
+    }
     fun stage(index: Int): FlowVulkanStageTiming {
       val offset = VULKAN_TIMING_HEADER_SIZE + index * VULKAN_TIMING_STAGE_SIZE
       val timerCreated = values[offset] != 0L
@@ -143,9 +157,9 @@ internal object Media3FlowDiagnosticMath {
       val completed = values[offset + 2].coerceAtLeast(0L)
       val totalNs = values[offset + 3].coerceAtLeast(0L)
       val maximumNs = values[offset + 4].coerceAtLeast(0L)
-      val supported = timestampValidBits > 0 && timerCreated
+      val supported = timestampsSupported && timerCreated
       return FlowVulkanStageTiming(
-        status = vulkanTimerStageStatus(timestampValidBits, timerCreated, dispatches, completed),
+        status = vulkanTimerStageStatus(timestampsSupported, timerCreated, dispatches, completed),
         supported = supported,
         dispatches = dispatches,
         completedSamples = completed,
@@ -156,7 +170,7 @@ internal object Media3FlowDiagnosticMath {
     }
     val stages = List(VULKAN_TIMING_STAGE_COUNT, ::stage)
     val state = when {
-      timestampValidBits <= 0 -> "unsupported_timestamp_queue"
+      capabilityStatus != "supported" -> capabilityStatus
       stages.none { it.supported } -> "unsupported_libplacebo_timer"
       stages.any { it.completedSamples > 0L } -> "ready"
       stages.any { it.dispatches > 0L } -> "pending_or_dropped"
@@ -164,7 +178,11 @@ internal object Media3FlowDiagnosticMath {
     }
     return FlowVulkanTimingStats(
       status = state,
+      timestampsSupported = timestampsSupported,
       timestampValidBits = timestampValidBits,
+      timestampPeriodNs = timestampPeriodNs,
+      timestampComputeAndGraphics = timestampComputeAndGraphics,
+      computeQueueFamily = computeQueueFamily,
       preprocess = stages[0],
       analysis = stages[1],
       motion = stages[2],

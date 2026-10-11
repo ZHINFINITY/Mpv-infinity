@@ -69,6 +69,13 @@ class Media3FlowCadenceTest {
   }
 
   @Test
+  fun blockedSwapDoesNotImmediatelyReplayCoalescedDisplayCallbacks() {
+    assertFalse(Media3FlowCadence.shouldImmediatelyResubmitCoalescedRender(4L, 4L, true))
+    assertFalse(Media3FlowCadence.shouldImmediatelyResubmitCoalescedRender(4L, 7L, false))
+    assertTrue(Media3FlowCadence.shouldImmediatelyResubmitCoalescedRender(4L, 7L, true))
+  }
+
+  @Test
   fun motionEstimateUsesPairGpuTimeWhenAvailableAndSubmitTimeWhilePending() {
     assertEquals(3f, Media3FlowCadence.motionEstimateMs(3f, null), 0f)
     assertEquals(7f, Media3FlowCadence.motionEstimateMs(3f, 7f), 0f)

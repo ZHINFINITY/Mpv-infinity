@@ -67,6 +67,17 @@ internal object Media3FlowCadence {
   fun skippedTicks(previousTick: Long, nextTick: Long): Long =
     if (previousTick < 0L || nextTick <= previousTick + 1L) 0L else nextTick - previousTick - 1L
 
+  /**
+   * A blocked display callback already has a newer Choreographer callback scheduled. Re-rendering
+   * immediately would submit an extra frame outside that cadence; preserve immediate retries only
+   * for coalesced one-shot requests that have no display callback to deliver them.
+   */
+  fun shouldImmediatelyResubmitCoalescedRender(
+    taskRequestVersion: Long,
+    latestRequestVersion: Long,
+    latestRequestIsOneShot: Boolean,
+  ): Boolean = latestRequestVersion != taskRequestVersion && latestRequestIsOneShot
+
   /** Uses this pair's GPU time when ready; otherwise keeps the baseline submit-time estimate. */
   fun motionEstimateMs(submitMs: Float, pairGpuMs: Float?): Float =
     maxOf(submitMs, pairGpuMs ?: 0f)

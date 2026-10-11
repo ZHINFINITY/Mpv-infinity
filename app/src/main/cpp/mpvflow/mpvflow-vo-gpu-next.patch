@@ -5,7 +5,7 @@
 +#include <string.h>
 @@ -52,0 +55 @@
 +#include "mpvflow_gpu.h"
-@@ -157,0 +161,26 @@
+@@ -157,0 +161,29 @@
 +    // MPVFLOW_GPU_INTEGRATION
 +    MPVFlowGPUContext *flow_gpu;
 +    MPVFlowGPUPair *flow_pair;
@@ -20,6 +20,9 @@
 +    int flow_max_dimension;
 +    bool flow_pending_synthesized;
 +    bool flow_pending_display_synced;
++    int flow_geometry_w;
++    int flow_geometry_h;
++    int64_t flow_timing_last_report_ns;
 +    int flow_pending_source_batch;
 +    int flow_pending_mix_frames;
 +    int64_t flow_cadence_window_start_ns;
@@ -52,7 +55,7 @@
 +    int flow_cap;
 +    int flow_w, flow_h;
 +    int flow_source_w, flow_source_h;
-@@ -569,0 +614,250 @@
+@@ -569,0 +614,301 @@
 +static void flow_release_pair(struct priv *p)
 +{
 +    if (p->flow_pair)
@@ -80,6 +83,8 @@
 +        p->flow_input_fmt = NULL;
 +        p->flow_max_dimension = 0;
 +        p->flow_init_logged = false;
++        p->flow_geometry_w = p->flow_geometry_h = 0;
++        p->flow_timing_last_report_ns = 0;
 +        p->flow_active_logged = false;
 +        p->flow_init_attempted = false;
 +        p->flow_bypass_logged_mask = 0;
@@ -105,6 +110,8 @@
 +        p->flow_input_fmt = NULL;
 +        p->flow_max_dimension = requested_dimension;
 +        p->flow_init_attempted = false;
++        p->flow_geometry_w = p->flow_geometry_h = 0;
++        p->flow_timing_last_report_ns = 0;
 +        p->flow_init_logged = false;
 +        p->flow_active_logged = false;
 +        p->flow_bypass_logged_mask = 0;
@@ -172,6 +179,53 @@
 +            "cpu_filter=no synthesized_output_cpu_readback=no\n",
 +            p->next_opts->mpvflow_target_fps, config.max_dimension,
 +            config.search_radius);
++}
++
++static void flow_report_gpu_timing(struct vo *vo)
++{
++    struct priv *p = vo->priv;
++    if (!p->flow_gpu)
++        return;
++    const int64_t now_ns = mp_time_ns();
++    if (now_ns <= 0)
++        return;
++    if (!p->flow_timing_last_report_ns) {
++        p->flow_timing_last_report_ns = now_ns;
++        return;
++    }
++    if (now_ns - p->flow_timing_last_report_ns < 1000000000LL)
++        return;
++    p->flow_timing_last_report_ns = now_ns;
++
++    struct MPVFlowGPUTimingStats stats = {0};
++    mpvflow_gpu_get_timing_stats(p->flow_gpu, &stats);
++    static const char *const names[MPVFLOW_GPU_STAGE_COUNT] = {
++        "preprocess", "analysis", "motion", "synthesis",
++    };
++    for (uint32_t i = 0; i < stats.stage_count && i < MPVFLOW_GPU_STAGE_COUNT; i++) {
++        const struct MPVFlowGPUStageTiming *stage = &stats.stages[i];
++        const uint64_t unresolved = stage->dispatches > stage->completed_samples
++            ? stage->dispatches - stage->completed_samples : 0;
++        const double average_us = stage->completed_samples
++            ? (double) stage->total_ns / stage->completed_samples / 1000.0 : 0.0;
++        const char *result_status = !stats.compute_timestamps_supported
++            ? "unsupported_timestamp_capability" :
++            !stage->timer_created ? "unsupported_libplacebo_timer" :
++            !stage->completed_samples ? (stage->dispatches ? "pending_or_dropped" : "awaiting_dispatch") :
++            "ready";
++        MP_INFO(vo, "MPVFLOW_DIAGNOSTIC component=mpvflow event=gpu_timing api=Vulkan "
++                "timer_source=libplacebo_timestamp stage=%s result_status=%s "
++                "timestamp_supported=%d compute_queue_family=%u queue_timestamp_valid_bits=%u "
++                "timestamp_period_ns=%.6f timestamp_compute_and_graphics=%d timer_created=%d "
++                "dispatches_total=%llu completed_total=%llu unresolved_dispatches_total=%llu "
++                "average_us=%.2f maximum_us=%.2f sample_scope=lifetime poll=nonblocking\n",
++                names[i], result_status, stats.compute_timestamps_supported,
++                stats.compute_queue_family, stats.compute_timestamp_valid_bits,
++                stats.timestamp_period_ns, stats.timestamp_compute_and_graphics,
++                stage->timer_created, (unsigned long long) stage->dispatches,
++                (unsigned long long) stage->completed_samples, (unsigned long long) unresolved,
++                average_us, (double) stage->maximum_ns / 1000.0);
++    }
 +}
 +
 +static void flow_log_passthrough(struct vo *vo, const char *reason, int status)
@@ -311,7 +365,7 @@
 @@ -1135,0 +1433,2 @@
 +    struct frame_priv *fp = mpi->priv;
 +    flow_release_frame(fp->vo, fp);
-@@ -1341,0 +1641,151 @@
+@@ -1341,0 +1641,164 @@
 +static bool flow_render_frame(struct vo *vo, const struct pl_frame_mix *mix,
 +                              struct pl_frame *target,
 +                              const struct pl_render_params *params,
@@ -390,6 +444,19 @@
 +                    p->flow_pair = pair;
 +                    p->flow_pair_ids[0] = fp0->frame_id;
 +                    p->flow_pair_ids[1] = fp1->frame_id;
++                    if (p->flow_geometry_w != fp0->flow_w || p->flow_geometry_h != fp0->flow_h) {
++                        const int grid_w = (fp0->flow_w - MPVFLOW_GPU_MOTION_BLOCK_SIZE +
++                            MPVFLOW_GPU_MOTION_GRID_STEP - 1) / MPVFLOW_GPU_MOTION_GRID_STEP + 1;
++                        const int grid_h = (fp0->flow_h - MPVFLOW_GPU_MOTION_BLOCK_SIZE +
++                            MPVFLOW_GPU_MOTION_GRID_STEP - 1) / MPVFLOW_GPU_MOTION_GRID_STEP + 1;
++                        MP_INFO(vo, "MPVFLOW_DIAGNOSTIC event=motion_geometry state=ready engine=mpv "
++                                "source=%dx%d processing=%dx%d motion_grid=%dx%d grid_step=%d block_size=%d\n",
++                                fp0->flow_source_w, fp0->flow_source_h, fp0->flow_w, fp0->flow_h,
++                                grid_w, grid_h, MPVFLOW_GPU_MOTION_GRID_STEP,
++                                MPVFLOW_GPU_MOTION_BLOCK_SIZE);
++                        p->flow_geometry_w = fp0->flow_w;
++                        p->flow_geometry_h = fp0->flow_h;
++                    }
 +                } else {
 +                    bypass_reason = "pair_analysis_failed";
 +                    bypass_status = status;
@@ -525,11 +592,12 @@
 -        if (!pl_swapchain_submit_frame(p->sw))
 +        submitted = pl_swapchain_submit_frame(p->sw);
 +        if (!submitted)
-@@ -1804,0 +2298,62 @@
+@@ -1804,0 +2298,63 @@
 +    const int64_t now_ns = mp_time_ns();
 +    const uint64_t flip_wait_ns = now_ns > flip_start_ns
 +        ? (uint64_t) (now_ns - flip_start_ns) : 0;
 +    if (p->next_opts->mpvflow && submitted) {
++        flow_report_gpu_timing(vo);
 +        if (!p->flow_cadence_window_start_ns)
 +            p->flow_cadence_window_start_ns = now_ns;
 +        p->flow_cadence_submitted++;

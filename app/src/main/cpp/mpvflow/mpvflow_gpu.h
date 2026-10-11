@@ -20,6 +20,9 @@ extern "C" {
 typedef struct MPVFlowGPUContext MPVFlowGPUContext;
 typedef struct MPVFlowGPUPair MPVFlowGPUPair;
 
+#define MPVFLOW_GPU_MOTION_BLOCK_SIZE 8
+#define MPVFLOW_GPU_MOTION_GRID_STEP 4
+
 enum MPVFlowGPUResult {
     MPVFLOW_GPU_ERROR = -1,
     MPVFLOW_GPU_UNSUPPORTED = -2,
@@ -71,7 +74,11 @@ struct MPVFlowGPUStageTiming {
 
 struct MPVFlowGPUTimingStats {
     uint32_t stage_count;
+    uint32_t compute_queue_family;
     uint32_t compute_timestamp_valid_bits;
+    bool compute_timestamps_supported;
+    bool timestamp_compute_and_graphics;
+    double timestamp_period_ns;
     struct MPVFlowGPUStageTiming stages[MPVFLOW_GPU_STAGE_COUNT];
 };
 

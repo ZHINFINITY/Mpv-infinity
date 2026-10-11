@@ -86,9 +86,20 @@ assert "external fun nativeGetRequiredHardwareBufferUsage" in NATIVE
 assert "external fun nativeAnalyzePair" in NATIVE
 assert "external fun nativeGetVulkanTimingStats(context: Long): LongArray?" in NATIVE
 assert "mpvflow_gpu_get_timing_stats(context->flow, &stats)" in JNI
-assert "computeTimestampValidBits" in JNI and "timestamp_valid_bits=%u" in JNI
+assert "vkGetPhysicalDeviceProperties(vk->phys_device, &device_properties)" in GPU
+assert "device_properties.limits.timestampPeriod" in GPU
+assert "device_properties.limits.timestampComputeAndGraphics" in GPU
+assert "vkGetPhysicalDeviceQueueFamilyProperties(vk->phys_device" in GPU
+assert "compute_timestamps_supported" in GPU and "timestamp_compute_and_graphics" in GPU
+assert "VK_QUERY_RESULT_WAIT_BIT" not in GPU and "pl_timer_query(ctx->gpu" in GPU
+assert "computeTimestampValidBits" in JNI and "timestamp_period_ns=%.6f" in JNI
 assert "context->computeTimestampValidBits = timingStats.compute_timestamp_valid_bits;" in JNI
-assert "values[1] = stats.compute_timestamp_valid_bits;" in JNI
+assert "values[0] = 2; // JNI snapshot schema version" in JNI
+assert "constexpr jsize headerFields = 7;" in JNI
+assert "values[1] = stats.compute_timestamps_supported ? 1 : 0;" in JNI
+assert "values[4] = stats.compute_timestamp_valid_bits;" in JNI
+assert "values[2] = static_cast<jlong>(stats.timestamp_period_ns * 1000.0 + 0.5);" in JNI
+assert "values[3] = stats.timestamp_compute_and_graphics ? 1 : 0;" in JNI
 assert "vulkanTimestampSupported" in JNI and "compute_queue_timestampValidBits_zero" in JNI
 assert "pending_or_dropped" in (ROOT / "app/src/main/java/app/infinity/mpvz/ui/player/Media3FlowDiagnostics.kt").read_text()
 assert "Vulkan/libplacebo timestamp queries" in (ROOT / "app/src/main/java/app/infinity/mpvz/ui/player/controls/PlayerControls.kt").read_text()

@@ -18,8 +18,8 @@
 #include <time.h>
 
 #define FLOW_LEVELS 3
-#define FLOW_BLOCK 8
-#define FLOW_STEP 4
+#define FLOW_BLOCK MPVFLOW_GPU_MOTION_BLOCK_SIZE
+#define FLOW_STEP MPVFLOW_GPU_MOTION_GRID_STEP
 #define FLOW_REDUCTIONS 8
 #define FLOW_DEFAULT_MAX_DIM 640
 #define FLOW_DEFAULT_RADIUS 8
@@ -62,7 +62,11 @@ struct MPVFlowGPUContext {
     pl_gpu gpu;                 /* borrowed */
     int max_dimension;
     int search_radius;
+    uint32_t compute_queue_family;
     uint32_t compute_timestamp_valid_bits;
+    bool compute_timestamps_supported;
+    bool timestamp_compute_and_graphics;
+    double timestamp_period_ns;
     int motion_log_w;
     int motion_log_h;
     uint32_t diagnostic_log_mask;
@@ -125,36 +129,53 @@ static uint64_t flow_monotonic_ns(void)
     return (uint64_t) ts.tv_sec * 1000000000ull + (uint64_t) ts.tv_nsec;
 }
 
-static uint32_t flow_compute_timestamp_valid_bits(pl_gpu gpu)
+static bool flow_compute_timestamp_capabilities(pl_gpu gpu,
+                                                uint32_t *valid_bits,
+                                                double *period_ns,
+                                                bool *compute_and_graphics)
 {
+    if (valid_bits)
+        *valid_bits = 0;
+    if (period_ns)
+        *period_ns = 0.0;
+    if (compute_and_graphics)
+        *compute_and_graphics = false;
     pl_vulkan vk = pl_vulkan_get(gpu);
-    if (!vk || !vk->get_proc_addr)
-        return 0;
-    PFN_vkGetPhysicalDeviceQueueFamilyProperties get_queue_properties =
-        (PFN_vkGetPhysicalDeviceQueueFamilyProperties)
-            vk->get_proc_addr(vk->instance, "vkGetPhysicalDeviceQueueFamilyProperties");
-    if (!get_queue_properties)
-        return 0;
+    if (!vk || !vk->phys_device)
+        return false;
+
+    VkPhysicalDeviceProperties device_properties = {0};
+    vkGetPhysicalDeviceProperties(vk->phys_device, &device_properties);
+    const double timestamp_period_ns = device_properties.limits.timestampPeriod;
+    const bool timestamp_compute_and_graphics =
+        device_properties.limits.timestampComputeAndGraphics == VK_TRUE;
+    if (period_ns)
+        *period_ns = timestamp_period_ns;
+    if (compute_and_graphics)
+        *compute_and_graphics = timestamp_compute_and_graphics;
 
     uint32_t queue_family_count = 0;
-    get_queue_properties(vk->phys_device, &queue_family_count, NULL);
+    vkGetPhysicalDeviceQueueFamilyProperties(vk->phys_device, &queue_family_count, NULL);
     if (!queue_family_count)
-        return 0;
+        return timestamp_period_ns > 0.0 && timestamp_compute_and_graphics;
     VkQueueFamilyProperties *queue_families =
         calloc(queue_family_count, sizeof(*queue_families));
     if (!queue_families)
-        return 0;
-    get_queue_properties(vk->phys_device, &queue_family_count, queue_families);
+        return false;
+    vkGetPhysicalDeviceQueueFamilyProperties(vk->phys_device, &queue_family_count, queue_families);
 
-    uint32_t valid_bits = 0;
+    uint32_t compute_valid_bits = 0;
     if (vk->queue_compute.index < queue_family_count) {
         const VkQueueFamilyProperties *compute_family =
             &queue_families[vk->queue_compute.index];
         if (compute_family->queueFlags & VK_QUEUE_COMPUTE_BIT)
-            valid_bits = compute_family->timestampValidBits;
+            compute_valid_bits = compute_family->timestampValidBits;
     }
     free(queue_families);
-    return valid_bits;
+    if (valid_bits)
+        *valid_bits = compute_valid_bits;
+    return timestamp_period_ns > 0.0 &&
+           (timestamp_compute_and_graphics || compute_valid_bits > 0);
 }
 
 static enum FlowTimerStage flow_timer_stage(const char *stage)
@@ -176,7 +197,7 @@ static void flow_timer_poll_and_report(MPVFlowGPUContext *ctx)
         "preprocess", "analysis", "motion", "synthesis",
     };
     for (int i = 0; i < FLOW_TIMER_COUNT; i++) {
-        if (ctx->compute_timestamp_valid_bits && ctx->timers[i].timer) {
+        if (ctx->compute_timestamps_supported && ctx->timers[i].timer) {
             for (int n = 0; n < 32; n++) {
                 uint64_t elapsed = pl_timer_query(ctx->gpu, ctx->timers[i].timer);
                 if (!elapsed)
@@ -208,11 +229,13 @@ static void flow_timer_poll_and_report(MPVFlowGPUContext *ctx)
                      "MPVFLOW_DIAGNOSTIC component=mpvflow event=gpu_timing api=Vulkan timer_source=%s "
                      "stage=%s timer_created=%d result_status=%s dispatches_total=%llu "
                      "completed_total=%llu unresolved_dispatches_total=%llu samples=%llu "
-                     "average_us=%.1f maximum_us=%.1f window_ms=%.1f queue_timestamp_valid_bits=%u nonblocking=1",
-                     ctx->compute_timestamp_valid_bits && stats->timer
+                     "average_us=%.1f maximum_us=%.1f window_ms=%.1f compute_queue_family=%u "
+                     "queue_timestamp_valid_bits=%u timestamp_period_ns=%.6f "
+                     "timestamp_compute_and_graphics=%d timestamp_supported=%d nonblocking=1",
+                     ctx->compute_timestamps_supported && stats->timer
                          ? "libplacebo_timestamp" : "unsupported",
                      names[i], stats->timer != NULL,
-                     !ctx->compute_timestamp_valid_bits || !stats->timer ? "unsupported" :
+                     !ctx->compute_timestamps_supported || !stats->timer ? "unsupported" :
                          stats->samples ? "sampled" : "no_ready_result_this_window",
                      (unsigned long long) stats->dispatches,
                      (unsigned long long) stats->completed_samples,
@@ -220,7 +243,9 @@ static void flow_timer_poll_and_report(MPVFlowGPUContext *ctx)
                      (unsigned long long) stats->samples,
                      stats->samples ? (double) stats->total_ns / stats->samples / 1000.0 : 0.0,
                      stats->samples ? (double) stats->max_ns / 1000.0 : 0.0,
-                     window_ms, ctx->compute_timestamp_valid_bits);
+                     window_ms, ctx->compute_queue_family, ctx->compute_timestamp_valid_bits,
+                     ctx->timestamp_period_ns, ctx->timestamp_compute_and_graphics,
+                     ctx->compute_timestamps_supported);
         }
         stats->samples = stats->total_ns = stats->max_ns = 0;
     }
@@ -494,6 +519,11 @@ MPVFlowGPUContext *mpvflow_gpu_create(pl_gpu gpu,
         return NULL;
     }
     ctx->gpu = gpu;
+    pl_vulkan vk = pl_vulkan_get(gpu);
+    ctx->compute_queue_family = vk ? vk->queue_compute.index : UINT32_MAX;
+    ctx->compute_timestamps_supported = flow_compute_timestamp_capabilities(
+        gpu, &ctx->compute_timestamp_valid_bits, &ctx->timestamp_period_ns,
+        &ctx->timestamp_compute_and_graphics);
     ctx->max_dimension = config && config->max_dimension > 0
         ? config->max_dimension : FLOW_DEFAULT_MAX_DIM;
     if (ctx->max_dimension > FLOW_DEFAULT_MAX_DIM)
@@ -641,7 +671,7 @@ MPVFlowGPUContext *mpvflow_gpu_create(pl_gpu gpu,
         "preprocess", "analysis", "motion", "synthesis",
     };
     int timer_count = 0;
-    if (ctx->compute_timestamp_valid_bits) {
+    if (ctx->compute_timestamps_supported) {
         for (int i = 0; i < FLOW_TIMER_COUNT; i++) {
             ctx->timers[i].timer = pl_timer_create(gpu);
             timer_count += ctx->timers[i].timer != NULL;
@@ -651,14 +681,19 @@ MPVFlowGPUContext *mpvflow_gpu_create(pl_gpu gpu,
     flow_log(gpu, PL_LOG_INFO,
              "MPVFLOW_DIAGNOSTIC component=mpvflow event=gpu_timing state=%s "
              "api=Vulkan timer_source=libplacebo_timestamp_timer_objects timer_objects=%d "
-             "queue_timestamp_valid_bits=%u timer_categories=%d timestamp_results=%s "
+             "compute_queue_family=%u queue_timestamp_valid_bits=%u timestamp_period_ns=%.6f "
+             "timestamp_compute_and_graphics=%d timer_categories=%d timestamp_results=%s "
              "poll_policy=nonblocking_frame_operation_boundary nonblocking=1 "
              "fallback=CPU_submission_and_output_cadence",
-             !ctx->compute_timestamp_valid_bits ? "unsupported" :
+             !ctx->compute_timestamps_supported ? "unsupported" :
                  timer_count == FLOW_TIMER_COUNT ? "supported" : "partial",
-             timer_count, ctx->compute_timestamp_valid_bits, FLOW_TIMER_COUNT,
-             ctx->compute_timestamp_valid_bits ? "awaiting_compute_dispatch" :
-                 "compute_queue_timestamp_valid_bits_zero");
+             timer_count, ctx->compute_queue_family, ctx->compute_timestamp_valid_bits,
+             ctx->timestamp_period_ns, ctx->timestamp_compute_and_graphics,
+             FLOW_TIMER_COUNT,
+             ctx->compute_timestamps_supported ? "awaiting_compute_dispatch" :
+                 ctx->timestamp_period_ns <= 0.0 ? "device_timestamp_period_zero" :
+                 !ctx->timestamp_compute_and_graphics && !ctx->compute_timestamp_valid_bits
+                     ? "compute_queue_timestamp_valid_bits_zero" : "timestamp_capability_unavailable");
     (void) timer_names;
     if (status)
         *status = MPVFLOW_GPU_OK;
@@ -694,7 +729,11 @@ void mpvflow_gpu_get_timing_stats(MPVFlowGPUContext *ctx,
     stats->stage_count = MPVFLOW_GPU_STAGE_COUNT;
     if (!ctx)
         return;
+    stats->compute_queue_family = ctx->compute_queue_family;
     stats->compute_timestamp_valid_bits = ctx->compute_timestamp_valid_bits;
+    stats->compute_timestamps_supported = ctx->compute_timestamps_supported;
+    stats->timestamp_compute_and_graphics = ctx->timestamp_compute_and_graphics;
+    stats->timestamp_period_ns = ctx->timestamp_period_ns;
     flow_timer_poll_and_report(ctx);
     for (int i = 0; i < FLOW_TIMER_COUNT; i++) {
         const struct FlowTimerStats *timer = &ctx->timers[i];

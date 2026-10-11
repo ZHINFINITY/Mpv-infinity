@@ -2467,7 +2467,10 @@ private fun NativeStatsPageOverlay(
               color = Color.White,
             )
             Text(
-              "Vulkan/libplacebo timestamp queries (${flowVulkan.status}, validBits=${flowVulkan.timestampValidBits}) " +
+              "Vulkan/libplacebo timestamp queries (${flowVulkan.status}, supported=${flowVulkan.timestampsSupported}, " +
+                "period=${String.format(java.util.Locale.US, "%.6f", flowVulkan.timestampPeriodNs)}ns, " +
+                "computeAndGraphics=${flowVulkan.timestampComputeAndGraphics}, " +
+                "queueFamily=${flowVulkan.computeQueueFamily}, validBits=${flowVulkan.timestampValidBits}) " +
                 "avg/max µs: preprocess ${formatVulkanStage(flowVulkan.preprocess)} · " +
                 "analysis ${formatVulkanStage(flowVulkan.analysis)} · motion ${formatVulkanStage(flowVulkan.motion)} · " +
                 "synthesis ${formatVulkanStage(flowVulkan.synthesis)}",
