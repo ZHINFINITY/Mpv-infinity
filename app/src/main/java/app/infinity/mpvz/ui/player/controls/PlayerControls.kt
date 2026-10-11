@@ -2443,7 +2443,7 @@ private fun NativeStatsPageOverlay(
           )
           if (flow.enabled) {
             Text(
-              "Media3 Flow: ${flow.state} · src $flowSourceRate fps → EGL swaps $flowOutputRate/${flow.targetFps} fps " +
+              "Media3 Flow: ${flow.state} · src $flowSourceRate fps → EGL swap-return $flowOutputRate/${flow.targetFps} fps " +
                 "($flowMultiplier×) · generated $flowGeneratedRate fps (${"%,d".format(java.util.Locale.US, flow.generatedFrames)} total)",
               style = MaterialTheme.typography.bodySmall,
               color = Color.White,

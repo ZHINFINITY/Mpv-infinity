@@ -28,7 +28,10 @@ for forbidden in (
     assert forbidden not in SINK, f"Obsolete GLES interpolation compute remains in Media3 sink: {forbidden}"
 
 # Both routes dispatch through the same libplacebo-backed Vulkan flow implementation.
-for marker in ("nativePrepareFrame(", "nativeAnalyzePair(", "nativeSynthesize(", "nativeCreateFrameImage("):
+for marker in (
+    "nativePrepareFrame(", "nativeAnalyzePair(", "nativeSynthesize(",
+    "nativeCreateFrameImage(", "nativeHoldImageForExternal(",
+):
     assert marker in SINK, f"Media3 sink is missing its Vulkan JNI dispatch: {marker}"
 for marker in (
     "pl_vulkan_create(", "pl_vulkan_wrap(", "pl_vulkan_release_ex(", "pl_vulkan_hold_ex(",
@@ -42,6 +45,8 @@ for marker in (
 assert "get_proc_addr" in JNI
 assert '"vkGetPhysicalDeviceImageFormatProperties2KHR"' in JNI
 assert "vkGetPhysicalDeviceImageFormatProperties2(\n" not in JNI, "Android Vulkan entry point must be loaded, not directly linked"
+assert "const bool imageOwned = image && context->images.find(image) != context->images.end()" in JNI
+assert "stage=frame_registration" in JNI and "frame0Owned" in JNI and "frame1Owned" in JNI
 pair_release = JNI.split("Java_app_infinity_mpvz_ui_player_Media3FlowVulkanNative_nativeReleasePair(", 1)[1].split(
     "Java_app_infinity_mpvz_ui_player_Media3FlowVulkanNative_nativeDestroyImage(", 1
 )[0]
@@ -60,9 +65,22 @@ for marker in (
         "Native Media3 sync-FD handoffs must preserve safe queue ordering and bounded resource pressure: "
         f"{marker}"
     )
-assert ".blit_src = blit_src" in GPU and 'ctx, w, h, ctx->fmt_rgba8, true, true,\n                                     "pair_output"' in GPU, (
-    "the synthesized Flow pair texture must advertise blit-source capability before Media3 copies it"
+assert ".blit_src = blit_src" in GPU and 'ctx, output_w, output_h, ctx->fmt_rgba8,\n                                         true, true, "full_resolution_pair_output"' in GPU, (
+    "the full-resolution synthesized Flow output must advertise blit-source capability before Media3 copies it"
 )
+assert "nativeCreateContext(maxDimension)" in SINK
+assert "config.max_dimension = std::max(160, std::min(640, static_cast<int>(requestedMaxDimension)))" in JNI
+assert "source0->texture, source1->texture" in JNI
+assert "nativeHoldImageForExternal(flowVulkanContext, slot.nativeImageHandle)" in SINK
+assert "eglSwapIntervalZeroApplied = EGL14.eglSwapInterval(eglDisplay, 0)" in SINK
+assert "outputWallTimes.addLast(swapReturnedNs)" in SINK
+assert "outputWallTimes.addLast(frameTimeNanos" not in SINK
+assert "eglSwapReturnFps=" in SINK and "outputMetric=successful_eglSwapBuffers_return_not_scanout" in SINK
+assert "fp0->flow_source, fp1->flow_source" in MPV_PATCH, "MPV synthesis must use source-resolution color frames"
+assert "motion_analysis=%dx%d" in MPV_PATCH and "synthesized_output=%dx%d" in MPV_PATCH
+assert "event=runtime_cadence" in MPV_PATCH and "empty_batch_redraws=%llu" in MPV_PATCH
+assert "source_frame.overlays = NULL" in MPV_PATCH and "source_frame.num_overlays = 0" in MPV_PATCH
+assert ".crop = image0->crop" not in MPV_PATCH, "full-resolution source copies already bake the input crop"
 assert "external fun nativeCreateContext" in NATIVE
 assert "external fun nativeGetRequiredHardwareBufferUsage" in NATIVE
 assert "external fun nativeAnalyzePair" in NATIVE
@@ -102,4 +120,4 @@ assert "backend=opengl-es" not in MPV_PATCH
 assert "gpu->glsl.vulkan" in GPU
 assert 'PlaybackSession.setOptionString("display-fps-override", displayRefreshRate.hz.toString())' in MPV_VIEW
 assert "display_refresh_source=" in MPV_VIEW
-print("Media3 and MPV Flow use Vulkan/SPIR-V with async native-fence handoffs, validated blit capabilities, and explicit display cadence")
+print("Media3 and MPV Flow preserve source-resolution synthesis, bounded motion analysis, async ownership handoffs, and measured output cadence")

@@ -53,8 +53,8 @@ struct MPVFlowGPUCreateDiagnostics {
 };
 
 struct MPVFlowGPUConfig {
-    /* Largest accepted input dimension; defaults to 480 when <= 0 and is
-     * conservatively hard-capped at 480 in this initial implementation. */
+    /* Largest motion-analysis dimension; defaults to 640 when <= 0 and is
+     * hard-capped at 640. Synthesized color output remains source-resolution. */
     int max_dimension;
     /* Search radius in coarsest-pyramid pixels; clamped to [1, 8], default 8. */
     int search_radius;
@@ -99,13 +99,16 @@ void mpvflow_gpu_pair_release(MPVFlowGPUContext *context,
                              MPVFlowGPUPair *pair);
 
 /*
- * Synthesize into the pair's reusable RGBA8 2D GPU texture for 0<t<1. The
- * returned texture is borrowed and remains valid until the pair is released.
- * No per-vsync texture allocation, CPU upload/download, or CPU pixel synthesis
- * is performed. GPU commands are queued on the supplied pl_gpu.
+ * Synthesize at the supplied full-resolution source dimensions using the
+ * pair's bounded motion fields. Source textures must be sampleable RGB, have
+ * equal 2D dimensions, and remain alive/unchanged until commands are submitted.
+ * The pair lazily reuses a full-resolution RGBA8 output texture. No CPU pixel
+ * readback, upload, or synthesis occurs; GPU commands are queued asynchronously.
  */
 enum MPVFlowGPUResult mpvflow_gpu_synthesize(MPVFlowGPUContext *context,
-                                             const MPVFlowGPUPair *pair,
+                                             MPVFlowGPUPair *pair,
+                                             pl_tex source0,
+                                             pl_tex source1,
                                              float t,
                                              pl_tex *output);
 

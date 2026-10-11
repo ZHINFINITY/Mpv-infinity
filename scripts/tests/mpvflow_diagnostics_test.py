@@ -12,6 +12,7 @@ LOG_REPOSITORY = (ROOT / "app/src/main/java/app/infinity/mpvz/presentation/crash
 DEBUG_LOGS_SCREEN = (ROOT / "app/src/main/java/app/infinity/mpvz/presentation/crash/DebugLogsScreen.kt").read_text(encoding="utf-8")
 CRASH_ACTIVITY = (ROOT / "app/src/main/java/app/infinity/mpvz/presentation/crash/CrashActivity.kt").read_text(encoding="utf-8")
 DECODERS_SHEET = (ROOT / "app/src/main/java/app/infinity/mpvz/ui/player/controls/components/sheets/DecodersSheet.kt").read_text(encoding="utf-8")
+MEDIA3_FLOW_SINK = (ROOT / "app/src/main/java/app/infinity/mpvz/ui/player/Media3FlowVideoSink.kt").read_text(encoding="utf-8")
 
 
 def require(source: str, fragment: str, message: str) -> None:
@@ -69,6 +70,10 @@ require(PATCH, "p->flow_bypass_logged_mask & reason_class", "pass-through loggin
 require(PATCH, "frame->num_frames > 1 || p->next_opts->mpvflow", "Flow must open the display-synchronized queue gate for one-frame VO batches")
 require(PATCH, "event=queue_state state=%s", "MPV Flow must report why the queue lacks a temporal pair or when one becomes available")
 require(PATCH, "waiting_for_temporal_pair", "MPV Flow must distinguish an incomplete pair from renderer or dispatch failure")
+require(PATCH, "event=runtime_cadence", "MPV Flow must report sustained swap-submit and synthesis cadence")
+require(PATCH, "source_sync_pct=%.1f", "MPV Flow must quantify display-synchronized source batches")
+require(PATCH, "empty_batch_redraws=%llu", "MPV Flow cadence must separate empty redraw callbacks from unsynchronized source batches")
+require(PATCH, "flip_wait_avg_ms=%.3f", "MPV Flow must measure swap submission/flip wait time")
 require(PATCH, "flow_update_context(vo);", "renderer initialization must be retried from the frame path when options were processed before GPU availability")
 assert PATCH.count("flow_update_context(vo);") >= 3, "initialization must be checked during map, render, and renderer-option updates"
 
@@ -80,6 +85,9 @@ require(LOG_REPOSITORY, 'message.contains("event=queue_state", ignoreCase = true
 require(LOG_REPOSITORY, "isNativeMedia3FlowDiagnostic", "log retention must preserve Native Media3 Flow route and summary records")
 require(CRASH_ACTIVITY, '"media3_flow_route"', "crash export must explicitly include Native Media3 route records")
 require(CRASH_ACTIVITY, '"flow_summary"', "crash export must explicitly include Native Media3 flow summaries")
+require(MEDIA3_FLOW_SINK, "eglSwapReturnFps=", "Native Media3 summary must report successful EGL swap-return cadence")
+require(MEDIA3_FLOW_SINK, "eglSwapInterval=", "Native Media3 summary must report whether implicit EGL swap pacing was disabled")
+require(MEDIA3_FLOW_SINK, "outputMetric=successful_eglSwapBuffers_return_not_scanout", "Media3 cadence must not be misrepresented as display scanout FPS")
 require(MPV_VIEW, '"MPVFLOW_DIAGNOSTIC event=renderer_config', "startup must record the applied MPV renderer settings")
 require(MPV_VIEW, "option_order=gpu-api>gpu-context>vo", "startup must record the actual Vulkan renderer-option order")
 require(MPV_VIEW, 'PlaybackSession.setOptionString("display-fps-override", displayRefreshRate.hz.toString())', "Flow must provide MPV with the Android display refresh rate")

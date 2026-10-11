@@ -48,7 +48,7 @@ import kotlin.math.roundToLong
 data class Media3FlowDiagnostics(
   val enabled: Boolean = false,
   val sourceFps: Float = 0f,
-  /** Successful EGL swap cadence; this is not a SurfaceFlinger scanout measurement. */
+  /** Successful eglSwapBuffers return cadence; this is not a SurfaceFlinger scanout measurement. */
   val outputFps: Float = 0f,
   val generatedFps: Float = 0f,
   val targetFps: Int = 0,
@@ -205,6 +205,8 @@ class Media3FlowVideoSink(
   private var eglConfig: android.opengl.EGLConfig? = null
   private var pbufferSurface = EGL14.EGL_NO_SURFACE
   private var windowSurface = EGL14.EGL_NO_SURFACE
+  private var eglSwapIntervalAttempted = false
+  private var eglSwapIntervalZeroApplied = false
   @Volatile private var outputSurface: Surface? = null
   private var inputTextureId = 0
   private var inputSurfaceTexture: SurfaceTexture? = null
@@ -256,7 +258,7 @@ class Media3FlowVideoSink(
           !ensureEgl() -> "egl_capture_setup_failed"
           !deviceSupportsVulkanFlow(appContext) -> "vulkan_compute_unavailable"
           else -> {
-            flowVulkanContext = Media3FlowVulkanNative.nativeCreateContext()
+            flowVulkanContext = Media3FlowVulkanNative.nativeCreateContext(maxDimension)
             if (flowVulkanContext == 0L) {
               "vulkan_context_or_compute_setup_failed"
             } else {
@@ -645,7 +647,11 @@ class Media3FlowVideoSink(
     outputAvailable = outputSurface.isValid
     glHandler.post {
       firstFrameReported = false
-      if (previousSurface !== outputSurface) clearFrameRateHint(previousSurface)
+      if (previousSurface !== outputSurface) {
+        clearFrameRateHint(previousSurface)
+        outputWallTimes.clear()
+        generatedWallTimes.clear()
+      }
       if (!ensureEgl() || !makePbufferCurrent()) return@post
       createWindowSurface()
       scheduleDisplayFrame()
@@ -659,6 +665,8 @@ class Media3FlowVideoSink(
     glHandler.post {
       cancelDisplayFrame()
       clearFrameRateHint(previousSurface)
+      outputWallTimes.clear()
+      generatedWallTimes.clear()
       makePbufferCurrent()
       destroyWindowSurface()
     }
@@ -999,6 +1007,12 @@ class Media3FlowVideoSink(
     if (slot == null) {
       droppedFrames.incrementAndGet()
       lastBypassReason = "bounded_queue_full"
+      publishDiagnostics("source_drop", lastBypassReason)
+      return
+    }
+    if (!makeSharedImageExternal(slot, "input_buffer_reuse")) {
+      droppedFrames.incrementAndGet()
+      lastBypassReason = "input_buffer_ownership_handoff_failed"
       publishDiagnostics("source_drop", lastBypassReason)
       return
     }
@@ -1388,8 +1402,6 @@ class Media3FlowVideoSink(
         while (generatedWallTimes.size > OUTPUT_RATE_WINDOW) generatedWallTimes.removeFirst()
       }
       lastRenderedPtsUs = targetPtsUs
-      outputWallTimes.addLast(frameTimeNanos ?: System.nanoTime())
-      while (outputWallTimes.size > OUTPUT_RATE_WINDOW) outputWallTimes.removeFirst()
       if (!firstFrameReported) {
         firstFrameReported = true
         dispatchListener { it.onFirstFrameRendered() }
@@ -1443,15 +1455,18 @@ class Media3FlowVideoSink(
     val submitStartNs = System.nanoTime()
     try {
       check(Media3FlowVulkanNative.nativeSynthesize(
-        flowVulkanContext, pair.nativePairHandle, alpha, outputImageHandle,
+        flowVulkanContext, pair.nativePairHandle,
+        a.nativeImageHandle, b.nativeImageHandle, alpha, outputImageHandle,
       )) { "Shared Vulkan frame synthesis failed" }
     } finally {
       recordCpuDuration(FlowCpuStage.VULKAN_SYNTHESIS_SUBMIT, (System.nanoTime() - submitStartNs).coerceAtLeast(0L))
     }
   }
 
-  private fun drawSourceFrame(slot: FrameSlot, presentationTimeNs: Long, ptsUs: Long): Boolean =
-    drawTexture(slot.colorTexture, presentationTimeNs, ptsUs)
+  private fun drawSourceFrame(slot: FrameSlot, presentationTimeNs: Long, ptsUs: Long): Boolean {
+    if (!makeSharedImageExternal(slot, "source_frame_display")) return false
+    return drawTexture(slot.colorTexture, presentationTimeNs, ptsUs)
+  }
 
   private fun drawTexture(textureId: Int, presentationTimeNs: Long, ptsUs: Long): Boolean {
     if (windowSurface == EGL14.EGL_NO_SURFACE || !makeWindowCurrent()) return false
@@ -1492,7 +1507,12 @@ class Media3FlowVideoSink(
     EGLExt.eglPresentationTimeANDROID(eglDisplay, windowSurface, presentationTimeNs.coerceAtLeast(0L))
     val swapStartNs = System.nanoTime()
     val swapped = EGL14.eglSwapBuffers(eglDisplay, windowSurface)
-    recordCpuDuration(FlowCpuStage.EGL_SWAP_WAIT, (System.nanoTime() - swapStartNs).coerceAtLeast(0L))
+    val swapReturnedNs = System.nanoTime()
+    recordCpuDuration(FlowCpuStage.EGL_SWAP_WAIT, (swapReturnedNs - swapStartNs).coerceAtLeast(0L))
+    if (swapped) {
+      outputWallTimes.addLast(swapReturnedNs)
+      while (outputWallTimes.size > OUTPUT_RATE_WINDOW) outputWallTimes.removeFirst()
+    }
     if (!swapped) Log.w(logTag, "eglSwapBuffers failed at ptsUs=$ptsUs error=0x${EGL14.eglGetError().toString(16)}")
     makePbufferCurrent()
     return swapped
@@ -1530,12 +1550,29 @@ class Media3FlowVideoSink(
     checkGlError("input copy unbind framebuffer", frameProbeOnly = true)
   }
 
+  private fun makeSharedImageExternal(slot: FrameSlot, stage: String): Boolean {
+    if (flowVulkanContext == 0L || slot.nativeImageHandle == 0L) return true
+    val returned = runCatching {
+      Media3FlowVulkanNative.nativeHoldImageForExternal(flowVulkanContext, slot.nativeImageHandle)
+    }.getOrDefault(false)
+    if (!returned) {
+      logFlowRecordOnce(
+        "shared-image-external-handoff-$stage",
+        Log.ERROR,
+        "event=ownership state=failed stage=$stage image_role=input source_pts_us=${slot.ptsUs} " +
+          "fallback=drop_frame_before_gles_access",
+      )
+    }
+    return returned
+  }
+
   private fun prepareSharedFrame(slot: FrameSlot) {
     check(flowVulkanContext != 0L && slot.nativeImageHandle != 0L) {
       "Media3 Flow frame is not backed by a Vulkan-shared HardwareBuffer"
     }
     // The JNI bridge exports the GLES native fence and makes Vulkan wait on it
-    // asynchronously; the reverse handoff is a Vulkan sync-FD / EGL server wait.
+    // asynchronously. The source AHardwareBuffer stays Vulkan-owned until the
+    // display path reads it or the capture path reuses it.
     val prepareStartNs = System.nanoTime()
     try {
       check(Media3FlowVulkanNative.nativePrepareFrame(flowVulkanContext, slot.nativeImageHandle)) {
@@ -1583,7 +1620,9 @@ class Media3FlowVideoSink(
     gridWidth = motionGridSize.width
     gridHeight = motionGridSize.height
     if (flowVulkanContext == 0L && deviceSupportsVulkanFlow(appContext)) {
-      flowVulkanContext = runCatching { Media3FlowVulkanNative.nativeCreateContext() }.getOrDefault(0L)
+      flowVulkanContext = runCatching {
+        Media3FlowVulkanNative.nativeCreateContext(maxDimension)
+      }.getOrDefault(0L)
     }
     var allSharedImagesReady = flowVulkanContext != 0L
     var outputBuffer: HardwareBuffer? = null
@@ -2003,8 +2042,29 @@ class Media3FlowVideoSink(
         "event=egl_context state=failed stage=eglMakeCurrent target=window " +
           "egl_error=0x${EGL14.eglGetError().toString(16)}",
       )
+      return false
     }
-    return current
+    if (!eglSwapIntervalAttempted) {
+      eglSwapIntervalAttempted = true
+      eglSwapIntervalZeroApplied = EGL14.eglSwapInterval(eglDisplay, 0)
+      if (eglSwapIntervalZeroApplied) {
+        logFlowRecordOnce(
+          "egl-swap-interval-zero",
+          Log.INFO,
+          "event=egl_pacing state=ready swap_interval=0 pacing=Choreographer " +
+            "presentation_time=eglPresentationTimeANDROID",
+        )
+      } else {
+        val eglError = EGL14.eglGetError()
+        val restored = EGL14.eglSwapInterval(eglDisplay, 1)
+        Log.w(
+          logTag,
+          "Unable to disable implicit EGL swap pacing; preserving interval=1 restored=$restored " +
+            "egl_error=0x${eglError.toString(16)} pacing=Choreographer",
+        )
+      }
+    }
+    return true
   }
 
   private fun destroyWindowSurface() {
@@ -2012,6 +2072,8 @@ class Media3FlowVideoSink(
       EGL14.eglDestroySurface(eglDisplay, windowSurface)
     }
     windowSurface = EGL14.EGL_NO_SURFACE
+    eglSwapIntervalAttempted = false
+    eglSwapIntervalZeroApplied = false
   }
 
   private fun createWindowSurface() {
@@ -2300,7 +2362,10 @@ class Media3FlowVideoSink(
         "flow_summary backend=vulkan-spirv state=${diagnostics.state} bypass=${diagnostics.bypassReason ?: "none"} " +
         "positionUs=$latestPositionUs speed=${formatLogFloat(playbackSpeed)} " +
         "sourceFps=${formatLogFloat(diagnostics.sourceFps)} targetFps=${diagnostics.targetFps} " +
-        "eglSwapFps=${formatLogFloat(diagnostics.outputFps)} generatedFps=${formatLogFloat(diagnostics.generatedFps)} " +
+        "eglSwapReturnFps=${formatLogFloat(diagnostics.outputFps)} " +
+        "eglSwapInterval=${if (eglSwapIntervalZeroApplied) 0 else "default"} " +
+        "outputMetric=successful_eglSwapBuffers_return_not_scanout " +
+        "generatedFps=${formatLogFloat(diagnostics.generatedFps)} " +
         "generatedTotal=${diagnostics.generatedFrames} dropsTotal=${diagnostics.droppedFrames} " +
         "missedOutputTicksTotal=${diagnostics.missedOutputTicks} skippedTotal=${diagnostics.skippedFrames} " +
         "input=$inputSize processing=${diagnostics.processingWidth}x${diagnostics.processingHeight} " +

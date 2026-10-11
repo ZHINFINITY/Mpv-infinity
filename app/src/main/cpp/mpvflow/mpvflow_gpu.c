@@ -13,6 +13,7 @@
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 
 #define FLOW_LEVELS 3
 #define FLOW_BLOCK 8
@@ -20,6 +21,21 @@
 #define FLOW_REDUCTIONS 8
 #define FLOW_DEFAULT_MAX_DIM 640
 #define FLOW_DEFAULT_RADIUS 8
+
+enum FlowTimerStage {
+    FLOW_TIMER_PREPROCESS,
+    FLOW_TIMER_ANALYSIS,
+    FLOW_TIMER_MOTION,
+    FLOW_TIMER_SYNTHESIS,
+    FLOW_TIMER_COUNT,
+};
+
+struct FlowTimerStats {
+    pl_timer timer;
+    uint64_t samples;
+    uint64_t total_ns;
+    uint64_t max_ns;
+};
 
 enum {
     FLOW_DIAG_TEXTURE_ALLOC = 1u << 0,
@@ -50,6 +66,8 @@ struct MPVFlowGPUContext {
     pl_pass pass_reduce;
     pl_pass pass_flow;
     pl_pass pass_synthesize;
+    struct FlowTimerStats timers[FLOW_TIMER_COUNT];
+    uint64_t timing_window_start_ns;
 };
 
 struct MPVFlowGPUPair {
@@ -57,6 +75,7 @@ struct MPVFlowGPUPair {
     pl_tex input[2];            /* borrowed from caller */
     pl_tex output;              /* owned, reused for each timestep */
     int w, h;
+    int output_w, output_h;
     int levels;
     struct FlowLevel level[FLOW_LEVELS];
     int reductions;
@@ -87,6 +106,65 @@ static void flow_log_once(MPVFlowGPUContext *ctx, uint32_t bit,
     vsnprintf(message, sizeof(message), format, args);
     va_end(args);
     flow_log(ctx->gpu, level, "%s", message);
+}
+
+static uint64_t flow_monotonic_ns(void)
+{
+    struct timespec ts;
+    if (clock_gettime(CLOCK_MONOTONIC, &ts) != 0)
+        return 0;
+    return (uint64_t) ts.tv_sec * 1000000000ull + (uint64_t) ts.tv_nsec;
+}
+
+static enum FlowTimerStage flow_timer_stage(const char *stage)
+{
+    if (strstr(stage, "preprocess"))
+        return FLOW_TIMER_PREPROCESS;
+    if (strstr(stage, "motion_search"))
+        return FLOW_TIMER_MOTION;
+    if (strstr(stage, "synthesize"))
+        return FLOW_TIMER_SYNTHESIS;
+    return FLOW_TIMER_ANALYSIS;
+}
+
+static void flow_timer_poll_and_report(MPVFlowGPUContext *ctx)
+{
+    static const char *const names[FLOW_TIMER_COUNT] = {
+        "preprocess", "analysis", "motion", "synthesis",
+    };
+    for (int i = 0; i < FLOW_TIMER_COUNT; i++) {
+        if (!ctx->timers[i].timer)
+            continue;
+        for (int n = 0; n < 32; n++) {
+            uint64_t elapsed = pl_timer_query(ctx->gpu, ctx->timers[i].timer);
+            if (!elapsed)
+                break;
+            ctx->timers[i].samples++;
+            ctx->timers[i].total_ns += elapsed;
+            if (elapsed > ctx->timers[i].max_ns)
+                ctx->timers[i].max_ns = elapsed;
+        }
+    }
+
+    const uint64_t now = flow_monotonic_ns();
+    if (!ctx->timing_window_start_ns)
+        ctx->timing_window_start_ns = now;
+    if (!now || now - ctx->timing_window_start_ns < 1000000000ull)
+        return;
+    const double window_ms = (now - ctx->timing_window_start_ns) / 1000000.0;
+    for (int i = 0; i < FLOW_TIMER_COUNT; i++) {
+        struct FlowTimerStats *stats = &ctx->timers[i];
+        if (stats->samples) {
+            flow_log(ctx->gpu, PL_LOG_INFO,
+                     "MPVFLOW_DIAGNOSTIC component=mpvflow event=gpu_timing source=libplacebo_timestamp "
+                     "stage=%s samples=%llu average_us=%.1f maximum_us=%.1f window_ms=%.1f nonblocking=1",
+                     names[i], (unsigned long long) stats->samples,
+                     (double) stats->total_ns / stats->samples / 1000.0,
+                     (double) stats->max_ns / 1000.0, window_ms);
+        }
+        stats->samples = stats->total_ns = stats->max_ns = 0;
+    }
+    ctx->timing_window_start_ns = now;
 }
 
 /* All compute passes target libplacebo's Vulkan/SPIR-V backend. Constants use
@@ -173,7 +251,7 @@ static const char shader_synthesize[] =
     "vec4 colorAt(sampler2D s,vec2 p){ ivec2 sz=textureSize(s,0); p=clamp(p,vec2(0.0),vec2(sz-1)); ivec2 a=ivec2(floor(p)); ivec2 b=min(a+1,sz-1); vec2 t=fract(p); return mix(mix(texelFetch(s,a,0),texelFetch(s,ivec2(b.x,a.y),0),t.x), mix(texelFetch(s,ivec2(a.x,b.y),0),texelFetch(s,b,0),t.x),t.y); }\n"
     "float pointInBounds(vec2 p,ivec2 sz){ return step(0.0,p.x)*step(p.x,float(sz.x-1))*step(0.0,p.y)*step(p.y,float(sz.y-1)); }\n"
     "float reliability(vec4 flow,float cycle,float valid){ float cycleQuality=1.0-smoothstep(1.0,6.0,cycle); float matchQuality=1.0-smoothstep(0.04,0.35,flow.z); float uniqueQuality=0.5+0.5*smoothstep(0.02,0.35,flow.w); return cycleQuality*matchQuality*uniqueQuality*valid; }\n"
-    "void main(){ ivec2 p=ivec2(gl_GlobalInvocationID.xy); if(any(greaterThanEqual(p,pc.cfg.xy))) return; float cut=imageLoad(sceneTex,ivec2(0)).r; if(cut>0.1882353){ vec4 c; if(pc.timestep<=0.5) c=texelFetch(frame0,p,0); else c=texelFetch(frame1,p,0); imageStore(outTex,p,c); return; } vec2 fp=vec2(p); vec4 f=flowAtEdgeAware(fp,0),b=flowAtEdgeAware(fp,1); vec2 a=fp-pc.timestep*f.xy,z=fp-(1.0-pc.timestep)*b.xy; for(int i=0;i<2;i++){ f=flowAtEdgeAware(a,0); a=fp-pc.timestep*f.xy; b=flowAtEdgeAware(z,1); z=fp-(1.0-pc.timestep)*b.xy; } f=flowAtEdgeAware(a,0); b=flowAtEdgeAware(z,1); vec2 cycle0=a+f.xy,cycle1=z+b.xy; vec4 backAt0=flowAtEdgeAware(cycle0,1); vec4 forwardAt1=flowAtEdgeAware(cycle1,0); float cycleError0=length(f.xy+backAt0.xy); float cycleError1=length(b.xy+forwardAt1.xy); vec4 ca=colorAt(frame0,a); vec4 cb=colorAt(frame1,z); float valid0=pointInBounds(a,pc.cfg.xy)*pointInBounds(cycle0,pc.cfg.xy); float valid1=pointInBounds(z,pc.cfg.xy)*pointInBounds(cycle1,pc.cfg.xy); float confidence0=reliability(f,cycleError0,valid0); float confidence1=reliability(b,cycleError1,valid1); float confidence=max(confidence0,confidence1); vec4 outc; if(confidence<0.15){ outc=pc.timestep<0.5?texelFetch(frame0,p,0):texelFetch(frame1,p,0); } else { float visibility0=smoothstep(0.15,0.45,confidence0),visibility1=smoothstep(0.15,0.45,confidence1); float weight0=(1.0-pc.timestep)*visibility0,weight1=pc.timestep*visibility1,total=weight0+weight1; float lumaDelta=abs(dot(ca.rgb,vec3(0.299,0.587,0.114))-dot(cb.rgb,vec3(0.299,0.587,0.114))); bool boundaryConflict=lumaDelta>0.12; if(boundaryConflict&&confidence0>confidence1+0.10) outc=ca; else if(boundaryConflict&&confidence1>confidence0+0.10) outc=cb; else if(boundaryConflict) outc=pc.timestep<0.5?texelFetch(frame0,p,0):texelFetch(frame1,p,0); else outc=total>0.0001?mix(ca,cb,weight1/total):(pc.timestep<0.5?texelFetch(frame0,p,0):texelFetch(frame1,p,0)); } outc.a=1.0; imageStore(outTex,p,outc); }\n"
+    "void main(){ ivec2 p=ivec2(gl_GlobalInvocationID.xy); ivec2 outSize=pc.cfg.xy,motionSize=pc.cfg.zw; if(any(greaterThanEqual(p,outSize))) return; vec2 srcP=vec2(p),uv=(srcP+vec2(0.5))/vec2(outSize),flowP=uv*vec2(motionSize); float cut=imageLoad(sceneTex,ivec2(0)).r; if(cut>0.1882353){ vec4 c=pc.timestep<=0.5?texelFetch(frame0,p,0):texelFetch(frame1,p,0); imageStore(outTex,p,c); return; } vec4 f=flowAtEdgeAware(flowP,0),b=flowAtEdgeAware(flowP,1); vec2 a=flowP-pc.timestep*f.xy,z=flowP-(1.0-pc.timestep)*b.xy; for(int i=0;i<2;i++){ f=flowAtEdgeAware(a,0); a=flowP-pc.timestep*f.xy; b=flowAtEdgeAware(z,1); z=flowP-(1.0-pc.timestep)*b.xy; } f=flowAtEdgeAware(a,0); b=flowAtEdgeAware(z,1); vec2 cycle0=a+f.xy,cycle1=z+b.xy; vec4 backAt0=flowAtEdgeAware(cycle0,1); vec4 forwardAt1=flowAtEdgeAware(cycle1,0); float cycleError0=length(f.xy+backAt0.xy); float cycleError1=length(b.xy+forwardAt1.xy); vec2 scale=vec2(outSize)/vec2(motionSize),srcA=srcP+(a-flowP)*scale,srcZ=srcP+(z-flowP)*scale; vec4 ca=colorAt(frame0,srcA); vec4 cb=colorAt(frame1,srcZ); float valid0=pointInBounds(a,motionSize)*pointInBounds(cycle0,motionSize); float valid1=pointInBounds(z,motionSize)*pointInBounds(cycle1,motionSize); float confidence0=reliability(f,cycleError0,valid0); float confidence1=reliability(b,cycleError1,valid1); float confidence=max(confidence0,confidence1); vec4 outc; if(confidence<0.15){ outc=pc.timestep<0.5?texelFetch(frame0,p,0):texelFetch(frame1,p,0); } else { float visibility0=smoothstep(0.15,0.45,confidence0),visibility1=smoothstep(0.15,0.45,confidence1); float weight0=(1.0-pc.timestep)*visibility0,weight1=pc.timestep*visibility1,total=weight0+weight1; float lumaDelta=abs(dot(ca.rgb,vec3(0.299,0.587,0.114))-dot(cb.rgb,vec3(0.299,0.587,0.114))); bool boundaryConflict=lumaDelta>0.12; if(boundaryConflict&&confidence0>confidence1+0.10) outc=ca; else if(boundaryConflict&&confidence1>confidence0+0.10) outc=cb; else if(boundaryConflict) outc=pc.timestep<0.5?texelFetch(frame0,p,0):texelFetch(frame1,p,0); else outc=total>0.0001?mix(ca,cb,weight1/total):(pc.timestep<0.5?texelFetch(frame0,p,0):texelFetch(frame1,p,0)); } outc.a=1.0; imageStore(outTex,p,outc); }\n"
 ;
 
 static pl_pass make_pass(pl_gpu gpu, const char *glsl,
@@ -234,8 +312,10 @@ static bool run_pass(MPVFlowGPUContext *ctx, pl_pass pass,
         .desc_bindings = bindings,
         .push_constants = &push,
         .compute_groups = { (w + 7) / 8, (h + 7) / 8, 1 },
+        .timer = ctx->timers[flow_timer_stage(stage)].timer,
     };
     (void) nbindings; /* descriptor array length is fixed by the pass */
+    flow_timer_poll_and_report(ctx);
     pl_pass_run(ctx->gpu, &run);
     return true;
 }
@@ -244,10 +324,6 @@ static bool allocate_pair_textures(MPVFlowGPUContext *ctx,
                                    MPVFlowGPUPair *pair)
 {
     int w = pair->w, h = pair->h;
-    pair->output = create_texture_ex(ctx, w, h, ctx->fmt_rgba8, true, true,
-                                     "pair_output");
-    if (!pair->output)
-        return false;
     for (int i = 0; i < FLOW_LEVELS && w >= FLOW_BLOCK && h >= FLOW_BLOCK; i++) {
         struct FlowLevel *lv = &pair->level[i];
         lv->w = w; lv->h = h;
@@ -499,6 +575,20 @@ MPVFlowGPUContext *mpvflow_gpu_create(pl_gpu gpu,
         if (status) *status = MPVFLOW_GPU_UNSUPPORTED_SHADER;
         return NULL;
     }
+    static const char *const timer_names[FLOW_TIMER_COUNT] = {
+        "preprocess", "analysis", "motion", "synthesis",
+    };
+    int timer_count = 0;
+    for (int i = 0; i < FLOW_TIMER_COUNT; i++) {
+        ctx->timers[i].timer = pl_timer_create(gpu);
+        timer_count += ctx->timers[i].timer != NULL;
+    }
+    ctx->timing_window_start_ns = flow_monotonic_ns();
+    flow_log(gpu, PL_LOG_INFO,
+             "MPVFLOW_DIAGNOSTIC component=mpvflow event=gpu_timing state=%s source=libplacebo_timestamp "
+             "timer_stages=%d timer_categories=%d nonblocking=1",
+             timer_count ? "ready" : "unsupported", timer_count, FLOW_TIMER_COUNT);
+    (void) timer_names;
     if (status)
         *status = MPVFLOW_GPU_OK;
     flow_log(gpu, PL_LOG_INFO,
@@ -519,6 +609,8 @@ void mpvflow_gpu_destroy(MPVFlowGPUContext *ctx)
     if (ctx->pass_reduce) pl_pass_destroy(ctx->gpu, &ctx->pass_reduce);
     if (ctx->pass_flow) pl_pass_destroy(ctx->gpu, &ctx->pass_flow);
     if (ctx->pass_synthesize) pl_pass_destroy(ctx->gpu, &ctx->pass_synthesize);
+    for (int i = 0; i < FLOW_TIMER_COUNT; i++)
+        pl_timer_destroy(ctx->gpu, &ctx->timers[i].timer);
     free(ctx);
 }
 
@@ -747,31 +839,70 @@ void mpvflow_gpu_pair_release(MPVFlowGPUContext *ctx, MPVFlowGPUPair *pair)
 }
 
 enum MPVFlowGPUResult mpvflow_gpu_synthesize(MPVFlowGPUContext *ctx,
-                                             const MPVFlowGPUPair *pair,
+                                             MPVFlowGPUPair *pair,
+                                             pl_tex source0,
+                                             pl_tex source1,
                                              float t, pl_tex *output)
 {
     if (output)
         *output = NULL;
-    if (!ctx || !pair || !output || pair->owner != ctx ||
+    if (!ctx || !pair || !source0 || !source1 || !output || pair->owner != ctx ||
         !isfinite(t) || t <= 0.0f || t >= 1.0f) {
         flow_log_once(ctx, FLOW_DIAG_SYNTHESIZE, PL_LOG_WARN,
                       "MPVFLOW_DIAGNOSTIC event=synthesize state=failed stage=input_validation "
-                      "pair_present=%d output_pointer_present=%d timestep=%.9g reason=invalid_context_pair_or_timestep",
-                      pair != NULL, output != NULL, t);
+                      "pair_present=%d source0_present=%d source1_present=%d output_pointer_present=%d "
+                      "timestep=%.9g reason=invalid_context_pair_source_or_timestep",
+                      pair != NULL, source0 != NULL, source1 != NULL, output != NULL, t);
         return MPVFLOW_GPU_INVALID;
     }
-    pl_tex out = pair->output;
-    if (!out) {
+    const struct pl_tex_params *p0 = &source0->params;
+    const struct pl_tex_params *p1 = &source1->params;
+    if (p0->d != 0 || p1->d != 0 || p0->w != p1->w || p0->h != p1->h ||
+        p0->w < FLOW_BLOCK || p0->h < FLOW_BLOCK ||
+        (uint32_t) p0->w > ctx->gpu->limits.max_tex_2d_dim ||
+        (uint32_t) p0->h > ctx->gpu->limits.max_tex_2d_dim ||
+        source0->sampler_type != PL_SAMPLER_NORMAL ||
+        source1->sampler_type != PL_SAMPLER_NORMAL ||
+        !p0->sampleable || !p1->sampleable || !p0->format || !p1->format ||
+        p0->format->num_planes != 0 || p1->format->num_planes != 0 ||
+        p0->format->num_components < 3 || p1->format->num_components < 3 ||
+        !(p0->format->caps & PL_FMT_CAP_SAMPLEABLE) ||
+        !(p1->format->caps & PL_FMT_CAP_SAMPLEABLE)) {
         flow_log_once(ctx, FLOW_DIAG_SYNTHESIZE, PL_LOG_WARN,
-                      "MPVFLOW_DIAGNOSTIC event=synthesize state=failed stage=pair_output_texture reason=missing");
-        return MPVFLOW_GPU_UNSUPPORTED;
+                      "MPVFLOW_DIAGNOSTIC event=synthesize state=failed stage=source_pair_validation "
+                      "source0=%ux%u sampleable=%d format=%s source1=%ux%u sampleable=%d format=%s "
+                      "max_texture_dimension=%u reason=full_resolution_rgb_sources_required",
+                      p0->w, p0->h, p0->sampleable,
+                      p0->format ? p0->format->name : "missing",
+                      p1->w, p1->h, p1->sampleable,
+                      p1->format ? p1->format->name : "missing",
+                      ctx->gpu->limits.max_tex_2d_dim);
+        return MPVFLOW_GPU_UNSUPPORTED_FORMAT;
     }
+
+    const int output_w = (int) p0->w;
+    const int output_h = (int) p0->h;
+    if (!pair->output || pair->output_w != output_w || pair->output_h != output_h) {
+        destroy_tex(ctx, &pair->output);
+        pair->output = create_texture_ex(ctx, output_w, output_h, ctx->fmt_rgba8,
+                                         true, true, "full_resolution_pair_output");
+        pair->output_w = pair->output ? output_w : 0;
+        pair->output_h = pair->output ? output_h : 0;
+        if (!pair->output) {
+            flow_log_once(ctx, FLOW_DIAG_SYNTHESIZE, PL_LOG_WARN,
+                          "MPVFLOW_DIAGNOSTIC event=synthesize state=failed stage=full_resolution_output_allocation "
+                          "width=%d height=%d format=rgba8 motion_width=%d motion_height=%d",
+                          output_w, output_h, pair->w, pair->h);
+            return MPVFLOW_GPU_UNSUPPORTED_FORMAT;
+        }
+    }
+    pl_tex out = pair->output;
     struct FlowLevel *full = (struct FlowLevel *) &pair->level[0];
-    int cfg[4] = { pair->w, pair->h, 0, 0 };
+    int cfg[4] = { output_w, output_h, pair->w, pair->h };
     struct pl_desc_binding sb[8] = {
-        { .object = pair->input[0], .address_mode = PL_TEX_ADDRESS_CLAMP,
+        { .object = source0, .address_mode = PL_TEX_ADDRESS_CLAMP,
           .sample_mode = PL_TEX_SAMPLE_NEAREST },
-        { .object = pair->input[1], .address_mode = PL_TEX_ADDRESS_CLAMP,
+        { .object = source1, .address_mode = PL_TEX_ADDRESS_CLAMP,
           .sample_mode = PL_TEX_SAMPLE_NEAREST },
         { .object = full->forward },
         { .object = full->backward },
@@ -780,12 +911,12 @@ enum MPVFlowGPUResult mpvflow_gpu_synthesize(MPVFlowGPUContext *ctx,
         { .object = full->luma[1] },
         { .object = out },
     };
-    if (!run_pass(ctx, ctx->pass_synthesize, sb, 8, cfg, t, pair->w, pair->h,
+    if (!run_pass(ctx, ctx->pass_synthesize, sb, 8, cfg, t, output_w, output_h,
                   "synthesize_output")) {
         flow_log_once(ctx, FLOW_DIAG_SYNTHESIZE, PL_LOG_WARN,
                       "MPVFLOW_DIAGNOSTIC event=synthesize state=failed stage=synthesis_dispatch "
-                      "width=%d height=%d timestep=%.9g status=%d; see preceding compute_dispatch stage",
-                      pair->w, pair->h, t, MPVFLOW_GPU_ERROR);
+                      "output=%dx%d motion=%dx%d timestep=%.9g status=%d; see preceding compute_dispatch stage",
+                      output_w, output_h, pair->w, pair->h, t, MPVFLOW_GPU_ERROR);
         return MPVFLOW_GPU_ERROR;
     }
     *output = out;

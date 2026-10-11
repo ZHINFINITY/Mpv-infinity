@@ -10,7 +10,7 @@ internal object Media3FlowVulkanNative {
     System.loadLibrary("media3flow_vulkan")
   }
 
-  external fun nativeCreateContext(): Long
+  external fun nativeCreateContext(maxDimension: Int): Long
 
   /** Returns the Vulkan driver's required Android buffer usage for the selected image role. */
   external fun nativeGetRequiredHardwareBufferUsage(context: Long, output: Boolean): Long
@@ -28,9 +28,19 @@ internal object Media3FlowVulkanNative {
 
   external fun nativePrepareFrame(context: Long, image: Long): Boolean
 
+  /** Must be called on the GL thread with this sink's EGL context current. */
+  external fun nativeHoldImageForExternal(context: Long, image: Long): Boolean
+
   external fun nativeAnalyzePair(context: Long, frame0: Long, frame1: Long): Long
 
-  external fun nativeSynthesize(context: Long, pair: Long, timestep: Float, output: Long): Boolean
+  external fun nativeSynthesize(
+    context: Long,
+    pair: Long,
+    source0: Long,
+    source1: Long,
+    timestep: Float,
+    output: Long,
+  ): Boolean
 
   external fun nativeReleasePair(context: Long, pair: Long)
 
