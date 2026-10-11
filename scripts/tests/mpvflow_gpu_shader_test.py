@@ -61,6 +61,9 @@ require(flow, "sadAt(p,d,sz,best==0?0:second)", "zero-cost matches must prune on
 require(flow, "int radius=pc.cfg.z", "center-out must retain the original full configured motion radius")
 require(flow, "float(best)/(64.0*255.0)", "flow vectors must retain normalized block-match error")
 require(synthesis, "vec4 flowAtEdgeAware(vec2 p,int direction)", "synthesis must guide vector sampling by source appearance")
+require(synthesis, "vec4 flowAtBilinear(vec2 p,int direction)", "iterative vector refinement must have a low-cost bilinear sampler")
+require(synthesis, "for(int i=0;i<2;i++){ f=flowAtBilinear(a,0)", "inverse-flow refinement must avoid repeated edge-aware sampling")
+require(synthesis, "b=flowAtBilinear(z,1)", "backward inverse-flow refinement must use the same efficient sampler")
 require(synthesis, "layout(set=0,binding=5,rgba16f) readonly uniform image2D luma0Tex;", "frame-0 luma binding/format mismatch")
 require(synthesis, "layout(set=0,binding=6,rgba16f) readonly uniform image2D luma1Tex;", "frame-1 luma binding/format mismatch")
 require(synthesis, "cycleError0=length(f.xy+backAt0.xy)", "forward warp must be checked against reverse flow at its endpoint")
@@ -70,15 +73,17 @@ require(synthesis, "vec2(outSize)/vec2(motionSize)", "motion vectors must scale 
 require(synthesis, "colorAt(frame0,srcA)", "interpolated color must be sampled from the source-resolution input")
 require(synthesis, "float confidence=max(confidence0,confidence1)", "visibility must retain the more reliable endpoint")
 require(synthesis, "weight0=(1.0-pc.timestep)*visibility0,weight1=pc.timestep*visibility1", "visible endpoint weights must preserve temporal alpha")
-require(synthesis, "return cycleQuality*matchQuality*uniqueQuality*valid;", "endpoint reliability must include match uniqueness")
-require(synthesis, "float uniqueQuality=smoothstep(0.04,0.35,flow.w)", "ambiguous tied matches must not receive a fixed visibility-confidence floor")
+require(synthesis, "return cycleQuality*matchQuality*valid;", "endpoint reliability must not globally penalize low-uniqueness motion")
 require(synthesis, "if(confidence<0.15)", "unreliable motion must fall back to a real source frame")
-assert "uniqueQuality=0.5+0.5*smoothstep" not in synthesis, "ambiguous motion must not be promoted to visible by a confidence floor"
 require(flow, "float(second-best)/max(float(second),1.0)", "flow vectors must report best-vs-runner-up match uniqueness")
 require(flow, "refineAxis(p,bestVector,ivec2(1,0)", "GPU flow vectors must be fractionally refined")
 require(flow, "center=clamp(center,-p,sz-ivec2(8)-p)", "coarse predictors must be clamped before border-local refinement")
-require(synthesis, "bool boundaryConflict=lumaDelta>0.12", "target-time synthesis must classify conflicting endpoint appearances")
-require(synthesis, "if(boundaryConflict&&confidence0>confidence1+0.10)", "motion-boundary synthesis must select the more reliable visible source")
+require(synthesis, "bool boundaryConflict=lumaDelta>0.12||(min(f.w,b.w)<0.04&&colorDelta>0.18)", "ambiguous vectors must be localized to an actual luma or chroma appearance conflict")
+require(synthesis, "edgeConfidence0=confidence0*(0.5+0.5*smoothstep(0.02,0.35,f.w))", "match uniqueness must only help resolve a visible endpoint conflict")
+require(synthesis, "backAt0=flowAtEdgeAware(cycle0,1)", "cycle-consistency verification must retain edge-aware sampling")
+require(synthesis, "forwardAt1=flowAtEdgeAware(cycle1,0)", "reverse cycle-consistency verification must retain edge-aware sampling")
+assert synthesis.split("void main()", 1)[1].count("flowAtEdgeAware(") == 6, "edge-aware sampling should remain at initial/final warps and cycle checks, not every refinement step"
+assert synthesis.split("void main()", 1)[1].count("flowAtBilinear(") == 2, "only iterative inverse-flow refinement should use the bounded bilinear sampler"
 require(SOURCE, 'pl_find_named_fmt(gpu, "rgba16f")', "MPV Flow must use the supported RGBA16F storage path")
 require(SOURCE, "gpu->glsl.vulkan", "MPV Flow must reject non-Vulkan compute devices")
 require(SOURCE, "gpu->glsl.version < 450", "MPV Flow requires the Vulkan GLSL profile")
@@ -241,10 +246,30 @@ def smoothstep(edge0: float, edge1: float, value: float) -> float:
     t = max(0.0, min(1.0, (value - edge0) / (edge1 - edge0)))
     return t * t * (3.0 - 2.0 * t)
 
+def ambiguous_edge_decision(alpha: float, luma_delta: float, color_delta: float,
+                            confidence0: float, confidence1: float,
+                            uniqueness0: float, uniqueness1: float) -> str:
+    ambiguous = min(uniqueness0, uniqueness1) < 0.04
+    conflict = luma_delta > 0.12 or (ambiguous and color_delta > 0.18)
+    if not conflict:
+        return "interpolate"
+    edge0 = confidence0 * (0.5 + 0.5 * smoothstep(0.02, 0.35, uniqueness0))
+    edge1 = confidence1 * (0.5 + 0.5 * smoothstep(0.02, 0.35, uniqueness1))
+    if edge0 > edge1 + 0.10:
+        return "frame0"
+    if edge1 > edge0 + 0.10:
+        return "frame1"
+    return "frame0" if alpha < 0.5 else "frame1"
+
 flat_match_uniqueness = block_search(ambiguous_texture, ambiguous_texture, (24, 16), (0, 0), 8, center_out=True)[2]
 assert flat_match_uniqueness == 0.0, "flat/tied blocks must be recognized as ambiguous"
-assert smoothstep(0.04, 0.35, flat_match_uniqueness) == 0.0, "ambiguous motion must be excluded and use a source-frame fallback"
+assert smoothstep(0.04, 0.35, flat_match_uniqueness) == 0.0, "tied matches must remain identifiable for local edge decisions"
 assert smoothstep(0.04, 0.35, 0.35) == 1.0, "distinctive motion matches must remain fully eligible"
+repeat_match_uniqueness = block_search(repetitive_texture, shifted(repetitive_texture, 2, 0), (24, 16), (0, 0), 8, center_out=True)[2]
+assert repeat_match_uniqueness == 0.0, "the periodic-pattern regression must expose a genuine tied-vector case"
+assert ambiguous_edge_decision(0.5, 0.0, 0.0, 1.0, 1.0, flat_match_uniqueness, flat_match_uniqueness) == "interpolate", "low uniqueness alone must not disable temporal synthesis"
+assert ambiguous_edge_decision(0.5, 0.0, 0.25, 1.0, 1.0, 0.0, 0.35) == "frame1", "a visible chroma conflict should prefer the distinctive endpoint"
+assert ambiguous_edge_decision(0.25, 0.0, 0.25, 1.0, 1.0, 0.35, 0.35) == "interpolate", "chroma-only fallback must require an ambiguous pair, not affect ordinary distinctive motion"
 
 validator = shutil.which("glslangValidator")
 if validator:
