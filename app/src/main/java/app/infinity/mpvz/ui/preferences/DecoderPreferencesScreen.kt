@@ -123,6 +123,8 @@ object DecoderPreferencesScreen : Screen {
         selectedPlaybackEngine != PlaybackEngineMode.NATIVE
     val nativeMedia3FlowSelected = selectedPlaybackEngine == PlaybackEngineMode.NATIVE
     val nativeMedia3FlowAvailable = nativeMedia3FlowSelected && isVulkanSupported
+    val mpvFlowForcesRenderer =
+      mpvFlowFrameInterpolationEnabled && mpvFlowAvailable && !rifeFrameInterpolationEnabled
     var showGpuNextWarning by remember { mutableStateOf(false) }
     var anime4kExpanded by remember { mutableStateOf(false) }
     Scaffold(
@@ -216,7 +218,8 @@ object DecoderPreferencesScreen : Screen {
 
               SwitchPreference(
                 modifier = Modifier.settingsSearchTarget(R.string.pref_decoder_gpu_next_title),
-                value = gpuNext,
+                value = gpuNext || mpvFlowForcesRenderer,
+                enabled = !mpvFlowForcesRenderer,
                 onValueChange = { enabled ->
                   if (enabled && !gpuNext && !useVulkan) { // Only show warning if Vulkan is disabled
                     showGpuNextWarning = true
@@ -230,7 +233,10 @@ object DecoderPreferencesScreen : Screen {
                 title = { Text(stringResource(R.string.pref_decoder_gpu_next_title)) },
                 summary = {
                   Text(
-                    stringResource(R.string.pref_decoder_gpu_next_summary),
+                    stringResource(
+                      if (mpvFlowForcesRenderer) R.string.pref_decoder_flow_forced_renderer_summary
+                      else R.string.pref_decoder_gpu_next_summary,
+                    ),
                     color = MaterialTheme.colorScheme.outline,
                   )
                 },
@@ -285,7 +291,7 @@ object DecoderPreferencesScreen : Screen {
 
               SwitchPreference(
                 modifier = Modifier.settingsSearchTarget(R.string.pref_decoder_vulkan_experimental_title),
-                value = useVulkan && isVulkanSupported,
+                value = (useVulkan || mpvFlowForcesRenderer) && isVulkanSupported,
                 onValueChange = { enabled ->
                   if (isVulkanSupported) {
                     preferences.useVulkan.set(enabled)
@@ -300,12 +306,13 @@ object DecoderPreferencesScreen : Screen {
                     }
                   }
                 },
-                enabled = isVulkanSupported && !rendererBackendConfigOwned,
+                enabled = isVulkanSupported && !rendererBackendConfigOwned && !mpvFlowForcesRenderer,
                 title = { Text(stringResource(R.string.pref_decoder_vulkan_experimental_title)) },
                 summary = {
                   Text(
                     stringResource(
                       when {
+                        mpvFlowForcesRenderer -> R.string.pref_decoder_flow_forced_renderer_summary
                         !BuildConfig.MPV_SUPPORTS_VULKAN && isDeviceVulkanSupported ->
                           R.string.pref_decoder_vulkan_excluded_supported_device
                         !BuildConfig.MPV_SUPPORTS_VULKAN ->
@@ -478,6 +485,27 @@ object DecoderPreferencesScreen : Screen {
                   )
                 },
               )
+
+              if (BuildConfig.MPV_HAS_MPVFLOW) {
+                PreferenceDivider()
+                Column(
+                  modifier =
+                    Modifier
+                      .fillMaxWidth()
+                      .settingsSearchTarget(R.string.pref_decoder_mpvflow_compute_api_title)
+                      .padding(horizontal = 24.dp, vertical = 12.dp),
+                ) {
+                  Text(
+                    text = stringResource(R.string.pref_decoder_mpvflow_compute_api_title),
+                    style = MaterialTheme.typography.titleSmall,
+                  )
+                  Text(
+                    text = stringResource(R.string.pref_decoder_mpvflow_compute_api_summary),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.outline,
+                  )
+                }
+              }
 
               PreferenceDivider()
 

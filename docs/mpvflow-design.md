@@ -2,39 +2,46 @@
 
 ## Goal and relationship to RIFE
 
-MPVFlow is a separate, local motion-estimation/motion-compensation (MEMC) path for Android MPV. It does **not** call the existing RIFE filter, its model/runtime, or an off-device service. The existing RIFE implementation remains a separate option; the settings switches are mutually exclusive so the two filters are not accidentally stacked.
+MPVFlow is a separate, local motion-estimation/motion-compensation (MEMC) path. It does not call the existing RIFE filter, its model/runtime, or an off-device service. The settings switches are mutually exclusive so the two interpolation paths are not accidentally stacked.
 
-This is an independently written prototype informed by SVP's public descriptions of its two-stage flow: estimate motion between decoded pictures, then use the vectors to synthesize intermediate pictures. It is not SVPFlow source code, does not reproduce proprietary defaults, and is not claimed to be pixel-identical to SVPlayer.
+This is an independently written prototype informed by SVP's public descriptions of frame-rate conversion. It is not SVPFlow source code, does not reproduce proprietary defaults, and is not claimed to be pixel-identical to SVPlayer.
 
-## Implemented pipeline
+## Active GPU implementation
 
-1. The Android mpv user filter holds adjacent decoded pictures and places output timestamps on the selected target-FPS grid.
-2. Each source pair is converted to a reduced RGB24 image. A luma pyramid is built at up to three scales.
-3. The native C core performs the same exhaustive coarse-to-fine block matching in both directions. Independent block rows are analyzed concurrently on up to four online CPU workers when a pyramid level is large enough; small levels stay serial. This changes scheduling, not the search candidates or vector decisions.
-4. The resulting pair of vector fields is cached. Analysis runs once per decoded pair; the cached vectors are reused for every synthesized timestamp in that interval.
-5. For each output timestamp, vectors warp samples from both source pictures. Forward/backward consistency and photometric agreement provide a confidence estimate; uncertain/occluded pixels fall back toward the nearer source picture. A large frame-wide change is treated as a scene cut and does not get motion-warped.
-6. The reduced output is converted back to the input dimensions and pixel format, with its presentation timestamp set to the target grid.
+### MPV `gpu-next` route
 
-## Media3 GPU path
+When MPVFlow is eligible on the MPV engine, the app selects the `gpu-next` renderer with Vulkan. The patched MPV video output supplies source-frame textures and display-timed output ticks to `mpvflow_gpu.c`. Preprocessing, luma/motion analysis, and synthesis run as libplacebo Vulkan compute passes compiled to SPIR-V, using the renderer's existing `pl_gpu`. Synthesized output remains GPU-side; the active Android build does not register or compile the legacy CPU `vf_mpvflow` filter and does not read synthesized pixels back to the CPU.
 
-The opt-in Media3 sink keeps decoded SDR source textures and synthesized output at input dimensions, while luma and block-motion analysis use a reduced grid capped at 480 pixels on the longest side. The full-resolution synthesis shader maps the reduced motion vectors through normalized sampling and directly blends pixels whose adjacent-frame colors are effectively unchanged, avoiding needless warping of static UI and other stationary detail. This preserves spatial detail better than resizing the generated frame itself to the motion-analysis cap; it does not guarantee GPU completion time, displayed cadence, or visual quality until measured on-device.
+The compute path works on reduced motion-analysis images while synthesizing at the source output dimensions. Unsupported or incompatible input is passed through rather than forcing interpolation. The feature is a motion-compensated prototype; image artifacts and achieved cadence still require device testing.
 
-## Rates and device constraints
+### Native Media3 route
 
-The UI offers the choices shown in the supplied SVPlayer image: **48, 60, 72, 90, 96, 120, and 144 fps**. It adds a `(!)` marker from 90 fps onward. The effective target is capped to the display refresh reported by Android. If the display rate is unavailable, the requested preset is used.
+The separate Native Media3 route uses a Vulkan context with the same libplacebo-based Flow compute implementation and shared Android `HardwareBuffer` images. GLES is limited to decoder-surface capture and display handoff; it does not perform interpolation compute. MPV's `gpu-next` renderer selection does not choose the Native Media3 route's compute backend.
 
-For the MPV Vulkan route, Flow requests Vulkan `mailbox` presentation before creating `gpu-next`, so stale queued images can be replaced without lowering the selected target rate. An explicit `vulkan-swap-mode` in `mpv.conf` remains authoritative. libplacebo falls back to FIFO when the Android surface does not support mailbox mode; this request is not a guarantee of achieved cadence. The runtime reports slow swapchain image acquisition and blocking `swap_buffers` calls separately from the nonblocking submit-call duration, and those CPU timings are not a measurement of SurfaceFlinger scanout.
+The current support policy keeps HDR, Dolby Vision, DRM, rotated, and non-square-pixel content on Media3's standard renderer. Unsupported formats or tight deadlines fall back to source frames.
 
-To bound CPU cost, the prototype automatically limits the longest processing-image side to 480 pixels through 60 fps, 360 at 72–90, 320 at 96–120, and 240 at 144. This is a longest-side pixel cap, not a promise of a particular encoded resolution. The target is a pacing request: the filter does not guarantee the device can sustain that rate.
+## Renderer and compute API settings
 
-The implementation is CPU-side and requires software-readable **SDR progressive** pictures. On Android, enabling it requests `mediacodec-copy,no`: MediaCodec performs hardware decoding where supported, then copies frames into CPU-visible memory for the filter; unsupported codecs can fall back to software decoding. Direct/no-copy hardware surfaces cannot be consumed by this filter. HDR PQ/HLG, interlaced, hardware-only, invalid-timestamp, and incompatible-format cases pass through or disable the filter safely. Sources already faster than the selected target bypass motion analysis and keep their original PTS for mpv's output-frame dropping. The player selects mpv's audio-master `video-sync=audio`; MPVFlow does not rewrite source-frame PTS, and generated frames use the target cadence. The automatic working-size cap adapts between source pairs: it steps down under sustained budget pressure and recovers slowly only after repeated low-cost pairs; explicit size settings remain fixed. If the 85% reserve is reached while more outputs remain in the current pair, MPVFlow emits the current result, queues the next source frame at its original PTS, skips only the unfinished part of that pair, and resumes at the adapted size. A pair that has already completed is not disabled just for using the reserve. This avoids repeated full-resolution overshoot while preserving audio-master timing and preventing an interpolation backlog. The longest-side caps soften synthesized detail relative to source frames. This is not an SVPFlow-equivalent GPU-resident pipeline and may be slower or less artifact-resistant than SVP's optimized CPU/GPU path, especially at high resolution or on a low-power device. Actual smoothness, displayed frame cadence, A/V sync, detail, power, and thermal behavior must be measured on target phones. No claim of sustained 144 fps or SVPlayer parity is made before device testing.
+The Decoder screen distinguishes **Vulkan renderer API** from **MPVFlow compute API**. The renderer control is a real MPV rendering setting during ordinary playback. While MPVFlow is active and eligible on the MPV route, Flow requires `gpu-next` plus Vulkan; the screen shows those effective renderer choices as enabled and locks the controls until Flow is turned off.
 
-## Build and tests
+The current Flow compute implementation is Vulkan/SPIR-V only. On the MPV route it uses the same Vulkan `pl_gpu` as `gpu-next`; OpenCL is not implemented. The compute entry is therefore a read-only status, not an Auto/OpenCL selector that would imply nonexistent functionality. A genuinely independent compute API selection requires another working backend first. The separate Native Media3 Flow route also currently uses Vulkan compute.
 
-- `scripts/test-mpvflow-core.sh` runs host-only synthetic tests for translation recovery, identical-frame handling, scene-cut handling, and deterministic parallel analysis/synthesis. It does not make an Android APK or validate A/V synchronization.
-- `scripts/prepare-mpvflow.py` registers `vf_mpvflow` and its core files in the pinned Android mpv source tree.
-- `.github/workflows/mpvflow-debug-arm64.yml` builds the arm64 MPV runtime and debug APK remotely, without building or linking the RIFE runtime into this test APK. The GitHub Actions artifact is retained for 14 days.
-- In the testing APK, open **Settings → Decoder → On-device motion interpolation (MPVFlow, experimental)**, choose a target, then restart playback. The player log includes `MPVFLOW_DIAGNOSTIC` lines for selected/effective rate, per-pair vector analysis, scene cuts, and any pass-through/disable reason.
+## Cadence and device constraints
+
+The UI offers **48, 60, 72, 90, 96, 120, and 144 fps**, with a `(!)` marker from 90 fps onward. The effective target is capped to the display refresh reported by Android. The automatic longest-side motion-analysis cap is 640 pixels through 60 fps, 480 at 72–90, 400 at 96–120, and 320 at 144. These are processing-size limits, not promises of encoded output resolution or sustained performance.
+
+For the MPV Vulkan route, Flow requests Vulkan `mailbox` presentation before creating `gpu-next`, so stale queued images can be replaced without lowering the selected target rate. An explicit `vulkan-swap-mode` in `mpv.conf` remains authoritative. libplacebo falls back to FIFO when the Android surface does not support mailbox mode; the request is not a guarantee of achieved cadence. The runtime reports swapchain image-acquisition and blocking `swap_buffers` waits separately from nonblocking submit duration. These CPU timings do not measure SurfaceFlinger scanout or prove the display presented every generated frame.
+
+Interpolation is intended for compatible SDR progressive video. The active Android path can use MediaCodec direct mode or `mediacodec-copy` for decoder input, depending on APK capabilities; decoder-input copying is distinct from GPU-side synthesis and does not imply a CPU readback of generated frames. Actual smoothness, artifacts, displayed cadence, A/V sync, detail, power, and thermal behavior must be measured on target phones. No claim of sustained 144 fps or SVPlayer parity is made before device testing.
+
+## Diagnostics, tests, and build
+
+- `MPVFLOW_DIAGNOSTIC` logs identify the initialized `vulkan-spirv` renderer, GPU timing stages, selected/effective cadence, input pass-through reasons, queue state, and blocking swapchain waits.
+- `scripts/tests/mpvflow_gpu_shader_test.py` compiles and checks the active Vulkan shader passes, including preprocessing, luma, downsample/reduction, motion, and synthesis.
+- `scripts/tests/mpvflow_native_build_test.py` checks the Android native integration, option ownership, renderer policy, and related build contracts.
+- `scripts/test-mpvflow-core.sh` runs host-only synthetic tests for the legacy CPU motion core. Those tests do not build an APK or validate the active Vulkan renderer, on-device cadence, or A/V synchronization.
+- `scripts/prepare-mpvflow.py` installs `mpvflow_gpu.c` and the `gpu-next` integration patch into the pinned Android MPV source. It explicitly does not compile or register the legacy CPU filter.
+- `.github/workflows/mpvflow-debug-arm64.yml` builds the experimental arm64 MPVFlow debug APK remotely. APK generation is performed through that workflow, not by the host-only tests.
 
 ## Public background
 

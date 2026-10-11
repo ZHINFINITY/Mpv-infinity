@@ -18,6 +18,8 @@ APP_BUILD = ROOT / "app/build.gradle.kts"
 MPV_CONF_POLICY = ROOT / "app/src/main/java/app/infinity/mpvz/preferences/MpvConfigOverride.kt"
 POLICY = ROOT / "app/src/main/java/app/infinity/mpvz/ui/player/RendererBackendPolicy.kt"
 POLICY_TEST = ROOT / "app/src/test/java/app/infinity/mpvz/ui/player/RendererBackendPolicyTest.kt"
+DECODER_SCREEN = ROOT / "app/src/main/java/app/infinity/mpvz/ui/preferences/DecoderPreferencesScreen.kt"
+STRING_RESOURCES = ROOT / "app/src/main/res/values/strings.xml"
 
 sys.dont_write_bytecode = True
 spec = importlib.util.spec_from_file_location("prepare_mpvflow", PREPARE)
@@ -287,6 +289,31 @@ mpv_conf_source = MPV_CONF_POLICY.read_text(encoding="utf-8")
 renderer_ownership = mpv_conf_source.split("RENDERER(", 1)[1].split("\n  ),", 1)[0]
 assert '"vulkan-swap-mode"' in renderer_ownership, (
     "explicit mpv.conf Vulkan swap-mode configuration must be discoverable and preserved"
+)
+decoder_screen = DECODER_SCREEN.read_text(encoding="utf-8")
+for marker in (
+    "val mpvFlowForcesRenderer =",
+    "value = gpuNext || mpvFlowForcesRenderer",
+    "value = (useVulkan || mpvFlowForcesRenderer) && isVulkanSupported",
+    "enabled = !mpvFlowForcesRenderer",
+    "R.string.pref_decoder_mpvflow_compute_api_title",
+):
+    assert marker in decoder_screen, f"the Decoder screen must truthfully distinguish Flow rendering and compute: missing {marker!r}"
+compute_status_start = decoder_screen.index("R.string.pref_decoder_mpvflow_compute_api_title")
+compute_status_end = decoder_screen.index("PreferenceDivider()", compute_status_start)
+compute_status = decoder_screen[compute_status_start:compute_status_end]
+assert "ListPreference(" not in compute_status and "onValueChange" not in compute_status, (
+    "Vulkan-only compute capability must be informational, not a dead selector"
+)
+resource_source = STRING_RESOURCES.read_text(encoding="utf-8")
+assert "Vulkan only (fixed)" in resource_source and "OpenCL is not implemented" in resource_source, (
+    "the Flow compute row must disclose its real backend and the missing OpenCL implementation"
+)
+assert "Decoder input may use MediaCodec direct mode or mediacodec-copy" in resource_source, (
+    "Flow settings must distinguish decoder-input copy mode from interpolation compute"
+)
+assert "synthesized output stays GPU-side with no CPU pixel readback" in resource_source, (
+    "Flow settings must state the actual synthesized-output path"
 )
 frame_interpolation_ownership = mpv_conf_source.split("val FRAME_INTERPOLATION =", 1)[1].split(
     "\n    )", 1

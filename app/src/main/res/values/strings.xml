@@ -291,6 +291,7 @@
   <string name="pref_decoder_try_hw_dec_title">Try hardware decoding</string>
   <string name="pref_decoder_gpu_next_title">Use gpu-next</string>
   <string name="pref_decoder_gpu_next_summary">A new rendering backend</string>
+  <string name="pref_decoder_flow_forced_renderer_summary">MPVFlow requires the gpu-next renderer with Vulkan. These controls show the effective renderer and stay locked while MPVFlow is enabled.</string>
   <string name="pref_decoder_gpu_next_enable_title">Enable gpu-next?</string>
   <string name="pref_decoder_gpu_next_warning">Enabling gpu-next may cause purple screen issues during playback on some devices.</string>
   <string name="pref_decoder_gpu_next_purple_screen_fix">If you experience purple screens, try to disable opengl-pbo in Advanced settings (mpv.conf):</string>
@@ -321,7 +322,9 @@
   <string name="pref_decoder_rife_summary_native_engine">MPV engine only. Select MPV or Auto for supported media.</string>
   <string name="pref_decoder_rife_summary_vulkan_unavailable">This device or selected MPV renderer has no available Vulkan path.</string>
   <string name="pref_decoder_mpvflow_title">On-device motion interpolation (MPVFlow, experimental)</string>
-  <string name="pref_decoder_mpvflow_summary">Separate, non-RIFE motion-compensated interpolation. Motion analysis and frame synthesis use the shared libplacebo Vulkan-compute pipeline in MPV gpu-next and Native Media3. GLES is limited to decoder-surface capture and final display handoff; it does not run interpolation compute. No MediaCodec copy mode, CPU Flow filter, or pixel readback is used. SDR progressive video only; unsupported input passes through. The MPV route automatically selects gpu-next/Vulkan when available. Smoothness and detail depend on device performance; restart playback after changing.</string>
+  <string name="pref_decoder_mpvflow_summary">Separate, non-RIFE motion-compensated interpolation. MPV gpu-next and Native Media3 use Vulkan/SPIR-V compute with libplacebo-based Flow passes; Native Media3 uses a separate Vulkan context and shared Android HardwareBuffers. GLES is limited to decoder-surface capture and final display handoff; it does not run interpolation compute. Decoder input may use MediaCodec direct mode or mediacodec-copy as the APK supports; synthesized output stays GPU-side with no CPU pixel readback. SDR progressive video only; unsupported input passes through. The MPV route automatically selects gpu-next/Vulkan when available. Smoothness and detail depend on device performance; restart playback after changing.</string>
+  <string name="pref_decoder_mpvflow_compute_api_title">MPVFlow compute API</string>
+  <string name="pref_decoder_mpvflow_compute_api_summary">Vulkan only (fixed). MPVFlow uses Vulkan/SPIR-V compute. On the MPV route it shares gpu-next’s libplacebo GPU; OpenCL is not implemented, so no independent compute API selector is available.</string>
   <string name="pref_decoder_mpvflow_summary_unavailable">The direct GPU Flow renderer is included only in the experimental arm64 testing APK.</string>
   <string name="pref_decoder_mpvflow_summary_config_owned">Unavailable because mpv.conf owns an option required by GPU Flow (such as gpu-api, gpu-context, mpvflow, mpvflow-max-dimension, interpolation, video-sync, vf, or hwdec). Clear those overrides to let the app manage this feature.</string>
   <string name="pref_decoder_mpvflow_summary_requires_gpu_next_vulkan">The direct MPV Flow route requires gpu-next with Vulkan compute. When supported, enabling Flow selects that backend automatically. If Anime4K is active, turn it off; if mpv.conf overrides a renderer option, clear that override.</string>
@@ -1189,7 +1192,7 @@
   <string name="diagnostics_playback_cache">Playback</string>
   <string name="diagnostics_playback_cache_value">Buffered %1$.1f s | Packets %2$s | File %3$s</string>
   <string name="toast_failed_to_read_file">Failed to read file: %1$s</string>
-  <string name="pref_decoder_vulkan_experimental_title">Vulkan (Experimental)</string>
+  <string name="pref_decoder_vulkan_experimental_title">Vulkan renderer API (Experimental)</string>
   <string name="hdr_mode_off">Off</string>
   <string name="hdr_mode_off_description">Normal SDR output</string>
   <string name="hdr_mode_bt2100_pq" translatable="false">BT.2100 PQ</string>
