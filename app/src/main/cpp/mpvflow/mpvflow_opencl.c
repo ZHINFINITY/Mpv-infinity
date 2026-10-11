@@ -53,6 +53,8 @@ typedef struct _cl_event *cl_event;
 #define CL_MEM_EXT_HOST_PTR_QCOM (1ULL << 29)
 #define CL_MEM_HOST_WRITEBACK_QCOM 0x40A5u
 #define CL_MEM_ANDROID_AHARDWAREBUFFER_HOST_PTR_QCOM 0x40C7u
+#define CL_DEVICE_EXT_MEM_PADDING_IN_BYTES_QCOM 0x40A0u
+#define CL_DEVICE_PAGE_SIZE_QCOM 0x40A1u
 #define CL_CONTEXT_PLATFORM 0x1084
 #define CL_PROGRAM_BUILD_LOG_CAP 4096
 #define MPVFLOW_LEVELS 3
@@ -169,6 +171,9 @@ struct MPVFlowOpenCLContext {
     char device_version[128];
     char driver_version[128];
     char opencl_c_version[128];
+    size_t qcom_ext_mem_padding_bytes;
+    size_t qcom_page_size_bytes;
+    int qcom_page_size_query_ok;
     char device_extensions[2048];
     size_t device_extensions_length;
     int device_extensions_truncated;
@@ -396,6 +401,24 @@ MPVFlowOpenCLContext *mpvflow_opencl_create(const struct MPVFlowOpenCLConfig *co
     query_device_string(c, CL_DRIVER_VERSION, c->driver_version, sizeof(c->driver_version));
     query_device_string(c, CL_DEVICE_OPENCL_C_VERSION, c->opencl_c_version,
                         sizeof(c->opencl_c_version));
+    err = c->clGetDeviceInfo(c->device, CL_DEVICE_EXT_MEM_PADDING_IN_BYTES_QCOM,
+                             sizeof(c->qcom_ext_mem_padding_bytes),
+                             &c->qcom_ext_mem_padding_bytes, NULL);
+    if (err != CL_SUCCESS) {
+        (void)snprintf(g_build_log, sizeof(g_build_log),
+                       "clGetDeviceInfo(CL_DEVICE_EXT_MEM_PADDING_IN_BYTES_QCOM) failed: %d",
+                       (int)err);
+        if (build_log) *build_log = g_build_log;
+        if (status) *status = MPVFLOW_OPENCL_UNSUPPORTED_EXTENSION;
+        context_cleanup(c);
+        return NULL;
+    }
+    err = c->clGetDeviceInfo(c->device, CL_DEVICE_PAGE_SIZE_QCOM,
+                             sizeof(c->qcom_page_size_bytes),
+                             &c->qcom_page_size_bytes, NULL);
+    c->qcom_page_size_query_ok = err == CL_SUCCESS;
+    if (!c->qcom_page_size_query_ok)
+        c->qcom_page_size_bytes = 0;
     const cl_context_properties props[] = { CL_CONTEXT_PLATFORM, (cl_context_properties)c->platform, 0 };
     c->context = c->clCreateContext(props, 1, &c->device, NULL, NULL, &err);
     if (!c->context || err != CL_SUCCESS) { context_cleanup(c); return NULL; }
@@ -442,6 +465,7 @@ const char *mpvflow_opencl_get_runtime_info(MPVFlowOpenCLContext *context)
                    "device_name=\"%s\" device_vendor=\"%s\" device_version=\"%s\" "
                    "driver_version=\"%s\" opencl_c_version=\"%s\" "
                    "qcom_ext_host_ptr=%d qcom_android_ahb_host_ptr=%d "
+                   "qcom_ext_mem_padding_bytes=%zu qcom_page_size_bytes=%zu qcom_page_size_query_ok=%d "
                    "extensions_bytes=%zu extensions_truncated=%d extensions=\"%s\"",
                    context->platform_name[0] ? context->platform_name : "unavailable",
                    context->platform_vendor[0] ? context->platform_vendor : "unavailable",
@@ -453,9 +477,16 @@ const char *mpvflow_opencl_get_runtime_info(MPVFlowOpenCLContext *context)
                    context->opencl_c_version[0] ? context->opencl_c_version : "unavailable",
                    has_extension(context->device_extensions, MPVFLOW_BASE_EXTENSION),
                    has_extension(context->device_extensions, MPVFLOW_EXTENSION),
+                   context->qcom_ext_mem_padding_bytes, context->qcom_page_size_bytes,
+                   context->qcom_page_size_query_ok,
                    context->device_extensions_length, context->device_extensions_truncated,
                    context->device_extensions);
     return context->runtime_info;
+}
+
+size_t mpvflow_opencl_get_qcom_ext_mem_padding_bytes(MPVFlowOpenCLContext *context)
+{
+    return context ? context->qcom_ext_mem_padding_bytes : 0;
 }
 
 void mpvflow_opencl_destroy(MPVFlowOpenCLContext *context)

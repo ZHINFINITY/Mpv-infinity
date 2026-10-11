@@ -89,6 +89,9 @@ MPVFlowOpenCLContext *mpvflow_opencl_create(
     const char **build_log);
 /* Context-owned platform/device version, driver and extension diagnostics. */
 const char *mpvflow_opencl_get_runtime_info(MPVFlowOpenCLContext *context);
+/* Required tail padding reported by CL_DEVICE_EXT_MEM_PADDING_IN_BYTES_QCOM. */
+size_t mpvflow_opencl_get_qcom_ext_mem_padding_bytes(
+    MPVFlowOpenCLContext *context);
 /* Complete all queued OpenCL work; callers can use this before marking shared
  * AHardwareBuffer storage Vulkan-safe after an operation that reported an error. */
 enum MPVFlowOpenCLStatus mpvflow_opencl_finish(MPVFlowOpenCLContext *context);
@@ -101,7 +104,8 @@ void mpvflow_opencl_destroy(MPVFlowOpenCLContext *context);
  * bytes; the AHB descriptor's height/layers must be 1 and its stride must match
  * the reported descriptor. `frame_width`, `frame_height`, and `row_stride_bytes`
  * describe packed RGBA8 content inside the BLOB, and `allocation_bytes` must be
- * the actual allocation size (not a guessed width*height); it is used for local
+ * the actual BLOB allocation size, including the device-required QCOM external
+ * memory tail padding (not a guessed width*height); it is used for local
  * validation and diagnostics, while the QCOM AHardwareBuffer host_ptr call uses
  * size=0 with the allocation descriptor in host_ptr. The caller must
  * establish that this is the same linear VkBuffer-backed allocation used for

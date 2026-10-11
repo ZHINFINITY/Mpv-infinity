@@ -415,8 +415,22 @@ assert "*cl_create_error_out = err" in opencl_buffer_creation, (
 )
 assert "cl_error_available=%d" in bridge_source and \
        "qcom_size_arg=0 qcom_access_flags=default" in bridge_source and \
+       "qcom_required_padding_bytes=%zu" in bridge_source and \
        "ahb_allocation_bytes=%zu desc=" in bridge_source, (
     "OpenCL import failures must distinguish the QCOM call arguments from the validated AHardwareBuffer descriptor"
+)
+assert "CL_DEVICE_EXT_MEM_PADDING_IN_BYTES_QCOM 0x40A0u" in opencl_source and \
+       "CL_DEVICE_EXT_MEM_PADDING_IN_BYTES_QCOM" in opencl_source and \
+       "qcom_ext_mem_padding_bytes=%zu" in opencl_source and \
+       "size_t qcom_ext_mem_padding_bytes" in opencl_source and \
+       "size_t qcom_page_size_bytes" in opencl_source, (
+    "OpenCL must query and report QCOM padding/page-size values using the extension's size_t query shape"
+)
+assert "mpvflow_opencl_get_qcom_ext_mem_padding_bytes" in bridge_source and \
+       "size_t qcom_padding_bytes" in bridge_source and \
+       "ahb_blob_bytes = logical_bytes + (VkDeviceSize)qcom_padding_bytes" in bridge_source and \
+       "ahb_desc.width = (uint32_t)ahb_blob_bytes" in bridge_source, (
+    "the shared BLOB AHardwareBuffer allocation must include the device-required QCOM tail padding"
 )
 for marker in (
     "clGetPlatformInfo",

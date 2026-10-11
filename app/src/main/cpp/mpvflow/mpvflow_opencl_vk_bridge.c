@@ -372,7 +372,8 @@ enum MPVFlowOpenCLVkBridgeStatus mpvflow_opencl_vk_buffer_create(
     VkMemoryDedicatedAllocateInfo dedicated_info;
     VkImportAndroidHardwareBufferInfoANDROID import_info;
     VkPhysicalDeviceMemoryProperties memory_props;
-    VkDeviceSize row, row_stride, logical_bytes;
+    VkDeviceSize row, row_stride, logical_bytes, ahb_blob_bytes;
+    size_t qcom_padding_bytes;
     uint32_t memory_type = UINT32_MAX;
     VkResult vr;
     enum MPVFlowOpenCLStatus cl_status;
@@ -394,9 +395,17 @@ enum MPVFlowOpenCLVkBridgeStatus mpvflow_opencl_vk_buffer_create(
         return MPVFLOW_OPENCL_VK_BRIDGE_UNSUPPORTED;
     }
     logical_bytes = row_stride * height;
-    if (!logical_bytes || logical_bytes > MPVFLOW_VK_MAX_BYTES || logical_bytes > UINT32_MAX) {
-        set_error(b, "BLOB allocation size %llu exceeds bridge limit (%u bytes)",
-                  (unsigned long long)logical_bytes, MPVFLOW_VK_MAX_BYTES);
+    qcom_padding_bytes = mpvflow_opencl_get_qcom_ext_mem_padding_bytes(b->opencl);
+    if ((uint64_t)qcom_padding_bytes > UINT64_MAX - logical_bytes) {
+        set_error(b, "BLOB size plus QCOM external-memory padding overflows");
+        return MPVFLOW_OPENCL_VK_BRIDGE_UNSUPPORTED;
+    }
+    ahb_blob_bytes = logical_bytes + (VkDeviceSize)qcom_padding_bytes;
+    if (!logical_bytes || ahb_blob_bytes > MPVFLOW_VK_MAX_BYTES || ahb_blob_bytes > UINT32_MAX) {
+        set_error(b, "padded BLOB allocation size %llu (frame bytes=%llu, QCOM padding=%zu) exceeds bridge limit (%u bytes)",
+                  (unsigned long long)ahb_blob_bytes,
+                  (unsigned long long)logical_bytes, qcom_padding_bytes,
+                  MPVFLOW_VK_MAX_BYTES);
         return MPVFLOW_OPENCL_VK_BRIDGE_UNSUPPORTED;
     }
 
@@ -418,7 +427,7 @@ enum MPVFlowOpenCLVkBridgeStatus mpvflow_opencl_vk_buffer_create(
     buf->access = access;
 
     memset(&ahb_desc, 0, sizeof(ahb_desc));
-    ahb_desc.width = (uint32_t)logical_bytes;
+    ahb_desc.width = (uint32_t)ahb_blob_bytes;
     ahb_desc.height = 1;
     ahb_desc.layers = 1;
     ahb_desc.format = AHARDWAREBUFFER_FORMAT_BLOB;
@@ -454,10 +463,11 @@ enum MPVFlowOpenCLVkBridgeStatus mpvflow_opencl_vk_buffer_create(
         status = MPVFLOW_OPENCL_VK_BRIDGE_UNSUPPORTED;
         goto fail;
     }
-    if (ahb_props.allocationSize < logical_bytes ||
+    if (ahb_props.allocationSize < ahb_blob_bytes ||
         ahb_props.allocationSize > MPVFLOW_VK_MAX_BYTES) {
-        set_error(b, "actual Vulkan AHardwareBuffer allocationSize (%llu) does not cover the frame or exceeds the %u-byte limit",
+        set_error(b, "actual Vulkan AHardwareBuffer allocationSize (%llu) does not cover padded BLOB size (%llu) or exceeds the %u-byte limit",
                   (unsigned long long)ahb_props.allocationSize,
+                  (unsigned long long)ahb_blob_bytes,
                   MPVFLOW_VK_MAX_BYTES);
         status = MPVFLOW_OPENCL_VK_BRIDGE_UNSUPPORTED;
         goto fail;
@@ -548,12 +558,14 @@ enum MPVFlowOpenCLVkBridgeStatus mpvflow_opencl_vk_buffer_create(
         set_error(b,
                   "OpenCL AHardwareBuffer import failed (wrapper_status=%d cl_error_available=%d "
                   "cl_error=%d qcom_size_arg=0 qcom_access_flags=default "
+                  "qcom_required_padding_bytes=%zu "
                   "qcom_flags=USE_HOST_PTR|EXT_HOST_PTR_QCOM wrapper_access=%d "
                   "ahb_allocation_bytes=%zu desc={format=%u width=%u height=%u stride=%u layers=%u "
                   "usage=0x%llx frame=%ux%u row_stride=%u})",
                   (int)cl_status,
                   cl_create_buffer_error != MPVFLOW_OPENCL_CL_ERROR_NOT_RETURNED,
-                  (int)cl_create_buffer_error, (int)access, cl_desc.allocation_bytes,
+                  (int)cl_create_buffer_error, qcom_padding_bytes, (int)access,
+                  cl_desc.allocation_bytes,
                   cl_desc.format, cl_desc.ahb_width, cl_desc.ahb_height,
                   cl_desc.ahb_stride, cl_desc.layers,
                   (unsigned long long)cl_desc.usage, cl_desc.frame_width,
