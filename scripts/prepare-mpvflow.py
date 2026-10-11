@@ -14,6 +14,16 @@ ANDROID_VULKAN_DEPENDENCY = "vulkan = dependency('vulkan', required: vulkan_opt)
 PLACEBO_SPIRV_LIBRARY_LOOKUP = "spirv = cxx.find_library('SPIRV', required: required, static: static, dirs: vulkan_lib_dirs)"
 PLACEBO_GLSLANG_LIBRARY_LOOKUP = "cxx.find_library('glslang', required: required, static: static)"
 ANDROID_PLACEBO_GLSLANG_LIBRARY_LOOKUP = "cxx.find_library('glslang', required: required, static: static, dirs: vulkan_lib_dirs)"
+PLACEBO_TIMER_RING_OLD = (
+    "// Gives us enough queries for 8 results\n#define QUERY_POOL_SIZE 16",
+    "atomic_uint_fast8_t pending; // bitmask of queries that are still running",
+    "static inline uint_fast8_t timer_bit(int index)",
+)
+PLACEBO_TIMER_RING_NEW = (
+    "// Gives us enough queries for 32 results\n#define QUERY_POOL_SIZE 64",
+    "atomic_uint_fast32_t pending; // bitmask of queries that are still running",
+    "static inline uint_fast32_t timer_bit(int index)",
+)
 
 
 def base_sources_close(meson: str) -> int:
@@ -73,6 +83,20 @@ def enable_android_glslang_library_search(meson: str) -> str:
     raise SystemExit("Pinned libplacebo glslang lookup changed; refusing a Vulkan build with an unverified SPIR-V compiler path")
 
 
+def enlarge_libplacebo_timer_ring(gpu_c: str) -> str:
+    old_counts = [gpu_c.count(marker) for marker in PLACEBO_TIMER_RING_OLD]
+    new_counts = [gpu_c.count(marker) for marker in PLACEBO_TIMER_RING_NEW]
+    if old_counts == [0, 0, 0] and new_counts == [1, 1, 1]:
+        return gpu_c
+    if old_counts != [1, 1, 1] or new_counts != [0, 0, 0]:
+        raise SystemExit(
+            "Pinned libplacebo Vulkan timer ring changed; refusing an unverified query-pool or pending-mask patch"
+        )
+    for old, new in zip(PLACEBO_TIMER_RING_OLD, PLACEBO_TIMER_RING_NEW, strict=True):
+        gpu_c = gpu_c.replace(old, new, 1)
+    return gpu_c
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--mpv-dir", required=True, type=Path)
@@ -83,7 +107,8 @@ def main() -> None:
     meson_path = mpv_dir / "meson.build"
     vo_path = mpv_dir / "video/out/vo_gpu_next.c"
     glslang_meson_path = libplacebo_dir / "src/glsl/meson.build"
-    for path in (meson_path, vo_path, glslang_meson_path):
+    gpu_timer_path = libplacebo_dir / "src/vulkan/gpu.c"
+    for path in (meson_path, vo_path, glslang_meson_path, gpu_timer_path):
         if not path.is_file():
             raise SystemExit(f"Pinned native source is missing required file {path}")
 
@@ -104,6 +129,7 @@ def main() -> None:
     meson = meson_path.read_text()
     meson = enable_android_vulkan_dependency(meson)
     glslang_meson = enable_android_glslang_library_search(glslang_meson_path.read_text())
+    gpu_timer = enlarge_libplacebo_timer_ring(gpu_timer_path.read_text())
     vo_marker = "MPVFLOW_GPU_INTEGRATION"
     meson_marker = "# MPVFLOW_ANDROID_GPU"
     if vo_marker not in vo:
@@ -132,10 +158,11 @@ def main() -> None:
         raise SystemExit("GPU Flow Meson marker exists without its source registration")
 
     glslang_meson_path.write_text(glslang_meson)
+    gpu_timer_path.write_text(gpu_timer)
     print(
         f"Installed direct GPU MPVFlow into {mpv_dir} and corrected libplacebo's "
-        f"Android glslang search path in {glslang_meson_path}; the legacy CPU "
-        "filter is not compiled or registered by this build."
+        f"Android glslang search path in {glslang_meson_path} and Vulkan timestamp "
+        f"ring in {gpu_timer_path}; the legacy CPU filter is not compiled or registered by this build."
     )
 
 

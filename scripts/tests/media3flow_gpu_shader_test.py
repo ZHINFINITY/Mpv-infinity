@@ -87,6 +87,8 @@ assert "external fun nativeAnalyzePair" in NATIVE
 assert "external fun nativeGetVulkanTimingStats(context: Long): LongArray?" in NATIVE
 assert "mpvflow_gpu_get_timing_stats(context->flow, &stats)" in JNI
 assert "computeTimestampValidBits" in JNI and "timestamp_valid_bits=%u" in JNI
+assert "context->computeTimestampValidBits = timingStats.compute_timestamp_valid_bits;" in JNI
+assert "values[1] = stats.compute_timestamp_valid_bits;" in JNI
 assert "vulkanTimestampSupported" in JNI and "compute_queue_timestampValidBits_zero" in JNI
 assert "pending_or_dropped" in (ROOT / "app/src/main/java/app/infinity/mpvz/ui/player/Media3FlowDiagnostics.kt").read_text()
 assert "Vulkan/libplacebo timestamp queries" in (ROOT / "app/src/main/java/app/infinity/mpvz/ui/player/controls/PlayerControls.kt").read_text()

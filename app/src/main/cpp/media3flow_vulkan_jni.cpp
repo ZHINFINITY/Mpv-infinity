@@ -1019,16 +1019,6 @@ Java_app_infinity_mpvz_ui_player_Media3FlowVulkanNative_nativeCreateContext(
     auto *context = new FlowContext();
     context->placeboLog = placeboLog;
     context->vulkan = vulkan;
-    uint32_t queueFamilyCount = 0;
-    vkGetPhysicalDeviceQueueFamilyProperties(vulkan->phys_device, &queueFamilyCount, nullptr);
-    if (vulkan->queue_compute.index < queueFamilyCount) {
-        std::vector<VkQueueFamilyProperties> queueFamilies(queueFamilyCount);
-        vkGetPhysicalDeviceQueueFamilyProperties(vulkan->phys_device, &queueFamilyCount,
-                                                 queueFamilies.data());
-        const auto &computeFamily = queueFamilies[vulkan->queue_compute.index];
-        if (computeFamily.queueFlags & VK_QUEUE_COMPUTE_BIT)
-            context->computeTimestampValidBits = computeFamily.timestampValidBits;
-    }
     initializeExternalSync(context);
     context->getBufferProperties = reinterpret_cast<PFN_vkGetAndroidHardwareBufferPropertiesANDROID>(
         vkGetDeviceProcAddr(vulkan->device, "vkGetAndroidHardwareBufferPropertiesANDROID"));
@@ -1073,6 +1063,7 @@ Java_app_infinity_mpvz_ui_player_Media3FlowVulkanNative_nativeCreateContext(
     }
     MPVFlowGPUTimingStats timingStats{};
     mpvflow_gpu_get_timing_stats(context->flow, &timingStats);
+    context->computeTimestampValidBits = timingStats.compute_timestamp_valid_bits;
     uint32_t timerObjectCount = 0;
     for (uint32_t i = 0; i < timingStats.stage_count; i++)
         timerObjectCount += timingStats.stages[i].timer_created;
@@ -1510,7 +1501,7 @@ Java_app_infinity_mpvz_ui_player_Media3FlowVulkanNative_nativeGetVulkanTimingSta
     constexpr jsize valueCount = headerFields + MPVFLOW_GPU_STAGE_COUNT * stageFields;
     jlong values[valueCount]{};
     values[0] = 1; // JNI snapshot schema version
-    values[1] = context->computeTimestampValidBits;
+    values[1] = stats.compute_timestamp_valid_bits;
     values[2] = stats.stage_count;
     for (uint32_t i = 0; i < stats.stage_count && i < MPVFLOW_GPU_STAGE_COUNT; i++) {
         const auto &stage = stats.stages[i];

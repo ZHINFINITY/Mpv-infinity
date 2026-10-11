@@ -8,8 +8,10 @@ import kotlin.math.roundToInt
 /** Reduced dimensions for motion estimation; source/output textures stay at source dimensions. */
 internal data class Media3FlowMotionSize(val width: Int, val height: Int)
 
-internal const val MEDIA3_FLOW_GRID_STEP = 6
+// Must match FLOW_STEP/FLOW_BLOCK in mpvflow_gpu.c; this is telemetry only.
+internal const val MEDIA3_FLOW_GRID_STEP = 4
 internal const val MEDIA3_FLOW_BLOCK_SIZE = 8
+// Legacy pure-Kotlin geometry/reference helpers below are not shader controls.
 internal const val MEDIA3_FLOW_COARSE_BLOCK_SIZE = 4
 internal const val MEDIA3_FLOW_COARSE_GRID_STEP = 3
 /** Each pyramid level samples candidates every two pixels before a full-resolution local refinement. */
@@ -75,8 +77,8 @@ internal object Media3FlowGeometry {
       "Processing dimensions must fit a motion block"
     }
     return Media3FlowGridSize(
-      width = (processingWidth - blockSize) / gridStep + 1,
-      height = (processingHeight - blockSize) / gridStep + 1,
+      width = (processingWidth - blockSize + gridStep - 1) / gridStep + 1,
+      height = (processingHeight - blockSize + gridStep - 1) / gridStep + 1,
     )
   }
 

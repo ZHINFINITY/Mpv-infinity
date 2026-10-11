@@ -78,6 +78,31 @@ for bad_placebo_meson in (
     else:
         raise AssertionError("unexpected libplacebo compiler lookup changes must fail closed")
 
+timer_source = (
+    "// Gives us enough queries for 8 results\n#define QUERY_POOL_SIZE 16\n"
+    "struct pl_timer_t { atomic_uint_fast8_t pending; // bitmask of queries that are still running\n};\n"
+    "static inline uint_fast8_t timer_bit(int index)\n"
+)
+patched_timer_source = prepare.enlarge_libplacebo_timer_ring(timer_source)
+assert "#define QUERY_POOL_SIZE 64" in patched_timer_source, "the Vulkan timer ring must retain 32 complete results"
+assert "atomic_uint_fast32_t pending" in patched_timer_source, "the pending mask must represent all 32 timer slots"
+assert "static inline uint_fast32_t timer_bit(int index)" in patched_timer_source, "timer bits must use the widened mask type"
+assert prepare.enlarge_libplacebo_timer_ring(patched_timer_source) == patched_timer_source, (
+    "libplacebo timer-ring preparation must be safe to repeat"
+)
+for bad_timer_source in (
+    timer_source.replace("QUERY_POOL_SIZE 16", "QUERY_POOL_SIZE 32"),
+    timer_source + "// Gives us enough queries for 8 results\n#define QUERY_POOL_SIZE 16\n",
+    timer_source.replace("atomic_uint_fast8_t pending", "atomic_uint_fast16_t pending"),
+    patched_timer_source.replace("uint_fast32_t timer_bit", "uint_fast16_t timer_bit"),
+):
+    try:
+        prepare.enlarge_libplacebo_timer_ring(bad_timer_source)
+    except SystemExit:
+        pass
+    else:
+        raise AssertionError("unexpected libplacebo timer-ring layout must fail closed")
+
 build = BUILD.read_text(encoding="utf-8")
 prepare_call = 'python3 "$ROOT/scripts/prepare-mpvflow.py" --mpv-dir "$BUILDSCRIPTS/deps/mpv" --libplacebo-dir "$BUILDSCRIPTS/deps/libplacebo"'
 assert prepare_call in build, "the native build must patch pinned libplacebo before compilation"

@@ -71,6 +71,7 @@ struct MPVFlowGPUStageTiming {
 
 struct MPVFlowGPUTimingStats {
     uint32_t stage_count;
+    uint32_t compute_timestamp_valid_bits;
     struct MPVFlowGPUStageTiming stages[MPVFLOW_GPU_STAGE_COUNT];
 };
 

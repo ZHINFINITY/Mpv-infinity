@@ -7,43 +7,32 @@ import org.junit.Test
 
 class Media3FlowGeometryTest {
   @Test
-  fun sharedFlowPyramidGeometryAndSearchConstantsStayAligned() {
-    assertEquals(6, MEDIA3_FLOW_GRID_STEP)
-    assertEquals(4, MEDIA3_FLOW_COARSE_BLOCK_SIZE)
-    assertEquals(3, MEDIA3_FLOW_COARSE_GRID_STEP)
-    assertEquals(4, MEDIA3_FLOW_COARSE_SEARCH_RADIUS)
-    assertEquals(2, MEDIA3_FLOW_FINE_SEARCH_RADIUS)
-    assertEquals(2f, MEDIA3_FLOW_FINE_PRIOR_SCALE)
+  fun sharedVulkanFlowGridUsesTheCoreStrideAcrossPyramidLevels() {
+    assertEquals(4, MEDIA3_FLOW_GRID_STEP)
+    assertEquals(8, MEDIA3_FLOW_BLOCK_SIZE)
     assertEquals(Media3FlowMotionSize(200, 113), Media3FlowGeometry.coarseMotionSize(400, 225))
     assertEquals(Media3FlowMotionSize(100, 57), Media3FlowGeometry.quarterMotionSize(400, 225))
-    assertEquals(Media3FlowGridSize(66, 37), Media3FlowGeometry.motionGridSize(400, 225))
-    assertEquals(
-      Media3FlowGridSize(16, 9),
-      Media3FlowGeometry.motionGridSize(100, 57, MEDIA3_FLOW_QUARTER_BLOCK_SIZE, MEDIA3_FLOW_QUARTER_GRID_STEP),
-    )
-    assertEquals(0.25f, Media3FlowGeometry.priorCellScale(3, 6), 0f)
-    assertEquals(1f, Media3FlowGeometry.priorCellScale(6, 3), 0f)
+    assertEquals(Media3FlowGridSize(99, 56), Media3FlowGeometry.motionGridSize(400, 225))
+    assertEquals(Media3FlowGridSize(24, 14), Media3FlowGeometry.motionGridSize(100, 57))
   }
 
   @Test
-  fun coarseAndFinePatchOriginsStayAlignedAtOddAndEvenBoundaries() {
+  fun motionGridOriginsStayValidAtOddAndEvenBoundaries() {
     val dimensions = listOf(16 to 16, 17 to 31, 400 to 225, 640 to 360, 721 to 359)
     for ((width, height) in dimensions) {
       val grid = Media3FlowGeometry.motionGridSize(width, height)
-      val coarseWidth = (width + 1) / 2
-      val coarseHeight = (height + 1) / 2
       for (cellX in 0 until grid.width) {
-        val fineOrigin = (cellX * MEDIA3_FLOW_GRID_STEP).coerceAtMost(width - MEDIA3_FLOW_BLOCK_SIZE)
-        val coarseOrigin = (cellX * MEDIA3_FLOW_COARSE_GRID_STEP)
-          .coerceAtMost(coarseWidth - MEDIA3_FLOW_COARSE_BLOCK_SIZE) * 2
-        assertEquals("x anchor mismatch at ${width}x${height}, cell $cellX", fineOrigin, coarseOrigin)
+        val origin = (cellX * MEDIA3_FLOW_GRID_STEP).coerceAtMost(width - MEDIA3_FLOW_BLOCK_SIZE)
+        assertTrue("x origin outside ${width}x${height}, cell $cellX", origin in 0..(width - MEDIA3_FLOW_BLOCK_SIZE))
       }
       for (cellY in 0 until grid.height) {
-        val fineOrigin = (cellY * MEDIA3_FLOW_GRID_STEP).coerceAtMost(height - MEDIA3_FLOW_BLOCK_SIZE)
-        val coarseOrigin = (cellY * MEDIA3_FLOW_COARSE_GRID_STEP)
-          .coerceAtMost(coarseHeight - MEDIA3_FLOW_COARSE_BLOCK_SIZE) * 2
-        assertEquals("y anchor mismatch at ${width}x${height}, cell $cellY", fineOrigin, coarseOrigin)
+        val origin = (cellY * MEDIA3_FLOW_GRID_STEP).coerceAtMost(height - MEDIA3_FLOW_BLOCK_SIZE)
+        assertTrue("y origin outside ${width}x${height}, cell $cellY", origin in 0..(height - MEDIA3_FLOW_BLOCK_SIZE))
       }
+      val xOrigins = (0 until grid.width).map { (it * MEDIA3_FLOW_GRID_STEP).coerceAtMost(width - MEDIA3_FLOW_BLOCK_SIZE) }
+      val yOrigins = (0 until grid.height).map { (it * MEDIA3_FLOW_GRID_STEP).coerceAtMost(height - MEDIA3_FLOW_BLOCK_SIZE) }
+      assertEquals("duplicate x block origin at ${width}x${height}", xOrigins.size, xOrigins.distinct().size)
+      assertEquals("duplicate y block origin at ${width}x${height}", yOrigins.size, yOrigins.distinct().size)
     }
   }
 
@@ -136,12 +125,12 @@ class Media3FlowGeometryTest {
   @Test
   fun motionGridUsesOnlyValidRegularBlockOrigins() {
     val grid = Media3FlowGeometry.motionGridSize(640, 360)
-    assertEquals(Media3FlowGridSize(106, 59), grid)
-    assertEquals(630, (grid.width - 1) * MEDIA3_FLOW_GRID_STEP)
-    assertEquals(348, (grid.height - 1) * MEDIA3_FLOW_GRID_STEP)
+    assertEquals(Media3FlowGridSize(159, 89), grid)
+    assertEquals(632, (grid.width - 1) * MEDIA3_FLOW_GRID_STEP)
+    assertEquals(352, (grid.height - 1) * MEDIA3_FLOW_GRID_STEP)
     assertTrue((grid.width - 1) * MEDIA3_FLOW_GRID_STEP <= 640 - MEDIA3_FLOW_BLOCK_SIZE)
     assertTrue((grid.height - 1) * MEDIA3_FLOW_GRID_STEP <= 360 - MEDIA3_FLOW_BLOCK_SIZE)
-    assertEquals(Media3FlowGridSize(105, 60), Media3FlowGeometry.motionGridSize(632, 362))
+    assertEquals(Media3FlowGridSize(157, 90), Media3FlowGeometry.motionGridSize(632, 362))
   }
 
   @Test

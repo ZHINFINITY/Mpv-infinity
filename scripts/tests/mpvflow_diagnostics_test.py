@@ -13,6 +13,7 @@ DEBUG_LOGS_SCREEN = (ROOT / "app/src/main/java/app/infinity/mpvz/presentation/cr
 CRASH_ACTIVITY = (ROOT / "app/src/main/java/app/infinity/mpvz/presentation/crash/CrashActivity.kt").read_text(encoding="utf-8")
 DECODERS_SHEET = (ROOT / "app/src/main/java/app/infinity/mpvz/ui/player/controls/components/sheets/DecodersSheet.kt").read_text(encoding="utf-8")
 MEDIA3_FLOW_SINK = (ROOT / "app/src/main/java/app/infinity/mpvz/ui/player/Media3FlowVideoSink.kt").read_text(encoding="utf-8")
+FLOW_GPU_CORE = (ROOT / "app/src/main/cpp/mpvflow/mpvflow_gpu.c").read_text(encoding="utf-8")
 
 
 def require(source: str, fragment: str, message: str) -> None:
@@ -96,6 +97,17 @@ require(MEDIA3_FLOW_SINK, "oldestPendingInputMs=", "Media3 must report the age o
 require(MEDIA3_FLOW_SINK, "pairPtsGapMs=", "Media3 must report the source PTS gap and capture age of the selected pair")
 require(MEDIA3_FLOW_SINK, "deadlineMissReasons=", "Media3 must categorize missed output tick contexts")
 require(MEDIA3_FLOW_SINK, "outputCallbackLatenessMs=", "Media3 must report Choreographer-to-GL callback lateness")
+require(FLOW_GPU_CORE, "queue_timestamp_valid_bits=%u", "Vulkan timer setup must log timestamp capability for the compute queue")
+require(FLOW_GPU_CORE, "VK_QUEUE_COMPUTE_BIT", "timestamp capability must be queried from the actual compute queue family")
+require(FLOW_GPU_CORE, "compute_queue_timestamp_valid_bits_zero", "unsupported Vulkan timestamps must be explicitly reported")
+require(FLOW_GPU_CORE, "event=gpu_timing api=Vulkan timer_source=%s", "Vulkan timing must emit direct per-stage records with an explicit source")
+require(FLOW_GPU_CORE, "dispatches_total=%llu", "Vulkan stage diagnostics must count issued compute work even without timers")
+require(FLOW_GPU_CORE, "unresolved_dispatches_total=%llu", "Vulkan stage diagnostics must expose unresolved or unavailable timer results")
+require(FLOW_GPU_CORE, "event=motion_geometry state=ready", "MPV and Media3 must expose the actual allocated Vulkan motion grid")
+require(FLOW_GPU_CORE, "motion_grid=%ux%u grid_step=%d block_size=%d", "motion geometry records must disambiguate processing pixels from vector-grid cells")
+require(FLOW_GPU_CORE, "poll_policy=nonblocking_frame_operation_boundary", "Vulkan timestamp polling must stay nonblocking and outside the per-dispatch hot path")
+run_pass_body = FLOW_GPU_CORE.split("static bool run_pass(", 1)[1].split("static bool allocate_pair_textures(", 1)[0]
+assert "flow_timer_poll_and_report" not in run_pass_body, "timer-result polling must not add CPU/Vulkan query overhead to every compute dispatch"
 require(MPV_VIEW, '"MPVFLOW_DIAGNOSTIC event=renderer_config', "startup must record the applied MPV renderer settings")
 require(MPV_VIEW, "option_order=gpu-api>gpu-context>vo", "startup must record the actual Vulkan renderer-option order")
 require(MPV_VIEW, 'PlaybackSession.setOptionString("display-fps-override", displayRefreshRate.hz.toString())', "Flow must provide MPV with the Android display refresh rate")

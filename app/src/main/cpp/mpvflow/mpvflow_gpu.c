@@ -7,6 +7,8 @@
  */
 #include "mpvflow_gpu.h"
 
+#include <libplacebo/vulkan.h>
+
 #include <math.h>
 #include <stdarg.h>
 #include <stdio.h>
@@ -60,6 +62,9 @@ struct MPVFlowGPUContext {
     pl_gpu gpu;                 /* borrowed */
     int max_dimension;
     int search_radius;
+    uint32_t compute_timestamp_valid_bits;
+    int motion_log_w;
+    int motion_log_h;
     uint32_t diagnostic_log_mask;
     pl_fmt fmt_rgba16f;
     pl_fmt fmt_rgba8;
@@ -120,6 +125,38 @@ static uint64_t flow_monotonic_ns(void)
     return (uint64_t) ts.tv_sec * 1000000000ull + (uint64_t) ts.tv_nsec;
 }
 
+static uint32_t flow_compute_timestamp_valid_bits(pl_gpu gpu)
+{
+    pl_vulkan vk = pl_vulkan_get(gpu);
+    if (!vk || !vk->get_proc_addr)
+        return 0;
+    PFN_vkGetPhysicalDeviceQueueFamilyProperties get_queue_properties =
+        (PFN_vkGetPhysicalDeviceQueueFamilyProperties)
+            vk->get_proc_addr(vk->instance, "vkGetPhysicalDeviceQueueFamilyProperties");
+    if (!get_queue_properties)
+        return 0;
+
+    uint32_t queue_family_count = 0;
+    get_queue_properties(vk->phys_device, &queue_family_count, NULL);
+    if (!queue_family_count)
+        return 0;
+    VkQueueFamilyProperties *queue_families =
+        calloc(queue_family_count, sizeof(*queue_families));
+    if (!queue_families)
+        return 0;
+    get_queue_properties(vk->phys_device, &queue_family_count, queue_families);
+
+    uint32_t valid_bits = 0;
+    if (vk->queue_compute.index < queue_family_count) {
+        const VkQueueFamilyProperties *compute_family =
+            &queue_families[vk->queue_compute.index];
+        if (compute_family->queueFlags & VK_QUEUE_COMPUTE_BIT)
+            valid_bits = compute_family->timestampValidBits;
+    }
+    free(queue_families);
+    return valid_bits;
+}
+
 static enum FlowTimerStage flow_timer_stage(const char *stage)
 {
     if (strstr(stage, "preprocess"))
@@ -133,24 +170,26 @@ static enum FlowTimerStage flow_timer_stage(const char *stage)
 
 static void flow_timer_poll_and_report(MPVFlowGPUContext *ctx)
 {
+    if (!ctx)
+        return;
     static const char *const names[FLOW_TIMER_COUNT] = {
         "preprocess", "analysis", "motion", "synthesis",
     };
     for (int i = 0; i < FLOW_TIMER_COUNT; i++) {
-        if (!ctx->timers[i].timer)
-            continue;
-        for (int n = 0; n < 32; n++) {
-            uint64_t elapsed = pl_timer_query(ctx->gpu, ctx->timers[i].timer);
-            if (!elapsed)
-                break;
-            ctx->timers[i].samples++;
-            ctx->timers[i].total_ns += elapsed;
-            if (elapsed > ctx->timers[i].max_ns)
-                ctx->timers[i].max_ns = elapsed;
-            ctx->timers[i].completed_samples++;
-            ctx->timers[i].lifetime_total_ns += elapsed;
-            if (elapsed > ctx->timers[i].lifetime_max_ns)
-                ctx->timers[i].lifetime_max_ns = elapsed;
+        if (ctx->compute_timestamp_valid_bits && ctx->timers[i].timer) {
+            for (int n = 0; n < 32; n++) {
+                uint64_t elapsed = pl_timer_query(ctx->gpu, ctx->timers[i].timer);
+                if (!elapsed)
+                    break;
+                ctx->timers[i].samples++;
+                ctx->timers[i].total_ns += elapsed;
+                if (elapsed > ctx->timers[i].max_ns)
+                    ctx->timers[i].max_ns = elapsed;
+                ctx->timers[i].completed_samples++;
+                ctx->timers[i].lifetime_total_ns += elapsed;
+                if (elapsed > ctx->timers[i].lifetime_max_ns)
+                    ctx->timers[i].lifetime_max_ns = elapsed;
+            }
         }
     }
 
@@ -162,13 +201,26 @@ static void flow_timer_poll_and_report(MPVFlowGPUContext *ctx)
     const double window_ms = (now - ctx->timing_window_start_ns) / 1000000.0;
     for (int i = 0; i < FLOW_TIMER_COUNT; i++) {
         struct FlowTimerStats *stats = &ctx->timers[i];
-        if (stats->samples) {
+        if (stats->dispatches || stats->completed_samples) {
+            const uint64_t unresolved = stats->dispatches > stats->completed_samples
+                ? stats->dispatches - stats->completed_samples : 0;
             flow_log(ctx->gpu, PL_LOG_INFO,
-                     "MPVFLOW_DIAGNOSTIC component=mpvflow event=gpu_timing source=libplacebo_timestamp "
-                     "stage=%s samples=%llu average_us=%.1f maximum_us=%.1f window_ms=%.1f nonblocking=1",
-                     names[i], (unsigned long long) stats->samples,
-                     (double) stats->total_ns / stats->samples / 1000.0,
-                     (double) stats->max_ns / 1000.0, window_ms);
+                     "MPVFLOW_DIAGNOSTIC component=mpvflow event=gpu_timing api=Vulkan timer_source=%s "
+                     "stage=%s timer_created=%d result_status=%s dispatches_total=%llu "
+                     "completed_total=%llu unresolved_dispatches_total=%llu samples=%llu "
+                     "average_us=%.1f maximum_us=%.1f window_ms=%.1f queue_timestamp_valid_bits=%u nonblocking=1",
+                     ctx->compute_timestamp_valid_bits && stats->timer
+                         ? "libplacebo_timestamp" : "unsupported",
+                     names[i], stats->timer != NULL,
+                     !ctx->compute_timestamp_valid_bits || !stats->timer ? "unsupported" :
+                         stats->samples ? "sampled" : "no_ready_result_this_window",
+                     (unsigned long long) stats->dispatches,
+                     (unsigned long long) stats->completed_samples,
+                     (unsigned long long) unresolved,
+                     (unsigned long long) stats->samples,
+                     stats->samples ? (double) stats->total_ns / stats->samples / 1000.0 : 0.0,
+                     stats->samples ? (double) stats->max_ns / 1000.0 : 0.0,
+                     window_ms, ctx->compute_timestamp_valid_bits);
         }
         stats->samples = stats->total_ns = stats->max_ns = 0;
     }
@@ -239,7 +291,7 @@ static const char shader_flow[] =
     "int sadAt(ivec2 p,ivec2 d,ivec2 sz,int cutoff){ int cost=0; for(int y=0;y<8;y++) for(int x=0;x<8;x++){ float a=imageLoad(srcTex,p+ivec2(x,y)).r; float b=imageLoad(dstTex,p+ivec2(x,y)+d).r; cost+=int(abs(a-b)*255.0+0.5); if(cost>cutoff) return cost; } return cost; }\n"
     "float subpixelOffset(float minusCost,float centerCost,float plusCost){ float curvature=minusCost-2.0*centerCost+plusCost; if(centerCost>minusCost||centerCost>plusCost||curvature<=0.0001) return 0.0; return clamp(0.5*(minusCost-plusCost)/curvature,-0.5,0.5); }\n"
     "float refineAxis(ivec2 p,ivec2 v,ivec2 axis,ivec2 sz,int centerCost){ ivec2 m=v-axis,q=v+axis; if(any(lessThan(p+m,ivec2(0)))||any(lessThan(p+q,ivec2(0)))|| any(greaterThan(p+m,sz-ivec2(8)))||any(greaterThan(p+q,sz-ivec2(8)))) return 0.0; int cm=sadAt(p,m,sz,2147483647),cp=sadAt(p,q,sz,2147483647); return subpixelOffset(float(cm),float(centerCost),float(cp)); }\n"
-    "void main(){ ivec2 g=ivec2(gl_GlobalInvocationID.xy); ivec2 grid=imageSize(flowTex); if(any(greaterThanEqual(g,grid))) return; ivec2 sz=pc.cfg.xy; ivec2 p=min(g*4,sz-ivec2(8)); ivec2 center=ivec2(0); if(pc.cfg.w!=0){ ivec2 pg=imageSize(parentTex); vec2 pc=vec2(p)*0.5/4.0; ivec2 a=clamp(ivec2(floor(pc)),ivec2(0),pg-1); ivec2 b=min(a+1,pg-1); vec2 f=fract(pc); vec2 top=mix(imageLoad(parentTex,a).rg,imageLoad(parentTex,ivec2(b.x,a.y)).rg,f.x); vec2 bot=mix(imageLoad(parentTex,ivec2(a.x,b.y)).rg,imageLoad(parentTex,b).rg,f.x); center=ivec2(round(mix(top,bot,f.y)*2.0)); } center=clamp(center,-p,sz-ivec2(8)-p); int radius=pc.cfg.z; ivec2 lo=max(-p,center-ivec2(radius)); ivec2 hi=min(sz-ivec2(8)-p,center+ivec2(radius)); ivec2 bestVector=center; int best=sadAt(p,bestVector,sz,2147483647),second=2147483647; for(int dy=-8;dy<=8;dy++) for(int dx=-8;dx<=8;dx++){ if(abs(dx)>radius||abs(dy)>radius) continue; ivec2 d=center+ivec2(dx,dy); if(any(lessThan(d,lo))||any(greaterThan(d,hi))||all(equal(d,bestVector))) continue; int c=sadAt(p,d,sz,second); if(c<best){second=best;best=c;bestVector=d;} else if(c<second) second=c; } vec2 refined=vec2(bestVector); refined.x+=refineAxis(p,bestVector,ivec2(1,0),sz,best); refined.y+=refineAxis(p,bestVector,ivec2(0,1),sz,best); float uniqueness=second<2147483647?clamp(float(second-best)/max(float(second),1.0),0.0,1.0):0.0; imageStore(flowTex,g,vec4(refined,float(best)/(64.0*255.0),uniqueness)); }\n"
+    "void main(){ ivec2 g=ivec2(gl_GlobalInvocationID.xy); ivec2 grid=imageSize(flowTex); if(any(greaterThanEqual(g,grid))) return; ivec2 sz=pc.cfg.xy; ivec2 p=min(g*4,sz-ivec2(8)); ivec2 center=ivec2(0); if(pc.cfg.w!=0){ ivec2 pg=imageSize(parentTex); vec2 pc=vec2(p)*0.5/4.0; ivec2 a=clamp(ivec2(floor(pc)),ivec2(0),pg-1); ivec2 b=min(a+1,pg-1); vec2 f=fract(pc); vec2 top=mix(imageLoad(parentTex,a).rg,imageLoad(parentTex,ivec2(b.x,a.y)).rg,f.x); vec2 bot=mix(imageLoad(parentTex,ivec2(a.x,b.y)).rg,imageLoad(parentTex,b).rg,f.x); center=ivec2(round(mix(top,bot,f.y)*2.0)); } center=clamp(center,-p,sz-ivec2(8)-p); int radius=pc.cfg.z; ivec2 lo=max(-p,center-ivec2(radius)); ivec2 hi=min(sz-ivec2(8)-p,center+ivec2(radius)); ivec2 bestVector=center; int best=sadAt(p,bestVector,sz,2147483647),second=2147483647; for(int dy=lo.y-center.y;dy<=hi.y-center.y;dy++) for(int dx=lo.x-center.x;dx<=hi.x-center.x;dx++){ ivec2 d=center+ivec2(dx,dy); if(all(equal(d,bestVector))) continue; int c=sadAt(p,d,sz,second); if(c<best){second=best;best=c;bestVector=d;} else if(c<second) second=c; } vec2 refined=vec2(bestVector); refined.x+=refineAxis(p,bestVector,ivec2(1,0),sz,best); refined.y+=refineAxis(p,bestVector,ivec2(0,1),sz,best); float uniqueness=second<2147483647?clamp(float(second-best)/max(float(second),1.0),0.0,1.0):0.0; imageStore(flowTex,g,vec4(refined,float(best)/(64.0*255.0),uniqueness)); }\n"
 ;
 
 static const char shader_synthesize[] =
@@ -325,9 +377,7 @@ static bool run_pass(MPVFlowGPUContext *ctx, pl_pass pass,
         .timer = timer,
     };
     (void) nbindings; /* descriptor array length is fixed by the pass */
-    flow_timer_poll_and_report(ctx);
-    if (timer)
-        ctx->timers[timer_stage].dispatches++;
+    ctx->timers[timer_stage].dispatches++;
     pl_pass_run(ctx->gpu, &run);
     return true;
 }
@@ -341,11 +391,11 @@ static bool allocate_pair_textures(MPVFlowGPUContext *ctx,
         lv->w = w; lv->h = h;
         lv->luma[0] = create_texture(ctx, w, h, ctx->fmt_rgba16f, false, "pyramid_luma_frame0");
         lv->luma[1] = create_texture(ctx, w, h, ctx->fmt_rgba16f, false, "pyramid_luma_frame1");
-        lv->forward = create_texture(ctx, (w + FLOW_STEP - 1) / FLOW_STEP,
-                                     (h + FLOW_STEP - 1) / FLOW_STEP,
+        const int grid_w = (w - FLOW_BLOCK + FLOW_STEP - 1) / FLOW_STEP + 1;
+        const int grid_h = (h - FLOW_BLOCK + FLOW_STEP - 1) / FLOW_STEP + 1;
+        lv->forward = create_texture(ctx, grid_w, grid_h,
                                      ctx->fmt_rgba16f, false, "motion_forward_field");
-        lv->backward = create_texture(ctx, (w + FLOW_STEP - 1) / FLOW_STEP,
-                                      (h + FLOW_STEP - 1) / FLOW_STEP,
+        lv->backward = create_texture(ctx, grid_w, grid_h,
                                       ctx->fmt_rgba16f, false, "motion_backward_field");
         if (!lv->luma[0] || !lv->luma[1] || !lv->forward || !lv->backward)
             return false;
@@ -591,17 +641,24 @@ MPVFlowGPUContext *mpvflow_gpu_create(pl_gpu gpu,
         "preprocess", "analysis", "motion", "synthesis",
     };
     int timer_count = 0;
-    for (int i = 0; i < FLOW_TIMER_COUNT; i++) {
-        ctx->timers[i].timer = pl_timer_create(gpu);
-        timer_count += ctx->timers[i].timer != NULL;
+    if (ctx->compute_timestamp_valid_bits) {
+        for (int i = 0; i < FLOW_TIMER_COUNT; i++) {
+            ctx->timers[i].timer = pl_timer_create(gpu);
+            timer_count += ctx->timers[i].timer != NULL;
+        }
     }
     ctx->timing_window_start_ns = flow_monotonic_ns();
     flow_log(gpu, PL_LOG_INFO,
              "MPVFLOW_DIAGNOSTIC component=mpvflow event=gpu_timing state=%s "
              "api=Vulkan timer_source=libplacebo_timestamp_timer_objects timer_objects=%d "
-             "timer_categories=%d timestamp_results=awaiting_compute_dispatch nonblocking=1 "
+             "queue_timestamp_valid_bits=%u timer_categories=%d timestamp_results=%s "
+             "poll_policy=nonblocking_frame_operation_boundary nonblocking=1 "
              "fallback=CPU_submission_and_output_cadence",
-             timer_count ? "created" : "unsupported", timer_count, FLOW_TIMER_COUNT);
+             !ctx->compute_timestamp_valid_bits ? "unsupported" :
+                 timer_count == FLOW_TIMER_COUNT ? "supported" : "partial",
+             timer_count, ctx->compute_timestamp_valid_bits, FLOW_TIMER_COUNT,
+             ctx->compute_timestamp_valid_bits ? "awaiting_compute_dispatch" :
+                 "compute_queue_timestamp_valid_bits_zero");
     (void) timer_names;
     if (status)
         *status = MPVFLOW_GPU_OK;
@@ -637,6 +694,7 @@ void mpvflow_gpu_get_timing_stats(MPVFlowGPUContext *ctx,
     stats->stage_count = MPVFLOW_GPU_STAGE_COUNT;
     if (!ctx)
         return;
+    stats->compute_timestamp_valid_bits = ctx->compute_timestamp_valid_bits;
     flow_timer_poll_and_report(ctx);
     for (int i = 0; i < FLOW_TIMER_COUNT; i++) {
         const struct FlowTimerStats *timer = &ctx->timers[i];
@@ -658,6 +716,7 @@ enum MPVFlowGPUResult mpvflow_gpu_prepare_input(MPVFlowGPUContext *ctx,
         *prepared_out = NULL;
     if (!ctx || !input || !prepared_out)
         return MPVFLOW_GPU_INVALID;
+    flow_timer_poll_and_report(ctx);
     if (!input->params.sampleable || input->params.w < FLOW_BLOCK ||
         input->params.h < FLOW_BLOCK) {
         flow_log_once(ctx, FLOW_DIAG_PREPARE_INPUT, PL_LOG_WARN,
@@ -720,6 +779,7 @@ enum MPVFlowGPUResult mpvflow_gpu_analyze_pair(MPVFlowGPUContext *ctx,
         *pair_out = NULL;
     if (!ctx || !frame0 || !frame1 || !pair_out)
         return MPVFLOW_GPU_INVALID;
+    flow_timer_poll_and_report(ctx);
     const struct pl_tex_params *p0 = &frame0->params;
     const struct pl_tex_params *p1 = &frame1->params;
     if (p0->d != 0 || p1->d != 0 || p0->w != p1->w || p0->h != p1->h ||
@@ -850,6 +910,17 @@ enum MPVFlowGPUResult mpvflow_gpu_analyze_pair(MPVFlowGPUContext *ctx,
                 goto failure;
         }
     }
+    if (ctx->motion_log_w != pair->w || ctx->motion_log_h != pair->h) {
+        flow_log(ctx->gpu, PL_LOG_INFO,
+                 "MPVFLOW_DIAGNOSTIC component=mpvflow event=motion_geometry state=ready "
+                 "processing=%dx%d pyramid_levels=%d motion_grid=%ux%u grid_step=%d block_size=%d "
+                 "search_radius=%d source_pts_preserved=caller_owned",
+                 pair->w, pair->h, pair->levels,
+                 pair->level[0].forward->params.w, pair->level[0].forward->params.h,
+                 FLOW_STEP, FLOW_BLOCK, ctx->search_radius);
+        ctx->motion_log_w = pair->w;
+        ctx->motion_log_h = pair->h;
+    }
     *pair_out = pair;
     return MPVFLOW_GPU_OK;
 
@@ -891,6 +962,7 @@ enum MPVFlowGPUResult mpvflow_gpu_synthesize(MPVFlowGPUContext *ctx,
                       pair != NULL, source0 != NULL, source1 != NULL, output != NULL, t);
         return MPVFLOW_GPU_INVALID;
     }
+    flow_timer_poll_and_report(ctx);
     const struct pl_tex_params *p0 = &source0->params;
     const struct pl_tex_params *p1 = &source1->params;
     if (p0->d != 0 || p1->d != 0 || p0->w != p1->w || p0->h != p1->h ||

@@ -52,6 +52,8 @@ require(preprocess, "texture(inTex,uv)", "preprocess must keep scaling on the GP
 
 flow = shaders["shader_flow"]
 synthesis = shaders["shader_synthesize"]
+require(flow, "for(int dy=lo.y-center.y;dy<=hi.y-center.y;dy++) for(int dx=lo.x-center.x;dx<=hi.x-center.x;dx++)", "motion search must iterate only valid candidates in its exact configured radius")
+assert "for(int dy=-8;dy<=8;dy++)" not in flow, "motion search must not execute masked candidates outside the active radius"
 require(flow, "float(best)/(64.0*255.0)", "flow vectors must retain normalized block-match error")
 require(synthesis, "vec4 flowAtEdgeAware(vec2 p,int direction)", "synthesis must guide vector sampling by source appearance")
 require(synthesis, "layout(set=0,binding=5,rgba16f) readonly uniform image2D luma0Tex;", "frame-0 luma binding/format mismatch")
@@ -78,8 +80,29 @@ require(SOURCE, '.name = "luma1Tex", .type = PL_DESC_STORAGE_IMG, .binding = 6',
 require(SOURCE, '.name = "outTex", .type = PL_DESC_STORAGE_IMG, .binding = 7', "synthesis output descriptor binding mismatch")
 require(SOURCE, "make_pass(gpu, shader_synthesize, synth_desc, 8)", "synthesis pass descriptor count mismatch")
 require(SOURCE, "mpvflow_gpu_prepare_input", "full-size shared frames need GPU downscaling before analysis")
+require(SOURCE, "(w - FLOW_BLOCK + FLOW_STEP - 1) / FLOW_STEP + 1", "motion texture width must contain only valid, unique block origins")
+require(SOURCE, "(h - FLOW_BLOCK + FLOW_STEP - 1) / FLOW_STEP + 1", "motion texture height must contain only valid, unique block origins")
 assert "r32f" not in SOURCE.lower(), "MPV Flow must not require the optional R32F image format"
 assert "glsl.gles" not in SOURCE and "#version 310 es" not in SOURCE, "MPV Flow must not require GLES compute"
+
+
+def search_candidates(center: int, lower: int, upper: int, radius: int):
+    low = max(lower, center - radius)
+    high = min(upper, center + radius)
+    return {center + delta for delta in range(low - center, high - center + 1)}
+
+
+for radius in range(1, 9):
+    for center in range(-12, 13):
+        for lower, upper in ((-20, 20), (-5, 7), (0, 15)):
+            exhaustive = {
+                center + delta
+                for delta in range(-8, 9)
+                if abs(delta) <= radius and lower <= center + delta <= upper
+            }
+            assert exhaustive == search_candidates(center, lower, upper, radius), (
+                "bounded loop must retain every in-frame candidate from the old masked loop"
+            )
 
 
 def boundary_source(alpha: float, luma0: float, luma1: float, confidence0: float, confidence1: float):
