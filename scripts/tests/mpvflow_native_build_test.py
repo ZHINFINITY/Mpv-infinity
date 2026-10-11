@@ -400,6 +400,18 @@ for marker in (
 assert 'cl_qcom_android_ahardwarebuffer_host_ptr' in opencl_source, (
     "OpenCL must import shared Android HardwareBuffer storage rather than exposing a disconnected compute toggle"
 )
+opencl_buffer_creation = opencl_source.split("static enum MPVFlowOpenCLStatus make_buffer(", 1)[1].split(
+    "enum MPVFlowOpenCLStatus mpvflow_opencl_import_ahardwarebuffer(", 1
+)[0]
+assert "desc_in->allocation_bytes, &desc, &err" in opencl_buffer_creation, (
+    "QCOM clCreateBuffer imports must use the actual nonzero AHardwareBuffer BLOB allocation size"
+)
+assert "*cl_create_error_out = err" in opencl_buffer_creation, (
+    "the raw vendor clCreateBuffer error must be preserved for device-side diagnosis"
+)
+assert "cl_error_available=%d" in bridge_source and "cl_error=%d size=%zu desc=" in bridge_source, (
+    "OpenCL AHardwareBuffer import failures must report the raw API result and validated descriptor"
+)
 opencl_synthesis = flow_gpu_source.split("static enum MPVFlowGPUResult flow_opencl_synthesize(", 1)[1].split(
     "enum MPVFlowGPUResult mpvflow_gpu_synthesize(", 1
 )[0]
@@ -432,6 +444,9 @@ for marker in (
         f"OpenCL initialization must execute an analyze/synthesize Vulkan round-trip: missing {marker!r}"
     )
 assert "probe=kernel_interop_roundtrip" in flow_gpu_source
+assert "opencl_status_valid=%d" in interop_probe, (
+    "an OpenCL status must not be reported as a returned error when buffer import failed before OpenCL execution"
+)
 for marker in (
     "flow_init_retry_count < 2",
     '"opencl_initialization"',

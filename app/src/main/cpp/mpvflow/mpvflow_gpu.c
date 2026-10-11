@@ -540,6 +540,7 @@ static enum MPVFlowOpenCLVkBridgeStatus flow_opencl_interop_probe(
     enum MPVFlowOpenCLVkBridgeStatus status =
         MPVFLOW_OPENCL_VK_BRIDGE_OPENCL_ERROR;
     enum MPVFlowOpenCLStatus opencl_status = MPVFLOW_OPENCL_INVALID;
+    int opencl_status_valid = 0;
     const char *stage = "buffer_allocation";
 
     if (!ctx || !ctx->opencl || !ctx->opencl_bridge)
@@ -576,11 +577,14 @@ static enum MPVFlowOpenCLVkBridgeStatus flow_opencl_interop_probe(
         ctx->opencl,
         mpvflow_opencl_vk_buffer_get_opencl(input[0]),
         mpvflow_opencl_vk_buffer_get_opencl(input[1]), &pair);
+    opencl_status_valid = 1;
     if (opencl_status != MPVFLOW_OPENCL_OK) {
         status = MPVFLOW_OPENCL_VK_BRIDGE_OPENCL_ERROR;
         goto done;
     }
-    if (mpvflow_opencl_finish(ctx->opencl) != MPVFLOW_OPENCL_OK) {
+    opencl_status = mpvflow_opencl_finish(ctx->opencl);
+    opencl_status_valid = 1;
+    if (opencl_status != MPVFLOW_OPENCL_OK) {
         status = MPVFLOW_OPENCL_VK_BRIDGE_OPENCL_ERROR;
         goto done;
     }
@@ -607,11 +611,14 @@ static enum MPVFlowOpenCLVkBridgeStatus flow_opencl_interop_probe(
         mpvflow_opencl_vk_buffer_get_opencl(input[0]),
         mpvflow_opencl_vk_buffer_get_opencl(input[1]),
         mpvflow_opencl_vk_buffer_get_opencl(output), 0.5f);
+    opencl_status_valid = 1;
     if (opencl_status != MPVFLOW_OPENCL_OK) {
         status = MPVFLOW_OPENCL_VK_BRIDGE_OPENCL_ERROR;
         goto done;
     }
-    if (mpvflow_opencl_finish(ctx->opencl) != MPVFLOW_OPENCL_OK) {
+    opencl_status = mpvflow_opencl_finish(ctx->opencl);
+    opencl_status_valid = 1;
+    if (opencl_status != MPVFLOW_OPENCL_OK) {
         status = MPVFLOW_OPENCL_VK_BRIDGE_OPENCL_ERROR;
         goto done;
     }
@@ -678,8 +685,9 @@ done:
         const char *reason = mpvflow_opencl_vk_bridge_last_error(ctx->opencl_bridge);
         flow_log(ctx->gpu, PL_LOG_ERR,
                  "MPVFLOW_DIAGNOSTIC event=compute_backend state=probe_failed "
-                 "stage=%s status=%d reason=%s opencl_status=%d size=%ux%u cpu_readback=no",
-                 stage, status, reason ? reason : "none", opencl_status,
+                 "stage=%s status=%d reason=%s opencl_status_valid=%d opencl_status=%d size=%ux%u cpu_readback=no",
+                 stage, status, reason ? reason : "none", opencl_status_valid,
+                 opencl_status,
                  probe_dimension, probe_dimension);
     } else {
         flow_log(ctx->gpu, PL_LOG_INFO,

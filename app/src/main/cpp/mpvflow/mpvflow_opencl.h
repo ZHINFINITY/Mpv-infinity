@@ -35,6 +35,10 @@ enum MPVFlowOpenCLStatus {
     MPVFLOW_OPENCL_UNSUPPORTED_LAYOUT = -9,
 };
 
+/* Raw clCreateBuffer status sentinel when import validation/allocation fails
+ * before the vendor OpenCL API is called. */
+#define MPVFLOW_OPENCL_CL_ERROR_NOT_RETURNED INT32_MIN
+
 enum MPVFlowOpenCLAccess {
     MPVFLOW_OPENCL_READ_ONLY = 0,
     MPVFLOW_OPENCL_WRITE_ONLY = 1,
@@ -95,7 +99,8 @@ void mpvflow_opencl_destroy(MPVFlowOpenCLContext *context);
  * bytes; the AHB descriptor's height/layers must be 1 and its stride must match
  * the reported descriptor. `frame_width`, `frame_height`, and `row_stride_bytes`
  * describe packed RGBA8 content inside the BLOB, and `allocation_bytes` must be
- * the actual allocation size (not a guessed width*height). The caller must
+ * the actual allocation size (not a guessed width*height); this nonzero byte
+ * size is passed to the QCOM clCreateBuffer host-pointer import. The caller must
  * establish that this is the same linear VkBuffer-backed allocation used for
  * Vulkan buffer-to-image/image-to-buffer copies; optimal-tiled Vulkan image
  * AHardwareBuffers are not accepted as byte buffers. Logical frame dimensions
@@ -106,15 +111,18 @@ void mpvflow_opencl_destroy(MPVFlowOpenCLContext *context);
  * bridge. The
  * caller retains ownership of the AHardwareBuffer and must keep it alive until
  * this wrapper (and all pair work using it) has been released. The OpenCL
- * import result is returned explicitly; unsupported descriptors and failed
- * clCreateBuffer imports never fall back to CPU or Vulkan processing.
+ * import result is returned explicitly; the optional raw error output receives
+ * clCreateBuffer's vendor error (or MPVFLOW_OPENCL_CL_ERROR_NOT_RETURNED if the
+ * API was not reached). Unsupported descriptors and failed imports never fall
+ * back to CPU or Vulkan processing.
  */
 enum MPVFlowOpenCLStatus mpvflow_opencl_import_ahardwarebuffer(
     MPVFlowOpenCLContext *context,
     struct AHardwareBuffer *ahb,
     const struct MPVFlowOpenCLAHBDesc *desc,
     enum MPVFlowOpenCLAccess access,
-    MPVFlowOpenCLBuffer **buffer_out);
+    MPVFlowOpenCLBuffer **buffer_out,
+    int32_t *cl_create_error_out);
 void mpvflow_opencl_buffer_release(MPVFlowOpenCLContext *context,
                                    MPVFlowOpenCLBuffer *buffer);
 

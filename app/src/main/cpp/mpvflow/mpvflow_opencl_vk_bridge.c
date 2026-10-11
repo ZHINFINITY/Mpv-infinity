@@ -376,6 +376,7 @@ enum MPVFlowOpenCLVkBridgeStatus mpvflow_opencl_vk_buffer_create(
     uint32_t memory_type = UINT32_MAX;
     VkResult vr;
     enum MPVFlowOpenCLStatus cl_status;
+    int32_t cl_create_buffer_error = MPVFLOW_OPENCL_CL_ERROR_NOT_RETURNED;
     struct MPVFlowOpenCLAHBDesc cl_desc;
     enum MPVFlowOpenCLVkBridgeStatus status = MPVFLOW_OPENCL_VK_BRIDGE_VULKAN_ERROR;
 
@@ -541,9 +542,20 @@ enum MPVFlowOpenCLVkBridgeStatus mpvflow_opencl_vk_buffer_create(
     cl_desc.row_stride_bytes = buf->row_stride;
     cl_desc.layout = MPVFLOW_OPENCL_LAYOUT_BLOB_RGBA8_ROWS;
     cl_status = mpvflow_opencl_import_ahardwarebuffer(
-        b->opencl, buf->ahb, &cl_desc, access, &buf->opencl_buffer);
+        b->opencl, buf->ahb, &cl_desc, access, &buf->opencl_buffer,
+        &cl_create_buffer_error);
     if (cl_status != MPVFLOW_OPENCL_OK) {
-        set_error(b, "mpvflow_opencl_import_ahardwarebuffer rejected BLOB descriptor (status=%d)", (int)cl_status);
+        set_error(b,
+                  "OpenCL AHardwareBuffer import failed (wrapper_status=%d cl_error_available=%d "
+                  "cl_error=%d size=%zu desc={format=%u width=%u height=%u stride=%u layers=%u "
+                  "usage=0x%llx frame=%ux%u row_stride=%u})",
+                  (int)cl_status,
+                  cl_create_buffer_error != MPVFLOW_OPENCL_CL_ERROR_NOT_RETURNED,
+                  (int)cl_create_buffer_error, cl_desc.allocation_bytes,
+                  cl_desc.format, cl_desc.ahb_width, cl_desc.ahb_height,
+                  cl_desc.ahb_stride, cl_desc.layers,
+                  (unsigned long long)cl_desc.usage, cl_desc.frame_width,
+                  cl_desc.frame_height, cl_desc.row_stride_bytes);
         status = MPVFLOW_OPENCL_VK_BRIDGE_OPENCL_ERROR;
         goto fail;
     }

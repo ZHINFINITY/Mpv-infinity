@@ -356,12 +356,15 @@ static enum MPVFlowOpenCLStatus make_buffer(MPVFlowOpenCLContext *c,
                                              struct AHardwareBuffer *ahb,
                                              const struct MPVFlowOpenCLAHBDesc *desc_in,
                                              enum MPVFlowOpenCLAccess access,
-                                             MPVFlowOpenCLBuffer **out)
+                                             MPVFlowOpenCLBuffer **out,
+                                             int32_t *cl_create_error_out)
 {
     struct cl_mem_ahardwarebuffer_host_ptr_qcom desc;
     cl_mem_flags flags;
     cl_int err = CL_SUCCESS;
     MPVFlowOpenCLBuffer *b;
+    if (cl_create_error_out)
+        *cl_create_error_out = MPVFLOW_OPENCL_CL_ERROR_NOT_RETURNED;
     if (out) *out = NULL;
     if (!c || !ahb || !desc_in || !out)
         return MPVFLOW_OPENCL_INVALID;
@@ -396,8 +399,11 @@ static enum MPVFlowOpenCLStatus make_buffer(MPVFlowOpenCLContext *c,
     case MPVFLOW_OPENCL_READ_WRITE: flags = CL_MEM_READ_WRITE; break;
     default: free(b); return MPVFLOW_OPENCL_INVALID;
     }
-    b->mem = c->clCreateBuffer(c->context, flags | CL_MEM_USE_HOST_PTR | CL_MEM_EXT_HOST_PTR_QCOM,
-                               0, &desc, &err);
+    b->mem = c->clCreateBuffer(c->context,
+                               flags | CL_MEM_USE_HOST_PTR | CL_MEM_EXT_HOST_PTR_QCOM,
+                               desc_in->allocation_bytes, &desc, &err);
+    if (cl_create_error_out)
+        *cl_create_error_out = err;
     if (!b->mem || err != CL_SUCCESS) { free(b); return MPVFLOW_OPENCL_ERROR; }
     b->owner = c;
     b->width = (int)desc_in->frame_width; b->height = (int)desc_in->frame_height;
@@ -409,9 +415,10 @@ static enum MPVFlowOpenCLStatus make_buffer(MPVFlowOpenCLContext *c,
 enum MPVFlowOpenCLStatus mpvflow_opencl_import_ahardwarebuffer(
     MPVFlowOpenCLContext *context, struct AHardwareBuffer *ahb,
     const struct MPVFlowOpenCLAHBDesc *desc, enum MPVFlowOpenCLAccess access,
-    MPVFlowOpenCLBuffer **buffer_out)
+    MPVFlowOpenCLBuffer **buffer_out, int32_t *cl_create_error_out)
 {
-    return make_buffer(context, ahb, desc, access, buffer_out);
+    return make_buffer(context, ahb, desc, access, buffer_out,
+                       cl_create_error_out);
 }
 
 void mpvflow_opencl_buffer_release(MPVFlowOpenCLContext *context, MPVFlowOpenCLBuffer *buffer)
