@@ -72,9 +72,17 @@ require(PATCH, "frame->num_frames > 1 || p->next_opts->mpvflow", "Flow must open
 require(PATCH, "event=queue_state state=%s", "MPV Flow must report why the queue lacks a temporal pair or when one becomes available")
 require(PATCH, "waiting_for_temporal_pair", "MPV Flow must distinguish an incomplete pair from renderer or dispatch failure")
 require(PATCH, "event=runtime_cadence", "MPV Flow must report sustained swap-submit and synthesis cadence")
+for marker in (
+    "render_callback_fps=%.2f", "render_cpu_avg_ms=%.3f", "callback_interval_avg_ms=%.3f",
+    "vsync_slots=%llu", "swap_attempts=%llu", "swap_failures=%llu",
+    "pair_analysis_attempts=%llu", "pair_analysis_failures=%llu", "pair_cache_reuses=%llu",
+):
+    require(PATCH, marker, f"MPV cadence report is missing {marker}")
 require(PATCH, "event=gpu_timing api=Vulkan", "MPV must emit direct retained per-stage Vulkan timing records")
 require(PATCH, "sample_scope=lifetime poll=nonblocking", "MPV Vulkan timing records must identify cumulative sample scope and nonblocking query polling")
 require(PATCH, "event=motion_geometry state=ready engine=mpv", "MPV must log its active motion-grid geometry directly to Logcat")
+require(PATCH, "motion_search_passes_per_pair=6", "MPV diagnostics must confirm all six original direction/level searches remain enabled")
+require(PATCH, "search_order=center_out_exact_legacy_tie_break", "MPV diagnostics must identify the exact-preserving candidate order")
 require(PATCH, "MPVFLOW_GPU_MOTION_GRID_STEP", "MPV grid telemetry must use the shared core geometry constants")
 require(PATCH, "source_sync_pct=%.1f", "MPV Flow must quantify display-synchronized source batches")
 require(PATCH, "empty_batch_redraws=%llu", "MPV Flow cadence must separate empty redraw callbacks from unsynchronized source batches")
@@ -114,6 +122,13 @@ require(FLOW_GPU_CORE, "event=gpu_timing api=Vulkan timer_source=%s", "Vulkan ti
 require(FLOW_GPU_CORE, "dispatches_total=%llu", "Vulkan stage diagnostics must count issued compute work even without timers")
 require(FLOW_GPU_CORE, "unresolved_dispatches_total=%llu", "Vulkan stage diagnostics must expose unresolved or unavailable timer results")
 require(FLOW_GPU_CORE, "event=motion_geometry state=ready", "MPV and Media3 must expose the actual allocated Vulkan motion grid")
+require(FLOW_GPU_CORE, "motion_search_passes_per_pair=6", "the shared Vulkan core must retain every original motion pass")
+for stage in (
+    "motion_search_forward_level_0", "motion_search_backward_level_0",
+    "motion_search_forward_level_1", "motion_search_backward_level_1",
+    "motion_search_forward_level_2", "motion_search_backward_level_2",
+):
+    require(FLOW_GPU_CORE, stage, f"Vulkan timer dispatch classification is missing {stage}")
 require(FLOW_GPU_CORE, "motion_grid=%ux%u grid_step=%d block_size=%d", "motion geometry records must disambiguate processing pixels from vector-grid cells")
 require(FLOW_GPU_CORE, "poll_policy=nonblocking_frame_operation_boundary", "Vulkan timestamp polling must stay nonblocking and outside the per-dispatch hot path")
 run_pass_body = FLOW_GPU_CORE.split("static bool run_pass(", 1)[1].split("static bool allocate_pair_textures(", 1)[0]

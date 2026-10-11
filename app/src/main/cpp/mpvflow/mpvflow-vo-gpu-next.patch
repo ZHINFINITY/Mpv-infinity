@@ -3,9 +3,9 @@
 @@ -21,0 +22,2 @@
 +#include <math.h>
 +#include <string.h>
-@@ -52,0 +55 @@
+@@ -52,0 +55,1 @@
 +#include "mpvflow_gpu.h"
-@@ -157,0 +161,29 @@
+@@ -157,0 +161,46 @@
 +    // MPVFLOW_GPU_INTEGRATION
 +    MPVFlowGPUContext *flow_gpu;
 +    MPVFlowGPUPair *flow_pair;
@@ -34,8 +34,25 @@
 +    uint64_t flow_cadence_temporal_pair;
 +    uint64_t flow_cadence_flip_wait_total_ns;
 +    uint64_t flow_cadence_flip_wait_max_ns;
++    int64_t flow_cadence_last_render_ns;
++    uint64_t flow_cadence_render_attempts;
++    uint64_t flow_cadence_render_pair_callbacks;
++    uint64_t flow_cadence_render_synthesized;
++    uint64_t flow_cadence_render_failures;
++    uint64_t flow_cadence_swap_attempts;
++    uint64_t flow_cadence_swap_failures;
++    uint64_t flow_cadence_vsync_slots;
++    uint64_t flow_cadence_render_cpu_total_ns;
++    uint64_t flow_cadence_render_cpu_max_ns;
++    uint64_t flow_cadence_render_cpu_samples;
++    uint64_t flow_cadence_callback_interval_total_ns;
++    uint64_t flow_cadence_callback_interval_max_ns;
++    uint64_t flow_cadence_callback_interval_samples;
++    uint64_t flow_cadence_pair_analysis_attempts;
++    uint64_t flow_cadence_pair_analysis_failures;
++    uint64_t flow_cadence_pair_cache_reuses;
 +
-@@ -184,0 +214 @@
+@@ -184,0 +214,1 @@
 +static void flow_update_context(struct vo *vo);
 @@ -186,0 +217,3 @@
 +    bool mpvflow;
@@ -55,7 +72,7 @@
 +    int flow_cap;
 +    int flow_w, flow_h;
 +    int flow_source_w, flow_source_h;
-@@ -569,0 +614,301 @@
+@@ -569,0 +614,337 @@
 +static void flow_release_pair(struct priv *p)
 +{
 +    if (p->flow_pair)
@@ -101,6 +118,23 @@
 +        p->flow_cadence_temporal_pair = 0;
 +        p->flow_cadence_flip_wait_total_ns = 0;
 +        p->flow_cadence_flip_wait_max_ns = 0;
++        p->flow_cadence_last_render_ns = 0;
++        p->flow_cadence_render_attempts = 0;
++        p->flow_cadence_render_pair_callbacks = 0;
++        p->flow_cadence_render_synthesized = 0;
++        p->flow_cadence_render_failures = 0;
++        p->flow_cadence_swap_attempts = 0;
++        p->flow_cadence_swap_failures = 0;
++        p->flow_cadence_vsync_slots = 0;
++        p->flow_cadence_render_cpu_total_ns = 0;
++        p->flow_cadence_render_cpu_max_ns = 0;
++        p->flow_cadence_render_cpu_samples = 0;
++        p->flow_cadence_callback_interval_total_ns = 0;
++        p->flow_cadence_callback_interval_max_ns = 0;
++        p->flow_cadence_callback_interval_samples = 0;
++        p->flow_cadence_pair_analysis_attempts = 0;
++        p->flow_cadence_pair_analysis_failures = 0;
++        p->flow_cadence_pair_cache_reuses = 0;
 +        return;
 +    }
 +    if (p->flow_max_dimension != requested_dimension) {
@@ -115,6 +149,24 @@
 +        p->flow_init_logged = false;
 +        p->flow_active_logged = false;
 +        p->flow_bypass_logged_mask = 0;
++        p->flow_cadence_window_start_ns = 0;
++        p->flow_cadence_last_render_ns = 0;
++        p->flow_cadence_render_attempts = 0;
++        p->flow_cadence_render_pair_callbacks = 0;
++        p->flow_cadence_render_synthesized = 0;
++        p->flow_cadence_render_failures = 0;
++        p->flow_cadence_swap_attempts = 0;
++        p->flow_cadence_swap_failures = 0;
++        p->flow_cadence_vsync_slots = 0;
++        p->flow_cadence_render_cpu_total_ns = 0;
++        p->flow_cadence_render_cpu_max_ns = 0;
++        p->flow_cadence_render_cpu_samples = 0;
++        p->flow_cadence_callback_interval_total_ns = 0;
++        p->flow_cadence_callback_interval_max_ns = 0;
++        p->flow_cadence_callback_interval_samples = 0;
++        p->flow_cadence_pair_analysis_attempts = 0;
++        p->flow_cadence_pair_analysis_failures = 0;
++        p->flow_cadence_pair_cache_reuses = 0;
 +    }
 +    if (p->flow_gpu || p->flow_init_attempted)
 +        return;
@@ -200,7 +252,8 @@
 +    struct MPVFlowGPUTimingStats stats = {0};
 +    mpvflow_gpu_get_timing_stats(p->flow_gpu, &stats);
 +    static const char *const names[MPVFLOW_GPU_STAGE_COUNT] = {
-+        "preprocess", "analysis", "motion", "synthesis",
++        "preprocess", "analysis", "motion_fine", "motion_middle",
++        "motion_coarse", "synthesis",
 +    };
 +    for (uint32_t i = 0; i < stats.stage_count && i < MPVFLOW_GPU_STAGE_COUNT; i++) {
 +        const struct MPVFlowGPUStageTiming *stage = &stats.stages[i];
@@ -360,12 +413,12 @@
 @@ -1109,0 +1404,2 @@
 +    flow_update_context(vo);
 +    flow_prepare_input(vo, frame, mpi, fp);
-@@ -1118,0 +1415 @@
+@@ -1118,0 +1415,1 @@
 +    flow_release_frame(fp->vo, fp);
 @@ -1135,0 +1433,2 @@
 +    struct frame_priv *fp = mpi->priv;
 +    flow_release_frame(fp->vo, fp);
-@@ -1341,0 +1641,164 @@
+@@ -1341,0 +1641,169 @@
 +static bool flow_render_frame(struct vo *vo, const struct pl_frame_mix *mix,
 +                              struct pl_frame *target,
 +                              const struct pl_render_params *params,
@@ -434,6 +487,7 @@
 +            fp0->flow_source_h == fp1->flow_source_h) {
 +            if (!p->flow_pair || p->flow_pair_ids[0] != fp0->frame_id ||
 +                p->flow_pair_ids[1] != fp1->frame_id) {
++                p->flow_cadence_pair_analysis_attempts++;
 +                flow_release_pair(p);
 +                MPVFlowGPUPair *pair = NULL;
 +                stats_time_start(p->stats, "mpvflow-analysis");
@@ -450,7 +504,8 @@
 +                        const int grid_h = (fp0->flow_h - MPVFLOW_GPU_MOTION_BLOCK_SIZE +
 +                            MPVFLOW_GPU_MOTION_GRID_STEP - 1) / MPVFLOW_GPU_MOTION_GRID_STEP + 1;
 +                        MP_INFO(vo, "MPVFLOW_DIAGNOSTIC event=motion_geometry state=ready engine=mpv "
-+                                "source=%dx%d processing=%dx%d motion_grid=%dx%d grid_step=%d block_size=%d\n",
++                                "source=%dx%d processing=%dx%d motion_grid=%dx%d grid_step=%d block_size=%d "
++                                "motion_search_passes_per_pair=6 search_order=center_out_exact_legacy_tie_break\n",
 +                                fp0->flow_source_w, fp0->flow_source_h, fp0->flow_w, fp0->flow_h,
 +                                grid_w, grid_h, MPVFLOW_GPU_MOTION_GRID_STEP,
 +                                MPVFLOW_GPU_MOTION_BLOCK_SIZE);
@@ -458,11 +513,14 @@
 +                        p->flow_geometry_h = fp0->flow_h;
 +                    }
 +                } else {
++                    p->flow_cadence_pair_analysis_failures++;
 +                    bypass_reason = "pair_analysis_failed";
 +                    bypass_status = status;
 +                    MP_DBG(vo, "MPVFLOW_DIAGNOSTIC component=gpu event=bypass reason=pair_analysis status=%d\n",
 +                           status);
 +                }
++            } else {
++                p->flow_cadence_pair_cache_reuses++;
 +            }
 +
 +            if (p->flow_pair) {
@@ -530,18 +588,35 @@
 +    return ok;
 +}
 +
-@@ -1344,0 +1795,4 @@
+@@ -1344,0 +1795,21 @@
 +    p->flow_pending_synthesized = false;
 +    p->flow_pending_display_synced = false;
 +    p->flow_pending_source_batch = 0;
 +    p->flow_pending_mix_frames = 0;
-@@ -1354 +1808,2 @@
++    const int64_t flow_render_start_ns = p->next_opts->mpvflow ? mp_time_ns() : 0;
++    if (flow_render_start_ns > 0) {
++        if (!p->flow_cadence_window_start_ns)
++            p->flow_cadence_window_start_ns = flow_render_start_ns;
++        p->flow_cadence_render_attempts++;
++        if (frame->num_vsyncs > 0)
++            p->flow_cadence_vsync_slots += frame->num_vsyncs;
++        if (p->flow_cadence_last_render_ns > 0 &&
++            flow_render_start_ns > p->flow_cadence_last_render_ns) {
++            const uint64_t interval = flow_render_start_ns - p->flow_cadence_last_render_ns;
++            p->flow_cadence_callback_interval_total_ns += interval;
++            p->flow_cadence_callback_interval_samples++;
++            if (interval > p->flow_cadence_callback_interval_max_ns)
++                p->flow_cadence_callback_interval_max_ns = interval;
++        }
++        p->flow_cadence_last_render_ns = flow_render_start_ns;
++    }
+@@ -1354,1 +1808,2 @@
 -                           !frame->still && frame->num_frames > 1 && !p->paused;
 +                           !frame->still &&
 +                           (frame->num_frames > 1 || p->next_opts->mpvflow) && !p->paused;
-@@ -1403,0 +1859 @@
+@@ -1403,0 +1859,1 @@
 +            flow_release_pair(p);
-@@ -1422,0 +1879 @@
+@@ -1422,0 +1879,1 @@
 +        fp->frame_id = id;
 @@ -1750,0 +2208,26 @@
 +    if (p->next_opts->mpvflow) {
@@ -570,13 +645,13 @@
 +    } else {
 +        p->flow_queue_state_logged = false;
 +    }
-@@ -1752 +2235,4 @@
+@@ -1752,1 +2235,4 @@
 -    bool render_ok = pl_render_image_mix(p->rr, &mix, &target, &params);
 +    bool flow_synthesized = false;
 +    bool render_ok = p->next_opts->mpvflow
 +        ? flow_render_frame(vo, &mix, &target, &params, &flow_synthesized)
 +        : pl_render_image_mix(p->rr, &mix, &target, &params);
-@@ -1780 +2266,6 @@
+@@ -1780,1 +2266,19 @@
 -    p->is_interpolated = pts_offset != 0 && mix.num_frames > 1;
 +    p->is_interpolated = p->next_opts->mpvflow
 +        ? flow_synthesized : pts_offset != 0 && mix.num_frames > 1;
@@ -584,15 +659,32 @@
 +    p->flow_pending_display_synced = frame->display_synced;
 +    p->flow_pending_source_batch = frame->num_frames;
 +    p->flow_pending_mix_frames = mix.num_frames;
-@@ -1797 +2288,2 @@
++    if (p->next_opts->mpvflow) {
++        p->flow_cadence_render_pair_callbacks += mix.num_frames >= 2;
++        p->flow_cadence_render_synthesized += flow_synthesized;
++        p->flow_cadence_render_failures += !render_ok;
++        const int64_t flow_render_end_ns = mp_time_ns();
++        if (flow_render_start_ns > 0 && flow_render_end_ns > flow_render_start_ns) {
++            const uint64_t render_ns = flow_render_end_ns - flow_render_start_ns;
++            p->flow_cadence_render_cpu_total_ns += render_ns;
++            p->flow_cadence_render_cpu_samples++;
++            if (render_ns > p->flow_cadence_render_cpu_max_ns)
++                p->flow_cadence_render_cpu_max_ns = render_ns;
++        }
++    }
+@@ -1797,1 +2288,2 @@
 -
 +    const int64_t flip_start_ns = mp_time_ns();
 +    bool submitted = false;
-@@ -1799 +2291,2 @@
+@@ -1799,1 +2291,6 @@
 -        if (!pl_swapchain_submit_frame(p->sw))
++        if (p->next_opts->mpvflow)
++            p->flow_cadence_swap_attempts++;
 +        submitted = pl_swapchain_submit_frame(p->sw);
++        if (!submitted && p->next_opts->mpvflow)
++            p->flow_cadence_swap_failures++;
 +        if (!submitted)
-@@ -1804,0 +2298,63 @@
+@@ -1804,0 +2298,107 @@
 +    const int64_t now_ns = mp_time_ns();
 +    const uint64_t flip_wait_ns = now_ns > flip_start_ns
 +        ? (uint64_t) (now_ns - flip_start_ns) : 0;
@@ -615,23 +707,51 @@
 +        if (flip_wait_ns > p->flow_cadence_flip_wait_max_ns)
 +            p->flow_cadence_flip_wait_max_ns = flip_wait_ns;
 +        if (now_ns - p->flow_cadence_window_start_ns >= 5000000000LL) {
-+            const double window_ms = (now_ns - p->flow_cadence_window_start_ns) / 1000000.0;
-+            const double submit_fps = p->flow_cadence_submitted * 1000000000.0 /
-+                                      (now_ns - p->flow_cadence_window_start_ns);
-+            const double synth_fps = p->flow_cadence_synthesized * 1000000000.0 /
-+                                     (now_ns - p->flow_cadence_window_start_ns);
++            const uint64_t window_ns = now_ns - p->flow_cadence_window_start_ns;
++            const double window_ms = window_ns / 1000000.0;
++            const double submit_fps = p->flow_cadence_submitted * 1000000000.0 / window_ns;
++            const double synth_fps = p->flow_cadence_synthesized * 1000000000.0 / window_ns;
++            const double render_callback_fps = p->flow_cadence_render_attempts * 1000000000.0 / window_ns;
++            const double render_cpu_avg_ms = p->flow_cadence_render_cpu_samples
++                ? (double) p->flow_cadence_render_cpu_total_ns /
++                  p->flow_cadence_render_cpu_samples / 1000000.0 : 0.0;
++            const double callback_interval_avg_ms = p->flow_cadence_callback_interval_samples
++                ? (double) p->flow_cadence_callback_interval_total_ns /
++                  p->flow_cadence_callback_interval_samples / 1000000.0 : 0.0;
 +            const uint64_t source_ticks = p->flow_cadence_source_synced +
 +                                          p->flow_cadence_source_unsynced;
 +            const double source_sync_pct = source_ticks
 +                ? 100.0 * p->flow_cadence_source_synced / source_ticks : 0.0;
 +            MP_INFO(vo, "MPVFLOW_DIAGNOSTIC event=runtime_cadence window_ms=%.1f target_fps=%d "
++                    "render_callback_fps=%.2f render_callbacks=%llu render_failures=%llu "
++                    "mix_pair_callbacks=%llu synthesized_render_callbacks=%llu vsync_slots=%llu "
++                    "render_cpu_avg_ms=%.3f render_cpu_max_ms=%.3f render_cpu_samples=%llu "
++                    "callback_interval_avg_ms=%.3f callback_interval_max_ms=%.3f callback_interval_samples=%llu "
 +                    "swap_submit_fps=%.2f synthesized_submit_fps=%.2f successful_submits=%llu "
-+                    "synthesized_submits=%llu source_batches=%llu source_sync_pct=%.1f "
-+                    "source_unsynced_batches=%llu empty_batch_redraws=%llu temporal_pair_submits=%llu "
++                    "swap_attempts=%llu swap_failures=%llu pair_analysis_attempts=%llu "
++                    "pair_analysis_failures=%llu pair_cache_reuses=%llu synthesized_submits=%llu "
++                    "source_batches=%llu source_sync_pct=%.1f source_unsynced_batches=%llu "
++                    "empty_batch_redraws=%llu temporal_pair_submits=%llu "
 +                    "flip_wait_avg_ms=%.3f flip_wait_max_ms=%.3f "
 +                    "metric=successful_pl_swapchain_submit_not_surfaceflinger_scanout\n",
-+                    window_ms, p->next_opts->mpvflow_target_fps, submit_fps, synth_fps,
++                    window_ms, p->next_opts->mpvflow_target_fps, render_callback_fps,
++                    (unsigned long long) p->flow_cadence_render_attempts,
++                    (unsigned long long) p->flow_cadence_render_failures,
++                    (unsigned long long) p->flow_cadence_render_pair_callbacks,
++                    (unsigned long long) p->flow_cadence_render_synthesized,
++                    (unsigned long long) p->flow_cadence_vsync_slots,
++                    render_cpu_avg_ms, p->flow_cadence_render_cpu_max_ns / 1000000.0,
++                    (unsigned long long) p->flow_cadence_render_cpu_samples,
++                    callback_interval_avg_ms,
++                    p->flow_cadence_callback_interval_max_ns / 1000000.0,
++                    (unsigned long long) p->flow_cadence_callback_interval_samples,
++                    submit_fps, synth_fps,
 +                    (unsigned long long) p->flow_cadence_submitted,
++                    (unsigned long long) p->flow_cadence_swap_attempts,
++                    (unsigned long long) p->flow_cadence_swap_failures,
++                    (unsigned long long) p->flow_cadence_pair_analysis_attempts,
++                    (unsigned long long) p->flow_cadence_pair_analysis_failures,
++                    (unsigned long long) p->flow_cadence_pair_cache_reuses,
 +                    (unsigned long long) p->flow_cadence_synthesized,
 +                    (unsigned long long) source_ticks, source_sync_pct,
 +                    (unsigned long long) p->flow_cadence_source_unsynced,
@@ -650,6 +770,22 @@
 +            p->flow_cadence_temporal_pair = 0;
 +            p->flow_cadence_flip_wait_total_ns = 0;
 +            p->flow_cadence_flip_wait_max_ns = 0;
++            p->flow_cadence_render_attempts = 0;
++            p->flow_cadence_render_pair_callbacks = 0;
++            p->flow_cadence_render_synthesized = 0;
++            p->flow_cadence_render_failures = 0;
++            p->flow_cadence_swap_attempts = 0;
++            p->flow_cadence_swap_failures = 0;
++            p->flow_cadence_vsync_slots = 0;
++            p->flow_cadence_render_cpu_total_ns = 0;
++            p->flow_cadence_render_cpu_max_ns = 0;
++            p->flow_cadence_render_cpu_samples = 0;
++            p->flow_cadence_callback_interval_total_ns = 0;
++            p->flow_cadence_callback_interval_max_ns = 0;
++            p->flow_cadence_callback_interval_samples = 0;
++            p->flow_cadence_pair_analysis_attempts = 0;
++            p->flow_cadence_pair_analysis_failures = 0;
++            p->flow_cadence_pair_cache_reuses = 0;
 +        }
 +    }
 +    p->flow_pending_synthesized = false;
@@ -661,9 +797,9 @@
 +    mpvflow_gpu_destroy(p->flow_gpu);
 +    p->flow_gpu = NULL;
 +    p->flow_input_fmt = NULL;
-@@ -2846,0 +3406 @@
+@@ -2846,0 +3406,1 @@
 +    flow_update_context(vo);
-@@ -2878 +3438,2 @@
+@@ -2878,1 +3438,2 @@
 -    pars->params.frame_mixer = opts->interpolation ? map_scaler(p, SCALER_TSCALE) : NULL;
 +    pars->params.frame_mixer = opts->interpolation && !p->next_opts->mpvflow
 +        ? map_scaler(p, SCALER_TSCALE) : NULL;

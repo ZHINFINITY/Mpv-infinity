@@ -27,7 +27,9 @@
 enum FlowTimerStage {
     FLOW_TIMER_PREPROCESS = MPVFLOW_GPU_STAGE_PREPROCESS,
     FLOW_TIMER_ANALYSIS = MPVFLOW_GPU_STAGE_ANALYSIS,
-    FLOW_TIMER_MOTION = MPVFLOW_GPU_STAGE_MOTION,
+    FLOW_TIMER_MOTION_FINE = MPVFLOW_GPU_STAGE_MOTION_FINE,
+    FLOW_TIMER_MOTION_MIDDLE = MPVFLOW_GPU_STAGE_MOTION_MIDDLE,
+    FLOW_TIMER_MOTION_COARSE = MPVFLOW_GPU_STAGE_MOTION_COARSE,
     FLOW_TIMER_SYNTHESIS = MPVFLOW_GPU_STAGE_SYNTHESIS,
     FLOW_TIMER_COUNT = MPVFLOW_GPU_STAGE_COUNT,
 };
@@ -182,8 +184,12 @@ static enum FlowTimerStage flow_timer_stage(const char *stage)
 {
     if (strstr(stage, "preprocess"))
         return FLOW_TIMER_PREPROCESS;
-    if (strstr(stage, "motion_search"))
-        return FLOW_TIMER_MOTION;
+    if (strstr(stage, "motion_search") && strstr(stage, "level_0"))
+        return FLOW_TIMER_MOTION_FINE;
+    if (strstr(stage, "motion_search") && strstr(stage, "level_1"))
+        return FLOW_TIMER_MOTION_MIDDLE;
+    if (strstr(stage, "motion_search") && strstr(stage, "level_2"))
+        return FLOW_TIMER_MOTION_COARSE;
     if (strstr(stage, "synthesize"))
         return FLOW_TIMER_SYNTHESIS;
     return FLOW_TIMER_ANALYSIS;
@@ -194,7 +200,8 @@ static void flow_timer_poll_and_report(MPVFlowGPUContext *ctx)
     if (!ctx)
         return;
     static const char *const names[FLOW_TIMER_COUNT] = {
-        "preprocess", "analysis", "motion", "synthesis",
+        "preprocess", "analysis", "motion_fine", "motion_middle",
+        "motion_coarse", "synthesis",
     };
     for (int i = 0; i < FLOW_TIMER_COUNT; i++) {
         if (ctx->compute_timestamps_supported && ctx->timers[i].timer) {
@@ -316,7 +323,7 @@ static const char shader_flow[] =
     "int sadAt(ivec2 p,ivec2 d,ivec2 sz,int cutoff){ int cost=0; for(int y=0;y<8;y++) for(int x=0;x<8;x++){ float a=imageLoad(srcTex,p+ivec2(x,y)).r; float b=imageLoad(dstTex,p+ivec2(x,y)+d).r; cost+=int(abs(a-b)*255.0+0.5); if(cost>cutoff) return cost; } return cost; }\n"
     "float subpixelOffset(float minusCost,float centerCost,float plusCost){ float curvature=minusCost-2.0*centerCost+plusCost; if(centerCost>minusCost||centerCost>plusCost||curvature<=0.0001) return 0.0; return clamp(0.5*(minusCost-plusCost)/curvature,-0.5,0.5); }\n"
     "float refineAxis(ivec2 p,ivec2 v,ivec2 axis,ivec2 sz,int centerCost){ ivec2 m=v-axis,q=v+axis; if(any(lessThan(p+m,ivec2(0)))||any(lessThan(p+q,ivec2(0)))|| any(greaterThan(p+m,sz-ivec2(8)))||any(greaterThan(p+q,sz-ivec2(8)))) return 0.0; int cm=sadAt(p,m,sz,2147483647),cp=sadAt(p,q,sz,2147483647); return subpixelOffset(float(cm),float(centerCost),float(cp)); }\n"
-    "void main(){ ivec2 g=ivec2(gl_GlobalInvocationID.xy); ivec2 grid=imageSize(flowTex); if(any(greaterThanEqual(g,grid))) return; ivec2 sz=pc.cfg.xy; ivec2 p=min(g*4,sz-ivec2(8)); ivec2 center=ivec2(0); if(pc.cfg.w!=0){ ivec2 pg=imageSize(parentTex); vec2 pc=vec2(p)*0.5/4.0; ivec2 a=clamp(ivec2(floor(pc)),ivec2(0),pg-1); ivec2 b=min(a+1,pg-1); vec2 f=fract(pc); vec2 top=mix(imageLoad(parentTex,a).rg,imageLoad(parentTex,ivec2(b.x,a.y)).rg,f.x); vec2 bot=mix(imageLoad(parentTex,ivec2(a.x,b.y)).rg,imageLoad(parentTex,b).rg,f.x); center=ivec2(round(mix(top,bot,f.y)*2.0)); } center=clamp(center,-p,sz-ivec2(8)-p); int radius=pc.cfg.z; ivec2 lo=max(-p,center-ivec2(radius)); ivec2 hi=min(sz-ivec2(8)-p,center+ivec2(radius)); ivec2 bestVector=center; int best=sadAt(p,bestVector,sz,2147483647),second=2147483647; for(int dy=lo.y-center.y;dy<=hi.y-center.y;dy++) for(int dx=lo.x-center.x;dx<=hi.x-center.x;dx++){ ivec2 d=center+ivec2(dx,dy); if(all(equal(d,bestVector))) continue; int c=sadAt(p,d,sz,second); if(c<best){second=best;best=c;bestVector=d;} else if(c<second) second=c; } vec2 refined=vec2(bestVector); refined.x+=refineAxis(p,bestVector,ivec2(1,0),sz,best); refined.y+=refineAxis(p,bestVector,ivec2(0,1),sz,best); float uniqueness=second<2147483647?clamp(float(second-best)/max(float(second),1.0),0.0,1.0):0.0; imageStore(flowTex,g,vec4(refined,float(best)/(64.0*255.0),uniqueness)); }\n"
+    "void main(){ ivec2 g=ivec2(gl_GlobalInvocationID.xy); ivec2 grid=imageSize(flowTex); if(any(greaterThanEqual(g,grid))) return; ivec2 sz=pc.cfg.xy; ivec2 p=min(g*4,sz-ivec2(8)); ivec2 center=ivec2(0); if(pc.cfg.w!=0){ ivec2 pg=imageSize(parentTex); vec2 pc=vec2(p)*0.5/4.0; ivec2 a=clamp(ivec2(floor(pc)),ivec2(0),pg-1); ivec2 b=min(a+1,pg-1); vec2 f=fract(pc); vec2 top=mix(imageLoad(parentTex,a).rg,imageLoad(parentTex,ivec2(b.x,a.y)).rg,f.x); vec2 bot=mix(imageLoad(parentTex,ivec2(a.x,b.y)).rg,imageLoad(parentTex,b).rg,f.x); center=ivec2(round(mix(top,bot,f.y)*2.0)); } center=clamp(center,-p,sz-ivec2(8)-p); int radius=pc.cfg.z; ivec2 lo=max(-p,center-ivec2(radius)); ivec2 hi=min(sz-ivec2(8)-p,center+ivec2(radius)); ivec2 bestVector=center; int best=sadAt(p,bestVector,sz,2147483647),second=2147483647; for(int ring=1;ring<=radius;ring++) for(int dy=-ring;dy<=ring;dy++) for(int dx=-ring;dx<=ring;dx++){ if(max(abs(dx),abs(dy))!=ring) continue; ivec2 d=center+ivec2(dx,dy); if(any(lessThan(d,lo))||any(greaterThan(d,hi))) continue; if(all(equal(d,bestVector))) continue; int c=sadAt(p,d,sz,best==0?0:second); if(best==0){if(c==0){second=0; if(!all(equal(bestVector,center))&&(d.y<bestVector.y||(d.y==bestVector.y&&d.x<bestVector.x))) bestVector=d;} else if(second!=0) second=1;} else if(c<best){second=best;best=c;bestVector=d;} else if(c==best){if(second>c) second=c; if(!all(equal(bestVector,center))&&(d.y<bestVector.y||(d.y==bestVector.y&&d.x<bestVector.x))) bestVector=d;} else if(c<second) second=c; } vec2 refined=vec2(bestVector); refined.x+=refineAxis(p,bestVector,ivec2(1,0),sz,best); refined.y+=refineAxis(p,bestVector,ivec2(0,1),sz,best); float uniqueness=second<2147483647?clamp(float(second-best)/max(float(second),1.0),0.0,1.0):0.0; imageStore(flowTex,g,vec4(refined,float(best)/(64.0*255.0),uniqueness)); }\n"
 ;
 
 static const char shader_synthesize[] =
@@ -668,7 +675,8 @@ MPVFlowGPUContext *mpvflow_gpu_create(pl_gpu gpu,
         return NULL;
     }
     static const char *const timer_names[FLOW_TIMER_COUNT] = {
-        "preprocess", "analysis", "motion", "synthesis",
+        "preprocess", "analysis", "motion_fine", "motion_middle",
+        "motion_coarse", "synthesis",
     };
     int timer_count = 0;
     if (ctx->compute_timestamps_supported) {
@@ -943,17 +951,24 @@ enum MPVFlowGPUResult mpvflow_gpu_analyze_pair(MPVFlowGPUContext *ctx,
                 { .object = src }, { .object = dst }, { .object = parent_flow },
                 { .object = flow },
             };
+            const char *stage = dir
+                ? (li == 0 ? "motion_search_backward_level_0" :
+                   li == 1 ? "motion_search_backward_level_1" : "motion_search_backward_level_2")
+                : (li == 0 ? "motion_search_forward_level_0" :
+                   li == 1 ? "motion_search_forward_level_1" : "motion_search_forward_level_2");
             if (!run_pass(ctx, ctx->pass_flow, fb, 4, fc, 0.0f,
                           flow->params.w, flow->params.h,
-                          dir ? "motion_search_backward" : "motion_search_forward"))
+                          stage))
                 goto failure;
         }
     }
     if (ctx->motion_log_w != pair->w || ctx->motion_log_h != pair->h) {
         flow_log(ctx->gpu, PL_LOG_INFO,
                  "MPVFLOW_DIAGNOSTIC component=mpvflow event=motion_geometry state=ready "
-                 "processing=%dx%d pyramid_levels=%d motion_grid=%ux%u grid_step=%d block_size=%d "
-                 "search_radius=%d source_pts_preserved=caller_owned",
+                 "processing=%dx%d pyramid_levels=%d motion_search_passes_per_pair=6 "
+                 "motion_grid=%ux%u grid_step=%d block_size=%d "
+                 "search_radius=%d search_order=center_out_exact_legacy_tie_break "
+                 "source_pts_preserved=caller_owned",
                  pair->w, pair->h, pair->levels,
                  pair->level[0].forward->params.w, pair->level[0].forward->params.h,
                  FLOW_STEP, FLOW_BLOCK, ctx->search_radius);

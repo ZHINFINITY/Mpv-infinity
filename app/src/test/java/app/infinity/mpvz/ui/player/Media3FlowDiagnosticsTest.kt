@@ -49,15 +49,15 @@ class Media3FlowDiagnosticsTest {
 
   @Test
   fun vulkanSnapshotReportsStageAveragesAndUnresolvedQueriesWithoutCallingThemExactPending() {
-    val snapshot = LongArray(27).apply {
-      this[0] = 2L
+    val snapshot = LongArray(37).apply {
+      this[0] = 3L
       this[1] = 1L
       this[2] = 1_000L // 1 ns timestamp period, represented as picoseconds
       this[3] = 0L
       this[4] = 32L
       this[5] = 2L
-      this[6] = 4L
-      for (stage in 0 until 4) {
+      this[6] = 6L
+      for (stage in 0 until 6) {
         val offset = 7 + stage * 5
         this[offset] = 1L
       }
@@ -69,6 +69,10 @@ class Media3FlowDiagnosticsTest {
       val motionOffset = 7 + 2 * 5
       this[motionOffset + 1] = 3L
       this[motionOffset + 2] = 0L
+      val middleOffset = 7 + 3 * 5
+      this[middleOffset + 1] = 1L
+      this[middleOffset + 2] = 1L
+      this[middleOffset + 3] = 1_500_000L
     }
 
     val timings = Media3FlowDiagnosticMath.parseVulkanTimingSnapshot(snapshot)
@@ -83,22 +87,25 @@ class Media3FlowDiagnosticsTest {
     assertEquals(2L, timings.preprocess.completedSamples)
     assertEquals(500.0, timings.preprocess.averageUs!!, 0.001)
     assertEquals(900.0, timings.preprocess.maximumUs!!, 0.001)
-    assertEquals("pending_or_dropped", timings.motion.status)
+    assertEquals("pending_or_dropped", timings.motionFine.status)
+    assertEquals(3L, timings.motionFine.pendingOrDropped)
+    assertEquals("ready", timings.motion.status)
     assertEquals(3L, timings.motion.pendingOrDropped)
-    assertNull(timings.motion.averageUs)
+    assertEquals(1L, timings.motion.completedSamples)
+    assertEquals(1_500.0, timings.motion.averageUs!!, 0.001)
   }
 
   @Test
   fun vulkanSnapshotUsesComputeAndGraphicsSupportEvenWhenQueueValidBitsAreZero() {
-    val supportedByDeviceLimits = LongArray(27).apply {
-      this[0] = 2L
+    val supportedByDeviceLimits = LongArray(37).apply {
+      this[0] = 3L
       this[1] = 1L
       this[2] = 1_000L
       this[3] = 1L
       this[4] = 0L
       this[5] = 2L
-      this[6] = 4L
-      for (stage in 0 until 4) this[7 + stage * 5] = 1L
+      this[6] = 6L
+      for (stage in 0 until 6) this[7 + stage * 5] = 1L
     }
     assertEquals(
       "supported_waiting_for_dispatch",

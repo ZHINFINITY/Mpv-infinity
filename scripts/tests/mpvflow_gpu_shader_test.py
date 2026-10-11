@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import ast
 import pathlib
+import random
 import re
 import shutil
 import subprocess
@@ -52,8 +53,12 @@ require(preprocess, "texture(inTex,uv)", "preprocess must keep scaling on the GP
 
 flow = shaders["shader_flow"]
 synthesis = shaders["shader_synthesize"]
-require(flow, "for(int dy=lo.y-center.y;dy<=hi.y-center.y;dy++) for(int dx=lo.x-center.x;dx<=hi.x-center.x;dx++)", "motion search must iterate only valid candidates in its exact configured radius")
-assert "for(int dy=-8;dy<=8;dy++)" not in flow, "motion search must not execute masked candidates outside the active radius"
+require(flow, "for(int ring=1;ring<=radius;ring++)", "motion search must prioritize candidates center-out without changing its configured radius")
+require(flow, "if(max(abs(dx),abs(dy))!=ring) continue", "center-out rings must enumerate each Chebyshev-radius candidate exactly once")
+require(flow, "if(any(lessThan(d,lo))||any(greaterThan(d,hi))) continue", "center-out search must retain edge-clipped bounds")
+require(flow, "d.y<bestVector.y||(d.y==bestVector.y&&d.x<bestVector.x)", "out-of-order equal-cost winners must retain the legacy row-major tie-break")
+require(flow, "sadAt(p,d,sz,best==0?0:second)", "zero-cost matches must prune only redundant SAD reads while still checking every candidate for an equally good match")
+require(flow, "int radius=pc.cfg.z", "center-out must retain the original full configured motion radius")
 require(flow, "float(best)/(64.0*255.0)", "flow vectors must retain normalized block-match error")
 require(synthesis, "vec4 flowAtEdgeAware(vec2 p,int direction)", "synthesis must guide vector sampling by source appearance")
 require(synthesis, "layout(set=0,binding=5,rgba16f) readonly uniform image2D luma0Tex;", "frame-0 luma binding/format mismatch")
@@ -86,6 +91,23 @@ assert "r32f" not in SOURCE.lower(), "MPV Flow must not require the optional R32
 assert "glsl.gles" not in SOURCE and "#version 310 es" not in SOURCE, "MPV Flow must not require GLES compute"
 
 
+def row_major_candidates(center_x: int, center_y: int, lo_x: int, hi_x: int, lo_y: int, hi_y: int):
+    return [(x, y) for y in range(lo_y, hi_y + 1) for x in range(lo_x, hi_x + 1)]
+
+
+def center_out_candidates(center_x: int, center_y: int, lo_x: int, hi_x: int, lo_y: int, hi_y: int, radius: int):
+    candidates = [(center_x, center_y)]
+    for ring in range(1, radius + 1):
+        for dy in range(-ring, ring + 1):
+            for dx in range(-ring, ring + 1):
+                if max(abs(dx), abs(dy)) != ring:
+                    continue
+                point = (center_x + dx, center_y + dy)
+                if lo_x <= point[0] <= hi_x and lo_y <= point[1] <= hi_y:
+                    candidates.append(point)
+    return candidates
+
+
 def search_candidates(center: int, lower: int, upper: int, radius: int):
     low = max(lower, center - radius)
     high = min(upper, center + radius)
@@ -103,6 +125,98 @@ for radius in range(1, 9):
             assert exhaustive == search_candidates(center, lower, upper, radius), (
                 "bounded loop must retain every in-frame candidate from the old masked loop"
             )
+
+
+def block_search(src, dst, p, center, radius, center_out):
+    height, width = len(src), len(src[0])
+    lo_x = max(-p[0], center[0] - radius)
+    hi_x = min(width - 8 - p[0], center[0] + radius)
+    lo_y = max(-p[1], center[1] - radius)
+    hi_y = min(height - 8 - p[1], center[1] + radius)
+    best_vector = center
+    best, reads = sad_at(src, dst, p, best_vector, 2**31 - 1)
+    second = 2**31 - 1
+    candidates = (
+        center_out_candidates(*center, lo_x, hi_x, lo_y, hi_y, radius)
+        if center_out else row_major_candidates(center[0], center[1], lo_x, hi_x, lo_y, hi_y)
+    )
+    for candidate in candidates:
+        if candidate == center:
+            continue
+        cost, sample_reads = sad_at(src, dst, p, candidate, 0 if center_out and best == 0 else second)
+        reads += sample_reads
+        if center_out and best == 0:
+            if cost == 0:
+                second = 0
+                if best_vector != center and (candidate[1], candidate[0]) < (best_vector[1], best_vector[0]):
+                    best_vector = candidate
+            elif second != 0:
+                # With an integer, non-negative SAD and best==0, every positive
+                # runner-up produces the same exact normalized uniqueness (1).
+                second = 1
+        elif cost < best:
+            second, best, best_vector = best, cost, candidate
+        elif cost == best:
+            if second > cost:
+                second = cost
+            # The reference scans row-major and never replaces the center on a tie.
+            if best_vector != center and (candidate[1], candidate[0]) < (best_vector[1], best_vector[0]):
+                best_vector = candidate
+        elif cost < second:
+            second = cost
+    confidence = max(0.0, min(1.0, (second - best) / max(second, 1)))
+    return best_vector, best, confidence, reads
+
+
+def sad_at(src, dst, p, displacement, cutoff):
+    cost = 0
+    reads = 0
+    for y in range(8):
+        for x in range(8):
+            cost += abs(src[p[1] + y][p[0] + x] - dst[p[1] + displacement[1] + y][p[0] + displacement[0] + x])
+            reads += 1
+            if cost > cutoff:
+                return cost, reads
+    return cost, reads
+
+
+def shifted(image, dx, dy):
+    height, width = len(image), len(image[0])
+    out = [[0 for _ in range(width)] for _ in range(height)]
+    for y in range(height):
+        for x in range(width):
+            sx, sy = x - dx, y - dy
+            if 0 <= sx < width and 0 <= sy < height:
+                out[y][x] = image[sy][sx]
+    return out
+
+
+rng = random.Random(0xF10A)
+random_texture = [[rng.randrange(256) for _ in range(32)] for _ in range(24)]
+repetitive_texture = [[(255 if (x // 2) % 2 else 0) for x in range(32)] for _ in range(24)]
+ambiguous_texture = [[127 for _ in range(32)] for _ in range(24)]
+exact_cases = (
+    (random_texture, shifted(random_texture, 3, -2), (12, 8), (2, -1), 8, "translated texture"),
+    (random_texture, shifted(random_texture, -3, 2), (0, 0), (0, 0), 8, "clipped top-left border"),
+    (repetitive_texture, shifted(repetitive_texture, 2, 0), (8, 8), (0, 0), 8, "repetitive stripes"),
+    (ambiguous_texture, ambiguous_texture, (24, 16), (0, 0), 8, "ambiguous flat patch"),
+)
+optimized_reads = reference_reads = 0
+for src, dst, p, center, radius, label in exact_cases:
+    height, width = len(src), len(src[0])
+    lo_x, hi_x = max(-p[0], center[0] - radius), min(width - 8 - p[0], center[0] + radius)
+    lo_y, hi_y = max(-p[1], center[1] - radius), min(height - 8 - p[1], center[1] + radius)
+    reference_set = set(row_major_candidates(center[0], center[1], lo_x, hi_x, lo_y, hi_y))
+    optimized_order = center_out_candidates(center[0], center[1], lo_x, hi_x, lo_y, hi_y, radius)
+    assert len(optimized_order) == len(set(optimized_order)), f"{label}: center-out order must not duplicate candidates"
+    assert set(optimized_order) == reference_set, f"{label}: center-out order must retain the entire clipped candidate set"
+    reference = block_search(src, dst, p, center, radius, center_out=False)
+    optimized = block_search(src, dst, p, center, radius, center_out=True)
+    assert optimized[:3] == reference[:3], f"{label}: vector, normalized best SAD and confidence must exactly match the row-major reference"
+    reference_reads += reference[3]
+    optimized_reads += optimized[3]
+
+print(f"Exact center-out SAD regression: candidates and vectors match; pixel comparisons {reference_reads}->{optimized_reads}")
 
 
 def boundary_source(alpha: float, luma0: float, luma1: float, confidence0: float, confidence1: float):

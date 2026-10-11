@@ -44,6 +44,9 @@ data class FlowVulkanTimingStats(
   val computeQueueFamily: Int = -1,
   val preprocess: FlowVulkanStageTiming = FlowVulkanStageTiming(),
   val analysis: FlowVulkanStageTiming = FlowVulkanStageTiming(),
+  val motionFine: FlowVulkanStageTiming = FlowVulkanStageTiming(),
+  val motionMiddle: FlowVulkanStageTiming = FlowVulkanStageTiming(),
+  val motionCoarse: FlowVulkanStageTiming = FlowVulkanStageTiming(),
   val motion: FlowVulkanStageTiming = FlowVulkanStageTiming(),
   val synthesis: FlowVulkanStageTiming = FlowVulkanStageTiming(),
 )
@@ -113,8 +116,8 @@ internal data class FlowCoverageSample(
 )
 
 internal object Media3FlowDiagnosticMath {
-  private const val VULKAN_TIMING_SCHEMA_VERSION = 2L
-  private const val VULKAN_TIMING_STAGE_COUNT = 4
+  private const val VULKAN_TIMING_SCHEMA_VERSION = 3L
+  private const val VULKAN_TIMING_STAGE_COUNT = 6
   private const val VULKAN_TIMING_HEADER_SIZE = 7
   private const val VULKAN_TIMING_STAGE_SIZE = 5
 
@@ -129,6 +132,30 @@ internal object Media3FlowDiagnosticMath {
     completedSamples > 0L -> "ready"
     dispatches > 0L -> "pending_or_dropped"
     else -> "supported_waiting_for_dispatch"
+  }
+
+  private fun aggregateMotionStages(stages: List<FlowVulkanStageTiming>): FlowVulkanStageTiming {
+    val dispatches = stages.sumOf { it.dispatches }
+    val completed = stages.sumOf { it.completedSamples }
+    val supported = stages.isNotEmpty() && stages.all { it.supported }
+    val unsupportedStatus = stages.map { it.status }.distinct().singleOrNull()
+    val status = when {
+      supported && completed > 0L -> "ready"
+      supported && dispatches > 0L -> "pending_or_dropped"
+      supported -> "supported_waiting_for_dispatch"
+      unsupportedStatus != null -> unsupportedStatus
+      else -> "partial_timer_support"
+    }
+    val weightedTotalUs = stages.sumOf { (it.averageUs ?: 0.0) * it.completedSamples }
+    return FlowVulkanStageTiming(
+      status = status,
+      supported = supported,
+      dispatches = dispatches,
+      completedSamples = completed,
+      pendingOrDropped = stages.sumOf { it.pendingOrDropped },
+      averageUs = weightedTotalUs.takeIf { completed > 0L }?.div(completed),
+      maximumUs = stages.mapNotNull { it.maximumUs }.maxOrNull(),
+    )
   }
 
   fun parseVulkanTimingSnapshot(values: LongArray?): FlowVulkanTimingStats {
@@ -185,8 +212,11 @@ internal object Media3FlowDiagnosticMath {
       computeQueueFamily = computeQueueFamily,
       preprocess = stages[0],
       analysis = stages[1],
-      motion = stages[2],
-      synthesis = stages[3],
+      motionFine = stages[2],
+      motionMiddle = stages[3],
+      motionCoarse = stages[4],
+      motion = aggregateMotionStages(stages.subList(2, 5)),
+      synthesis = stages[5],
     )
   }
 

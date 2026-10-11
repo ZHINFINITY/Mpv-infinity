@@ -2410,7 +2410,11 @@ class Media3FlowVideoSink(
       ?: vulkanTiming.motion.status
     val confidence = diagnostics.confidence?.let { formatLogFloat(it) } ?: "n/a"
     val vulkanStages = "preprocess=${formatVulkanStage(vulkanTiming.preprocess)} " +
-      "analysis=${formatVulkanStage(vulkanTiming.analysis)} motion=${formatVulkanStage(vulkanTiming.motion)} " +
+      "analysis=${formatVulkanStage(vulkanTiming.analysis)} " +
+      "motionFine=${formatVulkanStage(vulkanTiming.motionFine)} " +
+      "motionMiddle=${formatVulkanStage(vulkanTiming.motionMiddle)} " +
+      "motionCoarse=${formatVulkanStage(vulkanTiming.motionCoarse)} " +
+      "motionTotal=${formatVulkanStage(vulkanTiming.motion)} " +
       "synthesis=${formatVulkanStage(vulkanTiming.synthesis)}"
     val glesStages = "presentation_draw=${formatFlowDuration(glesTiming.presentationDraw)}"
     val cpuStages = "media3InputQueue=${formatFlowDuration(cpuTiming.inputQueueWait)} " +

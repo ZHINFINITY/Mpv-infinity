@@ -94,14 +94,18 @@ assert "compute_timestamps_supported" in GPU and "timestamp_compute_and_graphics
 assert "VK_QUERY_RESULT_WAIT_BIT" not in GPU and "pl_timer_query(ctx->gpu" in GPU
 assert "computeTimestampValidBits" in JNI and "timestamp_period_ns=%.6f" in JNI
 assert "context->computeTimestampValidBits = timingStats.compute_timestamp_valid_bits;" in JNI
-assert "values[0] = 2; // JNI snapshot schema version" in JNI
+assert "values[0] = 3; // JNI snapshot schema version" in JNI
 assert "constexpr jsize headerFields = 7;" in JNI
+assert "constexpr jsize stageFields = 5;" in JNI
+assert "values[6] = stats.stage_count;" in JNI
 assert "values[1] = stats.compute_timestamps_supported ? 1 : 0;" in JNI
 assert "values[4] = stats.compute_timestamp_valid_bits;" in JNI
 assert "values[2] = static_cast<jlong>(stats.timestamp_period_ns * 1000.0 + 0.5);" in JNI
 assert "values[3] = stats.timestamp_compute_and_graphics ? 1 : 0;" in JNI
 assert "vulkanTimestampSupported" in JNI and "compute_queue_timestampValidBits_zero" in JNI
 assert "pending_or_dropped" in (ROOT / "app/src/main/java/app/infinity/mpvz/ui/player/Media3FlowDiagnostics.kt").read_text()
+for stage in ("motionFine", "motionMiddle", "motionCoarse"):
+    assert f"{stage} = stages[" in (ROOT / "app/src/main/java/app/infinity/mpvz/ui/player/Media3FlowDiagnostics.kt").read_text()
 assert "Vulkan/libplacebo timestamp queries" in (ROOT / "app/src/main/java/app/infinity/mpvz/ui/player/controls/PlayerControls.kt").read_text()
 assert "GLES_EXT_disjoint_timer_query presentation draw" in (ROOT / "app/src/main/java/app/infinity/mpvz/ui/player/controls/PlayerControls.kt").read_text()
 timing_snapshot = JNI.split("nativeGetVulkanTimingStats(", 1)[1].split("nativeDestroyContext(", 1)[0]

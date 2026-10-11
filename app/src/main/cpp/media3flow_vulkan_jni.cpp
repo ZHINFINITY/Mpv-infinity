@@ -1515,7 +1515,7 @@ Java_app_infinity_mpvz_ui_player_Media3FlowVulkanNative_nativeGetVulkanTimingSta
     constexpr jsize stageFields = 5;
     constexpr jsize valueCount = headerFields + MPVFLOW_GPU_STAGE_COUNT * stageFields;
     jlong values[valueCount]{};
-    values[0] = 2; // JNI snapshot schema version
+    values[0] = 3; // JNI snapshot schema version
     values[1] = stats.compute_timestamps_supported ? 1 : 0;
     values[2] = static_cast<jlong>(stats.timestamp_period_ns * 1000.0 + 0.5); // picoseconds per tick
     values[3] = stats.timestamp_compute_and_graphics ? 1 : 0;
