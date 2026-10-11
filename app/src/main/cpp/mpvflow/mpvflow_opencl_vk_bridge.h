@@ -93,6 +93,12 @@ enum MPVFlowOpenCLVkBridgeStatus mpvflow_opencl_vk_buffer_opencl_started(
 enum MPVFlowOpenCLVkBridgeStatus mpvflow_opencl_vk_buffer_opencl_finished(
     MPVFlowOpenCLVkBuffer *buffer);
 
+/* GPU-only Vulkan transfer fill for deterministic bridge self-tests. The buffer
+ * must be foreign-owned and idle; ownership is returned to the foreign family
+ * and the queue fence is waited before this function returns. */
+enum MPVFlowOpenCLVkBridgeStatus mpvflow_opencl_vk_fill_buffer(
+    MPVFlowOpenCLVkBuffer *buffer, uint32_t value);
+
 /*
  * GPU-only VkImageToBuffer copy. Source must be a 2D, single-sample,
  * VK_FORMAT_R8G8B8A8_UNORM pl_tex with TRANSFER_SRC usage and exact dimensions.

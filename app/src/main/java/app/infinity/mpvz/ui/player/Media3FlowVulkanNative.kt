@@ -12,6 +12,9 @@ internal object Media3FlowVulkanNative {
 
   external fun nativeCreateContext(maxDimension: Int, requestedComputeApi: Int): Long
 
+  /** Returns the currently effective Flow compute backend, including Auto fallback. */
+  external fun nativeGetComputeApiName(context: Long): String?
+
   /** Returns the Vulkan driver's required Android buffer usage for the selected image role. */
   external fun nativeGetRequiredHardwareBufferUsage(context: Long, output: Boolean): Long
 

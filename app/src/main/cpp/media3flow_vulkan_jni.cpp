@@ -1123,6 +1123,18 @@ Java_app_infinity_mpvz_ui_player_Media3FlowVulkanNative_nativeCreateContext(
     return reinterpret_cast<jlong>(context);
 }
 
+extern "C" JNIEXPORT jstring JNICALL
+Java_app_infinity_mpvz_ui_player_Media3FlowVulkanNative_nativeGetComputeApiName(
+    JNIEnv *env, jobject, jlong contextHandle) {
+    auto *context = reinterpret_cast<FlowContext *>(contextHandle);
+    if (!context)
+        return env->NewStringUTF("unavailable");
+    std::lock_guard<std::mutex> guard(context->mutex);
+    const char *name = context->flow
+        ? mpvflow_gpu_get_compute_api_name(context->flow) : "unavailable";
+    return env->NewStringUTF(name ? name : "unknown");
+}
+
 extern "C" JNIEXPORT jlong JNICALL
 Java_app_infinity_mpvz_ui_player_Media3FlowVulkanNative_nativeGetRequiredHardwareBufferUsage(
     JNIEnv *, jobject, jlong contextHandle, jboolean output) {

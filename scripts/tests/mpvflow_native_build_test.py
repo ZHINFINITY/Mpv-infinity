@@ -416,6 +416,40 @@ assert 'cl_qcom_ext_host_ptr' in opencl_source and 'has_extension(exts, MPVFLOW_
 assert "vkCmdCopyImageToBuffer" in bridge_source and "vkCmdCopyBufferToImage" in bridge_source, (
     "the OpenCL interop path must transfer textures using synchronized GPU-only Vulkan copies"
 )
+assert "vkCmdFillBuffer" in bridge_source and "mpvflow_opencl_vk_fill_buffer" in bridge_source, (
+    "the OpenCL startup smoke test must exercise Vulkan writes into shared storage without CPU uploads"
+)
+interop_probe = flow_gpu_source.split("static enum MPVFlowOpenCLVkBridgeStatus flow_opencl_interop_probe(", 1)[1].split(
+    "MPVFlowGPUContext *mpvflow_gpu_create(", 1
+)[0]
+for marker in (
+    "mpvflow_opencl_analyze_pair",
+    "mpvflow_opencl_synthesize",
+    "mpvflow_opencl_vk_copy_buffer_to_texture",
+    "probe_dimension = 64",
+):
+    assert marker in interop_probe, (
+        f"OpenCL initialization must execute an analyze/synthesize Vulkan round-trip: missing {marker!r}"
+    )
+assert "probe=kernel_interop_roundtrip" in flow_gpu_source
+for marker in (
+    "flow_init_retry_count < 2",
+    '"opencl_initialization"',
+    "flow_init_retry_after_ns",
+    "retry_scheduled=%d",
+):
+    assert marker in vo_patch, f"explicit OpenCL initialization should use a bounded retry: missing {marker!r}"
+media3_sink_source = (ROOT / "app/src/main/java/app/infinity/mpvz/ui/player/Media3FlowVideoSink.kt").read_text(
+    encoding="utf-8"
+)
+media3_native_source = (
+    ROOT / "app/src/main/java/app/infinity/mpvz/ui/player/Media3FlowVulkanNative.kt"
+).read_text(encoding="utf-8")
+assert "nativeGetComputeApiName" in media3_jni_source and "nativeGetComputeApiName" in media3_native_source
+assert "effective_compute_api=${effectiveComputeApiName()}" in media3_sink_source
+assert "backend=vulkan-spirv" not in media3_sink_source, (
+    "Media3 Flow diagnostics must not claim Vulkan compute when OpenCL was requested or selected"
+)
 for source in ("mpvflow/mpvflow_opencl.c", "mpvflow/mpvflow_opencl_vk_bridge.c"):
     assert source in cmake_source, f"Native Media3 must compile {source}"
 assert "dl" in cmake_source and 'android:name="libOpenCL.so"' in manifest_source and 'android:required="false"' in manifest_source, (

@@ -5,7 +5,7 @@
 +#include <string.h>
 @@ -52,0 +55,1 @@
 +#include "mpvflow_gpu.h"
-@@ -157,0 +161,47 @@
+@@ -157,0 +161,50 @@
 +    // MPVFLOW_GPU_INTEGRATION
 +    MPVFlowGPUContext *flow_gpu;
 +    MPVFlowGPUPair *flow_pair;
@@ -14,6 +14,9 @@
 +    bool flow_init_logged;
 +    bool flow_active_logged;
 +    bool flow_init_attempted;
++    bool flow_init_retry_pending;
++    unsigned int flow_init_retry_count;
++    int64_t flow_init_retry_after_ns;
 +    unsigned int flow_bypass_logged_mask;
 +    bool flow_queue_state_logged;
 +    const char *flow_queue_last_state;
@@ -76,7 +79,7 @@
 +    int flow_cap;
 +    int flow_w, flow_h;
 +    int flow_source_w, flow_source_h;
-@@ -569,0 +614,345 @@
+@@ -569,0 +614,377 @@
 +static void flow_release_pair(struct priv *p)
 +{
 +    if (p->flow_pair)
@@ -109,6 +112,9 @@
 +        p->flow_timing_last_report_ns = 0;
 +        p->flow_active_logged = false;
 +        p->flow_init_attempted = false;
++        p->flow_init_retry_pending = false;
++        p->flow_init_retry_count = 0;
++        p->flow_init_retry_after_ns = 0;
 +        p->flow_bypass_logged_mask = 0;
 +        p->flow_pending_synthesized = false;
 +        p->flow_pending_display_synced = false;
@@ -151,6 +157,9 @@
 +        p->flow_max_dimension = requested_dimension;
 +        p->flow_compute_api = requested_compute_api;
 +        p->flow_init_attempted = false;
++        p->flow_init_retry_pending = false;
++        p->flow_init_retry_count = 0;
++        p->flow_init_retry_after_ns = 0;
 +        p->flow_geometry_w = p->flow_geometry_h = 0;
 +        p->flow_timing_last_report_ns = 0;
 +        p->flow_init_logged = false;
@@ -175,8 +184,15 @@
 +        p->flow_cadence_pair_analysis_failures = 0;
 +        p->flow_cadence_pair_cache_reuses = 0;
 +    }
-+    if (p->flow_gpu || p->flow_init_attempted)
++    if (p->flow_gpu)
 +        return;
++    if (p->flow_init_attempted) {
++        if (!p->flow_init_retry_pending ||
++            mp_time_ns() < p->flow_init_retry_after_ns)
++            return;
++        p->flow_init_attempted = false;
++        p->flow_init_retry_pending = false;
++    }
 +    if (!p->gpu) {
 +        if (!p->flow_init_logged) {
 +            MP_WARN(vo, "MPVFLOW_DIAGNOSTIC event=renderer_init state=unavailable "
@@ -208,13 +224,28 @@
 +            !p->gpu->glsl.vulkan ? "glsl_vulkan" :
 +            p->gpu->glsl.version < 450 ? "glsl_version" :
 +            p->gpu->limits.max_pushc_size < 20 ? "max_pushc_size" : "none";
++        unsigned int retry_delay_ms = 0;
++        if (!ctx && requested_compute_api == MPVFLOW_GPU_COMPUTE_OPENCL &&
++            create_diagnostics.stage &&
++            !strcmp(create_diagnostics.stage, "opencl_initialization") &&
++            p->flow_init_retry_count < 2) {
++            const int64_t retry_now_ns = mp_time_ns();
++            if (retry_now_ns > 0) {
++                p->flow_init_retry_count++;
++                retry_delay_ms = p->flow_init_retry_count == 1 ? 5000 : 15000;
++                p->flow_init_retry_after_ns = retry_now_ns +
++                    (int64_t) retry_delay_ms * 1000000LL;
++                p->flow_init_retry_pending = true;
++            }
++        }
 +        MP_WARN(vo, "MPVFLOW_DIAGNOSTIC event=renderer_init state=unavailable backend=%s "
 +                "target_fps=%d reason=%s status=%d input_rgba8=%d cpu_fallback=no "
 +                "capability_failure=%s glsl_compute=%d glsl_vulkan=%d glsl_version=%d "
 +                "max_pushc_size=%zu required_pushc_size=%zu max_tex_2d_dim=%u "
 +                "max_group_threads=%u max_group_size=%ux%ux%u compute_queues=%u "
 +                "create_stage=%s failed_pass_mask=0x%x rgba16f_found=%d rgba16f_caps=0x%x "
-+                "rgba8_found=%d rgba8_caps=0x%x input_fmt=%s input_fmt_caps=0x%x\n",
++                "rgba8_found=%d rgba8_caps=0x%x input_fmt=%s input_fmt_caps=0x%x "
++                "retry_scheduled=%d retry_count=%u retry_delay_ms=%u\n",
 +                backend, p->next_opts->mpvflow_target_fps, reason, status, !!input_fmt,
 +                capability_failure, p->gpu->glsl.compute, p->gpu->glsl.vulkan,
 +                p->gpu->glsl.version, p->gpu->limits.max_pushc_size,
@@ -226,13 +257,17 @@
 +                create_diagnostics.failed_pass_mask, create_diagnostics.rgba16f_found,
 +                create_diagnostics.rgba16f_caps, create_diagnostics.rgba8_found,
 +                create_diagnostics.rgba8_caps, input_fmt && input_fmt->name ? input_fmt->name : "missing",
-+                input_fmt ? input_fmt->caps : 0);
++                input_fmt ? input_fmt->caps : 0, p->flow_init_retry_pending,
++                p->flow_init_retry_count, retry_delay_ms);
 +        p->flow_init_logged = true;
 +        return;
 +    }
 +
 +    p->flow_gpu = ctx;
 +    p->flow_input_fmt = input_fmt;
++    p->flow_init_retry_pending = false;
++    p->flow_init_retry_count = 0;
++    p->flow_init_retry_after_ns = 0;
 +    p->flow_init_logged = true;
 +    MP_INFO(vo, "MPVFLOW_DIAGNOSTIC event=renderer_init state=initialized backend=%s "
 +            "target_fps=%d requested_compute_api=%d reason=ready status=0 max_dimension=%d search_radius=%d "

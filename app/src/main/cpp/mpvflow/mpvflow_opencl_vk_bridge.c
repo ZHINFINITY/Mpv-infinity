@@ -644,6 +644,52 @@ enum MPVFlowOpenCLVkBridgeStatus mpvflow_opencl_vk_buffer_opencl_finished(
     return MPVFLOW_OPENCL_VK_BRIDGE_OK;
 }
 
+enum MPVFlowOpenCLVkBridgeStatus mpvflow_opencl_vk_fill_buffer(
+    MPVFlowOpenCLVkBuffer *buf, uint32_t value)
+{
+    if (!buf || !buf->bridge)
+        return MPVFLOW_OPENCL_VK_BRIDGE_INVALID;
+    MPVFlowOpenCLVkBridge *b = buf->bridge;
+    VkCommandBuffer cmd = VK_NULL_HANDLE;
+    VkResult vr;
+    enum MPVFlowOpenCLVkBridgeStatus status;
+    pthread_mutex_lock(&b->mutex);
+    if (buf->state != BUFFER_FOREIGN_CL_DONE) {
+        set_error(b, "Vulkan fill requires an idle, foreign-owned buffer");
+        status = MPVFLOW_OPENCL_VK_BRIDGE_BUSY;
+        goto done;
+    }
+    if (!buf->blob_capacity || (buf->blob_capacity & 3u)) {
+        set_error(b, "Vulkan fill requires a non-empty 4-byte-aligned BLOB capacity");
+        status = MPVFLOW_OPENCL_VK_BRIDGE_UNSUPPORTED;
+        goto done;
+    }
+    vr = begin_command(b, &cmd);
+    if (vr != VK_SUCCESS) {
+        status = fail_vk(b, "allocate Vulkan buffer-fill command", vr);
+        goto done;
+    }
+    record_buffer_acquire(b, cmd, buf->vk_buffer);
+    vkCmdFillBuffer(cmd, buf->vk_buffer, 0,
+                    (VkDeviceSize)buf->blob_capacity, value);
+    record_buffer_release(b, cmd, buf->vk_buffer, VK_ACCESS_TRANSFER_WRITE_BIT);
+    vr = finish_command(b, cmd, VK_NULL_HANDLE);
+    cmd = VK_NULL_HANDLE;
+    if (vr != VK_SUCCESS) {
+        status = fail_vk(b, "submit/wait Vulkan shared-buffer fill", vr);
+        goto done;
+    }
+    buf->state = BUFFER_FOREIGN_CL_DONE;
+    b->error[0] = '\0';
+    status = MPVFLOW_OPENCL_VK_BRIDGE_OK;
+
+done:
+    if (cmd != VK_NULL_HANDLE)
+        vkFreeCommandBuffers(b->vk->device, b->command_pool, 1, &cmd);
+    pthread_mutex_unlock(&b->mutex);
+    return status;
+}
+
 static enum MPVFlowOpenCLVkBridgeStatus validate_texture(
     MPVFlowOpenCLVkBridge *b, pl_tex tex, VkImageUsageFlags wanted_usage,
     uint32_t width, uint32_t height, VkImage *image, VkImageUsageFlags *actual_usage)

@@ -246,7 +246,7 @@ class Media3FlowVideoSink(
   private var gridWidth = 0
   private var gridHeight = 0
   private var outputTexture = 0
-  private var flowVulkanContext = 0L
+  @Volatile private var flowVulkanContext = 0L
   private var inputRequiredHardwareBufferUsage = 0L
   private var outputRequiredHardwareBufferUsage = 0L
   private var outputHardwareBuffer: HardwareBuffer? = null
@@ -260,7 +260,8 @@ class Media3FlowVideoSink(
     logFlowRecordOnce(
       "flow-config",
       Log.INFO,
-      "event=config requested_enabled=true renderer=native-media3 capture=gles3 compute_backend=vulkan " +
+      "event=config requested_enabled=true renderer=native-media3 capture=gles3 renderer_api=vulkan " +
+        "requested_compute_api=${requestedComputeApi.name.lowercase()} " +
         "target_fps=$targetFps source_pts=media3_decoder sync_mode=1x hardware_decoder=media3 " +
         "cpu_readback=no",
     )
@@ -322,7 +323,9 @@ class Media3FlowVideoSink(
       logFlowRecordOnce(
         "preflight-ready",
         Log.INFO,
-        "event=preflight state=ready backend=vulkan-spirv target_fps=$targetFps " +
+        "event=preflight state=ready renderer_api=vulkan " +
+          "requested_compute_api=${requestedComputeApi.name.lowercase()} " +
+          "effective_compute_api=${effectiveComputeApiName()} target_fps=$targetFps " +
           "input_ahb=imported output_ahb=imported source_pts=media3_decoder sync_mode=1x",
       )
     }
@@ -358,6 +361,14 @@ class Media3FlowVideoSink(
       error != null -> Log.w(logTag, message, error)
       else -> Log.println(priority, logTag, message)
     }
+  }
+
+  private fun effectiveComputeApiName(): String {
+    val context = flowVulkanContext
+    if (context == 0L) return "unavailable"
+    return runCatching {
+      Media3FlowVulkanNative.nativeGetComputeApiName(context)
+    }.getOrNull() ?: "unknown"
   }
 
   fun isPreflightAvailable(): Boolean = preflightAvailable && !disposed
@@ -1309,28 +1320,32 @@ class Media3FlowVideoSink(
     if (nativePair == 0L) {
       reusable.available = false
       flowAvailable = false
-      lastBypassReason = "vulkan_motion_analysis_error"
+      lastBypassReason = "motion_analysis_error"
       lastState = "source_fallback"
       logFlowRecordOnce(
         "first-pair-analysis-failure",
         Log.ERROR,
-        "event=source_pair state=failed backend=vulkan-spirv stage=nativeAnalyzePair " +
+        "event=source_pair state=failed renderer_api=vulkan " +
+          "requested_compute_api=${requestedComputeApi.name.lowercase()} " +
+          "effective_compute_api=${effectiveComputeApiName()} stage=nativeAnalyzePair " +
           "source_pts0_us=${frame0.ptsUs} source_pts1_us=${frame1.ptsUs} source_delta_us=$deltaUs " +
           "target_fps=$targetFps playback_speed=${formatLogFloat(playbackSpeed)} " +
-          "reason=vulkan_motion_analysis_error fallback=original_media3_source_frames",
+          "reason=motion_analysis_error fallback=original_media3_source_frames",
       )
       return
     }
     reusable.nativePairHandle = nativePair
     reusable.available = true
     lastBypassReason = null
-    lastState = "motion_estimated_vulkan"
+    lastState = "motion_estimated_gpu"
     if (!firstSuccessfulPairDiagnosticLogged) {
       firstSuccessfulPairDiagnosticLogged = true
       logFlowRecordOnce(
         "first-source-pair-ready",
         Log.INFO,
-        "event=source_pair state=ready backend=vulkan-spirv " +
+        "event=source_pair state=ready renderer_api=vulkan " +
+          "requested_compute_api=${requestedComputeApi.name.lowercase()} " +
+          "effective_compute_api=${effectiveComputeApiName()} " +
           "source_pts0_us=${frame0.ptsUs} source_pts1_us=${frame1.ptsUs} source_delta_us=$deltaUs " +
           "target_fps=$targetFps playback_speed=${formatLogFloat(playbackSpeed)} " +
           "timestamp_source=media3_decoder_pts",
@@ -1475,7 +1490,9 @@ class Media3FlowVideoSink(
       lastLoggedOutputDiagnosticSignature = outputSignature
       val alpha = bracket?.let { Media3FlowCadence.interpolationAlpha(it.first.ptsUs, it.second.ptsUs, targetPtsUs) }
       val outputMessage =
-        "MPVFLOW_DIAGNOSTIC component=native-media3 event=output state=$outputState backend=vulkan-spirv " +
+        "MPVFLOW_DIAGNOSTIC component=native-media3 event=output state=$outputState renderer_api=vulkan " +
+          "requested_compute_api=${requestedComputeApi.name.lowercase()} " +
+          "effective_compute_api=${effectiveComputeApiName()} " +
           "reason=$outputReason target_fps=$targetFps speed=${formatLogFloat(speed)} " +
           "source_pts_us=${sourceFrame.ptsUs} source_pts0_us=${bracket?.first?.ptsUs ?: "none"} " +
           "source_pts1_us=${bracket?.second?.ptsUs ?: "none"} target_pts_us=$targetPtsUs " +
@@ -1813,7 +1830,9 @@ class Media3FlowVideoSink(
       logFlowRecordOnce(
         "shared-image-pool-ready-$sourceWidth-$sourceHeight",
         Log.INFO,
-        "event=renderer_init state=ready backend=vulkan-spirv target_fps=$targetFps " +
+        "event=renderer_init state=ready renderer_api=vulkan " +
+          "requested_compute_api=${requestedComputeApi.name.lowercase()} " +
+          "effective_compute_api=${effectiveComputeApiName()} target_fps=$targetFps " +
           "source=$sourceWidth x $sourceHeight input_images=${framePool.count { it.nativeImageHandle != 0L }} " +
           "required_input_images=$MAX_STORED_FRAMES output_image_present=${outputImageHandle != 0L} " +
           "hardware_decoder=media3 source_pts=media3_decoder_pts sync_mode=1x",
@@ -1824,7 +1843,8 @@ class Media3FlowVideoSink(
         "shared-image-pool-failure-$sourceWidth-$sourceHeight",
         Log.ERROR,
         "event=renderer_init state=unavailable stage=shared_image_pool reason=vulkan_shared_image_unavailable " +
-          "backend=vulkan-spirv source=$sourceWidth x $sourceHeight " +
+          "renderer_api=vulkan requested_compute_api=${requestedComputeApi.name.lowercase()} " +
+          "effective_compute_api=${effectiveComputeApiName()} source=$sourceWidth x $sourceHeight " +
           "input_images=${framePool.count { it.nativeImageHandle != 0L }} required_input_images=$MAX_STORED_FRAMES " +
           "output_image_present=${outputImageHandle != 0L} fallback=stock_media3_renderer",
       )
@@ -2427,7 +2447,9 @@ class Media3FlowVideoSink(
       "synthesisSubmit=${formatFlowDuration(cpuTiming.vulkanSynthesisSubmit)}"
     Log.i(
       logTag,
-        "flow_summary backend=vulkan-spirv state=${diagnostics.state} bypass=${diagnostics.bypassReason ?: "none"} " +
+        "flow_summary renderer_api=vulkan requested_compute_api=${requestedComputeApi.name.lowercase()} " +
+        "effective_compute_api=${effectiveComputeApiName()} state=${diagnostics.state} " +
+        "bypass=${diagnostics.bypassReason ?: "none"} " +
         "positionUs=$latestPositionUs speed=${formatLogFloat(playbackSpeed)} " +
         "sourceFps=${formatLogFloat(diagnostics.sourceFps)} targetFps=${diagnostics.targetFps} " +
         "eglSwapReturnFps=${formatLogFloat(diagnostics.outputFps)} " +
