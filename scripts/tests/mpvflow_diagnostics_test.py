@@ -66,6 +66,8 @@ require(PATCH, "event=renderer_init state=unavailable", "failed or missing GPU i
 require(PATCH, "event=output state=synthesized backend=vulkan-spirv", "only a successfully rendered synthesized output may report synthesized state")
 require(PATCH, "event=output state=passthrough", "source-frame fallback must be distinguishable from synthesized output")
 require(PATCH, "target_fps=%d reason=motion_pair", "synthesized output must include target and reason")
+require(MPV_VIEW, "event=present_mode state=$presentModeState", "MPV Flow must report its Android Vulkan presentation-mode request")
+require(MPV_VIEW, "fallback=FIFO_if_unsupported target_fps=$mpvFlowTargetFps", "present-mode diagnostics must preserve the selected rate and disclose the safe fallback")
 require(PATCH, "target_fps=%d reason=%s status=%d cpu_fallback=no", "pass-through output must expose reason and status")
 require(PATCH, "p->flow_bypass_logged_mask & reason_class", "pass-through logging must be deduplicated by outcome class")
 require(PATCH, "frame->num_frames > 1 || p->next_opts->mpvflow", "Flow must open the display-synchronized queue gate for one-frame VO batches")
@@ -86,7 +88,10 @@ require(PATCH, "search_order=center_out_exact_legacy_tie_break", "MPV diagnostic
 require(PATCH, "MPVFLOW_GPU_MOTION_GRID_STEP", "MPV grid telemetry must use the shared core geometry constants")
 require(PATCH, "source_sync_pct=%.1f", "MPV Flow must quantify display-synchronized source batches")
 require(PATCH, "empty_batch_redraws=%llu", "MPV Flow cadence must separate empty redraw callbacks from unsynchronized source batches")
-require(PATCH, "flip_wait_avg_ms=%.3f", "MPV Flow must measure swap submission/flip wait time")
+require(PATCH, "submit_call_avg_ms=%.3f", "MPV Flow must label the nonblocking submit-call duration accurately")
+require(PATCH, "event=swapchain_wait stage=acquire", "MPV Flow must report slow swapchain image acquisition")
+require(PATCH, "event=swapchain_wait stage=swap_buffers", "MPV Flow must report slow blocking swap/present calls")
+require(PATCH, "metric=cpu_blocking_call_not_scanout", "swapchain waits must not be misrepresented as confirmed scanout")
 require(PATCH, "flow_update_context(vo);", "renderer initialization must be retried from the frame path when options were processed before GPU availability")
 assert PATCH.count("flow_update_context(vo);") >= 3, "initialization must be checked during map, render, and renderer-option updates"
 

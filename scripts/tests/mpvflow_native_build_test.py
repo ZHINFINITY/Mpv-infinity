@@ -106,6 +106,14 @@ for bad_timer_source in (
 build = BUILD.read_text(encoding="utf-8")
 prepare_call = 'python3 "$ROOT/scripts/prepare-mpvflow.py" --mpv-dir "$BUILDSCRIPTS/deps/mpv" --libplacebo-dir "$BUILDSCRIPTS/deps/libplacebo"'
 assert prepare_call in build, "the native build must patch pinned libplacebo before compilation"
+vo_patch = (ROOT / "app/src/main/cpp/mpvflow/mpvflow-vo-gpu-next.patch").read_text(encoding="utf-8")
+for marker in (
+    "event=swapchain_wait stage=acquire",
+    "event=swapchain_wait stage=swap_buffers",
+    "metric=cpu_blocking_call_not_scanout",
+    "submit_call_avg_ms=%.3f",
+):
+    assert marker in vo_patch, f"MPV Flow must distinguish real blocking swapchain waits from submit time: missing {marker!r}"
 assert build.index("./include/ci.sh install") < build.index(prepare_call) < build.index("./include/ci.sh build"), (
     "the libplacebo search-path correction must run after dependency checkout and before native builds"
 )
@@ -236,6 +244,18 @@ vo_creation_position = init_options.index("PlaybackSession.setVideoOutput(backen
 assert display_override_position < vo_creation_position, (
     "MPV Flow must provide Android display FPS before VO creation and display-synced frame timing"
 )
+present_mode_position = init_options.index('PlaybackSession.setOptionString("vulkan-swap-mode", it)')
+assert present_mode_position < vo_creation_position, (
+    "MPV Flow must request its Vulkan present mode before gpu-next creates the Android swapchain"
+)
+for marker in (
+    'backend.gpuApi == "vulkan"',
+    'MpvConfigOverridePolicy.isOwnedByMpvConf("vulkan-swap-mode") -> null',
+    'mpvFlowFrameInterpolationEnabled -> "mailbox"',
+    'else -> "auto"',
+    "fallback=FIFO_if_unsupported",
+):
+    assert marker in init_options, f"MPV Flow present-mode request must retain {marker!r}"
 flow_selector = view_source.split("val flowRequiresVulkan =", 1)[1].split(
     "val gpuNextEnabled =", 1
 )[0]
@@ -264,6 +284,10 @@ assert 'MPV_SUPPORTS_MEDIACODEC_VULKAN", "false"' in standard_flavor, (
     "the standard ARM64 Flow build must keep its direct-import capability accurately declared"
 )
 mpv_conf_source = MPV_CONF_POLICY.read_text(encoding="utf-8")
+renderer_ownership = mpv_conf_source.split("RENDERER(", 1)[1].split("\n  ),", 1)[0]
+assert '"vulkan-swap-mode"' in renderer_ownership, (
+    "explicit mpv.conf Vulkan swap-mode configuration must be discoverable and preserved"
+)
 frame_interpolation_ownership = mpv_conf_source.split("val FRAME_INTERPOLATION =", 1)[1].split(
     "\n    )", 1
 )[0]
@@ -271,6 +295,9 @@ for option in ("gpu-api", "gpu-context", "interpolation", "video-sync", "display
     assert f'"{option}"' in frame_interpolation_ownership, (
         f"mpv.conf-owned {option} must disable MPV Flow rather than override the configured path"
     )
+assert '"vulkan-swap-mode"' not in frame_interpolation_ownership, (
+    "an explicit Vulkan swap mode must be preserved without disabling MPV Flow"
+)
 policy_source = POLICY.read_text(encoding="utf-8")
 flow_hwdec_policy = policy_source.split("fun gpuFlowHwdecMode(", 1)[1].split(
     "fun preferredHwdecMode(", 1

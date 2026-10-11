@@ -618,7 +618,29 @@
 +            flow_release_pair(p);
 @@ -1422,0 +1879,1 @@
 +        fp->frame_id = id;
-@@ -1750,0 +2208,26 @@
+@@ -1570,3 +2028,20 @@
+     struct pl_swapchain_frame swframe;
+     bool should_draw = sw->fns->start_frame(sw, NULL); // for wayland logic
+-    if (!should_draw || !pl_swapchain_start_frame(p->sw, &swframe)) {
++    const int64_t flow_acquire_start_ns = p->next_opts->mpvflow ? mp_time_ns() : 0;
++    const bool swapchain_frame_started =
++        should_draw && pl_swapchain_start_frame(p->sw, &swframe);
++    if (flow_acquire_start_ns > 0 && should_draw) {
++        const int64_t now_ns = mp_time_ns();
++        const uint64_t wait_ns = now_ns > flow_acquire_start_ns
++            ? (uint64_t) (now_ns - flow_acquire_start_ns) : 0;
++        static int64_t last_report_ns;
++        if (wait_ns >= 2000000 &&
++            (!last_report_ns || now_ns - last_report_ns >= 1000000000LL)) {
++            last_report_ns = now_ns;
++            MP_INFO(vo, "MPVFLOW_DIAGNOSTIC event=swapchain_wait stage=acquire "
++                    "wait_ms=%.3f threshold_ms=2.0 target_fps=%d "
++                    "metric=cpu_blocking_call_not_scanout\n",
++                    wait_ns / 1000000.0, p->next_opts->mpvflow_target_fps);
++        }
++    }
++    if (!should_draw || !swapchain_frame_started) {
+@@ -1750,0 +2225,26 @@
 +    if (p->next_opts->mpvflow) {
 +        const char *queue_state = !frame->num_frames ? "redraw_without_source_batch" :
 +            !opts->interpolation ? "interpolation_disabled" :
@@ -645,13 +667,13 @@
 +    } else {
 +        p->flow_queue_state_logged = false;
 +    }
-@@ -1752,1 +2235,4 @@
+@@ -1752,1 +2252,4 @@
 -    bool render_ok = pl_render_image_mix(p->rr, &mix, &target, &params);
 +    bool flow_synthesized = false;
 +    bool render_ok = p->next_opts->mpvflow
 +        ? flow_render_frame(vo, &mix, &target, &params, &flow_synthesized)
 +        : pl_render_image_mix(p->rr, &mix, &target, &params);
-@@ -1780,1 +2266,19 @@
+@@ -1780,1 +2283,19 @@
 -    p->is_interpolated = pts_offset != 0 && mix.num_frames > 1;
 +    p->is_interpolated = p->next_opts->mpvflow
 +        ? flow_synthesized : pts_offset != 0 && mix.num_frames > 1;
@@ -672,11 +694,11 @@
 +                p->flow_cadence_render_cpu_max_ns = render_ns;
 +        }
 +    }
-@@ -1797,1 +2288,2 @@
+@@ -1797,1 +2305,2 @@
 -
 +    const int64_t flip_start_ns = mp_time_ns();
 +    bool submitted = false;
-@@ -1799,1 +2291,6 @@
+@@ -1799,1 +2308,6 @@
 -        if (!pl_swapchain_submit_frame(p->sw))
 +        if (p->next_opts->mpvflow)
 +            p->flow_cadence_swap_attempts++;
@@ -684,7 +706,7 @@
 +        if (!submitted && p->next_opts->mpvflow)
 +            p->flow_cadence_swap_failures++;
 +        if (!submitted)
-@@ -1804,0 +2298,107 @@
+@@ -1804,1 +2315,123 @@
 +    const int64_t now_ns = mp_time_ns();
 +    const uint64_t flip_wait_ns = now_ns > flip_start_ns
 +        ? (uint64_t) (now_ns - flip_start_ns) : 0;
@@ -732,7 +754,7 @@
 +                    "pair_analysis_failures=%llu pair_cache_reuses=%llu synthesized_submits=%llu "
 +                    "source_batches=%llu source_sync_pct=%.1f source_unsynced_batches=%llu "
 +                    "empty_batch_redraws=%llu temporal_pair_submits=%llu "
-+                    "flip_wait_avg_ms=%.3f flip_wait_max_ms=%.3f "
++                    "submit_call_avg_ms=%.3f submit_call_max_ms=%.3f "
 +                    "metric=successful_pl_swapchain_submit_not_surfaceflinger_scanout\n",
 +                    window_ms, p->next_opts->mpvflow_target_fps, render_callback_fps,
 +                    (unsigned long long) p->flow_cadence_render_attempts,
@@ -792,14 +814,31 @@
 +    p->flow_pending_display_synced = false;
 +    p->flow_pending_source_batch = 0;
 +    p->flow_pending_mix_frames = 0;
-@@ -2466,0 +3022,4 @@
++    const int64_t flow_swap_wait_start_ns = p->next_opts->mpvflow ? mp_time_ns() : 0;
+-    sw->fns->swap_buffers(sw);
++    sw->fns->swap_buffers(sw);
++    if (flow_swap_wait_start_ns > 0) {
++        const int64_t now_ns = mp_time_ns();
++        const uint64_t wait_ns = now_ns > flow_swap_wait_start_ns
++            ? (uint64_t) (now_ns - flow_swap_wait_start_ns) : 0;
++        static int64_t last_report_ns;
++        if (wait_ns >= 2000000 &&
++            (!last_report_ns || now_ns - last_report_ns >= 1000000000LL)) {
++            last_report_ns = now_ns;
++            MP_INFO(vo, "MPVFLOW_DIAGNOSTIC event=swapchain_wait stage=swap_buffers "
++                    "wait_ms=%.3f threshold_ms=2.0 target_fps=%d "
++                    "metric=cpu_blocking_call_not_scanout\n",
++                    wait_ns / 1000000.0, p->next_opts->mpvflow_target_fps);
++        }
++    }
+@@ -2466,0 +3054,4 @@
 +    flow_release_pair(p);
 +    mpvflow_gpu_destroy(p->flow_gpu);
 +    p->flow_gpu = NULL;
 +    p->flow_input_fmt = NULL;
-@@ -2846,0 +3406,1 @@
+@@ -2846,0 +3438,1 @@
 +    flow_update_context(vo);
-@@ -2878,1 +3438,2 @@
+@@ -2878,1 +3470,2 @@
 -    pars->params.frame_mixer = opts->interpolation ? map_scaler(p, SCALER_TSCALE) : NULL;
 +    pars->params.frame_mixer = opts->interpolation && !p->next_opts->mpvflow
 +        ? map_scaler(p, SCALER_TSCALE) : NULL;

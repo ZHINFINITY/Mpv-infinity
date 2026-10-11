@@ -28,6 +28,7 @@ enum class MpvConfigOverride(
         "profile",
         "gpu-api",
         "gpu-context",
+        "vulkan-swap-mode",
       ),
   ),
   DECODER(

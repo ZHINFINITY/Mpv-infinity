@@ -356,6 +356,34 @@ class MPVView(
     // Apply them before `vo`; otherwise gpu-next can keep its default OpenGL GPU.
     val gpuApiApplyResult = PlaybackSession.setOptionString("gpu-api", backend.gpuApi)
     val gpuContextApplyResult = PlaybackSession.setOptionString("gpu-context", backend.gpuContext)
+    // Mailbox replaces stale queued presentation images without reducing the requested output rate.
+    // libplacebo falls back to FIFO on Android surfaces that do not support mailbox presentation.
+    val flowSwapMode =
+      if (BuildConfig.MPV_HAS_MPVFLOW && backend.gpuApi == "vulkan") {
+        when {
+          MpvConfigOverridePolicy.isOwnedByMpvConf("vulkan-swap-mode") -> null
+          mpvFlowFrameInterpolationEnabled -> "mailbox"
+          else -> "auto"
+        }
+      } else {
+        null
+      }
+    val flowSwapModeApplyResult =
+      flowSwapMode?.let { PlaybackSession.setOptionString("vulkan-swap-mode", it) }
+    if (mpvFlowFrameInterpolationEnabled && backend.gpuApi == "vulkan") {
+      val presentModeState =
+        when {
+          MpvConfigOverridePolicy.isOwnedByMpvConf("vulkan-swap-mode") -> "delegated"
+          flowSwapModeApplyResult == 0 -> "requested"
+          else -> "failed"
+        }
+      Log.i(
+        TAG,
+        "MPVFLOW_DIAGNOSTIC event=present_mode state=$presentModeState " +
+          "request=${flowSwapMode ?: "mpv.conf"} result=${flowSwapModeApplyResult ?: "unchanged"} " +
+          "fallback=FIFO_if_unsupported target_fps=$mpvFlowTargetFps",
+      )
+    }
     val rendererApplyResult = PlaybackSession.setVideoOutput(backend.vo)
     val gpuApiOwner = if (MpvConfigOverridePolicy.isOwnedByMpvConf("gpu-api")) "mpv.conf" else "app"
     val gpuContextOwner = if (MpvConfigOverridePolicy.isOwnedByMpvConf("gpu-context")) "mpv.conf" else "app"
