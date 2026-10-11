@@ -76,6 +76,7 @@ require(PATCH, "waiting_for_temporal_pair", "MPV Flow must distinguish an incomp
 require(PATCH, "event=runtime_cadence", "MPV Flow must report sustained swap-submit and synthesis cadence")
 for marker in (
     "render_callback_fps=%.2f", "render_cpu_avg_ms=%.3f", "callback_interval_avg_ms=%.3f",
+    "acquire_call_avg_ms=%.3f", "acquire_call_max_ms=%.3f", "acquire_call_samples=%llu",
     "vsync_slots=%llu", "swap_attempts=%llu", "swap_failures=%llu",
     "pair_analysis_attempts=%llu", "pair_analysis_failures=%llu", "pair_cache_reuses=%llu",
 ):

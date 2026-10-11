@@ -5,7 +5,7 @@
 +#include <string.h>
 @@ -52,0 +55,1 @@
 +#include "mpvflow_gpu.h"
-@@ -157,0 +161,50 @@
+@@ -157,0 +161,53 @@
 +    // MPVFLOW_GPU_INTEGRATION
 +    MPVFlowGPUContext *flow_gpu;
 +    MPVFlowGPUPair *flow_pair;
@@ -38,6 +38,9 @@
 +    uint64_t flow_cadence_temporal_pair;
 +    uint64_t flow_cadence_flip_wait_total_ns;
 +    uint64_t flow_cadence_flip_wait_max_ns;
++    uint64_t flow_cadence_acquire_call_total_ns;
++    uint64_t flow_cadence_acquire_call_max_ns;
++    uint64_t flow_cadence_acquire_call_samples;
 +    int64_t flow_cadence_last_render_ns;
 +    uint64_t flow_cadence_render_attempts;
 +    uint64_t flow_cadence_render_pair_callbacks;
@@ -56,30 +59,30 @@
 +    uint64_t flow_cadence_pair_analysis_failures;
 +    uint64_t flow_cadence_pair_cache_reuses;
 +
-@@ -184,0 +214,1 @@
+@@ -184,0 +217,1 @@
 +static void flow_update_context(struct vo *vo);
-@@ -186,0 +217,4 @@
+@@ -186,0 +220,4 @@
 +    bool mpvflow;
 +    int mpvflow_max_dimension;
 +    int mpvflow_target_fps;
 +    int mpvflow_compute_api;
-@@ -213,0 +247,4 @@
+@@ -213,0 +250,4 @@
 +        {"mpvflow", OPT_BOOL(mpvflow)},
 +        {"mpvflow-max-dimension", OPT_INT(mpvflow_max_dimension), M_RANGE(8, 640)},
 +        {"mpvflow-target-fps", OPT_INT(mpvflow_target_fps), M_RANGE(1, 240)},
 +        {"mpvflow-compute-api", OPT_INT(mpvflow_compute_api), M_RANGE(0, 2)},
-@@ -239,0 +276,3 @@
+@@ -239,0 +279,3 @@
 +        .mpvflow_max_dimension = 640,
 +        .mpvflow_target_fps = 60,
 +        .mpvflow_compute_api = MPVFLOW_GPU_COMPUTE_AUTO,
-@@ -560,0 +599,6 @@
+@@ -560,0 +602,6 @@
 +    uint64_t frame_id;
 +    pl_tex flow_source;
 +    pl_tex flow_input;
 +    int flow_cap;
 +    int flow_w, flow_h;
 +    int flow_source_w, flow_source_h;
-@@ -569,0 +614,377 @@
+@@ -569,0 +617,383 @@
 +static void flow_release_pair(struct priv *p)
 +{
 +    if (p->flow_pair)
@@ -129,6 +132,9 @@
 +        p->flow_cadence_temporal_pair = 0;
 +        p->flow_cadence_flip_wait_total_ns = 0;
 +        p->flow_cadence_flip_wait_max_ns = 0;
++        p->flow_cadence_acquire_call_total_ns = 0;
++        p->flow_cadence_acquire_call_max_ns = 0;
++        p->flow_cadence_acquire_call_samples = 0;
 +        p->flow_cadence_last_render_ns = 0;
 +        p->flow_cadence_render_attempts = 0;
 +        p->flow_cadence_render_pair_callbacks = 0;
@@ -166,6 +172,9 @@
 +        p->flow_active_logged = false;
 +        p->flow_bypass_logged_mask = 0;
 +        p->flow_cadence_window_start_ns = 0;
++        p->flow_cadence_acquire_call_total_ns = 0;
++        p->flow_cadence_acquire_call_max_ns = 0;
++        p->flow_cadence_acquire_call_samples = 0;
 +        p->flow_cadence_last_render_ns = 0;
 +        p->flow_cadence_render_attempts = 0;
 +        p->flow_cadence_render_pair_callbacks = 0;
@@ -457,15 +466,15 @@
 +    fp->flow_cap = 0;
 +}
 +
-@@ -1109,0 +1404,2 @@
+@@ -1109,0 +1413,2 @@
 +    flow_update_context(vo);
 +    flow_prepare_input(vo, frame, mpi, fp);
-@@ -1118,0 +1415,1 @@
+@@ -1118,0 +1424,1 @@
 +    flow_release_frame(fp->vo, fp);
-@@ -1135,0 +1433,2 @@
+@@ -1135,0 +1442,2 @@
 +    struct frame_priv *fp = mpi->priv;
 +    flow_release_frame(fp->vo, fp);
-@@ -1341,0 +1641,170 @@
+@@ -1341,0 +1650,170 @@
 +static bool flow_render_frame(struct vo *vo, const struct pl_frame_mix *mix,
 +                              struct pl_frame *target,
 +                              const struct pl_render_params *params,
@@ -636,7 +645,7 @@
 +    return ok;
 +}
 +
-@@ -1344,0 +1795,21 @@
+@@ -1344,0 +1804,21 @@
 +    p->flow_pending_synthesized = false;
 +    p->flow_pending_display_synced = false;
 +    p->flow_pending_source_batch = 0;
@@ -658,15 +667,15 @@
 +        }
 +        p->flow_cadence_last_render_ns = flow_render_start_ns;
 +    }
-@@ -1354,1 +1808,2 @@
+@@ -1354,1 +1817,2 @@
 -                           !frame->still && frame->num_frames > 1 && !p->paused;
 +                           !frame->still &&
 +                           (frame->num_frames > 1 || p->next_opts->mpvflow) && !p->paused;
-@@ -1403,0 +1859,1 @@
+@@ -1403,0 +1868,1 @@
 +            flow_release_pair(p);
-@@ -1422,0 +1879,1 @@
+@@ -1422,0 +1888,1 @@
 +        fp->frame_id = id;
-@@ -1570,3 +2028,20 @@
+@@ -1570,3 +2037,24 @@
      struct pl_swapchain_frame swframe;
      bool should_draw = sw->fns->start_frame(sw, NULL); // for wayland logic
 -    if (!should_draw || !pl_swapchain_start_frame(p->sw, &swframe)) {
@@ -677,6 +686,10 @@
 +        const int64_t now_ns = mp_time_ns();
 +        const uint64_t wait_ns = now_ns > flow_acquire_start_ns
 +            ? (uint64_t) (now_ns - flow_acquire_start_ns) : 0;
++        p->flow_cadence_acquire_call_total_ns += wait_ns;
++        p->flow_cadence_acquire_call_samples++;
++        if (wait_ns > p->flow_cadence_acquire_call_max_ns)
++            p->flow_cadence_acquire_call_max_ns = wait_ns;
 +        static int64_t last_report_ns;
 +        if (wait_ns >= 2000000 &&
 +            (!last_report_ns || now_ns - last_report_ns >= 1000000000LL)) {
@@ -688,7 +701,7 @@
 +        }
 +    }
 +    if (!should_draw || !swapchain_frame_started) {
-@@ -1750,0 +2225,26 @@
+@@ -1750,0 +2238,26 @@
 +    if (p->next_opts->mpvflow) {
 +        const char *queue_state = !frame->num_frames ? "redraw_without_source_batch" :
 +            !opts->interpolation ? "interpolation_disabled" :
@@ -715,13 +728,13 @@
 +    } else {
 +        p->flow_queue_state_logged = false;
 +    }
-@@ -1752,1 +2252,4 @@
+@@ -1752,1 +2265,4 @@
 -    bool render_ok = pl_render_image_mix(p->rr, &mix, &target, &params);
 +    bool flow_synthesized = false;
 +    bool render_ok = p->next_opts->mpvflow
 +        ? flow_render_frame(vo, &mix, &target, &params, &flow_synthesized)
 +        : pl_render_image_mix(p->rr, &mix, &target, &params);
-@@ -1780,1 +2283,19 @@
+@@ -1780,1 +2296,19 @@
 -    p->is_interpolated = pts_offset != 0 && mix.num_frames > 1;
 +    p->is_interpolated = p->next_opts->mpvflow
 +        ? flow_synthesized : pts_offset != 0 && mix.num_frames > 1;
@@ -742,11 +755,11 @@
 +                p->flow_cadence_render_cpu_max_ns = render_ns;
 +        }
 +    }
-@@ -1797,1 +2305,2 @@
+@@ -1797,1 +2318,2 @@
 -
 +    const int64_t flip_start_ns = mp_time_ns();
 +    bool submitted = false;
-@@ -1799,1 +2308,6 @@
+@@ -1799,1 +2321,6 @@
 -        if (!pl_swapchain_submit_frame(p->sw))
 +        if (p->next_opts->mpvflow)
 +            p->flow_cadence_swap_attempts++;
@@ -754,7 +767,7 @@
 +        if (!submitted && p->next_opts->mpvflow)
 +            p->flow_cadence_swap_failures++;
 +        if (!submitted)
-@@ -1804,1 +2315,123 @@
+@@ -1804,1 +2328,133 @@
 +    const int64_t now_ns = mp_time_ns();
 +    const uint64_t flip_wait_ns = now_ns > flip_start_ns
 +        ? (uint64_t) (now_ns - flip_start_ns) : 0;
@@ -788,6 +801,9 @@
 +            const double callback_interval_avg_ms = p->flow_cadence_callback_interval_samples
 +                ? (double) p->flow_cadence_callback_interval_total_ns /
 +                  p->flow_cadence_callback_interval_samples / 1000000.0 : 0.0;
++            const double acquire_call_avg_ms = p->flow_cadence_acquire_call_samples
++                ? (double) p->flow_cadence_acquire_call_total_ns /
++                  p->flow_cadence_acquire_call_samples / 1000000.0 : 0.0;
 +            const uint64_t source_ticks = p->flow_cadence_source_synced +
 +                                          p->flow_cadence_source_unsynced;
 +            const double source_sync_pct = source_ticks
@@ -797,6 +813,7 @@
 +                    "mix_pair_callbacks=%llu synthesized_render_callbacks=%llu vsync_slots=%llu "
 +                    "render_cpu_avg_ms=%.3f render_cpu_max_ms=%.3f render_cpu_samples=%llu "
 +                    "callback_interval_avg_ms=%.3f callback_interval_max_ms=%.3f callback_interval_samples=%llu "
++                    "acquire_call_avg_ms=%.3f acquire_call_max_ms=%.3f acquire_call_samples=%llu "
 +                    "swap_submit_fps=%.2f synthesized_submit_fps=%.2f successful_submits=%llu "
 +                    "swap_attempts=%llu swap_failures=%llu pair_analysis_attempts=%llu "
 +                    "pair_analysis_failures=%llu pair_cache_reuses=%llu synthesized_submits=%llu "
@@ -815,6 +832,9 @@
 +                    callback_interval_avg_ms,
 +                    p->flow_cadence_callback_interval_max_ns / 1000000.0,
 +                    (unsigned long long) p->flow_cadence_callback_interval_samples,
++                    acquire_call_avg_ms,
++                    p->flow_cadence_acquire_call_max_ns / 1000000.0,
++                    (unsigned long long) p->flow_cadence_acquire_call_samples,
 +                    submit_fps, synth_fps,
 +                    (unsigned long long) p->flow_cadence_submitted,
 +                    (unsigned long long) p->flow_cadence_swap_attempts,
@@ -840,6 +860,9 @@
 +            p->flow_cadence_temporal_pair = 0;
 +            p->flow_cadence_flip_wait_total_ns = 0;
 +            p->flow_cadence_flip_wait_max_ns = 0;
++            p->flow_cadence_acquire_call_total_ns = 0;
++            p->flow_cadence_acquire_call_max_ns = 0;
++            p->flow_cadence_acquire_call_samples = 0;
 +            p->flow_cadence_render_attempts = 0;
 +            p->flow_cadence_render_pair_callbacks = 0;
 +            p->flow_cadence_render_synthesized = 0;
@@ -879,14 +902,14 @@
 +                    wait_ns / 1000000.0, p->next_opts->mpvflow_target_fps);
 +        }
 +    }
-@@ -2466,0 +3054,4 @@
+@@ -2466,0 +3077,4 @@
 +    flow_release_pair(p);
 +    mpvflow_gpu_destroy(p->flow_gpu);
 +    p->flow_gpu = NULL;
 +    p->flow_input_fmt = NULL;
-@@ -2846,0 +3438,1 @@
+@@ -2846,0 +3461,1 @@
 +    flow_update_context(vo);
-@@ -2878,1 +3470,2 @@
+@@ -2878,1 +3493,2 @@
 -    pars->params.frame_mixer = opts->interpolation ? map_scaler(p, SCALER_TSCALE) : NULL;
 +    pars->params.frame_mixer = opts->interpolation && !p->next_opts->mpvflow
 +        ? map_scaler(p, SCALER_TSCALE) : NULL;
