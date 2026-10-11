@@ -23,15 +23,19 @@
 #define FLOW_DEFAULT_RADIUS 8
 
 enum FlowTimerStage {
-    FLOW_TIMER_PREPROCESS,
-    FLOW_TIMER_ANALYSIS,
-    FLOW_TIMER_MOTION,
-    FLOW_TIMER_SYNTHESIS,
-    FLOW_TIMER_COUNT,
+    FLOW_TIMER_PREPROCESS = MPVFLOW_GPU_STAGE_PREPROCESS,
+    FLOW_TIMER_ANALYSIS = MPVFLOW_GPU_STAGE_ANALYSIS,
+    FLOW_TIMER_MOTION = MPVFLOW_GPU_STAGE_MOTION,
+    FLOW_TIMER_SYNTHESIS = MPVFLOW_GPU_STAGE_SYNTHESIS,
+    FLOW_TIMER_COUNT = MPVFLOW_GPU_STAGE_COUNT,
 };
 
 struct FlowTimerStats {
     pl_timer timer;
+    uint64_t dispatches;
+    uint64_t completed_samples;
+    uint64_t lifetime_total_ns;
+    uint64_t lifetime_max_ns;
     uint64_t samples;
     uint64_t total_ns;
     uint64_t max_ns;
@@ -143,6 +147,10 @@ static void flow_timer_poll_and_report(MPVFlowGPUContext *ctx)
             ctx->timers[i].total_ns += elapsed;
             if (elapsed > ctx->timers[i].max_ns)
                 ctx->timers[i].max_ns = elapsed;
+            ctx->timers[i].completed_samples++;
+            ctx->timers[i].lifetime_total_ns += elapsed;
+            if (elapsed > ctx->timers[i].lifetime_max_ns)
+                ctx->timers[i].lifetime_max_ns = elapsed;
         }
     }
 
@@ -307,15 +315,19 @@ static bool run_pass(MPVFlowGPUContext *ctx, pl_pass pass,
         .cfg = { cfg[0], cfg[1], cfg[2], cfg[3] },
         .timestep = t,
     };
+    enum FlowTimerStage timer_stage = flow_timer_stage(stage);
+    pl_timer timer = ctx->timers[timer_stage].timer;
     struct pl_pass_run_params run = {
         .pass = pass,
         .desc_bindings = bindings,
         .push_constants = &push,
         .compute_groups = { (w + 7) / 8, (h + 7) / 8, 1 },
-        .timer = ctx->timers[flow_timer_stage(stage)].timer,
+        .timer = timer,
     };
     (void) nbindings; /* descriptor array length is fixed by the pass */
     flow_timer_poll_and_report(ctx);
+    if (timer)
+        ctx->timers[timer_stage].dispatches++;
     pl_pass_run(ctx->gpu, &run);
     return true;
 }
@@ -585,9 +597,11 @@ MPVFlowGPUContext *mpvflow_gpu_create(pl_gpu gpu,
     }
     ctx->timing_window_start_ns = flow_monotonic_ns();
     flow_log(gpu, PL_LOG_INFO,
-             "MPVFLOW_DIAGNOSTIC component=mpvflow event=gpu_timing state=%s source=libplacebo_timestamp "
-             "timer_stages=%d timer_categories=%d nonblocking=1",
-             timer_count ? "ready" : "unsupported", timer_count, FLOW_TIMER_COUNT);
+             "MPVFLOW_DIAGNOSTIC component=mpvflow event=gpu_timing state=%s "
+             "api=Vulkan timer_source=libplacebo_timestamp_timer_objects timer_objects=%d "
+             "timer_categories=%d timestamp_results=awaiting_compute_dispatch nonblocking=1 "
+             "fallback=CPU_submission_and_output_cadence",
+             timer_count ? "created" : "unsupported", timer_count, FLOW_TIMER_COUNT);
     (void) timer_names;
     if (status)
         *status = MPVFLOW_GPU_OK;
@@ -612,6 +626,28 @@ void mpvflow_gpu_destroy(MPVFlowGPUContext *ctx)
     for (int i = 0; i < FLOW_TIMER_COUNT; i++)
         pl_timer_destroy(ctx->gpu, &ctx->timers[i].timer);
     free(ctx);
+}
+
+void mpvflow_gpu_get_timing_stats(MPVFlowGPUContext *ctx,
+                                  struct MPVFlowGPUTimingStats *stats)
+{
+    if (!stats)
+        return;
+    memset(stats, 0, sizeof(*stats));
+    stats->stage_count = MPVFLOW_GPU_STAGE_COUNT;
+    if (!ctx)
+        return;
+    flow_timer_poll_and_report(ctx);
+    for (int i = 0; i < FLOW_TIMER_COUNT; i++) {
+        const struct FlowTimerStats *timer = &ctx->timers[i];
+        stats->stages[i] = (struct MPVFlowGPUStageTiming) {
+            .timer_created = timer->timer != NULL,
+            .dispatches = timer->dispatches,
+            .completed_samples = timer->completed_samples,
+            .total_ns = timer->lifetime_total_ns,
+            .maximum_ns = timer->lifetime_max_ns,
+        };
+    }
 }
 
 enum MPVFlowGPUResult mpvflow_gpu_prepare_input(MPVFlowGPUContext *ctx,

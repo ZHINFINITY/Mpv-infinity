@@ -42,6 +42,9 @@ internal object Media3FlowVulkanNative {
     output: Long,
   ): Boolean
 
+  /** Returns Vulkan timestamp counters only; libplacebo polls with zero timeout and never waits. */
+  external fun nativeGetVulkanTimingStats(context: Long): LongArray?
+
   external fun nativeReleasePair(context: Long, pair: Long)
 
   external fun nativeDestroyImage(context: Long, image: Long)

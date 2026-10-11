@@ -70,6 +70,7 @@ struct FlowContext {
     pl_log placeboLog = nullptr;
     pl_vulkan vulkan = nullptr;
     MPVFlowGPUContext *flow = nullptr;
+    uint32_t computeTimestampValidBits = 0;
     PFN_vkGetAndroidHardwareBufferPropertiesANDROID getBufferProperties = nullptr;
     PFN_vkImportSemaphoreFdKHR importSemaphoreFd = nullptr;
     PFN_vkGetSemaphoreFdKHR getSemaphoreFd = nullptr;
@@ -1018,6 +1019,16 @@ Java_app_infinity_mpvz_ui_player_Media3FlowVulkanNative_nativeCreateContext(
     auto *context = new FlowContext();
     context->placeboLog = placeboLog;
     context->vulkan = vulkan;
+    uint32_t queueFamilyCount = 0;
+    vkGetPhysicalDeviceQueueFamilyProperties(vulkan->phys_device, &queueFamilyCount, nullptr);
+    if (vulkan->queue_compute.index < queueFamilyCount) {
+        std::vector<VkQueueFamilyProperties> queueFamilies(queueFamilyCount);
+        vkGetPhysicalDeviceQueueFamilyProperties(vulkan->phys_device, &queueFamilyCount,
+                                                 queueFamilies.data());
+        const auto &computeFamily = queueFamilies[vulkan->queue_compute.index];
+        if (computeFamily.queueFlags & VK_QUEUE_COMPUTE_BIT)
+            context->computeTimestampValidBits = computeFamily.timestampValidBits;
+    }
     initializeExternalSync(context);
     context->getBufferProperties = reinterpret_cast<PFN_vkGetAndroidHardwareBufferPropertiesANDROID>(
         vkGetDeviceProcAddr(vulkan->device, "vkGetAndroidHardwareBufferPropertiesANDROID"));
@@ -1060,19 +1071,37 @@ Java_app_infinity_mpvz_ui_player_Media3FlowVulkanNative_nativeCreateContext(
         delete context;
         return 0;
     }
+    MPVFlowGPUTimingStats timingStats{};
+    mpvflow_gpu_get_timing_stats(context->flow, &timingStats);
+    uint32_t timerObjectCount = 0;
+    for (uint32_t i = 0; i < timingStats.stage_count; i++)
+        timerObjectCount += timingStats.stages[i].timer_created;
+    const bool vulkanTimestampSupported = context->computeTimestampValidBits > 0 &&
+                                          timerObjectCount == timingStats.stage_count;
+    logFlow(vulkanTimestampSupported ? ANDROID_LOG_INFO : ANDROID_LOG_WARN,
+            "MPVFLOW_DIAGNOSTIC component=native-media3 event=vulkan_timing_capability state=%s "
+            "api=Vulkan source=libplacebo_timestamp_query compute_queue_family=%u "
+            "timestamp_valid_bits=%u timer_objects=%u timer_stages=%u nonblocking=1 "
+            "fallback=CPU_submission_and_successful_EGL_swap_cadence reason=%s",
+            vulkanTimestampSupported ? "supported" : "unsupported",
+            vulkan->queue_compute.index, context->computeTimestampValidBits,
+            timerObjectCount, timingStats.stage_count,
+            context->computeTimestampValidBits == 0 ? "compute_queue_timestampValidBits_zero" :
+            timerObjectCount != timingStats.stage_count ? "libplacebo_timer_object_creation_failed" : "none");
     logFlow(ANDROID_LOG_INFO,
             "MPVFLOW_DIAGNOSTIC component=native-media3 event=renderer_init state=ready "
                 "backend=vulkan-spirv api_version=%u compute_queue_family=%u compute_queue_count=%u "
                 "glsl_compute=%d glsl_vulkan=%d glsl_version=%d max_pushc_size=%zu "
                 "analysis_max_dimension=%d hardware_max_texture_dimension=%u compute_queues=%u ahb_extension_enabled=%d "
-            "foreign_queue_extension_enabled=%d "
+            "foreign_queue_extension_enabled=%d compute_timestamp_valid_bits=%u vulkan_timing_supported=%d "
             "hardware_decoder=media3 hardware_buffers=android cpu_readback=no",
             vulkan->api_version, vulkan->queue_compute.index, vulkan->queue_compute.count,
             vulkan->gpu->glsl.compute, vulkan->gpu->glsl.vulkan, vulkan->gpu->glsl.version,
                 vulkan->gpu->limits.max_pushc_size, config.max_dimension,
-                vulkan->gpu->limits.max_tex_2d_dim, vulkan->gpu->limits.compute_queues,
+            vulkan->gpu->limits.max_tex_2d_dim, vulkan->gpu->limits.compute_queues,
             hasEnabledDeviceExtension(vulkan, VK_ANDROID_EXTERNAL_MEMORY_ANDROID_HARDWARE_BUFFER_EXTENSION_NAME),
-            hasEnabledDeviceExtension(vulkan, "VK_EXT_queue_family_foreign"));
+            hasEnabledDeviceExtension(vulkan, "VK_EXT_queue_family_foreign"),
+            context->computeTimestampValidBits, vulkanTimestampSupported);
     return reinterpret_cast<jlong>(context);
 }
 
@@ -1465,6 +1494,38 @@ Java_app_infinity_mpvz_ui_player_Media3FlowVulkanNative_nativeDestroyImage(
     pl_gpu_finish(context->vulkan->gpu);
     if (context->images.erase(image))
         destroyImage(context, image);
+}
+
+extern "C" JNIEXPORT jlongArray JNICALL
+Java_app_infinity_mpvz_ui_player_Media3FlowVulkanNative_nativeGetVulkanTimingStats(
+    JNIEnv *env, jobject, jlong contextHandle) {
+    auto *context = reinterpret_cast<FlowContext *>(contextHandle);
+    if (!env || !context || !context->flow)
+        return nullptr;
+    std::lock_guard<std::mutex> guard(context->mutex);
+    MPVFlowGPUTimingStats stats{};
+    mpvflow_gpu_get_timing_stats(context->flow, &stats);
+    constexpr jsize headerFields = 3;
+    constexpr jsize stageFields = 5;
+    constexpr jsize valueCount = headerFields + MPVFLOW_GPU_STAGE_COUNT * stageFields;
+    jlong values[valueCount]{};
+    values[0] = 1; // JNI snapshot schema version
+    values[1] = context->computeTimestampValidBits;
+    values[2] = stats.stage_count;
+    for (uint32_t i = 0; i < stats.stage_count && i < MPVFLOW_GPU_STAGE_COUNT; i++) {
+        const auto &stage = stats.stages[i];
+        const jsize offset = headerFields + static_cast<jsize>(i) * stageFields;
+        values[offset + 0] = stage.timer_created ? 1 : 0;
+        values[offset + 1] = static_cast<jlong>(stage.dispatches);
+        values[offset + 2] = static_cast<jlong>(stage.completed_samples);
+        values[offset + 3] = static_cast<jlong>(stage.total_ns);
+        values[offset + 4] = static_cast<jlong>(stage.maximum_ns);
+    }
+    jlongArray result = env->NewLongArray(valueCount);
+    if (!result)
+        return nullptr;
+    env->SetLongArrayRegion(result, 0, valueCount, values);
+    return result;
 }
 
 extern "C" JNIEXPORT void JNICALL

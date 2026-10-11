@@ -28,6 +28,81 @@ class Media3FlowDiagnosticsTest {
   }
 
   @Test
+  fun vulkanTimerStatesDistinguishUnsupportedPendingAndCompletedResults() {
+    assertEquals(
+      "unsupported_timestamp_queue",
+      Media3FlowDiagnosticMath.vulkanTimerStageStatus(0, true, 3L, 0L),
+    )
+    assertEquals(
+      "pending_or_dropped",
+      Media3FlowDiagnosticMath.vulkanTimerStageStatus(32, true, 2L, 0L),
+    )
+    assertEquals(
+      "ready",
+      Media3FlowDiagnosticMath.vulkanTimerStageStatus(32, true, 2L, 1L),
+    )
+    assertEquals(
+      "unsupported_libplacebo_timer",
+      Media3FlowDiagnosticMath.vulkanTimerStageStatus(32, false, 0L, 0L),
+    )
+  }
+
+  @Test
+  fun vulkanSnapshotReportsStageAveragesAndUnresolvedQueriesWithoutCallingThemExactPending() {
+    val snapshot = LongArray(23).apply {
+      this[0] = 1L
+      this[1] = 32L
+      this[2] = 4L
+      for (stage in 0 until 4) {
+        val offset = 3 + stage * 5
+        this[offset] = 1L
+      }
+      val preprocessOffset = 3
+      this[preprocessOffset + 1] = 2L
+      this[preprocessOffset + 2] = 2L
+      this[preprocessOffset + 3] = 1_000_000L
+      this[preprocessOffset + 4] = 900_000L
+      val motionOffset = 3 + 2 * 5
+      this[motionOffset + 1] = 3L
+      this[motionOffset + 2] = 0L
+    }
+
+    val timings = Media3FlowDiagnosticMath.parseVulkanTimingSnapshot(snapshot)
+
+    assertEquals("ready", timings.status)
+    assertEquals(32, timings.timestampValidBits)
+    assertEquals("ready", timings.preprocess.status)
+    assertEquals(2L, timings.preprocess.completedSamples)
+    assertEquals(500.0, timings.preprocess.averageUs!!, 0.001)
+    assertEquals(900.0, timings.preprocess.maximumUs!!, 0.001)
+    assertEquals("pending_or_dropped", timings.motion.status)
+    assertEquals(3L, timings.motion.pendingOrDropped)
+    assertNull(timings.motion.averageUs)
+  }
+
+  @Test
+  fun vulkanSnapshotNamesUnsupportedQueueAndRejectsUnknownSchema() {
+    val unsupported = LongArray(23).apply {
+      this[0] = 1L
+      this[1] = 0L
+      this[2] = 4L
+      for (stage in 0 until 4) this[3 + stage * 5] = 1L
+    }
+    assertEquals(
+      "unsupported_timestamp_queue",
+      Media3FlowDiagnosticMath.parseVulkanTimingSnapshot(unsupported).status,
+    )
+    assertEquals(
+      "unsupported_snapshot_schema",
+      Media3FlowDiagnosticMath.parseVulkanTimingSnapshot(longArrayOf(2L)).status,
+    )
+    assertEquals(
+      "snapshot_unavailable",
+      Media3FlowDiagnosticMath.parseVulkanTimingSnapshot(null).status,
+    )
+  }
+
+  @Test
   fun coverageReportsWarpFallbackAndStaticBlendCountsAndPercentages() {
     val coverage = Media3FlowDiagnosticMath.summarizeCoverage(
       listOf(

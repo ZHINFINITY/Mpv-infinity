@@ -10,7 +10,8 @@ data class FlowDurationSummary(
   val sampleCount: Int = 0,
 )
 
-data class FlowGpuTimingStats(
+/** GLES-only elapsed query results. Vulkan compute is reported separately below. */
+data class FlowGlesTimingStats(
   val supported: Boolean = false,
   val status: String = "unsupported",
   /** Available, non-disjoint timer results, including zero-duration results. */
@@ -19,12 +20,28 @@ data class FlowGpuTimingStats(
   val disjointResultsDiscarded: Long = 0L,
   val zeroDurationResults: Long = 0L,
   val skippedBecausePoolFull: Long = 0L,
-  val downsample: FlowDurationSummary = FlowDurationSummary(),
-  val motionForward: FlowDurationSummary = FlowDurationSummary(),
-  val motionBackward: FlowDurationSummary = FlowDurationSummary(),
-  /** Cycle-consistency checks and warp/synthesis share one compute dispatch today. */
-  val consistencyAndWarp: FlowDurationSummary = FlowDurationSummary(),
+  /** GLES presentation blit only; this is not a Vulkan compute measurement. */
   val presentationDraw: FlowDurationSummary = FlowDurationSummary(),
+)
+
+data class FlowVulkanStageTiming(
+  val status: String = "unsupported_context",
+  val supported: Boolean = false,
+  val dispatches: Long = 0L,
+  val completedSamples: Long = 0L,
+  /** Libplacebo's query ring may drop old results, so unresolved is pending-or-dropped. */
+  val pendingOrDropped: Long = 0L,
+  val averageUs: Double? = null,
+  val maximumUs: Double? = null,
+)
+
+data class FlowVulkanTimingStats(
+  val status: String = "unsupported_context",
+  val timestampValidBits: Int = 0,
+  val preprocess: FlowVulkanStageTiming = FlowVulkanStageTiming(),
+  val analysis: FlowVulkanStageTiming = FlowVulkanStageTiming(),
+  val motion: FlowVulkanStageTiming = FlowVulkanStageTiming(),
+  val synthesis: FlowVulkanStageTiming = FlowVulkanStageTiming(),
 )
 
 data class FlowCpuTimingStats(
@@ -92,6 +109,69 @@ internal data class FlowCoverageSample(
 )
 
 internal object Media3FlowDiagnosticMath {
+  private const val VULKAN_TIMING_SCHEMA_VERSION = 1L
+  private const val VULKAN_TIMING_STAGE_COUNT = 4
+  private const val VULKAN_TIMING_HEADER_SIZE = 3
+  private const val VULKAN_TIMING_STAGE_SIZE = 5
+
+  fun vulkanTimerStageStatus(
+    timestampValidBits: Int,
+    timerCreated: Boolean,
+    dispatches: Long,
+    completedSamples: Long,
+  ): String = when {
+    timestampValidBits <= 0 -> "unsupported_timestamp_queue"
+    !timerCreated -> "unsupported_libplacebo_timer"
+    completedSamples > 0L -> "ready"
+    dispatches > 0L -> "pending_or_dropped"
+    else -> "supported_waiting_for_dispatch"
+  }
+
+  fun parseVulkanTimingSnapshot(values: LongArray?): FlowVulkanTimingStats {
+    val expectedSize = VULKAN_TIMING_HEADER_SIZE + VULKAN_TIMING_STAGE_COUNT * VULKAN_TIMING_STAGE_SIZE
+    if (values == null) return FlowVulkanTimingStats(status = "snapshot_unavailable")
+    if (values.size != expectedSize || values[0] != VULKAN_TIMING_SCHEMA_VERSION ||
+      values[2] != VULKAN_TIMING_STAGE_COUNT.toLong()
+    ) {
+      return FlowVulkanTimingStats(status = "unsupported_snapshot_schema")
+    }
+    val timestampValidBits = values[1].coerceIn(0L, Int.MAX_VALUE.toLong()).toInt()
+    fun stage(index: Int): FlowVulkanStageTiming {
+      val offset = VULKAN_TIMING_HEADER_SIZE + index * VULKAN_TIMING_STAGE_SIZE
+      val timerCreated = values[offset] != 0L
+      val dispatches = values[offset + 1].coerceAtLeast(0L)
+      val completed = values[offset + 2].coerceAtLeast(0L)
+      val totalNs = values[offset + 3].coerceAtLeast(0L)
+      val maximumNs = values[offset + 4].coerceAtLeast(0L)
+      val supported = timestampValidBits > 0 && timerCreated
+      return FlowVulkanStageTiming(
+        status = vulkanTimerStageStatus(timestampValidBits, timerCreated, dispatches, completed),
+        supported = supported,
+        dispatches = dispatches,
+        completedSamples = completed,
+        pendingOrDropped = if (supported) (dispatches - completed).coerceAtLeast(0L) else 0L,
+        averageUs = totalNs.takeIf { completed > 0L }?.toDouble()?.div(completed)?.div(1_000.0),
+        maximumUs = maximumNs.takeIf { completed > 0L }?.toDouble()?.div(1_000.0),
+      )
+    }
+    val stages = List(VULKAN_TIMING_STAGE_COUNT, ::stage)
+    val state = when {
+      timestampValidBits <= 0 -> "unsupported_timestamp_queue"
+      stages.none { it.supported } -> "unsupported_libplacebo_timer"
+      stages.any { it.completedSamples > 0L } -> "ready"
+      stages.any { it.dispatches > 0L } -> "pending_or_dropped"
+      else -> "supported_waiting_for_dispatch"
+    }
+    return FlowVulkanTimingStats(
+      status = state,
+      timestampValidBits = timestampValidBits,
+      preprocess = stages[0],
+      analysis = stages[1],
+      motion = stages[2],
+      synthesis = stages[3],
+    )
+  }
+
   fun summarizeNanoseconds(values: List<Long>): FlowDurationSummary {
     val sorted = values.filter { it > 0L }.sorted()
     if (sorted.isEmpty()) return FlowDurationSummary()

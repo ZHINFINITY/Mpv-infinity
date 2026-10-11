@@ -11,6 +11,7 @@ package app.infinity.mpvz.ui.player.controls
 
 import app.infinity.mpvz.ui.player.DeclaredPlaybackMediaKind
 import app.infinity.mpvz.ui.player.FlowDurationSummary
+import app.infinity.mpvz.ui.player.FlowVulkanStageTiming
 import app.infinity.mpvz.ui.player.PlaybackPhase
 import app.infinity.mpvz.ui.player.PlaybackSession
 import app.infinity.mpvz.ui.player.declaredMediaKind
@@ -2366,10 +2367,10 @@ private fun NativeStatsPageOverlay(
   val flowSourceRate = if (flow.sourceFps > 0f) String.format(java.util.Locale.US, "%.1f", flow.sourceFps) else "—"
   val flowOutputRate = if (flow.outputFps > 0f) String.format(java.util.Locale.US, "%.1f", flow.outputFps) else "—"
   val flowGeneratedRate = if (flow.generatedFps > 0f) String.format(java.util.Locale.US, "%.1f", flow.generatedFps) else "—"
-  val flowGpuTime = flow.motionEstimateGpuMs?.let {
-    "${String.format(java.util.Locale.US, "%.1f", it * 1_000f)} µs"
+  val flowGpuTime = flow.motionPassAverageGpuUs?.let {
+    "${String.format(java.util.Locale.US, "%.1f", it)} µs/pass"
   }
-    ?: "n/a"
+    ?: flow.vulkanTimings.motion.status
   val flowMultiplier = if (flow.sourceFps > 0f && flow.outputFps > 0f) {
     String.format(java.util.Locale.US, "%.1f", flow.outputFps / flow.sourceFps)
   } else {
@@ -2390,7 +2391,13 @@ private fun NativeStatsPageOverlay(
   val formatFlowPercent: (Float?) -> String = { value ->
     value?.let { String.format(java.util.Locale.US, "%.1f%%", it) } ?: "—"
   }
-  val flowGpu = flow.gpuTimings
+  val formatVulkanStage: (FlowVulkanStageTiming) -> String = { stage ->
+    val average = stage.averageUs?.let { String.format(java.util.Locale.US, "%.1f", it) } ?: "—"
+    val maximum = stage.maximumUs?.let { String.format(java.util.Locale.US, "%.1f", it) } ?: "—"
+    "$average/$maximum µs n=${stage.completedSamples} ${stage.status}"
+  }
+  val flowVulkan = flow.vulkanTimings
+  val flowGles = flow.glesTimings
   val flowCpu = flow.cpuTimings
   val flowCoverage = flow.pixelCoverage
   Surface(
@@ -2450,7 +2457,7 @@ private fun NativeStatsPageOverlay(
             )
             Text(
               "ME submit ${String.format(java.util.Locale.US, "%.2f", flow.motionEstimateSubmitMs)} ms · " +
-                "ME GPU elapsed $flowGpuTime · " +
+                "Vulkan motion pass avg $flowGpuTime · " +
                 "confidence $flowConfidence · drops ${flow.droppedFrames} total · " +
                 "missed output ticks ${flow.missedOutputTicks} · skip ${flow.skippedFrames} · " +
                 "motion grid ${flow.motionGridWidth}×${flow.motionGridHeight} · " +
@@ -2460,18 +2467,36 @@ private fun NativeStatsPageOverlay(
               color = Color.White,
             )
             Text(
-              "Flow GPU avg/p95/max: downsample ${formatFlowDuration(flowGpu.downsample)} · " +
-                "motion F ${formatFlowDuration(flowGpu.motionForward)} · " +
-                "motion B ${formatFlowDuration(flowGpu.motionBackward)}",
+              "Vulkan/libplacebo timestamp queries (${flowVulkan.status}, validBits=${flowVulkan.timestampValidBits}) " +
+                "avg/max µs: preprocess ${formatVulkanStage(flowVulkan.preprocess)} · " +
+                "analysis ${formatVulkanStage(flowVulkan.analysis)} · motion ${formatVulkanStage(flowVulkan.motion)} · " +
+                "synthesis ${formatVulkanStage(flowVulkan.synthesis)}",
               style = MaterialTheme.typography.bodySmall,
               color = Color.White,
             )
             Text(
-              "Flow GPU avg/p95/max: consistency+warp ${formatFlowDuration(flowGpu.consistencyAndWarp)} · " +
-                "presentation draw ${formatFlowDuration(flowGpu.presentationDraw)} · " +
-                "timer ${flowGpu.status} valid/pending/disjoint/zero/skipped " +
-                "${flowGpu.validResults}/${flowGpu.pendingResults}/${flowGpu.disjointResultsDiscarded}/" +
-                "${flowGpu.zeroDurationResults}/${flowGpu.skippedBecausePoolFull}",
+              "GLES_EXT_disjoint_timer_query presentation draw ${formatFlowDuration(flowGles.presentationDraw)} · " +
+                "status ${flowGles.status} valid/pending/disjoint/zero/skipped " +
+                "${flowGles.validResults}/${flowGles.pendingResults}/${flowGles.disjointResultsDiscarded}/" +
+                "${flowGles.zeroDurationResults}/${flowGles.skippedBecausePoolFull}",
+              style = MaterialTheme.typography.bodySmall,
+              color = Color.White,
+            )
+            Text(
+              "Flow queues: pending input ${flow.pendingInputDepth} · in-flight ${flow.inputInFlight} · " +
+                "oldest input ${String.format(java.util.Locale.US, "%.1f", flow.oldestPendingInputAgeMs)} ms · " +
+                "source frames ${flow.sourceFrameDepth} · ready motion pairs ${flow.readyMotionPairDepth} · " +
+                "source PTS age ${flow.selectedSourcePtsAgeMs?.let { String.format(java.util.Locale.US, "%.1f", it) } ?: "—"} ms · " +
+                "pair PTS gap ${flow.sourcePairPtsGapMs?.let { String.format(java.util.Locale.US, "%.1f", it) } ?: "—"} ms · " +
+                "capture ages ${flow.frame0CaptureAgeMs?.let { String.format(java.util.Locale.US, "%.1f", it) } ?: "—"}/" +
+                "${flow.frame1CaptureAgeMs?.let { String.format(java.util.Locale.US, "%.1f", it) } ?: "—"} ms",
+              style = MaterialTheme.typography.bodySmall,
+              color = Color.White,
+            )
+            Text(
+              "Output deadline misses ${flow.missedOutputTicks} · latest ${flow.lastDeadlineMissReason} · " +
+                "reasons ${flow.deadlineMissReasons.entries.joinToString(",") { "${it.key}:${it.value}" }.ifEmpty { "none" }} · " +
+                "callback lateness ${String.format(java.util.Locale.US, "%.1f", flow.outputCallbackLatenessMs)} ms",
               style = MaterialTheme.typography.bodySmall,
               color = Color.White,
             )

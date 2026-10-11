@@ -84,6 +84,16 @@ assert ".crop = image0->crop" not in MPV_PATCH, "full-resolution source copies a
 assert "external fun nativeCreateContext" in NATIVE
 assert "external fun nativeGetRequiredHardwareBufferUsage" in NATIVE
 assert "external fun nativeAnalyzePair" in NATIVE
+assert "external fun nativeGetVulkanTimingStats(context: Long): LongArray?" in NATIVE
+assert "mpvflow_gpu_get_timing_stats(context->flow, &stats)" in JNI
+assert "computeTimestampValidBits" in JNI and "timestamp_valid_bits=%u" in JNI
+assert "vulkanTimestampSupported" in JNI and "compute_queue_timestampValidBits_zero" in JNI
+assert "pending_or_dropped" in (ROOT / "app/src/main/java/app/infinity/mpvz/ui/player/Media3FlowDiagnostics.kt").read_text()
+assert "Vulkan/libplacebo timestamp queries" in (ROOT / "app/src/main/java/app/infinity/mpvz/ui/player/controls/PlayerControls.kt").read_text()
+assert "GLES_EXT_disjoint_timer_query presentation draw" in (ROOT / "app/src/main/java/app/infinity/mpvz/ui/player/controls/PlayerControls.kt").read_text()
+timing_snapshot = JNI.split("nativeGetVulkanTimingStats(", 1)[1].split("nativeDestroyContext(", 1)[0]
+assert "mpvflow_gpu_get_timing_stats" in timing_snapshot
+assert "pl_gpu_finish" not in timing_snapshot and "glFinish" not in timing_snapshot
 assert "nativeGetRequiredHardwareBufferUsage(flowVulkanContext, output = false)" in SINK
 assert "nativeGetRequiredHardwareBufferUsage(flowVulkanContext, output = true)" in SINK
 assert "baseUsage or driverRequiredUsage" in SINK

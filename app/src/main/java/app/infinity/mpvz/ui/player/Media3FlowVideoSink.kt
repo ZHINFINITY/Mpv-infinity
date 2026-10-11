@@ -58,8 +58,8 @@ data class Media3FlowDiagnostics(
   val skippedFrames: Long = 0L,
   /** CPU time spent submitting motion-estimation commands, not a GPU-completion timer. */
   val motionEstimateSubmitMs: Float = 0f,
-  /** Asynchronously retrieved GPU elapsed time for forward and backward motion passes. */
-  val motionEstimateGpuMs: Float? = null,
+  /** Average Vulkan timestamp-query duration for one motion-search dispatch, not a per-pair estimate. */
+  val motionPassAverageGpuUs: Double? = null,
   /** Null until a non-blocking GPU confidence readback is available. */
   val confidence: Float? = null,
   val motionGridWidth: Int = 0,
@@ -69,9 +69,22 @@ data class Media3FlowDiagnostics(
   val processingHeight: Int = 0,
   val state: String = "off",
   val bypassReason: String? = null,
-  val gpuTimings: FlowGpuTimingStats = FlowGpuTimingStats(),
+  val vulkanTimings: FlowVulkanTimingStats = FlowVulkanTimingStats(),
+  val glesTimings: FlowGlesTimingStats = FlowGlesTimingStats(),
   val cpuTimings: FlowCpuTimingStats = FlowCpuTimingStats(),
   val pixelCoverage: FlowPixelCoverageStats = FlowPixelCoverageStats(),
+  val pendingInputDepth: Int = 0,
+  val inputInFlight: Boolean = false,
+  val oldestPendingInputAgeMs: Float = 0f,
+  val sourceFrameDepth: Int = 0,
+  val readyMotionPairDepth: Int = 0,
+  val selectedSourcePtsAgeMs: Float? = null,
+  val sourcePairPtsGapMs: Float? = null,
+  val frame0CaptureAgeMs: Float? = null,
+  val frame1CaptureAgeMs: Float? = null,
+  val outputCallbackLatenessMs: Float = 0f,
+  val lastDeadlineMissReason: String = "none",
+  val deadlineMissReasons: Map<String, Long> = emptyMap(),
 )
 
 private data class FlowFrameRateSurfacePolicy(
@@ -108,8 +121,8 @@ class Media3FlowVideoSink(
   private val motionPairs = ArrayList<MotionPairSlot>(MAX_MOTION_PAIRS)
   private val ptsHistory = ArrayDeque<Long>()
   private val outputWallTimes = ArrayDeque<Long>()
-  private val pendingGpuTimerQueries = ArrayDeque<PendingGpuTimerQuery>()
-  private val gpuDurationSamplesNs = Array(FlowGpuStage.values().size) { ArrayDeque<Long>() }
+  private val pendingGpuTimerQueries = ArrayDeque<PendingGlesTimerQuery>()
+  private val glesDurationSamplesNs = Array(FlowGlesStage.values().size) { ArrayDeque<Long>() }
   private val cpuTimingLock = Any()
   private val cpuDurationSamplesNs = Array(FlowCpuStage.values().size) { ArrayDeque<Long>() }
   private val generatedWallTimes = ArrayDeque<Long>()
@@ -172,10 +185,19 @@ class Media3FlowVideoSink(
   private val missedOutputTicks = AtomicLong(0L)
   private var skippedFrames = 0L
   private var lastMotionSubmitMs = 0f
-  private var lastMotionGpuMs: Float? = null
+  private var cachedVulkanTimingStats = FlowVulkanTimingStats()
+  private var lastVulkanTimingPollAtNs = 0L
+  private var lastSelectedSourcePtsAgeMs: Float? = null
+  private var lastSourcePairPtsGapMs: Float? = null
+  private var lastFrame0CaptureAgeMs: Float? = null
+  private var lastFrame1CaptureAgeMs: Float? = null
+  private var lastOutputCallbackLatenessMs = 0f
+  private var lastOutputDeadlineMissReason = "none"
+  private val outputDeadlineMissReasons = linkedMapOf<String, Long>()
+  private var lastEglSwapWaitMs = 0f
   private var gpuTimerQueryIds = IntArray(0)
   private var gpuTimerQueriesSupported = false
-  private var activeGpuTimerQuery: PendingGpuTimerQuery? = null
+  private var activeGpuTimerQuery: PendingGlesTimerQuery? = null
   private var validGpuTimerResults = 0L
   private var disjointGpuTimerResults = 0L
   private var zeroGpuTimerResults = 0L
@@ -464,9 +486,10 @@ class Media3FlowVideoSink(
     val handler: VideoSink.VideoFrameHandler,
     val enqueuedAtNs: Long,
   )
+  private data class InputQueueSnapshot(val depth: Int, val inFlight: Boolean, val oldestAgeMs: Float)
   private data class FrameToken(val ptsUs: Long, val generation: Long, val releaseTimestampNs: Long)
   private data class PlaybackClock(val positionUs: Long, val elapsedRealtimeUs: Long)
-  private enum class FlowGpuStage { DOWNSAMPLE, MOTION_FORWARD, MOTION_BACKWARD, CONSISTENCY_AND_WARP, PRESENTATION_DRAW }
+  private enum class FlowGlesStage { PRESENTATION_DRAW }
   private enum class FlowCpuStage {
     INPUT_QUEUE_WAIT,
     FRAME_HANDLER_CALL,
@@ -474,11 +497,8 @@ class Media3FlowVideoSink(
     VULKAN_INPUT_PREPARE,
     VULKAN_SYNTHESIS_SUBMIT,
   }
-  private data class PendingGpuTimerQuery(
+  private data class PendingGlesTimerQuery(
     val id: Int,
-    val stage: FlowGpuStage,
-    val frame0PtsUs: Long,
-    val frame1PtsUs: Long,
     val generation: Long,
   )
 
@@ -487,6 +507,7 @@ class Media3FlowVideoSink(
     var nativeImageHandle = 0L
     var colorTexture = 0
     var ptsUs = C.TIME_UNSET
+    var capturedAtNs = 0L
     var inUse = false
   }
 
@@ -496,9 +517,6 @@ class Media3FlowVideoSink(
     var frame1PtsUs = C.TIME_UNSET
     var available = false
     var motionEstimateSubmitMs = 0f
-    var motionEstimateGpuMs: Float? = null
-    var motionForwardGpuMs: Float? = null
-    var motionBackwardGpuMs: Float? = null
   }
 
   override fun setListener(listener: VideoSink.Listener, executor: Executor) {
@@ -812,7 +830,7 @@ class Media3FlowVideoSink(
   private fun renderAtDisplayFrame(frameTimeNanos: Long?) {
     if (!initialized || disposed || !outputAvailable) return
     if (!ensureEgl() || !makePbufferCurrent()) return
-    pollGpuTimerQueries()
+    pollGlesTimerQueries()
     val speed = playbackSpeed
     val clock = playbackClock
     val nowElapsedUs = SystemClock.elapsedRealtimeNanos() / 1_000L
@@ -996,6 +1014,7 @@ class Media3FlowVideoSink(
   }
 
   private fun captureFrame(ptsUs: Long, transform: FloatArray) {
+    val captureStartedNs = System.nanoTime()
     val previousPts = sourceFrames.lastOrNull()?.ptsUs
     if (previousPts != null && ptsUs <= previousPts) {
       skippedFrames++
@@ -1034,6 +1053,7 @@ class Media3FlowVideoSink(
       }
     }
     slot.ptsUs = ptsUs
+    slot.capturedAtNs = captureStartedNs
     slot.inUse = true
     sourceFrames.addLast(slot)
     if (originPtsUs == C.TIME_UNSET) {
@@ -1075,7 +1095,7 @@ class Media3FlowVideoSink(
       GLES30.glGetStringi(GLES20.GL_EXTENSIONS, index) == "GL_EXT_disjoint_timer_query"
     }
     if (!hasTimerExtension) {
-      Log.i(logTag, "Presentation GPU timer queries unavailable; Vulkan flow GPU duration is not sampled")
+      Log.i(logTag, "GLES presentation timer unavailable; Vulkan compute timestamp queries are reported separately")
       return
     }
     val ids = IntArray(MAX_GPU_TIMER_QUERIES)
@@ -1110,31 +1130,26 @@ class Media3FlowVideoSink(
     )
   }
 
-  private fun beginGpuTimerQuery(
-    stage: FlowGpuStage,
-    frame0PtsUs: Long = C.TIME_UNSET,
-    frame1PtsUs: Long = C.TIME_UNSET,
-    generation: Long = streamGeneration,
-  ): PendingGpuTimerQuery? {
+  private fun beginGlesTimerQuery(generation: Long = streamGeneration): PendingGlesTimerQuery? {
     if (!gpuTimerQueriesSupported) return null
     if (activeGpuTimerQuery != null) {
       skippedGpuTimerQueries++
       return null
     }
-    pollGpuTimerQueries()
+    pollGlesTimerQueries()
     val inUse = pendingGpuTimerQueries.mapTo(HashSet()) { it.id }
     val queryId = gpuTimerQueryIds.firstOrNull { it !in inUse }
     if (queryId == null) {
       skippedGpuTimerQueries++
       return null
     }
-    val query = PendingGpuTimerQuery(queryId, stage, frame0PtsUs, frame1PtsUs, generation)
+    val query = PendingGlesTimerQuery(queryId, generation)
     GLES30.glBeginQuery(GL_TIME_ELAPSED_EXT, queryId)
     activeGpuTimerQuery = query
     return query
   }
 
-  private fun endGpuTimerQuery(query: PendingGpuTimerQuery?) {
+  private fun endGlesTimerQuery(query: PendingGlesTimerQuery?) {
     if (query == null || activeGpuTimerQuery?.id != query.id) return
     GLES30.glEndQuery(GL_TIME_ELAPSED_EXT)
     pendingGpuTimerQueries.addLast(query)
@@ -1142,7 +1157,7 @@ class Media3FlowVideoSink(
   }
 
   /** Only available query results are read; a zero-timeout availability check never waits. */
-  private fun pollGpuTimerQueries() {
+  private fun pollGlesTimerQueries() {
     if (!gpuTimerQueriesSupported || pendingGpuTimerQueries.isEmpty()) return
     val pendingCount = pendingGpuTimerQueries.size
     repeat(pendingCount) {
@@ -1158,9 +1173,6 @@ class Media3FlowVideoSink(
       GLES30.glGetIntegerv(GL_GPU_DISJOINT_EXT, disjoint, 0)
       if (disjoint[0] != 0) {
         disjointGpuTimerResults++
-        if (pending.stage == FlowGpuStage.MOTION_FORWARD || pending.stage == FlowGpuStage.MOTION_BACKWARD) {
-          lastMotionGpuMs = null
-        }
         return@repeat
       }
       val elapsed = IntArray(1)
@@ -1171,32 +1183,18 @@ class Media3FlowVideoSink(
         zeroGpuTimerResults++
         return@repeat
       }
-      val stageSamples = gpuDurationSamplesNs[pending.stage.ordinal]
+      val stageSamples = glesDurationSamplesNs[FlowGlesStage.PRESENTATION_DRAW.ordinal]
       stageSamples.addLast(elapsedNs)
       while (stageSamples.size > GPU_TIMING_HISTORY_SIZE) stageSamples.removeFirst()
-      when (pending.stage) {
-        FlowGpuStage.MOTION_FORWARD, FlowGpuStage.MOTION_BACKWARD -> updateMotionPairGpuTime(pending, elapsedNs)
-        else -> Unit
-      }
     }
   }
 
-  private fun updateMotionPairGpuTime(query: PendingGpuTimerQuery, elapsedNs: Long) {
-    val pair = motionPairs.firstOrNull {
-      it.frame0PtsUs == query.frame0PtsUs && it.frame1PtsUs == query.frame1PtsUs
-    } ?: return
-    val elapsedMs = elapsedNs / 1_000_000f
-    when (query.stage) {
-      FlowGpuStage.MOTION_FORWARD -> pair.motionForwardGpuMs = elapsedMs
-      FlowGpuStage.MOTION_BACKWARD -> pair.motionBackwardGpuMs = elapsedMs
-      else -> return
-    }
-    val forwardMs = pair.motionForwardGpuMs
-    val backwardMs = pair.motionBackwardGpuMs
-    if (forwardMs != null && backwardMs != null) {
-      pair.motionEstimateGpuMs = forwardMs + backwardMs
-      lastMotionGpuMs = pair.motionEstimateGpuMs
-    }
+  private fun recordOutputDeadlineMisses(count: Long, reason: String, countAsDropped: Boolean = true) {
+    if (count <= 0L) return
+    missedOutputTicks.addAndGet(count)
+    if (countAsDropped) droppedFrames.addAndGet(count)
+    lastOutputDeadlineMissReason = reason
+    outputDeadlineMissReasons[reason] = (outputDeadlineMissReasons[reason] ?: 0L) + count
   }
 
   private fun recordCpuDuration(stage: FlowCpuStage, elapsedNs: Long) {
@@ -1207,7 +1205,7 @@ class Media3FlowVideoSink(
     }
   }
 
-  private fun gpuTimingSnapshot(): FlowGpuTimingStats {
+  private fun glesTimingSnapshot(): FlowGlesTimingStats {
     val status = when {
       !gpuTimerQueriesSupported -> "unsupported"
       validGpuTimerResults > 0L && disjointGpuTimerResults > 0L -> "valid_with_disjoint_results"
@@ -1217,9 +1215,9 @@ class Media3FlowVideoSink(
       skippedGpuTimerQueries > 0L -> "query_pool_limited"
       else -> "waiting_for_samples"
     }
-    fun summary(stage: FlowGpuStage) =
-      Media3FlowDiagnosticMath.summarizeNanoseconds(gpuDurationSamplesNs[stage.ordinal].toList())
-    return FlowGpuTimingStats(
+    fun summary(stage: FlowGlesStage) =
+      Media3FlowDiagnosticMath.summarizeNanoseconds(glesDurationSamplesNs[stage.ordinal].toList())
+    return FlowGlesTimingStats(
       supported = gpuTimerQueriesSupported,
       status = status,
       validResults = validGpuTimerResults,
@@ -1227,12 +1225,28 @@ class Media3FlowVideoSink(
       disjointResultsDiscarded = disjointGpuTimerResults,
       zeroDurationResults = zeroGpuTimerResults,
       skippedBecausePoolFull = skippedGpuTimerQueries,
-      downsample = summary(FlowGpuStage.DOWNSAMPLE),
-      motionForward = summary(FlowGpuStage.MOTION_FORWARD),
-      motionBackward = summary(FlowGpuStage.MOTION_BACKWARD),
-      consistencyAndWarp = summary(FlowGpuStage.CONSISTENCY_AND_WARP),
-      presentationDraw = summary(FlowGpuStage.PRESENTATION_DRAW),
+      presentationDraw = summary(FlowGlesStage.PRESENTATION_DRAW),
     )
+  }
+
+  /** Polling libplacebo's timestamp query ring is nonblocking; never call pl_gpu_finish here. */
+  private fun vulkanTimingSnapshot(nowNs: Long): FlowVulkanTimingStats {
+    if (flowVulkanContext == 0L) return FlowVulkanTimingStats(status = "unsupported_context")
+    if (nowNs - lastVulkanTimingPollAtNs < 250_000_000L) return cachedVulkanTimingStats
+    lastVulkanTimingPollAtNs = nowNs
+    cachedVulkanTimingStats = Media3FlowDiagnosticMath.parseVulkanTimingSnapshot(
+      runCatching {
+        Media3FlowVulkanNative.nativeGetVulkanTimingStats(flowVulkanContext)
+      }.getOrNull(),
+    )
+    return cachedVulkanTimingStats
+  }
+
+  private fun inputQueueSnapshot(nowNs: Long): InputQueueSnapshot = synchronized(inputLock) {
+    val oldestAgeMs = pendingInput.firstOrNull()?.let {
+      ((nowNs - it.enqueuedAtNs).coerceAtLeast(0L) / 1_000_000.0).toFloat()
+    } ?: 0f
+    InputQueueSnapshot(pendingInput.size, inputInFlight, oldestAgeMs)
   }
 
   private fun cpuTimingSnapshot(): FlowCpuTimingStats = synchronized(cpuTimingLock) {
@@ -1275,9 +1289,6 @@ class Media3FlowVideoSink(
     releaseMotionPair(reusable)
     reusable.frame0PtsUs = frame0.ptsUs
     reusable.frame1PtsUs = frame1.ptsUs
-    reusable.motionEstimateGpuMs = null
-    reusable.motionForwardGpuMs = null
-    reusable.motionBackwardGpuMs = null
     val startNs = System.nanoTime()
     val nativePair = runCatching {
       Media3FlowVulkanNative.nativeAnalyzePair(
@@ -1303,7 +1314,6 @@ class Media3FlowVideoSink(
     }
     reusable.nativePairHandle = nativePair
     reusable.available = true
-    lastMotionGpuMs = null
     lastBypassReason = null
     lastState = "motion_estimated_vulkan"
     if (!firstSuccessfulPairDiagnosticLogged) {
@@ -1333,22 +1343,20 @@ class Media3FlowVideoSink(
       ?: sourceSnapshot.first().ptsUs
     val targetPtsUs = if (forceFinalFrame) finalPtsUs else cadencePtsUs.coerceAtMost(positionUs)
     if (tick != null && tick <= lastOutputTick && !forceFinalFrame) return
+    val missedTicks = if (tick != null && lastOutputTick >= 0L) {
+      Media3FlowCadence.skippedTicks(lastOutputTick, tick)
+    } else {
+      0L
+    }
     val sourcePts = LongArray(sourceSnapshot.size) { sourceSnapshot[it].ptsUs }
     val sourceIndex = Media3FlowCadence.sourceFrameIndexAtOrBefore(sourcePts, targetPtsUs)
     val sourceFrame = sourceIndex?.let(sourceSnapshot::get)
     if (sourceFrame == null) {
       skippedFrames++
       lastBypassReason = "waiting_for_source_pts"
+      recordOutputDeadlineMisses(missedTicks.coerceAtLeast(if (tick != null) 1L else 0L), "source_pts_not_available")
       logTimingTrace(positionUs, speed, targetPtsUs, null, sourceSnapshot.first().ptsUs, null, System.nanoTime())
       return
-    }
-    if (tick != null && lastOutputTick >= 0L) {
-      val missed = Media3FlowCadence.skippedTicks(lastOutputTick, tick)
-      if (missed > 0L) {
-        droppedFrames.addAndGet(missed)
-        missedOutputTicks.addAndGet(missed)
-        lastBypassReason = "output_deadline_missed"
-      }
     }
     val bracket = findSourcePair(sourceSnapshot, targetPtsUs)
     val pair = bracket?.let { (a, b) ->
@@ -1356,12 +1364,39 @@ class Media3FlowVideoSink(
     }
     val deltaUs = bracket?.let { it.second.ptsUs - it.first.ptsUs } ?: 0L
     val estimatedMotionMs = pair?.let {
-      Media3FlowCadence.motionEstimateMs(it.motionEstimateSubmitMs, it.motionEstimateGpuMs)
+      Media3FlowCadence.motionEstimateMs(it.motionEstimateSubmitMs, null)
     } ?: Float.POSITIVE_INFINITY
     val synthesize = bracket != null && pair != null &&
       Media3FlowCadence.needsInterpolation(deltaUs, targetFps, speed) &&
       estimatedMotionMs < deltaUs / 1000f * ANALYSIS_DEADLINE_RESERVE
     val nowNs = System.nanoTime()
+    lastOutputCallbackLatenessMs = frameTimeNanos?.let {
+      ((nowNs - it).coerceAtLeast(0L) / 1_000_000.0).toFloat()
+    } ?: 0f
+    lastSelectedSourcePtsAgeMs = ((positionUs - sourceFrame.ptsUs).coerceAtLeast(0L) / 1_000f)
+    lastSourcePairPtsGapMs = bracket?.let { (a, b) -> (b.ptsUs - a.ptsUs).coerceAtLeast(0L) / 1_000f }
+    lastFrame0CaptureAgeMs = bracket?.first?.capturedAtNs?.takeIf { it > 0L }?.let {
+      ((nowNs - it).coerceAtLeast(0L) / 1_000_000.0).toFloat()
+    }
+    lastFrame1CaptureAgeMs = bracket?.second?.capturedAtNs?.takeIf { it > 0L }?.let {
+      ((nowNs - it).coerceAtLeast(0L) / 1_000_000.0).toFloat()
+    }
+    if (missedTicks > 0L) {
+      val tickBudgetMs = 1_000f / targetFps.coerceAtLeast(1)
+      val wantsInterpolation = bracket != null &&
+        Media3FlowCadence.needsInterpolation(deltaUs, targetFps, speed)
+      val missReason = when {
+        bracket == null -> "no_source_pair_for_target_pts"
+        pair == null && wantsInterpolation -> "motion_pair_not_ready"
+        pair != null && wantsInterpolation && estimatedMotionMs >= deltaUs / 1_000f * ANALYSIS_DEADLINE_RESERVE ->
+          "motion_analysis_over_deadline_reserve"
+        lastEglSwapWaitMs >= tickBudgetMs -> "previous_egl_swap_over_tick_budget"
+        lastOutputCallbackLatenessMs >= tickBudgetMs -> "gl_callback_late_by_one_or_more_ticks"
+        else -> "output_tick_gap_unattributed"
+      }
+      recordOutputDeadlineMisses(missedTicks, missReason)
+      lastBypassReason = "output_deadline_missed"
+    }
     val basePresentationNs = frameTimeNanos?.let {
       val refreshHz = displayHz.takeIf { rate -> rate.isFinite() && rate > 0f }?.toDouble() ?: targetFps.toDouble()
       it + (1_000_000_000.0 / refreshHz).roundToLong()
@@ -1369,7 +1404,10 @@ class Media3FlowVideoSink(
     val ptsOffsetNs = (((targetPtsUs - positionUs).toDouble() / speed.toDouble()) * 1000.0).toLong()
     val renderTimeNs = (basePresentationNs + ptsOffsetNs).coerceAtLeast(nowNs)
     logTimingTrace(positionUs, speed, targetPtsUs, sourceFrame.ptsUs, sourceSnapshot.first().ptsUs, renderTimeNs, nowNs)
-    if (!makeWindowCurrent()) return
+    if (!makeWindowCurrent()) {
+      recordOutputDeadlineMisses(1L, "egl_make_window_current_failed")
+      return
+    }
     var synthesized = false
     val submitted = if (synthesize && bracket != null && pair != null) {
       val synthesisResult = runCatching {
@@ -1413,6 +1451,7 @@ class Media3FlowVideoSink(
         null,
       )
     } else {
+      recordOutputDeadlineMisses(1L, "egl_swap_or_output_submission_failed", countAsDropped = false)
       droppedFrames.incrementAndGet()
       dispatchListener { it.onFrameDropped() }
     }
@@ -1498,17 +1537,19 @@ class Media3FlowVideoSink(
       geometry.textureOffsetX,
       geometry.textureOffsetY,
     )
-    val presentationQuery = beginGpuTimerQuery(FlowGpuStage.PRESENTATION_DRAW)
+    val presentationQuery = beginGlesTimerQuery()
     try {
       drawFullscreenTriangle()
     } finally {
-      endGpuTimerQuery(presentationQuery)
+      endGlesTimerQuery(presentationQuery)
     }
     EGLExt.eglPresentationTimeANDROID(eglDisplay, windowSurface, presentationTimeNs.coerceAtLeast(0L))
     val swapStartNs = System.nanoTime()
     val swapped = EGL14.eglSwapBuffers(eglDisplay, windowSurface)
     val swapReturnedNs = System.nanoTime()
-    recordCpuDuration(FlowCpuStage.EGL_SWAP_WAIT, (swapReturnedNs - swapStartNs).coerceAtLeast(0L))
+    val swapWaitNs = (swapReturnedNs - swapStartNs).coerceAtLeast(0L)
+    lastEglSwapWaitMs = swapWaitNs / 1_000_000f
+    recordCpuDuration(FlowCpuStage.EGL_SWAP_WAIT, swapWaitNs)
     if (swapped) {
       outputWallTimes.addLast(swapReturnedNs)
       while (outputWallTimes.size > OUTPUT_RATE_WINDOW) outputWallTimes.removeFirst()
@@ -1791,11 +1832,7 @@ class Media3FlowVideoSink(
       it.available = false
       it.frame0PtsUs = C.TIME_UNSET
       it.frame1PtsUs = C.TIME_UNSET
-      it.motionEstimateGpuMs = null
-      it.motionForwardGpuMs = null
-      it.motionBackwardGpuMs = null
     }
-    lastMotionGpuMs = null
     lastMotionSubmitMs = 0f
     storedFrameCount = 0
   }
@@ -2249,7 +2286,6 @@ class Media3FlowVideoSink(
     gpuTimerQueriesSupported = false
     pendingGpuTimerQueries.clear()
     activeGpuTimerQuery = null
-    lastMotionGpuMs = null
     if (framebuffer != 0) GLES20.glDeleteFramebuffers(1, intArrayOf(framebuffer), 0)
     framebuffer = 0
     deleteTexture(inputTextureId)
@@ -2299,6 +2335,8 @@ class Media3FlowVideoSink(
     val nowNs = System.nanoTime()
     if (!force && nowNs - lastMetricsAtNs < METRICS_INTERVAL_NS) return
     lastMetricsAtNs = nowNs
+    val queueSnapshot = inputQueueSnapshot(nowNs)
+    val vulkanTiming = vulkanTimingSnapshot(nowNs)
     val outputFps = if (outputWallTimes.size >= 2) {
       val elapsedNs = outputWallTimes.last() - outputWallTimes.first()
       if (elapsedNs > 0L) (outputWallTimes.size - 1) * 1_000_000_000f / elapsedNs else 0f
@@ -2318,7 +2356,7 @@ class Media3FlowVideoSink(
       missedOutputTicks = missedOutputTicks.get(),
       skippedFrames = skippedFrames,
       motionEstimateSubmitMs = lastMotionSubmitMs,
-      motionEstimateGpuMs = lastMotionGpuMs,
+      motionPassAverageGpuUs = vulkanTiming.motion.averageUs,
       confidence = null,
       motionGridWidth = gridWidth,
       motionGridHeight = gridHeight,
@@ -2326,9 +2364,22 @@ class Media3FlowVideoSink(
       processingHeight = processingHeight,
       state = state,
       bypassReason = reason,
-      gpuTimings = gpuTimingSnapshot(),
+      vulkanTimings = vulkanTiming,
+      glesTimings = glesTimingSnapshot(),
       cpuTimings = cpuTimingSnapshot(),
       pixelCoverage = pixelCoverageSnapshot(),
+      pendingInputDepth = queueSnapshot.depth,
+      inputInFlight = queueSnapshot.inFlight,
+      oldestPendingInputAgeMs = queueSnapshot.oldestAgeMs,
+      sourceFrameDepth = sourceFrames.size,
+      readyMotionPairDepth = motionPairs.count { it.available },
+      selectedSourcePtsAgeMs = lastSelectedSourcePtsAgeMs,
+      sourcePairPtsGapMs = lastSourcePairPtsGapMs,
+      frame0CaptureAgeMs = lastFrame0CaptureAgeMs,
+      frame1CaptureAgeMs = lastFrame1CaptureAgeMs,
+      outputCallbackLatenessMs = lastOutputCallbackLatenessMs,
+      lastDeadlineMissReason = lastOutputDeadlineMissReason,
+      deadlineMissReasons = outputDeadlineMissReasons.toMap(),
     )
     runCatching { onDiagnostics(diagnostics) }
     logFlowSummary(diagnostics, nowNs)
@@ -2344,14 +2395,18 @@ class Media3FlowVideoSink(
     lastFlowSummarySignature = signature
 
     val inputSize = currentFormat?.let { "${it.width}x${it.height}" } ?: "unknown"
-    val gpuTiming = diagnostics.gpuTimings
+    val glesTiming = diagnostics.glesTimings
     val cpuTiming = diagnostics.cpuTimings
-    val gpuElapsed = when {
-      diagnostics.motionEstimateGpuMs == null -> "not_sampled_vulkan"
-      else -> "${formatLogFloat(diagnostics.motionEstimateGpuMs * 1_000f)}us"
+    val vulkanTiming = diagnostics.vulkanTimings
+    val gpuElapsed = diagnostics.motionPassAverageGpuUs?.let {
+      "${String.format(java.util.Locale.US, "%.2f", it)}us_per_motion_pass"
     }
+      ?: vulkanTiming.motion.status
     val confidence = diagnostics.confidence?.let { formatLogFloat(it) } ?: "n/a"
-    val gpuStages = "presentation=${formatFlowDuration(gpuTiming.presentationDraw)}"
+    val vulkanStages = "preprocess=${formatVulkanStage(vulkanTiming.preprocess)} " +
+      "analysis=${formatVulkanStage(vulkanTiming.analysis)} motion=${formatVulkanStage(vulkanTiming.motion)} " +
+      "synthesis=${formatVulkanStage(vulkanTiming.synthesis)}"
+    val glesStages = "presentation_draw=${formatFlowDuration(glesTiming.presentationDraw)}"
     val cpuStages = "media3InputQueue=${formatFlowDuration(cpuTiming.inputQueueWait)} " +
       "frameHandler=${formatFlowDuration(cpuTiming.frameHandlerCall)} " +
       "eglSwapWait=${formatFlowDuration(cpuTiming.eglSwapWait)} " +
@@ -2368,14 +2423,25 @@ class Media3FlowVideoSink(
         "generatedFps=${formatLogFloat(diagnostics.generatedFps)} " +
         "generatedTotal=${diagnostics.generatedFrames} dropsTotal=${diagnostics.droppedFrames} " +
         "missedOutputTicksTotal=${diagnostics.missedOutputTicks} skippedTotal=${diagnostics.skippedFrames} " +
+        "deadlineMissReason=${diagnostics.lastDeadlineMissReason} deadlineMissReasons=${formatDeadlineReasons(diagnostics.deadlineMissReasons)} " +
+        "queueDepth=pendingInput:${diagnostics.pendingInputDepth},inFlight:${diagnostics.inputInFlight}," +
+        "sourceFrames:${diagnostics.sourceFrameDepth},readyMotionPairs:${diagnostics.readyMotionPairDepth} " +
+        "oldestPendingInputMs=${formatLogFloat(diagnostics.oldestPendingInputAgeMs)} " +
+        "selectedSourcePtsAgeMs=${formatNullableLogFloat(diagnostics.selectedSourcePtsAgeMs)} " +
+        "pairPtsGapMs=${formatNullableLogFloat(diagnostics.sourcePairPtsGapMs)} " +
+        "pairCaptureAgeMs=${formatNullableLogFloat(diagnostics.frame0CaptureAgeMs)}/${formatNullableLogFloat(diagnostics.frame1CaptureAgeMs)} " +
+        "outputCallbackLatenessMs=${formatLogFloat(diagnostics.outputCallbackLatenessMs)} " +
         "input=$inputSize processing=${diagnostics.processingWidth}x${diagnostics.processingHeight} " +
         "motionPyramid=quarter>half>full " +
         "motionGrid=${diagnostics.motionGridWidth}x${diagnostics.motionGridHeight} " +
         "motionSubmitCpuMs=${formatLogFloat(diagnostics.motionEstimateSubmitMs)} " +
-        "motionGpuElapsed=$gpuElapsed gpuTimerStatus=${gpuTiming.status} " +
-        "gpuQueryCounts=valid:${gpuTiming.validResults},pending:${gpuTiming.pendingResults}," +
-        "disjoint:${gpuTiming.disjointResultsDiscarded},zero:${gpuTiming.zeroDurationResults}," +
-        "skipped:${gpuTiming.skippedBecausePoolFull} gpuStagesUs={$gpuStages} " +
+        "motionPassVulkanAvg=$gpuElapsed vulkanTimerStatus=${vulkanTiming.status} " +
+        "computeTimestampValidBits=${vulkanTiming.timestampValidBits} " +
+        "vulkanStagesUs={$vulkanStages} " +
+        "glesTimerStatus=${glesTiming.status} glesQueryCounts=valid:${glesTiming.validResults}," +
+        "pending:${glesTiming.pendingResults},disjoint:${glesTiming.disjointResultsDiscarded}," +
+        "zero:${glesTiming.zeroDurationResults},skipped:${glesTiming.skippedBecausePoolFull} " +
+        "glesStagesUs={$glesStages} " +
         "cpuStagesUs={$cpuStages} coverage=unavailable_vulkan_ssbo_readback_disabled " +
         "confidence=$confidence displayReportedHz=${formatLogFloat(displayRefreshRate(appContext))} " +
         "displayModeInitialHz=${formatLogFloat(displayHz)} surfaceHintFps=${formatLogFloat(outputFrameRateHintFps)} " +
@@ -2384,6 +2450,18 @@ class Media3FlowVideoSink(
         "media3Strategy=${if (changeFrameRateStrategy == C.VIDEO_CHANGE_FRAME_RATE_STRATEGY_OFF) "off" else "only_if_seamless"}",
     )
   }
+
+  private fun formatVulkanStage(stage: FlowVulkanStageTiming): String {
+    val average = stage.averageUs?.let { String.format(java.util.Locale.US, "%.2f", it) } ?: "n/a"
+    val maximum = stage.maximumUs?.let { String.format(java.util.Locale.US, "%.2f", it) } ?: "n/a"
+    return "${stage.status}:avg=${average}us,max=${maximum}us,samples=${stage.completedSamples}," +
+      "unreportedOrDropped=${stage.pendingOrDropped}"
+  }
+
+  private fun formatNullableLogFloat(value: Float?): String = value?.let(::formatLogFloat) ?: "n/a"
+
+  private fun formatDeadlineReasons(reasons: Map<String, Long>): String =
+    reasons.entries.joinToString(",") { "${it.key}:${it.value}" }.ifEmpty { "none" }
 
   private fun logFrameRateRequest() {
     if (!isDebuggable) return

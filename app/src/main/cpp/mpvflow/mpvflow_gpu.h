@@ -11,6 +11,7 @@
 #include <libplacebo/gpu.h>
 #include <stdbool.h>
 #include <stddef.h>
+#include <stdint.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -52,6 +53,27 @@ struct MPVFlowGPUCreateDiagnostics {
     bool rgba8_found;
 };
 
+enum MPVFlowGPUStage {
+    MPVFLOW_GPU_STAGE_PREPROCESS,
+    MPVFLOW_GPU_STAGE_ANALYSIS,
+    MPVFLOW_GPU_STAGE_MOTION,
+    MPVFLOW_GPU_STAGE_SYNTHESIS,
+    MPVFLOW_GPU_STAGE_COUNT,
+};
+
+struct MPVFlowGPUStageTiming {
+    bool timer_created;
+    uint64_t dispatches;
+    uint64_t completed_samples;
+    uint64_t total_ns;
+    uint64_t maximum_ns;
+};
+
+struct MPVFlowGPUTimingStats {
+    uint32_t stage_count;
+    struct MPVFlowGPUStageTiming stages[MPVFLOW_GPU_STAGE_COUNT];
+};
+
 struct MPVFlowGPUConfig {
     /* Largest motion-analysis dimension; defaults to 640 when <= 0 and is
      * hard-capped at 640. Synthesized color output remains source-resolution. */
@@ -70,6 +92,10 @@ MPVFlowGPUContext *mpvflow_gpu_create(pl_gpu gpu,
                                       enum MPVFlowGPUResult *status,
                                       struct MPVFlowGPUCreateDiagnostics *diagnostics);
 void mpvflow_gpu_destroy(MPVFlowGPUContext *context);
+
+/* Poll completed libplacebo GPU timestamps without waiting for the device. */
+void mpvflow_gpu_get_timing_stats(MPVFlowGPUContext *context,
+                                  struct MPVFlowGPUTimingStats *stats);
 
 /*
  * Downscale a sampleable RGB texture to the context's bounded working size.
