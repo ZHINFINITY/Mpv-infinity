@@ -502,12 +502,14 @@ static void destroy_pair_textures(MPVFlowGPUContext *ctx,
                 if (*owned[i]) {
                     enum MPVFlowOpenCLVkBridgeStatus status =
                         mpvflow_opencl_vk_buffer_destroy(*owned[i]);
-                    if (status != MPVFLOW_OPENCL_VK_BRIDGE_OK)
+                    if (status != MPVFLOW_OPENCL_VK_BRIDGE_OK) {
                         flow_log(ctx->gpu, PL_LOG_ERR,
                                  "MPVFLOW_DIAGNOSTIC event=opencl_buffer_release state=failed status=%d",
                                  status);
+                    } else {
+                        *owned[i] = NULL;
+                    }
                 }
-                *owned[i] = NULL;
             }
         } else {
             flow_log(ctx->gpu, PL_LOG_ERR,

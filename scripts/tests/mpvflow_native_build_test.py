@@ -495,6 +495,11 @@ assert "if (mpvflow_opencl_finish(ctx->opencl) == MPVFLOW_OPENCL_OK)" in opencl_
 assert opencl_synthesize_wrapper.count("mpvflow_opencl_finish(ctx->opencl)") == 2, (
     "synthesis must retain only its geometry/error cleanup finishes and avoid a duplicate success-path finish"
 )
+pair_cleanup = flow_gpu_source.split("static void destroy_pair_textures(", 1)[1].split("\n}\n", 1)[0]
+assert "} else {\n                        *owned[i] = NULL;\n                    }" in pair_cleanup and \
+       "\n                *owned[i] = NULL;\n" not in pair_cleanup, (
+    "failed OpenCL buffer destruction must retain its handle so runtime fallback cannot mistake live interop resources for cleaned resources"
+)
 for marker in (
     "flow_init_retry_count < 2",
     '"opencl_initialization"',
