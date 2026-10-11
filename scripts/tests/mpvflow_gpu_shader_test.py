@@ -71,6 +71,9 @@ require(synthesis, "colorAt(frame0,srcA)", "interpolated color must be sampled f
 require(synthesis, "float confidence=max(confidence0,confidence1)", "visibility must retain the more reliable endpoint")
 require(synthesis, "weight0=(1.0-pc.timestep)*visibility0,weight1=pc.timestep*visibility1", "visible endpoint weights must preserve temporal alpha")
 require(synthesis, "return cycleQuality*matchQuality*uniqueQuality*valid;", "endpoint reliability must include match uniqueness")
+require(synthesis, "float uniqueQuality=smoothstep(0.04,0.35,flow.w)", "ambiguous tied matches must not receive a fixed visibility-confidence floor")
+require(synthesis, "if(confidence<0.15)", "unreliable motion must fall back to a real source frame")
+assert "uniqueQuality=0.5+0.5*smoothstep" not in synthesis, "ambiguous motion must not be promoted to visible by a confidence floor"
 require(flow, "float(second-best)/max(float(second),1.0)", "flow vectors must report best-vs-runner-up match uniqueness")
 require(flow, "refineAxis(p,bestVector,ivec2(1,0)", "GPU flow vectors must be fractionally refined")
 require(flow, "center=clamp(center,-p,sz-ivec2(8)-p)", "coarse predictors must be clamped before border-local refinement")
@@ -233,6 +236,15 @@ def boundary_source(alpha: float, luma0: float, luma1: float, confidence0: float
 assert boundary_source(0.5, 0.9, 0.1, 0.9, 0.3) == 0, "revealed foreground must prefer its reliable endpoint"
 assert boundary_source(0.75, 0.9, 0.1, 0.6, 0.6) == 1, "ambiguous crossing contours must avoid blending and use the nearer source"
 assert boundary_source(0.5, 0.31, 0.34, 0.8, 0.8) is None, "similar appearances must preserve ordinary temporal blending"
+
+def smoothstep(edge0: float, edge1: float, value: float) -> float:
+    t = max(0.0, min(1.0, (value - edge0) / (edge1 - edge0)))
+    return t * t * (3.0 - 2.0 * t)
+
+flat_match_uniqueness = block_search(ambiguous_texture, ambiguous_texture, (24, 16), (0, 0), 8, center_out=True)[2]
+assert flat_match_uniqueness == 0.0, "flat/tied blocks must be recognized as ambiguous"
+assert smoothstep(0.04, 0.35, flat_match_uniqueness) == 0.0, "ambiguous motion must be excluded and use a source-frame fallback"
+assert smoothstep(0.04, 0.35, 0.35) == 1.0, "distinctive motion matches must remain fully eligible"
 
 validator = shutil.which("glslangValidator")
 if validator:
