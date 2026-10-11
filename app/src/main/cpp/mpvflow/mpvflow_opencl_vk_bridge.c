@@ -104,6 +104,20 @@ static bool device_extension_enabled(pl_vulkan vk, const char *wanted)
     return false;
 }
 
+static PFN_vkGetPhysicalDeviceExternalBufferProperties
+load_external_buffer_properties(pl_vulkan vk)
+{
+    if (!vk || !vk->get_proc_addr)
+        return NULL;
+    PFN_vkVoidFunction function = vk->get_proc_addr(
+        vk->instance, "vkGetPhysicalDeviceExternalBufferProperties");
+    if (!function) {
+        function = vk->get_proc_addr(
+            vk->instance, "vkGetPhysicalDeviceExternalBufferPropertiesKHR");
+    }
+    return (PFN_vkGetPhysicalDeviceExternalBufferProperties) function;
+}
+
 static enum MPVFlowOpenCLVkBridgeStatus fail_vk(
     MPVFlowOpenCLVkBridge *b, const char *operation, VkResult result)
 {
@@ -234,6 +248,7 @@ MPVFlowOpenCLVkBridge *mpvflow_opencl_vk_bridge_create(
     VkExternalBufferProperties ext_props = {
         .sType = VK_STRUCTURE_TYPE_EXTERNAL_BUFFER_PROPERTIES,
     };
+    PFN_vkGetPhysicalDeviceExternalBufferProperties get_external_buffer_properties;
     char message[384] = "invalid bridge arguments";
 
     if (!gpu || !opencl) {
@@ -257,7 +272,13 @@ MPVFlowOpenCLVkBridge *mpvflow_opencl_vk_bridge_create(
                    "libplacebo Vulkan compute queue or queue-lock callbacks are unavailable");
         return NULL;
     }
-    vkGetPhysicalDeviceExternalBufferProperties(vk->phys_device, &ext_info, &ext_props);
+    get_external_buffer_properties = load_external_buffer_properties(vk);
+    if (!get_external_buffer_properties) {
+        copy_error(error_out, error_capacity,
+                   "Vulkan external-buffer-properties entry point is unavailable");
+        return NULL;
+    }
+    get_external_buffer_properties(vk->phys_device, &ext_info, &ext_props);
     if (!(ext_props.externalMemoryProperties.externalMemoryFeatures & VK_EXTERNAL_MEMORY_FEATURE_IMPORTABLE_BIT) ||
         !(ext_props.externalMemoryProperties.compatibleHandleTypes & ext_info.handleType)) {
         copy_error(error_out, error_capacity,

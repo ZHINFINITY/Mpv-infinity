@@ -461,6 +461,11 @@ assert "flow_compute_api=%s" in media3_jni_source and "renderer_api=vulkan flow_
 assert "AHardwareBuffer_lock" not in bridge_source and "clEnqueueReadBuffer" not in opencl_source, (
     "Flow must not add CPU pixel readback to the OpenCL backend"
 )
+assert "vk->get_proc_addr" in bridge_source
+assert '"vkGetPhysicalDeviceExternalBufferPropertiesKHR"' in bridge_source
+assert "vkGetPhysicalDeviceExternalBufferProperties(vk->phys_device" not in bridge_source, (
+    "Android's Vulkan loader may not export this core entry point for direct linking"
+)
 frame_interpolation_ownership = mpv_conf_source.split("val FRAME_INTERPOLATION =", 1)[1].split(
     "\n    )", 1
 )[0]
