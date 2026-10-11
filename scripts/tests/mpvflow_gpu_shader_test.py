@@ -86,6 +86,52 @@ require(synthesis, "backAt0=flowAtEdgeAware(cycle0,1)", "cycle-consistency verif
 require(synthesis, "forwardAt1=flowAtEdgeAware(cycle1,0)", "reverse cycle-consistency verification must retain edge-aware sampling")
 assert synthesis.split("void main()", 1)[1].count("flowAtEdgeAware(") == 6, "edge-aware sampling should remain at initial/final warps and cycle checks, not every refinement step"
 assert synthesis.split("void main()", 1)[1].count("flowAtBilinear(") == 2, "only iterative inverse-flow refinement should use the bounded bilinear sampler"
+color_at_match = re.search(r"vec4 colorAt\(sampler2D s,vec2 p\)\{(.*?)\}", synthesis)
+assert color_at_match, "synthesis must provide the source-color sampler"
+color_at = color_at_match.group(1)
+require(color_at, "p=clamp(p,vec2(0.0),vec2(sz-1))", "source sampling must keep the old clamp-to-edge boundary behavior")
+require(color_at, "textureLod(s,(p+vec2(0.5))/vec2(sz),0.0)", "source colors should use exact pixel-center mapping with hardware bilinear filtering")
+assert "texelFetch" not in color_at, "warped source colors should not perform four explicit fetches per source frame"
+
+def manual_bilinear(image, x, y):
+    height, width = len(image), len(image[0])
+    x = min(max(x, 0.0), width - 1.0)
+    y = min(max(y, 0.0), height - 1.0)
+    x0, y0 = int(x), int(y)
+    x1, y1 = min(x0 + 1, width - 1), min(y0 + 1, height - 1)
+    tx, ty = x - x0, y - y0
+    return tuple(
+        (image[y0][x0][channel] * (1.0 - tx) + image[y0][x1][channel] * tx) * (1.0 - ty)
+        + (image[y1][x0][channel] * (1.0 - tx) + image[y1][x1][channel] * tx) * ty
+        for channel in range(4)
+    )
+
+def linear_sampler_bilinear(image, x, y):
+    height, width = len(image), len(image[0])
+    x = min(max(x, 0.0), width - 1.0)
+    y = min(max(y, 0.0), height - 1.0)
+    u, v = (x + 0.5) / width, (y + 0.5) / height
+    return manual_bilinear(image, u * width - 0.5, v * height - 0.5)
+
+sampling_rng = random.Random(0xB11A)
+for height, width in ((1, 1), (2, 3), (7, 11)):
+    pixels = [
+        [tuple(sampling_rng.randrange(256) / 255.0 for _ in range(4)) for _ in range(width)]
+        for _ in range(height)
+    ]
+    coordinates = [(-2.25, 0.75), (0.0, 0.0), (width - 1.0, height - 1.0),
+                   (width + 1.5, height + 2.0)]
+    coordinates.extend(
+        (sampling_rng.uniform(-2.0, width + 2.0), sampling_rng.uniform(-2.0, height + 2.0))
+        for _ in range(24)
+    )
+    for x, y in coordinates:
+        manual = manual_bilinear(pixels, x, y)
+        filtered = linear_sampler_bilinear(pixels, x, y)
+        assert max(abs(a - b) for a, b in zip(manual, filtered)) < 1e-12, (
+            f"hardware pixel-center mapping differs from the existing manual bilinear sample at {(width, height, x, y)}"
+        )
+
 require(SOURCE, 'pl_find_named_fmt(gpu, "rgba16f")', "MPV Flow must use the supported RGBA16F storage path")
 require(SOURCE, "gpu->glsl.vulkan", "MPV Flow must reject non-Vulkan compute devices")
 require(SOURCE, "gpu->glsl.version < 450", "MPV Flow requires the Vulkan GLSL profile")
@@ -94,6 +140,13 @@ require(SOURCE, '.name = "luma0Tex", .type = PL_DESC_STORAGE_IMG, .binding = 5',
 require(SOURCE, '.name = "luma1Tex", .type = PL_DESC_STORAGE_IMG, .binding = 6', "frame-1 luma descriptor binding mismatch")
 require(SOURCE, '.name = "outTex", .type = PL_DESC_STORAGE_IMG, .binding = 7', "synthesis output descriptor binding mismatch")
 require(SOURCE, "make_pass(gpu, shader_synthesize, synth_desc, 8)", "synthesis pass descriptor count mismatch")
+synthesis_bindings = SOURCE.split("struct pl_desc_binding sb[8] = {", 1)[1].split("};", 1)[0]
+for source in ("source0", "source1"):
+    require(synthesis_bindings,
+            f".object = {source}, .address_mode = PL_TEX_ADDRESS_CLAMP,\n          .sample_mode = PL_TEX_SAMPLE_LINEAR",
+            f"{source} must use clamp-to-edge linear filtering for the exact hardware bilinear sampler")
+require(SOURCE, "!(p0->format->caps & PL_FMT_CAP_LINEAR)", "synthesis must reject formats that cannot safely use linear filtering")
+require(SOURCE, "!(p1->format->caps & PL_FMT_CAP_LINEAR)", "both synthesis inputs must support linear filtering")
 require(SOURCE, "mpvflow_gpu_prepare_input", "full-size shared frames need GPU downscaling before analysis")
 require(SOURCE, "(w - FLOW_BLOCK + FLOW_STEP - 1) / FLOW_STEP + 1", "motion texture width must contain only valid, unique block origins")
 require(SOURCE, "(h - FLOW_BLOCK + FLOW_STEP - 1) / FLOW_STEP + 1", "motion texture height must contain only valid, unique block origins")

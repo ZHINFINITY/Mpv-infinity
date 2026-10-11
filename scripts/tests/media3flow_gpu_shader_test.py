@@ -61,6 +61,13 @@ for marker in (
     "mpvflow_gpu_analyze_pair(", "mpvflow_gpu_synthesize(",
 ):
     assert marker in JNI, f"Vulkan HardwareBuffer bridge is missing required contract: {marker}"
+shared_synthesis_bindings = GPU.split("struct pl_desc_binding sb[8] = {", 1)[1].split("};", 1)[0]
+for source in ("source0", "source1"):
+    assert (
+        f".object = {source}, .address_mode = PL_TEX_ADDRESS_CLAMP,\n          .sample_mode = PL_TEX_SAMPLE_LINEAR"
+        in shared_synthesis_bindings
+    ), f"Media3 shared Vulkan synthesis must use the same clamp-to-edge linear sampler for {source}"
+assert "PL_FMT_CAP_LINEAR" in GPU, "Media3 source images must be capability-checked before linear filtering"
 assert "get_proc_addr" in JNI
 assert '"vkGetPhysicalDeviceImageFormatProperties2KHR"' in JNI
 assert "vkGetPhysicalDeviceImageFormatProperties2(\n" not in JNI, "Android Vulkan entry point must be loaded, not directly linked"
