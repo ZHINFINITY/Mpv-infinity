@@ -237,6 +237,11 @@ class Media3FlowVideoSink(
   private var inputSurface: Surface? = null
   private var copyProgram = 0
   private var blitProgram = 0
+  private var copyExternalLocation = -1
+  private var copyTextureMatrixLocation = -1
+  private var blitImageLocation = -1
+  private var blitTextureScaleLocation = -1
+  private var blitTextureOffsetLocation = -1
   private var framebuffer = 0
   private var graphicsProgramsCompiled = false
   private var frameWidth = 0
@@ -1552,14 +1557,14 @@ class Media3FlowVideoSink(
     )
     GLES20.glUseProgram(blitProgram)
     bindTextureUnit(0, textureId)
-    GLES20.glUniform1i(GLES20.glGetUniformLocation(blitProgram, "uImage"), 0)
+    GLES20.glUniform1i(blitImageLocation, 0)
     GLES20.glUniform2f(
-      GLES20.glGetUniformLocation(blitProgram, "uTextureScale"),
+      blitTextureScaleLocation,
       geometry.textureScaleX,
       geometry.textureScaleY,
     )
     GLES20.glUniform2f(
-      GLES20.glGetUniformLocation(blitProgram, "uTextureOffset"),
+      blitTextureOffsetLocation,
       geometry.textureOffsetX,
       geometry.textureOffsetY,
     )
@@ -1603,13 +1608,9 @@ class Media3FlowVideoSink(
     checkGlError("input copy glActiveTexture", frameProbeOnly = true)
     GLES20.glBindTexture(GLES11Ext.GL_TEXTURE_EXTERNAL_OES, inputTextureId)
     checkGlError("input copy bind external texture", frameProbeOnly = true)
-    val externalLocation = GLES20.glGetUniformLocation(copyProgram, "uExternal")
-    checkGlError("input copy lookup uExternal", frameProbeOnly = true)
-    GLES20.glUniform1i(externalLocation, 0)
+    GLES20.glUniform1i(copyExternalLocation, 0)
     checkGlError("input copy uniform uExternal", frameProbeOnly = true)
-    val matrixLocation = GLES20.glGetUniformLocation(copyProgram, "uTextureMatrix")
-    checkGlError("input copy lookup uTextureMatrix", frameProbeOnly = true)
-    GLES20.glUniformMatrix4fv(matrixLocation, 1, false, transform, 0)
+    GLES20.glUniformMatrix4fv(copyTextureMatrixLocation, 1, false, transform, 0)
     checkGlError("input copy uniform uTextureMatrix", frameProbeOnly = true)
     drawFullscreenTriangle()
     checkGlError("input copy draw", frameProbeOnly = true)
@@ -2058,6 +2059,11 @@ class Media3FlowVideoSink(
   private fun compileGraphicsPrograms() {
     copyProgram = linkProgram("input_external_texture_copy", COPY_VERTEX_SHADER, COPY_EXTERNAL_FRAGMENT_SHADER)
     blitProgram = linkProgram("presentation_blit", COPY_VERTEX_SHADER, BLIT_FRAGMENT_SHADER)
+    copyExternalLocation = if (copyProgram != 0) GLES20.glGetUniformLocation(copyProgram, "uExternal") else -1
+    copyTextureMatrixLocation = if (copyProgram != 0) GLES20.glGetUniformLocation(copyProgram, "uTextureMatrix") else -1
+    blitImageLocation = if (blitProgram != 0) GLES20.glGetUniformLocation(blitProgram, "uImage") else -1
+    blitTextureScaleLocation = if (blitProgram != 0) GLES20.glGetUniformLocation(blitProgram, "uTextureScale") else -1
+    blitTextureOffsetLocation = if (blitProgram != 0) GLES20.glGetUniformLocation(blitProgram, "uTextureOffset") else -1
   }
 
   private fun makePbufferCurrent(): Boolean {
@@ -2308,6 +2314,11 @@ class Media3FlowVideoSink(
       .forEach { GLES20.glDeleteProgram(it) }
     copyProgram = 0
     blitProgram = 0
+    copyExternalLocation = -1
+    copyTextureMatrixLocation = -1
+    blitImageLocation = -1
+    blitTextureScaleLocation = -1
+    blitTextureOffsetLocation = -1
     if (gpuTimerQueryIds.isNotEmpty()) {
       GLES30.glDeleteQueries(gpuTimerQueryIds.size, gpuTimerQueryIds, 0)
     }

@@ -27,6 +27,25 @@ for forbidden in (
 ):
     assert forbidden not in SINK, f"Obsolete GLES interpolation compute remains in Media3 sink: {forbidden}"
 
+# GLES uniform locations are stable for a linked program. Query them at setup,
+# not from the per-frame capture or presentation paths.
+draw_texture = SINK.split("  private fun drawTexture(", 1)[1].split(
+    "\n  private fun copyExternalTexture(", 1
+)[0]
+copy_external_texture = SINK.split("  private fun copyExternalTexture(", 1)[1].split(
+    "\n  private fun makeSharedImageExternal(", 1
+)[0]
+assert "glGetUniformLocation" not in draw_texture, "presentation must not query GLES uniforms per output frame"
+assert "glGetUniformLocation" not in copy_external_texture, "capture must not query GLES uniforms per input frame"
+for marker in (
+    'copyExternalLocation = if (copyProgram != 0) GLES20.glGetUniformLocation(copyProgram, "uExternal")',
+    'copyTextureMatrixLocation = if (copyProgram != 0) GLES20.glGetUniformLocation(copyProgram, "uTextureMatrix")',
+    'blitImageLocation = if (blitProgram != 0) GLES20.glGetUniformLocation(blitProgram, "uImage")',
+    'blitTextureScaleLocation = if (blitProgram != 0) GLES20.glGetUniformLocation(blitProgram, "uTextureScale")',
+    'blitTextureOffsetLocation = if (blitProgram != 0) GLES20.glGetUniformLocation(blitProgram, "uTextureOffset")',
+):
+    assert marker in SINK, f"GLES uniform must be cached after shader linking: {marker}"
+
 # Both routes dispatch through the same libplacebo-backed Vulkan flow implementation.
 for marker in (
     "nativePrepareFrame(", "nativeAnalyzePair(", "nativeSynthesize(",
