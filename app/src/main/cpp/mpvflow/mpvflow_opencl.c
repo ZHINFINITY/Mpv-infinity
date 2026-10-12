@@ -484,7 +484,12 @@ const char *mpvflow_opencl_get_extension_presence_info(MPVFlowOpenCLContext *con
     (void)snprintf(context->extension_presence_info,
                    sizeof(context->extension_presence_info),
                    "cl_qcom_ext_host_ptr=%d "
+                   "cl_qcom_ext_host_ptr_iocoherent=%d "
                    "cl_qcom_android_ahardwarebuffer_host_ptr=%d "
+                   "cl_qcom_android_native_buffer_host_ptr=%d "
+                   "cl_qcom_dmabuf_host_ptr=%d "
+                   "cl_qcom_ahardwarebuffer_direct_import=%d "
+                   "cl_arm_import_memory_android_hardware_buffer=%d "
                    "cl_khr_external_memory=%d "
                    "cl_khr_external_memory_dma_buf=%d "
                    "cl_khr_external_memory_opaque_fd=%d "
@@ -494,8 +499,16 @@ const char *mpvflow_opencl_get_extension_presence_info(MPVFlowOpenCLContext *con
                    "cl_ext_image_from_buffer=%d cl_ext_image_requirements_info=%d "
                    "cl_khr_byte_addressable_store=%d",
                    has_extension(context->device_extensions, "cl_qcom_ext_host_ptr"),
+                   has_extension(context->device_extensions, "cl_qcom_ext_host_ptr_iocoherent"),
                    has_extension(context->device_extensions,
                                  "cl_qcom_android_ahardwarebuffer_host_ptr"),
+                   has_extension(context->device_extensions,
+                                 "cl_qcom_android_native_buffer_host_ptr"),
+                   has_extension(context->device_extensions, "cl_qcom_dmabuf_host_ptr"),
+                   has_extension(context->device_extensions,
+                                 "cl_qcom_ahardwarebuffer_direct_import"),
+                   has_extension(context->device_extensions,
+                                 "cl_arm_import_memory_android_hardware_buffer"),
                    has_extension(context->device_extensions, "cl_khr_external_memory"),
                    has_extension(context->device_extensions,
                                  "cl_khr_external_memory_dma_buf"),

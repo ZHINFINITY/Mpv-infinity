@@ -527,9 +527,16 @@ assert "int32_t mpvflow_opencl_buffer_release" in opencl_header and \
     "diagnostic cleanup must retain the raw clReleaseMemObject result"
 )
 
+assert "qcom_primary_size_arg=%zu" in bridge_source and \
+       "qcom_size_arg=%zu" not in bridge_source, \
+       "backend errors must report the actual primary size argument, not allocation bytes"
+
 for extension in (
-    "cl_qcom_ext_host_ptr", "cl_qcom_android_ahardwarebuffer_host_ptr",
-    "cl_khr_external_memory", "cl_khr_external_memory_dma_buf",
+    "cl_qcom_ext_host_ptr", "cl_qcom_ext_host_ptr_iocoherent",
+    "cl_qcom_android_ahardwarebuffer_host_ptr", "cl_qcom_android_native_buffer_host_ptr",
+    "cl_qcom_dmabuf_host_ptr", "cl_qcom_ahardwarebuffer_direct_import",
+    "cl_arm_import_memory_android_hardware_buffer", "cl_khr_external_memory",
+    "cl_khr_external_memory_dma_buf",
     "cl_khr_external_memory_opaque_fd", "cl_khr_external_semaphore",
     "cl_khr_external_semaphore_sync_fd", "cl_khr_egl_event", "cl_khr_egl_image",
     "cl_khr_gl_sharing", "cl_ext_image_from_buffer",
@@ -539,6 +546,7 @@ for extension in (
         f"compact OpenCL extension diagnostics must include a presence boolean for {extension}"
     )
 assert "mpvflow_opencl_get_extension_presence_info" in opencl_header and \
+       "cl_qcom_ahardwarebuffer_direct_import" in opencl_source and \
        "event=opencl_extension_presence %s" in flow_gpu_source and \
        'extensions=\\"%s\\"' not in opencl_source, (
     "extension-presence booleans must be emitted separately instead of appending the full long list"
@@ -594,7 +602,7 @@ assert flow_gpu_source.index("mpvflow_opencl_vk_bridge_probe_import_stages(") < 
     "only the complete kernel/Vulkan round-trip may enable OpenCL; import diagnostics stay observational"
 )
 assert "cl_error_available=%d" in bridge_source and \
-       "qcom_size_arg=%zu qcom_access_flags=default" in bridge_source and \
+       "qcom_primary_size_arg=%zu qcom_access_flags=default" in bridge_source and \
        "qcom_required_padding_bytes=%zu" in bridge_source and \
        "ahb_allocation_bytes=%zu desc=" in bridge_source, (
     "OpenCL import failures must distinguish the QCOM call arguments from the validated AHardwareBuffer descriptor"
