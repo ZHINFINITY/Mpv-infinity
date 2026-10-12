@@ -126,6 +126,98 @@ for bad_timer_source in (
     else:
         raise AssertionError("unexpected libplacebo timer-ring layout must fail closed")
 
+wsi_header = "PL_API bool pl_vulkan_swapchain_suboptimal(pl_swapchain sw);\n"
+patched_wsi_header = prepare.add_libplacebo_swapchain_diagnostics_api(wsi_header)
+assert "PL_API bool pl_vulkan_swapchain_set_diagnostics(pl_swapchain sw, bool enabled);" in patched_wsi_header
+assert prepare.add_libplacebo_swapchain_diagnostics_api(patched_wsi_header) == patched_wsi_header
+for bad_wsi_header in ("no swapchain declaration here\n", wsi_header + wsi_header):
+    try:
+        prepare.add_libplacebo_swapchain_diagnostics_api(bad_wsi_header)
+    except SystemExit:
+        pass
+    else:
+        raise AssertionError("unexpected libplacebo Vulkan API changes must fail closed")
+stub_source = "bool pl_vulkan_swapchain_suboptimal(pl_swapchain sw)\n{\n    pl_unreachable();\n}\n"
+patched_stub_source = prepare.add_libplacebo_swapchain_diagnostics_stub(stub_source)
+assert "bool pl_vulkan_swapchain_set_diagnostics(pl_swapchain sw, bool enabled)" in patched_stub_source
+assert prepare.add_libplacebo_swapchain_diagnostics_stub(patched_stub_source) == patched_stub_source
+for bad_stub_source in ("unrecognized no-Vulkan stubs\n", stub_source + stub_source):
+    try:
+        prepare.add_libplacebo_swapchain_diagnostics_stub(bad_stub_source)
+    except SystemExit:
+        pass
+    else:
+        raise AssertionError("unexpected libplacebo no-Vulkan stubs must fail closed")
+wsi_source = """\
+struct priv {
+    bool has_swapchain_maintenance1;
+    struct pl_color_repr color_repr;
+};
+static const struct pl_sw_fns vulkan_swapchain;
+
+
+static bool map_color_space(VkColorSpaceKHR space, struct pl_color_space *out)
+{
+    return true;
+}
+static void init_priv(struct priv *p)
+{
+    pl_mutex_init(&p->lock);
+    p->impl = vulkan_swapchain;
+}
+static bool vk_sw_recreate(pl_swapchain sw, int w, int h)
+{
+    VkResult res = vk->CreateSwapchainKHR(vk->dev, &sinfo, PL_VK_ALLOC, &current->swapchain);
+    PL_VK_ASSERT(res, "vk->CreateSwapchainKHR(...)");
+
+    // Get the new swapchain images
+}
+static bool vk_sw_start_frame(pl_swapchain sw)
+{
+        VkResult res = vk->AcquireNextImageKHR(vk->dev, p->current->swapchain, UINT64_MAX,
+                                               sem_in, VK_NULL_HANDLE, &imgidx);
+            if (p->current->fences_out.num > 0) {
+                VkFence *pfence = &p->current->fences_out.elem[imgidx];
+                vk->WaitForFences(vk->dev, 1, pfence, VK_TRUE, UINT64_MAX);
+                vk->ResetFences(vk->dev, 1, pfence);
+    }
+}
+static bool vk_sw_submit_frame(pl_swapchain sw)
+{
+    VkResult res = vk->QueuePresentKHR(queue, &pinfo);
+    vk->unlock_queue(vk->queue_ctx, pool->qf, qidx);
+}
+bool pl_vulkan_swapchain_suboptimal(pl_swapchain sw)
+{
+    struct priv *p = PL_PRIV(sw);
+    return p->suboptimal;
+}
+"""
+patched_wsi_source = prepare.instrument_libplacebo_swapchain(wsi_source)
+for marker in (
+    "atomic_bool flow_diagnostics",
+    "event=wsi_swapchain_created",
+    'FLOW_WSI_ACQUIRE, "vkAcquireNextImageKHR"',
+    'FLOW_WSI_FENCE_WAIT, "present_fence_wait"',
+    'FLOW_WSI_PRESENT, "vkQueuePresentKHR"',
+    "bool pl_vulkan_swapchain_set_diagnostics(pl_swapchain sw, bool enabled)",
+):
+    assert marker in patched_wsi_source, f"libplacebo WSI diagnostic instrumentation is missing {marker!r}"
+assert prepare.instrument_libplacebo_swapchain(patched_wsi_source) == patched_wsi_source
+assert patched_wsi_source.count("UINT64_MAX") == wsi_source.count("UINT64_MAX"), (
+    "WSI instrumentation must preserve the existing infinite acquire and fence-wait timeouts"
+)
+assert "VK_TRUE, UINT64_MAX" in patched_wsi_source and "vk->ResetFences(vk->dev, 1, pfence);" in patched_wsi_source, (
+    "WSI instrumentation must preserve the original present-fence wait/reset sequence"
+)
+for bad_wsi_source in ("unrecognized Vulkan swapchain source\n", wsi_source + "\n" + wsi_source):
+    try:
+        prepare.instrument_libplacebo_swapchain(bad_wsi_source)
+    except SystemExit:
+        pass
+    else:
+        raise AssertionError("unexpected libplacebo swapchain implementation must fail closed")
+
 build = BUILD.read_text(encoding="utf-8")
 prepare_source = PREPARE.read_text(encoding="utf-8")
 assert 'VO_PATCH = VENDOR / "mpvflow-vo-gpu-next.patch"' in prepare_source, (

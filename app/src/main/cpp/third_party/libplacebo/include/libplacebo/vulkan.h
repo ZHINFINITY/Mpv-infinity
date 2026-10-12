@@ -384,6 +384,8 @@ PL_API pl_swapchain pl_vulkan_create_swapchain(pl_vulkan vk,
 // as being suboptimal (VK_SUBOPTIMAL_KHR). This might be of use to clients
 // who have `params->allow_suboptimal` enabled.
 PL_API bool pl_vulkan_swapchain_suboptimal(pl_swapchain sw);
+// Enable MPV Flow's CPU-side WSI diagnostics without changing swapchain behavior.
+PL_API bool pl_vulkan_swapchain_set_diagnostics(pl_swapchain sw, bool enabled);
 
 // Vulkan interop API, for sharing a single VkDevice (and associated vulkan
 // resources) directly with the API user. The use of this API is a bit sketchy
