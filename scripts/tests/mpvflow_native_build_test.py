@@ -515,11 +515,11 @@ assert "MPVFLOW_OPENCL_CL_INVALID_OPERATION" in opencl_buffer_creation, (
 assert "*cl_create_error_out = err" in opencl_buffer_creation, (
     "the raw vendor clCreateBuffer error must be preserved for device-side diagnosis"
 )
-assert "c->clCreateBuffer(c->context, flags,\n                               desc_in->allocation_bytes, &desc, &err)" in opencl_buffer_creation, (
-    "the primary QCOM clCreateBuffer call must use the validated allocation size"
+assert "c->clCreateBuffer(c->context, flags,\n                               MPVFLOW_OPENCL_QCOM_IMPORT_SIZE_ARG,\n                               &desc, &err)" in opencl_buffer_creation, (
+    "the QCOM AHardwareBuffer primary import must use the private-extension size-zero form"
 )
-assert "c->clCreateBuffer(c->context, flags,\n                                   MPVFLOW_OPENCL_QCOM_IMPORT_SIZE_ARG,\n                                   &desc, &err)" in opencl_buffer_creation, (
-    "the legacy size-zero QCOM form must remain only as a fallback"
+assert "c->clCreateBuffer(c->context, flags,\n                                   desc_in->allocation_bytes, &desc, &err)" in opencl_buffer_creation, (
+    "the validated allocation-size form must remain only as a fallback"
 )
 assert "MPVFLOW_OPENCL_QCOM_IMPORT_SIZE_ARG ((size_t)0)" in opencl_header
 assert "int32_t mpvflow_opencl_buffer_release" in opencl_header and \

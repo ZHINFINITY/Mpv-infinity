@@ -771,8 +771,11 @@ static enum MPVFlowOpenCLVkBridgeStatus buffer_create_internal(
     cl_desc.frame_height = height;
     cl_desc.row_stride_bytes = buf->row_stride;
     cl_desc.layout = MPVFLOW_OPENCL_LAYOUT_BLOB_RGBA8_ROWS;
+    /* The private QCOM AHardwareBuffer ABI uses size=0 for its primary
+     * clCreateBuffer call; do not report the descriptor allocation as the
+     * ordinary size argument. */
     if (diagnostics)
-        diagnostics->qcom_size_arg = cl_desc.allocation_bytes;
+        diagnostics->qcom_size_arg = MPVFLOW_OPENCL_QCOM_IMPORT_SIZE_ARG;
     cl_status = mpvflow_opencl_import_ahardwarebuffer(
         b->opencl, buf->ahb, &cl_desc, access, &buf->opencl_buffer,
         &cl_create_buffer_error);

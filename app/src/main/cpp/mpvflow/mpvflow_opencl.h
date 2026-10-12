@@ -122,9 +122,9 @@ void mpvflow_opencl_destroy(MPVFlowOpenCLContext *context);
  * describe packed RGBA8 content inside the BLOB, and `allocation_bytes` must be
  * the actual BLOB allocation size, including the device-required QCOM external
  * memory tail padding (not a guessed width*height); it is used for local
- * validation and diagnostics. The QCOM AHardwareBuffer host_ptr call uses
- * this validated allocation size first; if a legacy driver returns
- * CL_INVALID_OPERATION, it retries with size=0 and the allocation descriptor. The caller must
+ * validation and diagnostics. The private Qualcomm AHardwareBuffer host_ptr
+ * call uses size=0 with the allocation descriptor; if a driver returns
+ * CL_INVALID_OPERATION, it may retry with this validated allocation size. The caller must
  * establish that this is the same linear VkBuffer-backed allocation used for
  * Vulkan buffer-to-image/image-to-buffer copies; optimal-tiled Vulkan image
  * AHardwareBuffers are not accepted as byte buffers. Logical frame dimensions
