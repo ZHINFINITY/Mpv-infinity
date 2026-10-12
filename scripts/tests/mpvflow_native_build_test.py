@@ -510,13 +510,16 @@ assert "desc_in->allocation_bytes, &desc, &err" in opencl_buffer_creation, (
     "CL_INVALID_OPERATION must retry the QCOM import with the validated BLOB allocation size"
 )
 assert "MPVFLOW_OPENCL_CL_INVALID_OPERATION" in opencl_buffer_creation, (
-    "the allocation-size retry must be limited to the known QCOM CL_INVALID_OPERATION failure"
+    "the legacy size-zero fallback must be limited to the known QCOM CL_INVALID_OPERATION failure"
 )
 assert "*cl_create_error_out = err" in opencl_buffer_creation, (
     "the raw vendor clCreateBuffer error must be preserved for device-side diagnosis"
 )
-assert "c->clCreateBuffer(c->context, flags,\n                               MPVFLOW_OPENCL_QCOM_IMPORT_SIZE_ARG,\n                               &desc, &err)" in opencl_buffer_creation, (
-    "the QCOM clCreateBuffer call must retain size=0 and pass its descriptor as host_ptr"
+assert "c->clCreateBuffer(c->context, flags,\n                               desc_in->allocation_bytes, &desc, &err)" in opencl_buffer_creation, (
+    "the primary QCOM clCreateBuffer call must use the validated allocation size"
+)
+assert "c->clCreateBuffer(c->context, flags,\n                                   MPVFLOW_OPENCL_QCOM_IMPORT_SIZE_ARG,\n                                   &desc, &err)" in opencl_buffer_creation, (
+    "the legacy size-zero QCOM form must remain only as a fallback"
 )
 assert "MPVFLOW_OPENCL_QCOM_IMPORT_SIZE_ARG ((size_t)0)" in opencl_header
 assert "int32_t mpvflow_opencl_buffer_release" in opencl_header and \
@@ -591,7 +594,7 @@ assert flow_gpu_source.index("mpvflow_opencl_vk_bridge_probe_import_stages(") < 
     "only the complete kernel/Vulkan round-trip may enable OpenCL; import diagnostics stay observational"
 )
 assert "cl_error_available=%d" in bridge_source and \
-       "qcom_size_arg=0 qcom_access_flags=default" in bridge_source and \
+       "qcom_size_arg=%zu qcom_access_flags=default" in bridge_source and \
        "qcom_required_padding_bytes=%zu" in bridge_source and \
        "ahb_allocation_bytes=%zu desc=" in bridge_source, (
     "OpenCL import failures must distinguish the QCOM call arguments from the validated AHardwareBuffer descriptor"

@@ -585,17 +585,18 @@ static enum MPVFlowOpenCLStatus make_buffer(MPVFlowOpenCLContext *c,
      * and no explicit access qualifier is added to the two required host flags.
      * Keep allocation_bytes for descriptor validation and failure diagnostics. */
     flags = MPVFLOW_OPENCL_QCOM_IMPORT_FLAGS;
+    /* Use the real validated allocation size first. On this Adreno driver,
+     * attempting the legacy size=0 form first returns CL_INVALID_OPERATION and
+     * leaves the QCOM import unusable for the subsequent call. */
     b->mem = c->clCreateBuffer(c->context, flags,
-                               MPVFLOW_OPENCL_QCOM_IMPORT_SIZE_ARG,
-                               &desc, &err);
-    /* Qualcomm's extension has two deployed behaviors: the original import
-     * form accepts size=0, while newer drivers reject it with CL_INVALID_OPERATION
-     * and require the real AHardwareBuffer allocation size. Retry only that
-     * extension-specific failure; all other errors remain fatal. */
+                               desc_in->allocation_bytes, &desc, &err);
+    /* Older Qualcomm stacks accept only the historical size=0 form. Keep it
+     * as a compatibility fallback, but never call it before the real-size form. */
     if ((!b->mem || err != CL_SUCCESS) &&
         err == MPVFLOW_OPENCL_CL_INVALID_OPERATION) {
         b->mem = c->clCreateBuffer(c->context, flags,
-                                   desc_in->allocation_bytes, &desc, &err);
+                                   MPVFLOW_OPENCL_QCOM_IMPORT_SIZE_ARG,
+                                   &desc, &err);
     }
     if (cl_create_error_out)
         *cl_create_error_out = err;

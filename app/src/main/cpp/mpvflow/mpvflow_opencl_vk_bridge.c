@@ -771,6 +771,8 @@ static enum MPVFlowOpenCLVkBridgeStatus buffer_create_internal(
     cl_desc.frame_height = height;
     cl_desc.row_stride_bytes = buf->row_stride;
     cl_desc.layout = MPVFLOW_OPENCL_LAYOUT_BLOB_RGBA8_ROWS;
+    if (diagnostics)
+        diagnostics->qcom_size_arg = cl_desc.allocation_bytes;
     cl_status = mpvflow_opencl_import_ahardwarebuffer(
         b->opencl, buf->ahb, &cl_desc, access, &buf->opencl_buffer,
         &cl_create_buffer_error);
@@ -778,15 +780,15 @@ static enum MPVFlowOpenCLVkBridgeStatus buffer_create_internal(
     if (cl_status != MPVFLOW_OPENCL_OK) {
         set_error(b,
                   "OpenCL AHardwareBuffer import failed (wrapper_status=%d cl_error_available=%d "
-                  "cl_error=%d qcom_size_arg=0 qcom_access_flags=default "
+                  "cl_error=%d qcom_size_arg=%zu qcom_access_flags=default "
                   "qcom_required_padding_bytes=%zu "
                   "qcom_flags=USE_HOST_PTR|EXT_HOST_PTR_QCOM wrapper_access=%d "
                   "ahb_allocation_bytes=%zu desc={format=%u width=%u height=%u stride=%u layers=%u "
                   "usage=0x%llx frame=%ux%u row_stride=%u})",
                   (int)cl_status,
                   cl_create_buffer_error != MPVFLOW_OPENCL_CL_ERROR_NOT_RETURNED,
-                  (int)cl_create_buffer_error, qcom_padding_bytes, (int)access,
-                  cl_desc.allocation_bytes,
+                  (int)cl_create_buffer_error, cl_desc.allocation_bytes, qcom_padding_bytes,
+                  (int)access, cl_desc.allocation_bytes,
                   cl_desc.format, cl_desc.ahb_width, cl_desc.ahb_height,
                   cl_desc.ahb_stride, cl_desc.layers,
                   (unsigned long long)cl_desc.usage, cl_desc.frame_width,
