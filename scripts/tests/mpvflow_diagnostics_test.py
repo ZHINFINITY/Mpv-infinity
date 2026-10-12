@@ -67,7 +67,9 @@ require(PATCH, "event=output state=synthesized renderer_api=vulkan compute_api=%
 require(PATCH, "event=output state=passthrough", "source-frame fallback must be distinguishable from synthesized output")
 require(PATCH, "target_fps=%d reason=motion_pair", "synthesized output must include target and reason")
 require(MPV_VIEW, "event=present_mode state=$presentModeState", "MPV Flow must report its Android Vulkan presentation-mode request")
-require(MPV_VIEW, "fallback=FIFO_if_unsupported target_fps=$mpvFlowTargetFps", "present-mode diagnostics must preserve the selected rate and disclose the safe fallback")
+present_mode_diagnostic = MPV_VIEW.split('"MPVFLOW_DIAGNOSTIC event=present_mode', 1)[1].split("\n      )", 1)[0]
+require(present_mode_diagnostic, "fallback=FIFO_if_unsupported", "present-mode diagnostics must disclose the safe fallback")
+require(present_mode_diagnostic, "target_fps=$mpvFlowTargetFps", "present-mode diagnostics must preserve the selected rate")
 require(PATCH, "target_fps=%d reason=%s status=%d cpu_fallback=no", "pass-through output must expose reason and status")
 require(PATCH, "p->flow_bypass_logged_mask & reason_class", "pass-through logging must be deduplicated by outcome class")
 require(PATCH, "frame->num_frames > 1 || p->next_opts->mpvflow", "Flow must open the display-synchronized queue gate for one-frame VO batches")
