@@ -1,8 +1,10 @@
 /*
- * Android AImageReader / Vulkan backend selection.
+ * Android AImageReader / Vulkan backend using GPU-side YCbCr conversion.
  *
- * Prefer direct libplacebo sampling and fall back to conversion when the
- * Android hardware buffer cannot be sampled directly.
+ * The pinned upstream libplacebo version cannot wrap external-format YCbCr
+ * images directly, so convert MediaCodec AHardwareBuffers to a normal RGB
+ * Vulkan texture before MPVFlow consumes them. No video pixels are read back
+ * to the CPU.
  */
 
 #include "config.h"
@@ -21,17 +23,13 @@ struct aimagereader_vk {
     struct ra_hwdec_mapper *mapper;
     struct aimagereader_vk_api api;
     mp_mutex lock;
-    struct aimagereader_vk_direct *direct;
     struct aimagereader_vk_convert *convert;
     enum android_vulkan_aimagereader_backend backend;
-    bool direct_mapped;
 };
 
 static const char *backend_name(enum android_vulkan_aimagereader_backend backend)
 {
     switch (backend) {
-    case ANDROID_VULKAN_AIMAGEREADER_BACKEND_DIRECT:
-        return "direct";
     case ANDROID_VULKAN_AIMAGEREADER_BACKEND_COMPUTE:
         return "compute";
     case ANDROID_VULKAN_AIMAGEREADER_BACKEND_FRAGMENT:
@@ -54,31 +52,11 @@ static void reset_mapper_params(struct aimagereader_vk *p)
            sizeof(p->mapper->dst_component_mapping));
 }
 
-static bool switch_to_conversion(struct aimagereader_vk *p)
-{
-    mp_assert(p->direct && !p->convert && !p->direct_mapped);
-    aimagereader_vk_direct_destroy(&p->direct);
-    reset_mapper_params(p);
-    p->convert = aimagereader_vk_convert_create(p->mapper, &p->api,
-                                                p->backend);
-    if (!p->convert) {
-        mp_err(p->log, "No Vulkan conversion backend for this Android "
-                       "hardware buffer\n");
-        return false;
-    }
-    return true;
-}
-
 bool aimagereader_vk_available(struct ra_ctx *ra_ctx, struct mp_log *log,
                               enum android_vulkan_aimagereader_backend backend)
 {
-    if (backend == ANDROID_VULKAN_AIMAGEREADER_BACKEND_DIRECT)
-        return aimagereader_vk_direct_available(ra_ctx, log);
-    if (backend == ANDROID_VULKAN_AIMAGEREADER_BACKEND_COMPUTE ||
-        backend == ANDROID_VULKAN_AIMAGEREADER_BACKEND_FRAGMENT)
-        return aimagereader_vk_convert_available(ra_ctx, log);
-    return aimagereader_vk_direct_available(ra_ctx, log) ||
-           aimagereader_vk_convert_available(ra_ctx, log);
+    (void)backend;
+    return aimagereader_vk_convert_available(ra_ctx, log);
 }
 
 struct aimagereader_vk *aimagereader_vk_create(
@@ -94,21 +72,11 @@ struct aimagereader_vk *aimagereader_vk_create(
     mp_info(p->log, "Vulkan AImageReader backend: %s\n",
             backend_name(backend));
 
-    if (backend == ANDROID_VULKAN_AIMAGEREADER_BACKEND_AUTO ||
-        backend == ANDROID_VULKAN_AIMAGEREADER_BACKEND_DIRECT) {
-        p->direct = aimagereader_vk_direct_create(mapper, api);
-        if (p->direct)
-            return p;
-        if (backend == ANDROID_VULKAN_AIMAGEREADER_BACKEND_DIRECT)
-            goto error;
-    }
-
     reset_mapper_params(p);
     p->convert = aimagereader_vk_convert_create(mapper, api, backend);
     if (p->convert)
         return p;
 
-error:
     mp_mutex_destroy(&p->lock);
     talloc_free(p);
     return NULL;
@@ -121,7 +89,6 @@ void aimagereader_vk_destroy(struct aimagereader_vk **state)
         return;
 
     mp_mutex_lock(&p->lock);
-    aimagereader_vk_direct_destroy(&p->direct);
     aimagereader_vk_convert_destroy(&p->convert);
     mp_mutex_unlock(&p->lock);
     mp_mutex_destroy(&p->lock);
@@ -133,10 +100,7 @@ void aimagereader_vk_buffer_removed(struct aimagereader_vk *p,
                                     AHardwareBuffer *buffer)
 {
     mp_mutex_lock(&p->lock);
-    if (p->direct)
-        aimagereader_vk_direct_buffer_removed(p->direct, buffer);
-    if (p->convert)
-        aimagereader_vk_convert_buffer_removed(p->convert, buffer);
+    aimagereader_vk_convert_buffer_removed(p->convert, buffer);
     mp_mutex_unlock(&p->lock);
 }
 
@@ -144,9 +108,7 @@ bool aimagereader_vk_reuse(struct aimagereader_vk *p,
                            struct mp_image *frame)
 {
     mp_mutex_lock(&p->lock);
-    bool reused = p->convert
-        ? aimagereader_vk_convert_reuse(p->convert, frame)
-        : p->direct && aimagereader_vk_direct_reuse(p->direct, frame);
+    bool reused = aimagereader_vk_convert_reuse(p->convert, frame);
     mp_mutex_unlock(&p->lock);
     return reused;
 }
@@ -155,10 +117,7 @@ bool aimagereader_vk_retain_last(struct aimagereader_vk *p,
                                 struct mp_image *frame)
 {
     mp_mutex_lock(&p->lock);
-    bool retained = p->convert
-        ? aimagereader_vk_convert_retain_last(p->convert, frame)
-        : p->direct &&
-          aimagereader_vk_direct_retain_last(p->direct, frame);
+    bool retained = aimagereader_vk_convert_retain_last(p->convert, frame);
     mp_mutex_unlock(&p->lock);
     return retained;
 }
@@ -169,46 +128,8 @@ int aimagereader_vk_map(struct aimagereader_vk *p, AImage *image,
                         struct mp_image *frame, int *acquire_fence)
 {
     mp_mutex_lock(&p->lock);
-    int result;
-    if (p->convert) {
-        result = aimagereader_vk_convert_map(
-            p->convert, image, buffer, crop, data_space, frame, acquire_fence);
-        goto done;
-    }
-    if (!p->direct) {
-        result = -1;
-        goto done;
-    }
-
-    result = aimagereader_vk_direct_map(
-        p->direct, image, buffer, crop, data_space, frame, acquire_fence);
-    if (result == 0) {
-        p->direct_mapped = true;
-        goto done;
-    }
-    if (result != AIMAGEREADER_VK_MAP_UNSUPPORTED)
-        goto done;
-    if (p->backend == ANDROID_VULKAN_AIMAGEREADER_BACKEND_DIRECT) {
-        mp_err(p->log, "Forced direct Vulkan AImageReader backend does not "
-                       "support this Android hardware buffer\n");
-        result = -1;
-        goto done;
-    }
-    if (p->direct_mapped) {
-        mp_err(p->log, "Android hardware-buffer format changed after the "
-                       "direct Vulkan mapper was configured\n");
-        result = -1;
-        goto done;
-    }
-
-    if (!switch_to_conversion(p)) {
-        result = -1;
-        goto done;
-    }
-    result = aimagereader_vk_convert_map(
+    int result = aimagereader_vk_convert_map(
         p->convert, image, buffer, crop, data_space, frame, acquire_fence);
-
-done:
     mp_mutex_unlock(&p->lock);
     return result;
 }

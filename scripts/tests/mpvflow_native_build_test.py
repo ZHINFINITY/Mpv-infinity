@@ -240,11 +240,13 @@ for source in (
     "hwdec_aimagereader.c",
     "hwdec_aimagereader_vk.c",
     "hwdec_aimagereader_vk_convert.c",
-    "hwdec_aimagereader_vk_direct.c",
     "hwdec_aimagereader_vk.h",
     "hwdec_aimagereader_vk_private.h",
 ):
     assert (VULKAN_MAPPER_DIR / source).is_file(), f"missing AImageReader/Vulkan source {source}"
+assert not (VULKAN_MAPPER_DIR / "hwdec_aimagereader_vk_direct.c").exists(), (
+    "the pinned upstream libplacebo build must not include its unsupported direct-YCbCr wrapper"
+)
 prepare_call = 'python3 "$ROOT/scripts/prepare-mpvflow.py" --mpv-dir "$BUILDSCRIPTS/deps/mpv" --libplacebo-dir "$BUILDSCRIPTS/deps/libplacebo"'
 assert prepare_call in build, "the native build must patch pinned libplacebo before compilation"
 native_cmake = (ROOT / "app/src/main/cpp/CMakeLists.txt").read_text(encoding="utf-8")

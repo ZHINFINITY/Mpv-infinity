@@ -1,13 +1,12 @@
 diff --git a/meson.build b/meson.build
-index c49aa3cec..d2e5f3b6d 100644
+index c49aa3cec..4fd1bfa80 100644
 --- a/meson.build
 +++ b/meson.build
-@@ -1425,0 +1426,9 @@ endif
+@@ -1425,0 +1426,8 @@ endif
 +if features['android-media-ndk'] and features['vulkan']
 +    sources += files(
 +        'video/out/hwdec/hwdec_aimagereader_vk.c',
 +        'video/out/hwdec/hwdec_aimagereader_vk_convert.c',
-+        'video/out/hwdec/hwdec_aimagereader_vk_direct.c',
 +    )
 +endif
 +# MPVFLOW_AIMAGE_VULKAN_MAPPER

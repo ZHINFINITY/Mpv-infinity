@@ -24,7 +24,6 @@ MEDIACODEC_VULKAN_FILES = (
     "hwdec_aimagereader_vk.c",
     "hwdec_aimagereader_vk.h",
     "hwdec_aimagereader_vk_convert.c",
-    "hwdec_aimagereader_vk_direct.c",
     "hwdec_aimagereader_vk_private.h",
 )
 MPV_VULKAN_DEPENDENCY = "vulkan = dependency('vulkan', version: '>= 1.3.238', required: vulkan_opt)"
