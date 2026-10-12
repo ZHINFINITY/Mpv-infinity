@@ -900,8 +900,13 @@ enum MPVFlowOpenCLStatus mpvflow_opencl_synthesize(MPVFlowOpenCLContext *c,
     SET_ARG(c->synth_kernel, 10, luma0); SET_ARG(c->synth_kernel, 11, luma1);
     SET_ARG(c->synth_kernel, 12, timestep); SET_ARG(c->synth_kernel, 13, p->scene_delta);
     SET_ARG(c->synth_kernel, 14, dst); SET_ARG(c->synth_kernel, 15, dstride);
-    size_t global = (size_t)w * (size_t)h;
-    if (c->clEnqueueNDRangeKernel(c->queue, c->synth_kernel, 1, NULL, &global, NULL, 0, NULL, NULL) != CL_SUCCESS)
+    size_t pixels = (size_t)w * (size_t)h;
+    /* Stable 64-wide groups map well to Adreno wave execution; the kernel
+     * already guards the rounded tail. */
+    const size_t local = 64;
+    size_t global = (pixels + local - 1u) / local * local;
+    if (c->clEnqueueNDRangeKernel(c->queue, c->synth_kernel, 1, NULL,
+                                  &global, &local, 0, NULL, NULL) != CL_SUCCESS)
         return MPVFLOW_OPENCL_ERROR;
     return c->clFinish(c->queue) == CL_SUCCESS ? MPVFLOW_OPENCL_OK : MPVFLOW_OPENCL_ERROR;
 }

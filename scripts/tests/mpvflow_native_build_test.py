@@ -491,9 +491,9 @@ for marker in (
     "requested_api=auto from=opencl-qcom to=vulkan-spirv",
 ):
     assert marker in flow_gpu_source, f"MPVFlow must dispatch a real OpenCL backend with explicit fallback: missing {marker!r}"
-assert 'if (requested_api == MPVFLOW_GPU_COMPUTE_OPENCL)' in flow_gpu_source and \
-       'auto_prefers_in_process_vulkan_over_blocking_opencl_interop' in flow_gpu_source, \
-       "AUTO must avoid the synchronous OpenCL/Vulkan bridge; OpenCL remains explicit-only"
+assert 'source_format == VK_FORMAT_R8G8B8A8_UNORM' in flow_gpu_source and \
+       'const size_t local = 64' in opencl_source, \
+       "OpenCL must skip redundant RGBA8 preprocessing and use a fixed synthesis workgroup"
 assert 'cl_qcom_android_ahardwarebuffer_host_ptr' in opencl_source, (
     "OpenCL must import shared Android HardwareBuffer storage rather than exposing a disconnected compute toggle"
 )

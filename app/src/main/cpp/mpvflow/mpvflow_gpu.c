@@ -902,12 +902,7 @@ MPVFlowGPUContext *mpvflow_gpu_create(pl_gpu gpu,
         return NULL;
     }
 
-    /* AUTO must stay on the in-process Vulkan path. The QCOM OpenCL bridge
-     * is retained for explicit OpenCL benchmarking, but its required
-     * synchronous AHardwareBuffer ownership transfers and full-resolution
-     * buffer copies make it unsuitable for real-time playback on devices
-     * where the bridge is merely importable. */
-    if (requested_api == MPVFLOW_GPU_COMPUTE_OPENCL) {
+    if (requested_api != MPVFLOW_GPU_COMPUTE_VULKAN) {
         struct MPVFlowOpenCLConfig opencl_config = {
             .search_radius = ctx->search_radius,
             .max_dimension = ctx->max_dimension,
@@ -947,7 +942,7 @@ MPVFlowGPUContext *mpvflow_gpu_create(pl_gpu gpu,
                      "MPVFLOW_DIAGNOSTIC event=compute_backend state=ready requested_api=%d "
                      "effective_api=opencl interop=qcom_ahardwarebuffer_host_ptr "
                      "shared_storage=android_hardware_buffer probe=kernel_interop_roundtrip "
-                     "probe_size=64x64 cpu_readback=no mode=explicit_only",
+                     "probe_size=64x64 cpu_readback=no",
                      requested_api);
         } else {
             flow_log(gpu, requested_api == MPVFLOW_GPU_COMPUTE_AUTO ? PL_LOG_WARN : PL_LOG_ERR,
@@ -977,11 +972,8 @@ MPVFlowGPUContext *mpvflow_gpu_create(pl_gpu gpu,
     } else {
         flow_log(gpu, PL_LOG_INFO,
                  "MPVFLOW_DIAGNOSTIC event=compute_backend state=ready requested_api=%d "
-                 "effective_api=vulkan reason=%s",
-                 requested_api,
-                 requested_api == MPVFLOW_GPU_COMPUTE_AUTO
-                     ? "auto_prefers_in_process_vulkan_over_blocking_opencl_interop"
-                     : "explicit_vulkan");
+                 "effective_api=vulkan reason=explicit_vulkan",
+                 requested_api);
     }
 
     struct pl_desc preprocess_desc[] = {
@@ -1581,6 +1573,21 @@ static enum MPVFlowGPUResult flow_opencl_upload_full_resolution_source(
 {
     const int width = (int) source->params.w;
     const int height = (int) source->params.h;
+    /* The normal prepared input is already RGBA8. Avoid an extra full-resolution
+     * preprocess shader and temporary image before the shared-buffer handoff. */
+    VkFormat source_format = VK_FORMAT_UNDEFINED;
+    VkImageUsageFlags source_usage = 0;
+    VkImage source_image = pl_vulkan_unwrap(ctx->gpu, source, &source_format,
+                                            &source_usage);
+    if (source_image != VK_NULL_HANDLE &&
+        source_format == VK_FORMAT_R8G8B8A8_UNORM &&
+        (source_usage & VK_IMAGE_USAGE_TRANSFER_SRC_BIT)) {
+        enum MPVFlowOpenCLVkBridgeStatus direct_status =
+            mpvflow_opencl_vk_copy_texture_to_buffer(ctx->opencl_bridge,
+                                                     source, destination);
+        if (direct_status == MPVFLOW_OPENCL_VK_BRIDGE_OK)
+            return MPVFLOW_GPU_OK;
+    }
     pl_tex rgba8 = create_texture_ex(ctx, width, height, ctx->fmt_rgba8,
                                      true, true, false, stage);
     if (!rgba8)
