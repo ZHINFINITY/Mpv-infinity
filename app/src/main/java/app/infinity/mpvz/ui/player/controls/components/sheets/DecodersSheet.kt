@@ -22,6 +22,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import kotlin.math.roundToInt
 import androidx.compose.ui.res.stringResource
 import app.infinity.mpvz.BuildConfig
 import app.infinity.mpvz.R
@@ -45,6 +46,7 @@ fun DecodersSheet(
   val gpuApi by PlaybackSession.propString["gpu-api"].collectAsState()
   val decoderPreferences = koinInject<DecoderPreferences>()
   val mpvFlowQuality by decoderPreferences.mpvFlowQuality.collectAsState()
+  val mpvFlowProfile = (mpvFlowQuality.coerceIn(0, 100) * 9f / 100f).roundToInt()
   val isVulkanActive = gpuApi == "vulkan"
   val directMediaCodecAllowed =
     RendererBackendPolicy.canUseDirectMediaCodec(
@@ -95,15 +97,18 @@ fun DecodersSheet(
             Row(modifier = Modifier.fillMaxWidth()) {
               Text("Frame interpolation")
               Text(
-                text = if (mpvFlowQuality < 35) "Performance" else if (mpvFlowQuality > 70) "Quality" else "Balanced",
+                text = "Profile ${mpvFlowProfile + 1}/10 · " +
+                  if (mpvFlowProfile < 3) "Performance" else if (mpvFlowProfile > 6) "Quality" else "Balanced",
                 modifier = Modifier.padding(start = 8.dp),
               )
             }
             Slider(
-              value = mpvFlowQuality.coerceIn(0, 100).toFloat(),
-              onValueChange = { decoderPreferences.mpvFlowQuality.set(it.toInt()) },
-              valueRange = 0f..100f,
-              steps = 9,
+              value = mpvFlowProfile.toFloat(),
+              onValueChange = { profile ->
+                decoderPreferences.mpvFlowQuality.set((profile.roundToInt() * 100 / 9f).roundToInt())
+              },
+              valueRange = 0f..9f,
+              steps = 8,
               enabled = isVulkanActive,
             )
             Row(modifier = Modifier.fillMaxWidth()) {
