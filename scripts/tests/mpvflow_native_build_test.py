@@ -494,6 +494,9 @@ for marker in (
 assert 'source_format == VK_FORMAT_R8G8B8A8_UNORM' in flow_gpu_source and \
        'const size_t local = 64' in opencl_source, \
        "OpenCL must skip redundant RGBA8 preprocessing and use a fixed synthesis workgroup"
+assert 'auto_prefers_vulkan_native_pipeline_opencl_optional' in flow_gpu_source and \
+       'if (requested_api == MPVFLOW_GPU_COMPUTE_OPENCL)' in flow_gpu_source, \
+       "AUTO must use the native Vulkan path while preserving explicit OpenCL"
 assert 'cl_qcom_android_ahardwarebuffer_host_ptr' in opencl_source, (
     "OpenCL must import shared Android HardwareBuffer storage rather than exposing a disconnected compute toggle"
 )

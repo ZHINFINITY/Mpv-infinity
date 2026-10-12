@@ -902,7 +902,11 @@ MPVFlowGPUContext *mpvflow_gpu_create(pl_gpu gpu,
         return NULL;
     }
 
-    if (requested_api != MPVFLOW_GPU_COMPUTE_VULKAN) {
+    /* Match the SVPlayer architecture: keep the normal path entirely inside
+     * Vulkan. OpenCL remains dynamically loaded and available when explicitly
+     * requested, but AUTO must not pay the per-frame Vulkan/OpenCL ownership
+     * transfers and full-resolution copies. */
+    if (requested_api == MPVFLOW_GPU_COMPUTE_OPENCL) {
         struct MPVFlowOpenCLConfig opencl_config = {
             .search_radius = ctx->search_radius,
             .max_dimension = ctx->max_dimension,
@@ -942,7 +946,7 @@ MPVFlowGPUContext *mpvflow_gpu_create(pl_gpu gpu,
                      "MPVFLOW_DIAGNOSTIC event=compute_backend state=ready requested_api=%d "
                      "effective_api=opencl interop=qcom_ahardwarebuffer_host_ptr "
                      "shared_storage=android_hardware_buffer probe=kernel_interop_roundtrip "
-                     "probe_size=64x64 cpu_readback=no",
+                     "probe_size=64x64 cpu_readback=no mode=explicit_or_fallback",
                      requested_api);
         } else {
             flow_log(gpu, requested_api == MPVFLOW_GPU_COMPUTE_AUTO ? PL_LOG_WARN : PL_LOG_ERR,
@@ -972,8 +976,11 @@ MPVFlowGPUContext *mpvflow_gpu_create(pl_gpu gpu,
     } else {
         flow_log(gpu, PL_LOG_INFO,
                  "MPVFLOW_DIAGNOSTIC event=compute_backend state=ready requested_api=%d "
-                 "effective_api=vulkan reason=explicit_vulkan",
-                 requested_api);
+                 "effective_api=vulkan reason=%s",
+                 requested_api,
+                 requested_api == MPVFLOW_GPU_COMPUTE_AUTO
+                     ? "auto_prefers_vulkan_native_pipeline_opencl_optional"
+                     : "explicit_vulkan");
     }
 
     struct pl_desc preprocess_desc[] = {
