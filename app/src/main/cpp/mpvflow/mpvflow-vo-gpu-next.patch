@@ -1,12 +1,12 @@
 --- a/video/out/vo_gpu_next.c
 +++ b/video/out/vo_gpu_next.c
-@@ -21,0 +22,3 @@
+@@ -21,0 +25,3 @@
 +#include <math.h>
 +#include <string.h>
 +#include <libplacebo/vulkan.h>
-@@ -52,0 +55,1 @@
+@@ -52,0 +58,1 @@
 +#include "mpvflow_gpu.h"
-@@ -157,0 +161,57 @@
+@@ -157,0 +164,57 @@
 +    // MPVFLOW_GPU_INTEGRATION
 +    MPVFlowGPUContext *flow_gpu;
 +    MPVFlowGPUPair *flow_pair;
@@ -64,33 +64,33 @@
 +    uint64_t flow_cadence_pair_analysis_failures;
 +    uint64_t flow_cadence_pair_cache_reuses;
 +
-@@ -184,0 +217,1 @@
+@@ -184,0 +220,1 @@
 +static void flow_update_context(struct vo *vo);
-@@ -186,0 +220,5 @@
+@@ -186,0 +223,5 @@
 +    bool mpvflow;
 +    int mpvflow_max_dimension;
 +    int mpvflow_target_fps;
 +    int mpvflow_quality;
 +    int mpvflow_compute_api;
-@@ -213,0 +250,5 @@
+@@ -213,0 +253,5 @@
 +        {"mpvflow", OPT_BOOL(mpvflow)},
 +        {"mpvflow-max-dimension", OPT_INT(mpvflow_max_dimension), M_RANGE(8, 640)},
 +        {"mpvflow-target-fps", OPT_INT(mpvflow_target_fps), M_RANGE(1, 240)},
 +        {"mpvflow-quality", OPT_INT(mpvflow_quality), M_RANGE(0, 100)},
 +        {"mpvflow-compute-api", OPT_INT(mpvflow_compute_api), M_RANGE(0, 2)},
-@@ -239,0 +279,4 @@
+@@ -239,0 +282,4 @@
 +        .mpvflow_max_dimension = 640,
 +        .mpvflow_target_fps = 60,
 +        .mpvflow_quality = 60,
 +        .mpvflow_compute_api = MPVFLOW_GPU_COMPUTE_AUTO,
-@@ -560,0 +602,6 @@
+@@ -560,0 +605,6 @@
 +    uint64_t frame_id;
 +    pl_tex flow_source;
 +    pl_tex flow_input;
 +    int flow_cap;
 +    int flow_w, flow_h;
 +    int flow_source_w, flow_source_h;
-@@ -569,0 +617,395 @@
+@@ -569,0 +620,402 @@
 +static void flow_release_pair(struct priv *p)
 +{
 +    if (p->flow_pair)
@@ -493,15 +493,15 @@
 +    fp->flow_cap = 0;
 +}
 +
-@@ -1109,0 +1413,2 @@
+@@ -1109,0 +1421,2 @@
 +    flow_update_context(vo);
 +    flow_prepare_input(vo, frame, mpi, fp);
-@@ -1118,0 +1424,1 @@
+@@ -1118,0 +1432,1 @@
 +    flow_release_frame(fp->vo, fp);
-@@ -1135,0 +1442,2 @@
+@@ -1135,0 +1450,2 @@
 +    struct frame_priv *fp = mpi->priv;
 +    flow_release_frame(fp->vo, fp);
-@@ -1341,0 +1650,171 @@
+@@ -1341,0 +1658,171 @@
 +static bool flow_render_frame(struct vo *vo, const struct pl_frame_mix *mix,
 +                              struct pl_frame *target,
 +                              const struct pl_render_params *params,
@@ -673,7 +673,7 @@
 +    return ok;
 +}
 +
-@@ -1344,0 +1804,21 @@
+@@ -1344,0 +1812,21 @@
 +    p->flow_pending_synthesized = false;
 +    p->flow_pending_display_synced = false;
 +    p->flow_pending_source_batch = 0;
@@ -699,9 +699,9 @@
 -                           !frame->still && frame->num_frames > 1 && !p->paused;
 +                           !frame->still &&
 +                           (frame->num_frames > 1 || p->next_opts->mpvflow) && !p->paused;
-@@ -1403,0 +1868,1 @@
+@@ -1403,0 +1876,1 @@
 +            flow_release_pair(p);
-@@ -1422,0 +1888,1 @@
+@@ -1422,0 +1896,1 @@
 +        fp->frame_id = id;
 @@ -1570,3 +2037,29 @@
      struct pl_swapchain_frame swframe;
@@ -734,7 +734,7 @@
 +        }
 +    }
 +    if (!should_draw || !swapchain_frame_started) {
-@@ -1750,0 +2238,26 @@
+@@ -1750,0 +2246,26 @@
 +    if (p->next_opts->mpvflow) {
 +        const char *queue_state = !frame->num_frames ? "redraw_without_source_batch" :
 +            !opts->interpolation ? "interpolation_disabled" :
@@ -949,12 +949,12 @@
 +                    wait_ns / 1000000.0, p->next_opts->mpvflow_target_fps);
 +        }
 +    }
-@@ -2466,0 +3077,4 @@
+@@ -2466,0 +3085,4 @@
 +    flow_release_pair(p);
 +    mpvflow_gpu_destroy(p->flow_gpu);
 +    p->flow_gpu = NULL;
 +    p->flow_input_fmt = NULL;
-@@ -2846,0 +3461,1 @@
+@@ -2846,0 +3469,1 @@
 +    flow_update_context(vo);
 @@ -2878,1 +3493,2 @@
 -    pars->params.frame_mixer = opts->interpolation ? map_scaler(p, SCALER_TSCALE) : NULL;
