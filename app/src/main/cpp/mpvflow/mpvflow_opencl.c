@@ -588,6 +588,15 @@ static enum MPVFlowOpenCLStatus make_buffer(MPVFlowOpenCLContext *c,
     b->mem = c->clCreateBuffer(c->context, flags,
                                MPVFLOW_OPENCL_QCOM_IMPORT_SIZE_ARG,
                                &desc, &err);
+    /* Qualcomm's extension has two deployed behaviors: the original import
+     * form accepts size=0, while newer drivers reject it with CL_INVALID_OPERATION
+     * and require the real AHardwareBuffer allocation size. Retry only that
+     * extension-specific failure; all other errors remain fatal. */
+    if ((!b->mem || err != CL_SUCCESS) &&
+        err == MPVFLOW_OPENCL_CL_INVALID_OPERATION) {
+        b->mem = c->clCreateBuffer(c->context, flags,
+                                   desc_in->allocation_bytes, &desc, &err);
+    }
     if (cl_create_error_out)
         *cl_create_error_out = err;
     if (!b->mem || err != CL_SUCCESS) { free(b); return MPVFLOW_OPENCL_ERROR; }

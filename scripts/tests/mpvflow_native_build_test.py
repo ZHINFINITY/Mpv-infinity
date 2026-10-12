@@ -506,8 +506,11 @@ assert "flags = MPVFLOW_OPENCL_QCOM_IMPORT_FLAGS" in opencl_buffer_creation and 
        "MPVFLOW_OPENCL_QCOM_HOST_WRITEBACK_POLICY 0x40A5u" in opencl_header, (
     "QCOM AHardwareBuffer imports must match the public Adreno host_ptr call shape: size zero and no explicit access qualifier"
 )
-assert "desc_in->allocation_bytes, &desc, &err" not in opencl_buffer_creation, (
-    "the validated BLOB allocation size must not be substituted for the QCOM extension's size argument"
+assert "desc_in->allocation_bytes, &desc, &err" in opencl_buffer_creation, (
+    "CL_INVALID_OPERATION must retry the QCOM import with the validated BLOB allocation size"
+)
+assert "MPVFLOW_OPENCL_CL_INVALID_OPERATION" in opencl_buffer_creation, (
+    "the allocation-size retry must be limited to the known QCOM CL_INVALID_OPERATION failure"
 )
 assert "*cl_create_error_out = err" in opencl_buffer_creation, (
     "the raw vendor clCreateBuffer error must be preserved for device-side diagnosis"

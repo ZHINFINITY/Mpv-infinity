@@ -38,6 +38,9 @@ enum MPVFlowOpenCLStatus {
 /* Raw clCreateBuffer status sentinel when import validation/allocation fails
  * before the vendor OpenCL API is called. */
 #define MPVFLOW_OPENCL_CL_ERROR_NOT_RETURNED INT32_MIN
+/* Some Adreno OpenCL drivers reject the QCOM size=0 import form with this
+ * extension-specific error even though other driver versions accept it. */
+#define MPVFLOW_OPENCL_CL_INVALID_OPERATION (-59)
 
 /* Existing Qualcomm import call shape; diagnostics report these exact values. */
 #define MPVFLOW_OPENCL_QCOM_IMPORT_SIZE_ARG ((size_t)0)
@@ -119,8 +122,9 @@ void mpvflow_opencl_destroy(MPVFlowOpenCLContext *context);
  * describe packed RGBA8 content inside the BLOB, and `allocation_bytes` must be
  * the actual BLOB allocation size, including the device-required QCOM external
  * memory tail padding (not a guessed width*height); it is used for local
- * validation and diagnostics, while the QCOM AHardwareBuffer host_ptr call uses
- * size=0 with the allocation descriptor in host_ptr. The caller must
+ * validation and diagnostics. The QCOM AHardwareBuffer host_ptr call first
+ * uses size=0 with the allocation descriptor in host_ptr, then retries with
+ * this validated allocation size when a driver returns CL_INVALID_OPERATION. The caller must
  * establish that this is the same linear VkBuffer-backed allocation used for
  * Vulkan buffer-to-image/image-to-buffer copies; optimal-tiled Vulkan image
  * AHardwareBuffers are not accepted as byte buffers. Logical frame dimensions
