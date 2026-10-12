@@ -135,7 +135,7 @@ for stage in (
     "motion_search_forward_level_2", "motion_search_backward_level_2",
 ):
     require(FLOW_GPU_CORE, stage, f"Vulkan timer dispatch classification is missing {stage}")
-require(FLOW_GPU_CORE, "motion_grid=%ux%u grid_step=%d block_size=%d", "motion geometry records must disambiguate processing pixels from vector-grid cells")
+require(FLOW_GPU_CORE, "motion_grid=%ux%u grid_step=%d fine_block_size=%d coarse_block_size=%d", "motion geometry records must disambiguate fine and coarse vector support")
 require(FLOW_GPU_CORE, "poll_policy=nonblocking_frame_operation_boundary", "Vulkan timestamp polling must stay nonblocking and outside the per-dispatch hot path")
 run_pass_body = FLOW_GPU_CORE.split("static bool run_pass(", 1)[1].split("static bool allocate_pair_textures(", 1)[0]
 assert "flow_timer_poll_and_report" not in run_pass_body, "timer-result polling must not add CPU/Vulkan query overhead to every compute dispatch"

@@ -20,6 +20,7 @@ extern "C" {
 typedef struct MPVFlowGPUContext MPVFlowGPUContext;
 typedef struct MPVFlowGPUPair MPVFlowGPUPair;
 
+#define MPVFLOW_GPU_MOTION_FINE_BLOCK_SIZE 4
 #define MPVFLOW_GPU_MOTION_BLOCK_SIZE 8
 #define MPVFLOW_GPU_MOTION_GRID_STEP 4
 

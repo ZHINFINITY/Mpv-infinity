@@ -57,13 +57,19 @@ require(flow, "for(int ring=1;ring<=radius&&!stopOnCenterTie;ring++)", "motion s
 require(flow, "if(max(abs(dx),abs(dy))!=ring) continue", "center-out rings must enumerate each Chebyshev-radius candidate exactly once")
 require(flow, "if(any(lessThan(d,lo))||any(greaterThan(d,hi))) continue", "center-out search must retain edge-clipped bounds")
 require(flow, "d.y<bestVector.y||(d.y==bestVector.y&&d.x<bestVector.x)", "out-of-order equal-cost winners must retain the legacy row-major tie-break")
-require(flow, "sadAt(p,d,sz,best==0?0:second)", "zero-cost matches must keep exact SAD pruning while checking for a real tie")
+require(flow, "sadAt(p,d,sz,best==0?0:second,blockSize)", "zero-cost matches must keep exact SAD pruning while checking for a real tie")
 require(flow, "if(best==0&&second==0){ if(all(equal(bestVector,center))){stopOnCenterTie=true;continue;}", "a tied center winner must terminate search without changing its vector or confidence")
 require(flow, "d.y>bestVector.y||(d.y==bestVector.y&&d.x>=bestVector.x)", "once a non-center zero-cost tie is known, only lexicographically earlier vectors may affect the legacy tie-break")
 require(flow, "int radius=pc.cfg.z", "center-out must retain the original full configured motion radius")
-require(flow, "float(best)/(64.0*255.0)", "flow vectors must retain normalized block-match error")
+require(flow, "int blockSize=(pc.cfg.w>>8)", "motion search must distinguish fine and coarse block support")
+require(flow, "if(blockSize!=4) blockSize=8", "motion search must constrain support to the tested 4x4 or 8x8 sizes")
+require(flow, "float(best)/(float(blockSize*blockSize)*255.0)", "flow vectors must normalize SAD by the active block area")
 require(synthesis, "vec4 flowAtEdgeAware(vec2 p,int direction)", "synthesis must guide vector sampling by source appearance")
 require(synthesis, "vec4 flowAtBilinear(vec2 p,int direction)", "iterative vector refinement must have a low-cost bilinear sampler")
+require(synthesis, "bool staticPixel=", "static low-motion pixels should bypass the full-resolution warp path")
+require(synthesis, "dot(fastForward.xy,fastForward.xy)<=0.0025", "the static path must require a near-zero forward vector")
+require(synthesis, "dot(fastBackward.xy,fastBackward.xy)<=0.0025", "the static path must require a near-zero backward vector")
+require(synthesis, "colorDelta<=0.0039216", "the static path must require an at-most-one-LSB source difference")
 require(synthesis, "for(int i=0;i<2;i++){ f=flowAtBilinear(a,0)", "inverse-flow refinement must avoid repeated edge-aware sampling")
 require(synthesis, "b=flowAtBilinear(z,1)", "backward inverse-flow refinement must use the same efficient sampler")
 require(synthesis, "layout(set=0,binding=5,rgba16f) readonly uniform image2D luma0Tex;", "frame-0 luma binding/format mismatch")
@@ -79,13 +85,14 @@ require(synthesis, "return cycleQuality*matchQuality*valid;", "endpoint reliabil
 require(synthesis, "if(confidence<0.15)", "unreliable motion must fall back to a real source frame")
 require(flow, "float(second-best)/max(float(second),1.0)", "flow vectors must report best-vs-runner-up match uniqueness")
 require(flow, "refineAxis(p,bestVector,ivec2(1,0)", "GPU flow vectors must be fractionally refined")
-require(flow, "center=clamp(center,-p,sz-ivec2(8)-p)", "coarse predictors must be clamped before border-local refinement")
+require(flow, "center=clamp(center,-p,sz-block-p)", "coarse predictors must be clamped to the active block before border-local refinement")
+require(flow, "bool hasParent=(pc.cfg.w&1)!=0", "the encoded block support must not be confused with the coarse-parent flag")
 require(synthesis, "bool boundaryConflict=lumaDelta>0.12||(min(f.w,b.w)<0.04&&colorDelta>0.18)", "ambiguous vectors must be localized to an actual luma or chroma appearance conflict")
 require(synthesis, "edgeConfidence0=confidence0*(0.5+0.5*smoothstep(0.02,0.35,f.w))", "match uniqueness must only help resolve a visible endpoint conflict")
 require(synthesis, "backAt0=flowAtEdgeAware(cycle0,1)", "cycle-consistency verification must retain edge-aware sampling")
 require(synthesis, "forwardAt1=flowAtEdgeAware(cycle1,0)", "reverse cycle-consistency verification must retain edge-aware sampling")
 assert synthesis.split("void main()", 1)[1].count("flowAtEdgeAware(") == 6, "edge-aware sampling should remain at initial/final warps and cycle checks, not every refinement step"
-assert synthesis.split("void main()", 1)[1].count("flowAtBilinear(") == 2, "only iterative inverse-flow refinement should use the bounded bilinear sampler"
+assert synthesis.split("void main()", 1)[1].count("flowAtBilinear(") == 4, "the two static-pixel probes and two inverse-flow refinements should use the bounded bilinear sampler"
 color_at_match = re.search(r"vec4 colorAt\(sampler2D s,vec2 p\)\{(.*?)\}", synthesis)
 assert color_at_match, "synthesis must provide the source-color sampler"
 color_at = color_at_match.group(1)
@@ -148,8 +155,8 @@ for source in ("source0", "source1"):
 require(SOURCE, "!(p0->format->caps & PL_FMT_CAP_LINEAR)", "synthesis must reject formats that cannot safely use linear filtering")
 require(SOURCE, "!(p1->format->caps & PL_FMT_CAP_LINEAR)", "both synthesis inputs must support linear filtering")
 require(SOURCE, "mpvflow_gpu_prepare_input", "full-size shared frames need GPU downscaling before analysis")
-require(SOURCE, "(w - FLOW_BLOCK + FLOW_STEP - 1) / FLOW_STEP + 1", "motion texture width must contain only valid, unique block origins")
-require(SOURCE, "(h - FLOW_BLOCK + FLOW_STEP - 1) / FLOW_STEP + 1", "motion texture height must contain only valid, unique block origins")
+require(SOURCE, "const int grid_w = (w - block_size + FLOW_STEP - 1) / FLOW_STEP + 1", "motion texture width must contain only valid, unique per-level block origins")
+require(SOURCE, "const int grid_h = (h - block_size + FLOW_STEP - 1) / FLOW_STEP + 1", "motion texture height must contain only valid, unique per-level block origins")
 assert "r32f" not in SOURCE.lower(), "MPV Flow must not require the optional R32F image format"
 assert "glsl.gles" not in SOURCE and "#version 310 es" not in SOURCE, "MPV Flow must not require GLES compute"
 
@@ -190,14 +197,14 @@ for radius in range(1, 9):
             )
 
 
-def block_search(src, dst, p, center, radius, center_out, prune_ambiguous_zero=False):
+def block_search(src, dst, p, center, radius, center_out, prune_ambiguous_zero=False, block_size=8):
     height, width = len(src), len(src[0])
     lo_x = max(-p[0], center[0] - radius)
-    hi_x = min(width - 8 - p[0], center[0] + radius)
+    hi_x = min(width - block_size - p[0], center[0] + radius)
     lo_y = max(-p[1], center[1] - radius)
-    hi_y = min(height - 8 - p[1], center[1] + radius)
+    hi_y = min(height - block_size - p[1], center[1] + radius)
     best_vector = center
-    best, reads = sad_at(src, dst, p, best_vector, 2**31 - 1)
+    best, reads = sad_at(src, dst, p, best_vector, 2**31 - 1, block_size)
     second = 2**31 - 1
     candidates = (
         center_out_candidates(*center, lo_x, hi_x, lo_y, hi_y, radius)
@@ -211,7 +218,9 @@ def block_search(src, dst, p, center, radius, center_out, prune_ambiguous_zero=F
                 break
             if (candidate[1], candidate[0]) >= (best_vector[1], best_vector[0]):
                 continue
-        cost, sample_reads = sad_at(src, dst, p, candidate, 0 if center_out and best == 0 else second)
+        cost, sample_reads = sad_at(
+            src, dst, p, candidate, 0 if center_out and best == 0 else second, block_size
+        )
         reads += sample_reads
         if center_out and best == 0:
             if cost == 0:
@@ -236,16 +245,48 @@ def block_search(src, dst, p, center, radius, center_out, prune_ambiguous_zero=F
     return best_vector, best, confidence, reads
 
 
-def sad_at(src, dst, p, displacement, cutoff):
+def sad_at(src, dst, p, displacement, cutoff, block_size=8):
     cost = 0
     reads = 0
-    for y in range(8):
-        for x in range(8):
+    for y in range(block_size):
+        for x in range(block_size):
             cost += abs(src[p[1] + y][p[0] + x] - dst[p[1] + displacement[1] + y][p[0] + displacement[0] + x])
             reads += 1
             if cost > cutoff:
                 return cost, reads
     return cost, reads
+
+
+edge_rng = random.Random(0xED6E)
+edge_background = [[edge_rng.randrange(120) for _ in range(32)] for _ in range(24)]
+edge_frame0 = [row[:] for row in edge_background]
+edge_frame1 = [row[:] for row in edge_background]
+for y in range(8, 10):
+    for x in range(8, 10):
+        edge_frame0[y][x] = 255
+    for x in range(9, 11):
+        edge_frame1[y][x] = 255
+coarse_edge_match = block_search(edge_frame0, edge_frame1, (8, 8), (0, 0), 2, True, block_size=8)
+fine_edge_match = block_search(edge_frame0, edge_frame1, (8, 8), (0, 0), 2, True, block_size=4)
+assert coarse_edge_match[0] == (0, 0), "the regression scene must expose a background-dominated 8x8 match"
+assert fine_edge_match[0] == (1, 0), "4x4 support should recover the one-pixel foreground translation"
+print("Fine-level motion support regression: a thin moving foreground selects its own vector")
+
+
+def static_pixel_bypass(forward, backward, color0, color1):
+    color_delta = max(abs(a - b) for a, b in zip(color0, color1))
+    return (
+        sum(value * value for value in forward) <= 0.0025
+        and sum(value * value for value in backward) <= 0.0025
+        and color_delta <= 1.0 / 255.0
+    )
+
+
+assert static_pixel_bypass((0.0, 0.0), (0.0, 0.0), (0.4, 0.5, 0.6), (0.4, 0.5, 0.6)), "identical static pixels should be safe for direct temporal blending"
+assert static_pixel_bypass((0.04, 0.0), (0.03, 0.0), (0.4, 0.5, 0.6), (0.4, 0.5, 0.6)), "sub-threshold motion remains eligible for the fast path"
+assert not static_pixel_bypass((1.0, 0.0), (-1.0, 0.0), (0.4, 0.5, 0.6), (0.4, 0.5, 0.6)), "moving edges must retain full bidirectional warping"
+assert not static_pixel_bypass((0.0, 0.0), (0.0, 0.0), (0.4, 0.5, 0.6), (0.4, 0.51, 0.6)), "chroma or luma changes above one LSB must not use the fast path"
+print("Static-pixel fast-path regression: exact still regions bypass warping without masking motion or color changes")
 
 
 def shifted(image, dx, dy):

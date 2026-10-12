@@ -555,16 +555,16 @@
 +                    p->flow_pair_ids[0] = fp0->frame_id;
 +                    p->flow_pair_ids[1] = fp1->frame_id;
 +                    if (p->flow_geometry_w != fp0->flow_w || p->flow_geometry_h != fp0->flow_h) {
-+                        const int grid_w = (fp0->flow_w - MPVFLOW_GPU_MOTION_BLOCK_SIZE +
++                        const int grid_w = (fp0->flow_w - MPVFLOW_GPU_MOTION_FINE_BLOCK_SIZE +
 +                            MPVFLOW_GPU_MOTION_GRID_STEP - 1) / MPVFLOW_GPU_MOTION_GRID_STEP + 1;
-+                        const int grid_h = (fp0->flow_h - MPVFLOW_GPU_MOTION_BLOCK_SIZE +
++                        const int grid_h = (fp0->flow_h - MPVFLOW_GPU_MOTION_FINE_BLOCK_SIZE +
 +                            MPVFLOW_GPU_MOTION_GRID_STEP - 1) / MPVFLOW_GPU_MOTION_GRID_STEP + 1;
 +                        MP_INFO(vo, "MPVFLOW_DIAGNOSTIC event=motion_geometry state=ready engine=mpv "
-+                                "source=%dx%d processing=%dx%d motion_grid=%dx%d grid_step=%d block_size=%d "
++                                "source=%dx%d processing=%dx%d motion_grid=%dx%d grid_step=%d fine_block_size=%d coarse_block_size=%d "
 +                                "motion_search_passes_per_pair=6 search_order=center_out_exact_legacy_tie_break\n",
 +                                fp0->flow_source_w, fp0->flow_source_h, fp0->flow_w, fp0->flow_h,
 +                                grid_w, grid_h, MPVFLOW_GPU_MOTION_GRID_STEP,
-+                                MPVFLOW_GPU_MOTION_BLOCK_SIZE);
++                                MPVFLOW_GPU_MOTION_FINE_BLOCK_SIZE, MPVFLOW_GPU_MOTION_BLOCK_SIZE);
 +                        p->flow_geometry_w = fp0->flow_w;
 +                        p->flow_geometry_h = fp0->flow_h;
 +                    }
