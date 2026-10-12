@@ -48,7 +48,13 @@ class MpvFlowTargetFpsTest {
     assertEquals(480, effectiveMpvFlowMaxDimension(72))
     assertEquals(480, effectiveMpvFlowMaxDimension(90))
     assertEquals(400, effectiveMpvFlowMaxDimension(96))
-    assertEquals(400, effectiveMpvFlowMaxDimension(120))
-    assertEquals(320, effectiveMpvFlowMaxDimension(144))
+    assertEquals(384, effectiveMpvFlowMaxDimension(120))
+    assertEquals(304, effectiveMpvFlowMaxDimension(144))
+  }
+
+  @Test
+  fun highQualityAddsOnlyTheConfiguredHeadroomAtHighRates() {
+    assertEquals(416, effectiveMpvFlowMaxDimension(120, 100))
+    assertEquals(320, effectiveMpvFlowMaxDimension(144, 100))
   }
 }
