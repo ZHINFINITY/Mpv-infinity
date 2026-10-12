@@ -535,7 +535,8 @@ for extension in (
     "cl_qcom_ext_host_ptr", "cl_qcom_ext_host_ptr_iocoherent",
     "cl_qcom_android_ahardwarebuffer_host_ptr", "cl_qcom_android_native_buffer_host_ptr",
     "cl_qcom_dmabuf_host_ptr", "cl_qcom_ahardwarebuffer_direct_import",
-    "cl_arm_import_memory_android_hardware_buffer", "cl_khr_external_memory",
+    "cl_arm_import_memory_android_hardware_buffer", "cl_khr_external_memory_android_hardware_buffer",
+    "cl_khr_external_memory",
     "cl_khr_external_memory_dma_buf",
     "cl_khr_external_memory_opaque_fd", "cl_khr_external_semaphore",
     "cl_khr_external_semaphore_sync_fd", "cl_khr_egl_event", "cl_khr_egl_image",
@@ -627,6 +628,7 @@ for marker in (
     "CL_DRIVER_VERSION",
     "CL_DEVICE_OPENCL_C_VERSION",
     "device_extensions",
+    "library_path",
     "mpvflow_opencl_get_runtime_info",
     "event=opencl_device",
 ):

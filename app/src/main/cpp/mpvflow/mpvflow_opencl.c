@@ -7,6 +7,7 @@
 #include "mpvflow_opencl.h"
 
 #include <dlfcn.h>
+#include <link.h>
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -91,6 +92,8 @@ typedef cl_int (*PFN_clRetainMemObject)(cl_mem);
 typedef cl_int (*PFN_clSetKernelArg)(cl_kernel, cl_uint, size_t, const void *);
 typedef cl_int (*PFN_clEnqueueNDRangeKernel)(cl_command_queue, cl_kernel, cl_uint, const size_t *, const size_t *, const size_t *, cl_uint, const cl_event *, cl_event *);
 typedef cl_int (*PFN_clFinish)(cl_command_queue);
+typedef void *(*PFN_clGetExtensionFunctionAddressForPlatform)(
+    cl_platform_id, const char *);
 
 static char g_build_log[CL_PROGRAM_BUILD_LOG_CAP];
 
@@ -173,8 +176,13 @@ struct MPVFlowOpenCLContext {
     char device_extensions[2048];
     size_t device_extensions_length;
     int device_extensions_truncated;
+    char library_path[256];
+    int direct_import_symbol_present;
+    int direct_import_image_symbol_present;
+    int import_memory_arm_symbol_present;
     char runtime_info[3200];
-    char extension_presence_info[640];
+    char extension_presence_info[960];
+    PFN_clGetExtensionFunctionAddressForPlatform clGetExtensionFunctionAddressForPlatform;
 #define MPVFLOW_CL_FN(name) PFN_##name name
     MPVFLOW_CL_FN(clGetPlatformIDs);
     MPVFLOW_CL_FN(clGetDeviceIDs);
@@ -310,8 +318,31 @@ static int load_opencl(MPVFlowOpenCLContext *c)
     LOAD_CL(clReleaseKernel); LOAD_CL(clCreateBuffer); LOAD_CL(clReleaseMemObject);
     LOAD_CL(clRetainMemObject); LOAD_CL(clSetKernelArg); LOAD_CL(clEnqueueNDRangeKernel);
     LOAD_CL(clFinish);
+    *(void **)(&c->clGetExtensionFunctionAddressForPlatform) =
+        dlsym(c->library, "clGetExtensionFunctionAddressForPlatform");
 #undef LOAD_CL
+    if (c->clGetExtensionFunctionAddressForPlatform) {
+        Dl_info info;
+        memset(&info, 0, sizeof(info));
+        if (dladdr((void *)c->clGetPlatformIDs, &info) && info.dli_fname)
+            copy_info_string(c->library_path, sizeof(c->library_path),
+                             info.dli_fname, strlen(info.dli_fname) + 1);
+    }
     return 1;
+}
+
+static void probe_extension_symbols(MPVFlowOpenCLContext *c)
+{
+    if (!c || !c->clGetExtensionFunctionAddressForPlatform || !c->platform)
+        return;
+    c->import_memory_arm_symbol_present =
+        c->clGetExtensionFunctionAddressForPlatform(c->platform, "clImportMemoryARM") != NULL;
+    c->direct_import_symbol_present =
+        c->clGetExtensionFunctionAddressForPlatform(
+            c->platform, "clCreateBufferFromAHardwareBufferQCOM") != NULL;
+    c->direct_import_image_symbol_present =
+        c->clGetExtensionFunctionAddressForPlatform(
+            c->platform, "clCreateImageFromAHardwareBufferQCOM") != NULL;
 }
 
 MPVFlowOpenCLContext *mpvflow_opencl_create(const struct MPVFlowOpenCLConfig *config,
@@ -416,6 +447,7 @@ MPVFlowOpenCLContext *mpvflow_opencl_create(const struct MPVFlowOpenCLConfig *co
     c->qcom_page_size_query_ok = err == CL_SUCCESS;
     if (!c->qcom_page_size_query_ok)
         c->qcom_page_size_bytes = 0;
+    probe_extension_symbols(c);
     const cl_context_properties props[] = { CL_CONTEXT_PLATFORM, (cl_context_properties)c->platform, 0 };
     c->context = c->clCreateContext(props, 1, &c->device, NULL, NULL, &err);
     if (!c->context || err != CL_SUCCESS) { context_cleanup(c); return NULL; }
@@ -461,6 +493,8 @@ const char *mpvflow_opencl_get_runtime_info(MPVFlowOpenCLContext *context)
                    "platform_name=\"%s\" platform_vendor=\"%s\" platform_version=\"%s\" "
                    "device_name=\"%s\" device_vendor=\"%s\" device_version=\"%s\" "
                    "driver_version=\"%s\" opencl_c_version=\"%s\" "
+                   "opencl_library=\"%s\" import_memory_arm_symbol=%d "
+                   "direct_import_buffer_symbol=%d direct_import_image_symbol=%d "
                    "qcom_ext_mem_padding_bytes=%zu qcom_page_size_bytes=%zu qcom_page_size_query_ok=%d "
                    "extensions_bytes=%zu extensions_truncated=%d",
                    context->platform_name[0] ? context->platform_name : "unavailable",
@@ -471,6 +505,10 @@ const char *mpvflow_opencl_get_runtime_info(MPVFlowOpenCLContext *context)
                    context->device_version[0] ? context->device_version : "unavailable",
                    context->driver_version[0] ? context->driver_version : "unavailable",
                    context->opencl_c_version[0] ? context->opencl_c_version : "unavailable",
+                   context->library_path[0] ? context->library_path : "unavailable",
+                   context->import_memory_arm_symbol_present,
+                   context->direct_import_symbol_present,
+                   context->direct_import_image_symbol_present,
                    context->qcom_ext_mem_padding_bytes, context->qcom_page_size_bytes,
                    context->qcom_page_size_query_ok,
                    context->device_extensions_length, context->device_extensions_truncated);
@@ -490,6 +528,7 @@ const char *mpvflow_opencl_get_extension_presence_info(MPVFlowOpenCLContext *con
                    "cl_qcom_dmabuf_host_ptr=%d "
                    "cl_qcom_ahardwarebuffer_direct_import=%d "
                    "cl_arm_import_memory_android_hardware_buffer=%d "
+                   "cl_khr_external_memory_android_hardware_buffer=%d "
                    "cl_khr_external_memory=%d "
                    "cl_khr_external_memory_dma_buf=%d "
                    "cl_khr_external_memory_opaque_fd=%d "
@@ -509,6 +548,8 @@ const char *mpvflow_opencl_get_extension_presence_info(MPVFlowOpenCLContext *con
                                  "cl_qcom_ahardwarebuffer_direct_import"),
                    has_extension(context->device_extensions,
                                  "cl_arm_import_memory_android_hardware_buffer"),
+                   has_extension(context->device_extensions,
+                                 "cl_khr_external_memory_android_hardware_buffer"),
                    has_extension(context->device_extensions, "cl_khr_external_memory"),
                    has_extension(context->device_extensions,
                                  "cl_khr_external_memory_dma_buf"),
