@@ -94,8 +94,8 @@ require(synthesis, "bool boundaryConflict=lumaDelta>0.12||(min(f.w,b.w)<0.04&&co
 require(synthesis, "edgeConfidence0=confidence0*(0.5+0.5*smoothstep(0.02,0.35,f.w))", "match uniqueness must only help resolve a visible endpoint conflict")
 require(synthesis, "backAt0=flowAtEdgeAware(cycle0,1)", "cycle-consistency verification must retain edge-aware sampling")
 require(synthesis, "forwardAt1=flowAtEdgeAware(cycle1,0)", "reverse cycle-consistency verification must retain edge-aware sampling")
-assert synthesis.split("void main()", 1)[1].count("flowAtEdgeAware(") == 6, "edge-aware sampling should remain at initial/final warps and cycle checks, not every refinement step"
-assert synthesis.split("void main()", 1)[1].count("flowAtBilinear(") == 4, "the two static-pixel probes and two inverse-flow refinements should use the bounded bilinear sampler"
+assert synthesis.split("void main()", 1)[1].count("flowAtEdgeAware(") == 4, "edge-aware sampling should remain at final warps and cycle checks, not every refinement step"
+assert synthesis.split("void main()", 1)[1].count("flowAtBilinear(") == 6, "static probes, initial warp, and inverse-flow refinements should use the bounded bilinear sampler"
 color_at_match = re.search(r"vec4 colorAt\(sampler2D s,vec2 p\)\{(.*?)\}", synthesis)
 assert color_at_match, "synthesis must provide the source-color sampler"
 color_at = color_at_match.group(1)
@@ -158,6 +158,7 @@ for source in ("source0", "source1"):
 require(SOURCE, "!(p0->format->caps & PL_FMT_CAP_LINEAR)", "synthesis must reject formats that cannot safely use linear filtering")
 require(SOURCE, "!(p1->format->caps & PL_FMT_CAP_LINEAR)", "both synthesis inputs must support linear filtering")
 require(SOURCE, "mpvflow_gpu_prepare_input", "full-size shared frames need GPU downscaling before analysis")
+require(SOURCE, "Vulkan fast path: bilinear initial/cycle flow", "Vulkan synthesis must avoid redundant edge-aware exponential lookups")
 require(SOURCE, "const int grid_w = (w - block_size + FLOW_STEP - 1) / FLOW_STEP + 1", "motion texture width must contain only valid, unique per-level block origins")
 require(SOURCE, "const int grid_h = (h - block_size + FLOW_STEP - 1) / FLOW_STEP + 1", "motion texture height must contain only valid, unique per-level block origins")
 assert "r32f" not in SOURCE.lower(), "MPV Flow must not require the optional R32F image format"
