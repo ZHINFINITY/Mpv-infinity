@@ -502,7 +502,7 @@ assert "flags = MPVFLOW_OPENCL_QCOM_IMPORT_FLAGS" in opencl_buffer_creation and 
        "MPVFLOW_OPENCL_QCOM_USE_HOST_PTR_FLAG ((uint64_t)0x00000008u)" in opencl_header and \
        "MPVFLOW_OPENCL_QCOM_EXT_HOST_PTR_FLAG ((uint64_t)0x20000000u)" in opencl_header and \
        "(MPVFLOW_OPENCL_QCOM_USE_HOST_PTR_FLAG | MPVFLOW_OPENCL_QCOM_EXT_HOST_PTR_FLAG)" in opencl_header and \
-       "MPVFLOW_OPENCL_QCOM_AHB_ALLOCATION_TYPE 0x40C7u" in opencl_header and \
+       "MPVFLOW_OPENCL_QCOM_AHB_ALLOCATION_TYPE 0x4119u" in opencl_header and \
        "MPVFLOW_OPENCL_QCOM_HOST_WRITEBACK_POLICY 0x40A5u" in opencl_header, (
     "QCOM AHardwareBuffer imports must match the public Adreno host_ptr call shape: size zero and no explicit access qualifier"
 )
@@ -521,6 +521,9 @@ assert "c->clCreateBuffer(c->context, flags,\n                               MPV
 assert "c->clCreateBuffer(c->context, flags,\n                                   desc_in->allocation_bytes, &desc, &err)" in opencl_buffer_creation, (
     "the validated allocation-size form must remain only as a fallback"
 )
+assert "MPVFLOW_OPENCL_QCOM_AHB_ALLOCATION_TYPE 0x4119u" in opencl_header and \
+       "0x40C7 is CL_CONTEXT_PROTECTED_QCOM" in opencl_header, \
+       "the AHardwareBuffer allocation token must not alias the protected-context token"
 assert "MPVFLOW_OPENCL_QCOM_IMPORT_SIZE_ARG ((size_t)0)" in opencl_header
 assert "int32_t mpvflow_opencl_buffer_release" in opencl_header and \
        "err = context->clReleaseMemObject(buffer->mem)" in opencl_source, (
