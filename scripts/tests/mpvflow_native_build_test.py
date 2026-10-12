@@ -500,6 +500,12 @@ assert "} else {\n                        *owned[i] = NULL;\n                   
        "\n                *owned[i] = NULL;\n" not in pair_cleanup, (
     "failed OpenCL buffer destruction must retain its handle so runtime fallback cannot mistake live interop resources for cleaned resources"
 )
+failed_synthesis_context = vo_patch.split(
+    'bypass_reason = output ? "synthesis_failed" : "synthesis_output_missing";', 1
+)[1].splitlines()[:5]
+assert any("flow_release_pair(p);" in line for line in failed_synthesis_context), (
+    "a failed synthesis may tear down pair-owned resources; the MPV frame-ID cache must not reuse that pair"
+)
 for marker in (
     "flow_init_retry_count < 2",
     '"opencl_initialization"',

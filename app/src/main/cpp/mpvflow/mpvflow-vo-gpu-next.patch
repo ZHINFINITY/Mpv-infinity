@@ -474,7 +474,7 @@
 @@ -1135,0 +1442,2 @@
 +    struct frame_priv *fp = mpi->priv;
 +    flow_release_frame(fp->vo, fp);
-@@ -1341,0 +1650,170 @@
+@@ -1341,0 +1650,171 @@
 +static bool flow_render_frame(struct vo *vo, const struct pl_frame_mix *mix,
 +                              struct pl_frame *target,
 +                              const struct pl_render_params *params,
@@ -625,6 +625,7 @@
 +                } else {
 +                    bypass_reason = output ? "synthesis_failed" : "synthesis_output_missing";
 +                    bypass_status = status;
++                    flow_release_pair(p);
 +                }
 +            }
 +        }
