@@ -367,7 +367,9 @@ assert "synthesized output stays GPU-side with no CPU pixel readback" in resourc
 
 flow_gpu_source = (ROOT / "app/src/main/cpp/mpvflow/mpvflow_gpu.c").read_text(encoding="utf-8")
 opencl_source = (ROOT / "app/src/main/cpp/mpvflow/mpvflow_opencl.c").read_text(encoding="utf-8")
+opencl_header = (ROOT / "app/src/main/cpp/mpvflow/mpvflow_opencl.h").read_text(encoding="utf-8")
 bridge_source = (ROOT / "app/src/main/cpp/mpvflow/mpvflow_opencl_vk_bridge.c").read_text(encoding="utf-8")
+bridge_header = (ROOT / "app/src/main/cpp/mpvflow/mpvflow_opencl_vk_bridge.h").read_text(encoding="utf-8")
 media3_jni_source = (ROOT / "app/src/main/cpp/media3flow_vulkan_jni.cpp").read_text(encoding="utf-8")
 cmake_source = (ROOT / "app/src/main/cpp/CMakeLists.txt").read_text(encoding="utf-8")
 manifest_source = (ROOT / "app/src/main/AndroidManifest.xml").read_text(encoding="utf-8")
@@ -403,8 +405,13 @@ assert 'cl_qcom_android_ahardwarebuffer_host_ptr' in opencl_source, (
 opencl_buffer_creation = opencl_source.split("static enum MPVFlowOpenCLStatus make_buffer(", 1)[1].split(
     "enum MPVFlowOpenCLStatus mpvflow_opencl_import_ahardwarebuffer(", 1
 )[0]
-assert "flags = CL_MEM_USE_HOST_PTR | CL_MEM_EXT_HOST_PTR_QCOM" in opencl_buffer_creation and \
-       "c->clCreateBuffer(c->context, flags, 0, &desc, &err)" in opencl_buffer_creation, (
+assert "flags = MPVFLOW_OPENCL_QCOM_IMPORT_FLAGS" in opencl_buffer_creation and \
+       "MPVFLOW_OPENCL_QCOM_IMPORT_SIZE_ARG" in opencl_buffer_creation and \
+       "MPVFLOW_OPENCL_QCOM_USE_HOST_PTR_FLAG ((uint64_t)0x00000008u)" in opencl_header and \
+       "MPVFLOW_OPENCL_QCOM_EXT_HOST_PTR_FLAG ((uint64_t)0x20000000u)" in opencl_header and \
+       "(MPVFLOW_OPENCL_QCOM_USE_HOST_PTR_FLAG | MPVFLOW_OPENCL_QCOM_EXT_HOST_PTR_FLAG)" in opencl_header and \
+       "MPVFLOW_OPENCL_QCOM_AHB_ALLOCATION_TYPE 0x40C7u" in opencl_header and \
+       "MPVFLOW_OPENCL_QCOM_HOST_WRITEBACK_POLICY 0x40A5u" in opencl_header, (
     "QCOM AHardwareBuffer imports must match the public Adreno host_ptr call shape: size zero and no explicit access qualifier"
 )
 assert "desc_in->allocation_bytes, &desc, &err" not in opencl_buffer_creation, (
@@ -412,6 +419,81 @@ assert "desc_in->allocation_bytes, &desc, &err" not in opencl_buffer_creation, (
 )
 assert "*cl_create_error_out = err" in opencl_buffer_creation, (
     "the raw vendor clCreateBuffer error must be preserved for device-side diagnosis"
+)
+assert "c->clCreateBuffer(c->context, flags,\n                               MPVFLOW_OPENCL_QCOM_IMPORT_SIZE_ARG,\n                               &desc, &err)" in opencl_buffer_creation, (
+    "the QCOM clCreateBuffer call must retain size=0 and pass its descriptor as host_ptr"
+)
+assert "MPVFLOW_OPENCL_QCOM_IMPORT_SIZE_ARG ((size_t)0)" in opencl_header
+assert "int32_t mpvflow_opencl_buffer_release" in opencl_header and \
+       "err = context->clReleaseMemObject(buffer->mem)" in opencl_source, (
+    "diagnostic cleanup must retain the raw clReleaseMemObject result"
+)
+
+for extension in (
+    "cl_qcom_ext_host_ptr", "cl_qcom_android_ahardwarebuffer_host_ptr",
+    "cl_khr_external_memory", "cl_khr_external_memory_dma_buf",
+    "cl_khr_external_memory_opaque_fd", "cl_khr_external_semaphore",
+    "cl_khr_external_semaphore_sync_fd", "cl_khr_egl_event", "cl_khr_egl_image",
+    "cl_khr_gl_sharing", "cl_ext_image_from_buffer",
+    "cl_ext_image_requirements_info", "cl_khr_byte_addressable_store",
+):
+    assert f'"{extension}"' in opencl_source, (
+        f"compact OpenCL extension diagnostics must include a presence boolean for {extension}"
+    )
+assert "mpvflow_opencl_get_extension_presence_info" in opencl_header and \
+       "event=opencl_extension_presence %s" in flow_gpu_source and \
+       'extensions=\\"%s\\"' not in opencl_source, (
+    "extension-presence booleans must be emitted separately instead of appending the full long list"
+)
+
+before_bind_probe = bridge_source.split(
+    "static void probe_import_before_vk_bind(", 1
+)[1].split("static enum MPVFlowOpenCLVkBridgeStatus buffer_create_internal(", 1)[0]
+for marker in (
+    "AHardwareBuffer_allocate(&requested, &ahb)",
+    "b->get_ahb_properties(",
+    "mpvflow_opencl_import_ahardwarebuffer(",
+    "mpvflow_opencl_buffer_release(b->opencl, opencl_buffer)",
+    "AHardwareBuffer_release(ahb)",
+):
+    assert marker in before_bind_probe, f"pre-bind disposable probe is missing {marker}"
+assert "vkCreateBuffer(" not in before_bind_probe and "vkBindBufferMemory(" not in before_bind_probe, (
+    "the pre-bind import attempt must occur before any Vulkan buffer bind"
+)
+post_bind_probe = bridge_source.split(
+    "static enum MPVFlowOpenCLVkBridgeStatus buffer_create_internal(", 1
+)[1].split("enum MPVFlowOpenCLVkBridgeStatus mpvflow_opencl_vk_buffer_create(", 1)[0]
+assert post_bind_probe.index("vkBindBufferMemory(b->vk->device") < post_bind_probe.index(
+    "mpvflow_opencl_import_ahardwarebuffer("
+), "the after-bind import must run only after vkBindBufferMemory succeeds"
+for field in (
+    "requested_width_bytes", "actual_format", "actual_width", "actual_height",
+    "actual_stride", "actual_layers", "actual_usage", "vk_ahb_allocation_size",
+    "vk_ahb_memory_type_bits", "vk_external_memory_features",
+    "vk_buffer_requirement_size", "vk_buffer_requirement_alignment",
+    "vk_buffer_requirement_memory_type_bits", "vk_allocate_memory_result",
+    "vk_bind_buffer_memory_result", "cl_create_buffer_error",
+    "cl_release_mem_object_error", "vk_buffer_destroyed", "vk_memory_freed",
+    "ahb_released",
+):
+    assert field in bridge_header, f"import probe diagnostics must expose {field}"
+diagnostic_probe = bridge_source.split(
+    "void mpvflow_opencl_vk_bridge_probe_import_stages(", 1
+)[1].split("enum MPVFlowOpenCLVkBridgeStatus mpvflow_opencl_vk_buffer_destroy(", 1)[0]
+assert "MPVFLOW_IMPORT_DIAGNOSTIC_DIMENSION 32u" in bridge_source and \
+       "MPVFLOW_IMPORT_DIAGNOSTIC_DIMENSION,\n        MPVFLOW_IMPORT_DIAGNOSTIC_DIMENSION" in diagnostic_probe and \
+       "mpvflow_opencl_buffer_release(b->opencl, buffer->opencl_buffer)" in diagnostic_probe and \
+       diagnostic_probe.index("mpvflow_opencl_buffer_release") < diagnostic_probe.index(
+           "mpvflow_opencl_vk_buffer_destroy(buffer)"
+       ), "diagnostic imports must use a small fresh buffer and release OpenCL before Vulkan/AHB cleanup"
+assert "mpvflow_opencl_analyze_pair" not in diagnostic_probe and \
+       "mpvflow_opencl_synthesize" not in diagnostic_probe, (
+    "diagnostic-only imports must not run kernels or be treated as proof of backend readiness"
+)
+assert flow_gpu_source.index("mpvflow_opencl_vk_bridge_probe_import_stages(") < flow_gpu_source.index(
+    "probe_status = flow_opencl_interop_probe(ctx)"
+) and "probe_status == MPVFLOW_OPENCL_VK_BRIDGE_OK" in flow_gpu_source, (
+    "only the complete kernel/Vulkan round-trip may enable OpenCL; import diagnostics stay observational"
 )
 assert "cl_error_available=%d" in bridge_source and \
        "qcom_size_arg=0 qcom_access_flags=default" in bridge_source and \

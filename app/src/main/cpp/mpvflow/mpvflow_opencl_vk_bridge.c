@@ -27,6 +27,7 @@
 #define MPVFLOW_VK_MAX_BYTES (256u * 1024u * 1024u)
 #define MPVFLOW_VK_ROW_ALIGNMENT 64u
 #define MPVFLOW_VK_FOREVER UINT64_MAX
+#define MPVFLOW_IMPORT_DIAGNOSTIC_DIMENSION 32u
 
 enum BufferState {
     /* Fresh buffer is foreign-owned. Caller must explicitly announce that no
@@ -60,6 +61,10 @@ struct MPVFlowOpenCLVkBridge {
     VkQueue queue;
     VkCommandPool command_pool;
     PFN_vkGetAndroidHardwareBufferPropertiesANDROID get_ahb_properties;
+    VkExternalMemoryFeatureFlags external_memory_features;
+    VkExternalMemoryHandleTypeFlags external_memory_compatible_handle_types;
+    VkExternalMemoryHandleTypeFlags external_memory_export_from_imported_handle_types;
+    VkExternalMemoryHandleTypeFlags external_buffer_handle_type;
     pthread_mutex_t mutex;
     struct MPVFlowOpenCLVkBuffer *buffers;
     char error[384];
@@ -123,6 +128,58 @@ static enum MPVFlowOpenCLVkBridgeStatus fail_vk(
 {
     set_error(b, "%s failed: %s (%d)", operation, vk_result_name(result), (int)result);
     return MPVFLOW_OPENCL_VK_BRIDGE_VULKAN_ERROR;
+}
+
+static void init_import_stage_diagnostics(
+    struct MPVFlowOpenCLVkImportStageDiagnostics *diagnostics,
+    size_t qcom_padding_bytes, enum MPVFlowOpenCLAccess access)
+{
+    if (!diagnostics)
+        return;
+    *diagnostics = (struct MPVFlowOpenCLVkImportStageDiagnostics) {
+        .bridge_status = MPVFLOW_OPENCL_VK_BRIDGE_INVALID,
+        .ahb_allocate_result = INT32_MIN,
+        .vk_ahb_properties_result = INT32_MIN,
+        .vk_create_buffer_result = INT32_MIN,
+        .vk_allocate_memory_result = INT32_MIN,
+        .vk_bind_buffer_memory_result = INT32_MIN,
+        .opencl_wrapper_status = INT32_MIN,
+        .cl_create_buffer_error = MPVFLOW_OPENCL_CL_ERROR_NOT_RETURNED,
+        .cl_release_mem_object_error = MPVFLOW_OPENCL_CL_ERROR_NOT_RETURNED,
+        .vk_selected_memory_type = UINT32_MAX,
+        .qcom_size_arg = MPVFLOW_OPENCL_QCOM_IMPORT_SIZE_ARG,
+        .qcom_flags = MPVFLOW_OPENCL_QCOM_IMPORT_FLAGS,
+        .qcom_allocation_type = MPVFLOW_OPENCL_QCOM_AHB_ALLOCATION_TYPE,
+        .qcom_cache_policy = MPVFLOW_OPENCL_QCOM_HOST_WRITEBACK_POLICY,
+        .wrapper_access = (int32_t)access,
+        .qcom_padding_bytes = qcom_padding_bytes,
+    };
+}
+
+static void record_ahb_descriptor(
+    struct MPVFlowOpenCLVkImportStageDiagnostics *diagnostics,
+    const AHardwareBuffer_Desc *desc)
+{
+    if (!diagnostics || !desc)
+        return;
+    diagnostics->actual_format = desc->format;
+    diagnostics->actual_width = desc->width;
+    diagnostics->actual_height = desc->height;
+    diagnostics->actual_stride = desc->stride;
+    diagnostics->actual_layers = desc->layers;
+    diagnostics->actual_usage = desc->usage;
+}
+
+static void record_import_call(
+    struct MPVFlowOpenCLVkImportStageDiagnostics *diagnostics,
+    enum MPVFlowOpenCLStatus status, int32_t cl_error)
+{
+    if (!diagnostics)
+        return;
+    diagnostics->opencl_wrapper_status = (int32_t)status;
+    diagnostics->cl_create_buffer_error = cl_error;
+    diagnostics->cl_create_buffer_attempted =
+        cl_error != MPVFLOW_OPENCL_CL_ERROR_NOT_RETURNED;
 }
 
 static VkResult begin_command(MPVFlowOpenCLVkBridge *b, VkCommandBuffer *out)
@@ -294,6 +351,13 @@ MPVFlowOpenCLVkBridge *mpvflow_opencl_vk_bridge_create(
     b->gpu = gpu;
     b->vk = vk;
     b->opencl = opencl;
+    b->external_memory_features =
+        ext_props.externalMemoryProperties.externalMemoryFeatures;
+    b->external_memory_compatible_handle_types =
+        ext_props.externalMemoryProperties.compatibleHandleTypes;
+    b->external_memory_export_from_imported_handle_types =
+        ext_props.externalMemoryProperties.exportFromImportedHandleTypes;
+    b->external_buffer_handle_type = ext_info.handleType;
     if (pthread_mutex_init(&b->mutex, NULL) != 0) {
         copy_error(error_out, error_capacity, "failed to initialize bridge mutex");
         free(b);
@@ -357,9 +421,120 @@ const char *mpvflow_opencl_vk_bridge_last_error(const MPVFlowOpenCLVkBridge *b)
     return b ? b->error : "null bridge context";
 }
 
-enum MPVFlowOpenCLVkBridgeStatus mpvflow_opencl_vk_buffer_create(
+static void probe_import_before_vk_bind(
+    MPVFlowOpenCLVkBridge *b,
+    struct MPVFlowOpenCLVkImportStageDiagnostics *diagnostics)
+{
+    const uint32_t frame_width = MPVFLOW_IMPORT_DIAGNOSTIC_DIMENSION;
+    const uint32_t frame_height = MPVFLOW_IMPORT_DIAGNOSTIC_DIMENSION;
+    const uint32_t row_stride = frame_width * 4u;
+    const size_t logical_bytes = (size_t)row_stride * frame_height;
+    const size_t qcom_padding = mpvflow_opencl_get_qcom_ext_mem_padding_bytes(b->opencl);
+    AHardwareBuffer_Desc requested = {
+        .width = 0,
+        .height = 1,
+        .layers = 1,
+        .format = AHARDWAREBUFFER_FORMAT_BLOB,
+        .usage = AHARDWAREBUFFER_USAGE_GPU_DATA_BUFFER,
+    };
+    AHardwareBuffer_Desc reported = {0};
+    VkAndroidHardwareBufferPropertiesANDROID ahb_props = {
+        .sType = VK_STRUCTURE_TYPE_ANDROID_HARDWARE_BUFFER_PROPERTIES_ANDROID,
+    };
+    AHardwareBuffer *ahb = NULL;
+    MPVFlowOpenCLBuffer *opencl_buffer = NULL;
+    struct MPVFlowOpenCLAHBDesc cl_desc = {0};
+    int32_t cl_error = MPVFLOW_OPENCL_CL_ERROR_NOT_RETURNED;
+    enum MPVFlowOpenCLVkBridgeStatus bridge_status =
+        MPVFLOW_OPENCL_VK_BRIDGE_VULKAN_ERROR;
+
+    init_import_stage_diagnostics(diagnostics, qcom_padding,
+                                  MPVFLOW_OPENCL_READ_WRITE);
+    diagnostics->requested_width_bytes =
+        logical_bytes <= UINT32_MAX &&
+        qcom_padding <= UINT32_MAX - logical_bytes
+            ? (uint32_t)(logical_bytes + qcom_padding) : 0;
+    if (!diagnostics->requested_width_bytes) {
+        diagnostics->bridge_status = MPVFLOW_OPENCL_VK_BRIDGE_UNSUPPORTED;
+        return;
+    }
+    requested.width = diagnostics->requested_width_bytes;
+
+    pthread_mutex_lock(&b->mutex);
+    diagnostics->ahb_allocate_result =
+        AHardwareBuffer_allocate(&requested, &ahb);
+    if (diagnostics->ahb_allocate_result != 0 || !ahb) {
+        pthread_mutex_unlock(&b->mutex);
+        diagnostics->bridge_status = MPVFLOW_OPENCL_VK_BRIDGE_VULKAN_ERROR;
+        return;
+    }
+
+    AHardwareBuffer_describe(ahb, &reported);
+    record_ahb_descriptor(diagnostics, &reported);
+    diagnostics->vk_ahb_properties_attempted = 1;
+    diagnostics->vk_ahb_properties_result = (int32_t)b->get_ahb_properties(
+        b->vk->device, ahb, &ahb_props);
+    if (diagnostics->vk_ahb_properties_result == VK_SUCCESS) {
+        diagnostics->vk_ahb_allocation_size = ahb_props.allocationSize;
+        diagnostics->vk_ahb_memory_type_bits = ahb_props.memoryTypeBits;
+        diagnostics->vk_external_memory_features = b->external_memory_features;
+        diagnostics->vk_external_memory_compatible_handle_types =
+            b->external_memory_compatible_handle_types;
+        diagnostics->vk_external_memory_export_from_imported_handle_types =
+            b->external_memory_export_from_imported_handle_types;
+    }
+
+    if (reported.format == AHARDWAREBUFFER_FORMAT_BLOB &&
+        reported.height == 1 && reported.layers == 1 &&
+        reported.stride == reported.width &&
+        reported.width >= logical_bytes &&
+        (reported.usage & AHARDWAREBUFFER_USAGE_GPU_DATA_BUFFER) != 0 &&
+        (reported.usage & AHARDWAREBUFFER_USAGE_PROTECTED_CONTENT) == 0) {
+        cl_desc = (struct MPVFlowOpenCLAHBDesc) {
+            .ahb_width = reported.width,
+            .ahb_height = reported.height,
+            .ahb_stride = reported.stride,
+            .layers = reported.layers,
+            .format = MPVFLOW_AHB_FORMAT_BLOB,
+            .usage = reported.usage,
+            .allocation_bytes = reported.width,
+            .frame_width = frame_width,
+            .frame_height = frame_height,
+            .row_stride_bytes = row_stride,
+            .layout = MPVFLOW_OPENCL_LAYOUT_BLOB_RGBA8_ROWS,
+        };
+        enum MPVFlowOpenCLStatus cl_status =
+            mpvflow_opencl_import_ahardwarebuffer(
+                b->opencl, ahb, &cl_desc, MPVFLOW_OPENCL_READ_WRITE,
+                &opencl_buffer, &cl_error);
+        record_import_call(diagnostics, cl_status, cl_error);
+        bridge_status = cl_status == MPVFLOW_OPENCL_OK
+            ? MPVFLOW_OPENCL_VK_BRIDGE_OK
+            : MPVFLOW_OPENCL_VK_BRIDGE_OPENCL_ERROR;
+        if (opencl_buffer) {
+            diagnostics->cl_release_mem_object_error =
+                mpvflow_opencl_buffer_release(b->opencl, opencl_buffer);
+            diagnostics->cl_object_released =
+                diagnostics->cl_release_mem_object_error == 0;
+            if (!diagnostics->cl_object_released)
+                bridge_status = MPVFLOW_OPENCL_VK_BRIDGE_OPENCL_ERROR;
+        }
+    } else {
+        diagnostics->opencl_wrapper_status =
+            MPVFLOW_OPENCL_UNSUPPORTED_FORMAT_OR_USAGE;
+        bridge_status = MPVFLOW_OPENCL_VK_BRIDGE_UNSUPPORTED;
+    }
+
+    AHardwareBuffer_release(ahb);
+    diagnostics->ahb_released = 1;
+    pthread_mutex_unlock(&b->mutex);
+    diagnostics->bridge_status = bridge_status;
+}
+
+static enum MPVFlowOpenCLVkBridgeStatus buffer_create_internal(
     MPVFlowOpenCLVkBridge *b, uint32_t width, uint32_t height,
-    enum MPVFlowOpenCLAccess access, MPVFlowOpenCLVkBuffer **out)
+    enum MPVFlowOpenCLAccess access, MPVFlowOpenCLVkBuffer **out,
+    struct MPVFlowOpenCLVkImportStageDiagnostics *diagnostics)
 {
     MPVFlowOpenCLVkBuffer *buf = NULL;
     AHardwareBuffer_Desc ahb_desc;
@@ -396,6 +571,7 @@ enum MPVFlowOpenCLVkBridgeStatus mpvflow_opencl_vk_buffer_create(
     }
     logical_bytes = row_stride * height;
     qcom_padding_bytes = mpvflow_opencl_get_qcom_ext_mem_padding_bytes(b->opencl);
+    init_import_stage_diagnostics(diagnostics, qcom_padding_bytes, access);
     if ((uint64_t)qcom_padding_bytes > UINT64_MAX - logical_bytes) {
         set_error(b, "BLOB size plus QCOM external-memory padding overflows");
         return MPVFLOW_OPENCL_VK_BRIDGE_UNSUPPORTED;
@@ -432,7 +608,11 @@ enum MPVFlowOpenCLVkBridgeStatus mpvflow_opencl_vk_buffer_create(
     ahb_desc.layers = 1;
     ahb_desc.format = AHARDWAREBUFFER_FORMAT_BLOB;
     ahb_desc.usage = AHARDWAREBUFFER_USAGE_GPU_DATA_BUFFER;
+    if (diagnostics)
+        diagnostics->requested_width_bytes = ahb_desc.width;
     int32_t ahb_result = AHardwareBuffer_allocate(&ahb_desc, &buf->ahb);
+    if (diagnostics)
+        diagnostics->ahb_allocate_result = ahb_result;
     if (ahb_result != 0 || !buf->ahb) {
         set_error(b, "AHardwareBuffer_allocate(BLOB, GPU_DATA_BUFFER) failed (%d)", (int)ahb_result);
         status = MPVFLOW_OPENCL_VK_BRIDGE_VULKAN_ERROR;
@@ -441,6 +621,7 @@ enum MPVFlowOpenCLVkBridgeStatus mpvflow_opencl_vk_buffer_create(
     AHardwareBuffer_Desc reported;
     memset(&reported, 0, sizeof(reported));
     AHardwareBuffer_describe(buf->ahb, &reported);
+    record_ahb_descriptor(diagnostics, &reported);
     if (reported.format != AHARDWAREBUFFER_FORMAT_BLOB || reported.layers != 1 ||
         reported.height != 1 || reported.width != ahb_desc.width ||
         reported.stride != reported.width ||
@@ -454,6 +635,19 @@ enum MPVFlowOpenCLVkBridgeStatus mpvflow_opencl_vk_buffer_create(
     }
 
     vr = b->get_ahb_properties(b->vk->device, buf->ahb, &ahb_props);
+    if (diagnostics) {
+        diagnostics->vk_ahb_properties_attempted = 1;
+        diagnostics->vk_ahb_properties_result = (int32_t)vr;
+        if (vr == VK_SUCCESS) {
+            diagnostics->vk_ahb_allocation_size = ahb_props.allocationSize;
+            diagnostics->vk_ahb_memory_type_bits = ahb_props.memoryTypeBits;
+            diagnostics->vk_external_memory_features = b->external_memory_features;
+            diagnostics->vk_external_memory_compatible_handle_types =
+                b->external_memory_compatible_handle_types;
+            diagnostics->vk_external_memory_export_from_imported_handle_types =
+                b->external_memory_export_from_imported_handle_types;
+        }
+    }
     if (vr != VK_SUCCESS) {
         status = fail_vk(b, "vkGetAndroidHardwareBufferPropertiesANDROID", vr);
         goto fail;
@@ -478,17 +672,30 @@ enum MPVFlowOpenCLVkBridgeStatus mpvflow_opencl_vk_buffer_create(
     buffer_info.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
     buffer_info.pNext = &(VkExternalMemoryBufferCreateInfo) {
         .sType = VK_STRUCTURE_TYPE_EXTERNAL_MEMORY_BUFFER_CREATE_INFO,
-        .handleTypes = VK_EXTERNAL_MEMORY_HANDLE_TYPE_ANDROID_HARDWARE_BUFFER_BIT_ANDROID,
+        .handleTypes = b->external_buffer_handle_type,
     };
     buffer_info.size = buf->vk_allocation_size;
     buffer_info.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT;
     buffer_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+    if (diagnostics) {
+        diagnostics->vk_create_buffer_size = buffer_info.size;
+        diagnostics->vk_create_buffer_usage = buffer_info.usage;
+        diagnostics->vk_external_handle_type = b->external_buffer_handle_type;
+        diagnostics->vk_create_buffer_attempted = 1;
+    }
     vr = vkCreateBuffer(b->vk->device, &buffer_info, NULL, &buf->vk_buffer);
+    if (diagnostics)
+        diagnostics->vk_create_buffer_result = (int32_t)vr;
     if (vr != VK_SUCCESS) {
         status = fail_vk(b, "vkCreateBuffer for imported AHardwareBuffer", vr);
         goto fail;
     }
     vkGetBufferMemoryRequirements(b->vk->device, buf->vk_buffer, &requirements);
+    if (diagnostics) {
+        diagnostics->vk_buffer_requirement_size = requirements.size;
+        diagnostics->vk_buffer_requirement_alignment = requirements.alignment;
+        diagnostics->vk_buffer_requirement_memory_type_bits = requirements.memoryTypeBits;
+    }
     vkGetPhysicalDeviceMemoryProperties(b->vk->phys_device, &memory_props);
     uint32_t compatible = requirements.memoryTypeBits & ahb_props.memoryTypeBits;
     for (uint32_t i = 0; i < memory_props.memoryTypeCount; i++) {
@@ -497,6 +704,8 @@ enum MPVFlowOpenCLVkBridgeStatus mpvflow_opencl_vk_buffer_create(
             break;
         }
     }
+    if (diagnostics)
+        diagnostics->vk_selected_memory_type = memory_type;
     if (memory_type == UINT32_MAX) {
         set_error(b, "no Vulkan memory type is compatible with both VkBuffer requirements and AHardwareBuffer memoryTypeBits (0x%x & 0x%x)",
                   requirements.memoryTypeBits, ahb_props.memoryTypeBits);
@@ -527,12 +736,23 @@ enum MPVFlowOpenCLVkBridgeStatus mpvflow_opencl_vk_buffer_create(
         .allocationSize = ahb_props.allocationSize,
         .memoryTypeIndex = memory_type,
     };
+    if (diagnostics) {
+        diagnostics->vk_allocate_memory_size = alloc_info.allocationSize;
+        diagnostics->vk_allocate_memory_attempted = 1;
+    }
     vr = vkAllocateMemory(b->vk->device, &alloc_info, NULL, &buf->memory);
+    if (diagnostics)
+        diagnostics->vk_allocate_memory_result = (int32_t)vr;
     if (vr != VK_SUCCESS) {
         status = fail_vk(b, "vkAllocateMemory importing Android HardwareBuffer", vr);
         goto fail;
     }
     vr = vkBindBufferMemory(b->vk->device, buf->vk_buffer, buf->memory, 0);
+    if (diagnostics) {
+        diagnostics->vk_bind_offset = 0;
+        diagnostics->vk_bind_buffer_memory_attempted = 1;
+        diagnostics->vk_bind_buffer_memory_result = (int32_t)vr;
+    }
     if (vr != VK_SUCCESS) {
         status = fail_vk(b, "vkBindBufferMemory for imported Android HardwareBuffer", vr);
         goto fail;
@@ -554,6 +774,7 @@ enum MPVFlowOpenCLVkBridgeStatus mpvflow_opencl_vk_buffer_create(
     cl_status = mpvflow_opencl_import_ahardwarebuffer(
         b->opencl, buf->ahb, &cl_desc, access, &buf->opencl_buffer,
         &cl_create_buffer_error);
+    record_import_call(diagnostics, cl_status, cl_create_buffer_error);
     if (cl_status != MPVFLOW_OPENCL_OK) {
         set_error(b,
                   "OpenCL AHardwareBuffer import failed (wrapper_status=%d cl_error_available=%d "
@@ -579,21 +800,108 @@ enum MPVFlowOpenCLVkBridgeStatus mpvflow_opencl_vk_buffer_create(
     b->error[0] = '\0';
     pthread_mutex_unlock(&b->mutex);
     *out = buf;
+    if (diagnostics)
+        diagnostics->bridge_status = MPVFLOW_OPENCL_VK_BRIDGE_OK;
     return MPVFLOW_OPENCL_VK_BRIDGE_OK;
 
 fail:
     if (buf) {
-        if (buf->opencl_buffer)
-            mpvflow_opencl_buffer_release(b->opencl, buf->opencl_buffer);
-        if (buf->vk_buffer != VK_NULL_HANDLE)
+        if (buf->opencl_buffer) {
+            if (diagnostics) {
+                diagnostics->cl_release_mem_object_error =
+                    mpvflow_opencl_buffer_release(b->opencl, buf->opencl_buffer);
+                diagnostics->cl_object_released =
+                    diagnostics->cl_release_mem_object_error == 0;
+            } else {
+                (void)mpvflow_opencl_buffer_release(b->opencl, buf->opencl_buffer);
+            }
+        }
+        if (buf->vk_buffer != VK_NULL_HANDLE) {
             vkDestroyBuffer(b->vk->device, buf->vk_buffer, NULL);
-        if (buf->memory != VK_NULL_HANDLE)
+            if (diagnostics)
+                diagnostics->vk_buffer_destroyed = 1;
+        }
+        if (buf->memory != VK_NULL_HANDLE) {
             vkFreeMemory(b->vk->device, buf->memory, NULL);
-        if (buf->ahb) AHardwareBuffer_release(buf->ahb);
+            if (diagnostics)
+                diagnostics->vk_memory_freed = 1;
+        }
+        if (buf->ahb) {
+            AHardwareBuffer_release(buf->ahb);
+            if (diagnostics)
+                diagnostics->ahb_released = 1;
+        }
         free(buf);
     }
     pthread_mutex_unlock(&b->mutex);
+    if (diagnostics)
+        diagnostics->bridge_status = status;
     return status;
+}
+
+enum MPVFlowOpenCLVkBridgeStatus mpvflow_opencl_vk_buffer_create(
+    MPVFlowOpenCLVkBridge *b, uint32_t width, uint32_t height,
+    enum MPVFlowOpenCLAccess access, MPVFlowOpenCLVkBuffer **out)
+{
+    return buffer_create_internal(b, width, height, access, out, NULL);
+}
+
+void mpvflow_opencl_vk_bridge_probe_import_stages(
+    MPVFlowOpenCLVkBridge *b,
+    struct MPVFlowOpenCLVkImportDiagnostics *diagnostics)
+{
+    if (!diagnostics)
+        return;
+    memset(diagnostics, 0, sizeof(*diagnostics));
+    size_t padding = b
+        ? mpvflow_opencl_get_qcom_ext_mem_padding_bytes(b->opencl) : 0;
+    init_import_stage_diagnostics(&diagnostics->before_vk_bind, padding,
+                                  MPVFLOW_OPENCL_READ_WRITE);
+    init_import_stage_diagnostics(&diagnostics->after_vk_bind, padding,
+                                  MPVFLOW_OPENCL_READ_WRITE);
+    if (!b) {
+        diagnostics->before_vk_bind.bridge_status =
+            MPVFLOW_OPENCL_VK_BRIDGE_INVALID;
+        diagnostics->after_vk_bind.bridge_status =
+            MPVFLOW_OPENCL_VK_BRIDGE_INVALID;
+        return;
+    }
+
+    probe_import_before_vk_bind(b, &diagnostics->before_vk_bind);
+
+    MPVFlowOpenCLVkBuffer *buffer = NULL;
+    enum MPVFlowOpenCLVkBridgeStatus create_status = buffer_create_internal(
+        b, MPVFLOW_IMPORT_DIAGNOSTIC_DIMENSION,
+        MPVFLOW_IMPORT_DIAGNOSTIC_DIMENSION, MPVFLOW_OPENCL_READ_WRITE,
+        &buffer, &diagnostics->after_vk_bind);
+    if (create_status != MPVFLOW_OPENCL_VK_BRIDGE_OK || !buffer)
+        return;
+
+    enum MPVFlowOpenCLVkBridgeStatus state_status =
+        mpvflow_opencl_vk_buffer_opencl_finished(buffer);
+    if (state_status != MPVFLOW_OPENCL_VK_BRIDGE_OK) {
+        diagnostics->after_vk_bind.bridge_status = state_status;
+        return;
+    }
+    if (buffer->opencl_buffer) {
+        diagnostics->after_vk_bind.cl_release_mem_object_error =
+            mpvflow_opencl_buffer_release(b->opencl, buffer->opencl_buffer);
+        diagnostics->after_vk_bind.cl_object_released =
+            diagnostics->after_vk_bind.cl_release_mem_object_error == 0;
+        if (!diagnostics->after_vk_bind.cl_object_released)
+            diagnostics->after_vk_bind.bridge_status =
+                MPVFLOW_OPENCL_VK_BRIDGE_OPENCL_ERROR;
+        buffer->opencl_buffer = NULL;
+    }
+    enum MPVFlowOpenCLVkBridgeStatus destroy_status =
+        mpvflow_opencl_vk_buffer_destroy(buffer);
+    if (destroy_status == MPVFLOW_OPENCL_VK_BRIDGE_OK) {
+        diagnostics->after_vk_bind.vk_buffer_destroyed = 1;
+        diagnostics->after_vk_bind.vk_memory_freed = 1;
+        diagnostics->after_vk_bind.ahb_released = 1;
+    } else {
+        diagnostics->after_vk_bind.bridge_status = destroy_status;
+    }
 }
 
 enum MPVFlowOpenCLVkBridgeStatus mpvflow_opencl_vk_buffer_destroy(

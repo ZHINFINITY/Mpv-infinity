@@ -135,6 +135,81 @@ static void flow_log_once(MPVFlowGPUContext *ctx, uint32_t bit,
     flow_log(ctx->gpu, level, "%s", message);
 }
 
+static void flow_opencl_log_import_stage(
+    pl_gpu gpu, const char *stage_name,
+    const struct MPVFlowOpenCLVkImportStageDiagnostics *diagnostics)
+{
+    if (!diagnostics)
+        return;
+    flow_log(gpu, PL_LOG_INFO,
+             "MPVFLOW_DIAGNOSTIC event=opencl_ahb_import_probe stage=%s state=properties "
+             "status=%d padding_bytes=%zu request_format=0x21 request_width_bytes=%u "
+             "request_height=1 request_stride=0 request_layers=1 request_usage=0x1000000 "
+             "actual_format=%u actual_width=%u actual_height=%u actual_stride=%u "
+             "actual_layers=%u actual_usage=0x%llx frame=32x32 row_stride=128 "
+             "ahb_allocate_result=%d vk_ahb_properties_attempted=%d "
+             "vk_ahb_properties_result=%d vk_allocation_size=%llu "
+             "vk_memory_type_bits=0x%x vk_external_features=0x%x vk_compatible_handles=0x%x "
+             "vk_export_from_imported_handles=0x%x",
+             stage_name, diagnostics->bridge_status,
+             diagnostics->qcom_padding_bytes, diagnostics->requested_width_bytes,
+             diagnostics->actual_format, diagnostics->actual_width,
+             diagnostics->actual_height, diagnostics->actual_stride,
+             diagnostics->actual_layers,
+             (unsigned long long)diagnostics->actual_usage,
+             diagnostics->ahb_allocate_result,
+             diagnostics->vk_ahb_properties_attempted,
+             diagnostics->vk_ahb_properties_result,
+             (unsigned long long)diagnostics->vk_ahb_allocation_size,
+             diagnostics->vk_ahb_memory_type_bits,
+             diagnostics->vk_external_memory_features,
+             diagnostics->vk_external_memory_compatible_handle_types,
+             diagnostics->vk_external_memory_export_from_imported_handle_types);
+    flow_log(gpu, PL_LOG_INFO,
+             "MPVFLOW_DIAGNOSTIC event=opencl_ahb_import_probe stage=%s call=clCreateBuffer "
+             "context=non_null flags=0x%llx flag_names=USE_HOST_PTR|EXT_HOST_PTR_QCOM "
+             "size=%zu host_ptr=QCOM_AHB_descriptor err_out=non_null "
+             "desc_allocation_type=0x%x desc_cache_policy=0x%x desc_ahb=non_null "
+             "wrapper_access=%d access_qualifier=none attempted=%d wrapper_status=%d "
+             "cl_error_available=%d cl_error=%d cl_release_error=%d",
+             stage_name, (unsigned long long)diagnostics->qcom_flags,
+             diagnostics->qcom_size_arg, diagnostics->qcom_allocation_type,
+             diagnostics->qcom_cache_policy, diagnostics->wrapper_access,
+             diagnostics->cl_create_buffer_attempted,
+             diagnostics->opencl_wrapper_status,
+             diagnostics->cl_create_buffer_attempted,
+             diagnostics->cl_create_buffer_error,
+             diagnostics->cl_release_mem_object_error);
+    flow_log(gpu, PL_LOG_INFO,
+             "MPVFLOW_DIAGNOSTIC event=opencl_ahb_import_probe stage=%s "
+             "vkCreateBuffer_attempted=%d result=%d size=%llu usage=0x%x external_handle_type=0x%x "
+             "sharing_mode=EXCLUSIVE dedicated_import=1 ahb_import=1 "
+             "requirements_size=%llu requirements_alignment=%llu requirements_memory_type_bits=0x%x "
+             "selected_memory_type=%u vkAllocateMemory_attempted=%d size=%llu result=%d "
+             "vkBindBufferMemory_attempted=%d offset=%llu result=%d",
+             stage_name, diagnostics->vk_create_buffer_attempted,
+             diagnostics->vk_create_buffer_result,
+             (unsigned long long)diagnostics->vk_create_buffer_size,
+             diagnostics->vk_create_buffer_usage,
+             diagnostics->vk_external_handle_type,
+             (unsigned long long)diagnostics->vk_buffer_requirement_size,
+             (unsigned long long)diagnostics->vk_buffer_requirement_alignment,
+             diagnostics->vk_buffer_requirement_memory_type_bits,
+             diagnostics->vk_selected_memory_type,
+             diagnostics->vk_allocate_memory_attempted,
+             (unsigned long long)diagnostics->vk_allocate_memory_size,
+             diagnostics->vk_allocate_memory_result,
+             diagnostics->vk_bind_buffer_memory_attempted,
+             (unsigned long long)diagnostics->vk_bind_offset,
+             diagnostics->vk_bind_buffer_memory_result);
+    flow_log(gpu, PL_LOG_INFO,
+             "MPVFLOW_DIAGNOSTIC event=opencl_ahb_import_probe stage=%s cleanup="
+             "cl_object_released:%d,vk_buffer_destroyed:%d,vk_memory_freed:%d,ahb_released:%d",
+             stage_name, diagnostics->cl_object_released,
+             diagnostics->vk_buffer_destroyed, diagnostics->vk_memory_freed,
+             diagnostics->ahb_released);
+}
+
 static uint64_t flow_monotonic_ns(void)
 {
     struct timespec ts;
@@ -836,15 +911,28 @@ MPVFlowGPUContext *mpvflow_gpu_create(pl_gpu gpu,
         ctx->opencl = mpvflow_opencl_create(&opencl_config, &opencl_status, &build_log);
         if (ctx->opencl) {
             const char *runtime_info = mpvflow_opencl_get_runtime_info(ctx->opencl);
+            const char *extension_info =
+                mpvflow_opencl_get_extension_presence_info(ctx->opencl);
             flow_log(gpu, PL_LOG_INFO,
                      "MPVFLOW_DIAGNOSTIC event=opencl_device %s",
                      runtime_info ? runtime_info : "details=unavailable");
+            flow_log(gpu, PL_LOG_INFO,
+                     "MPVFLOW_DIAGNOSTIC event=opencl_extension_presence %s",
+                     extension_info ? extension_info : "details=unavailable");
             ctx->opencl_bridge = mpvflow_opencl_vk_bridge_create(
                 gpu, ctx->opencl, bridge_error, sizeof(bridge_error));
         }
         enum MPVFlowOpenCLVkBridgeStatus probe_status = MPVFLOW_OPENCL_VK_BRIDGE_UNSUPPORTED;
-        if (ctx->opencl_bridge)
+        if (ctx->opencl_bridge) {
+            struct MPVFlowOpenCLVkImportDiagnostics import_diagnostics;
+            mpvflow_opencl_vk_bridge_probe_import_stages(
+                ctx->opencl_bridge, &import_diagnostics);
+            flow_opencl_log_import_stage(
+                gpu, "before_vk_bind", &import_diagnostics.before_vk_bind);
+            flow_opencl_log_import_stage(
+                gpu, "after_vk_bind", &import_diagnostics.after_vk_bind);
             probe_status = flow_opencl_interop_probe(ctx);
+        }
         if (ctx->opencl && ctx->opencl_bridge &&
             probe_status == MPVFLOW_OPENCL_VK_BRIDGE_OK) {
             ctx->compute_api = MPVFLOW_GPU_COMPUTE_OPENCL;

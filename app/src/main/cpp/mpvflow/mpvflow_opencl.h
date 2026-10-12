@@ -39,6 +39,15 @@ enum MPVFlowOpenCLStatus {
  * before the vendor OpenCL API is called. */
 #define MPVFLOW_OPENCL_CL_ERROR_NOT_RETURNED INT32_MIN
 
+/* Existing Qualcomm import call shape; diagnostics report these exact values. */
+#define MPVFLOW_OPENCL_QCOM_IMPORT_SIZE_ARG ((size_t)0)
+#define MPVFLOW_OPENCL_QCOM_USE_HOST_PTR_FLAG ((uint64_t)0x00000008u)
+#define MPVFLOW_OPENCL_QCOM_EXT_HOST_PTR_FLAG ((uint64_t)0x20000000u)
+#define MPVFLOW_OPENCL_QCOM_IMPORT_FLAGS \
+    (MPVFLOW_OPENCL_QCOM_USE_HOST_PTR_FLAG | MPVFLOW_OPENCL_QCOM_EXT_HOST_PTR_FLAG)
+#define MPVFLOW_OPENCL_QCOM_AHB_ALLOCATION_TYPE 0x40C7u
+#define MPVFLOW_OPENCL_QCOM_HOST_WRITEBACK_POLICY 0x40A5u
+
 enum MPVFlowOpenCLAccess {
     MPVFLOW_OPENCL_READ_ONLY = 0,
     MPVFLOW_OPENCL_WRITE_ONLY = 1,
@@ -89,6 +98,10 @@ MPVFlowOpenCLContext *mpvflow_opencl_create(
     const char **build_log);
 /* Context-owned platform/device version, driver and extension diagnostics. */
 const char *mpvflow_opencl_get_runtime_info(MPVFlowOpenCLContext *context);
+/* Short, complete presence booleans for extensions relevant to QCOM AHB import
+ * and the current byte-buffer/kernel interop path. */
+const char *mpvflow_opencl_get_extension_presence_info(
+    MPVFlowOpenCLContext *context);
 /* Required tail padding reported by CL_DEVICE_EXT_MEM_PADDING_IN_BYTES_QCOM. */
 size_t mpvflow_opencl_get_qcom_ext_mem_padding_bytes(
     MPVFlowOpenCLContext *context);
@@ -130,8 +143,9 @@ enum MPVFlowOpenCLStatus mpvflow_opencl_import_ahardwarebuffer(
     enum MPVFlowOpenCLAccess access,
     MPVFlowOpenCLBuffer **buffer_out,
     int32_t *cl_create_error_out);
-void mpvflow_opencl_buffer_release(MPVFlowOpenCLContext *context,
-                                   MPVFlowOpenCLBuffer *buffer);
+/* Release an imported buffer and return the raw clReleaseMemObject result. */
+int32_t mpvflow_opencl_buffer_release(MPVFlowOpenCLContext *context,
+                                      MPVFlowOpenCLBuffer *buffer);
 
 /*
  * Analyze a pair of imported BLOB-backed RGBA8 frame buffers at their configured

@@ -30,6 +30,60 @@ enum MPVFlowOpenCLVkBridgeStatus {
     MPVFLOW_OPENCL_VK_BRIDGE_BUSY = -5,
 };
 
+/* Results from diagnostic-only imports on disposable 32x32 BLOB buffers. */
+struct MPVFlowOpenCLVkImportStageDiagnostics {
+    int32_t bridge_status;
+    int32_t ahb_allocate_result;
+    uint32_t requested_width_bytes;
+    uint32_t actual_format;
+    uint32_t actual_width;
+    uint32_t actual_height;
+    uint32_t actual_stride;
+    uint32_t actual_layers;
+    uint64_t actual_usage;
+    int vk_ahb_properties_attempted;
+    int32_t vk_ahb_properties_result;
+    uint64_t vk_ahb_allocation_size;
+    uint32_t vk_ahb_memory_type_bits;
+    uint32_t vk_external_memory_features;
+    uint32_t vk_external_memory_compatible_handle_types;
+    uint32_t vk_external_memory_export_from_imported_handle_types;
+    int vk_create_buffer_attempted;
+    int32_t vk_create_buffer_result;
+    uint64_t vk_create_buffer_size;
+    uint32_t vk_create_buffer_usage;
+    uint32_t vk_external_handle_type;
+    uint64_t vk_buffer_requirement_size;
+    uint64_t vk_buffer_requirement_alignment;
+    uint32_t vk_buffer_requirement_memory_type_bits;
+    uint32_t vk_selected_memory_type;
+    uint64_t vk_allocate_memory_size;
+    int vk_allocate_memory_attempted;
+    int32_t vk_allocate_memory_result;
+    uint64_t vk_bind_offset;
+    int vk_bind_buffer_memory_attempted;
+    int32_t vk_bind_buffer_memory_result;
+    int32_t opencl_wrapper_status;
+    int32_t cl_create_buffer_error;
+    int32_t cl_release_mem_object_error;
+    size_t qcom_size_arg;
+    uint64_t qcom_flags;
+    uint32_t qcom_allocation_type;
+    uint32_t qcom_cache_policy;
+    int32_t wrapper_access;
+    size_t qcom_padding_bytes;
+    int cl_create_buffer_attempted;
+    int cl_object_released;
+    int ahb_released;
+    int vk_buffer_destroyed;
+    int vk_memory_freed;
+};
+
+struct MPVFlowOpenCLVkImportDiagnostics {
+    struct MPVFlowOpenCLVkImportStageDiagnostics before_vk_bind;
+    struct MPVFlowOpenCLVkImportStageDiagnostics after_vk_bind;
+};
+
 /*
  * Create a bridge over an existing Vulkan-backed pl_gpu and OpenCL context.
  * Both objects are borrowed and must outlive the bridge and all its buffers.
@@ -46,6 +100,14 @@ enum MPVFlowOpenCLVkBridgeStatus mpvflow_opencl_vk_bridge_destroy(
 /* Last diagnostic for an operation on this context (process-owned storage). */
 const char *mpvflow_opencl_vk_bridge_last_error(
     const MPVFlowOpenCLVkBridge *bridge);
+
+/* Run short, diagnostic-only QCOM imports on separate fresh 32x32 BLOB AHBs:
+ * one before any Vulkan buffer bind and one after a successful Vulkan bind.
+ * Neither result enables OpenCL; the caller must separately pass its complete
+ * Vulkan/OpenCL kernel round-trip before selecting that backend. */
+void mpvflow_opencl_vk_bridge_probe_import_stages(
+    MPVFlowOpenCLVkBridge *bridge,
+    struct MPVFlowOpenCLVkImportDiagnostics *diagnostics);
 
 /*
  * Allocate and import a single-layer BLOB AHardwareBuffer. Logical RGBA8 frame

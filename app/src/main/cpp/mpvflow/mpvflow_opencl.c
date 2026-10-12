@@ -49,10 +49,6 @@ typedef struct _cl_event *cl_event;
 #define CL_MEM_READ_WRITE (1ULL << 0)
 #define CL_MEM_WRITE_ONLY (1ULL << 1)
 #define CL_MEM_READ_ONLY (1ULL << 2)
-#define CL_MEM_USE_HOST_PTR (1ULL << 3)
-#define CL_MEM_EXT_HOST_PTR_QCOM (1ULL << 29)
-#define CL_MEM_HOST_WRITEBACK_QCOM 0x40A5u
-#define CL_MEM_ANDROID_AHARDWAREBUFFER_HOST_PTR_QCOM 0x40C7u
 #define CL_DEVICE_EXT_MEM_PADDING_IN_BYTES_QCOM 0x40A0u
 #define CL_DEVICE_PAGE_SIZE_QCOM 0x40A1u
 #define CL_CONTEXT_PLATFORM 0x1084
@@ -178,6 +174,7 @@ struct MPVFlowOpenCLContext {
     size_t device_extensions_length;
     int device_extensions_truncated;
     char runtime_info[3200];
+    char extension_presence_info[640];
 #define MPVFLOW_CL_FN(name) PFN_##name name
     MPVFLOW_CL_FN(clGetPlatformIDs);
     MPVFLOW_CL_FN(clGetDeviceIDs);
@@ -464,9 +461,8 @@ const char *mpvflow_opencl_get_runtime_info(MPVFlowOpenCLContext *context)
                    "platform_name=\"%s\" platform_vendor=\"%s\" platform_version=\"%s\" "
                    "device_name=\"%s\" device_vendor=\"%s\" device_version=\"%s\" "
                    "driver_version=\"%s\" opencl_c_version=\"%s\" "
-                   "qcom_ext_host_ptr=%d qcom_android_ahb_host_ptr=%d "
                    "qcom_ext_mem_padding_bytes=%zu qcom_page_size_bytes=%zu qcom_page_size_query_ok=%d "
-                   "extensions_bytes=%zu extensions_truncated=%d extensions=\"%s\"",
+                   "extensions_bytes=%zu extensions_truncated=%d",
                    context->platform_name[0] ? context->platform_name : "unavailable",
                    context->platform_vendor[0] ? context->platform_vendor : "unavailable",
                    context->platform_version[0] ? context->platform_version : "unavailable",
@@ -475,13 +471,50 @@ const char *mpvflow_opencl_get_runtime_info(MPVFlowOpenCLContext *context)
                    context->device_version[0] ? context->device_version : "unavailable",
                    context->driver_version[0] ? context->driver_version : "unavailable",
                    context->opencl_c_version[0] ? context->opencl_c_version : "unavailable",
-                   has_extension(context->device_extensions, MPVFLOW_BASE_EXTENSION),
-                   has_extension(context->device_extensions, MPVFLOW_EXTENSION),
                    context->qcom_ext_mem_padding_bytes, context->qcom_page_size_bytes,
                    context->qcom_page_size_query_ok,
-                   context->device_extensions_length, context->device_extensions_truncated,
-                   context->device_extensions);
+                   context->device_extensions_length, context->device_extensions_truncated);
     return context->runtime_info;
+}
+
+const char *mpvflow_opencl_get_extension_presence_info(MPVFlowOpenCLContext *context)
+{
+    if (!context)
+        return NULL;
+    (void)snprintf(context->extension_presence_info,
+                   sizeof(context->extension_presence_info),
+                   "cl_qcom_ext_host_ptr=%d "
+                   "cl_qcom_android_ahardwarebuffer_host_ptr=%d "
+                   "cl_khr_external_memory=%d "
+                   "cl_khr_external_memory_dma_buf=%d "
+                   "cl_khr_external_memory_opaque_fd=%d "
+                   "cl_khr_external_semaphore=%d "
+                   "cl_khr_external_semaphore_sync_fd=%d "
+                   "cl_khr_egl_event=%d cl_khr_egl_image=%d cl_khr_gl_sharing=%d "
+                   "cl_ext_image_from_buffer=%d cl_ext_image_requirements_info=%d "
+                   "cl_khr_byte_addressable_store=%d",
+                   has_extension(context->device_extensions, "cl_qcom_ext_host_ptr"),
+                   has_extension(context->device_extensions,
+                                 "cl_qcom_android_ahardwarebuffer_host_ptr"),
+                   has_extension(context->device_extensions, "cl_khr_external_memory"),
+                   has_extension(context->device_extensions,
+                                 "cl_khr_external_memory_dma_buf"),
+                   has_extension(context->device_extensions,
+                                 "cl_khr_external_memory_opaque_fd"),
+                   has_extension(context->device_extensions,
+                                 "cl_khr_external_semaphore"),
+                   has_extension(context->device_extensions,
+                                 "cl_khr_external_semaphore_sync_fd"),
+                   has_extension(context->device_extensions, "cl_khr_egl_event"),
+                   has_extension(context->device_extensions, "cl_khr_egl_image"),
+                   has_extension(context->device_extensions, "cl_khr_gl_sharing"),
+                   has_extension(context->device_extensions,
+                                 "cl_ext_image_from_buffer"),
+                   has_extension(context->device_extensions,
+                                 "cl_ext_image_requirements_info"),
+                   has_extension(context->device_extensions,
+                                 "cl_khr_byte_addressable_store"));
+    return context->extension_presence_info;
 }
 
 size_t mpvflow_opencl_get_qcom_ext_mem_padding_bytes(MPVFlowOpenCLContext *context)
@@ -538,8 +571,8 @@ static enum MPVFlowOpenCLStatus make_buffer(MPVFlowOpenCLContext *c,
     b = calloc(1, sizeof(*b));
     if (!b) return MPVFLOW_OPENCL_ERROR;
     memset(&desc, 0, sizeof(desc));
-    desc.ext_host_ptr.allocation_type = CL_MEM_ANDROID_AHARDWAREBUFFER_HOST_PTR_QCOM;
-    desc.ext_host_ptr.host_cache_policy = CL_MEM_HOST_WRITEBACK_QCOM;
+    desc.ext_host_ptr.allocation_type = MPVFLOW_OPENCL_QCOM_AHB_ALLOCATION_TYPE;
+    desc.ext_host_ptr.host_cache_policy = MPVFLOW_OPENCL_QCOM_HOST_WRITEBACK_POLICY;
     desc.ahb_ptr = ahb;
     if (access != MPVFLOW_OPENCL_READ_ONLY &&
         access != MPVFLOW_OPENCL_WRITE_ONLY &&
@@ -551,8 +584,10 @@ static enum MPVFlowOpenCLStatus make_buffer(MPVFlowOpenCLContext *c,
      * path: the external-allocation descriptor carries the AHB, size is zero,
      * and no explicit access qualifier is added to the two required host flags.
      * Keep allocation_bytes for descriptor validation and failure diagnostics. */
-    flags = CL_MEM_USE_HOST_PTR | CL_MEM_EXT_HOST_PTR_QCOM;
-    b->mem = c->clCreateBuffer(c->context, flags, 0, &desc, &err);
+    flags = MPVFLOW_OPENCL_QCOM_IMPORT_FLAGS;
+    b->mem = c->clCreateBuffer(c->context, flags,
+                               MPVFLOW_OPENCL_QCOM_IMPORT_SIZE_ARG,
+                               &desc, &err);
     if (cl_create_error_out)
         *cl_create_error_out = err;
     if (!b->mem || err != CL_SUCCESS) { free(b); return MPVFLOW_OPENCL_ERROR; }
@@ -572,12 +607,18 @@ enum MPVFlowOpenCLStatus mpvflow_opencl_import_ahardwarebuffer(
                        cl_create_error_out);
 }
 
-void mpvflow_opencl_buffer_release(MPVFlowOpenCLContext *context, MPVFlowOpenCLBuffer *buffer)
+int32_t mpvflow_opencl_buffer_release(MPVFlowOpenCLContext *context,
+                                      MPVFlowOpenCLBuffer *buffer)
 {
-    if (!buffer) return;
-    if (!context || context != buffer->owner) return;
-    if (buffer->mem) context->clReleaseMemObject(buffer->mem);
+    if (!buffer)
+        return CL_SUCCESS;
+    if (!context || context != buffer->owner)
+        return MPVFLOW_OPENCL_CL_ERROR_NOT_RETURNED;
+    cl_int err = CL_SUCCESS;
+    if (buffer->mem)
+        err = context->clReleaseMemObject(buffer->mem);
     free(buffer);
+    return err;
 }
 
 static void pair_free(MPVFlowOpenCLContext *c, MPVFlowOpenCLPair *p)
