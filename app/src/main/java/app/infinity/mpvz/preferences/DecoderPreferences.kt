@@ -25,6 +25,9 @@ internal fun normalizeRifeTargetFps(value: Int): Int =
 
 internal val MPVFLOW_TARGET_FPS_OPTIONS = listOf(48, 60, 72, 90, 96, 120, 144)
 internal const val DEFAULT_MPVFLOW_TARGET_FPS = 60
+internal const val DEFAULT_MPVFLOW_QUALITY = 60
+
+internal fun normalizeMpvFlowQuality(value: Int): Int = value.coerceIn(0, 100)
 
 enum class MpvFlowComputeApi(val nativeValue: Int) {
   AUTO(0),
@@ -46,12 +49,35 @@ internal fun effectiveMpvFlowTargetFps(value: Int, displayRefreshHz: Float): Int
 }
 
 internal fun effectiveMpvFlowMaxDimension(targetFps: Int): Int =
-  when {
-    targetFps >= 144 -> 320
-    targetFps >= 96 -> 400
+  effectiveMpvFlowMaxDimension(targetFps, DEFAULT_MPVFLOW_QUALITY)
+
+internal fun effectiveMpvFlowMaxDimension(targetFps: Int, quality: Int): Int {
+  val q = normalizeMpvFlowQuality(quality)
+  val base = when {
+    targetFps >= 144 -> 288
+    targetFps >= 96 -> 360
     targetFps >= 72 -> 480
     else -> 640
   }
+  // A small quality headroom at high refresh rates; keep dimensions aligned for GPU tiles.
+  val headroom = when {
+    targetFps >= 144 -> 32
+    targetFps >= 120 -> 64
+    targetFps >= 96 -> 80
+    else -> 0
+  }
+  return ((base + headroom * q / 100) / 16) * 16
+}
+
+internal fun effectiveMpvFlowSearchRadius(targetFps: Int, quality: Int): Int {
+  val q = normalizeMpvFlowQuality(quality)
+  return when {
+    targetFps >= 144 -> if (q >= 75) 4 else 3
+    targetFps >= 120 -> if (q >= 75) 5 else 4
+    targetFps >= 96 -> if (q >= 60) 6 else 5
+    else -> if (q >= 60) 8 else 6
+  }
+}
 
 internal val RIFE_PROCESSING_RESOLUTION_OPTIONS = listOf(-1, 0, 480, 720, 1080)
 internal const val DEFAULT_RIFE_PROCESSING_RESOLUTION = 0
@@ -84,6 +110,7 @@ class DecoderPreferences(
     preferenceStore.getInt("rife_processing_resolution", DEFAULT_RIFE_PROCESSING_RESOLUTION)
   val mpvFlowFrameInterpolation = preferenceStore.getBoolean("mpvflow_frame_interpolation", false)
   val mpvFlowTargetFps = preferenceStore.getInt("mpvflow_target_fps", DEFAULT_MPVFLOW_TARGET_FPS)
+  val mpvFlowQuality = preferenceStore.getInt("mpvflow_quality", DEFAULT_MPVFLOW_QUALITY)
   val mpvFlowComputeApi = preferenceStore.getEnum("mpvflow_compute_api", MpvFlowComputeApi.AUTO)
 
   val debanding = preferenceStore.getEnum("debanding", Debanding.None)

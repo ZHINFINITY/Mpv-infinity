@@ -66,19 +66,22 @@
 +
 @@ -184,0 +217,1 @@
 +static void flow_update_context(struct vo *vo);
-@@ -186,0 +220,4 @@
+@@ -186,0 +220,5 @@
 +    bool mpvflow;
 +    int mpvflow_max_dimension;
 +    int mpvflow_target_fps;
++    int mpvflow_quality;
 +    int mpvflow_compute_api;
-@@ -213,0 +250,4 @@
+@@ -213,0 +250,5 @@
 +        {"mpvflow", OPT_BOOL(mpvflow)},
 +        {"mpvflow-max-dimension", OPT_INT(mpvflow_max_dimension), M_RANGE(8, 640)},
 +        {"mpvflow-target-fps", OPT_INT(mpvflow_target_fps), M_RANGE(1, 240)},
++        {"mpvflow-quality", OPT_INT(mpvflow_quality), M_RANGE(0, 100)},
 +        {"mpvflow-compute-api", OPT_INT(mpvflow_compute_api), M_RANGE(0, 2)},
-@@ -239,0 +279,3 @@
+@@ -239,0 +279,4 @@
 +        .mpvflow_max_dimension = 640,
 +        .mpvflow_target_fps = 60,
++        .mpvflow_quality = 60,
 +        .mpvflow_compute_api = MPVFLOW_GPU_COMPUTE_AUTO,
 @@ -560,0 +602,6 @@
 +    uint64_t frame_id;
@@ -113,8 +116,13 @@
 +     * previous 120-fps profile measured ~20 ms blocked in swapchain acquire
 +     * because motion analysis plus synthesis missed the 8.33 ms slot. */
 +    const int target_fps = MPCLAMP(p->next_opts->mpvflow_target_fps, 1, 240);
-+    const int effective_dimension = target_fps >= 120 ? MPCLAMP(requested_dimension, 8, 320) :
-+        target_fps >= 96 ? MPCLAMP(requested_dimension, 8, 360) : requested_dimension;
++    const int quality = MPCLAMP(p->next_opts->mpvflow_quality, 0, 100);
++    const int quality_headroom = target_fps >= 144 ? 32 : target_fps >= 120 ? 64 :
++        target_fps >= 96 ? 80 : 0;
++    const int quality_dimension = requested_dimension + quality_headroom * quality / 100;
++    const int effective_dimension = target_fps >= 144 ? MPCLAMP(quality_dimension, 8, 320) :
++        target_fps >= 120 ? MPCLAMP(quality_dimension, 8, 352) :
++        target_fps >= 96 ? MPCLAMP(quality_dimension, 8, 440) : quality_dimension;
 +    if (!p->next_opts->mpvflow) {
 +        flow_release_pair(p);
 +        mpvflow_gpu_destroy(p->flow_gpu);
@@ -233,7 +241,9 @@
 +    struct MPVFlowGPUConfig config = {
 +        .compute_api = (enum MPVFlowGPUComputeAPI) p->next_opts->mpvflow_compute_api,
 +        .max_dimension = effective_dimension,
-+        .search_radius = target_fps >= 120 ? 4 : target_fps >= 96 ? 6 : 8,
++        .search_radius = target_fps >= 144 ? (quality >= 75 ? 4 : 3) :
++            target_fps >= 120 ? (quality >= 75 ? 5 : 4) :
++            target_fps >= 96 ? (quality >= 60 ? 6 : 5) : (quality >= 60 ? 8 : 6),
 +    };
 +    enum MPVFlowGPUResult status = MPVFLOW_GPU_INVALID;
 +    struct MPVFlowGPUCreateDiagnostics create_diagnostics = {0};
@@ -296,10 +306,10 @@
 +    p->flow_init_retry_after_ns = 0;
 +    p->flow_init_logged = true;
 +    MP_INFO(vo, "MPVFLOW_DIAGNOSTIC event=renderer_init state=initialized backend=%s "
-+            "target_fps=%d requested_compute_api=%d reason=ready status=0 max_dimension=%d requested_max_dimension=%d search_radius=%d "
++            "target_fps=%d quality=%d requested_compute_api=%d reason=ready status=0 max_dimension=%d requested_max_dimension=%d search_radius=%d "
 +            "cpu_filter=no synthesized_output_cpu_readback=no\n",
 +            mpvflow_gpu_get_compute_api_name(ctx), p->next_opts->mpvflow_target_fps,
-+            config.compute_api, config.max_dimension, requested_dimension,
++            quality, config.compute_api, config.max_dimension, requested_dimension,
 +            config.search_radius);
 +}
 +

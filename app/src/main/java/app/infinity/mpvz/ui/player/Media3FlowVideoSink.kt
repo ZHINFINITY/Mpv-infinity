@@ -103,6 +103,7 @@ private data class FlowFrameRateSurfacePolicy(
 class Media3FlowVideoSink(
   context: Context,
   requestedTargetFps: Int,
+  requestedQuality: Int,
   private val requestedComputeApi: MpvFlowComputeApi,
   private val onDiagnostics: (Media3FlowDiagnostics) -> Unit,
 ) : VideoSink {
@@ -112,7 +113,8 @@ class Media3FlowVideoSink(
   private val logTag = "Mpv∞-Media3Flow"
   private val displayHz = displayRefreshRate(appContext)
   private val targetFps = effectiveMpvFlowTargetFps(requestedTargetFps, displayHz)
-  private val maxDimension = effectiveMpvFlowMaxDimension(targetFps).coerceIn(160, 640)
+  private val quality = requestedQuality.coerceIn(0, 100)
+  private val maxDimension = effectiveMpvFlowMaxDimension(targetFps, quality).coerceIn(160, 640)
   private val glThread = HandlerThread("Media3Flow-GLES").apply { start() }
   private val glHandler = Handler(glThread.looper)
   private val inputLock = Any()

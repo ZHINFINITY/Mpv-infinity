@@ -30,6 +30,7 @@ import app.infinity.mpvz.preferences.MpvConfigControlledFeatures
 import app.infinity.mpvz.preferences.MpvConfigOverridePolicy
 import app.infinity.mpvz.preferences.PlayerPreferences
 import app.infinity.mpvz.preferences.effectiveMpvFlowMaxDimension
+import app.infinity.mpvz.preferences.effectiveMpvFlowSearchRadius
 import app.infinity.mpvz.preferences.effectiveMpvFlowTargetFps
 import app.infinity.mpvz.preferences.normalizeRifeProcessingResolution
 import app.infinity.mpvz.preferences.normalizeRifeTargetFps
@@ -131,6 +132,7 @@ class MPVView(
         displayRefreshRate?.hz ?: 0f,
       )
     val requestedMpvFlowComputeApi = decoderPreferences.mpvFlowComputeApi.get()
+    val requestedMpvFlowQuality = decoderPreferences.mpvFlowQuality.get().coerceIn(0, 100)
     rifeModelDirectory =
       if (rifeRequested && BuildConfig.MPV_HAS_RIFE && !frameInterpolationConfigOwned) {
         runCatching { RifeModelInstaller.install(context.applicationContext).absolutePath }
@@ -153,7 +155,7 @@ class MPVView(
       }
     val coreConfigurationKey =
       "${requestedBackend.configurationKey}|conf=${MpvConfigOverridePolicy.configurationKey()}|$frameInterpolationKey|" +
-        "mpvflow=${if (mpvFlowFrameInterpolationActive) "$requestedMpvFlowTargetFps,compute_api=${requestedMpvFlowComputeApi.nativeValue}" else "off"}"
+        "mpvflow=${if (mpvFlowFrameInterpolationActive) "$requestedMpvFlowTargetFps,compute_api=${requestedMpvFlowComputeApi.nativeValue},quality=$requestedMpvFlowQuality" else "off"}"
     val result =
       PlaybackSession.initialize(
         context = context.applicationContext,
@@ -272,7 +274,8 @@ class MPVView(
         displayRefreshRate?.hz ?: 0f,
       )
     val mpvFlowComputeApi = decoderPreferences.mpvFlowComputeApi.get()
-    val mpvFlowMaxDimension = effectiveMpvFlowMaxDimension(mpvFlowTargetFps)
+    val mpvFlowQuality = decoderPreferences.mpvFlowQuality.get().coerceIn(0, 100)
+    val mpvFlowMaxDimension = effectiveMpvFlowMaxDimension(mpvFlowTargetFps, mpvFlowQuality)
     val rifeProcessingResolution =
       normalizeRifeProcessingResolution(decoderPreferences.rifeProcessingResolution.get())
     val frameInterpolationConfigOwned =
@@ -372,6 +375,11 @@ class MPVView(
       }
     val flowSwapModeApplyResult =
       flowSwapMode?.let { PlaybackSession.setOptionString("vulkan-swap-mode", it) }
+    val flowSwapchainDepthResult =
+      if (mpvFlowFrameInterpolationEnabled && backend.gpuApi == "vulkan" &&
+        !MpvConfigOverridePolicy.isOwnedByMpvConf("swapchain-depth")) {
+        PlaybackSession.setOptionString("swapchain-depth", "4")
+      } else null
     if (mpvFlowFrameInterpolationEnabled && backend.gpuApi == "vulkan") {
       val presentModeState =
         when {
@@ -383,7 +391,7 @@ class MPVView(
         TAG,
         "MPVFLOW_DIAGNOSTIC event=present_mode state=$presentModeState " +
           "request=${flowSwapMode ?: "mpv.conf"} result=${flowSwapModeApplyResult ?: "unchanged"} " +
-          "fallback=FIFO_if_unsupported target_fps=$mpvFlowTargetFps",
+          "fallback=FIFO_if_unsupported swapchain_depth_result=${flowSwapchainDepthResult ?: "unchanged"} target_fps=$mpvFlowTargetFps quality=$mpvFlowQuality",
       )
     }
     val rendererApplyResult = PlaybackSession.setVideoOutput(backend.vo)
@@ -456,7 +464,7 @@ class MPVView(
         TAG,
         "MPVFLOW_OPTIONS hwdec_mode=$hardwareDecodeMode hwdec_rc=$hardwareDecodeOptionResult " +
           "hwdec_codecs_rc=${hardwareDecodeCodecsOptionResult ?: "mpv.conf"} target_fps=$mpvFlowTargetFps " +
-          "max_dimension=$mpvFlowMaxDimension",
+          "max_dimension=$mpvFlowMaxDimension quality=$mpvFlowQuality search_radius=${effectiveMpvFlowSearchRadius(mpvFlowTargetFps, mpvFlowQuality)}",
       )
     } else {
       if (!MpvConfigOverridePolicy.isOwnedByMpvConf("hwdec")) {
@@ -493,12 +501,16 @@ class MPVView(
           } else {
             null
           }
+        val qualityResult =
+          if (mpvFlowFrameInterpolationEnabled) {
+            PlaybackSession.setOptionString("mpvflow-quality", mpvFlowQuality.toString())
+          } else null
         val enabledResult =
           PlaybackSession.setOptionString("mpvflow", if (mpvFlowFrameInterpolationEnabled) "yes" else "no")
         "mpvflow_rc=$enabledResult compute_api=${mpvFlowComputeApi.name.lowercase()} " +
           "compute_api_rc=${mpvFlowComputeApiOptionResult ?: "mpv.conf_or_unavailable"} " +
           "target_fps_rc=${targetFpsResult ?: "unchanged"} " +
-          "max_dimension_rc=${dimensionResult ?: "unchanged"}"
+          "max_dimension_rc=${dimensionResult ?: "unchanged"} quality=$mpvFlowQuality quality_rc=${qualityResult ?: "unchanged"}"
       } else {
         "compute_api=${mpvFlowComputeApi.name.lowercase()} " +
           "compute_api_rc=${mpvFlowComputeApiOptionResult ?: "mpv.conf_or_unavailable"} mpvflow=mpv.conf"

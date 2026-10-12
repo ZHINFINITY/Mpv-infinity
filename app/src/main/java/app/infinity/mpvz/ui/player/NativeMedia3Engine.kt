@@ -193,6 +193,7 @@ class NativeMedia3Engine(
   context: Context,
   enableMedia3Flow: Boolean = false,
   media3FlowTargetFps: Int = 60,
+  media3FlowQuality: Int = 60,
   media3FlowComputeApi: MpvFlowComputeApi = MpvFlowComputeApi.AUTO,
 ) {
   private val appContext = context.applicationContext
@@ -200,7 +201,7 @@ class NativeMedia3Engine(
   private val flowDeviceSupported =
     enableMedia3Flow && Media3FlowVideoSink.deviceSupportsVulkanFlow(appContext)
   private val media3FlowSink = if (flowDeviceSupported) {
-    Media3FlowVideoSink(appContext, media3FlowTargetFps, media3FlowComputeApi, ::publishFlowDiagnostics)
+    Media3FlowVideoSink(appContext, media3FlowTargetFps, media3FlowQuality, media3FlowComputeApi, ::publishFlowDiagnostics)
   } else {
     null
   }

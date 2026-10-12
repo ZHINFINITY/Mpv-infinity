@@ -203,6 +203,7 @@ class PlayerActivity :
       context = this,
       enableMedia3Flow = decoderPreferences.mpvFlowFrameInterpolation.get(),
       media3FlowTargetFps = decoderPreferences.mpvFlowTargetFps.get(),
+      media3FlowQuality = decoderPreferences.mpvFlowQuality.get(),
       media3FlowComputeApi = decoderPreferences.mpvFlowComputeApi.get(),
     ).also {
       it.onEnded = { runOnUiThread { handleNativePlaybackEnded() } }
