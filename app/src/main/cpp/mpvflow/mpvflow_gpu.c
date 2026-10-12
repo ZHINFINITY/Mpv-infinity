@@ -902,7 +902,12 @@ MPVFlowGPUContext *mpvflow_gpu_create(pl_gpu gpu,
         return NULL;
     }
 
-    if (requested_api != MPVFLOW_GPU_COMPUTE_VULKAN) {
+    /* AUTO must stay on the in-process Vulkan path. The QCOM OpenCL bridge
+     * is retained for explicit OpenCL benchmarking, but its required
+     * synchronous AHardwareBuffer ownership transfers and full-resolution
+     * buffer copies make it unsuitable for real-time playback on devices
+     * where the bridge is merely importable. */
+    if (requested_api == MPVFLOW_GPU_COMPUTE_OPENCL) {
         struct MPVFlowOpenCLConfig opencl_config = {
             .search_radius = ctx->search_radius,
             .max_dimension = ctx->max_dimension,
@@ -942,7 +947,7 @@ MPVFlowGPUContext *mpvflow_gpu_create(pl_gpu gpu,
                      "MPVFLOW_DIAGNOSTIC event=compute_backend state=ready requested_api=%d "
                      "effective_api=opencl interop=qcom_ahardwarebuffer_host_ptr "
                      "shared_storage=android_hardware_buffer probe=kernel_interop_roundtrip "
-                     "probe_size=64x64 cpu_readback=no",
+                     "probe_size=64x64 cpu_readback=no mode=explicit_only",
                      requested_api);
         } else {
             flow_log(gpu, requested_api == MPVFLOW_GPU_COMPUTE_AUTO ? PL_LOG_WARN : PL_LOG_ERR,
@@ -972,8 +977,11 @@ MPVFlowGPUContext *mpvflow_gpu_create(pl_gpu gpu,
     } else {
         flow_log(gpu, PL_LOG_INFO,
                  "MPVFLOW_DIAGNOSTIC event=compute_backend state=ready requested_api=%d "
-                 "effective_api=vulkan reason=explicit_vulkan",
-                 requested_api);
+                 "effective_api=vulkan reason=%s",
+                 requested_api,
+                 requested_api == MPVFLOW_GPU_COMPUTE_AUTO
+                     ? "auto_prefers_in_process_vulkan_over_blocking_opencl_interop"
+                     : "explicit_vulkan");
     }
 
     struct pl_desc preprocess_desc[] = {
