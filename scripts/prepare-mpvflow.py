@@ -10,6 +10,23 @@ import subprocess
 ROOT = Path(__file__).resolve().parents[1]
 VENDOR = ROOT / "app/src/main/cpp/mpvflow"
 VO_PATCH = VENDOR / "mpvflow-vo-gpu-next.patch"
+AIMAGE_VULKAN_PATCH = VENDOR / "mpvflow-aimagereader-vulkan.patch"
+MEDIACODEC_VULKAN_DIR = VENDOR / "mediacodec-vulkan"
+MEDIACODEC_VULKAN_FILES = (
+    "LICENSE.LGPL",
+    "hwdec_aimagereader.c",
+    "hwdec_aimagereader.comp",
+    "hwdec_aimagereader.frag",
+    "hwdec_aimagereader.vert",
+    "hwdec_aimagereader_comp.h",
+    "hwdec_aimagereader_frag.h",
+    "hwdec_aimagereader_vert.h",
+    "hwdec_aimagereader_vk.c",
+    "hwdec_aimagereader_vk.h",
+    "hwdec_aimagereader_vk_convert.c",
+    "hwdec_aimagereader_vk_direct.c",
+    "hwdec_aimagereader_vk_private.h",
+)
 MPV_VULKAN_DEPENDENCY = "vulkan = dependency('vulkan', version: '>= 1.3.238', required: vulkan_opt)"
 ANDROID_VULKAN_DEPENDENCY = "vulkan = dependency('vulkan', required: vulkan_opt)"
 PLACEBO_SPIRV_LIBRARY_LOOKUP = "spirv = cxx.find_library('SPIRV', required: required, static: static, dirs: vulkan_lib_dirs)"
@@ -19,6 +36,7 @@ VULKAN_OPT_EXTENSION_LIST = "    const char *opt_extensions[] = {\n"
 ANDROID_AHB_EXTENSIONS = (
     "#if defined(__ANDROID__)\n"
     '        "VK_ANDROID_external_memory_android_hardware_buffer",\n'
+    '        "VK_KHR_external_semaphore_fd",\n'
     '        "VK_EXT_queue_family_foreign",\n'
     "#endif\n"
 )
@@ -324,6 +342,8 @@ def main() -> None:
         VENDOR / "mpvflow_opencl_vk_bridge.c",
         VENDOR / "mpvflow_opencl_vk_bridge.h",
         VO_PATCH,
+        AIMAGE_VULKAN_PATCH,
+        *(MEDIACODEC_VULKAN_DIR / filename for filename in MEDIACODEC_VULKAN_FILES),
     )
     for path in required:
         if not path.is_file():
@@ -339,6 +359,10 @@ def main() -> None:
         "mpvflow_opencl_vk_bridge.h",
     ):
         shutil.copy2(VENDOR / filename, video_out_dir / filename)
+    hwdec_dir = video_out_dir / "hwdec"
+    for filename in MEDIACODEC_VULKAN_FILES:
+        if filename != "LICENSE.LGPL":
+            shutil.copy2(MEDIACODEC_VULKAN_DIR / filename, hwdec_dir / filename)
 
     vo = vo_path.read_text()
     meson = meson_path.read_text()
@@ -362,6 +386,19 @@ def main() -> None:
         vo = vo_path.read_text()
     if vo_marker not in vo:
         raise SystemExit("GPU Flow patch did not mark vo_gpu_next.c")
+
+    hwdec_header_path = mpv_dir / "video/out/gpu/hwdec.h"
+    mapper_marker = "#define RA_HWDEC_MAP_RETRY (-2)"
+    if mapper_marker not in hwdec_header_path.read_text():
+        subprocess.run(
+            ["patch", "-p1", "--forward", "--input", str(AIMAGE_VULKAN_PATCH)],
+            cwd=mpv_dir,
+            check=True,
+        )
+        vo = vo_path.read_text()
+    meson = enable_android_vulkan_dependency(meson_path.read_text())
+    if mapper_marker not in hwdec_header_path.read_text() or "# MPVFLOW_AIMAGE_VULKAN_MAPPER" not in meson:
+        raise SystemExit("Android MediaCodec/Vulkan mapper patch was not fully applied")
 
     gpu_source = "video/out/mpvflow_gpu.c"
     opencl_sources = (

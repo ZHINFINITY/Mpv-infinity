@@ -90,7 +90,7 @@
 +    int flow_cap;
 +    int flow_w, flow_h;
 +    int flow_source_w, flow_source_h;
-@@ -569,0 +620,402 @@
+@@ -569,0 +620,409 @@
 +static void flow_release_pair(struct priv *p)
 +{
 +    if (p->flow_pair)
@@ -381,6 +381,11 @@
 +            backend, p->next_opts->mpvflow_target_fps, reason, status);
 +}
 +
++static struct pl_rect2df apply_source_crop(struct pl_frame *frame,
++                                           struct mp_rect crop,
++                                           int width, int height,
++                                           const struct frame_priv *fp);
++
 +static bool flow_prepare_input(struct vo *vo, struct pl_frame *frame,
 +                               struct mp_image *mpi, struct frame_priv *fp)
 +{
@@ -451,6 +456,8 @@
 +    struct pl_frame source_frame = *frame;
 +    source_frame.overlays = NULL;
 +    source_frame.num_overlays = 0;
++    // Exclude decoder padding/cropped edges from both motion analysis and synthesis.
++    apply_source_crop(&source_frame, p->src, vo->params->w, vo->params->h, fp);
 +    stats_time_start(p->stats, "mpvflow-source-copy");
 +    bool ok = pl_render_image(p->rr, &source_frame, &source_target, NULL);
 +    stats_time_end(p->stats, "mpvflow-source-copy");
@@ -493,15 +500,15 @@
 +    fp->flow_cap = 0;
 +}
 +
-@@ -1109,0 +1421,2 @@
+@@ -1109,0 +1428,2 @@
 +    flow_update_context(vo);
 +    flow_prepare_input(vo, frame, mpi, fp);
-@@ -1118,0 +1432,1 @@
+@@ -1118,0 +1439,1 @@
 +    flow_release_frame(fp->vo, fp);
-@@ -1135,0 +1450,2 @@
+@@ -1135,0 +1457,2 @@
 +    struct frame_priv *fp = mpi->priv;
 +    flow_release_frame(fp->vo, fp);
-@@ -1341,0 +1658,171 @@
+@@ -1341,0 +1665,171 @@
 +static bool flow_render_frame(struct vo *vo, const struct pl_frame_mix *mix,
 +                              struct pl_frame *target,
 +                              const struct pl_render_params *params,
@@ -673,7 +680,7 @@
 +    return ok;
 +}
 +
-@@ -1344,0 +1812,21 @@
+@@ -1344,0 +1819,21 @@
 +    p->flow_pending_synthesized = false;
 +    p->flow_pending_display_synced = false;
 +    p->flow_pending_source_batch = 0;
@@ -695,15 +702,15 @@
 +        }
 +        p->flow_cadence_last_render_ns = flow_render_start_ns;
 +    }
-@@ -1354,1 +1817,2 @@
+@@ -1354,1 +1824,2 @@
 -                           !frame->still && frame->num_frames > 1 && !p->paused;
 +                           !frame->still &&
 +                           (frame->num_frames > 1 || p->next_opts->mpvflow) && !p->paused;
-@@ -1403,0 +1876,1 @@
+@@ -1403,0 +1883,1 @@
 +            flow_release_pair(p);
-@@ -1422,0 +1896,1 @@
+@@ -1422,0 +1903,1 @@
 +        fp->frame_id = id;
-@@ -1570,3 +2037,29 @@
+@@ -1570,3 +2044,29 @@
      struct pl_swapchain_frame swframe;
      bool should_draw = sw->fns->start_frame(sw, NULL); // for wayland logic
 +    if (p->gpu && p->gpu->glsl.vulkan && p->sw &&
@@ -734,7 +741,7 @@
 +        }
 +    }
 +    if (!should_draw || !swapchain_frame_started) {
-@@ -1750,0 +2246,26 @@
+@@ -1750,0 +2253,26 @@
 +    if (p->next_opts->mpvflow) {
 +        const char *queue_state = !frame->num_frames ? "redraw_without_source_batch" :
 +            !opts->interpolation ? "interpolation_disabled" :
@@ -761,13 +768,13 @@
 +    } else {
 +        p->flow_queue_state_logged = false;
 +    }
-@@ -1752,1 +2265,4 @@
+@@ -1752,1 +2272,4 @@
 -    bool render_ok = pl_render_image_mix(p->rr, &mix, &target, &params);
 +    bool flow_synthesized = false;
 +    bool render_ok = p->next_opts->mpvflow
 +        ? flow_render_frame(vo, &mix, &target, &params, &flow_synthesized)
 +        : pl_render_image_mix(p->rr, &mix, &target, &params);
-@@ -1780,1 +2296,19 @@
+@@ -1780,1 +2303,19 @@
 -    p->is_interpolated = pts_offset != 0 && mix.num_frames > 1;
 +    p->is_interpolated = p->next_opts->mpvflow
 +        ? flow_synthesized : pts_offset != 0 && mix.num_frames > 1;
@@ -788,11 +795,11 @@
 +                p->flow_cadence_render_cpu_max_ns = render_ns;
 +        }
 +    }
-@@ -1797,1 +2318,2 @@
+@@ -1797,1 +2325,2 @@
 -
 +    const int64_t flip_start_ns = mp_time_ns();
 +    bool submitted = false;
-@@ -1799,1 +2321,6 @@
+@@ -1799,1 +2328,6 @@
 -        if (!pl_swapchain_submit_frame(p->sw))
 +        if (p->next_opts->mpvflow)
 +            p->flow_cadence_swap_attempts++;
@@ -800,7 +807,7 @@
 +        if (!submitted && p->next_opts->mpvflow)
 +            p->flow_cadence_swap_failures++;
 +        if (!submitted)
-@@ -1804,1 +2328,147 @@
+@@ -1804,1 +2335,147 @@
 +    const int64_t now_ns = mp_time_ns();
 +    const uint64_t flip_wait_ns = now_ns > flip_start_ns
 +        ? (uint64_t) (now_ns - flip_start_ns) : 0;
@@ -949,14 +956,14 @@
 +                    wait_ns / 1000000.0, p->next_opts->mpvflow_target_fps);
 +        }
 +    }
-@@ -2466,0 +3085,4 @@
+@@ -2466,0 +3092,4 @@
 +    flow_release_pair(p);
 +    mpvflow_gpu_destroy(p->flow_gpu);
 +    p->flow_gpu = NULL;
 +    p->flow_input_fmt = NULL;
-@@ -2846,0 +3469,1 @@
+@@ -2846,0 +3476,1 @@
 +    flow_update_context(vo);
-@@ -2878,1 +3493,2 @@
+@@ -2878,1 +3500,2 @@
 -    pars->params.frame_mixer = opts->interpolation ? map_scaler(p, SCALER_TSCALE) : NULL;
 +    pars->params.frame_mixer = opts->interpolation && !p->next_opts->mpvflow
 +        ? map_scaler(p, SCALER_TSCALE) : NULL;

@@ -12,6 +12,9 @@ import tempfile
 ROOT = Path(__file__).resolve().parents[2]
 PREPARE = ROOT / "scripts/prepare-mpvflow.py"
 BUILD = ROOT / "scripts/build-mpvflow-mpv-runtime.sh"
+VULKAN_MAPPER_PATCH = ROOT / "app/src/main/cpp/mpvflow/mpvflow-aimagereader-vulkan.patch"
+VULKAN_MAPPER_DIR = ROOT / "app/src/main/cpp/mpvflow/mediacodec-vulkan"
+VO_PATCH = ROOT / "app/src/main/cpp/mpvflow/mpvflow-vo-gpu-next.patch"
 PLAYBACK_SESSION = ROOT / "app/src/main/java/app/infinity/mpvz/ui/player/PlaybackSession.kt"
 MPV_VIEW = ROOT / "app/src/main/java/app/infinity/mpvz/ui/player/MPVView.kt"
 APP_BUILD = ROOT / "app/build.gradle.kts"
@@ -59,6 +62,7 @@ vulkan_context = (
 )
 patched_vulkan_context = prepare.enable_android_external_memory_extensions(vulkan_context)
 assert '"VK_ANDROID_external_memory_android_hardware_buffer"' in patched_vulkan_context
+assert '"VK_KHR_external_semaphore_fd"' in patched_vulkan_context
 assert '"VK_EXT_queue_family_foreign"' in patched_vulkan_context
 assert patched_vulkan_context.startswith("before\n") and patched_vulkan_context.endswith("after\n")
 assert prepare.enable_android_external_memory_extensions(patched_vulkan_context) == patched_vulkan_context, (
@@ -229,6 +233,18 @@ assert '"--input", str(VO_PATCH)' in prepare_source, (
 assert '"--input", str(required[2])' not in prepare_source, (
     "adding OpenCL sources must not silently redirect the mpv patch command"
 )
+assert 'AIMAGE_VULKAN_PATCH = VENDOR / "mpvflow-aimagereader-vulkan.patch"' in prepare_source
+assert '"--input", str(AIMAGE_VULKAN_PATCH)' in prepare_source
+assert VULKAN_MAPPER_PATCH.is_file(), "the pinned MPV mapper compatibility patch must be vendored"
+for source in (
+    "hwdec_aimagereader.c",
+    "hwdec_aimagereader_vk.c",
+    "hwdec_aimagereader_vk_convert.c",
+    "hwdec_aimagereader_vk_direct.c",
+    "hwdec_aimagereader_vk.h",
+    "hwdec_aimagereader_vk_private.h",
+):
+    assert (VULKAN_MAPPER_DIR / source).is_file(), f"missing AImageReader/Vulkan source {source}"
 prepare_call = 'python3 "$ROOT/scripts/prepare-mpvflow.py" --mpv-dir "$BUILDSCRIPTS/deps/mpv" --libplacebo-dir "$BUILDSCRIPTS/deps/libplacebo"'
 assert prepare_call in build, "the native build must patch pinned libplacebo before compilation"
 native_cmake = (ROOT / "app/src/main/cpp/CMakeLists.txt").read_text(encoding="utf-8")
@@ -238,7 +254,7 @@ for source in (
 ):
     assert source in native_cmake, f"Native Media3 CMake target must compile the real OpenCL backend: {source}"
 assert "\n        dl\n" in native_cmake, "Native Media3 must link the runtime dlopen dependency"
-vo_patch = (ROOT / "app/src/main/cpp/mpvflow/mpvflow-vo-gpu-next.patch").read_text(encoding="utf-8")
+vo_patch = VO_PATCH.read_text(encoding="utf-8")
 for marker in (
     "event=swapchain_wait stage=acquire",
     "event=swapchain_wait stage=swap_buffers",
@@ -246,6 +262,14 @@ for marker in (
     "submit_call_avg_ms=%.3f",
 ):
     assert marker in vo_patch, f"MPV Flow must distinguish real blocking swapchain waits from submit time: missing {marker!r}"
+flow_prepare_body = vo_patch.split("+static bool flow_prepare_input", 1)[1].split(
+    "\n+static void flow_release_frame", 1
+)[0]
+crop_call = "+    apply_source_crop(&source_frame, p->src, vo->params->w, vo->params->h, fp);"
+assert crop_call in flow_prepare_body, "MPVFlow must crop the decoder image before motion analysis"
+assert flow_prepare_body.index(crop_call) < flow_prepare_body.index("pl_render_image("), (
+    "the mapped AImage crop must be applied before copying source pixels into Flow textures"
+)
 assert build.index("./include/ci.sh install") < build.index(prepare_call) < build.index("./include/ci.sh build"), (
     "the libplacebo search-path correction must run after dependency checkout and before native builds"
 )
@@ -412,8 +436,18 @@ assert "BuildConfig.MPV_SUPPORTS_MEDIACODEC_VULKAN" in flow_hwdec, (
 standard_flavor = APP_BUILD.read_text(encoding="utf-8").split('create("standard") {', 1)[1].split(
     'create("noVulkan") {', 1
 )[0]
-assert 'MPV_SUPPORTS_MEDIACODEC_VULKAN", "false"' in standard_flavor, (
-    "the standard ARM64 Flow build must keep its direct-import capability accurately declared"
+assert 'MPV_SUPPORTS_MEDIACODEC_VULKAN", includeMpvFlowMpvRuntime.toString()' in standard_flavor, (
+    "the standard ARM64 Flow build must advertise direct import only when the custom runtime was packaged"
+)
+app_build_source = APP_BUILD.read_text(encoding="utf-8")
+assert 'val includeMpvFlowMpvRuntime = requestedMpvFlowMpvRuntime && activeAbis == listOf("arm64-v8a")' in app_build_source, (
+    "the custom Vulkan mapper capability must be limited to the native arm64 runtime build"
+)
+no_vulkan_flavor = app_build_source.split('create("noVulkan") {', 1)[1].split(
+    'create("fongmi") {', 1
+)[0]
+assert 'MPV_SUPPORTS_MEDIACODEC_VULKAN", "false"' in no_vulkan_flavor, (
+    "the no-Vulkan flavor must never advertise direct MediaCodec/Vulkan import"
 )
 mpv_conf_source = MPV_CONF_POLICY.read_text(encoding="utf-8")
 renderer_ownership = mpv_conf_source.split("RENDERER(", 1)[1].split("\n  ),", 1)[0]
