@@ -979,6 +979,9 @@ nv_selftest_source = (
 nv_optical_source = (
     ROOT / "app/src/main/cpp/mpvflow/mpvflow_vulkan_optical.c"
 ).read_text(encoding="utf-8")
+nv_optical_header_source = (
+    ROOT / "app/src/main/cpp/mpvflow/mpvflow_vulkan_optical.h"
+).read_text(encoding="utf-8")
 advanced_preferences_source = (
     ROOT / "app/src/main/java/app/infinity/mpvz/ui/preferences/AdvancedPreferencesScreen.kt"
 ).read_text(encoding="utf-8")
@@ -1000,6 +1003,7 @@ for marker in (
     assert marker in nv_selftest_source, f"manual NV self-test is missing {marker!r}"
 assert "mpvflow/mpvflow_vulkan_optical_selftest.c" in cmake_source
 assert '"$<$<CONFIG:Debug>:MPVFLOW_ENABLE_NV_SELF_TEST=1>"' in cmake_source
+assert '#ifdef __cplusplus\nextern "C" {' in nv_optical_header_source
 assert "nativeRunNvOpticalFlowSelfTest" in media3_jni_source
 assert "BuildConfig.DEBUG && BuildConfig.MPV_SUPPORTS_VULKAN" in advanced_preferences_source
 assert "nativeRunNvOpticalFlowSelfTest(testContext)" in advanced_preferences_source

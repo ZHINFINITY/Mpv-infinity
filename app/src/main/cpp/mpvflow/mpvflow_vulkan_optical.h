@@ -10,6 +10,10 @@
 
 typedef struct MPVFlowVulkanOptical MPVFlowVulkanOptical;
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 /* Optional acceleration only: unavailable capabilities return NULL or false. */
 MPVFlowVulkanOptical *mpvflow_vulkan_optical_create(pl_gpu gpu,
                                                     char *reason,
@@ -23,5 +27,9 @@ void mpvflow_vulkan_optical_destroy(MPVFlowVulkanOptical **optical);
 
 /* Manual debug-only probe; never called by the playback adapter. */
 bool mpvflow_vulkan_optical_debug_self_test(pl_gpu gpu);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif
