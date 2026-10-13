@@ -133,7 +133,13 @@ for bad_timer_source in (
 wsi_header = "PL_API bool pl_vulkan_swapchain_suboptimal(pl_swapchain sw);\n"
 patched_wsi_header = prepare.add_libplacebo_swapchain_diagnostics_api(wsi_header)
 assert "PL_API bool pl_vulkan_swapchain_set_diagnostics(pl_swapchain sw, bool enabled);" in patched_wsi_header
+assert "PL_API bool pl_vulkan_swapchain_get_diagnostics(" in patched_wsi_header
+assert "int *created_mode, int *requested_depth" in patched_wsi_header
 assert prepare.add_libplacebo_swapchain_diagnostics_api(patched_wsi_header) == patched_wsi_header
+legacy_wsi_header = wsi_header + "PL_API bool pl_vulkan_swapchain_set_diagnostics(pl_swapchain sw, bool enabled);\n"
+upgraded_wsi_header = prepare.add_libplacebo_swapchain_diagnostics_api(legacy_wsi_header)
+assert upgraded_wsi_header.count("PL_API bool pl_vulkan_swapchain_set_diagnostics(") == 1
+assert "PL_API bool pl_vulkan_swapchain_get_diagnostics(" in upgraded_wsi_header
 for bad_wsi_header in ("no swapchain declaration here\n", wsi_header + wsi_header):
     try:
         prepare.add_libplacebo_swapchain_diagnostics_api(bad_wsi_header)
@@ -144,7 +150,12 @@ for bad_wsi_header in ("no swapchain declaration here\n", wsi_header + wsi_heade
 stub_source = "bool pl_vulkan_swapchain_suboptimal(pl_swapchain sw)\n{\n    pl_unreachable();\n}\n"
 patched_stub_source = prepare.add_libplacebo_swapchain_diagnostics_stub(stub_source)
 assert "bool pl_vulkan_swapchain_set_diagnostics(pl_swapchain sw, bool enabled)" in patched_stub_source
+assert "bool pl_vulkan_swapchain_get_diagnostics(" in patched_stub_source
 assert prepare.add_libplacebo_swapchain_diagnostics_stub(patched_stub_source) == patched_stub_source
+legacy_stub_source = stub_source + "bool pl_vulkan_swapchain_set_diagnostics(pl_swapchain sw, bool enabled)\n{\n    pl_unreachable();\n}\n"
+upgraded_stub_source = prepare.add_libplacebo_swapchain_diagnostics_stub(legacy_stub_source)
+assert upgraded_stub_source.count("bool pl_vulkan_swapchain_set_diagnostics(") == 1
+assert "bool pl_vulkan_swapchain_get_diagnostics(" in upgraded_stub_source
 for bad_stub_source in ("unrecognized no-Vulkan stubs\n", stub_source + stub_source):
     try:
         prepare.add_libplacebo_swapchain_diagnostics_stub(bad_stub_source)
@@ -176,6 +187,36 @@ for bad_formats_source in (
         pass
     else:
         raise AssertionError("unexpected libplacebo format-table change must fail closed")
+sampleability_anchor = (
+    "        if (fmt->caps) {\n"
+    '            fmt->glsl_type = pl_var_glsl_type_name(pl_var_from_fmt(fmt, ""));\n'
+    "            pl_assert(fmt->glsl_type);\n"
+    "        }\n"
+)
+sampleability_source = "before\n" + sampleability_anchor + "after\n"
+patched_sampleability_source = prepare.enable_nv_optical_flow_sampleability(sampleability_source)
+for marker in (
+    "VK_FORMAT_R16G16_S10_5_NV",
+    'strcmp(vk->exts.elem[i], "VK_NV_optical_flow")',
+    "VK_OPTICAL_FLOW_USAGE_OUTPUT_BIT_NV",
+    "VK_IMAGE_USAGE_SAMPLED_BIT",
+    "vk->GetPhysicalDeviceImageFormatProperties2(",
+    "fmt->caps |= PL_FMT_CAP_SAMPLEABLE",
+    "MPVFLOW_NV_OPTICAL_FLOW_SFIXED5_SAMPLEABILITY",
+):
+    assert marker in patched_sampleability_source, f"NV sampleability must be gated by the extension-aware image query: missing {marker!r}"
+assert prepare.enable_nv_optical_flow_sampleability(patched_sampleability_source) == patched_sampleability_source
+for bad_sampleability_source in (
+    "format capability setup changed\n",
+    sampleability_source + sampleability_anchor,
+    patched_sampleability_source.replace("VK_IMAGE_USAGE_SAMPLED_BIT", "VK_IMAGE_USAGE_STORAGE_BIT"),
+):
+    try:
+        prepare.enable_nv_optical_flow_sampleability(bad_sampleability_source)
+    except SystemExit:
+        pass
+    else:
+        raise AssertionError("unexpected libplacebo sampleability code must fail closed")
 wsi_source = """\
 struct priv {
     bool has_swapchain_maintenance1;
@@ -199,6 +240,7 @@ static bool vk_sw_recreate(pl_swapchain sw, int w, int h)
     PL_VK_ASSERT(res, "vk->CreateSwapchainKHR(...)");
 
     // Get the new swapchain images
+    VK(vk->GetSwapchainImagesKHR(vk->dev, current->swapchain, &num_images, current->vkimages.elem));
 }
 static bool vk_sw_start_frame(pl_swapchain sw)
 {
@@ -225,19 +267,25 @@ patched_wsi_source = prepare.instrument_libplacebo_swapchain(wsi_source)
 for marker in (
     "atomic_bool flow_diagnostics",
     "VkPresentModeKHR flow_created_present_mode",
+    "uint32_t flow_created_image_count",
     "flow_created_info_valid, flow_created_info_reported",
     "flow_report_created_swapchain(p);",
     "create_min_images=%u",
+    "actual_images=%u",
     "event=wsi_swapchain_created",
     'FLOW_WSI_ACQUIRE, "vkAcquireNextImageKHR"',
     'FLOW_WSI_FENCE_WAIT, "present_fence_wait"',
     'FLOW_WSI_PRESENT, "vkQueuePresentKHR"',
     "bool pl_vulkan_swapchain_set_diagnostics(pl_swapchain sw, bool enabled)",
+    "bool pl_vulkan_swapchain_get_diagnostics(",
 ):
     assert marker in patched_wsi_source, f"libplacebo WSI diagnostic instrumentation is missing {marker!r}"
 assert patched_wsi_source.index("p->flow_created_present_mode = sinfo.presentMode;") < patched_wsi_source.index(
     "flow_report_created_swapchain(p);"
 ), "the created swapchain mode must be stored before it is reported"
+assert patched_wsi_source.index("p->flow_created_image_count = num_images;") < patched_wsi_source.index(
+    "flow_report_created_swapchain(p);"
+), "actual image count must be stored before the created swapchain is reported"
 diagnostic_setter = patched_wsi_source.split(
     "bool pl_vulkan_swapchain_set_diagnostics(pl_swapchain sw, bool enabled)", 1
 )[1]
@@ -282,6 +330,7 @@ for marker in (
     '"mpvflow_vulkan_optical.h"',
     '"video/out/mpvflow_vulkan_optical.c"',
     'placebo_formats_path = libplacebo_dir / "src/vulkan/formats.c"',
+    "enable_nv_optical_flow_sampleability",
 ):
     assert marker in prepare_source, f"MPV native preparation must include optional optical integration: {marker!r}"
 assert VULKAN_MAPPER_PATCH.is_file(), "the pinned MPV mapper compatibility patch must be vendored"
@@ -335,6 +384,12 @@ for marker in (
     "event=swapchain_wait stage=swap_buffers",
     "metric=cpu_blocking_call_not_scanout",
     "submit_call_avg_ms=%.3f",
+    "event=wsi_diagnostics_toggle engine=mpv",
+    "event=wsi_swapchain_created engine=mpv",
+    "pl_vulkan_swapchain_get_diagnostics",
+    "actual_images=%u",
+    "event=optical_flow_backend engine=mpv",
+    "optical_flow_reason",
 ):
     assert marker in vo_patch, f"MPV Flow must distinguish real blocking swapchain waits from submit time: missing {marker!r}"
 assert "+        target_fps >= 120 ? 448 : target_fps >= 96 ? 440 : 640;" in vo_patch, (

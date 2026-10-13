@@ -125,10 +125,23 @@ def enlarge_libplacebo_timer_ring(gpu_c: str) -> str:
 
 def add_libplacebo_swapchain_diagnostics_api(vulkan_header: str) -> str:
     old = "PL_API bool pl_vulkan_swapchain_suboptimal(pl_swapchain sw);\n"
-    new = old + "PL_API bool pl_vulkan_swapchain_set_diagnostics(pl_swapchain sw, bool enabled);\n"
-    if vulkan_header.count("PL_API bool pl_vulkan_swapchain_set_diagnostics(pl_swapchain sw, bool enabled);\n") == 1:
+    set_api = "PL_API bool pl_vulkan_swapchain_set_diagnostics(pl_swapchain sw, bool enabled);\n"
+    get_api = (
+        "PL_API bool pl_vulkan_swapchain_get_diagnostics(\n"
+        "    pl_swapchain sw, int *requested_mode,\n"
+        "    int *created_mode, int *requested_depth,\n"
+        "    uint32_t *create_min_images, uint32_t *actual_images);\n"
+    )
+    new = old + set_api + get_api
+    set_count = vulkan_header.count(set_api)
+    get_count = vulkan_header.count(get_api)
+    if set_count == 1 and get_count == 1:
         return vulkan_header
-    if vulkan_header.count(old) == 1 and new not in vulkan_header:
+    if get_count or set_count > 1:
+        raise SystemExit("Pinned libplacebo swapchain API patch is incomplete")
+    if set_count == 1 and vulkan_header.count(old) == 1:
+        return vulkan_header.replace(set_api, set_api + get_api, 1)
+    if vulkan_header.count(old) == 1:
         return vulkan_header.replace(old, new, 1)
     raise SystemExit("Pinned libplacebo swapchain API changed; refusing an unverified diagnostic declaration")
 
@@ -139,15 +152,18 @@ def instrument_libplacebo_swapchain(swapchain_c: str) -> str:
         required = (
             "atomic_bool flow_diagnostics",
             "VkPresentModeKHR flow_created_present_mode",
+            "uint32_t flow_created_image_count",
             "flow_created_info_valid, flow_created_info_reported",
             "flow_report_created_swapchain(p);",
             "create_min_images=%u",
+            "actual_images=%u",
             "event=wsi_swapchain_created",
             "event=wsi_timing stage=%s avg_ms=%.3f max_ms=%.3f ",
             'FLOW_WSI_ACQUIRE, "vkAcquireNextImageKHR"',
             'FLOW_WSI_FENCE_WAIT, "present_fence_wait"',
             'FLOW_WSI_PRESENT, "vkQueuePresentKHR"',
             "pl_vulkan_swapchain_set_diagnostics(pl_swapchain sw, bool enabled)",
+            "pl_vulkan_swapchain_get_diagnostics(",
         )
         if all(item in swapchain_c for item in required):
             return swapchain_c
@@ -164,6 +180,7 @@ def instrument_libplacebo_swapchain(swapchain_c: str) -> str:
         "    bool has_swapchain_maintenance1;\n    atomic_bool flow_diagnostics;\n"
         "    VkPresentModeKHR flow_created_present_mode;\n"
         "    uint32_t flow_created_min_image_count;\n"
+        "    uint32_t flow_created_image_count;\n"
         "    bool flow_created_info_valid, flow_created_info_reported;\n"
         "    pl_clock_t flow_diag_last_report[3];\n"
         "    uint64_t flow_diag_total_ns[3], flow_diag_max_ns[3], flow_diag_samples[3];\n"
@@ -228,11 +245,13 @@ static void flow_report_created_swapchain(struct priv *p)
         return;
     PL_INFO(p->vk, "MPVFLOW_DIAGNOSTIC event=wsi_swapchain_created requested_mode=%s requested_vk=%d "
             "created_mode=%s created_vk=%d fallback=%d requested_depth=%d create_min_images=%u "
+            "actual_images=%u "
             "source=successful_vkCreateSwapchainKHR_create_info metric=created_config_not_scanout",
             flow_present_mode_name(p->params.present_mode), p->params.present_mode,
             flow_present_mode_name(p->flow_created_present_mode), p->flow_created_present_mode,
             p->params.present_mode != p->flow_created_present_mode,
-            p->swapchain_depth, p->flow_created_min_image_count);
+            p->swapchain_depth, p->flow_created_min_image_count,
+            p->flow_created_image_count);
     p->flow_created_info_reported = true;
 }
 '''
@@ -248,11 +267,19 @@ static void flow_report_created_swapchain(struct priv *p)
         '    PL_VK_ASSERT(res, "vk->CreateSwapchainKHR(...)");\n\n'
         '    p->flow_created_present_mode = sinfo.presentMode;\n'
         '    p->flow_created_min_image_count = sinfo.minImageCount;\n'
+        '    p->flow_created_image_count = 0;\n'
         '    p->flow_created_info_valid = true;\n'
         '    p->flow_created_info_reported = false;\n'
-        '    flow_report_created_swapchain(p);\n'
         '    // Get the new swapchain images',
         "created WSI present-mode report",
+    )
+    swapchain_c = replace_once(
+        swapchain_c,
+        "    VK(vk->GetSwapchainImagesKHR(vk->dev, current->swapchain, &num_images, current->vkimages.elem));\n",
+        "    VK(vk->GetSwapchainImagesKHR(vk->dev, current->swapchain, &num_images, current->vkimages.elem));\n"
+        "    p->flow_created_image_count = num_images;\n"
+        "    flow_report_created_swapchain(p);\n",
+        "created WSI image count report",
     )
     swapchain_c = replace_once(
         swapchain_c,
@@ -301,6 +328,21 @@ static void flow_report_created_swapchain(struct priv *p)
         "    struct priv *p = PL_PRIV(sw);\n"
         "    atomic_store_explicit(&p->flow_diagnostics, enabled, memory_order_relaxed);\n"
         "    if (enabled)\n        flow_report_created_swapchain(p);\n"
+        "    return true;\n}\n"
+        "bool pl_vulkan_swapchain_get_diagnostics(\n"
+        "    pl_swapchain sw, int *requested_mode,\n"
+        "    int *created_mode, int *requested_depth,\n"
+        "    uint32_t *create_min_images, uint32_t *actual_images)\n"
+        "{\n"
+        "    if (!sw)\n        return false;\n"
+        "    struct priv *p = PL_PRIV(sw);\n"
+        "    if (!p->flow_created_info_valid || !p->flow_created_image_count)\n"
+        "        return false;\n"
+        "    if (requested_mode) *requested_mode = (int) p->params.present_mode;\n"
+        "    if (created_mode) *created_mode = (int) p->flow_created_present_mode;\n"
+        "    if (requested_depth) *requested_depth = p->swapchain_depth;\n"
+        "    if (create_min_images) *create_min_images = p->flow_created_min_image_count;\n"
+        "    if (actual_images) *actual_images = p->flow_created_image_count;\n"
         "    return true;\n}\n",
         "diagnostic toggle API",
     )
@@ -309,9 +351,26 @@ static void flow_report_created_swapchain(struct priv *p)
 
 def add_libplacebo_swapchain_diagnostics_stub(stubs_c: str) -> str:
     old = "bool pl_vulkan_swapchain_suboptimal(pl_swapchain sw)\n{\n    pl_unreachable();\n}\n"
-    new = old + "bool pl_vulkan_swapchain_set_diagnostics(pl_swapchain sw, bool enabled)\n{\n    pl_unreachable();\n}\n"
-    if stubs_c.count("bool pl_vulkan_swapchain_set_diagnostics(pl_swapchain sw, bool enabled)") == 1:
+    set_stub_definition = "bool pl_vulkan_swapchain_set_diagnostics(pl_swapchain sw, bool enabled)\n{\n    pl_unreachable();\n}\n"
+    get_stub_definition = (
+        "bool pl_vulkan_swapchain_get_diagnostics(\n"
+        + "    pl_swapchain sw, int *requested_mode,\n"
+        + "    int *created_mode, int *requested_depth,\n"
+        + "    uint32_t *create_min_images, uint32_t *actual_images)\n{\n    pl_unreachable();\n}\n"
+    )
+    new = old + set_stub_definition + get_stub_definition
+    set_marker = "bool pl_vulkan_swapchain_set_diagnostics(pl_swapchain sw, bool enabled)"
+    get_marker = "bool pl_vulkan_swapchain_get_diagnostics("
+    set_count = stubs_c.count(set_marker)
+    get_count = stubs_c.count(get_marker)
+    if set_count == 1 and get_count == 1:
         return stubs_c
+    if get_count or set_count > 1:
+        raise SystemExit("Pinned libplacebo no-Vulkan diagnostic stubs are incomplete")
+    if set_count == 1 and stubs_c.count(old) == 1:
+        if stubs_c.count(set_stub_definition) != 1:
+            raise SystemExit("Pinned libplacebo legacy no-Vulkan stub changed; refusing an unverified getter")
+        return stubs_c.replace(set_stub_definition, set_stub_definition + get_stub_definition, 1)
     if stubs_c.count(old) == 1 and new not in stubs_c:
         return stubs_c.replace(old, new, 1)
     raise SystemExit("Pinned libplacebo no-Vulkan stubs changed; refusing an unverified diagnostic stub")
@@ -337,6 +396,72 @@ def enable_nv_optical_flow_vector_format(formats_c: str) -> str:
     if formats_c.count(needle) != 1:
         raise SystemExit("Pinned libplacebo signed-integer format table changed; refusing an unverified SFIXED5 mapping")
     return formats_c.replace(needle, needle + entry, 1)
+
+
+def enable_nv_optical_flow_sampleability(formats_c: str) -> str:
+    marker = "/* MPVFLOW_NV_OPTICAL_FLOW_SFIXED5_SAMPLEABILITY */"
+    required = (
+        "vk->GetPhysicalDeviceImageFormatProperties2",
+        'strcmp(vk->exts.elem[i], "VK_NV_optical_flow")',
+        "VK_OPTICAL_FLOW_USAGE_OUTPUT_BIT_NV",
+        "VK_IMAGE_USAGE_SAMPLED_BIT",
+        "fmt->caps |= PL_FMT_CAP_SAMPLEABLE",
+        marker,
+    )
+    if marker in formats_c:
+        if all(item in formats_c for item in required):
+            return formats_c
+        raise SystemExit("Pinned libplacebo NV sampleability patch is incomplete")
+
+    anchor = (
+        "        if (fmt->caps) {\n"
+        '            fmt->glsl_type = pl_var_glsl_type_name(pl_var_from_fmt(fmt, ""));\n'
+        "            pl_assert(fmt->glsl_type);\n"
+        "        }\n"
+    )
+    if formats_c.count(anchor) != 1:
+        raise SystemExit("Pinned libplacebo format capability setup changed; refusing an unverified NV sampleability patch")
+
+    query = '''#ifdef VK_NV_optical_flow
+        /* The NV vector format may not expose SAMPLED_IMAGE through the
+         * generic format-feature query. Only advertise sampling when the
+         * extension-aware image-usage query accepts this exact output image. */
+        if (vk_fmt->tfmt == VK_FORMAT_R16G16_S10_5_NV &&
+            vk->GetPhysicalDeviceImageFormatProperties2) {
+            bool optical_flow_enabled = false;
+            for (int i = 0; i < vk->exts.num; i++) {
+                if (strcmp(vk->exts.elem[i], "VK_NV_optical_flow") == 0) {
+                    optical_flow_enabled = true;
+                    break;
+                }
+            }
+            if (optical_flow_enabled) {
+                VkOpticalFlowImageFormatInfoNV flow_info = {
+                    .sType = VK_STRUCTURE_TYPE_OPTICAL_FLOW_IMAGE_FORMAT_INFO_NV,
+                    .usage = VK_OPTICAL_FLOW_USAGE_OUTPUT_BIT_NV,
+                };
+                VkPhysicalDeviceImageFormatInfo2 flow_image_info = {
+                    .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_IMAGE_FORMAT_INFO_2,
+                    .pNext = &flow_info,
+                    .format = VK_FORMAT_R16G16_S10_5_NV,
+                    .type = VK_IMAGE_TYPE_2D,
+                    .tiling = VK_IMAGE_TILING_OPTIMAL,
+                    .usage = VK_IMAGE_USAGE_SAMPLED_BIT,
+                };
+                VkImageFormatProperties2 flow_image_properties = {
+                    .sType = VK_STRUCTURE_TYPE_IMAGE_FORMAT_PROPERTIES_2,
+                };
+                if (vk->GetPhysicalDeviceImageFormatProperties2(
+                        vk->physd, &flow_image_info, &flow_image_properties) == VK_SUCCESS) {
+                    fmt->caps |= PL_FMT_CAP_SAMPLEABLE;
+                }
+            }
+        }
+#endif
+        /* MPVFLOW_NV_OPTICAL_FLOW_SFIXED5_SAMPLEABILITY */
+
+'''
+    return formats_c.replace(anchor, query + anchor, 1)
 
 
 def enable_android_external_memory_extensions(vulkan_context: str) -> str:
@@ -426,7 +551,9 @@ def main() -> None:
     placebo_swapchain = instrument_libplacebo_swapchain(placebo_swapchain_path.read_text())
     placebo_vulkan_header = add_libplacebo_swapchain_diagnostics_api(placebo_vulkan_header_path.read_text())
     placebo_stubs = add_libplacebo_swapchain_diagnostics_stub(placebo_stubs_path.read_text())
-    placebo_formats = enable_nv_optical_flow_vector_format(placebo_formats_path.read_text())
+    placebo_formats = enable_nv_optical_flow_sampleability(
+        enable_nv_optical_flow_vector_format(placebo_formats_path.read_text())
+    )
     vo_marker = "MPVFLOW_GPU_INTEGRATION"
     meson_marker = "# MPVFLOW_ANDROID_GPU"
     if vo_marker not in vo:
@@ -483,7 +610,7 @@ def main() -> None:
         f"Installed direct GPU/OpenCL MPVFlow into {mpv_dir} and corrected libplacebo's "
         f"Android glslang search path in {glslang_meson_path} and Vulkan timestamp "
         f"ring in {gpu_timer_path}, plus Flow-gated Vulkan WSI diagnostics in {placebo_swapchain_path}; "
-        f"the optional NV optical-flow vector format is patched into libplacebo; "
+        f"the optional NV optical-flow vector format is registered with an extension-aware sampleability check; "
         f"the legacy CPU filter is not compiled or registered by this build."
     )
 

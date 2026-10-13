@@ -61,6 +61,9 @@ struct MPVFlowGPUCreateDiagnostics {
     uint32_t rgba8_caps;
     bool rgba16f_found;
     bool rgba8_found;
+    bool optical_flow_attempted;
+    bool optical_flow_ready;
+    char optical_flow_reason[160];
 };
 
 enum MPVFlowGPUStage {

@@ -1292,6 +1292,14 @@ MPVFlowGPUContext *mpvflow_gpu_create(pl_gpu gpu,
     char optical_reason[160] = {0};
     ctx->optical = mpvflow_vulkan_optical_create(gpu, optical_reason,
                                                  sizeof(optical_reason));
+    if (diagnostics) {
+        diagnostics->optical_flow_attempted = true;
+        diagnostics->optical_flow_ready = ctx->optical != NULL;
+        snprintf(diagnostics->optical_flow_reason,
+                 sizeof(diagnostics->optical_flow_reason), "%s",
+                 ctx->optical ? "ready" :
+                     (optical_reason[0] ? optical_reason : "unavailable"));
+    }
     if (!ctx->optical)
         flow_log(gpu, PL_LOG_INFO,
                  "MPVFLOW_DIAGNOSTIC event=optical_flow_backend state=disabled "

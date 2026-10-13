@@ -6,13 +6,14 @@ index bd3d1aa..0072486 100644
 +#include <math.h>
 +#include <string.h>
 +#include <libplacebo/vulkan.h>
-@@ -52,0 +56 @@
+@@ -52,0 +56,1 @@
 +#include "mpvflow_gpu.h"
-@@ -157,0 +162,58 @@ struct priv {
+@@ -157,0 +162,59 @@ struct priv {
 +    // MPVFLOW_GPU_INTEGRATION
 +    MPVFlowGPUContext *flow_gpu;
 +    MPVFlowGPUPair *flow_pair;
 +    bool flow_swapchain_diagnostics_enabled;
++    bool flow_wsi_created_logged;
 +    uint64_t flow_pair_ids[2];
 +    pl_fmt flow_input_fmt;
 +    bool flow_init_logged;
@@ -67,33 +68,33 @@ index bd3d1aa..0072486 100644
 +    uint64_t flow_cadence_pair_analysis_failures;
 +    uint64_t flow_cadence_pair_cache_reuses;
 +
-@@ -184,0 +247 @@ static void update_lut(struct priv *p, struct user_lut *lut);
+@@ -184,0 +248,1 @@ static void update_lut(struct priv *p, struct user_lut *lut);
 +static void flow_update_context(struct vo *vo);
-@@ -186,0 +250,5 @@ struct gl_next_opts {
+@@ -186,0 +251,5 @@ struct gl_next_opts {
 +    bool mpvflow;
 +    int mpvflow_max_dimension;
 +    int mpvflow_target_fps;
 +    int mpvflow_quality;
 +    int mpvflow_compute_api;
-@@ -213,0 +282,5 @@ const struct m_sub_options gl_next_conf = {
+@@ -213,0 +283,5 @@ const struct m_sub_options gl_next_conf = {
 +        {"mpvflow", OPT_BOOL(mpvflow)},
 +        {"mpvflow-max-dimension", OPT_INT(mpvflow_max_dimension), M_RANGE(8, 640)},
 +        {"mpvflow-target-fps", OPT_INT(mpvflow_target_fps), M_RANGE(1, 240)},
 +        {"mpvflow-quality", OPT_INT(mpvflow_quality), M_RANGE(0, 100)},
 +        {"mpvflow-compute-api", OPT_INT(mpvflow_compute_api), M_RANGE(0, 2)},
-@@ -239,0 +313,4 @@ const struct m_sub_options gl_next_conf = {
+@@ -239,0 +314,4 @@ const struct m_sub_options gl_next_conf = {
 +        .mpvflow_max_dimension = 640,
 +        .mpvflow_target_fps = 60,
 +        .mpvflow_quality = 60,
 +        .mpvflow_compute_api = MPVFLOW_GPU_COMPUTE_AUTO,
-@@ -560,0 +638,6 @@ struct frame_priv {
+@@ -560,0 +639,6 @@ struct frame_priv {
 +    uint64_t frame_id;
 +    pl_tex flow_source;
 +    pl_tex flow_input;
 +    int flow_cap;
 +    int flow_w, flow_h;
 +    int flow_source_w, flow_source_h;
-@@ -569,0 +653,409 @@ struct frame_priv {
+@@ -569,0 +654,416 @@ struct frame_priv {
 +static void flow_release_pair(struct priv *p)
 +{
 +    if (p->flow_pair)
@@ -252,6 +253,13 @@ index bd3d1aa..0072486 100644
 +    struct MPVFlowGPUCreateDiagnostics create_diagnostics = {0};
 +    MPVFlowGPUContext *ctx = mpvflow_gpu_create(p->gpu, &config, &status,
 +                                                &create_diagnostics);
++    MP_INFO(vo, "MPVFLOW_DIAGNOSTIC event=optical_flow_backend engine=mpv "
++            "state=%s attempted=%d reason=%s\n",
++            create_diagnostics.optical_flow_ready ? "ready" :
++                create_diagnostics.optical_flow_attempted ? "disabled" : "not_attempted",
++            create_diagnostics.optical_flow_attempted,
++            create_diagnostics.optical_flow_reason[0]
++                ? create_diagnostics.optical_flow_reason : "unknown");
 +    pl_fmt input_fmt = pl_find_fmt(p->gpu, PL_FMT_UNORM, 4, 8, 8,
 +                                   PL_FMT_CAP_SAMPLEABLE | PL_FMT_CAP_RENDERABLE);
 +    if (!ctx || !input_fmt) {
@@ -503,15 +511,15 @@ index bd3d1aa..0072486 100644
 +    fp->flow_cap = 0;
 +}
 +
-@@ -1109,0 +1602,2 @@ static bool map_frame(pl_gpu gpu, pl_tex *tex, const struct pl_source_frame *src
+@@ -1109,0 +1610,2 @@ static bool map_frame(pl_gpu gpu, pl_tex *tex, const struct pl_source_frame *src
 +    flow_update_context(vo);
 +    flow_prepare_input(vo, frame, mpi, fp);
-@@ -1118,0 +1613 @@ static void unmap_frame(pl_gpu gpu, struct pl_frame *frame,
+@@ -1118,0 +1621,1 @@ static void unmap_frame(pl_gpu gpu, struct pl_frame *frame,
 +    flow_release_frame(fp->vo, fp);
-@@ -1135,0 +1631,2 @@ static void discard_frame(const struct pl_source_frame *src)
+@@ -1135,0 +1639,2 @@ static void discard_frame(const struct pl_source_frame *src)
 +    struct frame_priv *fp = mpi->priv;
 +    flow_release_frame(fp->vo, fp);
-@@ -1341,0 +1839,204 @@ static void update_hook_opts_dynamic(struct priv *p, const struct pl_hook *hook,
+@@ -1341,0 +1847,204 @@ static void update_hook_opts_dynamic(struct priv *p, const struct pl_hook *hook,
 +struct flow_prepared_frame {
 +    int nearest;
 +    int before;
@@ -716,7 +724,7 @@ index bd3d1aa..0072486 100644
 +    return ok;
 +}
 +
-@@ -1344,0 +2046,21 @@ static bool draw_frame(struct vo *vo, struct vo_frame *frame)
+@@ -1344,0 +2054,21 @@ static bool draw_frame(struct vo *vo, struct vo_frame *frame)
 +    p->flow_pending_synthesized = false;
 +    p->flow_pending_display_synced = false;
 +    p->flow_pending_source_batch = 0;
@@ -738,15 +746,15 @@ index bd3d1aa..0072486 100644
 +        }
 +        p->flow_cadence_last_render_ns = flow_render_start_ns;
 +    }
-@@ -1354 +2076,2 @@ static bool draw_frame(struct vo *vo, struct vo_frame *frame)
+@@ -1354,1 +2084,2 @@ static bool draw_frame(struct vo *vo, struct vo_frame *frame)
 -                           !frame->still && frame->num_frames > 1 && !p->paused;
 +                           !frame->still &&
 +                           (frame->num_frames > 1 || p->next_opts->mpvflow) && !p->paused;
-@@ -1403,0 +2127 @@ static bool draw_frame(struct vo *vo, struct vo_frame *frame)
+@@ -1403,0 +2135,1 @@ static bool draw_frame(struct vo *vo, struct vo_frame *frame)
 +            flow_release_pair(p);
-@@ -1422,0 +2147 @@ static bool draw_frame(struct vo *vo, struct vo_frame *frame)
+@@ -1422,0 +2155,1 @@ static bool draw_frame(struct vo *vo, struct vo_frame *frame)
 +        fp->frame_id = id;
-@@ -1570,0 +2296,10 @@ static bool draw_frame(struct vo *vo, struct vo_frame *frame)
+@@ -1570,0 +2304,10 @@ static bool draw_frame(struct vo *vo, struct vo_frame *frame)
 +    struct pl_frame_mix mix = {0};
 +    struct pl_queue_params flow_qparams = {0};
 +    enum pl_queue_status flow_queue_status = PL_QUEUE_OK;
@@ -757,7 +765,7 @@ index bd3d1aa..0072486 100644
 +        .bypass_reason = p->flow_gpu ? "no_temporal_pair" : "gpu_context_unavailable",
 +        .bypass_status = MPVFLOW_GPU_OK,
 +    };
-@@ -1572 +2307,71 @@ static bool draw_frame(struct vo *vo, struct vo_frame *frame)
+@@ -1572,1 +2315,110 @@ static bool draw_frame(struct vo *vo, struct vo_frame *frame)
 -    if (!should_draw || !pl_swapchain_start_frame(p->sw, &swframe)) {
 +    if (p->next_opts->mpvflow && gpu && should_draw && frame->current) {
 +        // Create and map the timestamped frame mix before a potentially blocking WSI acquire.
@@ -805,12 +813,51 @@ index bd3d1aa..0072486 100644
 +    }
 +    if (p->gpu && p->gpu->glsl.vulkan && p->sw &&
 +        p->flow_swapchain_diagnostics_enabled != p->next_opts->mpvflow) {
-+        p->flow_swapchain_diagnostics_enabled =
-+            pl_vulkan_swapchain_set_diagnostics(p->sw, p->next_opts->mpvflow);
++        const bool flow_wsi_requested = p->next_opts->mpvflow;
++        const bool flow_wsi_set =
++            pl_vulkan_swapchain_set_diagnostics(p->sw, flow_wsi_requested);
++        if (flow_wsi_set) {
++            p->flow_swapchain_diagnostics_enabled = flow_wsi_requested;
++            if (flow_wsi_requested)
++                p->flow_wsi_created_logged = false;
++        }
++        MP_INFO(vo, "MPVFLOW_DIAGNOSTIC event=wsi_diagnostics_toggle engine=mpv "
++                "requested=%d applied=%d setter_result=%d\n",
++                flow_wsi_requested, p->flow_swapchain_diagnostics_enabled,
++                flow_wsi_set);
 +    }
 +    const int64_t flow_acquire_start_ns = p->next_opts->mpvflow ? mp_time_ns() : 0;
 +    const bool swapchain_frame_started =
 +        should_draw && pl_swapchain_start_frame(p->sw, &swframe);
++    if (swapchain_frame_started && p->next_opts->mpvflow &&
++        !p->flow_wsi_created_logged) {
++        int requested_mode = VK_PRESENT_MODE_FIFO_KHR;
++        int created_mode = VK_PRESENT_MODE_FIFO_KHR;
++        int requested_depth = 0;
++        uint32_t create_min_images = 0, actual_images = 0;
++        if (pl_vulkan_swapchain_get_diagnostics(
++                p->sw, &requested_mode, &created_mode, &requested_depth,
++                &create_min_images, &actual_images)) {
++            const char *requested_name =
++                requested_mode == VK_PRESENT_MODE_MAILBOX_KHR ? "mailbox" :
++                requested_mode == VK_PRESENT_MODE_IMMEDIATE_KHR ? "immediate" :
++                requested_mode == VK_PRESENT_MODE_FIFO_RELAXED_KHR ? "fifo_relaxed" :
++                requested_mode == VK_PRESENT_MODE_FIFO_KHR ? "fifo" : "other";
++            const char *created_name =
++                created_mode == VK_PRESENT_MODE_MAILBOX_KHR ? "mailbox" :
++                created_mode == VK_PRESENT_MODE_IMMEDIATE_KHR ? "immediate" :
++                created_mode == VK_PRESENT_MODE_FIFO_RELAXED_KHR ? "fifo_relaxed" :
++                created_mode == VK_PRESENT_MODE_FIFO_KHR ? "fifo" : "other";
++            MP_INFO(vo, "MPVFLOW_DIAGNOSTIC event=wsi_swapchain_created engine=mpv "
++                    "requested_mode=%s requested_vk=%d created_mode=%s created_vk=%d "
++                    "fallback=%d requested_depth=%d create_min_images=%u actual_images=%u "
++                    "source=successful_vkCreateSwapchainKHR_create_info metric=created_config_not_scanout\n",
++                    requested_name, (int) requested_mode, created_name,
++                    (int) created_mode, requested_mode != created_mode,
++                    requested_depth, create_min_images, actual_images);
++            p->flow_wsi_created_logged = true;
++        }
++    }
 +    if (flow_acquire_start_ns > 0 && should_draw) {
 +        const int64_t now_ns = mp_time_ns();
 +        const uint64_t wait_ns = now_ns > flow_acquire_start_ns
@@ -830,7 +877,7 @@ index bd3d1aa..0072486 100644
 +        }
 +    }
 +    if (!should_draw || !swapchain_frame_started) {
-@@ -1574,8 +2379,14 @@ static bool draw_frame(struct vo *vo, struct vo_frame *frame)
+@@ -1574,8 +2426,14 @@ static bool draw_frame(struct vo *vo, struct vo_frame *frame)
 -            // Advance the queue state to the current PTS to discard unused frames
 -            struct pl_queue_params qparams = *pl_queue_params(
 -                .pts = frame->current->pts + pts_offset,
@@ -853,16 +900,16 @@ index bd3d1aa..0072486 100644
 +                );
 +                pl_queue_update(p->queue, NULL, &qparams);
 +            }
-@@ -1654,2 +2465,3 @@ static bool draw_frame(struct vo *vo, struct vo_frame *frame)
+@@ -1654,2 +2512,3 @@ static bool draw_frame(struct vo *vo, struct vo_frame *frame)
 -    struct pl_frame_mix mix = {0};
 -    if (frame->current) {
 +    if (flow_queue_updated && flow_queue_status == PL_QUEUE_ERR)
 +        goto done;
 +    if (frame->current && !flow_queue_updated) {
-@@ -1693,0 +2506,2 @@ static bool draw_frame(struct vo *vo, struct vo_frame *frame)
+@@ -1693,0 +2553,2 @@ static bool draw_frame(struct vo *vo, struct vo_frame *frame)
 +    }
 +    if (frame->current) {
-@@ -1750,0 +2565,26 @@ static bool draw_frame(struct vo *vo, struct vo_frame *frame)
+@@ -1750,0 +2612,26 @@ static bool draw_frame(struct vo *vo, struct vo_frame *frame)
 +    if (p->next_opts->mpvflow) {
 +        const char *queue_state = !frame->num_frames ? "redraw_without_source_batch" :
 +            !opts->interpolation ? "interpolation_disabled" :
@@ -889,13 +936,13 @@ index bd3d1aa..0072486 100644
 +    } else {
 +        p->flow_queue_state_logged = false;
 +    }
-@@ -1752 +2592,4 @@ static bool draw_frame(struct vo *vo, struct vo_frame *frame)
+@@ -1752,1 +2639,4 @@ static bool draw_frame(struct vo *vo, struct vo_frame *frame)
 -    bool render_ok = pl_render_image_mix(p->rr, &mix, &target, &params);
 +    bool flow_synthesized = false;
 +    bool render_ok = p->next_opts->mpvflow
 +        ? flow_render_frame(vo, &mix, &target, &params, &flow_prepared, &flow_synthesized)
 +        : pl_render_image_mix(p->rr, &mix, &target, &params);
-@@ -1780 +2623,19 @@ static bool draw_frame(struct vo *vo, struct vo_frame *frame)
+@@ -1780,1 +2670,19 @@ static bool draw_frame(struct vo *vo, struct vo_frame *frame)
 -    p->is_interpolated = pts_offset != 0 && mix.num_frames > 1;
 +    p->is_interpolated = p->next_opts->mpvflow
 +        ? flow_synthesized : pts_offset != 0 && mix.num_frames > 1;
@@ -916,11 +963,11 @@ index bd3d1aa..0072486 100644
 +                p->flow_cadence_render_cpu_max_ns = render_ns;
 +        }
 +    }
-@@ -1797 +2658,2 @@ static void flip_page(struct vo *vo)
+@@ -1797,1 +2705,2 @@ static void flip_page(struct vo *vo)
 -
 +    const int64_t flip_start_ns = mp_time_ns();
 +    bool submitted = false;
-@@ -1799 +2661,6 @@ static void flip_page(struct vo *vo)
+@@ -1799,1 +2708,6 @@ static void flip_page(struct vo *vo)
 -        if (!pl_swapchain_submit_frame(p->sw))
 +        if (p->next_opts->mpvflow)
 +            p->flow_cadence_swap_attempts++;
@@ -928,7 +975,7 @@ index bd3d1aa..0072486 100644
 +        if (!submitted && p->next_opts->mpvflow)
 +            p->flow_cadence_swap_failures++;
 +        if (!submitted)
-@@ -1803,0 +2671,128 @@ static void flip_page(struct vo *vo)
+@@ -1803,0 +2718,128 @@ static void flip_page(struct vo *vo)
 +    const int64_t now_ns = mp_time_ns();
 +    const uint64_t flip_wait_ns = now_ns > flip_start_ns
 +        ? (uint64_t) (now_ns - flip_start_ns) : 0;
@@ -1057,7 +1104,7 @@ index bd3d1aa..0072486 100644
 +    p->flow_pending_source_batch = 0;
 +    p->flow_pending_mix_frames = 0;
 +    const int64_t flow_swap_wait_start_ns = p->next_opts->mpvflow ? mp_time_ns() : 0;
-@@ -1804,0 +2800,18 @@ static void flip_page(struct vo *vo)
+@@ -1804,0 +2847,18 @@ static void flip_page(struct vo *vo)
 +    if (flow_swap_wait_start_ns > 0) {
 +        const int64_t now_ns = mp_time_ns();
 +        const uint64_t wait_ns = now_ns > flow_swap_wait_start_ns
@@ -1076,14 +1123,14 @@ index bd3d1aa..0072486 100644
 +                    wait_ns / 1000000.0, p->next_opts->mpvflow_target_fps);
 +        }
 +    }
-@@ -2466,0 +3480,4 @@ static void uninit(struct vo *vo)
+@@ -2466,0 +3527,4 @@ static void uninit(struct vo *vo)
 +    flow_release_pair(p);
 +    mpvflow_gpu_destroy(p->flow_gpu);
 +    p->flow_gpu = NULL;
 +    p->flow_input_fmt = NULL;
-@@ -2846,0 +3864 @@ static void update_render_options(struct vo *vo)
+@@ -2846,0 +3911,1 @@ static void update_render_options(struct vo *vo)
 +    flow_update_context(vo);
-@@ -2878 +3896,2 @@ static void update_render_options(struct vo *vo)
+@@ -2878,1 +3943,2 @@ static void update_render_options(struct vo *vo)
 -    pars->params.frame_mixer = opts->interpolation ? map_scaler(p, SCALER_TSCALE) : NULL;
 +    pars->params.frame_mixer = opts->interpolation && !p->next_opts->mpvflow
 +        ? map_scaler(p, SCALER_TSCALE) : NULL;
