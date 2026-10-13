@@ -555,16 +555,26 @@ class Media3FlowVideoSink(
 
   override fun initialize(sourceFormat: Format): Boolean {
     currentFormat = sourceFormat
+    initialized = false
     val success = runOnGlThreadSync {
       if (!ensureEgl() || !makePbufferCurrent() || sourceFormat.width <= 0 || sourceFormat.height <= 0) {
+        destroyWindowSurface()
+        initialized = false
         return@runOnGlThreadSync false
       }
       configureInputSurface(sourceFormat.width, sourceFormat.height)
       ensureProcessingResources(sourceFormat.width, sourceFormat.height)
-      if (outputSurface?.isValid == true) createWindowSurface()
-      inputSurface != null && inputSurfaceTexture != null
+      val sinkInitialized = inputSurface != null && inputSurfaceTexture != null
+      initialized = sinkInitialized
+      if (Media3FlowOutputSurfacePolicy.shouldCreateEglWindowSurface(
+          sinkInitialized = sinkInitialized,
+          outputSurfaceValid = outputSurface?.isValid == true,
+          disposed = disposed,
+        )) {
+        createWindowSurface()
+      }
+      sinkInitialized
     }
-    initialized = success
     if (success) {
       dispatchListener { it.onVideoSizeChanged(videoSize(sourceFormat)) }
       publishDiagnostics("ready", null, force = true)
@@ -699,6 +709,15 @@ class Media3FlowVideoSink(
         outputWallTimes.clear()
         generatedWallTimes.clear()
       }
+      // The dormant Flow renderer shares PlayerView's surface; only claim its BufferQueue after
+      // Media3 selects this sink, otherwise the stock MediaCodec renderer cannot connect.
+      val canCreateOutputWindowSurface = this.outputSurface === outputSurface &&
+        Media3FlowOutputSurfacePolicy.shouldCreateEglWindowSurface(
+          sinkInitialized = initialized,
+          outputSurfaceValid = outputSurface.isValid,
+          disposed = disposed,
+        )
+      if (!canCreateOutputWindowSurface) return@post
       if (!ensureEgl() || !makePbufferCurrent()) return@post
       createWindowSurface()
       scheduleDisplayFrame()
