@@ -67,6 +67,26 @@ require(flow, "float(best)/(float(blockSize*blockSize)*255.0)", "flow vectors mu
 require(synthesis, "vec4 flowAtEdgeAware(vec2 p,int direction)", "synthesis must guide vector sampling by source appearance")
 require(synthesis, "vec4 flowAtBilinear(vec2 p,int direction)", "iterative vector refinement must have a low-cost bilinear sampler")
 require(synthesis, "bool staticPixel=", "static low-motion pixels should bypass the full-resolution warp path")
+require(synthesis, "ivec2 outSize=imageSize(outTex),motionSize=pc.cfg.zw;", "synthesis bounds must use the actual storage-image extent, not only host-provided dimensions")
+synthesis_main = synthesis.split("void main()", 1)[1]
+output_guard = "if(any(greaterThanEqual(p,outSize))) return;"
+assert output_guard in synthesis_main, "synthesis must reject padded invocations outside the output image"
+assert synthesis_main.index(output_guard) < synthesis_main.index("imageStore(outTex,p,"), "output bounds must be checked before every synthesis image store"
+
+def padded_workgroup_pixels(width: int, height: int, local_size: int = 8):
+    groups_x = (width + local_size - 1) // local_size
+    groups_y = (height + local_size - 1) // local_size
+    return [(x, y) for y in range(groups_y * local_size) for x in range(groups_x * local_size)]
+
+for output_width, output_height in ((1, 1), (7, 9), (13, 9), (16, 8), (17, 16)):
+    dispatched = padded_workgroup_pixels(output_width, output_height)
+    written = {(x, y) for x, y in dispatched if x < output_width and y < output_height}
+    expected = {(x, y) for y in range(output_height) for x in range(output_width)}
+    assert written == expected, f"bounds guard must write each valid pixel exactly once for {output_width}x{output_height}"
+    assert all(x < output_width and y < output_height for x, y in written), "padded workgroup lanes must never reach output stores"
+    if output_width % 8 or output_height % 8:
+        assert len(dispatched) > len(written), "odd or partial dimensions must exercise padded workgroup lanes"
+
 require(flow, "layout(set=0,binding=4,rgba16f) readonly uniform image2D sceneTex;", "Vulkan motion search must consume the reduced scene delta")
 require(flow, "if(imageLoad(sceneTex,ivec2(0)).r>0.1882353){ imageStore(flowTex,g,vec4(0.0,0.0,1.0,0.0)); return; }", "Vulkan scene cuts must initialize a no-confidence flow field before skipping SAD search")
 require(synthesis, "if(cut>0.1882353)", "Vulkan synthesis must use the same scene-cut threshold as the motion-search early-out")
