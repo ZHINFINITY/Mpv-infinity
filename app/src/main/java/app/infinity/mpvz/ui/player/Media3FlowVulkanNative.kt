@@ -4,6 +4,8 @@ import android.hardware.HardwareBuffer
 
 /** JNI access to the same libplacebo-backed Vulkan motion pipeline used by MPV Flow. */
 internal object Media3FlowVulkanNative {
+  const val COMPUTE_API_VULKAN = 2
+
   init {
     // The selected mpv AAR exports the exact libplacebo runtime linked by the JNI library.
     System.loadLibrary("mpv")
@@ -11,6 +13,9 @@ internal object Media3FlowVulkanNative {
   }
 
   external fun nativeCreateContext(maxDimension: Int, requestedComputeApi: Int): Long
+
+  /** Manually dispatches the debug-only NV Optical Flow synthetic-shift probe. */
+  external fun nativeRunNvOpticalFlowSelfTest(context: Long): Boolean
 
   /** Returns the currently effective Flow compute backend, including Auto fallback. */
   external fun nativeGetComputeApiName(context: Long): String?

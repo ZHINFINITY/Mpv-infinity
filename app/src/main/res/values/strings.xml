@@ -460,6 +460,11 @@
   <string name="mpv_config_owned_message">This app control is disabled because one or more options it requires are assigned to mpv.conf in Advanced settings.</string>
   <string name="pref_advanced_dump_logs_title">Dump logs</string>
   <string name="pref_advanced_dump_logs_summary">Dumps and copies the logs to be shared with the developers</string>
+  <string name="pref_advanced_nv_optical_self_test_title">Run NV Optical Flow self-test</string>
+  <string name="pref_advanced_nv_optical_self_test_summary">Debug-only: dispatches a known 16 px synthetic shift, reads back RGBA16F, and logs all four channels. Does not change the playback decoder.</string>
+  <string name="pref_advanced_nv_optical_self_test_running">Running an isolated Vulkan diagnostic…</string>
+  <string name="pref_advanced_nv_optical_self_test_complete">NV self-test readback completed. Check MPVFLOW diagnostics to inspect the decoded grid.</string>
+  <string name="pref_advanced_nv_optical_self_test_failed">NV self-test was unavailable or failed. Check MPVFLOW diagnostics for the reason.</string>
   <string name="pref_advanced_verbose_logging_title">Verbose logging</string>
   <string name="pref_advanced_verbose_logging_summary">Helps in debugging but may hinder performance</string>
   <string name="pref_advanced_clear_playback_history">Clear playback history</string>

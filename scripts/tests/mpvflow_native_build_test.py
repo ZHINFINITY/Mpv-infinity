@@ -972,6 +972,51 @@ for marker in (
     "shader_execution=not_integrated_in_flow_core",
 ):
     assert marker in flow_gpu_source, f"shared core must query QCOM block-match support without enabling its shader path: missing {marker!r}"
+
+nv_selftest_source = (
+    ROOT / "app/src/main/cpp/mpvflow/mpvflow_vulkan_optical_selftest.c"
+).read_text(encoding="utf-8")
+nv_optical_source = (
+    ROOT / "app/src/main/cpp/mpvflow/mpvflow_vulkan_optical.c"
+).read_text(encoding="utf-8")
+advanced_preferences_source = (
+    ROOT / "app/src/main/java/app/infinity/mpvz/ui/preferences/AdvancedPreferencesScreen.kt"
+).read_text(encoding="utf-8")
+for marker in (
+    "#if defined(MPVFLOW_ENABLE_NV_SELF_TEST) && defined(VK_NV_optical_flow)",
+    "VK_FORMAT_R16G16B16A16_SFLOAT",
+    "VK_IMAGE_USAGE_TRANSFER_SRC_BIT",
+    "VK_IMAGE_USAGE_SAMPLED_BIT",
+    "VK_IMAGE_USAGE_TRANSFER_DST_BIT",
+    "vkCmdClearColorImage",
+    "VK_PIPELINE_STAGE_ALL_COMMANDS_BIT",
+    "vkCmdCopyImageToBuffer",
+    "vkWaitForFences",
+    "self_test_half_to_float",
+    "event=grid_cell",
+    "half_bits=(%04x,%04x,%04x,%04x)",
+    "production_rgba16f_decoder_enabled=0",
+):
+    assert marker in nv_selftest_source, f"manual NV self-test is missing {marker!r}"
+assert "mpvflow/mpvflow_vulkan_optical_selftest.c" in cmake_source
+assert '"$<$<CONFIG:Debug>:MPVFLOW_ENABLE_NV_SELF_TEST=1>"' in cmake_source
+assert "nativeRunNvOpticalFlowSelfTest" in media3_jni_source
+assert "BuildConfig.DEBUG && BuildConfig.MPV_SUPPORTS_VULKAN" in advanced_preferences_source
+assert "nativeRunNvOpticalFlowSelfTest(testContext)" in advanced_preferences_source
+assert "nativeDestroyContext(testContext)" in advanced_preferences_source
+assert "nativeRunNvOpticalFlowSelfTest" not in media3_sink_source, (
+    "the manual NV diagnostic must not run during normal Media3 playback"
+)
+assert "mpvflow_vulkan_optical_debug_self_test" not in flow_gpu_source, (
+    "the shared playback Flow core must not invoke the manual NV diagnostic"
+)
+production_vector_candidates = nv_optical_source.split(
+    "static const struct Candidate candidates[]", 1
+)[1].split("};", 1)[0]
+assert "VK_FORMAT_R16G16B16A16_SFLOAT" not in production_vector_candidates, (
+    "the debug probe must not add RGBA16F to the production adapter's documented S10.5 decoder candidates"
+)
+
 for marker in (
     "params.async_compute = false;",
     "params.async_transfer = false;",

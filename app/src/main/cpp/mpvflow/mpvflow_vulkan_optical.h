@@ -21,4 +21,7 @@ pl_tex mpvflow_vulkan_optical_vectors(MPVFlowVulkanOptical *optical, int index);
 bool mpvflow_vulkan_optical_dispatch(MPVFlowVulkanOptical *optical);
 void mpvflow_vulkan_optical_destroy(MPVFlowVulkanOptical **optical);
 
+/* Manual debug-only probe; never called by the playback adapter. */
+bool mpvflow_vulkan_optical_debug_self_test(pl_gpu gpu);
+
 #endif
