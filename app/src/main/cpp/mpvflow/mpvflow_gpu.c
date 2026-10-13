@@ -122,6 +122,359 @@ static void flow_log(pl_gpu gpu, enum pl_log_level level, const char *format, ..
     gpu->log->params.log_cb(gpu->log->params.log_priv, level, message);
 }
 
+#ifdef VK_NV_optical_flow
+static bool flow_vk_extension_enabled(pl_vulkan vk, const char *name)
+{
+    if (!vk || !name)
+        return false;
+    for (int i = 0; i < vk->num_extensions; i++) {
+        if (vk->extensions[i] && strcmp(vk->extensions[i], name) == 0)
+            return true;
+    }
+    return false;
+}
+
+static bool flow_vk_optical_feature_enabled(pl_vulkan vk)
+{
+    if (!vk || !vk->features)
+        return false;
+    const VkBaseInStructure *feature =
+        (const VkBaseInStructure *) vk->features->pNext;
+    for (; feature; feature = (const VkBaseInStructure *) feature->pNext) {
+        if (feature->sType == VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_OPTICAL_FLOW_FEATURES_NV) {
+            const VkPhysicalDeviceOpticalFlowFeaturesNV *optical =
+                (const VkPhysicalDeviceOpticalFlowFeaturesNV *) feature;
+            return optical->opticalFlow == VK_TRUE;
+        }
+    }
+    return false;
+}
+
+static uint32_t flow_vk_optical_formats(
+    PFN_vkGetPhysicalDeviceOpticalFlowImageFormatsNV get_formats,
+    VkPhysicalDevice physical_device, VkOpticalFlowUsageFlagsNV usage,
+    char *list, size_t list_size, VkResult *query_result)
+{
+    if (query_result)
+        *query_result = VK_ERROR_EXTENSION_NOT_PRESENT;
+    if (list && list_size)
+        snprintf(list, list_size, "not_queried");
+    if (!get_formats || !physical_device || !list || !list_size)
+        return 0;
+
+    VkOpticalFlowImageFormatInfoNV info = {
+        .sType = VK_STRUCTURE_TYPE_OPTICAL_FLOW_IMAGE_FORMAT_INFO_NV,
+        .usage = usage,
+    };
+    uint32_t count = 0;
+    VkResult result = get_formats(physical_device, &info, &count, NULL);
+    if (query_result)
+        *query_result = result;
+    if (result != VK_SUCCESS || !count) {
+        snprintf(list, list_size, "none");
+        return 0;
+    }
+
+    enum { FLOW_OPTICAL_FORMAT_LOG_LIMIT = 12 };
+    VkOpticalFlowImageFormatPropertiesNV formats[FLOW_OPTICAL_FORMAT_LOG_LIMIT] = {0};
+    uint32_t written = count < FLOW_OPTICAL_FORMAT_LOG_LIMIT
+        ? count : FLOW_OPTICAL_FORMAT_LOG_LIMIT;
+    for (uint32_t i = 0; i < written; i++)
+        formats[i].sType = VK_STRUCTURE_TYPE_OPTICAL_FLOW_IMAGE_FORMAT_PROPERTIES_NV;
+    result = get_formats(physical_device, &info, &written, formats);
+    if (query_result)
+        *query_result = result;
+    if (result != VK_SUCCESS && result != VK_INCOMPLETE) {
+        snprintf(list, list_size, "query_failed");
+        return 0;
+    }
+
+    size_t used = 0;
+    for (uint32_t i = 0; i < written; i++) {
+        int length = snprintf(list + used, list_size - used, "%s0x%x",
+                              i ? "," : "", (unsigned) formats[i].format);
+        if (length < 0 || (size_t) length >= list_size - used) {
+            list[list_size - 1] = '\0';
+            break;
+        }
+        used += (size_t) length;
+    }
+    return written;
+}
+
+static void flow_log_optical_flow_capability(pl_vulkan vk)
+{
+    if (!vk || !vk->gpu || !vk->phys_device)
+        return;
+    const bool extension_enabled = flow_vk_extension_enabled(
+        vk, VK_NV_OPTICAL_FLOW_EXTENSION_NAME);
+    const bool feature_enabled = flow_vk_optical_feature_enabled(vk);
+    uint32_t family_count = 0;
+    uint32_t family_queues = 0;
+    uint32_t queue_families = 0;
+    vkGetPhysicalDeviceQueueFamilyProperties(vk->phys_device, &family_count, NULL);
+    VkQueueFamilyProperties *families = family_count
+        ? calloc(family_count, sizeof(*families)) : NULL;
+    if (families) {
+        uint32_t written = family_count;
+        vkGetPhysicalDeviceQueueFamilyProperties(vk->phys_device, &written, families);
+        for (uint32_t i = 0; i < written; i++) {
+            if (families[i].queueFlags & VK_QUEUE_OPTICAL_FLOW_BIT_NV) {
+                queue_families++;
+                family_queues += families[i].queueCount;
+            }
+        }
+    }
+    free(families);
+
+    VkPhysicalDeviceOpticalFlowPropertiesNV optical = {
+        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_OPTICAL_FLOW_PROPERTIES_NV,
+    };
+    bool properties_queried = false;
+    PFN_vkGetPhysicalDeviceProperties2 get_properties2 = vk->get_proc_addr
+        ? (PFN_vkGetPhysicalDeviceProperties2) vk->get_proc_addr(
+              vk->instance, "vkGetPhysicalDeviceProperties2") : NULL;
+    if (!get_properties2 && vk->get_proc_addr)
+        get_properties2 = (PFN_vkGetPhysicalDeviceProperties2) vk->get_proc_addr(
+            vk->instance, "vkGetPhysicalDeviceProperties2KHR");
+    if (extension_enabled && get_properties2) {
+        VkPhysicalDeviceProperties2 properties = {
+            .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2,
+            .pNext = &optical,
+        };
+        get_properties2(vk->phys_device, &properties);
+        properties_queried = true;
+    }
+
+    PFN_vkGetPhysicalDeviceOpticalFlowImageFormatsNV get_formats = vk->get_proc_addr
+        ? (PFN_vkGetPhysicalDeviceOpticalFlowImageFormatsNV) vk->get_proc_addr(
+              vk->instance, "vkGetPhysicalDeviceOpticalFlowImageFormatsNV") : NULL;
+    char input_formats[192] = "not_queried";
+    char output_formats[192] = "not_queried";
+    VkResult input_result = VK_ERROR_EXTENSION_NOT_PRESENT;
+    VkResult output_result = VK_ERROR_EXTENSION_NOT_PRESENT;
+    uint32_t input_count = 0;
+    uint32_t output_count = 0;
+    if (extension_enabled && get_formats) {
+        input_count = flow_vk_optical_formats(
+            get_formats, vk->phys_device, VK_OPTICAL_FLOW_USAGE_INPUT_BIT_NV,
+            input_formats, sizeof(input_formats), &input_result);
+        output_count = flow_vk_optical_formats(
+            get_formats, vk->phys_device, VK_OPTICAL_FLOW_USAGE_OUTPUT_BIT_NV,
+            output_formats, sizeof(output_formats), &output_result);
+    }
+
+    const char *state = extension_enabled && feature_enabled && queue_families &&
+        properties_queried && input_count && output_count
+        ? "format_and_queue_ready" : extension_enabled ? "partial" : "not_exposed";
+    flow_log(vk->gpu, PL_LOG_INFO,
+             "MPVFLOW_DIAGNOSTIC event=optical_flow_capability state=%s api_version=%u "
+             "extension_enabled=%d feature_enabled=%d optical_queue_families=%u optical_queue_count=%u "
+             "properties_queried=%d min_size=%ux%u max_size=%ux%u output_grid_flags=0x%x "
+             "hint_grid_flags=0x%x bidirectional=%d hint=%d cost=%d "
+             "input_reference_format_count=%u input_reference_formats=%s input_query_result=%d "
+             "output_format_count=%u output_formats=%s output_query_result=%d "
+             "session_execution=not_integrated_in_flow_core",
+             state, vk->api_version, extension_enabled, feature_enabled,
+             queue_families, family_queues, properties_queried,
+             optical.minWidth, optical.minHeight, optical.maxWidth, optical.maxHeight,
+             (unsigned) optical.supportedOutputGridSizes,
+             (unsigned) optical.supportedHintGridSizes,
+             optical.bidirectionalFlowSupported == VK_TRUE,
+             optical.hintSupported == VK_TRUE, optical.costSupported == VK_TRUE,
+             input_count, input_formats, input_result,
+             output_count, output_formats, output_result);
+}
+#else
+static void flow_log_optical_flow_capability(pl_vulkan vk)
+{
+    if (vk && vk->gpu)
+        flow_log(vk->gpu, PL_LOG_INFO,
+                 "MPVFLOW_DIAGNOSTIC event=optical_flow_capability state=not_compiled "
+                 "session_execution=not_integrated_in_flow_core");
+}
+#endif
+
+#if defined(VK_QCOM_image_processing) && defined(VK_QCOM_image_processing2)
+static bool flow_vk_device_extension_supported(pl_vulkan vk, const char *name)
+{
+    if (!vk || !vk->phys_device || !vk->get_proc_addr || !name)
+        return false;
+    PFN_vkEnumerateDeviceExtensionProperties enumerate =
+        (PFN_vkEnumerateDeviceExtensionProperties) vk->get_proc_addr(
+            vk->instance, "vkEnumerateDeviceExtensionProperties");
+    if (!enumerate)
+        return false;
+
+    uint32_t count = 0;
+    VkResult result = enumerate(vk->phys_device, NULL, &count, NULL);
+    if ((result != VK_SUCCESS && result != VK_INCOMPLETE) || !count)
+        return false;
+    VkExtensionProperties *extensions = calloc(count, sizeof(*extensions));
+    if (!extensions)
+        return false;
+    uint32_t written = count;
+    result = enumerate(vk->phys_device, NULL, &written, extensions);
+    bool found = false;
+    if (result == VK_SUCCESS || result == VK_INCOMPLETE) {
+        for (uint32_t i = 0; i < written; i++) {
+            if (strcmp(extensions[i].extensionName, name) == 0) {
+                found = true;
+                break;
+            }
+        }
+    }
+    free(extensions);
+    return found;
+}
+
+static bool flow_vk_device_extension_enabled(pl_vulkan vk, const char *name)
+{
+    if (!vk || !name)
+        return false;
+    for (int i = 0; i < vk->num_extensions; i++) {
+        if (vk->extensions[i] && strcmp(vk->extensions[i], name) == 0)
+            return true;
+    }
+    return false;
+}
+
+static void flow_log_qcom_block_match_capability(pl_vulkan vk)
+{
+    if (!vk || !vk->gpu || !vk->phys_device)
+        return;
+
+    const bool base_extension = flow_vk_device_extension_supported(
+        vk, VK_QCOM_IMAGE_PROCESSING_EXTENSION_NAME);
+    const bool window_extension = base_extension && flow_vk_device_extension_supported(
+        vk, VK_QCOM_IMAGE_PROCESSING_2_EXTENSION_NAME);
+    const bool base_enabled = flow_vk_device_extension_enabled(
+        vk, VK_QCOM_IMAGE_PROCESSING_EXTENSION_NAME);
+    const bool window_enabled = flow_vk_device_extension_enabled(
+        vk, VK_QCOM_IMAGE_PROCESSING_2_EXTENSION_NAME);
+    VkPhysicalDeviceImageProcessingFeaturesQCOM base_features = {
+        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_IMAGE_PROCESSING_FEATURES_QCOM,
+    };
+    VkPhysicalDeviceImageProcessing2FeaturesQCOM window_features = {
+        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_IMAGE_PROCESSING_2_FEATURES_QCOM,
+    };
+    bool features_queried = false;
+    PFN_vkGetPhysicalDeviceFeatures2 get_features2 = vk->get_proc_addr
+        ? (PFN_vkGetPhysicalDeviceFeatures2) vk->get_proc_addr(
+              vk->instance, "vkGetPhysicalDeviceFeatures2") : NULL;
+    if (!get_features2 && vk->get_proc_addr)
+        get_features2 = (PFN_vkGetPhysicalDeviceFeatures2) vk->get_proc_addr(
+            vk->instance, "vkGetPhysicalDeviceFeatures2KHR");
+    if (base_extension && get_features2) {
+        base_features.pNext = window_extension ? &window_features : NULL;
+        VkPhysicalDeviceFeatures2 features = {
+            .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2,
+            .pNext = &base_features,
+        };
+        get_features2(vk->phys_device, &features);
+        features_queried = true;
+    }
+
+    VkPhysicalDeviceImageProcessingPropertiesQCOM base_properties = {
+        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_IMAGE_PROCESSING_PROPERTIES_QCOM,
+    };
+    VkPhysicalDeviceImageProcessing2PropertiesQCOM window_properties = {
+        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_IMAGE_PROCESSING_2_PROPERTIES_QCOM,
+    };
+    bool properties_queried = false;
+    PFN_vkGetPhysicalDeviceProperties2 get_properties2 = vk->get_proc_addr
+        ? (PFN_vkGetPhysicalDeviceProperties2) vk->get_proc_addr(
+              vk->instance, "vkGetPhysicalDeviceProperties2") : NULL;
+    if (!get_properties2 && vk->get_proc_addr)
+        get_properties2 = (PFN_vkGetPhysicalDeviceProperties2) vk->get_proc_addr(
+            vk->instance, "vkGetPhysicalDeviceProperties2KHR");
+    if (base_extension && get_properties2) {
+        base_properties.pNext = window_extension ? &window_properties : NULL;
+        VkPhysicalDeviceProperties2 properties = {
+            .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2,
+            .pNext = &base_properties,
+        };
+        get_properties2(vk->phys_device, &properties);
+        properties_queried = true;
+    }
+
+    bool format_queried = false;
+    bool r8_block_match_format = false;
+    PFN_vkGetPhysicalDeviceFormatProperties2 get_format_properties2 = vk->get_proc_addr
+        ? (PFN_vkGetPhysicalDeviceFormatProperties2) vk->get_proc_addr(
+              vk->instance, "vkGetPhysicalDeviceFormatProperties2") : NULL;
+    if (!get_format_properties2 && vk->get_proc_addr)
+        get_format_properties2 = (PFN_vkGetPhysicalDeviceFormatProperties2) vk->get_proc_addr(
+            vk->instance, "vkGetPhysicalDeviceFormatProperties2KHR");
+    if (base_extension && get_format_properties2) {
+        VkFormatProperties3 format3 = {
+            .sType = VK_STRUCTURE_TYPE_FORMAT_PROPERTIES_3,
+        };
+        VkFormatProperties2 format2 = {
+            .sType = VK_STRUCTURE_TYPE_FORMAT_PROPERTIES_2,
+            .pNext = &format3,
+        };
+        get_format_properties2(vk->phys_device, VK_FORMAT_R8_UNORM, &format2);
+        format_queried = true;
+        r8_block_match_format =
+            (format3.optimalTilingFeatures & VK_FORMAT_FEATURE_2_BLOCK_MATCHING_BIT_QCOM) != 0;
+    }
+
+    VkResult image_usage_result = VK_ERROR_EXTENSION_NOT_PRESENT;
+    VkImageFormatProperties2 image_properties = {
+        .sType = VK_STRUCTURE_TYPE_IMAGE_FORMAT_PROPERTIES_2,
+    };
+    PFN_vkGetPhysicalDeviceImageFormatProperties2 get_image_properties2 = vk->get_proc_addr
+        ? (PFN_vkGetPhysicalDeviceImageFormatProperties2) vk->get_proc_addr(
+              vk->instance, "vkGetPhysicalDeviceImageFormatProperties2") : NULL;
+    if (!get_image_properties2 && vk->get_proc_addr)
+        get_image_properties2 = (PFN_vkGetPhysicalDeviceImageFormatProperties2) vk->get_proc_addr(
+            vk->instance, "vkGetPhysicalDeviceImageFormatProperties2KHR");
+    if (base_extension && get_image_properties2) {
+        VkPhysicalDeviceImageFormatInfo2 image_info = {
+            .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_IMAGE_FORMAT_INFO_2,
+            .format = VK_FORMAT_R8_UNORM,
+            .type = VK_IMAGE_TYPE_2D,
+            .tiling = VK_IMAGE_TILING_OPTIMAL,
+            .usage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_SAMPLE_BLOCK_MATCH_BIT_QCOM,
+        };
+        image_usage_result = get_image_properties2(vk->phys_device, &image_info,
+                                                    &image_properties);
+    }
+
+    const bool block_match = features_queried && base_features.textureBlockMatch == VK_TRUE;
+    const bool window_match = features_queried && window_extension &&
+        window_features.textureBlockMatch2 == VK_TRUE;
+    const char *state = !base_extension ? "not_supported" :
+        !features_queried ? "query_unavailable" :
+        block_match && format_queried && r8_block_match_format &&
+            image_usage_result == VK_SUCCESS ? "base_r8_block_match_ready" : "partial";
+    flow_log(vk->gpu, PL_LOG_INFO,
+             "MPVFLOW_DIAGNOSTIC event=qcom_block_match_capability state=%s "
+             "base_extension_supported=%d window_extension_supported=%d "
+             "base_extension_enabled=%d window_extension_enabled=%d features_queried=%d "
+             "texture_block_match_supported=%d texture_block_match2_supported=%d properties_queried=%d "
+             "max_block_match_region=%ux%u max_block_match_window=%ux%u "
+             "r8_format_queried=%d r8_block_match_format=%d image_usage_result=%d "
+             "shader_execution=not_integrated_in_flow_core",
+             state, base_extension, window_extension, base_enabled, window_enabled, features_queried,
+             block_match, window_match, properties_queried,
+             base_properties.maxBlockMatchRegion.width,
+             base_properties.maxBlockMatchRegion.height,
+             window_properties.maxBlockMatchWindow.width,
+             window_properties.maxBlockMatchWindow.height,
+             format_queried, r8_block_match_format, image_usage_result);
+}
+#else
+static void flow_log_qcom_block_match_capability(pl_vulkan vk)
+{
+    if (vk && vk->gpu)
+        flow_log(vk->gpu, PL_LOG_INFO,
+                 "MPVFLOW_DIAGNOSTIC event=qcom_block_match_capability state=not_compiled "
+                 "shader_execution=not_integrated_in_flow_core");
+}
+#endif
+
 static void flow_log_once(MPVFlowGPUContext *ctx, uint32_t bit,
                           enum pl_log_level level, const char *format, ...)
 {
@@ -792,6 +1145,8 @@ MPVFlowGPUContext *mpvflow_gpu_create(pl_gpu gpu,
         if (diagnostics) diagnostics->stage = "gpu_missing";
         return NULL;
     }
+    flow_log_optical_flow_capability(pl_vulkan_get(gpu));
+    flow_log_qcom_block_match_capability(pl_vulkan_get(gpu));
     const enum MPVFlowGPUComputeAPI requested_api = config
         ? config->compute_api : MPVFLOW_GPU_COMPUTE_AUTO;
     if (requested_api < MPVFLOW_GPU_COMPUTE_AUTO ||

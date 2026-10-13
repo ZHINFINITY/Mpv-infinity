@@ -10,7 +10,7 @@ This is an independently written prototype informed by public descriptions of fr
 
 ### MPV `gpu-next` route
 
-When MPVFlow is eligible on the MPV engine, the app selects the `gpu-next` renderer with Vulkan. The patched MPV video output supplies source-frame textures and display-timed output ticks to the shared Flow implementation. The renderer API and interpolation compute API are separate choices: Vulkan remains the MPV renderer even when Flow's motion and synthesis kernels use OpenCL.
+When MPVFlow is eligible on the MPV engine, the app selects the `gpu-next` renderer with Vulkan. The patched MPV video output supplies source-frame textures and display-timed output ticks to the shared Flow implementation. The renderer API and interpolation compute API are separate choices: Vulkan remains the MPV renderer even when Flow's motion and synthesis kernels use OpenCL. In the Flow path, the timestamped source mix, pair analysis and offscreen synthesis are prepared and flushed before `pl_swapchain_start_frame`; this allows submitted GPU work to overlap a blocking acquire call, but does not make WSI acquisition nonblocking or prove the frame was scanned out.
 
 ### OpenCL compute backend
 
@@ -26,7 +26,11 @@ The Vulkan/SPIR-V backend remains available explicitly and as `Auto` fallback. I
 
 ### Native Media3 route
 
-The separate Native Media3 route uses a Vulkan renderer/context and the same Flow compute API preference. Its decoded surface is captured on GLES, with Vulkan handling Flow buffers and the final display handoff; interpolation itself uses either the selected supported OpenCL route or Vulkan/SPIR-V. MPV's `gpu-next` setting does not select the Native Media3 route's renderer.
+The separate Native Media3 route uses a Vulkan renderer/context and the same Flow compute API preference. Its decoded surface is captured on GLES, with Vulkan handling Flow buffers and the final display handoff; interpolation itself uses either the selected supported OpenCL route or Vulkan/SPIR-V. Source-pair analysis happens during input capture and synthesis is submitted before the EGL window swap, but SurfaceTexture capture and presentation currently share one GL handler, so a long `eglSwapBuffers` can delay later input callbacks. Although a device may expose a dedicated compute family, Media3 intentionally keeps `async_compute` and `async_transfer` disabled: its imported AHardwareBuffer images are created with exclusive sharing, while the current libplacebo wrapper contract requires multi-family images to be concurrently shared. Diagnostics now report available dedicated-compute families without selecting one. A fully decoupled route would need separately synchronized capture/presentation contexts plus a bounded, multi-slot output queue; it must not overwrite an output still being sampled. MPV's `gpu-next` setting does not select the Native Media3 route's renderer.
+
+Both Vulkan contexts opportunistically request `VK_NV_optical_flow`, its feature bit and an optical-flow queue family where available. The shared core logs the enabled extension/feature, queue families, reported grid/direction properties, and supported input/reference/output formats. This is a capability probe only: no `VkOpticalFlowSessionNV` is created or used for synthesis yet, and the existing bidirectional block-matching path remains authoritative until a correct, measured adapter is implemented.
+
+The shared core also queries optional `VK_QCOM_image_processing` / `VK_QCOM_image_processing2` support, feature bits, block-match region/window limits, and whether `R8_UNORM` supports the block-match format feature and image usage. This is observational only: the extensions are not enabled for Flow, and no QCOM shader operation is executed. A device profile containing only legacy `VkFormatProperties` does not establish the newer QCOM `VkFormatFeatureFlags2` result; the runtime diagnostic is needed before an implementation can rely on it.
 
 The current support policy keeps HDR, Dolby Vision, DRM, rotated, and non-square-pixel content on Media3's standard renderer. Unsupported formats or tight deadlines fall back to source frames.
 
@@ -47,6 +51,7 @@ Interpolation is intended for compatible SDR progressive video. The active Andro
 ## Diagnostics, tests, and build
 
 - `MPVFLOW_DIAGNOSTIC` logs identify the requested and effective compute backend, OpenCL extension/build/import failures, Auto fallback, Flow stages, selected/effective cadence, input pass-through reasons, queue state, and blocking swapchain waits.
+- Vulkan optical-flow capability logs are explicitly separate from execution; `session_execution=not_integrated_in_flow_core` means the proprietary accelerator has not contributed motion vectors.
 - `scripts/tests/mpvflow_gpu_shader_test.py` checks the Vulkan shader passes and artifact protections.
 - `scripts/tests/mpvflow_native_build_test.py` checks Android native source registration, OpenCL/Vulkan interop extension requests, selector persistence, option ownership, renderer policy, and related build contracts.
 - `scripts/test-mpvflow-core.sh` runs host-only synthetic tests for the legacy CPU motion core. Those tests do not build an APK or validate device OpenCL support, on-device cadence, image quality, or A/V synchronization.

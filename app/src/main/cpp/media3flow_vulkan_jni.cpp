@@ -202,6 +202,35 @@ bool hasEnabledDeviceExtension(pl_vulkan vulkan, const char *name) {
     return false;
 }
 
+void logQueueFamilyCapability(pl_vulkan vulkan) {
+    if (!vulkan || !vulkan->phys_device)
+        return;
+    uint32_t familyCount = 0;
+    vkGetPhysicalDeviceQueueFamilyProperties(vulkan->phys_device, &familyCount, nullptr);
+    std::vector<VkQueueFamilyProperties> families(familyCount);
+    if (familyCount)
+        vkGetPhysicalDeviceQueueFamilyProperties(vulkan->phys_device, &familyCount, families.data());
+    uint32_t dedicatedComputeFamilies = 0;
+    int firstDedicatedComputeFamily = -1;
+    for (uint32_t i = 0; i < familyCount; ++i) {
+        const VkQueueFlags flags = families[i].queueFlags;
+        if (families[i].queueCount && (flags & VK_QUEUE_COMPUTE_BIT) && !(flags & VK_QUEUE_GRAPHICS_BIT)) {
+            if (firstDedicatedComputeFamily < 0)
+                firstDedicatedComputeFamily = static_cast<int>(i);
+            ++dedicatedComputeFamilies;
+        }
+    }
+    logFlow(ANDROID_LOG_INFO,
+            "MPVFLOW_DIAGNOSTIC component=native-media3 event=queue_capability "
+            "state=probed graphics_queue_family=%u selected_compute_queue_family=%u "
+            "dedicated_compute_families=%u first_dedicated_compute_family=%d "
+            "async_compute_enabled=0 async_transfer_enabled=0 queue_count=1 "
+            "ahb_image_sharing=exclusive multi_family_wrapping_safe=0 "
+            "async_queue_disabled_reason=exclusive_ahb_images_require_verified_queue_ownership",
+            vulkan->queue_graphics.index, vulkan->queue_compute.index,
+            dedicatedComputeFamilies, firstDedicatedComputeFamily);
+}
+
 bool hasEglExtension(const char *extensions, const char *name) {
     if (!extensions || !name || !*name)
         return false;
@@ -994,7 +1023,18 @@ Java_app_infinity_mpvz_ui_player_Media3FlowVulkanNative_nativeCreateContext(
     };
     const char *optionalExtensions[] = {
         VK_KHR_EXTERNAL_SEMAPHORE_FD_EXTENSION_NAME,
+#ifdef VK_NV_optical_flow
+        VK_NV_OPTICAL_FLOW_EXTENSION_NAME,
+#endif
     };
+#ifdef VK_NV_optical_flow
+    VkPhysicalDeviceFeatures2 opticalFlowFeatures{};
+    opticalFlowFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
+    VkPhysicalDeviceOpticalFlowFeaturesNV opticalFlowFeature{};
+    opticalFlowFeature.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_OPTICAL_FLOW_FEATURES_NV;
+    opticalFlowFeature.opticalFlow = VK_TRUE;
+    opticalFlowFeatures.pNext = &opticalFlowFeature;
+#endif
     struct pl_vulkan_params params = pl_vulkan_default_params;
     params.async_compute = false;
     params.async_transfer = false;
@@ -1003,6 +1043,10 @@ Java_app_infinity_mpvz_ui_player_Media3FlowVulkanNative_nativeCreateContext(
     params.num_extensions = sizeof(extensions) / sizeof(extensions[0]);
     params.opt_extensions = optionalExtensions;
     params.num_opt_extensions = sizeof(optionalExtensions) / sizeof(optionalExtensions[0]);
+#ifdef VK_NV_optical_flow
+    params.extra_queues = VK_QUEUE_OPTICAL_FLOW_BIT_NV;
+    params.features = &opticalFlowFeatures;
+#endif
     struct pl_log_params logParams{};
     logParams.log_cb = placeboLogCallback;
     logParams.log_level = PL_LOG_INFO;
@@ -1016,9 +1060,15 @@ Java_app_infinity_mpvz_ui_player_Media3FlowVulkanNative_nativeCreateContext(
     logFlow(ANDROID_LOG_INFO,
             "MPVFLOW_DIAGNOSTIC component=native-media3 event=vulkan_context state=requested "
             "renderer_api=vulkan requested_compute_api=%d async_compute=0 async_transfer=0 queue_count=1 "
-            "analysis_max_dimension=%d "
+            "analysis_max_dimension=%d optical_flow_extension_requested=%d optical_flow_queue_requested=%d "
             "required_extensions=VK_ANDROID_external_memory_android_hardware_buffer,VK_EXT_queue_family_foreign",
-            requestedComputeApi, requestedMaxDimension);
+            requestedComputeApi, requestedMaxDimension,
+#ifdef VK_NV_optical_flow
+            1, 1
+#else
+            0, 0
+#endif
+    );
     pl_vulkan vulkan = pl_vulkan_create(placeboLog, &params);
     if (!vulkan) {
         logFlow(ANDROID_LOG_ERROR,
@@ -1031,6 +1081,7 @@ Java_app_infinity_mpvz_ui_player_Media3FlowVulkanNative_nativeCreateContext(
     auto *context = new FlowContext();
     context->placeboLog = placeboLog;
     context->vulkan = vulkan;
+    logQueueFamilyCapability(vulkan);
     initializeExternalSync(context);
     context->getBufferProperties = reinterpret_cast<PFN_vkGetAndroidHardwareBufferPropertiesANDROID>(
         vkGetDeviceProcAddr(vulkan->device, "vkGetAndroidHardwareBufferPropertiesANDROID"));
@@ -1108,6 +1159,7 @@ Java_app_infinity_mpvz_ui_player_Media3FlowVulkanNative_nativeCreateContext(
                 "renderer_api=vulkan flow_compute_api=%s api_version=%u compute_queue_family=%u compute_queue_count=%u "
                 "glsl_compute=%d glsl_vulkan=%d glsl_version=%d max_pushc_size=%zu "
                 "analysis_max_dimension=%d hardware_max_texture_dimension=%u compute_queues=%u ahb_extension_enabled=%d "
+            "optical_flow_extension_enabled=%d "
             "foreign_queue_extension_enabled=%d compute_queue_timestamp_valid_bits=%u "
             "timestamp_period_ns=%.6f timestamp_compute_and_graphics=%d vulkan_timing_supported=%d "
             "hardware_decoder=media3 hardware_buffers=android cpu_readback=no",
@@ -1117,6 +1169,7 @@ Java_app_infinity_mpvz_ui_player_Media3FlowVulkanNative_nativeCreateContext(
                 vulkan->gpu->limits.max_pushc_size, config.max_dimension,
             vulkan->gpu->limits.max_tex_2d_dim, vulkan->gpu->limits.compute_queues,
             hasEnabledDeviceExtension(vulkan, VK_ANDROID_EXTERNAL_MEMORY_ANDROID_HARDWARE_BUFFER_EXTENSION_NAME),
+            hasEnabledDeviceExtension(vulkan, "VK_NV_optical_flow"),
             hasEnabledDeviceExtension(vulkan, "VK_EXT_queue_family_foreign"),
             context->computeTimestampValidBits, context->timestampPeriodNs,
             context->timestampComputeAndGraphics, vulkanTimestampSupported);

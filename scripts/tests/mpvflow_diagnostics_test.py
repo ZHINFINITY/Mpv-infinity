@@ -14,6 +14,7 @@ CRASH_ACTIVITY = (ROOT / "app/src/main/java/app/infinity/mpvz/presentation/crash
 DECODERS_SHEET = (ROOT / "app/src/main/java/app/infinity/mpvz/ui/player/controls/components/sheets/DecodersSheet.kt").read_text(encoding="utf-8")
 MEDIA3_FLOW_SINK = (ROOT / "app/src/main/java/app/infinity/mpvz/ui/player/Media3FlowVideoSink.kt").read_text(encoding="utf-8")
 FLOW_GPU_CORE = (ROOT / "app/src/main/cpp/mpvflow/mpvflow_gpu.c").read_text(encoding="utf-8")
+MEDIA3_NATIVE = (ROOT / "app/src/main/cpp/media3flow_vulkan_jni.cpp").read_text(encoding="utf-8")
 
 
 def require(source: str, fragment: str, message: str) -> None:
@@ -96,6 +97,18 @@ require(PATCH, "event=swapchain_wait stage=acquire", "MPV Flow must report slow 
 require(PATCH, "event=swapchain_wait stage=swap_buffers", "MPV Flow must report slow blocking swap/present calls")
 require(PATCH, "metric=cpu_blocking_call_not_scanout", "swapchain waits must not be misrepresented as confirmed scanout")
 require(PATCH, "pl_vulkan_swapchain_set_diagnostics", "lower-level Vulkan WSI measurements must be enabled only by the MPV Flow path")
+flow_prepare_call = PATCH.index("+            flow_prepare_frame(vo, &mix, &flow_prepared);")
+flow_prepare_flush = PATCH.index("+            pl_gpu_flush(gpu);", flow_prepare_call)
+flow_acquire_call = PATCH.index("+        should_draw && pl_swapchain_start_frame", flow_prepare_call)
+assert flow_prepare_call < flow_prepare_flush < flow_acquire_call, (
+    "Flow preparation and nonblocking GPU submission must precede Vulkan swapchain acquisition"
+)
+flow_prepare_body = PATCH.split("+static void flow_prepare_frame(", 1)[1].split(
+    "+static bool flow_render_frame(", 1
+)[0]
+require(flow_prepare_body, "mpvflow_gpu_analyze_pair(", "pre-acquire producer must prepare motion before presentation")
+require(flow_prepare_body, "mpvflow_gpu_synthesize(", "pre-acquire producer must synthesize the offscreen output before presentation")
+require(PATCH, "event=producer state=pre_acquire", "MPV must report the producer/presenter split at runtime")
 require(PATCH, "swap_buffers_call_avg_ms=%.3f", "MPV Flow cadence must include the swap_buffers call duration")
 require(PATCH, "swap_buffers_call_max_ms=%.3f", "MPV Flow cadence must include the maximum swap_buffers call duration")
 require(PATCH, "swap_buffers_call_samples=%llu", "MPV Flow cadence must identify the swap_buffers timing sample count")
@@ -136,6 +149,10 @@ require(FLOW_GPU_CORE, "dispatches_total=%llu", "Vulkan stage diagnostics must c
 require(FLOW_GPU_CORE, "unresolved_dispatches_total=%llu", "Vulkan stage diagnostics must expose unresolved or unavailable timer results")
 require(FLOW_GPU_CORE, "event=motion_geometry state=ready", "MPV and Media3 must expose the actual allocated Vulkan motion grid")
 require(FLOW_GPU_CORE, "motion_search_passes_per_pair=6", "the shared Vulkan core must retain every original motion pass")
+require(FLOW_GPU_CORE, "event=qcom_block_match_capability", "QCOM block-match support and format usage must be queried at runtime")
+require(FLOW_GPU_CORE, "shader_execution=not_integrated_in_flow_core", "QCOM probing must not imply its shader was enabled or executed")
+require(MEDIA3_NATIVE, "event=queue_capability", "Media3 must report whether the device exposes a dedicated compute family")
+require(MEDIA3_NATIVE, "async_queue_disabled_reason=exclusive_ahb_images_require_verified_queue_ownership", "Media3 must explain why its current AHardwareBuffer path remains single-family")
 for stage in (
     "motion_search_forward_level_0", "motion_search_backward_level_0",
     "motion_search_forward_level_1", "motion_search_backward_level_1",

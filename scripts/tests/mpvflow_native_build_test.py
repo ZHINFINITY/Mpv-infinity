@@ -770,6 +770,53 @@ assert "dl" in cmake_source and 'android:name="libOpenCL.so"' in manifest_source
 assert "flow_compute_api=%s" in media3_jni_source and "renderer_api=vulkan flow_compute_api=%s" in media3_jni_source, (
     "Native Media3 diagnostics must distinguish Vulkan rendering from the effective Flow compute backend"
 )
+for marker in (
+    "VK_NV_OPTICAL_FLOW_EXTENSION_NAME",
+    "VkPhysicalDeviceOpticalFlowFeaturesNV",
+    "VK_QUEUE_OPTICAL_FLOW_BIT_NV",
+    "params.extra_queues = VK_QUEUE_OPTICAL_FLOW_BIT_NV",
+    "params.features = &opticalFlowFeatures",
+):
+    assert marker in media3_jni_source, f"Media3 should opportunistically request optical-flow capability: missing {marker!r}"
+for marker in (
+    "event=optical_flow_capability",
+    "vkGetPhysicalDeviceOpticalFlowImageFormatsNV",
+    "VK_OPTICAL_FLOW_USAGE_INPUT_BIT_NV",
+    "VK_OPTICAL_FLOW_USAGE_OUTPUT_BIT_NV",
+    "session_execution=not_integrated_in_flow_core",
+):
+    assert marker in flow_gpu_source, f"shared core must report verified optical-flow capability without overclaiming execution: missing {marker!r}"
+for marker in (
+    "event=qcom_block_match_capability",
+    "VK_QCOM_IMAGE_PROCESSING_EXTENSION_NAME",
+    "VK_QCOM_IMAGE_PROCESSING_2_EXTENSION_NAME",
+    "VkPhysicalDeviceImageProcessingFeaturesQCOM",
+    "VkPhysicalDeviceImageProcessing2FeaturesQCOM",
+    "texture_block_match_supported=%d",
+    "texture_block_match2_supported=%d",
+    "base_extension_enabled=%d",
+    "window_extension_enabled=%d",
+    "maxBlockMatchRegion",
+    "maxBlockMatchWindow",
+    "VK_FORMAT_FEATURE_2_BLOCK_MATCHING_BIT_QCOM",
+    "VK_IMAGE_USAGE_SAMPLE_BLOCK_MATCH_BIT_QCOM",
+    "vkGetPhysicalDeviceImageFormatProperties2",
+    "shader_execution=not_integrated_in_flow_core",
+):
+    assert marker in flow_gpu_source, f"shared core must query QCOM block-match support without enabling its shader path: missing {marker!r}"
+for marker in (
+    "params.async_compute = false;",
+    "params.async_transfer = false;",
+    "VK_SHARING_MODE_EXCLUSIVE",
+    "event=queue_capability",
+    "dedicated_compute_families=%u",
+    "async_queue_disabled_reason=exclusive_ahb_images_require_verified_queue_ownership",
+    "logQueueFamilyCapability(vulkan);",
+):
+    assert marker in media3_jni_source, f"Media3 must inventory available queues but preserve exclusive-image safety: missing {marker!r}"
+assert "VK_QCOM_IMAGE_PROCESSING_EXTENSION_NAME" not in media3_jni_source, (
+    "QCOM support must remain a physical-device capability query until a validated Flow shader path exists"
+)
 assert "AHardwareBuffer_lock" not in bridge_source and "clEnqueueReadBuffer" not in opencl_source, (
     "Flow must not add CPU pixel readback to the OpenCL backend"
 )
