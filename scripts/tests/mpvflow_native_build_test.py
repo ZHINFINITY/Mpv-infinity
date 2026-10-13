@@ -285,20 +285,57 @@ static bool vk_sw_recreate(pl_swapchain sw, int w, int h)
     PL_VK_ASSERT(res, "vk->CreateSwapchainKHR(...)");
 
     // Get the new swapchain images
+    VK(vk->GetSwapchainImagesKHR(vk->dev, current->swapchain, &num_images, NULL));
     VK(vk->GetSwapchainImagesKHR(vk->dev, current->swapchain, &num_images, current->vkimages.elem));
 }
 static bool vk_sw_start_frame(pl_swapchain sw)
 {
+    struct priv *p = PL_PRIV(sw);
+    struct vk_ctx *vk = p->vk;
+    pl_mutex_lock(&p->lock);
+
+    bool recreate = !p->current || p->needs_recreate;
+    if (recreate && !vk_sw_recreate(sw, 0, 0)) {
+        pl_mutex_unlock(&p->lock);
+        return false;
+    }
+
+    for (int attempts = 0; attempts < 2; attempts++) {
+        uint32_t imgidx = 0;
         VkResult res = vk->AcquireNextImageKHR(vk->dev, p->current->swapchain, UINT64_MAX,
                                                sem_in, VK_NULL_HANDLE, &imgidx);
+        switch (res) {
+        case VK_SUCCESS:
+            p->current->last_imgidx = imgidx;
             if (p->current->fences_out.num > 0) {
                 VkFence *pfence = &p->current->fences_out.elem[imgidx];
                 vk->WaitForFences(vk->dev, 1, pfence, VK_TRUE, UINT64_MAX);
                 vk->ResetFences(vk->dev, 1, pfence);
+            }
+            if (!vk_sw_image_init(sw, imgidx))
+                goto error;
+            return true;
+        case VK_ERROR_OUT_OF_DATE_KHR: {
+            if (!vk_sw_recreate(sw, 0, 0)) {
+                pl_mutex_unlock(&p->lock);
+                return false;
+            }
+            continue;
+        }
+        }
     }
+error:
+    pl_mutex_unlock(&p->lock);
+    return false;
 }
 static bool vk_sw_submit_frame(pl_swapchain sw)
 {
+    int qidx = cmd->qindex;
+    if (!CMD_SUBMIT(&cmd)) {
+        pl_mutex_unlock(&p->lock);
+        return false;
+    }
+    vk->lock_queue(vk->queue_ctx, pool->qf, qidx);
     VkResult res = vk->QueuePresentKHR(queue, &pinfo);
     vk->unlock_queue(vk->queue_ctx, pool->qf, qidx);
 }
@@ -329,6 +366,10 @@ for marker in (
     "bool pl_vulkan_swapchain_get_diagnostics(",
 ):
     assert marker in patched_wsi_source, f"libplacebo WSI diagnostic instrumentation is missing {marker!r}"
+assert "metric=host_call_duration_not_scanout" in patched_wsi_source
+assert "acquire_semaphore_signal=%s" not in patched_wsi_source, (
+    "vkAcquireNextImageKHR returning VK_SUCCESS does not prove its semaphore has signaled at host return"
+)
 assert patched_wsi_source.index("p->flow_created_present_mode = sinfo.presentMode;") < patched_wsi_source.index(
     "flow_report_created_swapchain(p);"
 ), "the created swapchain mode must be stored before it is reported"
@@ -345,9 +386,13 @@ assert "if (enabled)\n        flow_report_created_swapchain(p);" in diagnostic_s
     "enabling diagnostics after creation must report the effective swapchain mode"
 )
 assert prepare.instrument_libplacebo_swapchain(patched_wsi_source) == patched_wsi_source
-assert patched_wsi_source.count("UINT64_MAX") == wsi_source.count("UINT64_MAX"), (
-    "WSI instrumentation must preserve the existing infinite acquire and fence-wait timeouts"
-)
+for call in (
+    "vk->AcquireNextImageKHR(vk->dev, p->current->swapchain, UINT64_MAX,",
+    "vk->WaitForFences(vk->dev, 1, pfence, VK_TRUE, UINT64_MAX)",
+):
+    assert patched_wsi_source.count(call) == wsi_source.count(call) == 1, (
+        f"WSI instrumentation must preserve the original infinite-timeout API call: {call}"
+    )
 assert "VK_TRUE, UINT64_MAX" in patched_wsi_source and "vk->ResetFences(vk->dev, 1, pfence);" in patched_wsi_source, (
     "WSI instrumentation must preserve the original present-fence wait/reset sequence"
 )

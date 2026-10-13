@@ -6,8 +6,10 @@
 #include <libplacebo/gpu.h>
 #include <stdarg.h>
 #include <stdio.h>
+#include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 
 static void qcom_set_reason(char *reason, size_t size, const char *format, ...)
 {
@@ -38,6 +40,8 @@ struct QcomImage {
 struct QcomCommandSlot {
     VkCommandBuffer command;
     VkFence fence;
+    VkQueryPool timestamp_queries;
+    bool timestamp_pending;
 };
 
 struct QcomSeedPush {
@@ -64,6 +68,17 @@ struct MPVFlowVulkanQcom {
     uint64_t done_value;
     uint64_t dispatches;
     uint32_t slot_cursor;
+    uint32_t timestamp_valid_bits;
+    double timestamp_period_ns;
+    bool timestamp_compute_and_graphics;
+    bool timestamps_supported;
+    uint64_t cpu_fence_poll_total_ns, cpu_fence_poll_max_ns, cpu_fence_poll_samples;
+    uint64_t cpu_flush_total_ns, cpu_flush_max_ns, cpu_flush_samples;
+    uint64_t cpu_record_total_ns, cpu_record_max_ns, cpu_record_samples;
+    uint64_t cpu_queue_lock_total_ns, cpu_queue_lock_max_ns, cpu_queue_lock_samples;
+    uint64_t cpu_queue_submit_total_ns, cpu_queue_submit_max_ns, cpu_queue_submit_samples;
+    double gpu_dispatch_total_ns, gpu_dispatch_max_ns;
+    uint64_t gpu_dispatch_samples, gpu_dispatch_unresolved;
     VkExtent2D max_region;
     VkExtent2D window;
     struct QcomImage stage_luma[2];
@@ -90,6 +105,124 @@ static void qcom_log(pl_gpu gpu, enum pl_log_level level, const char *format, ..
     gpu->log->params.log_cb(gpu->log->params.log_priv, level, message);
 }
 
+static uint64_t qcom_clock_ns(void)
+{
+    struct timespec ts;
+    if (clock_gettime(CLOCK_MONOTONIC, &ts) != 0)
+        return 0;
+    return (uint64_t) ts.tv_sec * 1000000000ull + (uint64_t) ts.tv_nsec;
+}
+static void qcom_add_elapsed(uint64_t start, uint64_t end,
+                             uint64_t *total, uint64_t *maximum,
+                             uint64_t *samples)
+{
+    if (!start || end <= start)
+        return;
+    const uint64_t elapsed = end - start;
+    *total += elapsed;
+    if (elapsed > *maximum)
+        *maximum = elapsed;
+    (*samples)++;
+}
+static void qcom_read_timestamp_caps(MPVFlowVulkanQcom *qcom)
+{
+    VkPhysicalDeviceProperties properties = {0};
+    vkGetPhysicalDeviceProperties(qcom->vk->phys_device, &properties);
+    qcom->timestamp_period_ns = properties.limits.timestampPeriod;
+    qcom->timestamp_compute_and_graphics =
+        properties.limits.timestampComputeAndGraphics == VK_TRUE;
+    uint32_t count = 0;
+    vkGetPhysicalDeviceQueueFamilyProperties(qcom->vk->phys_device, &count, NULL);
+    if (count && qcom->queue_family < count) {
+        VkQueueFamilyProperties *families = calloc(count, sizeof(*families));
+        if (families) {
+            vkGetPhysicalDeviceQueueFamilyProperties(qcom->vk->phys_device,
+                                                     &count, families);
+            const VkQueueFamilyProperties *family = &families[qcom->queue_family];
+            if (family->queueFlags & VK_QUEUE_COMPUTE_BIT)
+                qcom->timestamp_valid_bits = family->timestampValidBits;
+            free(families);
+        }
+    }
+    qcom->timestamps_supported = qcom->timestamp_period_ns > 0.0 &&
+        qcom->timestamp_compute_and_graphics && qcom->timestamp_valid_bits > 0;
+    qcom_log(qcom->gpu, PL_LOG_INFO,
+             "MPVFLOW_DIAGNOSTIC event=qcom_gpu_timing state=%s source=vkCmdWriteTimestamp "
+             "timestamp_period_ns=%.6f timestamp_compute_and_graphics=%d queue_family=%u "
+             "queue_timestamp_valid_bits=%u polling=nonblocking_after_slot_fence",
+             qcom->timestamps_supported ? "supported_pending_query_pool" : "unsupported",
+             qcom->timestamp_period_ns, qcom->timestamp_compute_and_graphics,
+             qcom->queue_family, qcom->timestamp_valid_bits);
+}
+static void qcom_collect_timestamp(MPVFlowVulkanQcom *qcom,
+                                  struct QcomCommandSlot *slot)
+{
+    if (!qcom->timestamps_supported || !slot->timestamp_queries ||
+        !slot->timestamp_pending)
+        return;
+    uint64_t values[4] = {0};
+    const VkResult result = vkGetQueryPoolResults(
+        qcom->vk->device, slot->timestamp_queries, 0, 2, sizeof(values), values,
+        sizeof(uint64_t) * 2,
+        VK_QUERY_RESULT_64_BIT | VK_QUERY_RESULT_WITH_AVAILABILITY_BIT);
+    slot->timestamp_pending = false;
+    if (result != VK_SUCCESS || !values[1] || !values[3]) {
+        qcom->gpu_dispatch_unresolved++;
+        return;
+    }
+    const uint64_t mask = qcom->timestamp_valid_bits >= 64 ? UINT64_MAX :
+        ((UINT64_C(1) << qcom->timestamp_valid_bits) - 1);
+    const uint64_t ticks = (values[2] - values[0]) & mask;
+    const double elapsed_ns = (double) ticks * qcom->timestamp_period_ns;
+    qcom->gpu_dispatch_total_ns += elapsed_ns;
+    if (elapsed_ns > qcom->gpu_dispatch_max_ns)
+        qcom->gpu_dispatch_max_ns = elapsed_ns;
+    qcom->gpu_dispatch_samples++;
+}
+static void qcom_report_dispatch_timing(MPVFlowVulkanQcom *qcom)
+{
+    qcom_log(qcom->gpu, PL_LOG_INFO,
+             "MPVFLOW_DIAGNOSTIC event=qcom_dispatch_timing window_success_dispatches=120 "
+             "fence_poll_scope=all_nonblocking_slot_polls_since_previous_report "
+             "fence_status_avg_us=%.2f fence_status_max_us=%.2f fence_status_samples=%llu "
+             "pl_gpu_flush_avg_us=%.2f command_record_avg_us=%.2f command_record_max_us=%.2f "
+             "queue_lock_avg_us=%.2f queue_submit_avg_us=%.2f queue_submit_max_us=%.2f "
+             "queue_submit_samples=%llu vkQueueSubmit_result=VK_SUCCESS "
+             "gpu_dispatch_avg_us=%.2f gpu_dispatch_max_us=%.2f gpu_timestamp_samples=%llu "
+             "gpu_timestamp_unresolved=%llu timestamp_supported=%d timestamp_valid_bits=%u "
+             "timestamp_period_ns=%.6f gpu_timestamp_scope=two_qcom2_block_match_commands_only "
+             "gpu_timestamp_alignment=completed_slot_fence_results_lagged_nonblocking=1 "
+             "metric=host_cpu_and_gpu_time_separate",
+             qcom->cpu_fence_poll_samples ?
+                 (double) qcom->cpu_fence_poll_total_ns / qcom->cpu_fence_poll_samples / 1000.0 : 0.0,
+             qcom->cpu_fence_poll_max_ns / 1000.0,
+             (unsigned long long) qcom->cpu_fence_poll_samples,
+             qcom->cpu_flush_samples ?
+                 (double) qcom->cpu_flush_total_ns / qcom->cpu_flush_samples / 1000.0 : 0.0,
+             qcom->cpu_record_samples ?
+                 (double) qcom->cpu_record_total_ns / qcom->cpu_record_samples / 1000.0 : 0.0,
+             qcom->cpu_record_max_ns / 1000.0,
+             qcom->cpu_queue_lock_samples ?
+                 (double) qcom->cpu_queue_lock_total_ns / qcom->cpu_queue_lock_samples / 1000.0 : 0.0,
+             qcom->cpu_queue_submit_samples ?
+                 (double) qcom->cpu_queue_submit_total_ns / qcom->cpu_queue_submit_samples / 1000.0 : 0.0,
+             qcom->cpu_queue_submit_max_ns / 1000.0,
+             (unsigned long long) qcom->cpu_queue_submit_samples,
+             qcom->gpu_dispatch_samples ?
+                 qcom->gpu_dispatch_total_ns / qcom->gpu_dispatch_samples / 1000.0 : 0.0,
+             qcom->gpu_dispatch_max_ns / 1000.0,
+             (unsigned long long) qcom->gpu_dispatch_samples,
+             (unsigned long long) qcom->gpu_dispatch_unresolved,
+             qcom->timestamps_supported, qcom->timestamp_valid_bits,
+             qcom->timestamp_period_ns);
+    qcom->cpu_fence_poll_total_ns = qcom->cpu_fence_poll_max_ns = qcom->cpu_fence_poll_samples = 0;
+    qcom->cpu_flush_total_ns = qcom->cpu_flush_max_ns = qcom->cpu_flush_samples = 0;
+    qcom->cpu_record_total_ns = qcom->cpu_record_max_ns = qcom->cpu_record_samples = 0;
+    qcom->cpu_queue_lock_total_ns = qcom->cpu_queue_lock_max_ns = qcom->cpu_queue_lock_samples = 0;
+    qcom->cpu_queue_submit_total_ns = qcom->cpu_queue_submit_max_ns = qcom->cpu_queue_submit_samples = 0;
+    qcom->gpu_dispatch_total_ns = qcom->gpu_dispatch_max_ns = 0.0;
+    qcom->gpu_dispatch_samples = qcom->gpu_dispatch_unresolved = 0;
+}
 static bool qcom_extension_enabled(pl_vulkan vk, const char *name)
 {
     if (!vk || !name)
@@ -570,6 +703,31 @@ static bool qcom_create_commands(MPVFlowVulkanQcom *qcom)
         if (result != VK_SUCCESS)
             goto fail;
     }
+    if (qcom->timestamps_supported) {
+        VkQueryPoolCreateInfo query_info = {
+            .sType = VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO,
+            .queryType = VK_QUERY_TYPE_TIMESTAMP,
+            .queryCount = 2,
+        };
+        for (uint32_t i = 0; i < QCOM_COMMAND_SLOTS; i++) {
+            result = vkCreateQueryPool(qcom->vk->device, &query_info, NULL,
+                                       &qcom->slots[i].timestamp_queries);
+            if (result != VK_SUCCESS) {
+                for (uint32_t j = 0; j < QCOM_COMMAND_SLOTS; j++) {
+                    if (qcom->slots[j].timestamp_queries)
+                        vkDestroyQueryPool(qcom->vk->device,
+                            qcom->slots[j].timestamp_queries, NULL);
+                    qcom->slots[j].timestamp_queries = VK_NULL_HANDLE;
+                }
+                qcom->timestamps_supported = false;
+                qcom_log(qcom->gpu, PL_LOG_WARN,
+                         "MPVFLOW_DIAGNOSTIC event=qcom_gpu_timing state=unsupported "
+                         "reason=query_pool_creation_failed result=%d dispatch_behavior=unchanged",
+                         result);
+                break;
+            }
+        }
+    }
     return true;
 
 fail:
@@ -672,6 +830,7 @@ MPVFlowVulkanQcom *mpvflow_vulkan_qcom_create(pl_gpu gpu,
         goto fail;
     }
     qcom->queue_family = qcom->vk->queue_compute.index;
+    qcom_read_timestamp_caps(qcom);
     vkGetDeviceQueue(qcom->vk->device, qcom->queue_family, 0, &qcom->queue);
     if (!qcom->queue) {
         qcom_set_reason(reason, reason_size, "compute_queue_retrieval_failed");
@@ -796,7 +955,8 @@ bool mpvflow_vulkan_qcom_ensure(MPVFlowVulkanQcom *qcom,
         qcom->grid_width == grid_width && qcom->grid_height == grid_height &&
         qcom->block_size == block_size)
         return true;
-
+    const uint64_t setup_start_ns = qcom_clock_ns();
+    uint64_t pl_finish_ns = 0, queue_idle_ns = 0;
     VkImageFormatProperties block_properties = {0};
     VkImageUsageFlags block_usage = VK_IMAGE_USAGE_SAMPLED_BIT |
         VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLE_BLOCK_MATCH_BIT_QCOM;
@@ -822,10 +982,14 @@ bool mpvflow_vulkan_qcom_ensure(MPVFlowVulkanQcom *qcom,
         return false;
     }
 
+    const uint64_t pl_finish_start_ns = qcom_clock_ns();
     pl_gpu_finish(qcom->gpu);
+    pl_finish_ns = qcom_clock_ns() - pl_finish_start_ns;
+    const uint64_t queue_idle_start_ns = qcom_clock_ns();
     qcom->vk->lock_queue(qcom->vk, qcom->queue_family, 0);
     VkResult idle_result = vkQueueWaitIdle(qcom->queue);
     qcom->vk->unlock_queue(qcom->vk, qcom->queue_family, 0);
+    queue_idle_ns = qcom_clock_ns() - queue_idle_start_ns;
     if (idle_result != VK_SUCCESS) {
         qcom_log(qcom->gpu, PL_LOG_WARN,
                  "MPVFLOW_DIAGNOSTIC event=qcom_block_match_image state=unavailable reason=resize_queue_idle_failed result=%d",
@@ -866,10 +1030,13 @@ bool mpvflow_vulkan_qcom_ensure(MPVFlowVulkanQcom *qcom,
     qcom->block_size = block_size;
     qcom_update_descriptors(qcom);
     qcom_log(qcom->gpu, PL_LOG_INFO,
-             "MPVFLOW_DIAGNOSTIC event=qcom_block_match_image state=ready input=%dx%d grid=%dx%d block=%d window=%ux%u block_usage=0x%x stage_usage=0x%x output_usage=0x%x",
+             "MPVFLOW_DIAGNOSTIC event=qcom_block_match_image state=ready input=%dx%d grid=%dx%d block=%d window=%ux%u block_usage=0x%x stage_usage=0x%x output_usage=0x%x "
+             "setup_cpu_ms=%.3f pl_gpu_finish_ms=%.3f resize_queue_wait_ms=%.3f blocking_resize_only=1",
              width, height, grid_width, grid_height, block_size,
              qcom->window.width, qcom->window.height, block_usage, stage_usage,
-             VK_IMAGE_USAGE_STORAGE_BIT);
+             VK_IMAGE_USAGE_STORAGE_BIT,
+             (qcom_clock_ns() - setup_start_ns) / 1000000.0,
+             pl_finish_ns / 1000000.0, queue_idle_ns / 1000000.0);
     return true;
 }
 
@@ -893,7 +1060,11 @@ bool mpvflow_vulkan_qcom_dispatch(MPVFlowVulkanQcom *qcom)
         return false;
     const uint32_t slot_index = qcom->slot_cursor++ % QCOM_COMMAND_SLOTS;
     struct QcomCommandSlot *slot = &qcom->slots[slot_index];
+    const uint64_t fence_poll_start_ns = qcom_clock_ns();
     VkResult result = vkGetFenceStatus(qcom->vk->device, slot->fence);
+    qcom_add_elapsed(fence_poll_start_ns, qcom_clock_ns(),
+        &qcom->cpu_fence_poll_total_ns, &qcom->cpu_fence_poll_max_ns,
+        &qcom->cpu_fence_poll_samples);
     if (result == VK_NOT_READY) {
         qcom_log(qcom->gpu, PL_LOG_DEBUG,
                  "MPVFLOW_DIAGNOSTIC event=qcom_block_match_dispatch state=fallback reason=command_slot_busy slot=%u dispatches=%llu",
@@ -907,6 +1078,7 @@ bool mpvflow_vulkan_qcom_dispatch(MPVFlowVulkanQcom *qcom)
                  result);
         return false;
     }
+    qcom_collect_timestamp(qcom, slot);
     result = vkResetCommandBuffer(slot->command, 0);
     if (result != VK_SUCCESS) {
         qcom->disabled = true;
@@ -921,7 +1093,11 @@ bool mpvflow_vulkan_qcom_dispatch(MPVFlowVulkanQcom *qcom)
     };
     bool held[QCOM_HELD_IMAGE_COUNT] = {false};
     uint64_t values[QCOM_HELD_IMAGE_COUNT] = {0};
+    const uint64_t flush_start_ns = qcom_clock_ns();
     pl_gpu_flush(qcom->gpu);
+    qcom_add_elapsed(flush_start_ns, qcom_clock_ns(),
+        &qcom->cpu_flush_total_ns, &qcom->cpu_flush_max_ns,
+        &qcom->cpu_flush_samples);
     if (qcom->ready_value > UINT64_MAX - QCOM_HELD_IMAGE_COUNT ||
         qcom->done_value == UINT64_MAX) {
         qcom->disabled = true;
@@ -949,6 +1125,8 @@ bool mpvflow_vulkan_qcom_dispatch(MPVFlowVulkanQcom *qcom)
         .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
         .flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT,
     };
+    const uint64_t command_record_start_ns = qcom_clock_ns();
+    bool command_record_timed = false;
     result = vkBeginCommandBuffer(slot->command, &begin);
     if (result != VK_SUCCESS)
         goto command_fail;
@@ -1026,6 +1204,11 @@ bool mpvflow_vulkan_qcom_dispatch(MPVFlowVulkanQcom *qcom)
     vkCmdPipelineBarrier(slot->command, VK_PIPELINE_STAGE_TRANSFER_BIT,
         VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0, 0, NULL, 0, NULL, 2,
         block_for_compute);
+    if (slot->timestamp_queries) {
+        vkCmdResetQueryPool(slot->command, slot->timestamp_queries, 0, 2);
+        vkCmdWriteTimestamp(slot->command, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                            slot->timestamp_queries, 0);
+    }
     vkCmdBindPipeline(slot->command, VK_PIPELINE_BIND_POINT_COMPUTE, qcom->pipeline);
     struct QcomSeedPush push = {
         .image_grid = {
@@ -1046,7 +1229,14 @@ bool mpvflow_vulkan_qcom_dispatch(MPVFlowVulkanQcom *qcom)
             ((uint32_t) qcom->grid_width + 7u) / 8u,
             ((uint32_t) qcom->grid_height + 7u) / 8u, 1);
     }
+    if (slot->timestamp_queries)
+        vkCmdWriteTimestamp(slot->command, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                            slot->timestamp_queries, 1);
     result = vkEndCommandBuffer(slot->command);
+    qcom_add_elapsed(command_record_start_ns, qcom_clock_ns(),
+        &qcom->cpu_record_total_ns, &qcom->cpu_record_max_ns,
+        &qcom->cpu_record_samples);
+    command_record_timed = true;
     if (result != VK_SUCCESS)
         goto command_fail;
 
@@ -1075,9 +1265,18 @@ bool mpvflow_vulkan_qcom_dispatch(MPVFlowVulkanQcom *qcom)
         .signalSemaphoreCount = 1,
         .pSignalSemaphores = &qcom->done_semaphore,
     };
+    const uint64_t queue_lock_start_ns = qcom_clock_ns();
     qcom->vk->lock_queue(qcom->vk, qcom->queue_family, 0);
+    const uint64_t queue_submit_start_ns = qcom_clock_ns();
     result = vkQueueSubmit(qcom->queue, 1, &submit, slot->fence);
+    const uint64_t queue_submit_end_ns = qcom_clock_ns();
     qcom->vk->unlock_queue(qcom->vk, qcom->queue_family, 0);
+    qcom_add_elapsed(queue_lock_start_ns, queue_submit_start_ns,
+        &qcom->cpu_queue_lock_total_ns, &qcom->cpu_queue_lock_max_ns,
+        &qcom->cpu_queue_lock_samples);
+    qcom_add_elapsed(queue_submit_start_ns, queue_submit_end_ns,
+        &qcom->cpu_queue_submit_total_ns, &qcom->cpu_queue_submit_max_ns,
+        &qcom->cpu_queue_submit_samples);
     if (result != VK_SUCCESS) {
         qcom_release_held(qcom, images, held, values, qcom->ready_semaphore);
         qcom->disabled = true;
@@ -1086,6 +1285,7 @@ bool mpvflow_vulkan_qcom_dispatch(MPVFlowVulkanQcom *qcom)
                  result);
         return false;
     }
+    slot->timestamp_pending = slot->timestamp_queries != VK_NULL_HANDLE;
     for (uint32_t i = 0; i < QCOM_HELD_IMAGE_COUNT; i++) {
         pl_vulkan_release_ex(qcom->gpu, pl_vulkan_release_params(
             .tex = images[i]->texture,
@@ -1096,15 +1296,22 @@ bool mpvflow_vulkan_qcom_dispatch(MPVFlowVulkanQcom *qcom)
     qcom->block_luma_layout[0] = VK_IMAGE_LAYOUT_GENERAL;
     qcom->block_luma_layout[1] = VK_IMAGE_LAYOUT_GENERAL;
     qcom->dispatches++;
-    if (qcom->dispatches == 1 || qcom->dispatches % 120 == 0)
+    if (qcom->dispatches == 1 || qcom->dispatches % 120 == 0) {
         qcom_log(qcom->gpu, PL_LOG_INFO,
                  "MPVFLOW_DIAGNOSTIC event=qcom_block_match_dispatch state=active dispatches=%llu input=%dx%d grid=%dx%d block=%d window=%ux%u refinement=full_baseline_sad_search",
                  (unsigned long long) qcom->dispatches, qcom->width, qcom->height,
                  qcom->grid_width, qcom->grid_height, qcom->block_size,
                  qcom->window.width, qcom->window.height);
+        if (qcom->dispatches % 120 == 0)
+            qcom_report_dispatch_timing(qcom);
+    }
     return true;
 
 command_fail:
+    if (!command_record_timed)
+        qcom_add_elapsed(command_record_start_ns, qcom_clock_ns(),
+            &qcom->cpu_record_total_ns, &qcom->cpu_record_max_ns,
+            &qcom->cpu_record_samples);
     qcom_release_held(qcom, images, held, values, qcom->ready_semaphore);
     qcom_log(qcom->gpu, PL_LOG_WARN,
              "MPVFLOW_DIAGNOSTIC event=qcom_block_match_dispatch state=fallback reason=command_record_failed result=%d",
@@ -1132,6 +1339,9 @@ void mpvflow_vulkan_qcom_destroy(MPVFlowVulkanQcom **qcom_ptr)
             qcom_destroy_image(qcom, &qcom->seed[i]);
         }
         for (uint32_t i = 0; i < QCOM_COMMAND_SLOTS; i++) {
+            if (qcom->slots[i].timestamp_queries)
+                vkDestroyQueryPool(qcom->vk->device,
+                    qcom->slots[i].timestamp_queries, NULL);
             if (qcom->slots[i].fence)
                 vkDestroyFence(qcom->vk->device, qcom->slots[i].fence, NULL);
         }

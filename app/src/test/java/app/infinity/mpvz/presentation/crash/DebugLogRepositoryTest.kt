@@ -284,6 +284,46 @@ class DebugLogRepositoryTest {
   }
 
   @Test
+  fun pinsPresentModeAndLatestWsiWaitStagesAfterLargeFlowLogFlood() {
+    fun entry(id: String, time: Long, message: String) =
+      DebugLogEntry(
+        id = id,
+        timeMillis = time,
+        timestamp = "00:00:00.000",
+        level = DebugLogLevel.Info,
+        tag = "mpv",
+        message = message,
+      )
+
+    val evidence =
+      listOf(
+        entry("present-mode", 1L, "MPVFLOW_DIAGNOSTIC event=present_mode state=requested request=mailbox result=0"),
+        entry("wsi-created-old", 2L, "MPVFLOW_DIAGNOSTIC event=wsi_swapchain_created created_mode=fifo actual_images=3"),
+        entry("wsi-created-latest", 3L, "MPVFLOW_DIAGNOSTIC event=wsi_swapchain_created created_mode=mailbox actual_images=3"),
+        entry("wsi-acquire", 4L, "MPVFLOW_DIAGNOSTIC event=wsi_timing stage=vkAcquireNextImageKHR avg_ms=17.0 max_ms=25.0"),
+        entry("wsi-present-fence", 5L, "MPVFLOW_DIAGNOSTIC event=wsi_timing stage=present_fence_wait avg_ms=1.0 max_ms=3.0"),
+        entry("qcom-capabilities", 6L, "MPVFLOW_DIAGNOSTIC event=qcom_gpu_timing state=supported_pending_query_pool"),
+        entry("qcom-timing", 7L, "MPVFLOW_DIAGNOSTIC event=qcom_dispatch_timing gpu_dispatch_avg_us=900"),
+      )
+    val flowNoise =
+      (0 until DEBUG_LOG_ENTRY_LIMIT + 2_000).map { index ->
+        entry("flow-noise-$index", 100L + index, "MPVFLOW_DIAGNOSTIC event=timing_sample sample=$index")
+      }
+
+    val retained = retainDebugLogEntries(evidence + flowNoise)
+
+    assertTrue(retained.size <= DEBUG_LOG_ENTRY_LIMIT)
+    assertTrue(retained.any { it.id == "present-mode" })
+    assertTrue(retained.any { it.id == "wsi-created-old" })
+    assertTrue(retained.any { it.id == "wsi-created-latest" })
+    assertTrue(retained.any { it.id == "wsi-acquire" })
+    assertTrue(retained.any { it.id == "wsi-present-fence" })
+    assertTrue(retained.any { it.id == "qcom-capabilities" })
+    assertTrue(retained.any { it.id == "qcom-timing" })
+    assertTrue(retained.any { it.id == "flow-noise-${DEBUG_LOG_ENTRY_LIMIT + 1_999}" })
+  }
+
+  @Test
   fun pinsLatestRendererConfigOutsideTheFirstStartupWindow() {
     fun entry(id: String, time: Long, message: String) =
       DebugLogEntry(

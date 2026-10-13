@@ -369,11 +369,32 @@ private fun retainPinnedFlowDiagnostics(
       .filter { it.message.contains("event=renderer_config", ignoreCase = true) }
       .takeLast(FLOW_RENDERER_CONFIG_PIN_COUNT)
   val failures = entries.filter(DebugLogEntry::isFlowFailureRecord).takeLast(FLOW_FAILURE_ENTRY_PIN_COUNT)
-  val pinned = (startup + latestRendererConfigs + failures).distinctBy(DebugLogEntry::id)
+  val latestPresentMode = entries.filter { it.message.contains("event=present_mode", ignoreCase = true) }.takeLast(1)
+  val latestWsiToggle = entries.filter { it.message.contains("event=wsi_diagnostics_toggle", ignoreCase = true) }.takeLast(1)
+  val wsiSwapchains = entries.filter { it.message.contains("event=wsi_swapchain_created", ignoreCase = true) }
+  val wsiSwapchainEvidence = (wsiSwapchains.take(1) + wsiSwapchains.takeLast(1)).distinctBy(DebugLogEntry::id)
+  val wsiTimingEntries =
+    entries
+      .filter { it.message.contains("event=wsi_timing", ignoreCase = true) }
+      .mapNotNull { entry -> entry.flowWsiTimingStage()?.let { it to entry } }
+      .groupBy({ it.first }, { it.second })
+      .values
+      .mapNotNull { it.lastOrNull() }
+  val latestQcomCapabilities = entries.filter { it.message.contains("event=qcom_gpu_timing", ignoreCase = true) }.takeLast(1)
+  val latestQcomDispatchTiming = entries.filter { it.message.contains("event=qcom_dispatch_timing", ignoreCase = true) }.takeLast(1)
+  val pinned =
+    (startup + latestRendererConfigs + failures + latestPresentMode + latestWsiToggle +
+      wsiSwapchainEvidence + wsiTimingEntries + latestQcomCapabilities + latestQcomDispatchTiming)
+      .distinctBy(DebugLogEntry::id)
   val tailCapacity = (reserve - pinned.size).coerceAtLeast(0)
   return (pinned + entries.takeLast(tailCapacity))
     .distinctBy(DebugLogEntry::id)
     .sortedBy(DebugLogEntry::timeMillis)
+}
+
+private fun DebugLogEntry.flowWsiTimingStage(): String? {
+  if (!message.contains("event=wsi_timing", ignoreCase = true)) return null
+  return Regex("(?:^|\\s)stage=([^\\s]+)").find(message)?.groupValues?.get(1)
 }
 
 private fun DebugLogEntry.isFlowStartupRecord(): Boolean =

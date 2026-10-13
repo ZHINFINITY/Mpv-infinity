@@ -152,6 +152,7 @@ def instrument_libplacebo_swapchain(swapchain_c: str) -> str:
         required = (
             "atomic_bool flow_diagnostics",
             "VkPresentModeKHR flow_created_present_mode",
+            "VkFormat flow_created_format",
             "uint32_t flow_created_image_count",
             "uint32_t flow_surface_min_image_count, flow_surface_max_image_count",
             "flow_created_info_valid, flow_created_info_reported",
@@ -159,12 +160,25 @@ def instrument_libplacebo_swapchain(swapchain_c: str) -> str:
             "create_min_images=%u",
             "actual_images=%u",
             "surface_min_images=%u surface_max_images=%u",
+            "format_vk=%d color_space_vk=%d extent=%ux%u usage=0x%x",
+            "present_feedback=unsupported_by_pinned_libplacebo",
             "p->flow_surface_min_image_count = caps.minImageCount;",
             "p->flow_surface_max_image_count = caps.maxImageCount;",
             "event=wsi_swapchain_created",
-            "event=wsi_timing stage=%s avg_ms=%.3f max_ms=%.3f ",
+            "event=wsi_timing stage=%s avg_ms=%.3f max_ms=%.3f",
+            "last_result_name=%s window_s=%.2f",
+            "last_timeout_ns=%llu last_image_index=%u",
+            "FLOW_WSI_MUTEX_LOCK, \"swapchain_mutex_lock\"",
+            "FLOW_WSI_RECREATE, \"swapchain_recreate\"",
+            "FLOW_WSI_CREATE_SWAPCHAIN, \"vkCreateSwapchainKHR\"",
+            "FLOW_WSI_GET_IMAGE_COUNT, \"vkGetSwapchainImagesKHR_count\"",
+            "FLOW_WSI_GET_IMAGES, \"vkGetSwapchainImagesKHR\"",
             'FLOW_WSI_ACQUIRE, "vkAcquireNextImageKHR"',
             'FLOW_WSI_FENCE_WAIT, "present_fence_wait"',
+            'FLOW_WSI_FENCE_RESET, "vkResetFences"',
+            'FLOW_WSI_IMAGE_INIT, "vk_sw_image_init"',
+            'FLOW_WSI_COMMAND_SUBMIT, "vk_cmd_submit_path"',
+            'FLOW_WSI_PRESENT_QUEUE_LOCK, "present_queue_lock"',
             'FLOW_WSI_PRESENT, "vkQueuePresentKHR"',
             "pl_vulkan_swapchain_set_diagnostics(pl_swapchain sw, bool enabled)",
             "pl_vulkan_swapchain_get_diagnostics(",
@@ -183,13 +197,20 @@ def instrument_libplacebo_swapchain(swapchain_c: str) -> str:
         "    bool has_swapchain_maintenance1;\n    struct pl_color_repr color_repr;",
         "    bool has_swapchain_maintenance1;\n    atomic_bool flow_diagnostics;\n"
         "    VkPresentModeKHR flow_created_present_mode;\n"
+        "    VkFormat flow_created_format;\n"
+        "    VkColorSpaceKHR flow_created_color_space;\n"
+        "    VkExtent2D flow_created_extent;\n"
+        "    VkImageUsageFlags flow_created_usage;\n"
         "    uint32_t flow_created_min_image_count;\n"
         "    uint32_t flow_created_image_count;\n"
         "    uint32_t flow_surface_min_image_count, flow_surface_max_image_count;\n"
         "    bool flow_created_info_valid, flow_created_info_reported;\n"
-        "    pl_clock_t flow_diag_last_report[3];\n"
-        "    uint64_t flow_diag_total_ns[3], flow_diag_max_ns[3], flow_diag_samples[3];\n"
-        "    VkResult flow_diag_last_result[3];\n    struct pl_color_repr color_repr;",
+        "    pl_clock_t flow_diag_last_report[12];\n"
+        "    uint64_t flow_diag_total_ns[12], flow_diag_max_ns[12], flow_diag_samples[12];\n"
+        "    VkResult flow_diag_last_result[12];\n"
+        "    uint64_t flow_diag_last_timeout_ns[12];\n"
+        "    uint32_t flow_diag_last_image_index[12], flow_diag_image_index_valid[12];\n"
+        "    struct pl_color_repr color_repr;",
         "swapchain diagnostic state",
     )
     swapchain_c = replace_once(
@@ -211,7 +232,25 @@ def instrument_libplacebo_swapchain(swapchain_c: str) -> str:
         "surface image-count capability capture",
     )
     helper = '''/* MPVFLOW_WSI_DIAGNOSTICS */
-enum { FLOW_WSI_ACQUIRE, FLOW_WSI_FENCE_WAIT, FLOW_WSI_PRESENT };
+enum {
+    FLOW_WSI_MUTEX_LOCK, FLOW_WSI_RECREATE, FLOW_WSI_CREATE_SWAPCHAIN,
+    FLOW_WSI_GET_IMAGE_COUNT, FLOW_WSI_GET_IMAGES, FLOW_WSI_ACQUIRE,
+    FLOW_WSI_FENCE_WAIT, FLOW_WSI_FENCE_RESET, FLOW_WSI_IMAGE_INIT,
+    FLOW_WSI_COMMAND_SUBMIT, FLOW_WSI_PRESENT_QUEUE_LOCK, FLOW_WSI_PRESENT,
+    FLOW_WSI_STAGE_COUNT,
+};
+static const char *flow_vk_result_name(VkResult result)
+{
+    switch (result) {
+    case VK_SUCCESS: return "VK_SUCCESS";
+    case VK_SUBOPTIMAL_KHR: return "VK_SUBOPTIMAL_KHR";
+    case VK_NOT_READY: return "VK_NOT_READY";
+    case VK_TIMEOUT: return "VK_TIMEOUT";
+    case VK_ERROR_OUT_OF_DATE_KHR: return "VK_ERROR_OUT_OF_DATE_KHR";
+    case VK_ERROR_DEVICE_LOST: return "VK_ERROR_DEVICE_LOST";
+    default: return "VK_ERROR_OTHER";
+    }
+}
 static const char *flow_present_mode_name(VkPresentModeKHR mode)
 {
     switch (mode) {
@@ -235,19 +274,27 @@ static void flow_report_wsi_call(struct priv *p, unsigned int stage,
         p->flow_diag_max_ns[stage] = elapsed_ns;
     p->flow_diag_samples[stage]++;
     p->flow_diag_last_result[stage] = result;
-    if (!p->flow_diag_last_report[stage])
+    bool first_sample = !p->flow_diag_last_report[stage];
+    if (first_sample)
         p->flow_diag_last_report[stage] = stop;
     double window_s = pl_clock_diff(stop, p->flow_diag_last_report[stage]);
-    if (window_s < 5.0)
+    bool low_frequency_stage = stage == FLOW_WSI_RECREATE ||
+        stage == FLOW_WSI_CREATE_SWAPCHAIN || stage == FLOW_WSI_GET_IMAGE_COUNT ||
+        stage == FLOW_WSI_GET_IMAGES || stage == FLOW_WSI_IMAGE_INIT;
+    if (window_s < 5.0 && !first_sample && !low_frequency_stage)
         return;
     p->flow_diag_last_report[stage] = stop;
     double avg_ms = p->flow_diag_samples[stage]
         ? (double) p->flow_diag_total_ns[stage] / p->flow_diag_samples[stage] / 1e6 : 0.0;
     PL_INFO(p->vk, "MPVFLOW_DIAGNOSTIC event=wsi_timing stage=%s avg_ms=%.3f max_ms=%.3f "
-            "samples=%llu last_result=%d window_s=%.2f metric=host_call_duration_not_scanout",
+            "samples=%llu last_result=%d last_result_name=%s window_s=%.2f "
+            "last_timeout_ns=%llu last_image_index=%u image_index_valid=%u "
+            "metric=host_call_duration_not_scanout",
             name, avg_ms, p->flow_diag_max_ns[stage] / 1e6,
             (unsigned long long) p->flow_diag_samples[stage],
-            p->flow_diag_last_result[stage], window_s);
+            p->flow_diag_last_result[stage], flow_vk_result_name(p->flow_diag_last_result[stage]), window_s,
+            (unsigned long long) p->flow_diag_last_timeout_ns[stage],
+            p->flow_diag_last_image_index[stage], p->flow_diag_image_index_valid[stage]);
     p->flow_diag_total_ns[stage] = 0;
     p->flow_diag_max_ns[stage] = 0;
     p->flow_diag_samples[stage] = 0;
@@ -260,13 +307,19 @@ static void flow_report_created_swapchain(struct priv *p)
     PL_INFO(p->vk, "MPVFLOW_DIAGNOSTIC event=wsi_swapchain_created requested_mode=%s requested_vk=%d "
             "created_mode=%s created_vk=%d fallback=%d requested_depth=%d create_min_images=%u "
             "actual_images=%u surface_min_images=%u surface_max_images=%u "
+            "format_vk=%d color_space_vk=%d extent=%ux%u usage=0x%x "
+            "present_fence_completion=%d present_feedback=unsupported_by_pinned_libplacebo "
+            "refresh_source=AndroidDisplayManager_MPV_config_event "
             "source=successful_vkCreateSwapchainKHR_create_info metric=created_config_not_scanout",
             flow_present_mode_name(p->params.present_mode), p->params.present_mode,
             flow_present_mode_name(p->flow_created_present_mode), p->flow_created_present_mode,
             p->params.present_mode != p->flow_created_present_mode,
             p->swapchain_depth, p->flow_created_min_image_count,
             p->flow_created_image_count, p->flow_surface_min_image_count,
-            p->flow_surface_max_image_count);
+            p->flow_surface_max_image_count, p->flow_created_format,
+            p->flow_created_color_space, p->flow_created_extent.width,
+            p->flow_created_extent.height, p->flow_created_usage,
+            p->has_swapchain_maintenance1);
     p->flow_created_info_reported = true;
 }
 '''
@@ -278,9 +331,25 @@ static void flow_report_created_swapchain(struct priv *p)
     )
     swapchain_c = replace_once(
         swapchain_c,
+        "    VkResult res = vk->CreateSwapchainKHR(vk->dev, &sinfo, PL_VK_ALLOC, &current->swapchain);\n"
+        "    PL_VK_ASSERT(res, \"vk->CreateSwapchainKHR(...)\");",
+        "    pl_clock_t flow_create_start = atomic_load_explicit(&p->flow_diagnostics, memory_order_relaxed)\n"
+        "        ? pl_clock_now() : 0;\n"
+        "    VkResult res = vk->CreateSwapchainKHR(vk->dev, &sinfo, PL_VK_ALLOC, &current->swapchain);\n"
+        "    if (flow_create_start)\n"
+        "        flow_report_wsi_call(p, FLOW_WSI_CREATE_SWAPCHAIN, \"vkCreateSwapchainKHR\", flow_create_start, pl_clock_now(), res);\n"
+        "    PL_VK_ASSERT(res, \"vk->CreateSwapchainKHR(...)\");",
+        "vkCreateSwapchainKHR host timing",
+    )
+    swapchain_c = replace_once(
+        swapchain_c,
         '    PL_VK_ASSERT(res, "vk->CreateSwapchainKHR(...)");\n\n    // Get the new swapchain images',
         '    PL_VK_ASSERT(res, "vk->CreateSwapchainKHR(...)");\n\n'
         '    p->flow_created_present_mode = sinfo.presentMode;\n'
+        '    p->flow_created_format = sinfo.imageFormat;\n'
+        '    p->flow_created_color_space = sinfo.imageColorSpace;\n'
+        '    p->flow_created_extent = sinfo.imageExtent;\n'
+        '    p->flow_created_usage = sinfo.imageUsage;\n'
         '    p->flow_created_min_image_count = sinfo.minImageCount;\n'
         '    p->flow_created_image_count = 0;\n'
         '    p->flow_created_info_valid = true;\n'
@@ -290,8 +359,24 @@ static void flow_report_created_swapchain(struct priv *p)
     )
     swapchain_c = replace_once(
         swapchain_c,
+        "    VK(vk->GetSwapchainImagesKHR(vk->dev, current->swapchain, &num_images, NULL));",
+        "    pl_clock_t flow_get_count_start = atomic_load_explicit(&p->flow_diagnostics, memory_order_relaxed)\n"
+        "        ? pl_clock_now() : 0;\n"
+        "    VkResult flow_get_count_result = vk->GetSwapchainImagesKHR(vk->dev, current->swapchain, &num_images, NULL);\n"
+        "    if (flow_get_count_start)\n"
+        "        flow_report_wsi_call(p, FLOW_WSI_GET_IMAGE_COUNT, \"vkGetSwapchainImagesKHR_count\", flow_get_count_start, pl_clock_now(), flow_get_count_result);\n"
+        "    VK(flow_get_count_result);",
+        "swapchain image-count query timing",
+    )
+    swapchain_c = replace_once(
+        swapchain_c,
         "    VK(vk->GetSwapchainImagesKHR(vk->dev, current->swapchain, &num_images, current->vkimages.elem));\n",
-        "    VK(vk->GetSwapchainImagesKHR(vk->dev, current->swapchain, &num_images, current->vkimages.elem));\n"
+        "    pl_clock_t flow_get_images_start = atomic_load_explicit(&p->flow_diagnostics, memory_order_relaxed)\n"
+        "        ? pl_clock_now() : 0;\n"
+        "    VkResult flow_get_images_result = vk->GetSwapchainImagesKHR(vk->dev, current->swapchain, &num_images, current->vkimages.elem);\n"
+        "    if (flow_get_images_start)\n"
+        "        flow_report_wsi_call(p, FLOW_WSI_GET_IMAGES, \"vkGetSwapchainImagesKHR\", flow_get_images_start, pl_clock_now(), flow_get_images_result);\n"
+        "    VK(flow_get_images_result);\n"
         "    p->flow_created_image_count = num_images;\n"
         "    flow_report_created_swapchain(p);\n",
         "created WSI image count report",
@@ -304,8 +389,12 @@ static void flow_report_created_swapchain(struct priv *p)
         "            ? pl_clock_now() : 0;\n"
         "        VkResult res = vk->AcquireNextImageKHR(vk->dev, p->current->swapchain, UINT64_MAX,\n"
         "                                               sem_in, VK_NULL_HANDLE, &imgidx);\n"
-        "        if (flow_acquire_start)\n"
-        "            flow_report_wsi_call(p, FLOW_WSI_ACQUIRE, \"vkAcquireNextImageKHR\", flow_acquire_start, pl_clock_now(), res);",
+        "        if (flow_acquire_start) {\n"
+        "            p->flow_diag_last_timeout_ns[FLOW_WSI_ACQUIRE] = UINT64_MAX;\n"
+        "            p->flow_diag_last_image_index[FLOW_WSI_ACQUIRE] = imgidx;\n"
+        "            p->flow_diag_image_index_valid[FLOW_WSI_ACQUIRE] = res == VK_SUCCESS || res == VK_SUBOPTIMAL_KHR;\n"
+        "            flow_report_wsi_call(p, FLOW_WSI_ACQUIRE, \"vkAcquireNextImageKHR\", flow_acquire_start, pl_clock_now(), res);\n"
+        "        }",
         "vkAcquireNextImageKHR timing",
     )
     swapchain_c = replace_once(
@@ -315,22 +404,109 @@ static void flow_report_created_swapchain(struct priv *p)
         "                pl_clock_t flow_fence_start = atomic_load_explicit(&p->flow_diagnostics, memory_order_relaxed)\n"
         "                    ? pl_clock_now() : 0;\n"
         "                VkResult flow_fence_result = vk->WaitForFences(vk->dev, 1, pfence, VK_TRUE, UINT64_MAX);\n"
-        "                if (flow_fence_start)\n"
+        "                if (flow_fence_start) {\n"
+        "                    p->flow_diag_last_timeout_ns[FLOW_WSI_FENCE_WAIT] = UINT64_MAX;\n"
+        "                    p->flow_diag_last_image_index[FLOW_WSI_FENCE_WAIT] = imgidx;\n"
+        "                    p->flow_diag_image_index_valid[FLOW_WSI_FENCE_WAIT] = 1;\n"
         "                    flow_report_wsi_call(p, FLOW_WSI_FENCE_WAIT, \"present_fence_wait\", flow_fence_start, pl_clock_now(), flow_fence_result);\n"
-        "                vk->ResetFences(vk->dev, 1, pfence);",
+        "                }\n"
+        "                pl_clock_t flow_reset_start = atomic_load_explicit(&p->flow_diagnostics, memory_order_relaxed)\n"
+        "                    ? pl_clock_now() : 0;\n"
+        "                VkResult flow_reset_result = vk->ResetFences(vk->dev, 1, pfence);\n"
+        "                if (flow_reset_start)\n"
+        "                    flow_report_wsi_call(p, FLOW_WSI_FENCE_RESET, \"vkResetFences\", flow_reset_start, pl_clock_now(), flow_reset_result);",
         "present-fence wait timing",
     )
     swapchain_c = replace_once(
         swapchain_c,
-        "    VkResult res = vk->QueuePresentKHR(queue, &pinfo);\n    vk->unlock_queue(vk->queue_ctx, pool->qf, qidx);",
-        "    pl_clock_t flow_present_start = atomic_load_explicit(&p->flow_diagnostics, memory_order_relaxed)\n"
-        "        ? pl_clock_now() : 0;\n"
+        "    vk->lock_queue(vk->queue_ctx, pool->qf, qidx);\n"
         "    VkResult res = vk->QueuePresentKHR(queue, &pinfo);\n"
-        "    pl_clock_t flow_present_end = flow_present_start ? pl_clock_now() : 0;\n"
+        "    vk->unlock_queue(vk->queue_ctx, pool->qf, qidx);",
+        "    pl_clock_t flow_queue_lock_start = atomic_load_explicit(&p->flow_diagnostics, memory_order_relaxed)\n"
+        "        ? pl_clock_now() : 0;\n"
+        "    vk->lock_queue(vk->queue_ctx, pool->qf, qidx);\n"
+        "    pl_clock_t flow_present_start = flow_queue_lock_start ? pl_clock_now() : 0;\n"
+        "    if (flow_queue_lock_start)\n"
+        "        flow_report_wsi_call(p, FLOW_WSI_PRESENT_QUEUE_LOCK, \"present_queue_lock\", flow_queue_lock_start, flow_present_start, VK_SUCCESS);\n"
+        "    VkResult res = vk->QueuePresentKHR(queue, &pinfo);\n"
+        "    pl_clock_t flow_present_end = flow_queue_lock_start ? pl_clock_now() : 0;\n"
         "    vk->unlock_queue(vk->queue_ctx, pool->qf, qidx);\n"
-        "    if (flow_present_start)\n"
+        "    if (flow_queue_lock_start)\n"
         "        flow_report_wsi_call(p, FLOW_WSI_PRESENT, \"vkQueuePresentKHR\", flow_present_start, flow_present_end, res);",
         "vkQueuePresentKHR timing",
+    )
+    swapchain_c = replace_once(
+        swapchain_c,
+        "    struct vk_ctx *vk = p->vk;\n    pl_mutex_lock(&p->lock);\n\n    bool recreate = !p->current || p->needs_recreate;",
+        "    struct vk_ctx *vk = p->vk;\n"
+        "    pl_clock_t flow_lock_start = atomic_load_explicit(&p->flow_diagnostics, memory_order_relaxed)\n"
+        "        ? pl_clock_now() : 0;\n"
+        "    pl_mutex_lock(&p->lock);\n"
+        "    if (flow_lock_start)\n"
+        "        flow_report_wsi_call(p, FLOW_WSI_MUTEX_LOCK, \"swapchain_mutex_lock\", flow_lock_start, pl_clock_now(), VK_SUCCESS);\n\n"
+        "    bool recreate = !p->current || p->needs_recreate;",
+        "start-frame mutex wait timing",
+    )
+    swapchain_c = replace_once(
+        swapchain_c,
+        "    if (recreate && !vk_sw_recreate(sw, 0, 0)) {\n        pl_mutex_unlock(&p->lock);\n        return false;\n    }",
+        "    if (recreate) {\n"
+        "        pl_clock_t flow_recreate_start = atomic_load_explicit(&p->flow_diagnostics, memory_order_relaxed)\n"
+        "            ? pl_clock_now() : 0;\n"
+        "        bool flow_recreate_ok = vk_sw_recreate(sw, 0, 0);\n"
+        "        if (flow_recreate_start)\n"
+        "            flow_report_wsi_call(p, FLOW_WSI_RECREATE, \"swapchain_recreate\", flow_recreate_start, pl_clock_now(),\n"
+        "                                 flow_recreate_ok ? VK_SUCCESS : VK_ERROR_UNKNOWN);\n"
+        "        if (!flow_recreate_ok) {\n"
+        "            pl_mutex_unlock(&p->lock);\n"
+        "            return false;\n"
+        "        }\n"
+        "    }",
+        "start-frame swapchain recreation timing",
+    )
+    swapchain_c = replace_once(
+        swapchain_c,
+        "            if (!vk_sw_recreate(sw, 0, 0)) {\n                pl_mutex_unlock(&p->lock);\n                return false;\n            }",
+        "            pl_clock_t flow_retry_recreate_start = atomic_load_explicit(&p->flow_diagnostics, memory_order_relaxed)\n"
+        "                ? pl_clock_now() : 0;\n"
+        "            bool flow_retry_recreate_ok = vk_sw_recreate(sw, 0, 0);\n"
+        "            if (flow_retry_recreate_start)\n"
+        "                flow_report_wsi_call(p, FLOW_WSI_RECREATE, \"swapchain_recreate_out_of_date\",\n"
+        "                                     flow_retry_recreate_start, pl_clock_now(),\n"
+        "                                     flow_retry_recreate_ok ? VK_SUCCESS : VK_ERROR_UNKNOWN);\n"
+        "            if (!flow_retry_recreate_ok) {\n"
+        "                pl_mutex_unlock(&p->lock);\n"
+        "                return false;\n"
+        "            }",
+        "out-of-date WSI recreation timing",
+    )
+    swapchain_c = replace_once(
+        swapchain_c,
+        "            if (!vk_sw_image_init(sw, imgidx))\n                goto error;",
+        "            pl_clock_t flow_image_init_start = atomic_load_explicit(&p->flow_diagnostics, memory_order_relaxed)\n"
+        "                ? pl_clock_now() : 0;\n"
+        "            bool flow_image_init_ok = vk_sw_image_init(sw, imgidx);\n"
+        "            if (flow_image_init_start)\n"
+        "                flow_report_wsi_call(p, FLOW_WSI_IMAGE_INIT, \"vk_sw_image_init\", flow_image_init_start, pl_clock_now(),\n"
+        "                                     flow_image_init_ok ? VK_SUCCESS : VK_ERROR_UNKNOWN);\n"
+        "            if (!flow_image_init_ok)\n                goto error;",
+        "acquired swapchain image initialization timing",
+    )
+    swapchain_c = replace_once(
+        swapchain_c,
+        "    int qidx = cmd->qindex;\n    if (!CMD_SUBMIT(&cmd)) {\n        pl_mutex_unlock(&p->lock);\n        return false;\n    }",
+        "    int qidx = cmd->qindex;\n"
+        "    pl_clock_t flow_submit_start = atomic_load_explicit(&p->flow_diagnostics, memory_order_relaxed)\n"
+        "        ? pl_clock_now() : 0;\n"
+        "    bool flow_submit_ok = CMD_SUBMIT(&cmd);\n"
+        "    if (flow_submit_start)\n"
+        "        flow_report_wsi_call(p, FLOW_WSI_COMMAND_SUBMIT, \"vk_cmd_submit_path\", flow_submit_start, pl_clock_now(),\n"
+        "                             flow_submit_ok ? VK_SUCCESS : VK_ERROR_UNKNOWN);\n"
+        "    if (!flow_submit_ok) {\n"
+        "        pl_mutex_unlock(&p->lock);\n"
+        "        return false;\n"
+        "    }",
+        "swapchain command-submit host timing",
     )
     swapchain_c = replace_once(
         swapchain_c,
