@@ -469,6 +469,10 @@ with tempfile.TemporaryDirectory(prefix="mpvflow-placebo-version-test-") as temp
     assert missing.returncode != 0, "missing MPV libplacebo dependency metadata must fail closed"
 
 session_source = PLAYBACK_SESSION.read_text(encoding="utf-8")
+assert "fun surfaceFrameRateHintHz(): Double? = activeSurfaceFrameRateHintHz" in session_source
+assert session_source.count("activeSurfaceFrameRateHintHz = null") >= 3, (
+    "PlaybackSession must clear the retained Surface-rate hint on fresh initialization, failure, and teardown"
+)
 initialize_order = (
     "MPVLib.create(context.applicationContext)",
     "initOptions()",
@@ -491,6 +495,9 @@ assert "_state.value.phase == PlaybackPhase.INITIALIZING" in core_gate, (
 )
 
 view_source = MPV_VIEW.read_text(encoding="utf-8")
+assert "interpolationOutputFrameRate = PlaybackSession.surfaceFrameRateHintHz()" in view_source, (
+    "a reattached MPVView must restore the active process-wide output rate when the core is reused"
+)
 init_options = view_source.split("override fun initOptions()", 1)[1].split(
     "override fun observeProperties()", 1
 )[0]
@@ -504,6 +511,15 @@ output_rate_position = init_options.index("interpolationOutputFrameRate =")
 surface_hint_position = init_options.index("updateSurfaceFrameRateHint()", output_rate_position)
 assert output_rate_position < surface_hint_position, (
     "MPV Flow must reapply its output-rate hint after selecting the active interpolation target"
+)
+assert "PlaybackSession.setSurfaceFrameRateHintHz(interpolationOutputFrameRate)" in init_options, (
+    "MPV initOptions must publish the active interpolation rate to the process-wide session"
+)
+surface_hint = view_source.split("internal fun updateSurfaceFrameRateHint()", 1)[1].split(
+    "private val observedProps", 1
+)[0]
+assert "PlaybackSession.isInitialized" in surface_hint and "PlaybackSession.surfaceFrameRateHintHz()" in surface_hint, (
+    "source-FPS property updates must use the initialized core's interpolation target instead of reverting the Surface hint"
 )
 for marker in (
     'PlaybackSession.setOptionString("display-fps-override", displayRefreshRate.hz.toString())',

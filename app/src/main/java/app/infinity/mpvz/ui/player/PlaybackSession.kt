@@ -152,6 +152,8 @@ object PlaybackSession : MPVLib.EventObserver {
 
   @Volatile
   private var initialized = false
+  @Volatile
+  private var activeSurfaceFrameRateHintHz: Double? = null
   private var nativeCoreReady = false
   private var applicationContext: Context? = null
   private var desiredVideoOutput = "gpu"
@@ -184,6 +186,12 @@ object PlaybackSession : MPVLib.EventObserver {
 
   val isInitialized: Boolean
     get() = initialized
+
+  fun surfaceFrameRateHintHz(): Double? = activeSurfaceFrameRateHintHz
+
+  fun setSurfaceFrameRateHintHz(frameRateHz: Double?) {
+    activeSurfaceFrameRateHintHz = frameRateHz?.takeIf { it.isFinite() && it > 0.0 }
+  }
 
   fun invalidateCoreConfiguration() {
     nativeLock.withLock { activeCoreConfigurationKey = null }
@@ -219,6 +227,7 @@ object PlaybackSession : MPVLib.EventObserver {
 
         applicationContext = context.applicationContext
         nativeCoreReady = false
+        activeSurfaceFrameRateHintHz = null
         observedProperties.clear()
         suspendedVideoTrack = null
         deferredVideoSelectionGeneration = null
@@ -266,6 +275,7 @@ object PlaybackSession : MPVLib.EventObserver {
           initialized = false
           nativeCoreReady = false
           activeCoreConfigurationKey = null
+          activeSurfaceFrameRateHintHz = null
           suspendedVideoTrack = null
           deferredVideoSelectionGeneration = null
           pendingStopClearQueue = false
@@ -527,6 +537,7 @@ object PlaybackSession : MPVLib.EventObserver {
     initialized = false
     nativeCoreReady = false
     activeCoreConfigurationKey = null
+    activeSurfaceFrameRateHintHz = null
     clearTimelinePropertiesLocked()
     updateState { PlaybackSessionState(phase = PlaybackPhase.UNINITIALIZED) }
   }

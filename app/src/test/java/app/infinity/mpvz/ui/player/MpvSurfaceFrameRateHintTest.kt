@@ -15,6 +15,11 @@ class MpvSurfaceFrameRateHintTest {
   }
 
   @Test
+  fun interpolationTargetAt120HzOverridesLaterSourceRateMetadata() {
+    assertEquals(120.0, resolveSurfaceFrameRateHint(23.976, 120.0)!!, 0.0)
+  }
+
+  @Test
   fun sourceCadenceIsUsedWhenInterpolationIsInactive() {
     assertEquals(23.976, resolveSurfaceFrameRateHint(23.976, null)!!, 0.0)
   }

@@ -166,6 +166,8 @@ class MPVView(
         postInitOptions = ::postInitOptions,
         observeProperties = ::observeProperties,
       )
+    // Refresh from the process-wide owner even when initOptions was skipped on core reuse.
+    interpolationOutputFrameRate = PlaybackSession.surfaceFrameRateHintHz()
     if (result.isSuccess) {
       holder.removeCallback(this)
       holder.addCallback(this)
@@ -357,6 +359,7 @@ class MPVView(
         mpvFlowFrameInterpolationEnabled -> mpvFlowTargetFps.toDouble()
         else -> null
       }
+    PlaybackSession.setSurfaceFrameRateHintHz(interpolationOutputFrameRate)
     // A new file can publish its source FPS after Surface callbacks; reassert the active FRC output rate.
     updateSurfaceFrameRateHint()
     // These options are consumed while the VO creates its libplacebo context.
@@ -796,10 +799,18 @@ class MPVView(
 
   internal fun updateSurfaceFrameRateHint() {
     if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
+      val coreIsInitialized = PlaybackSession.isInitialized
+      val activeInterpolationFrameRate =
+        if (coreIsInitialized) {
+          PlaybackSession.surfaceFrameRateHintHz()
+        } else {
+          interpolationOutputFrameRate
+        }
+      val hintSource = if (coreIsInitialized) "playback_session" else "view_initialization"
       val fps =
         resolveSurfaceFrameRateHint(
           sourceFrameRate = PlaybackSession.getPropertyDouble("container-fps"),
-          interpolationFrameRate = interpolationOutputFrameRate,
+          interpolationFrameRate = activeInterpolationFrameRate,
         )
       if (fps != null && holder?.surface?.isValid == true) {
         try {
@@ -807,7 +818,12 @@ class MPVView(
             fps.toFloat(),
             android.view.Surface.FRAME_RATE_COMPATIBILITY_FIXED_SOURCE,
           )
-          Log.i(TAG, "Set surface frame-rate hint to ${fps}Hz")
+          Log.i(
+            TAG,
+            "MPVFLOW_DIAGNOSTIC event=surface_frame_rate_hint rate_hz=$fps " +
+              "interpolation_target_hz=${activeInterpolationFrameRate ?: "none"} " +
+              "source=$hintSource",
+          )
         } catch (e: Exception) {
           Log.e(TAG, "Failed to set frame rate on surface", e)
         }
