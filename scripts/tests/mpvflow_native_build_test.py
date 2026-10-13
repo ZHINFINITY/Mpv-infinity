@@ -264,6 +264,9 @@ for marker in (
     "submit_call_avg_ms=%.3f",
 ):
     assert marker in vo_patch, f"MPV Flow must distinguish real blocking swapchain waits from submit time: missing {marker!r}"
+assert "+        target_fps >= 120 ? 448 : target_fps >= 96 ? 440 : 640;" in vo_patch, (
+    "the MPV renderer must preserve the balanced 384-pixel 120-fps profile and the quality headroom"
+)
 flow_prepare_body = vo_patch.split("+static bool flow_prepare_input", 1)[1].split(
     "\n+static void flow_release_frame", 1
 )[0]

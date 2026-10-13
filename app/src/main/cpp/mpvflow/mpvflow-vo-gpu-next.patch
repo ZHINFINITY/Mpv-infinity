@@ -112,13 +112,13 @@
 +    struct priv *p = vo->priv;
 +    const int requested_dimension = MPCLAMP(p->next_opts->mpvflow_max_dimension, 8, 640);
 +    const int requested_compute_api = p->next_opts->mpvflow_compute_api;
-+    /* Keep high-refresh playback inside the mobile display deadline. The
-+     * previous 120-fps profile measured ~20 ms blocked in swapchain acquire
-+     * because motion analysis plus synthesis missed the 8.33 ms slot. */
++    /* Bound mobile analysis cost by target refresh while preserving the app's
++     * selected performance/quality profile. Acquire and render timings are
++     * measured separately; a blocking acquire is not shader execution time. */
 +    const int target_fps = MPCLAMP(p->next_opts->mpvflow_target_fps, 1, 240);
 +    const int quality = MPCLAMP(p->next_opts->mpvflow_quality, 0, 100);
 +    const int target_dimension_limit = target_fps >= 144 ? 320 :
-+        target_fps >= 120 ? 352 : target_fps >= 96 ? 440 : 640;
++        target_fps >= 120 ? 448 : target_fps >= 96 ? 440 : 640;
 +    /* The app already maps the performance/quality profile to this dimension. */
 +    const int effective_dimension = MPCLAMP(requested_dimension, 8, target_dimension_limit);
 +    if (!p->next_opts->mpvflow) {

@@ -56,7 +56,7 @@ internal fun effectiveMpvFlowMaxDimension(targetFps: Int, quality: Int): Int {
   val (minimum, maximum) =
     when {
       targetFps >= 144 -> 288 to 320
-      targetFps >= 120 -> 288 to 352
+      targetFps >= 120 -> 320 to 448
       targetFps >= 96 -> 320 to 432
       targetFps >= 72 -> 384 to 480
       else -> 480 to 640

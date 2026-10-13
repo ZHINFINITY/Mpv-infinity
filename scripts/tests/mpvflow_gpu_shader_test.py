@@ -70,6 +70,9 @@ require(synthesis, "bool staticPixel=", "static low-motion pixels should bypass 
 opencl_source = (ROOT / "app/src/main/cpp/mpvflow/mpvflow_opencl.c").read_text(encoding="utf-8")
 require(opencl_source, "float static_luma_delta=", "OpenCL synthesis must gate static pixels before warping")
 require(opencl_source, "static_out=convert_uchar4_sat_rte", "OpenCL synthesis must preserve static pixels instead of blending warped neighbors")
+require(opencl_source, "float chroma_delta=max(fabs((ca.x-ca.y)-(cb.x-cb.y)),fabs((ca.z-ca.y)-(cb.z-cb.y)))/255.0f", "OpenCL synthesis must measure chroma disagreement between warped source samples")
+require(opencl_source, "int chroma_boundary=color_delta>0.12f&&chroma_delta>0.06f", "OpenCL must reject strong chroma-only contour mixing")
+require(opencl_source, "int boundary_conflict=luma_delta>0.12f||chroma_boundary", "OpenCL boundary fallback must include chroma-only conflicts")
 require(synthesis, "dot(fastForward.xy,fastForward.xy)<=0.0025", "the static path must require a near-zero forward vector")
 require(synthesis, "dot(fastBackward.xy,fastBackward.xy)<=0.0025", "the static path must require a near-zero backward vector")
 require(synthesis, "colorDelta<=0.0039216", "the static path must require an at-most-one-LSB source difference")
@@ -92,7 +95,9 @@ require(flow, "refineAxis(p,bestVector,ivec2(1,0)", "GPU flow vectors must be fr
 require(flow, "center=clamp(center,-p,sz-block-p)", "coarse predictors must be clamped to the active block before border-local refinement")
 require(flow, "bool hasParent=(pc.cfg.w&1)!=0", "the encoded block support must not be confused with the coarse-parent flag")
 require(synthesis, "bool neighborhoodConflict=", "synthesis must detect local motion disagreement")
-require(synthesis, "bool boundaryConflict=neighborhoodConflict||lumaDelta>0.08", "ambiguous vectors must be localized to appearance or neighborhood conflict")
+require(synthesis, "float chromaDelta=max(abs((ca.r-ca.g)-(cb.r-cb.g)),abs((ca.b-ca.g)-(cb.b-cb.g)))", "Vulkan synthesis must measure chroma disagreement between warped source samples")
+require(synthesis, "bool chromaBoundary=colorDelta>0.12&&chromaDelta>0.06", "Vulkan synthesis must reject strong chroma-only contour mixing")
+require(synthesis, "bool boundaryConflict=neighborhoodConflict||lumaDelta>0.08||chromaBoundary", "motion and color boundaries must select a source sample instead of blending across regions")
 require(synthesis, "edgeConfidence0=confidence0*(0.5+0.5*smoothstep(0.02,0.35,f.w))", "edge confidence must still use match uniqueness for boundary conflict resolution")
 require(synthesis, "backAt0=flowAtEdgeAware(cycle0,1)", "cycle-consistency verification must retain edge-aware sampling")
 require(synthesis, "forwardAt1=flowAtEdgeAware(cycle1,0)", "reverse cycle-consistency verification must retain edge-aware sampling")
@@ -378,11 +383,12 @@ def smoothstep(edge0: float, edge1: float, value: float) -> float:
     t = max(0.0, min(1.0, (value - edge0) / (edge1 - edge0)))
     return t * t * (3.0 - 2.0 * t)
 
-def ambiguous_edge_decision(alpha: float, luma_delta: float, color_delta: float,
-                            confidence0: float, confidence1: float,
-                            uniqueness0: float, uniqueness1: float) -> str:
+def edge_decision(alpha: float, luma_delta: float, color_delta: float, chroma_delta: float,
+                  confidence0: float, confidence1: float,
+                  uniqueness0: float, uniqueness1: float) -> str:
     ambiguous = min(uniqueness0, uniqueness1) < 0.04
-    conflict = luma_delta > 0.12 or (ambiguous and color_delta > 0.18)
+    chroma_boundary = color_delta > 0.12 and chroma_delta > 0.06
+    conflict = luma_delta > 0.12 or chroma_boundary or (ambiguous and color_delta > 0.18)
     if not conflict:
         return "interpolate"
     edge0 = confidence0 * (0.5 + 0.5 * smoothstep(0.02, 0.35, uniqueness0))
@@ -399,9 +405,10 @@ assert smoothstep(0.04, 0.35, flat_match_uniqueness) == 0.0, "tied matches must 
 assert smoothstep(0.04, 0.35, 0.35) == 1.0, "distinctive motion matches must remain fully eligible"
 repeat_match_uniqueness = block_search(repetitive_texture, shifted(repetitive_texture, 2, 0), (24, 16), (0, 0), 8, center_out=True)[2]
 assert repeat_match_uniqueness == 0.0, "the periodic-pattern regression must expose a genuine tied-vector case"
-assert ambiguous_edge_decision(0.5, 0.0, 0.0, 1.0, 1.0, flat_match_uniqueness, flat_match_uniqueness) == "interpolate", "low uniqueness alone must not disable temporal synthesis"
-assert ambiguous_edge_decision(0.5, 0.0, 0.25, 1.0, 1.0, 0.0, 0.35) == "frame1", "a visible chroma conflict should prefer the distinctive endpoint"
-assert ambiguous_edge_decision(0.25, 0.0, 0.25, 1.0, 1.0, 0.35, 0.35) == "interpolate", "chroma-only fallback must require an ambiguous pair, not affect ordinary distinctive motion"
+assert edge_decision(0.5, 0.0, 0.0, 0.0, 1.0, 1.0, flat_match_uniqueness, flat_match_uniqueness) == "interpolate", "low uniqueness alone must not disable temporal synthesis"
+assert edge_decision(0.5, 0.0, 0.25, 0.0, 1.0, 1.0, 0.0, 0.35) == "frame1", "a visible chroma conflict should prefer the distinctive endpoint"
+assert edge_decision(0.75, 0.0, 0.25, 0.10, 1.0, 1.0, 0.35, 0.35) == "frame1", "chroma-only hair, eye, and clothing boundaries must not mix even with distinctive vectors"
+assert edge_decision(0.25, 0.02, 0.08, 0.03, 1.0, 1.0, 0.35, 0.35) == "interpolate", "small chroma variation must not disable ordinary temporal synthesis"
 
 validator = shutil.which("glslangValidator")
 if validator:
