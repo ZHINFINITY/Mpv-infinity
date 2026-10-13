@@ -5,8 +5,13 @@ import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.roundToInt
 
-/** Reduced dimensions for motion estimation; source/output textures stay at source dimensions. */
+/** Aspect-preserving dimensions for the frames stored and synthesized by Media3 Flow. */
+internal data class Media3FlowFrameSize(val width: Int, val height: Int)
+
+/** Reduced dimensions for motion estimation on the capped working frames. */
 internal data class Media3FlowMotionSize(val width: Int, val height: Int)
+
+internal const val MEDIA3_FLOW_FRAME_MAX_DIMENSION = 1920
 
 // Must match FLOW_STEP/FLOW_BLOCK in mpvflow_gpu.c; this is telemetry only.
 internal const val MEDIA3_FLOW_GRID_STEP = 4
@@ -53,9 +58,24 @@ internal data class Media3FlowBlitGeometry(
   val textureScaleY: Float,
   val textureOffsetX: Float,
   val textureOffsetY: Float,
+  val rotationDegrees: Int = 0,
 )
 
 internal object Media3FlowGeometry {
+  fun processingFrameSize(
+    sourceWidth: Int,
+    sourceHeight: Int,
+    maxDimension: Int = MEDIA3_FLOW_FRAME_MAX_DIMENSION,
+  ): Media3FlowFrameSize {
+    require(sourceWidth > 0 && sourceHeight > 0) { "Source dimensions must be positive" }
+    require(maxDimension > 0) { "Frame dimension cap must be positive" }
+    val scale = min(1f, maxDimension.toFloat() / max(sourceWidth, sourceHeight).toFloat())
+    return Media3FlowFrameSize(
+      width = max(1, (sourceWidth * scale).roundToInt()),
+      height = max(1, (sourceHeight * scale).roundToInt()),
+    )
+  }
+
   fun motionSize(sourceWidth: Int, sourceHeight: Int, maxDimension: Int): Media3FlowMotionSize {
     require(sourceWidth > 0 && sourceHeight > 0) { "Source dimensions must be positive" }
     require(maxDimension > 0) { "Motion dimension cap must be positive" }
@@ -199,10 +219,20 @@ internal object Media3FlowGeometry {
     outputWidth: Int,
     outputHeight: Int,
     aspect: VideoAspect,
+    pixelWidthHeightRatio: Float = 1f,
+    rotationDegrees: Int = 0,
   ): Media3FlowBlitGeometry {
     require(sourceWidth > 0 && sourceHeight > 0) { "Source dimensions must be positive" }
     require(outputWidth > 0 && outputHeight > 0) { "Output dimensions must be positive" }
-    val sourceAspect = sourceWidth.toDouble() / sourceHeight
+    require(pixelWidthHeightRatio.isFinite() && pixelWidthHeightRatio > 0f) {
+      "Pixel width/height ratio must be finite and positive"
+    }
+    require(rotationDegrees == 0 || rotationDegrees == 90 || rotationDegrees == 180 || rotationDegrees == 270) {
+      "Rotation must be a multiple of 90 degrees"
+    }
+    val quarterTurn = rotationDegrees == 90 || rotationDegrees == 270
+    val unrotatedAspect = sourceWidth.toDouble() * pixelWidthHeightRatio.toDouble() / sourceHeight
+    val sourceAspect = if (quarterTurn) 1.0 / unrotatedAspect else unrotatedAspect
     val outputAspect = outputWidth.toDouble() / outputHeight
 
     if (aspect == VideoAspect.Fit) {
@@ -224,6 +254,7 @@ internal object Media3FlowGeometry {
         textureScaleY = 1f,
         textureOffsetX = 0f,
         textureOffsetY = 0f,
+        rotationDegrees = rotationDegrees,
       )
     }
 
@@ -232,9 +263,11 @@ internal object Media3FlowGeometry {
     when (aspect) {
       VideoAspect.Crop -> {
         if (sourceAspect > outputAspect) {
-          textureScaleX = (outputAspect / sourceAspect).toFloat()
+          val scale = (outputAspect / sourceAspect).toFloat()
+          if (quarterTurn) textureScaleY = scale else textureScaleX = scale
         } else if (sourceAspect < outputAspect) {
-          textureScaleY = (sourceAspect / outputAspect).toFloat()
+          val scale = (sourceAspect / outputAspect).toFloat()
+          if (quarterTurn) textureScaleX = scale else textureScaleY = scale
         }
       }
       VideoAspect.Stretch -> Unit
@@ -249,6 +282,7 @@ internal object Media3FlowGeometry {
       textureScaleY = textureScaleY,
       textureOffsetX = (1f - textureScaleX) / 2f,
       textureOffsetY = (1f - textureScaleY) / 2f,
+      rotationDegrees = rotationDegrees,
     )
   }
 }

@@ -123,6 +123,26 @@ class Media3FlowGeometryTest {
   }
 
   @Test
+  fun interpolationFramesAreCappedAt1080pWithoutUpscalingSmallSources() {
+    assertEquals(
+      Media3FlowFrameSize(1920, 1080),
+      Media3FlowGeometry.processingFrameSize(3840, 2160),
+    )
+    assertEquals(
+      Media3FlowFrameSize(1920, 1080),
+      Media3FlowGeometry.processingFrameSize(7680, 4320),
+    )
+    assertEquals(
+      Media3FlowFrameSize(1080, 1920),
+      Media3FlowGeometry.processingFrameSize(1080, 1920),
+    )
+    assertEquals(
+      Media3FlowFrameSize(1280, 720),
+      Media3FlowGeometry.processingFrameSize(1280, 720),
+    )
+  }
+
+  @Test
   fun motionGridUsesOnlyValidRegularBlockOrigins() {
     val grid = Media3FlowGeometry.motionGridSize(640, 360)
     assertEquals(Media3FlowGridSize(159, 89), grid)
@@ -167,6 +187,53 @@ class Media3FlowGeometryTest {
     assertEquals(
       Media3FlowBlitGeometry(0, 0, 800, 800, 0.5f, 1f, 0.25f, 0f),
       Media3FlowGeometry.blitGeometry(1600, 800, 800, 800, VideoAspect.Crop),
+    )
+  }
+
+  @Test
+  fun blitGeometryPreservesNonSquarePixelsAndQuarterTurnRotation() {
+    assertEquals(
+      Media3FlowBlitGeometry(240, 0, 1440, 1080, 1f, 1f, 0f, 0f),
+      Media3FlowGeometry.blitGeometry(
+        sourceWidth = 720,
+        sourceHeight = 576,
+        outputWidth = 1920,
+        outputHeight = 1080,
+        aspect = VideoAspect.Fit,
+        pixelWidthHeightRatio = 16f / 15f,
+      ),
+    )
+    assertEquals(
+      Media3FlowBlitGeometry(0, 0, 1080, 1920, 1f, 1f, 0f, 0f, rotationDegrees = 90),
+      Media3FlowGeometry.blitGeometry(
+        sourceWidth = 1920,
+        sourceHeight = 1080,
+        outputWidth = 1080,
+        outputHeight = 1920,
+        aspect = VideoAspect.Fit,
+        rotationDegrees = 90,
+      ),
+    )
+    assertEquals(
+      Media3FlowBlitGeometry(
+        0,
+        0,
+        1920,
+        1080,
+        0.31640625f,
+        1f,
+        0.34179688f,
+        0f,
+        rotationDegrees = 90,
+      ),
+      Media3FlowGeometry.blitGeometry(
+        sourceWidth = 1920,
+        sourceHeight = 1080,
+        outputWidth = 1920,
+        outputHeight = 1080,
+        aspect = VideoAspect.Crop,
+        rotationDegrees = 90,
+      ),
     )
   }
 }

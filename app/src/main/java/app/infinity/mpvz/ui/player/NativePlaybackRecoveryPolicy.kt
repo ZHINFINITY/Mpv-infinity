@@ -11,7 +11,8 @@ internal object NativePlaybackRecoveryPolicy {
     return causeClassNames.any { className ->
       className.contains("DecoderInitializationException", ignoreCase = true) ||
         className.contains("DecoderQueryException", ignoreCase = true) ||
-        className.contains("UnrecognizedInputFormatException", ignoreCase = true)
+        className.contains("UnrecognizedInputFormatException", ignoreCase = true) ||
+        className.contains("Media3FlowSdrOutputException", ignoreCase = true)
     }
   }
 }

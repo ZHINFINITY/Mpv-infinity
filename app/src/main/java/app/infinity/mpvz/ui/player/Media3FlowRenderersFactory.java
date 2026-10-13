@@ -1,7 +1,11 @@
 package app.infinity.mpvz.ui.player;
 
+import android.annotation.SuppressLint;
 import android.content.Context;
+import android.media.MediaFormat;
+import android.os.Build;
 import android.os.Handler;
+import androidx.annotation.Nullable;
 import androidx.media3.common.C;
 import androidx.media3.common.Format;
 import androidx.media3.common.util.UnstableApi;
@@ -14,7 +18,7 @@ import androidx.media3.exoplayer.video.MediaCodecVideoRenderer;
 import androidx.media3.exoplayer.video.VideoRendererEventListener;
 import java.util.ArrayList;
 
-/** Adds a GPU-sink MediaCodec renderer ahead of the stock renderers for supported SDR video only. */
+/** Adds a GPU-sink MediaCodec renderer for formats that can be safely normalized to SDR. */
 @UnstableApi
 public final class Media3FlowRenderersFactory extends DefaultRenderersFactory {
   private final Media3FlowVideoSink flowSink;
@@ -70,6 +74,37 @@ public final class Media3FlowRenderersFactory extends DefaultRenderersFactory {
     FlowMediaCodecVideoRenderer(Builder builder, Media3FlowVideoSink flowSink) {
       super(builder);
       this.flowSink = flowSink;
+    }
+
+    @Override
+    @SuppressLint("InlinedApi")
+    protected MediaFormat getMediaFormat(
+        Format format,
+        String codecMimeType,
+        CodecMaxValues codecMaxValues,
+        float codecOperatingRate,
+        boolean deviceNeedsNoPostProcessWorkaround,
+        int tunnelingAudioSessionId) {
+      MediaFormat mediaFormat =
+          super.getMediaFormat(
+              format,
+              codecMimeType,
+              codecMaxValues,
+              codecOperatingRate,
+              deviceNeedsNoPostProcessWorkaround,
+              tunnelingAudioSessionId);
+      if (Build.VERSION.SDK_INT >= 31
+          && Media3FlowVideoSink.requiresSdrOutputTransferRequest(format)) {
+        mediaFormat.setInteger(
+            MediaFormat.KEY_COLOR_TRANSFER_REQUEST, MediaFormat.COLOR_TRANSFER_SDR_VIDEO);
+      }
+      return mediaFormat;
+    }
+
+    @Override
+    protected void onOutputFormatChanged(Format format, @Nullable MediaFormat mediaFormat) {
+      super.onOutputFormatChanged(format, mediaFormat);
+      flowSink.onDecoderOutputFormatChanged(format, mediaFormat);
     }
 
     @Override

@@ -6,6 +6,7 @@ import android.graphics.Bitmap
 import android.graphics.SurfaceTexture
 import android.hardware.HardwareBuffer
 import android.hardware.display.DisplayManager
+import android.media.MediaFormat
 import android.opengl.EGL14
 import android.opengl.EGLExt
 import android.opengl.GLES11Ext
@@ -21,6 +22,7 @@ import android.view.Choreographer
 import android.view.Surface
 import android.view.WindowManager
 import androidx.media3.common.C
+import androidx.media3.common.ColorInfo
 import androidx.media3.common.Effect
 import androidx.media3.common.Format
 import androidx.media3.common.MimeTypes
@@ -45,6 +47,8 @@ import java.util.concurrent.atomic.AtomicLong
 import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.roundToLong
+
+internal class Media3FlowSdrOutputException(message: String) : IllegalStateException(message)
 
 /** Diagnostics emitted by the Media3-owned GPU interpolation route. */
 data class Media3FlowDiagnostics(
@@ -72,9 +76,12 @@ data class Media3FlowDiagnostics(
   val confidence: Float? = null,
   val motionGridWidth: Int = 0,
   val motionGridHeight: Int = 0,
-  /** Reduced luma/motion dimensions; synthesized output remains source-resolution. */
+  /** Motion-search dimensions, measured from the capped interpolation frame. */
   val processingWidth: Int = 0,
   val processingHeight: Int = 0,
+  /** Actual GPU-stored and synthesized frame dimensions after the 1920px cap. */
+  val frameStorageWidth: Int = 0,
+  val frameStorageHeight: Int = 0,
   val state: String = "off",
   val bypassReason: String? = null,
   val vulkanTimings: FlowVulkanTimingStats = FlowVulkanTimingStats(),
@@ -164,6 +171,10 @@ class Media3FlowVideoSink(
     .apply { position(0) }
 
   @Volatile private var currentFormat: Format? = null
+  @Volatile private var decoderOutputColorStandard = Format.NO_VALUE
+  @Volatile private var decoderOutputColorTransfer = Format.NO_VALUE
+  @Volatile private var decoderSdrOutputConfirmed = false
+  @Volatile private var decoderSdrOutputFailureReported = false
   @Volatile private var videoAspect = VideoAspect.Fit
   @Volatile private var initialized = false
   @Volatile private var outputAvailable = false
@@ -250,13 +261,19 @@ class Media3FlowVideoSink(
   private var blitProgram = 0
   private var copyExternalLocation = -1
   private var copyTextureMatrixLocation = -1
+  private var copyDownscaleFactorLocation = -1
+  private var copyOutputTexelSizeLocation = -1
   private var blitImageLocation = -1
   private var blitTextureScaleLocation = -1
   private var blitTextureOffsetLocation = -1
+  private var blitRotationLocation = -1
+  private var copyBt2020ToBt709Location = -1
   private var framebuffer = 0
   private var graphicsProgramsCompiled = false
   private var frameWidth = 0
   private var frameHeight = 0
+  private var decoderInputWidth = 0
+  private var decoderInputHeight = 0
   private var processingWidth = 0
   private var processingHeight = 0
   private var gridWidth = 0
@@ -556,6 +573,7 @@ class Media3FlowVideoSink(
 
   override fun initialize(sourceFormat: Format): Boolean {
     currentFormat = sourceFormat
+    resetDecoderOutputColorState(sourceFormat)
     initialized = false
     val success = runOnGlThreadSync {
       if (!ensureEgl() || !makePbufferCurrent() || sourceFormat.width <= 0 || sourceFormat.height <= 0) {
@@ -754,6 +772,7 @@ class Media3FlowVideoSink(
     check(inputType == VideoSink.INPUT_TYPE_SURFACE) { "Media3FlowVideoSink requires Surface input" }
     check(videoEffects.isEmpty()) { "Media3FlowVideoSink does not accept stream video effects" }
     currentFormat = format
+    resetDecoderOutputColorState(format)
     streamStartPositionUs = startPositionUs
     allowFirstFrameBeforeStarted =
       firstFrameReleaseInstruction == VideoSink.RELEASE_FIRST_FRAME_IMMEDIATELY ||
@@ -766,6 +785,86 @@ class Media3FlowVideoSink(
       }
       dispatchListener { it.onVideoSizeChanged(videoSize(format)) }
     }
+  }
+
+  /** Receives the codec-negotiated output color fields after Media3 configures the decoder. */
+  fun onDecoderOutputFormatChanged(format: Format, outputFormat: MediaFormat?) {
+    val colorInfo = format.colorInfo
+    val requestSdrOutput = requiresSdrOutputTransferRequest(format)
+    val outputStandard = outputFormat?.let { mediaFormat ->
+      runCatching {
+        if (mediaFormat.containsKey(MediaFormat.KEY_COLOR_STANDARD)) {
+          mediaFormat.getInteger(MediaFormat.KEY_COLOR_STANDARD)
+        } else {
+          Format.NO_VALUE
+        }
+      }.getOrDefault(Format.NO_VALUE)
+    }?.takeUnless { it == Format.NO_VALUE } ?: colorInfo?.colorSpace ?: Format.NO_VALUE
+    val outputTransfer = outputFormat?.let { mediaFormat ->
+      runCatching {
+        if (mediaFormat.containsKey(MediaFormat.KEY_COLOR_TRANSFER)) {
+          mediaFormat.getInteger(MediaFormat.KEY_COLOR_TRANSFER)
+        } else {
+          Format.NO_VALUE
+        }
+      }.getOrDefault(Format.NO_VALUE)
+    }?.takeUnless { it == Format.NO_VALUE } ?:
+      if (requestSdrOutput) Format.NO_VALUE else colorInfo?.colorTransfer ?: Format.NO_VALUE
+
+    decoderOutputColorStandard = outputStandard
+    decoderOutputColorTransfer = outputTransfer
+    decoderSdrOutputConfirmed = !requestSdrOutput || outputTransfer == MediaFormat.COLOR_TRANSFER_SDR_VIDEO
+    decoderSdrOutputFailureReported = false
+    logFlowRecordOnce(
+      "decoder-color-${format.sampleMimeType}-${format.width}x${format.height}",
+      if (decoderSdrOutputConfirmed) Log.INFO else Log.WARN,
+      "event=decoder_color state=${if (decoderSdrOutputConfirmed) "ready" else "unverified"} " +
+        "request_sdr_video=$requestSdrOutput output_standard=$outputStandard " +
+        "output_transfer=$outputTransfer source_transfer=${colorInfo?.colorTransfer ?: Format.NO_VALUE} " +
+        "source_resolution=${format.width}x${format.height} frame_storage_cap=$MEDIA3_FLOW_FRAME_MAX_DIMENSION",
+    )
+  }
+
+  private fun resetDecoderOutputColorState(format: Format) {
+    val requestSdrOutput = requiresSdrOutputTransferRequest(format)
+    decoderOutputColorStandard = format.colorInfo?.colorSpace ?: Format.NO_VALUE
+    decoderOutputColorTransfer = if (requestSdrOutput) {
+      Format.NO_VALUE
+    } else {
+      format.colorInfo?.colorTransfer ?: Format.NO_VALUE
+    }
+    decoderSdrOutputConfirmed = !requestSdrOutput
+    decoderSdrOutputFailureReported = false
+  }
+
+  private fun isDecoderOutputSafeForStorage(texture: SurfaceTexture): Boolean {
+    val requestSdrOutput = currentFormat?.let(::requiresSdrOutputTransferRequest) == true
+    if (decoderOutputColorTransfer == C.COLOR_TRANSFER_ST2084 ||
+      decoderOutputColorTransfer == C.COLOR_TRANSFER_HLG ||
+      decoderOutputColorTransfer == C.COLOR_TRANSFER_LINEAR
+    ) return false
+    if (Build.VERSION.SDK_INT >= 33) {
+      val dataSpace = Api33.dataSpace(texture)
+      val transfer = Api33.transfer(dataSpace)
+      Api33.colorSpace(dataSpace)?.let { decoderOutputColorStandard = it }
+      if (transfer == Api33.TRANSFER_HLG || transfer == Api33.TRANSFER_ST2084 ||
+        transfer == Api33.TRANSFER_LINEAR
+      ) return false
+      if (!requestSdrOutput) return true
+      if (decoderOutputColorTransfer == MediaFormat.COLOR_TRANSFER_SDR_VIDEO) {
+        decoderSdrOutputConfirmed = true
+        return true
+      }
+      if (transfer == Api33.TRANSFER_SMPTE_170M || transfer == Api33.TRANSFER_SRGB ||
+        transfer == Api33.TRANSFER_GAMMA2_2 || transfer == Api33.TRANSFER_GAMMA2_6 ||
+        transfer == Api33.TRANSFER_GAMMA2_8
+      ) {
+        decoderSdrOutputConfirmed = true
+        return true
+      }
+      return false
+    }
+    return !requestSdrOutput || decoderOutputColorTransfer == MediaFormat.COLOR_TRANSFER_SDR_VIDEO
   }
 
   override fun allowReleaseFirstFrameBeforeStarted() {
@@ -1067,6 +1166,28 @@ class Media3FlowVideoSink(
       }
       lastSurfaceTimestampNs = surfaceTimestampNs
       lastFrameReleaseTimestampNs = token.releaseTimestampNs
+      val format = currentFormat
+      if (!isDecoderOutputSafeForStorage(texture)) {
+        droppedFrames.incrementAndGet()
+        dispatchListener { it.onFrameDropped() }
+        if (!decoderSdrOutputFailureReported) {
+          decoderSdrOutputFailureReported = true
+          val error = Media3FlowSdrOutputException(
+            "Media3 decoder did not produce verified SDR output; refusing to copy HDR/unknown-transfer " +
+              "frames into RGBA8 interpolation storage (transfer=$decoderOutputColorTransfer)",
+          )
+          logFlowRecordOnce(
+            "decoder-sdr-transfer-rejected-${format.sampleMimeType}-${format.width}x${format.height}",
+            Log.ERROR,
+            "event=decoder_color state=failed reason=sdr_transfer_request_unhonored " +
+              "output_transfer=$decoderOutputColorTransfer source_transfer=${format.colorInfo?.colorTransfer ?: Format.NO_VALUE} " +
+              "source_resolution=${format.width}x${format.height} fallback=media3_error_recovery",
+            error,
+          )
+          reportError(error)
+        }
+        return
+      }
       captureFrame(token.ptsUs, transform)
       storedFrameCount = sourceFrames.size
       dispatchListener { it.onFrameAvailableForRendering() }
@@ -1631,7 +1752,16 @@ class Media3FlowVideoSink(
     if (windowSurface == EGL14.EGL_NO_SURFACE || !makeWindowCurrent()) return false
     val width = outputResolution.width.takeIf { it > 0 } ?: frameWidth
     val height = outputResolution.height.takeIf { it > 0 } ?: frameHeight
-    val geometry = Media3FlowGeometry.blitGeometry(frameWidth, frameHeight, width, height, videoAspect)
+    val format = currentFormat
+    val geometry = Media3FlowGeometry.blitGeometry(
+      frameWidth,
+      frameHeight,
+      width,
+      height,
+      videoAspect,
+      pixelWidthHeightRatio = format?.pixelWidthHeightRatio?.takeIf { it.isFinite() && it > 0f } ?: 1f,
+      rotationDegrees = format?.rotationDegrees ?: 0,
+    )
     val hasLetterbox = geometry.viewportWidth != width || geometry.viewportHeight != height
     if (hasLetterbox) {
       GLES20.glViewport(0, 0, width, height)
@@ -1657,6 +1787,7 @@ class Media3FlowVideoSink(
       geometry.textureOffsetX,
       geometry.textureOffsetY,
     )
+    GLES20.glUniform1i(blitRotationLocation, geometry.rotationDegrees)
     val presentationQuery = beginGlesTimerQuery()
     try {
       drawFullscreenTriangle()
@@ -1701,6 +1832,23 @@ class Media3FlowVideoSink(
     checkGlError("input copy uniform uExternal", frameProbeOnly = true)
     GLES20.glUniformMatrix4fv(copyTextureMatrixLocation, 1, false, transform, 0)
     checkGlError("input copy uniform uTextureMatrix", frameProbeOnly = true)
+    GLES20.glUniform2f(
+      copyDownscaleFactorLocation,
+      (decoderInputWidth.toFloat() / frameWidth).coerceAtLeast(1f),
+      (decoderInputHeight.toFloat() / frameHeight).coerceAtLeast(1f),
+    )
+    checkGlError("input copy uniform uDownscaleFactor", frameProbeOnly = true)
+    GLES20.glUniform2f(copyOutputTexelSizeLocation, 1f / frameWidth, 1f / frameHeight)
+    checkGlError("input copy uniform uOutputTexelSize", frameProbeOnly = true)
+    val format = currentFormat
+    val convertBt2020ToBt709 = format != null && Media3FlowFormatPolicy.shouldConvertBt2020ToBt709(
+      inputColorSpace = format.colorInfo?.colorSpace ?: Format.NO_VALUE,
+      outputColorStandard = decoderOutputColorStandard,
+      mimeType = format.sampleMimeType.orEmpty(),
+      codecs = format.codecs.orEmpty(),
+    )
+    GLES20.glUniform1i(copyBt2020ToBt709Location, if (convertBt2020ToBt709) 1 else 0)
+    checkGlError("input copy uniform uConvertBt2020ToBt709", frameProbeOnly = true)
     drawFullscreenTriangle()
     checkGlError("input copy draw", frameProbeOnly = true)
     GLES20.glBindFramebuffer(GLES20.GL_FRAMEBUFFER, 0)
@@ -1760,16 +1908,22 @@ class Media3FlowVideoSink(
     return Media3FlowCadence.checkedSubtract(positionUs, lookBehindUs) ?: Long.MIN_VALUE
   }
 
-  private fun ensureProcessingResources(sourceWidth: Int, sourceHeight: Int) {
+  private fun ensureProcessingResources(decoderWidth: Int, decoderHeight: Int) {
+    val frameSize = Media3FlowGeometry.processingFrameSize(decoderWidth, decoderHeight)
+    val sourceWidth = frameSize.width
+    val sourceHeight = frameSize.height
     val motionSize = Media3FlowGeometry.motionSize(sourceWidth, sourceHeight, maxDimension)
     val width = motionSize.width
     val height = motionSize.height
-    if (sourceWidth == frameWidth && sourceHeight == frameHeight &&
+    if (decoderWidth == decoderInputWidth && decoderHeight == decoderInputHeight &&
+      sourceWidth == frameWidth && sourceHeight == frameHeight &&
       width == processingWidth && height == processingHeight && framePool.isNotEmpty() &&
       flowAvailable
     ) return
     clearSourceFrames()
     destroyFrameResources()
+    decoderInputWidth = decoderWidth
+    decoderInputHeight = decoderHeight
     frameWidth = sourceWidth
     frameHeight = sourceHeight
     processingWidth = width
@@ -1924,7 +2078,8 @@ class Media3FlowVideoSink(
         "event=renderer_init state=ready renderer_api=vulkan " +
           "requested_compute_api=${requestedComputeApi.name.lowercase()} " +
           "effective_compute_api=${effectiveComputeApiName()} target_fps=$targetFps " +
-          "source=$sourceWidth x $sourceHeight input_images=${framePool.count { it.nativeImageHandle != 0L }} " +
+          "source=${decoderWidth}x${decoderHeight} frame_storage=${sourceWidth}x${sourceHeight} " +
+          "motion=${width}x${height} input_images=${framePool.count { it.nativeImageHandle != 0L }} " +
           "required_input_images=$MAX_STORED_FRAMES output_image_present=${outputImageHandle != 0L} " +
           "hardware_decoder=media3 source_pts=media3_decoder_pts sync_mode=1x",
       )
@@ -1935,7 +2090,8 @@ class Media3FlowVideoSink(
         Log.ERROR,
         "event=renderer_init state=unavailable stage=shared_image_pool reason=vulkan_shared_image_unavailable " +
           "renderer_api=vulkan requested_compute_api=${requestedComputeApi.name.lowercase()} " +
-          "effective_compute_api=${effectiveComputeApiName()} source=$sourceWidth x $sourceHeight " +
+          "effective_compute_api=${effectiveComputeApiName()} source=${decoderWidth}x${decoderHeight} " +
+          "frame_storage=${sourceWidth}x${sourceHeight} motion=${width}x${height} " +
           "input_images=${framePool.count { it.nativeImageHandle != 0L }} required_input_images=$MAX_STORED_FRAMES " +
           "output_image_present=${outputImageHandle != 0L} fallback=stock_media3_renderer",
       )
@@ -2151,9 +2307,17 @@ class Media3FlowVideoSink(
     blitProgram = linkProgram("presentation_blit", COPY_VERTEX_SHADER, BLIT_FRAGMENT_SHADER)
     copyExternalLocation = if (copyProgram != 0) GLES20.glGetUniformLocation(copyProgram, "uExternal") else -1
     copyTextureMatrixLocation = if (copyProgram != 0) GLES20.glGetUniformLocation(copyProgram, "uTextureMatrix") else -1
+    copyDownscaleFactorLocation = if (copyProgram != 0) GLES20.glGetUniformLocation(copyProgram, "uDownscaleFactor") else -1
+    copyOutputTexelSizeLocation = if (copyProgram != 0) GLES20.glGetUniformLocation(copyProgram, "uOutputTexelSize") else -1
+    copyBt2020ToBt709Location = if (copyProgram != 0) GLES20.glGetUniformLocation(copyProgram, "uConvertBt2020ToBt709") else -1
     blitImageLocation = if (blitProgram != 0) GLES20.glGetUniformLocation(blitProgram, "uImage") else -1
     blitTextureScaleLocation = if (blitProgram != 0) GLES20.glGetUniformLocation(blitProgram, "uTextureScale") else -1
     blitTextureOffsetLocation = if (blitProgram != 0) GLES20.glGetUniformLocation(blitProgram, "uTextureOffset") else -1
+    blitRotationLocation = if (blitProgram != 0) GLES20.glGetUniformLocation(blitProgram, "uRotationDegrees") else -1
+    check(copyProgram != 0 && copyExternalLocation >= 0 && copyTextureMatrixLocation >= 0 &&
+      copyDownscaleFactorLocation >= 0 && copyOutputTexelSizeLocation >= 0 &&
+      copyBt2020ToBt709Location >= 0
+    ) { "Media3 Flow input color-conversion shader did not compile completely" }
   }
 
   private fun makePbufferCurrent(): Boolean {
@@ -2406,9 +2570,13 @@ class Media3FlowVideoSink(
     blitProgram = 0
     copyExternalLocation = -1
     copyTextureMatrixLocation = -1
+    copyDownscaleFactorLocation = -1
+    copyOutputTexelSizeLocation = -1
+    copyBt2020ToBt709Location = -1
     blitImageLocation = -1
     blitTextureScaleLocation = -1
     blitTextureOffsetLocation = -1
+    blitRotationLocation = -1
     if (gpuTimerQueryIds.isNotEmpty()) {
       GLES30.glDeleteQueries(gpuTimerQueryIds.size, gpuTimerQueryIds, 0)
     }
@@ -2495,6 +2663,8 @@ class Media3FlowVideoSink(
       motionGridHeight = gridHeight,
       processingWidth = processingWidth,
       processingHeight = processingHeight,
+      frameStorageWidth = frameWidth,
+      frameStorageHeight = frameHeight,
       state = state,
       bypassReason = reason,
       vulkanTimings = vulkanTiming,
@@ -2575,7 +2745,8 @@ class Media3FlowVideoSink(
         "pairPtsGapMs=${formatNullableLogFloat(diagnostics.sourcePairPtsGapMs)} " +
         "pairCaptureAgeMs=${formatNullableLogFloat(diagnostics.frame0CaptureAgeMs)}/${formatNullableLogFloat(diagnostics.frame1CaptureAgeMs)} " +
         "outputCallbackLatenessMs=${formatLogFloat(diagnostics.outputCallbackLatenessMs)} " +
-        "input=$inputSize processing=${diagnostics.processingWidth}x${diagnostics.processingHeight} " +
+        "input=$inputSize frameStorage=${diagnostics.frameStorageWidth}x${diagnostics.frameStorageHeight} " +
+        "processing=${diagnostics.processingWidth}x${diagnostics.processingHeight} " +
         "motionPyramid=quarter>half>full " +
         "motionGrid=${diagnostics.motionGridWidth}x${diagnostics.motionGridHeight} " +
         "motionSubmitCpuMs=${formatLogFloat(diagnostics.motionEstimateSubmitMs)} " +
@@ -2753,21 +2924,42 @@ class Media3FlowVideoSink(
 
     @JvmStatic
     fun supportsFormat(format: Format): Boolean {
-      if (format.width < 32 || format.height < 32 || format.rotationDegrees != 0 ||
-        abs(format.pixelWidthHeightRatio - 1f) > 0.001f || format.drmInitData != null
+      val supportedRotation = format.rotationDegrees == 0 || format.rotationDegrees == 90 ||
+        format.rotationDegrees == 180 || format.rotationDegrees == 270
+      if (format.width < 16 || format.height < 16 || !supportedRotation ||
+        !format.pixelWidthHeightRatio.isFinite() || format.pixelWidthHeightRatio <= 0f ||
+        format.drmInitData != null
       ) return false
       val mime = format.sampleMimeType.orEmpty().lowercase()
       val codecs = format.codecs.orEmpty().lowercase()
-      if (mime.contains("dolby-vision") || codecs.startsWith("dvhe") || codecs.startsWith("dvh1")) return false
-      val colorInfo = format.colorInfo ?: return false
+      if (!mime.startsWith("video/")) return false
+      val colorInfo = format.colorInfo
       return Media3FlowFormatPolicy.supportsSdrInterpolation(
         mimeType = mime,
-        colorSpace = colorInfo.colorSpace,
-        colorRange = colorInfo.colorRange,
-        colorTransfer = colorInfo.colorTransfer,
-        lumaBitdepth = colorInfo.lumaBitdepth,
-        chromaBitdepth = colorInfo.chromaBitdepth,
-        hasHdrStaticInfo = colorInfo.hdrStaticInfo != null,
+        codecs = codecs,
+        colorSpace = colorInfo?.colorSpace ?: Format.NO_VALUE,
+        colorRange = colorInfo?.colorRange ?: Format.NO_VALUE,
+        colorTransfer = colorInfo?.colorTransfer ?: Format.NO_VALUE,
+        lumaBitdepth = colorInfo?.lumaBitdepth ?: Format.NO_VALUE,
+        chromaBitdepth = colorInfo?.chromaBitdepth ?: Format.NO_VALUE,
+        hasHdrStaticInfo = colorInfo?.hdrStaticInfo != null,
+        isEquivalentToAssumedSdrDefault = ColorInfo.isEquivalentToAssumedSdrDefault(colorInfo),
+        decoderSdrRequestAvailable = Build.VERSION.SDK_INT >= 31,
+      )
+    }
+
+    @JvmStatic
+    fun requiresSdrOutputTransferRequest(format: Format): Boolean {
+      val colorInfo = format.colorInfo
+      return Media3FlowFormatPolicy.requiresSdrOutputRequest(
+        mimeType = format.sampleMimeType.orEmpty().lowercase(),
+        codecs = format.codecs.orEmpty().lowercase(),
+        colorSpace = colorInfo?.colorSpace ?: Format.NO_VALUE,
+        colorRange = colorInfo?.colorRange ?: Format.NO_VALUE,
+        colorTransfer = colorInfo?.colorTransfer ?: Format.NO_VALUE,
+        lumaBitdepth = colorInfo?.lumaBitdepth ?: Format.NO_VALUE,
+        chromaBitdepth = colorInfo?.chromaBitdepth ?: Format.NO_VALUE,
+        hasHdrStaticInfo = colorInfo?.hdrStaticInfo != null,
       )
     }
 
@@ -2794,9 +2986,62 @@ class Media3FlowVideoSink(
       out vec4 outColor;
       uniform samplerExternalOES uExternal;
       uniform mat4 uTextureMatrix;
+      uniform vec2 uDownscaleFactor;
+      uniform vec2 uOutputTexelSize;
+      uniform bool uConvertBt2020ToBt709;
+
+      vec3 bt709ToLinear(vec3 encoded) {
+        vec3 low = encoded / 4.5;
+        vec3 high = pow(max((encoded + vec3(0.099)) / 1.099, vec3(0.0)), vec3(1.0 / 0.45));
+        return mix(low, high, step(vec3(0.081), encoded));
+      }
+
+      vec3 linearToBt709(vec3 linearRgb) {
+        vec3 low = linearRgb * 4.5;
+        vec3 high = 1.099 * pow(max(linearRgb, vec3(0.0)), vec3(0.45)) - vec3(0.099);
+        return mix(low, high, step(vec3(0.018), linearRgb));
+      }
+
       void main() {
-        vec2 uv = (uTextureMatrix * vec4(vUv, 0.0, 1.0)).xy;
-        outColor = texture(uExternal, uv);
+        int tapsX = int(clamp(ceil(uDownscaleFactor.x), 1.0, 4.0));
+        int tapsY = int(clamp(ceil(uDownscaleFactor.y), 1.0, 4.0));
+        vec4 source = vec4(0.0);
+        float sampleCount = 0.0;
+        for (int y = 0; y < 4; ++y) {
+          for (int x = 0; x < 4; ++x) {
+            if (x < tapsX && y < tapsY) {
+              vec2 tap = (vec2(float(x) + 0.5, float(y) + 0.5) /
+                          vec2(float(tapsX), float(tapsY)) - 0.5) * uOutputTexelSize;
+              vec2 uv = (uTextureMatrix * vec4(vUv + tap, 0.0, 1.0)).xy;
+              source += texture(uExternal, uv);
+              sampleCount += 1.0;
+            }
+          }
+        }
+        source /= max(sampleCount, 1.0);
+        if (uConvertBt2020ToBt709) {
+          vec3 linear2020 = bt709ToLinear(source.rgb);
+          mat3 bt2020ToBt709 = mat3(
+            1.660491, -0.124550, -0.018151,
+           -0.587641,  1.132900, -0.100579,
+           -0.072850, -0.008349,  1.118730
+          );
+          vec3 linear709 = bt2020ToBt709 * linear2020;
+          float luma = clamp(dot(linear709, vec3(0.2126, 0.7152, 0.0722)), 0.0, 1.0);
+          vec3 chroma = linear709 - vec3(luma);
+          float gamutScale = 1.0;
+          for (int channel = 0; channel < 3; ++channel) {
+            if (chroma[channel] > 0.0 && linear709[channel] > 1.0) {
+              gamutScale = min(gamutScale, (1.0 - luma) / chroma[channel]);
+            } else if (chroma[channel] < 0.0 && linear709[channel] < 0.0) {
+              gamutScale = min(gamutScale, luma / -chroma[channel]);
+            }
+          }
+          vec3 gamutMapped709 = vec3(luma) + chroma * clamp(gamutScale, 0.0, 1.0);
+          outColor = vec4(linearToBt709(max(gamutMapped709, vec3(0.0))), source.a);
+        } else {
+          outColor = source;
+        }
       }
     """
 
@@ -2808,7 +3053,14 @@ class Media3FlowVideoSink(
       uniform sampler2D uImage;
       uniform vec2 uTextureScale;
       uniform vec2 uTextureOffset;
-      void main() { outColor = texture(uImage, uTextureOffset + vUv * uTextureScale); }
+      uniform int uRotationDegrees;
+      void main() {
+        vec2 sourceUv = vUv;
+        if (uRotationDegrees == 90) sourceUv = vec2(1.0 - vUv.y, vUv.x);
+        else if (uRotationDegrees == 180) sourceUv = vec2(1.0 - vUv.x, 1.0 - vUv.y);
+        else if (uRotationDegrees == 270) sourceUv = vec2(vUv.y, 1.0 - vUv.x);
+        outColor = texture(uImage, uTextureOffset + sourceUv * uTextureScale);
+      }
     """
 
 
@@ -2862,6 +3114,33 @@ class Media3FlowVideoSink(
           "only_if_seamless"
         },
       )
+    }
+  }
+
+  @androidx.annotation.RequiresApi(33)
+  private object Api33 {
+    const val TRANSFER_HLG = android.hardware.DataSpace.TRANSFER_HLG
+    const val TRANSFER_ST2084 = android.hardware.DataSpace.TRANSFER_ST2084
+    const val TRANSFER_LINEAR = android.hardware.DataSpace.TRANSFER_LINEAR
+    const val TRANSFER_SMPTE_170M = android.hardware.DataSpace.TRANSFER_SMPTE_170M
+    const val TRANSFER_SRGB = android.hardware.DataSpace.TRANSFER_SRGB
+    const val TRANSFER_GAMMA2_2 = android.hardware.DataSpace.TRANSFER_GAMMA2_2
+    const val TRANSFER_GAMMA2_6 = android.hardware.DataSpace.TRANSFER_GAMMA2_6
+    const val TRANSFER_GAMMA2_8 = android.hardware.DataSpace.TRANSFER_GAMMA2_8
+
+    fun dataSpace(texture: SurfaceTexture): Int = texture.dataSpace
+
+    fun transfer(dataSpace: Int): Int = android.hardware.DataSpace.getTransfer(dataSpace)
+
+    fun colorSpace(dataSpace: Int): Int? = when (android.hardware.DataSpace.getStandard(dataSpace)) {
+      android.hardware.DataSpace.STANDARD_BT2020,
+      android.hardware.DataSpace.STANDARD_BT2020_CONSTANT_LUMINANCE -> C.COLOR_SPACE_BT2020
+      android.hardware.DataSpace.STANDARD_BT709 -> C.COLOR_SPACE_BT709
+      android.hardware.DataSpace.STANDARD_BT601_525,
+      android.hardware.DataSpace.STANDARD_BT601_525_UNADJUSTED,
+      android.hardware.DataSpace.STANDARD_BT601_625,
+      android.hardware.DataSpace.STANDARD_BT601_625_UNADJUSTED -> C.COLOR_SPACE_BT601
+      else -> null
     }
   }
 

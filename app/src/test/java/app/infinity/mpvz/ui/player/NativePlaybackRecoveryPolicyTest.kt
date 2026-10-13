@@ -32,6 +32,25 @@ class NativePlaybackRecoveryPolicyTest {
   }
 
   @Test
+  fun recoversWhenMedia3FlowCannotVerifyDecoderSdrOutput() {
+    assertTrue(
+      NativePlaybackRecoveryPolicy.shouldFallbackToMpv(
+        "ERROR_CODE_VIDEO_FRAME_PROCESSING_FAILED",
+        listOf(
+          "androidx.media3.exoplayer.video.VideoSink.VideoSinkException",
+          "app.infinity.mpvz.ui.player.Media3FlowSdrOutputException",
+        ),
+      ),
+    )
+    assertFalse(
+      NativePlaybackRecoveryPolicy.shouldFallbackToMpv(
+        "ERROR_CODE_VIDEO_FRAME_PROCESSING_FAILED",
+        listOf("androidx.media3.exoplayer.video.VideoSink.VideoSinkException", "java.lang.IllegalStateException"),
+      ),
+    )
+  }
+
+  @Test
   fun doesNotTreatNetworkFailuresAsCodecFallbacks() {
     assertFalse(
       NativePlaybackRecoveryPolicy.shouldFallbackToMpv(
