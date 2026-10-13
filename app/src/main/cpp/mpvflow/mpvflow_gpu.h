@@ -92,7 +92,7 @@ struct MPVFlowGPUTimingStats {
 };
 
 struct MPVFlowGPUConfig {
-    /* Auto prefers a fully initialized OpenCL interop backend, then Vulkan. */
+    /* Auto uses Vulkan; OpenCL is selected only by an explicit request. */
     enum MPVFlowGPUComputeAPI compute_api;
     /* Largest motion-analysis dimension; defaults to 640 when <= 0 and is
      * hard-capped at 640. Synthesized color output remains source-resolution. */

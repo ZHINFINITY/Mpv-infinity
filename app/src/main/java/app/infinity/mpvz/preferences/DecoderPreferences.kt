@@ -53,20 +53,18 @@ internal fun effectiveMpvFlowMaxDimension(targetFps: Int): Int =
 
 internal fun effectiveMpvFlowMaxDimension(targetFps: Int, quality: Int): Int {
   val q = normalizeMpvFlowQuality(quality)
-  val base = when {
-    targetFps >= 144 -> 288
-    targetFps >= 96 -> 360
-    targetFps >= 72 -> 480
-    else -> 640
-  }
-  // A small quality headroom at high refresh rates; keep dimensions aligned for GPU tiles.
-  val headroom = when {
-    targetFps >= 144 -> 32
-    targetFps >= 120 -> 64
-    targetFps >= 96 -> 80
-    else -> 0
-  }
-  return ((base + headroom * q / 100) / 16) * 16
+  val (minimum, maximum) =
+    when {
+      targetFps >= 144 -> 288 to 320
+      targetFps >= 120 -> 288 to 352
+      targetFps >= 96 -> 320 to 432
+      targetFps >= 72 -> 384 to 480
+      else -> 480 to 640
+    }
+  // Lower profiles reduce motion-analysis work; higher profiles spend more of the frame budget
+  // on a denser field. Keep dimensions aligned for GPU tiles and apply this mapping only once.
+  val scaledDimension = minimum + (maximum - minimum) * q / 100
+  return (scaledDimension / 16) * 16
 }
 
 internal fun effectiveMpvFlowSearchRadius(targetFps: Int, quality: Int): Int {

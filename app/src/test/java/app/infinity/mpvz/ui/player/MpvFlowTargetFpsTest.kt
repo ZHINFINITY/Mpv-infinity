@@ -9,6 +9,7 @@ import app.infinity.mpvz.preferences.effectiveMpvFlowMaxDimension
 import app.infinity.mpvz.preferences.effectiveMpvFlowTargetFps
 import app.infinity.mpvz.preferences.normalizeMpvFlowTargetFps
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class MpvFlowTargetFpsTest {
@@ -42,19 +43,38 @@ class MpvFlowTargetFpsTest {
   }
 
   @Test
-  fun higherMotionAnalysisCapStepsDownWithoutRemovingAnyTargetRate() {
+  fun defaultQualityUsesTargetRateSpecificMotionAnalysisBudgets() {
     assertEquals(listOf(48, 60, 72, 90, 96, 120, 144), MPVFLOW_TARGET_FPS_OPTIONS)
-    assertEquals(640, effectiveMpvFlowMaxDimension(60))
-    assertEquals(480, effectiveMpvFlowMaxDimension(72))
-    assertEquals(480, effectiveMpvFlowMaxDimension(90))
-    assertEquals(400, effectiveMpvFlowMaxDimension(96))
-    assertEquals(384, effectiveMpvFlowMaxDimension(120))
+    assertEquals(576, effectiveMpvFlowMaxDimension(60))
+    assertEquals(432, effectiveMpvFlowMaxDimension(72))
+    assertEquals(432, effectiveMpvFlowMaxDimension(90))
+    assertEquals(384, effectiveMpvFlowMaxDimension(96))
+    assertEquals(320, effectiveMpvFlowMaxDimension(120))
     assertEquals(304, effectiveMpvFlowMaxDimension(144))
   }
 
   @Test
-  fun highQualityAddsOnlyTheConfiguredHeadroomAtHighRates() {
-    assertEquals(416, effectiveMpvFlowMaxDimension(120, 100))
+  fun qualityProfileControlsTheAnalysisRangeAtHighRates() {
+    assertEquals(288, effectiveMpvFlowMaxDimension(120, 0))
+    assertEquals(320, effectiveMpvFlowMaxDimension(120, 60))
+    assertEquals(352, effectiveMpvFlowMaxDimension(120, 100))
+    assertEquals(320, effectiveMpvFlowMaxDimension(96, 0))
+    assertEquals(432, effectiveMpvFlowMaxDimension(96, 100))
+    assertEquals(288, effectiveMpvFlowMaxDimension(144, 0))
     assertEquals(320, effectiveMpvFlowMaxDimension(144, 100))
+  }
+
+  @Test
+  fun qualityProfileIsMonotonicAndTileAlignedForEveryTargetRate() {
+    for (fps in MPVFLOW_TARGET_FPS_OPTIONS) {
+      val performance = effectiveMpvFlowMaxDimension(fps, 0)
+      val balanced = effectiveMpvFlowMaxDimension(fps, 60)
+      val quality = effectiveMpvFlowMaxDimension(fps, 100)
+      assertTrue("profile must increase analysis size at $fps fps", performance < balanced)
+      assertTrue("profile must reach the quality end at $fps fps", balanced < quality)
+      assertEquals(0, performance % 16)
+      assertEquals(0, balanced % 16)
+      assertEquals(0, quality % 16)
+    }
   }
 }

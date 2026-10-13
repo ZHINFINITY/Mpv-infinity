@@ -947,7 +947,7 @@ MPVFlowGPUContext *mpvflow_gpu_create(pl_gpu gpu,
                      "MPVFLOW_DIAGNOSTIC event=compute_backend state=ready requested_api=%d "
                      "effective_api=opencl interop=qcom_ahardwarebuffer_host_ptr "
                      "shared_storage=android_hardware_buffer probe=kernel_interop_roundtrip "
-                     "probe_size=64x64 cpu_readback=no mode=explicit_or_fallback",
+                     "probe_size=64x64 cpu_readback=no mode=explicit",
                      requested_api);
         } else {
             flow_log(gpu, requested_api == MPVFLOW_GPU_COMPUTE_AUTO ? PL_LOG_WARN : PL_LOG_ERR,

@@ -90,7 +90,7 @@
 +    int flow_cap;
 +    int flow_w, flow_h;
 +    int flow_source_w, flow_source_h;
-@@ -569,0 +620,409 @@
+@@ -569,0 +620,407 @@
 +static void flow_release_pair(struct priv *p)
 +{
 +    if (p->flow_pair)
@@ -117,12 +117,10 @@
 +     * because motion analysis plus synthesis missed the 8.33 ms slot. */
 +    const int target_fps = MPCLAMP(p->next_opts->mpvflow_target_fps, 1, 240);
 +    const int quality = MPCLAMP(p->next_opts->mpvflow_quality, 0, 100);
-+    const int quality_headroom = target_fps >= 144 ? 32 : target_fps >= 120 ? 64 :
-+        target_fps >= 96 ? 80 : 0;
-+    const int quality_dimension = requested_dimension + quality_headroom * quality / 100;
-+    const int effective_dimension = target_fps >= 144 ? MPCLAMP(quality_dimension, 8, 320) :
-+        target_fps >= 120 ? MPCLAMP(quality_dimension, 8, 352) :
-+        target_fps >= 96 ? MPCLAMP(quality_dimension, 8, 440) : quality_dimension;
++    const int target_dimension_limit = target_fps >= 144 ? 320 :
++        target_fps >= 120 ? 352 : target_fps >= 96 ? 440 : 640;
++    /* The app already maps the performance/quality profile to this dimension. */
++    const int effective_dimension = MPCLAMP(requested_dimension, 8, target_dimension_limit);
 +    if (!p->next_opts->mpvflow) {
 +        flow_release_pair(p);
 +        mpvflow_gpu_destroy(p->flow_gpu);

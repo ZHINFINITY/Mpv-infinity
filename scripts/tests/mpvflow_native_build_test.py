@@ -480,7 +480,7 @@ for marker in (
     assert marker in compute_selector, f"the compute selector must persist real backend choices: missing {marker!r}"
 resource_source = STRING_RESOURCES.read_text(encoding="utf-8")
 for marker in (
-    "Auto prefers the Qualcomm OpenCL AHardwareBuffer backend",
+    "Auto uses native Vulkan/SPIR-V compute to avoid per-frame Vulkan/OpenCL ownership transfers",
     "cl_qcom_android_ahardwarebuffer_host_ptr",
     "No Vulkan compute fallback is used for this explicit choice",
     "Force Vulkan/SPIR-V compute",
@@ -524,9 +524,9 @@ for marker in (
     "effective_api=opencl",
     "flow_opencl_analyze_pair(",
     "flow_opencl_synthesize(",
-    "requested_api=auto from=opencl-qcom to=vulkan-spirv",
+    "ctx->requested_compute_api != MPVFLOW_GPU_COMPUTE_AUTO",
 ):
-    assert marker in flow_gpu_source, f"MPVFlow must dispatch a real OpenCL backend with explicit fallback: missing {marker!r}"
+    assert marker in flow_gpu_source, f"MPVFlow must keep OpenCL explicit and reject its failures without silently switching backends: missing {marker!r}"
 assert 'source_format == VK_FORMAT_R8G8B8A8_UNORM' in flow_gpu_source and \
        'const size_t local = 64' in opencl_source, \
        "OpenCL must skip redundant RGBA8 preprocessing and use a fixed synthesis workgroup"
