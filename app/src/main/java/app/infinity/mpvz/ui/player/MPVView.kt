@@ -574,6 +574,12 @@ class MPVView(
         diagnostic,
       )
     }
+    val logLevel =
+      MpvFlowLogConfig.messageLevelOption(
+        mpvFlowEnabled = mpvFlowFrameInterpolationEnabled,
+        frameInterpolationEnabled = frameInterpolationEnabled,
+        verboseLogging = advancedPreferences.verboseLogging.get(),
+      )
     if (mpvFlowFrameInterpolationPreference) {
       val reason =
         when {
@@ -606,16 +612,11 @@ class MPVView(
           "renderer=${backend.vo} gpu_api=${backend.gpuApi} " +
           "hardware_decode_mode=$interpolationHwdecDiagnostic " +
           "cpu_filter_fallback=disabled " +
+          "requested_msg_level=$logLevel " +
           "renderer_option_result=${mpvFlowRendererOptionResult ?: "skipped"} reason=$reason",
       )
     }
-    val logLevel =
-      when {
-        frameInterpolationEnabled -> "info"
-        advancedPreferences.verboseLogging.get() -> "v"
-        else -> "warn"
-      }
-    PlaybackSession.setOptionString("msg-level", "all=$logLevel")
+    PlaybackSession.setOptionString("msg-level", logLevel)
 
     PlaybackSession.setOptionString("keep-open", "yes")
     PlaybackSession.setOptionString("input-default-bindings", "yes")

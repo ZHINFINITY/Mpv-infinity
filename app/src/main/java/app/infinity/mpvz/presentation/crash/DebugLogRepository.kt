@@ -382,9 +382,30 @@ private fun retainPinnedFlowDiagnostics(
       .mapNotNull { it.lastOrNull() }
   val latestQcomCapabilities = entries.filter { it.message.contains("event=qcom_gpu_timing", ignoreCase = true) }.takeLast(1)
   val latestQcomDispatchTiming = entries.filter { it.message.contains("event=qcom_dispatch_timing", ignoreCase = true) }.takeLast(1)
+  val latestQcomBlockMatchCapability =
+    entries.filter { it.message.contains("event=qcom_block_match_capability", ignoreCase = true) }.takeLast(1)
+  val latestQcomBlockMatchInit =
+    entries.filter { it.message.contains("event=qcom_block_match_init", ignoreCase = true) }.takeLast(1)
+  val qcomBlockMatchImages =
+    entries
+      .mapNotNull { entry -> entry.flowQcomCreatedImageName()?.let { it to entry } }
+      .groupBy({ it.first }, { it.second })
+      .values
+      .mapNotNull { it.lastOrNull() }
+  val latestQcomBlockMatchImageState =
+    entries
+      .filter {
+        it.message.contains("event=qcom_block_match_image", ignoreCase = true) &&
+          !it.message.contains("state=created", ignoreCase = true)
+      }
+      .takeLast(1)
+  val latestQcomBlockMatchDispatchState =
+    entries.filter { it.message.contains("event=qcom_block_match_dispatch", ignoreCase = true) }.takeLast(1)
   val pinned =
     (startup + latestRendererConfigs + failures + latestPresentMode + latestWsiToggle +
-      wsiSwapchainEvidence + wsiTimingEntries + latestQcomCapabilities + latestQcomDispatchTiming)
+      wsiSwapchainEvidence + wsiTimingEntries + latestQcomCapabilities + latestQcomDispatchTiming +
+      latestQcomBlockMatchCapability + latestQcomBlockMatchInit + qcomBlockMatchImages +
+      latestQcomBlockMatchImageState + latestQcomBlockMatchDispatchState)
       .distinctBy(DebugLogEntry::id)
   val tailCapacity = (reserve - pinned.size).coerceAtLeast(0)
   return (pinned + entries.takeLast(tailCapacity))
@@ -395,6 +416,12 @@ private fun retainPinnedFlowDiagnostics(
 private fun DebugLogEntry.flowWsiTimingStage(): String? {
   if (!message.contains("event=wsi_timing", ignoreCase = true)) return null
   return Regex("(?:^|\\s)stage=([^\\s]+)").find(message)?.groupValues?.get(1)
+}
+
+private fun DebugLogEntry.flowQcomCreatedImageName(): String? {
+  if (!message.contains("event=qcom_block_match_image", ignoreCase = true)) return null
+  if (!message.contains("state=created", ignoreCase = true)) return null
+  return Regex("(?:^|\\s)name=([^\\s]+)").find(message)?.groupValues?.get(1)
 }
 
 private fun DebugLogEntry.isFlowStartupRecord(): Boolean =

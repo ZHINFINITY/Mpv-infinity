@@ -17,6 +17,7 @@ VULKAN_MAPPER_DIR = ROOT / "app/src/main/cpp/mpvflow/mediacodec-vulkan"
 VO_PATCH = ROOT / "app/src/main/cpp/mpvflow/mpvflow-vo-gpu-next.patch"
 PLAYBACK_SESSION = ROOT / "app/src/main/java/app/infinity/mpvz/ui/player/PlaybackSession.kt"
 MPV_VIEW = ROOT / "app/src/main/java/app/infinity/mpvz/ui/player/MPVView.kt"
+MPVFLOW_LOG_CONFIG = ROOT / "app/src/main/java/app/infinity/mpvz/ui/player/MpvFlowLogConfig.kt"
 APP_BUILD = ROOT / "app/build.gradle.kts"
 MPV_CONF_POLICY = ROOT / "app/src/main/java/app/infinity/mpvz/preferences/MpvConfigOverride.kt"
 POLICY = ROOT / "app/src/main/java/app/infinity/mpvz/ui/player/RendererBackendPolicy.kt"
@@ -367,6 +368,11 @@ for marker in (
 ):
     assert marker in patched_wsi_source, f"libplacebo WSI diagnostic instrumentation is missing {marker!r}"
 assert "metric=host_call_duration_not_scanout" in patched_wsi_source
+assert "if (!atomic_load_explicit(&p->flow_diagnostics, memory_order_relaxed))" in patched_wsi_source
+assert "bool first_sample = !p->flow_diag_last_report[stage];" in patched_wsi_source
+assert "if (window_s < 5.0 && !first_sample && !low_frequency_stage)" in patched_wsi_source, (
+    "WSI timings must emit their first sample, then remain rate-limited rather than log per frame"
+)
 assert "acquire_semaphore_signal=%s" not in patched_wsi_source, (
     "vkAcquireNextImageKHR returning VK_SUCCESS does not prove its semaphore has signaled at host return"
 )
@@ -406,6 +412,21 @@ for bad_wsi_source in ("unrecognized Vulkan swapchain source\n", wsi_source + "\
 
 build = BUILD.read_text(encoding="utf-8")
 prepare_source = PREPARE.read_text(encoding="utf-8")
+mpv_view_source = MPV_VIEW.read_text(encoding="utf-8")
+flow_log_config_source = MPVFLOW_LOG_CONFIG.read_text(encoding="utf-8")
+qcom_source = (ROOT / "app/src/main/cpp/mpvflow/mpvflow_vulkan_qcom.c").read_text(encoding="utf-8")
+assert "MpvFlowLogConfig.messageLevelOption(" in mpv_view_source
+assert 'PlaybackSession.setOptionString("msg-level", logLevel)' in mpv_view_source
+assert "requested_msg_level=$logLevel" in mpv_view_source
+assert 'const val FLOW_VERBOSE_DIAGNOSTICS = "all=info,vo/gpu-next/libplacebo=v"' in flow_log_config_source
+assert "mpvFlowEnabled -> FLOW_VERBOSE_DIAGNOSTICS" in flow_log_config_source
+assert "if (qcom->dispatches == 1 || qcom->dispatches % 120 == 0)" in qcom_source
+assert "if (qcom->dispatches % 120 == 0)" in qcom_source, (
+    "QCOM timing reports must remain periodic, not add per-dispatch log overhead"
+)
+assert 'qcom_log(qcom->gpu, PL_LOG_INFO,\n             "MPVFLOW_DIAGNOSTIC event=qcom_block_match_image state=created' in qcom_source, (
+    "QCOM image-sharing diagnostics must be visible at Flow verbosity and occur only during image creation"
+)
 assert 'VO_PATCH = VENDOR / "mpvflow-vo-gpu-next.patch"' in prepare_source, (
     "MPV source preparation must keep the custom VO patch path explicit"
 )

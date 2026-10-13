@@ -4,6 +4,7 @@
 
 package app.infinity.mpvz.presentation.crash
 
+import app.infinity.mpvz.ui.player.MpvFlowLogConfig
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -284,26 +285,101 @@ class DebugLogRepositoryTest {
   }
 
   @Test
-  fun pinsPresentModeAndLatestWsiWaitStagesAfterLargeFlowLogFlood() {
-    fun entry(id: String, time: Long, message: String) =
+  fun exportsAppliedWsiAcquireAndFenceTimingsWithPresentModeAfterLargeFlowLogFlood() {
+    val messageLevel =
+      MpvFlowLogConfig.messageLevelOption(
+        mpvFlowEnabled = true,
+        frameInterpolationEnabled = true,
+        verboseLogging = false,
+      )
+    assertEquals("all=info,vo/gpu-next/libplacebo=v", messageLevel)
+
+    fun entry(
+      id: String,
+      time: Long,
+      message: String,
+      level: DebugLogLevel = DebugLogLevel.Info,
+      tag: String = "mpv",
+    ) =
       DebugLogEntry(
         id = id,
         timeMillis = time,
         timestamp = "00:00:00.000",
-        level = DebugLogLevel.Info,
-        tag = "mpv",
+        level = level,
+        tag = tag,
         message = message,
       )
 
     val evidence =
       listOf(
-        entry("present-mode", 1L, "MPVFLOW_DIAGNOSTIC event=present_mode state=requested request=mailbox result=0"),
-        entry("wsi-created-old", 2L, "MPVFLOW_DIAGNOSTIC event=wsi_swapchain_created created_mode=fifo actual_images=3"),
-        entry("wsi-created-latest", 3L, "MPVFLOW_DIAGNOSTIC event=wsi_swapchain_created created_mode=mailbox actual_images=3"),
-        entry("wsi-acquire", 4L, "MPVFLOW_DIAGNOSTIC event=wsi_timing stage=vkAcquireNextImageKHR avg_ms=17.0 max_ms=25.0"),
-        entry("wsi-present-fence", 5L, "MPVFLOW_DIAGNOSTIC event=wsi_timing stage=present_fence_wait avg_ms=1.0 max_ms=3.0"),
-        entry("qcom-capabilities", 6L, "MPVFLOW_DIAGNOSTIC event=qcom_gpu_timing state=supported_pending_query_pool"),
-        entry("qcom-timing", 7L, "MPVFLOW_DIAGNOSTIC event=qcom_dispatch_timing gpu_dispatch_avg_us=900"),
+        entry(
+          "flow-config",
+          1L,
+          "MPVFLOW_DIAGNOSTIC event=config requested_enabled=true requested_msg_level=$messageLevel",
+        ),
+        entry("present-mode", 2L, "MPVFLOW_DIAGNOSTIC event=present_mode state=requested request=mailbox result=0"),
+        entry(
+          "wsi-toggle",
+          3L,
+          "[vo/gpu-next:info] MPVFLOW_DIAGNOSTIC event=wsi_diagnostics_toggle engine=mpv requested=1 applied=1 setter_result=1",
+          level = DebugLogLevel.Verbose,
+        ),
+        entry(
+          "wsi-created",
+          4L,
+          "[vo/gpu-next/libplacebo:verbose] MPVFLOW_DIAGNOSTIC event=wsi_swapchain_created created_mode=mailbox actual_images=5 present_fence_completion=1",
+          level = DebugLogLevel.Verbose,
+        ),
+        entry(
+          "wsi-acquire",
+          5L,
+          "[vo/gpu-next/libplacebo:verbose] MPVFLOW_DIAGNOSTIC event=wsi_timing stage=vkAcquireNextImageKHR avg_ms=17.0 max_ms=25.0 last_result=0",
+          level = DebugLogLevel.Verbose,
+        ),
+        entry(
+          "wsi-present-fence",
+          6L,
+          "[vo/gpu-next/libplacebo:verbose] MPVFLOW_DIAGNOSTIC event=wsi_timing stage=present_fence_wait avg_ms=1.0 max_ms=3.0 last_result=0",
+          level = DebugLogLevel.Verbose,
+        ),
+        entry(
+          "qcom-active",
+          7L,
+          "[vo/gpu-next/libplacebo:verbose] MPVFLOW_DIAGNOSTIC event=qcom_block_match_dispatch state=active dispatches=1",
+          level = DebugLogLevel.Verbose,
+        ),
+        entry(
+          "qcom-capability",
+          8L,
+          "MPVFLOW_DIAGNOSTIC event=qcom_block_match_capability state=exact_usage_capabilities_present",
+        ),
+        entry(
+          "qcom-init",
+          9L,
+          "MPVFLOW_DIAGNOSTIC event=qcom_block_match_init state=pipeline_ready backend=VK_QCOM_image_processing2",
+        ),
+        entry(
+          "qcom-image-created",
+          10L,
+          "[vo/gpu-next/libplacebo:verbose] MPVFLOW_DIAGNOSTIC event=qcom_block_match_image state=created name=block_luma_frame0 sharing=EXCLUSIVE",
+          level = DebugLogLevel.Verbose,
+        ),
+        entry(
+          "qcom-image-ready",
+          11L,
+          "MPVFLOW_DIAGNOSTIC event=qcom_block_match_image state=ready input=1920x1080 setup_cpu_ms=4.2 blocking_resize_only=1",
+        ),
+        entry(
+          "qcom-capabilities",
+          12L,
+          "MPVFLOW_DIAGNOSTIC event=qcom_gpu_timing state=supported_pending_query_pool",
+        ),
+        entry(
+          "qcom-timing",
+          13L,
+          "[vo/gpu-next/libplacebo:verbose] MPVFLOW_DIAGNOSTIC event=qcom_dispatch_timing gpu_dispatch_avg_us=900",
+          level = DebugLogLevel.Verbose,
+        ),
       )
     val flowNoise =
       (0 until DEBUG_LOG_ENTRY_LIMIT + 2_000).map { index ->
@@ -311,16 +387,36 @@ class DebugLogRepositoryTest {
       }
 
     val retained = retainDebugLogEntries(evidence + flowNoise)
+    val rawLogcat =
+      (evidence + flowNoise).mapIndexed { index, logEntry ->
+        val priority = if (logEntry.level == DebugLogLevel.Verbose) "V" else "I"
+        "10-14 01:12:10.000 123 456 $priority ${logEntry.tag}: ${logEntry.message}"
+      }
+    val exportedFlowDiagnostics = selectMpvFlowDiagnosticLines(rawLogcat.joinToString("\n"))
 
     assertTrue(retained.size <= DEBUG_LOG_ENTRY_LIMIT)
+    assertTrue(retained.any { it.id == "flow-config" && it.message.contains("requested_msg_level=$messageLevel") })
     assertTrue(retained.any { it.id == "present-mode" })
-    assertTrue(retained.any { it.id == "wsi-created-old" })
-    assertTrue(retained.any { it.id == "wsi-created-latest" })
+    assertTrue(retained.any { it.id == "wsi-toggle" && it.message.contains("applied=1 setter_result=1") })
+    assertTrue(retained.any { it.id == "wsi-created" })
     assertTrue(retained.any { it.id == "wsi-acquire" })
     assertTrue(retained.any { it.id == "wsi-present-fence" })
+    assertTrue(retained.any { it.id == "qcom-active" })
+    assertTrue(retained.any { it.id == "qcom-capability" })
+    assertTrue(retained.any { it.id == "qcom-init" })
+    assertTrue(retained.any { it.id == "qcom-image-created" })
+    assertTrue(retained.any { it.id == "qcom-image-ready" })
     assertTrue(retained.any { it.id == "qcom-capabilities" })
     assertTrue(retained.any { it.id == "qcom-timing" })
     assertTrue(retained.any { it.id == "flow-noise-${DEBUG_LOG_ENTRY_LIMIT + 1_999}" })
+    assertTrue(exportedFlowDiagnostics.contains("event=present_mode"))
+    assertTrue(exportedFlowDiagnostics.contains("event=wsi_diagnostics_toggle engine=mpv requested=1 applied=1"))
+    assertTrue(exportedFlowDiagnostics.contains("stage=vkAcquireNextImageKHR"))
+    assertTrue(exportedFlowDiagnostics.contains("stage=present_fence_wait"))
+    assertTrue(exportedFlowDiagnostics.contains("event=qcom_block_match_dispatch state=active"))
+    assertTrue(exportedFlowDiagnostics.contains("event=qcom_block_match_image state=created"))
+    assertTrue(exportedFlowDiagnostics.contains("event=qcom_block_match_image state=ready"))
+    assertTrue(exportedFlowDiagnostics.contains("event=qcom_dispatch_timing"))
   }
 
   @Test

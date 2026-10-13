@@ -522,7 +522,7 @@ static bool qcom_create_image(MPVFlowVulkanQcom *qcom,
             .layout = VK_IMAGE_LAYOUT_UNDEFINED,
             .qf = VK_QUEUE_FAMILY_IGNORED));
     }
-    qcom_log(qcom->gpu, PL_LOG_DEBUG,
+    qcom_log(qcom->gpu, PL_LOG_INFO,
              "MPVFLOW_DIAGNOSTIC event=qcom_block_match_image state=created name=%s size=%dx%d format=%d usage=0x%x sharing=%s queue_families=%u wrapped=%d",
              name, width, height, format, usage,
              family_count > 1 ? "CONCURRENT" : "EXCLUSIVE", family_count,
