@@ -159,10 +159,42 @@ static bool format_present(PFN_vkGetPhysicalDeviceOpticalFlowImageFormatsNV get_
     return found;
 }
 
+static PFN_vkGetPhysicalDeviceProperties2 get_physical_device_properties2(pl_vulkan vk)
+{
+    if (!vk || !vk->get_proc_addr)
+        return NULL;
+    PFN_vkGetPhysicalDeviceProperties2 get_properties =
+        (PFN_vkGetPhysicalDeviceProperties2) vk->get_proc_addr(
+            vk->instance, "vkGetPhysicalDeviceProperties2");
+    if (!get_properties)
+        get_properties = (PFN_vkGetPhysicalDeviceProperties2) vk->get_proc_addr(
+            vk->instance, "vkGetPhysicalDeviceProperties2KHR");
+    return get_properties;
+}
+
+static PFN_vkGetPhysicalDeviceImageFormatProperties2
+get_physical_device_image_format_properties2(pl_vulkan vk)
+{
+    if (!vk || !vk->get_proc_addr)
+        return NULL;
+    PFN_vkGetPhysicalDeviceImageFormatProperties2 get_properties =
+        (PFN_vkGetPhysicalDeviceImageFormatProperties2) vk->get_proc_addr(
+            vk->instance, "vkGetPhysicalDeviceImageFormatProperties2");
+    if (!get_properties)
+        get_properties = (PFN_vkGetPhysicalDeviceImageFormatProperties2)
+            vk->get_proc_addr(vk->instance,
+                              "vkGetPhysicalDeviceImageFormatProperties2KHR");
+    return get_properties;
+}
+
 static bool format_usage_supported(pl_vulkan vk, VkFormat format,
                                    VkImageUsageFlags usage,
                                    VkOpticalFlowUsageFlagsNV optical_usage)
 {
+    PFN_vkGetPhysicalDeviceImageFormatProperties2 get_properties =
+        get_physical_device_image_format_properties2(vk);
+    if (!get_properties)
+        return false;
     VkOpticalFlowImageFormatInfoNV flow_info = {
         .sType = VK_STRUCTURE_TYPE_OPTICAL_FLOW_IMAGE_FORMAT_INFO_NV,
         .usage = optical_usage,
@@ -179,8 +211,7 @@ static bool format_usage_supported(pl_vulkan vk, VkFormat format,
     VkImageFormatProperties2 image_properties = {
         .sType = VK_STRUCTURE_TYPE_IMAGE_FORMAT_PROPERTIES_2,
     };
-    return vkGetPhysicalDeviceImageFormatProperties2(
-        vk->phys_device, &image_info, &image_properties) == VK_SUCCESS;
+    return get_properties(vk->phys_device, &image_info, &image_properties) == VK_SUCCESS;
 }
 
 static void append_unique_family(uint32_t *families, uint32_t *count,
@@ -665,7 +696,17 @@ bool mpvflow_vulkan_optical_ensure(MPVFlowVulkanOptical *optical,
         .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2,
         .pNext = &flow_properties,
     };
-    vkGetPhysicalDeviceProperties2(optical->vk->phys_device, &properties);
+    PFN_vkGetPhysicalDeviceProperties2 get_properties =
+        get_physical_device_properties2(optical->vk);
+    if (!get_properties) {
+        optical->rejected_width = target_width;
+        optical->rejected_height = target_height;
+        optical_log(optical->gpu, PL_LOG_WARN,
+                    "MPVFLOW_DIAGNOSTIC event=optical_flow_backend state=fallback "
+                    "reason=physical_device_properties2_unavailable");
+        return false;
+    }
+    get_properties(optical->vk->phys_device, &properties);
     if (target_width < flow_properties.minWidth || target_height < flow_properties.minHeight ||
         target_width > flow_properties.maxWidth || target_height > flow_properties.maxHeight ||
         !(flow_properties.supportedOutputGridSizes & FLOW_OPTICAL_GRID)) {

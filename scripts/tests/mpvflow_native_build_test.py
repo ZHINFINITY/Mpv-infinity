@@ -308,6 +308,14 @@ for marker in (
     assert marker in optical_dispatch, f"NV optical dispatch must preserve synchronized validated fallback: missing {marker!r}"
 assert "vkQueueWaitIdle" not in optical_dispatch, "per-frame optical execution must remain nonblocking"
 assert "optical->disabled = true" in optical_adapter, "fatal optional backend failures must disable NV and preserve ordinary Vulkan matching"
+for marker in (
+    "vk->get_proc_addr",
+    "vkGetPhysicalDeviceProperties2KHR",
+    "vkGetPhysicalDeviceImageFormatProperties2KHR",
+):
+    assert marker in optical_adapter, f"Android-safe Vulkan promoted-function dispatch is missing {marker!r}"
+assert "vkGetPhysicalDeviceProperties2(optical->vk->phys_device" not in optical_adapter
+assert "vkGetPhysicalDeviceImageFormatProperties2(" not in optical_adapter
 vo_patch = VO_PATCH.read_text(encoding="utf-8")
 for marker in (
     "event=swapchain_wait stage=acquire",
