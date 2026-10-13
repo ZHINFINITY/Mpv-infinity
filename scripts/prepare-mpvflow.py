@@ -31,6 +31,7 @@ ANDROID_VULKAN_DEPENDENCY = "vulkan = dependency('vulkan', required: vulkan_opt)
 PLACEBO_SPIRV_LIBRARY_LOOKUP = "spirv = cxx.find_library('SPIRV', required: required, static: static, dirs: vulkan_lib_dirs)"
 PLACEBO_GLSLANG_LIBRARY_LOOKUP = "cxx.find_library('glslang', required: required, static: static)"
 ANDROID_PLACEBO_GLSLANG_LIBRARY_LOOKUP = "cxx.find_library('glslang', required: required, static: static, dirs: vulkan_lib_dirs)"
+NV_OPTICAL_FORMAT_MARKER = "/* MPVFLOW_NV_OPTICAL_FLOW_SFIXED5_FORMAT */"
 VULKAN_OPT_EXTENSION_LIST = "    const char *opt_extensions[] = {\n"
 ANDROID_AHB_EXTENSIONS = (
     "#if defined(__ANDROID__)\n"
@@ -295,6 +296,28 @@ def add_libplacebo_swapchain_diagnostics_stub(stubs_c: str) -> str:
     raise SystemExit("Pinned libplacebo no-Vulkan stubs changed; refusing an unverified diagnostic stub")
 
 
+def enable_nv_optical_flow_vector_format(formats_c: str) -> str:
+    needle = '    {VK_FORMAT_R16G16_SINT,           REGFMT("rg16i",    2, 16, SINT)},\n'
+    entry = (
+        "#ifdef VK_NV_optical_flow\n"
+        '    {VK_FORMAT_R16G16_S10_5_NV, REGFMT("rg16sfix5", 2, 16, SINT)},\n'
+        "#endif\n"
+        f"{NV_OPTICAL_FORMAT_MARKER}\n"
+    )
+    if NV_OPTICAL_FORMAT_MARKER in formats_c:
+        required = (
+            "#ifdef VK_NV_optical_flow",
+            'VK_FORMAT_R16G16_S10_5_NV, REGFMT("rg16sfix5", 2, 16, SINT)',
+            NV_OPTICAL_FORMAT_MARKER,
+        )
+        if all(item in formats_c for item in required):
+            return formats_c
+        raise SystemExit("Pinned libplacebo NV optical-flow format patch is incomplete")
+    if formats_c.count(needle) != 1:
+        raise SystemExit("Pinned libplacebo signed-integer format table changed; refusing an unverified SFIXED5 mapping")
+    return formats_c.replace(needle, needle + entry, 1)
+
+
 def enable_android_external_memory_extensions(vulkan_context: str) -> str:
     old_count = vulkan_context.count(VULKAN_OPT_EXTENSION_LIST)
     ext_count = vulkan_context.count(ANDROID_AHB_EXTENSIONS)
@@ -326,9 +349,11 @@ def main() -> None:
     placebo_swapchain_path = libplacebo_dir / "src/vulkan/swapchain.c"
     placebo_vulkan_header_path = libplacebo_dir / "src/include/libplacebo/vulkan.h"
     placebo_stubs_path = libplacebo_dir / "src/vulkan/stubs.c"
+    placebo_formats_path = libplacebo_dir / "src/vulkan/formats.c"
     for path in (
         meson_path, vo_path, vulkan_context_path, glslang_meson_path, gpu_timer_path,
         placebo_swapchain_path, placebo_vulkan_header_path, placebo_stubs_path,
+        placebo_formats_path,
     ):
         if not path.is_file():
             raise SystemExit(f"Pinned native source is missing required file {path}")
@@ -340,6 +365,8 @@ def main() -> None:
         VENDOR / "mpvflow_opencl.h",
         VENDOR / "mpvflow_opencl_vk_bridge.c",
         VENDOR / "mpvflow_opencl_vk_bridge.h",
+        VENDOR / "mpvflow_vulkan_optical.c",
+        VENDOR / "mpvflow_vulkan_optical.h",
         VO_PATCH,
         AIMAGE_VULKAN_PATCH,
         VENDOR / "mpvflow_opencl_validation.h",
@@ -358,6 +385,8 @@ def main() -> None:
         "mpvflow_opencl_validation.h",
         "mpvflow_opencl_vk_bridge.c",
         "mpvflow_opencl_vk_bridge.h",
+        "mpvflow_vulkan_optical.c",
+        "mpvflow_vulkan_optical.h",
     ):
         shutil.copy2(VENDOR / filename, video_out_dir / filename)
     hwdec_dir = video_out_dir / "hwdec"
@@ -376,6 +405,7 @@ def main() -> None:
     placebo_swapchain = instrument_libplacebo_swapchain(placebo_swapchain_path.read_text())
     placebo_vulkan_header = add_libplacebo_swapchain_diagnostics_api(placebo_vulkan_header_path.read_text())
     placebo_stubs = add_libplacebo_swapchain_diagnostics_stub(placebo_stubs_path.read_text())
+    placebo_formats = enable_nv_optical_flow_vector_format(placebo_formats_path.read_text())
     vo_marker = "MPVFLOW_GPU_INTEGRATION"
     meson_marker = "# MPVFLOW_ANDROID_GPU"
     if vo_marker not in vo:
@@ -405,20 +435,21 @@ def main() -> None:
     opencl_sources = (
         "video/out/mpvflow_opencl.c",
         "video/out/mpvflow_opencl_vk_bridge.c",
+        "video/out/mpvflow_vulkan_optical.c",
     )
     if meson_marker not in meson:
         close = base_sources_close(meson)
         block = (
             "\n# The direct MPVFlow compute stage is built only for Android.\n"
             "if host_machine.system() == 'android'\n"
-            f"    sources += files('{gpu_source}', '{opencl_sources[0]}', '{opencl_sources[1]}')\n"
+            f"    sources += files('{gpu_source}', '{opencl_sources[0]}', '{opencl_sources[1]}', '{opencl_sources[2]}')\n"
             "endif\n"
             f"{meson_marker}\n"
         )
         meson = meson[: close + 1] + block + meson[close + 1 :]
         meson_path.write_text(meson)
     elif any(source not in meson for source in (gpu_source, *opencl_sources)):
-        raise SystemExit("GPU Flow Meson marker exists without every required Flow/OpenCL source")
+        raise SystemExit("GPU Flow Meson marker exists without every required Flow/OpenCL/optical source")
 
     vulkan_context_path.write_text(vulkan_context)
     glslang_meson_path.write_text(glslang_meson)
@@ -426,10 +457,12 @@ def main() -> None:
     placebo_swapchain_path.write_text(placebo_swapchain)
     placebo_vulkan_header_path.write_text(placebo_vulkan_header)
     placebo_stubs_path.write_text(placebo_stubs)
+    placebo_formats_path.write_text(placebo_formats)
     print(
         f"Installed direct GPU/OpenCL MPVFlow into {mpv_dir} and corrected libplacebo's "
         f"Android glslang search path in {glslang_meson_path} and Vulkan timestamp "
         f"ring in {gpu_timer_path}, plus Flow-gated Vulkan WSI diagnostics in {placebo_swapchain_path}; "
+        f"the optional NV optical-flow vector format is patched into libplacebo; "
         f"the legacy CPU filter is not compiled or registered by this build."
     )
 

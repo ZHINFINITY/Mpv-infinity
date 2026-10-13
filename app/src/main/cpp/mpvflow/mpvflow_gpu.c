@@ -8,6 +8,7 @@
 #include "mpvflow_gpu.h"
 #include "mpvflow_opencl.h"
 #include "mpvflow_opencl_vk_bridge.h"
+#include "mpvflow_vulkan_optical.h"
 
 #include <libplacebo/vulkan.h>
 
@@ -87,7 +88,10 @@ struct MPVFlowGPUContext {
     pl_pass pass_reduce_first;
     pl_pass pass_reduce;
     pl_pass pass_flow;
+    pl_pass pass_optical_luma;
+    pl_pass pass_optical_seed;
     pl_pass pass_synthesize;
+    MPVFlowVulkanOptical *optical;
     struct FlowTimerStats timers[FLOW_TIMER_COUNT];
     uint64_t timing_window_start_ns;
 };
@@ -102,6 +106,8 @@ struct MPVFlowGPUPair {
     bool opencl_source_cache_ready;
     pl_tex input[2];            /* borrowed from caller */
     pl_tex output;              /* owned, reused for each timestep */
+    pl_tex optical_seed[2];     /* optional, pair-scoped coarse motion priors */
+    bool optical_seed_ready;
     int w, h;
     int output_w, output_h;
     int levels;
@@ -274,7 +280,7 @@ static void flow_log_optical_flow_capability(pl_vulkan vk)
              "hint_grid_flags=0x%x bidirectional=%d hint=%d cost=%d "
              "input_reference_format_count=%u input_reference_formats=%s input_query_result=%d "
              "output_format_count=%u output_formats=%s output_query_result=%d "
-             "session_execution=not_integrated_in_flow_core",
+             "session_execution=optional_adapter_initialization_follows",
              state, vk->api_version, extension_enabled, feature_enabled,
              queue_families, family_queues, properties_queried,
              optical.minWidth, optical.minHeight, optical.maxWidth, optical.maxHeight,
@@ -291,7 +297,7 @@ static void flow_log_optical_flow_capability(pl_vulkan vk)
     if (vk && vk->gpu)
         flow_log(vk->gpu, PL_LOG_INFO,
                  "MPVFLOW_DIAGNOSTIC event=optical_flow_capability state=not_compiled "
-                 "session_execution=not_integrated_in_flow_core");
+                 "session_execution=unavailable_without_extension_headers");
 }
 #endif
 
@@ -754,6 +760,25 @@ static const char shader_reduce[] =
     "void main(){ ivec2 p=ivec2(gl_GlobalInvocationID.xy); if(any(greaterThanEqual(p,pc.cfg.xy))) return; ivec2 sz=imageSize(inTex); float s=0.0; float n=0.0; for(int y=0;y<16;y++) for(int x=0;x<16;x++){ ivec2 q=p*16+ivec2(x,y); if(all(lessThan(q,sz))){s+=imageLoad(inTex,q).r;n+=1.0;}} imageStore(outTex,p,vec4(s/max(n,1.0),0.0,0.0,1.0)); }\n"
 ;
 
+static const char shader_optical_luma[] =
+    "#version 450\n"
+    "layout(set=0,binding=0,rgba16f) readonly uniform image2D inTex;\n"
+    "layout(set=0,binding=1,r8) writeonly uniform image2D outTex;\n"
+    "layout(push_constant) uniform FlowPush { ivec4 cfg; float timestep; } pc;\n"
+    "layout(local_size_x=8, local_size_y=8) in;\n"
+    "void main(){ ivec2 p=ivec2(gl_GlobalInvocationID.xy),outSize=imageSize(outTex),srcSize=imageSize(inTex); if(any(greaterThanEqual(p,outSize))) return; ivec2 q=min(p,srcSize-1); imageStore(outTex,p,vec4(imageLoad(inTex,q).r,0.0,0.0,1.0)); }\n"
+;
+
+static const char shader_optical_seed[] =
+    "#version 450\n"
+    "layout(set=0,binding=0) uniform isampler2D vectorTex;\n"
+    "layout(set=0,binding=1,rgba16f) writeonly uniform image2D seedTex;\n"
+    "layout(set=0,binding=2,rgba16f) readonly uniform image2D sceneTex;\n"
+    "layout(push_constant) uniform FlowPush { ivec4 cfg; float timestep; } pc;\n"
+    "layout(local_size_x=8, local_size_y=8) in;\n"
+    "void main(){ ivec2 g=ivec2(gl_GlobalInvocationID.xy),grid=imageSize(seedTex); if(any(greaterThanEqual(g,grid))) return; if(imageLoad(sceneTex,ivec2(0)).r>0.1882353){ imageStore(seedTex,g,vec4(0.0,0.0,1.0,0.0)); return; } int scale=max(pc.cfg.z,1); ivec2 p=min(g*4,pc.cfg.xy-ivec2(8)); vec2 center=(vec2(p)+vec2(4.0))*float(scale); ivec2 vectorSize=textureSize(vectorTex,0),q=clamp(ivec2(floor(center/8.0)),ivec2(0),vectorSize-1); ivec2 fixedVector=texelFetch(vectorTex,q,0).rg; vec2 flow=(vec2(fixedVector)/32.0)/float(scale); imageStore(seedTex,g,vec4(flow,0.0,1.0)); }\n"
+;
+
 static const char shader_flow[] =
     "#version 450\n"
     "layout(set=0,binding=0,rgba16f) readonly uniform image2D srcTex;\n"
@@ -767,7 +792,7 @@ static const char shader_flow[] =
     "int sadAt(ivec2 p,ivec2 d,ivec2 sz,int cutoff,int blockSize){ int cost=0; for(int y=0;y<blockSize;y++) for(int x=0;x<blockSize;x++){ float a=imageLoad(srcTex,p+ivec2(x,y)).r; float b=imageLoad(dstTex,p+ivec2(x,y)+d).r; cost+=int(abs(a-b)*255.0+0.5); if(cost>cutoff) return cost; } return cost; }\n"
     "float subpixelOffset(float minusCost,float centerCost,float plusCost){ float curvature=minusCost-2.0*centerCost+plusCost; if(centerCost>minusCost||centerCost>plusCost||curvature<=0.0001) return 0.0; return clamp(0.5*(minusCost-plusCost)/curvature,-0.5,0.5); }\n"
     "float refineAxis(ivec2 p,ivec2 v,ivec2 axis,ivec2 sz,int blockSize,int centerCost){ ivec2 m=v-axis,q=v+axis,block=ivec2(blockSize); if(any(lessThan(p+m,ivec2(0)))||any(lessThan(p+q,ivec2(0)))||any(greaterThan(p+m,sz-block))||any(greaterThan(p+q,sz-block))) return 0.0; int cm=sadAt(p,m,sz,2147483647,blockSize),cp=sadAt(p,q,sz,2147483647,blockSize); return subpixelOffset(float(cm),float(centerCost),float(cp)); }\n"
-    "void main(){ ivec2 g=ivec2(gl_GlobalInvocationID.xy); ivec2 grid=imageSize(flowTex); if(any(greaterThanEqual(g,grid))) return; if(imageLoad(sceneTex,ivec2(0)).r>0.1882353){ imageStore(flowTex,g,vec4(0.0,0.0,1.0,0.0)); return; } ivec2 sz=pc.cfg.xy; int blockSize=(pc.cfg.w>>8); if(blockSize!=4) blockSize=8; ivec2 block=ivec2(blockSize),p=min(g*4,sz-block); bool hasParent=(pc.cfg.w&1)!=0; ivec2 center=ivec2(0); float parentResidual=0.0,parentUniqueness=1.0; if(hasParent){ ivec2 pg=imageSize(parentTex),parentSize=(sz+ivec2(1))/2; vec2 parentPos=vec2(flowGridAxis(float(p.x)*0.5,float(parentSize.x),8,pg.x),flowGridAxis(float(p.y)*0.5,float(parentSize.y),8,pg.y)); ivec2 a=clamp(ivec2(floor(parentPos)),ivec2(0),pg-1); ivec2 b=min(a+1,pg-1); vec2 f=fract(parentPos); vec4 top=mix(imageLoad(parentTex,a),imageLoad(parentTex,ivec2(b.x,a.y)),f.x); vec4 bot=mix(imageLoad(parentTex,ivec2(a.x,b.y)),imageLoad(parentTex,b),f.x); vec4 parentFlow=mix(top,bot,f.y); center=ivec2(round(parentFlow.rg*2.0)); parentResidual=parentFlow.b; parentUniqueness=parentFlow.a; } center=clamp(center,-p,sz-block-p); int radius=pc.cfg.z; if(hasParent&&parentResidual>0.12&&parentUniqueness>0.0005)radius=min(radius*2,16); ivec2 lo=max(-p,center-ivec2(radius)); ivec2 hi=min(sz-block-p,center+ivec2(radius)); ivec2 bestVector=center; int best=sadAt(p,bestVector,sz,2147483647,blockSize),second=2147483647; bool stopOnCenterTie=false;\n"
+    "void main(){ ivec2 g=ivec2(gl_GlobalInvocationID.xy); ivec2 grid=imageSize(flowTex); if(any(greaterThanEqual(g,grid))) return; if(imageLoad(sceneTex,ivec2(0)).r>0.1882353){ imageStore(flowTex,g,vec4(0.0,0.0,1.0,0.0)); return; } ivec2 sz=pc.cfg.xy; int blockSize=(pc.cfg.w>>8); if(blockSize!=4) blockSize=8; ivec2 block=ivec2(blockSize),p=min(g*4,sz-block); bool opticalSeed=(pc.cfg.w&2)!=0,hasParent=(pc.cfg.w&1)!=0||opticalSeed;ivec2 center=ivec2(0); float parentResidual=0.0,parentUniqueness=1.0; if(hasParent){ vec4 parentFlow; if(opticalSeed){ parentFlow=imageLoad(parentTex,g); } else { ivec2 pg=imageSize(parentTex),parentSize=(sz+ivec2(1))/2; vec2 parentPos=vec2(flowGridAxis(float(p.x)*0.5,float(parentSize.x),8,pg.x),flowGridAxis(float(p.y)*0.5,float(parentSize.y),8,pg.y)); ivec2 a=clamp(ivec2(floor(parentPos)),ivec2(0),pg-1); ivec2 b=min(a+1,pg-1); vec2 f=fract(parentPos); vec4 top=mix(imageLoad(parentTex,a),imageLoad(parentTex,ivec2(b.x,a.y)),f.x); vec4 bot=mix(imageLoad(parentTex,ivec2(a.x,b.y)),imageLoad(parentTex,b),f.x); parentFlow=mix(top,bot,f.y); } center=ivec2(round(parentFlow.rg*(opticalSeed?1.0:2.0))); parentResidual=parentFlow.b; parentUniqueness=parentFlow.a; } center=clamp(center,-p,sz-block-p); int radius=pc.cfg.z; if(hasParent&&parentResidual>0.12&&parentUniqueness>0.0005)radius=min(radius*2,16); ivec2 lo=max(-p,center-ivec2(radius)); ivec2 hi=min(sz-block-p,center+ivec2(radius)); ivec2 bestVector=center; int best=sadAt(p,bestVector,sz,2147483647,blockSize),second=2147483647; bool stopOnCenterTie=false;\n"
     "for(int ring=1;ring<=radius&&!stopOnCenterTie;ring++) for(int dy=-ring;dy<=ring&&!stopOnCenterTie;dy++) for(int dx=-ring;dx<=ring&&!stopOnCenterTie;dx++){ if(max(abs(dx),abs(dy))!=ring) continue; ivec2 d=center+ivec2(dx,dy); if(any(lessThan(d,lo))||any(greaterThan(d,hi))) continue; if(all(equal(d,bestVector))) continue; if(best==0&&second==0){ if(all(equal(bestVector,center))){stopOnCenterTie=true;continue;} if(d.y>bestVector.y||(d.y==bestVector.y&&d.x>=bestVector.x)) continue; } int c=sadAt(p,d,sz,best==0?0:second,blockSize); if(best==0){if(c==0){second=0; if(!all(equal(bestVector,center))&&(d.y<bestVector.y||(d.y==bestVector.y&&d.x<bestVector.x))) bestVector=d;} else if(second!=0) second=1;} else if(c<best){second=best;best=c;bestVector=d;} else if(c==best){if(second>c) second=c; if(!all(equal(bestVector,center))&&(d.y<bestVector.y||(d.y==bestVector.y&&d.x<bestVector.x))) bestVector=d;} else if(c<second) second=c; }\n"
     "vec2 refined=vec2(bestVector); refined.x+=refineAxis(p,bestVector,ivec2(1,0),sz,blockSize,best); refined.y+=refineAxis(p,bestVector,ivec2(0,1),sz,blockSize,best); float uniqueness=second<2147483647?clamp(float(second-best)/max(float(second),1.0),0.0,1.0):0.0; imageStore(flowTex,g,vec4(refined,float(best)/(float(blockSize*blockSize)*255.0),uniqueness)); }\n"
 ;
@@ -955,6 +980,8 @@ static void destroy_pair_textures(MPVFlowGPUContext *ctx,
             pair->opencl_pair = NULL;
     }
     destroy_tex(ctx, &pair->output);
+    destroy_tex(ctx, &pair->optical_seed[0]);
+    destroy_tex(ctx, &pair->optical_seed[1]);
     for (int i = 0; i < FLOW_LEVELS; i++) {
         destroy_tex(ctx, &pair->level[i].luma[0]);
         destroy_tex(ctx, &pair->level[i].luma[1]);
@@ -1262,6 +1289,15 @@ MPVFlowGPUContext *mpvflow_gpu_create(pl_gpu gpu,
         return NULL;
     }
 
+    char optical_reason[160] = {0};
+    ctx->optical = mpvflow_vulkan_optical_create(gpu, optical_reason,
+                                                 sizeof(optical_reason));
+    if (!ctx->optical)
+        flow_log(gpu, PL_LOG_INFO,
+                 "MPVFLOW_DIAGNOSTIC event=optical_flow_backend state=disabled "
+                 "reason=%s fallback=validated_vulkan_block_matching",
+                 optical_reason[0] ? optical_reason : "unavailable");
+
     /* Match the SVPlayer architecture: keep the normal path entirely inside
      * Vulkan. OpenCL remains dynamically loaded and available when explicitly
      * requested, but AUTO must not pay the per-frame Vulkan/OpenCL ownership
@@ -1373,6 +1409,19 @@ MPVFlowGPUContext *mpvflow_gpu_create(pl_gpu gpu,
         { .name = "outTex", .type = PL_DESC_STORAGE_IMG, .binding = 1,
           .access = PL_DESC_ACCESS_WRITEONLY },
     };
+    struct pl_desc optical_luma_desc[] = {
+        { .name = "inTex", .type = PL_DESC_STORAGE_IMG, .binding = 0,
+          .access = PL_DESC_ACCESS_READONLY },
+        { .name = "outTex", .type = PL_DESC_STORAGE_IMG, .binding = 1,
+          .access = PL_DESC_ACCESS_WRITEONLY },
+    };
+    struct pl_desc optical_seed_desc[] = {
+        { .name = "vectorTex", .type = PL_DESC_SAMPLED_TEX, .binding = 0 },
+        { .name = "seedTex", .type = PL_DESC_STORAGE_IMG, .binding = 1,
+          .access = PL_DESC_ACCESS_WRITEONLY },
+        { .name = "sceneTex", .type = PL_DESC_STORAGE_IMG, .binding = 2,
+          .access = PL_DESC_ACCESS_READONLY },
+    };
     struct pl_desc flow_desc[] = {
         { .name = "srcTex", .type = PL_DESC_STORAGE_IMG, .binding = 0,
           .access = PL_DESC_ACCESS_READONLY },
@@ -1408,6 +1457,24 @@ MPVFlowGPUContext *mpvflow_gpu_create(pl_gpu gpu,
     ctx->pass_reduce = make_pass(gpu, shader_reduce, reduce_desc, 2);
     ctx->pass_flow = make_pass(gpu, shader_flow, flow_desc, 5);
     ctx->pass_synthesize = make_pass(gpu, shader_synthesize, synth_desc, 8);
+    if (ctx->optical) {
+        ctx->pass_optical_luma = make_pass(gpu, shader_optical_luma,
+                                           optical_luma_desc, 2);
+        ctx->pass_optical_seed = make_pass(gpu, shader_optical_seed,
+                                           optical_seed_desc, 3);
+        if (!ctx->pass_optical_luma || !ctx->pass_optical_seed) {
+            flow_log(gpu, PL_LOG_WARN,
+                     "MPVFLOW_DIAGNOSTIC event=optical_flow_backend state=disabled "
+                     "reason=optional_seed_shader_compile_failed fallback=validated_vulkan_block_matching "
+                     "luma_pass=%d seed_pass=%d",
+                     !!ctx->pass_optical_luma, !!ctx->pass_optical_seed);
+            mpvflow_vulkan_optical_destroy(&ctx->optical);
+            if (ctx->pass_optical_luma)
+                pl_pass_destroy(gpu, &ctx->pass_optical_luma);
+            if (ctx->pass_optical_seed)
+                pl_pass_destroy(gpu, &ctx->pass_optical_seed);
+        }
+    }
     uint32_t failed_pass_mask = 0;
     if (!ctx->pass_preprocess) failed_pass_mask |= MPVFLOW_GPU_PASS_PREPROCESS;
     if (!ctx->pass_luma) failed_pass_mask |= MPVFLOW_GPU_PASS_LUMA;
@@ -1475,12 +1542,15 @@ void mpvflow_gpu_destroy(MPVFlowGPUContext *ctx)
 {
     if (!ctx)
         return;
+    mpvflow_vulkan_optical_destroy(&ctx->optical);
     if (ctx->pass_preprocess) pl_pass_destroy(ctx->gpu, &ctx->pass_preprocess);
     if (ctx->pass_luma) pl_pass_destroy(ctx->gpu, &ctx->pass_luma);
     if (ctx->pass_downsample) pl_pass_destroy(ctx->gpu, &ctx->pass_downsample);
     if (ctx->pass_reduce_first) pl_pass_destroy(ctx->gpu, &ctx->pass_reduce_first);
     if (ctx->pass_reduce) pl_pass_destroy(ctx->gpu, &ctx->pass_reduce);
     if (ctx->pass_flow) pl_pass_destroy(ctx->gpu, &ctx->pass_flow);
+    if (ctx->pass_optical_luma) pl_pass_destroy(ctx->gpu, &ctx->pass_optical_luma);
+    if (ctx->pass_optical_seed) pl_pass_destroy(ctx->gpu, &ctx->pass_optical_seed);
     if (ctx->pass_synthesize) pl_pass_destroy(ctx->gpu, &ctx->pass_synthesize);
     for (int i = 0; i < FLOW_TIMER_COUNT; i++)
         pl_timer_destroy(ctx->gpu, &ctx->timers[i].timer);
@@ -1782,6 +1852,20 @@ enum MPVFlowGPUResult mpvflow_gpu_analyze_pair(MPVFlowGPUContext *ctx,
         free(pair);
         return MPVFLOW_GPU_ERROR;
     }
+    if (ctx->optical && ctx->pass_optical_luma && ctx->pass_optical_seed &&
+        mpvflow_vulkan_optical_ensure(ctx->optical, pair->w, pair->h)) {
+        struct FlowLevel *coarse = &pair->level[pair->levels - 1];
+        pair->optical_seed[0] = create_texture(ctx,
+            (int) coarse->forward->params.w, (int) coarse->forward->params.h,
+            ctx->fmt_rgba16f, false, "optical_forward_seed");
+        pair->optical_seed[1] = create_texture(ctx,
+            (int) coarse->backward->params.w, (int) coarse->backward->params.h,
+            ctx->fmt_rgba16f, false, "optical_backward_seed");
+        if (!pair->optical_seed[0] || !pair->optical_seed[1]) {
+            destroy_tex(ctx, &pair->optical_seed[0]);
+            destroy_tex(ctx, &pair->optical_seed[1]);
+        }
+    }
 
     int cfg[4] = { pair->w, pair->h, 0, 0 };
     struct pl_desc_binding lb[2] = {
@@ -1797,6 +1881,31 @@ enum MPVFlowGPUResult mpvflow_gpu_analyze_pair(MPVFlowGPUContext *ctx,
     if (!run_pass(ctx, ctx->pass_luma, lb, 2, cfg, 0.0f, pair->w, pair->h,
                   "luma_frame1"))
         goto failure;
+
+    bool optical_dispatched = false;
+    if (pair->optical_seed[0] && pair->optical_seed[1]) {
+        pl_tex optical_input0 = mpvflow_vulkan_optical_input(ctx->optical, 0);
+        pl_tex optical_input1 = mpvflow_vulkan_optical_input(ctx->optical, 1);
+        int optical_w = optical_input0 ? (int) optical_input0->params.w : 0;
+        int optical_h = optical_input0 ? (int) optical_input0->params.h : 0;
+        struct pl_desc_binding optical_luma_bindings[2] = {
+            { .object = pair->level[0].luma[0] }, { .object = optical_input0 },
+        };
+        int optical_luma_cfg[4] = { pair->w, pair->h, 0, 0 };
+        bool optical_inputs_ready = optical_input0 && optical_input1 &&
+            optical_w > 0 && optical_h > 0 &&
+            run_pass(ctx, ctx->pass_optical_luma, optical_luma_bindings, 2,
+                     optical_luma_cfg, 0.0f, optical_w, optical_h,
+                     "motion_coarse_optical_luma_frame0");
+        optical_luma_bindings[0].object = pair->level[0].luma[1];
+        optical_luma_bindings[1].object = optical_input1;
+        optical_inputs_ready = optical_inputs_ready &&
+            run_pass(ctx, ctx->pass_optical_luma, optical_luma_bindings, 2,
+                     optical_luma_cfg, 0.0f, optical_w, optical_h,
+                     "motion_coarse_optical_luma_frame1");
+        optical_dispatched = optical_inputs_ready &&
+            mpvflow_vulkan_optical_dispatch(ctx->optical);
+    }
 
     for (int i = 1; i < pair->levels; i++) {
         struct FlowLevel *prev = &pair->level[i - 1];
@@ -1839,21 +1948,47 @@ enum MPVFlowGPUResult mpvflow_gpu_analyze_pair(MPVFlowGPUContext *ctx,
     }
 
     pl_tex scene_delta = pair->scene[pair->reductions - 1];
+    if (optical_dispatched) {
+        struct FlowLevel *coarse = &pair->level[pair->levels - 1];
+        int scale = 1 << (pair->levels - 1);
+        int seed_cfg[4] = { coarse->w, coarse->h, scale, 0 };
+        struct pl_desc_binding seed_bindings[3] = {
+            { .object = mpvflow_vulkan_optical_vectors(ctx->optical, 0),
+              .sample_mode = PL_TEX_SAMPLE_NEAREST },
+            { .object = pair->optical_seed[0] }, { .object = scene_delta },
+        };
+        pair->optical_seed_ready = run_pass(ctx, ctx->pass_optical_seed,
+            seed_bindings, 3, seed_cfg, 0.0f,
+            (int) pair->optical_seed[0]->params.w,
+            (int) pair->optical_seed[0]->params.h,
+            "motion_coarse_optical_seed_forward");
+        seed_bindings[0].object = mpvflow_vulkan_optical_vectors(ctx->optical, 1);
+        seed_bindings[1].object = pair->optical_seed[1];
+        pair->optical_seed_ready = pair->optical_seed_ready &&
+            run_pass(ctx, ctx->pass_optical_seed, seed_bindings, 3, seed_cfg,
+                0.0f, (int) pair->optical_seed[1]->params.w,
+                (int) pair->optical_seed[1]->params.h,
+                "motion_coarse_optical_seed_backward");
+    }
     for (int dir = 0; dir < 2; dir++) {
         for (int li = pair->levels - 1; li >= 0; li--) {
             struct FlowLevel *lv = &pair->level[li];
             struct FlowLevel *parent = li + 1 < pair->levels
                 ? &pair->level[li + 1] : NULL;
+            const bool optical_parent = pair->optical_seed_ready &&
+                                        li == pair->levels - 1;
             pl_tex src = lv->luma[dir ? 1 : 0];
             pl_tex dst = lv->luma[dir ? 0 : 1];
             pl_tex flow = dir ? lv->backward : lv->forward;
-            pl_tex parent_flow = parent
+            pl_tex parent_flow = optical_parent ? pair->optical_seed[dir] : parent
                 ? (dir ? parent->backward : parent->forward)
                 : (dir ? lv->forward : lv->backward);
+            const bool has_parent = parent || optical_parent;
             int radius = parent ? 2 : ctx->search_radius;
             const int block_size = li == 0 ? FLOW_FINE_BLOCK : FLOW_BLOCK;
             int fc[4] = { lv->w, lv->h, radius,
-                          (parent ? 1 : 0) | (block_size << 8) };
+                          (has_parent ? 1 : 0) | (optical_parent ? 2 : 0) |
+                          (block_size << 8) };
             struct pl_desc_binding fb[5] = {
                 { .object = src }, { .object = dst }, { .object = parent_flow },
                 { .object = flow }, { .object = scene_delta },

@@ -37,6 +37,8 @@ shader_names = (
     "shader_downsample",
     "shader_reduce_first",
     "shader_reduce",
+    "shader_optical_luma",
+    "shader_optical_seed",
     "shader_flow",
     "shader_synthesize",
 )
@@ -52,7 +54,15 @@ require(preprocess, "layout(set=0,binding=1,rgba8) writeonly uniform image2D out
 require(preprocess, "texture(inTex,uv)", "preprocess must keep scaling on the GPU")
 
 flow = shaders["shader_flow"]
+optical_luma = shaders["shader_optical_luma"]
+optical_seed = shaders["shader_optical_seed"]
 synthesis = shaders["shader_synthesize"]
+require(optical_luma, "layout(set=0,binding=0,rgba16f) readonly uniform image2D inTex;", "optical conversion must consume the existing GPU luma pyramid")
+require(optical_luma, "layout(set=0,binding=1,r8) writeonly uniform image2D outTex;", "NV optical inputs must be packed as R8 UNORM without a CPU round-trip")
+require(optical_seed, "uniform isampler2D vectorTex", "NV's scaled signed-integer vector output must be read with an integer sampler")
+require(optical_seed, "vec2(fixedVector)/32.0", "NV SFIXED5 vectors must convert from fixed point before entering the pixel-space search")
+require(optical_seed, "(vec2(fixedVector)/32.0)/float(scale)", "full-resolution NV vectors must scale into the coarsest pyramid level")
+require(optical_seed, "imageStore(seedTex,g,vec4(flow,0.0,1.0))", "hardware vectors must remain only a center prior with no assumed-match confidence")
 require(flow, "for(int ring=1;ring<=radius&&!stopOnCenterTie;ring++)", "motion search must stop only after an exact zero-cost tie makes later candidates irrelevant")
 require(flow, "if(max(abs(dx),abs(dy))!=ring) continue", "center-out rings must enumerate each Chebyshev-radius candidate exactly once")
 require(flow, "if(any(lessThan(d,lo))||any(greaterThan(d,hi))) continue", "center-out search must retain edge-clipped bounds")
@@ -165,7 +175,9 @@ require(synthesis, "if(confidence<0.28)", "unreliable motion must fall back to a
 require(flow, "float(second-best)/max(float(second),1.0)", "flow vectors must report best-vs-runner-up match uniqueness")
 require(flow, "refineAxis(p,bestVector,ivec2(1,0)", "GPU flow vectors must be fractionally refined")
 require(flow, "center=clamp(center,-p,sz-block-p)", "coarse predictors must be clamped to the active block before border-local refinement")
-require(flow, "bool hasParent=(pc.cfg.w&1)!=0", "the encoded block support must not be confused with the coarse-parent flag")
+require(flow, "bool opticalSeed=(pc.cfg.w&2)!=0,hasParent=(pc.cfg.w&1)!=0||opticalSeed", "the encoded block support must remain distinct from optional parent and optical seed flags")
+require(flow, "if(opticalSeed){ parentFlow=imageLoad(parentTex,g); }", "coarse flow must use the direction-matched hardware vector as a local search center")
+require(flow, "parentFlow.rg*(opticalSeed?1.0:2.0)", "hardware vectors must not be accidentally doubled when seeding the coarsest level")
 require(flow, "parentResidual=parentFlow.b; parentUniqueness=parentFlow.a", "finer Vulkan levels must retain the coarse SAD and uniqueness signals")
 require(flow, "if(hasParent&&parentResidual>0.12&&parentUniqueness>0.0005)radius=min(radius*2,16)", "only a poor but non-tied parent may double the fine-level search")
 require(synthesis, "bool neighborhoodConflict=", "synthesis must detect local motion disagreement")

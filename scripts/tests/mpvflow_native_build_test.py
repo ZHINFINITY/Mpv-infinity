@@ -152,6 +152,30 @@ for bad_stub_source in ("unrecognized no-Vulkan stubs\n", stub_source + stub_sou
         pass
     else:
         raise AssertionError("unexpected libplacebo no-Vulkan stubs must fail closed")
+formats_source = (
+    'static const struct vk_format vk_formats[] = {\n'
+    '    {VK_FORMAT_R16G16_SINT,           REGFMT("rg16i",    2, 16, SINT)},\n'
+    '};\n'
+)
+patched_formats_source = prepare.enable_nv_optical_flow_vector_format(formats_source)
+for marker in (
+    "#ifdef VK_NV_optical_flow",
+    'VK_FORMAT_R16G16_S10_5_NV, REGFMT("rg16sfix5", 2, 16, SINT)',
+    "MPVFLOW_NV_OPTICAL_FLOW_SFIXED5_FORMAT",
+):
+    assert marker in patched_formats_source, f"libplacebo optical format mapping is missing {marker!r}"
+assert prepare.enable_nv_optical_flow_vector_format(patched_formats_source) == patched_formats_source
+for bad_formats_source in (
+    "no signed-integer format table here\n",
+    formats_source + formats_source,
+    patched_formats_source.replace("rg16sfix5", "rg16i"),
+):
+    try:
+        prepare.enable_nv_optical_flow_vector_format(bad_formats_source)
+    except SystemExit:
+        pass
+    else:
+        raise AssertionError("unexpected libplacebo format-table change must fail closed")
 wsi_source = """\
 struct priv {
     bool has_swapchain_maintenance1;
@@ -238,6 +262,15 @@ assert '"--input", str(AIMAGE_VULKAN_PATCH)' in prepare_source
 assert prepare_source.count('"mpvflow_opencl_validation.h"') == 2, (
     "MPV native preparation must validate and copy the OpenCL synthesis validation header"
 )
+for marker in (
+    'VENDOR / "mpvflow_vulkan_optical.c"',
+    'VENDOR / "mpvflow_vulkan_optical.h"',
+    '"mpvflow_vulkan_optical.c"',
+    '"mpvflow_vulkan_optical.h"',
+    '"video/out/mpvflow_vulkan_optical.c"',
+    'placebo_formats_path = libplacebo_dir / "src/vulkan/formats.c"',
+):
+    assert marker in prepare_source, f"MPV native preparation must include optional optical integration: {marker!r}"
 assert VULKAN_MAPPER_PATCH.is_file(), "the pinned MPV mapper compatibility patch must be vendored"
 for source in (
     "hwdec_aimagereader.c",
@@ -254,11 +287,27 @@ prepare_call = 'python3 "$ROOT/scripts/prepare-mpvflow.py" --mpv-dir "$BUILDSCRI
 assert prepare_call in build, "the native build must patch pinned libplacebo before compilation"
 native_cmake = (ROOT / "app/src/main/cpp/CMakeLists.txt").read_text(encoding="utf-8")
 for source in (
+    "mpvflow/mpvflow_vulkan_optical.c",
     "mpvflow/mpvflow_opencl.c",
     "mpvflow/mpvflow_opencl_vk_bridge.c",
 ):
     assert source in native_cmake, f"Native Media3 CMake target must compile the real OpenCL backend: {source}"
 assert "\n        dl\n" in native_cmake, "Native Media3 must link the runtime dlopen dependency"
+optical_adapter = (ROOT / "app/src/main/cpp/mpvflow/mpvflow_vulkan_optical.c").read_text(encoding="utf-8")
+optical_dispatch = optical_adapter.split(
+    "bool mpvflow_vulkan_optical_dispatch(", 1
+)[1].split("\nvoid mpvflow_vulkan_optical_destroy(", 1)[0]
+for marker in (
+    "available_command(optical)",
+    "pl_vulkan_hold_ex",
+    "VK_OPTICAL_FLOW_EXECUTE_DISABLE_TEMPORAL_HINTS_BIT_NV",
+    "vkQueueSubmit",
+    "pl_vulkan_release_ex",
+    "shader_quality_checks=enabled",
+):
+    assert marker in optical_dispatch, f"NV optical dispatch must preserve synchronized validated fallback: missing {marker!r}"
+assert "vkQueueWaitIdle" not in optical_dispatch, "per-frame optical execution must remain nonblocking"
+assert "optical->disabled = true" in optical_adapter, "fatal optional backend failures must disable NV and preserve ordinary Vulkan matching"
 vo_patch = VO_PATCH.read_text(encoding="utf-8")
 for marker in (
     "event=swapchain_wait stage=acquire",
@@ -791,7 +840,7 @@ for marker in (
     "vkGetPhysicalDeviceOpticalFlowImageFormatsNV",
     "VK_OPTICAL_FLOW_USAGE_INPUT_BIT_NV",
     "VK_OPTICAL_FLOW_USAGE_OUTPUT_BIT_NV",
-    "session_execution=not_integrated_in_flow_core",
+    "session_execution=optional_adapter_initialization_follows",
 ):
     assert marker in flow_gpu_source, f"shared core must report verified optical-flow capability without overclaiming execution: missing {marker!r}"
 for marker in (
