@@ -101,6 +101,36 @@ except SystemExit:
 else:
     raise AssertionError("unexpected MPV Vulkan extension-list changes must fail closed")
 
+mailbox_context = """\
+    if (p->opts->swap_mode >= 0) // user override
+        pl_params.present_mode = p->opts->swap_mode;
+    vk->swapchain = pl_vulkan_create_swapchain(vk->vulkan, &pl_params);
+"""
+patched_mailbox_context = prepare.enable_mailbox_suboptimal_tolerance(mailbox_context)
+mailbox_policy = "pl_params.present_mode == VK_PRESENT_MODE_MAILBOX_KHR;"
+assert mailbox_policy in patched_mailbox_context
+assert patched_mailbox_context.index("pl_params.present_mode = p->opts->swap_mode;") < patched_mailbox_context.index(
+    "pl_params.allow_suboptimal ="
+) < patched_mailbox_context.index("pl_vulkan_create_swapchain"), (
+    "the effective user-selected present mode must determine suboptimal tolerance before swapchain creation"
+)
+assert prepare.enable_mailbox_suboptimal_tolerance(patched_mailbox_context) == patched_mailbox_context, (
+    "mailbox suboptimal preparation must be safe to repeat"
+)
+assert "pl_params.allow_suboptimal =\n        pl_params.present_mode == VK_PRESENT_MODE_MAILBOX_KHR;" in patched_mailbox_context, (
+    "only the effective Mailbox request may opt into suboptimal tolerance; FIFO and other modes remain false"
+)
+for bad_mailbox_context in (
+    "no Vulkan swap-mode override here\n",
+    patched_mailbox_context.replace(mailbox_policy, "false;"),
+):
+    try:
+        prepare.enable_mailbox_suboptimal_tolerance(bad_mailbox_context)
+    except SystemExit:
+        pass
+    else:
+        raise AssertionError("unexpected MPV swap-mode source changes must fail closed")
+
 qcom_vulkan_context = """\
     const char *opt_extensions[] = {
         VK_NV_OPTICAL_FLOW_EXTENSION_NAME,
@@ -321,6 +351,8 @@ static bool vk_sw_start_frame(pl_swapchain sw)
     pl_mutex_lock(&p->lock);
 
     bool recreate = !p->current || p->needs_recreate;
+    if (p->suboptimal && !p->params.allow_suboptimal)
+        recreate = true;
     if (recreate && !vk_sw_recreate(sw, 0, 0)) {
         pl_mutex_unlock(&p->lock);
         return false;
@@ -331,6 +363,9 @@ static bool vk_sw_start_frame(pl_swapchain sw)
         VkResult res = vk->AcquireNextImageKHR(vk->dev, p->current->swapchain, UINT64_MAX,
                                                sem_in, VK_NULL_HANDLE, &imgidx);
         switch (res) {
+        case VK_SUBOPTIMAL_KHR:
+            p->suboptimal = true;
+            // fall through
         case VK_SUCCESS:
             p->current->last_imgidx = imgidx;
             if (p->current->fences_out.num > 0) {
@@ -342,6 +377,7 @@ static bool vk_sw_start_frame(pl_swapchain sw)
                 goto error;
             return true;
         case VK_ERROR_OUT_OF_DATE_KHR: {
+            // In these cases try recreating the swapchain
             if (!vk_sw_recreate(sw, 0, 0)) {
                 pl_mutex_unlock(&p->lock);
                 return false;
@@ -364,6 +400,24 @@ static bool vk_sw_submit_frame(pl_swapchain sw)
     vk->lock_queue(vk->queue_ctx, pool->qf, qidx);
     VkResult res = vk->QueuePresentKHR(queue, &pinfo);
     vk->unlock_queue(vk->queue_ctx, pool->qf, qidx);
+    switch (res) {
+    case VK_SUBOPTIMAL_KHR:
+        p->suboptimal = true;
+        // fall through
+    case VK_SUCCESS:
+        return true;
+    case VK_ERROR_OUT_OF_DATE_KHR:
+        // We can silently ignore this error, since the next start_frame will
+        // recreate the swapchain automatically.
+        return true;
+    }
+}
+static bool vk_sw_resize(pl_swapchain sw, int *width, int *height)
+{
+    bool width_changed = *width && *width != p->cur_width,
+         height_changed = *height && *height != p->cur_height;
+    if (p->suboptimal || p->needs_recreate || width_changed || height_changed)
+        ok = vk_sw_recreate(sw, *width, *height);
 }
 bool pl_vulkan_swapchain_suboptimal(pl_swapchain sw)
 {
@@ -371,7 +425,49 @@ bool pl_vulkan_swapchain_suboptimal(pl_swapchain sw)
     return p->suboptimal;
 }
 """
+prepare.validate_libplacebo_suboptimal_recovery(wsi_source)
+for bad_wsi_recovery in (
+    wsi_source.replace("case VK_ERROR_OUT_OF_DATE_KHR", "case VK_SUCCESS"),
+    wsi_source.replace("width_changed || height_changed", "false"),
+):
+    try:
+        prepare.validate_libplacebo_suboptimal_recovery(bad_wsi_recovery)
+    except SystemExit:
+        pass
+    else:
+        raise AssertionError("unexpected pinned WSI recovery changes must fail closed")
 patched_wsi_source = prepare.instrument_libplacebo_swapchain(wsi_source)
+for recovery_marker in (
+    "if (p->suboptimal && !p->params.allow_suboptimal)\n        recreate = true;",
+    "case VK_SUBOPTIMAL_KHR:\n            p->suboptimal = true;\n            // fall through\n        case VK_SUCCESS:",
+    "case VK_ERROR_OUT_OF_DATE_KHR:\n        // We can silently ignore this error, since the next start_frame will\n        // recreate the swapchain automatically.\n        return true;",
+    "if (p->suboptimal || p->needs_recreate || width_changed || height_changed)\n        ok = vk_sw_recreate(sw, *width, *height);",
+):
+    assert recovery_marker in patched_wsi_source, f"pinned WSI recovery changed: {recovery_marker!r}"
+assert "case VK_ERROR_OUT_OF_DATE_KHR: {" in patched_wsi_source
+assert "bool flow_retry_recreate_ok = vk_sw_recreate(sw, 0, 0);" in patched_wsi_source
+assert "if (!flow_retry_recreate_ok) {" in patched_wsi_source and "continue;" in patched_wsi_source, (
+    "the timed instrumentation must preserve out-of-date recreation failure handling and retry"
+)
+
+def should_recreate_on_start(current: bool, needs_recreate: bool, suboptimal: bool, allow_suboptimal: bool) -> bool:
+    recreate = not current or needs_recreate
+    if suboptimal and not allow_suboptimal:
+        recreate = True
+    return recreate
+
+assert not should_recreate_on_start(True, False, True, True), "Mailbox must tolerate VK_SUBOPTIMAL_KHR at frame start"
+assert should_recreate_on_start(True, False, True, False), "non-Mailbox/default mode must retain suboptimal recreation"
+assert should_recreate_on_start(True, True, False, True), "needs_recreate must still recreate under Mailbox"
+assert should_recreate_on_start(False, False, False, True), "missing swapchains must still be created under Mailbox"
+
+def should_recreate_on_resize(suboptimal: bool, needs_recreate: bool, width_changed: bool, height_changed: bool) -> bool:
+    return suboptimal or needs_recreate or width_changed or height_changed
+
+assert should_recreate_on_resize(False, False, True, False), "surface width changes must still recreate under Mailbox"
+assert should_recreate_on_resize(False, False, False, True), "surface height changes must still recreate under Mailbox"
+assert should_recreate_on_resize(True, False, False, False), "explicit resize must clear a tolerated suboptimal swapchain"
+
 for marker in (
     "atomic_bool flow_diagnostics",
     "VkPresentModeKHR flow_created_present_mode",
@@ -496,6 +592,9 @@ assert '"--input", str(required[2])' not in prepare_source, (
 )
 assert 'AIMAGE_VULKAN_PATCH = VENDOR / "mpvflow-aimagereader-vulkan.patch"' in prepare_source
 assert '"--input", str(AIMAGE_VULKAN_PATCH)' in prepare_source
+assert "vulkan_context = enable_mailbox_suboptimal_tolerance(vulkan_context)" in prepare_source, (
+    "the measured mailbox suboptimal fix must be applied by the pinned MPV preparation pipeline"
+)
 assert prepare_source.count('"mpvflow_opencl_validation.h"') == 2, (
     "MPV native preparation must validate and copy the OpenCL synthesis validation header"
 )

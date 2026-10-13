@@ -146,6 +146,20 @@ def add_libplacebo_swapchain_diagnostics_api(vulkan_header: str) -> str:
     raise SystemExit("Pinned libplacebo swapchain API changed; refusing an unverified diagnostic declaration")
 
 
+def validate_libplacebo_suboptimal_recovery(swapchain_c: str) -> None:
+    required = (
+        "if (p->suboptimal && !p->params.allow_suboptimal)\n        recreate = true;",
+        "case VK_SUBOPTIMAL_KHR:\n        p->suboptimal = true;\n        // fall through\n    case VK_SUCCESS:\n        return true;",
+        "case VK_ERROR_OUT_OF_DATE_KHR: {\n            // In these cases try recreating the swapchain\n            if (!vk_sw_recreate(sw, 0, 0)) {",
+        "case VK_ERROR_OUT_OF_DATE_KHR:\n        // We can silently ignore this error, since the next start_frame will\n        // recreate the swapchain automatically.\n        return true;",
+        "if (p->suboptimal || p->needs_recreate || width_changed || height_changed)\n        ok = vk_sw_recreate(sw, *width, *height);",
+    )
+    if not all(item in swapchain_c for item in required):
+        raise SystemExit(
+            "Pinned libplacebo suboptimal/out-of-date/resize recovery changed; refusing an unverified Mailbox tolerance policy"
+        )
+
+
 def instrument_libplacebo_swapchain(swapchain_c: str) -> str:
     marker = "/* MPVFLOW_WSI_DIAGNOSTICS */"
     if marker in swapchain_c:
@@ -737,6 +751,41 @@ def enable_qcom_image_processing(vulkan_context: str) -> str:
     return patched.replace(feature_anchor, feature_insert, 1)
 
 
+def enable_mailbox_suboptimal_tolerance(vulkan_context: str) -> str:
+    marker = "/* MPVFLOW_MAILBOX_SUBOPTIMAL_TOLERANCE */"
+    policy = (
+        "    pl_params.allow_suboptimal =\n"
+        "        pl_params.present_mode == VK_PRESENT_MODE_MAILBOX_KHR;\n"
+    )
+    required = (
+        "pl_params.present_mode = p->opts->swap_mode;",
+        policy,
+        marker,
+    )
+    if marker in vulkan_context:
+        if all(item in vulkan_context for item in required):
+            return vulkan_context
+        raise SystemExit("Pinned MPV mailbox suboptimal-tolerance patch is incomplete")
+
+    anchor = (
+        "    if (p->opts->swap_mode >= 0) // user override\n"
+        "        pl_params.present_mode = p->opts->swap_mode;\n"
+    )
+    replacement = anchor + (
+        "\n"
+        "    /* Tolerate non-fatal SUBOPTIMAL presents on the high-rate mailbox path.\n"
+        "     * Surface-size changes still use pl_swapchain_resize; OUT_OF_DATE\n"
+        "     * retains libplacebo's normal recreation path. */\n"
+        + policy
+        + f"    {marker}\n"
+    )
+    if vulkan_context.count(anchor) != 1:
+        raise SystemExit(
+            "Pinned MPV Vulkan swap-mode override changed; refusing an unverified mailbox suboptimal policy"
+        )
+    return vulkan_context.replace(anchor, replacement, 1)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--mpv-dir", required=True, type=Path)
@@ -811,10 +860,13 @@ def main() -> None:
         vulkan_context_path.read_text()
     )
     vulkan_context = enable_qcom_image_processing(vulkan_context)
+    vulkan_context = enable_mailbox_suboptimal_tolerance(vulkan_context)
     meson = enable_android_vulkan_dependency(meson)
     glslang_meson = enable_android_glslang_library_search(glslang_meson_path.read_text())
     gpu_timer = enlarge_libplacebo_timer_ring(gpu_timer_path.read_text())
-    placebo_swapchain = instrument_libplacebo_swapchain(placebo_swapchain_path.read_text())
+    placebo_swapchain_source = placebo_swapchain_path.read_text()
+    validate_libplacebo_suboptimal_recovery(placebo_swapchain_source)
+    placebo_swapchain = instrument_libplacebo_swapchain(placebo_swapchain_source)
     placebo_vulkan_header = add_libplacebo_swapchain_diagnostics_api(placebo_vulkan_header_path.read_text())
     placebo_stubs = add_libplacebo_swapchain_diagnostics_stub(placebo_stubs_path.read_text())
     placebo_formats = enable_nv_optical_flow_sampleability(
@@ -876,7 +928,8 @@ def main() -> None:
     print(
         f"Installed direct GPU/OpenCL MPVFlow into {mpv_dir} and corrected libplacebo's "
         f"Android glslang search path in {glslang_meson_path} and Vulkan timestamp "
-        f"ring in {gpu_timer_path}, plus Flow-gated Vulkan WSI diagnostics in {placebo_swapchain_path}; "
+        f"ring in {gpu_timer_path}, plus mailbox-only SUBOPTIMAL tolerance and Flow-gated WSI diagnostics "
+        f"in {placebo_swapchain_path}; "
         f"the optional NV optical-flow vector format is registered with an extension-aware sampleability check; "
         f"the legacy CPU filter is not compiled or registered by this build."
     )

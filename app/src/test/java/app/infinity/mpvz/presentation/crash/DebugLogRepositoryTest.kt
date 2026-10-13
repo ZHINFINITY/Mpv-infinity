@@ -352,40 +352,52 @@ class DebugLogRepositoryTest {
           level = DebugLogLevel.Verbose,
         ),
         entry(
-          "qcom-active",
+          "wsi-submit",
           7L,
+          "[vo/gpu-next/libplacebo:verbose] MPVFLOW_DIAGNOSTIC event=wsi_timing stage=vk_cmd_submit_path avg_ms=0.1 max_ms=1.0 last_result=0",
+          level = DebugLogLevel.Verbose,
+        ),
+        entry(
+          "wsi-present",
+          8L,
+          "[vo/gpu-next/libplacebo:verbose] MPVFLOW_DIAGNOSTIC event=wsi_timing stage=vkQueuePresentKHR avg_ms=0.5 max_ms=2.4 last_result_name=VK_SUBOPTIMAL_KHR",
+          level = DebugLogLevel.Verbose,
+        ),
+        entry(
+          "qcom-active",
+          9L,
           "[vo/gpu-next/libplacebo:verbose] MPVFLOW_DIAGNOSTIC event=qcom_block_match_dispatch state=active dispatches=1",
           level = DebugLogLevel.Verbose,
         ),
         entry(
           "qcom-capability",
-          8L,
+          10L,
           "MPVFLOW_DIAGNOSTIC event=qcom_block_match_capability state=exact_usage_capabilities_present",
         ),
         entry(
           "qcom-init",
-          9L,
+          11L,
           "MPVFLOW_DIAGNOSTIC event=qcom_block_match_init state=pipeline_ready backend=VK_QCOM_image_processing2",
         ),
         entry(
           "qcom-image-created",
-          10L,
+          12L,
           "[vo/gpu-next/libplacebo:verbose] MPVFLOW_DIAGNOSTIC event=qcom_block_match_image state=created name=block_luma_frame0 sharing=EXCLUSIVE",
           level = DebugLogLevel.Verbose,
         ),
         entry(
           "qcom-image-ready",
-          11L,
+          13L,
           "MPVFLOW_DIAGNOSTIC event=qcom_block_match_image state=ready input=1920x1080 setup_cpu_ms=4.2 blocking_resize_only=1",
         ),
         entry(
           "qcom-capabilities",
-          12L,
+          14L,
           "MPVFLOW_DIAGNOSTIC event=qcom_gpu_timing state=supported_pending_query_pool",
         ),
         entry(
           "qcom-timing",
-          13L,
+          15L,
           "[vo/gpu-next/libplacebo:verbose] MPVFLOW_DIAGNOSTIC event=qcom_dispatch_timing gpu_dispatch_avg_us=900",
           level = DebugLogLevel.Verbose,
         ),
@@ -412,6 +424,8 @@ class DebugLogRepositoryTest {
     assertTrue(retained.any { it.id == "wsi-created" })
     assertTrue(retained.any { it.id == "wsi-acquire" })
     assertTrue(retained.any { it.id == "wsi-present-fence" })
+    assertTrue(retained.any { it.id == "wsi-submit" })
+    assertTrue(retained.any { it.id == "wsi-present" })
     assertTrue(retained.any { it.id == "qcom-active" })
     assertTrue(retained.any { it.id == "qcom-capability" })
     assertTrue(retained.any { it.id == "qcom-init" })
@@ -428,6 +442,8 @@ class DebugLogRepositoryTest {
     assertTrue(exportedFlowDiagnostics.contains("event=wsi_swapchain_created created_mode=mailbox actual_images=5"))
     assertTrue(exportedFlowDiagnostics.contains("stage=vkAcquireNextImageKHR"))
     assertTrue(exportedFlowDiagnostics.contains("stage=present_fence_wait"))
+    assertTrue(exportedFlowDiagnostics.contains("stage=vk_cmd_submit_path"))
+    assertTrue(exportedFlowDiagnostics.contains("stage=vkQueuePresentKHR"))
     assertTrue(exportedFlowDiagnostics.contains("event=qcom_block_match_dispatch state=active"))
     assertTrue(exportedFlowDiagnostics.contains("event=qcom_block_match_image state=created"))
     assertTrue(exportedFlowDiagnostics.contains("event=qcom_block_match_image state=ready"))
