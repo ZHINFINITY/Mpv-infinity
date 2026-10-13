@@ -153,10 +153,14 @@ def instrument_libplacebo_swapchain(swapchain_c: str) -> str:
             "atomic_bool flow_diagnostics",
             "VkPresentModeKHR flow_created_present_mode",
             "uint32_t flow_created_image_count",
+            "uint32_t flow_surface_min_image_count, flow_surface_max_image_count",
             "flow_created_info_valid, flow_created_info_reported",
             "flow_report_created_swapchain(p);",
             "create_min_images=%u",
             "actual_images=%u",
+            "surface_min_images=%u surface_max_images=%u",
+            "p->flow_surface_min_image_count = caps.minImageCount;",
+            "p->flow_surface_max_image_count = caps.maxImageCount;",
             "event=wsi_swapchain_created",
             "event=wsi_timing stage=%s avg_ms=%.3f max_ms=%.3f ",
             'FLOW_WSI_ACQUIRE, "vkAcquireNextImageKHR"',
@@ -181,6 +185,7 @@ def instrument_libplacebo_swapchain(swapchain_c: str) -> str:
         "    VkPresentModeKHR flow_created_present_mode;\n"
         "    uint32_t flow_created_min_image_count;\n"
         "    uint32_t flow_created_image_count;\n"
+        "    uint32_t flow_surface_min_image_count, flow_surface_max_image_count;\n"
         "    bool flow_created_info_valid, flow_created_info_reported;\n"
         "    pl_clock_t flow_diag_last_report[3];\n"
         "    uint64_t flow_diag_total_ns[3], flow_diag_max_ns[3], flow_diag_samples[3];\n"
@@ -195,6 +200,15 @@ def instrument_libplacebo_swapchain(swapchain_c: str) -> str:
         "    p->flow_created_info_reported = false;\n"
         "    p->impl = vulkan_swapchain;",
         "swapchain diagnostic initialization",
+    )
+    swapchain_c = replace_once(
+        swapchain_c,
+        "caps_ready:\n    // Check for hidden/invisible window",
+        "caps_ready:\n"
+        "    p->flow_surface_min_image_count = caps.minImageCount;\n"
+        "    p->flow_surface_max_image_count = caps.maxImageCount;\n"
+        "    // Check for hidden/invisible window",
+        "surface image-count capability capture",
     )
     helper = '''/* MPVFLOW_WSI_DIAGNOSTICS */
 enum { FLOW_WSI_ACQUIRE, FLOW_WSI_FENCE_WAIT, FLOW_WSI_PRESENT };
@@ -245,13 +259,14 @@ static void flow_report_created_swapchain(struct priv *p)
         return;
     PL_INFO(p->vk, "MPVFLOW_DIAGNOSTIC event=wsi_swapchain_created requested_mode=%s requested_vk=%d "
             "created_mode=%s created_vk=%d fallback=%d requested_depth=%d create_min_images=%u "
-            "actual_images=%u "
+            "actual_images=%u surface_min_images=%u surface_max_images=%u "
             "source=successful_vkCreateSwapchainKHR_create_info metric=created_config_not_scanout",
             flow_present_mode_name(p->params.present_mode), p->params.present_mode,
             flow_present_mode_name(p->flow_created_present_mode), p->flow_created_present_mode,
             p->params.present_mode != p->flow_created_present_mode,
             p->swapchain_depth, p->flow_created_min_image_count,
-            p->flow_created_image_count);
+            p->flow_created_image_count, p->flow_surface_min_image_count,
+            p->flow_surface_max_image_count);
     p->flow_created_info_reported = true;
 }
 '''

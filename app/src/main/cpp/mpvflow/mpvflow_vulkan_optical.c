@@ -18,7 +18,7 @@
 #ifdef VK_NV_optical_flow
 #define FLOW_OPTICAL_COMMAND_SLOTS 3
 #define FLOW_OPTICAL_GRID VK_OPTICAL_FLOW_GRID_SIZE_8X8_BIT_NV
-#define FLOW_OPTICAL_VECTOR_FORMAT VK_FORMAT_R16G16_S10_5_NV
+#define FLOW_OPTICAL_VECTOR_FORMAT_SFIXED5 VK_FORMAT_R16G16_S10_5_NV
 #define FLOW_OPTICAL_INPUT_FORMAT VK_FORMAT_R8_UNORM
 
 typedef struct FlowOpticalImage {
@@ -45,6 +45,8 @@ struct MPVFlowVulkanOptical {
     PFN_vkDestroyOpticalFlowSessionNV destroy_session;
     PFN_vkBindOpticalFlowSessionImageNV bind_session_image;
     PFN_vkCmdOpticalFlowExecuteNV cmd_execute;
+    VkFormat vector_format;
+    const char *vector_format_name;
     VkQueue queue;
     uint32_t queue_family;
     bool queue_is_managed;
@@ -187,14 +189,14 @@ get_physical_device_image_format_properties2(pl_vulkan vk)
     return get_properties;
 }
 
-static bool format_usage_supported(pl_vulkan vk, VkFormat format,
-                                   VkImageUsageFlags usage,
-                                   VkOpticalFlowUsageFlagsNV optical_usage)
+static VkResult format_usage_result(pl_vulkan vk, VkFormat format,
+                                    VkImageUsageFlags usage,
+                                    VkOpticalFlowUsageFlagsNV optical_usage)
 {
     PFN_vkGetPhysicalDeviceImageFormatProperties2 get_properties =
         get_physical_device_image_format_properties2(vk);
     if (!get_properties)
-        return false;
+        return VK_ERROR_EXTENSION_NOT_PRESENT;
     VkOpticalFlowImageFormatInfoNV flow_info = {
         .sType = VK_STRUCTURE_TYPE_OPTICAL_FLOW_IMAGE_FORMAT_INFO_NV,
         .usage = optical_usage,
@@ -211,7 +213,121 @@ static bool format_usage_supported(pl_vulkan vk, VkFormat format,
     VkImageFormatProperties2 image_properties = {
         .sType = VK_STRUCTURE_TYPE_IMAGE_FORMAT_PROPERTIES_2,
     };
-    return get_properties(vk->phys_device, &image_info, &image_properties) == VK_SUCCESS;
+    return get_properties(vk->phys_device, &image_info, &image_properties);
+}
+
+static bool format_usage_supported(pl_vulkan vk, VkFormat format,
+                                   VkImageUsageFlags usage,
+                                   VkOpticalFlowUsageFlagsNV optical_usage)
+{
+    return format_usage_result(vk, format, usage, optical_usage) == VK_SUCCESS;
+}
+
+static PFN_vkGetPhysicalDeviceFormatProperties2
+get_physical_device_format_properties2(pl_vulkan vk)
+{
+    if (!vk || !vk->get_proc_addr)
+        return NULL;
+    PFN_vkGetPhysicalDeviceFormatProperties2 get_properties =
+        (PFN_vkGetPhysicalDeviceFormatProperties2) vk->get_proc_addr(
+            vk->instance, "vkGetPhysicalDeviceFormatProperties2");
+    if (!get_properties)
+        get_properties = (PFN_vkGetPhysicalDeviceFormatProperties2)
+            vk->get_proc_addr(vk->instance,
+                              "vkGetPhysicalDeviceFormatProperties2KHR");
+    return get_properties;
+}
+
+static bool optical_vector_format_features_supported(pl_vulkan vk,
+                                                       VkFormat format,
+                                                       VkFormatFeatureFlags2 *features_out)
+{
+    if (features_out)
+        *features_out = 0;
+#if (defined(VK_VERSION_1_3) || defined(VK_KHR_format_feature_flags2)) && \
+    defined(VK_FORMAT_FEATURE_2_OPTICAL_FLOW_VECTOR_BIT_NV)
+    PFN_vkGetPhysicalDeviceFormatProperties2 get_properties =
+        get_physical_device_format_properties2(vk);
+    if (!get_properties)
+        return false;
+    VkFormatProperties3 properties3 = {
+        .sType = VK_STRUCTURE_TYPE_FORMAT_PROPERTIES_3,
+    };
+    VkFormatProperties2 properties2 = {
+        .sType = VK_STRUCTURE_TYPE_FORMAT_PROPERTIES_2,
+        .pNext = &properties3,
+    };
+    get_properties(vk->phys_device, format, &properties2);
+    if (features_out)
+        *features_out = properties3.optimalTilingFeatures;
+    const VkFormatFeatureFlags2 required =
+        VK_FORMAT_FEATURE_2_OPTICAL_FLOW_VECTOR_BIT_NV |
+        VK_FORMAT_FEATURE_2_SAMPLED_IMAGE_BIT;
+    return (properties3.optimalTilingFeatures & required) == required;
+#else
+    (void) vk;
+    (void) format;
+    return false;
+#endif
+}
+
+static bool choose_vector_format(MPVFlowVulkanOptical *optical)
+{
+    struct Candidate {
+        VkFormat format;
+        const char *name;
+        const char *libplacebo_name;
+        enum pl_fmt_type type;
+        int components;
+    };
+    static const struct Candidate candidates[] = {
+        { FLOW_OPTICAL_VECTOR_FORMAT_SFIXED5, "R16G16_S10_5_NV",
+          "rg16sfix5", PL_FMT_SINT, 2 },
+    };
+    for (size_t i = 0; i < sizeof(candidates) / sizeof(candidates[0]); i++) {
+        const struct Candidate *candidate = &candidates[i];
+        pl_fmt mapped = pl_find_named_fmt(optical->gpu,
+                                          candidate->libplacebo_name);
+        VkFormatFeatureFlags2 format_features = 0;
+        bool listed = format_present(optical->get_image_formats,
+            optical->vk->phys_device, VK_OPTICAL_FLOW_USAGE_OUTPUT_BIT_NV,
+            candidate->format);
+        bool mapped_sampleable = mapped && mapped->type == candidate->type &&
+            mapped->num_components == candidate->components &&
+            (mapped->caps & PL_FMT_CAP_SAMPLEABLE);
+        bool vector_features = optical_vector_format_features_supported(
+            optical->vk, candidate->format, &format_features);
+        VkResult image_result = format_usage_result(optical->vk,
+            candidate->format, VK_IMAGE_USAGE_SAMPLED_BIT,
+            VK_OPTICAL_FLOW_USAGE_OUTPUT_BIT_NV);
+        bool accepted = listed && mapped_sampleable && vector_features &&
+                        image_result == VK_SUCCESS;
+        optical_log(optical->gpu, accepted ? PL_LOG_INFO : PL_LOG_DEBUG,
+            "MPVFLOW_DIAGNOSTIC event=optical_flow_vector_candidate "
+            "name=%s format=0x%x listed=%d mapped_sampleable=%d "
+            "mapped_type=%d mapped_components=%d mapped_caps=0x%x "
+            "format_features=0x%llx vector_features=%d sampled_usage_result=%d accepted=%d",
+            candidate->name, (unsigned) candidate->format, listed,
+            mapped_sampleable, mapped ? (int) mapped->type : -1,
+            mapped ? mapped->num_components : 0,
+            mapped ? (unsigned) mapped->caps : 0,
+            (unsigned long long) format_features, vector_features,
+            (int) image_result, accepted);
+        if (accepted) {
+            optical->vector_format = candidate->format;
+            optical->vector_format_name = candidate->name;
+            return true;
+        }
+    }
+    if (format_present(optical->get_image_formats, optical->vk->phys_device,
+                       VK_OPTICAL_FLOW_USAGE_OUTPUT_BIT_NV,
+                       VK_FORMAT_R16G16B16A16_SFLOAT)) {
+        optical_log(optical->gpu, PL_LOG_WARN,
+            "MPVFLOW_DIAGNOSTIC event=optical_flow_vector_format state=unsupported "
+            "format=R16G16B16A16_SFLOAT reason=channel_semantics_unverified "
+            "decoder=rg16sfix5_signed_sfixed5");
+    }
+    return false;
 }
 
 static void append_unique_family(uint32_t *families, uint32_t *count,
@@ -446,7 +562,7 @@ static bool create_sessions(MPVFlowVulkanOptical *optical)
         .width = optical->width,
         .height = optical->height,
         .imageFormat = FLOW_OPTICAL_INPUT_FORMAT,
-        .flowVectorFormat = FLOW_OPTICAL_VECTOR_FORMAT,
+        .flowVectorFormat = optical->vector_format,
         .costFormat = VK_FORMAT_UNDEFINED,
         .outputGridSize = FLOW_OPTICAL_GRID,
         .hintGridSize = VK_OPTICAL_FLOW_GRID_SIZE_UNKNOWN_NV,
@@ -611,14 +727,6 @@ MPVFlowVulkanOptical *mpvflow_vulkan_optical_create(pl_gpu gpu,
             snprintf(reason, reason_size, "timeline_semaphore_feature_not_enabled");
         return NULL;
     }
-    pl_fmt vector_fmt = pl_find_named_fmt(gpu, "rg16sfix5");
-    if (!vector_fmt || vector_fmt->type != PL_FMT_SINT ||
-        vector_fmt->num_components != 2 ||
-        !(vector_fmt->caps & PL_FMT_CAP_SAMPLEABLE)) {
-        if (reason && reason_size)
-            snprintf(reason, reason_size, "sampleable_sfixed5_format_mapping_unavailable");
-        return NULL;
-    }
     MPVFlowVulkanOptical *optical = calloc(1, sizeof(*optical));
     if (!optical) {
         if (reason && reason_size)
@@ -633,10 +741,16 @@ MPVFlowVulkanOptical *mpvflow_vulkan_optical_create(pl_gpu gpu,
         free(optical);
         return NULL;
     }
+    if (!choose_vector_format(optical)) {
+        if (reason && reason_size)
+            snprintf(reason, reason_size, "no_documented_sampleable_vector_format");
+        free(optical);
+        return NULL;
+    }
     if (!format_present(optical->get_image_formats, vk->phys_device,
                         VK_OPTICAL_FLOW_USAGE_INPUT_BIT_NV, FLOW_OPTICAL_INPUT_FORMAT) ||
         !format_present(optical->get_image_formats, vk->phys_device,
-                        VK_OPTICAL_FLOW_USAGE_OUTPUT_BIT_NV, FLOW_OPTICAL_VECTOR_FORMAT)) {
+                        VK_OPTICAL_FLOW_USAGE_OUTPUT_BIT_NV, optical->vector_format)) {
         if (reason && reason_size)
             snprintf(reason, reason_size, "required_optical_flow_image_format_missing");
         free(optical);
@@ -657,9 +771,10 @@ MPVFlowVulkanOptical *mpvflow_vulkan_optical_create(pl_gpu gpu,
     optical_log(gpu, PL_LOG_INFO,
                 "MPVFLOW_DIAGNOSTIC event=optical_flow_backend state=ready "
                 "api=VK_NV_optical_flow queue_family=%u queue_is_libplacebo_managed=%d "
-                "vector_format=R16G16_SFIXED5_NV vector_format_sampleable=1 "
+                "vector_format=%s vector_format_sampleable=1 "
                 "timeline_semaphore=1 cpu_readback=no",
-                optical->queue_family, optical->queue_is_managed);
+                optical->queue_family, optical->queue_is_managed,
+                optical->vector_format_name);
     return optical;
 #else
     (void) gpu;
@@ -725,7 +840,7 @@ bool mpvflow_vulkan_optical_ensure(MPVFlowVulkanOptical *optical,
     const VkImageUsageFlags vector_usage = VK_IMAGE_USAGE_SAMPLED_BIT;
     if (!format_usage_supported(optical->vk, FLOW_OPTICAL_INPUT_FORMAT, input_usage,
                                 VK_OPTICAL_FLOW_USAGE_INPUT_BIT_NV) ||
-        !format_usage_supported(optical->vk, FLOW_OPTICAL_VECTOR_FORMAT, vector_usage,
+        !format_usage_supported(optical->vk, optical->vector_format, vector_usage,
                                 VK_OPTICAL_FLOW_USAGE_OUTPUT_BIT_NV)) {
         optical->rejected_width = target_width;
         optical->rejected_height = target_height;
@@ -749,10 +864,10 @@ bool mpvflow_vulkan_optical_ensure(MPVFlowVulkanOptical *optical,
                       FLOW_OPTICAL_INPUT_FORMAT, input_usage,
                       VK_OPTICAL_FLOW_USAGE_INPUT_BIT_NV) ||
         !create_image(optical, &optical->vectors[0], vector_width, vector_height,
-                      FLOW_OPTICAL_VECTOR_FORMAT, vector_usage,
+                      optical->vector_format, vector_usage,
                       VK_OPTICAL_FLOW_USAGE_OUTPUT_BIT_NV) ||
         !create_image(optical, &optical->vectors[1], vector_width, vector_height,
-                      FLOW_OPTICAL_VECTOR_FORMAT, vector_usage,
+                      optical->vector_format, vector_usage,
                       VK_OPTICAL_FLOW_USAGE_OUTPUT_BIT_NV) ||
         !create_sessions(optical)) {
         optical_log(optical->gpu, PL_LOG_WARN,
@@ -769,9 +884,10 @@ bool mpvflow_vulkan_optical_ensure(MPVFlowVulkanOptical *optical,
     optical_log(optical->gpu, PL_LOG_INFO,
                 "MPVFLOW_DIAGNOSTIC event=optical_flow_session state=ready "
                 "width=%u height=%u vector_grid=%ux%u directions=2 "
-                "performance=medium luma_format=R8_UNORM vector_format=R16G16_SFIXED5_NV "
+                "performance=medium luma_format=R8_UNORM vector_format=%s "
                 "output_grid=8x8 cpu_readback=no",
-                target_width, target_height, vector_width, vector_height);
+                target_width, target_height, vector_width, vector_height,
+                optical->vector_format_name);
     return true;
 #else
     (void) optical;

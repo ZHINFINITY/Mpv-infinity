@@ -112,6 +112,8 @@ require(PATCH, "event=producer state=pre_acquire", "MPV must report the producer
 require(PATCH, "swap_buffers_call_avg_ms=%.3f", "MPV Flow cadence must include the swap_buffers call duration")
 require(PATCH, "swap_buffers_call_max_ms=%.3f", "MPV Flow cadence must include the maximum swap_buffers call duration")
 require(PATCH, "swap_buffers_call_samples=%llu", "MPV Flow cadence must identify the swap_buffers timing sample count")
+require(MPV_VIEW, 'PlaybackSession.setOptionString("swapchain-depth", "2")', "MPV Flow should request triple buffering instead of five minimum swapchain images")
+require(MPV_VIEW, 'MpvConfigOverridePolicy.isOwnedByMpvConf("swapchain-depth")', "the Flow depth tuning must preserve explicit mpv.conf ownership")
 require((ROOT / "app/src/main/cpp/third_party/libplacebo/include/libplacebo/vulkan.h").read_text(encoding="utf-8"), "pl_vulkan_swapchain_set_diagnostics", "the vendored libplacebo API must match the pinned native library")
 require(PATCH, "flow_update_context(vo);", "renderer initialization must be retried from the frame path when options were processed before GPU availability")
 assert PATCH.count("flow_update_context(vo);") >= 3, "initialization must be checked during map, render, and renderer-option updates"

@@ -380,10 +380,11 @@ class MPVView(
       }
     val flowSwapModeApplyResult =
       flowSwapMode?.let { PlaybackSession.setOptionString("vulkan-swap-mode", it) }
+    // libplacebo requests swapchain_depth + 1 images; depth 2 asks for triple buffering.
     val flowSwapchainDepthResult =
       if (mpvFlowFrameInterpolationEnabled && backend.gpuApi == "vulkan" &&
         !MpvConfigOverridePolicy.isOwnedByMpvConf("swapchain-depth")) {
-        PlaybackSession.setOptionString("swapchain-depth", "4")
+        PlaybackSession.setOptionString("swapchain-depth", "2")
       } else null
     if (mpvFlowFrameInterpolationEnabled && backend.gpuApi == "vulkan") {
       val presentModeState =

@@ -229,6 +229,13 @@ static bool map_color_space(VkColorSpaceKHR space, struct pl_color_space *out)
 {
     return true;
 }
+static bool update_swapchain_info(struct priv *p)
+{
+    VkSurfaceCapabilitiesKHR caps = {0};
+caps_ready:
+    // Check for hidden/invisible window
+    return true;
+}
 static void init_priv(struct priv *p)
 {
     pl_mutex_init(&p->lock);
@@ -272,6 +279,10 @@ for marker in (
     "flow_report_created_swapchain(p);",
     "create_min_images=%u",
     "actual_images=%u",
+    "uint32_t flow_surface_min_image_count, flow_surface_max_image_count",
+    "surface_min_images=%u surface_max_images=%u",
+    "p->flow_surface_min_image_count = caps.minImageCount;",
+    "p->flow_surface_max_image_count = caps.maxImageCount;",
     "event=wsi_swapchain_created",
     'FLOW_WSI_ACQUIRE, "vkAcquireNextImageKHR"',
     'FLOW_WSI_FENCE_WAIT, "present_fence_wait"',
@@ -286,6 +297,9 @@ assert patched_wsi_source.index("p->flow_created_present_mode = sinfo.presentMod
 assert patched_wsi_source.index("p->flow_created_image_count = num_images;") < patched_wsi_source.index(
     "flow_report_created_swapchain(p);"
 ), "actual image count must be stored before the created swapchain is reported"
+assert patched_wsi_source.index("p->flow_surface_min_image_count = caps.minImageCount;") < patched_wsi_source.index(
+    "// Check for hidden/invisible window"
+), "surface image-count limits must be captured at the shared caps_ready path"
 diagnostic_setter = patched_wsi_source.split(
     "bool pl_vulkan_swapchain_set_diagnostics(pl_swapchain sw, bool enabled)", 1
 )[1]
