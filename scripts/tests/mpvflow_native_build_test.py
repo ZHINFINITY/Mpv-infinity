@@ -442,7 +442,7 @@ assert "vkGetPhysicalDeviceProperties2(optical->vk->phys_device" not in optical_
 assert "vkGetPhysicalDeviceImageFormatProperties2(" not in optical_adapter
 vo_patch = VO_PATCH.read_text(encoding="utf-8")
 for marker in (
-    "event=swapchain_wait stage=acquire",
+    "event=swapchain_wait stage=pl_swapchain_start_frame",
     "event=swapchain_wait stage=swap_buffers",
     "metric=cpu_blocking_call_not_scanout",
     "submit_call_avg_ms=%.3f",

@@ -7,6 +7,7 @@ import re
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 PATCH = (ROOT / "app/src/main/cpp/mpvflow/mpvflow-vo-gpu-next.patch").read_text(encoding="utf-8")
+PREPARE = (ROOT / "scripts/prepare-mpvflow.py").read_text(encoding="utf-8")
 MPV_VIEW = (ROOT / "app/src/main/java/app/infinity/mpvz/ui/player/MPVView.kt").read_text(encoding="utf-8")
 LOG_REPOSITORY = (ROOT / "app/src/main/java/app/infinity/mpvz/presentation/crash/DebugLogRepository.kt").read_text(encoding="utf-8")
 DEBUG_LOGS_SCREEN = (ROOT / "app/src/main/java/app/infinity/mpvz/presentation/crash/DebugLogsScreen.kt").read_text(encoding="utf-8")
@@ -80,7 +81,8 @@ require(PATCH, "waiting_for_temporal_pair", "MPV Flow must distinguish an incomp
 require(PATCH, "event=runtime_cadence", "MPV Flow must report sustained swap-submit and synthesis cadence")
 for marker in (
     "render_callback_fps=%.2f", "render_cpu_avg_ms=%.3f", "callback_interval_avg_ms=%.3f",
-    "acquire_call_avg_ms=%.3f", "acquire_call_max_ms=%.3f", "acquire_call_samples=%llu",
+    "pl_swapchain_start_frame_avg_ms=%.3f", "pl_swapchain_start_frame_max_ms=%.3f",
+    "pl_swapchain_start_frame_samples=%llu",
     "vsync_slots=%llu", "swap_attempts=%llu", "swap_failures=%llu",
     "pair_analysis_attempts=%llu", "pair_analysis_failures=%llu", "pair_cache_reuses=%llu",
 ):
@@ -94,7 +96,13 @@ require(PATCH, "MPVFLOW_GPU_MOTION_GRID_STEP", "MPV grid telemetry must use the 
 require(PATCH, "source_sync_pct=%.1f", "MPV Flow must quantify display-synchronized source batches")
 require(PATCH, "empty_batch_redraws=%llu", "MPV Flow cadence must separate empty redraw callbacks from unsynchronized source batches")
 require(PATCH, "submit_call_avg_ms=%.3f", "MPV Flow must label the nonblocking submit-call duration accurately")
-require(PATCH, "event=swapchain_wait stage=acquire", "MPV Flow must report slow swapchain image acquisition")
+require(PATCH, "event=swapchain_wait stage=pl_swapchain_start_frame", "MPV Flow must name the aggregate swapchain start-frame interval accurately")
+for marker in (
+    'FLOW_WSI_ACQUIRE, "vkAcquireNextImageKHR"',
+    'FLOW_WSI_FENCE_WAIT, "present_fence_wait"',
+    'FLOW_WSI_PRESENT, "vkQueuePresentKHR"',
+):
+    require(PREPARE, marker, f"libplacebo must separately time the WSI stage {marker!r}")
 require(PATCH, "event=swapchain_wait stage=swap_buffers", "MPV Flow must report slow blocking swap/present calls")
 require(PATCH, "metric=cpu_blocking_call_not_scanout", "swapchain waits must not be misrepresented as confirmed scanout")
 require(PATCH, "pl_vulkan_swapchain_set_diagnostics", "lower-level Vulkan WSI measurements must be enabled only by the MPV Flow path")

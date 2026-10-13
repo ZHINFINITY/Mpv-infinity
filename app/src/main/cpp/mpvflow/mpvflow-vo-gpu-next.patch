@@ -870,7 +870,7 @@ index bd3d1aa..0072486 100644
 +        if (wait_ns >= 2000000 &&
 +            (!last_report_ns || now_ns - last_report_ns >= 1000000000LL)) {
 +            last_report_ns = now_ns;
-+            MP_INFO(vo, "MPVFLOW_DIAGNOSTIC event=swapchain_wait stage=acquire "
++            MP_INFO(vo, "MPVFLOW_DIAGNOSTIC event=swapchain_wait stage=pl_swapchain_start_frame "
 +                    "wait_ms=%.3f threshold_ms=2.0 target_fps=%d "
 +                    "metric=cpu_blocking_call_not_scanout\n",
 +                    wait_ns / 1000000.0, p->next_opts->mpvflow_target_fps);
@@ -1009,7 +1009,7 @@ index bd3d1aa..0072486 100644
 +            const double callback_interval_avg_ms = p->flow_cadence_callback_interval_samples
 +                ? (double) p->flow_cadence_callback_interval_total_ns /
 +                  p->flow_cadence_callback_interval_samples / 1000000.0 : 0.0;
-+            const double acquire_call_avg_ms = p->flow_cadence_acquire_call_samples
++            const double pl_swapchain_start_frame_avg_ms = p->flow_cadence_acquire_call_samples
 +                ? (double) p->flow_cadence_acquire_call_total_ns /
 +                  p->flow_cadence_acquire_call_samples / 1000000.0 : 0.0;
 +            const double swap_buffers_call_avg_ms = p->flow_cadence_swap_buffers_samples
@@ -1024,7 +1024,7 @@ index bd3d1aa..0072486 100644
 +                    "mix_pair_callbacks=%llu synthesized_render_callbacks=%llu vsync_slots=%llu "
 +                    "render_cpu_avg_ms=%.3f render_cpu_max_ms=%.3f render_cpu_samples=%llu "
 +                    "callback_interval_avg_ms=%.3f callback_interval_max_ms=%.3f callback_interval_samples=%llu "
-+                    "acquire_call_avg_ms=%.3f acquire_call_max_ms=%.3f acquire_call_samples=%llu "
++                    "pl_swapchain_start_frame_avg_ms=%.3f pl_swapchain_start_frame_max_ms=%.3f pl_swapchain_start_frame_samples=%llu "
 +                    "swap_submit_fps=%.2f synthesized_submit_fps=%.2f successful_submits=%llu "
 +                    "swap_attempts=%llu swap_failures=%llu pair_analysis_attempts=%llu "
 +                    "pair_analysis_failures=%llu pair_cache_reuses=%llu synthesized_submits=%llu "
@@ -1044,7 +1044,7 @@ index bd3d1aa..0072486 100644
 +                    callback_interval_avg_ms,
 +                    p->flow_cadence_callback_interval_max_ns / 1000000.0,
 +                    (unsigned long long) p->flow_cadence_callback_interval_samples,
-+                    acquire_call_avg_ms,
++                    pl_swapchain_start_frame_avg_ms,
 +                    p->flow_cadence_acquire_call_max_ns / 1000000.0,
 +                    (unsigned long long) p->flow_cadence_acquire_call_samples,
 +                    submit_fps, synth_fps,
