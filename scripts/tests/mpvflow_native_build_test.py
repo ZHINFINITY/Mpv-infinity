@@ -224,6 +224,10 @@ bool pl_vulkan_swapchain_suboptimal(pl_swapchain sw)
 patched_wsi_source = prepare.instrument_libplacebo_swapchain(wsi_source)
 for marker in (
     "atomic_bool flow_diagnostics",
+    "VkPresentModeKHR flow_created_present_mode",
+    "flow_created_info_valid, flow_created_info_reported",
+    "flow_report_created_swapchain(p);",
+    "create_min_images=%u",
     "event=wsi_swapchain_created",
     'FLOW_WSI_ACQUIRE, "vkAcquireNextImageKHR"',
     'FLOW_WSI_FENCE_WAIT, "present_fence_wait"',
@@ -231,6 +235,15 @@ for marker in (
     "bool pl_vulkan_swapchain_set_diagnostics(pl_swapchain sw, bool enabled)",
 ):
     assert marker in patched_wsi_source, f"libplacebo WSI diagnostic instrumentation is missing {marker!r}"
+assert patched_wsi_source.index("p->flow_created_present_mode = sinfo.presentMode;") < patched_wsi_source.index(
+    "flow_report_created_swapchain(p);"
+), "the created swapchain mode must be stored before it is reported"
+diagnostic_setter = patched_wsi_source.split(
+    "bool pl_vulkan_swapchain_set_diagnostics(pl_swapchain sw, bool enabled)", 1
+)[1]
+assert "if (enabled)\n        flow_report_created_swapchain(p);" in diagnostic_setter, (
+    "enabling diagnostics after creation must report the effective swapchain mode"
+)
 assert prepare.instrument_libplacebo_swapchain(patched_wsi_source) == patched_wsi_source
 assert patched_wsi_source.count("UINT64_MAX") == wsi_source.count("UINT64_MAX"), (
     "WSI instrumentation must preserve the existing infinite acquire and fence-wait timeouts"
@@ -431,6 +444,11 @@ timing_candidate = init_options.split("val mpvFlowFrameInterpolationCandidate ="
 )[0]
 assert "!frameInterpolationConfigOwned" in timing_candidate, (
     "MPV Flow timing must not override interpolation or sync options owned by mpv.conf"
+)
+output_rate_position = init_options.index("interpolationOutputFrameRate =")
+surface_hint_position = init_options.index("updateSurfaceFrameRateHint()", output_rate_position)
+assert output_rate_position < surface_hint_position, (
+    "MPV Flow must reapply its output-rate hint after selecting the active interpolation target"
 )
 for marker in (
     'PlaybackSession.setOptionString("display-fps-override", displayRefreshRate.hz.toString())',

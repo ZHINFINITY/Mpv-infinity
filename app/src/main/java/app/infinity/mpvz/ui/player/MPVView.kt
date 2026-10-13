@@ -357,6 +357,8 @@ class MPVView(
         mpvFlowFrameInterpolationEnabled -> mpvFlowTargetFps.toDouble()
         else -> null
       }
+    // A new file can publish its source FPS after Surface callbacks; reassert the active FRC output rate.
+    updateSurfaceFrameRateHint()
     // These options are consumed while the VO creates its libplacebo context.
     // Apply them before `vo`; otherwise gpu-next can keep its default OpenGL GPU.
     val gpuApiApplyResult = PlaybackSession.setOptionString("gpu-api", backend.gpuApi)

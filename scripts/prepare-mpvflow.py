@@ -138,6 +138,10 @@ def instrument_libplacebo_swapchain(swapchain_c: str) -> str:
     if marker in swapchain_c:
         required = (
             "atomic_bool flow_diagnostics",
+            "VkPresentModeKHR flow_created_present_mode",
+            "flow_created_info_valid, flow_created_info_reported",
+            "flow_report_created_swapchain(p);",
+            "create_min_images=%u",
             "event=wsi_swapchain_created",
             "event=wsi_timing stage=%s avg_ms=%.3f max_ms=%.3f ",
             'FLOW_WSI_ACQUIRE, "vkAcquireNextImageKHR"',
@@ -158,6 +162,9 @@ def instrument_libplacebo_swapchain(swapchain_c: str) -> str:
         swapchain_c,
         "    bool has_swapchain_maintenance1;\n    struct pl_color_repr color_repr;",
         "    bool has_swapchain_maintenance1;\n    atomic_bool flow_diagnostics;\n"
+        "    VkPresentModeKHR flow_created_present_mode;\n"
+        "    uint32_t flow_created_min_image_count;\n"
+        "    bool flow_created_info_valid, flow_created_info_reported;\n"
         "    pl_clock_t flow_diag_last_report[3];\n"
         "    uint64_t flow_diag_total_ns[3], flow_diag_max_ns[3], flow_diag_samples[3];\n"
         "    VkResult flow_diag_last_result[3];\n    struct pl_color_repr color_repr;",
@@ -167,6 +174,8 @@ def instrument_libplacebo_swapchain(swapchain_c: str) -> str:
         swapchain_c,
         "    pl_mutex_init(&p->lock);\n    p->impl = vulkan_swapchain;",
         "    pl_mutex_init(&p->lock);\n    atomic_init(&p->flow_diagnostics, false);\n"
+        "    p->flow_created_info_valid = false;\n"
+        "    p->flow_created_info_reported = false;\n"
         "    p->impl = vulkan_swapchain;",
         "swapchain diagnostic initialization",
     )
@@ -212,6 +221,20 @@ static void flow_report_wsi_call(struct priv *p, unsigned int stage,
     p->flow_diag_max_ns[stage] = 0;
     p->flow_diag_samples[stage] = 0;
 }
+static void flow_report_created_swapchain(struct priv *p)
+{
+    if (!atomic_load_explicit(&p->flow_diagnostics, memory_order_relaxed) ||
+        !p->flow_created_info_valid || p->flow_created_info_reported)
+        return;
+    PL_INFO(p->vk, "MPVFLOW_DIAGNOSTIC event=wsi_swapchain_created requested_mode=%s requested_vk=%d "
+            "created_mode=%s created_vk=%d fallback=%d requested_depth=%d create_min_images=%u "
+            "source=successful_vkCreateSwapchainKHR_create_info metric=created_config_not_scanout",
+            flow_present_mode_name(p->params.present_mode), p->params.present_mode,
+            flow_present_mode_name(p->flow_created_present_mode), p->flow_created_present_mode,
+            p->params.present_mode != p->flow_created_present_mode,
+            p->swapchain_depth, p->flow_created_min_image_count);
+    p->flow_created_info_reported = true;
+}
 '''
     swapchain_c = replace_once(
         swapchain_c,
@@ -223,14 +246,11 @@ static void flow_report_wsi_call(struct priv *p, unsigned int stage,
         swapchain_c,
         '    PL_VK_ASSERT(res, "vk->CreateSwapchainKHR(...)");\n\n    // Get the new swapchain images',
         '    PL_VK_ASSERT(res, "vk->CreateSwapchainKHR(...)");\n\n'
-        '    if (atomic_load_explicit(&p->flow_diagnostics, memory_order_relaxed)) {\n'
-        '        PL_INFO(vk, "MPVFLOW_DIAGNOSTIC event=wsi_swapchain_created requested_mode=%s requested_vk=%d "\n'
-        '                "created_mode=%s created_vk=%d fallback=%d "\n'
-        '                "source=successful_vkCreateSwapchainKHR_create_info metric=created_config_not_scanout",\n'
-        '                flow_present_mode_name(p->params.present_mode), p->params.present_mode,\n'
-        '                flow_present_mode_name(sinfo.presentMode), sinfo.presentMode,\n'
-        '                p->params.present_mode != sinfo.presentMode);\n'
-        '    }\n'
+        '    p->flow_created_present_mode = sinfo.presentMode;\n'
+        '    p->flow_created_min_image_count = sinfo.minImageCount;\n'
+        '    p->flow_created_info_valid = true;\n'
+        '    p->flow_created_info_reported = false;\n'
+        '    flow_report_created_swapchain(p);\n'
         '    // Get the new swapchain images',
         "created WSI present-mode report",
     )
@@ -280,6 +300,7 @@ static void flow_report_wsi_call(struct priv *p, unsigned int stage,
         "    if (!sw)\n        return false;\n"
         "    struct priv *p = PL_PRIV(sw);\n"
         "    atomic_store_explicit(&p->flow_diagnostics, enabled, memory_order_relaxed);\n"
+        "    if (enabled)\n        flow_report_created_swapchain(p);\n"
         "    return true;\n}\n",
         "diagnostic toggle API",
     )
