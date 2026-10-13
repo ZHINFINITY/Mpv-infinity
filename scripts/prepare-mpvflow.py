@@ -342,6 +342,7 @@ def main() -> None:
         VENDOR / "mpvflow_opencl_vk_bridge.h",
         VO_PATCH,
         AIMAGE_VULKAN_PATCH,
+        VENDOR / "mpvflow_opencl_validation.h",
         *(MEDIACODEC_VULKAN_DIR / filename for filename in MEDIACODEC_VULKAN_FILES),
     )
     for path in required:
@@ -354,6 +355,7 @@ def main() -> None:
     for filename in (
         "mpvflow_opencl.c",
         "mpvflow_opencl.h",
+        "mpvflow_opencl_validation.h",
         "mpvflow_opencl_vk_bridge.c",
         "mpvflow_opencl_vk_bridge.h",
     ):

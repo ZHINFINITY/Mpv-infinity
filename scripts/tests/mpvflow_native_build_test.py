@@ -235,6 +235,9 @@ assert '"--input", str(required[2])' not in prepare_source, (
 )
 assert 'AIMAGE_VULKAN_PATCH = VENDOR / "mpvflow-aimagereader-vulkan.patch"' in prepare_source
 assert '"--input", str(AIMAGE_VULKAN_PATCH)' in prepare_source
+assert prepare_source.count('"mpvflow_opencl_validation.h"') == 2, (
+    "MPV native preparation must validate and copy the OpenCL synthesis validation header"
+)
 assert VULKAN_MAPPER_PATCH.is_file(), "the pinned MPV mapper compatibility patch must be vendored"
 for source in (
     "hwdec_aimagereader.c",
