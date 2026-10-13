@@ -426,6 +426,7 @@ private fun DebugLogEntry.flowQcomCreatedImageName(): String? {
 
 private fun DebugLogEntry.isFlowStartupRecord(): Boolean =
   message.contains("event=config", ignoreCase = true) ||
+    message.contains("event=logger_config", ignoreCase = true) ||
     message.contains("event=renderer_config", ignoreCase = true) ||
     message.contains("event=renderer_init", ignoreCase = true) ||
     message.contains("event=compute_capabilities", ignoreCase = true) ||

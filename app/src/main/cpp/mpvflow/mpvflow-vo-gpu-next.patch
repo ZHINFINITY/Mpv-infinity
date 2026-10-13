@@ -780,7 +780,7 @@ index bd3d1aa..0072486 100644
 +        .bypass_reason = p->flow_gpu ? "no_temporal_pair" : "gpu_context_unavailable",
 +        .bypass_status = MPVFLOW_GPU_OK,
 +    };
-@@ -1572,1 +2315,110 @@ static bool draw_frame(struct vo *vo, struct vo_frame *frame)
+@@ -1572,1 +2315,113 @@ static bool draw_frame(struct vo *vo, struct vo_frame *frame)
 -    if (!should_draw || !pl_swapchain_start_frame(p->sw, &swframe)) {
 +    if (p->next_opts->mpvflow && gpu && should_draw && frame->current) {
 +        // Create and map the timestamped frame mix before a potentially blocking WSI acquire.
@@ -831,21 +831,21 @@ index bd3d1aa..0072486 100644
 +        const bool flow_wsi_requested = p->next_opts->mpvflow;
 +        const bool flow_wsi_set =
 +            pl_vulkan_swapchain_set_diagnostics(p->sw, flow_wsi_requested);
++        const int flow_parent_msg_level = mp_msg_level(vo->log);
 +        if (flow_wsi_set) {
 +            p->flow_swapchain_diagnostics_enabled = flow_wsi_requested;
 +            if (flow_wsi_requested)
 +                p->flow_wsi_created_logged = false;
 +        }
 +        MP_INFO(vo, "MPVFLOW_DIAGNOSTIC event=wsi_diagnostics_toggle engine=mpv "
-+                "requested=%d applied=%d setter_result=%d\n",
++                "requested=%d applied=%d setter_result=%d diagnostics_gate_enabled=%d "
++                "logger_policy=all=info,vo/gpu-next=v parent_msg_level=%d "
++                "libplacebo_info_enabled=%d first_runtime_wsi_sample=next_start_frame\n",
 +                flow_wsi_requested, p->flow_swapchain_diagnostics_enabled,
-+                flow_wsi_set);
++                flow_wsi_set, p->flow_swapchain_diagnostics_enabled,
++                flow_parent_msg_level, flow_parent_msg_level >= MSGL_V);
 +    }
-+    const int64_t flow_acquire_start_ns = p->next_opts->mpvflow ? mp_time_ns() : 0;
-+    const bool swapchain_frame_started =
-+        should_draw && pl_swapchain_start_frame(p->sw, &swframe);
-+    if (swapchain_frame_started && p->next_opts->mpvflow &&
-+        !p->flow_wsi_created_logged) {
++    if (p->next_opts->mpvflow && !p->flow_wsi_created_logged) {
 +        int requested_mode = VK_PRESENT_MODE_FIFO_KHR;
 +        int created_mode = VK_PRESENT_MODE_FIFO_KHR;
 +        int requested_depth = 0;
@@ -873,6 +873,9 @@ index bd3d1aa..0072486 100644
 +            p->flow_wsi_created_logged = true;
 +        }
 +    }
++    const int64_t flow_acquire_start_ns = p->next_opts->mpvflow ? mp_time_ns() : 0;
++    const bool swapchain_frame_started =
++        should_draw && pl_swapchain_start_frame(p->sw, &swframe);
 +    if (flow_acquire_start_ns > 0 && should_draw) {
 +        const int64_t now_ns = mp_time_ns();
 +        const uint64_t wait_ns = now_ns > flow_acquire_start_ns

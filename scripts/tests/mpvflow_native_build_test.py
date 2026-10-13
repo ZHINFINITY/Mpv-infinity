@@ -9,6 +9,31 @@ import subprocess
 import sys
 import tempfile
 
+
+def mpv_module_level(module: str, option: str) -> str:
+    """Model MPV's ordered all/exact-or-parent-prefix msg-level rules."""
+    level = "status"
+    for rule in option.split(","):
+        selector, value = rule.split("=", 1)
+        if selector == "all" or module == selector or module.startswith(selector + "/"):
+            level = value
+    return level
+
+
+def modeled_mppl_log_create_threshold(parent_module: str, option: str) -> str:
+    """Model pinned mppl_log_create: cutoff from parent `log`, callback on child."""
+    # Pinned MPV video/out/placebo/utils.c uses
+    # `.log_level = determine_pl_log_level(log)` and
+    # `.log_priv = mp_log_new(tactx, log, "libplacebo")`.
+    parent_mpv_level = mpv_module_level(parent_module, option)
+    return {"info": "warn", "v": "info", "debug": "debug", "trace": "trace"}[parent_mpv_level]
+
+
+def pl_log_emits(message_level: str, threshold: str) -> bool:
+    verbosity = ["fatal", "err", "warn", "info", "debug", "trace"]
+    return verbosity.index(message_level) <= verbosity.index(threshold)
+
+
 ROOT = Path(__file__).resolve().parents[2]
 PREPARE = ROOT / "scripts/prepare-mpvflow.py"
 BUILD = ROOT / "scripts/build-mpvflow-mpv-runtime.sh"
@@ -418,8 +443,41 @@ qcom_source = (ROOT / "app/src/main/cpp/mpvflow/mpvflow_vulkan_qcom.c").read_tex
 assert "MpvFlowLogConfig.messageLevelOption(" in mpv_view_source
 assert 'PlaybackSession.setOptionString("msg-level", logLevel)' in mpv_view_source
 assert "requested_msg_level=$logLevel" in mpv_view_source
-assert 'const val FLOW_VERBOSE_DIAGNOSTICS = "all=info,vo/gpu-next/libplacebo=v"' in flow_log_config_source
+assert 'const val FLOW_VERBOSE_DIAGNOSTICS = "all=info,vo/gpu-next=v"' in flow_log_config_source
 assert "mpvFlowEnabled -> FLOW_VERBOSE_DIAGNOSTICS" in flow_log_config_source
+child_only_policy = "all=info,vo/gpu-next/libplacebo=v"
+parent_policy = "all=info,vo/gpu-next=v"
+assert mpv_module_level("vo/gpu-next", child_only_policy) == "info"
+assert modeled_mppl_log_create_threshold("vo/gpu-next", child_only_policy) == "warn"
+assert not pl_log_emits("info", modeled_mppl_log_create_threshold("vo/gpu-next", child_only_policy)), (
+    "the previous child-only override leaves mppl_log_create's parent-derived PL_INFO filtered"
+)
+assert mpv_module_level("vo/gpu-next", parent_policy) == "v"
+assert mpv_module_level("vo/gpu-next/libplacebo", parent_policy) == "v"
+parent_threshold = modeled_mppl_log_create_threshold("vo/gpu-next", parent_policy)
+assert parent_threshold == "info" and pl_log_emits("info", parent_threshold), (
+    "the parent gpu-next override must make pinned mppl_log_create pass WSI PL_INFO records"
+)
+logger_option_call = 'PlaybackSession.setOptionString("msg-level", logLevel)'
+vo_option_call = "PlaybackSession.setVideoOutput(backend.vo)"
+assert mpv_view_source.index(logger_option_call) < mpv_view_source.index(vo_option_call), (
+    "Flow must apply the parent logger threshold before the gpu-next VO/libplacebo logger is created"
+)
+assert "event=logger_config" in mpv_view_source and "msg_level_apply_rc=" in mpv_view_source
+flow_vo_patch_source = VO_PATCH.read_text(encoding="utf-8")
+assert "logger_policy=all=info,vo/gpu-next=v" in flow_vo_patch_source
+assert "parent_msg_level=%d" in flow_vo_patch_source
+assert "libplacebo_info_enabled=%d" in flow_vo_patch_source
+assert "diagnostics_gate_enabled=%d" in flow_vo_patch_source
+assert "first_runtime_wsi_sample=next_start_frame" in flow_vo_patch_source
+toggle_offset = flow_vo_patch_source.index("event=wsi_diagnostics_toggle engine=mpv")
+created_offset = flow_vo_patch_source.index("event=wsi_swapchain_created engine=mpv")
+first_start_frame_offset = flow_vo_patch_source.index(
+    "+        should_draw && pl_swapchain_start_frame(p->sw, &swframe);"
+)
+assert toggle_offset < created_offset < first_start_frame_offset, (
+    "the enabled gate and effective created swapchain mode/image count must be reported before the first runtime WSI call"
+)
 assert "if (qcom->dispatches == 1 || qcom->dispatches % 120 == 0)" in qcom_source
 assert "if (qcom->dispatches % 120 == 0)" in qcom_source, (
     "QCOM timing reports must remain periodic, not add per-dispatch log overhead"

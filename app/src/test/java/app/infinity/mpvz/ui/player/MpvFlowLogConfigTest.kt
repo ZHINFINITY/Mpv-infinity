@@ -9,9 +9,9 @@ import org.junit.Test
 
 class MpvFlowLogConfigTest {
   @Test
-  fun mpvFlowKeepsInfoGloballyAndEnablesOnlyLibplaceboVerboseDiagnostics() {
+  fun mpvFlowKeepsInfoGloballyAndEnablesParentGpuNextVerbosityForLibplacebo() {
     assertEquals(
-      "all=info,vo/gpu-next/libplacebo=v",
+      "all=info,vo/gpu-next=v",
       MpvFlowLogConfig.messageLevelOption(
         mpvFlowEnabled = true,
         frameInterpolationEnabled = true,

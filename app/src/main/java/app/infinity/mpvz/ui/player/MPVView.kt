@@ -362,6 +362,21 @@ class MPVView(
     PlaybackSession.setSurfaceFrameRateHintHz(interpolationOutputFrameRate)
     // A new file can publish its source FPS after Surface callbacks; reassert the active FRC output rate.
     updateSurfaceFrameRateHint()
+    val logLevel =
+      MpvFlowLogConfig.messageLevelOption(
+        mpvFlowEnabled = mpvFlowFrameInterpolationEnabled,
+        frameInterpolationEnabled = frameInterpolationEnabled,
+        verboseLogging = advancedPreferences.verboseLogging.get(),
+      )
+    val flowLogLevelApplyResult =
+      if (mpvFlowFrameInterpolationEnabled) PlaybackSession.setOptionString("msg-level", logLevel) else null
+    if (mpvFlowFrameInterpolationEnabled) {
+      Log.i(
+        TAG,
+        "MPVFLOW_DIAGNOSTIC event=logger_config state=${if (flowLogLevelApplyResult == 0) "applied" else "failed"} " +
+          "logger_policy=$logLevel parent_module=vo/gpu-next apply_rc=$flowLogLevelApplyResult",
+      )
+    }
     // These options are consumed while the VO creates its libplacebo context.
     // Apply them before `vo`; otherwise gpu-next can keep its default OpenGL GPU.
     val gpuApiApplyResult = PlaybackSession.setOptionString("gpu-api", backend.gpuApi)
@@ -574,12 +589,6 @@ class MPVView(
         diagnostic,
       )
     }
-    val logLevel =
-      MpvFlowLogConfig.messageLevelOption(
-        mpvFlowEnabled = mpvFlowFrameInterpolationEnabled,
-        frameInterpolationEnabled = frameInterpolationEnabled,
-        verboseLogging = advancedPreferences.verboseLogging.get(),
-      )
     if (mpvFlowFrameInterpolationPreference) {
       val reason =
         when {
@@ -612,11 +621,13 @@ class MPVView(
           "renderer=${backend.vo} gpu_api=${backend.gpuApi} " +
           "hardware_decode_mode=$interpolationHwdecDiagnostic " +
           "cpu_filter_fallback=disabled " +
-          "requested_msg_level=$logLevel " +
+          "requested_msg_level=$logLevel msg_level_apply_rc=${flowLogLevelApplyResult ?: "deferred"} " +
           "renderer_option_result=${mpvFlowRendererOptionResult ?: "skipped"} reason=$reason",
       )
     }
-    PlaybackSession.setOptionString("msg-level", logLevel)
+    if (!mpvFlowFrameInterpolationEnabled) {
+      PlaybackSession.setOptionString("msg-level", logLevel)
+    }
 
     PlaybackSession.setOptionString("keep-open", "yes")
     PlaybackSession.setOptionString("input-default-bindings", "yes")

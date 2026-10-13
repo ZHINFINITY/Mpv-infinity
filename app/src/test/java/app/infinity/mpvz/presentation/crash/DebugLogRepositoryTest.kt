@@ -292,7 +292,7 @@ class DebugLogRepositoryTest {
         frameInterpolationEnabled = true,
         verboseLogging = false,
       )
-    assertEquals("all=info,vo/gpu-next/libplacebo=v", messageLevel)
+    assertEquals("all=info,vo/gpu-next=v", messageLevel)
 
     fun entry(
       id: String,
@@ -313,6 +313,12 @@ class DebugLogRepositoryTest {
     val evidence =
       listOf(
         entry(
+          "logger-config",
+          0L,
+          "MPVFLOW_DIAGNOSTIC event=logger_config state=applied logger_policy=$messageLevel " +
+            "parent_module=vo/gpu-next apply_rc=0",
+        ),
+        entry(
           "flow-config",
           1L,
           "MPVFLOW_DIAGNOSTIC event=config requested_enabled=true requested_msg_level=$messageLevel",
@@ -321,7 +327,10 @@ class DebugLogRepositoryTest {
         entry(
           "wsi-toggle",
           3L,
-          "[vo/gpu-next:info] MPVFLOW_DIAGNOSTIC event=wsi_diagnostics_toggle engine=mpv requested=1 applied=1 setter_result=1",
+          "[vo/gpu-next:info] MPVFLOW_DIAGNOSTIC event=wsi_diagnostics_toggle engine=mpv " +
+            "requested=1 applied=1 setter_result=1 diagnostics_gate_enabled=1 " +
+            "logger_policy=$messageLevel parent_msg_level=5 libplacebo_info_enabled=1 " +
+            "first_runtime_wsi_sample=next_start_frame",
           level = DebugLogLevel.Verbose,
         ),
         entry(
@@ -387,17 +396,19 @@ class DebugLogRepositoryTest {
       }
 
     val retained = retainDebugLogEntries(evidence + flowNoise)
-    val rawLogcat =
-      (evidence + flowNoise).mapIndexed { index, logEntry ->
+    val retainedRawLogcat =
+      retained.mapIndexed { index, logEntry ->
         val priority = if (logEntry.level == DebugLogLevel.Verbose) "V" else "I"
         "10-14 01:12:10.000 123 456 $priority ${logEntry.tag}: ${logEntry.message}"
       }
-    val exportedFlowDiagnostics = selectMpvFlowDiagnosticLines(rawLogcat.joinToString("\n"))
+    val exportedFlowDiagnostics = selectMpvFlowDiagnosticLines(retainedRawLogcat.joinToString("\n"))
 
     assertTrue(retained.size <= DEBUG_LOG_ENTRY_LIMIT)
     assertTrue(retained.any { it.id == "flow-config" && it.message.contains("requested_msg_level=$messageLevel") })
+    assertTrue(retained.any { it.id == "logger-config" && it.message.contains("parent_module=vo/gpu-next") })
     assertTrue(retained.any { it.id == "present-mode" })
     assertTrue(retained.any { it.id == "wsi-toggle" && it.message.contains("applied=1 setter_result=1") })
+    assertTrue(retained.any { it.id == "wsi-toggle" && it.message.contains("libplacebo_info_enabled=1") })
     assertTrue(retained.any { it.id == "wsi-created" })
     assertTrue(retained.any { it.id == "wsi-acquire" })
     assertTrue(retained.any { it.id == "wsi-present-fence" })
@@ -410,7 +421,11 @@ class DebugLogRepositoryTest {
     assertTrue(retained.any { it.id == "qcom-timing" })
     assertTrue(retained.any { it.id == "flow-noise-${DEBUG_LOG_ENTRY_LIMIT + 1_999}" })
     assertTrue(exportedFlowDiagnostics.contains("event=present_mode"))
+    assertTrue(exportedFlowDiagnostics.contains("event=logger_config"))
     assertTrue(exportedFlowDiagnostics.contains("event=wsi_diagnostics_toggle engine=mpv requested=1 applied=1"))
+    assertTrue(exportedFlowDiagnostics.contains("diagnostics_gate_enabled=1"))
+    assertTrue(exportedFlowDiagnostics.contains("first_runtime_wsi_sample=next_start_frame"))
+    assertTrue(exportedFlowDiagnostics.contains("event=wsi_swapchain_created created_mode=mailbox actual_images=5"))
     assertTrue(exportedFlowDiagnostics.contains("stage=vkAcquireNextImageKHR"))
     assertTrue(exportedFlowDiagnostics.contains("stage=present_fence_wait"))
     assertTrue(exportedFlowDiagnostics.contains("event=qcom_block_match_dispatch state=active"))
