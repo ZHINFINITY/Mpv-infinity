@@ -249,14 +249,12 @@ static bool self_test_image_extent_supported(const VkImageFormatProperties *prop
            (properties->sampleCounts & VK_SAMPLE_COUNT_1_BIT);
 }
 
-static bool self_test_query_vector_format_feature(struct NVSelfTest *test,
-                                                  VkFormatFeatureFlags2 *flags_out,
-                                                  bool *vector_feature_out)
+static bool self_test_query_format_features(struct NVSelfTest *test,
+                                            VkFormat format,
+                                            VkFormatFeatureFlags2 *flags_out)
 {
     if (flags_out)
         *flags_out = 0;
-    if (vector_feature_out)
-        *vector_feature_out = false;
 #if defined(VK_VERSION_1_3) && defined(VK_NV_optical_flow)
     const bool core_feature_flags2 = test->vk->api_version >= VK_API_VERSION_1_3;
     if (!test->get_format_properties ||
@@ -271,16 +269,37 @@ static bool self_test_query_vector_format_feature(struct NVSelfTest *test,
         .sType = VK_STRUCTURE_TYPE_FORMAT_PROPERTIES_2,
         .pNext = &properties3,
     };
-    test->get_format_properties(test->vk->phys_device,
-        NV_SELF_TEST_VECTOR_FORMAT, &properties2);
+    test->get_format_properties(test->vk->phys_device, format, &properties2);
     if (flags_out)
         *flags_out = properties3.optimalTilingFeatures;
+    return true;
+#else
+    (void) test;
+    (void) format;
+    return false;
+#endif
+}
+
+static bool self_test_query_vector_format_feature(struct NVSelfTest *test,
+                                                  VkFormatFeatureFlags2 *flags_out,
+                                                  bool *vector_feature_out)
+{
+    if (flags_out)
+        *flags_out = 0;
+    if (vector_feature_out)
+        *vector_feature_out = false;
+#if defined(VK_VERSION_1_3) && defined(VK_NV_optical_flow)
+    VkFormatFeatureFlags2 features = 0;
+    if (!self_test_query_format_features(test, NV_SELF_TEST_VECTOR_FORMAT,
+                                         &features))
+        return false;
+    if (flags_out)
+        *flags_out = features;
     const VkFormatFeatureFlags2 required =
         VK_FORMAT_FEATURE_2_OPTICAL_FLOW_VECTOR_BIT_NV |
         VK_FORMAT_FEATURE_2_SAMPLED_IMAGE_BIT;
     if (vector_feature_out)
-        *vector_feature_out =
-            (properties3.optimalTilingFeatures & required) == required;
+        *vector_feature_out = (features & required) == required;
     return true;
 #else
     (void) test;
@@ -1098,9 +1117,19 @@ static bool run_nv_self_test(pl_gpu gpu)
     VkImageFormatProperties output_combined_props = {0};
     VkImageFormatProperties output_clear_props = {0};
     VkImageFormatProperties output_sampled_clear_props = {0};
+    VkImageFormatProperties input_storage_props = {0};
+    VkImageFormatProperties input_storage_transfer_props = {0};
+    VkImageFormatProperties input_color_props = {0};
+    VkImageFormatProperties input_color_transfer_props = {0};
+    VkImageFormatProperties output_storage_props = {0};
+    VkImageFormatProperties output_storage_transfer_src_props = {0};
+    VkImageFormatProperties output_storage_transfer_dst_props = {0};
+    VkImageFormatProperties output_storage_transfer_both_props = {0};
     const VkImageUsageFlags input_usage = VK_IMAGE_USAGE_TRANSFER_DST_BIT;
     const VkImageUsageFlags transfer_usage = VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
     const VkImageUsageFlags sampled_usage = VK_IMAGE_USAGE_SAMPLED_BIT;
+    const VkImageUsageFlags storage_usage = VK_IMAGE_USAGE_STORAGE_BIT;
+    const VkImageUsageFlags color_attachment_usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
     VkResult input_result = self_test_query_image_usage(&test,
         NV_SELF_TEST_INPUT_FORMAT, input_usage,
         VK_OPTICAL_FLOW_USAGE_INPUT_BIT_NV, &input_props);
@@ -1121,6 +1150,31 @@ static bool run_nv_self_test(pl_gpu gpu)
         NV_SELF_TEST_VECTOR_FORMAT,
         transfer_usage | sampled_usage | VK_IMAGE_USAGE_TRANSFER_DST_BIT,
         VK_OPTICAL_FLOW_USAGE_OUTPUT_BIT_NV, &output_sampled_clear_props);
+    VkResult input_storage_result = self_test_query_image_usage(&test,
+        NV_SELF_TEST_INPUT_FORMAT, storage_usage,
+        VK_OPTICAL_FLOW_USAGE_INPUT_BIT_NV, &input_storage_props);
+    VkResult input_storage_transfer_result = self_test_query_image_usage(&test,
+        NV_SELF_TEST_INPUT_FORMAT, storage_usage | input_usage,
+        VK_OPTICAL_FLOW_USAGE_INPUT_BIT_NV, &input_storage_transfer_props);
+    VkResult input_color_result = self_test_query_image_usage(&test,
+        NV_SELF_TEST_INPUT_FORMAT, color_attachment_usage,
+        VK_OPTICAL_FLOW_USAGE_INPUT_BIT_NV, &input_color_props);
+    VkResult input_color_transfer_result = self_test_query_image_usage(&test,
+        NV_SELF_TEST_INPUT_FORMAT, color_attachment_usage | input_usage,
+        VK_OPTICAL_FLOW_USAGE_INPUT_BIT_NV, &input_color_transfer_props);
+    VkResult output_storage_result = self_test_query_image_usage(&test,
+        NV_SELF_TEST_VECTOR_FORMAT, storage_usage,
+        VK_OPTICAL_FLOW_USAGE_OUTPUT_BIT_NV, &output_storage_props);
+    VkResult output_storage_transfer_src_result = self_test_query_image_usage(&test,
+        NV_SELF_TEST_VECTOR_FORMAT, storage_usage | transfer_usage,
+        VK_OPTICAL_FLOW_USAGE_OUTPUT_BIT_NV, &output_storage_transfer_src_props);
+    VkResult output_storage_transfer_dst_result = self_test_query_image_usage(&test,
+        NV_SELF_TEST_VECTOR_FORMAT, storage_usage | VK_IMAGE_USAGE_TRANSFER_DST_BIT,
+        VK_OPTICAL_FLOW_USAGE_OUTPUT_BIT_NV, &output_storage_transfer_dst_props);
+    VkResult output_storage_transfer_both_result = self_test_query_image_usage(&test,
+        NV_SELF_TEST_VECTOR_FORMAT,
+        storage_usage | transfer_usage | VK_IMAGE_USAGE_TRANSFER_DST_BIT,
+        VK_OPTICAL_FLOW_USAGE_OUTPUT_BIT_NV, &output_storage_transfer_both_props);
     const uint32_t grid_width = NV_SELF_TEST_WIDTH / 8u;
     const uint32_t grid_height = NV_SELF_TEST_HEIGHT / 8u;
     const bool sampled_extent_usable = sampled_result == VK_SUCCESS &&
@@ -1135,10 +1189,64 @@ static bool run_nv_self_test(pl_gpu gpu)
     const bool sampled_clear_extent_usable = sampled_clear_result == VK_SUCCESS &&
         self_test_image_extent_supported(&output_sampled_clear_props,
                                          grid_width, grid_height);
+    const bool input_storage_extent_usable = input_storage_result == VK_SUCCESS &&
+        self_test_image_extent_supported(&input_storage_props,
+            NV_SELF_TEST_WIDTH, NV_SELF_TEST_HEIGHT);
+    const bool input_storage_transfer_extent_usable =
+        input_storage_transfer_result == VK_SUCCESS &&
+        self_test_image_extent_supported(&input_storage_transfer_props,
+            NV_SELF_TEST_WIDTH, NV_SELF_TEST_HEIGHT);
+    const bool input_color_extent_usable = input_color_result == VK_SUCCESS &&
+        self_test_image_extent_supported(&input_color_props,
+            NV_SELF_TEST_WIDTH, NV_SELF_TEST_HEIGHT);
+    const bool input_color_transfer_extent_usable =
+        input_color_transfer_result == VK_SUCCESS &&
+        self_test_image_extent_supported(&input_color_transfer_props,
+            NV_SELF_TEST_WIDTH, NV_SELF_TEST_HEIGHT);
+    const bool output_storage_extent_usable = output_storage_result == VK_SUCCESS &&
+        self_test_image_extent_supported(&output_storage_props,
+            grid_width, grid_height);
+    const bool output_storage_transfer_src_extent_usable =
+        output_storage_transfer_src_result == VK_SUCCESS &&
+        self_test_image_extent_supported(&output_storage_transfer_src_props,
+            grid_width, grid_height);
+    const bool output_storage_transfer_dst_extent_usable =
+        output_storage_transfer_dst_result == VK_SUCCESS &&
+        self_test_image_extent_supported(&output_storage_transfer_dst_props,
+            grid_width, grid_height);
+    const bool output_storage_transfer_both_extent_usable =
+        output_storage_transfer_both_result == VK_SUCCESS &&
+        self_test_image_extent_supported(&output_storage_transfer_both_props,
+            grid_width, grid_height);
+    VkFormatFeatureFlags2 input_format_features = 0;
     VkFormatFeatureFlags2 vector_format_features = 0;
+    const bool input_feature_query = self_test_query_format_features(
+        &test, NV_SELF_TEST_INPUT_FORMAT, &input_format_features);
     bool vector_feature_supported = false;
     const bool vector_feature_query = self_test_query_vector_format_feature(
         &test, &vector_format_features, &vector_feature_supported);
+    bool input_flow_image_feature = false;
+    bool input_storage_image_feature = false;
+    bool input_color_attachment_feature = false;
+    bool output_flow_vector_feature = false;
+    bool output_sampled_image_feature = false;
+    bool output_storage_image_feature = false;
+    bool storage_image_extended_formats_enabled = test.vk->features &&
+        test.vk->features->features.shaderStorageImageExtendedFormats;
+#if defined(VK_VERSION_1_3) && defined(VK_NV_optical_flow)
+    input_flow_image_feature = input_feature_query &&
+        (input_format_features & VK_FORMAT_FEATURE_2_OPTICAL_FLOW_IMAGE_BIT_NV);
+    input_storage_image_feature = input_feature_query &&
+        (input_format_features & VK_FORMAT_FEATURE_2_STORAGE_IMAGE_BIT);
+    input_color_attachment_feature = input_feature_query &&
+        (input_format_features & VK_FORMAT_FEATURE_2_COLOR_ATTACHMENT_BIT);
+    output_flow_vector_feature = vector_feature_query &&
+        (vector_format_features & VK_FORMAT_FEATURE_2_OPTICAL_FLOW_VECTOR_BIT_NV);
+    output_sampled_image_feature = vector_feature_query &&
+        (vector_format_features & VK_FORMAT_FEATURE_2_SAMPLED_IMAGE_BIT);
+    output_storage_image_feature = vector_feature_query &&
+        (vector_format_features & VK_FORMAT_FEATURE_2_STORAGE_IMAGE_BIT);
+#endif
     self_test_log(gpu, (input_result == VK_SUCCESS && transfer_result == VK_SUCCESS)
                       ? PL_LOG_INFO : PL_LOG_WARN,
         "MPVFLOW_DIAGNOSTIC component=nv-self-test event=image_usage state=queried format=R16G16B16A16_SFLOAT listed=%d input_R8_transfer_dst_result=%d output_transfer_src_result=%d output_sampled_result=%d output_sampled_transfer_src_result=%d output_transfer_src_dst_result=%d output_sampled_transfer_src_dst_result=%d sampled_extent_usable=%d sampled_transfer_extent_usable=%d output_zero_init_supported=%d sampled_zero_init_supported=%d output_grid=8x8",
@@ -1146,11 +1254,48 @@ static bool run_nv_self_test(pl_gpu gpu)
         combined_result, clear_result, sampled_clear_result,
         sampled_extent_usable, sampled_transfer_extent_usable,
         clear_extent_usable, sampled_clear_extent_usable);
-    self_test_log(gpu, vector_feature_query ? PL_LOG_INFO : PL_LOG_WARN,
-        "MPVFLOW_DIAGNOSTIC component=nv-self-test event=format_feature state=%s format=R16G16B16A16_SFLOAT flow_vector_and_sampled_feature=%d optimal_tiling_features=0x%llx",
-        vector_feature_query ? "queried" : "unavailable",
-        vector_feature_supported,
+    self_test_log(gpu,
+        (input_storage_result == VK_SUCCESS || input_color_result == VK_SUCCESS ||
+         output_storage_result == VK_SUCCESS) ? PL_LOG_INFO : PL_LOG_WARN,
+        "MPVFLOW_DIAGNOSTIC component=nv-self-test event=alternate_usage state=queried role=input format=R8_UNORM storage_result=%d storage_extent_usable=%d storage_transfer_dst_result=%d storage_transfer_dst_extent_usable=%d color_attachment_result=%d color_attachment_extent_usable=%d color_attachment_transfer_dst_result=%d color_attachment_transfer_dst_extent_usable=%d optical_flow_image_feature=%d storage_image_feature=%d color_attachment_feature=%d format_features=0x%llx storage_extended_formats_enabled=%d",
+        input_storage_result, input_storage_extent_usable,
+        input_storage_transfer_result, input_storage_transfer_extent_usable,
+        input_color_result, input_color_extent_usable,
+        input_color_transfer_result, input_color_transfer_extent_usable,
+        input_flow_image_feature, input_storage_image_feature,
+        input_color_attachment_feature,
+        (unsigned long long) input_format_features,
+        storage_image_extended_formats_enabled);
+    self_test_log(gpu,
+        (output_storage_result == VK_SUCCESS) ? PL_LOG_INFO : PL_LOG_WARN,
+        "MPVFLOW_DIAGNOSTIC component=nv-self-test event=alternate_usage state=queried role=output format=R16G16B16A16_SFLOAT storage_result=%d storage_extent_usable=%d storage_transfer_src_result=%d storage_transfer_src_extent_usable=%d storage_transfer_dst_result=%d storage_transfer_dst_extent_usable=%d storage_transfer_src_dst_result=%d storage_transfer_src_dst_extent_usable=%d optical_flow_vector_feature=%d sampled_image_feature=%d storage_image_feature=%d format_features=0x%llx",
+        output_storage_result, output_storage_extent_usable,
+        output_storage_transfer_src_result,
+        output_storage_transfer_src_extent_usable,
+        output_storage_transfer_dst_result,
+        output_storage_transfer_dst_extent_usable,
+        output_storage_transfer_both_result,
+        output_storage_transfer_both_extent_usable,
+        output_flow_vector_feature, output_sampled_image_feature,
+        output_storage_image_feature,
         (unsigned long long) vector_format_features);
+    self_test_log(gpu,
+        (input_feature_query && vector_feature_query) ? PL_LOG_INFO : PL_LOG_WARN,
+        "MPVFLOW_DIAGNOSTIC component=nv-self-test event=format_feature state=%s input_optical_flow_image_feature=%d output_optical_flow_vector_feature=%d output_flow_vector_and_sampled_feature=%d input_optimal_tiling_features=0x%llx output_optimal_tiling_features=0x%llx dispatch_feature_gate=%d",
+        (input_feature_query && vector_feature_query) ? "queried" : "unavailable",
+        input_flow_image_feature, output_flow_vector_feature,
+        vector_feature_supported,
+        (unsigned long long) input_format_features,
+        (unsigned long long) vector_format_features,
+        input_flow_image_feature && output_flow_vector_feature);
+    if (!input_feature_query || !vector_feature_query ||
+        !input_flow_image_feature || !output_flow_vector_feature) {
+        self_test_log(gpu, PL_LOG_WARN,
+            "MPVFLOW_DIAGNOSTIC component=nv-self-test event=dispatch state=not_attempted reason=required_nv_optical_format_feature_missing input_feature_query=%d input_image_feature=%d output_feature_query=%d output_vector_feature=%d",
+            input_feature_query, input_flow_image_feature,
+            vector_feature_query, output_flow_vector_feature);
+        return false;
+    }
     if (input_result != VK_SUCCESS || transfer_result != VK_SUCCESS ||
         !self_test_image_extent_supported(&input_props,
             NV_SELF_TEST_WIDTH, NV_SELF_TEST_HEIGHT) ||

@@ -991,6 +991,13 @@ for marker in (
     "VK_IMAGE_USAGE_TRANSFER_SRC_BIT",
     "VK_IMAGE_USAGE_SAMPLED_BIT",
     "VK_IMAGE_USAGE_TRANSFER_DST_BIT",
+    "VK_IMAGE_USAGE_STORAGE_BIT",
+    "VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT",
+    "VK_FORMAT_FEATURE_2_OPTICAL_FLOW_IMAGE_BIT_NV",
+    "VK_FORMAT_FEATURE_2_OPTICAL_FLOW_VECTOR_BIT_NV",
+    "event=alternate_usage state=queried role=input",
+    "event=alternate_usage state=queried role=output",
+    "event=dispatch state=not_attempted reason=required_nv_optical_format_feature_missing",
     "vkCmdClearColorImage",
     "VK_PIPELINE_STAGE_ALL_COMMANDS_BIT",
     "vkCmdCopyImageToBuffer",
@@ -1001,6 +1008,19 @@ for marker in (
     "production_rgba16f_decoder_enabled=0",
 ):
     assert marker in nv_selftest_source, f"manual NV self-test is missing {marker!r}"
+assert "NV_SELF_TEST_INPUT_FORMAT, storage_usage" in nv_selftest_source
+assert "NV_SELF_TEST_INPUT_FORMAT, color_attachment_usage" in nv_selftest_source
+assert "NV_SELF_TEST_VECTOR_FORMAT, storage_usage" in nv_selftest_source
+assert "normal_playback_adapter_unchanged=1" in nv_selftest_source
+feature_gate = nv_selftest_source.index(
+    "if (!input_feature_query || !vector_feature_query ||"
+)
+image_allocation = nv_selftest_source.index(
+    "self_test_create_image(&test, &test.input[0]"
+)
+assert feature_gate < image_allocation, (
+    "NV input/vector format feature failures must stop the probe before image allocation"
+)
 assert "mpvflow/mpvflow_vulkan_optical_selftest.c" in cmake_source
 assert '"$<$<CONFIG:Debug>:MPVFLOW_ENABLE_NV_SELF_TEST=1>"' in cmake_source
 assert '#ifdef __cplusplus\nextern "C" {' in nv_optical_header_source
