@@ -64,6 +64,9 @@ struct MPVFlowGPUCreateDiagnostics {
     bool optical_flow_attempted;
     bool optical_flow_ready;
     char optical_flow_reason[160];
+    bool qcom_seed_adapter_ready;
+    bool qcom_seed_luma_pass_ready;
+    char qcom_seed_reason[160];
 };
 
 enum MPVFlowGPUStage {
@@ -94,9 +97,21 @@ struct MPVFlowGPUTimingStats {
     struct MPVFlowGPUStageTiming stages[MPVFLOW_GPU_STAGE_COUNT];
 };
 
+struct MPVFlowGPUQcomDiagnostics {
+    bool adapter_ready;
+    bool luma_pass_ready;
+    uint64_t pair_attempts;
+    uint64_t dispatches;
+    uint64_t fallbacks;
+    char state[24];
+    char reason[160];
+};
+
 struct MPVFlowGPUConfig {
     /* Auto uses Vulkan; OpenCL is selected only by an explicit request. */
     enum MPVFlowGPUComputeAPI compute_api;
+    /* Identifies the caller in QCOM path diagnostics; copied at creation. */
+    const char *diagnostic_engine;
     /* Largest motion-analysis dimension; defaults to 640 when <= 0 and is
      * hard-capped at 640. Synthesized color output remains source-resolution. */
     int max_dimension;
@@ -121,6 +136,8 @@ const char *mpvflow_gpu_get_compute_api_name(MPVFlowGPUContext *context);
 /* Poll completed libplacebo GPU timestamps without waiting for the device. */
 void mpvflow_gpu_get_timing_stats(MPVFlowGPUContext *context,
                                   struct MPVFlowGPUTimingStats *stats);
+void mpvflow_gpu_get_qcom_diagnostics(MPVFlowGPUContext *context,
+                                      struct MPVFlowGPUQcomDiagnostics *stats);
 
 /*
  * Downscale a sampleable RGB texture to the context's bounded working size.

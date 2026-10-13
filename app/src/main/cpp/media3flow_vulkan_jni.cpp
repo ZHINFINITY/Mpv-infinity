@@ -1134,6 +1134,7 @@ Java_app_infinity_mpvz_ui_player_Media3FlowVulkanNative_nativeCreateContext(
     }
     MPVFlowGPUConfig config{};
     config.compute_api = static_cast<MPVFlowGPUComputeAPI>(requestedComputeApi);
+    config.diagnostic_engine = "media3";
     config.max_dimension = std::max(160, std::min(640, static_cast<int>(requestedMaxDimension)));
     config.search_radius = 8;
     MPVFlowGPUResult status = MPVFLOW_GPU_INVALID;
@@ -1193,9 +1194,10 @@ Java_app_infinity_mpvz_ui_player_Media3FlowVulkanNative_nativeCreateContext(
                 "glsl_compute=%d glsl_vulkan=%d glsl_version=%d max_pushc_size=%zu "
                 "analysis_max_dimension=%d hardware_max_texture_dimension=%u compute_queues=%u ahb_extension_enabled=%d "
             "optical_flow_extension_enabled=%d "
-            "foreign_queue_extension_enabled=%d compute_queue_timestamp_valid_bits=%u "
-            "timestamp_period_ns=%.6f timestamp_compute_and_graphics=%d vulkan_timing_supported=%d "
-            "hardware_decoder=media3 hardware_buffers=android cpu_readback=no",
+                "foreign_queue_extension_enabled=%d compute_queue_timestamp_valid_bits=%u "
+                "timestamp_period_ns=%.6f timestamp_compute_and_graphics=%d vulkan_timing_supported=%d "
+                "qcom2_adapter_ready=%d qcom2_luma_pass_ready=%d qcom2_seed_reason=%s "
+                "hardware_decoder=media3 hardware_buffers=android cpu_readback=no",
             mpvflow_gpu_get_compute_api_name(context->flow),
             vulkan->api_version, vulkan->queue_compute.index, vulkan->queue_compute.count,
             vulkan->gpu->glsl.compute, vulkan->gpu->glsl.vulkan, vulkan->gpu->glsl.version,
@@ -1205,7 +1207,11 @@ Java_app_infinity_mpvz_ui_player_Media3FlowVulkanNative_nativeCreateContext(
             hasEnabledDeviceExtension(vulkan, "VK_NV_optical_flow"),
             hasEnabledDeviceExtension(vulkan, "VK_EXT_queue_family_foreign"),
             context->computeTimestampValidBits, context->timestampPeriodNs,
-            context->timestampComputeAndGraphics, vulkanTimestampSupported);
+            context->timestampComputeAndGraphics, vulkanTimestampSupported,
+            createDiagnostics.qcom_seed_adapter_ready,
+            createDiagnostics.qcom_seed_luma_pass_ready,
+            createDiagnostics.qcom_seed_reason[0]
+                ? createDiagnostics.qcom_seed_reason : "unknown");
     return reinterpret_cast<jlong>(context);
 }
 

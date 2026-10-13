@@ -452,6 +452,12 @@ for marker in (
     "actual_images=%u",
     "event=optical_flow_backend engine=mpv",
     "optical_flow_reason",
+    '.diagnostic_engine = "mpv"',
+    "qcom2_adapter_ready=%d",
+    "qcom2_luma_pass_ready=%d",
+    "event=qcom_runtime",
+    "pair_attempts=%llu dispatches=%llu fallbacks=%llu",
+    "mpvflow_gpu_get_qcom_diagnostics",
 ):
     assert marker in vo_patch, f"MPV Flow must distinguish real blocking swapchain waits from submit time: missing {marker!r}"
 assert "+        target_fps >= 120 ? 448 : target_fps >= 96 ? 440 : 640;" in vo_patch, (
@@ -713,6 +719,8 @@ opencl_header = (ROOT / "app/src/main/cpp/mpvflow/mpvflow_opencl.h").read_text(e
 bridge_source = (ROOT / "app/src/main/cpp/mpvflow/mpvflow_opencl_vk_bridge.c").read_text(encoding="utf-8")
 bridge_header = (ROOT / "app/src/main/cpp/mpvflow/mpvflow_opencl_vk_bridge.h").read_text(encoding="utf-8")
 media3_jni_source = (ROOT / "app/src/main/cpp/media3flow_vulkan_jni.cpp").read_text(encoding="utf-8")
+assert 'config.diagnostic_engine = "media3";' in media3_jni_source
+assert "qcom2_adapter_ready=%d qcom2_luma_pass_ready=%d" in media3_jni_source
 cmake_source = (ROOT / "app/src/main/cpp/CMakeLists.txt").read_text(encoding="utf-8")
 manifest_source = (ROOT / "app/src/main/AndroidManifest.xml").read_text(encoding="utf-8")
 for marker in (
@@ -1027,6 +1035,13 @@ for marker in (
     "window_extension_not_supported",
     "block_match && window_match && properties_queried",
     "shader_execution=optional_qcom2_custom_pass_initialization_follows",
+    "event=qcom_seed_backend engine=%s state=%s",
+    "optional_luma_shader_compile_failed",
+    "MPVFlowGPUQcomDiagnostics",
+    "qcom_pair_attempts++",
+    "qcom_dispatches++",
+    "qcom_fallbacks++",
+    "mpvflow_gpu_get_qcom_diagnostics",
 ):
     assert marker in flow_gpu_source, f"shared core must query QCOM capability before optional adapter setup: missing {marker!r}"
 

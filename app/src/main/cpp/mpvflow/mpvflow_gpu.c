@@ -94,6 +94,13 @@ struct MPVFlowGPUContext {
     pl_pass pass_synthesize;
     MPVFlowVulkanOptical *optical;
     MPVFlowVulkanQcom *qcom;
+    char diagnostic_engine[32];
+    char qcom_seed_reason[160];
+    char qcom_last_state[24];
+    char qcom_last_reason[160];
+    uint64_t qcom_pair_attempts;
+    uint64_t qcom_dispatches;
+    uint64_t qcom_fallbacks;
     struct FlowTimerStats timers[FLOW_TIMER_COUNT];
     uint64_t timing_window_start_ns;
 };
@@ -1313,24 +1320,20 @@ MPVFlowGPUContext *mpvflow_gpu_create(pl_gpu gpu,
     char qcom_reason[160] = {0};
     ctx->qcom = mpvflow_vulkan_qcom_create(gpu, qcom_reason,
                                            sizeof(qcom_reason));
+    snprintf(ctx->qcom_seed_reason, sizeof(ctx->qcom_seed_reason), "%s",
+             qcom_reason[0] ? qcom_reason : "unavailable");
+    snprintf(ctx->diagnostic_engine, sizeof(ctx->diagnostic_engine), "%s",
+             config && config->diagnostic_engine ? config->diagnostic_engine : "unknown");
     char optical_reason[160] = {0};
-    if (!ctx->qcom)
+    const bool optical_attempted = !ctx->qcom;
+    if (optical_attempted)
         ctx->optical = mpvflow_vulkan_optical_create(gpu, optical_reason,
                                                      sizeof(optical_reason));
-    if (diagnostics) {
-        diagnostics->optical_flow_attempted = !ctx->qcom;
-        diagnostics->optical_flow_ready = ctx->optical != NULL;
-        snprintf(diagnostics->optical_flow_reason,
-                 sizeof(diagnostics->optical_flow_reason), "%s",
-                 ctx->qcom ? "qcom2_seed_backend_preferred" :
-                 ctx->optical ? "ready" :
-                     (optical_reason[0] ? optical_reason : "unavailable"));
-    }
     if (!ctx->optical && !ctx->qcom)
         flow_log(gpu, PL_LOG_INFO,
                  "MPVFLOW_DIAGNOSTIC event=optical_flow_backend state=disabled "
                  "reason=%s fallback=validated_vulkan_block_matching",
-                 optical_reason[0] ? optical_reason : "unavailable");
+                 optical_reason[0] ? optical_reason : ctx->qcom_seed_reason);
 
     /* Match the SVPlayer architecture: keep the normal path entirely inside
      * Vulkan. OpenCL remains dynamically loaded and available when explicitly
@@ -1503,6 +1506,12 @@ MPVFlowGPUContext *mpvflow_gpu_create(pl_gpu gpu,
                      "reason=optional_luma_or_seed_shader_compile_failed fallback=validated_vulkan_sad "
                      "luma_pass=%d seed_pass=%d",
                      !!ctx->pass_optical_luma, !!ctx->pass_optical_seed);
+            if (ctx->qcom)
+                snprintf(ctx->qcom_seed_reason, sizeof(ctx->qcom_seed_reason),
+                         "optional_luma_shader_compile_failed");
+            if (ctx->optical)
+                snprintf(optical_reason, sizeof(optical_reason),
+                         "optional_luma_or_seed_shader_compile_failed");
             mpvflow_vulkan_optical_destroy(&ctx->optical);
             mpvflow_vulkan_qcom_destroy(&ctx->qcom);
             if (ctx->pass_optical_luma)
@@ -1511,6 +1520,36 @@ MPVFlowGPUContext *mpvflow_gpu_create(pl_gpu gpu,
                 pl_pass_destroy(gpu, &ctx->pass_optical_seed);
         }
     }
+    if (ctx->qcom && ctx->pass_optical_luma) {
+        snprintf(ctx->qcom_seed_reason, sizeof(ctx->qcom_seed_reason), "ready");
+        snprintf(ctx->qcom_last_state, sizeof(ctx->qcom_last_state), "ready");
+        snprintf(ctx->qcom_last_reason, sizeof(ctx->qcom_last_reason), "awaiting_pair_analysis");
+    } else {
+        snprintf(ctx->qcom_last_state, sizeof(ctx->qcom_last_state), "disabled");
+        snprintf(ctx->qcom_last_reason, sizeof(ctx->qcom_last_reason), "%s",
+                 ctx->qcom_seed_reason[0] ? ctx->qcom_seed_reason : "unavailable");
+    }
+    if (diagnostics) {
+        diagnostics->optical_flow_attempted = optical_attempted;
+        diagnostics->optical_flow_ready = ctx->optical != NULL;
+        diagnostics->qcom_seed_adapter_ready = ctx->qcom != NULL;
+        diagnostics->qcom_seed_luma_pass_ready = ctx->qcom && ctx->pass_optical_luma;
+        snprintf(diagnostics->qcom_seed_reason,
+                 sizeof(diagnostics->qcom_seed_reason), "%s",
+                 ctx->qcom_seed_reason[0] ? ctx->qcom_seed_reason : "unavailable");
+        const char *optical_status_reason = ctx->qcom
+            ? "qcom2_seed_backend_preferred" : ctx->optical
+            ? "ready" : optical_reason[0] ? optical_reason
+            : ctx->qcom_seed_reason[0] ? ctx->qcom_seed_reason : "unavailable";
+        snprintf(diagnostics->optical_flow_reason,
+                 sizeof(diagnostics->optical_flow_reason), "%s", optical_status_reason);
+    }
+    flow_log(gpu, PL_LOG_INFO,
+             "MPVFLOW_DIAGNOSTIC event=qcom_seed_backend engine=%s state=%s "
+             "adapter_ready=%d luma_pass_ready=%d reason=%s",
+             ctx->diagnostic_engine, ctx->qcom ? "ready" : "disabled",
+             !!ctx->qcom, !!(ctx->qcom && ctx->pass_optical_luma),
+             ctx->qcom_seed_reason[0] ? ctx->qcom_seed_reason : "unavailable");
     uint32_t failed_pass_mask = 0;
     if (!ctx->pass_preprocess) failed_pass_mask |= MPVFLOW_GPU_PASS_PREPROCESS;
     if (!ctx->pass_luma) failed_pass_mask |= MPVFLOW_GPU_PASS_LUMA;
@@ -1650,6 +1689,28 @@ void mpvflow_gpu_get_timing_stats(MPVFlowGPUContext *ctx,
             .maximum_ns = timer->lifetime_max_ns,
         };
     }
+}
+
+void mpvflow_gpu_get_qcom_diagnostics(MPVFlowGPUContext *ctx,
+                                      struct MPVFlowGPUQcomDiagnostics *stats)
+{
+    if (!stats)
+        return;
+    memset(stats, 0, sizeof(*stats));
+    if (!ctx) {
+        snprintf(stats->state, sizeof(stats->state), "unavailable");
+        snprintf(stats->reason, sizeof(stats->reason), "context_missing");
+        return;
+    }
+    stats->adapter_ready = ctx->qcom != NULL;
+    stats->luma_pass_ready = ctx->qcom && ctx->pass_optical_luma;
+    stats->pair_attempts = ctx->qcom_pair_attempts;
+    stats->dispatches = ctx->qcom_dispatches;
+    stats->fallbacks = ctx->qcom_fallbacks;
+    snprintf(stats->state, sizeof(stats->state), "%s",
+             ctx->qcom_last_state[0] ? ctx->qcom_last_state : "not_attempted");
+    snprintf(stats->reason, sizeof(stats->reason), "%s",
+             ctx->qcom_last_reason[0] ? ctx->qcom_last_reason : "not_attempted");
 }
 
 enum MPVFlowGPUResult mpvflow_gpu_prepare_input(MPVFlowGPUContext *ctx,
@@ -1962,6 +2023,7 @@ enum MPVFlowGPUResult mpvflow_gpu_analyze_pair(MPVFlowGPUContext *ctx,
 
     bool qcom_dispatched = false;
     if (ctx->qcom && ctx->pass_optical_luma) {
+        ctx->qcom_pair_attempts++;
         struct FlowLevel *coarse = &pair->level[pair->levels - 1];
         const int block_size = pair->levels == 1 ? FLOW_FINE_BLOCK : FLOW_BLOCK;
         const int grid_width = (int) coarse->forward->params.w;
@@ -1982,12 +2044,25 @@ enum MPVFlowGPUResult mpvflow_gpu_analyze_pair(MPVFlowGPUContext *ctx,
             qcom_luma_bindings, 2, qcom_luma_cfg, 0.0f,
             coarse->w, coarse->h, "qcom_block_match_luma_frame1");
         qcom_dispatched = inputs_ready && mpvflow_vulkan_qcom_dispatch(ctx->qcom);
-        if (!qcom_dispatched)
+        if (qcom_dispatched) {
+            ctx->qcom_dispatches++;
+            snprintf(ctx->qcom_last_state, sizeof(ctx->qcom_last_state), "active");
+            snprintf(ctx->qcom_last_reason, sizeof(ctx->qcom_last_reason), "none");
+        } else {
+            ctx->qcom_fallbacks++;
+            const char *reason = inputs_ready ? "optional_qcom_dispatch_unavailable" :
+                "optional_qcom_luma_or_image_setup_unavailable";
+            snprintf(ctx->qcom_last_state, sizeof(ctx->qcom_last_state), "fallback");
+            snprintf(ctx->qcom_last_reason, sizeof(ctx->qcom_last_reason), "%s", reason);
             flow_log(ctx->gpu, PL_LOG_DEBUG,
                      "MPVFLOW_DIAGNOSTIC event=qcom_block_match_dispatch state=fallback "
                      "reason=%s fallback=full_baseline_sad_search",
-                     inputs_ready ? "optional_qcom_dispatch_unavailable" :
-                         "optional_qcom_luma_or_image_setup_unavailable");
+                     reason);
+        }
+    } else if (ctx->qcom) {
+        ctx->qcom_fallbacks++;
+        snprintf(ctx->qcom_last_state, sizeof(ctx->qcom_last_state), "fallback");
+        snprintf(ctx->qcom_last_reason, sizeof(ctx->qcom_last_reason), "luma_pass_unavailable");
     }
 
     int rw = (pair->w + 15) / 16, rh = (pair->h + 15) / 16;

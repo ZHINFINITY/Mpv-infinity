@@ -94,7 +94,7 @@ index bd3d1aa..0072486 100644
 +    int flow_cap;
 +    int flow_w, flow_h;
 +    int flow_source_w, flow_source_h;
-@@ -569,0 +654,416 @@ struct frame_priv {
+@@ -569,0 +654,431 @@ struct frame_priv {
 +static void flow_release_pair(struct priv *p)
 +{
 +    if (p->flow_pair)
@@ -244,6 +244,7 @@ index bd3d1aa..0072486 100644
 +
 +    struct MPVFlowGPUConfig config = {
 +        .compute_api = (enum MPVFlowGPUComputeAPI) p->next_opts->mpvflow_compute_api,
++        .diagnostic_engine = "mpv",
 +        .max_dimension = effective_dimension,
 +        .search_radius = target_fps >= 144 ? (quality >= 75 ? 4 : 3) :
 +            target_fps >= 120 ? (quality >= 75 ? 5 : 4) :
@@ -254,12 +255,17 @@ index bd3d1aa..0072486 100644
 +    MPVFlowGPUContext *ctx = mpvflow_gpu_create(p->gpu, &config, &status,
 +                                                &create_diagnostics);
 +    MP_INFO(vo, "MPVFLOW_DIAGNOSTIC event=optical_flow_backend engine=mpv "
-+            "state=%s attempted=%d reason=%s\n",
++            "state=%s attempted=%d reason=%s qcom2_adapter_ready=%d "
++            "qcom2_luma_pass_ready=%d qcom2_seed_reason=%s\n",
 +            create_diagnostics.optical_flow_ready ? "ready" :
 +                create_diagnostics.optical_flow_attempted ? "disabled" : "not_attempted",
 +            create_diagnostics.optical_flow_attempted,
 +            create_diagnostics.optical_flow_reason[0]
-+                ? create_diagnostics.optical_flow_reason : "unknown");
++                ? create_diagnostics.optical_flow_reason : "unknown",
++            create_diagnostics.qcom_seed_adapter_ready,
++            create_diagnostics.qcom_seed_luma_pass_ready,
++            create_diagnostics.qcom_seed_reason[0]
++                ? create_diagnostics.qcom_seed_reason : "unknown");
 +    pl_fmt input_fmt = pl_find_fmt(p->gpu, PL_FMT_UNORM, 4, 8, 8,
 +                                   PL_FMT_CAP_SAMPLEABLE | PL_FMT_CAP_RENDERABLE);
 +    if (!ctx || !input_fmt) {
@@ -342,6 +348,15 @@ index bd3d1aa..0072486 100644
 +
 +    struct MPVFlowGPUTimingStats stats = {0};
 +    mpvflow_gpu_get_timing_stats(p->flow_gpu, &stats);
++    struct MPVFlowGPUQcomDiagnostics qcom = {0};
++    mpvflow_gpu_get_qcom_diagnostics(p->flow_gpu, &qcom);
++    MP_INFO(vo, "MPVFLOW_DIAGNOSTIC component=mpvflow event=qcom_runtime "
++            "engine=mpv state=%s adapter_ready=%d luma_pass_ready=%d "
++            "pair_attempts=%llu dispatches=%llu fallbacks=%llu reason=%s\n",
++            qcom.state, qcom.adapter_ready, qcom.luma_pass_ready,
++            (unsigned long long) qcom.pair_attempts,
++            (unsigned long long) qcom.dispatches,
++            (unsigned long long) qcom.fallbacks, qcom.reason);
 +    static const char *const names[MPVFLOW_GPU_STAGE_COUNT] = {
 +        "preprocess", "analysis", "motion_fine", "motion_middle",
 +        "motion_coarse", "synthesis",
