@@ -133,7 +133,13 @@ assert synthesis_jni.index("!std::isfinite(timestep)") < synthesis_jni.index("re
 resource_setup = SINK.split("  private fun ensureProcessingResources(", 1)[1].split(
     "\n  private fun clearSourceFrames(", 1
 )[0]
-resource_reuse_guard = resource_setup.split("if (sourceWidth == frameWidth", 1)[1].split(") return", 1)[0]
+resource_reuse_guard = resource_setup.split("if (decoderWidth == decoderInputWidth", 1)[1].split(") return", 1)[0]
+assert "decoderHeight == decoderInputHeight" in resource_reuse_guard, (
+    "Media3 Flow may reuse the decoder surface only when its input height is unchanged"
+)
+assert "sourceWidth == frameWidth && sourceHeight == frameHeight" in resource_reuse_guard, (
+    "Media3 Flow may reuse storage only when the capped interpolation dimensions are unchanged"
+)
 assert re.search(r"framePool\.isNotEmpty\(\)\s*&&\s*flowAvailable", resource_reuse_guard), (
     "same-resolution stream initialization must retry shared resources after Flow has fallen back"
 )
@@ -215,4 +221,4 @@ assert "backend=opengl-es" not in MPV_PATCH
 assert "gpu->glsl.vulkan" in GPU
 assert 'PlaybackSession.setOptionString("display-fps-override", displayRefreshRate.hz.toString())' in MPV_VIEW
 assert "display_refresh_source=" in MPV_VIEW
-print("Media3 and MPV Flow preserve source-resolution synthesis, bounded motion analysis, async ownership handoffs, and measured output cadence")
+print("Media3 Flow caps interpolation storage at 1080p; MPV Flow keeps source-resolution rendering, bounded motion analysis, async ownership handoffs, and measured output cadence")
