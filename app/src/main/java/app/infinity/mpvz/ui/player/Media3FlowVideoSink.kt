@@ -23,6 +23,7 @@ import android.view.WindowManager
 import androidx.media3.common.C
 import androidx.media3.common.Effect
 import androidx.media3.common.Format
+import androidx.media3.common.MimeTypes
 import androidx.media3.common.VideoSize
 import androidx.media3.common.util.Size
 import androidx.media3.common.util.TimestampIterator
@@ -2758,8 +2759,16 @@ class Media3FlowVideoSink(
       val mime = format.sampleMimeType.orEmpty().lowercase()
       val codecs = format.codecs.orEmpty().lowercase()
       if (mime.contains("dolby-vision") || codecs.startsWith("dvhe") || codecs.startsWith("dvh1")) return false
-      val transfer = format.colorInfo?.colorTransfer ?: return false
-      return transfer == C.COLOR_TRANSFER_SDR
+      val colorInfo = format.colorInfo ?: return false
+      return Media3FlowFormatPolicy.supportsSdrInterpolation(
+        mimeType = mime,
+        colorSpace = colorInfo.colorSpace,
+        colorRange = colorInfo.colorRange,
+        colorTransfer = colorInfo.colorTransfer,
+        lumaBitdepth = colorInfo.lumaBitdepth,
+        chromaBitdepth = colorInfo.chromaBitdepth,
+        hasHdrStaticInfo = colorInfo.hdrStaticInfo != null,
+      )
     }
 
     @JvmStatic
