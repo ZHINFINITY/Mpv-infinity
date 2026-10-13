@@ -75,6 +75,44 @@ except SystemExit:
 else:
     raise AssertionError("unexpected MPV Vulkan extension-list changes must fail closed")
 
+qcom_vulkan_context = """\
+    const char *opt_extensions[] = {
+        VK_NV_OPTICAL_FLOW_EXTENSION_NAME,
+    };
+    VkPhysicalDeviceZeroInitializeWorkgroupMemoryFeaturesKHR zero_init_feature = {
+        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ZERO_INITIALIZE_WORKGROUP_MEMORY_FEATURES_KHR,
+    };
+    VkPhysicalDeviceOpticalFlowFeaturesNV optical_flow_feature = {
+        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_OPTICAL_FLOW_FEATURES_NV,
+        .pNext = &zero_init_feature,
+        .opticalFlow = true,
+    };
+"""
+patched_qcom_context = prepare.enable_qcom_image_processing(qcom_vulkan_context)
+for marker in (
+    "VK_QCOM_IMAGE_PROCESSING_EXTENSION_NAME",
+    "VK_QCOM_IMAGE_PROCESSING_2_EXTENSION_NAME",
+    "VkPhysicalDeviceImageProcessingFeaturesQCOM",
+    "VkPhysicalDeviceImageProcessing2FeaturesQCOM",
+    "textureBlockMatch = true",
+    "textureBlockMatch2 = true",
+    "&image_processing_feature",
+    "MPVFLOW_QCOM_IMAGE_PROCESSING_FEATURES",
+):
+    assert marker in patched_qcom_context, f"MPV QCOM enablement patch is missing {marker!r}"
+assert prepare.enable_qcom_image_processing(patched_qcom_context) == patched_qcom_context
+for bad_qcom_context in (
+    "no optional extension list or feature chain\n",
+    qcom_vulkan_context + qcom_vulkan_context,
+    patched_qcom_context.replace("textureBlockMatch2 = true", "textureBlockMatch2 = false"),
+):
+    try:
+        prepare.enable_qcom_image_processing(bad_qcom_context)
+    except SystemExit:
+        pass
+    else:
+        raise AssertionError("unexpected MPV QCOM feature-chain changes must fail closed")
+
 placebo_meson = (
     "spirv = cxx.find_library('SPIRV', required: required, static: static, dirs: vulkan_lib_dirs)\n"
     "glslang_deps += spirv\n"
@@ -340,9 +378,18 @@ assert prepare_source.count('"mpvflow_opencl_validation.h"') == 2, (
 for marker in (
     'VENDOR / "mpvflow_vulkan_optical.c"',
     'VENDOR / "mpvflow_vulkan_optical.h"',
+    'VENDOR / "mpvflow_vulkan_qcom.c"',
+    'VENDOR / "mpvflow_vulkan_qcom.h"',
+    'VENDOR / "mpvflow_qcom_seed.comp"',
+    'VENDOR / "mpvflow_qcom_seed_spv.h"',
     '"mpvflow_vulkan_optical.c"',
     '"mpvflow_vulkan_optical.h"',
+    '"mpvflow_vulkan_qcom.c"',
+    '"mpvflow_vulkan_qcom.h"',
+    '"mpvflow_qcom_seed.comp"',
+    '"mpvflow_qcom_seed_spv.h"',
     '"video/out/mpvflow_vulkan_optical.c"',
+    '"video/out/mpvflow_vulkan_qcom.c"',
     'placebo_formats_path = libplacebo_dir / "src/vulkan/formats.c"',
     "enable_nv_optical_flow_sampleability",
 ):
@@ -363,6 +410,7 @@ prepare_call = 'python3 "$ROOT/scripts/prepare-mpvflow.py" --mpv-dir "$BUILDSCRI
 assert prepare_call in build, "the native build must patch pinned libplacebo before compilation"
 native_cmake = (ROOT / "app/src/main/cpp/CMakeLists.txt").read_text(encoding="utf-8")
 for source in (
+    "mpvflow/mpvflow_vulkan_qcom.c",
     "mpvflow/mpvflow_vulkan_optical.c",
     "mpvflow/mpvflow_opencl.c",
     "mpvflow/mpvflow_opencl_vk_bridge.c",
@@ -943,7 +991,14 @@ for marker in (
     "VkPhysicalDeviceOpticalFlowFeaturesNV",
     "VK_QUEUE_OPTICAL_FLOW_BIT_NV",
     "params.extra_queues = VK_QUEUE_OPTICAL_FLOW_BIT_NV",
-    "params.features = &opticalFlowFeatures",
+    "params.features = &optionalFeatures",
+    "VK_QCOM_IMAGE_PROCESSING_EXTENSION_NAME",
+    "VK_QCOM_IMAGE_PROCESSING_2_EXTENSION_NAME",
+    "VkPhysicalDeviceImageProcessingFeaturesQCOM",
+    "VkPhysicalDeviceImageProcessing2FeaturesQCOM",
+    "textureBlockMatch = VK_TRUE",
+    "textureBlockMatch2 = VK_TRUE",
+    "optionalFeatures.pNext = optionalFeatureChain",
 ):
     assert marker in media3_jni_source, f"Media3 should opportunistically request optical-flow capability: missing {marker!r}"
 for marker in (
@@ -969,9 +1024,37 @@ for marker in (
     "VK_FORMAT_FEATURE_2_BLOCK_MATCHING_BIT_QCOM",
     "VK_IMAGE_USAGE_SAMPLE_BLOCK_MATCH_BIT_QCOM",
     "vkGetPhysicalDeviceImageFormatProperties2",
-    "shader_execution=not_integrated_in_flow_core",
+    "window_extension_not_supported",
+    "block_match && window_match && properties_queried",
+    "shader_execution=optional_qcom2_custom_pass_initialization_follows",
 ):
-    assert marker in flow_gpu_source, f"shared core must query QCOM block-match support without enabling its shader path: missing {marker!r}"
+    assert marker in flow_gpu_source, f"shared core must query QCOM capability before optional adapter setup: missing {marker!r}"
+
+qcom_adapter_source = (
+    ROOT / "app/src/main/cpp/mpvflow/mpvflow_vulkan_qcom.c"
+).read_text(encoding="utf-8")
+for marker in (
+    "#if defined(VK_QCOM_image_processing) && defined(VK_QCOM_image_processing2)",
+    "VK_DESCRIPTOR_TYPE_BLOCK_MATCH_IMAGE_QCOM",
+    "VK_IMAGE_USAGE_SAMPLE_BLOCK_MATCH_BIT_QCOM",
+    "VK_IMAGE_USAGE_TRANSFER_SRC_BIT",
+    "VK_IMAGE_USAGE_TRANSFER_DST_BIT",
+    "pl_vulkan_hold_ex",
+    "vkCmdCopyImage",
+    "vkCmdDispatch",
+    "refinement=full_baseline_sad_search",
+):
+    assert marker in qcom_adapter_source, f"QCOM adapter must stage, dispatch, and preserve baseline refinement: missing {marker!r}"
+for marker in (
+    "mpvflow_vulkan_qcom_ensure(ctx->qcom",
+    "mpvflow_vulkan_qcom_dispatch(ctx->qcom)",
+    "event=qcom_block_match_dispatch state=fallback",
+    "fallback=full_baseline_sad_search",
+    "const bool qcom_parent = qcom_dispatched",
+    "(qcom_parent ? 4 : 0)",
+    "mpvflow_vulkan_qcom_seed(ctx->qcom, dir)",
+):
+    assert marker in flow_gpu_source, f"shared flow core must route QCOM seeds to SAD refinement with fallback: missing {marker!r}"
 
 nv_selftest_source = (
     ROOT / "app/src/main/cpp/mpvflow/mpvflow_vulkan_optical_selftest.c"
@@ -1051,9 +1134,10 @@ for marker in (
     "logQueueFamilyCapability(vulkan);",
 ):
     assert marker in media3_jni_source, f"Media3 must inventory available queues but preserve exclusive-image safety: missing {marker!r}"
-assert "VK_QCOM_IMAGE_PROCESSING_EXTENSION_NAME" not in media3_jni_source, (
-    "QCOM support must remain a physical-device capability query until a validated Flow shader path exists"
-)
+assert "VK_QCOM_IMAGE_PROCESSING_EXTENSION_NAME" in media3_jni_source
+assert "VK_QCOM_IMAGE_PROCESSING_2_EXTENSION_NAME" in media3_jni_source
+assert "imageProcessingFeature.textureBlockMatch = VK_TRUE" in media3_jni_source
+assert "imageProcessing2Feature.textureBlockMatch2 = VK_TRUE" in media3_jni_source
 assert "AHardwareBuffer_lock" not in bridge_source and "clEnqueueReadBuffer" not in opencl_source, (
     "Flow must not add CPU pixel readback to the OpenCL backend"
 )

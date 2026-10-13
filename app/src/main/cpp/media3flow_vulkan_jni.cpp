@@ -1028,14 +1028,43 @@ Java_app_infinity_mpvz_ui_player_Media3FlowVulkanNative_nativeCreateContext(
 #ifdef VK_NV_optical_flow
         VK_NV_OPTICAL_FLOW_EXTENSION_NAME,
 #endif
+#ifdef VK_QCOM_image_processing
+        VK_QCOM_IMAGE_PROCESSING_EXTENSION_NAME,
+#ifdef VK_QCOM_image_processing2
+        VK_QCOM_IMAGE_PROCESSING_2_EXTENSION_NAME,
+#endif
+#endif
     };
+#if defined(VK_NV_optical_flow) || defined(VK_QCOM_image_processing) || defined(VK_QCOM_image_processing2)
+    VkPhysicalDeviceFeatures2 optionalFeatures{};
+    optionalFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
+    void *optionalFeatureChain = nullptr;
+#endif
+#ifdef VK_QCOM_image_processing2
+    VkPhysicalDeviceImageProcessing2FeaturesQCOM imageProcessing2Feature{};
+    imageProcessing2Feature.sType =
+        VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_IMAGE_PROCESSING_2_FEATURES_QCOM;
+    imageProcessing2Feature.textureBlockMatch2 = VK_TRUE;
+    imageProcessing2Feature.pNext = optionalFeatureChain;
+    optionalFeatureChain = &imageProcessing2Feature;
+#endif
+#ifdef VK_QCOM_image_processing
+    VkPhysicalDeviceImageProcessingFeaturesQCOM imageProcessingFeature{};
+    imageProcessingFeature.sType =
+        VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_IMAGE_PROCESSING_FEATURES_QCOM;
+    imageProcessingFeature.textureBlockMatch = VK_TRUE;
+    imageProcessingFeature.pNext = optionalFeatureChain;
+    optionalFeatureChain = &imageProcessingFeature;
+#endif
 #ifdef VK_NV_optical_flow
-    VkPhysicalDeviceFeatures2 opticalFlowFeatures{};
-    opticalFlowFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
     VkPhysicalDeviceOpticalFlowFeaturesNV opticalFlowFeature{};
     opticalFlowFeature.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_OPTICAL_FLOW_FEATURES_NV;
     opticalFlowFeature.opticalFlow = VK_TRUE;
-    opticalFlowFeatures.pNext = &opticalFlowFeature;
+    opticalFlowFeature.pNext = optionalFeatureChain;
+    optionalFeatureChain = &opticalFlowFeature;
+#endif
+#if defined(VK_NV_optical_flow) || defined(VK_QCOM_image_processing) || defined(VK_QCOM_image_processing2)
+    optionalFeatures.pNext = optionalFeatureChain;
 #endif
     struct pl_vulkan_params params = pl_vulkan_default_params;
     params.async_compute = false;
@@ -1047,7 +1076,9 @@ Java_app_infinity_mpvz_ui_player_Media3FlowVulkanNative_nativeCreateContext(
     params.num_opt_extensions = sizeof(optionalExtensions) / sizeof(optionalExtensions[0]);
 #ifdef VK_NV_optical_flow
     params.extra_queues = VK_QUEUE_OPTICAL_FLOW_BIT_NV;
-    params.features = &opticalFlowFeatures;
+#endif
+#if defined(VK_NV_optical_flow) || defined(VK_QCOM_image_processing) || defined(VK_QCOM_image_processing2)
+    params.features = &optionalFeatures;
 #endif
     struct pl_log_params logParams{};
     logParams.log_cb = placeboLogCallback;

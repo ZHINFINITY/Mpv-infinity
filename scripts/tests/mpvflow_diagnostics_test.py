@@ -14,6 +14,7 @@ CRASH_ACTIVITY = (ROOT / "app/src/main/java/app/infinity/mpvz/presentation/crash
 DECODERS_SHEET = (ROOT / "app/src/main/java/app/infinity/mpvz/ui/player/controls/components/sheets/DecodersSheet.kt").read_text(encoding="utf-8")
 MEDIA3_FLOW_SINK = (ROOT / "app/src/main/java/app/infinity/mpvz/ui/player/Media3FlowVideoSink.kt").read_text(encoding="utf-8")
 FLOW_GPU_CORE = (ROOT / "app/src/main/cpp/mpvflow/mpvflow_gpu.c").read_text(encoding="utf-8")
+QCOM_ADAPTER = (ROOT / "app/src/main/cpp/mpvflow/mpvflow_vulkan_qcom.c").read_text(encoding="utf-8")
 MEDIA3_NATIVE = (ROOT / "app/src/main/cpp/media3flow_vulkan_jni.cpp").read_text(encoding="utf-8")
 
 
@@ -157,9 +158,12 @@ require(FLOW_GPU_CORE, "unresolved_dispatches_total=%llu", "Vulkan stage diagnos
 require(FLOW_GPU_CORE, "event=motion_geometry state=ready", "MPV and Media3 must expose the actual allocated Vulkan motion grid")
 require(FLOW_GPU_CORE, "motion_search_passes_per_pair=6", "the shared Vulkan core must retain every original motion pass")
 require(FLOW_GPU_CORE, "event=qcom_block_match_capability", "QCOM block-match support and format usage must be queried at runtime")
-require(FLOW_GPU_CORE, "shader_execution=not_integrated_in_flow_core", "QCOM probing must not imply its shader was enabled or executed")
-require(FLOW_GPU_CORE, "base_r8_capability_present_shader_unintegrated", "QCOM capability logging must not label unintegrated support as ready")
-assert "base_r8_block_match_ready" not in FLOW_GPU_CORE, "a capability probe must not imply a usable block-match runtime path"
+require(FLOW_GPU_CORE, "shader_execution=optional_qcom2_custom_pass_initialization_follows", "QCOM capability reporting must distinguish capability queries from adapter initialization")
+require(FLOW_GPU_CORE, "event=qcom_block_match_dispatch state=fallback", "QCOM setup or dispatch failure must retain baseline SAD matching")
+require(FLOW_GPU_CORE, "fallback=full_baseline_sad_search", "QCOM adapter dispatch must report a safe full-search fallback")
+require(QCOM_ADAPTER, "refinement=full_baseline_sad_search", "successful QCOM dispatch must still be refined and checked by baseline SAD")
+require(QCOM_ADAPTER, "event=qcom_block_match_dispatch state=active", "QCOM active diagnostics must represent an actual submitted dispatch")
+assert "base_r8_block_match_ready" not in FLOW_GPU_CORE, "QCOM capability queries alone must not imply an active dispatch"
 require(MEDIA3_NATIVE, "event=queue_capability", "Media3 must report whether the device exposes a dedicated compute family")
 require(MEDIA3_NATIVE, "async_queue_disabled_reason=exclusive_ahb_images_require_verified_queue_ownership", "Media3 must explain why its current AHardwareBuffer path remains single-family")
 for stage in (

@@ -495,6 +495,72 @@ def enable_android_external_memory_extensions(vulkan_context: str) -> str:
     )
 
 
+def enable_qcom_image_processing(vulkan_context: str) -> str:
+    marker = "/* MPVFLOW_QCOM_IMAGE_PROCESSING_FEATURES */"
+    required = (
+        "VK_QCOM_IMAGE_PROCESSING_EXTENSION_NAME",
+        "VK_QCOM_IMAGE_PROCESSING_2_EXTENSION_NAME",
+        "VkPhysicalDeviceImageProcessingFeaturesQCOM",
+        "VkPhysicalDeviceImageProcessing2FeaturesQCOM",
+        "textureBlockMatch = true",
+        "textureBlockMatch2 = true",
+        "MPVFLOW_QCOM_IMAGE_PROCESSING_FEATURES",
+    )
+    if marker in vulkan_context:
+        if all(item in vulkan_context for item in required):
+            return vulkan_context
+        raise SystemExit("Pinned MPV QCOM image-processing patch is incomplete")
+
+    extension_anchor = "        VK_NV_OPTICAL_FLOW_EXTENSION_NAME,\n"
+    extension_insert = extension_anchor + (
+        "#ifdef VK_QCOM_image_processing\n"
+        "        VK_QCOM_IMAGE_PROCESSING_EXTENSION_NAME,\n"
+        "#ifdef VK_QCOM_image_processing2\n"
+        "        VK_QCOM_IMAGE_PROCESSING_2_EXTENSION_NAME,\n"
+        "#endif\n"
+        "#endif\n"
+    )
+    feature_anchor = (
+        "    VkPhysicalDeviceOpticalFlowFeaturesNV optical_flow_feature = {\n"
+        "        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_OPTICAL_FLOW_FEATURES_NV,\n"
+        "        .pNext = &zero_init_feature,\n"
+    )
+    feature_insert = (
+        "#if defined(VK_QCOM_image_processing) && defined(VK_QCOM_image_processing2)\n"
+        "    VkPhysicalDeviceImageProcessing2FeaturesQCOM image_processing2_feature = {\n"
+        "        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_IMAGE_PROCESSING_2_FEATURES_QCOM,\n"
+        "        .pNext = &zero_init_feature,\n"
+        "        .textureBlockMatch2 = true,\n"
+        "    };\n"
+        "#endif\n"
+        "#ifdef VK_QCOM_image_processing\n"
+        "    VkPhysicalDeviceImageProcessingFeaturesQCOM image_processing_feature = {\n"
+        "        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_IMAGE_PROCESSING_FEATURES_QCOM,\n"
+        "#ifdef VK_QCOM_image_processing2\n"
+        "        .pNext = &image_processing2_feature,\n"
+        "#else\n"
+        "        .pNext = &zero_init_feature,\n"
+        "#endif\n"
+        "        .textureBlockMatch = true,\n"
+        "    };\n"
+        "#endif\n"
+        f"{marker}\n"
+        "    VkPhysicalDeviceOpticalFlowFeaturesNV optical_flow_feature = {\n"
+        "        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_OPTICAL_FLOW_FEATURES_NV,\n"
+        "        .pNext =\n"
+        "#ifdef VK_QCOM_image_processing\n"
+        "            &image_processing_feature,\n"
+        "#else\n"
+        "            &zero_init_feature,\n"
+        "#endif\n"
+    )
+
+    if vulkan_context.count(extension_anchor) != 1 or vulkan_context.count(feature_anchor) != 1:
+        raise SystemExit("Pinned MPV Vulkan extension/feature chain changed; refusing an unverified QCOM enablement patch")
+    patched = vulkan_context.replace(extension_anchor, extension_insert, 1)
+    return patched.replace(feature_anchor, feature_insert, 1)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--mpv-dir", required=True, type=Path)
@@ -528,6 +594,10 @@ def main() -> None:
         VENDOR / "mpvflow_opencl_vk_bridge.h",
         VENDOR / "mpvflow_vulkan_optical.c",
         VENDOR / "mpvflow_vulkan_optical.h",
+        VENDOR / "mpvflow_vulkan_qcom.c",
+        VENDOR / "mpvflow_vulkan_qcom.h",
+        VENDOR / "mpvflow_qcom_seed.comp",
+        VENDOR / "mpvflow_qcom_seed_spv.h",
         VO_PATCH,
         AIMAGE_VULKAN_PATCH,
         VENDOR / "mpvflow_opencl_validation.h",
@@ -548,6 +618,10 @@ def main() -> None:
         "mpvflow_opencl_vk_bridge.h",
         "mpvflow_vulkan_optical.c",
         "mpvflow_vulkan_optical.h",
+        "mpvflow_vulkan_qcom.c",
+        "mpvflow_vulkan_qcom.h",
+        "mpvflow_qcom_seed.comp",
+        "mpvflow_qcom_seed_spv.h",
     ):
         shutil.copy2(VENDOR / filename, video_out_dir / filename)
     hwdec_dir = video_out_dir / "hwdec"
@@ -560,6 +634,7 @@ def main() -> None:
     vulkan_context = enable_android_external_memory_extensions(
         vulkan_context_path.read_text()
     )
+    vulkan_context = enable_qcom_image_processing(vulkan_context)
     meson = enable_android_vulkan_dependency(meson)
     glslang_meson = enable_android_glslang_library_search(glslang_meson_path.read_text())
     gpu_timer = enlarge_libplacebo_timer_ring(gpu_timer_path.read_text())
@@ -599,13 +674,14 @@ def main() -> None:
         "video/out/mpvflow_opencl.c",
         "video/out/mpvflow_opencl_vk_bridge.c",
         "video/out/mpvflow_vulkan_optical.c",
+        "video/out/mpvflow_vulkan_qcom.c",
     )
     if meson_marker not in meson:
         close = base_sources_close(meson)
         block = (
             "\n# The direct MPVFlow compute stage is built only for Android.\n"
             "if host_machine.system() == 'android'\n"
-            f"    sources += files('{gpu_source}', '{opencl_sources[0]}', '{opencl_sources[1]}', '{opencl_sources[2]}')\n"
+            f"    sources += files('{gpu_source}', '{opencl_sources[0]}', '{opencl_sources[1]}', '{opencl_sources[2]}', '{opencl_sources[3]}')\n"
             "endif\n"
             f"{meson_marker}\n"
         )

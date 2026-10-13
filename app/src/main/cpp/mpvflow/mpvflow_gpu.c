@@ -9,6 +9,7 @@
 #include "mpvflow_opencl.h"
 #include "mpvflow_opencl_vk_bridge.h"
 #include "mpvflow_vulkan_optical.h"
+#include "mpvflow_vulkan_qcom.h"
 
 #include <libplacebo/vulkan.h>
 
@@ -92,6 +93,7 @@ struct MPVFlowGPUContext {
     pl_pass pass_optical_seed;
     pl_pass pass_synthesize;
     MPVFlowVulkanOptical *optical;
+    MPVFlowVulkanQcom *qcom;
     struct FlowTimerStats timers[FLOW_TIMER_COUNT];
     uint64_t timing_window_start_ns;
 };
@@ -427,6 +429,8 @@ static void flow_log_qcom_block_match_capability(pl_vulkan vk)
     }
 
     VkResult image_usage_result = VK_ERROR_EXTENSION_NOT_PRESENT;
+    VkResult stage_usage_result = VK_ERROR_EXTENSION_NOT_PRESENT;
+    VkResult seed_usage_result = VK_ERROR_EXTENSION_NOT_PRESENT;
     VkImageFormatProperties2 image_properties = {
         .sType = VK_STRUCTURE_TYPE_IMAGE_FORMAT_PROPERTIES_2,
     };
@@ -442,9 +446,17 @@ static void flow_log_qcom_block_match_capability(pl_vulkan vk)
             .format = VK_FORMAT_R8_UNORM,
             .type = VK_IMAGE_TYPE_2D,
             .tiling = VK_IMAGE_TILING_OPTIMAL,
-            .usage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_SAMPLE_BLOCK_MATCH_BIT_QCOM,
+            .usage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT |
+                VK_IMAGE_USAGE_SAMPLE_BLOCK_MATCH_BIT_QCOM,
         };
         image_usage_result = get_image_properties2(vk->phys_device, &image_info,
+                                                    &image_properties);
+        image_info.usage = VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
+        stage_usage_result = get_image_properties2(vk->phys_device, &image_info,
+                                                     &image_properties);
+        image_info.format = VK_FORMAT_R16G16B16A16_SFLOAT;
+        image_info.usage = VK_IMAGE_USAGE_STORAGE_BIT;
+        seed_usage_result = get_image_properties2(vk->phys_device, &image_info,
                                                     &image_properties);
     }
 
@@ -452,24 +464,33 @@ static void flow_log_qcom_block_match_capability(pl_vulkan vk)
     const bool window_match = features_queried && window_extension &&
         window_features.textureBlockMatch2 == VK_TRUE;
     const char *state = !base_extension ? "not_supported" :
+        !window_extension ? "window_extension_not_supported" :
         !features_queried ? "query_unavailable" :
-        block_match && format_queried && r8_block_match_format &&
-            image_usage_result == VK_SUCCESS ? "base_r8_capability_present_shader_unintegrated" : "partial";
+            block_match && window_match && properties_queried &&
+                base_properties.maxBlockMatchRegion.width &&
+                base_properties.maxBlockMatchRegion.height &&
+                window_properties.maxBlockMatchWindow.width &&
+                window_properties.maxBlockMatchWindow.height &&
+                format_queried && r8_block_match_format &&
+                image_usage_result == VK_SUCCESS && stage_usage_result == VK_SUCCESS &&
+                seed_usage_result == VK_SUCCESS ? "exact_usage_capabilities_present" : "partial";
     flow_log(vk->gpu, PL_LOG_INFO,
              "MPVFLOW_DIAGNOSTIC event=qcom_block_match_capability state=%s "
              "base_extension_supported=%d window_extension_supported=%d "
              "base_extension_enabled=%d window_extension_enabled=%d features_queried=%d "
              "texture_block_match_supported=%d texture_block_match2_supported=%d properties_queried=%d "
              "max_block_match_region=%ux%u max_block_match_window=%ux%u "
-             "r8_format_queried=%d r8_block_match_format=%d image_usage_result=%d "
-             "shader_execution=not_integrated_in_flow_core",
+             "r8_format_queried=%d r8_block_match_format=%d block_input_usage_result=%d "
+             "storage_stage_usage_result=%d rgba16f_seed_usage_result=%d "
+             "shader_execution=optional_qcom2_custom_pass_initialization_follows",
              state, base_extension, window_extension, base_enabled, window_enabled, features_queried,
              block_match, window_match, properties_queried,
              base_properties.maxBlockMatchRegion.width,
              base_properties.maxBlockMatchRegion.height,
              window_properties.maxBlockMatchWindow.width,
              window_properties.maxBlockMatchWindow.height,
-             format_queried, r8_block_match_format, image_usage_result);
+             format_queried, r8_block_match_format, image_usage_result,
+             stage_usage_result, seed_usage_result);
 }
 #else
 static void flow_log_qcom_block_match_capability(pl_vulkan vk)
@@ -477,7 +498,7 @@ static void flow_log_qcom_block_match_capability(pl_vulkan vk)
     if (vk && vk->gpu)
         flow_log(vk->gpu, PL_LOG_INFO,
                  "MPVFLOW_DIAGNOSTIC event=qcom_block_match_capability state=not_compiled "
-                 "shader_execution=not_integrated_in_flow_core");
+                 "shader_execution=unavailable_headers_missing");
 }
 #endif
 
@@ -792,8 +813,8 @@ static const char shader_flow[] =
     "int sadAt(ivec2 p,ivec2 d,ivec2 sz,int cutoff,int blockSize){ int cost=0; for(int y=0;y<blockSize;y++) for(int x=0;x<blockSize;x++){ float a=imageLoad(srcTex,p+ivec2(x,y)).r; float b=imageLoad(dstTex,p+ivec2(x,y)+d).r; cost+=int(abs(a-b)*255.0+0.5); if(cost>cutoff) return cost; } return cost; }\n"
     "float subpixelOffset(float minusCost,float centerCost,float plusCost){ float curvature=minusCost-2.0*centerCost+plusCost; if(centerCost>minusCost||centerCost>plusCost||curvature<=0.0001) return 0.0; return clamp(0.5*(minusCost-plusCost)/curvature,-0.5,0.5); }\n"
     "float refineAxis(ivec2 p,ivec2 v,ivec2 axis,ivec2 sz,int blockSize,int centerCost){ ivec2 m=v-axis,q=v+axis,block=ivec2(blockSize); if(any(lessThan(p+m,ivec2(0)))||any(lessThan(p+q,ivec2(0)))||any(greaterThan(p+m,sz-block))||any(greaterThan(p+q,sz-block))) return 0.0; int cm=sadAt(p,m,sz,2147483647,blockSize),cp=sadAt(p,q,sz,2147483647,blockSize); return subpixelOffset(float(cm),float(centerCost),float(cp)); }\n"
-    "void main(){ ivec2 g=ivec2(gl_GlobalInvocationID.xy); ivec2 grid=imageSize(flowTex); if(any(greaterThanEqual(g,grid))) return; if(imageLoad(sceneTex,ivec2(0)).r>0.1882353){ imageStore(flowTex,g,vec4(0.0,0.0,1.0,0.0)); return; } ivec2 sz=pc.cfg.xy; int blockSize=(pc.cfg.w>>8); if(blockSize!=4) blockSize=8; ivec2 block=ivec2(blockSize),p=min(g*4,sz-block); bool opticalSeed=(pc.cfg.w&2)!=0,hasParent=(pc.cfg.w&1)!=0||opticalSeed;ivec2 center=ivec2(0); float parentResidual=0.0,parentUniqueness=1.0; if(hasParent){ vec4 parentFlow; if(opticalSeed){ parentFlow=imageLoad(parentTex,g); } else { ivec2 pg=imageSize(parentTex),parentSize=(sz+ivec2(1))/2; vec2 parentPos=vec2(flowGridAxis(float(p.x)*0.5,float(parentSize.x),8,pg.x),flowGridAxis(float(p.y)*0.5,float(parentSize.y),8,pg.y)); ivec2 a=clamp(ivec2(floor(parentPos)),ivec2(0),pg-1); ivec2 b=min(a+1,pg-1); vec2 f=fract(parentPos); vec4 top=mix(imageLoad(parentTex,a),imageLoad(parentTex,ivec2(b.x,a.y)),f.x); vec4 bot=mix(imageLoad(parentTex,ivec2(a.x,b.y)),imageLoad(parentTex,b),f.x); parentFlow=mix(top,bot,f.y); } center=ivec2(round(parentFlow.rg*(opticalSeed?1.0:2.0))); parentResidual=parentFlow.b; parentUniqueness=parentFlow.a; } center=clamp(center,-p,sz-block-p); int radius=pc.cfg.z; if(hasParent&&parentResidual>0.12&&parentUniqueness>0.0005)radius=min(radius*2,16); ivec2 lo=max(-p,center-ivec2(radius)); ivec2 hi=min(sz-block-p,center+ivec2(radius)); ivec2 bestVector=center; int best=sadAt(p,bestVector,sz,2147483647,blockSize),second=2147483647; bool stopOnCenterTie=false;\n"
-    "for(int ring=1;ring<=radius&&!stopOnCenterTie;ring++) for(int dy=-ring;dy<=ring&&!stopOnCenterTie;dy++) for(int dx=-ring;dx<=ring&&!stopOnCenterTie;dx++){ if(max(abs(dx),abs(dy))!=ring) continue; ivec2 d=center+ivec2(dx,dy); if(any(lessThan(d,lo))||any(greaterThan(d,hi))) continue; if(all(equal(d,bestVector))) continue; if(best==0&&second==0){ if(all(equal(bestVector,center))){stopOnCenterTie=true;continue;} if(d.y>bestVector.y||(d.y==bestVector.y&&d.x>=bestVector.x)) continue; } int c=sadAt(p,d,sz,best==0?0:second,blockSize); if(best==0){if(c==0){second=0; if(!all(equal(bestVector,center))&&(d.y<bestVector.y||(d.y==bestVector.y&&d.x<bestVector.x))) bestVector=d;} else if(second!=0) second=1;} else if(c<best){second=best;best=c;bestVector=d;} else if(c==best){if(second>c) second=c; if(!all(equal(bestVector,center))&&(d.y<bestVector.y||(d.y==bestVector.y&&d.x<bestVector.x))) bestVector=d;} else if(c<second) second=c; }\n"
+    "void main(){ ivec2 g=ivec2(gl_GlobalInvocationID.xy); ivec2 grid=imageSize(flowTex); if(any(greaterThanEqual(g,grid))) return; if(imageLoad(sceneTex,ivec2(0)).r>0.1882353){ imageStore(flowTex,g,vec4(0.0,0.0,1.0,0.0)); return; } ivec2 sz=pc.cfg.xy; int blockSize=(pc.cfg.w>>8); if(blockSize!=4) blockSize=8; ivec2 block=ivec2(blockSize),p=min(g*4,sz-block); bool opticalSeed=(pc.cfg.w&2)!=0,qcomSeed=(pc.cfg.w&4)!=0,hasParent=(pc.cfg.w&1)!=0||opticalSeed||qcomSeed; ivec2 center=ivec2(0),qcomCandidate=ivec2(0); bool qcomCandidateValid=false; float parentResidual=0.0,parentUniqueness=1.0; if(qcomSeed){ vec4 qcomFlow=imageLoad(parentTex,g); qcomCandidate=ivec2(round(qcomFlow.rg)); } else if(hasParent){ vec4 parentFlow; if(opticalSeed){ parentFlow=imageLoad(parentTex,g); } else { ivec2 pg=imageSize(parentTex),parentSize=(sz+ivec2(1))/2; vec2 parentPos=vec2(flowGridAxis(float(p.x)*0.5,float(parentSize.x),8,pg.x),flowGridAxis(float(p.y)*0.5,float(parentSize.y),8,pg.y)); ivec2 a=clamp(ivec2(floor(parentPos)),ivec2(0),pg-1); ivec2 b=min(a+1,pg-1); vec2 f=fract(parentPos); vec4 top=mix(imageLoad(parentTex,a),imageLoad(parentTex,ivec2(b.x,a.y)),f.x); vec4 bot=mix(imageLoad(parentTex,ivec2(a.x,b.y)),imageLoad(parentTex,b),f.x); parentFlow=mix(top,bot,f.y); } center=ivec2(round(parentFlow.rg*(opticalSeed?1.0:2.0))); parentResidual=parentFlow.b; parentUniqueness=parentFlow.a; } center=clamp(center,-p,sz-block-p); int radius=pc.cfg.z; if(hasParent&&!qcomSeed&&parentResidual>0.12&&parentUniqueness>0.0005)radius=min(radius*2,16); ivec2 lo=max(-p,center-ivec2(radius)); ivec2 hi=min(sz-block-p,center+ivec2(radius)); if(qcomSeed) qcomCandidateValid=all(greaterThanEqual(qcomCandidate,lo))&&all(lessThanEqual(qcomCandidate,hi)); ivec2 bestVector=center; int best=sadAt(p,bestVector,sz,2147483647,blockSize),second=2147483647; bool stopOnCenterTie=false; if(qcomCandidateValid&&!all(equal(qcomCandidate,bestVector))){ int c=sadAt(p,qcomCandidate,sz,best==0?0:second,blockSize); if(best==0){if(c==0){second=0; if(!all(equal(bestVector,center))&&(qcomCandidate.y<bestVector.y||(qcomCandidate.y==bestVector.y&&qcomCandidate.x<bestVector.x))) bestVector=qcomCandidate;} else if(second!=0) second=1;} else if(c<best){second=best;best=c;bestVector=qcomCandidate;} else if(c==best){if(second>c) second=c; if(!all(equal(bestVector,center))&&(qcomCandidate.y<bestVector.y||(qcomCandidate.y==bestVector.y&&qcomCandidate.x<bestVector.x))) bestVector=qcomCandidate;} else if(c<second) second=c; }\n"
+    "for(int ring=1;ring<=radius&&!stopOnCenterTie;ring++) for(int dy=-ring;dy<=ring&&!stopOnCenterTie;dy++) for(int dx=-ring;dx<=ring&&!stopOnCenterTie;dx++){ if(max(abs(dx),abs(dy))!=ring) continue; ivec2 d=center+ivec2(dx,dy); if(any(lessThan(d,lo))||any(greaterThan(d,hi))) continue; if(all(equal(d,bestVector))) continue; if(qcomCandidateValid&&all(equal(d,qcomCandidate))) continue; if(best==0&&second==0){ if(all(equal(bestVector,center))){stopOnCenterTie=true;continue;} if(d.y>bestVector.y||(d.y==bestVector.y&&d.x>=bestVector.x)) continue; } int c=sadAt(p,d,sz,best==0?0:second,blockSize); if(best==0){if(c==0){second=0; if(!all(equal(bestVector,center))&&(d.y<bestVector.y||(d.y==bestVector.y&&d.x<bestVector.x))) bestVector=d;} else if(second!=0) second=1;} else if(c<best){second=best;best=c;bestVector=d;} else if(c==best){if(second>c) second=c; if(!all(equal(bestVector,center))&&(d.y<bestVector.y||(d.y==bestVector.y&&d.x<bestVector.x))) bestVector=d;} else if(c<second) second=c; }\n"
     "vec2 refined=vec2(bestVector); refined.x+=refineAxis(p,bestVector,ivec2(1,0),sz,blockSize,best); refined.y+=refineAxis(p,bestVector,ivec2(0,1),sz,blockSize,best); float uniqueness=second<2147483647?clamp(float(second-best)/max(float(second),1.0),0.0,1.0):0.0; imageStore(flowTex,g,vec4(refined,float(best)/(float(blockSize*blockSize)*255.0),uniqueness)); }\n"
 ;
 
@@ -1289,18 +1310,23 @@ MPVFlowGPUContext *mpvflow_gpu_create(pl_gpu gpu,
         return NULL;
     }
 
+    char qcom_reason[160] = {0};
+    ctx->qcom = mpvflow_vulkan_qcom_create(gpu, qcom_reason,
+                                           sizeof(qcom_reason));
     char optical_reason[160] = {0};
-    ctx->optical = mpvflow_vulkan_optical_create(gpu, optical_reason,
-                                                 sizeof(optical_reason));
+    if (!ctx->qcom)
+        ctx->optical = mpvflow_vulkan_optical_create(gpu, optical_reason,
+                                                     sizeof(optical_reason));
     if (diagnostics) {
-        diagnostics->optical_flow_attempted = true;
+        diagnostics->optical_flow_attempted = !ctx->qcom;
         diagnostics->optical_flow_ready = ctx->optical != NULL;
         snprintf(diagnostics->optical_flow_reason,
                  sizeof(diagnostics->optical_flow_reason), "%s",
+                 ctx->qcom ? "qcom2_seed_backend_preferred" :
                  ctx->optical ? "ready" :
                      (optical_reason[0] ? optical_reason : "unavailable"));
     }
-    if (!ctx->optical)
+    if (!ctx->optical && !ctx->qcom)
         flow_log(gpu, PL_LOG_INFO,
                  "MPVFLOW_DIAGNOSTIC event=optical_flow_backend state=disabled "
                  "reason=%s fallback=validated_vulkan_block_matching",
@@ -1465,18 +1491,20 @@ MPVFlowGPUContext *mpvflow_gpu_create(pl_gpu gpu,
     ctx->pass_reduce = make_pass(gpu, shader_reduce, reduce_desc, 2);
     ctx->pass_flow = make_pass(gpu, shader_flow, flow_desc, 5);
     ctx->pass_synthesize = make_pass(gpu, shader_synthesize, synth_desc, 8);
-    if (ctx->optical) {
+    if (ctx->optical || ctx->qcom) {
         ctx->pass_optical_luma = make_pass(gpu, shader_optical_luma,
                                            optical_luma_desc, 2);
-        ctx->pass_optical_seed = make_pass(gpu, shader_optical_seed,
-                                           optical_seed_desc, 3);
-        if (!ctx->pass_optical_luma || !ctx->pass_optical_seed) {
+        if (ctx->optical)
+            ctx->pass_optical_seed = make_pass(gpu, shader_optical_seed,
+                                               optical_seed_desc, 3);
+        if (!ctx->pass_optical_luma || (ctx->optical && !ctx->pass_optical_seed)) {
             flow_log(gpu, PL_LOG_WARN,
-                     "MPVFLOW_DIAGNOSTIC event=optical_flow_backend state=disabled "
-                     "reason=optional_seed_shader_compile_failed fallback=validated_vulkan_block_matching "
+                     "MPVFLOW_DIAGNOSTIC event=hardware_seed_backend state=disabled "
+                     "reason=optional_luma_or_seed_shader_compile_failed fallback=validated_vulkan_sad "
                      "luma_pass=%d seed_pass=%d",
                      !!ctx->pass_optical_luma, !!ctx->pass_optical_seed);
             mpvflow_vulkan_optical_destroy(&ctx->optical);
+            mpvflow_vulkan_qcom_destroy(&ctx->qcom);
             if (ctx->pass_optical_luma)
                 pl_pass_destroy(gpu, &ctx->pass_optical_luma);
             if (ctx->pass_optical_seed)
@@ -1550,7 +1578,6 @@ void mpvflow_gpu_destroy(MPVFlowGPUContext *ctx)
 {
     if (!ctx)
         return;
-    mpvflow_vulkan_optical_destroy(&ctx->optical);
     if (ctx->pass_preprocess) pl_pass_destroy(ctx->gpu, &ctx->pass_preprocess);
     if (ctx->pass_luma) pl_pass_destroy(ctx->gpu, &ctx->pass_luma);
     if (ctx->pass_downsample) pl_pass_destroy(ctx->gpu, &ctx->pass_downsample);
@@ -1560,6 +1587,8 @@ void mpvflow_gpu_destroy(MPVFlowGPUContext *ctx)
     if (ctx->pass_optical_luma) pl_pass_destroy(ctx->gpu, &ctx->pass_optical_luma);
     if (ctx->pass_optical_seed) pl_pass_destroy(ctx->gpu, &ctx->pass_optical_seed);
     if (ctx->pass_synthesize) pl_pass_destroy(ctx->gpu, &ctx->pass_synthesize);
+    mpvflow_vulkan_optical_destroy(&ctx->optical);
+    mpvflow_vulkan_qcom_destroy(&ctx->qcom);
     for (int i = 0; i < FLOW_TIMER_COUNT; i++)
         pl_timer_destroy(ctx->gpu, &ctx->timers[i].timer);
     if (ctx->opencl_bridge) {
@@ -1931,6 +1960,36 @@ enum MPVFlowGPUResult mpvflow_gpu_analyze_pair(MPVFlowGPUContext *ctx,
             goto failure;
     }
 
+    bool qcom_dispatched = false;
+    if (ctx->qcom && ctx->pass_optical_luma) {
+        struct FlowLevel *coarse = &pair->level[pair->levels - 1];
+        const int block_size = pair->levels == 1 ? FLOW_FINE_BLOCK : FLOW_BLOCK;
+        const int grid_width = (int) coarse->forward->params.w;
+        const int grid_height = (int) coarse->forward->params.h;
+        int qcom_luma_cfg[4] = { coarse->w, coarse->h, 0, 0 };
+        bool inputs_ready = mpvflow_vulkan_qcom_ensure(ctx->qcom,
+            coarse->w, coarse->h, grid_width, grid_height, block_size);
+        struct pl_desc_binding qcom_luma_bindings[2] = {
+            { .object = coarse->luma[0] },
+            { .object = mpvflow_vulkan_qcom_luma(ctx->qcom, 0) },
+        };
+        inputs_ready = inputs_ready && run_pass(ctx, ctx->pass_optical_luma,
+            qcom_luma_bindings, 2, qcom_luma_cfg, 0.0f,
+            coarse->w, coarse->h, "qcom_block_match_luma_frame0");
+        qcom_luma_bindings[0].object = coarse->luma[1];
+        qcom_luma_bindings[1].object = mpvflow_vulkan_qcom_luma(ctx->qcom, 1);
+        inputs_ready = inputs_ready && run_pass(ctx, ctx->pass_optical_luma,
+            qcom_luma_bindings, 2, qcom_luma_cfg, 0.0f,
+            coarse->w, coarse->h, "qcom_block_match_luma_frame1");
+        qcom_dispatched = inputs_ready && mpvflow_vulkan_qcom_dispatch(ctx->qcom);
+        if (!qcom_dispatched)
+            flow_log(ctx->gpu, PL_LOG_DEBUG,
+                     "MPVFLOW_DIAGNOSTIC event=qcom_block_match_dispatch state=fallback "
+                     "reason=%s fallback=full_baseline_sad_search",
+                     inputs_ready ? "optional_qcom_dispatch_unavailable" :
+                         "optional_qcom_luma_or_image_setup_unavailable");
+    }
+
     int rw = (pair->w + 15) / 16, rh = (pair->h + 15) / 16;
     int rc[4] = { rw, rh, 0, 0 };
     struct pl_desc_binding rb[3] = {
@@ -1985,17 +2044,22 @@ enum MPVFlowGPUResult mpvflow_gpu_analyze_pair(MPVFlowGPUContext *ctx,
                 ? &pair->level[li + 1] : NULL;
             const bool optical_parent = pair->optical_seed_ready &&
                                         li == pair->levels - 1;
+            const bool qcom_parent = qcom_dispatched &&
+                                     li == pair->levels - 1;
             pl_tex src = lv->luma[dir ? 1 : 0];
             pl_tex dst = lv->luma[dir ? 0 : 1];
             pl_tex flow = dir ? lv->backward : lv->forward;
-            pl_tex parent_flow = optical_parent ? pair->optical_seed[dir] : parent
+            pl_tex parent_flow = qcom_parent
+                ? mpvflow_vulkan_qcom_seed(ctx->qcom, dir) : optical_parent
+                ? pair->optical_seed[dir] : parent
                 ? (dir ? parent->backward : parent->forward)
                 : (dir ? lv->forward : lv->backward);
-            const bool has_parent = parent || optical_parent;
+            const bool has_parent = parent || optical_parent || qcom_parent;
             int radius = parent ? 2 : ctx->search_radius;
             const int block_size = li == 0 ? FLOW_FINE_BLOCK : FLOW_BLOCK;
             int fc[4] = { lv->w, lv->h, radius,
                           (has_parent ? 1 : 0) | (optical_parent ? 2 : 0) |
+                          (qcom_parent ? 4 : 0) |
                           (block_size << 8) };
             struct pl_desc_binding fb[5] = {
                 { .object = src }, { .object = dst }, { .object = parent_flow },

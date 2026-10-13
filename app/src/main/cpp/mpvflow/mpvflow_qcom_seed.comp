@@ -1,0 +1,46 @@
+#version 450
+#extension GL_QCOM_image_processing : require
+#extension GL_QCOM_image_processing2 : require
+
+layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
+
+// These use VK_DESCRIPTOR_TYPE_BLOCK_MATCH_IMAGE_QCOM, not ordinary sampled
+// image descriptors. The QCOM2 builtin requires a separately bound sampler.
+layout(set = 0, binding = 0) uniform texture2D targetImage;
+layout(set = 0, binding = 1) uniform texture2D referenceImage;
+layout(set = 0, binding = 2) uniform sampler blockMatchSampler;
+layout(set = 0, binding = 3, rgba16f) writeonly uniform image2D seedMap;
+
+layout(push_constant) uniform QcomSeedPush {
+    uvec4 imageGrid; // input width, input height, grid width, grid height
+    uvec4 search;    // block size, window width, window height, reserved
+} pc;
+
+void main()
+{
+    uvec2 g = gl_GlobalInvocationID.xy;
+    if (any(greaterThanEqual(g, pc.imageGrid.zw)))
+        return;
+
+    uvec2 imageSize = pc.imageGrid.xy;
+    uint blockSize = pc.search.x;
+    uvec2 windowSize = pc.search.yz;
+    uvec2 block = uvec2(blockSize);
+    uvec2 p = min(g * 4u, imageSize - block);
+
+    // The QCOM2 result reports target-window-local offsets. Center the search
+    // window on the reference block where possible, while keeping every target
+    // candidate fully inside the input image.
+    uvec2 halfWindow = windowSize / 2u;
+    uvec2 idealOrigin = p - min(p, halfWindow);
+    uvec2 maxOrigin = imageSize - block - (windowSize - 1u);
+    uvec2 targetOrigin = min(idealOrigin, maxOrigin);
+
+    vec4 match = textureBlockMatchWindowSADQCOM(
+        sampler2D(targetImage, blockMatchSampler), targetOrigin,
+        sampler2D(referenceImage, blockMatchSampler), p, block);
+    ivec2 offset = ivec2(floor(match.yz + vec2(0.5)));
+    ivec2 displacement = ivec2(targetOrigin) + offset - ivec2(p);
+    float normalizedSad = match.x / float(blockSize * blockSize);
+    imageStore(seedMap, ivec2(g), vec4(vec2(displacement), normalizedSad, 1.0));
+}

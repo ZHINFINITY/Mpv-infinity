@@ -7,12 +7,15 @@ import pathlib
 import random
 import re
 import shutil
+import struct
 import subprocess
 import tempfile
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 SOURCE_PATH = ROOT / "app/src/main/cpp/mpvflow/mpvflow_gpu.c"
 SOURCE = SOURCE_PATH.read_text(encoding="utf-8")
+QCOM_SHADER_PATH = ROOT / "app/src/main/cpp/mpvflow/mpvflow_qcom_seed.comp"
+QCOM_SHADER = QCOM_SHADER_PATH.read_text(encoding="utf-8")
 
 
 def shader_source(name: str) -> str:
@@ -71,6 +74,11 @@ require(flow, "sadAt(p,d,sz,best==0?0:second,blockSize)", "zero-cost matches mus
 require(flow, "if(best==0&&second==0){ if(all(equal(bestVector,center))){stopOnCenterTie=true;continue;}", "a tied center winner must terminate search without changing its vector or confidence")
 require(flow, "d.y>bestVector.y||(d.y==bestVector.y&&d.x>=bestVector.x)", "once a non-center zero-cost tie is known, only lexicographically earlier vectors may affect the legacy tie-break")
 require(flow, "int radius=pc.cfg.z", "center-out must retain the original full configured motion radius")
+require(flow, "qcomSeed=(pc.cfg.w&4)!=0", "QCOM results must be tagged separately from optical and parent-flow priors")
+require(flow, "qcomCandidateValid=all(greaterThanEqual(qcomCandidate,lo))&&all(lessThanEqual(qcomCandidate,hi))", "QCOM hints outside the original edge-clipped SAD domain must be discarded")
+require(flow, "int c=sadAt(p,qcomCandidate,sz,best==0?0:second,blockSize)", "a QCOM vector must be scored by the existing SAD objective before it can affect motion")
+require(flow, "if(qcomCandidateValid&&all(equal(d,qcomCandidate))) continue", "the baseline center-out search must not double-count its QCOM-seeded candidate")
+require(flow, "int radius=pc.cfg.z; if(hasParent&&!qcomSeed&&parentResidual", "QCOM hints must not expand or otherwise change the configured SAD search radius")
 require(flow, "int blockSize=(pc.cfg.w>>8)", "motion search must distinguish fine and coarse block support")
 require(flow, "if(blockSize!=4) blockSize=8", "motion search must constrain support to the tested 4x4 or 8x8 sizes")
 require(flow, "float(best)/(float(blockSize*blockSize)*255.0)", "flow vectors must normalize SAD by the active block area")
@@ -173,13 +181,22 @@ require(synthesis, "float uniquenessQuality=smoothstep(0.08,0.30,flow.w)", "endp
 require(synthesis, "return cycleQuality*matchQuality*uniquenessQuality*valid;", "endpoint reliability must include motion uniqueness")
 require(synthesis, "if(confidence<0.28)", "unreliable motion must fall back to a real source frame")
 require(flow, "float(second-best)/max(float(second),1.0)", "flow vectors must report best-vs-runner-up match uniqueness")
+
+for fragment, message in (
+    ("textureBlockMatchWindowSADQCOM(", "QCOM2 must call the window-SAD intrinsic"),
+    ("uniform texture2D targetImage", "QCOM block-match image descriptors must remain separate from ordinary sampled descriptors"),
+    ("uniform sampler blockMatchSampler", "QCOM2 must bind its image-processing sampler separately"),
+    ("ivec2 displacement = ivec2(targetOrigin) + offset - ivec2(p)", "QCOM target-local offsets must convert to signed frame displacement"),
+    ("imageStore(seedMap, ivec2(g), vec4(vec2(displacement)", "QCOM output must contain only a coarse vector prior and SAD metadata"),
+):
+    require(QCOM_SHADER, fragment, message)
 require(flow, "refineAxis(p,bestVector,ivec2(1,0)", "GPU flow vectors must be fractionally refined")
 require(flow, "center=clamp(center,-p,sz-block-p)", "coarse predictors must be clamped to the active block before border-local refinement")
-require(flow, "bool opticalSeed=(pc.cfg.w&2)!=0,hasParent=(pc.cfg.w&1)!=0||opticalSeed", "the encoded block support must remain distinct from optional parent and optical seed flags")
+require(flow, "bool opticalSeed=(pc.cfg.w&2)!=0,qcomSeed=(pc.cfg.w&4)!=0,hasParent=(pc.cfg.w&1)!=0||opticalSeed||qcomSeed", "the encoded block support must remain distinct from optional parent, optical, and QCOM seed flags")
 require(flow, "if(opticalSeed){ parentFlow=imageLoad(parentTex,g); }", "coarse flow must use the direction-matched hardware vector as a local search center")
 require(flow, "parentFlow.rg*(opticalSeed?1.0:2.0)", "hardware vectors must not be accidentally doubled when seeding the coarsest level")
 require(flow, "parentResidual=parentFlow.b; parentUniqueness=parentFlow.a", "finer Vulkan levels must retain the coarse SAD and uniqueness signals")
-require(flow, "if(hasParent&&parentResidual>0.12&&parentUniqueness>0.0005)radius=min(radius*2,16)", "only a poor but non-tied parent may double the fine-level search")
+require(flow, "if(hasParent&&!qcomSeed&&parentResidual>0.12&&parentUniqueness>0.0005)radius=min(radius*2,16)", "only a poor but non-tied non-QCOM parent may double the fine-level search")
 require(synthesis, "bool neighborhoodConflict=", "synthesis must detect local motion disagreement")
 require(synthesis, "float chromaDelta=max(abs((ca.r-ca.g)-(cb.r-cb.g)),abs((ca.b-ca.g)-(cb.b-cb.g)))", "Vulkan synthesis must measure chroma disagreement between warped source samples")
 require(synthesis, "bool chromaBoundary=colorDelta>0.12&&chromaDelta>0.06", "Vulkan synthesis must reject strong chroma-only contour mixing")
@@ -616,6 +633,34 @@ if validator:
             if result.returncode:
                 raise SystemExit(f"{name} Vulkan SPIR-V validation failed:\n{result.stdout}{result.stderr}")
             print(f"MPV Flow {name} Vulkan SPIR-V compiled")
+
+    with tempfile.TemporaryDirectory(prefix="mpvflow-qcom-shader-") as temp_dir:
+        output_file = pathlib.Path(temp_dir) / "mpvflow_qcom_seed.spv"
+        result = subprocess.run(
+            [validator, "-V", "--target-env", "vulkan1.2", "-S", "comp", "-o", str(output_file), str(QCOM_SHADER_PATH)],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode:
+            raise SystemExit(f"QCOM2 seed Vulkan SPIR-V compilation failed:\n{result.stdout}{result.stderr}")
+        compiled = output_file.read_bytes()
+        assert len(compiled) % 4 == 0, "compiled QCOM2 SPIR-V must contain whole words"
+        qcom_header = (ROOT / "app/src/main/cpp/mpvflow/mpvflow_qcom_seed_spv.h").read_text(encoding="utf-8")
+        header_words = [int(word, 16) for word in re.findall(r"0x([0-9a-fA-F]{8})u", qcom_header)]
+        compiled_words = list(struct.unpack(f"<{len(compiled) // 4}I", compiled))
+        assert header_words == compiled_words, "checked-in QCOM2 SPIR-V header is stale relative to the GLSL source"
+        spirv_val = shutil.which("spirv-val")
+        if spirv_val:
+            validation = subprocess.run(
+                [spirv_val, "--target-env", "vulkan1.2", str(output_file)],
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+            if validation.returncode:
+                raise SystemExit(f"QCOM2 seed SPIR-V validation failed:\n{validation.stdout}{validation.stderr}")
+        print("MPV Flow QCOM2 seed Vulkan SPIR-V compiled and matches the embedded header")
 else:
     print("glslangValidator unavailable; Vulkan GLSL compilation skipped")
 
