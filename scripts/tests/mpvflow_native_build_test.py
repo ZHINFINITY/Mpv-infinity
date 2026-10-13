@@ -437,6 +437,18 @@ for bad_wsi_recovery in (
     else:
         raise AssertionError("unexpected pinned WSI recovery changes must fail closed")
 patched_wsi_source = prepare.instrument_libplacebo_swapchain(wsi_source)
+prepare.validate_libplacebo_suboptimal_recovery(patched_wsi_source)
+bad_instrumented_recovery = patched_wsi_source.replace(
+    "bool flow_retry_recreate_ok = vk_sw_recreate(sw, 0, 0);",
+    "bool flow_retry_recreate_ok = false;",
+    1,
+)
+try:
+    prepare.validate_libplacebo_suboptimal_recovery(bad_instrumented_recovery)
+except SystemExit:
+    pass
+else:
+    raise AssertionError("repeated preparation must fail closed if timed out-of-date recreation is lost")
 for recovery_marker in (
     "if (p->suboptimal && !p->params.allow_suboptimal)\n        recreate = true;",
     "case VK_SUBOPTIMAL_KHR:\n            p->suboptimal = true;\n            // fall through\n        case VK_SUCCESS:",

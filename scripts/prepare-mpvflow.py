@@ -147,10 +147,27 @@ def add_libplacebo_swapchain_diagnostics_api(vulkan_header: str) -> str:
 
 
 def validate_libplacebo_suboptimal_recovery(swapchain_c: str) -> None:
+    if "/* MPVFLOW_WSI_DIAGNOSTICS */" in swapchain_c:
+        acquire_out_of_date = (
+            "case VK_ERROR_OUT_OF_DATE_KHR: {\n"
+            "            // In these cases try recreating the swapchain",
+            "bool flow_retry_recreate_ok = vk_sw_recreate(sw, 0, 0);",
+            "if (!flow_retry_recreate_ok) {\n"
+            "                pl_mutex_unlock(&p->lock);\n"
+            "                return false;\n"
+            "            }\n"
+            "            continue;",
+        )
+    else:
+        acquire_out_of_date = (
+            "case VK_ERROR_OUT_OF_DATE_KHR: {\n"
+            "            // In these cases try recreating the swapchain\n"
+            "            if (!vk_sw_recreate(sw, 0, 0)) {",
+        )
     required = (
         "if (p->suboptimal && !p->params.allow_suboptimal)\n        recreate = true;",
         "case VK_SUBOPTIMAL_KHR:\n        p->suboptimal = true;\n        // fall through\n    case VK_SUCCESS:\n        return true;",
-        "case VK_ERROR_OUT_OF_DATE_KHR: {\n            // In these cases try recreating the swapchain\n            if (!vk_sw_recreate(sw, 0, 0)) {",
+        *acquire_out_of_date,
         "case VK_ERROR_OUT_OF_DATE_KHR:\n        // We can silently ignore this error, since the next start_frame will\n        // recreate the swapchain automatically.\n        return true;",
         "if (p->suboptimal || p->needs_recreate || width_changed || height_changed)\n        ok = vk_sw_recreate(sw, *width, *height);",
     )
