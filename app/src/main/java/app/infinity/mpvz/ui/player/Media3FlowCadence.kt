@@ -34,8 +34,10 @@ internal object Media3FlowCadence {
   fun outputTimestampUs(tick: Long, originUs: Long, targetFps: Int, speed: Float): Long? {
     if (tick < 0L || targetFps <= 0 || !speed.isFinite() || speed <= 0f) return null
     val offsetUs = tick.toDouble() * MICROS_PER_SECOND * speed.toDouble() / targetFps
-    if (!offsetUs.isFinite() || offsetUs > Long.MAX_VALUE.toDouble()) return null
-    return originUs + offsetUs.roundToLong()
+    if (!offsetUs.isFinite() || offsetUs < 0.0 || offsetUs >= Long.MAX_VALUE.toDouble()) return null
+    val roundedOffsetUs = offsetUs.roundToLong()
+    if (originUs > Long.MAX_VALUE - roundedOffsetUs) return null
+    return originUs + roundedOffsetUs
   }
 
   /** Estimates source FPS from the median positive presentation-time delta. */

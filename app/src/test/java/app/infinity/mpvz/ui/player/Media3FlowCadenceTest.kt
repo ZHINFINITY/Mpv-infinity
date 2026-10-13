@@ -15,6 +15,16 @@ class Media3FlowCadenceTest {
   }
 
   @Test
+  fun outputTimestampsRejectOverflowAndPreserveNegativeOrigins() {
+    assertNull(Media3FlowCadence.outputTimestampUs(1, Long.MAX_VALUE - 1, 1, 1f))
+    assertEquals(
+      Long.MIN_VALUE + 1_000_000L,
+      Media3FlowCadence.outputTimestampUs(1, Long.MIN_VALUE, 1, 1f),
+    )
+    assertEquals(-33_333L, Media3FlowCadence.outputTimestampUs(1, -50_000L, 60, 1f))
+  }
+
+  @Test
   fun outputTicksRespectPositionAndPlaybackSpeed() {
     assertEquals(3L, Media3FlowCadence.outputTick(50_000, 0, 60, 1f))
     assertEquals(3L, Media3FlowCadence.outputTick(100_000, 0, 60, 2f))

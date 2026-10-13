@@ -93,6 +93,18 @@ require(synthesis, "if(cut>0.1882353)", "Vulkan synthesis must use the same scen
 require(SOURCE, "ctx->pass_flow = make_pass(gpu, shader_flow, flow_desc, 5);", "Vulkan flow pass must expose all five descriptors")
 require(SOURCE, "{ .object = flow }, { .object = scene_delta },", "Vulkan motion dispatch must bind the reduced scene-delta texture")
 opencl_source = (ROOT / "app/src/main/cpp/mpvflow/mpvflow_opencl.c").read_text(encoding="utf-8")
+opencl_synthesize_api = opencl_source.split(
+    "enum MPVFlowOpenCLStatus mpvflow_opencl_synthesize(", 1
+)[1].split("\n}\n", 1)[0]
+require(
+    opencl_synthesize_api,
+    "mpvflow_opencl_synthesis_output_disjoint_from_inputs(",
+    "OpenCL synthesis must reject output aliases of either source or backing allocation",
+)
+assert opencl_synthesize_api.index("mpvflow_opencl_synthesis_output_disjoint_from_inputs(") < \
+       opencl_synthesize_api.index("c->clEnqueueNDRangeKernel("), (
+           "OpenCL output/source alias validation must happen before GPU work is queued"
+       )
 require(opencl_source, "if(scene_delta[0]>0.1882353f){out[i]=(float4)(0.0f,0.0f,1.0f,0.0f);return;}", "OpenCL scene cuts must initialize a no-confidence flow field before skipping SAD search")
 require(opencl_source, "if(scene_delta[0]>0.1882353f)", "OpenCL motion search and synthesis must share the same scene-cut threshold")
 require(opencl_source, "SET_ARG(c->estimate_kernel, 9, block_size);\n    SET_ARG(c->estimate_kernel, 10, p->scene_delta); SET_ARG(c->estimate_kernel, 11, out);", "OpenCL block support, scene delta, and flow output kernel arguments must remain correctly ordered")

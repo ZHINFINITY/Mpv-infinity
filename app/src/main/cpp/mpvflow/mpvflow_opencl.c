@@ -5,6 +5,7 @@
  * are resolved at runtime; no OpenCL vendor library is a build-time dependency.
  */
 #include "mpvflow_opencl.h"
+#include "mpvflow_opencl_validation.h"
 
 #include <dlfcn.h>
 #include <link.h>
@@ -212,6 +213,7 @@ struct MPVFlowOpenCLContext {
 struct MPVFlowOpenCLBuffer {
     MPVFlowOpenCLContext *owner;
     cl_mem mem;
+    const void *storage_identity; /* Non-owning AHardwareBuffer identity. */
     int width, height, stride;
     enum MPVFlowOpenCLAccess access;
 };
@@ -659,6 +661,7 @@ static enum MPVFlowOpenCLStatus make_buffer(MPVFlowOpenCLContext *c,
         *cl_create_error_out = err;
     if (!b->mem || err != CL_SUCCESS) { free(b); return MPVFLOW_OPENCL_ERROR; }
     b->owner = c;
+    b->storage_identity = ahb;
     b->width = (int)desc_in->frame_width; b->height = (int)desc_in->frame_height;
     b->stride = (int)stride; b->access = access;
     *out = b;
@@ -878,6 +881,10 @@ enum MPVFlowOpenCLStatus mpvflow_opencl_synthesize(MPVFlowOpenCLContext *c,
     if (!c || !p || p->owner != c || !source0 || !source1 || !output ||
         source0->owner != c || source1->owner != c || output->owner != c ||
         !source0->mem || !source1->mem || !output->mem ||
+        !mpvflow_opencl_synthesis_output_disjoint_from_inputs(
+            source0->mem, source1->mem, output->mem,
+            source0->storage_identity, source1->storage_identity,
+            output->storage_identity) ||
         source0->access == MPVFLOW_OPENCL_WRITE_ONLY ||
         source1->access == MPVFLOW_OPENCL_WRITE_ONLY ||
         output->access == MPVFLOW_OPENCL_READ_ONLY ||
