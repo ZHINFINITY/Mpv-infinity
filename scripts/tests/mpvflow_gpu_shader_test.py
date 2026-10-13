@@ -80,7 +80,14 @@ require(opencl_source, "float static_luma_delta=", "OpenCL synthesis must gate s
 require(opencl_source, "static_out=convert_uchar4_sat_rte", "OpenCL synthesis must preserve static pixels instead of blending warped neighbors")
 require(opencl_source, "float chroma_delta=max(fabs((ca.x-ca.y)-(cb.x-cb.y)),fabs((ca.z-ca.y)-(cb.z-cb.y)))/255.0f", "OpenCL synthesis must measure chroma disagreement between warped source samples")
 require(opencl_source, "int chroma_boundary=color_delta>0.12f&&chroma_delta>0.06f", "OpenCL must reject strong chroma-only contour mixing")
-require(opencl_source, "int boundary_conflict=luma_delta>0.12f||chroma_boundary", "OpenCL boundary fallback must include chroma-only conflicts")
+require(synthesis, "float cycleQuality=1.0-smoothstep(0.75,4.0,cycle); float matchQuality=1.0-smoothstep(0.025,0.22,flow.z); float uniquenessQuality=smoothstep(0.08,0.30,flow.w)", "Vulkan reliability must combine cycle, residual, and uniqueness confidence")
+require(opencl_source, "float cycle_quality=1.0f-smoothstep(0.75f,4.0f,cycle); float match_quality=1.0f-smoothstep(0.025f,0.22f,flow.z); float uniqueness_quality=smoothstep(0.08f,0.30f,flow.w)", "OpenCL reliability must match Vulkan cycle, residual, and uniqueness confidence")
+require(opencl_source, "if(confidence<0.28f)", "OpenCL must use Vulkan's conservative low-confidence source-frame fallback")
+require(opencl_source, "inline float neighborhood_quality(", "OpenCL must mirror Vulkan local flow-consistency checks")
+require(opencl_source, "int neighborhood_conflict=(min(neighborhood0,neighborhood1)<0.30f&&(luma_delta>0.06f||color_delta>0.08f))||(flow_spread>3.0f&&min(neighborhood0,neighborhood1)<0.45f)", "OpenCL neighborhood/flow-spread rejection must match Vulkan")
+require(opencl_source, "int boundary_conflict=neighborhood_conflict||luma_delta>0.08f||chroma_boundary||(min(f.w,q.w)<0.08f&&color_delta>0.10f)", "OpenCL must match Vulkan luma, chroma, and ambiguity boundary thresholds")
+require(opencl_source, "float4 f=flow_at_bilinear(forward,backward,0,aw,ah,flow_p.x,flow_p.y),q=flow_at_bilinear(forward,backward,1,aw,ah,flow_p.x,flow_p.y)", "OpenCL synthesis must use Vulkan's cheaper bilinear initial-flow sampling")
+require(opencl_source, "f=flow_at_edge_aware(forward,backward,luma0,luma1,0,aw,ah,pa.x,pa.y)", "OpenCL must retain final edge-aware refinement after the bilinear fast path")
 require(opencl_source, "parent_residual=q.z; parent_uniqueness=q.w", "OpenCL finer levels must retain the coarse SAD and uniqueness signals")
 require(opencl_source, "if(has_coarse&&parent_residual>0.12f&&parent_uniqueness>0.0005f)search_radius=min(radius*2,16)", "OpenCL must use the same gated search-expansion policy")
 require(synthesis, "dot(fastForward.xy,fastForward.xy)<=0.0025", "the static path must require a near-zero forward vector")
@@ -423,12 +430,26 @@ def smoothstep(edge0: float, edge1: float, value: float) -> float:
     t = max(0.0, min(1.0, (value - edge0) / (edge1 - edge0)))
     return t * t * (3.0 - 2.0 * t)
 
+def endpoint_reliability(cycle_error: float, residual: float, uniqueness: float, valid: float = 1.0) -> float:
+    return (
+        (1.0 - smoothstep(0.75, 4.0, cycle_error))
+        * (1.0 - smoothstep(0.025, 0.22, residual))
+        * smoothstep(0.08, 0.30, uniqueness)
+        * valid
+    )
+
+assert endpoint_reliability(0.75, 0.025, 0.30) == 1.0, "reliable, distinctive in-bounds flow should retain full confidence at curve starts"
+assert endpoint_reliability(0.75, 0.025, 0.0) == 0.0, "tied motion matches must not be trusted for synthesis"
+assert endpoint_reliability(4.0, 0.025, 0.30) == 0.0, "large forward/backward cycle errors must reject an endpoint"
+assert endpoint_reliability(0.75, 0.22, 0.30) == 0.0, "high normalized SAD must reject an endpoint"
+assert endpoint_reliability(0.75, 0.025, 0.30, valid=0.0) == 0.0, "out-of-bounds flow endpoints must be rejected"
+
 def edge_decision(alpha: float, luma_delta: float, color_delta: float, chroma_delta: float,
                   confidence0: float, confidence1: float,
                   uniqueness0: float, uniqueness1: float) -> str:
-    ambiguous = min(uniqueness0, uniqueness1) < 0.04
+    ambiguous = min(uniqueness0, uniqueness1) < 0.08
     chroma_boundary = color_delta > 0.12 and chroma_delta > 0.06
-    conflict = luma_delta > 0.12 or chroma_boundary or (ambiguous and color_delta > 0.18)
+    conflict = luma_delta > 0.08 or chroma_boundary or (ambiguous and color_delta > 0.10)
     if not conflict:
         return "interpolate"
     edge0 = confidence0 * (0.5 + 0.5 * smoothstep(0.02, 0.35, uniqueness0))
@@ -438,6 +459,25 @@ def edge_decision(alpha: float, luma_delta: float, color_delta: float, chroma_de
     if edge1 > edge0 + 0.10:
         return "frame1"
     return "frame0" if alpha < 0.5 else "frame1"
+
+def neighborhood_boundary_conflict(neighborhood0: float, neighborhood1: float,
+                                   flow_spread: float, luma_delta: float,
+                                   color_delta: float, chroma_delta: float,
+                                   uniqueness0: float, uniqueness1: float) -> bool:
+    local = (
+        min(neighborhood0, neighborhood1) < 0.30
+        and (luma_delta > 0.06 or color_delta > 0.08)
+    ) or (flow_spread > 3.0 and min(neighborhood0, neighborhood1) < 0.45)
+    chroma_boundary = color_delta > 0.12 and chroma_delta > 0.06
+    ambiguous_color = min(uniqueness0, uniqueness1) < 0.08 and color_delta > 0.10
+    return local or luma_delta > 0.08 or chroma_boundary or ambiguous_color
+
+assert neighborhood_boundary_conflict(0.25, 0.80, 0.0, 0.07, 0.09, 0.0, 0.35, 0.35), "weak local flow plus modest appearance change must reject a contour mix"
+assert neighborhood_boundary_conflict(0.40, 0.80, 3.1, 0.01, 0.01, 0.0, 0.35, 0.35), "large forward/backward flow spread in a weak neighborhood must trigger fallback"
+assert neighborhood_boundary_conflict(0.80, 0.80, 0.0, 0.09, 0.01, 0.0, 0.35, 0.35), "luma conflicts between 0.08 and 0.12 must be caught"
+assert neighborhood_boundary_conflict(0.80, 0.80, 0.0, 0.01, 0.11, 0.0, 0.0, 0.35), "ambiguous motion with color disagreement between 0.10 and 0.18 must be caught"
+assert neighborhood_boundary_conflict(0.80, 0.80, 0.0, 0.01, 0.13, 0.07, 0.35, 0.35), "chroma-only boundaries must remain protected"
+assert not neighborhood_boundary_conflict(0.80, 0.80, 0.0, 0.01, 0.02, 0.01, 0.35, 0.35), "consistent flow and similar source samples should still interpolate"
 
 flat_match_uniqueness = block_search(ambiguous_texture, ambiguous_texture, (24, 16), (0, 0), 8, center_out=True)[2]
 assert flat_match_uniqueness == 0.0, "flat/tied blocks must be recognized as ambiguous"
