@@ -44,7 +44,7 @@ jobs:
       - name: Install Android MPV native build dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y autoconf automake libtool gettext autopoint gperf pkg-config ninja-build cmake pipx nasm yasm binutils zlib1g-dev libssl-dev zip unzip wget curl ffmpeg glslang-tools
+          sudo apt-get install -y autoconf automake libtool gettext autopoint gperf pkg-config ninja-build cmake pipx nasm yasm binutils zlib1g-dev libssl-dev zip unzip wget curl ffmpeg glslang-tools libvulkan-dev mesa-vulkan-drivers
           pipx install meson==1.6.1
           export PATH="$HOME/.local/bin:$PATH"
           meson --version
@@ -59,6 +59,8 @@ jobs:
         run: python3 scripts/package-mpv-runtime-aar.py --without-rife --runtime-apk "$MPVFLOW_RUNTIME_APK" --mpv-aar app/libs/mpvlib.aar
       - name: Run MPVFlow core and GPU shader regression tests
         run: ./scripts/test-mpvflow-core.sh
+        env:
+          MPVFLOW_REQUIRE_VULKAN_PIXEL_TEST: '1'
       - name: Run standard arm64 debug unit tests
         run: ./gradlew testStandardDebugUnitTest -PtargetAbi=arm64-v8a -PmpvFlowMpvBuild=true --stacktrace --no-daemon --max-workers=2
       - name: Build arm64-v8a debug APK
