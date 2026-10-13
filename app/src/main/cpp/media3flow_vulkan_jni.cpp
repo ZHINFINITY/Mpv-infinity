@@ -25,6 +25,7 @@
 #include <algorithm>
 #include <atomic>
 #include <chrono>
+#include <cmath>
 #include <cstdarg>
 #include <cstdint>
 #include <cstdio>
@@ -1472,7 +1473,8 @@ Java_app_infinity_mpvz_ui_player_Media3FlowVulkanNative_nativeSynthesize(
         return JNI_FALSE;
     std::lock_guard<std::mutex> guard(context->mutex);
     if (!pair || !source0 || !source1 || source0 == source1 ||
-        !output || !output->texture || timestep <= 0.f || timestep >= 1.f) {
+        !output || !output->texture || !std::isfinite(timestep) ||
+        timestep <= 0.f || timestep >= 1.f) {
         logFlowOnce(context, DIAG_SYNTH_FAILURE, ANDROID_LOG_ERROR,
                     "MPVFLOW_DIAGNOSTIC component=native-media3 event=synthesize state=failed "
                     "stage=arguments pair_present=%d source0_present=%d source1_present=%d "

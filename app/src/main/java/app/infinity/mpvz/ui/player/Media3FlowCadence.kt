@@ -7,11 +7,24 @@ import kotlin.math.roundToLong
 internal object Media3FlowCadence {
   private const val MICROS_PER_SECOND = 1_000_000.0
 
+  /** Returns null rather than allowing signed timestamp arithmetic to wrap. */
+  fun checkedAdd(a: Long, b: Long): Long? {
+    val result = a + b
+    return if (((a xor result) and (b xor result)) < 0L) null else result
+  }
+
+  /** Returns null rather than allowing signed timestamp arithmetic to wrap. */
+  fun checkedSubtract(a: Long, b: Long): Long? {
+    val result = a - b
+    return if (((a xor b) and (a xor result)) < 0L) null else result
+  }
+
   /** Returns the interpolation fraction for an output PTS strictly between two source PTS values. */
   fun interpolationAlpha(source0Us: Long, source1Us: Long, outputUs: Long): Float? {
-    val durationUs = source1Us - source0Us
+    val durationUs = checkedSubtract(source1Us, source0Us) ?: return null
     if (durationUs <= 0L || outputUs <= source0Us || outputUs >= source1Us) return null
-    return ((outputUs - source0Us).toDouble() / durationUs.toDouble())
+    val elapsedUs = checkedSubtract(outputUs, source0Us) ?: return null
+    return (elapsedUs.toDouble() / durationUs.toDouble())
       .toFloat()
       .takeIf { it > 0f && it < 1f }
   }
@@ -23,7 +36,7 @@ internal object Media3FlowCadence {
    */
   fun outputTick(positionUs: Long, originUs: Long, targetFps: Int, speed: Float): Long? {
     if (targetFps <= 0 || !speed.isFinite() || speed <= 0f) return null
-    val elapsedUs = positionUs - originUs
+    val elapsedUs = checkedSubtract(positionUs, originUs) ?: return null
     if (elapsedUs < 0L) return null
     val ticks = elapsedUs.toDouble() * targetFps / (MICROS_PER_SECOND * speed.toDouble())
     if (!ticks.isFinite() || ticks < 0.0) return null
@@ -36,14 +49,14 @@ internal object Media3FlowCadence {
     val offsetUs = tick.toDouble() * MICROS_PER_SECOND * speed.toDouble() / targetFps
     if (!offsetUs.isFinite() || offsetUs < 0.0 || offsetUs >= Long.MAX_VALUE.toDouble()) return null
     val roundedOffsetUs = offsetUs.roundToLong()
-    if (originUs > Long.MAX_VALUE - roundedOffsetUs) return null
-    return originUs + roundedOffsetUs
+    return checkedAdd(originUs, roundedOffsetUs)
   }
 
   /** Estimates source FPS from the median positive presentation-time delta. */
   fun estimateSourceFps(presentationTimesUs: List<Long>): Float {
     if (presentationTimesUs.size < 2) return 0f
-    val deltas = presentationTimesUs.zipWithNext { a, b -> b - a }
+    val deltas = presentationTimesUs.zipWithNext { a, b -> checkedSubtract(b, a) }
+      .filterNotNull()
       .filter { it in 1L..10_000_000L }
       .sorted()
     if (deltas.isEmpty()) return 0f
@@ -66,8 +79,11 @@ internal object Media3FlowCadence {
   }
 
   /** Number of target ticks skipped when advancing from [previousTick] to [nextTick]. */
-  fun skippedTicks(previousTick: Long, nextTick: Long): Long =
-    if (previousTick < 0L || nextTick <= previousTick + 1L) 0L else nextTick - previousTick - 1L
+  fun skippedTicks(previousTick: Long, nextTick: Long): Long {
+    if (previousTick < 0L || nextTick <= previousTick) return 0L
+    val tickDistance = checkedSubtract(nextTick, previousTick) ?: return 0L
+    return (tickDistance - 1L).coerceAtLeast(0L)
+  }
 
   /**
    * A blocked display callback already has a newer Choreographer callback scheduled. Re-rendering
@@ -80,8 +96,8 @@ internal object Media3FlowCadence {
     latestRequestIsOneShot: Boolean,
   ): Boolean = latestRequestVersion != taskRequestVersion && latestRequestIsOneShot
 
-  /** Uses this pair's GPU time when ready; otherwise keeps the baseline submit-time estimate. */
-  fun motionEstimateMs(submitMs: Float, pairGpuMs: Float?): Float =
+  /** Admission proxy only: submit time is CPU enqueue time, not GPU completion time. */
+  fun motionAdmissionProxyMs(submitMs: Float, pairGpuMs: Float?): Float =
     maxOf(submitMs, pairGpuMs ?: 0f)
 
   /** Keeps a decoder frame queued until the sink can retain it in an owned GPU frame slot. */
@@ -104,7 +120,8 @@ internal object Media3FlowCadence {
     maxLookAheadUs: Long,
   ): Long? {
     if (nowNs < 0L || maxLookAheadUs < 0L || !speed.isFinite() || speed <= 0f) return null
-    val wallDeltaUs = (framePtsUs.toDouble() - clockPositionUs.toDouble()) / speed.toDouble()
+    val mediaDeltaUs = checkedSubtract(framePtsUs, clockPositionUs) ?: return null
+    val wallDeltaUs = mediaDeltaUs.toDouble() / speed.toDouble()
     if (!wallDeltaUs.isFinite() || wallDeltaUs > maxLookAheadUs.toDouble()) return null
     val releaseTimeNs = nowNs.toDouble() + wallDeltaUs.coerceAtLeast(0.0) * 1_000.0
     if (!releaseTimeNs.isFinite() || releaseTimeNs > Long.MAX_VALUE.toDouble()) return null

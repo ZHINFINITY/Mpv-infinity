@@ -7,6 +7,7 @@ import re
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 SINK = (ROOT / "app/src/main/java/app/infinity/mpvz/ui/player/Media3FlowVideoSink.kt").read_text(encoding="utf-8")
+CADENCE = (ROOT / "app/src/main/java/app/infinity/mpvz/ui/player/Media3FlowCadence.kt").read_text(encoding="utf-8")
 NATIVE = (ROOT / "app/src/main/java/app/infinity/mpvz/ui/player/Media3FlowVulkanNative.kt").read_text(encoding="utf-8")
 NATIVE_ENGINE = (ROOT / "app/src/main/java/app/infinity/mpvz/ui/player/NativeMedia3Engine.kt").read_text(encoding="utf-8")
 JNI = (ROOT / "app/src/main/cpp/media3flow_vulkan_jni.cpp").read_text(encoding="utf-8")
@@ -99,6 +100,33 @@ assert ".blit_src = blit_src" in GPU and ".blit_dst = blit_dst" in GPU and (
 )
 assert "nativeCreateContext(maxDimension, requestedComputeApi.nativeValue)" in SINK
 assert "config.max_dimension = std::max(160, std::min(640, static_cast<int>(requestedMaxDimension)))" in JNI
+for marker in (
+    "checkedAdd(bufferPresentationTimeUs, inputTimestampAdjustmentUs)",
+    "checkedSubtract(frame1.ptsUs, frame0.ptsUs)",
+    "checkedAdd(it, inputTimestampAdjustmentUs)",
+):
+    assert marker in SINK, f"Media3 Flow must reject wrapped PTS arithmetic at the sink boundary: {marker}"
+for marker in (
+    "fun checkedAdd(a: Long, b: Long): Long?",
+    "fun checkedSubtract(a: Long, b: Long): Long?",
+    "checkedSubtract(positionUs, originUs)",
+    "checkedSubtract(source1Us, source0Us)",
+):
+    assert marker in CADENCE, f"Media3 Flow cadence must use checked signed timestamp math: {marker}"
+assert "fun motionAdmissionProxyMs(" in CADENCE
+assert "motionDeadlineAdmission=cpu_submit_proxy_not_gpu_completion" in SINK
+non_monotonic_capture = SINK.split(
+    "if (previousPts != null && ptsUs <= previousPts)", 1
+)[1].split("evictOneFrameIfNeeded()", 1)[0]
+assert "droppedFrames.incrementAndGet()" in non_monotonic_capture
+assert "it.onFrameDropped()" in non_monotonic_capture
+synthesis_jni = JNI.split(
+    "Java_app_infinity_mpvz_ui_player_Media3FlowVulkanNative_nativeSynthesize(", 1
+)[1]
+assert "!std::isfinite(timestep)" in synthesis_jni, "Media3 JNI must reject NaN/infinite synthesis fractions"
+assert synthesis_jni.index("!std::isfinite(timestep)") < synthesis_jni.index("releaseImageToVulkan(") < synthesis_jni.index(
+    "mpvflow_gpu_synthesize(",
+), "invalid synthesis fractions must be rejected before ownership handoff or GPU dispatch"
 resource_setup = SINK.split("  private fun ensureProcessingResources(", 1)[1].split(
     "\n  private fun clearSourceFrames(", 1
 )[0]

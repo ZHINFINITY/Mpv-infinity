@@ -48,14 +48,20 @@ import kotlin.math.roundToLong
 /** Diagnostics emitted by the Media3-owned GPU interpolation route. */
 data class Media3FlowDiagnostics(
   val enabled: Boolean = false,
-  val sourceFps: Float = 0f,
+  /** Median cadence of accepted SurfaceTexture capture PTS; not nominal container FPS. */
+  val capturedSourceFps: Float = 0f,
+  val capturedPtsSampleCount: Int = 0,
   /** Successful eglSwapBuffers return cadence; this is not a SurfaceFlinger scanout measurement. */
   val outputFps: Float = 0f,
   val generatedFps: Float = 0f,
   val targetFps: Int = 0,
   val generatedFrames: Long = 0L,
   val droppedFrames: Long = 0L,
-  val missedOutputTicks: Long = 0L,
+  /** Inferred target ticks with no sink output; not confirmed display/scanout misses. */
+  val skippedOutputTicks: Long = 0L,
+  /** EGL/window/swap submission failures, distinct from inferred tick gaps. */
+  val outputSubmissionFailures: Long = 0L,
+  val lastOutputSubmissionFailureReason: String = "none",
   val skippedFrames: Long = 0L,
   /** CPU time spent submitting motion-estimation commands, not a GPU-completion timer. */
   val motionEstimateSubmitMs: Float = 0f,
@@ -84,8 +90,8 @@ data class Media3FlowDiagnostics(
   val frame0CaptureAgeMs: Float? = null,
   val frame1CaptureAgeMs: Float? = null,
   val outputCallbackLatenessMs: Float = 0f,
-  val lastDeadlineMissReason: String = "none",
-  val deadlineMissReasons: Map<String, Long> = emptyMap(),
+  val lastOutputTickGapReason: String = "none",
+  val outputTickGapContexts: Map<String, Long> = emptyMap(),
 )
 
 private data class FlowFrameRateSurfacePolicy(
@@ -186,7 +192,8 @@ class Media3FlowVideoSink(
   @Volatile private var firstFrameReported = false
   private var generatedFrames = 0L
   private val droppedFrames = AtomicLong(0L)
-  private val missedOutputTicks = AtomicLong(0L)
+  private val skippedOutputTicks = AtomicLong(0L)
+  private val outputSubmissionFailures = AtomicLong(0L)
   private var skippedFrames = 0L
   private var lastMotionSubmitMs = 0f
   private var cachedVulkanTimingStats = FlowVulkanTimingStats()
@@ -196,8 +203,9 @@ class Media3FlowVideoSink(
   private var lastFrame0CaptureAgeMs: Float? = null
   private var lastFrame1CaptureAgeMs: Float? = null
   private var lastOutputCallbackLatenessMs = 0f
-  private var lastOutputDeadlineMissReason = "none"
-  private val outputDeadlineMissReasons = linkedMapOf<String, Long>()
+  private var lastOutputTickGapReason = "none"
+  private val outputTickGapContexts = linkedMapOf<String, Long>()
+  private var lastOutputSubmissionFailureReason = "none"
   private var lastEglSwapWaitMs = 0f
   private var gpuTimerQueryIds = IntArray(0)
   private var gpuTimerQueriesSupported = false
@@ -749,10 +757,21 @@ class Media3FlowVideoSink(
     videoFrameHandler: VideoSink.VideoFrameHandler,
   ): Boolean {
     if (!initialized || disposed) return false
+    val ptsUs = Media3FlowCadence.checkedAdd(bufferPresentationTimeUs, inputTimestampAdjustmentUs)
+    if (ptsUs == null) {
+      runCatching { videoFrameHandler.skip() }
+      droppedFrames.incrementAndGet()
+      dispatchListener { it.onFrameDropped() }
+      logFlowRecordOnce(
+        "input-pts-adjustment-overflow",
+        Log.WARN,
+        "event=input_frame state=dropped stage=timestamp_adjustment reason=signed_long_overflow",
+      )
+      return true
+    }
     synchronized(inputLock) {
       val buffered = pendingInput.size + storedFrameCount + if (inputInFlight) 1 else 0
       if (buffered >= MAX_QUEUED_FRAMES) return false
-      val ptsUs = bufferPresentationTimeUs + inputTimestampAdjustmentUs
       pendingInput.addLast(PendingInput(ptsUs, streamGeneration, videoFrameHandler, System.nanoTime()))
       lastInputPtsUs = max(lastInputPtsUs, ptsUs)
     }
@@ -771,9 +790,19 @@ class Media3FlowVideoSink(
       } else {
         0L
       }
-    val currentPositionUs =
-      positionUs + inputTimestampAdjustmentUs +
-        (elapsedSinceLoopUs.toDouble() * speed.toDouble()).roundToLong()
+    val adjustedPositionUs = Media3FlowCadence.checkedAdd(positionUs, inputTimestampAdjustmentUs)
+    val elapsedMediaUs = (elapsedSinceLoopUs.toDouble() * speed.toDouble()).roundToLong()
+    val currentPositionUs = adjustedPositionUs?.let {
+      Media3FlowCadence.checkedAdd(it, elapsedMediaUs)
+    }
+    if (currentPositionUs == null) {
+      logFlowRecordOnce(
+        "playback-position-overflow",
+        Log.WARN,
+        "event=clock state=skipped stage=position_adjustment reason=signed_long_overflow",
+      )
+      return
+    }
     val clock = PlaybackClock(currentPositionUs, currentElapsedUs)
     playbackClock = clock
     releaseNextDecoderFrame(clock, speed)
@@ -863,7 +892,16 @@ class Media3FlowVideoSink(
     val nowElapsedUs = SystemClock.elapsedRealtimeNanos() / 1_000L
     val elapsedSinceClockUs =
       if (running && nowElapsedUs >= clock.elapsedRealtimeUs) nowElapsedUs - clock.elapsedRealtimeUs else 0L
-    val positionUs = clock.positionUs + (elapsedSinceClockUs.toDouble() * speed.toDouble()).roundToLong()
+    val elapsedMediaUs = (elapsedSinceClockUs.toDouble() * speed.toDouble()).roundToLong()
+    val positionUs = Media3FlowCadence.checkedAdd(clock.positionUs, elapsedMediaUs)
+    if (positionUs == null) {
+      logFlowRecordOnce(
+        "display-position-overflow",
+        Log.WARN,
+        "event=clock state=skipped stage=display_position_projection reason=signed_long_overflow",
+      )
+      return
+    }
     latestPositionUs = positionUs
     trimExpiredFrames(positionUs)
     renderAtPosition(positionUs, speed, frameTimeNanos)
@@ -1045,6 +1083,8 @@ class Media3FlowVideoSink(
     val previousPts = sourceFrames.lastOrNull()?.ptsUs
     if (previousPts != null && ptsUs <= previousPts) {
       skippedFrames++
+      droppedFrames.incrementAndGet()
+      dispatchListener { it.onFrameDropped() }
       lastBypassReason = "non_monotonic_pts"
       return
     }
@@ -1084,10 +1124,18 @@ class Media3FlowVideoSink(
     slot.inUse = true
     sourceFrames.addLast(slot)
     if (originPtsUs == C.TIME_UNSET) {
-      originPtsUs = streamStartPositionUs
-        .takeIf { it != C.TIME_UNSET }
-        ?.plus(inputTimestampAdjustmentUs)
-        ?: ptsUs
+      val streamStartUs = streamStartPositionUs.takeIf { it != C.TIME_UNSET }
+      val adjustedStreamStartUs = streamStartUs?.let {
+        Media3FlowCadence.checkedAdd(it, inputTimestampAdjustmentUs)
+      }
+      if (streamStartUs != null && adjustedStreamStartUs == null) {
+        logFlowRecordOnce(
+          "stream-origin-overflow",
+          Log.WARN,
+          "event=clock state=fallback stage=stream_origin reason=signed_long_overflow",
+        )
+      }
+      originPtsUs = adjustedStreamStartUs ?: ptsUs
       if (originPtsUs > ptsUs) originPtsUs = ptsUs
     }
     ptsHistory.addLast(ptsUs)
@@ -1216,12 +1264,17 @@ class Media3FlowVideoSink(
     }
   }
 
-  private fun recordOutputDeadlineMisses(count: Long, reason: String, countAsDropped: Boolean = true) {
+  private fun recordOutputTickGaps(count: Long, reason: String) {
     if (count <= 0L) return
-    missedOutputTicks.addAndGet(count)
-    if (countAsDropped) droppedFrames.addAndGet(count)
-    lastOutputDeadlineMissReason = reason
-    outputDeadlineMissReasons[reason] = (outputDeadlineMissReasons[reason] ?: 0L) + count
+    skippedOutputTicks.addAndGet(count)
+    droppedFrames.addAndGet(count)
+    lastOutputTickGapReason = reason
+    outputTickGapContexts[reason] = (outputTickGapContexts[reason] ?: 0L) + count
+  }
+
+  private fun recordOutputSubmissionFailure(reason: String) {
+    outputSubmissionFailures.incrementAndGet()
+    lastOutputSubmissionFailureReason = reason
   }
 
   private fun recordCpuDuration(stage: FlowCpuStage, elapsedNs: Long) {
@@ -1297,7 +1350,7 @@ class Media3FlowVideoSink(
     }
     val frame0 = sourceFrames.elementAt(sourceFrames.size - 2)
     val frame1 = sourceFrames.last()
-    val deltaUs = frame1.ptsUs - frame0.ptsUs
+    val deltaUs = Media3FlowCadence.checkedSubtract(frame1.ptsUs, frame0.ptsUs) ?: 0L
     if (deltaUs <= 0L || !Media3FlowCadence.needsInterpolation(deltaUs, targetFps, playbackSpeed)) {
       lastBypassReason = if (deltaUs <= 0L) "invalid_source_delta" else "source_meets_target"
       return
@@ -1385,7 +1438,7 @@ class Media3FlowVideoSink(
     if (sourceFrame == null) {
       skippedFrames++
       lastBypassReason = "waiting_for_source_pts"
-      recordOutputDeadlineMisses(missedTicks.coerceAtLeast(if (tick != null) 1L else 0L), "source_pts_not_available")
+      recordOutputTickGaps(missedTicks.coerceAtLeast(if (tick != null) 1L else 0L), "source_pts_not_available")
       logTimingTrace(positionUs, speed, targetPtsUs, null, sourceSnapshot.first().ptsUs, null, System.nanoTime())
       return
     }
@@ -1393,19 +1446,25 @@ class Media3FlowVideoSink(
     val pair = bracket?.let { (a, b) ->
       motionPairs.firstOrNull { it.available && it.frame0PtsUs == a.ptsUs && it.frame1PtsUs == b.ptsUs }
     }
-    val deltaUs = bracket?.let { it.second.ptsUs - it.first.ptsUs } ?: 0L
-    val estimatedMotionMs = pair?.let {
-      Media3FlowCadence.motionEstimateMs(it.motionEstimateSubmitMs, null)
+    val deltaUs = bracket?.let {
+      Media3FlowCadence.checkedSubtract(it.second.ptsUs, it.first.ptsUs)
+    } ?: 0L
+    val motionAdmissionProxyMs = pair?.let {
+      Media3FlowCadence.motionAdmissionProxyMs(it.motionEstimateSubmitMs, null)
     } ?: Float.POSITIVE_INFINITY
     val synthesize = bracket != null && pair != null &&
       Media3FlowCadence.needsInterpolation(deltaUs, targetFps, speed) &&
-      estimatedMotionMs < deltaUs / 1000f * ANALYSIS_DEADLINE_RESERVE
+      motionAdmissionProxyMs < deltaUs / 1000f * ANALYSIS_DEADLINE_RESERVE
     val nowNs = System.nanoTime()
     lastOutputCallbackLatenessMs = frameTimeNanos?.let {
       ((nowNs - it).coerceAtLeast(0L) / 1_000_000.0).toFloat()
     } ?: 0f
-    lastSelectedSourcePtsAgeMs = ((positionUs - sourceFrame.ptsUs).coerceAtLeast(0L) / 1_000f)
-    lastSourcePairPtsGapMs = bracket?.let { (a, b) -> (b.ptsUs - a.ptsUs).coerceAtLeast(0L) / 1_000f }
+    lastSelectedSourcePtsAgeMs = Media3FlowCadence.checkedSubtract(positionUs, sourceFrame.ptsUs)
+      ?.coerceAtLeast(0L)
+      ?.div(1_000f)
+    lastSourcePairPtsGapMs = bracket?.let { (a, b) ->
+      Media3FlowCadence.checkedSubtract(b.ptsUs, a.ptsUs)?.coerceAtLeast(0L)?.div(1_000f)
+    }
     lastFrame0CaptureAgeMs = bracket?.first?.capturedAtNs?.takeIf { it > 0L }?.let {
       ((nowNs - it).coerceAtLeast(0L) / 1_000_000.0).toFloat()
     }
@@ -1419,24 +1478,32 @@ class Media3FlowVideoSink(
       val missReason = when {
         bracket == null -> "no_source_pair_for_target_pts"
         pair == null && wantsInterpolation -> "motion_pair_not_ready"
-        pair != null && wantsInterpolation && estimatedMotionMs >= deltaUs / 1_000f * ANALYSIS_DEADLINE_RESERVE ->
-          "motion_analysis_over_deadline_reserve"
+        pair != null && wantsInterpolation && motionAdmissionProxyMs >= deltaUs / 1_000f * ANALYSIS_DEADLINE_RESERVE ->
+          "motion_submit_proxy_over_deadline_reserve"
         lastEglSwapWaitMs >= tickBudgetMs -> "previous_egl_swap_over_tick_budget"
         lastOutputCallbackLatenessMs >= tickBudgetMs -> "gl_callback_late_by_one_or_more_ticks"
         else -> "output_tick_gap_unattributed"
       }
-      recordOutputDeadlineMisses(missedTicks, missReason)
-      lastBypassReason = "output_deadline_missed"
+      recordOutputTickGaps(missedTicks, missReason)
+      lastBypassReason = "output_tick_gap_inferred"
     }
     val basePresentationNs = frameTimeNanos?.let {
       val refreshHz = displayHz.takeIf { rate -> rate.isFinite() && rate > 0f }?.toDouble() ?: targetFps.toDouble()
-      it + (1_000_000_000.0 / refreshHz).roundToLong()
+      Media3FlowCadence.checkedAdd(it, (1_000_000_000.0 / refreshHz).roundToLong())
     } ?: nowNs
-    val ptsOffsetNs = (((targetPtsUs - positionUs).toDouble() / speed.toDouble()) * 1000.0).toLong()
-    val renderTimeNs = (basePresentationNs + ptsOffsetNs).coerceAtLeast(nowNs)
+    val ptsOffsetNs = Media3FlowCadence.checkedSubtract(targetPtsUs, positionUs)?.let { offsetUs ->
+      val offsetNs = (offsetUs.toDouble() / speed.toDouble()) * 1_000.0
+      offsetNs.takeIf {
+        it.isFinite() && it >= Long.MIN_VALUE.toDouble() && it <= Long.MAX_VALUE.toDouble()
+      }?.toLong()
+    }
+    val renderTimeNs = ptsOffsetNs?.let { Media3FlowCadence.checkedAdd(basePresentationNs, it) }
+      ?.coerceAtLeast(nowNs) ?: nowNs
     logTimingTrace(positionUs, speed, targetPtsUs, sourceFrame.ptsUs, sourceSnapshot.first().ptsUs, renderTimeNs, nowNs)
     if (!makeWindowCurrent()) {
-      recordOutputDeadlineMisses(1L, "egl_make_window_current_failed")
+      recordOutputSubmissionFailure("egl_make_window_current_failed")
+      droppedFrames.incrementAndGet()
+      dispatchListener { it.onFrameDropped() }
       return
     }
     var synthesized = false
@@ -1482,7 +1549,7 @@ class Media3FlowVideoSink(
         null,
       )
     } else {
-      recordOutputDeadlineMisses(1L, "egl_swap_or_output_submission_failed", countAsDropped = false)
+      recordOutputSubmissionFailure("egl_swap_or_output_submission_failed")
       droppedFrames.incrementAndGet()
       dispatchListener { it.onFrameDropped() }
     }
@@ -1670,7 +1737,7 @@ class Media3FlowVideoSink(
 
   private fun retentionBoundaryUs(positionUs: Long): Long {
     val lookBehindUs = (1_000_000.0 * playbackSpeed.toDouble() / targetFps).roundToLong().coerceAtLeast(1L)
-    return positionUs - lookBehindUs
+    return Media3FlowCadence.checkedSubtract(positionUs, lookBehindUs) ?: Long.MIN_VALUE
   }
 
   private fun ensureProcessingResources(sourceWidth: Int, sourceHeight: Int) {
@@ -2390,13 +2457,16 @@ class Media3FlowVideoSink(
     } else 0f
     val diagnostics = Media3FlowDiagnostics(
       enabled = true,
-      sourceFps = Media3FlowCadence.estimateSourceFps(ptsHistory.toList()),
+      capturedSourceFps = Media3FlowCadence.estimateSourceFps(ptsHistory.toList()),
+      capturedPtsSampleCount = ptsHistory.size,
       outputFps = outputFps,
       generatedFps = generatedFps,
       targetFps = targetFps,
       generatedFrames = generatedFrames,
       droppedFrames = droppedFrames.get(),
-      missedOutputTicks = missedOutputTicks.get(),
+      skippedOutputTicks = skippedOutputTicks.get(),
+      outputSubmissionFailures = outputSubmissionFailures.get(),
+      lastOutputSubmissionFailureReason = lastOutputSubmissionFailureReason,
       skippedFrames = skippedFrames,
       motionEstimateSubmitMs = lastMotionSubmitMs,
       motionPassAverageGpuUs = vulkanTiming.motion.averageUs,
@@ -2421,8 +2491,8 @@ class Media3FlowVideoSink(
       frame0CaptureAgeMs = lastFrame0CaptureAgeMs,
       frame1CaptureAgeMs = lastFrame1CaptureAgeMs,
       outputCallbackLatenessMs = lastOutputCallbackLatenessMs,
-      lastDeadlineMissReason = lastOutputDeadlineMissReason,
-      deadlineMissReasons = outputDeadlineMissReasons.toMap(),
+      lastOutputTickGapReason = lastOutputTickGapReason,
+      outputTickGapContexts = outputTickGapContexts.toMap(),
     )
     runCatching { onDiagnostics(diagnostics) }
     logFlowSummary(diagnostics, nowNs)
@@ -2465,14 +2535,19 @@ class Media3FlowVideoSink(
         "effective_compute_api=${effectiveComputeApiName()} state=${diagnostics.state} " +
         "bypass=${diagnostics.bypassReason ?: "none"} " +
         "positionUs=$latestPositionUs speed=${formatLogFloat(playbackSpeed)} " +
-        "sourceFps=${formatLogFloat(diagnostics.sourceFps)} targetFps=${diagnostics.targetFps} " +
+        "capturedSourceFps=${formatLogFloat(diagnostics.capturedSourceFps)} " +
+        "capturedPtsSamples=${diagnostics.capturedPtsSampleCount} targetFps=${diagnostics.targetFps} " +
         "eglSwapReturnFps=${formatLogFloat(diagnostics.outputFps)} " +
         "eglSwapInterval=${if (eglSwapIntervalZeroApplied) 0 else "default"} " +
         "outputMetric=successful_eglSwapBuffers_return_not_scanout " +
         "generatedFps=${formatLogFloat(diagnostics.generatedFps)} " +
         "generatedTotal=${diagnostics.generatedFrames} dropsTotal=${diagnostics.droppedFrames} " +
-        "missedOutputTicksTotal=${diagnostics.missedOutputTicks} skippedTotal=${diagnostics.skippedFrames} " +
-        "deadlineMissReason=${diagnostics.lastDeadlineMissReason} deadlineMissReasons=${formatDeadlineReasons(diagnostics.deadlineMissReasons)} " +
+        "inferredSkippedOutputTicksTotal=${diagnostics.skippedOutputTicks} skippedTotal=${diagnostics.skippedFrames} " +
+        "outputSubmissionFailures=${diagnostics.outputSubmissionFailures} " +
+        "lastOutputSubmissionFailure=${diagnostics.lastOutputSubmissionFailureReason} " +
+        "tickGapReason=${diagnostics.lastOutputTickGapReason} " +
+        "tickGapContexts=${formatDeadlineReasons(diagnostics.outputTickGapContexts)} " +
+        "motionDeadlineAdmission=cpu_submit_proxy_not_gpu_completion " +
         "queueDepth=pendingInput:${diagnostics.pendingInputDepth},inFlight:${diagnostics.inputInFlight}," +
         "sourceFrames:${diagnostics.sourceFrameDepth},readyMotionPairs:${diagnostics.readyMotionPairDepth} " +
         "oldestPendingInputMs=${formatLogFloat(diagnostics.oldestPendingInputAgeMs)} " +
@@ -2563,14 +2638,18 @@ class Media3FlowVideoSink(
   ) {
     if (!isDebuggable || nowNs - lastTimingLogAtNs < METRICS_INTERVAL_NS) return
     lastTimingLogAtNs = nowNs
-    val sourceLeadUs = sourcePtsUs?.let { it - targetPtsUs }?.toString() ?: "none"
+    val sourceLeadUs = sourcePtsUs?.let {
+      Media3FlowCadence.checkedSubtract(it, targetPtsUs)?.toString() ?: "overflow"
+    } ?: "none"
     val surfaceTimestampDeltaNs = if (
       lastSurfaceTimestampNs != C.TIME_UNSET && lastFrameReleaseTimestampNs != C.TIME_UNSET
-    ) lastSurfaceTimestampNs - lastFrameReleaseTimestampNs else C.TIME_UNSET
+    ) Media3FlowCadence.checkedSubtract(lastSurfaceTimestampNs, lastFrameReleaseTimestampNs) ?: C.TIME_UNSET
+    else C.TIME_UNSET
     Log.i(
       logTag,
       "clock playerPositionUs=$positionUs speed=$speed targetPtsUs=$targetPtsUs " +
-        "targetOffsetUs=${targetPtsUs - positionUs} sourcePtsUs=${sourcePtsUs ?: "none"} " +
+        "targetOffsetUs=${Media3FlowCadence.checkedSubtract(targetPtsUs, positionUs)?.toString() ?: "overflow"} " +
+        "sourcePtsUs=${sourcePtsUs ?: "none"} " +
         "sourceLeadUs=$sourceLeadUs nextSourcePtsUs=${nextSourcePtsUs ?: "none"} " +
         "inputReleaseTimestampNs=$lastFrameReleaseTimestampNs inputSurfaceTimestampNs=$lastSurfaceTimestampNs " +
         "inputTimestampDeltaNs=$surfaceTimestampDeltaNs presentationTimeNs=${presentationTimeNs ?: "none"} nowNs=$nowNs",

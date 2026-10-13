@@ -108,6 +108,21 @@ assert opencl_synthesize_api.index("mpvflow_opencl_synthesis_output_disjoint_fro
 require(opencl_source, "if(scene_delta[0]>0.1882353f){out[i]=(float4)(0.0f,0.0f,1.0f,0.0f);return;}", "OpenCL scene cuts must initialize a no-confidence flow field before skipping SAD search")
 require(opencl_source, "if(scene_delta[0]>0.1882353f)", "OpenCL motion search and synthesis must share the same scene-cut threshold")
 require(opencl_source, "SET_ARG(c->estimate_kernel, 9, block_size);\n    SET_ARG(c->estimate_kernel, 10, p->scene_delta); SET_ARG(c->estimate_kernel, 11, out);", "OpenCL block support, scene delta, and flow output kernel arguments must remain correctly ordered")
+core_source = (ROOT / "app/src/main/cpp/mpvflow/mpvflow_core.c").read_text(encoding="utf-8")
+cpu_cut = re.search(r"#define MPVFLOW_SCENE_CUT_MEAN_DELTA ([0-9.]+)", core_source)
+vulkan_search_cut = re.search(r"if\(imageLoad\(sceneTex,ivec2\(0\)\)\.r>([0-9.]+)\)", flow)
+vulkan_synthesis_cut = re.search(r"if\(cut>([0-9.]+)\)", synthesis)
+opencl_cut = re.search(r"if\(scene_delta\[0\]>([0-9.]+)f\)", opencl_source)
+assert all((cpu_cut, vulkan_search_cut, vulkan_synthesis_cut, opencl_cut)), "all Flow engines must expose their scene-cut thresholds"
+normalized_thresholds = (
+    float(cpu_cut.group(1)) / 255.0,
+    float(vulkan_search_cut.group(1)),
+    float(vulkan_synthesis_cut.group(1)),
+    float(opencl_cut.group(1)),
+)
+assert max(normalized_thresholds) - min(normalized_thresholds) <= 1e-7, (
+    f"CPU/Vulkan/OpenCL scene-cut thresholds diverged: {normalized_thresholds}"
+)
 require(opencl_source, "int block_size = level == MPVFLOW_LEVELS - 1 ? 4 : 8;", "OpenCL must use 4x4 support only at its finest level and 8x8 at coarser levels")
 require(opencl_source, "inline int sad_block(", "OpenCL matching must support the configured block area")
 require(opencl_source, "for(int yy=0;yy<block_size;yy++) for(int xx=0;xx<block_size;xx++)", "OpenCL SAD must use the active fine/coarse support")

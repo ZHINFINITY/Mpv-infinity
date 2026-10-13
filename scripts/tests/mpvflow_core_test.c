@@ -78,6 +78,30 @@ static void test_translation_is_compensated(void)
     free(b);
     free(out);
 }
+static void test_scene_cut_threshold_boundary(void)
+{
+    const int width = 96, height = 64;
+    size_t bytes = (size_t)width * height * 3;
+    uint8_t *a = malloc(bytes), *b = malloc(bytes), *out = malloc(bytes);
+    assert(a && b && out);
+    memset(a, 0, bytes);
+    memset(b, 47, bytes);
+    MPVFlowContext *context = mpvflow_create(8, 8);
+    assert(context);
+    MPVFlowPair *pair = NULL;
+    assert(mpvflow_analyze_pair(context, a, b, width, height, &pair, NULL) == MPVFLOW_OK);
+    mpvflow_pair_destroy(pair);
+    pair = NULL;
+    memset(b, 48, bytes);
+    assert(mpvflow_analyze_pair(context, a, b, width, height, &pair, NULL) == MPVFLOW_SCENE_CUT);
+    assert(mpvflow_synthesize_rgb24(context, pair, a, b, 0.4f, out, NULL) == MPVFLOW_SCENE_CUT);
+    assert(memcmp(a, out, bytes) == 0);
+    mpvflow_pair_destroy(pair);
+    mpvflow_destroy(context);
+    free(a);
+    free(b);
+    free(out);
+}
 static void test_revealed_background_does_not_extend_the_translating_object(void)
 {
     const int width = 96, height = 64;
@@ -303,6 +327,7 @@ static void test_adaptive_dimension_reduces_under_pressure_and_recovers_slowly(v
 int main(void)
 {
     test_translation_is_compensated();
+    test_scene_cut_threshold_boundary();
     test_revealed_background_does_not_extend_the_translating_object();
     test_one_pixel_contour_stays_separate_from_background();
     test_crossing_motion_fixture_retains_both_object_appearances();

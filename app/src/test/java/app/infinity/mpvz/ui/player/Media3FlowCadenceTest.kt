@@ -25,6 +25,35 @@ class Media3FlowCadenceTest {
   }
 
   @Test
+  fun checkedTimestampArithmeticRejectsBothSignedOverflowDirections() {
+    assertEquals(5L, Media3FlowCadence.checkedAdd(2L, 3L))
+    assertEquals(-1L, Media3FlowCadence.checkedSubtract(2L, 3L))
+    assertNull(Media3FlowCadence.checkedAdd(Long.MAX_VALUE, 1L))
+    assertNull(Media3FlowCadence.checkedAdd(Long.MIN_VALUE, -1L))
+    assertNull(Media3FlowCadence.checkedSubtract(Long.MAX_VALUE, -1L))
+    assertNull(Media3FlowCadence.checkedSubtract(Long.MIN_VALUE, 1L))
+  }
+
+  @Test
+  fun cadenceMathRejectsWrappedPtsDeltasAndKeepsLongMaxTickSafe() {
+    assertNull(Media3FlowCadence.interpolationAlpha(Long.MIN_VALUE, Long.MAX_VALUE, 0L))
+    assertNull(Media3FlowCadence.outputTick(Long.MAX_VALUE, Long.MIN_VALUE, 60, 1f))
+    assertEquals(0f, Media3FlowCadence.estimateSourceFps(listOf(Long.MIN_VALUE, Long.MAX_VALUE)), 0f)
+    assertEquals(0f, Media3FlowCadence.estimateSourceFps(listOf(Long.MAX_VALUE, Long.MIN_VALUE)), 0f)
+    assertEquals(0L, Media3FlowCadence.skippedTicks(Long.MAX_VALUE - 1L, Long.MAX_VALUE))
+    assertEquals(1L, Media3FlowCadence.skippedTicks(Long.MAX_VALUE - 2L, Long.MAX_VALUE))
+    assertNull(
+      Media3FlowCadence.inputReleaseTimeNs(
+        framePtsUs = Long.MAX_VALUE,
+        clockPositionUs = Long.MIN_VALUE,
+        nowNs = 1_000_000_000L,
+        speed = 1f,
+        maxLookAheadUs = 100_000L,
+      ),
+    )
+  }
+
+  @Test
   fun outputTicksRespectPositionAndPlaybackSpeed() {
     assertEquals(3L, Media3FlowCadence.outputTick(50_000, 0, 60, 1f))
     assertEquals(3L, Media3FlowCadence.outputTick(100_000, 0, 60, 2f))
@@ -86,10 +115,10 @@ class Media3FlowCadenceTest {
   }
 
   @Test
-  fun motionEstimateUsesPairGpuTimeWhenAvailableAndSubmitTimeWhilePending() {
-    assertEquals(3f, Media3FlowCadence.motionEstimateMs(3f, null), 0f)
-    assertEquals(7f, Media3FlowCadence.motionEstimateMs(3f, 7f), 0f)
-    assertEquals(3f, Media3FlowCadence.motionEstimateMs(3f, 2f), 0f)
+  fun motionAdmissionProxyUsesGpuDurationOnlyWhenPairTimingExists() {
+    assertEquals(3f, Media3FlowCadence.motionAdmissionProxyMs(3f, null), 0f)
+    assertEquals(7f, Media3FlowCadence.motionAdmissionProxyMs(3f, 7f), 0f)
+    assertEquals(3f, Media3FlowCadence.motionAdmissionProxyMs(3f, 2f), 0f)
   }
 
   @Test

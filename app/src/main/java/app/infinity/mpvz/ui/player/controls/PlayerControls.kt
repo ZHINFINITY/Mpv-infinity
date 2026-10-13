@@ -2364,15 +2364,19 @@ private fun NativeStatsPageOverlay(
   val position = NativeStatsDisplay.position(snapshot.positionMs)
   val bufferAhead = NativeStatsDisplay.bufferedDuration(snapshot.totalBufferedDurationMs)
   val flow = snapshot.media3Flow
-  val flowSourceRate = if (flow.sourceFps > 0f) String.format(java.util.Locale.US, "%.1f", flow.sourceFps) else "—"
+  val flowSourceRate = if (flow.capturedSourceFps > 0f) {
+    String.format(java.util.Locale.US, "%.1f", flow.capturedSourceFps)
+  } else {
+    "—"
+  }
   val flowOutputRate = if (flow.outputFps > 0f) String.format(java.util.Locale.US, "%.1f", flow.outputFps) else "—"
   val flowGeneratedRate = if (flow.generatedFps > 0f) String.format(java.util.Locale.US, "%.1f", flow.generatedFps) else "—"
   val flowGpuTime = flow.motionPassAverageGpuUs?.let {
     "${String.format(java.util.Locale.US, "%.1f", it)} µs/pass"
   }
     ?: flow.vulkanTimings.motion.status
-  val flowMultiplier = if (flow.sourceFps > 0f && flow.outputFps > 0f) {
-    String.format(java.util.Locale.US, "%.1f", flow.outputFps / flow.sourceFps)
+  val flowMultiplier = if (flow.capturedSourceFps > 0f && flow.outputFps > 0f) {
+    String.format(java.util.Locale.US, "%.1f", flow.outputFps / flow.capturedSourceFps)
   } else {
     "—"
   }
@@ -2450,16 +2454,18 @@ private fun NativeStatsPageOverlay(
           )
           if (flow.enabled) {
             Text(
-              "Media3 Flow: ${flow.state} · src $flowSourceRate fps → EGL swap-return $flowOutputRate/${flow.targetFps} fps " +
-                "($flowMultiplier×) · generated $flowGeneratedRate fps (${"%,d".format(java.util.Locale.US, flow.generatedFrames)} total)",
+              "Media3 Flow: ${flow.state} · captured cadence $flowSourceRate fps (n=${flow.capturedPtsSampleCount}) → " +
+                "EGL swap-return $flowOutputRate/${flow.targetFps} fps ($flowMultiplier×) · " +
+                "generated $flowGeneratedRate fps (${"%,d".format(java.util.Locale.US, flow.generatedFrames)} total)",
               style = MaterialTheme.typography.bodySmall,
               color = Color.White,
             )
             Text(
-              "ME submit ${String.format(java.util.Locale.US, "%.2f", flow.motionEstimateSubmitMs)} ms · " +
+              "ME submit ${String.format(java.util.Locale.US, "%.2f", flow.motionEstimateSubmitMs)} ms (CPU-only deadline proxy) · " +
                 "Vulkan motion pass avg $flowGpuTime · " +
                 "confidence $flowConfidence · drops ${flow.droppedFrames} total · " +
-                "missed output ticks ${flow.missedOutputTicks} · skip ${flow.skippedFrames} · " +
+                "inferred tick gaps ${flow.skippedOutputTicks} · sink failures ${flow.outputSubmissionFailures} · " +
+                "skip ${flow.skippedFrames} · " +
                 "motion grid ${flow.motionGridWidth}×${flow.motionGridHeight} · " +
                 "processing ${flow.processingWidth}×${flow.processingHeight}" +
                 (flow.bypassReason?.let { " · $it" } ?: ""),
@@ -2497,8 +2503,9 @@ private fun NativeStatsPageOverlay(
               color = Color.White,
             )
             Text(
-              "Output deadline misses ${flow.missedOutputTicks} · latest ${flow.lastDeadlineMissReason} · " +
-                "reasons ${flow.deadlineMissReasons.entries.joinToString(",") { "${it.key}:${it.value}" }.ifEmpty { "none" }} · " +
+              "Inferred output tick gaps ${flow.skippedOutputTicks} · latest ${flow.lastOutputTickGapReason} · " +
+                "contexts ${flow.outputTickGapContexts.entries.joinToString(",") { "${it.key}:${it.value}" }.ifEmpty { "none" }} · " +
+                "sink failures ${flow.outputSubmissionFailures} (${flow.lastOutputSubmissionFailureReason}) · " +
                 "callback lateness ${String.format(java.util.Locale.US, "%.1f", flow.outputCallbackLatenessMs)} ms",
               style = MaterialTheme.typography.bodySmall,
               color = Color.White,
