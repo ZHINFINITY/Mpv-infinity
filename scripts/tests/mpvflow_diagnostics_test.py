@@ -156,6 +156,8 @@ require(FLOW_GPU_CORE, "event=motion_geometry state=ready", "MPV and Media3 must
 require(FLOW_GPU_CORE, "motion_search_passes_per_pair=6", "the shared Vulkan core must retain every original motion pass")
 require(FLOW_GPU_CORE, "event=qcom_block_match_capability", "QCOM block-match support and format usage must be queried at runtime")
 require(FLOW_GPU_CORE, "shader_execution=not_integrated_in_flow_core", "QCOM probing must not imply its shader was enabled or executed")
+require(FLOW_GPU_CORE, "base_r8_capability_present_shader_unintegrated", "QCOM capability logging must not label unintegrated support as ready")
+assert "base_r8_block_match_ready" not in FLOW_GPU_CORE, "a capability probe must not imply a usable block-match runtime path"
 require(MEDIA3_NATIVE, "event=queue_capability", "Media3 must report whether the device exposes a dedicated compute family")
 require(MEDIA3_NATIVE, "async_queue_disabled_reason=exclusive_ahb_images_require_verified_queue_ownership", "Media3 must explain why its current AHardwareBuffer path remains single-family")
 for stage in (

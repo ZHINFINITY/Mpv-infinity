@@ -13,6 +13,9 @@
 
 #define WIDTH 7
 #define HEIGHT 5
+#define GRID_WIDTH (((WIDTH - 4 + 3) / 4) + 1)
+#define GRID_HEIGHT (((HEIGHT - 4 + 3) / 4) + 1)
+#define GRID_PIXELS ((size_t)GRID_WIDTH * (size_t)GRID_HEIGHT)
 #define PIXELS ((size_t)WIDTH * (size_t)HEIGHT)
 #define IMAGE_BYTES (PIXELS * 4)
 
@@ -448,10 +451,10 @@ static void fill_rgba8(uint8_t *pixels, const uint8_t color[4])
         memcpy(pixels + i * 4, color, 4);
 }
 
-static void fill_rgba16f(uint16_t *pixels, uint16_t r, uint16_t g,
+static void fill_rgba16f(uint16_t *pixels, size_t count, uint16_t r, uint16_t g,
                          uint16_t b, uint16_t a)
 {
-    for (size_t i = 0; i < PIXELS; i++) {
+    for (size_t i = 0; i < count; i++) {
         pixels[i * 4 + 0] = r;
         pixels[i * 4 + 1] = g;
         pixels[i * 4 + 2] = b;
@@ -488,15 +491,41 @@ static void run_fixture(struct VulkanContext *ctx, const char *label,
                         const uint8_t frame1_color[4], uint16_t scene_delta,
                         uint16_t luma0_value, uint16_t luma1_value,
                         float timestep, const uint8_t expected[4],
-                        int check_all_pixels)
+                        int check_all_pixels, int terminal_grid_test)
 {
     uint8_t frame0[IMAGE_BYTES], frame1[IMAGE_BYTES];
-    uint16_t flow[PIXELS * 4], scene[4], luma0[PIXELS * 4], luma1[PIXELS * 4];
+    uint16_t flow[2][GRID_PIXELS * 4], scene[4], luma0[PIXELS * 4], luma1[PIXELS * 4];
     fill_rgba8(frame0, frame0_color);
     fill_rgba8(frame1, frame1_color);
-    fill_rgba16f(flow, 0x0000, 0x0000, 0x0000, 0x3c00);
-    fill_rgba16f(luma0, luma0_value, 0x0000, 0x0000, 0x3c00);
-    fill_rgba16f(luma1, luma1_value, 0x0000, 0x0000, 0x3c00);
+    fill_rgba16f(flow[0], GRID_PIXELS, 0x0000, 0x0000, 0x0000, 0x3c00);
+    fill_rgba16f(flow[1], GRID_PIXELS, 0x0000, 0x0000, 0x0000, 0x3c00);
+    fill_rgba16f(luma0, PIXELS, luma0_value, 0x0000, 0x0000, 0x3c00);
+    fill_rgba16f(luma1, PIXELS, luma1_value, 0x0000, 0x0000, 0x3c00);
+    if (terminal_grid_test) {
+        for (int y = 0; y < HEIGHT; y++) {
+            for (int x = 0; x < WIDTH; x++) {
+                size_t index = ((size_t)y * WIDTH + (size_t)x) * 4;
+                uint8_t value = (uint8_t)(x * x * 6);
+                frame0[index + 0] = frame0[index + 1] = frame0[index + 2] = value;
+                frame0[index + 3] = 255;
+                frame1[index + 0] = frame1[index + 1] = frame1[index + 2] = value;
+                frame1[index + 3] = 255;
+            }
+        }
+        for (uint32_t y = 0; y < GRID_HEIGHT; y++) {
+            for (uint32_t x = 0; x < GRID_WIDTH; x++) {
+                size_t index = ((size_t)y * GRID_WIDTH + x) * 4;
+                flow[0][index + 0] = x == 0 ? 0x3c00 : 0x4200;
+                flow[0][index + 1] = 0x0000;
+                flow[0][index + 2] = 0x0000;
+                flow[0][index + 3] = 0x3c00;
+                flow[1][index + 0] = x == 0 ? 0xbc00 : 0xc200;
+                flow[1][index + 1] = 0x0000;
+                flow[1][index + 2] = 0x0000;
+                flow[1][index + 3] = 0x3c00;
+            }
+        }
+    }
     scene[0] = scene_delta;
     scene[1] = scene[2] = 0x0000;
     scene[3] = 0x3c00;
@@ -507,8 +536,8 @@ static void run_fixture(struct VulkanContext *ctx, const char *label,
     images[1] = create_image(ctx, VK_FORMAT_R8G8B8A8_UNORM, WIDTH, HEIGHT,
                              VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, 1);
     for (int i = 2; i <= 6; i++) {
-        uint32_t w = i == 4 ? 1 : WIDTH;
-        uint32_t h = i == 4 ? 1 : HEIGHT;
+        uint32_t w = i == 4 ? 1 : (i == 2 || i == 3 ? GRID_WIDTH : WIDTH);
+        uint32_t h = i == 4 ? 1 : (i == 2 || i == 3 ? GRID_HEIGHT : HEIGHT);
         images[i] = create_image(ctx, VK_FORMAT_R16G16B16A16_SFLOAT, w, h,
                                  VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_STORAGE_BIT, 0);
     }
@@ -517,8 +546,8 @@ static void run_fixture(struct VulkanContext *ctx, const char *label,
 
     upload_image(ctx, &images[0], frame0, sizeof(frame0));
     upload_image(ctx, &images[1], frame1, sizeof(frame1));
-    upload_image(ctx, &images[2], flow, sizeof(flow));
-    upload_image(ctx, &images[3], flow, sizeof(flow));
+    upload_image(ctx, &images[2], flow[0], sizeof(flow[0]));
+    upload_image(ctx, &images[3], flow[1], sizeof(flow[1]));
     upload_image(ctx, &images[4], scene, sizeof(scene));
     upload_image(ctx, &images[5], luma0, sizeof(luma0));
     upload_image(ctx, &images[6], luma1, sizeof(luma1));
@@ -606,7 +635,7 @@ static void run_fixture(struct VulkanContext *ctx, const char *label,
     VK_CHECK(vkMapMemory(ctx->device, readback.memory, 0, IMAGE_BYTES, 0, &mapped));
     memcpy(output, mapped, IMAGE_BYTES);
     vkUnmapMemory(ctx->device, readback.memory);
-    int first = check_all_pixels ? 0 : (2 * WIDTH + 3);
+    int first = check_all_pixels ? 0 : (2 * WIDTH + (terminal_grid_test ? 2 : 3));
     int last = check_all_pixels ? (int)PIXELS : first + 1;
     for (int i = first; i < last; i++) {
         for (int channel = 0; channel < 4; channel++) {
@@ -668,16 +697,20 @@ int main(int argc, char **argv)
     const uint8_t mixed[4] = { 110, 105, 102, 255 };
 
     run_fixture(&ctx, "scene-cut alpha selects first source", red, blue,
-                0x3800, 0x3400, 0x3800, 0.25f, red, 1);
+                0x3800, 0x3400, 0x3800, 0.25f, red, 1, 0);
     run_fixture(&ctx, "scene-cut alpha selects second source", red, blue,
-                0x3800, 0x3400, 0x3800, 0.75f, blue, 1);
+                0x3800, 0x3400, 0x3800, 0.75f, blue, 1, 0);
     run_fixture(&ctx, "static identical frame is preserved exactly", neutral0,
-                neutral0, 0x0000, 0x3400, 0x3400, 0.37f, neutral0, 1);
+                neutral0, 0x0000, 0x3400, 0x3400, 0.37f, neutral0, 1, 0);
     run_fixture(&ctx, "chroma-only contour chooses nearest source without color blend",
                 red, luminance_matched_green, 0x0000, 0x3400, 0x3800, 0.75f,
-                luminance_matched_green, 0);
+                luminance_matched_green, 0, 0);
     run_fixture(&ctx, "low-contrast reliable motion retains temporal color blend",
-                neutral0, neutral1, 0x0000, 0x3400, 0x3500, 0.5f, mixed, 0);
+                neutral0, neutral1, 0x0000, 0x3400, 0x3500, 0.5f, mixed, 0, 0);
+    const uint8_t grid_expected[4] = { 24, 24, 24, 255 };
+    run_fixture(&ctx, "irregular terminal block anchors affect edge synthesis",
+                neutral0, neutral0, 0x0000, 0x3400, 0x3400, 0.5f,
+                grid_expected, 0, 1);
 
     destroy_vulkan(&ctx);
     puts("MPVFlow Vulkan synthesis pixel-oracle tests passed");

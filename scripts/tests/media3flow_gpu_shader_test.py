@@ -70,6 +70,9 @@ for source in ("source0", "source1"):
         in shared_synthesis_bindings
     ), f"Media3 shared Vulkan synthesis must use the same clamp-to-edge linear sampler for {source}"
 assert "PL_FMT_CAP_LINEAR" in GPU, "Media3 source images must be capability-checked before linear filtering"
+assert "flowGridAxis(" in GPU and "flowGridCoord(p,direction)" in GPU, (
+    "Media3 and MPV must share actual terminal block-grid coordinates in Vulkan synthesis"
+)
 assert "get_proc_addr" in JNI
 assert '"vkGetPhysicalDeviceImageFormatProperties2KHR"' in JNI
 assert "vkGetPhysicalDeviceImageFormatProperties2(\n" not in JNI, "Android Vulkan entry point must be loaded, not directly linked"

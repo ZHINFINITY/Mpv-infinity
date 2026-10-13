@@ -244,6 +244,46 @@ require(SOURCE, "const int grid_w = (w - block_size + FLOW_STEP - 1) / FLOW_STEP
 require(SOURCE, "const int grid_h = (h - block_size + FLOW_STEP - 1) / FLOW_STEP + 1", "motion texture height must contain only valid, unique per-level block origins")
 assert "r32f" not in SOURCE.lower(), "MPV Flow must not require the optional R32F image format"
 assert "glsl.gles" not in SOURCE and "#version 310 es" not in SOURCE, "MPV Flow must not require GLES compute"
+require(flow, "float flowGridAxis(", "Vulkan search prediction must map the clamped terminal block to its actual image-space origin")
+require(flow, "float(parentSize.x),8,pg.x", "Vulkan parent-flow prediction must account for the coarser block grid")
+require(synthesis, "flowGridCoord(p,direction)", "Vulkan synthesis must sample the irregular terminal block grid by its actual origin")
+require(opencl_source, "inline float grid_axis(", "OpenCL must share the same terminal-block coordinate rule")
+require(opencl_source, "grid_axis(x,aw,4,gw)", "OpenCL synthesis must sample the terminal fine block by its actual origin")
+require(opencl_source, "int block_size = l == MPVFLOW_LEVELS - 1 ? 4 : 8", "OpenCL grid allocation must match each level's motion block support")
+require(opencl_source, "(w - block_size + MPVFLOW_GRID_STEP - 1) / MPVFLOW_GRID_STEP + 1", "OpenCL must allocate unique valid coarse/fine block origins like Vulkan")
+require(opencl_source, "(max(w-block_size,0)+3)/4+1", "OpenCL kernel launch dimensions must match allocated grid extents")
+
+
+def terminal_grid_coord(position: float, extent: int, block: int, step: int = 4) -> float:
+    grid_count = (max(extent - block, 0) + step - 1) // step + 1
+    if grid_count <= 1:
+        return 0.0
+    last_anchor = max(extent - block, 0)
+    previous_anchor = min((grid_count - 2) * step, last_anchor)
+    last_index = grid_count - 1
+    if position <= previous_anchor:
+        return min(max(position / step, 0.0), float(last_index))
+    if last_anchor <= previous_anchor:
+        return float(last_index)
+    return min(max(last_index - 1 + (position - previous_anchor) / (last_anchor - previous_anchor), 0.0), float(last_index))
+
+
+for extent, block in ((7, 4), (13, 4), (98, 8), (13, 8), (96, 8)):
+    count = (max(extent - block, 0) + 3) // 4 + 1
+    anchors = [min(i * 4, extent - block) for i in range(count)]
+    assert all(left < right for left, right in zip(anchors, anchors[1:])), (
+        f"motion grid must not allocate duplicate terminal blocks: {extent=}, {block=}, {anchors=}"
+    )
+    for index, anchor in enumerate(anchors):
+        assert abs(terminal_grid_coord(float(anchor), extent, block) - index) < 1e-9, (
+            f"grid anchor did not map to its own sample: {extent=}, {block=}, {anchor=}"
+        )
+    assert terminal_grid_coord(float(extent), extent, block) == float(count - 1), (
+        f"coordinates beyond the last valid block must clamp to its sample: {extent=}, {block=}"
+    )
+assert terminal_grid_coord(2.0, 7, 4) > 2.0 / 4.0, "a partial terminal block must be reached at its true origin"
+assert terminal_grid_coord(2.0, 8, 4) == 0.5, "aligned block grids must preserve the existing linear coordinate mapping"
+print("Terminal-grid regression: irregular edge anchors map exactly; aligned grids remain unchanged")
 
 
 def row_major_candidates(center_x: int, center_y: int, lo_x: int, hi_x: int, lo_y: int, hi_y: int):
