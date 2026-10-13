@@ -73,6 +73,8 @@ require(opencl_source, "static_out=convert_uchar4_sat_rte", "OpenCL synthesis mu
 require(opencl_source, "float chroma_delta=max(fabs((ca.x-ca.y)-(cb.x-cb.y)),fabs((ca.z-ca.y)-(cb.z-cb.y)))/255.0f", "OpenCL synthesis must measure chroma disagreement between warped source samples")
 require(opencl_source, "int chroma_boundary=color_delta>0.12f&&chroma_delta>0.06f", "OpenCL must reject strong chroma-only contour mixing")
 require(opencl_source, "int boundary_conflict=luma_delta>0.12f||chroma_boundary", "OpenCL boundary fallback must include chroma-only conflicts")
+require(opencl_source, "parent_residual=q.z; parent_uniqueness=q.w", "OpenCL finer levels must retain the coarse SAD and uniqueness signals")
+require(opencl_source, "if(has_coarse&&parent_residual>0.12f&&parent_uniqueness>0.0005f)search_radius=min(radius*2,16)", "OpenCL must use the same gated search-expansion policy")
 require(synthesis, "dot(fastForward.xy,fastForward.xy)<=0.0025", "the static path must require a near-zero forward vector")
 require(synthesis, "dot(fastBackward.xy,fastBackward.xy)<=0.0025", "the static path must require a near-zero backward vector")
 require(synthesis, "colorDelta<=0.0039216", "the static path must require an at-most-one-LSB source difference")
@@ -94,6 +96,8 @@ require(flow, "float(second-best)/max(float(second),1.0)", "flow vectors must re
 require(flow, "refineAxis(p,bestVector,ivec2(1,0)", "GPU flow vectors must be fractionally refined")
 require(flow, "center=clamp(center,-p,sz-block-p)", "coarse predictors must be clamped to the active block before border-local refinement")
 require(flow, "bool hasParent=(pc.cfg.w&1)!=0", "the encoded block support must not be confused with the coarse-parent flag")
+require(flow, "parentResidual=parentFlow.b; parentUniqueness=parentFlow.a", "finer Vulkan levels must retain the coarse SAD and uniqueness signals")
+require(flow, "if(hasParent&&parentResidual>0.12&&parentUniqueness>0.0005)radius=min(radius*2,16)", "only a poor but non-tied parent may double the fine-level search")
 require(synthesis, "bool neighborhoodConflict=", "synthesis must detect local motion disagreement")
 require(synthesis, "float chromaDelta=max(abs((ca.r-ca.g)-(cb.r-cb.g)),abs((ca.b-ca.g)-(cb.b-cb.g)))", "Vulkan synthesis must measure chroma disagreement between warped source samples")
 require(synthesis, "bool chromaBoundary=colorDelta>0.12&&chromaDelta>0.06", "Vulkan synthesis must reject strong chroma-only contour mixing")
@@ -268,6 +272,12 @@ def sad_at(src, dst, p, displacement, cutoff, block_size=8):
     return cost, reads
 
 
+def confidence_guided_radius(base_radius, parent_residual, parent_uniqueness):
+    if parent_residual > 0.12 and parent_uniqueness > 0.0005:
+        return min(base_radius * 2, 16)
+    return base_radius
+
+
 edge_rng = random.Random(0xED6E)
 edge_background = [[edge_rng.randrange(120) for _ in range(32)] for _ in range(24)]
 edge_frame0 = [row[:] for row in edge_background]
@@ -339,6 +349,28 @@ for index in range(24):
         )
     )
 exact_cases += tuple(randomized_cases)
+
+adaptive_rng = random.Random(94127)
+adaptive_image = [[adaptive_rng.randrange(256) for _ in range(64)] for _ in range(48)]
+adaptive_origin = (24, 16)
+for dx, dy in ((9, 0), (12, 3)):
+    adaptive_target = shifted(adaptive_image, dx, dy)
+    parent = block_search(adaptive_image, adaptive_target, adaptive_origin, (0, 0), 8, True, prune_ambiguous_zero=True)
+    parent_residual = parent[1] / (8 * 8 * 255.0)
+    radius = confidence_guided_radius(8, parent_residual, parent[2])
+    baseline = block_search(adaptive_image, adaptive_target, adaptive_origin, parent[0], 8, True, prune_ambiguous_zero=True)
+    refined = block_search(adaptive_image, adaptive_target, adaptive_origin, parent[0], radius, True, prune_ambiguous_zero=True)
+    assert radius == 16 and baseline[0] != (dx, dy), f"translation {(dx, dy)} must exercise recovery outside the base radius"
+    assert refined[0] == (dx, dy) and refined[1] == 0, f"confidence-guided expansion must recover exact translation {(dx, dy)}"
+
+flat_source = [[127 for _ in range(64)] for _ in range(48)]
+flat_target = [[0 for _ in range(64)] for _ in range(48)]
+ambiguous_parent = block_search(flat_source, flat_target, adaptive_origin, (0, 0), 8, True, prune_ambiguous_zero=True)
+assert confidence_guided_radius(8, ambiguous_parent[1] / (8 * 8 * 255.0), ambiguous_parent[2]) == 8, "a high-residual but exactly tied parent must not spend work on a wider ambiguous search"
+clear_parent = block_search(adaptive_image, adaptive_image, adaptive_origin, (0, 0), 8, True, prune_ambiguous_zero=True)
+assert confidence_guided_radius(8, clear_parent[1] / (8 * 8 * 255.0), clear_parent[2]) == 8, "a reliable parent must retain the base search radius"
+print("Confidence-guided pyramid regression: poor distinct matches widen only the local search; tied and reliable parents do not")
+
 optimized_reads = reference_reads = center_out_reads = 0
 for src, dst, p, center, radius, label in exact_cases:
     height, width = len(src), len(src[0])
