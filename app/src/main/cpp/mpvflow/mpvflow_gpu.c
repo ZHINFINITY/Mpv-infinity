@@ -760,12 +760,13 @@ static const char shader_flow[] =
     "layout(set=0,binding=1,rgba16f) readonly uniform image2D dstTex;\n"
     "layout(set=0,binding=2,rgba16f) readonly uniform image2D parentTex;\n"
     "layout(set=0,binding=3,rgba16f) writeonly uniform image2D flowTex;\n"
+    "layout(set=0,binding=4,rgba16f) readonly uniform image2D sceneTex;\n"
     "layout(push_constant) uniform FlowPush { ivec4 cfg; float timestep; } pc;\n"
     "layout(local_size_x=8, local_size_y=8) in;\n"
     "int sadAt(ivec2 p,ivec2 d,ivec2 sz,int cutoff,int blockSize){ int cost=0; for(int y=0;y<blockSize;y++) for(int x=0;x<blockSize;x++){ float a=imageLoad(srcTex,p+ivec2(x,y)).r; float b=imageLoad(dstTex,p+ivec2(x,y)+d).r; cost+=int(abs(a-b)*255.0+0.5); if(cost>cutoff) return cost; } return cost; }\n"
     "float subpixelOffset(float minusCost,float centerCost,float plusCost){ float curvature=minusCost-2.0*centerCost+plusCost; if(centerCost>minusCost||centerCost>plusCost||curvature<=0.0001) return 0.0; return clamp(0.5*(minusCost-plusCost)/curvature,-0.5,0.5); }\n"
     "float refineAxis(ivec2 p,ivec2 v,ivec2 axis,ivec2 sz,int blockSize,int centerCost){ ivec2 m=v-axis,q=v+axis,block=ivec2(blockSize); if(any(lessThan(p+m,ivec2(0)))||any(lessThan(p+q,ivec2(0)))||any(greaterThan(p+m,sz-block))||any(greaterThan(p+q,sz-block))) return 0.0; int cm=sadAt(p,m,sz,2147483647,blockSize),cp=sadAt(p,q,sz,2147483647,blockSize); return subpixelOffset(float(cm),float(centerCost),float(cp)); }\n"
-    "void main(){ ivec2 g=ivec2(gl_GlobalInvocationID.xy); ivec2 grid=imageSize(flowTex); if(any(greaterThanEqual(g,grid))) return; ivec2 sz=pc.cfg.xy; int blockSize=(pc.cfg.w>>8); if(blockSize!=4) blockSize=8; ivec2 block=ivec2(blockSize),p=min(g*4,sz-block); bool hasParent=(pc.cfg.w&1)!=0; ivec2 center=ivec2(0); float parentResidual=0.0,parentUniqueness=1.0; if(hasParent){ ivec2 pg=imageSize(parentTex); vec2 parentPos=vec2(p)*0.5/4.0; ivec2 a=clamp(ivec2(floor(parentPos)),ivec2(0),pg-1); ivec2 b=min(a+1,pg-1); vec2 f=fract(parentPos); vec4 top=mix(imageLoad(parentTex,a),imageLoad(parentTex,ivec2(b.x,a.y)),f.x); vec4 bot=mix(imageLoad(parentTex,ivec2(a.x,b.y)),imageLoad(parentTex,b),f.x); vec4 parentFlow=mix(top,bot,f.y); center=ivec2(round(parentFlow.rg*2.0)); parentResidual=parentFlow.b; parentUniqueness=parentFlow.a; } center=clamp(center,-p,sz-block-p); int radius=pc.cfg.z; if(hasParent&&parentResidual>0.12&&parentUniqueness>0.0005)radius=min(radius*2,16); ivec2 lo=max(-p,center-ivec2(radius)); ivec2 hi=min(sz-block-p,center+ivec2(radius)); ivec2 bestVector=center; int best=sadAt(p,bestVector,sz,2147483647,blockSize),second=2147483647; bool stopOnCenterTie=false;\n"
+    "void main(){ ivec2 g=ivec2(gl_GlobalInvocationID.xy); ivec2 grid=imageSize(flowTex); if(any(greaterThanEqual(g,grid))) return; if(imageLoad(sceneTex,ivec2(0)).r>0.1882353){ imageStore(flowTex,g,vec4(0.0,0.0,1.0,0.0)); return; } ivec2 sz=pc.cfg.xy; int blockSize=(pc.cfg.w>>8); if(blockSize!=4) blockSize=8; ivec2 block=ivec2(blockSize),p=min(g*4,sz-block); bool hasParent=(pc.cfg.w&1)!=0; ivec2 center=ivec2(0); float parentResidual=0.0,parentUniqueness=1.0; if(hasParent){ ivec2 pg=imageSize(parentTex); vec2 parentPos=vec2(p)*0.5/4.0; ivec2 a=clamp(ivec2(floor(parentPos)),ivec2(0),pg-1); ivec2 b=min(a+1,pg-1); vec2 f=fract(parentPos); vec4 top=mix(imageLoad(parentTex,a),imageLoad(parentTex,ivec2(b.x,a.y)),f.x); vec4 bot=mix(imageLoad(parentTex,ivec2(a.x,b.y)),imageLoad(parentTex,b),f.x); vec4 parentFlow=mix(top,bot,f.y); center=ivec2(round(parentFlow.rg*2.0)); parentResidual=parentFlow.b; parentUniqueness=parentFlow.a; } center=clamp(center,-p,sz-block-p); int radius=pc.cfg.z; if(hasParent&&parentResidual>0.12&&parentUniqueness>0.0005)radius=min(radius*2,16); ivec2 lo=max(-p,center-ivec2(radius)); ivec2 hi=min(sz-block-p,center+ivec2(radius)); ivec2 bestVector=center; int best=sadAt(p,bestVector,sz,2147483647,blockSize),second=2147483647; bool stopOnCenterTie=false;\n"
     "for(int ring=1;ring<=radius&&!stopOnCenterTie;ring++) for(int dy=-ring;dy<=ring&&!stopOnCenterTie;dy++) for(int dx=-ring;dx<=ring&&!stopOnCenterTie;dx++){ if(max(abs(dx),abs(dy))!=ring) continue; ivec2 d=center+ivec2(dx,dy); if(any(lessThan(d,lo))||any(greaterThan(d,hi))) continue; if(all(equal(d,bestVector))) continue; if(best==0&&second==0){ if(all(equal(bestVector,center))){stopOnCenterTie=true;continue;} if(d.y>bestVector.y||(d.y==bestVector.y&&d.x>=bestVector.x)) continue; } int c=sadAt(p,d,sz,best==0?0:second,blockSize); if(best==0){if(c==0){second=0; if(!all(equal(bestVector,center))&&(d.y<bestVector.y||(d.y==bestVector.y&&d.x<bestVector.x))) bestVector=d;} else if(second!=0) second=1;} else if(c<best){second=best;best=c;bestVector=d;} else if(c==best){if(second>c) second=c; if(!all(equal(bestVector,center))&&(d.y<bestVector.y||(d.y==bestVector.y&&d.x<bestVector.x))) bestVector=d;} else if(c<second) second=c; }\n"
     "vec2 refined=vec2(bestVector); refined.x+=refineAxis(p,bestVector,ivec2(1,0),sz,blockSize,best); refined.y+=refineAxis(p,bestVector,ivec2(0,1),sz,blockSize,best); float uniqueness=second<2147483647?clamp(float(second-best)/max(float(second),1.0),0.0,1.0):0.0; imageStore(flowTex,g,vec4(refined,float(best)/(float(blockSize*blockSize)*255.0),uniqueness)); }\n"
 ;
@@ -1378,6 +1379,8 @@ MPVFlowGPUContext *mpvflow_gpu_create(pl_gpu gpu,
           .access = PL_DESC_ACCESS_READONLY },
         { .name = "flowTex", .type = PL_DESC_STORAGE_IMG, .binding = 3,
           .access = PL_DESC_ACCESS_WRITEONLY },
+        { .name = "sceneTex", .type = PL_DESC_STORAGE_IMG, .binding = 4,
+          .access = PL_DESC_ACCESS_READONLY },
     };
     struct pl_desc synth_desc[] = {
         { .name = "frame0", .type = PL_DESC_SAMPLED_TEX, .binding = 0 },
@@ -1400,7 +1403,7 @@ MPVFlowGPUContext *mpvflow_gpu_create(pl_gpu gpu,
     ctx->pass_downsample = make_pass(gpu, shader_downsample, down_desc, 2);
     ctx->pass_reduce_first = make_pass(gpu, shader_reduce_first, first_desc, 3);
     ctx->pass_reduce = make_pass(gpu, shader_reduce, reduce_desc, 2);
-    ctx->pass_flow = make_pass(gpu, shader_flow, flow_desc, 4);
+    ctx->pass_flow = make_pass(gpu, shader_flow, flow_desc, 5);
     ctx->pass_synthesize = make_pass(gpu, shader_synthesize, synth_desc, 8);
     uint32_t failed_pass_mask = 0;
     if (!ctx->pass_preprocess) failed_pass_mask |= MPVFLOW_GPU_PASS_PREPROCESS;
@@ -1832,6 +1835,7 @@ enum MPVFlowGPUResult mpvflow_gpu_analyze_pair(MPVFlowGPUContext *ctx,
             goto failure;
     }
 
+    pl_tex scene_delta = pair->scene[pair->reductions - 1];
     for (int dir = 0; dir < 2; dir++) {
         for (int li = pair->levels - 1; li >= 0; li--) {
             struct FlowLevel *lv = &pair->level[li];
@@ -1847,16 +1851,16 @@ enum MPVFlowGPUResult mpvflow_gpu_analyze_pair(MPVFlowGPUContext *ctx,
             const int block_size = li == 0 ? FLOW_FINE_BLOCK : FLOW_BLOCK;
             int fc[4] = { lv->w, lv->h, radius,
                           (parent ? 1 : 0) | (block_size << 8) };
-            struct pl_desc_binding fb[4] = {
+            struct pl_desc_binding fb[5] = {
                 { .object = src }, { .object = dst }, { .object = parent_flow },
-                { .object = flow },
+                { .object = flow }, { .object = scene_delta },
             };
             const char *stage = dir
                 ? (li == 0 ? "motion_search_backward_level_0" :
                    li == 1 ? "motion_search_backward_level_1" : "motion_search_backward_level_2")
                 : (li == 0 ? "motion_search_forward_level_0" :
                    li == 1 ? "motion_search_forward_level_1" : "motion_search_forward_level_2");
-            if (!run_pass(ctx, ctx->pass_flow, fb, 4, fc, 0.0f,
+            if (!run_pass(ctx, ctx->pass_flow, fb, 5, fc, 0.0f,
                           flow->params.w, flow->params.h,
                           stage))
                 goto failure;
