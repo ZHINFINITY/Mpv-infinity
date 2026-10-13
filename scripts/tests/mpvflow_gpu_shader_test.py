@@ -75,7 +75,15 @@ require(SOURCE, "{ .object = flow }, { .object = scene_delta },", "Vulkan motion
 opencl_source = (ROOT / "app/src/main/cpp/mpvflow/mpvflow_opencl.c").read_text(encoding="utf-8")
 require(opencl_source, "if(scene_delta[0]>0.1882353f){out[i]=(float4)(0.0f,0.0f,1.0f,0.0f);return;}", "OpenCL scene cuts must initialize a no-confidence flow field before skipping SAD search")
 require(opencl_source, "if(scene_delta[0]>0.1882353f)", "OpenCL motion search and synthesis must share the same scene-cut threshold")
-require(opencl_source, "SET_ARG(c->estimate_kernel, 9, p->scene_delta);\n    SET_ARG(c->estimate_kernel, 10, out);", "OpenCL scene delta and flow output kernel arguments must remain correctly ordered")
+require(opencl_source, "SET_ARG(c->estimate_kernel, 9, block_size);\n    SET_ARG(c->estimate_kernel, 10, p->scene_delta); SET_ARG(c->estimate_kernel, 11, out);", "OpenCL block support, scene delta, and flow output kernel arguments must remain correctly ordered")
+require(opencl_source, "int block_size = level == MPVFLOW_LEVELS - 1 ? 4 : 8;", "OpenCL must use 4x4 support only at its finest level and 8x8 at coarser levels")
+require(opencl_source, "inline int sad_block(", "OpenCL matching must support the configured block area")
+require(opencl_source, "for(int yy=0;yy<block_size;yy++) for(int xx=0;xx<block_size;xx++)", "OpenCL SAD must use the active fine/coarse support")
+require(opencl_source, "p=min((int2)(gx*4,gy*4),(int2)(w-block_size,h-block_size))", "OpenCL block origins must be clamped using active support")
+require(opencl_source, "sad_block(a,b,w,h,p.x,p.y,center.x,center.y,block_size,2147483647)", "OpenCL center SAD must use active support")
+require(opencl_source, "out[i]=(float4)(refined.x,refined.y,(float)best/((float)(block_size*block_size)*255.0f),uniqueness)", "OpenCL residual confidence must normalize by active block area")
+require(opencl_source, "limit=(int2)(w-block_size,h-block_size)", "OpenCL subpixel refinement must respect active block bounds")
+require(opencl_source, "int2 bound=(int2)(aw-4,ah-4),c00=min(a*(int2)(4),bound)+(int2)(2)", "OpenCL edge-guide samples must match Vulkan's 4x4 block centers, including partial edge blocks")
 require(opencl_source, "float static_luma_delta=", "OpenCL synthesis must gate static pixels before warping")
 require(opencl_source, "static_out=convert_uchar4_sat_rte", "OpenCL synthesis must preserve static pixels instead of blending warped neighbors")
 require(opencl_source, "float chroma_delta=max(fabs((ca.x-ca.y)-(cb.x-cb.y)),fabs((ca.z-ca.y)-(cb.z-cb.y)))/255.0f", "OpenCL synthesis must measure chroma disagreement between warped source samples")
@@ -304,8 +312,10 @@ for y in range(8, 10):
         edge_frame1[y][x] = 255
 coarse_edge_match = block_search(edge_frame0, edge_frame1, (8, 8), (0, 0), 2, True, block_size=8)
 fine_edge_match = block_search(edge_frame0, edge_frame1, (8, 8), (0, 0), 2, True, block_size=4)
+opencl_fine_edge_match = block_search(edge_frame0, edge_frame1, (8, 8), (0, 0), 2, True, block_size=4)
 assert coarse_edge_match[0] == (0, 0), "the regression scene must expose a background-dominated 8x8 match"
 assert fine_edge_match[0] == (1, 0), "4x4 support should recover the one-pixel foreground translation"
+assert opencl_fine_edge_match[0] == fine_edge_match[0], "OpenCL's Vulkan-aligned fine support should recover the same thin foreground vector"
 print("Fine-level motion support regression: a thin moving foreground selects its own vector")
 
 

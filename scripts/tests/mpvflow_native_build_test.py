@@ -517,7 +517,9 @@ for marker in (
     "inline float reliability(float4 flow,float cycle,float valid)",
     "cycle_error0",
     "boundary_conflict",
-    "(float)best/(64.0f*255.0f),uniqueness",
+    "int block_size = level == MPVFLOW_LEVELS - 1 ? 4 : 8;",
+    "(float)best/((float)(block_size*block_size)*255.0f),uniqueness",
+    "aw-4,ah-4",
     "SET_ARG(c->synth_kernel, 10, luma0)",
     "SET_ARG(c->synth_kernel, 15, dstride)",
 ):
