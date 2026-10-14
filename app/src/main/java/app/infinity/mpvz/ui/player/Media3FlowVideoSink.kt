@@ -1541,6 +1541,7 @@ class Media3FlowVideoSink(
     val frame0 = sourceFrames.firstOrNull { it.ptsUs == candidate.frame0PtsUs }
     val frame1 = sourceFrames.firstOrNull { it.ptsUs == candidate.frame1PtsUs }
     if (frame0 == null || frame1 == null) return
+    val deltaUs = Media3FlowCadence.checkedSubtract(frame1.ptsUs, frame0.ptsUs) ?: return
     if (motionPairs.any {
         it.available && it.frame0PtsUs == candidate.frame0PtsUs &&
           it.frame1PtsUs == candidate.frame1PtsUs
