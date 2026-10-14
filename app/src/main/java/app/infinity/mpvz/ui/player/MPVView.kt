@@ -22,6 +22,9 @@ import app.infinity.mpvz.BuildConfig
 import app.infinity.mpvz.domain.anime4k.Anime4KManager
 import app.infinity.mpvz.domain.hdr.HdrToysManager
 import app.infinity.mpvz.network.AndroidCookieJar
+import app.infinity.mpvz.presentation.crash.DebugLogReader
+import app.infinity.mpvz.presentation.crash.isMpvFlowRuntimeCadenceSampleFresh
+import app.infinity.mpvz.presentation.crash.latestMpvFlowRuntimeCadenceSample
 import app.infinity.mpvz.preferences.AdvancedPreferences
 import app.infinity.mpvz.preferences.AudioPreferences
 import app.infinity.mpvz.preferences.DecoderPreferences
@@ -47,6 +50,14 @@ import app.infinity.mpvz.utils.device.VulkanCapabilities
 import `is`.xyz.mpv.BaseMPVView
 import `is`.xyz.mpv.KeyMapping
 import `is`.xyz.mpv.MPVLib
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import org.koin.core.component.KoinComponent
 import org.koin.core.component.inject
 import kotlin.reflect.KProperty
@@ -89,6 +100,9 @@ class MPVView(
   var onSurfaceReady: (() -> Unit)? = null
   private var rifeModelDirectory: String? = null
   private var interpolationOutputFrameRate: Double? = null
+  private val mpvFlowOsdStatsScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+  private var mpvFlowOsdStatsJob: Job? = null
+  private var mpvFlowOsdStatsEnabled = false
 
   private fun currentDisplayRefreshRate(): FlowDisplayRefreshRate? {
     val viewDisplay = display
@@ -147,6 +161,7 @@ class MPVView(
         BuildConfig.MPV_HAS_MPVFLOW &&
         !frameInterpolationConfigOwned &&
         decoderPreferences.playbackEngine.get() != PlaybackEngineMode.NATIVE
+    mpvFlowOsdStatsEnabled = mpvFlowFrameInterpolationActive
     val frameInterpolationKey =
       if (rifeFrameInterpolationActive) {
         "rife=on,target-fps=$requestedRifeTargetFps,max-dimension=$requestedRifeProcessingResolution"
@@ -168,19 +183,69 @@ class MPVView(
       )
     // Refresh from the process-wide owner even when initOptions was skipped on core reuse.
     interpolationOutputFrameRate = PlaybackSession.surfaceFrameRateHintHz()
+    if (result.isFailure) mpvFlowOsdStatsEnabled = false
     if (result.isSuccess) {
       holder.removeCallback(this)
       holder.addCallback(this)
       if (holder.surface.isValid && !isSurfaceReady) surfaceCreated(holder)
     }
+    updateMpvFlowOsdStatsBridge()
     return result
   }
 
   fun releaseSurface() {
+    stopMpvFlowOsdStatsBridge()
     holder.removeCallback(this)
     if (isSurfaceReady || PlaybackSession.state.value.surfaceAttached) {
       isSurfaceReady = false
       PlaybackSession.unbindSurface(this)
+    }
+  }
+
+  private fun updateMpvFlowOsdStatsBridge() {
+    if (mpvFlowOsdStatsEnabled && isSurfaceReady && holder.surface.isValid) {
+      startMpvFlowOsdStatsBridge()
+    } else {
+      stopMpvFlowOsdStatsBridge()
+    }
+  }
+
+  private fun startMpvFlowOsdStatsBridge() {
+    if (!mpvFlowOsdStatsEnabled || !isSurfaceReady || mpvFlowOsdStatsJob?.isActive == true) return
+    mpvFlowOsdStatsJob =
+      mpvFlowOsdStatsScope.launch {
+        while (isActive && mpvFlowOsdStatsEnabled && isSurfaceReady) {
+          val sample =
+            withContext(Dispatchers.IO) {
+              runCatching {
+                latestMpvFlowRuntimeCadenceSample(DebugLogReader.readSnapshot(maxRawLines = 500).entries)
+              }.getOrNull()
+            }?.takeIf { isMpvFlowRuntimeCadenceSampleFresh(it, System.currentTimeMillis()) }
+          sendMpvFlowOsdStats(sample)
+          delay(3_000L)
+        }
+      }
+  }
+
+  private fun stopMpvFlowOsdStatsBridge() {
+    mpvFlowOsdStatsJob?.cancel()
+    mpvFlowOsdStatsJob = null
+    sendMpvFlowOsdStats(null)
+  }
+
+  private fun sendMpvFlowOsdStats(
+    sample: app.infinity.mpvz.presentation.crash.MpvFlowRuntimeCadenceSample?,
+  ) {
+    if (!PlaybackSession.isInitialized) return
+    runCatching {
+      PlaybackSession.command(
+        "script-message-to",
+        "stats",
+        "mpvflow-output-rate",
+        sample?.synthesizedSubmitFps?.toString().orEmpty(),
+        sample?.targetFps?.toString().orEmpty(),
+        sample?.swapSubmitFps?.toString().orEmpty(),
+      )
     }
   }
 
@@ -342,6 +407,7 @@ class MPVView(
     }
     val mpvFlowFrameInterpolationEnabled =
       mpvFlowFrameInterpolationCandidate && flowTimingOptionsReady
+    mpvFlowOsdStatsEnabled = mpvFlowFrameInterpolationEnabled
     if (mpvFlowFrameInterpolationEnabled) {
       Log.i(
         TAG,
@@ -798,6 +864,7 @@ class MPVView(
   override fun surfaceCreated(holder: android.view.SurfaceHolder) {
     isSurfaceReady = PlaybackSession.bindSurface(holder.surface, width, height, this)
     updateSurfaceFrameRateHint()
+    updateMpvFlowOsdStatsBridge()
     post {
       if (isSurfaceReady && holder.surface.isValid) {
         onSurfaceReady?.invoke()
@@ -806,8 +873,14 @@ class MPVView(
   }
 
   override fun surfaceDestroyed(holder: android.view.SurfaceHolder) {
+    stopMpvFlowOsdStatsBridge()
     isSurfaceReady = false
     PlaybackSession.unbindSurface(this)
+  }
+
+  override fun onDetachedFromWindow() {
+    stopMpvFlowOsdStatsBridge()
+    super.onDetachedFromWindow()
   }
 
   internal fun updateSurfaceFrameRateHint() {

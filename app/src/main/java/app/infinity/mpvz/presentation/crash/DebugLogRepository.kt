@@ -455,6 +455,59 @@ internal fun selectMpvFlowDiagnosticLines(logcat: String): String =
     }
     .joinToString("\n")
 
+internal data class MpvFlowRuntimeCadenceSample(
+  val synthesizedSubmitFps: Double,
+  val targetFps: Int?,
+  val swapSubmitFps: Double?,
+  val synthesizedSubmits: Long?,
+  val windowMillis: Double?,
+  val timeMillis: Long,
+)
+
+internal fun latestMpvFlowRuntimeCadenceSample(
+  entries: List<DebugLogEntry>,
+): MpvFlowRuntimeCadenceSample? {
+  val entry =
+    entries.lastOrNull { candidate ->
+      candidate.isMpvFlowDiagnostic() && candidate.message.contains("event=runtime_cadence")
+    } ?: return null
+  val fields = Regex("""([A-Za-z_][A-Za-z0-9_]*)=([^\s]+)""")
+    .findAll(entry.message)
+    .associate { it.groupValues[1] to it.groupValues[2] }
+  if (fields["metric"] != "successful_pl_swapchain_submit_not_surfaceflinger_scanout") return null
+
+  fun number(name: String): Double? = fields[name]?.toDoubleOrNull()?.takeIf { it.isFinite() }
+
+  val windowMillis = number("window_ms")?.takeIf { it > 0.0 }
+  val synthesizedSubmits = fields["synthesized_submits"]?.toLongOrNull()?.takeIf { it >= 0L }
+  val synthesizedSubmitFps =
+    number("synthesized_submit_fps")?.takeIf { it >= 0.0 }
+      ?: if (synthesizedSubmits != null && windowMillis != null) {
+        synthesizedSubmits * 1_000.0 / windowMillis
+      } else {
+        null
+      }
+      ?: return null
+
+  return MpvFlowRuntimeCadenceSample(
+    synthesizedSubmitFps = synthesizedSubmitFps,
+    targetFps = fields["target_fps"]?.toIntOrNull()?.takeIf { it in 1..240 },
+    swapSubmitFps = number("swap_submit_fps")?.takeIf { it >= 0.0 },
+    synthesizedSubmits = synthesizedSubmits,
+    windowMillis = windowMillis,
+    timeMillis = entry.timeMillis,
+  )
+}
+
+internal fun isMpvFlowRuntimeCadenceSampleFresh(
+  sample: MpvFlowRuntimeCadenceSample,
+  nowMillis: Long,
+  maxAgeMillis: Long = 12_000L,
+): Boolean {
+  val ageMillis = nowMillis - sample.timeMillis
+  return ageMillis in 0..maxAgeMillis
+}
+
 internal fun formatMpvFlowTimingSummary(entries: List<DebugLogEntry>): String {
   val fieldPattern = Regex("""([A-Za-z_][A-Za-z0-9_]*)=([^\s]+)""")
   fun fieldsFor(event: String): Map<String, String>? =
@@ -468,34 +521,17 @@ internal fun formatMpvFlowTimingSummary(entries: List<DebugLogEntry>): String {
     fields[name]?.toDoubleOrNull()?.takeIf { it.isFinite() }
   fun compact(value: Double?): String = value?.let { String.format(Locale.US, "%.1f", it) } ?: "--"
 
-  val cadenceFields = fieldsFor("runtime_cadence")
-  val synthesizedOutput = cadenceFields
-    ?.takeIf { it["metric"] == "successful_pl_swapchain_submit_not_surfaceflinger_scanout" }
-    ?.let { fields ->
-      val windowMs = number(fields, "window_ms")?.takeIf { it > 0.0 }
-      val synthesizedCount = fields["synthesized_submits"]?.toLongOrNull()?.takeIf { it >= 0L }
-      val reportedRate = number(fields, "synthesized_submit_fps")?.takeIf { it >= 0.0 }
-      val rate = reportedRate ?: if (synthesizedCount != null && windowMs != null) {
-        synthesizedCount * 1_000.0 / windowMs
-      } else {
-        null
+  val synthesizedOutput = latestMpvFlowRuntimeCadenceSample(entries)?.let { sample ->
+    buildString {
+      append("Successful synthesized submits ${compact(sample.synthesizedSubmitFps)} fps")
+      sample.targetFps?.let { append(" · target $it fps") }
+      if (sample.synthesizedSubmits != null && sample.windowMillis != null) {
+        append(" · ${sample.synthesizedSubmits} in ${compact(sample.windowMillis / 1_000.0)} s")
       }
-      if (rate == null) {
-        null
-      } else {
-        val targetFps = fields["target_fps"]?.toIntOrNull()?.takeIf { it in 1..240 }
-        val allSwapRate = number(fields, "swap_submit_fps")?.takeIf { it >= 0.0 }
-        buildString {
-          append("Successful synthesized submits ${compact(rate)} fps")
-          targetFps?.let { append(" · target $it fps") }
-          if (synthesizedCount != null && windowMs != null) {
-            append(" · $synthesizedCount in ${compact(windowMs / 1_000.0)} s")
-          }
-          allSwapRate?.let { append(" · all swap submits ${compact(it)} fps") }
-          append(" · not scanout")
-        }
-      }
+      sample.swapSubmitFps?.let { append(" · all swap submits ${compact(it)} fps") }
+      append(" · not scanout")
     }
+  }
 
   val pairFields = fieldsFor("source_pair_synthesis")
   val pairSummary = pairFields?.let { fields ->

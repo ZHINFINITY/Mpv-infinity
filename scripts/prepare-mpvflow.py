@@ -52,6 +52,58 @@ PLACEBO_TIMER_RING_NEW = (
 )
 
 
+def patch_mpvflow_stats_lua(stats_lua: str) -> str:
+    message_marker = "-- MPVFLOW_OSD_SYNTH_STATS"
+    row_marker = "    -- MPVFLOW_OSD_SYNTH_ROW"
+    if message_marker in stats_lua or row_marker in stats_lua:
+        required = (
+            message_marker,
+            row_marker,
+            'mp.register_script_message("mpvflow-output-rate"',
+            "append(s, mpvflow_output_summary, {prefix=\"MPVFlow Synth:\"})",
+        )
+        if all(marker in stats_lua for marker in required):
+            return stats_lua
+        raise SystemExit("Pinned MPV stats.lua Flow OSD patch is incomplete")
+
+    page_anchor = "local function add_video_out(s)\n"
+    row_anchor = '    append_fps(s, "display-fps", "estimated-display-fps")\n'
+    if stats_lua.count(page_anchor) != 1 or stats_lua.count(row_anchor) != 1:
+        raise SystemExit("Pinned MPV stats.lua page-one layout changed; refusing an unverified OSD insertion")
+
+    message_handler = (
+        f"{message_marker}\n"
+        "local mpvflow_output_summary\n"
+        "mp.register_script_message(\"mpvflow-output-rate\", function(synthesized_fps, target_fps, swap_submit_fps)\n"
+        "    local synthesized = tonumber(synthesized_fps)\n"
+        "    if not synthesized or synthesized < 0 or synthesized ~= synthesized or synthesized == math.huge then\n"
+        "        mpvflow_output_summary = nil\n"
+        "        return\n"
+        "    end\n"
+        "    local fields = {format(\"%.1f fps\", synthesized)}\n"
+        "    local target = tonumber(target_fps)\n"
+        "    if target and target >= 1 and target <= 240 then\n"
+        "        fields[#fields + 1] = format(\"target %.0f\", target)\n"
+        "    end\n"
+        "    local swaps = tonumber(swap_submit_fps)\n"
+        "    if swaps and swaps >= 0 and swaps == swaps and swaps ~= math.huge then\n"
+        "        fields[#fields + 1] = format(\"all swaps %.1f fps\", swaps)\n"
+        "    end\n"
+        "    fields[#fields + 1] = \"successful submits; not scanout\"\n"
+        "    mpvflow_output_summary = table.concat(fields, \" · \")\n"
+        "end)\n\n"
+    )
+    stats_lua = stats_lua.replace(page_anchor, message_handler + page_anchor, 1)
+    row = (
+        row_anchor
+        + f"{row_marker}\n"
+        + "    if mpvflow_output_summary then\n"
+        + "        append(s, mpvflow_output_summary, {prefix=\"MPVFlow Synth:\"})\n"
+        + "    end\n"
+    )
+    return stats_lua.replace(row_anchor, row, 1)
+
+
 def base_sources_close(meson: str) -> int:
     start = meson.index("sources = files(")
     depth = 0
@@ -811,6 +863,7 @@ def main() -> None:
     mpv_dir = args.mpv_dir.resolve()
     libplacebo_dir = args.libplacebo_dir.resolve()
     meson_path = mpv_dir / "meson.build"
+    stats_lua_path = mpv_dir / "player/lua/stats.lua"
     vo_path = mpv_dir / "video/out/vo_gpu_next.c"
     vulkan_context_path = mpv_dir / "video/out/vulkan/context.c"
     glslang_meson_path = libplacebo_dir / "src/glsl/meson.build"
@@ -820,7 +873,7 @@ def main() -> None:
     placebo_stubs_path = libplacebo_dir / "src/vulkan/stubs.c"
     placebo_formats_path = libplacebo_dir / "src/vulkan/formats.c"
     for path in (
-        meson_path, vo_path, vulkan_context_path, glslang_meson_path, gpu_timer_path,
+        meson_path, stats_lua_path, vo_path, vulkan_context_path, glslang_meson_path, gpu_timer_path,
         placebo_swapchain_path, placebo_vulkan_header_path, placebo_stubs_path,
         placebo_formats_path,
     ):
@@ -874,6 +927,7 @@ def main() -> None:
             shutil.copy2(MEDIACODEC_VULKAN_DIR / filename, hwdec_dir / filename)
 
     vo = vo_path.read_text()
+    stats_lua = patch_mpvflow_stats_lua(stats_lua_path.read_text())
     meson = meson_path.read_text()
     vulkan_context = enable_android_external_memory_extensions(
         vulkan_context_path.read_text()
@@ -944,11 +998,13 @@ def main() -> None:
     placebo_vulkan_header_path.write_text(placebo_vulkan_header)
     placebo_stubs_path.write_text(placebo_stubs)
     placebo_formats_path.write_text(placebo_formats)
+    stats_lua_path.write_text(stats_lua)
     print(
         f"Installed direct GPU/OpenCL MPVFlow into {mpv_dir} and corrected libplacebo's "
         f"Android glslang search path in {glslang_meson_path} and Vulkan timestamp "
         f"ring in {gpu_timer_path}, plus mailbox-only SUBOPTIMAL tolerance and Flow-gated WSI diagnostics "
         f"in {placebo_swapchain_path}; "
+        f"the built-in stats OSD reports successful MPVFlow synthesized-submit cadence; "
         f"the optional NV optical-flow vector format is registered with an extension-aware sampleability check; "
         f"the legacy CPU filter is not compiled or registered by this build."
     )

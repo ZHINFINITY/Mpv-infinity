@@ -555,6 +555,13 @@ class DebugLogRepositoryTest {
     assertTrue(summary.contains("all swap submits 55.0 fps"))
     assertTrue(summary.contains("not scanout"))
     assertTrue(!summary.contains("200.0"))
+
+    val sample = latestMpvFlowRuntimeCadenceSample(listOf(entry))
+    assertEquals(48.0, sample?.synthesizedSubmitFps)
+    assertEquals(120, sample?.targetFps)
+    assertEquals(55.0, sample?.swapSubmitFps)
+    assertTrue(sample != null && isMpvFlowRuntimeCadenceSampleFresh(sample, nowMillis = 12_002L))
+    assertTrue(sample != null && !isMpvFlowRuntimeCadenceSampleFresh(sample, nowMillis = 12_003L))
   }
 
   @Test

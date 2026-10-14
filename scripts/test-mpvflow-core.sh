@@ -22,5 +22,6 @@ else
   python3 "$ROOT/scripts/tests/mpvflow_gpu_synthesis_test.py"
 fi
 python3 "$ROOT/scripts/tests/media3flow_gpu_shader_test.py"
+python3 "$ROOT/scripts/tests/mpvflow_osd_stats_test.py"
 python3 "$ROOT/scripts/tests/mpvflow_diagnostics_test.py"
 python3 "$ROOT/scripts/tests/mpvflow_native_build_test.py"
