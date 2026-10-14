@@ -28,6 +28,8 @@ jobs:
         uses: actions/checkout@v6
         with:
           fetch-depth: 0
+      - name: Test runtime AAR overlay accepts new shared libraries
+        run: python3 scripts/tests/package_mpv_runtime_aar_test.py
       - name: Checkout pinned Android MPV build tools
         uses: actions/checkout@v6
         with:

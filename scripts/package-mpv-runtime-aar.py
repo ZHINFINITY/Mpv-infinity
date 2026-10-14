@@ -199,9 +199,10 @@ def main() -> None:
             player_name = f"jni/{abi}/libplayer.so"
             if player_name not in original_entries:
                 raise SystemExit(f"The MPV∞ AAR has no {abi} libplayer.so JNI bridge to preserve")
-            for name in required_libs - {"librife_vfi.so"}:
-                if f"jni/{abi}/{name}" not in original_entries:
-                    raise SystemExit(f"The MPV∞ AAR has no {abi} slot for {name}")
+            # Runtime APKs may contain shared libraries that the old AAR never
+            # packaged (notably libplacebo.so). The overlay writer below
+            # replaces present members and appends new ones; only libplayer.so
+            # is required from the original AAR because it is app-specific.
 
             for name, blob in entries.items():
                 library = temp / f"{abi}-{name}"
