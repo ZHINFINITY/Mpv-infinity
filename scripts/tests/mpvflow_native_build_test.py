@@ -729,10 +729,12 @@ assert rate_gate_offset < rate_prepare_offset < rate_acquire_offset, (
 rate_submit_guard = vo_patch.index("if (p->next_opts->mpvflow && submitted)")
 rate_commit_offset = vo_patch.index("mpvflow_rate_limiter_commit(&p->flow_rate_limiter")
 assert rate_submit_guard < rate_commit_offset, "the rate interval may only be committed after successful swap submission"
-assert "flow_pending_rate_limiter_timestamp_ns = (uint64_t) flow_render_start_ns;" in vo_patch
+assert "flow_pending_rate_limiter_timestamp_ns =" in vo_patch
+assert "mpvflow_rate_limiter_timestamp_ns(&p->flow_rate_limiter, frame->pts," in vo_patch
+assert "(uint64_t) flow_render_start_ns);" in vo_patch
 assert "p->flow_pending_rate_limiter_timestamp_ns," in vo_patch
 assert "mpvflow_rate_limiter_commit(&p->flow_rate_limiter, (uint64_t) now_ns" not in vo_patch, (
-    "rate admission must be committed at the same render-start timestamp, not swap completion"
+    "rate admission must commit the selected presentation timestamp, not swap completion"
 )
 assert '"mpvflow-synthesis-max-dimension", OPT_INT(mpvflow_synthesis_max_dimension), M_RANGE(0, 7680)' in vo_patch
 assert "+        .mpvflow_synthesis_max_dimension = 1920," in vo_patch
@@ -1730,6 +1732,31 @@ int main(void)
     mpvflow_rate_limiter_commit(&limiter, 8333334ULL, 120);
     assert(!mpvflow_rate_limiter_ready(&limiter, 16666667ULL, 120));
     assert(mpvflow_rate_limiter_ready(&limiter, 16666668ULL, 120));
+
+    /* Scheduled presentation ticks, not callback-arrival jitter, control admission. */
+    mpvflow_rate_limiter_reset(&limiter);
+    uint64_t timestamp_ns = mpvflow_rate_limiter_timestamp_ns(
+        &limiter, 1000000000LL, 1002000000ULL);
+    assert(timestamp_ns == 1000000000ULL);
+    assert(mpvflow_rate_limiter_ready(&limiter, timestamp_ns, 120));
+    mpvflow_rate_limiter_commit(&limiter, timestamp_ns, 120);
+    timestamp_ns = mpvflow_rate_limiter_timestamp_ns(
+        &limiter, 1008333334LL, 1007000000ULL);
+    assert(timestamp_ns == 1008333334ULL);
+    assert(mpvflow_rate_limiter_ready(&limiter, timestamp_ns, 120));
+    mpvflow_rate_limiter_commit(&limiter, timestamp_ns, 120);
+    timestamp_ns = mpvflow_rate_limiter_timestamp_ns(
+        &limiter, 1008333334LL, 1010000000ULL);
+    assert(timestamp_ns == 1008333334ULL);
+    assert(!mpvflow_rate_limiter_ready(&limiter, timestamp_ns, 120));
+    timestamp_ns = mpvflow_rate_limiter_timestamp_ns(
+        &limiter, 1000000000LL, 1020000000ULL);
+    assert(timestamp_ns == 1020000000ULL);
+    assert(mpvflow_rate_limiter_ready(&limiter, timestamp_ns, 120));
+    mpvflow_rate_limiter_commit(&limiter, timestamp_ns, 120);
+    timestamp_ns = mpvflow_rate_limiter_timestamp_ns(&limiter, 0, 1028333334ULL);
+    assert(timestamp_ns == 1028333334ULL);
+    assert(mpvflow_rate_limiter_ready(&limiter, timestamp_ns, 120));
 
     /* A long idle grants one frame only, not the previous bucket's two-frame burst. */
     assert(mpvflow_rate_limiter_ready(&limiter, 10000000000ULL, 120));

@@ -91,10 +91,11 @@ for marker in (
     "render_callback_fps=%.2f", "render_cpu_avg_ms=%.3f", "callback_interval_avg_ms=%.3f",
     "pl_swapchain_start_frame_avg_ms=%.3f", "pl_swapchain_start_frame_max_ms=%.3f",
     "pl_swapchain_start_frame_samples=%llu",
-    "vsync_slots=%llu", "swap_attempts=%llu", "swap_failures=%llu",
+    "frame_repeat_count=%llu", "swap_attempts=%llu", "swap_failures=%llu",
     "pair_analysis_attempts=%llu", "pair_analysis_failures=%llu", "pair_cache_reuses=%llu",
 ):
     require(PATCH, marker, f"MPV cadence report is missing {marker}")
+assert "vsync_slots=%llu" not in PATCH, "num_vsyncs must not be mislabeled as missed display-vsync slots"
 require(PATCH, "event=gpu_timing api=Vulkan", "MPV must emit direct retained per-stage Vulkan timing records")
 require(PATCH, "sample_scope=lifetime poll=nonblocking", "MPV Vulkan timing records must identify cumulative sample scope and nonblocking query polling")
 require(PATCH, "event=motion_geometry state=ready engine=mpv", "MPV must log its active motion-grid geometry directly to Logcat")
