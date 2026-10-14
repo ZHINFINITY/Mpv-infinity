@@ -163,19 +163,29 @@ patch_profile() {
     "$dir/buildscripts/include/build_config.sh" \
     "$dir/buildscripts/scripts/ffmpeg.sh" \
     "$dir/buildscripts/scripts/mpv.sh" \
+    "$dir/buildscripts/scripts/write_versions.sh" \
     "$MPV_COMMIT" "$LIBPLACEBO_COMMIT" "$DAV1D_COMMIT" "$LIBASS_COMMIT" <<'PY'
 from pathlib import Path
 import re
 import sys
 
-ci_path, depinfo_path, download_path, config_path, ffmpeg_path, mpv_path = map(Path, sys.argv[1:7])
-mpv_revision, placebo_revision, dav1d_revision, libass_revision = sys.argv[7:]
+ci_path, depinfo_path, download_path, config_path, ffmpeg_path, mpv_path, versions_path = map(Path, sys.argv[1:8])
+mpv_revision, placebo_revision, dav1d_revision, libass_revision = sys.argv[8:]
 
 def replace_once(path: Path, text: str, old: str, new: str) -> str:
     count = text.count(old)
     if count != 1:
         raise SystemExit(f"Expected one exact build marker in {path}; found {count}: {old!r}")
     return text.replace(old, new, 1)
+
+def replace_range_once(path: Path, text: str, start: str, end: str, replacement: str) -> str:
+    if text.count(start) != 1 or text.count(end) != 1:
+        raise SystemExit(f"Expected one version-generation range in {path}; markers were not unique")
+    start_index = text.index(start)
+    end_index = text.index(end, start_index + len(start))
+    if end_index <= start_index:
+        raise SystemExit(f"Version-generation range is reversed in {path}")
+    return text[:start_index] + replacement + text[end_index:]
 
 # The Sep 2026 MPV profile used moving git branches for these four native
 # sources. Pin them to the last upstream commits before the imported AARs.
@@ -285,6 +295,49 @@ mpv = replace_once(
 if '-Dvulkan=enabled' not in mpv and '-Dvulkan=disabled' not in mpv:
     raise SystemExit(f"Could not verify the existing Vulkan profile in {mpv_path}")
 mpv_path.write_text(mpv)
+
+versions = versions_path.read_text()
+versions = replace_range_once(
+    versions_path,
+    versions,
+    '# Meson writes the version used by the compiled library to this generated header.\n',
+    '# Installed pkg-config files survive CI prefix cache restores and describe the\n',
+    '''# Read all generated MPV version headers, not only the NDK-suffix path: the
+# upstream suffix can be empty for ARMv7 and may otherwise fall back to a stale
+# MPV_VERSION file on ARM64. Fail closed if the selected ABI outputs disagree.
+mapfile -t mpv_version_headers < <(find buildscripts/deps/mpv -path '*/common/version.h' -type f -print | sort)
+mpv_versions=()
+for header in "${mpv_version_headers[@]}"; do
+    version=$(sed -n 's/^#define VERSION "\\(.*\\)"/\\1/p' "$header" | head -n 1)
+    [ -n "$version" ] && mpv_versions+=("${version#v}")
+done
+if [ "${#mpv_versions[@]}" -gt 0 ]; then
+    mapfile -t unique_mpv_versions < <(printf '%s\\n' "${mpv_versions[@]}" | sort -u)
+    if [ "${#unique_mpv_versions[@]}" -ne 1 ]; then
+        printf 'MPV version differs between generated ABI headers: %s\\n' "${unique_mpv_versions[*]}" >&2
+        exit 1
+    fi
+    MPV_VERSION="${unique_mpv_versions[0]}"
+fi
+if [ -z "$MPV_VERSION" ] && [ -f buildscripts/deps/mpv/MPV_VERSION ]; then
+    MPV_VERSION=$(sed 's/-UNKNOWN$//' buildscripts/deps/mpv/MPV_VERSION)
+fi
+
+''',
+)
+versions = replace_range_once(
+    versions_path,
+    versions,
+    "# Get the build date from mpv's compiled object file.\n",
+    'versions_file=app/src/main/java/is/xyz/mpv/Utils.kt\n',
+    '''# Build-date extraction from readelf's human-readable section columns is
+# architecture-dependent and can embed binary bytes for 32-bit ARM. This field
+# is informational, so report the explicit fallback consistently for every ABI.
+DATE=unknown
+
+''',
+)
+versions_path.write_text(versions)
 print("Pinned source dependencies; disabled FFmpeg GPL/nonfree and MPV GPL, Rubber Band, and DVDnav features.")
 PY
   touch "$dir/.mpv-lgpl-profile-patched"

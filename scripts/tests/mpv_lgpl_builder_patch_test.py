@@ -46,6 +46,15 @@ OLD_RUBBERBAND_DOWNLOAD = (
     "\t\ttar -xz -C rubberband --strip-components=1\n"
     "fi\n\n"
 )
+VERSION_GENERATOR_FIXTURE = (
+    "# Meson writes the version used by the compiled library to this generated header.\n"
+    "old per-ABI version logic\n"
+    "# Installed pkg-config files survive CI prefix cache restores and describe the\n"
+    "old dependency version logic\n"
+    "# Get the build date from mpv's compiled object file.\n"
+    "old ELF date parser\n"
+    "versions_file=app/src/main/java/is/xyz/mpv/Utils.kt\n"
+)
 
 
 def run_selector(value: str | None) -> subprocess.CompletedProcess[str]:
@@ -84,13 +93,14 @@ def test_abi_selection() -> None:
         assert result.returncode != 0, f"invalid ABI list unexpectedly passed: {invalid}"
 
 
-def run_source_patcher(fixture: Path) -> tuple[str, str, str, str]:
+def run_source_patcher(fixture: Path) -> tuple[str, str, str, str, str]:
     ci = fixture / "ci.sh"
     depinfo = fixture / "depinfo.sh"
     download = fixture / "download-deps.sh"
     config = fixture / "build_config.sh"
     ffmpeg = fixture / "ffmpeg.sh"
     mpv = fixture / "mpv.sh"
+    versions = fixture / "write_versions.sh"
 
     ci.write_text(OLD_CI_ARCHES + OLD_MPV_FETCH, encoding="utf-8")
     depinfo.write_text(
@@ -120,6 +130,7 @@ def run_source_patcher(fixture: Path) -> tuple[str, str, str, str]:
         "-Dvulkan=enabled\n",
         encoding="utf-8",
     )
+    versions.write_text(VERSION_GENERATOR_FIXTURE, encoding="utf-8")
 
     source = BUILDER.read_text(encoding="utf-8")
     marker = "<<'PY'\n"
@@ -136,6 +147,7 @@ def run_source_patcher(fixture: Path) -> tuple[str, str, str, str]:
             str(config),
             str(ffmpeg),
             str(mpv),
+            str(versions),
             "mpv-commit",
             "libplacebo-commit",
             "dav1d-commit",
@@ -147,12 +159,12 @@ def run_source_patcher(fixture: Path) -> tuple[str, str, str, str]:
         check=False,
     )
     assert result.returncode == 0, result.stderr or result.stdout
-    return ci.read_text(), depinfo.read_text(), ffmpeg.read_text(), mpv.read_text()
+    return ci.read_text(), depinfo.read_text(), ffmpeg.read_text(), mpv.read_text(), versions.read_text()
 
 
 def test_source_patcher() -> None:
     with tempfile.TemporaryDirectory(prefix="mpv-lgpl-patcher-test-") as temporary:
-        ci, depinfo, ffmpeg, mpv = run_source_patcher(Path(temporary))
+        ci, depinfo, ffmpeg, mpv, versions = run_source_patcher(Path(temporary))
         selector = (
             'read -r -a ci_build_arches <<< '
             '"${MPV_LGPL_ARCHES:-armv7l arm64 x86 x86_64}"'
@@ -168,6 +180,11 @@ def test_source_patcher() -> None:
         assert "rubberband" not in mpv.lower()
         assert "-D{libarchive,dvdnav}=enabled" not in mpv
         assert "-Ddvdnav=disabled" in mpv
+        assert "find buildscripts/deps/mpv" in versions
+        assert "MPV version differs between generated ABI headers" in versions
+        assert "DATE=unknown" in versions
+        assert "old ELF date parser" not in versions
+        assert "OBJ_FILE=" not in versions
 
         selected = subprocess.run(
             ["bash", "-c", selector + "\nprintf '%s\\n' \"${ci_build_arches[*]}\""],
@@ -178,6 +195,43 @@ def test_source_patcher() -> None:
         )
         assert selected.returncode == 0, selected.stderr
         assert selected.stdout.strip() == "arm64", selected.stdout
+
+        header_value = 'v0.41.0-dev-gf5bcfb195-dirty'
+        mpv_root = Path(temporary) / "buildscripts/deps/mpv"
+        headers = [
+            mpv_root / "_build-arm64/common/version.h",
+            mpv_root / "_build/common/version.h",
+        ]
+        for header in headers:
+            header.parent.mkdir(parents=True, exist_ok=True)
+            header.write_text(f'#define VERSION "{header_value}"\n', encoding="utf-8")
+
+        version_start = versions.index("# Read all generated MPV version headers")
+        version_end = versions.index(
+            "# Installed pkg-config files survive CI prefix cache restores and describe the",
+            version_start,
+        )
+        version_logic = versions[version_start:version_end]
+        selected_version = subprocess.run(
+            ["bash", "-c", version_logic + '\nprintf \'%s\\n\' "$MPV_VERSION"'],
+            cwd=temporary,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        assert selected_version.returncode == 0, selected_version.stderr
+        assert selected_version.stdout.strip() == header_value.removeprefix("v")
+
+        headers[1].write_text('#define VERSION "v0.42.0-dev-mismatch"\n', encoding="utf-8")
+        rejected_version = subprocess.run(
+            ["bash", "-c", version_logic],
+            cwd=temporary,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        assert rejected_version.returncode != 0
+        assert "MPV version differs between generated ABI headers" in rejected_version.stderr
 
 
 def main() -> None:
