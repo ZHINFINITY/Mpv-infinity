@@ -1176,12 +1176,15 @@ class Media3FlowVideoSink(
             "Media3 decoder did not produce verified SDR output; refusing to copy HDR/unknown-transfer " +
               "frames into RGBA8 interpolation storage (transfer=$decoderOutputColorTransfer)",
           )
+          val formatLogName = format?.sampleMimeType ?: "unknown"
+          val formatLogResolution = format?.let { "${it.width}x${it.height}" } ?: "unknown"
+          val sourceColorTransfer = format?.colorInfo?.colorTransfer ?: Format.NO_VALUE
           logFlowRecordOnce(
-            "decoder-sdr-transfer-rejected-${format.sampleMimeType}-${format.width}x${format.height}",
+            "decoder-sdr-transfer-rejected-$formatLogName-$formatLogResolution",
             Log.ERROR,
             "event=decoder_color state=failed reason=sdr_transfer_request_unhonored " +
-              "output_transfer=$decoderOutputColorTransfer source_transfer=${format.colorInfo?.colorTransfer ?: Format.NO_VALUE} " +
-              "source_resolution=${format.width}x${format.height} fallback=media3_error_recovery",
+              "output_transfer=$decoderOutputColorTransfer source_transfer=$sourceColorTransfer " +
+              "source_resolution=$formatLogResolution fallback=media3_error_recovery",
             error,
           )
           reportError(error)
