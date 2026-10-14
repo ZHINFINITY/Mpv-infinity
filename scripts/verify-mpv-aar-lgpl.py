@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Verify MPV AARs contain LGPL-only FFmpeg and the expected libmpv profile."""
+"""Verify MPV AARs contain LGPL-only FFmpeg and a compatible libmpv profile/API."""
 from __future__ import annotations
 
 import argparse
@@ -8,6 +8,9 @@ import re
 import subprocess
 import tempfile
 import zipfile
+
+ROOT = Path(__file__).resolve().parents[1]
+PLACEBO_CONFIG_HEADER = ROOT / "app/src/main/cpp/third_party/libplacebo/include/libplacebo/config.h"
 
 ABI_ELF = {
     "arm64-v8a": ("ELF64", "AArch64"),
@@ -57,6 +60,28 @@ def assert_abi(path: Path, abi: str) -> None:
         raise SystemExit(f"{path.name} is not a {abi} ELF shared library")
 
 
+def expected_placebo_api_ver() -> str:
+    if not PLACEBO_CONFIG_HEADER.is_file():
+        raise SystemExit(f"Cannot read app libplacebo API header: {PLACEBO_CONFIG_HEADER}")
+    text = PLACEBO_CONFIG_HEADER.read_text(encoding="utf-8")
+    match = re.search(r"^#define PL_API_VER\s+(\d+)\s*$", text, re.MULTILINE)
+    if not match:
+        raise SystemExit(f"Cannot determine PL_API_VER from {PLACEBO_CONFIG_HEADER}")
+    return match.group(1)
+
+
+def verify_placebo_logger_export(abi: str, path: Path) -> None:
+    api_ver = expected_placebo_api_ver()
+    expected_symbol = f"pl_log_create_{api_ver}"
+    exports = run_tool(["nm", "-D", "--defined-only", str(path)])
+    if not re.search(rf"\b{re.escape(expected_symbol)}(?:@[^\s]+)?\b", exports):
+        found = sorted(set(re.findall(r"\bpl_log_create_\d+\b", exports)))
+        raise SystemExit(
+            f"Standard {abi}/libmpv.so exports {found or 'no versioned logger symbol'}, "
+            f"but the app's libplacebo headers require {expected_symbol} (API v{api_ver})"
+        )
+
+
 def verify_mpv(abi: str, path: Path, require_vulkan: bool, forbid_vulkan: bool) -> None:
     text = run_tool(["strings", "-a", str(path)])
     if re.search(r"--enable-gpl\b", text):
@@ -74,6 +99,8 @@ def verify_mpv(abi: str, path: Path, require_vulkan: bool, forbid_vulkan: bool) 
     has_vulkan = bool(re.search(r"(?<![A-Za-z0-9_-])vulkan(?![A-Za-z0-9_-])", features, re.IGNORECASE))
     if require_vulkan and not has_vulkan:
         raise SystemExit(f"Standard {abi}/libmpv.so is missing its Vulkan feature")
+    if require_vulkan:
+        verify_placebo_logger_export(abi, path)
     if forbid_vulkan and has_vulkan:
         raise SystemExit(f"No-Vulkan {abi}/libmpv.so still enables Vulkan")
 

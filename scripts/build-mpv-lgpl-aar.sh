@@ -6,7 +6,7 @@ SOURCE_URL="https://github.com/Riteshp2001/mpvlibAndroid.git"
 STANDARD_SOURCE_COMMIT="45b206be0e8d199fbc3a68f9adfc02ed6afccb71"
 NO_VULKAN_SOURCE_COMMIT="108a82cc09eb38bd6e717b318117408b19a70f8f"
 MPV_COMMIT="f5bcfb195412e0ca733eac2e850879cd3b1ded18"
-LIBPLACEBO_COMMIT="3330a515d62139259c26239014f286e233bd3a5c"
+LIBPLACEBO_COMMIT="0d043c7f6f79cd3687c023454bdacbe615e4d96f"
 DAV1D_COMMIT="aa09a630ef57ee7d9482ffb7ef355a903dbb5302"
 LIBASS_COMMIT="b2fe9d8770678a7b5271387d38c20657ebf3429a"
 DEFAULT_ABIS="arm64-v8a,armeabi-v7a,x86,x86_64"
@@ -91,7 +91,7 @@ cleanup() {
 }
 trap cleanup EXIT
 
-for command in git python3 meson ninja cmake make autoconf autoreconf libtoolize pkg-config javac readelf strings unzip; do
+for command in git python3 meson ninja cmake make autoconf autoreconf libtoolize pkg-config javac nm readelf strings unzip; do
   command -v "$command" >/dev/null || { echo "Required native build tool is missing: $command" >&2; exit 1; }
 done
 

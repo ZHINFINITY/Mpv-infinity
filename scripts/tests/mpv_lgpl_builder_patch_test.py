@@ -2,11 +2,14 @@
 """Fixture tests for per-ABI selection and GPL patches in the AAR builder."""
 from __future__ import annotations
 
+import importlib.util
 import os
 from pathlib import Path
+import re
 import subprocess
 import sys
 import tempfile
+from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[2]
 BUILDER = ROOT / "scripts/build-mpv-lgpl-aar.sh"
@@ -234,9 +237,51 @@ def test_source_patcher() -> None:
         assert "MPV version differs between generated ABI headers" in rejected_version.stderr
 
 
+def test_libplacebo_api_alignment() -> None:
+    builder = BUILDER.read_text(encoding="utf-8")
+    flow_builder = (ROOT / "scripts/build-mpvflow-mpv-runtime.sh").read_text(encoding="utf-8")
+    header = (ROOT / "app/src/main/cpp/third_party/libplacebo/include/libplacebo/config.h").read_text(
+        encoding="utf-8"
+    )
+    cmake = (ROOT / "app/src/main/cpp/CMakeLists.txt").read_text(encoding="utf-8")
+    verifier_source = (ROOT / "scripts/verify-mpv-aar-lgpl.py").read_text(encoding="utf-8")
+
+    aar_revision = re.search(r'^LIBPLACEBO_COMMIT="([0-9a-f]{40})"$', builder, re.MULTILINE)
+    flow_revision = re.search(r'libplacebo_revision = "([0-9a-f]{40})"', flow_builder)
+    api_match = re.search(r"^#define PL_API_VER\s+(\d+)\s*$", header, re.MULTILINE)
+    assert aar_revision and flow_revision and api_match
+    assert aar_revision.group(1) == flow_revision.group(1), (
+        "LGPL AAR and MPVFlow native builders must use the same libplacebo source revision"
+    )
+    api_version = api_match.group(1)
+    expected_symbol = f"pl_log_create_{api_version}"
+    assert '"pl_log_create_${MPVFLOW_EXPECTED_PLACEBO_API_VER}"' in cmake
+    assert "verify_placebo_logger_export(abi, path)" in verifier_source
+
+    spec = importlib.util.spec_from_file_location(
+        "verify_mpv_aar_lgpl_test", ROOT / "scripts/verify-mpv-aar-lgpl.py"
+    )
+    assert spec is not None and spec.loader is not None
+    verifier = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(verifier)
+
+    with patch.object(verifier, "run_tool", return_value=f"00000000 T {expected_symbol}"):
+        verifier.verify_placebo_logger_export("arm64-v8a", Path("libmpv.so"))
+
+    try:
+        with patch.object(verifier, "run_tool", return_value="00000000 T pl_log_create_371"):
+            verifier.verify_placebo_logger_export("arm64-v8a", Path("libmpv.so"))
+    except SystemExit as error:
+        assert expected_symbol in str(error)
+        assert "pl_log_create_371" in str(error)
+    else:
+        raise AssertionError("the AAR verifier accepted a mismatched libplacebo logger API")
+
+
 def main() -> None:
     test_abi_selection()
     test_source_patcher()
+    test_libplacebo_api_alignment()
     print("MPV LGPL builder matrix and GPL-patch tests passed.")
 
 

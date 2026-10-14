@@ -125,9 +125,21 @@ if(MPVFLOW_ENABLE_VULKAN_BACKEND)
     endif()
     string(REPLACE "\r" "" MPVFLOW_PLACEBO_EXPORTS "${MPVFLOW_PLACEBO_EXPORTS}")
     string(REPLACE "\n" ";" MPVFLOW_PLACEBO_EXPORT_LINES "${MPVFLOW_PLACEBO_EXPORTS}")
-    foreach(MPVFLOW_REQUIRED_PLACEBO_SYMBOL IN ITEMS
-            pl_vulkan_default_params pl_vulkan_create pl_vulkan_destroy
-            pl_vulkan_wrap pl_vulkan_hold_ex pl_vulkan_release_ex)
+    set(MPVFLOW_PLACEBO_CONFIG_HEADER
+        "${CMAKE_CURRENT_SOURCE_DIR}/third_party/libplacebo/include/libplacebo/config.h")
+    file(STRINGS "${MPVFLOW_PLACEBO_CONFIG_HEADER}" MPVFLOW_PLACEBO_API_LINE
+        REGEX "^#define PL_API_VER [0-9]+$")
+    string(REGEX MATCH "[0-9]+" MPVFLOW_EXPECTED_PLACEBO_API_VER
+        "${MPVFLOW_PLACEBO_API_LINE}")
+    if(NOT MPVFLOW_EXPECTED_PLACEBO_API_VER)
+        message(FATAL_ERROR
+            "Cannot read PL_API_VER from ${MPVFLOW_PLACEBO_CONFIG_HEADER}")
+    endif()
+    set(MPVFLOW_REQUIRED_PLACEBO_SYMBOLS
+        pl_vulkan_default_params pl_vulkan_create pl_vulkan_destroy
+        pl_vulkan_wrap pl_vulkan_hold_ex pl_vulkan_release_ex
+        "pl_log_create_${MPVFLOW_EXPECTED_PLACEBO_API_VER}")
+    foreach(MPVFLOW_REQUIRED_PLACEBO_SYMBOL IN LISTS MPVFLOW_REQUIRED_PLACEBO_SYMBOLS)
         set(MPVFLOW_SYMBOL_EXPORTED FALSE)
         foreach(MPVFLOW_EXPORT_LINE IN LISTS MPVFLOW_PLACEBO_EXPORT_LINES)
             if(MPVFLOW_EXPORT_LINE MATCHES "[ \t]${MPVFLOW_REQUIRED_PLACEBO_SYMBOL}(@[^ \t]+)?$")
