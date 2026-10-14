@@ -1284,7 +1284,7 @@ Reinicia la aplicación para que se apliquen todos los cambios.</string>
   <string name="ui_mpv_infinity_has_always_required_storage_access_permission_as_it_s_esse">Mpv∞ siempre ha necesitado permiso de acceso al almacenamiento, ya que es esencial para encontrar todos los archivos multimedia y de subtítulos del dispositivo, incluidos los no compatibles con el sistema.</string>
   <string name="ui_however_due_to_a_change_in_security_policy_apps_built_for_androi">Sin embargo, debido a un cambio en la política de seguridad, las aplicaciones creadas para Android 11 y versiones posteriores ahora necesitan un permiso adicional para mantener el mismo acceso.</string>
   <string name="ui_please_know_that_this_permission_is_only_used_for_the_auto_disco">Este permiso solo se utiliza para detectar automáticamente archivos multimedia y de subtítulos en tu dispositivo y no nos permite acceder de ninguna forma a los datos privados almacenados por otras aplicaciones.</string>
-  <string name="ui_mpv_infinity_is_an_open_source_project_you_can_review_the_source_code_a">Mpv∞ es un proyecto de código abierto. Puedes revisar el código fuente y comprobar cómo se usan los permisos en nuestro repositorio de GitHub:</string>
+  <string name="ui_mpv_infinity_is_an_open_source_project_you_can_review_the_source_code_a">Mpv∞ es un proyecto con el código fuente disponible. Puedes revisar el código fuente y comprobar cómo se usan los permisos en nuestro repositorio de GitHub:</string>
   <string name="ui_be_rest_assured_your_privacy_is_our_utmost_priority_and_we_neith">Puedes estar tranquilo: tu privacidad es nuestra máxima prioridad. No accedemos a tus archivos para otros fines ni los transferimos o almacenamos en nuestros servidores; permanecen seguros en tu dispositivo.</string>
   <string name="ui_app_permissions">Permisos de la aplicación</string>
   <string name="ui_permissions_setup_subtitle">Configura los permisos para habilitar las funciones principales y la reproducción de medios.</string>
@@ -1547,7 +1547,7 @@ Reinicia la aplicación para que se apliquen todos los cambios.</string>
   <string name="oss_libtorrent4j_description">Enlaces de Java y bibliotecas nativas para streaming por BitTorrent.</string>
   <string name="oss_markdown_renderer_description">Renderiza Markdown como contenido nativo de Compose con Material 3.</string>
   <string name="oss_mpv_description">Motor nativo de reproducción para audio, vídeo y subtítulos.</string>
-  <string name="oss_mpvlib_android_description">Envoltorio de libmpv para Android usado por las compilaciones Standard, No-Vulkan y FongMi.</string>
+  <string name="oss_mpvlib_android_description">Envoltorio de libmpv para Android usado por las compilaciones Standard y No-Vulkan.</string>
   <string name="oss_quickjs_ng_description">Motor JavaScript integrado para resolver desafíos de yt-dlp.</string>
   <string name="filter_preset_none">Ninguno</string>
   <string name="filter_preset_vivid">Vívido</string>

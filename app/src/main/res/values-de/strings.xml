@@ -1284,7 +1284,7 @@ Bitte starten Sie die App neu, damit alle Änderungen wirksam werden.</string>
   <string name="ui_mpv_infinity_has_always_required_storage_access_permission_as_it_s_esse">Mpv∞ benötigte schon immer Speicherzugriff, da dieser erforderlich ist, um alle Medien- und Untertiteldateien auf dem Gerät zu finden, einschließlich solcher, die vom System nicht unterstützt werden.</string>
   <string name="ui_however_due_to_a_change_in_security_policy_apps_built_for_androi">Aufgrund einer Änderung der Sicherheitsrichtlinien benötigen Apps für Android 11 und höher nun eine zusätzliche Berechtigung, um weiterhin denselben Zugriff zu erhalten.</string>
   <string name="ui_please_know_that_this_permission_is_only_used_for_the_auto_disco">Diese Berechtigung wird nur zur automatischen Erkennung von Medien- und Untertiteldateien auf Ihrem Gerät verwendet und ermöglicht uns keinerlei Zugriff auf private Datendateien anderer Apps.</string>
-  <string name="ui_mpv_infinity_is_an_open_source_project_you_can_review_the_source_code_a">Mpv∞ ist ein Open-Source-Projekt. Sie können den Quellcode prüfen und die Verwendung der Berechtigungen in unserem GitHub-Repository nachvollziehen:</string>
+  <string name="ui_mpv_infinity_is_an_open_source_project_you_can_review_the_source_code_a">Mpv∞ ist ein Projekt mit verfügbarem Quellcode. Sie können den Quellcode prüfen und die Verwendung der Berechtigungen in unserem GitHub-Repository nachvollziehen:</string>
   <string name="ui_be_rest_assured_your_privacy_is_our_utmost_priority_and_we_neith">Ihre Privatsphäre hat höchste Priorität. Wir greifen nicht für andere Zwecke auf Ihre Dateien zu und übertragen oder speichern sie nicht auf unseren Servern. Sie bleiben sicher auf Ihrem Gerät.</string>
   <string name="ui_app_permissions">App-Berechtigungen</string>
   <string name="ui_permissions_setup_subtitle">Konfigurieren Sie Berechtigungen für Kernfunktionen und Medienwiedergabe.</string>
@@ -1547,7 +1547,7 @@ Bitte starten Sie die App neu, damit alle Änderungen wirksam werden.</string>
   <string name="oss_libtorrent4j_description">Java-Bindings und native Bibliotheken für BitTorrent-Streaming.</string>
   <string name="oss_markdown_renderer_description">Rendert Markdown als nativen Material-3-Compose-Inhalt.</string>
   <string name="oss_mpv_description">Native Medienwiedergabe-Engine für Audio, Video und Untertitel.</string>
-  <string name="oss_mpvlib_android_description">Android-libmpv-Wrapper für die Standard-, No-Vulkan- und FongMi-Builds.</string>
+  <string name="oss_mpvlib_android_description">Android-libmpv-Wrapper für die Standard- und No-Vulkan-Builds.</string>
   <string name="oss_quickjs_ng_description">Eingebettete JavaScript-Engine zum Lösen von yt-dlp-Herausforderungen.</string>
   <string name="filter_preset_none">Keine</string>
   <string name="filter_preset_vivid">Lebendig</string>

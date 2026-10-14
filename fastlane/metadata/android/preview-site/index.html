@@ -594,12 +594,11 @@
               <span class="section-index">📦 Download assets</span>
               <h2>Pick the build that fits.</h2>
             </div>
-            <p>Standard is the default. Fongmi enables its alternate Vulkan/MediaCodec core, while non-Vulkan provides a safe OpenGL-only Universal build.</p>
+            <p>Standard is the default. No-Vulkan provides an OpenGL-only Universal build for devices without reliable Vulkan support.</p>
           </div>
 
           <div class="choice-guide" aria-label="Build flavor guide">
             <div><strong>Standard</strong><span>The regular Mpv∞ core, available as Universal and architecture-specific APKs.</span></div>
-            <div><strong>Fongmi</strong><span>Universal Vulkan core with direct MediaCodec and Dolby Vision support.</span></div>
             <div><strong>Non-Vulkan</strong><span>Universal OpenGL-only core for devices without the required Vulkan support.</span></div>
           </div>
 
@@ -621,7 +620,7 @@
     <footer>
       <div class="footer-row">
         <span><strong>Mpv∞</strong> · Feature-rich Android media player powered by libmpv.</span>
-        <span>AGPL-3.0 · No ads · No trackers</span>
+        <span>PolyForm Noncommercial 1.0.0 · No ads · No trackers</span>
       </div>
     </footer>
   </div>
@@ -698,7 +697,6 @@
     function buildInfoFor(name) {
       const n = name.toLowerCase();
       const table = [
-        ["fongmi", { title: "Fongmi", badge: "MediaCodec + Vulkan", desc: "Direct MediaCodec, Vulkan, Dolby Vision." }],
         ["no-vulkan", { title: "Non-Vulkan", badge: "OpenGL only", desc: "For devices without Vulkan support." }],
         ["novulkan", { title: "Non-Vulkan", badge: "OpenGL only", desc: "For devices without Vulkan support." }],
         ["arm64-v8a", { title: "ARM 64-bit", badge: "Recommended", desc: "Best for most modern phones & tablets." }],
@@ -835,7 +833,7 @@
         document.getElementById("rel-notes").innerHTML = renderReleaseNotes(rel.body);
         const checksums = parseChecksums(rel.body);
 
-        const order = ["arm64-v8a", "universal", "fongmi", "no-vulkan", "armeabi-v7a", "x86_64", "x86"];
+        const order = ["arm64-v8a", "universal", "no-vulkan", "armeabi-v7a", "x86_64", "x86"];
         const rank = name => {
           const idx = order.findIndex(k => name.toLowerCase().includes(k));
           return idx === -1 ? order.length : idx;
@@ -924,7 +922,7 @@
         build.classList.remove("loading");
         document.getElementById("pre-commit").textContent = (manifest.commit_sha || "").slice(0, 7) || "Unknown";
         document.getElementById("pre-published").textContent = fmtDate(manifest.published_at);
-        document.getElementById("pre-flavor").textContent = ({ all: "All three", dual: "Standard + Fongmi", standard: "Standard", fongmi: "Fongmi", no_vulkan: "Non-Vulkan" }[manifest.selected_flavor]) || "Selected builds";
+        document.getElementById("pre-flavor").textContent = ({ all: "Standard + No-Vulkan", standard: "Standard", no_vulkan: "No-Vulkan" }[manifest.selected_flavor]) || "Selected builds";
 
         const run = document.getElementById("pre-run");
         if (manifest.run_url) {
@@ -936,7 +934,7 @@
           run.textContent = `#${manifest.run_number || "—"}`;
         }
 
-        const order = ["arm64-v8a", "universal", "fongmi", "no-vulkan", "armeabi-v7a", "x86_64", "x86"];
+        const order = ["arm64-v8a", "universal", "no-vulkan", "armeabi-v7a", "x86_64", "x86"];
         const assets = order.map(key => (manifest.assets || []).find(a => a.abi === key)).filter(Boolean)
           .map(a => ({ name: a.name, size: a.size, browser_download_url: a.browser_download_url, download_count: undefined, sha256: a.sha256 }));
         const checksums = {};

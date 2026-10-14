@@ -10,7 +10,6 @@ on:
         type: choice
         options:
           - standard
-          - fongmi
           - no_vulkan
       target_abi:
         description: Target ABI
@@ -39,6 +38,10 @@ jobs:
           cache: gradle
       - name: Install native subtitle build dependencies
         run: sudo apt-get update && sudo apt-get install -y autoconf automake libtool gettext autopoint gperf pkg-config
+      - name: Verify LGPL-only MPV runtimes
+        run: |
+          python3 scripts/verify-mpv-aar-lgpl.py app/libs/mpvlib.aar --abis arm64-v8a,armeabi-v7a,x86,x86_64 --only-selected-abis --require-vulkan
+          python3 scripts/verify-mpv-aar-lgpl.py app/libs/mpvlib-no-vulkun.aar --abis arm64-v8a,armeabi-v7a,x86,x86_64 --only-selected-abis --forbid-vulkan
       - name: Build debug APK
         run: |
           chmod +x ./gradlew
@@ -46,7 +49,6 @@ jobs:
           if [[ "${{ inputs.target_abi }}" != "all" ]]; then ABI_ARGS="-PtargetAbi=${{ inputs.target_abi }}"; fi
           case "${{ inputs.flavor }}" in
             standard) ./gradlew assembleStandardDebug $ABI_ARGS --stacktrace --no-daemon --max-workers=2 ;;
-            fongmi) ./gradlew assembleFongmiDebug $ABI_ARGS --stacktrace --no-daemon --max-workers=2 ;;
             no_vulkan) ./gradlew assembleNoVulkanDebug $ABI_ARGS --stacktrace --no-daemon --max-workers=2 ;;
           esac
       - name: Upload debug APKs

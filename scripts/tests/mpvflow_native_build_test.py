@@ -1008,7 +1008,7 @@ assert 'val includeMpvFlowMpvRuntime = requestedMpvFlowMpvRuntime && activeAbis 
     "the custom Vulkan mapper capability must be limited to the native arm64 runtime build"
 )
 no_vulkan_flavor = app_build_source.split('create("noVulkan") {', 1)[1].split(
-    'create("fongmi") {', 1
+    '\n  }\n\n  dependenciesInfo {', 1
 )[0]
 assert 'MPV_SUPPORTS_MEDIACODEC_VULKAN", "false"' in no_vulkan_flavor, (
     "the no-Vulkan flavor must never advertise direct MediaCodec/Vulkan import"
@@ -1546,6 +1546,7 @@ with tempfile.TemporaryDirectory(prefix="mpvflow-builder-patch-test-") as tempor
     libplacebo = fixture / "libplacebo.sh"
     android_mk = fixture / "Android.mk"
     mpv = fixture / "mpv.sh"
+    ffmpeg = fixture / "ffmpeg.sh"
     ci.write_text(
         'msg "Fetching mpv"\n'
         "mkdir -p deps/mpv\n"
@@ -1590,8 +1591,12 @@ with tempfile.TemporaryDirectory(prefix="mpvflow-builder-patch-test-") as tempor
         '\t-Dmanpage-build=disabled\n',
         encoding="utf-8",
     )
+    ffmpeg.write_text(
+        "--disable-static --enable-shared --enable-{gpl,version3}\n",
+        encoding="utf-8",
+    )
     result = subprocess.run(
-        [sys.executable, "-", str(ci), str(depinfo), str(downloads), str(libplacebo), str(android_mk), str(mpv)],
+        [sys.executable, "-", str(ci), str(depinfo), str(downloads), str(libplacebo), str(android_mk), str(mpv), str(ffmpeg)],
         input=builder_patcher,
         check=False,
         capture_output=True,
@@ -1611,8 +1616,15 @@ with tempfile.TemporaryDirectory(prefix="mpvflow-builder-patch-test-") as tempor
     assert "-Dglslang=enabled" in patched_placebo and "-Dvulkan=enabled" in patched_placebo
     assert "cmake --install" in patched_placebo and "libSPIRV.a" in patched_placebo
     patched_mpv = mpv.read_text(encoding="utf-8")
-    assert "\t-Dmanpage-build=disabled -Dvulkan=enabled\n" in patched_mpv, (
-        "MPV Vulkan must be enabled in the pinned Meson options block"
+    assert "\t-Dmanpage-build=disabled -Dgpl=false -Dvulkan=enabled\n" in patched_mpv, (
+        "MPV's GPL feature must be disabled while Vulkan remains enabled"
+    )
+    patched_ffmpeg = ffmpeg.read_text(encoding="utf-8")
+    assert "--disable-gpl --enable-version3" in patched_ffmpeg, (
+        "FFmpeg must stay GPL-free while using LGPLv3 for Apache-2.0 mbedTLS"
+    )
+    assert "--enable-gpl" not in patched_ffmpeg and "--disable-version3" not in patched_ffmpeg, (
+        "FFmpeg's GPL flags or incompatible LGPLv2.1 mode were not removed"
     )
     assert "--arch arm64" in ci.read_text(encoding="utf-8"), "native build must remain arm64-only"
 

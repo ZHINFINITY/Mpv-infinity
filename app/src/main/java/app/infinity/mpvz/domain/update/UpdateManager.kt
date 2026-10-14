@@ -1,10 +1,8 @@
 /*
- * SPDX-License-Identifier: AGPL-3.0-or-later
+ * SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
  *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Affero General Public License as published
- * by the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * Copyright (c) 2026 ZHINFINITY. Mpv∞ Covered Code.
+ * See LICENSE for terms.
  */
 
 package app.infinity.mpvz.domain.update
@@ -174,19 +172,17 @@ class UpdateManager(
       return universalApk
     }
 
-    // FongMi and No-Vulkan universal assets use the flavor marker instead of "universal".
+    // No-Vulkan universal assets use the flavor marker instead of "universal".
     return compatibleAssets.firstOrNull { asset ->
       SUPPORTED_ARCHITECTURES.none { architecture -> asset.name.hasAssetToken(architecture) }
     }
   }
 
   private fun String.matchesApkVariant(variant: String): Boolean {
-    val isFongMi = hasAssetToken("fongmi")
     val isNoVulkan = hasAssetToken("no-vulkan")
     return when (variant) {
-      "fongmi" -> isFongMi
       "no-vulkan" -> isNoVulkan
-      "standard" -> !isFongMi && !isNoVulkan
+      "standard" -> !isNoVulkan
       else -> false
     }
   }

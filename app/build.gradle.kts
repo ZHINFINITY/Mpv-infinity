@@ -23,7 +23,7 @@ val activeAbis =
   }
 val includeRifeNative = requestedRifeNative && activeAbis == listOf("arm64-v8a")
 val includeMpvFlowMpvRuntime = requestedMpvFlowMpvRuntime && activeAbis == listOf("arm64-v8a")
-val universalOnlyDistributions = setOf("noVulkan", "fongmi")
+val universalOnlyDistributions = setOf("noVulkan")
 val releaseVersionCode = 259
 val versionCodeBandSize = 10_000
 val stableVersionCode = releaseVersionCode * versionCodeBandSize + (versionCodeBandSize - 1)
@@ -105,21 +105,6 @@ android {
       externalNativeBuild {
         cmake {
           arguments += "-DMPVFLOW_ENABLE_VULKAN_BACKEND=OFF"
-        }
-      }
-    }
-
-    create("fongmi") {
-      dimension = "distribution"
-      buildConfigField("boolean", "ENABLE_UPDATE_FEATURE", "true")
-      buildConfigField("String", "UPDATE_APK_VARIANT", "\"fongmi\"")
-      buildConfigField("boolean", "SCOPED_STORAGE_ONLY", "false")
-      buildConfigField("boolean", "MPV_SUPPORTS_VULKAN", "true")
-      buildConfigField("boolean", "MPV_SUPPORTS_MEDIACODEC_VULKAN", "true")
-      externalNativeBuild {
-        cmake {
-          arguments += "-DMPVFLOW_ENABLE_VULKAN_BACKEND=ON"
-          arguments += "-DMPVFLOW_MPV_AAR=${projectDir}/libs/mpvlib-fongmi.aar"
         }
       }
     }
@@ -230,8 +215,6 @@ androidComponents {
           .find { it.filterType == FilterConfiguration.FilterType.ABI }
           ?.identifier
 
-      // Keep universal packages for these flavors, but also publish the arm64-v8a split for
-      // modern devices that need the architecture-specific native playback profile.
       if (isUniversalOnly && abi != null && abi != "arm64-v8a") {
         output.enabled.set(false)
       }
@@ -303,7 +286,7 @@ dependencies {
   implementation(libs.kotlinx.immutable.collections)
   implementation(libs.kotlinx.serialization.json)
   implementation(libs.okhttp)
-  implementation(files("libs/quickjs-kt-android-1.0.5-nuvio.aar"))
+  implementation(libs.quickjs.kt.android)
   implementation(libs.retrofit)
   implementation(libs.retrofit.kotlinx.serialization)
   implementation(libs.coil.compose)
@@ -319,7 +302,6 @@ dependencies {
   implementation(libs.androidx.media3.transformer)
   implementation("io.github.peerless2012:ass-kt:0.5.1")
   implementation("io.github.peerless2012:ass-media:0.5.1")
-  implementation(libs.jellyfin.media3.ffmpeg.decoder)
   implementation(project(":subtitle-libass"))
   implementation(platform(libs.sora.editor.bom))
   implementation(libs.sora.editor)
@@ -336,7 +318,6 @@ dependencies {
 
   "standardImplementation"(files("libs/mpvlib.aar"))
   "noVulkanImplementation"(files("libs/mpvlib-no-vulkun.aar"))
-  "fongmiImplementation"(files("libs/mpvlib-fongmi.aar"))
 
   // Network protocol libraries
   implementation(libs.smbj)

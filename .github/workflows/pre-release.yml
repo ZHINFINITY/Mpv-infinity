@@ -44,12 +44,16 @@ jobs:
       - name: Make Gradle wrapper executable
         run: chmod +x ./gradlew
 
+      - name: Verify LGPL-only MPV runtimes
+        run: |
+          python3 scripts/verify-mpv-aar-lgpl.py app/libs/mpvlib.aar --abis arm64-v8a,armeabi-v7a,x86,x86_64 --only-selected-abis --require-vulkan
+          python3 scripts/verify-mpv-aar-lgpl.py app/libs/mpvlib-no-vulkun.aar --abis arm64-v8a,armeabi-v7a,x86,x86_64 --only-selected-abis --forbid-vulkan
+
       - name: Build preview APKs
         shell: bash
         run: |
           set -euo pipefail
           ./gradlew assembleStandardPreview --stacktrace --no-daemon --max-workers=2
-          ./gradlew assembleFongmiPreview --stacktrace --no-daemon --max-workers=2
           ./gradlew assembleNoVulkanPreview --stacktrace --no-daemon --max-workers=2
 
       - name: Sign and verify preview APKs
@@ -98,13 +102,6 @@ jobs:
               "standard $abi preview"
           done
 
-          flavor_dir="app/build/outputs/apk/fongmi/preview"
-          test -d "$flavor_dir"
-          sign_apk \
-            "$flavor_dir/app-fongmi-universal-preview-unsigned.apk" \
-            "$flavor_dir/app-fongmi-universal-preview.apk" \
-            "fongmi universal preview"
-
           flavor_dir="app/build/outputs/apk/noVulkan/preview"
           test -d "$flavor_dir"
           sign_apk \
@@ -128,12 +125,6 @@ jobs:
             cp "$src" "$dst"
             sha256sum "$dst" | tee -a checksums.txt
           done
-
-          src="app/build/outputs/apk/fongmi/preview/app-fongmi-universal-preview.apk"
-          dst="preview/Mpv∞-preview-fongmi-${VERSION_TAG}.apk"
-          test -f "$src"
-          cp "$src" "$dst"
-          sha256sum "$dst" | tee -a checksums.txt
 
           src="app/build/outputs/apk/noVulkan/preview/app-noVulkan-universal-preview.apk"
           dst="preview/Mpv∞-preview-no-vulkan-${VERSION_TAG}.apk"
@@ -183,7 +174,6 @@ jobs:
             preview/Mpv∞-preview-armeabi-v7a-${{ env.VERSION_TAG }}.apk
             preview/Mpv∞-preview-x86-${{ env.VERSION_TAG }}.apk
             preview/Mpv∞-preview-x86_64-${{ env.VERSION_TAG }}.apk
-            preview/Mpv∞-preview-fongmi-${{ env.VERSION_TAG }}.apk
             preview/Mpv∞-preview-no-vulkan-${{ env.VERSION_TAG }}.apk
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

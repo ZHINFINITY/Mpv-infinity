@@ -26,11 +26,12 @@ python3 - \
   "$BUILDSCRIPTS/include/download-deps.sh" \
   "$BUILDSCRIPTS/scripts/libplacebo.sh" \
   "$MPV_BUILDER_DIR/app/src/main/jni/Android.mk" \
-  "$BUILDSCRIPTS/scripts/mpv.sh" <<'PY'
+  "$BUILDSCRIPTS/scripts/mpv.sh" \
+  "$BUILDSCRIPTS/scripts/ffmpeg.sh" <<'PY'
 from pathlib import Path
 import sys
 
-ci_path, depinfo_path, download_path, libplacebo_path, android_mk_path, mpv_script_path = map(Path, sys.argv[1:])
+ci_path, depinfo_path, download_path, libplacebo_path, android_mk_path, mpv_script_path, ffmpeg_script_path = map(Path, sys.argv[1:])
 lines = ci_path.read_text().splitlines()
 expected = [
     'msg "Fetching mpv"',
@@ -100,6 +101,17 @@ download = download.replace(glslang_insert_after, glslang_insert_after + glslang
 download_path.write_text(download)
 print(f"Pinned Android SPIR-V compiler glslang {glslang_revision}")
 
+ffmpeg_script = ffmpeg_script_path.read_text()
+ffmpeg_gpl_switch = "--disable-static --enable-shared --enable-{gpl,version3}"
+if ffmpeg_script.count(ffmpeg_gpl_switch) != 1:
+    raise SystemExit(f"Expected one FFmpeg GPL configure switch in {ffmpeg_script_path}")
+ffmpeg_script_path.write_text(ffmpeg_script.replace(
+    ffmpeg_gpl_switch,
+    "--disable-static --enable-shared --disable-gpl --enable-version3",
+    1,
+))
+print("Configured FFmpeg as LGPLv3-or-later with GPL disabled to retain Apache-2.0 mbedTLS")
+
 libplacebo_script = libplacebo_path.read_text()
 libplacebo_setup = "unset CC CXX\nmeson setup $build --cross-file \"$prefix_dir\"/crossfile.txt \\\n\t-Dvulkan=enabled -Ddemos=false\n"
 libplacebo_setup_replacement = '''unset CC CXX
@@ -135,10 +147,10 @@ if mpv_script.count(mpv_vulkan_option) != 1:
     raise SystemExit(f"Expected one MPV Meson options block in {mpv_script_path}")
 mpv_script_path.write_text(mpv_script.replace(
     mpv_vulkan_option,
-    mpv_vulkan_option.rstrip("\n") + " -Dvulkan=enabled\n",
+    mpv_vulkan_option.rstrip("\n") + " -Dgpl=false -Dvulkan=enabled\n",
     1,
 ))
-print("Required MPV's Android Vulkan backend instead of accepting an OpenGL-only native package")
+print("Disabled MPV's GPL-only features and required its Android Vulkan backend")
 
 android_mk = android_mk_path.read_text()
 mpv_block = """include $(CLEAR_VARS)

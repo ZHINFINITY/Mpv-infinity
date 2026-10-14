@@ -1286,7 +1286,7 @@
   <string name="ui_mpv_infinity_has_always_required_storage_access_permission_as_it_s_esse">Mpv∞ 一直需要存储访问权限，因为这是查找设备上所有媒体和字幕文件所必需的，包括系统不支持的文件。</string>
   <string name="ui_however_due_to_a_change_in_security_policy_apps_built_for_androi">但是，由于安全政策发生变化，面向 Android 11 及更高版本构建的应用现在需要额外权限才能继续进行相同访问。</string>
   <string name="ui_please_know_that_this_permission_is_only_used_for_the_auto_disco">请注意，此权限仅用于自动发现设备上的媒体/字幕文件，并不会让我们以任何方式访问其他应用存储的私人数据文件。</string>
-  <string name="ui_mpv_infinity_is_an_open_source_project_you_can_review_the_source_code_a">Mpv∞ 是一个开源项目。您可以访问我们的 GitHub 仓库查看源代码并验证权限的使用方式：</string>
+  <string name="ui_mpv_infinity_is_an_open_source_project_you_can_review_the_source_code_a">Mpv∞ 是一个可查看源代码的项目。您可以访问我们的 GitHub 仓库查看源代码并验证权限的使用方式：</string>
   <string name="ui_be_rest_assured_your_privacy_is_our_utmost_priority_and_we_neith">请放心，您的隐私是我们的首要任务。我们不会出于其他目的访问您的文件，也不会将其传输或存储到服务器；文件会安全地保留在您的设备上。</string>
   <string name="ui_app_permissions">应用权限</string>
   <string name="ui_permissions_setup_subtitle">配置权限以启用核心功能和媒体播放。</string>
@@ -1549,7 +1549,7 @@
   <string name="oss_libtorrent4j_description">用于 BitTorrent 流式传输的 Java 绑定和原生库。</string>
   <string name="oss_markdown_renderer_description">将 Markdown 渲染为原生 Material 3 Compose 内容。</string>
   <string name="oss_mpv_description">用于音频、视频和字幕的原生媒体播放引擎。</string>
-  <string name="oss_mpvlib_android_description">Standard、No-Vulkan 和 FongMi 构建使用的 Android libmpv 封装库。</string>
+  <string name="oss_mpvlib_android_description">Standard 和 No-Vulkan 构建使用的 Android libmpv 封装库。</string>
   <string name="oss_quickjs_ng_description">用于解决 yt-dlp 挑战的嵌入式 JavaScript 引擎。</string>
   <string name="filter_preset_none">无</string>
   <string name="filter_preset_vivid">鲜艳</string>

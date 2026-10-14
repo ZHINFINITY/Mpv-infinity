@@ -1220,7 +1220,7 @@
   <string name="ui_mpv_infinity_has_always_required_storage_access_permission_as_it_s_esse">Mpv∞ को हमेशा स्टोरेज एक्सेस परमिशन की ज़रूरत रही है क्योंकि ऐप के लिए आपके डिवाइस पर सभी मीडिया और सबटाइटल फाइलें ढूंढना ज़रूरी है, जिनमें वे भी शामिल हैं जो सिस्टम द्वारा समर्थित नहीं हैं।</string>
   <string name="ui_however_due_to_a_change_in_security_policy_apps_built_for_androi">हालांकि, सिक्योरिटी पॉलिसी में बदलाव के कारण, Android 11 और उससे ऊपर के लिए बने ऐप्स को अब यही एक्सेस जारी रखने के लिए अतिरिक्त परमिशन चाहिए।</string>
   <string name="ui_please_know_that_this_permission_is_only_used_for_the_auto_disco">कृपया जान लें कि यह परमिशन सिर्फ आपके डिवाइस पर मीडिया/सबटाइटल फाइलों की ऑटो-डिस्कवरी के लिए इस्तेमाल होती है और हमें किसी भी तरह से दूसरे ऐप्स की निजी डेटा फाइलों तक पहुंचने नहीं देगी।</string>
-  <string name="ui_mpv_infinity_is_an_open_source_project_you_can_review_the_source_code_a">Mpv∞ एक ओपन सोर्स प्रोजेक्ट है। आप हमारी GitHub रिपॉज़िटरी पर जाकर सोर्स कोड देख सकते हैं और परमिशन कैसे इस्तेमाल होती है, यह जांच सकते हैं:</string>
+  <string name="ui_mpv_infinity_is_an_open_source_project_you_can_review_the_source_code_a">Mpv∞ एक ऐसा प्रोजेक्ट है जिसका स्रोत कोड उपलब्ध है। आप हमारी GitHub रिपॉज़िटरी पर जाकर स्रोत कोड देख सकते हैं और परमिशन कैसे इस्तेमाल होती है, यह जांच सकते हैं:</string>
   <string name="ui_be_rest_assured_your_privacy_is_our_utmost_priority_and_we_neith">बेफ़िक्र रहें, आपकी प्राइवेसी हमारी सबसे बड़ी प्राथमिकता है, और हम न तो किसी और मकसद के लिए आपकी फाइलें एक्सेस करते हैं और न ही उन्हें अपने सर्वर पर भेजते या स्टोर करते हैं। वे आपके डिवाइस पर ही सुरक्षित रहती हैं।</string>
   <string name="ui_app_permissions">ऐप परमिशन</string>
   <string name="ui_permissions_setup_subtitle">मुख्य फीचर और मीडिया प्लेबैक सक्षम करने के लिए परमिशन कॉन्फ़िगर करें।</string>
@@ -1492,7 +1492,7 @@
   <string name="oss_libtorrent4j_description">BitTorrent स्ट्रीमिंग के लिए Java बाइंडिंग और नेटिव लाइब्रेरी।</string>
   <string name="oss_markdown_renderer_description">Markdown को नेटिव Material 3 Compose सामग्री के रूप में रेंडर करता है।</string>
   <string name="oss_mpv_description">ऑडियो, वीडियो और सबटाइटल के लिए नेटिव मीडिया प्लेबैक इंजन।</string>
-  <string name="oss_mpvlib_android_description">Standard, No-Vulkan और FongMi बिल्ड में उपयोग होने वाला Android libmpv रैपर।</string>
+  <string name="oss_mpvlib_android_description">Standard और No-Vulkan बिल्ड में उपयोग होने वाला Android libmpv रैपर।</string>
   <string name="oss_quickjs_ng_description">yt-dlp चुनौतियाँ हल करने के लिए एम्बेडेड JavaScript इंजन।</string>
   <string name="filter_preset_none">कोई नहीं</string>
   <string name="filter_preset_vivid">Vivid</string>

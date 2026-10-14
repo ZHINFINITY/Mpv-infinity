@@ -1,5 +1,5 @@
 /*
- * SPDX-License-Identifier: AGPL-3.0-or-later
+ * SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
  *
  * Executes the exact embedded MPVFlow synthesis shader on Vulkan (llvmpipe in
  * CI) and checks output pixels. This is a deterministic shader regression test,

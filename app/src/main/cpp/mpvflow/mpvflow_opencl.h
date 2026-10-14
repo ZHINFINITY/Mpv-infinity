@@ -1,5 +1,7 @@
 /*
- * SPDX-License-Identifier: AGPL-3.0-or-later
+ * SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+ * Copyright (c) 2026 ZHINFINITY. Mpv∞ Covered Code.
+ * See LICENSE for terms.
  *
  * Optional OpenCL/QCOM AHardwareBuffer motion-compensated interpolation backend.
  * This module is deliberately independent of libplacebo/Vulkan: callers keep

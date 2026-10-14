@@ -57,12 +57,16 @@ jobs:
       - name: Make Gradle wrapper executable
         run: chmod +x ./gradlew
 
+      - name: Verify LGPL-only MPV runtimes
+        run: |
+          python3 scripts/verify-mpv-aar-lgpl.py app/libs/mpvlib.aar --abis arm64-v8a,armeabi-v7a,x86,x86_64 --only-selected-abis --require-vulkan
+          python3 scripts/verify-mpv-aar-lgpl.py app/libs/mpvlib-no-vulkun.aar --abis arm64-v8a,armeabi-v7a,x86,x86_64 --only-selected-abis --forbid-vulkan
+
       - name: Build all stable APK variants
         shell: bash
         run: |
           set -euo pipefail
           ./gradlew assembleStandardRelease --stacktrace --no-daemon --max-workers=2
-          ./gradlew assembleFongmiRelease --stacktrace --no-daemon --max-workers=2
           ./gradlew assembleNoVulkanRelease --stacktrace --no-daemon --max-workers=2
 
       - name: Sign and verify all APKs
@@ -106,10 +110,6 @@ jobs:
           done
 
           sign_apk \
-            "app/build/outputs/apk/fongmi/release/app-fongmi-universal-release-unsigned.apk" \
-            "app/build/outputs/apk/fongmi/release/app-fongmi-universal-release.apk"
-
-          sign_apk \
             "app/build/outputs/apk/noVulkan/release/app-noVulkan-universal-release-unsigned.apk" \
             "app/build/outputs/apk/noVulkan/release/app-noVulkan-universal-release.apk"
 
@@ -123,7 +123,6 @@ jobs:
           cp app/build/outputs/apk/standard/release/app-standard-armeabi-v7a-release.apk release/mpv-infinity-standard-armeabi-v7a-${VERSION_TAG}.apk
           cp app/build/outputs/apk/standard/release/app-standard-x86-release.apk release/mpv-infinity-standard-x86-${VERSION_TAG}.apk
           cp app/build/outputs/apk/standard/release/app-standard-x86_64-release.apk release/mpv-infinity-standard-x86_64-${VERSION_TAG}.apk
-          cp app/build/outputs/apk/fongmi/release/app-fongmi-universal-release.apk release/mpv-infinity-fongmi-universal-${VERSION_TAG}.apk
           cp app/build/outputs/apk/noVulkan/release/app-noVulkan-universal-release.apk release/mpv-infinity-no-vulkan-universal-${VERSION_TAG}.apk
 
           cat > release-notes.md <<EOF
@@ -143,7 +142,7 @@ jobs:
 
           ### Downloads
 
-          Choose the standard APK for most devices. Use the ARM64 variant for modern 64-bit ARM phones, ARMv7 for older 32-bit ARM devices, x86 or x86_64 for compatible emulator and Intel devices, Fongmi for that distribution, and no-Vulkan for devices where Vulkan playback is unavailable or unstable.
+          Choose the standard APK for most devices. Use the ARM64 variant for modern 64-bit ARM phones, ARMv7 for older 32-bit ARM devices, x86 or x86_64 for compatible emulator and Intel devices, and no-Vulkan for devices where Vulkan playback is unavailable or unstable.
           EOF
 
           : > checksums.txt
@@ -171,7 +170,6 @@ jobs:
             release/mpv-infinity-standard-armeabi-v7a-${{ env.VERSION_TAG }}.apk
             release/mpv-infinity-standard-x86-${{ env.VERSION_TAG }}.apk
             release/mpv-infinity-standard-x86_64-${{ env.VERSION_TAG }}.apk
-            release/mpv-infinity-fongmi-universal-${{ env.VERSION_TAG }}.apk
             release/mpv-infinity-no-vulkan-universal-${{ env.VERSION_TAG }}.apk
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

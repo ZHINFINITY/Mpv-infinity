@@ -1284,7 +1284,7 @@
   <string name="ui_mpv_infinity_has_always_required_storage_access_permission_as_it_s_esse">Mpv∞では、システムが対応していないものを含む端末上のすべてのメディアおよび字幕ファイルを見つけるために、以前からストレージへのアクセス権限が必要でした。</string>
   <string name="ui_however_due_to_a_change_in_security_policy_apps_built_for_androi">ただし、セキュリティポリシーの変更により、Android 11以降向けのアプリでは同じアクセスを継続するために追加の権限が必要になりました。</string>
   <string name="ui_please_know_that_this_permission_is_only_used_for_the_auto_disco">この権限は端末上のメディア／字幕ファイルの自動検出にのみ使用され、他のアプリが保存した個人データにアクセスすることはありません。</string>
-  <string name="ui_mpv_infinity_is_an_open_source_project_you_can_review_the_source_code_a">Mpv∞はオープンソースプロジェクトです。GitHubリポジトリでソースコードと権限の使用方法を確認できます：</string>
+  <string name="ui_mpv_infinity_is_an_open_source_project_you_can_review_the_source_code_a">Mpv∞はソースコードを公開しているプロジェクトです。GitHubリポジトリでソースコードと権限の使用方法を確認できます：</string>
   <string name="ui_be_rest_assured_your_privacy_is_our_utmost_priority_and_we_neith">ご安心ください。プライバシーを最優先しており、他の目的でファイルにアクセスしたり、サーバーへ転送・保存したりすることはありません。ファイルは端末内に安全に保たれます。</string>
   <string name="ui_app_permissions">アプリの権限</string>
   <string name="ui_permissions_setup_subtitle">主要機能とメディア再生を有効にするために権限を設定します。</string>
@@ -1547,7 +1547,7 @@
   <string name="oss_libtorrent4j_description">BitTorrentストリーミング用のJavaバインディングとネイティブライブラリ。</string>
   <string name="oss_markdown_renderer_description">MarkdownをネイティブのMaterial 3 Composeコンテンツとして描画します。</string>
   <string name="oss_mpv_description">音声、動画、字幕用のネイティブメディア再生エンジン。</string>
-  <string name="oss_mpvlib_android_description">Standard、No-Vulkan、FongMiビルドで使用するAndroid向けlibmpvラッパー。</string>
+  <string name="oss_mpvlib_android_description">Standard、No-Vulkanビルドで使用するAndroid向けlibmpvラッパー。</string>
   <string name="oss_quickjs_ng_description">yt-dlpのチャレンジ解決に使用する組み込みJavaScriptエンジン。</string>
   <string name="filter_preset_none">なし</string>
   <string name="filter_preset_vivid">鮮やか</string>

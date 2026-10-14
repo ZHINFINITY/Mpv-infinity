@@ -1284,7 +1284,7 @@ Veuillez redémarrer l’application pour appliquer toutes les modifications.</s
   <string name="ui_mpv_infinity_has_always_required_storage_access_permission_as_it_s_esse">Mpv∞ a toujours nécessité l’accès au stockage, indispensable pour trouver tous les fichiers multimédias et de sous-titres de votre appareil, y compris ceux que le système ne prend pas en charge.</string>
   <string name="ui_however_due_to_a_change_in_security_policy_apps_built_for_androi">Cependant, en raison d’un changement de politique de sécurité, les applications conçues pour Android 11 et versions ultérieures nécessitent désormais une autorisation supplémentaire pour conserver le même accès.</string>
   <string name="ui_please_know_that_this_permission_is_only_used_for_the_auto_disco">Cette autorisation sert uniquement à détecter automatiquement les fichiers multimédias et de sous-titres sur votre appareil et ne nous permet en aucun cas d’accéder aux données privées stockées par d’autres applications.</string>
-  <string name="ui_mpv_infinity_is_an_open_source_project_you_can_review_the_source_code_a">Mpv∞ est un projet open source. Vous pouvez consulter le code source et vérifier l’utilisation des autorisations dans notre dépôt GitHub :</string>
+  <string name="ui_mpv_infinity_is_an_open_source_project_you_can_review_the_source_code_a">Mpv∞ est un projet dont le code source est disponible. Vous pouvez consulter le code source et vérifier l’utilisation des autorisations dans notre dépôt GitHub :</string>
   <string name="ui_be_rest_assured_your_privacy_is_our_utmost_priority_and_we_neith">Soyez rassuré : votre confidentialité est notre priorité absolue. Nous n’accédons pas à vos fichiers à d’autres fins, ne les transférons pas et ne les stockons pas sur nos serveurs. Ils restent sur votre appareil.</string>
   <string name="ui_app_permissions">Autorisations de l’application</string>
   <string name="ui_permissions_setup_subtitle">Configurez les autorisations pour activer les fonctionnalités principales et la lecture média.</string>
@@ -1547,7 +1547,7 @@ Veuillez redémarrer l’application pour appliquer toutes les modifications.</s
   <string name="oss_libtorrent4j_description">Liaisons Java et bibliothèques natives pour la diffusion BitTorrent.</string>
   <string name="oss_markdown_renderer_description">Affiche Markdown sous forme de contenu Compose Material 3 natif.</string>
   <string name="oss_mpv_description">Moteur natif de lecture audio, vidéo et de sous-titres.</string>
-  <string name="oss_mpvlib_android_description">Wrapper Android de libmpv utilisé par les versions Standard, No-Vulkan et FongMi.</string>
+  <string name="oss_mpvlib_android_description">Wrapper Android de libmpv utilisé par les versions Standard et No-Vulkan.</string>
   <string name="oss_quickjs_ng_description">Moteur JavaScript intégré utilisé pour résoudre les défis yt-dlp.</string>
   <string name="filter_preset_none">Aucun</string>
   <string name="filter_preset_vivid">Vif</string>

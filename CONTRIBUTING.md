@@ -27,4 +27,6 @@ Use short, imperative commit subjects, such as `fix: preserve subtitle selection
 
 ## License
 
-By contributing, you agree that your contribution may be distributed under the repository's [AGPL-3.0-or-later license](LICENSE), subject to applicable third-party notices.
+Contributions intended for the unreleased next version are accepted under the [PolyForm Noncommercial License 1.0.0](LICENSE). By submitting a contribution, you agree that it may be incorporated into and distributed with that version under those terms. You retain ownership of your contribution; this notice does not assign your copyright or grant permission to use, publish, or relicense your contribution for purposes outside the PolyForm license. Any broader or commercial-purpose permission must be agreed to separately in writing by the relevant rights holder.
+
+Do not submit third-party code, assets, or generated material as Mpv∞ Covered Code. If a contribution includes or depends on third-party material, identify its source and license and include all required notices; its original terms remain applicable. These contribution terms apply prospectively and do not change the terms for previously submitted contributions or previously published AGPL-3.0-or-later releases.

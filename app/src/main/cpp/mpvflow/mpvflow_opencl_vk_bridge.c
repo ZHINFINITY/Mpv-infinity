@@ -1,5 +1,7 @@
 /*
- * SPDX-License-Identifier: AGPL-3.0-or-later
+ * SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+ * Copyright (c) 2026 ZHINFINITY. Mpv∞ Covered Code.
+ * See LICENSE for terms.
  *
  * Vulkan <-> OpenCL BLOB-AHardwareBuffer bridge. The VkBuffer and OpenCL
  * wrapper import the same AHardwareBuffer allocation. VkImage objects are
