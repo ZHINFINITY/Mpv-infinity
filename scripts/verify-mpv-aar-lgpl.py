@@ -70,19 +70,25 @@ def expected_placebo_api_ver() -> str:
     return match.group(1)
 
 
-def verify_placebo_logger_export(abi: str, path: Path) -> None:
+def verify_placebo_logger_export(abi: str, path: Path, library_name: str = "libmpv.so") -> None:
     api_ver = expected_placebo_api_ver()
     expected_symbol = f"pl_log_create_{api_ver}"
     exports = run_tool(["nm", "-D", "--defined-only", str(path)])
     if not re.search(rf"\b{re.escape(expected_symbol)}(?:@[^\s]+)?\b", exports):
         found = sorted(set(re.findall(r"\bpl_log_create_\d+\b", exports)))
         raise SystemExit(
-            f"Standard {abi}/libmpv.so exports {found or 'no versioned logger symbol'}, "
+            f"Standard {abi}/{library_name} exports {found or 'no versioned logger symbol'}, "
             f"but the app's libplacebo headers require {expected_symbol} (API v{api_ver})"
         )
 
 
-def verify_mpv(abi: str, path: Path, require_vulkan: bool, forbid_vulkan: bool) -> None:
+def verify_mpv(
+    abi: str,
+    path: Path,
+    require_vulkan: bool,
+    forbid_vulkan: bool,
+    placebo_path: Path | None = None,
+) -> None:
     text = run_tool(["strings", "-a", str(path)])
     if re.search(r"--enable-gpl\b", text):
         raise SystemExit(f"GPL-enabled MPV configure marker found in {abi}/libmpv.so")
@@ -100,7 +106,10 @@ def verify_mpv(abi: str, path: Path, require_vulkan: bool, forbid_vulkan: bool) 
     if require_vulkan and not has_vulkan:
         raise SystemExit(f"Standard {abi}/libmpv.so is missing its Vulkan feature")
     if require_vulkan:
-        verify_placebo_logger_export(abi, path)
+        if placebo_path is not None:
+            verify_placebo_logger_export(abi, placebo_path, "libplacebo.so")
+        else:
+            verify_placebo_logger_export(abi, path, "libmpv.so")
     if forbid_vulkan and has_vulkan:
         raise SystemExit(f"No-Vulkan {abi}/libmpv.so still enables Vulkan")
 
@@ -168,14 +177,24 @@ def main() -> None:
                 missing = sorted(REQUIRED_LIBS - entries.keys())
                 if missing:
                     raise SystemExit(f"AAR is missing required {abi} libraries: {', '.join(missing)}")
+                paths: dict[str, Path] = {}
                 for name, data in entries.items():
                     path = temp / f"{abi}-{name}"
                     path.write_bytes(data)
                     assert_abi(path, abi)
+                    paths[name] = path
+
+                for name, path in paths.items():
                     if name.startswith("libav"):
                         verify_ffmpeg(abi, name, path)
                     elif name == "libmpv.so":
-                        verify_mpv(abi, path, args.require_vulkan, args.forbid_vulkan)
+                        verify_mpv(
+                            abi,
+                            path,
+                            args.require_vulkan,
+                            args.forbid_vulkan,
+                            paths.get("libplacebo.so"),
+                        )
 
     print(f"Verified {args.aar}: FFmpeg is LGPL-only and MPV's GPL, Rubber Band, and DVD navigation features are disabled for {', '.join(abis)}.")
     if args.only_selected_abis:

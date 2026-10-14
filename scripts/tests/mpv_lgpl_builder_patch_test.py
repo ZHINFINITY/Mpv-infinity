@@ -256,7 +256,9 @@ def test_libplacebo_api_alignment() -> None:
     api_version = api_match.group(1)
     expected_symbol = f"pl_log_create_{api_version}"
     assert '"pl_log_create_${MPVFLOW_EXPECTED_PLACEBO_API_VER}"' in cmake
-    assert "verify_placebo_logger_export(abi, path)" in verifier_source
+    assert 'verify_placebo_logger_export(abi, placebo_path, "libplacebo.so")' in verifier_source
+    assert 'verify_placebo_logger_export(abi, path, "libmpv.so")' in verifier_source
+    assert 'paths.get("libplacebo.so")' in verifier_source
 
     spec = importlib.util.spec_from_file_location(
         "verify_mpv_aar_lgpl_test", ROOT / "scripts/verify-mpv-aar-lgpl.py"
@@ -276,6 +278,33 @@ def test_libplacebo_api_alignment() -> None:
         assert "pl_log_create_371" in str(error)
     else:
         raise AssertionError("the AAR verifier accepted a mismatched libplacebo logger API")
+
+    def separate_placebo_tool(args: list[str]) -> str:
+        if args[0] == "strings":
+            return "List of enabled features:\nvulkan\n"
+        if args[0] == "nm" and args[-1].endswith("libplacebo.so"):
+            return f"00000000 T {expected_symbol}"
+        if args[0] == "nm":
+            return ""
+        raise AssertionError(f"unexpected verifier tool invocation: {args}")
+
+    with patch.object(verifier, "run_tool", side_effect=separate_placebo_tool):
+        verifier.verify_mpv(
+            "arm64-v8a",
+            Path("libmpv.so"),
+            require_vulkan=True,
+            forbid_vulkan=False,
+            placebo_path=Path("libplacebo.so"),
+        )
+
+    try:
+        with patch.object(verifier, "run_tool", side_effect=separate_placebo_tool):
+            verifier.verify_mpv("arm64-v8a", Path("libmpv.so"), True, False)
+    except SystemExit as error:
+        assert "libmpv.so" in str(error)
+        assert expected_symbol in str(error)
+    else:
+        raise AssertionError("the AAR verifier accepted an MPV library with no logger API and no separate libplacebo")
 
 
 def main() -> None:
