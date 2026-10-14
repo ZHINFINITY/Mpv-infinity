@@ -456,35 +456,72 @@ internal fun selectMpvFlowDiagnosticLines(logcat: String): String =
     .joinToString("\n")
 
 internal fun formatMpvFlowTimingSummary(entries: List<DebugLogEntry>): String {
-  val pair =
+  val fieldPattern = Regex("""([A-Za-z_][A-Za-z0-9_]*)=([^\s]+)""")
+  fun fieldsFor(event: String): Map<String, String>? =
     entries.lastOrNull { entry ->
-      entry.isMpvFlowDiagnostic() && entry.message.contains("event=source_pair_synthesis")
-    } ?: return if (entries.any(DebugLogEntry::isMpvFlowDiagnostic)) {
-      "MPVFlow active; pair timing not captured yet"
-    } else {
-      "No MPVFlow pair timing captured"
+      entry.isMpvFlowDiagnostic() && entry.message.contains("event=$event")
+    }?.let { entry ->
+      fieldPattern.findAll(entry.message)
+        .associate { it.groupValues[1] to it.groupValues[2] }
     }
-  val fields =
-    Regex("""([A-Za-z_][A-Za-z0-9_]*)=([^\s]+)""")
-      .findAll(pair.message)
-      .associate { it.groupValues[1] to it.groupValues[2] }
-  fun number(name: String): Double? = fields[name]?.toDoubleOrNull()?.takeIf { it.isFinite() }
+  fun number(fields: Map<String, String>, name: String): Double? =
+    fields[name]?.toDoubleOrNull()?.takeIf { it.isFinite() }
   fun compact(value: Double?): String = value?.let { String.format(Locale.US, "%.1f", it) } ?: "--"
 
-  val frames = fields["frames"] ?: "?"
-  val processingMs = number("processing_ms")
-  val budgetMs = number("pair_budget_ms")
-  val budgetRatio = number("budget_ratio")
-    ?: if (processingMs != null && budgetMs != null && budgetMs > 0.0) processingMs / budgetMs else null
-  val percent = budgetRatio?.let { String.format(Locale.US, "%.0f%%", it * 100.0) } ?: "--"
-  val dimensions =
-    if (fields["process_width"] != null && fields["process_height"] != null) {
-      "${fields["process_width"]}×${fields["process_height"]}"
-    } else {
-      "--"
+  val cadenceFields = fieldsFor("runtime_cadence")
+  val synthesizedOutput = cadenceFields
+    ?.takeIf { it["metric"] == "successful_pl_swapchain_submit_not_surfaceflinger_scanout" }
+    ?.let { fields ->
+      val windowMs = number(fields, "window_ms")?.takeIf { it > 0.0 }
+      val synthesizedCount = fields["synthesized_submits"]?.toLongOrNull()?.takeIf { it >= 0L }
+      val reportedRate = number(fields, "synthesized_submit_fps")?.takeIf { it >= 0.0 }
+      val rate = reportedRate ?: if (synthesizedCount != null && windowMs != null) {
+        synthesizedCount * 1_000.0 / windowMs
+      } else {
+        null
+      }
+      if (rate == null) {
+        null
+      } else {
+        val targetFps = fields["target_fps"]?.toIntOrNull()?.takeIf { it in 1..240 }
+        val allSwapRate = number(fields, "swap_submit_fps")?.takeIf { it >= 0.0 }
+        buildString {
+          append("Successful synthesized submits ${compact(rate)} fps")
+          targetFps?.let { append(" · target $it fps") }
+          if (synthesizedCount != null && windowMs != null) {
+            append(" · $synthesizedCount in ${compact(windowMs / 1_000.0)} s")
+          }
+          allSwapRate?.let { append(" · all swap submits ${compact(it)} fps") }
+          append(" · not scanout")
+        }
+      }
     }
-  val targetFps = fields["target_fps"] ?: "?"
-  return "Last pair: $frames generated · ${compact(processingMs)}/${compact(budgetMs)} ms ($percent) · $dimensions · target $targetFps fps"
+
+  val pairFields = fieldsFor("source_pair_synthesis")
+  val pairSummary = pairFields?.let { fields ->
+    val processingMs = number(fields, "processing_ms")
+    val budgetMs = number(fields, "pair_budget_ms")
+    val budgetRatio = number(fields, "budget_ratio")
+      ?: if (processingMs != null && budgetMs != null && budgetMs > 0.0) processingMs / budgetMs else null
+    val percent = budgetRatio?.let { String.format(Locale.US, "%.0f%%", it * 100.0) } ?: "--"
+    val dimensions =
+      if (fields["process_width"] != null && fields["process_height"] != null) {
+        "${fields["process_width"]}×${fields["process_height"]}"
+      } else {
+        "--"
+      }
+    val frames = fields["frames"] ?: "?"
+    val targetFps = fields["target_fps"] ?: "?"
+    "Last pair: $frames generated · ${compact(processingMs)}/${compact(budgetMs)} ms ($percent) · $dimensions · target $targetFps fps"
+  }
+
+  return when {
+    synthesizedOutput != null && pairSummary != null -> "$synthesizedOutput · $pairSummary"
+    synthesizedOutput != null -> synthesizedOutput
+    pairSummary != null -> "Synthesized submit rate not captured · $pairSummary"
+    entries.any(DebugLogEntry::isMpvFlowDiagnostic) -> "MPVFlow active; synthesized submit rate not captured yet"
+    else -> "No MPVFlow output telemetry captured"
+  }
 }
 
 private fun String.toDebugLogLevel(): DebugLogLevel? =

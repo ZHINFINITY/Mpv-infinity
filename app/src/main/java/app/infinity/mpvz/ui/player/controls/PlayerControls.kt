@@ -2628,7 +2628,7 @@ private fun nativeStatsCodecLabel(mimeType: String?, codecs: String?): String {
 private data class CustomStatsSnapshot(
   val fileName: String,
   val renderContext: String,
-  val mpvFlowTimingText: String,
+  val mpvFlowOutputText: String,
   val mpvPlaybackTimingText: String,
   val video: String,
   val audio: String,
@@ -2670,7 +2670,7 @@ private fun CustomStatsPageSixOverlay(
       CustomStatsSnapshot(
         fileName = "--",
         renderContext = "--",
-        mpvFlowTimingText = "MPVFlow pair timing unavailable",
+        mpvFlowOutputText = "MPVFlow output telemetry unavailable",
         mpvPlaybackTimingText = "Pacing telemetry unavailable",
         video = "--",
         audio = "--",
@@ -2700,7 +2700,7 @@ private fun CustomStatsPageSixOverlay(
     var lastMemorySampleMs = lastTimeMs
     var memorySnapshot = withContext(Dispatchers.Default) { readProcessMemorySnapshot() }
     var lastMpvFlowDiagnosticReadMs = 0L
-    var mpvFlowTimingText = "No MPVFlow pair timing captured"
+    var mpvFlowOutputText = "No MPVFlow output telemetry captured"
 
     var startBatteryTemp: Float? = null
     var peakBatteryTemp = 0.0f
@@ -2724,7 +2724,7 @@ private fun CustomStatsPageSixOverlay(
       val currentTimeMs = android.os.SystemClock.elapsedRealtime()
       if (currentTimeMs - lastMpvFlowDiagnosticReadMs >= 3_000L) {
         lastMpvFlowDiagnosticReadMs = currentTimeMs
-        mpvFlowTimingText =
+        mpvFlowOutputText =
           withContext(Dispatchers.IO) {
             runCatching {
               formatMpvFlowTimingSummary(DebugLogReader.readSnapshot(maxRawLines = 1_000).entries)
@@ -2918,7 +2918,7 @@ private fun CustomStatsPageSixOverlay(
           ?.toString()
           ?: "--"
       val mpvPlaybackTimingText =
-        "vf estimate $estimatedVfFps fps · display $displayFps Hz · A/V offset $avSyncOffset · " +
+        "MPV vf estimate $estimatedVfFps fps (not Flow submits) · display-fps hint $displayFps Hz · A/V offset $avSyncOffset · " +
           "decoder/VO drops $decoderDrops/$outputDrops · delayed $delayedFrames"
       val decoderEfficiencyText =
         when {
@@ -2931,7 +2931,7 @@ private fun CustomStatsPageSixOverlay(
         CustomStatsSnapshot(
           fileName = fileName,
           renderContext = renderContext,
-          mpvFlowTimingText = mpvFlowTimingText,
+          mpvFlowOutputText = mpvFlowOutputText,
           mpvPlaybackTimingText = mpvPlaybackTimingText,
           video = videoCodec,
           audio = audioCodec,
@@ -3017,7 +3017,7 @@ private fun CustomStatsPageSixOverlay(
       labelStyle,
       valueStyle,
     )
-    OutlinedLabeled("MPVFlow pair", stats.mpvFlowTimingText, labelStyle, valueStyle)
+    OutlinedLabeled("MPVFlow output", stats.mpvFlowOutputText, labelStyle, valueStyle)
     OutlinedLabeled("Pacing / sync", stats.mpvPlaybackTimingText, labelStyle, valueStyle)
     OutlinedLabeled("Audio", "${stats.audio} | HDR: ${stats.hdrActive}", labelStyle, valueStyle)
 

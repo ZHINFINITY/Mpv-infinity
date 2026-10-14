@@ -536,6 +536,28 @@ class DebugLogRepositoryTest {
   }
 
   @Test
+  fun formatsSuccessfulSynthesizedSubmitRateSeparatelyFromCallbackAndSwapRates() {
+    val entry =
+      DebugLogEntry(
+        id = "mpvflow-cadence",
+        timeMillis = 2L,
+        timestamp = "00:00:00.002",
+        level = DebugLogLevel.Info,
+        tag = "vo/gpu-next",
+        message = "MPVFLOW_DIAGNOSTIC event=runtime_cadence window_ms=5000.0 target_fps=120 render_callback_fps=200.00 swap_submit_fps=55.00 synthesized_submit_fps=48.00 synthesized_submits=240 metric=successful_pl_swapchain_submit_not_surfaceflinger_scanout",
+      )
+
+    val summary = formatMpvFlowTimingSummary(listOf(entry))
+
+    assertTrue(summary.contains("Successful synthesized submits 48.0 fps"))
+    assertTrue(summary.contains("target 120 fps"))
+    assertTrue(summary.contains("240 in 5.0 s"))
+    assertTrue(summary.contains("all swap submits 55.0 fps"))
+    assertTrue(summary.contains("not scanout"))
+    assertTrue(!summary.contains("200.0"))
+  }
+
+  @Test
   fun allAccessibleLogcatCommandRequestsEveryBufferWithoutPidOrTailLimits() {
     val command = DebugLogReader.allAccessibleLogcatCommand()
 
