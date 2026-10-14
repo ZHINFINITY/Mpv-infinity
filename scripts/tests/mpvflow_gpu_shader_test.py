@@ -60,6 +60,11 @@ flow = shaders["shader_flow"]
 optical_luma = shaders["shader_optical_luma"]
 optical_seed = shaders["shader_optical_seed"]
 synthesis = shaders["shader_synthesize"]
+require(synthesis, "layout(set=0,binding=7,rgba8) writeonly uniform image2D outTex;", "SDR synthesis output must remain RGBA8")
+require(SOURCE, "shader_replace_once(", "HDR synthesis must derive a second shader from the validated baseline")
+require(SOURCE, "layout(set=0,binding=7,rgba16f) writeonly uniform image2D outTex;", "HDR shader variant must write RGBA16F")
+require(SOURCE, "ctx->pass_synthesize_rgba16f = make_pass", "HDR output pass must be independently compiled and optional")
+require(SOURCE, "mpvflow_gpu_rgba16f_synthesis_supported", "high-precision output must be gated by Vulkan pass and format capability")
 require(optical_luma, "layout(set=0,binding=0,rgba16f) readonly uniform image2D inTex;", "optical conversion must consume the existing GPU luma pyramid")
 require(optical_luma, "layout(set=0,binding=1,r8) writeonly uniform image2D outTex;", "NV optical inputs must be packed as R8 UNORM without a CPU round-trip")
 require(optical_seed, "uniform isampler2D vectorTex", "NV's scaled signed-integer vector output must be read with an integer sampler")
@@ -618,9 +623,17 @@ assert edge_decision(0.25, 0.02, 0.08, 0.03, 1.0, 1.0, 0.35, 0.35) == "interpola
 
 validator = shutil.which("glslangValidator")
 if validator:
+    rgba8_output = "layout(set=0,binding=7,rgba8) writeonly uniform image2D outTex;"
+    assert synthesis.count(rgba8_output) == 1, "the synthesis baseline must expose one replaceable RGBA8 output binding"
+    shaders_to_compile = dict(shaders)
+    shaders_to_compile["shader_synthesize_rgba16f"] = synthesis.replace(
+        rgba8_output,
+        "layout(set=0,binding=7,rgba16f) writeonly uniform image2D outTex;",
+        1,
+    )
     with tempfile.TemporaryDirectory(prefix="mpvflow-vulkan-shaders-") as temp_dir:
         temp_path = pathlib.Path(temp_dir)
-        for name, shader in shaders.items():
+        for name, shader in shaders_to_compile.items():
             source_file = temp_path / f"{name}.comp"
             output_file = temp_path / f"{name}.spv"
             source_file.write_text(shader, encoding="utf-8")

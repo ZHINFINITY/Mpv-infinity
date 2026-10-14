@@ -132,6 +132,8 @@ void mpvflow_gpu_destroy(MPVFlowGPUContext *context);
 /* Returns the resolved runtime backend (OpenCL or Vulkan), never the Auto request. */
 enum MPVFlowGPUComputeAPI mpvflow_gpu_get_compute_api(MPVFlowGPUContext *context);
 const char *mpvflow_gpu_get_compute_api_name(MPVFlowGPUContext *context);
+/* True only when a Vulkan RGBA16F output pass and sampling/storage caps are ready. */
+bool mpvflow_gpu_rgba16f_synthesis_supported(MPVFlowGPUContext *context);
 
 /* Poll completed libplacebo GPU timestamps without waiting for the device. */
 void mpvflow_gpu_get_timing_stats(MPVFlowGPUContext *context,

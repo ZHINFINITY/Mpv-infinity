@@ -581,7 +581,7 @@ assert "first_runtime_wsi_sample=next_start_frame" in flow_vo_patch_source
 toggle_offset = flow_vo_patch_source.index("event=wsi_diagnostics_toggle engine=mpv")
 created_offset = flow_vo_patch_source.index("event=wsi_swapchain_created engine=mpv")
 first_start_frame_offset = flow_vo_patch_source.index(
-    "+        should_draw && !flow_rate_limited && pl_swapchain_start_frame(p->sw, &swframe);"
+    "+        should_draw && pl_swapchain_start_frame(p->sw, &swframe);"
 )
 assert toggle_offset < created_offset < first_start_frame_offset, (
     "the enabled gate and effective created swapchain mode/image count must be reported before the first runtime WSI call"
@@ -715,12 +715,12 @@ assert 'VENDOR / "mpvflow_rate_limit.h"' in prepare_source and \
     "native preparation must stage the tested limiter header into MPV's video/out tree"
 )
 rate_gate_offset = vo_patch.index("mpvflow_rate_limiter_ready(&p->flow_rate_limiter")
-rate_prepare_offset = vo_patch.index("flow_prepare_frame(vo, &mix, &flow_prepared, frame->still);")
+rate_prepare_offset = vo_patch.index("flow_prepare_frame(vo, &mix, &flow_prepared, frame->still,")
 rate_acquire_offset = vo_patch.index(
-    "+        should_draw && !flow_rate_limited && pl_swapchain_start_frame(p->sw, &swframe);"
+    "+        should_draw && pl_swapchain_start_frame(p->sw, &swframe);"
 )
 assert rate_gate_offset < rate_prepare_offset < rate_acquire_offset, (
-    "over-target MPV callbacks must be skipped before Flow compute and Vulkan swapchain acquire"
+    "the synthesis-rate gate must precede Flow preparation while source-frame acquisition stays enabled"
 )
 rate_submit_guard = vo_patch.index("if (p->next_opts->mpvflow && submitted)")
 rate_commit_offset = vo_patch.index("mpvflow_rate_limiter_commit(&p->flow_rate_limiter")
@@ -745,7 +745,7 @@ paused_still_guard = "+    if (p->paused || source_is_still) {"
 assert paused_still_guard in flow_synthesis_body, "paused and still frames must bypass MPVFlow analysis"
 assert flow_synthesis_body.index(paused_still_guard) < flow_synthesis_body.index("mpvflow_gpu_analyze_pair(")
 assert flow_synthesis_body.index(paused_still_guard) < flow_synthesis_body.index("mpvflow_gpu_synthesize(")
-assert "flow_prepare_frame(vo, &mix, &flow_prepared, frame->still);" in vo_patch
+assert "flow_prepare_frame(vo, &mix, &flow_prepared, frame->still," in vo_patch
 assert '+        const char *queue_state = p->paused ? "paused" :' in vo_patch, (
     "the paused state must not be hidden by empty-batch or still-frame diagnostics"
 )
@@ -1593,6 +1593,18 @@ with tempfile.TemporaryDirectory(prefix="mpvflow-builder-patch-test-") as tempor
         "MPV Vulkan must be enabled in the pinned Meson options block"
     )
     assert "--arch arm64" in ci.read_text(encoding="utf-8"), "native build must remain arm64-only"
+
+flow_vo_patch = flow_vo_patch_source
+assert "flow_prepare_frame(vo, &mix, &flow_prepared, frame->still," in flow_vo_patch
+assert "if (!allow_synthesis)" in flow_vo_patch
+assert "should_draw && pl_swapchain_start_frame(p->sw, &swframe)" in flow_vo_patch
+assert "should_draw && !flow_synthesis_rate_limited && pl_swapchain_start_frame" not in flow_vo_patch
+assert "flow_pending_rate_limiter_eligible && p->flow_pending_synthesized" in flow_vo_patch
+assert "high_precision_rgba16f_synthesis_unavailable" in flow_vo_patch
+assert "analysis=bt709_bt1886_tonemapped" in flow_vo_patch
+assert "frame->repr.bits.color_depth > 8" in flow_vo_patch
+assert "source_color.transfer = PL_COLOR_TRC_LINEAR" in flow_vo_patch
+assert "flow_color.transfer = PL_COLOR_TRC_LINEAR" in flow_vo_patch
 
 rate_limit_test = r"""
 #include <assert.h>

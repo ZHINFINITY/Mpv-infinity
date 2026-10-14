@@ -106,10 +106,10 @@ for marker in (
 require(PATCH, "event=swapchain_wait stage=swap_buffers", "MPV Flow must report slow blocking swap/present calls")
 require(PATCH, "metric=cpu_blocking_call_not_scanout", "swapchain waits must not be misrepresented as confirmed scanout")
 require(PATCH, "pl_vulkan_swapchain_set_diagnostics", "lower-level Vulkan WSI measurements must be enabled only by the MPV Flow path")
-flow_prepare_call = PATCH.index("+            flow_prepare_frame(vo, &mix, &flow_prepared, frame->still);")
+flow_prepare_call = PATCH.index("+            flow_prepare_frame(vo, &mix, &flow_prepared, frame->still,")
 flow_prepare_flush = PATCH.index("+            pl_gpu_flush(gpu);", flow_prepare_call)
 flow_acquire_call = PATCH.index(
-    "+        should_draw && !flow_rate_limited && pl_swapchain_start_frame(p->sw, &swframe);",
+    "+        should_draw && pl_swapchain_start_frame(p->sw, &swframe);",
     flow_prepare_call,
 )
 assert flow_prepare_call < flow_prepare_flush < flow_acquire_call, (
@@ -121,6 +121,10 @@ flow_prepare_body = PATCH.split("+static void flow_prepare_frame(", 1)[1].split(
 require(flow_prepare_body, "if (p->paused || source_is_still)", "paused and still frames must bypass motion interpolation")
 require(flow_prepare_body, "mpvflow_gpu_analyze_pair(", "pre-acquire producer must prepare motion before presentation")
 require(flow_prepare_body, "mpvflow_gpu_synthesize(", "pre-acquire producer must synthesize the offscreen output before presentation")
+require(flow_prepare_body, "if (!allow_synthesis)", "rate limiting may bypass interpolation but must preserve nearest-source rendering")
+require(PATCH, "should_draw && pl_swapchain_start_frame(p->sw, &swframe)", "synthesis rate limiting must not suppress source-frame presentation")
+require(PATCH, "p->flow_pending_rate_limiter_eligible && flow_synthesized", "only actual synthesized renders may consume target-rate credit")
+require(PATCH, "analysis=bt709_bt1886_tonemapped", "HDR motion input must be a separate SDR tone-mapped analysis copy")
 require(PATCH, "event=producer state=pre_acquire", "MPV must report the producer/presenter split at runtime")
 require(PATCH, "swap_buffers_call_avg_ms=%.3f", "MPV Flow cadence must include the swap_buffers call duration")
 require(PATCH, "swap_buffers_call_max_ms=%.3f", "MPV Flow cadence must include the maximum swap_buffers call duration")

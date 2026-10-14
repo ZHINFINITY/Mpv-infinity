@@ -92,6 +92,7 @@ struct MPVFlowGPUContext {
     pl_pass pass_optical_luma;
     pl_pass pass_optical_seed;
     pl_pass pass_synthesize;
+    pl_pass pass_synthesize_rgba16f;
     MPVFlowVulkanOptical *optical;
     MPVFlowVulkanQcom *qcom;
     char diagnostic_engine[32];
@@ -860,6 +861,29 @@ static pl_pass make_pass(pl_gpu gpu, const char *glsl,
         .glsl_shader = glsl));
 }
 
+static char *shader_replace_once(const char *source, const char *needle,
+                                  const char *replacement)
+{
+    if (!source || !needle || !replacement || !needle[0])
+        return NULL;
+    const char *match = strstr(source, needle);
+    if (!match || strstr(match + strlen(needle), needle))
+        return NULL;
+    const size_t source_len = strlen(source);
+    const size_t needle_len = strlen(needle);
+    const size_t replacement_len = strlen(replacement);
+    const size_t prefix_len = (size_t) (match - source);
+    const size_t output_len = source_len - needle_len + replacement_len;
+    char *output = malloc(output_len + 1);
+    if (!output)
+        return NULL;
+    memcpy(output, source, prefix_len);
+    memcpy(output + prefix_len, replacement, replacement_len);
+    memcpy(output + prefix_len + replacement_len, match + needle_len,
+           source_len - prefix_len - needle_len + 1);
+    return output;
+}
+
 static pl_tex create_texture_ex(MPVFlowGPUContext *ctx, int w, int h, pl_fmt fmt,
                                 bool sampleable, bool blit_src, bool blit_dst,
                                 const char *stage)
@@ -1494,6 +1518,18 @@ MPVFlowGPUContext *mpvflow_gpu_create(pl_gpu gpu,
     ctx->pass_reduce = make_pass(gpu, shader_reduce, reduce_desc, 2);
     ctx->pass_flow = make_pass(gpu, shader_flow, flow_desc, 5);
     ctx->pass_synthesize = make_pass(gpu, shader_synthesize, synth_desc, 8);
+    const unsigned int rgba16f_pass_caps = PL_FMT_CAP_STORABLE |
+        PL_FMT_CAP_SAMPLEABLE | PL_FMT_CAP_LINEAR;
+    if ((ctx->fmt_rgba16f->caps & rgba16f_pass_caps) == rgba16f_pass_caps) {
+        char *rgba16f_shader = shader_replace_once(
+            shader_synthesize,
+            "layout(set=0,binding=7,rgba8) writeonly uniform image2D outTex;",
+            "layout(set=0,binding=7,rgba16f) writeonly uniform image2D outTex;");
+        if (rgba16f_shader) {
+            ctx->pass_synthesize_rgba16f = make_pass(gpu, rgba16f_shader, synth_desc, 8);
+            free(rgba16f_shader);
+        }
+    }
     if (ctx->optical || ctx->qcom) {
         ctx->pass_optical_luma = make_pass(gpu, shader_optical_luma,
                                            optical_luma_desc, 2);
@@ -1608,8 +1644,8 @@ MPVFlowGPUContext *mpvflow_gpu_create(pl_gpu gpu,
         *status = MPVFLOW_GPU_OK;
     flow_log(gpu, PL_LOG_INFO,
              "MPVFLOW_DIAGNOSTIC event=shader_setup state=ready stage=compute_pass_creation "
-             "pass_mask=0x7f max_dimension=%d search_radius=%d",
-             ctx->max_dimension, ctx->search_radius);
+             "pass_mask=0x7f rgba16f_synthesis_pass=%d max_dimension=%d search_radius=%d",
+             !!ctx->pass_synthesize_rgba16f, ctx->max_dimension, ctx->search_radius);
     return ctx;
 }
 
@@ -1626,6 +1662,7 @@ void mpvflow_gpu_destroy(MPVFlowGPUContext *ctx)
     if (ctx->pass_optical_luma) pl_pass_destroy(ctx->gpu, &ctx->pass_optical_luma);
     if (ctx->pass_optical_seed) pl_pass_destroy(ctx->gpu, &ctx->pass_optical_seed);
     if (ctx->pass_synthesize) pl_pass_destroy(ctx->gpu, &ctx->pass_synthesize);
+    if (ctx->pass_synthesize_rgba16f) pl_pass_destroy(ctx->gpu, &ctx->pass_synthesize_rgba16f);
     mpvflow_vulkan_optical_destroy(&ctx->optical);
     mpvflow_vulkan_qcom_destroy(&ctx->qcom);
     for (int i = 0; i < FLOW_TIMER_COUNT; i++)
@@ -1650,6 +1687,15 @@ void mpvflow_gpu_destroy(MPVFlowGPUContext *ctx)
 enum MPVFlowGPUComputeAPI mpvflow_gpu_get_compute_api(MPVFlowGPUContext *ctx)
 {
     return ctx ? ctx->compute_api : MPVFLOW_GPU_COMPUTE_VULKAN;
+}
+
+bool mpvflow_gpu_rgba16f_synthesis_supported(MPVFlowGPUContext *ctx)
+{
+    const unsigned int required_caps = PL_FMT_CAP_STORABLE |
+        PL_FMT_CAP_SAMPLEABLE | PL_FMT_CAP_LINEAR;
+    return ctx && ctx->compute_api == MPVFLOW_GPU_COMPUTE_VULKAN &&
+        ctx->pass_synthesize_rgba16f && ctx->fmt_rgba16f &&
+        (ctx->fmt_rgba16f->caps & required_caps) == required_caps;
 }
 
 const char *mpvflow_gpu_get_compute_api_name(MPVFlowGPUContext *ctx)
@@ -2462,11 +2508,29 @@ enum MPVFlowGPUResult mpvflow_gpu_synthesize(MPVFlowGPUContext *ctx,
         return MPVFLOW_GPU_UNSUPPORTED_FORMAT;
     }
 
+    const char *format0 = p0->format->name ? p0->format->name : "";
+    const char *format1 = p1->format->name ? p1->format->name : "";
+    const bool rgba8_pair = !strcmp(format0, "rgba8") && !strcmp(format1, "rgba8");
+    const bool rgba16f_pair = !strcmp(format0, "rgba16f") && !strcmp(format1, "rgba16f");
+    if ((!rgba8_pair && !rgba16f_pair) ||
+        (rgba16f_pair && !mpvflow_gpu_rgba16f_synthesis_supported(ctx))) {
+        flow_log_once(ctx, FLOW_DIAG_SYNTHESIZE, PL_LOG_WARN,
+                      "MPVFLOW_DIAGNOSTIC event=synthesize state=failed stage=source_pair_format "
+                      "source0_format=%s source1_format=%s hdr_pass_ready=%d reason=unsupported_precision_or_backend",
+                      format0, format1, mpvflow_gpu_rgba16f_synthesis_supported(ctx));
+        return MPVFLOW_GPU_UNSUPPORTED_FORMAT;
+    }
+    pl_fmt output_fmt = rgba16f_pair ? ctx->fmt_rgba16f : ctx->fmt_rgba8;
+    pl_pass synthesis_pass = rgba16f_pair ? ctx->pass_synthesize_rgba16f : ctx->pass_synthesize;
+    if (!output_fmt || !synthesis_pass)
+        return MPVFLOW_GPU_UNSUPPORTED_FORMAT;
+
     const int output_w = (int) p0->w;
     const int output_h = (int) p0->h;
-    if (!pair->output || pair->output_w != output_w || pair->output_h != output_h) {
+    if (!pair->output || pair->output_w != output_w || pair->output_h != output_h ||
+        pair->output->params.format != output_fmt) {
         destroy_tex(ctx, &pair->output);
-        pair->output = create_texture_ex(ctx, output_w, output_h, ctx->fmt_rgba8,
+        pair->output = create_texture_ex(ctx, output_w, output_h, output_fmt,
                                          true, true,
                                          ctx->compute_api == MPVFLOW_GPU_COMPUTE_OPENCL,
                                          "full_resolution_pair_output");
@@ -2475,12 +2539,14 @@ enum MPVFlowGPUResult mpvflow_gpu_synthesize(MPVFlowGPUContext *ctx,
         if (!pair->output) {
             flow_log_once(ctx, FLOW_DIAG_SYNTHESIZE, PL_LOG_WARN,
                           "MPVFLOW_DIAGNOSTIC event=synthesize state=failed stage=full_resolution_output_allocation "
-                          "width=%d height=%d format=rgba8 motion_width=%d motion_height=%d",
-                          output_w, output_h, pair->w, pair->h);
+                          "width=%d height=%d format=%s motion_width=%d motion_height=%d",
+                          output_w, output_h, output_fmt->name, pair->w, pair->h);
             return MPVFLOW_GPU_UNSUPPORTED_FORMAT;
         }
     }
     if (pair->opencl_pair) {
+        if (rgba16f_pair)
+            return MPVFLOW_GPU_UNSUPPORTED_FORMAT;
         enum MPVFlowGPUResult result =
             flow_opencl_synthesize(ctx, pair, source0, source1, t);
         if (result == MPVFLOW_GPU_OK) {
@@ -2526,7 +2592,7 @@ enum MPVFlowGPUResult mpvflow_gpu_synthesize(MPVFlowGPUContext *ctx,
         { .object = full->luma[1] },
         { .object = out },
     };
-    if (!run_pass(ctx, ctx->pass_synthesize, sb, 8, cfg, t, output_w, output_h,
+    if (!run_pass(ctx, synthesis_pass, sb, 8, cfg, t, output_w, output_h,
                   "synthesize_output")) {
         flow_log_once(ctx, FLOW_DIAG_SYNTHESIZE, PL_LOG_WARN,
                       "MPVFLOW_DIAGNOSTIC event=synthesize state=failed stage=synthesis_dispatch "
