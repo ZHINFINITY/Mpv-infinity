@@ -1747,6 +1747,11 @@ int main(void)
     assert(mpvflow_rate_limiter_ready(&limiter, 25000001ULL, 0));
     mpvflow_rate_limiter_commit(&limiter, 25000001ULL, 0);
     assert(mpvflow_rate_limiter_ready(&limiter, 25000002ULL, 120));
+    assert(mpvflow_previous_present_budget_available(8333333ULL, 120));
+    assert(!mpvflow_previous_present_budget_available(8333334ULL, 120));
+    assert(mpvflow_previous_present_budget_available(16666666ULL, 60));
+    assert(!mpvflow_previous_present_budget_available(16666667ULL, 60));
+    assert(mpvflow_previous_present_budget_available(UINT64_MAX, 0));
     return 0;
 }
 """

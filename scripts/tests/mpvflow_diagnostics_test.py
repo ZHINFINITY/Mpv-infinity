@@ -127,6 +127,11 @@ flow_prepare_body = PATCH.split("+static void flow_prepare_frame(", 1)[1].split(
 )[0]
 require(flow_prepare_body, "if (p->paused || source_is_still)", "paused and still frames must bypass motion interpolation")
 require(flow_prepare_body, "mpvflow_gpu_analyze_pair(", "pre-acquire producer must prepare motion before presentation")
+require(flow_prepare_body, "mpvflow_previous_present_budget_available(", "MPV must skip new motion work after a measured over-budget present")
+assert flow_prepare_body.index("mpvflow_previous_present_budget_available(") < flow_prepare_body.index(
+    "mpvflow_gpu_analyze_pair("
+), "MPV backpressure admission must happen before native pair analysis"
+require(flow_prepare_body, 'prepared->bypass_reason = "previous_frame_over_budget"', "MPV backpressure must preserve an explicit source fallback reason")
 require(flow_prepare_body, "mpvflow_gpu_synthesize(", "pre-acquire producer must synthesize the offscreen output before presentation")
 require(flow_prepare_body, "if (!allow_synthesis)", "rate limiting may bypass interpolation but must preserve nearest-source rendering")
 require(PATCH, "should_draw && pl_swapchain_start_frame(p->sw, &swframe)", "synthesis rate limiting must not suppress source-frame presentation")
@@ -166,6 +171,14 @@ require(MEDIA3_FLOW_SINK, "motionDeadlineAdmission=cpu_submit_proxy_not_gpu_comp
 require(MEDIA3_FLOW_SINK, "motion_submit_proxy_over_deadline_reserve", "Media3 over-reserve diagnostics must identify the CPU submit proxy rather than imply GPU completion timing")
 require(MEDIA3_FLOW_SINK, "capturedPtsSamples=", "Media3 captured cadence must expose its PTS sample count")
 require(MEDIA3_FLOW_SINK, "outputCallbackLatenessMs=", "Media3 must report Choreographer-to-GL callback lateness")
+media3_analysis_body = MEDIA3_FLOW_SINK.split("private fun analyzeNewestPair()", 1)[1].split(
+    "private fun renderAtPosition(", 1
+)[0]
+require(media3_analysis_body, "shouldAnalyzeMotionPairAfterEglSwap", "Media3 must bypass new pair analysis after a measured over-budget swap")
+assert media3_analysis_body.index("shouldAnalyzeMotionPairAfterEglSwap") < media3_analysis_body.index(
+    "Media3FlowVulkanNative.nativeAnalyzePair"
+), "Media3 backpressure admission must happen before native pair analysis"
+require(media3_analysis_body, 'lastBypassReason = "egl_swap_backpressure_analysis_deferred"', "Media3 must preserve source-frame fallback when analysis is deferred")
 require(FLOW_GPU_CORE, "queue_timestamp_valid_bits=%u", "Vulkan timer setup must log timestamp capability for the compute queue")
 require(FLOW_GPU_CORE, "VK_QUEUE_COMPUTE_BIT", "timestamp capability must be queried from the actual compute queue family")
 require(FLOW_GPU_CORE, "vkGetPhysicalDeviceProperties(vk->phys_device, &device_properties)", "timestamp support must inspect physical-device limits")

@@ -131,6 +131,16 @@ class Media3FlowCadenceTest {
   }
 
   @Test
+  fun overBudgetEglSwapDefersOnlyNewMotionAnalysisUntilTheNextTickCanFit() {
+    assertTrue(Media3FlowCadence.shouldAnalyzeMotionPairAfterEglSwap(8.0f, 120))
+    assertFalse(Media3FlowCadence.shouldAnalyzeMotionPairAfterEglSwap(8.34f, 120))
+    assertFalse(Media3FlowCadence.shouldAnalyzeMotionPairAfterEglSwap(21.6f, 120))
+    assertTrue(Media3FlowCadence.shouldAnalyzeMotionPairAfterEglSwap(16.0f, 60))
+    assertTrue(Media3FlowCadence.shouldAnalyzeMotionPairAfterEglSwap(Float.NaN, 120))
+    assertTrue(Media3FlowCadence.shouldAnalyzeMotionPairAfterEglSwap(-1f, 120))
+  }
+
+  @Test
   fun decoderInputWaitsForAFreeGpuFrameSlotAndCompletedSurfaceCapture() {
     assertTrue(Media3FlowCadence.canReleaseNextDecoderFrame(0, 3, inputInFlight = false))
     assertTrue(Media3FlowCadence.canReleaseNextDecoderFrame(2, 3, inputInFlight = false))

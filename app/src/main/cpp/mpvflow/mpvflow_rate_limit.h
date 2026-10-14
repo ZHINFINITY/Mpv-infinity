@@ -51,4 +51,14 @@ static inline void mpvflow_rate_limiter_commit(
     limiter->last_submit_ns = now_ns;
 }
 
+/* Skip new motion analysis only if the measured prior present wait exhausted this frame budget. */
+static inline bool mpvflow_previous_present_budget_available(
+    uint64_t present_wait_ns, int target_fps)
+{
+    const uint64_t interval_ns = mpvflow_rate_limiter_interval_ns(target_fps);
+    if (!interval_ns)
+        return true;
+    return present_wait_ns < interval_ns;
+}
+
 #endif /* MPVFLOW_RATE_LIMIT_H */

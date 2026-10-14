@@ -106,6 +106,11 @@ internal object Media3FlowCadence {
     return lastSwapWaitMs < 1_000f / targetFps
   }
 
+  /** Avoid blocking the shared input/render GL thread on analysis that cannot meet the next tick. */
+  fun shouldAnalyzeMotionPairAfterEglSwap(lastSwapWaitMs: Float, targetFps: Int): Boolean {
+    return canSynthesizeAfterEglSwap(lastSwapWaitMs, targetFps)
+  }
+
   /** Keeps a decoder frame queued until the sink can retain it in an owned GPU frame slot. */
   fun canReleaseNextDecoderFrame(
     storedFrameCount: Int,

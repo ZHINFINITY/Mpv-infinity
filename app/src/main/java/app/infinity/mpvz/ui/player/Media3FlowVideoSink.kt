@@ -1503,6 +1503,10 @@ class Media3FlowVideoSink(
         it.available && it.frame0PtsUs == frame0.ptsUs && it.frame1PtsUs == frame1.ptsUs
       }
     ) return
+    if (!Media3FlowCadence.shouldAnalyzeMotionPairAfterEglSwap(lastEglSwapWaitMs, targetFps)) {
+      lastBypassReason = "egl_swap_backpressure_analysis_deferred"
+      return
+    }
     val reusable = motionPairs.firstOrNull {
       !it.available || retentionBoundaryUs(latestPositionUs) >= it.frame1PtsUs
     }
