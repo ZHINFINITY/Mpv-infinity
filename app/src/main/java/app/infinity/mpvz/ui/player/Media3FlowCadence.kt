@@ -44,6 +44,12 @@ internal object Media3FlowCadence {
     return floor(ticks).toLong()
   }
 
+  /** Selects the latest due tick when work is behind, otherwise the next tick after one already rendered. */
+  fun nextRenderableOutputTick(dueTick: Long, lastOutputTick: Long): Long? {
+    if (dueTick < 0L) return null
+    return if (dueTick > lastOutputTick) dueTick else checkedAdd(lastOutputTick, 1L)
+  }
+
   /** Returns the target media PTS for an ordinal output tick without cumulative rounding drift. */
   fun outputTimestampUs(tick: Long, originUs: Long, targetFps: Int, speed: Float): Long? {
     if (tick < 0L || targetFps <= 0 || !speed.isFinite() || speed <= 0f) return null
@@ -177,6 +183,7 @@ internal class Media3FlowDeferredPairQueue(private val capacity: Int) {
     retainedFramePtsUs: LongArray,
     retentionBoundaryUs: Long,
     analysisAllowed: Boolean,
+    preferredPair: Media3FlowSourcePair? = null,
   ): Media3FlowSourcePair? {
     val iterator = pairs.iterator()
     while (iterator.hasNext()) {
@@ -188,6 +195,16 @@ internal class Media3FlowDeferredPairQueue(private val capacity: Int) {
       if (!stillAdjacent || retentionBoundaryUs >= pair.frame1PtsUs) iterator.remove()
     }
     if (!analysisAllowed) return null
+    if (preferredPair != null) {
+      val iterator = pairs.iterator()
+      while (iterator.hasNext()) {
+        val pair = iterator.next()
+        if (pair == preferredPair) {
+          iterator.remove()
+          return pair
+        }
+      }
+    }
     return pairs.pollFirst()
   }
 

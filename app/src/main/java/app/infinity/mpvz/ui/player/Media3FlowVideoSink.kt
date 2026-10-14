@@ -1524,11 +1524,14 @@ class Media3FlowVideoSink(
     } else {
       null
     }
-    val sourcePts = LongArray(sourceFrames.size) { sourceFrames.elementAt(it).ptsUs }
+    val sourceSnapshot = sourceFrames.toList()
+    val sourcePts = LongArray(sourceSnapshot.size) { sourceSnapshot[it].ptsUs }
+    val preferredPair = preferredMotionPairForNextOutput(sourceSnapshot)
     val candidate = deferredMotionPairs.takeNextRetainedAdjacent(
       retainedFramePtsUs = sourcePts,
       retentionBoundaryUs = retentionBoundaryUs(latestPositionUs),
       analysisAllowed = analysisAllowed && reusable != null,
+      preferredPair = preferredPair,
     )
     if (candidate == null) {
       lastBypassReason = when {
@@ -1772,6 +1775,26 @@ class Media3FlowVideoSink(
       val a = frames[index]
       val b = frames[index + 1]
       if (a.ptsUs < targetPtsUs && targetPtsUs < b.ptsUs) return a to b
+    }
+    return null
+  }
+
+  /** Prefer a pair for the next renderable cadence tick; missed intervals are not replayed. */
+  private fun preferredMotionPairForNextOutput(frames: List<FrameSlot>): Media3FlowSourcePair? {
+    if (frames.size < 2) return null
+    val origin = originPtsUs.takeIf { it != C.TIME_UNSET } ?: frames.first().ptsUs
+    val dueTick = Media3FlowCadence.outputTick(latestPositionUs, origin, targetFps, playbackSpeed)
+      ?: return null
+    val firstTick = Media3FlowCadence.nextRenderableOutputTick(dueTick, lastOutputTick) ?: return null
+    for (offset in 0L..1L) {
+      val tick = Media3FlowCadence.checkedAdd(firstTick, offset) ?: continue
+      val targetPtsUs = Media3FlowCadence.outputTimestampUs(tick, origin, targetFps, playbackSpeed)
+        ?: continue
+      val (frame0, frame1) = findSourcePair(frames, targetPtsUs) ?: continue
+      val deltaUs = Media3FlowCadence.checkedSubtract(frame1.ptsUs, frame0.ptsUs) ?: continue
+      if (Media3FlowCadence.needsInterpolation(deltaUs, targetFps, playbackSpeed)) {
+        return Media3FlowSourcePair(frame0.ptsUs, frame1.ptsUs)
+      }
     }
     return null
   }

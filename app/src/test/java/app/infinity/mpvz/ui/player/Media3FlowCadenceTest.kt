@@ -62,6 +62,15 @@ class Media3FlowCadenceTest {
   }
 
   @Test
+  fun nextRenderableTickSkipsMissedIntervalsAndAlreadyRenderedTicks() {
+    assertEquals(5L, Media3FlowCadence.nextRenderableOutputTick(5L, 4L))
+    assertEquals(6L, Media3FlowCadence.nextRenderableOutputTick(5L, 5L))
+    assertEquals(9L, Media3FlowCadence.nextRenderableOutputTick(9L, 5L))
+    assertNull(Media3FlowCadence.nextRenderableOutputTick(-1L, 0L))
+    assertNull(Media3FlowCadence.nextRenderableOutputTick(4L, Long.MAX_VALUE))
+  }
+
+  @Test
   fun outputTickTimestampNeverRunsAheadOfThePlayerPosition() {
     for (speed in listOf(0.5f, 1f, 2f, 4f)) {
       for (positionUs in 0L..2_000_000L step 997L) {
@@ -182,6 +191,28 @@ class Media3FlowCadenceTest {
     )
     assertEquals(
       Media3FlowSourcePair(20L, 30L),
+      queue.takeNextRetainedAdjacent(retained, 0L, analysisAllowed = true),
+    )
+  }
+
+  @Test
+  fun deferredPairQueuePrioritizesTheNextOutputBracketOverOlderRetainedWork() {
+    val queue = Media3FlowDeferredPairQueue(capacity = 2)
+    queue.enqueue(0L, 10L)
+    queue.enqueue(10L, 20L)
+    val retained = longArrayOf(0L, 10L, 20L)
+
+    assertEquals(
+      Media3FlowSourcePair(10L, 20L),
+      queue.takeNextRetainedAdjacent(
+        retainedFramePtsUs = retained,
+        retentionBoundaryUs = 0L,
+        analysisAllowed = true,
+        preferredPair = Media3FlowSourcePair(10L, 20L),
+      ),
+    )
+    assertEquals(
+      Media3FlowSourcePair(0L, 10L),
       queue.takeNextRetainedAdjacent(retained, 0L, analysisAllowed = true),
     )
   }
