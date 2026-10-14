@@ -304,7 +304,8 @@ class Media3FlowFormatPolicyTest {
         .setColorInfo(colorInfo)
         .build()
 
-    assertTrue(Media3FlowVideoSink.supportsFormat(format))
+    assertTrue(Media3FlowVideoSink.supportsFormat(format, sdkInt = 34))
+    assertFalse(Media3FlowVideoSink.supportsFormat(format, sdkInt = 30))
   }
 
   @Test

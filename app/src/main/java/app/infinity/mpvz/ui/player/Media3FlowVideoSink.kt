@@ -2926,7 +2926,10 @@ class Media3FlowVideoSink(
     private const val EGL_OPENGL_ES3_BIT_KHR = 0x0040
 
     @JvmStatic
-    fun supportsFormat(format: Format): Boolean {
+    fun supportsFormat(format: Format): Boolean =
+      supportsFormat(format, Build.VERSION.SDK_INT)
+
+    internal fun supportsFormat(format: Format, sdkInt: Int): Boolean {
       val supportedRotation = format.rotationDegrees == 0 || format.rotationDegrees == 90 ||
         format.rotationDegrees == 180 || format.rotationDegrees == 270
       if (format.width < 16 || format.height < 16 || !supportedRotation ||
@@ -2947,7 +2950,7 @@ class Media3FlowVideoSink(
         chromaBitdepth = colorInfo?.chromaBitdepth ?: Format.NO_VALUE,
         hasHdrStaticInfo = colorInfo?.hdrStaticInfo != null,
         isEquivalentToAssumedSdrDefault = ColorInfo.isEquivalentToAssumedSdrDefault(colorInfo),
-        decoderSdrRequestAvailable = Build.VERSION.SDK_INT >= 31,
+        decoderSdrRequestAvailable = sdkInt >= 31,
       )
     }
 
