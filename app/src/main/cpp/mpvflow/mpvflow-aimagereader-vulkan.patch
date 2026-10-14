@@ -43,15 +43,19 @@ index ea29b0dc2..55de25640 100644
 +    int dst_num_components;
 +    int dst_component_mapping[4];
 diff --git a/video/out/vo_gpu_next.c b/video/out/vo_gpu_next.c
-index bd79fa62d..47d55c36d 100644
+index dd47f440f..48cb34057 100644
 --- a/video/out/vo_gpu_next.c
 +++ b/video/out/vo_gpu_next.c
-@@ -645,0 +646,3 @@ struct frame_priv {
+@@ -648,5 +648,9 @@ struct frame_priv {
+ struct frame_priv {
+     struct vo *vo;
 +    bool hwdec_preloaded;
 +    bool mapped_coordinates;
 +    struct mp_image_params mapped_params;
-@@ -647,0 +651 @@ struct frame_priv {
 +    bool el_hwdec_preloaded;
+     uint64_t frame_id;
+     pl_tex flow_source;
+     pl_tex flow_input;
 @@ -1258 +1262,2 @@ static void setup_hwdec_plane_mapping(struct pl_frame *frame,
 -                                      const struct mp_imgfmt_desc *desc)
 +                                      const struct mp_imgfmt_desc *desc,

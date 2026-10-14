@@ -1611,6 +1611,44 @@ with tempfile.TemporaryDirectory(prefix="mpvflow-builder-patch-test-") as tempor
     )
     assert "--arch arm64" in ci.read_text(encoding="utf-8"), "native build must remain arm64-only"
 
+ahb_patch = VULKAN_MAPPER_PATCH.read_text(encoding="utf-8")
+assert "@@ -648,5 +648,9 @@ struct frame_priv {" in ahb_patch, (
+    "Android mapper members must use struct context, not a fragile line-only insertion"
+)
+assert "struct frame_priv {\n     struct vo *vo;\n+    bool hwdec_preloaded;" in ahb_patch
+assert "@@ -645,0 +646,3 @@ struct frame_priv {" not in ahb_patch
+
+frame_priv_fixture = """\
+static void unrelated(void) {
+    bool hwdec_preloaded;
+}
+struct frame_priv {
+    struct vo *vo;
+    bool hwdec_preloaded;
+    bool el_hwdec_preloaded;
+    bool mapped_coordinates;
+    struct mp_image_params mapped_params;
+};
+"""
+prepare.validate_hwdec_frame_priv_members(frame_priv_fixture)
+misplaced_frame_priv_fixture = """\
+static void unrelated(void) {
+    bool hwdec_preloaded;
+    bool el_hwdec_preloaded;
+    bool mapped_coordinates;
+    struct mp_image_params mapped_params;
+}
+struct frame_priv {
+    struct vo *vo;
+};
+"""
+try:
+    prepare.validate_hwdec_frame_priv_members(misplaced_frame_priv_fixture)
+except SystemExit:
+    pass
+else:
+    raise AssertionError("mapper members outside frame_priv must fail native preparation")
+
 flow_vo_patch = flow_vo_patch_source
 assert "flow_prepare_frame(vo, &mix, &flow_prepared, frame->still," in flow_vo_patch
 assert "if (!allow_synthesis)" in flow_vo_patch

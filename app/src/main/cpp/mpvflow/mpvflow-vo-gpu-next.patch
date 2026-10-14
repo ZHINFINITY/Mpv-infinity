@@ -1,5 +1,5 @@
 diff --git a/video/out/vo_gpu_next.c b/video/out/vo_gpu_next.c
-index bd3d1aa..0072486 100644
+index bd3d1aa..dd47f440f 100644
 --- a/video/out/vo_gpu_next.c
 +++ b/video/out/vo_gpu_next.c
 @@ -21,0 +22,3 @@
@@ -1262,7 +1262,8 @@ index bd3d1aa..0072486 100644
 +                                          p->flow_cadence_source_unsynced;
 +            const double source_sync_pct = source_ticks
 +                ? 100.0 * p->flow_cadence_source_synced / source_ticks : 0.0;
-+            MP_INFO(vo, "MPVFLOW_DIAGNOSTIC event=runtime_cadence window_ms=%.1f target_fps=%d "
++            MP_INFO(vo, "MPVFLOW_DIAGNOSTIC event=runtime_cadence metric=successful_pl_swapchain_submit_not_surfaceflinger_scanout "
++                    "window_ms=%.1f target_fps=%d "
 +                    "render_callback_fps=%.2f render_callbacks=%llu render_failures=%llu synthesis_rate_limited_callbacks=%llu "
 +                    "mix_pair_callbacks=%llu synthesized_render_callbacks=%llu vsync_slots=%llu "
 +                    "render_cpu_avg_ms=%.3f render_cpu_max_ms=%.3f render_cpu_samples=%llu "
@@ -1274,8 +1275,7 @@ index bd3d1aa..0072486 100644
 +                    "source_batches=%llu source_sync_pct=%.1f source_unsynced_batches=%llu "
 +                    "empty_batch_redraws=%llu temporal_pair_submits=%llu "
 +                    "submit_call_avg_ms=%.3f submit_call_max_ms=%.3f "
-+                    "swap_buffers_call_avg_ms=%.3f swap_buffers_call_max_ms=%.3f swap_buffers_call_samples=%llu "
-+                    "metric=successful_pl_swapchain_submit_not_surfaceflinger_scanout\n",
++                    "swap_buffers_call_avg_ms=%.3f swap_buffers_call_max_ms=%.3f swap_buffers_call_samples=%llu\n",
 +                    window_ms, p->next_opts->mpvflow_target_fps, render_callback_fps,
 +                    (unsigned long long) p->flow_cadence_render_attempts,
 +                    (unsigned long long) p->flow_cadence_render_failures,

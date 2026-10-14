@@ -79,6 +79,13 @@ require(PATCH, "frame->num_frames > 1 || p->next_opts->mpvflow", "Flow must open
 require(PATCH, "event=queue_state state=%s", "MPV Flow must report why the queue lacks a temporal pair or when one becomes available")
 require(PATCH, "waiting_for_temporal_pair", "MPV Flow must distinguish an incomplete pair from renderer or dispatch failure")
 require(PATCH, "event=runtime_cadence", "MPV Flow must report sustained swap-submit and synthesis cadence")
+cadence_format = PATCH.split("MPVFLOW_DIAGNOSTIC event=runtime_cadence", 1)[1].split("\\n\",", 1)[0]
+if cadence_format.index("metric=successful_pl_swapchain_submit_not_surfaceflinger_scanout") > cadence_format.index(
+    "window_ms=%.1f"
+):
+    raise AssertionError("the strict OSD metric identity must precede truncation-prone cadence fields")
+if cadence_format.count("metric=successful_pl_swapchain_submit_not_surfaceflinger_scanout") != 1:
+    raise AssertionError("the cadence record must contain exactly one strict OSD metric identity")
 for marker in (
     "render_callback_fps=%.2f", "render_cpu_avg_ms=%.3f", "callback_interval_avg_ms=%.3f",
     "pl_swapchain_start_frame_avg_ms=%.3f", "pl_swapchain_start_frame_max_ms=%.3f",

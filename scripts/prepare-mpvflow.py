@@ -104,6 +104,27 @@ def patch_mpvflow_stats_lua(stats_lua: str) -> str:
     return stats_lua.replace(row_anchor, row, 1)
 
 
+def validate_hwdec_frame_priv_members(vo_source: str) -> None:
+    start = vo_source.find("struct frame_priv {")
+    if start < 0:
+        raise SystemExit("Pinned MPV vo_gpu_next.c has no struct frame_priv")
+    end = vo_source.find("\n};", start)
+    if end < 0:
+        raise SystemExit("Pinned MPV struct frame_priv is not closed")
+    body = vo_source[start:end]
+    required = (
+        "bool hwdec_preloaded;",
+        "bool el_hwdec_preloaded;",
+        "bool mapped_coordinates;",
+        "struct mp_image_params mapped_params;",
+    )
+    missing = [member for member in required if member not in body]
+    if missing:
+        raise SystemExit(
+            "Android Vulkan mapper fields must be members of struct frame_priv; "
+            "missing: " + ", ".join(missing)
+        )
+
 def base_sources_close(meson: str) -> int:
     start = meson.index("sources = files(")
     depth = 0
@@ -963,7 +984,7 @@ def main() -> None:
     mapper_marker = "#define RA_HWDEC_MAP_RETRY (-2)"
     if mapper_marker not in hwdec_header_path.read_text():
         subprocess.run(
-            ["patch", "-p1", "--forward", "--input", str(AIMAGE_VULKAN_PATCH)],
+            ["patch", "-p1", "--forward", "--fuzz=0", "--input", str(AIMAGE_VULKAN_PATCH)],
             cwd=mpv_dir,
             check=True,
         )
@@ -972,6 +993,7 @@ def main() -> None:
     if mapper_marker not in hwdec_header_path.read_text() or "# MPVFLOW_AIMAGE_VULKAN_MAPPER" not in meson:
         raise SystemExit("Android MediaCodec/Vulkan mapper patch was not fully applied")
 
+    validate_hwdec_frame_priv_members(vo)
     gpu_source = "video/out/mpvflow_gpu.c"
     opencl_sources = (
         "video/out/mpvflow_opencl.c",

@@ -544,7 +544,7 @@ class DebugLogRepositoryTest {
         timestamp = "00:00:00.002",
         level = DebugLogLevel.Info,
         tag = "vo/gpu-next",
-        message = "MPVFLOW_DIAGNOSTIC event=runtime_cadence window_ms=5000.0 target_fps=120 render_callback_fps=200.00 swap_submit_fps=55.00 synthesized_submit_fps=48.00 synthesized_submits=240 metric=successful_pl_swapchain_submit_not_surfaceflinger_scanout",
+        message = "MPVFLOW_DIAGNOSTIC event=runtime_cadence metric=successful_pl_swapchain_submit_not_surfaceflinger_scanout window_ms=5000.0 target_fps=120 render_callback_fps=200.00 swap_submit_fps=55.00 synthesized_submit_fps=48.00 synthesized_submits=240",
       )
 
     val summary = formatMpvFlowTimingSummary(listOf(entry))
@@ -562,6 +562,34 @@ class DebugLogRepositoryTest {
     assertEquals(55.0, sample?.swapSubmitFps)
     assertTrue(sample != null && isMpvFlowRuntimeCadenceSampleFresh(sample, nowMillis = 12_002L))
     assertTrue(sample != null && !isMpvFlowRuntimeCadenceSampleFresh(sample, nowMillis = 12_003L))
+  }
+
+  @Test
+  fun parsesCadenceWhenTheCapturedLogLineIsTruncatedAfterItsMetricPrefix() {
+    val clippedMessage =
+      (
+        "MPVFLOW_DIAGNOSTIC event=runtime_cadence metric=successful_pl_swapchain_submit_not_surfaceflinger_scanout " +
+          "window_ms=5000.0 target_fps=120 swap_submit_fps=55.00 synthesized_submit_fps=48.00 synthesized_submits=240 " +
+          "extra_cadence_fields=" + "x".repeat(2_000)
+      ).take(900)
+    assertEquals(900, clippedMessage.length)
+
+    val entry =
+      DebugLogEntry(
+        id = "mpvflow-cadence-clipped",
+        timeMillis = 3L,
+        timestamp = "00:00:00.003",
+        level = DebugLogLevel.Info,
+        tag = "vo/gpu-next",
+        message = clippedMessage,
+      )
+
+    val sample = latestMpvFlowRuntimeCadenceSample(listOf(entry))
+    assertEquals(48.0, sample?.synthesizedSubmitFps)
+    assertEquals(120, sample?.targetFps)
+    assertEquals(55.0, sample?.swapSubmitFps)
+    assertEquals(240L, sample?.synthesizedSubmits)
+    assertEquals(5_000.0, sample?.windowMillis)
   }
 
   @Test
