@@ -149,11 +149,12 @@ assert "eglSwapIntervalZeroApplied = EGL14.eglSwapInterval(eglDisplay, 0)" in SI
 assert "outputWallTimes.addLast(swapReturnedNs)" in SINK
 assert "outputWallTimes.addLast(frameTimeNanos" not in SINK
 assert "eglSwapReturnFps=" in SINK and "outputMetric=successful_eglSwapBuffers_return_not_scanout" in SINK
-assert "fp0->flow_source, fp1->flow_source" in MPV_PATCH, "MPV synthesis must use source-resolution color frames"
-assert "motion_analysis=%dx%d" in MPV_PATCH and "synthesized_output=%dx%d" in MPV_PATCH
+assert "fp0->flow_source, fp1->flow_source" in MPV_PATCH, "MPV synthesis must use the high-precision pre-FRC source copies"
+assert "motion_analysis=%dx%d" in MPV_PATCH and "synthesis_processing=%dx%d" in MPV_PATCH
+assert "rendered_output=%dx%d" in MPV_PATCH
 assert "event=runtime_cadence" in MPV_PATCH and "empty_batch_redraws=%llu" in MPV_PATCH
 assert "source_frame.overlays = NULL" in MPV_PATCH and "source_frame.num_overlays = 0" in MPV_PATCH
-assert ".crop = image0->crop" not in MPV_PATCH, "full-resolution source copies already bake the input crop"
+assert ".crop = image0->crop" not in MPV_PATCH, "pre-FRC synthesis copies already bake the input crop"
 assert "external fun nativeCreateContext" in NATIVE
 assert "external fun nativeGetRequiredHardwareBufferUsage" in NATIVE
 assert "external fun nativeAnalyzePair" in NATIVE
@@ -221,4 +222,4 @@ assert "backend=opengl-es" not in MPV_PATCH
 assert "gpu->glsl.vulkan" in GPU
 assert 'PlaybackSession.setOptionString("display-fps-override", displayRefreshRate.hz.toString())' in MPV_VIEW
 assert "display_refresh_source=" in MPV_VIEW
-print("Media3 Flow caps interpolation storage at 1080p; MPV Flow keeps source-resolution rendering, bounded motion analysis, async ownership handoffs, and measured output cadence")
+print("Media3 Flow caps interpolation storage at 1080p; MPV Flow defaults to 1080p synthesis for larger sources, keeps full-resolution fallback for unsupported, paused, and still content, bounded motion analysis, async ownership handoffs, and measured output cadence")

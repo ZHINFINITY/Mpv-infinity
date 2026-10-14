@@ -6,10 +6,11 @@ index bd3d1aa..0072486 100644
 +#include <math.h>
 +#include <string.h>
 +#include <libplacebo/vulkan.h>
-@@ -52,0 +56,2 @@
+@@ -52,0 +56,3 @@
 +#include "mpvflow_gpu.h"
 +#include "mpvflow_rate_limit.h"
-@@ -157,0 +163,64 @@ struct priv {
++#include "mpvflow_synthesis_scale.h"
+@@ -157,0 +163,65 @@ struct priv {
 +    // MPVFLOW_GPU_INTEGRATION
 +    MPVFlowGPUContext *flow_gpu;
 +    MPVFlowGPUPair *flow_pair;
@@ -29,6 +30,7 @@ index bd3d1aa..0072486 100644
 +    bool flow_queue_state_logged;
 +    const char *flow_queue_last_state;
 +    int flow_max_dimension;
++    int flow_synthesis_max_dimension;
 +    int flow_compute_api;
 +    bool flow_pending_synthesized;
 +    bool flow_pending_display_synced;
@@ -76,33 +78,38 @@ index bd3d1aa..0072486 100644
 +
 @@ -184,0 +254,1 @@ static void update_lut(struct priv *p, struct user_lut *lut);
 +static void flow_update_context(struct vo *vo);
-@@ -186,0 +257,5 @@ struct gl_next_opts {
+@@ -186,0 +257,6 @@ struct gl_next_opts {
 +    bool mpvflow;
 +    int mpvflow_max_dimension;
++    int mpvflow_synthesis_max_dimension;
 +    int mpvflow_target_fps;
 +    int mpvflow_quality;
 +    int mpvflow_compute_api;
-@@ -213,0 +289,5 @@ const struct m_sub_options gl_next_conf = {
+@@ -213,0 +289,6 @@ const struct m_sub_options gl_next_conf = {
 +        {"mpvflow", OPT_BOOL(mpvflow)},
 +        {"mpvflow-max-dimension", OPT_INT(mpvflow_max_dimension), M_RANGE(8, 640)},
++        {"mpvflow-synthesis-max-dimension", OPT_INT(mpvflow_synthesis_max_dimension), M_RANGE(0, 7680)},
 +        {"mpvflow-target-fps", OPT_INT(mpvflow_target_fps), M_RANGE(1, 240)},
 +        {"mpvflow-quality", OPT_INT(mpvflow_quality), M_RANGE(0, 100)},
 +        {"mpvflow-compute-api", OPT_INT(mpvflow_compute_api), M_RANGE(0, 2)},
-@@ -239,0 +320,4 @@ const struct m_sub_options gl_next_conf = {
+@@ -239,0 +320,5 @@ const struct m_sub_options gl_next_conf = {
 +        .mpvflow_max_dimension = 640,
++        .mpvflow_synthesis_max_dimension = 1920,
 +        .mpvflow_target_fps = 60,
 +        .mpvflow_quality = 60,
 +        .mpvflow_compute_api = MPVFLOW_GPU_COMPUTE_AUTO,
-@@ -560,0 +645,8 @@ struct frame_priv {
+@@ -560,0 +645,10 @@ struct frame_priv {
 +    uint64_t frame_id;
 +    pl_tex flow_source;
 +    pl_tex flow_input;
 +    pl_tex flow_analysis_source;
 +    bool flow_linear_hdr_source;
 +    int flow_cap;
++    int flow_synthesis_cap;
++    int flow_synthesis_w, flow_synthesis_h;
 +    int flow_w, flow_h;
 +    int flow_source_w, flow_source_h;
-@@ -569,0 +662,528 @@ struct frame_priv {
+@@ -569,0 +662,553 @@ struct frame_priv {
 +static void flow_release_pair(struct priv *p)
 +{
 +    if (p->flow_pair)
@@ -124,6 +131,10 @@ index bd3d1aa..0072486 100644
 +    struct priv *p = vo->priv;
 +    const int requested_dimension = MPCLAMP(p->next_opts->mpvflow_max_dimension, 8, 640);
 +    const int requested_compute_api = p->next_opts->mpvflow_compute_api;
++    const int requested_synthesis_max_dimension =
++        p->next_opts->mpvflow_synthesis_max_dimension < 0 ? 0 :
++        p->next_opts->mpvflow_synthesis_max_dimension > 7680 ? 7680 :
++        p->next_opts->mpvflow_synthesis_max_dimension;
 +    /* Bound mobile analysis cost by target refresh while preserving the app's
 +     * selected performance/quality profile. Acquire and render timings are
 +     * measured separately; a blocking acquire is not shader execution time. */
@@ -140,6 +151,7 @@ index bd3d1aa..0072486 100644
 +        p->flow_input_fmt = NULL;
 +        p->flow_rgba16f_fmt = NULL;
 +        p->flow_max_dimension = 0;
++        p->flow_synthesis_max_dimension = 0;
 +        p->flow_init_logged = false;
 +        p->flow_geometry_w = p->flow_geometry_h = 0;
 +        p->flow_timing_last_report_ns = 0;
@@ -192,6 +204,7 @@ index bd3d1aa..0072486 100644
 +        return;
 +    }
 +    if (p->flow_max_dimension != effective_dimension ||
++        p->flow_synthesis_max_dimension != requested_synthesis_max_dimension ||
 +        p->flow_compute_api != requested_compute_api) {
 +        flow_release_pair(p);
 +        mpvflow_gpu_destroy(p->flow_gpu);
@@ -199,6 +212,7 @@ index bd3d1aa..0072486 100644
 +        p->flow_input_fmt = NULL;
 +        p->flow_rgba16f_fmt = NULL;
 +        p->flow_max_dimension = effective_dimension;
++        p->flow_synthesis_max_dimension = requested_synthesis_max_dimension;
 +        p->flow_compute_api = requested_compute_api;
 +        p->flow_init_attempted = false;
 +        p->flow_init_retry_pending = false;
@@ -446,6 +460,7 @@ index bd3d1aa..0072486 100644
 +    if (!p->next_opts->mpvflow || !p->flow_gpu || !p->flow_input_fmt)
 +        return false;
 +    if (fp->flow_input && fp->flow_source && fp->flow_cap == p->flow_max_dimension &&
++        fp->flow_synthesis_cap == p->flow_synthesis_max_dimension &&
 +        ((hdr_input && fp->flow_analysis_source) ||
 +         (!hdr_input && !fp->flow_analysis_source)))
 +        return true;
@@ -458,6 +473,8 @@ index bd3d1aa..0072486 100644
 +    fp->flow_w = fp->flow_h = 0;
 +    fp->flow_linear_hdr_source = false;
 +    fp->flow_cap = 0;
++    fp->flow_synthesis_cap = 0;
++    fp->flow_synthesis_w = fp->flow_synthesis_h = 0;
 +
 +    const char *reason = NULL;
 +    if (frame->rotation != PL_ROTATION_0)
@@ -488,17 +505,22 @@ index bd3d1aa..0072486 100644
 +        return false;
 +    }
 +
++    const struct mpvflow_synthesis_size synthesis_size =
++        mpvflow_synthesis_size_for(source_w, source_h,
++            p->next_opts->mpvflow_synthesis_max_dimension);
 +    pl_fmt source_fmt = high_precision_input ? p->flow_rgba16f_fmt : p->flow_input_fmt;
 +    pl_tex source_texture = pl_tex_create(p->gpu, pl_tex_params(
-+        .w = source_w,
-+        .h = source_h,
++        .w = synthesis_size.width,
++        .h = synthesis_size.height,
 +        .d = 0,
 +        .format = source_fmt,
 +        .sampleable = true,
 +        .renderable = true,
 +    ));
 +    if (!source_texture) {
-+        MP_DBG(vo, "MPVFLOW_DIAGNOSTIC component=gpu event=bypass reason=full_resolution_source_allocation format=%s\n",
++        MP_DBG(vo, "MPVFLOW_DIAGNOSTIC component=gpu event=bypass reason=synthesis_source_allocation "
++               "source=%dx%d synthesis=%dx%d format=%s\n", source_w, source_h,
++               synthesis_size.width, synthesis_size.height,
 +               source_fmt ? source_fmt->name : "missing");
 +        return false;
 +    }
@@ -509,6 +531,7 @@ index bd3d1aa..0072486 100644
 +    struct pl_frame source_target = {
 +        .repr = pl_color_repr_rgb,
 +        .color = source_color,
++        .pixel_aspect_ratio = frame->pixel_aspect_ratio,
 +        .num_planes = 1,
 +        .planes[0] = {
 +            .texture = source_texture,
@@ -522,8 +545,11 @@ index bd3d1aa..0072486 100644
 +    source_frame.num_overlays = 0;
 +    // Exclude decoder padding/cropped edges from both motion analysis and synthesis.
 +    apply_source_crop(&source_frame, p->src, vo->params->w, vo->params->h, fp);
++    struct pl_render_params source_copy_params = pl_render_default_params;
++    source_copy_params.upscaler = &pl_filter_bilinear;
++    source_copy_params.downscaler = &pl_filter_bilinear;
 +    stats_time_start(p->stats, "mpvflow-source-copy");
-+    bool ok = pl_render_image(p->rr, &source_frame, &source_target, NULL);
++    bool ok = pl_render_image(p->rr, &source_frame, &source_target, &source_copy_params);
 +    stats_time_end(p->stats, "mpvflow-source-copy");
 +    if (!ok) {
 +        pl_tex_destroy(p->gpu, &source_texture);
@@ -564,6 +590,7 @@ index bd3d1aa..0072486 100644
 +                .primaries = PL_COLOR_PRIM_BT_709,
 +                .transfer = PL_COLOR_TRC_BT_1886,
 +            },
++            .pixel_aspect_ratio = frame->pixel_aspect_ratio,
 +            .num_planes = 1,
 +            .planes[0] = {
 +                .texture = analysis_texture,
@@ -605,6 +632,9 @@ index bd3d1aa..0072486 100644
 +    fp->flow_source_w = source_w;
 +    fp->flow_source_h = source_h;
 +    fp->flow_cap = p->flow_max_dimension;
++    fp->flow_synthesis_cap = p->flow_synthesis_max_dimension;
++    fp->flow_synthesis_w = synthesis_size.width;
++    fp->flow_synthesis_h = synthesis_size.height;
 +    if (hdr_input)
 +        MP_DBG(vo, "MPVFLOW_DIAGNOSTIC component=gpu event=hdr_analysis_copy state=ready "
 +               "source=rgba16f transfer=%s primaries=%s analysis=bt709_bt1886_tonemapped "
@@ -629,6 +659,8 @@ index bd3d1aa..0072486 100644
 +    fp->flow_linear_hdr_source = false;
 +    fp->flow_source_w = fp->flow_source_h = 0;
 +    fp->flow_cap = 0;
++    fp->flow_synthesis_cap = 0;
++    fp->flow_synthesis_w = fp->flow_synthesis_h = 0;
 +}
 +
 @@ -1109,0 +1730,2 @@ static bool map_frame(pl_gpu gpu, pl_tex *tex, const struct pl_source_frame *src
@@ -639,7 +671,7 @@ index bd3d1aa..0072486 100644
 @@ -1135,0 +1759,2 @@ static void discard_frame(const struct pl_source_frame *src)
 +    struct frame_priv *fp = mpi->priv;
 +    flow_release_frame(fp->vo, fp);
-@@ -1341,0 +1967,218 @@ static void update_hook_opts_dynamic(struct priv *p, const struct pl_hook *hook,
+@@ -1341,0 +1967,266 @@ static void update_hook_opts_dynamic(struct priv *p, const struct pl_hook *hook,
 +struct flow_prepared_frame {
 +    int nearest;
 +    int before;
@@ -712,7 +744,9 @@ index bd3d1aa..0072486 100644
 +        } else if (fp0->flow_cap != p->flow_max_dimension ||
 +                   fp1->flow_cap != p->flow_max_dimension ||
 +                   fp0->flow_w != fp1->flow_w || fp0->flow_h != fp1->flow_h ||
-+                   fp0->flow_source_w != fp1->flow_source_w || fp0->flow_source_h != fp1->flow_source_h) {
++                   fp0->flow_source_w != fp1->flow_source_w || fp0->flow_source_h != fp1->flow_source_h ||
++                   fp0->flow_synthesis_w != fp1->flow_synthesis_w ||
++                   fp0->flow_synthesis_h != fp1->flow_synthesis_h) {
 +            prepared->bypass_reason = "incompatible_input_dimensions";
 +        }
 +
@@ -727,7 +761,9 @@ index bd3d1aa..0072486 100644
 +            fp0->flow_cap == p->flow_max_dimension && fp1->flow_cap == p->flow_max_dimension &&
 +            fp0->flow_w == fp1->flow_w && fp0->flow_h == fp1->flow_h &&
 +            fp0->flow_source_w == fp1->flow_source_w &&
-+            fp0->flow_source_h == fp1->flow_source_h) {
++            fp0->flow_source_h == fp1->flow_source_h &&
++            fp0->flow_synthesis_w == fp1->flow_synthesis_w &&
++            fp0->flow_synthesis_h == fp1->flow_synthesis_h) {
 +            if (!p->flow_pair || p->flow_pair_ids[0] != fp0->frame_id ||
 +                p->flow_pair_ids[1] != fp1->frame_id) {
 +                p->flow_cadence_pair_analysis_attempts++;
@@ -785,6 +821,47 @@ index bd3d1aa..0072486 100644
 +    }
 +}
 +
++static bool flow_render_source_frame(struct vo *vo, const struct pl_frame *source,
++                                    struct pl_frame *target,
++                                    const struct pl_render_params *params,
++                                    const char *bypass_reason)
++{
++    struct priv *p = vo->priv;
++    struct mp_image *mpi = source->user_data;
++    struct frame_priv *fp = mpi ? mpi->priv : NULL;
++    const bool keep_native_resolution =
++        !strcmp(bypass_reason, "paused") || !strcmp(bypass_reason, "still_frame");
++    if (fp && fp->flow_source && !keep_native_resolution &&
++        (fp->flow_synthesis_w < fp->flow_source_w ||
++         fp->flow_synthesis_h < fp->flow_source_h)) {
++        struct pl_color_space source_color = source->color;
++        if (fp->flow_linear_hdr_source)
++            source_color.transfer = PL_COLOR_TRC_LINEAR;
++        // Match source-frame sharpness to synthesized frames after pre-FRC downscaling.
++        struct pl_frame scaled_source = {
++            .repr = pl_color_repr_rgb,
++            .color = source_color,
++            .num_planes = 1,
++            .planes[0] = {
++                .texture = fp->flow_source,
++                .components = 4,
++                .component_mapping = {0, 1, 2, 3},
++            },
++            .rotation = PL_ROTATION_0,
++            .pixel_aspect_ratio = source->pixel_aspect_ratio,
++            .overlays = source->overlays,
++            .num_overlays = source->num_overlays,
++        };
++        stats_time_start(p->stats, "mpvflow-source-render");
++        bool ok = pl_render_image(p->rr, &scaled_source, target, params);
++        stats_time_end(p->stats, "mpvflow-source-render");
++        if (ok)
++            return true;
++        MP_DBG(vo, "MPVFLOW_DIAGNOSTIC component=gpu event=source_resize_fallback reason=render_failed\n");
++    }
++    return pl_render_image(p->rr, source, target, params);
++}
++
 +static bool flow_render_frame(struct vo *vo, const struct pl_frame_mix *mix,
 +                              struct pl_frame *target,
 +                              const struct pl_render_params *params,
@@ -827,13 +904,15 @@ index bd3d1aa..0072486 100644
 +            if (!p->flow_active_logged && fp0) {
 +                MP_INFO(vo, "MPVFLOW_DIAGNOSTIC event=output state=synthesized renderer_api=vulkan compute_api=%s "
 +                        "target_fps=%d reason=motion_pair input_path=%s source=%dx%d motion_analysis=%dx%d "
-+                        "synthesized_output=%dx%d motion=yes cpu_filter=no synthesized_output_cpu_readback=no\n",
++                        "synthesis_processing=%dx%d rendered_output=%dx%d "
++                        "motion=yes cpu_filter=no synthesized_output_cpu_readback=no\n",
 +                        mpvflow_gpu_get_compute_api_name(p->flow_gpu),
 +                        p->next_opts->mpvflow_target_fps,
 +                        fp0->hwdec ? "direct-hw-surface" : "software-upload",
 +                        fp0->flow_source_w, fp0->flow_source_h,
 +                        fp0->flow_w, fp0->flow_h,
-+                        fp0->flow_source_w, fp0->flow_source_h);
++                        fp0->flow_synthesis_w, fp0->flow_synthesis_h,
++                        vo->params->w, vo->params->h);
 +                p->flow_active_logged = true;
 +            }
 +            *synthesized = true;
@@ -847,7 +926,8 @@ index bd3d1aa..0072486 100644
 +    // filter and not mpv's temporal blend fallback.
 +    MP_DBG(vo, "MPVFLOW_DIAGNOSTIC component=gpu event=bypass reason=no_usable_gpu_pair\n");
 +    if (prepared->nearest >= 0 && prepared->nearest < mix->num_frames) {
-+        bool ok = pl_render_image(p->rr, mix->frames[prepared->nearest], target, params);
++        bool ok = flow_render_source_frame(vo, mix->frames[prepared->nearest],
++                                           target, params, bypass_reason);
 +        if (ok)
 +            flow_log_passthrough(vo, bypass_reason, bypass_status);
 +        return ok;

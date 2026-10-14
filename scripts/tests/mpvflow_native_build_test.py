@@ -709,10 +709,14 @@ assert "+        target_fps >= 120 ? 448 : target_fps >= 96 ? 440 : 640;" in vo_
     "the MPV renderer must preserve the balanced 384-pixel 120-fps profile and the quality headroom"
 )
 rate_limit_header = ROOT / "app/src/main/cpp/mpvflow/mpvflow_rate_limit.h"
+synthesis_scale_header = ROOT / "app/src/main/cpp/mpvflow/mpvflow_synthesis_scale.h"
+assert synthesis_scale_header.is_file(), "the aspect-preserving synthesis-size policy must be vendored"
 assert rate_limit_header.is_file(), "the shared MPVFlow output limiter must be vendored"
 assert 'VENDOR / "mpvflow_rate_limit.h"' in prepare_source and \
-       'shutil.copy2(VENDOR / "mpvflow_rate_limit.h", video_out_dir / "mpvflow_rate_limit.h")' in prepare_source, (
-    "native preparation must stage the tested limiter header into MPV's video/out tree"
+       'shutil.copy2(VENDOR / "mpvflow_rate_limit.h", video_out_dir / "mpvflow_rate_limit.h")' in prepare_source and \
+       'VENDOR / "mpvflow_synthesis_scale.h"' in prepare_source and \
+       'shutil.copy2(VENDOR / "mpvflow_synthesis_scale.h", video_out_dir / "mpvflow_synthesis_scale.h")' in prepare_source, (
+    "native preparation must stage the limiter and synthesis-size headers into MPV's video/out tree"
 )
 rate_gate_offset = vo_patch.index("mpvflow_rate_limiter_ready(&p->flow_rate_limiter")
 rate_prepare_offset = vo_patch.index("flow_prepare_frame(vo, &mix, &flow_prepared, frame->still,")
@@ -730,6 +734,19 @@ assert "p->flow_pending_rate_limiter_timestamp_ns," in vo_patch
 assert "mpvflow_rate_limiter_commit(&p->flow_rate_limiter, (uint64_t) now_ns" not in vo_patch, (
     "rate admission must be committed at the same render-start timestamp, not swap completion"
 )
+assert '"mpvflow-synthesis-max-dimension", OPT_INT(mpvflow_synthesis_max_dimension), M_RANGE(0, 7680)' in vo_patch
+assert "+        .mpvflow_synthesis_max_dimension = 1920," in vo_patch
+assert "mpvflow_synthesis_size_for(source_w, source_h" in vo_patch
+assert "p->flow_synthesis_max_dimension != requested_synthesis_max_dimension" in vo_patch
+assert "+        .w = synthesis_size.width," in vo_patch and "+        .h = synthesis_size.height," in vo_patch
+assert "synthesis_processing=%dx%d rendered_output=%dx%d" in vo_patch
+assert "source_copy_params.upscaler = &pl_filter_bilinear;" in vo_patch
+assert "source_copy_params.downscaler = &pl_filter_bilinear;" in vo_patch
+assert vo_patch.count(".pixel_aspect_ratio = frame->pixel_aspect_ratio,") == 2
+assert "flow_render_source_frame(vo, mix->frames[prepared->nearest]" in vo_patch
+assert "return pl_render_image(p->rr, source, target, params);" in vo_patch
+assert "fp->flow_synthesis_w < fp->flow_source_w" in vo_patch
+assert 'strcmp(bypass_reason, "paused")' in vo_patch and 'strcmp(bypass_reason, "still_frame")' in vo_patch
 flow_prepare_body = vo_patch.split("+static bool flow_prepare_input", 1)[1].split(
     "\n+static void flow_release_frame", 1
 )[0]
@@ -1611,9 +1628,24 @@ rate_limit_test = r"""
 #include <stdbool.h>
 #include <stdint.h>
 #include "mpvflow_rate_limit.h"
+#include "mpvflow_synthesis_scale.h"
 
 int main(void)
 {
+    struct mpvflow_synthesis_size size = mpvflow_synthesis_size_for(3840, 2160, 1920);
+    assert(size.width == 1920 && size.height == 1080);
+    size = mpvflow_synthesis_size_for(2560, 1440, 1920);
+    assert(size.width == 1920 && size.height == 1080);
+    size = mpvflow_synthesis_size_for(3840, 1600, 1920);
+    assert(size.width == 1920 && size.height == 800);
+    size = mpvflow_synthesis_size_for(3840, 2160, 1280);
+    assert(size.width == 1280 && size.height == 720);
+    size = mpvflow_synthesis_size_for(1920, 1080, 1920);
+    assert(size.width == 1920 && size.height == 1080);
+    size = mpvflow_synthesis_size_for(1280, 720, 1920);
+    assert(size.width == 1280 && size.height == 720);
+    size = mpvflow_synthesis_size_for(3840, 2160, 0);
+    assert(size.width == 3840 && size.height == 2160);
     struct mpvflow_rate_limiter limiter = {0};
     uint64_t submits = 0;
     uint64_t last_submit_ns = 0;

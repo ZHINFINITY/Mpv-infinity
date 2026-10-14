@@ -884,6 +884,7 @@ def main() -> None:
         VENDOR / "mpvflow_gpu.c",
         VENDOR / "mpvflow_gpu.h",
         VENDOR / "mpvflow_rate_limit.h",
+        VENDOR / "mpvflow_synthesis_scale.h",
         VENDOR / "mpvflow_opencl.c",
         VENDOR / "mpvflow_opencl.h",
         VENDOR / "mpvflow_opencl_vk_bridge.c",
@@ -907,6 +908,7 @@ def main() -> None:
     shutil.copy2(VENDOR / "mpvflow_gpu.c", video_out_dir / "mpvflow_gpu.c")
     shutil.copy2(VENDOR / "mpvflow_gpu.h", video_out_dir / "mpvflow_gpu.h")
     shutil.copy2(VENDOR / "mpvflow_rate_limit.h", video_out_dir / "mpvflow_rate_limit.h")
+    shutil.copy2(VENDOR / "mpvflow_synthesis_scale.h", video_out_dir / "mpvflow_synthesis_scale.h")
     for filename in (
         "mpvflow_opencl.c",
         "mpvflow_opencl.h",
