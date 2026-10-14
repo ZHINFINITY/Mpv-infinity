@@ -8,9 +8,13 @@ on:
       - .github/workflows/mpv-lgpl-aar.yml
       - scripts/build-mpv-lgpl-aar.sh
       - scripts/verify-mpv-aar-lgpl.py
+      - scripts/merge-mpv-lgpl-aars.py
+      - scripts/tests/merge_mpv_lgpl_aars_test.py
+      - scripts/tests/mpv_lgpl_builder_patch_test.py
   workflow_dispatch:
 
 permissions:
+  actions: read
   contents: read
 
 concurrency:
@@ -18,10 +22,36 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  rebuild-native-aars:
-    name: Build LGPL-only Standard and No-Vulkan AARs for all ABIs
+  preflight:
+    name: Validate ABI routing and AAR merger
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Test single-ABI routing and GPL source patches
+        run: python3 scripts/tests/mpv_lgpl_builder_patch_test.py
+
+      - name: Test four-ABI AAR merge
+        run: python3 scripts/tests/merge_mpv_lgpl_aars_test.py
+
+      - name: Syntax-check native AAR builder
+        run: bash -n scripts/build-mpv-lgpl-aar.sh
+
+  build-single-abi:
+    name: Build ${{ matrix.abi }} Standard + No-Vulkan AARs
+    needs: preflight
     runs-on: ubuntu-latest
     timeout-minutes: 360
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix:
+        abi:
+          - arm64-v8a
+          - armeabi-v7a
+          - x86
+          - x86_64
     steps:
       - name: Check out repository
         uses: actions/checkout@v6
@@ -47,27 +77,67 @@ jobs:
       - name: Make Gradle wrappers executable
         run: chmod +x ./gradlew
 
-      - name: Rebuild and install GPL-free AARs
+      - name: Rebuild GPL-free AARs for this ABI
         run: ./scripts/build-mpv-lgpl-aar.sh
         env:
+          MPV_LGPL_ABIS: ${{ matrix.abi }}
           MPV_LGPL_BUILD_CORES: '2'
 
-      - name: Verify both four-ABI runtime profiles
+      - name: Verify this ABI in both runtime profiles
         run: |
-          python3 scripts/verify-mpv-aar-lgpl.py app/libs/mpvlib.aar --abis arm64-v8a,armeabi-v7a,x86,x86_64 --only-selected-abis --require-vulkan
-          python3 scripts/verify-mpv-aar-lgpl.py app/libs/mpvlib-no-vulkun.aar --abis arm64-v8a,armeabi-v7a,x86,x86_64 --only-selected-abis --forbid-vulkan
+          python3 scripts/verify-mpv-aar-lgpl.py app/libs/mpvlib.aar --abis "${{ matrix.abi }}" --only-selected-abis --require-vulkan
+          python3 scripts/verify-mpv-aar-lgpl.py app/libs/mpvlib-no-vulkun.aar --abis "${{ matrix.abi }}" --only-selected-abis --forbid-vulkan
 
-      - name: Record archive checksums
-        run: sha256sum app/libs/mpvlib.aar app/libs/mpvlib-no-vulkun.aar > mpv-lgpl-aar-SHA256SUMS.txt
+      - name: Stage single-ABI AAR artifacts
+        run: |
+          mkdir -p mpv-lgpl-output
+          cp app/libs/mpvlib.aar "mpv-lgpl-output/mpvlib-${{ matrix.abi }}.aar"
+          cp app/libs/mpvlib-no-vulkun.aar "mpv-lgpl-output/mpvlib-no-vulkun-${{ matrix.abi }}.aar"
+          sha256sum mpv-lgpl-output/*.aar > "mpv-lgpl-output/SHA256SUMS-${{ matrix.abi }}.txt"
 
-      - name: Upload rebuilt AARs
+      - name: Upload verified single-ABI AARs
+        uses: actions/upload-artifact@v7
+        with:
+          name: mpv-lgpl-abi-${{ github.sha }}-${{ matrix.abi }}
+          path: mpv-lgpl-output/
+          if-no-files-found: error
+          retention-days: 14
+          compression-level: 0
+
+  package-and-verify:
+    name: Merge and verify four-ABI AARs
+    needs: build-single-abi
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Download all four verified ABI artifacts
+        uses: actions/download-artifact@v8.0.2
+        with:
+          pattern: mpv-lgpl-abi-${{ github.sha }}-*
+          path: matrix-artifacts
+          merge-multiple: false
+
+      - name: Merge ABI archives into the final AARs
+        run: |
+          mkdir -p rebuilt
+          python3 scripts/merge-mpv-lgpl-aars.py matrix-artifacts rebuilt --abis arm64-v8a,armeabi-v7a,x86,x86_64
+
+      - name: Verify both combined four-ABI runtime profiles
+        run: |
+          python3 scripts/verify-mpv-aar-lgpl.py rebuilt/mpvlib.aar --abis arm64-v8a,armeabi-v7a,x86,x86_64 --only-selected-abis --require-vulkan
+          python3 scripts/verify-mpv-aar-lgpl.py rebuilt/mpvlib-no-vulkun.aar --abis arm64-v8a,armeabi-v7a,x86,x86_64 --only-selected-abis --forbid-vulkan
+
+      - name: Record final archive checksums
+        run: cd rebuilt && sha256sum mpvlib.aar mpvlib-no-vulkun.aar > mpv-lgpl-aar-SHA256SUMS.txt
+
+      - name: Upload verified combined AARs
         uses: actions/upload-artifact@v7
         with:
           name: mpv-lgpl-aars-${{ github.sha }}
-          path: |
-            app/libs/mpvlib.aar
-            app/libs/mpvlib-no-vulkun.aar
-            mpv-lgpl-aar-SHA256SUMS.txt
+          path: rebuilt/
           if-no-files-found: error
           retention-days: 14
           compression-level: 0

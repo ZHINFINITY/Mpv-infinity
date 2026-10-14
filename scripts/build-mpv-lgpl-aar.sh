@@ -9,8 +9,39 @@ MPV_COMMIT="f5bcfb195412e0ca733eac2e850879cd3b1ded18"
 LIBPLACEBO_COMMIT="3330a515d62139259c26239014f286e233bd3a5c"
 DAV1D_COMMIT="aa09a630ef57ee7d9482ffb7ef355a903dbb5302"
 LIBASS_COMMIT="b2fe9d8770678a7b5271387d38c20657ebf3429a"
-ABIS="arm64-v8a,armeabi-v7a,x86,x86_64"
-ARCHES=(armv7l arm64 x86 x86_64)
+DEFAULT_ABIS="arm64-v8a,armeabi-v7a,x86,x86_64"
+ABIS="${MPV_LGPL_ABIS:-$DEFAULT_ABIS}"
+IFS=',' read -r -a ABI_LIST <<< "$ABIS"
+ARCHES=()
+declare -A ABI_TO_ARCH=(
+  ["arm64-v8a"]="arm64"
+  ["armeabi-v7a"]="armv7l"
+  ["x86"]="x86"
+  ["x86_64"]="x86_64"
+)
+declare -A SEEN_ABIS=()
+for abi in "${ABI_LIST[@]}"; do
+  if [[ -z "$abi" ]]; then
+    echo "MPV_LGPL_ABIS contains an empty ABI entry." >&2
+    exit 1
+  fi
+  if [[ -n "${SEEN_ABIS[$abi]:-}" ]]; then
+    echo "MPV_LGPL_ABIS contains duplicate ABI: $abi" >&2
+    exit 1
+  fi
+  SEEN_ABIS["$abi"]=1
+  arch="${ABI_TO_ARCH[$abi]:-}"
+  if [[ -z "$arch" ]]; then
+    echo "Unsupported MPV_LGPL_ABIS entry: $abi" >&2
+    exit 1
+  fi
+  ARCHES+=("$arch")
+done
+if [[ "${#ARCHES[@]}" -eq 0 ]]; then
+  echo "MPV_LGPL_ABIS must select at least one ABI." >&2
+  exit 1
+fi
+ABIS="$(IFS=,; printf '%s' "${ABI_LIST[*]}")"
 VARIANTS=(mpvlib.aar mpvlib-no-vulkun.aar)
 LEGACY_VARIANT=mpvlib-fongmi.aar
 RESUME_BUILD="${MPV_LGPL_RESUME:-0}"
@@ -168,7 +199,22 @@ new_mpv = (
     '\tgit -C deps/mpv checkout --detach FETCH_HEAD\n'
     '\tgit -C deps/mpv apply ../../patches/mpv_video_shaders.patch\n'
 )
-ci_path.write_text(replace_once(ci_path, ci, old_mpv, new_mpv))
+ci = replace_once(ci_path, ci, old_mpv, new_mpv)
+old_ci_arches = (
+    'ci_build_arches=(\n'
+    '\tarmv7l\n'
+    '\tarm64\n'
+    ')\n'
+    '[ "$ENABLE_X86_ARCH" = "true" ] && ci_build_arches+=(\n'
+    '\tx86\n'
+    '\tx86_64\n'
+    ')\n'
+)
+new_ci_arches = (
+    'read -r -a ci_build_arches <<< "${MPV_LGPL_ARCHES:-armv7l arm64 x86 x86_64}"\n'
+)
+ci = replace_once(ci_path, ci, old_ci_arches, new_ci_arches)
+ci_path.write_text(ci)
 
 depinfo = depinfo_path.read_text()
 depinfo = replace_once(depinfo_path, depinfo, 'v_rubberband=4.0.0\n', '')
@@ -255,11 +301,12 @@ build_profile() {
   (
     cd "$buildscripts"
     chmod 755 ./include/*.sh ./scripts/*.sh ./buildall.sh
+    export MPV_LGPL_ARCHES="${ARCHES[*]}"
     if [[ "$RESUME_BUILD" == "1" && "$profile" == "standard" ]]; then
       for arch in "${ARCHES[@]}"; do
         [[ -d "prefix/$arch" ]] || { echo "Retained prefix is missing $arch." >&2; exit 1; }
       done
-      echo "Reusing retained Standard SDK, source, and four-ABI dependency prefix."
+      echo "Reusing retained Standard SDK, source, and selected-ABI dependency prefix."
     else
       IN_CI=1 ./include/ci.sh install
     fi
