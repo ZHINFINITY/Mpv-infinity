@@ -106,15 +106,19 @@ for marker in (
 require(PATCH, "event=swapchain_wait stage=swap_buffers", "MPV Flow must report slow blocking swap/present calls")
 require(PATCH, "metric=cpu_blocking_call_not_scanout", "swapchain waits must not be misrepresented as confirmed scanout")
 require(PATCH, "pl_vulkan_swapchain_set_diagnostics", "lower-level Vulkan WSI measurements must be enabled only by the MPV Flow path")
-flow_prepare_call = PATCH.index("+            flow_prepare_frame(vo, &mix, &flow_prepared);")
+flow_prepare_call = PATCH.index("+            flow_prepare_frame(vo, &mix, &flow_prepared, frame->still);")
 flow_prepare_flush = PATCH.index("+            pl_gpu_flush(gpu);", flow_prepare_call)
-flow_acquire_call = PATCH.index("+        should_draw && pl_swapchain_start_frame", flow_prepare_call)
+flow_acquire_call = PATCH.index(
+    "+        should_draw && !flow_rate_limited && pl_swapchain_start_frame(p->sw, &swframe);",
+    flow_prepare_call,
+)
 assert flow_prepare_call < flow_prepare_flush < flow_acquire_call, (
     "Flow preparation and nonblocking GPU submission must precede Vulkan swapchain acquisition"
 )
 flow_prepare_body = PATCH.split("+static void flow_prepare_frame(", 1)[1].split(
     "+static bool flow_render_frame(", 1
 )[0]
+require(flow_prepare_body, "if (p->paused || source_is_still)", "paused and still frames must bypass motion interpolation")
 require(flow_prepare_body, "mpvflow_gpu_analyze_pair(", "pre-acquire producer must prepare motion before presentation")
 require(flow_prepare_body, "mpvflow_gpu_synthesize(", "pre-acquire producer must synthesize the offscreen output before presentation")
 require(PATCH, "event=producer state=pre_acquire", "MPV must report the producer/presenter split at runtime")
