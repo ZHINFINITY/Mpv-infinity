@@ -1,5 +1,6 @@
 package app.infinity.mpvz.ui.player
 
+import java.util.ArrayDeque
 import kotlin.math.floor
 import kotlin.math.roundToLong
 
@@ -146,4 +147,49 @@ internal object Media3FlowCadence {
     }
     return null
   }
+}
+
+internal data class Media3FlowSourcePair(val frame0PtsUs: Long, val frame1PtsUs: Long)
+
+/** Bounded retry state for source pairs whose motion analysis was deferred by present backpressure. */
+internal class Media3FlowDeferredPairQueue(private val capacity: Int) {
+  private val pairs = ArrayDeque<Media3FlowSourcePair>()
+
+  init {
+    require(capacity > 0)
+  }
+
+  val size: Int get() = pairs.size
+
+  /** Keeps the newest bounded set of strictly increasing source pairs, without duplicates. */
+  fun enqueue(frame0PtsUs: Long, frame1PtsUs: Long) {
+    if (frame1PtsUs <= frame0PtsUs) return
+    val pair = Media3FlowSourcePair(frame0PtsUs, frame1PtsUs)
+    if (pairs.contains(pair)) return
+    if (pairs.size == capacity) pairs.removeFirst()
+    pairs.addLast(pair)
+  }
+
+  /**
+   * Drops expired/non-adjacent pairs, then consumes the oldest retained pair only when analysis is allowed.
+   */
+  fun takeNextRetainedAdjacent(
+    retainedFramePtsUs: LongArray,
+    retentionBoundaryUs: Long,
+    analysisAllowed: Boolean,
+  ): Media3FlowSourcePair? {
+    val iterator = pairs.iterator()
+    while (iterator.hasNext()) {
+      val pair = iterator.next()
+      val stillAdjacent = (0 until retainedFramePtsUs.lastIndex).any { index ->
+        retainedFramePtsUs[index] == pair.frame0PtsUs &&
+          retainedFramePtsUs[index + 1] == pair.frame1PtsUs
+      }
+      if (!stillAdjacent || retentionBoundaryUs >= pair.frame1PtsUs) iterator.remove()
+    }
+    if (!analysisAllowed) return null
+    return pairs.pollFirst()
+  }
+
+  fun clear() = pairs.clear()
 }

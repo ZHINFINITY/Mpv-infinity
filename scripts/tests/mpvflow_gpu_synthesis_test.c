@@ -491,7 +491,7 @@ static void run_fixture(struct VulkanContext *ctx, const char *label,
                         const uint8_t frame1_color[4], uint16_t scene_delta,
                         uint16_t luma0_value, uint16_t luma1_value,
                         float timestep, const uint8_t expected[4],
-                        int check_all_pixels, int terminal_grid_test)
+                        int check_all_pixels, int special_grid_test)
 {
     uint8_t frame0[IMAGE_BYTES], frame1[IMAGE_BYTES];
     uint16_t flow[2][GRID_PIXELS * 4], scene[4], luma0[PIXELS * 4], luma1[PIXELS * 4];
@@ -501,7 +501,7 @@ static void run_fixture(struct VulkanContext *ctx, const char *label,
     fill_rgba16f(flow[1], GRID_PIXELS, 0x0000, 0x0000, 0x0000, 0x3c00);
     fill_rgba16f(luma0, PIXELS, luma0_value, 0x0000, 0x0000, 0x3c00);
     fill_rgba16f(luma1, PIXELS, luma1_value, 0x0000, 0x0000, 0x3c00);
-    if (terminal_grid_test) {
+    if (special_grid_test == 1) {
         for (int y = 0; y < HEIGHT; y++) {
             for (int x = 0; x < WIDTH; x++) {
                 size_t index = ((size_t)y * WIDTH + (size_t)x) * 4;
@@ -525,6 +525,24 @@ static void run_fixture(struct VulkanContext *ctx, const char *label,
                 flow[1][index + 3] = 0x3c00;
             }
         }
+    } else if (special_grid_test == 2) {
+        for (int y = 0; y < HEIGHT; y++) {
+            for (int x = 0; x < WIDTH; x++) {
+                size_t index = ((size_t)y * WIDTH + (size_t)x) * 4;
+                uint8_t value = (uint8_t)(x * x * 2 + y * 3);
+                frame0[index + 0] = frame0[index + 1] = frame0[index + 2] = value;
+                frame0[index + 3] = 255;
+                frame1[index + 0] = frame1[index + 1] = frame1[index + 2] = value;
+                frame1[index + 3] = 255;
+            }
+        }
+        size_t outlier = ((size_t)(GRID_HEIGHT - 1) * GRID_WIDTH + (GRID_WIDTH - 1)) * 4;
+        flow[0][outlier + 0] = 0x4000; // +2px, high-motion but ambiguous
+        flow[0][outlier + 2] = 0x3000; // normalized SAD = 0.125
+        flow[0][outlier + 3] = 0x0000; // tied/ambiguous match
+        flow[1][outlier + 0] = 0xc000; // matching reverse outlier
+        flow[1][outlier + 2] = 0x3000;
+        flow[1][outlier + 3] = 0x0000;
     }
     scene[0] = scene_delta;
     scene[1] = scene[2] = 0x0000;
@@ -635,7 +653,8 @@ static void run_fixture(struct VulkanContext *ctx, const char *label,
     VK_CHECK(vkMapMemory(ctx->device, readback.memory, 0, IMAGE_BYTES, 0, &mapped));
     memcpy(output, mapped, IMAGE_BYTES);
     vkUnmapMemory(ctx->device, readback.memory);
-    int first = check_all_pixels ? 0 : (2 * WIDTH + (terminal_grid_test ? 2 : 3));
+    int first = check_all_pixels ? 0 : special_grid_test == 2 ? 1 :
+                (2 * WIDTH + (special_grid_test == 1 ? 2 : 3));
     int last = check_all_pixels ? (int)PIXELS : first + 1;
     for (int i = first; i < last; i++) {
         for (int channel = 0; channel < 4; channel++) {
@@ -711,6 +730,10 @@ int main(int argc, char **argv)
     run_fixture(&ctx, "irregular terminal block anchors affect edge synthesis",
                 neutral0, neutral0, 0x0000, 0x3400, 0x3400, 0.5f,
                 grid_expected, 0, 1);
+    const uint8_t confidence_outlier_expected[4] = { 2, 2, 2, 255 };
+    run_fixture(&ctx, "ambiguous fast vector cannot warp a coherent region",
+                neutral0, neutral0, 0x0000, 0x3400, 0x3400, 0.25f,
+                confidence_outlier_expected, 0, 2);
 
     destroy_vulkan(&ctx);
     puts("MPVFlow Vulkan synthesis pixel-oracle tests passed");

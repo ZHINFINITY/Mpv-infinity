@@ -674,7 +674,7 @@ index bd3d1aa..75ffbb1 100644
 @@ -1135,0 +1762,2 @@ static void discard_frame(const struct pl_source_frame *src)
 +    struct frame_priv *fp = mpi->priv;
 +    flow_release_frame(fp->vo, fp);
-@@ -1341,0 +1970,274 @@ static void update_hook_opts_dynamic(struct priv *p, const struct pl_hook *hook,
+@@ -1341,0 +1970,279 @@ static void update_hook_opts_dynamic(struct priv *p, const struct pl_hook *hook,
 +struct flow_prepared_frame {
 +    int nearest;
 +    int before;
@@ -913,9 +913,12 @@ index bd3d1aa..75ffbb1 100644
 +        stats_time_end(p->stats, "mpvflow-render");
 +        if (ok) {
 +            if (!p->flow_active_logged && fp0) {
++                const pl_tex target_texture = target->num_planes > 0 ? target->planes[0].texture : NULL;
++                const int presentation_width = target_texture ? target_texture->params.w : 0;
++                const int presentation_height = target_texture ? target_texture->params.h : 0;
 +                MP_INFO(vo, "MPVFLOW_DIAGNOSTIC event=output state=synthesized renderer_api=vulkan compute_api=%s "
 +                        "target_fps=%d reason=motion_pair input_path=%s source=%dx%d motion_analysis=%dx%d "
-+                        "synthesis_processing=%dx%d rendered_output=%dx%d "
++                        "synthesis_processing=%dx%d presentation_target=%dx%d video_params=%dx%d "
 +                        "motion=yes cpu_filter=no synthesized_output_cpu_readback=no\n",
 +                        mpvflow_gpu_get_compute_api_name(p->flow_gpu),
 +                        p->next_opts->mpvflow_target_fps,
@@ -923,7 +926,9 @@ index bd3d1aa..75ffbb1 100644
 +                        fp0->flow_source_w, fp0->flow_source_h,
 +                        fp0->flow_w, fp0->flow_h,
 +                        fp0->flow_synthesis_w, fp0->flow_synthesis_h,
-+                        vo->params->w, vo->params->h);
++                        presentation_width, presentation_height,
++                        vo->params ? vo->params->w : 0,
++                        vo->params ? vo->params->h : 0);
 +                p->flow_active_logged = true;
 +            }
 +            *synthesized = true;

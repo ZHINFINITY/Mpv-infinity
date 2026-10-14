@@ -739,7 +739,10 @@ assert "+        .mpvflow_synthesis_max_dimension = 1920," in vo_patch
 assert "mpvflow_synthesis_size_for(source_w, source_h" in vo_patch
 assert "p->flow_synthesis_max_dimension != requested_synthesis_max_dimension" in vo_patch
 assert "+        .w = synthesis_size.width," in vo_patch and "+        .h = synthesis_size.height," in vo_patch
-assert "synthesis_processing=%dx%d rendered_output=%dx%d" in vo_patch
+assert "synthesis_processing=%dx%d presentation_target=%dx%d video_params=%dx%d" in vo_patch
+assert "target->num_planes > 0 ? target->planes[0].texture : NULL" in vo_patch
+assert "target_texture->params.w" in vo_patch
+assert "target_texture->params.h" in vo_patch
 assert "source_copy_params.upscaler = &pl_filter_bilinear;" in vo_patch
 assert "source_copy_params.downscaler = &pl_filter_bilinear;" in vo_patch
 assert vo_patch.count(".pixel_aspect_ratio = frame->pixel_aspect_ratio,") == 2

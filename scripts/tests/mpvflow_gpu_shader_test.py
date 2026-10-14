@@ -160,6 +160,16 @@ require(opencl_source, "float chroma_delta=max(fabs((ca.x-ca.y)-(cb.x-cb.y)),fab
 require(opencl_source, "int chroma_boundary=color_delta>0.12f&&chroma_delta>0.06f", "OpenCL must reject strong chroma-only contour mixing")
 require(synthesis, "float cycleQuality=1.0-smoothstep(0.75,4.0,cycle); float matchQuality=1.0-smoothstep(0.025,0.22,flow.z); float uniquenessQuality=smoothstep(0.08,0.30,flow.w)", "Vulkan reliability must combine cycle, residual, and uniqueness confidence")
 require(opencl_source, "float cycle_quality=1.0f-smoothstep(0.75f,4.0f,cycle); float match_quality=1.0f-smoothstep(0.025f,0.22f,flow.z); float uniqueness_quality=smoothstep(0.08f,0.30f,flow.w)", "OpenCL reliability must match Vulkan cycle, residual, and uniqueness confidence")
+require(synthesis, "float flowConfidenceWeight(vec4 flow){ return clamp((0.22-flow.z)*5.128205,0.0,1.0)*clamp((flow.w-0.08)*4.545455,0.0,1.0); }", "Vulkan edge-aware flow filtering must cheaply weight residual and uniqueness")
+require(opencl_source, "inline float flow_confidence_weight(float4 flow) { return clamp((0.22f-flow.z)*5.128205f,0.0f,1.0f)*clamp((flow.w-0.08f)*4.545455f,0.0f,1.0f); }", "OpenCL edge-aware flow filtering must use Vulkan's piecewise-linear confidence policy")
+require(synthesis, "float flowSpread=max(max(length(v00.xy-v10.xy),length(v01.xy-v11.xy)),max(length(v00.xy-v01.xy),length(v10.xy-v11.xy))); if(flowSpread<=1.0)return geometric;", "Vulkan coherent motion must retain geometric bilinear sampling and only gate conflicting vectors")
+require(opencl_source, "float flow_spread=max(max(length(v00.xy-v10.xy),length(v01.xy-v11.xy)),max(length(v00.xy-v01.xy),length(v10.xy-v11.xy))); if(flow_spread<=1.0f)return geometric;", "OpenCL must use Vulkan's low-cost local vector-disagreement gate")
+require(synthesis, "float c00=flowConfidenceWeight(v00)", "Vulkan bilinear sampling must reject low-confidence outliers at motion boundaries")
+require(opencl_source, "float c00=flow_confidence_weight(v00)", "OpenCL bilinear sampling must reject low-confidence outliers at motion boundaries")
+require(synthesis, "w00*=flowConfidenceWeight(v00)", "Vulkan final warp and cycle edge-aware samples must include motion confidence")
+require(synthesis, ":mix(mix(v00,v10,t.x),mix(v01,v11,t.x),t.y)", "Vulkan edge-aware sampling must keep a bounded geometric fallback when every candidate is uncertain")
+require(opencl_source, "w00*=flow_confidence_weight(v00)", "OpenCL final warp and cycle edge-aware samples must include motion confidence")
+require(opencl_source, ":flow_at_bilinear(forward,backward,direction,aw,ah,x,y)", "OpenCL must preserve a bounded fallback when every edge candidate is uncertain")
 require(opencl_source, "if(confidence<0.28f)", "OpenCL must use Vulkan's conservative low-confidence source-frame fallback")
 require(opencl_source, "inline float neighborhood_quality(", "OpenCL must mirror Vulkan local flow-consistency checks")
 require(opencl_source, "int neighborhood_conflict=(min(neighborhood0,neighborhood1)<0.30f&&(luma_delta>0.06f||color_delta>0.08f))||(flow_spread>3.0f&&min(neighborhood0,neighborhood1)<0.45f)", "OpenCL neighborhood/flow-spread rejection must match Vulkan")
@@ -574,6 +584,40 @@ assert endpoint_reliability(0.75, 0.025, 0.0) == 0.0, "tied motion matches must 
 assert endpoint_reliability(4.0, 0.025, 0.30) == 0.0, "large forward/backward cycle errors must reject an endpoint"
 assert endpoint_reliability(0.75, 0.22, 0.30) == 0.0, "high normalized SAD must reject an endpoint"
 assert endpoint_reliability(0.75, 0.025, 0.30, valid=0.0) == 0.0, "out-of-bounds flow endpoints must be rejected"
+
+def flow_sample_weight(residual: float, uniqueness: float) -> float:
+    return max(0.0, min(1.0, (0.22 - residual) * 5.128205)) * max(
+        0.0, min(1.0, (uniqueness - 0.08) * 4.545455)
+    )
+
+def confidence_weighted_flow(vectors, geometry_weights):
+    geometric_total = sum(geometry_weights)
+    geometric = sum(vector * geometry for (vector, _, _), geometry in zip(vectors, geometry_weights)) / geometric_total
+    values = [vector for vector, _, _ in vectors]
+    if max(values) - min(values) <= 1.0:
+        return geometric
+    weights = [geometry * flow_sample_weight(residual, uniqueness)
+               for (vector, residual, uniqueness), geometry in zip(vectors, geometry_weights)]
+    total = sum(weights)
+    if total <= 0.000001:
+        weights = geometry_weights
+        total = sum(weights)
+    return sum(vector * weight for (vector, _, _), weight in zip(vectors, weights)) / total
+
+ambiguous_fast_outlier = [(0.0, 0.0, 1.0), (0.0, 0.0, 1.0),
+                          (0.0, 0.0, 1.0), (12.0, 0.125, 0.0)]
+assert confidence_weighted_flow(ambiguous_fast_outlier, [0.25] * 4) == 0.0, (
+    "an ambiguous high-motion neighbor must not contaminate otherwise reliable stationary flow"
+)
+all_ambiguous = [(0.0, 0.125, 0.0), (4.0, 0.125, 0.0)]
+assert confidence_weighted_flow(all_ambiguous, [0.5, 0.5]) == 2.0, (
+    "when every match is ambiguous, keep a bounded geometric estimate and let endpoint fallback decide"
+)
+coherent_motion = [(0.0, 0.0, 1.0), (0.3, 0.0, 1.0),
+                   (0.6, 0.0, 1.0), (0.8, 0.0, 1.0)]
+assert abs(confidence_weighted_flow(coherent_motion, [0.25] * 4) - 0.425) < 1e-9, (
+    "coherent motion below the disagreement threshold must keep the exact geometric fast path"
+)
 
 def edge_decision(alpha: float, luma_delta: float, color_delta: float, chroma_delta: float,
                   confidence0: float, confidence1: float,

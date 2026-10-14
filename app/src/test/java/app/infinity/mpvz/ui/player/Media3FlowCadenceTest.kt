@@ -141,6 +141,78 @@ class Media3FlowCadenceTest {
   }
 
   @Test
+  fun deferredPairSurvivesBackpressureAndRetriesWhenAnalysisIsAllowed() {
+    val queue = Media3FlowDeferredPairQueue(capacity = 2)
+    val retained = longArrayOf(0L, 40_000L)
+    val pair = Media3FlowSourcePair(0L, 40_000L)
+    queue.enqueue(pair.frame0PtsUs, pair.frame1PtsUs)
+
+    assertNull(
+      queue.takeNextRetainedAdjacent(
+        retainedFramePtsUs = retained,
+        retentionBoundaryUs = 0L,
+        analysisAllowed = false,
+      ),
+    )
+    assertEquals(1, queue.size)
+    assertEquals(
+      pair,
+      queue.takeNextRetainedAdjacent(
+        retainedFramePtsUs = retained,
+        retentionBoundaryUs = 0L,
+        analysisAllowed = true,
+      ),
+    )
+    assertEquals(0, queue.size)
+  }
+
+  @Test
+  fun deferredPairQueueIsBoundedAndKeepsTheNewestRetainedPairs() {
+    val queue = Media3FlowDeferredPairQueue(capacity = 2)
+    queue.enqueue(0L, 10L)
+    queue.enqueue(10L, 20L)
+    queue.enqueue(20L, 30L)
+    queue.enqueue(20L, 30L)
+    assertEquals(2, queue.size)
+
+    val retained = longArrayOf(0L, 10L, 20L, 30L)
+    assertEquals(
+      Media3FlowSourcePair(10L, 20L),
+      queue.takeNextRetainedAdjacent(retained, 0L, analysisAllowed = true),
+    )
+    assertEquals(
+      Media3FlowSourcePair(20L, 30L),
+      queue.takeNextRetainedAdjacent(retained, 0L, analysisAllowed = true),
+    )
+  }
+
+  @Test
+  fun deferredPairQueueDropsExpiredOrNonAdjacentPtsPairsBeforeRetrying() {
+    val queue = Media3FlowDeferredPairQueue(capacity = 3)
+    queue.enqueue(0L, 10L)
+    queue.enqueue(10L, 20L)
+    queue.enqueue(0L, 20L)
+    val retained = longArrayOf(0L, 10L, 20L)
+
+    assertEquals(
+      Media3FlowSourcePair(10L, 20L),
+      queue.takeNextRetainedAdjacent(
+        retainedFramePtsUs = retained,
+        retentionBoundaryUs = 10L,
+        analysisAllowed = true,
+      ),
+    )
+    assertNull(
+      queue.takeNextRetainedAdjacent(
+        retainedFramePtsUs = retained,
+        retentionBoundaryUs = 10L,
+        analysisAllowed = true,
+      ),
+    )
+    assertEquals(0, queue.size)
+  }
+
+  @Test
   fun decoderInputWaitsForAFreeGpuFrameSlotAndCompletedSurfaceCapture() {
     assertTrue(Media3FlowCadence.canReleaseNextDecoderFrame(0, 3, inputInFlight = false))
     assertTrue(Media3FlowCadence.canReleaseNextDecoderFrame(2, 3, inputInFlight = false))

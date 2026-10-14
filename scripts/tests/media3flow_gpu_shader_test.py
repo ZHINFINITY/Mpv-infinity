@@ -151,7 +151,7 @@ assert "outputWallTimes.addLast(frameTimeNanos" not in SINK
 assert "eglSwapReturnFps=" in SINK and "outputMetric=successful_eglSwapBuffers_return_not_scanout" in SINK
 assert "fp0->flow_source, fp1->flow_source" in MPV_PATCH, "MPV synthesis must use the high-precision pre-FRC source copies"
 assert "motion_analysis=%dx%d" in MPV_PATCH and "synthesis_processing=%dx%d" in MPV_PATCH
-assert "rendered_output=%dx%d" in MPV_PATCH
+assert "presentation_target=%dx%d video_params=%dx%d" in MPV_PATCH
 assert "event=runtime_cadence" in MPV_PATCH and "empty_batch_redraws=%llu" in MPV_PATCH
 assert "source_frame.overlays = NULL" in MPV_PATCH and "source_frame.num_overlays = 0" in MPV_PATCH
 assert ".crop = image0->crop" not in MPV_PATCH, "pre-FRC synthesis copies already bake the input crop"

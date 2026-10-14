@@ -178,7 +178,10 @@ require(media3_analysis_body, "shouldAnalyzeMotionPairAfterEglSwap", "Media3 mus
 assert media3_analysis_body.index("shouldAnalyzeMotionPairAfterEglSwap") < media3_analysis_body.index(
     "Media3FlowVulkanNative.nativeAnalyzePair"
 ), "Media3 backpressure admission must happen before native pair analysis"
-require(media3_analysis_body, 'lastBypassReason = "egl_swap_backpressure_analysis_deferred"', "Media3 must preserve source-frame fallback when analysis is deferred")
+require(media3_analysis_body, "deferredMotionPairs.enqueue", "Media3 must retain a pair when analysis cannot run immediately")
+require(media3_analysis_body, "takeNextRetainedAdjacent", "Media3 must retry only still-adjacent retained source pairs")
+require(media3_analysis_body, '"egl_swap_backpressure_analysis_deferred"', "Media3 must preserve source-frame fallback while a pair remains deferred")
+require(media3_analysis_body, '"motion_pair_queue_full"', "Media3 must keep bounded slot-pressure diagnostics when a deferred pair cannot run")
 require(FLOW_GPU_CORE, "queue_timestamp_valid_bits=%u", "Vulkan timer setup must log timestamp capability for the compute queue")
 require(FLOW_GPU_CORE, "VK_QUEUE_COMPUTE_BIT", "timestamp capability must be queried from the actual compute queue family")
 require(FLOW_GPU_CORE, "vkGetPhysicalDeviceProperties(vk->phys_device, &device_properties)", "timestamp support must inspect physical-device limits")

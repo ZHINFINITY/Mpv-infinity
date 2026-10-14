@@ -138,6 +138,7 @@ class Media3FlowVideoSink(
   private val sourceFrames = ArrayDeque<FrameSlot>()
   private val framePool = ArrayList<FrameSlot>(MAX_STORED_FRAMES)
   private val motionPairs = ArrayList<MotionPairSlot>(MAX_MOTION_PAIRS)
+  private val deferredMotionPairs = Media3FlowDeferredPairQueue(MAX_MOTION_PAIRS)
   private val ptsHistory = ArrayDeque<Long>()
   private val outputWallTimes = ArrayDeque<Long>()
   private val pendingGpuTimerQueries = ArrayDeque<PendingGlesTimerQuery>()
@@ -1495,28 +1496,60 @@ class Media3FlowVideoSink(
     val frame0 = sourceFrames.elementAt(sourceFrames.size - 2)
     val frame1 = sourceFrames.last()
     val deltaUs = Media3FlowCadence.checkedSubtract(frame1.ptsUs, frame0.ptsUs) ?: 0L
-    if (deltaUs <= 0L || !Media3FlowCadence.needsInterpolation(deltaUs, targetFps, playbackSpeed)) {
-      lastBypassReason = if (deltaUs <= 0L) "invalid_source_delta" else "source_meets_target"
+    when {
+      deltaUs <= 0L -> lastBypassReason = "invalid_source_delta"
+      !Media3FlowCadence.needsInterpolation(deltaUs, targetFps, playbackSpeed) ->
+        lastBypassReason = "source_meets_target"
+      motionPairs.none {
+        it.available && it.frame0PtsUs == frame0.ptsUs && it.frame1PtsUs == frame1.ptsUs
+      } -> deferredMotionPairs.enqueue(frame0.ptsUs, frame1.ptsUs)
+    }
+    analyzeDeferredMotionPair()
+  }
+
+  /**
+   * Retries one retained pair after a transient over-budget swap; no output waits for analysis.
+   * Pair PTS keys are revalidated against the current adjacent source-frame list before JNI use.
+   */
+  private fun analyzeDeferredMotionPair() {
+    if (!flowAvailable || sourceFrames.size < 2 || deferredMotionPairs.size == 0) return
+    val analysisAllowed = Media3FlowCadence.shouldAnalyzeMotionPairAfterEglSwap(
+      lastEglSwapWaitMs,
+      targetFps,
+    )
+    val reusable = if (analysisAllowed) {
+      motionPairs.firstOrNull {
+        !it.available || retentionBoundaryUs(latestPositionUs) >= it.frame1PtsUs
+      }
+    } else {
+      null
+    }
+    val sourcePts = LongArray(sourceFrames.size) { sourceFrames.elementAt(it).ptsUs }
+    val candidate = deferredMotionPairs.takeNextRetainedAdjacent(
+      retainedFramePtsUs = sourcePts,
+      retentionBoundaryUs = retentionBoundaryUs(latestPositionUs),
+      analysisAllowed = analysisAllowed && reusable != null,
+    )
+    if (candidate == null) {
+      lastBypassReason = when {
+        !analysisAllowed -> "egl_swap_backpressure_analysis_deferred"
+        reusable == null -> "motion_pair_queue_full"
+        else -> lastBypassReason
+      }
       return
     }
+    val frame0 = sourceFrames.firstOrNull { it.ptsUs == candidate.frame0PtsUs }
+    val frame1 = sourceFrames.firstOrNull { it.ptsUs == candidate.frame1PtsUs }
+    if (frame0 == null || frame1 == null) return
     if (motionPairs.any {
-        it.available && it.frame0PtsUs == frame0.ptsUs && it.frame1PtsUs == frame1.ptsUs
+        it.available && it.frame0PtsUs == candidate.frame0PtsUs &&
+          it.frame1PtsUs == candidate.frame1PtsUs
       }
     ) return
-    if (!Media3FlowCadence.shouldAnalyzeMotionPairAfterEglSwap(lastEglSwapWaitMs, targetFps)) {
-      lastBypassReason = "egl_swap_backpressure_analysis_deferred"
-      return
-    }
-    val reusable = motionPairs.firstOrNull {
-      !it.available || retentionBoundaryUs(latestPositionUs) >= it.frame1PtsUs
-    }
-    if (reusable == null) {
-      lastBypassReason = "motion_pair_queue_full"
-      return
-    }
-    releaseMotionPair(reusable)
-    reusable.frame0PtsUs = frame0.ptsUs
-    reusable.frame1PtsUs = frame1.ptsUs
+    val slot = checkNotNull(reusable)
+    releaseMotionPair(slot)
+    slot.frame0PtsUs = candidate.frame0PtsUs
+    slot.frame1PtsUs = candidate.frame1PtsUs
     val startNs = System.nanoTime()
     val nativePair = runCatching {
       Media3FlowVulkanNative.nativeAnalyzePair(
@@ -1524,9 +1557,9 @@ class Media3FlowVideoSink(
       )
     }.getOrDefault(0L)
     lastMotionSubmitMs = (System.nanoTime() - startNs) / 1_000_000f
-    reusable.motionEstimateSubmitMs = lastMotionSubmitMs
+    slot.motionEstimateSubmitMs = lastMotionSubmitMs
     if (nativePair == 0L) {
-      reusable.available = false
+      slot.available = false
       flowAvailable = false
       lastBypassReason = "motion_analysis_error"
       lastState = "source_fallback"
@@ -1542,8 +1575,8 @@ class Media3FlowVideoSink(
       )
       return
     }
-    reusable.nativePairHandle = nativePair
-    reusable.available = true
+    slot.nativePairHandle = nativePair
+    slot.available = true
     lastBypassReason = null
     lastState = "motion_estimated_gpu"
     if (!firstSuccessfulPairDiagnosticLogged) {
@@ -2118,6 +2151,7 @@ class Media3FlowVideoSink(
   private fun clearSourceFrames() {
     sourceFrames.forEach { it.inUse = false; it.ptsUs = C.TIME_UNSET }
     sourceFrames.clear()
+    deferredMotionPairs.clear()
     motionPairs.forEach {
       releaseMotionPair(it)
       it.available = false
