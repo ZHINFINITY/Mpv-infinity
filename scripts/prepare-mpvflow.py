@@ -830,6 +830,7 @@ def main() -> None:
     required = (
         VENDOR / "mpvflow_gpu.c",
         VENDOR / "mpvflow_gpu.h",
+        VENDOR / "mpvflow_rate_limit.h",
         VENDOR / "mpvflow_opencl.c",
         VENDOR / "mpvflow_opencl.h",
         VENDOR / "mpvflow_opencl_vk_bridge.c",
@@ -852,6 +853,7 @@ def main() -> None:
     video_out_dir = mpv_dir / "video/out"
     shutil.copy2(VENDOR / "mpvflow_gpu.c", video_out_dir / "mpvflow_gpu.c")
     shutil.copy2(VENDOR / "mpvflow_gpu.h", video_out_dir / "mpvflow_gpu.h")
+    shutil.copy2(VENDOR / "mpvflow_rate_limit.h", video_out_dir / "mpvflow_rate_limit.h")
     for filename in (
         "mpvflow_opencl.c",
         "mpvflow_opencl.h",

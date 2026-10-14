@@ -122,6 +122,15 @@ class Media3FlowCadenceTest {
   }
 
   @Test
+  fun overBudgetEglSwapSkipsOnlyTheNextSynthesisAdmission() {
+    assertTrue(Media3FlowCadence.canSynthesizeAfterEglSwap(8.0f, 120))
+    assertFalse(Media3FlowCadence.canSynthesizeAfterEglSwap(8.34f, 120))
+    assertFalse(Media3FlowCadence.canSynthesizeAfterEglSwap(21.6f, 120))
+    assertTrue(Media3FlowCadence.canSynthesizeAfterEglSwap(16.0f, 60))
+    assertTrue(Media3FlowCadence.canSynthesizeAfterEglSwap(Float.NaN, 120))
+  }
+
+  @Test
   fun decoderInputWaitsForAFreeGpuFrameSlotAndCompletedSurfaceCapture() {
     assertTrue(Media3FlowCadence.canReleaseNextDecoderFrame(0, 3, inputInFlight = false))
     assertTrue(Media3FlowCadence.canReleaseNextDecoderFrame(2, 3, inputInFlight = false))

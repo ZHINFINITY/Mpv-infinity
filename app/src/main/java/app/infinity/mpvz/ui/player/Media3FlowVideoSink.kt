@@ -61,6 +61,7 @@ data class Media3FlowDiagnostics(
   val generatedFps: Float = 0f,
   val targetFps: Int = 0,
   val generatedFrames: Long = 0L,
+  /** Actual sink frame drops; inferred output-tick gaps are reported separately. */
   val droppedFrames: Long = 0L,
   /** Inferred target ticks with no sink output; not confirmed display/scanout misses. */
   val skippedOutputTicks: Long = 0L,
@@ -1411,7 +1412,6 @@ class Media3FlowVideoSink(
   private fun recordOutputTickGaps(count: Long, reason: String) {
     if (count <= 0L) return
     skippedOutputTicks.addAndGet(count)
-    droppedFrames.addAndGet(count)
     lastOutputTickGapReason = reason
     outputTickGapContexts[reason] = (outputTickGapContexts[reason] ?: 0L) + count
   }
@@ -1596,9 +1596,11 @@ class Media3FlowVideoSink(
     val motionAdmissionProxyMs = pair?.let {
       Media3FlowCadence.motionAdmissionProxyMs(it.motionEstimateSubmitMs, null)
     } ?: Float.POSITIVE_INFINITY
+    val swapBudgetAvailable = Media3FlowCadence.canSynthesizeAfterEglSwap(lastEglSwapWaitMs, targetFps)
     val synthesize = bracket != null && pair != null &&
       Media3FlowCadence.needsInterpolation(deltaUs, targetFps, speed) &&
-      motionAdmissionProxyMs < deltaUs / 1000f * ANALYSIS_DEADLINE_RESERVE
+      motionAdmissionProxyMs < deltaUs / 1000f * ANALYSIS_DEADLINE_RESERVE &&
+      swapBudgetAvailable
     val nowNs = System.nanoTime()
     lastOutputCallbackLatenessMs = frameTimeNanos?.let {
       ((nowNs - it).coerceAtLeast(0L) / 1_000_000.0).toFloat()
@@ -1630,6 +1632,12 @@ class Media3FlowVideoSink(
       }
       recordOutputTickGaps(missedTicks, missReason)
       lastBypassReason = "output_tick_gap_inferred"
+    }
+    if (!swapBudgetAvailable && bracket != null && pair != null &&
+      Media3FlowCadence.needsInterpolation(deltaUs, targetFps, speed)
+    ) {
+      // Preserve the decoded source image while letting the GL thread recover from a blocking swap.
+      lastBypassReason = "egl_swap_backpressure"
     }
     val basePresentationNs = frameTimeNanos?.let {
       val refreshHz = displayHz.takeIf { rate -> rate.isFinite() && rate > 0f }?.toDouble() ?: targetFps.toDouble()
@@ -2734,7 +2742,7 @@ class Media3FlowVideoSink(
         "eglSwapInterval=${if (eglSwapIntervalZeroApplied) 0 else "default"} " +
         "outputMetric=successful_eglSwapBuffers_return_not_scanout " +
         "generatedFps=${formatLogFloat(diagnostics.generatedFps)} " +
-        "generatedTotal=${diagnostics.generatedFrames} dropsTotal=${diagnostics.droppedFrames} " +
+        "generatedTotal=${diagnostics.generatedFrames} inputDropsTotal=${diagnostics.droppedFrames} " +
         "inferredSkippedOutputTicksTotal=${diagnostics.skippedOutputTicks} skippedTotal=${diagnostics.skippedFrames} " +
         "outputSubmissionFailures=${diagnostics.outputSubmissionFailures} " +
         "lastOutputSubmissionFailure=${diagnostics.lastOutputSubmissionFailureReason} " +

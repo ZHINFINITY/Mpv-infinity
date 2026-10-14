@@ -2463,7 +2463,7 @@ private fun NativeStatsPageOverlay(
             Text(
               "ME submit ${String.format(java.util.Locale.US, "%.2f", flow.motionEstimateSubmitMs)} ms (CPU-only deadline proxy) · " +
                 "Vulkan motion pass avg $flowGpuTime · " +
-                "confidence $flowConfidence · drops ${flow.droppedFrames} total · " +
+                "confidence $flowConfidence · sink frame drops ${flow.droppedFrames} · " +
                 "inferred tick gaps ${flow.skippedOutputTicks} · sink failures ${flow.outputSubmissionFailures} · " +
                 "skip ${flow.skippedFrames} · " +
                 "motion grid ${flow.motionGridWidth}×${flow.motionGridHeight} · " +

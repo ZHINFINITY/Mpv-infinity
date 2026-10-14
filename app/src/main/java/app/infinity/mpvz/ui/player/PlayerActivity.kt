@@ -887,7 +887,23 @@ class PlayerActivity :
           if (outgoingEngine == PlaybackEngineMode.NATIVE) {
             nativeEngine.setPlaying(false)
           } else if (mpvInitialized) {
-            PlaybackSession.setPropertyBoolean("pause", true)
+            val pauseRequested = PlaybackSession.setPauseForEngineHandoff(true)
+            var pauseConfirmed = false
+            if (pauseRequested) {
+              for (attempt in 0 until 20) {
+                if (PlaybackSession.getPropertyBoolean("pause") == true) {
+                  pauseConfirmed = true
+                  break
+                }
+                delay(25L)
+              }
+            }
+            if (!pauseConfirmed) {
+              PlaybackSession.setPauseForEngineHandoff(!outgoingPlaying)
+              Log.e(TAG, "Engine handoff aborted because MPV pause was not acknowledged")
+              return@collect
+            }
+            Log.i(TAG, "MPV pause acknowledged before engine handoff")
           }
 
           val useNative = effectiveEngine == PlaybackEngineMode.NATIVE
@@ -901,7 +917,6 @@ class PlayerActivity :
               // HDR WebDAV playback.
               setNativeVideoSurfaceVisible(false)
               if (outgoingEngine == PlaybackEngineMode.MPV) {
-                PlaybackSession.setPropertyBoolean("pause", true)
                 PlaybackSession.setPropertyBoolean("mute", true)
               }
               val queuedItem = PlaybackSession.queue.value.currentItem

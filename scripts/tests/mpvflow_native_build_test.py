@@ -581,7 +581,7 @@ assert "first_runtime_wsi_sample=next_start_frame" in flow_vo_patch_source
 toggle_offset = flow_vo_patch_source.index("event=wsi_diagnostics_toggle engine=mpv")
 created_offset = flow_vo_patch_source.index("event=wsi_swapchain_created engine=mpv")
 first_start_frame_offset = flow_vo_patch_source.index(
-    "+        should_draw && pl_swapchain_start_frame(p->sw, &swframe);"
+    "+        should_draw && !flow_rate_limited && pl_swapchain_start_frame(p->sw, &swframe);"
 )
 assert toggle_offset < created_offset < first_start_frame_offset, (
     "the enabled gate and effective created swapchain mode/image count must be reported before the first runtime WSI call"
@@ -695,8 +695,40 @@ for marker in (
     "mpvflow_gpu_get_qcom_diagnostics",
 ):
     assert marker in vo_patch, f"MPV Flow must distinguish real blocking swapchain waits from submit time: missing {marker!r}"
+patch_parse = subprocess.run(
+    ["git", "apply", "--numstat", str(VO_PATCH)],
+    cwd=ROOT,
+    check=False,
+    capture_output=True,
+    text=True,
+)
+assert patch_parse.returncode == 0, (
+    f"MPV VO patch must be a valid unified diff:\n{patch_parse.stdout}{patch_parse.stderr}"
+)
 assert "+        target_fps >= 120 ? 448 : target_fps >= 96 ? 440 : 640;" in vo_patch, (
     "the MPV renderer must preserve the balanced 384-pixel 120-fps profile and the quality headroom"
+)
+rate_limit_header = ROOT / "app/src/main/cpp/mpvflow/mpvflow_rate_limit.h"
+assert rate_limit_header.is_file(), "the shared MPVFlow output limiter must be vendored"
+assert 'VENDOR / "mpvflow_rate_limit.h"' in prepare_source and \
+       'shutil.copy2(VENDOR / "mpvflow_rate_limit.h", video_out_dir / "mpvflow_rate_limit.h")' in prepare_source, (
+    "native preparation must stage the tested limiter header into MPV's video/out tree"
+)
+rate_gate_offset = vo_patch.index("mpvflow_rate_limiter_ready(&p->flow_rate_limiter")
+rate_prepare_offset = vo_patch.index("flow_prepare_frame(vo, &mix, &flow_prepared, frame->still);")
+rate_acquire_offset = vo_patch.index(
+    "+        should_draw && !flow_rate_limited && pl_swapchain_start_frame(p->sw, &swframe);"
+)
+assert rate_gate_offset < rate_prepare_offset < rate_acquire_offset, (
+    "over-target MPV callbacks must be skipped before Flow compute and Vulkan swapchain acquire"
+)
+rate_submit_guard = vo_patch.index("if (p->next_opts->mpvflow && submitted)")
+rate_commit_offset = vo_patch.index("mpvflow_rate_limiter_commit(&p->flow_rate_limiter")
+assert rate_submit_guard < rate_commit_offset, "the rate interval may only be committed after successful swap submission"
+assert "flow_pending_rate_limiter_timestamp_ns = (uint64_t) flow_render_start_ns;" in vo_patch
+assert "p->flow_pending_rate_limiter_timestamp_ns," in vo_patch
+assert "mpvflow_rate_limiter_commit(&p->flow_rate_limiter, (uint64_t) now_ns" not in vo_patch, (
+    "rate admission must be committed at the same render-start timestamp, not swap completion"
 )
 flow_prepare_body = vo_patch.split("+static bool flow_prepare_input", 1)[1].split(
     "\n+static void flow_release_frame", 1
@@ -706,6 +738,59 @@ assert crop_call in flow_prepare_body, "MPVFlow must crop the decoder image befo
 assert flow_prepare_body.index(crop_call) < flow_prepare_body.index("pl_render_image("), (
     "the mapped AImage crop must be applied before copying source pixels into Flow textures"
 )
+flow_synthesis_body = vo_patch.split("+static void flow_prepare_frame", 1)[1].split(
+    "\n+static bool flow_render_frame", 1
+)[0]
+paused_still_guard = "+    if (p->paused || source_is_still) {"
+assert paused_still_guard in flow_synthesis_body, "paused and still frames must bypass MPVFlow analysis"
+assert flow_synthesis_body.index(paused_still_guard) < flow_synthesis_body.index("mpvflow_gpu_analyze_pair(")
+assert flow_synthesis_body.index(paused_still_guard) < flow_synthesis_body.index("mpvflow_gpu_synthesize(")
+assert "flow_prepare_frame(vo, &mix, &flow_prepared, frame->still);" in vo_patch
+assert '+        const char *queue_state = p->paused ? "paused" :' in vo_patch, (
+    "the paused state must not be hidden by empty-batch or still-frame diagnostics"
+)
+
+playback_session_source = (ROOT / "app/src/main/java/app/infinity/mpvz/ui/player/PlaybackSession.kt").read_text(
+    encoding="utf-8"
+)
+handoff_pause_body = playback_session_source.split("fun setPauseForEngineHandoff", 1)[1].split(
+    "/** Atomically toggles pause", 1
+)[0]
+assert 'MPVLib.setPropertyBoolean("pause", paused)' in handoff_pause_body
+assert "MpvConfigOverridePolicy.isOwnedByMpvConf" not in handoff_pause_body
+assert "_state.value.phase != PlaybackPhase.LOADING" not in handoff_pause_body
+player_activity_source = (ROOT / "app/src/main/java/app/infinity/mpvz/ui/player/PlayerActivity.kt").read_text(
+    encoding="utf-8"
+)
+handoff_source = player_activity_source.split("Freeze the outgoing renderer before changing surfaces", 1)[1].split(
+    "if (currentUri != null", 1
+)[0]
+assert "setPauseForEngineHandoff(true)" in handoff_source
+assert 'getPropertyBoolean("pause") == true' in handoff_source
+assert "Engine handoff aborted because MPV pause was not acknowledged" in handoff_source
+assert "setPauseForEngineHandoff(true)" in player_activity_source.split("nativeEngine.play(", 1)[0]
+
+media3_flow_sink_source = (ROOT / "app/src/main/java/app/infinity/mpvz/ui/player/Media3FlowVideoSink.kt").read_text(
+    encoding="utf-8"
+)
+flow_surface_initialize = media3_flow_sink_source.split("override fun initialize(sourceFormat: Format)", 1)[1].split(
+    "override fun isInitialized()", 1
+)[0]
+flow_output_surface_callback = media3_flow_sink_source.split("override fun setOutputSurfaceInfo(", 1)[1].split(
+    "override fun clearOutputSurfaceInfo()", 1
+)[0]
+surface_binding_policy = "Media3FlowOutputSurfacePolicy.shouldCreateEglWindowSurface("
+assert surface_binding_policy in flow_output_surface_callback, (
+    "the dormant Flow sink must not reserve the PlayerView SurfaceView before its renderer initializes"
+)
+assert flow_output_surface_callback.index(surface_binding_policy) < flow_output_surface_callback.index(
+    "createWindowSurface()"
+), "the surface ownership guard must run before EGL connects to the PlayerView BufferQueue"
+assert "initialized = sinkInitialized" in flow_surface_initialize
+assert flow_surface_initialize.index("initialized = sinkInitialized") < flow_surface_initialize.index(
+    "createWindowSurface()"
+), "initialize must publish Flow ownership before connecting its output EGL surface"
+
 assert build.index("./include/ci.sh install") < build.index(prepare_call) < build.index("./include/ci.sh build"), (
     "the libplacebo search-path correction must run after dependency checkout and before native builds"
 )
@@ -1508,5 +1593,99 @@ with tempfile.TemporaryDirectory(prefix="mpvflow-builder-patch-test-") as tempor
         "MPV Vulkan must be enabled in the pinned Meson options block"
     )
     assert "--arch arm64" in ci.read_text(encoding="utf-8"), "native build must remain arm64-only"
+
+rate_limit_test = r"""
+#include <assert.h>
+#include <stdbool.h>
+#include <stdint.h>
+#include "mpvflow_rate_limit.h"
+
+int main(void)
+{
+    struct mpvflow_rate_limiter limiter = {0};
+    uint64_t submits = 0;
+    uint64_t last_submit_ns = 0;
+    bool has_last_submit = false;
+
+    /* 6-ms callbacks oversupply 120 fps; every accepted frame must still be spaced safely. */
+    for (uint64_t now = 0; now < 10ULL * MPVFLOW_RATE_LIMIT_ONE; now += 6000000ULL) {
+        if (mpvflow_rate_limiter_ready(&limiter, now, 120)) {
+            if (has_last_submit)
+                assert(now - last_submit_ns >= mpvflow_rate_limiter_interval_ns(120));
+            mpvflow_rate_limiter_commit(&limiter, now, 120);
+            last_submit_ns = now;
+            has_last_submit = true;
+            submits++;
+        }
+    }
+    assert(submits >= 830 && submits <= 840);
+
+    /* A correctly paced 120-Hz callback stream is admitted at the target. */
+    mpvflow_rate_limiter_reset(&limiter);
+    submits = 0;
+    last_submit_ns = 0;
+    has_last_submit = false;
+    for (uint64_t now = 0; now < 10ULL * MPVFLOW_RATE_LIMIT_ONE; now += 8333334ULL) {
+        if (mpvflow_rate_limiter_ready(&limiter, now, 120)) {
+            if (has_last_submit)
+                assert(now - last_submit_ns >= mpvflow_rate_limiter_interval_ns(120));
+            mpvflow_rate_limiter_commit(&limiter, now, 120);
+            last_submit_ns = now;
+            has_last_submit = true;
+            submits++;
+        }
+    }
+    assert(submits >= 1199 && submits <= 1200);
+
+    mpvflow_rate_limiter_reset(&limiter);
+    assert(mpvflow_rate_limiter_ready(&limiter, 0, 120));
+    mpvflow_rate_limiter_commit(&limiter, 0, 120);
+    assert(!mpvflow_rate_limiter_ready(&limiter, 8333333ULL, 120));
+    assert(mpvflow_rate_limiter_ready(&limiter, 8333334ULL, 120));
+    mpvflow_rate_limiter_commit(&limiter, 8333334ULL, 120);
+    assert(!mpvflow_rate_limiter_ready(&limiter, 16666667ULL, 120));
+    assert(mpvflow_rate_limiter_ready(&limiter, 16666668ULL, 120));
+
+    /* A long idle grants one frame only, not the previous bucket's two-frame burst. */
+    assert(mpvflow_rate_limiter_ready(&limiter, 10000000000ULL, 120));
+    mpvflow_rate_limiter_commit(&limiter, 10000000000ULL, 120);
+    assert(!mpvflow_rate_limiter_ready(&limiter, 10001000000ULL, 120));
+    assert(!mpvflow_rate_limiter_ready(&limiter, 10008333333ULL, 120));
+    assert(mpvflow_rate_limiter_ready(&limiter, 10008333334ULL, 120));
+
+    /* A target change uses the new rate from the last successful submit. */
+    mpvflow_rate_limiter_reset(&limiter);
+    mpvflow_rate_limiter_commit(&limiter, 0, 240);
+    assert(!mpvflow_rate_limiter_ready(&limiter, 16666666ULL, 60));
+    assert(mpvflow_rate_limiter_ready(&limiter, 16666667ULL, 60));
+    mpvflow_rate_limiter_commit(&limiter, 16666667ULL, 60);
+    assert(!mpvflow_rate_limiter_ready(&limiter, 24999999ULL, 120));
+    assert(mpvflow_rate_limiter_ready(&limiter, 25000001ULL, 120));
+    assert(!mpvflow_rate_limiter_ready(&limiter, 1ULL, 120));
+    assert(mpvflow_rate_limiter_ready(&limiter, 25000001ULL, 0));
+    mpvflow_rate_limiter_commit(&limiter, 25000001ULL, 0);
+    assert(mpvflow_rate_limiter_ready(&limiter, 25000002ULL, 120));
+    return 0;
+}
+"""
+with tempfile.TemporaryDirectory(prefix="mpvflow-rate-limit-test-") as temp_dir:
+    temp_path = Path(temp_dir)
+    test_source = temp_path / "rate_limit_test.c"
+    test_binary = temp_path / "rate_limit_test"
+    test_source.write_text(rate_limit_test, encoding="utf-8")
+    compile_rate_test = subprocess.run(
+        ["cc", "-std=c11", "-Wall", "-Wextra", "-Werror", "-I", str(rate_limit_header.parent),
+         str(test_source), "-o", str(test_binary)],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert compile_rate_test.returncode == 0, (
+        f"MPVFlow limiter C regression test failed to compile:\n{compile_rate_test.stdout}{compile_rate_test.stderr}"
+    )
+    run_rate_test = subprocess.run([str(test_binary)], check=False, capture_output=True, text=True)
+    assert run_rate_test.returncode == 0, (
+        f"MPVFlow limiter C regression test failed:\n{run_rate_test.stdout}{run_rate_test.stderr}"
+    )
 
 print("MPVFlow Android Vulkan/glslang native-build regression tests passed")

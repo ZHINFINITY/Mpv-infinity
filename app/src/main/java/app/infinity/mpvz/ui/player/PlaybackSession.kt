@@ -1071,6 +1071,27 @@ object PlaybackSession : MPVLib.EventObserver {
     }
   }
 
+  /**
+   * Applies the transport pause immediately at an engine boundary. Unlike ordinary UI option
+   * writes, this must not be skipped by mpv.conf ownership or deferred until load completion.
+   * The caller verifies the native property before starting the replacement renderer.
+   */
+  fun setPauseForEngineHandoff(paused: Boolean): Boolean =
+    withCore(default = false) {
+      if (_state.value.phase == PlaybackPhase.STOPPING) return@withCore false
+      AudiobookPlayback.onPauseRequested(paused)
+      desiredPaused = paused
+      val applied =
+        runCatching { MPVLib.setPropertyBoolean("pause", paused) }
+          .onFailure { error -> Log.w(TAG, "Failed to set MPV pause for engine handoff", error) }
+          .isSuccess
+      if (applied) {
+        updateState { it.copy(paused = paused) }
+        propBoolean.emit("pause", paused)
+      }
+      applied
+    }
+
   /** Atomically toggles pause so rapid UI/media-button taps cannot race separate reads and writes. */
   fun togglePause(): Boolean? =
     withCore(default = null) {
