@@ -97,7 +97,7 @@ for marker in (
         f"{marker}"
     )
 assert ".blit_src = blit_src" in GPU and ".blit_dst = blit_dst" in GPU and (
-    'ctx, output_w, output_h, ctx->fmt_rgba8,\n                                         true, true,\n                                         ctx->compute_api == MPVFLOW_GPU_COMPUTE_OPENCL,' in GPU
+    'ctx, output_w, output_h, output_fmt,\n                                         true, true,\n                                         ctx->compute_api == MPVFLOW_GPU_COMPUTE_OPENCL,' in GPU
 ), (
     "full-resolution output must enable Vulkan transfer usage for OpenCL interop while retaining blit capabilities"
 )
