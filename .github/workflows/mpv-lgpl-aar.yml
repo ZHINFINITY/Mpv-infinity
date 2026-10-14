@@ -1,0 +1,72 @@
+name: Rebuild LGPL-only MPV AARs
+
+on:
+  push:
+    branches:
+      - Mpv∞-flow
+    paths:
+      - .github/workflows/mpv-lgpl-aar.yml
+      - scripts/build-mpv-lgpl-aar.sh
+      - scripts/verify-mpv-aar-lgpl.py
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mpv-lgpl-aar-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  rebuild-native-aars:
+    name: Build LGPL-only Standard and No-Vulkan AARs for all ABIs
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: gradle
+
+      - name: Install MPV Android native build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y autoconf automake libtool gettext autopoint gperf pkg-config ninja-build cmake pipx nasm yasm binutils zlib1g-dev libssl-dev zip unzip wget curl ffmpeg glslang-tools libvulkan-dev mesa-vulkan-drivers
+          pipx install meson==1.6.1
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          "$HOME/.local/bin/meson" --version
+
+      - name: Make Gradle wrappers executable
+        run: chmod +x ./gradlew
+
+      - name: Rebuild and install GPL-free AARs
+        run: ./scripts/build-mpv-lgpl-aar.sh
+        env:
+          MPV_LGPL_BUILD_CORES: '2'
+
+      - name: Verify both four-ABI runtime profiles
+        run: |
+          python3 scripts/verify-mpv-aar-lgpl.py app/libs/mpvlib.aar --abis arm64-v8a,armeabi-v7a,x86,x86_64 --only-selected-abis --require-vulkan
+          python3 scripts/verify-mpv-aar-lgpl.py app/libs/mpvlib-no-vulkun.aar --abis arm64-v8a,armeabi-v7a,x86,x86_64 --only-selected-abis --forbid-vulkan
+
+      - name: Record archive checksums
+        run: sha256sum app/libs/mpvlib.aar app/libs/mpvlib-no-vulkun.aar > mpv-lgpl-aar-SHA256SUMS.txt
+
+      - name: Upload rebuilt AARs
+        uses: actions/upload-artifact@v7
+        with:
+          name: mpv-lgpl-aars-${{ github.sha }}
+          path: |
+            app/libs/mpvlib.aar
+            app/libs/mpvlib-no-vulkun.aar
+            mpv-lgpl-aar-SHA256SUMS.txt
+          if-no-files-found: error
+          retention-days: 14
+          compression-level: 0

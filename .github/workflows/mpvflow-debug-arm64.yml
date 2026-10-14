@@ -4,6 +4,11 @@ on:
   push:
     branches:
       - Mpv∞-flow
+    paths-ignore:
+      - .github/workflows/mpvflow-debug-arm64.yml
+      - .github/workflows/mpv-lgpl-aar.yml
+      - scripts/build-mpv-lgpl-aar.sh
+      - scripts/verify-mpv-aar-lgpl.py
   workflow_dispatch:
 
 permissions:
