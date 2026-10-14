@@ -620,4 +620,43 @@ class DebugLogRepositoryTest {
     assertTrue(export.contains(rawLines.last()))
     assertEquals(rawLines.size, export.lineSequence().count { it.startsWith("raw-log-line-") })
   }
+
+  @Test
+  fun retainsTheLastFreshCadenceSampleAcrossTransientLogSnapshotMisses() {
+    val cache = MpvFlowRuntimeCadenceSampleCache()
+    val sample =
+      MpvFlowRuntimeCadenceSample(
+        synthesizedSubmitFps = 48.0,
+        targetFps = 120,
+        swapSubmitFps = 55.0,
+        synthesizedSubmits = 240L,
+        windowMillis = 5_000.0,
+        timeMillis = 1_000L,
+      )
+
+    assertEquals(sample, cache.update(sample, nowMillis = 1_000L))
+    assertEquals(sample, cache.update(null, nowMillis = 4_000L))
+    assertEquals(sample, cache.update(null, nowMillis = 9_000L))
+    assertTrue(cache.update(null, nowMillis = 13_001L) == null)
+    assertTrue(cache.update(null, nowMillis = 13_002L) == null)
+  }
+
+  @Test
+  fun ignoresStaleCadenceCandidatesWithoutReplacingCurrentFreshValue() {
+    val cache = MpvFlowRuntimeCadenceSampleCache()
+    val current =
+      MpvFlowRuntimeCadenceSample(
+        synthesizedSubmitFps = 48.0,
+        targetFps = 120,
+        swapSubmitFps = 55.0,
+        synthesizedSubmits = 240L,
+        windowMillis = 5_000.0,
+        timeMillis = 1_000L,
+      )
+    val stale = current.copy(synthesizedSubmitFps = 2.0, timeMillis = 0L)
+
+    assertEquals(current, cache.update(current, nowMillis = 1_000L))
+    assertEquals(current, cache.update(stale, nowMillis = 13_000L))
+  }
+
 }

@@ -23,8 +23,8 @@ import app.infinity.mpvz.domain.anime4k.Anime4KManager
 import app.infinity.mpvz.domain.hdr.HdrToysManager
 import app.infinity.mpvz.network.AndroidCookieJar
 import app.infinity.mpvz.presentation.crash.DebugLogReader
-import app.infinity.mpvz.presentation.crash.isMpvFlowRuntimeCadenceSampleFresh
 import app.infinity.mpvz.presentation.crash.latestMpvFlowRuntimeCadenceSample
+import app.infinity.mpvz.presentation.crash.MpvFlowRuntimeCadenceSampleCache
 import app.infinity.mpvz.preferences.AdvancedPreferences
 import app.infinity.mpvz.preferences.AudioPreferences
 import app.infinity.mpvz.preferences.DecoderPreferences
@@ -214,13 +214,15 @@ class MPVView(
     if (!mpvFlowOsdStatsEnabled || !isSurfaceReady || mpvFlowOsdStatsJob?.isActive == true) return
     mpvFlowOsdStatsJob =
       mpvFlowOsdStatsScope.launch {
+        val sampleCache = MpvFlowRuntimeCadenceSampleCache()
         while (isActive && mpvFlowOsdStatsEnabled && isSurfaceReady) {
-          val sample =
+          val candidate =
             withContext(Dispatchers.IO) {
               runCatching {
                 latestMpvFlowRuntimeCadenceSample(DebugLogReader.readSnapshot(maxRawLines = 500).entries)
               }.getOrNull()
-            }?.takeIf { isMpvFlowRuntimeCadenceSampleFresh(it, System.currentTimeMillis()) }
+            }
+          val sample = sampleCache.update(candidate, System.currentTimeMillis())
           sendMpvFlowOsdStats(sample)
           delay(3_000L)
         }

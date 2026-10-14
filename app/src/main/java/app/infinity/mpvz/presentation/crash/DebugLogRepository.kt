@@ -508,6 +508,25 @@ internal fun isMpvFlowRuntimeCadenceSampleFresh(
   return ageMillis in 0..maxAgeMillis
 }
 
+internal class MpvFlowRuntimeCadenceSampleCache {
+  private var lastFreshSample: MpvFlowRuntimeCadenceSample? = null
+
+  fun update(
+    candidate: MpvFlowRuntimeCadenceSample?,
+    nowMillis: Long,
+  ): MpvFlowRuntimeCadenceSample? {
+    if (candidate != null && isMpvFlowRuntimeCadenceSampleFresh(candidate, nowMillis)) {
+      lastFreshSample = candidate
+    }
+    val retained = lastFreshSample
+    if (retained != null && isMpvFlowRuntimeCadenceSampleFresh(retained, nowMillis)) {
+      return retained
+    }
+    lastFreshSample = null
+    return null
+  }
+}
+
 internal fun formatMpvFlowTimingSummary(entries: List<DebugLogEntry>): String {
   val fieldPattern = Regex("""([A-Za-z_][A-Za-z0-9_]*)=([^\s]+)""")
   fun fieldsFor(event: String): Map<String, String>? =
