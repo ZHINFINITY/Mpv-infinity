@@ -32,7 +32,6 @@ import androidx.media3.common.util.TimestampIterator
 import androidx.media3.exoplayer.video.VideoFrameMetadataListener
 import androidx.media3.exoplayer.video.VideoSink
 import app.infinity.mpvz.BuildConfig
-import app.infinity.mpvz.preferences.effectiveMpvFlowMaxDimension
 import app.infinity.mpvz.preferences.effectiveMpvFlowTargetFps
 import app.infinity.mpvz.preferences.MpvFlowComputeApi
 import java.nio.ByteBuffer
@@ -129,7 +128,7 @@ class Media3FlowVideoSink(
   private val displayHz = displayRefreshRate(appContext)
   private val targetFps = effectiveMpvFlowTargetFps(requestedTargetFps, displayHz)
   private val quality = requestedQuality.coerceIn(0, 100)
-  private val maxDimension = effectiveMpvFlowMaxDimension(targetFps, quality).coerceIn(160, 640)
+  private val maxDimension = Media3FlowAnalysisPolicy.maxDimension(targetFps, quality)
   private val glThread = HandlerThread("Media3Flow-GLES").apply { start() }
   private val glHandler = Handler(glThread.looper)
   private val inputLock = Any()
