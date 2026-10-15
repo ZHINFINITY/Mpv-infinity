@@ -48,6 +48,9 @@ def test_standard_workflow_includes_both_runtimes() -> None:
     assert "package-mpv-runtime-aar.py --runtime-apk" in workflow
     overlay_command = workflow.split("package-mpv-runtime-aar.py --runtime-apk", 1)[1].split("\n", 1)[0]
     assert "--without-rife" not in overlay_command, "the combined artifact must retain the RIFE library"
+    verify_step = workflow.split("- name: Verify combined LGPL-only MPV runtime", 1)[1].split("- name:", 1)[0]
+    assert "--abis arm64-v8a,armeabi-v7a,x86,x86_64 --require-vulkan" in verify_step
+    assert "--only-selected-abis" not in verify_step, "the overlay preserves other ABI entries in the Standard AAR"
     assert "-PrifeNativeBuild=true -PmpvFlowMpvBuild=true" in workflow
     assert workflow.index("- name: Run focused interpolation regression tests") < workflow.index(
         "- name: Build debug APK"
