@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Verify missing runtime .so files are appended to an existing MPV AAR."""
+"""Verify MPV runtime overlays preserve the selected interpolation libraries."""
 from __future__ import annotations
 
 import importlib.util
@@ -18,10 +18,24 @@ sys.modules[SPEC.name] = MODULE
 SPEC.loader.exec_module(MODULE)
 
 
-def main() -> None:
+def patch_runtime_validation() -> None:
+    MODULE.assert_abi_library = lambda _path, _abi: None
+    MODULE.assert_lgpl_runtime = lambda _abi, _entries, _temp: None
+    MODULE.needed_libraries = lambda _path: set()
+    MODULE.elf_version_tags = lambda _path: set()
+    MODULE.dynamic_defined_symbols = lambda _path: {
+        "pl_vulkan_default_params",
+        "pl_vulkan_create",
+        "pl_vulkan_destroy",
+        "pl_vulkan_wrap",
+        "pl_vulkan_hold_ex",
+        "pl_vulkan_release_ex",
+    }
+
+
+def overlay_case(*, include_rife: bool) -> None:
     abi = "x86_64"
-    runtime_libs = sorted(MODULE.FLOW_REQUIRED_LIBS)
-    assert "libplacebo.so" in runtime_libs
+    runtime_libs = sorted(MODULE.REQUIRED_LIBS if include_rife else MODULE.FLOW_REQUIRED_LIBS)
     runtime_blobs = {name: f"new-runtime:{name}".encode() for name in runtime_libs}
     player_blob = b"app-specific-player-bridge"
     missing_from_old_aar = "libplacebo.so"
@@ -37,23 +51,14 @@ def main() -> None:
         with zipfile.ZipFile(mpv_aar, "w", compression=zipfile.ZIP_DEFLATED) as aar:
             aar.writestr("AndroidManifest.xml", b"fixture-manifest")
             aar.writestr(f"jni/{abi}/libplayer.so", player_blob)
+            # A Flow-only overlay must remove a stale RIFE entry; the combined
+            # overlay must replace/retain it as part of the runtime package.
+            aar.writestr(f"jni/{abi}/librife_vfi.so", b"old-rife")
             for name in runtime_libs:
-                if name != missing_from_old_aar:
+                if name not in {missing_from_old_aar, "librife_vfi.so"}:
                     aar.writestr(f"jni/{abi}/{name}", f"old:{name}".encode())
 
-        MODULE.assert_abi_library = lambda _path, _abi: None
-        MODULE.assert_lgpl_runtime = lambda _abi, _entries, _temp: None
-        MODULE.needed_libraries = lambda _path: set()
-        MODULE.elf_version_tags = lambda _path: set()
-        MODULE.dynamic_defined_symbols = lambda _path: {
-            "pl_vulkan_default_params",
-            "pl_vulkan_create",
-            "pl_vulkan_destroy",
-            "pl_vulkan_wrap",
-            "pl_vulkan_hold_ex",
-            "pl_vulkan_release_ex",
-        }
-
+        patch_runtime_validation()
         argv = [
             str(SCRIPT),
             "--runtime-apk",
@@ -62,8 +67,9 @@ def main() -> None:
             str(mpv_aar),
             "--abis",
             abi,
-            "--without-rife",
         ]
+        if not include_rife:
+            argv.append("--without-rife")
         with patch.object(sys, "argv", argv):
             MODULE.main()
 
@@ -76,8 +82,18 @@ def main() -> None:
             ]
             for name in runtime_libs:
                 assert result.read(f"jni/{abi}/{name}") == runtime_blobs[name]
+            if include_rife:
+                assert result.read(f"jni/{abi}/librife_vfi.so") == runtime_blobs["librife_vfi.so"]
+            else:
+                assert f"jni/{abi}/librife_vfi.so" not in result.namelist()
 
-    print("MPV runtime AAR overlay missing-library test passed.")
+
+def main() -> None:
+    assert "librife_vfi.so" in MODULE.REQUIRED_LIBS
+    assert "librife_vfi.so" not in MODULE.FLOW_REQUIRED_LIBS
+    overlay_case(include_rife=False)
+    overlay_case(include_rife=True)
+    print("MPV runtime AAR overlay tests passed (Flow-only removal and combined RIFE retention).")
 
 
 if __name__ == "__main__":

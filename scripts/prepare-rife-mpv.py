@@ -17,6 +17,18 @@ def replace_once(text: str, old: str, new: str, label: str) -> str:
     return text.replace(old, new, 1)
 
 
+def register_rife_player_dependency(android_mk: str) -> str:
+    base = "LOCAL_SHARED_LIBRARIES := swscale avcodec mpv"
+    flow = base + " placebo"
+    rife = base + " rife_vfi"
+    combined = base + " rife_vfi placebo"
+    if combined in android_mk or rife in android_mk:
+        return android_mk
+    if flow in android_mk:
+        return replace_once(android_mk, flow, combined, "MPVFlow player shared-library list")
+    return replace_once(android_mk, base, rife, "player shared-library list")
+
+
 def base_sources_close(meson: str) -> int:
     start = meson.index("sources = files(")
     depth = 0
@@ -127,13 +139,7 @@ def main() -> None:
             "include $(CLEAR_VARS)\n\nLOCAL_MODULE    := libplayer"
         )
         android_mk = replace_once(android_mk, anchor, module, "libplayer NDK module")
-    if "LOCAL_SHARED_LIBRARIES := swscale avcodec mpv rife_vfi" not in android_mk:
-        android_mk = replace_once(
-            android_mk,
-            "LOCAL_SHARED_LIBRARIES := swscale avcodec mpv",
-            "LOCAL_SHARED_LIBRARIES := swscale avcodec mpv rife_vfi",
-            "player shared-library list",
-        )
+    android_mk = register_rife_player_dependency(android_mk)
     android_mk_path.write_text(android_mk)
     print(f"Registered vf_rife and packaged librife_vfi.so in {mpv_dir}")
 

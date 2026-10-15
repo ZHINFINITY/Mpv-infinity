@@ -317,7 +317,7 @@
   <string name="pref_decoder_rife_processing_resolution_source">Source resolution</string>
   <string name="pref_decoder_rife_processing_resolution_value">%1$dp</string>
   <string name="pref_decoder_rife_processing_resolution_summary">Current: %1$s. Auto processes at up to 480p for 60 fps, 720p for 48 fps, and 1080p for 30 fps. Only generated frames are upscaled; lower caps can improve speed but soften their detail. Restart playback after changing.</string>
-  <string name="pref_decoder_rife_summary_unavailable">The RIFE native runtime is not included in this APK. It is built only by the experimental arm64 GitHub Actions workflow.</string>
+  <string name="pref_decoder_rife_summary_unavailable">The RIFE native runtime is not included in this APK. Use the Standard arm64-v8a debug build or the RIFE test APK.</string>
   <string name="pref_decoder_rife_summary_config_owned">Unavailable because mpv.conf owns vf or hwdec. Clear those overrides to let the app manage this feature.</string>
   <string name="pref_decoder_rife_summary_native_engine">MPV engine only. Select MPV or Auto for supported media.</string>
   <string name="pref_decoder_rife_summary_vulkan_unavailable">This device or selected MPV renderer has no available Vulkan path.</string>
@@ -331,7 +331,7 @@
   <string name="pref_decoder_mpvflow_compute_api_summary_opencl">Requires Qualcomm/Adreno support for cl_qcom_android_ahardwarebuffer_host_ptr and working Vulkan AHardwareBuffer interop. No Vulkan compute fallback is used for this explicit choice; failures are logged and affected frames pass through.</string>
   <string name="pref_decoder_mpvflow_compute_api_summary_vulkan">Force Vulkan/SPIR-V compute. The renderer API remains independent; MPVFlow may still require gpu-next with Vulkan on the MPV route.</string>
   <string name="pref_decoder_mpvflow_compute_api_summary_config_owned">The MPV route takes this choice from mpv.conf. Clear the mpvflow-compute-api override to change it here.</string>
-  <string name="pref_decoder_mpvflow_summary_unavailable">The direct GPU Flow renderer is included only in the experimental arm64 testing APK.</string>
+  <string name="pref_decoder_mpvflow_summary_unavailable">The direct GPU Flow renderer is not included in this APK. Use the Standard arm64-v8a debug build or the MPVFlow test APK.</string>
   <string name="pref_decoder_mpvflow_summary_config_owned">Unavailable because mpv.conf owns an option required by GPU Flow (such as gpu-api, gpu-context, mpvflow, mpvflow-max-dimension, interpolation, video-sync, vf, or hwdec). Clear those overrides to let the app manage this feature.</string>
   <string name="pref_decoder_mpvflow_summary_requires_gpu_next_vulkan">The direct MPV Flow route requires gpu-next with Vulkan rendering. Its OpenCL or Vulkan compute backend is selected separately. When supported, enabling Flow selects gpu-next/Vulkan rendering automatically. If Anime4K is active, turn it off; if mpv.conf overrides a renderer option, clear that override.</string>
   <string name="pref_decoder_mpvflow_summary_vulkan_unavailable">Vulkan compute is not available in this app build or on this device. Interpolation stays disabled; the player will use its normal playback route.</string>
