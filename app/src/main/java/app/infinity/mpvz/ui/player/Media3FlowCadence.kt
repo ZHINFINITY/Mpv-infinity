@@ -127,8 +127,8 @@ internal object Media3FlowCadence {
     !inputInFlight && maxStoredFrames > 0 && storedFrameCount in 0 until maxStoredFrames
 
   /**
-   * Maps an adjusted media PTS onto the current monotonic clock. Frames too far ahead stay in the
-   * bounded input queue instead of being released to MediaCodec immediately.
+   * Admits only frames within a bounded lookahead and releases them now to the private capture
+   * SurfaceTexture. This is not presentation: the window output remains scheduled from playback PTS.
    */
   fun inputReleaseTimeNs(
     framePtsUs: Long,
@@ -140,10 +140,11 @@ internal object Media3FlowCadence {
     if (nowNs < 0L || maxLookAheadUs < 0L || !speed.isFinite() || speed <= 0f) return null
     val mediaDeltaUs = checkedSubtract(framePtsUs, clockPositionUs) ?: return null
     val wallDeltaUs = mediaDeltaUs.toDouble() / speed.toDouble()
-    if (!wallDeltaUs.isFinite() || wallDeltaUs > maxLookAheadUs.toDouble()) return null
-    val releaseTimeNs = nowNs.toDouble() + wallDeltaUs.coerceAtLeast(0.0) * 1_000.0
-    if (!releaseTimeNs.isFinite() || releaseTimeNs > Long.MAX_VALUE.toDouble()) return null
-    return releaseTimeNs.roundToLong()
+    if (
+      !wallDeltaUs.isFinite() ||
+        wallDeltaUs.coerceAtLeast(0.0) > maxLookAheadUs.toDouble()
+    ) return null
+    return nowNs
   }
 
   /** Returns the newest source-frame index that is not ahead of [targetPtsUs], or null if none is due. */

@@ -1,5 +1,6 @@
 package app.infinity.mpvz.ui.player
 
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -22,9 +23,39 @@ class NativePlaybackRecoveryPolicyTest {
   }
 
   @Test
+  fun audioRendererFailureIsClassifiedAsAudioRatherThanVideo() {
+    val kind = NativePlaybackRecoveryPolicy.fallbackKind(
+      errorCodeName = "ERROR_CODE_DECODING_FAILED",
+      causeClassNames = listOf("androidx.media3.decoder.ffmpeg.FfmpegDecoderException"),
+      rendererName = "FfmpegAudioRenderer",
+      rendererMimeType = "audio/vnd.dts.hd",
+    )
+
+    assertEquals(NativePlaybackFallbackKind.AUDIO_DECODER, kind)
+    assertEquals(
+      "Native could not decode the selected audio track; switching to MPV.",
+      kind?.toastMessage,
+    )
+  }
+
+  @Test
+  fun videoRendererFailureKeepsVideoSpecificFallbackMessage() {
+    assertEquals(
+      NativePlaybackFallbackKind.VIDEO_DECODER,
+      NativePlaybackRecoveryPolicy.fallbackKind(
+        errorCodeName = "ERROR_CODE_DECODING_FAILED",
+        causeClassNames = emptyList(),
+        rendererName = "MediaCodecVideoRenderer",
+        rendererMimeType = "video/hevc",
+      ),
+    )
+  }
+
+  @Test
   fun recoversFromUnsupportedContainers() {
-    assertTrue(
-      NativePlaybackRecoveryPolicy.shouldFallbackToMpv(
+    assertEquals(
+      NativePlaybackFallbackKind.UNSUPPORTED_MEDIA,
+      NativePlaybackRecoveryPolicy.fallbackKind(
         "ERROR_CODE_PARSING_CONTAINER_UNSUPPORTED",
         emptyList(),
       ),
@@ -33,8 +64,9 @@ class NativePlaybackRecoveryPolicyTest {
 
   @Test
   fun recoversWhenMedia3FlowCannotVerifyDecoderSdrOutput() {
-    assertTrue(
-      NativePlaybackRecoveryPolicy.shouldFallbackToMpv(
+    assertEquals(
+      NativePlaybackFallbackKind.VIDEO_DECODER,
+      NativePlaybackRecoveryPolicy.fallbackKind(
         "ERROR_CODE_VIDEO_FRAME_PROCESSING_FAILED",
         listOf(
           "androidx.media3.exoplayer.video.VideoSink.VideoSinkException",

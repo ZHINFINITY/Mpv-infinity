@@ -300,6 +300,7 @@ dependencies {
   implementation("io.github.peerless2012:ass-kt:0.5.1")
   implementation("io.github.peerless2012:ass-media:0.5.1")
   implementation(project(":subtitle-libass"))
+  implementation(project(":media3-decoder-ffmpeg"))
   implementation(platform(libs.sora.editor.bom))
   implementation(libs.sora.editor)
   implementation(libs.sora.language.textmate)
@@ -343,7 +344,7 @@ dependencies {
 
 fun getCommitCount(): String = runCommand("git rev-list --count HEAD") ?: "0"
 
-fun getCommitSha(): String = runCommand("git rev-parse --short HEAD") ?: "unknown"
+fun getCommitSha(): String = runCommand("git rev-parse HEAD") ?: "unknown"
 
 fun runCommand(command: String): String? =
   try {

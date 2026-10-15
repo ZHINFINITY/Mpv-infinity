@@ -36,3 +36,4 @@ dependencyResolutionManagement {
 rootProject.name = "Mpv∞"
 include(":app")
 include(":subtitle-libass")
+include(":media3-decoder-ffmpeg")

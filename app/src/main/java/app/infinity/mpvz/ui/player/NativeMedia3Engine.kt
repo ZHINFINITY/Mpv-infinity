@@ -129,6 +129,9 @@ data class NativeTrack(
   val selected: Boolean,
   val formatId: String? = null,
   val external: Boolean = false,
+  val sampleMimeType: String? = null,
+  val codecs: String? = null,
+  val channelCount: Int = 0,
 )
 
 internal fun media3ResizeModeForAspect(aspect: VideoAspect): Int = when (aspect) {
@@ -1363,6 +1366,9 @@ class NativeMedia3Engine(
             language = format.language,
             formatId = externalUri?.let { "external:$it" } ?: format.id,
             external = isExternal,
+            sampleMimeType = format.sampleMimeType,
+            codecs = format.codecs,
+            channelCount = format.channelCount.coerceAtLeast(0),
             selected = if (type == C.TRACK_TYPE_TEXT && selectedNativeSubtitleKey == (groupIndex to trackIndex)) {
               true
             } else group.isTrackSelected(trackIndex),

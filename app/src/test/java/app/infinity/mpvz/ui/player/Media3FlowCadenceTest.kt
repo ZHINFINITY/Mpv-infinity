@@ -254,9 +254,9 @@ class Media3FlowCadenceTest {
   }
 
   @Test
-  fun decoderFramesAreReleasedOnThePlaybackClockNotImmediately() {
+  fun decoderFramesWithinBoundedLookAheadAreCapturedImmediatelyOffscreen() {
     assertEquals(
-      1_040_000_000L,
+      1_000_000_000L,
       Media3FlowCadence.inputReleaseTimeNs(
         framePtsUs = 50_000L,
         clockPositionUs = 10_000L,
@@ -266,7 +266,7 @@ class Media3FlowCadenceTest {
       ),
     )
     assertEquals(
-      1_020_000_000L,
+      1_000_000_000L,
       Media3FlowCadence.inputReleaseTimeNs(
         framePtsUs = 50_000L,
         clockPositionUs = 10_000L,
@@ -289,7 +289,7 @@ class Media3FlowCadenceTest {
       ),
     )
     assertEquals(
-      1_075_000_000L,
+      1_000_000_000L,
       Media3FlowCadence.inputReleaseTimeNs(
         framePtsUs = 160_000L,
         clockPositionUs = 10_000L,

@@ -70,6 +70,9 @@ class TrackSelector(
     val type: String,
     val lang: String,
     val title: String,
+    val codec: String,
+    val codecDesc: String,
+    val channelCount: Int,
     val isDefault: Boolean,
     val forced: Boolean,
     val hearing: Boolean,
@@ -108,6 +111,31 @@ class TrackSelector(
       }
     }
 
+  suspend fun selectAudioTrackByFingerprint(preference: AudioTrackFingerprint): Boolean =
+    withContext(Dispatchers.Main) {
+      if (MpvConfigOverridePolicy.ownsAny(MpvConfigControlledFeatures.AUDIO_TRACK_SELECTION)) {
+        return@withContext false
+      }
+      val trackCount = PlaybackSession.getPropertyInt("track-list/count") ?: 0
+      if (trackCount <= 0) return@withContext false
+      val audioTracks = readTracks(trackCount).filter { it.type == "audio" }
+      val matchIndex = AudioTrackSelectionMatcher.findBestMatchIndex(
+        preference,
+        audioTracks.map { track ->
+          AudioTrackFingerprint(
+            language = track.lang,
+            label = track.title,
+            codec = listOf(track.codec, track.codecDesc).filter(String::isNotBlank).joinToString(" "),
+            channelCount = track.channelCount.takeIf { it > 0 },
+          )
+        },
+      ) ?: return@withContext false
+      val match = audioTracks[matchIndex]
+      PlaybackSession.setPropertyInt("aid", match.id)
+      Log.i(TAG, "Restored Native-selected audio track after engine handoff id=${match.id} lang=${match.lang} codec=${match.codec}")
+      true
+    }
+
   private fun readTracks(count: Int): List<Track> {
     val list = mutableListOf<Track>()
     for (i in 0 until count) {
@@ -120,6 +148,9 @@ class TrackSelector(
           type = type,
           lang = (PlaybackSession.getPropertyString("track-list/$i/lang") ?: "").lowercase(),
           title = (PlaybackSession.getPropertyString("track-list/$i/title") ?: "").lowercase(),
+          codec = (PlaybackSession.getPropertyString("track-list/$i/codec") ?: "").lowercase(),
+          codecDesc = (PlaybackSession.getPropertyString("track-list/$i/codec-desc") ?: "").lowercase(),
+          channelCount = PlaybackSession.getPropertyInt("track-list/$i/demux-channel-count") ?: 0,
           isDefault = PlaybackSession.getPropertyBoolean("track-list/$i/default") ?: false,
           forced = PlaybackSession.getPropertyBoolean("track-list/$i/forced") ?: false,
           hearing = PlaybackSession.getPropertyBoolean("track-list/$i/hearing-impaired") ?: false,

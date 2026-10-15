@@ -118,6 +118,8 @@ jobs:
         run: python3 scripts/package-mpv-runtime-aar.py --runtime-apk "$MPVFLOW_RUNTIME_APK" --mpv-aar app/libs/mpvlib.aar --abis arm64-v8a
       - name: Verify GPL-free MPVFlow arm64 runtime
         run: python3 scripts/verify-mpv-aar-lgpl.py app/libs/mpvlib.aar --abis arm64-v8a --require-vulkan
+      - name: Verify LGPL-only DTS decoder runtime for Media3
+        run: python3 scripts/verify-media3-dca-runtime.py app/libs/mpvlib.aar --abis arm64-v8a
       - name: Save verified Flow-only MPVFlow arm64 runtime
         if: ${{ steps.mpvflow-runtime-cache.outputs.cache-hit != 'true' }}
         uses: actions/cache/save@v4
@@ -129,9 +131,15 @@ jobs:
         env:
           MPVFLOW_REQUIRE_VULKAN_PIXEL_TEST: '1'
       - name: Run standard arm64 debug unit tests
-        run: ./gradlew testStandardDebugUnitTest -PtargetAbi=arm64-v8a -PmpvFlowMpvBuild=true --stacktrace --no-daemon --max-workers=2
+        run: ./gradlew testStandardDebugUnitTest :media3-decoder-ffmpeg:testDebugUnitTest -PtargetAbi=arm64-v8a -PmpvFlowMpvBuild=true --stacktrace --no-daemon --max-workers=2
       - name: Build arm64-v8a debug APK
         run: ./gradlew assembleStandardDebug -PtargetAbi=arm64-v8a -PmpvFlowMpvBuild=true --stacktrace --no-daemon --max-workers=2
+      - name: Verify arm64 DTS wrapper dynamically links the existing FFmpeg runtime
+        run: |
+          set -euo pipefail
+          apk="$(find app/build/outputs/apk/standard/debug -maxdepth 1 -type f -name '*arm64-v8a-debug*.apk' -print -quit)"
+          [[ -n "$apk" ]] || { echo "Standard arm64 debug APK was not produced" >&2; exit 1; }
+          python3 scripts/verify-media3-dca-apk.py "$apk"
       - name: Upload arm64-v8a debug APK
         uses: actions/upload-artifact@v7
         with:

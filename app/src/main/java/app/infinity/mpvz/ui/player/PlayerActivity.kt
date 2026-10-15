@@ -71,7 +71,10 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.media3.common.C
 import androidx.media3.common.PlaybackException
+import androidx.media3.common.util.UnstableApi
+import androidx.media3.exoplayer.ExoPlaybackException
 import androidx.lifecycle.repeatOnLifecycle
+import app.infinity.mpvz.BuildConfig
 import app.infinity.mpvz.R
 import app.infinity.mpvz.catalog.StreamWatchHistory
 import app.infinity.mpvz.database.entities.PlaybackStateEntity
@@ -388,6 +391,7 @@ class PlayerActivity :
     }
   }
 
+  @OptIn(UnstableApi::class)
   private fun handleNativePlaybackError(error: PlaybackException) {
     if (activeEngineMode != PlaybackEngineMode.NATIVE || !ownsPlaybackSession() || isFinishing || isDestroyed) return
     val causeClassNames = buildList {
@@ -398,10 +402,21 @@ class PlayerActivity :
         cause = cause.cause
       }
     }
-    if (!NativePlaybackRecoveryPolicy.shouldFallbackToMpv(error.errorCodeName, causeClassNames)) return
+    val rendererFailure = error as? ExoPlaybackException
+    val fallbackKind = NativePlaybackRecoveryPolicy.fallbackKind(
+      errorCodeName = error.errorCodeName,
+      causeClassNames = causeClassNames,
+      rendererName = rendererFailure?.rendererName,
+      rendererMimeType = rendererFailure?.rendererFormat?.sampleMimeType,
+    ) ?: return
 
-    Log.w("Mpv∞-PlayerActivity", "Native decoder/media parsing failed; switching this item to MPV (${error.errorCodeName})")
-    viewModel.showToast("Native could not decode this video; switching to MPV.")
+    Log.w(
+      "Mpv∞-PlayerActivity",
+      "Native ${fallbackKind.name.lowercase()} failure; switching this item to MPV " +
+        "(code=${error.errorCodeName},renderer=${rendererFailure?.rendererName ?: "unknown"}," +
+        "format=${rendererFailure?.rendererFormat?.sampleMimeType ?: "unknown"})",
+    )
+    viewModel.showToast(fallbackKind.toastMessage)
     // The engine handoff snapshots the current position and play/pause state before reloading.
     selectEngineForCurrentVideo(PlaybackEngineMode.MPV)
   }
@@ -586,6 +601,8 @@ class PlayerActivity :
   @Volatile private var nativeEofHandled = false
   /** Native and MPV use different audio-track identifiers across an engine handoff. */
   @Volatile private var forceMpvAudioTrackAutoOnNextLoad = false
+  @Volatile private var lastRequestedNativeAudioSelection: AudioTrackFingerprint? = null
+  @Volatile private var pendingMpvAudioSelection: AudioTrackFingerprint? = null
 
   @Volatile private var playWhenFileLoaded = false
   private var pendingVideoParamRefreshRequiresShaderReload = false
@@ -755,6 +772,21 @@ class PlayerActivity :
   override fun onCreate(savedInstanceState: Bundle?) {
     enableEdgeToEdge()
     super.onCreate(savedInstanceState)
+    Log.i(
+      "Mpv∞-BuildIdentity",
+      BuildIdentityDiagnostic.startupLine(
+        gitSha = BuildConfig.GIT_SHA,
+        versionName = BuildConfig.VERSION_NAME,
+        versionCode = BuildConfig.VERSION_CODE,
+        deviceBrand = Build.BRAND,
+        deviceModel = Build.MODEL,
+        deviceProduct = Build.PRODUCT,
+        deviceCodeName = Build.DEVICE,
+        androidRelease = Build.VERSION.RELEASE,
+        androidSdk = Build.VERSION.SDK_INT,
+        buildFingerprint = Build.FINGERPRINT,
+      ),
+    )
     restoreAudioPlaybackSessionIfNeeded()
     if (redirectUnselectedTorrentToPicker(intent, finishCurrent = true)) return
     if (!acceptPreparedPlaybackLaunch(intent)) {
@@ -1106,7 +1138,10 @@ class PlayerActivity :
     }
     viewModel.setNativeAudioToggleListener { id ->
       if (id <= -1001) {
-        nativeEngine.snapshot.value.audioTracks.getOrNull(-1001 - id)?.let(nativeEngine::selectTrack)
+        nativeEngine.snapshot.value.audioTracks.getOrNull(-1001 - id)?.let { track ->
+          lastRequestedNativeAudioSelection = track.toAudioTrackFingerprint()
+          nativeEngine.selectTrack(track)
+        }
       }
     }
     lifecycleScope.launch {
@@ -1535,6 +1570,14 @@ class PlayerActivity :
   }
 
   fun selectEngineForCurrentVideo(engine: PlaybackEngineMode) {
+    if (engine == PlaybackEngineMode.MPV && activeEngineMode == PlaybackEngineMode.NATIVE) {
+      val selectedTrack = nativeEngine.snapshot.value.audioTracks.firstOrNull { it.selected }
+      pendingMpvAudioSelection =
+        lastRequestedNativeAudioSelection ?: selectedTrack?.toAudioTrackFingerprint()
+    } else if (engine == PlaybackEngineMode.NATIVE) {
+      lastRequestedNativeAudioSelection = null
+      pendingMpvAudioSelection = null
+    }
     val mediaId = PlaybackSession.queue.value.currentItem?.stableId ?: activeSaveMediaIdentifier
     if (mediaId.isNotBlank()) manualEngineOverride = mediaId to engine
     engineSelectionRequests.tryEmit(engine)
@@ -5032,9 +5075,17 @@ class PlayerActivity :
         // Apply track selection logic (defaults only apply when no saved state)
         trackSelector.onFileLoaded(hasState)
         if (activeEngineMode == PlaybackEngineMode.MPV && forceMpvAudioTrackAutoOnNextLoad) {
-          // A saved Native track id is not valid for MPV and can leave the handoff silent.
+          // Native and MPV track IDs are not interchangeable. Reset first, then restore only an
+          // unambiguous match by language/label/codec/channel metadata rather than selecting track 0.
           runCatching { PlaybackSession.setPropertyString("aid", "auto") }
           runCatching { PlaybackSession.setPropertyBoolean("mute", false) }
+          pendingMpvAudioSelection?.let { preference ->
+            if (!trackSelector.selectAudioTrackByFingerprint(preference)) {
+              Log.w(TAG, "Could not unambiguously remap the selected Native audio track in MPV")
+            }
+          }
+          pendingMpvAudioSelection = null
+          lastRequestedNativeAudioSelection = null
           forceMpvAudioTrackAutoOnNextLoad = false
         }
 

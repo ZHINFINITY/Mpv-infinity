@@ -1109,7 +1109,11 @@ class Media3FlowVideoSink(
     recordCpuDuration(FlowCpuStage.INPUT_QUEUE_WAIT, (System.nanoTime() - pending.enqueuedAtNs).coerceAtLeast(0L))
     val handlerStartNs = System.nanoTime()
     try {
-      // Handler.render is called on Media3's playback thread; GPU work stays on the dedicated GL thread.
+      // This renders only into the sink's private capture SurfaceTexture. The visible window is
+      // scheduled separately from playback PTS in renderAtPosition, so a bounded frame lookahead
+      // supplies interpolation inputs without advancing on-screen presentation or audio timing.
+      // Handler.render is called on Media3's playback thread; GPU work stays on the dedicated GL
+      // thread.
       pending.handler.render(token.releaseTimestampNs)
     } catch (error: RuntimeException) {
       synchronized(inputLock) {
@@ -2828,7 +2832,8 @@ class Media3FlowVideoSink(
       "synthesisSubmit=${formatFlowDuration(cpuTiming.vulkanSynthesisSubmit)}"
     Log.i(
       logTag,
-        "flow_summary renderer_api=vulkan requested_compute_api=${requestedComputeApi.name.lowercase()} " +
+        "flow_summary ${BuildIdentityDiagnostic.shaField(BuildConfig.GIT_SHA)} " +
+        "renderer_api=vulkan requested_compute_api=${requestedComputeApi.name.lowercase()} " +
         "effective_compute_api=${effectiveComputeApiName()} state=${diagnostics.state} " +
         "bypass=${diagnostics.bypassReason ?: "none"} " +
         "positionUs=$latestPositionUs speed=${formatLogFloat(playbackSpeed)} " +
