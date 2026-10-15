@@ -7,7 +7,7 @@
  * version 2.1 of the License, or (at your option) any later version.
  *
  * The MPVFlow implementation below is an independent, clean-room MEMC
- * experiment and does not include SVPFlow or RIFE code.
+ * experiment with its own GPU motion-estimation and synthesis pipeline.
  */
 #include <math.h>
 #include <stddef.h>

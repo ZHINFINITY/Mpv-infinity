@@ -17,7 +17,6 @@ import java.util.Date
 import java.util.Locale
 
 internal const val DEBUG_LOG_ENTRY_LIMIT = 5_000
-private const val RIFE_DIAGNOSTIC_ENTRY_RESERVE = 500
 private const val MPVFLOW_DIAGNOSTIC_ENTRY_RESERVE = 500
 private const val NATIVE_MEDIA3_FLOW_DIAGNOSTIC_ENTRY_RESERVE = 250
 private const val FLOW_STARTUP_ENTRY_PIN_COUNT = 16
@@ -319,10 +318,6 @@ internal fun formatAllAccessibleLogcatExport(
 internal fun retainDebugLogEntries(entries: List<DebugLogEntry>): List<DebugLogEntry> {
   if (entries.size <= DEBUG_LOG_ENTRY_LIMIT) return entries
 
-  val rifeDiagnostics =
-    entries
-      .filter(DebugLogEntry::isRifeDiagnostic)
-      .takeLast(RIFE_DIAGNOSTIC_ENTRY_RESERVE)
   val mpvFlowDiagnostics =
     retainPinnedFlowDiagnostics(entries.filter(DebugLogEntry::isMpvFlowDiagnostic), MPVFLOW_DIAGNOSTIC_ENTRY_RESERVE)
   val nativeMedia3FlowDiagnostics =
@@ -330,17 +325,12 @@ internal fun retainDebugLogEntries(entries: List<DebugLogEntry>): List<DebugLogE
       entries.filter(DebugLogEntry::isNativeMedia3FlowDiagnostic),
       NATIVE_MEDIA3_FLOW_DIAGNOSTIC_ENTRY_RESERVE,
     )
-  val diagnostics = (rifeDiagnostics + mpvFlowDiagnostics + nativeMedia3FlowDiagnostics).distinctBy(DebugLogEntry::id)
+  val diagnostics = (mpvFlowDiagnostics + nativeMedia3FlowDiagnostics).distinctBy(DebugLogEntry::id)
   val recentCapacity = (DEBUG_LOG_ENTRY_LIMIT - diagnostics.size).coerceAtLeast(0)
   return (entries.takeLast(recentCapacity) + diagnostics)
     .distinctBy(DebugLogEntry::id)
     .sortedBy(DebugLogEntry::timeMillis)
 }
-
-internal fun DebugLogEntry.isRifeDiagnostic(): Boolean =
-  tag.contains("rife", ignoreCase = true) ||
-    message.contains("rife", ignoreCase = true) ||
-    message.contains("vf_rife", ignoreCase = true)
 
 internal fun DebugLogEntry.isMpvFlowDiagnostic(): Boolean =
   tag.contains("vf_mpvflow", ignoreCase = true) ||

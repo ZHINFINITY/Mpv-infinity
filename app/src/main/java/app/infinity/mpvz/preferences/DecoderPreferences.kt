@@ -14,13 +14,6 @@ import app.infinity.mpvz.ui.player.Debanding
 import app.infinity.mpvz.ui.player.HdrScreenMode
 import app.infinity.mpvz.ui.player.PlaybackEngineMode
 
-internal val RIFE_TARGET_FPS_OPTIONS = listOf(30, 48, 60)
-internal const val DEFAULT_RIFE_TARGET_FPS = 30
-
-internal fun normalizeRifeTargetFps(value: Int): Int =
-  RIFE_TARGET_FPS_OPTIONS.minByOrNull { kotlin.math.abs(it.toLong() - value.toLong()) }
-    ?: DEFAULT_RIFE_TARGET_FPS
-
 internal val MPVFLOW_TARGET_FPS_OPTIONS = listOf(48, 60, 72, 90, 96, 120, 144)
 internal const val DEFAULT_MPVFLOW_TARGET_FPS = 60
 internal const val DEFAULT_MPVFLOW_QUALITY = 60
@@ -75,16 +68,6 @@ internal fun effectiveMpvFlowSearchRadius(targetFps: Int, quality: Int): Int {
   }
 }
 
-internal val RIFE_PROCESSING_RESOLUTION_OPTIONS = listOf(-1, 0, 480, 720, 1080)
-internal const val DEFAULT_RIFE_PROCESSING_RESOLUTION = 0
-
-internal fun normalizeRifeProcessingResolution(value: Int): Int =
-  value.takeIf { it in RIFE_PROCESSING_RESOLUTION_OPTIONS }
-    ?: RIFE_PROCESSING_RESOLUTION_OPTIONS.filter { it > 0 }.minByOrNull {
-      kotlin.math.abs(it.toLong() - value.toLong())
-    }
-    ?: DEFAULT_RIFE_PROCESSING_RESOLUTION
-
 class DecoderPreferences(
   preferenceStore: PreferenceStore,
 ) {
@@ -100,10 +83,6 @@ class DecoderPreferences(
   /** Boost SDR content into the HDR range when using the Linear HDR pipeline. */
   val boostSdrToHdr = preferenceStore.getBoolean("boost_sdr_to_hdr", true)
   val useYUV420P = preferenceStore.getBoolean("use_yuv420p", false)
-  val rifeFrameInterpolation = preferenceStore.getBoolean("rife_frame_interpolation", false)
-  val rifeTargetFps = preferenceStore.getInt("rife_target_fps", DEFAULT_RIFE_TARGET_FPS)
-  val rifeProcessingResolution =
-    preferenceStore.getInt("rife_processing_resolution", DEFAULT_RIFE_PROCESSING_RESOLUTION)
   val mpvFlowFrameInterpolation = preferenceStore.getBoolean("mpvflow_frame_interpolation", false)
   val mpvFlowTargetFps = preferenceStore.getInt("mpvflow_target_fps", DEFAULT_MPVFLOW_TARGET_FPS)
   val mpvFlowQuality = preferenceStore.getInt("mpvflow_quality", DEFAULT_MPVFLOW_QUALITY)

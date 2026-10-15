@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Verify MPV runtime overlays preserve the selected interpolation libraries."""
+"""Verify Flow-only MPV runtime overlays preserve required libraries and remove stale RIFE."""
 from __future__ import annotations
 
 import importlib.util
@@ -33,13 +33,14 @@ def patch_runtime_validation() -> None:
     }
 
 
-def overlay_case(*, include_rife: bool, omit_udfread: bool = False) -> None:
+def overlay_case(*, omit_udfread: bool = False) -> None:
     abi = "x86_64"
-    runtime_libs = sorted(MODULE.REQUIRED_LIBS if include_rife else MODULE.FLOW_REQUIRED_LIBS)
+    runtime_libs = sorted(MODULE.REQUIRED_LIBS)
     if omit_udfread:
         runtime_libs.remove("libudfread.so")
     runtime_blobs = {name: f"new-runtime:{name}".encode() for name in runtime_libs}
     player_blob = b"app-specific-player-bridge"
+    other_abi_player_blob = b"other-abi-player-bridge"
     missing_from_old_aar = "libplacebo.so"
 
     with tempfile.TemporaryDirectory(prefix="mpv-runtime-aar-overlay-test-") as td:
@@ -53,11 +54,12 @@ def overlay_case(*, include_rife: bool, omit_udfread: bool = False) -> None:
         with zipfile.ZipFile(mpv_aar, "w", compression=zipfile.ZIP_DEFLATED) as aar:
             aar.writestr("AndroidManifest.xml", b"fixture-manifest")
             aar.writestr(f"jni/{abi}/libplayer.so", player_blob)
-            # A Flow-only overlay must remove a stale RIFE entry; the combined
-            # overlay must replace/retain it as part of the runtime package.
-            aar.writestr(f"jni/{abi}/librife_vfi.so", b"old-rife")
+            aar.writestr("jni/arm64-v8a/libplayer.so", other_abi_player_blob)
+            # A stale RIFE binary must be pruned even when its ABI is not overlaid.
+            aar.writestr(f"jni/{abi}/librife_vfi.so", b"old-rife-selected-abi")
+            aar.writestr("jni/arm64-v8a/librife_vfi.so", b"old-rife-other-abi")
             for name in runtime_libs:
-                if name not in {missing_from_old_aar, "librife_vfi.so"}:
+                if name != missing_from_old_aar:
                     aar.writestr(f"jni/{abi}/{name}", f"old:{name}".encode())
 
         patch_runtime_validation()
@@ -70,8 +72,6 @@ def overlay_case(*, include_rife: bool, omit_udfread: bool = False) -> None:
             "--abis",
             abi,
         ]
-        if not include_rife:
-            argv.append("--without-rife")
         with patch.object(sys, "argv", argv):
             if omit_udfread:
                 try:
@@ -87,26 +87,19 @@ def overlay_case(*, include_rife: bool, omit_udfread: bool = False) -> None:
             assert result.testzip() is None
             assert result.read("AndroidManifest.xml") == b"fixture-manifest"
             assert result.read(f"jni/{abi}/libplayer.so") == player_blob
-            assert result.read(f"jni/{abi}/{missing_from_old_aar}") == runtime_blobs[
-                missing_from_old_aar
-            ]
+            assert result.read("jni/arm64-v8a/libplayer.so") == other_abi_player_blob
+            assert result.read(f"jni/{abi}/{missing_from_old_aar}") == runtime_blobs[missing_from_old_aar]
             for name in runtime_libs:
                 assert result.read(f"jni/{abi}/{name}") == runtime_blobs[name]
-            if include_rife:
-                assert result.read(f"jni/{abi}/librife_vfi.so") == runtime_blobs["librife_vfi.so"]
-            else:
-                assert f"jni/{abi}/librife_vfi.so" not in result.namelist()
+            assert not any(name.endswith("/librife_vfi.so") for name in result.namelist())
 
 
 def main() -> None:
-    assert "librife_vfi.so" in MODULE.REQUIRED_LIBS
-    assert "librife_vfi.so" not in MODULE.FLOW_REQUIRED_LIBS
+    assert "librife_vfi.so" not in MODULE.REQUIRED_LIBS
     assert "libudfread.so" in MODULE.REQUIRED_LIBS
-    assert "libudfread.so" in MODULE.FLOW_REQUIRED_LIBS
-    overlay_case(include_rife=False, omit_udfread=True)
-    overlay_case(include_rife=False)
-    overlay_case(include_rife=True)
-    print("MPV runtime AAR overlay tests passed (Flow-only removal and combined RIFE retention).")
+    overlay_case(omit_udfread=True)
+    overlay_case()
+    print("MPV runtime AAR overlay tests passed (Flow-only closure and stale-RIFE pruning).")
 
 
 if __name__ == "__main__":

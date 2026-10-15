@@ -206,7 +206,9 @@ assert "mpvflow_placebo_api_from_aar" in CMAKE
 assert "-Ddefault_library=shared" in RUNTIME_BUILD
 assert "LOCAL_MODULE := libplacebo" in RUNTIME_BUILD
 assert "LOCAL_SRC_FILES := $(PREFIX)/lib/libplacebo.so" in RUNTIME_BUILD
-assert "LOCAL_SHARED_LIBRARIES := swscale avcodec mpv placebo" in RUNTIME_BUILD
+assert "LOCAL_MODULE := libudfread" in RUNTIME_BUILD
+assert "LOCAL_SRC_FILES := $(PREFIX)/lib/libudfread.so" in RUNTIME_BUILD
+assert "LOCAL_SHARED_LIBRARIES := swscale avcodec mpv udfread placebo" in RUNTIME_BUILD
 assert '"libplacebo.so"' in AAR_PACKAGE
 assert "dynamic_defined_symbols" in AAR_PACKAGE
 assert "pl_vulkan_release_ex" in AAR_PACKAGE

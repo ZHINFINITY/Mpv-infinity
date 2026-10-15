@@ -52,8 +52,6 @@ import app.infinity.mpvz.preferences.AdvancedPreferences
 import app.infinity.mpvz.preferences.DecoderPreferences
 import app.infinity.mpvz.preferences.MpvConfigControlledFeatures
 import app.infinity.mpvz.preferences.MpvConfigOverride
-import app.infinity.mpvz.preferences.RIFE_PROCESSING_RESOLUTION_OPTIONS
-import app.infinity.mpvz.preferences.RIFE_TARGET_FPS_OPTIONS
 import app.infinity.mpvz.preferences.MPVFLOW_TARGET_FPS_OPTIONS
 import app.infinity.mpvz.preferences.MpvFlowComputeApi
 import app.infinity.mpvz.preferences.preference.collectAsState
@@ -86,9 +84,6 @@ object DecoderPreferencesScreen : Screen {
     val anime4kEnabledPreference by preferences.enableAnime4K.collectAsState()
     val anime4kMode by preferences.anime4kMode.collectAsState()
     val anime4kActivePreference = anime4kEnabledPreference && anime4kMode != "OFF"
-    val rifeFrameInterpolationEnabled by preferences.rifeFrameInterpolation.collectAsState()
-    val rifeTargetFps by preferences.rifeTargetFps.collectAsState()
-    val rifeProcessingResolution by preferences.rifeProcessingResolution.collectAsState()
     val mpvFlowFrameInterpolationEnabled by preferences.mpvFlowFrameInterpolation.collectAsState()
     val mpvFlowTargetFps by preferences.mpvFlowTargetFps.collectAsState()
     val mpvFlowComputeApi by preferences.mpvFlowComputeApi.collectAsState()
@@ -111,11 +106,6 @@ object DecoderPreferencesScreen : Screen {
     val context = LocalContext.current
     val isDeviceVulkanSupported = remember { VulkanCapabilities.isDeviceSupported(context) }
     val isVulkanSupported = BuildConfig.MPV_SUPPORTS_VULKAN && isDeviceVulkanSupported
-    val rifeAvailable =
-      BuildConfig.MPV_HAS_RIFE &&
-        isVulkanSupported &&
-        !frameInterpolationConfigOwned &&
-        selectedPlaybackEngine != PlaybackEngineMode.NATIVE
     val mpvFlowAvailable =
       BuildConfig.MPV_HAS_MPVFLOW &&
         isVulkanSupported &&
@@ -125,8 +115,7 @@ object DecoderPreferencesScreen : Screen {
         selectedPlaybackEngine != PlaybackEngineMode.NATIVE
     val nativeMedia3FlowSelected = selectedPlaybackEngine == PlaybackEngineMode.NATIVE
     val nativeMedia3FlowAvailable = nativeMedia3FlowSelected && isVulkanSupported
-    val mpvFlowForcesRenderer =
-      mpvFlowFrameInterpolationEnabled && mpvFlowAvailable && !rifeFrameInterpolationEnabled
+    val mpvFlowForcesRenderer = mpvFlowFrameInterpolationEnabled && mpvFlowAvailable
     var showGpuNextWarning by remember { mutableStateOf(false) }
     var anime4kExpanded by remember { mutableStateOf(false) }
     Scaffold(
@@ -373,96 +362,10 @@ object DecoderPreferencesScreen : Screen {
               PreferenceDivider()
 
               SwitchPreference(
-                modifier = Modifier.settingsSearchTarget(R.string.pref_decoder_rife_title),
-                value = rifeFrameInterpolationEnabled,
-                enabled = rifeAvailable && !mpvFlowFrameInterpolationEnabled,
-                onValueChange = {
-                  if (it) preferences.mpvFlowFrameInterpolation.set(false)
-                  preferences.rifeFrameInterpolation.set(it)
-                },
-                title = { Text(stringResource(R.string.pref_decoder_rife_title)) },
-                summary = {
-                  Text(
-                    stringResource(
-                      when {
-                        !BuildConfig.MPV_HAS_RIFE -> R.string.pref_decoder_rife_summary_unavailable
-                        frameInterpolationConfigOwned -> R.string.pref_decoder_rife_summary_config_owned
-                        selectedPlaybackEngine == PlaybackEngineMode.NATIVE ->
-                          R.string.pref_decoder_rife_summary_native_engine
-                        !isVulkanSupported -> R.string.pref_decoder_rife_summary_vulkan_unavailable
-                        else -> R.string.pref_decoder_rife_summary
-                      },
-                    ),
-                    color = MaterialTheme.colorScheme.outline,
-                  )
-                },
-              )
-
-              PreferenceDivider()
-
-              ListPreference(
-                modifier = Modifier.settingsSearchTarget(R.string.pref_decoder_rife_target_fps_title),
-                value = rifeTargetFps,
-                onValueChange = preferences.rifeTargetFps::set,
-                values = RIFE_TARGET_FPS_OPTIONS,
-                enabled = rifeAvailable && !mpvFlowFrameInterpolationEnabled,
-                valueToText = {
-                  AnnotatedString(context.getString(R.string.pref_decoder_rife_target_fps_value, it))
-                },
-                title = { Text(stringResource(R.string.pref_decoder_rife_target_fps_title)) },
-                summary = {
-                  Text(
-                    stringResource(R.string.pref_decoder_rife_target_fps_summary, rifeTargetFps),
-                    color = MaterialTheme.colorScheme.outline,
-                  )
-                },
-              )
-
-              PreferenceDivider()
-
-              ListPreference(
-                modifier = Modifier.settingsSearchTarget(R.string.pref_decoder_rife_processing_resolution_title),
-                value = rifeProcessingResolution,
-                onValueChange = preferences.rifeProcessingResolution::set,
-                values = RIFE_PROCESSING_RESOLUTION_OPTIONS,
-                enabled = rifeAvailable && !mpvFlowFrameInterpolationEnabled,
-                valueToText = {
-                  AnnotatedString(
-                    when (it) {
-                      -1 -> context.getString(R.string.pref_decoder_rife_processing_resolution_source)
-                      0 -> context.getString(R.string.pref_decoder_rife_processing_resolution_auto)
-                      else -> context.getString(R.string.pref_decoder_rife_processing_resolution_value, it)
-                    },
-                  )
-                },
-                title = { Text(stringResource(R.string.pref_decoder_rife_processing_resolution_title)) },
-                summary = {
-                  Text(
-                    stringResource(
-                      R.string.pref_decoder_rife_processing_resolution_summary,
-                      when (rifeProcessingResolution) {
-                        -1 -> context.getString(R.string.pref_decoder_rife_processing_resolution_source)
-                        0 -> context.getString(R.string.pref_decoder_rife_processing_resolution_auto)
-                        else ->
-                          context.getString(
-                            R.string.pref_decoder_rife_processing_resolution_value,
-                            rifeProcessingResolution,
-                          )
-                      },
-                    ),
-                    color = MaterialTheme.colorScheme.outline,
-                  )
-                },
-              )
-
-              PreferenceDivider()
-
-              SwitchPreference(
                 modifier = Modifier.settingsSearchTarget(R.string.pref_decoder_mpvflow_title),
                 value = mpvFlowFrameInterpolationEnabled,
                 enabled = mpvFlowAvailable || nativeMedia3FlowAvailable || mpvFlowFrameInterpolationEnabled,
                 onValueChange = { enabled ->
-                  if (enabled) preferences.rifeFrameInterpolation.set(false)
                   preferences.mpvFlowFrameInterpolation.set(enabled)
                 },
                 title = { Text(stringResource(R.string.pref_decoder_mpvflow_title)) },
@@ -476,7 +379,6 @@ object DecoderPreferencesScreen : Screen {
                         !BuildConfig.MPV_HAS_MPVFLOW -> R.string.pref_decoder_mpvflow_summary_unavailable
                         frameInterpolationConfigOwned -> R.string.pref_decoder_mpvflow_summary_config_owned
                         rendererBackendConfigOwned -> R.string.pref_decoder_mpvflow_summary_config_owned
-                        rifeFrameInterpolationEnabled -> R.string.pref_decoder_mpvflow_summary_rife_selected
                         !isVulkanSupported -> R.string.pref_decoder_mpvflow_summary_vulkan_unavailable
                         anime4kActivePreference ->
                           R.string.pref_decoder_mpvflow_summary_requires_gpu_next_vulkan

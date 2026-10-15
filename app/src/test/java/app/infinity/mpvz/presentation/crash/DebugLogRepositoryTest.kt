@@ -13,73 +13,16 @@ import org.junit.Test
 
 class DebugLogRepositoryTest {
   @Test
-  fun retainsRifeDiagnosticsAlongsideTheMostRecentLogs() {
-    val rifeEntry =
-      DebugLogEntry(
-        id = "rife-config",
-        timeMillis = 1L,
-        timestamp = "00:00:00.001",
-        level = DebugLogLevel.Info,
-        tag = "Mpv∞",
-        message = "RIFE_DIAGNOSTIC event=config enabled=true target_fps=30",
-      )
-    val recentEntries =
-      (0 until DEBUG_LOG_ENTRY_LIMIT).map { index ->
-        DebugLogEntry(
-          id = "recent-$index",
-          timeMillis = index + 2L,
-          timestamp = "00:00:00.002",
-          level = DebugLogLevel.Info,
-          tag = "Playback",
-          message = "routine playback log $index",
-        )
-      }
-
-    val retained = retainDebugLogEntries(listOf(rifeEntry) + recentEntries)
-
-    assertEquals(DEBUG_LOG_ENTRY_LIMIT, retained.size)
-    assertTrue(retained.any { it.id == rifeEntry.id })
-    assertTrue(retained.any { it.id == "recent-${DEBUG_LOG_ENTRY_LIMIT - 1}" })
-  }
-
-  @Test
-  fun classifiesRifeSetupFormatTimingAndFallbackEventsForTheRifeFilter() {
-    val messages =
-      listOf(
-        "RIFE_DIAGNOSTIC event=config enabled=true target_fps=60",
-        "RIFE_DIAGNOSTIC event=input format=yuv420p10le component_bits=10",
-        "RIFE_DIAGNOSTIC event=frame_timing average_inference_ms=12.5",
-        "RIFE_DIAGNOSTIC event=passthrough reason=hdr_pq",
-        "RIFE_DIAGNOSTIC event=auto_fallback reason=slow_inference",
-        "ordinary decoder log without interpolation details",
-      )
-    val entries =
-      messages.mapIndexed { index, message ->
-        DebugLogEntry(
-          id = "entry-$index",
-          timeMillis = index.toLong(),
-          timestamp = "00:00:00.000",
-          level = DebugLogLevel.Info,
-          tag = if (index == 2) "vf_rife" else "Mpv∞",
-          message = message,
-        )
-      }
-
-    assertEquals(5, entries.count(DebugLogEntry::isRifeDiagnostic))
-    assertEquals(5, retainDebugLogEntries(entries).count(DebugLogEntry::isRifeDiagnostic))
-  }
-
-  @Test
-  fun reservesTheLatestFiveHundredRifeDiagnosticsWhenTheLogBufferOverflows() {
-    val rifeEntries =
+  fun reservesTheLatestFiveHundredMpvFlowDiagnosticsWhenTheLogBufferOverflows() {
+    val flowEntries =
       (0 until 520).map { index ->
         DebugLogEntry(
-          id = "rife-$index",
+          id = "mpvflow-$index",
           timeMillis = index.toLong(),
           timestamp = "00:00:00.000",
           level = DebugLogLevel.Info,
           tag = "Mpv∞",
-          message = "RIFE_DIAGNOSTIC event=frame_timing frame=$index",
+          message = "MPVFLOW_DIAGNOSTIC event=source_pair_synthesis pair=$index",
         )
       }
     val recentEntries =
@@ -94,48 +37,13 @@ class DebugLogRepositoryTest {
         )
       }
 
-    val retained = retainDebugLogEntries(rifeEntries + recentEntries)
+    val retained = retainDebugLogEntries(flowEntries + recentEntries)
 
     assertEquals(DEBUG_LOG_ENTRY_LIMIT, retained.size)
-    assertEquals(500, retained.count(DebugLogEntry::isRifeDiagnostic))
-    assertTrue(retained.none { it.id == "rife-0" })
-    assertTrue(retained.any { it.id == "rife-519" })
-    assertTrue(retained.any { it.id == "recent-${DEBUG_LOG_ENTRY_LIMIT - 1}" })
-  }
-
-  @Test
-  fun reservesTheLatestFiveHundredMpvFlowAndRifeDiagnostics() {
-    fun diagnostic(id: String, timeMillis: Long, message: String) =
-      DebugLogEntry(
-        id = id,
-        timeMillis = timeMillis,
-        timestamp = "00:00:00.000",
-        level = DebugLogLevel.Info,
-        tag = "Mpv∞",
-        message = message,
-      )
-
-    val rifeEntries =
-      (0 until 520).map { index ->
-        diagnostic("rife-$index", index.toLong(), "RIFE_DIAGNOSTIC event=frame_timing frame=$index")
-      }
-    val mpvFlowEntries =
-      (0 until 520).map { index ->
-        diagnostic("mpvflow-$index", 520L + index, "MPVFLOW_DIAGNOSTIC event=source_pair_synthesis pair=$index")
-      }
-    val recentEntries =
-      (0 until DEBUG_LOG_ENTRY_LIMIT).map { index ->
-        diagnostic("recent-$index", 2_000L + index, "routine playback log $index")
-      }
-
-    val retained = retainDebugLogEntries(rifeEntries + mpvFlowEntries + recentEntries)
-
-    assertEquals(DEBUG_LOG_ENTRY_LIMIT, retained.size)
-    assertEquals(500, retained.count(DebugLogEntry::isRifeDiagnostic))
     assertEquals(500, retained.count(DebugLogEntry::isMpvFlowDiagnostic))
-    assertTrue(retained.none { it.id == "rife-0" || it.id == "mpvflow-0" })
-    assertTrue(retained.any { it.id == "rife-519" })
+    assertTrue(retained.none { it.id == "mpvflow-0" })
     assertTrue(retained.any { it.id == "mpvflow-519" })
+    assertTrue(retained.any { it.id == "recent-${DEBUG_LOG_ENTRY_LIMIT - 1}" })
   }
 
   @Test

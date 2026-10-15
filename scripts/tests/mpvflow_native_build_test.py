@@ -998,7 +998,6 @@ flow_selector = view_source.split("val flowRequiresVulkan =", 1)[1].split(
 for marker in (
     "BuildConfig.MPV_HAS_MPVFLOW",
     "BuildConfig.MPV_SUPPORTS_VULKAN",
-    "!decoderPreferences.rifeFrameInterpolation.get()",
     "!MpvConfigOverridePolicy.ownsAny(MpvConfigControlledFeatures.FRAME_INTERPOLATION)",
     "PlaybackEngineMode.NATIVE",
 ):

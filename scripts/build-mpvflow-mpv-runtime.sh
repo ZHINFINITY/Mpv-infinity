@@ -4,25 +4,11 @@ set -euo pipefail
 ROOT="${GITHUB_WORKSPACE:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
 MPV_BUILDER_DIR="${MPV_BUILDER_DIR:-$ROOT/native-builder}"
 MPV_SOURCE_DIR="${MPV_SOURCE_DIR:-$ROOT/mpv-source}"
-RIFE_SOURCE_DIR="${RIFE_SOURCE_DIR:-$ROOT/rife-project}"
-MPVFLOW_INCLUDE_RIFE="${MPVFLOW_INCLUDE_RIFE:-0}"
 BUILDSCRIPTS="$MPV_BUILDER_DIR/buildscripts"
 
 [[ -d "$BUILDSCRIPTS" ]] || { echo "Missing pinned Android MPV build tools: $BUILDSCRIPTS" >&2; exit 1; }
 [[ -d "$MPV_SOURCE_DIR/.git" ]] || { echo "Missing pinned MPV checkout: $MPV_SOURCE_DIR" >&2; exit 1; }
 [[ -n "${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}" ]] || { echo "ANDROID_HOME/ANDROID_SDK_ROOT is required" >&2; exit 1; }
-[[ "$MPVFLOW_INCLUDE_RIFE" == "0" || "$MPVFLOW_INCLUDE_RIFE" == "1" ]] || {
-  echo "MPVFLOW_INCLUDE_RIFE must be 0 or 1" >&2
-  exit 1
-}
-if [[ "$MPVFLOW_INCLUDE_RIFE" == "1" ]]; then
-  [[ -d "$RIFE_SOURCE_DIR/src" && -f "$RIFE_SOURCE_DIR/src/rife.cpp" ]] || {
-    echo "Missing pinned RIFE source: $RIFE_SOURCE_DIR" >&2
-    exit 1
-  }
-  export RIFE_SOURCE_DIR
-fi
-
 export ANDROID_HOME="${ANDROID_HOME:-$ANDROID_SDK_ROOT}"
 export ANDROID_SDK_ROOT="$ANDROID_HOME"
 export MPV_SOURCE_DIR
@@ -274,14 +260,6 @@ rm -f "$LIBBLURAY_ARCHIVE"
 
 cd "$BUILDSCRIPTS"
 ./include/ci.sh install
-
-if [[ "$MPVFLOW_INCLUDE_RIFE" == "1" ]]; then
-  cd "$ROOT"
-  RIFE_PREFIX="$BUILDSCRIPTS/prefix/arm64" ./scripts/build-rife-native.sh
-  python3 "$ROOT/scripts/prepare-rife-mpv.py" \
-    --mpv-dir "$BUILDSCRIPTS/deps/mpv" \
-    --prefix-dir "$BUILDSCRIPTS/prefix/arm64"
-fi
 
 cd "$ROOT"
 python3 "$ROOT/scripts/prepare-mpvflow.py" --mpv-dir "$BUILDSCRIPTS/deps/mpv" --libplacebo-dir "$BUILDSCRIPTS/deps/libplacebo"

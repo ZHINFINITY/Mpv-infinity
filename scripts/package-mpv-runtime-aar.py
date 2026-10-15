@@ -11,7 +11,6 @@ import tempfile
 import zipfile
 
 REQUIRED_LIBS = {
-    "librife_vfi.so",
     "libmpv.so",
     "libplacebo.so",
     "libavcodec.so",
@@ -24,7 +23,6 @@ REQUIRED_LIBS = {
     "libudfread.so",
     "libc++_shared.so",
 }
-FLOW_REQUIRED_LIBS = REQUIRED_LIBS - {"librife_vfi.so"}
 PRESERVE_FROM_MPV_INFINITY = {"libplayer.so"}
 KNOWN_SYSTEM_LIBS = {
     "libandroid.so", "libc.so", "libdl.so", "libEGL.so", "libGLESv1_CM.so",
@@ -155,18 +153,13 @@ def main() -> None:
         help="Remove every non-selected ABI directory from the output AAR.",
     )
     parser.add_argument(
-        "--without-rife",
-        action="store_true",
-        help="Overlay a standard MPV runtime without requiring or packaging the RIFE library.",
-    )
-    parser.add_argument(
         "--without-vulkan",
         action="store_true",
         help="Overlay a no-Vulkan runtime and skip Vulkan-only libplacebo export checks.",
     )
     args = parser.parse_args()
     abis = parse_abis(args.abis)
-    required_libs = FLOW_REQUIRED_LIBS if args.without_rife else REQUIRED_LIBS
+    required_libs = REQUIRED_LIBS
     apk_path = args.runtime_apk.resolve()
     aar_path = args.mpv_aar.resolve()
     if not apk_path.is_file() or not aar_path.is_file():
@@ -260,9 +253,12 @@ def main() -> None:
         for name, blob in entries.items()
         if name != "libplayer.so"
     }
-    remove_from_aar = set()
-    if args.without_rife:
-        remove_from_aar.update(f"jni/{abi}/librife_vfi.so" for abi in abis)
+    # The app now ships only MPVFlow; remove any stale RIFE library from every ABI,
+    # including ABIs not selected for this runtime overlay.
+    remove_from_aar = {
+        name for name in original_entries
+        if name.startswith("jni/") and name.endswith("/librife_vfi.so")
+    }
     if args.prune_abis:
         remove_from_aar.update(
             name for name in original_entries
@@ -296,8 +292,6 @@ def main() -> None:
     print("Preserved each ABI's MPV∞ libplayer.so and validated FFmpeg ABI tags plus the selected runtime profile.")
     if args.prune_abis:
         print("Removed all non-selected ABI entries from the AAR.")
-    if args.without_rife:
-        print("Packaged the MPV runtime without the RIFE native library.")
     if args.without_vulkan:
         print("Packaged a no-Vulkan MPV runtime.")
 

@@ -12,7 +12,6 @@ val localProperties =
 
 val targetAbiProp = project.findProperty("targetAbi")?.toString() ?: localProperties.getProperty("targetAbi")
 val enableX86 = project.findProperty("enableX86") != "false"
-val requestedRifeNative = project.findProperty("rifeNativeBuild")?.toString() == "true"
 val requestedMpvFlowMpvRuntime = project.findProperty("mpvFlowMpvBuild")?.toString() == "true"
 val x86Abis = if (enableX86) listOf("x86", "x86_64") else emptyList()
 val activeAbis =
@@ -21,7 +20,6 @@ val activeAbis =
   } else {
     listOf("arm64-v8a", "armeabi-v7a") + x86Abis
   }
-val includeRifeNative = requestedRifeNative && activeAbis == listOf("arm64-v8a")
 val includeMpvFlowMpvRuntime = requestedMpvFlowMpvRuntime && activeAbis == listOf("arm64-v8a")
 val universalOnlyDistributions = setOf("noVulkan")
 val releaseVersionCode = 259
@@ -60,7 +58,6 @@ android {
 
     buildConfigField("String", "GIT_SHA", "\"${getCommitSha()}\"")
     buildConfigField("int", "GIT_COUNT", getCommitCount())
-    buildConfigField("boolean", "MPV_HAS_RIFE", includeRifeNative.toString())
     buildConfigField("boolean", "MPV_HAS_MPVFLOW", includeMpvFlowMpvRuntime.toString())
 
     externalNativeBuild {

@@ -1,8 +1,8 @@
 # MPVFlow: on-device motion-interpolation experiment
 
-## Goal and relationship to RIFE
+## Goal
 
-MPVFlow is a separate, local motion-estimation/motion-compensation (MEMC) path. It does not call the existing RIFE filter, its model/runtime, or an off-device service. The settings switches are mutually exclusive so the two interpolation paths are not accidentally stacked.
+MPVFlow is the app's local motion-estimation/motion-compensation (MEMC) frame-interpolation path. It runs on-device, uses the selected compute backend, and does not depend on an off-device service.
 
 This is an independently written prototype informed by public descriptions of frame-rate conversion. It is not SVPFlow source code, does not reproduce proprietary defaults, and is not claimed to be pixel-identical to SVPlayer.
 

@@ -53,18 +53,6 @@ jobs:
           repository: mpv-player/mpv
           ref: c1529642089bfebfc928a1c1664638a7a5d219ba
           path: mpv-source
-      - name: Checkout pinned RIFE source and model
-        if: ${{ inputs.flavor == 'standard' && inputs.target_abi == 'arm64-v8a' }}
-        uses: actions/checkout@v6
-        with:
-          repository: nihui/rife-ncnn-vulkan
-          ref: a7532fc3f9f8f008cd6eecd6f2ffe2a9698e0cf7
-          path: rife-project
-          submodules: recursive
-          sparse-checkout: |
-            src
-            models/rife-v4.6
-            LICENSE
       - name: Install native interpolation build dependencies
         if: ${{ inputs.flavor == 'standard' && inputs.target_abi == 'arm64-v8a' }}
         run: |
@@ -79,29 +67,27 @@ jobs:
         run: |
           python3 scripts/verify-mpv-aar-lgpl.py app/libs/mpvlib.aar --abis arm64-v8a,armeabi-v7a,x86,x86_64 --only-selected-abis --require-vulkan
           python3 scripts/verify-mpv-aar-lgpl.py app/libs/mpvlib-no-vulkun.aar --abis arm64-v8a,armeabi-v7a,x86,x86_64 --only-selected-abis --forbid-vulkan
-      - name: Build combined RIFE and MPVFlow arm64 runtime
+      - name: Build Flow-only MPVFlow arm64 runtime
         if: ${{ inputs.flavor == 'standard' && inputs.target_abi == 'arm64-v8a' }}
         run: ./scripts/build-mpvflow-mpv-runtime.sh
         env:
-          MPVFLOW_INCLUDE_RIFE: '1'
           MPVFLOW_MPV_BUILD_CORES: '2'
-          RIFE_BUILD_CORES: '2'
-      - name: Overlay combined interpolation runtime into Standard MPV AAR
+      - name: Overlay Flow-only runtime into Standard MPV AAR
         if: ${{ inputs.flavor == 'standard' && inputs.target_abi == 'arm64-v8a' }}
         run: python3 scripts/package-mpv-runtime-aar.py --runtime-apk "$MPVFLOW_RUNTIME_APK" --mpv-aar app/libs/mpvlib.aar --abis arm64-v8a
-      - name: Verify combined LGPL-only MPV runtime
+      - name: Verify Flow-only LGPL MPV runtime
         if: ${{ inputs.flavor == 'standard' && inputs.target_abi == 'arm64-v8a' }}
         run: python3 scripts/verify-mpv-aar-lgpl.py app/libs/mpvlib.aar --abis arm64-v8a,armeabi-v7a,x86,x86_64 --require-vulkan
       - name: Run focused interpolation regression tests
         if: ${{ inputs.flavor == 'standard' && inputs.target_abi == 'arm64-v8a' }}
         run: |
           python3 scripts/tests/package_mpv_runtime_aar_test.py
-          python3 scripts/tests/rife_mpvflow_composition_test.py
+          python3 scripts/tests/mpvflow_flow_only_test.py
           python3 scripts/tests/mpvflow_native_build_test.py
           MPVFLOW_REQUIRE_VULKAN_PIXEL_TEST=1 ./scripts/test-mpvflow-core.sh
       - name: Run Standard arm64 debug unit tests
         if: ${{ inputs.flavor == 'standard' && inputs.target_abi == 'arm64-v8a' }}
-        run: ./gradlew testStandardDebugUnitTest -PtargetAbi=arm64-v8a -PrifeNativeBuild=true -PmpvFlowMpvBuild=true --stacktrace --no-daemon --max-workers=2
+        run: ./gradlew testStandardDebugUnitTest -PtargetAbi=arm64-v8a -PmpvFlowMpvBuild=true --stacktrace --no-daemon --max-workers=2
       - name: Build debug APK
         run: |
           chmod +x ./gradlew
@@ -110,13 +96,31 @@ jobs:
           case "${{ inputs.flavor }}" in
             standard)
               if [[ "${{ inputs.target_abi }}" == "arm64-v8a" ]]; then
-                ./gradlew assembleStandardDebug $ABI_ARGS -PrifeNativeBuild=true -PmpvFlowMpvBuild=true --stacktrace --no-daemon --max-workers=2
+                ./gradlew assembleStandardDebug $ABI_ARGS -PmpvFlowMpvBuild=true --stacktrace --no-daemon --max-workers=2
               else
                 ./gradlew assembleStandardDebug $ABI_ARGS --stacktrace --no-daemon --max-workers=2
               fi
               ;;
             no_vulkan) ./gradlew assembleNoVulkanDebug $ABI_ARGS --stacktrace --no-daemon --max-workers=2 ;;
           esac
+      - name: Verify Flow-only arm64 APK contents
+        if: ${{ inputs.flavor == 'standard' && inputs.target_abi == 'arm64-v8a' }}
+        run: |
+          set -euo pipefail
+          apk="$(find app/build/outputs/apk/standard/debug -type f -name '*arm64-v8a*.apk' -print -quit)"
+          [[ -n "$apk" ]] || { echo "No Standard arm64 debug APK found" >&2; exit 1; }
+          mapfile -t entries < <(unzip -Z1 "$apk")
+          for library in libmpv.so libplayer.so libplacebo.so libudfread.so; do
+            if ! printf '%s\n' "${entries[@]}" | grep -Fxq "lib/arm64-v8a/$library"; then
+              echo "Flow-only APK is missing $library" >&2
+              exit 1
+            fi
+          done
+          if printf '%s\n' "${entries[@]}" | grep -Eq '^lib/[^/]+/librife_vfi\.so$'; then
+            echo "RIFE native library unexpectedly present in the Flow-only APK" >&2
+            exit 1
+          fi
+          echo "Verified Flow runtime libraries and confirmed librife_vfi.so is absent: $apk"
       - name: Upload debug APKs
         uses: actions/upload-artifact@v4
         with:
