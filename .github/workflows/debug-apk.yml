@@ -109,14 +109,14 @@ jobs:
           set -euo pipefail
           apk="$(find app/build/outputs/apk/standard/debug -type f -name '*arm64-v8a*.apk' -print -quit)"
           [[ -n "$apk" ]] || { echo "No Standard arm64 debug APK found" >&2; exit 1; }
-          mapfile -t entries < <(unzip -Z1 "$apk")
+          apk_entries="$(unzip -Z1 "$apk")"
           for library in libmpv.so libplayer.so libplacebo.so libudfread.so; do
-            if ! printf '%s\n' "${entries[@]}" | grep -Fxq "lib/arm64-v8a/$library"; then
+            if ! grep -Fx "lib/arm64-v8a/$library" <<< "$apk_entries" >/dev/null; then
               echo "Flow-only APK is missing $library" >&2
               exit 1
             fi
           done
-          if printf '%s\n' "${entries[@]}" | grep -Eq '^lib/[^/]+/librife_vfi\.so$'; then
+          if grep -E '^lib/[^/]+/librife_vfi\.so$' <<< "$apk_entries" >/dev/null; then
             echo "RIFE native library unexpectedly present in the Flow-only APK" >&2
             exit 1
           fi

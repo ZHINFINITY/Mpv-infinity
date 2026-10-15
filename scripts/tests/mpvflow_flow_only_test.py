@@ -50,8 +50,10 @@ def test_standard_workflow_is_flow_only() -> None:
 
     apk_check = workflow.split("- name: Verify Flow-only arm64 APK contents", 1)[1].split("- name:", 1)[0]
     assert "unzip -Z1" in apk_check
+    assert 'apk_entries="$(unzip -Z1 "$apk")"' in apk_check
     assert "for library in libmpv.so libplayer.so libplacebo.so libudfread.so" in apk_check
-    assert 'grep -Fxq "lib/arm64-v8a/$library"' in apk_check
+    assert 'grep -Fx "lib/arm64-v8a/$library" <<< "$apk_entries" >/dev/null' in apk_check
+    assert '| grep' not in apk_check
     assert "librife_vfi\\.so" in apk_check
     assert "exit 1" in apk_check
     assert workflow.index("- name: Run focused interpolation regression tests") < workflow.index(
