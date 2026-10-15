@@ -1057,18 +1057,12 @@ for marker in (
     assert marker in compute_selector, f"the compute selector must persist real backend choices: missing {marker!r}"
 resource_source = STRING_RESOURCES.read_text(encoding="utf-8")
 for marker in (
-    "Auto uses native Vulkan/SPIR-V compute to avoid per-frame Vulkan/OpenCL ownership transfers",
-    "cl_qcom_android_ahardwarebuffer_host_ptr",
-    "No Vulkan compute fallback is used for this explicit choice",
-    "Force Vulkan/SPIR-V compute",
+    '<string name="pref_decoder_mpvflow_compute_api_title">MPVFlow compute API</string>',
+    '<string name="pref_decoder_mpvflow_compute_api_auto">Auto</string>',
+    '<string name="pref_decoder_mpvflow_compute_api_opencl">OpenCL</string>',
+    '<string name="pref_decoder_mpvflow_compute_api_vulkan">Vulkan</string>',
 ):
-    assert marker in resource_source, f"compute API choice must have accurate user-facing semantics: missing {marker!r}"
-assert "Decoder input may use MediaCodec direct mode or mediacodec-copy" in resource_source, (
-    "Flow settings must distinguish decoder-input copy mode from interpolation compute"
-)
-assert "synthesized output stays GPU-side with no CPU pixel readback" in resource_source, (
-    "Flow settings must state the actual synthesized-output path"
-)
+    assert marker in resource_source, f"compute API label must remain available without explanatory copy: missing {marker!r}"
 
 flow_gpu_source = (ROOT / "app/src/main/cpp/mpvflow/mpvflow_gpu.c").read_text(encoding="utf-8")
 opencl_source = (ROOT / "app/src/main/cpp/mpvflow/mpvflow_opencl.c").read_text(encoding="utf-8")
