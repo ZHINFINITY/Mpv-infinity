@@ -625,6 +625,21 @@ class MPVView(
       } else {
         null
       }
+    val mpvFlowVisibilityResolverDebugEnabled =
+      BuildConfig.DEBUG &&
+        decoderPreferences.mpvFlowVisibilityResolverDebug.get() &&
+        mpvFlowFrameInterpolationEnabled &&
+        backend.gpuApi == "vulkan"
+    val mpvFlowVisibilityResolverOptionResult =
+      if (BuildConfig.MPV_HAS_MPVFLOW &&
+        !MpvConfigOverridePolicy.isOwnedByMpvConf("mpvflow-visibility-resolver")) {
+        PlaybackSession.setOptionString(
+          "mpvflow-visibility-resolver",
+          if (mpvFlowVisibilityResolverDebugEnabled) "yes" else "no",
+        )
+      } else {
+        null
+      }
     val mpvFlowRendererOptionResult =
       if (BuildConfig.MPV_HAS_MPVFLOW && !MpvConfigOverridePolicy.isOwnedByMpvConf("mpvflow")) {
         val targetFpsResult =
@@ -648,7 +663,9 @@ class MPVView(
         "mpvflow_rc=$enabledResult compute_api=${mpvFlowComputeApi.name.lowercase()} " +
           "compute_api_rc=${mpvFlowComputeApiOptionResult ?: "mpv.conf_or_unavailable"} " +
           "target_fps_rc=${targetFpsResult ?: "unchanged"} " +
-          "max_dimension_rc=${dimensionResult ?: "unchanged"} quality=$mpvFlowQuality quality_rc=${qualityResult ?: "unchanged"}"
+          "max_dimension_rc=${dimensionResult ?: "unchanged"} quality=$mpvFlowQuality quality_rc=${qualityResult ?: "unchanged"} " +
+          "visibility_resolver=$mpvFlowVisibilityResolverDebugEnabled " +
+          "visibility_resolver_rc=${mpvFlowVisibilityResolverOptionResult ?: "mpv.conf_or_unavailable"}"
       } else {
         "compute_api=${mpvFlowComputeApi.name.lowercase()} " +
           "compute_api_rc=${mpvFlowComputeApiOptionResult ?: "mpv.conf_or_unavailable"} mpvflow=mpv.conf"

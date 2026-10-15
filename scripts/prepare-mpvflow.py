@@ -905,6 +905,7 @@ def main() -> None:
     required = (
         VENDOR / "mpvflow_gpu.c",
         VENDOR / "mpvflow_gpu.h",
+        VENDOR / "mpvflow_visibility_resolver_shader.h",
         VENDOR / "mpvflow_rate_limit.h",
         VENDOR / "mpvflow_synthesis_scale.h",
         VENDOR / "mpvflow_opencl.c",
@@ -929,6 +930,7 @@ def main() -> None:
     video_out_dir = mpv_dir / "video/out"
     shutil.copy2(VENDOR / "mpvflow_gpu.c", video_out_dir / "mpvflow_gpu.c")
     shutil.copy2(VENDOR / "mpvflow_gpu.h", video_out_dir / "mpvflow_gpu.h")
+    shutil.copy2(VENDOR / "mpvflow_visibility_resolver_shader.h", video_out_dir / "mpvflow_visibility_resolver_shader.h")
     shutil.copy2(VENDOR / "mpvflow_rate_limit.h", video_out_dir / "mpvflow_rate_limit.h")
     shutil.copy2(VENDOR / "mpvflow_synthesis_scale.h", video_out_dir / "mpvflow_synthesis_scale.h")
     for filename in (

@@ -183,6 +183,12 @@ enum MPVFlowGPUResult mpvflow_gpu_synthesize(MPVFlowGPUContext *context,
                                              pl_tex source1,
                                              float t,
                                              pl_tex *output);
+/* Debug-only opt-in: apply the conservative Vulkan visibility pass after the
+ * production synthesis. Unsupported backends or pass failures keep production output. */
+enum MPVFlowGPUResult mpvflow_gpu_synthesize_with_visibility(
+    MPVFlowGPUContext *context, MPVFlowGPUPair *pair,
+    pl_tex source0, pl_tex source1, float t,
+    bool enable_visibility_resolver, pl_tex *output);
 
 #ifdef __cplusplus
 }

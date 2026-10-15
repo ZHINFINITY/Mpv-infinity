@@ -84,6 +84,7 @@ object DecoderPreferencesScreen : Screen {
     val anime4kMode by preferences.anime4kMode.collectAsState()
     val anime4kActivePreference = anime4kEnabledPreference && anime4kMode != "OFF"
     val mpvFlowFrameInterpolationEnabled by preferences.mpvFlowFrameInterpolation.collectAsState()
+    val mpvFlowVisibilityResolverDebug by preferences.mpvFlowVisibilityResolverDebug.collectAsState()
     val mpvFlowTargetFps by preferences.mpvFlowTargetFps.collectAsState()
     val storedConfigOverrides by advancedPreferences.mpvConfOverrides.collectAsState()
     val configOwnedOptions =
@@ -379,6 +380,23 @@ object DecoderPreferencesScreen : Screen {
               }
 
               PreferenceDivider()
+
+              if (BuildConfig.DEBUG && BuildConfig.MPV_HAS_MPVFLOW) {
+                SwitchPreference(
+                  modifier = Modifier.settingsSearchTarget(R.string.pref_decoder_mpvflow_visibility_resolver_debug_title),
+                  value = mpvFlowVisibilityResolverDebug,
+                  enabled = mpvFlowAvailable || mpvFlowVisibilityResolverDebug,
+                  onValueChange = preferences.mpvFlowVisibilityResolverDebug::set,
+                  title = { Text(stringResource(R.string.pref_decoder_mpvflow_visibility_resolver_debug_title)) },
+                  summary = {
+                    Text(
+                      stringResource(R.string.pref_decoder_mpvflow_visibility_resolver_debug_summary),
+                      color = MaterialTheme.colorScheme.outline,
+                    )
+                  },
+                )
+                PreferenceDivider()
+              }
 
               ListPreference(
                 modifier = Modifier.settingsSearchTarget(R.string.pref_decoder_mpvflow_target_fps_title),

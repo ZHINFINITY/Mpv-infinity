@@ -735,7 +735,11 @@ rate_limit_header = ROOT / "app/src/main/cpp/mpvflow/mpvflow_rate_limit.h"
 synthesis_scale_header = ROOT / "app/src/main/cpp/mpvflow/mpvflow_synthesis_scale.h"
 assert synthesis_scale_header.is_file(), "the aspect-preserving synthesis-size policy must be vendored"
 assert rate_limit_header.is_file(), "the shared MPVFlow output limiter must be vendored"
+visibility_shader_header = ROOT / "app/src/main/cpp/mpvflow/mpvflow_visibility_resolver_shader.h"
+assert visibility_shader_header.is_file(), "the validated visibility-resolver shader must be embedded for native builds"
 assert 'VENDOR / "mpvflow_rate_limit.h"' in prepare_source and \
+       'VENDOR / "mpvflow_visibility_resolver_shader.h"' in prepare_source and \
+       'shutil.copy2(VENDOR / "mpvflow_visibility_resolver_shader.h", video_out_dir / "mpvflow_visibility_resolver_shader.h")' in prepare_source and \
        'shutil.copy2(VENDOR / "mpvflow_rate_limit.h", video_out_dir / "mpvflow_rate_limit.h")' in prepare_source and \
        'VENDOR / "mpvflow_synthesis_scale.h"' in prepare_source and \
        'shutil.copy2(VENDOR / "mpvflow_synthesis_scale.h", video_out_dir / "mpvflow_synthesis_scale.h")' in prepare_source, (
@@ -790,7 +794,7 @@ flow_synthesis_body = vo_patch.split("+static void flow_prepare_frame", 1)[1].sp
 paused_still_guard = "+    if (p->paused || source_is_still) {"
 assert paused_still_guard in flow_synthesis_body, "paused and still frames must bypass MPVFlow analysis"
 assert flow_synthesis_body.index(paused_still_guard) < flow_synthesis_body.index("mpvflow_gpu_analyze_pair(")
-assert flow_synthesis_body.index(paused_still_guard) < flow_synthesis_body.index("mpvflow_gpu_synthesize(")
+assert flow_synthesis_body.index(paused_still_guard) < flow_synthesis_body.index("mpvflow_gpu_synthesize_with_visibility(")
 assert "flow_prepare_frame(vo, &mix, &flow_prepared, frame->still," in vo_patch
 assert '+        const char *queue_state = p->paused ? "paused" :' in vo_patch, (
     "the paused state must not be hidden by empty-batch or still-frame diagnostics"
@@ -1256,7 +1260,7 @@ for marker in (
         f"OpenCL platform/device/driver/extension identity must be logged: missing {marker!r}"
     )
 opencl_synthesis = flow_gpu_source.split("static enum MPVFlowGPUResult flow_opencl_synthesize(", 1)[1].split(
-    "enum MPVFlowGPUResult mpvflow_gpu_synthesize(", 1
+    "static bool run_visibility_resolver(", 1
 )[0]
 new_output_buffer = opencl_synthesis.split("if (!pair->opencl_output) {", 1)[1].split(
     "for (int i = 0; i < 2; i++)", 1
@@ -1297,7 +1301,7 @@ assert opencl_analyze_wrapper.count("mpvflow_opencl_finish(ctx->opencl)") == 1, 
     "analysis must retain its failure drain but avoid a duplicate finish after successful internal completion"
 )
 opencl_synthesize_wrapper = flow_gpu_source.split("static enum MPVFlowGPUResult flow_opencl_synthesize(", 1)[1].split(
-    "enum MPVFlowGPUResult mpvflow_gpu_synthesize(", 1
+    "static bool run_visibility_resolver(", 1
 )[0]
 assert "if (mpvflow_opencl_finish(ctx->opencl) == MPVFLOW_OPENCL_OK)" in opencl_synthesize_wrapper, (
     "failed OpenCL synthesis must still finish before returning shared buffers to Vulkan"

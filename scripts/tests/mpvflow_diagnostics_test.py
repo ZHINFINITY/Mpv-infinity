@@ -136,7 +136,7 @@ assert flow_prepare_body.index("mpvflow_previous_present_budget_available(") < f
     "mpvflow_gpu_analyze_pair("
 ), "MPV backpressure admission must happen before native pair analysis"
 require(flow_prepare_body, 'prepared->bypass_reason = "previous_frame_over_budget"', "MPV backpressure must preserve an explicit source fallback reason")
-require(flow_prepare_body, "mpvflow_gpu_synthesize(", "pre-acquire producer must synthesize the offscreen output before presentation")
+require(flow_prepare_body, "mpvflow_gpu_synthesize_with_visibility(", "pre-acquire producer must synthesize the offscreen output before presentation")
 require(flow_prepare_body, "if (!allow_synthesis)", "rate limiting may bypass interpolation but must preserve nearest-source rendering")
 require(PATCH, "should_draw && pl_swapchain_start_frame(p->sw, &swframe)", "synthesis rate limiting must not suppress source-frame presentation")
 require(PATCH, "p->flow_pending_rate_limiter_eligible && flow_synthesized", "only actual synthesized renders may consume target-rate credit")

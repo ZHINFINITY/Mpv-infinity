@@ -14,14 +14,15 @@ import tempfile
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 SOURCE_PATH = ROOT / "app/src/main/cpp/mpvflow/mpvflow_gpu.c"
 SOURCE = SOURCE_PATH.read_text(encoding="utf-8")
+VISIBILITY_HEADER_PATH = ROOT / "app/src/main/cpp/mpvflow/mpvflow_visibility_resolver_shader.h"
+VISIBILITY_HEADER = VISIBILITY_HEADER_PATH.read_text(encoding="utf-8")
 QCOM_SHADER_PATH = ROOT / "app/src/main/cpp/mpvflow/mpvflow_qcom_seed.comp"
 QCOM_SHADER = QCOM_SHADER_PATH.read_text(encoding="utf-8")
-
-
 def shader_source(name: str) -> str:
+    source = VISIBILITY_HEADER if name == "shader_visibility_resolver" else SOURCE
     match = re.search(
         rf"static const char {re.escape(name)}\[\] =\n(.*?);\n",
-        SOURCE,
+        source,
         re.DOTALL,
     )
     assert match, f"missing embedded shader {name}"
@@ -44,6 +45,7 @@ shader_names = (
     "shader_optical_seed",
     "shader_flow",
     "shader_synthesize",
+    "shader_visibility_resolver",
 )
 shaders = {name: shader_source(name) for name in shader_names}
 for name, shader in shaders.items():
@@ -60,6 +62,7 @@ flow = shaders["shader_flow"]
 optical_luma = shaders["shader_optical_luma"]
 optical_seed = shaders["shader_optical_seed"]
 synthesis = shaders["shader_synthesize"]
+visibility_resolver = shaders["shader_visibility_resolver"]
 require(synthesis, "layout(set=0,binding=7,rgba8) writeonly uniform image2D outTex;", "SDR synthesis output must remain RGBA8")
 require(SOURCE, "shader_replace_once(", "HDR synthesis must derive a second shader from the validated baseline")
 require(SOURCE, "layout(set=0,binding=7,rgba16f) writeonly uniform image2D outTex;", "HDR shader variant must write RGBA16F")
@@ -91,6 +94,17 @@ require(synthesis, "vec4 flowAtEdgeAware(vec2 p,int direction)", "synthesis must
 require(synthesis, "vec4 flowAtBilinear(vec2 p,int direction)", "iterative vector refinement must have a low-cost bilinear sampler")
 require(synthesis, "bool staticPixel=", "static low-motion pixels should bypass the full-resolution warp path")
 require(synthesis, "ivec2 outSize=imageSize(outTex),motionSize=pc.cfg.zw;", "synthesis bounds must use the actual storage-image extent, not only host-provided dimensions")
+require(visibility_resolver, "layout(set=0,binding=7) uniform sampler2D motionWarped;", "resolver must sample the already-produced production frame as fallback")
+require(visibility_resolver, "layout(set=0,binding=8,rgba8) writeonly uniform image2D outTex;", "resolver output must remain a separate RGBA8 storage image")
+require(visibility_resolver, "layout(set=0,binding=9,rgba8) writeonly uniform image2D maskTex;", "resolver diagnostic mask must not alias the production output")
+require(visibility_resolver, "for(int y=-2;y<=2;y++)for(int x=-2;x<=2;x++)", "resolver must compare a full-resolution 5x5 patch")
+require(visibility_resolver, "bool uniquelySupported=bestEnergy>0.012&&margin>max(0.025,best*0.30)&&centerError<0.04&&forwardSupport&&backwardSupport", "resolver must require distinct-cost, center, and bidirectional support")
+require(visibility_resolver, "baselineCost-best>0.035&&baselineDistance>3.0", "resolver must materially improve on production and reject near-duplicate motions")
+require(visibility_resolver, "result=mix(fallback,mix(ca,cb,t),0.25)", "resolver correction must remain capped at 25 percent")
+require(SOURCE, '"mpvflow_visibility_resolver_shader.h"', "the native GPU implementation must include the validated embedded GLSL")
+require(SOURCE, "mpvflow_gpu_synthesize_internal(ctx, pair, source0, source1, t,\n                                           false, output)", "the public production synthesis API must keep the resolver disabled")
+require(SOURCE, "*pass = make_pass(ctx->gpu, glsl, resolver_desc, 10)", "resolver pass must be initialized lazily only after explicit opt-in")
+require(SOURCE, "fallback=production_output", "resolver failure paths must retain the production result")
 synthesis_main = synthesis.split("void main()", 1)[1]
 output_guard = "if(any(greaterThanEqual(p,outSize))) return;"
 assert output_guard in synthesis_main, "synthesis must reject padded invocations outside the output image"
@@ -673,6 +687,13 @@ if validator:
     shaders_to_compile["shader_synthesize_rgba16f"] = synthesis.replace(
         rgba8_output,
         "layout(set=0,binding=7,rgba16f) writeonly uniform image2D outTex;",
+        1,
+    )
+    visibility_rgba8_output = "layout(set=0,binding=8,rgba8) writeonly uniform image2D outTex;"
+    assert visibility_resolver.count(visibility_rgba8_output) == 1, "the resolver must expose one replaceable RGBA8 output binding"
+    shaders_to_compile["shader_visibility_resolver_rgba16f"] = visibility_resolver.replace(
+        visibility_rgba8_output,
+        "layout(set=0,binding=8,rgba16f) writeonly uniform image2D outTex;",
         1,
     )
     with tempfile.TemporaryDirectory(prefix="mpvflow-vulkan-shaders-") as temp_dir:
