@@ -16,7 +16,7 @@ val prepareMedia3DcaInputs =
     inputs.property("ffmpegSourceCommit", "946fcce07b6dcd0331c8cc609192aeff5e1924f8")
     outputs.dir(generatedRoot)
     doFirst {
-      val ndkDir = android.ndkDirectory
+      val ndkDir = android.sdkComponents.ndkDirectory.get().asFile
       commandLine(
         "bash",
         prepareScript.absolutePath,
