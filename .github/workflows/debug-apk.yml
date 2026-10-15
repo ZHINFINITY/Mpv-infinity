@@ -31,6 +31,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:
@@ -43,25 +45,59 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: native-builder/app/build/outputs/apk
-          key: mpvflow-arm64-runtime-v1-${{ hashFiles('scripts/build-mpvflow-mpv-runtime.sh', 'scripts/prepare-mpvflow.py', 'scripts/patch-ffmpeg-symver.py', 'app/src/main/cpp/**', 'THIRD_PARTY_LICENSES/**', 'app/src/main/assets/mpv/licenses/**', '.github/workflows/debug-apk.yml', '.github/workflows/mpvflow-debug-arm64.yml') }}
+          key: mpvflow-arm64-runtime-v2-builder-1efc82739f6f7034-mpv-c1529642089bfebf-cores2-${{ hashFiles('scripts/build-mpvflow-mpv-runtime.sh', 'scripts/prepare-mpvflow.py', 'scripts/patch-ffmpeg-symver.py', 'app/src/main/cpp/**', 'THIRD_PARTY_LICENSES/**', 'app/src/main/assets/mpv/licenses/**') }}
+      - name: Check legacy runtime cache source compatibility
+        id: mpvflow-runtime-legacy-compat
+        if: ${{ inputs.flavor == 'standard' && inputs.target_abi == 'arm64-v8a' && steps.mpvflow-runtime-cache.outputs.cache-hit != 'true' }}
+        run: |
+          set -euo pipefail
+          seed_sha='1dc0a03c540fc7aee19101fdcfa759e0f7aeffd1'
+          if ! git cat-file -e "${seed_sha}^{commit}" 2>/dev/null; then
+            echo "matches_seed=false" >> "$GITHUB_OUTPUT"
+            echo "Legacy runtime cache seed commit is unavailable; requiring a fresh native build."
+            exit 0
+          fi
+          if ! git diff --quiet "$seed_sha" HEAD -- scripts/build-mpvflow-mpv-runtime.sh scripts/prepare-mpvflow.py scripts/patch-ffmpeg-symver.py app/src/main/cpp THIRD_PARTY_LICENSES app/src/main/assets/mpv/licenses; then
+            echo "matches_seed=false" >> "$GITHUB_OUTPUT"
+            echo "Native source, build recipe, or license inputs changed since the verified cache seed."
+            exit 0
+          fi
+          for file in .github/workflows/debug-apk.yml .github/workflows/mpvflow-debug-arm64.yml; do
+            if ! grep -Fq 'ref: 1efc82739f6f7034cd63e7ee8b3ec5431df27467' "$file" || \
+               ! grep -Fq 'ref: c1529642089bfebfc928a1c1664638a7a5d219ba' "$file" || \
+               ! grep -Fq "MPVFLOW_MPV_BUILD_CORES: '2'" "$file"; then
+              echo "matches_seed=false" >> "$GITHUB_OUTPUT"
+              echo "Pinned source/build settings differ from the verified legacy cache seed."
+              exit 0
+            fi
+          done
+          echo "matches_seed=true" >> "$GITHUB_OUTPUT"
+          echo "Native inputs and pinned source/build settings match the verified legacy cache seed."
+      - name: Restore verified legacy Flow-only MPVFlow runtime
+        id: mpvflow-runtime-legacy-cache
+        if: ${{ inputs.flavor == 'standard' && inputs.target_abi == 'arm64-v8a' && steps.mpvflow-runtime-cache.outputs.cache-hit != 'true' && steps.mpvflow-runtime-legacy-compat.outputs.matches_seed == 'true' }}
+        uses: actions/cache/restore@v4
+        with:
+          path: native-builder/app/build/outputs/apk
+          key: mpvflow-arm64-runtime-v1-8b9cdaf1e5bcc44928adae0b2f3b9f1d8808504bdc5e129ec67b3e0b4871d812
       - name: Install native subtitle build dependencies
         run: sudo apt-get update && sudo apt-get install -y autoconf automake libtool gettext autopoint gperf pkg-config
       - name: Checkout pinned Android MPV build tools
-        if: ${{ inputs.flavor == 'standard' && inputs.target_abi == 'arm64-v8a' && steps.mpvflow-runtime-cache.outputs.cache-hit != 'true' }}
+        if: ${{ inputs.flavor == 'standard' && inputs.target_abi == 'arm64-v8a' && steps.mpvflow-runtime-cache.outputs.cache-hit != 'true' && steps.mpvflow-runtime-legacy-cache.outputs.cache-hit != 'true' }}
         uses: actions/checkout@v6
         with:
           repository: NihilDigit/mpv-android-anvil
           ref: 1efc82739f6f7034cd63e7ee8b3ec5431df27467
           path: native-builder
       - name: Checkout pinned MPV source
-        if: ${{ inputs.flavor == 'standard' && inputs.target_abi == 'arm64-v8a' && steps.mpvflow-runtime-cache.outputs.cache-hit != 'true' }}
+        if: ${{ inputs.flavor == 'standard' && inputs.target_abi == 'arm64-v8a' && steps.mpvflow-runtime-cache.outputs.cache-hit != 'true' && steps.mpvflow-runtime-legacy-cache.outputs.cache-hit != 'true' }}
         uses: actions/checkout@v6
         with:
           repository: mpv-player/mpv
           ref: c1529642089bfebfc928a1c1664638a7a5d219ba
           path: mpv-source
       - name: Install native interpolation build dependencies
-        if: ${{ inputs.flavor == 'standard' && inputs.target_abi == 'arm64-v8a' && steps.mpvflow-runtime-cache.outputs.cache-hit != 'true' }}
+        if: ${{ inputs.flavor == 'standard' && inputs.target_abi == 'arm64-v8a' }}
         run: |
           sudo apt-get update
           sudo apt-get install -y ninja-build cmake pipx nasm yasm binutils zlib1g-dev libssl-dev zip unzip wget curl ffmpeg glslang-tools libvulkan-dev mesa-vulkan-drivers
@@ -75,7 +111,7 @@ jobs:
           python3 scripts/verify-mpv-aar-lgpl.py app/libs/mpvlib.aar --abis arm64-v8a,armeabi-v7a,x86,x86_64 --only-selected-abis --require-vulkan
           python3 scripts/verify-mpv-aar-lgpl.py app/libs/mpvlib-no-vulkun.aar --abis arm64-v8a,armeabi-v7a,x86,x86_64 --only-selected-abis --forbid-vulkan
       - name: Use cached Flow-only MPVFlow arm64 runtime
-        if: ${{ inputs.flavor == 'standard' && inputs.target_abi == 'arm64-v8a' && steps.mpvflow-runtime-cache.outputs.cache-hit == 'true' }}
+        if: ${{ inputs.flavor == 'standard' && inputs.target_abi == 'arm64-v8a' && (steps.mpvflow-runtime-cache.outputs.cache-hit == 'true' || steps.mpvflow-runtime-legacy-cache.outputs.cache-hit == 'true') }}
         run: |
           set -euo pipefail
           runtime_dir="$GITHUB_WORKSPACE/native-builder/app/build/outputs/apk"
@@ -85,7 +121,7 @@ jobs:
           echo "MPVFLOW_RUNTIME_APK=$apk" >> "$GITHUB_ENV"
           echo "Using verified cached MPVFlow runtime APK: $apk"
       - name: Build Flow-only MPVFlow arm64 runtime
-        if: ${{ inputs.flavor == 'standard' && inputs.target_abi == 'arm64-v8a' && steps.mpvflow-runtime-cache.outputs.cache-hit != 'true' }}
+        if: ${{ inputs.flavor == 'standard' && inputs.target_abi == 'arm64-v8a' && steps.mpvflow-runtime-cache.outputs.cache-hit != 'true' && steps.mpvflow-runtime-legacy-cache.outputs.cache-hit != 'true' }}
         run: ./scripts/build-mpvflow-mpv-runtime.sh
         env:
           MPVFLOW_MPV_BUILD_CORES: '2'

@@ -14,6 +14,7 @@ def test_standard_workflow_is_flow_only() -> None:
     gradle = (ROOT / "app/build.gradle.kts").read_text(encoding="utf-8")
 
     cache_step_name = "- name: Restore verified Flow-only MPVFlow arm64 runtime"
+    legacy_key = "mpvflow-arm64-runtime-v1-8b9cdaf1e5bcc44928adae0b2f3b9f1d8808504bdc5e129ec67b3e0b4871d812"
 
     def runtime_cache_key(contents: str) -> str:
         restore_step = contents.split(cache_step_name, 1)[1].split("- name:", 1)[0]
@@ -29,16 +30,49 @@ def test_standard_workflow_is_flow_only() -> None:
         "app/src/main/cpp/**",
         "THIRD_PARTY_LICENSES/**",
         "app/src/main/assets/mpv/licenses/**",
-        ".github/workflows/debug-apk.yml",
-        ".github/workflows/mpvflow-debug-arm64.yml",
     ):
         assert native_input in manual_cache_key, f"native cache key must include {native_input}"
+    assert ".github/workflows/debug-apk.yml" not in manual_cache_key
+    assert ".github/workflows/mpvflow-debug-arm64.yml" not in manual_cache_key
+    for pin in (
+        "mpvflow-arm64-runtime-v2-builder-1efc82739f6f7034-mpv-c1529642089bfebf-cores2-",
+        "mpvflow-runtime-legacy-compat.outputs.matches_seed == 'true'",
+        "mpvflow-runtime-legacy-cache.outputs.cache-hit",
+    ):
+        assert pin in manual_cache_key or all(pin in candidate for candidate in (workflow, flow_workflow)), (
+            f"native cache behavior must keep {pin}"
+        )
     for candidate in (workflow, flow_workflow):
-        assert "uses: actions/cache/restore@v4" in candidate
+        assert candidate.count("uses: actions/cache/restore@v4") == 2
         assert "uses: actions/cache/save@v4" in candidate
         assert "MPVFLOW_RUNTIME_APK=$apk" in candidate
         assert "steps.mpvflow-runtime-cache.outputs.cache-hit == 'true'" in candidate
         assert "steps.mpvflow-runtime-cache.outputs.cache-hit != 'true'" in candidate
+        assert legacy_key in candidate
+        assert "id: mpvflow-runtime-legacy-compat" in candidate
+        assert "id: mpvflow-runtime-legacy-cache" in candidate
+        assert "seed_sha='1dc0a03c540fc7aee19101fdcfa759e0f7aeffd1'" in candidate
+        assert 'git diff --quiet "$seed_sha" HEAD --' in candidate
+        assert "steps.mpvflow-runtime-legacy-compat.outputs.matches_seed == 'true'" in candidate
+        assert "steps.mpvflow-runtime-legacy-cache.outputs.cache-hit == 'true'" in candidate
+        assert "steps.mpvflow-runtime-legacy-cache.outputs.cache-hit != 'true'" in candidate
+        for required_input in (
+            "scripts/build-mpvflow-mpv-runtime.sh",
+            "scripts/prepare-mpvflow.py",
+            "scripts/patch-ffmpeg-symver.py",
+            "app/src/main/cpp",
+            "THIRD_PARTY_LICENSES",
+            "app/src/main/assets/mpv/licenses",
+            "ref: 1efc82739f6f7034cd63e7ee8b3ec5431df27467",
+            "ref: c1529642089bfebfc928a1c1664638a7a5d219ba",
+            "MPVFLOW_MPV_BUILD_CORES: '2'",
+        ):
+            assert required_input in candidate
+        cached_runtime_step = candidate.split("- name: Use cached Flow-only MPVFlow arm64 runtime", 1)[1].split(
+            "- name:", 1
+        )[0]
+        assert "steps.mpvflow-runtime-cache.outputs.cache-hit == 'true'" in cached_runtime_step
+        assert "steps.mpvflow-runtime-legacy-cache.outputs.cache-hit == 'true'" in cached_runtime_step
     assert workflow.index("- name: Verify Flow-only LGPL MPV runtime") < workflow.index(
         "- name: Save verified Flow-only MPVFlow arm64 runtime"
     ) < workflow.index("- name: Run focused interpolation regression tests")
@@ -60,13 +94,24 @@ def test_standard_workflow_is_flow_only() -> None:
     build_runtime_step = workflow.split("- name: Build Flow-only MPVFlow arm64 runtime", 1)[1].split("- name:", 1)[0]
     assert "./scripts/build-mpvflow-mpv-runtime.sh" in build_runtime_step
     assert "steps.mpvflow-runtime-cache.outputs.cache-hit != 'true'" in build_runtime_step
+    assert "steps.mpvflow-runtime-legacy-cache.outputs.cache-hit != 'true'" in build_runtime_step
+    assert "steps.mpvflow-runtime-cache.outputs.cache-hit != 'true' && steps.mpvflow-runtime-legacy-cache.outputs.cache-hit != 'true'" in build_runtime_step
     assert "MPVFLOW_MPV_BUILD_CORES: '2'" in build_runtime_step
+
+    native_dependencies_step = workflow.split(
+        "- name: Install native interpolation build dependencies", 1
+    )[1].split("- name:", 1)[0]
+    assert "inputs.flavor == 'standard' && inputs.target_abi == 'arm64-v8a'" in native_dependencies_step
+    assert "steps.mpvflow-runtime-cache.outputs.cache-hit" not in native_dependencies_step
+    assert "steps.mpvflow-runtime-legacy-cache.outputs.cache-hit" not in native_dependencies_step
 
     push_build_step = flow_workflow.split(
         "- name: Build MPVFlow-only MPV native arm64 debug package", 1
     )[1].split("- name:", 1)[0]
     assert "./scripts/build-mpvflow-mpv-runtime.sh" in push_build_step
     assert "steps.mpvflow-runtime-cache.outputs.cache-hit != 'true'" in push_build_step
+    assert "steps.mpvflow-runtime-legacy-cache.outputs.cache-hit != 'true'" in push_build_step
+    assert "steps.mpvflow-runtime-cache.outputs.cache-hit != 'true' && steps.mpvflow-runtime-legacy-cache.outputs.cache-hit != 'true'" in push_build_step
 
     overlay_step = workflow.split("- name: Overlay Flow-only runtime into Standard MPV AAR", 1)[1].split("- name:", 1)[0]
     assert "package-mpv-runtime-aar.py --runtime-apk" in overlay_step
