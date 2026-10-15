@@ -522,6 +522,13 @@ assert "bool first_sample = !p->flow_diag_last_report[stage];" in patched_wsi_so
 assert "if (window_s < 5.0 && !first_sample && !low_frequency_stage)" in patched_wsi_source, (
     "WSI timings must emit their first sample, then remain rate-limited rather than log per frame"
 )
+low_frequency_stage_body = patched_wsi_source.split("bool low_frequency_stage = ", 1)[1].split(";", 1)[0]
+assert "FLOW_WSI_IMAGE_INIT" not in low_frequency_stage_body, (
+    "per-frame vk_sw_image_init timings must be retained as five-second aggregates, not emitted per call"
+)
+assert 'FLOW_WSI_IMAGE_INIT, "vk_sw_image_init"' in patched_wsi_source, (
+    "vk_sw_image_init timing must remain measured in the periodic aggregate"
+)
 assert "acquire_semaphore_signal=%s" not in patched_wsi_source, (
     "vkAcquireNextImageKHR returning VK_SUCCESS does not prove its semaphore has signaled at host return"
 )

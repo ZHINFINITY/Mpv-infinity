@@ -382,9 +382,10 @@ static void flow_report_wsi_call(struct priv *p, unsigned int stage,
     if (first_sample)
         p->flow_diag_last_report[stage] = stop;
     double window_s = pl_clock_diff(stop, p->flow_diag_last_report[stage]);
+    // vk_sw_image_init runs per acquired image; keep measuring it, but aggregate its reports.
     bool low_frequency_stage = stage == FLOW_WSI_RECREATE ||
         stage == FLOW_WSI_CREATE_SWAPCHAIN || stage == FLOW_WSI_GET_IMAGE_COUNT ||
-        stage == FLOW_WSI_GET_IMAGES || stage == FLOW_WSI_IMAGE_INIT;
+        stage == FLOW_WSI_GET_IMAGES;
     if (window_s < 5.0 && !first_sample && !low_frequency_stage)
         return;
     p->flow_diag_last_report[stage] = stop;

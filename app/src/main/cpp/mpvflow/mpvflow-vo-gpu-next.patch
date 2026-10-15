@@ -10,7 +10,7 @@ index bd3d1aa..75ffbb1 100644
 +#include "mpvflow_gpu.h"
 +#include "mpvflow_rate_limit.h"
 +#include "mpvflow_synthesis_scale.h"
-@@ -157,0 +163,66 @@ struct priv {
+@@ -157,0 +163,67 @@ struct priv {
 +    // MPVFLOW_GPU_INTEGRATION
 +    MPVFlowGPUContext *flow_gpu;
 +    MPVFlowGPUPair *flow_pair;
@@ -39,6 +39,7 @@ index bd3d1aa..75ffbb1 100644
 +    struct mpvflow_rate_limiter flow_rate_limiter;
 +    uint64_t flow_cadence_last_flip_wait_ns;
 +    uint64_t flow_cadence_synthesis_rate_limited;
++    uint64_t flow_cadence_previous_present_budget_skips;
 +    int flow_geometry_w;
 +    int flow_geometry_h;
 +    int64_t flow_timing_last_report_ns;
@@ -77,29 +78,29 @@ index bd3d1aa..75ffbb1 100644
 +    uint64_t flow_cadence_pair_analysis_failures;
 +    uint64_t flow_cadence_pair_cache_reuses;
 +
-@@ -184,0 +255,1 @@ static void update_lut(struct priv *p, struct user_lut *lut);
+@@ -184,0 +256,1 @@ static void update_lut(struct priv *p, struct user_lut *lut);
 +static void flow_update_context(struct vo *vo);
-@@ -186,0 +258,6 @@ struct gl_next_opts {
+@@ -186,0 +259,6 @@ struct gl_next_opts {
 +    bool mpvflow;
 +    int mpvflow_max_dimension;
 +    int mpvflow_synthesis_max_dimension;
 +    int mpvflow_target_fps;
 +    int mpvflow_quality;
 +    int mpvflow_compute_api;
-@@ -213,0 +290,6 @@ const struct m_sub_options gl_next_conf = {
+@@ -213,0 +291,6 @@ const struct m_sub_options gl_next_conf = {
 +        {"mpvflow", OPT_BOOL(mpvflow)},
 +        {"mpvflow-max-dimension", OPT_INT(mpvflow_max_dimension), M_RANGE(8, 640)},
 +        {"mpvflow-synthesis-max-dimension", OPT_INT(mpvflow_synthesis_max_dimension), M_RANGE(0, 7680)},
 +        {"mpvflow-target-fps", OPT_INT(mpvflow_target_fps), M_RANGE(1, 240)},
 +        {"mpvflow-quality", OPT_INT(mpvflow_quality), M_RANGE(0, 100)},
 +        {"mpvflow-compute-api", OPT_INT(mpvflow_compute_api), M_RANGE(0, 2)},
-@@ -239,0 +321,5 @@ const struct m_sub_options gl_next_conf = {
+@@ -239,0 +322,5 @@ const struct m_sub_options gl_next_conf = {
 +        .mpvflow_max_dimension = 640,
 +        .mpvflow_synthesis_max_dimension = 1920,
 +        .mpvflow_target_fps = 60,
 +        .mpvflow_quality = 60,
 +        .mpvflow_compute_api = MPVFLOW_GPU_COMPUTE_AUTO,
-@@ -560,0 +646,10 @@ struct frame_priv {
+@@ -560,0 +647,10 @@ struct frame_priv {
 +    uint64_t frame_id;
 +    pl_tex flow_source;
 +    pl_tex flow_input;
@@ -110,7 +111,7 @@ index bd3d1aa..75ffbb1 100644
 +    int flow_synthesis_w, flow_synthesis_h;
 +    int flow_w, flow_h;
 +    int flow_source_w, flow_source_h;
-@@ -569,0 +663,555 @@ struct frame_priv {
+@@ -569,0 +664,557 @@ struct frame_priv {
 +static void flow_release_pair(struct priv *p)
 +{
 +    if (p->flow_pair)
@@ -169,6 +170,7 @@ index bd3d1aa..75ffbb1 100644
 +        mpvflow_rate_limiter_reset(&p->flow_rate_limiter);
 +        p->flow_cadence_last_flip_wait_ns = 0;
 +        p->flow_cadence_synthesis_rate_limited = 0;
++        p->flow_cadence_previous_present_budget_skips = 0;
 +        p->flow_pending_source_batch = 0;
 +        p->flow_pending_mix_frames = 0;
 +        p->flow_cadence_window_start_ns = 0;
@@ -223,6 +225,7 @@ index bd3d1aa..75ffbb1 100644
 +        p->flow_geometry_w = p->flow_geometry_h = 0;
 +        p->flow_timing_last_report_ns = 0;
 +        p->flow_cadence_last_flip_wait_ns = 0;
++        p->flow_cadence_previous_present_budget_skips = 0;
 +        p->flow_init_logged = false;
 +        p->flow_active_logged = false;
 +        p->flow_preacquire_logged = false;
@@ -666,15 +669,15 @@ index bd3d1aa..75ffbb1 100644
 +    fp->flow_synthesis_w = fp->flow_synthesis_h = 0;
 +}
 +
-@@ -1109,0 +1733,2 @@ static bool map_frame(pl_gpu gpu, pl_tex *tex, const struct pl_source_frame *src
+@@ -1109,0 +1736,2 @@ static bool map_frame(pl_gpu gpu, pl_tex *tex, const struct pl_source_frame *src
 +    flow_update_context(vo);
 +    flow_prepare_input(vo, frame, mpi, fp);
-@@ -1118,0 +1744,1 @@ static void unmap_frame(pl_gpu gpu, struct pl_frame *frame,
+@@ -1118,0 +1747,1 @@ static void unmap_frame(pl_gpu gpu, struct pl_frame *frame,
 +    flow_release_frame(fp->vo, fp);
-@@ -1135,0 +1762,2 @@ static void discard_frame(const struct pl_source_frame *src)
+@@ -1135,0 +1765,2 @@ static void discard_frame(const struct pl_source_frame *src)
 +    struct frame_priv *fp = mpi->priv;
 +    flow_release_frame(fp->vo, fp);
-@@ -1341,0 +1970,279 @@ static void update_hook_opts_dynamic(struct priv *p, const struct pl_hook *hook,
+@@ -1341,0 +1973,280 @@ static void update_hook_opts_dynamic(struct priv *p, const struct pl_hook *hook,
 +struct flow_prepared_frame {
 +    int nearest;
 +    int before;
@@ -762,6 +765,7 @@ index bd3d1aa..75ffbb1 100644
 +        if (!mpvflow_previous_present_budget_available(
 +                p->flow_cadence_last_flip_wait_ns,
 +                p->next_opts->mpvflow_target_fps)) {
++            p->flow_cadence_previous_present_budget_skips++;
 +            prepared->bypass_reason = "previous_frame_over_budget";
 +            return;
 +        }
@@ -954,7 +958,7 @@ index bd3d1aa..75ffbb1 100644
 +    return ok;
 +}
 +
-@@ -1344,0 +2199,38 @@ static bool draw_frame(struct vo *vo, struct vo_frame *frame)
+@@ -1344,0 +2203,38 @@ static bool draw_frame(struct vo *vo, struct vo_frame *frame)
 +    p->flow_pending_synthesized = false;
 +    p->flow_pending_display_synced = false;
 +    p->flow_pending_source_batch = 0;
@@ -993,15 +997,15 @@ index bd3d1aa..75ffbb1 100644
 +        }
 +        p->flow_cadence_last_render_ns = flow_render_start_ns;
 +    }
-@@ -1354,1 +2244,2 @@ static bool draw_frame(struct vo *vo, struct vo_frame *frame)
+@@ -1354,1 +2248,2 @@ static bool draw_frame(struct vo *vo, struct vo_frame *frame)
 -                           !frame->still && frame->num_frames > 1 && !p->paused;
 +                           !frame->still &&
 +                           (frame->num_frames > 1 || p->next_opts->mpvflow) && !p->paused;
-@@ -1403,0 +2295,1 @@ static bool draw_frame(struct vo *vo, struct vo_frame *frame)
+@@ -1403,0 +2299,1 @@ static bool draw_frame(struct vo *vo, struct vo_frame *frame)
 +            flow_release_pair(p);
-@@ -1422,0 +2315,1 @@ static bool draw_frame(struct vo *vo, struct vo_frame *frame)
+@@ -1422,0 +2319,1 @@ static bool draw_frame(struct vo *vo, struct vo_frame *frame)
 +        fp->frame_id = id;
-@@ -1570,0 +2464,10 @@ static bool draw_frame(struct vo *vo, struct vo_frame *frame)
+@@ -1570,0 +2468,10 @@ static bool draw_frame(struct vo *vo, struct vo_frame *frame)
 +    struct pl_frame_mix mix = {0};
 +    struct pl_queue_params flow_qparams = {0};
 +    enum pl_queue_status flow_queue_status = PL_QUEUE_OK;
@@ -1012,7 +1016,7 @@ index bd3d1aa..75ffbb1 100644
 +        .bypass_reason = p->flow_gpu ? "no_temporal_pair" : "gpu_context_unavailable",
 +        .bypass_status = MPVFLOW_GPU_OK,
 +    };
-@@ -1572,1 +2475,116 @@ static bool draw_frame(struct vo *vo, struct vo_frame *frame)
+@@ -1572,1 +2479,116 @@ static bool draw_frame(struct vo *vo, struct vo_frame *frame)
 -    if (!should_draw || !pl_swapchain_start_frame(p->sw, &swframe)) {
 +    if (p->next_opts->mpvflow && gpu && should_draw && frame->current) {
 +        // Create and map the timestamped frame mix before a potentially blocking WSI acquire.
@@ -1130,7 +1134,7 @@ index bd3d1aa..75ffbb1 100644
 +        }
 +    }
 +    if (!should_draw || !swapchain_frame_started) {
-@@ -1574,8 +2592,14 @@ static bool draw_frame(struct vo *vo, struct vo_frame *frame)
+@@ -1574,8 +2596,14 @@ static bool draw_frame(struct vo *vo, struct vo_frame *frame)
 -            // Advance the queue state to the current PTS to discard unused frames
 -            struct pl_queue_params qparams = *pl_queue_params(
 -                .pts = frame->current->pts + pts_offset,
@@ -1153,16 +1157,16 @@ index bd3d1aa..75ffbb1 100644
 +                );
 +                pl_queue_update(p->queue, NULL, &qparams);
 +            }
-@@ -1654,2 +2678,3 @@ static bool draw_frame(struct vo *vo, struct vo_frame *frame)
+@@ -1654,2 +2682,3 @@ static bool draw_frame(struct vo *vo, struct vo_frame *frame)
 -    struct pl_frame_mix mix = {0};
 -    if (frame->current) {
 +    if (flow_queue_updated && flow_queue_status == PL_QUEUE_ERR)
 +        goto done;
 +    if (frame->current && !flow_queue_updated) {
-@@ -1693,0 +2719,2 @@ static bool draw_frame(struct vo *vo, struct vo_frame *frame)
+@@ -1693,0 +2723,2 @@ static bool draw_frame(struct vo *vo, struct vo_frame *frame)
 +    }
 +    if (frame->current) {
-@@ -1750,0 +2778,26 @@ static bool draw_frame(struct vo *vo, struct vo_frame *frame)
+@@ -1750,0 +2782,26 @@ static bool draw_frame(struct vo *vo, struct vo_frame *frame)
 +    if (p->next_opts->mpvflow) {
 +        const char *queue_state = p->paused ? "paused" :
 +            !frame->num_frames ? "redraw_without_source_batch" :
@@ -1189,13 +1193,13 @@ index bd3d1aa..75ffbb1 100644
 +    } else {
 +        p->flow_queue_state_logged = false;
 +    }
-@@ -1752,1 +2805,4 @@ static bool draw_frame(struct vo *vo, struct vo_frame *frame)
+@@ -1752,1 +2809,4 @@ static bool draw_frame(struct vo *vo, struct vo_frame *frame)
 -    bool render_ok = pl_render_image_mix(p->rr, &mix, &target, &params);
 +    bool flow_synthesized = false;
 +    bool render_ok = p->next_opts->mpvflow
 +        ? flow_render_frame(vo, &mix, &target, &params, &flow_prepared, &flow_synthesized)
 +        : pl_render_image_mix(p->rr, &mix, &target, &params);
-@@ -1780,1 +2836,23 @@ static bool draw_frame(struct vo *vo, struct vo_frame *frame)
+@@ -1780,1 +2840,23 @@ static bool draw_frame(struct vo *vo, struct vo_frame *frame)
 -    p->is_interpolated = pts_offset != 0 && mix.num_frames > 1;
 +    p->is_interpolated = p->next_opts->mpvflow
 +        ? flow_synthesized : pts_offset != 0 && mix.num_frames > 1;
@@ -1220,11 +1224,11 @@ index bd3d1aa..75ffbb1 100644
 +                p->flow_cadence_render_cpu_max_ns = render_ns;
 +        }
 +    }
-@@ -1797,1 +2875,2 @@ static void flip_page(struct vo *vo)
+@@ -1797,1 +2879,2 @@ static void flip_page(struct vo *vo)
 -
 +    const int64_t flip_start_ns = mp_time_ns();
 +    bool submitted = false;
-@@ -1799,1 +2878,6 @@ static void flip_page(struct vo *vo)
+@@ -1799,1 +2882,6 @@ static void flip_page(struct vo *vo)
 -        if (!pl_swapchain_submit_frame(p->sw))
 +        if (p->next_opts->mpvflow)
 +            p->flow_cadence_swap_attempts++;
@@ -1232,7 +1236,7 @@ index bd3d1aa..75ffbb1 100644
 +        if (!submitted && p->next_opts->mpvflow)
 +            p->flow_cadence_swap_failures++;
 +        if (!submitted)
-@@ -1803,0 +2888,136 @@ static void flip_page(struct vo *vo)
+@@ -1803,0 +2892,139 @@ static void flip_page(struct vo *vo)
 +    const int64_t now_ns = mp_time_ns();
 +    const uint64_t flip_wait_ns = now_ns > flip_start_ns
 +        ? (uint64_t) (now_ns - flip_start_ns) : 0;
@@ -1284,6 +1288,7 @@ index bd3d1aa..75ffbb1 100644
 +            MP_INFO(vo, "MPVFLOW_DIAGNOSTIC event=runtime_cadence metric=successful_pl_swapchain_submit_not_surfaceflinger_scanout "
 +                    "window_ms=%.1f target_fps=%d "
 +                    "render_callback_fps=%.2f render_callbacks=%llu render_failures=%llu synthesis_rate_limited_callbacks=%llu "
++                    "previous_present_budget_skips=%llu "
 +                    "mix_pair_callbacks=%llu synthesized_render_callbacks=%llu frame_repeat_count=%llu "
 +                    "render_cpu_avg_ms=%.3f render_cpu_max_ms=%.3f render_cpu_samples=%llu "
 +                    "callback_interval_avg_ms=%.3f callback_interval_max_ms=%.3f callback_interval_samples=%llu "
@@ -1299,6 +1304,7 @@ index bd3d1aa..75ffbb1 100644
 +                    (unsigned long long) p->flow_cadence_render_attempts,
 +                    (unsigned long long) p->flow_cadence_render_failures,
 +                    (unsigned long long) p->flow_cadence_synthesis_rate_limited,
++                    (unsigned long long) p->flow_cadence_previous_present_budget_skips,
 +                    (unsigned long long) p->flow_cadence_render_pair_callbacks,
 +                    (unsigned long long) p->flow_cadence_render_synthesized,
 +                    (unsigned long long) p->flow_cadence_frame_repeat_count,
@@ -1346,6 +1352,7 @@ index bd3d1aa..75ffbb1 100644
 +            p->flow_cadence_acquire_call_samples = 0;
 +            p->flow_cadence_render_attempts = 0;
 +            p->flow_cadence_synthesis_rate_limited = 0;
++            p->flow_cadence_previous_present_budget_skips = 0;
 +            p->flow_cadence_render_pair_callbacks = 0;
 +            p->flow_cadence_render_synthesized = 0;
 +            p->flow_cadence_render_failures = 0;
@@ -1369,7 +1376,7 @@ index bd3d1aa..75ffbb1 100644
 +    p->flow_pending_mix_frames = 0;
 +    p->flow_pending_rate_limiter_eligible = false;
 +    const int64_t flow_swap_wait_start_ns = p->next_opts->mpvflow ? mp_time_ns() : 0;
-@@ -1804,0 +3025,18 @@ static void flip_page(struct vo *vo)
+@@ -1804,0 +3032,18 @@ static void flip_page(struct vo *vo)
 +    if (flow_swap_wait_start_ns > 0) {
 +        const int64_t now_ns = mp_time_ns();
 +        const uint64_t wait_ns = now_ns > flow_swap_wait_start_ns
@@ -1388,14 +1395,14 @@ index bd3d1aa..75ffbb1 100644
 +                    wait_ns / 1000000.0, p->next_opts->mpvflow_target_fps);
 +        }
 +    }
-@@ -2466,0 +3705,4 @@ static void uninit(struct vo *vo)
+@@ -2466,0 +3712,4 @@ static void uninit(struct vo *vo)
 +    flow_release_pair(p);
 +    mpvflow_gpu_destroy(p->flow_gpu);
 +    p->flow_gpu = NULL;
 +    p->flow_input_fmt = NULL;
-@@ -2846,0 +4089,1 @@ static void update_render_options(struct vo *vo)
+@@ -2846,0 +4096,1 @@ static void update_render_options(struct vo *vo)
 +    flow_update_context(vo);
-@@ -2878,1 +4121,2 @@ static void update_render_options(struct vo *vo)
+@@ -2878,1 +4128,2 @@ static void update_render_options(struct vo *vo)
 -    pars->params.frame_mixer = opts->interpolation ? map_scaler(p, SCALER_TSCALE) : NULL;
 +    pars->params.frame_mixer = opts->interpolation && !p->next_opts->mpvflow
 +        ? map_scaler(p, SCALER_TSCALE) : NULL;

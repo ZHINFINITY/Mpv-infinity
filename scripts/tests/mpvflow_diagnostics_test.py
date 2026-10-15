@@ -89,6 +89,7 @@ if cadence_format.count("metric=successful_pl_swapchain_submit_not_surfaceflinge
     raise AssertionError("the cadence record must contain exactly one strict OSD metric identity")
 for marker in (
     "render_callback_fps=%.2f", "render_cpu_avg_ms=%.3f", "callback_interval_avg_ms=%.3f",
+    "previous_present_budget_skips=%llu",
     "pl_swapchain_start_frame_avg_ms=%.3f", "pl_swapchain_start_frame_max_ms=%.3f",
     "pl_swapchain_start_frame_samples=%llu",
     "frame_repeat_count=%llu", "swap_attempts=%llu", "swap_failures=%llu",
@@ -130,6 +131,7 @@ flow_prepare_body = PATCH.split("+static void flow_prepare_frame(", 1)[1].split(
 require(flow_prepare_body, "if (p->paused || source_is_still)", "paused and still frames must bypass motion interpolation")
 require(flow_prepare_body, "mpvflow_gpu_analyze_pair(", "pre-acquire producer must prepare motion before presentation")
 require(flow_prepare_body, "mpvflow_previous_present_budget_available(", "MPV must skip new motion work after a measured over-budget present")
+require(flow_prepare_body, "p->flow_cadence_previous_present_budget_skips++", "MPV must count callbacks suppressed by the prior-present budget gate")
 assert flow_prepare_body.index("mpvflow_previous_present_budget_available(") < flow_prepare_body.index(
     "mpvflow_gpu_analyze_pair("
 ), "MPV backpressure admission must happen before native pair analysis"
@@ -169,7 +171,12 @@ require(MEDIA3_FLOW_SINK, "pairPtsGapMs=", "Media3 must report the source PTS ga
 require(MEDIA3_FLOW_SINK, "inferredSkippedOutputTicksTotal=", "Media3 tick-gap totals must not imply confirmed display deadline misses")
 require(MEDIA3_FLOW_SINK, "tickGapContexts=", "Media3 must categorize inferred output tick gaps separately")
 require(MEDIA3_FLOW_SINK, "outputSubmissionFailures=", "Media3 must report actual EGL/output submission failures separately from inferred tick gaps")
+require(MEDIA3_FLOW_SINK, "motionPairAnalysisTotals=", "Media3 must summarize pair-analysis attempts, deferrals, and outcomes")
 require(MEDIA3_FLOW_SINK, "motionDeadlineAdmission=cpu_submit_proxy_not_gpu_completion", "Media3 must disclose that its current deadline gate uses a CPU submit proxy")
+require(MPV_VIEW, "pixelArtifactQuality=unmeasured_native_pixel_coverage_unavailable", "MPV must not imply pixel quality without a coverage measurement")
+require(MEDIA3_FLOW_SINK, "artifactRiskProxy=spatial_sampling_only", "Media3 spatial-grid risk must remain explicitly labeled as a proxy")
+require(MEDIA3_FLOW_SINK, "coverage=unavailable_vulkan_ssbo_readback_disabled", "Media3 coverage must remain marked unavailable until GPU readback is implemented")
+require(MEDIA3_FLOW_SINK, "pixelArtifactQuality=unmeasured_vulkan_ssbo_readback_disabled", "Media3 must not claim measured visual quality without pixel evidence")
 require(MEDIA3_FLOW_SINK, "motion_submit_proxy_over_deadline_reserve", "Media3 over-reserve diagnostics must identify the CPU submit proxy rather than imply GPU completion timing")
 require(MEDIA3_FLOW_SINK, "capturedPtsSamples=", "Media3 captured cadence must expose its PTS sample count")
 require(MEDIA3_FLOW_SINK, "outputCallbackLatenessMs=", "Media3 must report Choreographer-to-GL callback lateness")

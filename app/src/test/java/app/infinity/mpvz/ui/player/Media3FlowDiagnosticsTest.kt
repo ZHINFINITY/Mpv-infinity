@@ -225,6 +225,31 @@ class Media3FlowDiagnosticsTest {
   }
 
   @Test
+  fun motionPairAnalysisCountersSeparateSwapAndSlotDeferralsFromNativeOutcomes() {
+    val counters = FlowMotionPairAnalysisCounters()
+    counters.recordDeferredByEglSwap()
+    counters.recordDeferredNoReusableSlot()
+    counters.recordNoRetainedCandidate()
+    counters.recordAttempt()
+    counters.recordReady()
+    counters.recordAttempt()
+    counters.recordFailure()
+
+    val snapshot = counters.snapshot()
+
+    assertEquals(2L, snapshot.attempts)
+    assertEquals(1L, snapshot.ready)
+    assertEquals(1L, snapshot.failures)
+    assertEquals(1L, snapshot.deferredByEglSwap)
+    assertEquals(1L, snapshot.deferredNoReusableSlot)
+    assertEquals(1L, snapshot.noRetainedCandidate)
+    assertEquals(
+      "attempts:2,ready:1,failures:1,deferredEglSwap:1,deferredNoSlot:1,noRetainedCandidate:1",
+      snapshot.asLogFieldValue(),
+    )
+  }
+
+  @Test
   fun motionGridSpacingProxyShowsTheApproximateSourcePixelSpanOn4kInput() {
     val spacing = estimateFlowMotionGridStepSourcePx(3840, 2160, 416, 234)
 

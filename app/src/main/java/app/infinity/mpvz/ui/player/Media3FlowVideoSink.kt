@@ -246,6 +246,7 @@ class Media3FlowVideoSink(
   private var firstSuccessfulPairDiagnosticLogged = false
   private var lastLoggedOutputDiagnosticSignature: String? = null
   private val outputDecisionCounters = FlowOutputDecisionCounters()
+  private val motionPairAnalysisCounters = FlowMotionPairAnalysisCounters()
   private var lastOutputDiagnosticLogAtNs = 0L
 
   private var eglDisplay = EGL14.EGL_NO_DISPLAY
@@ -1535,6 +1536,11 @@ class Media3FlowVideoSink(
       preferredPair = preferredPair,
     )
     if (candidate == null) {
+      when {
+        deferredMotionPairs.size == 0 -> motionPairAnalysisCounters.recordNoRetainedCandidate()
+        !analysisAllowed -> motionPairAnalysisCounters.recordDeferredByEglSwap()
+        reusable == null -> motionPairAnalysisCounters.recordDeferredNoReusableSlot()
+      }
       lastBypassReason = when {
         !analysisAllowed -> "egl_swap_backpressure_analysis_deferred"
         reusable == null -> "motion_pair_queue_full"
@@ -1556,6 +1562,7 @@ class Media3FlowVideoSink(
     slot.frame0PtsUs = candidate.frame0PtsUs
     slot.frame1PtsUs = candidate.frame1PtsUs
     val startNs = System.nanoTime()
+    motionPairAnalysisCounters.recordAttempt()
     val nativePair = runCatching {
       Media3FlowVulkanNative.nativeAnalyzePair(
         flowVulkanContext, frame0.nativeImageHandle, frame1.nativeImageHandle,
@@ -1564,6 +1571,7 @@ class Media3FlowVideoSink(
     lastMotionSubmitMs = (System.nanoTime() - startNs) / 1_000_000f
     slot.motionEstimateSubmitMs = lastMotionSubmitMs
     if (nativePair == 0L) {
+      motionPairAnalysisCounters.recordFailure()
       slot.available = false
       flowAvailable = false
       lastBypassReason = "motion_analysis_error"
@@ -1582,6 +1590,7 @@ class Media3FlowVideoSink(
     }
     slot.nativePairHandle = nativePair
     slot.available = true
+    motionPairAnalysisCounters.recordReady()
     lastBypassReason = null
     lastState = "motion_estimated_gpu"
     if (!firstSuccessfulPairDiagnosticLogged) {
@@ -2831,6 +2840,7 @@ class Media3FlowVideoSink(
         "generatedFps=${formatLogFloat(diagnostics.generatedFps)} " +
         "generatedTotal=${diagnostics.generatedFrames} inputDropsTotal=${diagnostics.droppedFrames} " +
         "outputDecisionTotals=${outputDecisionCounters.snapshot().asLogFieldValue()} " +
+        "motionPairAnalysisTotals=${motionPairAnalysisCounters.snapshot().asLogFieldValue()} " +
         "inferredSkippedOutputTicksTotal=${diagnostics.skippedOutputTicks} skippedTotal=${diagnostics.skippedFrames} " +
         "outputSubmissionFailures=${diagnostics.outputSubmissionFailures} " +
         "lastOutputSubmissionFailure=${diagnostics.lastOutputSubmissionFailureReason} " +

@@ -154,6 +154,71 @@ internal class FlowOutputDecisionCounters {
     )
 }
 
+/** Cumulative pair-analysis scheduling outcomes; these are queue/admission counters, not GPU completion. */
+internal data class FlowMotionPairAnalysisSnapshot(
+  val attempts: Long,
+  val ready: Long,
+  val failures: Long,
+  val deferredByEglSwap: Long,
+  val deferredNoReusableSlot: Long,
+  val noRetainedCandidate: Long,
+) {
+  fun asLogFieldValue(): String =
+    "attempts:$attempts,ready:$ready,failures:$failures," +
+      "deferredEglSwap:$deferredByEglSwap,deferredNoSlot:$deferredNoReusableSlot," +
+      "noRetainedCandidate:$noRetainedCandidate"
+}
+
+internal class FlowMotionPairAnalysisCounters {
+  private var attempts = 0L
+  private var ready = 0L
+  private var failures = 0L
+  private var deferredByEglSwap = 0L
+  private var deferredNoReusableSlot = 0L
+  private var noRetainedCandidate = 0L
+
+  @Synchronized
+  fun recordAttempt() {
+    attempts++
+  }
+
+  @Synchronized
+  fun recordReady() {
+    ready++
+  }
+
+  @Synchronized
+  fun recordFailure() {
+    failures++
+  }
+
+  @Synchronized
+  fun recordDeferredByEglSwap() {
+    deferredByEglSwap++
+  }
+
+  @Synchronized
+  fun recordDeferredNoReusableSlot() {
+    deferredNoReusableSlot++
+  }
+
+  @Synchronized
+  fun recordNoRetainedCandidate() {
+    noRetainedCandidate++
+  }
+
+  @Synchronized
+  fun snapshot(): FlowMotionPairAnalysisSnapshot =
+    FlowMotionPairAnalysisSnapshot(
+      attempts = attempts,
+      ready = ready,
+      failures = failures,
+      deferredByEglSwap = deferredByEglSwap,
+      deferredNoReusableSlot = deferredNoReusableSlot,
+      noRetainedCandidate = noRetainedCandidate,
+    )
+}
+
 /** Estimates the source-pixel spacing represented by one motion-grid step, not a pixel artifact score. */
 internal fun estimateFlowMotionGridStepSourcePx(
   sourceWidth: Int,
