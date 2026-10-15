@@ -369,25 +369,6 @@ object DecoderPreferencesScreen : Screen {
                   preferences.mpvFlowFrameInterpolation.set(enabled)
                 },
                 title = { Text(stringResource(R.string.pref_decoder_mpvflow_title)) },
-                summary = {
-                  Text(
-                    stringResource(
-                      when {
-                        nativeMedia3FlowSelected && !isVulkanSupported ->
-                          R.string.pref_decoder_mpvflow_summary_vulkan_unavailable
-                        nativeMedia3FlowSelected -> R.string.pref_decoder_mpvflow_summary_native_engine
-                        !BuildConfig.MPV_HAS_MPVFLOW -> R.string.pref_decoder_mpvflow_summary_unavailable
-                        frameInterpolationConfigOwned -> R.string.pref_decoder_mpvflow_summary_config_owned
-                        rendererBackendConfigOwned -> R.string.pref_decoder_mpvflow_summary_config_owned
-                        !isVulkanSupported -> R.string.pref_decoder_mpvflow_summary_vulkan_unavailable
-                        anime4kActivePreference ->
-                          R.string.pref_decoder_mpvflow_summary_requires_gpu_next_vulkan
-                        else -> R.string.pref_decoder_mpvflow_summary
-                      },
-                    ),
-                    color = MaterialTheme.colorScheme.outline,
-                  )
-                },
               )
 
               if (BuildConfig.MPV_HAS_MPVFLOW || nativeMedia3FlowSelected) {
@@ -412,22 +393,6 @@ object DecoderPreferencesScreen : Screen {
                     )
                   },
                   title = { Text(stringResource(R.string.pref_decoder_mpvflow_compute_api_title)) },
-                  summary = {
-                    Text(
-                      stringResource(
-                        when {
-                          mpvFlowComputeApiConfigOwned ->
-                            R.string.pref_decoder_mpvflow_compute_api_summary_config_owned
-                          mpvFlowComputeApi == MpvFlowComputeApi.AUTO ->
-                            R.string.pref_decoder_mpvflow_compute_api_summary_auto
-                          mpvFlowComputeApi == MpvFlowComputeApi.OPENCL ->
-                            R.string.pref_decoder_mpvflow_compute_api_summary_opencl
-                          else -> R.string.pref_decoder_mpvflow_compute_api_summary_vulkan
-                        },
-                      ),
-                      color = MaterialTheme.colorScheme.outline,
-                    )
-                  },
                 )
               }
 
@@ -449,12 +414,6 @@ object DecoderPreferencesScreen : Screen {
                   )
                 },
                 title = { Text(stringResource(R.string.pref_decoder_mpvflow_target_fps_title)) },
-                summary = {
-                  Text(
-                    stringResource(R.string.pref_decoder_mpvflow_target_fps_summary, mpvFlowTargetFps),
-                    color = MaterialTheme.colorScheme.outline,
-                  )
-                },
               )
 
               PreferenceDivider()

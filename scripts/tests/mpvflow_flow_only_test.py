@@ -94,8 +94,40 @@ def test_standard_workflow_is_flow_only() -> None:
     assert "pref_decoder_rife_" not in app_source
 
 
+def test_mpvflow_settings_keep_controls_without_explanations() -> None:
+    screen = (ROOT / "app/src/main/java/app/infinity/mpvz/ui/preferences/DecoderPreferencesScreen.kt").read_text(
+        encoding="utf-8"
+    )
+    strings = (ROOT / "app/src/main/res/values/strings.xml").read_text(encoding="utf-8")
+
+    for title in (
+        "pref_decoder_mpvflow_title",
+        "pref_decoder_mpvflow_compute_api_title",
+        "pref_decoder_mpvflow_target_fps_title",
+    ):
+        assert f"settingsSearchTarget(R.string.{title})" in screen
+        assert f'name="{title}"' in strings
+
+    assert "preferences.mpvFlowFrameInterpolation.set(enabled)" in screen
+    assert "preferences.mpvFlowComputeApi::set" in screen
+    assert "preferences.mpvFlowTargetFps::set" in screen
+    assert "pref_decoder_mpvflow_compute_api_auto" in strings
+    assert "pref_decoder_mpvflow_compute_api_opencl" in strings
+    assert "pref_decoder_mpvflow_compute_api_vulkan" in strings
+    assert "pref_decoder_mpvflow_target_fps_value" in strings
+
+    description_prefixes = (
+        "pref_decoder_mpvflow_summary",
+        "pref_decoder_mpvflow_compute_api_summary",
+        "pref_decoder_mpvflow_target_fps_summary",
+    )
+    assert all(prefix not in screen for prefix in description_prefixes)
+    assert all(prefix not in strings for prefix in description_prefixes)
+
+
 def main() -> None:
     test_standard_workflow_is_flow_only()
+    test_mpvflow_settings_keep_controls_without_explanations()
     print("Flow-only MPVFlow Standard arm64 workflow tests passed.")
 
 
