@@ -1,0 +1,6 @@
+libudfread 1.2.0
+
+Source: https://code.videolan.org/videolan/libudfread
+License: GNU Lesser General Public License, version 2.1 or later (LGPL-2.1-or-later).
+
+The libudfread shared library is included in both MPV AAR variants as a native dependency of libmpv. It remains a separate third-party component and is not covered by Mpv∞'s PolyForm Noncommercial license. The complete upstream license text is in libudfread-LGPL-2.1.txt.

@@ -18,6 +18,20 @@ ABI_ELF = {
     "x86": ("ELF32", "Intel 80386"),
     "x86_64": ("ELF64", "Advanced Micro Devices X86-64"),
 }
+ANDROID_SYSTEM_LIBS = {
+    "libEGL.so",
+    "libGLESv3.so",
+    "libOpenSLES.so",
+    "libandroid.so",
+    "libc.so",
+    "libdl.so",
+    "libjnigraphics.so",
+    "liblog.so",
+    "libm.so",
+    "libmediandk.so",
+    "libvulkan.so",
+    "libz.so",
+}
 REQUIRED_LIBS = {
     "libavcodec.so",
     "libavdevice.so",
@@ -29,6 +43,7 @@ REQUIRED_LIBS = {
     "libplayer.so",
     "libswresample.so",
     "libswscale.so",
+    "libudfread.so",
 }
 
 
@@ -58,6 +73,24 @@ def assert_abi(path: Path, abi: str) -> None:
         rf"Machine:\s+{re.escape(expected_machine)}\b", header
     ):
         raise SystemExit(f"{path.name} is not a {abi} ELF shared library")
+
+
+def needed_libraries(path: Path) -> set[str]:
+    dynamic = run_tool(["readelf", "-d", str(path)])
+    return set(re.findall(r"\(NEEDED\).*?\[([^\]]+)\]", dynamic))
+
+
+def verify_dependency_closure(abi: str, paths: dict[str, Path]) -> None:
+    packaged = set(paths)
+    for name, path in paths.items():
+        needed = needed_libraries(path)
+        missing = sorted(needed - packaged - ANDROID_SYSTEM_LIBS)
+        if missing:
+            raise SystemExit(
+                f"{abi}/{name} has unbundled native dependencies: {', '.join(missing)}"
+            )
+        if name == "libmpv.so" and "libudfread.so" not in needed:
+            raise SystemExit(f"{abi}/libmpv.so no longer declares the expected libudfread dependency")
 
 
 def expected_placebo_api_ver() -> str:
@@ -183,6 +216,8 @@ def main() -> None:
                     path.write_bytes(data)
                     assert_abi(path, abi)
                     paths[name] = path
+
+                verify_dependency_closure(abi, paths)
 
                 for name, path in paths.items():
                     if name.startswith("libav"):

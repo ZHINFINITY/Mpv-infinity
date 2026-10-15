@@ -385,6 +385,8 @@ build_profile() {
 
   local staged_aar="$BUILD_TMP/rebuilt/$aar_name"
   cp "$built_aar" "$staged_aar"
+  python3 "$ROOT/scripts/package-mpv-aar-udfread.py" "$staged_aar" "$buildscripts/prefix" \
+    --abis "$ABIS"
   local profile_args=()
   if [[ "$mode" == "vulkan" ]]; then
     profile_args+=(--require-vulkan)

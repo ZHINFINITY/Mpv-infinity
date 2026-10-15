@@ -183,6 +183,7 @@ def test_source_patcher() -> None:
         assert "rubberband" not in mpv.lower()
         assert "-D{libarchive,dvdnav}=enabled" not in mpv
         assert "-Ddvdnav=disabled" in mpv
+        assert "package-mpv-aar-udfread.py" in BUILDER.read_text(encoding="utf-8")
         assert "find buildscripts/deps/mpv" in versions
         assert "MPV version differs between generated ABI headers" in versions
         assert "DATE=unknown" in versions
@@ -307,10 +308,45 @@ def test_libplacebo_api_alignment() -> None:
         raise AssertionError("the AAR verifier accepted an MPV library with no logger API and no separate libplacebo")
 
 
+def test_native_dependency_closure() -> None:
+    spec = importlib.util.spec_from_file_location(
+        "verify_mpv_aar_dependency_test", ROOT / "scripts/verify-mpv-aar-lgpl.py"
+    )
+    assert spec is not None and spec.loader is not None
+    verifier = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(verifier)
+    assert "libudfread.so" in verifier.REQUIRED_LIBS
+
+    mpv = Path("arm64-libmpv.so")
+    udfread = Path("arm64-libudfread.so")
+
+    def dynamic_dependencies(args: list[str]) -> str:
+        assert args[:2] == ["readelf", "-d"]
+        if args[-1].endswith("libmpv.so"):
+            return "(NEEDED) Shared library: [libudfread.so]\n(NEEDED) Shared library: [libavcodec.so]\n"
+        if args[-1].endswith("libudfread.so"):
+            return "(NEEDED) Shared library: [libc.so]\n"
+        return "(NEEDED) Shared library: [libc.so]\n"
+
+    with patch.object(verifier, "run_tool", side_effect=dynamic_dependencies):
+        verifier.verify_dependency_closure(
+            "arm64-v8a", {"libmpv.so": mpv, "libavcodec.so": Path("libavcodec.so"), "libudfread.so": udfread}
+        )
+
+    try:
+        with patch.object(verifier, "run_tool", side_effect=dynamic_dependencies):
+            verifier.verify_dependency_closure("arm64-v8a", {"libmpv.so": mpv})
+    except SystemExit as error:
+        assert "libudfread.so" in str(error)
+    else:
+        raise AssertionError("the AAR verifier accepted a missing libudfread dependency")
+
+
 def main() -> None:
     test_abi_selection()
     test_source_patcher()
     test_libplacebo_api_alignment()
+    test_native_dependency_closure()
     print("MPV LGPL builder matrix and GPL-patch tests passed.")
 
 

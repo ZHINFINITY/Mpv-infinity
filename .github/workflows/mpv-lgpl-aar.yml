@@ -7,10 +7,12 @@ on:
     paths:
       - .github/workflows/mpv-lgpl-aar.yml
       - scripts/build-mpv-lgpl-aar.sh
+      - scripts/package-mpv-aar-udfread.py
       - scripts/verify-mpv-aar-lgpl.py
       - scripts/merge-mpv-lgpl-aars.py
       - scripts/tests/merge_mpv_lgpl_aars_test.py
       - scripts/tests/mpv_lgpl_builder_patch_test.py
+      - scripts/tests/mpv_lgpl_udfread_packaging_test.py
   workflow_dispatch:
 
 permissions:
@@ -34,6 +36,9 @@ jobs:
 
       - name: Test four-ABI AAR merge
         run: python3 scripts/tests/merge_mpv_lgpl_aars_test.py
+
+      - name: Test libudfread AAR packaging
+        run: python3 scripts/tests/mpv_lgpl_udfread_packaging_test.py
 
       - name: Syntax-check native AAR builder
         run: bash -n scripts/build-mpv-lgpl-aar.sh
