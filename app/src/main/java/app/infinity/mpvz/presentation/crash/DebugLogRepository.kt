@@ -511,7 +511,7 @@ internal fun latestMpvFlowRuntimeCadenceSample(
 }
 
 internal fun observedMpvFlowPassthroughReasons(entries: List<DebugLogEntry>): List<String> {
-  val reasonPattern = Regex("""(?:^|\\s)reason=([A-Za-z0-9_.-]+)""")
+  val reasonPattern = Regex("""(?:^|\s)reason=([A-Za-z0-9_.-]+)""")
   return entries.asSequence()
     .filter { entry ->
       entry.message.contains("MPVFLOW_DIAGNOSTIC") &&
