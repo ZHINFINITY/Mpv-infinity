@@ -20,10 +20,18 @@ def test_player_dependency_composition() -> None:
     flow = base + " placebo"
     rife = base + " rife_vfi"
     combined = base + " rife_vfi placebo"
+    base_udfread = base + " udfread"
+    flow_udfread = base_udfread + " placebo"
+    rife_udfread = base_udfread + " rife_vfi"
+    combined_udfread = base_udfread + " rife_vfi placebo"
     assert RIFE_PREPARE.register_rife_player_dependency(f"{base}\n") == f"{rife}\n"
     assert RIFE_PREPARE.register_rife_player_dependency(f"{flow}\n") == f"{combined}\n"
+    assert RIFE_PREPARE.register_rife_player_dependency(f"{base_udfread}\n") == f"{rife_udfread}\n"
+    assert RIFE_PREPARE.register_rife_player_dependency(f"{flow_udfread}\n") == f"{combined_udfread}\n"
     assert RIFE_PREPARE.register_rife_player_dependency(f"{rife}\n") == f"{rife}\n"
     assert RIFE_PREPARE.register_rife_player_dependency(f"{combined}\n") == f"{combined}\n"
+    assert RIFE_PREPARE.register_rife_player_dependency(f"{rife_udfread}\n") == f"{rife_udfread}\n"
+    assert RIFE_PREPARE.register_rife_player_dependency(f"{combined_udfread}\n") == f"{combined_udfread}\n"
     try:
         RIFE_PREPARE.register_rife_player_dependency("LOCAL_SHARED_LIBRARIES := changed\n")
     except SystemExit:

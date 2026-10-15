@@ -181,6 +181,10 @@ android_mk = android_mk.replace(
 LOCAL_MODULE := libplacebo
 LOCAL_SRC_FILES := $(PREFIX)/lib/libplacebo.so
 include $(PREBUILT_SHARED_LIBRARY)
+\ninclude $(CLEAR_VARS)
+LOCAL_MODULE := libudfread
+LOCAL_SRC_FILES := $(PREFIX)/lib/libudfread.so
+include $(PREBUILT_SHARED_LIBRARY)
 """,
     1,
 )
@@ -189,10 +193,10 @@ if android_mk.count(mpv_player_dependencies) != 1:
     raise SystemExit(f"Expected exactly one libplayer dependency list in {android_mk_path}")
 android_mk_path.write_text(android_mk.replace(
     mpv_player_dependencies,
-    "LOCAL_SHARED_LIBRARIES := swscale avcodec mpv placebo",
+    "LOCAL_SHARED_LIBRARIES := swscale avcodec mpv udfread placebo",
     1,
 ))
-print("Registered libplacebo.so in ndk-build and linked it into libplayer so the runtime APK stages it")
+print("Registered libplacebo.so and libudfread.so in ndk-build so the runtime APK stages both dependencies")
 
 depinfo = depinfo_path.read_text()
 qairt_dependency = "dep_mpv=(ffmpeg libass lua libplacebo qairt)"

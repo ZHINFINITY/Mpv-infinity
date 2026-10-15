@@ -21,6 +21,7 @@ REQUIRED_LIBS = {
     "libavdevice.so",
     "libswresample.so",
     "libswscale.so",
+    "libudfread.so",
     "libc++_shared.so",
 }
 FLOW_REQUIRED_LIBS = REQUIRED_LIBS - {"librife_vfi.so"}

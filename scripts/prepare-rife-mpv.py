@@ -22,10 +22,20 @@ def register_rife_player_dependency(android_mk: str) -> str:
     flow = base + " placebo"
     rife = base + " rife_vfi"
     combined = base + " rife_vfi placebo"
+    base_udfread = base + " udfread"
+    flow_udfread = base_udfread + " placebo"
+    rife_udfread = base_udfread + " rife_vfi"
+    combined_udfread = base_udfread + " rife_vfi placebo"
+    if combined_udfread in android_mk or rife_udfread in android_mk:
+        return android_mk
+    if flow_udfread in android_mk:
+        return replace_once(android_mk, flow_udfread, combined_udfread, "MPVFlow player shared-library list")
     if combined in android_mk or rife in android_mk:
         return android_mk
     if flow in android_mk:
         return replace_once(android_mk, flow, combined, "MPVFlow player shared-library list")
+    if base_udfread in android_mk:
+        return replace_once(android_mk, base_udfread, rife_udfread, "player shared-library list")
     return replace_once(android_mk, base, rife, "player shared-library list")
 
 

@@ -62,6 +62,8 @@ for marker in (
     "-Ddefault_library=static",
     "must statically link libbluray",
     "Shared library: [libudfread.so]",
+    "LOCAL_MODULE := libudfread",
+    "LOCAL_SHARED_LIBRARIES := swscale avcodec mpv udfread placebo",
 ):
     assert marker in runtime_builder, f"MPVFlow build must preserve verified LGPL Blu-ray support: missing {marker!r}"
 
@@ -1637,6 +1639,10 @@ with tempfile.TemporaryDirectory(prefix="mpvflow-builder-patch-test-") as tempor
     patched_placebo = libplacebo.read_text(encoding="utf-8")
     assert "-Dglslang=enabled" in patched_placebo and "-Dvulkan=enabled" in patched_placebo
     assert "cmake --install" in patched_placebo and "libSPIRV.a" in patched_placebo
+    patched_android_mk = android_mk.read_text(encoding="utf-8")
+    assert "LOCAL_MODULE := libudfread" in patched_android_mk
+    assert "LOCAL_SRC_FILES := $(PREFIX)/lib/libudfread.so" in patched_android_mk
+    assert "LOCAL_SHARED_LIBRARIES := swscale avcodec mpv udfread placebo" in patched_android_mk
     patched_mpv = mpv.read_text(encoding="utf-8")
     assert "\t-Dmanpage-build=disabled -Dgpl=false -Dvulkan=enabled -Dlibbluray=enabled -Ddvdnav=disabled\n" in patched_mpv, (
         "MPV's GPL/DVD-navigation features must stay disabled while Vulkan and LGPL Blu-ray remain enabled"

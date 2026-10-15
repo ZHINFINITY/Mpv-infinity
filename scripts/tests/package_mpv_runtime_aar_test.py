@@ -21,7 +21,7 @@ SPEC.loader.exec_module(MODULE)
 def patch_runtime_validation() -> None:
     MODULE.assert_abi_library = lambda _path, _abi: None
     MODULE.assert_lgpl_runtime = lambda _abi, _entries, _temp: None
-    MODULE.needed_libraries = lambda _path: set()
+    MODULE.needed_libraries = lambda path: {"libudfread.so"} if path.name.endswith("libmpv.so") else set()
     MODULE.elf_version_tags = lambda _path: set()
     MODULE.dynamic_defined_symbols = lambda _path: {
         "pl_vulkan_default_params",
@@ -33,9 +33,11 @@ def patch_runtime_validation() -> None:
     }
 
 
-def overlay_case(*, include_rife: bool) -> None:
+def overlay_case(*, include_rife: bool, omit_udfread: bool = False) -> None:
     abi = "x86_64"
     runtime_libs = sorted(MODULE.REQUIRED_LIBS if include_rife else MODULE.FLOW_REQUIRED_LIBS)
+    if omit_udfread:
+        runtime_libs.remove("libudfread.so")
     runtime_blobs = {name: f"new-runtime:{name}".encode() for name in runtime_libs}
     player_blob = b"app-specific-player-bridge"
     missing_from_old_aar = "libplacebo.so"
@@ -71,6 +73,14 @@ def overlay_case(*, include_rife: bool) -> None:
         if not include_rife:
             argv.append("--without-rife")
         with patch.object(sys, "argv", argv):
+            if omit_udfread:
+                try:
+                    MODULE.main()
+                except SystemExit as error:
+                    assert "libudfread.so" in str(error)
+                    assert "missing required native libraries" in str(error)
+                    return
+                raise AssertionError("runtime overlay accepted an APK without required libudfread.so")
             MODULE.main()
 
         with zipfile.ZipFile(mpv_aar) as result:
@@ -91,6 +101,9 @@ def overlay_case(*, include_rife: bool) -> None:
 def main() -> None:
     assert "librife_vfi.so" in MODULE.REQUIRED_LIBS
     assert "librife_vfi.so" not in MODULE.FLOW_REQUIRED_LIBS
+    assert "libudfread.so" in MODULE.REQUIRED_LIBS
+    assert "libudfread.so" in MODULE.FLOW_REQUIRED_LIBS
+    overlay_case(include_rife=False, omit_udfread=True)
     overlay_case(include_rife=False)
     overlay_case(include_rife=True)
     print("MPV runtime AAR overlay tests passed (Flow-only removal and combined RIFE retention).")
