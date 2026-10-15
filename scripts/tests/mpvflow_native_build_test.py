@@ -51,6 +51,20 @@ DECODER_SCREEN = ROOT / "app/src/main/java/app/infinity/mpvz/ui/preferences/Deco
 STRING_RESOURCES = ROOT / "app/src/main/res/values/strings.xml"
 
 sys.dont_write_bytecode = True
+runtime_builder = BUILD.read_text(encoding="utf-8")
+for marker in (
+    "dep_mpv=(ffmpeg libass lua libplacebo libbluray)",
+    "v_libbluray=1.4.1",
+    "LIBBLURAY_SHA256=76b5dc40097f28dca4ebb009c98ed51321b2927453f75cc72cf74acd09b9f449",
+    "-Dlibbluray=enabled",
+    "-Ddvdnav=disabled",
+    "-Dembed_udfread=false",
+    "-Ddefault_library=static",
+    "must statically link libbluray",
+    "Shared library: [libudfread.so]",
+):
+    assert marker in runtime_builder, f"MPVFlow build must preserve verified LGPL Blu-ray support: missing {marker!r}"
+
 spec = importlib.util.spec_from_file_location("prepare_mpvflow", PREPARE)
 assert spec and spec.loader, "could not load MPVFlow preparation module"
 prepare = importlib.util.module_from_spec(spec)
@@ -1547,6 +1561,7 @@ with tempfile.TemporaryDirectory(prefix="mpvflow-builder-patch-test-") as tempor
     android_mk = fixture / "Android.mk"
     mpv = fixture / "mpv.sh"
     ffmpeg = fixture / "ffmpeg.sh"
+    libbluray_script = fixture / "libbluray.sh"
     ci.write_text(
         'msg "Fetching mpv"\n'
         "mkdir -p deps/mpv\n"
@@ -1562,7 +1577,14 @@ with tempfile.TemporaryDirectory(prefix="mpvflow-builder-patch-test-") as tempor
         "./buildall.sh -n\n",
         encoding="utf-8",
     )
-    depinfo.write_text("dep_mpv=(ffmpeg libass lua libplacebo qairt)\nv_ci_ffmpeg=n8.0.1\n", encoding="utf-8")
+    depinfo.write_text(
+        "v_libxml2=2.15.2\n"
+        "dep_libplacebo=()\n"
+        "dep_mpv=(ffmpeg libass lua libplacebo qairt)\n"
+        "v_ci_ffmpeg=n8.0.1\n"
+        'ci_tarball="prefix-libxml2-${v_libxml2}-fontconfig-${v_fontconfig}-ffmpeg-${v_ci_ffmpeg}.tgz"\n',
+        encoding="utf-8",
+    )
     downloads.write_text(
         "[ ! -d libplacebo ] && git clone --recursive https://github.com/haasn/libplacebo\n# mpv\n",
         encoding="utf-8",
@@ -1596,7 +1618,7 @@ with tempfile.TemporaryDirectory(prefix="mpvflow-builder-patch-test-") as tempor
         encoding="utf-8",
     )
     result = subprocess.run(
-        [sys.executable, "-", str(ci), str(depinfo), str(downloads), str(libplacebo), str(android_mk), str(mpv), str(ffmpeg)],
+        [sys.executable, "-", str(ci), str(depinfo), str(downloads), str(libplacebo), str(android_mk), str(mpv), str(ffmpeg), str(libbluray_script)],
         input=builder_patcher,
         check=False,
         capture_output=True,
@@ -1616,9 +1638,17 @@ with tempfile.TemporaryDirectory(prefix="mpvflow-builder-patch-test-") as tempor
     assert "-Dglslang=enabled" in patched_placebo and "-Dvulkan=enabled" in patched_placebo
     assert "cmake --install" in patched_placebo and "libSPIRV.a" in patched_placebo
     patched_mpv = mpv.read_text(encoding="utf-8")
-    assert "\t-Dmanpage-build=disabled -Dgpl=false -Dvulkan=enabled\n" in patched_mpv, (
-        "MPV's GPL feature must be disabled while Vulkan remains enabled"
+    assert "\t-Dmanpage-build=disabled -Dgpl=false -Dvulkan=enabled -Dlibbluray=enabled -Ddvdnav=disabled\n" in patched_mpv, (
+        "MPV's GPL/DVD-navigation features must stay disabled while Vulkan and LGPL Blu-ray remain enabled"
     )
+    patched_depinfo = depinfo.read_text(encoding="utf-8")
+    assert "dep_mpv=(ffmpeg libass lua libplacebo libbluray)" in patched_depinfo
+    assert "v_libbluray=1.4.1" in patched_depinfo and "dep_libbluray=()" in patched_depinfo
+    assert "-libbluray-${v_libbluray}-fontconfig-" in patched_depinfo, "dependency cache key must include libbluray"
+    patched_libbluray = libbluray_script.read_text(encoding="utf-8")
+    assert libbluray_script.stat().st_mode & 0o111, "generated libbluray build script must be executable"
+    for marker in ("-Dembed_udfread=false", "-Ddefault_library=static", "-Dlibxml2=enabled", "-ludfread"):
+        assert marker in patched_libbluray, f"LGPL Blu-ray build is missing {marker!r}"
     patched_ffmpeg = ffmpeg.read_text(encoding="utf-8")
     assert "--disable-gpl --enable-version3" in patched_ffmpeg, (
         "FFmpeg must stay GPL-free while using LGPLv3 for Apache-2.0 mbedTLS"

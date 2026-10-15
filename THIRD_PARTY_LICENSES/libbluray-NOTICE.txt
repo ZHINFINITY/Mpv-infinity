@@ -1,0 +1,6 @@
+libbluray 1.4.1
+
+Source: https://code.videolan.org/videolan/libbluray
+License: GNU Lesser General Public License, version 2.1 or later (LGPL-2.1-or-later).
+
+libbluray is a separate third-party component statically linked into libmpv in the Standard and No-Vulkan MPV AARs. It is not covered by Mpv∞'s PolyForm Noncommercial license. The complete upstream license text is provided in the app's MPV license assets as COPYING.LGPLv2.1. DVD navigation remains disabled; Blu-ray stream support remains enabled.

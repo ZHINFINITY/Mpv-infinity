@@ -1,0 +1,6 @@
+libbluray 1.4.1
+
+Source: https://code.videolan.org/videolan/libbluray
+License: GNU Lesser General Public License, version 2.1 or later (LGPL-2.1-or-later).
+
+This app includes libbluray as a static third-party dependency of libmpv. It is not covered by Mpv∞'s PolyForm Noncommercial license. The full license text is available in COPYING.LGPLv2.1. DVD navigation remains disabled; Blu-ray stream support remains enabled.
