@@ -11,6 +11,8 @@ import tempfile
 import zipfile
 from pathlib import Path
 
+from ffmpeg_runtime_config import RuntimeEvidenceError, verify_runtime_evidence
+
 
 REQUIRED_LIBS = ("avcodec", "avutil", "swresample")
 REQUIRED_AVCODEC_SYMBOLS = (
@@ -67,23 +69,10 @@ def verify(aar_path: Path, abis: list[str], readelf: str, strings: str) -> None:
 
             avcodec = extracted["avcodec"]
             text = run(strings, "-a", str(avcodec))
-            configuration = next(
-                (line for line in text.splitlines() if "--disable-gpl" in line),
-                "",
-            )
-            required_text = {
-                "FFmpeg n9.0": "FFmpeg version n9.0" in text,
-                "LGPLv3-or-later license": "libavcodec license: LGPL version 3 or later" in text,
-                "GPL explicitly disabled": "--disable-gpl" in configuration,
-                "nonfree explicitly disabled": "--disable-nonfree" in configuration,
-                "version-3 LGPL mode": "--enable-version3" in configuration,
-                "DCA decoder marker": "DCA (DTS Coherent Acoustics)" in text,
-            }
-            missing = [name for name, found in required_text.items() if not found]
-            if missing:
-                raise SystemExit(f"{abi}: missing runtime evidence: {', '.join(missing)}")
-            if "--enable-gpl" in configuration or re.search(r"(?<!L)GPL version", text):
-                raise SystemExit(f"{abi}: GPL-enabled or GPL-licensed FFmpeg runtime detected")
+            try:
+                effective_flags = verify_runtime_evidence(text)
+            except RuntimeEvidenceError as error:
+                raise SystemExit(f"{abi}: {error}") from error
 
             symbol_groups = (
                 ("avcodec", REQUIRED_AVCODEC_SYMBOLS),
@@ -102,7 +91,8 @@ def verify(aar_path: Path, abis: list[str], readelf: str, strings: str) -> None:
                     raise SystemExit(f"{abi}: libavcodec is missing dynamic dependency {dependency}")
 
             print(
-                f"OK {abi}: FFmpeg n9.0; LGPL-3.0-or-later; GPL/nonfree disabled; "
+                f"OK {abi}: FFmpeg n9.0; CONFIG_GPL={effective_flags['CONFIG_GPL']}, "
+                f"CONFIG_NONFREE={effective_flags['CONFIG_NONFREE']}; LGPL-3.0-or-later; "
                 "DCA marker and all JNI-required dynamic symbols present"
             )
 

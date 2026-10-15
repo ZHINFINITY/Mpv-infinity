@@ -116,6 +116,8 @@ jobs:
           MPVFLOW_MPV_BUILD_CORES: '2'
       - name: Overlay MPVFlow MPV/FFmpeg arm64 runtime into MPV∞ AAR
         run: python3 scripts/package-mpv-runtime-aar.py --runtime-apk "$MPVFLOW_RUNTIME_APK" --mpv-aar app/libs/mpvlib.aar --abis arm64-v8a
+      - name: Test Media3 FFmpeg runtime verifier
+        run: python3 scripts/tests/verify_media3_dca_runtime_test.py
       - name: Verify GPL-free MPVFlow arm64 runtime
         run: python3 scripts/verify-mpv-aar-lgpl.py app/libs/mpvlib.aar --abis arm64-v8a --require-vulkan
       - name: Verify LGPL-only DTS decoder runtime for Media3

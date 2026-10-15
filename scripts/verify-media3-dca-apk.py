@@ -10,6 +10,8 @@ import tempfile
 import zipfile
 from pathlib import Path
 
+from ffmpeg_runtime_config import RuntimeEvidenceError, verify_runtime_evidence
+
 
 ABI = "arm64-v8a"
 LIBRARIES = (
@@ -54,16 +56,10 @@ def verify(apk_path: Path, readelf: str, strings: str) -> None:
                 raise SystemExit(f"Packaged libavcodec.so is missing {dependency}")
 
         runtime = run(strings, "-a", str(extracted["libavcodec.so"]))
-        required_runtime = (
-            "FFmpeg version n9.0",
-            "libavcodec license: LGPL version 3 or later",
-            "--disable-gpl",
-            "--disable-nonfree",
-            "DCA (DTS Coherent Acoustics)",
-        )
-        for marker in required_runtime:
-            if marker not in runtime:
-                raise SystemExit(f"APK's FFmpeg runtime is missing verified marker: {marker}")
+        try:
+            effective_flags = verify_runtime_evidence(runtime)
+        except RuntimeEvidenceError as error:
+            raise SystemExit(f"APK's FFmpeg runtime failed licensing/DCA verification: {error}") from error
 
         notice_path = "assets/licenses/media3/NOTICE.txt"
         license_path = "assets/licenses/media3/APACHE-2.0.txt"
@@ -77,8 +73,10 @@ def verify(apk_path: Path, readelf: str, strings: str) -> None:
             raise SystemExit("Packaged Apache license text is invalid")
 
         print(
-            f"OK {apk_path}: arm64 Media3 wrapper dynamically uses one existing "
-            "LGPL FFmpeg DCA runtime; no duplicate decoder libraries; notices packaged"
+            f"OK {apk_path}: arm64 Media3 wrapper dynamically uses one FFmpeg runtime "
+            f"(CONFIG_GPL={effective_flags['CONFIG_GPL']}, "
+            f"CONFIG_NONFREE={effective_flags['CONFIG_NONFREE']}); LGPL DCA evidence, "
+            "no duplicate decoder libraries; notices packaged"
         )
 
 
