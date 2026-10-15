@@ -111,7 +111,7 @@ class TrackSelector(
       }
     }
 
-  suspend fun selectAudioTrackByFingerprint(preference: AudioTrackFingerprint): Boolean =
+  internal suspend fun selectAudioTrackByFingerprint(preference: AudioTrackFingerprint): Boolean =
     withContext(Dispatchers.Main) {
       if (MpvConfigOverridePolicy.ownsAny(MpvConfigControlledFeatures.AUDIO_TRACK_SELECTION)) {
         return@withContext false
