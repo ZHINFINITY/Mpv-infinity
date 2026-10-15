@@ -450,6 +450,17 @@ internal data class MpvFlowRuntimeCadenceSample(
   val synthesizedSubmits: Long?,
   val windowMillis: Double?,
   val timeMillis: Long,
+  val renderCallbackFps: Double? = null,
+  val renderFailures: Long? = null,
+  val synthesisRateLimitedCallbacks: Long? = null,
+  val synthesizedRenderCallbacks: Long? = null,
+  val frameRepeatCount: Long? = null,
+  val renderCpuAverageMs: Double? = null,
+  val renderCpuMaximumMs: Double? = null,
+  val swapFailures: Long? = null,
+  val pairAnalysisAttempts: Long? = null,
+  val pairAnalysisFailures: Long? = null,
+  val sourceSyncPercent: Double? = null,
 )
 
 internal fun latestMpvFlowRuntimeCadenceSample(
@@ -465,6 +476,7 @@ internal fun latestMpvFlowRuntimeCadenceSample(
   if (fields["metric"] != "successful_pl_swapchain_submit_not_surfaceflinger_scanout") return null
 
   fun number(name: String): Double? = fields[name]?.toDoubleOrNull()?.takeIf { it.isFinite() }
+  fun count(name: String): Long? = fields[name]?.toLongOrNull()?.takeIf { it >= 0L }
 
   val windowMillis = number("window_ms")?.takeIf { it > 0.0 }
   val synthesizedSubmits = fields["synthesized_submits"]?.toLongOrNull()?.takeIf { it >= 0L }
@@ -484,7 +496,33 @@ internal fun latestMpvFlowRuntimeCadenceSample(
     synthesizedSubmits = synthesizedSubmits,
     windowMillis = windowMillis,
     timeMillis = entry.timeMillis,
+    renderCallbackFps = number("render_callback_fps")?.takeIf { it >= 0.0 },
+    renderFailures = count("render_failures"),
+    synthesisRateLimitedCallbacks = count("synthesis_rate_limited_callbacks"),
+    synthesizedRenderCallbacks = count("synthesized_render_callbacks"),
+    frameRepeatCount = count("frame_repeat_count"),
+    renderCpuAverageMs = number("render_cpu_avg_ms")?.takeIf { it >= 0.0 },
+    renderCpuMaximumMs = number("render_cpu_max_ms")?.takeIf { it >= 0.0 },
+    swapFailures = count("swap_failures"),
+    pairAnalysisAttempts = count("pair_analysis_attempts"),
+    pairAnalysisFailures = count("pair_analysis_failures"),
+    sourceSyncPercent = number("source_sync_pct")?.takeIf { it in 0.0..100.0 },
   )
+}
+
+internal fun observedMpvFlowPassthroughReasons(entries: List<DebugLogEntry>): List<String> {
+  val reasonPattern = Regex("""(?:^|\\s)reason=([A-Za-z0-9_.-]+)""")
+  return entries.asSequence()
+    .filter { entry ->
+      entry.message.contains("MPVFLOW_DIAGNOSTIC") &&
+        entry.message.contains("event=output ") &&
+        entry.message.contains("state=passthrough") &&
+        !entry.message.contains("component=native-media3")
+    }
+    .mapNotNull { entry -> reasonPattern.find(entry.message)?.groupValues?.getOrNull(1) }
+    .distinct()
+    .sorted()
+    .toList()
 }
 
 internal fun isMpvFlowRuntimeCadenceSampleFresh(

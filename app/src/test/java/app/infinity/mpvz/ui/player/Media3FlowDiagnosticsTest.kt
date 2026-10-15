@@ -202,4 +202,34 @@ class Media3FlowDiagnosticsTest {
     assertEquals(28.3333f, coverage.staticVectorNearZeroConfidentPercent!!, 0.001f)
     assertEquals(13.3333f, coverage.staticVectorNearZeroUncertainPercent!!, 0.001f)
   }
+
+  @Test
+  fun outputDecisionCountersSeparateSynthesisFromEachPassthroughReason() {
+    val counters = FlowOutputDecisionCounters()
+    counters.record("synthesized", "motion_pair_ready")
+    counters.record("passthrough", "source_frame_due")
+    counters.record("passthrough", "motion_not_ready_or_deadline")
+
+    val snapshot = counters.snapshot()
+
+    assertEquals(1L, snapshot.synthesizedCount)
+    assertEquals(2L, snapshot.passthroughCount)
+    assertEquals(
+      mapOf("source_frame_due" to 1L, "motion_not_ready_or_deadline" to 1L),
+      snapshot.passthroughReasons,
+    )
+    assertEquals(
+      "synthesized:1,passthrough:2,passthroughReasons:motion_not_ready_or_deadline:1,source_frame_due:1",
+      snapshot.asLogFieldValue(),
+    )
+  }
+
+  @Test
+  fun motionGridSpacingProxyShowsTheApproximateSourcePixelSpanOn4kInput() {
+    val spacing = estimateFlowMotionGridStepSourcePx(3840, 2160, 416, 234)
+
+    assertEquals(36.9231, spacing!!.first, 0.001)
+    assertEquals(36.9231, spacing.second, 0.001)
+    assertEquals(null, estimateFlowMotionGridStepSourcePx(3840, 2160, 0, 234))
+  }
 }

@@ -115,6 +115,60 @@ internal data class FlowCoverageSample(
   val interframeChangedStaticBlendPixels: Long = 0L,
 )
 
+internal data class FlowOutputDecisionSnapshot(
+  val synthesizedCount: Long,
+  val passthroughCount: Long,
+  val passthroughReasons: Map<String, Long>,
+) {
+  fun asLogFieldValue(): String {
+    val reasons =
+      passthroughReasons.toSortedMap().entries.joinToString(",") { "${it.key}:${it.value}" }
+        .ifEmpty { "none" }
+    return "synthesized:$synthesizedCount,passthrough:$passthroughCount,passthroughReasons:$reasons"
+  }
+}
+
+/** Cumulative sink-session output decisions; these are cadence/fallback proxies, not pixel quality. */
+internal class FlowOutputDecisionCounters {
+  private var synthesizedCount = 0L
+  private var passthroughCount = 0L
+  private val passthroughReasons = linkedMapOf<String, Long>()
+
+  @Synchronized
+  fun record(state: String, reason: String) {
+    if (state == "synthesized") {
+      synthesizedCount++
+    } else {
+      passthroughCount++
+      val key = reason.takeIf { it.isNotBlank() } ?: "unknown"
+      passthroughReasons[key] = (passthroughReasons[key] ?: 0L) + 1L
+    }
+  }
+
+  @Synchronized
+  fun snapshot(): FlowOutputDecisionSnapshot =
+    FlowOutputDecisionSnapshot(
+      synthesizedCount = synthesizedCount,
+      passthroughCount = passthroughCount,
+      passthroughReasons = passthroughReasons.toMap(),
+    )
+}
+
+/** Estimates the source-pixel spacing represented by one motion-grid step, not a pixel artifact score. */
+internal fun estimateFlowMotionGridStepSourcePx(
+  sourceWidth: Int,
+  sourceHeight: Int,
+  processingWidth: Int,
+  processingHeight: Int,
+  gridStep: Int = 4,
+): Pair<Double, Double>? {
+  if (sourceWidth <= 0 || sourceHeight <= 0 || processingWidth <= 0 || processingHeight <= 0 || gridStep <= 0) {
+    return null
+  }
+  return (sourceWidth.toDouble() * gridStep / processingWidth) to
+    (sourceHeight.toDouble() * gridStep / processingHeight)
+}
+
 internal object Media3FlowDiagnosticMath {
   private const val VULKAN_TIMING_SCHEMA_VERSION = 3L
   private const val VULKAN_TIMING_STAGE_COUNT = 6

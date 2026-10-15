@@ -245,6 +245,8 @@ class Media3FlowVideoSink(
   private val loggedFlowDiagnosticKeys = mutableSetOf<String>()
   private var firstSuccessfulPairDiagnosticLogged = false
   private var lastLoggedOutputDiagnosticSignature: String? = null
+  private val outputDecisionCounters = FlowOutputDecisionCounters()
+  private var lastOutputDiagnosticLogAtNs = 0L
 
   private var eglDisplay = EGL14.EGL_NO_DISPLAY
   private var eglContext = EGL14.EGL_NO_CONTEXT
@@ -1750,10 +1752,22 @@ class Media3FlowVideoSink(
     lastState = if (synthesized && submitted) "gpu_interpolated" else "source_frame_fallback"
     if (synthesized && submitted) lastBypassReason = null
     val outputState = if (synthesized && submitted) "synthesized" else "passthrough"
-    val outputReason = lastBypassReason ?: if (outputState == "synthesized") "motion_pair_ready" else "source_frame_due"
+    val outputReason =
+      if (!submitted) {
+        "output_submission_failed"
+      } else {
+        lastBypassReason ?: if (outputState == "synthesized") "motion_pair_ready" else "source_frame_due"
+      }
+    outputDecisionCounters.record(outputState, outputReason)
     val outputSignature = "$outputState|$outputReason"
-    if (outputSignature != lastLoggedOutputDiagnosticSignature) {
+    val outputLogNowNs = System.nanoTime()
+    if (outputSignature != lastLoggedOutputDiagnosticSignature &&
+      (lastOutputDiagnosticLogAtNs == 0L ||
+        outputLogNowNs - lastOutputDiagnosticLogAtNs >= FLOW_OUTPUT_DIAGNOSTIC_LOG_MIN_INTERVAL_NS ||
+        outputReason == "output_submission_failed")
+    ) {
       lastLoggedOutputDiagnosticSignature = outputSignature
+      lastOutputDiagnosticLogAtNs = outputLogNowNs
       val alpha = bracket?.let { Media3FlowCadence.interpolationAlpha(it.first.ptsUs, it.second.ptsUs, targetPtsUs) }
       val outputMessage =
         "MPVFLOW_DIAGNOSTIC component=native-media3 event=output state=$outputState renderer_api=vulkan " +
@@ -2769,7 +2783,19 @@ class Media3FlowVideoSink(
     lastFlowSummaryLogAtNs = nowNs
     lastFlowSummarySignature = signature
 
-    val inputSize = currentFormat?.let { "${it.width}x${it.height}" } ?: "unknown"
+    val sourceFormat = currentFormat
+    val inputSize = sourceFormat?.let { "${it.width}x${it.height}" } ?: "unknown"
+    val motionGridStepSourcePxEstimate =
+      sourceFormat?.let {
+        estimateFlowMotionGridStepSourcePx(
+          it.width,
+          it.height,
+          diagnostics.processingWidth,
+          diagnostics.processingHeight,
+        )
+      }?.let {
+        String.format(java.util.Locale.US, "%.1fx%.1f", it.first, it.second)
+      } ?: "unavailable"
     val glesTiming = diagnostics.glesTimings
     val cpuTiming = diagnostics.cpuTimings
     val vulkanTiming = diagnostics.vulkanTimings
@@ -2804,6 +2830,7 @@ class Media3FlowVideoSink(
         "outputMetric=successful_eglSwapBuffers_return_not_scanout " +
         "generatedFps=${formatLogFloat(diagnostics.generatedFps)} " +
         "generatedTotal=${diagnostics.generatedFrames} inputDropsTotal=${diagnostics.droppedFrames} " +
+        "outputDecisionTotals=${outputDecisionCounters.snapshot().asLogFieldValue()} " +
         "inferredSkippedOutputTicksTotal=${diagnostics.skippedOutputTicks} skippedTotal=${diagnostics.skippedFrames} " +
         "outputSubmissionFailures=${diagnostics.outputSubmissionFailures} " +
         "lastOutputSubmissionFailure=${diagnostics.lastOutputSubmissionFailureReason} " +
@@ -2821,6 +2848,7 @@ class Media3FlowVideoSink(
         "processing=${diagnostics.processingWidth}x${diagnostics.processingHeight} " +
         "motionPyramid=quarter>half>full " +
         "motionGrid=${diagnostics.motionGridWidth}x${diagnostics.motionGridHeight} " +
+        "motionGridStepSourcePxEstimate=$motionGridStepSourcePxEstimate artifactRiskProxy=spatial_sampling_only " +
         "motionSubmitCpuMs=${formatLogFloat(diagnostics.motionEstimateSubmitMs)} " +
         "motionPassVulkanAvg=$gpuElapsed vulkanTimerStatus=${vulkanTiming.status} " +
         "computeTimestampSupported=${vulkanTiming.timestampsSupported} " +
@@ -2834,6 +2862,7 @@ class Media3FlowVideoSink(
         "zero:${glesTiming.zeroDurationResults},skipped:${glesTiming.skippedBecausePoolFull} " +
         "glesStagesUs={$glesStages} " +
         "cpuStagesUs={$cpuStages} coverage=unavailable_vulkan_ssbo_readback_disabled " +
+        "pixelArtifactQuality=unmeasured_vulkan_ssbo_readback_disabled " +
         "confidence=$confidence displayReportedHz=${formatLogFloat(displayRefreshRate(appContext))} " +
         "displayModeInitialHz=${formatLogFloat(displayHz)} surfaceHintFps=${formatLogFloat(outputFrameRateHintFps)} " +
         "matchContentPreference=$matchContentFrameRatePreferenceLabel " +
@@ -2985,6 +3014,7 @@ class Media3FlowVideoSink(
     private const val METRICS_INTERVAL_NS = 500_000_000L
     private const val FLOW_SUMMARY_LOG_INTERVAL_NS = 5_000_000_000L
     private const val FLOW_STATE_LOG_MIN_INTERVAL_NS = 1_000_000_000L
+    private const val FLOW_OUTPUT_DIAGNOSTIC_LOG_MIN_INTERVAL_NS = 250_000_000L
     private const val GL_INIT_TIMEOUT_MS = 5_000L
     private const val MAX_GPU_TIMER_QUERIES = 64
     private const val GPU_TIMING_HISTORY_SIZE = 90

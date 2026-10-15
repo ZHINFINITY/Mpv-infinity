@@ -21,8 +21,10 @@ import app.infinity.mpvz.domain.anime4k.Anime4KManager
 import app.infinity.mpvz.domain.hdr.HdrToysManager
 import app.infinity.mpvz.network.AndroidCookieJar
 import app.infinity.mpvz.presentation.crash.DebugLogReader
+import app.infinity.mpvz.presentation.crash.MpvFlowRuntimeCadenceSample
 import app.infinity.mpvz.presentation.crash.latestMpvFlowRuntimeCadenceSample
 import app.infinity.mpvz.presentation.crash.MpvFlowRuntimeCadenceSampleCache
+import app.infinity.mpvz.presentation.crash.observedMpvFlowPassthroughReasons
 import app.infinity.mpvz.preferences.AdvancedPreferences
 import app.infinity.mpvz.preferences.AudioPreferences
 import app.infinity.mpvz.preferences.DecoderPreferences
@@ -57,6 +59,7 @@ import kotlinx.coroutines.withContext
 import org.koin.core.component.KoinComponent
 import org.koin.core.component.inject
 import kotlin.reflect.KProperty
+import kotlin.math.roundToInt
 
 internal fun resolveSurfaceFrameRateHint(
   sourceFrameRate: Double?,
@@ -191,15 +194,25 @@ class MPVView(
     mpvFlowOsdStatsJob =
       mpvFlowOsdStatsScope.launch {
         val sampleCache = MpvFlowRuntimeCadenceSampleCache()
+        val observedFallbackReasons = linkedSetOf<String>()
         while (isActive && mpvFlowOsdStatsEnabled && isSurfaceReady) {
-          val candidate =
+          val entries =
             withContext(Dispatchers.IO) {
-              runCatching {
-                latestMpvFlowRuntimeCadenceSample(DebugLogReader.readSnapshot(maxRawLines = 500).entries)
-              }.getOrNull()
+              runCatching { DebugLogReader.readSnapshot(maxRawLines = 500).entries }
+                .getOrDefault(emptyList())
             }
+          val candidate = latestMpvFlowRuntimeCadenceSample(entries)
           val sample = sampleCache.update(candidate, System.currentTimeMillis())
           sendMpvFlowOsdStats(sample)
+          if (BuildConfig.DEBUG) {
+            observedFallbackReasons += observedMpvFlowPassthroughReasons(entries)
+            val healthFields =
+              withContext(Dispatchers.IO) {
+                runCatching { mpvFlowPlayerHealthFields(sample, observedFallbackReasons) }
+                  .getOrDefault("status=unavailable")
+              }
+            Log.i(TAG, "MPVFLOW_DIAGNOSTIC component=mpvflow event=player_health engine=mpv $healthFields")
+          }
           delay(3_000L)
         }
       }
@@ -225,6 +238,84 @@ class MPVView(
         sample?.swapSubmitFps?.toString().orEmpty(),
       )
     }
+  }
+
+  private fun mpvFlowPlayerHealthFields(
+    sample: MpvFlowRuntimeCadenceSample?,
+    observedFallbackReasons: Set<String>,
+  ): String {
+    fun intProperty(name: String): Int? =
+      runCatching { PlaybackSession.getPropertyInt(name) }.getOrNull()
+
+    fun doubleProperty(name: String): Double? =
+      runCatching { PlaybackSession.getPropertyDouble(name) }
+        .getOrNull()
+        ?.takeIf { it.isFinite() }
+
+    fun stringProperty(name: String): String =
+      runCatching { PlaybackSession.getPropertyString(name) }
+        .getOrNull()
+        ?.takeIf { it.isNotBlank() }
+        ?.replace(Regex("[^A-Za-z0-9_.+-]"), "_")
+        ?: "unknown"
+
+    fun metric(value: Double?): String =
+      value?.takeIf { it.isFinite() }?.let { String.format(java.util.Locale.US, "%.2f", it) } ?: "unknown"
+
+    val sourceWidth = intProperty("video-params/w")?.takeIf { it > 0 } ?: intProperty("width")?.coerceAtLeast(0) ?: 0
+    val sourceHeight = intProperty("video-params/h")?.takeIf { it > 0 } ?: intProperty("height")?.coerceAtLeast(0) ?: 0
+    val targetFps = sample?.targetFps ?: decoderPreferences.mpvFlowTargetFps.get()
+    val quality = decoderPreferences.mpvFlowQuality.get().coerceIn(0, 100)
+    val analysisCap = effectiveMpvFlowMaxDimension(targetFps, quality)
+    val longestSourceDimension = maxOf(sourceWidth, sourceHeight)
+    val processingScale =
+      if (longestSourceDimension > 0) minOf(1.0, analysisCap.toDouble() / longestSourceDimension) else 0.0
+    val processingWidth = (sourceWidth * processingScale).roundToInt()
+    val processingHeight = (sourceHeight * processingScale).roundToInt()
+    val motionGridStepSourcePx =
+      estimateFlowMotionGridStepSourcePx(sourceWidth, sourceHeight, processingWidth, processingHeight)
+        ?.let { "${metric(it.first)}x${metric(it.second)}" }
+        ?: "unavailable"
+    val avSyncMs = doubleProperty("avsync")?.times(1_000.0)
+    val thermalStatus =
+      if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
+        runCatching {
+          context.getSystemService(android.os.PowerManager::class.java)?.currentThermalStatus
+        }.getOrNull()?.toString() ?: "unknown"
+      } else {
+        "unsupported"
+      }
+    val cadenceAgeMs = sample?.let { (System.currentTimeMillis() - it.timeMillis).coerceAtLeast(0L) }
+
+    return "source=${sourceWidth}x$sourceHeight source_fps=${metric(doubleProperty("container-fps"))} " +
+      "estimated_vf_fps=${metric(doubleProperty("estimated-vf-fps"))} " +
+      "estimated_vf_fps_metric=mpv_filter_estimate_not_flow_submits " +
+      "hwdec_current=${stringProperty("hwdec-current")} " +
+      "decoder_drop_total=${intProperty("decoder-frame-drop-count") ?: "unknown"} " +
+      "vo_drop_total=${intProperty("frame-drop-count") ?: "unknown"} " +
+      "vo_delayed_total=${intProperty("vo-delayed-frame-count") ?: "unknown"} " +
+      "display_fps=${metric(doubleProperty("display-fps"))} avsync_ms=${metric(avSyncMs)} " +
+      "color_primaries=${stringProperty("video-params/primaries")} " +
+      "color_transfer=${stringProperty("video-params/gamma")} " +
+      "thermal_status=$thermalStatus analysis_cap_px=$analysisCap " +
+      "analysis_processing_estimate=${processingWidth}x${processingHeight} " +
+      "motion_grid_step_source_px_estimate=$motionGridStepSourcePx " +
+      "flow_target_fps=${sample?.targetFps ?: targetFps} " +
+      "render_callback_fps=${metric(sample?.renderCallbackFps)} " +
+      "successful_synthesized_submit_fps=${metric(sample?.synthesizedSubmitFps)} " +
+      "successful_all_swap_submit_fps=${metric(sample?.swapSubmitFps)} " +
+      "cadence_window_ms=${metric(sample?.windowMillis)} cadence_sample_age_ms=${cadenceAgeMs ?: "unknown"} " +
+      "synthesis_rate_limited_callbacks=${sample?.synthesisRateLimitedCallbacks ?: "unknown"} " +
+      "synthesized_render_callbacks=${sample?.synthesizedRenderCallbacks ?: "unknown"} " +
+      "frame_repeat_count=${sample?.frameRepeatCount ?: "unknown"} " +
+      "render_failures=${sample?.renderFailures ?: "unknown"} swap_failures=${sample?.swapFailures ?: "unknown"} " +
+      "pair_analysis_attempts=${sample?.pairAnalysisAttempts ?: "unknown"} " +
+      "pair_analysis_failures=${sample?.pairAnalysisFailures ?: "unknown"} " +
+      "source_sync_pct=${metric(sample?.sourceSyncPercent)} " +
+      "render_cpu_avg_ms=${metric(sample?.renderCpuAverageMs)} render_cpu_max_ms=${metric(sample?.renderCpuMaximumMs)} " +
+      "observed_passthrough_reasons=${observedFallbackReasons.sorted().joinToString(",").ifEmpty { "none_seen" }} " +
+      "output_metric=successful_pl_swapchain_submit_not_scanout " +
+      "pixelArtifactQuality=unmeasured_native_pixel_coverage_unavailable"
   }
 
   private data class RenderBackendSelection(

@@ -8,6 +8,7 @@ import re
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 SINK = (ROOT / "app/src/main/java/app/infinity/mpvz/ui/player/Media3FlowVideoSink.kt").read_text(encoding="utf-8")
 CADENCE = (ROOT / "app/src/main/java/app/infinity/mpvz/ui/player/Media3FlowCadence.kt").read_text(encoding="utf-8")
+FLOW_DIAGNOSTICS = (ROOT / "app/src/main/java/app/infinity/mpvz/ui/player/Media3FlowDiagnostics.kt").read_text(encoding="utf-8")
 NATIVE = (ROOT / "app/src/main/java/app/infinity/mpvz/ui/player/Media3FlowVulkanNative.kt").read_text(encoding="utf-8")
 NATIVE_ENGINE = (ROOT / "app/src/main/java/app/infinity/mpvz/ui/player/NativeMedia3Engine.kt").read_text(encoding="utf-8")
 JNI = (ROOT / "app/src/main/cpp/media3flow_vulkan_jni.cpp").read_text(encoding="utf-8")
@@ -224,4 +225,24 @@ assert "backend=opengl-es" not in MPV_PATCH
 assert "gpu->glsl.vulkan" in GPU
 assert 'PlaybackSession.setOptionString("display-fps-override", displayRefreshRate.hz.toString())' in MPV_VIEW
 assert "display_refresh_source=" in MPV_VIEW
+for marker in (
+    "FlowOutputDecisionCounters",
+    "outputDecisionTotals=",
+    "motionGridStepSourcePxEstimate=",
+    "pixelArtifactQuality=unmeasured_vulkan_ssbo_readback_disabled",
+    "FLOW_OUTPUT_DIAGNOSTIC_LOG_MIN_INTERVAL_NS = 250_000_000L",
+):
+    assert marker in SINK, f"Media3 Flow must expose bounded decision and spatial-risk diagnostics: {marker}"
+assert "estimateFlowMotionGridStepSourcePx" in FLOW_DIAGNOSTICS
+assert "event=player_health" in MPV_VIEW
+for marker in (
+    "hwdec-current",
+    "decoder-frame-drop-count",
+    "frame-drop-count",
+    "synthesis_rate_limited_callbacks",
+    "render_cpu_avg_ms",
+    "motion_grid_step_source_px_estimate",
+    "pixelArtifactQuality=unmeasured_native_pixel_coverage_unavailable",
+):
+    assert marker in MPV_VIEW, f"MPV Flow health summary is missing a decoder/cadence/artifact-risk signal: {marker}"
 print("Media3 Flow caps interpolation storage at 1080p; MPV Flow defaults to 1080p synthesis for larger sources, keeps full-resolution fallback for unsupported, paused, and still content, bounded motion analysis, async ownership handoffs, and measured output cadence")

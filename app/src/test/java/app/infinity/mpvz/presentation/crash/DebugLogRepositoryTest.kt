@@ -454,7 +454,7 @@ class DebugLogRepositoryTest {
         timestamp = "00:00:00.002",
         level = DebugLogLevel.Info,
         tag = "vo/gpu-next",
-        message = "MPVFLOW_DIAGNOSTIC event=runtime_cadence metric=successful_pl_swapchain_submit_not_surfaceflinger_scanout window_ms=5000.0 target_fps=120 render_callback_fps=200.00 swap_submit_fps=55.00 synthesized_submit_fps=48.00 synthesized_submits=240",
+        message = "MPVFLOW_DIAGNOSTIC event=runtime_cadence metric=successful_pl_swapchain_submit_not_surfaceflinger_scanout window_ms=5000.0 target_fps=120 render_callback_fps=200.00 render_failures=2 synthesis_rate_limited_callbacks=16 synthesized_render_callbacks=125 frame_repeat_count=22 render_cpu_avg_ms=8.380 render_cpu_max_ms=62.560 swap_failures=1 pair_analysis_attempts=69 pair_analysis_failures=0 source_sync_pct=100.0 swap_submit_fps=55.00 synthesized_submit_fps=48.00 synthesized_submits=240",
       )
 
     val summary = formatMpvFlowTimingSummary(listOf(entry))
@@ -470,8 +470,44 @@ class DebugLogRepositoryTest {
     assertEquals(48.0, sample?.synthesizedSubmitFps)
     assertEquals(120, sample?.targetFps)
     assertEquals(55.0, sample?.swapSubmitFps)
+    assertEquals(200.0, sample?.renderCallbackFps)
+    assertEquals(2L, sample?.renderFailures)
+    assertEquals(16L, sample?.synthesisRateLimitedCallbacks)
+    assertEquals(125L, sample?.synthesizedRenderCallbacks)
+    assertEquals(22L, sample?.frameRepeatCount)
+    assertEquals(8.38, sample?.renderCpuAverageMs!!, 0.001)
+    assertEquals(62.56, sample?.renderCpuMaximumMs!!, 0.001)
+    assertEquals(1L, sample?.swapFailures)
+    assertEquals(69L, sample?.pairAnalysisAttempts)
+    assertEquals(0L, sample?.pairAnalysisFailures)
+    assertEquals(100.0, sample?.sourceSyncPercent)
     assertTrue(sample != null && isMpvFlowRuntimeCadenceSampleFresh(sample, nowMillis = 12_002L))
     assertTrue(sample != null && !isMpvFlowRuntimeCadenceSampleFresh(sample, nowMillis = 12_003L))
+  }
+
+  @Test
+  fun observedMpvFlowPassthroughReasonsExcludeMedia3AndAreDeduplicated() {
+    val entries =
+      listOf(
+        "MPVFLOW_DIAGNOSTIC event=output state=passthrough reason=no_temporal_pair",
+        "MPVFLOW_DIAGNOSTIC event=output state=passthrough reason=gpu_context_unavailable",
+        "MPVFLOW_DIAGNOSTIC event=output state=passthrough reason=no_temporal_pair",
+        "MPVFLOW_DIAGNOSTIC component=native-media3 event=output state=passthrough reason=motion_not_ready_or_deadline",
+      ).mapIndexed { index, message ->
+        DebugLogEntry(
+          id = "output-$index",
+          timeMillis = index.toLong(),
+          timestamp = "00:00:00.000",
+          level = DebugLogLevel.Info,
+          tag = "vo/gpu-next",
+          message = message,
+        )
+      }
+
+    assertEquals(
+      listOf("gpu_context_unavailable", "no_temporal_pair"),
+      observedMpvFlowPassthroughReasons(entries),
+    )
   }
 
   @Test
