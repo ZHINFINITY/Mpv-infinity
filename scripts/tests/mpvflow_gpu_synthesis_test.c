@@ -50,6 +50,7 @@ struct VulkanContext {
     VkPipeline pipeline;
     VkSampler sampler;
     char device_name[VK_MAX_PHYSICAL_DEVICE_NAME_SIZE];
+    int soft_blend;
 };
 
 static void fail(const char *operation, VkResult result)
@@ -544,6 +545,10 @@ static void run_fixture(struct VulkanContext *ctx, const char *label,
         flow[1][outlier + 2] = 0x3000;
         flow[1][outlier + 3] = 0x0000;
     }
+    if (special_grid_test == 3) {
+        fill_rgba16f(flow[0], GRID_PIXELS, 0x0000, 0x0000, 0x0000, 0x0000);
+        fill_rgba16f(flow[1], GRID_PIXELS, 0x0000, 0x0000, 0x0000, 0x0000);
+    }
     scene[0] = scene_delta;
     scene[1] = scene[2] = 0x0000;
     scene[3] = 0x3c00;
@@ -599,6 +604,8 @@ static void run_fixture(struct VulkanContext *ctx, const char *label,
     vkCmdBindDescriptorSets(command, VK_PIPELINE_BIND_POINT_COMPUTE,
                             ctx->pipeline_layout, 0, 1, &ctx->descriptor_set, 0, NULL);
     int32_t push[4] = { WIDTH, HEIGHT, WIDTH, HEIGHT };
+    if (ctx->soft_blend)
+        push[0] |= 0x40000000;
     vkCmdPushConstants(command, ctx->pipeline_layout, VK_SHADER_STAGE_COMPUTE_BIT,
                        0, sizeof(push), push);
     vkCmdPushConstants(command, ctx->pipeline_layout, VK_SHADER_STAGE_COMPUTE_BIT,
@@ -699,14 +706,15 @@ static void destroy_vulkan(struct VulkanContext *ctx)
 
 int main(int argc, char **argv)
 {
-    if (argc != 2) {
-        fprintf(stderr, "usage: %s shader.spv\n", argv[0]);
+    if (argc < 2 || argc > 3) {
+        fprintf(stderr, "usage: %s shader.spv [soft-blend:0|1]\n", argv[0]);
         return 2;
     }
     struct VulkanContext ctx = {0};
+    ctx.soft_blend = argc == 3 && atoi(argv[2]) != 0;
     initialize_vulkan(&ctx, argv[1]);
-    printf("Running exact MPVFlow shader_synthesize on Vulkan device: %s (%dx%d odd extent)\n",
-           ctx.device_name, WIDTH, HEIGHT);
+    printf("Running exact MPVFlow shader_synthesize on Vulkan device: %s (%dx%d odd extent, soft_blend=%d)\n",
+           ctx.device_name, WIDTH, HEIGHT, ctx.soft_blend);
 
     const uint8_t red[4] = { 255, 0, 0, 255 };
     const uint8_t blue[4] = { 0, 0, 255, 255 };
@@ -714,6 +722,8 @@ int main(int argc, char **argv)
     const uint8_t neutral0[4] = { 100, 100, 100, 255 };
     const uint8_t neutral1[4] = { 120, 110, 104, 255 };
     const uint8_t mixed[4] = { 110, 105, 102, 255 };
+    const uint8_t soft_chroma_blend[4] = { 64, 98, 0, 255 };
+    const uint8_t soft_low_confidence_blend[4] = { 191, 0, 64, 255 };
 
     run_fixture(&ctx, "scene-cut alpha selects first source", red, blue,
                 0x3800, 0x3400, 0x3800, 0.25f, red, 1, 0);
@@ -721,19 +731,27 @@ int main(int argc, char **argv)
                 0x3800, 0x3400, 0x3800, 0.75f, blue, 1, 0);
     run_fixture(&ctx, "static identical frame is preserved exactly", neutral0,
                 neutral0, 0x0000, 0x3400, 0x3400, 0.37f, neutral0, 1, 0);
-    run_fixture(&ctx, "chroma-only contour chooses nearest source without color blend",
+    run_fixture(&ctx,
+                ctx.soft_blend ? "soft mode blends the chroma boundary" :
+                                 "default mode keeps the nearest chroma endpoint",
                 red, luminance_matched_green, 0x0000, 0x3400, 0x3800, 0.75f,
-                luminance_matched_green, 0, 0);
+                ctx.soft_blend ? soft_chroma_blend : luminance_matched_green, 0, 0);
     run_fixture(&ctx, "low-contrast reliable motion retains temporal color blend",
                 neutral0, neutral1, 0x0000, 0x3400, 0x3500, 0.5f, mixed, 0, 0);
     const uint8_t grid_expected[4] = { 24, 24, 24, 255 };
+    const uint8_t soft_grid_expected[4] = { 40, 40, 40, 255 };
     run_fixture(&ctx, "irregular terminal block anchors affect edge synthesis",
                 neutral0, neutral0, 0x0000, 0x3400, 0x3400, 0.5f,
-                grid_expected, 0, 1);
+                ctx.soft_blend ? soft_grid_expected : grid_expected, 0, 1);
     const uint8_t confidence_outlier_expected[4] = { 2, 2, 2, 255 };
     run_fixture(&ctx, "ambiguous fast vector cannot warp a coherent region",
                 neutral0, neutral0, 0x0000, 0x3400, 0x3400, 0.25f,
                 confidence_outlier_expected, 0, 2);
+    run_fixture(&ctx,
+                ctx.soft_blend ? "soft mode blends low-confidence adjacent frames" :
+                                 "default mode keeps the nearest low-confidence endpoint",
+                red, blue, 0x0000, 0x3400, 0x3800, 0.25f,
+                ctx.soft_blend ? soft_low_confidence_blend : red, 1, 3);
 
     destroy_vulkan(&ctx);
     puts("MPVFlow Vulkan synthesis pixel-oracle tests passed");

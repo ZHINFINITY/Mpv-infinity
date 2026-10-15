@@ -859,7 +859,7 @@ static const char shader_synthesize[] =
     "float pointInBounds(vec2 p,ivec2 sz){ return step(0.0,p.x)*step(p.x,float(sz.x-1))*step(0.0,p.y)*step(p.y,float(sz.y-1)); }\n"
     "float reliability(vec4 flow,float cycle,float valid){ float cycleQuality=1.0-smoothstep(0.75,4.0,cycle); float matchQuality=1.0-smoothstep(0.025,0.22,flow.z); float uniquenessQuality=smoothstep(0.08,0.30,flow.w); return cycleQuality*matchQuality*uniquenessQuality*valid; }\n"
     "float neighborhoodQuality(vec2 p,int direction,vec2 center){ vec2 d=vec2(2.0); vec2 n0=flowAtBilinear(p-d,direction).xy,n1=flowAtBilinear(p+vec2(d.x,-d.y),direction).xy,n2=flowAtBilinear(p+vec2(-d.x,d.y),direction).xy,n3=flowAtBilinear(p+d,direction).xy; float spread=(length(n0-center)+length(n1-center)+length(n2-center)+length(n3-center))*0.25; return 1.0-smoothstep(0.65,2.8,spread); }\n"
-    "void main(){ ivec2 p=ivec2(gl_GlobalInvocationID.xy); ivec2 outSize=imageSize(outTex),motionSize=pc.cfg.zw; if(any(greaterThanEqual(p,outSize))) return; vec2 srcP=vec2(p),uv=(srcP+vec2(0.5))/vec2(outSize),flowP=uv*vec2(motionSize); float cut=imageLoad(sceneTex,ivec2(0)).r; if(cut>0.1882353){ vec4 c=pc.timestep<=0.5?texelFetch(frame0,p,0):texelFetch(frame1,p,0); imageStore(outTex,p,c); return; } { float staticLumaDelta=abs(lumaAt(flowP,0)-lumaAt(flowP,1)); if(staticLumaDelta<=0.0039216){ vec4 fastForward=flowAtBilinear(flowP,0),fastBackward=flowAtBilinear(flowP,1); if(dot(fastForward.xy,fastForward.xy)<=0.0025&&dot(fastBackward.xy,fastBackward.xy)<=0.0025){ vec4 static0=texelFetch(frame0,p,0),static1=texelFetch(frame1,p,0); float colorDelta=max(max(abs(static0.r-static1.r),abs(static0.g-static1.g)),abs(static0.b-static1.b)); bool staticPixel=colorDelta<=0.0039216; if(staticPixel){ vec4 outc=mix(static0,static1,pc.timestep); outc.a=1.0; imageStore(outTex,p,outc); return; } } } } /* Vulkan fast path: bilinear initial/cycle flow; retain final edge refinement. */ vec4 f=flowAtBilinear(flowP,0),b=flowAtBilinear(flowP,1); vec2 a=flowP-pc.timestep*f.xy,z=flowP-(1.0-pc.timestep)*b.xy; for(int i=0;i<2;i++){ f=flowAtBilinear(a,0); a=flowP-pc.timestep*f.xy; b=flowAtBilinear(z,1); z=flowP-(1.0-pc.timestep)*b.xy; } f=flowAtEdgeAware(a,0); b=flowAtEdgeAware(z,1); vec2 cycle0=a+f.xy,cycle1=z+b.xy; vec4 backAt0=flowAtEdgeAware(cycle0,1); vec4 forwardAt1=flowAtEdgeAware(cycle1,0); float cycleError0=length(f.xy+backAt0.xy); float cycleError1=length(b.xy+forwardAt1.xy); vec2 scale=vec2(outSize)/vec2(motionSize),srcA=srcP+(a-flowP)*scale,srcZ=srcP+(z-flowP)*scale; vec4 ca=colorAt(frame0,srcA); vec4 cb=colorAt(frame1,srcZ); float valid0=pointInBounds(a,motionSize)*pointInBounds(cycle0,motionSize); float valid1=pointInBounds(z,motionSize)*pointInBounds(cycle1,motionSize); float confidence0=reliability(f,cycleError0,valid0); float confidence1=reliability(b,cycleError1,valid1); float confidence=max(confidence0,confidence1); vec4 outc; if(confidence<0.28){ outc=pc.timestep<0.5?texelFetch(frame0,p,0):texelFetch(frame1,p,0); } else { float visibility0=smoothstep(0.15,0.45,confidence0),visibility1=smoothstep(0.15,0.45,confidence1); float weight0=(1.0-pc.timestep)*visibility0,weight1=pc.timestep*visibility1,total=weight0+weight1; float lumaDelta=abs(dot(ca.rgb,vec3(0.299,0.587,0.114))-dot(cb.rgb,vec3(0.299,0.587,0.114))); float colorDelta=max(max(abs(ca.r-cb.r),abs(ca.g-cb.g)),abs(ca.b-cb.b)); float chromaDelta=max(abs((ca.r-ca.g)-(cb.r-cb.g)),abs((ca.b-ca.g)-(cb.b-cb.g))); float neighborhood0=neighborhoodQuality(a,0,f.xy),neighborhood1=neighborhoodQuality(z,1,b.xy); float flowSpread=length(f.xy-b.xy); bool neighborhoodConflict=(min(neighborhood0,neighborhood1)<0.30&&(lumaDelta>0.06||colorDelta>0.08))||(flowSpread>3.0&&min(neighborhood0,neighborhood1)<0.45); bool chromaBoundary=colorDelta>0.12&&chromaDelta>0.06; bool boundaryConflict=neighborhoodConflict||lumaDelta>0.08||chromaBoundary||(min(f.w,b.w)<0.08&&colorDelta>0.10); float edgeConfidence0=confidence0*(0.5+0.5*smoothstep(0.02,0.35,f.w)),edgeConfidence1=confidence1*(0.5+0.5*smoothstep(0.02,0.35,b.w)); if(boundaryConflict&&edgeConfidence0>edgeConfidence1+0.10) outc=ca; else if(boundaryConflict&&edgeConfidence1>edgeConfidence0+0.10) outc=cb; else if(boundaryConflict) outc=pc.timestep<0.5?texelFetch(frame0,p,0):texelFetch(frame1,p,0); else outc=total>0.0001?mix(ca,cb,weight1/total):(pc.timestep<0.5?texelFetch(frame0,p,0):texelFetch(frame1,p,0)); } outc.a=1.0; imageStore(outTex,p,outc); }\n"
+    "void main(){ ivec2 p=ivec2(gl_GlobalInvocationID.xy); ivec2 outSize=imageSize(outTex),motionSize=pc.cfg.zw; if(any(greaterThanEqual(p,outSize))) return; vec2 srcP=vec2(p),uv=(srcP+vec2(0.5))/vec2(outSize),flowP=uv*vec2(motionSize); float cut=imageLoad(sceneTex,ivec2(0)).r; if(cut>0.1882353){ vec4 c=pc.timestep<=0.5?texelFetch(frame0,p,0):texelFetch(frame1,p,0); imageStore(outTex,p,c); return; } { float staticLumaDelta=abs(lumaAt(flowP,0)-lumaAt(flowP,1)); if(staticLumaDelta<=0.0039216){ vec4 fastForward=flowAtBilinear(flowP,0),fastBackward=flowAtBilinear(flowP,1); if(dot(fastForward.xy,fastForward.xy)<=0.0025&&dot(fastBackward.xy,fastBackward.xy)<=0.0025){ vec4 static0=texelFetch(frame0,p,0),static1=texelFetch(frame1,p,0); float colorDelta=max(max(abs(static0.r-static1.r),abs(static0.g-static1.g)),abs(static0.b-static1.b)); bool staticPixel=colorDelta<=0.0039216; if(staticPixel){ vec4 outc=mix(static0,static1,pc.timestep); outc.a=1.0; imageStore(outTex,p,outc); return; } } } } /* Vulkan fast path: bilinear initial/cycle flow; retain final edge refinement. */ vec4 f=flowAtBilinear(flowP,0),b=flowAtBilinear(flowP,1); vec2 a=flowP-pc.timestep*f.xy,z=flowP-(1.0-pc.timestep)*b.xy; for(int i=0;i<2;i++){ f=flowAtBilinear(a,0); a=flowP-pc.timestep*f.xy; b=flowAtBilinear(z,1); z=flowP-(1.0-pc.timestep)*b.xy; } f=flowAtEdgeAware(a,0); b=flowAtEdgeAware(z,1); vec2 cycle0=a+f.xy,cycle1=z+b.xy; vec4 backAt0=flowAtEdgeAware(cycle0,1); vec4 forwardAt1=flowAtEdgeAware(cycle1,0); float cycleError0=length(f.xy+backAt0.xy); float cycleError1=length(b.xy+forwardAt1.xy); vec2 scale=vec2(outSize)/vec2(motionSize),srcA=srcP+(a-flowP)*scale,srcZ=srcP+(z-flowP)*scale; vec4 ca=colorAt(frame0,srcA); vec4 cb=colorAt(frame1,srcZ); float valid0=pointInBounds(a,motionSize)*pointInBounds(cycle0,motionSize); float valid1=pointInBounds(z,motionSize)*pointInBounds(cycle1,motionSize); float confidence0=reliability(f,cycleError0,valid0); float confidence1=reliability(b,cycleError1,valid1); float confidence=max(confidence0,confidence1); bool softBlend=(pc.cfg.x&0x40000000)!=0; vec4 softColor=vec4(0.0); if(softBlend){ vec4 sourceBlend=mix(texelFetch(frame0,p,0),texelFetch(frame1,p,0),pc.timestep),warpBlend=mix(ca,cb,pc.timestep); softColor=mix(sourceBlend,warpBlend,smoothstep(0.04,0.48,confidence)); } vec4 outc; if(confidence<0.28){ outc=softBlend?softColor:(pc.timestep<0.5?texelFetch(frame0,p,0):texelFetch(frame1,p,0)); } else { float visibility0=smoothstep(0.15,0.45,confidence0),visibility1=smoothstep(0.15,0.45,confidence1); float weight0=(1.0-pc.timestep)*visibility0,weight1=pc.timestep*visibility1,total=weight0+weight1; float lumaDelta=abs(dot(ca.rgb,vec3(0.299,0.587,0.114))-dot(cb.rgb,vec3(0.299,0.587,0.114))); float colorDelta=max(max(abs(ca.r-cb.r),abs(ca.g-cb.g)),abs(ca.b-cb.b)); float chromaDelta=max(abs((ca.r-ca.g)-(cb.r-cb.g)),abs((ca.b-ca.g)-(cb.b-cb.g))); float neighborhood0=neighborhoodQuality(a,0,f.xy),neighborhood1=neighborhoodQuality(z,1,b.xy); float flowSpread=length(f.xy-b.xy); bool neighborhoodConflict=(min(neighborhood0,neighborhood1)<0.30&&(lumaDelta>0.06||colorDelta>0.08))||(flowSpread>3.0&&min(neighborhood0,neighborhood1)<0.45); bool chromaBoundary=colorDelta>0.12&&chromaDelta>0.06; bool boundaryConflict=neighborhoodConflict||lumaDelta>0.08||chromaBoundary||(min(f.w,b.w)<0.08&&colorDelta>0.10); float edgeConfidence0=confidence0*(0.5+0.5*smoothstep(0.02,0.35,f.w)),edgeConfidence1=confidence1*(0.5+0.5*smoothstep(0.02,0.35,b.w)); if(boundaryConflict&&softBlend) outc=softColor; else if(boundaryConflict&&edgeConfidence0>edgeConfidence1+0.10) outc=ca; else if(boundaryConflict&&edgeConfidence1>edgeConfidence0+0.10) outc=cb; else if(boundaryConflict) outc=pc.timestep<0.5?texelFetch(frame0,p,0):texelFetch(frame1,p,0); else outc=total>0.0001?mix(ca,cb,weight1/total):(pc.timestep<0.5?texelFetch(frame0,p,0):texelFetch(frame1,p,0)); } outc.a=1.0; imageStore(outTex,p,outc); }\n"
 ;
 
 static pl_pass make_pass(pl_gpu gpu, const char *glsl,
@@ -2616,7 +2616,7 @@ static bool run_visibility_resolver(MPVFlowGPUContext *ctx,
 static enum MPVFlowGPUResult mpvflow_gpu_synthesize_internal(
     MPVFlowGPUContext *ctx, MPVFlowGPUPair *pair,
     pl_tex source0, pl_tex source1, float t,
-    bool enable_visibility_resolver, pl_tex *output)
+    bool enable_visibility_resolver, bool enable_soft_blend, pl_tex *output)
 {
     if (output)
         *output = NULL;
@@ -2702,6 +2702,10 @@ static enum MPVFlowGPUResult mpvflow_gpu_synthesize_internal(
         enum MPVFlowGPUResult result =
             flow_opencl_synthesize(ctx, pair, source0, source1, t);
         if (result == MPVFLOW_GPU_OK) {
+            if (enable_soft_blend)
+                flow_log_once(ctx, FLOW_DIAG_SYNTHESIZE, PL_LOG_WARN,
+                              "MPVFLOW_DIAGNOSTIC event=soft_blend state=skipped "
+                              "reason=backend_not_vulkan fallback=production_output");
             if (enable_visibility_resolver)
                 flow_log_once(ctx, FLOW_DIAG_VISIBILITY, PL_LOG_WARN,
                               "MPVFLOW_DIAGNOSTIC event=visibility_resolver state=skipped "
@@ -2732,11 +2736,13 @@ static enum MPVFlowGPUResult mpvflow_gpu_synthesize_internal(
         *pair = *vulkan_pair;
         free(vulkan_pair);
         return mpvflow_gpu_synthesize_internal(ctx, pair, source0, source1, t,
-                                               enable_visibility_resolver, output);
+                                               enable_visibility_resolver, enable_soft_blend, output);
     }
     pl_tex out = pair->output;
     struct FlowLevel *full = (struct FlowLevel *) &pair->level[0];
     int cfg[4] = { output_w, output_h, pair->w, pair->h };
+    if (enable_soft_blend)
+        cfg[0] |= 0x40000000;
     struct pl_desc_binding sb[8] = {
         { .object = source0, .address_mode = PL_TEX_ADDRESS_CLAMP,
           .sample_mode = PL_TEX_SAMPLE_LINEAR },
@@ -2758,7 +2764,7 @@ static enum MPVFlowGPUResult mpvflow_gpu_synthesize_internal(
         return MPVFLOW_GPU_ERROR;
     }
     *output = out;
-    if (enable_visibility_resolver) {
+    if (enable_visibility_resolver && !enable_soft_blend) {
         pl_tex resolved = NULL;
         if (run_visibility_resolver(ctx, pair, source0, source1, t, output_fmt,
                                     output_w, output_h, &resolved) && resolved)
@@ -2774,14 +2780,14 @@ enum MPVFlowGPUResult mpvflow_gpu_synthesize(MPVFlowGPUContext *ctx,
                                              float t, pl_tex *output)
 {
     return mpvflow_gpu_synthesize_internal(ctx, pair, source0, source1, t,
-                                           false, output);
+                                           false, false, output);
 }
 
 enum MPVFlowGPUResult mpvflow_gpu_synthesize_with_visibility(
     MPVFlowGPUContext *ctx, MPVFlowGPUPair *pair,
     pl_tex source0, pl_tex source1, float t,
-    bool enable_visibility_resolver, pl_tex *output)
+    bool enable_visibility_resolver, bool enable_soft_blend, pl_tex *output)
 {
     return mpvflow_gpu_synthesize_internal(ctx, pair, source0, source1, t,
-                                           enable_visibility_resolver, output);
+                                           enable_visibility_resolver, enable_soft_blend, output);
 }

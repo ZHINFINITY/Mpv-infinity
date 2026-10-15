@@ -31,6 +31,7 @@ import app.infinity.mpvz.preferences.DecoderPreferences
 import app.infinity.mpvz.preferences.DEFAULT_SUBTITLE_FONT_FAMILY
 import app.infinity.mpvz.preferences.MpvConfigControlledFeatures
 import app.infinity.mpvz.preferences.MpvConfigOverridePolicy
+import app.infinity.mpvz.preferences.MpvFlowComputeApi
 import app.infinity.mpvz.preferences.PlayerPreferences
 import app.infinity.mpvz.preferences.effectiveMpvFlowMaxDimension
 import app.infinity.mpvz.preferences.effectiveMpvFlowSearchRadius
@@ -146,10 +147,19 @@ class MPVView(
         BuildConfig.MPV_HAS_MPVFLOW &&
         !frameInterpolationConfigOwned &&
         decoderPreferences.playbackEngine.get() != PlaybackEngineMode.NATIVE
+    val mpvFlowSoftBlendDebugActive =
+      BuildConfig.DEBUG &&
+        decoderPreferences.mpvFlowSoftBlendDebug.get() &&
+        mpvFlowFrameInterpolationActive &&
+        requestedBackend.gpuApi == "vulkan" &&
+        !MpvConfigOverridePolicy.isOwnedByMpvConf("mpvflow-soft-blend") &&
+        !MpvConfigOverridePolicy.isOwnedByMpvConf("mpvflow-compute-api")
+    val effectiveMpvFlowComputeApi =
+      if (mpvFlowSoftBlendDebugActive) MpvFlowComputeApi.VULKAN else requestedMpvFlowComputeApi
     mpvFlowOsdStatsEnabled = mpvFlowFrameInterpolationActive
     val coreConfigurationKey =
       "${requestedBackend.configurationKey}|conf=${MpvConfigOverridePolicy.configurationKey()}|" +
-        "mpvflow=${if (mpvFlowFrameInterpolationActive) "$requestedMpvFlowTargetFps,compute_api=${requestedMpvFlowComputeApi.nativeValue},quality=$requestedMpvFlowQuality" else "off"}"
+        "mpvflow=${if (mpvFlowFrameInterpolationActive) "$requestedMpvFlowTargetFps,compute_api=${effectiveMpvFlowComputeApi.nativeValue},quality=$requestedMpvFlowQuality,soft_blend=$mpvFlowSoftBlendDebugActive" else "off"}"
     val result =
       PlaybackSession.initialize(
         context = context.applicationContext,
@@ -619,9 +629,18 @@ class MPVView(
     PlaybackSession.setOptionString("vd-lavc-dr", "auto")
     PlaybackSession.setOptionString("vd-lavc-queue", "no")
 
+    val mpvFlowSoftBlendDebugEnabled =
+      BuildConfig.DEBUG &&
+        decoderPreferences.mpvFlowSoftBlendDebug.get() &&
+        mpvFlowFrameInterpolationEnabled &&
+        backend.gpuApi == "vulkan" &&
+        !MpvConfigOverridePolicy.isOwnedByMpvConf("mpvflow-soft-blend") &&
+        !MpvConfigOverridePolicy.isOwnedByMpvConf("mpvflow-compute-api")
+    val effectiveMpvFlowComputeApi =
+      if (mpvFlowSoftBlendDebugEnabled) MpvFlowComputeApi.VULKAN else mpvFlowComputeApi
     val mpvFlowComputeApiOptionResult =
       if (BuildConfig.MPV_HAS_MPVFLOW && !MpvConfigOverridePolicy.isOwnedByMpvConf("mpvflow-compute-api")) {
-        PlaybackSession.setOptionString("mpvflow-compute-api", mpvFlowComputeApi.nativeValue.toString())
+        PlaybackSession.setOptionString("mpvflow-compute-api", effectiveMpvFlowComputeApi.nativeValue.toString())
       } else {
         null
       }
@@ -636,6 +655,16 @@ class MPVView(
         PlaybackSession.setOptionString(
           "mpvflow-visibility-resolver",
           if (mpvFlowVisibilityResolverDebugEnabled) "yes" else "no",
+        )
+      } else {
+        null
+      }
+    val mpvFlowSoftBlendOptionResult =
+      if (BuildConfig.MPV_HAS_MPVFLOW &&
+        !MpvConfigOverridePolicy.isOwnedByMpvConf("mpvflow-soft-blend")) {
+        PlaybackSession.setOptionString(
+          "mpvflow-soft-blend",
+          if (mpvFlowSoftBlendDebugEnabled) "yes" else "no",
         )
       } else {
         null
@@ -660,14 +689,15 @@ class MPVView(
           } else null
         val enabledResult =
           PlaybackSession.setOptionString("mpvflow", if (mpvFlowFrameInterpolationEnabled) "yes" else "no")
-        "mpvflow_rc=$enabledResult compute_api=${mpvFlowComputeApi.name.lowercase()} " +
+        "mpvflow_rc=$enabledResult compute_api=${effectiveMpvFlowComputeApi.name.lowercase()} " +
           "compute_api_rc=${mpvFlowComputeApiOptionResult ?: "mpv.conf_or_unavailable"} " +
           "target_fps_rc=${targetFpsResult ?: "unchanged"} " +
           "max_dimension_rc=${dimensionResult ?: "unchanged"} quality=$mpvFlowQuality quality_rc=${qualityResult ?: "unchanged"} " +
           "visibility_resolver=$mpvFlowVisibilityResolverDebugEnabled " +
-          "visibility_resolver_rc=${mpvFlowVisibilityResolverOptionResult ?: "mpv.conf_or_unavailable"}"
+          "visibility_resolver_rc=${mpvFlowVisibilityResolverOptionResult ?: "mpv.conf_or_unavailable"} " +
+          "soft_blend=$mpvFlowSoftBlendDebugEnabled soft_blend_rc=${mpvFlowSoftBlendOptionResult ?: "mpv.conf_or_unavailable"}"
       } else {
-        "compute_api=${mpvFlowComputeApi.name.lowercase()} " +
+        "compute_api=${effectiveMpvFlowComputeApi.name.lowercase()} " +
           "compute_api_rc=${mpvFlowComputeApiOptionResult ?: "mpv.conf_or_unavailable"} mpvflow=mpv.conf"
       }
 

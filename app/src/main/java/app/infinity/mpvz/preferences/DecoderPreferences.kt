@@ -88,6 +88,7 @@ class DecoderPreferences(
   val mpvFlowQuality = preferenceStore.getInt("mpvflow_quality", DEFAULT_MPVFLOW_QUALITY)
   val mpvFlowComputeApi = preferenceStore.getEnum("mpvflow_compute_api", MpvFlowComputeApi.AUTO)
   val mpvFlowVisibilityResolverDebug = preferenceStore.getBoolean("mpvflow_visibility_resolver_debug", false)
+  val mpvFlowSoftBlendDebug = preferenceStore.getBoolean("mpvflow_soft_blend_debug", false)
 
   val debanding = preferenceStore.getEnum("debanding", Debanding.None)
   val debandIterations = preferenceStore.getInt("deband_iterations", 1)

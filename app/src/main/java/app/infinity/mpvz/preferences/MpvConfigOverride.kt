@@ -31,7 +31,7 @@ enum class MpvConfigOverride(
   ),
   FLOW_COMPUTE(
     preferenceKey = "flow_compute",
-    optionNames = setOf("mpvflow-compute-api"),
+    optionNames = setOf("mpvflow-compute-api", "mpvflow-soft-blend"),
   ),
   DECODER(
     preferenceKey = "decoder",
@@ -296,6 +296,7 @@ object MpvConfigControlledFeatures {
       "video-sync",
       "display-fps-override",
       "mpvflow",
+      "mpvflow-soft-blend",
       "mpvflow-max-dimension",
       "gpu-api",
       "gpu-context",

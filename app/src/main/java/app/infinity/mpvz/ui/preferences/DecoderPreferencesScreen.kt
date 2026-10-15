@@ -85,6 +85,7 @@ object DecoderPreferencesScreen : Screen {
     val anime4kActivePreference = anime4kEnabledPreference && anime4kMode != "OFF"
     val mpvFlowFrameInterpolationEnabled by preferences.mpvFlowFrameInterpolation.collectAsState()
     val mpvFlowVisibilityResolverDebug by preferences.mpvFlowVisibilityResolverDebug.collectAsState()
+    val mpvFlowSoftBlendDebug by preferences.mpvFlowSoftBlendDebug.collectAsState()
     val mpvFlowTargetFps by preferences.mpvFlowTargetFps.collectAsState()
     val storedConfigOverrides by advancedPreferences.mpvConfOverrides.collectAsState()
     val configOwnedOptions =
@@ -391,6 +392,19 @@ object DecoderPreferencesScreen : Screen {
                   summary = {
                     Text(
                       stringResource(R.string.pref_decoder_mpvflow_visibility_resolver_debug_summary),
+                      color = MaterialTheme.colorScheme.outline,
+                    )
+                  },
+                )
+                SwitchPreference(
+                  modifier = Modifier.settingsSearchTarget(R.string.pref_decoder_mpvflow_soft_blend_debug_title),
+                  value = mpvFlowSoftBlendDebug,
+                  enabled = mpvFlowAvailable || mpvFlowSoftBlendDebug,
+                  onValueChange = preferences.mpvFlowSoftBlendDebug::set,
+                  title = { Text(stringResource(R.string.pref_decoder_mpvflow_soft_blend_debug_title)) },
+                  summary = {
+                    Text(
+                      stringResource(R.string.pref_decoder_mpvflow_soft_blend_debug_summary),
                       color = MaterialTheme.colorScheme.outline,
                     )
                   },

@@ -119,20 +119,22 @@ def main() -> None:
         lavapipe_icds = sorted(Path("/usr/share/vulkan/icd.d").glob("lvp_icd*.json"))
         if lavapipe_icds:
             env["VK_ICD_FILENAMES"] = str(lavapipe_icds[0])
-        result = subprocess.run(
-            [str(executable), str(spirv)],
-            check=False,
-            capture_output=True,
-            text=True,
-            env=env,
-        )
-        if result.returncode:
-            raise SystemExit(
-                "Vulkan synthesis pixel oracle failed:\n"
-                + result.stdout
-                + result.stderr
+        for mode, label in (("0", "default-off production output"),
+                            ("1", "opt-in soft-blend output")):
+            result = subprocess.run(
+                [str(executable), str(spirv), mode],
+                check=False,
+                capture_output=True,
+                text=True,
+                env=env,
             )
-        print(result.stdout, end="")
+            if result.returncode:
+                raise SystemExit(
+                    f"Vulkan synthesis pixel oracle failed ({label}):\n"
+                    + result.stdout
+                    + result.stderr
+                )
+            print(f"[{label}]\n" + result.stdout, end="")
 
 
 if __name__ == "__main__":

@@ -102,7 +102,7 @@ require(visibility_resolver, "bool uniquelySupported=bestEnergy>0.012&&margin>ma
 require(visibility_resolver, "baselineCost-best>0.035&&baselineDistance>3.0", "resolver must materially improve on production and reject near-duplicate motions")
 require(visibility_resolver, "result=mix(fallback,mix(ca,cb,t),0.25)", "resolver correction must remain capped at 25 percent")
 require(SOURCE, '"mpvflow_visibility_resolver_shader.h"', "the native GPU implementation must include the validated embedded GLSL")
-require(SOURCE, "mpvflow_gpu_synthesize_internal(ctx, pair, source0, source1, t,\n                                           false, output)", "the public production synthesis API must keep the resolver disabled")
+require(SOURCE, "mpvflow_gpu_synthesize_internal(ctx, pair, source0, source1, t,\n                                           false, false, output)", "the public production synthesis API must keep the resolver disabled")
 require(SOURCE, "*pass = make_pass(ctx->gpu, glsl, resolver_desc, 10)", "resolver pass must be initialized lazily only after explicit opt-in")
 require(SOURCE, "fallback=production_output", "resolver failure paths must retain the production result")
 synthesis_main = synthesis.split("void main()", 1)[1]
@@ -209,6 +209,9 @@ require(synthesis, "weight0=(1.0-pc.timestep)*visibility0,weight1=pc.timestep*vi
 require(synthesis, "float uniquenessQuality=smoothstep(0.08,0.30,flow.w)", "endpoint reliability must reject ambiguous motion vectors")
 require(synthesis, "return cycleQuality*matchQuality*uniquenessQuality*valid;", "endpoint reliability must include motion uniqueness")
 require(synthesis, "if(confidence<0.28)", "unreliable motion must fall back to a real source frame")
+require(synthesis, "bool softBlend=(pc.cfg.x&0x40000000)!=0", "the soft path must use an explicit per-synthesis debug flag")
+require(synthesis, "if(confidence<0.28){ outc=softBlend?softColor:", "soft blending must replace only the low-confidence nearest-frame fallback")
+require(synthesis, "if(boundaryConflict&&softBlend) outc=softColor;", "soft blending must mix source colors at motion/color conflicts")
 require(flow, "float(second-best)/max(float(second),1.0)", "flow vectors must report best-vs-runner-up match uniqueness")
 
 for fragment, message in (
