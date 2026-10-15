@@ -1046,11 +1046,13 @@ for marker in (
 ):
     assert marker in decoder_screen, f"the Decoder screen must truthfully distinguish Flow rendering and compute: missing {marker!r}"
 assert "R.string.pref_decoder_mpvflow_compute_api_title" not in decoder_screen
-assert "R.string.pref_decoder_mpvflow_target_fps_title" not in decoder_screen
+assert "R.string.pref_decoder_mpvflow_target_fps_title" in decoder_screen
+assert "onValueChange = preferences.mpvFlowTargetFps::set" in decoder_screen
+assert "values = MPVFLOW_TARGET_FPS_OPTIONS" in decoder_screen
 resource_source = STRING_RESOURCES.read_text(encoding="utf-8")
 assert '<string name="pref_decoder_mpvflow_title">Frame interpolation</string>' in resource_source
 assert "pref_decoder_mpvflow_compute_api_" not in resource_source
-assert "pref_decoder_mpvflow_target_fps_" not in resource_source
+assert '<string name="pref_decoder_mpvflow_target_fps_title">MPVFlow target frame rate</string>' in resource_source
 
 flow_gpu_source = (ROOT / "app/src/main/cpp/mpvflow/mpvflow_gpu.c").read_text(encoding="utf-8")
 opencl_source = (ROOT / "app/src/main/cpp/mpvflow/mpvflow_opencl.c").read_text(encoding="utf-8")

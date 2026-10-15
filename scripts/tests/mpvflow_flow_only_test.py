@@ -179,7 +179,7 @@ def test_standard_workflow_is_flow_only() -> None:
     assert "pref_decoder_rife_" not in app_source
 
 
-def test_mpvflow_settings_are_switch_only_and_prominent() -> None:
+def test_mpvflow_settings_keep_single_toggle_and_target_fps() -> None:
     screen = (ROOT / "app/src/main/java/app/infinity/mpvz/ui/preferences/DecoderPreferencesScreen.kt").read_text(
         encoding="utf-8"
     )
@@ -192,11 +192,19 @@ def test_mpvflow_settings_are_switch_only_and_prominent() -> None:
     assert "settingsSearchTarget(R.string.pref_decoder_mpvflow_title)" in screen
     assert "Surface(" in screen and "surfaceContainerLow" in screen
     assert "titleStyle =" in screen and "MaterialTheme.typography.titleMedium" in screen
-    assert "preferences.mpvFlowFrameInterpolation.set(enabled)" in screen
+    assert screen.count("preferences.mpvFlowFrameInterpolation.set(enabled)") == 1
     assert '<string name="pref_decoder_mpvflow_title">Frame interpolation</string>' in strings
     assert "pref_decoder_mpvflow_compute_api_" not in screen and "pref_decoder_mpvflow_compute_api_" not in strings
-    assert "pref_decoder_mpvflow_target_fps_" not in screen and "pref_decoder_mpvflow_target_fps_" not in strings
-    assert "preferences.mpvFlowComputeApi" not in screen and "preferences.mpvFlowTargetFps" not in screen
+    assert "preferences.mpvFlowComputeApi" not in screen
+    assert "val mpvFlowTargetFps by preferences.mpvFlowTargetFps.collectAsState()" in screen
+    assert "onValueChange = preferences.mpvFlowTargetFps::set" in screen
+    assert "values = MPVFLOW_TARGET_FPS_OPTIONS" in screen
+    assert "preferences.mpvFlowFrameInterpolation.set(enabled)" in screen
+    assert "if (it >= 90) R.string.pref_decoder_mpvflow_target_fps_warning_value" in screen
+    assert '<string name="pref_decoder_mpvflow_target_fps_title">MPVFlow target frame rate</string>' in strings
+    assert '<string name="pref_decoder_mpvflow_target_fps_value">%1$d fps</string>' in strings
+    assert '<string name="pref_decoder_mpvflow_target_fps_warning_value">(!) %1$d fps</string>' in strings
+    assert "internal val MPVFLOW_TARGET_FPS_OPTIONS = listOf(48, 60, 72, 90, 96, 120, 144)" in prefs
     assert 'mpvFlowComputeApi = preferenceStore.getEnum("mpvflow_compute_api", MpvFlowComputeApi.AUTO)' in prefs
     assert 'mpvFlowTargetFps = preferenceStore.getInt("mpvflow_target_fps", DEFAULT_MPVFLOW_TARGET_FPS)' in prefs
     assert "decoderPreferences.mpvFlowComputeApi.get()" in player
@@ -205,7 +213,7 @@ def test_mpvflow_settings_are_switch_only_and_prominent() -> None:
 
 def main() -> None:
     test_standard_workflow_is_flow_only()
-    test_mpvflow_settings_are_switch_only_and_prominent()
+    test_mpvflow_settings_keep_single_toggle_and_target_fps()
     print("Flow-only MPVFlow Standard arm64 workflow tests passed.")
 
 

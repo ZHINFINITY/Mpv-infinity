@@ -50,6 +50,7 @@ import app.infinity.mpvz.R
 import app.infinity.mpvz.domain.anime4k.Anime4KManager
 import app.infinity.mpvz.preferences.AdvancedPreferences
 import app.infinity.mpvz.preferences.DecoderPreferences
+import app.infinity.mpvz.preferences.MPVFLOW_TARGET_FPS_OPTIONS
 import app.infinity.mpvz.preferences.MpvConfigControlledFeatures
 import app.infinity.mpvz.preferences.MpvConfigOverride
 import app.infinity.mpvz.preferences.preference.collectAsState
@@ -83,6 +84,7 @@ object DecoderPreferencesScreen : Screen {
     val anime4kMode by preferences.anime4kMode.collectAsState()
     val anime4kActivePreference = anime4kEnabledPreference && anime4kMode != "OFF"
     val mpvFlowFrameInterpolationEnabled by preferences.mpvFlowFrameInterpolation.collectAsState()
+    val mpvFlowTargetFps by preferences.mpvFlowTargetFps.collectAsState()
     val storedConfigOverrides by advancedPreferences.mpvConfOverrides.collectAsState()
     val configOwnedOptions =
       remember(storedConfigOverrides) { MpvConfigOverride.resolveOptionNames(storedConfigOverrides) }
@@ -375,6 +377,26 @@ object DecoderPreferencesScreen : Screen {
                     ),
                 )
               }
+
+              PreferenceDivider()
+
+              ListPreference(
+                modifier = Modifier.settingsSearchTarget(R.string.pref_decoder_mpvflow_target_fps_title),
+                value = mpvFlowTargetFps,
+                onValueChange = preferences.mpvFlowTargetFps::set,
+                values = MPVFLOW_TARGET_FPS_OPTIONS,
+                enabled = mpvFlowAvailable || nativeMedia3FlowAvailable || mpvFlowFrameInterpolationEnabled,
+                valueToText = {
+                  AnnotatedString(
+                    context.getString(
+                      if (it >= 90) R.string.pref_decoder_mpvflow_target_fps_warning_value
+                      else R.string.pref_decoder_mpvflow_target_fps_value,
+                      it,
+                    ),
+                  )
+                },
+                title = { Text(stringResource(R.string.pref_decoder_mpvflow_target_fps_title)) },
+              )
 
               PreferenceDivider()
 
