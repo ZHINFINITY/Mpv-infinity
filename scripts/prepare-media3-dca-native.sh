@@ -2,15 +2,16 @@
 set -euo pipefail
 
 if [[ $# -ne 3 ]]; then
-  echo "usage: $0 <generated-root> <android-ndk-dir> <mpv-runtime-aar>" >&2
+  echo "usage: $0 <generated-root> <android-ndk-version> <mpv-runtime-aar>" >&2
   exit 2
 fi
 
 GENERATED_ROOT="$1"
-NDK_DIR="$2"
+NDK_VERSION="$2"
 RUNTIME_AAR="$3"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+NDK_DIR="$(python3 "$SCRIPT_DIR/android_ndk_path.py" "$NDK_VERSION" "$REPO_ROOT")"
 FFMPEG_COMMIT="946fcce07b6dcd0331c8cc609192aeff5e1924f8"
 FFMPEG_ARCHIVE_SHA256="0aa2b1de2a5698b20a23e93d539a9a8e82ca0117496c5bdf05d198805f42bb3b"
 FFMPEG_ARCHIVE="$GENERATED_ROOT/ffmpeg-n9.0.2.tar.gz"

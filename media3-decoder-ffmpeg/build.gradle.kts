@@ -7,21 +7,24 @@ plugins {
 val generatedRoot = layout.buildDirectory.dir("generated/media3-dca")
 val ffmpegHeadersDir = generatedRoot.map { it.dir("ffmpeg-source") }
 val ffmpegRuntimeLibsDir = generatedRoot.map { it.dir("runtime") }
+val androidNdkVersion = "27.3.13750724"
 val prepareMedia3DcaInputs =
   tasks.register<Exec>("prepareMedia3DcaInputs") {
     val prepareScript = rootProject.file("scripts/prepare-media3-dca-native.sh")
+    val ndkPathResolver = rootProject.file("scripts/android_ndk_path.py")
     val runtimeAar = rootProject.file("app/libs/mpvlib.aar")
     inputs.file(prepareScript)
+    inputs.file(ndkPathResolver)
     inputs.file(runtimeAar)
     inputs.property("ffmpegSourceCommit", "946fcce07b6dcd0331c8cc609192aeff5e1924f8")
+    inputs.property("androidNdkVersion", androidNdkVersion)
     outputs.dir(generatedRoot)
     doFirst {
-      val ndkDir = android.sdkComponents.ndkDirectory.get().asFile
       commandLine(
         "bash",
         prepareScript.absolutePath,
         generatedRoot.get().asFile.absolutePath,
-        ndkDir.absolutePath,
+        androidNdkVersion,
         runtimeAar.absolutePath,
       )
     }
@@ -40,7 +43,7 @@ tasks.configureEach {
 android {
   namespace = "androidx.media3.decoder.ffmpeg"
   compileSdk = 37
-  ndkVersion = "27.3.13750724"
+  ndkVersion = androidNdkVersion
 
   defaultConfig {
     minSdk = 26
