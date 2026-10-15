@@ -49,7 +49,6 @@ import androidx.compose.ui.util.fastJoinToString
 import androidx.core.net.toUri
 import androidx.core.os.LocaleListCompat
 import androidx.documentfile.provider.DocumentFile
-import app.infinity.mpvz.BuildConfig
 import app.infinity.mpvz.R
 import app.infinity.mpvz.catalog.StreamWatchHistory
 import app.infinity.mpvz.domain.playbackstate.repository.PlaybackStateRepository
@@ -64,7 +63,6 @@ import app.infinity.mpvz.presentation.components.ConfirmDialog
 import app.infinity.mpvz.presentation.crash.CrashActivity
 import app.infinity.mpvz.ui.icons.Icon
 import app.infinity.mpvz.ui.icons.Icons
-import app.infinity.mpvz.ui.player.Media3FlowVulkanNative
 import app.infinity.mpvz.ui.preferences.components.SwitchPreference
 import app.infinity.mpvz.ui.utils.LocalBackStack
 import app.infinity.mpvz.ui.utils.LocalShowSettingsBackArrow
@@ -140,7 +138,6 @@ object AdvancedPreferencesScreen : Screen {
     var importStats by remember { mutableStateOf<SettingsManager.ImportStats?>(null) }
     var exportStats by remember { mutableStateOf<SettingsManager.ExportStats?>(null) }
     var pendingAppLanguage by remember { mutableStateOf<AppLanguage?>(null) }
-    var nvOpticalSelfTestRunning by remember { mutableStateOf(false) }
     val configuration = LocalConfiguration.current
     val currentAppLanguage =
       remember(configuration) {
@@ -1107,63 +1104,6 @@ object AdvancedPreferencesScreen : Screen {
                 },
               )
 
-              if (BuildConfig.DEBUG && BuildConfig.MPV_SUPPORTS_VULKAN) {
-                PreferenceDivider()
-                Preference(
-                  title = { Text(stringResource(R.string.pref_advanced_nv_optical_self_test_title)) },
-                  summary = {
-                    Text(
-                      stringResource(
-                        if (nvOpticalSelfTestRunning) {
-                          R.string.pref_advanced_nv_optical_self_test_running
-                        } else {
-                          R.string.pref_advanced_nv_optical_self_test_summary
-                        },
-                      ),
-                      color = MaterialTheme.colorScheme.outline,
-                    )
-                  },
-                  onClick = {
-                    if (!nvOpticalSelfTestRunning) {
-                      nvOpticalSelfTestRunning = true
-                      scope.launch {
-                        val completed =
-                          withContext(Dispatchers.IO) {
-                            runCatching {
-                              val testContext =
-                                Media3FlowVulkanNative.nativeCreateContext(
-                                  256,
-                                  Media3FlowVulkanNative.COMPUTE_API_VULKAN,
-                                )
-                              if (testContext == 0L) {
-                                false
-                              } else {
-                                try {
-                                  Media3FlowVulkanNative.nativeRunNvOpticalFlowSelfTest(testContext)
-                                } finally {
-                                  Media3FlowVulkanNative.nativeDestroyContext(testContext)
-                                }
-                              }
-                            }.getOrDefault(false)
-                          }
-                        nvOpticalSelfTestRunning = false
-                        Toast
-                          .makeText(
-                            context,
-                            context.getString(
-                              if (completed) {
-                                R.string.pref_advanced_nv_optical_self_test_complete
-                              } else {
-                                R.string.pref_advanced_nv_optical_self_test_failed
-                              },
-                            ),
-                            Toast.LENGTH_LONG,
-                          ).show()
-                      }
-                    }
-                  },
-                )
-              }
             }
           }
         }

@@ -179,40 +179,33 @@ def test_standard_workflow_is_flow_only() -> None:
     assert "pref_decoder_rife_" not in app_source
 
 
-def test_mpvflow_settings_keep_controls_without_explanations() -> None:
+def test_mpvflow_settings_are_switch_only_and_prominent() -> None:
     screen = (ROOT / "app/src/main/java/app/infinity/mpvz/ui/preferences/DecoderPreferencesScreen.kt").read_text(
         encoding="utf-8"
     )
     strings = (ROOT / "app/src/main/res/values/strings.xml").read_text(encoding="utf-8")
-
-    for title in (
-        "pref_decoder_mpvflow_title",
-        "pref_decoder_mpvflow_compute_api_title",
-        "pref_decoder_mpvflow_target_fps_title",
-    ):
-        assert f"settingsSearchTarget(R.string.{title})" in screen
-        assert f'name="{title}"' in strings
-
-    assert "preferences.mpvFlowFrameInterpolation.set(enabled)" in screen
-    assert "preferences.mpvFlowComputeApi::set" in screen
-    assert "preferences.mpvFlowTargetFps::set" in screen
-    assert "pref_decoder_mpvflow_compute_api_auto" in strings
-    assert "pref_decoder_mpvflow_compute_api_opencl" in strings
-    assert "pref_decoder_mpvflow_compute_api_vulkan" in strings
-    assert "pref_decoder_mpvflow_target_fps_value" in strings
-
-    description_prefixes = (
-        "pref_decoder_mpvflow_summary",
-        "pref_decoder_mpvflow_compute_api_summary",
-        "pref_decoder_mpvflow_target_fps_summary",
+    prefs = (ROOT / "app/src/main/java/app/infinity/mpvz/preferences/DecoderPreferences.kt").read_text(
+        encoding="utf-8"
     )
-    assert all(prefix not in screen for prefix in description_prefixes)
-    assert all(prefix not in strings for prefix in description_prefixes)
+    player = (ROOT / "app/src/main/java/app/infinity/mpvz/ui/player/MPVView.kt").read_text(encoding="utf-8")
+
+    assert "settingsSearchTarget(R.string.pref_decoder_mpvflow_title)" in screen
+    assert "Surface(" in screen and "surfaceContainerLow" in screen
+    assert "titleStyle =" in screen and "MaterialTheme.typography.titleMedium" in screen
+    assert "preferences.mpvFlowFrameInterpolation.set(enabled)" in screen
+    assert '<string name="pref_decoder_mpvflow_title">Frame interpolation</string>' in strings
+    assert "pref_decoder_mpvflow_compute_api_" not in screen and "pref_decoder_mpvflow_compute_api_" not in strings
+    assert "pref_decoder_mpvflow_target_fps_" not in screen and "pref_decoder_mpvflow_target_fps_" not in strings
+    assert "preferences.mpvFlowComputeApi" not in screen and "preferences.mpvFlowTargetFps" not in screen
+    assert 'mpvFlowComputeApi = preferenceStore.getEnum("mpvflow_compute_api", MpvFlowComputeApi.AUTO)' in prefs
+    assert 'mpvFlowTargetFps = preferenceStore.getInt("mpvflow_target_fps", DEFAULT_MPVFLOW_TARGET_FPS)' in prefs
+    assert "decoderPreferences.mpvFlowComputeApi.get()" in player
+    assert "decoderPreferences.mpvFlowTargetFps.get()" in player
 
 
 def main() -> None:
     test_standard_workflow_is_flow_only()
-    test_mpvflow_settings_keep_controls_without_explanations()
+    test_mpvflow_settings_are_switch_only_and_prominent()
     print("Flow-only MPVFlow Standard arm64 workflow tests passed.")
 
 

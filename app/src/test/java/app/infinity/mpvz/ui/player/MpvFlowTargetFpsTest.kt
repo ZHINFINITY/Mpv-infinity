@@ -51,14 +51,14 @@ class MpvFlowTargetFpsTest {
     assertEquals(432, effectiveMpvFlowMaxDimension(72))
     assertEquals(432, effectiveMpvFlowMaxDimension(90))
     assertEquals(384, effectiveMpvFlowMaxDimension(96))
-    assertEquals(384, effectiveMpvFlowMaxDimension(120))
+    assertEquals(416, effectiveMpvFlowMaxDimension(120))
     assertEquals(304, effectiveMpvFlowMaxDimension(144))
   }
 
   @Test
   fun qualityProfileControlsTheAnalysisRangeAtHighRates() {
-    assertEquals(320, effectiveMpvFlowMaxDimension(120, 0))
-    assertEquals(384, effectiveMpvFlowMaxDimension(120, 60))
+    assertEquals(384, effectiveMpvFlowMaxDimension(120, 0))
+    assertEquals(416, effectiveMpvFlowMaxDimension(120, 60))
     assertEquals(448, effectiveMpvFlowMaxDimension(120, 100))
     assertEquals(320, effectiveMpvFlowMaxDimension(96, 0))
     assertEquals(432, effectiveMpvFlowMaxDimension(96, 100))

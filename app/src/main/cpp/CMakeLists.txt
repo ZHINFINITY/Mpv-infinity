@@ -162,7 +162,6 @@ if(MPVFLOW_ENABLE_VULKAN_BACKEND)
         mpvflow/mpvflow_gpu.c
         mpvflow/mpvflow_vulkan_qcom.c
         mpvflow/mpvflow_vulkan_optical.c
-        mpvflow/mpvflow_vulkan_optical_selftest.c
         mpvflow/mpvflow_opencl.c
         mpvflow/mpvflow_opencl_vk_bridge.c)
     set_target_properties(media3flow_vulkan PROPERTIES
@@ -174,8 +173,6 @@ if(MPVFLOW_ENABLE_VULKAN_BACKEND)
     target_include_directories(media3flow_vulkan PRIVATE
         "${CMAKE_CURRENT_SOURCE_DIR}/third_party/libplacebo/include"
         "${CMAKE_CURRENT_SOURCE_DIR}/mpvflow")
-    target_compile_definitions(media3flow_vulkan PRIVATE
-        "$<$<CONFIG:Debug>:MPVFLOW_ENABLE_NV_SELF_TEST=1>")
     target_link_libraries(media3flow_vulkan PRIVATE
         mpvflow_placebo_api_from_aar
         android

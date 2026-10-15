@@ -12,17 +12,13 @@ struct mpvflow_rate_limiter {
     bool initialized;
 };
 
-/* MPV vo_frame.pts is the scheduled show time in mp_time_ns units. */
+/* Source PTS may repeat across output redraws. Prefer the monotonic render callback clock. */
 static inline uint64_t mpvflow_rate_limiter_timestamp_ns(
-    const struct mpvflow_rate_limiter *limiter, int64_t presentation_pts_ns,
-    uint64_t render_start_ns)
+    int64_t presentation_pts_ns, uint64_t render_start_ns)
 {
-    if (presentation_pts_ns <= 0)
+    if (render_start_ns > 0)
         return render_start_ns;
-    const uint64_t presentation_ns = (uint64_t) presentation_pts_ns;
-    if (limiter && limiter->initialized && presentation_ns < limiter->last_submit_ns)
-        return render_start_ns;
-    return presentation_ns;
+    return presentation_pts_ns > 0 ? (uint64_t) presentation_pts_ns : 0;
 }
 
 static inline void mpvflow_rate_limiter_reset(struct mpvflow_rate_limiter *limiter)
@@ -38,7 +34,7 @@ static inline uint64_t mpvflow_rate_limiter_interval_ns(int target_fps)
     return (MPVFLOW_RATE_LIMIT_ONE + fps - 1) / fps;
 }
 
-/* Admission follows scheduled presentation timestamps when available, never burst credit. */
+/* Admission follows monotonic output time and never accumulates burst credit. */
 static inline bool mpvflow_rate_limiter_ready(
     const struct mpvflow_rate_limiter *limiter, uint64_t timestamp_ns, int target_fps)
 {

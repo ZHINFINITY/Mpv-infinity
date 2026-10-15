@@ -967,7 +967,7 @@ index bd3d1aa..75ffbb1 100644
 +        flow_render_start_ns > 0) {
 +        p->flow_pending_rate_limiter_eligible = true;
 +        p->flow_pending_rate_limiter_timestamp_ns =
-+            mpvflow_rate_limiter_timestamp_ns(&p->flow_rate_limiter, frame->pts,
++            mpvflow_rate_limiter_timestamp_ns(frame->pts,
 +                                              (uint64_t) flow_render_start_ns);
 +        if (!mpvflow_rate_limiter_ready(&p->flow_rate_limiter,
 +                p->flow_pending_rate_limiter_timestamp_ns,

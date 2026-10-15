@@ -14,9 +14,6 @@ internal object Media3FlowVulkanNative {
 
   external fun nativeCreateContext(maxDimension: Int, requestedComputeApi: Int): Long
 
-  /** Manually dispatches the debug-only NV Optical Flow synthetic-shift probe. */
-  external fun nativeRunNvOpticalFlowSelfTest(context: Long): Boolean
-
   /** Returns the currently effective Flow compute backend, including Auto fallback. */
   external fun nativeGetComputeApiName(context: Long): String?
 

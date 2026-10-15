@@ -722,7 +722,7 @@ assert patch_parse.returncode == 0, (
     f"MPV VO patch must be a valid unified diff:\n{patch_parse.stdout}{patch_parse.stderr}"
 )
 assert "+        target_fps >= 120 ? 448 : target_fps >= 96 ? 440 : 640;" in vo_patch, (
-    "the MPV renderer must preserve the balanced 384-pixel 120-fps profile and the quality headroom"
+    "the MPV renderer must preserve its 448-pixel 120-fps safety ceiling"
 )
 rate_limit_header = ROOT / "app/src/main/cpp/mpvflow/mpvflow_rate_limit.h"
 synthesis_scale_header = ROOT / "app/src/main/cpp/mpvflow/mpvflow_synthesis_scale.h"
@@ -746,11 +746,12 @@ rate_submit_guard = vo_patch.index("if (p->next_opts->mpvflow && submitted)")
 rate_commit_offset = vo_patch.index("mpvflow_rate_limiter_commit(&p->flow_rate_limiter")
 assert rate_submit_guard < rate_commit_offset, "the rate interval may only be committed after successful swap submission"
 assert "flow_pending_rate_limiter_timestamp_ns =" in vo_patch
-assert "mpvflow_rate_limiter_timestamp_ns(&p->flow_rate_limiter, frame->pts," in vo_patch
+assert "mpvflow_rate_limiter_timestamp_ns(frame->pts," in vo_patch
+assert "mpvflow_rate_limiter_timestamp_ns(&p->flow_rate_limiter, frame->pts," not in vo_patch
 assert "(uint64_t) flow_render_start_ns);" in vo_patch
 assert "p->flow_pending_rate_limiter_timestamp_ns," in vo_patch
 assert "mpvflow_rate_limiter_commit(&p->flow_rate_limiter, (uint64_t) now_ns" not in vo_patch, (
-    "rate admission must commit the selected presentation timestamp, not swap completion"
+    "rate admission must commit the selected render-callback timestamp, not swap completion"
 )
 assert '"mpvflow-synthesis-max-dimension", OPT_INT(mpvflow_synthesis_max_dimension), M_RANGE(0, 7680)' in vo_patch
 assert "+        .mpvflow_synthesis_max_dimension = 1920," in vo_patch
@@ -1039,30 +1040,17 @@ for marker in (
     "value = gpuNext || mpvFlowForcesRenderer",
     "value = (useVulkan || mpvFlowForcesRenderer) && isVulkanSupported",
     "enabled = !mpvFlowForcesRenderer",
-    "R.string.pref_decoder_mpvflow_compute_api_title",
+    "settingsSearchTarget(R.string.pref_decoder_mpvflow_title)",
+    "titleStyle =",
+    "MaterialTheme.colorScheme.surfaceContainerLow",
 ):
     assert marker in decoder_screen, f"the Decoder screen must truthfully distinguish Flow rendering and compute: missing {marker!r}"
-compute_title_position = decoder_screen.index("R.string.pref_decoder_mpvflow_compute_api_title")
-compute_selector_start = decoder_screen.rfind("ListPreference(", 0, compute_title_position)
-compute_selector_end = decoder_screen.index("PreferenceDivider()", compute_selector_start)
-compute_selector = decoder_screen[compute_selector_start:compute_selector_end]
-for marker in (
-    "ListPreference(",
-    "onValueChange = preferences.mpvFlowComputeApi::set",
-    "values = MpvFlowComputeApi.entries",
-    "!mpvFlowComputeApiConfigOwned",
-    "MpvFlowComputeApi.OPENCL",
-    "MpvFlowComputeApi.VULKAN",
-):
-    assert marker in compute_selector, f"the compute selector must persist real backend choices: missing {marker!r}"
+assert "R.string.pref_decoder_mpvflow_compute_api_title" not in decoder_screen
+assert "R.string.pref_decoder_mpvflow_target_fps_title" not in decoder_screen
 resource_source = STRING_RESOURCES.read_text(encoding="utf-8")
-for marker in (
-    '<string name="pref_decoder_mpvflow_compute_api_title">MPVFlow compute API</string>',
-    '<string name="pref_decoder_mpvflow_compute_api_auto">Auto</string>',
-    '<string name="pref_decoder_mpvflow_compute_api_opencl">OpenCL</string>',
-    '<string name="pref_decoder_mpvflow_compute_api_vulkan">Vulkan</string>',
-):
-    assert marker in resource_source, f"compute API label must remain available without explanatory copy: missing {marker!r}"
+assert '<string name="pref_decoder_mpvflow_title">Frame interpolation</string>' in resource_source
+assert "pref_decoder_mpvflow_compute_api_" not in resource_source
+assert "pref_decoder_mpvflow_target_fps_" not in resource_source
 
 flow_gpu_source = (ROOT / "app/src/main/cpp/mpvflow/mpvflow_gpu.c").read_text(encoding="utf-8")
 opencl_source = (ROOT / "app/src/main/cpp/mpvflow/mpvflow_opencl.c").read_text(encoding="utf-8")
@@ -1422,9 +1410,6 @@ for marker in (
 ):
     assert marker in flow_gpu_source, f"shared flow core must route QCOM seeds to SAD refinement with fallback: missing {marker!r}"
 
-nv_selftest_source = (
-    ROOT / "app/src/main/cpp/mpvflow/mpvflow_vulkan_optical_selftest.c"
-).read_text(encoding="utf-8")
 nv_optical_source = (
     ROOT / "app/src/main/cpp/mpvflow/mpvflow_vulkan_optical.c"
 ).read_text(encoding="utf-8")
@@ -1434,55 +1419,17 @@ nv_optical_header_source = (
 advanced_preferences_source = (
     ROOT / "app/src/main/java/app/infinity/mpvz/ui/preferences/AdvancedPreferencesScreen.kt"
 ).read_text(encoding="utf-8")
-for marker in (
-    "#if defined(MPVFLOW_ENABLE_NV_SELF_TEST) && defined(VK_NV_optical_flow)",
-    "VK_FORMAT_R16G16B16A16_SFLOAT",
-    "VK_IMAGE_USAGE_TRANSFER_SRC_BIT",
-    "VK_IMAGE_USAGE_SAMPLED_BIT",
-    "VK_IMAGE_USAGE_TRANSFER_DST_BIT",
-    "VK_IMAGE_USAGE_STORAGE_BIT",
-    "VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT",
-    "VK_FORMAT_FEATURE_2_OPTICAL_FLOW_IMAGE_BIT_NV",
-    "VK_FORMAT_FEATURE_2_OPTICAL_FLOW_VECTOR_BIT_NV",
-    "event=alternate_usage state=queried role=input",
-    "event=alternate_usage state=queried role=output",
-    "event=dispatch state=not_attempted reason=required_nv_optical_format_feature_missing",
-    "vkCmdClearColorImage",
-    "VK_PIPELINE_STAGE_ALL_COMMANDS_BIT",
-    "vkCmdCopyImageToBuffer",
-    "vkWaitForFences",
-    "self_test_half_to_float",
-    "event=grid_cell",
-    "half_bits=(%04x,%04x,%04x,%04x)",
-    "production_rgba16f_decoder_enabled=0",
-):
-    assert marker in nv_selftest_source, f"manual NV self-test is missing {marker!r}"
-assert "NV_SELF_TEST_INPUT_FORMAT, storage_usage" in nv_selftest_source
-assert "NV_SELF_TEST_INPUT_FORMAT, color_attachment_usage" in nv_selftest_source
-assert "NV_SELF_TEST_VECTOR_FORMAT, storage_usage" in nv_selftest_source
-assert "normal_playback_adapter_unchanged=1" in nv_selftest_source
-feature_gate = nv_selftest_source.index(
-    "if (!input_feature_query || !vector_feature_query ||"
-)
-image_allocation = nv_selftest_source.index(
-    "self_test_create_image(&test, &test.input[0]"
-)
-assert feature_gate < image_allocation, (
-    "NV input/vector format feature failures must stop the probe before image allocation"
-)
-assert "mpvflow/mpvflow_vulkan_optical_selftest.c" in cmake_source
-assert '"$<$<CONFIG:Debug>:MPVFLOW_ENABLE_NV_SELF_TEST=1>"' in cmake_source
+assert not (ROOT / "app/src/main/cpp/mpvflow/mpvflow_vulkan_optical_selftest.c").exists()
+assert "mpvflow_vulkan_optical_selftest.c" not in cmake_source
+assert "MPVFLOW_ENABLE_NV_SELF_TEST" not in cmake_source
 assert '#ifdef __cplusplus\nextern "C" {' in nv_optical_header_source
-assert "nativeRunNvOpticalFlowSelfTest" in media3_jni_source
-assert "BuildConfig.DEBUG && BuildConfig.MPV_SUPPORTS_VULKAN" in advanced_preferences_source
-assert "nativeRunNvOpticalFlowSelfTest(testContext)" in advanced_preferences_source
-assert "nativeDestroyContext(testContext)" in advanced_preferences_source
-assert "nativeRunNvOpticalFlowSelfTest" not in media3_sink_source, (
-    "the manual NV diagnostic must not run during normal Media3 playback"
-)
-assert "mpvflow_vulkan_optical_debug_self_test" not in flow_gpu_source, (
-    "the shared playback Flow core must not invoke the manual NV diagnostic"
-)
+assert "nativeRunNvOpticalFlowSelfTest" not in media3_jni_source
+assert "nativeRunNvOpticalFlowSelfTest" not in advanced_preferences_source
+assert "pref_advanced_nv_optical_self_test" not in advanced_preferences_source
+assert "pref_advanced_nv_optical_self_test" not in resource_source
+assert "mpvflow_vulkan_optical_debug_self_test" not in nv_optical_header_source
+assert "mpvflow_vulkan_optical_create" in flow_gpu_source
+assert "VK_NV_optical_flow" in nv_optical_source
 production_vector_candidates = nv_optical_source.split(
     "static const struct Candidate candidates[]", 1
 )[1].split("};", 1)[0]
@@ -1774,32 +1721,47 @@ int main(void)
     assert(!mpvflow_rate_limiter_ready(&limiter, 16666667ULL, 120));
     assert(mpvflow_rate_limiter_ready(&limiter, 16666668ULL, 120));
 
-    /* Scheduled presentation ticks, not callback-arrival jitter, control admission. */
+    /* Monotonic callback time wins when source PTS repeats across redraw ticks. */
     mpvflow_rate_limiter_reset(&limiter);
     uint64_t timestamp_ns = mpvflow_rate_limiter_timestamp_ns(
-        &limiter, 1000000000LL, 1002000000ULL);
-    assert(timestamp_ns == 1000000000ULL);
+        1000000000LL, 1002000000ULL);
+    assert(timestamp_ns == 1002000000ULL);
     assert(mpvflow_rate_limiter_ready(&limiter, timestamp_ns, 120));
     mpvflow_rate_limiter_commit(&limiter, timestamp_ns, 120);
     timestamp_ns = mpvflow_rate_limiter_timestamp_ns(
-        &limiter, 1008333334LL, 1007000000ULL);
-    assert(timestamp_ns == 1008333334ULL);
-    assert(mpvflow_rate_limiter_ready(&limiter, timestamp_ns, 120));
-    mpvflow_rate_limiter_commit(&limiter, timestamp_ns, 120);
-    timestamp_ns = mpvflow_rate_limiter_timestamp_ns(
-        &limiter, 1008333334LL, 1010000000ULL);
-    assert(timestamp_ns == 1008333334ULL);
+        1000000000LL, 1007000000ULL);
+    assert(timestamp_ns == 1007000000ULL);
     assert(!mpvflow_rate_limiter_ready(&limiter, timestamp_ns, 120));
     timestamp_ns = mpvflow_rate_limiter_timestamp_ns(
-        &limiter, 1000000000LL, 1020000000ULL);
+        1000000000LL, 1011000000ULL);
+    assert(timestamp_ns == 1011000000ULL);
+    assert(mpvflow_rate_limiter_ready(&limiter, timestamp_ns, 120));
+    mpvflow_rate_limiter_commit(&limiter, timestamp_ns, 120);
+    timestamp_ns = mpvflow_rate_limiter_timestamp_ns(
+        900000000LL, 1020000000ULL);
     assert(timestamp_ns == 1020000000ULL);
     assert(mpvflow_rate_limiter_ready(&limiter, timestamp_ns, 120));
     mpvflow_rate_limiter_commit(&limiter, timestamp_ns, 120);
-    timestamp_ns = mpvflow_rate_limiter_timestamp_ns(&limiter, 0, 1028333334ULL);
+    timestamp_ns = mpvflow_rate_limiter_timestamp_ns(0, 1028333334ULL);
     assert(timestamp_ns == 1028333334ULL);
     assert(mpvflow_rate_limiter_ready(&limiter, timestamp_ns, 120));
 
+    /* At 106-Hz callback cadence, repeated source PTS must not discard eligible callbacks. */
+    mpvflow_rate_limiter_reset(&limiter);
+    submits = 0;
+    for (uint64_t tick = 0; tick < 1060; tick++) {
+        const uint64_t render_ns = 1000000000ULL + tick * 9433962ULL;
+        const int64_t source_pts_ns = 1000000000LL + (int64_t) (tick / 2) * 16666667LL;
+        timestamp_ns = mpvflow_rate_limiter_timestamp_ns(source_pts_ns, render_ns);
+        if (mpvflow_rate_limiter_ready(&limiter, timestamp_ns, 120)) {
+            mpvflow_rate_limiter_commit(&limiter, timestamp_ns, 120);
+            submits++;
+        }
+    }
+    assert(submits == 1060);
+
     /* A long idle grants one frame only, not the previous bucket's two-frame burst. */
+    mpvflow_rate_limiter_reset(&limiter);
     assert(mpvflow_rate_limiter_ready(&limiter, 10000000000ULL, 120));
     mpvflow_rate_limiter_commit(&limiter, 10000000000ULL, 120);
     assert(!mpvflow_rate_limiter_ready(&limiter, 10001000000ULL, 120));

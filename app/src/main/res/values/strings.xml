@@ -307,14 +307,7 @@
   <string name="renderer_build_notice_unsupported_device">Using OpenGL; this device lacks Vulkan 1.3.</string>
   <string name="pref_decoder_yuv420p_title">Use YUV420P pixel format</string>
   <string name="pref_decoder_yuv420p_summary">May fix black screens on some video codecs, can also improve performance at the cost of quality</string>
-  <string name="pref_decoder_mpvflow_title">On-device motion interpolation (MPVFlow, experimental)</string>
-  <string name="pref_decoder_mpvflow_compute_api_title">MPVFlow compute API</string>
-  <string name="pref_decoder_mpvflow_compute_api_auto">Auto</string>
-  <string name="pref_decoder_mpvflow_compute_api_opencl">OpenCL</string>
-  <string name="pref_decoder_mpvflow_compute_api_vulkan">Vulkan</string>
-  <string name="pref_decoder_mpvflow_target_fps_title">MPVFlow target frame rate</string>
-  <string name="pref_decoder_mpvflow_target_fps_value">%1$d fps</string>
-  <string name="pref_decoder_mpvflow_target_fps_warning_value">(!) %1$d fps</string>
+  <string name="pref_decoder_mpvflow_title">Frame interpolation</string>
   <string name="pref_subtitles">Subtitles</string>
   <string name="pref_subtitles_summary">Preferred languages, fonts and search</string>
   <string name="pref_subtitle_search_title">Online Subtitle Search</string>
@@ -434,11 +427,6 @@
   <string name="mpv_config_owned_message">This app control is disabled because one or more options it requires are assigned to mpv.conf in Advanced settings.</string>
   <string name="pref_advanced_dump_logs_title">Dump logs</string>
   <string name="pref_advanced_dump_logs_summary">Dumps and copies the logs to be shared with the developers</string>
-  <string name="pref_advanced_nv_optical_self_test_title">Run NV Optical Flow self-test</string>
-  <string name="pref_advanced_nv_optical_self_test_summary">Debug-only: dispatches a known 16 px synthetic shift, reads back RGBA16F, and logs all four channels. Does not change the playback decoder.</string>
-  <string name="pref_advanced_nv_optical_self_test_running">Running an isolated Vulkan diagnostic…</string>
-  <string name="pref_advanced_nv_optical_self_test_complete">NV self-test readback completed. Check MPVFLOW diagnostics to inspect the decoded grid.</string>
-  <string name="pref_advanced_nv_optical_self_test_failed">NV self-test was unavailable or failed. Check MPVFLOW diagnostics for the reason.</string>
   <string name="pref_advanced_verbose_logging_title">Verbose logging</string>
   <string name="pref_advanced_verbose_logging_summary">Helps in debugging but may hinder performance</string>
   <string name="pref_advanced_clear_playback_history">Clear playback history</string>

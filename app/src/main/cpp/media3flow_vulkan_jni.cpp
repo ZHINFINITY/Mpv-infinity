@@ -1217,23 +1217,6 @@ Java_app_infinity_mpvz_ui_player_Media3FlowVulkanNative_nativeCreateContext(
     return reinterpret_cast<jlong>(context);
 }
 
-extern "C" JNIEXPORT jboolean JNICALL
-Java_app_infinity_mpvz_ui_player_Media3FlowVulkanNative_nativeRunNvOpticalFlowSelfTest(
-    JNIEnv *, jobject, jlong contextHandle) {
-    auto *context = reinterpret_cast<FlowContext *>(contextHandle);
-    if (!context)
-        return JNI_FALSE;
-    std::lock_guard<std::mutex> guard(context->mutex);
-    if (!context->vulkan || !context->flow || !context->vulkan->gpu) {
-        logFlow(ANDROID_LOG_WARN,
-                "MPVFLOW_DIAGNOSTIC component=nv-self-test event=start state=unavailable reason=vulkan_context_not_ready");
-        return JNI_FALSE;
-    }
-    const bool completed =
-        mpvflow_vulkan_optical_debug_self_test(context->vulkan->gpu);
-    return completed ? JNI_TRUE : JNI_FALSE;
-}
-
 extern "C" JNIEXPORT jstring JNICALL
 Java_app_infinity_mpvz_ui_player_Media3FlowVulkanNative_nativeGetComputeApiName(
     JNIEnv *env, jobject, jlong contextHandle) {

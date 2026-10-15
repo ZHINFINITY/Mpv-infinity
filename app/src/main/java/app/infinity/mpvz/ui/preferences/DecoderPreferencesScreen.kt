@@ -52,8 +52,6 @@ import app.infinity.mpvz.preferences.AdvancedPreferences
 import app.infinity.mpvz.preferences.DecoderPreferences
 import app.infinity.mpvz.preferences.MpvConfigControlledFeatures
 import app.infinity.mpvz.preferences.MpvConfigOverride
-import app.infinity.mpvz.preferences.MPVFLOW_TARGET_FPS_OPTIONS
-import app.infinity.mpvz.preferences.MpvFlowComputeApi
 import app.infinity.mpvz.preferences.preference.collectAsState
 import app.infinity.mpvz.presentation.Screen
 import app.infinity.mpvz.ui.icons.Icon
@@ -85,15 +83,11 @@ object DecoderPreferencesScreen : Screen {
     val anime4kMode by preferences.anime4kMode.collectAsState()
     val anime4kActivePreference = anime4kEnabledPreference && anime4kMode != "OFF"
     val mpvFlowFrameInterpolationEnabled by preferences.mpvFlowFrameInterpolation.collectAsState()
-    val mpvFlowTargetFps by preferences.mpvFlowTargetFps.collectAsState()
-    val mpvFlowComputeApi by preferences.mpvFlowComputeApi.collectAsState()
     val storedConfigOverrides by advancedPreferences.mpvConfOverrides.collectAsState()
     val configOwnedOptions =
       remember(storedConfigOverrides) { MpvConfigOverride.resolveOptionNames(storedConfigOverrides) }
     val profileConfigOwned = "profile" in configOwnedOptions
     val rendererBackendConfigOwned = setOf("gpu-api", "gpu-context").any(configOwnedOptions::contains)
-    val mpvFlowComputeApiConfigOwned =
-      selectedPlaybackEngine != PlaybackEngineMode.NATIVE && "mpvflow-compute-api" in configOwnedOptions
     val decoderConfigOwned = MpvConfigControlledFeatures.HARDWARE_DECODER.any(configOwnedOptions::contains)
     val frameInterpolationConfigOwned =
       MpvConfigControlledFeatures.FRAME_INTERPOLATION.any(configOwnedOptions::contains)
@@ -361,60 +355,26 @@ object DecoderPreferencesScreen : Screen {
 
               PreferenceDivider()
 
-              SwitchPreference(
-                modifier = Modifier.settingsSearchTarget(R.string.pref_decoder_mpvflow_title),
-                value = mpvFlowFrameInterpolationEnabled,
-                enabled = mpvFlowAvailable || nativeMedia3FlowAvailable || mpvFlowFrameInterpolationEnabled,
-                onValueChange = { enabled ->
-                  preferences.mpvFlowFrameInterpolation.set(enabled)
-                },
-                title = { Text(stringResource(R.string.pref_decoder_mpvflow_title)) },
-              )
-
-              if (BuildConfig.MPV_HAS_MPVFLOW || nativeMedia3FlowSelected) {
-                PreferenceDivider()
-                ListPreference(
-                  modifier = Modifier.settingsSearchTarget(R.string.pref_decoder_mpvflow_compute_api_title),
-                  value = mpvFlowComputeApi,
-                  onValueChange = preferences.mpvFlowComputeApi::set,
-                  values = MpvFlowComputeApi.entries,
-                  enabled =
-                    (mpvFlowAvailable || nativeMedia3FlowAvailable || mpvFlowFrameInterpolationEnabled) &&
-                      !mpvFlowComputeApiConfigOwned,
-                  valueToText = { api ->
-                    AnnotatedString(
-                      context.getString(
-                        when (api) {
-                          MpvFlowComputeApi.AUTO -> R.string.pref_decoder_mpvflow_compute_api_auto
-                          MpvFlowComputeApi.OPENCL -> R.string.pref_decoder_mpvflow_compute_api_opencl
-                          MpvFlowComputeApi.VULKAN -> R.string.pref_decoder_mpvflow_compute_api_vulkan
-                        },
-                      ),
-                    )
+              Surface(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp),
+                shape = androidx.compose.foundation.shape.RoundedCornerShape(12.dp),
+                color = MaterialTheme.colorScheme.surfaceContainerLow,
+              ) {
+                SwitchPreference(
+                  modifier = Modifier.settingsSearchTarget(R.string.pref_decoder_mpvflow_title),
+                  value = mpvFlowFrameInterpolationEnabled,
+                  enabled = mpvFlowAvailable || nativeMedia3FlowAvailable || mpvFlowFrameInterpolationEnabled,
+                  onValueChange = { enabled ->
+                    preferences.mpvFlowFrameInterpolation.set(enabled)
                   },
-                  title = { Text(stringResource(R.string.pref_decoder_mpvflow_compute_api_title)) },
+                  title = { Text(stringResource(R.string.pref_decoder_mpvflow_title)) },
+                  titleStyle =
+                    MaterialTheme.typography.titleMedium.copy(
+                      fontWeight = FontWeight.SemiBold,
+                      color = MaterialTheme.colorScheme.primary,
+                    ),
                 )
               }
-
-              PreferenceDivider()
-
-              ListPreference(
-                modifier = Modifier.settingsSearchTarget(R.string.pref_decoder_mpvflow_target_fps_title),
-                value = mpvFlowTargetFps,
-                onValueChange = preferences.mpvFlowTargetFps::set,
-                values = MPVFLOW_TARGET_FPS_OPTIONS,
-                enabled = mpvFlowAvailable || nativeMedia3FlowAvailable || mpvFlowFrameInterpolationEnabled,
-                valueToText = {
-                  AnnotatedString(
-                    context.getString(
-                      if (it >= 90) R.string.pref_decoder_mpvflow_target_fps_warning_value
-                      else R.string.pref_decoder_mpvflow_target_fps_value,
-                      it,
-                    ),
-                  )
-                },
-                title = { Text(stringResource(R.string.pref_decoder_mpvflow_target_fps_title)) },
-              )
 
               PreferenceDivider()
 
