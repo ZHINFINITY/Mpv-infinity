@@ -216,15 +216,17 @@ class PlayerActivity :
   private val flowDiagnosticsCaptureManager by lazy { FlowDiagnosticsCaptureManager(this) }
   internal val flowDiagnosticsCaptureState get() = flowDiagnosticsCaptureManager.state
 
-  internal fun startFlowDiagnosticsCapture(): String? {
+  internal fun startFlowDiagnosticsCapture(pairedOutput: Boolean = false): String? {
     if (!BuildConfig.DEBUG) return "debug_build_required"
     return when (activeEngineMode) {
       PlaybackEngineMode.AUTO -> "active_engine_unresolved"
       PlaybackEngineMode.MPV ->
         flowDiagnosticsCaptureManager.start(
           engine = "mpv",
+          pairedOutput = pairedOutput,
           startRequest = { sessionId, baseDirectory ->
-            binding.player.startFlowDiagnosticCapture(sessionId, baseDirectory.absolutePath)
+            binding.player.startFlowDiagnosticCapture(
+              sessionId, baseDirectory.absolutePath, pairedOutput)
           },
           stopRequest = { sessionId ->
             binding.player.stopFlowDiagnosticCapture(sessionId)
@@ -234,8 +236,10 @@ class PlayerActivity :
       PlaybackEngineMode.NATIVE ->
         flowDiagnosticsCaptureManager.start(
           engine = "native-media3",
+          pairedOutput = pairedOutput,
           startRequest = { sessionId, baseDirectory ->
-            nativeEngine.startFlowDiagnosticCapture(sessionId, baseDirectory.absolutePath)
+            nativeEngine.startFlowDiagnosticCapture(
+              sessionId, baseDirectory.absolutePath, pairedOutput)
           },
           stopRequest = nativeEngine::stopFlowDiagnosticCapture,
           timingSnapshot = nativeEngine::flowDiagnosticTimingSnapshot,

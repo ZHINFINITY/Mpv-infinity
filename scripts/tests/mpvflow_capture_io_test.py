@@ -18,7 +18,7 @@ C_FIXTURE = r'''#include "mpvflow_capture_io.h"
 
 static struct MPVFlowCaptureMeta meta = {
     "mpv", "vulkan", 1920, 1080, 1920, 1080,
-    10.25, 11.5, 10.75, .5, "{\"x\":\"q\\\"\\n\"}"
+    10.25, 11.5, 10.75, .5, "{\"x\":\"q\\\"\\n\"}", 0, 0, 0, 0
 };
 
 int main(int argc, char **argv) {
@@ -83,9 +83,53 @@ int main(int argc, char **argv) {
     assert(mpvflow_capture_io_stop(session));
     mpvflow_capture_io_destroy(session);
 
+    struct MPVFlowCaptureMeta paired_meta = {
+        "mpv", "vulkan", 640, 360, 640, 360,
+        20.0, 20.04, 20.02, .5,
+        "{\"visibility_resolver\":false,\"preserve_motion_blend_on_conflict\":true}",
+        1, 0, 0, 1
+    };
+    struct MPVFlowCaptureMeta invalid_paired_meta = paired_meta;
+    invalid_paired_meta.effective_settings_json =
+        "{\"visibility_resolver\":false,\"soft_blend\":false}";
+    assert(!mpvflow_capture_io_start(argv[2], "paired_bad_settings",
+        &invalid_paired_meta, reason, sizeof(reason)));
+    invalid_paired_meta = paired_meta;
+    invalid_paired_meta.visibility_resolver_enabled = 1;
+    assert(!mpvflow_capture_io_start(argv[2], "paired_resolver_on",
+        &invalid_paired_meta, reason, sizeof(reason)));
+    session = mpvflow_capture_io_start(argv[2], "paired", &paired_meta,
+                                       reason, sizeof(reason));
+    assert(session);
+    assert(!mpvflow_capture_io_write(session, 0, -1, "source0",
+        &paired_meta, px, 2, 2, reason, sizeof(reason)));
+    assert(!mpvflow_capture_io_write(session, 0, -1, "source1",
+        &paired_meta, px, 2, 2, reason, sizeof(reason)));
+    assert(!mpvflow_capture_io_write(session, 0, 0, "synthesized",
+        &paired_meta, px, 2, 2, reason, sizeof(reason)));
+    paired_meta.soft_blend_enabled = 1;
+    const int paired_on_result = mpvflow_capture_io_write(session, 0, 1, "synthesized",
+        &paired_meta, px, 2, 2, reason, sizeof(reason));
+    if (paired_on_result) fprintf(stderr, "paired on variant rejected: %s\n", reason);
+    assert(!paired_on_result);
+    struct MPVFlowCaptureMeta mismatched_variant = paired_meta;
+    mismatched_variant.pts0 += 0.001;
+    assert(mpvflow_capture_io_write(session, 0, 1, "synthesized",
+        &mismatched_variant, px, 2, 2, reason, sizeof(reason)));
+    mismatched_variant = paired_meta;
+    mismatched_variant.preserve_motion_blend_on_conflict = 0;
+    assert(mpvflow_capture_io_write(session, 0, 1, "synthesized",
+        &mismatched_variant, px, 2, 2, reason, sizeof(reason)));
+    assert(mpvflow_capture_io_write(session, 2, 0, "synthesized",
+        &paired_meta, px, 2, 2, reason, sizeof(reason)));
+    assert(mpvflow_capture_io_write(session, 0, 2, "synthesized",
+        &paired_meta, px, 2, 2, reason, sizeof(reason)));
+    assert(mpvflow_capture_io_stop(session) == 0);
+    mpvflow_capture_io_destroy(session);
+
     struct MPVFlowCaptureMeta differing_dimensions = {
         "native-media3", "vulkan", 512, 288, 1920, 1080,
-        20.0, 20.04, 20.02, .5, "{}"
+        20.0, 20.04, 20.02, .5, "{}", 0, 0, 0, 0
     };
     session = mpvflow_capture_io_start(argv[2], "differing_dimensions",
         &differing_dimensions, reason, sizeof(reason));
@@ -105,12 +149,17 @@ int main(int argc, char **argv) {
     free(output_tile);
 
     assert(!mpvflow_capture_io_write_terminal_manifest(argv[2], "no_frames",
-        "native-media3", "vulkan", meta.effective_settings_json,
+        "native-media3", "vulkan", meta.effective_settings_json, 0,
         "no_synthesized_samples"));
     assert(!mpvflow_capture_io_write_terminal_manifest(argv[2], "no_vulkan_readback",
         "native-media3",
         mpvflow_capture_io_backend_label(mpvflow_capture_io_backend_kind("opencl-qcom")),
-        meta.effective_settings_json, "capture_readback_requires_vulkan"));
+        meta.effective_settings_json, 0, "capture_readback_requires_vulkan"));
+    assert(!mpvflow_capture_io_write_terminal_manifest(argv[2], "paired_terminal",
+        "mpv", "unknown", "{\"visibility_resolver\":false}", 1,
+        "hdr_dolby_vision_or_unknown_color_refused"));
+    assert(mpvflow_capture_io_write_terminal_manifest(argv[2], "paired_terminal_bad",
+        "mpv", "unknown", "{\"soft_blend\":false}", 1, "capture_refused"));
     assert(!mpvflow_capture_io_start(argv[2], "../oops", &meta, reason, sizeof(reason)));
     assert(!mpvflow_capture_io_start("/missing", "bad", &meta, reason, sizeof(reason)));
     meta.effective_settings_json = "{\"x\":}";
@@ -195,6 +244,23 @@ with tempfile.TemporaryDirectory() as temp_dir:
     media3_manifest = json.loads((directory / "media3" / "manifest.json").read_text())
     assert media3_manifest["engine"] == "native-media3"
     assert media3_manifest["stopped"] is True
+    paired_terminal = json.loads((directory / "paired_terminal" / "manifest.json").read_text())
+    assert paired_terminal["paired_output_diagnostic"] is True
+    assert paired_terminal["paired_comparison"]["only_differing_setting"] == "soft_blend"
+    paired_manifest = json.loads((directory / "paired" / "manifest.json").read_text())
+    assert paired_manifest["paired_output_diagnostic"] is True
+    assert paired_manifest["limits"]["pairs"] == 2
+    assert paired_manifest["limits"]["samples_per_pair"] == 2
+    assert paired_manifest["paired_comparison"]["only_differing_setting"] == "soft_blend"
+    assert paired_manifest["paired_comparison"]["same_source_textures"] is True
+    assert paired_manifest["paired_comparison"]["same_analyzed_motion_field"] is True
+    assert "soft_blend" not in paired_manifest["effective_settings"]
+    paired_outputs = [item for item in paired_manifest["records"] if item["channel"] == "synthesized"]
+    assert [item["variant"] for item in paired_outputs] == ["soft_blend_off", "soft_blend_on"]
+    assert [item["soft_blend"] for item in paired_outputs] == [False, True]
+    assert [item["visibility_resolver"] for item in paired_outputs] == [False, False]
+    assert [item["preserve_motion_blend_on_conflict"] for item in paired_outputs] == [True, True]
+    assert paired_outputs[0]["pts"] == paired_outputs[1]["pts"]
     differing = json.loads((directory / "differing_dimensions" / "manifest.json").read_text())
     assert differing["source_dimensions"] == [512, 288]
     assert differing["output_dimensions"] == [1920, 1080]

@@ -100,6 +100,13 @@ assert "mpvflow_gpu_synthesize_with_policy(" in MPV_PATCH, "MPV must use the sha
 mpv_synthesis_call = MPV_PATCH.split("mpvflow_gpu_synthesize_with_policy(", 1)[1].split(");", 1)[0]
 assert mpv_synthesis_call.count("p->next_opts->mpvflow_soft_blend,") == 2, "MPV soft blend must explicitly enable both the source blend and conflict bias"
 assert "mpvflow_gpu_synthesize_with_visibility(" not in MPV_PATCH, "MPV must not bypass its opt-in conflict policy"
+paired_helper = GPU.split("enum MPVFlowGPUResult mpvflow_gpu_capture_paired_sample(", 1)[1].split("\n}", 1)[0]
+assert "const bool blend_variants[MPVFLOW_CAPTURE_PAIRED_SAMPLES_PER_PAIR] = {\n        false, true," in paired_helper
+assert "ctx, pair, source0, source1, timestep,\n            false, soft_blend, preserve_motion_blend_on_conflict, &variant_output" in paired_helper
+assert "ctx, pair, source0, source1, variant_output, timestep,\n            source_pts0, source_pts1, output_pts,\n            false, soft_blend, preserve_motion_blend_on_conflict" in paired_helper
+assert "production_visibility_resolver, production_soft_blend,\n        production_preserve_motion_blend_on_conflict, production_output" in paired_helper
+assert "mpvflow_gpu_capture_paired_sample(" in MPV_PATCH and "p->flow_pair, fp0->flow_source, fp1->flow_source, t," in MPV_PATCH
+assert "mpvflow_gpu_capture_paired_sample(" in JNI and "source0->texture, source1->texture, timestep," in JNI
 assert "Media3FlowDebugSettingsPolicy.effective(" in NATIVE_ENGINE
 assert "visibilityResolverEnabled || media3FlowDebugSettings.softBlendEnabled" in NATIVE_ENGINE
 assert "MpvFlowComputeApi.VULKAN" in NATIVE_ENGINE

@@ -136,6 +136,7 @@ struct MPVFlowGPUContext {
     int capture_sample_index;
     int capture_pair_count;
     bool capture_pair_ready;
+    bool capture_paired_output;
     bool capture_armed;
     bool capture_terminal_written;
 };
@@ -3066,6 +3067,7 @@ static void capture_write_terminal(MPVFlowGPUContext *ctx, const char *reason)
     if (mpvflow_capture_io_write_terminal_manifest(
             ctx->capture_base_dir, ctx->capture_session_name,
             ctx->capture_engine, backend, ctx->capture_settings,
+            ctx->capture_paired_output,
             reason ? reason : "no_synthesized_frames") == 0)
         ctx->capture_terminal_written = true;
 }
@@ -3083,7 +3085,7 @@ static bool capture_valid_token(const char *value, size_t max_length)
 
 enum MPVFlowGPUResult mpvflow_gpu_capture_start(
     MPVFlowGPUContext *ctx, const char *base_dir, const char *session_name,
-    const char *engine, const char *effective_settings_json)
+    const char *engine, const char *effective_settings_json, bool paired_output)
 {
     if (!ctx || !base_dir || !*base_dir || strlen(base_dir) >= sizeof(ctx->capture_base_dir) ||
         !capture_valid_token(session_name, 80) || !capture_valid_token(engine, 23) ||
@@ -3098,6 +3100,7 @@ enum MPVFlowGPUResult mpvflow_gpu_capture_start(
     snprintf(ctx->capture_session_name, sizeof(ctx->capture_session_name), "%s", session_name);
     snprintf(ctx->capture_engine, sizeof(ctx->capture_engine), "%s", engine);
     snprintf(ctx->capture_settings, sizeof(ctx->capture_settings), "%s", effective_settings_json);
+    ctx->capture_paired_output = paired_output;
     ctx->capture_terminal_written = false;
     ctx->capture_pair_count = 0;
     ctx->capture_sample_index = 0;
@@ -3114,7 +3117,8 @@ enum MPVFlowGPUResult mpvflow_gpu_capture_start(
         (void) mpvflow_capture_io_write_terminal_manifest(
             ctx->capture_base_dir, ctx->capture_session_name, ctx->capture_engine,
             manifest_backend,
-            ctx->capture_settings, "capture_readback_requires_vulkan");
+            ctx->capture_settings, ctx->capture_paired_output,
+            "capture_readback_requires_vulkan");
         ctx->capture_terminal_written = true;
         flow_log(ctx->gpu, PL_LOG_WARN,
                  "MPVFLOW_DIAGNOSTIC component=capture event=start state=failed "
@@ -3125,21 +3129,30 @@ enum MPVFlowGPUResult mpvflow_gpu_capture_start(
     if (!ensure_capture_passes(ctx)) {
         (void) mpvflow_capture_io_write_terminal_manifest(
             ctx->capture_base_dir, ctx->capture_session_name, ctx->capture_engine,
-            "vulkan", ctx->capture_settings, "capture_readback_pass_or_host_format_unavailable");
+            "vulkan", ctx->capture_settings, ctx->capture_paired_output,
+            "capture_readback_pass_or_host_format_unavailable");
         ctx->capture_terminal_written = true;
         return MPVFLOW_GPU_UNSUPPORTED_FORMAT;
     }
     ctx->capture_armed = true;
     flow_log(ctx->gpu, PL_LOG_INFO,
              "MPVFLOW_DIAGNOSTIC component=capture event=start state=armed engine=%s backend=vulkan compute_api=%s "
-             "limits=pairs_4_samples_per_pair_4_bytes_64MiB readback=explicit_user_opt_in",
-             ctx->capture_engine, backend);
+             "limits=pairs_%d_samples_per_pair_%d_bytes_64MiB readback=explicit_user_opt_in paired=%d",
+             ctx->capture_engine, backend,
+             ctx->capture_paired_output ? MPVFLOW_CAPTURE_PAIRED_MAX_PAIRS : MPVFLOW_CAPTURE_GPU_MAX_PAIRS,
+             ctx->capture_paired_output ? MPVFLOW_CAPTURE_PAIRED_SAMPLES_PER_PAIR : MPVFLOW_CAPTURE_MAX_SAMPLES_PER_PAIR,
+             ctx->capture_paired_output);
     return MPVFLOW_GPU_OK;
 }
 
 bool mpvflow_gpu_capture_active(MPVFlowGPUContext *ctx)
 {
     return ctx && ctx->capture_armed;
+}
+
+bool mpvflow_gpu_capture_is_paired(MPVFlowGPUContext *ctx)
+{
+    return ctx && ctx->capture_armed && ctx->capture_paired_output;
 }
 
 void mpvflow_gpu_capture_stop(MPVFlowGPUContext *ctx)
@@ -3166,8 +3179,11 @@ void mpvflow_gpu_capture_fail(MPVFlowGPUContext *ctx, const char *reason)
         return;
     const char *failure = reason && *reason ? reason : "capture_failed";
     if (ctx->capture_session) {
+        const int max_samples = ctx->capture_paired_output
+            ? MPVFLOW_CAPTURE_PAIRED_SAMPLES_PER_PAIR
+            : MPVFLOW_CAPTURE_MAX_SAMPLES_PER_PAIR;
         const int sample = ctx->capture_sample_index >= 0 &&
-            ctx->capture_sample_index < MPVFLOW_CAPTURE_MAX_SAMPLES_PER_PAIR
+            ctx->capture_sample_index < max_samples
             ? ctx->capture_sample_index : 0;
         mpvflow_capture_io_missing(ctx->capture_session,
             ctx->capture_pair_ready ? ctx->capture_pair_index : 0,
@@ -3189,9 +3205,6 @@ enum MPVFlowGPUResult mpvflow_gpu_capture_sample(
     bool visibility_resolver, bool soft_blend,
     bool preserve_motion_blend_on_conflict)
 {
-    (void) visibility_resolver;
-    (void) soft_blend;
-    (void) preserve_motion_blend_on_conflict;
     if (!mpvflow_gpu_capture_active(ctx))
         return MPVFLOW_GPU_INVALID;
     if (!pair || pair->owner != ctx || !source0 || !source1 || !synthesized_output ||
@@ -3230,7 +3243,9 @@ enum MPVFlowGPUResult mpvflow_gpu_capture_sample(
     const bool new_pair = !ctx->capture_pair_ready ||
         source_pts0 != ctx->capture_pair_pts0 || source_pts1 != ctx->capture_pair_pts1;
     if (new_pair) {
-        if (ctx->capture_pair_count >= MPVFLOW_CAPTURE_GPU_MAX_PAIRS) {
+        const int max_pairs = ctx->capture_paired_output
+            ? MPVFLOW_CAPTURE_PAIRED_MAX_PAIRS : MPVFLOW_CAPTURE_GPU_MAX_PAIRS;
+        if (ctx->capture_pair_count >= max_pairs) {
             mpvflow_gpu_capture_stop(ctx);
             return MPVFLOW_GPU_OK;
         }
@@ -3240,7 +3255,10 @@ enum MPVFlowGPUResult mpvflow_gpu_capture_sample(
         ctx->capture_sample_index = 0;
         ctx->capture_pair_ready = true;
     }
-    if (ctx->capture_sample_index >= MPVFLOW_CAPTURE_MAX_SAMPLES_PER_PAIR)
+    const int max_samples = ctx->capture_paired_output
+        ? MPVFLOW_CAPTURE_PAIRED_SAMPLES_PER_PAIR
+        : MPVFLOW_CAPTURE_MAX_SAMPLES_PER_PAIR;
+    if (ctx->capture_sample_index >= max_samples)
         return MPVFLOW_GPU_OK;
 
     const int max_dimension = MPVFLOW_CAPTURE_IMAGE_MAX_DIMENSION;
@@ -3281,6 +3299,10 @@ enum MPVFlowGPUResult mpvflow_gpu_capture_sample(
         .output_pts = output_pts,
         .timestep = timestep,
         .effective_settings_json = ctx->capture_settings,
+        .paired_output = ctx->capture_paired_output,
+        .soft_blend_enabled = soft_blend,
+        .visibility_resolver_enabled = visibility_resolver,
+        .preserve_motion_blend_on_conflict = preserve_motion_blend_on_conflict,
     };
     if (!ctx->capture_session) {
         flow_log(ctx->gpu, PL_LOG_INFO,
@@ -3387,11 +3409,21 @@ enum MPVFlowGPUResult mpvflow_gpu_capture_sample(
     }
 
     ctx->capture_sample_index++;
-    if (ctx->capture_sample_index >= MPVFLOW_CAPTURE_MAX_SAMPLES_PER_PAIR)
+    if (ctx->capture_sample_index >= max_samples)
         flow_log(ctx->gpu, PL_LOG_INFO,
                  "MPVFLOW_DIAGNOSTIC component=capture event=pair_complete state=ready pair=%d samples=%d",
                  ctx->capture_pair_index, ctx->capture_sample_index);
-    if (ctx->capture_pair_index + 1 >= MPVFLOW_CAPTURE_GPU_MAX_PAIRS &&
+    if (ctx->capture_paired_output &&
+        ctx->capture_pair_index + 1 >= MPVFLOW_CAPTURE_PAIRED_MAX_PAIRS &&
+        ctx->capture_sample_index >= MPVFLOW_CAPTURE_PAIRED_SAMPLES_PER_PAIR) {
+        flow_log(ctx->gpu, PL_LOG_INFO,
+                 "MPVFLOW_DIAGNOSTIC component=capture event=session_limit state=complete "
+                 "pairs=%d samples_per_pair=%d paired_soft_blend=1",
+                 MPVFLOW_CAPTURE_PAIRED_MAX_PAIRS,
+                 MPVFLOW_CAPTURE_PAIRED_SAMPLES_PER_PAIR);
+        mpvflow_gpu_capture_stop(ctx);
+    } else if (!ctx->capture_paired_output &&
+        ctx->capture_pair_index + 1 >= MPVFLOW_CAPTURE_GPU_MAX_PAIRS &&
         ctx->capture_sample_index >= MPVFLOW_CAPTURE_MAX_SAMPLES_PER_PAIR) {
         flow_log(ctx->gpu, PL_LOG_INFO,
                  "MPVFLOW_DIAGNOSTIC component=capture event=session_limit state=complete pairs=%d samples_per_pair=%d",
@@ -3399,4 +3431,48 @@ enum MPVFlowGPUResult mpvflow_gpu_capture_sample(
         mpvflow_gpu_capture_stop(ctx);
     }
     return MPVFLOW_GPU_OK;
+}
+
+enum MPVFlowGPUResult mpvflow_gpu_capture_paired_sample(
+    MPVFlowGPUContext *ctx, MPVFlowGPUPair *pair,
+    pl_tex source0, pl_tex source1, float timestep,
+    double source_pts0, double source_pts1, double output_pts,
+    bool preserve_motion_blend_on_conflict,
+    bool production_visibility_resolver, bool production_soft_blend,
+    bool production_preserve_motion_blend_on_conflict, pl_tex *production_output)
+{
+    if (production_output)
+        *production_output = NULL;
+    if (!mpvflow_gpu_capture_is_paired(ctx) || !production_output)
+        return MPVFLOW_GPU_INVALID;
+
+    const bool blend_variants[MPVFLOW_CAPTURE_PAIRED_SAMPLES_PER_PAIR] = {
+        false, true,
+    };
+    for (int sample = 0; sample < MPVFLOW_CAPTURE_PAIRED_SAMPLES_PER_PAIR; sample++) {
+        if (!mpvflow_gpu_capture_active(ctx))
+            break;
+        pl_tex variant_output = NULL;
+        const bool soft_blend = blend_variants[sample];
+        const enum MPVFlowGPUResult synth_status = mpvflow_gpu_synthesize_with_policy(
+            ctx, pair, source0, source1, timestep,
+            false, soft_blend, preserve_motion_blend_on_conflict, &variant_output);
+        if (synth_status != MPVFLOW_GPU_OK || !variant_output) {
+            mpvflow_gpu_capture_fail(ctx, "paired_variant_synthesis_failed");
+            break;
+        }
+        const enum MPVFlowGPUResult capture_status = mpvflow_gpu_capture_sample(
+            ctx, pair, source0, source1, variant_output, timestep,
+            source_pts0, source_pts1, output_pts,
+            false, soft_blend, preserve_motion_blend_on_conflict);
+        if (capture_status != MPVFLOW_GPU_OK)
+            break;
+    }
+
+    /* Paired variants overwrite the pair-owned scratch output. Restore the
+     * playback policy before returning it to the renderer. */
+    return mpvflow_gpu_synthesize_with_policy(
+        ctx, pair, source0, source1, timestep,
+        production_visibility_resolver, production_soft_blend,
+        production_preserve_motion_blend_on_conflict, production_output);
 }

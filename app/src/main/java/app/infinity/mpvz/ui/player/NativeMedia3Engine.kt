@@ -1338,8 +1338,13 @@ class NativeMedia3Engine(
     publishSnapshot()
   }
 
-  fun startFlowDiagnosticCapture(sessionId: String, baseDirectory: String): String? =
-    if (media3FlowSink == null) "Media3 Flow/Vulkan unavailable" else media3FlowSink.startFlowDiagnosticCapture(sessionId, baseDirectory)
+  fun startFlowDiagnosticCapture(
+    sessionId: String,
+    baseDirectory: String,
+    pairedOutput: Boolean = false,
+  ): String? =
+    if (media3FlowSink == null) "Media3 Flow/Vulkan unavailable" else
+      media3FlowSink.startFlowDiagnosticCapture(sessionId, baseDirectory, pairedOutput)
 
   fun stopFlowDiagnosticCapture(sessionId: String): String? =
     if (media3FlowSink == null) "Media3 Flow/Vulkan unavailable" else media3FlowSink.stopFlowDiagnosticCapture(sessionId)

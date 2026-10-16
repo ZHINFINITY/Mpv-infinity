@@ -51,6 +51,7 @@ internal data class FlowDiagnosticsCaptureUiState(
   val pairs: Int = 0,
   val synthesizedOutputs: Int = 0,
   val bytesWritten: Long = 0L,
+  val pairedOutput: Boolean = false,
   val missingChannels: List<String> = emptyList(),
   val message: String? = null,
   val savedLocation: String? = null,
@@ -89,6 +90,7 @@ internal class FlowDiagnosticsCaptureManager(context: Context) {
     startRequest: (sessionId: String, baseDirectory: File) -> String?,
     stopRequest: (sessionId: String) -> String?,
     timingSnapshot: () -> JSONObject?,
+    pairedOutput: Boolean = false,
   ): String? {
     if (engine !in setOf("mpv", "native-media3")) return "unsupported_engine"
     if (!canStartFlowDiagnosticsCapture(_state.value, sessionId)) return "capture_already_active"
@@ -102,6 +104,7 @@ internal class FlowDiagnosticsCaptureManager(context: Context) {
       _state.value = FlowDiagnosticsCaptureUiState(
         phase = FlowDiagnosticsCapturePhase.FAILED,
         engine = engine,
+        pairedOutput = pairedOutput,
         message = "Capture could not start: $error",
       )
       return error
@@ -114,7 +117,12 @@ internal class FlowDiagnosticsCaptureManager(context: Context) {
     _state.value = FlowDiagnosticsCaptureUiState(
       phase = FlowDiagnosticsCapturePhase.STARTING,
       engine = engine,
-      message = "Capture armed. Replay the marked moment; it stops at the capture limit.",
+      pairedOutput = pairedOutput,
+      message = if (pairedOutput) {
+        "Paired comparison armed. It records Soft Blend off/on from the same frame pair and motion field."
+      } else {
+        "Capture armed. Replay the marked moment; it stops at the capture limit."
+      },
     )
     monitorJob?.cancel()
     monitorJob = scope.launch { monitor(id, root, engine) }

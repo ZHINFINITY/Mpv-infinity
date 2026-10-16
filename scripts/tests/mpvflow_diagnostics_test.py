@@ -282,10 +282,11 @@ assert "static pl_pass make_pass(pl_gpu gpu, const char *glsl,\nstatic bool ensu
     "capture helpers must not leave an incomplete C declaration before the pass initializer"
 )
 synthesis_success_index = PATCH.index("+                if (status == MPVFLOW_GPU_OK && output) {")
-capture_start_index = PATCH.index("+                    (void) flow_capture_start_for_pair(", synthesis_success_index)
-capture_sample_index = PATCH.index("+                        const enum MPVFlowGPUResult capture_status = mpvflow_gpu_capture_sample(", capture_start_index)
-assert synthesis_success_index < capture_start_index < capture_sample_index, (
-    "MPV must create a capture session and save a sample only after synthesis succeeds"
+capture_start_index = PATCH.index("+                (void) flow_capture_start_for_pair(")
+paired_synthesis_index = PATCH.index("+                    status = mpvflow_gpu_capture_paired_sample(", capture_start_index)
+capture_sample_index = PATCH.index("+                        const enum MPVFlowGPUResult capture_status = mpvflow_gpu_capture_sample(", synthesis_success_index)
+assert capture_start_index < paired_synthesis_index < synthesis_success_index < capture_sample_index, (
+    "MPV must use the live pair for paired capture and keep standard capture after production synthesis succeeds"
 )
 require(
     MEDIA3_FLOW_SINK,
@@ -323,6 +324,13 @@ require(FLOW_CAPTURE_IO, 'strcmp(backend, "opencl-qcom")', "the shared classifie
 require(FLOW_GPU_CORE, "reason=capture_readback_requires_vulkan compute_api=%s", "a real non-Vulkan readback refusal must log its resolved backend")
 require(PATCH, "mpvflow_gpu_capture_start(", "MPV must use the shared Vulkan-alias-aware capture start gate")
 require(MEDIA3_NATIVE, "mpvflow_gpu_capture_start(", "Media3 must use the same Vulkan-alias-aware capture start gate")
+require(PATCH, "START_PAIRED\\t", "MPV paired capture must use a distinct explicit private control command")
+require(PATCH, "mpvflow_gpu_capture_paired_sample(", "MPV must rerender a paired comparison from the live source pair")
+require(MEDIA3_NATIVE, "mpvflow_gpu_capture_paired_sample(", "Media3 must rerender a paired comparison under its existing synchronization")
+require(FLOW_GPU_CORE, "const bool blend_variants[MPVFLOW_CAPTURE_PAIRED_SAMPLES_PER_PAIR] = {\n        false, true,", "shared capture must emit Soft Blend off then on")
+require(FLOW_GPU_CORE, "false, soft_blend, preserve_motion_blend_on_conflict, &variant_output", "paired variants must keep the conflict-preservation parameter identical")
+require(FLOW_GPU_CORE, "source0, source1, variant_output, timestep", "each variant must reuse both source textures and the exact interpolation timestep")
+require(FLOW_CAPTURE_IO, "same_analyzed_motion_field", "the manifest must declare reuse of the cached motion field")
 assert 'if (!backend || strcmp(backend, "vulkan"))' not in FLOW_GPU_CORE, "the capture gate must not compare Vulkan against the wrong literal alias"
 
 # The private control file is an integration prerequisite; it must survive core reuse and mpv.conf ownership.

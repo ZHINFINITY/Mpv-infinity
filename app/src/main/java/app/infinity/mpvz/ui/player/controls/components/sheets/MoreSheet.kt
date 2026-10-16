@@ -296,9 +296,21 @@ fun MoreSheet(
             modifier = Modifier.fillMaxWidth().padding(MaterialTheme.spacing.small),
             verticalArrangement = Arrangement.spacedBy(MaterialTheme.spacing.extraSmall),
           ) {
-            Text("Flow diagnostic capture · debug", style = MaterialTheme.typography.titleSmall)
             Text(
-              "Marked, local-only sample: at most 4 adjacent source pairs, 4 synthesized outputs per pair, and 64 MiB.",
+              if (captureState.active && captureState.pairedOutput) {
+                "Paired Soft Blend comparison · debug"
+              } else {
+                "Flow diagnostic capture · debug"
+              },
+              style = MaterialTheme.typography.titleSmall,
+            )
+            Text(
+              if (captureState.active && captureState.pairedOutput) {
+                "Local-only: same source pair, motion field, PTS and alpha; resolver off and conflict preservation fixed. " +
+                  "At most 2 pairs, 2 outputs per pair, 640 px and 64 MiB."
+              } else {
+                "Marked, local-only sample: at most 4 adjacent source pairs, 4 synthesized outputs per pair, and 64 MiB."
+              },
               style = MaterialTheme.typography.bodySmall,
             )
             if (captureState.active) {
@@ -320,6 +332,12 @@ fun MoreSheet(
                 enabled = activity != null,
               ) {
                 Text("Start marked capture · ${if (activeEngine == PlaybackEngineMode.NATIVE) "Media3" else "MPV"}")
+              }
+              Button(
+                onClick = { startError = activity?.startFlowDiagnosticsCapture(pairedOutput = true) },
+                enabled = activity != null,
+              ) {
+                Text("Start paired Soft Blend comparison · ${if (activeEngine == PlaybackEngineMode.NATIVE) "Media3" else "MPV"}")
               }
             }
             val message = captureState.message ?: startError

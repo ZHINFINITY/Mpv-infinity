@@ -204,7 +204,7 @@ MPVFLOW_INTERNAL enum MPVFlowGPUResult mpvflow_gpu_synthesize_with_policy(
  * capture-owned host-readable staging textures. Caller textures stay borrowed. */
 MPVFLOW_INTERNAL enum MPVFlowGPUResult mpvflow_gpu_capture_start(
     MPVFlowGPUContext *context, const char *base_dir, const char *session_name,
-    const char *engine, const char *effective_settings_json);
+    const char *engine, const char *effective_settings_json, bool paired_output);
 MPVFLOW_INTERNAL enum MPVFlowGPUResult mpvflow_gpu_capture_sample(
     MPVFlowGPUContext *context, MPVFlowGPUPair *pair,
     pl_tex source0, pl_tex source1, pl_tex synthesized_output, float timestep,
@@ -215,6 +215,14 @@ MPVFLOW_INTERNAL void mpvflow_gpu_capture_stop(MPVFlowGPUContext *context);
 MPVFLOW_INTERNAL void mpvflow_gpu_capture_fail(MPVFlowGPUContext *context,
                                                 const char *reason);
 MPVFLOW_INTERNAL bool mpvflow_gpu_capture_active(MPVFlowGPUContext *context);
+MPVFLOW_INTERNAL bool mpvflow_gpu_capture_is_paired(MPVFlowGPUContext *context);
+MPVFLOW_INTERNAL enum MPVFlowGPUResult mpvflow_gpu_capture_paired_sample(
+    MPVFlowGPUContext *context, MPVFlowGPUPair *pair,
+    pl_tex source0, pl_tex source1, float timestep,
+    double source_pts0, double source_pts1, double output_pts,
+    bool preserve_motion_blend_on_conflict,
+    bool production_visibility_resolver, bool production_soft_blend,
+    bool production_preserve_motion_blend_on_conflict, pl_tex *production_output);
 
 
 #ifdef __cplusplus

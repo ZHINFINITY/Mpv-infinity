@@ -323,7 +323,11 @@ class MPVView(
   }
 
   /** Arms the MPV VO through a private, atomically replaced control file. */
-  fun startFlowDiagnosticCapture(sessionId: String, baseDirectory: String): String? {
+  fun startFlowDiagnosticCapture(
+    sessionId: String,
+    baseDirectory: String,
+    pairedOutput: Boolean = false,
+  ): String? {
     if (!BuildConfig.DEBUG || !BuildConfig.MPV_HAS_MPVFLOW) return "debug_mpvflow_unavailable"
     if (!mpvFlowDiagnosticsEnabled || !isSurfaceReady) return "mpvflow_not_active"
     if (!sessionId.matches(Regex("[A-Za-z0-9_-]{1,80}"))) return "invalid_session_id"
@@ -339,7 +343,8 @@ class MPVView(
         return "mpvflow_capture_control_unavailable"
       }
     }
-    val error = writeFlowDiagnosticControl("START\t$sessionId\t${target.path}\n")
+    val command = if (pairedOutput) "START_PAIRED" else "START"
+    val error = writeFlowDiagnosticControl("$command\t$sessionId\t${target.path}\n")
     if (error != null) return error
     mpvFlowCaptureSessionId = sessionId
     return null

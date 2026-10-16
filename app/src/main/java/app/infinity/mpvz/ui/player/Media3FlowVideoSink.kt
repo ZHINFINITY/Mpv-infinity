@@ -443,7 +443,12 @@ class Media3FlowVideoSink(
 
   fun isPreflightAvailable(): Boolean = preflightAvailable && !disposed
 
-  fun startFlowDiagnosticCapture(sessionId: String, baseDirectory: String): String? = runCatching {
+  fun startFlowDiagnosticCapture(
+    sessionId: String,
+    baseDirectory: String,
+    pairedOutput: Boolean = false,
+  ): String? = runCatching {
+    check(BuildConfig.DEBUG) { "Diagnostic capture is debug-only" }
     require(sessionId.matches(Regex("[A-Za-z0-9_-]{1,80}"))) { "Invalid capture session ID" }
     runOnGlThreadSync {
       val context = flowVulkanContext
@@ -464,9 +469,15 @@ class Media3FlowVideoSink(
           append("\"source_width\":$frameWidth,\"source_height\":$frameHeight,")
           append("\"processing_width\":$processingWidth,\"processing_height\":$processingHeight,")
           append("\"surface_width\":${outputResolution.width},\"surface_height\":${outputResolution.height},")
-          append("\"visibility_resolver\":$visibilityResolverEnabled,\"soft_blend\":$softBlendEnabled}")
+          if (pairedOutput) {
+            append("\"visibility_resolver\":false,\"preserve_motion_blend_on_conflict\":$softBlendEnabled,")
+            append("\"comparison_visibility_resolver_override\":true}")
+          } else {
+            append("\"visibility_resolver\":$visibilityResolverEnabled,\"soft_blend\":$softBlendEnabled}")
+          }
         }
-      val failure = Media3FlowVulkanNative.nativeStartDiagnosticCapture(context, sessionId, baseDirectory, json)
+      val failure = Media3FlowVulkanNative.nativeStartDiagnosticCapture(
+        context, sessionId, baseDirectory, json, pairedOutput)
       check(failure == null) { failure ?: "Native capture start failed" }
       diagnosticCaptureSession = sessionId
       null

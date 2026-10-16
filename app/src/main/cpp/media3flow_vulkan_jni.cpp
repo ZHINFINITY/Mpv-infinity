@@ -1222,7 +1222,8 @@ Java_app_infinity_mpvz_ui_player_Media3FlowVulkanNative_nativeCreateContext(
 
 extern "C" JNIEXPORT jstring JNICALL
 Java_app_infinity_mpvz_ui_player_Media3FlowVulkanNative_nativeStartDiagnosticCapture(
-    JNIEnv *env, jobject, jlong contextHandle, jstring sessionId, jstring baseDirectory, jstring settingsJson) {
+    JNIEnv *env, jobject, jlong contextHandle, jstring sessionId, jstring baseDirectory,
+    jstring settingsJson, jboolean pairedOutput) {
     auto *context = reinterpret_cast<FlowContext *>(contextHandle);
     if (!context || !sessionId || !baseDirectory || !settingsJson) return nullptr;
     const char *sid = env->GetStringUTFChars(sessionId, nullptr);
@@ -1245,7 +1246,9 @@ Java_app_infinity_mpvz_ui_player_Media3FlowVulkanNative_nativeStartDiagnosticCap
         else if (!context->captureSessionId.empty() || mpvflow_gpu_capture_active(context->flow))
             error = "A diagnostic capture is already active";
         else {
-            const auto result = mpvflow_gpu_capture_start(context->flow, base, id.c_str(), "native-media3", settings);
+            const auto result = mpvflow_gpu_capture_start(
+                context->flow, base, id.c_str(), "native-media3", settings,
+                pairedOutput == JNI_TRUE);
             if (result == MPVFLOW_GPU_OK) { context->captureSessionId = id; context->captureFailureLogged = false; }
             else error = "Native diagnostic capture start failed";
         }
@@ -1622,10 +1625,40 @@ Java_app_infinity_mpvz_ui_player_Media3FlowVulkanNative_nativeSynthesize(
         return JNI_FALSE;
     }
     pl_tex synthesized = nullptr;
-    const MPVFlowGPUResult result = mpvflow_gpu_synthesize_with_policy(
-        context->flow, pair, source0->texture, source1->texture, timestep,
-        visibilityResolverEnabled == JNI_TRUE, softBlendEnabled == JNI_TRUE,
-        softBlendEnabled == JNI_TRUE, &synthesized);
+    MPVFlowGPUResult result;
+    if (mpvflow_gpu_capture_is_paired(context->flow)) {
+        result = mpvflow_gpu_capture_paired_sample(
+            context->flow, pair, source0->texture, source1->texture, timestep,
+            static_cast<double>(sourcePts0Us) / 1000000.0,
+            static_cast<double>(sourcePts1Us) / 1000000.0,
+            static_cast<double>(outputPtsUs) / 1000000.0,
+            softBlendEnabled == JNI_TRUE,
+            visibilityResolverEnabled == JNI_TRUE,
+            softBlendEnabled == JNI_TRUE, softBlendEnabled == JNI_TRUE,
+            &synthesized);
+    } else {
+        result = mpvflow_gpu_synthesize_with_policy(
+            context->flow, pair, source0->texture, source1->texture, timestep,
+            visibilityResolverEnabled == JNI_TRUE, softBlendEnabled == JNI_TRUE,
+            softBlendEnabled == JNI_TRUE, &synthesized);
+        if (result == MPVFLOW_GPU_OK && synthesized &&
+            mpvflow_gpu_capture_active(context->flow)) {
+            const MPVFlowGPUResult captureResult = mpvflow_gpu_capture_sample(
+                context->flow, pair, source0->texture, source1->texture, synthesized,
+                timestep, static_cast<double>(sourcePts0Us) / 1000000.0,
+                static_cast<double>(sourcePts1Us) / 1000000.0,
+                static_cast<double>(outputPtsUs) / 1000000.0,
+                visibilityResolverEnabled == JNI_TRUE, softBlendEnabled == JNI_TRUE,
+                softBlendEnabled == JNI_TRUE);
+            if (captureResult != MPVFLOW_GPU_OK) {
+                if (!context->captureFailureLogged) {
+                    context->captureFailureLogged = true;
+                    logFlow(ANDROID_LOG_ERROR, "MPVFLOW_DIAGNOSTIC component=capture event=sample_failed status=%d playback_preserved=1", captureResult);
+                }
+                mpvflow_gpu_capture_fail(context->flow, "capture_sample_failed");
+            }
+        }
+    }
     if (result != MPVFLOW_GPU_OK || !synthesized) {
         (void) holdImageForExternal(context, output, true);
         logFlowOnce(context, DIAG_SYNTH_FAILURE, ANDROID_LOG_ERROR,
@@ -1634,22 +1667,6 @@ Java_app_infinity_mpvz_ui_player_Media3FlowVulkanNative_nativeSynthesize(
                     "timestep=%.9g output=%dx%d",
                     result, synthesized != nullptr, timestep, output->width, output->height);
         return JNI_FALSE;
-    }
-    if (mpvflow_gpu_capture_active(context->flow)) {
-        const MPVFlowGPUResult captureResult = mpvflow_gpu_capture_sample(
-            context->flow, pair, source0->texture, source1->texture, synthesized,
-            timestep, static_cast<double>(sourcePts0Us) / 1000000.0,
-            static_cast<double>(sourcePts1Us) / 1000000.0,
-            static_cast<double>(outputPtsUs) / 1000000.0,
-            visibilityResolverEnabled == JNI_TRUE, softBlendEnabled == JNI_TRUE,
-            softBlendEnabled == JNI_TRUE);
-        if (captureResult != MPVFLOW_GPU_OK) {
-            if (!context->captureFailureLogged) {
-                context->captureFailureLogged = true;
-                logFlow(ANDROID_LOG_ERROR, "MPVFLOW_DIAGNOSTIC component=capture event=sample_failed status=%d playback_preserved=1", captureResult);
-            }
-            mpvflow_gpu_capture_fail(context->flow, "capture_sample_failed");
-        }
     }
     struct pl_tex_blit_params blitParams{};
     blitParams.src = synthesized;

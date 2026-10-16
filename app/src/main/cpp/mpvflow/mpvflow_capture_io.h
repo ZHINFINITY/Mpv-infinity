@@ -11,6 +11,8 @@
 
 #define MPVFLOW_CAPTURE_MAX_PAIRS 8
 #define MPVFLOW_CAPTURE_MAX_SAMPLES_PER_PAIR 4
+#define MPVFLOW_CAPTURE_PAIRED_MAX_PAIRS 2
+#define MPVFLOW_CAPTURE_PAIRED_SAMPLES_PER_PAIR 2
 #define MPVFLOW_CAPTURE_MAX_BYTES (64u * 1024u * 1024u)
 #define MPVFLOW_CAPTURE_IMAGE_MAX_DIMENSION 640
 
@@ -40,6 +42,10 @@ struct MPVFlowCaptureMeta {
     double output_pts;
     float timestep;
     const char *effective_settings_json;
+    int paired_output;
+    int soft_blend_enabled;
+    int visibility_resolver_enabled;
+    int preserve_motion_blend_on_conflict;
 };
 
 struct MPVFlowCaptureSession *mpvflow_capture_io_start(
@@ -76,6 +82,7 @@ int mpvflow_capture_io_write_terminal_manifest(
     const char *engine,
     const char *backend,
     const char *effective_settings_json,
+    int paired_output,
     const char *reason);
 
 int mpvflow_capture_io_stop(struct MPVFlowCaptureSession *session);
