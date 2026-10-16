@@ -40,6 +40,25 @@ class Media3FlowPresentationQueueTest {
   }
 
   @Test
+  fun failedAcquisitionSnapshotsBothPresentingSlotsWithoutChangingTheirOwnership() {
+    val queue = Media3FlowPresentationQueue(capacity = 2)
+    val first = queue.acquireForWrite() ?: error("first write lease unavailable")
+    queue.publish(first)
+    assertEquals(first.slot, queue.takeNext())
+    val second = queue.acquireForWrite() ?: error("second write lease unavailable")
+    queue.publish(second)
+    assertEquals(second.slot, queue.takeNext())
+
+    val attempt = queue.acquireForWriteWithSnapshot()
+
+    assertNull(attempt.lease)
+    assertEquals(2, attempt.slotStates[Media3FlowPresentationQueue.State.PRESENTING])
+    assertEquals(0, attempt.slotStates[Media3FlowPresentationQueue.State.FREE])
+    assertEquals(Media3FlowPresentationQueue.State.PRESENTING, queue.state(first.slot))
+    assertEquals(Media3FlowPresentationQueue.State.PRESENTING, queue.state(second.slot))
+  }
+
+  @Test
   fun cancelReadyLeavesPresentingSlotOwnedUntilCompletion() {
     val queue = Media3FlowPresentationQueue(capacity = 2)
     val active = queue.acquireForWrite() ?: error("active write lease unavailable")

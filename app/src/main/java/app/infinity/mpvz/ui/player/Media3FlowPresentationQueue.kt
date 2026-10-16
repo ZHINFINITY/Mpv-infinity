@@ -12,6 +12,7 @@ internal class Media3FlowPresentationQueue(capacity: Int) {
   enum class State { FREE, WRITING, READY, PRESENTING, QUARANTINED }
 
   data class WriteLease(val slot: Int, val replacedPending: Boolean)
+  data class WriteAttempt(val lease: WriteLease?, val slotStates: Map<State, Int>)
 
   init {
     require(capacity >= 2) { "At least one presenting and one writable slot are required" }
@@ -21,20 +22,23 @@ internal class Media3FlowPresentationQueue(capacity: Int) {
   private val readySlots = ArrayDeque<Int>(1)
   private var coalescedFrames = 0L
 
+  fun acquireForWrite(): WriteLease? = acquireForWriteWithSnapshot().lease
+
+  /** Returns slot occupancy from the same critical section when no write slot can be acquired. */
   @Synchronized
-  fun acquireForWrite(): WriteLease? {
+  fun acquireForWriteWithSnapshot(): WriteAttempt {
     val free = states.indexOfFirst { it == State.FREE }
     if (free >= 0) {
       states[free] = State.WRITING
-      return WriteLease(free, replacedPending = false)
+      return WriteAttempt(WriteLease(free, replacedPending = false), emptyMap())
     }
 
     // The only slot that may be reclaimed is a READY slot not yet acquired by the presenter.
-    val pending = readySlots.pollFirst() ?: return null
+    val pending = readySlots.pollFirst() ?: return WriteAttempt(null, stateCountsLocked())
     check(states[pending] == State.READY)
     states[pending] = State.WRITING
     coalescedFrames++
-    return WriteLease(pending, replacedPending = true)
+    return WriteAttempt(WriteLease(pending, replacedPending = true), emptyMap())
   }
 
   /** Publishes a completed write and returns a superseded, now-free pending slot if any. */
@@ -113,6 +117,9 @@ internal class Media3FlowPresentationQueue(capacity: Int) {
     require(slot in states.indices) { "Unknown presentation slot $slot" }
     return states[slot]
   }
+
+  private fun stateCountsLocked(): Map<State, Int> =
+    State.values().associateWith { expected -> states.count { it == expected } }
 
   private fun checkState(slot: Int, expected: State) {
     require(slot in states.indices) { "Unknown presentation slot $slot" }

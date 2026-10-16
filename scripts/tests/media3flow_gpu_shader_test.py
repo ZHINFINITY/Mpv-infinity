@@ -42,7 +42,7 @@ copy_external_texture = SINK.split("  private fun copyExternalTexture(", 1)[1].s
 assert "glGetUniformLocation" not in draw_texture, "presentation must not query GLES uniforms per output frame"
 assert "glGetUniformLocation" not in copy_external_texture, "capture must not query GLES uniforms per input frame"
 assert "MAX_PRESENTATION_BUFFERS = 2" in SINK, "async presentation must stay within a two-buffer memory bound"
-assert "presentationQueue.acquireForWrite()" in draw_texture and "presentationQueue.publish(lease)" in draw_texture, (
+assert "presentationQueue.acquireForWriteWithSnapshot()" in draw_texture and "presentationQueue.publish(lease)" in draw_texture, (
     "producer output must enter the bounded latest-wins presentation mailbox"
 )
 assert "eglSwapBuffers" not in draw_texture, "the producer GL handler must not block on the window swap"

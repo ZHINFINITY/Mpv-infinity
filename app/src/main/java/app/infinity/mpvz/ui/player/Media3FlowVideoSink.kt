@@ -67,6 +67,9 @@ data class Media3FlowDiagnostics(
   /** Staging, GLES/EGL, or window/swap submission failures, distinct from inferred tick gaps. */
   val outputSubmissionFailures: Long = 0L,
   val lastOutputSubmissionFailureReason: String = "none",
+  val outputSubmissionFailureReasons: Map<String, Long> = emptyMap(),
+  val presentationPathFailureReasons: Map<String, Long> = emptyMap(),
+  val lastNoWritablePresentationSlotStates: Map<String, Int> = emptyMap(),
   val skippedFrames: Long = 0L,
   /** CPU time spent submitting motion-estimation commands, not a GPU-completion timer. */
   val motionEstimateSubmitMs: Float = 0f,
@@ -226,6 +229,7 @@ class Media3FlowVideoSink(
   private val droppedFrames = AtomicLong(0L)
   private val skippedOutputTicks = AtomicLong(0L)
   private val outputSubmissionFailures = AtomicLong(0L)
+  private val presentationFailureCounters = FlowPresentationFailureCounters()
   private var skippedFrames = 0L
   private var lastMotionSubmitMs = 0f
   private var cachedVulkanTimingStats = FlowVulkanTimingStats()
@@ -237,7 +241,8 @@ class Media3FlowVideoSink(
   private var lastOutputCallbackLatenessMs = 0f
   private var lastOutputTickGapReason = "none"
   private val outputTickGapContexts = linkedMapOf<String, Long>()
-  private var lastOutputSubmissionFailureReason = "none"
+  private var lastPresentationStageFailureReason = "producer_submission_failed_unclassified"
+  private var lastPresentationStageSlotStates = emptyMap<String, Int>()
   private var gpuTimerQueryIds = IntArray(0)
   private var gpuTimerQueriesSupported = false
   private var activeGpuTimerQuery: PendingGlesTimerQuery? = null
@@ -1563,9 +1568,17 @@ class Media3FlowVideoSink(
     outputTickGapContexts[reason] = (outputTickGapContexts[reason] ?: 0L) + count
   }
 
-  private fun recordOutputSubmissionFailure(reason: String) {
+  private fun recordOutputSubmissionFailure(
+    reason: String,
+    detail: String = reason,
+    slotStates: Map<String, Int> = emptyMap(),
+  ) {
     outputSubmissionFailures.incrementAndGet()
-    lastOutputSubmissionFailureReason = reason
+    presentationFailureCounters.recordOutputSubmissionFailure(reason, detail, slotStates)
+  }
+
+  private fun recordPresentationPathFailure(reason: String) {
+    presentationFailureCounters.recordPresentationPathFailure(reason)
   }
 
   private fun recordCpuDuration(stage: FlowCpuStage, elapsedNs: Long) {
@@ -1847,6 +1860,8 @@ class Media3FlowVideoSink(
       outputHeight = outputResolution.height.takeIf { it > 0 } ?: frameHeight,
       aspect = videoAspect,
     )
+    lastPresentationStageFailureReason = "producer_submission_failed_unclassified"
+    lastPresentationStageSlotStates = emptyMap()
     var synthesized = false
     val submitted = if (synthesize && bracket != null && pair != null) {
       val synthesisResult = runCatching {
@@ -1873,7 +1888,10 @@ class Media3FlowVideoSink(
       drawSourceFrame(sourceFrame, renderTimeNs, targetPtsUs, presentationFrame(false, lastBypassReason ?: "source_frame_due"))
     }
     if (!submitted) {
-      recordOutputSubmissionFailure("presentation_stage_failed")
+      recordOutputSubmissionFailure(
+        lastPresentationStageFailureReason,
+        slotStates = lastPresentationStageSlotStates,
+      )
       droppedFrames.incrementAndGet()
       dispatchListener { it.onFrameDropped() }
       outputDecisionCounters.record("output_submission_failed", "presentation_stage_failed")
@@ -1935,7 +1953,10 @@ class Media3FlowVideoSink(
     ptsUs: Long,
     frame: PresentationFrame? = null,
   ): Boolean {
-    if (!makeSharedImageExternal(slot, "source_frame_display")) return false
+    if (!makeSharedImageExternal(slot, "source_frame_display")) {
+      lastPresentationStageFailureReason = "producer_shared_image_external_handoff_failed"
+      return false
+    }
     return drawTexture(slot.colorTexture, presentationTimeNs, ptsUs, frame)
   }
 
@@ -1945,12 +1966,45 @@ class Media3FlowVideoSink(
     ptsUs: Long,
     frame: PresentationFrame? = null,
   ): Boolean {
-    if (presentationFailed || !presentationSurfaceReady || !outputAvailable || frameWidth <= 0 || frameHeight <= 0) return false
-    if (!ensureEgl() || !makePbufferCurrent()) return false
-    val lease = presentationQueue.acquireForWrite() ?: return false
+    when {
+      presentationFailed -> {
+        lastPresentationStageFailureReason = "producer_presentation_path_unavailable"
+        return false
+      }
+      !presentationSurfaceReady -> {
+        lastPresentationStageFailureReason = "producer_presentation_surface_unavailable"
+        return false
+      }
+      !outputAvailable -> {
+        lastPresentationStageFailureReason = "producer_output_unavailable"
+        return false
+      }
+      frameWidth <= 0 || frameHeight <= 0 -> {
+        lastPresentationStageFailureReason = "producer_invalid_frame_dimensions"
+        return false
+      }
+    }
+    if (!ensureEgl()) {
+      lastPresentationStageFailureReason = "producer_egl_context_unavailable"
+      return false
+    }
+    if (!makePbufferCurrent()) {
+      lastPresentationStageFailureReason = "producer_egl_pbuffer_current_failed"
+      return false
+    }
+    val acquisition = presentationQueue.acquireForWriteWithSnapshot()
+    val lease = acquisition.lease
+    if (lease == null) {
+      lastPresentationStageFailureReason = "producer_no_writable_presentation_slot"
+      lastPresentationStageSlotStates = acquisition.slotStates.entries.associate { (state, count) ->
+        state.name.lowercase() to count
+      }
+      return false
+    }
     val slot = presentationSlots[lease.slot]
     clearProducerFence(slot)
     var producerFence = 0L
+    var failureStage = "staging_texture_allocation"
     try {
       if (slot.textureId == 0 || slot.width != frameWidth || slot.height != frameHeight) {
         deleteTexture(slot.textureId)
@@ -1960,6 +2014,7 @@ class Media3FlowVideoSink(
       }
       val glesQuery = beginGlesTimerQuery()
       try {
+        failureStage = "staging_framebuffer_setup"
         GLES20.glBindFramebuffer(GLES20.GL_FRAMEBUFFER, framebuffer)
         GLES20.glFramebufferTexture2D(
           GLES20.GL_FRAMEBUFFER,
@@ -1968,6 +2023,7 @@ class Media3FlowVideoSink(
           slot.textureId,
           0,
         )
+        failureStage = "staging_framebuffer_validation"
         check(GLES20.glCheckFramebufferStatus(GLES20.GL_FRAMEBUFFER) == GLES20.GL_FRAMEBUFFER_COMPLETE) {
           "Media3 Flow presentation-staging framebuffer is incomplete"
         }
@@ -1978,18 +2034,23 @@ class Media3FlowVideoSink(
         GLES20.glUniform2f(blitTextureScaleLocation, 1f, 1f)
         GLES20.glUniform2f(blitTextureOffsetLocation, 0f, 0f)
         GLES20.glUniform1i(blitRotationLocation, 0)
+        failureStage = "staging_blit_draw"
         drawFullscreenTriangle()
+        failureStage = "staging_gl_error_check"
         checkGlError("presentation staging copy")
       } finally {
         GLES20.glBindFramebuffer(GLES20.GL_FRAMEBUFFER, 0)
         endGlesTimerQuery(glesQuery)
       }
+      failureStage = "producer_fence_creation"
       producerFence = GLES30.glFenceSync(GLES30.GL_SYNC_GPU_COMMANDS_COMPLETE, 0)
       check(producerFence != 0L) { "Unable to fence the staged Media3 Flow frame" }
+      failureStage = "producer_command_flush"
       GLES20.glFlush()
       slot.producerFence = producerFence
       slot.frame = frame ?: defaultPresentationFrame(ptsUs, presentationTimeNs)
       slot.completionReported = false
+      failureStage = "presentation_queue_publish"
       val superseded = presentationQueue.publish(lease)
       if (superseded != null) {
         val replaced = presentationSlots[superseded]
@@ -2003,10 +2064,12 @@ class Media3FlowVideoSink(
       slot.producerFence = 0L
       slot.frame = null
       presentationQueue.abortWrite(lease)
+      lastPresentationStageFailureReason = "producer_${failureStage}_failed"
       logFlowRecordOnce(
         "presentation-stage-failed",
         Log.ERROR,
-        "event=presentation_handoff state=failed stage=bounded_texture_staging reason=stage_or_fence_failure",
+        "event=presentation_handoff state=failed stage=$failureStage " +
+          "reason=$lastPresentationStageFailureReason exception=${error.javaClass.simpleName}",
         error,
       )
       return false
@@ -2087,11 +2150,18 @@ class Media3FlowVideoSink(
       return
     }
     if (slot.producerFence == 0L) {
-      failUnprovenPresentation(index, frame, "producer_fence_missing", GLES30.GL_WAIT_FAILED, "gles_fence")
+      failUnprovenPresentation(
+        index,
+        frame,
+        "producer_fence_missing",
+        GLES30.GL_WAIT_FAILED,
+        "presenter_producer_fence_missing",
+      )
       return
     }
     if (!makePresentationWindowCurrent()) {
       val error = EGL14.eglGetError()
+      recordPresentationPathFailure("presenter_egl_make_current_failed")
       makePresentationPbufferCurrent()
       discardPresentationSlot(index)
       slot.completionReported = true
@@ -2101,6 +2171,7 @@ class Media3FlowVideoSink(
         swapWaitNs = 0L,
         swapReturnedNs = System.nanoTime(),
         errorCode = error,
+        errorKind = "presenter_egl_make_current",
       )
       resumePresentationDrain()
       return
@@ -2112,7 +2183,13 @@ class Media3FlowVideoSink(
     val producerWaitError = consumePresentationGlError()
     if (producerWaitError != GLES20.GL_NO_ERROR) {
       runCatching { GLES30.glDeleteSync(producerFence) }
-      failUnprovenPresentation(index, frame, "producer_fence_wait", producerWaitError, "gles_fence_wait")
+      failUnprovenPresentation(
+        index,
+        frame,
+        "producer_fence_wait",
+        producerWaitError,
+        "presenter_producer_fence_wait",
+      )
       return
     }
     GLES30.glDeleteSync(producerFence)
@@ -2156,7 +2233,13 @@ class Media3FlowVideoSink(
     slot.consumerFence = GLES30.glFenceSync(GLES30.GL_SYNC_GPU_COMMANDS_COMPLETE, 0)
     if (slot.consumerFence == 0L) {
       val fenceError = consumePresentationGlError().takeIf { it != GLES20.GL_NO_ERROR } ?: GLES30.GL_WAIT_FAILED
-      failUnprovenPresentation(index, frame, "consumer_fence_create", fenceError, "gles_fence")
+      failUnprovenPresentation(
+        index,
+        frame,
+        "consumer_fence_create",
+        fenceError,
+        "presenter_consumer_fence_create",
+      )
       return
     }
     if (!schedulePresentationFencePoll(index, slot, flushCommands = true)) {
@@ -2170,6 +2253,7 @@ class Media3FlowVideoSink(
       return
     }
     if (drawError != GLES20.GL_NO_ERROR) {
+      recordPresentationPathFailure("presenter_gles_draw_failed")
       slot.completionReported = true
       reportPresentationCompletion(
         frame,
@@ -2177,13 +2261,14 @@ class Media3FlowVideoSink(
         swapWaitNs = 0L,
         swapReturnedNs = System.nanoTime(),
         errorCode = drawError,
-        errorKind = "gles_draw",
+        errorKind = "presenter_gles_draw",
       )
       failPresentationPath("presenter_draw")
       resumePresentationDrain()
       return
     }
     if (!presentationTimeSet) {
+      recordPresentationPathFailure("presenter_egl_presentation_time_failed")
       slot.completionReported = true
       reportPresentationCompletion(
         frame,
@@ -2191,7 +2276,7 @@ class Media3FlowVideoSink(
         swapWaitNs = 0L,
         swapReturnedNs = System.nanoTime(),
         errorCode = presentationTimeError,
-        errorKind = "egl_presentation_time",
+        errorKind = "presenter_egl_presentation_time",
       )
       resumePresentationDrain()
       return
@@ -2201,6 +2286,7 @@ class Media3FlowVideoSink(
     val swapReturnedNs = System.nanoTime()
     val swapWaitNs = (swapReturnedNs - swapStartNs).coerceAtLeast(0L)
     val swapError = if (swapped) EGL14.EGL_SUCCESS else EGL14.eglGetError()
+    if (!swapped) recordPresentationPathFailure("presenter_egl_swap_failed")
     slot.completionReported = true
     reportPresentationCompletion(
       frame,
@@ -2208,6 +2294,7 @@ class Media3FlowVideoSink(
       swapWaitNs,
       swapReturnedNs,
       swapError,
+      errorKind = "presenter_egl_swap",
       swapAttempted = true,
     )
     resumePresentationDrain()
@@ -2221,6 +2308,7 @@ class Media3FlowVideoSink(
     errorKind: String,
   ) {
     val slot = presentationSlots[index]
+    recordPresentationPathFailure("presenter_${stage}_failed")
     slot.frame = null
     slot.completionReported = true
     presentationQueue.quarantinePresentation(index)
@@ -2272,6 +2360,7 @@ class Media3FlowVideoSink(
   }
 
   private fun handlePresenterException(error: Throwable) {
+    recordPresentationPathFailure("presenter_exception")
     logFlowRecordOnce(
       "presentation-handler-exception",
       Log.ERROR,
@@ -2292,7 +2381,7 @@ class Media3FlowVideoSink(
             swapWaitNs = 0L,
             swapReturnedNs = System.nanoTime(),
             errorCode = 0,
-            errorKind = "gles_presenter_exception",
+            errorKind = "presenter_gles_exception",
           )
         }
         schedulePresentationFencePoll(index, slot)
@@ -2307,7 +2396,7 @@ class Media3FlowVideoSink(
             swapWaitNs = 0L,
             swapReturnedNs = System.nanoTime(),
             errorCode = 0,
-            errorKind = "gles_presenter_exception",
+            errorKind = "presenter_gles_exception",
           )
         }
       }
@@ -2356,6 +2445,7 @@ class Media3FlowVideoSink(
     val slot = presentationSlots[index]
     if (slot.consumerFence != fence || fence == 0L) return
     val frame = slot.frame
+    recordPresentationPathFailure("presenter_consumer_fence_wait_failed")
     runCatching { GLES30.glDeleteSync(fence) }
     slot.consumerFence = 0L
     slot.consumerFenceStartedAtNs = 0L
@@ -2376,7 +2466,7 @@ class Media3FlowVideoSink(
         swapWaitNs = 0L,
         swapReturnedNs = System.nanoTime(),
         errorCode = waitResult,
-        errorKind = "gles_fence_wait",
+        errorKind = "presenter_consumer_fence_wait",
       )
     }
     failPresentationPath("consumer_fence_wait")
@@ -2428,7 +2518,7 @@ class Media3FlowVideoSink(
     swapWaitNs: Long,
     swapReturnedNs: Long,
     errorCode: Int,
-    errorKind: String = "egl",
+    errorKind: String = "presenter_egl",
     swapAttempted: Boolean = false,
   ) {
     glHandler.post {
@@ -2460,11 +2550,13 @@ class Media3FlowVideoSink(
         outputState = if (frame.synthesized) "synthesized" else "passthrough"
         outputReason = frame.reason
       } else {
-        recordOutputSubmissionFailure("${errorKind}_submission_failed")
+        val failureReason = "${errorKind}_failed"
+        val failureDetail = "${failureReason}_0x${errorCode.toString(16)}"
+        recordOutputSubmissionFailure(failureReason, detail = failureDetail)
         droppedFrames.incrementAndGet()
         dispatchListener { it.onFrameDropped() }
         outputState = "output_submission_failed"
-        outputReason = "${errorKind}_submission_failed_0x${errorCode.toString(16)}"
+        outputReason = failureDetail
       }
       outputDecisionCounters.record(outputState, outputReason)
       logPresentedOutput(frame, outputState, outputReason)
@@ -3412,6 +3504,7 @@ class Media3FlowVideoSink(
       val elapsedNs = generatedWallTimes.last() - generatedWallTimes.first()
       if (elapsedNs > 0L) (generatedWallTimes.size - 1) * 1_000_000_000f / elapsedNs else 0f
     } else 0f
+    val presentationFailures = presentationFailureCounters.snapshot()
     val diagnostics = Media3FlowDiagnostics(
       enabled = true,
       capturedSourceFps = Media3FlowCadence.estimateSourceFps(ptsHistory.toList()),
@@ -3423,7 +3516,10 @@ class Media3FlowVideoSink(
       droppedFrames = droppedFrames.get(),
       skippedOutputTicks = skippedOutputTicks.get(),
       outputSubmissionFailures = outputSubmissionFailures.get(),
-      lastOutputSubmissionFailureReason = lastOutputSubmissionFailureReason,
+      lastOutputSubmissionFailureReason = presentationFailures.lastOutputSubmissionFailureReason,
+      outputSubmissionFailureReasons = presentationFailures.outputSubmissionReasons,
+      presentationPathFailureReasons = presentationFailures.presentationPathReasons,
+      lastNoWritablePresentationSlotStates = presentationFailures.lastNoWritableSlotStates,
       skippedFrames = skippedFrames,
       motionEstimateSubmitMs = lastMotionSubmitMs,
       motionPassAverageGpuUs = vulkanTiming.motion.averageUs,
@@ -3485,6 +3581,7 @@ class Media3FlowVideoSink(
     val glesTiming = diagnostics.glesTimings
     val cpuTiming = diagnostics.cpuTimings
     val vulkanTiming = diagnostics.vulkanTimings
+    val presentationFailures = presentationFailureCounters.snapshot()
     val gpuElapsed = diagnostics.motionPassAverageGpuUs?.let {
       "${String.format(java.util.Locale.US, "%.2f", it)}us_per_motion_pass"
     }
@@ -3522,6 +3619,9 @@ class Media3FlowVideoSink(
         "inferredSkippedOutputTicksTotal=${diagnostics.skippedOutputTicks} skippedTotal=${diagnostics.skippedFrames} " +
         "outputSubmissionFailures=${diagnostics.outputSubmissionFailures} " +
         "lastOutputSubmissionFailure=${diagnostics.lastOutputSubmissionFailureReason} " +
+        "outputSubmissionFailureReasons=${presentationFailures.outputSubmissionReasonsAsLogFieldValue()} " +
+        "presentationPathFailureReasons=${presentationFailures.presentationPathReasonsAsLogFieldValue()} " +
+        "lastNoWritableSlotStates=${presentationFailures.lastNoWritableSlotStatesAsLogFieldValue()} " +
         "tickGapReason=${diagnostics.lastOutputTickGapReason} " +
         "tickGapContexts=${formatDeadlineReasons(diagnostics.outputTickGapContexts)} " +
         "motionDeadlineAdmission=cpu_submit_proxy_not_gpu_completion " +

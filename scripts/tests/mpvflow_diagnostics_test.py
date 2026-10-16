@@ -24,6 +24,7 @@ MEDIA3_NATIVE = (ROOT / "app/src/main/cpp/media3flow_vulkan_jni.cpp").read_text(
 FLOW_CAPTURE_MANAGER = (ROOT / "app/src/main/java/app/infinity/mpvz/ui/player/FlowDiagnosticsCapture.kt").read_text(encoding="utf-8")
 PLAYER_ACTIVITY = (ROOT / "app/src/main/java/app/infinity/mpvz/ui/player/PlayerActivity.kt").read_text(encoding="utf-8")
 MEDIA3_FORMAT_POLICY = (ROOT / "app/src/main/java/app/infinity/mpvz/ui/player/Media3FlowFormatPolicy.kt").read_text(encoding="utf-8")
+NATIVE_ENGINE = (ROOT / "app/src/main/java/app/infinity/mpvz/ui/player/NativeMedia3Engine.kt").read_text(encoding="utf-8")
 
 
 def require(source: str, fragment: str, message: str) -> None:
@@ -178,6 +179,18 @@ require(MEDIA3_FLOW_SINK, "pairPtsGapMs=", "Media3 must report the source PTS ga
 require(MEDIA3_FLOW_SINK, "inferredSkippedOutputTicksTotal=", "Media3 tick-gap totals must not imply confirmed display deadline misses")
 require(MEDIA3_FLOW_SINK, "tickGapContexts=", "Media3 must categorize inferred output tick gaps separately")
 require(MEDIA3_FLOW_SINK, "outputSubmissionFailures=", "Media3 must report actual EGL/output submission failures separately from inferred tick gaps")
+require(MEDIA3_FLOW_SINK, "outputSubmissionFailureReasons=", "Media3 must categorize producer submission and later completion failures")
+require(MEDIA3_FLOW_SINK, "presentationPathFailureReasons=", "Media3 must separately count asynchronous presenter failures")
+require(MEDIA3_FLOW_SINK, "lastNoWritableSlotStates=", "Media3 must report atomic slot occupancy when no producer slot is writable")
+require(MEDIA3_FLOW_SINK, "presentationQueue.acquireForWriteWithSnapshot()", "no-writable-slot diagnostics must snapshot queue state atomically")
+require(MEDIA3_FLOW_SINK, '"producer_no_writable_presentation_slot"', "Media3 must label two-slot backpressure independently from GLES/EGL failures")
+require(MEDIA3_FLOW_SINK, '"presenter_egl_swap_failed"', "Media3 must distinguish asynchronous EGL swap failures from producer staging failures")
+require(MEDIA3_FLOW_SINK, 'failureStage = "staging_framebuffer_validation"', "Media3 must report framebuffer staging failures by producer stage")
+require(MEDIA3_FLOW_SINK, 'failureStage = "staging_gl_error_check"', "Media3 must report staging GLES errors separately from queue pressure")
+require(MEDIA3_FLOW_SINK, 'outputDecisionCounters.record("output_submission_failed", "presentation_stage_failed")', "the established aggregate stage-failure decision label must remain available")
+require(NATIVE_ENGINE, '"output_submission_failure_reasons"', "captured Media3 timing JSON must include categorized output failures")
+require(NATIVE_ENGINE, '"presentation_path_failure_reasons"', "captured Media3 timing JSON must include asynchronous presenter failures")
+require(NATIVE_ENGINE, '"last_no_writable_presentation_slot_states"', "captured Media3 timing JSON must include the last atomic slot state snapshot")
 require(MEDIA3_FLOW_SINK, "motionPairAnalysisTotals=", "Media3 must summarize pair-analysis attempts, deferrals, and outcomes")
 require(MEDIA3_FLOW_SINK, "motionDeadlineAdmission=cpu_submit_proxy_not_gpu_completion", "Media3 must disclose that its current deadline gate uses a CPU submit proxy")
 require(MPV_VIEW, "pixelArtifactQuality=unmeasured_native_pixel_coverage_unavailable", "MPV must not imply pixel quality without a coverage measurement")

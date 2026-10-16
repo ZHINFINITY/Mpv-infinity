@@ -1357,6 +1357,12 @@ class NativeMedia3Engine(
     val coverage = d.pixelCoverage
     val gapContexts = JSONObject()
     d.outputTickGapContexts.toSortedMap().forEach { (reason, count) -> gapContexts.put(reason, count) }
+    val outputFailureReasons = JSONObject()
+    d.outputSubmissionFailureReasons.toSortedMap().forEach { (reason, count) -> outputFailureReasons.put(reason, count) }
+    val presentationPathFailureReasons = JSONObject()
+    d.presentationPathFailureReasons.toSortedMap().forEach { (reason, count) -> presentationPathFailureReasons.put(reason, count) }
+    val noWritableSlotStates = JSONObject()
+    d.lastNoWritablePresentationSlotStates.toSortedMap().forEach { (state, count) -> noWritableSlotStates.put(state, count) }
     return JSONObject()
       .put("schema_version", 1)
       .put("engine", "native-media3")
@@ -1372,6 +1378,9 @@ class NativeMedia3Engine(
       .put("inferred_skipped_output_ticks", d.skippedOutputTicks)
       .put("output_submission_failures", d.outputSubmissionFailures)
       .put("last_submission_failure_reason", d.lastOutputSubmissionFailureReason)
+      .put("output_submission_failure_reasons", outputFailureReasons)
+      .put("presentation_path_failure_reasons", presentationPathFailureReasons)
+      .put("last_no_writable_presentation_slot_states", noWritableSlotStates)
       .put("rate_semantics", "eglSwapBuffers return cadence and generated submits; neither is SurfaceFlinger scanout")
       .put("actual_displayed_fps_available", false)
       .put("actual_displayed_fps_source", "Perfetto FrameTimeline companion trace required for SurfaceView")

@@ -225,6 +225,38 @@ class Media3FlowDiagnosticsTest {
   }
 
   @Test
+  fun presentationFailuresSeparateProducerBackpressureFromAsynchronousEglFailures() {
+    val counters = FlowPresentationFailureCounters()
+    counters.recordOutputSubmissionFailure(
+      "producer_no_writable_presentation_slot",
+      slotStates = mapOf("free" to 0, "presenting" to 2, "quarantined" to 0),
+    )
+    counters.recordOutputSubmissionFailure("producer_staging_gl_error_check_failed")
+    counters.recordPresentationPathFailure("presenter_egl_swap_failed")
+
+    val snapshot = counters.snapshot()
+
+    assertEquals(
+      mapOf(
+        "producer_no_writable_presentation_slot" to 1L,
+        "producer_staging_gl_error_check_failed" to 1L,
+      ),
+      snapshot.outputSubmissionReasons,
+    )
+    assertEquals(mapOf("presenter_egl_swap_failed" to 1L), snapshot.presentationPathReasons)
+    assertEquals("producer_staging_gl_error_check_failed", snapshot.lastOutputSubmissionFailureReason)
+    assertEquals(
+      mapOf("free" to 0, "presenting" to 2, "quarantined" to 0),
+      snapshot.lastNoWritableSlotStates,
+    )
+    assertEquals(
+      "producer_no_writable_presentation_slot:1,producer_staging_gl_error_check_failed:1",
+      snapshot.outputSubmissionReasonsAsLogFieldValue(),
+    )
+    assertEquals("free:0,presenting:2,quarantined:0", snapshot.lastNoWritableSlotStatesAsLogFieldValue())
+  }
+
+  @Test
   fun motionPairAnalysisCountersSeparateSwapAndSlotDeferralsFromNativeOutcomes() {
     val counters = FlowMotionPairAnalysisCounters()
     counters.recordDeferredByEglSwap()

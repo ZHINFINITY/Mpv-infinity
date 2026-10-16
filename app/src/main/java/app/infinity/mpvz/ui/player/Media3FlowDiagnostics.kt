@@ -154,6 +154,61 @@ internal class FlowOutputDecisionCounters {
     )
 }
 
+internal data class FlowPresentationFailureSnapshot(
+  val outputSubmissionReasons: Map<String, Long>,
+  val presentationPathReasons: Map<String, Long>,
+  val lastOutputSubmissionFailureReason: String,
+  val lastNoWritableSlotStates: Map<String, Int>,
+) {
+  fun outputSubmissionReasonsAsLogFieldValue(): String = formatCounts(outputSubmissionReasons)
+
+  fun presentationPathReasonsAsLogFieldValue(): String = formatCounts(presentationPathReasons)
+
+  fun lastNoWritableSlotStatesAsLogFieldValue(): String =
+    lastNoWritableSlotStates.toSortedMap().entries.joinToString(",") { "${it.key}:${it.value}" }
+      .ifEmpty { "none" }
+
+  private fun formatCounts(counts: Map<String, Long>): String =
+    counts.toSortedMap().entries.joinToString(",") { "${it.key}:${it.value}" }.ifEmpty { "none" }
+}
+
+/** Failure buckets separate producer staging/submission from the later presentation-thread path. */
+internal class FlowPresentationFailureCounters {
+  private val outputSubmissionReasons = linkedMapOf<String, Long>()
+  private val presentationPathReasons = linkedMapOf<String, Long>()
+  private var lastOutputSubmissionFailureReason = "none"
+  private var lastNoWritableSlotStates = emptyMap<String, Int>()
+
+  @Synchronized
+  fun recordOutputSubmissionFailure(
+    reason: String,
+    detail: String = reason,
+    slotStates: Map<String, Int> = emptyMap(),
+  ) {
+    val key = reason.takeIf { it.isNotBlank() } ?: "producer_unknown_submission_failure"
+    outputSubmissionReasons[key] = (outputSubmissionReasons[key] ?: 0L) + 1L
+    lastOutputSubmissionFailureReason = detail.takeIf { it.isNotBlank() } ?: key
+    if (key == "producer_no_writable_presentation_slot") {
+      lastNoWritableSlotStates = slotStates.toSortedMap()
+    }
+  }
+
+  @Synchronized
+  fun recordPresentationPathFailure(reason: String) {
+    val key = reason.takeIf { it.isNotBlank() } ?: "presenter_unknown_failure"
+    presentationPathReasons[key] = (presentationPathReasons[key] ?: 0L) + 1L
+  }
+
+  @Synchronized
+  fun snapshot(): FlowPresentationFailureSnapshot =
+    FlowPresentationFailureSnapshot(
+      outputSubmissionReasons = outputSubmissionReasons.toMap(),
+      presentationPathReasons = presentationPathReasons.toMap(),
+      lastOutputSubmissionFailureReason = lastOutputSubmissionFailureReason,
+      lastNoWritableSlotStates = lastNoWritableSlotStates.toMap(),
+    )
+}
+
 /** Cumulative pair-analysis scheduling outcomes; these are queue/admission counters, not GPU completion. */
 internal data class FlowMotionPairAnalysisSnapshot(
   val attempts: Long,

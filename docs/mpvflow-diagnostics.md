@@ -16,6 +16,8 @@ HDR, Dolby Vision, unknown color metadata, unsupported compute backends, or unav
 
 `app_timing.jsonl` records bounded app-side snapshots for each engine. It distinguishes generated/synthesized counts from swap-submit-return cadence and includes available CPU/GPU timing, queue, and failure counters. **Neither engine can claim actual displayed/scanout FPS from these app-side counters.** MPV’s successful swap submits, Media3’s `eglSwapBuffers` return cadence, decoder counts, generated FPS, and a Surface frame-rate hint are different measurements; none proves what SurfaceFlinger displayed.
 
+For Native Media3, `output_submission_failure_reasons` separates producer-side causes such as no writable presentation slot, EGL/pbuffer setup, staging/FBO/GL work, and producer-fence creation. A no-writable-slot event also snapshots both bounded slot states atomically, so two slots in `PRESENTING` can be distinguished from a quarantined slot. `presentation_path_failure_reasons` records later presentation-thread failures—including window `eglMakeCurrent`, GLES draw, presentation-time, `eglSwapBuffers`, and fence/exception paths—separately; these occur after producer staging and are not causes of its `presentation_stage_failed` result. The aggregate `output_submission_failures` remains for compatibility, and none of these counters represents panel scanout.
+
 ## Companion check: Android presentation evidence with Perfetto
 
 Use this separate procedure when you need a system trace. It requires a desktop with Android Platform Tools (`adb`) on `PATH`, a USB-connected device with Developer options and USB debugging enabled, and **Android 12 (S) or newer**.
