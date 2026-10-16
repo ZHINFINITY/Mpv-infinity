@@ -728,8 +728,8 @@ patch_parse = subprocess.run(
 assert patch_parse.returncode == 0, (
     f"MPV VO patch must be a valid unified diff:\n{patch_parse.stdout}{patch_parse.stderr}"
 )
-assert "+        target_fps >= 120 ? 448 : target_fps >= 96 ? 440 : 640;" in vo_patch, (
-    "the MPV renderer must preserve its 448-pixel 120-fps safety ceiling"
+assert "+    const int target_dimension_limit = 640;" in vo_patch, (
+    "the MPV renderer must allow the caller-selected maximum 640-pixel analysis setting"
 )
 rate_limit_header = ROOT / "app/src/main/cpp/mpvflow/mpvflow_rate_limit.h"
 synthesis_scale_header = ROOT / "app/src/main/cpp/mpvflow/mpvflow_synthesis_scale.h"
@@ -766,6 +766,7 @@ assert "mpvflow_rate_limiter_commit(&p->flow_rate_limiter, (uint64_t) now_ns" no
 )
 assert '"mpvflow-synthesis-max-dimension", OPT_INT(mpvflow_synthesis_max_dimension), M_RANGE(0, 7680)' in vo_patch
 assert "+        .mpvflow_synthesis_max_dimension = 1920," in vo_patch
+assert "+        .search_radius = requested_dimension >= 640 ? 8 :" in vo_patch
 assert "mpvflow_synthesis_size_for(source_w, source_h" in vo_patch
 assert "p->flow_synthesis_max_dimension != requested_synthesis_max_dimension" in vo_patch
 assert "+        .w = synthesis_size.width," in vo_patch and "+        .h = synthesis_size.height," in vo_patch

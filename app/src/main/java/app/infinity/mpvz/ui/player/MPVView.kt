@@ -276,7 +276,7 @@ class MPVView(
     val sourceHeight = intProperty("video-params/h")?.takeIf { it > 0 } ?: intProperty("height")?.coerceAtLeast(0) ?: 0
     val targetFps = sample?.targetFps ?: decoderPreferences.mpvFlowTargetFps.get()
     val quality = decoderPreferences.mpvFlowQuality.get().coerceIn(0, 100)
-    val analysisCap = effectiveMpvFlowMaxDimension(targetFps, quality)
+    val analysisCap = if (BuildConfig.DEBUG) 640 else effectiveMpvFlowMaxDimension(targetFps, quality)
     val longestSourceDimension = maxOf(sourceWidth, sourceHeight)
     val processingScale =
       if (longestSourceDimension > 0) minOf(1.0, analysisCap.toDouble() / longestSourceDimension) else 0.0
@@ -419,7 +419,11 @@ class MPVView(
       )
     val mpvFlowComputeApi = decoderPreferences.mpvFlowComputeApi.get()
     val mpvFlowQuality = decoderPreferences.mpvFlowQuality.get().coerceIn(0, 100)
-    val mpvFlowMaxDimension = effectiveMpvFlowMaxDimension(mpvFlowTargetFps, mpvFlowQuality)
+    val mpvFlowMaxDimension =
+      if (BuildConfig.DEBUG) 640 else effectiveMpvFlowMaxDimension(mpvFlowTargetFps, mpvFlowQuality)
+    val mpvFlowSearchRadius =
+      if (BuildConfig.DEBUG) 8 else effectiveMpvFlowSearchRadius(mpvFlowTargetFps, mpvFlowQuality)
+    val mpvFlowSynthesisMaxDimension = if (BuildConfig.DEBUG) 4096 else null
     val frameInterpolationConfigOwned =
       MpvConfigOverridePolicy.ownsAny(MpvConfigControlledFeatures.FRAME_INTERPOLATION)
     val anime4kActive = decoderPreferences.enableAnime4K.get() && decoderPreferences.anime4kMode.get() != "OFF"
@@ -612,7 +616,8 @@ class MPVView(
         TAG,
         "MPVFLOW_OPTIONS hwdec_mode=$hardwareDecodeMode hwdec_rc=$hardwareDecodeOptionResult " +
           "hwdec_codecs_rc=${hardwareDecodeCodecsOptionResult ?: "mpv.conf"} target_fps=$mpvFlowTargetFps " +
-          "max_dimension=$mpvFlowMaxDimension quality=$mpvFlowQuality search_radius=${effectiveMpvFlowSearchRadius(mpvFlowTargetFps, mpvFlowQuality)}",
+          "max_dimension=$mpvFlowMaxDimension quality=$mpvFlowQuality search_radius=$mpvFlowSearchRadius " +
+          "synthesis_max_dimension=${mpvFlowSynthesisMaxDimension ?: "mpv.conf/default"}",
       )
     } else {
       if (!MpvConfigOverridePolicy.isOwnedByMpvConf("hwdec")) {
@@ -683,6 +688,13 @@ class MPVView(
           } else {
             null
           }
+        val synthesisDimensionResult =
+          if (mpvFlowFrameInterpolationEnabled && mpvFlowSynthesisMaxDimension != null) {
+            PlaybackSession.setOptionString(
+              "mpvflow-synthesis-max-dimension",
+              mpvFlowSynthesisMaxDimension.toString(),
+            )
+          } else null
         val qualityResult =
           if (mpvFlowFrameInterpolationEnabled) {
             PlaybackSession.setOptionString("mpvflow-quality", mpvFlowQuality.toString())
@@ -692,7 +704,10 @@ class MPVView(
         "mpvflow_rc=$enabledResult compute_api=${effectiveMpvFlowComputeApi.name.lowercase()} " +
           "compute_api_rc=${mpvFlowComputeApiOptionResult ?: "mpv.conf_or_unavailable"} " +
           "target_fps_rc=${targetFpsResult ?: "unchanged"} " +
-          "max_dimension_rc=${dimensionResult ?: "unchanged"} quality=$mpvFlowQuality quality_rc=${qualityResult ?: "unchanged"} " +
+          "max_dimension_rc=${dimensionResult ?: "unchanged"} " +
+          "synthesis_max_dimension=${mpvFlowSynthesisMaxDimension ?: "mpv.conf/default"} " +
+          "synthesis_max_dimension_rc=${synthesisDimensionResult ?: "unchanged"} " +
+          "quality=$mpvFlowQuality quality_rc=${qualityResult ?: "unchanged"} " +
           "visibility_resolver=$mpvFlowVisibilityResolverDebugEnabled " +
           "visibility_resolver_rc=${mpvFlowVisibilityResolverOptionResult ?: "mpv.conf_or_unavailable"} " +
           "soft_blend=$mpvFlowSoftBlendDebugEnabled soft_blend_rc=${mpvFlowSoftBlendOptionResult ?: "mpv.conf_or_unavailable"}"

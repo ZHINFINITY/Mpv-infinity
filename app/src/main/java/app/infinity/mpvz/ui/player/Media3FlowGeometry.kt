@@ -12,6 +12,7 @@ internal data class Media3FlowFrameSize(val width: Int, val height: Int)
 internal data class Media3FlowMotionSize(val width: Int, val height: Int)
 
 internal const val MEDIA3_FLOW_FRAME_MAX_DIMENSION = 1920
+internal const val MEDIA3_FLOW_DEBUG_FRAME_MAX_DIMENSION = 4096
 
 // Must match FLOW_STEP/FLOW_BLOCK in mpvflow_gpu.c; this is telemetry only.
 internal const val MEDIA3_FLOW_GRID_STEP = 4

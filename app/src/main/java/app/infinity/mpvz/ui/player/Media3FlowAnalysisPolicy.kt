@@ -10,7 +10,12 @@ import app.infinity.mpvz.preferences.effectiveMpvFlowMaxDimension
 internal object Media3FlowAnalysisPolicy {
   private const val EXTRA_ANALYSIS_PIXELS = 96
 
-  fun maxDimension(targetFps: Int, quality: Int): Int {
+  fun maxDimension(
+    targetFps: Int,
+    quality: Int,
+    maximumTestSettings: Boolean = false,
+  ): Int {
+    if (maximumTestSettings) return 640
     val sharedDimension = effectiveMpvFlowMaxDimension(targetFps, quality).coerceIn(160, 640)
     return (sharedDimension + EXTRA_ANALYSIS_PIXELS).coerceAtMost(640)
   }

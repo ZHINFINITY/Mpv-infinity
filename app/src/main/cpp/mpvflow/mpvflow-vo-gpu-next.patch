@@ -143,14 +143,14 @@ index bd3d1aa..75ffbb1 100644
 +        p->next_opts->mpvflow_synthesis_max_dimension < 0 ? 0 :
 +        p->next_opts->mpvflow_synthesis_max_dimension > 7680 ? 7680 :
 +        p->next_opts->mpvflow_synthesis_max_dimension;
-+    /* Bound mobile analysis cost by target refresh while preserving the app's
-+     * selected performance/quality profile. Acquire and render timings are
-+     * measured separately; a blocking acquire is not shader execution time. */
++    /* Preserve the caller's adaptive profile for normal builds. */
++    /* Debug test builds explicitly request the full 640-pixel analysis ceiling. */
++    /* The native maximum remains available for those explicit test settings. */
++    /* Motion-grid spacing stays fixed; vectors become denser with larger analysis. */
++    /* Acquisition and render timing remain separate from shader execution time. */
 +    const int target_fps = MPCLAMP(p->next_opts->mpvflow_target_fps, 1, 240);
 +    const int quality = MPCLAMP(p->next_opts->mpvflow_quality, 0, 100);
-+    const int target_dimension_limit = target_fps >= 144 ? 320 :
-+        target_fps >= 120 ? 448 : target_fps >= 96 ? 440 : 640;
-+    /* The app already maps the performance/quality profile to this dimension. */
++    const int target_dimension_limit = 640;
 +    const int effective_dimension = MPCLAMP(requested_dimension, 8, target_dimension_limit);
 +    if (!p->next_opts->mpvflow) {
 +        flow_release_pair(p);
@@ -285,9 +285,9 @@ index bd3d1aa..75ffbb1 100644
 +        .compute_api = (enum MPVFlowGPUComputeAPI) p->next_opts->mpvflow_compute_api,
 +        .diagnostic_engine = "mpv",
 +        .max_dimension = effective_dimension,
-+        .search_radius = target_fps >= 144 ? (quality >= 75 ? 4 : 3) :
-+            target_fps >= 120 ? (quality >= 75 ? 5 : 4) :
-+            target_fps >= 96 ? (quality >= 60 ? 6 : 5) : (quality >= 60 ? 8 : 6),
++        .search_radius = requested_dimension >= 640 ? 8 :
++            target_fps >= 144 ? (quality >= 75 ? 4 : 3) :
++            target_fps >= 120 ? (quality >= 75 ? 5 : 4) : target_fps >= 96 ? (quality >= 60 ? 6 : 5) : (quality >= 60 ? 8 : 6),
 +    };
 +    enum MPVFlowGPUResult status = MPVFLOW_GPU_INVALID;
 +    struct MPVFlowGPUCreateDiagnostics create_diagnostics = {0};
