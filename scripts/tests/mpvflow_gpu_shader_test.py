@@ -210,6 +210,8 @@ require(synthesis, "float uniquenessQuality=smoothstep(0.08,0.30,flow.w)", "endp
 require(synthesis, "return cycleQuality*matchQuality*uniquenessQuality*valid;", "endpoint reliability must include motion uniqueness")
 require(synthesis, "if(confidence<0.28)", "unreliable motion must fall back to a real source frame")
 require(synthesis, "bool softBlend=(pc.cfg.x&0x40000000)!=0", "the soft path must use an explicit per-synthesis debug flag")
+require(synthesis, "softBlendAlpha=clamp(0.5+(pc.timestep-0.5)*1.35,0.0,1.0)", "soft fallback must sharpen uncertain temporal blends continuously without a midpoint jump")
+require(synthesis, "texelFetch(frame1,p,0),softBlendAlpha", "soft fallback must use its biased temporal alpha only for source-frame blending")
 require(synthesis, "if(confidence<0.28){ outc=softBlend?softColor:", "soft blending must replace only the low-confidence nearest-frame fallback")
 require(synthesis, "if(boundaryConflict&&softBlend) outc=softColor;", "soft blending must mix source colors at motion/color conflicts")
 require(flow, "float(second-best)/max(float(second),1.0)", "flow vectors must report best-vs-runner-up match uniqueness")

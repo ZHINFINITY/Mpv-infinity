@@ -44,6 +44,7 @@ internal object Media3FlowVulkanNative {
     source0: Long,
     source1: Long,
     timestep: Float,
+    softBlendEnabled: Boolean,
     output: Long,
   ): Boolean
 

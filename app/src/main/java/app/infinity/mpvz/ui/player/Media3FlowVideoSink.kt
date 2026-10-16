@@ -122,12 +122,14 @@ class Media3FlowVideoSink(
   requestedTargetFps: Int,
   requestedQuality: Int,
   private val requestedComputeApi: MpvFlowComputeApi,
+  requestedSoftBlend: Boolean,
   private val onDiagnostics: (Media3FlowDiagnostics) -> Unit,
 ) : VideoSink {
   private val appContext = context.applicationContext
   private val isDebuggable =
     (appContext.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE) != 0
   private val logTag = "Mpv∞-Media3Flow"
+  private val softBlendEnabled = BuildConfig.DEBUG && requestedSoftBlend
   private val displayHz = displayRefreshRate(appContext)
   private val targetFps = effectiveMpvFlowTargetFps(requestedTargetFps, displayHz)
   private val quality = requestedQuality.coerceIn(0, 100)
@@ -323,6 +325,7 @@ class Media3FlowVideoSink(
       Log.INFO,
       "event=config requested_enabled=true renderer=native-media3 capture=gles3 renderer_api=vulkan " +
         "requested_compute_api=${requestedComputeApi.name.lowercase()} " +
+        "soft_blend=$softBlendEnabled " +
         "target_fps=$targetFps source_pts=media3_decoder sync_mode=1x hardware_decoder=media3 " +
         "cpu_readback=no",
     )
@@ -1887,7 +1890,7 @@ class Media3FlowVideoSink(
     try {
       check(Media3FlowVulkanNative.nativeSynthesize(
         flowVulkanContext, pair.nativePairHandle,
-        a.nativeImageHandle, b.nativeImageHandle, alpha, outputImageHandle,
+        a.nativeImageHandle, b.nativeImageHandle, alpha, softBlendEnabled, outputImageHandle,
       )) { "Shared Vulkan frame synthesis failed" }
     } finally {
       recordCpuDuration(FlowCpuStage.VULKAN_SYNTHESIS_SUBMIT, (System.nanoTime() - submitStartNs).coerceAtLeast(0L))

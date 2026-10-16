@@ -10,6 +10,7 @@ import android.util.Log
 import android.view.View
 import android.view.SurfaceView
 import java.io.File
+import app.infinity.mpvz.BuildConfig
 import app.infinity.mpvz.R
 import androidx.media3.common.C
 import androidx.media3.common.ColorInfo
@@ -198,13 +199,24 @@ class NativeMedia3Engine(
   media3FlowTargetFps: Int = 60,
   media3FlowQuality: Int = 60,
   media3FlowComputeApi: MpvFlowComputeApi = MpvFlowComputeApi.AUTO,
+  media3FlowSoftBlendDebug: Boolean = false,
 ) {
   private val appContext = context.applicationContext
   private val logTag = "Mpv∞-Media3"
+  private val media3FlowSoftBlendEnabled = BuildConfig.DEBUG && media3FlowSoftBlendDebug
+  private val effectiveMedia3FlowComputeApi =
+    if (media3FlowSoftBlendEnabled) MpvFlowComputeApi.VULKAN else media3FlowComputeApi
   private val flowDeviceSupported =
     enableMedia3Flow && Media3FlowVideoSink.deviceSupportsVulkanFlow(appContext)
   private val media3FlowSink = if (flowDeviceSupported) {
-    Media3FlowVideoSink(appContext, media3FlowTargetFps, media3FlowQuality, media3FlowComputeApi, ::publishFlowDiagnostics)
+    Media3FlowVideoSink(
+      appContext,
+      media3FlowTargetFps,
+      media3FlowQuality,
+      effectiveMedia3FlowComputeApi,
+      media3FlowSoftBlendEnabled,
+      ::publishFlowDiagnostics,
+    )
   } else {
     null
   }

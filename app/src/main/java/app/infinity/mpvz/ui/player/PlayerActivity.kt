@@ -206,6 +206,7 @@ class PlayerActivity :
       media3FlowTargetFps = decoderPreferences.mpvFlowTargetFps.get(),
       media3FlowQuality = decoderPreferences.mpvFlowQuality.get(),
       media3FlowComputeApi = decoderPreferences.mpvFlowComputeApi.get(),
+      media3FlowSoftBlendDebug = BuildConfig.DEBUG && decoderPreferences.mpvFlowSoftBlendDebug.get(),
     ).also {
       it.onEnded = { runOnUiThread { handleNativePlaybackEnded() } }
       it.onPlaybackError = { error -> runOnUiThread { handleNativePlaybackError(error) } }

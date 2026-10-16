@@ -723,7 +723,7 @@ int main(int argc, char **argv)
     const uint8_t neutral1[4] = { 120, 110, 104, 255 };
     const uint8_t mixed[4] = { 110, 105, 102, 255 };
     const uint8_t soft_chroma_blend[4] = { 64, 98, 0, 255 };
-    const uint8_t soft_low_confidence_blend[4] = { 191, 0, 64, 255 };
+    const uint8_t soft_low_confidence_blend[4] = { 214, 0, 41, 255 };
 
     run_fixture(&ctx, "scene-cut alpha selects first source", red, blue,
                 0x3800, 0x3400, 0x3800, 0.25f, red, 1, 0);
@@ -748,7 +748,7 @@ int main(int argc, char **argv)
                 neutral0, neutral0, 0x0000, 0x3400, 0x3400, 0.25f,
                 confidence_outlier_expected, 0, 2);
     run_fixture(&ctx,
-                ctx.soft_blend ? "soft mode blends low-confidence adjacent frames" :
+                ctx.soft_blend ? "soft mode favors temporal detail at low confidence" :
                                  "default mode keeps the nearest low-confidence endpoint",
                 red, blue, 0x0000, 0x3400, 0x3800, 0.25f,
                 ctx.soft_blend ? soft_low_confidence_blend : red, 1, 3);
