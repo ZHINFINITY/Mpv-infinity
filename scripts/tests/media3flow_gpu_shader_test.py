@@ -34,13 +34,37 @@ for forbidden in (
 # GLES uniform locations are stable for a linked program. Query them at setup,
 # not from the per-frame capture or presentation paths.
 draw_texture = SINK.split("  private fun drawTexture(", 1)[1].split(
-    "\n  private fun copyExternalTexture(", 1
+    "\n  private fun defaultPresentationFrame(", 1
 )[0]
 copy_external_texture = SINK.split("  private fun copyExternalTexture(", 1)[1].split(
     "\n  private fun makeSharedImageExternal(", 1
 )[0]
 assert "glGetUniformLocation" not in draw_texture, "presentation must not query GLES uniforms per output frame"
 assert "glGetUniformLocation" not in copy_external_texture, "capture must not query GLES uniforms per input frame"
+assert "MAX_PRESENTATION_BUFFERS = 2" in SINK, "async presentation must stay within a two-buffer memory bound"
+assert "presentationQueue.acquireForWrite()" in draw_texture and "presentationQueue.publish(lease)" in draw_texture, (
+    "producer output must enter the bounded latest-wins presentation mailbox"
+)
+assert "eglSwapBuffers" not in draw_texture, "the producer GL handler must not block on the window swap"
+presentation_consumer = SINK.split("  private fun presentNextQueuedFrame()", 1)[1].split(
+    "\n  private fun resumePresentationDrain()", 1
+)[0]
+assert "GLES30.glWaitSync" in presentation_consumer and "eglSwapBuffers" in presentation_consumer, (
+    "the presenter must wait for staged GPU work and own eglSwapBuffers"
+)
+assert "GLES30.glClientWaitSync" in SINK and "presentationQueue.finishPresentation(index)" in SINK, (
+    "staging slots must not be reused until the presenter-side GPU read fence completes"
+)
+assert "consumePresentationGlError()" in presentation_consumer and "eglPresentationTimeANDROID" in presentation_consumer, (
+    "presenter-side GLES draw and EGL presentation-time failures must be checked before swapping"
+)
+assert "PRESENTATION_FENCE_TIMEOUT_NS" in SINK and "presentationQueue.quarantinePresentation(index)" in SINK, (
+    "uncertain GPU ownership must time out into a permanently unavailable slot, not unsafe reuse"
+)
+assert "presentationReleaseStarted" in SINK, "presenter release must be idempotent after fence completion"
+assert "handlePresenterException(error)" in SINK, "unexpected presenter exceptions must not strand an owned slot"
+queue_source = (ROOT / "app/src/main/java/app/infinity/mpvz/ui/player/Media3FlowPresentationQueue.kt").read_text(encoding="utf-8")
+assert "QUARANTINED" in queue_source and "fun quarantinePresentation(slot: Int)" in queue_source
 for marker in (
     'copyExternalLocation = if (copyProgram != 0) GLES20.glGetUniformLocation(copyProgram, "uExternal")',
     'copyTextureMatrixLocation = if (copyProgram != 0) GLES20.glGetUniformLocation(copyProgram, "uTextureMatrix")',
@@ -126,7 +150,7 @@ assert "lastEglSwapWaitMs" not in synthesis_admission and "swapBudgetAvailable" 
 assert "motionAdmissionProxyMs <" in render_decision, (
     "motion admission must retain its source-pair deadline proxy"
 )
-assert "drawSourceFrame(sourceFrame, renderTimeNs, targetPtsUs)" in render_decision, (
+assert "drawSourceFrame(sourceFrame, renderTimeNs, targetPtsUs, presentationFrame(false" in render_decision, (
     "source-frame fallback must remain available when synthesis is unavailable"
 )
 for marker in (
@@ -207,7 +231,7 @@ assert "pending_or_dropped" in (ROOT / "app/src/main/java/app/infinity/mpvz/ui/p
 for stage in ("motionFine", "motionMiddle", "motionCoarse"):
     assert f"{stage} = stages[" in (ROOT / "app/src/main/java/app/infinity/mpvz/ui/player/Media3FlowDiagnostics.kt").read_text()
 assert "Vulkan/libplacebo timestamp queries" in (ROOT / "app/src/main/java/app/infinity/mpvz/ui/player/controls/PlayerControls.kt").read_text()
-assert "GLES_EXT_disjoint_timer_query presentation draw" in (ROOT / "app/src/main/java/app/infinity/mpvz/ui/player/controls/PlayerControls.kt").read_text()
+assert "GLES_EXT_disjoint_timer_query staging copy" in (ROOT / "app/src/main/java/app/infinity/mpvz/ui/player/controls/PlayerControls.kt").read_text()
 timing_snapshot = JNI.split("nativeGetVulkanTimingStats(", 1)[1].split("nativeDestroyContext(", 1)[0]
 assert "mpvflow_gpu_get_timing_stats" in timing_snapshot
 assert "pl_gpu_finish" not in timing_snapshot and "glFinish" not in timing_snapshot

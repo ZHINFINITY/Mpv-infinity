@@ -64,7 +64,7 @@ data class Media3FlowDiagnostics(
   val droppedFrames: Long = 0L,
   /** Inferred target ticks with no sink output; not confirmed display/scanout misses. */
   val skippedOutputTicks: Long = 0L,
-  /** EGL/window/swap submission failures, distinct from inferred tick gaps. */
+  /** Staging, GLES/EGL, or window/swap submission failures, distinct from inferred tick gaps. */
   val outputSubmissionFailures: Long = 0L,
   val lastOutputSubmissionFailureReason: String = "none",
   val skippedFrames: Long = 0L,
@@ -93,6 +93,9 @@ data class Media3FlowDiagnostics(
   val oldestPendingInputAgeMs: Float = 0f,
   val sourceFrameDepth: Int = 0,
   val readyMotionPairDepth: Int = 0,
+  val presentationQueueDepth: Int = 0,
+  val presentationInFlight: Int = 0,
+  val presentationCoalescedFrames: Long = 0L,
   val selectedSourcePtsAgeMs: Float? = null,
   val sourcePairPtsGapMs: Float? = null,
   val frame0CaptureAgeMs: Float? = null,
@@ -131,6 +134,13 @@ class Media3FlowVideoSink(
   private val maxDimension = Media3FlowAnalysisPolicy.maxDimension(targetFps, quality)
   private val glThread = HandlerThread("Media3Flow-GLES").apply { start() }
   private val glHandler = Handler(glThread.looper)
+  private val presentationThread = HandlerThread("Media3Flow-Present").apply { start() }
+  private val presentationHandler = Handler(presentationThread.looper)
+  private val presentationQueue = Media3FlowPresentationQueue(MAX_PRESENTATION_BUFFERS)
+  private val presentationSlots = Array(MAX_PRESENTATION_BUFFERS) { PresentationSlot() }
+  private val presentationDrainPending = AtomicBoolean(false)
+  private var presenterCurrentSlotIndex = -1
+  private val outputSurfaceGeneration = AtomicLong(0L)
   private val inputLock = Any()
   private val pendingInput = ArrayDeque<PendingInput>()
   private val expectedTexturePts = ArrayDeque<FrameToken>()
@@ -170,6 +180,11 @@ class Media3FlowVideoSink(
     .asFloatBuffer()
     .put(floatArrayOf(-1f, -1f, 3f, -1f, -1f, 3f))
     .apply { position(0) }
+  private val presentationVertexBuffer: FloatBuffer = ByteBuffer.allocateDirect(6 * 2 * Float.SIZE_BYTES)
+    .order(ByteOrder.nativeOrder())
+    .asFloatBuffer()
+    .put(floatArrayOf(-1f, -1f, 3f, -1f, -1f, 3f))
+    .apply { position(0) }
 
   @Volatile private var currentFormat: Format? = null
   @Volatile private var decoderOutputColorStandard = Format.NO_VALUE
@@ -179,6 +194,8 @@ class Media3FlowVideoSink(
   @Volatile private var videoAspect = VideoAspect.Fit
   @Volatile private var initialized = false
   @Volatile private var outputAvailable = false
+  @Volatile private var presentationSurfaceReady = false
+  @Volatile private var presentationFailed = false
   @Volatile private var storedFrameCount = 0
   @Volatile private var latestPositionUs = 0L
   @Volatile private var playbackClock = PlaybackClock(0L, 0L)
@@ -219,7 +236,6 @@ class Media3FlowVideoSink(
   private var lastOutputTickGapReason = "none"
   private val outputTickGapContexts = linkedMapOf<String, Long>()
   private var lastOutputSubmissionFailureReason = "none"
-  private var lastEglSwapWaitMs = 0f
   private var gpuTimerQueryIds = IntArray(0)
   private var gpuTimerQueriesSupported = false
   private var activeGpuTimerQuery: PendingGlesTimerQuery? = null
@@ -255,8 +271,16 @@ class Media3FlowVideoSink(
   private var eglConfig: android.opengl.EGLConfig? = null
   private var pbufferSurface = EGL14.EGL_NO_SURFACE
   private var windowSurface = EGL14.EGL_NO_SURFACE
-  private var eglSwapIntervalAttempted = false
-  private var eglSwapIntervalZeroApplied = false
+  private var presentationEglContext = EGL14.EGL_NO_CONTEXT
+  private var presentationPbufferSurface = EGL14.EGL_NO_SURFACE
+  private var presentationBlitProgram = 0
+  private var presentationBlitImageLocation = -1
+  private var presentationBlitTextureScaleLocation = -1
+  private var presentationBlitTextureOffsetLocation = -1
+  private var presentationBlitRotationLocation = -1
+  @Volatile private var eglSwapIntervalAttempted = false
+  @Volatile private var eglSwapIntervalZeroApplied = false
+  private var presentationReleaseStarted = false
   @Volatile private var outputSurface: Surface? = null
   private var inputTextureId = 0
   private var inputSurfaceTexture: SurfaceTexture? = null
@@ -540,7 +564,7 @@ class Media3FlowVideoSink(
   private data class InputQueueSnapshot(val depth: Int, val inFlight: Boolean, val oldestAgeMs: Float)
   private data class FrameToken(val ptsUs: Long, val generation: Long, val releaseTimestampNs: Long)
   private data class PlaybackClock(val positionUs: Long, val elapsedRealtimeUs: Long)
-  private enum class FlowGlesStage { PRESENTATION_DRAW }
+  private enum class FlowGlesStage { PRESENTATION_STAGING_COPY }
   private enum class FlowCpuStage {
     INPUT_QUEUE_WAIT,
     FRAME_HANDLER_CALL,
@@ -562,6 +586,38 @@ class Media3FlowVideoSink(
     var inUse = false
   }
 
+  private class PresentationSlot {
+    var textureId = 0
+    var width = 0
+    var height = 0
+    var producerFence = 0L
+    var consumerFence = 0L
+    var consumerFenceStartedAtNs = 0L
+    var consumerFencePollScheduled = false
+    var frame: PresentationFrame? = null
+    var completionReported = false
+  }
+
+  private data class PresentationFrame(
+    val sourcePtsUs: Long,
+    val sourcePts0Us: Long?,
+    val sourcePts1Us: Long?,
+    val targetPtsUs: Long,
+    val renderTimeNs: Long,
+    val interpolationAlpha: Float?,
+    val speed: Float,
+    val synthesized: Boolean,
+    val reason: String,
+    val streamGeneration: Long,
+    val surfaceGeneration: Long,
+    val format: Format?,
+    val frameWidth: Int,
+    val frameHeight: Int,
+    val outputWidth: Int,
+    val outputHeight: Int,
+    val aspect: VideoAspect,
+  )
+
   private class MotionPairSlot {
     var nativePairHandle = 0L
     var frame0PtsUs = C.TIME_UNSET
@@ -580,7 +636,10 @@ class Media3FlowVideoSink(
     resetDecoderOutputColorState(sourceFormat)
     initialized = false
     val success = runOnGlThreadSync {
-      if (!ensureEgl() || !makePbufferCurrent() || sourceFormat.width <= 0 || sourceFormat.height <= 0) {
+      if (!ensureEgl() || !makePbufferCurrent() ||
+        !runOnPresentationThreadSync { ensurePresentationEgl() } ||
+        sourceFormat.width <= 0 || sourceFormat.height <= 0
+      ) {
         destroyWindowSurface()
         initialized = false
         return@runOnGlThreadSync false
@@ -663,6 +722,7 @@ class Media3FlowVideoSink(
         originPtsUs = C.TIME_UNSET
         lastOutputTick = -1L
       }
+      if (makePbufferCurrent()) cancelPendingPresentationBuffers()
       clearSourceFrames()
       ptsHistory.clear()
       outputWallTimes.clear()
@@ -722,6 +782,8 @@ class Media3FlowVideoSink(
 
   override fun setOutputSurfaceInfo(outputSurface: Surface, outputResolution: Size) {
     val previousSurface = this.outputSurface
+    outputSurfaceGeneration.incrementAndGet()
+    presentationSurfaceReady = false
     this.outputSurface = outputSurface
     this.outputResolution = outputResolution
     outputAvailable = outputSurface.isValid
@@ -731,6 +793,7 @@ class Media3FlowVideoSink(
         clearFrameRateHint(previousSurface)
         outputWallTimes.clear()
         generatedWallTimes.clear()
+        if (makePbufferCurrent()) cancelPendingPresentationBuffers()
       }
       // The dormant Flow renderer shares PlayerView's surface; only claim its BufferQueue after
       // Media3 selects this sink, otherwise the stock MediaCodec renderer cannot connect.
@@ -749,14 +812,16 @@ class Media3FlowVideoSink(
 
   override fun clearOutputSurfaceInfo() {
     val previousSurface = outputSurface
+    outputSurfaceGeneration.incrementAndGet()
     outputAvailable = false
+    presentationSurfaceReady = false
     outputSurface = null
     glHandler.post {
       cancelDisplayFrame()
       clearFrameRateHint(previousSurface)
       outputWallTimes.clear()
       generatedWallTimes.clear()
-      makePbufferCurrent()
+      if (makePbufferCurrent()) cancelPendingPresentationBuffers()
       destroyWindowSurface()
     }
   }
@@ -1048,33 +1113,73 @@ class Media3FlowVideoSink(
     disposed = true
     running = false
     val previousSurface = outputSurface
+    outputAvailable = false
+    presentationSurfaceReady = false
+    outputSurfaceGeneration.incrementAndGet()
+    outputSurface = null
     val discarded = ArrayList<PendingInput>()
     synchronized(inputLock) {
       while (pendingInput.isNotEmpty()) discarded += pendingInput.removeFirst()
     }
     discarded.forEach { runCatching { it.handler.skip() } }
-    runCatching {
-      runOnGlThreadSync {
-        cancelDisplayFrame()
-        clearFrameRateHint(previousSurface)
-        makePbufferCurrent()
-        destroyWindowSurface()
-        inputSurface?.release()
-        inputSurface = null
-        inputSurfaceTexture?.release()
-        inputSurfaceTexture = null
-        destroyGlResources()
-        if (eglDisplay != EGL14.EGL_NO_DISPLAY) {
-          EGL14.eglMakeCurrent(eglDisplay, EGL14.EGL_NO_SURFACE, EGL14.EGL_NO_SURFACE, EGL14.EGL_NO_CONTEXT)
-          if (pbufferSurface != EGL14.EGL_NO_SURFACE) EGL14.eglDestroySurface(eglDisplay, pbufferSurface)
-          if (eglContext != EGL14.EGL_NO_CONTEXT) EGL14.eglDestroyContext(eglDisplay, eglContext)
-          EGL14.eglTerminate(eglDisplay)
-        }
-        eglDisplay = EGL14.EGL_NO_DISPLAY
-        eglContext = EGL14.EGL_NO_CONTEXT
-        pbufferSurface = EGL14.EGL_NO_SURFACE
+    glHandler.post {
+      cancelDisplayFrame()
+      clearFrameRateHint(previousSurface)
+      if (makePbufferCurrent()) cancelPendingPresentationBuffers()
+      inputSurface?.release()
+      inputSurface = null
+      inputSurfaceTexture?.release()
+      inputSurfaceTexture = null
+      presentationHandler.post {
+        cancelPendingPresentationBuffersOnPresentationThread()
+        destroyWindowSurfaceOnPresentationThread()
+        finishPresentationThreadRelease()
       }
     }
+  }
+
+  private fun finishPresentationThreadRelease() {
+    if (presentationQueue.hasPresenting()) {
+      presentationHandler.postDelayed({ finishPresentationThreadRelease() }, PRESENTATION_FENCE_POLL_DELAY_MS)
+      return
+    }
+    if (presentationReleaseStarted) return
+    presentationReleaseStarted = true
+    makePresentationPbufferCurrent()
+    if (presentationBlitProgram != 0) GLES20.glDeleteProgram(presentationBlitProgram)
+    presentationBlitProgram = 0
+    if (eglDisplay != EGL14.EGL_NO_DISPLAY) {
+      EGL14.eglMakeCurrent(
+        eglDisplay,
+        EGL14.EGL_NO_SURFACE,
+        EGL14.EGL_NO_SURFACE,
+        EGL14.EGL_NO_CONTEXT,
+      )
+      if (presentationPbufferSurface != EGL14.EGL_NO_SURFACE) {
+        EGL14.eglDestroySurface(eglDisplay, presentationPbufferSurface)
+      }
+      if (presentationEglContext != EGL14.EGL_NO_CONTEXT) {
+        EGL14.eglDestroyContext(eglDisplay, presentationEglContext)
+      }
+    }
+    presentationPbufferSurface = EGL14.EGL_NO_SURFACE
+    presentationEglContext = EGL14.EGL_NO_CONTEXT
+    presentationThread.quitSafely()
+    glHandler.post { finishGlThreadRelease() }
+  }
+
+  private fun finishGlThreadRelease() {
+    makePbufferCurrent()
+    destroyGlResources()
+    if (eglDisplay != EGL14.EGL_NO_DISPLAY) {
+      EGL14.eglMakeCurrent(eglDisplay, EGL14.EGL_NO_SURFACE, EGL14.EGL_NO_SURFACE, EGL14.EGL_NO_CONTEXT)
+      if (pbufferSurface != EGL14.EGL_NO_SURFACE) EGL14.eglDestroySurface(eglDisplay, pbufferSurface)
+      if (eglContext != EGL14.EGL_NO_CONTEXT) EGL14.eglDestroyContext(eglDisplay, eglContext)
+      EGL14.eglTerminate(eglDisplay)
+    }
+    eglDisplay = EGL14.EGL_NO_DISPLAY
+    eglContext = EGL14.EGL_NO_CONTEXT
+    pbufferSurface = EGL14.EGL_NO_SURFACE
     glThread.quitSafely()
   }
 
@@ -1410,7 +1515,7 @@ class Media3FlowVideoSink(
         zeroGpuTimerResults++
         return@repeat
       }
-      val stageSamples = glesDurationSamplesNs[FlowGlesStage.PRESENTATION_DRAW.ordinal]
+      val stageSamples = glesDurationSamplesNs[FlowGlesStage.PRESENTATION_STAGING_COPY.ordinal]
       stageSamples.addLast(elapsedNs)
       while (stageSamples.size > GPU_TIMING_HISTORY_SIZE) stageSamples.removeFirst()
     }
@@ -1456,7 +1561,7 @@ class Media3FlowVideoSink(
       disjointResultsDiscarded = disjointGpuTimerResults,
       zeroDurationResults = zeroGpuTimerResults,
       skippedBecausePoolFull = skippedGpuTimerQueries,
-      presentationDraw = summary(FlowGlesStage.PRESENTATION_DRAW),
+      presentationStagingCopy = summary(FlowGlesStage.PRESENTATION_STAGING_COPY),
     )
   }
 
@@ -1603,7 +1708,7 @@ class Media3FlowVideoSink(
   }
 
   private fun renderAtPosition(positionUs: Long, speed: Float, frameTimeNanos: Long?) {
-    if ((!running && !allowFirstFrameBeforeStarted) || !outputAvailable || windowSurface == EGL14.EGL_NO_SURFACE) return
+    if ((!running && !allowFirstFrameBeforeStarted) || !outputAvailable || !presentationSurfaceReady) return
     if (sourceFrames.isEmpty()) return
     val sourceSnapshot = sourceFrames.toList()
     val origin = originPtsUs.takeIf { it != C.TIME_UNSET } ?: sourceSnapshot.first().ptsUs
@@ -1661,7 +1766,6 @@ class Media3FlowVideoSink(
       ((nowNs - it).coerceAtLeast(0L) / 1_000_000.0).toFloat()
     }
     if (missedTicks > 0L) {
-      val tickBudgetMs = 1_000f / targetFps.coerceAtLeast(1)
       val wantsInterpolation = bracket != null &&
         Media3FlowCadence.needsInterpolation(deltaUs, targetFps, speed)
       val missReason = when {
@@ -1669,8 +1773,7 @@ class Media3FlowVideoSink(
         pair == null && wantsInterpolation -> "motion_pair_not_ready"
         pair != null && wantsInterpolation && motionAdmissionProxyMs >= deltaUs / 1_000f * ANALYSIS_DEADLINE_RESERVE ->
           "motion_submit_proxy_over_deadline_reserve"
-        lastEglSwapWaitMs >= tickBudgetMs -> "previous_egl_swap_over_tick_budget"
-        lastOutputCallbackLatenessMs >= tickBudgetMs -> "gl_callback_late_by_one_or_more_ticks"
+        lastOutputCallbackLatenessMs >= 1_000f / targetFps.coerceAtLeast(1) -> "gl_callback_late_by_one_or_more_ticks"
         else -> "output_tick_gap_unattributed"
       }
       recordOutputTickGaps(missedTicks, missReason)
@@ -1689,18 +1792,32 @@ class Media3FlowVideoSink(
     val renderTimeNs = ptsOffsetNs?.let { Media3FlowCadence.checkedAdd(basePresentationNs, it) }
       ?.coerceAtLeast(nowNs) ?: nowNs
     logTimingTrace(positionUs, speed, targetPtsUs, sourceFrame.ptsUs, sourceSnapshot.first().ptsUs, renderTimeNs, nowNs)
-    if (!makeWindowCurrent()) {
-      recordOutputSubmissionFailure("egl_make_window_current_failed")
-      droppedFrames.incrementAndGet()
-      dispatchListener { it.onFrameDropped() }
-      return
-    }
+    val alpha = bracket?.let { Media3FlowCadence.interpolationAlpha(it.first.ptsUs, it.second.ptsUs, targetPtsUs) }
+    fun presentationFrame(synthesized: Boolean, reason: String) = PresentationFrame(
+      sourcePtsUs = sourceFrame.ptsUs,
+      sourcePts0Us = bracket?.first?.ptsUs,
+      sourcePts1Us = bracket?.second?.ptsUs,
+      targetPtsUs = targetPtsUs,
+      renderTimeNs = renderTimeNs,
+      interpolationAlpha = alpha,
+      speed = speed,
+      synthesized = synthesized,
+      reason = reason,
+      streamGeneration = streamGeneration,
+      surfaceGeneration = outputSurfaceGeneration.get(),
+      format = currentFormat,
+      frameWidth = frameWidth,
+      frameHeight = frameHeight,
+      outputWidth = outputResolution.width.takeIf { it > 0 } ?: frameWidth,
+      outputHeight = outputResolution.height.takeIf { it > 0 } ?: frameHeight,
+      aspect = videoAspect,
+    )
     var synthesized = false
     val submitted = if (synthesize && bracket != null && pair != null) {
       val synthesisResult = runCatching {
         dispatchSynthesis(bracket.first, bracket.second, pair, targetPtsUs)
         checkGlError("frame synthesis")
-        drawTexture(outputTexture, renderTimeNs, targetPtsUs)
+        drawTexture(outputTexture, renderTimeNs, targetPtsUs, presentationFrame(true, "motion_pair_ready"))
       }
       synthesized = synthesisResult.getOrDefault(false)
       if (synthesized) {
@@ -1711,71 +1828,25 @@ class Media3FlowVideoSink(
           lastBypassReason = "synthesis_pass_error"
           Log.w(logTag, "Frame synthesis failed; drawing a source frame", error)
         }
-        drawSourceFrame(sourceFrame, renderTimeNs, targetPtsUs)
+        drawSourceFrame(sourceFrame, renderTimeNs, targetPtsUs, presentationFrame(false, lastBypassReason ?: "source_frame_due"))
       }
     } else {
       if (bracket != null && Media3FlowCadence.needsInterpolation(deltaUs, targetFps, speed)) {
         skippedFrames++
         if (lastBypassReason == null) lastBypassReason = "motion_not_ready_or_deadline"
       }
-      drawSourceFrame(sourceFrame, renderTimeNs, targetPtsUs)
+      drawSourceFrame(sourceFrame, renderTimeNs, targetPtsUs, presentationFrame(false, lastBypassReason ?: "source_frame_due"))
     }
-    if (submitted) {
-      if (synthesized) {
-        generatedFrames++
-        generatedWallTimes.addLast(System.nanoTime())
-        while (generatedWallTimes.size > OUTPUT_RATE_WINDOW) generatedWallTimes.removeFirst()
-      }
-      lastRenderedPtsUs = targetPtsUs
-      if (!firstFrameReported) {
-        firstFrameReported = true
-        dispatchListener { it.onFirstFrameRendered() }
-      }
-      metadataListener?.onVideoFrameAboutToBeRendered(
-        targetPtsUs,
-        renderTimeNs,
-        currentFormat ?: Format.Builder().build(),
-        null,
-      )
-    } else {
-      recordOutputSubmissionFailure("egl_swap_or_output_submission_failed")
+    if (!submitted) {
+      recordOutputSubmissionFailure("presentation_stage_failed")
       droppedFrames.incrementAndGet()
       dispatchListener { it.onFrameDropped() }
+      outputDecisionCounters.record("output_submission_failed", "presentation_stage_failed")
     }
     if (tick != null) lastOutputTick = tick
     allowFirstFrameBeforeStarted = false
     lastState = if (synthesized && submitted) "gpu_interpolated" else "source_frame_fallback"
     if (synthesized && submitted) lastBypassReason = null
-    val outputState = if (synthesized && submitted) "synthesized" else "passthrough"
-    val outputReason =
-      if (!submitted) {
-        "output_submission_failed"
-      } else {
-        lastBypassReason ?: if (outputState == "synthesized") "motion_pair_ready" else "source_frame_due"
-      }
-    outputDecisionCounters.record(outputState, outputReason)
-    val outputSignature = "$outputState|$outputReason"
-    val outputLogNowNs = System.nanoTime()
-    if (outputSignature != lastLoggedOutputDiagnosticSignature &&
-      (lastOutputDiagnosticLogAtNs == 0L ||
-        outputLogNowNs - lastOutputDiagnosticLogAtNs >= FLOW_OUTPUT_DIAGNOSTIC_LOG_MIN_INTERVAL_NS ||
-        outputReason == "output_submission_failed")
-    ) {
-      lastLoggedOutputDiagnosticSignature = outputSignature
-      lastOutputDiagnosticLogAtNs = outputLogNowNs
-      val alpha = bracket?.let { Media3FlowCadence.interpolationAlpha(it.first.ptsUs, it.second.ptsUs, targetPtsUs) }
-      val outputMessage =
-        "MPVFLOW_DIAGNOSTIC component=native-media3 event=output state=$outputState renderer_api=vulkan " +
-          "requested_compute_api=${requestedComputeApi.name.lowercase()} " +
-          "effective_compute_api=${effectiveComputeApiName()} " +
-          "reason=$outputReason target_fps=$targetFps speed=${formatLogFloat(speed)} " +
-          "source_pts_us=${sourceFrame.ptsUs} source_pts0_us=${bracket?.first?.ptsUs ?: "none"} " +
-          "source_pts1_us=${bracket?.second?.ptsUs ?: "none"} target_pts_us=$targetPtsUs " +
-          "interpolation_alpha=${alpha?.let(::formatLogFloat) ?: "none"} " +
-          "fallback_source_frame_pts_us=${if (outputState == "passthrough") sourceFrame.ptsUs else "none"} " +
-          "timestamp_source=media3_decoder_pts sync_mode=1x"
-      Log.println(if (outputState == "synthesized") Log.INFO else Log.WARN, logTag, outputMessage)
-    }
   }
 
   private fun findSourcePair(frames: List<FrameSlot>, targetPtsUs: Long): Pair<FrameSlot, FrameSlot>? {
@@ -1823,71 +1894,733 @@ class Media3FlowVideoSink(
     }
   }
 
-  private fun drawSourceFrame(slot: FrameSlot, presentationTimeNs: Long, ptsUs: Long): Boolean {
+  private fun drawSourceFrame(
+    slot: FrameSlot,
+    presentationTimeNs: Long,
+    ptsUs: Long,
+    frame: PresentationFrame? = null,
+  ): Boolean {
     if (!makeSharedImageExternal(slot, "source_frame_display")) return false
-    return drawTexture(slot.colorTexture, presentationTimeNs, ptsUs)
+    return drawTexture(slot.colorTexture, presentationTimeNs, ptsUs, frame)
   }
 
-  private fun drawTexture(textureId: Int, presentationTimeNs: Long, ptsUs: Long): Boolean {
-    if (windowSurface == EGL14.EGL_NO_SURFACE || !makeWindowCurrent()) return false
-    val width = outputResolution.width.takeIf { it > 0 } ?: frameWidth
-    val height = outputResolution.height.takeIf { it > 0 } ?: frameHeight
+  private fun drawTexture(
+    textureId: Int,
+    presentationTimeNs: Long,
+    ptsUs: Long,
+    frame: PresentationFrame? = null,
+  ): Boolean {
+    if (presentationFailed || !presentationSurfaceReady || !outputAvailable || frameWidth <= 0 || frameHeight <= 0) return false
+    if (!ensureEgl() || !makePbufferCurrent()) return false
+    val lease = presentationQueue.acquireForWrite() ?: return false
+    val slot = presentationSlots[lease.slot]
+    clearProducerFence(slot)
+    var producerFence = 0L
+    try {
+      if (slot.textureId == 0 || slot.width != frameWidth || slot.height != frameHeight) {
+        deleteTexture(slot.textureId)
+        slot.textureId = createTexture(GLES20.GL_TEXTURE_2D, frameWidth, frameHeight, GLES30.GL_RGBA8)
+        slot.width = frameWidth
+        slot.height = frameHeight
+      }
+      val glesQuery = beginGlesTimerQuery()
+      try {
+        GLES20.glBindFramebuffer(GLES20.GL_FRAMEBUFFER, framebuffer)
+        GLES20.glFramebufferTexture2D(
+          GLES20.GL_FRAMEBUFFER,
+          GLES20.GL_COLOR_ATTACHMENT0,
+          GLES20.GL_TEXTURE_2D,
+          slot.textureId,
+          0,
+        )
+        check(GLES20.glCheckFramebufferStatus(GLES20.GL_FRAMEBUFFER) == GLES20.GL_FRAMEBUFFER_COMPLETE) {
+          "Media3 Flow presentation-staging framebuffer is incomplete"
+        }
+        GLES20.glViewport(0, 0, frameWidth, frameHeight)
+        GLES20.glUseProgram(blitProgram)
+        bindTextureUnit(0, textureId)
+        GLES20.glUniform1i(blitImageLocation, 0)
+        GLES20.glUniform2f(blitTextureScaleLocation, 1f, 1f)
+        GLES20.glUniform2f(blitTextureOffsetLocation, 0f, 0f)
+        GLES20.glUniform1i(blitRotationLocation, 0)
+        drawFullscreenTriangle()
+        checkGlError("presentation staging copy")
+      } finally {
+        GLES20.glBindFramebuffer(GLES20.GL_FRAMEBUFFER, 0)
+        endGlesTimerQuery(glesQuery)
+      }
+      producerFence = GLES30.glFenceSync(GLES30.GL_SYNC_GPU_COMMANDS_COMPLETE, 0)
+      check(producerFence != 0L) { "Unable to fence the staged Media3 Flow frame" }
+      GLES20.glFlush()
+      slot.producerFence = producerFence
+      slot.frame = frame ?: defaultPresentationFrame(ptsUs, presentationTimeNs)
+      slot.completionReported = false
+      val superseded = presentationQueue.publish(lease)
+      if (superseded != null) {
+        val replaced = presentationSlots[superseded]
+        clearProducerFence(replaced)
+        replaced.frame = null
+      }
+      schedulePresentationDrain()
+      return true
+    } catch (error: RuntimeException) {
+      if (producerFence != 0L) GLES30.glDeleteSync(producerFence)
+      slot.producerFence = 0L
+      slot.frame = null
+      presentationQueue.abortWrite(lease)
+      logFlowRecordOnce(
+        "presentation-stage-failed",
+        Log.ERROR,
+        "event=presentation_handoff state=failed stage=bounded_texture_staging reason=stage_or_fence_failure",
+        error,
+      )
+      false
+    }
+  }
+
+  private fun defaultPresentationFrame(ptsUs: Long, presentationTimeNs: Long): PresentationFrame {
     val format = currentFormat
-    val geometry = Media3FlowGeometry.blitGeometry(
-      frameWidth,
-      frameHeight,
-      width,
-      height,
-      videoAspect,
-      pixelWidthHeightRatio = format?.pixelWidthHeightRatio?.takeIf { it.isFinite() && it > 0f } ?: 1f,
-      rotationDegrees = format?.rotationDegrees ?: 0,
+    return PresentationFrame(
+      sourcePtsUs = ptsUs,
+      sourcePts0Us = null,
+      sourcePts1Us = null,
+      targetPtsUs = ptsUs,
+      renderTimeNs = presentationTimeNs,
+      interpolationAlpha = null,
+      speed = playbackSpeed,
+      synthesized = false,
+      reason = "source_frame_due",
+      streamGeneration = streamGeneration,
+      surfaceGeneration = outputSurfaceGeneration.get(),
+      format = format,
+      frameWidth = frameWidth,
+      frameHeight = frameHeight,
+      outputWidth = outputResolution.width.takeIf { it > 0 } ?: frameWidth,
+      outputHeight = outputResolution.height.takeIf { it > 0 } ?: frameHeight,
+      aspect = videoAspect,
     )
-    val hasLetterbox = geometry.viewportWidth != width || geometry.viewportHeight != height
+  }
+
+  private fun clearProducerFence(slot: PresentationSlot) {
+    if (slot.producerFence != 0L) GLES30.glDeleteSync(slot.producerFence)
+    slot.producerFence = 0L
+  }
+
+  /** Runs on the producer GL handler; only READY slots can be cancelled here. */
+  private fun cancelPendingPresentationBuffers() {
+    presentationQueue.cancelReady().forEach { index ->
+      val slot = presentationSlots[index]
+      clearProducerFence(slot)
+      slot.frame = null
+    }
+  }
+
+  private fun schedulePresentationDrain() {
+    if (disposed || presentationFailed || !presentationDrainPending.compareAndSet(false, true)) return
+    if (!presentationHandler.post {
+        presenterCurrentSlotIndex = -1
+        try {
+          presentNextQueuedFrame()
+        } catch (error: Throwable) {
+          handlePresenterException(error)
+        } finally {
+          presenterCurrentSlotIndex = -1
+        }
+      }
+    ) {
+      presentationDrainPending.set(false)
+    }
+  }
+
+  /** Runs exclusively on the presentation handler; eglSwapBuffers never blocks capture or synthesis. */
+  private fun presentNextQueuedFrame() {
+    val index = presentationQueue.takeNext()
+    if (index == null) {
+      presentationDrainPending.set(false)
+      if (presentationQueue.hasReady()) schedulePresentationDrain()
+      return
+    }
+    val slot = presentationSlots[index]
+    presenterCurrentSlotIndex = index
+    val frame = slot.frame
+    if (frame == null || disposed || presentationFailed || !outputAvailable || !presentationSurfaceReady ||
+      frame.streamGeneration != streamGeneration || frame.surfaceGeneration != outputSurfaceGeneration.get()
+    ) {
+      makePresentationPbufferCurrent()
+      discardPresentationSlot(index)
+      resumePresentationDrain()
+      return
+    }
+    if (slot.producerFence == 0L) {
+      failUnprovenPresentation(index, frame, "producer_fence_missing", GLES30.GL_WAIT_FAILED, "gles_fence")
+      return
+    }
+    if (!makePresentationWindowCurrent()) {
+      val error = EGL14.eglGetError()
+      makePresentationPbufferCurrent()
+      discardPresentationSlot(index)
+      slot.completionReported = true
+      reportPresentationCompletion(
+        frame,
+        swapped = false,
+        swapWaitNs = 0L,
+        swapReturnedNs = System.nanoTime(),
+        errorCode = error,
+      )
+      resumePresentationDrain()
+      return
+    }
+
+    val producerFence = slot.producerFence
+    slot.producerFence = 0L
+    GLES30.glWaitSync(producerFence, 0, GLES30.GL_TIMEOUT_IGNORED)
+    val producerWaitError = consumePresentationGlError()
+    if (producerWaitError != GLES20.GL_NO_ERROR) {
+      runCatching { GLES30.glDeleteSync(producerFence) }
+      failUnprovenPresentation(index, frame, "producer_fence_wait", producerWaitError, "gles_fence_wait")
+      return
+    }
+    GLES30.glDeleteSync(producerFence)
+    if (disposed || !outputAvailable || !presentationSurfaceReady ||
+      frame.streamGeneration != streamGeneration || frame.surfaceGeneration != outputSurfaceGeneration.get()
+    ) {
+      discardPresentationSlot(index)
+      resumePresentationDrain()
+      return
+    }
+    val geometry = Media3FlowGeometry.blitGeometry(
+      frame.frameWidth,
+      frame.frameHeight,
+      frame.outputWidth,
+      frame.outputHeight,
+      frame.aspect,
+      pixelWidthHeightRatio = frame.format?.pixelWidthHeightRatio?.takeIf { it.isFinite() && it > 0f } ?: 1f,
+      rotationDegrees = frame.format?.rotationDegrees ?: 0,
+    )
+    val hasLetterbox = geometry.viewportWidth != frame.outputWidth || geometry.viewportHeight != frame.outputHeight
     if (hasLetterbox) {
-      GLES20.glViewport(0, 0, width, height)
+      GLES20.glViewport(0, 0, frame.outputWidth, frame.outputHeight)
       GLES20.glClearColor(0f, 0f, 0f, 1f)
       GLES20.glClear(GLES20.GL_COLOR_BUFFER_BIT)
     }
-    GLES20.glViewport(
-      geometry.viewportX,
-      geometry.viewportY,
-      geometry.viewportWidth,
-      geometry.viewportHeight,
+    GLES20.glViewport(geometry.viewportX, geometry.viewportY, geometry.viewportWidth, geometry.viewportHeight)
+    GLES20.glUseProgram(presentationBlitProgram)
+    bindTextureUnit(0, slot.textureId)
+    GLES20.glUniform1i(presentationBlitImageLocation, 0)
+    GLES20.glUniform2f(presentationBlitTextureScaleLocation, geometry.textureScaleX, geometry.textureScaleY)
+    GLES20.glUniform2f(presentationBlitTextureOffsetLocation, geometry.textureOffsetX, geometry.textureOffsetY)
+    GLES20.glUniform1i(presentationBlitRotationLocation, geometry.rotationDegrees)
+    drawPresentationFullscreenTriangle()
+    val drawError = consumePresentationGlError()
+    val presentationTimeSet = EGLExt.eglPresentationTimeANDROID(
+      eglDisplay,
+      windowSurface,
+      frame.renderTimeNs.coerceAtLeast(0L),
     )
-    GLES20.glUseProgram(blitProgram)
-    bindTextureUnit(0, textureId)
-    GLES20.glUniform1i(blitImageLocation, 0)
-    GLES20.glUniform2f(
-      blitTextureScaleLocation,
-      geometry.textureScaleX,
-      geometry.textureScaleY,
-    )
-    GLES20.glUniform2f(
-      blitTextureOffsetLocation,
-      geometry.textureOffsetX,
-      geometry.textureOffsetY,
-    )
-    GLES20.glUniform1i(blitRotationLocation, geometry.rotationDegrees)
-    val presentationQuery = beginGlesTimerQuery()
-    try {
-      drawFullscreenTriangle()
-    } finally {
-      endGlesTimerQuery(presentationQuery)
+    val presentationTimeError = if (presentationTimeSet) EGL14.EGL_SUCCESS else EGL14.eglGetError()
+    slot.consumerFence = GLES30.glFenceSync(GLES30.GL_SYNC_GPU_COMMANDS_COMPLETE, 0)
+    if (slot.consumerFence == 0L) {
+      val fenceError = consumePresentationGlError().takeIf { it != GLES20.GL_NO_ERROR } ?: GLES30.GL_WAIT_FAILED
+      failUnprovenPresentation(index, frame, "consumer_fence_create", fenceError, "gles_fence")
+      return
     }
-    EGLExt.eglPresentationTimeANDROID(eglDisplay, windowSurface, presentationTimeNs.coerceAtLeast(0L))
+    if (!schedulePresentationFencePoll(index, slot, flushCommands = true)) {
+      resumePresentationDrain()
+      return
+    }
+    if (disposed || !outputAvailable || !presentationSurfaceReady ||
+      frame.streamGeneration != streamGeneration || frame.surfaceGeneration != outputSurfaceGeneration.get()
+    ) {
+      resumePresentationDrain()
+      return
+    }
+    if (drawError != GLES20.GL_NO_ERROR) {
+      slot.completionReported = true
+      reportPresentationCompletion(
+        frame,
+        swapped = false,
+        swapWaitNs = 0L,
+        swapReturnedNs = System.nanoTime(),
+        errorCode = drawError,
+        errorKind = "gles_draw",
+      )
+      failPresentationPath("presenter_draw")
+      resumePresentationDrain()
+      return
+    }
+    if (!presentationTimeSet) {
+      slot.completionReported = true
+      reportPresentationCompletion(
+        frame,
+        swapped = false,
+        swapWaitNs = 0L,
+        swapReturnedNs = System.nanoTime(),
+        errorCode = presentationTimeError,
+        errorKind = "egl_presentation_time",
+      )
+      resumePresentationDrain()
+      return
+    }
     val swapStartNs = System.nanoTime()
     val swapped = EGL14.eglSwapBuffers(eglDisplay, windowSurface)
     val swapReturnedNs = System.nanoTime()
     val swapWaitNs = (swapReturnedNs - swapStartNs).coerceAtLeast(0L)
-    lastEglSwapWaitMs = swapWaitNs / 1_000_000f
-    recordCpuDuration(FlowCpuStage.EGL_SWAP_WAIT, swapWaitNs)
-    if (swapped) {
-      outputWallTimes.addLast(swapReturnedNs)
-      while (outputWallTimes.size > OUTPUT_RATE_WINDOW) outputWallTimes.removeFirst()
+    val swapError = if (swapped) EGL14.EGL_SUCCESS else EGL14.eglGetError()
+    slot.completionReported = true
+    reportPresentationCompletion(
+      frame,
+      swapped,
+      swapWaitNs,
+      swapReturnedNs,
+      swapError,
+      swapAttempted = true,
+    )
+    resumePresentationDrain()
+  }
+
+  private fun failUnprovenPresentation(
+    index: Int,
+    frame: PresentationFrame,
+    stage: String,
+    errorCode: Int,
+    errorKind: String,
+  ) {
+    val slot = presentationSlots[index]
+    slot.frame = null
+    slot.completionReported = true
+    presentationQueue.quarantinePresentation(index)
+    reportPresentationCompletion(
+      frame,
+      swapped = false,
+      swapWaitNs = 0L,
+      swapReturnedNs = System.nanoTime(),
+      errorCode = errorCode,
+      errorKind = errorKind,
+    )
+    failPresentationPath(stage)
+    resumePresentationDrain()
+  }
+
+  private fun schedulePresentationFencePoll(
+    index: Int,
+    slot: PresentationSlot,
+    flushCommands: Boolean = false,
+  ): Boolean {
+    val fence = slot.consumerFence
+    if (fence == 0L) return false
+    if (slot.consumerFencePollScheduled) return true
+    if (flushCommands) GLES20.glFlush()
+    if (slot.consumerFenceStartedAtNs == 0L) slot.consumerFenceStartedAtNs = System.nanoTime()
+    slot.consumerFencePollScheduled = true
+    val posted = presentationHandler.postDelayed(
+      {
+        try {
+          pollPresentationFence(index, fence)
+        } catch (error: Throwable) {
+          failPresentationFence(index, fence, GLES30.GL_WAIT_FAILED)
+        }
+      },
+      PRESENTATION_FENCE_POLL_DELAY_MS,
+    )
+    if (!posted) {
+      slot.consumerFencePollScheduled = false
+      failPresentationFence(index, fence, GLES30.GL_WAIT_FAILED)
     }
-    if (!swapped) Log.w(logTag, "eglSwapBuffers failed at ptsUs=$ptsUs error=0x${EGL14.eglGetError().toString(16)}")
-    makePbufferCurrent()
-    return swapped
+    return posted
+  }
+
+  private fun consumePresentationGlError(): Int {
+    val firstError = GLES20.glGetError()
+    var errorCount = if (firstError == GLES20.GL_NO_ERROR) 0 else 1
+    while (errorCount < 16 && GLES20.glGetError() != GLES20.GL_NO_ERROR) errorCount++
+    return firstError
+  }
+
+  private fun handlePresenterException(error: Throwable) {
+    logFlowRecordOnce(
+      "presentation-handler-exception",
+      Log.ERROR,
+      "event=presentation_handoff state=failed stage=presenter_exception " +
+        "exception=${error.javaClass.simpleName} reason=${error.message.orEmpty().replace(' ', '_').take(160)}",
+      error,
+    )
+    val index = presenterCurrentSlotIndex
+    if (index >= 0 && presentationQueue.state(index) == Media3FlowPresentationQueue.State.PRESENTING) {
+      val slot = presentationSlots[index]
+      val frame = slot.frame
+      if (slot.consumerFence != 0L) {
+        if (!slot.completionReported && frame != null) {
+          slot.completionReported = true
+          reportPresentationCompletion(
+            frame,
+            swapped = false,
+            swapWaitNs = 0L,
+            swapReturnedNs = System.nanoTime(),
+            errorCode = 0,
+            errorKind = "gles_presenter_exception",
+          )
+        }
+        schedulePresentationFencePoll(index, slot)
+      } else {
+        slot.frame = null
+        slot.completionReported = true
+        presentationQueue.quarantinePresentation(index)
+        if (frame != null) {
+          reportPresentationCompletion(
+            frame,
+            swapped = false,
+            swapWaitNs = 0L,
+            swapReturnedNs = System.nanoTime(),
+            errorCode = 0,
+            errorKind = "gles_presenter_exception",
+          )
+        }
+      }
+    }
+    failPresentationPath("presenter_exception")
+    resumePresentationDrain()
+  }
+
+  private fun resumePresentationDrain() {
+    presentationDrainPending.set(false)
+    if (presentationQueue.hasReady()) schedulePresentationDrain()
+  }
+
+  private fun pollPresentationFence(index: Int, fence: Long) {
+    val slot = presentationSlots[index]
+    if (slot.consumerFence != fence || fence == 0L) return
+    slot.consumerFencePollScheduled = false
+    val waitResult = runCatching { GLES30.glClientWaitSync(fence, 0, 0L) }
+      .getOrDefault(GLES30.GL_WAIT_FAILED)
+    when (waitResult) {
+      GLES30.GL_ALREADY_SIGNALED, GLES30.GL_CONDITION_SATISFIED -> {
+        GLES30.glDeleteSync(fence)
+        slot.consumerFence = 0L
+        slot.consumerFenceStartedAtNs = 0L
+        slot.frame = null
+        slot.completionReported = false
+        presentationQueue.finishPresentation(index)
+        when {
+          disposed -> finishPresentationThreadRelease()
+          presentationFailed && !presentationQueue.hasPresenting() -> destroyPresentationContextOnThread()
+        }
+      }
+      GLES30.GL_TIMEOUT_EXPIRED -> {
+        val elapsedNs = System.nanoTime() - slot.consumerFenceStartedAtNs
+        if (slot.consumerFenceStartedAtNs != 0L && elapsedNs >= PRESENTATION_FENCE_TIMEOUT_NS) {
+          failPresentationFence(index, fence, waitResult)
+        } else {
+          schedulePresentationFencePoll(index, slot)
+        }
+      }
+      else -> failPresentationFence(index, fence, waitResult)
+    }
+  }
+
+  private fun failPresentationFence(index: Int, fence: Long, waitResult: Int) {
+    val slot = presentationSlots[index]
+    if (slot.consumerFence != fence || fence == 0L) return
+    val frame = slot.frame
+    runCatching { GLES30.glDeleteSync(fence) }
+    slot.consumerFence = 0L
+    slot.consumerFenceStartedAtNs = 0L
+    slot.consumerFencePollScheduled = false
+    slot.frame = null
+    presentationQueue.quarantinePresentation(index)
+    logFlowRecordOnce(
+      "presentation-consumer-fence-wait-failed",
+      Log.ERROR,
+      "event=presentation_handoff state=failed stage=consumer_fence_wait " +
+        "reason=slot_quarantined wait_result=0x${waitResult.toString(16)}",
+    )
+    if (!slot.completionReported && frame != null) {
+      slot.completionReported = true
+      reportPresentationCompletion(
+        frame,
+        swapped = false,
+        swapWaitNs = 0L,
+        swapReturnedNs = System.nanoTime(),
+        errorCode = waitResult,
+        errorKind = "gles_fence_wait",
+      )
+    }
+    failPresentationPath("consumer_fence_wait")
+  }
+
+  private fun failPresentationPath(stage: String) {
+    val firstFailure = !presentationFailed
+    presentationFailed = true
+    presentationSurfaceReady = false
+    outputAvailable = false
+    cancelPendingPresentationBuffersOnPresentationThread()
+    logFlowRecordOnce(
+      "presentation-path-failed",
+      Log.ERROR,
+      "event=presentation_handoff state=failed stage=$stage fallback=disabled_after_gpu_ownership_failure",
+    )
+    if (!presentationQueue.hasPresenting()) destroyPresentationContextOnThread()
+    if (firstFailure && !disposed) reportError(IllegalStateException("Media3 Flow presentation failed at $stage"))
+    if (disposed && !presentationQueue.hasPresenting()) finishPresentationThreadRelease()
+  }
+
+  private fun discardPresentationSlot(index: Int) {
+    val slot = presentationSlots[index]
+    if (slot.producerFence != 0L) GLES30.glDeleteSync(slot.producerFence)
+    slot.producerFence = 0L
+    slot.consumerFenceStartedAtNs = 0L
+    slot.consumerFencePollScheduled = false
+    slot.frame = null
+    slot.completionReported = false
+    presentationQueue.finishPresentation(index)
+  }
+
+  private fun cancelPendingPresentationBuffersOnPresentationThread() {
+    val canDeleteProducerFences = makePresentationPbufferCurrent()
+    presentationQueue.cancelReady().forEach { index ->
+      val slot = presentationSlots[index]
+      if (canDeleteProducerFences) {
+        if (slot.producerFence != 0L) GLES30.glDeleteSync(slot.producerFence)
+        slot.producerFence = 0L
+      }
+      slot.consumerFencePollScheduled = false
+      slot.frame = null
+    }
+  }
+
+  private fun reportPresentationCompletion(
+    frame: PresentationFrame,
+    swapped: Boolean,
+    swapWaitNs: Long,
+    swapReturnedNs: Long,
+    errorCode: Int,
+    errorKind: String = "egl",
+    swapAttempted: Boolean = false,
+  ) {
+    glHandler.post {
+      if (disposed || frame.streamGeneration != streamGeneration ||
+        frame.surfaceGeneration != outputSurfaceGeneration.get()
+      ) return@post
+      if (swapAttempted) recordCpuDuration(FlowCpuStage.EGL_SWAP_WAIT, swapWaitNs)
+      val outputState: String
+      val outputReason: String
+      if (swapped) {
+        outputWallTimes.addLast(swapReturnedNs)
+        while (outputWallTimes.size > OUTPUT_RATE_WINDOW) outputWallTimes.removeFirst()
+        if (frame.synthesized) {
+          generatedFrames++
+          generatedWallTimes.addLast(swapReturnedNs)
+          while (generatedWallTimes.size > OUTPUT_RATE_WINDOW) generatedWallTimes.removeFirst()
+        }
+        lastRenderedPtsUs = max(lastRenderedPtsUs, frame.targetPtsUs)
+        if (!firstFrameReported) {
+          firstFrameReported = true
+          dispatchListener { it.onFirstFrameRendered() }
+        }
+        metadataListener?.onVideoFrameAboutToBeRendered(
+          frame.targetPtsUs,
+          frame.renderTimeNs,
+          frame.format ?: Format.Builder().build(),
+          null,
+        )
+        outputState = if (frame.synthesized) "synthesized" else "passthrough"
+        outputReason = frame.reason
+      } else {
+        recordOutputSubmissionFailure("${errorKind}_submission_failed")
+        droppedFrames.incrementAndGet()
+        dispatchListener { it.onFrameDropped() }
+        outputState = "output_submission_failed"
+        outputReason = "${errorKind}_submission_failed_0x${errorCode.toString(16)}"
+      }
+      outputDecisionCounters.record(outputState, outputReason)
+      logPresentedOutput(frame, outputState, outputReason)
+      publishDiagnostics(lastState, lastBypassReason)
+    }
+  }
+
+  private fun logPresentedOutput(frame: PresentationFrame, outputState: String, outputReason: String) {
+    val signature = "$outputState|$outputReason"
+    val nowNs = System.nanoTime()
+    if (signature == lastLoggedOutputDiagnosticSignature &&
+      lastOutputDiagnosticLogAtNs != 0L &&
+      nowNs - lastOutputDiagnosticLogAtNs < FLOW_OUTPUT_DIAGNOSTIC_LOG_MIN_INTERVAL_NS &&
+      outputState != "output_submission_failed"
+    ) return
+    lastLoggedOutputDiagnosticSignature = signature
+    lastOutputDiagnosticLogAtNs = nowNs
+    val alpha = frame.interpolationAlpha
+    val outputMessage =
+      "MPVFLOW_DIAGNOSTIC component=native-media3 event=output state=$outputState renderer_api=vulkan " +
+        "requested_compute_api=${requestedComputeApi.name.lowercase()} " +
+        "effective_compute_api=${effectiveComputeApiName()} " +
+        "reason=$outputReason target_fps=$targetFps speed=${formatLogFloat(frame.speed)} " +
+        "source_pts_us=${frame.sourcePtsUs} source_pts0_us=${frame.sourcePts0Us ?: "none"} " +
+        "source_pts1_us=${frame.sourcePts1Us ?: "none"} target_pts_us=${frame.targetPtsUs} " +
+        "interpolation_alpha=${alpha?.let(::formatLogFloat) ?: "none"} " +
+        "fallback_source_frame_pts_us=${if (outputState == "passthrough") frame.sourcePtsUs else "none"} " +
+        "timestamp_source=media3_decoder_pts sync_mode=1x"
+    Log.println(if (outputState == "synthesized") Log.INFO else Log.WARN, logTag, outputMessage)
+  }
+
+  private fun makePresentationWindowCurrent(): Boolean {
+    if (windowSurface == EGL14.EGL_NO_SURFACE || presentationEglContext == EGL14.EGL_NO_CONTEXT ||
+      eglDisplay == EGL14.EGL_NO_DISPLAY
+    ) return false
+    if (!EGL14.eglMakeCurrent(eglDisplay, windowSurface, windowSurface, presentationEglContext)) {
+      logFlowRecordOnce(
+        "egl-make-presentation-window-current",
+        Log.ERROR,
+        "event=egl_context state=failed stage=presentation_eglMakeCurrent egl_error=0x${EGL14.eglGetError().toString(16)}",
+      )
+      return false
+    }
+    if (!eglSwapIntervalAttempted) {
+      eglSwapIntervalAttempted = true
+      eglSwapIntervalZeroApplied = EGL14.eglSwapInterval(eglDisplay, 0)
+      if (!eglSwapIntervalZeroApplied) {
+        val error = EGL14.eglGetError()
+        val restored = EGL14.eglSwapInterval(eglDisplay, 1)
+        Log.w(logTag, "Unable to disable implicit EGL swap pacing; preserving interval=1 restored=$restored egl_error=0x${error.toString(16)}")
+      }
+    }
+    return true
+  }
+
+  private fun makePresentationPbufferCurrent(): Boolean {
+    if (eglDisplay == EGL14.EGL_NO_DISPLAY || presentationEglContext == EGL14.EGL_NO_CONTEXT ||
+      presentationPbufferSurface == EGL14.EGL_NO_SURFACE
+    ) return false
+    return EGL14.eglMakeCurrent(
+      eglDisplay,
+      presentationPbufferSurface,
+      presentationPbufferSurface,
+      presentationEglContext,
+    )
+  }
+
+  private fun ensurePresentationEgl(): Boolean {
+    if (presentationEglContext != EGL14.EGL_NO_CONTEXT && presentationBlitProgram != 0) {
+      return makePresentationPbufferCurrent()
+    }
+    if (eglDisplay == EGL14.EGL_NO_DISPLAY || eglContext == EGL14.EGL_NO_CONTEXT || eglConfig == null) return false
+    val attributes = intArrayOf(EGL14.EGL_CONTEXT_CLIENT_VERSION, 3, EGL14.EGL_NONE)
+    presentationEglContext = EGL14.eglCreateContext(eglDisplay, checkNotNull(eglConfig), eglContext, attributes, 0)
+    if (presentationEglContext == EGL14.EGL_NO_CONTEXT) {
+      Log.e(logTag, "Unable to create shared presentation EGL context error=0x${EGL14.eglGetError().toString(16)}")
+      return false
+    }
+    presentationPbufferSurface = EGL14.eglCreatePbufferSurface(
+      eglDisplay,
+      checkNotNull(eglConfig),
+      intArrayOf(EGL14.EGL_WIDTH, 1, EGL14.EGL_HEIGHT, 1, EGL14.EGL_NONE),
+      0,
+    )
+    if (presentationPbufferSurface == EGL14.EGL_NO_SURFACE || !makePresentationPbufferCurrent()) {
+      Log.e(logTag, "Unable to create or activate presentation EGL pbuffer error=0x${EGL14.eglGetError().toString(16)}")
+      destroyPresentationContextOnThread()
+      return false
+    }
+    presentationBlitProgram = linkProgram("async_presentation_blit", COPY_VERTEX_SHADER, BLIT_FRAGMENT_SHADER)
+    presentationBlitImageLocation = if (presentationBlitProgram != 0) GLES20.glGetUniformLocation(presentationBlitProgram, "uImage") else -1
+    presentationBlitTextureScaleLocation = if (presentationBlitProgram != 0) GLES20.glGetUniformLocation(presentationBlitProgram, "uTextureScale") else -1
+    presentationBlitTextureOffsetLocation = if (presentationBlitProgram != 0) GLES20.glGetUniformLocation(presentationBlitProgram, "uTextureOffset") else -1
+    presentationBlitRotationLocation = if (presentationBlitProgram != 0) GLES20.glGetUniformLocation(presentationBlitProgram, "uRotationDegrees") else -1
+    val ready = presentationBlitProgram != 0 && presentationBlitImageLocation >= 0 &&
+      presentationBlitTextureScaleLocation >= 0 && presentationBlitTextureOffsetLocation >= 0 &&
+      presentationBlitRotationLocation >= 0
+    if (!ready) destroyPresentationContextOnThread()
+    return ready
+  }
+
+  private fun destroyPresentationContextOnThread() {
+    destroyWindowSurfaceOnPresentationThread()
+    if (presentationBlitProgram != 0) GLES20.glDeleteProgram(presentationBlitProgram)
+    presentationBlitProgram = 0
+    if (eglDisplay != EGL14.EGL_NO_DISPLAY) {
+      EGL14.eglMakeCurrent(eglDisplay, EGL14.EGL_NO_SURFACE, EGL14.EGL_NO_SURFACE, EGL14.EGL_NO_CONTEXT)
+      if (presentationPbufferSurface != EGL14.EGL_NO_SURFACE) EGL14.eglDestroySurface(eglDisplay, presentationPbufferSurface)
+      if (presentationEglContext != EGL14.EGL_NO_CONTEXT) EGL14.eglDestroyContext(eglDisplay, presentationEglContext)
+    }
+    presentationPbufferSurface = EGL14.EGL_NO_SURFACE
+    presentationEglContext = EGL14.EGL_NO_CONTEXT
+  }
+
+  private fun createWindowSurface() {
+    if (!presentationHandler.post { createWindowSurfaceOnPresentationThread() }) {
+      presentationSurfaceReady = false
+    }
+  }
+
+  private fun createWindowSurfaceOnPresentationThread() {
+    if (presentationFailed) {
+      presentationSurfaceReady = false
+      return
+    }
+    if (presentationQueue.hasPresenting()) {
+      presentationHandler.postDelayed(
+        { createWindowSurfaceOnPresentationThread() },
+        PRESENTATION_FENCE_POLL_DELAY_MS,
+      )
+      return
+    }
+    destroyWindowSurfaceOnPresentationThread()
+    val surface = outputSurface ?: return
+    if (!Media3FlowOutputSurfacePolicy.shouldCreateEglWindowSurface(
+        sinkInitialized = initialized,
+        outputSurfaceValid = surface.isValid,
+        disposed = disposed,
+      ) || !ensurePresentationEgl()
+    ) return
+    windowSurface = EGL14.eglCreateWindowSurface(
+      eglDisplay,
+      checkNotNull(eglConfig),
+      surface,
+      intArrayOf(EGL14.EGL_NONE),
+      0,
+    )
+    if (windowSurface == EGL14.EGL_NO_SURFACE) {
+      outputAvailable = false
+      presentationSurfaceReady = false
+      Log.e(logTag, "Unable to create Media3 Flow EGL window surface error=0x${EGL14.eglGetError().toString(16)}")
+      reportError(IllegalStateException("Unable to create Media3 Flow EGL window surface"))
+      return
+    }
+    presentationSurfaceReady = true
+    setOutputFrameRate()
+    currentFormat?.let { format -> dispatchListener { it.onVideoSizeChanged(videoSize(format)) } }
+    if (presentationQueue.hasReady()) schedulePresentationDrain()
+  }
+
+  private fun destroyWindowSurface() {
+    presentationSurfaceReady = false
+    presentationHandler.post { destroyWindowSurfaceOnPresentationThread() }
+  }
+
+  private fun destroyWindowSurfaceOnPresentationThread() {
+    presentationSurfaceReady = false
+    if (presentationQueue.hasPresenting()) {
+      presentationHandler.postDelayed(
+        { destroyWindowSurfaceOnPresentationThread() },
+        PRESENTATION_FENCE_POLL_DELAY_MS,
+      )
+      return
+    }
+    if (eglDisplay == EGL14.EGL_NO_DISPLAY) {
+      windowSurface = EGL14.EGL_NO_SURFACE
+      return
+    }
+    makePresentationPbufferCurrent()
+    if (windowSurface != EGL14.EGL_NO_SURFACE) EGL14.eglDestroySurface(eglDisplay, windowSurface)
+    windowSurface = EGL14.EGL_NO_SURFACE
+    eglSwapIntervalAttempted = false
+    eglSwapIntervalZeroApplied = false
+  }
+
+  private fun drawPresentationFullscreenTriangle() {
+    presentationVertexBuffer.position(0)
+    GLES20.glEnableVertexAttribArray(0)
+    GLES20.glVertexAttribPointer(0, 2, GLES20.GL_FLOAT, false, 0, presentationVertexBuffer)
+    GLES20.glDrawArrays(GLES20.GL_TRIANGLES, 0, 3)
+    GLES20.glDisableVertexAttribArray(0)
   }
 
   private fun copyExternalTexture(destinationTexture: Int, transform: FloatArray) {
@@ -2427,102 +3160,6 @@ class Media3FlowVideoSink(
     return current
   }
 
-  private fun makeWindowCurrent(): Boolean {
-    if (windowSurface == EGL14.EGL_NO_SURFACE || eglDisplay == EGL14.EGL_NO_DISPLAY ||
-      eglContext == EGL14.EGL_NO_CONTEXT
-    ) {
-      logFlowRecordOnce(
-        "egl-make-window-current",
-        Log.ERROR,
-        "event=egl_context state=failed stage=eglMakeCurrent target=window " +
-          "display_ready=${eglDisplay != EGL14.EGL_NO_DISPLAY} " +
-          "context_ready=${eglContext != EGL14.EGL_NO_CONTEXT} " +
-          "surface_ready=${windowSurface != EGL14.EGL_NO_SURFACE}",
-      )
-      return false
-    }
-    val current = EGL14.eglMakeCurrent(eglDisplay, windowSurface, windowSurface, eglContext)
-    if (!current) {
-      logFlowRecordOnce(
-        "egl-make-window-current",
-        Log.ERROR,
-        "event=egl_context state=failed stage=eglMakeCurrent target=window " +
-          "egl_error=0x${EGL14.eglGetError().toString(16)}",
-      )
-      return false
-    }
-    if (!eglSwapIntervalAttempted) {
-      eglSwapIntervalAttempted = true
-      eglSwapIntervalZeroApplied = EGL14.eglSwapInterval(eglDisplay, 0)
-      if (eglSwapIntervalZeroApplied) {
-        logFlowRecordOnce(
-          "egl-swap-interval-zero",
-          Log.INFO,
-          "event=egl_pacing state=ready swap_interval=0 pacing=Choreographer " +
-            "presentation_time=eglPresentationTimeANDROID",
-        )
-      } else {
-        val eglError = EGL14.eglGetError()
-        val restored = EGL14.eglSwapInterval(eglDisplay, 1)
-        Log.w(
-          logTag,
-          "Unable to disable implicit EGL swap pacing; preserving interval=1 restored=$restored " +
-            "egl_error=0x${eglError.toString(16)} pacing=Choreographer",
-        )
-      }
-    }
-    return true
-  }
-
-  private fun destroyWindowSurface() {
-    if (windowSurface != EGL14.EGL_NO_SURFACE && eglDisplay != EGL14.EGL_NO_DISPLAY) {
-      EGL14.eglDestroySurface(eglDisplay, windowSurface)
-    }
-    windowSurface = EGL14.EGL_NO_SURFACE
-    eglSwapIntervalAttempted = false
-    eglSwapIntervalZeroApplied = false
-  }
-
-  private fun createWindowSurface() {
-    destroyWindowSurface()
-    val surface = outputSurface ?: return
-    if (!outputAvailable || !surface.isValid) {
-      if (outputAvailable && !surface.isValid) {
-        logFlowRecordOnce(
-          "egl-window-surface-invalid",
-          Log.WARN,
-          "event=egl_context state=unavailable stage=window_surface_validation reason=surface_invalid",
-        )
-      }
-      return
-    }
-    windowSurface = EGL14.eglCreateWindowSurface(
-      eglDisplay,
-      checkNotNull(eglConfig),
-      surface,
-      intArrayOf(EGL14.EGL_NONE),
-      0,
-    )
-    if (windowSurface == EGL14.EGL_NO_SURFACE) {
-      outputAvailable = false
-      logFlowRecordOnce(
-        "egl-window-surface-create",
-        Log.ERROR,
-        "event=egl_context state=failed stage=eglCreateWindowSurface " +
-          "surface_valid=${surface.isValid} egl_error=0x${EGL14.eglGetError().toString(16)}",
-      )
-      reportError(IllegalStateException("Unable to create Media3 Flow EGL window surface"))
-    } else {
-      logFlowRecordOnce(
-        "egl-window-surface-ready",
-        Log.INFO,
-        "event=egl_context state=ready stage=eglCreateWindowSurface output_surface_valid=true",
-      )
-      setOutputFrameRate()
-      currentFormat?.let { format -> dispatchListener { it.onVideoSizeChanged(videoSize(format)) } }
-    }
-  }
-
   private fun createTexture(target: Int, width: Int, height: Int, internalFormat: Int): Int {
     val ids = IntArray(1)
     GLES20.glGenTextures(1, ids, 0)
@@ -2640,6 +3277,20 @@ class Media3FlowVideoSink(
 
   private fun destroyGlResources() {
     destroyFrameResources()
+    presentationSlots.forEach { slot ->
+      if (slot.producerFence != 0L) GLES30.glDeleteSync(slot.producerFence)
+      if (slot.consumerFence != 0L) GLES30.glDeleteSync(slot.consumerFence)
+      slot.producerFence = 0L
+      slot.consumerFence = 0L
+      slot.consumerFenceStartedAtNs = 0L
+      slot.consumerFencePollScheduled = false
+      deleteTexture(slot.textureId)
+      slot.textureId = 0
+      slot.width = 0
+      slot.height = 0
+      slot.frame = null
+      slot.completionReported = false
+    }
     if (flowVulkanContext != 0L) {
       Media3FlowVulkanNative.nativeDestroyContext(flowVulkanContext)
       flowVulkanContext = 0L
@@ -2757,6 +3408,9 @@ class Media3FlowVideoSink(
       oldestPendingInputAgeMs = queueSnapshot.oldestAgeMs,
       sourceFrameDepth = sourceFrames.size,
       readyMotionPairDepth = motionPairs.count { it.available },
+      presentationQueueDepth = presentationQueue.readyCount(),
+      presentationInFlight = presentationQueue.presentingCount(),
+      presentationCoalescedFrames = presentationQueue.coalescedCount(),
       selectedSourcePtsAgeMs = lastSelectedSourcePtsAgeMs,
       sourcePairPtsGapMs = lastSourcePairPtsGapMs,
       frame0CaptureAgeMs = lastFrame0CaptureAgeMs,
@@ -2806,7 +3460,7 @@ class Media3FlowVideoSink(
       "motionCoarse=${formatVulkanStage(vulkanTiming.motionCoarse)} " +
       "motionTotal=${formatVulkanStage(vulkanTiming.motion)} " +
       "synthesis=${formatVulkanStage(vulkanTiming.synthesis)}"
-    val glesStages = "presentation_draw=${formatFlowDuration(glesTiming.presentationDraw)}"
+    val glesStages = "presentationStagingCopy=${formatFlowDuration(glesTiming.presentationStagingCopy)}"
     val cpuStages = "media3InputQueue=${formatFlowDuration(cpuTiming.inputQueueWait)} " +
       "frameHandler=${formatFlowDuration(cpuTiming.frameHandlerCall)} " +
       "eglSwapWait=${formatFlowDuration(cpuTiming.eglSwapWait)} " +
@@ -2836,6 +3490,8 @@ class Media3FlowVideoSink(
         "motionDeadlineAdmission=cpu_submit_proxy_not_gpu_completion " +
         "queueDepth=pendingInput:${diagnostics.pendingInputDepth},inFlight:${diagnostics.inputInFlight}," +
         "sourceFrames:${diagnostics.sourceFrameDepth},readyMotionPairs:${diagnostics.readyMotionPairDepth} " +
+        "presentationQueue=queued:${diagnostics.presentationQueueDepth},inFlight:${diagnostics.presentationInFlight}," +
+        "coalesced:${diagnostics.presentationCoalescedFrames} " +
         "oldestPendingInputMs=${formatLogFloat(diagnostics.oldestPendingInputAgeMs)} " +
         "selectedSourcePtsAgeMs=${formatNullableLogFloat(diagnostics.selectedSourcePtsAgeMs)} " +
         "pairPtsGapMs=${formatNullableLogFloat(diagnostics.sourcePairPtsGapMs)} " +
@@ -3000,9 +3656,34 @@ class Media3FlowVideoSink(
     return result as T
   }
 
+  private fun <T> runOnPresentationThreadSync(timeoutMs: Long = GL_INIT_TIMEOUT_MS, block: () -> T): T {
+    if (Looper.myLooper() == presentationThread.looper) return block()
+    val latch = CountDownLatch(1)
+    var result: Any? = null
+    var failure: Throwable? = null
+    check(presentationHandler.post {
+      try {
+        result = block()
+      } catch (error: Throwable) {
+        failure = error
+      } finally {
+        latch.countDown()
+      }
+    }) { "Media3 Flow presentation thread is shutting down" }
+    check(latch.await(timeoutMs, TimeUnit.MILLISECONDS)) {
+      "Timed out waiting for Media3 Flow presentation initialization"
+    }
+    failure?.let { throw it }
+    @Suppress("UNCHECKED_CAST")
+    return result as T
+  }
+
   companion object {
     private const val MAX_STORED_FRAMES = 3
     private const val MAX_MOTION_PAIRS = 2
+    private const val MAX_PRESENTATION_BUFFERS = 2
+  private const val PRESENTATION_FENCE_POLL_DELAY_MS = 1L
+  private const val PRESENTATION_FENCE_TIMEOUT_NS = 5_000_000_000L
     private const val MAX_QUEUED_FRAMES = 5
     private const val MAX_INPUT_RELEASE_AHEAD_US = 100_000L
     private const val HISTORY_SIZE = 24

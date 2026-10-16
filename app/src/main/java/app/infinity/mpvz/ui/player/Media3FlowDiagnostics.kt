@@ -20,8 +20,8 @@ data class FlowGlesTimingStats(
   val disjointResultsDiscarded: Long = 0L,
   val zeroDurationResults: Long = 0L,
   val skippedBecausePoolFull: Long = 0L,
-  /** GLES presentation blit only; this is not a Vulkan compute measurement. */
-  val presentationDraw: FlowDurationSummary = FlowDurationSummary(),
+  /** Producer-context copy into a fenced staging texture; not the visible-window draw or scanout. */
+  val presentationStagingCopy: FlowDurationSummary = FlowDurationSummary(),
 )
 
 data class FlowVulkanStageTiming(

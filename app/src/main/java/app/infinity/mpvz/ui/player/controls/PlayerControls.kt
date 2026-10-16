@@ -2482,7 +2482,7 @@ private fun NativeStatsPageOverlay(
               color = Color.White,
             )
             Text(
-              "GLES_EXT_disjoint_timer_query presentation draw ${formatFlowDuration(flowGles.presentationDraw)} · " +
+              "GLES_EXT_disjoint_timer_query staging copy ${formatFlowDuration(flowGles.presentationStagingCopy)} · " +
                 "status ${flowGles.status} valid/pending/disjoint/zero/skipped " +
                 "${flowGles.validResults}/${flowGles.pendingResults}/${flowGles.disjointResultsDiscarded}/" +
                 "${flowGles.zeroDurationResults}/${flowGles.skippedBecausePoolFull}",
@@ -2493,6 +2493,8 @@ private fun NativeStatsPageOverlay(
               "Flow queues: pending input ${flow.pendingInputDepth} · in-flight ${flow.inputInFlight} · " +
                 "oldest input ${String.format(java.util.Locale.US, "%.1f", flow.oldestPendingInputAgeMs)} ms · " +
                 "source frames ${flow.sourceFrameDepth} · ready motion pairs ${flow.readyMotionPairDepth} · " +
+                "presentation queued/in-flight ${flow.presentationQueueDepth}/${flow.presentationInFlight} · " +
+                "coalesced ${flow.presentationCoalescedFrames} · " +
                 "source PTS age ${flow.selectedSourcePtsAgeMs?.let { String.format(java.util.Locale.US, "%.1f", it) } ?: "—"} ms · " +
                 "pair PTS gap ${flow.sourcePairPtsGapMs?.let { String.format(java.util.Locale.US, "%.1f", it) } ?: "—"} ms · " +
                 "capture ages ${flow.frame0CaptureAgeMs?.let { String.format(java.util.Locale.US, "%.1f", it) } ?: "—"}/" +
