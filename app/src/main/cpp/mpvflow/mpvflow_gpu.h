@@ -9,17 +9,13 @@
  */
 #ifndef MPV_INFINITY_MPVFLOW_GPU_H
 #define MPV_INFINITY_MPVFLOW_GPU_H
+#include "mpvflow_visibility.h"
 
 #include <libplacebo/gpu.h>
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
 
-#if defined(__GNUC__) || defined(__clang__)
-#define MPVFLOW_GPU_LOCAL __attribute__((visibility("hidden")))
-#else
-#define MPVFLOW_GPU_LOCAL
-#endif
 
 #ifdef __cplusplus
 extern "C" {
@@ -132,21 +128,21 @@ struct MPVFlowGPUConfig {
  * existing libplacebo GPU. This function never creates/destroys the GPU.
  * On failure, status distinguishes unsupported compute/formats from errors.
  */
-MPVFLOW_GPU_LOCAL MPVFlowGPUContext *mpvflow_gpu_create(pl_gpu gpu,
+MPVFLOW_INTERNAL MPVFlowGPUContext *mpvflow_gpu_create(pl_gpu gpu,
                                       const struct MPVFlowGPUConfig *config,
                                       enum MPVFlowGPUResult *status,
                                       struct MPVFlowGPUCreateDiagnostics *diagnostics);
-MPVFLOW_GPU_LOCAL void mpvflow_gpu_destroy(MPVFlowGPUContext *context);
+MPVFLOW_INTERNAL void mpvflow_gpu_destroy(MPVFlowGPUContext *context);
 /* Returns the resolved runtime backend (OpenCL or Vulkan), never the Auto request. */
-MPVFLOW_GPU_LOCAL enum MPVFlowGPUComputeAPI mpvflow_gpu_get_compute_api(MPVFlowGPUContext *context);
-MPVFLOW_GPU_LOCAL const char *mpvflow_gpu_get_compute_api_name(MPVFlowGPUContext *context);
+MPVFLOW_INTERNAL enum MPVFlowGPUComputeAPI mpvflow_gpu_get_compute_api(MPVFlowGPUContext *context);
+MPVFLOW_INTERNAL const char *mpvflow_gpu_get_compute_api_name(MPVFlowGPUContext *context);
 /* True only when a Vulkan RGBA16F output pass and sampling/storage caps are ready. */
-MPVFLOW_GPU_LOCAL bool mpvflow_gpu_rgba16f_synthesis_supported(MPVFlowGPUContext *context);
+MPVFLOW_INTERNAL bool mpvflow_gpu_rgba16f_synthesis_supported(MPVFlowGPUContext *context);
 
 /* Poll completed libplacebo GPU timestamps without waiting for the device. */
-MPVFLOW_GPU_LOCAL void mpvflow_gpu_get_timing_stats(MPVFlowGPUContext *context,
+MPVFLOW_INTERNAL void mpvflow_gpu_get_timing_stats(MPVFlowGPUContext *context,
                                   struct MPVFlowGPUTimingStats *stats);
-MPVFLOW_GPU_LOCAL void mpvflow_gpu_get_qcom_diagnostics(MPVFlowGPUContext *context,
+MPVFLOW_INTERNAL void mpvflow_gpu_get_qcom_diagnostics(MPVFlowGPUContext *context,
                                       struct MPVFlowGPUQcomDiagnostics *stats);
 
 /*
@@ -155,7 +151,7 @@ MPVFLOW_GPU_LOCAL void mpvflow_gpu_get_qcom_diagnostics(MPVFlowGPUContext *conte
  * pl_tex_destroy after all pairs using it have been released. Pixels stay on
  * the Vulkan device; no CPU readback or upload occurs.
  */
-MPVFLOW_GPU_LOCAL enum MPVFlowGPUResult mpvflow_gpu_prepare_input(MPVFlowGPUContext *context,
+MPVFLOW_INTERNAL enum MPVFlowGPUResult mpvflow_gpu_prepare_input(MPVFlowGPUContext *context,
                                                 pl_tex input,
                                                 pl_tex *prepared_out);
 
@@ -169,11 +165,11 @@ MPVFLOW_GPU_LOCAL enum MPVFlowGPUResult mpvflow_gpu_prepare_input(MPVFlowGPUCont
  * shader by selecting the nearest endpoint; analyze itself cannot report a
  * CPU-readable scene-cut diagnosis without violating the no-readback contract.
  */
-MPVFLOW_GPU_LOCAL enum MPVFlowGPUResult mpvflow_gpu_analyze_pair(MPVFlowGPUContext *context,
+MPVFLOW_INTERNAL enum MPVFlowGPUResult mpvflow_gpu_analyze_pair(MPVFlowGPUContext *context,
                                                pl_tex frame0,
                                                pl_tex frame1,
                                                MPVFlowGPUPair **pair_out);
-MPVFLOW_GPU_LOCAL void mpvflow_gpu_pair_release(MPVFlowGPUContext *context,
+MPVFLOW_INTERNAL void mpvflow_gpu_pair_release(MPVFlowGPUContext *context,
                              MPVFlowGPUPair *pair);
 
 /*
@@ -183,7 +179,7 @@ MPVFLOW_GPU_LOCAL void mpvflow_gpu_pair_release(MPVFlowGPUContext *context,
  * The pair lazily reuses a full-resolution RGBA8 output texture. No CPU pixel
  * readback, upload, or synthesis occurs; GPU commands are queued asynchronously.
  */
-MPVFLOW_GPU_LOCAL enum MPVFlowGPUResult mpvflow_gpu_synthesize(MPVFlowGPUContext *context,
+MPVFLOW_INTERNAL enum MPVFlowGPUResult mpvflow_gpu_synthesize(MPVFlowGPUContext *context,
                                              MPVFlowGPUPair *pair,
                                              pl_tex source0,
                                              pl_tex source1,
@@ -192,18 +188,17 @@ MPVFLOW_GPU_LOCAL enum MPVFlowGPUResult mpvflow_gpu_synthesize(MPVFlowGPUContext
 /* Opt-in synthesis policies. The legacy entry point preserves default behavior.
  * The policy variant caps warped contribution on uncertain-motion and conflict
  * pixels, trading mild ghosting for fewer hard motion-block artifacts. */
-MPVFLOW_GPU_LOCAL enum MPVFlowGPUResult mpvflow_gpu_synthesize_with_visibility(
+MPVFLOW_INTERNAL enum MPVFlowGPUResult mpvflow_gpu_synthesize_with_visibility(
     MPVFlowGPUContext *context, MPVFlowGPUPair *pair,
     pl_tex source0, pl_tex source1, float t,
     bool enable_visibility_resolver, bool enable_soft_blend,
     pl_tex *output);
-MPVFLOW_GPU_LOCAL enum MPVFlowGPUResult mpvflow_gpu_synthesize_with_policy(
+MPVFLOW_INTERNAL enum MPVFlowGPUResult mpvflow_gpu_synthesize_with_policy(
     MPVFlowGPUContext *context, MPVFlowGPUPair *pair,
     pl_tex source0, pl_tex source1, float t,
     bool enable_visibility_resolver, bool enable_soft_blend,
     bool preserve_motion_blend_on_conflict, pl_tex *output);
 
-#undef MPVFLOW_GPU_LOCAL
 
 #ifdef __cplusplus
 }

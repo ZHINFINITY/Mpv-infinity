@@ -280,6 +280,22 @@ PLACEBO_PC="$MPV_PREFIX/pkgconfig/libplacebo.pc"
   echo "MPVFlow MPV Meson dependency metadata is missing: $MPV_DEPENDENCIES" >&2
   exit 1
 }
+MPV_DYNAMIC_SYMBOLS="$(nm -D --defined-only "$MPV_LIBRARY" | awk '{print $NF}')"
+if grep -Eq '^mpvflow_' <<<"$MPV_DYNAMIC_SYMBOLS"; then
+  echo "MPVFlow internals remain dynamically exported from libmpv.so:" >&2
+  grep -E '^mpvflow_' <<<"$MPV_DYNAMIC_SYMBOLS" >&2
+  exit 1
+fi
+if ! grep -Eq '^mpv_create(@@[^[:space:]]+)?$' <<<"$MPV_DYNAMIC_SYMBOLS"; then
+  echo "Stripped MPV runtime is missing its required public mpv_create API" >&2
+  exit 1
+fi
+if readelf -W -S "$MPV_LIBRARY" | grep -Eq '\.(symtab|debug_|gnu_debugdata)'; then
+  echo "MPVFlow libmpv.so still contains a static symbol/debug section after install stripping" >&2
+  readelf -W -S "$MPV_LIBRARY" | grep -E '\.(symtab|debug_|gnu_debugdata)' >&2 || true
+  exit 1
+fi
+echo "Verified libmpv.so strips local/debug symbols and hides all MPVFlow dynamic API names"
 PLACEBO_VERSION="$(sed -n 's/^Version: *//p' "$PLACEBO_PC")"
 [[ -n "$PLACEBO_VERSION" ]] || { echo "Could not read the installed libplacebo version" >&2; exit 1; }
 if ! readelf -d "$MPV_LIBRARY" | grep -Eq 'Shared library: \[libplacebo\.so([.][0-9]+)*\]'; then

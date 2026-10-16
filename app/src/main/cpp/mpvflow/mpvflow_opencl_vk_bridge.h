@@ -10,6 +10,7 @@
  */
 #ifndef MPV_INFINITY_MPVFLOW_OPENCL_VK_BRIDGE_H
 #define MPV_INFINITY_MPVFLOW_OPENCL_VK_BRIDGE_H
+#include "mpvflow_visibility.h"
 
 #include <stddef.h>
 #include <stdint.h>
@@ -91,23 +92,23 @@ struct MPVFlowOpenCLVkImportDiagnostics {
  * Both objects are borrowed and must outlive the bridge and all its buffers.
  * On failure, error_out (when supplied) receives an explicit diagnostic.
  */
-MPVFlowOpenCLVkBridge *mpvflow_opencl_vk_bridge_create(
+MPVFLOW_INTERNAL MPVFlowOpenCLVkBridge *mpvflow_opencl_vk_bridge_create(
     pl_gpu gpu, MPVFlowOpenCLContext *opencl,
     char *error_out, size_t error_capacity);
 
 /* Fails with BUSY unless every child buffer has first been destroyed. */
-enum MPVFlowOpenCLVkBridgeStatus mpvflow_opencl_vk_bridge_destroy(
+MPVFLOW_INTERNAL enum MPVFlowOpenCLVkBridgeStatus mpvflow_opencl_vk_bridge_destroy(
     MPVFlowOpenCLVkBridge *bridge);
 
 /* Last diagnostic for an operation on this context (process-owned storage). */
-const char *mpvflow_opencl_vk_bridge_last_error(
+MPVFLOW_INTERNAL const char *mpvflow_opencl_vk_bridge_last_error(
     const MPVFlowOpenCLVkBridge *bridge);
 
 /* Run short, diagnostic-only QCOM imports on separate fresh 32x32 BLOB AHBs:
  * one before any Vulkan buffer bind and one after a successful Vulkan bind.
  * Neither result enables OpenCL; the caller must separately pass its complete
  * Vulkan/OpenCL kernel round-trip before selecting that backend. */
-void mpvflow_opencl_vk_bridge_probe_import_stages(
+MPVFLOW_INTERNAL void mpvflow_opencl_vk_bridge_probe_import_stages(
     MPVFlowOpenCLVkBridge *bridge,
     struct MPVFlowOpenCLVkImportDiagnostics *diagnostics);
 
@@ -120,7 +121,7 @@ void mpvflow_opencl_vk_bridge_probe_import_stages(
  * the unused OpenCL side complete. Later Vulkan copies are fence-waited before
  * returning, so the caller may then start OpenCL work directly.
  */
-enum MPVFlowOpenCLVkBridgeStatus mpvflow_opencl_vk_buffer_create(
+MPVFLOW_INTERNAL enum MPVFlowOpenCLVkBridgeStatus mpvflow_opencl_vk_buffer_create(
     MPVFlowOpenCLVkBridge *bridge, uint32_t frame_width,
     uint32_t frame_height, enum MPVFlowOpenCLAccess access,
     MPVFlowOpenCLVkBuffer **buffer_out);
@@ -130,21 +131,21 @@ enum MPVFlowOpenCLVkBridgeStatus mpvflow_opencl_vk_buffer_create(
  * mpvflow_opencl_vk_buffer_opencl_finished() has been called for the last
  * OpenCL access. Vulkan/AHB/OpenCL objects are released in dependency order.
  */
-enum MPVFlowOpenCLVkBridgeStatus mpvflow_opencl_vk_buffer_destroy(
+MPVFLOW_INTERNAL enum MPVFlowOpenCLVkBridgeStatus mpvflow_opencl_vk_buffer_destroy(
     MPVFlowOpenCLVkBuffer *buffer);
 
 /* Borrowed OpenCL wrapper, owned/released by the bridge buffer. */
-MPVFlowOpenCLBuffer *mpvflow_opencl_vk_buffer_get_opencl(
+MPVFLOW_INTERNAL MPVFlowOpenCLBuffer *mpvflow_opencl_vk_buffer_get_opencl(
     MPVFlowOpenCLVkBuffer *buffer);
-uint32_t mpvflow_opencl_vk_buffer_width(const MPVFlowOpenCLVkBuffer *buffer);
-uint32_t mpvflow_opencl_vk_buffer_height(const MPVFlowOpenCLVkBuffer *buffer);
-uint32_t mpvflow_opencl_vk_buffer_row_stride(const MPVFlowOpenCLVkBuffer *buffer);
+MPVFLOW_INTERNAL uint32_t mpvflow_opencl_vk_buffer_width(const MPVFlowOpenCLVkBuffer *buffer);
+MPVFLOW_INTERNAL uint32_t mpvflow_opencl_vk_buffer_height(const MPVFlowOpenCLVkBuffer *buffer);
+MPVFLOW_INTERNAL uint32_t mpvflow_opencl_vk_buffer_row_stride(const MPVFlowOpenCLVkBuffer *buffer);
 
 /*
  * Call before queuing OpenCL work that will touch this buffer. This records that
  * completion must be explicitly confirmed before the next Vulkan use/destruction.
  */
-enum MPVFlowOpenCLVkBridgeStatus mpvflow_opencl_vk_buffer_opencl_started(
+MPVFLOW_INTERNAL enum MPVFlowOpenCLVkBridgeStatus mpvflow_opencl_vk_buffer_opencl_started(
     MPVFlowOpenCLVkBuffer *buffer);
 
 /* Call only after the OpenCL queue has completed all work touching this buffer
@@ -154,13 +155,13 @@ enum MPVFlowOpenCLVkBridgeStatus mpvflow_opencl_vk_buffer_opencl_started(
  * Vulkan copy performs the foreign-family acquire barrier and waits for its
  * fence before returning.
  */
-enum MPVFlowOpenCLVkBridgeStatus mpvflow_opencl_vk_buffer_opencl_finished(
+MPVFLOW_INTERNAL enum MPVFlowOpenCLVkBridgeStatus mpvflow_opencl_vk_buffer_opencl_finished(
     MPVFlowOpenCLVkBuffer *buffer);
 
 /* GPU-only Vulkan transfer fill for deterministic bridge self-tests. The buffer
  * must be foreign-owned and idle; ownership is returned to the foreign family
  * and the queue fence is waited before this function returns. */
-enum MPVFlowOpenCLVkBridgeStatus mpvflow_opencl_vk_fill_buffer(
+MPVFLOW_INTERNAL enum MPVFlowOpenCLVkBridgeStatus mpvflow_opencl_vk_fill_buffer(
     MPVFlowOpenCLVkBuffer *buffer, uint32_t value);
 
 /*
@@ -169,7 +170,7 @@ enum MPVFlowOpenCLVkBridgeStatus mpvflow_opencl_vk_fill_buffer(
  * On return the Vulkan fence has signaled and the buffer is released to the
  * foreign queue family for OpenCL use. The fence is waited before return.
  */
-enum MPVFlowOpenCLVkBridgeStatus mpvflow_opencl_vk_copy_texture_to_buffer(
+MPVFLOW_INTERNAL enum MPVFlowOpenCLVkBridgeStatus mpvflow_opencl_vk_copy_texture_to_buffer(
     MPVFlowOpenCLVkBridge *bridge, pl_tex source,
     MPVFlowOpenCLVkBuffer *destination);
 
@@ -180,7 +181,7 @@ enum MPVFlowOpenCLVkBridgeStatus mpvflow_opencl_vk_copy_texture_to_buffer(
  * directly to TRANSFER_DST_OPTIMAL and then GENERAL before release.
  * The buffer must have been marked complete after OpenCL clFinish.
  */
-enum MPVFlowOpenCLVkBridgeStatus mpvflow_opencl_vk_copy_buffer_to_texture(
+MPVFLOW_INTERNAL enum MPVFlowOpenCLVkBridgeStatus mpvflow_opencl_vk_copy_buffer_to_texture(
     MPVFlowOpenCLVkBridge *bridge, MPVFlowOpenCLVkBuffer *source,
     pl_tex destination);
 

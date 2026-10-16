@@ -180,6 +180,35 @@ jobs:
             exit 1
           fi
           echo "Verified Flow runtime libraries and confirmed librife_vfi.so is absent: $apk"
+      - name: Verify native library symbol hygiene
+        if: ${{ inputs.flavor == 'standard' && inputs.target_abi == 'arm64-v8a' }}
+        run: |
+          set -euo pipefail
+          apk="$(find app/build/outputs/apk/standard/debug -type f -name '*arm64-v8a*.apk' -print -quit)"
+          [[ -n "$apk" ]] || { echo "No Standard arm64 debug APK found" >&2; exit 1; }
+          audit_dir="$(mktemp -d)"
+          trap 'rm -rf "$audit_dir"' EXIT
+          for library in libmpv.so libmedia3flow_vulkan.so; do
+            native="$audit_dir/$library"
+            unzip -p "$apk" "lib/arm64-v8a/$library" > "$native"
+            [[ -s "$native" ]] || { echo "APK contains an empty/missing $library" >&2; exit 1; }
+            if readelf -W -S "$native" | grep -Eq '\.(symtab|debug_|gnu_debugdata)'; then
+              echo "$library contains local/debug symbol metadata after stripping" >&2
+              readelf -W -S "$native" | grep -E '\.(symtab|debug_|gnu_debugdata)' >&2 || true
+              exit 1
+            fi
+            exports="$(nm -D --defined-only "$native" | awk '{print $NF}')"
+            if grep -Eq '^(mpvflow_|.*MPVFlow)' <<<"$exports"; then
+              echo "$library exposes internal MPVFlow dynamic symbols:" >&2
+              grep -E '^(mpvflow_|.*MPVFlow)' <<<"$exports" >&2
+              exit 1
+            fi
+            if [[ "$library" == libmedia3flow_vulkan.so ]] && ! grep -q '^Java_' <<<"$exports"; then
+              echo "Media3 Flow JNI entrypoints are missing from $library" >&2
+              exit 1
+            fi
+            echo "Verified $library: JNI/API exports retained; Flow internals and debug symbols hidden"
+          done
       - name: Upload debug APKs
         uses: actions/upload-artifact@v4
         with:

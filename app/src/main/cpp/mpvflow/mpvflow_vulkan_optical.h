@@ -5,6 +5,7 @@
  */
 #ifndef MPVFLOW_VULKAN_OPTICAL_H
 #define MPVFLOW_VULKAN_OPTICAL_H
+#include "mpvflow_visibility.h"
 
 #include <libplacebo/vulkan.h>
 #include <stddef.h>
@@ -17,15 +18,15 @@ extern "C" {
 #endif
 
 /* Optional acceleration only: unavailable capabilities return NULL or false. */
-MPVFlowVulkanOptical *mpvflow_vulkan_optical_create(pl_gpu gpu,
+MPVFLOW_INTERNAL MPVFlowVulkanOptical *mpvflow_vulkan_optical_create(pl_gpu gpu,
                                                     char *reason,
                                                     size_t reason_size);
-bool mpvflow_vulkan_optical_ensure(MPVFlowVulkanOptical *optical,
+MPVFLOW_INTERNAL bool mpvflow_vulkan_optical_ensure(MPVFlowVulkanOptical *optical,
                                    int width, int height);
-pl_tex mpvflow_vulkan_optical_input(MPVFlowVulkanOptical *optical, int index);
-pl_tex mpvflow_vulkan_optical_vectors(MPVFlowVulkanOptical *optical, int index);
-bool mpvflow_vulkan_optical_dispatch(MPVFlowVulkanOptical *optical);
-void mpvflow_vulkan_optical_destroy(MPVFlowVulkanOptical **optical);
+MPVFLOW_INTERNAL pl_tex mpvflow_vulkan_optical_input(MPVFlowVulkanOptical *optical, int index);
+MPVFLOW_INTERNAL pl_tex mpvflow_vulkan_optical_vectors(MPVFlowVulkanOptical *optical, int index);
+MPVFLOW_INTERNAL bool mpvflow_vulkan_optical_dispatch(MPVFlowVulkanOptical *optical);
+MPVFLOW_INTERNAL void mpvflow_vulkan_optical_destroy(MPVFlowVulkanOptical **optical);
 
 #ifdef __cplusplus
 }

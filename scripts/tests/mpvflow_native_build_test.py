@@ -669,9 +669,26 @@ assert prepare_call in build, "the native build must patch pinned libplacebo bef
 native_cmake = (ROOT / "app/src/main/cpp/CMakeLists.txt").read_text(encoding="utf-8")
 assert "target_compile_options(media3flow_vulkan PRIVATE -fvisibility=hidden)" in native_cmake
 assert "target_link_options(media3flow_vulkan PRIVATE -Wl,--strip-all)" in native_cmake
+flow_visibility_header = ROOT / "app/src/main/cpp/mpvflow/mpvflow_visibility.h"
+assert 'MPVFLOW_INTERNAL __attribute__((visibility("hidden")))' in flow_visibility_header.read_text(encoding="utf-8")
+flow_api_headers = (
+    "mpvflow_gpu.h",
+    "mpvflow_opencl.h",
+    "mpvflow_opencl_vk_bridge.h",
+    "mpvflow_vulkan_optical.h",
+    "mpvflow_vulkan_qcom.h",
+    "mpvflow_core.h",
+)
+for header_name in flow_api_headers:
+    api_header = (flow_visibility_header.parent / header_name).read_text(encoding="utf-8")
+    assert '#include "mpvflow_visibility.h"' in api_header, f"{header_name} must use the shared hidden-symbol annotation"
+    for api_line in api_header.splitlines():
+        if api_line and api_line == api_line.lstrip() and not api_line.startswith(("/*", "//", "static inline", "#")) and \
+           "mpvflow_" in api_line and "(" in api_line:
+            assert api_line.startswith("MPVFLOW_INTERNAL "), f"MPVFlow API must be hidden in {header_name}: {api_line}"
 flow_gpu_api = (ROOT / "app/src/main/cpp/mpvflow/mpvflow_gpu.h").read_text(encoding="utf-8")
-assert "MPVFLOW_GPU_LOCAL __attribute__((visibility(\"hidden\")))" in flow_gpu_api
-assert "MPVFLOW_GPU_LOCAL enum MPVFlowGPUResult mpvflow_gpu_synthesize_with_policy(" in flow_gpu_api
+assert "MPVFLOW_GPU_LOCAL" not in flow_gpu_api
+assert "MPVFLOW_INTERNAL enum MPVFlowGPUResult mpvflow_gpu_synthesize_with_policy(" in flow_gpu_api
 for source in (
     "mpvflow/mpvflow_vulkan_qcom.c",
     "mpvflow/mpvflow_vulkan_optical.c",
@@ -742,7 +759,10 @@ assert synthesis_scale_header.is_file(), "the aspect-preserving synthesis-size p
 assert rate_limit_header.is_file(), "the shared MPVFlow output limiter must be vendored"
 visibility_shader_header = ROOT / "app/src/main/cpp/mpvflow/mpvflow_visibility_resolver_shader.h"
 assert visibility_shader_header.is_file(), "the validated visibility-resolver shader must be embedded for native builds"
+assert flow_visibility_header.is_file(), "the shared internal-symbol visibility header must be vendored"
 assert 'VENDOR / "mpvflow_rate_limit.h"' in prepare_source and \
+       'VENDOR / "mpvflow_visibility.h"' in prepare_source and \
+       '"mpvflow_visibility.h"' in prepare_source and \
        'VENDOR / "mpvflow_visibility_resolver_shader.h"' in prepare_source and \
        'shutil.copy2(VENDOR / "mpvflow_visibility_resolver_shader.h", video_out_dir / "mpvflow_visibility_resolver_shader.h")' in prepare_source and \
        'shutil.copy2(VENDOR / "mpvflow_rate_limit.h", video_out_dir / "mpvflow_rate_limit.h")' in prepare_source and \
@@ -1038,6 +1058,10 @@ assert 'MPV_SUPPORTS_MEDIACODEC_VULKAN", includeMpvFlowMpvRuntime.toString()' in
 app_build_source = APP_BUILD.read_text(encoding="utf-8")
 assert 'val includeMpvFlowMpvRuntime = requestedMpvFlowMpvRuntime && activeAbis == listOf("arm64-v8a")' in app_build_source, (
     "the custom Vulkan mapper capability must be limited to the native arm64 runtime build"
+)
+debug_build_type = app_build_source.split('named("debug") {', 1)[1].split("\n    }", 1)[0]
+assert 'debugSymbolLevel = "none"' in debug_build_type, (
+    "debug APKs must not package native symbol/debug metadata"
 )
 no_vulkan_flavor = app_build_source.split('create("noVulkan") {', 1)[1].split(
     '\n  }\n\n  dependenciesInfo {', 1
@@ -1605,6 +1629,24 @@ with tempfile.TemporaryDirectory(prefix="mpvflow-builder-patch-test-") as tempor
     assert "\t-Dmanpage-build=disabled -Dgpl=false -Dvulkan=enabled -Dlibbluray=enabled -Ddvdnav=disabled -Dstrip=true\n" in patched_mpv, (
         "MPV must retain its LGPL-only feature set, Vulkan and Blu-ray support, and install-time symbol stripping"
     )
+    for marker in (
+        "nm -D --defined-only \"$MPV_LIBRARY\"",
+        "MPV_DYNAMIC_SYMBOLS",
+        "^mpvflow_",
+        "^mpv_create(@@",
+        "readelf -W -S \"$MPV_LIBRARY\"",
+        "Verified libmpv.so strips local/debug symbols",
+    ):
+        assert marker in runtime_builder, f"arm64 MPV runtime must verify stripped internal symbols: missing {marker!r}"
+    native_symbol_workflow = (ROOT / ".github/workflows/debug-apk.yml").read_text(encoding="utf-8")
+    for marker in (
+        "Verify native library symbol hygiene",
+        "libmedia3flow_vulkan.so",
+        "nm -D --defined-only",
+        "^Java_",
+        "local/debug symbol metadata",
+    ):
+        assert marker in native_symbol_workflow, f"arm64 APK must verify JNI-preserving symbol hygiene: missing {marker!r}"
     patched_depinfo = depinfo.read_text(encoding="utf-8")
     assert "dep_mpv=(ffmpeg libass lua libplacebo libbluray)" in patched_depinfo
     assert "v_libbluray=1.4.1" in patched_depinfo and "dep_libbluray=()" in patched_depinfo
@@ -1825,5 +1867,42 @@ with tempfile.TemporaryDirectory(prefix="mpvflow-rate-limit-test-") as temp_dir:
     assert run_rate_test.returncode == 0, (
         f"MPVFlow limiter C regression test failed:\n{run_rate_test.stdout}{run_rate_test.stderr}"
     )
+
+visibility_probe_source = """
+#include "mpvflow_core.h"
+bool mpvflow_should_yield_for_deadline(double processing_ms, double pair_budget_ms, bool work_remains)
+{
+    return work_remains && processing_ms < pair_budget_ms;
+}
+int Java_app_test_visibility_probe(void)
+{
+    return 1;
+}
+"""
+with tempfile.TemporaryDirectory(prefix="mpvflow-visibility-test-") as temp_dir:
+    temp_path = Path(temp_dir)
+    probe_source = temp_path / "visibility_probe.c"
+    probe_library = temp_path / "libvisibility_probe.so"
+    probe_source.write_text(visibility_probe_source, encoding="utf-8")
+    compile_visibility_probe = subprocess.run(
+        ["cc", "-std=c11", "-Wall", "-Wextra", "-Werror", "-fPIC", "-shared",
+         "-Wl,--strip-all", "-I", str(flow_visibility_header.parent),
+         str(probe_source), "-o", str(probe_library)],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert compile_visibility_probe.returncode == 0, (
+        f"MPVFlow visibility probe failed to compile:\n{compile_visibility_probe.stdout}{compile_visibility_probe.stderr}"
+    )
+    dynamic_symbols = subprocess.run(
+        ["nm", "-D", "--defined-only", str(probe_library)],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert dynamic_symbols.returncode == 0, f"could not inspect visibility probe dynsym: {dynamic_symbols.stderr}"
+    assert "Java_app_test_visibility_probe" in dynamic_symbols.stdout, "JNI-style entrypoint must remain exported"
+    assert "mpvflow_should_yield_for_deadline" not in dynamic_symbols.stdout, "MPVFlow internal API must be hidden"
 
 print("MPVFlow Android Vulkan/glslang native-build regression tests passed")

@@ -10,6 +10,7 @@
  */
 #ifndef MPV_INFINITY_MPVFLOW_OPENCL_H
 #define MPV_INFINITY_MPVFLOW_OPENCL_H
+#include "mpvflow_visibility.h"
 
 #include <stdbool.h>
 #include <stddef.h>
@@ -100,24 +101,24 @@ struct MPVFlowOpenCLAHBDesc {
  * error string, when non-NULL, points to a process-static build log valid until
  * the next create call. No alternate CPU/Vulkan backend is selected here.
  */
-MPVFlowOpenCLContext *mpvflow_opencl_create(
+MPVFLOW_INTERNAL MPVFlowOpenCLContext *mpvflow_opencl_create(
     const struct MPVFlowOpenCLConfig *config,
     enum MPVFlowOpenCLStatus *status,
     const char **build_log);
 /* Context-owned platform/device version, driver and extension diagnostics. */
-const char *mpvflow_opencl_get_runtime_info(MPVFlowOpenCLContext *context);
+MPVFLOW_INTERNAL const char *mpvflow_opencl_get_runtime_info(MPVFlowOpenCLContext *context);
 /* Short, complete presence booleans for extensions relevant to QCOM AHB import
  * and the current byte-buffer/kernel interop path. */
-const char *mpvflow_opencl_get_extension_presence_info(
+MPVFLOW_INTERNAL const char *mpvflow_opencl_get_extension_presence_info(
     MPVFlowOpenCLContext *context);
 /* Required tail padding reported by CL_DEVICE_EXT_MEM_PADDING_IN_BYTES_QCOM. */
-size_t mpvflow_opencl_get_qcom_ext_mem_padding_bytes(
+MPVFLOW_INTERNAL size_t mpvflow_opencl_get_qcom_ext_mem_padding_bytes(
     MPVFlowOpenCLContext *context);
 /* Complete all queued OpenCL work; callers can use this before marking shared
  * AHardwareBuffer storage Vulkan-safe after an operation that reported an error. */
-enum MPVFlowOpenCLStatus mpvflow_opencl_finish(MPVFlowOpenCLContext *context);
+MPVFLOW_INTERNAL enum MPVFlowOpenCLStatus mpvflow_opencl_finish(MPVFlowOpenCLContext *context);
 /* Release every buffer and pair created from this context before destroying it. */
-void mpvflow_opencl_destroy(MPVFlowOpenCLContext *context);
+MPVFLOW_INTERNAL void mpvflow_opencl_destroy(MPVFlowOpenCLContext *context);
 
 /*
  * Import a format-BLOB, single-layer, GPU_DATA_BUFFER AHardwareBuffer using the
@@ -145,7 +146,7 @@ void mpvflow_opencl_destroy(MPVFlowOpenCLContext *context);
  * API was not reached). Unsupported descriptors and failed imports never fall
  * back to CPU or Vulkan processing.
  */
-enum MPVFlowOpenCLStatus mpvflow_opencl_import_ahardwarebuffer(
+MPVFLOW_INTERNAL enum MPVFlowOpenCLStatus mpvflow_opencl_import_ahardwarebuffer(
     MPVFlowOpenCLContext *context,
     struct AHardwareBuffer *ahb,
     const struct MPVFlowOpenCLAHBDesc *desc,
@@ -153,7 +154,7 @@ enum MPVFlowOpenCLStatus mpvflow_opencl_import_ahardwarebuffer(
     MPVFlowOpenCLBuffer **buffer_out,
     int32_t *cl_create_error_out);
 /* Release an imported buffer and return the raw clReleaseMemObject result. */
-int32_t mpvflow_opencl_buffer_release(MPVFlowOpenCLContext *context,
+MPVFLOW_INTERNAL int32_t mpvflow_opencl_buffer_release(MPVFlowOpenCLContext *context,
                                       MPVFlowOpenCLBuffer *buffer);
 
 /*
@@ -165,12 +166,12 @@ int32_t mpvflow_opencl_buffer_release(MPVFlowOpenCLContext *context,
  * return so input lifetime and error reporting are deterministic. Frame buffers
  * must have equal dimensions and be unchanged for the duration of this call.
  */
-enum MPVFlowOpenCLStatus mpvflow_opencl_analyze_pair(
+MPVFLOW_INTERNAL enum MPVFlowOpenCLStatus mpvflow_opencl_analyze_pair(
     MPVFlowOpenCLContext *context,
     MPVFlowOpenCLBuffer *frame0,
     MPVFlowOpenCLBuffer *frame1,
     MPVFlowOpenCLPair **pair_out);
-void mpvflow_opencl_pair_release(MPVFlowOpenCLContext *context,
+MPVFLOW_INTERNAL void mpvflow_opencl_pair_release(MPVFlowOpenCLContext *context,
                                  MPVFlowOpenCLPair *pair);
 
 /*
@@ -186,7 +187,7 @@ void mpvflow_opencl_pair_release(MPVFlowOpenCLContext *context,
  * clFinish completes output writes before return. Wrappers remain caller-owned; Vulkan can then consume/
  * copy the same AHardwareBuffer through its existing interop path.
  */
-enum MPVFlowOpenCLStatus mpvflow_opencl_synthesize(
+MPVFLOW_INTERNAL enum MPVFlowOpenCLStatus mpvflow_opencl_synthesize(
     MPVFlowOpenCLContext *context,
     MPVFlowOpenCLPair *pair,
     MPVFlowOpenCLBuffer *source0,

@@ -9,6 +9,7 @@
  */
 #ifndef MPV_INFINITY_MPVFLOW_CORE_H
 #define MPV_INFINITY_MPVFLOW_CORE_H
+#include "mpvflow_visibility.h"
 #include <stdbool.h>
 #include <stdint.h>
 #ifdef __cplusplus
@@ -27,33 +28,33 @@ struct MPVFlowStats {
     double mean_motion_pixels;
 };
 /* Return true only when more target frames remain and the 85% safety reserve is spent. */
-bool mpvflow_should_yield_for_deadline(double processing_ms,
+MPVFLOW_INTERNAL bool mpvflow_should_yield_for_deadline(double processing_ms,
                                        double pair_budget_ms,
                                        bool work_remains);
 /* High-rate sources need no motion analysis; preserve their original timestamps for VO pacing. */
-bool mpvflow_should_bypass_for_source_rate(double source_delta_seconds,
+MPVFLOW_INTERNAL bool mpvflow_should_bypass_for_source_rate(double source_delta_seconds,
                                           double target_step_seconds);
 /* Auto mode adapts its next-pair working cap with pressure/recovery hysteresis. */
-int mpvflow_update_adaptive_dimension(int current_dimension,
+MPVFLOW_INTERNAL int mpvflow_update_adaptive_dimension(int current_dimension,
                                       int configured_max_dimension,
                                       double budget_ratio,
                                       unsigned int *recovery_count);
-MPVFlowContext *mpvflow_create(int block_size, int search_radius);
-void mpvflow_destroy(MPVFlowContext *context);
-int mpvflow_analyze_pair(MPVFlowContext *context,
+MPVFLOW_INTERNAL MPVFlowContext *mpvflow_create(int block_size, int search_radius);
+MPVFLOW_INTERNAL void mpvflow_destroy(MPVFlowContext *context);
+MPVFLOW_INTERNAL int mpvflow_analyze_pair(MPVFlowContext *context,
                          const uint8_t *frame0,
                          const uint8_t *frame1,
                          int width,
                          int height,
                          MPVFlowPair **pair,
                          struct MPVFlowStats *stats);
-void mpvflow_pair_destroy(MPVFlowPair *pair);
+MPVFLOW_INTERNAL void mpvflow_pair_destroy(MPVFlowPair *pair);
 /*
  * Synthesize one packed RGB24 frame at 0 < timestep < 1 using cached vectors.
  * Call mpvflow_analyze_pair once for each decoded pair, then reuse that pair for
  * every target timestamp in the source-frame interval.
  */
-int mpvflow_synthesize_rgb24(MPVFlowContext *context,
+MPVFLOW_INTERNAL int mpvflow_synthesize_rgb24(MPVFlowContext *context,
                              const MPVFlowPair *pair,
                              const uint8_t *frame0,
                              const uint8_t *frame1,
