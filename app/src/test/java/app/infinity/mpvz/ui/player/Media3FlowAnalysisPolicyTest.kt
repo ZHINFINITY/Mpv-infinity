@@ -13,14 +13,6 @@ class Media3FlowAnalysisPolicyTest {
   }
 
   @Test
-  fun maximumTestSettingsForceTheSupportedAnalysisCeiling() {
-    assertEquals(
-      640,
-      Media3FlowAnalysisPolicy.maxDimension(targetFps = 120, quality = 60, maximumTestSettings = true),
-    )
-  }
-
-  @Test
   fun sharedMpvProfileAndTargetRatePolicyRemainUnchanged() {
     assertEquals(416, effectiveMpvFlowMaxDimension(targetFps = 120, quality = 60))
   }

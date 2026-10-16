@@ -143,26 +143,6 @@ class Media3FlowGeometryTest {
   }
 
   @Test
-  fun maximumTestFrameCapPreserves4kInputAndCapsLargerSources() {
-    assertEquals(
-      Media3FlowFrameSize(3840, 2160),
-      Media3FlowGeometry.processingFrameSize(
-        3840,
-        2160,
-        MEDIA3_FLOW_DEBUG_FRAME_MAX_DIMENSION,
-      ),
-    )
-    assertEquals(
-      Media3FlowFrameSize(4096, 2304),
-      Media3FlowGeometry.processingFrameSize(
-        7680,
-        4320,
-        MEDIA3_FLOW_DEBUG_FRAME_MAX_DIMENSION,
-      ),
-    )
-  }
-
-  @Test
   fun motionGridUsesOnlyValidRegularBlockOrigins() {
     val grid = Media3FlowGeometry.motionGridSize(640, 360)
     assertEquals(Media3FlowGridSize(159, 89), grid)

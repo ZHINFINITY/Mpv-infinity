@@ -79,7 +79,7 @@ data class Media3FlowDiagnostics(
   /** Motion-search dimensions, measured from the capped interpolation frame. */
   val processingWidth: Int = 0,
   val processingHeight: Int = 0,
-  /** Actual GPU-stored and synthesized frame dimensions after the active storage cap. */
+  /** Actual GPU-stored and synthesized frame dimensions after the 1920px cap. */
   val frameStorageWidth: Int = 0,
   val frameStorageHeight: Int = 0,
   val state: String = "off",
@@ -128,9 +128,7 @@ class Media3FlowVideoSink(
   private val displayHz = displayRefreshRate(appContext)
   private val targetFps = effectiveMpvFlowTargetFps(requestedTargetFps, displayHz)
   private val quality = requestedQuality.coerceIn(0, 100)
-  private val maxDimension = Media3FlowAnalysisPolicy.maxDimension(targetFps, quality, maximumTestSettings = isDebuggable)
-  private val frameStorageMaxDimension =
-    if (isDebuggable) MEDIA3_FLOW_DEBUG_FRAME_MAX_DIMENSION else MEDIA3_FLOW_FRAME_MAX_DIMENSION
+  private val maxDimension = Media3FlowAnalysisPolicy.maxDimension(targetFps, quality)
   private val glThread = HandlerThread("Media3Flow-GLES").apply { start() }
   private val glHandler = Handler(glThread.looper)
   private val inputLock = Any()
@@ -827,7 +825,7 @@ class Media3FlowVideoSink(
       "event=decoder_color state=${if (decoderSdrOutputConfirmed) "ready" else "unverified"} " +
         "request_sdr_video=$requestSdrOutput output_standard=$outputStandard " +
         "output_transfer=$outputTransfer source_transfer=${colorInfo?.colorTransfer ?: Format.NO_VALUE} " +
-        "source_resolution=${format.width}x${format.height} frame_storage_cap=$frameStorageMaxDimension",
+        "source_resolution=${format.width}x${format.height} frame_storage_cap=$MEDIA3_FLOW_FRAME_MAX_DIMENSION",
     )
   }
 
@@ -1991,8 +1989,7 @@ class Media3FlowVideoSink(
   }
 
   private fun ensureProcessingResources(decoderWidth: Int, decoderHeight: Int) {
-    val frameSize =
-      Media3FlowGeometry.processingFrameSize(decoderWidth, decoderHeight, frameStorageMaxDimension)
+    val frameSize = Media3FlowGeometry.processingFrameSize(decoderWidth, decoderHeight)
     val sourceWidth = frameSize.width
     val sourceHeight = frameSize.height
     val motionSize = Media3FlowGeometry.motionSize(sourceWidth, sourceHeight, maxDimension)
