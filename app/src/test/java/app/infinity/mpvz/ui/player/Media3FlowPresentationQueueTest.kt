@@ -84,21 +84,24 @@ class Media3FlowPresentationQueueTest {
   }
 
   @Test
-  fun quarantiningOneOfTwoInFlightSlotsStillWaitsForTheOtherSlot() {
+  fun quarantiningActiveSlotLeavesPendingFrameCancellableOnFailure() {
     val queue = Media3FlowPresentationQueue(capacity = 2)
     val first = queue.acquireForWrite() ?: error("first write lease unavailable")
     queue.publish(first)
+    val active = queue.takeNext() ?: error("first ready slot unavailable")
     val second = queue.acquireForWrite() ?: error("second write lease unavailable")
     queue.publish(second)
-    val firstPresenting = queue.takeNext() ?: error("first ready slot unavailable")
-    val secondPresenting = queue.takeNext() ?: error("second ready slot unavailable")
-
-    queue.quarantinePresentation(firstPresenting)
     assertTrue(queue.hasPresenting())
-    queue.finishPresentation(secondPresenting)
+    assertEquals(Media3FlowPresentationQueue.State.READY, queue.state(second.slot))
+
+    queue.quarantinePresentation(active)
 
     assertFalse(queue.hasPresenting())
-    assertEquals(Media3FlowPresentationQueue.State.QUARANTINED, queue.state(firstPresenting))
-    assertEquals(Media3FlowPresentationQueue.State.FREE, queue.state(secondPresenting))
+    assertEquals(listOf(second.slot), queue.cancelReady())
+    assertEquals(Media3FlowPresentationQueue.State.QUARANTINED, queue.state(active))
+    assertEquals(Media3FlowPresentationQueue.State.FREE, queue.state(second.slot))
+    val reusable = queue.acquireForWrite() ?: error("cancelled pending slot should be reusable")
+    assertEquals(second.slot, reusable.slot)
+    queue.abortWrite(reusable)
   }
 }
