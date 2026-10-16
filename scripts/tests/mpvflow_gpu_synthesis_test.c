@@ -51,6 +51,7 @@ struct VulkanContext {
     VkSampler sampler;
     char device_name[VK_MAX_PHYSICAL_DEVICE_NAME_SIZE];
     int soft_blend;
+    int prefer_confident_side;
 };
 
 static void fail(const char *operation, VkResult result)
@@ -548,6 +549,9 @@ static void run_fixture(struct VulkanContext *ctx, const char *label,
     if (special_grid_test == 3) {
         fill_rgba16f(flow[0], GRID_PIXELS, 0x0000, 0x0000, 0x0000, 0x0000);
         fill_rgba16f(flow[1], GRID_PIXELS, 0x0000, 0x0000, 0x0000, 0x0000);
+    } else if (special_grid_test == 4) {
+        for (size_t cell = 0; cell < GRID_PIXELS; cell++)
+            flow[1][cell * 4 + 3] = 0x3200; // less reliable reverse motion
     }
     scene[0] = scene_delta;
     scene[1] = scene[2] = 0x0000;
@@ -606,6 +610,8 @@ static void run_fixture(struct VulkanContext *ctx, const char *label,
     int32_t push[4] = { WIDTH, HEIGHT, WIDTH, HEIGHT };
     if (ctx->soft_blend)
         push[0] |= 0x40000000;
+    if (ctx->soft_blend && ctx->prefer_confident_side)
+        push[0] |= 0x20000000;
     vkCmdPushConstants(command, ctx->pipeline_layout, VK_SHADER_STAGE_COMPUTE_BIT,
                        0, sizeof(push), push);
     vkCmdPushConstants(command, ctx->pipeline_layout, VK_SHADER_STAGE_COMPUTE_BIT,
@@ -706,15 +712,16 @@ static void destroy_vulkan(struct VulkanContext *ctx)
 
 int main(int argc, char **argv)
 {
-    if (argc < 2 || argc > 3) {
-        fprintf(stderr, "usage: %s shader.spv [soft-blend:0|1]\n", argv[0]);
+    if (argc < 2 || argc > 4) {
+        fprintf(stderr, "usage: %s shader.spv [soft-blend:0|1] [prefer-confident-side:0|1]\n", argv[0]);
         return 2;
     }
     struct VulkanContext ctx = {0};
-    ctx.soft_blend = argc == 3 && atoi(argv[2]) != 0;
+    ctx.soft_blend = argc >= 3 && atoi(argv[2]) != 0;
+    ctx.prefer_confident_side = argc >= 4 && atoi(argv[3]) != 0;
     initialize_vulkan(&ctx, argv[1]);
-    printf("Running exact MPVFlow shader_synthesize on Vulkan device: %s (%dx%d odd extent, soft_blend=%d)\n",
-           ctx.device_name, WIDTH, HEIGHT, ctx.soft_blend);
+    printf("Running exact MPVFlow shader_synthesize on Vulkan device: %s (%dx%d odd extent, soft_blend=%d prefer_confident_side=%d)\n",
+           ctx.device_name, WIDTH, HEIGHT, ctx.soft_blend, ctx.prefer_confident_side);
 
     const uint8_t red[4] = { 255, 0, 0, 255 };
     const uint8_t blue[4] = { 0, 0, 255, 255 };
@@ -724,6 +731,7 @@ int main(int argc, char **argv)
     const uint8_t mixed[4] = { 110, 105, 102, 255 };
     const uint8_t soft_chroma_blend[4] = { 64, 98, 0, 255 };
     const uint8_t soft_low_confidence_blend[4] = { 214, 0, 41, 255 };
+    const uint8_t soft_edge_blend[4] = { 128, 0, 128, 255 };
 
     run_fixture(&ctx, "scene-cut alpha selects first source", red, blue,
                 0x3800, 0x3400, 0x3800, 0.25f, red, 1, 0);
@@ -738,6 +746,9 @@ int main(int argc, char **argv)
                 ctx.soft_blend ? soft_chroma_blend : luminance_matched_green, 0, 0);
     run_fixture(&ctx, "low-contrast reliable motion retains temporal color blend",
                 neutral0, neutral1, 0x0000, 0x3400, 0x3500, 0.5f, mixed, 0, 0);
+    run_fixture(&ctx, "soft fallback favors the more reliable moving edge",
+                red, blue, 0x0000, 0x3400, 0x3800, 0.5f,
+                ctx.prefer_confident_side ? red : (ctx.soft_blend ? soft_edge_blend : red), 0, 4);
     const uint8_t grid_expected[4] = { 24, 24, 24, 255 };
     const uint8_t soft_grid_expected[4] = { 40, 40, 40, 255 };
     run_fixture(&ctx, "irregular terminal block anchors affect edge synthesis",

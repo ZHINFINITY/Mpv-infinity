@@ -1566,9 +1566,9 @@ Java_app_infinity_mpvz_ui_player_Media3FlowVulkanNative_nativeSynthesize(
         return JNI_FALSE;
     }
     pl_tex synthesized = nullptr;
-    const MPVFlowGPUResult result = mpvflow_gpu_synthesize_with_visibility(
+    const MPVFlowGPUResult result = mpvflow_gpu_synthesize_with_policy(
         context->flow, pair, source0->texture, source1->texture, timestep,
-        false, softBlendEnabled == JNI_TRUE, &synthesized);
+        false, softBlendEnabled == JNI_TRUE, softBlendEnabled == JNI_TRUE, &synthesized);
     if (result != MPVFLOW_GPU_OK || !synthesized) {
         (void) holdImageForExternal(context, output, true);
         logFlowOnce(context, DIAG_SYNTH_FAILURE, ANDROID_LOG_ERROR,

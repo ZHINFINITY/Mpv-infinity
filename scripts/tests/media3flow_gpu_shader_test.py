@@ -84,6 +84,10 @@ assert "requestedSoftBlend: Boolean" in SINK and "soft_blend=$softBlendEnabled" 
 assert "softBlendEnabled, outputImageHandle" in SINK
 assert "softBlendEnabled: Boolean" in NATIVE
 assert "jboolean softBlendEnabled" in JNI and "softBlendEnabled == JNI_TRUE" in JNI
+assert "false, softBlendEnabled == JNI_TRUE, softBlendEnabled == JNI_TRUE, &synthesized" in JNI
+assert "mpvflow_gpu_synthesize_with_visibility(" in MPV_PATCH and "mpvflow_gpu_synthesize_with_policy(" not in MPV_PATCH, (
+    "MPV must retain its legacy synthesis policy while Native Media3 opts into confident-edge fallback"
+)
 assert "media3FlowSoftBlendDebug" in NATIVE_ENGINE and "MpvFlowComputeApi.VULKAN" in NATIVE_ENGINE
 assert "media3FlowSoftBlendDebug = BuildConfig.DEBUG" in (ROOT / "app/src/main/java/app/infinity/mpvz/ui/player/PlayerActivity.kt").read_text(encoding="utf-8")
 for marker in (
@@ -92,7 +96,7 @@ for marker in (
     "eglDupNativeFenceFDANDROID", "eglWaitSyncKHR", "sync_handoff_summary",
     "VK_EXTERNAL_MEMORY_HANDLE_TYPE_ANDROID_HARDWARE_BUFFER_BIT_ANDROID",
     "VK_QUEUE_FAMILY_FOREIGN_EXT", "mpvflow_gpu_create(", "mpvflow_gpu_prepare_input(",
-    "mpvflow_gpu_analyze_pair(", "mpvflow_gpu_synthesize_with_visibility(",
+    "mpvflow_gpu_analyze_pair(", "mpvflow_gpu_synthesize_with_policy(",
 ):
     assert marker in JNI, f"Vulkan HardwareBuffer bridge is missing required contract: {marker}"
 shared_synthesis_bindings = GPU.split("struct pl_desc_binding sb[8] = {", 1)[1].split("};", 1)[0]
@@ -184,7 +188,7 @@ synthesis_jni = JNI.split(
 )[1]
 assert "!std::isfinite(timestep)" in synthesis_jni, "Media3 JNI must reject NaN/infinite synthesis fractions"
 assert synthesis_jni.index("!std::isfinite(timestep)") < synthesis_jni.index("releaseImageToVulkan(") < synthesis_jni.index(
-    "mpvflow_gpu_synthesize_with_visibility(",
+    "mpvflow_gpu_synthesize_with_policy(",
 ), "invalid synthesis fractions must be rejected before ownership handoff or GPU dispatch"
 resource_setup = SINK.split("  private fun ensureProcessingResources(", 1)[1].split(
     "\n  private fun clearSourceFrames(", 1

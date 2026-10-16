@@ -102,7 +102,8 @@ require(visibility_resolver, "bool uniquelySupported=bestEnergy>0.012&&margin>ma
 require(visibility_resolver, "baselineCost-best>0.035&&baselineDistance>3.0", "resolver must materially improve on production and reject near-duplicate motions")
 require(visibility_resolver, "result=mix(fallback,mix(ca,cb,t),0.25)", "resolver correction must remain capped at 25 percent")
 require(SOURCE, '"mpvflow_visibility_resolver_shader.h"', "the native GPU implementation must include the validated embedded GLSL")
-require(SOURCE, "mpvflow_gpu_synthesize_internal(ctx, pair, source0, source1, t,\n                                           false, false, output)", "the public production synthesis API must keep the resolver disabled")
+require(SOURCE, "mpvflow_gpu_synthesize_internal(ctx, pair, source0, source1, t,\n                                           false, false, false, output)", "the public production synthesis API must keep the resolver and Media3 policy disabled")
+require(SOURCE, "bool enable_soft_blend,\n    bool prefer_confident_warp_on_conflict, pl_tex *output)", "the policy API must keep the Media3 edge preference explicit")
 require(SOURCE, "*pass = make_pass(ctx->gpu, glsl, resolver_desc, 10)", "resolver pass must be initialized lazily only after explicit opt-in")
 require(SOURCE, "fallback=production_output", "resolver failure paths must retain the production result")
 synthesis_main = synthesis.split("void main()", 1)[1]
@@ -212,8 +213,12 @@ require(synthesis, "if(confidence<0.28)", "unreliable motion must fall back to a
 require(synthesis, "bool softBlend=(pc.cfg.x&0x40000000)!=0", "the soft path must use an explicit per-synthesis debug flag")
 require(synthesis, "softBlendAlpha=clamp(0.5+(pc.timestep-0.5)*1.35,0.0,1.0)", "soft fallback must sharpen uncertain temporal blends continuously without a midpoint jump")
 require(synthesis, "texelFetch(frame1,p,0),softBlendAlpha", "soft fallback must use its biased temporal alpha only for source-frame blending")
-require(synthesis, "if(confidence<0.28){ outc=softBlend?softColor:", "soft blending must replace only the low-confidence nearest-frame fallback")
-require(synthesis, "if(boundaryConflict&&softBlend) outc=softColor;", "soft blending must mix source colors at motion/color conflicts")
+require(synthesis, "outc=softBlend?softBlendColor(p,ca,cb,confidence):", "soft blending must replace only the low-confidence nearest-frame fallback")
+require(synthesis, "if(boundaryConflict&&softBlend) outc=softBlendColor(p,ca,cb,confidence);", "soft blending must mix source colors at motion/color conflicts")
+require(synthesis, "preferConfidentSide=(pc.cfg.x&0x20000000)!=0", "the reliable-edge preference must use a separate synthesis flag")
+require(synthesis, "boundaryConflict&&softBlend&&preferConfidentSide&&edgeConfidence0>edgeConfidence1+0.10", "the opt-in policy must preserve the more reliable forward warp at a conflict")
+require(synthesis, "boundaryConflict&&softBlend&&preferConfidentSide&&edgeConfidence1>edgeConfidence0+0.10", "the opt-in policy must preserve the more reliable reverse warp at a conflict")
+require(synthesis, "if(!boundaryConflict&&(lumaDelta>0.06||colorDelta>0.08||flowSpread>3.0)){", "expensive neighborhood motion probes must run only when they could alter the conflict decision")
 require(flow, "float(second-best)/max(float(second),1.0)", "flow vectors must report best-vs-runner-up match uniqueness")
 
 for fragment, message in (
@@ -234,7 +239,7 @@ require(flow, "if(hasParent&&!qcomSeed&&parentResidual>0.12&&parentUniqueness>0.
 require(synthesis, "bool neighborhoodConflict=", "synthesis must detect local motion disagreement")
 require(synthesis, "float chromaDelta=max(abs((ca.r-ca.g)-(cb.r-cb.g)),abs((ca.b-ca.g)-(cb.b-cb.g)))", "Vulkan synthesis must measure chroma disagreement between warped source samples")
 require(synthesis, "bool chromaBoundary=colorDelta>0.12&&chromaDelta>0.06", "Vulkan synthesis must reject strong chroma-only contour mixing")
-require(synthesis, "bool boundaryConflict=neighborhoodConflict||lumaDelta>0.08||chromaBoundary", "motion and color boundaries must select a source sample instead of blending across regions")
+require(synthesis, "bool boundaryConflict=lumaDelta>0.08||chromaBoundary", "strong motion and color boundaries must select a source sample instead of blending across regions")
 require(synthesis, "edgeConfidence0=confidence0*(0.5+0.5*smoothstep(0.02,0.35,f.w))", "edge confidence must still use match uniqueness for boundary conflict resolution")
 require(synthesis, "backAt0=flowAtEdgeAware(cycle0,1)", "cycle-consistency verification must retain edge-aware sampling")
 require(synthesis, "forwardAt1=flowAtEdgeAware(cycle1,0)", "reverse cycle-consistency verification must retain edge-aware sampling")

@@ -183,14 +183,19 @@ enum MPVFlowGPUResult mpvflow_gpu_synthesize(MPVFlowGPUContext *context,
                                              pl_tex source1,
                                              float t,
                                              pl_tex *output);
-/* Debug-only opt-ins: apply the Vulkan visibility pass and/or soft fallback
- * blending. Soft blending takes precedence over visibility resolution. Unsupported
- * backends or pass failures keep production output. */
+/* Debug-only synthesis opt-ins. The legacy entry point preserves MPV behavior.
+ * The policy variant may prefer a reliable warped endpoint at conflict boundaries
+ * before using the soft fallback; unsupported backends retain production output. */
 enum MPVFlowGPUResult mpvflow_gpu_synthesize_with_visibility(
     MPVFlowGPUContext *context, MPVFlowGPUPair *pair,
     pl_tex source0, pl_tex source1, float t,
     bool enable_visibility_resolver, bool enable_soft_blend,
     pl_tex *output);
+enum MPVFlowGPUResult mpvflow_gpu_synthesize_with_policy(
+    MPVFlowGPUContext *context, MPVFlowGPUPair *pair,
+    pl_tex source0, pl_tex source1, float t,
+    bool enable_visibility_resolver, bool enable_soft_blend,
+    bool prefer_confident_warp_on_conflict, pl_tex *output);
 
 #ifdef __cplusplus
 }

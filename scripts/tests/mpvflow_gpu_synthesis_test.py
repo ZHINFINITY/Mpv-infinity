@@ -119,10 +119,13 @@ def main() -> None:
         lavapipe_icds = sorted(Path("/usr/share/vulkan/icd.d").glob("lvp_icd*.json"))
         if lavapipe_icds:
             env["VK_ICD_FILENAMES"] = str(lavapipe_icds[0])
-        for mode, label in (("0", "default-off production output"),
-                            ("1", "opt-in soft-blend output")):
+        for soft_blend, prefer_confident_side, label in (
+            ("0", "0", "default-off production output"),
+            ("1", "0", "opt-in soft-blend output"),
+            ("1", "1", "soft blend with confident-edge preference"),
+        ):
             result = subprocess.run(
-                [str(executable), str(spirv), mode],
+                [str(executable), str(spirv), soft_blend, prefer_confident_side],
                 check=False,
                 capture_output=True,
                 text=True,
