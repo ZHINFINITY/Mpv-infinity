@@ -896,6 +896,8 @@ def main() -> None:
     required = (
         VENDOR / "mpvflow_gpu.c",
         VENDOR / "mpvflow_gpu.h",
+        VENDOR / "mpvflow_capture_io.c",
+        VENDOR / "mpvflow_capture_io.h",
         VENDOR / "mpvflow_visibility.h",
         VENDOR / "mpvflow_visibility_resolver_shader.h",
         VENDOR / "mpvflow_rate_limit.h",
@@ -922,6 +924,8 @@ def main() -> None:
     video_out_dir = mpv_dir / "video/out"
     shutil.copy2(VENDOR / "mpvflow_gpu.c", video_out_dir / "mpvflow_gpu.c")
     shutil.copy2(VENDOR / "mpvflow_gpu.h", video_out_dir / "mpvflow_gpu.h")
+    shutil.copy2(VENDOR / "mpvflow_capture_io.c", video_out_dir / "mpvflow_capture_io.c")
+    shutil.copy2(VENDOR / "mpvflow_capture_io.h", video_out_dir / "mpvflow_capture_io.h")
     shutil.copy2(VENDOR / "mpvflow_visibility_resolver_shader.h", video_out_dir / "mpvflow_visibility_resolver_shader.h")
     shutil.copy2(VENDOR / "mpvflow_rate_limit.h", video_out_dir / "mpvflow_rate_limit.h")
     shutil.copy2(VENDOR / "mpvflow_synthesis_scale.h", video_out_dir / "mpvflow_synthesis_scale.h")
@@ -991,6 +995,7 @@ def main() -> None:
 
     validate_hwdec_frame_priv_members(vo)
     gpu_source = "video/out/mpvflow_gpu.c"
+    capture_io_source = "video/out/mpvflow_capture_io.c"
     opencl_sources = (
         "video/out/mpvflow_opencl.c",
         "video/out/mpvflow_opencl_vk_bridge.c",
@@ -1002,14 +1007,14 @@ def main() -> None:
         block = (
             "\n# The direct MPVFlow compute stage is built only for Android.\n"
             "if host_machine.system() == 'android'\n"
-            f"    sources += files('{gpu_source}', '{opencl_sources[0]}', '{opencl_sources[1]}', '{opencl_sources[2]}', '{opencl_sources[3]}')\n"
+            f"    sources += files('{gpu_source}', '{capture_io_source}', '{opencl_sources[0]}', '{opencl_sources[1]}', '{opencl_sources[2]}', '{opencl_sources[3]}')\n"
             "endif\n"
             f"{meson_marker}\n"
         )
         meson = meson[: close + 1] + block + meson[close + 1 :]
         meson_path.write_text(meson)
-    elif any(source not in meson for source in (gpu_source, *opencl_sources)):
-        raise SystemExit("GPU Flow Meson marker exists without every required Flow/OpenCL/optical source")
+    elif any(source not in meson for source in (gpu_source, capture_io_source, *opencl_sources)):
+        raise SystemExit("GPU Flow Meson marker exists without every required Flow/capture/OpenCL/optical source")
 
     vulkan_context_path.write_text(vulkan_context)
     glslang_meson_path.write_text(glslang_meson)

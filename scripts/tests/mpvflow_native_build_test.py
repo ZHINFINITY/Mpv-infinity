@@ -1367,7 +1367,7 @@ assert "effective_compute_api=${effectiveComputeApiName()}" in media3_sink_sourc
 assert "backend=vulkan-spirv" not in media3_sink_source, (
     "Media3 Flow diagnostics must not claim Vulkan compute when OpenCL was requested or selected"
 )
-for source in ("mpvflow/mpvflow_opencl.c", "mpvflow/mpvflow_opencl_vk_bridge.c"):
+for source in ("mpvflow/mpvflow_capture_io.c", "mpvflow/mpvflow_opencl.c", "mpvflow/mpvflow_opencl_vk_bridge.c"):
     assert source in cmake_source, f"Native Media3 must compile {source}"
 assert "dl" in cmake_source and 'android:name="libOpenCL.so"' in manifest_source and 'android:required="false"' in manifest_source, (
     "OpenCL must be dynamically loaded as an optional Android vendor library"

@@ -160,6 +160,7 @@ if(MPVFLOW_ENABLE_VULKAN_BACKEND)
     add_library(media3flow_vulkan SHARED
         media3flow_vulkan_jni.cpp
         mpvflow/mpvflow_gpu.c
+        mpvflow/mpvflow_capture_io.c
         mpvflow/mpvflow_vulkan_qcom.c
         mpvflow/mpvflow_vulkan_optical.c
         mpvflow/mpvflow_opencl.c
