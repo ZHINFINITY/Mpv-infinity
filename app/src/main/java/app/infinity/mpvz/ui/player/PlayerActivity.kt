@@ -218,6 +218,7 @@ class PlayerActivity :
   internal fun startFlowDiagnosticsCapture(): String? {
     if (!BuildConfig.DEBUG) return "debug_build_required"
     return when (activeEngineMode) {
+      PlaybackEngineMode.AUTO -> "active_engine_unresolved"
       PlaybackEngineMode.MPV ->
         flowDiagnosticsCaptureManager.start(
           engine = "mpv",

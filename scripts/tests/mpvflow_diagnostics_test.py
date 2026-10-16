@@ -20,6 +20,7 @@ FLOW_GPU_CORE = (ROOT / "app/src/main/cpp/mpvflow/mpvflow_gpu.c").read_text(enco
 QCOM_ADAPTER = (ROOT / "app/src/main/cpp/mpvflow/mpvflow_vulkan_qcom.c").read_text(encoding="utf-8")
 MEDIA3_NATIVE = (ROOT / "app/src/main/cpp/media3flow_vulkan_jni.cpp").read_text(encoding="utf-8")
 FLOW_CAPTURE_MANAGER = (ROOT / "app/src/main/java/app/infinity/mpvz/ui/player/FlowDiagnosticsCapture.kt").read_text(encoding="utf-8")
+PLAYER_ACTIVITY = (ROOT / "app/src/main/java/app/infinity/mpvz/ui/player/PlayerActivity.kt").read_text(encoding="utf-8")
 MEDIA3_FORMAT_POLICY = (ROOT / "app/src/main/java/app/infinity/mpvz/ui/player/Media3FlowFormatPolicy.kt").read_text(encoding="utf-8")
 
 
@@ -286,6 +287,8 @@ require(FLOW_CAPTURE_MANAGER[terminal_cleanup_index:terminal_archive_index], "va
 require(MPV_VIEW, "val activeSession = mpvFlowCaptureSessionId ?: return null", "MPV stop cleanup must be idempotent after auto-completion")
 require(MEDIA3_FLOW_SINK, "val activeSession = diagnosticCaptureSession ?: return@runOnGlThreadSync null", "Media3 stop cleanup must be idempotent after auto-completion")
 require(MEDIA3_FLOW_SINK, "if (result == null) diagnosticCaptureSession = null", "Media3 must retain its session ID when native stop fails")
+require(FLOW_CAPTURE_MANAGER, "while (currentCoroutineContext().isActive)", "the suspend capture monitor must check cancellation through its coroutine context")
+require(PLAYER_ACTIVITY, 'PlaybackEngineMode.AUTO -> "active_engine_unresolved"', "diagnostics must fail closed rather than guess a renderer if AUTO remains unresolved")
 mapper_hunk = AIMAGE_PATCH.split("@@ -1611,0 +1677,9", 1)[1].split("\n@@", 1)[0]
 require(mapper_hunk, "struct priv *mapper_priv = fp->vo->priv;", "AImage unmap cleanup must declare its own mapper context after line shifts")
 require(mapper_hunk, "mapper_priv->hwdec.mapper", "AImage unmap cleanup must use its locally declared mapper context")

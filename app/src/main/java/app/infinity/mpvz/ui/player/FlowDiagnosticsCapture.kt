@@ -24,6 +24,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
@@ -157,7 +158,7 @@ internal class FlowDiagnosticsCaptureManager(context: Context) {
     var nextTimeoutStopAttemptAt = deadline
     var lastTimingSnapshotAt = 0L
     try {
-      while (isActive) {
+      while (currentCoroutineContext().isActive) {
         val status = withContext(Dispatchers.IO) { readManifest(File(session, MANIFEST_NAME)) }
         val timingNow = SystemClock.elapsedRealtime()
         if (timingNow - lastTimingSnapshotAt >= TIMING_SNAPSHOT_INTERVAL_MILLIS || status?.terminal == true) {
