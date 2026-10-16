@@ -1635,7 +1635,7 @@ Java_app_infinity_mpvz_ui_player_Media3FlowVulkanNative_nativeSynthesize(
     }
     if (mpvflow_gpu_capture_active(context->flow)) {
         const MPVFlowGPUResult captureResult = mpvflow_gpu_capture_sample(
-            context->flow, pair, source0->prepared, source1->prepared, synthesized,
+            context->flow, pair, source0->texture, source1->texture, synthesized,
             timestep, static_cast<double>(sourcePts0Us) / 1000000.0,
             static_cast<double>(sourcePts1Us) / 1000000.0,
             static_cast<double>(outputPtsUs) / 1000000.0,

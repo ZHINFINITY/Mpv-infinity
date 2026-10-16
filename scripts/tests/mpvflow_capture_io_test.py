@@ -28,6 +28,16 @@ int main(int argc, char **argv) {
         0,0,255,0, 17,34,51,255
     };
     char reason[256];
+    int source_tile_width = 0, source_tile_height = 0;
+    int output_tile_width = 0, output_tile_height = 0;
+    assert(mpvflow_capture_io_scaled_dimensions(512, 288,
+        MPVFLOW_CAPTURE_IMAGE_MAX_DIMENSION, &source_tile_width, &source_tile_height));
+    assert(source_tile_width == 512 && source_tile_height == 288);
+    assert(mpvflow_capture_io_scaled_dimensions(1920, 1080,
+        MPVFLOW_CAPTURE_IMAGE_MAX_DIMENSION, &output_tile_width, &output_tile_height));
+    assert(output_tile_width == 640 && output_tile_height == 360);
+    assert(!mpvflow_capture_io_scaled_dimensions(0, 1080,
+        MPVFLOW_CAPTURE_IMAGE_MAX_DIMENSION, &output_tile_width, &output_tile_height));
     assert(mpvflow_capture_io_backend_kind("vulkan-spirv") == MPVFLOW_CAPTURE_BACKEND_VULKAN);
     assert(mpvflow_capture_io_backend_supports_vulkan_readback("vulkan-spirv"));
     assert(mpvflow_capture_io_backend_kind("opencl-qcom") == MPVFLOW_CAPTURE_BACKEND_OPENCL);
@@ -72,6 +82,28 @@ int main(int argc, char **argv) {
         &meta, px, 2, 2, reason, sizeof(reason)));
     assert(mpvflow_capture_io_stop(session));
     mpvflow_capture_io_destroy(session);
+
+    struct MPVFlowCaptureMeta differing_dimensions = {
+        "native-media3", "vulkan", 512, 288, 1920, 1080,
+        20.0, 20.04, 20.02, .5, "{}"
+    };
+    session = mpvflow_capture_io_start(argv[2], "differing_dimensions",
+        &differing_dimensions, reason, sizeof(reason));
+    assert(session);
+    uint8_t *source_tile = calloc((size_t) source_tile_width * source_tile_height, 4);
+    uint8_t *output_tile = calloc((size_t) output_tile_width * output_tile_height, 4);
+    assert(source_tile && output_tile);
+    assert(!mpvflow_capture_io_write(session, 0, -1, "source0",
+        &differing_dimensions, source_tile, source_tile_width, source_tile_height,
+        reason, sizeof(reason)));
+    assert(!mpvflow_capture_io_write(session, 0, 0, "synthesized",
+        &differing_dimensions, output_tile, output_tile_width, output_tile_height,
+        reason, sizeof(reason)));
+    assert(mpvflow_capture_io_stop(session) == 0);
+    mpvflow_capture_io_destroy(session);
+    free(source_tile);
+    free(output_tile);
+
     assert(!mpvflow_capture_io_write_terminal_manifest(argv[2], "no_frames",
         "native-media3", "vulkan", meta.effective_settings_json,
         "no_synthesized_samples"));
@@ -163,6 +195,13 @@ with tempfile.TemporaryDirectory() as temp_dir:
     media3_manifest = json.loads((directory / "media3" / "manifest.json").read_text())
     assert media3_manifest["engine"] == "native-media3"
     assert media3_manifest["stopped"] is True
+    differing = json.loads((directory / "differing_dimensions" / "manifest.json").read_text())
+    assert differing["source_dimensions"] == [512, 288]
+    assert differing["output_dimensions"] == [1920, 1080]
+    source_record = next(item for item in differing["records"] if item["channel"] == "source0")
+    output_record = next(item for item in differing["records"] if item["channel"] == "synthesized")
+    assert (source_record["width"], source_record["height"]) == (512, 288)
+    assert (output_record["width"], output_record["height"]) == (640, 360)
     no_frame_manifest = json.loads((directory / "no_frames" / "manifest.json").read_text())
     assert no_frame_manifest["status"] == "failed" and no_frame_manifest["stopped"] is True
     assert no_frame_manifest["terminal_reason"] == "no_synthesized_samples"

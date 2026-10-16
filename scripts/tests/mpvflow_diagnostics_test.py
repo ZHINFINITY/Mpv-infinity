@@ -332,4 +332,29 @@ control_start = MPV_VIEW.split("fun startFlowDiagnosticCapture", 1)[1].split("fu
 require(control_start, 'configureMpvFlowCaptureControl("capture_start")', "capture start must retry the MPV control option instead of failing on a stale readiness flag")
 require(control_start, "if (!mpvFlowCaptureControlConfigured)", "MPV must avoid resetting a ready control option at every capture tap")
 require(control_start, 'return "mpvflow_capture_control_unavailable"', "the start path must still fail closed if the integration option genuinely cannot be set")
+media3_synthesize = MEDIA3_NATIVE.split(
+    "Java_app_infinity_mpvz_ui_player_Media3FlowVulkanNative_nativeSynthesize(", 1
+)[1].split(
+    "Java_app_infinity_mpvz_ui_player_Media3FlowVulkanNative_nativeReleasePair(", 1
+)[0]
+require(
+    media3_synthesize,
+    "context->flow, pair, source0->texture, source1->texture, timestep,",
+    "Media3 synthesis must use the full-resolution decoder textures",
+)
+require(
+    media3_synthesize,
+    "context->flow, pair, source0->texture, source1->texture, synthesized,",
+    "Media3 capture must use the exact full-resolution source textures consumed by synthesis",
+)
+require(
+    FLOW_GPU_CORE,
+    "capture_source_pair_dimensions_mismatch source0=%dx%d source1=%dx%d synthesized=%dx%d",
+    "source-pair dimension failures must report the actual texture sizes",
+)
+assert "output_w != source_w" not in FLOW_GPU_CORE, (
+    "diagnostic capture must not reject valid synthesized outputs solely because output dimensions differ"
+)
+require(FLOW_GPU_CORE, "source_tile_w * 2 + output_tile_w", "capture atlases must account for independently scaled output tiles")
+require(FLOW_GPU_CORE, "int output_tile_w = 0, output_tile_h = 0;", "capture must size synthesized images independently from source images")
 print("MPV Flow runtime diagnostics and capture regression tests passed")

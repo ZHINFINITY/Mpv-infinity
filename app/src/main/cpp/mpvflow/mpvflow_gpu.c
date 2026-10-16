@@ -2847,11 +2847,14 @@ static const char shader_capture_color[] =
     "layout(set=0,binding=3,rgba8) writeonly uniform image2D outTex;\n"
     "layout(push_constant) uniform FlowPush { ivec4 cfg; float timestep; } pc;\n"
     "layout(local_size_x=8, local_size_y=8) in;\n"
-    "void main(){ ivec2 p=ivec2(gl_GlobalInvocationID.xy); int tw=pc.cfg.x,th=pc.cfg.y; "
-    "if(p.x>=tw*3||p.y>=th)return; int tile=p.x/tw; ivec2 q=ivec2(p.x-tile*tw,p.y); "
-    "vec2 uv=(vec2(q)+vec2(0.5))/vec2(tw,th); vec4 c=tile==0?textureLod(frame0,uv,0.0):"
-    "tile==1?textureLod(frame1,uv,0.0):textureLod(synthesized,uv,0.0); "
-    "imageStore(outTex,p,vec4(c.rgb,1.0)); }\n";
+    "void main(){ ivec2 p=ivec2(gl_GlobalInvocationID.xy); int sw=pc.cfg.x,sh=pc.cfg.y; "
+    "int ow=pc.cfg.z,oh=pc.cfg.w,atlasW=sw*2+ow,atlasH=max(sh,oh); "
+    "if(p.x>=atlasW||p.y>=atlasH)return; if(p.x<sw*2){ int tile=p.x/sw; "
+    "ivec2 q=ivec2(p.x-tile*sw,p.y); vec2 uv=(vec2(q)+vec2(0.5))/vec2(sw,sh); "
+    "vec4 c=tile==0?textureLod(frame0,uv,0.0):textureLod(frame1,uv,0.0); "
+    "imageStore(outTex,p,vec4(c.rgb,1.0)); } else { ivec2 q=ivec2(p.x-sw*2,p.y); "
+    "vec2 uv=(vec2(q)+vec2(0.5))/vec2(ow,oh); "
+    "vec4 c=textureLod(synthesized,uv,0.0); imageStore(outTex,p,vec4(c.rgb,1.0)); } }\n";
 
 static const char shader_capture_maps[] =
     "#version 450\n"
@@ -2943,13 +2946,14 @@ static bool ensure_capture_staging(MPVFlowGPUContext *ctx, pl_tex *texture,
 
 static bool dispatch_capture_pass(MPVFlowGPUContext *ctx, pl_pass pass,
                                   struct pl_desc_binding *bindings,
-                                  int cfg0, int cfg1, int cfg2, float timestep,
+                                  int cfg0, int cfg1, int cfg2, int cfg3,
+                                  float timestep,
                                   int width, int height)
 {
     if (!ctx || !pass || !bindings || width <= 0 || height <= 0)
         return false;
     struct FlowPushConstants push = {
-        .cfg = { cfg0, cfg1, cfg2, 0 },
+        .cfg = { cfg0, cfg1, cfg2, cfg3 },
         .timestep = timestep,
     };
     const struct pl_pass_run_params run = {
@@ -2999,30 +3003,31 @@ static void capture_write_missing(struct MPVFlowCaptureSession *session,
 static bool capture_write_panel(MPVFlowGPUContext *ctx,
                                 const struct MPVFlowCaptureMeta *meta,
                                 const uint8_t *atlas, int atlas_width,
-                                int atlas_height, int panel_width, int panel,
+                                int atlas_height, int panel_x, int panel_width,
+                                int panel_height,
                                 int pair_index, int sample_index,
                                 const char *channel)
 {
-    if (!ctx || !ctx->capture_session || !meta || !atlas || panel_width <= 0 ||
-        panel < 0 || panel_width > atlas_width ||
-        (panel + 1) * panel_width > atlas_width || atlas_height <= 0)
+    if (!ctx || !ctx->capture_session || !meta || !atlas || panel_x < 0 ||
+        panel_width <= 0 || panel_height <= 0 || panel_x > atlas_width - panel_width ||
+        panel_height > atlas_height)
         return false;
     if ((size_t) panel_width > SIZE_MAX / 4 ||
-        (size_t) atlas_height > SIZE_MAX / ((size_t) panel_width * 4))
+        (size_t) panel_height > SIZE_MAX / ((size_t) panel_width * 4))
         return false;
     const size_t row_bytes = (size_t) panel_width * 4;
-    uint8_t *pixels = malloc(row_bytes * (size_t) atlas_height);
+    uint8_t *pixels = malloc(row_bytes * (size_t) panel_height);
     if (!pixels)
         return false;
-    for (int y = 0; y < atlas_height; y++) {
+    for (int y = 0; y < panel_height; y++) {
         const uint8_t *source = atlas +
-            ((size_t) y * (size_t) atlas_width + (size_t) panel * (size_t) panel_width) * 4;
+            ((size_t) y * (size_t) atlas_width + (size_t) panel_x) * 4;
         memcpy(pixels + (size_t) y * row_bytes, source, row_bytes);
     }
     char reason[128] = {0};
     const bool ok = mpvflow_capture_io_write(
         ctx->capture_session, pair_index, sample_index, channel, meta,
-        pixels, panel_width, atlas_height, reason, sizeof(reason)) == 0;
+        pixels, panel_width, panel_height, reason, sizeof(reason)) == 0;
     free(pixels);
     if (!ok) {
         flow_log(ctx->gpu, PL_LOG_WARN,
@@ -3200,12 +3205,25 @@ enum MPVFlowGPUResult mpvflow_gpu_capture_sample(
     }
     const int source_w = (int) source0->params.w;
     const int source_h = (int) source0->params.h;
+    const int source1_w = (int) source1->params.w;
+    const int source1_h = (int) source1->params.h;
     const int output_w = (int) synthesized_output->params.w;
     const int output_h = (int) synthesized_output->params.h;
-    if (source_w <= 0 || source_h <= 0 || output_w != source_w ||
-        output_h != source_h || source1->params.w != (unsigned) source_w ||
-        source1->params.h != (unsigned) source_h) {
-        mpvflow_gpu_capture_fail(ctx, "capture_source_output_dimensions_mismatch");
+    if (source_w <= 0 || source_h <= 0 || source1_w != source_w ||
+        source1_h != source_h) {
+        flow_log(ctx->gpu, PL_LOG_WARN,
+                 "MPVFLOW_DIAGNOSTIC component=capture event=dimensions state=failed "
+                 "reason=capture_source_pair_dimensions_mismatch source0=%dx%d source1=%dx%d synthesized=%dx%d",
+                 source_w, source_h, source1_w, source1_h, output_w, output_h);
+        mpvflow_gpu_capture_fail(ctx, "capture_source_pair_dimensions_mismatch");
+        return MPVFLOW_GPU_UNSUPPORTED_DIMENSION;
+    }
+    if (output_w <= 0 || output_h <= 0) {
+        flow_log(ctx->gpu, PL_LOG_WARN,
+                 "MPVFLOW_DIAGNOSTIC component=capture event=dimensions state=failed "
+                 "reason=capture_output_dimensions_invalid source=%dx%d synthesized=%dx%d",
+                 source_w, source_h, output_w, output_h);
+        mpvflow_gpu_capture_fail(ctx, "capture_output_dimensions_invalid");
         return MPVFLOW_GPU_UNSUPPORTED_DIMENSION;
     }
 
@@ -3225,17 +3243,27 @@ enum MPVFlowGPUResult mpvflow_gpu_capture_sample(
     if (ctx->capture_sample_index >= MPVFLOW_CAPTURE_MAX_SAMPLES_PER_PAIR)
         return MPVFLOW_GPU_OK;
 
-    const int max_dimension = 640;
-    const double scale = fmin(1.0, (double) max_dimension /
-                              (double) (source_w > source_h ? source_w : source_h));
-    const int tile_w = (int) lround(source_w * scale);
-    const int tile_h = (int) lround(source_h * scale);
+    const int max_dimension = MPVFLOW_CAPTURE_IMAGE_MAX_DIMENSION;
+    int source_tile_w = 0, source_tile_h = 0;
+    int output_tile_w = 0, output_tile_h = 0;
+    if (!mpvflow_capture_io_scaled_dimensions(source_w, source_h, max_dimension,
+                                               &source_tile_w, &source_tile_h) ||
+        !mpvflow_capture_io_scaled_dimensions(output_w, output_h, max_dimension,
+                                               &output_tile_w, &output_tile_h) ||
+        source_tile_w > (INT_MAX - output_tile_w) / 2) {
+        mpvflow_gpu_capture_fail(ctx, "capture_color_tile_dimensions_invalid");
+        return MPVFLOW_GPU_UNSUPPORTED_DIMENSION;
+    }
+    const int color_atlas_w = source_tile_w * 2 + output_tile_w;
+    const int color_atlas_h = source_tile_h > output_tile_h ? source_tile_h : output_tile_h;
     struct FlowLevel *level = &pair->level[0];
     const int grid_w = (int) level->forward->params.w;
     const int grid_h = (int) level->forward->params.h;
-    if (tile_w < 1 || tile_h < 1 || grid_w < 1 || grid_h < 1 ||
-        tile_w > INT_MAX / 3 || grid_w > INT_MAX / 7 ||
-        !ensure_capture_staging(ctx, &ctx->capture_color_atlas, tile_w * 3, tile_h) ||
+    if (source_tile_w < 1 || source_tile_h < 1 || output_tile_w < 1 ||
+        output_tile_h < 1 || grid_w < 1 || grid_h < 1 ||
+        grid_w > INT_MAX / 7 ||
+        !ensure_capture_staging(ctx, &ctx->capture_color_atlas,
+                                color_atlas_w, color_atlas_h) ||
         !ensure_capture_staging(ctx, &ctx->capture_map_atlas, grid_w * 7, grid_h)) {
         mpvflow_gpu_capture_fail(ctx, "capture_staging_texture_unavailable");
         return MPVFLOW_GPU_UNSUPPORTED_FORMAT;
@@ -3255,6 +3283,11 @@ enum MPVFlowGPUResult mpvflow_gpu_capture_sample(
         .effective_settings_json = ctx->capture_settings,
     };
     if (!ctx->capture_session) {
+        flow_log(ctx->gpu, PL_LOG_INFO,
+                 "MPVFLOW_DIAGNOSTIC component=capture event=dimensions state=ready engine=%s "
+                 "source=%dx%d synthesized=%dx%d source_tile=%dx%d synthesized_tile=%dx%d",
+                 ctx->capture_engine, source_w, source_h, output_w, output_h,
+                 source_tile_w, source_tile_h, output_tile_w, output_tile_h);
         char reason[128] = {0};
         ctx->capture_session = mpvflow_capture_io_start(
             ctx->capture_base_dir, ctx->capture_session_name, &meta,
@@ -3279,8 +3312,9 @@ enum MPVFlowGPUResult mpvflow_gpu_capture_sample(
         { .object = ctx->capture_color_atlas },
     };
     if (!dispatch_capture_pass(ctx, ctx->pass_capture_color, color_bindings,
-                               tile_w, tile_h, 0, timestep,
-                               tile_w * 3, tile_h)) {
+                               source_tile_w, source_tile_h,
+                               output_tile_w, output_tile_h, timestep,
+                               color_atlas_w, color_atlas_h)) {
         mpvflow_gpu_capture_fail(ctx, "capture_color_copy_pass_failed");
         return MPVFLOW_GPU_ERROR;
     }
@@ -3292,7 +3326,7 @@ enum MPVFlowGPUResult mpvflow_gpu_capture_sample(
     };
     if (capture_new_pair && !dispatch_capture_pass(
             ctx, ctx->pass_capture_maps, map_bindings,
-            grid_w, grid_h, MPVFLOW_GPU_MOTION_GRID_STEP, timestep,
+            grid_w, grid_h, MPVFLOW_GPU_MOTION_GRID_STEP, 0, timestep,
             grid_w * 7, grid_h)) {
         mpvflow_gpu_capture_fail(ctx, "capture_motion_map_pass_failed");
         return MPVFLOW_GPU_ERROR;
@@ -3303,7 +3337,7 @@ enum MPVFlowGPUResult mpvflow_gpu_capture_sample(
      * destroys a caller-owned source/synthesis texture. */
     pl_gpu_finish(ctx->gpu);
     uint8_t *color_atlas = download_capture_atlas(
-        ctx, ctx->capture_color_atlas, tile_w * 3, tile_h);
+        ctx, ctx->capture_color_atlas, color_atlas_w, color_atlas_h);
     uint8_t *map_atlas = capture_new_pair ? download_capture_atlas(
         ctx, ctx->capture_map_atlas, grid_w * 7, grid_h) : NULL;
     if (!color_atlas || (capture_new_pair && !map_atlas)) {
@@ -3315,31 +3349,35 @@ enum MPVFlowGPUResult mpvflow_gpu_capture_sample(
 
     bool writes_ok = true;
     if (capture_new_pair) {
-        writes_ok = capture_write_panel(ctx, &meta, color_atlas, tile_w * 3,
-            tile_h, tile_w, 0, ctx->capture_pair_index, -1, "source0") &&
-            capture_write_panel(ctx, &meta, color_atlas, tile_w * 3,
-            tile_h, tile_w, 1, ctx->capture_pair_index, -1, "source1") &&
+        writes_ok = capture_write_panel(ctx, &meta, color_atlas, color_atlas_w,
+            color_atlas_h, 0, source_tile_w, source_tile_h,
+            ctx->capture_pair_index, -1, "source0") &&
+            capture_write_panel(ctx, &meta, color_atlas, color_atlas_w,
+            color_atlas_h, source_tile_w, source_tile_w, source_tile_h,
+            ctx->capture_pair_index, -1, "source1") &&
             capture_write_panel(ctx, &meta, map_atlas, grid_w * 7,
-            grid_h, grid_w, 0, ctx->capture_pair_index, -1, "motion_forward") &&
+            grid_h, 0, grid_w, grid_h, ctx->capture_pair_index, -1, "motion_forward") &&
             capture_write_panel(ctx, &meta, map_atlas, grid_w * 7,
-            grid_h, grid_w, 0, ctx->capture_pair_index, -1, "motion") &&
+            grid_h, 0, grid_w, grid_h, ctx->capture_pair_index, -1, "motion") &&
             capture_write_panel(ctx, &meta, map_atlas, grid_w * 7,
-            grid_h, grid_w, 1, ctx->capture_pair_index, -1, "motion_backward") &&
+            grid_h, grid_w, grid_w, grid_h, ctx->capture_pair_index, -1, "motion_backward") &&
             capture_write_panel(ctx, &meta, map_atlas, grid_w * 7,
-            grid_h, grid_w, 2, ctx->capture_pair_index, -1, "residual") &&
+            grid_h, grid_w * 2, grid_w, grid_h, ctx->capture_pair_index, -1, "residual") &&
             capture_write_panel(ctx, &meta, map_atlas, grid_w * 7,
-            grid_h, grid_w, 3, ctx->capture_pair_index, -1, "uniqueness") &&
+            grid_h, grid_w * 3, grid_w, grid_h, ctx->capture_pair_index, -1, "uniqueness") &&
             capture_write_panel(ctx, &meta, map_atlas, grid_w * 7,
-            grid_h, grid_w, 4, ctx->capture_pair_index, -1, "confidence") &&
+            grid_h, grid_w * 4, grid_w, grid_h, ctx->capture_pair_index, -1, "confidence") &&
             capture_write_panel(ctx, &meta, map_atlas, grid_w * 7,
-            grid_h, grid_w, 5, ctx->capture_pair_index, -1, "cycle_consistency") &&
+            grid_h, grid_w * 5, grid_w, grid_h, ctx->capture_pair_index, -1, "cycle_consistency") &&
             capture_write_panel(ctx, &meta, map_atlas, grid_w * 7,
-            grid_h, grid_w, 5, ctx->capture_pair_index, -1, "cycle_error") &&
+            grid_h, grid_w * 5, grid_w, grid_h, ctx->capture_pair_index, -1, "cycle_error") &&
             capture_write_panel(ctx, &meta, map_atlas, grid_w * 7,
-            grid_h, grid_w, 6, ctx->capture_pair_index, -1, "visibility_support");
+            grid_h, grid_w * 6, grid_w, grid_h,
+            ctx->capture_pair_index, -1, "visibility_support");
     }
     writes_ok = writes_ok && capture_write_panel(
-        ctx, &meta, color_atlas, tile_w * 3, tile_h, tile_w, 2,
+        ctx, &meta, color_atlas, color_atlas_w, color_atlas_h,
+        source_tile_w * 2, output_tile_w, output_tile_h,
         ctx->capture_pair_index, ctx->capture_sample_index, "synthesized");
     free(color_atlas);
     free(map_atlas);

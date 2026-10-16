@@ -409,6 +409,32 @@ static int supported_engine(const char *engine)
     return engine && (!strcmp(engine, "mpv") || !strcmp(engine, "native-media3"));
 }
 
+int mpvflow_capture_io_scaled_dimensions(int width, int height, int max_dimension,
+                                         int *scaled_width, int *scaled_height)
+{
+    if (width <= 0 || height <= 0 || max_dimension <= 0 ||
+        !scaled_width || !scaled_height)
+        return 0;
+
+    const int largest = width > height ? width : height;
+    if (largest <= max_dimension) {
+        *scaled_width = width;
+        *scaled_height = height;
+        return 1;
+    }
+
+    const int64_t half = largest / 2;
+    int64_t out_width = ((int64_t) width * max_dimension + half) / largest;
+    int64_t out_height = ((int64_t) height * max_dimension + half) / largest;
+    if (out_width < 1) out_width = 1;
+    if (out_height < 1) out_height = 1;
+    if (out_width > max_dimension || out_height > max_dimension)
+        return 0;
+    *scaled_width = (int) out_width;
+    *scaled_height = (int) out_height;
+    return 1;
+}
+
 enum MPVFlowCaptureBackendKind mpvflow_capture_io_backend_kind(const char *backend)
 {
     if (!backend)

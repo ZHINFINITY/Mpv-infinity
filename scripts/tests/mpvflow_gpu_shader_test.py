@@ -46,6 +46,8 @@ shader_names = (
     "shader_flow",
     "shader_synthesize",
     "shader_visibility_resolver",
+    "shader_capture_color",
+    "shader_capture_maps",
 )
 shaders = {name: shader_source(name) for name in shader_names}
 for name, shader in shaders.items():
@@ -63,6 +65,11 @@ optical_luma = shaders["shader_optical_luma"]
 optical_seed = shaders["shader_optical_seed"]
 synthesis = shaders["shader_synthesize"]
 visibility_resolver = shaders["shader_visibility_resolver"]
+capture_color = shaders["shader_capture_color"]
+capture_maps = shaders["shader_capture_maps"]
+require(capture_color, "int ow=pc.cfg.z,oh=pc.cfg.w", "capture color panels must accept independent synthesized-output dimensions")
+require(capture_color, "if(p.x>=atlasW||p.y>=atlasH)return", "capture shader must guard each independently sized atlas extent")
+require(capture_maps, "int tileW=gw; if(p.x>=tileW*7||p.y>=gh)return", "motion-map atlas shader must retain its native map-grid layout")
 require(synthesis, "layout(set=0,binding=7,rgba8) writeonly uniform image2D outTex;", "SDR synthesis output must remain RGBA8")
 require(SOURCE, "shader_replace_once(", "HDR synthesis must derive a second shader from the validated baseline")
 require(SOURCE, "layout(set=0,binding=7,rgba16f) writeonly uniform image2D outTex;", "HDR shader variant must write RGBA16F")
