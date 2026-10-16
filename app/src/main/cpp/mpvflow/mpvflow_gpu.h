@@ -199,6 +199,23 @@ MPVFLOW_INTERNAL enum MPVFlowGPUResult mpvflow_gpu_synthesize_with_policy(
     bool enable_visibility_resolver, bool enable_soft_blend,
     bool preserve_motion_blend_on_conflict, pl_tex *output);
 
+/* Explicit, bounded diagnostic capture. Capture is inactive until start; the
+ * selected Vulkan path performs synchronous capture-only readbacks into
+ * capture-owned host-readable staging textures. Caller textures stay borrowed. */
+MPVFLOW_INTERNAL enum MPVFlowGPUResult mpvflow_gpu_capture_start(
+    MPVFlowGPUContext *context, const char *base_dir, const char *session_name,
+    const char *engine, const char *effective_settings_json);
+MPVFLOW_INTERNAL enum MPVFlowGPUResult mpvflow_gpu_capture_sample(
+    MPVFlowGPUContext *context, MPVFlowGPUPair *pair,
+    pl_tex source0, pl_tex source1, pl_tex synthesized_output, float timestep,
+    double source_pts0, double source_pts1, double output_pts,
+    bool visibility_resolver, bool soft_blend,
+    bool preserve_motion_blend_on_conflict);
+MPVFLOW_INTERNAL void mpvflow_gpu_capture_stop(MPVFlowGPUContext *context);
+MPVFLOW_INTERNAL void mpvflow_gpu_capture_fail(MPVFlowGPUContext *context,
+                                                const char *reason);
+MPVFLOW_INTERNAL bool mpvflow_gpu_capture_active(MPVFlowGPUContext *context);
+
 
 #ifdef __cplusplus
 }

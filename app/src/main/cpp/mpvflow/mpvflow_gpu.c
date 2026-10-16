@@ -13,16 +13,22 @@
 #include "mpvflow_opencl_vk_bridge.h"
 #include "mpvflow_vulkan_optical.h"
 #include "mpvflow_vulkan_qcom.h"
+#include "mpvflow_capture_io.h"
 
 #include <libplacebo/vulkan.h>
 
 #include <math.h>
+#include <limits.h>
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+
+#ifndef PATH_MAX
+#define PATH_MAX 4096
+#endif
 
 #define FLOW_LEVELS 3
 #define FLOW_BLOCK MPVFLOW_GPU_MOTION_BLOCK_SIZE
@@ -31,6 +37,7 @@
 #define FLOW_REDUCTIONS 8
 #define FLOW_DEFAULT_MAX_DIM 640
 #define FLOW_DEFAULT_RADIUS 8
+#define MPVFLOW_CAPTURE_GPU_MAX_PAIRS 4
 
 enum FlowTimerStage {
     FLOW_TIMER_PREPROCESS = MPVFLOW_GPU_STAGE_PREPROCESS,
@@ -113,6 +120,24 @@ struct MPVFlowGPUContext {
     uint64_t qcom_fallbacks;
     struct FlowTimerStats timers[FLOW_TIMER_COUNT];
     uint64_t timing_window_start_ns;
+    pl_fmt capture_rgba8;
+    pl_pass pass_capture_color;
+    pl_pass pass_capture_maps;
+    pl_tex capture_color_atlas;
+    pl_tex capture_map_atlas;
+    struct MPVFlowCaptureSession *capture_session;
+    char capture_base_dir[PATH_MAX];
+    char capture_session_name[81];
+    char capture_engine[24];
+    char capture_settings[4097];
+    double capture_pair_pts0;
+    double capture_pair_pts1;
+    int capture_pair_index;
+    int capture_sample_index;
+    int capture_pair_count;
+    bool capture_pair_ready;
+    bool capture_armed;
+    bool capture_terminal_written;
 };
 
 struct MPVFlowGPUPair {
@@ -1721,6 +1746,15 @@ void mpvflow_gpu_destroy(MPVFlowGPUContext *ctx)
 {
     if (!ctx)
         return;
+    mpvflow_gpu_capture_stop(ctx);
+    if (ctx->capture_color_atlas)
+        pl_tex_destroy(ctx->gpu, &ctx->capture_color_atlas);
+    if (ctx->capture_map_atlas)
+        pl_tex_destroy(ctx->gpu, &ctx->capture_map_atlas);
+    if (ctx->pass_capture_color)
+        pl_pass_destroy(ctx->gpu, &ctx->pass_capture_color);
+    if (ctx->pass_capture_maps)
+        pl_pass_destroy(ctx->gpu, &ctx->pass_capture_maps);
     if (ctx->pass_preprocess) pl_pass_destroy(ctx->gpu, &ctx->pass_preprocess);
     if (ctx->pass_luma) pl_pass_destroy(ctx->gpu, &ctx->pass_luma);
     if (ctx->pass_downsample) pl_pass_destroy(ctx->gpu, &ctx->pass_downsample);
@@ -2804,4 +2838,518 @@ enum MPVFlowGPUResult mpvflow_gpu_synthesize_with_policy(
     return mpvflow_gpu_synthesize_internal(ctx, pair, source0, source1, t,
                                            enable_visibility_resolver, enable_soft_blend,
                                            preserve_motion_blend_on_conflict, output);
+}
+static const char shader_capture_color[] =
+    "#version 450\n"
+    "layout(set=0,binding=0) uniform sampler2D frame0;\n"
+    "layout(set=0,binding=1) uniform sampler2D frame1;\n"
+    "layout(set=0,binding=2) uniform sampler2D synthesized;\n"
+    "layout(set=0,binding=3,rgba8) writeonly uniform image2D outTex;\n"
+    "layout(push_constant) uniform FlowPush { ivec4 cfg; float timestep; } pc;\n"
+    "layout(local_size_x=8, local_size_y=8) in;\n"
+    "void main(){ ivec2 p=ivec2(gl_GlobalInvocationID.xy); int tw=pc.cfg.x,th=pc.cfg.y; "
+    "if(p.x>=tw*3||p.y>=th)return; int tile=p.x/tw; ivec2 q=ivec2(p.x-tile*tw,p.y); "
+    "vec2 uv=(vec2(q)+vec2(0.5))/vec2(tw,th); vec4 c=tile==0?textureLod(frame0,uv,0.0):"
+    "tile==1?textureLod(frame1,uv,0.0):textureLod(synthesized,uv,0.0); "
+    "imageStore(outTex,p,vec4(c.rgb,1.0)); }\n";
+
+static const char shader_capture_maps[] =
+    "#version 450\n"
+    "layout(set=0,binding=0,rgba16f) readonly uniform image2D fwdTex;\n"
+    "layout(set=0,binding=1,rgba16f) readonly uniform image2D backTex;\n"
+    "layout(set=0,binding=2,rgba8) writeonly uniform image2D outTex;\n"
+    "layout(push_constant) uniform FlowPush { ivec4 cfg; float timestep; } pc;\n"
+    "layout(local_size_x=8, local_size_y=8) in;\n"
+    "vec3 hsv(vec3 c){ vec3 p=abs(fract(c.xxx+vec3(0.0,0.6666667,0.3333333))*6.0-3.0); "
+    "return c.z*mix(vec3(1.0),clamp(p-1.0,0.0,1.0),c.y); }\n"
+    "float reliability(vec4 f,float cycle,float valid){ float cq=1.0-smoothstep(0.75,4.0,cycle); "
+    "float rq=1.0-smoothstep(0.025,0.22,f.z); float uq=smoothstep(0.08,0.30,f.w); "
+    "return cq*rq*uq*valid; }\n"
+    "void main(){ ivec2 p=ivec2(gl_GlobalInvocationID.xy); int gw=imageSize(fwdTex).x,gh=imageSize(fwdTex).y; "
+    "int tileW=gw; if(p.x>=tileW*7||p.y>=gh)return; int panel=p.x/tileW; ivec2 q=ivec2(p.x-panel*tileW,p.y); "
+    "vec4 f=imageLoad(fwdTex,q),b=imageLoad(backTex,q); vec2 g=vec2(q); float stepSize=max(float(pc.cfg.z),1.0); "
+    "vec2 e0=g+f.xy/stepSize,e1=g+b.xy/stepSize; float v0=all(greaterThanEqual(e0,vec2(0.0)))&&all(lessThanEqual(e0,vec2(gw-1,gh-1)))?1.0:0.0; "
+    "float v1=all(greaterThanEqual(e1,vec2(0.0)))&&all(lessThanEqual(e1,vec2(gw-1,gh-1)))?1.0:0.0; "
+    "ivec2 r0=clamp(ivec2(round(e0)),ivec2(0),ivec2(gw-1,gh-1)),r1=clamp(ivec2(round(e1)),ivec2(0),ivec2(gw-1,gh-1)); "
+    "float c0=length(f.xy+imageLoad(backTex,r0).xy),c1=length(b.xy+imageLoad(fwdTex,r1).xy); "
+    "float conf=max(reliability(f,c0,v0),reliability(b,c1,v1)); vec3 color=vec3(0.0); "
+    "if(panel==0){float mag=clamp(length(f.xy)/16.0,0.0,1.0);color=hsv(vec3(atan(f.y,f.x)/6.2831853+0.5,1.0,0.25+0.75*mag));} "
+    "else if(panel==1){float mag=clamp(length(b.xy)/16.0,0.0,1.0);color=hsv(vec3(atan(b.y,b.x)/6.2831853+0.5,1.0,0.25+0.75*mag));} "
+    "else if(panel==2){float v=clamp(max(f.z,b.z),0.0,1.0);color=vec3(v);} "
+    "else if(panel==3){float v=clamp(min(f.w,b.w),0.0,1.0);color=vec3(v);} "
+    "else if(panel==4){color=vec3(conf);} else if(panel==5){float err=clamp(max(c0,c1)/4.0,0.0,1.0);color=vec3(err,0.0,0.0);} "
+    "else {color=vec3(1.0-conf);} imageStore(outTex,p,vec4(color,1.0)); }\n";
+
+static bool ensure_capture_passes(MPVFlowGPUContext *ctx)
+{
+    if (!ctx || ctx->compute_api != MPVFLOW_GPU_COMPUTE_VULKAN)
+        return false;
+    if (ctx->pass_capture_color && ctx->pass_capture_maps && ctx->capture_rgba8)
+        return true;
+
+    const unsigned int caps = PL_FMT_CAP_STORABLE | PL_FMT_CAP_HOST_READABLE;
+    ctx->capture_rgba8 = pl_find_fmt(ctx->gpu, PL_FMT_UNORM, 4, 8, 8, caps);
+    if (!ctx->capture_rgba8 || !ctx->capture_rgba8->glsl_format ||
+        strcmp(ctx->capture_rgba8->glsl_format, "rgba8"))
+        return false;
+
+    struct pl_desc color_desc[] = {
+        { .name = "frame0", .type = PL_DESC_SAMPLED_TEX, .binding = 0 },
+        { .name = "frame1", .type = PL_DESC_SAMPLED_TEX, .binding = 1 },
+        { .name = "synthesized", .type = PL_DESC_SAMPLED_TEX, .binding = 2 },
+        { .name = "outTex", .type = PL_DESC_STORAGE_IMG, .binding = 3,
+          .access = PL_DESC_ACCESS_WRITEONLY },
+    };
+    struct pl_desc maps_desc[] = {
+        { .name = "fwdTex", .type = PL_DESC_STORAGE_IMG, .binding = 0,
+          .access = PL_DESC_ACCESS_READONLY },
+        { .name = "backTex", .type = PL_DESC_STORAGE_IMG, .binding = 1,
+          .access = PL_DESC_ACCESS_READONLY },
+        { .name = "outTex", .type = PL_DESC_STORAGE_IMG, .binding = 2,
+          .access = PL_DESC_ACCESS_WRITEONLY },
+    };
+    ctx->pass_capture_color = make_pass(ctx->gpu, shader_capture_color,
+                                        color_desc, 4);
+    ctx->pass_capture_maps = make_pass(ctx->gpu, shader_capture_maps,
+                                       maps_desc, 3);
+    if (!ctx->pass_capture_color || !ctx->pass_capture_maps) {
+        if (ctx->pass_capture_color)
+            pl_pass_destroy(ctx->gpu, &ctx->pass_capture_color);
+        if (ctx->pass_capture_maps)
+            pl_pass_destroy(ctx->gpu, &ctx->pass_capture_maps);
+        ctx->capture_rgba8 = NULL;
+        return false;
+    }
+    return true;
+}
+
+static bool ensure_capture_staging(MPVFlowGPUContext *ctx, pl_tex *texture,
+                                   int width, int height)
+{
+    if (!ctx || !texture || width <= 0 || height <= 0 || !ctx->capture_rgba8)
+        return false;
+    if (*texture && (*texture)->params.w == width &&
+        (*texture)->params.h == height &&
+        (*texture)->params.format == ctx->capture_rgba8 &&
+        (*texture)->params.host_readable && (*texture)->params.storable)
+        return true;
+    if (*texture)
+        pl_tex_destroy(ctx->gpu, texture);
+    *texture = pl_tex_create(ctx->gpu, pl_tex_params(
+        .w = width, .h = height, .d = 0, .format = ctx->capture_rgba8,
+        .storable = true, .host_readable = true));
+    return *texture != NULL;
+}
+
+static bool dispatch_capture_pass(MPVFlowGPUContext *ctx, pl_pass pass,
+                                  struct pl_desc_binding *bindings,
+                                  int cfg0, int cfg1, int cfg2, float timestep,
+                                  int width, int height)
+{
+    if (!ctx || !pass || !bindings || width <= 0 || height <= 0)
+        return false;
+    struct FlowPushConstants push = {
+        .cfg = { cfg0, cfg1, cfg2, 0 },
+        .timestep = timestep,
+    };
+    const struct pl_pass_run_params run = {
+        .pass = pass,
+        .desc_bindings = bindings,
+        .push_constants = &push,
+        .compute_groups = { (width + 7) / 8, (height + 7) / 8, 1 },
+    };
+    pl_pass_run(ctx->gpu, &run);
+    return true;
+}
+
+static uint8_t *download_capture_atlas(MPVFlowGPUContext *ctx, pl_tex texture,
+                                       int width, int height)
+{
+    if (!ctx || !texture || width <= 0 || height <= 0 ||
+        (size_t) width > SIZE_MAX / 4 ||
+        (size_t) height > SIZE_MAX / ((size_t) width * 4))
+        return NULL;
+    const size_t row_pitch = (size_t) width * 4;
+    uint8_t *pixels = malloc(row_pitch * (size_t) height);
+    if (!pixels)
+        return NULL;
+    const bool ok = pl_tex_download(ctx->gpu, pl_tex_transfer_params(
+        .tex = texture,
+        .rc = { .x0 = 0, .y0 = 0, .z0 = 0,
+                .x1 = width, .y1 = height, .z1 = 1 },
+        .row_pitch = row_pitch,
+        .ptr = pixels));
+    if (!ok) {
+        free(pixels);
+        return NULL;
+    }
+    return pixels;
+}
+
+static void capture_write_missing(struct MPVFlowCaptureSession *session,
+                                  int pair_index, int sample_index,
+                                  const char *channel, const char *stage,
+                                  const char *reason)
+{
+    if (session)
+        mpvflow_capture_io_missing(session, pair_index, sample_index,
+                                   channel, stage, reason);
+}
+
+static bool capture_write_panel(MPVFlowGPUContext *ctx,
+                                const struct MPVFlowCaptureMeta *meta,
+                                const uint8_t *atlas, int atlas_width,
+                                int atlas_height, int panel_width, int panel,
+                                int pair_index, int sample_index,
+                                const char *channel)
+{
+    if (!ctx || !ctx->capture_session || !meta || !atlas || panel_width <= 0 ||
+        panel < 0 || panel_width > atlas_width ||
+        (panel + 1) * panel_width > atlas_width || atlas_height <= 0)
+        return false;
+    if ((size_t) panel_width > SIZE_MAX / 4 ||
+        (size_t) atlas_height > SIZE_MAX / ((size_t) panel_width * 4))
+        return false;
+    const size_t row_bytes = (size_t) panel_width * 4;
+    uint8_t *pixels = malloc(row_bytes * (size_t) atlas_height);
+    if (!pixels)
+        return false;
+    for (int y = 0; y < atlas_height; y++) {
+        const uint8_t *source = atlas +
+            ((size_t) y * (size_t) atlas_width + (size_t) panel * (size_t) panel_width) * 4;
+        memcpy(pixels + (size_t) y * row_bytes, source, row_bytes);
+    }
+    char reason[128] = {0};
+    const bool ok = mpvflow_capture_io_write(
+        ctx->capture_session, pair_index, sample_index, channel, meta,
+        pixels, panel_width, atlas_height, reason, sizeof(reason)) == 0;
+    free(pixels);
+    if (!ok) {
+        flow_log(ctx->gpu, PL_LOG_WARN,
+                 "MPVFLOW_DIAGNOSTIC component=capture event=image_write state=failed "
+                 "channel=%s reason=%s", channel,
+                 reason[0] ? reason : "capture_writer_error");
+        capture_write_missing(ctx->capture_session, pair_index, sample_index,
+                              channel, "png_write",
+                              reason[0] ? reason : "capture_writer_error");
+    }
+    return ok;
+}
+
+static void capture_release_session(MPVFlowGPUContext *ctx)
+{
+    if (!ctx)
+        return;
+    if (ctx->capture_session) {
+        const int result = mpvflow_capture_io_stop(ctx->capture_session);
+        if (result)
+            flow_log(ctx->gpu, PL_LOG_WARN,
+                     "MPVFLOW_DIAGNOSTIC component=capture event=manifest_write state=failed reason=stop_failed");
+        mpvflow_capture_io_destroy(ctx->capture_session);
+        ctx->capture_session = NULL;
+    }
+    ctx->capture_armed = false;
+    ctx->capture_pair_ready = false;
+}
+
+static void capture_write_terminal(MPVFlowGPUContext *ctx, const char *reason)
+{
+    if (!ctx || ctx->capture_terminal_written || !ctx->capture_session_name[0])
+        return;
+    const char *backend = mpvflow_gpu_get_compute_api_name(ctx);
+    if (!backend || (strcmp(backend, "vulkan") && strcmp(backend, "opencl")))
+        backend = "unknown";
+    if (mpvflow_capture_io_write_terminal_manifest(
+            ctx->capture_base_dir, ctx->capture_session_name,
+            ctx->capture_engine, backend, ctx->capture_settings,
+            reason ? reason : "no_synthesized_frames") == 0)
+        ctx->capture_terminal_written = true;
+}
+
+static bool capture_valid_token(const char *value, size_t max_length)
+{
+    if (!value || !*value || strlen(value) > max_length)
+        return false;
+    for (const unsigned char *p = (const unsigned char *) value; *p; p++)
+        if (!( (*p >= 'A' && *p <= 'Z') || (*p >= 'a' && *p <= 'z') ||
+               (*p >= '0' && *p <= '9') || *p == '_' || *p == '-' ))
+            return false;
+    return true;
+}
+
+enum MPVFlowGPUResult mpvflow_gpu_capture_start(
+    MPVFlowGPUContext *ctx, const char *base_dir, const char *session_name,
+    const char *engine, const char *effective_settings_json)
+{
+    if (!ctx || !base_dir || !*base_dir || strlen(base_dir) >= sizeof(ctx->capture_base_dir) ||
+        !capture_valid_token(session_name, 80) || !capture_valid_token(engine, 23) ||
+        (strcmp(engine, "mpv") && strcmp(engine, "native-media3")) ||
+        !effective_settings_json || !*effective_settings_json ||
+        strlen(effective_settings_json) >= sizeof(ctx->capture_settings))
+        return MPVFLOW_GPU_INVALID;
+    if (ctx->capture_armed)
+        return MPVFLOW_GPU_INVALID;
+
+    snprintf(ctx->capture_base_dir, sizeof(ctx->capture_base_dir), "%s", base_dir);
+    snprintf(ctx->capture_session_name, sizeof(ctx->capture_session_name), "%s", session_name);
+    snprintf(ctx->capture_engine, sizeof(ctx->capture_engine), "%s", engine);
+    snprintf(ctx->capture_settings, sizeof(ctx->capture_settings), "%s", effective_settings_json);
+    ctx->capture_terminal_written = false;
+    ctx->capture_pair_count = 0;
+    ctx->capture_sample_index = 0;
+    ctx->capture_pair_ready = false;
+
+    const char *backend = mpvflow_gpu_get_compute_api_name(ctx);
+    if (!backend || strcmp(backend, "vulkan")) {
+        (void) mpvflow_capture_io_write_terminal_manifest(
+            ctx->capture_base_dir, ctx->capture_session_name, ctx->capture_engine,
+            backend && !strcmp(backend, "opencl") ? "opencl" : "unavailable",
+            ctx->capture_settings, "capture_readback_requires_vulkan");
+        ctx->capture_terminal_written = true;
+        return MPVFLOW_GPU_UNSUPPORTED_API;
+    }
+    if (!ensure_capture_passes(ctx)) {
+        (void) mpvflow_capture_io_write_terminal_manifest(
+            ctx->capture_base_dir, ctx->capture_session_name, ctx->capture_engine,
+            "vulkan", ctx->capture_settings, "capture_readback_pass_or_host_format_unavailable");
+        ctx->capture_terminal_written = true;
+        return MPVFLOW_GPU_UNSUPPORTED_FORMAT;
+    }
+    ctx->capture_armed = true;
+    flow_log(ctx->gpu, PL_LOG_INFO,
+             "MPVFLOW_DIAGNOSTIC component=capture event=start state=armed engine=%s backend=vulkan "
+             "limits=pairs_4_samples_per_pair_4_bytes_64MiB readback=explicit_user_opt_in",
+             ctx->capture_engine);
+    return MPVFLOW_GPU_OK;
+}
+
+bool mpvflow_gpu_capture_active(MPVFlowGPUContext *ctx)
+{
+    return ctx && ctx->capture_armed;
+}
+
+void mpvflow_gpu_capture_stop(MPVFlowGPUContext *ctx)
+{
+    if (!ctx)
+        return;
+    if (ctx->capture_session) {
+        capture_release_session(ctx);
+        flow_log(ctx->gpu, PL_LOG_INFO,
+                 "MPVFLOW_DIAGNOSTIC component=capture event=stop state=manifest_written engine=%s",
+                 ctx->capture_engine);
+    } else if (ctx->capture_armed) {
+        capture_write_terminal(ctx, "no_synthesized_frames");
+        ctx->capture_armed = false;
+        flow_log(ctx->gpu, PL_LOG_INFO,
+                 "MPVFLOW_DIAGNOSTIC component=capture event=stop state=no_synthesized_frames engine=%s",
+                 ctx->capture_engine);
+    }
+}
+
+void mpvflow_gpu_capture_fail(MPVFlowGPUContext *ctx, const char *reason)
+{
+    if (!ctx || !ctx->capture_armed)
+        return;
+    const char *failure = reason && *reason ? reason : "capture_failed";
+    if (ctx->capture_session) {
+        const int sample = ctx->capture_sample_index >= 0 &&
+            ctx->capture_sample_index < MPVFLOW_CAPTURE_MAX_SAMPLES_PER_PAIR
+            ? ctx->capture_sample_index : 0;
+        mpvflow_capture_io_missing(ctx->capture_session,
+            ctx->capture_pair_ready ? ctx->capture_pair_index : 0,
+            sample, "synthesized", "capture", failure);
+        capture_release_session(ctx);
+    } else {
+        capture_write_terminal(ctx, failure);
+        ctx->capture_armed = false;
+    }
+    flow_log(ctx->gpu, PL_LOG_WARN,
+             "MPVFLOW_DIAGNOSTIC component=capture event=failed state=stopped reason=%s",
+             failure);
+}
+
+enum MPVFlowGPUResult mpvflow_gpu_capture_sample(
+    MPVFlowGPUContext *ctx, MPVFlowGPUPair *pair,
+    pl_tex source0, pl_tex source1, pl_tex synthesized_output, float timestep,
+    double source_pts0, double source_pts1, double output_pts,
+    bool visibility_resolver, bool soft_blend,
+    bool preserve_motion_blend_on_conflict)
+{
+    (void) visibility_resolver;
+    (void) soft_blend;
+    (void) preserve_motion_blend_on_conflict;
+    if (!mpvflow_gpu_capture_active(ctx))
+        return MPVFLOW_GPU_INVALID;
+    if (!pair || pair->owner != ctx || !source0 || !source1 || !synthesized_output ||
+        !source0->params.sampleable || !source1->params.sampleable ||
+        !synthesized_output->params.sampleable || !pair->levels ||
+        !pair->level[0].forward || !pair->level[0].backward ||
+        !isfinite(timestep) || !isfinite(source_pts0) ||
+        !isfinite(source_pts1) || !isfinite(output_pts)) {
+        mpvflow_gpu_capture_fail(ctx, "capture_input_or_pair_unavailable");
+        return MPVFLOW_GPU_INVALID;
+    }
+    const int source_w = (int) source0->params.w;
+    const int source_h = (int) source0->params.h;
+    const int output_w = (int) synthesized_output->params.w;
+    const int output_h = (int) synthesized_output->params.h;
+    if (source_w <= 0 || source_h <= 0 || output_w != source_w ||
+        output_h != source_h || source1->params.w != (unsigned) source_w ||
+        source1->params.h != (unsigned) source_h) {
+        mpvflow_gpu_capture_fail(ctx, "capture_source_output_dimensions_mismatch");
+        return MPVFLOW_GPU_UNSUPPORTED_DIMENSION;
+    }
+
+    const bool new_pair = !ctx->capture_pair_ready ||
+        source_pts0 != ctx->capture_pair_pts0 || source_pts1 != ctx->capture_pair_pts1;
+    if (new_pair) {
+        if (ctx->capture_pair_count >= MPVFLOW_CAPTURE_GPU_MAX_PAIRS) {
+            mpvflow_gpu_capture_stop(ctx);
+            return MPVFLOW_GPU_OK;
+        }
+        ctx->capture_pair_index = ctx->capture_pair_count++;
+        ctx->capture_pair_pts0 = source_pts0;
+        ctx->capture_pair_pts1 = source_pts1;
+        ctx->capture_sample_index = 0;
+        ctx->capture_pair_ready = true;
+    }
+    if (ctx->capture_sample_index >= MPVFLOW_CAPTURE_MAX_SAMPLES_PER_PAIR)
+        return MPVFLOW_GPU_OK;
+
+    const int max_dimension = 640;
+    const double scale = fmin(1.0, (double) max_dimension /
+                              (double) (source_w > source_h ? source_w : source_h));
+    const int tile_w = (int) lround(source_w * scale);
+    const int tile_h = (int) lround(source_h * scale);
+    struct FlowLevel *level = &pair->level[0];
+    const int grid_w = (int) level->forward->params.w;
+    const int grid_h = (int) level->forward->params.h;
+    if (tile_w < 1 || tile_h < 1 || grid_w < 1 || grid_h < 1 ||
+        tile_w > INT_MAX / 3 || grid_w > INT_MAX / 7 ||
+        !ensure_capture_staging(ctx, &ctx->capture_color_atlas, tile_w * 3, tile_h) ||
+        !ensure_capture_staging(ctx, &ctx->capture_map_atlas, grid_w * 7, grid_h)) {
+        mpvflow_gpu_capture_fail(ctx, "capture_staging_texture_unavailable");
+        return MPVFLOW_GPU_UNSUPPORTED_FORMAT;
+    }
+
+    struct MPVFlowCaptureMeta meta = {
+        .engine = ctx->capture_engine,
+        .backend = "vulkan",
+        .source_width = source_w,
+        .source_height = source_h,
+        .output_width = output_w,
+        .output_height = output_h,
+        .pts0 = source_pts0,
+        .pts1 = source_pts1,
+        .output_pts = output_pts,
+        .timestep = timestep,
+        .effective_settings_json = ctx->capture_settings,
+    };
+    if (!ctx->capture_session) {
+        char reason[128] = {0};
+        ctx->capture_session = mpvflow_capture_io_start(
+            ctx->capture_base_dir, ctx->capture_session_name, &meta,
+            reason, sizeof(reason));
+        if (!ctx->capture_session) {
+            flow_log(ctx->gpu, PL_LOG_WARN,
+                     "MPVFLOW_DIAGNOSTIC component=capture event=session_create state=failed reason=%s",
+                     reason[0] ? reason : "capture_io_start_failed");
+            mpvflow_gpu_capture_fail(ctx,
+                reason[0] ? reason : "capture_io_start_failed");
+            return MPVFLOW_GPU_ERROR;
+        }
+    }
+
+    struct pl_desc_binding color_bindings[4] = {
+        { .object = source0, .address_mode = PL_TEX_ADDRESS_CLAMP,
+          .sample_mode = PL_TEX_SAMPLE_LINEAR },
+        { .object = source1, .address_mode = PL_TEX_ADDRESS_CLAMP,
+          .sample_mode = PL_TEX_SAMPLE_LINEAR },
+        { .object = synthesized_output, .address_mode = PL_TEX_ADDRESS_CLAMP,
+          .sample_mode = PL_TEX_SAMPLE_LINEAR },
+        { .object = ctx->capture_color_atlas },
+    };
+    if (!dispatch_capture_pass(ctx, ctx->pass_capture_color, color_bindings,
+                               tile_w, tile_h, 0, timestep,
+                               tile_w * 3, tile_h)) {
+        mpvflow_gpu_capture_fail(ctx, "capture_color_copy_pass_failed");
+        return MPVFLOW_GPU_ERROR;
+    }
+
+    const bool capture_new_pair = ctx->capture_sample_index == 0;
+    struct pl_desc_binding map_bindings[3] = {
+        { .object = level->forward }, { .object = level->backward },
+        { .object = ctx->capture_map_atlas },
+    };
+    if (capture_new_pair && !dispatch_capture_pass(
+            ctx, ctx->pass_capture_maps, map_bindings,
+            grid_w, grid_h, MPVFLOW_GPU_MOTION_GRID_STEP, timestep,
+            grid_w * 7, grid_h)) {
+        mpvflow_gpu_capture_fail(ctx, "capture_motion_map_pass_failed");
+        return MPVFLOW_GPU_ERROR;
+    }
+
+    /* This explicitly opted-in debug path waits on the borrowed GPU queue
+     * only after the capture-owned copies have been queued; it never maps or
+     * destroys a caller-owned source/synthesis texture. */
+    pl_gpu_finish(ctx->gpu);
+    uint8_t *color_atlas = download_capture_atlas(
+        ctx, ctx->capture_color_atlas, tile_w * 3, tile_h);
+    uint8_t *map_atlas = capture_new_pair ? download_capture_atlas(
+        ctx, ctx->capture_map_atlas, grid_w * 7, grid_h) : NULL;
+    if (!color_atlas || (capture_new_pair && !map_atlas)) {
+        free(color_atlas);
+        free(map_atlas);
+        mpvflow_gpu_capture_fail(ctx, "capture_texture_download_failed");
+        return MPVFLOW_GPU_ERROR;
+    }
+
+    bool writes_ok = true;
+    if (capture_new_pair) {
+        writes_ok = capture_write_panel(ctx, &meta, color_atlas, tile_w * 3,
+            tile_h, tile_w, 0, ctx->capture_pair_index, -1, "source0") &&
+            capture_write_panel(ctx, &meta, color_atlas, tile_w * 3,
+            tile_h, tile_w, 1, ctx->capture_pair_index, -1, "source1") &&
+            capture_write_panel(ctx, &meta, map_atlas, grid_w * 7,
+            grid_h, grid_w, 0, ctx->capture_pair_index, -1, "motion_forward") &&
+            capture_write_panel(ctx, &meta, map_atlas, grid_w * 7,
+            grid_h, grid_w, 0, ctx->capture_pair_index, -1, "motion") &&
+            capture_write_panel(ctx, &meta, map_atlas, grid_w * 7,
+            grid_h, grid_w, 1, ctx->capture_pair_index, -1, "motion_backward") &&
+            capture_write_panel(ctx, &meta, map_atlas, grid_w * 7,
+            grid_h, grid_w, 2, ctx->capture_pair_index, -1, "residual") &&
+            capture_write_panel(ctx, &meta, map_atlas, grid_w * 7,
+            grid_h, grid_w, 3, ctx->capture_pair_index, -1, "uniqueness") &&
+            capture_write_panel(ctx, &meta, map_atlas, grid_w * 7,
+            grid_h, grid_w, 4, ctx->capture_pair_index, -1, "confidence") &&
+            capture_write_panel(ctx, &meta, map_atlas, grid_w * 7,
+            grid_h, grid_w, 5, ctx->capture_pair_index, -1, "cycle_consistency") &&
+            capture_write_panel(ctx, &meta, map_atlas, grid_w * 7,
+            grid_h, grid_w, 5, ctx->capture_pair_index, -1, "cycle_error") &&
+            capture_write_panel(ctx, &meta, map_atlas, grid_w * 7,
+            grid_h, grid_w, 6, ctx->capture_pair_index, -1, "visibility_support");
+    }
+    writes_ok = writes_ok && capture_write_panel(
+        ctx, &meta, color_atlas, tile_w * 3, tile_h, tile_w, 2,
+        ctx->capture_pair_index, ctx->capture_sample_index, "synthesized");
+    free(color_atlas);
+    free(map_atlas);
+    if (!writes_ok) {
+        mpvflow_gpu_capture_fail(ctx, "capture_png_write_failed_or_size_cap");
+        return MPVFLOW_GPU_ERROR;
+    }
+
+    ctx->capture_sample_index++;
+    if (ctx->capture_sample_index >= MPVFLOW_CAPTURE_MAX_SAMPLES_PER_PAIR)
+        flow_log(ctx->gpu, PL_LOG_INFO,
+                 "MPVFLOW_DIAGNOSTIC component=capture event=pair_complete state=ready pair=%d samples=%d",
+                 ctx->capture_pair_index, ctx->capture_sample_index);
+    if (ctx->capture_pair_index + 1 >= MPVFLOW_CAPTURE_GPU_MAX_PAIRS &&
+        ctx->capture_sample_index >= MPVFLOW_CAPTURE_MAX_SAMPLES_PER_PAIR) {
+        flow_log(ctx->gpu, PL_LOG_INFO,
+                 "MPVFLOW_DIAGNOSTIC component=capture event=session_limit state=complete pairs=%d samples_per_pair=%d",
+                 MPVFLOW_CAPTURE_GPU_MAX_PAIRS, MPVFLOW_CAPTURE_MAX_SAMPLES_PER_PAIR);
+        mpvflow_gpu_capture_stop(ctx);
+    }
+    return MPVFLOW_GPU_OK;
 }

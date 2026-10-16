@@ -57,6 +57,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import org.json.JSONObject
 import org.koin.core.component.KoinComponent
 import org.koin.core.component.inject
 import kotlin.reflect.KProperty
@@ -101,8 +102,12 @@ class MPVView(
   private var interpolationOutputFrameRate: Double? = null
   private val mpvFlowDiagnosticsScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
   private var mpvFlowDiagnosticsJob: Job? = null
+  private val mpvFlowCaptureControlFile = java.io.File(context.cacheDir, "mpvflow-diagnostic-control.txt")
+  private var mpvFlowCaptureControlConfigured = false
+  private var mpvFlowCaptureSessionId: String? = null
   private var mpvFlowDiagnosticsEnabled = false
   private var mpvFlowOsdStatsEnabled = false
+  @Volatile private var latestMpvFlowRuntimeSample: MpvFlowRuntimeCadenceSample? = null
 
   private fun currentDisplayRefreshRate(): FlowDisplayRefreshRate? {
     val viewDisplay = display
@@ -188,6 +193,7 @@ class MPVView(
   }
 
   fun releaseSurface() {
+    stopFlowDiagnosticCapture()
     stopMpvFlowDiagnostics()
     holder.removeCallback(this)
     if (isSurfaceReady || PlaybackSession.state.value.surfaceAttached) {
@@ -218,6 +224,7 @@ class MPVView(
             }
           val candidate = latestMpvFlowRuntimeCadenceSample(entries)
           val sample = sampleCache.update(candidate, System.currentTimeMillis())
+          latestMpvFlowRuntimeSample = sample
           if (mpvFlowOsdStatsEnabled) sendMpvFlowOsdStats(sample)
           if (mpvFlowDiagnosticsEnabled && BuildConfig.DEBUG) {
             observedFallbackReasons += observedMpvFlowPassthroughReasons(entries)
@@ -256,6 +263,78 @@ class MPVView(
       )
     }
   }
+
+  /** Latest app-side counters; successful swap submits are not proof of displayed/scanout FPS. */
+  fun flowDiagnosticTimingSnapshot(): JSONObject {
+    val sample = latestMpvFlowRuntimeSample
+    fun nullable(value: Number?): Any = value ?: JSONObject.NULL
+    return JSONObject()
+      .put("schema_version", 1)
+      .put("engine", "mpv")
+      .put("sample_available", sample != null)
+      .put("sample_time_ms", nullable(sample?.timeMillis))
+      .put("sample_window_ms", nullable(sample?.windowMillis))
+      .put("target_fps", nullable(sample?.targetFps))
+      .put("synthesized_submit_fps", nullable(sample?.synthesizedSubmitFps))
+      .put("successful_swap_submit_fps", nullable(sample?.swapSubmitFps))
+      .put("render_callback_fps", nullable(sample?.renderCallbackFps))
+      .put("synthesized_submits", nullable(sample?.synthesizedSubmits))
+      .put("synthesized_render_callbacks", nullable(sample?.synthesizedRenderCallbacks))
+      .put("render_failures", nullable(sample?.renderFailures))
+      .put("swap_failures", nullable(sample?.swapFailures))
+      .put("synthesis_rate_limited_callbacks", nullable(sample?.synthesisRateLimitedCallbacks))
+      .put("frame_repeat_count", nullable(sample?.frameRepeatCount))
+      .put("render_cpu_average_ms", nullable(sample?.renderCpuAverageMs))
+      .put("render_cpu_maximum_ms", nullable(sample?.renderCpuMaximumMs))
+      .put("pair_analysis_attempts", nullable(sample?.pairAnalysisAttempts))
+      .put("pair_analysis_failures", nullable(sample?.pairAnalysisFailures))
+      .put("source_sync_percent", nullable(sample?.sourceSyncPercent))
+      .put("successful_swap_metric_semantics", "successful pl_swapchain submit; not SurfaceFlinger scanout")
+      .put("surface_frame_rate_hint_hz", nullable(interpolationOutputFrameRate))
+      .put("surface_frame_rate_hint_semantics", "requested Surface frame-rate hint; not observed presentation")
+      .put("actual_displayed_fps_available", false)
+      .put("actual_displayed_fps_source", "Perfetto FrameTimeline companion trace required for SurfaceView")
+  }
+
+  /** Arms the MPV VO through a private, atomically replaced control file. */
+  fun startFlowDiagnosticCapture(sessionId: String, baseDirectory: String): String? {
+    if (!BuildConfig.DEBUG || !BuildConfig.MPV_HAS_MPVFLOW) return "debug_mpvflow_unavailable"
+    if (!mpvFlowDiagnosticsEnabled || !isSurfaceReady) return "mpvflow_not_active"
+    if (!mpvFlowCaptureControlConfigured) return "mpvflow_capture_control_unavailable"
+    if (!sessionId.matches(Regex("[A-Za-z0-9_-]{1,80}"))) return "invalid_session_id"
+    val allowedRoot = java.io.File(context.cacheDir, "flow-diagnostics").canonicalFile
+    val target = java.io.File(baseDirectory).canonicalFile
+    if (target != allowedRoot) {
+      return "capture_directory_outside_private_cache"
+    }
+    if (!target.isDirectory && !target.mkdirs()) return "capture_directory_create_failed"
+    val error = writeFlowDiagnosticControl("START\t$sessionId\t${target.path}\n")
+    if (error != null) return error
+    mpvFlowCaptureSessionId = sessionId
+    return null
+  }
+
+  fun stopFlowDiagnosticCapture(sessionId: String? = mpvFlowCaptureSessionId): String? {
+    val activeSession = mpvFlowCaptureSessionId ?: return null
+    if (sessionId == null || sessionId != activeSession) return "capture_session_id_mismatch"
+    val error = writeFlowDiagnosticControl("STOP\t$sessionId\n")
+    if (error == null) mpvFlowCaptureSessionId = null
+    else Log.e(TAG, "MPVFLOW_DIAGNOSTIC component=capture event=control_write state=failed reason=$error")
+    return error
+  }
+
+  private fun writeFlowDiagnosticControl(contents: String): String? =
+    runCatching {
+      val atomic = android.util.AtomicFile(mpvFlowCaptureControlFile)
+      val output = atomic.startWrite()
+      try {
+        output.write(contents.toByteArray(Charsets.UTF_8))
+        atomic.finishWrite(output)
+      } catch (error: Exception) {
+        atomic.failWrite(output)
+        throw error
+      }
+    }.exceptionOrNull()?.let { "control_file_${it.javaClass.simpleName.lowercase()}" }
 
 
   private fun mpvFlowPlayerHealthFields(
@@ -652,6 +731,18 @@ class MPVView(
         PlaybackSession.setOptionString("mpvflow-compute-api", effectiveMpvFlowComputeApi.nativeValue.toString())
       } else {
         null
+      }
+    val captureControlOptionResult =
+      if (BuildConfig.DEBUG && BuildConfig.MPV_HAS_MPVFLOW &&
+        !MpvConfigOverridePolicy.isOwnedByMpvConf("mpvflow-diagnostic-control-file")) {
+        mpvFlowCaptureControlConfigured =
+          PlaybackSession.setOptionString(
+            "mpvflow-diagnostic-control-file",
+            if (mpvFlowFrameInterpolationEnabled) mpvFlowCaptureControlFile.absolutePath else "",
+          ) == 0
+        mpvFlowCaptureControlConfigured
+      } else {
+        false
       }
     val mpvFlowVisibilityResolverDebugEnabled =
       BuildConfig.DEBUG &&

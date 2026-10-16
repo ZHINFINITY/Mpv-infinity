@@ -14,6 +14,9 @@ internal object Media3FlowVulkanNative {
 
   external fun nativeCreateContext(maxDimension: Int, requestedComputeApi: Int): Long
 
+  external fun nativeStartDiagnosticCapture(context: Long, sessionId: String, baseDirectory: String, settingsJson: String): String?
+  external fun nativeStopDiagnosticCapture(context: Long, sessionId: String): String?
+
   /** Returns the currently effective Flow compute backend, including Auto fallback. */
   external fun nativeGetComputeApiName(context: Long): String?
 
@@ -43,6 +46,9 @@ internal object Media3FlowVulkanNative {
     pair: Long,
     source0: Long,
     source1: Long,
+    sourcePts0Us: Long,
+    sourcePts1Us: Long,
+    outputPtsUs: Long,
     timestep: Float,
     softBlendEnabled: Boolean,
     output: Long,

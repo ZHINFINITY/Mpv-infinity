@@ -11,6 +11,8 @@ import app.infinity.mpvz.ui.player.NativePlaybackSnapshot
 import app.infinity.mpvz.ui.player.PlaybackEngineMode
 import app.infinity.mpvz.ui.player.PlaybackSession
 
+import android.content.Context
+import android.content.ContextWrapper
 import android.content.res.Configuration
 import android.text.format.DateUtils
 import androidx.compose.foundation.ExperimentalFoundationApi
@@ -42,6 +44,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TimeInput
 import androidx.compose.material3.rememberTimePickerState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -49,10 +52,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import app.infinity.mpvz.BuildConfig
 import app.infinity.mpvz.R
 import app.infinity.mpvz.domain.anime4k.Anime4KManager
 import app.infinity.mpvz.preferences.AdvancedPreferences
@@ -63,6 +68,9 @@ import app.infinity.mpvz.ui.icons.Icons
 import app.infinity.mpvz.ui.player.anime4k.Anime4KUiState
 import app.infinity.mpvz.ui.theme.AppShapeScale
 import app.infinity.mpvz.ui.theme.spacing
+import app.infinity.mpvz.ui.player.FlowDiagnosticsCapturePhase
+import app.infinity.mpvz.ui.player.FlowDiagnosticsCaptureUiState
+import app.infinity.mpvz.ui.player.PlayerActivity
 import org.koin.compose.koinInject
 
 private fun nativeCodecLabel(mimeType: String?, codecs: String?): String {
@@ -80,6 +88,13 @@ private fun nativeCodecLabel(mimeType: String?, codecs: String?): String {
       ?: "--"
   }
 }
+
+private tailrec fun Context.playerActivityOrNull(): PlayerActivity? =
+  when (this) {
+    is PlayerActivity -> this
+    is ContextWrapper -> baseContext.playerActivityOrNull()
+    else -> null
+  }
 
 @OptIn(ExperimentalLayoutApi::class, ExperimentalFoundationApi::class)
 @Composable
@@ -259,6 +274,68 @@ fun MoreSheet(
             )
           } else {
             Text("Output: MPV renderer", style = MaterialTheme.typography.bodySmall)
+          }
+        }
+      }
+      if (BuildConfig.DEBUG && activeEngine in setOf(PlaybackEngineMode.MPV, PlaybackEngineMode.NATIVE)) {
+        val activity = LocalContext.current.playerActivityOrNull()
+        val captureStateFlow = activity?.flowDiagnosticsCaptureState
+        val fallbackState = remember { mutableStateOf(FlowDiagnosticsCaptureUiState()) }
+        val captureState by if (captureStateFlow != null) {
+          captureStateFlow.collectAsState()
+        } else {
+          fallbackState
+        }
+        var startError by remember { mutableStateOf<String?>(null) }
+        Surface(
+          modifier = Modifier.fillMaxWidth(),
+          color = MaterialTheme.colorScheme.surfaceVariant,
+          shape = MaterialTheme.shapes.medium,
+        ) {
+          Column(
+            modifier = Modifier.fillMaxWidth().padding(MaterialTheme.spacing.small),
+            verticalArrangement = Arrangement.spacedBy(MaterialTheme.spacing.extraSmall),
+          ) {
+            Text("Flow diagnostic capture · debug", style = MaterialTheme.typography.titleSmall)
+            Text(
+              "Marked, local-only sample: at most 4 adjacent source pairs, 4 synthesized outputs per pair, and 64 MiB.",
+              style = MaterialTheme.typography.bodySmall,
+            )
+            if (captureState.active) {
+              Text(
+                "${captureState.engine ?: "Flow"}: ${captureState.pairs} pairs · " +
+                  "${captureState.synthesizedOutputs} synthesized outputs · " +
+                  "${captureState.bytesWritten / 1024} KiB",
+                style = MaterialTheme.typography.bodySmall,
+              )
+              Button(
+                onClick = { startError = activity?.stopFlowDiagnosticsCapture() },
+                enabled = activity != null && captureState.phase != FlowDiagnosticsCapturePhase.STOPPING,
+              ) {
+                Text(if (captureState.phase == FlowDiagnosticsCapturePhase.STOPPING) "Stopping…" else "Stop capture")
+              }
+            } else {
+              Button(
+                onClick = { startError = activity?.startFlowDiagnosticsCapture() },
+                enabled = activity != null,
+              ) {
+                Text("Start marked capture · ${if (activeEngine == PlaybackEngineMode.NATIVE) "Media3" else "MPV"}")
+              }
+            }
+            val message = captureState.message ?: startError
+            if (!message.isNullOrBlank()) {
+              Text(message, style = MaterialTheme.typography.bodySmall)
+            }
+            if (captureState.missingChannels.isNotEmpty()) {
+              Text(
+                "Missing: ${captureState.missingChannels.take(3).joinToString()}",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.error,
+              )
+            }
+            captureState.savedLocation?.let { location ->
+              Text("Saved locally: $location", style = MaterialTheme.typography.bodySmall)
+            }
           }
         }
       }

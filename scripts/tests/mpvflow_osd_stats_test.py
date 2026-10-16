@@ -51,7 +51,7 @@ def main() -> None:
 
     assert "mpvFlowOsdStatsEnabled = mpvFlowFrameInterpolationActive" in MPV_VIEW
     assert "if (mpvFlowOsdStatsEnabled) sendMpvFlowOsdStats(sample)" in MPV_VIEW
-    bridge = MPV_VIEW.split("private fun sendMpvFlowOsdStats(", 1)[1].split("private fun mpvFlowPlayerHealthFields(", 1)[0]
+    bridge = MPV_VIEW.split("private fun sendMpvFlowOsdStats(", 1)[1].split("/** Latest app-side counters", 1)[0]
     assert "sample?.synthesizedSubmitFps" in bridge
     assert '"script-message-to"' in bridge and '"mpvflow-output-rate"' in bridge
     assert "swapSubmitFps" not in bridge and "targetFps" not in bridge

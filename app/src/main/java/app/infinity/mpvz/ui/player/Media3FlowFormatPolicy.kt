@@ -78,7 +78,7 @@ internal object Media3FlowFormatPolicy {
     return inputColorSpace == C.COLOR_SPACE_BT2020 || isDolbyVision(mimeType, codecs)
   }
 
-  private fun isDolbyVision(mimeType: String, codecs: String): Boolean {
+  fun isDolbyVision(mimeType: String, codecs: String): Boolean {
     val mime = mimeType.lowercase()
     val codec = codecs.lowercase().substringBefore(',').trim()
     return mime == MimeTypes.VIDEO_DOLBY_VISION ||

@@ -2,15 +2,18 @@ diff --git a/video/out/vo_gpu_next.c b/video/out/vo_gpu_next.c
 index bd3d1aa..75ffbb1 100644
 --- a/video/out/vo_gpu_next.c
 +++ b/video/out/vo_gpu_next.c
-@@ -21,0 +22,3 @@
+@@ -21,0 +22,5 @@
 +#include <math.h>
++#include <limits.h>
++#include <stdio.h>
 +#include <string.h>
 +#include <libplacebo/vulkan.h>
-@@ -52,0 +56,3 @@
+@@ -52,0 +56,4 @@
 +#include "mpvflow_gpu.h"
++#include "mpvflow_capture_io.h"
 +#include "mpvflow_rate_limit.h"
 +#include "mpvflow_synthesis_scale.h"
-@@ -157,0 +163,67 @@ struct priv {
+@@ -157,0 +163,71 @@ struct priv {
 +    // MPVFLOW_GPU_INTEGRATION
 +    MPVFlowGPUContext *flow_gpu;
 +    MPVFlowGPUPair *flow_pair;
@@ -77,10 +80,14 @@ index bd3d1aa..75ffbb1 100644
 +    uint64_t flow_cadence_pair_analysis_attempts;
 +    uint64_t flow_cadence_pair_analysis_failures;
 +    uint64_t flow_cadence_pair_cache_reuses;
++    char flow_capture_base_dir[PATH_MAX];
++    char flow_capture_session_id[81];
++    bool flow_capture_pending;
++    int64_t flow_capture_poll_ns;
 +
 @@ -184,0 +256,1 @@ static void update_lut(struct priv *p, struct user_lut *lut);
 +static void flow_update_context(struct vo *vo);
-@@ -186,0 +259,8 @@ struct gl_next_opts {
+@@ -186,0 +259,9 @@ struct gl_next_opts {
 +    bool mpvflow;
 +    bool mpvflow_visibility_resolver;
 +    bool mpvflow_soft_blend;
@@ -89,7 +96,8 @@ index bd3d1aa..75ffbb1 100644
 +    int mpvflow_target_fps;
 +    int mpvflow_quality;
 +    int mpvflow_compute_api;
-@@ -213,0 +293,8 @@ const struct m_sub_options gl_next_conf = {
++    char *mpvflow_diagnostic_control_file;
+@@ -213,0 +293,9 @@ const struct m_sub_options gl_next_conf = {
 +        {"mpvflow", OPT_BOOL(mpvflow)},
 +        {"mpvflow-visibility-resolver", OPT_BOOL(mpvflow_visibility_resolver)},
 +        {"mpvflow-soft-blend", OPT_BOOL(mpvflow_soft_blend)},
@@ -98,7 +106,8 @@ index bd3d1aa..75ffbb1 100644
 +        {"mpvflow-target-fps", OPT_INT(mpvflow_target_fps), M_RANGE(1, 240)},
 +        {"mpvflow-quality", OPT_INT(mpvflow_quality), M_RANGE(0, 100)},
 +        {"mpvflow-compute-api", OPT_INT(mpvflow_compute_api), M_RANGE(0, 2)},
-@@ -239,0 +326,7 @@ const struct m_sub_options gl_next_conf = {
++        {"mpvflow-diagnostic-control-file", OPT_STRING(mpvflow_diagnostic_control_file)},
+@@ -239,0 +326,8 @@ const struct m_sub_options gl_next_conf = {
 +        .mpvflow_max_dimension = 640,
 +        .mpvflow_synthesis_max_dimension = 1920,
 +        .mpvflow_target_fps = 60,
@@ -106,7 +115,8 @@ index bd3d1aa..75ffbb1 100644
 +        .mpvflow_compute_api = MPVFLOW_GPU_COMPUTE_AUTO,
 +        .mpvflow_visibility_resolver = false,
 +        .mpvflow_soft_blend = false,
-@@ -560,0 +650,10 @@ struct frame_priv {
++        .mpvflow_diagnostic_control_file = NULL,
+@@ -560,0 +650,11 @@ struct frame_priv {
 +    uint64_t frame_id;
 +    pl_tex flow_source;
 +    pl_tex flow_input;
@@ -117,6 +127,7 @@ index bd3d1aa..75ffbb1 100644
 +    int flow_synthesis_w, flow_synthesis_h;
 +    int flow_w, flow_h;
 +    int flow_source_w, flow_source_h;
++    double pts;
 @@ -569,0 +664,557 @@ struct frame_priv {
 +static void flow_release_pair(struct priv *p)
 +{
@@ -675,7 +686,8 @@ index bd3d1aa..75ffbb1 100644
 +    fp->flow_synthesis_w = fp->flow_synthesis_h = 0;
 +}
 +
-@@ -1109,0 +1736,2 @@ static bool map_frame(pl_gpu gpu, pl_tex *tex, const struct pl_source_frame *src
+@@ -1109,0 +1736,3 @@ static bool map_frame(pl_gpu gpu, pl_tex *tex, const struct pl_source_frame *src,
++    fp->pts = src->pts;
 +    flow_update_context(vo);
 +    flow_prepare_input(vo, frame, mpi, fp);
 @@ -1118,0 +1747,1 @@ static void unmap_frame(pl_gpu gpu, struct pl_frame *frame,
@@ -683,7 +695,132 @@ index bd3d1aa..75ffbb1 100644
 @@ -1135,0 +1765,2 @@ static void discard_frame(const struct pl_source_frame *src)
 +    struct frame_priv *fp = mpi->priv;
 +    flow_release_frame(fp->vo, fp);
-@@ -1341,0 +1976,283 @@ static void update_hook_opts_dynamic(struct priv *p, const struct pl_hook *hook,
+@@ -1341,0 +1976,421 @@ static void update_hook_opts_dynamic(struct priv *p, const struct pl_hook *hook,
++static void flow_capture_terminal(struct priv *p, const char *base_dir,
++                                  const char *session_id, const char *backend,
++                                  const char *reason)
++{
++    if (!p || !base_dir || !session_id || !*session_id)
++        return;
++    char settings[768];
++    snprintf(settings, sizeof(settings),
++             "{\"target_fps\":%d,\"quality\":%d,\"analysis_cap_px\":%d,"
++             "\"synthesis_cap_px\":%d,\"compute_api_requested\":%d,"
++             "\"compute_api_resolved\":\"%s\",\"color_primaries\":\"unknown\","
++             "\"color_transfer\":\"unknown\"}",
++             p->next_opts->mpvflow_target_fps, p->next_opts->mpvflow_quality,
++             p->flow_max_dimension, p->flow_synthesis_max_dimension,
++             p->next_opts->mpvflow_compute_api, backend ? backend : "unknown");
++    (void) mpvflow_capture_io_write_terminal_manifest(
++        base_dir, session_id, "mpv", backend ? backend : "unknown",
++        settings, reason ? reason : "capture_stopped_before_synthesis");
++}
++
++static void flow_capture_poll_control(struct vo *vo)
++{
++    struct priv *p = vo->priv;
++    const char *path = p->next_opts->mpvflow_diagnostic_control_file;
++    if (!path || !path[0])
++        return;
++    const int64_t now = mp_time_ns();
++    if (now <= 0 || now - p->flow_capture_poll_ns < 100000000LL)
++        return;
++    p->flow_capture_poll_ns = now;
++    FILE *file = fopen(path, "r");
++    if (!file)
++        return;
++    char line[PATH_MAX + 128] = {0};
++    const bool read_ok = fgets(line, sizeof(line), file) != NULL;
++    fclose(file);
++    if (!read_ok)
++        return;
++
++    char id[81] = {0};
++    char base_dir[PATH_MAX] = {0};
++    if (sscanf(line, "START\t%80[A-Za-z0-9_-]\t%4095[^\n]", id, base_dir) == 2 &&
++        base_dir[0] == '/') {
++        if (!strcmp(id, p->flow_capture_session_id))
++            return;
++        if (p->flow_gpu && mpvflow_gpu_capture_active(p->flow_gpu))
++            mpvflow_gpu_capture_stop(p->flow_gpu);
++        else if (p->flow_capture_pending)
++            flow_capture_terminal(p, p->flow_capture_base_dir,
++                p->flow_capture_session_id, "unknown", "capture_replaced_before_synthesis");
++        snprintf(p->flow_capture_session_id, sizeof(p->flow_capture_session_id), "%s", id);
++        snprintf(p->flow_capture_base_dir, sizeof(p->flow_capture_base_dir), "%s", base_dir);
++        p->flow_capture_pending = true;
++        if (!p->flow_gpu) {
++            flow_capture_terminal(p, p->flow_capture_base_dir,
++                p->flow_capture_session_id, "unavailable", "mpvflow_context_unavailable");
++            p->flow_capture_pending = false;
++            MP_WARN(vo, "MPVFLOW_DIAGNOSTIC component=capture event=start state=failed reason=mpvflow_context_unavailable\n");
++        }
++        return;
++    }
++    if (sscanf(line, "STOP\t%80[A-Za-z0-9_-]", id) == 1 &&
++        !strcmp(id, p->flow_capture_session_id)) {
++        if (p->flow_gpu && mpvflow_gpu_capture_active(p->flow_gpu))
++            mpvflow_gpu_capture_stop(p->flow_gpu);
++        else if (p->flow_capture_pending)
++            flow_capture_terminal(p, p->flow_capture_base_dir,
++                p->flow_capture_session_id,
++                p->flow_gpu ? mpvflow_gpu_get_compute_api_name(p->flow_gpu) : "unknown",
++                "capture_stopped_before_synthesis");
++        p->flow_capture_pending = false;
++        p->flow_capture_session_id[0] = '\0';
++    }
++}
++
++static bool flow_capture_start_for_pair(struct vo *vo,
++                                        const struct pl_frame *image0,
++                                        const struct pl_frame *image1,
++                                        const struct frame_priv *fp0,
++                                        const struct frame_priv *fp1)
++{
++    struct priv *p = vo->priv;
++    if (!p->flow_capture_pending || !p->flow_gpu || !image0 || !image1 || !fp0 || !fp1)
++        return false;
++    const struct pl_color_space *c0 = &image0->color;
++    const struct pl_color_space *c1 = &image1->color;
++    const bool known_sdr = c0->primaries != PL_COLOR_PRIM_UNKNOWN &&
++        c1->primaries != PL_COLOR_PRIM_UNKNOWN &&
++        c0->transfer != PL_COLOR_TRC_UNKNOWN && c1->transfer != PL_COLOR_TRC_UNKNOWN &&
++        !pl_color_transfer_is_hdr(c0->transfer) && !pl_color_transfer_is_hdr(c1->transfer) &&
++        !pl_color_space_is_hdr(c0) && !pl_color_space_is_hdr(c1) &&
++        !fp0->flow_linear_hdr_source && !fp1->flow_linear_hdr_source;
++    const char *backend = mpvflow_gpu_get_compute_api_name(p->flow_gpu);
++    char settings[1024];
++    snprintf(settings, sizeof(settings),
++             "{\"target_fps\":%d,\"quality\":%d,\"analysis_cap_px\":%d,"
++             "\"synthesis_cap_px\":%d,\"compute_api_requested\":%d,"
++             "\"compute_api_resolved\":\"%s\",\"visibility_resolver\":%s,"
++             "\"soft_blend\":%s,\"preserve_motion_blend_on_conflict\":%s,"
++             "\"source_dimensions\":[%d,%d],\"processing_dimensions\":[%d,%d],"
++             "\"color_primaries\":\"%s\",\"color_transfer\":\"%s\"}",
++             p->next_opts->mpvflow_target_fps, p->next_opts->mpvflow_quality,
++             p->flow_max_dimension, p->flow_synthesis_max_dimension,
++             p->next_opts->mpvflow_compute_api, backend ? backend : "unknown",
++             p->next_opts->mpvflow_visibility_resolver ? "true" : "false",
++             p->next_opts->mpvflow_soft_blend ? "true" : "false",
++             p->next_opts->mpvflow_soft_blend ? "true" : "false",
++             fp0->flow_source_w, fp0->flow_source_h, fp0->flow_w, fp0->flow_h,
++             pl_color_primaries_name(c0->primaries), pl_color_transfer_name(c0->transfer));
++    if (!known_sdr) {
++        flow_capture_terminal(p, p->flow_capture_base_dir,
++            p->flow_capture_session_id, backend,
++            "hdr_dolby_vision_or_unknown_color_refused");
++        p->flow_capture_pending = false;
++        MP_WARN(vo, "MPVFLOW_DIAGNOSTIC component=capture event=start state=refused reason=hdr_dolby_vision_or_unknown_color\n");
++        return false;
++    }
++    const enum MPVFlowGPUResult result = mpvflow_gpu_capture_start(
++        p->flow_gpu, p->flow_capture_base_dir, p->flow_capture_session_id,
++        "mpv", settings);
++    p->flow_capture_pending = false;
++    if (result != MPVFLOW_GPU_OK)
++        MP_WARN(vo, "MPVFLOW_DIAGNOSTIC component=capture event=start state=failed status=%d\n", result);
++    return result == MPVFLOW_GPU_OK;
++}
 +struct flow_prepared_frame {
 +    int nearest;
 +    int before;
@@ -695,7 +832,7 @@ index bd3d1aa..75ffbb1 100644
 +
 +static void flow_prepare_frame(struct vo *vo, const struct pl_frame_mix *mix,
 +                               struct flow_prepared_frame *prepared, bool source_is_still,
-+                               bool allow_synthesis)
++                               bool allow_synthesis, double output_pts)
 +{
 +    struct priv *p = vo->priv;
 +    *prepared = (struct flow_prepared_frame) {
@@ -705,6 +842,7 @@ index bd3d1aa..75ffbb1 100644
 +        .bypass_status = MPVFLOW_GPU_OK,
 +    };
 +    flow_update_context(vo);
++    flow_capture_poll_control(vo);
 +    prepared->prepared = true;
 +    prepared->bypass_reason = p->flow_gpu ? "no_temporal_pair" : "gpu_context_unavailable";
 +
@@ -833,6 +971,18 @@ index bd3d1aa..75ffbb1 100644
 +                    p->next_opts->mpvflow_soft_blend, &output);
 +                stats_time_end(p->stats, "mpvflow-synthesis");
 +                if (status == MPVFLOW_GPU_OK && output) {
++                    (void) flow_capture_start_for_pair(vo, image0, image1, fp0, fp1);
++                    if (mpvflow_gpu_capture_active(p->flow_gpu)) {
++                        const enum MPVFlowGPUResult capture_status = mpvflow_gpu_capture_sample(
++                            p->flow_gpu, p->flow_pair, fp0->flow_source, fp1->flow_source,
++                            output, t, fp0->pts, fp1->pts, output_pts,
++                            p->next_opts->mpvflow_visibility_resolver,
++                            p->next_opts->mpvflow_soft_blend,
++                            p->next_opts->mpvflow_soft_blend);
++                        if (capture_status != MPVFLOW_GPU_OK)
++                            MP_WARN(vo, "MPVFLOW_DIAGNOSTIC component=capture event=sample state=failed status=%d\n",
++                                    capture_status);
++                    }
 +                    prepared->before = before;
 +                    prepared->output = output;
 +                } else {
@@ -1061,7 +1211,7 @@ index bd3d1aa..75ffbb1 100644
 +        }
 +        if (flow_queue_status != PL_QUEUE_ERR) {
 +            flow_prepare_frame(vo, &mix, &flow_prepared, frame->still,
-+                               !flow_synthesis_rate_limited);
++                               !flow_synthesis_rate_limited, flow_qparams.pts);
 +            // Submit queued Flow work, but do not wait for the GPU to become idle.
 +            pl_gpu_flush(gpu);
 +            if (!p->flow_preacquire_logged) {

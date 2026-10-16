@@ -1,0 +1,77 @@
+/*
+ * SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+ * Copyright (c) 2026 ZHINFINITY. Mpv∞ Covered Code.
+ * See LICENSE for terms.
+ */
+#ifndef MPVFLOW_CAPTURE_IO_H
+#define MPVFLOW_CAPTURE_IO_H
+
+#include <stddef.h>
+#include <stdint.h>
+
+#define MPVFLOW_CAPTURE_MAX_PAIRS 8
+#define MPVFLOW_CAPTURE_MAX_SAMPLES_PER_PAIR 4
+#define MPVFLOW_CAPTURE_MAX_BYTES (64u * 1024u * 1024u)
+
+struct MPVFlowCaptureSession;
+
+struct MPVFlowCaptureMeta {
+    const char *engine;
+    const char *backend;
+    int source_width;
+    int source_height;
+    int output_width;
+    int output_height;
+    double pts0;
+    double pts1;
+    double output_pts;
+    float timestep;
+    const char *effective_settings_json;
+};
+
+struct MPVFlowCaptureSession *mpvflow_capture_io_start(
+    const char *base_dir,
+    const char *session_name,
+    const struct MPVFlowCaptureMeta *initial_meta,
+    char *reason,
+    size_t reason_size);
+
+int mpvflow_capture_io_write(
+    struct MPVFlowCaptureSession *session,
+    int pair_index,
+    int sample_index,
+    const char *channel,
+    const struct MPVFlowCaptureMeta *meta,
+    const uint8_t *rgba8,
+    int width,
+    int height,
+    char *reason,
+    size_t reason_size);
+
+void mpvflow_capture_io_missing(
+    struct MPVFlowCaptureSession *session,
+    int pair_index,
+    int sample_index,
+    const char *channel,
+    const char *stage,
+    const char *reason);
+
+/* Write a terminal, valid manifest when no renderable synthesized sample arrived. */
+int mpvflow_capture_io_write_terminal_manifest(
+    const char *base_dir,
+    const char *session_name,
+    const char *engine,
+    const char *backend,
+    const char *effective_settings_json,
+    const char *reason);
+
+int mpvflow_capture_io_stop(struct MPVFlowCaptureSession *session);
+const char *mpvflow_capture_io_directory(const struct MPVFlowCaptureSession *session);
+const char *mpvflow_capture_io_status(const struct MPVFlowCaptureSession *session);
+void mpvflow_capture_io_destroy(struct MPVFlowCaptureSession *session);
+
+/* Writes a tightly packed RGBA8 PNG atomically via a sibling .part file. */
+int mpvflow_capture_write_png(const char *path, const uint8_t *rgba8,
+                              uint32_t width, uint32_t height);
+
+#endif

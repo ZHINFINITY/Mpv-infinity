@@ -266,6 +266,7 @@ class Media3FlowVideoSink(
   private val outputDecisionCounters = FlowOutputDecisionCounters()
   private val motionPairAnalysisCounters = FlowMotionPairAnalysisCounters()
   private var lastOutputDiagnosticLogAtNs = 0L
+  @Volatile private var diagnosticCaptureSession: String? = null
 
   private var eglDisplay = EGL14.EGL_NO_DISPLAY
   private var eglContext = EGL14.EGL_NO_CONTEXT
@@ -436,6 +437,37 @@ class Media3FlowVideoSink(
   }
 
   fun isPreflightAvailable(): Boolean = preflightAvailable && !disposed
+
+  fun startFlowDiagnosticCapture(sessionId: String, baseDirectory: String): String? = runCatching {
+    require(sessionId.matches(Regex("[A-Za-z0-9_-]{1,80}"))) { "Invalid capture session ID" }
+    runOnGlThreadSync {
+      val context = flowVulkanContext
+      check(!disposed && preflightAvailable && flowAvailable && context != 0L) { "Flow/Vulkan resources unavailable" }
+      check(diagnosticCaptureSession == null) { "Diagnostic capture already active" }
+      val format = currentFormat ?: error("Video color metadata unavailable")
+      val color = format.colorInfo ?: error("Video color metadata unknown")
+      check(color.colorSpace != Format.NO_VALUE && color.colorTransfer != Format.NO_VALUE && color.colorRange != Format.NO_VALUE) { "Video color metadata unknown" }
+      check(!Media3FlowFormatPolicy.isDolbyVision(format.sampleMimeType.orEmpty(), format.codecs.orEmpty())) { "Dolby Vision capture unsupported" }
+      check(color.hdrStaticInfo == null && color.colorTransfer != C.COLOR_TRANSFER_ST2084 && color.colorTransfer != C.COLOR_TRANSFER_HLG) { "HDR/Dolby Vision capture unsupported" }
+      check(decoderSdrOutputConfirmed) { "Resolved decoder output color is not confirmed SDR" }
+      val backend = effectiveComputeApiName().replace(Regex("[^A-Za-z0-9_-]"), "")
+      val json = """{"backend":"$backend","target_fps":$targetFps,"quality":$quality,"maximum_dimension":$maxDimension,"color_space":${color.colorSpace},"color_transfer":${color.colorTransfer},"color_range":${color.colorRange},"source_width":$frameWidth,"source_height":$frameHeight,"processing_width":$processingWidth,"processing_height":$processingHeight,"surface_width":${outputResolution.width},"surface_height":${outputResolution.height},"visibility_resolver":false,"soft_blend":$softBlendEnabled}"""
+      val failure = Media3FlowVulkanNative.nativeStartDiagnosticCapture(context, sessionId, baseDirectory, json)
+      check(failure == null) { failure ?: "Native capture start failed" }
+      diagnosticCaptureSession = sessionId
+      null
+    }
+  }.getOrElse { it.message ?: "Diagnostic capture could not start" }
+
+  fun stopFlowDiagnosticCapture(sessionId: String): String? = runCatching {
+    runOnGlThreadSync {
+      val activeSession = diagnosticCaptureSession ?: return@runOnGlThreadSync null
+      check(activeSession == sessionId) { "Capture session ID mismatch" }
+      val result = Media3FlowVulkanNative.nativeStopDiagnosticCapture(flowVulkanContext, sessionId)
+      if (result == null) diagnosticCaptureSession = null
+      result
+    }
+  }.getOrElse { it.message ?: "Diagnostic capture could not stop" }
 
   private fun createSharedHardwareBuffer(width: Int, height: Int, role: String): HardwareBuffer {
     val baseUsage = HardwareBuffer.USAGE_GPU_SAMPLED_IMAGE or HardwareBuffer.USAGE_GPU_COLOR_OUTPUT
@@ -1890,7 +1922,7 @@ class Media3FlowVideoSink(
     try {
       check(Media3FlowVulkanNative.nativeSynthesize(
         flowVulkanContext, pair.nativePairHandle,
-        a.nativeImageHandle, b.nativeImageHandle, alpha, softBlendEnabled, outputImageHandle,
+        a.nativeImageHandle, b.nativeImageHandle, a.ptsUs, b.ptsUs, targetPtsUs, alpha, softBlendEnabled, outputImageHandle,
       )) { "Shared Vulkan frame synthesis failed" }
     } finally {
       recordCpuDuration(FlowCpuStage.VULKAN_SYNTHESIS_SUBMIT, (System.nanoTime() - submitStartNs).coerceAtLeast(0L))
@@ -3295,6 +3327,8 @@ class Media3FlowVideoSink(
       slot.completionReported = false
     }
     if (flowVulkanContext != 0L) {
+      diagnosticCaptureSession?.let { id -> runCatching { Media3FlowVulkanNative.nativeStopDiagnosticCapture(flowVulkanContext, id) } }
+      diagnosticCaptureSession = null
       Media3FlowVulkanNative.nativeDestroyContext(flowVulkanContext)
       flowVulkanContext = 0L
     }

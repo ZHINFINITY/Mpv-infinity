@@ -212,6 +212,37 @@ class PlayerActivity :
       it.onPlaybackError = { error -> runOnUiThread { handleNativePlaybackError(error) } }
     }
   }
+  private val flowDiagnosticsCaptureManager by lazy { FlowDiagnosticsCaptureManager(this) }
+  internal val flowDiagnosticsCaptureState get() = flowDiagnosticsCaptureManager.state
+
+  internal fun startFlowDiagnosticsCapture(): String? {
+    if (!BuildConfig.DEBUG) return "debug_build_required"
+    return when (activeEngineMode) {
+      PlaybackEngineMode.MPV ->
+        flowDiagnosticsCaptureManager.start(
+          engine = "mpv",
+          startRequest = { sessionId, baseDirectory ->
+            binding.player.startFlowDiagnosticCapture(sessionId, baseDirectory.absolutePath)
+          },
+          stopRequest = { sessionId ->
+            binding.player.stopFlowDiagnosticCapture(sessionId)
+          },
+          timingSnapshot = binding.player::flowDiagnosticTimingSnapshot,
+        )
+      PlaybackEngineMode.NATIVE ->
+        flowDiagnosticsCaptureManager.start(
+          engine = "native-media3",
+          startRequest = { sessionId, baseDirectory ->
+            nativeEngine.startFlowDiagnosticCapture(sessionId, baseDirectory.absolutePath)
+          },
+          stopRequest = nativeEngine::stopFlowDiagnosticCapture,
+          timingSnapshot = nativeEngine::flowDiagnosticTimingSnapshot,
+        )
+    }
+  }
+
+  internal fun stopFlowDiagnosticsCapture(): String? = flowDiagnosticsCaptureManager.stop()
+
   val nativePlaybackSnapshot get() = nativeEngine.snapshot
   private var activeEngineMode = PlaybackEngineMode.MPV
   private var engineHandoffJob: Job? = null

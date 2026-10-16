@@ -337,6 +337,13 @@ class Media3FlowFormatPolicyTest {
     assertFalse(Media3FlowVideoSink.supportsFormat(invalidPixelRatio))
   }
 
+  @Test
+  fun dolbyVisionCaptureSourceIsRecognizedEvenWhenColorTransferLooksSdr() {
+    assertTrue(Media3FlowFormatPolicy.isDolbyVision(MimeTypes.VIDEO_DOLBY_VISION, "dvhe.05.06"))
+    assertTrue(Media3FlowFormatPolicy.isDolbyVision(MimeTypes.VIDEO_H265, "dvh1.08.06"))
+    assertFalse(Media3FlowFormatPolicy.isDolbyVision(MimeTypes.VIDEO_H265, "hvc1.1.6.L93.B0"))
+  }
+
   private fun supports(
     mimeType: String,
     codecs: String = "",

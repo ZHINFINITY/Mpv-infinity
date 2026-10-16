@@ -56,6 +56,7 @@ import io.github.peerless2012.ass.media.type.AssRenderType
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import org.json.JSONObject
 import kotlin.math.pow
 
 private object NativeMedia3Cache {
@@ -1324,6 +1325,119 @@ class NativeMedia3Engine(
     }
     _hasRenderedFirstFrame.value = false
     publishSnapshot()
+  }
+
+  fun startFlowDiagnosticCapture(sessionId: String, baseDirectory: String): String? =
+    if (media3FlowSink == null) "Media3 Flow/Vulkan unavailable" else media3FlowSink.startFlowDiagnosticCapture(sessionId, baseDirectory)
+
+  fun stopFlowDiagnosticCapture(sessionId: String): String? =
+    if (media3FlowSink == null) "Media3 Flow/Vulkan unavailable" else media3FlowSink.stopFlowDiagnosticCapture(sessionId)
+
+  /** App-side timing only; SurfaceView scanout requires a companion FrameTimeline trace. */
+  fun flowDiagnosticTimingSnapshot(): JSONObject {
+    val d = _flowDiagnostics.value
+    fun nullable(value: Number?): Any = value ?: JSONObject.NULL
+    fun duration(value: FlowDurationSummary) = JSONObject()
+      .put("average_us", nullable(value.averageUs))
+      .put("p95_us", nullable(value.p95Us))
+      .put("maximum_us", nullable(value.maximumUs))
+      .put("sample_count", value.sampleCount)
+    fun stage(value: FlowVulkanStageTiming) = JSONObject()
+      .put("status", value.status)
+      .put("supported", value.supported)
+      .put("dispatches", value.dispatches)
+      .put("completed_samples", value.completedSamples)
+      .put("pending_or_dropped", value.pendingOrDropped)
+      .put("average_us", nullable(value.averageUs))
+      .put("maximum_us", nullable(value.maximumUs))
+
+    val vulkan = d.vulkanTimings
+    val gles = d.glesTimings
+    val cpu = d.cpuTimings
+    val coverage = d.pixelCoverage
+    val gapContexts = JSONObject()
+    d.outputTickGapContexts.toSortedMap().forEach { (reason, count) -> gapContexts.put(reason, count) }
+    return JSONObject()
+      .put("schema_version", 1)
+      .put("engine", "native-media3")
+      .put("state", d.state)
+      .put("bypass_reason", d.bypassReason ?: JSONObject.NULL)
+      .put("target_fps", d.targetFps)
+      .put("captured_source_fps_median_pts", d.capturedSourceFps.toDouble())
+      .put("captured_pts_sample_count", d.capturedPtsSampleCount)
+      .put("successful_egl_swap_return_fps", d.outputFps.toDouble())
+      .put("generated_output_fps", d.generatedFps.toDouble())
+      .put("generated_output_frames", d.generatedFrames)
+      .put("sink_dropped_frames", d.droppedFrames)
+      .put("inferred_skipped_output_ticks", d.skippedOutputTicks)
+      .put("output_submission_failures", d.outputSubmissionFailures)
+      .put("last_submission_failure_reason", d.lastOutputSubmissionFailureReason)
+      .put("rate_semantics", "eglSwapBuffers return cadence and generated submits; neither is SurfaceFlinger scanout")
+      .put("actual_displayed_fps_available", false)
+      .put("actual_displayed_fps_source", "Perfetto FrameTimeline companion trace required for SurfaceView")
+      .put("motion_estimate_submit_ms", d.motionEstimateSubmitMs.toDouble())
+      .put("motion_pass_average_gpu_us", nullable(d.motionPassAverageGpuUs))
+      .put("confidence", nullable(d.confidence?.toDouble()))
+      .put("motion_grid", JSONObject().put("width", d.motionGridWidth).put("height", d.motionGridHeight))
+      .put("processing_dimensions", JSONObject().put("width", d.processingWidth).put("height", d.processingHeight))
+      .put("frame_storage_dimensions", JSONObject().put("width", d.frameStorageWidth).put("height", d.frameStorageHeight))
+      .put("cpu_timings", JSONObject()
+        .put("input_queue_wait", duration(cpu.inputQueueWait))
+        .put("frame_handler_call", duration(cpu.frameHandlerCall))
+        .put("egl_swap_wait", duration(cpu.eglSwapWait))
+        .put("vulkan_input_prepare_submit", duration(cpu.vulkanInputPrepare))
+        .put("vulkan_synthesis_submit", duration(cpu.vulkanSynthesisSubmit)))
+      .put("gles_timings", JSONObject()
+        .put("status", gles.status)
+        .put("supported", gles.supported)
+        .put("valid_results", gles.validResults)
+        .put("pending_results", gles.pendingResults)
+        .put("disjoint_results_discarded", gles.disjointResultsDiscarded)
+        .put("zero_duration_results", gles.zeroDurationResults)
+        .put("skipped_because_pool_full", gles.skippedBecausePoolFull)
+        .put("presentation_staging_copy", duration(gles.presentationStagingCopy)))
+      .put("vulkan_timings", JSONObject()
+        .put("status", vulkan.status)
+        .put("timestamps_supported", vulkan.timestampsSupported)
+        .put("timestamp_valid_bits", vulkan.timestampValidBits)
+        .put("timestamp_period_ns", vulkan.timestampPeriodNs)
+        .put("timestamp_compute_and_graphics", vulkan.timestampComputeAndGraphics)
+        .put("compute_queue_family", vulkan.computeQueueFamily)
+        .put("preprocess", stage(vulkan.preprocess))
+        .put("analysis", stage(vulkan.analysis))
+        .put("motion_fine", stage(vulkan.motionFine))
+        .put("motion_middle", stage(vulkan.motionMiddle))
+        .put("motion_coarse", stage(vulkan.motionCoarse))
+        .put("synthesis", stage(vulkan.synthesis)))
+      .put("pixel_coverage", JSONObject()
+        .put("samples", coverage.samples)
+        .put("sampled_pixels", coverage.sampledPixels)
+        .put("motion_warp_pixels", coverage.motionWarpPixels)
+        .put("source_fallback_pixels", coverage.sourceFrameFallbackPixels)
+        .put("static_blend_pixels", coverage.staticBlendPixels)
+        .put("interframe_changed_pixels", coverage.interframeChangedPixels)
+        .put("changed_warp_pixels", coverage.interframeChangedWarpPixels)
+        .put("changed_source_fallback_pixels", coverage.interframeChangedSourceFallbackPixels)
+        .put("changed_static_blend_pixels", coverage.interframeChangedStaticBlendPixels)
+        .put("static_vector_likely_motion", coverage.staticVectorLikelyMotionSamples)
+        .put("static_vector_uncertain_motion", coverage.staticVectorUncertainMotionSamples))
+      .put("queues", JSONObject()
+        .put("pending_input_depth", d.pendingInputDepth)
+        .put("input_in_flight", d.inputInFlight)
+        .put("oldest_pending_input_age_ms", d.oldestPendingInputAgeMs.toDouble())
+        .put("source_frame_depth", d.sourceFrameDepth)
+        .put("ready_motion_pair_depth", d.readyMotionPairDepth)
+        .put("presentation_queue_depth", d.presentationQueueDepth)
+        .put("presentation_in_flight", d.presentationInFlight)
+        .put("presentation_coalesced_frames", d.presentationCoalescedFrames))
+      .put("frame_timing", JSONObject()
+        .put("selected_source_pts_age_ms", nullable(d.selectedSourcePtsAgeMs?.toDouble()))
+        .put("source_pair_pts_gap_ms", nullable(d.sourcePairPtsGapMs?.toDouble()))
+        .put("frame0_capture_age_ms", nullable(d.frame0CaptureAgeMs?.toDouble()))
+        .put("frame1_capture_age_ms", nullable(d.frame1CaptureAgeMs?.toDouble()))
+        .put("output_callback_lateness_ms", d.outputCallbackLatenessMs.toDouble())
+        .put("last_output_tick_gap_reason", d.lastOutputTickGapReason)
+        .put("output_tick_gap_contexts", gapContexts))
   }
 
   fun release() {

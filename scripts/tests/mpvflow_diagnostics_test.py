@@ -18,6 +18,8 @@ MEDIA3_FLOW_CADENCE = (ROOT / "app/src/main/java/app/infinity/mpvz/ui/player/Med
 FLOW_GPU_CORE = (ROOT / "app/src/main/cpp/mpvflow/mpvflow_gpu.c").read_text(encoding="utf-8")
 QCOM_ADAPTER = (ROOT / "app/src/main/cpp/mpvflow/mpvflow_vulkan_qcom.c").read_text(encoding="utf-8")
 MEDIA3_NATIVE = (ROOT / "app/src/main/cpp/media3flow_vulkan_jni.cpp").read_text(encoding="utf-8")
+FLOW_CAPTURE_MANAGER = (ROOT / "app/src/main/java/app/infinity/mpvz/ui/player/FlowDiagnosticsCapture.kt").read_text(encoding="utf-8")
+MEDIA3_FORMAT_POLICY = (ROOT / "app/src/main/java/app/infinity/mpvz/ui/player/Media3FlowFormatPolicy.kt").read_text(encoding="utf-8")
 
 
 def require(source: str, fragment: str, message: str) -> None:
@@ -256,4 +258,30 @@ gpu_api_index = MPV_VIEW.index('PlaybackSession.setOptionString("gpu-api", backe
 gpu_context_index = MPV_VIEW.index('PlaybackSession.setOptionString("gpu-context", backend.gpuContext)')
 renderer_index = MPV_VIEW.index('PlaybackSession.setVideoOutput(backend.vo)')
 assert gpu_api_index < gpu_context_index < renderer_index, "Vulkan API/context must be applied before creating the selected VO"
+
+# Capture is explicitly opt-in, follows successful synthesis, and cleans up bounded auto-stopped sessions.
+assert "static pl_pass make_pass(pl_gpu gpu, const char *glsl,\nstatic bool ensure_capture_passes" not in FLOW_GPU_CORE, (
+    "capture helpers must not leave an incomplete C declaration before the pass initializer"
+)
+synthesis_success_index = PATCH.index("+                if (status == MPVFLOW_GPU_OK && output) {")
+capture_start_index = PATCH.index("+                    (void) flow_capture_start_for_pair(", synthesis_success_index)
+capture_sample_index = PATCH.index("+                        const enum MPVFlowGPUResult capture_status = mpvflow_gpu_capture_sample(", capture_start_index)
+assert synthesis_success_index < capture_start_index < capture_sample_index, (
+    "MPV must create a capture session and save a sample only after synthesis succeeds"
+)
+require(
+    MEDIA3_FLOW_SINK,
+    "check(!Media3FlowFormatPolicy.isDolbyVision(format.sampleMimeType.orEmpty(), format.codecs.orEmpty()))",
+    "Media3 diagnostics capture must refuse Dolby Vision even when color transfer appears SDR",
+)
+require(MEDIA3_FORMAT_POLICY, "fun isDolbyVision(mimeType: String, codecs: String): Boolean", "capture policy must use the shared Dolby Vision detector")
+require(FLOW_CAPTURE_MANAGER, "if (!canStartFlowDiagnosticsCapture(_state.value, sessionId))", "an unresolved native session must block a second capture")
+require(FLOW_CAPTURE_MANAGER, "val retainedPhase = previousPhase.takeIf", "failed stops must preserve an active capture phase")
+require(FLOW_CAPTURE_MANAGER, "message = \"Stop request failed; capture may still be active. Retry Stop:", "failed stops must remain retryable rather than becoming a fresh-start state")
+terminal_cleanup_index = FLOW_CAPTURE_MANAGER.index("if (status.terminal) {")
+terminal_archive_index = FLOW_CAPTURE_MANAGER.index("createAndSaveArchive(session, engine, id)", terminal_cleanup_index)
+require(FLOW_CAPTURE_MANAGER[terminal_cleanup_index:terminal_archive_index], "val cleanup = stopRequest", "native auto-completion must clear the engine-side session before archive completion")
+require(MPV_VIEW, "val activeSession = mpvFlowCaptureSessionId ?: return null", "MPV stop cleanup must be idempotent after auto-completion")
+require(MEDIA3_FLOW_SINK, "val activeSession = diagnosticCaptureSession ?: return@runOnGlThreadSync null", "Media3 stop cleanup must be idempotent after auto-completion")
+require(MEDIA3_FLOW_SINK, "if (result == null) diagnosticCaptureSession = null", "Media3 must retain its session ID when native stop fails")
 print("MPV Flow runtime diagnostics and capture regression tests passed")

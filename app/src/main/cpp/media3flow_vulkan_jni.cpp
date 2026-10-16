@@ -33,6 +33,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
+#include <string>
 #include <mutex>
 #include <unordered_set>
 #include <unistd.h>
@@ -105,6 +106,8 @@ struct FlowContext {
     uint64_t cpuSyncWaitMaxNs = 0;
     uint32_t syncOperationsSinceSummary = 0;
     bool syncFdInteropReady = false;
+    std::string captureSessionId;
+    bool captureFailureLogged = false;
 };
 
 enum FlowDiagnosticBit : uint64_t {
@@ -1218,6 +1221,57 @@ Java_app_infinity_mpvz_ui_player_Media3FlowVulkanNative_nativeCreateContext(
 }
 
 extern "C" JNIEXPORT jstring JNICALL
+Java_app_infinity_mpvz_ui_player_Media3FlowVulkanNative_nativeStartDiagnosticCapture(
+    JNIEnv *env, jobject, jlong contextHandle, jstring sessionId, jstring baseDirectory, jstring settingsJson) {
+    auto *context = reinterpret_cast<FlowContext *>(contextHandle);
+    if (!context || !sessionId || !baseDirectory || !settingsJson) return nullptr;
+    const char *sid = env->GetStringUTFChars(sessionId, nullptr);
+    const char *base = env->GetStringUTFChars(baseDirectory, nullptr);
+    const char *settings = env->GetStringUTFChars(settingsJson, nullptr);
+    if (!sid || !base || !settings) {
+        if (sid) env->ReleaseStringUTFChars(sessionId, sid);
+        if (base) env->ReleaseStringUTFChars(baseDirectory, base);
+        if (settings) env->ReleaseStringUTFChars(settingsJson, settings);
+        return env->NewStringUTF("Unable to read capture arguments");
+    }
+    std::string error;
+    {
+        std::lock_guard<std::mutex> guard(context->mutex);
+        const std::string id(sid);
+        if (id.empty() || id.size() > 80 || id.find_first_not_of("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-") != std::string::npos)
+            error = "Invalid capture session ID";
+        else if (!context->flow || !context->vulkan || !context->vulkan->gpu)
+            error = "Flow/Vulkan resources unavailable";
+        else if (!context->captureSessionId.empty() || mpvflow_gpu_capture_active(context->flow))
+            error = "A diagnostic capture is already active";
+        else {
+            const auto result = mpvflow_gpu_capture_start(context->flow, base, id.c_str(), "native-media3", settings);
+            if (result == MPVFLOW_GPU_OK) { context->captureSessionId = id; context->captureFailureLogged = false; }
+            else error = "Native diagnostic capture start failed";
+        }
+    }
+    env->ReleaseStringUTFChars(sessionId, sid); env->ReleaseStringUTFChars(baseDirectory, base); env->ReleaseStringUTFChars(settingsJson, settings);
+    return error.empty() ? nullptr : env->NewStringUTF(error.c_str());
+}
+
+extern "C" JNIEXPORT jstring JNICALL
+Java_app_infinity_mpvz_ui_player_Media3FlowVulkanNative_nativeStopDiagnosticCapture(
+    JNIEnv *env, jobject, jlong contextHandle, jstring sessionId) {
+    auto *context = reinterpret_cast<FlowContext *>(contextHandle);
+    if (!context || !sessionId) return env->NewStringUTF("Native Flow context unavailable");
+    const char *sid = env->GetStringUTFChars(sessionId, nullptr);
+    if (!sid) return env->NewStringUTF("Unable to read capture session ID");
+    std::string error;
+    {
+        std::lock_guard<std::mutex> guard(context->mutex);
+        if (context->captureSessionId != sid) error = "Capture session ID mismatch";
+        else { mpvflow_gpu_capture_stop(context->flow); context->captureSessionId.clear(); }
+    }
+    env->ReleaseStringUTFChars(sessionId, sid);
+    return error.empty() ? nullptr : env->NewStringUTF(error.c_str());
+}
+
+extern "C" JNIEXPORT jstring JNICALL
 Java_app_infinity_mpvz_ui_player_Media3FlowVulkanNative_nativeGetComputeApiName(
     JNIEnv *env, jobject, jlong contextHandle) {
     auto *context = reinterpret_cast<FlowContext *>(contextHandle);
@@ -1503,7 +1557,8 @@ Java_app_infinity_mpvz_ui_player_Media3FlowVulkanNative_nativeAnalyzePair(
 extern "C" JNIEXPORT jboolean JNICALL
 Java_app_infinity_mpvz_ui_player_Media3FlowVulkanNative_nativeSynthesize(
     JNIEnv *, jobject, jlong contextHandle, jlong pairHandle,
-    jlong source0Handle, jlong source1Handle, jfloat timestep,
+    jlong source0Handle, jlong source1Handle, jlong sourcePts0Us,
+    jlong sourcePts1Us, jlong outputPtsUs, jfloat timestep,
     jboolean softBlendEnabled, jlong outputHandle) {
     auto *context = reinterpret_cast<FlowContext *>(contextHandle);
     auto *pair = reinterpret_cast<MPVFlowGPUPair *>(pairHandle);
@@ -1577,6 +1632,21 @@ Java_app_infinity_mpvz_ui_player_Media3FlowVulkanNative_nativeSynthesize(
                     "timestep=%.9g output=%dx%d",
                     result, synthesized != nullptr, timestep, output->width, output->height);
         return JNI_FALSE;
+    }
+    if (mpvflow_gpu_capture_active(context->flow)) {
+        const MPVFlowGPUResult captureResult = mpvflow_gpu_capture_sample(
+            context->flow, pair, source0->prepared, source1->prepared, synthesized,
+            timestep, static_cast<double>(sourcePts0Us) / 1000000.0,
+            static_cast<double>(sourcePts1Us) / 1000000.0,
+            static_cast<double>(outputPtsUs) / 1000000.0,
+            false, softBlendEnabled == JNI_TRUE, softBlendEnabled == JNI_TRUE);
+        if (captureResult != MPVFLOW_GPU_OK) {
+            if (!context->captureFailureLogged) {
+                context->captureFailureLogged = true;
+                logFlow(ANDROID_LOG_ERROR, "MPVFLOW_DIAGNOSTIC component=capture event=sample_failed status=%d playback_preserved=1", captureResult);
+            }
+            mpvflow_gpu_capture_fail(context->flow, "capture_sample_failed");
+        }
     }
     struct pl_tex_blit_params blitParams{};
     blitParams.src = synthesized;
@@ -1675,6 +1745,7 @@ Java_app_infinity_mpvz_ui_player_Media3FlowVulkanNative_nativeDestroyContext(
     {
         std::lock_guard<std::mutex> guard(context->mutex);
         drainPendingInterop(context);
+        if (context->flow && mpvflow_gpu_capture_active(context->flow)) { mpvflow_gpu_capture_stop(context->flow); context->captureSessionId.clear(); }
         for (MPVFlowGPUPair *pair : context->pairs)
             mpvflow_gpu_pair_release(context->flow, pair);
         context->pairs.clear();
