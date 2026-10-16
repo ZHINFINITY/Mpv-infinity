@@ -8,6 +8,7 @@ import re
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 SINK = (ROOT / "app/src/main/java/app/infinity/mpvz/ui/player/Media3FlowVideoSink.kt").read_text(encoding="utf-8")
 CADENCE = (ROOT / "app/src/main/java/app/infinity/mpvz/ui/player/Media3FlowCadence.kt").read_text(encoding="utf-8")
+MEDIA3_ANALYSIS_POLICY = (ROOT / "app/src/main/java/app/infinity/mpvz/ui/player/Media3FlowAnalysisPolicy.kt").read_text(encoding="utf-8")
 FLOW_DIAGNOSTICS = (ROOT / "app/src/main/java/app/infinity/mpvz/ui/player/Media3FlowDiagnostics.kt").read_text(encoding="utf-8")
 NATIVE = (ROOT / "app/src/main/java/app/infinity/mpvz/ui/player/Media3FlowVulkanNative.kt").read_text(encoding="utf-8")
 NATIVE_ENGINE = (ROOT / "app/src/main/java/app/infinity/mpvz/ui/player/NativeMedia3Engine.kt").read_text(encoding="utf-8")
@@ -104,6 +105,30 @@ assert ".blit_src = blit_src" in GPU and ".blit_dst = blit_dst" in GPU and (
 )
 assert "nativeCreateContext(maxDimension, requestedComputeApi.nativeValue)" in SINK
 assert "config.max_dimension = std::max(160, std::min(640, static_cast<int>(requestedMaxDimension)))" in JNI
+assert "EXTRA_ANALYSIS_PIXELS = 96" in MEDIA3_ANALYSIS_POLICY and "coerceAtMost(640)" in MEDIA3_ANALYSIS_POLICY, (
+    "Media3's denser motion-analysis allowance must stay bounded and independent of the shared MPV profile"
+)
+analysis_admission = SINK.split("  private fun analyzeDeferredMotionPair()", 1)[1].split(
+    "\n  private fun renderAtPosition(", 1
+)[0]
+assert "lastEglSwapWaitMs" not in analysis_admission, (
+    "a slow display swap must not suppress bounded Media3 motion-pair analysis"
+)
+render_decision = SINK.split("  private fun renderAtPosition(", 1)[1].split(
+    "\n  private fun findSourcePair(", 1
+)[0]
+synthesis_admission = render_decision.split("    val synthesize =", 1)[1].split(
+    "\n    val nowNs", 1
+)[0]
+assert "lastEglSwapWaitMs" not in synthesis_admission and "swapBudgetAvailable" not in render_decision and "canSynthesizeAfterEglSwap" not in render_decision, (
+    "a prior EGL wait must not veto a ready Media3 interpolation pair"
+)
+assert "motionAdmissionProxyMs <" in render_decision, (
+    "motion admission must retain its source-pair deadline proxy"
+)
+assert "drawSourceFrame(sourceFrame, renderTimeNs, targetPtsUs)" in render_decision, (
+    "source-frame fallback must remain available when synthesis is unavailable"
+)
 for marker in (
     "checkedAdd(bufferPresentationTimeUs, inputTimestampAdjustmentUs)",
     "checkedSubtract(frame1.ptsUs, frame0.ptsUs)",

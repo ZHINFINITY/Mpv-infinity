@@ -1514,21 +1514,13 @@ class Media3FlowVideoSink(
   }
 
   /**
-   * Retries one retained pair after a transient over-budget swap; no output waits for analysis.
+   * Retries one retained pair when a reusable slot is available; no output waits for analysis.
    * Pair PTS keys are revalidated against the current adjacent source-frame list before JNI use.
    */
   private fun analyzeDeferredMotionPair() {
     if (!flowAvailable || sourceFrames.size < 2 || deferredMotionPairs.size == 0) return
-    val analysisAllowed = Media3FlowCadence.shouldAnalyzeMotionPairAfterEglSwap(
-      lastEglSwapWaitMs,
-      targetFps,
-    )
-    val reusable = if (analysisAllowed) {
-      motionPairs.firstOrNull {
-        !it.available || retentionBoundaryUs(latestPositionUs) >= it.frame1PtsUs
-      }
-    } else {
-      null
+    val reusable = motionPairs.firstOrNull {
+      !it.available || retentionBoundaryUs(latestPositionUs) >= it.frame1PtsUs
     }
     val sourceSnapshot = sourceFrames.toList()
     val sourcePts = LongArray(sourceSnapshot.size) { sourceSnapshot[it].ptsUs }
@@ -1536,17 +1528,15 @@ class Media3FlowVideoSink(
     val candidate = deferredMotionPairs.takeNextRetainedAdjacent(
       retainedFramePtsUs = sourcePts,
       retentionBoundaryUs = retentionBoundaryUs(latestPositionUs),
-      analysisAllowed = analysisAllowed && reusable != null,
+      analysisAllowed = reusable != null,
       preferredPair = preferredPair,
     )
     if (candidate == null) {
       when {
         deferredMotionPairs.size == 0 -> motionPairAnalysisCounters.recordNoRetainedCandidate()
-        !analysisAllowed -> motionPairAnalysisCounters.recordDeferredByEglSwap()
         reusable == null -> motionPairAnalysisCounters.recordDeferredNoReusableSlot()
       }
       lastBypassReason = when {
-        !analysisAllowed -> "egl_swap_backpressure_analysis_deferred"
         reusable == null -> "motion_pair_queue_full"
         else -> lastBypassReason
       }
@@ -1651,11 +1641,9 @@ class Media3FlowVideoSink(
     val motionAdmissionProxyMs = pair?.let {
       Media3FlowCadence.motionAdmissionProxyMs(it.motionEstimateSubmitMs, null)
     } ?: Float.POSITIVE_INFINITY
-    val swapBudgetAvailable = Media3FlowCadence.canSynthesizeAfterEglSwap(lastEglSwapWaitMs, targetFps)
     val synthesize = bracket != null && pair != null &&
       Media3FlowCadence.needsInterpolation(deltaUs, targetFps, speed) &&
-      motionAdmissionProxyMs < deltaUs / 1000f * ANALYSIS_DEADLINE_RESERVE &&
-      swapBudgetAvailable
+      motionAdmissionProxyMs < deltaUs / 1000f * ANALYSIS_DEADLINE_RESERVE
     val nowNs = System.nanoTime()
     lastOutputCallbackLatenessMs = frameTimeNanos?.let {
       ((nowNs - it).coerceAtLeast(0L) / 1_000_000.0).toFloat()
@@ -1687,12 +1675,6 @@ class Media3FlowVideoSink(
       }
       recordOutputTickGaps(missedTicks, missReason)
       lastBypassReason = "output_tick_gap_inferred"
-    }
-    if (!swapBudgetAvailable && bracket != null && pair != null &&
-      Media3FlowCadence.needsInterpolation(deltaUs, targetFps, speed)
-    ) {
-      // Preserve the decoded source image while letting the GL thread recover from a blocking swap.
-      lastBypassReason = "egl_swap_backpressure"
     }
     val basePresentationNs = frameTimeNanos?.let {
       val refreshHz = displayHz.takeIf { rate -> rate.isFinite() && rate > 0f }?.toDouble() ?: targetFps.toDouble()

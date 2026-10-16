@@ -107,17 +107,6 @@ internal object Media3FlowCadence {
   fun motionAdmissionProxyMs(submitMs: Float, pairGpuMs: Float?): Float =
     maxOf(submitMs, pairGpuMs ?: 0f)
 
-  /** Do not add a motion-synthesis dispatch immediately after a measured over-budget EGL swap. */
-  fun canSynthesizeAfterEglSwap(lastSwapWaitMs: Float, targetFps: Int): Boolean {
-    if (targetFps <= 0 || !lastSwapWaitMs.isFinite() || lastSwapWaitMs < 0f) return true
-    return lastSwapWaitMs < 1_000f / targetFps
-  }
-
-  /** Avoid blocking the shared input/render GL thread on analysis that cannot meet the next tick. */
-  fun shouldAnalyzeMotionPairAfterEglSwap(lastSwapWaitMs: Float, targetFps: Int): Boolean {
-    return canSynthesizeAfterEglSwap(lastSwapWaitMs, targetFps)
-  }
-
   /** Keeps a decoder frame queued until the sink can retain it in an owned GPU frame slot. */
   fun canReleaseNextDecoderFrame(
     storedFrameCount: Int,
