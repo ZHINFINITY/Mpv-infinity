@@ -745,10 +745,10 @@ int main(int argc, char **argv)
     const uint8_t neutral1[4] = { 120, 110, 104, 255 };
     const uint8_t mixed[4] = { 110, 105, 102, 255 };
     const uint8_t soft_chroma_blend[4] = { 64, 98, 0, 255 };
-    const uint8_t continuous_chroma_blend[4] = { 55, 102, 0, 255 };
+    const uint8_t continuous_chroma_blend[4] = { 50, 104, 0, 255 };
     const uint8_t soft_low_confidence_blend[4] = { 214, 0, 41, 255 };
     const uint8_t soft_edge_blend[4] = { 50, 114, 50, 255 };
-    const uint8_t continuous_edge_blend[4] = { 54, 118, 54, 255 };
+    const uint8_t continuous_edge_blend[4] = { 56, 120, 56, 255 };
     const uint8_t hard_warp_edge[4] = { 100, 100, 100, 255 };
 
     run_fixture(&ctx, "scene-cut alpha selects first source", red, blue,
@@ -769,7 +769,7 @@ int main(int argc, char **argv)
                 ctx.soft_blend ? (ctx.preserve_motion_blend ? continuous_edge_blend : soft_edge_blend) : hard_warp_edge, 0, 4);
     const uint8_t grid_expected[4] = { 24, 24, 24, 255 };
     const uint8_t soft_grid_expected[4] = { 40, 40, 40, 255 };
-    const uint8_t continuous_soft_grid_expected[4] = { 34, 34, 34, 255 };
+    const uint8_t continuous_soft_grid_expected[4] = { 31, 31, 31, 255 };
     run_fixture(&ctx, "irregular terminal block anchors affect edge synthesis",
                 neutral0, neutral0, 0x0000, 0x3400, 0x3400, 0.5f,
                 ctx.soft_blend ? (ctx.preserve_motion_blend ? continuous_soft_grid_expected : soft_grid_expected) : grid_expected, 0, 1);

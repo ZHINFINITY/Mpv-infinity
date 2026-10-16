@@ -683,7 +683,7 @@ index bd3d1aa..75ffbb1 100644
 @@ -1135,0 +1765,2 @@ static void discard_frame(const struct pl_source_frame *src)
 +    struct frame_priv *fp = mpi->priv;
 +    flow_release_frame(fp->vo, fp);
-@@ -1341,0 +1976,282 @@ static void update_hook_opts_dynamic(struct priv *p, const struct pl_hook *hook,
+@@ -1341,0 +1976,283 @@ static void update_hook_opts_dynamic(struct priv *p, const struct pl_hook *hook,
 +struct flow_prepared_frame {
 +    int nearest;
 +    int before;
@@ -826,9 +826,10 @@ index bd3d1aa..75ffbb1 100644
 +            if (p->flow_pair) {
 +                pl_tex output = NULL;
 +                stats_time_start(p->stats, "mpvflow-synthesis");
-+                enum MPVFlowGPUResult status = mpvflow_gpu_synthesize_with_visibility(
++                enum MPVFlowGPUResult status = mpvflow_gpu_synthesize_with_policy(
 +                    p->flow_gpu, p->flow_pair, fp0->flow_source, fp1->flow_source, t,
 +                    p->next_opts->mpvflow_visibility_resolver,
++                    p->next_opts->mpvflow_soft_blend,
 +                    p->next_opts->mpvflow_soft_blend, &output);
 +                stats_time_end(p->stats, "mpvflow-synthesis");
 +                if (status == MPVFLOW_GPU_OK && output) {

@@ -667,6 +667,11 @@ assert not (VULKAN_MAPPER_DIR / "hwdec_aimagereader_vk_direct.c").exists(), (
 prepare_call = 'python3 "$ROOT/scripts/prepare-mpvflow.py" --mpv-dir "$BUILDSCRIPTS/deps/mpv" --libplacebo-dir "$BUILDSCRIPTS/deps/libplacebo"'
 assert prepare_call in build, "the native build must patch pinned libplacebo before compilation"
 native_cmake = (ROOT / "app/src/main/cpp/CMakeLists.txt").read_text(encoding="utf-8")
+assert "target_compile_options(media3flow_vulkan PRIVATE -fvisibility=hidden)" in native_cmake
+assert "target_link_options(media3flow_vulkan PRIVATE -Wl,--strip-all)" in native_cmake
+flow_gpu_api = (ROOT / "app/src/main/cpp/mpvflow/mpvflow_gpu.h").read_text(encoding="utf-8")
+assert "MPVFLOW_GPU_LOCAL __attribute__((visibility(\"hidden\")))" in flow_gpu_api
+assert "MPVFLOW_GPU_LOCAL enum MPVFlowGPUResult mpvflow_gpu_synthesize_with_policy(" in flow_gpu_api
 for source in (
     "mpvflow/mpvflow_vulkan_qcom.c",
     "mpvflow/mpvflow_vulkan_optical.c",
@@ -794,7 +799,7 @@ flow_synthesis_body = vo_patch.split("+static void flow_prepare_frame", 1)[1].sp
 paused_still_guard = "+    if (p->paused || source_is_still) {"
 assert paused_still_guard in flow_synthesis_body, "paused and still frames must bypass MPVFlow analysis"
 assert flow_synthesis_body.index(paused_still_guard) < flow_synthesis_body.index("mpvflow_gpu_analyze_pair(")
-assert flow_synthesis_body.index(paused_still_guard) < flow_synthesis_body.index("mpvflow_gpu_synthesize_with_visibility(")
+assert flow_synthesis_body.index(paused_still_guard) < flow_synthesis_body.index("mpvflow_gpu_synthesize_with_policy(")
 assert "flow_prepare_frame(vo, &mix, &flow_prepared, frame->still," in vo_patch
 assert '+        const char *queue_state = p->paused ? "paused" :' in vo_patch, (
     "the paused state must not be hidden by empty-batch or still-frame diagnostics"
@@ -1597,8 +1602,8 @@ with tempfile.TemporaryDirectory(prefix="mpvflow-builder-patch-test-") as tempor
     assert "LOCAL_SRC_FILES := $(PREFIX)/lib/libudfread.so" in patched_android_mk
     assert "LOCAL_SHARED_LIBRARIES := swscale avcodec mpv udfread placebo" in patched_android_mk
     patched_mpv = mpv.read_text(encoding="utf-8")
-    assert "\t-Dmanpage-build=disabled -Dgpl=false -Dvulkan=enabled -Dlibbluray=enabled -Ddvdnav=disabled\n" in patched_mpv, (
-        "MPV's GPL/DVD-navigation features must stay disabled while Vulkan and LGPL Blu-ray remain enabled"
+    assert "\t-Dmanpage-build=disabled -Dgpl=false -Dvulkan=enabled -Dlibbluray=enabled -Ddvdnav=disabled -Dstrip=true\n" in patched_mpv, (
+        "MPV must retain its LGPL-only feature set, Vulkan and Blu-ray support, and install-time symbol stripping"
     )
     patched_depinfo = depinfo.read_text(encoding="utf-8")
     assert "dep_mpv=(ffmpeg libass lua libplacebo libbluray)" in patched_depinfo

@@ -1573,7 +1573,7 @@ Java_app_infinity_mpvz_ui_player_Media3FlowVulkanNative_nativeSynthesize(
         (void) holdImageForExternal(context, output, true);
         logFlowOnce(context, DIAG_SYNTH_FAILURE, ANDROID_LOG_ERROR,
                     "MPVFLOW_DIAGNOSTIC component=native-media3 event=synthesize state=failed "
-                    "stage=mpvflow_gpu_synthesize_with_visibility status=%d synthesized_texture_present=%d "
+                    "stage=mpvflow_gpu_synthesize_with_policy status=%d synthesized_texture_present=%d "
                     "timestep=%.9g output=%dx%d",
                     result, synthesized != nullptr, timestep, output->width, output->height);
         return JNI_FALSE;

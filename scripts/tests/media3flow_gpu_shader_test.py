@@ -85,9 +85,9 @@ assert "softBlendEnabled, outputImageHandle" in SINK
 assert "softBlendEnabled: Boolean" in NATIVE
 assert "jboolean softBlendEnabled" in JNI and "softBlendEnabled == JNI_TRUE" in JNI
 assert "false, softBlendEnabled == JNI_TRUE, softBlendEnabled == JNI_TRUE, &synthesized" in JNI
-assert "mpvflow_gpu_synthesize_with_visibility(" in MPV_PATCH and "mpvflow_gpu_synthesize_with_policy(" not in MPV_PATCH, (
-    "MPV must retain its legacy synthesis policy while Native Media3 opts into confident-edge fallback"
-)
+assert "mpvflow_gpu_synthesize_with_policy(" in MPV_PATCH, "MPV must use the shared continuous-motion policy"
+assert MPV_PATCH.count("p->next_opts->mpvflow_soft_blend,") == 2, "MPV soft blend must explicitly enable both the source blend and conflict bias"
+assert "mpvflow_gpu_synthesize_with_visibility(" not in MPV_PATCH, "MPV must not bypass its opt-in conflict policy"
 assert "media3FlowSoftBlendDebug" in NATIVE_ENGINE and "MpvFlowComputeApi.VULKAN" in NATIVE_ENGINE
 assert "media3FlowSoftBlendDebug = BuildConfig.DEBUG" in (ROOT / "app/src/main/java/app/infinity/mpvz/ui/player/PlayerActivity.kt").read_text(encoding="utf-8")
 for marker in (

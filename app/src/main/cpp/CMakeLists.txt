@@ -181,5 +181,8 @@ if(MPVFLOW_ENABLE_VULKAN_BACKEND)
         log
         dl
         vulkan)
+    # Keep only JNI entry points visible and omit local/debug symbol tables in the shipped .so.
+    target_compile_options(media3flow_vulkan PRIVATE -fvisibility=hidden)
+    target_link_options(media3flow_vulkan PRIVATE -Wl,--strip-all)
     mpvinfinity_optimize_native_target(media3flow_vulkan)
 endif()

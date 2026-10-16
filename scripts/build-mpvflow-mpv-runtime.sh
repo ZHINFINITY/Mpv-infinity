@@ -147,7 +147,7 @@ if mpv_script.count(mpv_vulkan_option) != 1:
     raise SystemExit(f"Expected one MPV Meson options block in {mpv_script_path}")
 mpv_script_path.write_text(mpv_script.replace(
     mpv_vulkan_option,
-    mpv_vulkan_option.rstrip("\n") + " -Dgpl=false -Dvulkan=enabled -Dlibbluray=enabled -Ddvdnav=disabled\n",
+    mpv_vulkan_option.rstrip("\n") + " -Dgpl=false -Dvulkan=enabled -Dlibbluray=enabled -Ddvdnav=disabled -Dstrip=true\n",
     1,
 ))
 print("Disabled MPV's GPL/DVD-navigation features; required Vulkan and LGPL Blu-ray support")

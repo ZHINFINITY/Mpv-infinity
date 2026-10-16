@@ -389,12 +389,6 @@ object DecoderPreferencesScreen : Screen {
                   enabled = mpvFlowAvailable || mpvFlowVisibilityResolverDebug,
                   onValueChange = preferences.mpvFlowVisibilityResolverDebug::set,
                   title = { Text(stringResource(R.string.pref_decoder_mpvflow_visibility_resolver_debug_title)) },
-                  summary = {
-                    Text(
-                      stringResource(R.string.pref_decoder_mpvflow_visibility_resolver_debug_summary),
-                      color = MaterialTheme.colorScheme.outline,
-                    )
-                  },
                 )
                 SwitchPreference(
                   modifier = Modifier.settingsSearchTarget(R.string.pref_decoder_mpvflow_soft_blend_debug_title),
@@ -402,12 +396,6 @@ object DecoderPreferencesScreen : Screen {
                   enabled = mpvFlowAvailable || mpvFlowSoftBlendDebug,
                   onValueChange = preferences.mpvFlowSoftBlendDebug::set,
                   title = { Text(stringResource(R.string.pref_decoder_mpvflow_soft_blend_debug_title)) },
-                  summary = {
-                    Text(
-                      stringResource(R.string.pref_decoder_mpvflow_soft_blend_debug_summary),
-                      color = MaterialTheme.colorScheme.outline,
-                    )
-                  },
                 )
                 PreferenceDivider()
               }

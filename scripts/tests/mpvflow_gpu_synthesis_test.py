@@ -122,7 +122,7 @@ def main() -> None:
         for soft_blend, preserve_motion_blend, label in (
             ("0", "0", "default-off production output"),
             ("1", "0", "opt-in soft-blend output"),
-            ("1", "1", "soft blend with continuous-edge bias"),
+            ("1", "1", "soft blend with stronger continuous-motion bias"),
         ):
             result = subprocess.run(
                 [str(executable), str(spirv), soft_blend, preserve_motion_blend],

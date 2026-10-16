@@ -99,9 +99,9 @@ class MPVView(
     private set
   var onSurfaceReady: (() -> Unit)? = null
   private var interpolationOutputFrameRate: Double? = null
-  private val mpvFlowOsdStatsScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
-  private var mpvFlowOsdStatsJob: Job? = null
-  private var mpvFlowOsdStatsEnabled = false
+  private val mpvFlowDiagnosticsScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+  private var mpvFlowDiagnosticsJob: Job? = null
+  private var mpvFlowDiagnosticsEnabled = false
 
   private fun currentDisplayRefreshRate(): FlowDisplayRefreshRate? {
     val viewDisplay = display
@@ -156,7 +156,7 @@ class MPVView(
         !MpvConfigOverridePolicy.isOwnedByMpvConf("mpvflow-compute-api")
     val effectiveMpvFlowComputeApi =
       if (mpvFlowSoftBlendDebugActive) MpvFlowComputeApi.VULKAN else requestedMpvFlowComputeApi
-    mpvFlowOsdStatsEnabled = mpvFlowFrameInterpolationActive
+    mpvFlowDiagnosticsEnabled = BuildConfig.DEBUG && mpvFlowFrameInterpolationActive
     val coreConfigurationKey =
       "${requestedBackend.configurationKey}|conf=${MpvConfigOverridePolicy.configurationKey()}|" +
         "mpvflow=${if (mpvFlowFrameInterpolationActive) "$requestedMpvFlowTargetFps,compute_api=${effectiveMpvFlowComputeApi.nativeValue},quality=$requestedMpvFlowQuality,soft_blend=$mpvFlowSoftBlendDebugActive" else "off"}"
@@ -172,18 +172,18 @@ class MPVView(
       )
     // Refresh from the process-wide owner even when initOptions was skipped on core reuse.
     interpolationOutputFrameRate = PlaybackSession.surfaceFrameRateHintHz()
-    if (result.isFailure) mpvFlowOsdStatsEnabled = false
+    if (result.isFailure) mpvFlowDiagnosticsEnabled = false
     if (result.isSuccess) {
       holder.removeCallback(this)
       holder.addCallback(this)
       if (holder.surface.isValid && !isSurfaceReady) surfaceCreated(holder)
     }
-    updateMpvFlowOsdStatsBridge()
+    updateMpvFlowDiagnostics()
     return result
   }
 
   fun releaseSurface() {
-    stopMpvFlowOsdStatsBridge()
+    stopMpvFlowDiagnostics()
     holder.removeCallback(this)
     if (isSurfaceReady || PlaybackSession.state.value.surfaceAttached) {
       isSurfaceReady = false
@@ -191,21 +191,21 @@ class MPVView(
     }
   }
 
-  private fun updateMpvFlowOsdStatsBridge() {
-    if (mpvFlowOsdStatsEnabled && isSurfaceReady && holder.surface.isValid) {
-      startMpvFlowOsdStatsBridge()
+  private fun updateMpvFlowDiagnostics() {
+    if (mpvFlowDiagnosticsEnabled && isSurfaceReady && holder.surface.isValid) {
+      startMpvFlowDiagnostics()
     } else {
-      stopMpvFlowOsdStatsBridge()
+      stopMpvFlowDiagnostics()
     }
   }
 
-  private fun startMpvFlowOsdStatsBridge() {
-    if (!mpvFlowOsdStatsEnabled || !isSurfaceReady || mpvFlowOsdStatsJob?.isActive == true) return
-    mpvFlowOsdStatsJob =
-      mpvFlowOsdStatsScope.launch {
+  private fun startMpvFlowDiagnostics() {
+    if (!mpvFlowDiagnosticsEnabled || !isSurfaceReady || mpvFlowDiagnosticsJob?.isActive == true) return
+    mpvFlowDiagnosticsJob =
+      mpvFlowDiagnosticsScope.launch {
         val sampleCache = MpvFlowRuntimeCadenceSampleCache()
         val observedFallbackReasons = linkedSetOf<String>()
-        while (isActive && mpvFlowOsdStatsEnabled && isSurfaceReady) {
+        while (isActive && mpvFlowDiagnosticsEnabled && isSurfaceReady) {
           val entries =
             withContext(Dispatchers.IO) {
               runCatching { DebugLogReader.readSnapshot(maxRawLines = 500).entries }
@@ -213,7 +213,6 @@ class MPVView(
             }
           val candidate = latestMpvFlowRuntimeCadenceSample(entries)
           val sample = sampleCache.update(candidate, System.currentTimeMillis())
-          sendMpvFlowOsdStats(sample)
           if (BuildConfig.DEBUG) {
             observedFallbackReasons += observedMpvFlowPassthroughReasons(entries)
             val healthFields =
@@ -228,27 +227,11 @@ class MPVView(
       }
   }
 
-  private fun stopMpvFlowOsdStatsBridge() {
-    mpvFlowOsdStatsJob?.cancel()
-    mpvFlowOsdStatsJob = null
-    sendMpvFlowOsdStats(null)
+  private fun stopMpvFlowDiagnostics() {
+    mpvFlowDiagnosticsJob?.cancel()
+    mpvFlowDiagnosticsJob = null
   }
 
-  private fun sendMpvFlowOsdStats(
-    sample: app.infinity.mpvz.presentation.crash.MpvFlowRuntimeCadenceSample?,
-  ) {
-    if (!PlaybackSession.isInitialized) return
-    runCatching {
-      PlaybackSession.command(
-        "script-message-to",
-        "stats",
-        "mpvflow-output-rate",
-        sample?.synthesizedSubmitFps?.toString().orEmpty(),
-        sample?.targetFps?.toString().orEmpty(),
-        sample?.swapSubmitFps?.toString().orEmpty(),
-      )
-    }
-  }
 
   private fun mpvFlowPlayerHealthFields(
     sample: MpvFlowRuntimeCadenceSample?,
@@ -476,7 +459,7 @@ class MPVView(
     }
     val mpvFlowFrameInterpolationEnabled =
       mpvFlowFrameInterpolationCandidate && flowTimingOptionsReady
-    mpvFlowOsdStatsEnabled = mpvFlowFrameInterpolationEnabled
+    mpvFlowDiagnosticsEnabled = BuildConfig.DEBUG && mpvFlowFrameInterpolationEnabled
     if (mpvFlowFrameInterpolationEnabled) {
       Log.i(
         TAG,
@@ -925,7 +908,7 @@ class MPVView(
   override fun surfaceCreated(holder: android.view.SurfaceHolder) {
     isSurfaceReady = PlaybackSession.bindSurface(holder.surface, width, height, this)
     updateSurfaceFrameRateHint()
-    updateMpvFlowOsdStatsBridge()
+    updateMpvFlowDiagnostics()
     post {
       if (isSurfaceReady && holder.surface.isValid) {
         onSurfaceReady?.invoke()
@@ -934,13 +917,13 @@ class MPVView(
   }
 
   override fun surfaceDestroyed(holder: android.view.SurfaceHolder) {
-    stopMpvFlowOsdStatsBridge()
+    stopMpvFlowDiagnostics()
     isSurfaceReady = false
     PlaybackSession.unbindSurface(this)
   }
 
   override fun onDetachedFromWindow() {
-    stopMpvFlowOsdStatsBridge()
+    stopMpvFlowDiagnostics()
     super.onDetachedFromWindow()
   }
 
