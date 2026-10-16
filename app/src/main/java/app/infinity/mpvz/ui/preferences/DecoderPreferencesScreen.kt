@@ -58,6 +58,7 @@ import app.infinity.mpvz.presentation.Screen
 import app.infinity.mpvz.ui.icons.Icon
 import app.infinity.mpvz.ui.icons.Icons
 import app.infinity.mpvz.ui.player.Debanding
+import app.infinity.mpvz.ui.player.Media3FlowDebugSettingsPolicy
 import app.infinity.mpvz.ui.player.MPVProfile
 import app.infinity.mpvz.ui.player.PlaybackEngineMode
 import app.infinity.mpvz.ui.preferences.components.SwitchPreference
@@ -113,6 +114,12 @@ object DecoderPreferencesScreen : Screen {
         selectedPlaybackEngine != PlaybackEngineMode.NATIVE
     val nativeMedia3FlowSelected = selectedPlaybackEngine == PlaybackEngineMode.NATIVE
     val nativeMedia3FlowAvailable = nativeMedia3FlowSelected && isVulkanSupported
+    val showFlowDebugControls =
+      Media3FlowDebugSettingsPolicy.controlsVisible(
+        debugBuild = BuildConfig.DEBUG,
+        mpvFlowRuntimeAvailable = BuildConfig.MPV_HAS_MPVFLOW,
+        nativeMedia3FlowAvailable = nativeMedia3FlowAvailable,
+      )
     val mpvFlowForcesRenderer = mpvFlowFrameInterpolationEnabled && mpvFlowAvailable
     var showGpuNextWarning by remember { mutableStateOf(false) }
     var anime4kExpanded by remember { mutableStateOf(false) }
@@ -382,18 +389,28 @@ object DecoderPreferencesScreen : Screen {
 
               PreferenceDivider()
 
-              if (BuildConfig.DEBUG && BuildConfig.MPV_HAS_MPVFLOW) {
+              if (showFlowDebugControls) {
                 SwitchPreference(
                   modifier = Modifier.settingsSearchTarget(R.string.pref_decoder_mpvflow_visibility_resolver_debug_title),
                   value = mpvFlowVisibilityResolverDebug,
-                  enabled = mpvFlowAvailable || mpvFlowVisibilityResolverDebug,
+                  enabled =
+                    Media3FlowDebugSettingsPolicy.controlEnabled(
+                      mpvFlowAvailable,
+                      nativeMedia3FlowAvailable,
+                      mpvFlowVisibilityResolverDebug,
+                    ),
                   onValueChange = preferences.mpvFlowVisibilityResolverDebug::set,
                   title = { Text(stringResource(R.string.pref_decoder_mpvflow_visibility_resolver_debug_title)) },
                 )
                 SwitchPreference(
                   modifier = Modifier.settingsSearchTarget(R.string.pref_decoder_mpvflow_soft_blend_debug_title),
                   value = mpvFlowSoftBlendDebug,
-                  enabled = mpvFlowAvailable || mpvFlowSoftBlendDebug,
+                  enabled =
+                    Media3FlowDebugSettingsPolicy.controlEnabled(
+                      mpvFlowAvailable,
+                      nativeMedia3FlowAvailable,
+                      mpvFlowSoftBlendDebug,
+                    ),
                   onValueChange = preferences.mpvFlowSoftBlendDebug::set,
                   title = { Text(stringResource(R.string.pref_decoder_mpvflow_soft_blend_debug_title)) },
                 )

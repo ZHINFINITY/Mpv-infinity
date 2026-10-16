@@ -12,6 +12,8 @@ MEDIA3_ANALYSIS_POLICY = (ROOT / "app/src/main/java/app/infinity/mpvz/ui/player/
 FLOW_DIAGNOSTICS = (ROOT / "app/src/main/java/app/infinity/mpvz/ui/player/Media3FlowDiagnostics.kt").read_text(encoding="utf-8")
 NATIVE = (ROOT / "app/src/main/java/app/infinity/mpvz/ui/player/Media3FlowVulkanNative.kt").read_text(encoding="utf-8")
 NATIVE_ENGINE = (ROOT / "app/src/main/java/app/infinity/mpvz/ui/player/NativeMedia3Engine.kt").read_text(encoding="utf-8")
+DEBUG_SETTINGS = (ROOT / "app/src/main/java/app/infinity/mpvz/ui/player/Media3FlowDebugSettings.kt").read_text(encoding="utf-8")
+DECODER_PREFERENCES = (ROOT / "app/src/main/java/app/infinity/mpvz/ui/preferences/DecoderPreferencesScreen.kt").read_text(encoding="utf-8")
 JNI = (ROOT / "app/src/main/cpp/media3flow_vulkan_jni.cpp").read_text(encoding="utf-8")
 CMAKE = (ROOT / "app/src/main/cpp/CMakeLists.txt").read_text(encoding="utf-8")
 GPU = (ROOT / "app/src/main/cpp/mpvflow/mpvflow_gpu.c").read_text(encoding="utf-8")
@@ -80,17 +82,32 @@ for marker in (
     "nativeCreateFrameImage(", "nativeHoldImageForExternal(",
 ):
     assert marker in SINK, f"Media3 sink is missing its Vulkan JNI dispatch: {marker}"
-assert "requestedSoftBlend: Boolean" in SINK and "soft_blend=$softBlendEnabled" in SINK
-assert "softBlendEnabled, outputImageHandle" in SINK
-assert "softBlendEnabled: Boolean" in NATIVE
-assert "jboolean softBlendEnabled" in JNI and "softBlendEnabled == JNI_TRUE" in JNI
-assert "false, softBlendEnabled == JNI_TRUE, softBlendEnabled == JNI_TRUE, &synthesized" in JNI
+assert "private val visibilityResolverEnabled: Boolean" in SINK
+assert "private val softBlendEnabled: Boolean" in SINK
+assert "visibility_resolver=$visibilityResolverEnabled soft_blend=$softBlendEnabled" in SINK
+assert re.search(r"visibilityResolverEnabled,\s*softBlendEnabled,\s*outputImageHandle", SINK)
+assert "visibilityResolverEnabled: Boolean" in NATIVE and "softBlendEnabled: Boolean" in NATIVE
+assert "jboolean visibilityResolverEnabled, jboolean softBlendEnabled" in JNI
+assert re.search(
+    r"visibilityResolverEnabled == JNI_TRUE,\s*softBlendEnabled == JNI_TRUE,\s*softBlendEnabled == JNI_TRUE, &synthesized",
+    JNI,
+), "Native Media3 must pass resolver, soft blend, and the existing conflict bias into shared synthesis"
+assert re.search(
+    r"visibilityResolverEnabled == JNI_TRUE,\s*softBlendEnabled == JNI_TRUE,\s*softBlendEnabled == JNI_TRUE\);",
+    JNI,
+), "capture metadata must record the effective Native Media3 synthesis settings"
 assert "mpvflow_gpu_synthesize_with_policy(" in MPV_PATCH, "MPV must use the shared continuous-motion policy"
 mpv_synthesis_call = MPV_PATCH.split("mpvflow_gpu_synthesize_with_policy(", 1)[1].split(");", 1)[0]
 assert mpv_synthesis_call.count("p->next_opts->mpvflow_soft_blend,") == 2, "MPV soft blend must explicitly enable both the source blend and conflict bias"
 assert "mpvflow_gpu_synthesize_with_visibility(" not in MPV_PATCH, "MPV must not bypass its opt-in conflict policy"
-assert "media3FlowSoftBlendDebug" in NATIVE_ENGINE and "MpvFlowComputeApi.VULKAN" in NATIVE_ENGINE
-assert "media3FlowSoftBlendDebug = BuildConfig.DEBUG" in (ROOT / "app/src/main/java/app/infinity/mpvz/ui/player/PlayerActivity.kt").read_text(encoding="utf-8")
+assert "Media3FlowDebugSettingsPolicy.effective(" in NATIVE_ENGINE
+assert "visibilityResolverEnabled || media3FlowDebugSettings.softBlendEnabled" in NATIVE_ENGINE
+assert "MpvFlowComputeApi.VULKAN" in NATIVE_ENGINE
+assert "media3FlowVisibilityResolverDebug =" in (ROOT / "app/src/main/java/app/infinity/mpvz/ui/player/PlayerActivity.kt").read_text(encoding="utf-8")
+assert "media3FlowSoftBlendDebug =" in (ROOT / "app/src/main/java/app/infinity/mpvz/ui/player/PlayerActivity.kt").read_text(encoding="utf-8")
+assert "nativeMedia3FlowAvailable" in DECODER_PREFERENCES and "controlsVisible(" in DECODER_PREFERENCES
+assert "softBlendEnabled = debugBuild && requestedSoftBlend" in DEBUG_SETTINGS
+assert "requestedVisibilityResolver && !softBlendEnabled" in DEBUG_SETTINGS
 for marker in (
     "pl_vulkan_create(", "pl_vulkan_wrap(", "pl_vulkan_release_ex(", "pl_vulkan_hold_ex(",
     "VK_KHR_EXTERNAL_SEMAPHORE_FD_EXTENSION_NAME", "vkImportSemaphoreFdKHR", "vkGetSemaphoreFdKHR",

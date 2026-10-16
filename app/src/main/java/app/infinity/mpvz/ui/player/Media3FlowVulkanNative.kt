@@ -50,6 +50,7 @@ internal object Media3FlowVulkanNative {
     sourcePts1Us: Long,
     outputPtsUs: Long,
     timestep: Float,
+    visibilityResolverEnabled: Boolean,
     softBlendEnabled: Boolean,
     output: Long,
   ): Boolean

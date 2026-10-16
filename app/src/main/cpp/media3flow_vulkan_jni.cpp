@@ -1559,7 +1559,8 @@ Java_app_infinity_mpvz_ui_player_Media3FlowVulkanNative_nativeSynthesize(
     JNIEnv *, jobject, jlong contextHandle, jlong pairHandle,
     jlong source0Handle, jlong source1Handle, jlong sourcePts0Us,
     jlong sourcePts1Us, jlong outputPtsUs, jfloat timestep,
-    jboolean softBlendEnabled, jlong outputHandle) {
+    jboolean visibilityResolverEnabled, jboolean softBlendEnabled,
+    jlong outputHandle) {
     auto *context = reinterpret_cast<FlowContext *>(contextHandle);
     auto *pair = reinterpret_cast<MPVFlowGPUPair *>(pairHandle);
     auto *source0 = reinterpret_cast<SharedImage *>(source0Handle);
@@ -1623,7 +1624,8 @@ Java_app_infinity_mpvz_ui_player_Media3FlowVulkanNative_nativeSynthesize(
     pl_tex synthesized = nullptr;
     const MPVFlowGPUResult result = mpvflow_gpu_synthesize_with_policy(
         context->flow, pair, source0->texture, source1->texture, timestep,
-        false, softBlendEnabled == JNI_TRUE, softBlendEnabled == JNI_TRUE, &synthesized);
+        visibilityResolverEnabled == JNI_TRUE, softBlendEnabled == JNI_TRUE,
+        softBlendEnabled == JNI_TRUE, &synthesized);
     if (result != MPVFLOW_GPU_OK || !synthesized) {
         (void) holdImageForExternal(context, output, true);
         logFlowOnce(context, DIAG_SYNTH_FAILURE, ANDROID_LOG_ERROR,
@@ -1639,7 +1641,8 @@ Java_app_infinity_mpvz_ui_player_Media3FlowVulkanNative_nativeSynthesize(
             timestep, static_cast<double>(sourcePts0Us) / 1000000.0,
             static_cast<double>(sourcePts1Us) / 1000000.0,
             static_cast<double>(outputPtsUs) / 1000000.0,
-            false, softBlendEnabled == JNI_TRUE, softBlendEnabled == JNI_TRUE);
+            visibilityResolverEnabled == JNI_TRUE, softBlendEnabled == JNI_TRUE,
+            softBlendEnabled == JNI_TRUE);
         if (captureResult != MPVFLOW_GPU_OK) {
             if (!context->captureFailureLogged) {
                 context->captureFailureLogged = true;

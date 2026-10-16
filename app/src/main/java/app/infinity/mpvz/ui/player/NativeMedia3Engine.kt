@@ -200,13 +200,23 @@ class NativeMedia3Engine(
   media3FlowTargetFps: Int = 60,
   media3FlowQuality: Int = 60,
   media3FlowComputeApi: MpvFlowComputeApi = MpvFlowComputeApi.AUTO,
+  media3FlowVisibilityResolverDebug: Boolean = false,
   media3FlowSoftBlendDebug: Boolean = false,
 ) {
   private val appContext = context.applicationContext
   private val logTag = "Mpv∞-Media3"
-  private val media3FlowSoftBlendEnabled = BuildConfig.DEBUG && media3FlowSoftBlendDebug
+  private val media3FlowDebugSettings =
+    Media3FlowDebugSettingsPolicy.effective(
+      debugBuild = BuildConfig.DEBUG,
+      requestedVisibilityResolver = media3FlowVisibilityResolverDebug,
+      requestedSoftBlend = media3FlowSoftBlendDebug,
+    )
   private val effectiveMedia3FlowComputeApi =
-    if (media3FlowSoftBlendEnabled) MpvFlowComputeApi.VULKAN else media3FlowComputeApi
+    if (media3FlowDebugSettings.visibilityResolverEnabled || media3FlowDebugSettings.softBlendEnabled) {
+      MpvFlowComputeApi.VULKAN
+    } else {
+      media3FlowComputeApi
+    }
   private val flowDeviceSupported =
     enableMedia3Flow && Media3FlowVideoSink.deviceSupportsVulkanFlow(appContext)
   private val media3FlowSink = if (flowDeviceSupported) {
@@ -215,7 +225,8 @@ class NativeMedia3Engine(
       media3FlowTargetFps,
       media3FlowQuality,
       effectiveMedia3FlowComputeApi,
-      media3FlowSoftBlendEnabled,
+      media3FlowDebugSettings.visibilityResolverEnabled,
+      media3FlowDebugSettings.softBlendEnabled,
       ::publishFlowDiagnostics,
     )
   } else {
