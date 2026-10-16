@@ -1974,7 +1974,7 @@ class Media3FlowVideoSink(
         "event=presentation_handoff state=failed stage=bounded_texture_staging reason=stage_or_fence_failure",
         error,
       )
-      false
+      return false
     }
   }
 
