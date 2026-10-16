@@ -15,9 +15,14 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class FlowDiagnosticsCaptureTest {
+  private fun tempDirectory(prefix: String): File =
+    java.nio.file.Files.createTempDirectory(prefix).toFile()
+
+  private fun tempFile(prefix: String): File = File.createTempFile(prefix, ".tmp")
+
   @Test
   fun archiveContainsOnlyCommittedFilesAndPreservesRelativeNames() {
-    val root = createTempDir(prefix = "flow-capture-")
+    val root = tempDirectory("flow-capture-")
     val zip = File(root.parentFile, "${root.name}.zip")
     try {
       File(root, "pair_00").mkdirs()
@@ -48,7 +53,7 @@ class FlowDiagnosticsCaptureTest {
 
   @Test
   fun archiveWriterRejectsInputsAboveTheBoundedArchiveLimit() {
-    val root = createTempDir(prefix = "flow-capture-large-")
+    val root = tempDirectory("flow-capture-large-")
     val zip = File(root.parentFile, "${root.name}.zip")
     try {
       val tooLarge = File(root, "oversize.bin")
@@ -68,8 +73,8 @@ class FlowDiagnosticsCaptureTest {
 
   @Test
   fun archiveWriterRejectsSymlinkEscapes() {
-    val root = createTempDir(prefix = "flow-capture-links-")
-    val outside = createTempFile(prefix = "flow-capture-outside-")
+    val root = tempDirectory("flow-capture-links-")
+    val outside = tempFile("flow-capture-outside-")
     val zip = File(root.parentFile, "${root.name}.zip")
     try {
       java.nio.file.Files.createSymbolicLink(File(root, "outside.txt").toPath(), outside.toPath())
@@ -87,7 +92,7 @@ class FlowDiagnosticsCaptureTest {
 
   @Test
   fun timingWriterDoesNotPrecreateTheNativeExclusiveSessionDirectory() {
-    val root = createTempDir(prefix = "flow-timing-root-")
+    val root = tempDirectory("flow-timing-root-")
     val session = File(root, "flow_session")
     try {
       assertFalse(
@@ -107,7 +112,7 @@ class FlowDiagnosticsCaptureTest {
 
   @Test
   fun timingWriterCapsSnapshotsAndPreservesRateSemantics() {
-    val root = createTempDir(prefix = "flow-timing-session-")
+    val root = tempDirectory("flow-timing-session-")
     try {
       repeat(40) { index ->
         FlowDiagnosticsTimingWriter.append(
@@ -131,7 +136,7 @@ class FlowDiagnosticsCaptureTest {
 
   @Test
   fun timingWriterRejectsAPathThatAliasesTheNativeManifest() {
-    val root = createTempDir(prefix = "flow-timing-alias-")
+    val root = tempDirectory("flow-timing-alias-")
     val manifest = File(root, "manifest.json")
     val sidecar = File(root, FlowDiagnosticsTimingWriter.FILE_NAME)
     try {
