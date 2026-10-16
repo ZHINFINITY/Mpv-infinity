@@ -167,14 +167,15 @@ index dd47f440f..48cb34057 100644
 @@ -1573 +1638 @@ static bool map_frame(pl_gpu gpu, pl_tex *tex, const struct pl_source_frame *src
 -            setup_hwdec_plane_mapping(&fp->el_frame, &desc);
 +            setup_hwdec_plane_mapping(&fp->el_frame, &desc, p->el_hwdec.mapper);
-@@ -1611,0 +1677,8 @@ static void unmap_frame(pl_gpu gpu, struct pl_frame *frame,
-+    if (fp->hwdec_preloaded && p->hwdec.mapper &&
-+        p->hwdec.mapper->src == mpi)
-+        ra_hwdec_mapper_unmap(p->hwdec.mapper);
+@@ -1611,0 +1677,9 @@ static void unmap_frame(pl_gpu gpu, struct pl_frame *frame,
++    struct priv *mapper_priv = fp->vo->priv;
++    if (fp->hwdec_preloaded && mapper_priv->hwdec.mapper &&
++        mapper_priv->hwdec.mapper->src == mpi)
++        ra_hwdec_mapper_unmap(mapper_priv->hwdec.mapper);
 +    fp->hwdec_preloaded = false;
-+    if (fp->el_hwdec_preloaded && p->el_hwdec.mapper &&
-+        p->el_hwdec.mapper->src == mpi->enhancement_layer)
-+        ra_hwdec_mapper_unmap(p->el_hwdec.mapper);
++    if (fp->el_hwdec_preloaded && mapper_priv->el_hwdec.mapper &&
++        mapper_priv->el_hwdec.mapper->src == mpi->enhancement_layer)
++        ra_hwdec_mapper_unmap(mapper_priv->el_hwdec.mapper);
 +    fp->el_hwdec_preloaded = false;
 @@ -1768,2 +1841,2 @@ static void apply_target_options(struct priv *p, struct pl_frame *target,
 -static void apply_crop(struct pl_frame *frame, struct mp_rect crop,

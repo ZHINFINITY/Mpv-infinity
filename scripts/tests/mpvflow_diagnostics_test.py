@@ -7,6 +7,7 @@ import re
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 PATCH = (ROOT / "app/src/main/cpp/mpvflow/mpvflow-vo-gpu-next.patch").read_text(encoding="utf-8")
+AIMAGE_PATCH = (ROOT / "app/src/main/cpp/mpvflow/mpvflow-aimagereader-vulkan.patch").read_text(encoding="utf-8")
 PREPARE = (ROOT / "scripts/prepare-mpvflow.py").read_text(encoding="utf-8")
 MPV_VIEW = (ROOT / "app/src/main/java/app/infinity/mpvz/ui/player/MPVView.kt").read_text(encoding="utf-8")
 LOG_REPOSITORY = (ROOT / "app/src/main/java/app/infinity/mpvz/presentation/crash/DebugLogRepository.kt").read_text(encoding="utf-8")
@@ -62,6 +63,7 @@ def verify_unified_hunk_counts(patch_text: str) -> None:
 
 
 verify_unified_hunk_counts(PATCH)
+verify_unified_hunk_counts(AIMAGE_PATCH)
 
 
 # Config is a request only; the renderer independently reports initialization and output state.
@@ -284,6 +286,11 @@ require(FLOW_CAPTURE_MANAGER[terminal_cleanup_index:terminal_archive_index], "va
 require(MPV_VIEW, "val activeSession = mpvFlowCaptureSessionId ?: return null", "MPV stop cleanup must be idempotent after auto-completion")
 require(MEDIA3_FLOW_SINK, "val activeSession = diagnosticCaptureSession ?: return@runOnGlThreadSync null", "Media3 stop cleanup must be idempotent after auto-completion")
 require(MEDIA3_FLOW_SINK, "if (result == null) diagnosticCaptureSession = null", "Media3 must retain its session ID when native stop fails")
+mapper_hunk = AIMAGE_PATCH.split("@@ -1611,0 +1677,9", 1)[1].split("\n@@", 1)[0]
+require(mapper_hunk, "struct priv *mapper_priv = fp->vo->priv;", "AImage unmap cleanup must declare its own mapper context after line shifts")
+require(mapper_hunk, "mapper_priv->hwdec.mapper", "AImage unmap cleanup must use its locally declared mapper context")
+require(mapper_hunk, "mapper_priv->el_hwdec.mapper", "AImage enhancement-layer cleanup must use its locally declared mapper context")
+assert "p->hwdec.mapper" not in mapper_hunk, "AImage cleanup must not depend on an out-of-scope p variable"
 require(PREPARE, 'VENDOR / "mpvflow_capture_io.c"', "pinned MPV preparation must require the capture writer implementation")
 require(PREPARE, 'VENDOR / "mpvflow_capture_io.h"', "pinned MPV preparation must require the capture writer header")
 require(PREPARE, 'shutil.copy2(VENDOR / "mpvflow_capture_io.c", video_out_dir / "mpvflow_capture_io.c")', "pinned MPV preparation must stage the capture writer implementation beside the VO")
