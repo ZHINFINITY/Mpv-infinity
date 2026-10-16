@@ -102,6 +102,7 @@ class MPVView(
   private val mpvFlowDiagnosticsScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
   private var mpvFlowDiagnosticsJob: Job? = null
   private var mpvFlowDiagnosticsEnabled = false
+  private var mpvFlowOsdStatsEnabled = false
 
   private fun currentDisplayRefreshRate(): FlowDisplayRefreshRate? {
     val viewDisplay = display
@@ -156,6 +157,7 @@ class MPVView(
         !MpvConfigOverridePolicy.isOwnedByMpvConf("mpvflow-compute-api")
     val effectiveMpvFlowComputeApi =
       if (mpvFlowSoftBlendDebugActive) MpvFlowComputeApi.VULKAN else requestedMpvFlowComputeApi
+    mpvFlowOsdStatsEnabled = mpvFlowFrameInterpolationActive
     mpvFlowDiagnosticsEnabled = BuildConfig.DEBUG && mpvFlowFrameInterpolationActive
     val coreConfigurationKey =
       "${requestedBackend.configurationKey}|conf=${MpvConfigOverridePolicy.configurationKey()}|" +
@@ -172,7 +174,10 @@ class MPVView(
       )
     // Refresh from the process-wide owner even when initOptions was skipped on core reuse.
     interpolationOutputFrameRate = PlaybackSession.surfaceFrameRateHintHz()
-    if (result.isFailure) mpvFlowDiagnosticsEnabled = false
+    if (result.isFailure) {
+      mpvFlowOsdStatsEnabled = false
+      mpvFlowDiagnosticsEnabled = false
+    }
     if (result.isSuccess) {
       holder.removeCallback(this)
       holder.addCallback(this)
@@ -192,7 +197,7 @@ class MPVView(
   }
 
   private fun updateMpvFlowDiagnostics() {
-    if (mpvFlowDiagnosticsEnabled && isSurfaceReady && holder.surface.isValid) {
+    if ((mpvFlowOsdStatsEnabled || mpvFlowDiagnosticsEnabled) && isSurfaceReady && holder.surface.isValid) {
       startMpvFlowDiagnostics()
     } else {
       stopMpvFlowDiagnostics()
@@ -200,12 +205,12 @@ class MPVView(
   }
 
   private fun startMpvFlowDiagnostics() {
-    if (!mpvFlowDiagnosticsEnabled || !isSurfaceReady || mpvFlowDiagnosticsJob?.isActive == true) return
+    if (!(mpvFlowOsdStatsEnabled || mpvFlowDiagnosticsEnabled) || !isSurfaceReady || mpvFlowDiagnosticsJob?.isActive == true) return
     mpvFlowDiagnosticsJob =
       mpvFlowDiagnosticsScope.launch {
         val sampleCache = MpvFlowRuntimeCadenceSampleCache()
         val observedFallbackReasons = linkedSetOf<String>()
-        while (isActive && mpvFlowDiagnosticsEnabled && isSurfaceReady) {
+        while (isActive && (mpvFlowOsdStatsEnabled || mpvFlowDiagnosticsEnabled) && isSurfaceReady) {
           val entries =
             withContext(Dispatchers.IO) {
               runCatching { DebugLogReader.readSnapshot(maxRawLines = 500).entries }
@@ -213,7 +218,8 @@ class MPVView(
             }
           val candidate = latestMpvFlowRuntimeCadenceSample(entries)
           val sample = sampleCache.update(candidate, System.currentTimeMillis())
-          if (BuildConfig.DEBUG) {
+          if (mpvFlowOsdStatsEnabled) sendMpvFlowOsdStats(sample)
+          if (mpvFlowDiagnosticsEnabled && BuildConfig.DEBUG) {
             observedFallbackReasons += observedMpvFlowPassthroughReasons(entries)
             val healthFields =
               withContext(Dispatchers.IO) {
@@ -230,6 +236,25 @@ class MPVView(
   private fun stopMpvFlowDiagnostics() {
     mpvFlowDiagnosticsJob?.cancel()
     mpvFlowDiagnosticsJob = null
+    sendMpvFlowOsdStats(null)
+  }
+
+  private fun sendMpvFlowOsdStats(
+    sample: MpvFlowRuntimeCadenceSample?,
+  ) {
+    if (!PlaybackSession.isInitialized) return
+    val synthesizedFps = sample?.synthesizedSubmitFps
+      ?.takeIf { it.isFinite() && it >= 0.0 }
+      ?.toString()
+      .orEmpty()
+    runCatching {
+      PlaybackSession.command(
+        "script-message-to",
+        "stats",
+        "mpvflow-output-rate",
+        synthesizedFps,
+      )
+    }
   }
 
 
@@ -459,6 +484,7 @@ class MPVView(
     }
     val mpvFlowFrameInterpolationEnabled =
       mpvFlowFrameInterpolationCandidate && flowTimingOptionsReady
+    mpvFlowOsdStatsEnabled = mpvFlowFrameInterpolationEnabled
     mpvFlowDiagnosticsEnabled = BuildConfig.DEBUG && mpvFlowFrameInterpolationEnabled
     if (mpvFlowFrameInterpolationEnabled) {
       Log.i(

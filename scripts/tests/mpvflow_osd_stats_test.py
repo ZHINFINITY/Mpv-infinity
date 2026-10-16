@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Regression tests ensuring MPVFlow debug text stays out of the normal OSD."""
+"""Regression tests for MPVFlow's minimal synthesized-FPS statistics row."""
 from __future__ import annotations
 
 import importlib.util
@@ -12,7 +12,7 @@ if SPEC is None or SPEC.loader is None:
     raise SystemExit("Could not import MPVFlow source preparation")
 PREPARE = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(PREPARE)
-
+MPV_VIEW = (ROOT / "app/src/main/java/app/infinity/mpvz/ui/player/MPVView.kt").read_text(encoding="utf-8")
 PINNED_STATS_EXCERPT = '''local mp = require 'mp'
 local format = string.format
 
@@ -32,14 +32,31 @@ end
 
 def main() -> None:
     patched = PREPARE.patch_mpvflow_stats_lua(PINNED_STATS_EXCERPT)
-    assert patched == PINNED_STATS_EXCERPT, "MPVFlow must not modify MPV's standard stats OSD"
-    assert "MPVFLOW_OSD_SYNTH_STATS" not in patched
-    assert "MPVFLOW_OSD_SYNTH_ROW" not in patched
-    assert "MPVFlow Synth:" not in patched
-    assert "mpvflow-output-rate" not in patched
+    assert patched.count("-- MPVFLOW_OSD_SYNTH_STATS") == 1
+    assert patched.count("    -- MPVFLOW_OSD_SYNTH_ROW") == 1
+    assert 'mp.register_script_message("mpvflow-output-rate"' in patched
+    assert 'append(s, mpvflow_output_summary, {prefix="MPVFlow Synth:"})' in patched
+    assert 'mpvflow_output_summary = format("%.1f fps", synthesized)' in patched
+    assert patched.index('append_fps(s, "display-fps"') < patched.index("-- MPVFLOW_OSD_SYNTH_ROW")
+    for removed_debug_text in ("target ", "all swaps", "successful submits; not scanout", "interpolation_alpha"):
+        assert removed_debug_text not in patched, f"unexpected debug/explanation text returned: {removed_debug_text}"
     assert PREPARE.patch_mpvflow_stats_lua(patched) == patched
 
-    print("MPVFlow OSD debug-text removal tests passed")
+    try:
+        PREPARE.patch_mpvflow_stats_lua("local function add_video_out(s) end\n")
+    except SystemExit as error:
+        assert "layout changed" in str(error)
+    else:
+        raise AssertionError("Unexpected stats.lua layout must fail closed")
+
+    assert "mpvFlowOsdStatsEnabled = mpvFlowFrameInterpolationActive" in MPV_VIEW
+    assert "if (mpvFlowOsdStatsEnabled) sendMpvFlowOsdStats(sample)" in MPV_VIEW
+    bridge = MPV_VIEW.split("private fun sendMpvFlowOsdStats(", 1)[1].split("private fun mpvFlowPlayerHealthFields(", 1)[0]
+    assert "sample?.synthesizedSubmitFps" in bridge
+    assert '"script-message-to"' in bridge and '"mpvflow-output-rate"' in bridge
+    assert "swapSubmitFps" not in bridge and "targetFps" not in bridge
+    assert "sendMpvFlowOsdStats(null)" in MPV_VIEW, "stale FPS must be cleared when the overlay bridge stops"
+    print("MPVFlow Synth FPS statistics OSD regression tests passed")
 
 
 if __name__ == "__main__":

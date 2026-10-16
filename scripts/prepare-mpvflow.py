@@ -53,8 +53,46 @@ PLACEBO_TIMER_RING_NEW = (
 
 
 def patch_mpvflow_stats_lua(stats_lua: str) -> str:
-    """Keep MPV's normal stats pages free of the MPVFlow debug OSD row."""
-    return stats_lua
+    """Add only MPVFlow's synthesized-FPS value to MPV's normal stats page."""
+    message_marker = "-- MPVFLOW_OSD_SYNTH_STATS"
+    row_marker = "    -- MPVFLOW_OSD_SYNTH_ROW"
+    if message_marker in stats_lua or row_marker in stats_lua:
+        required = (
+            message_marker,
+            row_marker,
+            'mp.register_script_message("mpvflow-output-rate"',
+            'append(s, mpvflow_output_summary, {prefix="MPVFlow Synth:"})',
+        )
+        if all(marker in stats_lua for marker in required):
+            return stats_lua
+        raise SystemExit("Pinned MPV stats.lua Flow FPS row is incomplete")
+
+    page_anchor = "local function add_video_out(s)\n"
+    row_anchor = '    append_fps(s, "display-fps", "estimated-display-fps")\n'
+    if stats_lua.count(page_anchor) != 1 or stats_lua.count(row_anchor) != 1:
+        raise SystemExit("Pinned MPV stats.lua page-one layout changed; refusing an unverified OSD insertion")
+
+    message_handler = (
+        f"{message_marker}\n"
+        "local mpvflow_output_summary\n"
+        "mp.register_script_message(\"mpvflow-output-rate\", function(synthesized_fps)\n"
+        "    local synthesized = tonumber(synthesized_fps)\n"
+        "    if not synthesized or synthesized < 0 or synthesized ~= synthesized or synthesized == math.huge then\n"
+        "        mpvflow_output_summary = nil\n"
+        "        return\n"
+        "    end\n"
+        "    mpvflow_output_summary = format(\"%.1f fps\", synthesized)\n"
+        "end)\n\n"
+    )
+    stats_lua = stats_lua.replace(page_anchor, message_handler + page_anchor, 1)
+    row = (
+        row_anchor
+        + f"{row_marker}\n"
+        + "    if mpvflow_output_summary then\n"
+        + "        append(s, mpvflow_output_summary, {prefix=\"MPVFlow Synth:\"})\n"
+        + "    end\n"
+    )
+    return stats_lua.replace(row_anchor, row, 1)
 
 
 def validate_hwdec_frame_priv_members(vo_source: str) -> None:
