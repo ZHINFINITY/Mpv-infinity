@@ -968,12 +968,22 @@ object PlaybackSession : MPVLib.EventObserver {
   /**
    * Applies an app-owned integration prerequisite even when a broad mpv.conf ownership group is
    * selected. Use this only for infrastructure required to connect a bundled component to libmpv,
-   * never for a user-facing playback preference.
+   * never for a user-facing playback preference. Before initialization, set the option directly;
+   * on a reused core, update the runtime options property and verify the applied value.
    */
   fun setIntegrationOptionString(
     name: String,
     value: String,
-  ): Int = withCore(-1, allowInitializing = true) { MPVLib.setOptionString(name, value) }
+  ): Int =
+    withCore(-1, allowInitializing = true) {
+      if (!nativeCoreReady) {
+        MPVLib.setOptionString(name, value)
+      } else {
+        val property = "options/$name"
+        MPVLib.setPropertyString(property, value)
+        if (MPVLib.getPropertyString(property) == value) 0 else -1
+      }
+    }
 
   fun getPropertyInt(property: String): Int? = withReadyCore(null) { MPVLib.getPropertyInt(property) }
 

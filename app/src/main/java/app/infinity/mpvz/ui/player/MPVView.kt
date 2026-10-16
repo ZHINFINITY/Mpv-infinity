@@ -182,6 +182,11 @@ class MPVView(
     if (result.isFailure) {
       mpvFlowOsdStatsEnabled = false
       mpvFlowDiagnosticsEnabled = false
+      mpvFlowCaptureControlConfigured = false
+    }
+    if (result.isSuccess && BuildConfig.DEBUG && BuildConfig.MPV_HAS_MPVFLOW) {
+      // PlaybackSession may reuse a core and skip initOptions for this view.
+      configureMpvFlowCaptureControl("after_initialize")
     }
     if (result.isSuccess) {
       holder.removeCallback(this)
@@ -296,11 +301,31 @@ class MPVView(
       .put("actual_displayed_fps_source", "Perfetto FrameTimeline companion trace required for SurfaceView")
   }
 
+  private fun configureMpvFlowCaptureControl(source: String): Int {
+    if (!BuildConfig.DEBUG || !BuildConfig.MPV_HAS_MPVFLOW) {
+      mpvFlowCaptureControlConfigured = false
+      return -1
+    }
+    val optionValue = if (mpvFlowDiagnosticsEnabled) mpvFlowCaptureControlFile.absolutePath else ""
+    val result =
+      PlaybackSession.setIntegrationOptionString("mpvflow-diagnostic-control-file", optionValue)
+    mpvFlowCaptureControlConfigured = mpvFlowDiagnosticsEnabled && result == 0
+    val state = when {
+      !mpvFlowDiagnosticsEnabled -> "disabled"
+      mpvFlowCaptureControlConfigured -> "ready"
+      else -> "unavailable"
+    }
+    Log.i(
+      TAG,
+      "MPVFLOW_DIAGNOSTIC component=capture event=control_option source=$source state=$state option_rc=$result",
+    )
+    return result
+  }
+
   /** Arms the MPV VO through a private, atomically replaced control file. */
   fun startFlowDiagnosticCapture(sessionId: String, baseDirectory: String): String? {
     if (!BuildConfig.DEBUG || !BuildConfig.MPV_HAS_MPVFLOW) return "debug_mpvflow_unavailable"
     if (!mpvFlowDiagnosticsEnabled || !isSurfaceReady) return "mpvflow_not_active"
-    if (!mpvFlowCaptureControlConfigured) return "mpvflow_capture_control_unavailable"
     if (!sessionId.matches(Regex("[A-Za-z0-9_-]{1,80}"))) return "invalid_session_id"
     val allowedRoot = java.io.File(context.cacheDir, "flow-diagnostics").canonicalFile
     val target = java.io.File(baseDirectory).canonicalFile
@@ -308,6 +333,12 @@ class MPVView(
       return "capture_directory_outside_private_cache"
     }
     if (!target.isDirectory && !target.mkdirs()) return "capture_directory_create_failed"
+    if (!mpvFlowCaptureControlConfigured) {
+      val controlOptionResult = configureMpvFlowCaptureControl("capture_start")
+      if (controlOptionResult != 0 || !mpvFlowCaptureControlConfigured) {
+        return "mpvflow_capture_control_unavailable"
+      }
+    }
     val error = writeFlowDiagnosticControl("START\t$sessionId\t${target.path}\n")
     if (error != null) return error
     mpvFlowCaptureSessionId = sessionId
@@ -733,16 +764,11 @@ class MPVView(
         null
       }
     val captureControlOptionResult =
-      if (BuildConfig.DEBUG && BuildConfig.MPV_HAS_MPVFLOW &&
-        !MpvConfigOverridePolicy.isOwnedByMpvConf("mpvflow-diagnostic-control-file")) {
-        mpvFlowCaptureControlConfigured =
-          PlaybackSession.setOptionString(
-            "mpvflow-diagnostic-control-file",
-            if (mpvFlowFrameInterpolationEnabled) mpvFlowCaptureControlFile.absolutePath else "",
-          ) == 0
-        mpvFlowCaptureControlConfigured
+      if (BuildConfig.DEBUG && BuildConfig.MPV_HAS_MPVFLOW) {
+        configureMpvFlowCaptureControl("init_options")
       } else {
-        false
+        mpvFlowCaptureControlConfigured = false
+        null
       }
     val mpvFlowVisibilityResolverDebugEnabled =
       BuildConfig.DEBUG &&
@@ -795,7 +821,8 @@ class MPVView(
           "max_dimension_rc=${dimensionResult ?: "unchanged"} quality=$mpvFlowQuality quality_rc=${qualityResult ?: "unchanged"} " +
           "visibility_resolver=$mpvFlowVisibilityResolverDebugEnabled " +
           "visibility_resolver_rc=${mpvFlowVisibilityResolverOptionResult ?: "mpv.conf_or_unavailable"} " +
-          "soft_blend=$mpvFlowSoftBlendDebugEnabled soft_blend_rc=${mpvFlowSoftBlendOptionResult ?: "mpv.conf_or_unavailable"}"
+          "soft_blend=$mpvFlowSoftBlendDebugEnabled soft_blend_rc=${mpvFlowSoftBlendOptionResult ?: "mpv.conf_or_unavailable"} " +
+          "capture_control_rc=${captureControlOptionResult ?: "skipped"}"
       } else {
         "compute_api=${effectiveMpvFlowComputeApi.name.lowercase()} " +
           "compute_api_rc=${mpvFlowComputeApiOptionResult ?: "mpv.conf_or_unavailable"} mpvflow=mpv.conf"

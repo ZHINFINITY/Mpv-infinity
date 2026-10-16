@@ -409,6 +409,32 @@ static int supported_engine(const char *engine)
     return engine && (!strcmp(engine, "mpv") || !strcmp(engine, "native-media3"));
 }
 
+enum MPVFlowCaptureBackendKind mpvflow_capture_io_backend_kind(const char *backend)
+{
+    if (!backend)
+        return MPVFLOW_CAPTURE_BACKEND_UNKNOWN;
+    if (!strcmp(backend, "vulkan") || !strcmp(backend, "vulkan-spirv"))
+        return MPVFLOW_CAPTURE_BACKEND_VULKAN;
+    if (!strcmp(backend, "opencl") || !strcmp(backend, "opencl-qcom"))
+        return MPVFLOW_CAPTURE_BACKEND_OPENCL;
+    return MPVFLOW_CAPTURE_BACKEND_UNKNOWN;
+}
+
+const char *mpvflow_capture_io_backend_label(enum MPVFlowCaptureBackendKind kind)
+{
+    switch (kind) {
+    case MPVFLOW_CAPTURE_BACKEND_VULKAN: return "vulkan";
+    case MPVFLOW_CAPTURE_BACKEND_OPENCL: return "opencl";
+    case MPVFLOW_CAPTURE_BACKEND_UNKNOWN: break;
+    }
+    return "unknown";
+}
+
+int mpvflow_capture_io_backend_supports_vulkan_readback(const char *backend)
+{
+    return mpvflow_capture_io_backend_kind(backend) == MPVFLOW_CAPTURE_BACKEND_VULKAN;
+}
+
 static int supported_backend(const char *backend)
 {
     return backend && (!strcmp(backend, "vulkan") || !strcmp(backend, "opencl"));

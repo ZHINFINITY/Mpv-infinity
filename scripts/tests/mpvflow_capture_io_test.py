@@ -28,6 +28,13 @@ int main(int argc, char **argv) {
         0,0,255,0, 17,34,51,255
     };
     char reason[256];
+    assert(mpvflow_capture_io_backend_kind("vulkan-spirv") == MPVFLOW_CAPTURE_BACKEND_VULKAN);
+    assert(mpvflow_capture_io_backend_supports_vulkan_readback("vulkan-spirv"));
+    assert(mpvflow_capture_io_backend_kind("opencl-qcom") == MPVFLOW_CAPTURE_BACKEND_OPENCL);
+    assert(!mpvflow_capture_io_backend_supports_vulkan_readback("opencl-qcom"));
+    assert(mpvflow_capture_io_backend_kind("unknown") == MPVFLOW_CAPTURE_BACKEND_UNKNOWN);
+    assert(!strcmp(mpvflow_capture_io_backend_label(MPVFLOW_CAPTURE_BACKEND_VULKAN), "vulkan"));
+    assert(!strcmp(mpvflow_capture_io_backend_label(MPVFLOW_CAPTURE_BACKEND_OPENCL), "opencl"));
     assert(!mpvflow_capture_write_png(argv[1], px, 2, 2));
     struct MPVFlowCaptureSession *session = mpvflow_capture_io_start(
         argv[2], "valid", &meta, reason, sizeof(reason));
@@ -68,6 +75,10 @@ int main(int argc, char **argv) {
     assert(!mpvflow_capture_io_write_terminal_manifest(argv[2], "no_frames",
         "native-media3", "vulkan", meta.effective_settings_json,
         "no_synthesized_samples"));
+    assert(!mpvflow_capture_io_write_terminal_manifest(argv[2], "no_vulkan_readback",
+        "native-media3",
+        mpvflow_capture_io_backend_label(mpvflow_capture_io_backend_kind("opencl-qcom")),
+        meta.effective_settings_json, "capture_readback_requires_vulkan"));
     assert(!mpvflow_capture_io_start(argv[2], "../oops", &meta, reason, sizeof(reason)));
     assert(!mpvflow_capture_io_start("/missing", "bad", &meta, reason, sizeof(reason)));
     meta.effective_settings_json = "{\"x\":}";
@@ -156,6 +167,18 @@ with tempfile.TemporaryDirectory() as temp_dir:
     assert no_frame_manifest["status"] == "failed" and no_frame_manifest["stopped"] is True
     assert no_frame_manifest["terminal_reason"] == "no_synthesized_samples"
     assert no_frame_manifest["pts"] is None and no_frame_manifest["sample_count"] == 0
+    readback_manifest = json.loads((directory / "no_vulkan_readback" / "manifest.json").read_text())
+    assert readback_manifest["status"] == "failed" and readback_manifest["stopped"] is True
+    assert readback_manifest["backend"] == "opencl"
+    assert readback_manifest["terminal_reason"] == "capture_readback_requires_vulkan"
+    assert readback_manifest["sample_count"] == 0 and readback_manifest["records"] == []
+    assert readback_manifest["missing"] == [{
+        "pair_index": 0,
+        "sample_index": -1,
+        "channel": "synthesized",
+        "stage": "capture",
+        "reason": "capture_readback_requires_vulkan",
+    }]
     limit_manifest = json.loads((directory / "byte_limit" / "manifest.json").read_text())
     assert limit_manifest["status"] == "partial" and limit_manifest["bytes_written"] <= 64 * 1024 * 1024
 

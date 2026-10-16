@@ -13,6 +13,16 @@
 #define MPVFLOW_CAPTURE_MAX_SAMPLES_PER_PAIR 4
 #define MPVFLOW_CAPTURE_MAX_BYTES (64u * 1024u * 1024u)
 
+enum MPVFlowCaptureBackendKind {
+    MPVFLOW_CAPTURE_BACKEND_UNKNOWN = 0,
+    MPVFLOW_CAPTURE_BACKEND_OPENCL,
+    MPVFLOW_CAPTURE_BACKEND_VULKAN,
+};
+
+enum MPVFlowCaptureBackendKind mpvflow_capture_io_backend_kind(const char *backend);
+const char *mpvflow_capture_io_backend_label(enum MPVFlowCaptureBackendKind kind);
+int mpvflow_capture_io_backend_supports_vulkan_readback(const char *backend);
+
 struct MPVFlowCaptureSession;
 
 struct MPVFlowCaptureMeta {

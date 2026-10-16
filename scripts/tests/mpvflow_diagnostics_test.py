@@ -17,6 +17,8 @@ DECODERS_SHEET = (ROOT / "app/src/main/java/app/infinity/mpvz/ui/player/controls
 MEDIA3_FLOW_SINK = (ROOT / "app/src/main/java/app/infinity/mpvz/ui/player/Media3FlowVideoSink.kt").read_text(encoding="utf-8")
 MEDIA3_FLOW_CADENCE = (ROOT / "app/src/main/java/app/infinity/mpvz/ui/player/Media3FlowCadence.kt").read_text(encoding="utf-8")
 FLOW_GPU_CORE = (ROOT / "app/src/main/cpp/mpvflow/mpvflow_gpu.c").read_text(encoding="utf-8")
+FLOW_CAPTURE_IO = (ROOT / "app/src/main/cpp/mpvflow/mpvflow_capture_io.c").read_text(encoding="utf-8")
+PLAYBACK_SESSION = (ROOT / "app/src/main/java/app/infinity/mpvz/ui/player/PlaybackSession.kt").read_text(encoding="utf-8")
 QCOM_ADAPTER = (ROOT / "app/src/main/cpp/mpvflow/mpvflow_vulkan_qcom.c").read_text(encoding="utf-8")
 MEDIA3_NATIVE = (ROOT / "app/src/main/cpp/media3flow_vulkan_jni.cpp").read_text(encoding="utf-8")
 FLOW_CAPTURE_MANAGER = (ROOT / "app/src/main/java/app/infinity/mpvz/ui/player/FlowDiagnosticsCapture.kt").read_text(encoding="utf-8")
@@ -300,4 +302,34 @@ require(PREPARE, 'shutil.copy2(VENDOR / "mpvflow_capture_io.c", video_out_dir / 
 require(PREPARE, 'shutil.copy2(VENDOR / "mpvflow_capture_io.h", video_out_dir / "mpvflow_capture_io.h")', "pinned MPV preparation must stage the capture writer header beside the VO")
 require(PREPARE, 'capture_io_source = "video/out/mpvflow_capture_io.c"', "pinned MPV Meson must register the capture writer translation unit")
 require(PREPARE, "capture_io_source, *opencl_sources", "existing MPVFlow Meson marker validation must require capture writer registration")
+
+# Resolved Vulkan is named vulkan-spirv; it must not be rejected by the readback gate.
+require(FLOW_GPU_CORE, "mpvflow_capture_io_backend_supports_vulkan_readback(backend)", "capture must classify resolved Vulkan aliases before refusing readback")
+require(FLOW_CAPTURE_IO, 'strcmp(backend, "vulkan-spirv")', "the shared classifier must recognize the exact Vulkan compute API label")
+require(FLOW_CAPTURE_IO, 'strcmp(backend, "opencl-qcom")', "the shared classifier must recognize the exact QCOM OpenCL label")
+require(FLOW_GPU_CORE, "reason=capture_readback_requires_vulkan compute_api=%s", "a real non-Vulkan readback refusal must log its resolved backend")
+require(PATCH, "mpvflow_gpu_capture_start(", "MPV must use the shared Vulkan-alias-aware capture start gate")
+require(MEDIA3_NATIVE, "mpvflow_gpu_capture_start(", "Media3 must use the same Vulkan-alias-aware capture start gate")
+assert 'if (!backend || strcmp(backend, "vulkan"))' not in FLOW_GPU_CORE, "the capture gate must not compare Vulkan against the wrong literal alias"
+
+# The private control file is an integration prerequisite; it must survive core reuse and mpv.conf ownership.
+assert 'MpvConfigOverridePolicy.isOwnedByMpvConf("mpvflow-diagnostic-control-file")' not in MPV_VIEW, (
+    "a broad mpv.conf ownership selection must not suppress the private debug control channel"
+)
+control_setup = MPV_VIEW.split("private fun configureMpvFlowCaptureControl", 1)[1].split(
+    "/** Arms the MPV VO", 1
+)[0]
+require(control_setup, "PlaybackSession.setIntegrationOptionString(", "the private MPV control option must use the integration setter")
+require(control_setup, "event=control_option source=$source state=$state option_rc=$result", "control-option failures must include their exact native return code")
+integration_setter = PLAYBACK_SESSION.split("fun setIntegrationOptionString(", 1)[1].split("fun getPropertyInt(", 1)[0]
+require(integration_setter, "if (!nativeCoreReady)", "fresh MPV cores must set the integration option before initialization")
+require(integration_setter, "MPVLib.setOptionString(name, value)", "fresh-core MPV options must use the pre-initialization setter")
+require(integration_setter, 'val property = "options/$name"', "reused MPV cores must use the documented runtime options property")
+require(integration_setter, "MPVLib.setPropertyString(property, value)", "reused MPV cores must apply the private path through the runtime property setter")
+require(integration_setter, "MPVLib.getPropertyString(property) == value", "runtime control-option setup must fail closed unless readback verifies the exact value")
+require(MPV_VIEW, 'configureMpvFlowCaptureControl("after_initialize")', "a reused MPV core must configure the new view's control path after initialize returns")
+control_start = MPV_VIEW.split("fun startFlowDiagnosticCapture", 1)[1].split("fun stopFlowDiagnosticCapture", 1)[0]
+require(control_start, 'configureMpvFlowCaptureControl("capture_start")', "capture start must retry the MPV control option instead of failing on a stale readiness flag")
+require(control_start, "if (!mpvFlowCaptureControlConfigured)", "MPV must avoid resetting a ready control option at every capture tap")
+require(control_start, 'return "mpvflow_capture_control_unavailable"', "the start path must still fail closed if the integration option genuinely cannot be set")
 print("MPV Flow runtime diagnostics and capture regression tests passed")

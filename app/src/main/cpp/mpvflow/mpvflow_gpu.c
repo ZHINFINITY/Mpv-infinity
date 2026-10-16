@@ -3057,8 +3057,7 @@ static void capture_write_terminal(MPVFlowGPUContext *ctx, const char *reason)
     if (!ctx || ctx->capture_terminal_written || !ctx->capture_session_name[0])
         return;
     const char *backend = mpvflow_gpu_get_compute_api_name(ctx);
-    if (!backend || (strcmp(backend, "vulkan") && strcmp(backend, "opencl")))
-        backend = "unknown";
+    backend = mpvflow_capture_io_backend_label(mpvflow_capture_io_backend_kind(backend));
     if (mpvflow_capture_io_write_terminal_manifest(
             ctx->capture_base_dir, ctx->capture_session_name,
             ctx->capture_engine, backend, ctx->capture_settings,
@@ -3100,12 +3099,22 @@ enum MPVFlowGPUResult mpvflow_gpu_capture_start(
     ctx->capture_pair_ready = false;
 
     const char *backend = mpvflow_gpu_get_compute_api_name(ctx);
-    if (!backend || strcmp(backend, "vulkan")) {
+    if (!mpvflow_capture_io_backend_supports_vulkan_readback(backend)) {
+        const enum MPVFlowCaptureBackendKind backend_kind =
+            mpvflow_capture_io_backend_kind(backend);
+        const char *manifest_backend =
+            mpvflow_capture_io_backend_label(backend_kind);
+        if (backend_kind == MPVFLOW_CAPTURE_BACKEND_UNKNOWN)
+            manifest_backend = "unavailable";
         (void) mpvflow_capture_io_write_terminal_manifest(
             ctx->capture_base_dir, ctx->capture_session_name, ctx->capture_engine,
-            backend && !strcmp(backend, "opencl") ? "opencl" : "unavailable",
+            manifest_backend,
             ctx->capture_settings, "capture_readback_requires_vulkan");
         ctx->capture_terminal_written = true;
+        flow_log(ctx->gpu, PL_LOG_WARN,
+                 "MPVFLOW_DIAGNOSTIC component=capture event=start state=failed "
+                 "reason=capture_readback_requires_vulkan compute_api=%s",
+                 backend ? backend : "unavailable");
         return MPVFLOW_GPU_UNSUPPORTED_API;
     }
     if (!ensure_capture_passes(ctx)) {
@@ -3117,9 +3126,9 @@ enum MPVFlowGPUResult mpvflow_gpu_capture_start(
     }
     ctx->capture_armed = true;
     flow_log(ctx->gpu, PL_LOG_INFO,
-             "MPVFLOW_DIAGNOSTIC component=capture event=start state=armed engine=%s backend=vulkan "
+             "MPVFLOW_DIAGNOSTIC component=capture event=start state=armed engine=%s backend=vulkan compute_api=%s "
              "limits=pairs_4_samples_per_pair_4_bytes_64MiB readback=explicit_user_opt_in",
-             ctx->capture_engine);
+             ctx->capture_engine, backend);
     return MPVFLOW_GPU_OK;
 }
 
