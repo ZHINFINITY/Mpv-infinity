@@ -183,14 +183,12 @@ require(MEDIA3_FLOW_SINK, "outputCallbackLatenessMs=", "Media3 must report Chore
 media3_analysis_body = MEDIA3_FLOW_SINK.split("private fun analyzeNewestPair()", 1)[1].split(
     "private fun renderAtPosition(", 1
 )[0]
-require(media3_analysis_body, "shouldAnalyzeMotionPairAfterEglSwap", "Media3 must bypass new pair analysis after a measured over-budget swap")
-assert media3_analysis_body.index("shouldAnalyzeMotionPairAfterEglSwap") < media3_analysis_body.index(
-    "Media3FlowVulkanNative.nativeAnalyzePair"
-), "Media3 backpressure admission must happen before native pair analysis"
+require(media3_analysis_body, "analyzeDeferredMotionPair()", "Media3 must admit deferred pair analysis independently of EGL swap timing")
+assert "shouldAnalyzeMotionPairAfterEglSwap" not in media3_analysis_body, "Media3 pair analysis must not be gated by prior EGL swap duration"
 require(media3_analysis_body, "deferredMotionPairs.enqueue", "Media3 must retain a pair when analysis cannot run immediately")
 require(media3_analysis_body, "takeNextRetainedAdjacent", "Media3 must retry only still-adjacent retained source pairs")
 require(media3_analysis_body, "preferredPair = preferredPair", "Media3 must prioritize the exact retained bracket for the next output tick")
-require(media3_analysis_body, '"egl_swap_backpressure_analysis_deferred"', "Media3 must preserve source-frame fallback while a pair remains deferred")
+assert '"egl_swap_backpressure_analysis_deferred"' not in media3_analysis_body, "Media3 deferred-pair analysis must not restore the removed EGL-swap backpressure path"
 require(media3_analysis_body, '"motion_pair_queue_full"', "Media3 must keep bounded slot-pressure diagnostics when a deferred pair cannot run")
 require(MEDIA3_FLOW_SINK, "private fun preferredMotionPairForNextOutput", "Media3 pair priority must derive from the display cadence")
 require(MEDIA3_FLOW_SINK, "nextRenderableOutputTick(dueTick, lastOutputTick)", "Media3 pair priority must use the next renderable cadence tick without replaying missed intervals")
