@@ -184,8 +184,8 @@ enum MPVFlowGPUResult mpvflow_gpu_synthesize(MPVFlowGPUContext *context,
                                              float t,
                                              pl_tex *output);
 /* Debug-only synthesis opt-ins. The legacy entry point preserves MPV behavior.
- * The policy variant may prefer a reliable warped endpoint at conflict boundaries
- * before using the soft fallback; unsupported backends retain production output. */
+ * The policy variant retains a bounded source-frame blend at conflict boundaries,
+ * trading mild ghosting for fewer hard motion-block artifacts. */
 enum MPVFlowGPUResult mpvflow_gpu_synthesize_with_visibility(
     MPVFlowGPUContext *context, MPVFlowGPUPair *pair,
     pl_tex source0, pl_tex source1, float t,
@@ -195,7 +195,7 @@ enum MPVFlowGPUResult mpvflow_gpu_synthesize_with_policy(
     MPVFlowGPUContext *context, MPVFlowGPUPair *pair,
     pl_tex source0, pl_tex source1, float t,
     bool enable_visibility_resolver, bool enable_soft_blend,
-    bool prefer_confident_warp_on_conflict, pl_tex *output);
+    bool preserve_motion_blend_on_conflict, pl_tex *output);
 
 #ifdef __cplusplus
 }
