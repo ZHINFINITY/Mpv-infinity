@@ -198,7 +198,10 @@ require(opencl_source, "w00*=flow_confidence_weight(v00)", "OpenCL final warp an
 require(opencl_source, ":flow_at_bilinear(forward,backward,direction,aw,ah,x,y)", "OpenCL must preserve a bounded fallback when every edge candidate is uncertain")
 require(opencl_source, "if(confidence<0.28f)", "OpenCL must use Vulkan's conservative low-confidence source-frame fallback")
 require(opencl_source, "inline float neighborhood_quality(", "OpenCL must mirror Vulkan local flow-consistency checks")
-require(opencl_source, "int neighborhood_conflict=(min(neighborhood0,neighborhood1)<0.30f&&(luma_delta>0.06f||color_delta>0.08f))||(flow_spread>3.0f&&min(neighborhood0,neighborhood1)<0.45f)", "OpenCL neighborhood/flow-spread rejection must match Vulkan")
+require(opencl_source, "int neighborhood_conflict=(min(neighborhood0,neighborhood1)<0.30f&&(luma_delta>0.06f||color_delta>0.08f))||(forward_backward_error>3.0f&&min(neighborhood0,neighborhood1)<0.45f)", "OpenCL neighborhood/flow-spread rejection must match Vulkan")
+require(synthesis, "float forwardBackwardError=length(f.xy+b.xy);", "Vulkan must compare forward/backward vectors with opposite signs for a consistent motion pair")
+require(opencl_source, "float forward_backward_error=length((float2)(f.x+q.x,f.y+q.y));", "OpenCL must use the same sign-correct forward/backward consistency error")
+
 require(opencl_source, "int boundary_conflict=neighborhood_conflict||luma_delta>0.08f||chroma_boundary||(min(f.w,q.w)<0.08f&&color_delta>0.10f)", "OpenCL must match Vulkan luma, chroma, and ambiguity boundary thresholds")
 require(opencl_source, "float4 f=flow_at_bilinear(forward,backward,0,aw,ah,flow_p.x,flow_p.y),q=flow_at_bilinear(forward,backward,1,aw,ah,flow_p.x,flow_p.y)", "OpenCL synthesis must use Vulkan's cheaper bilinear initial-flow sampling")
 require(opencl_source, "f=flow_at_edge_aware(forward,backward,luma0,luma1,0,aw,ah,pa.x,pa.y)", "OpenCL must retain final edge-aware refinement after the bilinear fast path")
@@ -229,7 +232,7 @@ require(synthesis, "if(boundaryConflict&&softBlend) outc=softBlendColor(p,ca,cb,
 require(synthesis, "preserveMotionBlend=(pc.cfg.x&0x20000000)!=0", "the continuous-motion blend policy must use a separate synthesis flag")
 require(synthesis, "if(preserveMotionBlend) warpWeight=min(warpWeight,0.40);", "conflict blending must retain at least 60 percent of the temporally blended source colors")
 require(synthesis, "if(boundaryConflict&&softBlend&&preserveMotionBlend) outc=softBlendColor(p,ca,cb,confidence,true);", "MPV and Media3 conflicts must use a bounded source/warp blend rather than a single warped side")
-require(synthesis, "if(!boundaryConflict&&(lumaDelta>0.06||colorDelta>0.08||flowSpread>3.0)){", "expensive neighborhood motion probes must run only when they could alter the conflict decision")
+require(synthesis, "if(!boundaryConflict&&(lumaDelta>0.06||colorDelta>0.08||forwardBackwardError>3.0)){", "expensive neighborhood motion probes must run only when they could alter the conflict decision")
 require(flow, "float(second-best)/max(float(second),1.0)", "flow vectors must report best-vs-runner-up match uniqueness")
 
 for fragment, message in (
