@@ -3851,7 +3851,7 @@ class Media3FlowVideoSink(
   companion object {
     private const val MAX_STORED_FRAMES = 3
     private const val MAX_MOTION_PAIRS = 2
-    private const val MAX_PRESENTATION_BUFFERS = 2
+    private const val MAX_PRESENTATION_BUFFERS = 3
   private const val PRESENTATION_FENCE_POLL_DELAY_MS = 1L
   private const val PRESENTATION_FENCE_TIMEOUT_NS = 5_000_000_000L
     private const val MAX_QUEUED_FRAMES = 5
