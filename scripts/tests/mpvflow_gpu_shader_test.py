@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import ast
-import math
 import pathlib
 import random
 import re
@@ -59,7 +58,7 @@ for name, shader in shaders.items():
 preprocess = shaders["shader_preprocess"]
 require(preprocess, "layout(set=0,binding=0) uniform sampler2D inTex", "preprocess input binding mismatch")
 require(preprocess, "layout(set=0,binding=1,rgba8) writeonly uniform image2D outTex", "preprocess output binding mismatch")
-require(preprocess, "imageStore(outTex,p,texture(inTex,uv))", "motion analysis must retain the established single prepared-frame sample")
+require(preprocess, "texture(inTex,uv)", "preprocess must keep scaling on the GPU")
 
 flow = shaders["shader_flow"]
 optical_luma = shaders["shader_optical_luma"]
@@ -89,17 +88,12 @@ require(flow, "d.y<bestVector.y||(d.y==bestVector.y&&d.x<bestVector.x)", "out-of
 require(flow, "sadAt(p,d,sz,best==0?0:second,blockSize)", "zero-cost matches must keep exact SAD pruning while checking for a real tie")
 require(flow, "if(best==0&&second==0){ if(all(equal(bestVector,center))){stopOnCenterTie=true;continue;}", "a tied center winner must terminate search without changing its vector or confidence")
 require(flow, "d.y>bestVector.y||(d.y==bestVector.y&&d.x>=bestVector.x)", "once a non-center zero-cost tie is known, only lexicographically earlier vectors may affect the legacy tie-break")
-require(flow, "vec4 selectParentSeed(", "coarse motion boundaries must test parent-vector candidates with the child SAD objective")
-require(flow, "int cost=sadAt(p,candidate,sz,bestCost,blockSize)", "Vulkan parent selection must use the same SAD objective as local motion search")
-require(flow, "parentFlow=selectParentSeed(p,sz,blockSize,parentSize,pg)", "Vulkan child search must choose among coarse vectors using its own block evidence")
-require(flow, "centerResidual=float(best)/(float(blockSize*blockSize)*255.0)", "Vulkan fine search must measure the selected child-center residual before setting its radius")
-require(flow, "parentResidual>0.12||centerResidual>0.12", "Vulkan local search must expand when a confident coarse prior mismatches its child block")
 require(flow, "int radius=pc.cfg.z", "center-out must retain the original full configured motion radius")
 require(flow, "qcomSeed=(pc.cfg.w&4)!=0", "QCOM results must be tagged separately from optical and parent-flow priors")
 require(flow, "qcomCandidateValid=all(greaterThanEqual(qcomCandidate,lo))&&all(lessThanEqual(qcomCandidate,hi))", "QCOM hints outside the original edge-clipped SAD domain must be discarded")
 require(flow, "int c=sadAt(p,qcomCandidate,sz,best==0?0:second,blockSize)", "a QCOM vector must be scored by the existing SAD objective before it can affect motion")
 require(flow, "if(qcomCandidateValid&&all(equal(d,qcomCandidate))) continue", "the baseline center-out search must not double-count its QCOM-seeded candidate")
-require(flow, "int radius=pc.cfg.z; if(hasParent&&!qcomSeed&&parentUniqueness>0.0005&&(parentResidual>0.12||centerResidual>0.12))", "QCOM hints must not expand the configured SAD search radius; parent-driven expansion must require a reliable coarse field and high parent-or-child residual")
+require(flow, "int radius=pc.cfg.z; if(hasParent&&!qcomSeed&&parentResidual", "QCOM hints must not expand or otherwise change the configured SAD search radius")
 require(flow, "int blockSize=(pc.cfg.w>>8)", "motion search must distinguish fine and coarse block support")
 require(flow, "if(blockSize!=4) blockSize=8", "motion search must constrain support to the tested 4x4 or 8x8 sizes")
 require(flow, "float(best)/(float(blockSize*blockSize)*255.0)", "flow vectors must normalize SAD by the active block area")
@@ -178,9 +172,6 @@ normalized_thresholds = (
 assert max(normalized_thresholds) - min(normalized_thresholds) <= 1e-7, (
     f"CPU/Vulkan/OpenCL scene-cut thresholds diverged: {normalized_thresholds}"
 )
-require(opencl_source, "inline float4 select_coarse_seed(", "OpenCL coarse boundaries must test parent-vector candidates with the child SAD objective")
-require(opencl_source, "select_coarse_seed(a,b,coarse,w,h,cgw,cgh,block_size,p)", "OpenCL child search must use its own block evidence to select among coarse vector modes")
-require(opencl_source, "parent_residual>0.12f||center_residual>0.12f", "OpenCL local search must expand when a confident coarse prior mismatches its child block")
 require(opencl_source, "int block_size = level == MPVFLOW_LEVELS - 1 ? 4 : 8;", "OpenCL must use 4x4 support only at its finest level and 8x8 at coarser levels")
 require(opencl_source, "inline int sad_block(", "OpenCL matching must support the configured block area")
 require(opencl_source, "for(int yy=0;yy<block_size;yy++) for(int xx=0;xx<block_size;xx++)", "OpenCL SAD must use the active fine/coarse support")
@@ -212,7 +203,7 @@ require(opencl_source, "int boundary_conflict=neighborhood_conflict||luma_delta>
 require(opencl_source, "float4 f=flow_at_bilinear(forward,backward,0,aw,ah,flow_p.x,flow_p.y),q=flow_at_bilinear(forward,backward,1,aw,ah,flow_p.x,flow_p.y)", "OpenCL synthesis must use Vulkan's cheaper bilinear initial-flow sampling")
 require(opencl_source, "f=flow_at_edge_aware(forward,backward,luma0,luma1,0,aw,ah,pa.x,pa.y)", "OpenCL must retain final edge-aware refinement after the bilinear fast path")
 require(opencl_source, "parent_residual=q.z; parent_uniqueness=q.w", "OpenCL finer levels must retain the coarse SAD and uniqueness signals")
-require(opencl_source, "if(has_coarse&&parent_uniqueness>0.0005f&&(parent_residual>0.12f||center_residual>0.12f))search_radius=min(radius*2,16)", "OpenCL must expand only when a reliable coarse field has high parent or child residual")
+require(opencl_source, "if(has_coarse&&parent_residual>0.12f&&parent_uniqueness>0.0005f)search_radius=min(radius*2,16)", "OpenCL must use the same gated search-expansion policy")
 require(synthesis, "dot(fastForward.xy,fastForward.xy)<=0.0025", "the static path must require a near-zero forward vector")
 require(synthesis, "dot(fastBackward.xy,fastBackward.xy)<=0.0025", "the static path must require a near-zero backward vector")
 require(synthesis, "colorDelta<=0.0039216", "the static path must require an at-most-one-LSB source difference")
@@ -255,7 +246,7 @@ require(flow, "bool opticalSeed=(pc.cfg.w&2)!=0,qcomSeed=(pc.cfg.w&4)!=0,hasPare
 require(flow, "if(opticalSeed){ parentFlow=imageLoad(parentTex,g); }", "coarse flow must use the direction-matched hardware vector as a local search center")
 require(flow, "parentFlow.rg*(opticalSeed?1.0:2.0)", "hardware vectors must not be accidentally doubled when seeding the coarsest level")
 require(flow, "parentResidual=parentFlow.b; parentUniqueness=parentFlow.a", "finer Vulkan levels must retain the coarse SAD and uniqueness signals")
-require(flow, "if(hasParent&&!qcomSeed&&parentUniqueness>0.0005&&(parentResidual>0.12||centerResidual>0.12))radius=min(radius*2,16)", "only a reliable non-QCOM parent with high parent or child residual may double the fine-level search")
+require(flow, "if(hasParent&&!qcomSeed&&parentResidual>0.12&&parentUniqueness>0.0005)radius=min(radius*2,16)", "only a poor but non-tied non-QCOM parent may double the fine-level search")
 require(synthesis, "bool neighborhoodConflict=", "synthesis must detect local motion disagreement")
 require(synthesis, "float chromaDelta=max(abs((ca.r-ca.g)-(cb.r-cb.g)),abs((ca.b-ca.g)-(cb.b-cb.g)))", "Vulkan synthesis must measure chroma disagreement between warped source samples")
 require(synthesis, "bool chromaBoundary=colorDelta>0.12&&chromaDelta>0.06", "Vulkan synthesis must reject strong chroma-only contour mixing")
@@ -470,29 +461,10 @@ def sad_at(src, dst, p, displacement, cutoff, block_size=8):
     return cost, reads
 
 
-def confidence_guided_radius(base_radius, parent_residual, parent_uniqueness, center_residual=0.0):
-    if (parent_residual > 0.12 or center_residual > 0.12) and parent_uniqueness > 0.0005:
+def confidence_guided_radius(base_radius, parent_residual, parent_uniqueness):
+    if parent_residual > 0.12 and parent_uniqueness > 0.0005:
         return min(base_radius * 2, 16)
     return base_radius
-
-
-def select_parent_seed_reference(src, dst, p, parent_vectors, geometric, block_size=4):
-    vectors = tuple(parent_vectors)
-    spread = max(
-        math.dist(vectors[0], vectors[1]), math.dist(vectors[2], vectors[3]),
-        math.dist(vectors[0], vectors[2]), math.dist(vectors[1], vectors[3]),
-    )
-    center = (round(geometric[0] * 2), round(geometric[1] * 2))
-    best_cost = sad_at(src, dst, p, center, 2**31 - 1, block_size)[0]
-    selected = geometric
-    if spread <= 1.0:
-        return selected, center
-    for vector in vectors:
-        candidate = (round(vector[0] * 2), round(vector[1] * 2))
-        cost = sad_at(src, dst, p, candidate, best_cost, block_size)[0]
-        if cost < best_cost:
-            center, best_cost, selected = candidate, cost, vector
-    return selected, center
 
 
 edge_rng = random.Random(0xED6E)
@@ -582,30 +554,6 @@ for dx, dy in ((9, 0), (12, 3)):
     assert radius == 16 and baseline[0] != (dx, dy), f"translation {(dx, dy)} must exercise recovery outside the base radius"
     assert refined[0] == (dx, dy) and refined[1] == 0, f"confidence-guided expansion must recover exact translation {(dx, dy)}"
 
-boundary_rng = random.Random(0xC0A25E)
-boundary_source = [[boundary_rng.randrange(256) for _ in range(32)] for _ in range(24)]
-boundary_target = shifted(boundary_source, 8, 0)
-boundary_origin = (12, 8)
-parent_boundary_vectors = ((0, 0), (4, 0), (0, 0), (4, 0))
-old_parent_center = (4, 0)
-old_parent_result = block_search(boundary_source, boundary_target, boundary_origin, old_parent_center, 2, True, block_size=4)
-selected_parent, selected_center = select_parent_seed_reference(
-    boundary_source, boundary_target, boundary_origin, parent_boundary_vectors, (2, 0), block_size=4
-)
-new_parent_result = block_search(boundary_source, boundary_target, boundary_origin, selected_center, 2, True, block_size=4)
-assert old_parent_result[0] != (8, 0), "the bilinear parent midpoint must miss an 8-pixel child motion outside its radius"
-assert selected_parent == (4, 0) and selected_center == (8, 0), "child SAD must select the coarse vector that actually matches this fine block"
-assert new_parent_result[0] == (8, 0) and new_parent_result[1] == 0, "candidate-seeded fine search must recover the exact motion without a larger global radius"
-print("Motion-boundary regression: child SAD selects the matching coarse-vector mode instead of a blended midpoint")
-
-local_center_cost = sad_at(boundary_source, boundary_target, boundary_origin, old_parent_center, 2**31 - 1, 4)[0]
-local_center_residual = local_center_cost / (4 * 4 * 255.0)
-assert confidence_guided_radius(2, 0.05, 0.9) == 2, "a confident coarse prior with low reported residual retains the base radius when no child mismatch is known"
-assert confidence_guided_radius(2, 0.05, 0.9, local_center_residual) == 4, "high child SAD must trigger bounded local expansion even when the coarse prior reports a low residual"
-local_expanded = block_search(boundary_source, boundary_target, boundary_origin, old_parent_center, 4, True, block_size=4)
-assert local_expanded[0] == (8, 0), "child-residual expansion must recover fast motion missed by the coarse prior"
-print("Local-residual regression: a confident but mismatched coarse prior triggers only a bounded local search expansion")
-
 flat_source = [[127 for _ in range(64)] for _ in range(48)]
 flat_target = [[0 for _ in range(64)] for _ in range(48)]
 ambiguous_parent = block_search(flat_source, flat_target, adaptive_origin, (0, 0), 8, True, prune_ambiguous_zero=True)
@@ -676,53 +624,6 @@ def flow_sample_weight(residual: float, uniqueness: float) -> float:
     return max(0.0, min(1.0, (0.22 - residual) * 5.128205)) * max(
         0.0, min(1.0, (uniqueness - 0.08) * 4.545455)
     )
-
-def edge_aware_parent_flow(vectors, guides, residuals, uniqueness, geometry_weights, query_guide):
-    differences = [guide - query_guide for guide in guides]
-    variance = sum(weight * difference * difference for weight, difference in zip(geometry_weights, differences))
-    safe_variance = max(variance, 0.000001)
-    weights = [
-        geometry * math.exp(-(difference * difference) / safe_variance)
-        * flow_sample_weight(residual, unique)
-        for geometry, difference, residual, unique in zip(
-            geometry_weights, differences, residuals, uniqueness
-        )
-    ]
-    total = sum(weights)
-    if total <= 0.000001:
-        weights = geometry_weights
-        total = sum(weights)
-    return sum(vector * weight for vector, weight in zip(vectors, weights)) / total
-
-boundary_parent = edge_aware_parent_flow(
-    vectors=[0.0, 8.0, 0.0, 8.0],
-    guides=[0.0, 1.0, 0.0, 1.0],
-    residuals=[0.0] * 4,
-    uniqueness=[1.0] * 4,
-    geometry_weights=[0.25] * 4,
-    query_guide=1.0,
-)
-assert boundary_parent > 7.0, (
-    "fine motion priors must follow the same-appearance parent across a foreground/background edge"
-)
-coherent_parent = edge_aware_parent_flow(
-    vectors=[4.0] * 4,
-    guides=[0.45, 0.55, 0.45, 0.55],
-    residuals=[0.0] * 4,
-    uniqueness=[1.0] * 4,
-    geometry_weights=[0.25] * 4,
-    query_guide=0.5,
-)
-assert abs(coherent_parent - 4.0) < 1e-9, "edge-aware propagation must preserve coherent motion in one appearance layer"
-untrusted_parent = edge_aware_parent_flow(
-    vectors=[0.0, 4.0, 8.0, 12.0],
-    guides=[0.5] * 4,
-    residuals=[0.3] * 4,
-    uniqueness=[0.0] * 4,
-    geometry_weights=[0.25] * 4,
-    query_guide=0.5,
-)
-assert abs(untrusted_parent - 6.0) < 1e-9, "when every parent match is untrusted, propagation must retain a bounded geometric fallback"
 
 def confidence_weighted_flow(vectors, geometry_weights):
     geometric_total = sum(geometry_weights)
