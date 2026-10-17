@@ -85,13 +85,17 @@ require(flow, "for(int ring=1;ring<=radius&&!stopOnCenterTie;ring++)", "motion s
 require(flow, "if(max(abs(dx),abs(dy))!=ring) continue", "center-out rings must enumerate each Chebyshev-radius candidate exactly once")
 require(flow, "if(any(lessThan(d,lo))||any(greaterThan(d,hi))) continue", "center-out search must retain edge-clipped bounds")
 require(flow, "d.y<bestVector.y||(d.y==bestVector.y&&d.x<bestVector.x)", "out-of-order equal-cost winners must retain the legacy row-major tie-break")
-require(flow, "sadAt(p,d,sz,best==0?0:second,blockSize)", "zero-cost matches must keep exact SAD pruning while checking for a real tie")
+require(flow, "sadAt(p,d,sz,best==0?0:second,blockSize,colorAware)", "zero-cost matches must keep exact SAD pruning while checking for a real tie")
+require(flow, "layout(set=0,binding=5,rgba8) readonly uniform image2D srcColorTex;", "finest motion search must have access to source-frame color alongside luma")
+require(flow, "layout(set=0,binding=6,rgba8) readonly uniform image2D dstColorTex;", "finest motion search must have access to destination-frame color alongside luma")
+require(flow, "colorAware=(pc.cfg.w&8)!=0", "color-aware refinement must be explicitly enabled only for the finest analysis level")
+require(flow, "(3*lumaCost+4*colorCost+2)/4", "finest motion candidates must combine luma SAD with sampled RGB SAD")
 require(flow, "if(best==0&&second==0){ if(all(equal(bestVector,center))){stopOnCenterTie=true;continue;}", "a tied center winner must terminate search without changing its vector or confidence")
 require(flow, "d.y>bestVector.y||(d.y==bestVector.y&&d.x>=bestVector.x)", "once a non-center zero-cost tie is known, only lexicographically earlier vectors may affect the legacy tie-break")
 require(flow, "int radius=pc.cfg.z", "center-out must retain the original full configured motion radius")
 require(flow, "qcomSeed=(pc.cfg.w&4)!=0", "QCOM results must be tagged separately from optical and parent-flow priors")
 require(flow, "qcomCandidateValid=all(greaterThanEqual(qcomCandidate,lo))&&all(lessThanEqual(qcomCandidate,hi))", "QCOM hints outside the original edge-clipped SAD domain must be discarded")
-require(flow, "int c=sadAt(p,qcomCandidate,sz,best==0?0:second,blockSize)", "a QCOM vector must be scored by the existing SAD objective before it can affect motion")
+require(flow, "int c=sadAt(p,qcomCandidate,sz,best==0?0:second,blockSize,colorAware)", "a QCOM vector must be scored by the active SAD objective before it can affect motion")
 require(flow, "if(qcomCandidateValid&&all(equal(d,qcomCandidate))) continue", "the baseline center-out search must not double-count its QCOM-seeded candidate")
 require(flow, "int radius=pc.cfg.z; if(hasParent&&!qcomSeed&&parentResidual", "QCOM hints must not expand or otherwise change the configured SAD search radius")
 require(flow, "int blockSize=(pc.cfg.w>>8)", "motion search must distinguish fine and coarse block support")
@@ -137,7 +141,9 @@ for output_width, output_height in ((1, 1), (7, 9), (13, 9), (16, 8), (17, 16)):
 require(flow, "layout(set=0,binding=4,rgba16f) readonly uniform image2D sceneTex;", "Vulkan motion search must consume the reduced scene delta")
 require(flow, "if(imageLoad(sceneTex,ivec2(0)).r>0.1882353){ imageStore(flowTex,g,vec4(0.0,0.0,1.0,0.0)); return; }", "Vulkan scene cuts must initialize a no-confidence flow field before skipping SAD search")
 require(synthesis, "if(cut>0.1882353)", "Vulkan synthesis must use the same scene-cut threshold as the motion-search early-out")
-require(SOURCE, "ctx->pass_flow = make_pass(gpu, shader_flow, flow_desc, 5);", "Vulkan flow pass must expose all five descriptors")
+require(SOURCE, "ctx->pass_flow = make_pass(gpu, shader_flow, flow_desc, 7);", "Vulkan flow pass must expose the five motion and two color descriptors")
+require(SOURCE, "(qcom_parent ? 4 : 0) | (li == 0 ? 8 : 0)", "only the finest analysis grid should use the RGB-aware score")
+require(SOURCE, "{ .object = pair->input[dir ? 1 : 0] },\n                { .object = pair->input[dir ? 0 : 1] },", "motion direction must bind matching source and destination color inputs")
 require(SOURCE, "{ .object = flow }, { .object = scene_delta },", "Vulkan motion dispatch must bind the reduced scene-delta texture")
 opencl_source = (ROOT / "app/src/main/cpp/mpvflow/mpvflow_opencl.c").read_text(encoding="utf-8")
 require(opencl_source, "(float)x+0.5f)*(float)aw/(float)w-0.5f", "OpenCL output pixel centers must map to analysis pixel centers without a half-pixel offset")
@@ -486,6 +492,18 @@ assert coarse_edge_match[0] == (0, 0), "the regression scene must expose a backg
 assert fine_edge_match[0] == (1, 0), "4x4 support should recover the one-pixel foreground translation"
 assert opencl_fine_edge_match[0] == fine_edge_match[0], "OpenCL's Vulkan-aligned fine support should recover the same thin foreground vector"
 print("Fine-level motion support regression: a thin moving foreground selects its own vector")
+
+def combined_luma_rgb_cost(luma_delta: int, rgb_deltas: tuple[int, int, int]) -> int:
+    luma_cost = luma_delta
+    color_cost = sum(rgb_deltas) // 3
+    return (3 * luma_cost + color_cost + 2) // 4
+
+# Same-luma candidates can represent different anime colors. The fine-level RGB
+# term must select the near-color match instead of accepting a chromatically wrong tie.
+wrong_same_luma = combined_luma_rgb_cost(0, (120, 120, 120))
+correct_near_color = combined_luma_rgb_cost(4, (4, 4, 4))
+assert correct_near_color < wrong_same_luma, "RGB-aware fine matching must reject a same-luma, wrong-color candidate"
+print("Chromatic-match regression: same-luma, wrong-color candidates lose to the matching color patch")
 
 
 def static_pixel_bypass(forward, backward, color0, color1):
