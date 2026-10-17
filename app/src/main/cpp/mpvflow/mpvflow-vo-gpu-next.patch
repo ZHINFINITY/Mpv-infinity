@@ -696,7 +696,7 @@ index bd3d1aa..75ffbb1 100644
 @@ -1135,0 +1766,2 @@ static void discard_frame(const struct pl_source_frame *src)
 +    struct frame_priv *fp = mpi->priv;
 +    flow_release_frame(fp->vo, fp);
-@@ -1341,0 +1977,459 @@ static void update_hook_opts_dynamic(struct priv *p, const struct pl_hook *hook,
+@@ -1341,0 +1977,463 @@ static void update_hook_opts_dynamic(struct priv *p, const struct pl_hook *hook,
 +static void flow_capture_terminal(struct priv *p, const char *base_dir,
 +                                  const char *session_id, const char *backend,
 +                                  const char *reason)
@@ -932,15 +932,6 @@ index bd3d1aa..75ffbb1 100644
 +            return;
 +        }
 +
-+        // Defer analysis only when the measured prior present consumed the tick budget.
-+        if (!mpvflow_previous_present_budget_available(
-+                p->flow_cadence_last_flip_wait_ns,
-+                p->next_opts->mpvflow_target_fps)) {
-+            p->flow_cadence_previous_present_budget_skips++;
-+            prepared->bypass_reason = "previous_frame_over_budget";
-+            return;
-+        }
-+
 +        if (t > 0.0f && t < 1.0f && fp0 && fp1 && metadata_compatible &&
 +            fp0->flow_input && fp1->flow_input &&
 +            fp0->flow_source && fp1->flow_source &&
@@ -950,8 +941,21 @@ index bd3d1aa..75ffbb1 100644
 +            fp0->flow_source_h == fp1->flow_source_h &&
 +            fp0->flow_synthesis_w == fp1->flow_synthesis_w &&
 +            fp0->flow_synthesis_h == fp1->flow_synthesis_h) {
-+            if (!p->flow_pair || p->flow_pair_ids[0] != fp0->frame_id ||
-+                p->flow_pair_ids[1] != fp1->frame_id) {
++            const bool pair_cache_matches = p->flow_pair &&
++                p->flow_pair_ids[0] == fp0->frame_id &&
++                p->flow_pair_ids[1] == fp1->frame_id;
++            // A slow prior present may defer new vector analysis, but must not
++            // discard synthesis from a pair whose vectors are already cached.
++            if (!pair_cache_matches && !mpvflow_previous_present_budget_available(
++                    p->flow_cadence_last_flip_wait_ns,
++                    p->next_opts->mpvflow_target_fps)) {
++                p->flow_cadence_previous_present_budget_skips++;
++                if (p->flow_pair)
++                    flow_release_pair(p);
++                prepared->bypass_reason = "previous_frame_over_budget";
++                return;
++            }
++            if (!pair_cache_matches) {
 +                p->flow_cadence_pair_analysis_attempts++;
 +                flow_release_pair(p);
 +                MPVFlowGPUPair *pair = NULL;

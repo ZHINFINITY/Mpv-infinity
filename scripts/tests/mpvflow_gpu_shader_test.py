@@ -101,6 +101,8 @@ require(synthesis, "vec4 flowAtEdgeAware(vec2 p,int direction)", "synthesis must
 require(synthesis, "vec4 flowAtBilinear(vec2 p,int direction)", "iterative vector refinement must have a low-cost bilinear sampler")
 require(synthesis, "bool staticPixel=", "static low-motion pixels should bypass the full-resolution warp path")
 require(synthesis, "ivec2 outSize=imageSize(outTex),motionSize=pc.cfg.zw;", "synthesis bounds must use the actual storage-image extent, not only host-provided dimensions")
+require(synthesis, "flowP=clamp(uv*vec2(motionSize)-vec2(0.5),vec2(0.0),vec2(motionSize-1))", "Vulkan output pixel centers must map to analysis pixel centers without a half-pixel offset")
+require(visibility_resolver, "flowP=(vec2(p)+0.5)*vec2(motionSize)/vec2(outSize)-vec2(0.5)", "optional resolver must share the corrected pixel-center mapping")
 require(visibility_resolver, "layout(set=0,binding=7) uniform sampler2D motionWarped;", "resolver must sample the already-produced production frame as fallback")
 require(visibility_resolver, "layout(set=0,binding=8,rgba8) writeonly uniform image2D outTex;", "resolver output must remain a separate RGBA8 storage image")
 require(visibility_resolver, "layout(set=0,binding=9,rgba8) writeonly uniform image2D maskTex;", "resolver diagnostic mask must not alias the production output")
@@ -138,6 +140,8 @@ require(synthesis, "if(cut>0.1882353)", "Vulkan synthesis must use the same scen
 require(SOURCE, "ctx->pass_flow = make_pass(gpu, shader_flow, flow_desc, 5);", "Vulkan flow pass must expose all five descriptors")
 require(SOURCE, "{ .object = flow }, { .object = scene_delta },", "Vulkan motion dispatch must bind the reduced scene-delta texture")
 opencl_source = (ROOT / "app/src/main/cpp/mpvflow/mpvflow_opencl.c").read_text(encoding="utf-8")
+require(opencl_source, "(float)x+0.5f)*(float)aw/(float)w-0.5f", "OpenCL output pixel centers must map to analysis pixel centers without a half-pixel offset")
+require(opencl_source, "(float)y+0.5f)*(float)ah/(float)h-0.5f", "OpenCL output pixel centers must map to analysis pixel centers without a half-pixel offset")
 opencl_synthesize_api = opencl_source.split(
     "enum MPVFlowOpenCLStatus mpvflow_opencl_synthesize(", 1
 )[1].split("\n}\n", 1)[0]

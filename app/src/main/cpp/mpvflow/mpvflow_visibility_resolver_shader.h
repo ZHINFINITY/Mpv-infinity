@@ -62,7 +62,7 @@ static const char shader_visibility_resolver[] =
     "        imageStore(maskTex,p,vec4(0));return;\n"
     "    }\n"
     "    float t=pc.timestep<0.0?0.5:clamp(pc.timestep,0.0,1.0);\n"
-    "    vec2 flowP=(vec2(p)+0.5)*vec2(motionSize)/vec2(outSize);\n"
+    "    vec2 flowP=(vec2(p)+0.5)*vec2(motionSize)/vec2(outSize)-vec2(0.5);\n"
     "    vec2 scale=vec2(outSize)/vec2(motionSize);\n"
     "    vec4 f=flowAt(flowP,0),b=flowAt(flowP,1);\n"
     "    vec2 d0=f.xy*scale,d1=-b.xy*scale;\n"

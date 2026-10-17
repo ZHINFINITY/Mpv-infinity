@@ -767,8 +767,8 @@ int main(int argc, char **argv)
     run_fixture(&ctx, "soft fallback keeps a continuous blend across the moving edge",
                 red, blue, 0x0000, 0x3400, 0x3800, 0.5f,
                 ctx.soft_blend ? (ctx.preserve_motion_blend ? continuous_edge_blend : soft_edge_blend) : hard_warp_edge, 0, 4);
-    const uint8_t grid_expected[4] = { 24, 24, 24, 255 };
-    const uint8_t soft_grid_expected[4] = { 40, 40, 40, 255 };
+    const uint8_t grid_expected[4] = { 8, 8, 8, 255 };
+    const uint8_t soft_grid_expected[4] = { 42, 42, 42, 255 };
     const uint8_t continuous_soft_grid_expected[4] = { 31, 31, 31, 255 };
     run_fixture(&ctx, "irregular terminal block anchors affect edge synthesis",
                 neutral0, neutral0, 0x0000, 0x3400, 0x3400, 0.5f,

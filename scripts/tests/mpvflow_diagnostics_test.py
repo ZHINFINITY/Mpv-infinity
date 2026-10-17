@@ -137,6 +137,9 @@ flow_prepare_body = PATCH.split("+static void flow_prepare_frame(", 1)[1].split(
     "+static bool flow_render_frame(", 1
 )[0]
 require(flow_prepare_body, "if (p->paused || source_is_still)", "paused and still frames must bypass motion interpolation")
+require(flow_prepare_body, "const bool pair_cache_matches = p->flow_pair &&", "MPV must identify a reusable vector pair before applying present-budget backpressure")
+require(flow_prepare_body, "if (!pair_cache_matches && !mpvflow_previous_present_budget_available(", "an over-budget present may defer only uncached pair analysis")
+require(flow_prepare_body, "p->flow_cadence_pair_cache_reuses++", "cached vectors must remain available for synthesis during present backpressure")
 require(flow_prepare_body, "mpvflow_gpu_analyze_pair(", "pre-acquire producer must prepare motion before presentation")
 require(flow_prepare_body, "mpvflow_previous_present_budget_available(", "MPV must skip new motion work after a measured over-budget present")
 require(flow_prepare_body, "p->flow_cadence_previous_present_budget_skips++", "MPV must count callbacks suppressed by the prior-present budget gate")
