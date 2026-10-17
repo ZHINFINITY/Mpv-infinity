@@ -261,7 +261,7 @@ require(synthesis, "bool neighborhoodConflict=", "synthesis must detect local mo
 require(synthesis, "float chromaDelta=max(abs((ca.r-ca.g)-(cb.r-cb.g)),abs((ca.b-ca.g)-(cb.b-cb.g)))", "Vulkan synthesis must measure chroma disagreement between warped source samples")
 require(synthesis, "bool chromaBoundary=colorDelta>0.12&&chromaDelta>0.06", "Vulkan synthesis must reject strong chroma-only contour mixing")
 require(synthesis, "bool boundaryConflict=lumaDelta>0.08||chromaBoundary", "strong motion and color boundaries must select a source sample instead of blending across regions")
-require(synthesis, "edgeConfidence0=confidence0*(0.5+0.5*smoothstep(0.02,0.35,f.w))", "edge confidence must still use match uniqueness for boundary conflict resolution")
+require(synthesis, "edgeConfidence0=confidence0*(0.5+0.5*smoothstep(0.02,0.35,f.w))", "edge confidence remains available for diagnostics and non-conflict weighting")
 require(synthesis, "backAt0=flowAtEdgeAware(cycle0,1)", "cycle-consistency verification must retain edge-aware sampling")
 require(synthesis, "forwardAt1=flowAtEdgeAware(cycle1,0)", "reverse cycle-consistency verification must retain edge-aware sampling")
 assert synthesis.split("void main()", 1)[1].count("flowAtEdgeAware(") == 4, "edge-aware sampling should remain at final warps and cycle checks, not every refinement step"
