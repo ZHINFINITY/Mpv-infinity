@@ -798,7 +798,7 @@ int main(int argc, char **argv)
     run_fixture(&ctx,"scene-cut alpha selects first source",red,blue,0x3800,0x3400,0x3800,0.25f,red,1,0);
     run_fixture(&ctx,"scene-cut alpha selects second source",red,blue,0x3800,0x3400,0x3800,0.75f,blue,1,0);
     run_fixture(&ctx,"static identical frame is preserved exactly",neutral0,neutral0,0,0x3400,0x3400,0.37f,neutral0,1,0);
-    run_fixture(&ctx,ctx.soft_blend?"soft mode blends the chroma boundary":"default mode keeps the nearest chroma endpoint",red,green,0,0x3400,0x3800,0.75f,ctx.soft_blend?(ctx.preserve_motion_blend?continuous_chroma:soft_chroma):green,0,0);
+    run_fixture(&ctx,ctx.soft_blend?"soft mode blends the chroma boundary":"default conflict fallback blends source frames",red,green,0,0x3400,0x3800,0.75f,ctx.soft_blend?(ctx.preserve_motion_blend?continuous_chroma:soft_chroma):soft_chroma,0,0);
     run_fixture(&ctx,"low-contrast reliable motion retains temporal color blend",neutral0,neutral1,0,0x3400,0x3500,0.5f,mixed,0,0);
     run_fixture(&ctx,"soft fallback keeps a continuous blend across the moving edge",red,blue,0,0x3400,0x3800,0.5f,ctx.soft_blend?(ctx.preserve_motion_blend?continuous_edge:soft_edge):hard_edge,0,4);
     const uint8_t grid[4]={8,8,8,255}, soft_grid[4]={42,42,42,255}, cont_grid[4]={31,31,31,255};
