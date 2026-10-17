@@ -47,9 +47,9 @@ internal fun effectiveMpvFlowMaxDimension(targetFps: Int, quality: Int): Int {
   val (minimum, maximum) =
     when {
       targetFps >= 144 -> 288 to 320
-      targetFps >= 120 -> 384 to 448
-      targetFps >= 96 -> 320 to 432
-      targetFps >= 72 -> 384 to 480
+      targetFps >= 120 -> 416 to 448
+      targetFps >= 96 -> 352 to 432
+      targetFps >= 72 -> 400 to 480
       else -> 480 to 640
     }
   // Lower profiles reduce motion-analysis work; higher profiles spend more of the frame budget

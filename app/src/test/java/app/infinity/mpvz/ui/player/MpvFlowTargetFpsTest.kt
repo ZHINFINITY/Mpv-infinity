@@ -48,20 +48,24 @@ class MpvFlowTargetFpsTest {
   fun defaultQualityUsesTargetRateSpecificMotionAnalysisBudgets() {
     assertEquals(listOf(48, 60, 72, 90, 96, 120, 144), MPVFLOW_TARGET_FPS_OPTIONS)
     assertEquals(576, effectiveMpvFlowMaxDimension(60))
-    assertEquals(432, effectiveMpvFlowMaxDimension(72))
-    assertEquals(432, effectiveMpvFlowMaxDimension(90))
-    assertEquals(384, effectiveMpvFlowMaxDimension(96))
-    assertEquals(416, effectiveMpvFlowMaxDimension(120))
+    assertEquals(448, effectiveMpvFlowMaxDimension(72))
+    assertEquals(448, effectiveMpvFlowMaxDimension(90))
+    assertEquals(400, effectiveMpvFlowMaxDimension(96))
+    assertEquals(432, effectiveMpvFlowMaxDimension(120))
     assertEquals(304, effectiveMpvFlowMaxDimension(144))
   }
 
   @Test
   fun qualityProfileControlsTheAnalysisRangeAtHighRates() {
-    assertEquals(384, effectiveMpvFlowMaxDimension(120, 0))
-    assertEquals(416, effectiveMpvFlowMaxDimension(120, 60))
+    assertEquals(416, effectiveMpvFlowMaxDimension(120, 0))
+    assertEquals(432, effectiveMpvFlowMaxDimension(120, 60))
     assertEquals(448, effectiveMpvFlowMaxDimension(120, 100))
-    assertEquals(320, effectiveMpvFlowMaxDimension(96, 0))
+    assertEquals(352, effectiveMpvFlowMaxDimension(96, 0))
+    assertEquals(400, effectiveMpvFlowMaxDimension(96, 60))
     assertEquals(432, effectiveMpvFlowMaxDimension(96, 100))
+    assertEquals(400, effectiveMpvFlowMaxDimension(72, 0))
+    assertEquals(448, effectiveMpvFlowMaxDimension(72, 60))
+    assertEquals(480, effectiveMpvFlowMaxDimension(72, 100))
     assertEquals(288, effectiveMpvFlowMaxDimension(144, 0))
     assertEquals(320, effectiveMpvFlowMaxDimension(144, 100))
   }

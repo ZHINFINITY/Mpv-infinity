@@ -1110,7 +1110,7 @@ for marker in (
     "parent_residual=q.z; parent_uniqueness=q.w",
     "if(has_coarse&&parent_residual>0.12f&&parent_uniqueness>0.0005f)search_radius=min(radius*2,16)",
     "inline float subpixel_offset",
-    "sample_coarse(coarse,cgw,cgh",
+    "sample_coarse_edge_aware(a,coarse,cgw,cgh",
     "flow_at_edge_aware(forward,backward",
     "ring<=search_radius&&!stop",
     "flow_at_bilinear(forward,backward",

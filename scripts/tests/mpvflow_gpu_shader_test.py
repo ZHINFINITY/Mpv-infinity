@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import ast
+import math
 import pathlib
 import random
 import re
@@ -58,7 +59,10 @@ for name, shader in shaders.items():
 preprocess = shaders["shader_preprocess"]
 require(preprocess, "layout(set=0,binding=0) uniform sampler2D inTex", "preprocess input binding mismatch")
 require(preprocess, "layout(set=0,binding=1,rgba8) writeonly uniform image2D outTex", "preprocess output binding mismatch")
-require(preprocess, "texture(inTex,uv)", "preprocess must keep scaling on the GPU")
+require(preprocess, "vec2 radius=vec2(0.25)/vec2(pc.cfg.xy)", "motion downscaling must use a source-footprint-aware low-pass radius")
+require(preprocess, "texture(inTex,uv+vec2(-radius.x,-radius.y))", "motion downscaling must use the first of four bilinear low-pass taps")
+require(preprocess, "texture(inTex,uv+vec2(radius.x,radius.y))", "motion downscaling must use the final of four bilinear low-pass taps")
+require(preprocess, "all(lessThanEqual(srcSize,pc.cfg.xy))", "equal-size or upscaled motion inputs must avoid unnecessary low-pass blur")
 
 flow = shaders["shader_flow"]
 optical_luma = shaders["shader_optical_luma"]
@@ -88,6 +92,9 @@ require(flow, "d.y<bestVector.y||(d.y==bestVector.y&&d.x<bestVector.x)", "out-of
 require(flow, "sadAt(p,d,sz,best==0?0:second,blockSize)", "zero-cost matches must keep exact SAD pruning while checking for a real tie")
 require(flow, "if(best==0&&second==0){ if(all(equal(bestVector,center))){stopOnCenterTie=true;continue;}", "a tied center winner must terminate search without changing its vector or confidence")
 require(flow, "d.y>bestVector.y||(d.y==bestVector.y&&d.x>=bestVector.x)", "once a non-center zero-cost tie is known, only lexicographically earlier vectors may affect the legacy tie-break")
+require(flow, "vec4 sampleParentEdgeAware(", "coarse motion priors must be edge-aware instead of mixing foreground and background vectors")
+require(flow, "parentTrust(v00)", "coarse propagation must downweight low-confidence parent vectors")
+require(flow, "parentFlow=sampleParentEdgeAware(p,block,sz,parentSize,pg)", "Vulkan fine-level search must use edge-aware parent flow")
 require(flow, "int radius=pc.cfg.z", "center-out must retain the original full configured motion radius")
 require(flow, "qcomSeed=(pc.cfg.w&4)!=0", "QCOM results must be tagged separately from optical and parent-flow priors")
 require(flow, "qcomCandidateValid=all(greaterThanEqual(qcomCandidate,lo))&&all(lessThanEqual(qcomCandidate,hi))", "QCOM hints outside the original edge-clipped SAD domain must be discarded")
@@ -172,6 +179,8 @@ normalized_thresholds = (
 assert max(normalized_thresholds) - min(normalized_thresholds) <= 1e-7, (
     f"CPU/Vulkan/OpenCL scene-cut thresholds diverged: {normalized_thresholds}"
 )
+require(opencl_source, "inline float4 sample_coarse_edge_aware(", "OpenCL coarse motion propagation must use the matching edge-aware parent prior")
+require(opencl_source, "sample_coarse_edge_aware(a,coarse,cgw,cgh", "OpenCL fine-level search must use the edge-aware parent prior")
 require(opencl_source, "int block_size = level == MPVFLOW_LEVELS - 1 ? 4 : 8;", "OpenCL must use 4x4 support only at its finest level and 8x8 at coarser levels")
 require(opencl_source, "inline int sad_block(", "OpenCL matching must support the configured block area")
 require(opencl_source, "for(int yy=0;yy<block_size;yy++) for(int xx=0;xx<block_size;xx++)", "OpenCL SAD must use the active fine/coarse support")
@@ -624,6 +633,53 @@ def flow_sample_weight(residual: float, uniqueness: float) -> float:
     return max(0.0, min(1.0, (0.22 - residual) * 5.128205)) * max(
         0.0, min(1.0, (uniqueness - 0.08) * 4.545455)
     )
+
+def edge_aware_parent_flow(vectors, guides, residuals, uniqueness, geometry_weights, query_guide):
+    differences = [guide - query_guide for guide in guides]
+    variance = sum(weight * difference * difference for weight, difference in zip(geometry_weights, differences))
+    safe_variance = max(variance, 0.000001)
+    weights = [
+        geometry * math.exp(-(difference * difference) / safe_variance)
+        * flow_sample_weight(residual, unique)
+        for geometry, difference, residual, unique in zip(
+            geometry_weights, differences, residuals, uniqueness
+        )
+    ]
+    total = sum(weights)
+    if total <= 0.000001:
+        weights = geometry_weights
+        total = sum(weights)
+    return sum(vector * weight for vector, weight in zip(vectors, weights)) / total
+
+boundary_parent = edge_aware_parent_flow(
+    vectors=[0.0, 8.0, 0.0, 8.0],
+    guides=[0.0, 1.0, 0.0, 1.0],
+    residuals=[0.0] * 4,
+    uniqueness=[1.0] * 4,
+    geometry_weights=[0.25] * 4,
+    query_guide=1.0,
+)
+assert boundary_parent > 7.0, (
+    "fine motion priors must follow the same-appearance parent across a foreground/background edge"
+)
+coherent_parent = edge_aware_parent_flow(
+    vectors=[4.0] * 4,
+    guides=[0.45, 0.55, 0.45, 0.55],
+    residuals=[0.0] * 4,
+    uniqueness=[1.0] * 4,
+    geometry_weights=[0.25] * 4,
+    query_guide=0.5,
+)
+assert abs(coherent_parent - 4.0) < 1e-9, "edge-aware propagation must preserve coherent motion in one appearance layer"
+untrusted_parent = edge_aware_parent_flow(
+    vectors=[0.0, 4.0, 8.0, 12.0],
+    guides=[0.5] * 4,
+    residuals=[0.3] * 4,
+    uniqueness=[0.0] * 4,
+    geometry_weights=[0.25] * 4,
+    query_guide=0.5,
+)
+assert abs(untrusted_parent - 6.0) < 1e-9, "when every parent match is untrusted, propagation must retain a bounded geometric fallback"
 
 def confidence_weighted_flow(vectors, geometry_weights):
     geometric_total = sum(geometry_weights)

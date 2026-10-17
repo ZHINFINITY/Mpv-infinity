@@ -131,6 +131,9 @@ for source in ("source0", "source1"):
         in shared_synthesis_bindings
     ), f"Media3 shared Vulkan synthesis must use the same clamp-to-edge linear sampler for {source}"
 assert "PL_FMT_CAP_LINEAR" in GPU, "Media3 source images must be capability-checked before linear filtering"
+assert "sampleParentEdgeAware(" in GPU and "parentTrust(v00)" in GPU, (
+    "shared Vulkan motion estimation must guide coarse priors by source edges and match confidence"
+)
 assert "flowGridAxis(" in GPU and "flowGridCoord(p,direction)" in GPU, (
     "Media3 and MPV must share actual terminal block-grid coordinates in Vulkan synthesis"
 )
