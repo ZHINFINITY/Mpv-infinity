@@ -978,17 +978,25 @@ def main() -> None:
     meson = enable_android_vulkan_dependency(meson)
     glslang_meson = enable_android_glslang_library_search(glslang_meson_path.read_text())
     glslang_source = glslang_source_path.read_text()
-    optimizer_setting = "options.disableOptimizer = false;"
-    if glslang_source.count(optimizer_setting) != 1:
-        raise SystemExit(
-            "Pinned libplacebo glslang optimizer setting changed; refusing an unverified "
-            "Adreno optimizer diagnostic build"
+    optimizer_enabled = "options.disableOptimizer = false;"
+    optimizer_disabled = "options.disableOptimizer = true;"
+    enabled_count = glslang_source.count(optimizer_enabled)
+    disabled_count = glslang_source.count(optimizer_disabled)
+    if enabled_count == 1 and disabled_count == 0:
+        # Diagnostic-only experiment: build this debug runtime with SPIR-V optimization
+        # disabled to test whether optimized shader code triggers Adreno artifacts.
+        glslang_source = glslang_source.replace(
+            optimizer_enabled, optimizer_disabled, 1
         )
-    # Diagnostic-only experiment: build this debug runtime with SPIR-V optimization
-    # disabled to test whether optimized shader code triggers Adreno artifacts.
-    glslang_source = glslang_source.replace(
-        optimizer_setting, "options.disableOptimizer = true;", 1
-    )
+    elif enabled_count == 0 and disabled_count == 1:
+        # prepare-mpvflow.py is intentionally called before and after dependency setup.
+        # The second invocation must accept the already-applied diagnostic patch.
+        pass
+    else:
+        raise SystemExit(
+            "Pinned libplacebo glslang optimizer setting is ambiguous; refusing an "
+            "unverified Adreno optimizer diagnostic build"
+        )
     gpu_timer = enlarge_libplacebo_timer_ring(gpu_timer_path.read_text())
     placebo_swapchain_source = placebo_swapchain_path.read_text()
     validate_libplacebo_suboptimal_recovery(placebo_swapchain_source)
