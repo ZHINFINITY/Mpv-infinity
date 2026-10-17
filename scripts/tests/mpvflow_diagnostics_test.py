@@ -332,7 +332,9 @@ require(PATCH, "mpvflow_gpu_capture_paired_sample(", "MPV must rerender a paired
 require(MEDIA3_NATIVE, "mpvflow_gpu_capture_paired_sample(", "Media3 must rerender a paired comparison under its existing synchronization")
 require(FLOW_GPU_CORE, "const bool blend_variants[MPVFLOW_CAPTURE_PAIRED_SAMPLES_PER_PAIR] = {\n        false, true,", "shared capture must emit Soft Blend off then on")
 require(FLOW_GPU_CORE, "false, soft_blend, preserve_motion_blend_on_conflict, &variant_output", "paired variants must keep the conflict-preservation parameter identical")
-require(FLOW_GPU_CORE, "source0, source1, variant_output, timestep", "each variant must reuse both source textures and the exact interpolation timestep")
+require(FLOW_GPU_CORE, "source0, source1, variant_output, capture_timestep", "each diagnostic variant must reuse both source textures and the fixed midpoint")
+require(FLOW_GPU_CORE, "const float capture_timestep = 0.5f;", "decision capture must use a repeatable interpolation midpoint")
+require(FLOW_GPU_CORE, "source_pts0 + (source_pts1 - source_pts0) * 0.5", "diagnostic output PTS must be the source-pair midpoint")
 require(FLOW_CAPTURE_IO, "same_analyzed_motion_field", "the manifest must declare reuse of the cached motion field")
 assert 'if (!backend || strcmp(backend, "vulkan"))' not in FLOW_GPU_CORE, "the capture gate must not compare Vulkan against the wrong literal alias"
 

@@ -71,6 +71,17 @@ spec = importlib.util.spec_from_file_location("prepare_mpvflow", PREPARE)
 assert spec and spec.loader, "could not load MPVFlow preparation module"
 prepare = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(prepare)
+gpu_source = (ROOT / "app/src/main/cpp/mpvflow/mpvflow_gpu.c").read_text(encoding="utf-8")
+capture_define = "#define MPVFLOW_DEBUG_CAPTURE 1\n"
+capture_default = prepare.configure_debug_capture_source(gpu_source, enabled=False)
+assert capture_define not in capture_default, "default MPV source preparation must not enable debug capture"
+capture_debug = prepare.configure_debug_capture_source(gpu_source, enabled=True)
+assert capture_debug.count(capture_define) == 1, "debug capture define must be injected exactly once"
+assert capture_debug.index("*/") < capture_debug.index(capture_define) < capture_debug.index("#include"), "debug capture define must follow the SPDX notice"
+assert prepare.configure_debug_capture_source(capture_debug, enabled=True) == capture_debug, "debug capture source preparation must be idempotent"
+assert prepare.configure_debug_capture_source(capture_debug, enabled=False) == capture_default, "disabling debug capture must restore the default source"
+cmake_native = (ROOT / "app/src/main/cpp/CMakeLists.txt").read_text(encoding="utf-8")
+assert "target_compile_definitions(media3flow_vulkan PRIVATE\n        $<$<CONFIG:Debug>:MPVFLOW_DEBUG_CAPTURE=1>)" in cmake_native, "Media3 Vulkan capture define must be Debug-only"
 
 old_dependency = "vulkan = dependency('vulkan', version: '>= 1.3.238', required: vulkan_opt)"
 new_dependency = "vulkan = dependency('vulkan', required: vulkan_opt)"

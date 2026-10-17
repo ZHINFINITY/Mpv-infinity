@@ -52,6 +52,7 @@ struct VulkanContext {
     char device_name[VK_MAX_PHYSICAL_DEVICE_NAME_SIZE];
     int soft_blend;
     int preserve_motion_blend;
+    int decision_mode;
 };
 
 static void fail(const char *operation, VkResult result)
@@ -346,9 +347,9 @@ static void initialize_vulkan(struct VulkanContext *ctx, const char *spirv_path)
     };
     VK_CHECK(vkCreateCommandPool(ctx->device, &pool_info, NULL, &ctx->command_pool));
 
-    VkDescriptorSetLayoutBinding bindings[8];
+    VkDescriptorSetLayoutBinding bindings[9];
     memset(bindings, 0, sizeof(bindings));
-    for (uint32_t i = 0; i < 8; i++) {
+    for (uint32_t i = 0; i < 9; i++) {
         bindings[i].binding = i;
         bindings[i].descriptorCount = 1;
         bindings[i].stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
@@ -357,14 +358,14 @@ static void initialize_vulkan(struct VulkanContext *ctx, const char *spirv_path)
     }
     VkDescriptorSetLayoutCreateInfo descriptor_info = {
         .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
-        .bindingCount = 8,
+        .bindingCount = 9,
         .pBindings = bindings,
     };
     VK_CHECK(vkCreateDescriptorSetLayout(ctx->device, &descriptor_info, NULL,
                                          &ctx->descriptor_layout));
     VkDescriptorPoolSize pool_sizes[2] = {
         { .type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, .descriptorCount = 2 },
-        { .type = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, .descriptorCount = 6 },
+        { .type = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, .descriptorCount = 7 },
     };
     VkDescriptorPoolCreateInfo descriptor_pool_info = {
         .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
@@ -465,13 +466,13 @@ static void fill_rgba16f(uint16_t *pixels, size_t count, uint16_t r, uint16_t g,
 }
 
 static void update_descriptors(struct VulkanContext *ctx,
-                               struct Image images[8])
+                               struct Image images[9])
 {
-    VkDescriptorImageInfo image_info[8];
-    VkWriteDescriptorSet writes[8];
+    VkDescriptorImageInfo image_info[9];
+    VkWriteDescriptorSet writes[9];
     memset(image_info, 0, sizeof(image_info));
     memset(writes, 0, sizeof(writes));
-    for (uint32_t i = 0; i < 8; i++) {
+    for (uint32_t i = 0; i < 9; i++) {
         image_info[i].imageView = images[i].view;
         image_info[i].imageLayout = i < 2 ? VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL :
                                             VK_IMAGE_LAYOUT_GENERAL;
@@ -485,7 +486,7 @@ static void update_descriptors(struct VulkanContext *ctx,
                                            VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
         writes[i].pImageInfo = &image_info[i];
     }
-    vkUpdateDescriptorSets(ctx->device, 8, writes, 0, NULL);
+    vkUpdateDescriptorSets(ctx->device, 9, writes, 0, NULL);
 }
 
 static void run_fixture(struct VulkanContext *ctx, const char *label,
@@ -572,7 +573,7 @@ static void run_fixture(struct VulkanContext *ctx, const char *label,
     scene[1] = scene[2] = 0x0000;
     scene[3] = 0x3c00;
 
-    struct Image images[8] = {0};
+    struct Image images[9] = {0};
     images[0] = create_image(ctx, VK_FORMAT_R8G8B8A8_UNORM, WIDTH, HEIGHT,
                              VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, 1);
     images[1] = create_image(ctx, VK_FORMAT_R8G8B8A8_UNORM, WIDTH, HEIGHT,
@@ -584,6 +585,9 @@ static void run_fixture(struct VulkanContext *ctx, const char *label,
                                  VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_STORAGE_BIT, 0);
     }
     images[7] = create_image(ctx, VK_FORMAT_R8G8B8A8_UNORM, WIDTH, HEIGHT,
+                             VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT, 0);
+
+    images[8] = create_image(ctx, VK_FORMAT_R8G8B8A8_UNORM, WIDTH, HEIGHT,
                              VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT, 0);
 
     upload_image(ctx, &images[0], frame0, sizeof(frame0));
@@ -616,6 +620,14 @@ static void run_fixture(struct VulkanContext *ctx, const char *label,
                          0, NULL, 0, NULL, 1, &output_ready);
     end_commands(ctx, command);
     images[7].layout = VK_IMAGE_LAYOUT_GENERAL;
+    VkImageMemoryBarrier decision_ready = output_ready;
+    decision_ready.image = images[8].handle;
+    command = begin_commands(ctx);
+    vkCmdPipelineBarrier(command, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+                         VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0,
+                         0, NULL, 0, NULL, 1, &decision_ready);
+    end_commands(ctx, command);
+    images[8].layout = VK_IMAGE_LAYOUT_GENERAL;
     update_descriptors(ctx, images);
 
     command = begin_commands(ctx);
@@ -643,6 +655,13 @@ static void run_fixture(struct VulkanContext *ctx, const char *label,
                          0, NULL, 0, NULL, 1, &output_to_copy);
     struct Buffer readback = create_buffer(ctx, IMAGE_BYTES,
                                            VK_BUFFER_USAGE_TRANSFER_DST_BIT);
+    struct Buffer decision_readback = create_buffer(ctx, IMAGE_BYTES,
+                                           VK_BUFFER_USAGE_TRANSFER_DST_BIT);
+    VkImageMemoryBarrier decision_to_copy = output_to_copy;
+    decision_to_copy.image = images[8].handle;
+    vkCmdPipelineBarrier(command, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                         VK_PIPELINE_STAGE_TRANSFER_BIT, 0,
+                         0, NULL, 0, NULL, 1, &decision_to_copy);
     VkBufferImageCopy read_copy = {
         .bufferOffset = 0,
         .bufferRowLength = 0,
@@ -659,6 +678,9 @@ static void run_fixture(struct VulkanContext *ctx, const char *label,
     vkCmdCopyImageToBuffer(command, images[7].handle,
                            VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
                            readback.handle, 1, &read_copy);
+    vkCmdCopyImageToBuffer(command, images[8].handle,
+                           VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                           decision_readback.handle, 1, &read_copy);
     VkBufferMemoryBarrier host_ready = {
         .sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER,
         .srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
@@ -669,9 +691,11 @@ static void run_fixture(struct VulkanContext *ctx, const char *label,
         .offset = 0,
         .size = VK_WHOLE_SIZE,
     };
+    VkBufferMemoryBarrier host_barriers[2] = { host_ready, host_ready };
+    host_barriers[1].buffer = decision_readback.handle;
     vkCmdPipelineBarrier(command, VK_PIPELINE_STAGE_TRANSFER_BIT,
                          VK_PIPELINE_STAGE_HOST_BIT, 0,
-                         0, NULL, 1, &host_ready, 0, NULL);
+                         0, NULL, 2, host_barriers, 0, NULL);
     end_commands(ctx, command);
 
     uint8_t *output = malloc(IMAGE_BYTES);
@@ -681,25 +705,58 @@ static void run_fixture(struct VulkanContext *ctx, const char *label,
     VK_CHECK(vkMapMemory(ctx->device, readback.memory, 0, IMAGE_BYTES, 0, &mapped));
     memcpy(output, mapped, IMAGE_BYTES);
     vkUnmapMemory(ctx->device, readback.memory);
+    uint8_t *decisions = malloc(IMAGE_BYTES);
+    if (!decisions) exit(1);
+    VK_CHECK(vkMapMemory(ctx->device, decision_readback.memory, 0, IMAGE_BYTES, 0, &mapped));
+    memcpy(decisions, mapped, IMAGE_BYTES);
+    vkUnmapMemory(ctx->device, decision_readback.memory);
     int first = check_all_pixels ? 0 : special_grid_test == 2 ? 1 :
                 (2 * WIDTH + (special_grid_test == 1 ? 2 : 3));
     int last = check_all_pixels ? (int)PIXELS : first + 1;
     for (int i = first; i < last; i++) {
         for (int channel = 0; channel < 4; channel++) {
             int actual = output[(size_t)i * 4 + (size_t)channel];
-            int difference = abs(actual - (int)expected[channel]);
-            if (difference > 1) {
-                fprintf(stderr,
-                        "Vulkan synthesis pixel mismatch: fixture=%s pixel=(%d,%d) channel=%d expected=%u actual=%d\n",
-                        label, i % WIDTH, i / WIDTH, channel, expected[channel], actual);
-                exit(1);
+            if (abs(actual - (int)expected[channel]) > 1) {
+                fprintf(stderr, "Vulkan synthesis pixel mismatch: fixture=%s pixel=(%d,%d) channel=%d expected=%u actual=%d\n", label, i % WIDTH, i / WIDTH, channel, expected[channel], actual); exit(1);
+            }
+        }
+    }
+    if (ctx->decision_mode) {
+        int expected_id = strstr(label, "scene-cut") ? 1 :
+                          strstr(label, "static identical") ? 2 :
+                          strstr(label, "low-confidence source 0") ? 3 :
+                          strstr(label, "low-confidence source 1") ? 4 :
+                          strstr(label, "irregular terminal") ? -2 : -1;
+        const uint8_t grid_ids[WIDTH] = { 4, 5, 5, 8, 8, 4, 4 };
+        for (int i = 0; i < (int)PIXELS; i++) {
+            const uint8_t *m = decisions + (size_t)i * 4;
+            if (m[0] > 10 || m[2] > 15 || m[3] != 255) {
+                fprintf(stderr, "Invalid decision encoding: %s (%d,%d)\n", label, i % WIDTH, i / WIDTH); exit(1);
+            }
+            if (strstr(label, "chroma endpoint") && m[0] >= 5 && m[0] <= 8 && !(m[2] & 2)) {
+                fprintf(stderr, "Missing chroma conflict reason: %s (%d,%d)\n", label, i % WIDTH, i / WIDTH); exit(1);
+            }
+            int id = expected_id == -2 ? grid_ids[i % WIDTH] : expected_id;
+            if (id >= 0 && m[0] != (uint8_t)id) {
+                fprintf(stderr, "Decision id mismatch: %s (%d,%d) expected=%d actual=%u\n", label, i % WIDTH, i / WIDTH, id, m[0]); exit(1);
+            }
+            if (m[0] == 3 || m[0] == 7 || m[0] == 9 || m[0] == 4 || m[0] == 8 || m[0] == 10) {
+                const uint8_t *src = (m[0] == 3 || m[0] == 7 || m[0] == 9) ? frame0 : frame1;
+                for (int c = 0; c < 3; c++) if (output[(size_t)i * 4 + c] != src[(size_t)i * 4 + c]) {
+                    fprintf(stderr, "Fallback/output mismatch: %s (%d,%d) id=%u\n", label, i % WIDTH, i / WIDTH, m[0]); exit(1);
+                }
+            }
+            if (strstr(label, "low-confidence") && m[1] != 0) {
+                fprintf(stderr, "Expected zero G confidence for %s; got %u\n", label, m[1]); exit(1);
             }
         }
     }
     printf("Vulkan synthesis pixel fixture passed: %s\n", label);
     free(output);
+    free(decisions);
     destroy_buffer(ctx, &readback);
-    for (int i = 0; i < 8; i++)
+    destroy_buffer(ctx, &decision_readback);
+    for (int i = 0; i < 9; i++)
         destroy_image(ctx, &images[i]);
 }
 
@@ -727,62 +784,29 @@ static void destroy_vulkan(struct VulkanContext *ctx)
 
 int main(int argc, char **argv)
 {
-    if (argc < 2 || argc > 4) {
-        fprintf(stderr, "usage: %s shader.spv [soft-blend:0|1] [preserve-motion-blend:0|1]\n", argv[0]);
-        return 2;
-    }
+    if (argc < 2 || argc > 5) return 2;
     struct VulkanContext ctx = {0};
     ctx.soft_blend = argc >= 3 && atoi(argv[2]) != 0;
     ctx.preserve_motion_blend = argc >= 4 && atoi(argv[3]) != 0;
+    ctx.decision_mode = argc >= 5 && atoi(argv[4]) != 0;
     initialize_vulkan(&ctx, argv[1]);
-    printf("Running exact MPVFlow shader_synthesize on Vulkan device: %s (%dx%d odd extent, soft_blend=%d preserve_motion_blend=%d)\n",
-           ctx.device_name, WIDTH, HEIGHT, ctx.soft_blend, ctx.preserve_motion_blend);
-
-    const uint8_t red[4] = { 255, 0, 0, 255 };
-    const uint8_t blue[4] = { 0, 0, 255, 255 };
-    const uint8_t luminance_matched_green[4] = { 0, 130, 0, 255 };
-    const uint8_t neutral0[4] = { 100, 100, 100, 255 };
-    const uint8_t neutral1[4] = { 120, 110, 104, 255 };
-    const uint8_t mixed[4] = { 110, 105, 102, 255 };
-    const uint8_t soft_chroma_blend[4] = { 64, 98, 0, 255 };
-    const uint8_t continuous_chroma_blend[4] = { 50, 104, 0, 255 };
-    const uint8_t soft_low_confidence_blend[4] = { 214, 0, 41, 255 };
-    const uint8_t soft_edge_blend[4] = { 50, 114, 50, 255 };
-    const uint8_t continuous_edge_blend[4] = { 56, 120, 56, 255 };
-    const uint8_t hard_warp_edge[4] = { 100, 100, 100, 255 };
-
-    run_fixture(&ctx, "scene-cut alpha selects first source", red, blue,
-                0x3800, 0x3400, 0x3800, 0.25f, red, 1, 0);
-    run_fixture(&ctx, "scene-cut alpha selects second source", red, blue,
-                0x3800, 0x3400, 0x3800, 0.75f, blue, 1, 0);
-    run_fixture(&ctx, "static identical frame is preserved exactly", neutral0,
-                neutral0, 0x0000, 0x3400, 0x3400, 0.37f, neutral0, 1, 0);
-    run_fixture(&ctx,
-                ctx.soft_blend ? "soft mode blends the chroma boundary" :
-                                 "default mode keeps the nearest chroma endpoint",
-                red, luminance_matched_green, 0x0000, 0x3400, 0x3800, 0.75f,
-                ctx.soft_blend ? (ctx.preserve_motion_blend ? continuous_chroma_blend : soft_chroma_blend) : luminance_matched_green, 0, 0);
-    run_fixture(&ctx, "low-contrast reliable motion retains temporal color blend",
-                neutral0, neutral1, 0x0000, 0x3400, 0x3500, 0.5f, mixed, 0, 0);
-    run_fixture(&ctx, "soft fallback keeps a continuous blend across the moving edge",
-                red, blue, 0x0000, 0x3400, 0x3800, 0.5f,
-                ctx.soft_blend ? (ctx.preserve_motion_blend ? continuous_edge_blend : soft_edge_blend) : hard_warp_edge, 0, 4);
-    const uint8_t grid_expected[4] = { 8, 8, 8, 255 };
-    const uint8_t soft_grid_expected[4] = { 42, 42, 42, 255 };
-    const uint8_t continuous_soft_grid_expected[4] = { 31, 31, 31, 255 };
-    run_fixture(&ctx, "irregular terminal block anchors affect edge synthesis",
-                neutral0, neutral0, 0x0000, 0x3400, 0x3400, 0.5f,
-                ctx.soft_blend ? (ctx.preserve_motion_blend ? continuous_soft_grid_expected : soft_grid_expected) : grid_expected, 0, 1);
-    const uint8_t confidence_outlier_expected[4] = { 2, 2, 2, 255 };
-    run_fixture(&ctx, "ambiguous fast vector cannot warp a coherent region",
-                neutral0, neutral0, 0x0000, 0x3400, 0x3400, 0.25f,
-                confidence_outlier_expected, 0, 2);
-    run_fixture(&ctx,
-                ctx.soft_blend ? "soft mode favors temporal detail at low confidence" :
-                                 "default mode keeps the nearest low-confidence endpoint",
-                red, blue, 0x0000, 0x3400, 0x3800, 0.25f,
-                ctx.soft_blend ? soft_low_confidence_blend : red, 1, 3);
-
+    printf("Running exact MPVFlow shader_synthesize on Vulkan device: %s (%dx%d odd extent, soft_blend=%d preserve_motion_blend=%d decision_mode=%d)\n", ctx.device_name, WIDTH, HEIGHT, ctx.soft_blend, ctx.preserve_motion_blend, ctx.decision_mode);
+    const uint8_t red[4]={255,0,0,255}, blue[4]={0,0,255,255}, green[4]={0,130,0,255};
+    const uint8_t neutral0[4]={100,100,100,255}, neutral1[4]={120,110,104,255}, mixed[4]={110,105,102,255};
+    const uint8_t soft_chroma[4]={64,98,0,255}, continuous_chroma[4]={50,104,0,255};
+    const uint8_t soft_low[4]={214,0,41,255}, soft_edge[4]={50,114,50,255}, continuous_edge[4]={56,120,56,255}, hard_edge[4]={100,100,100,255};
+    run_fixture(&ctx,"scene-cut alpha selects first source",red,blue,0x3800,0x3400,0x3800,0.25f,red,1,0);
+    run_fixture(&ctx,"scene-cut alpha selects second source",red,blue,0x3800,0x3400,0x3800,0.75f,blue,1,0);
+    run_fixture(&ctx,"static identical frame is preserved exactly",neutral0,neutral0,0,0x3400,0x3400,0.37f,neutral0,1,0);
+    run_fixture(&ctx,ctx.soft_blend?"soft mode blends the chroma boundary":"default mode keeps the nearest chroma endpoint",red,green,0,0x3400,0x3800,0.75f,ctx.soft_blend?(ctx.preserve_motion_blend?continuous_chroma:soft_chroma):green,0,0);
+    run_fixture(&ctx,"low-contrast reliable motion retains temporal color blend",neutral0,neutral1,0,0x3400,0x3500,0.5f,mixed,0,0);
+    run_fixture(&ctx,"soft fallback keeps a continuous blend across the moving edge",red,blue,0,0x3400,0x3800,0.5f,ctx.soft_blend?(ctx.preserve_motion_blend?continuous_edge:soft_edge):hard_edge,0,4);
+    const uint8_t grid[4]={8,8,8,255}, soft_grid[4]={42,42,42,255}, cont_grid[4]={31,31,31,255};
+    run_fixture(&ctx,"irregular terminal block anchors affect edge synthesis",neutral0,neutral0,0,0x3400,0x3400,0.5f,ctx.soft_blend?(ctx.preserve_motion_blend?cont_grid:soft_grid):grid,0,1);
+    const uint8_t outlier[4]={2,2,2,255};
+    run_fixture(&ctx,"ambiguous fast vector cannot warp a coherent region",neutral0,neutral0,0,0x3400,0x3400,0.25f,outlier,0,2);
+    run_fixture(&ctx,ctx.soft_blend?"soft mode favors temporal detail at low confidence":"low-confidence source 0 at endpoint",red,blue,0,0x3400,0x3800,0.25f,ctx.soft_blend?soft_low:red,1,3);
+    if (ctx.decision_mode) run_fixture(&ctx,"low-confidence source 1 at endpoint",red,blue,0,0x3400,0x3800,0.75f,blue,1,3);
     destroy_vulkan(&ctx);
     puts("MPVFlow Vulkan synthesis pixel-oracle tests passed");
     return 0;

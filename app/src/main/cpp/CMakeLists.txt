@@ -171,6 +171,8 @@ if(MPVFLOW_ENABLE_VULKAN_BACKEND)
         C_EXTENSIONS ON
         CXX_STANDARD 17
         CXX_STANDARD_REQUIRED ON)
+    target_compile_definitions(media3flow_vulkan PRIVATE
+        $<$<CONFIG:Debug>:MPVFLOW_DEBUG_CAPTURE=1>)
     target_include_directories(media3flow_vulkan PRIVATE
         "${CMAKE_CURRENT_SOURCE_DIR}/third_party/libplacebo/include"
         "${CMAKE_CURRENT_SOURCE_DIR}/mpvflow")

@@ -60,6 +60,7 @@ def main() -> None:
         action="store_true",
         help="fail instead of skipping when Vulkan execution dependencies are absent",
     )
+    parser.add_argument("--decision-mode", action="store_true", help="also compile/run decision-mask fixtures")
     args = parser.parse_args()
     if not require_tooling(args.require_vulkan):
         return
@@ -69,52 +70,34 @@ def main() -> None:
         shader = temp_path / "shader_synthesize.comp"
         spirv = temp_path / "shader_synthesize.spv"
         executable = temp_path / "mpvflow_gpu_synthesis_test"
-        shader.write_text(embedded_synthesis_shader(), encoding="utf-8")
-        compile_shader = subprocess.run(
-            [
-                "glslangValidator",
-                "-V",
-                "--target-env",
-                "vulkan1.2",
-                "-S",
-                "comp",
-                "-o",
-                str(spirv),
-                str(shader),
-            ],
-            check=False,
-            capture_output=True,
-            text=True,
-        )
-        if compile_shader.returncode:
-            raise SystemExit(
-                "Embedded synthesis shader failed Vulkan compilation:\n"
-                + compile_shader.stdout
-                + compile_shader.stderr
+        shader_source = embedded_synthesis_shader()
+        shader.write_text(shader_source, encoding="utf-8")
+        def compile_variant(source_text: str, variant: str) -> Path:
+            variant_shader = temp_path / f"shader_synthesize_{variant}.comp"
+            variant_spirv = temp_path / f"shader_synthesize_{variant}.spv"
+            variant_shader.write_text(source_text, encoding="utf-8")
+            compiled = subprocess.run(
+                ["glslangValidator", "-V", "--target-env", "vulkan1.2", "-S", "comp", "-o", str(variant_spirv), str(variant_shader)],
+                check=False, capture_output=True, text=True,
             )
+            if compiled.returncode:
+                raise SystemExit(f"Embedded synthesis shader ({variant}) failed Vulkan compilation:\n" + compiled.stdout + compiled.stderr)
+            return variant_spirv
+
         compile_harness = subprocess.run(
-            [
-                "cc",
-                "-std=c11",
-                "-O2",
-                "-Wall",
-                "-Wextra",
-                "-Werror",
-                str(HARNESS),
-                "-lvulkan",
-                "-o",
-                str(executable),
-            ],
-            check=False,
-            capture_output=True,
-            text=True,
+            ["cc", "-std=c11", "-O2", "-Wall", "-Wextra", "-Werror", str(HARNESS), "-lvulkan", "-o", str(executable)],
+            check=False, capture_output=True, text=True,
         )
         if compile_harness.returncode:
-            raise SystemExit(
-                "Vulkan pixel-oracle harness failed to compile:\n"
-                + compile_harness.stdout
-                + compile_harness.stderr
-            )
+            raise SystemExit("Vulkan pixel-oracle harness failed to compile:\n" + compile_harness.stdout + compile_harness.stderr)
+        spirv = compile_variant(shader_source, "production")
+        decision_spirv = None
+        if args.decision_mode:
+            version = "#version 450\n"
+            if not shader_source.startswith(version):
+                raise SystemExit("shader_synthesize does not start with #version 450")
+            capture_source = shader_source.replace(version, version + "#define MPVFLOW_CAPTURE_DECISIONS 1\n", 1)
+            decision_spirv = compile_variant(capture_source, "decisions")
         env = os.environ.copy()
         lavapipe_icds = sorted(Path("/usr/share/vulkan/icd.d").glob("lvp_icd*.json"))
         if lavapipe_icds:
@@ -138,6 +121,14 @@ def main() -> None:
                     + result.stderr
                 )
             print(f"[{label}]\n" + result.stdout, end="")
+        if decision_spirv is not None:
+            result = subprocess.run(
+                [str(executable), str(decision_spirv), "0", "0", "1"],
+                check=False, capture_output=True, text=True, env=env,
+            )
+            if result.returncode:
+                raise SystemExit("Vulkan synthesis decision-mask oracle failed:\n" + result.stdout + result.stderr)
+            print("[decision-mask capture mode]\n" + result.stdout, end="")
 
 
 if __name__ == "__main__":

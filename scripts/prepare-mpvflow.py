@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 from pathlib import Path
 import shutil
 import subprocess
@@ -147,6 +148,18 @@ def base_sources_close(meson: str) -> int:
             if depth == 0:
                 return pos
     raise SystemExit("Could not find end of mpv base source list")
+
+
+def configure_debug_capture_source(source: str, enabled: bool) -> str:
+    """Toggle the capture define after the source's SPDX notice."""
+    marker = "\n#define MPVFLOW_DEBUG_CAPTURE 1\n"
+    source = source.replace(marker, "")
+    if not enabled:
+        return source
+    notice_end = source.find("*/")
+    if not source.startswith("/*") or notice_end < 0:
+        raise SystemExit("MPVFlow GPU source is missing its leading SPDX notice")
+    return source[:notice_end + 2] + marker + source[notice_end + 2:]
 
 
 def enable_android_vulkan_dependency(meson: str) -> str:
@@ -922,7 +935,11 @@ def main() -> None:
             raise SystemExit(f"GPU Flow source is missing: {path}")
 
     video_out_dir = mpv_dir / "video/out"
-    shutil.copy2(VENDOR / "mpvflow_gpu.c", video_out_dir / "mpvflow_gpu.c")
+    gpu_source = (VENDOR / "mpvflow_gpu.c").read_text(encoding="utf-8")
+    gpu_source = configure_debug_capture_source(
+        gpu_source, enabled=os.environ.get("MPVFLOW_DEBUG_CAPTURE") == "1"
+    )
+    (video_out_dir / "mpvflow_gpu.c").write_text(gpu_source, encoding="utf-8")
     shutil.copy2(VENDOR / "mpvflow_gpu.h", video_out_dir / "mpvflow_gpu.h")
     shutil.copy2(VENDOR / "mpvflow_capture_io.c", video_out_dir / "mpvflow_capture_io.c")
     shutil.copy2(VENDOR / "mpvflow_capture_io.h", video_out_dir / "mpvflow_capture_io.h")

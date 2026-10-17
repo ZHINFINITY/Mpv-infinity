@@ -123,6 +123,9 @@ struct MPVFlowGPUContext {
     pl_fmt capture_rgba8;
     pl_pass pass_capture_color;
     pl_pass pass_capture_maps;
+    pl_pass pass_capture_decisions;
+    pl_tex capture_decision_output;
+    pl_tex capture_hard_output;
     pl_tex capture_color_atlas;
     pl_tex capture_map_atlas;
     struct MPVFlowCaptureSession *capture_session;
@@ -874,6 +877,17 @@ static const char shader_synthesize[] =
     "layout(set=0,binding=7,rgba8) writeonly uniform image2D outTex;\n"
     "layout(push_constant) uniform FlowPush { ivec4 cfg; float timestep; } pc;\n"
     "layout(local_size_x=8, local_size_y=8) in;\n"
+    "#ifdef MPVFLOW_CAPTURE_DECISIONS\n"
+    "layout(set=0,binding=8,rgba8) writeonly uniform image2D decisionTex;\n"
+    "vec4 flowCaptureResult(vec4 value,int id,float confidence,int reasons){ imageStore(decisionTex,ivec2(gl_GlobalInvocationID.xy),vec4(float(id)/255.0,clamp(confidence,0.0,1.0),float(reasons)/255.0,1.0)); return value; }\n"
+    "#define FLOW_BEGIN int captureReason=0;\n"
+    "#define FLOW_REASON(bits) captureReason|=(bits);\n"
+    "#define FLOW_RESULT(value,id,confidence,reasons) flowCaptureResult((value),(id),(confidence),(reasons))\n"
+    "#else\n"
+    "#define FLOW_BEGIN\n"
+    "#define FLOW_REASON(bits)\n"
+    "#define FLOW_RESULT(value,id,confidence,reasons) value\n"
+    "#endif\n"
     "vec4 flowImageAt(ivec2 p,int direction){ return direction==0?imageLoad(fwdTex,p):imageLoad(backTex,p); }\n"
     "float lumaAt(vec2 p,int direction){ ivec2 sz=direction==0?imageSize(luma0Tex):imageSize(luma1Tex); ivec2 q=clamp(ivec2(round(p)),ivec2(0),sz-1); return direction==0?imageLoad(luma0Tex,q).r:imageLoad(luma1Tex,q).r; }\n"
     "float flowGridAxis(float p,float extent,int blockSize,int gridCount){if(gridCount<=1)return 0.0;float lastAnchor=max(extent-float(blockSize),0.0),previousAnchor=min(float(gridCount-2)*4.0,lastAnchor),lastIndex=float(gridCount-1);if(p<=previousAnchor)return clamp(p/4.0,0.0,lastIndex);if(lastAnchor<=previousAnchor)return lastIndex;return clamp(lastIndex-1.0+(p-previousAnchor)/(lastAnchor-previousAnchor),0.0,lastIndex); }\n"
@@ -886,7 +900,7 @@ static const char shader_synthesize[] =
     "float reliability(vec4 flow,float cycle,float valid){ float cycleQuality=1.0-smoothstep(0.75,4.0,cycle); float matchQuality=1.0-smoothstep(0.025,0.22,flow.z); float uniquenessQuality=smoothstep(0.08,0.30,flow.w); return cycleQuality*matchQuality*uniquenessQuality*valid; }\n"
     "vec4 softBlendColor(ivec2 p,vec4 ca,vec4 cb,float confidence,bool preserveMotionBlend){ float softBlendAlpha=clamp(0.5+(pc.timestep-0.5)*1.35,0.0,1.0); vec4 sourceBlend=mix(texelFetch(frame0,p,0),texelFetch(frame1,p,0),softBlendAlpha),warpBlend=mix(ca,cb,pc.timestep); float warpWeight=smoothstep(0.04,0.48,confidence); if(preserveMotionBlend) warpWeight=min(warpWeight,0.40); return mix(sourceBlend,warpBlend,warpWeight); }\n"
     "float neighborhoodQuality(vec2 p,int direction,vec2 center){ vec2 d=vec2(2.0); vec2 n0=flowAtBilinear(p-d,direction).xy,n1=flowAtBilinear(p+vec2(d.x,-d.y),direction).xy,n2=flowAtBilinear(p+vec2(-d.x,d.y),direction).xy,n3=flowAtBilinear(p+d,direction).xy; float spread=(length(n0-center)+length(n1-center)+length(n2-center)+length(n3-center))*0.25; return 1.0-smoothstep(0.65,2.8,spread); }\n"
-    "void main(){ ivec2 p=ivec2(gl_GlobalInvocationID.xy); ivec2 outSize=imageSize(outTex),motionSize=pc.cfg.zw; if(any(greaterThanEqual(p,outSize))) return; vec2 srcP=vec2(p),uv=(srcP+vec2(0.5))/vec2(outSize),flowP=clamp(uv*vec2(motionSize)-vec2(0.5),vec2(0.0),vec2(motionSize-1)); float cut=imageLoad(sceneTex,ivec2(0)).r; if(cut>0.1882353){ vec4 c=pc.timestep<=0.5?texelFetch(frame0,p,0):texelFetch(frame1,p,0); imageStore(outTex,p,c); return; } { float staticLumaDelta=abs(lumaAt(flowP,0)-lumaAt(flowP,1)); if(staticLumaDelta<=0.0039216){ vec4 fastForward=flowAtBilinear(flowP,0),fastBackward=flowAtBilinear(flowP,1); if(dot(fastForward.xy,fastForward.xy)<=0.0025&&dot(fastBackward.xy,fastBackward.xy)<=0.0025){ vec4 static0=texelFetch(frame0,p,0),static1=texelFetch(frame1,p,0); float colorDelta=max(max(abs(static0.r-static1.r),abs(static0.g-static1.g)),abs(static0.b-static1.b)); bool staticPixel=colorDelta<=0.0039216; if(staticPixel){ vec4 outc=mix(static0,static1,pc.timestep); outc.a=1.0; imageStore(outTex,p,outc); return; } } } } /* Vulkan fast path: bilinear initial/cycle flow; retain final edge refinement. */ vec4 f=flowAtBilinear(flowP,0),b=flowAtBilinear(flowP,1); vec2 a=flowP-pc.timestep*f.xy,z=flowP-(1.0-pc.timestep)*b.xy; for(int i=0;i<2;i++){ f=flowAtBilinear(a,0); a=flowP-pc.timestep*f.xy; b=flowAtBilinear(z,1); z=flowP-(1.0-pc.timestep)*b.xy; } f=flowAtEdgeAware(a,0); b=flowAtEdgeAware(z,1); vec2 cycle0=a+f.xy,cycle1=z+b.xy; vec4 backAt0=flowAtEdgeAware(cycle0,1); vec4 forwardAt1=flowAtEdgeAware(cycle1,0); float cycleError0=length(f.xy+backAt0.xy); float cycleError1=length(b.xy+forwardAt1.xy); vec2 scale=vec2(outSize)/vec2(motionSize),srcA=srcP+(a-flowP)*scale,srcZ=srcP+(z-flowP)*scale; vec4 ca=colorAt(frame0,srcA); vec4 cb=colorAt(frame1,srcZ); float valid0=pointInBounds(a,motionSize)*pointInBounds(cycle0,motionSize); float valid1=pointInBounds(z,motionSize)*pointInBounds(cycle1,motionSize); float confidence0=reliability(f,cycleError0,valid0); float confidence1=reliability(b,cycleError1,valid1); float confidence=max(confidence0,confidence1); bool softBlend=(pc.cfg.x&0x40000000)!=0,preserveMotionBlend=(pc.cfg.x&0x20000000)!=0; vec4 outc; if(confidence<0.28){ outc=softBlend?softBlendColor(p,ca,cb,confidence,preserveMotionBlend):(pc.timestep<0.5?texelFetch(frame0,p,0):texelFetch(frame1,p,0)); } else { float visibility0=smoothstep(0.15,0.45,confidence0),visibility1=smoothstep(0.15,0.45,confidence1); float weight0=(1.0-pc.timestep)*visibility0,weight1=pc.timestep*visibility1,total=weight0+weight1; float lumaDelta=abs(dot(ca.rgb,vec3(0.299,0.587,0.114))-dot(cb.rgb,vec3(0.299,0.587,0.114))); float colorDelta=max(max(abs(ca.r-cb.r),abs(ca.g-cb.g)),abs(ca.b-cb.b)); float chromaDelta=max(abs((ca.r-ca.g)-(cb.r-cb.g)),abs((ca.b-ca.g)-(cb.b-cb.g))); float flowSpread=length(f.xy-b.xy); bool chromaBoundary=colorDelta>0.12&&chromaDelta>0.06; bool boundaryConflict=lumaDelta>0.08||chromaBoundary||(min(f.w,b.w)<0.08&&colorDelta>0.10); if(!boundaryConflict&&(lumaDelta>0.06||colorDelta>0.08||flowSpread>3.0)){ float neighborhood0=neighborhoodQuality(a,0,f.xy),neighborhood1=neighborhoodQuality(z,1,b.xy),neighborhoodMinimum=min(neighborhood0,neighborhood1); bool neighborhoodConflict=(neighborhoodMinimum<0.30&&(lumaDelta>0.06||colorDelta>0.08))||(flowSpread>3.0&&neighborhoodMinimum<0.45); boundaryConflict=neighborhoodConflict; } float edgeConfidence0=confidence0*(0.5+0.5*smoothstep(0.02,0.35,f.w)),edgeConfidence1=confidence1*(0.5+0.5*smoothstep(0.02,0.35,b.w)); if(boundaryConflict&&softBlend&&preserveMotionBlend) outc=softBlendColor(p,ca,cb,confidence,true); else if(boundaryConflict&&softBlend) outc=softBlendColor(p,ca,cb,confidence,false); else if(boundaryConflict&&edgeConfidence0>edgeConfidence1+0.10) outc=ca; else if(boundaryConflict&&edgeConfidence1>edgeConfidence0+0.10) outc=cb; else if(boundaryConflict) outc=pc.timestep<0.5?texelFetch(frame0,p,0):texelFetch(frame1,p,0); else outc=total>0.0001?mix(ca,cb,weight1/total):(pc.timestep<0.5?texelFetch(frame0,p,0):texelFetch(frame1,p,0)); } outc.a=1.0; imageStore(outTex,p,outc); }\n";
+    "void main(){ FLOW_BEGIN ivec2 p=ivec2(gl_GlobalInvocationID.xy); ivec2 outSize=imageSize(outTex),motionSize=pc.cfg.zw; if(any(greaterThanEqual(p,outSize))) return; vec2 srcP=vec2(p),uv=(srcP+vec2(0.5))/vec2(outSize),flowP=clamp(uv*vec2(motionSize)-vec2(0.5),vec2(0.0),vec2(motionSize-1)); float cut=imageLoad(sceneTex,ivec2(0)).r; if(cut>0.1882353){ vec4 c=pc.timestep<=0.5?texelFetch(frame0,p,0):texelFetch(frame1,p,0); imageStore(outTex,p,FLOW_RESULT(c,1,0.0,0)); return; } { float staticLumaDelta=abs(lumaAt(flowP,0)-lumaAt(flowP,1)); if(staticLumaDelta<=0.0039216){ vec4 fastForward=flowAtBilinear(flowP,0),fastBackward=flowAtBilinear(flowP,1); if(dot(fastForward.xy,fastForward.xy)<=0.0025&&dot(fastBackward.xy,fastBackward.xy)<=0.0025){ vec4 static0=texelFetch(frame0,p,0),static1=texelFetch(frame1,p,0); float colorDelta=max(max(abs(static0.r-static1.r),abs(static0.g-static1.g)),abs(static0.b-static1.b)); bool staticPixel=colorDelta<=0.0039216; if(staticPixel){ vec4 outc=mix(static0,static1,pc.timestep); outc.a=1.0; imageStore(outTex,p,FLOW_RESULT(outc,2,1.0,0)); return; } } } } /* Vulkan fast path: bilinear initial/cycle flow; retain final edge refinement. */ vec4 f=flowAtBilinear(flowP,0),b=flowAtBilinear(flowP,1); vec2 a=flowP-pc.timestep*f.xy,z=flowP-(1.0-pc.timestep)*b.xy; for(int i=0;i<2;i++){ f=flowAtBilinear(a,0); a=flowP-pc.timestep*f.xy; b=flowAtBilinear(z,1); z=flowP-(1.0-pc.timestep)*b.xy; } f=flowAtEdgeAware(a,0); b=flowAtEdgeAware(z,1); vec2 cycle0=a+f.xy,cycle1=z+b.xy; vec4 backAt0=flowAtEdgeAware(cycle0,1); vec4 forwardAt1=flowAtEdgeAware(cycle1,0); float cycleError0=length(f.xy+backAt0.xy); float cycleError1=length(b.xy+forwardAt1.xy); vec2 scale=vec2(outSize)/vec2(motionSize),srcA=srcP+(a-flowP)*scale,srcZ=srcP+(z-flowP)*scale; vec4 ca=colorAt(frame0,srcA); vec4 cb=colorAt(frame1,srcZ); float valid0=pointInBounds(a,motionSize)*pointInBounds(cycle0,motionSize); float valid1=pointInBounds(z,motionSize)*pointInBounds(cycle1,motionSize); float confidence0=reliability(f,cycleError0,valid0); float confidence1=reliability(b,cycleError1,valid1); float confidence=max(confidence0,confidence1); bool softBlend=(pc.cfg.x&0x40000000)!=0,preserveMotionBlend=(pc.cfg.x&0x20000000)!=0; vec4 outc; if(confidence<0.28){ outc=softBlend?softBlendColor(p,ca,cb,confidence,preserveMotionBlend):FLOW_RESULT((pc.timestep<0.5?texelFetch(frame0,p,0):texelFetch(frame1,p,0)),(pc.timestep<0.5?3:4),confidence,0); } else { float visibility0=smoothstep(0.15,0.45,confidence0),visibility1=smoothstep(0.15,0.45,confidence1); float weight0=(1.0-pc.timestep)*visibility0,weight1=pc.timestep*visibility1,total=weight0+weight1; float lumaDelta=abs(dot(ca.rgb,vec3(0.299,0.587,0.114))-dot(cb.rgb,vec3(0.299,0.587,0.114))); float colorDelta=max(max(abs(ca.r-cb.r),abs(ca.g-cb.g)),abs(ca.b-cb.b)); float chromaDelta=max(abs((ca.r-ca.g)-(cb.r-cb.g)),abs((ca.b-ca.g)-(cb.b-cb.g))); float flowSpread=length(f.xy-b.xy); bool chromaBoundary=colorDelta>0.12&&chromaDelta>0.06; bool boundaryConflict=lumaDelta>0.08||chromaBoundary||(min(f.w,b.w)<0.08&&colorDelta>0.10); FLOW_REASON((lumaDelta>0.08?1:0)|(chromaBoundary?2:0)|((min(f.w,b.w)<0.08&&colorDelta>0.10)?4:0)) if(!boundaryConflict&&(lumaDelta>0.06||colorDelta>0.08||flowSpread>3.0)){ float neighborhood0=neighborhoodQuality(a,0,f.xy),neighborhood1=neighborhoodQuality(z,1,b.xy),neighborhoodMinimum=min(neighborhood0,neighborhood1); bool neighborhoodConflict=(neighborhoodMinimum<0.30&&(lumaDelta>0.06||colorDelta>0.08))||(flowSpread>3.0&&neighborhoodMinimum<0.45); boundaryConflict=neighborhoodConflict; FLOW_REASON(neighborhoodConflict?8:0) } float edgeConfidence0=confidence0*(0.5+0.5*smoothstep(0.02,0.35,f.w)),edgeConfidence1=confidence1*(0.5+0.5*smoothstep(0.02,0.35,b.w)); if(boundaryConflict&&softBlend&&preserveMotionBlend) outc=softBlendColor(p,ca,cb,confidence,true); else if(boundaryConflict&&softBlend) outc=softBlendColor(p,ca,cb,confidence,false); else if(boundaryConflict&&edgeConfidence0>edgeConfidence1+0.10) outc=FLOW_RESULT(ca,5,confidence,captureReason); else if(boundaryConflict&&edgeConfidence1>edgeConfidence0+0.10) outc=FLOW_RESULT(cb,6,confidence,captureReason); else if(boundaryConflict) outc=FLOW_RESULT((pc.timestep<0.5?texelFetch(frame0,p,0):texelFetch(frame1,p,0)),(pc.timestep<0.5?7:8),confidence,captureReason); else outc=FLOW_RESULT((total>0.0001?mix(ca,cb,weight1/total):(pc.timestep<0.5?texelFetch(frame0,p,0):texelFetch(frame1,p,0))),(total>0.0001?0:(pc.timestep<0.5?9:10)),confidence,0); } outc.a=1.0; imageStore(outTex,p,outc); }\n";
 
 static pl_pass make_pass(pl_gpu gpu, const char *glsl,
                          struct pl_desc *descs, int ndesc)
@@ -1756,6 +1770,12 @@ void mpvflow_gpu_destroy(MPVFlowGPUContext *ctx)
         pl_pass_destroy(ctx->gpu, &ctx->pass_capture_color);
     if (ctx->pass_capture_maps)
         pl_pass_destroy(ctx->gpu, &ctx->pass_capture_maps);
+    if (ctx->pass_capture_decisions)
+        pl_pass_destroy(ctx->gpu, &ctx->pass_capture_decisions);
+    if (ctx->capture_decision_output)
+        pl_tex_destroy(ctx->gpu, &ctx->capture_decision_output);
+    if (ctx->capture_hard_output)
+        pl_tex_destroy(ctx->gpu, &ctx->capture_hard_output);
     if (ctx->pass_preprocess) pl_pass_destroy(ctx->gpu, &ctx->pass_preprocess);
     if (ctx->pass_luma) pl_pass_destroy(ctx->gpu, &ctx->pass_luma);
     if (ctx->pass_downsample) pl_pass_destroy(ctx->gpu, &ctx->pass_downsample);
@@ -3042,6 +3062,95 @@ static bool capture_write_panel(MPVFlowGPUContext *ctx,
     return ok;
 }
 
+#if defined(MPVFLOW_DEBUG_CAPTURE)
+static bool dispatch_capture_decisions(MPVFlowGPUContext *ctx, MPVFlowGPUPair *pair,
+                                       pl_tex source0, pl_tex source1,
+                                       int width, int height, float timestep)
+{
+    if (!ctx || !pair || pair->owner != ctx || !pair->levels ||
+        pair->reductions <= 0 || !source0 || !source1 ||
+        !source0->params.sampleable || !source1->params.sampleable ||
+        source0->params.w != source1->params.w ||
+        source0->params.h != source1->params.h ||
+        width <= 0 || height <= 0 ||
+        width > MPVFLOW_CAPTURE_DECISION_MAX_DIMENSION ||
+        height > MPVFLOW_CAPTURE_DECISION_MAX_DIMENSION ||
+        (int64_t) width * height > MPVFLOW_CAPTURE_DECISION_MAX_PIXELS ||
+        source0->params.format != ctx->fmt_rgba8 ||
+        source1->params.format != ctx->fmt_rgba8)
+        return false;
+    if (!ctx->pass_capture_decisions) {
+        struct pl_desc desc[] = {
+            { .name = "frame0", .type = PL_DESC_SAMPLED_TEX, .binding = 0 },
+            { .name = "frame1", .type = PL_DESC_SAMPLED_TEX, .binding = 1 },
+            { .name = "fwdTex", .type = PL_DESC_STORAGE_IMG, .binding = 2, .access = PL_DESC_ACCESS_READONLY },
+            { .name = "backTex", .type = PL_DESC_STORAGE_IMG, .binding = 3, .access = PL_DESC_ACCESS_READONLY },
+            { .name = "sceneTex", .type = PL_DESC_STORAGE_IMG, .binding = 4, .access = PL_DESC_ACCESS_READONLY },
+            { .name = "luma0Tex", .type = PL_DESC_STORAGE_IMG, .binding = 5, .access = PL_DESC_ACCESS_READONLY },
+            { .name = "luma1Tex", .type = PL_DESC_STORAGE_IMG, .binding = 6, .access = PL_DESC_ACCESS_READONLY },
+            { .name = "outTex", .type = PL_DESC_STORAGE_IMG, .binding = 7, .access = PL_DESC_ACCESS_WRITEONLY },
+            { .name = "decisionTex", .type = PL_DESC_STORAGE_IMG, .binding = 8, .access = PL_DESC_ACCESS_WRITEONLY },
+        };
+        char *shader = shader_replace_once(shader_synthesize, "#version 450\n",
+            "#version 450\n#define MPVFLOW_CAPTURE_DECISIONS 1\n");
+        if (!shader)
+            return false;
+        ctx->pass_capture_decisions = make_pass(ctx->gpu, shader, desc, 9);
+        free(shader);
+    }
+    if (!ctx->pass_capture_decisions ||
+        !ensure_capture_staging(ctx, &ctx->capture_decision_output, width, height))
+        return false;
+    if (ctx->capture_hard_output &&
+        (ctx->capture_hard_output->params.w != (unsigned int) width ||
+         ctx->capture_hard_output->params.h != (unsigned int) height))
+        pl_tex_destroy(ctx->gpu, &ctx->capture_hard_output);
+    if (!ctx->capture_hard_output)
+        ctx->capture_hard_output = pl_tex_create(ctx->gpu, pl_tex_params(
+            .w = width, .h = height, .d = 0, .format = ctx->fmt_rgba8,
+            .storable = true, .sampleable = true));
+    if (!ctx->capture_hard_output)
+        return false;
+    struct FlowLevel *level = &pair->level[0];
+    struct pl_desc_binding bindings[] = {
+        { .object = source0, .address_mode = PL_TEX_ADDRESS_CLAMP, .sample_mode = PL_TEX_SAMPLE_LINEAR },
+        { .object = source1, .address_mode = PL_TEX_ADDRESS_CLAMP, .sample_mode = PL_TEX_SAMPLE_LINEAR },
+        { .object = level->forward }, { .object = level->backward },
+        { .object = pair->scene[pair->reductions - 1] },
+        { .object = level->luma[0] }, { .object = level->luma[1] },
+        { .object = ctx->capture_hard_output },
+        { .object = ctx->capture_decision_output },
+    };
+    /* Write color and its branch label in the SAME invocation: no approximate
+     * proxy, separate mask replay, extra estimator pass, or production output alias. */
+    return dispatch_capture_pass(ctx, ctx->pass_capture_decisions, bindings,
+        width, height, pair->w, pair->h, timestep, width, height);
+}
+
+static bool capture_write_decisions(MPVFlowGPUContext *ctx,
+                                    const struct MPVFlowCaptureMeta *meta,
+                                    uint8_t *raw, int width, int height)
+{
+    if (!capture_write_panel(ctx, meta, raw, width, height, 0, width, height,
+                             ctx->capture_pair_index, 0, "decision_raw"))
+        return false;
+    static const uint8_t palette[11][3] = {
+        { 0, 180, 0 }, { 128, 128, 128 }, { 0, 80, 255 },
+        { 255, 0, 0 }, { 255, 128, 0 }, { 0, 255, 255 },
+        { 255, 255, 0 }, { 255, 0, 255 }, { 160, 0, 255 },
+        { 128, 64, 0 }, { 255, 255, 255 },
+    };
+    for (size_t i = 0; i < (size_t) width * height; i++) {
+        unsigned id = raw[i * 4];
+        if (id > 10)
+            return false;
+        memcpy(raw + i * 4, palette[id], 3);
+    }
+    return capture_write_panel(ctx, meta, raw, width, height, 0, width, height,
+                                ctx->capture_pair_index, 0, "decision_mask");
+}
+#endif
+
 static void capture_release_session(MPVFlowGPUContext *ctx)
 {
     if (!ctx)
@@ -3056,6 +3165,18 @@ static void capture_release_session(MPVFlowGPUContext *ctx)
     }
     ctx->capture_armed = false;
     ctx->capture_pair_ready = false;
+    /* The larger debug images are capture-owned; do not retain their VRAM
+     * after the bounded session. No decoder, pair, or presentation texture is freed. */
+    if (ctx->capture_paired_output) {
+        if (ctx->capture_color_atlas)
+            pl_tex_destroy(ctx->gpu, &ctx->capture_color_atlas);
+        if (ctx->capture_map_atlas)
+            pl_tex_destroy(ctx->gpu, &ctx->capture_map_atlas);
+        if (ctx->capture_decision_output)
+            pl_tex_destroy(ctx->gpu, &ctx->capture_decision_output);
+        if (ctx->capture_hard_output)
+            pl_tex_destroy(ctx->gpu, &ctx->capture_hard_output);
+    }
 }
 
 static void capture_write_terminal(MPVFlowGPUContext *ctx, const char *reason)
@@ -3101,6 +3222,12 @@ enum MPVFlowGPUResult mpvflow_gpu_capture_start(
     snprintf(ctx->capture_engine, sizeof(ctx->capture_engine), "%s", engine);
     snprintf(ctx->capture_settings, sizeof(ctx->capture_settings), "%s", effective_settings_json);
     ctx->capture_paired_output = paired_output;
+#if !defined(MPVFLOW_DEBUG_CAPTURE)
+    if (paired_output) {
+        capture_write_terminal(ctx, "decision_capture_requires_debug_build");
+        return MPVFLOW_GPU_UNSUPPORTED_API;
+    }
+#endif
     ctx->capture_terminal_written = false;
     ctx->capture_pair_count = 0;
     ctx->capture_sample_index = 0;
@@ -3261,7 +3388,25 @@ enum MPVFlowGPUResult mpvflow_gpu_capture_sample(
     if (ctx->capture_sample_index >= max_samples)
         return MPVFLOW_GPU_OK;
 
-    const int max_dimension = MPVFLOW_CAPTURE_IMAGE_MAX_DIMENSION;
+    if (ctx->capture_paired_output &&
+        (source0->params.format != ctx->fmt_rgba8 ||
+         source1->params.format != ctx->fmt_rgba8 ||
+         synthesized_output->params.format != ctx->fmt_rgba8)) {
+        mpvflow_gpu_capture_fail(ctx, "decision_capture_requires_sdr_rgba8");
+        return MPVFLOW_GPU_UNSUPPORTED_FORMAT;
+    }
+    if (ctx->capture_paired_output &&
+        (source_w > MPVFLOW_CAPTURE_DECISION_MAX_DIMENSION ||
+         source_h > MPVFLOW_CAPTURE_DECISION_MAX_DIMENSION ||
+         output_w > MPVFLOW_CAPTURE_DECISION_MAX_DIMENSION ||
+         output_h > MPVFLOW_CAPTURE_DECISION_MAX_DIMENSION ||
+         (int64_t) source_w * source_h > MPVFLOW_CAPTURE_DECISION_MAX_PIXELS ||
+         (int64_t) output_w * output_h > MPVFLOW_CAPTURE_DECISION_MAX_PIXELS)) {
+        mpvflow_gpu_capture_fail(ctx, "decision_capture_native_size_limit");
+        return MPVFLOW_GPU_UNSUPPORTED_DIMENSION;
+    }
+    const int max_dimension = ctx->capture_paired_output
+        ? MPVFLOW_CAPTURE_DECISION_MAX_DIMENSION : MPVFLOW_CAPTURE_IMAGE_MAX_DIMENSION;
     int source_tile_w = 0, source_tile_h = 0;
     int output_tile_w = 0, output_tile_h = 0;
     if (!mpvflow_capture_io_scaled_dimensions(source_w, source_h, max_dimension,
@@ -3294,6 +3439,10 @@ enum MPVFlowGPUResult mpvflow_gpu_capture_sample(
         .source_height = source_h,
         .output_width = output_w,
         .output_height = output_h,
+        .analysis_width = pair->w,
+        .analysis_height = pair->h,
+        .grid_width = grid_w,
+        .grid_height = grid_h,
         .pts0 = source_pts0,
         .pts1 = source_pts1,
         .output_pts = output_pts,
@@ -3354,6 +3503,14 @@ enum MPVFlowGPUResult mpvflow_gpu_capture_sample(
         return MPVFLOW_GPU_ERROR;
     }
 
+    bool capture_decisions = false;
+#if defined(MPVFLOW_DEBUG_CAPTURE)
+    capture_decisions = ctx->capture_paired_output && capture_new_pair && !soft_blend;
+    if (capture_decisions && !ctx->capture_decision_output) {
+        mpvflow_gpu_capture_fail(ctx, "decision_capture_mask_unavailable");
+        return MPVFLOW_GPU_ERROR;
+    }
+#endif
     /* This explicitly opted-in debug path waits on the borrowed GPU queue
      * only after the capture-owned copies have been queued; it never maps or
      * destroys a caller-owned source/synthesis texture. */
@@ -3362,7 +3519,11 @@ enum MPVFlowGPUResult mpvflow_gpu_capture_sample(
         ctx, ctx->capture_color_atlas, color_atlas_w, color_atlas_h);
     uint8_t *map_atlas = capture_new_pair ? download_capture_atlas(
         ctx, ctx->capture_map_atlas, grid_w * 7, grid_h) : NULL;
-    if (!color_atlas || (capture_new_pair && !map_atlas)) {
+    uint8_t *decision_pixels = capture_decisions ? download_capture_atlas(
+        ctx, ctx->capture_decision_output, output_w, output_h) : NULL;
+    if (!color_atlas || (capture_new_pair && !map_atlas) ||
+        (capture_decisions && !decision_pixels)) {
+        free(decision_pixels);
         free(color_atlas);
         free(map_atlas);
         mpvflow_gpu_capture_fail(ctx, "capture_texture_download_failed");
@@ -3401,6 +3562,12 @@ enum MPVFlowGPUResult mpvflow_gpu_capture_sample(
         ctx, &meta, color_atlas, color_atlas_w, color_atlas_h,
         source_tile_w * 2, output_tile_w, output_tile_h,
         ctx->capture_pair_index, ctx->capture_sample_index, "synthesized");
+#if defined(MPVFLOW_DEBUG_CAPTURE)
+    if (capture_decisions)
+        writes_ok = capture_write_decisions(ctx, &meta, decision_pixels,
+                                            output_w, output_h) && writes_ok;
+#endif
+    free(decision_pixels);
     free(color_atlas);
     free(map_atlas);
     if (!writes_ok) {
@@ -3446,6 +3613,9 @@ enum MPVFlowGPUResult mpvflow_gpu_capture_paired_sample(
     if (!mpvflow_gpu_capture_is_paired(ctx) || !production_output)
         return MPVFLOW_GPU_INVALID;
 
+    (void) output_pts; /* Fixed-pair output uses the midpoint, never a fabricated live PTS. */
+    const float capture_timestep = 0.5f;
+    const double capture_pts = source_pts0 + (source_pts1 - source_pts0) * 0.5;
     const bool blend_variants[MPVFLOW_CAPTURE_PAIRED_SAMPLES_PER_PAIR] = {
         false, true,
     };
@@ -3454,16 +3624,27 @@ enum MPVFlowGPUResult mpvflow_gpu_capture_paired_sample(
             break;
         pl_tex variant_output = NULL;
         const bool soft_blend = blend_variants[sample];
-        const enum MPVFlowGPUResult synth_status = mpvflow_gpu_synthesize_with_policy(
-            ctx, pair, source0, source1, timestep,
-            false, soft_blend, preserve_motion_blend_on_conflict, &variant_output);
+        enum MPVFlowGPUResult synth_status;
+#if defined(MPVFLOW_DEBUG_CAPTURE)
+        if (!soft_blend) {
+            const bool ok = dispatch_capture_decisions(ctx, pair, source0, source1,
+                (int) source0->params.w, (int) source0->params.h, capture_timestep);
+            synth_status = ok ? MPVFLOW_GPU_OK : MPVFLOW_GPU_ERROR;
+            variant_output = ok ? ctx->capture_hard_output : NULL;
+        } else
+#endif
+        {
+            synth_status = mpvflow_gpu_synthesize_with_policy(
+                ctx, pair, source0, source1, capture_timestep,
+                false, soft_blend, preserve_motion_blend_on_conflict, &variant_output);
+        }
         if (synth_status != MPVFLOW_GPU_OK || !variant_output) {
             mpvflow_gpu_capture_fail(ctx, "paired_variant_synthesis_failed");
             break;
         }
         const enum MPVFlowGPUResult capture_status = mpvflow_gpu_capture_sample(
-            ctx, pair, source0, source1, variant_output, timestep,
-            source_pts0, source_pts1, output_pts,
+            ctx, pair, source0, source1, variant_output, capture_timestep,
+            source_pts0, source_pts1, capture_pts,
             false, soft_blend, preserve_motion_blend_on_conflict);
         if (capture_status != MPVFLOW_GPU_OK)
             break;

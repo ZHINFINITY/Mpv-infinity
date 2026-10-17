@@ -17,7 +17,7 @@ C_FIXTURE = r'''#include "mpvflow_capture_io.h"
 #include <string.h>
 
 static struct MPVFlowCaptureMeta meta = {
-    "mpv", "vulkan", 1920, 1080, 1920, 1080,
+    "mpv", "vulkan", 1920, 1080, 1920, 1080, 1920, 1080, 480, 270,
     10.25, 11.5, 10.75, .5, "{\"x\":\"q\\\"\\n\"}", 0, 0, 0, 0
 };
 
@@ -84,7 +84,7 @@ int main(int argc, char **argv) {
     mpvflow_capture_io_destroy(session);
 
     struct MPVFlowCaptureMeta paired_meta = {
-        "mpv", "vulkan", 640, 360, 640, 360,
+        "mpv", "vulkan", 2, 2, 2, 2, 640, 360, 160, 90,
         20.0, 20.04, 20.02, .5,
         "{\"visibility_resolver\":false,\"preserve_motion_blend_on_conflict\":true}",
         1, 0, 0, 1
@@ -98,12 +98,33 @@ int main(int argc, char **argv) {
     invalid_paired_meta.visibility_resolver_enabled = 1;
     assert(!mpvflow_capture_io_start(argv[2], "paired_resolver_on",
         &invalid_paired_meta, reason, sizeof(reason)));
+    invalid_paired_meta = paired_meta;
+    invalid_paired_meta.timestep = .25f;
+    assert(!mpvflow_capture_io_start(argv[2], "paired_non_midpoint",
+        &invalid_paired_meta, reason, sizeof(reason)));
+    session = mpvflow_capture_io_start(argv[2], "paired_missing_masks", &paired_meta,
+                                       reason, sizeof(reason));
+    assert(session);
+    assert(!mpvflow_capture_io_write(session, 0, 0, "synthesized",
+        &paired_meta, px, 2, 2, reason, sizeof(reason)));
+    assert(mpvflow_capture_io_stop(session));
+    assert(!strcmp(mpvflow_capture_io_status(session), "partial"));
+    mpvflow_capture_io_destroy(session);
     session = mpvflow_capture_io_start(argv[2], "paired", &paired_meta,
                                        reason, sizeof(reason));
     assert(session);
     assert(!mpvflow_capture_io_write(session, 0, -1, "source0",
         &paired_meta, px, 2, 2, reason, sizeof(reason)));
     assert(!mpvflow_capture_io_write(session, 0, -1, "source1",
+        &paired_meta, px, 2, 2, reason, sizeof(reason)));
+    uint8_t *decision_pixels = calloc(2u * 2u, 4);
+    assert(decision_pixels);
+    assert(!mpvflow_capture_io_write(session, 0, 0, "decision_raw",
+        &paired_meta, decision_pixels, 2, 2, reason, sizeof(reason)));
+    assert(!mpvflow_capture_io_write(session, 0, 0, "decision_mask",
+        &paired_meta, decision_pixels, 2, 2, reason, sizeof(reason)));
+    free(decision_pixels);
+    assert(mpvflow_capture_io_write(session, 0, 1, "decision_raw",
         &paired_meta, px, 2, 2, reason, sizeof(reason)));
     assert(!mpvflow_capture_io_write(session, 0, 0, "synthesized",
         &paired_meta, px, 2, 2, reason, sizeof(reason)));
@@ -128,7 +149,7 @@ int main(int argc, char **argv) {
     mpvflow_capture_io_destroy(session);
 
     struct MPVFlowCaptureMeta differing_dimensions = {
-        "native-media3", "vulkan", 512, 288, 1920, 1080,
+        "native-media3", "vulkan", 512, 288, 1920, 1080, 512, 288, 128, 72,
         20.0, 20.04, 20.02, .5, "{}", 0, 0, 0, 0
     };
     session = mpvflow_capture_io_start(argv[2], "differing_dimensions",
@@ -249,9 +270,16 @@ with tempfile.TemporaryDirectory() as temp_dir:
     assert paired_terminal["paired_comparison"]["only_differing_setting"] == "soft_blend"
     paired_manifest = json.loads((directory / "paired" / "manifest.json").read_text())
     assert paired_manifest["paired_output_diagnostic"] is True
-    assert paired_manifest["limits"]["pairs"] == 2
+    assert paired_manifest["limits"]["pairs"] == 1
     assert paired_manifest["limits"]["samples_per_pair"] == 2
     assert paired_manifest["paired_comparison"]["only_differing_setting"] == "soft_blend"
+    assert paired_manifest["paired_comparison"]["alpha"] == 0.5
+    assert paired_manifest["decision_capture"]["schema"] == "mpvflow-decision-mask-v1"
+    assert paired_manifest["image_policy"]["max_dimension"] == 1920
+    assert paired_manifest["image_policy"]["color_images"] == "native-resolution RGBA8; no resampling"
+    assert paired_manifest["decision_capture"]["branches"]["10"] == "zero-weight source1"
+    assert paired_manifest["decision_capture"]["conflict_bits"]["8"] == "neighborhood_conflict"
+    assert {r["channel"] for r in paired_manifest["records"] if r["channel"].startswith("decision_")} == {"decision_raw", "decision_mask"}
     assert paired_manifest["paired_comparison"]["same_source_textures"] is True
     assert paired_manifest["paired_comparison"]["same_analyzed_motion_field"] is True
     assert "soft_blend" not in paired_manifest["effective_settings"]
@@ -266,6 +294,10 @@ with tempfile.TemporaryDirectory() as temp_dir:
     assert differing["output_dimensions"] == [1920, 1080]
     source_record = next(item for item in differing["records"] if item["channel"] == "source0")
     output_record = next(item for item in differing["records"] if item["channel"] == "synthesized")
+    assert source_record["analysis_dimensions"] == [512, 288]
+    assert source_record["grid_dimensions"] == [128, 72]
+    assert source_record["analysis_dimensions"] == [512, 288]
+    assert source_record["grid_dimensions"] == [128, 72]
     assert (source_record["width"], source_record["height"]) == (512, 288)
     assert (output_record["width"], output_record["height"]) == (640, 360)
     no_frame_manifest = json.loads((directory / "no_frames" / "manifest.json").read_text())

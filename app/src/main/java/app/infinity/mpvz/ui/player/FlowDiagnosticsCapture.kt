@@ -119,7 +119,7 @@ internal class FlowDiagnosticsCaptureManager(context: Context) {
       engine = engine,
       pairedOutput = pairedOutput,
       message = if (pairedOutput) {
-        "Paired comparison armed. It records Soft Blend off/on from the same frame pair and motion field."
+        "Fixed-pair comparison armed: one pair at alpha 0.5, Soft Blend off/on and exact decision masks. Capture temporarily stalls playback; its timing is not normal playback performance."
       } else {
         "Capture armed. Replay the marked moment; it stops at the capture limit."
       },

@@ -30,6 +30,10 @@ struct ImageRecord {
     int source_height;
     int output_width;
     int output_height;
+    int analysis_width;
+    int analysis_height;
+    int grid_width;
+    int grid_height;
     double pts0;
     double pts1;
     double output_pts;
@@ -482,8 +486,10 @@ static int valid_meta(const struct MPVFlowCaptureMeta *meta)
     return meta && supported_engine(meta->engine) && supported_backend(meta->backend) &&
            meta->source_width > 0 && meta->source_height > 0 &&
            meta->output_width > 0 && meta->output_height > 0 &&
+           meta->analysis_width > 0 && meta->analysis_height > 0 &&
+           meta->grid_width > 0 && meta->grid_height > 0 &&
            isfinite(meta->pts0) && isfinite(meta->pts1) && isfinite(meta->output_pts) &&
-           isfinite(meta->timestep) && meta->timestep >= 0.0f &&
+           isfinite(meta->timestep) && meta->timestep >= 0.0f && meta->timestep <= 1.0f &&
            (meta->paired_output == 0 || meta->paired_output == 1) &&
            (meta->soft_blend_enabled == 0 || meta->soft_blend_enabled == 1) &&
            (meta->visibility_resolver_enabled == 0 || meta->visibility_resolver_enabled == 1) &&
@@ -491,7 +497,9 @@ static int valid_meta(const struct MPVFlowCaptureMeta *meta)
             meta->preserve_motion_blend_on_conflict == 1) &&
            valid_settings_object(meta->effective_settings_json) &&
            (!meta->paired_output ||
-            (!meta->visibility_resolver_enabled &&
+            (!meta->visibility_resolver_enabled && meta->timestep == 0.5f &&
+             meta->pts1 > meta->pts0 &&
+             fabs(meta->output_pts - (meta->pts0 + (meta->pts1 - meta->pts0) * 0.5)) < 0.000001 &&
              !strstr(meta->effective_settings_json, "\"soft_blend\"")));
 }
 
@@ -547,12 +555,12 @@ static int write_manifest_json(FILE *file, const struct MPVFlowCaptureSession *s
     fputs(",\"backend\":", file);
     write_json_string(file, session->backend);
     if (fprintf(file,
-                ",\"source_dimensions\":[%d,%d],\"output_dimensions\":[%d,%d],"
+                ",\"source_dimensions\":[%d,%d],\"output_dimensions\":[%d,%d],\"analysis_dimensions\":[%d,%d],\"grid_dimensions\":[%d,%d],"
             "\"pts\":{\"source0\":%.17g,\"source1\":%.17g,\"output\":%.17g,\"timestep\":%.9g},"
                 "\"effective_settings\":%s,\"paired_output_diagnostic\":%s,"
             "\"pair_count\":%u,\"sample_count\":%u,"
             "\"bytes_written\":%zu,\"limits\":{\"pairs\":%d,\"samples_per_pair\":%d,\"bytes\":%u},"
-            "\"image_policy\":{\"max_dimension\":640,\"color_images\":\"aspect-preserving RGBA8 downscale\","
+            "\"image_policy\":{\"max_dimension\":%d,\"color_images\":\"%s\","
             "\"maps\":\"native motion-grid resolution; not full-resolution\"},"
             "\"units\":{\"motion_forward\":\"working-resolution pixels; HSV direction and magnitude visualization\","
             "\"motion_backward\":\"working-resolution pixels; HSV direction and magnitude visualization\","
@@ -567,12 +575,16 @@ static int write_manifest_json(FILE *file, const struct MPVFlowCaptureSession *s
                 "\"residual_smoothstep\":[0.025,0.22],\"uniqueness_smoothstep\":[0.08,0.30]}",
             session->initial_meta.source_width, session->initial_meta.source_height,
             session->initial_meta.output_width, session->initial_meta.output_height,
+            session->initial_meta.analysis_width, session->initial_meta.analysis_height,
+            session->initial_meta.grid_width, session->initial_meta.grid_height,
             session->initial_meta.pts0, session->initial_meta.pts1,
             session->initial_meta.output_pts, session->initial_meta.timestep,
             session->settings, session->paired_output ? "true" : "false",
             bit_count(session->pair_bits), bit_count(session->sample_bits),
                 session->bytes_written, session_max_pairs(session),
-                session_max_samples(session), MPVFLOW_CAPTURE_MAX_BYTES) < 0)
+                session_max_samples(session), MPVFLOW_CAPTURE_MAX_BYTES,
+                session->paired_output ? MPVFLOW_CAPTURE_DECISION_MAX_DIMENSION : MPVFLOW_CAPTURE_IMAGE_MAX_DIMENSION,
+                session->paired_output ? "native-resolution RGBA8; no resampling" : "aspect-preserving RGBA8 downscale") < 0)
         return -1;
 
     if (session->paired_output)
@@ -581,7 +593,9 @@ static int write_manifest_json(FILE *file, const struct MPVFlowCaptureSession *s
               "\"same_source_pts_output_pts_and_timestep\":true,"
               "\"visibility_resolver_disabled_for_both_variants\":true,"
               "\"preserve_motion_blend_on_conflict_must_match\":true,"
-              "\"variant_order\":[\"soft_blend_off\",\"soft_blend_on\"]}", file);
+              "\"variant_order\":[\"soft_blend_off\",\"soft_blend_on\"],\"alpha\":0.5}", file);
+    if (session->paired_output)
+        fputs(",\"decision_capture\":{\"schema\":\"mpvflow-decision-mask-v1\",\"sample_index\":0,\"dimensions\":\"synthesized output dimensions\",\"channels\":{\"R\":\"branch_id 0-10\",\"G\":\"round(confidence*255)\",\"B\":\"conflict reason bitset\",\"A\":255},\"branches\":{\"0\":\"normal warped blend\",\"1\":\"scene-cut source endpoint\",\"2\":\"static bypass\",\"3\":\"lowconf source0\",\"4\":\"lowconf source1\",\"5\":\"conflict warp0\",\"6\":\"conflict warp1\",\"7\":\"conflict source0\",\"8\":\"conflict source1\",\"9\":\"zero-weight source0\",\"10\":\"zero-weight source1\"},\"conflict_bits\":{\"1\":\"luma_delta\",\"2\":\"chroma_boundary\",\"4\":\"ambiguity\",\"8\":\"neighborhood_conflict\"},\"palette_rgb\":{\"0\":[0,180,0],\"1\":[128,128,128],\"2\":[0,80,255],\"3\":[255,0,0],\"4\":[255,128,0],\"5\":[0,255,255],\"6\":[255,255,0],\"7\":[255,0,255],\"8\":[160,0,255],\"9\":[128,64,0],\"10\":[255,255,255]},\"geometry\":\"output uv=(p+0.5)/output; analysis=clamp(uv*analysis-0.5,0,analysis-1); grid step=4, blockfine=4, coarse=8\"}", file);
     fputs(",\"records\":[", file);
 
     for (size_t i = 0; i < session->image_count; i++) {
@@ -596,10 +610,11 @@ static int write_manifest_json(FILE *file, const struct MPVFlowCaptureSession *s
         write_json_string(file, image->path);
         fprintf(file,
                 ",\"width\":%d,\"height\":%d,\"source_dimensions\":[%d,%d],"
-                "\"output_dimensions\":[%d,%d],\"pts\":{\"source0\":%.17g,"
+                "\"output_dimensions\":[%d,%d],\"analysis_dimensions\":[%d,%d],\"grid_dimensions\":[%d,%d],\"pts\":{\"source0\":%.17g,"
                 "\"source1\":%.17g,\"output\":%.17g,\"timestep\":%.9g}",
                 image->width, image->height, image->source_width, image->source_height,
-                image->output_width, image->output_height, image->pts0, image->pts1,
+                image->output_width, image->output_height, image->analysis_width, image->analysis_height,
+                image->grid_width, image->grid_height, image->pts0, image->pts1,
                 image->output_pts, image->timestep);
         if (session->paired_output && !strcmp(image->channel, "synthesized"))
             fprintf(file,
@@ -720,7 +735,7 @@ struct MPVFlowCaptureSession *mpvflow_capture_io_start(
 static int is_pair_channel(const char *channel)
 {
     static const char *const channels[] = {
-        "source0", "source1", "motion_forward", "motion_backward", "motion",
+        "decision_raw", "decision_mask", "source0", "source1", "motion_forward", "motion_backward", "motion",
         "residual", "uniqueness", "confidence", "cycle_consistency", "cycle_error",
         "visibility_support",
     };
@@ -757,9 +772,19 @@ int mpvflow_capture_io_write(
         strlen(channel) >= MAX_CHANNEL_NAME || !safe_token(channel, MAX_CHANNEL_NAME - 1) ||
         !valid_meta(meta) || strcmp(meta->engine, session->engine) ||
         strcmp(meta->backend, session->backend) || !rgba8 || width <= 0 || height <= 0 ||
-        (is_pair_channel(channel) ? sample_index != -1 :
-         (strcmp(channel, "synthesized") || sample_index < 0 ||
-          sample_index >= session_max_samples(session))) ||
+        (is_pair_channel(channel) ?
+         ((!strcmp(channel, "decision_raw") || !strcmp(channel, "decision_mask")) ? sample_index != 0 : sample_index != -1) :
+         (strcmp(channel, "synthesized") || sample_index < 0 || sample_index >= session_max_samples(session))) ||
+        ((!strcmp(channel, "decision_raw") || !strcmp(channel, "decision_mask")) &&
+         (!meta->paired_output || meta->soft_blend_enabled ||
+          width != meta->output_width || height != meta->output_height ||
+          width > MPVFLOW_CAPTURE_DECISION_MAX_DIMENSION || height > MPVFLOW_CAPTURE_DECISION_MAX_DIMENSION ||
+          (int64_t) width * height > MPVFLOW_CAPTURE_DECISION_MAX_PIXELS)) ||
+        (meta->paired_output &&
+         ((!strcmp(channel, "synthesized") &&
+           (width != meta->output_width || height != meta->output_height)) ||
+          ((!strcmp(channel, "source0") || !strcmp(channel, "source1")) &&
+           (width != meta->source_width || height != meta->source_height)))) ||
         meta->paired_output != session->paired_output ||
         (session->paired_output &&
          (strcmp(meta->effective_settings_json, session->settings) ||
@@ -784,6 +809,8 @@ int mpvflow_capture_io_write(
             off->output_pts != meta->output_pts || off->timestep != meta->timestep ||
             off->source_width != meta->source_width || off->source_height != meta->source_height ||
             off->output_width != meta->output_width || off->output_height != meta->output_height ||
+            off->analysis_width != meta->analysis_width || off->analysis_height != meta->analysis_height ||
+            off->grid_width != meta->grid_width || off->grid_height != meta->grid_height ||
             off->visibility_resolver_enabled != meta->visibility_resolver_enabled ||
             off->preserve_motion_blend_on_conflict != meta->preserve_motion_blend_on_conflict) {
             if (reason && reason_size)
@@ -852,6 +879,10 @@ int mpvflow_capture_io_write(
     image->source_height = meta->source_height;
     image->output_width = meta->output_width;
     image->output_height = meta->output_height;
+    image->analysis_width = meta->analysis_width;
+    image->analysis_height = meta->analysis_height;
+    image->grid_width = meta->grid_width;
+    image->grid_height = meta->grid_height;
     image->pts0 = meta->pts0;
     image->pts1 = meta->pts1;
     image->output_pts = meta->output_pts;
@@ -864,7 +895,7 @@ int mpvflow_capture_io_write(
     snprintf(image->path, sizeof(image->path), "%s", relative_path);
     session->bytes_written += (size_t) file_status.st_size;
     session->pair_bits |= 1u << pair_index;
-    if (sample_index >= 0)
+    if (sample_index >= 0 && !strcmp(channel, "synthesized"))
         session->sample_bits |= 1u << (pair_index * MPVFLOW_CAPTURE_MAX_SAMPLES_PER_PAIR + sample_index);
     if (write_manifest(session)) {
         session->failed = 1;
@@ -936,7 +967,7 @@ int mpvflow_capture_io_write_terminal_manifest(
             "\"paired_comparison\":%s,"
             "\"pair_count\":0,\"sample_count\":0,"
             "\"bytes_written\":0,\"limits\":{\"pairs\":%d,\"samples_per_pair\":%d,\"bytes\":%u},"
-            "\"image_policy\":{\"max_dimension\":640,\"color_images\":\"aspect-preserving RGBA8 downscale\","
+            "\"image_policy\":{\"max_dimension\":%d,\"color_images\":\"%s\","
             "\"maps\":\"native motion-grid resolution; not full-resolution\"},"
             "\"units\":{\"motion_forward\":\"working-resolution pixels; HSV direction and magnitude visualization\","
             "\"motion_backward\":\"working-resolution pixels; HSV direction and magnitude visualization\","
@@ -954,11 +985,13 @@ int mpvflow_capture_io_write_terminal_manifest(
                   "\"same_analyzed_motion_field\":true,\"same_source_pts_output_pts_and_timestep\":true,"
                   "\"visibility_resolver_disabled_for_both_variants\":true,"
                   "\"preserve_motion_blend_on_conflict_must_match\":true,"
-                  "\"variant_order\":[\"soft_blend_off\",\"soft_blend_on\"]}"
+                  "\"variant_order\":[\"soft_blend_off\",\"soft_blend_on\"],\"alpha\":0.5}"
                 : "null",
             paired_output ? MPVFLOW_CAPTURE_PAIRED_MAX_PAIRS : MPVFLOW_CAPTURE_MAX_PAIRS,
             paired_output ? MPVFLOW_CAPTURE_PAIRED_SAMPLES_PER_PAIR : MPVFLOW_CAPTURE_MAX_SAMPLES_PER_PAIR,
-            MPVFLOW_CAPTURE_MAX_BYTES);
+            MPVFLOW_CAPTURE_MAX_BYTES,
+            paired_output ? MPVFLOW_CAPTURE_DECISION_MAX_DIMENSION : MPVFLOW_CAPTURE_IMAGE_MAX_DIMENSION,
+            paired_output ? "native-resolution RGBA8; no resampling" : "aspect-preserving RGBA8 downscale");
     write_json_string(file, reason && *reason ? reason : "no_synthesized_samples");
     fputs("}]}", file);
     int failed = ferror(file);
@@ -978,6 +1011,22 @@ int mpvflow_capture_io_stop(struct MPVFlowCaptureSession *session)
     if (!session)
         return -1;
     session->stopped = 1;
+    if (session->paired_output && session->sample_bits) {
+        unsigned required = 0;
+        for (size_t i = 0; i < session->image_count; i++) {
+            const struct ImageRecord *image = &session->images[i];
+            if (!strcmp(image->channel, "source0")) required |= 1u;
+            if (!strcmp(image->channel, "source1")) required |= 2u;
+            if (!strcmp(image->channel, "decision_raw")) required |= 4u;
+            if (!strcmp(image->channel, "decision_mask")) required |= 8u;
+            if (!strcmp(image->channel, "synthesized")) required |= 16u << image->sample;
+        }
+        if (required != 63u) {
+            session->failed = 1;
+            snprintf(session->terminal_reason, sizeof(session->terminal_reason),
+                     "fixed_pair_proof_channel_missing");
+        }
+    }
     if (!session->sample_bits) {
         snprintf(session->status, sizeof(session->status), "failed");
         snprintf(session->terminal_reason, sizeof(session->terminal_reason), "no_synthesized_samples");

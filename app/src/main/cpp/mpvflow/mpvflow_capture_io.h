@@ -11,10 +11,12 @@
 
 #define MPVFLOW_CAPTURE_MAX_PAIRS 8
 #define MPVFLOW_CAPTURE_MAX_SAMPLES_PER_PAIR 4
-#define MPVFLOW_CAPTURE_PAIRED_MAX_PAIRS 2
+#define MPVFLOW_CAPTURE_PAIRED_MAX_PAIRS 1
 #define MPVFLOW_CAPTURE_PAIRED_SAMPLES_PER_PAIR 2
 #define MPVFLOW_CAPTURE_MAX_BYTES (64u * 1024u * 1024u)
 #define MPVFLOW_CAPTURE_IMAGE_MAX_DIMENSION 640
+#define MPVFLOW_CAPTURE_DECISION_MAX_DIMENSION 1920
+#define MPVFLOW_CAPTURE_DECISION_MAX_PIXELS 2073600
 
 enum MPVFlowCaptureBackendKind {
     MPVFLOW_CAPTURE_BACKEND_UNKNOWN = 0,
@@ -37,6 +39,10 @@ struct MPVFlowCaptureMeta {
     int source_height;
     int output_width;
     int output_height;
+    int analysis_width;
+    int analysis_height;
+    int grid_width;
+    int grid_height;
     double pts0;
     double pts1;
     double output_pts;
