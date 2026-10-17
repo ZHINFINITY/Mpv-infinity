@@ -893,13 +893,14 @@ def main() -> None:
     vo_path = mpv_dir / "video/out/vo_gpu_next.c"
     vulkan_context_path = mpv_dir / "video/out/vulkan/context.c"
     glslang_meson_path = libplacebo_dir / "src/glsl/meson.build"
+    glslang_source_path = libplacebo_dir / "src/glsl/glslang.cc"
     gpu_timer_path = libplacebo_dir / "src/vulkan/gpu.c"
     placebo_swapchain_path = libplacebo_dir / "src/vulkan/swapchain.c"
     placebo_vulkan_header_path = libplacebo_dir / "src/include/libplacebo/vulkan.h"
     placebo_stubs_path = libplacebo_dir / "src/vulkan/stubs.c"
     placebo_formats_path = libplacebo_dir / "src/vulkan/formats.c"
     for path in (
-        meson_path, stats_lua_path, vo_path, vulkan_context_path, glslang_meson_path, gpu_timer_path,
+        meson_path, stats_lua_path, vo_path, vulkan_context_path, glslang_meson_path, glslang_source_path, gpu_timer_path,
         placebo_swapchain_path, placebo_vulkan_header_path, placebo_stubs_path,
         placebo_formats_path,
     ):
@@ -976,6 +977,18 @@ def main() -> None:
     vulkan_context = enable_mailbox_suboptimal_tolerance(vulkan_context)
     meson = enable_android_vulkan_dependency(meson)
     glslang_meson = enable_android_glslang_library_search(glslang_meson_path.read_text())
+    glslang_source = glslang_source_path.read_text()
+    optimizer_setting = "options.disableOptimizer = false;"
+    if glslang_source.count(optimizer_setting) != 1:
+        raise SystemExit(
+            "Pinned libplacebo glslang optimizer setting changed; refusing an unverified "
+            "Adreno optimizer diagnostic build"
+        )
+    # Diagnostic-only experiment: build this debug runtime with SPIR-V optimization
+    # disabled to test whether optimized shader code triggers Adreno artifacts.
+    glslang_source = glslang_source.replace(
+        optimizer_setting, "options.disableOptimizer = true;", 1
+    )
     gpu_timer = enlarge_libplacebo_timer_ring(gpu_timer_path.read_text())
     placebo_swapchain_source = placebo_swapchain_path.read_text()
     validate_libplacebo_suboptimal_recovery(placebo_swapchain_source)
@@ -1035,6 +1048,8 @@ def main() -> None:
 
     vulkan_context_path.write_text(vulkan_context)
     glslang_meson_path.write_text(glslang_meson)
+    glslang_source_path.write_text(glslang_source)
+    print("Adreno diagnostic: disabled glslang SPIR-V optimizer for this MPVFlow debug runtime")
     gpu_timer_path.write_text(gpu_timer)
     placebo_swapchain_path.write_text(placebo_swapchain)
     placebo_vulkan_header_path.write_text(placebo_vulkan_header)
