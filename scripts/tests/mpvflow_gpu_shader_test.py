@@ -104,6 +104,7 @@ require(flow, "float(best)/(float(blockSize*blockSize)*255.0)", "flow vectors mu
 require(synthesis, "vec4 flowAtEdgeAware(vec2 p,int direction)", "synthesis must guide vector sampling by source appearance")
 require(synthesis, "vec4 flowAtBilinear(vec2 p,int direction)", "iterative vector refinement must have a low-cost bilinear sampler")
 require(synthesis, "bool staticPixel=", "static low-motion pixels should bypass the full-resolution warp path")
+require(synthesis, "else if(boundaryConflict) outc=FLOW_RESULT(mix(texelFetch(frame0,p,0),texelFetch(frame1,p,0),pc.timestep),7,confidence,captureReason);", "conflicting warped samples must fall back to a source-frame blend instead of trusting a single possibly corrupted warp")
 require(synthesis, "ivec2 outSize=imageSize(outTex),motionSize=pc.cfg.zw;", "synthesis bounds must use the actual storage-image extent, not only host-provided dimensions")
 require(synthesis, "flowP=clamp(uv*vec2(motionSize)-vec2(0.5),vec2(0.0),vec2(motionSize-1))", "Vulkan output pixel centers must map to analysis pixel centers without a half-pixel offset")
 require(visibility_resolver, "flowP=(vec2(p)+0.5)*vec2(motionSize)/vec2(outSize)-vec2(0.5)", "optional resolver must share the corrected pixel-center mapping")
