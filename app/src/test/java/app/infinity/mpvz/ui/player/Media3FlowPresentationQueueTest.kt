@@ -123,4 +123,22 @@ class Media3FlowPresentationQueueTest {
     assertEquals(second.slot, reusable.slot)
     queue.abortWrite(reusable)
   }
+
+  @Test
+  fun thirdBufferAllowsProducerToContinueWhileTwoGpuReadsAreInFlight() {
+    val queue = Media3FlowPresentationQueue(capacity = 3)
+    val first = queue.acquireForWrite() ?: error("first write lease unavailable")
+    queue.publish(first)
+    assertEquals(first.slot, queue.takeNext())
+
+    val second = queue.acquireForWrite() ?: error("second write lease unavailable")
+    queue.publish(second)
+    assertEquals(second.slot, queue.takeNext())
+
+    val third = queue.acquireForWrite()
+
+    assertNotNull("producer should have a staging slot while two GPU reads are in flight", third)
+    assertEquals(2, queue.presentingCount())
+    assertEquals(Media3FlowPresentationQueue.State.WRITING, queue.state(third!!.slot))
+  }
 }
