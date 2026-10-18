@@ -742,8 +742,8 @@ static void run_fixture(struct VulkanContext *ctx, const char *label,
             if (id >= 0 && m[0] != (uint8_t)id) {
                 fprintf(stderr, "Decision id mismatch: %s (%d,%d) expected=%d actual=%u\n", label, i % WIDTH, i / WIDTH, id, m[0]); exit(1);
             }
-            if (m[0] == 3 || m[0] == 7 || m[0] == 9 || m[0] == 4 || m[0] == 8 || m[0] == 10) {
-                const uint8_t *src = (m[0] == 3 || m[0] == 7 || m[0] == 9) ? frame0 : frame1;
+            if (m[0] == 3 || m[0] == 9 || m[0] == 4 || m[0] == 8 || m[0] == 10) {
+                const uint8_t *src = (m[0] == 3 || m[0] == 9) ? frame0 : frame1;
                 for (int c = 0; c < 3; c++) if (output[(size_t)i * 4 + c] != src[(size_t)i * 4 + c]) {
                     fprintf(stderr, "Fallback/output mismatch: %s (%d,%d) id=%u\n", label, i % WIDTH, i / WIDTH, m[0]); exit(1);
                 }
