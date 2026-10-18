@@ -1145,13 +1145,21 @@ int main(int argc, char **argv)
     puts("Full-frame 4x-upscaled motion tests passed");
     return 0;
 #endif
-    if (!ctx.soft_blend) {
+    const int seams_only = argc > 5 && strcmp(argv[5], "seams") == 0;
+    {
+        int seam_failures = 0;
         int c0 = run_fixture(&ctx,"confidence contour below former gate",neutral0,neutral0,0,0x3400,0x3400,0.5f,NULL,0,7);
         int c1 = run_fixture(&ctx,"confidence contour above former gate",neutral0,neutral0,0,0x3400,0x3400,0.5f,NULL,0,8);
-        if (abs(c1-c0) > 1) { fprintf(stderr,"Hard confidence contour seam: below=%d above=%d\n",c0,c1); return 1; }
+        if (abs(c1-c0) > 1) { fprintf(stderr,"Hard confidence contour seam: below=%d above=%d\n",c0,c1); seam_failures++; }
         int b0 = run_fixture(&ctx,"boundary contour below former gate",neutral0,neutral0,0,0x3400,0x3400,0.5f,NULL,0,9);
         int b1 = run_fixture(&ctx,"boundary contour above former gate",neutral0,neutral0,0,0x3400,0x3400,0.5f,NULL,0,10);
-        if (abs(b1-b0) > 2) { fprintf(stderr,"Hard boundary contour seam: below=%d above=%d\n",b0,b1); return 1; }
+        if (abs(b1-b0) > 2) { fprintf(stderr,"Hard boundary contour seam: below=%d above=%d\n",b0,b1); seam_failures++; }
+        if (seam_failures) { destroy_vulkan(&ctx); return 1; }
+    }
+    if (seams_only) {
+        destroy_vulkan(&ctx);
+        puts("Confidence and boundary seam tests passed");
+        return 0;
     }
     run_fixture(&ctx,"reliable constant translation retains warped detail",neutral0,neutral0,0,0x3400,0x3400,0.5f,translated_pixel,0,6);
     run_fixture(&ctx,"nonconverged inverse warp rejects a cycle-consistent wrong sample",neutral0,neutral0,0,0x3400,0x3400,0.5f,inverse_fallback,0,5);

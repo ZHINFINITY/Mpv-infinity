@@ -48,6 +48,7 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--require-vulkan", action="store_true")
     parser.add_argument("--decision-mode", action="store_true")
+    parser.add_argument("--soft-blend-baseline-revision", help="prove Soft Blend threshold fixtures fail this git revision")
     parser.add_argument("--baseline-revision", help="also prove the full-frame regressions fail this git revision")
     parser.add_argument("--aperture-baseline-revision", help="prove the tied-outline regression fails this git revision")
     args = parser.parse_args()
@@ -59,6 +60,15 @@ def main() -> None:
         centered_origin = "vec2 center=p-vec2(2.0);"
         if shader_source.count(centered_origin) != 1:
             raise SystemExit("Centered flow-grid origin mapping is missing or duplicated")
+        if "softBlend&&confidence<0.28" in shader_source:
+            raise SystemExit("Soft Blend must not retain the binary confidence gate")
+        for anchor in (
+            "vec4 visibilityWarped=(ca*weight0+cb*weight1+fallback*max(0.0001-total,0.0))/max(total,0.0001)",
+            "float warpTrust=smoothstep(0.0,0.60,confidence)",
+            "float softWarpTrust=smoothstep(0.0,0.60,confidence)*boundaryTrust",
+        ):
+            if shader_source.count(anchor) < 1:
+                raise SystemExit(f"Continuous Soft Blend anchor missing: {anchor}")
 
         def compile_variant(text: str, label: str) -> Path:
             source = directory / f"{label}.comp"
@@ -175,8 +185,25 @@ def main() -> None:
         mutant = shader_source.replace(fallback, "vec4 c=pc.timestep<0.5?texelFetch(frame0,p,0):texelFetch(frame1,p,0);")
         run(large, compile_variant(mutant, "endpoint_nan_fallback"), ("0", "0", "0", "nan"), "hard endpoint nonfinite fallback", "fixture=nonfinite motion")
         for replacement, label, proof in (("step(0.28,confidence)*boundaryTrust", "hard_confidence", "Hard confidence contour seam"), ("smoothstep(0.0,0.60,confidence)", "hard_boundary", "Hard boundary contour seam")):
-            mutant = shader_source.replace("smoothstep(0.0,0.60,confidence)*boundaryTrust", replacement, 1)
+            mutant = shader_source.replace("float warpTrust=smoothstep(0.0,0.60,confidence)*boundaryTrust", "float warpTrust=" + replacement, 1)
             run(normal, compile_variant(mutant, label), ("0", "0"), label, proof)
+        # Restore each old Soft Blend discontinuity independently. The production
+        # flags (soft=true, preserve=true) must catch both, not just compile them.
+        soft_trust = "float softWarpTrust=smoothstep(0.0,0.60,confidence)*boundaryTrust"
+        for replacement, label, proof in (
+            ("step(0.28,confidence)*boundaryTrust", "soft_hard_confidence", "Hard confidence contour seam"),
+            ("smoothstep(0.0,0.60,confidence)*(boundaryConflict?0.0:1.0)", "soft_hard_boundary", "Hard boundary contour seam"),
+        ):
+            mutant = shader_source.replace(soft_trust, "float softWarpTrust=" + replacement, 1)
+            run(normal, compile_variant(mutant, label), ("1", "1", "0", "seams"), label, proof)
+        if args.soft_blend_baseline_revision:
+            old_source = subprocess.check_output(["git", "show", f"{args.soft_blend_baseline_revision}:app/src/main/cpp/mpvflow/mpvflow_gpu.c"], cwd=ROOT, text=True)
+            old = compile_variant(embedded_synthesis_shader(old_source), "soft_baseline")
+            # The default policy must already pass: this isolates the active Soft
+            # Blend regression from earlier, unrelated motion-pipeline defects.
+            run(normal, old, ("0", "0", "0", "seams"), "baseline default contours")
+            for flags in (("1", "0", "0", "seams"), ("1", "1", "0", "seams")):
+                run(normal, old, flags, "baseline Soft Blend contours", "Hard confidence contour seam")
         if args.baseline_revision:
             old_source = subprocess.check_output(["git", "show", f"{args.baseline_revision}:app/src/main/cpp/mpvflow/mpvflow_gpu.c"], cwd=ROOT, text=True)
             old_shader = embedded_synthesis_shader(old_source)
