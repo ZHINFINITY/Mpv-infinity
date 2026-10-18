@@ -13,10 +13,11 @@ MAX_IMAGE = 8 * 1024 * 1024
 MAX_PIXELS = 2_073_600
 MAX_DIM = 1920
 PALETTE = {0:(0,180,0),1:(128,128,128),2:(0,80,255),3:(255,0,0),4:(255,128,0),5:(0,255,255),6:(255,255,0),7:(255,0,255),8:(160,0,255),9:(128,64,0),10:(255,255,255)}
+LEGACY_PALETTE = dict(PALETTE)
+PALETTE.update({11:(0,128,255),12:(255,192,64)})
+SOURCE_BLEND = {11,12}
 FALLBACK = {3:0,7:0,9:0,4:1,8:1,10:1}
-
 class InvalidArchive(ValueError): pass
-
 def require(ok, message):
     if not ok: raise InvalidArchive(message)
 
@@ -89,7 +90,7 @@ def analyze(path, outdir=None):
         require(all((by[k].get('width'),by[k].get('height'))==(w,h) for k in required),'record_pixel_geometry_mismatch')
         require(signature(off)[1]==(w,h) and signature(off)[2]==(aw,ah),'manifest_record_geometry_mismatch')
         palette=manifest['decision_capture'].get('palette_rgb',{})
-        if palette: require({int(k):tuple(v) for k,v in palette.items()}==PALETTE,'invalid_manifest_palette')
+        if palette: require({int(k):tuple(v) for k,v in palette.items()} in (LEGACY_PALETTE,PALETTE),'invalid_manifest_palette')
         pts=off['pts']; alpha=float(manifest.get('paired_comparison',{}).get('alpha',0.5))
         require(math.isfinite(alpha) and abs(alpha-0.5)<1e-9,'comparison_alpha_must_be_midpoint')
         p0,p1,po=(float(pts[k]) for k in ('source0','source1','output'))
@@ -102,6 +103,7 @@ def analyze(path, outdir=None):
         rawrgba=list(raw.getdata()); maskp=list(mask.convert('RGB').getdata())
         rawp=[p[:3] for p in rawrgba]
         labels=[]; counts=Counter(); mismatches={0:0,1:0}; compared={0:0,1:0}; conflict=0
+        blend_compared=0; blend_mismatches=0
         a0=list(src0.convert('RGB').getdata()); a1=list(src1.convert('RGB').getdata()); out=list(off.convert('RGB').getdata())
         for i,(r,m) in enumerate(zip(rawp,maskp)):
             bid=r[0]; require(bid in PALETTE,f"invalid_branch_id:{bid}"); require(rawrgba[i][3]==255,f"invalid_raw_alpha:{i}"); require(m==PALETTE[bid],f"mask_palette_mismatch:{i}")
@@ -114,17 +116,21 @@ def analyze(path, outdir=None):
             elif bid==1:
                 source=0 if alpha<=0.5 else 1; expected=(a0 if source==0 else a1)[i]; compared[source]+=1
                 if any(abs(out[i][c]-expected[c])>1 for c in range(3)): mismatches[source]+=1
-        comps=components(labels,w,h,set(FALLBACK))
+            elif bid in SOURCE_BLEND:
+                blend_compared+=1
+                expected=[(1.0-alpha)*a0[i][c]+alpha*a1[i][c] for c in range(3)]
+                if any(abs(out[i][c]-expected[c])>1 for c in range(3)): blend_mismatches+=1
+        comps=components(labels,w,h,set(FALLBACK)|SOURCE_BLEND)
         for c in comps: c['cell_units']={'width':c['width']/(4*w/aw),'height':c['height']/(4*h/ah)}
-        report={'engine':manifest.get('engine'),'geometry':{'output':[w,h],'analysis':[aw,ah],'grid':manifest.get('grid_dimensions'),'cell_footprint_output_pixels':[4*w/aw,4*h/ah]},'branch_counts':{str(k):counts[k] for k in range(11)},'conflict_pixel_count':conflict,'source_equality':{str(s):{'compared_pixels':compared[s],'mismatch_pixels':mismatches[s],'tolerance_rgb':1} for s in (0,1)},'fallback_components':{'connectivity':4,'count':len(comps),'largest_pixels':max((c['pixels'] for c in comps),default=0),'largest_cell_units':max((max(c['cell_units'].values()) for c in comps),default=0),'regions':sorted(comps,key=lambda c:c['pixels'],reverse=True)[:128],'regions_shown_limit':128},'interpretation':'Mismatch counts are diagnostic comparisons, not assertions that captured artifacts are bad. Components larger than one nominal cell are multi-cell decision regions, not proof of a fixed output tile. This does not establish which regions are perceptually objectionable.'}
+        report={'engine':manifest.get('engine'),'geometry':{'output':[w,h],'analysis':[aw,ah],'grid':manifest.get('grid_dimensions'),'cell_footprint_output_pixels':[4*w/aw,4*h/ah]},'branch_counts':{str(k):counts[k] for k in PALETTE},'conflict_pixel_count':conflict,'source_equality':{str(s):{'compared_pixels':compared[s],'mismatch_pixels':mismatches[s],'tolerance_rgb':1} for s in (0,1)},'source_blend_equality':{'compared_pixels':blend_compared,'mismatch_pixels':blend_mismatches,'tolerance_rgb':1},'fallback_components':{'connectivity':4,'count':len(comps),'largest_pixels':max((c['pixels'] for c in comps),default=0),'largest_cell_units':max((max(c['cell_units'].values()) for c in comps),default=0),'regions':sorted(comps,key=lambda c:c['pixels'],reverse=True)[:128],'regions_shown_limit':128},'interpretation':'Mismatch counts are diagnostic comparisons, not assertions that captured artifacts are bad. Components larger than one nominal cell are multi-cell decision regions, not proof of a fixed output tile. This does not establish which regions are perceptually objectionable.'}
         if outdir:
             from PIL import Image
             overlay=Image.new('RGBA',(w,h)); pix=[]
             for i,b in enumerate(labels):
-                if b in FALLBACK: pix.append((255,40,200,150))
+                if b in FALLBACK or b in SOURCE_BLEND: pix.append((255,40,200,150))
                 elif rawp[i][2]: pix.append((255,220,0,170))
                 else: pix.append((0,0,0,0))
-            overlay.putdata(pix); outdir.mkdir(parents=True,exist_ok=True); overlay.save(outdir/'decision-overlay.png'); (outdir/'analysis.json').write_text(json.dumps(report,indent=2)+'\n')
+                overlay.putdata(pix); outdir.mkdir(parents=True,exist_ok=True); overlay.save(outdir/'decision-overlay.png'); (outdir/'analysis.json').write_text(json.dumps(report,indent=2)+'\n')
         return report
 
 def main():

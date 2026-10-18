@@ -278,6 +278,10 @@ with tempfile.TemporaryDirectory() as temp_dir:
     assert paired_manifest["image_policy"]["max_dimension"] == 1920
     assert paired_manifest["image_policy"]["color_images"] == "native-resolution RGBA8; no resampling"
     assert paired_manifest["decision_capture"]["branches"]["10"] == "zero-weight source1"
+    assert paired_manifest["decision_capture"]["branches"]["11"] == "lowconf source blend"
+    assert paired_manifest["decision_capture"]["branches"]["12"] == "conflict source blend"
+    assert paired_manifest["decision_capture"]["palette_rgb"]["11"] == [0, 128, 255]
+    assert paired_manifest["decision_capture"]["palette_rgb"]["12"] == [255, 192, 64]
     assert paired_manifest["decision_capture"]["conflict_bits"]["8"] == "neighborhood_conflict"
     assert {r["channel"] for r in paired_manifest["records"] if r["channel"].startswith("decision_")} == {"decision_raw", "decision_mask"}
     assert paired_manifest["paired_comparison"]["same_source_textures"] is True

@@ -129,6 +129,17 @@ def main() -> None:
             if result.returncode:
                 raise SystemExit("Vulkan synthesis decision-mask oracle failed:\n" + result.stdout + result.stderr)
             print("[decision-mask capture mode]\n" + result.stdout, end="")
+        guard = "bool inverseResidual0Valid=inverseResidual0<=0.75, inverseResidual1Valid=inverseResidual1<=0.75;"
+        if shader_source.count(guard) != 1:
+            raise SystemExit("Inverse-warp mutation check could not locate the production guard")
+        mutant = compile_variant(shader_source.replace(guard,
+            "bool inverseResidual0Valid=true, inverseResidual1Valid=true;", 1), "unguarded_inverse")
+        result = subprocess.run([str(executable), str(mutant), "0", "0"],
+            check=False, capture_output=True, text=True, env=env)
+        proof = "fixture=nonconverged inverse warp rejects a cycle-consistent wrong sample"
+        if result.returncode == 0 or proof not in result.stderr:
+            raise SystemExit("Inverse-warp fixture did not reject the disabled guard:\n" + result.stdout + result.stderr)
+        print("[mutation check: disabled inverse guard correctly fails]\n" + result.stderr, end="")
 
 
 if __name__ == "__main__":

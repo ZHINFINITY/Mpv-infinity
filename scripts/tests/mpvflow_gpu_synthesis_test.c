@@ -569,6 +569,28 @@ static void run_fixture(struct VulkanContext *ctx, const char *label,
             flow[1][cell * 4 + 3] = 0x3200; // less reliable reverse motion
         }
     }
+    if (special_grid_test == 5 || special_grid_test == 6) {
+        /* Case 5: at P.x=1, F=B=[-4,+2] makes the inverse iterate
+         * land at x=2 where both final vectors are zero. Cycle error is zero,
+         * yet the inverse residual is one OUTPUT pixel: this is not a valid warp.
+         * Case 6: constant +/-2 translation has zero residual and must still warp. */
+        for (int y = 0; y < HEIGHT; y++) {
+            for (int x = 0; x < WIDTH; x++) {
+                size_t index = ((size_t)y * WIDTH + x) * 4;
+                int translated = x >= 2 ? x - 2 : 0;
+                uint8_t v0 = (uint8_t)(special_grid_test == 5 ? x * 10 : x * x * 4);
+                uint8_t v1 = (uint8_t)(special_grid_test == 5 ? x * 10 : translated * translated * 4);
+                for (int c = 0; c < 3; c++) { frame0[index+c] = v0; frame1[index+c] = v1; }
+            }
+        }
+        for (uint32_t y = 0; y < GRID_HEIGHT; y++) {
+            for (uint32_t x = 0; x < GRID_WIDTH; x++) {
+                size_t index = ((size_t)y * GRID_WIDTH + x) * 4;
+                flow[0][index] = special_grid_test == 5 ? (x == 0 ? 0xc400 : 0x4000) : 0x4000;
+                flow[1][index] = special_grid_test == 5 ? flow[0][index] : 0xc000;
+            }
+        }
+    }
     scene[0] = scene_delta;
     scene[1] = scene[2] = 0x0000;
     scene[3] = 0x3c00;
@@ -710,7 +732,7 @@ static void run_fixture(struct VulkanContext *ctx, const char *label,
     VK_CHECK(vkMapMemory(ctx->device, decision_readback.memory, 0, IMAGE_BYTES, 0, &mapped));
     memcpy(decisions, mapped, IMAGE_BYTES);
     vkUnmapMemory(ctx->device, decision_readback.memory);
-    int first = check_all_pixels ? 0 : special_grid_test == 2 ? 1 :
+    int first = check_all_pixels ? 0 : special_grid_test == 2 ? 1 : special_grid_test == 5 ? (2 * WIDTH + 1) :
                 (2 * WIDTH + (special_grid_test == 1 ? 2 : 3));
     int last = check_all_pixels ? (int)PIXELS : first + 1;
     if (expected) {
@@ -726,13 +748,14 @@ static void run_fixture(struct VulkanContext *ctx, const char *label,
     if (ctx->decision_mode) {
         int expected_id = strstr(label, "scene-cut") ? 1 :
                           strstr(label, "static identical") ? 2 :
-                          strstr(label, "low-confidence source 0") ? 3 :
-                          strstr(label, "low-confidence source 1") ? 4 :
+                          strstr(label, "low-confidence source 0") ? 11 :
+                          strstr(label, "low-confidence source 1") ? 11 :
+                          strstr(label, "default conflict") ? 12 :
                           strstr(label, "irregular terminal") ? -2 : -1;
-        const uint8_t grid_ids[WIDTH] = { 4, 5, 5, 8, 8, 4, 4 };
+        const uint8_t grid_ids[WIDTH] = { 11, 12, 12, 12, 12, 11, 11 };
         for (int i = 0; i < (int)PIXELS; i++) {
             const uint8_t *m = decisions + (size_t)i * 4;
-            if (m[0] > 10 || m[2] > 15 || m[3] != 255) {
+            if (m[0] > 12 || m[2] > 15 || m[3] != 255) {
                 fprintf(stderr, "Invalid decision encoding: %s (%d,%d)\n", label, i % WIDTH, i / WIDTH); exit(1);
             }
             if (strstr(label, "chroma endpoint") && m[0] >= 5 && m[0] <= 8 && !(m[2] & 2)) {
@@ -741,6 +764,15 @@ static void run_fixture(struct VulkanContext *ctx, const char *label,
             int id = expected_id == -2 ? grid_ids[i % WIDTH] : expected_id;
             if (id >= 0 && m[0] != (uint8_t)id) {
                 fprintf(stderr, "Decision id mismatch: %s (%d,%d) expected=%d actual=%u\n", label, i % WIDTH, i / WIDTH, id, m[0]); exit(1);
+            }
+            if (m[0] == 11 || m[0] == 12) {
+                float alpha = timestep;
+                for (int c = 0; c < 3; c++) {
+                    int expected_blend = (int)((1.0f - alpha) * frame0[(size_t)i * 4 + c] + alpha * frame1[(size_t)i * 4 + c] + 0.5f);
+                    if (abs((int)output[(size_t)i * 4 + c] - expected_blend) > 1) {
+                        fprintf(stderr, "Source-blend/output mismatch: %s (%d,%d) id=%u expected=%d actual=%u\n", label, i % WIDTH, i / WIDTH, m[0], expected_blend, output[(size_t)i * 4 + c]); exit(1);
+                    }
+                }
             }
             if (m[0] == 3 || m[0] == 7 || m[0] == 9 || m[0] == 4 || m[0] == 8 || m[0] == 10) {
                 const uint8_t *src = (m[0] == 3 || m[0] == 7 || m[0] == 9) ? frame0 : frame1;
@@ -751,6 +783,13 @@ static void run_fixture(struct VulkanContext *ctx, const char *label,
             if (strstr(label, "low-confidence") && m[1] != 0) {
                 fprintf(stderr, "Expected zero G confidence for %s; got %u\n", label, m[1]); exit(1);
             }
+        }
+    }
+    if (ctx->decision_mode && (special_grid_test == 5 || special_grid_test == 6)) {
+        int required_id = special_grid_test == 5 ? 11 : 0;
+        if (decisions[(size_t)first * 4] != required_id) {
+            fprintf(stderr, "Inverse-warp decision mismatch: %s expected=%d actual=%u\n", label, required_id, decisions[(size_t)first * 4]);
+            exit(1);
         }
     }
     printf("Vulkan synthesis pixel fixture passed: %s\n", label);
@@ -796,7 +835,11 @@ int main(int argc, char **argv)
     const uint8_t red[4]={255,0,0,255}, blue[4]={0,0,255,255}, green[4]={0,130,0,255};
     const uint8_t neutral0[4]={100,100,100,255}, neutral1[4]={120,110,104,255}, mixed[4]={110,105,102,255};
     const uint8_t soft_chroma[4]={64,98,0,255}, continuous_chroma[4]={50,104,0,255};
+    const uint8_t source_blend_low0[4]={191,0,64,255}, source_blend_low1[4]={64,0,191,255};
     const uint8_t soft_low[4]={214,0,41,255}, soft_edge[4]={50,114,50,255}, continuous_edge[4]={56,120,56,255};
+    const uint8_t inverse_fallback[4]={10,10,10,255}, translated_pixel[4]={16,16,16,255};
+    run_fixture(&ctx,"reliable constant translation retains warped detail",neutral0,neutral0,0,0x3400,0x3400,0.5f,translated_pixel,0,6);
+    run_fixture(&ctx,"nonconverged inverse warp rejects a cycle-consistent wrong sample",neutral0,neutral0,0,0x3400,0x3400,0.5f,inverse_fallback,0,5);
     run_fixture(&ctx,"scene-cut alpha selects first source",red,blue,0x3800,0x3400,0x3800,0.25f,red,1,0);
     run_fixture(&ctx,"scene-cut alpha selects second source",red,blue,0x3800,0x3400,0x3800,0.75f,blue,1,0);
     run_fixture(&ctx,"static identical frame is preserved exactly",neutral0,neutral0,0,0x3400,0x3400,0.37f,neutral0,1,0);
@@ -808,8 +851,8 @@ int main(int argc, char **argv)
     run_fixture(&ctx,"irregular terminal block anchors use conservative source fallback",neutral0,neutral0,0,0x3400,0x3400,0.5f,ctx.soft_blend?(ctx.preserve_motion_blend?cont_grid:soft_grid):terminal_grid_source,0,1);
     const uint8_t outlier[4]={2,2,2,255};
     run_fixture(&ctx,"ambiguous fast vector cannot warp a coherent region",neutral0,neutral0,0,0x3400,0x3400,0.25f,outlier,0,2);
-    run_fixture(&ctx,ctx.soft_blend?"soft mode favors temporal detail at low confidence":"low-confidence source 0 at endpoint",red,blue,0,0x3400,0x3800,0.25f,ctx.soft_blend?soft_low:red,1,3);
-    if (ctx.decision_mode) run_fixture(&ctx,"low-confidence source 1 at endpoint",red,blue,0,0x3400,0x3800,0.75f,blue,1,3);
+    run_fixture(&ctx,ctx.soft_blend?"soft mode favors temporal detail at low confidence":"low-confidence source 0 weighted blend",red,blue,0,0x3400,0x3800,0.25f,ctx.soft_blend?soft_low:source_blend_low0,1,3);
+    if (ctx.decision_mode) run_fixture(&ctx,"low-confidence source 1 weighted blend",red,blue,0,0x3400,0x3800,0.75f,source_blend_low1,1,3);
     destroy_vulkan(&ctx);
     puts("MPVFlow Vulkan synthesis pixel-oracle tests passed");
     return 0;
