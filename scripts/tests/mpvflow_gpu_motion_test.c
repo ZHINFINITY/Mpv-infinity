@@ -8,10 +8,6 @@
 #include <vulkan/vulkan.h>
 #define W 64
 #define H 48
-#define GW ((W - 4 + 3) / 4 + 1)
-#define GH ((H - 4 + 3) / 4 + 1)
-#define PW (((W / 2) - 8 + 3) / 4 + 1)
-#define PH (((H / 2) - 8 + 3) / 4 + 1)
 #define N4(n) ((size_t)(n) * 4)
 typedef struct {
   VkImage im;
@@ -317,14 +313,25 @@ static void init(Ctx *c, const char *spv) {
 }
 int main(int ac, char **av) {
   if (ac < 2) {
-    fprintf(stderr, "usage: %s flow.spv\n", av[0]);
+    fprintf(stderr, "usage: %s flow.spv [child-block-size 4|8]\n", av[0]);
     return 2;
   }
+  int child_block = ac >= 3 ? atoi(av[2]) : 4;
+  if (child_block != 4 && child_block != 8) {
+    fprintf(stderr, "child block size must be 4 or 8\n");
+    return 2;
+  }
+  const int parent_case = ac >= 4 && strcmp(av[3], "parent") == 0;
+  const int gw = (W - child_block + 3) / 4 + 1;
+  const int gh = (H - child_block + 3) / 4 + 1;
+  const int parent_block = 8;
+  int pw = ((W / 2 - parent_block + 3) / 4 + 1);
+  int ph = ((H / 2 - parent_block + 3) / 4 + 1);
   Ctx c = {0};
   init(&c, av[1]);
-  size_t pix = (size_t)W * H, grid = (size_t)GW * GH;
+  size_t pix = (size_t)W * H, grid = (size_t)gw * gh, parent_grid = (size_t)pw * ph;
   uint16_t *src = calloc(pix * 4, 2), *dst = calloc(pix * 4, 2),
-           *par = calloc((size_t)PW * PH * 4, 2), *out = calloc(grid * 4, 2);
+           *par = calloc(parent_grid * 4, 2), *out = calloc(grid * 4, 2);
   uint8_t *col0 = calloc(pix * 4, 1), *col1 = calloc(pix * 4, 1);
   uint16_t *scene = calloc(4, 2);
   for (int y = 0; y < H; y++)
@@ -348,8 +355,27 @@ int main(int ac, char **av) {
           (uint8_t)lroundf(255.0f * (edge1 ? 0.02f : (shape1 ? 0.92f : b)));
       col0[k + 3] = col1[k + 3] = 255;
     }
-  for (size_t i = 0; i < (size_t)PW * PH; i++) {
-    par[i * 4] = half(1.5f);
+  for (size_t i = 0; i < parent_grid; i++) {
+    int px = (int)(i % pw), py = (int)(i / pw);
+    /* Adversarial parent-field sentinel, independent of the pan image oracle.
+     * For the fine (3,3) probe the correct anchor is parent pixel (3,3),
+     * whereas stale -2 reads (4,4). The values make that misregistration
+     * observable even with the real radius-4 search, not a radius-zero stub.
+     * This is a coordinate regression, not an end-to-end two-layer render. */
+    float parent_dx = 1.5f;
+    if (parent_case && child_block == 4 && px <= 2 && py <= 2) {
+      if (px == 2 && py == 2) parent_dx = -8.0f;
+      else if (px <= 1 && py <= 1)
+        parent_dx = (px == 1 && py == 1) ? -8.0f : 13.714285f;
+    }
+    if (parent_case && child_block == 8 && px <= 2 && py <= 2) {
+      /* The 8x8 child's aligned parent coordinate is exactly cell (1,1).
+       * Old origin-only sampling averages in the independently moving region
+       * at cells (2,1)/(1,2)/(2,2), outside the radius-8 recovery budget. */
+      parent_dx = (px <= 1 && py <= 1) ? -16.0f : 12.0f;
+      if (px == 1 && py == 1) parent_dx = 1.5f;
+    }
+    par[i * 4] = half(parent_dx);
     par[i * 4 + 1] = half(0);
     par[i * 4 + 2] = half(0.03f);
     par[i * 4 + 3] = half(0.0f);
@@ -359,9 +385,9 @@ int main(int ac, char **av) {
                 VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_STORAGE_BIT);
   im[1] = image(&c, im[0].fmt, W, H,
                 VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_STORAGE_BIT);
-  im[2] = image(&c, im[0].fmt, PW, PH,
+  im[2] = image(&c, im[0].fmt, pw, ph,
                 VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_STORAGE_BIT);
-  im[3] = image(&c, im[0].fmt, GW, GH,
+  im[3] = image(&c, im[0].fmt, gw, gh,
                 VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_STORAGE_BIT);
   im[4] = image(&c, im[0].fmt, 1, 1,
                 VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_STORAGE_BIT);
@@ -371,7 +397,7 @@ int main(int ac, char **av) {
                 VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_STORAGE_BIT);
   upload(&c, &im[0], src, pix * 8);
   upload(&c, &im[1], dst, pix * 8);
-  upload(&c, &im[2], par, (size_t)PW * PH * 8);
+  upload(&c, &im[2], par, parent_grid * 8);
   upload(&c, &im[3], out, grid * 8);
   upload(&c, &im[4], scene, 8);
   upload(&c, &im[5], col0, pix * 4);
@@ -393,11 +419,11 @@ int main(int ac, char **av) {
   vkCmdBindPipeline(z, VK_PIPELINE_BIND_POINT_COMPUTE, c.pipe);
   vkCmdBindDescriptorSets(z, VK_PIPELINE_BIND_POINT_COMPUTE, c.pl, 0, 1, &c.ds,
                           0, 0);
-  int32_t pc[4] = {W, H, 2, (4 << 8) | 1 | 8};
+  int32_t pc[4] = {W, H, child_block == 4 ? 4 : 8, (child_block << 8) | 1 | 8};
   float timestep = 0.5f;
   vkCmdPushConstants(z, c.pl, VK_SHADER_STAGE_COMPUTE_BIT, 0, 16, pc);
   vkCmdPushConstants(z, c.pl, VK_SHADER_STAGE_COMPUTE_BIT, 16, 4, &timestep);
-  vkCmdDispatch(z, (GW + 7) / 8, (GH + 7) / 8, 1);
+  vkCmdDispatch(z, (gw + 7) / 8, (gh + 7) / 8, 1);
   VkImageMemoryBarrier q = {
       .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
       .srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT,
@@ -414,7 +440,7 @@ int main(int ac, char **av) {
   VkBufferImageCopy cp = {0};
   cp.imageSubresource =
       (VkImageSubresourceLayers){VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
-  cp.imageExtent = (VkExtent3D){GW, GH, 1};
+  cp.imageExtent = (VkExtent3D){gw, gh, 1};
   vkCmdCopyImageToBuffer(z, im[3].im, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
                          rb.b, 1, &cp);
   VkBufferMemoryBarrier hb = {.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER,
@@ -433,9 +459,9 @@ int main(int ac, char **av) {
   vkUnmapMemory(c.dev, rb.m);
   /* Run the same production pass backward as well: swap both luma and RGB
    * bindings. */
-  for (size_t i = 0; i < (size_t)PW * PH; i++)
+  for (size_t i = 0; i < parent_grid; i++)
     par[i * 4] = half(-1.5f);
-  upload(&c, &im[2], par, (size_t)PW * PH * 8);
+  upload(&c, &im[2], par, parent_grid * 8);
   VkDescriptorImageInfo bi[2] = {{0, im[1].view, VK_IMAGE_LAYOUT_GENERAL},
                                  {0, im[0].view, VK_IMAGE_LAYOUT_GENERAL}};
   VkWriteDescriptorSet bw[2] = {
@@ -474,7 +500,7 @@ int main(int ac, char **av) {
                           &c.ds, 0, NULL);
   vkCmdPushConstants(back, c.pl, VK_SHADER_STAGE_COMPUTE_BIT, 0, 16, pc);
   vkCmdPushConstants(back, c.pl, VK_SHADER_STAGE_COMPUTE_BIT, 16, 4, &timestep);
-  vkCmdDispatch(back, (GW + 7) / 8, (GH + 7) / 8, 1);
+  vkCmdDispatch(back, (gw + 7) / 8, (gh + 7) / 8, 1);
   q.oldLayout = VK_IMAGE_LAYOUT_GENERAL;
   q.newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
   q.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
@@ -497,18 +523,23 @@ int main(int ac, char **av) {
   double err = 0, uniq = 0, res = 0;
   int tied = 0, bad = 0, tied_correct = 0, bad_back = 0, tied_back = 0,
       tied_back_correct = 0;
-  int outline_tied = 0, backward_outline_tied = 0;
+  int outline_tied = 0, backward_outline_tied = 0, parent_probe_bad = 0;
+  const size_t probe_index = (3 * gw + 3) * 4;
+  if (parent_case) printf("parent_anchor_probe block=%d vector=(%.4f,%.4f) expected=(3,0)\n",
+                          child_block, unhalf(out[probe_index]), unhalf(out[probe_index+1]));
   for (size_t i = 0; i < grid; i++) {
     float dx = unhalf(out[i * 4]), dy = unhalf(out[i * 4 + 1]),
           rr = unhalf(out[i * 4 + 2]), uu = unhalf(out[i * 4 + 3]);
     float bdx = unhalf(out_back[i * 4]), bdy = unhalf(out_back[i * 4 + 1]);
-    if (getenv("MPVFLOW_TEST_MOTION_DEBUG") && i / GW >= 3 && i / GW <= 7 &&
-        (i % GW == 2 || i % GW == 7 || i % GW == 3 || i % GW == 8))
+    if (getenv("MPVFLOW_TEST_MOTION_DEBUG") && i / gw >= 3 && i / gw <= 7 &&
+        (i % gw == 2 || i % gw == 7 || i % gw == 3 || i % gw == 8))
       fprintf(
           stderr,
           "cell=(%zu,%zu) F=(%.3f,%.3f) r=%.4f w=%.4f B=(%.3f,%.3f) w=%.4f\n",
-          i % GW, i / GW, dx, dy, rr, uu, bdx, bdy,
+          i % gw, i / gw, dx, dy, rr, uu, bdx, bdy,
           unhalf(out_back[i * 4 + 3]));
+    if (parent_case && i % gw == 3 && i / gw == 3 && fabs(dx - 3) > 0.01)
+      parent_probe_bad = 1;
     err += fabs(dx - 3) + fabs(dy) + fabs(bdx + 3) + fabs(bdy);
     uniq += uu;
     res += rr;
@@ -516,7 +547,7 @@ int main(int ac, char **av) {
       tied++;
       if (fabs(dx - 3) < 0.01 && fabs(dy) < 0.01) {
         tied_correct++;
-        if ((i % GW == 2 || i % GW == 7) && i / GW >= 3 && i / GW <= 7)
+        if ((i % gw == 2 || i % gw == 7) && i / gw >= 3 && i / gw <= 7)
           outline_tied++;
       }
     }
@@ -528,29 +559,30 @@ int main(int ac, char **av) {
       tied_back++;
       if (fabs(bdx + 3) < 0.01 && fabs(bdy) < 0.01) {
         tied_back_correct++;
-        if ((i % GW == 3 || i % GW == 8) && i / GW >= 3 && i / GW <= 7)
+        if ((i % gw == 3 || i % gw == 8) && i / gw >= 3 && i / gw <= 7)
           backward_outline_tied++;
       }
     }
   }
   if (bad > (int)(grid / 3) || bad_back > (int)(grid / 3) || tied_correct < 8 ||
-      tied_back_correct < 8 || outline_tied < 4 || backward_outline_tied < 4 ||
-      !isfinite(err) || !isfinite(res) || !isfinite(uniq)) {
+      tied_back_correct < 8 ||
+      (!parent_case && (outline_tied < 4 || backward_outline_tied < 4)) ||
+      parent_probe_bad || !isfinite(err) || !isfinite(res) || !isfinite(uniq)) {
     fprintf(stderr,
             "motion regression failed: forward bad=%d tied=%d/%d "
-            "outline_tied=%d backward "
+            "outline_tied=%d parent_probe_bad=%d backward "
             "bad=%d tied=%d/%d outline_tied=%d\n",
-            bad, tied, tied_correct, outline_tied, bad_back, tied_back,
+            bad, tied, tied_correct, outline_tied, parent_probe_bad, bad_back, tied_back,
             tied_back_correct, backward_outline_tied);
     return 1;
   }
-  printf("device=Vulkan shader_flow fixture=anime-outline-pan size=%dx%d "
+  printf("device=Vulkan shader_flow fixture=anime-outline-pan parent_case=%d child_block=%d parent_grid=%dx%d size=%dx%d "
          "grid=%dx%d expected_forward=(3,0) expected_backward=(-3,0) "
          "mean_abs_error=%.4f mean_residual=%.4f "
          "mean_uniqueness=%.4f tied=%d/%zu bad_matches=%d "
          "backward_bad_matches=%d tied_correct=%d backward_tied_correct=%d "
          "outline_tied=%d backward_outline_tied=%d\n",
-         W, H, GW, GH, err / (4 * grid), res / grid, uniq / grid, tied, grid,
+         parent_case, child_block, pw, ph, W, H, gw, gh, err / (4 * grid), res / grid, uniq / grid, tied, grid,
          bad, bad_back, tied_correct, tied_back_correct, outline_tied,
          backward_outline_tied);
   destroy_buffer(&c, &rb);

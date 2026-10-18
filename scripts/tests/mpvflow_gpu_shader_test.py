@@ -99,6 +99,7 @@ require(flow, "int c=sadAt(p,qcomCandidate,sz,best==0?0:second,blockSize,colorAw
 require(flow, "if(qcomCandidateValid&&all(equal(d,qcomCandidate))) continue", "the baseline center-out search must not double-count its QCOM-seeded candidate")
 require(flow, "int radius=pc.cfg.z; if(hasParent&&!qcomSeed&&parentResidual", "QCOM hints must not expand or otherwise change the configured SAD search radius")
 require(flow, "int blockSize=(pc.cfg.w>>8)", "motion search must distinguish fine and coarse block support")
+require(flow, "vec2 parentOrigin=vec2(float(blockSize)*0.25-4.0)", "parent sampling must center each child block on its parent block")
 require(flow, "if(blockSize!=4) blockSize=8", "motion search must constrain support to the tested 4x4 or 8x8 sizes")
 require(flow, "float(best)/(float(blockSize*blockSize)*255.0)", "flow vectors must normalize SAD by the active block area")
 assert "flowAtEdgeAware(" not in synthesis, "inverse/final/cycle sampling must not switch to a nearest-guide field"
@@ -220,6 +221,7 @@ require(opencl_source, "int boundary_conflict=neighborhood_conflict||luma_delta>
 require(opencl_source, "float4 f=flow_at_bilinear(forward,backward,0,aw,ah,flow_p.x,flow_p.y),q=flow_at_bilinear(forward,backward,1,aw,ah,flow_p.x,flow_p.y)", "OpenCL synthesis must use Vulkan's cheaper bilinear initial-flow sampling")
 require(opencl_source, "f=flow_at_edge_aware(forward,backward,luma0,luma1,0,aw,ah,pa.x,pa.y)", "OpenCL must retain final edge-aware refinement after the bilinear fast path")
 require(opencl_source, "parent_residual=q.z; parent_uniqueness=q.w", "OpenCL finer levels must retain the coarse SAD and uniqueness signals")
+require(opencl_source, "float2 parent_origin=(float2)((float)block_size*0.25f-4.0f)", "OpenCL parent sampling must use the active child block center")
 require(opencl_source, "if(has_coarse&&parent_residual>0.12f&&parent_uniqueness>0.0005f)search_radius=min(radius*2,16)", "OpenCL must use the same gated search-expansion policy")
 require(synthesis, "dot(fastForward.xy,fastForward.xy)<=0.0025", "the static path must require a near-zero forward vector")
 require(synthesis, "dot(fastBackward.xy,fastBackward.xy)<=0.0025", "the static path must require a near-zero backward vector")
