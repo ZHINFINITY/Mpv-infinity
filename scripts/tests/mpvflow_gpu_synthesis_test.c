@@ -808,7 +808,8 @@ int main(int argc, char **argv)
     run_fixture(&ctx,"irregular terminal block anchors use conservative source fallback",neutral0,neutral0,0,0x3400,0x3400,0.5f,ctx.soft_blend?(ctx.preserve_motion_blend?cont_grid:soft_grid):terminal_grid_source,0,1);
     const uint8_t outlier[4]={2,2,2,255};
     run_fixture(&ctx,"ambiguous fast vector cannot warp a coherent region",neutral0,neutral0,0,0x3400,0x3400,0.25f,outlier,0,2);
-    run_fixture(&ctx,ctx.soft_blend?"soft mode favors temporal detail at low confidence":"low-confidence source 0 at endpoint",red,blue,0,0x3400,0x3800,0.25f,ctx.soft_blend?soft_low:red,1,3);
+    const uint8_t low_confidence_blend[4]={191,0,64,255};
+    run_fixture(&ctx,ctx.soft_blend?"soft mode favors temporal detail at low confidence":"low-confidence source 0 at endpoint",red,blue,0,0x3400,0x3800,0.25f,ctx.soft_blend?soft_low:low_confidence_blend,1,3);
     if (ctx.decision_mode) run_fixture(&ctx,"low-confidence source 1 at endpoint",red,blue,0,0x3400,0x3800,0.75f,blue,1,3);
     destroy_vulkan(&ctx);
     puts("MPVFlow Vulkan synthesis pixel-oracle tests passed");
