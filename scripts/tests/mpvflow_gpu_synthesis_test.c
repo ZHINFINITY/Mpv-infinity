@@ -489,7 +489,7 @@ static void update_descriptors(struct VulkanContext *ctx,
     vkUpdateDescriptorSets(ctx->device, 9, writes, 0, NULL);
 }
 
-static void run_fixture(struct VulkanContext *ctx, const char *label,
+static int run_fixture(struct VulkanContext *ctx, const char *label,
                         const uint8_t frame0_color[4],
                         const uint8_t frame1_color[4], uint16_t scene_delta,
                         uint16_t luma0_value, uint16_t luma1_value,
@@ -589,6 +589,28 @@ static void run_fixture(struct VulkanContext *ctx, const char *label,
                 flow[0][index] = special_grid_test == 5 ? (x == 0 ? 0xc400 : 0x3800) : 0x4000;
                 flow[1][index] = special_grid_test == 5 ? (x == 0 ? 0xc400 : 0x4800) : 0xc000;
             }
+        }
+    }
+    if (special_grid_test >= 7 && special_grid_test <= 10) {
+        /* Same coherent +/-2px motion, with only a half-float confidence step
+         * across the former .28 gate, or a 1/255 color step at the .08 gate.
+         * A hard fallback used to change the pixel by 10 levels at once. */
+        for (int y = 0; y < HEIGHT; y++) {
+            for (int x = 0; x < WIDTH; x++) {
+                size_t index = ((size_t)y * WIDTH + x) * 4;
+                int translated = x >= 2 ? x - 2 : 0;
+                int offset = special_grid_test >= 9 ? (special_grid_test == 9 ? 20 : 21) : 0;
+                int v0 = x * x * 10, v1 = translated * translated * 10 + offset;
+                if (v0 > 255) v0 = 255;
+                if (v1 > 255) v1 = 255;
+                for (int c = 0; c < 3; c++) { frame0[index+c] = (uint8_t)v0; frame1[index+c] = (uint8_t)v1; }
+            }
+        }
+        for (size_t cell = 0; cell < GRID_PIXELS; cell++) {
+            flow[0][cell*4] = 0x4000;
+            flow[1][cell*4] = 0xc000;
+            flow[0][cell*4+3] = flow[1][cell*4+3] =
+                special_grid_test == 7 ? 0x3103 : special_grid_test == 8 ? 0x3104 : 0x3c00;
         }
     }
     scene[0] = scene_delta;
@@ -792,13 +814,15 @@ static void run_fixture(struct VulkanContext *ctx, const char *label,
             exit(1);
         }
     }
-    printf("Vulkan synthesis pixel fixture passed: %s\n", label);
+    int sampled_pixel = output[(size_t)first * 4];
+    printf("Vulkan synthesis pixel fixture passed: %s (probe=%d)\n", label, sampled_pixel);
     free(output);
     free(decisions);
     destroy_buffer(ctx, &readback);
     destroy_buffer(ctx, &decision_readback);
     for (int i = 0; i < 9; i++)
         destroy_image(ctx, &images[i]);
+    return sampled_pixel;
 }
 
 static void destroy_vulkan(struct VulkanContext *ctx)
@@ -838,6 +862,14 @@ int main(int argc, char **argv)
     const uint8_t source_blend_low0[4]={191,0,64,255}, source_blend_low1[4]={64,0,191,255};
     const uint8_t soft_low[4]={214,0,41,255}, soft_edge[4]={50,114,50,255}, continuous_edge[4]={56,120,56,255};
     const uint8_t inverse_fallback[4]={10,10,10,255}, translated_pixel[4]={16,16,16,255};
+    if (!ctx.soft_blend) {
+        int c0 = run_fixture(&ctx,"confidence contour below former gate",neutral0,neutral0,0,0x3400,0x3400,0.5f,NULL,0,7);
+        int c1 = run_fixture(&ctx,"confidence contour above former gate",neutral0,neutral0,0,0x3400,0x3400,0.5f,NULL,0,8);
+        if (abs(c1-c0) > 1) { fprintf(stderr,"Hard confidence contour seam: below=%d above=%d\n",c0,c1); return 1; }
+        int b0 = run_fixture(&ctx,"boundary contour below former gate",neutral0,neutral0,0,0x3400,0x3400,0.5f,NULL,0,9);
+        int b1 = run_fixture(&ctx,"boundary contour above former gate",neutral0,neutral0,0,0x3400,0x3400,0.5f,NULL,0,10);
+        if (abs(b1-b0) > 2) { fprintf(stderr,"Hard boundary contour seam: below=%d above=%d\n",b0,b1); return 1; }
+    }
     run_fixture(&ctx,"reliable constant translation retains warped detail",neutral0,neutral0,0,0x3400,0x3400,0.5f,translated_pixel,0,6);
     run_fixture(&ctx,"nonconverged inverse warp rejects a cycle-consistent wrong sample",neutral0,neutral0,0,0x3400,0x3400,0.5f,inverse_fallback,0,5);
     run_fixture(&ctx,"scene-cut alpha selects first source",red,blue,0x3800,0x3400,0x3800,0.25f,red,1,0);

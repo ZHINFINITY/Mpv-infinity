@@ -132,17 +132,28 @@ def main() -> None:
             if result.returncode:
                 raise SystemExit("Vulkan synthesis decision-mask oracle failed:\n" + result.stdout + result.stderr)
             print("[decision-mask capture mode]\n" + result.stdout, end="")
-        guard = "bool inverseResidual0Valid=inverseResidual0<=0.75, inverseResidual1Valid=inverseResidual1<=0.75;"
+        guard = "float inverseResidual0Valid=1.0-smoothstep(0.25,0.75,inverseResidual0), inverseResidual1Valid=1.0-smoothstep(0.25,0.75,inverseResidual1);"
         if shader_source.count(guard) != 1:
             raise SystemExit("Inverse-warp mutation check could not locate the production guard")
         mutant = compile_variant(shader_source.replace(guard,
-            "bool inverseResidual0Valid=true, inverseResidual1Valid=true;", 1), "unguarded_inverse")
+            "float inverseResidual0Valid=1.0, inverseResidual1Valid=1.0;", 1), "unguarded_inverse")
         result = subprocess.run([str(executable), str(mutant), "0", "0"],
             check=False, capture_output=True, text=True, env=env)
         proof = "fixture=nonconverged inverse warp rejects a cycle-consistent wrong sample"
         if result.returncode == 0 or proof not in result.stderr:
             raise SystemExit("Inverse-warp fixture did not reject the disabled guard:\n" + result.stdout + result.stderr)
         print("[mutation check: disabled inverse guard correctly fails]\n" + result.stderr, end="")
+        for fragment, replacement, label, proof in (
+            ("smoothstep(0.0,0.60,confidence)*boundaryTrust", "step(0.28,confidence)*boundaryTrust", "hard_confidence", "Hard confidence contour seam"),
+            ("smoothstep(0.0,0.60,confidence)*boundaryTrust", "smoothstep(0.0,0.60,confidence)", "hard_boundary", "Hard boundary contour seam"),
+        ):
+            if shader_source.count(fragment) != 1:
+                raise SystemExit(f"Continuity mutation {label} could not locate warp trust")
+            mutant = compile_variant(shader_source.replace(fragment, replacement, 1), label)
+            result = subprocess.run([str(executable), str(mutant), "0", "0"], check=False, capture_output=True, text=True, env=env)
+            if result.returncode == 0 or proof not in result.stderr:
+                raise SystemExit(f"Continuity fixture did not reject {label}:\n" + result.stdout + result.stderr)
+            print(f"[mutation check: {label} correctly fails]\n" + result.stderr, end="")
         old_origin = compile_variant(shader_source.replace(centered_origin, "vec2 center=p;", 1), "old_origin")
         result = subprocess.run([str(executable), str(old_origin), "0", "0"],
             check=False, capture_output=True, text=True, env=env)

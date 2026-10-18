@@ -242,7 +242,7 @@ require(synthesis, "float confidence=max(confidence0,confidence1)", "visibility 
 require(synthesis, "weight0=(1.0-pc.timestep)*visibility0,weight1=pc.timestep*visibility1", "visible endpoint weights must preserve temporal alpha")
 require(synthesis, "float uniquenessQuality=smoothstep(0.08,0.30,flow.w)", "endpoint reliability must reject ambiguous motion vectors")
 require(synthesis, "return cycleQuality*matchQuality*uniquenessQuality*valid;", "endpoint reliability must include motion uniqueness")
-require(synthesis, "if(confidence<0.28)", "unreliable motion must fall back to a real source frame")
+require(synthesis, "smoothstep(0.0,0.60,confidence)*boundaryTrust", "default warp trust must transition continuously instead of exposing a coarse-grid confidence contour")
 require(synthesis, "bool softBlend=(pc.cfg.x&0x40000000)!=0", "the soft path must use an explicit per-synthesis debug flag")
 require(synthesis, "softBlendAlpha=clamp(0.5+(pc.timestep-0.5)*1.35,0.0,1.0)", "soft fallback must sharpen uncertain temporal blends continuously without a midpoint jump")
 require(synthesis, "texelFetch(frame1,p,0),softBlendAlpha", "soft fallback must use its biased temporal alpha only for source-frame blending")
@@ -251,7 +251,7 @@ require(synthesis, "if(boundaryConflict&&softBlend) outc=softBlendColor(p,ca,cb,
 require(synthesis, "preserveMotionBlend=(pc.cfg.x&0x20000000)!=0", "the continuous-motion blend policy must use a separate synthesis flag")
 require(synthesis, "if(preserveMotionBlend) warpWeight=min(warpWeight,0.40);", "conflict blending must retain at least 60 percent of the temporally blended source colors")
 require(synthesis, "if(boundaryConflict&&softBlend&&preserveMotionBlend) outc=softBlendColor(p,ca,cb,confidence,true);", "MPV and Media3 conflicts must use a bounded source/warp blend rather than a single warped side")
-require(synthesis, "if(!boundaryConflict&&(lumaDelta>0.06||colorDelta>0.08||forwardBackwardError>3.0)){", "expensive neighborhood motion probes must run only when they could alter the conflict decision")
+require(synthesis, "if(!boundaryConflict&&(lumaDelta>0.04||colorDelta>0.06||forwardBackwardError>2.0)){", "expensive neighborhood motion probes must run only when they could alter the conflict decision")
 require(flow, "float(second-best)/max(float(second),1.0)", "flow vectors must report best-vs-runner-up match uniqueness")
 
 for fragment, message in (
