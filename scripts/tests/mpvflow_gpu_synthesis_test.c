@@ -477,6 +477,61 @@ static void fill_rgba16f(uint16_t *pixels, size_t count, uint16_t r, uint16_t g,
     }
 }
 
+static float test_smoothstep(float edge0, float edge1, float x)
+{
+    float t = fminf(fmaxf((x - edge0) / (edge1 - edge0), 0.0f), 1.0f);
+    return t * t * (3.0f - 2.0f * t);
+}
+
+static float test_stripe_sample(float p, int extent)
+{
+    p = fminf(fmaxf(p, 0.0f), (float)(extent - 1));
+    float left = floorf(p);
+    float t = p - left;
+    int a = ((int)left % 16) < 8 ? 200 : 0;
+    int b = ((int)fminf(left + 1.0f, (float)(extent - 1)) % 16) < 8 ? 200 : 0;
+    return (1.0f - t) * a + t * b;
+}
+
+static float test_point_support(float p, int extent)
+{
+    float margin = fminf(p, (float)(extent - 1) - p);
+    return test_smoothstep(0.0f, 1.0f, margin);
+}
+
+static int test_stripe_expected(int x, int y, float timestep, int vertical,
+                                int *wanted, int *exact)
+{
+    float coord = (float)(vertical ? y : x);
+    float extent = (float)(vertical ? ANALYSIS_HEIGHT : ANALYSIS_WIDTH);
+    float q = fminf(fmaxf((coord + 0.5f) / 4.0f - 0.5f, 0.0f), extent - 1.0f);
+    float a = q - timestep * 4.0f;
+    float z = q - (1.0f - timestep) * -4.0f;
+    float cycle0 = a + 4.0f, cycle1 = z - 4.0f;
+    float support = fminf(test_point_support(a, (int)extent),
+                          fminf(test_point_support(z, (int)extent),
+                                fminf(test_point_support(cycle0, (int)extent),
+                                      test_point_support(cycle1, (int)extent))));
+    float source = ((int)coord % 16) < 8 ? 200.0f : 0.0f;
+    int output_extent = vertical ? HEIGHT : WIDTH;
+    float ca = test_stripe_sample(coord + (a-q)*4.0f, output_extent);
+    float cb = test_stripe_sample(coord + (z-q)*4.0f, output_extent);
+    *exact = 0;
+    if (support <= 0.0f) { *wanted = (int)floorf(source + 0.5f); *exact = 1; return 1; }
+    /* The shader also tests the orthogonal support margin; assert the analytic
+     * warp only on fully interior rows/columns where that factor is one. */
+    int orthogonal = vertical ? x : y;
+    if (orthogonal < 8 || orthogonal >= (vertical ? WIDTH : HEIGHT) - 8)
+        return 0;
+    if (fabsf(ca - cb) <= 0.01f) {
+        float confidence = support;
+        float trust = test_smoothstep(0.0f, 0.60f, confidence);
+        *wanted = (int)floorf((source + (ca - source) * trust) + 0.5f);
+        *exact = 1; return 1;
+    }
+    return 0;
+}
+
 static void update_descriptors(struct VulkanContext *ctx,
                                struct Image images[9])
 {
@@ -676,6 +731,26 @@ static int run_fixture(struct VulkanContext *ctx, const char *label,
                     flow[0][i+3] = (x & 1) ? 0 : 0x3c00;
                 }
         }
+        if (special_grid_test == 16 || special_grid_test == 17) {
+            /* Coherent period-16 stripes: frame 1 is translated +16 output
+             * pixels, so its image is identical while motion still shifts the
+             * sampled phase by 4/8/12 pixels at quarter/half times. */
+            for (int y = 0; y < HEIGHT; y++)
+                for (int x = 0; x < WIDTH; x++) {
+                    size_t i = ((size_t)y * WIDTH + x) * 4;
+                    int coordinate = special_grid_test == 16 ? x : y;
+                    int v = (coordinate % 16) < 8 ? 200 : 0;
+                    for (int c = 0; c < 3; c++)
+                        frame0[i+c] = frame1[i+c] = (uint8_t)v;
+                    frame0[i+3] = frame1[i+3] = 255;
+                }
+            fill_rgba16f(flow[0], GRID_PIXELS,
+                         special_grid_test == 16 ? 0x4400 : 0,
+                         special_grid_test == 17 ? 0x4400 : 0, 0, 0x3c00);
+            fill_rgba16f(flow[1], GRID_PIXELS,
+                         special_grid_test == 16 ? 0xc400 : 0,
+                         special_grid_test == 17 ? 0xc400 : 0, 0, 0x3c00);
+        }
     }
     scene[0] = scene_delta;
     scene[1] = scene[2] = 0x0000;
@@ -822,7 +897,7 @@ static int run_fixture(struct VulkanContext *ctx, const char *label,
         for (int y = 0; y < HEIGHT; y++) {
             for (int x = 0; x < WIDTH; x++) {
                 size_t i = ((size_t)y * WIDTH + x) * 4;
-                int wanted = 0, check = 1;
+                int wanted = 0, check = !(special_grid_test == 16 || special_grid_test == 17);
                 if (special_grid_test == 12 || special_grid_test == 13) {
                     wanted = (int)floorf((1.0f-timestep)*frame0[i] + timestep*frame1[i] + 0.5f);
                 } else if (special_grid_test == 14) {
@@ -839,6 +914,29 @@ static int run_fixture(struct VulkanContext *ctx, const char *label,
                     fprintf(stderr,"Full-frame motion regression: fixture=%s pixel=(%d,%d) alpha=%.2f expected=%d actual=%d\n",label,x,y,timestep,wanted,output[i]);
                     exit(1);
                 }
+            }
+        }
+        if (special_grid_test == 16 || special_grid_test == 17) {
+            int exact_pixels = 0, trusted_warp_pixels = 0;
+            for (int y = 0; y < HEIGHT; y++)
+                for (int x = 0; x < WIDTH; x++) {
+                    int wanted, exact;
+                    if (!test_stripe_expected(x, y, timestep, special_grid_test == 17, &wanted, &exact))
+                        continue;
+                    size_t i = ((size_t)y * WIDTH + x) * 4;
+                    if (abs((int)output[i] - wanted) > 1 || output[i+1] != output[i] ||
+                        output[i+2] != output[i] || output[i+3] != 255) {
+                        fprintf(stderr, "Exact stripe oracle mismatch: fixture=%s pixel=(%d,%d) t=%.2f expected=%d actual=%u\n", label, x, y, timestep, wanted, output[i]);
+                        exit(1);
+                    }
+                    exact_pixels++;
+                    int source = frame0[i];
+                    if (wanted != source && abs((int)output[i] - wanted) <= 1)
+                        trusted_warp_pixels++;
+                }
+            if (exact_pixels < 100 || trusted_warp_pixels < 8) {
+                fprintf(stderr, "Stripe oracle underconstrained: fixture=%s exact=%d trusted_warp=%d\n", label, exact_pixels, trusted_warp_pixels);
+                exit(1);
             }
         }
     }
@@ -872,6 +970,19 @@ static int run_fixture(struct VulkanContext *ctx, const char *label,
                 fprintf(stderr, "Missing chroma conflict reason: %s (%d,%d)\n", label, i % WIDTH, i / WIDTH); exit(1);
             }
             int id = expected_id == -2 ? grid_ids[i % WIDTH] : expected_id;
+            /* The smooth one-analysis-pixel support fade intentionally turns
+             * the outermost pixels of a zero-motion conflict into the
+             * conservative source-blend decision.  Keep the interior
+             * conflict decision exact: this exception is only for the
+             * directly affected border pixels. */
+            int support_fade_border = expected_id == 12 &&
+                                      (i % WIDTH == 0 || i % WIDTH == WIDTH - 1 ||
+                                       i / WIDTH == 0 || i / WIDTH == HEIGHT - 1);
+            if (support_fade_border && m[0] == 11)
+                id = 11;
+            if (expected_id == -2 &&
+                (i / WIDTH == 0 || i / WIDTH == HEIGHT - 1) && m[0] == 11)
+                id = 11;
             if (id >= 0 && m[0] != (uint8_t)id) {
                 fprintf(stderr, "Decision id mismatch: %s (%d,%d) expected=%d actual=%u\n", label, i % WIDTH, i / WIDTH, id, m[0]); exit(1);
             }
@@ -954,6 +1065,12 @@ int main(int argc, char **argv)
     const uint8_t background[4] = {0,0,0,255};
     if (argc > 5 && strcmp(argv[5], "field") == 0) {
         run_fixture(&ctx,"confidence-independent continuous geometric field",background,background,0,0x3400,0x3400,0.5f,NULL,0,15);
+    } else if (argc > 5 && strcmp(argv[5], "bounds") == 0) {
+        for (int step = 1; step <= 3; step++) {
+            float t = (float)step * 0.25f;
+            run_fixture(&ctx,"horizontal constant-translation support fade",background,background,0,0x3400,0x3400,t,NULL,0,16);
+            run_fixture(&ctx,"vertical constant-translation support fade",background,background,0,0x3400,0x3400,t,NULL,0,17);
+        }
     } else if (argc > 5 && strcmp(argv[5], "nan") == 0) {
         for (int step=1; step<=3; step++)
             run_fixture(&ctx,"nonfinite motion preserves complete temporal source blend",background,background,0,0x3400,0x3400,(float)step*0.25f,NULL,0,13);

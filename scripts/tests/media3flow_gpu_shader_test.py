@@ -100,6 +100,8 @@ assert "mpvflow_gpu_synthesize_with_policy(" in MPV_PATCH, "MPV must use the sha
 mpv_synthesis_call = MPV_PATCH.split("mpvflow_gpu_synthesize_with_policy(", 1)[1].split(");", 1)[0]
 assert mpv_synthesis_call.count("p->next_opts->mpvflow_soft_blend,") == 2, "MPV soft blend must explicitly enable both the source blend and conflict bias"
 assert "mpvflow_gpu_synthesize_with_visibility(" not in MPV_PATCH, "MPV must not bypass its opt-in conflict policy"
+assert "mpvflow_gpu_synthesize_with_policy(" in JNI, "Media3 must share the production Vulkan synthesis policy"
+assert "return smoothstep(0.0,1.0,margin);" in GPU, "both engines must fade source/cycle boundary support instead of switching coordinate spaces abruptly"
 paired_helper = GPU.split("enum MPVFlowGPUResult mpvflow_gpu_capture_paired_sample(", 1)[1].split("\n}", 1)[0]
 assert "const bool blend_variants[MPVFLOW_CAPTURE_PAIRED_SAMPLES_PER_PAIR] = {\n        false, true," in paired_helper
 assert "const float capture_timestep = 0.5f;" in paired_helper

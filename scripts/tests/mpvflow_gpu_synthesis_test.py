@@ -101,6 +101,23 @@ def main() -> None:
             decision_shader = shader_source.replace("#version 450\n", "#version 450\n#define MPVFLOW_CAPTURE_DECISIONS 1\n", 1)
             run(normal, compile_variant(decision_shader, "decisions"), ("0", "0", "1"), "decision-mask capture")
         run(large, production, ("0", "0"), "whole-frame 4x upscaling / 32px motion")
+        run(large, production, ("0", "0", "0", "bounds"), "constant-translation smooth support boundaries")
+
+        # This is deliberately separate from --baseline-revision: it mutates
+        # only pointInBounds and therefore proves this regression, rather than
+        # relying on an unrelated historical revision's fixture set.
+        bounds_helper = "float pointInBounds(vec2 p,ivec2 sz){ float margin=min(min(p.x,p.y),min(float(sz.x-1)-p.x,float(sz.y-1)-p.y)); return smoothstep(0.0,1.0,margin); }"
+        if shader_source.count(bounds_helper) != 1:
+            raise SystemExit("Smooth pointInBounds anchor is missing or duplicated")
+        hard_bounds = shader_source.replace(
+            bounds_helper,
+            "float pointInBounds(vec2 p,ivec2 sz){ return step(0.0,p.x)*step(p.x,float(sz.x-1))*step(0.0,p.y)*step(p.y,float(sz.y-1)); }",
+            1,
+        )
+        # Always run this mutation: the exact stripe oracle must fail the old
+        # binary gate, proving the regression test is not merely checking for
+        # absence of a large jump.
+        run(large, compile_variant(hard_bounds, "hard_bounds_baseline"), ("0", "0", "0", "bounds"), "old hard bounds gate", "Exact stripe oracle mismatch")
 
         def field_shader(text: str) -> str:
             # Execute the ACTUAL helper, not a Python reconstruction. Changing

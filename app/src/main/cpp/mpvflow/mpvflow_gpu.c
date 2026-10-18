@@ -908,7 +908,10 @@ static const char shader_synthesize[] =
     "vec2 flowGridCoord(vec2 p,int direction){ivec2 extent=direction==0?imageSize(luma0Tex):imageSize(luma1Tex),grid=imageSize(fwdTex);vec2 center=p-vec2(2.0);return vec2(flowGridAxis(center.x,float(extent.x),4,grid.x),flowGridAxis(center.y,float(extent.y),4,grid.y));}\n"
     "vec4 flowAtBilinear(vec2 p,int direction){ ivec2 sz=imageSize(fwdTex); vec2 g=flowGridCoord(p,direction); ivec2 a=ivec2(floor(g)); ivec2 b=min(a+1,sz-1); vec2 t=fract(g); vec4 v00=flowImageAt(a,direction),v10=flowImageAt(ivec2(b.x,a.y),direction); vec4 v01=flowImageAt(ivec2(a.x,b.y),direction),v11=flowImageAt(b,direction); return mix(mix(v00,v10,t.x),mix(v01,v11,t.x),t.y); }\n"
     "vec4 colorAt(sampler2D s,vec2 p){ ivec2 sz=textureSize(s,0); p=clamp(p,vec2(0.0),vec2(sz-1)); return textureLod(s,(p+vec2(0.5))/vec2(sz),0.0); }\n"
-    "float pointInBounds(vec2 p,ivec2 sz){ return step(0.0,p.x)*step(p.x,float(sz.x-1))*step(0.0,p.y)*step(p.y,float(sz.y-1)); }\n"
+    /* Keep unsupported coordinates rejected, but fade common warp support over
+     * the last analysis pixel inside the frame. A binary gate here bypasses
+     * continuous warp trust when a source or cycle crosses a pan boundary. */
+    "float pointInBounds(vec2 p,ivec2 sz){ float margin=min(min(p.x,p.y),min(float(sz.x-1)-p.x,float(sz.y-1)-p.y)); return smoothstep(0.0,1.0,margin); }\n"
     "float reliability(vec4 flow,float cycle,float valid){ float cycleQuality=1.0-smoothstep(0.75,4.0,cycle); float matchQuality=1.0-smoothstep(0.025,0.22,flow.z); float uniquenessQuality=smoothstep(0.08,0.30,flow.w); return cycleQuality*matchQuality*uniquenessQuality*valid; }\n"
     "bool flowFinite(vec4 v){return !any(isnan(v))&&!any(isinf(v));}\n"
     "vec4 softBlendColor(ivec2 p,vec4 ca,vec4 cb,float confidence,bool preserveMotionBlend){ float softBlendAlpha=clamp(0.5+(pc.timestep-0.5)*1.35,0.0,1.0); vec4 sourceBlend=mix(texelFetch(frame0,p,0),texelFetch(frame1,p,0),softBlendAlpha),warpBlend=mix(ca,cb,pc.timestep); float warpWeight=smoothstep(0.04,0.48,confidence); if(preserveMotionBlend) warpWeight=min(warpWeight,0.40); return mix(sourceBlend,warpBlend,warpWeight); }\n"
