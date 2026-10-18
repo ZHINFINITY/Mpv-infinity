@@ -119,6 +119,22 @@ def main() -> None:
         for flags in (("0", "0"), ("1", "0"), ("1", "1")):
             run(affine, production, (*flags, "0", "affine"), f"invertible camera zoom/rotation soft={flags}")
             run(large, production, (*flags, "0", "coherent"), f"coherent moving outlines soft={flags}")
+            run(large, production, (*flags, "0", "occlusion"), f"independent foreground and fast camera pan soft={flags}")
+        # Deliberately force both synthesis branches to the ordinary temporal
+        # source blend. The occlusion oracle must reject this (old/new red
+        # ghosts), rather than merely checking that output is nonuniform.
+        source_only = shader_source
+        soft_output = "outc=FLOW_RESULT(mix(fallback,visibilityWarped,softWarpTrust),boundaryConflict?12:0,confidence,boundaryConflict?captureReason:0);"
+        source_output = "outc=FLOW_RESULT(mix(texelFetch(frame0,p,0),texelFetch(frame1,p,0),pc.timestep),0,confidence,0);"
+        if source_only.count(soft_output) != 1 or source_only.count("outc=warped;") != 1:
+            raise SystemExit("Source-only occlusion mutant anchors are missing or duplicated")
+        source_only = source_only.replace(soft_output, source_output, 1).replace(
+            "outc=warped;", "outc=mix(texelFetch(frame0,p,0),texelFetch(frame1,p,0),pc.timestep);", 1)
+        source_only_spirv = compile_variant(source_only, "source_only_occlusion")
+        run(large, source_only_spirv, ("0", "0", "0", "occlusion"),
+            "source-only occlusion negative control", "Moving-foreground")
+        run(large, source_only_spirv, ("1", "1", "0", "occlusion"),
+            "source-only Soft Blend occlusion negative control", "Moving-foreground")
         aperture_guard = "if(cycleSamplesFinite&&min(f.w,b.w)<0.30"
         if shader_source.count(aperture_guard) != 1:
             raise SystemExit("Shared coherent-motion validation anchor missing or duplicated")

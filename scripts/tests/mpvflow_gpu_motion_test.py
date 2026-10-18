@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
-"""Production matcher regressions: original pan and adversarial parent fields.
+"""Production matcher regressions for pan, layered motion, and parent fields.
 
 Parent sentinels test coordinates at real search radii, not end-to-end video quality.
+The layered probes intentionally exclude contour/occlusion and aperture-ambiguous
+blocks; blend mode and playback FPS are independent of this matcher-only oracle.
 """
 from __future__ import annotations
 import argparse
@@ -65,8 +67,10 @@ def main() -> None:
             if result.returncode:
                 raise SystemExit(f"{label} compilation failed:\n{result.stdout}{result.stderr}")
 
-        def run(block: int, parent: bool, label: str, failure: str | None = None) -> None:
-            result = subprocess.run([str(exe), str(spirv), str(block)] + (["parent"] if parent else []), capture_output=True, text=True, env=environment)
+        def run(block: int, parent: bool, label: str, failure: str | None = None,
+                mode: str | None = None) -> None:
+            suffix = [mode] if mode else (["parent"] if parent else [])
+            result = subprocess.run([str(exe), str(spirv), str(block)] + suffix, capture_output=True, text=True, env=environment)
             if failure is None:
                 if result.returncode:
                     raise SystemExit(f"Motion fixture failed ({label}):\n{result.stdout}{result.stderr}")
@@ -78,11 +82,14 @@ def main() -> None:
 
         compile_variant(text, "production")
         run(4, False, "original exact-outline pan")
+        run(4, False, "layered fast foreground over shifted background", mode="layered")
         for block in (4, 8):
             run(block, True, f"block-{block} centered parent-field sentinel")
         guard = "if(centerCost==0) return 0.0;"
         if text.count(guard) != 1:
             raise SystemExit("Exact-match refinement guard missing or duplicated")
+        compile_variant(text.replace("int radius=pc.cfg.z;", "int radius=1;", 1), "layered radius negative control")
+        run(4, False, "layered radius negative control", "motion regression failed:", mode="layered")
         compile_variant(text.replace(guard, "", 1), "disabled exact-match preservation")
         run(4, False, "disabled exact-match preservation", "motion regression failed:")
         for replacement, blocks, label in (

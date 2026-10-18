@@ -313,7 +313,7 @@ static void init(Ctx *c, const char *spv) {
 }
 int main(int ac, char **av) {
   if (ac < 2) {
-    fprintf(stderr, "usage: %s flow.spv [child-block-size 4|8]\n", av[0]);
+    fprintf(stderr, "usage: %s flow.spv [child-block-size 4|8] [parent|layered]\n", av[0]);
     return 2;
   }
   int child_block = ac >= 3 ? atoi(av[2]) : 4;
@@ -322,6 +322,7 @@ int main(int ac, char **av) {
     return 2;
   }
   const int parent_case = ac >= 4 && strcmp(av[3], "parent") == 0;
+  const int layered_case = ac >= 4 && strcmp(av[3], "layered") == 0;
   const int gw = (W - child_block + 3) / 4 + 1;
   const int gh = (H - child_block + 3) / 4 + 1;
   const int parent_block = 8;
@@ -337,15 +338,30 @@ int main(int ac, char **av) {
   for (int y = 0; y < H; y++)
     for (int x = 0; x < W; x++) {
       int k = (y * W + x) * 4;
-      float a = 0.06f + 0.015f * ((x / 3 + y / 5) & 1),
-            b = 0.06f + 0.015f * (((x - 3) / 3 + y / 5) & 1);
-      int xa = x - 10, xb = x - 13;
+      /* The layered fixture deliberately separates motion stages: a textured
+       * background shifts +5 while a high-contrast, internally textured
+       * silhouette shifts +13. Probe only blocks wholly inside one layer;
+       * contour/occlusion blocks are intentionally not ground-truthed. */
+      int bgx = layered_case ? x : x - 3;
+      float a = layered_case
+                    ? (0.08f + 0.009f * ((bgx * 13 + y * 37 + bgx * bgx * 3 + y * y * 5) & 31))
+                    : (0.06f + 0.015f * ((x / 3 + y / 5) & 1));
+      int xa = x - 10, xb = layered_case ? x - 23 : x - 13;
       int shape = (xa >= 0 && xa < 22 && y >= 10 && y < 36),
           shape1 = (xb >= 0 && xb < 22 && y >= 10 && y < 36);
       int edge = shape && (xa < 2 || xa > 19 || y < 12 || y > 33),
           edge1 = shape1 && (xb < 2 || xb > 19 || y < 12 || y > 33);
-      float v = edge ? 0.02f : (shape ? 0.92f : a),
-            w = edge1 ? 0.02f : (shape1 ? 0.92f : b);
+      float interior = layered_case
+                           ? (0.62f + 0.012f * ((xa * 11 + y * 7 + xa * y) & 31))
+                           : 0.92f;
+      float interior1 = layered_case
+                            ? (0.62f + 0.012f * ((xb * 11 + y * 7 + xb * y) & 31))
+                            : 0.92f;
+      float b = layered_case
+                    ? (0.08f + 0.009f * (((x - 5) * 13 + y * 37 + (x - 5) * (x - 5) * 3 + y * y * 5) & 31))
+                    : (0.06f + 0.015f * (((x - 3) / 3 + y / 5) & 1));
+      float v = edge ? 0.02f : (shape ? interior : a),
+            w = edge1 ? 0.02f : (shape1 ? interior1 : b);
       src[k] = src[k + 1] = src[k + 2] = half(v);
       dst[k] = dst[k + 1] = dst[k + 2] = half(w);
       src[k + 3] = dst[k + 3] = half(1);
@@ -419,7 +435,8 @@ int main(int ac, char **av) {
   vkCmdBindPipeline(z, VK_PIPELINE_BIND_POINT_COMPUTE, c.pipe);
   vkCmdBindDescriptorSets(z, VK_PIPELINE_BIND_POINT_COMPUTE, c.pl, 0, 1, &c.ds,
                           0, 0);
-  int32_t pc[4] = {W, H, child_block == 4 ? 4 : 8, (child_block << 8) | 1 | 8};
+  int32_t pc[4] = {W, H, layered_case ? 16 : (child_block == 4 ? 4 : 8),
+                   (child_block << 8) | (layered_case ? 0 : 1) | 8};
   float timestep = 0.5f;
   vkCmdPushConstants(z, c.pl, VK_SHADER_STAGE_COMPUTE_BIT, 0, 16, pc);
   vkCmdPushConstants(z, c.pl, VK_SHADER_STAGE_COMPUTE_BIT, 16, 4, &timestep);
@@ -524,6 +541,9 @@ int main(int ac, char **av) {
   int tied = 0, bad = 0, tied_correct = 0, bad_back = 0, tied_back = 0,
       tied_back_correct = 0;
   int outline_tied = 0, backward_outline_tied = 0, parent_probe_bad = 0;
+  int layered_probe_bad = 0, layered_probe_count = 0;
+  double layered_fg_sad = 0.0, layered_bg_sad = 0.0;
+  double layered_fg_uniq = 0.0, layered_bg_uniq = 0.0;
   const size_t probe_index = (3 * gw + 3) * 4;
   if (parent_case) printf("parent_anchor_probe block=%d vector=(%.4f,%.4f) expected=(3,0)\n",
                           child_block, unhalf(out[probe_index]), unhalf(out[probe_index+1]));
@@ -540,6 +560,32 @@ int main(int ac, char **av) {
           unhalf(out_back[i * 4 + 3]));
     if (parent_case && i % gw == 3 && i / gw == 3 && fabs(dx - 3) > 0.01)
       parent_probe_bad = 1;
+    if (layered_case) {
+      int px = (int)(i % gw) * 4, py = (int)(i / gw) * 4;
+      /* (12,16) is safely inside the moving silhouette in both frames;
+       * (4,4) is safely in the shifted textured background. */
+      int fg_forward = (px == 12 && py == 16);
+      int fg_backward = (px == 28 && py == 16);
+      int bg_probe = (px == 8 && py == 4);
+      if (fg_forward || fg_backward || bg_probe) {
+        float expected = (fg_forward || fg_backward) ? 13.0f : 5.0f;
+        int forward_valid = fg_forward || bg_probe;
+        int backward_valid = fg_backward || bg_probe;
+        layered_probe_count++;
+        if ((forward_valid && (fabs(dx - expected) > 0.51f || fabs(dy) > 0.51f)) ||
+            (backward_valid && (fabs(bdx + expected) > 0.51f || fabs(bdy) > 0.51f)))
+          layered_probe_bad = 1;
+        if (fg_forward || fg_backward) {
+          layered_fg_sad += rr; layered_fg_uniq += uu;
+        } else {
+          layered_bg_sad += rr; layered_bg_uniq += uu;
+        }
+        printf("layered_probe kind=%s direction=%s p=(%d,%d) vector=(%.3f,%.3f) reverse=(%.3f,%.3f) sad=%.5f uniqueness=%.5f expected_motion=(%.1f,0)\n",
+               (fg_forward || fg_backward) ? "foreground" : "background",
+               fg_forward ? "forward" : (fg_backward ? "backward" : "both"),
+               px, py, dx, dy, bdx, bdy, rr, uu, expected);
+      }
+    }
     err += fabs(dx - 3) + fabs(dy) + fabs(bdx + 3) + fabs(bdy);
     uniq += uu;
     res += rr;
@@ -564,9 +610,10 @@ int main(int ac, char **av) {
       }
     }
   }
-  if (bad > (int)(grid / 3) || bad_back > (int)(grid / 3) || tied_correct < 8 ||
-      tied_back_correct < 8 ||
-      (!parent_case && (outline_tied < 4 || backward_outline_tied < 4)) ||
+  if ((layered_case && (layered_probe_count != 3 || layered_probe_bad)) ||
+      (!layered_case && (bad > (int)(grid / 3) || bad_back > (int)(grid / 3) ||
+       tied_correct < 8 || tied_back_correct < 8 ||
+       (!parent_case && (outline_tied < 4 || backward_outline_tied < 4)))) ||
       parent_probe_bad || !isfinite(err) || !isfinite(res) || !isfinite(uniq)) {
     fprintf(stderr,
             "motion regression failed: forward bad=%d tied=%d/%d "
@@ -576,6 +623,13 @@ int main(int ac, char **av) {
             tied_back_correct, backward_outline_tied);
     return 1;
   }
+  if (layered_case)
+    printf("device=Vulkan shader_flow fixture=layered-foreground-background "
+           "foreground_motion=(13,0) background_motion=(5,0) "
+           "probe_count=%d foreground_mean_sad=%.5f foreground_mean_uniqueness=%.5f "
+           "background_mean_sad=%.5f background_mean_uniqueness=%.5f\n",
+           layered_probe_count, layered_fg_sad / 2.0, layered_fg_uniq / 2.0,
+           layered_bg_sad, layered_bg_uniq);
   printf("device=Vulkan shader_flow fixture=anime-outline-pan parent_case=%d child_block=%d parent_grid=%dx%d size=%dx%d "
          "grid=%dx%d expected_forward=(3,0) expected_backward=(-3,0) "
          "mean_abs_error=%.4f mean_residual=%.4f "

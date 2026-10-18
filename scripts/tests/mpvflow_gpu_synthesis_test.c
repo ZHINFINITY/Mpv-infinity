@@ -12,6 +12,18 @@
 #include <string.h>
 #include <math.h>
 
+static int floor_div4(int value)
+{
+    int quotient = value / 4;
+    return value % 4 < 0 ? quotient - 1 : quotient;
+}
+
+static int positive_mod48(int value)
+{
+    int remainder = value % 48;
+    return remainder < 0 ? remainder + 48 : remainder;
+}
+
 #ifndef WIDTH
 #define WIDTH 7
 #endif
@@ -788,6 +800,60 @@ static int run_fixture(struct VulkanContext *ctx, const char *label,
         }
     }
 
+    if (special_grid_test == 25 || special_grid_test == 26) {
+        /* Targeted occlusion/pan fixtures.  Case 25 has a red foreground
+         * rectangle moving independently over a translated, high-frequency
+         * RGB background; the grid carries +2px for the rectangle and +1px
+         * for the background (reverse vectors are supplied in flow[1]).
+         * Case 26 is a deliberately fast 24x8-pixel global camera pan over
+         * a checker/gradient texture.  These are intentionally not idealized
+         * occlusion masks: a bright old+new pair is a source-frame ghost and
+         * must be rejected, while unsupported holes remain shader-policy
+         * behavior rather than being called a defect. */
+        for (int y = 0; y < HEIGHT; y++) for (int x = 0; x < WIDTH; x++) {
+            size_t i = ((size_t)y * WIDTH + x) * 4;
+            int fg0 = special_grid_test == 25 && x >= 20 && x < 28 && y >= 8 && y < 24;
+            int fg1 = special_grid_test == 25 && x >= 28 && x < 36 && y >= 8 && y < 24;
+            /* Frame 1 is the same world texture translated by (24,8)
+             * output pixels; frame 0 remains in output coordinates.  The
+             * foreground fixture instead has a 4px background pan and an
+             * 8px independent foreground pan. */
+            int sx0 = x;
+            int sy0 = y;
+            int sx1 = special_grid_test == 26 ? x - 24 : x - 4;
+            int sy1 = special_grid_test == 26 ? y - 8 : y;
+            /* C truncates integer division toward zero.  Floor and positive
+             * modulo keep negative frame-1 coordinates on the same periodic
+             * world texture as frame 0. */
+            int checker0 = ((floor_div4(sx0) + floor_div4(sy0)) & 1) ? 1 : 0;
+            int checker1 = ((floor_div4(sx1) + floor_div4(sy1)) & 1) ? 1 : 0;
+            uint8_t r0 = (uint8_t)(checker0 ? 176 : 28), g0 = (uint8_t)(24 + positive_mod48(sx0 * 3 + sy0 * 5)), b0 = (uint8_t)(checker0 ? 44 : 132);
+            uint8_t r1 = (uint8_t)(checker1 ? 176 : 28), g1 = (uint8_t)(24 + positive_mod48(sx1 * 3 + sy1 * 5)), b1 = (uint8_t)(checker1 ? 44 : 132);
+            if (special_grid_test == 25 && fg0) r0 = 240, g0 = 20, b0 = 20;
+            if (special_grid_test == 25 && fg1) r1 = 240, g1 = 20, b1 = 20;
+            frame0[i] = r0; frame0[i + 1] = g0; frame0[i + 2] = b0; frame0[i + 3] = 255;
+            frame1[i] = r1; frame1[i + 1] = g1; frame1[i + 2] = b1; frame1[i + 3] = 255;
+        }
+        if (special_grid_test == 25) {
+            for (uint32_t y = 0; y < GRID_HEIGHT; y++) for (uint32_t x = 0; x < GRID_WIDTH; x++) {
+                size_t i = ((size_t)y * GRID_WIDTH + x) * 4;
+                /* 16x8 analysis produces only a 4x2 flow lattice.  Cells
+                 * 1..2 and both rows cover the 16..48px foreground span;
+                 * the old x>=5/y>=2 predicate was permanently false. */
+                int foreground_cell = x >= 1 && x <= 2;
+                flow[0][i] = foreground_cell ? 0x4000 : 0x3c00;
+                flow[1][i] = foreground_cell ? 0xc000 : 0xbc00;
+                flow[0][i + 1] = flow[1][i + 1] = 0;
+                flow[0][i + 2] = flow[1][i + 2] = 0;
+                flow[0][i + 3] = flow[1][i + 3] = 0x3c00;
+            }
+        } else {
+            /* Vectors are analysis pixels: 6x2 becomes 24x8 at 4x output. */
+            fill_rgba16f(flow[0], GRID_PIXELS, 0x4600, 0x4000, 0, 0x3c00);
+            fill_rgba16f(flow[1], GRID_PIXELS, 0xc600, 0xc000, 0, 0x3c00);
+        }
+    }
+
     if (special_grid_test == 22 || special_grid_test == 23) {
         /* Exact affine correspondences, not a relaxation of residual checks.
          * 22: 3x horizontal zoom about 31.5; 23: 90-degree camera rotation.
@@ -956,6 +1022,63 @@ static int run_fixture(struct VulkanContext *ctx, const char *label,
     memcpy(decisions, mapped, IMAGE_BYTES);
     vkUnmapMemory(ctx->device, decision_readback.memory);
 
+    if (special_grid_test == 25) {
+        int shift = (int)lroundf(8.0f * timestep), checked = 0;
+        int start = 20 + shift, end = 28 + shift;
+        for (int y = 10; y < 22; y++) for (int x = start + 2; x < end - 2; x++) {
+            size_t i = ((size_t)y * WIDTH + x) * 4;
+            if (output[i] < 235 || output[i + 1] > 25 || output[i + 2] > 25) {
+                fprintf(stderr, "Moving-foreground pixel oracle mismatch: fixture=%s pixel=(%d,%d) t=%.2f expected=red actual=(%u,%u,%u)\n", label,x,y,timestep,output[i],output[i+1],output[i+2]);
+                exit(1);
+            }
+            checked++;
+        }
+        /* These are safely outside the translated rectangle at the sampled
+         * times. A source-only temporal blend leaves a red old/new ghost. */
+        if (timestep >= 0.7f) for (int y = 10; y < 22; y++)
+            for (int x = 20; x < 22; x++) {
+                size_t i=((size_t)y*WIDTH+x)*4;
+                if (output[i] > 200 && output[i+1] < 70 && output[i+2] < 70) {
+                    fprintf(stderr,"Moving-foreground old-position ghost: fixture=%s pixel=(%d,%d) t=%.2f\n",label,x,y,timestep); exit(1);
+                }
+            }
+        if (timestep <= 0.2f) for (int y = 10; y < 22; y++)
+            for (int x = 34; x < 36; x++) {
+                size_t i=((size_t)y*WIDTH+x)*4;
+                if (output[i] > 200 && output[i+1] < 70 && output[i+2] < 70) {
+                    fprintf(stderr,"Moving-foreground new-position ghost: fixture=%s pixel=(%d,%d) t=%.2f\n",label,x,y,timestep); exit(1);
+                }
+            }
+        if (checked < 48) { fprintf(stderr,"Moving-foreground oracle underconstrained: checked=%d\n",checked); exit(1); }
+        printf("Moving-foreground oracle checked exact red pixels=%d and old/new ghost probes\n", checked);
+    }
+    if (special_grid_test == 26) {
+        int checked = 0;
+        for (int y = 12; y < 21; y++) for (int x = 24; x < 41; x++) {
+            /* Require both inverse endpoints to have a two-pixel support
+             * margin and to sit well inside a checker plateau. */
+            float ax = (float)x - 24.0f*timestep, ay = (float)y - 8.0f*timestep;
+            float zx = (float)x + 24.0f*(1.0f-timestep), zy = (float)y + 8.0f*(1.0f-timestep);
+            if (ax < 4.0f || ay < 4.0f || zx < 4.0f || zy < 4.0f ||
+                ax > WIDTH-4.0f || ay > HEIGHT-4.0f ||
+                zx > WIDTH-4.0f || zy > HEIGHT-4.0f) continue;
+            float fax = ax - floorf(ax/4.0f)*4.0f, fay = ay - floorf(ay/4.0f)*4.0f;
+            float fzx = zx - floorf(zx/4.0f)*4.0f, fzy = zy - floorf(zy/4.0f)*4.0f;
+            if (fax < 1.5f || fax > 2.5f || fay < 1.5f || fay > 2.5f ||
+                fzx < 1.5f || fzx > 2.5f || fzy < 1.5f || fzy > 2.5f) continue;
+            int source_cell = (((int)floorf(ax / 4.0f) + (int)floorf(ay / 4.0f)) & 1);
+            int endpoint_cell = (((int)floorf(zx / 4.0f) + (int)floorf(zy / 4.0f)) & 1);
+            if (source_cell != endpoint_cell) continue;
+            size_t i=((size_t)y * WIDTH + x) * 4;
+            int want_r = source_cell ? 176 : 28, want_b = source_cell ? 44 : 132;
+            if (abs((int)output[i]-want_r)>2 || abs((int)output[i+2]-want_b)>2 || output[i+3]!=255) {
+                fprintf(stderr,"Fast-camera supported pixel mismatch: fixture=%s pixel=(%d,%d) t=%.2f expected=(%d,*,%d) actual=(%u,%u,%u)\n",label,x,y,timestep,want_r,want_b,output[i],output[i+1],output[i+2]); exit(1);
+            }
+            checked++;
+        }
+        if (checked < 8) { fprintf(stderr,"Fast-camera oracle underconstrained: checked=%d\n",checked); exit(1); }
+        printf("Fast-camera oracle checked exact endpoint-safe checker plateaus=%d for 24x8 translation\n", checked);
+    }
     if (special_grid_test==22 || special_grid_test==23) {
         int checked=0;
         for (int y=24;y<=40;y++) for (int x=24;x<=40;x++) {
@@ -1205,6 +1328,16 @@ int main(int argc, char **argv)
     }
     if (argc > 5 && strcmp(argv[5], "field") == 0) {
         run_fixture(&ctx,"confidence-independent continuous geometric field",background,background,0,0x3400,0x3400,0.5f,NULL,0,15);
+    } else if (argc > 5 && strcmp(argv[5], "occlusion") == 0) {
+        const float samples[] = { 0.20f, 0.40f, 0.60f, 0.80f };
+        for (size_t step = 0; step < sizeof(samples) / sizeof(samples[0]); step++) {
+            float t = samples[step];
+            run_fixture(&ctx,"independent foreground over textured moving background",background,background,0,0x3400,0x3400,t,NULL,0,25);
+            run_fixture(&ctx,"fast global camera pan preserves textured support",background,background,0,0x3400,0x3400,t,NULL,0,26);
+        }
+        destroy_vulkan(&ctx);
+        puts("Independent-foreground and fast-camera-pan synthesis tests passed");
+        return 0;
     } else if (argc > 5 && strcmp(argv[5], "bounds") == 0) {
         for (int step = 1; step <= 3; step++) {
             float t = (float)step * 0.25f;
