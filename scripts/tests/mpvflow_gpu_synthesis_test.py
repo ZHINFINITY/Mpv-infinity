@@ -71,6 +71,9 @@ def main() -> None:
         spirv = temp_path / "shader_synthesize.spv"
         executable = temp_path / "mpvflow_gpu_synthesis_test"
         shader_source = embedded_synthesis_shader()
+        centered_origin = "vec2 center=p-vec2(2.0);"
+        if shader_source.count(centered_origin) != 1:
+            raise SystemExit("Centered flow-grid origin mapping is missing or duplicated")
         shader.write_text(shader_source, encoding="utf-8")
         def compile_variant(source_text: str, variant: str) -> Path:
             variant_shader = temp_path / f"shader_synthesize_{variant}.comp"
@@ -140,6 +143,13 @@ def main() -> None:
         if result.returncode == 0 or proof not in result.stderr:
             raise SystemExit("Inverse-warp fixture did not reject the disabled guard:\n" + result.stdout + result.stderr)
         print("[mutation check: disabled inverse guard correctly fails]\n" + result.stderr, end="")
+        old_origin = compile_variant(shader_source.replace(centered_origin, "vec2 center=p;", 1), "old_origin")
+        result = subprocess.run([str(executable), str(old_origin), "0", "0"],
+            check=False, capture_output=True, text=True, env=env)
+        proof = "fixture=nonconverged inverse warp rejects a cycle-consistent wrong sample"
+        if result.returncode == 0 or proof not in result.stderr:
+            raise SystemExit("Old flow-grid origin mutation was not caught by the centered fixture:\n" + result.stdout + result.stderr)
+        print("[mutation check: old flow-grid origin correctly fails]\n" + result.stderr, end="")
 
 
 if __name__ == "__main__":

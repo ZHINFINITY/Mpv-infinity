@@ -570,9 +570,9 @@ static void run_fixture(struct VulkanContext *ctx, const char *label,
         }
     }
     if (special_grid_test == 5 || special_grid_test == 6) {
-        /* Case 5: at P.x=1, F=B=[-4,+2] makes the inverse iterate
-         * land at x=2 where both final vectors are zero. Cycle error is zero,
-         * yet the inverse residual is one OUTPUT pixel: this is not a valid warp.
+        /* Case 5: with the centered flow-grid origin, probe P.x=1. A nonconstant
+         * affine/zoom field makes the inverse iterate land on the wrong branch;
+         * cycle error alone is insufficient, so residual validation must reject it.
          * Case 6: constant +/-2 translation has zero residual and must still warp. */
         for (int y = 0; y < HEIGHT; y++) {
             for (int x = 0; x < WIDTH; x++) {
@@ -586,8 +586,8 @@ static void run_fixture(struct VulkanContext *ctx, const char *label,
         for (uint32_t y = 0; y < GRID_HEIGHT; y++) {
             for (uint32_t x = 0; x < GRID_WIDTH; x++) {
                 size_t index = ((size_t)y * GRID_WIDTH + x) * 4;
-                flow[0][index] = special_grid_test == 5 ? (x == 0 ? 0xc400 : 0x4000) : 0x4000;
-                flow[1][index] = special_grid_test == 5 ? flow[0][index] : 0xc000;
+                flow[0][index] = special_grid_test == 5 ? (x == 0 ? 0xc400 : 0x3800) : 0x4000;
+                flow[1][index] = special_grid_test == 5 ? (x == 0 ? 0xc400 : 0x4800) : 0xc000;
             }
         }
     }
@@ -752,7 +752,7 @@ static void run_fixture(struct VulkanContext *ctx, const char *label,
                           strstr(label, "low-confidence source 1") ? 11 :
                           strstr(label, "default conflict") ? 12 :
                           strstr(label, "irregular terminal") ? -2 : -1;
-        const uint8_t grid_ids[WIDTH] = { 11, 12, 12, 12, 12, 11, 11 };
+        const uint8_t grid_ids[WIDTH] = { 11, 0, 12, 12, 12, 11, 11 };
         for (int i = 0; i < (int)PIXELS; i++) {
             const uint8_t *m = decisions + (size_t)i * 4;
             if (m[0] > 12 || m[2] > 15 || m[3] != 255) {
@@ -846,7 +846,7 @@ int main(int argc, char **argv)
     run_fixture(&ctx,ctx.soft_blend?"soft mode blends the chroma boundary":"default conflict fallback blends source frames",red,green,0,0x3400,0x3800,0.75f,ctx.soft_blend?(ctx.preserve_motion_blend?continuous_chroma:soft_chroma):soft_chroma,0,0);
     run_fixture(&ctx,"low-contrast reliable motion retains temporal color blend",neutral0,neutral1,0,0x3400,0x3500,0.5f,mixed,0,0);
     run_fixture(&ctx,"soft fallback keeps a continuous blend across the moving edge",red,blue,0,0x3400,0x3800,0.5f,ctx.soft_blend?(ctx.preserve_motion_blend?continuous_edge:soft_edge):NULL,0,4);
-    const uint8_t soft_grid[4]={42,42,42,255}, cont_grid[4]={31,31,31,255};
+    const uint8_t soft_grid[4]={31,31,31,255}, cont_grid[4]={27,27,27,255};
     const uint8_t terminal_grid_source[4]={24,24,24,255};
     run_fixture(&ctx,"irregular terminal block anchors use conservative source fallback",neutral0,neutral0,0,0x3400,0x3400,0.5f,ctx.soft_blend?(ctx.preserve_motion_blend?cont_grid:soft_grid):terminal_grid_source,0,1);
     const uint8_t outlier[4]={2,2,2,255};

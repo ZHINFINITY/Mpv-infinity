@@ -103,6 +103,7 @@ require(flow, "if(blockSize!=4) blockSize=8", "motion search must constrain supp
 require(flow, "float(best)/(float(blockSize*blockSize)*255.0)", "flow vectors must normalize SAD by the active block area")
 require(synthesis, "vec4 flowAtEdgeAware(vec2 p,int direction)", "synthesis must guide vector sampling by source appearance")
 require(synthesis, "vec4 flowAtBilinear(vec2 p,int direction)", "iterative vector refinement must have a low-cost bilinear sampler")
+require(synthesis, "vec2 center=p-vec2(2.0)", "synthesis flow lookup must use 4x4 block centers rather than block origins")
 require(synthesis, "vec2 scale=vec2(outSize)/vec2(motionSize)", "inverse residuals must be measured in output pixel units")
 require(synthesis, "inverseResidual0=length((a+pc.timestep*f.xy-flowP)*scale)", "forward inverse residual must use the final edge-aware forward sample")
 require(synthesis, "inverseResidual1=length((z+(1.0-pc.timestep)*b.xy-flowP)*scale)", "backward inverse residual must use the final edge-aware backward sample")
