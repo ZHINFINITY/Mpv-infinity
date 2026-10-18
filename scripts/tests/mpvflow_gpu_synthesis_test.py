@@ -49,6 +49,7 @@ def main() -> None:
     parser.add_argument("--require-vulkan", action="store_true")
     parser.add_argument("--decision-mode", action="store_true")
     parser.add_argument("--baseline-revision", help="also prove the full-frame regressions fail this git revision")
+    parser.add_argument("--aperture-baseline-revision", help="prove the tied-outline regression fails this git revision")
     args = parser.parse_args()
     if not require_tooling(args.require_vulkan):
         return
@@ -103,6 +104,34 @@ def main() -> None:
         run(large, production, ("0", "0"), "whole-frame 4x upscaling / 32px motion")
         run(large, production, ("0", "0", "0", "bounds"), "constant-translation smooth support boundaries")
 
+        run(large, production, ("0", "0", "0", "aperture"), "coherent aperture-tied outlines and strict rejection")
+        aperture_mutations = (
+            (("float aperture=apertureQuality(", "float aperture=0.0*apertureQuality("),
+             "disabled aperture support", "fixture=tied straight outline"),
+            (("max(f.z,b.z)<0.025", "true"),
+             ("(1.0-smoothstep(0.005,0.025,residual))", "1.0"),
+             "disabled aperture residual check", "fixture=tied high-residual"),
+            (("max(cycleError0,cycleError1)<0.75", "true"),
+             ("(1.0-smoothstep(0.25,0.75,cycle))", "1.0"),
+             "disabled aperture cycle check", "fixture=tied but cycle-inconsistent"),
+            (("(1.0-smoothstep(0.01,0.04,colorError))", "1.0"),
+             "disabled aperture full-resolution color check", "fixture=tied full-resolution color conflict"),
+        )
+        for *replacements, label, failure in aperture_mutations:
+            mutant = shader_source
+            for needle, replacement in replacements:
+                if mutant.count(needle) != 1:
+                    raise SystemExit(f"Aperture mutation anchor missing or duplicated: {needle}")
+                mutant = mutant.replace(needle, replacement, 1)
+            run(large, compile_variant(mutant, label.replace(" ", "_")),
+                ("0", "0", "0", "aperture"), label, failure)
+        if args.aperture_baseline_revision:
+            old_source = subprocess.check_output(
+                ["git", "show", f"{args.aperture_baseline_revision}:app/src/main/cpp/mpvflow/mpvflow_gpu.c"],
+                cwd=ROOT, text=True)
+            old = compile_variant(embedded_synthesis_shader(old_source), "aperture_baseline")
+            run(large, old, ("0", "0", "0", "aperture"),
+                "last-tested commit tied-outline regression", "fixture=tied straight outline")
         # This is deliberately separate from --baseline-revision: it mutates
         # only pointInBounds and therefore proves this regression, rather than
         # relying on an unrelated historical revision's fixture set.

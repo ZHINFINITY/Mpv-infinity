@@ -678,7 +678,12 @@ static int run_fixture(struct VulkanContext *ctx, const char *label,
             flow[0][cell*4] = 0x4000;
             flow[1][cell*4] = 0xc000;
             flow[0][cell*4+3] = flow[1][cell*4+3] =
-                special_grid_test == 7 ? 0x3103 : special_grid_test == 8 ? 0x3104 : 0x3c00;
+                special_grid_test == 7 ? 12586 : special_grid_test == 8 ? 12587 : 0x3c00;
+            if (special_grid_test <= 8) {
+                /* Non-exact SAD keeps these probes outside aperture rescue.
+                 * Adjacent half floats still bracket final confidence .28. */
+                flow[0][cell*4+2] = flow[1][cell*4+2] = 0x2c00;
+            }
         }
     }
     if (special_grid_test == 11) {
@@ -720,6 +725,9 @@ static int run_fixture(struct VulkanContext *ctx, const char *label,
         }
         fill_rgba16f(flow[0], GRID_PIXELS, 0x4800, 0, 0, 0x3c00); /* +8 */
         fill_rgba16f(flow[1], GRID_PIXELS, 0xc800, 0, 0, special_grid_test == 12 ? 0 : 0x3c00);
+        if (special_grid_test == 12)
+            for (size_t cell=0; cell<GRID_PIXELS; cell++)
+                flow[1][cell*4+2]=0x3000; /* Actually unsupported: poor reverse SAD, not merely an aperture tie. */
         if (special_grid_test == 13)
             fill_rgba16f(flow[0], GRID_PIXELS, 0x7e00, 0, 0, 0x3c00); /* NaN */
         if (special_grid_test == 15) {
@@ -751,6 +759,26 @@ static int run_fixture(struct VulkanContext *ctx, const char *label,
                          special_grid_test == 16 ? 0xc400 : 0,
                          special_grid_test == 17 ? 0xc400 : 0, 0, 0x3c00);
         }
+    }
+    if (special_grid_test >= 18 && special_grid_test <= 21) {
+        /* A straight outline is ambiguous along its tangent even when its
+         * inherited pan vector, inverse and bidirectional cycle are exact.
+         * Check the ENTIRE supported edge region, including old ghost positions. */
+        for (int y=0; y<HEIGHT; y++) for (int x=0; x<WIDTH; x++) {
+            size_t i=((size_t)y*WIDTH+x)*4;
+            int a=x>=20&&x<22&&y>=4&&y<HEIGHT-4;
+            int b=x>=28&&x<30&&y>=4&&y<HEIGHT-4;
+            for (int c=0;c<3;c++) {
+                frame0[i+c]=a?255:0;
+                frame1[i+c]=b?255:0;
+            }
+            if (special_grid_test==21 && b)
+                for (int c=0;c<3;c++) frame1[i+c]=239;
+            frame0[i+3]=frame1[i+3]=255;
+        }
+        fill_rgba16f(flow[0],GRID_PIXELS,0x4000,0,0,0); /* +2, exact but tied */
+        fill_rgba16f(flow[1],GRID_PIXELS,special_grid_test==19?0xbc00:0xc000,0,
+                     special_grid_test==20?0x2c00:0,0); /* -1 breaks cycle; high SAD breaks match */
     }
     scene[0] = scene_delta;
     scene[1] = scene[2] = 0x0000;
@@ -898,6 +926,25 @@ static int run_fixture(struct VulkanContext *ctx, const char *label,
             for (int x = 0; x < WIDTH; x++) {
                 size_t i = ((size_t)y * WIDTH + x) * 4;
                 int wanted = 0, check = !(special_grid_test == 16 || special_grid_test == 17);
+                if (special_grid_test>=18 && special_grid_test<=21) {
+                    check=x>=16&&x<=36&&y>=8&&y<HEIGHT-8;
+                    if (special_grid_test==21) {
+                        int shift=(int)lroundf(8.0f*timestep);
+                        check=check&&x>=20+shift&&x<22+shift;
+                    }
+                    if (special_grid_test==18) {
+                        int shift=(int)lroundf(8.0f*timestep);
+                        wanted=x>=20+shift&&x<22+shift?255:0;
+                    } else wanted=(int)floorf((1.0f-timestep)*frame0[i]+timestep*frame1[i]+0.5f);
+                    if (check) for(int c=0;c<3;c++) {
+                        int channel_wanted=special_grid_test==18?wanted:(int)floorf((1.0f-timestep)*frame0[i+c]+timestep*frame1[i+c]+0.5f);
+                        if(abs((int)output[i+c]-channel_wanted)>1) {
+                            fprintf(stderr,"Aperture outline regression: fixture=%s pixel=(%d,%d) channel=%d t=%.2f expected=%d actual=%d\n",label,x,y,c,timestep,channel_wanted,output[i+c]);
+                            exit(1);
+                        }
+                    }
+                    continue;
+                }
                 if (special_grid_test == 12 || special_grid_test == 13) {
                     wanted = (int)floorf((1.0f-timestep)*frame0[i] + timestep*frame1[i] + 0.5f);
                 } else if (special_grid_test == 14) {
@@ -1063,6 +1110,18 @@ int main(int argc, char **argv)
     const uint8_t inverse_fallback[4]={26,26,26,255}, translated_pixel[4]={16,16,16,255};
 #ifdef FLOW_LARGE_FIXTURES
     const uint8_t background[4] = {0,0,0,255};
+    if (argc > 5 && strcmp(argv[5], "aperture") == 0) {
+        for(int step=1;step<=3;step++) {
+            float t=(float)step*0.25f;
+            run_fixture(&ctx,"tied straight outline retains coherent motion without source ghosts",background,background,0,0x3400,0x3400,t,NULL,0,18);
+            run_fixture(&ctx,"tied but cycle-inconsistent motion stays rejected",background,background,0,0x3400,0x3400,t,NULL,0,19);
+            run_fixture(&ctx,"tied high-residual motion stays rejected",background,background,0,0x3400,0x3400,t,NULL,0,20);
+            run_fixture(&ctx,"tied full-resolution color conflict stays rejected",background,background,0,0x3400,0x3400,t,NULL,0,21);
+        }
+        destroy_vulkan(&ctx);
+        puts("Aperture-tied outline and rejection tests passed");
+        return 0;
+    }
     if (argc > 5 && strcmp(argv[5], "field") == 0) {
         run_fixture(&ctx,"confidence-independent continuous geometric field",background,background,0,0x3400,0x3400,0.5f,NULL,0,15);
     } else if (argc > 5 && strcmp(argv[5], "bounds") == 0) {
