@@ -667,8 +667,18 @@ static int run_fixture(struct VulkanContext *ctx, const char *label,
         for (uint32_t y = 0; y < GRID_HEIGHT; y++) {
             for (uint32_t x = 0; x < GRID_WIDTH; x++) {
                 size_t index = ((size_t)y * GRID_WIDTH + x) * 4;
-                flow[0][index] = special_grid_test == 5 ? (x == 0 ? 0x0000 : 0x4600) : 0x4000;
-                flow[1][index] = special_grid_test == 5 ? (x == 0 ? 0x0000 : 0xc000) : 0xc000;
+                if (special_grid_test == 5) {
+                    /* Sample the stated analytic field at the SAD centroid;
+                     * retaining the old constants silently translates it. */
+                    float center = fminf((float)(x*4), ANALYSIS_WIDTH-4) + 1.5f;
+                    _Float16 forward = (_Float16)(2.0f*center-4.0f);
+                    _Float16 backward = (_Float16)((4.0f-2.0f*center)/3.0f);
+                    memcpy(&flow[0][index], &forward, 2);
+                    memcpy(&flow[1][index], &backward, 2);
+                } else {
+                    flow[0][index] = 0x4000;
+                    flow[1][index] = 0xc000;
+                }
             }
         }
     }
@@ -857,7 +867,9 @@ static int run_fixture(struct VulkanContext *ctx, const char *label,
     if (special_grid_test == 22 || special_grid_test == 23) {
         /* Exact affine correspondences, not a relaxation of residual checks.
          * 22: 3x horizontal zoom about 31.5; 23: 90-degree camera rotation.
-         * Linear RGB ramps are reproduced exactly by bilinear color sampling. */
+         * Linear RGB ramps are reproduced exactly by bilinear color sampling.
+         * Derive vector locations independently from the mean of the actual
+         * SAD sample indices 0..3, not the synthesis helper's assumed anchor. */
         for (int y=0;y<HEIGHT;y++) for (int x=0;x<WIDTH;x++) {
             size_t i=((size_t)y*WIDTH+x)*4;
             for (int c=0;c<3;c++) {
@@ -868,8 +880,8 @@ static int run_fixture(struct VulkanContext *ctx, const char *label,
         }
         for (uint32_t gy=0;gy<GRID_HEIGHT;gy++) for (uint32_t gx=0;gx<GRID_WIDTH;gx++) {
             size_t i=((size_t)gy*GRID_WIDTH+gx)*4;
-            float dx=fminf((float)(gx*4),ANALYSIS_WIDTH-4)+2.0f-7.5f;
-            float dy=fminf((float)(gy*4),ANALYSIS_HEIGHT-4)+2.0f-7.5f;
+            float dx=fminf((float)(gx*4),ANALYSIS_WIDTH-4)+((0.0f+1.0f+2.0f+3.0f)/4.0f)-7.5f;
+            float dy=fminf((float)(gy*4),ANALYSIS_HEIGHT-4)+((0.0f+1.0f+2.0f+3.0f)/4.0f)-7.5f;
             _Float16 fx=(_Float16)(special_grid_test==22?2.0f*dx:-dx-dy);
             _Float16 fy=(_Float16)(special_grid_test==22?0:dx-dy);
             _Float16 bx=(_Float16)(special_grid_test==22?-2.0f/3.0f*dx:dy-dx);
@@ -1131,7 +1143,7 @@ static int run_fixture(struct VulkanContext *ctx, const char *label,
                     check = x >= 32 && x <= 40 && y >= 8 && y < HEIGHT-8;
                     wanted = x >= 36 && x < 38 ? 255 : 0;
                 } else if (special_grid_test == 15) {
-                    float pos = ((float)x+0.5f)*(float)ANALYSIS_WIDTH/(float)WIDTH-0.5f-2.0f;
+                    float pos = ((float)x+0.5f)*(float)ANALYSIS_WIDTH/(float)WIDTH-0.5f-1.5f;
                     float grid = fminf(fmaxf(pos/4.0f,0.0f),(float)GRID_WIDTH-1.0f);
                     wanted = (int)floorf((grid*2.0f/8.0f)*255.0f+0.5f);
                 }
@@ -1387,7 +1399,11 @@ int main(int argc, char **argv)
     const uint8_t asymmetric_continuous_blend[4]={56,120,56,255};
     run_fixture(&ctx,"asymmetric endpoint confidence uses conservative min",red,blue,0,0x3400,0x3800,0.5f,ctx.soft_blend?(ctx.preserve_motion_blend?asymmetric_continuous_blend:asymmetric_soft_blend):asymmetric_confidence_blend,0,11);
     run_fixture(&ctx,"soft fallback keeps a continuous blend across the moving edge",red,blue,0,0x3400,0x3800,0.5f,ctx.soft_blend?(ctx.preserve_motion_blend?continuous_edge:soft_edge):NULL,0,4);
-    const uint8_t soft_grid[4]={31,31,31,255}, cont_grid[4]={27,27,27,255};
+    /* At (2,2), V(x)=6*x*x and terminal +/-{1,3} vectors now register
+     * at mean(0,1,2,3)=1.5. Re-evaluating inverse/support and visibility
+     * gives 34 (ordinary soft) or 28 (0.40 motion-blend cap); default
+     * conflict fallback below remains the exact unwarped value 24. */
+    const uint8_t soft_grid[4]={34,34,34,255}, cont_grid[4]={28,28,28,255};
     const uint8_t terminal_grid_source[4]={24,24,24,255};
     run_fixture(&ctx,"irregular terminal block anchors use conservative source fallback",neutral0,neutral0,0,0x3400,0x3400,0.5f,ctx.soft_blend?(ctx.preserve_motion_blend?cont_grid:soft_grid):terminal_grid_source,0,1);
     const uint8_t outlier[4]={2,2,2,255};

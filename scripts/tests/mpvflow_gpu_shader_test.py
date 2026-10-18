@@ -104,7 +104,7 @@ require(flow, "if(blockSize!=4) blockSize=8", "motion search must constrain supp
 require(flow, "float(best)/(float(blockSize*blockSize)*255.0)", "flow vectors must normalize SAD by the active block area")
 assert "flowAtEdgeAware(" not in synthesis, "inverse/final/cycle sampling must not switch to a nearest-guide field"
 require(synthesis, "vec4 flowAtBilinear(vec2 p,int direction)", "iterative vector refinement must have a low-cost bilinear sampler")
-require(synthesis, "vec2 center=p-vec2(2.0)", "synthesis flow lookup must use 4x4 block centers rather than block origins")
+require(synthesis, "vec2 center=p-vec2(1.5)", "synthesis flow lookup must use the mean of 4x4 SAD texel indices, not pixel-corner coordinates")
 require(synthesis, "vec2 scale=vec2(outSize)/vec2(motionSize)", "inverse residuals must be measured in output pixel units")
 require(synthesis, "inverseResidual0=length((a+pc.timestep*f.xy-flowP)*scale)", "forward inverse residual must use the final continuous forward sample")
 require(synthesis, "inverseResidual1=length((z+(1.0-pc.timestep)*b.xy-flowP)*scale)", "backward inverse residual must use the final continuous backward sample")

@@ -58,7 +58,7 @@ def main() -> None:
     with tempfile.TemporaryDirectory(prefix="mpvflow-synthesis-oracle-") as temp:
         directory = Path(temp)
         shader_source = embedded_synthesis_shader()
-        centered_origin = "vec2 center=p-vec2(2.0);"
+        centered_origin = "vec2 center=p-vec2(1.5);"
         if shader_source.count(centered_origin) != 1:
             raise SystemExit("Centered flow-grid origin mapping is missing or duplicated")
         if "softBlend&&confidence<0.28" in shader_source:
@@ -120,6 +120,16 @@ def main() -> None:
             run(affine, production, (*flags, "0", "affine"), f"invertible camera zoom/rotation soft={flags}")
             run(large, production, (*flags, "0", "coherent"), f"coherent moving outlines soft={flags}")
             run(large, production, (*flags, "0", "occlusion"), f"independent foreground and fast camera pan soft={flags}")
+        # Independent affine fields use mean(0,1,2,3) pixel-index centers.
+        # Reintroduce the former corner-coordinate anchor in BOTH the field
+        # lookup and its Jacobian: self-consistent but shifted sampling must fail.
+        if shader_source.count("center=p-vec2(1.5)") != 2:
+            raise SystemExit("Both lookup and Jacobian must use pixel-index centroids")
+        old_centroid = shader_source.replace("center=p-vec2(1.5)", "center=p-vec2(2.0)")
+        old_centroid_spirv = compile_variant(old_centroid, "corner_coordinate_centroid")
+        for flags in (("0", "0"), ("1", "0"), ("1", "1")):
+            run(affine, old_centroid_spirv, (*flags, "0", "affine"),
+                f"old half-analysis-pixel centroid soft={flags}", "Affine inverse regression:")
         # Deliberately force both synthesis branches to the ordinary temporal
         # source blend. The occlusion oracle must reject this (old/new red
         # ghosts), rather than merely checking that output is nonuniform.
