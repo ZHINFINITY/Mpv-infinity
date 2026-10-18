@@ -51,6 +51,7 @@ def main() -> None:
     parser.add_argument("--soft-blend-baseline-revision", help="prove Soft Blend threshold fixtures fail this git revision")
     parser.add_argument("--baseline-revision", help="also prove the full-frame regressions fail this git revision")
     parser.add_argument("--aperture-baseline-revision", help="prove the tied-outline regression fails this git revision")
+    parser.add_argument("--inverse-baseline-revision", help="prove affine camera inverse regressions fail this git revision")
     args = parser.parse_args()
     if not require_tooling(args.require_vulkan):
         return
@@ -79,9 +80,9 @@ def main() -> None:
                 raise SystemExit(f"Shader compilation failed ({label}):\n" + result.stdout + result.stderr)
             return spirv
 
-        def compile_harness(large: bool) -> Path:
-            output = directory / ("full_frame_oracle" if large else "odd_extent_oracle")
-            definitions = ["-DFLOW_LARGE_FIXTURES", "-DWIDTH=64", "-DHEIGHT=32", "-DANALYSIS_WIDTH=16", "-DANALYSIS_HEIGHT=8"] if large else []
+        def compile_harness(large: bool, square: bool = False) -> Path:
+            output = directory / ("affine_camera_oracle" if square else "full_frame_oracle" if large else "odd_extent_oracle")
+            definitions = ["-DFLOW_LARGE_FIXTURES", "-DWIDTH=64", f"-DHEIGHT={64 if square else 32}", "-DANALYSIS_WIDTH=16", f"-DANALYSIS_HEIGHT={16 if square else 8}"] if large else []
             result = subprocess.run(["cc", "-std=c11", "-O2", "-Wall", "-Wextra", "-Werror", *definitions, str(HARNESS), "-lvulkan", "-lm", "-o", str(output)], capture_output=True, text=True)
             if result.returncode:
                 raise SystemExit("Vulkan pixel harness compilation failed:\n" + result.stdout + result.stderr)
@@ -89,6 +90,7 @@ def main() -> None:
 
         normal = compile_harness(False)
         large = compile_harness(True)
+        affine = compile_harness(True, square=True)
         environment = os.environ.copy()
         icds = sorted(Path("/usr/share/vulkan/icd.d").glob("lvp_icd*.json"))
         if icds:
@@ -113,6 +115,23 @@ def main() -> None:
             run(normal, compile_variant(decision_shader, "decisions"), ("0", "0", "1"), "decision-mask capture")
         run(large, production, ("0", "0"), "whole-frame 4x upscaling / 32px motion")
         run(large, production, ("0", "0", "0", "bounds"), "constant-translation smooth support boundaries")
+
+        for flags in (("0", "0"), ("1", "0"), ("1", "1")):
+            run(affine, production, (*flags, "0", "affine"), f"invertible camera zoom/rotation soft={flags}")
+            run(large, production, (*flags, "0", "coherent"), f"coherent moving outlines soft={flags}")
+        aperture_guard = "if(cycleSamplesFinite&&min(f.w,b.w)<0.30"
+        if shader_source.count(aperture_guard) != 1:
+            raise SystemExit("Shared coherent-motion validation anchor missing or duplicated")
+        mutant = shader_source.replace(aperture_guard, "if(!softBlend&&cycleSamplesFinite&&min(f.w,b.w)<0.30", 1)
+        run(large, compile_variant(mutant, "soft_aperture_disabled"), ("1", "1", "0", "coherent"),
+            "disabled Soft Blend coherent support", "Aperture outline regression:")
+        if args.inverse_baseline_revision:
+            old_source = subprocess.check_output(
+                ["git", "show", f"{args.inverse_baseline_revision}:app/src/main/cpp/mpvflow/mpvflow_gpu.c"],
+                cwd=ROOT, text=True)
+            old = compile_variant(embedded_synthesis_shader(old_source), "inverse_baseline")
+            for flags in (("0", "0"), ("1", "1")):
+                run(affine, old, (*flags, "0", "affine"), f"baseline inverse solve soft={flags}", "Affine inverse regression:")
 
         run(large, production, ("0", "0", "0", "aperture"), "coherent aperture-tied outlines and strict rejection")
         aperture_mutations = (
@@ -165,13 +184,21 @@ def main() -> None:
             return text + "\nvoid main(){ ivec2 p=ivec2(gl_GlobalInvocationID.xy),sz=imageSize(outTex); if(any(greaterThanEqual(p,sz)))return; vec2 q=clamp((vec2(p)+0.5)*vec2(pc.cfg.zw)/vec2(sz)-0.5,vec2(0.0),vec2(pc.cfg.zw-1)); float v=flowAtBilinear(q,0).x/8.0; imageStore(outTex,p,vec4(v,v,v,1.0)); }\n"
 
         run(large, compile_variant(field_shader(shader_source), "continuous_field"), ("0", "0", "0", "field"), "continuous field across asymmetric grid confidence")
+        inverse_loop = re.search(r"for\(int i=0;i<2;i\+\+\)\{ mat2 dfA,dfZ;.*? \} f=flowAtBilinear\(a,0\);", shader_source)
+        if not inverse_loop:
+            raise SystemExit("Bounded Jacobian inverse-loop anchor is missing")
+        fixed_point = shader_source[:inverse_loop.start()] + "for(int i=0;i<2;i++){ f=flowAtBilinear(a,0); a=flowP-pc.timestep*f.xy; b=flowAtBilinear(z,1); z=flowP-(1.0-pc.timestep)*b.xy; } f=flowAtBilinear(a,0);" + shader_source[inverse_loop.end():]
+        fixed_spirv = compile_variant(fixed_point, "fixed_point_inverse")
+        run(normal, fixed_spirv, ("0", "0", "0", "residual"), "residual guard with deliberately nonconverged inverse")
+        for flags in (("0", "0"), ("1", "1")):
+            run(affine, fixed_spirv, (*flags, "0", "affine"), "disabled Jacobian inverse refinement", "Affine inverse regression:")
         guard = "float inverseResidual0Valid=1.0-smoothstep(0.25,0.75,inverseResidual0), inverseResidual1Valid=1.0-smoothstep(0.25,0.75,inverseResidual1);"
         if shader_source.count(guard) != 1:
             raise SystemExit("Inverse residual guard mutation anchor is missing")
-        mutant = shader_source.replace(guard, "float inverseResidual0Valid=1.0, inverseResidual1Valid=1.0;", 1)
-        run(normal, compile_variant(mutant, "unguarded_inverse"), ("0", "0"), "disabled inverse guard", "fixture=nonconverged inverse warp")
+        mutant = fixed_point.replace(guard, "float inverseResidual0Valid=1.0, inverseResidual1Valid=1.0;", 1)
+        run(normal, compile_variant(mutant, "unguarded_inverse"), ("0", "0", "0", "residual"), "disabled inverse guard", "fixture=nonconverged inverse warp")
         geometric = "return mix(mix(v00,v10,t.x),mix(v01,v11,t.x),t.y)"
-        if shader_source.count(geometric) != 1:
+        if shader_source.count(geometric) != 2:
             raise SystemExit("Pure geometric bilinear field is missing")
         for needle, replacement, label in ((geometric, "return v00", "nearest lattice field"), (centered_origin, "vec2 center=p;", "uncentered lattice field")):
             mutant = shader_source.replace(needle, replacement, 1)

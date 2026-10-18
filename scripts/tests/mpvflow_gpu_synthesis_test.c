@@ -639,8 +639,9 @@ static int run_fixture(struct VulkanContext *ctx, const char *label,
     if (special_grid_test == 5 || special_grid_test == 6) {
         /* Case 5: probe P.x=3 with F(x)=2*x-4, B(x)=(4-2*x)/3.
          * These fields are exact cycle inverses, but the forward fixed-point
-         * iterate oscillates instead of converging. The final residual rejects
-         * it independently of the backward endpoint's otherwise valid support.
+         * iterate oscillates instead of converging. Newton must now recover it;
+         * the residual mutation probe deliberately restores the old iteration
+         * to prove its final nonconverged sample still cannot bypass validation.
          * Case 6: constant +/-2 translation has zero residual and must still warp. */
         for (int y = 0; y < HEIGHT; y++) {
             for (int x = 0; x < WIDTH; x++) {
@@ -760,7 +761,7 @@ static int run_fixture(struct VulkanContext *ctx, const char *label,
                          special_grid_test == 17 ? 0xc400 : 0, 0, 0x3c00);
         }
     }
-    if (special_grid_test >= 18 && special_grid_test <= 21) {
+    if ((special_grid_test >= 18 && special_grid_test <= 21) || special_grid_test == 24) {
         /* A straight outline is ambiguous along its tangent even when its
          * inherited pan vector, inverse and bidirectional cycle are exact.
          * Check the ENTIRE supported edge region, including old ghost positions. */
@@ -779,6 +780,39 @@ static int run_fixture(struct VulkanContext *ctx, const char *label,
         fill_rgba16f(flow[0],GRID_PIXELS,0x4000,0,0,0); /* +2, exact but tied */
         fill_rgba16f(flow[1],GRID_PIXELS,special_grid_test==19?0xbc00:0xc000,0,
                      special_grid_test==20?0x2c00:0,0); /* -1 breaks cycle; high SAD breaks match */
+        if (special_grid_test == 24) {
+            for (size_t i=0;i<GRID_PIXELS;i++) {
+                flow[0][i*4+2]=flow[1][i*4+2]=0x2000; /* SAD .0078125 */
+                flow[0][i*4+3]=flow[1][i*4+3]=0x3200; /* uniqueness .1875 */
+            }
+        }
+    }
+
+    if (special_grid_test == 22 || special_grid_test == 23) {
+        /* Exact affine correspondences, not a relaxation of residual checks.
+         * 22: 3x horizontal zoom about 31.5; 23: 90-degree camera rotation.
+         * Linear RGB ramps are reproduced exactly by bilinear color sampling. */
+        for (int y=0;y<HEIGHT;y++) for (int x=0;x<WIDTH;x++) {
+            size_t i=((size_t)y*WIDTH+x)*4;
+            for (int c=0;c<3;c++) {
+                frame0[i+c]=(uint8_t)(special_grid_test==22?3*x:2*x+y);
+                frame1[i+c]=(uint8_t)(special_grid_test==22?x+63:2*y+63-x);
+            }
+            frame0[i+3]=frame1[i+3]=255;
+        }
+        for (uint32_t gy=0;gy<GRID_HEIGHT;gy++) for (uint32_t gx=0;gx<GRID_WIDTH;gx++) {
+            size_t i=((size_t)gy*GRID_WIDTH+gx)*4;
+            float dx=fminf((float)(gx*4),ANALYSIS_WIDTH-4)+2.0f-7.5f;
+            float dy=fminf((float)(gy*4),ANALYSIS_HEIGHT-4)+2.0f-7.5f;
+            _Float16 fx=(_Float16)(special_grid_test==22?2.0f*dx:-dx-dy);
+            _Float16 fy=(_Float16)(special_grid_test==22?0:dx-dy);
+            _Float16 bx=(_Float16)(special_grid_test==22?-2.0f/3.0f*dx:dy-dx);
+            _Float16 by=(_Float16)(special_grid_test==22?0:-dx-dy);
+            memcpy(&flow[0][i],&fx,2); memcpy(&flow[0][i+1],&fy,2);
+            memcpy(&flow[1][i],&bx,2); memcpy(&flow[1][i+1],&by,2);
+            flow[0][i+2]=flow[1][i+2]=0;
+            flow[0][i+3]=flow[1][i+3]=0x3c00;
+        }
     }
     scene[0] = scene_delta;
     scene[1] = scene[2] = 0x0000;
@@ -921,23 +955,44 @@ static int run_fixture(struct VulkanContext *ctx, const char *label,
     VK_CHECK(vkMapMemory(ctx->device, decision_readback.memory, 0, IMAGE_BYTES, 0, &mapped));
     memcpy(decisions, mapped, IMAGE_BYTES);
     vkUnmapMemory(ctx->device, decision_readback.memory);
-    if (special_grid_test >= 12) {
+
+    if (special_grid_test==22 || special_grid_test==23) {
+        int checked=0;
+        for (int y=24;y<=40;y++) for (int x=24;x<=40;x++) {
+            size_t i=((size_t)y*WIDTH+x)*4;
+            float ideal;
+            if (special_grid_test==22) ideal=3.0f*((x-31.5f)/(1.0f+2.0f*timestep)+31.5f);
+            else {
+                float u=1.0f-timestep,den=u*u+timestep*timestep;
+                ideal=94.5f+((2.0f*u-timestep)*(x-31.5f)+(2.0f*timestep+u)*(y-31.5f))/den;
+            }
+            int wanted=(int)floorf(ideal+0.5f);
+            for (int c=0;c<3;c++) if (abs((int)output[i+c]-wanted)>1) {
+                fprintf(stderr,"Affine inverse regression: fixture=%s pixel=(%d,%d) t=%.2f expected=%d actual=%d\n",label,x,y,timestep,wanted,output[i+c]);
+                exit(1);
+            }
+            if (output[i+3]!=255) exit(1);
+            checked++;
+        }
+        printf("Affine inverse oracle checked %d supported output pixels\n",checked);
+    }
+    if ((special_grid_test >= 12 && special_grid_test <= 21) || special_grid_test == 24) {
         for (int y = 0; y < HEIGHT; y++) {
             for (int x = 0; x < WIDTH; x++) {
                 size_t i = ((size_t)y * WIDTH + x) * 4;
                 int wanted = 0, check = !(special_grid_test == 16 || special_grid_test == 17);
-                if (special_grid_test>=18 && special_grid_test<=21) {
+                if ((special_grid_test>=18 && special_grid_test<=21) || special_grid_test==24) {
                     check=x>=16&&x<=36&&y>=8&&y<HEIGHT-8;
                     if (special_grid_test==21) {
                         int shift=(int)lroundf(8.0f*timestep);
                         check=check&&x>=20+shift&&x<22+shift;
                     }
-                    if (special_grid_test==18) {
+                    if (special_grid_test==18 || special_grid_test==24) {
                         int shift=(int)lroundf(8.0f*timestep);
                         wanted=x>=20+shift&&x<22+shift?255:0;
                     } else wanted=(int)floorf((1.0f-timestep)*frame0[i]+timestep*frame1[i]+0.5f);
                     if (check) for(int c=0;c<3;c++) {
-                        int channel_wanted=special_grid_test==18?wanted:(int)floorf((1.0f-timestep)*frame0[i+c]+timestep*frame1[i+c]+0.5f);
+                        int channel_wanted=(special_grid_test==18 || special_grid_test==24)?wanted:(int)floorf((1.0f-timestep)*frame0[i+c]+timestep*frame1[i+c]+0.5f);
                         if(abs((int)output[i+c]-channel_wanted)>1) {
                             fprintf(stderr,"Aperture outline regression: fixture=%s pixel=(%d,%d) channel=%d t=%.2f expected=%d actual=%d\n",label,x,y,c,timestep,channel_wanted,output[i+c]);
                             exit(1);
@@ -1054,7 +1109,7 @@ static int run_fixture(struct VulkanContext *ctx, const char *label,
         }
     }
     if (ctx->decision_mode && (special_grid_test == 5 || special_grid_test == 6)) {
-        int required_id = special_grid_test == 5 ? 11 : 0;
+        int required_id = strstr(label,"nonconverged inverse") ? 11 : 0;
         if (decisions[(size_t)first * 4] != required_id) {
             fprintf(stderr, "Inverse-warp decision mismatch: %s expected=%d actual=%u\n", label, required_id, decisions[(size_t)first * 4]);
             exit(1);
@@ -1108,8 +1163,34 @@ int main(int argc, char **argv)
     const uint8_t source_blend_low0[4]={191,0,64,255}, source_blend_low1[4]={64,0,191,255};
     const uint8_t soft_low[4]={214,0,41,255}, soft_edge[4]={50,114,50,255}, continuous_edge[4]={56,120,56,255};
     const uint8_t inverse_fallback[4]={26,26,26,255}, translated_pixel[4]={16,16,16,255};
+    if (argc > 5 && strcmp(argv[5], "residual") == 0) {
+        run_fixture(&ctx,"nonconverged inverse warp retains residual safety guard",neutral0,neutral0,0,0x3400,0x3400,0.5f,inverse_fallback,0,5);
+        destroy_vulkan(&ctx);
+        return 0;
+    }
 #ifdef FLOW_LARGE_FIXTURES
     const uint8_t background[4] = {0,0,0,255};
+    if (argc > 5 && strcmp(argv[5], "coherent") == 0) {
+        for (int step=1;step<=3;step++) {
+            float t=(float)step*0.25f;
+            run_fixture(&ctx,"coherent tied outline has no old/new-position ghosts",background,background,0,0x3400,0x3400,t,NULL,0,18);
+            run_fixture(&ctx,"coherent low-uniqueness outline has no old/new-position ghosts",background,background,0,0x3400,0x3400,t,NULL,0,24);
+        }
+        destroy_vulkan(&ctx);
+        puts("Coherent outline policy tests passed");
+        return 0;
+    }
+    if (argc > 5 && strcmp(argv[5], "affine") == 0) {
+        for (int step=1;step<=3;step++) {
+            float t=(float)step*0.25f;
+            run_fixture(&ctx,"invertible camera zoom retains aligned samples",background,background,0,0x3400,0x3400,t,NULL,0,22);
+            run_fixture(&ctx,"invertible camera rotation retains aligned samples",background,background,0,0x3400,0x3400,t,NULL,0,23);
+        }
+        destroy_vulkan(&ctx);
+        puts("Affine camera inverse-warp tests passed");
+        return 0;
+    }
+
     if (argc > 5 && strcmp(argv[5], "aperture") == 0) {
         for(int step=1;step<=3;step++) {
             float t=(float)step*0.25f;
@@ -1162,7 +1243,7 @@ int main(int argc, char **argv)
         return 0;
     }
     run_fixture(&ctx,"reliable constant translation retains warped detail",neutral0,neutral0,0,0x3400,0x3400,0.5f,translated_pixel,0,6);
-    run_fixture(&ctx,"nonconverged inverse warp rejects a cycle-consistent wrong sample",neutral0,neutral0,0,0x3400,0x3400,0.5f,inverse_fallback,0,5);
+    run_fixture(&ctx,"converged affine inverse now retains valid warp support",neutral0,neutral0,0,0x3400,0x3400,0.5f,inverse_fallback,0,5);
     run_fixture(&ctx,"scene-cut alpha selects first source",red,blue,0x3800,0x3400,0x3800,0.25f,red,1,0);
     run_fixture(&ctx,"scene-cut alpha selects second source",red,blue,0x3800,0x3400,0x3800,0.75f,blue,1,0);
     run_fixture(&ctx,"static identical frame is preserved exactly",neutral0,neutral0,0,0x3400,0x3400,0.37f,neutral0,1,0);

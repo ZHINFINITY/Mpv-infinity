@@ -226,7 +226,14 @@ require(opencl_source, "if(has_coarse&&parent_residual>0.12f&&parent_uniqueness>
 require(synthesis, "dot(fastForward.xy,fastForward.xy)<=0.0025", "the static path must require a near-zero forward vector")
 require(synthesis, "dot(fastBackward.xy,fastBackward.xy)<=0.0025", "the static path must require a near-zero backward vector")
 require(synthesis, "colorDelta<=0.0039216", "the static path must require an at-most-one-LSB source difference")
-require(synthesis, "for(int i=0;i<2;i++){ f=flowAtBilinear(a,0)", "inverse-flow refinement must avoid repeated edge-aware sampling")
+require(synthesis, "for(int i=0;i<2;i++){ mat2 dfA,dfZ;", "inverse-flow refinement must retain its two-step sampling budget")
+require(synthesis, "f=flowAtBilinearJacobian(a,0,dfA)", "forward inverse refinement must reuse the bilinear flow texels for its Jacobian")
+require(synthesis, "b=flowAtBilinearJacobian(z,1,dfZ)", "backward inverse refinement must use the same Jacobian-aware field")
+require(synthesis, "detA>0.05", "forward Newton refinement must reject singular and folded local maps")
+require(synthesis, "detZ>0.05", "backward Newton refinement must reject singular and folded local maps")
+require(synthesis, "all(lessThanEqual(abs(dA),vec2(4.0)))", "forward correction must stay within one grid cell per axis")
+require(synthesis, "all(lessThanEqual(abs(dZ),vec2(4.0)))", "backward correction must stay within one grid cell per axis")
+require(synthesis, "if(cycleSamplesFinite&&min(f.w,b.w)<0.30", "validated coherent motion support must be available with Soft Blend on or off")
 require(synthesis, "b=flowAtBilinear(z,1)", "backward inverse-flow refinement must use the same efficient sampler")
 require(synthesis, "layout(set=0,binding=5,rgba16f) readonly uniform image2D luma0Tex;", "frame-0 luma binding/format mismatch")
 require(synthesis, "layout(set=0,binding=6,rgba16f) readonly uniform image2D luma1Tex;", "frame-1 luma binding/format mismatch")
@@ -242,7 +249,7 @@ require(synthesis, "weight0=(1.0-pc.timestep)*visibility0,weight1=pc.timestep*vi
 require(synthesis, "float uniquenessQuality=smoothstep(0.08,0.30,flow.w)", "endpoint reliability must reject ambiguous motion vectors")
 require(synthesis, "return cycleQuality*matchQuality*uniquenessQuality*valid;", "endpoint reliability must include motion uniqueness")
 require(synthesis, "float apertureQuality(float residual,float cycle,float coherence,vec3 difference)", "correct aperture-tied motion needs separately qualified support, not a lower uniqueness threshold")
-require(synthesis, "!softBlend&&cycleSamplesFinite&&min(f.w,b.w)<0.30&&min(valid0,valid1)>0.90", "aperture rescue remains default-only and requires finite, jointly interior endpoints")
+require(synthesis, "if(cycleSamplesFinite&&min(f.w,b.w)<0.30&&min(valid0,valid1)>0.90", "both policies require finite, jointly interior endpoints before aperture rescue")
 require(synthesis, "max(f.z,b.z)<0.025&&max(cycleError0,cycleError1)<0.75", "aperture rescue must reject weak residuals and inconsistent cycles before qualifying trajectories")
 require(synthesis, "vec2 initialForward=f.xy,initialBackward=b.xy", "trajectory coherence must reuse the original inverse-field samples")
 require(synthesis, "trajectorySpread,ca.rgb-cb.rgb", "aperture support must check trajectory coherence and full-resolution RGB agreement")
@@ -283,8 +290,10 @@ require(synthesis, "bool boundaryConflict=lumaDelta>0.08||chromaBoundary", "stro
 require(synthesis, "backAt0=flowAtBilinear(cycle0,1)", "cycle checks must use the inverse solve field")
 require(synthesis, "forwardAt1=flowAtBilinear(cycle1,0)", "reverse cycle checks must use the inverse solve field")
 assert "exp(" not in synthesis, "production synthesis must not redo nearest-guide exponential filters at full output resolution"
-assert synthesis.split("void main()", 1)[1].count("flowAtBilinear(") == 10, "static, inverse, final and cycle samples must all use the continuous field"
-sampler = synthesis.split("vec4 flowAtBilinear(", 1)[1].split("vec4 colorAt(", 1)[0]
+assert synthesis_main.count("flowAtBilinear(") == 8 and synthesis_main.count("flowAtBilinearJacobian(") == 2, "static, inverse, final and cycle samples must retain the continuous-field evaluation budget"
+sampler = synthesis.split("vec4 flowAtBilinear(", 1)[1].split("\n", 1)[0]
+jacobian_sampler = synthesis.split("vec4 flowAtBilinearJacobian(", 1)[1].split("\n", 1)[0]
+assert sampler.count("flowImageAt(") == 4 and jacobian_sampler.count("flowImageAt(") == 4, "the Jacobian must reuse the same four texels, not finite-difference additional field samples"
 require(sampler, "return mix(mix(v00,v10,t.x),mix(v01,v11,t.x),t.y)", "bilinear vectors and their quality must remain continuous across confidence changes")
 assert "flowConfidenceWeight" not in sampler and "if(" not in sampler, "motion coordinates must not switch interpolation modes based on confidence/spread"
 assert "pc.timestep<0.5?texelFetch" not in synthesis_main, "non-finite flow must use a temporal source crossfade rather than endpoint patches"
