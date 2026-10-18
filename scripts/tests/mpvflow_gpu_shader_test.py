@@ -101,12 +101,12 @@ require(flow, "int radius=pc.cfg.z; if(hasParent&&!qcomSeed&&parentResidual", "Q
 require(flow, "int blockSize=(pc.cfg.w>>8)", "motion search must distinguish fine and coarse block support")
 require(flow, "if(blockSize!=4) blockSize=8", "motion search must constrain support to the tested 4x4 or 8x8 sizes")
 require(flow, "float(best)/(float(blockSize*blockSize)*255.0)", "flow vectors must normalize SAD by the active block area")
-require(synthesis, "vec4 flowAtEdgeAware(vec2 p,int direction)", "synthesis must guide vector sampling by source appearance")
+assert "flowAtEdgeAware(" not in synthesis, "inverse/final/cycle sampling must not switch to a nearest-guide field"
 require(synthesis, "vec4 flowAtBilinear(vec2 p,int direction)", "iterative vector refinement must have a low-cost bilinear sampler")
 require(synthesis, "vec2 center=p-vec2(2.0)", "synthesis flow lookup must use 4x4 block centers rather than block origins")
 require(synthesis, "vec2 scale=vec2(outSize)/vec2(motionSize)", "inverse residuals must be measured in output pixel units")
-require(synthesis, "inverseResidual0=length((a+pc.timestep*f.xy-flowP)*scale)", "forward inverse residual must use the final edge-aware forward sample")
-require(synthesis, "inverseResidual1=length((z+(1.0-pc.timestep)*b.xy-flowP)*scale)", "backward inverse residual must use the final edge-aware backward sample")
+require(synthesis, "inverseResidual0=length((a+pc.timestep*f.xy-flowP)*scale)", "forward inverse residual must use the final continuous forward sample")
+require(synthesis, "inverseResidual1=length((z+(1.0-pc.timestep)*b.xy-flowP)*scale)", "backward inverse residual must use the final continuous backward sample")
 require(synthesis, "inverseResidual0Valid", "forward validity must be independently guarded")
 require(synthesis, "inverseResidual1Valid", "backward validity must be independently guarded")
 require(synthesis, "cycleSamplesFinite=flowFinite(backAt0)&&flowFinite(forwardAt1)", "cycle samples must be finite before reliability")
@@ -205,14 +205,9 @@ require(opencl_source, "float chroma_delta=max(fabs((ca.x-ca.y)-(cb.x-cb.y)),fab
 require(opencl_source, "int chroma_boundary=color_delta>0.12f&&chroma_delta>0.06f", "OpenCL must reject strong chroma-only contour mixing")
 require(synthesis, "float cycleQuality=1.0-smoothstep(0.75,4.0,cycle); float matchQuality=1.0-smoothstep(0.025,0.22,flow.z); float uniquenessQuality=smoothstep(0.08,0.30,flow.w)", "Vulkan reliability must combine cycle, residual, and uniqueness confidence")
 require(opencl_source, "float cycle_quality=1.0f-smoothstep(0.75f,4.0f,cycle); float match_quality=1.0f-smoothstep(0.025f,0.22f,flow.z); float uniqueness_quality=smoothstep(0.08f,0.30f,flow.w)", "OpenCL reliability must match Vulkan cycle, residual, and uniqueness confidence")
-require(synthesis, "float flowConfidenceWeight(vec4 flow){ return clamp((0.22-flow.z)*5.128205,0.0,1.0)*clamp((flow.w-0.08)*4.545455,0.0,1.0); }", "Vulkan edge-aware flow filtering must cheaply weight residual and uniqueness")
 require(opencl_source, "inline float flow_confidence_weight(float4 flow) { return clamp((0.22f-flow.z)*5.128205f,0.0f,1.0f)*clamp((flow.w-0.08f)*4.545455f,0.0f,1.0f); }", "OpenCL edge-aware flow filtering must use Vulkan's piecewise-linear confidence policy")
-require(synthesis, "float flowSpread=max(max(length(v00.xy-v10.xy),length(v01.xy-v11.xy)),max(length(v00.xy-v01.xy),length(v10.xy-v11.xy))); if(flowSpread<=1.0)return geometric;", "Vulkan coherent motion must retain geometric bilinear sampling and only gate conflicting vectors")
 require(opencl_source, "float flow_spread=max(max(length(v00.xy-v10.xy),length(v01.xy-v11.xy)),max(length(v00.xy-v01.xy),length(v10.xy-v11.xy))); if(flow_spread<=1.0f)return geometric;", "OpenCL must use Vulkan's low-cost local vector-disagreement gate")
-require(synthesis, "float c00=flowConfidenceWeight(v00)", "Vulkan bilinear sampling must reject low-confidence outliers at motion boundaries")
 require(opencl_source, "float c00=flow_confidence_weight(v00)", "OpenCL bilinear sampling must reject low-confidence outliers at motion boundaries")
-require(synthesis, "w00*=flowConfidenceWeight(v00)", "Vulkan final warp and cycle edge-aware samples must include motion confidence")
-require(synthesis, ":mix(mix(v00,v10,t.x),mix(v01,v11,t.x),t.y)", "Vulkan edge-aware sampling must keep a bounded geometric fallback when every candidate is uncertain")
 require(opencl_source, "w00*=flow_confidence_weight(v00)", "OpenCL final warp and cycle edge-aware samples must include motion confidence")
 require(opencl_source, ":flow_at_bilinear(forward,backward,direction,aw,ah,x,y)", "OpenCL must preserve a bounded fallback when every edge candidate is uncertain")
 require(opencl_source, "if(confidence<0.28f){ uchar4 px0=vload4(0,a+y*astride+x*4),px1=vload4(0,b+y*bstride+x*4); color=mix4(convert_float4(px0),convert_float4(px1),t); }", "OpenCL low-confidence fallback must blend source endpoints instead of creating hard spatial endpoint patches")
@@ -238,7 +233,8 @@ require(synthesis, "cycleError1=flowFinite(forwardAt1)?length(b.xy+forwardAt1.xy
 require(synthesis, "pointInBounds(a,motionSize)*pointInBounds(cycle0,motionSize)", "out-of-frame motion endpoints must be rejected")
 require(synthesis, "vec2(outSize)/vec2(motionSize)", "motion vectors must scale from the bounded analysis grid to source-resolution pixels")
 require(synthesis, "colorAt(frame0,srcA)", "interpolated color must be sampled from the source-resolution input")
-require(synthesis, "float confidence=max(confidence0,confidence1)", "visibility must retain the more reliable endpoint")
+require(synthesis, "confidence=softBlend?max(confidence0,confidence1):min(confidence0,confidence1)", "default warping needs common support; one good endpoint must not hide the other unsupported endpoint")
+require(synthesis, "vec4 warped=mix(ca,cb,pc.timestep); if(softBlend)", "default temporal phase must not be renormalized by per-pixel endpoint confidence")
 require(synthesis, "weight0=(1.0-pc.timestep)*visibility0,weight1=pc.timestep*visibility1", "visible endpoint weights must preserve temporal alpha")
 require(synthesis, "float uniquenessQuality=smoothstep(0.08,0.30,flow.w)", "endpoint reliability must reject ambiguous motion vectors")
 require(synthesis, "return cycleQuality*matchQuality*uniquenessQuality*valid;", "endpoint reliability must include motion uniqueness")
@@ -273,11 +269,14 @@ require(synthesis, "bool neighborhoodConflict=", "synthesis must detect local mo
 require(synthesis, "float chromaDelta=max(abs((ca.r-ca.g)-(cb.r-cb.g)),abs((ca.b-ca.g)-(cb.b-cb.g)))", "Vulkan synthesis must measure chroma disagreement between warped source samples")
 require(synthesis, "bool chromaBoundary=colorDelta>0.12&&chromaDelta>0.06", "Vulkan synthesis must reject strong chroma-only contour mixing")
 require(synthesis, "bool boundaryConflict=lumaDelta>0.08||chromaBoundary", "strong motion and color boundaries must select a source sample instead of blending across regions")
-require(synthesis, "edgeConfidence0=confidence0*(0.5+0.5*smoothstep(0.02,0.35,f.w))", "edge confidence remains available for diagnostics and non-conflict weighting")
-require(synthesis, "backAt0=flowAtEdgeAware(cycle0,1)", "cycle-consistency verification must retain edge-aware sampling")
-require(synthesis, "forwardAt1=flowAtEdgeAware(cycle1,0)", "reverse cycle-consistency verification must retain edge-aware sampling")
-assert synthesis.split("void main()", 1)[1].count("flowAtEdgeAware(") == 4, "edge-aware sampling should remain at final warps and cycle checks, not every refinement step"
-assert synthesis.split("void main()", 1)[1].count("flowAtBilinear(") == 6, "static probes, initial warp, and inverse-flow refinements should use the bounded bilinear sampler"
+require(synthesis, "backAt0=flowAtBilinear(cycle0,1)", "cycle checks must use the inverse solve field")
+require(synthesis, "forwardAt1=flowAtBilinear(cycle1,0)", "reverse cycle checks must use the inverse solve field")
+assert "exp(" not in synthesis, "production synthesis must not redo nearest-guide exponential filters at full output resolution"
+assert synthesis.split("void main()", 1)[1].count("flowAtBilinear(") == 10, "static, inverse, final and cycle samples must all use the continuous field"
+sampler = synthesis.split("vec4 flowAtBilinear(", 1)[1].split("vec4 colorAt(", 1)[0]
+require(sampler, "return mix(mix(v00,v10,t.x),mix(v01,v11,t.x),t.y)", "bilinear vectors and their quality must remain continuous across confidence changes")
+assert "flowConfidenceWeight" not in sampler and "if(" not in sampler, "motion coordinates must not switch interpolation modes based on confidence/spread"
+assert "pc.timestep<0.5?texelFetch" not in synthesis_main, "non-finite flow must use a temporal source crossfade rather than endpoint patches"
 color_at_match = re.search(r"vec4 colorAt\(sampler2D s,vec2 p\)\{(.*?)\}", synthesis)
 assert color_at_match, "synthesis must provide the source-color sampler"
 color_at = color_at_match.group(1)
@@ -340,7 +339,7 @@ for source in ("source0", "source1"):
 require(SOURCE, "!(p0->format->caps & PL_FMT_CAP_LINEAR)", "synthesis must reject formats that cannot safely use linear filtering")
 require(SOURCE, "!(p1->format->caps & PL_FMT_CAP_LINEAR)", "both synthesis inputs must support linear filtering")
 require(SOURCE, "mpvflow_gpu_prepare_input", "full-size shared frames need GPU downscaling before analysis")
-require(SOURCE, "Vulkan fast path: bilinear initial/cycle flow", "Vulkan synthesis must avoid redundant edge-aware exponential lookups")
+require(SOURCE, "One continuous field for inverse iteration, final samples and cycles", "Vulkan synthesis must avoid changing fields or redoing edge-guide exponential lookups")
 require(SOURCE, "const int grid_w = (w - block_size + FLOW_STEP - 1) / FLOW_STEP + 1", "motion texture width must contain only valid, unique per-level block origins")
 require(SOURCE, "const int grid_h = (h - block_size + FLOW_STEP - 1) / FLOW_STEP + 1", "motion texture height must contain only valid, unique per-level block origins")
 assert "r32f" not in SOURCE.lower(), "MPV Flow must not require the optional R32F image format"

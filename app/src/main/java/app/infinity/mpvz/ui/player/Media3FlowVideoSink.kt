@@ -99,6 +99,7 @@ data class Media3FlowDiagnostics(
   val presentationQueueDepth: Int = 0,
   val presentationInFlight: Int = 0,
   val presentationCoalescedFrames: Long = 0L,
+  val backpressureDeferredOutputs: Long = 0L,
   val selectedSourcePtsAgeMs: Float? = null,
   val sourcePairPtsGapMs: Float? = null,
   val frame0CaptureAgeMs: Float? = null,
@@ -230,6 +231,8 @@ class Media3FlowVideoSink(
   private val droppedFrames = AtomicLong(0L)
   private val skippedOutputTicks = AtomicLong(0L)
   private val outputSubmissionFailures = AtomicLong(0L)
+  private val backpressureDeferredOutputs = AtomicLong(0L)
+  private var backpressureDeferredSinceOutput = false
   private val presentationFailureCounters = FlowPresentationFailureCounters()
   private var skippedFrames = 0L
   private var lastMotionSubmitMs = 0f
@@ -1790,6 +1793,12 @@ class Media3FlowVideoSink(
       ?: sourceSnapshot.first().ptsUs
     val targetPtsUs = if (forceFinalFrame) finalPtsUs else cadencePtsUs.coerceAtMost(positionUs)
     if (tick != null && tick <= lastOutputTick && !forceFinalFrame) return
+    if (!presentationQueue.canAcceptProduction()) {
+      backpressureDeferredOutputs.incrementAndGet()
+      backpressureDeferredSinceOutput = true
+      lastBypassReason = "presentation_backpressure"
+      return
+    }
     val missedTicks = if (tick != null && lastOutputTick >= 0L) {
       Media3FlowCadence.skippedTicks(lastOutputTick, tick)
     } else {
@@ -1834,7 +1843,7 @@ class Media3FlowVideoSink(
     lastFrame1CaptureAgeMs = bracket?.second?.capturedAtNs?.takeIf { it > 0L }?.let {
       ((nowNs - it).coerceAtLeast(0L) / 1_000_000.0).toFloat()
     }
-    if (missedTicks > 0L) {
+    if (missedTicks > 0L && !backpressureDeferredSinceOutput) {
       val wantsInterpolation = bracket != null &&
         Media3FlowCadence.needsInterpolation(deltaUs, targetFps, speed)
       val missReason = when {
@@ -1918,6 +1927,10 @@ class Media3FlowVideoSink(
       outputDecisionCounters.record("output_submission_failed", "presentation_stage_failed")
     }
     if (submitted) {
+      if (backpressureDeferredSinceOutput && missedTicks > 0L) {
+        recordOutputTickGaps(missedTicks, "presentation_backpressure_resume")
+      }
+      backpressureDeferredSinceOutput = false
       lastOutputTick = Media3FlowCadence.committedOutputTick(lastOutputTick, tick, submitted = true)
       allowFirstFrameBeforeStarted = false
     }
@@ -2175,6 +2188,7 @@ class Media3FlowVideoSink(
       return
     }
     val slot = presentationSlots[index]
+    if (presentationQueue.canAcceptProduction()) requestRenderAtDisplayFrame(null)
     presenterCurrentSlotIndex = index
     val frame = slot.frame
     if (frame == null || disposed || presentationFailed || !outputAvailable || !presentationSurfaceReady ||
@@ -2460,6 +2474,7 @@ class Media3FlowVideoSink(
         slot.frame = null
         slot.completionReported = false
         presentationQueue.finishPresentation(index)
+        if (presentationQueue.canAcceptProduction()) requestRenderAtDisplayFrame(null)
         when {
           disposed -> finishPresentationThreadRelease()
           presentationFailed && !presentationQueue.hasPresenting() -> destroyPresentationContextOnThread()
@@ -2533,6 +2548,7 @@ class Media3FlowVideoSink(
     slot.frame = null
     slot.completionReported = false
     presentationQueue.finishPresentation(index)
+    if (presentationQueue.canAcceptProduction()) requestRenderAtDisplayFrame(null)
   }
 
   private fun cancelPendingPresentationBuffersOnPresentationThread() {
@@ -3580,6 +3596,7 @@ class Media3FlowVideoSink(
       presentationQueueDepth = presentationQueue.readyCount(),
       presentationInFlight = presentationQueue.presentingCount(),
       presentationCoalescedFrames = presentationQueue.coalescedCount(),
+      backpressureDeferredOutputs = backpressureDeferredOutputs.get(),
       selectedSourcePtsAgeMs = lastSelectedSourcePtsAgeMs,
       sourcePairPtsGapMs = lastSourcePairPtsGapMs,
       frame0CaptureAgeMs = lastFrame0CaptureAgeMs,
@@ -3665,6 +3682,7 @@ class Media3FlowVideoSink(
         "sourceFrames:${diagnostics.sourceFrameDepth},readyMotionPairs:${diagnostics.readyMotionPairDepth} " +
         "presentationQueue=queued:${diagnostics.presentationQueueDepth},inFlight:${diagnostics.presentationInFlight}," +
         "coalesced:${diagnostics.presentationCoalescedFrames} " +
+        "backpressureDeferredOutputs=${diagnostics.backpressureDeferredOutputs} " +
         "oldestPendingInputMs=${formatLogFloat(diagnostics.oldestPendingInputAgeMs)} " +
         "selectedSourcePtsAgeMs=${formatNullableLogFloat(diagnostics.selectedSourcePtsAgeMs)} " +
         "pairPtsGapMs=${formatNullableLogFloat(diagnostics.sourcePairPtsGapMs)} " +

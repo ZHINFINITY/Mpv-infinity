@@ -10,11 +10,23 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <math.h>
 
+#ifndef WIDTH
 #define WIDTH 7
+#endif
+#ifndef HEIGHT
 #define HEIGHT 5
-#define GRID_WIDTH (((WIDTH - 4 + 3) / 4) + 1)
-#define GRID_HEIGHT (((HEIGHT - 4 + 3) / 4) + 1)
+#endif
+#ifndef ANALYSIS_WIDTH
+#define ANALYSIS_WIDTH WIDTH
+#endif
+#ifndef ANALYSIS_HEIGHT
+#define ANALYSIS_HEIGHT HEIGHT
+#endif
+#define LUMA_PIXELS ((size_t)ANALYSIS_WIDTH * ANALYSIS_HEIGHT)
+#define GRID_WIDTH (((ANALYSIS_WIDTH - 4 + 3) / 4) + 1)
+#define GRID_HEIGHT (((ANALYSIS_HEIGHT - 4 + 3) / 4) + 1)
 #define GRID_PIXELS ((size_t)GRID_WIDTH * (size_t)GRID_HEIGHT)
 #define PIXELS ((size_t)WIDTH * (size_t)HEIGHT)
 #define IMAGE_BYTES (PIXELS * 4)
@@ -497,13 +509,13 @@ static int run_fixture(struct VulkanContext *ctx, const char *label,
                         int check_all_pixels, int special_grid_test)
 {
     uint8_t frame0[IMAGE_BYTES], frame1[IMAGE_BYTES];
-    uint16_t flow[2][GRID_PIXELS * 4], scene[4], luma0[PIXELS * 4], luma1[PIXELS * 4];
+    uint16_t flow[2][GRID_PIXELS * 4], scene[4], luma0[LUMA_PIXELS * 4], luma1[LUMA_PIXELS * 4];
     fill_rgba8(frame0, frame0_color);
     fill_rgba8(frame1, frame1_color);
     fill_rgba16f(flow[0], GRID_PIXELS, 0x0000, 0x0000, 0x0000, 0x3c00);
     fill_rgba16f(flow[1], GRID_PIXELS, 0x0000, 0x0000, 0x0000, 0x3c00);
-    fill_rgba16f(luma0, PIXELS, luma0_value, 0x0000, 0x0000, 0x3c00);
-    fill_rgba16f(luma1, PIXELS, luma1_value, 0x0000, 0x0000, 0x3c00);
+    fill_rgba16f(luma0, LUMA_PIXELS, luma0_value, 0x0000, 0x0000, 0x3c00);
+    fill_rgba16f(luma1, LUMA_PIXELS, luma1_value, 0x0000, 0x0000, 0x3c00);
     if (special_grid_test == 1) {
         for (int y = 0; y < HEIGHT; y++) {
             for (int x = 0; x < WIDTH; x++) {
@@ -570,24 +582,25 @@ static int run_fixture(struct VulkanContext *ctx, const char *label,
         }
     }
     if (special_grid_test == 5 || special_grid_test == 6) {
-        /* Case 5: with the centered flow-grid origin, probe P.x=1. A nonconstant
-         * affine/zoom field makes the inverse iterate land on the wrong branch;
-         * cycle error alone is insufficient, so residual validation must reject it.
+        /* Case 5: probe P.x=3 with F(x)=2*x-4, B(x)=(4-2*x)/3.
+         * These fields are exact cycle inverses, but the forward fixed-point
+         * iterate oscillates instead of converging. The final residual rejects
+         * it independently of the backward endpoint's otherwise valid support.
          * Case 6: constant +/-2 translation has zero residual and must still warp. */
         for (int y = 0; y < HEIGHT; y++) {
             for (int x = 0; x < WIDTH; x++) {
                 size_t index = ((size_t)y * WIDTH + x) * 4;
                 int translated = x >= 2 ? x - 2 : 0;
                 uint8_t v0 = (uint8_t)(special_grid_test == 5 ? x * 10 : x * x * 4);
-                uint8_t v1 = (uint8_t)(special_grid_test == 5 ? x * 10 : translated * translated * 4);
+                uint8_t v1 = (uint8_t)(special_grid_test == 5 ? (x * 10 > 8 ? x * 10 - 8 : 0) : translated * translated * 4);
                 for (int c = 0; c < 3; c++) { frame0[index+c] = v0; frame1[index+c] = v1; }
             }
         }
         for (uint32_t y = 0; y < GRID_HEIGHT; y++) {
             for (uint32_t x = 0; x < GRID_WIDTH; x++) {
                 size_t index = ((size_t)y * GRID_WIDTH + x) * 4;
-                flow[0][index] = special_grid_test == 5 ? (x == 0 ? 0xc400 : 0x3800) : 0x4000;
-                flow[1][index] = special_grid_test == 5 ? (x == 0 ? 0xc400 : 0x4800) : 0xc000;
+                flow[0][index] = special_grid_test == 5 ? (x == 0 ? 0x0000 : 0x4600) : 0x4000;
+                flow[1][index] = special_grid_test == 5 ? (x == 0 ? 0x0000 : 0xc000) : 0xc000;
             }
         }
     }
@@ -613,6 +626,57 @@ static int run_fixture(struct VulkanContext *ctx, const char *label,
                 special_grid_test == 7 ? 0x3103 : special_grid_test == 8 ? 0x3104 : 0x3c00;
         }
     }
+    if (special_grid_test == 11) {
+        /* Forward motion is fully reliable while reverse motion is not. The
+         * synthesis confidence must use conservative min(conf0, conf1). */
+        for (int y = 0; y < HEIGHT; y++) {
+            for (int x = 0; x < WIDTH; x++) {
+                size_t index = ((size_t)y * WIDTH + x) * 4;
+                uint8_t gray = (uint8_t)(x * 40);
+                frame0[index + 0] = frame0[index + 1] = frame0[index + 2] = gray;
+                frame0[index + 3] = 255;
+                frame1[index + 0] = 0;
+                frame1[index + 1] = 128;
+                frame1[index + 2] = 0;
+                frame1[index + 3] = 255;
+            }
+        }
+        for (size_t cell = 0; cell < GRID_PIXELS; cell++) {
+            flow[0][cell * 4 + 0] = 0x3c00;
+            flow[1][cell * 4 + 0] = 0xbc00;
+            flow[0][cell * 4 + 3] = 0x3c00;
+            flow[1][cell * 4 + 3] = 0x0000;
+        }
+    }
+    if (special_grid_test >= 12) {
+        /* Full output-frame fixtures: 16x8 analysis -> 64x32 output, 32px
+         * source motion, including a two-pixel outline and independent rows. */
+        for (int y = 0; y < HEIGHT; y++) {
+            for (int x = 0; x < WIDTH; x++) {
+                size_t i = ((size_t)y * WIDTH + x) * 4;
+                int line0 = x >= 20 && x < 22 && y >= 4 && y < HEIGHT-4;
+                int line1 = x >= 52 && x < 54 && y >= 4 && y < HEIGHT-4;
+                for (int c = 0; c < 3; c++) {
+                    frame0[i+c] = line0 ? 255 : 0;
+                    frame1[i+c] = line1 ? 255 : 0;
+                }
+                frame0[i+3] = frame1[i+3] = 255;
+            }
+        }
+        fill_rgba16f(flow[0], GRID_PIXELS, 0x4800, 0, 0, 0x3c00); /* +8 */
+        fill_rgba16f(flow[1], GRID_PIXELS, 0xc800, 0, 0, special_grid_test == 12 ? 0 : 0x3c00);
+        if (special_grid_test == 13)
+            fill_rgba16f(flow[0], GRID_PIXELS, 0x7e00, 0, 0, 0x3c00); /* NaN */
+        if (special_grid_test == 15) {
+            const uint16_t vectors[] = {0x0000,0x4000,0x4400,0x4600};
+            for (uint32_t y = 0; y < GRID_HEIGHT; y++)
+                for (uint32_t x = 0; x < GRID_WIDTH; x++) {
+                    size_t i = ((size_t)y * GRID_WIDTH + x) * 4;
+                    flow[0][i] = vectors[x];
+                    flow[0][i+3] = (x & 1) ? 0 : 0x3c00;
+                }
+        }
+    }
     scene[0] = scene_delta;
     scene[1] = scene[2] = 0x0000;
     scene[3] = 0x3c00;
@@ -623,8 +687,8 @@ static int run_fixture(struct VulkanContext *ctx, const char *label,
     images[1] = create_image(ctx, VK_FORMAT_R8G8B8A8_UNORM, WIDTH, HEIGHT,
                              VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, 1);
     for (int i = 2; i <= 6; i++) {
-        uint32_t w = i == 4 ? 1 : (i == 2 || i == 3 ? GRID_WIDTH : WIDTH);
-        uint32_t h = i == 4 ? 1 : (i == 2 || i == 3 ? GRID_HEIGHT : HEIGHT);
+        uint32_t w = i == 4 ? 1 : (i == 2 || i == 3 ? GRID_WIDTH : ANALYSIS_WIDTH);
+        uint32_t h = i == 4 ? 1 : (i == 2 || i == 3 ? GRID_HEIGHT : ANALYSIS_HEIGHT);
         images[i] = create_image(ctx, VK_FORMAT_R16G16B16A16_SFLOAT, w, h,
                                  VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_STORAGE_BIT, 0);
     }
@@ -678,7 +742,7 @@ static int run_fixture(struct VulkanContext *ctx, const char *label,
     vkCmdBindPipeline(command, VK_PIPELINE_BIND_POINT_COMPUTE, ctx->pipeline);
     vkCmdBindDescriptorSets(command, VK_PIPELINE_BIND_POINT_COMPUTE,
                             ctx->pipeline_layout, 0, 1, &ctx->descriptor_set, 0, NULL);
-    int32_t push[4] = { WIDTH, HEIGHT, WIDTH, HEIGHT };
+    int32_t push[4] = { WIDTH, HEIGHT, ANALYSIS_WIDTH, ANALYSIS_HEIGHT };
     if (ctx->soft_blend)
         push[0] |= 0x40000000;
     if (ctx->soft_blend && ctx->preserve_motion_blend)
@@ -754,7 +818,31 @@ static int run_fixture(struct VulkanContext *ctx, const char *label,
     VK_CHECK(vkMapMemory(ctx->device, decision_readback.memory, 0, IMAGE_BYTES, 0, &mapped));
     memcpy(decisions, mapped, IMAGE_BYTES);
     vkUnmapMemory(ctx->device, decision_readback.memory);
-    int first = check_all_pixels ? 0 : special_grid_test == 2 ? 1 : special_grid_test == 5 ? (2 * WIDTH + 1) :
+    if (special_grid_test >= 12) {
+        for (int y = 0; y < HEIGHT; y++) {
+            for (int x = 0; x < WIDTH; x++) {
+                size_t i = ((size_t)y * WIDTH + x) * 4;
+                int wanted = 0, check = 1;
+                if (special_grid_test == 12 || special_grid_test == 13) {
+                    wanted = (int)floorf((1.0f-timestep)*frame0[i] + timestep*frame1[i] + 0.5f);
+                } else if (special_grid_test == 14) {
+                    /* Interior pair support: a 32px translation must produce a
+                     * WHOLE shifted outline, not mask artifacts away by blending. */
+                    check = x >= 32 && x <= 40 && y >= 8 && y < HEIGHT-8;
+                    wanted = x >= 36 && x < 38 ? 255 : 0;
+                } else if (special_grid_test == 15) {
+                    float pos = ((float)x+0.5f)*(float)ANALYSIS_WIDTH/(float)WIDTH-0.5f-2.0f;
+                    float grid = fminf(fmaxf(pos/4.0f,0.0f),(float)GRID_WIDTH-1.0f);
+                    wanted = (int)floorf((grid*2.0f/8.0f)*255.0f+0.5f);
+                }
+                if (check && (abs((int)output[i]-wanted)>1 || output[i+1]!=output[i] || output[i+2]!=output[i] || output[i+3]!=255)) {
+                    fprintf(stderr,"Full-frame motion regression: fixture=%s pixel=(%d,%d) alpha=%.2f expected=%d actual=%d\n",label,x,y,timestep,wanted,output[i]);
+                    exit(1);
+                }
+            }
+        }
+    }
+    int first = check_all_pixels ? 0 : special_grid_test == 2 ? 1 : special_grid_test == 5 ? (2 * WIDTH + 3) :
                 (2 * WIDTH + (special_grid_test == 1 ? 2 : 3));
     int last = check_all_pixels ? (int)PIXELS : first + 1;
     if (expected) {
@@ -849,19 +937,38 @@ static void destroy_vulkan(struct VulkanContext *ctx)
 
 int main(int argc, char **argv)
 {
-    if (argc < 2 || argc > 5) return 2;
+    if (argc < 2 || argc > 6) return 2;
     struct VulkanContext ctx = {0};
     ctx.soft_blend = argc >= 3 && atoi(argv[2]) != 0;
     ctx.preserve_motion_blend = argc >= 4 && atoi(argv[3]) != 0;
     ctx.decision_mode = argc >= 5 && atoi(argv[4]) != 0;
     initialize_vulkan(&ctx, argv[1]);
-    printf("Running exact MPVFlow shader_synthesize on Vulkan device: %s (%dx%d odd extent, soft_blend=%d preserve_motion_blend=%d decision_mode=%d)\n", ctx.device_name, WIDTH, HEIGHT, ctx.soft_blend, ctx.preserve_motion_blend, ctx.decision_mode);
+    printf("Running exact MPVFlow shader_synthesize on Vulkan device: %s (output=%dx%d analysis=%dx%d soft_blend=%d preserve_motion_blend=%d decision_mode=%d)\n", ctx.device_name, WIDTH, HEIGHT, ANALYSIS_WIDTH, ANALYSIS_HEIGHT, ctx.soft_blend, ctx.preserve_motion_blend, ctx.decision_mode);
     const uint8_t red[4]={255,0,0,255}, blue[4]={0,0,255,255}, green[4]={0,130,0,255};
     const uint8_t neutral0[4]={100,100,100,255}, neutral1[4]={120,110,104,255}, mixed[4]={110,105,102,255};
     const uint8_t soft_chroma[4]={64,98,0,255}, continuous_chroma[4]={50,104,0,255};
     const uint8_t source_blend_low0[4]={191,0,64,255}, source_blend_low1[4]={64,0,191,255};
     const uint8_t soft_low[4]={214,0,41,255}, soft_edge[4]={50,114,50,255}, continuous_edge[4]={56,120,56,255};
-    const uint8_t inverse_fallback[4]={10,10,10,255}, translated_pixel[4]={16,16,16,255};
+    const uint8_t inverse_fallback[4]={26,26,26,255}, translated_pixel[4]={16,16,16,255};
+#ifdef FLOW_LARGE_FIXTURES
+    const uint8_t background[4] = {0,0,0,255};
+    if (argc > 5 && strcmp(argv[5], "field") == 0) {
+        run_fixture(&ctx,"confidence-independent continuous geometric field",background,background,0,0x3400,0x3400,0.5f,NULL,0,15);
+    } else if (argc > 5 && strcmp(argv[5], "nan") == 0) {
+        for (int step=1; step<=3; step++)
+            run_fixture(&ctx,"nonfinite motion preserves complete temporal source blend",background,background,0,0x3400,0x3400,(float)step*0.25f,NULL,0,13);
+    } else {
+        for (int step=1; step<=3; step++) {
+            float t = (float)step*0.25f;
+            run_fixture(&ctx,"unsupported reverse motion preserves complete temporal source blend",background,background,0,0x3400,0x3400,t,NULL,0,12);
+            run_fixture(&ctx,"nonfinite motion preserves complete temporal source blend",background,background,0,0x3400,0x3400,t,NULL,0,13);
+        }
+        run_fixture(&ctx,"reliable 32px motion preserves the whole thin outline",background,background,0,0x3400,0x3400,0.5f,NULL,0,14);
+    }
+    destroy_vulkan(&ctx);
+    puts("Full-frame 4x-upscaled motion tests passed");
+    return 0;
+#endif
     if (!ctx.soft_blend) {
         int c0 = run_fixture(&ctx,"confidence contour below former gate",neutral0,neutral0,0,0x3400,0x3400,0.5f,NULL,0,7);
         int c1 = run_fixture(&ctx,"confidence contour above former gate",neutral0,neutral0,0,0x3400,0x3400,0.5f,NULL,0,8);
@@ -877,6 +984,10 @@ int main(int argc, char **argv)
     run_fixture(&ctx,"static identical frame is preserved exactly",neutral0,neutral0,0,0x3400,0x3400,0.37f,neutral0,1,0);
     run_fixture(&ctx,ctx.soft_blend?"soft mode blends the chroma boundary":"default conflict fallback blends source frames",red,green,0,0x3400,0x3800,0.75f,ctx.soft_blend?(ctx.preserve_motion_blend?continuous_chroma:soft_chroma):soft_chroma,0,0);
     run_fixture(&ctx,"low-contrast reliable motion retains temporal color blend",neutral0,neutral1,0,0x3400,0x3500,0.5f,mixed,0,0);
+    const uint8_t asymmetric_confidence_blend[4]={60,124,60,255};
+    const uint8_t asymmetric_soft_blend[4]={50,114,50,255};
+    const uint8_t asymmetric_continuous_blend[4]={56,120,56,255};
+    run_fixture(&ctx,"asymmetric endpoint confidence uses conservative min",red,blue,0,0x3400,0x3800,0.5f,ctx.soft_blend?(ctx.preserve_motion_blend?asymmetric_continuous_blend:asymmetric_soft_blend):asymmetric_confidence_blend,0,11);
     run_fixture(&ctx,"soft fallback keeps a continuous blend across the moving edge",red,blue,0,0x3400,0x3800,0.5f,ctx.soft_blend?(ctx.preserve_motion_blend?continuous_edge:soft_edge):NULL,0,4);
     const uint8_t soft_grid[4]={31,31,31,255}, cont_grid[4]={27,27,27,255};
     const uint8_t terminal_grid_source[4]={24,24,24,255};

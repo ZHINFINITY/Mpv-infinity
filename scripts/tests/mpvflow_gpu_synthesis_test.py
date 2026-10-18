@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Execute the embedded MPVFlow synthesis shader and check deterministic pixels."""
+"""Execute the production synthesis shader, full-frame fixtures, and negative controls."""
 from __future__ import annotations
 import argparse
 import ast
@@ -17,17 +17,14 @@ HARNESS = ROOT / "scripts/tests/mpvflow_gpu_synthesis_test.c"
 
 def require_tooling(required: bool) -> bool:
     missing = []
-    if not shutil.which("glslangValidator"):
-        missing.append("glslangValidator")
-    if not shutil.which("cc"):
-        missing.append("C compiler")
+    for command in ("glslangValidator", "cc"):
+        if not shutil.which(command):
+            missing.append(command)
     if not Path("/usr/include/vulkan/vulkan.h").is_file():
         missing.append("Vulkan development headers")
     if not any(Path("/usr/lib").glob("**/libvulkan.so")):
         missing.append("Vulkan loader/development library")
-    icd_directory = Path("/usr/share/vulkan/icd.d")
-    lavapipe_icds = sorted(icd_directory.glob("lvp_icd*.json"))
-    if required and not lavapipe_icds:
+    if required and not list(Path("/usr/share/vulkan/icd.d").glob("lvp_icd*.json")):
         missing.append("lavapipe Vulkan software driver")
     if missing:
         message = "Vulkan synthesis pixel oracle unavailable: " + ", ".join(missing)
@@ -38,129 +35,109 @@ def require_tooling(required: bool) -> bool:
     return True
 
 
-def embedded_synthesis_shader() -> str:
-    source = SOURCE.read_text(encoding="utf-8")
-    match = re.search(
-        r"static const char shader_synthesize\[\] =\n(.*?);\n",
-        source,
-        re.DOTALL,
-    )
+def embedded_synthesis_shader(source: str | None = None) -> str:
+    if source is None:
+        source = SOURCE.read_text(encoding="utf-8")
+    match = re.search(r"static const char shader_synthesize\[\] =\n(.*?);\n", source, re.DOTALL)
     if not match:
         raise SystemExit("Could not find embedded shader_synthesize")
-    literals = re.findall(r'"(?:\\.|[^"\\])*"', match.group(1))
-    if not literals:
-        raise SystemExit("Embedded shader_synthesize has no C string literals")
-    return "".join(ast.literal_eval(literal) for literal in literals)
+    return "".join(ast.literal_eval(literal) for literal in re.findall(r'"(?:\\.|[^"\\])*"', match.group(1)))
 
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument(
-        "--require-vulkan",
-        action="store_true",
-        help="fail instead of skipping when Vulkan execution dependencies are absent",
-    )
-    parser.add_argument("--decision-mode", action="store_true", help="also compile/run decision-mask fixtures")
+    parser.add_argument("--require-vulkan", action="store_true")
+    parser.add_argument("--decision-mode", action="store_true")
+    parser.add_argument("--baseline-revision", help="also prove the full-frame regressions fail this git revision")
     args = parser.parse_args()
     if not require_tooling(args.require_vulkan):
         return
-
     with tempfile.TemporaryDirectory(prefix="mpvflow-synthesis-oracle-") as temp:
-        temp_path = Path(temp)
-        shader = temp_path / "shader_synthesize.comp"
-        spirv = temp_path / "shader_synthesize.spv"
-        executable = temp_path / "mpvflow_gpu_synthesis_test"
+        directory = Path(temp)
         shader_source = embedded_synthesis_shader()
         centered_origin = "vec2 center=p-vec2(2.0);"
         if shader_source.count(centered_origin) != 1:
             raise SystemExit("Centered flow-grid origin mapping is missing or duplicated")
-        shader.write_text(shader_source, encoding="utf-8")
-        def compile_variant(source_text: str, variant: str) -> Path:
-            variant_shader = temp_path / f"shader_synthesize_{variant}.comp"
-            variant_spirv = temp_path / f"shader_synthesize_{variant}.spv"
-            variant_shader.write_text(source_text, encoding="utf-8")
-            compiled = subprocess.run(
-                ["glslangValidator", "-V", "--target-env", "vulkan1.2", "-S", "comp", "-o", str(variant_spirv), str(variant_shader)],
-                check=False, capture_output=True, text=True,
-            )
-            if compiled.returncode:
-                raise SystemExit(f"Embedded synthesis shader ({variant}) failed Vulkan compilation:\n" + compiled.stdout + compiled.stderr)
-            return variant_spirv
 
-        compile_harness = subprocess.run(
-            ["cc", "-std=c11", "-O2", "-Wall", "-Wextra", "-Werror", str(HARNESS), "-lvulkan", "-o", str(executable)],
-            check=False, capture_output=True, text=True,
-        )
-        if compile_harness.returncode:
-            raise SystemExit("Vulkan pixel-oracle harness failed to compile:\n" + compile_harness.stdout + compile_harness.stderr)
-        spirv = compile_variant(shader_source, "production")
-        decision_spirv = None
+        def compile_variant(text: str, label: str) -> Path:
+            source = directory / f"{label}.comp"
+            spirv = directory / f"{label}.spv"
+            source.write_text(text, encoding="utf-8")
+            result = subprocess.run(["glslangValidator", "-V", "--target-env", "vulkan1.2", "-S", "comp", "-o", str(spirv), str(source)], capture_output=True, text=True)
+            if result.returncode:
+                raise SystemExit(f"Shader compilation failed ({label}):\n" + result.stdout + result.stderr)
+            return spirv
+
+        def compile_harness(large: bool) -> Path:
+            output = directory / ("full_frame_oracle" if large else "odd_extent_oracle")
+            definitions = ["-DFLOW_LARGE_FIXTURES", "-DWIDTH=64", "-DHEIGHT=32", "-DANALYSIS_WIDTH=16", "-DANALYSIS_HEIGHT=8"] if large else []
+            result = subprocess.run(["cc", "-std=c11", "-O2", "-Wall", "-Wextra", "-Werror", *definitions, str(HARNESS), "-lvulkan", "-lm", "-o", str(output)], capture_output=True, text=True)
+            if result.returncode:
+                raise SystemExit("Vulkan pixel harness compilation failed:\n" + result.stdout + result.stderr)
+            return output
+
+        normal = compile_harness(False)
+        large = compile_harness(True)
+        environment = os.environ.copy()
+        icds = sorted(Path("/usr/share/vulkan/icd.d").glob("lvp_icd*.json"))
+        if icds:
+            environment["VK_ICD_FILENAMES"] = str(icds[0])
+
+        def run(program: Path, spirv: Path, flags: tuple[str, ...], label: str, failure: str | None = None) -> None:
+            result = subprocess.run([str(program), str(spirv), *flags], capture_output=True, text=True, env=environment)
+            if failure is None:
+                if result.returncode:
+                    raise SystemExit(f"Pixel oracle failed ({label}):\n" + result.stdout + result.stderr)
+                print(f"[{label}]\n" + result.stdout, end="")
+            else:
+                if result.returncode == 0 or failure not in result.stderr:
+                    raise SystemExit(f"Negative control did not fail for the expected reason ({label}):\n" + result.stdout + result.stderr)
+                print(f"[negative control caught: {label}]\n" + result.stderr, end="")
+
+        production = compile_variant(shader_source, "production")
+        for flags, label in ((("0", "0"), "default-off production"), (("1", "0"), "opt-in soft blend"), (("1", "1"), "opt-in continuous soft blend")):
+            run(normal, production, flags, label)
         if args.decision_mode:
-            version = "#version 450\n"
-            if not shader_source.startswith(version):
-                raise SystemExit("shader_synthesize does not start with #version 450")
-            capture_source = shader_source.replace(version, version + "#define MPVFLOW_CAPTURE_DECISIONS 1\n", 1)
-            decision_spirv = compile_variant(capture_source, "decisions")
-        env = os.environ.copy()
-        lavapipe_icds = sorted(Path("/usr/share/vulkan/icd.d").glob("lvp_icd*.json"))
-        if lavapipe_icds:
-            env["VK_ICD_FILENAMES"] = str(lavapipe_icds[0])
-        for soft_blend, preserve_motion_blend, label in (
-            ("0", "0", "default-off production output"),
-            ("1", "0", "opt-in soft-blend output"),
-            ("1", "1", "soft blend with stronger continuous-motion bias"),
-        ):
-            result = subprocess.run(
-                [str(executable), str(spirv), soft_blend, preserve_motion_blend],
-                check=False,
-                capture_output=True,
-                text=True,
-                env=env,
-            )
-            if result.returncode:
-                raise SystemExit(
-                    f"Vulkan synthesis pixel oracle failed ({label}):\n"
-                    + result.stdout
-                    + result.stderr
-                )
-            print(f"[{label}]\n" + result.stdout, end="")
-        if decision_spirv is not None:
-            result = subprocess.run(
-                [str(executable), str(decision_spirv), "0", "0", "1"],
-                check=False, capture_output=True, text=True, env=env,
-            )
-            if result.returncode:
-                raise SystemExit("Vulkan synthesis decision-mask oracle failed:\n" + result.stdout + result.stderr)
-            print("[decision-mask capture mode]\n" + result.stdout, end="")
+            decision_shader = shader_source.replace("#version 450\n", "#version 450\n#define MPVFLOW_CAPTURE_DECISIONS 1\n", 1)
+            run(normal, compile_variant(decision_shader, "decisions"), ("0", "0", "1"), "decision-mask capture")
+        run(large, production, ("0", "0"), "whole-frame 4x upscaling / 32px motion")
+
+        def field_shader(text: str) -> str:
+            # Execute the ACTUAL helper, not a Python reconstruction. Changing
+            # confidence must not move coordinates or expose the coarse lattice.
+            text = text.replace("void main(){ FLOW_BEGIN", "void unusedSynthesisMain(){ FLOW_BEGIN", 1)
+            return text + "\nvoid main(){ ivec2 p=ivec2(gl_GlobalInvocationID.xy),sz=imageSize(outTex); if(any(greaterThanEqual(p,sz)))return; vec2 q=clamp((vec2(p)+0.5)*vec2(pc.cfg.zw)/vec2(sz)-0.5,vec2(0.0),vec2(pc.cfg.zw-1)); float v=flowAtBilinear(q,0).x/8.0; imageStore(outTex,p,vec4(v,v,v,1.0)); }\n"
+
+        run(large, compile_variant(field_shader(shader_source), "continuous_field"), ("0", "0", "0", "field"), "continuous field across asymmetric grid confidence")
         guard = "float inverseResidual0Valid=1.0-smoothstep(0.25,0.75,inverseResidual0), inverseResidual1Valid=1.0-smoothstep(0.25,0.75,inverseResidual1);"
         if shader_source.count(guard) != 1:
-            raise SystemExit("Inverse-warp mutation check could not locate the production guard")
-        mutant = compile_variant(shader_source.replace(guard,
-            "float inverseResidual0Valid=1.0, inverseResidual1Valid=1.0;", 1), "unguarded_inverse")
-        result = subprocess.run([str(executable), str(mutant), "0", "0"],
-            check=False, capture_output=True, text=True, env=env)
-        proof = "fixture=nonconverged inverse warp rejects a cycle-consistent wrong sample"
-        if result.returncode == 0 or proof not in result.stderr:
-            raise SystemExit("Inverse-warp fixture did not reject the disabled guard:\n" + result.stdout + result.stderr)
-        print("[mutation check: disabled inverse guard correctly fails]\n" + result.stderr, end="")
-        for fragment, replacement, label, proof in (
-            ("smoothstep(0.0,0.60,confidence)*boundaryTrust", "step(0.28,confidence)*boundaryTrust", "hard_confidence", "Hard confidence contour seam"),
-            ("smoothstep(0.0,0.60,confidence)*boundaryTrust", "smoothstep(0.0,0.60,confidence)", "hard_boundary", "Hard boundary contour seam"),
-        ):
-            if shader_source.count(fragment) != 1:
-                raise SystemExit(f"Continuity mutation {label} could not locate warp trust")
-            mutant = compile_variant(shader_source.replace(fragment, replacement, 1), label)
-            result = subprocess.run([str(executable), str(mutant), "0", "0"], check=False, capture_output=True, text=True, env=env)
-            if result.returncode == 0 or proof not in result.stderr:
-                raise SystemExit(f"Continuity fixture did not reject {label}:\n" + result.stdout + result.stderr)
-            print(f"[mutation check: {label} correctly fails]\n" + result.stderr, end="")
-        old_origin = compile_variant(shader_source.replace(centered_origin, "vec2 center=p;", 1), "old_origin")
-        result = subprocess.run([str(executable), str(old_origin), "0", "0"],
-            check=False, capture_output=True, text=True, env=env)
-        proof = "fixture=nonconverged inverse warp rejects a cycle-consistent wrong sample"
-        if result.returncode == 0 or proof not in result.stderr:
-            raise SystemExit("Old flow-grid origin mutation was not caught by the centered fixture:\n" + result.stdout + result.stderr)
-        print("[mutation check: old flow-grid origin correctly fails]\n" + result.stderr, end="")
+            raise SystemExit("Inverse residual guard mutation anchor is missing")
+        mutant = shader_source.replace(guard, "float inverseResidual0Valid=1.0, inverseResidual1Valid=1.0;", 1)
+        run(normal, compile_variant(mutant, "unguarded_inverse"), ("0", "0"), "disabled inverse guard", "fixture=nonconverged inverse warp")
+        geometric = "return mix(mix(v00,v10,t.x),mix(v01,v11,t.x),t.y)"
+        if shader_source.count(geometric) != 1:
+            raise SystemExit("Pure geometric bilinear field is missing")
+        for needle, replacement, label in ((geometric, "return v00", "nearest lattice field"), (centered_origin, "vec2 center=p;", "uncentered lattice field")):
+            mutant = shader_source.replace(needle, replacement, 1)
+            run(large, compile_variant(field_shader(mutant), label.replace(" ", "_")), ("0", "0", "0", "field"), label, "fixture=confidence-independent continuous geometric field")
+        common = "confidence=softBlend?max(confidence0,confidence1):min(confidence0,confidence1)"
+        if shader_source.count(common) != 1:
+            raise SystemExit("Common-support trust anchor is missing")
+        mutant = shader_source.replace(common, "confidence=max(confidence0,confidence1)", 1)
+        run(large, compile_variant(mutant, "one_sided_trust"), ("0", "0"), "one-sided warp trust", "fixture=unsupported reverse motion")
+        fallback = "vec4 c=mix(texelFetch(frame0,p,0),texelFetch(frame1,p,0),pc.timestep);"
+        mutant = shader_source.replace(fallback, "vec4 c=pc.timestep<0.5?texelFetch(frame0,p,0):texelFetch(frame1,p,0);")
+        run(large, compile_variant(mutant, "endpoint_nan_fallback"), ("0", "0", "0", "nan"), "hard endpoint nonfinite fallback", "fixture=nonfinite motion")
+        for replacement, label, proof in (("step(0.28,confidence)*boundaryTrust", "hard_confidence", "Hard confidence contour seam"), ("smoothstep(0.0,0.60,confidence)", "hard_boundary", "Hard boundary contour seam")):
+            mutant = shader_source.replace("smoothstep(0.0,0.60,confidence)*boundaryTrust", replacement, 1)
+            run(normal, compile_variant(mutant, label), ("0", "0"), label, proof)
+        if args.baseline_revision:
+            old_source = subprocess.check_output(["git", "show", f"{args.baseline_revision}:app/src/main/cpp/mpvflow/mpvflow_gpu.c"], cwd=ROOT, text=True)
+            old_shader = embedded_synthesis_shader(old_source)
+            old = compile_variant(old_shader, "baseline")
+            run(large, old, ("0", "0"), "baseline unsupported reverse motion", "fixture=unsupported reverse motion")
+            run(large, old, ("0", "0", "0", "nan"), "baseline nonfinite fallback", "fixture=nonfinite motion")
+            run(large, compile_variant(field_shader(old_shader), "baseline_field"), ("0", "0", "0", "field"), "baseline confidence-selected coordinates", "fixture=confidence-independent continuous geometric field")
 
 
 if __name__ == "__main__":

@@ -180,6 +180,10 @@ render_decision = SINK.split("  private fun renderAtPosition(", 1)[1].split(
     "\n  private fun findSourcePair(", 1
 )[0]
 assert "fun committedOutputTick(previousTick: Long, candidateTick: Long?, submitted: Boolean): Long" in CADENCE
+assert "presentationQueue.canAcceptProduction()" in render_decision, (
+    "producer must perform non-mutating presentation admission before GPU synthesis"
+)
+assert "backpressureDeferredOutputs" in SINK, "Media3 backpressure deferrals must be diagnosed separately from drops"
 assert "if (submitted)" in render_decision and "allowFirstFrameBeforeStarted = false" in render_decision
 assert "lastOutputTick = tick" not in render_decision, "failed producer submissions must not consume the cadence tick"
 synthesis_admission = render_decision.split("    val synthesize =", 1)[1].split(

@@ -141,4 +141,72 @@ class Media3FlowPresentationQueueTest {
     assertEquals(2, queue.presentingCount())
     assertEquals(Media3FlowPresentationQueue.State.WRITING, queue.state(third!!.slot))
   }
+  @Test
+  fun readyBlocksAdmissionEvenWhenAnotherSlotIsFree() {
+    val queue = Media3FlowPresentationQueue(capacity = 3)
+    val lease = queue.acquireForWrite() ?: error("write lease unavailable")
+    queue.publish(lease)
+
+    assertFalse(queue.canAcceptProduction())
+    assertEquals(Media3FlowPresentationQueue.State.READY, queue.state(lease.slot))
+  }
+
+  @Test
+  fun allPresentingBlocksAdmission() {
+    val queue = Media3FlowPresentationQueue(capacity = 2)
+    repeat(2) {
+      val lease = queue.acquireForWrite() ?: error("write lease unavailable")
+      queue.publish(lease)
+      queue.takeNext()
+    }
+
+    assertFalse(queue.canAcceptProduction())
+  }
+
+  @Test
+  fun freeSlotAdmitsProduction() {
+    val queue = Media3FlowPresentationQueue(capacity = 2)
+
+    assertTrue(queue.canAcceptProduction())
+  }
+
+  @Test
+  fun consumerConsumptionResumesAdmissionWithFreeSlot() {
+    val queue = Media3FlowPresentationQueue(capacity = 2)
+    val lease = queue.acquireForWrite() ?: error("write lease unavailable")
+    queue.publish(lease)
+    assertFalse(queue.canAcceptProduction())
+
+    assertEquals(lease.slot, queue.takeNext())
+    assertTrue(queue.canAcceptProduction())
+  }
+
+  @Test
+  fun consumerFenceReleaseResumesAdmission() {
+    val queue = Media3FlowPresentationQueue(capacity = 2)
+    repeat(2) {
+      val lease = queue.acquireForWrite() ?: error("write lease unavailable")
+      queue.publish(lease)
+      queue.takeNext()
+    }
+    val slot = 0
+    assertFalse(queue.canAcceptProduction())
+
+    queue.finishPresentation(slot)
+    assertTrue(queue.canAcceptProduction())
+  }
+
+  @Test
+  fun admissionDoesNotCoalesceUnderSaturation() {
+    val queue = Media3FlowPresentationQueue(capacity = 2)
+    repeat(2) {
+      val lease = queue.acquireForWrite() ?: error("write lease unavailable")
+      queue.publish(lease)
+      queue.takeNext()
+    }
+    assertFalse(queue.canAcceptProduction())
+    assertNull(queue.acquireForWrite())
+    assertEquals(0L, queue.coalescedCount())
+  }
+
 }
