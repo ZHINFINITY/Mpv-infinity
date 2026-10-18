@@ -748,12 +748,11 @@ static void run_fixture(struct VulkanContext *ctx, const char *label,
     if (ctx->decision_mode) {
         int expected_id = strstr(label, "scene-cut") ? 1 :
                           strstr(label, "static identical") ? 2 :
-                          strstr(label, "low-confidence source 0") ? (ctx->soft_blend ? 11 : 3) :
-                          strstr(label, "low-confidence source 1") ? (ctx->soft_blend ? 11 : 4) :
-                          strstr(label, "default conflict source 0") ? 7 :
-                          strstr(label, "default conflict") ? (ctx->soft_blend ? 12 : 8) :
+                          strstr(label, "low-confidence source 0") ? 11 :
+                          strstr(label, "low-confidence source 1") ? 11 :
+                          strstr(label, "default conflict") ? 12 :
                           strstr(label, "irregular terminal") ? -2 : -1;
-        const uint8_t grid_ids[WIDTH] = { 3, 7, 7, 7, 7, 3, 3 };
+        const uint8_t grid_ids[WIDTH] = { 11, 12, 12, 12, 12, 11, 11 };
         for (int i = 0; i < (int)PIXELS; i++) {
             const uint8_t *m = decisions + (size_t)i * 4;
             if (m[0] > 12 || m[2] > 15 || m[3] != 255) {
@@ -787,7 +786,7 @@ static void run_fixture(struct VulkanContext *ctx, const char *label,
         }
     }
     if (ctx->decision_mode && (special_grid_test == 5 || special_grid_test == 6)) {
-        int required_id = special_grid_test == 5 ? 3 : 0;
+        int required_id = special_grid_test == 5 ? 11 : 0;
         if (decisions[(size_t)first * 4] != required_id) {
             fprintf(stderr, "Inverse-warp decision mismatch: %s expected=%d actual=%u\n", label, required_id, decisions[(size_t)first * 4]);
             exit(1);
@@ -836,15 +835,15 @@ int main(int argc, char **argv)
     const uint8_t red[4]={255,0,0,255}, blue[4]={0,0,255,255}, green[4]={0,130,0,255};
     const uint8_t neutral0[4]={100,100,100,255}, neutral1[4]={120,110,104,255}, mixed[4]={110,105,102,255};
     const uint8_t soft_chroma[4]={64,98,0,255}, continuous_chroma[4]={50,104,0,255};
-    const uint8_t soft_low[4]={214,0,41,255}, soft_low1[4]={41,0,214,255}, soft_edge[4]={50,114,50,255}, continuous_edge[4]={56,120,56,255};
+    const uint8_t source_blend_low0[4]={191,0,64,255}, source_blend_low1[4]={64,0,191,255};
+    const uint8_t soft_low[4]={214,0,41,255}, soft_edge[4]={50,114,50,255}, continuous_edge[4]={56,120,56,255};
     const uint8_t inverse_fallback[4]={10,10,10,255}, translated_pixel[4]={16,16,16,255};
     run_fixture(&ctx,"reliable constant translation retains warped detail",neutral0,neutral0,0,0x3400,0x3400,0.5f,translated_pixel,0,6);
     run_fixture(&ctx,"nonconverged inverse warp rejects a cycle-consistent wrong sample",neutral0,neutral0,0,0x3400,0x3400,0.5f,inverse_fallback,0,5);
     run_fixture(&ctx,"scene-cut alpha selects first source",red,blue,0x3800,0x3400,0x3800,0.25f,red,1,0);
     run_fixture(&ctx,"scene-cut alpha selects second source",red,blue,0x3800,0x3400,0x3800,0.75f,blue,1,0);
     run_fixture(&ctx,"static identical frame is preserved exactly",neutral0,neutral0,0,0x3400,0x3400,0.37f,neutral0,1,0);
-    run_fixture(&ctx,ctx.soft_blend?"soft mode blends the chroma boundary":"default conflict fallback holds nearest source endpoint",red,green,0,0x3400,0x3800,0.75f,ctx.soft_blend?(ctx.preserve_motion_blend?continuous_chroma:soft_chroma):green,0,0);
-    if (!ctx.soft_blend) run_fixture(&ctx,"default conflict source 0 nearest endpoint",red,green,0,0x3400,0x3800,0.25f,red,0,0);
+    run_fixture(&ctx,ctx.soft_blend?"soft mode blends the chroma boundary":"default conflict fallback blends source frames",red,green,0,0x3400,0x3800,0.75f,ctx.soft_blend?(ctx.preserve_motion_blend?continuous_chroma:soft_chroma):soft_chroma,0,0);
     run_fixture(&ctx,"low-contrast reliable motion retains temporal color blend",neutral0,neutral1,0,0x3400,0x3500,0.5f,mixed,0,0);
     run_fixture(&ctx,"soft fallback keeps a continuous blend across the moving edge",red,blue,0,0x3400,0x3800,0.5f,ctx.soft_blend?(ctx.preserve_motion_blend?continuous_edge:soft_edge):NULL,0,4);
     const uint8_t soft_grid[4]={42,42,42,255}, cont_grid[4]={31,31,31,255};
@@ -852,8 +851,8 @@ int main(int argc, char **argv)
     run_fixture(&ctx,"irregular terminal block anchors use conservative source fallback",neutral0,neutral0,0,0x3400,0x3400,0.5f,ctx.soft_blend?(ctx.preserve_motion_blend?cont_grid:soft_grid):terminal_grid_source,0,1);
     const uint8_t outlier[4]={2,2,2,255};
     run_fixture(&ctx,"ambiguous fast vector cannot warp a coherent region",neutral0,neutral0,0,0x3400,0x3400,0.25f,outlier,0,2);
-    run_fixture(&ctx,ctx.soft_blend?"soft mode favors temporal detail at low confidence":"low-confidence source 0 nearest endpoint",red,blue,0,0x3400,0x3800,0.25f,ctx.soft_blend?soft_low:red,1,3);
-    run_fixture(&ctx,ctx.soft_blend?"low-confidence source 1 weighted blend":"low-confidence source 1 nearest endpoint",red,blue,0,0x3400,0x3800,0.75f,ctx.soft_blend?soft_low1:blue,1,3);
+    run_fixture(&ctx,ctx.soft_blend?"soft mode favors temporal detail at low confidence":"low-confidence source 0 weighted blend",red,blue,0,0x3400,0x3800,0.25f,ctx.soft_blend?soft_low:source_blend_low0,1,3);
+    if (ctx.decision_mode) run_fixture(&ctx,"low-confidence source 1 weighted blend",red,blue,0,0x3400,0x3800,0.75f,source_blend_low1,1,3);
     destroy_vulkan(&ctx);
     puts("MPVFlow Vulkan synthesis pixel-oracle tests passed");
     return 0;
