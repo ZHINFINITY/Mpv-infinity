@@ -140,6 +140,23 @@ def main() -> None:
         if result.returncode == 0 or proof not in result.stderr:
             raise SystemExit("Inverse-warp fixture did not reject the disabled guard:\n" + result.stdout + result.stderr)
         print("[mutation check: disabled inverse guard correctly fails]\n" + result.stderr, end="")
+        endpoint = "pc.timestep<=0.5?texelFetch(frame0,p,0):texelFetch(frame1,p,0)"
+        source_blend = "mix(texelFetch(frame0,p,0),texelFetch(frame1,p,0),pc.timestep)"
+        for decision, proof in (
+            ("3:4", "fixture=low-confidence source 0 nearest endpoint"),
+            ("7:8", "fixture=default conflict fallback holds nearest source endpoint"),
+        ):
+            branch = endpoint + ",(pc.timestep<=0.5?" + decision + ")"
+            if shader_source.count(branch) != 1:
+                raise SystemExit("Fallback mutation check could not locate endpoint branch: " + decision)
+            mutant = compile_variant(shader_source.replace(branch,
+                source_blend + ",(pc.timestep<=0.5?" + decision + ")", 1),
+                "source_blend_" + decision.replace(":", "_"))
+            result = subprocess.run([str(executable), str(mutant), "0", "0"],
+                check=False, capture_output=True, text=True, env=env)
+            if result.returncode == 0 or proof not in result.stderr:
+                raise SystemExit("Fallback fixture did not reject restored source blending:\n" + result.stdout + result.stderr)
+            print("[mutation check: source-blend fallback correctly fails]\n" + result.stderr, end="")
 
 
 if __name__ == "__main__":

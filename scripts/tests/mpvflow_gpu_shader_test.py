@@ -110,7 +110,10 @@ require(synthesis, "inverseResidual0Valid", "forward validity must be independen
 require(synthesis, "inverseResidual1Valid", "backward validity must be independently guarded")
 require(synthesis, "cycleSamplesFinite=flowFinite(backAt0)&&flowFinite(forwardAt1)", "cycle samples must be finite before reliability")
 require(synthesis, "bool staticPixel=", "static low-motion pixels should bypass the full-resolution warp path")
-require(synthesis, "else if(boundaryConflict) outc=FLOW_RESULT(mix(texelFetch(frame0,p,0),texelFetch(frame1,p,0),pc.timestep),12,confidence,captureReason);", "conflicting warped samples must fall back to a source-frame blend instead of trusting a single possibly corrupted warp")
+require(synthesis, "else if(boundaryConflict) outc=FLOW_RESULT(pc.timestep<=0.5?texelFetch(frame0,p,0):texelFetch(frame1,p,0),(pc.timestep<=0.5?7:8),confidence,captureReason);", "conflicting warped samples must hold the temporally nearest source by default while retaining opt-in soft blending")
+require(synthesis, "confidence<0.28){ outc=softBlend?softBlendColor(p,ca,cb,confidence,preserveMotionBlend):FLOW_RESULT(pc.timestep<=0.5?texelFetch(frame0,p,0):texelFetch(frame1,p,0),(pc.timestep<=0.5?3:4),confidence,0);", "uncertain motion must hold the temporally nearest source by default while retaining opt-in soft blending")
+assert "FLOW_RESULT(mix(texelFetch(frame0,p,0),texelFetch(frame1,p,0),pc.timestep),11" not in synthesis, "default low-confidence path must not source-blend endpoints"
+assert "FLOW_RESULT(mix(texelFetch(frame0,p,0),texelFetch(frame1,p,0),pc.timestep),12" not in synthesis, "default conflict path must not source-blend endpoints"
 require(synthesis, "ivec2 outSize=imageSize(outTex),motionSize=pc.cfg.zw;", "synthesis bounds must use the actual storage-image extent, not only host-provided dimensions")
 require(synthesis, "flowP=clamp(uv*vec2(motionSize)-vec2(0.5),vec2(0.0),vec2(motionSize-1))", "Vulkan output pixel centers must map to analysis pixel centers without a half-pixel offset")
 require(visibility_resolver, "flowP=(vec2(p)+0.5)*vec2(motionSize)/vec2(outSize)-vec2(0.5)", "optional resolver must share the corrected pixel-center mapping")
@@ -245,7 +248,7 @@ require(synthesis, "if(confidence<0.28)", "unreliable motion must fall back to a
 require(synthesis, "bool softBlend=(pc.cfg.x&0x40000000)!=0", "the soft path must use an explicit per-synthesis debug flag")
 require(synthesis, "softBlendAlpha=clamp(0.5+(pc.timestep-0.5)*1.35,0.0,1.0)", "soft fallback must sharpen uncertain temporal blends continuously without a midpoint jump")
 require(synthesis, "texelFetch(frame1,p,0),softBlendAlpha", "soft fallback must use its biased temporal alpha only for source-frame blending")
-require(synthesis, "outc=softBlend?softBlendColor(p,ca,cb,confidence,preserveMotionBlend):FLOW_RESULT(mix(texelFetch(frame0,p,0),texelFetch(frame1,p,0),pc.timestep)", "Vulkan low-confidence fallback must blend source endpoints instead of creating hard spatial endpoint patches")
+require(synthesis, "outc=softBlend?softBlendColor(p,ca,cb,confidence,preserveMotionBlend):FLOW_RESULT(pc.timestep<=0.5?texelFetch(frame0,p,0):texelFetch(frame1,p,0)", "Vulkan low-confidence fallback must hold the temporally nearest source while retaining opt-in soft blending")
 require(synthesis, "if(boundaryConflict&&softBlend) outc=softBlendColor(p,ca,cb,confidence,false);", "soft blending must mix source colors at motion/color conflicts")
 require(synthesis, "preserveMotionBlend=(pc.cfg.x&0x20000000)!=0", "the continuous-motion blend policy must use a separate synthesis flag")
 require(synthesis, "if(preserveMotionBlend) warpWeight=min(warpWeight,0.40);", "conflict blending must retain at least 60 percent of the temporally blended source colors")
