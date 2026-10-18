@@ -13,7 +13,7 @@ index bd3d1aa..75ffbb1 100644
 +#include "mpvflow_capture_io.h"
 +#include "mpvflow_rate_limit.h"
 +#include "mpvflow_synthesis_scale.h"
-@@ -157,0 +163,72 @@ struct priv {
+@@ -157,0 +163,77 @@ struct priv {
 +    // MPVFLOW_GPU_INTEGRATION
 +    MPVFlowGPUContext *flow_gpu;
 +    MPVFlowGPUPair *flow_pair;
@@ -40,6 +40,11 @@ index bd3d1aa..75ffbb1 100644
 +    bool flow_pending_rate_limiter_eligible;
 +    uint64_t flow_pending_rate_limiter_timestamp_ns;
 +    struct mpvflow_rate_limiter flow_rate_limiter;
++    pl_tex flow_cached_synthesis;
++    struct mpvflow_synthesis_identity flow_cached_synthesis_identity;
++    struct pl_color_space flow_cached_synthesis_color;
++    float flow_cached_synthesis_par;
++    int flow_cached_synthesis_policy;
 +    uint64_t flow_cadence_last_flip_wait_ns;
 +    uint64_t flow_cadence_synthesis_rate_limited;
 +    uint64_t flow_cadence_previous_present_budget_skips;
@@ -129,7 +134,7 @@ index bd3d1aa..75ffbb1 100644
 +    int flow_w, flow_h;
 +    int flow_source_w, flow_source_h;
 +    double pts;
-@@ -569,0 +665,557 @@ struct frame_priv {
+@@ -569,0 +665,560 @@ struct frame_priv {
 +static void flow_release_pair(struct priv *p)
 +{
 +    if (p->flow_pair)
@@ -137,6 +142,9 @@ index bd3d1aa..75ffbb1 100644
 +    p->flow_pair = NULL;
 +    p->flow_pair_ids[0] = 0;
 +    p->flow_pair_ids[1] = 0;
++    /* The output texture is pair-owned and may be destroyed on release. */
++    p->flow_cached_synthesis = NULL;
++    p->flow_cached_synthesis_identity.valid = false;
 +}
 +
 +static void flow_release_pair_for_frame(struct priv *p, uint64_t frame_id)
@@ -696,7 +704,7 @@ index bd3d1aa..75ffbb1 100644
 @@ -1135,0 +1766,2 @@ static void discard_frame(const struct pl_source_frame *src)
 +    struct frame_priv *fp = mpi->priv;
 +    flow_release_frame(fp->vo, fp);
-@@ -1341,0 +1977,463 @@ static void update_hook_opts_dynamic(struct priv *p, const struct pl_hook *hook,
+@@ -1341,0 +1977,504 @@ static void update_hook_opts_dynamic(struct priv *p, const struct pl_hook *hook,
 +static void flow_capture_terminal(struct priv *p, const char *base_dir,
 +                                  const char *session_id, const char *backend,
 +                                  const char *reason)
@@ -927,8 +935,37 @@ index bd3d1aa..75ffbb1 100644
 +            prepared->bypass_reason = "incompatible_input_dimensions";
 +        }
 +
++        const int synthesis_policy = (p->next_opts->mpvflow_soft_blend ? 1 : 0) |
++            (p->next_opts->mpvflow_visibility_resolver ? 2 : 0);
++        int64_t source_pts0_ns = 0, source_pts1_ns = 0, output_pts_ns = 0;
++        const bool temporal_identity_valid = fp0 && fp1 &&
++            t > 0.0f && t < 1.0f &&
++            mpvflow_synthesis_timestamp_ns(fp0->pts, &source_pts0_ns) &&
++            mpvflow_synthesis_timestamp_ns(fp1->pts, &source_pts1_ns) &&
++            mpvflow_synthesis_timestamp_ns(output_pts, &output_pts_ns);
 +        if (!allow_synthesis) {
-+            prepared->bypass_reason = "synthesis_rate_limited";
++            const bool cached_identity = temporal_identity_valid && metadata_compatible &&
++                p->flow_pair &&
++                p->flow_cached_synthesis &&
++                mpvflow_synthesis_identity_matches(
++                    &p->flow_cached_synthesis_identity,
++                    fp0->frame_id, fp1->frame_id,
++                    source_pts0_ns, source_pts1_ns, output_pts_ns,
++                    p->next_opts->mpvflow_target_fps) &&
++                p->flow_cached_synthesis_par == (float) par0 &&
++                p->flow_cached_synthesis_policy == synthesis_policy &&
++                pl_color_space_equal(&p->flow_cached_synthesis_color,
++                                     &image0->color);
++            if (cached_identity) {
++                /* Rate-limited redraws must not replace an already-presented
++                 * temporal sample with the nearest source endpoint. Hold for
++                 * less than one target interval, never across source pairs. */
++                prepared->before = before;
++                prepared->output = p->flow_cached_synthesis;
++                prepared->bypass_reason = "synthesis_rate_limited_cached";
++            } else {
++                prepared->bypass_reason = "synthesis_rate_limited";
++            }
 +            return;
 +        }
 +
@@ -1028,6 +1065,18 @@ index bd3d1aa..75ffbb1 100644
 +                    }
 +                    prepared->before = before;
 +                    prepared->output = output;
++                    p->flow_cached_synthesis = output;
++                    p->flow_cached_synthesis_identity = (struct mpvflow_synthesis_identity) {
++                        .pair_before = fp0->frame_id,
++                        .pair_after = fp1->frame_id,
++                        .source_pts_before_ns = source_pts0_ns,
++                        .source_pts_after_ns = source_pts1_ns,
++                        .output_pts_ns = output_pts_ns,
++                        .valid = temporal_identity_valid,
++                    };
++                    p->flow_cached_synthesis_color = image0->color;
++                    p->flow_cached_synthesis_par = (float) par0;
++                    p->flow_cached_synthesis_policy = synthesis_policy;
 +                } else {
 +                    prepared->bypass_reason = output ? "synthesis_failed" : "synthesis_output_missing";
 +                    prepared->bypass_status = status;

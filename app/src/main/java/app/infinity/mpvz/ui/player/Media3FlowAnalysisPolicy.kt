@@ -14,4 +14,8 @@ internal object Media3FlowAnalysisPolicy {
     val sharedDimension = effectiveMpvFlowMaxDimension(targetFps, quality).coerceIn(160, 640)
     return (sharedDimension + EXTRA_ANALYSIS_PIXELS).coerceAtMost(640)
   }
+
+  /** Uses the same target-rate/quality motion-search profile as MPV Flow. */
+  fun searchRadius(targetFps: Int, quality: Int): Int =
+    app.infinity.mpvz.preferences.effectiveMpvFlowSearchRadius(targetFps, quality)
 }

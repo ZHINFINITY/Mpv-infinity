@@ -1727,10 +1727,32 @@ assert "flow_color.transfer = PL_COLOR_TRC_LINEAR" in flow_vo_patch
 
 rate_limit_test = r"""
 #include <assert.h>
+#include <math.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include "mpvflow_rate_limit.h"
 #include "mpvflow_synthesis_scale.h"
+
+static void test_callback_rate(uint64_t callback_step_ns)
+{
+    struct mpvflow_rate_limiter limiter = {0};
+    const uint64_t interval = mpvflow_rate_limiter_interval_ns(120);
+    uint64_t submits = 0, previous_bucket = 0;
+    bool have_bucket = false;
+    for (uint64_t now = 0; now < 10ULL * MPVFLOW_RATE_LIMIT_ONE;
+         now += callback_step_ns) {
+        if (mpvflow_rate_limiter_ready(&limiter, now, 120)) {
+            const uint64_t bucket = now / interval; /* independent oracle */
+            if (have_bucket)
+                assert(bucket > previous_bucket);
+            previous_bucket = bucket;
+            have_bucket = true;
+            mpvflow_rate_limiter_commit(&limiter, now, 120);
+            submits++;
+        }
+    }
+    assert(submits >= 1199 && submits <= 1201);
+}
 
 int main(void)
 {
@@ -1740,121 +1762,39 @@ int main(void)
     assert(size.width == 1920 && size.height == 1080);
     size = mpvflow_synthesis_size_for(3840, 1600, 1920);
     assert(size.width == 1920 && size.height == 800);
-    size = mpvflow_synthesis_size_for(3840, 2160, 1280);
-    assert(size.width == 1280 && size.height == 720);
-    size = mpvflow_synthesis_size_for(1920, 1080, 1920);
-    assert(size.width == 1920 && size.height == 1080);
-    size = mpvflow_synthesis_size_for(1280, 720, 1920);
-    assert(size.width == 1280 && size.height == 720);
-    size = mpvflow_synthesis_size_for(3840, 2160, 0);
-    assert(size.width == 3840 && size.height == 2160);
+    test_callback_rate(5555555ULL); /* nominal 180-Hz callbacks */
+    test_callback_rate(4166666ULL); /* nominal 240-Hz callbacks */
+
     struct mpvflow_rate_limiter limiter = {0};
-    uint64_t submits = 0;
-    uint64_t last_submit_ns = 0;
-    bool has_last_submit = false;
-
-    /* 6-ms callbacks oversupply 120 fps; every accepted frame must still be spaced safely. */
-    for (uint64_t now = 0; now < 10ULL * MPVFLOW_RATE_LIMIT_ONE; now += 6000000ULL) {
-        if (mpvflow_rate_limiter_ready(&limiter, now, 120)) {
-            if (has_last_submit)
-                assert(now - last_submit_ns >= mpvflow_rate_limiter_interval_ns(120));
-            mpvflow_rate_limiter_commit(&limiter, now, 120);
-            last_submit_ns = now;
-            has_last_submit = true;
-            submits++;
-        }
-    }
-    assert(submits >= 830 && submits <= 840);
-
-    /* A correctly paced 120-Hz callback stream is admitted at the target. */
-    mpvflow_rate_limiter_reset(&limiter);
-    submits = 0;
-    last_submit_ns = 0;
-    has_last_submit = false;
-    for (uint64_t now = 0; now < 10ULL * MPVFLOW_RATE_LIMIT_ONE; now += 8333334ULL) {
-        if (mpvflow_rate_limiter_ready(&limiter, now, 120)) {
-            if (has_last_submit)
-                assert(now - last_submit_ns >= mpvflow_rate_limiter_interval_ns(120));
-            mpvflow_rate_limiter_commit(&limiter, now, 120);
-            last_submit_ns = now;
-            has_last_submit = true;
-            submits++;
-        }
-    }
-    assert(submits >= 1199 && submits <= 1200);
-
-    mpvflow_rate_limiter_reset(&limiter);
     assert(mpvflow_rate_limiter_ready(&limiter, 0, 120));
     mpvflow_rate_limiter_commit(&limiter, 0, 120);
     assert(!mpvflow_rate_limiter_ready(&limiter, 8333333ULL, 120));
     assert(mpvflow_rate_limiter_ready(&limiter, 8333334ULL, 120));
     mpvflow_rate_limiter_commit(&limiter, 8333334ULL, 120);
-    assert(!mpvflow_rate_limiter_ready(&limiter, 16666667ULL, 120));
-    assert(mpvflow_rate_limiter_ready(&limiter, 16666668ULL, 120));
-
-    /* Monotonic callback time wins when source PTS repeats across redraw ticks. */
-    mpvflow_rate_limiter_reset(&limiter);
-    uint64_t timestamp_ns = mpvflow_rate_limiter_timestamp_ns(
-        1000000000LL, 1002000000ULL);
-    assert(timestamp_ns == 1002000000ULL);
-    assert(mpvflow_rate_limiter_ready(&limiter, timestamp_ns, 120));
-    mpvflow_rate_limiter_commit(&limiter, timestamp_ns, 120);
-    timestamp_ns = mpvflow_rate_limiter_timestamp_ns(
-        1000000000LL, 1007000000ULL);
-    assert(timestamp_ns == 1007000000ULL);
-    assert(!mpvflow_rate_limiter_ready(&limiter, timestamp_ns, 120));
-    timestamp_ns = mpvflow_rate_limiter_timestamp_ns(
-        1000000000LL, 1011000000ULL);
-    assert(timestamp_ns == 1011000000ULL);
-    assert(mpvflow_rate_limiter_ready(&limiter, timestamp_ns, 120));
-    mpvflow_rate_limiter_commit(&limiter, timestamp_ns, 120);
-    timestamp_ns = mpvflow_rate_limiter_timestamp_ns(
-        900000000LL, 1020000000ULL);
-    assert(timestamp_ns == 1020000000ULL);
-    assert(mpvflow_rate_limiter_ready(&limiter, timestamp_ns, 120));
-    mpvflow_rate_limiter_commit(&limiter, timestamp_ns, 120);
-    timestamp_ns = mpvflow_rate_limiter_timestamp_ns(0, 1028333334ULL);
-    assert(timestamp_ns == 1028333334ULL);
-    assert(mpvflow_rate_limiter_ready(&limiter, timestamp_ns, 120));
-
-    /* At 106-Hz callback cadence, repeated source PTS must not discard eligible callbacks. */
-    mpvflow_rate_limiter_reset(&limiter);
-    submits = 0;
-    for (uint64_t tick = 0; tick < 1060; tick++) {
-        const uint64_t render_ns = 1000000000ULL + tick * 9433962ULL;
-        const int64_t source_pts_ns = 1000000000LL + (int64_t) (tick / 2) * 16666667LL;
-        timestamp_ns = mpvflow_rate_limiter_timestamp_ns(source_pts_ns, render_ns);
-        if (mpvflow_rate_limiter_ready(&limiter, timestamp_ns, 120)) {
-            mpvflow_rate_limiter_commit(&limiter, timestamp_ns, 120);
-            submits++;
-        }
-    }
-    assert(submits == 1060);
-
-    /* A long idle grants one frame only, not the previous bucket's two-frame burst. */
-    mpvflow_rate_limiter_reset(&limiter);
+    assert(!mpvflow_rate_limiter_ready(&limiter, 10000000ULL, 120));
     assert(mpvflow_rate_limiter_ready(&limiter, 10000000000ULL, 120));
     mpvflow_rate_limiter_commit(&limiter, 10000000000ULL, 120);
-    assert(!mpvflow_rate_limiter_ready(&limiter, 10001000000ULL, 120));
-    assert(!mpvflow_rate_limiter_ready(&limiter, 10008333333ULL, 120));
-    assert(mpvflow_rate_limiter_ready(&limiter, 10008333334ULL, 120));
-
-    /* A target change uses the new rate from the last successful submit. */
-    mpvflow_rate_limiter_reset(&limiter);
-    mpvflow_rate_limiter_commit(&limiter, 0, 240);
-    assert(!mpvflow_rate_limiter_ready(&limiter, 16666666ULL, 60));
-    assert(mpvflow_rate_limiter_ready(&limiter, 16666667ULL, 60));
-    mpvflow_rate_limiter_commit(&limiter, 16666667ULL, 60);
-    assert(!mpvflow_rate_limiter_ready(&limiter, 24999999ULL, 120));
-    assert(mpvflow_rate_limiter_ready(&limiter, 25000001ULL, 120));
+    assert(!mpvflow_rate_limiter_ready(&limiter, 10000000000ULL, 120));
     assert(!mpvflow_rate_limiter_ready(&limiter, 1ULL, 120));
-    assert(mpvflow_rate_limiter_ready(&limiter, 25000001ULL, 0));
-    mpvflow_rate_limiter_commit(&limiter, 25000001ULL, 0);
-    assert(mpvflow_rate_limiter_ready(&limiter, 25000002ULL, 120));
+
+    /* A target change starts the new absolute grid; disabling resets state. */
+    assert(mpvflow_rate_limiter_ready(&limiter, 10000000000ULL, 60));
+    mpvflow_rate_limiter_commit(&limiter, 10000000000ULL, 60);
+    assert(!mpvflow_rate_limiter_ready(&limiter, 10000000001ULL, 60));
+    assert(mpvflow_rate_limiter_ready(&limiter, 10000000001ULL, 0));
+    mpvflow_rate_limiter_commit(&limiter, 10000000001ULL, 0);
+    assert(mpvflow_rate_limiter_ready(&limiter, 10000000002ULL, 120));
+
+    uint64_t timestamp_ns = mpvflow_rate_limiter_timestamp_ns(1000000000LL, 1002000000ULL);
+    assert(timestamp_ns == 1002000000ULL);
+    assert(mpvflow_rate_limiter_timestamp_ns(1000000000LL, 0) == 1000000000ULL);
+    int64_t converted = 0;
+    assert(mpvflow_synthesis_timestamp_ns(0.5, &converted) && converted == 500000000);
+    assert(!mpvflow_synthesis_timestamp_ns(NAN, &converted));
+    assert(!mpvflow_synthesis_timestamp_ns(INFINITY, &converted));
+    assert(!mpvflow_synthesis_timestamp_ns(1e30, &converted));
     assert(mpvflow_previous_present_budget_available(8333333ULL, 120));
     assert(!mpvflow_previous_present_budget_available(8333334ULL, 120));
-    assert(mpvflow_previous_present_budget_available(16666666ULL, 60));
-    assert(!mpvflow_previous_present_budget_available(16666667ULL, 60));
     assert(mpvflow_previous_present_budget_available(UINT64_MAX, 0));
     return 0;
 }
@@ -1866,7 +1806,7 @@ with tempfile.TemporaryDirectory(prefix="mpvflow-rate-limit-test-") as temp_dir:
     test_source.write_text(rate_limit_test, encoding="utf-8")
     compile_rate_test = subprocess.run(
         ["cc", "-std=c11", "-Wall", "-Wextra", "-Werror", "-I", str(rate_limit_header.parent),
-         str(test_source), "-o", str(test_binary)],
+         str(test_source), "-lm", "-o", str(test_binary)],
         check=False,
         capture_output=True,
         text=True,

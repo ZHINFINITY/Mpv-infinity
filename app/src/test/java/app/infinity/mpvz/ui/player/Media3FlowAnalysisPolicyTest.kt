@@ -15,5 +15,16 @@ class Media3FlowAnalysisPolicyTest {
   @Test
   fun sharedMpvProfileAndTargetRatePolicyRemainUnchanged() {
     assertEquals(416, effectiveMpvFlowMaxDimension(targetFps = 120, quality = 60))
+    assertEquals(4, Media3FlowAnalysisPolicy.searchRadius(targetFps = 120, quality = 60))
+  }
+
+  @Test
+  fun targetAwareSearchRadiusMatchesMpvProfileAtNativeRatesAndClampsQuality() {
+    assertEquals(6, Media3FlowAnalysisPolicy.searchRadius(90, -10))
+    assertEquals(8, Media3FlowAnalysisPolicy.searchRadius(90, 101))
+    assertEquals(4, Media3FlowAnalysisPolicy.searchRadius(120, 0))
+    assertEquals(5, Media3FlowAnalysisPolicy.searchRadius(120, 100))
+    assertEquals(3, Media3FlowAnalysisPolicy.searchRadius(144, 0))
+    assertEquals(4, Media3FlowAnalysisPolicy.searchRadius(144, 100))
   }
 }

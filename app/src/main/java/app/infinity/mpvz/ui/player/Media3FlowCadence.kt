@@ -85,6 +85,10 @@ internal object Media3FlowCadence {
     return sourceWallDeltaUs > MICROS_PER_SECOND / targetFps
   }
 
+  /** Commits a cadence tick only after the producer actually submitted a frame. */
+  fun committedOutputTick(previousTick: Long, candidateTick: Long?, submitted: Boolean): Long =
+    if (submitted && candidateTick != null) candidateTick else previousTick
+
   /** Number of target ticks skipped when advancing from [previousTick] to [nextTick]. */
   fun skippedTicks(previousTick: Long, nextTick: Long): Long {
     if (previousTick < 0L || nextTick <= previousTick) return 0L

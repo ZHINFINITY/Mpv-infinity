@@ -12,7 +12,7 @@ internal object Media3FlowVulkanNative {
     System.loadLibrary("media3flow_vulkan")
   }
 
-  external fun nativeCreateContext(maxDimension: Int, requestedComputeApi: Int): Long
+  external fun nativeCreateContext(maxDimension: Int, requestedComputeApi: Int, searchRadius: Int): Long
 
   external fun nativeStartDiagnosticCapture(
     context: Long,

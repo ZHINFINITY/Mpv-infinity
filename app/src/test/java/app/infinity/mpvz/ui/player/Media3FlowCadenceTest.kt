@@ -71,6 +71,13 @@ class Media3FlowCadenceTest {
   }
 
   @Test
+  fun failedSubmissionDoesNotConsumeTickAndRetryCanReuseIt() {
+    assertEquals(4L, Media3FlowCadence.committedOutputTick(4L, 5L, submitted = false))
+    assertEquals(5L, Media3FlowCadence.committedOutputTick(4L, 5L, submitted = true))
+    assertEquals(5L, Media3FlowCadence.committedOutputTick(5L, null, submitted = true))
+  }
+
+  @Test
   fun outputTickTimestampNeverRunsAheadOfThePlayerPosition() {
     for (speed in listOf(0.5f, 1f, 2f, 4f)) {
       for (positionUs in 0L..2_000_000L step 997L) {

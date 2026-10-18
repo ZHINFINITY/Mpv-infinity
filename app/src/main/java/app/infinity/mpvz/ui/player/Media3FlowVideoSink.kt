@@ -137,6 +137,7 @@ class Media3FlowVideoSink(
   private val targetFps = effectiveMpvFlowTargetFps(requestedTargetFps, displayHz)
   private val quality = requestedQuality.coerceIn(0, 100)
   private val maxDimension = Media3FlowAnalysisPolicy.maxDimension(targetFps, quality)
+  private val searchRadius = Media3FlowAnalysisPolicy.searchRadius(targetFps, quality)
   private val glThread = HandlerThread("Media3Flow-GLES").apply { start() }
   private val glHandler = Handler(glThread.looper)
   private val presentationThread = HandlerThread("Media3Flow-Present").apply { start() }
@@ -354,7 +355,7 @@ class Media3FlowVideoSink(
           !deviceSupportsVulkanFlow(appContext) -> "vulkan_compute_unavailable"
           else -> {
             flowVulkanContext =
-              Media3FlowVulkanNative.nativeCreateContext(maxDimension, requestedComputeApi.nativeValue)
+              Media3FlowVulkanNative.nativeCreateContext(maxDimension, requestedComputeApi.nativeValue, searchRadius)
             if (flowVulkanContext == 0L) {
               "vulkan_context_or_compute_setup_failed"
             } else {
@@ -1814,10 +1815,10 @@ class Media3FlowVideoSink(
     val motionAdmissionProxyMs = pair?.let {
       Media3FlowCadence.motionAdmissionProxyMs(it.motionEstimateSubmitMs, null)
     } ?: Float.POSITIVE_INFINITY
+    val nowNs = System.nanoTime()
     val synthesize = bracket != null && pair != null &&
       Media3FlowCadence.needsInterpolation(deltaUs, targetFps, speed) &&
       motionAdmissionProxyMs < deltaUs / 1000f * ANALYSIS_DEADLINE_RESERVE
-    val nowNs = System.nanoTime()
     lastOutputCallbackLatenessMs = frameTimeNanos?.let {
       ((nowNs - it).coerceAtLeast(0L) / 1_000_000.0).toFloat()
     } ?: 0f
@@ -1916,8 +1917,10 @@ class Media3FlowVideoSink(
       dispatchListener { it.onFrameDropped() }
       outputDecisionCounters.record("output_submission_failed", "presentation_stage_failed")
     }
-    if (tick != null) lastOutputTick = tick
-    allowFirstFrameBeforeStarted = false
+    if (submitted) {
+      lastOutputTick = Media3FlowCadence.committedOutputTick(lastOutputTick, tick, submitted = true)
+      allowFirstFrameBeforeStarted = false
+    }
     lastState = if (synthesized && submitted) "gpu_interpolated" else "source_frame_fallback"
     if (synthesized && submitted) lastBypassReason = null
   }
@@ -2906,7 +2909,7 @@ class Media3FlowVideoSink(
     gridHeight = motionGridSize.height
     if (flowVulkanContext == 0L && deviceSupportsVulkanFlow(appContext)) {
       flowVulkanContext = runCatching {
-        Media3FlowVulkanNative.nativeCreateContext(maxDimension, requestedComputeApi.nativeValue)
+        Media3FlowVulkanNative.nativeCreateContext(maxDimension, requestedComputeApi.nativeValue, searchRadius)
       }.getOrDefault(0L)
     }
     var allSharedImagesReady = flowVulkanContext != 0L

@@ -2,6 +2,7 @@
  * SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
  */
 #include "mpvflow_core.h"
+#include "mpvflow_rate_limit.h"
 #include <assert.h>
 #include <math.h>
 #include <stdint.h>
@@ -324,6 +325,60 @@ static void test_adaptive_dimension_reduces_under_pressure_and_recovers_slowly(v
     assert(recovery_count == 0);
     assert(dimension == 432);
 }
+static void test_rate_limited_callbacks_do_not_flip_cached_synthesis_to_source(void)
+{
+    struct mpvflow_rate_limiter limiter = {0};
+    struct mpvflow_synthesis_identity cached = {
+        .pair_before = 41,
+        .pair_after = 42,
+        .source_pts_before_ns = 1000000000,
+        .source_pts_after_ns = 1016666667,
+        .output_pts_ns = 1008333333,
+        .valid = true,
+    };
+    /* Absolute buckets admit one successful synthesis per nominal interval,
+     * regardless of callback cadence or a long idle gap. */
+    unsigned int submits = 0;
+    for (uint64_t now = 0; now < 1000000000ULL; now += 4166666ULL) {
+        if (mpvflow_rate_limiter_ready(&limiter, now, 120)) {
+            mpvflow_rate_limiter_commit(&limiter, now, 120);
+            submits++;
+        }
+    }
+    assert(submits >= 119 && submits <= 121);
+    assert(mpvflow_rate_limiter_ready(&limiter, 10000000000ULL, 120));
+    mpvflow_rate_limiter_commit(&limiter, 10000000000ULL, 120);
+    assert(!mpvflow_rate_limiter_ready(&limiter, 1ULL, 120));
+    assert(mpvflow_synthesis_identity_matches(&cached, 41, 42,
+                                              1000000000, 1016666667,
+                                              1008333333, 120));
+    assert(mpvflow_synthesis_identity_matches(&cached, 41, 42,
+                                              1000000000, 1016666667,
+                                              1008333334, 120));
+    assert(!mpvflow_synthesis_identity_matches(&cached, 41, 43,
+                                               1000000000, 1016666667,
+                                               1008333333, 120));
+    assert(!mpvflow_synthesis_identity_matches(&cached, 41, 42,
+                                               1000000000, 1016666667,
+                                               1008333333, 0));
+    assert(!mpvflow_synthesis_identity_matches(&cached, 41, 42,
+                                               1000000001, 1016666667,
+                                               1008333333, 120));
+    assert(!mpvflow_synthesis_identity_matches(&cached, 41, 42,
+                                               1000000000, 1016666666,
+                                               1008333333, 120));
+    assert(!mpvflow_synthesis_identity_matches(&cached, 41, 42,
+                                               1000000000, 1016666667,
+                                               1008333332, 120));
+    assert(!mpvflow_synthesis_identity_matches(&cached, 41, 42,
+                                               1000000000, 1016666667,
+                                               1016666667, 120));
+    int64_t converted = 0;
+    assert(mpvflow_synthesis_timestamp_ns(0.5, &converted) && converted == 500000000);
+    assert(!mpvflow_synthesis_timestamp_ns(NAN, &converted));
+    assert(!mpvflow_synthesis_timestamp_ns(INFINITY, &converted));
+    assert(!mpvflow_synthesis_timestamp_ns(1e30, &converted));
+}
 int main(void)
 {
     test_translation_is_compensated();
@@ -338,6 +393,7 @@ int main(void)
     test_deadline_guard_yields_only_when_work_remains();
     test_high_rate_source_bypass_preserves_rate_boundary();
     test_adaptive_dimension_reduces_under_pressure_and_recovers_slowly();
+    test_rate_limited_callbacks_do_not_flip_cached_synthesis_to_source();
     puts("mpvflow core tests passed");
     return 0;
 }

@@ -1015,7 +1015,7 @@ SharedImage *createSharedImage(FlowContext *context, JNIEnv *env, jobject javaBu
 
 extern "C" JNIEXPORT jlong JNICALL
 Java_app_infinity_mpvz_ui_player_Media3FlowVulkanNative_nativeCreateContext(
-    JNIEnv *, jobject, jint requestedMaxDimension, jint requestedComputeApi) {
+    JNIEnv *, jobject, jint requestedMaxDimension, jint requestedComputeApi, jint requestedSearchRadius) {
     if (requestedComputeApi < MPVFLOW_GPU_COMPUTE_AUTO ||
         requestedComputeApi > MPVFLOW_GPU_COMPUTE_VULKAN) {
         logFlow(ANDROID_LOG_ERROR,
@@ -1141,7 +1141,7 @@ Java_app_infinity_mpvz_ui_player_Media3FlowVulkanNative_nativeCreateContext(
     config.compute_api = static_cast<MPVFlowGPUComputeAPI>(requestedComputeApi);
     config.diagnostic_engine = "media3";
     config.max_dimension = std::max(160, std::min(640, static_cast<int>(requestedMaxDimension)));
-    config.search_radius = 8;
+    config.search_radius = std::max(1, std::min(8, static_cast<int>(requestedSearchRadius)));
     MPVFlowGPUResult status = MPVFLOW_GPU_INVALID;
     MPVFlowGPUCreateDiagnostics createDiagnostics{};
     context->flow = mpvflow_gpu_create(vulkan->gpu, &config, &status, &createDiagnostics);

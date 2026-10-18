@@ -164,8 +164,9 @@ assert ".blit_src = blit_src" in GPU and ".blit_dst = blit_dst" in GPU and (
 ), (
     "full-resolution output must enable Vulkan transfer usage for OpenCL interop while retaining blit capabilities"
 )
-assert "nativeCreateContext(maxDimension, requestedComputeApi.nativeValue)" in SINK
+assert "nativeCreateContext(maxDimension, requestedComputeApi.nativeValue, searchRadius)" in SINK
 assert "config.max_dimension = std::max(160, std::min(640, static_cast<int>(requestedMaxDimension)))" in JNI
+assert "requestedSearchRadius" in JNI and "config.search_radius = std::max(1, std::min(8" in JNI
 assert "EXTRA_ANALYSIS_PIXELS = 96" in MEDIA3_ANALYSIS_POLICY and "coerceAtMost(640)" in MEDIA3_ANALYSIS_POLICY, (
     "Media3's denser motion-analysis allowance must stay bounded and independent of the shared MPV profile"
 )
@@ -178,6 +179,9 @@ assert "lastEglSwapWaitMs" not in analysis_admission, (
 render_decision = SINK.split("  private fun renderAtPosition(", 1)[1].split(
     "\n  private fun findSourcePair(", 1
 )[0]
+assert "fun committedOutputTick(previousTick: Long, candidateTick: Long?, submitted: Boolean): Long" in CADENCE
+assert "if (submitted)" in render_decision and "allowFirstFrameBeforeStarted = false" in render_decision
+assert "lastOutputTick = tick" not in render_decision, "failed producer submissions must not consume the cadence tick"
 synthesis_admission = render_decision.split("    val synthesize =", 1)[1].split(
     "\n    val nowNs", 1
 )[0]
