@@ -1,8 +1,8 @@
 # MPVFlow diagnostics and presentation checks
 
-This opt-in feature is for **debug/testing builds**. It captures a short, user-started sample from the selected playback engine; it is not a general playback recorder or a guarantee of display cadence.
+The **Start marked capture** and **Start paired Soft Blend comparison** controls have been removed from the player's More sheet. Normal playback no longer exposes this capture panel. The capture implementation is retained for diagnostic tooling and existing captures; the legacy capture procedures below describe older debug builds, not controls available in the current player. For current on-device investigation, export **Debug Logs** for each engine playing the same scene. The separate Perfetto procedure below remains applicable.
 
-## Capture a marked moment from each engine
+## Legacy debug builds: capture a marked moment from each engine
 
 Run the same SDR scene twice—once with **MPV** and once with **Media3**—so the two engines can be compared independently.
 
@@ -12,7 +12,7 @@ Run the same SDR scene twice—once with **MPV** and once with **Media3**—so t
 4. The app saves the ZIP locally to `Downloads/Mpv∞/Flow Diagnostics/` as `MpvFlow_<engine>_<session-id>.zip`; the More sheet shows the saved location. No export or upload is performed automatically.
 5. Repeat with the other engine on the same scene and settings where possible. Keep the ZIP private unless you choose to share it; captured images may contain video frames.
 
-## Paired Soft Blend comparison
+## Legacy debug builds: paired Soft Blend comparison
 
 Use **Start paired Soft Blend comparison** in the debug-only More sheet when an ordinary marked capture does not isolate the Soft Blend effect. It begins on the next eligible output and captures **Soft Blend off, then on**, from the same live source textures, cached motion field, source PTS pair, output PTS, and interpolation alpha. The two manifest records include the per-variant flag and must match on all other captured settings and pair identity; MPV's `preserve_motion_blend_on_conflict` value is snapshotted and held equal for both variants. The common comparison settings omit the varying `soft_blend` value.
 

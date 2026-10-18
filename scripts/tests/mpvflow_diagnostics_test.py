@@ -25,6 +25,17 @@ FLOW_CAPTURE_MANAGER = (ROOT / "app/src/main/java/app/infinity/mpvz/ui/player/Fl
 PLAYER_ACTIVITY = (ROOT / "app/src/main/java/app/infinity/mpvz/ui/player/PlayerActivity.kt").read_text(encoding="utf-8")
 MEDIA3_FORMAT_POLICY = (ROOT / "app/src/main/java/app/infinity/mpvz/ui/player/Media3FlowFormatPolicy.kt").read_text(encoding="utf-8")
 NATIVE_ENGINE = (ROOT / "app/src/main/java/app/infinity/mpvz/ui/player/NativeMedia3Engine.kt").read_text(encoding="utf-8")
+MORE_SHEET = (ROOT / "app/src/main/java/app/infinity/mpvz/ui/player/controls/components/sheets/MoreSheet.kt").read_text(encoding="utf-8")
+
+# Capture internals remain available to diagnostics, but are not player settings.
+for removed_capture_ui in (
+    "Start marked capture",
+    "Start paired Soft Blend comparison",
+    "startFlowDiagnosticsCapture",
+    "stopFlowDiagnosticsCapture",
+    "flowDiagnosticsCaptureState",
+):
+    assert removed_capture_ui not in MORE_SHEET, f"More sheet must not expose {removed_capture_ui}"
 
 
 def require(source: str, fragment: str, message: str) -> None:
