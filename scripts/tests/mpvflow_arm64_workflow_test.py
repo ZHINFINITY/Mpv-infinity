@@ -13,11 +13,20 @@ MISS = "if: ${{ steps.mpvflow-runtime-cache.outputs.cache-hit != 'true' && steps
 
 
 class Arm64WorkflowTest(unittest.TestCase):
-    def test_checkouts_and_native_setup_require_both_cache_misses(self):
-        for name in ('Checkout pinned Android MPV build tools', 'Checkout pinned MPV source', 'Install Android MPV native build dependencies', 'Build MPVFlow-only MPV native arm64 debug package'):
+    def test_checkouts_and_native_compilation_require_both_cache_misses(self):
+        for name in ('Checkout pinned Android MPV build tools', 'Checkout pinned MPV source', 'Build MPVFlow-only MPV native arm64 debug package'):
             with self.subTest(step=name):
                 self.assertIn(MISS, STEPS[name])
                 self.assertGreater(TEXT.index('- name: ' + name), TEXT.index('- name: Restore verified legacy Flow-only MPVFlow runtime'))
+
+    def test_android_host_tools_are_installed_even_on_runtime_cache_hits(self):
+        name = 'Install Android MPV native build dependencies'
+        dependencies = STEPS[name]
+        self.assertNotIn('        if:', dependencies)
+        for package in ('autoconf', 'automake', 'libtool', 'gettext', 'autopoint', 'gperf', 'pkg-config', 'ninja-build', 'cmake', 'pipx', 'nasm', 'yasm'):
+            self.assertIn(package, dependencies)
+        self.assertIn('pipx install meson==1.6.1', dependencies)
+        self.assertLess(TEXT.index('- name: ' + name), TEXT.index('- name: Test and assemble arm64-v8a debug APK in one Gradle invocation'))
 
     def test_validation_dependencies_and_vulkan_checks_are_unconditional(self):
         dependencies = STEPS['Install Vulkan and shader validation dependencies']
