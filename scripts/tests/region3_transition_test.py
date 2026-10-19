@@ -27,9 +27,11 @@ class Region3TransitionTest(unittest.TestCase):
                          '1.0-(1.0-smoothstep(0.04,0.08,uniqueness))*smoothstep(0.06,0.10,colorDelta)',
                          'return edgeTrust*chromaTrust*ambiguousTrust;',
                          'region3LocalTrust=mix(1.0,smoothstep(0.30,0.75,neighborhoodMinimum),neighborhoodActivation);',
-                         'warpTrust*=region3LocalTrust*region3TransitionTrust(lumaDelta,colorDelta,chromaDelta,min(f.w,b.w));'):
+                         'if(!softBlend) boundaryTrust*=region3LocalTrust*region3TransitionTrust(lumaDelta,colorDelta,chromaDelta,min(f.w,b.w));'):
             self.assertIn(fragment, shader)
         self.assertEqual(shader.count('region3TransitionTrust('), 2)
+        self.assertNotIn('warpTrust*=', shader)
+        self.assertEqual(shader.count('float warpTrust=smoothstep(0.0,0.60,confidence)*boundaryTrust;'), 1)
         # No added image/flow/color loads, no spreading of neighboring vectors.
         helper = shader.split('float region3TransitionTrust(',1)[1].split('\n',1)[0]
         for forbidden in ('imageLoad', 'texelFetch', 'texture', 'flowAt', 'colorAt'):
