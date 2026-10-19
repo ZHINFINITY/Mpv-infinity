@@ -208,6 +208,7 @@ class PlayerActivity :
       media3FlowComputeApi = decoderPreferences.mpvFlowComputeApi.get(),
       media3FlowVisibilityResolverDebug = decoderPreferences.mpvFlowVisibilityResolverDebug.get(),
       media3FlowSoftBlendDebug = BuildConfig.DEBUG && decoderPreferences.mpvFlowSoftBlendDebug.get(),
+      media3FlowExperimentalGuardedRoots = decoderPreferences.mpvFlowExperimentalGuardedRoots.get(),
     ).also {
       it.onEnded = { runOnUiThread { handleNativePlaybackEnded() } }
       it.onPlaybackError = { error -> runOnUiThread { handleNativePlaybackError(error) } }

@@ -202,6 +202,7 @@ class NativeMedia3Engine(
   media3FlowComputeApi: MpvFlowComputeApi = MpvFlowComputeApi.AUTO,
   media3FlowVisibilityResolverDebug: Boolean = false,
   media3FlowSoftBlendDebug: Boolean = false,
+  media3FlowExperimentalGuardedRoots: Boolean = false,
 ) {
   private val appContext = context.applicationContext
   private val logTag = "Mpv∞-Media3"
@@ -227,6 +228,7 @@ class NativeMedia3Engine(
       effectiveMedia3FlowComputeApi,
       media3FlowDebugSettings.visibilityResolverEnabled,
       media3FlowDebugSettings.softBlendEnabled,
+      media3FlowExperimentalGuardedRoots,
       ::publishFlowDiagnostics,
     )
   } else {

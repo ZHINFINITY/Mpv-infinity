@@ -114,6 +114,8 @@ struct MPVFlowGPUQcomDiagnostics {
 struct MPVFlowGPUConfig {
     /* Auto uses Vulkan; OpenCL is selected only by an explicit request. */
     enum MPVFlowGPUComputeAPI compute_api;
+    /* Opt-in guarded-root Vulkan variant. Zero preserves the production path. */
+    bool experimental_guarded_roots;
     /* Identifies the caller in QCOM path diagnostics; copied at creation. */
     const char *diagnostic_engine;
     /* Largest motion-analysis dimension; defaults to 640 when <= 0 and is

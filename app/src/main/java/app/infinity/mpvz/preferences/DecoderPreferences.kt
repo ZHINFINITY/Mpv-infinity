@@ -89,6 +89,9 @@ class DecoderPreferences(
   val mpvFlowComputeApi = preferenceStore.getEnum("mpvflow_compute_api", MpvFlowComputeApi.AUTO)
   val mpvFlowVisibilityResolverDebug = preferenceStore.getBoolean("mpvflow_visibility_resolver_debug", false)
   val mpvFlowSoftBlendDebug = preferenceStore.getBoolean("mpvflow_soft_blend_debug", false)
+  /** Opt-in experimental synthesis path; production remains disabled by default. */
+  val mpvFlowExperimentalGuardedRoots =
+    preferenceStore.getBoolean("mpvflow_experimental_guarded_roots", false)
 
   val debanding = preferenceStore.getEnum("debanding", Debanding.None)
   val debandIterations = preferenceStore.getInt("deband_iterations", 1)

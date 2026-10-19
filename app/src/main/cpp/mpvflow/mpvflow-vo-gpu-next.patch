@@ -13,7 +13,7 @@ index bd3d1aa..75ffbb1 100644
 +#include "mpvflow_capture_io.h"
 +#include "mpvflow_rate_limit.h"
 +#include "mpvflow_synthesis_scale.h"
-@@ -157,0 +163,77 @@ struct priv {
+@@ -157,0 +163,78 @@ struct priv {
 +    // MPVFLOW_GPU_INTEGRATION
 +    MPVFlowGPUContext *flow_gpu;
 +    MPVFlowGPUPair *flow_pair;
@@ -35,6 +35,7 @@ index bd3d1aa..75ffbb1 100644
 +    int flow_max_dimension;
 +    int flow_synthesis_max_dimension;
 +    int flow_compute_api;
++    bool flow_experimental_guarded_roots;
 +    bool flow_pending_synthesized;
 +    bool flow_pending_display_synced;
 +    bool flow_pending_rate_limiter_eligible;
@@ -93,27 +94,29 @@ index bd3d1aa..75ffbb1 100644
 +
 @@ -184,0 +257,1 @@ static void update_lut(struct priv *p, struct user_lut *lut);
 +static void flow_update_context(struct vo *vo);
-@@ -186,0 +260,9 @@ struct gl_next_opts {
+@@ -186,0 +260,10 @@ struct gl_next_opts {
 +    bool mpvflow;
 +    bool mpvflow_visibility_resolver;
 +    bool mpvflow_soft_blend;
++    bool mpvflow_experimental_guarded_roots;
 +    int mpvflow_max_dimension;
 +    int mpvflow_synthesis_max_dimension;
 +    int mpvflow_target_fps;
 +    int mpvflow_quality;
 +    int mpvflow_compute_api;
 +    char *mpvflow_diagnostic_control_file;
-@@ -213,0 +294,9 @@ const struct m_sub_options gl_next_conf = {
+@@ -213,0 +294,10 @@ const struct m_sub_options gl_next_conf = {
 +        {"mpvflow", OPT_BOOL(mpvflow)},
 +        {"mpvflow-visibility-resolver", OPT_BOOL(mpvflow_visibility_resolver)},
 +        {"mpvflow-soft-blend", OPT_BOOL(mpvflow_soft_blend)},
++        {"mpvflow-experimental-guarded-roots", OPT_BOOL(mpvflow_experimental_guarded_roots)},
 +        {"mpvflow-max-dimension", OPT_INT(mpvflow_max_dimension), M_RANGE(8, 640)},
 +        {"mpvflow-synthesis-max-dimension", OPT_INT(mpvflow_synthesis_max_dimension), M_RANGE(0, 7680)},
 +        {"mpvflow-target-fps", OPT_INT(mpvflow_target_fps), M_RANGE(1, 240)},
 +        {"mpvflow-quality", OPT_INT(mpvflow_quality), M_RANGE(0, 100)},
 +        {"mpvflow-compute-api", OPT_INT(mpvflow_compute_api), M_RANGE(0, 2)},
 +        {"mpvflow-diagnostic-control-file", OPT_STRING(mpvflow_diagnostic_control_file)},
-@@ -239,0 +327,8 @@ const struct m_sub_options gl_next_conf = {
+@@ -239,0 +327,9 @@ const struct m_sub_options gl_next_conf = {
 +        .mpvflow_max_dimension = 640,
 +        .mpvflow_synthesis_max_dimension = 1920,
 +        .mpvflow_target_fps = 60,
@@ -121,6 +124,7 @@ index bd3d1aa..75ffbb1 100644
 +        .mpvflow_compute_api = MPVFLOW_GPU_COMPUTE_AUTO,
 +        .mpvflow_visibility_resolver = false,
 +        .mpvflow_soft_blend = false,
++        .mpvflow_experimental_guarded_roots = false,
 +        .mpvflow_diagnostic_control_file = NULL,
 @@ -560,0 +651,11 @@ struct frame_priv {
 +    uint64_t frame_id;
@@ -134,7 +138,7 @@ index bd3d1aa..75ffbb1 100644
 +    int flow_w, flow_h;
 +    int flow_source_w, flow_source_h;
 +    double pts;
-@@ -569,0 +665,560 @@ struct frame_priv {
+@@ -569,0 +665,564 @@ struct frame_priv {
 +static void flow_release_pair(struct priv *p)
 +{
 +    if (p->flow_pair)
@@ -159,6 +163,7 @@ index bd3d1aa..75ffbb1 100644
 +    struct priv *p = vo->priv;
 +    const int requested_dimension = MPCLAMP(p->next_opts->mpvflow_max_dimension, 8, 640);
 +    const int requested_compute_api = p->next_opts->mpvflow_compute_api;
++    const bool requested_guarded_roots = p->next_opts->mpvflow_experimental_guarded_roots;
 +    const int requested_synthesis_max_dimension =
 +        p->next_opts->mpvflow_synthesis_max_dimension < 0 ? 0 :
 +        p->next_opts->mpvflow_synthesis_max_dimension > 7680 ? 7680 :
@@ -235,7 +240,8 @@ index bd3d1aa..75ffbb1 100644
 +    }
 +    if (p->flow_max_dimension != effective_dimension ||
 +        p->flow_synthesis_max_dimension != requested_synthesis_max_dimension ||
-+        p->flow_compute_api != requested_compute_api) {
++        p->flow_compute_api != requested_compute_api ||
++        p->flow_experimental_guarded_roots != requested_guarded_roots) {
 +        flow_release_pair(p);
 +        mpvflow_gpu_destroy(p->flow_gpu);
 +        p->flow_gpu = NULL;
@@ -244,6 +250,7 @@ index bd3d1aa..75ffbb1 100644
 +        p->flow_max_dimension = effective_dimension;
 +        p->flow_synthesis_max_dimension = requested_synthesis_max_dimension;
 +        p->flow_compute_api = requested_compute_api;
++        p->flow_experimental_guarded_roots = requested_guarded_roots;
 +        p->flow_init_attempted = false;
 +        p->flow_init_retry_pending = false;
 +        p->flow_init_retry_count = 0;
@@ -303,6 +310,7 @@ index bd3d1aa..75ffbb1 100644
 +
 +    struct MPVFlowGPUConfig config = {
 +        .compute_api = (enum MPVFlowGPUComputeAPI) p->next_opts->mpvflow_compute_api,
++        .experimental_guarded_roots = requested_guarded_roots,
 +        .diagnostic_engine = "mpv",
 +        .max_dimension = effective_dimension,
 +        .search_radius = target_fps >= 144 ? (quality >= 75 ? 4 : 3) :

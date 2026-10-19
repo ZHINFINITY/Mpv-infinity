@@ -87,6 +87,7 @@ object DecoderPreferencesScreen : Screen {
     val mpvFlowFrameInterpolationEnabled by preferences.mpvFlowFrameInterpolation.collectAsState()
     val mpvFlowVisibilityResolverDebug by preferences.mpvFlowVisibilityResolverDebug.collectAsState()
     val mpvFlowSoftBlendDebug by preferences.mpvFlowSoftBlendDebug.collectAsState()
+    val mpvFlowExperimentalGuardedRoots by preferences.mpvFlowExperimentalGuardedRoots.collectAsState()
     val mpvFlowTargetFps by preferences.mpvFlowTargetFps.collectAsState()
     val storedConfigOverrides by advancedPreferences.mpvConfOverrides.collectAsState()
     val configOwnedOptions =
@@ -386,6 +387,21 @@ object DecoderPreferencesScreen : Screen {
                     ),
                 )
               }
+
+              val guardedRootsEnabled = mpvFlowExperimentalGuardedRoots
+              SwitchPreference(
+                modifier = Modifier.settingsSearchTarget(R.string.pref_decoder_mpvflow_guarded_roots_title),
+                value = guardedRootsEnabled,
+                enabled = mpvFlowAvailable || nativeMedia3FlowAvailable || guardedRootsEnabled,
+                onValueChange = preferences.mpvFlowExperimentalGuardedRoots::set,
+                title = { Text(stringResource(R.string.pref_decoder_mpvflow_guarded_roots_title)) },
+                summary = {
+                  Text(
+                    stringResource(R.string.pref_decoder_mpvflow_guarded_roots_summary),
+                    color = MaterialTheme.colorScheme.outline,
+                  )
+                },
+              )
 
               PreferenceDivider()
 

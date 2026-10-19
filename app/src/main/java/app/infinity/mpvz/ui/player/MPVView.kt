@@ -148,6 +148,7 @@ class MPVView(
       )
     val requestedMpvFlowComputeApi = decoderPreferences.mpvFlowComputeApi.get()
     val requestedMpvFlowQuality = decoderPreferences.mpvFlowQuality.get().coerceIn(0, 100)
+    val requestedMpvFlowExperimentalGuardedRoots = decoderPreferences.mpvFlowExperimentalGuardedRoots.get()
     val mpvFlowFrameInterpolationActive =
       mpvFlowRequested &&
         BuildConfig.MPV_HAS_MPVFLOW &&
@@ -166,7 +167,7 @@ class MPVView(
     mpvFlowDiagnosticsEnabled = BuildConfig.DEBUG && mpvFlowFrameInterpolationActive
     val coreConfigurationKey =
       "${requestedBackend.configurationKey}|conf=${MpvConfigOverridePolicy.configurationKey()}|" +
-        "mpvflow=${if (mpvFlowFrameInterpolationActive) "$requestedMpvFlowTargetFps,compute_api=${effectiveMpvFlowComputeApi.nativeValue},quality=$requestedMpvFlowQuality,soft_blend=$mpvFlowSoftBlendDebugActive" else "off"}"
+        "mpvflow=${if (mpvFlowFrameInterpolationActive) "$requestedMpvFlowTargetFps,compute_api=${effectiveMpvFlowComputeApi.nativeValue},quality=$requestedMpvFlowQuality,soft_blend=$mpvFlowSoftBlendDebugActive,guarded_roots=$requestedMpvFlowExperimentalGuardedRoots" else "off"}"
     val result =
       PlaybackSession.initialize(
         context = context.applicationContext,
@@ -820,10 +821,16 @@ class MPVView(
           } else null
         val enabledResult =
           PlaybackSession.setOptionString("mpvflow", if (mpvFlowFrameInterpolationEnabled) "yes" else "no")
+        val requestedMpvFlowExperimentalGuardedRoots = decoderPreferences.mpvFlowExperimentalGuardedRoots.get()
+        val guardedRootsResult =
+          PlaybackSession.setOptionString(
+            "mpvflow-experimental-guarded-roots",
+            if (mpvFlowFrameInterpolationEnabled && requestedMpvFlowExperimentalGuardedRoots) "yes" else "no",
+          )
         "mpvflow_rc=$enabledResult compute_api=${effectiveMpvFlowComputeApi.name.lowercase()} " +
           "compute_api_rc=${mpvFlowComputeApiOptionResult ?: "mpv.conf_or_unavailable"} " +
           "target_fps_rc=${targetFpsResult ?: "unchanged"} " +
-          "max_dimension_rc=${dimensionResult ?: "unchanged"} quality=$mpvFlowQuality quality_rc=${qualityResult ?: "unchanged"} " +
+          "max_dimension_rc=${dimensionResult ?: "unchanged"} quality=$mpvFlowQuality quality_rc=${qualityResult ?: "unchanged"} guarded_roots_rc=$guardedRootsResult " +
           "visibility_resolver=$mpvFlowVisibilityResolverDebugEnabled " +
           "visibility_resolver_rc=${mpvFlowVisibilityResolverOptionResult ?: "mpv.conf_or_unavailable"} " +
           "soft_blend=$mpvFlowSoftBlendDebugEnabled soft_blend_rc=${mpvFlowSoftBlendOptionResult ?: "mpv.conf_or_unavailable"} " +
@@ -875,6 +882,8 @@ class MPVView(
         "MPVFLOW_DIAGNOSTIC event=config requested_enabled=$mpvFlowFrameInterpolationEnabled " +
           "runtime_state=not_verified " +
           "requested_target_fps=${decoderPreferences.mpvFlowTargetFps.get()} " +
+          "guarded_roots=${decoderPreferences.mpvFlowExperimentalGuardedRoots.get()} " +
+          "synthesis_path=${if (decoderPreferences.mpvFlowExperimentalGuardedRoots.get()) "guarded-roots-v1" else "production"} " +
           "effective_target_fps=$mpvFlowTargetFps display_refresh_hz=${displayRefreshRate?.hz ?: 0f} " +
           "display_refresh_source=${displayRefreshRate?.source ?: "unavailable"} " +
           "renderer=${backend.vo} gpu_api=${backend.gpuApi} " +

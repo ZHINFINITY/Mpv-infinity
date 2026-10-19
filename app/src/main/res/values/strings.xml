@@ -310,6 +310,8 @@
   <string name="pref_decoder_mpvflow_title">Frame interpolation</string>
   <string name="pref_decoder_mpvflow_visibility_resolver_debug_title">Visibility resolver</string>
   <string name="pref_decoder_mpvflow_soft_blend_debug_title">Soft blend</string>
+  <string name="pref_decoder_mpvflow_guarded_roots_title">Experimental guarded roots</string>
+  <string name="pref_decoder_mpvflow_guarded_roots_summary">Opt in to guarded-roots-v1 synthesis for MPV and Media3. Experimental; may cause artifacts or instability. Restart playback after changing.</string>
   <string name="pref_decoder_mpvflow_target_fps_title">MPVFlow target frame rate</string>
   <string name="pref_decoder_mpvflow_target_fps_value">%1$d fps</string>
   <string name="pref_decoder_mpvflow_target_fps_warning_value">(!) %1$d fps</string>

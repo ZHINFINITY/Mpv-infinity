@@ -128,6 +128,7 @@ class Media3FlowVideoSink(
   private val requestedComputeApi: MpvFlowComputeApi,
   private val visibilityResolverEnabled: Boolean,
   private val softBlendEnabled: Boolean,
+  private val experimentalGuardedRoots: Boolean,
   private val onDiagnostics: (Media3FlowDiagnostics) -> Unit,
 ) : VideoSink {
   private val appContext = context.applicationContext
@@ -358,7 +359,12 @@ class Media3FlowVideoSink(
           !deviceSupportsVulkanFlow(appContext) -> "vulkan_compute_unavailable"
           else -> {
             flowVulkanContext =
-              Media3FlowVulkanNative.nativeCreateContext(maxDimension, requestedComputeApi.nativeValue, searchRadius)
+              Media3FlowVulkanNative.nativeCreateContext(
+                maxDimension,
+                requestedComputeApi.nativeValue,
+                searchRadius,
+                experimentalGuardedRoots,
+              )
             if (flowVulkanContext == 0L) {
               "vulkan_context_or_compute_setup_failed"
             } else {
@@ -2925,7 +2931,12 @@ class Media3FlowVideoSink(
     gridHeight = motionGridSize.height
     if (flowVulkanContext == 0L && deviceSupportsVulkanFlow(appContext)) {
       flowVulkanContext = runCatching {
-        Media3FlowVulkanNative.nativeCreateContext(maxDimension, requestedComputeApi.nativeValue, searchRadius)
+        Media3FlowVulkanNative.nativeCreateContext(
+          maxDimension,
+          requestedComputeApi.nativeValue,
+          searchRadius,
+          experimentalGuardedRoots,
+        )
       }.getOrDefault(0L)
     }
     var allSharedImagesReady = flowVulkanContext != 0L
