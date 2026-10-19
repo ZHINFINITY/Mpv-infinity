@@ -115,7 +115,22 @@ def main() -> None:
             run(normal, compile_variant(decision_shader, "decisions"), ("0", "0", "1"), "decision-mask capture")
         run(large, production, ("0", "0"), "whole-frame 4x upscaling / 32px motion")
         run(large, production, ("0", "0", "0", "bounds"), "constant-translation smooth support boundaries")
-
+        rescue_anchor = "bool oneSidedRescue=cycleSamplesFinite&&min(valid0,valid1)>0.75&&f.w>=0.20&&f.z<=0.05&&max(cycleError0,cycleError1)<1.0;"
+        if shader_source.count(rescue_anchor) != 1:
+            raise SystemExit("One-sided rescue anchor is missing or duplicated")
+        run(large, production, ("0", "0", "0", "rescue"), "one-sided benefit, safety and continuity")
+        disabled = shader_source.replace("if(!softBlend) confidence=max(confidence,rescueQuality);", "", 1)
+        run(large, compile_variant(disabled, "disabled_one_sided_rescue"), ("0", "0", "0", "rescue"),
+            "disabled one-sided rescue benefit", "fixture=one-sided benefit")
+        for needle, replacement, label, failure in (
+            ("rescueSpread,ca.rgb-cb.rgb)", "rescueSpread,vec3(0.0))", "rescue color guard removed", "fixture=one-sided invalid witness"),
+            ("if(!softBlend) confidence=max(confidence,rescueQuality);", "if(!softBlend) confidence=max(confidence,confidence0);", "rescue certificate bypassed", "fixture=one-sided invalid witness"),
+            ("smoothstep(0.30,0.75,f.w)", "smoothstep(0.30,0.45,f.w)", "narrow rescue support contour", "One-sided spatial seam:"),
+        ):
+            if shader_source.count(needle) != 1:
+                raise SystemExit(f"One-sided mutation anchor missing or duplicated: {needle}")
+            mutant=shader_source.replace(needle,replacement,1)
+            run(large, compile_variant(mutant,label.replace(" ","_")), ("0","0","0","rescue"), label, failure)
         for flags in (("0", "0"), ("1", "0"), ("1", "1")):
             run(affine, production, (*flags, "0", "affine"), f"invertible camera zoom/rotation soft={flags}")
             run(large, production, (*flags, "0", "coherent"), f"coherent moving outlines soft={flags}")
@@ -229,10 +244,12 @@ def main() -> None:
         for needle, replacement, label in ((geometric, "return v00", "nearest lattice field"), (centered_origin, "vec2 center=p;", "uncentered lattice field")):
             mutant = shader_source.replace(needle, replacement, 1)
             run(large, compile_variant(field_shader(mutant), label.replace(" ", "_")), ("0", "0", "0", "field"), label, "fixture=confidence-independent continuous geometric field")
-        common = "confidence=softBlend?max(confidence0,confidence1):min(confidence0,confidence1)"
-        if shader_source.count(common) != 1:
+        common = "float confidence=softBlend?max(confidence0,confidence1):min(confidence0,confidence1);"
+        if shader_source.count(common) != 1 or shader_source.count("if(!softBlend) confidence=max(confidence,rescueQuality);") != 1:
             raise SystemExit("Common-support trust anchor is missing")
-        mutant = shader_source.replace(common, "confidence=max(confidence0,confidence1)", 1)
+        # Unsafe endpoint trust must remain a rejecting negative control: it
+        # bypasses the conservative common-support baseline, unlike rescueQuality.
+        mutant = shader_source.replace(common, "float confidence=max(confidence0,confidence1);", 1)
         run(large, compile_variant(mutant, "one_sided_trust"), ("0", "0"), "one-sided warp trust", "fixture=unsupported reverse motion")
         fallback = "vec4 c=mix(texelFetch(frame0,p,0),texelFetch(frame1,p,0),pc.timestep);"
         mutant = shader_source.replace(fallback, "vec4 c=pc.timestep<0.5?texelFetch(frame0,p,0):texelFetch(frame1,p,0);")

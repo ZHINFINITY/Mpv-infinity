@@ -42,6 +42,10 @@ static int positive_mod48(int value)
 #define GRID_PIXELS ((size_t)GRID_WIDTH * (size_t)GRID_HEIGHT)
 #define PIXELS ((size_t)WIDTH * (size_t)HEIGHT)
 #define IMAGE_BYTES (PIXELS * 4)
+/* Dedicated one-sided quality/continuity probes; never used by normal fixtures. */
+static int rescue_probe_variant;
+static float rescue_probe_uniqueness=1.0f, rescue_probe_sad;
+static uint8_t rescue_probe_pixels[IMAGE_BYTES];
 
 struct Buffer {
     VkBuffer handle;
@@ -747,10 +751,10 @@ static int run_fixture(struct VulkanContext *ctx, const char *label,
             }
         }
         fill_rgba16f(flow[0], GRID_PIXELS, 0x4800, 0, 0, 0x3c00); /* +8 */
-        fill_rgba16f(flow[1], GRID_PIXELS, 0xc800, 0, 0, special_grid_test == 12 ? 0 : 0x3c00);
+        fill_rgba16f(flow[1], GRID_PIXELS, special_grid_test == 12 ? 0xc700 : 0xc800, 0, 0, special_grid_test == 12 ? 0 : 0x3c00);
         if (special_grid_test == 12)
             for (size_t cell=0; cell<GRID_PIXELS; cell++)
-                flow[1][cell*4+2]=0x3000; /* Actually unsupported: poor reverse SAD, not merely an aperture tie. */
+                flow[1][cell*4+2]=0x3000; /* Poor reverse SAD AND wrong reverse geometry: retain invalid-motion fallback. */
         if (special_grid_test == 13)
             fill_rgba16f(flow[0], GRID_PIXELS, 0x7e00, 0, 0, 0x3c00); /* NaN */
         if (special_grid_test == 15) {
@@ -783,14 +787,14 @@ static int run_fixture(struct VulkanContext *ctx, const char *label,
                          special_grid_test == 17 ? 0xc400 : 0, 0, 0x3c00);
         }
     }
-    if ((special_grid_test >= 18 && special_grid_test <= 21) || special_grid_test == 24) {
+    if ((special_grid_test >= 18 && special_grid_test <= 21) || special_grid_test == 24 || special_grid_test == 27) {
         /* A straight outline is ambiguous along its tangent even when its
          * inherited pan vector, inverse and bidirectional cycle are exact.
          * Check the ENTIRE supported edge region, including old ghost positions. */
         for (int y=0; y<HEIGHT; y++) for (int x=0; x<WIDTH; x++) {
             size_t i=((size_t)y*WIDTH+x)*4;
-            int a=x>=20&&x<22&&y>=4&&y<HEIGHT-4;
-            int b=x>=28&&x<30&&y>=4&&y<HEIGHT-4;
+            int a=(special_grid_test==27 ? x>=16&&x<18 : x>=20&&x<22)&&y>=4&&y<HEIGHT-4;
+            int b=(special_grid_test==27 ? x>=24&&x<26 : x>=28&&x<30)&&y>=4&&y<HEIGHT-4;
             for (int c=0;c<3;c++) {
                 frame0[i+c]=a?255:0;
                 frame1[i+c]=b?255:0;
@@ -801,7 +805,23 @@ static int run_fixture(struct VulkanContext *ctx, const char *label,
         }
         fill_rgba16f(flow[0],GRID_PIXELS,0x4000,0,0,0); /* +2, exact but tied */
         fill_rgba16f(flow[1],GRID_PIXELS,special_grid_test==19?0xbc00:0xc000,0,
-                     special_grid_test==20?0x2c00:0,0); /* -1 breaks cycle; high SAD breaks match */
+                     special_grid_test==20?0x2c00:0,0);
+        if (special_grid_test == 27) {
+            for (size_t i=0;i<GRID_PIXELS;i++) {
+                flow[0][i*4+3]=0x3c00; flow[1][i*4+3]=0;
+                flow[1][i*4+2]=0x3000; /* coherent reverse geometry, rejected reverse SAD */
+                _Float16 uniqueness=(_Float16)(rescue_probe_variant==7 ? 0.2f+0.4f*(float)(i/GRID_WIDTH) : rescue_probe_uniqueness);
+                _Float16 residual=(_Float16)rescue_probe_sad;
+                memcpy(&flow[0][i*4+3],&uniqueness,2);
+                memcpy(&flow[0][i*4+2],&residual,2);
+                if(rescue_probe_variant==1) flow[1][i*4]=0xbc00; /* wrong reverse: -1, not -2 */
+                if(rescue_probe_variant==2) flow[1][i*4]=0x7e00; /* nonfinite reverse */
+                if(rescue_probe_variant==3) flow[0][i*4+2]=0x2c00; /* poor strong-direction SAD */
+                if(rescue_probe_variant==5) flow[0][i*4+3]=0; /* no unique strong witness */
+            }
+            if(rescue_probe_variant==4) for(int y=0;y<HEIGHT;y++) for(int x=24;x<26;x++)
+                for(int c=0;c<3;c++) frame1[((size_t)y*WIDTH+x)*4+c]=239;
+        } /* -1 breaks cycle; high SAD breaks match */
         if (special_grid_test == 24) {
             for (size_t i=0;i<GRID_PIXELS;i++) {
                 flow[0][i*4+2]=flow[1][i*4+2]=0x2000; /* SAD .0078125 */
@@ -1111,23 +1131,30 @@ static int run_fixture(struct VulkanContext *ctx, const char *label,
         }
         printf("Affine inverse oracle checked %d supported output pixels\n",checked);
     }
-    if ((special_grid_test >= 12 && special_grid_test <= 21) || special_grid_test == 24) {
+    if ((special_grid_test >= 12 && special_grid_test <= 21) || special_grid_test == 24 || special_grid_test == 27) {
         for (int y = 0; y < HEIGHT; y++) {
             for (int x = 0; x < WIDTH; x++) {
                 size_t i = ((size_t)y * WIDTH + x) * 4;
                 int wanted = 0, check = !(special_grid_test == 16 || special_grid_test == 17);
-                if ((special_grid_test>=18 && special_grid_test<=21) || special_grid_test==24) {
+                if ((special_grid_test>=18 && special_grid_test<=21) || special_grid_test==24 || special_grid_test==27) {
                     check=x>=16&&x<=36&&y>=8&&y<HEIGHT-8;
                     if (special_grid_test==21) {
                         int shift=(int)lroundf(8.0f*timestep);
                         check=check&&x>=20+shift&&x<22+shift;
                     }
-                    if (special_grid_test==18 || special_grid_test==24) {
+                    if (special_grid_test==18 || special_grid_test==24 || special_grid_test==27) {
                         int shift=(int)lroundf(8.0f*timestep);
-                        wanted=x>=20+shift&&x<22+shift?255:0;
+                        wanted=(special_grid_test==27 ? (x>=16+shift&&x<18+shift) : (x>=20+shift&&x<22+shift))?255:0;
                     } else wanted=(int)floorf((1.0f-timestep)*frame0[i]+timestep*frame1[i]+0.5f);
+                    if(special_grid_test==27 && rescue_probe_variant==4) {
+                        int shift=(int)lroundf(8.0f*timestep);
+                        check=check&&x>=16+shift&&x<18+shift;
+                    }
+                    if(special_grid_test==27 && rescue_probe_variant>=6) check=0;
                     if (check) for(int c=0;c<3;c++) {
-                        int channel_wanted=(special_grid_test==18 || special_grid_test==24)?wanted:(int)floorf((1.0f-timestep)*frame0[i+c]+timestep*frame1[i+c]+0.5f);
+                        int channel_wanted=(special_grid_test==18 || special_grid_test==24 || special_grid_test==27)?wanted:(int)floorf((1.0f-timestep)*frame0[i+c]+timestep*frame1[i+c]+0.5f);
+                        if(special_grid_test==27 && rescue_probe_variant>=1 && rescue_probe_variant<=5)
+                            channel_wanted=(int)floorf((1.0f-timestep)*frame0[i+c]+timestep*frame1[i+c]+0.5f);
                         if(abs((int)output[i+c]-channel_wanted)>1) {
                             fprintf(stderr,"Aperture outline regression: fixture=%s pixel=(%d,%d) channel=%d t=%.2f expected=%d actual=%d\n",label,x,y,c,timestep,channel_wanted,output[i+c]);
                             exit(1);
@@ -1250,6 +1277,7 @@ static int run_fixture(struct VulkanContext *ctx, const char *label,
             exit(1);
         }
     }
+    if(special_grid_test==27) memcpy(rescue_probe_pixels,output,IMAGE_BYTES);
     int sampled_pixel = output[(size_t)first * 4];
     printf("Vulkan synthesis pixel fixture passed: %s (probe=%d)\n", label, sampled_pixel);
     free(output);
@@ -1305,6 +1333,60 @@ int main(int argc, char **argv)
     }
 #ifdef FLOW_LARGE_FIXTURES
     const uint8_t background[4] = {0,0,0,255};
+    if (argc > 5 && strcmp(argv[5], "rescue") == 0) {
+        for(int step=1;step<=3;step++) {
+            float t=0.25f*(float)step;
+            for(int variant=0;variant<=5;variant++) {
+                rescue_probe_variant=variant;
+                run_fixture(&ctx,variant==0?"one-sided benefit: no endpoint ghosts":"one-sided invalid witness retains safe source blend",background,background,0,0x3400,0x3400,t,NULL,0,27);
+            }
+        }
+        /* Adjacent representable half floats around each new quality fade.
+         * Only quality changes: source pixels and geometry are identical. */
+        const float limits[]={0.30f,0.75f,0.005f,0.025f};
+        uint8_t previous[IMAGE_BYTES];
+        rescue_probe_variant=6;
+        for(int gate=0;gate<4;gate++) {
+            for(int side=0;side<2;side++) {
+                _Float16 center=(_Float16)limits[gate]; uint16_t bits; memcpy(&bits,&center,2);
+                bits=(uint16_t)(bits+(side?1:-1)); _Float16 adjacent; memcpy(&adjacent,&bits,2);
+                rescue_probe_uniqueness=gate<2?(float)adjacent:1.0f;
+                rescue_probe_sad=gate<2?0.0f:(float)adjacent;
+                run_fixture(&ctx,"one-sided quality boundary",background,background,0,0x3400,0x3400,0.5f,NULL,0,27);
+                if(!side) memcpy(previous,rescue_probe_pixels,IMAGE_BYTES);
+                else for(int y=8;y<HEIGHT-8;y++) for(int x=16;x<=36;x++) for(int c=0;c<3;c++) {
+                    size_t i=((size_t)y*WIDTH+x)*4+c;
+                    if(abs((int)rescue_probe_pixels[i]-previous[i])>1) {
+                        fprintf(stderr,"One-sided continuity regression: gate=%d pixel=(%d,%d) below=%u above=%u\n",gate,x,y,previous[i],rescue_probe_pixels[i]);exit(1);
+                    }
+                }
+            }
+        }
+        rescue_probe_uniqueness=1;rescue_probe_sad=0;
+        for(int side=0;side<2;side++) {
+            float t=0.5f+(side?1.0f:-1.0f)/4096.0f;
+            run_fixture(&ctx,"one-sided temporal midpoint continuity",background,background,0,0x3400,0x3400,t,NULL,0,27);
+            if(!side) memcpy(previous,rescue_probe_pixels,IMAGE_BYTES);
+            else for(int y=8;y<HEIGHT-8;y++) for(int x=16;x<=36;x++) for(int c=0;c<3;c++) {
+                size_t i=((size_t)y*WIDTH+x)*4+c;
+                if(abs((int)rescue_probe_pixels[i]-previous[i])>2) {
+                    fprintf(stderr,"One-sided temporal discontinuity: pixel=(%d,%d) below=%u above=%u\n",x,y,previous[i],rescue_probe_pixels[i]);exit(1);
+                }
+            }
+        }
+        rescue_probe_variant=7;rescue_probe_uniqueness=1;rescue_probe_sad=0;
+        run_fixture(&ctx,"one-sided spatial support fade",background,background,0,0x3400,0x3400,0.5f,NULL,0,27);
+        int largest_step=0;
+        for(int y=11;y<22;y++) {
+            int a=rescue_probe_pixels[((size_t)(y-1)*WIDTH+20)*4],b=rescue_probe_pixels[((size_t)y*WIDTH+20)*4];
+            if(b-a>largest_step) largest_step=b-a;
+            if(b<a-1 || b-a>64) { fprintf(stderr,"One-sided spatial seam: y=%d previous=%d current=%d\n",y,a,b);exit(1); }
+        }
+        int low=rescue_probe_pixels[((size_t)10*WIDTH+20)*4],high=rescue_probe_pixels[((size_t)21*WIDTH+20)*4];
+        if(high-low<128) {fprintf(stderr,"One-sided spatial fade underconstrained: %d -> %d\n",low,high);exit(1);}
+        printf("One-sided spatial fade: endpoint range=%d..%d largest adjacent step=%d; half-float gates <=1 level, midpoint time <=2 levels\n",low,high,largest_step);
+        destroy_vulkan(&ctx); puts("One-sided benefit, invalid-motion and quality-boundary pixel tests passed"); return 0;
+    }
     if (argc > 5 && strcmp(argv[5], "coherent") == 0) {
         for (int step=1;step<=3;step++) {
             float t=(float)step*0.25f;
