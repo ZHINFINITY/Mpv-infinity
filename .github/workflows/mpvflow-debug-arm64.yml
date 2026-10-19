@@ -30,6 +30,8 @@ jobs:
           fetch-depth: 0
       - name: Test arm64 workflow cache and validation invariants
         run: python3 scripts/tests/mpvflow_arm64_workflow_test.py
+      - name: Test experimental region3 attenuation invariants
+        run: python3 scripts/tests/region3_transition_test.py
       - name: Test runtime AAR overlay accepts new shared libraries
         run: python3 scripts/tests/package_mpv_runtime_aar_test.py
       - name: Set up JDK 17
@@ -96,6 +98,10 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y binutils ffmpeg glslang-tools libvulkan-dev mesa-vulkan-drivers
+      - name: Run MPVFlow core and GPU shader regression tests
+        run: ./scripts/test-mpvflow-core.sh
+        env:
+          MPVFLOW_REQUIRE_VULKAN_PIXEL_TEST: '1'
       - name: Install Android MPV native build dependencies
         if: ${{ steps.mpvflow-runtime-cache.outputs.cache-hit != 'true' && steps.mpvflow-runtime-legacy-cache.outputs.cache-hit != 'true' }}
         run: |
@@ -139,10 +145,6 @@ jobs:
         with:
           path: native-builder/app/build/outputs/apk
           key: ${{ steps.mpvflow-runtime-cache.outputs.cache-primary-key }}
-      - name: Run MPVFlow core and GPU shader regression tests
-        run: ./scripts/test-mpvflow-core.sh
-        env:
-          MPVFLOW_REQUIRE_VULKAN_PIXEL_TEST: '1'
       - name: Test and assemble arm64-v8a debug APK in one Gradle invocation
         run: ./gradlew testStandardDebugUnitTest :media3-decoder-ffmpeg:testDebugUnitTest assembleStandardDebug -PtargetAbi=arm64-v8a -PmpvFlowMpvBuild=true --stacktrace --no-daemon --max-workers=2
       - name: Verify arm64 DTS wrapper dynamically links the existing FFmpeg runtime
@@ -151,11 +153,14 @@ jobs:
           apk="$(find app/build/outputs/apk/standard/debug -maxdepth 1 -type f -name '*arm64-v8a-debug*.apk' -print -quit)"
           [[ -n "$apk" ]] || { echo "Standard arm64 debug APK was not produced" >&2; exit 1; }
           python3 scripts/verify-media3-dca-apk.py "$apk"
+          python3 scripts/verify-region3-shader-apk.py "$apk"
       - name: Upload arm64-v8a debug APK
         uses: actions/upload-artifact@v7
         with:
           name: mpv-infinity-mpvflow-arm64-v8a-debug-${{ github.sha }}
-          path: app/build/outputs/apk/standard/debug/*arm64-v8a-debug*.apk
+          path: |
+            app/build/outputs/apk/standard/debug/*arm64-v8a-debug*.apk
+            app/build/outputs/apk/standard/debug/region3-shader-verification.json
           if-no-files-found: error
           retention-days: 14
           compression-level: 0
