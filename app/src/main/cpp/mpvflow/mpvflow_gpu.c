@@ -102,6 +102,9 @@ struct MPVFlowGPUContext {
     pl_pass pass_flow;
     pl_pass pass_optical_luma;
     pl_pass pass_optical_seed;
+    pl_pass pass_pair_gate_first;
+    pl_pass pass_pair_gate_reduce;
+    pl_pass pass_pair_gate_merge;
     pl_pass pass_synthesize;
     pl_pass pass_synthesize_rgba16f;
     pl_pass pass_visibility_resolver;
@@ -164,6 +167,8 @@ struct MPVFlowGPUPair {
     struct FlowLevel level[FLOW_LEVELS];
     int reductions;
     pl_tex scene[FLOW_REDUCTIONS];
+    pl_tex pair_gate[2];
+    pl_tex pair_scene_original; /* scene-cut scalar retained until pair release */
 };
 
 static void flow_log(pl_gpu gpu, enum pl_log_level level, const char *format, ...)
@@ -892,6 +897,70 @@ static const char shader_flow[] =
  * endpoint warp using the SAME boundary trust as the default policy. The .15
  * shortcut is exact: both endpoint visibility weights are zero below it, so the
  * full expression would also return fallback. No extra pass or search is added. */
+#if MPVFLOW_PAIR_GHOST_EXPERIMENT
+/* Experimental pair-wide abstention. Cached once after both fine motion fields.
+ * The entire pair uses endpoint crossfade only when broad ambiguity AND broad
+ * photometric mismatch are present. Low-cost aperture/flat pans are not rejected
+ * merely for low uniqueness. No CPU readback, per-pixel fallback mask, flow edit,
+ * quality/resolution/FPS change, or Soft Blend setting change is introduced. */
+static const char shader_pair_gate_first[] =
+    "#version 450\n"
+    "// MPVFLOW_PAIR_GHOST_EXPERIMENT_V1: normalized fine-grid evidence, not pixel masks.\n"
+    "layout(set=0,binding=0,rgba16f) readonly uniform image2D forwardTex;\n"
+    "layout(set=0,binding=1,rgba16f) readonly uniform image2D backwardTex;\n"
+    "layout(set=0,binding=2,rgba16f) writeonly uniform image2D outTex;\n"
+    "layout(push_constant) uniform FlowPush { ivec4 cfg; float timestep; } pc;\n"
+    "layout(local_size_x=8,local_size_y=8) in;\n"
+    "bool finite4(vec4 v){return !any(isnan(v))&&!any(isinf(v));}\n"
+    "void main(){\n"
+    " ivec2 tile=ivec2(gl_GlobalInvocationID.xy),sz=imageSize(forwardTex);\n"
+    " if(any(greaterThanEqual(tile,imageSize(outTex))))return;\n"
+    " vec4 counts=vec4(0.0);bool invalid=false;\n"
+    " for(int y=0;y<16;y++)for(int x=0;x<16;x++){\n"
+    "  ivec2 q=tile*16+ivec2(x,y);if(any(greaterThanEqual(q,sz)))continue;\n"
+    "  vec4 f=imageLoad(forwardTex,q),b=imageLoad(backwardTex,q);\n"
+    "  if(!finite4(f)||!finite4(b)){invalid=true;continue;}\n"
+    "  counts+=vec4((f.z>=.04||f.w<=.08)?1.:0.,(b.z>=.04||b.w<=.08)?1.:0.,f.z>=.04?1.:0.,b.z>=.04?1.:0.);\n"
+    " }\n"
+    " // Divide by all fine-grid cells BEFORE half storage: every sum stays <=1.\n"
+    " // Edge tiles retain their actual count; no unweighted tile means or half overflow.\n"
+    " vec4 value=counts/float(sz.x*sz.y);\n"
+    " if(invalid)value=vec4(uintBitsToFloat(0x7fc00000u));\n"
+    " imageStore(outTex,tile,value);\n"
+    "}\n"
+;
+
+static const char shader_pair_gate_reduce[] =
+    "#version 450\n"
+    "layout(set=0,binding=0,rgba16f) readonly uniform image2D inTex;\n"
+    "layout(set=0,binding=1,rgba16f) writeonly uniform image2D outTex;\n"
+    "layout(push_constant) uniform FlowPush { ivec4 cfg; float timestep; } pc;\n"
+    "layout(local_size_x=8,local_size_y=8) in;\n"
+    "void main(){ivec2 p=ivec2(gl_GlobalInvocationID.xy);if(any(greaterThanEqual(p,pc.cfg.xy)))return;\n"
+    " ivec2 sz=imageSize(inTex);vec4 s=vec4(0.0);\n"
+    " for(int y=0;y<16;y++)for(int x=0;x<16;x++){ivec2 q=p*16+ivec2(x,y);if(all(lessThan(q,sz)))s+=imageLoad(inTex,q);}\n"
+    " imageStore(outTex,p,s);\n"
+    "}\n"
+;
+
+static const char shader_pair_gate_merge[] =
+    "#version 450\n"
+    "layout(set=0,binding=0,rgba16f) readonly uniform image2D sceneTex;\n"
+    "layout(set=0,binding=1,rgba16f) readonly uniform image2D gateTex;\n"
+    "layout(set=0,binding=2,rgba16f) writeonly uniform image2D outTex;\n"
+    "layout(push_constant) uniform FlowPush { ivec4 cfg; float timestep; } pc;\n"
+    "layout(local_size_x=8,local_size_y=8) in;\n"
+    "void main(){ivec2 p=ivec2(gl_GlobalInvocationID.xy);if(any(greaterThanEqual(p,pc.cfg.xy)))return;\n"
+    " vec4 scene=imageLoad(sceneTex,ivec2(0)),g=imageLoad(gateTex,ivec2(0));\n"
+    " bool valid=!any(isnan(g))&&!any(isinf(g))&&all(greaterThanEqual(g,vec4(0.0)))&&all(lessThanEqual(g,vec4(1.01)));\n"
+    " float weak=valid?min(g.r,g.g):0.0,bad=valid?min(g.b,g.a):0.0;\n"
+    " bool ghost=valid&&scene.r<=.1882353&&weak>=.55&&bad>=.25;\n"
+    " imageStore(outTex,p,vec4(scene.r,ghost?1.:0.,weak,bad));\n"
+    "}\n"
+;
+
+#endif
+
 static const char shader_synthesize[] =
     "#version 450\n"
     "layout(set=0,binding=0) uniform sampler2D frame0; layout(set=0,binding=1) uniform sampler2D frame1;\n"
@@ -964,7 +1033,7 @@ static const char shader_synthesize[] =
  * hard-boundary negative control still removes the complete certificate.
  * The app's Soft Blend path remains unchanged. */
     "float region3TransitionTrust(float lumaDelta,float colorDelta,float chromaDelta,float uniqueness){ float edgeTrust=1.0-smoothstep(0.025,0.08,lumaDelta); float chromaTrust=1.0-smoothstep(0.06,0.12,colorDelta)*smoothstep(0.025,0.06,chromaDelta); float ambiguousTrust=1.0-(1.0-smoothstep(0.04,0.08,uniqueness))*smoothstep(0.06,0.10,colorDelta); return edgeTrust*chromaTrust*ambiguousTrust; }\n"
-    "void main(){ FLOW_BEGIN ivec2 p=ivec2(gl_GlobalInvocationID.xy); ivec2 outSize=imageSize(outTex),motionSize=pc.cfg.zw; if(any(greaterThanEqual(p,outSize))) return; vec2 srcP=vec2(p),uv=(srcP+vec2(0.5))/vec2(outSize),flowP=clamp(uv*vec2(motionSize)-vec2(0.5),vec2(0.0),vec2(motionSize-1)); float cut=imageLoad(sceneTex,ivec2(0)).r; if(cut>0.1882353){ vec4 c=pc.timestep<=0.5?texelFetch(frame0,p,0):texelFetch(frame1,p,0); imageStore(outTex,p,FLOW_RESULT(c,1,0.0,0)); return; } { float staticLumaDelta=abs(lumaAt(flowP,0)-lumaAt(flowP,1)); if(staticLumaDelta<=0.0039216){ vec4 fastForward=flowAtBilinear(flowP,0),fastBackward=flowAtBilinear(flowP,1); if(dot(fastForward.xy,fastForward.xy)<=0.0025&&dot(fastBackward.xy,fastBackward.xy)<=0.0025){ vec4 static0=texelFetch(frame0,p,0),static1=texelFetch(frame1,p,0); float colorDelta=max(max(abs(static0.r-static1.r),abs(static0.g-static1.g)),abs(static0.b-static1.b)); bool staticPixel=colorDelta<=0.0039216; if(staticPixel){ vec4 outc=mix(static0,static1,pc.timestep); outc.a=1.0; imageStore(outTex,p,FLOW_RESULT(outc,2,1.0,0)); return; } } } } /* One continuous field for inverse iteration, final samples and cycles. */ vec4 f=flowAtBilinear(flowP,0),b=flowAtBilinear(flowP,1); if(!flowFinite(f)||!flowFinite(b)){ vec4 c=mix(texelFetch(frame0,p,0),texelFetch(frame1,p,0),pc.timestep); imageStore(outTex,p,FLOW_RESULT(c,(pc.timestep<0.5?3:4),0.0,0)); return; } vec2 initialForward=f.xy,initialBackward=b.xy; vec2 a=flowP-pc.timestep*f.xy,z=flowP-(1.0-pc.timestep)*b.xy; for(int i=0;i<2;i++){ mat2 dfA,dfZ; f=flowAtBilinearJacobian(a,0,dfA); b=flowAtBilinearJacobian(z,1,dfZ); vec2 rA=a+pc.timestep*f.xy-flowP,rZ=z+(1.0-pc.timestep)*b.xy-flowP; mat2 jA=mat2(1.0)+pc.timestep*dfA,jZ=mat2(1.0)+(1.0-pc.timestep)*dfZ; float detA=determinant(jA),detZ=determinant(jZ); bool newtonA=flowFinite(f)&&flowMatFinite(dfA)&&flowMatFinite(jA)&&!isnan(detA)&&!isinf(detA)&&detA>0.05; bool newtonZ=flowFinite(b)&&flowMatFinite(dfZ)&&flowMatFinite(jZ)&&!isnan(detZ)&&!isinf(detZ)&&detZ>0.05; vec2 dA=newtonA?inverse(jA)*rA:vec2(0.0),dZ=newtonZ?inverse(jZ)*rZ:vec2(0.0); newtonA=newtonA&&flowFinite(vec4(dA,0.0,0.0))&&all(lessThanEqual(abs(dA),vec2(4.0))); newtonZ=newtonZ&&flowFinite(vec4(dZ,0.0,0.0))&&all(lessThanEqual(abs(dZ),vec2(4.0))); a=newtonA?a-dA:flowP-pc.timestep*f.xy; z=newtonZ?z-dZ:flowP-(1.0-pc.timestep)*b.xy; } f=flowAtBilinear(a,0); b=flowAtBilinear(z,1); if(!flowFinite(f)||!flowFinite(b)||any(isnan(a))||any(isinf(a))||any(isnan(z))||any(isinf(z))){ vec4 c=mix(texelFetch(frame0,p,0),texelFetch(frame1,p,0),pc.timestep); imageStore(outTex,p,FLOW_RESULT(c,(pc.timestep<0.5?3:4),0.0,0)); return; }vec2 cycle0=a+f.xy,cycle1=z+b.xy; vec4 backAt0=flowAtBilinear(cycle0,1); vec4 forwardAt1=flowAtBilinear(cycle1,0); float cycleError0=flowFinite(backAt0)?length(f.xy+backAt0.xy):1e20; float cycleError1=flowFinite(forwardAt1)?length(b.xy+forwardAt1.xy):1e20; vec2 scale=vec2(outSize)/vec2(motionSize); float inverseResidual0=length((a+pc.timestep*f.xy-flowP)*scale),inverseResidual1=length((z+(1.0-pc.timestep)*b.xy-flowP)*scale); bool cycleSamplesFinite=flowFinite(backAt0)&&flowFinite(forwardAt1); float inverseResidual0Valid=1.0-smoothstep(0.25,0.75,inverseResidual0), inverseResidual1Valid=1.0-smoothstep(0.25,0.75,inverseResidual1); vec2 srcA=srcP+(a-flowP)*scale,srcZ=srcP+(z-flowP)*scale; vec4 ca=colorAt(frame0,srcA); vec4 cb=colorAt(frame1,srcZ); float valid0=pointInBounds(a,motionSize)*pointInBounds(cycle0,motionSize)*(cycleSamplesFinite?inverseResidual0Valid:0.0); float valid1=pointInBounds(z,motionSize)*pointInBounds(cycle1,motionSize)*(cycleSamplesFinite?inverseResidual1Valid:0.0); float confidence0=reliability(f,cycleError0,valid0); float confidence1=reliability(b,cycleError1,valid1); bool softBlend=(pc.cfg.x&0x40000000)!=0,preserveMotionBlend=(pc.cfg.x&0x20000000)!=0; if(cycleSamplesFinite&&min(f.w,b.w)<0.30&&min(valid0,valid1)>0.90&&max(f.z,b.z)<0.025&&max(cycleError0,cycleError1)<0.75){ float trajectorySpread=max(max(length(f.xy-initialForward),length(b.xy-initialBackward)),max(length(f.xy-forwardAt1.xy),length(b.xy-backAt0.xy))); float aperture=apertureQuality(max(f.z,b.z),max(cycleError0,cycleError1),trajectorySpread,ca.rgb-cb.rgb)*smoothstep(0.90,1.0,min(valid0,valid1)); confidence0=max(confidence0,aperture*valid0); confidence1=max(confidence1,aperture*valid1); } bool oneSidedRescue=cycleSamplesFinite&&min(valid0,valid1)>0.75&&f.w>=0.20&&f.z<=0.05&&max(cycleError0,cycleError1)<1.0; float rescueQuality=0.0; if(!softBlend&&oneSidedRescue){ float rescueSpread=max(max(length(f.xy-initialForward),length(b.xy-initialBackward)),max(length(f.xy-forwardAt1.xy),length(b.xy-backAt0.xy))); rescueQuality=reliability(f,cycleError0,valid0)*apertureQuality(f.z,max(cycleError0,cycleError1),rescueSpread,ca.rgb-cb.rgb)*smoothstep(0.90,1.0,min(valid0,valid1))*smoothstep(0.30,0.75,f.w); } float confidence=softBlend?max(confidence0,confidence1):min(confidence0,confidence1); if(!softBlend) confidence=max(confidence,rescueQuality); vec4 outc; if(confidence<=0.0||(softBlend&&confidence<=0.15)){ outc=softBlend?softBlendColor(p,ca,cb,confidence,preserveMotionBlend):FLOW_RESULT(mix(texelFetch(frame0,p,0),texelFetch(frame1,p,0),pc.timestep),11,confidence,0); } else { float lumaDelta=abs(dot(ca.rgb,vec3(0.299,0.587,0.114))-dot(cb.rgb,vec3(0.299,0.587,0.114))); float colorDelta=max(max(abs(ca.r-cb.r),abs(ca.g-cb.g)),abs(ca.b-cb.b)); float chromaDelta=max(abs((ca.r-ca.g)-(cb.r-cb.g)),abs((ca.b-ca.g)-(cb.b-cb.g))); float forwardBackwardError=length(f.xy+b.xy); float region3LocalTrust=1.0; float boundaryTrust=1.0-smoothstep(0.04,0.08,lumaDelta); boundaryTrust*=1.0-smoothstep(0.08,0.12,colorDelta)*smoothstep(0.03,0.06,chromaDelta); boundaryTrust*=1.0-(1.0-smoothstep(0.04,0.08,min(f.w,b.w)))*smoothstep(0.06,0.10,colorDelta); bool chromaBoundary=colorDelta>0.12&&chromaDelta>0.06; bool boundaryConflict=lumaDelta>0.08||chromaBoundary||(min(f.w,b.w)<0.08&&colorDelta>0.10); FLOW_REASON((lumaDelta>0.08?1:0)|(chromaBoundary?2:0)|((min(f.w,b.w)<0.08&&colorDelta>0.10)?4:0)) if(boundaryTrust>0.0&&(lumaDelta>0.04||colorDelta>0.06||forwardBackwardError>2.0)){ float neighborhood0=neighborhoodQuality(a,0,f.xy),neighborhood1=neighborhoodQuality(z,1,b.xy),neighborhoodMinimum=min(neighborhood0,neighborhood1); bool neighborhoodConflict=(neighborhoodMinimum<0.30&&(lumaDelta>0.06||colorDelta>0.08))||(forwardBackwardError>3.0&&neighborhoodMinimum<0.45); float neighborhoodActivation=max(max(smoothstep(0.04,0.06,lumaDelta),smoothstep(0.06,0.08,colorDelta)),smoothstep(2.0,3.0,forwardBackwardError)); boundaryTrust*=mix(1.0,smoothstep(0.45,0.70,neighborhoodMinimum),neighborhoodActivation); region3LocalTrust=mix(1.0,smoothstep(0.30,0.75,neighborhoodMinimum),neighborhoodActivation); boundaryConflict=neighborhoodConflict; FLOW_REASON(neighborhoodConflict?8:0) } if(!softBlend) boundaryTrust*=region3LocalTrust*region3TransitionTrust(lumaDelta,colorDelta,chromaDelta,min(f.w,b.w)); if(softBlend){ vec4 fallback=softBlendColor(p,ca,cb,confidence,preserveMotionBlend); float visibility0=smoothstep(0.15,0.45,confidence0),visibility1=smoothstep(0.15,0.45,confidence1); float weight0=(1.0-pc.timestep)*visibility0,weight1=pc.timestep*visibility1,total=weight0+weight1; vec4 visibilityWarped=(ca*weight0+cb*weight1+fallback*max(0.0001-total,0.0))/max(total,0.0001); float softWarpTrust=smoothstep(0.0,0.60,confidence)*boundaryTrust; outc=FLOW_RESULT(mix(fallback,visibilityWarped,softWarpTrust),boundaryConflict?12:0,confidence,boundaryConflict?captureReason:0); } else if(boundaryConflict) outc=FLOW_RESULT(mix(texelFetch(frame0,p,0),texelFetch(frame1,p,0),pc.timestep),12,confidence,captureReason); else { vec4 warped=mix(ca,cb,pc.timestep); float warpTrust=smoothstep(0.0,0.60,confidence)*boundaryTrust; outc=warped; if(warpTrust<1.0){ vec4 sourceBlend=mix(texelFetch(frame0,p,0),texelFetch(frame1,p,0),pc.timestep); outc=mix(sourceBlend,warped,warpTrust); } outc=FLOW_RESULT(outc,0,confidence,0); } } outc.a=1.0; imageStore(outTex,p,outc); }\n";
+    "void main(){ FLOW_BEGIN ivec2 p=ivec2(gl_GlobalInvocationID.xy); ivec2 outSize=imageSize(outTex),motionSize=pc.cfg.zw; if(any(greaterThanEqual(p,outSize))) return; vec2 srcP=vec2(p),uv=(srcP+vec2(0.5))/vec2(outSize),flowP=clamp(uv*vec2(motionSize)-vec2(0.5),vec2(0.0),vec2(motionSize-1)); float cut=imageLoad(sceneTex,ivec2(0)).r; if(cut>0.1882353){ vec4 c=pc.timestep<=0.5?texelFetch(frame0,p,0):texelFetch(frame1,p,0); imageStore(outTex,p,FLOW_RESULT(c,1,0.0,0)); return; } bool pairGhost=(pc.cfg.x&0x40000000)==0&&imageLoad(sceneTex,ivec2(0)).g>0.5; if(pairGhost){ vec4 c=mix(texelFetch(frame0,p,0),texelFetch(frame1,p,0),pc.timestep); c.a=1.0; imageStore(outTex,p,FLOW_RESULT(c,11,0.0,0)); return; } { float staticLumaDelta=abs(lumaAt(flowP,0)-lumaAt(flowP,1)); if(staticLumaDelta<=0.0039216){ vec4 fastForward=flowAtBilinear(flowP,0),fastBackward=flowAtBilinear(flowP,1); if(dot(fastForward.xy,fastForward.xy)<=0.0025&&dot(fastBackward.xy,fastBackward.xy)<=0.0025){ vec4 static0=texelFetch(frame0,p,0),static1=texelFetch(frame1,p,0); float colorDelta=max(max(abs(static0.r-static1.r),abs(static0.g-static1.g)),abs(static0.b-static1.b)); bool staticPixel=colorDelta<=0.0039216; if(staticPixel){ vec4 outc=mix(static0,static1,pc.timestep); outc.a=1.0; imageStore(outTex,p,FLOW_RESULT(outc,2,1.0,0)); return; } } } } /* One continuous field for inverse iteration, final samples and cycles. */ vec4 f=flowAtBilinear(flowP,0),b=flowAtBilinear(flowP,1); if(!flowFinite(f)||!flowFinite(b)){ vec4 c=mix(texelFetch(frame0,p,0),texelFetch(frame1,p,0),pc.timestep); imageStore(outTex,p,FLOW_RESULT(c,(pc.timestep<0.5?3:4),0.0,0)); return; } vec2 initialForward=f.xy,initialBackward=b.xy; vec2 a=flowP-pc.timestep*f.xy,z=flowP-(1.0-pc.timestep)*b.xy; for(int i=0;i<2;i++){ mat2 dfA,dfZ; f=flowAtBilinearJacobian(a,0,dfA); b=flowAtBilinearJacobian(z,1,dfZ); vec2 rA=a+pc.timestep*f.xy-flowP,rZ=z+(1.0-pc.timestep)*b.xy-flowP; mat2 jA=mat2(1.0)+pc.timestep*dfA,jZ=mat2(1.0)+(1.0-pc.timestep)*dfZ; float detA=determinant(jA),detZ=determinant(jZ); bool newtonA=flowFinite(f)&&flowMatFinite(dfA)&&flowMatFinite(jA)&&!isnan(detA)&&!isinf(detA)&&detA>0.05; bool newtonZ=flowFinite(b)&&flowMatFinite(dfZ)&&flowMatFinite(jZ)&&!isnan(detZ)&&!isinf(detZ)&&detZ>0.05; vec2 dA=newtonA?inverse(jA)*rA:vec2(0.0),dZ=newtonZ?inverse(jZ)*rZ:vec2(0.0); newtonA=newtonA&&flowFinite(vec4(dA,0.0,0.0))&&all(lessThanEqual(abs(dA),vec2(4.0))); newtonZ=newtonZ&&flowFinite(vec4(dZ,0.0,0.0))&&all(lessThanEqual(abs(dZ),vec2(4.0))); a=newtonA?a-dA:flowP-pc.timestep*f.xy; z=newtonZ?z-dZ:flowP-(1.0-pc.timestep)*b.xy; } f=flowAtBilinear(a,0); b=flowAtBilinear(z,1); if(!flowFinite(f)||!flowFinite(b)||any(isnan(a))||any(isinf(a))||any(isnan(z))||any(isinf(z))){ vec4 c=mix(texelFetch(frame0,p,0),texelFetch(frame1,p,0),pc.timestep); imageStore(outTex,p,FLOW_RESULT(c,(pc.timestep<0.5?3:4),0.0,0)); return; }vec2 cycle0=a+f.xy,cycle1=z+b.xy; vec4 backAt0=flowAtBilinear(cycle0,1); vec4 forwardAt1=flowAtBilinear(cycle1,0); float cycleError0=flowFinite(backAt0)?length(f.xy+backAt0.xy):1e20; float cycleError1=flowFinite(forwardAt1)?length(b.xy+forwardAt1.xy):1e20; vec2 scale=vec2(outSize)/vec2(motionSize); float inverseResidual0=length((a+pc.timestep*f.xy-flowP)*scale),inverseResidual1=length((z+(1.0-pc.timestep)*b.xy-flowP)*scale); bool cycleSamplesFinite=flowFinite(backAt0)&&flowFinite(forwardAt1); float inverseResidual0Valid=1.0-smoothstep(0.25,0.75,inverseResidual0), inverseResidual1Valid=1.0-smoothstep(0.25,0.75,inverseResidual1); vec2 srcA=srcP+(a-flowP)*scale,srcZ=srcP+(z-flowP)*scale; vec4 ca=colorAt(frame0,srcA); vec4 cb=colorAt(frame1,srcZ); float valid0=pointInBounds(a,motionSize)*pointInBounds(cycle0,motionSize)*(cycleSamplesFinite?inverseResidual0Valid:0.0); float valid1=pointInBounds(z,motionSize)*pointInBounds(cycle1,motionSize)*(cycleSamplesFinite?inverseResidual1Valid:0.0); float confidence0=reliability(f,cycleError0,valid0); float confidence1=reliability(b,cycleError1,valid1); bool softBlend=(pc.cfg.x&0x40000000)!=0,preserveMotionBlend=(pc.cfg.x&0x20000000)!=0; if(cycleSamplesFinite&&min(f.w,b.w)<0.30&&min(valid0,valid1)>0.90&&max(f.z,b.z)<0.025&&max(cycleError0,cycleError1)<0.75){ float trajectorySpread=max(max(length(f.xy-initialForward),length(b.xy-initialBackward)),max(length(f.xy-forwardAt1.xy),length(b.xy-backAt0.xy))); float aperture=apertureQuality(max(f.z,b.z),max(cycleError0,cycleError1),trajectorySpread,ca.rgb-cb.rgb)*smoothstep(0.90,1.0,min(valid0,valid1)); confidence0=max(confidence0,aperture*valid0); confidence1=max(confidence1,aperture*valid1); } bool oneSidedRescue=cycleSamplesFinite&&min(valid0,valid1)>0.75&&f.w>=0.20&&f.z<=0.05&&max(cycleError0,cycleError1)<1.0; float rescueQuality=0.0; if(!softBlend&&oneSidedRescue){ float rescueSpread=max(max(length(f.xy-initialForward),length(b.xy-initialBackward)),max(length(f.xy-forwardAt1.xy),length(b.xy-backAt0.xy))); rescueQuality=reliability(f,cycleError0,valid0)*apertureQuality(f.z,max(cycleError0,cycleError1),rescueSpread,ca.rgb-cb.rgb)*smoothstep(0.90,1.0,min(valid0,valid1))*smoothstep(0.30,0.75,f.w); } float confidence=softBlend?max(confidence0,confidence1):min(confidence0,confidence1); if(!softBlend) confidence=max(confidence,rescueQuality); vec4 outc; if(confidence<=0.0||(softBlend&&confidence<=0.15)){ outc=softBlend?softBlendColor(p,ca,cb,confidence,preserveMotionBlend):FLOW_RESULT(mix(texelFetch(frame0,p,0),texelFetch(frame1,p,0),pc.timestep),11,confidence,0); } else { float lumaDelta=abs(dot(ca.rgb,vec3(0.299,0.587,0.114))-dot(cb.rgb,vec3(0.299,0.587,0.114))); float colorDelta=max(max(abs(ca.r-cb.r),abs(ca.g-cb.g)),abs(ca.b-cb.b)); float chromaDelta=max(abs((ca.r-ca.g)-(cb.r-cb.g)),abs((ca.b-ca.g)-(cb.b-cb.g))); float forwardBackwardError=length(f.xy+b.xy); float region3LocalTrust=1.0; float boundaryTrust=1.0-smoothstep(0.04,0.08,lumaDelta); boundaryTrust*=1.0-smoothstep(0.08,0.12,colorDelta)*smoothstep(0.03,0.06,chromaDelta); boundaryTrust*=1.0-(1.0-smoothstep(0.04,0.08,min(f.w,b.w)))*smoothstep(0.06,0.10,colorDelta); bool chromaBoundary=colorDelta>0.12&&chromaDelta>0.06; bool boundaryConflict=lumaDelta>0.08||chromaBoundary||(min(f.w,b.w)<0.08&&colorDelta>0.10); FLOW_REASON((lumaDelta>0.08?1:0)|(chromaBoundary?2:0)|((min(f.w,b.w)<0.08&&colorDelta>0.10)?4:0)) if(boundaryTrust>0.0&&(lumaDelta>0.04||colorDelta>0.06||forwardBackwardError>2.0)){ float neighborhood0=neighborhoodQuality(a,0,f.xy),neighborhood1=neighborhoodQuality(z,1,b.xy),neighborhoodMinimum=min(neighborhood0,neighborhood1); bool neighborhoodConflict=(neighborhoodMinimum<0.30&&(lumaDelta>0.06||colorDelta>0.08))||(forwardBackwardError>3.0&&neighborhoodMinimum<0.45); float neighborhoodActivation=max(max(smoothstep(0.04,0.06,lumaDelta),smoothstep(0.06,0.08,colorDelta)),smoothstep(2.0,3.0,forwardBackwardError)); boundaryTrust*=mix(1.0,smoothstep(0.45,0.70,neighborhoodMinimum),neighborhoodActivation); region3LocalTrust=mix(1.0,smoothstep(0.30,0.75,neighborhoodMinimum),neighborhoodActivation); boundaryConflict=neighborhoodConflict; FLOW_REASON(neighborhoodConflict?8:0) } if(!softBlend) boundaryTrust*=region3LocalTrust*region3TransitionTrust(lumaDelta,colorDelta,chromaDelta,min(f.w,b.w)); if(softBlend){ vec4 fallback=softBlendColor(p,ca,cb,confidence,preserveMotionBlend); float visibility0=smoothstep(0.15,0.45,confidence0),visibility1=smoothstep(0.15,0.45,confidence1); float weight0=(1.0-pc.timestep)*visibility0,weight1=pc.timestep*visibility1,total=weight0+weight1; vec4 visibilityWarped=(ca*weight0+cb*weight1+fallback*max(0.0001-total,0.0))/max(total,0.0001); float softWarpTrust=smoothstep(0.0,0.60,confidence)*boundaryTrust; outc=FLOW_RESULT(mix(fallback,visibilityWarped,softWarpTrust),boundaryConflict?12:0,confidence,boundaryConflict?captureReason:0); } else if(boundaryConflict) outc=FLOW_RESULT(mix(texelFetch(frame0,p,0),texelFetch(frame1,p,0),pc.timestep),12,confidence,captureReason); else { vec4 warped=mix(ca,cb,pc.timestep); float warpTrust=smoothstep(0.0,0.60,confidence)*boundaryTrust; outc=warped; if(warpTrust<1.0){ vec4 sourceBlend=mix(texelFetch(frame0,p,0),texelFetch(frame1,p,0),pc.timestep); outc=mix(sourceBlend,warped,warpTrust); } outc=FLOW_RESULT(outc,0,confidence,0); } } outc.a=1.0; imageStore(outTex,p,outc); }\n";
 
 static pl_pass make_pass(pl_gpu gpu, const char *glsl,
                          struct pl_desc *descs, int ndesc)
@@ -1113,6 +1182,60 @@ static bool run_pass(MPVFlowGPUContext *ctx, pl_pass pass,
     return true;
 }
 
+#if MPVFLOW_PAIR_GHOST_EXPERIMENT
+static bool analyze_pair_ghost(MPVFlowGPUContext *ctx, MPVFlowGPUPair *pair)
+{
+    /* All supported analysis dimensions <=640 give a fine grid <=160x160.
+     * Thus one 16x16 tile pass and one sum pass suffice. */
+    if (ctx->compute_api != MPVFLOW_GPU_COMPUTE_VULKAN)
+        return true;
+    struct FlowLevel *fine = &pair->level[0];
+    const int gw = (int) fine->forward->params.w;
+    const int gh = (int) fine->forward->params.h;
+    const int tw = (gw + 15) / 16, th = (gh + 15) / 16;
+    if (tw > 16 || th > 16 || !ctx->pass_pair_gate_first ||
+        !ctx->pass_pair_gate_reduce || !ctx->pass_pair_gate_merge)
+        return false;
+    pair->pair_gate[0] = create_texture(ctx, tw, th, ctx->fmt_rgba16f, false,
+                                       "pair_ghost_tile_evidence");
+    pair->pair_gate[1] = create_texture(ctx, 1, 1, ctx->fmt_rgba16f, false,
+                                       "pair_ghost_pair_evidence");
+    pl_tex merged = create_texture(ctx, 1, 1, ctx->fmt_rgba16f, false,
+                                   "pair_ghost_scene_metadata");
+    if (!pair->pair_gate[0] || !pair->pair_gate[1] || !merged) {
+        destroy_tex(ctx, &merged);
+        return false;
+    }
+    int cfg[4] = { tw, th, 0, 0 };
+    struct pl_desc_binding first[3] = {
+        { .object = fine->forward }, { .object = fine->backward },
+        { .object = pair->pair_gate[0] },
+    };
+    bool ok = run_pass(ctx, ctx->pass_pair_gate_first, first, 3, cfg, 0.0f,
+                       tw, th, "pair_ghost_gate_first");
+    cfg[0] = cfg[1] = 1;
+    struct pl_desc_binding reduce[2] = {
+        { .object = pair->pair_gate[0] }, { .object = pair->pair_gate[1] },
+    };
+    ok = ok && run_pass(ctx, ctx->pass_pair_gate_reduce, reduce, 2, cfg, 0.0f,
+                        1, 1, "pair_ghost_gate_reduce");
+    struct pl_desc_binding merge[3] = {
+        { .object = pair->scene[pair->reductions - 1] },
+        { .object = pair->pair_gate[1] }, { .object = merged },
+    };
+    ok = ok && run_pass(ctx, ctx->pass_pair_gate_merge, merge, 3, cfg, 0.0f,
+                        1, 1, "pair_ghost_scene_merge");
+    if (!ok) {
+        destroy_tex(ctx, &merged);
+        return false;
+    }
+    /* Retain both textures until pair release; no in-flight resource destruction. */
+    pair->pair_scene_original = pair->scene[pair->reductions - 1];
+    pair->scene[pair->reductions - 1] = merged;
+    return true;
+}
+#endif
+
 static bool allocate_pair_textures(MPVFlowGPUContext *ctx,
                                    MPVFlowGPUPair *pair)
 {
@@ -1214,6 +1337,9 @@ static void destroy_pair_textures(MPVFlowGPUContext *ctx,
     }
     for (int i = 0; i < FLOW_REDUCTIONS; i++)
         destroy_tex(ctx, &pair->scene[i]);
+    for (int i = 0; i < 2; i++)
+        destroy_tex(ctx, &pair->pair_gate[i]);
+    destroy_tex(ctx, &pair->pair_scene_original);
 }
 
 static enum MPVFlowOpenCLVkBridgeStatus flow_opencl_interop_probe(
@@ -1693,6 +1819,29 @@ MPVFlowGPUContext *mpvflow_gpu_create(pl_gpu gpu,
     ctx->pass_reduce_first = make_pass(gpu, shader_reduce_first, first_desc, 3);
     ctx->pass_reduce = make_pass(gpu, shader_reduce, reduce_desc, 2);
     ctx->pass_flow = make_pass(gpu, shader_flow, flow_desc, 7);
+#if MPVFLOW_PAIR_GHOST_EXPERIMENT
+    struct pl_desc gate_first_desc[] = {
+        { .name="forwardTex", .type=PL_DESC_STORAGE_IMG, .binding=0, .access=PL_DESC_ACCESS_READONLY },
+        { .name="backwardTex", .type=PL_DESC_STORAGE_IMG, .binding=1, .access=PL_DESC_ACCESS_READONLY },
+        { .name="outTex", .type=PL_DESC_STORAGE_IMG, .binding=2, .access=PL_DESC_ACCESS_WRITEONLY },
+    };
+    struct pl_desc gate_merge_desc[] = {
+        { .name="sceneTex", .type=PL_DESC_STORAGE_IMG, .binding=0, .access=PL_DESC_ACCESS_READONLY },
+        { .name="gateTex", .type=PL_DESC_STORAGE_IMG, .binding=1, .access=PL_DESC_ACCESS_READONLY },
+        { .name="outTex", .type=PL_DESC_STORAGE_IMG, .binding=2, .access=PL_DESC_ACCESS_WRITEONLY },
+    };
+    ctx->pass_pair_gate_first = make_pass(gpu, shader_pair_gate_first, gate_first_desc, 3);
+    ctx->pass_pair_gate_reduce = make_pass(gpu, shader_pair_gate_reduce, reduce_desc, 2);
+    ctx->pass_pair_gate_merge = make_pass(gpu, shader_pair_gate_merge, gate_merge_desc, 3);
+    if (!ctx->pass_pair_gate_first || !ctx->pass_pair_gate_reduce || !ctx->pass_pair_gate_merge) {
+        if (status) *status = MPVFLOW_GPU_ERROR;
+        mpvflow_gpu_destroy(ctx);
+        return NULL;
+    }
+    flow_log(gpu, PL_LOG_INFO, "MPVFLOW_DIAGNOSTIC event=pair_ghost_experiment state=enabled "
+             "marker=MPVFLOW_PAIR_GHOST_EXPERIMENT_V1 weak_min=0.55 residual_min=0.25 "
+             "backend=vulkan scope=whole_pair cpu_readback=no");
+#endif
     ctx->pass_synthesize = make_pass(gpu, shader_synthesize, synth_desc, 8);
     const unsigned int rgba16f_pass_caps = PL_FMT_CAP_STORABLE |
         PL_FMT_CAP_SAMPLEABLE | PL_FMT_CAP_LINEAR;
@@ -1852,6 +2001,9 @@ void mpvflow_gpu_destroy(MPVFlowGPUContext *ctx)
     if (ctx->pass_flow) pl_pass_destroy(ctx->gpu, &ctx->pass_flow);
     if (ctx->pass_optical_luma) pl_pass_destroy(ctx->gpu, &ctx->pass_optical_luma);
     if (ctx->pass_optical_seed) pl_pass_destroy(ctx->gpu, &ctx->pass_optical_seed);
+    if (ctx->pass_pair_gate_first) pl_pass_destroy(ctx->gpu, &ctx->pass_pair_gate_first);
+    if (ctx->pass_pair_gate_reduce) pl_pass_destroy(ctx->gpu, &ctx->pass_pair_gate_reduce);
+    if (ctx->pass_pair_gate_merge) pl_pass_destroy(ctx->gpu, &ctx->pass_pair_gate_merge);
     if (ctx->pass_synthesize) pl_pass_destroy(ctx->gpu, &ctx->pass_synthesize);
     if (ctx->pass_synthesize_rgba16f) pl_pass_destroy(ctx->gpu, &ctx->pass_synthesize_rgba16f);
     if (ctx->pass_visibility_resolver) pl_pass_destroy(ctx->gpu, &ctx->pass_visibility_resolver);
@@ -2392,6 +2544,10 @@ enum MPVFlowGPUResult mpvflow_gpu_analyze_pair(MPVFlowGPUContext *ctx,
                 goto failure;
         }
     }
+#if MPVFLOW_PAIR_GHOST_EXPERIMENT
+    if (!analyze_pair_ghost(ctx, pair))
+        goto failure;
+#endif
     if (ctx->motion_log_w != pair->w || ctx->motion_log_h != pair->h) {
         flow_log(ctx->gpu, PL_LOG_INFO,
                  "MPVFLOW_DIAGNOSTIC component=mpvflow event=motion_geometry state=ready "

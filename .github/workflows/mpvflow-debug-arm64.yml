@@ -155,6 +155,7 @@ jobs:
           [[ -n "$apk" ]] || { echo "Standard arm64 debug APK was not produced" >&2; exit 1; }
           python3 scripts/verify-media3-dca-apk.py "$apk"
           python3 scripts/verify-region3-shader-apk.py "$apk"
+          python3 scripts/verify-pair-ghost-apk.py "$apk"
       - name: Upload arm64-v8a debug APK
         uses: actions/upload-artifact@v7
         with:
@@ -162,6 +163,7 @@ jobs:
           path: |
             app/build/outputs/apk/standard/debug/*arm64-v8a-debug*.apk
             app/build/outputs/apk/standard/debug/region3-shader-verification.json
+            app/build/outputs/apk/standard/debug/pair-ghost-verification.json
           if-no-files-found: error
           retention-days: 14
           compression-level: 0

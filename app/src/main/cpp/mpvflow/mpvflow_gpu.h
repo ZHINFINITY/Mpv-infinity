@@ -27,6 +27,10 @@ typedef struct MPVFlowGPUPair MPVFlowGPUPair;
 #define MPVFLOW_GPU_MOTION_FINE_BLOCK_SIZE 4
 #define MPVFLOW_GPU_MOTION_BLOCK_SIZE 8
 #define MPVFLOW_GPU_MOTION_GRID_STEP 4
+/* Experimental whole-frame ambiguous-pair crossfade; set to 0 to disable. */
+#ifndef MPVFLOW_PAIR_GHOST_EXPERIMENT
+#define MPVFLOW_PAIR_GHOST_EXPERIMENT 1
+#endif
 
 enum MPVFlowGPUResult {
     MPVFLOW_GPU_ERROR = -1,
