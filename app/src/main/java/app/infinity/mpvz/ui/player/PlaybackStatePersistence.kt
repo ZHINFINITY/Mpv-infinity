@@ -32,6 +32,8 @@ internal data class PlaybackStateSnapshot(
   val isPositionRestorePending: Boolean = false,
   /** False when the renderer/property read was unavailable (for example after surface teardown). */
   val positionIsKnown: Boolean = true,
+  /** False when the live subtitle list could not be read and an empty value is only a placeholder. */
+  val externalSubtitlesAreKnown: Boolean = true,
 )
 
 internal object PlaybackStatePersistence {
@@ -51,7 +53,15 @@ internal object PlaybackStatePersistence {
         positionIsKnown = snapshot.positionIsKnown,
       )
     val duration = snapshot.duration
-    val timeRemaining = if (duration > lastPosition) duration - lastPosition else 0
+    val timeRemaining =
+      if (!snapshot.positionIsKnown && duration <= 0) oldState?.timeRemaining ?: 0
+      else if (duration > lastPosition) duration - lastPosition else 0
+    val externalSubtitles =
+      if (!snapshot.externalSubtitlesAreKnown && snapshot.externalSubtitles.isBlank()) {
+        oldState?.externalSubtitles.orEmpty()
+      } else {
+        snapshot.externalSubtitles
+      }
 
     return PlaybackStateEntity(
       mediaTitle = snapshot.mediaIdentifier,
@@ -67,7 +77,7 @@ internal object PlaybackStatePersistence {
       aid = snapshot.aid,
       audioDelay = snapshot.audioDelayMs,
       timeRemaining = timeRemaining,
-      externalSubtitles = snapshot.externalSubtitles,
+      externalSubtitles = externalSubtitles,
       hasBeenWatched =
         isWatched(
           oldState = oldState,
@@ -94,7 +104,7 @@ internal object PlaybackStatePersistence {
       return oldState?.lastPosition ?: currentPosition.coerceAtLeast(0)
     }
 
-    if (duration <= 0) return currentPosition.takeIf { it > 0 } ?: oldState?.lastPosition ?: 0
+    if (duration <= 0) return currentPosition.coerceAtLeast(0)
 
     return if (currentPosition < duration - 1) currentPosition.coerceAtLeast(0) else 0
   }

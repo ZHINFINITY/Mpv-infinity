@@ -15,7 +15,12 @@ class PlaybackStatePersistenceTest {
   @Test
   fun unavailablePositionKeepsLastKnownHistoryAfterTeardown() {
     val saved = entity(lastPosition = 321, externalSubtitles = "content://subs/movie.srt")
-    val snapshot = snapshot(currentPosition = 0, duration = 0, positionIsKnown = false)
+    val snapshot = snapshot(
+      currentPosition = 0,
+      duration = 0,
+      positionIsKnown = false,
+      externalSubtitlesAreKnown = false,
+    )
 
     val persisted = PlaybackStatePersistence.buildEntity(saved, snapshot, true, 80)
 
@@ -31,6 +36,63 @@ class PlaybackStatePersistenceTest {
     val persisted = PlaybackStatePersistence.buildEntity(saved, snapshot, true, 80)
 
     assertEquals(0, persisted.lastPosition)
+  }
+
+  @Test
+  fun unavailableSubtitleListKeepsOldListEvenWhenPositionIsKnown() {
+    val saved = entity(lastPosition = 321, externalSubtitles = "content://subs/movie.srt")
+    val persisted = PlaybackStatePersistence.buildEntity(
+      saved,
+      snapshot(currentPosition = 12, duration = 600, positionIsKnown = true, externalSubtitlesAreKnown = false),
+      true,
+      80,
+    )
+    assertEquals("content://subs/movie.srt", persisted.externalSubtitles)
+  }
+
+  @Test
+  fun knownEmptySubtitleListClearsOldList() {
+    val saved = entity(lastPosition = 321, externalSubtitles = "content://subs/movie.srt")
+    val persisted = PlaybackStatePersistence.buildEntity(
+      saved,
+      snapshot(currentPosition = 12, duration = 600, externalSubtitlesAreKnown = true),
+      true,
+      80,
+    )
+    assertTrue(persisted.externalSubtitles.isEmpty())
+  }
+
+  @Test
+  fun unknownNonBlankSubtitleListIsPreserved() {
+    val persisted = PlaybackStatePersistence.buildEntity(
+      entity(lastPosition = 321, externalSubtitles = "old.srt"),
+      snapshot(currentPosition = 12, duration = 600, externalSubtitles = "new.srt", externalSubtitlesAreKnown = false),
+      true,
+      80,
+    )
+    assertEquals("new.srt", persisted.externalSubtitles)
+  }
+
+  @Test
+  fun explicitSeekToZeroIsSavedWhenDurationIsUnknown() {
+    val persisted = PlaybackStatePersistence.buildEntity(
+      entity(lastPosition = 321),
+      snapshot(currentPosition = 0, duration = 0, positionIsKnown = true),
+      true,
+      80,
+    )
+    assertEquals(0, persisted.lastPosition)
+  }
+
+  @Test
+  fun unknownPositionWithoutHistoryFallsBackToNonNegativePosition() {
+    val persisted = PlaybackStatePersistence.buildEntity(
+      null,
+      snapshot(currentPosition = -4, duration = 0, positionIsKnown = false),
+      true,
+      80,
+    )
+    assertTrue(persisted.lastPosition >= 0)
   }
 
   @Test
@@ -57,6 +119,8 @@ class PlaybackStatePersistenceTest {
     currentPosition: Int,
     duration: Int,
     positionIsKnown: Boolean = true,
+    externalSubtitles: String = "",
+    externalSubtitlesAreKnown: Boolean = true,
   ) = PlaybackStateSnapshot(
     mediaIdentifier = "media:v2:test",
     mediaTitle = "movie.mkv",
@@ -72,8 +136,9 @@ class PlaybackStatePersistenceTest {
     subSpeed = 1.0,
     aid = -1,
     audioDelayMs = 0,
-    externalSubtitles = "",
+    externalSubtitles = externalSubtitles,
     positionIsKnown = positionIsKnown,
+    externalSubtitlesAreKnown = externalSubtitlesAreKnown,
   )
 
   private fun entity(lastPosition: Int, externalSubtitles: String = "") =

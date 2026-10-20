@@ -5543,16 +5543,10 @@ class PlayerActivity :
         val oldState = saveRepository.getVideoDataByTitle(snapshot.mediaIdentifier)
         Log.d(TAG, "Saving playback state for: ${snapshot.mediaTitle} (identifier: ${snapshot.mediaIdentifier})")
 
-        val snapshotToPersist =
-          if (snapshot.externalSubtitles.isBlank() && !oldState?.externalSubtitles.isNullOrBlank()) {
-            snapshot.copy(externalSubtitles = oldState.externalSubtitles.orEmpty())
-          } else {
-            snapshot
-          }
         val playbackState =
           PlaybackStatePersistence.buildEntity(
             oldState = oldState,
-            snapshot = snapshotToPersist,
+            snapshot = snapshot,
             savePositionOnQuit = savePositionOnQuit,
             watchedThreshold = watchedThreshold,
           )
@@ -5632,6 +5626,7 @@ class PlayerActivity :
           PlaybackSession.isPositionRestorePending(PlaybackSession.state.value.activeGeneration)
         },
       positionIsKnown = nativeEngineActive || mpvPosition != null,
+      externalSubtitlesAreKnown = nativeEngineActive || mpvPosition != null,
       playbackSpeed = PlaybackSession.getPropertyDouble("speed") ?: DEFAULT_PLAYBACK_SPEED,
       videoZoom = PlaybackSession.getPropertyDouble("video-zoom")?.toFloat() ?: viewModel.videoZoom.value,
       videoAspect = viewModel.videoAspect.value.name,

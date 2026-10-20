@@ -1812,16 +1812,10 @@ class MediaPlaybackService :
 
     runCatching {
       val oldState = playbackStateRepository.getVideoDataByTitle(identifier)
-      val snapshot =
-        if (capturedSnapshot.externalSubtitles.isBlank() && !oldState?.externalSubtitles.isNullOrBlank()) {
-          capturedSnapshot.copy(externalSubtitles = oldState.externalSubtitles.orEmpty())
-        } else {
-          capturedSnapshot
-        }
       val playbackState =
         PlaybackStatePersistence.buildEntity(
           oldState = oldState,
-          snapshot = snapshot,
+          snapshot = capturedSnapshot,
           savePositionOnQuit = playerPreferences.savePositionOnQuit.get(),
           watchedThreshold = browserPreferences.watchedThreshold.get(),
         )
@@ -1841,6 +1835,8 @@ class MediaPlaybackService :
     oldState: PlaybackStateEntity?,
   ): PlaybackStateSnapshot? {
     if (identifier.isBlank()) return null
+
+    val mpvPosition = readMpvIntSecondsOrNull("time-pos")
 
     return PlaybackStateSnapshot(
       mediaIdentifier = identifier,
@@ -1873,6 +1869,7 @@ class MediaPlaybackService :
           ) * PLAYBACK_STATE_MILLISECONDS_TO_SECONDS
         ).toInt(),
       externalSubtitles = oldState?.externalSubtitles.orEmpty(),
+      externalSubtitlesAreKnown = false,
     )
   }
 
