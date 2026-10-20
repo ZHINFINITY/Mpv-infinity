@@ -85,6 +85,7 @@ import app.infinity.mpvz.utils.media.ChecksumUtils
 import app.infinity.mpvz.utils.media.MediaInfoParser
 import app.infinity.mpvz.utils.media.ParsedMediaInfo
 import app.infinity.mpvz.utils.media.SubtitleHashUtils
+import app.infinity.mpvz.utils.media.SubtitleFilenameMatcher
 import app.infinity.mpvz.utils.media.fileExtension
 import dev.vivvvek.seeker.Segment
 import app.infinity.mpvz.utils.media.resolveSubtitleLookupDirectories
@@ -3323,12 +3324,31 @@ class PlayerViewModel : ViewModel(),
         // Use seenUris so the same file found via multiple folder name variants isn't double-added
         val seenUris = mutableSetOf<String>()
         parentDirs.forEach { parentDir ->
+          // Downsub-style downloads are commonly saved directly in the selected
+          // folder, rather than in the per-video lookup folder.
+          parentDir.listFiles().forEach { file ->
+            val uriStr = file.uri.toString()
+            if (
+              file.isFile &&
+                isValidSubtitleFile(file.name ?: "") &&
+                SubtitleFilenameMatcher.matches(file.name ?: "", fullTitle) &&
+                seenUris.add(uriStr)
+            ) {
+              addSubtitle(file.uri, select = false, silent = true)
+              addedCount++
+            }
+          }
           listOf(checksumTitle, fullTitle, sanitizedTitle).distinct().forEach { folderName ->
             val movieDir = parentDir.findFile(folderName) ?: return@forEach
             if (movieDir.isDirectory) {
               movieDir.listFiles().forEach { file ->
                 val uriStr = file.uri.toString()
-                if (file.isFile && isValidSubtitleFile(file.name ?: "") && seenUris.add(uriStr)) {
+                if (
+                  file.isFile &&
+                    isValidSubtitleFile(file.name ?: "") &&
+                    SubtitleFilenameMatcher.matches(file.name ?: "", fullTitle) &&
+                    seenUris.add(uriStr)
+                ) {
                   // Don't auto-select during scan, just make available.
                   addSubtitle(file.uri, select = false, silent = true)
                   addedCount++
