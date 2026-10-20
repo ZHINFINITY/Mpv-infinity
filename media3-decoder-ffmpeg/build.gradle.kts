@@ -70,6 +70,14 @@ android {
     }
   }
 
+  // The app has a preview build type; use the release settings for this library
+  // so its preview compile classpath has a matching project variant.
+  buildTypes {
+    create("preview") {
+      initWith(getByName("release"))
+    }
+  }
+
   buildFeatures {
     buildConfig = false
   }
