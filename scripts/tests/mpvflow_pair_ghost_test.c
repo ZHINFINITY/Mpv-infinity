@@ -22,5 +22,61 @@ static void init(Ctx*c){VkApplicationInfo ai={VK_STRUCTURE_TYPE_APPLICATION_INFO
 static VkShaderModule sm(Ctx*c,const char*path){FILE*f=fopen(path,"rb");if(!f){perror(path);exit(2);}fseek(f,0,SEEK_END);long n=ftell(f);rewind(f);uint32_t*p=malloc(n);fread(p,1,n,f);fclose(f);VkShaderModuleCreateInfo z={VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,0,0,(size_t)n,p};VkShaderModule s;CK(vkCreateShaderModule(c->d,&z,0,&s));free(p);return s;}
 static void pass(Ctx*c,const char*path,Img*a,Img*b,Img*out,int ow,int oh){VkShaderModule s=sm(c,path);VkComputePipelineCreateInfo pi={VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO,0,0,{VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,0,0,VK_SHADER_STAGE_COMPUTE_BIT,s,"main",0},c->pl};VkPipeline p;CK(vkCreateComputePipelines(c->d,0,1,&pi,0,&p));VkDescriptorSet ds;VkDescriptorSetAllocateInfo da={VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,0,c->dp,1,&c->dl};CK(vkAllocateDescriptorSets(c->d,&da,&ds));VkDescriptorImageInfo ii[3]={{0,a->v,VK_IMAGE_LAYOUT_GENERAL},{0,(b?b:out)->v,VK_IMAGE_LAYOUT_GENERAL},{0,out->v,VK_IMAGE_LAYOUT_GENERAL}};VkWriteDescriptorSet w[3];for(int i=0;i<3;i++)w[i]=(VkWriteDescriptorSet){VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,0,ds,i,0,1,VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,&ii[i],0,0};vkUpdateDescriptorSets(c->d,3,w,0,0);VkCommandBufferAllocateInfo ca={VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,0,c->cp,VK_COMMAND_BUFFER_LEVEL_PRIMARY,1};VkCommandBuffer x;CK(vkAllocateCommandBuffers(c->d,&ca,&x));VkCommandBufferBeginInfo cb={VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,0,VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT,0};CK(vkBeginCommandBuffer(x,&cb));VkImageMemoryBarrier mb[3];uint32_t nm=0;Img*in[2]={a,b};for(int i=0;i<2;i++)if(in[i])mb[nm++]=(VkImageMemoryBarrier){VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,0,VK_ACCESS_SHADER_WRITE_BIT,VK_ACCESS_SHADER_READ_BIT|VK_ACCESS_SHADER_WRITE_BIT,VK_IMAGE_LAYOUT_GENERAL,VK_IMAGE_LAYOUT_GENERAL,VK_QUEUE_FAMILY_IGNORED,VK_QUEUE_FAMILY_IGNORED,in[i]->i,{VK_IMAGE_ASPECT_COLOR_BIT,0,1,0,1}};mb[nm++]=(VkImageMemoryBarrier){VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,0,0,VK_ACCESS_SHADER_WRITE_BIT,VK_IMAGE_LAYOUT_UNDEFINED,VK_IMAGE_LAYOUT_GENERAL,VK_QUEUE_FAMILY_IGNORED,VK_QUEUE_FAMILY_IGNORED,out->i,{VK_IMAGE_ASPECT_COLOR_BIT,0,1,0,1}};vkCmdPipelineBarrier(x,VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT|VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,0,0,0,0,0,nm,mb);vkCmdBindPipeline(x,VK_PIPELINE_BIND_POINT_COMPUTE,p);vkCmdBindDescriptorSets(x,VK_PIPELINE_BIND_POINT_COMPUTE,c->pl,0,1,&ds,0,0);int pc[5]={ow,oh,0,0};vkCmdPushConstants(x,c->pl,VK_SHADER_STAGE_COMPUTE_BIT,0,20,pc);vkCmdDispatch(x,(ow+7)/8,(oh+7)/8,1);CK(vkEndCommandBuffer(x));VkSubmitInfo su={VK_STRUCTURE_TYPE_SUBMIT_INFO,0,0,0,0,1,&x,0,0};CK(vkQueueSubmit(c->q,1,&su,0));CK(vkQueueWaitIdle(c->q));vkFreeCommandBuffers(c->d,c->cp,1,&x);vkDestroyPipeline(c->d,p,0);vkDestroyShaderModule(c->d,s,0);}
 static void destroy_img(Ctx*c,Img*a){vkDestroyImageView(c->d,a->v,0);vkDestroyImage(c->d,a->i,0);vkFreeMemory(c->d,a->m,0);}
-static int run(Ctx*c,const char*a,const char*b,const char*m,int w,int h,int mode){int n=w*h;uint16_t*F=calloc((size_t)n*8,2);int k=(mode==0||mode==9)?(n*70/100):(mode==1? n*54/100:(mode==2?n:n*70/100));int bad=(mode==0||mode==9)?n*35/100:(mode==10?n*26/100:(mode==1?n*35/100:n*24/100));if(mode==11){k=(n*56+50)/100;bad=(n*26+50)/100;}for(int dir=0;dir<2;dir++)for(int i=0;i<n;i++){int weak=i<k,b=(i<bad);if(mode==9)b=dir?i>=n-bad:i<bad;if(mode==6&&dir)b=i< n*35/100,weak=i<n*54/100;if(mode==7)weak=i<n/10,b=0;if(mode==2)weak=i<n,b=0;if(mode==3)weak=i<n*70/100,b=i<n*24/100;if(mode==4&&i==0)F[(dir*n+i)*4]=hf(NAN);if(mode==5&&dir==1&&i==0)F[(dir*n+i)*4]=hf(INFINITY);if(!(mode==4&&i==0)||dir)F[(dir*n+i)*4+2]=hf(b?.05f:(weak?.0f:0.f));F[(dir*n+i)*4+3]=hf(weak&&!b?0.f:.1f);}Img f=image(c,w,h),bb=image(c,w,h);int tw=(w+15)/16,th=(h+15)/16,rw=(tw+15)/16,rh=(th+15)/16;Img t=image(c,tw,th),g=image(c,rw,rh),scene=image(c,1,1),out=image(c,1,1);uint16_t sc[4]={hf(mode==8?.25f:.1f),0,0,0};copy_to(c,&f,F,n*4*2);copy_to(c,&bb,F+n*4,n*4*2);copy_to(c,&scene,sc,8);pass(c,a,&f,&bb,&t,tw,th);pass(c,b,&t,0,&g,rw,rh);pass(c,m,&scene,&g,&out,1,1);uint16_t O[4];readback(c,&out,O,8);float ghost=fh(O[1]);int want=(mode==0||mode==9||mode==10||mode==11);if(O[0]!=sc[0]||(ghost>.5f)!=want){fprintf(stderr,"fixture %dx%d mode%d expected%d got%.3f scene=%04x/%04x\n",w,h,mode,want,ghost,O[0],sc[0]);return 1;}destroy_img(c,&out);destroy_img(c,&scene);destroy_img(c,&g);destroy_img(c,&t);destroy_img(c,&bb);destroy_img(c,&f);free(F);CK(vkResetDescriptorPool(c->d,c->dp,0));return 0;}
-int main(int ac,char**av){if(ac!=4){fprintf(stderr,"usage: %s first.spv reduce.spv merge.spv\n",av[0]);return 2;}Ctx c={0};init(&c);int dims[][2]={{104,59},{128,72},{160,160},{17,19}};for(int i=0;i<4;i++)for(int k=0;k<12;k++)if(run(&c,av[1],av[2],av[3],dims[i][0],dims[i][1],k))return 1;printf("Vulkan pair-gate fixtures passed: 4 grids x 12 exact controls\n");return 0;}
+/* V2 review policy intentionally changes old modes 1/3/6 to coherent ghosts.
+ * Preserve their input evidence; add localized and one-sided negative controls. */
+static int run(Ctx*c,const char*a,const char*b,const char*m,int w,int h,int mode){
+ int n=w*h;
+ uint16_t*F=calloc((size_t)n*8,2);
+ int k=(mode==0||mode==9)?(n*70/100):(mode==1?n*54/100:(mode==2?n:n*70/100));
+ int bad=(mode==0||mode==9)?n*35/100:(mode==10?n*26/100:(mode==1?n*35/100:n*24/100));
+ if(mode==11){k=(n*56+50)/100;bad=(n*26+50)/100;}
+ float expected_weak[2]={0},expected_bad[2]={0};
+ for(int dir=0;dir<2;dir++)for(int i=0;i<n;i++){
+  int weak=i<k,badcell=i<bad;
+  if(mode==9)badcell=dir?i>=n-bad:i<bad;
+  if(mode==6&&dir)badcell=i<n*35/100,weak=i<n*54/100;
+  if(mode==7)weak=i<n/10,badcell=0;
+  if(mode==2)weak=1,badcell=0;
+  if(mode==3)weak=i<n*70/100,badcell=i<n*24/100;
+  if(mode>=12){
+   int kw=n*12/100,kb=n*2/100;
+   if(mode==13)kw=n*9/100;
+   if(mode==14)kb=n*5/1000;
+   if(mode==15&&dir)kw=n*9/100;
+   if(mode==16&&dir)kb=n*5/1000;
+   if(mode==17){kw=n*12/100;kb=n*2/100;}
+   if(mode==18){kw=n*105/1000;kb=n*15/1000;}
+   if(mode==19){kw=n*95/1000;kb=n*15/1000;}
+   if(mode==20){kw=n*105/1000;kb=n*75/10000;}
+   if(mode==22){kw=0;kb=0;}
+   if(mode==23){kw=n;kb=n;}
+   if(mode==24){kw=n;kb=0;}
+   if(mode==25&&dir){kw=0;kb=0;}
+   weak=i<kw;badcell=i<kb;
+   if(mode==17&&dir)weak=i>=n-kw,badcell=i>=n-kb;
+  }
+  if(mode==4&&i==0)F[(dir*n+i)*4]=hf(NAN);
+  if(mode==5&&dir==1&&i==0)F[(dir*n+i)*4]=hf(INFINITY);
+  F[(dir*n+i)*4+2]=hf(badcell?.05f:0.f);
+  F[(dir*n+i)*4+3]=hf(weak&&!badcell?0.f:.1f);
+  expected_weak[dir]+=weak||badcell;
+  expected_bad[dir]+=badcell;
+ }
+ Img f=image(c,w,h),bb=image(c,w,h);
+ int tw=(w+15)/16,th=(h+15)/16,rw=(tw+15)/16,rh=(th+15)/16;
+ Img t=image(c,tw,th),g=image(c,rw,rh),scene=image(c,1,1),out=image(c,1,1);
+ float scene_delta=(mode==8?.25f:((mode==21||mode==23)?.19f:(mode==22||mode==24?0.f:.1f)));
+ uint16_t sc[4]={hf(scene_delta),0,0,0};
+ copy_to(c,&f,F,n*4*2);copy_to(c,&bb,F+n*4,n*4*2);copy_to(c,&scene,sc,8);
+ pass(c,a,&f,&bb,&t,tw,th);pass(c,b,&t,0,&g,rw,rh);pass(c,m,&scene,&g,&out,1,1);
+ uint16_t O[4];readback(c,&out,O,8);float ghost=fh(O[1]);
+ int want=(mode==0||mode==1||mode==3||mode==6||mode==9||mode==10||mode==11||mode==12||mode==17||mode==18);
+ float ew=fminf(expected_weak[0],expected_weak[1])/n,eb=fminf(expected_bad[0],expected_bad[1])/n;
+ if(mode==4||mode==5)ew=eb=0;
+ if(O[0]!=sc[0]||(ghost>.5f)!=want||fabsf(fh(O[2])-ew)>.004f||fabsf(fh(O[3])-eb)>.004f){
+  fprintf(stderr,"fixture %dx%d mode%d expected%d got%.3f scene=%04x/%04x weak=%.5f/%.5f bad=%.5f/%.5f\n",w,h,mode,want,ghost,O[0],sc[0],fh(O[2]),ew,fh(O[3]),eb);return 1;
+ }
+ destroy_img(c,&out);destroy_img(c,&scene);destroy_img(c,&g);destroy_img(c,&t);destroy_img(c,&bb);destroy_img(c,&f);free(F);
+ CK(vkResetDescriptorPool(c->d,c->dp,0));return 0;
+}
+int main(int ac,char**av){if(ac!=4){fprintf(stderr,"usage: %s first.spv reduce.spv merge.spv\n",av[0]);return 2;}Ctx c={0};init(&c);int dims[][2]={{104,59},{128,72},{160,160},{17,19}};for(int i=0;i<4;i++)for(int k=0;k<26;k++)if(run(&c,av[1],av[2],av[3],dims[i][0],dims[i][1],k))return 1;printf("Vulkan pair-gate fixtures passed: 4 grids x 26 exact inclusive/protected controls\n");return 0;}

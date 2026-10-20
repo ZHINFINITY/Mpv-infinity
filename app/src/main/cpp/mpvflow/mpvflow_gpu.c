@@ -905,7 +905,7 @@ static const char shader_flow[] =
  * quality/resolution/FPS change, or Soft Blend setting change is introduced. */
 static const char shader_pair_gate_first[] =
     "#version 450\n"
-    "// MPVFLOW_PAIR_GHOST_EXPERIMENT_V1: normalized fine-grid evidence, not pixel masks.\n"
+    "// MPVFLOW_PAIR_GHOST_INCLUSIVE_V2: normalized fine-grid evidence, not pixel masks.\n"
     "layout(set=0,binding=0,rgba16f) readonly uniform image2D forwardTex;\n"
     "layout(set=0,binding=1,rgba16f) readonly uniform image2D backwardTex;\n"
     "layout(set=0,binding=2,rgba16f) writeonly uniform image2D outTex;\n"
@@ -954,7 +954,9 @@ static const char shader_pair_gate_merge[] =
     " vec4 scene=imageLoad(sceneTex,ivec2(0)),g=imageLoad(gateTex,ivec2(0));\n"
     " bool valid=!any(isnan(g))&&!any(isinf(g))&&all(greaterThanEqual(g,vec4(0.0)))&&all(lessThanEqual(g,vec4(1.01)));\n"
     " float weak=valid?min(g.r,g.g):0.0,bad=valid?min(g.b,g.a):0.0;\n"
-    " bool ghost=valid&&scene.r<=.1882353&&weak>=.55&&bad>=.25;\n"
+    " // Review-only inclusive policy: coherent ghosts may replace valid pans.\n"
+    " // Require bilateral ambiguity AND bilateral residuals; flat/static pairs stay exact.\n"
+    " bool ghost=valid&&scene.r<=.1882353&&weak>=.10&&bad>=.01;\n"
     " imageStore(outTex,p,vec4(scene.r,ghost?1.:0.,weak,bad));\n"
     "}\n"
 ;
@@ -1839,7 +1841,7 @@ MPVFlowGPUContext *mpvflow_gpu_create(pl_gpu gpu,
         return NULL;
     }
     flow_log(gpu, PL_LOG_INFO, "MPVFLOW_DIAGNOSTIC event=pair_ghost_experiment state=enabled "
-             "marker=MPVFLOW_PAIR_GHOST_EXPERIMENT_V1 weak_min=0.55 residual_min=0.25 "
+             "marker=MPVFLOW_PAIR_GHOST_INCLUSIVE_V2 weak_min=0.10 residual_min=0.01 "
              "backend=vulkan scope=whole_pair cpu_readback=no");
 #endif
     ctx->pass_synthesize = make_pass(gpu, shader_synthesize, synth_desc, 8);
