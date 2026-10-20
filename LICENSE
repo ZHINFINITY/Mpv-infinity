@@ -1,91 +1,165 @@
-# Mpv∞ Next-Version License
+# Mpv∞ Permission-Only Terms 1.0
 
-## Scope and prior releases
+Copyright (c) 2026 ZHINFINITY, for original material owned by ZHINFINITY.
+All rights reserved, subject to the exceptions below.
 
-This scope statement is repository-specific context and does not modify the PolyForm terms below.
+These are custom, project-specific terms, not the PolyForm licence or an
+OSI-approved open-source licence. They apply to covered source versions at the
+effective boundary recorded in LICENSE-BOUNDARY.md and to the upcoming release
+containing them. They have not been approved by legal counsel.
 
-For the unreleased next version, this license applies only to **Mpv∞ Covered Code**: original Mpv∞ code and modifications controlled by ZHINFINITY, plus mpvRx-derived portions for which the relevant rights holders have authorized use and relicensing for this version. In source files, `SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0` identifies Covered Code.
+## 1. Covered material and ownership
 
-This license does **not** cover third-party code, libraries, dependencies, generated or bundled assets, or any material carrying a separate copyright or license notice. Those materials remain under their own terms. In particular, MIT-, BSD-, and Apache-licensed components remain independently reusable under their original licenses, subject to those licenses' conditions and notice requirements. Nothing here claims ownership of, changes, or restricts the rights granted in those components. Preserve and comply with the notices and license texts in `THIRD_PARTY_LICENSES/` and in component-specific directories.
+"Covered Material" means all copyrightable project code, documentation, and
+other project material in the covered Mpv∞ source version and upcoming release identified under
+LICENSE-BOUNDARY.md that ZHINFINITY owns or has express authority from the
+relevant rights holders to offer under these exact terms. It includes owned
+or expressly authorized frame-interpolation code and feature updates carried
+forward unchanged from earlier snapshots, as well as additions and changes.
+Coverage is not limited to material newly written after a particular commit.
+An authorization is effective only within its actual scope; repository control,
+a copyright header, or permission to use a different licence does not establish
+ownership or authority to offer these terms.
 
-This change applies prospectively to the unreleased next version only. It does not amend or revoke any terms under which a prior version was published. Previously released AGPL-3.0-or-later versions remain available under their original terms; the AGPL text from the previous root `LICENSE` is preserved in [`HISTORICAL-LICENSE-AGPL-3.0-or-later.txt`](HISTORICAL-LICENSE-AGPL-3.0-or-later.txt) for reference.
+Third-party and upstream components, dependencies, bundled libraries, assets,
+and contributions owned by others remain under their applicable licences and
+notices. They are not included merely because they appear in this release or
+are combined with Covered Material. Any separate offer under these terms for
+another rights holder's project contribution requires documented express
+authority for that particular material and these terms; it does not remove
+that holder's original notices or independently applicable grants. Unresolved
+ownership or authority is not a basis for claiming coverage. In mixed files,
+these terms apply only to the portions ZHINFINITY owns or is expressly
+authorized to license this way, not automatically to the whole file.
 
-The PolyForm terms below permit only the purposes allowed by that license. Any use of Covered Code outside those permitted purposes requires separate permission from the applicable rights holder.
+This is the licence offer for Covered Material in the covered source version
+and upcoming release, not a claim that previously licensed code becomes exclusively
+permission-only. Earlier grants, including grants for unchanged code carried
+into this release, remain available as explained in section 4.
+See THIRD_PARTY_SOURCE.md and LICENSE-BOUNDARY.md for the inventory and gaps.
 
-Required Notice: Copyright (c) 2026 ZHINFINITY. Mpv∞ Covered Code.
+## 2. App use is permitted; code reuse and republication require permission
 
----
+### 2.1 Permission for everyone to use official app releases
 
-# PolyForm Noncommercial License 1.0.0
+ZHINFINITY grants everyone a nonexclusive, worldwide, royalty-free permission
+to download, install, update, and run official, unmodified Mpv∞ app releases
+distributed by ZHINFINITY or an expressly authorized distributor, on devices
+they own or are authorized to use. This includes the copies reasonably
+necessary to install, operate, update, and back up the app for their own use.
+Ordinary app use is permitted for personal, educational, organizational, and
+commercial purposes. No individual permission request is required for these
+activities. These terms do not restrict media or data merely used with the app.
 
-<https://polyformproject.org/licenses/noncommercial/1.0.0>
+This end-user permission is for using the app, not for reusing its source code,
+making derivative apps, sharing copies with others, rehosting APKs, or publishing
+the app or a modified version in an app store or elsewhere. Sharing a link to
+an official download is allowed; redistributing the app itself is not granted
+by this section. Sections 4 and 5 preserve independently applicable rights.
 
-## Acceptance
+### 2.2 Prior written permission for code reuse and republication
 
-In order to get any license under these terms, you must agree to them as both strict obligations and conditions to all your licenses.
+Except for section 2.1 and the rights preserved in sections 4 and 5, no licence
+is granted to copy, reproduce, modify, adapt, create derivative works from,
+reuse, redistribute, sublicense, sell, monetize, publish, upload, or otherwise
+make available any Covered Material, in whole or in part, in source or binary
+form. Each such activity requires prior written permission from ZHINFINITY.
 
-## Copyright License
+This requirement applies to commercial and noncommercial activities alike,
+including copying source code for private projects, reposting, app-store
+publication, advertising-supported distribution, and incorporation into another
+project. Public access, attribution, absence of a fee, or a failure to respond
+to a request is not permission. The app-use grant in section 2.1 does not grant
+general source-code reuse or republication rights.
 
-The licensor grants you a copyright license for the software to do everything you might do with the software that would otherwise infringe the licensor's copyright in it for any permitted purpose.  However, you may only distribute the software according to [Distribution License](#distribution-license) and make changes or new works based on the software according to [Changes and New Works License](#changes-and-new-works-license).
+Any permission must expressly identify the material and authorized activities
+and their scope; section 2.1 itself provides that permission for ordinary app
+use. Section 5 acknowledges GitHub platform rights without a separate request.
+No permission grants rights outside its scope or rights owned by others.
+No separate patent, trademark, branding, or endorsement rights are granted by
+these terms beyond any rights necessarily implied by the express app-use grant.
 
-## Distribution License
+## 3. Attribution and no false authorship
 
-The licensor grants you an additional copyright license to distribute copies of the software.  Your license to distribute covers distributing the software with changes and new works permitted by [Changes and New Works License](#changes-and-new-works-license).
+Any use authorized under these terms must preserve applicable copyright,
+author, licence, and third-party notices, and identify modifications and their
+authors without presenting the original work as their own. You must not falsely
+claim to be the original creator or author of material created by others, or
+suggest that ZHINFINITY endorses your version without written authorization.
+Attribution does not replace the permission required by section 2. These
+conditions do not purport to impose new restrictions on previously licensed
+material or independently licensed third-party material.
+Ordinary app users do not need to publish a separate attribution statement;
+leaving the app's built-in notices intact satisfies this section for their use.
 
-## Notices
+## 4. Earlier grants and third-party rights are preserved
 
-You must ensure that anyone who gets a copy of any part of the software from you also gets a copy of these terms or the URL for them above, as well as copies of any plain-text lines beginning with `Required Notice:` that the licensor provided with the software.  For example:
+These terms do not withdraw, narrow, replace, or amend licences or permissions
+already granted for earlier snapshots or for material contained in them.
+Recipients may continue to exercise those rights subject to their original
+conditions, including rights in material carried forward unchanged into a new
+snapshot. Previously published AGPL-3.0-or-later and PolyForm Noncommercial
+versions retain their respective terms. The exact root licence of baseline
+commit 7015805f6831cbf8a9fc2e6d5dd5c70af209b638 is retained in
+HISTORICAL-LICENSE-POLYFORM-BASELINE.md; the prior AGPL text is retained in
+HISTORICAL-LICENSE-AGPL-3.0-or-later.txt. Historical copies are references, not
+new blanket grants for later Covered Material.
 
-> Required Notice: Copyright Yoyodyne, Inc. (http://example.com)
+Earlier grants are not limited to people who already made a fork or local copy.
+Anyone entitled to rely on an earlier licence may continue to do so, including
+where that licence permits obtaining copies from other recipients. A person
+exercising such rights must satisfy that licence, but need not obtain separate
+permission under these terms for acts it already permits. Conversely, an older
+licence does not automatically license later additions it never covered.
 
-## Changes and New Works License
+All independently applicable third-party licences remain effective, including
+MIT, BSD, Apache, LGPL, MPL, PSF, and OFL terms. In particular, nothing here
+restricts modification, replacement, relinking, or reverse engineering for
+debugging modifications to LGPL-covered components where required by their
+licences, or any associated access to required source or relinkable material.
+These terms cannot substitute for compliance with those obligations.
 
-The licensor grants you an additional copyright license to make changes and new works based on the software for any permitted purpose.
+To the extent required by the applicable LGPL or other upstream licence,
+changes to covered upstream library files remain available under that licence,
+including ZHINFINITY-authored changes. Exercising those upstream licence rights
+does not require separate permission under these custom terms.
 
-## Patent License
+## 5. Law and hosting-platform rights
 
-The licensor grants you a patent license for the software that covers patent claims the licensor can license, or becomes able to license, that you would infringe by using the software.
+Nothing here restricts rights that applicable law makes available independently
+of permission, including applicable copyright exceptions. Nothing here limits
+rights already granted under the terms of the hosting platform, including
+GitHub's rights to host the repository and its users' rights to view and fork a
+public repository through GitHub's functionality. GitHub's built-in public-
+repository viewing and forking, including a fork under a user's own GitHub
+account, are expressly acceptable to ZHINFINITY; no separate permission request
+is needed for those platform-authorized activities. This acknowledges platform
+rights, not a separate general source-reuse or publication licence. A public
+fork may itself be visible on GitHub; its existence is not permission to
+repackage or publish the code or app elsewhere. Those platform rights do not
+by themselves authorize external publication, APK rehosting, app-store release,
+or reuse outside their scope. Sections 2.1 and 4 and other independent rights
+continue to apply. These terms cannot technically prevent copying or infringement.
 
-## Noncommercial Purposes
+## 6. Permission requests
 
-Any noncommercial purpose is a permitted purpose.
+No request is needed for the ordinary app use expressly allowed by section 2.1.
+No request is needed for GitHub viewing/forking within section 5 or for an
+activity authorized by the preserved rights in sections 4 and 5.
+For activities requiring separate permission under section 2.2, follow this
+request process:
 
-## Personal Uses
+Contact the repository owner, ZHINFINITY, through the contact channels listed
+at https://github.com/ZHINFINITY. Identify the exact source revision or files,
+your intended activities, how and where you will distribute them, and whether
+you intend commercial use or monetization. Do not include private information
+in a public issue. Wait for an express written grant before proceeding.
 
-Personal use for research, experiment, and testing for the benefit of public knowledge, personal study, private entertainment, hobby projects, amateur pursuits, or religious observance, without any anticipated commercial application, is use for a permitted purpose.
+## 7. No warranty or liability
 
-## Noncommercial Organizations
-
-Use by any charitable organization, educational institution, public research organization, public safety or health organization, environmental protection organization, or government institution is use for a permitted purpose regardless of the source of funding or obligations resulting from the funding.
-
-## Fair Use
-
-You may have "fair use" rights for the software under the law. These terms do not limit them.
-
-## No Other Rights
-
-These terms do not allow you to sublicense or transfer any of your licenses to anyone else, or prevent the licensor from granting licenses to anyone else.  These terms do not imply any other licenses.
-
-## Patent Defense
-
-If you make any written claim that the software infringes or contributes to infringement of any patent, your patent license for the software granted under these terms ends immediately. If your company makes such a claim, your patent license ends immediately for work on behalf of your company.
-
-## Violations
-
-The first time you are notified in writing that you have violated any of these terms, or done anything with the software not covered by your licenses, your licenses can nonetheless continue if you come into full compliance with these terms, and take practical steps to correct past violations, within 32 days of receiving notice.  Otherwise, all your licenses end immediately.
-
-## No Liability
-
-***As far as the law allows, the software comes as is, without any warranty or condition, and the licensor will not be liable to you for any damages arising out of these terms or the use or nature of the software, under any kind of legal claim.***
-
-## Definitions
-
-The **licensor** is the individual or entity offering these terms, and the **software** is the software the licensor makes available under these terms.
-
-**You** refers to the individual or entity agreeing to these terms.
-
-**Your company** is any legal entity, sole proprietorship, or other kind of organization that you work for, plus all organizations that have control over, are under the control of, or are under common control with that organization.  **Control** means ownership of substantially all the assets of an entity, or the power to direct its management and policies by vote, contract, or otherwise.  Control can be direct or indirect.
-
-**Your licenses** are all the licenses granted to you for the software under these terms.
-
-**Use** means anything you do with the software requiring one of your licenses.
+To the maximum extent permitted by applicable law, the Covered Material is
+provided "AS IS", without warranties of any kind, express or implied, including
+merchantability, fitness for a particular purpose, and noninfringement. To that
+extent, the rights holder is not liable for claims, damages, or other liability
+arising from the Covered Material or its use. Nothing excludes liability or
+other rights that applicable law does not permit to be excluded.
