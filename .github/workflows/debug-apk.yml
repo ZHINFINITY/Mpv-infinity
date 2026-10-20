@@ -33,25 +33,22 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - name: Verify combined non-UI test candidate
+      - name: Verify combined radio and UI phone-test candidate
         run: |
           set -euo pipefail
           for required in \
             1e380270d4ef44549c0be40f168e859c9d8bb49c \
             05c0a8acc0ffc0645b5d06b3df1798674b134160 \
             cbe0f78475dbf34c2e24508a3e56b1cf002823f3 \
-            a3f4a61ff8af33aed7105686f9f450a4e4ce91c7; do
+            a3f4a61ff8af33aed7105686f9f450a4e4ce91c7 \
+            6dee37881ebff6958e384e5c9e20f5516c8b2196; do
             git merge-base --is-ancestor "$required" HEAD
           done
           git diff --exit-code 1e380270d4ef44549c0be40f168e859c9d8bb49c HEAD -- \
-            app/src/main/java/app/infinity/mpvz/ui/browser \
-            app/src/main/java/app/infinity/mpvz/ui/preferences \
-            app/src/main/java/app/infinity/mpvz/ui/player/NativeStatsDisplay.kt \
-            app/src/main/java/app/infinity/mpvz/preferences app/src/main/res \
             app/src/main/cpp scripts/build-mpvflow-mpv-runtime.sh \
             scripts/prepare-mpvflow.py scripts/patch-ffmpeg-symver.py \
             THIRD_PARTY_LICENSES app/src/main/assets/mpv/licenses
-          echo "Verified combined non-UI test candidate: $(git rev-parse HEAD)"
+          echo "Verified combined radio/UI candidate with unchanged interpolation runtime: $(git rev-parse HEAD)"
       - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:
@@ -169,14 +166,16 @@ jobs:
         run: python3 scripts/tests/download_validator_migration_test.py
       - name: Test Native resume and live-seek contracts
         run: python3 scripts/tests/native_playback_control_contract_test.py
+      - name: Test combined radio and music UI contracts
+        run: python3 scripts/tests/radio_music_ui_contract_test.py
       - name: Run Standard arm64 debug unit tests
         if: ${{ inputs.flavor == 'standard' && inputs.target_abi == 'arm64-v8a' }}
         run: ./gradlew testStandardDebugUnitTest -PtargetAbi=arm64-v8a -PmpvFlowMpvBuild=true --stacktrace --no-daemon --max-workers=2
-      - name: Upload non-UI validation evidence
+      - name: Upload combined validation evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: non-ui-download-validation-evidence
+          name: combined-radio-ui-validation-evidence
           path: |
             app/schemas/**/23.json
             app/schemas/**/24.json

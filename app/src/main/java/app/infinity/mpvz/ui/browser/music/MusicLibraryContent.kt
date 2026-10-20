@@ -511,33 +511,12 @@ fun MusicLibraryContent(
               },
               leadingActions = {
                 if (!activeSelectionManager.isInSelectionMode) {
-                  Icon(
-                    imageVector = Icons.RoundedFilled.Audiotrack,
-                    contentDescription = stringResource(R.string.ui_music),
-                    modifier = Modifier.size(26.dp),
-                    tint = MaterialTheme.colorScheme.onSurface,
-                  )
                   MusicSourceChooser(
                     hasJellyfin = jellyfinServers.isNotEmpty(),
                     hasNavidrome = navidromeServers.isNotEmpty(),
                     onManageServers = { backStack.add(app.infinity.mpvz.ui.preferences.MediaServersPreferencesScreen) },
-                    modifier = Modifier.padding(start = 8.dp, end = 6.dp, top = 6.dp, bottom = 6.dp),
+                    modifier = Modifier.padding(start = 12.dp, end = 8.dp, top = 4.dp, bottom = 4.dp),
                   )
-                }
-              },
-              additionalActions = {
-                if (!activeSelectionManager.isInSelectionMode) {
-                  IconButton(
-                    onClick = { backStack.add(AudiobookLibraryScreen) },
-                    modifier = Modifier.padding(horizontal = 2.dp),
-                  ) {
-                    Icon(
-                      imageVector = Icons.RoundedFilled.AudiobookWave,
-                      contentDescription = stringResource(R.string.audiobooks_title),
-                      modifier = Modifier.size(22.dp),
-                      tint = MaterialTheme.colorScheme.onSurface,
-                    )
-                  }
                 }
               },
               onSelectAll = { activeSelectionManager.selectAll() },
