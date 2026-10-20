@@ -202,7 +202,7 @@ class DebugLogRepositoryTest {
         frameInterpolationEnabled = true,
         verboseLogging = false,
       )
-    assertEquals("all=info,vo/gpu-next=v", messageLevel)
+    assertEquals("all=warn,vo/gpu-next=info", messageLevel)
 
     fun entry(
       id: String,
@@ -439,7 +439,7 @@ class DebugLogRepositoryTest {
 
     val summary = formatMpvFlowTimingSummary(listOf(entry))
 
-    assertEquals("Synthesized submit rate not captured", summary)
+    assertEquals("MPVFlow active; synthesized submit rate not captured yet", summary)
     assertTrue(!summary.contains("38.9/42.0 ms"))
     assertTrue(!summary.contains("480×270"))
     assertTrue(!summary.contains("target 60 fps"))
