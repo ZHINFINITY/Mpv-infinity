@@ -7,6 +7,7 @@
 package app.infinity.mpvz.repository
 
 import app.infinity.mpvz.preferences.IntroSegmentProvider
+import app.infinity.mpvz.utils.media.ParsedMediaInfo
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
 import okhttp3.OkHttpClient
@@ -131,7 +132,7 @@ class IntroDbRepositoryTest {
   fun lookupSegmentsExplicitTmdbPreservesMappingInOutgoingUrl() = runBlocking {
     val requests = mutableListOf<String>()
     val client = lookupClient(requests)
-    val outcome = IntroDbRepository(client, Json).lookupSegments(
+    val outcome = lookupRepository(client).lookupSegments(
       IntroDbLookupRequest(
         mediaTitle = "Example Show",
         tmdbId = 123,
@@ -150,7 +151,7 @@ class IntroDbRepositoryTest {
   @Test
   fun lookupSegmentsExplicitImdbPreservesMappingInOutgoingUrl() = runBlocking {
     val requests = mutableListOf<String>()
-    val outcome = IntroDbRepository(lookupClient(requests), Json).lookupSegments(
+    val outcome = lookupRepository(lookupClient(requests)).lookupSegments(
       IntroDbLookupRequest(
         mediaTitle = "Example Show",
         imdbId = "tt1234567",
@@ -170,7 +171,7 @@ class IntroDbRepositoryTest {
   fun lookupSegmentsTmdbSearchFallbackPreservesMappingInOutgoingUrl() = runBlocking {
     val requests = mutableListOf<String>()
     val client = lookupClient(requests, includeTmdbSearch = true)
-    val outcome = IntroDbRepository(client, Json).lookupSegments(
+    val outcome = lookupRepository(client).lookupSegments(
       IntroDbLookupRequest(
         mediaTitle = "Fallback Show S02E07 1080p.mkv",
         mediaType = "tv",
@@ -188,6 +189,13 @@ class IntroDbRepositoryTest {
       requests,
     )
   }
+
+  // Dispatch tests supply metadata directly; the production parser uses Android's LruCache.
+  // The real provider selection, search fallback, HTTP request and response parsing still run.
+  private fun lookupRepository(client: OkHttpClient): IntroDbRepository =
+    IntroDbRepository(client, Json) {
+      ParsedMediaInfo(title = "Fallback Show", season = 2, episode = 7, type = "tv")
+    }
 
   private fun lookupClient(
     requests: MutableList<String>,
