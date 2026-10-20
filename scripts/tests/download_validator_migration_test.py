@@ -15,7 +15,7 @@ DATABASE = ROOT / "app/src/main/java/app/infinity/mpvz/database/MpvInfinityDatab
 class DownloadValidatorMigrationTest(unittest.TestCase):
     def test_upgrade_preserves_rows_indexes_and_nullable_defaults(self):
         source = MODULE.read_text()
-        migration = source.split("val MIGRATION_22_23 =", 1)[1].split("val DatabaseModule =", 1)[0]
+        migration = re.split(r"\nval \w+\s*=", source.split("val MIGRATION_22_23 =", 1)[1], maxsplit=1)[0]
         statements = re.findall(r'db\.execSQL\("([^"\n]+)"\)', migration)
         self.assertEqual(len(statements), 2)
         connection = sqlite3.connect(":memory:")
@@ -56,8 +56,10 @@ class DownloadValidatorMigrationTest(unittest.TestCase):
                            ('"version-1"', 'Tue, 15 Nov 1994 08:12:31 GMT'))
         self.assertEqual(connection.execute("SELECT remoteEtag FROM download_items WHERE id=7").fetchone()[0], '"version-1"')
 
-    def test_migration_is_registered_for_schema_23(self):
-        self.assertRegex(DATABASE.read_text(), r"version\s*=\s*23\b")
+    def test_migration_is_registered_for_schema_23_or_later(self):
+        version = re.search(r"version\s*=\s*(\d+)\b", DATABASE.read_text())
+        self.assertIsNotNone(version)
+        self.assertGreaterEqual(int(version.group(1)), 23)
         registered = MODULE.read_text().split(".addMigrations(", 1)[1].split(").build()", 1)[0]
         self.assertIn("MIGRATION_22_23", registered)
 
