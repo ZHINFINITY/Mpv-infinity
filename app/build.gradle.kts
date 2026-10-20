@@ -257,6 +257,7 @@ dependencies {
   debugImplementation(libs.androidx.ui.tooling)
   debugImplementation(libs.leakcanary.android)
   testImplementation("junit:junit:4.13.2")
+  testImplementation("com.squareup.okhttp3:mockwebserver:4.12.0")
   implementation(libs.bundles.compose.navigation3)
   implementation(libs.androidx.appcompat)
   implementation(libs.androidx.core.ktx)
