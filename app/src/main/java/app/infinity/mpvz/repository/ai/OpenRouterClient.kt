@@ -124,9 +124,10 @@ class OpenRouterClient(
             .get()
             .build()
 
-        val response = apiClient.newCall(request).execute()
-        if (!response.isSuccessful) throw Exception("Invalid API key: ${response.code}")
-        "API key verified successfully"
+        apiClient.newCall(request).execute().use { response ->
+          if (!response.isSuccessful) throw Exception("Invalid API key: ${response.code}")
+          "API key verified successfully"
+        }
       }
     }
 

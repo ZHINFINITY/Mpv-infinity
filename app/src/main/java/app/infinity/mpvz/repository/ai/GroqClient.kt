@@ -108,12 +108,13 @@ class GroqClient(
             .get()
             .build()
 
-        val response = apiClient.newCall(request).execute()
-        if (!response.isSuccessful) {
-          val body = response.body.string()
-          throw Exception("Invalid API key: ${response.code} $body")
+        apiClient.newCall(request).execute().use { response ->
+          if (!response.isSuccessful) {
+            val body = response.body.string()
+            throw Exception("Invalid API key: ${response.code} $body")
+          }
+          "API key verified successfully"
         }
-        "API key verified successfully"
       }
     }
 
