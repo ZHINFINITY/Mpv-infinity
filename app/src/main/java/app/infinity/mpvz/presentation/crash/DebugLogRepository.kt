@@ -578,28 +578,8 @@ internal fun formatMpvFlowTimingSummary(entries: List<DebugLogEntry>): String {
     }
   }
 
-  val pairFields = fieldsFor("source_pair_synthesis")
-  val pairSummary = pairFields?.let { fields ->
-    val processingMs = number(fields, "processing_ms")
-    val budgetMs = number(fields, "pair_budget_ms")
-    val budgetRatio = number(fields, "budget_ratio")
-      ?: if (processingMs != null && budgetMs != null && budgetMs > 0.0) processingMs / budgetMs else null
-    val percent = budgetRatio?.let { String.format(Locale.US, "%.0f%%", it * 100.0) } ?: "--"
-    val dimensions =
-      if (fields["process_width"] != null && fields["process_height"] != null) {
-        "${fields["process_width"]}×${fields["process_height"]}"
-      } else {
-        "--"
-      }
-    val frames = fields["frames"] ?: "?"
-    val targetFps = fields["target_fps"] ?: "?"
-    "Last pair: $frames generated · ${compact(processingMs)}/${compact(budgetMs)} ms ($percent) · $dimensions · target $targetFps fps"
-  }
-
   return when {
-    synthesizedOutput != null && pairSummary != null -> "$synthesizedOutput · $pairSummary"
     synthesizedOutput != null -> synthesizedOutput
-    pairSummary != null -> "Synthesized submit rate not captured · $pairSummary"
     entries.any(DebugLogEntry::isMpvFlowDiagnostic) -> "MPVFlow active; synthesized submit rate not captured yet"
     else -> "No MPVFlow output telemetry captured"
   }

@@ -8,8 +8,6 @@
 package app.infinity.mpvz.ui.player.controls
 
 import app.infinity.mpvz.ui.player.DeclaredPlaybackMediaKind
-import app.infinity.mpvz.ui.player.FlowDurationSummary
-import app.infinity.mpvz.ui.player.FlowVulkanStageTiming
 import app.infinity.mpvz.ui.player.PlaybackPhase
 import app.infinity.mpvz.ui.player.PlaybackSession
 import app.infinity.mpvz.ui.player.declaredMediaKind
@@ -2355,46 +2353,16 @@ private fun NativeStatsPageOverlay(
   val position = NativeStatsDisplay.position(snapshot.positionMs)
   val bufferAhead = NativeStatsDisplay.bufferedDuration(snapshot.totalBufferedDurationMs)
   val flow = snapshot.media3Flow
-  val flowSourceRate = if (flow.capturedSourceFps > 0f) {
-    String.format(java.util.Locale.US, "%.1f", flow.capturedSourceFps)
-  } else {
-    "—"
-  }
-  val flowOutputRate = if (flow.outputFps > 0f) String.format(java.util.Locale.US, "%.1f", flow.outputFps) else "—"
-  val flowGeneratedRate = if (flow.generatedFps > 0f) String.format(java.util.Locale.US, "%.1f", flow.generatedFps) else "—"
+  val flowInterpolationFps = NativeStatsDisplay.interpolationFps(
+    flow.capturedSourceFps,
+    flow.outputFps,
+    flow.generatedFps,
+    flow.targetFps,
+  )
   val flowGpuTime = flow.motionPassAverageGpuUs?.let {
     "${String.format(java.util.Locale.US, "%.1f", it)} µs/pass"
   }
     ?: flow.vulkanTimings.motion.status
-  val flowMultiplier = if (flow.capturedSourceFps > 0f && flow.outputFps > 0f) {
-    String.format(java.util.Locale.US, "%.1f", flow.outputFps / flow.capturedSourceFps)
-  } else {
-    "—"
-  }
-  val flowConfidence = flow.confidence?.let { String.format(java.util.Locale.US, "%.0f%%", it * 100f) }
-    ?: "n/a (not read back)"
-  val formatFlowDuration: (FlowDurationSummary) -> String = { summary ->
-    if (summary.sampleCount == 0) {
-      "—"
-    } else {
-      val average = String.format(java.util.Locale.US, "%.1f", summary.averageUs)
-      val p95 = String.format(java.util.Locale.US, "%.1f", summary.p95Us)
-      val maximum = String.format(java.util.Locale.US, "%.1f", summary.maximumUs)
-      "$average/$p95/$maximum µs (n=${summary.sampleCount})"
-    }
-  }
-  val formatFlowPercent: (Float?) -> String = { value ->
-    value?.let { String.format(java.util.Locale.US, "%.1f%%", it) } ?: "—"
-  }
-  val formatVulkanStage: (FlowVulkanStageTiming) -> String = { stage ->
-    val average = stage.averageUs?.let { String.format(java.util.Locale.US, "%.1f", it) } ?: "—"
-    val maximum = stage.maximumUs?.let { String.format(java.util.Locale.US, "%.1f", it) } ?: "—"
-    "$average/$maximum µs n=${stage.completedSamples} ${stage.status}"
-  }
-  val flowVulkan = flow.vulkanTimings
-  val flowGles = flow.glesTimings
-  val flowCpu = flow.cpuTimings
-  val flowCoverage = flow.pixelCoverage
   Surface(
     modifier = modifier,
     color = Color.Transparent,
@@ -2445,94 +2413,16 @@ private fun NativeStatsPageOverlay(
           )
           if (flow.enabled) {
             Text(
-              "Media3 Flow: ${flow.state} · captured cadence $flowSourceRate fps (n=${flow.capturedPtsSampleCount}) → " +
-                "EGL swap-return $flowOutputRate/${flow.targetFps} fps ($flowMultiplier×) · " +
-                "generated $flowGeneratedRate fps (${"%,d".format(java.util.Locale.US, flow.generatedFrames)} total)",
+              "Media3 Flow: ${flow.state} · $flowInterpolationFps " +
+                "(${"%,d".format(java.util.Locale.US, flow.generatedFrames)} generated total)",
               style = MaterialTheme.typography.bodySmall,
               color = Color.White,
             )
             Text(
-              "ME submit ${String.format(java.util.Locale.US, "%.2f", flow.motionEstimateSubmitMs)} ms (CPU-only deadline proxy) · " +
-                "Vulkan motion pass avg $flowGpuTime · " +
-                "confidence $flowConfidence · sink frame drops ${flow.droppedFrames} · " +
-                "inferred tick gaps ${flow.skippedOutputTicks} · sink failures ${flow.outputSubmissionFailures} · " +
-                "skip ${flow.skippedFrames} · " +
-                "motion grid ${flow.motionGridWidth}×${flow.motionGridHeight} · " +
-                "processing ${flow.processingWidth}×${flow.processingHeight}" +
+              "Performance: motion $flowGpuTime · " +
+                "dropped ${flow.droppedFrames} · skipped ${flow.skippedFrames} · " +
+                "output failures ${flow.outputSubmissionFailures}" +
                 (flow.bypassReason?.let { " · $it" } ?: ""),
-              style = MaterialTheme.typography.bodySmall,
-              color = Color.White,
-            )
-            Text(
-              "Vulkan/libplacebo timestamp queries (${flowVulkan.status}, supported=${flowVulkan.timestampsSupported}, " +
-                "period=${String.format(java.util.Locale.US, "%.6f", flowVulkan.timestampPeriodNs)}ns, " +
-                "computeAndGraphics=${flowVulkan.timestampComputeAndGraphics}, " +
-                "queueFamily=${flowVulkan.computeQueueFamily}, validBits=${flowVulkan.timestampValidBits}) " +
-                "avg/max µs: preprocess ${formatVulkanStage(flowVulkan.preprocess)} · " +
-                "analysis ${formatVulkanStage(flowVulkan.analysis)} · motion ${formatVulkanStage(flowVulkan.motion)} · " +
-                "synthesis ${formatVulkanStage(flowVulkan.synthesis)}",
-              style = MaterialTheme.typography.bodySmall,
-              color = Color.White,
-            )
-            Text(
-              "GLES_EXT_disjoint_timer_query staging copy ${formatFlowDuration(flowGles.presentationStagingCopy)} · " +
-                "status ${flowGles.status} valid/pending/disjoint/zero/skipped " +
-                "${flowGles.validResults}/${flowGles.pendingResults}/${flowGles.disjointResultsDiscarded}/" +
-                "${flowGles.zeroDurationResults}/${flowGles.skippedBecausePoolFull}",
-              style = MaterialTheme.typography.bodySmall,
-              color = Color.White,
-            )
-            Text(
-              "Flow queues: pending input ${flow.pendingInputDepth} · in-flight ${flow.inputInFlight} · " +
-                "oldest input ${String.format(java.util.Locale.US, "%.1f", flow.oldestPendingInputAgeMs)} ms · " +
-                "source frames ${flow.sourceFrameDepth} · ready motion pairs ${flow.readyMotionPairDepth} · " +
-                "presentation queued/in-flight ${flow.presentationQueueDepth}/${flow.presentationInFlight} · " +
-                "coalesced ${flow.presentationCoalescedFrames} · " +
-                "source PTS age ${flow.selectedSourcePtsAgeMs?.let { String.format(java.util.Locale.US, "%.1f", it) } ?: "—"} ms · " +
-                "pair PTS gap ${flow.sourcePairPtsGapMs?.let { String.format(java.util.Locale.US, "%.1f", it) } ?: "—"} ms · " +
-                "capture ages ${flow.frame0CaptureAgeMs?.let { String.format(java.util.Locale.US, "%.1f", it) } ?: "—"}/" +
-                "${flow.frame1CaptureAgeMs?.let { String.format(java.util.Locale.US, "%.1f", it) } ?: "—"} ms",
-              style = MaterialTheme.typography.bodySmall,
-              color = Color.White,
-            )
-            Text(
-              "Inferred output tick gaps ${flow.skippedOutputTicks} · latest ${flow.lastOutputTickGapReason} · " +
-                "contexts ${flow.outputTickGapContexts.entries.joinToString(",") { "${it.key}:${it.value}" }.ifEmpty { "none" }} · " +
-                "sink failures ${flow.outputSubmissionFailures} (${flow.lastOutputSubmissionFailureReason}) · " +
-                "callback lateness ${String.format(java.util.Locale.US, "%.1f", flow.outputCallbackLatenessMs)} ms",
-              style = MaterialTheme.typography.bodySmall,
-              color = Color.White,
-            )
-            Text(
-              "Flow CPU avg/p95/max: Media3 input queue ${formatFlowDuration(flowCpu.inputQueueWait)} · " +
-                "handler call ${formatFlowDuration(flowCpu.frameHandlerCall)} · " +
-                "EGL swap ${formatFlowDuration(flowCpu.eglSwapWait)} · " +
-                "input Vulkan submit ${formatFlowDuration(flowCpu.vulkanInputPrepare)} · " +
-                "synthesis submit ${formatFlowDuration(flowCpu.vulkanSynthesisSubmit)}",
-              style = MaterialTheme.typography.bodySmall,
-              color = Color.White,
-            )
-            Text(
-              "Flow pixels (1/8 successfully presented synth frames; n=${flowCoverage.samples}): " +
-                "motion warp ${flowCoverage.motionWarpPixels} (${formatFlowPercent(flowCoverage.motionWarpPercent)}) · " +
-                "source fallback ${flowCoverage.sourceFrameFallbackPixels} " +
-                "(${formatFlowPercent(flowCoverage.sourceFrameFallbackPercent)}) · " +
-                "static blend ${flowCoverage.staticBlendPixels} (${formatFlowPercent(flowCoverage.staticBlendPercent)}) · " +
-                "readback skipped/invalid ${flowCoverage.skippedSamples}/${flowCoverage.invalidSamples}",
-              style = MaterialTheme.typography.bodySmall,
-              color = Color.White,
-            )
-            Text(
-              "Static-path vector probe (1/64 image positions; n=${flowCoverage.staticVectorProbeSamples}; " +
-                "motion cutoff 0.5 processing px; confidence cutoff 0.15): likely motion/confident " +
-                "${flowCoverage.staticVectorLikelyMotionSamples} " +
-                "(${formatFlowPercent(flowCoverage.staticVectorLikelyMotionPercent)}) · uncertain " +
-                "${flowCoverage.staticVectorUncertainMotionSamples} " +
-                "(${formatFlowPercent(flowCoverage.staticVectorUncertainMotionPercent)}) · near-zero/confident " +
-                "${flowCoverage.staticVectorNearZeroConfidentSamples} " +
-                "(${formatFlowPercent(flowCoverage.staticVectorNearZeroConfidentPercent)}) · near-zero/uncertain " +
-                "${flowCoverage.staticVectorNearZeroUncertainSamples} " +
-                "(${formatFlowPercent(flowCoverage.staticVectorNearZeroUncertainPercent)})",
               style = MaterialTheme.typography.bodySmall,
               color = Color.White,
             )

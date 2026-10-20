@@ -599,7 +599,7 @@ qcom_source = (ROOT / "app/src/main/cpp/mpvflow/mpvflow_vulkan_qcom.c").read_tex
 assert "MpvFlowLogConfig.messageLevelOption(" in mpv_view_source
 assert 'PlaybackSession.setOptionString("msg-level", logLevel)' in mpv_view_source
 assert "requested_msg_level=$logLevel" in mpv_view_source
-assert 'const val FLOW_VERBOSE_DIAGNOSTICS = "all=info,vo/gpu-next=v"' in flow_log_config_source
+assert 'const val FLOW_VERBOSE_DIAGNOSTICS = "all=warn,vo/gpu-next=warn"' in flow_log_config_source
 assert "mpvFlowEnabled -> FLOW_VERBOSE_DIAGNOSTICS" in flow_log_config_source
 child_only_policy = "all=info,vo/gpu-next/libplacebo=v"
 parent_policy = "all=info,vo/gpu-next=v"
