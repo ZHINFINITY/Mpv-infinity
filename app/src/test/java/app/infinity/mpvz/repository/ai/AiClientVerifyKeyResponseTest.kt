@@ -4,12 +4,12 @@
  * Copyright (c) 2026 ZHINFINITY. Mpv∞ Covered Code.
  * See LICENSE for terms.
  */
-
 package app.infinity.mpvz.repository.ai
 
 import app.infinity.mpvz.preferences.AiPreferences
 import app.infinity.mpvz.preferences.preference.Preference
 import app.infinity.mpvz.preferences.preference.PreferenceStore
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -22,8 +22,10 @@ import okhttp3.OkHttpClient
 import okhttp3.Protocol
 import okhttp3.Response
 import okhttp3.ResponseBody
-import okio.BufferedSource
 import okio.Buffer
+import okio.BufferedSource
+import okio.ForwardingSource
+import okio.buffer
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -32,28 +34,26 @@ class AiClientVerifyKeyResponseTest {
   @Test
   fun verifyKeyClosesSuccessfulResponsesForEveryProvider() = runBlocking {
     val closed = AtomicInteger(0)
-    val clients = clients(closed, code = 200)
-
-    clients.forEach { assertTrue(it.verifyKey("test-key").isSuccess) }
-
-    assertTrue(closed.get() == 6)
+    clients(closed, 200).forEach { client ->
+      assertTrue(client.javaClass.simpleName, client.verifyKey("test-key").isSuccess)
+    }
+    assertTrue("Each response source must close exactly once", closed.get() == 6)
   }
 
   @Test
   fun verifyKeyClosesFailedResponsesForEveryProvider() = runBlocking {
     val closed = AtomicInteger(0)
-    val clients = clients(closed, code = 401)
-
-    clients.forEach { assertFalse(it.verifyKey("test-key").isSuccess) }
-
-    assertTrue(closed.get() == 6)
+    clients(closed, 401).forEach { client ->
+      assertFalse(client.javaClass.simpleName, client.verifyKey("test-key").isSuccess)
+    }
+    assertTrue("Each response source must close exactly once", closed.get() == 6)
   }
 
   private fun clients(closed: AtomicInteger, code: Int): List<AiClient> {
     val http = OkHttpClient.Builder().addInterceptor(responseInterceptor(closed, code)).build()
     val json = Json { ignoreUnknownKeys = true }
     return listOf(
-      OpenAiClient(http, json, AiPreferences(TestPreferenceStore(emptyMap()))),
+      OpenAiClient(http, json, AiPreferences(VerificationPreferenceStore())),
       AnthropicClient(http, json),
       OpenRouterClient(http, json),
       TogetherClient(http, json),
@@ -63,52 +63,52 @@ class AiClientVerifyKeyResponseTest {
   }
 
   private fun responseInterceptor(closed: AtomicInteger, code: Int) = Interceptor { chain ->
-    val body = TrackingResponseBody(closed)
     Response.Builder()
       .request(chain.request())
       .protocol(Protocol.HTTP_1_1)
       .code(code)
       .message("test")
-      .body(body)
+      .body(VerificationResponseBody(closed))
       .build()
   }
 }
 
-private class TrackingResponseBody(
-  private val closed: AtomicInteger,
-) : ResponseBody() {
+private class VerificationResponseBody(closed: AtomicInteger) : ResponseBody() {
+  private val bytes = "{\"data\":[]}".toByteArray()
+  private val wasClosed = AtomicBoolean(false)
+  private val trackedSource = object : ForwardingSource(Buffer().write(bytes)) {
+    override fun close() {
+      if (wasClosed.compareAndSet(false, true)) closed.incrementAndGet()
+      super.close()
+    }
+  }.buffer()
+
   override fun contentType(): MediaType? = null
-  override fun contentLength(): Long = 11
-  override fun source(): BufferedSource = Buffer().writeUtf8("{\"data\":[]}").buffer()
-  override fun close() {
-    closed.incrementAndGet()
-  }
+  override fun contentLength(): Long = bytes.size.toLong()
+  override fun source(): BufferedSource = trackedSource
 }
 
-private class TestPreferenceStore(
-  private val values: Map<String, String>,
-) : PreferenceStore {
+private class VerificationPreferenceStore : PreferenceStore {
   override fun getString(key: String, defaultValue: String): Preference<String> =
-    TestPreference(key, values[key] ?: defaultValue)
-
-  override fun getLong(key: String, defaultValue: Long): Preference<Long> = TestPreference(key, defaultValue)
-  override fun getInt(key: String, defaultValue: Int): Preference<Int> = TestPreference(key, defaultValue)
-  override fun getFloat(key: String, defaultValue: Float): Preference<Float> = TestPreference(key, defaultValue)
-  override fun getBoolean(key: String, defaultValue: Boolean): Preference<Boolean> = TestPreference(key, defaultValue)
+    VerificationPreference(key, defaultValue)
+  override fun getLong(key: String, defaultValue: Long): Preference<Long> = VerificationPreference(key, defaultValue)
+  override fun getInt(key: String, defaultValue: Int): Preference<Int> = VerificationPreference(key, defaultValue)
+  override fun getFloat(key: String, defaultValue: Float): Preference<Float> = VerificationPreference(key, defaultValue)
+  override fun getBoolean(key: String, defaultValue: Boolean): Preference<Boolean> = VerificationPreference(key, defaultValue)
   override fun getStringSet(key: String, defaultValue: Set<String>): Preference<Set<String>> =
-    TestPreference(key, defaultValue)
+    VerificationPreference(key, defaultValue)
   override fun <T> getObject(
     key: String,
     defaultValue: T,
     serializer: (T) -> String,
     deserializer: (String) -> T,
-  ): Preference<T> = TestPreference(key, defaultValue)
-  override fun getAll(): Map<String, *> = values
+  ): Preference<T> = VerificationPreference(key, defaultValue)
+  override fun getAll(): Map<String, *> = emptyMap<String, Any>()
 }
 
-private class TestPreference<T>(
+private class VerificationPreference<T>(
   private val preferenceKey: String,
-  initialValue: T,
+  private val initialValue: T,
 ) : Preference<T> {
   private val state = MutableStateFlow(initialValue)
   override fun key(): String = preferenceKey
@@ -116,7 +116,7 @@ private class TestPreference<T>(
   override fun set(value: T) { state.value = value }
   override fun isSet(): Boolean = true
   override fun delete() = Unit
-  override fun defaultValue(): T = state.value
+  override fun defaultValue(): T = initialValue
   override fun changes(): Flow<T> = state
   override fun stateIn(scope: kotlinx.coroutines.CoroutineScope): StateFlow<T> = state
 }
