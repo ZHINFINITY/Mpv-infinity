@@ -12,6 +12,15 @@ BASELINE = "7015805f6831cbf8a9fc2e6d5dd5c70af209b638"
 
 
 def main() -> None:
+    available = subprocess.run(
+        ["git", "cat-file", "-e", f"{BASELINE}:LICENSE"], cwd=ROOT,
+        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False,
+    )
+    if available.returncode:
+        raise SystemExit(
+            "Baseline licence object missing: fetch full repository history "
+            "(CI requires actions/checkout fetch-depth: 0) and retry."
+        )
     historical = ROOT / "HISTORICAL-LICENSE-POLYFORM-BASELINE.md"
     original = subprocess.check_output(
         ["git", "show", f"{BASELINE}:LICENSE"], cwd=ROOT
@@ -44,6 +53,12 @@ def main() -> None:
     for required in (BASELINE, "cannot make", "no new playback feature",
                      "transitive", "AGPL", "mpvRx", "legal counsel"):
         assert required in boundary, required
+    readme = (ROOT / "README.md").read_text(encoding="utf-8")
+    assert "Upstream-derived portions are excluded" in readme
+    assert "retains its existing grants" in readme
+    contributing = (ROOT / "CONTRIBUTING.md").read_text(encoding="utf-8")
+    assert "no general contribution-workflow exception" in contributing
+    assert "not an assignment of copyright" in contributing
     for relative in (
         "THIRD_PARTY_SOURCE.md", "THIRD_PARTY_LICENSES",
         "app/src/main/assets/mpv/licenses",
@@ -52,8 +67,17 @@ def main() -> None:
         "app/src/main/cpp/third_party/quickjs/LICENSE",
         "app/src/main/cpp/mpvflow/mediacodec-vulkan/LICENSE.LGPL",
     ):
-        assert (ROOT / relative).exists(), relative
-    print("prospective-only licence boundaries and historical texts verified")
+        path = ROOT / relative
+        assert path.exists(), relative
+        if path.is_file():
+            assert path.stat().st_size > 0, relative
+        else:
+            assert any(p.is_file() and p.stat().st_size > 0
+                       for p in path.rglob("*")), relative
+    # Wording/existence checks are not a dependency or ownership audit.
+    # The draft's application/no-notice-change gate is run separately against
+    # BASELINE; keeping it permanent here would block legitimate future edits.
+    print("historical licence bytes, required wording and notice presence verified")
 
 
 if __name__ == "__main__":

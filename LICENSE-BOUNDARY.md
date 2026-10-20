@@ -23,7 +23,8 @@ publication. Automated review is not a legal opinion.
   regardless of the eventual release name. No next release number is assigned
   by this PR and the application version is not changed.
 - New material in this proposal is limited to licensing policy/documentation
-  and the permission-only regression test. There is no new playback feature.
+  and the permission-only regression test, its CI invocation, and a preview
+  footer licence label. There is no new playback feature.
   Existing source headers and every third-party notice remain unchanged.
 - Future original, exclusively owned contributions intended to use the new
   terms should be explicitly marked
@@ -51,7 +52,7 @@ intact when assembling a release.
 | Material / location | Applicable terms and scope |
 | --- | --- |
 | Previously published Mpv∞ source | Its original AGPL, PolyForm, or other grants remain available; see the history and both historical licence files. |
-| mpvRx / mpvEx / mpv-android lineage, other contributors | Excluded from the new owned-code scope unless ownership or express permission for the particular new terms is documented. A previous authorization to use PolyForm does not establish authorization for these different terms. |
+| mpvRx / mpvEx / mpv-android lineage, other contributors | Excluded from the new ZHINFINITY-owned scope. Separately documented permissions do not themselves transfer ownership; any future ownership-based scope change needs its own review. A previous authorization to use PolyForm does not establish authorization for these different terms. |
 | MPV/libmpv, libplacebo, libbluray, libudfread, FFmpeg | Independent component licences; see `app/src/main/assets/mpv/licenses/`, `app/src/main/assets/ffmpeg/FFMPEG-LICENSE.md`, `THIRD_PARTY_LICENSES/`, and [THIRD_PARTY_SOURCE.md](THIRD_PARTY_SOURCE.md) for source/relink obligations and differing LGPL versions. |
 | Media3, AndroidX, native decoder module | See `media3-decoder-ffmpeg/LICENSE`, `media3-decoder-ffmpeg/NOTICE`, `app/src/main/assets/licenses/media3/`, and each dependency's own terms. |
 | QuickJS, QuickJS-KT, Mbed TLS, wrappers and native imported code | See component-specific notices, including `app/src/main/cpp/third_party/quickjs/LICENSE`, `app/src/main/cpp/mpvflow/mediacodec-vulkan/LICENSE.LGPL`, and MPV licence assets. Not relicensed here. |
