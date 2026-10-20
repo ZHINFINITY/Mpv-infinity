@@ -1812,16 +1812,10 @@ class MediaPlaybackService :
 
     runCatching {
       val oldState = playbackStateRepository.getVideoDataByTitle(identifier)
-      val snapshot =
-        if (capturedSnapshot.externalSubtitles.isBlank() && !oldState?.externalSubtitles.isNullOrBlank()) {
-          capturedSnapshot.copy(externalSubtitles = oldState.externalSubtitles.orEmpty())
-        } else {
-          capturedSnapshot
-        }
       val playbackState =
         PlaybackStatePersistence.buildEntity(
           oldState = oldState,
-          snapshot = snapshot,
+          snapshot = capturedSnapshot,
           savePositionOnQuit = playerPreferences.savePositionOnQuit.get(),
           watchedThreshold = browserPreferences.watchedThreshold.get(),
         )
@@ -1842,13 +1836,16 @@ class MediaPlaybackService :
   ): PlaybackStateSnapshot? {
     if (identifier.isBlank()) return null
 
+    val mpvPosition = readMpvIntSecondsOrNull("time-pos")
+
     return PlaybackStateSnapshot(
       mediaIdentifier = identifier,
       mediaTitle = mediaTitle.ifBlank { identifier },
-      currentPosition = readMpvIntSeconds("time-pos", currentPositionSeconds.toInt()),
+      currentPosition = mpvPosition ?: currentPositionSeconds.toInt(),
       duration = readMpvIntSeconds("duration", mediaDurationSeconds.toInt()),
       isPositionRestorePending =
         PlaybackSession.isPositionRestorePending(PlaybackSession.state.value.activeGeneration),
+      positionIsKnown = mpvPosition != null,
       playbackSpeed = readMpvDouble("speed", oldState?.playbackSpeed ?: DEFAULT_PLAYBACK_STATE_SPEED),
       videoZoom = readMpvDouble("video-zoom", oldState?.videoZoom?.toDouble() ?: 0.0).toFloat(),
       videoAspect = oldState?.videoAspect ?: "Fit",
@@ -1872,8 +1869,15 @@ class MediaPlaybackService :
           ) * PLAYBACK_STATE_MILLISECONDS_TO_SECONDS
         ).toInt(),
       externalSubtitles = oldState?.externalSubtitles.orEmpty(),
+      externalSubtitlesAreKnown = false,
     )
   }
+
+  private fun readMpvIntSecondsOrNull(property: String): Int? =
+    runCatching {
+      PlaybackSession.getPropertyDouble(property)?.toInt()
+        ?: PlaybackSession.getPropertyInt(property)
+    }.getOrNull()
 
   private fun readMpvIntSeconds(
     property: String,
