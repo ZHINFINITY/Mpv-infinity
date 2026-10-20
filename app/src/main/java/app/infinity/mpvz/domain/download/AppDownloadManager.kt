@@ -481,7 +481,17 @@ class AppDownloadManager(
       if (download.isActive) cancelledIds.add(entity.id)
       runCatching { File(entity.dirPath, entity.fileName + PART_SUFFIX).delete() }
       if (deleteFile) {
-        sidecarSubtitles(download).forEach { runCatching { it.delete() } }
+        val siblingNames = download.file.parentFile?.listFiles().orEmpty()
+          .filter { it.isFile }.map { it.name }
+        val registeredNames = dao.getAll()
+          .filter { it.id != entity.id && it.dirPath == entity.dirPath }
+          .map { it.fileName }
+        sidecarSubtitles(download)
+          .filter { sidecar ->
+            SidecarSubtitlePolicy.canDeleteForVideo(
+              entity.fileName, sidecar.name, SUBTITLE_EXTENSIONS, siblingNames + registeredNames,
+            )
+          }.forEach { runCatching { it.delete() } }
         runCatching { download.file.delete() }
       }
       dao.delete(entity.id)

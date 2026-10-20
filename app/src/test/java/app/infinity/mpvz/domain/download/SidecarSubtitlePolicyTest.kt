@@ -55,6 +55,17 @@ class SidecarSubtitlePolicyTest {
     assertEquals("Movie.el.srt", SidecarSubtitlePolicy.sidecarFileName("Movie.mkv", null, "Greek", false, "srt"))
   }
 
+  @Test
+  fun ambiguousOrSharedSidecarsAreNotDeleted() {
+    fun canDelete(candidate: String, others: List<String>) =
+      SidecarSubtitlePolicy.canDeleteForVideo("Movie.mkv", candidate, extensions, others)
+    assertFalse(canDelete("Movie.en.srt", listOf("Movie.en.mkv")))
+    assertFalse(canDelete("Movie.en.forced.srt", listOf("Movie.en.mkv.part")))
+    assertFalse(canDelete("Movie.en.srt", listOf("Movie.mp4")))
+    assertFalse(canDelete("Movie 2.en.srt", emptyList()))
+    assertTrue(canDelete("Movie.en.srt", listOf("Movie.mkv", "Movie2.mkv", "Movie.en.srt")))
+  }
+
   private fun name(language: String?, forced: Boolean): String =
     SidecarSubtitlePolicy.sidecarFileName("Movie.mkv", language, "", forced, "srt")
 
