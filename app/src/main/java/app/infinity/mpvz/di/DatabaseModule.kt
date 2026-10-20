@@ -791,14 +791,22 @@ val MIGRATION_20_21 =
     }
   }
 
-val MIGRATION_21_22 =
-  object : Migration(21, 22) {
-    override fun migrate(db: SupportSQLiteDatabase) {
-      db.execSQL("ALTER TABLE `network_connections` ADD COLUMN `sftpHostKeyFingerprint` TEXT NOT NULL DEFAULT ''")
-    }
-  }
+	val MIGRATION_21_22 =
+	  object : Migration(21, 22) {
+	    override fun migrate(db: SupportSQLiteDatabase) {
+	      db.execSQL("ALTER TABLE `network_connections` ADD COLUMN `sftpHostKeyFingerprint` TEXT NOT NULL DEFAULT ''")
+	    }
+	  }
 
-val DatabaseModule =
+	val MIGRATION_22_23 =
+	  object : Migration(22, 23) {
+	    override fun migrate(db: SupportSQLiteDatabase) {
+	      db.execSQL("ALTER TABLE `download_items` ADD COLUMN `remoteEtag` TEXT")
+	      db.execSQL("ALTER TABLE `download_items` ADD COLUMN `remoteLastModified` TEXT")
+	    }
+	  }
+
+	val DatabaseModule =
   module {
     single<Json> {
       Json {
@@ -832,9 +840,10 @@ val DatabaseModule =
           MIGRATION_17_18,
           MIGRATION_18_19,
           MIGRATION_19_20,
-          MIGRATION_20_21,
-          MIGRATION_21_22,
-        ).build()
+	          MIGRATION_20_21,
+	          MIGRATION_21_22,
+	          MIGRATION_22_23,
+	        ).build()
     }
 
     singleOf(::PlaybackStateRepositoryImpl).bind(PlaybackStateRepository::class)

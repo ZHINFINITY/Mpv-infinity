@@ -207,103 +207,147 @@ class AppDownloadManager(
     val partFile = File(directory, entity.fileName + PART_SUFFIX)
 
     val result =
-      runCatching {
+      runCatching<Long> {
         if (!directory.exists()) directory.mkdirs()
         var resumeFrom = if (partFile.isFile) partFile.length() else 0L
-
-        val requestBuilder = Request.Builder().url(entity.url).get()
-        decodeHeaders(entity.stagingPath).forEach { (key, value) -> requestBuilder.header(key, value) }
-        if (resumeFrom > 0) {
-          requestBuilder.header("Range", "bytes=$resumeFrom-")
-          requestBuilder.header("Accept-Encoding", "identity")
+        var validators = DownloadValidators(entity.remoteEtag, entity.remoteLastModified)
+        // A legacy .part has no trustworthy representation binding. Never append to it.
+        if (resumeFrom > 0L && validators.ifRange == null) {
+          partFile.delete()
+          resumeFrom = 0L
         }
 
-        httpClient.newCall(requestBuilder.build()).awaitResponse().use { response ->
-          var rangedTotal: Long? = null
-          if (resumeFrom > 0 && response.code == 206) {
-            val contentRange = response.header("Content-Range").orEmpty()
-            val match = CONTENT_RANGE_PATTERN.matchEntire(contentRange)
-            val rangeStart = match?.groupValues?.get(1)?.toLongOrNull()
-            val rangeEnd = match?.groupValues?.get(2)?.toLongOrNull()
-            rangedTotal = match?.groupValues?.get(3)?.takeUnless { it == "*" }?.toLongOrNull()
-            val rangeLength =
-              if (rangeStart != null && rangeEnd != null && rangeEnd >= rangeStart) {
-                rangeEnd - rangeStart + 1L
-              } else {
-                null
-              }
-            val bodyLength = response.body.contentLength()
-            if (
-              rangeStart != resumeFrom || rangeLength == null || rangedTotal == null ||
-              rangeEnd == null || rangeEnd + 1L != rangedTotal ||
-              (bodyLength >= 0L && bodyLength != rangeLength)
-            ) {
-              throw IOException("Invalid Content-Range for resumed download: $contentRange")
-            }
-          } else if (resumeFrom > 0) {
-            // Server ignored the range; start over.
-            partFile.delete()
-            resumeFrom = 0
+        var restarted = false
+        while (true) {
+          val requestBuilder = Request.Builder().url(entity.url).get()
+          decodeHeaders(entity.stagingPath).forEach { (key, value) -> requestBuilder.header(key, value) }
+          requestBuilder.removeHeader("Range").removeHeader("If-Range")
+          requestBuilder.header("Accept-Encoding", "identity")
+          if (resumeFrom > 0L) {
+            requestBuilder.header("Range", "bytes=$resumeFrom-")
+            requestBuilder.header("If-Range", validators.ifRange!!)
           }
-          check(response.isSuccessful) { "HTTP ${response.code}" }
-          val body = response.body
-          val totalBytes =
-            rangedTotal ?: body.contentLength().takeIf { it > 0 }?.plus(resumeFrom) ?: 0L
 
-          var downloaded = resumeFrom
-          var windowBytes = 0L
-          var windowStart = System.currentTimeMillis()
-          var lastDbWrite = 0L
-
-          body.byteStream().use { input ->
-            FileOutputStream(partFile, resumeFrom > 0).use { output ->
-              val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
-              while (true) {
-                if (id in cancelledIds) throw CancelledDownloadException()
-                if (id in pausedIds) throw PausedDownloadException()
-                val read = input.read(buffer)
-                if (read < 0) break
-                output.write(buffer, 0, read)
-                downloaded += read
-                windowBytes += read
-
-                val now = System.currentTimeMillis()
-                if (now - windowStart >= PROGRESS_INTERVAL_MS) {
-                  val speed = windowBytes * 1000 / (now - windowStart).coerceAtLeast(1)
-                  windowBytes = 0
-                  windowStart = now
-                  val progress =
-                    if (totalBytes > 0) ((downloaded * 100) / totalBytes).toInt().coerceIn(0, 100) else 0
-                  val snapshot =
-                    ActiveSnapshot(
-                      id = id,
-                      title = entity.title.ifBlank { entity.fileName },
-                      progress = progress,
-                      downloadedBytes = downloaded,
-                      totalBytes = totalBytes,
-                      speedBytesPerSec = speed,
-                    )
-                  _activeSnapshot.value = snapshot
-                  onUpdate(snapshot)
-                  if (now - lastDbWrite >= DB_WRITE_INTERVAL_MS) {
-                    lastDbWrite = now
-                    dao.findById(id)?.let {
-                      dao.update(it.copy(progress = progress, totalBytes = totalBytes))
+          val response = httpClient.newCall(requestBuilder.build()).awaitResponse()
+          var retryFromStart = false
+          try {
+            if (resumeFrom > 0L && response.code == 416) {
+              // A stale/invalid suffix is never treated as complete; fetch a fresh representation.
+              retryFromStart = true
+            } else if (resumeFrom > 0L && response.code == 206) {
+              val range = parseResumedRange(
+                response.header("Content-Range"),
+                resumeFrom,
+                response.body.contentLength(),
+              ) ?: throw IOException("Invalid Content-Range for resumed download")
+              if (!validators.matches(response.header("ETag"), response.header("Last-Modified"))) {
+                retryFromStart = true
+              } else {
+                val totalBytes = range.total
+                var downloaded = resumeFrom
+                var windowBytes = 0L
+                var windowStart = System.currentTimeMillis()
+                var lastDbWrite = 0L
+                response.body.byteStream().use { input ->
+                  FileOutputStream(partFile, true).use { output ->
+                    val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+                    while (true) {
+                      if (id in cancelledIds) throw CancelledDownloadException()
+                      if (id in pausedIds) throw PausedDownloadException()
+                      val read = input.read(buffer)
+                      if (read < 0) break
+                      output.write(buffer, 0, read)
+                      downloaded += read
+                      windowBytes += read
+                      val now = System.currentTimeMillis()
+                      if (now - windowStart >= PROGRESS_INTERVAL_MS) {
+                        val speed = windowBytes * 1000 / (now - windowStart).coerceAtLeast(1)
+                        windowBytes = 0
+                        windowStart = now
+                        val progress = ((downloaded * 100) / totalBytes).toInt().coerceIn(0, 100)
+                        val snapshot = ActiveSnapshot(id, entity.title.ifBlank { entity.fileName }, progress, downloaded, totalBytes, speed)
+                        _activeSnapshot.value = snapshot
+                        onUpdate(snapshot)
+                        if (now - lastDbWrite >= DB_WRITE_INTERVAL_MS) {
+                          lastDbWrite = now
+                          dao.findById(id)?.let { dao.update(it.copy(progress = progress, totalBytes = totalBytes)) }
+                        }
+                      }
+                    }
+                  }
+                }
+                check(partFile.length() == totalBytes) { "Downloaded size mismatch: ${partFile.length()}/$totalBytes bytes" }
+                check(partFile.renameTo(finalFile)) { "Could not finalize file in download folder" }
+                return@runCatching totalBytes
+              }
+            } else {
+              check(response.code == 200) { "Expected complete HTTP 200 response, got ${response.code}" }
+              // A full response after Range means the server declined the range or the validator changed.
+              if (resumeFrom > 0L) {
+                partFile.delete()
+                resumeFrom = 0L
+              }
+              val nextValidators = DownloadValidators.fromResponse(response.header("ETag"), response.header("Last-Modified"))
+              // Truncate before persisting new validators: a crash cannot bind old bytes to new metadata.
+              FileOutputStream(partFile, false).use { }
+              validators = nextValidators
+              dao.findById(id)?.let {
+                dao.update(it.copy(remoteEtag = validators.etag, remoteLastModified = validators.lastModified))
+              }
+              val body = response.body
+              val totalBytes = body.contentLength().takeIf { it > 0 } ?: 0L
+              var downloaded = 0L
+              var windowBytes = 0L
+              var windowStart = System.currentTimeMillis()
+              var lastDbWrite = 0L
+              body.byteStream().use { input ->
+                FileOutputStream(partFile, false).use { output ->
+                  val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+                  while (true) {
+                    if (id in cancelledIds) throw CancelledDownloadException()
+                    if (id in pausedIds) throw PausedDownloadException()
+                    val read = input.read(buffer)
+                    if (read < 0) break
+                    output.write(buffer, 0, read)
+                    downloaded += read
+                    windowBytes += read
+                    val now = System.currentTimeMillis()
+                    if (now - windowStart >= PROGRESS_INTERVAL_MS) {
+                      val speed = windowBytes * 1000 / (now - windowStart).coerceAtLeast(1)
+                      windowBytes = 0
+                      windowStart = now
+                      val progress = if (totalBytes > 0) ((downloaded * 100) / totalBytes).toInt().coerceIn(0, 100) else 0
+                      val snapshot = ActiveSnapshot(id, entity.title.ifBlank { entity.fileName }, progress, downloaded, totalBytes, speed)
+                      _activeSnapshot.value = snapshot
+                      onUpdate(snapshot)
+                      if (now - lastDbWrite >= DB_WRITE_INTERVAL_MS) {
+                        lastDbWrite = now
+                        dao.findById(id)?.let { dao.update(it.copy(progress = progress, totalBytes = totalBytes)) }
+                      }
                     }
                   }
                 }
               }
+              val completedBytes = partFile.length()
+              check(completedBytes > 0L) { "Downloaded file is empty" }
+              check(totalBytes <= 0L || completedBytes == totalBytes) { "Downloaded size mismatch: $completedBytes/$totalBytes bytes" }
+              check(partFile.renameTo(finalFile)) { "Could not finalize file in download folder" }
+              return@runCatching totalBytes.takeIf { it > 0 } ?: completedBytes
             }
+          } finally {
+            response.close()
           }
-
-          val completedBytes = partFile.length()
-          check(completedBytes > 0L) { "Downloaded file is empty" }
-          check(totalBytes <= 0L || completedBytes == totalBytes) {
-            "Downloaded size mismatch: $completedBytes/$totalBytes bytes"
+          if (retryFromStart) {
+            if (restarted) throw IOException("Unable to obtain a stable remote representation")
+            restarted = true
+            partFile.delete()
+            resumeFrom = 0L
+            validators = DownloadValidators()
+            dao.findById(id)?.let { dao.update(it.copy(remoteEtag = null, remoteLastModified = null)) }
           }
-          check(partFile.renameTo(finalFile)) { "Could not finalize file in download folder" }
-          totalBytes.takeIf { it > 0 } ?: finalFile.length()
         }
+        @Suppress("UNREACHABLE_CODE")
+        error("Download loop exited without a result")
       }
 
     result
@@ -316,6 +360,8 @@ class AppDownloadManager(
               totalBytes = total,
               failureReason = null,
               stagingPath = null,
+              remoteEtag = null,
+              remoteLastModified = null,
             ),
           )
         }
@@ -323,7 +369,7 @@ class AppDownloadManager(
         when {
           error is CancelledDownloadException || id in cancelledIds -> {
             runCatching { partFile.delete() }
-            dao.findById(id)?.let { dao.update(it.copy(status = AppDownloadStatus.CANCELLED.name)) }
+            dao.findById(id)?.let { dao.update(it.copy(status = AppDownloadStatus.CANCELLED.name, remoteEtag = null, remoteLastModified = null)) }
           }
           error is PausedDownloadException || id in pausedIds -> {
             dao.findById(id)?.let { dao.update(it.copy(status = AppDownloadStatus.PAUSED.name)) }
@@ -459,7 +505,6 @@ class AppDownloadManager(
     private const val PART_SUFFIX = ".part"
     private const val PROGRESS_INTERVAL_MS = 750L
     private const val DB_WRITE_INTERVAL_MS = 1_500L
-    private val CONTENT_RANGE_PATTERN = Regex("""bytes (\d+)-(\d+)/(\d+|\*)""", RegexOption.IGNORE_CASE)
 
     val SUBTITLE_EXTENSIONS = setOf("srt", "ass", "ssa", "vtt", "sub", "sup", "idx", "txt")
 
