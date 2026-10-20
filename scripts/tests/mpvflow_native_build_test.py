@@ -1106,8 +1106,8 @@ for marker in (
     "value = (useVulkan || mpvFlowForcesRenderer) && isVulkanSupported",
     "enabled = !mpvFlowForcesRenderer",
     "settingsSearchTarget(R.string.pref_decoder_mpvflow_title)",
-    "titleStyle =",
-    "MaterialTheme.colorScheme.surfaceContainerLow",
+    "value = mpvFlowFrameInterpolationEnabled",
+    "stringResource(R.string.pref_decoder_mpvflow_summary)",
 ):
     assert marker in decoder_screen, f"the Decoder screen must truthfully distinguish Flow rendering and compute: missing {marker!r}"
 assert "R.string.pref_decoder_mpvflow_compute_api_title" not in decoder_screen

@@ -366,26 +366,18 @@ object DecoderPreferencesScreen : Screen {
 
               PreferenceDivider()
 
-              Surface(
-                modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
-                shape = androidx.compose.foundation.shape.RoundedCornerShape(12.dp),
-                color = MaterialTheme.colorScheme.surfaceContainerLow,
-              ) {
-                SwitchPreference(
-                  modifier = Modifier.settingsSearchTarget(R.string.pref_decoder_mpvflow_title),
-                  value = mpvFlowFrameInterpolationEnabled,
-                  enabled = mpvFlowAvailable || nativeMedia3FlowAvailable || mpvFlowFrameInterpolationEnabled,
-                  onValueChange = { enabled ->
-                    preferences.mpvFlowFrameInterpolation.set(enabled)
-                  },
-                  title = { Text(stringResource(R.string.pref_decoder_mpvflow_title)) },
-                  titleStyle =
-                    MaterialTheme.typography.titleMedium.copy(
-                      fontWeight = FontWeight.SemiBold,
-                      color = MaterialTheme.colorScheme.primary,
-                    ),
-                )
-              }
+              SwitchPreference(
+                modifier = Modifier.settingsSearchTarget(R.string.pref_decoder_mpvflow_title),
+                value = mpvFlowFrameInterpolationEnabled,
+                enabled = mpvFlowAvailable || nativeMedia3FlowAvailable || mpvFlowFrameInterpolationEnabled,
+                onValueChange = { enabled ->
+                  preferences.mpvFlowFrameInterpolation.set(enabled)
+                },
+                title = { Text(stringResource(R.string.pref_decoder_mpvflow_title)) },
+                summary = {
+                  Text(stringResource(R.string.pref_decoder_mpvflow_summary))
+                },
+              )
 
               PreferenceDivider()
 
