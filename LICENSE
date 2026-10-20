@@ -24,24 +24,45 @@ under its own applicable licences and notices. Obtain permission from its
 actual rights holders where its existing licence does not authorize your use.
 See THIRD_PARTY_SOURCE.md and the inventory in LICENSE-BOUNDARY.md.
 
-## 2. Prior written permission required
+## 2. App use is permitted; code reuse and republication require permission
 
-Except for the rights preserved in sections 4 and 5, no licence is granted to
-use, run, copy, reproduce, modify, adapt, create derivative works from, reuse,
-redistribute, sublicense, sell, monetize, publish, upload, or otherwise make
-available any Covered Material, in whole or in part, in source or binary form.
-Each such activity requires prior written permission from ZHINFINITY.
+### 2.1 Permission for everyone to use official app releases
+
+ZHINFINITY grants everyone a nonexclusive, worldwide, royalty-free permission
+to download, install, update, and run official, unmodified Mpv∞ app releases
+distributed by ZHINFINITY or an expressly authorized distributor, on devices
+they own or are authorized to use. This includes the copies reasonably
+necessary to install, operate, update, and back up the app for their own use.
+Ordinary app use is permitted for personal, educational, organizational, and
+commercial purposes. No individual permission request is required for these
+activities. These terms do not restrict media or data merely used with the app.
+
+This end-user permission is for using the app, not for reusing its source code,
+making derivative apps, sharing copies with others, rehosting APKs, or publishing
+the app or a modified version in an app store or elsewhere. Sharing a link to
+an official download is allowed; redistributing the app itself is not granted
+by this section. Sections 4 and 5 preserve independently applicable rights.
+
+### 2.2 Prior written permission for code reuse and republication
+
+Except for section 2.1 and the rights preserved in sections 4 and 5, no licence
+is granted to copy, reproduce, modify, adapt, create derivative works from,
+reuse, redistribute, sublicense, sell, monetize, publish, upload, or otherwise
+make available any Covered Material, in whole or in part, in source or binary
+form. Each such activity requires prior written permission from ZHINFINITY.
 
 This requirement applies to commercial and noncommercial activities alike,
-including private or personal use, reposting, app-store publication, advertising-
-supported distribution, and incorporation into another project. Public access,
-attribution, absence of a fee, or a failure to respond to a request is not
-permission. No general personal-use or noncommercial-use permission is granted.
+including copying source code for private projects, reposting, app-store
+publication, advertising-supported distribution, and incorporation into another
+project. Public access, attribution, absence of a fee, or a failure to respond
+to a request is not permission. The app-use grant in section 2.1 does not grant
+general source-code reuse or republication rights.
 
 Any permission must expressly identify the material and authorized activities
-and their scope. It does not grant rights outside that scope or rights owned
-by others. No patent, trademark, branding, or endorsement rights are granted by
-these terms.
+and their scope; section 2.1 itself provides that permission for ordinary app
+use. No permission grants rights outside its scope or rights owned by others.
+No separate patent, trademark, branding, or endorsement rights are granted by
+these terms beyond any rights necessarily implied by the express app-use grant.
 
 ## 3. Attribution and no false authorship
 
@@ -53,6 +74,8 @@ suggest that ZHINFINITY endorses your version without written authorization.
 Attribution does not replace the permission required by section 2. These
 conditions do not purport to impose new restrictions on previously licensed
 material or independently licensed third-party material.
+Ordinary app users do not need to publish a separate attribution statement;
+leaving the app's built-in notices intact satisfies this section for their use.
 
 ## 4. Earlier grants and third-party rights are preserved
 
@@ -85,6 +108,10 @@ by themselves authorize unrelated reuse or external publication. These terms
 cannot prevent access, copying, or infringement as a technical matter.
 
 ## 6. Permission requests
+
+No request is needed for the ordinary app use expressly allowed by section 2.1.
+For activities requiring separate permission under section 2.2, follow this
+request process:
 
 Contact the repository owner, ZHINFINITY, through the contact channels listed
 at https://github.com/ZHINFINITY. Identify the exact source revision or files,

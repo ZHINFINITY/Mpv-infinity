@@ -3,11 +3,16 @@
 ## Draft only: do not merge or publish a release yet
 
 The proposed [Mpv∞ Permission-Only Terms 1.0](LICENSE) require prior written
-permission for copying, use, reuse, modification, and publication of qualifying
-new ZHINFINITY-owned material, whether commercial or noncommercial. This is
-not PolyForm Noncommercial, and not an open-source licence. The exact text must
-be approved by the owner and reviewed by qualified legal counsel before
-publication. Automated review is not a legal opinion.
+permission for source-code copying, reuse, modification, redistribution, and
+publication of qualifying new ZHINFINITY-owned material, whether commercial or
+noncommercial. **Everyone may download, install, update, and use official app
+releases without asking for permission**, including for commercial work, with
+necessary installation and personal backup copies. This does not authorize
+code reuse, derivative apps, APK rehosting, or app-store republication. Sharing
+official download links is allowed. Earlier and third-party rights are preserved.
+This is not PolyForm Noncommercial, and not an open-source licence. The exact
+text must be approved by the owner and reviewed by qualified legal counsel
+before publication. Automated review is not a legal opinion.
 
 ## Exact source boundary
 

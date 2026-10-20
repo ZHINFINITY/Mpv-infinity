@@ -36,7 +36,12 @@ def main() -> None:
         "# Mpv∞ Permission-Only Terms 1.0",
         "prior written permission from ZHINFINITY",
         "commercial and noncommercial activities alike",
-        "No general personal-use or noncommercial-use permission is granted",
+        "Permission for everyone to use official app releases",
+        "to download, install, update, and run official, unmodified",
+        "No individual permission request is required",
+        "commercial purposes",
+        "Sharing a link to",
+        "general source-code reuse or republication rights",
         "must not falsely",
         "do not withdraw, narrow, replace, or amend",
         "GitHub's rights to host",
@@ -46,6 +51,7 @@ def main() -> None:
     ):
         assert required in terms, required
     assert "## Noncommercial Purposes" not in terms
+    assert "No general personal-use or noncommercial-use permission is granted" not in terms
     assert "LicenseRef-MpvInfinity-Permission-Only-1.0" in (
         ROOT / "LICENSE-BOUNDARY.md"
     ).read_text(encoding="utf-8")
@@ -56,6 +62,7 @@ def main() -> None:
     readme = (ROOT / "README.md").read_text(encoding="utf-8")
     assert "Upstream-derived portions are excluded" in readme
     assert "retains its existing grants" in readme
+    assert "Everyone may download, install, update, and use official" in readme
     contributing = (ROOT / "CONTRIBUTING.md").read_text(encoding="utf-8")
     assert "no general contribution-workflow exception" in contributing
     assert "not an assignment of copyright" in contributing
