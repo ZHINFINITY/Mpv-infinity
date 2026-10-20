@@ -38,11 +38,16 @@ class DownloadResumeIntegrityTest {
   @Test
   fun lastModifiedFallbackRequiresTheSameValidDate() {
     val date = "Tue, 15 Nov 1994 08:12:31 GMT"
-    val saved = DownloadValidators.fromResponse("W/\"v1\"", date)
+    val served = "Tue, 15 Nov 1994 08:14:31 GMT"
+    val saved = DownloadValidators.fromResponse(null, date, served)
     assertEquals(date, saved.ifRange)
     assertTrue(saved.matches(null, date))
     assertFalse(saved.matches(null, "Wed, 16 Nov 1994 08:12:31 GMT"))
     assertFalse(saved.matches(null, null))
+    assertFalse(saved.matches("W/\"changed\"", date))
+    assertNull(DownloadValidators.fromResponse("W/\"v1\"", date, served).ifRange)
+    assertNull(DownloadValidators.fromResponse(null, date, date).ifRange)
+    assertNull(DownloadValidators.fromResponse(null, date, null).ifRange)
   }
 
   @Test

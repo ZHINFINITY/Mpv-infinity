@@ -287,7 +287,9 @@ class AppDownloadManager(
                 partFile.delete()
                 resumeFrom = 0L
               }
-              val nextValidators = DownloadValidators.fromResponse(response.header("ETag"), response.header("Last-Modified"))
+              val nextValidators = DownloadValidators.fromResponse(
+                response.header("ETag"), response.header("Last-Modified"), response.header("Date"),
+              )
               // Truncate before persisting new validators: a crash cannot bind old bytes to new metadata.
               FileOutputStream(partFile, false).use { }
               validators = nextValidators
