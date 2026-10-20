@@ -45,4 +45,22 @@ internal object SidecarSubtitlePolicy {
     if (!languageToken.matches(language) && !language.equals("greek", ignoreCase = true)) return false
     return tokens.size == 1 || (tokens.size == 2 && tokens[1].lowercase(Locale.ROOT) in roleTokens)
   }
+
+  fun canDeleteForVideo(
+    videoFileName: String,
+    candidateName: String,
+    subtitleExtensions: Set<String>,
+    otherFileNames: Collection<String>,
+  ): Boolean {
+    if (!belongsToVideo(videoFileName, candidateName, subtitleExtensions)) return false
+    val candidateBase = candidateName.substringBeforeLast('.')
+    return otherFileNames.none { filename ->
+      val otherName = filename.removeSuffix(".part")
+      val otherBase = otherName.substringBeforeLast('.')
+      otherName != videoFileName &&
+        otherName.substringAfterLast('.', "").lowercase(Locale.ROOT) !in subtitleExtensions &&
+        otherBase.isNotBlank() &&
+        (candidateBase == otherBase || candidateBase.startsWith("$otherBase."))
+    }
+  }
 }
