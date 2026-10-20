@@ -75,6 +75,7 @@ import app.infinity.mpvz.ui.icons.Icons
 import app.infinity.mpvz.ui.player.Panels
 import app.infinity.mpvz.ui.player.PlayerUpdates
 import app.infinity.mpvz.ui.player.PlayerViewModel
+import app.infinity.mpvz.ui.player.SpeedGesturePolicy
 import app.infinity.mpvz.ui.player.Sheets
 import app.infinity.mpvz.ui.player.SingleActionGesture
 import app.infinity.mpvz.ui.player.getSubtitleHitboxBounds
@@ -591,8 +592,10 @@ fun GestureHandler(
                       // writes rebuild the active audio filter chain (notably with pitch
                       // correction enabled), so ramping through five values can block the
                       // render thread and present the same frame during the hold gesture.
-                      val targetSpeed = 2f
-                      viewModel.setPlaybackSpeed(targetSpeed)
+                      val targetSpeed = SpeedGesturePolicy.HOLD_SPEED
+                      SpeedGesturePolicy.enter(originalSpeed, targetSpeed).forEach { command ->
+                        viewModel.setPlaybackSpeed(command.speed)
+                      }
 
                       isDynamicSpeedControlActive = true
                       hasSwipedEnough = false
@@ -958,9 +961,10 @@ fun GestureHandler(
               hasSwipedEnough = false
               if (!isSpeedLocked) {
                 // A single restore avoids rebuilding the MPV audio filter chain five times.
-                val targetSpeed = originalSpeed
                 coroutineScope.launch {
-                  viewModel.setPlaybackSpeed(targetSpeed)
+                  SpeedGesturePolicy.restore(originalSpeed, isSpeedLocked).forEach { command ->
+                    viewModel.setPlaybackSpeed(command.speed)
+                  }
                 }
               }
               viewModel.playerUpdate.update { PlayerUpdates.None }
