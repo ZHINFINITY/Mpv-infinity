@@ -114,6 +114,7 @@ import app.infinity.mpvz.ui.browser.components.BrowserBottomBar
 import app.infinity.mpvz.ui.browser.components.BrowserTopBar
 import app.infinity.mpvz.ui.browser.components.ExpressiveScrollBar
 import app.infinity.mpvz.ui.browser.components.fastScrollGlyph
+import app.infinity.mpvz.ui.browser.dialogs.AddToPlaylistDialog
 import app.infinity.mpvz.ui.browser.dialogs.DeleteConfirmationDialog
 import app.infinity.mpvz.ui.browser.dialogs.FileOperationProgressDialog
 import app.infinity.mpvz.ui.browser.dialogs.FolderPickerDialog
@@ -259,11 +260,14 @@ object FolderListScreen : Screen {
     val isRefreshing = remember { mutableStateOf(false) }
     val sortDialogOpen = rememberSaveable { mutableStateOf(false) }
     var pendingDeleteFolders by remember { mutableStateOf<List<VideoFolder>>(emptyList()) }
+    var pendingDeleteSearchVideos by remember { mutableStateOf<List<Video>>(emptyList()) }
     val showLinkDialog = remember { mutableStateOf(false) }
     val folderPickerOpen = rememberSaveable { mutableStateOf(false) }
     val operationType = remember { mutableStateOf<CopyPasteOps.OperationType?>(null) }
     val progressDialogOpen = rememberSaveable { mutableStateOf(false) }
     var renameDialogOpen by rememberSaveable { mutableStateOf(false) }
+    var searchRenameDialogOpen by rememberSaveable { mutableStateOf(false) }
+    val searchAddToPlaylistDialogOpen = rememberSaveable { mutableStateOf(false) }
     val operationProgress by CopyPasteOps.operationProgress.collectAsState()
 
     // Move-to-Secure-Folder state (moves every video inside the selected folders)
@@ -447,6 +451,22 @@ object FolderListScreen : Screen {
         onOperationComplete = { viewModel.refresh() },
       )
 
+    // Global search has its own video selection scope. Never use folder selection
+    // here: search results can be filtered/reordered independently of the folder list.
+    val searchVideos = searchResults.filterIsInstance<FileSystemItem.VideoFile>().map { it.video }
+    val searchSelectionManager =
+      rememberSelectionManager(
+        items = searchVideos,
+        getId = { it.id },
+        onDeleteItems = { videos, _ -> app.infinity.mpvz.utils.permission.PermissionUtils.StorageOps.deleteVideos(context, videos) },
+        onRenameItem = { video, newName -> app.infinity.mpvz.utils.permission.PermissionUtils.StorageOps.renameVideo(context, video, newName) },
+        onOperationComplete = { viewModel.refresh() },
+      )
+    LaunchedEffect(effectiveIsSearching, searchVideos) {
+      if (!effectiveIsSearching) searchSelectionManager.clear()
+      else if (searchSelectionManager.getSelectedItems().any { selected -> searchVideos.none { it.id == selected.id } }) searchSelectionManager.clear()
+    }
+
     fun moveSelectedFoldersToSecureFolder() {
       val selectedIds = selectionManager.getSelectedItems().map { it.bucketId }.toSet()
       if (selectedIds.isEmpty()) return
@@ -489,12 +509,15 @@ object FolderListScreen : Screen {
         }
         progressDialogOpen.value = true
         coroutineScope.launch {
-          val selectedFolders = selectionManager.getSelectedItems()
-          val selectedVideos =
+          val selectedVideos = if (effectiveIsSearching) {
+            searchSelectionManager.getSelectedItems()
+          } else {
+            val selectedFolders = selectionManager.getSelectedItems()
             selectedFolders.flatMap { folder ->
               app.infinity.mpvz.repository.MediaFileRepository
                 .getVideosForBuckets(context, setOf(folder.bucketId), includeAudioOverride = if (audioOnly) true else null)
             }
+          }
           if (selectedVideos.isNotEmpty()) {
             when (operationType.value) {
               is CopyPasteOps.OperationType.Copy -> CopyPasteOps.copyFilesToTreeUri(context, selectedVideos, uri)
@@ -528,7 +551,7 @@ object FolderListScreen : Screen {
     // Update NavigationBarState synchronously when selection mode changes
     SideEffect {
       navBarState.updateSelectionState(
-        inSelectionMode = selectionManager.isInSelectionMode,
+        inSelectionMode = if (effectiveIsSearching) searchSelectionManager.isInSelectionMode else selectionManager.isInSelectionMode,
         onlyVideos = true,
       )
     }
@@ -554,13 +577,14 @@ object FolderListScreen : Screen {
 
     // Optimized back handler for immediate response
     val shouldHandleBack =
-      selectionManager.isInSelectionMode ||
+      (if (effectiveIsSearching) searchSelectionManager.isInSelectionMode else selectionManager.isInSelectionMode) ||
         (!embedded && internalIsSearching) ||
         isFabExpanded.value ||
         ((isDualPaneActive || embedded && audiobookMode) && selectedFolderBucketId != null)
     androidx.activity.compose.BackHandler(enabled = shouldHandleBack) {
       when {
         isFabExpanded.value -> isFabExpanded.value = false
+        effectiveIsSearching && searchSelectionManager.isInSelectionMode -> searchSelectionManager.clear()
         selectionManager.isInSelectionMode -> selectionManager.clear()
         !embedded && internalIsSearching -> {
           internalIsSearching = false
@@ -590,6 +614,27 @@ object FolderListScreen : Screen {
         topBar = {
           if (embedded) {
             // Embedded inside another screen (e.g. Music tab) which already renders its own top bar.
+          } else if (effectiveIsSearching && searchSelectionManager.isInSelectionMode) {
+            BrowserTopBar(
+              title = stringResource(R.string.settings_search_title),
+              isInSelectionMode = true,
+              selectedCount = searchSelectionManager.selectedCount,
+              totalCount = searchVideos.size,
+              onCancelSelection = { searchSelectionManager.clear() },
+              isSingleSelection = searchSelectionManager.isSingleSelection,
+              onInfoClick = {
+                searchSelectionManager.getSelectedItems().firstOrNull()?.let { video ->
+                  context.startActivity(Intent(context, app.infinity.mpvz.ui.mediainfo.MediaInfoActivity::class.java).apply { action = Intent.ACTION_VIEW; data = video.uri })
+                  searchSelectionManager.clear()
+                }
+              },
+              onShareClick = { searchSelectionManager.shareSelected() },
+              onPlayClick = { searchSelectionManager.playSelected() },
+              onSelectAll = { searchSelectionManager.selectAll() },
+              onInvertSelection = { searchSelectionManager.invertSelection() },
+              onDeselectAll = { searchSelectionManager.clear() },
+              onAddToPlaylistClick = { searchAddToPlaylistDialogOpen.value = true },
+            )
           } else if (internalIsSearching) {
             InlineSearchBar(
               query = internalSearchQuery,
@@ -907,8 +952,12 @@ object FolderListScreen : Screen {
                           )
                         }
                       },
+                      selectionManager = searchSelectionManager,
+                      onVideoLongClick = { video -> searchSelectionManager.handleLongClick(video) },
                       onVideoClick = { video ->
-                        if (audiobookMode) {
+                        if (searchSelectionManager.isInSelectionMode) {
+                          searchSelectionManager.toggle(video)
+                        } else if (audiobookMode) {
                           coroutineScope.launch {
                             AudiobookPlayback.launchForFile(context, video.path, video.uri.toString())
                           }
@@ -1012,7 +1061,7 @@ object FolderListScreen : Screen {
           }
 
           BrowserBottomBar(
-            isSelectionMode = selectionManager.isInSelectionMode,
+            isSelectionMode = if (effectiveIsSearching) searchSelectionManager.isInSelectionMode else selectionManager.isInSelectionMode,
             onCopyClick = {
               operationType.value = CopyPasteOps.OperationType.Copy
               if (CopyPasteOps.canUseDirectFileOperations()) {
@@ -1029,14 +1078,14 @@ object FolderListScreen : Screen {
                 treePickerLauncher.launch(null)
               }
             },
-            onRenameClick = { renameDialogOpen = true },
-            onDeleteClick = { pendingDeleteFolders = selectionManager.getSelectedItems() },
-            onAddToPlaylistClick = { },
+            onRenameClick = { if (effectiveIsSearching) searchRenameDialogOpen = true else renameDialogOpen = true },
+            onDeleteClick = { if (effectiveIsSearching) pendingDeleteSearchVideos = searchSelectionManager.getSelectedItems() else pendingDeleteFolders = selectionManager.getSelectedItems() },
+            onAddToPlaylistClick = { if (effectiveIsSearching) searchAddToPlaylistDialogOpen.value = true },
             showCopy = true,
             showMove = true,
-            showRename = selectionManager.isSingleSelection,
+            showRename = if (effectiveIsSearching) searchSelectionManager.isSingleSelection else selectionManager.isSingleSelection,
             showDownscale = false,
-            showAddToPlaylist = false,
+            showAddToPlaylist = effectiveIsSearching,
             modifier =
               Modifier
                 .align(Alignment.BottomCenter)
@@ -1124,11 +1173,22 @@ object FolderListScreen : Screen {
         val op = operationType.value
         if (op != null) {
           coroutineScope.launch {
-            val selectedFolders = selectionManager.getSelectedItems()
-            if (selectedFolders.isNotEmpty()) {
-              when (op) {
-                is CopyPasteOps.OperationType.Move -> {
-                  val needFallback = mutableListOf<VideoFolder>()
+            if (effectiveIsSearching) {
+              val selectedVideos = searchSelectionManager.getSelectedItems()
+              if (selectedVideos.isNotEmpty()) {
+                progressDialogOpen.value = true
+                when (op) {
+                  is CopyPasteOps.OperationType.Move -> CopyPasteOps.moveFiles(context, selectedVideos, destinationPath)
+                  is CopyPasteOps.OperationType.Copy -> CopyPasteOps.copyFiles(context, selectedVideos, destinationPath)
+                  else -> Unit
+                }
+              }
+            } else {
+              val selectedFolders = selectionManager.getSelectedItems()
+              if (selectedFolders.isNotEmpty()) {
+                when (op) {
+                  is CopyPasteOps.OperationType.Move -> {
+                    val needFallback = mutableListOf<VideoFolder>()
                   for (folder in selectedFolders) {
                     val dst = File(destinationPath, folder.name)
                     if (!File(folder.path).renameTo(dst)) needFallback.add(folder)
@@ -1169,6 +1229,7 @@ object FolderListScreen : Screen {
                 }
               }
             }
+            }
           }
         }
       },
@@ -1207,6 +1268,39 @@ object FolderListScreen : Screen {
       progress = secureFolderProgress,
       label = stringResource(R.string.secure_folder_moving_progress),
       onCancel = { secureFolderRepository.cancelOperation() },
+    )
+
+    if (pendingDeleteSearchVideos.isNotEmpty()) {
+      DeleteConfirmationDialog(
+        isOpen = true,
+        onDismiss = { pendingDeleteSearchVideos = emptyList() },
+        onConfirm = {
+          pendingDeleteSearchVideos = emptyList()
+          searchSelectionManager.deleteSelected()
+        },
+        itemType = "video",
+        itemCount = pendingDeleteSearchVideos.size,
+        itemNames = pendingDeleteSearchVideos.map { it.displayName },
+      )
+    }
+    if (searchRenameDialogOpen && searchSelectionManager.isSingleSelection) {
+      val video = searchSelectionManager.getSelectedItems().firstOrNull()
+      if (video != null) {
+        RenameDialog(
+          isOpen = true,
+          onDismiss = { searchRenameDialogOpen = false },
+          onConfirm = { name -> searchRenameDialogOpen = false; searchSelectionManager.renameSelected(name) },
+          currentName = video.displayName.substringBeforeLast('.'),
+          itemType = "video",
+          extension = video.displayName.substringAfterLast('.', "").takeIf { it.isNotBlank() },
+        )
+      }
+    }
+    AddToPlaylistDialog(
+      isOpen = searchAddToPlaylistDialogOpen.value,
+      videos = searchSelectionManager.getSelectedItems(),
+      onDismiss = { searchAddToPlaylistDialogOpen.value = false },
+      onSuccess = { searchAddToPlaylistDialogOpen.value = false; searchSelectionManager.clear(); viewModel.refresh() },
     )
 
     if (renameDialogOpen && selectionManager.isSingleSelection) {
@@ -1661,6 +1755,8 @@ private fun SearchResultsContent(
   searchResults: List<FileSystemItem>,
   navigationBarHeight: androidx.compose.ui.unit.Dp,
   onFolderClick: (app.infinity.mpvz.domain.media.model.VideoFolder) -> Unit,
+  selectionManager: app.infinity.mpvz.ui.browser.selection.SelectionManager<Video, Long>,
+  onVideoLongClick: (Video) -> Unit,
   onVideoClick: (app.infinity.mpvz.domain.media.model.Video) -> Unit,
   mediaLayoutMode: app.infinity.mpvz.preferences.MediaLayoutMode,
 ) {
@@ -1780,9 +1876,9 @@ private fun SearchResultsContent(
             val video = videos[index]
             VideoCard(
               video = video,
-              isSelected = false,
+              isSelected = selectionManager.isSelected(video),
               onClick = { onVideoClick(video) },
-              onLongClick = {},
+              onLongClick = { onVideoLongClick(video) },
               onThumbClick = { onVideoClick(video) },
               isGridMode = true,
               showSubtitleIndicator = showSubtitleIndicator,
