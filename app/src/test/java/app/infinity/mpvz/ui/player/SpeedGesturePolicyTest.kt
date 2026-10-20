@@ -28,7 +28,7 @@ class SpeedGesturePolicyTest {
   }
 
   @Test
-  fun lockedHoldDoesNotWriteA restorationCommand() {
+  fun lockedHoldDoesNotWriteARestorationCommand() {
     assertTrue(SpeedGesturePolicy.restore(originalSpeed = 1.5f, locked = true).isEmpty())
   }
 
