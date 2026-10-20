@@ -115,6 +115,16 @@ internal object PlayerLifecyclePolicy {
     backgroundPlaybackSessionActive: Boolean,
   ): Boolean = backgroundPlaybackEnabled && backgroundPlaybackSessionActive
 
+  /** Preserve an intentional pause while restoring a playing service handoff. */
+  fun shouldResumeAfterBackgroundHandoff(
+    backgroundPlaybackSessionActive: Boolean,
+    wasPlayingBeforeHandoff: Boolean,
+    isInPictureInPictureMode: Boolean,
+  ): Boolean =
+    backgroundPlaybackSessionActive &&
+      wasPlayingBeforeHandoff &&
+      !isInPictureInPictureMode
+
   fun shouldTreatStopAsPipDismissal(
     wasInPictureInPictureMode: Boolean,
     isInPictureInPictureMode: Boolean,

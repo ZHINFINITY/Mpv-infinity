@@ -2708,6 +2708,15 @@ class PlayerActivity :
       setupWindowFlags()
       setupSystemUI()
 
+      // Capture this before ending the service handoff. The service shares the
+      // process-wide core, but its teardown can leave the Activity paused after
+      // a long background interval. Never resume an item that was already paused.
+      val resumeAfterBackgroundHandoff =
+        PlayerLifecyclePolicy.shouldResumeAfterBackgroundHandoff(
+          backgroundPlaybackSessionActive = isBackgroundPlaybackSessionActive,
+          wasPlayingBeforeHandoff = PlaybackSession.getPropertyBoolean("pause") == false,
+          isInPictureInPictureMode = isInPictureInPictureMode,
+        )
       if (restoreForegroundVideoAndAmbientIfUnlocked()) {
         // Foreground playback owns the session again after unlock or app return.
         if (MediaPlaybackService.isRunning()) endBackgroundPlayback()
@@ -2715,6 +2724,9 @@ class PlayerActivity :
         // The detached service released focus during the handoff; take it back over so a
         // future focus loss (e.g. a phone call) pauses the now-foreground playback.
         if (viewModel.paused != true) requestAudioFocus()
+        if (resumeAfterBackgroundHandoff) {
+          PlaybackSession.setPropertyBoolean("pause", false)
+        }
       }
 
       if (!noisyReceiverRegistered) {
