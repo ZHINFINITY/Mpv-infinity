@@ -7,7 +7,8 @@ import json
 from pathlib import Path
 import zipfile
 MARKERS = (
-    b"MPVFLOW_PAIR_GHOST_INCLUSIVE_V2",
+    b"MPVFLOW_PAIR_GHOST_SPATIAL_GAP_V3",
+    b"scene.r>=.003&&weak>=.04&&weak<=.25&&supported>=.008",
     b"counts/float(sz.x*sz.y)",
     b"weak>=.10&&bad>=.01",
     b"bool pairGhost=(pc.cfg.x&0x40000000)==0",
@@ -29,7 +30,7 @@ def main() -> None:
                     raise SystemExit(f"{name} lacks pair policy evidence: {marker.decode()}")
             records.append({"library": name, "sha256": hashlib.sha256(data).hexdigest(),
                             "bytes": len(data), "verified_markers": [m.decode() for m in MARKERS]})
-    report = {"experiment": "pair-ghost-inclusive-v2", "apk": args.apk.name,
+    report = {"experiment": "pair-ghost-inclusive-v3", "apk": args.apk.name,
               "apk_sha256": hashlib.sha256(args.apk.read_bytes()).hexdigest(),
               "libraries": records,
               "limits": "Packaging proof only; not Poco performance or visual proof."}

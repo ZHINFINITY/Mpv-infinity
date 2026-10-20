@@ -76,9 +76,9 @@ def test_standard_workflow_is_flow_only() -> None:
     assert workflow.index("- name: Verify Flow-only LGPL MPV runtime") < workflow.index(
         "- name: Save verified Flow-only MPVFlow arm64 runtime"
     ) < workflow.index("- name: Run focused interpolation regression tests")
-    assert flow_workflow.index("- name: Verify GPL-free MPVFlow arm64 runtime") < flow_workflow.index(
-        "- name: Save verified Flow-only MPVFlow arm64 runtime"
-    ) < flow_workflow.index("- name: Run MPVFlow core and GPU shader regression tests")
+    assert flow_workflow.index("- name: Run MPVFlow core and GPU shader regression tests") < flow_workflow.index(
+        "- name: Verify GPL-free MPVFlow arm64 runtime"
+    ) < flow_workflow.index("- name: Save verified Flow-only MPVFlow arm64 runtime")
 
     assert "MPVFLOW_INCLUDE_RIFE" not in builder
     assert "build-rife-native.sh" not in builder

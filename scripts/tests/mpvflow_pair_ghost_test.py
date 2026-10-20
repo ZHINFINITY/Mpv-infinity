@@ -36,10 +36,14 @@ def main() -> None:
         return
     source = SOURCE.read_text(encoding="utf-8")
     shaders = [embedded(x, source) for x in ("shader_pair_gate_first", "shader_pair_gate_reduce", "shader_pair_gate_merge")]
+    assert "MPVFLOW_PAIR_GHOST_SPATIAL_GAP_V3" in shaders[0]
+    assert "imageStore(outTex,tile+ivec2(0,tiles.y),spatial)" in shaders[0]
     assert "counts/float(sz.x*sz.y)" in shaders[0]
     assert "weak>=.10&&bad>=.01" in shaders[2]
     assert "scene.r<=.1882353" in shaders[2]
     assert "isnan(g)" in shaders[2]
+    assert "scene.r>=.003&&weak>=.04&&weak<=.25&&supported>=.008" in shaders[2]
+    assert "ivec2(0,1)" in shaders[2]
     with tempfile.TemporaryDirectory(prefix="pair-ghost-", dir=os.environ.get("TMPDIR") or "/dev/shm") as td:
         d = Path(td)
         spirv = []

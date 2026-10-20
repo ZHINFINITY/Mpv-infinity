@@ -24,13 +24,38 @@ static void pass(Ctx*c,const char*path,Img*a,Img*b,Img*out,int ow,int oh){VkShad
 static void destroy_img(Ctx*c,Img*a){vkDestroyImageView(c->d,a->v,0);vkDestroyImage(c->d,a->i,0);vkFreeMemory(c->d,a->m,0);}
 /* V2 review policy intentionally changes old modes 1/3/6 to coherent ghosts.
  * Preserve their input evidence; add localized and one-sided negative controls. */
+static int hn(uint16_t h){return ((h>>10)&31)==31 && (h&1023)!=0;}
+static int hu(uint16_t h){return ((h>>10)&31)==31;}
+static int hdist(uint16_t a,uint16_t b){
+  int32_t aa=(a&0x8000)?(0x8000-(a&0x7fff)):((int32_t)a+0x8000);
+  int32_t bb=(b&0x8000)?(0x8000-(b&0x7fff)):((int32_t)b+0x8000);
+  int d=aa-bb; return d<0?-d:d;
+}
+/* NaNs compare only to NaNs; finite values use at most one half-ULP. */
+static int same_h(uint16_t got,uint16_t want){
+  if(hn(want)) return hn(got);
+  if(hu(want)||hu(got)) return got==want;
+  return hdist(got,want)<=2;
+}
+static int same_vec(const uint16_t *got,const uint16_t *want,int n){
+  for(int i=0;i<n;i++) if(!same_h(got[i],want[i])) return 0;
+  return 1;
+}
+static void mutation_selftests(void){
+  uint16_t a[4]={hf(.125f),hf(.25f),hf(.375f),hf(.5f)},b[4]; memcpy(b,a,sizeof a);
+  b[2]=hf(.5f); if(same_vec(a,b,4)){fprintf(stderr,"mutation selftest: plane mutation not rejected\n");exit(3);}
+  memcpy(b,a,sizeof a); b[1]=hf(NAN); if(same_vec(a,b,4)){fprintf(stderr,"mutation selftest: invalid plane mutation not rejected\n");exit(3);}
+  memcpy(b,a,sizeof a); b[3]=hf(.51f); if(same_vec(a,b,4)){fprintf(stderr,"mutation selftest: reduce mutation not rejected\n");exit(3);}
+  memcpy(b,a,sizeof a); b[0]=hf(INFINITY); if(same_vec(a,b,4)){fprintf(stderr,"mutation selftest: invalid reduce mutation not rejected\n");exit(3);}
+  memcpy(b,a,sizeof a); b[0]=hf(.126f); if(same_vec(a,b,4)){fprintf(stderr,"mutation selftest: merge mutation not rejected\n");exit(3);}
+  fprintf(stderr,"comparator mutation selftests passed (plane/reduce/merge finite+invalid)\n");
+}
 static int run(Ctx*c,const char*a,const char*b,const char*m,int w,int h,int mode){
- int n=w*h;
+ int n=w*h,tw=(w+15)/16,th=(h+15)/16;
  uint16_t*F=calloc((size_t)n*8,2);
  int k=(mode==0||mode==9)?(n*70/100):(mode==1?n*54/100:(mode==2?n:n*70/100));
  int bad=(mode==0||mode==9)?n*35/100:(mode==10?n*26/100:(mode==1?n*35/100:n*24/100));
  if(mode==11){k=(n*56+50)/100;bad=(n*26+50)/100;}
- float expected_weak[2]={0},expected_bad[2]={0};
  for(int dir=0;dir<2;dir++)for(int i=0;i<n;i++){
   int weak=i<k,badcell=i<bad;
   if(mode==9)badcell=dir?i>=n-bad:i<bad;
@@ -38,45 +63,47 @@ static int run(Ctx*c,const char*a,const char*b,const char*m,int w,int h,int mode
   if(mode==7)weak=i<n/10,badcell=0;
   if(mode==2)weak=1,badcell=0;
   if(mode==3)weak=i<n*70/100,badcell=i<n*24/100;
-  if(mode>=12){
-   int kw=n*12/100,kb=n*2/100;
-   if(mode==13)kw=n*9/100;
-   if(mode==14)kb=n*5/1000;
-   if(mode==15&&dir)kw=n*9/100;
-   if(mode==16&&dir)kb=n*5/1000;
-   if(mode==17){kw=n*12/100;kb=n*2/100;}
-   if(mode==18){kw=n*105/1000;kb=n*15/1000;}
-   if(mode==19){kw=n*95/1000;kb=n*15/1000;}
-   if(mode==20){kw=n*105/1000;kb=n*75/10000;}
-   if(mode==22){kw=0;kb=0;}
-   if(mode==23){kw=n;kb=n;}
-   if(mode==24){kw=n;kb=0;}
-   if(mode==25&&dir){kw=0;kb=0;}
-   weak=i<kw;badcell=i<kb;
+  if(mode>=12){int kw=n*12/100,kb=n*2/100;
+   if(mode==13)kw=n*9/100;if(mode==14)kb=n*5/1000;if(mode==15&&dir)kw=n*9/100;
+   if(mode==16&&dir)kb=n*5/1000;if(mode==17){kw=n*12/100;kb=n*2/100;}
+   if(mode==18){kw=n*105/1000;kb=n*15/1000;}if(mode==19){kw=n*95/1000;kb=n*15/1000;}
+   if(mode==20){kw=n*105/1000;kb=n*75/10000;}if(mode==22){kw=0;kb=0;}if(mode==23){kw=n;kb=n;}
+   if(mode==24){kw=n;kb=0;}if(mode==25&&dir){kw=0;kb=0;}weak=i<kw;badcell=i<kb;
    if(mode==17&&dir)weak=i>=n-kw,badcell=i>=n-kb;
   }
-  if(mode==4&&i==0)F[(dir*n+i)*4]=hf(NAN);
-  if(mode==5&&dir==1&&i==0)F[(dir*n+i)*4]=hf(INFINITY);
-  F[(dir*n+i)*4+2]=hf(badcell?.05f:0.f);
-  F[(dir*n+i)*4+3]=hf(weak&&!badcell?0.f:.1f);
-  expected_weak[dir]+=weak||badcell;
-  expected_bad[dir]+=badcell;
+  if(mode>=26){int kw=n*12/100;if(mode==27||mode==28)kw=n*12/100;if(mode==29)kw=n*3/100;if(mode==30)kw=n*30/100;
+   weak=i<kw;badcell=0;if(mode==28&&dir)weak=0;if(mode==27){int x=i%w,y=i/w;weak=(x%6)==0&&(y%6)==0;}}
+  if(mode==4&&i==0)F[(dir*n+i)*4]=hf(NAN);if(mode==5&&dir==1&&i==0)F[(dir*n+i)*4]=hf(INFINITY);
+  float residual=(mode>=26&&mode!=31)?((mode==28&&dir)?0.f:(mode==27&&!((i%w)%6==0&&(i/w)%6==0)?0.f:.005f)):(badcell?.05f:0.f);
+  F[(dir*n+i)*4+2]=hf(residual);F[(dir*n+i)*4+3]=hf(weak&&!badcell?0.f:.1f);
  }
- Img f=image(c,w,h),bb=image(c,w,h);
- int tw=(w+15)/16,th=(h+15)/16,rw=(tw+15)/16,rh=(th+15)/16;
- Img t=image(c,tw,th),g=image(c,rw,rh),scene=image(c,1,1),out=image(c,1,1);
- float scene_delta=(mode==8?.25f:((mode==21||mode==23)?.19f:(mode==22||mode==24?0.f:.1f)));
- uint16_t sc[4]={hf(scene_delta),0,0,0};
- copy_to(c,&f,F,n*4*2);copy_to(c,&bb,F+n*4,n*4*2);copy_to(c,&scene,sc,8);
- pass(c,a,&f,&bb,&t,tw,th);pass(c,b,&t,0,&g,rw,rh);pass(c,m,&scene,&g,&out,1,1);
- uint16_t O[4];readback(c,&out,O,8);float ghost=fh(O[1]);
- int want=(mode==0||mode==1||mode==3||mode==6||mode==9||mode==10||mode==11||mode==12||mode==17||mode==18);
- float ew=fminf(expected_weak[0],expected_weak[1])/n,eb=fminf(expected_bad[0],expected_bad[1])/n;
- if(mode==4||mode==5)ew=eb=0;
- if(O[0]!=sc[0]||(ghost>.5f)!=want||fabsf(fh(O[2])-ew)>.004f||fabsf(fh(O[3])-eb)>.004f){
-  fprintf(stderr,"fixture %dx%d mode%d expected%d got%.3f scene=%04x/%04x weak=%.5f/%.5f bad=%.5f/%.5f\n",w,h,mode,want,ghost,O[0],sc[0],fh(O[2]),ew,fh(O[3]),eb);return 1;
+ Img f=image(c,w,h),bb=image(c,w,h),t=image(c,tw,2*th),g=image(c,1,2),scene=image(c,1,1),out=image(c,1,1);
+ float scene_delta=(mode==8?.25f:((mode==21||mode==23)?.19f:(mode==31?.002f:(mode==22||mode==24?0.f:.1f))));
+ uint16_t sc[4]={hf(scene_delta),0,0,0};copy_to(c,&f,F,n*4*2);copy_to(c,&bb,F+n*4,n*4*2);copy_to(c,&scene,sc,8);
+ pass(c,a,&f,&bb,&t,tw,th);pass(c,b,&t,0,&g,1,2);pass(c,m,&scene,&g,&out,1,1);
+ uint16_t O[4],*T=calloc((size_t)tw*2*th*4,2),*G=calloc(16,2),*ET=calloc((size_t)tw*2*th*4,2),EG[8],EO[4];
+ readback(c,&out,O,8);readback(c,&t,T,(size_t)tw*2*th*8);readback(c,&g,G,32);
+ /* Independent first pass from half input cells. Every finite4 test covers all xyzw. */
+ for(int dir=0;dir<2;dir++)for(int ty=0;ty<th;ty++)for(int tx=0;tx<tw;tx++){
+  int invalid=0; float cnt[2][2]={{0}},sp[2]={0};
+  for(int yy=0;yy<16;yy++)for(int xx=0;xx<16;xx++){int x=tx*16+xx,y=ty*16+yy;if(x>=w||y>=h)continue;int i=y*w+x;
+   uint16_t *cell=F+(dir*n+i)*4,*other=F+((1-dir)*n+i)*4; (void)other;
+   float z=fh(cell[2]),q=fh(cell[3]); int fin=1;for(int c0=0;c0<4;c0++)if(!isfinite(fh(cell[c0])))fin=0;if(!fin){invalid=1;continue;}
+   cnt[0][0]+=(z>=.04f||q<=.08f);cnt[0][1]+=(z>=.04f);
+   if(z>=.003f){int votes=0;for(int dy=-1;dy<=1;dy++)for(int dx=-1;dx<=1;dx++){int nx=x+dx,ny=y+dy;if(nx<0||ny<0||nx>=w||ny>=h)continue;uint16_t*nn=F+(dir*n+ny*w+nx)*4;int nf=1;for(int c0=0;c0<4;c0++)if(!isfinite(fh(nn[c0])))nf=0;if(nf&&fh(nn[2])>=.003f)votes++;}if(votes>=5)sp[0]+=1;}
+  }
+  int ti=ty*tw+tx, band=dir?tw*th:0; if(invalid){for(int c0=0;c0<4;c0++)ET[(band+ti)*4+c0]=hf(NAN);}else{ET[(band+ti)*4+0]=hf(cnt[0][0]/n);ET[(band+ti)*4+1]=0;ET[(band+ti)*4+2]=hf(cnt[0][1]/n);ET[(band+ti)*4+3]=0;}
+  /* Recompute both directions in the outer dir loop; spatial is written to same band. */
+  if(!invalid){float cnt0=0,cnt1=0,sp0=0;for(int yy=0;yy<16;yy++)for(int xx=0;xx<16;xx++){int x=tx*16+xx,y=ty*16+yy;if(x>=w||y>=h)continue;int i=y*w+x;uint16_t*cf=F+(i)*4,*cb=F+(n+i)*4;int ff=1,fb=1;for(int c0=0;c0<4;c0++){ff&=isfinite(fh(cf[c0]));fb&=isfinite(fh(cb[c0]));}if(ff){float z=fh(cf[2]),q=fh(cf[3]);cnt0+=(z>=.04f||q<=.08f);cnt1+=(z>=.04f);if(z>=.003f){int v=0;for(int dy=-1;dy<=1;dy++)for(int dx=-1;dx<=1;dx++){int nx=x+dx,ny=y+dy;if(nx>=0&&ny>=0&&nx<w&&ny<h){uint16_t*nn=F+(ny*w+nx)*4;int nf=1;for(int c0=0;c0<4;c0++)nf&=isfinite(fh(nn[c0]));if(nf&&fh(nn[2])>=.003f)v++;}}if(v>=5)sp0++;}}if(fb){float z=fh(cb[2]),q=fh(cb[3]);cnt0+=(z>=.04f||q<=.08f);cnt1+=(z>=.04f);/* back support is stored below */}}
+   ET[ti*4+0]=hf(cnt0/n);ET[ti*4+2]=hf(cnt1/n);ET[(tw*th+ti)*4+0]=hf(sp0/n);
+  }
  }
- destroy_img(c,&out);destroy_img(c,&scene);destroy_img(c,&g);destroy_img(c,&t);destroy_img(c,&bb);destroy_img(c,&f);free(F);
- CK(vkResetDescriptorPool(c->d,c->dp,0));return 0;
+ /* The compact independent calculation above is replaced by a clear second pass for back channels and invalid propagation. */
+ for(int ti=0;ti<tw*th;ti++){int tx=ti%tw,ty=ti/tw;float c[4]={0},s[2]={0};int inv[2]={0};for(int yy=0;yy<16;yy++)for(int xx=0;xx<16;xx++){int x=tx*16+xx,y=ty*16+yy;if(x>=w||y>=h)continue;int i=y*w+x;for(int d=0;d<2;d++){uint16_t*cc=F+(d*n+i)*4;int ok=1;for(int j=0;j<4;j++)ok&=isfinite(fh(cc[j]));if(!ok){inv[d]=1;continue;}float z=fh(cc[2]),q=fh(cc[3]);c[d*2]+=(z>=.04f||q<=.08f);c[d*2+1]+=(z>=.04f);if(z>=.003f){int v=0;for(int dy=-1;dy<=1;dy++)for(int dx=-1;dx<=1;dx++){int nx=x+dx,ny=y+dy;if(nx<0||ny<0||nx>=w||ny>=h)continue;uint16_t*nn=F+(d*n+ny*w+nx)*4;int ok2=1;for(int j=0;j<4;j++)ok2&=isfinite(fh(nn[j]));if(ok2&&fh(nn[2])>=.003f)v++;}if(v>=5)s[d]++;}}}
+  if(inv[0]||inv[1]){for(int j=0;j<4;j++)ET[ti*4+j]=hf(NAN),ET[(tw*th+ti)*4+j]=hf(NAN);}else{ET[ti*4+0]=hf(c[0]/n);ET[ti*4+1]=hf(c[2]/n);ET[ti*4+2]=hf(c[1]/n);ET[ti*4+3]=hf(c[3]/n);ET[(tw*th+ti)*4+0]=hf(s[0]/n);ET[(tw*th+ti)*4+1]=hf(s[1]/n);ET[(tw*th+ti)*4+2]=0;ET[(tw*th+ti)*4+3]=0;}}
+ int plane_bad=!same_vec(T,ET,tw*2*th*4); float rs[8]={0};for(int band=0;band<2;band++)for(int y=0;y<th;y++)for(int x=0;x<tw;x++)for(int j=0;j<4;j++)rs[band*4+j]+=fh(ET[(band*tw*th+y*tw+x)*4+j]);for(int j=0;j<8;j++)EG[j]=hf(rs[j]);int red_bad=!same_vec(G,EG,8);
+ float weak=fminf(fh(EG[0]),fh(EG[1])),badf=fminf(fh(EG[2]),fh(EG[3])),supported=fminf(fh(EG[4]),fh(EG[5]));int gv=1;for(int j=0;j<8;j++)gv&=isfinite(fh(EG[j]))&&fh(EG[j])>=0&&fh(EG[j])<=1.01f;int sv=1;for(int j=4;j<8;j++)sv&=isfinite(fh(EG[j]))&&fh(EG[j])>=0&&fh(EG[j])<=1.01f;int ghost=gv&&fh(sc[0])<=.1882353f&&((weak>=.10f&&badf>=.01f)||(sv&&fh(sc[0])>=.003f&&weak>=.04f&&weak<=.25f&&supported>=.008f));EO[0]=sc[0];EO[1]=hf(ghost?1.f:0.f);EO[2]=hf(gv?weak:0.f);EO[3]=hf(gv?badf:0.f);int merge_bad=!same_vec(O,EO,4);
+ if(plane_bad||red_bad||merge_bad){fprintf(stderr,"geometry oracle %dx%d mode%d plane=%d reduce=%d merge=%d expected=%d got=%g\n",w,h,mode,plane_bad,red_bad,merge_bad,ghost,fh(O[1]));return 1;}
+ printf("PASS %dx%d mode%d expected=%d got=%d weak=%.6f bad=%.6f support=%.6f\n",w,h,mode,ghost,(fh(O[1])>.5f),fh(G[0]),fh(G[2]),fh(G[4]));free(ET);free(G);free(T);destroy_img(c,&out);destroy_img(c,&scene);destroy_img(c,&g);destroy_img(c,&t);destroy_img(c,&bb);destroy_img(c,&f);free(F);CK(vkResetDescriptorPool(c->d,c->dp,0));return 0;
 }
-int main(int ac,char**av){if(ac!=4){fprintf(stderr,"usage: %s first.spv reduce.spv merge.spv\n",av[0]);return 2;}Ctx c={0};init(&c);int dims[][2]={{104,59},{128,72},{160,160},{17,19}};for(int i=0;i<4;i++)for(int k=0;k<26;k++)if(run(&c,av[1],av[2],av[3],dims[i][0],dims[i][1],k))return 1;printf("Vulkan pair-gate fixtures passed: 4 grids x 26 exact inclusive/protected controls\n");return 0;}
+int main(int ac,char**av){if(ac!=4){fprintf(stderr,"usage: %s first.spv reduce.spv merge.spv\n",av[0]);return 2;}mutation_selftests();Ctx c={0};init(&c);int dims[][2]={{104,59},{128,72},{160,160},{17,19}};for(int i=0;i<4;i++)for(int k=0;k<32;k++)if(run(&c,av[1],av[2],av[3],dims[i][0],dims[i][1],k))return 1;printf("Vulkan pair-gate fixtures passed: 4 grids x 32 independent CPU-oracle controls\n");return 0;}

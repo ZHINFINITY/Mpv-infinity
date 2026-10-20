@@ -902,10 +902,12 @@ static const char shader_flow[] =
  * The entire pair uses endpoint crossfade only when broad ambiguity AND broad
  * photometric mismatch are present. Low-cost aperture/flat pans are not rejected
  * merely for low uniqueness. No CPU readback, per-pixel fallback mask, flow edit,
- * quality/resolution/FPS change, or Soft Blend setting change is introduced. */
+ * quality/resolution/FPS change, or Soft Blend setting change is introduced.
+ * The second evidence plane adds spatially supported low-residual gap rescue
+ * without another dispatch or any cross-pair/CPU state. */
 static const char shader_pair_gate_first[] =
     "#version 450\n"
-    "// MPVFLOW_PAIR_GHOST_INCLUSIVE_V2: normalized fine-grid evidence, not pixel masks.\n"
+    "// MPVFLOW_PAIR_GHOST_SPATIAL_GAP_V3: normalized fine-grid evidence, not pixel masks.\n"
     "layout(set=0,binding=0,rgba16f) readonly uniform image2D forwardTex;\n"
     "layout(set=0,binding=1,rgba16f) readonly uniform image2D backwardTex;\n"
     "layout(set=0,binding=2,rgba16f) writeonly uniform image2D outTex;\n"
@@ -914,19 +916,27 @@ static const char shader_pair_gate_first[] =
     "bool finite4(vec4 v){return !any(isnan(v))&&!any(isinf(v));}\n"
     "void main(){\n"
     " ivec2 tile=ivec2(gl_GlobalInvocationID.xy),sz=imageSize(forwardTex);\n"
-    " if(any(greaterThanEqual(tile,imageSize(outTex))))return;\n"
-    " vec4 counts=vec4(0.0);bool invalid=false;\n"
+    " ivec2 tiles=(sz+15)/16;if(any(greaterThanEqual(tile,tiles)))return;\n"
+    " vec4 counts=vec4(0.0),support=vec4(0.0);bool invalid=false;\n"
     " for(int y=0;y<16;y++)for(int x=0;x<16;x++){\n"
     "  ivec2 q=tile*16+ivec2(x,y);if(any(greaterThanEqual(q,sz)))continue;\n"
     "  vec4 f=imageLoad(forwardTex,q),b=imageLoad(backwardTex,q);\n"
     "  if(!finite4(f)||!finite4(b)){invalid=true;continue;}\n"
     "  counts+=vec4((f.z>=.04||f.w<=.08)?1.:0.,(b.z>=.04||b.w<=.08)?1.:0.,f.z>=.04?1.:0.,b.z>=.04?1.:0.);\n"
+    "  ivec2 votes=ivec2(0);\n"
+    "  if(f.z>=.003||b.z>=.003)for(int ny=-1;ny<=1;ny++)for(int nx=-1;nx<=1;nx++){\n"
+    "   ivec2 n=q+ivec2(nx,ny);if(any(lessThan(n,ivec2(0)))||any(greaterThanEqual(n,sz)))continue;\n"
+    "   vec4 nf=imageLoad(forwardTex,n),nb=imageLoad(backwardTex,n);\n"
+    "   votes+=ivec2(finite4(nf)&&nf.z>=.003?1:0,finite4(nb)&&nb.z>=.003?1:0);\n"
+    "  }\n"
+    "  support.r+=f.z>=.003&&votes.x>=5?1.:0.;support.g+=b.z>=.003&&votes.y>=5?1.:0.;\n"
     " }\n"
     " // Divide by all fine-grid cells BEFORE half storage: every sum stays <=1.\n"
     " // Edge tiles retain their actual count; no unweighted tile means or half overflow.\n"
     " vec4 value=counts/float(sz.x*sz.y);\n"
-    " if(invalid)value=vec4(uintBitsToFloat(0x7fc00000u));\n"
-    " imageStore(outTex,tile,value);\n"
+    " vec4 spatial=support/float(sz.x*sz.y);\n"
+    " if(invalid){value=vec4(uintBitsToFloat(0x7fc00000u));spatial=value;}\n"
+    " imageStore(outTex,tile,value);imageStore(outTex,tile+ivec2(0,tiles.y),spatial);\n"
     "}\n"
 ;
 
@@ -937,8 +947,8 @@ static const char shader_pair_gate_reduce[] =
     "layout(push_constant) uniform FlowPush { ivec4 cfg; float timestep; } pc;\n"
     "layout(local_size_x=8,local_size_y=8) in;\n"
     "void main(){ivec2 p=ivec2(gl_GlobalInvocationID.xy);if(any(greaterThanEqual(p,pc.cfg.xy)))return;\n"
-    " ivec2 sz=imageSize(inTex);vec4 s=vec4(0.0);\n"
-    " for(int y=0;y<16;y++)for(int x=0;x<16;x++){ivec2 q=p*16+ivec2(x,y);if(all(lessThan(q,sz)))s+=imageLoad(inTex,q);}\n"
+    " ivec2 sz=imageSize(inTex);int bandH=sz.y/2;vec4 s=vec4(0.0);\n"
+    " for(int y=0;y<16;y++)for(int x=0;x<16;x++){if(x<sz.x&&y<bandH)s+=imageLoad(inTex,ivec2(x,y+p.y*bandH));}\n"
     " imageStore(outTex,p,s);\n"
     "}\n"
 ;
@@ -954,9 +964,14 @@ static const char shader_pair_gate_merge[] =
     " vec4 scene=imageLoad(sceneTex,ivec2(0)),g=imageLoad(gateTex,ivec2(0));\n"
     " bool valid=!any(isnan(g))&&!any(isinf(g))&&all(greaterThanEqual(g,vec4(0.0)))&&all(lessThanEqual(g,vec4(1.01)));\n"
     " float weak=valid?min(g.r,g.g):0.0,bad=valid?min(g.b,g.a):0.0;\n"
-    " // Review-only inclusive policy: coherent ghosts may replace valid pans.\n"
-    " // Require bilateral ambiguity AND bilateral residuals; flat/static pairs stay exact.\n"
-    " bool ghost=valid&&scene.r<=.1882353&&weak>=.10&&bad>=.01;\n"
+    " vec4 spatial=imageLoad(gateTex,ivec2(0,1));\n"
+    " bool spatialValid=!any(isnan(spatial))&&!any(isinf(spatial))&&all(greaterThanEqual(spatial,vec4(0.0)))&&all(lessThanEqual(spatial,vec4(1.01)));\n"
+    " float supported=spatialValid?min(spatial.r,spatial.g):0.0;\n"
+    " // Preserve V2. Rescue localized ambiguity only with bilateral 5-of-9 support.\n"
+    " // Pair-local evidence: no history can leak across cuts, seeks or discontinuities.\n"
+    " bool original=weak>=.10&&bad>=.01;\n"
+    " bool gap=spatialValid&&scene.r>=.003&&weak>=.04&&weak<=.25&&supported>=.008;\n"
+    " bool ghost=valid&&scene.r<=.1882353&&(original||gap);\n"
     " imageStore(outTex,p,vec4(scene.r,ghost?1.:0.,weak,bad));\n"
     "}\n"
 ;
@@ -1198,9 +1213,9 @@ static bool analyze_pair_ghost(MPVFlowGPUContext *ctx, MPVFlowGPUPair *pair)
     if (tw > 16 || th > 16 || !ctx->pass_pair_gate_first ||
         !ctx->pass_pair_gate_reduce || !ctx->pass_pair_gate_merge)
         return false;
-    pair->pair_gate[0] = create_texture(ctx, tw, th, ctx->fmt_rgba16f, false,
+    pair->pair_gate[0] = create_texture(ctx, tw, 2 * th, ctx->fmt_rgba16f, false,
                                        "pair_ghost_tile_evidence");
-    pair->pair_gate[1] = create_texture(ctx, 1, 1, ctx->fmt_rgba16f, false,
+    pair->pair_gate[1] = create_texture(ctx, 1, 2, ctx->fmt_rgba16f, false,
                                        "pair_ghost_pair_evidence");
     pl_tex merged = create_texture(ctx, 1, 1, ctx->fmt_rgba16f, false,
                                    "pair_ghost_scene_metadata");
@@ -1215,12 +1230,13 @@ static bool analyze_pair_ghost(MPVFlowGPUContext *ctx, MPVFlowGPUPair *pair)
     };
     bool ok = run_pass(ctx, ctx->pass_pair_gate_first, first, 3, cfg, 0.0f,
                        tw, th, "pair_ghost_gate_first");
-    cfg[0] = cfg[1] = 1;
+    cfg[0] = 1; cfg[1] = 2;
     struct pl_desc_binding reduce[2] = {
         { .object = pair->pair_gate[0] }, { .object = pair->pair_gate[1] },
     };
     ok = ok && run_pass(ctx, ctx->pass_pair_gate_reduce, reduce, 2, cfg, 0.0f,
-                        1, 1, "pair_ghost_gate_reduce");
+                        1, 2, "pair_ghost_gate_reduce");
+    cfg[1] = 1;
     struct pl_desc_binding merge[3] = {
         { .object = pair->scene[pair->reductions - 1] },
         { .object = pair->pair_gate[1] }, { .object = merged },
@@ -1841,7 +1857,7 @@ MPVFlowGPUContext *mpvflow_gpu_create(pl_gpu gpu,
         return NULL;
     }
     flow_log(gpu, PL_LOG_INFO, "MPVFLOW_DIAGNOSTIC event=pair_ghost_experiment state=enabled "
-             "marker=MPVFLOW_PAIR_GHOST_INCLUSIVE_V2 weak_min=0.10 residual_min=0.01 "
+             "marker=MPVFLOW_PAIR_GHOST_SPATIAL_GAP_V3 weak_min=0.10 residual_min=0.01 gap_support_min=0.008 neighborhood=5_of_9 "
              "backend=vulkan scope=whole_pair cpu_readback=no");
 #endif
     ctx->pass_synthesize = make_pass(gpu, shader_synthesize, synth_desc, 8);

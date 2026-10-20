@@ -26,7 +26,7 @@ class Arm64WorkflowTest(unittest.TestCase):
         for package in ('autoconf', 'automake', 'libtool', 'gettext', 'autopoint', 'gperf', 'pkg-config', 'ninja-build', 'cmake', 'pipx', 'nasm', 'yasm'):
             self.assertIn(package, dependencies)
         self.assertIn('pipx install meson==1.6.1', dependencies)
-        self.assertLess(TEXT.index('- name: ' + name), TEXT.index('- name: Test and assemble arm64-v8a debug APK in one Gradle invocation'))
+        self.assertLess(TEXT.index('- name: ' + name), TEXT.index('- name: Assemble arm64-v8a debug APK after Kotlin checks'))
 
     def test_validation_dependencies_and_vulkan_checks_are_unconditional(self):
         dependencies = STEPS['Install Vulkan and shader validation dependencies']
@@ -38,6 +38,12 @@ class Arm64WorkflowTest(unittest.TestCase):
         self.assertIn('./scripts/test-mpvflow-core.sh', tests)
         self.assertIn("MPVFLOW_REQUIRE_VULKAN_PIXEL_TEST: '1'", tests)
 
+    def test_complete_focused_mpflow_regressions_run_before_build(self):
+        focused = STEPS['Test complete MPVFlow focused invariants']
+        for script in ('scripts/tests/mpvflow_flow_only_test.py', 'scripts/tests/mpvflow_native_build_test.py'):
+            self.assertIn('python3 ' + script, focused)
+        self.assertLess(TEXT.index('- name: Test complete MPVFlow focused invariants'), TEXT.index('- name: Set up JDK 17'))
+
     def test_shader_changes_invalidate_runtime_cache(self):
         cache = STEPS['Restore verified Flow-only MPVFlow arm64 runtime']
         self.assertIn("hashFiles('scripts/build-mpvflow-mpv-runtime.sh', 'scripts/prepare-mpvflow.py', 'scripts/patch-ffmpeg-symver.py', 'app/src/main/cpp/**', 'THIRD_PARTY_LICENSES/**', 'app/src/main/assets/mpv/licenses/**')", cache)
@@ -48,12 +54,16 @@ class Arm64WorkflowTest(unittest.TestCase):
             self.assertIn('ref: ' + pin, TEXT)
         self.assertIn("MPVFLOW_MPV_BUILD_CORES: '2'", TEXT)
 
-    def test_single_gradle_invocation_keeps_all_tasks_and_limits(self):
+    def test_kotlin_checks_complete_before_apk_assembly(self):
         runs = re.findall(r'^        run: (\./gradlew .+)$', TEXT, re.M)
-        self.assertEqual(len(runs), 1)
-        for token in ('testStandardDebugUnitTest', ':media3-decoder-ffmpeg:testDebugUnitTest', 'assembleStandardDebug', '-PtargetAbi=arm64-v8a', '-PmpvFlowMpvBuild=true', '--stacktrace', '--no-daemon', '--max-workers=2'):
-            self.assertIn(token, runs[0].split())
-        self.assertNotIn('-x', runs[0].split())
+        self.assertEqual(len(runs), 2)
+        kotlin_run, assemble_run = runs
+        for token in ('testStandardDebugUnitTest', ':media3-decoder-ffmpeg:testDebugUnitTest', ':app:compileStandardDebugKotlin', '-PtargetAbi=arm64-v8a', '-PmpvFlowMpvBuild=true', '--stacktrace', '--no-daemon', '--max-workers=2'):
+            self.assertIn(token, kotlin_run.split())
+        for token in ('assembleStandardDebug', '-PtargetAbi=arm64-v8a', '-PmpvFlowMpvBuild=true', '--stacktrace', '--no-daemon', '--max-workers=2'):
+            self.assertIn(token, assemble_run.split())
+        self.assertNotIn('-x', kotlin_run.split() + assemble_run.split())
+        self.assertLess(TEXT.index('- name: Run complete Kotlin compile and unit tests before APK packaging'), TEXT.index('- name: Assemble arm64-v8a debug APK after Kotlin checks'))
         self.assertNotIn('continue-on-error:', TEXT)
 
     def test_packaged_runtime_checks_precede_upload(self):
