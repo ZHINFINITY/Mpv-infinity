@@ -341,21 +341,25 @@ class NativeMedia3Engine(
   private var loopASeconds: Double? = null
   private var loopBSeconds: Double? = null
   private val loopHandler = Handler(Looper.getMainLooper())
-  private val seekDispatchPolicy = NativeSeekDispatchPolicy()
-  private var pendingSeekPositionMs: Long? = null
   private var pendingSeekDisplayPositionMs: Long? = null
   private var initialResumeTargetMs: Long? = null
   private var lastKnownDurationMs: Long = 0L
   private var pendingExternalSelectionId: String? = null
-  private val seekRunnable = Runnable {
-    val targetMs = seekDispatchPolicy.dispatch(SystemClock.uptimeMillis()) ?: return@Runnable
-    pendingSeekPositionMs = seekDispatchPolicy.pendingTarget
-    // The source is prepared once with a seek-capable extractor. Seeking only moves the existing
-    // extractor/decoder forward; it never rebuilds the MediaSource or flushes the surface.
-    Log.d(logTag, "seek targetMs=$targetMs ${bufferingLogState()}")
-    player.seekTo(targetMs)
-    publishPlaybackSnapshot()
-  }
+  var hasEstablishedPlaybackPosition: Boolean = false
+    private set
+  private val seekDispatcher = NativeSeekDispatcher(
+    nowMs = { SystemClock.uptimeMillis() },
+    postDelayed = { task, delayMs -> loopHandler.postDelayed(task, delayMs); Unit },
+    removeCallbacks = { task -> loopHandler.removeCallbacks(task) },
+    dispatch = { targetMs, committed ->
+      pendingSeekDisplayPositionMs = targetMs
+      // Preserve the tested UHD/Dolby Vision keyframe policy. Preview seeks are throttled;
+      // releasing the thumb immediately dispatches the final target without preparing again.
+      Log.d(logTag, "seek targetMs=$targetMs committed=$committed ${bufferingLogState()}")
+      player.seekTo(targetMs)
+      publishPlaybackSnapshot()
+    },
+  )
   private val timelineRunnable = object : Runnable {
     override fun run() {
       // Keep the subtitle clock alive while paused, buffering, and immediately
@@ -534,11 +538,12 @@ class NativeMedia3Engine(
       }
     }
     override fun onPlaybackStateChanged(playbackState: Int) {
-      if (playbackState == Player.STATE_READY &&
-        pendingSeekPositionMs == null && seekDispatchPolicy.pendingTarget == null
-      ) {
-        pendingSeekDisplayPositionMs = null
-        initialResumeTargetMs = null
+      if (playbackState == Player.STATE_READY) {
+        hasEstablishedPlaybackPosition = true
+        if (seekDispatcher.pendingPositionMs == null) {
+          pendingSeekDisplayPositionMs = null
+          initialResumeTargetMs = null
+        }
       }
       Log.d(logTag, "playback state=$playbackState ${bufferingLogState()}")
       if (playbackState == Player.STATE_ENDED) {
@@ -1090,11 +1095,10 @@ class NativeMedia3Engine(
     mimeType: String? = null,
     sourceUri: Uri? = null,
   ) {
-    loopHandler.removeCallbacks(seekRunnable)
-    seekDispatchPolicy.reset()
-    pendingSeekPositionMs = null
+    seekDispatcher.cancel()
     pendingSeekDisplayPositionMs = startPositionMs.coerceAtLeast(0L)
     initialResumeTargetMs = startPositionMs.coerceAtLeast(0L)
+    hasEstablishedPlaybackPosition = false
     _hasRenderedFirstFrame.value = false
     endedUri = null
     lastKnownDurationMs = 0L
@@ -1248,41 +1252,35 @@ class NativeMedia3Engine(
   }
 
   fun seekTo(positionMs: Long) {
-    val targetMs = positionMs.coerceAtLeast(0L)
-    pendingSeekDisplayPositionMs = targetMs
-    val immediateTarget = seekDispatchPolicy.request(targetMs, SystemClock.uptimeMillis())
-    pendingSeekPositionMs = seekDispatchPolicy.pendingTarget
-    loopHandler.removeCallbacks(seekRunnable)
-    if (immediateTarget != null) {
-      dispatchSeek(immediateTarget)
-    } else {
-      loopHandler.postDelayed(seekRunnable, seekDispatchPolicy.delayUntilDispatch(SystemClock.uptimeMillis()))
-    }
+    seekDispatcher.commit(positionMs)
     // Seek controls must not enumerate every subtitle/audio metadata entry on the UI thread.
     publishPlaybackSnapshot()
     startTimelineUpdates()
   }
 
-  fun seekBy(offsetMs: Long) {
-    val basePositionMs = seekDispatchPolicy.pendingTarget
-      ?: pendingSeekDisplayPositionMs
-      ?: player.currentPosition
-    seekTo(basePositionMs + offsetMs)
+  fun cancelSeekPreview() {
+    seekDispatcher.cancel()
   }
 
-  private fun dispatchSeek(targetMs: Long) {
-    pendingSeekPositionMs = seekDispatchPolicy.pendingTarget
-    // The source is prepared once with a seek-capable extractor. Seeking only moves the existing
-    // extractor/decoder forward; it never rebuilds the MediaSource or flushes the surface.
-    Log.d(logTag, "seek targetMs=$targetMs ${bufferingLogState()}")
-    player.seekTo(targetMs)
+  fun seekPreviewTo(positionMs: Long) {
+    seekDispatcher.preview(positionMs)
     publishPlaybackSnapshot()
+    startTimelineUpdates()
+  }
+
+  fun seekBy(offsetMs: Long) {
+    val basePositionMs = seekDispatcher.pendingPositionMs ?: player.currentPosition
+    seekDispatcher.preview((basePositionMs + offsetMs).coerceAtLeast(0L))
+    // Keep repeated seek-bar updates lightweight; the track/metadata snapshot is unchanged.
+    publishPlaybackSnapshot()
+    startTimelineUpdates()
   }
 
   /** Desired position for persistence, including a seek that has not reached the player yet. */
   fun positionForPersistenceMs(): Long? {
     if (player.currentMediaItem == null) return null
-    return pendingSeekDisplayPositionMs
+    return seekDispatcher.pendingPositionMs
+      ?: pendingSeekDisplayPositionMs
       ?: initialResumeTargetMs?.takeIf { player.playbackState != Player.STATE_READY }
       ?: player.currentPosition.coerceAtLeast(0L)
   }
@@ -1480,9 +1478,7 @@ class NativeMedia3Engine(
   fun stop() {
     clearLoop()
     loopHandler.removeCallbacks(timelineRunnable)
-    loopHandler.removeCallbacks(seekRunnable)
-    seekDispatchPolicy.reset()
-    pendingSeekPositionMs = null
+    seekDispatcher.cancel()
     pendingSeekDisplayPositionMs = null
     initialResumeTargetMs = null
     player.stop()
@@ -1635,9 +1631,7 @@ class NativeMedia3Engine(
   fun release() {
     clearLoop()
     loopHandler.removeCallbacks(timelineRunnable)
-    loopHandler.removeCallbacks(seekRunnable)
-    seekDispatchPolicy.reset()
-    pendingSeekPositionMs = null
+    seekDispatcher.cancel()
     pendingSeekDisplayPositionMs = null
     initialResumeTargetMs = null
     desiredAudioSelection = null

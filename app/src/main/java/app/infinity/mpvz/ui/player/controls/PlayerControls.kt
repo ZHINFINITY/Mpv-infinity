@@ -332,18 +332,6 @@ fun PlayerControls(
   val nativeSnapshot by activity?.nativePlaybackSnapshot?.collectAsState()
     ?: remember { mutableStateOf(NativePlaybackSnapshot()) }
   val nativeEngineActive = activity?.isNativeEngineActive() == true
-  // A Native seek is committed asynchronously. Do not clear the preview on pointer-up: the next
-  // snapshot can still contain the old position, and the seekbar would animate 20m -> 10m before
-  // jumping back to the committed 20m target. Clear it only after Media3 reports the target.
-  LaunchedEffect(nativeEngineActive, nativeSnapshot.positionMs, nativeSeekPreviewPosition, isSeeking) {
-    val target = nativeSeekPreviewPosition
-    if (nativeEngineActive && !isSeeking && target != null) {
-      val actualSeconds = nativeSnapshot.positionMs / 1000f
-      if (kotlin.math.abs(actualSeconds - target) <= 0.75f) {
-        nativeSeekPreviewPosition = null
-      }
-    }
-  }
   val isNativeBuffering = nativeEngineActive && nativeSnapshot.isBuffering
   val showBufferingIndicator =
     (bufferingState.visible || isNativeBuffering) &&
@@ -1884,18 +1872,18 @@ fun PlayerControls(
                 isSeeking = true
                 resetControlsTimestamp = System.currentTimeMillis()
                 if (nativeEngineActive) {
-                  // Native coalesces real keyframe seeks at a bounded cadence. Preview the
-                  // scene under the thumb during dragging, not just the timestamp label.
+                  // Keep the thumb responsive while the engine conflates scene-preview seeks.
                   nativeSeekPreviewPosition = it
-                  viewModel.seekPreviewTo(it)
-                } else {
-                  viewModel.seekPreviewTo(it)
                 }
+                viewModel.seekPreviewTo(it)
               },
               onValueChangeFinished = { targetPosition ->
                 isSeeking = false
                 resetControlsTimestamp = System.currentTimeMillis()
-                viewModel.seekTo(targetPosition.toInt(), fast = false)
+                viewModel.finishSeekPreview(targetPosition)
+                // The final Native seek now dispatches synchronously and publishes its target.
+                // Do not pin the thumb forever waiting for a nearby keyframe to equal the target.
+                nativeSeekPreviewPosition = null
                 viewModel.showControls()
               },
               onUserInteractionChange = { isInteracting ->
@@ -1903,6 +1891,8 @@ fun PlayerControls(
                   if (nativeEngineActive) viewModel.beginNativeScrub()
                 } else {
                   viewModel.endNativeScrub()
+                  nativeSeekPreviewPosition = null
+                  isSeeking = false
                 }
               },
               timersInverted = Pair(false, invertDuration),

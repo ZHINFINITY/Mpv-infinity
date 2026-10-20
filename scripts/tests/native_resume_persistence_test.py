@@ -34,7 +34,7 @@ class NativeResumeIntegrationTest(unittest.TestCase):
         model = (PLAYER / "PlayerViewModel.kt").read_text()
         start = model.index("  fun seekPreviewTo(")
         preview = model[start:model.index("  private suspend fun runSeekPreviewLoop", start)]
-        self.assertIn("host.nativeSeekTo(", preview)
+        self.assertIn("host.nativeSeekPreviewTo(", preview)
         self.assertIn("beginNativeScrub()", preview)
 
     def test_room_upgrade_preserves_existing_position_and_adds_nullable_selections(self):

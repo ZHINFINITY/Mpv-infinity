@@ -4507,15 +4507,14 @@ class PlayerViewModel : ViewModel(),
   fun nativePlaybackDurationSeconds(): Double = host.nativePlaybackDurationSeconds()
 
   /**
-   * Conflated live preview used by the legacy/full-screen seek mode and the MPV audio seekbar.
-   * Native preview is intentionally visual-only: every Media3 seek flushes the hardware decoder,
-   * so native playback commits one seek when the user releases the seekbar instead.
+   * Conflated live scene preview. Native bounds decoder seeks in its main-thread dispatcher;
+   * MPV keeps its existing keyframe preview loop.
    */
   fun seekPreviewTo(position: Float) {
     cancelFrameSeek()
     if (host.isNativeEngineActive()) {
       beginNativeScrub()
-      host.nativeSeekTo((position.coerceAtLeast(0f) * 1000.0).toLong())
+      host.nativeSeekPreviewTo((position.coerceAtLeast(0f).toDouble() * 1000.0).toLong())
       return
     }
     synchronized(seekPreviewLock) {
@@ -4551,15 +4550,28 @@ class PlayerViewModel : ViewModel(),
   /** Pause native playback for a seekbar drag, preserving the pre-drag state. */
   fun beginNativeScrub() {
     if (!host.isNativeEngineActive()) return
-    if (nativeScrubPlaybackPolicy.begin(host.isNativePlaying())) {
+    if (nativeScrubPlaybackPolicy.begin(host.nativePlayWhenReady())) {
       host.nativePause()
     }
   }
 
   /** Finish or cancel a native seekbar drag and restore only pre-drag playback. */
   fun endNativeScrub() {
+    if (!nativeScrubPlaybackPolicy.isActive()) return
+    if (host.isNativeEngineActive()) host.nativeCancelSeekPreview()
     if (nativeScrubPlaybackPolicy.end() && host.isNativeEngineActive()) {
       host.nativeUnpause()
+    }
+  }
+
+  fun finishSeekPreview(position: Float) {
+    if (host.isNativeEngineActive()) {
+      cancelFrameSeek()
+      cancelSeekPreview()
+      host.nativeSeekTo((position.coerceAtLeast(0f).toDouble() * 1000.0).toLong())
+      endNativeScrub()
+    } else {
+      seekTo(position.toInt(), fast = false)
     }
   }
 

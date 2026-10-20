@@ -163,8 +163,12 @@ jobs:
           python3 scripts/tests/mpvflow_flow_only_test.py
           python3 scripts/tests/mpvflow_native_build_test.py
           MPVFLOW_REQUIRE_VULKAN_PIXEL_TEST=1 ./scripts/test-mpvflow-core.sh
+      - name: Test Native resume and shared track persistence wiring
+        run: python3 scripts/tests/native_resume_persistence_test.py
       - name: Test download validator migration
         run: python3 scripts/tests/download_validator_migration_test.py
+      - name: Test Native resume and live-seek contracts
+        run: python3 scripts/tests/native_playback_control_contract_test.py
       - name: Run Standard arm64 debug unit tests
         if: ${{ inputs.flavor == 'standard' && inputs.target_abi == 'arm64-v8a' }}
         run: ./gradlew testStandardDebugUnitTest -PtargetAbi=arm64-v8a -PmpvFlowMpvBuild=true --stacktrace --no-daemon --max-workers=2
@@ -175,6 +179,7 @@ jobs:
           name: non-ui-download-validation-evidence
           path: |
             app/schemas/**/23.json
+            app/schemas/**/24.json
             app/build/test-results/testStandardDebugUnitTest/*.xml
           if-no-files-found: warn
       - name: Build debug APK
