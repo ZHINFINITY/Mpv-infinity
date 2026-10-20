@@ -356,17 +356,22 @@ class AppDownloadManager(
     headers: Map<String, String> = emptyMap(),
   ) {
     if (tracks.isEmpty()) return
-    val baseName = videoFileName.substringBeforeLast('.')
     scope.launch {
       tracks.forEachIndexed { index, track ->
         runCatching {
           val extension = subtitleExtension(track.url)
-          val label =
-            DownloadLocations
-              .sanitizeName(track.languageCode ?: track.label.ifBlank { "sub${index + 1}" })
-              .replace(' ', '_')
-              .take(24)
-          val target = File(directory, "$baseName.$label.$extension")
+          val targetName = SidecarSubtitlePolicy.sidecarFileName(
+            videoFileName = videoFileName,
+            languageCode = track.languageCode,
+            label = track.label,
+            forced = track.forced,
+            index = index,
+            extension = extension,
+          )
+          val target = File(directory, targetName)
+          // A same-language/same-role duplicate has no player-loadable filename that
+          // can distinguish it. Never overwrite the first sidecar; the forced role is
+          // deliberately part of the name and therefore does not collide.
           if (target.isFile && target.length() > 0) return@forEachIndexed
           val requestBuilder = Request.Builder().url(track.url).get()
           headers.forEach { (name, value) -> requestBuilder.header(name, value) }
@@ -388,15 +393,12 @@ class AppDownloadManager(
 
   /** Sidecar subtitle files saved next to a completed download. */
   fun sidecarSubtitles(download: AppDownload): List<File> {
-    val baseName = download.entity.fileName.substringBeforeLast('.')
     return download.file.parentFile
       ?.listFiles()
       ?.filter { file ->
         file.isFile &&
           file.name != download.entity.fileName &&
-          !file.name.endsWith(PART_SUFFIX) &&
-          file.nameWithoutExtension.startsWith(baseName) &&
-          file.extension.lowercase() in SUBTITLE_EXTENSIONS
+          SidecarSubtitlePolicy.belongsToVideo(download.entity.fileName, file.name, SUBTITLE_EXTENSIONS)
       }.orEmpty()
   }
 

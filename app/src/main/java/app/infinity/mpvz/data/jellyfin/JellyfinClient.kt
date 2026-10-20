@@ -813,6 +813,7 @@ class JellyfinClient(
             val codec = stream["Codec"]?.jsonPrimitive?.content ?: "srt"
             val language = stream["Language"]?.jsonPrimitive?.content
             val displayTitle = stream["DisplayTitle"]?.jsonPrimitive?.content ?: language ?: "Subtitle #$index"
+            val forced = stream["IsForced"]?.jsonPrimitive?.booleanOrNull ?: false
             val deliveryUrl = stream["DeliveryUrl"]?.jsonPrimitive?.content
 
             val subUrl =
@@ -827,6 +828,7 @@ class JellyfinClient(
               url = finalUrl,
               label = displayTitle,
               languageCode = language,
+              forced = forced,
             )
           }
         }
