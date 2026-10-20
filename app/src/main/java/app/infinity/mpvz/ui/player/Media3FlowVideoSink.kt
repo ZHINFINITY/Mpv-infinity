@@ -3637,98 +3637,18 @@ class Media3FlowVideoSink(
 
     val sourceFormat = currentFormat
     val inputSize = sourceFormat?.let { "${it.width}x${it.height}" } ?: "unknown"
-    val motionGridStepSourcePxEstimate =
-      sourceFormat?.let {
-        estimateFlowMotionGridStepSourcePx(
-          it.width,
-          it.height,
-          diagnostics.processingWidth,
-          diagnostics.processingHeight,
-        )
-      }?.let {
-        String.format(java.util.Locale.US, "%.1fx%.1f", it.first, it.second)
-      } ?: "unavailable"
-    val glesTiming = diagnostics.glesTimings
-    val cpuTiming = diagnostics.cpuTimings
-    val vulkanTiming = diagnostics.vulkanTimings
-    val presentationFailures = presentationFailureCounters.snapshot()
-    val gpuElapsed = diagnostics.motionPassAverageGpuUs?.let {
-      "${String.format(java.util.Locale.US, "%.2f", it)}us_per_motion_pass"
-    }
-      ?: vulkanTiming.motion.status
-    val confidence = diagnostics.confidence?.let { formatLogFloat(it) } ?: "n/a"
-    val vulkanStages = "preprocess=${formatVulkanStage(vulkanTiming.preprocess)} " +
-      "analysis=${formatVulkanStage(vulkanTiming.analysis)} " +
-      "motionFine=${formatVulkanStage(vulkanTiming.motionFine)} " +
-      "motionMiddle=${formatVulkanStage(vulkanTiming.motionMiddle)} " +
-      "motionCoarse=${formatVulkanStage(vulkanTiming.motionCoarse)} " +
-      "motionTotal=${formatVulkanStage(vulkanTiming.motion)} " +
-      "synthesis=${formatVulkanStage(vulkanTiming.synthesis)}"
-    val glesStages = "presentationStagingCopy=${formatFlowDuration(glesTiming.presentationStagingCopy)}"
-    val cpuStages = "media3InputQueue=${formatFlowDuration(cpuTiming.inputQueueWait)} " +
-      "frameHandler=${formatFlowDuration(cpuTiming.frameHandlerCall)} " +
-      "eglSwapWait=${formatFlowDuration(cpuTiming.eglSwapWait)} " +
-      "inputPrepareSubmit=${formatFlowDuration(cpuTiming.vulkanInputPrepare)} " +
-      "synthesisSubmit=${formatFlowDuration(cpuTiming.vulkanSynthesisSubmit)}"
     Log.i(
       logTag,
-        "flow_summary ${BuildIdentityDiagnostic.shaField(BuildConfig.GIT_SHA)} " +
-        "renderer_api=vulkan requested_compute_api=${requestedComputeApi.name.lowercase()} " +
-        "effective_compute_api=${effectiveComputeApiName()} state=${diagnostics.state} " +
-        "bypass=${diagnostics.bypassReason ?: "none"} " +
-        "positionUs=$latestPositionUs speed=${formatLogFloat(playbackSpeed)} " +
-        "capturedSourceFps=${formatLogFloat(diagnostics.capturedSourceFps)} " +
-        "capturedPtsSamples=${diagnostics.capturedPtsSampleCount} targetFps=${diagnostics.targetFps} " +
-        "eglSwapReturnFps=${formatLogFloat(diagnostics.outputFps)} " +
+      "flow_summary ${BuildIdentityDiagnostic.shaField(BuildConfig.GIT_SHA)} " +
+        "state=${diagnostics.state} bypass=${diagnostics.bypassReason ?: "none"} " +
+        "input=$inputSize capturedFps=${formatLogFloat(diagnostics.capturedSourceFps)} " +
+        "targetFps=${diagnostics.targetFps} eglSwapReturnFps=${formatLogFloat(diagnostics.outputFps)} " +
+        "generatedFps=${formatLogFloat(diagnostics.generatedFps)} " +
+        "generatedFrames=${diagnostics.generatedFrames} droppedFrames=${diagnostics.droppedFrames} " +
+        "submissionFailures=${diagnostics.outputSubmissionFailures} " +
         "eglSwapInterval=${if (eglSwapIntervalZeroApplied) 0 else "default"} " +
         "outputMetric=successful_eglSwapBuffers_return_not_scanout " +
-        "generatedFps=${formatLogFloat(diagnostics.generatedFps)} " +
-        "generatedTotal=${diagnostics.generatedFrames} inputDropsTotal=${diagnostics.droppedFrames} " +
-        "outputDecisionTotals=${outputDecisionCounters.snapshot().asLogFieldValue()} " +
-        "motionPairAnalysisTotals=${motionPairAnalysisCounters.snapshot().asLogFieldValue()} " +
-        "inferredSkippedOutputTicksTotal=${diagnostics.skippedOutputTicks} skippedTotal=${diagnostics.skippedFrames} " +
-        "outputSubmissionFailures=${diagnostics.outputSubmissionFailures} " +
-        "lastOutputSubmissionFailure=${diagnostics.lastOutputSubmissionFailureReason} " +
-        "outputSubmissionFailureReasons=${presentationFailures.outputSubmissionReasonsAsLogFieldValue()} " +
-        "presentationPathFailureReasons=${presentationFailures.presentationPathReasonsAsLogFieldValue()} " +
-        "lastNoWritableSlotStates=${presentationFailures.lastNoWritableSlotStatesAsLogFieldValue()} " +
-        "tickGapReason=${diagnostics.lastOutputTickGapReason} " +
-        "tickGapContexts=${formatDeadlineReasons(diagnostics.outputTickGapContexts)} " +
-        "motionDeadlineAdmission=cpu_submit_proxy_not_gpu_completion " +
-        "queueDepth=pendingInput:${diagnostics.pendingInputDepth},inFlight:${diagnostics.inputInFlight}," +
-        "sourceFrames:${diagnostics.sourceFrameDepth},readyMotionPairs:${diagnostics.readyMotionPairDepth} " +
-        "presentationQueue=queued:${diagnostics.presentationQueueDepth},inFlight:${diagnostics.presentationInFlight}," +
-        "coalesced:${diagnostics.presentationCoalescedFrames} " +
-        "backpressureDeferredOutputs=${diagnostics.backpressureDeferredOutputs} " +
-        "oldestPendingInputMs=${formatLogFloat(diagnostics.oldestPendingInputAgeMs)} " +
-        "selectedSourcePtsAgeMs=${formatNullableLogFloat(diagnostics.selectedSourcePtsAgeMs)} " +
-        "pairPtsGapMs=${formatNullableLogFloat(diagnostics.sourcePairPtsGapMs)} " +
-        "pairCaptureAgeMs=${formatNullableLogFloat(diagnostics.frame0CaptureAgeMs)}/${formatNullableLogFloat(diagnostics.frame1CaptureAgeMs)} " +
-        "outputCallbackLatenessMs=${formatLogFloat(diagnostics.outputCallbackLatenessMs)} " +
-        "input=$inputSize frameStorage=${diagnostics.frameStorageWidth}x${diagnostics.frameStorageHeight} " +
-        "processing=${diagnostics.processingWidth}x${diagnostics.processingHeight} " +
-        "motionPyramid=quarter>half>full " +
-        "motionGrid=${diagnostics.motionGridWidth}x${diagnostics.motionGridHeight} " +
-        "motionGridStepSourcePxEstimate=$motionGridStepSourcePxEstimate artifactRiskProxy=spatial_sampling_only " +
-        "motionSubmitCpuMs=${formatLogFloat(diagnostics.motionEstimateSubmitMs)} " +
-        "motionPassVulkanAvg=$gpuElapsed vulkanTimerStatus=${vulkanTiming.status} " +
-        "computeTimestampSupported=${vulkanTiming.timestampsSupported} " +
-        "computeQueueFamily=${vulkanTiming.computeQueueFamily} " +
-        "computeTimestampValidBits=${vulkanTiming.timestampValidBits} " +
-        "timestampPeriodNs=${String.format(java.util.Locale.US, "%.6f", vulkanTiming.timestampPeriodNs)} " +
-        "timestampComputeAndGraphics=${vulkanTiming.timestampComputeAndGraphics} " +
-        "vulkanStagesUs={$vulkanStages} " +
-        "glesTimerStatus=${glesTiming.status} glesQueryCounts=valid:${glesTiming.validResults}," +
-        "pending:${glesTiming.pendingResults},disjoint:${glesTiming.disjointResultsDiscarded}," +
-        "zero:${glesTiming.zeroDurationResults},skipped:${glesTiming.skippedBecausePoolFull} " +
-        "glesStagesUs={$glesStages} " +
-        "cpuStagesUs={$cpuStages} coverage=unavailable_vulkan_ssbo_readback_disabled " +
-        "pixelArtifactQuality=unmeasured_vulkan_ssbo_readback_disabled " +
-        "confidence=$confidence displayReportedHz=${formatLogFloat(displayRefreshRate(appContext))} " +
-        "displayModeInitialHz=${formatLogFloat(displayHz)} surfaceHintFps=${formatLogFloat(outputFrameRateHintFps)} " +
-        "matchContentPreference=$matchContentFrameRatePreferenceLabel " +
-        "surfaceSwitchStrategy=$surfaceFrameRateChangeStrategyLabel " +
-        "media3Strategy=${if (changeFrameRateStrategy == C.VIDEO_CHANGE_FRAME_RATE_STRATEGY_OFF) "off" else "only_if_seamless"}",
+        "displayHz=${formatLogFloat(displayRefreshRate(appContext))}",
     )
   }
 

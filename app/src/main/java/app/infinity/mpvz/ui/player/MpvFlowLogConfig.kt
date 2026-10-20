@@ -7,7 +7,7 @@
 package app.infinity.mpvz.ui.player
 
 internal object MpvFlowLogConfig {
-  const val FLOW_VERBOSE_DIAGNOSTICS = "all=info,vo/gpu-next=v"
+  const val FLOW_VERBOSE_DIAGNOSTICS = "all=warn,vo/gpu-next=warn"
 
   fun messageLevelOption(
     mpvFlowEnabled: Boolean,

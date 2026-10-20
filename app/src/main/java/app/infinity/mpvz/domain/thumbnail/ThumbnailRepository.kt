@@ -224,7 +224,12 @@ class ThumbnailRepository(
       }?.let { return@withContext it }
 
       val decoded =
-        readBitmapFromDisk(diskCacheKey(video), isNetworkUrl(video.path))
+        readBitmapFromDisk(
+          diskCacheKey(video),
+          isNetworkUrl(video.path),
+          widthPx,
+          heightPx,
+        )
           ?: return@withContext null
       val scaled = scaleBitmap(decoded, widthPx, heightPx)
       synchronized(memoryCache) {
@@ -688,6 +693,8 @@ class ThumbnailRepository(
   private fun readBitmapFromDisk(
     key: String,
     network: Boolean,
+    requestedWidthPx: Int = Int.MAX_VALUE,
+    requestedHeightPx: Int = Int.MAX_VALUE,
   ): Bitmap? =
     diskCacheLock.read {
       val file = File(if (network) networkDiskDir else localDiskDir, keyToFileName(key))
@@ -699,7 +706,13 @@ class ThumbnailRepository(
         BitmapFactory.decodeFile(
           file.absolutePath,
           BitmapFactory.Options().apply {
-            inSampleSize = calculateThumbnailSampleSize(bounds.outWidth, bounds.outHeight, thumbnailMaxSize())
+            inSampleSize = calculateThumbnailSampleSize(
+              bounds.outWidth,
+              bounds.outHeight,
+              maxOf(requestedWidthPx, requestedHeightPx)
+                .coerceAtLeast(1)
+                .coerceAtMost(thumbnailMaxSize()),
+            )
             inPreferredConfig = Bitmap.Config.RGB_565
           },
         )
