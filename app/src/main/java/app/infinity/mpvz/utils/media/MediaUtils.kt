@@ -31,6 +31,7 @@ data class PlaybackSubtitleTrack(
   val url: String,
   val label: String = "",
   val languageCode: String? = null,
+  val forced: Boolean = false,
 )
 
 /**
