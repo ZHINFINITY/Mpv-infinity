@@ -207,7 +207,7 @@ class AppDownloadManager(
     val partFile = File(directory, entity.fileName + PART_SUFFIX)
 
     val result =
-      runCatching {
+      runCatching<Long> {
         if (!directory.exists()) directory.mkdirs()
         var resumeFrom = if (partFile.isFile) partFile.length() else 0L
         var validators = DownloadValidators(entity.remoteEtag, entity.remoteLastModified)
@@ -221,9 +221,10 @@ class AppDownloadManager(
         while (true) {
           val requestBuilder = Request.Builder().url(entity.url).get()
           decodeHeaders(entity.stagingPath).forEach { (key, value) -> requestBuilder.header(key, value) }
+          requestBuilder.removeHeader("Range").removeHeader("If-Range")
+          requestBuilder.header("Accept-Encoding", "identity")
           if (resumeFrom > 0L) {
             requestBuilder.header("Range", "bytes=$resumeFrom-")
-            requestBuilder.header("Accept-Encoding", "identity")
             requestBuilder.header("If-Range", validators.ifRange!!)
           }
 
@@ -280,8 +281,7 @@ class AppDownloadManager(
                 return@runCatching totalBytes
               }
             } else {
-              if (resumeFrom > 0L && response.code != 200) check(response.isSuccessful) { "HTTP ${response.code}" }
-              if (!response.isSuccessful) check(false) { "HTTP ${response.code}" }
+              check(response.code == 200) { "Expected complete HTTP 200 response, got ${response.code}" }
               // A full response after Range means the server declined the range or the validator changed.
               if (resumeFrom > 0L) {
                 partFile.delete()
@@ -346,6 +346,8 @@ class AppDownloadManager(
             dao.findById(id)?.let { dao.update(it.copy(remoteEtag = null, remoteLastModified = null)) }
           }
         }
+        @Suppress("UNREACHABLE_CODE")
+        error("Download loop exited without a result")
       }
 
     result

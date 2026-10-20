@@ -1,3 +1,9 @@
+/*
+ * SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+ *
+ * Copyright (c) 2026 ZHINFINITY. Mpv∞ Covered Code.
+ * See LICENSE for terms.
+ */
 package app.infinity.mpvz.domain.download
 
 import org.junit.Assert.assertEquals
@@ -27,6 +33,16 @@ class DownloadResumeIntegrityTest {
   fun missingValidatorAndInvalidLastModifiedAreNeverTrusted() {
     assertNull(DownloadValidators.fromResponse(null, "not an HTTP date").ifRange)
     assertNull(DownloadValidators().ifRange)
+  }
+
+  @Test
+  fun lastModifiedFallbackRequiresTheSameValidDate() {
+    val date = "Tue, 15 Nov 1994 08:12:31 GMT"
+    val saved = DownloadValidators.fromResponse("W/\"v1\"", date)
+    assertEquals(date, saved.ifRange)
+    assertTrue(saved.matches(null, date))
+    assertFalse(saved.matches(null, "Wed, 16 Nov 1994 08:12:31 GMT"))
+    assertFalse(saved.matches(null, null))
   }
 
   @Test
