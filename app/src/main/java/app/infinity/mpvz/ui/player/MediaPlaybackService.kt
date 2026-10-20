@@ -247,6 +247,7 @@ class MediaPlaybackService :
   private var radioStreamArtist: String? = null
   private var radioIcyTitle: String? = null
   private var radioStreamArtworkUri: String? = null
+  private var radioPictureBlock: String? = null
   private var paused = false
   private var playbackSpeed = 1.0f
   private var activeQueueItemId: Long = MediaSessionCompat.QueueItem.UNKNOWN_ID.toLong()
@@ -421,7 +422,7 @@ class MediaPlaybackService :
       PlaybackSession.observeProperty("pause", MPVLib.MpvFormat.MPV_FORMAT_FLAG)
       PlaybackSession.observeProperty("media-title", MPVLib.MpvFormat.MPV_FORMAT_STRING)
       PlaybackSession.observeProperty("metadata/artist", MPVLib.MpvFormat.MPV_FORMAT_STRING)
-      listOf("Title", "TITLE", "title", "Artist", "ARTIST", "artist", "icy-title", "Artwork", "artwork")
+      listOf("Title", "TITLE", "title", "Artist", "ARTIST", "artist", "icy-title", "Artwork", "artwork", "METADATA_BLOCK_PICTURE", "metadata_block_picture")
         .forEach { key -> PlaybackSession.observeProperty("metadata/by-key/$key", MPVLib.MpvFormat.MPV_FORMAT_STRING) }
       PlaybackSession.observeProperty("metadata/artwork", MPVLib.MpvFormat.MPV_FORMAT_STRING)
       PlaybackSession.observeProperty("metadata/icy-title", MPVLib.MpvFormat.MPV_FORMAT_STRING)
@@ -611,6 +612,12 @@ class MediaPlaybackService :
     identifier: String? = null,
   ) {
     serviceScope.launch {
+      if (isCurrentRadioItem()) {
+        refreshCurrentRadioMetadata()
+        updateMediaSessionPlaybackState()
+        updateNotification()
+        return@launch
+      }
       val resolvedTitle = FileTypeUtils.stripExtension(title)
       val resolvedIdentifier = identifier?.takeIf { it.isNotBlank() }
       // A metadata-only Activity sync must not erase artwork already resolved for this queue item.
@@ -778,6 +785,7 @@ class MediaPlaybackService :
     radioStreamArtist = null
     radioIcyTitle = null
     radioStreamArtworkUri = null
+    radioPictureBlock = null
     mediaTitle = FileTypeUtils.stripExtension(item.title.orEmpty()).ifBlank { getString(R.string.player_unknown_video) }
     mediaArtist = item.artist.orEmpty()
     mediaUri = item.originalUri
@@ -799,6 +807,7 @@ class MediaPlaybackService :
     updateNotification()
     loadSessionArtwork(item)
     refreshFavoriteState(item)
+    refreshCurrentRadioMetadata()
   }
 
   private fun refreshFavoriteState(item: PlaybackItem) {
@@ -880,7 +889,7 @@ class MediaPlaybackService :
         withContext(Dispatchers.IO) {
           EmbeddedArtworkResolver.decodeArtworkUri(this@MediaPlaybackService, artworkUri)
         } ?: return@launch
-      if (mediaIdentifier != expectedIdentifier) {
+      if (mediaIdentifier != expectedIdentifier || activeArtworkUri != artworkUri || radioPictureBlock != null) {
         return@launch
       }
       val changed = replaceOwnedThumbnail(loaded)
@@ -899,6 +908,27 @@ class MediaPlaybackService :
     return RadioMetadataPolicy.isRadio(queue.isM3u, item.isDefinitelyAudioOnly(), item.originalUri.ifBlank { item.playableUri }, duration)
   }
 
+  private fun refreshCurrentRadioMetadata() {
+    val state = PlaybackSession.state.value
+    if (state.phase != PlaybackPhase.READY && state.phase != PlaybackPhase.BACKGROUND) return
+    val item = PlaybackSession.queue.value.currentItem ?: return
+    if (mediaIdentifier != item.stableId || !isCurrentRadioItem()) return
+    // A service may attach after these properties were already observed by the UI. Observing
+    // again is deduplicated by PlaybackSession, so seed from the current file once as well.
+    listOf(
+      listOf("Title", "TITLE", "title"),
+      listOf("Artist", "ARTIST", "artist"),
+      listOf("icy-title"),
+      listOf("Artwork", "ARTWORK", "artwork"),
+      listOf("METADATA_BLOCK_PICTURE", "metadata_block_picture"),
+    ).forEach { keys ->
+      keys.asSequence().mapNotNull { key ->
+        val property = "metadata/by-key/$key"
+        PlaybackSession.getPropertyString(property)?.takeIf { it.isNotBlank() }?.let { property to it }
+      }.firstOrNull()?.let { (property, value) -> updateRadioMetadata(property, value) }
+    }
+  }
+
   private fun updateRadioMetadata(property: String, value: String) {
     val queue = PlaybackSession.queue.value
     val item = queue.currentItem ?: return
@@ -909,17 +939,62 @@ class MediaPlaybackService :
       "artist" -> radioStreamArtist = value
       "icy-title" -> radioIcyTitle = value
       "artwork" -> radioStreamArtworkUri = value
+      "metadata_block_picture" -> {
+        val encoded = value.takeIf { it.isNotBlank() }
+        if (radioPictureBlock == encoded) return
+        radioPictureBlock = encoded
+        val expectedIdentifier = item.stableId
+        serviceScope.launch {
+          val cover = withContext(Dispatchers.IO) { RadioArtworkDecoder.decode(encoded) }
+          if (mediaIdentifier != expectedIdentifier || radioPictureBlock != encoded) return@launch
+          if (cover != null && replaceOwnedThumbnail(cover)) {
+            refreshNotificationPalette()
+            updateMediaSessionMetadata()
+            updateNotification()
+          } else if (cover == null) {
+            radioPictureBlock = null
+            clearRadioArtworkAndLoadFallback(item)
+          }
+        }
+        return
+      }
     }
     val presentation = RadioMetadataPolicy.presentation(item.title, radioStreamTitle, radioStreamArtist, radioIcyTitle, item.artworkUri, radioStreamArtworkUri)
-    if (mediaTitle == presentation.title && mediaArtist == presentation.artist.orEmpty()) return
+    val artworkChanged = activeArtworkUri != presentation.artworkUri
+    if (mediaTitle == presentation.title && mediaArtist == presentation.artist.orEmpty() && !artworkChanged) return
     mediaTitle = presentation.title
     mediaArtist = presentation.artist.orEmpty()
-    val artworkChanged = activeArtworkUri != presentation.artworkUri
     activeArtworkUri = presentation.artworkUri
-    if (artworkChanged && item.artworkUri.isNullOrBlank()) loadSessionArtworkUri(presentation.artworkUri, item.stableId)
+    if (artworkChanged && item.artworkUri.isNullOrBlank() && radioPictureBlock == null) {
+      replaceOwnedThumbnail(null)
+      loadSessionArtworkUri(presentation.artworkUri, item.stableId)
+    }
     serviceScope.launch {
       updateMediaSessionMetadata()
       updateNotification()
+    }
+  }
+
+  private fun clearRadioArtworkAndLoadFallback(item: PlaybackItem) {
+    val fallbackArtworkUri =
+      RadioMetadataPolicy.presentation(
+          item.title,
+          radioStreamTitle,
+          radioStreamArtist,
+          radioIcyTitle,
+          item.artworkUri,
+          radioStreamArtworkUri,
+        )
+        .artworkUri
+    activeArtworkUri = fallbackArtworkUri
+    replaceOwnedThumbnail(null)
+    refreshNotificationPalette()
+    updateMediaSessionMetadata()
+    updateNotification()
+    if (fallbackArtworkUri == item.artworkUri && !item.artworkUri.isNullOrBlank()) {
+      loadSessionArtwork(item)
+    } else {
+      loadSessionArtworkUri(fallbackArtworkUri, item.stableId)
     }
   }
 
@@ -929,7 +1004,7 @@ class MediaPlaybackService :
       val loaded = withContext(Dispatchers.IO) {
         EmbeddedArtworkResolver.decodeArtworkUri(this@MediaPlaybackService, artworkUri!!)
       } ?: return@launch
-      if (mediaIdentifier != expectedIdentifier) return@launch
+      if (mediaIdentifier != expectedIdentifier || activeArtworkUri != artworkUri || radioPictureBlock != null) return@launch
       if (replaceOwnedThumbnail(loaded)) {
         refreshNotificationPalette()
         updateMediaSessionMetadata()
@@ -1732,7 +1807,8 @@ class MediaPlaybackService :
     when (property) {
       "media-title" -> {
         if (isCurrentRadioItem()) {
-          updateRadioMetadata("metadata/by-key/Title", value)
+          // This may be only the mount filename. Explicit Title/icy-title metadata
+          // and the preserved station name are the authoritative radio display sources.
           return
         }
         if (value.isNotBlank()) {
@@ -1746,7 +1822,7 @@ class MediaPlaybackService :
       }
       "metadata/artist" -> {
         if (isCurrentRadioItem()) {
-          updateRadioMetadata(property, value)
+          serviceScope.launch { updateRadioMetadata(property, value) }
           return
         }
         serviceScope.launch {
@@ -1758,7 +1834,8 @@ class MediaPlaybackService :
       }
       "metadata/by-key/Title", "metadata/by-key/TITLE", "metadata/by-key/title", "metadata/by-key/icy-title", "metadata/icy-title",
       "metadata/by-key/Artist", "metadata/by-key/ARTIST", "metadata/by-key/artist",
-      "metadata/by-key/Artwork", "metadata/by-key/ARTWORK", "metadata/by-key/artwork", "metadata/artwork" -> updateRadioMetadata(property, value)
+      "metadata/by-key/Artwork", "metadata/by-key/ARTWORK", "metadata/by-key/artwork", "metadata/artwork",
+      "metadata/by-key/METADATA_BLOCK_PICTURE", "metadata/by-key/metadata_block_picture" -> serviceScope.launch { updateRadioMetadata(property, value) }
     }
   }
 

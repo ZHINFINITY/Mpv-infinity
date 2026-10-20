@@ -1106,7 +1106,7 @@ class ThumbnailRepository(
           }
 
           val diskKey = networkThumbnailDiskKey(identity)
-          readBitmapFromDisk(diskKey, network = true)?.let { bitmap ->
+          readBitmapFromDisk(diskKey, network = true, requestedWidthPx = widthPx, requestedHeightPx = heightPx)?.let { bitmap ->
             val scaled = scaleBitmap(bitmap, widthPx, heightPx)
             synchronized(memoryCache) { memoryCache.put(memKey, scaled) }
             return@async scaled
@@ -1202,7 +1202,7 @@ class ThumbnailRepository(
     synchronized(memoryCache) { memoryCache.get(memKey) }?.let { return it }
 
     // Disk cache hit
-    readBitmapFromDisk(diskKey, network = true)?.let { bitmap ->
+    readBitmapFromDisk(diskKey, network = true, requestedWidthPx = widthPx, requestedHeightPx = heightPx)?.let { bitmap ->
       val scaled = scaleBitmap(bitmap, widthPx, heightPx)
       synchronized(memoryCache) { memoryCache.put(memKey, scaled) }
       return scaled

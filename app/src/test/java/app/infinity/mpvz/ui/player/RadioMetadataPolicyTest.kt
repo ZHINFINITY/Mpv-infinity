@@ -32,5 +32,8 @@ class RadioMetadataPolicyTest {
     val metadata = RadioMetadataPolicy.presentation("Station", null, null, null, null, "http://stream/art")
     assertEquals("http://stream/art", metadata.artworkUri)
     assertNull(RadioMetadataPolicy.presentation("Station", null, null, null, "file:///logo", "data:image/png;base64,x").artworkUri)
+    assertFalse(RadioMetadataPolicy.isHttpUrl("http:///missing-host"))
+    assertFalse(RadioMetadataPolicy.isHttpUrl("https://broken host/art"))
+    assertTrue(RadioMetadataPolicy.isHttpUrl("HTTPS://radio.example/cover.jpg"))
   }
 }

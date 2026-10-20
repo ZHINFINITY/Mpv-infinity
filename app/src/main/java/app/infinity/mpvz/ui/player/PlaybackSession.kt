@@ -73,6 +73,12 @@ class PlaybackProperty<T> internal constructor(
     states[property]?.value = value
   }
 
+  internal fun clearMediaMetadata() {
+    states.forEach { (property, state) ->
+      if (property == "media-title" || property.startsWith("metadata/")) state.value = null
+    }
+  }
+
   internal fun reobserve() {
     states.forEach { (property, state) ->
       PlaybackSession.observeProperty(property, format)
@@ -719,6 +725,11 @@ object PlaybackSession : MPVLib.EventObserver {
         resolved.registration?.let(::releaseNetworkStream)
         generation
       } else {
+        _queue.update { queue ->
+          if (queue.currentItem?.stableId != item.stableId) queue else {
+            queue.copy(items = queue.items.toMutableList().apply { set(queue.currentIndex, item) })
+          }
+        }
         val previousRegistration = previous
         if (previousRegistration != null && previousRegistration != resolved.registration) {
           releaseNetworkStream(previousRegistration)
@@ -793,6 +804,7 @@ object PlaybackSession : MPVLib.EventObserver {
       initialPositionGeneration = generation.takeIf { initialPosition != null } ?: 0L
       val holdForPositionRestore = pendingPositionRestoreGeneration == generation
       deferredVideoSelectionGeneration = generation.takeIf { videoSelection == PlaybackVideoSelection.DEFERRED }
+      propString.clearMediaMetadata()
       updateState {
         it.copy(
           phase = PlaybackPhase.LOADING,

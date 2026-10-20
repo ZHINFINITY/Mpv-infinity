@@ -36,7 +36,12 @@ object RadioMetadataPolicy {
   }
 
   fun isHttpUrl(value: String?): Boolean =
-    value?.trim()?.let { it.startsWith("http://", true) || it.startsWith("https://", true) } == true
+    value?.trim()?.let {
+      runCatching {
+        val uri = java.net.URI(it)
+        (uri.scheme.equals("http", true) || uri.scheme.equals("https", true)) && !uri.host.isNullOrBlank()
+      }.getOrDefault(false)
+    } == true
 
   private fun clean(value: String?): String? = value?.trim()?.takeIf { it.isNotEmpty() }
 }

@@ -276,7 +276,8 @@ data class PlaylistDetailScreen(
       coroutineScope.launch {
         try {
           val headersExtra = buildM3UHeadersExtra(playlist, item.playlistItem)
-          val headers = headersExtra?.toList()?.chunked(2)?.associate { it[0] to it[1] }.orEmpty()
+          val headers = headersExtra?.toList()?.chunked(2)?.associate { it[0] to it[1] }
+            ?: mapOf("User-Agent" to app.infinity.mpvz.network.NetworkUserAgent.resolve(context))
           // Do not create the video UI and wait for demuxing to discover that this is radio.
           // A successful bounded probe is reused by the player; unknown/video URLs keep their old route.
           val radioMimeType =

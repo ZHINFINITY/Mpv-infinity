@@ -772,6 +772,18 @@ fun AudioPlayerControls(
   val rawRadioArtistLower by PlaybackSession.propString["metadata/by-key/artist"].collectAsState()
   val rawStreamArtwork by PlaybackSession.propString["metadata/by-key/Artwork"].collectAsState()
   val rawStreamArtworkAlt by PlaybackSession.propString["metadata/by-key/artwork"].collectAsState()
+  val streamPicture by PlaybackSession.propString["metadata/by-key/METADATA_BLOCK_PICTURE"].collectAsState()
+  val streamPictureAlt by PlaybackSession.propString["metadata/by-key/metadata_block_picture"].collectAsState()
+  val encodedPicture = if (isRadio) streamPicture?.takeIf { it.isNotBlank() } ?: streamPictureAlt else null
+  val decodedStreamCover by produceState<Pair<String, Bitmap>?>(null, encodedPicture) {
+    value = null
+    if (!encodedPicture.isNullOrBlank()) {
+      value = withContext(Dispatchers.IO) {
+        app.infinity.mpvz.ui.player.RadioArtworkDecoder.decode(encodedPicture)?.let { encodedPicture to it }
+      }
+    }
+  }
+  val streamCover = decodedStreamCover?.takeIf { it.first == encodedPicture }?.second
 
   val currentArtworkUri =
     audiobook?.book?.coverUri?.takeIf { it.isNotBlank() }
@@ -792,7 +804,7 @@ fun AudioPlayerControls(
       pathOrUri = currentMediaSource?.takeIf { isAudiobook } ?: mediaPath?.takeIf { it.isNotBlank() } ?: currentMediaSource,
       artworkUri = currentArtworkUri,
     )
-  val albumArtBitmap = currentAudioPresentation?.artwork
+  val albumArtBitmap = streamCover.takeIf { isRadio } ?: currentAudioPresentation?.artwork
 
   fun cleanSongTitle(
     title: String,
@@ -816,7 +828,7 @@ fun AudioPlayerControls(
     return titleWithoutExt
   }
 
-  var lastValidTitle by remember {
+  var lastValidTitle by remember(currentItem?.stableId) {
     mutableStateOf(
       currentItem?.title?.takeIf { it.isNotBlank() }?.stripAudioExtension()
         ?: mediaTitle?.takeIf { it.isNotBlank() }?.stripAudioExtension()
