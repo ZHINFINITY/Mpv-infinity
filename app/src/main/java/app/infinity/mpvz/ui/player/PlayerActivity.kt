@@ -2723,9 +2723,11 @@ class PlayerActivity :
         isBackgroundPlaybackSessionActive = false
         // The detached service released focus during the handoff; take it back over so a
         // future focus loss (e.g. a phone call) pauses the now-foreground playback.
-        if (viewModel.paused != true) requestAudioFocus()
         if (resumeAfterBackgroundHandoff) {
-          PlaybackSession.setPropertyBoolean("pause", false)
+          val focusGranted = requestAudioFocus()
+          PlaybackSession.setPropertyBoolean("pause", !focusGranted)
+        } else if (viewModel.paused != true) {
+          requestAudioFocus()
         }
       }
 
