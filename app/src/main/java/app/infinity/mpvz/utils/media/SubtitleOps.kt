@@ -142,7 +142,7 @@ object SubtitleOps : KoinComponent {
         files.filter { file ->
           !file.isDirectory &&
             isSubtitleFile(file.name) &&
-            file.name.substringBeforeLast('.').startsWith(baseName, ignoreCase = true)
+            SubtitleFilenameMatcher.matches(file.name, baseName)
         }
 
       if (subtitles.isEmpty()) {
@@ -228,7 +228,7 @@ object SubtitleOps : KoinComponent {
       videoDirectory.listFiles()?.filter { file ->
         file.isFile &&
           isSubtitleFile(file.name) &&
-          file.nameWithoutExtension.startsWith(baseName, ignoreCase = true)
+          SubtitleFilenameMatcher.matches(file.name, baseName)
       } ?: emptyList()
 
     if (subtitles.isNotEmpty()) {
