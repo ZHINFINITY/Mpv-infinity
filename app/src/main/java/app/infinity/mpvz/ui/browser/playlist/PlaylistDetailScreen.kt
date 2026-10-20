@@ -11,6 +11,9 @@ import android.content.Intent
 import android.net.Uri
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.content.FileProvider
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -36,6 +39,8 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.FilterChip
@@ -103,7 +108,11 @@ import app.infinity.mpvz.utils.clipboard.SafeClipboard
 import app.infinity.mpvz.utils.media.MediaInfoOps
 import app.infinity.mpvz.utils.media.MediaUtils
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
+import java.io.File
+import java.nio.charset.StandardCharsets
 import org.koin.compose.koinInject
 import sh.calvin.reorderable.ReorderableItem
 import sh.calvin.reorderable.rememberReorderableLazyListState
@@ -248,6 +257,69 @@ data class PlaylistDetailScreen(
     val mediaInfoError = remember { mutableStateOf<String?>(null) }
     var showUrlDialog by rememberSaveable { mutableStateOf(false) }
     var urlDialogContent by remember { mutableStateOf("") }
+    var pendingExport by remember { mutableStateOf<Pair<String, String>?>(null) }
+    var exportMenuOpen by rememberSaveable { mutableStateOf(false) }
+    val createDocumentLauncher = rememberLauncherForActivityResult(
+      ActivityResultContracts.CreateDocument("audio/x-mpegurl"),
+    ) { uri ->
+      val export = pendingExport
+      pendingExport = null
+      if (uri != null && export != null) {
+        coroutineScope.launch {
+          try {
+            withContext(Dispatchers.IO) {
+              context.contentResolver.openOutputStream(uri)?.use { output ->
+                output.write(export.second.toByteArray(StandardCharsets.UTF_8))
+              } ?: error("Unable to open destination")
+            }
+            Toast.makeText(context, R.string.playlist_export_success, Toast.LENGTH_SHORT).show()
+          } catch (error: Exception) {
+            Toast.makeText(context, context.getString(R.string.playlist_export_error, error.message.orEmpty()), Toast.LENGTH_LONG).show()
+          }
+        }
+      }
+    }
+
+    fun exportPlaylist() {
+      if (isLoading || playlist == null) {
+        Toast.makeText(context, R.string.playlist_export_unavailable, Toast.LENGTH_SHORT).show()
+        return
+      }
+      coroutineScope.launch {
+        try {
+          val export = viewModel.exportM3uContent()
+          pendingExport = export
+          createDocumentLauncher.launch(export.first)
+        } catch (error: Exception) {
+          Toast.makeText(context, context.getString(R.string.playlist_export_error, error.message.orEmpty()), Toast.LENGTH_LONG).show()
+        }
+      }
+    }
+
+    fun sharePlaylist() {
+      if (isLoading || playlist == null) {
+        Toast.makeText(context, R.string.playlist_export_unavailable, Toast.LENGTH_SHORT).show()
+        return
+      }
+      coroutineScope.launch {
+        try {
+          val (fileName, content) = viewModel.exportM3uContent()
+          val file = withContext(Dispatchers.IO) {
+            File(context.cacheDir, fileName).apply { writeText(content, StandardCharsets.UTF_8) }
+          }
+          val uri = FileProvider.getUriForFile(context, "${context.packageName}.provider", file)
+          val shareIntent = Intent(Intent.ACTION_SEND).apply {
+            type = "audio/x-mpegurl"
+            putExtra(Intent.EXTRA_STREAM, uri)
+            putExtra(Intent.EXTRA_SUBJECT, fileName)
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+          }
+          context.startActivity(Intent.createChooser(shareIntent, context.getString(R.string.playlist_share_m3u)))
+        } catch (error: Exception) {
+          Toast.makeText(context, context.getString(R.string.playlist_share_error, error.message.orEmpty()), Toast.LENGTH_LONG).show()
+        }
+      }
+    }
 
     // Reorder mode state
     var isReorderMode by rememberSaveable { mutableStateOf(false) }
@@ -471,7 +543,7 @@ data class PlaylistDetailScreen(
                   }
                 }
                 // Show reorder button and play button when not in selection mode
-                !selectionManager.isInSelectionMode && videos.isNotEmpty() -> {
+                !selectionManager.isInSelectionMode -> {
                   Row(
                     verticalAlignment = Alignment.CenterVertically,
                   ) {
@@ -490,6 +562,29 @@ data class PlaylistDetailScreen(
                     }
                     Spacer(modifier = Modifier.width(4.dp))
 
+                    Box {
+                      IconButton(onClick = { exportMenuOpen = true }) {
+                        Icon(
+                          imageVector = Icons.RoundedFilled.MoreVert,
+                          contentDescription = stringResource(R.string.playlist_actions),
+                          tint = MaterialTheme.colorScheme.onSurface,
+                        )
+                      }
+                      DropdownMenu(
+                        expanded = exportMenuOpen,
+                        onDismissRequest = { exportMenuOpen = false },
+                      ) {
+                        DropdownMenuItem(
+                          text = { Text(stringResource(R.string.playlist_export_m3u)) },
+                          onClick = { exportMenuOpen = false; exportPlaylist() },
+                        )
+                        DropdownMenuItem(
+                          text = { Text(stringResource(R.string.playlist_share_m3u)) },
+                          onClick = { exportMenuOpen = false; sharePlaylist() },
+                        )
+                      }
+                    }
+                    Spacer(modifier = Modifier.width(4.dp))
                     // Reorder button (hide for M3U playlists)
                     if (playlist?.isM3uPlaylist != true) {
                       IconButton(

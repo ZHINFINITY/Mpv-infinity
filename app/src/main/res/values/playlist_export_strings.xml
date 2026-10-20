@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+  <string name="playlist_actions">Playlist actions</string>
+  <string name="playlist_export_m3u">Export M3U</string>
+  <string name="playlist_share_m3u">Share M3U</string>
+  <string name="playlist_export_success">Playlist exported</string>
+  <string name="playlist_export_unavailable">Playlist is still loading</string>
+  <string name="playlist_export_error">Could not export playlist: %1$s</string>
+  <string name="playlist_share_error">Could not share playlist: %1$s</string>
+</resources>
