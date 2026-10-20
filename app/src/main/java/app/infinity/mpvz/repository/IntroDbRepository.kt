@@ -45,9 +45,9 @@ data class IntroDbLookupRequest(
   val mediaType: String? = null,
   val season: Int? = null,
   val episode: Int? = null,
+  val provider: IntroSegmentProvider = IntroSegmentProvider.INTRO_DB,
   /** Episode order used by the media server; omitted for TVDB default order. */
   val mapping: String? = null,
-  val provider: IntroSegmentProvider = IntroSegmentProvider.INTRO_DB,
 )
 
 sealed interface IntroDbLookupOutcome {
@@ -564,7 +564,7 @@ class IntroDbRepository(
         }
     }.getOrDefault(emptyList())
 
-  private fun parseTheIntroDbMediaBody(body: String): List<IntroDbSegment> =
+  internal fun parseTheIntroDbMediaBody(body: String): List<IntroDbSegment> =
     runCatching {
       val element = json.parseToJsonElement(body)
       if (element is JsonArray) {
@@ -644,6 +644,7 @@ class IntroDbRepository(
         mediaType = mediaType,
         season = season,
         episode = episode,
+        mapping = request.mapping,
         source = IntroDbResolutionSource.DIRECT_IMDB,
       )
     }
@@ -656,6 +657,7 @@ class IntroDbRepository(
         mediaType = mediaType,
         season = season,
         episode = episode,
+        mapping = request.mapping,
         source = IntroDbResolutionSource.DIRECT_IMDB,
       )
     }
@@ -669,6 +671,7 @@ class IntroDbRepository(
         mediaType = mediaType,
         season = season,
         episode = episode,
+        mapping = request.mapping,
         source = IntroDbResolutionSource.EXPLICIT_TMDB,
       )
     }
@@ -683,6 +686,7 @@ class IntroDbRepository(
         mediaType = mediaType,
         season = season,
         episode = episode,
+        mapping = request.mapping,
         source = IntroDbResolutionSource.TMDB_SEARCH,
       )
     }
@@ -710,6 +714,7 @@ class IntroDbRepository(
         mediaType = mediaType,
         season = season,
         episode = episode,
+        mapping = request.mapping,
         source = IntroDbResolutionSource.EXPLICIT_TMDB,
       )
     }
@@ -722,6 +727,7 @@ class IntroDbRepository(
         mediaType = mediaType,
         season = season,
         episode = episode,
+        mapping = request.mapping,
         source = IntroDbResolutionSource.DIRECT_IMDB,
       )
     }
@@ -734,6 +740,7 @@ class IntroDbRepository(
         mediaType = mediaType,
         season = season,
         episode = episode,
+        mapping = request.mapping,
         source = IntroDbResolutionSource.DIRECT_IMDB,
       )
     }
@@ -863,6 +870,7 @@ class IntroDbRepository(
     mediaType: String,
     season: Int?,
     episode: Int?,
+    mapping: String? = null,
     source: IntroDbResolutionSource,
   ): IntroDbLookupOutcome {
     val useEpisodeHints = mediaType.equals("tv", ignoreCase = true)
@@ -874,6 +882,7 @@ class IntroDbRepository(
               imdbId = imdbId,
               season = season.takeIf { useEpisodeHints },
               episode = episode.takeIf { useEpisodeHints },
+              mapping = mapping,
             )
           } else if (tmdbId != null && tmdbId > 0) {
             getTheIntroDbSegments(
@@ -882,6 +891,7 @@ class IntroDbRepository(
               mediaType = mediaType,
               season = season.takeIf { useEpisodeHints },
               episode = episode.takeIf { useEpisodeHints },
+              mapping = mapping,
             )
           } else {
             Result.failure(IllegalArgumentException("IntroDB lookup requires an IMDb or TMDB ID"))
