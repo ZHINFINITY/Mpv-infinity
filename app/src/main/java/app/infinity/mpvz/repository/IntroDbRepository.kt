@@ -10,6 +10,7 @@ package app.infinity.mpvz.repository
 import android.util.Log
 import app.infinity.mpvz.preferences.IntroSegmentProvider
 import app.infinity.mpvz.utils.media.MediaInfoParser
+import app.infinity.mpvz.utils.media.ParsedMediaInfo
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.SerialName
@@ -213,12 +214,13 @@ private data class AnimeSkipTimestampType(
 class IntroDbRepository(
   private val client: OkHttpClient,
   private val json: Json,
+  private val parseMediaInfo: (String) -> ParsedMediaInfo = { MediaInfoParser.parse(it) },
 ) {
   suspend fun lookupSegments(request: IntroDbLookupRequest): IntroDbLookupOutcome =
     withContext(Dispatchers.IO) {
       runCatching {
         val titleForLookup = request.canonicalTitle?.takeIf { it.isNotBlank() } ?: request.mediaTitle
-        val parsed = MediaInfoParser.parse(titleForLookup)
+        val parsed = parseMediaInfo(titleForLookup)
         val normalizedTitle = parsed.title.ifBlank { titleForLookup.substringBeforeLast('.') }.trim()
         val effectiveMediaType = request.mediaType ?: parsed.type
         val effectiveSeason = request.season ?: parsed.season
