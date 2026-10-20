@@ -357,7 +357,7 @@ class AppDownloadManager(
   ) {
     if (tracks.isEmpty()) return
     scope.launch {
-      tracks.forEachIndexed { index, track ->
+      tracks.forEach { track ->
         runCatching {
           val extension = subtitleExtension(track.url)
           val targetName = SidecarSubtitlePolicy.sidecarFileName(
@@ -365,14 +365,13 @@ class AppDownloadManager(
             languageCode = track.languageCode,
             label = track.label,
             forced = track.forced,
-            index = index,
             extension = extension,
           )
           val target = File(directory, targetName)
           // A same-language/same-role duplicate has no player-loadable filename that
           // can distinguish it. Never overwrite the first sidecar; the forced role is
           // deliberately part of the name and therefore does not collide.
-          if (target.isFile && target.length() > 0) return@forEachIndexed
+          if (target.isFile && target.length() > 0) return@forEach
           val requestBuilder = Request.Builder().url(track.url).get()
           headers.forEach { (name, value) -> requestBuilder.header(name, value) }
           val request = requestBuilder.build()

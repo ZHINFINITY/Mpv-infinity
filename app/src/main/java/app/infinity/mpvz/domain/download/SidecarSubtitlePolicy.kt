@@ -1,51 +1,48 @@
+/*
+ * SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+ *
+ * Copyright (c) 2026 ZHINFINITY. Mpv∞ Covered Code.
+ * See LICENSE for terms.
+ */
 package app.infinity.mpvz.domain.download
+
+import java.util.Locale
 
 /** Pure filename policy shared by sidecar downloads and cleanup. */
 internal object SidecarSubtitlePolicy {
-  private val languageToken = Regex("[a-z]{2,3}(?:[-_][a-z0-9]{2,8})*|[\\u0370-\\u03ff]{2,}", RegexOption.IGNORE_CASE)
-  private val roleToken = setOf("forced", "default", "sdh", "cc", "hi")
-
-  fun videoBaseName(videoFileName: String): String = videoFileName.substringBeforeLast('.')
+  private val languageToken = Regex("[a-z]{2,3}(?:[-_][a-z]{2,4})?", RegexOption.IGNORE_CASE)
+  private val roleTokens = setOf("forced", "default", "sdh", "cc", "hi")
 
   fun sidecarFileName(
     videoFileName: String,
     languageCode: String?,
     label: String,
     forced: Boolean,
-    index: Int,
     extension: String,
-    occupiedNames: Set<String> = emptySet(),
   ): String {
-    val base = videoBaseName(videoFileName)
-    val token = sanitizeToken(languageCode?.takeIf { it.isNotBlank() } ?: "sub${index + 1}", label)
+    val raw = languageCode?.trim().orEmpty().lowercase(Locale.ROOT)
+    val language = when {
+      languageToken.matches(raw) -> raw
+      raw == "greek" || label.trim().equals("Greek", ignoreCase = true) -> "el"
+      label.trim().equals("English", ignoreCase = true) -> "en"
+      else -> "und"
+    }
     val role = if (forced) ".forced" else ""
-    val stem = "$base.$token$role"
-    return "$stem.$extension"
+    return "${videoFileName.substringBeforeLast('.')}.$language$role.$extension"
   }
 
-  /** True only for this video's exact basename and recognized sidecar suffix tokens. */
+  /** Prefer leaving an ambiguous legacy file behind to deleting another video's subtitles. */
   fun belongsToVideo(videoFileName: String, candidateName: String, subtitleExtensions: Set<String>): Boolean {
     if (candidateName == videoFileName || candidateName.endsWith(".part", ignoreCase = true)) return false
-    val extension = candidateName.substringAfterLast('.', "").lowercase()
+    val extension = candidateName.substringAfterLast('.', "").lowercase(Locale.ROOT)
     if (extension !in subtitleExtensions) return false
-    val base = videoBaseName(videoFileName)
+    val base = videoFileName.substringBeforeLast('.')
     val candidateBase = candidateName.substringBeforeLast('.')
-    if (candidateBase == base) return true // video.srt
-    val suffix = candidateBase.removePrefix("$base.")
-    if (suffix == candidateBase) return false // no dot delimiter: Movie2.srt
-    val tokens = suffix.split('.')
-    if (tokens.isEmpty() || !languageToken.matches(tokens[0])) return false
-    return when (tokens.size) {
-      1 -> true
-      2 -> tokens[1].lowercase() in roleToken
-      else -> false
-    }
-  }
-
-  private fun sanitizeToken(raw: String, label: String): String {
-    // Keep the historical language/label sanitization, but make the no-language fallback
-    // deterministic so cleanup can recognize it without accepting arbitrary suffixes.
-    val source = if (raw.startsWith("sub")) raw else raw.ifBlank { label.ifBlank { "sub1" } }
-    return DownloadLocations.sanitizeName(source).replace(' ', '_').take(24).ifBlank { "sub1" }
+    if (candidateBase == base) return true
+    if (!candidateBase.startsWith("$base.")) return false
+    val tokens = candidateBase.removePrefix("$base.").split('.')
+    val language = tokens[0]
+    if (!languageToken.matches(language) && !language.equals("greek", ignoreCase = true)) return false
+    return tokens.size == 1 || (tokens.size == 2 && tokens[1].lowercase(Locale.ROOT) in roleTokens)
   }
 }

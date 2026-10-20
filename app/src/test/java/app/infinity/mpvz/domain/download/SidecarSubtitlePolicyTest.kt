@@ -1,3 +1,9 @@
+/*
+ * SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+ *
+ * Copyright (c) 2026 ZHINFINITY. Mpv∞ Covered Code.
+ * See LICENSE for terms.
+ */
 package app.infinity.mpvz.domain.download
 
 import org.junit.Assert.assertEquals
@@ -10,33 +16,48 @@ class SidecarSubtitlePolicyTest {
 
   @Test
   fun ownershipUsesExactVideoBasenameNotLoosePrefix() {
-    assertTrue(owns("Movie.mkv", "Movie.srt"))
-    assertTrue(owns("Movie.mkv", "Movie.en.srt"))
-    assertTrue(owns("Movie.mkv", "Movie.en.forced.srt"))
-    assertFalse(owns("Movie.mkv", "Movie2.en.srt"))
-    assertFalse(owns("Movie.mkv", "Movie 2.en.srt"))
-    assertFalse(owns("Movie.mkv", "Movie.2.srt"))
-    assertFalse(owns("Movie.mkv", "Movie.backup.srt"))
+    listOf("Movie.srt", "Movie.en.srt", "Movie.en.forced.srt", "Movie.Greek.srt").forEach {
+      assertTrue(it, owns(it))
+    }
+    listOf("Movie2.en.srt", "Movie 2.en.srt", "Movie.2.srt", "Movie.backup.srt",
+      "Movie.mkv", "Movie.en.srt.part", "Other.en.srt").forEach {
+      assertFalse(it, owns(it))
+    }
   }
 
   @Test
-  fun normalAndForcedTracksHaveDistinctNamesInEitherOrder() {
-    val normal = SidecarSubtitlePolicy.sidecarFileName("Movie.mkv", "en", "English", false, 0, "srt")
-    val forced = SidecarSubtitlePolicy.sidecarFileName("Movie.mkv", "en", "English", true, 1, "srt")
+  fun normalAndForcedTracksHaveDistinctNamesRegardlessOfInputOrder() {
+    val normal = name("en", false)
+    val forced = name("en", true)
     assertEquals("Movie.en.srt", normal)
     assertEquals("Movie.en.forced.srt", forced)
-    assertEquals(normal, SidecarSubtitlePolicy.sidecarFileName("Movie.mkv", "en", "English", false, 1, "srt"))
-    assertEquals(forced, SidecarSubtitlePolicy.sidecarFileName("Movie.mkv", "en", "English", true, 0, "srt"))
+    assertEquals(setOf(normal, forced), listOf(true, false).map { name("en", it) }.toSet())
+    assertEquals(setOf(normal, forced), listOf(false, true).map { name("en", it) }.toSet())
+    assertTrue(owns(normal))
+    assertTrue(owns(forced))
   }
 
   @Test
-  fun preservesSubtitleExtensionAndRecognizesRoleNames() {
-    assertEquals("Movie.eng.forced.ass", SidecarSubtitlePolicy.sidecarFileName("Movie.mp4", "eng", "English", true, 0, "ass"))
-    assertTrue(owns("Movie.mp4", "Movie.eng.forced.ass"))
-    assertTrue(owns("Movie.mp4", "Movie.en.vtt"))
-    assertFalse(owns("Movie.mp4", "Movie.en.normal.srt"))
+  fun preservesSubtitleExtensionsAndRecognizedRoleNames() {
+    assertEquals("Movie.eng.forced.ass", SidecarSubtitlePolicy.sidecarFileName("Movie.mp4", "eng", "English", true, "ass"))
+    assertTrue(owns("Movie.eng.forced.ass"))
+    assertTrue(owns("Movie.en-US.vtt"))
+    assertFalse(owns("Movie.en.normal.srt"))
   }
 
-  private fun owns(video: String, candidate: String): Boolean =
-    SidecarSubtitlePolicy.belongsToVideo(video, candidate, extensions)
+  @Test
+  fun missingOrUnsafeLanguageUsesAnOwnedLoadableFallback() {
+    assertEquals("Movie.und.srt", name(null, false))
+    assertEquals("Movie.und.forced.srt", name(null, true))
+    assertEquals("Movie.und.srt", name("../unsafe", false))
+    assertTrue(owns(name(null, false)))
+    assertTrue(owns(name(null, true)))
+    assertEquals("Movie.el.srt", SidecarSubtitlePolicy.sidecarFileName("Movie.mkv", null, "Greek", false, "srt"))
+  }
+
+  private fun name(language: String?, forced: Boolean): String =
+    SidecarSubtitlePolicy.sidecarFileName("Movie.mkv", language, "", forced, "srt")
+
+  private fun owns(candidate: String): Boolean =
+    SidecarSubtitlePolicy.belongsToVideo("Movie.mkv", candidate, extensions)
 }
