@@ -28,6 +28,9 @@ data class DownloadItemEntity(
   val fileName: String,
   /** Request headers for the transfer, one `name: value` per line. */
   val stagingPath: String? = null,
+  /** Strong remote representation validators associated with the .part file. */
+  val remoteEtag: String? = null,
+  val remoteLastModified: String? = null,
   /** Name of [app.infinity.mpvz.domain.download.AppDownloadStatus]. */
   val status: String = "QUEUED",
   val progress: Int = 0,
