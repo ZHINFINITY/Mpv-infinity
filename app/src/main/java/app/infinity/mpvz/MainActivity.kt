@@ -81,7 +81,6 @@ import app.infinity.mpvz.ui.browser.components.MiniPlayer
 import app.infinity.mpvz.ui.player.NavigationAnimStyle
 import app.infinity.mpvz.ui.theme.DarkMode
 import app.infinity.mpvz.ui.theme.MpvInfinityTheme
-import app.infinity.mpvz.ui.theme.GlassSurface
 import app.infinity.mpvz.ui.theme.rememberThemeTransitionState
 import android.view.SurfaceHolder
 import android.view.SurfaceView
@@ -573,9 +572,6 @@ class MainActivity : AppCompatActivity() {
 
     val appNavStyle by playerPreferences.appNavStyle.collectAsState()
     val animSpeed by playerPreferences.animationSpeed.collectAsState()
-    val liquidGlassSurfaces by appearancePreferences.liquidGlassSurfaces.collectAsState()
-    val glassOpacity by appearancePreferences.glassSurfaceOpacity.collectAsState()
-    val glassHighlight by appearancePreferences.glassSurfaceHighlight.collectAsState()
 
     val context = LocalContext.current
     val currentVersion =
@@ -635,12 +631,9 @@ class MainActivity : AppCompatActivity() {
             },
             entryProvider = { route ->
               NavEntry(route) {
-                GlassSurface(
-                  enabled = liquidGlassSurfaces,
-                  opacity = glassOpacity,
-                  highlight = glassHighlight,
-                  cornerRadius = 0.dp,
+                Surface(
                   modifier = Modifier.fillMaxSize(),
+                  color = MaterialTheme.colorScheme.background,
                 ) {
                   route.Content()
                 }

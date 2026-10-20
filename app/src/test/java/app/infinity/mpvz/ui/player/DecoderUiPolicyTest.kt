@@ -9,8 +9,9 @@ class DecoderUiPolicyTest {
     assertEquals(9, DecoderUiPolicy.profileForQuality(100))
     assertEquals(0, DecoderUiPolicy.qualityForProfile(0))
     assertEquals(100, DecoderUiPolicy.qualityForProfile(9))
-    assertEquals(10, DecoderUiPolicy.qualityForProfile(1))
-    assertEquals(90, DecoderUiPolicy.qualityForProfile(8))
+    for (profile in 0 until DecoderUiPolicy.PROFILE_COUNT) {
+      assertEquals(profile, DecoderUiPolicy.profileForQuality(DecoderUiPolicy.qualityForProfile(profile)))
+    }
   }
 
   @Test fun playerTabsNeverExposeGlobalAuto() {

@@ -573,6 +573,8 @@ private fun ExpressivePillNavigationBar(
   val haptics = LocalHapticFeedback.current
   val appearancePreferences = koinInject<AppearancePreferences>()
   val liquidGlassSurfaces by appearancePreferences.liquidGlassSurfaces.collectAsState()
+  val glassOpacity by appearancePreferences.glassSurfaceOpacity.collectAsState()
+  val glassHighlight by appearancePreferences.glassSurfaceHighlight.collectAsState()
 
   val position =
     if (pagerState != null && visibleTabs.isNotEmpty()) {
@@ -635,23 +637,14 @@ private fun ExpressivePillNavigationBar(
       inactiveTabWidth
     }
 
-  Surface(
+  app.infinity.mpvz.ui.theme.GlassSurface(
+    enabled = liquidGlassSurfaces,
+    opacity = glassOpacity,
+    highlight = glassHighlight,
+    cornerRadius = 1000.dp,
     modifier = modifier
       .then(if (maxWidth != null) Modifier.widthIn(max = maxWidth) else Modifier)
       .clip(CircleShape),
-    shape = CircleShape,
-    color = if (liquidGlassSurfaces) {
-      MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.78f)
-    } else {
-      MaterialTheme.colorScheme.surfaceContainerHigh
-    },
-    tonalElevation = if (liquidGlassSurfaces) 3.dp else 6.dp,
-    shadowElevation = if (liquidGlassSurfaces) 12.dp else 8.dp,
-    border =
-      BorderStroke(
-        width = 1.dp,
-        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = if (liquidGlassSurfaces) 0.55f else 0.25f),
-      ),
   ) {
     Box(
       modifier =
