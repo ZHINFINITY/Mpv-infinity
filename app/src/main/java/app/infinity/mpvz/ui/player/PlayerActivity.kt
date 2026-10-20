@@ -6763,7 +6763,7 @@ class PlayerActivity :
     val restoreSavedPosition = playerPreferences.savePositionOnQuit.get()
     // Give mpv the resume point as a load-local option so the demuxer starts there instead of
     // decoding at zero and visibly seeking only after FILE_LOADED.
-    val initialPositionSeconds =
+    val candidateInitialPositionSeconds =
       if (positionRestoreOverride != null) {
         positionRestoreOverride.positionSeconds?.takeIf { it.isFinite() && it > 0.0 }
       } else if (restoreSavedPosition && !item.isDefinitelyAudioOnly()) {
@@ -6774,9 +6774,20 @@ class PlayerActivity :
         null
       }
     ensureCurrentMediaRequest(requestGeneration)
-    val requiresYtdlp = sequenceOf(item.originalUri, item.playableUri).any(YtdlpManager::requiresYtdlp)
+    val looksLikeWebSource = sequenceOf(item.originalUri, item.playableUri).any(YtdlpManager::requiresYtdlp)
+    // Extensionless Icecast mounts are direct audio, not webpages. A bounded header probe
+    // avoids feeding an endless radio response to yt-dlp's generic webpage extractor.
+    val radioMimeType =
+      if (PlaybackSession.queue.value.isM3u && looksLikeWebSource) {
+        app.infinity.mpvz.utils.media.RadioStreamProbe.detectAudioMimeType(item.playableUri, item.headers)
+      } else {
+        null
+      }
+    ensureCurrentMediaRequest(requestGeneration)
+    val initialPositionSeconds = candidateInitialPositionSeconds.takeIf { radioMimeType == null }
+    val requiresYtdlp = looksLikeWebSource && radioMimeType == null
     val ytdlpReady =
-      YtdlpManager.prepareForPlayback(this, item.playableUri) { line ->
+      !requiresYtdlp || YtdlpManager.prepareForPlayback(this, item.playableUri) { line ->
         line.trim().takeIf { it.isNotEmpty() }?.let { message -> Log.d(TAG, message) }
       }
     if (!ytdlpReady) throw IllegalStateException("yt-dlp could not be prepared for web playback")
@@ -6799,8 +6810,8 @@ class PlayerActivity :
             HttpUtils.extractRefererDomain(Uri.parse(item.playableUri)),
           ),
         )
-      } ?: item
-    val playbackRequiresYtdlp = YtdlpManager.requiresYtdlp(playbackItem.playableUri)
+      } ?: radioMimeType?.let { item.copy(mimeType = it) } ?: item
+    val playbackRequiresYtdlp = radioMimeType == null && YtdlpManager.requiresYtdlp(playbackItem.playableUri)
     // Native Media3 is used for HDR-family video, while MPV remains the normal video/audio
     // pipeline. Auto keeps ordinary videos on MPV and routes HDR, HLG, and Dolby Vision to Native.
     val configuredEngine =
@@ -6810,6 +6821,7 @@ class PlayerActivity :
         ?: decoderPreferences.playbackEngine.get()
     val selectedEngine =
       when {
+        playbackItem.isDefinitelyAudioOnly() -> PlaybackEngineMode.MPV
         isStreamTabPlayback && !requiresYtdlp && item.declaredMediaKind() == DeclaredPlaybackMediaKind.VIDEO -> PlaybackEngineMode.NATIVE
         configuredEngine == PlaybackEngineMode.AUTO ->
           if (item.isHdrOrDolbyVision()) PlaybackEngineMode.NATIVE else PlaybackEngineMode.MPV
@@ -6821,7 +6833,7 @@ class PlayerActivity :
       } else {
         null
       }
-    val nativeItem = nativeResolvedUri?.let { playbackItem } ?: item
+    val nativeItem = if (nativeResolvedUri != null || radioMimeType != null) playbackItem else item
     val nativeSourceIsPlayable = !isTorrentSource(nativeItem.playableUri, nativeItem.mimeType)
     val canUseNative =
       selectedEngine == PlaybackEngineMode.NATIVE &&
