@@ -45,6 +45,7 @@ jobs:
       - name: Test licence notices and promotion regressions
         run: |
           python3 scripts/tests/project_license_test.py
+          python3 scripts/tests/permission_only_license_test.py
           python3 scripts/tests/third_party_source_test.py
           python3 scripts/tests/media3_decoder_ffmpeg_variant_test.py
           python3 scripts/tests/mpvflow_pair_ghost_runner_test.py

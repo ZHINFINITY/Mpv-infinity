@@ -36,7 +36,7 @@ Mpv∞ includes a native **Jellyfin Client** for connecting to Jellyfin media se
 
 <p align="center">
   <img src="https://img.shields.io/badge/Platform-Android-brightgreen.svg" />
-  <img src="https://img.shields.io/badge/License-PolyForm_Noncommercial_1.0.0-blue.svg" />
+  <img src="https://img.shields.io/badge/Next_source_terms-Permission_only_DRAFT-blue.svg" alt="Draft permission-only terms for new owned material; prior and third-party licences preserved" />
   <img src="https://img.shields.io/github/v/release/ZHINFINITY/Mpv-infinity.svg?logo=github&label=Release&cacheSeconds=3600" />
   <img src="https://img.shields.io/github/downloads/ZHINFINITY/Mpv-infinity/total?logo=github&cacheSeconds=3600" />
 </p>
@@ -454,11 +454,11 @@ Individual source files, dependencies, and bundled assets may carry their own co
 
 ## License
 
-For the unreleased next version, Mpv∞ Covered Code identified by `SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0` is licensed under the **[PolyForm Noncommercial License 1.0.0](LICENSE)**. This is a noncommercial source-available license, not an OSI-approved open-source license. Uses outside the purposes permitted by the license require separate permission from the applicable rights holder.
+**Draft proposal for the next source release:** custom [Mpv∞ Permission-Only Terms 1.0](LICENSE) require prior written permission for use, copying, reuse, modification, or publication of qualifying new material owned by **ZHINFINITY**, whether commercial or noncommercial. Attribution alone is not permission, and authorized reuse must not falsely claim original authorship. This is not PolyForm or an open-source licence. The exact text awaits owner approval and legal review; no tagged release is published by this proposal.
 
-The scope is limited to Mpv∞ code controlled by **ZHINFINITY** and mpvRx-derived material whose rights holders have authorized relicensing for this version. Third-party components are excluded and remain independently governed by their own license texts and notices, including the files in [`THIRD_PARTY_LICENSES/`](THIRD_PARTY_LICENSES/) and component-specific license directories. This preserves the original terms and reuse rights of MIT-, BSD-, and Apache-licensed components.
+The precise source boundary, exclusions, inventory, and release gates are in [LICENSE-BOUNDARY.md](LICENSE-BOUNDARY.md). **The interpolation and feature code already public at commit `7015805f6831cbf8a9fc2e6d5dd5c70af209b638` retains its existing grants.** Changing the licence file or releasing a new version does not revoke those rights. Existing PolyForm headers refer to the [preserved baseline licence](HISTORICAL-LICENSE-POLYFORM-BASELINE.md). Earlier AGPL versions remain under their original terms; see [HISTORICAL-LICENSE-AGPL-3.0-or-later.txt](HISTORICAL-LICENSE-AGPL-3.0-or-later.txt).
 
-This change is prospective only. Previously published releases distributed under **AGPL-3.0-or-later** remain under their original terms; see [`HISTORICAL-LICENSE-AGPL-3.0-or-later.txt`](HISTORICAL-LICENSE-AGPL-3.0-or-later.txt) for the preserved license text.
+Third-party and upstream-derived material is not relicensed here. Its own notices and reuse rights, including LGPL modification/relinking rights, remain intact; see [THIRD_PARTY_SOURCE.md](THIRD_PARTY_SOURCE.md), [THIRD_PARTY_LICENSES/](THIRD_PARTY_LICENSES/), and component-specific notices. Repository ownership does not establish copyright ownership or upstream consent. Applicable law and GitHub's rights for viewing and forking public repositories also remain unaffected. Licensing cannot technically prevent copying or guarantee against infringement.
 
 ---
 
