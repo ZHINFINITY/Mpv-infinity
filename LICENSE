@@ -10,19 +10,33 @@ approved by legal counsel.
 
 ## 1. Covered material and ownership
 
-"Covered Material" means only new, original copyrightable code, documentation,
-and other material owned by ZHINFINITY, first made available with these terms
-at or after the source boundary recorded in LICENSE-BOUNDARY.md. For a file
-containing older or third-party material, only qualifying new contributions
-are Covered Material; the entire file does not become exclusively restricted.
-A notice alone does not establish ownership or authority to relicense.
+"Covered Material" means all copyrightable project code, documentation, and
+other project material in the upcoming Mpv∞ release identified under
+LICENSE-BOUNDARY.md that ZHINFINITY owns or has express authority from the
+relevant rights holders to offer under these exact terms. It includes owned
+or expressly authorized frame-interpolation code and feature updates carried
+forward unchanged from earlier snapshots, as well as additions and changes.
+Coverage is not limited to material newly written after a particular commit.
+An authorization is effective only within its actual scope; repository control,
+a copyright header, or permission to use a different licence does not establish
+ownership or authority to offer these terms.
 
-These terms do not claim ownership of or relicense contributions owned by
-anyone else, upstream-derived code, dependencies, bundled libraries, generated
-third-party material, or assets with separate terms. Such material remains
-under its own applicable licences and notices. Obtain permission from its
-actual rights holders where its existing licence does not authorize your use.
-See THIRD_PARTY_SOURCE.md and the inventory in LICENSE-BOUNDARY.md.
+Third-party and upstream components, dependencies, bundled libraries, assets,
+and contributions owned by others remain under their applicable licences and
+notices. They are not included merely because they appear in this release or
+are combined with Covered Material. Any separate offer under these terms for
+another rights holder's project contribution requires documented express
+authority for that particular material and these terms; it does not remove
+that holder's original notices or independently applicable grants. Unresolved
+ownership or authority is not a basis for claiming coverage. In mixed files,
+these terms apply only to the portions ZHINFINITY owns or is expressly
+authorized to license this way, not automatically to the whole file.
+
+This is the proposed licence offer for Covered Material in the upcoming
+release, not a claim that previously licensed code becomes exclusively
+permission-only. Earlier grants, including grants for unchanged code carried
+into this release, remain available as explained in section 4.
+See THIRD_PARTY_SOURCE.md and LICENSE-BOUNDARY.md for the inventory and gaps.
 
 ## 2. App use is permitted; code reuse and republication require permission
 
@@ -60,7 +74,8 @@ general source-code reuse or republication rights.
 
 Any permission must expressly identify the material and authorized activities
 and their scope; section 2.1 itself provides that permission for ordinary app
-use. No permission grants rights outside its scope or rights owned by others.
+use. Section 5 acknowledges GitHub platform rights without a separate request.
+No permission grants rights outside its scope or rights owned by others.
 No separate patent, trademark, branding, or endorsement rights are granted by
 these terms beyond any rights necessarily implied by the express app-use grant.
 
@@ -90,6 +105,13 @@ HISTORICAL-LICENSE-POLYFORM-BASELINE.md; the prior AGPL text is retained in
 HISTORICAL-LICENSE-AGPL-3.0-or-later.txt. Historical copies are references, not
 new blanket grants for later Covered Material.
 
+Earlier grants are not limited to people who already made a fork or local copy.
+Anyone entitled to rely on an earlier licence may continue to do so, including
+where that licence permits obtaining copies from other recipients. A person
+exercising such rights must satisfy that licence, but need not obtain separate
+permission under these terms for acts it already permits. Conversely, an older
+licence does not automatically license later additions it never covered.
+
 All independently applicable third-party licences remain effective, including
 MIT, BSD, Apache, LGPL, MPL, PSF, and OFL terms. In particular, nothing here
 restricts modification, replacement, relinking, or reverse engineering for
@@ -103,13 +125,22 @@ Nothing here restricts rights that applicable law makes available independently
 of permission, including applicable copyright exceptions. Nothing here limits
 rights already granted under the terms of the hosting platform, including
 GitHub's rights to host the repository and its users' rights to view and fork a
-public repository through GitHub's functionality. Those platform rights do not
-by themselves authorize unrelated reuse or external publication. These terms
-cannot prevent access, copying, or infringement as a technical matter.
+public repository through GitHub's functionality. GitHub's built-in public-
+repository viewing and forking, including a fork under a user's own GitHub
+account, are expressly acceptable to ZHINFINITY; no separate permission request
+is needed for those platform-authorized activities. This acknowledges platform
+rights, not a separate general source-reuse or publication licence. A public
+fork may itself be visible on GitHub; its existence is not permission to
+repackage or publish the code or app elsewhere. Those platform rights do not
+by themselves authorize external publication, APK rehosting, app-store release,
+or reuse outside their scope. Sections 2.1 and 4 and other independent rights
+continue to apply. These terms cannot technically prevent copying or infringement.
 
 ## 6. Permission requests
 
 No request is needed for the ordinary app use expressly allowed by section 2.1.
+No request is needed for GitHub viewing/forking within section 5 or for an
+activity authorized by the preserved rights in sections 4 and 5.
 For activities requiring separate permission under section 2.2, follow this
 request process:
 

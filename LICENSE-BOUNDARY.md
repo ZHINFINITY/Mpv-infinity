@@ -1,97 +1,121 @@
-# Next-source-release licensing boundary
+# Upcoming-release licensing boundary and ownership gaps
 
 ## Draft only: do not merge or publish a release yet
 
-The proposed [Mpv∞ Permission-Only Terms 1.0](LICENSE) require prior written
-permission for source-code copying, reuse, modification, redistribution, and
-publication of qualifying new ZHINFINITY-owned material, whether commercial or
-noncommercial. **Everyone may download, install, update, and use official app
-releases without asking for permission**, including for commercial work, with
-necessary installation and personal backup copies. This does not authorize
-code reuse, derivative apps, APK rehosting, or app-store republication. Sharing
-official download links is allowed. Earlier and third-party rights are preserved.
-This is not PolyForm Noncommercial, and not an open-source licence. The exact
-text must be approved by the owner and reviewed by qualified legal counsel
-before publication. Automated review is not a legal opinion.
+The proposed [Mpv∞ Permission-Only Terms 1.0](LICENSE) are the licence offer for
+all project material in the upcoming release that ZHINFINITY owns or has express
+authority to offer under those exact terms. **This includes carried-forward,
+unchanged user-owned frame-interpolation code and feature updates; it is not
+limited to newly authored additions.** Independently licensed third-party,
+upstream, and contributor material keeps its applicable terms and notices.
+Authority for a different licence is not automatically authority for this one.
 
-## Exact source boundary
+Everyone may download, install, update, and run official releases without
+asking, including for commercial work and necessary installation/backup copies.
+GitHub's built-in public-repository viewing and forking are expressly acceptable
+platform activities, including a fork under another user's account. A public
+fork can be visible on GitHub; this acknowledgement is not a general licence
+for external code reuse, APK rehosting, app-store release, or republication.
+Sharing official download links is allowed.
 
-- Baseline: [`7015805f6831cbf8a9fc2e6d5dd5c70af209b638`](https://github.com/ZHINFINITY/Mpv-infinity/commit/7015805f6831cbf8a9fc2e6d5dd5c70af209b638), the public merge of PR #85.
-- The baseline's complete root licence is preserved byte-for-byte in
-  [HISTORICAL-LICENSE-POLYFORM-BASELINE.md](HISTORICAL-LICENSE-POLYFORM-BASELINE.md).
-- Earlier tagged snapshots retain the licences distributed with them. For
-  example, tag `v2.1.5` (`71cc7d0ad7e83e1a9f2097d1f3ce0e583aaf156f`) has an
-  AGPL-3.0-or-later root licence. No existing tag or history is changed here.
-- The proposed boundary is the first commit descended from that baseline that
-  introduces this document together with the root title
-  `Mpv∞ Permission-Only Terms 1.0`. Its commit SHA identifies the boundary,
-  regardless of the eventual release name. No next release number is assigned
-  by this PR and the application version is not changed.
-- New material in this proposal is limited to licensing policy/documentation
-  and the permission-only regression test, its CI invocation, and a preview
-  footer licence label. There is no new playback feature.
-  Existing source headers and every third-party notice remain unchanged.
-- Future original, exclusively owned contributions intended to use the new
-  terms should be explicitly marked
-  `SPDX-License-Identifier: LicenseRef-MpvInfinity-Permission-Only-1.0`,
-  with `Copyright (c) <year> ZHINFINITY` and `See LICENSE and LICENSE-BOUNDARY.md`.
-  Do not replace older notices. In mixed files, identify the particular new
-  contribution and its introduction commit; a file-wide new header must not
-  purport to cancel earlier or third-party rights.
+This is a custom licence offer, not PolyForm Noncommercial or an open-source
+licence. The owner must approve the exact text; qualified legal review is
+recommended before release. Automated review is not a legal opinion.
 
-**The interpolation and feature updates already present at the baseline were
-public under the baseline's licence. This documentation-only change cannot make
-that existing code exclusively permission-only, even in a new release.** Older
-AGPL grants also remain effective where applicable. Merely changing a header,
-release name, or licence file does not erase previous grants. The existing
-`PolyForm-Noncommercial-1.0.0` headers intentionally remain in place for
-previously published material; consult the historical baseline licence for them.
+## What version the proposal covers
 
-## Third-party and ownership inventory
+The historical reference snapshot is public PR #85's merge,
+[`7015805f6831cbf8a9fc2e6d5dd5c70af209b638`](https://github.com/ZHINFINITY/Mpv-infinity/commit/7015805f6831cbf8a9fc2e6d5dd5c70af209b638).
+Its root licence is preserved byte-for-byte in
+[HISTORICAL-LICENSE-POLYFORM-BASELINE.md](HISTORICAL-LICENSE-POLYFORM-BASELINE.md).
+That reference is **not an authorship cutoff** and does not exclude older
+ZHINFINITY-owned interpolation or feature code from the new release's offer.
 
-This is an index, not a claim of ownership or an exhaustive dependency audit.
-All component notices, including ones not listed here, take precedence for
-their own material. Keep the source/replacement manifest and all notice files
-intact when assembling a release.
+The proposed release boundary is the exact source commit of the first upcoming
+release that the owner approves for distribution with the final revised
+`Mpv∞ Permission-Only Terms 1.0`. Record that SHA and the chosen version in
+its release notes and this document before publication. Both are **unassigned**:
+a draft PR commit is not an approved release. No application version bump,
+merge, tag, release publication, history rewrite, or repository visibility change
+is performed by this proposal. Later releases may retain this offer explicitly.
 
-| Material / location | Applicable terms and scope |
+This PR changes licensing/documentation, the bounded licence test and its CI
+invocation, and a preview footer label only. There is no new playback feature.
+All application source, interpolation settings, binaries, and existing
+third-party notices remain unchanged from the historical reference snapshot.
+The broader licence offer does not require changing the playback implementation.
+
+## Earlier rights remain usable, not just existing forks
+
+The same owned code can be offered under these new terms while licences
+previously granted for that code remain available. In particular, the
+interpolation and feature code already public at the reference snapshot retains
+its existing grants even when included unchanged in the upcoming release.
+The proposal cannot make those portions exclusively permission-only or require
+permission for activities already authorized by an earlier applicable licence.
+
+This protection is not limited to people who already forked or downloaded.
+Others may also obtain and use earlier-licensed material wherever those grants
+permit, including from other recipients. They must comply with the earlier
+licence. Earlier grants do not automatically cover later additions absent from
+those snapshots. Tag `v2.1.5` (`71cc7d0ad7e83e1a9f2097d1f3ce0e583aaf156f`)
+and other historical releases retain their original licences; the historical
+AGPL text remains in `HISTORICAL-LICENSE-AGPL-3.0-or-later.txt`.
+
+Existing `PolyForm-Noncommercial-1.0.0` source headers are retained as evidence
+of the earlier offer, not as an assertion that all such files are wholly owned
+by ZHINFINITY. The root `LICENSE` states the separate upcoming-release offer
+for owned/expressly authorized portions without deleting those earlier grants.
+For future exclusively covered material, the local identifier is
+`SPDX-License-Identifier: LicenseRef-MpvInfinity-Permission-Only-1.0`.
+In mixed files, identify the covered portions and their provenance instead of
+relabeling the entire file or removing existing copyright/licence notices.
+
+## Scope inventory and gaps that prevent whole-codebase coverage
+
+This is a source index, not an ownership certificate or exhaustive dependency
+audit. No in-tree path-by-path assignment/authorization register was found.
+The following candidate areas do not prove exclusive ownership merely by their
+location, contributor identity, or existing SPDX header.
+
+| Material / source location | Proposed treatment and unresolved evidence |
 | --- | --- |
-| Previously published Mpv∞ source | Its original AGPL, PolyForm, or other grants remain available; see the history and both historical licence files. |
-| mpvRx / mpvEx / mpv-android lineage, other contributors | Excluded from the new ZHINFINITY-owned scope. Separately documented permissions do not themselves transfer ownership; any future ownership-based scope change needs its own review. A previous authorization to use PolyForm does not establish authorization for these different terms. |
-| MPV/libmpv, libplacebo, libbluray, libudfread, FFmpeg | Independent component licences; see `app/src/main/assets/mpv/licenses/`, `app/src/main/assets/ffmpeg/FFMPEG-LICENSE.md`, `THIRD_PARTY_LICENSES/`, and [THIRD_PARTY_SOURCE.md](THIRD_PARTY_SOURCE.md) for source/relink obligations and differing LGPL versions. |
-| Media3, AndroidX, native decoder module | See `media3-decoder-ffmpeg/LICENSE`, `media3-decoder-ffmpeg/NOTICE`, `app/src/main/assets/licenses/media3/`, and each dependency's own terms. |
-| QuickJS, QuickJS-KT, Mbed TLS, wrappers and native imported code | See component-specific notices, including `app/src/main/cpp/third_party/quickjs/LICENSE`, `app/src/main/cpp/mpvflow/mediacodec-vulkan/LICENSE.LGPL`, and MPV licence assets. Not relicensed here. |
-| Python, yt-dlp and bundled runtime data | See runtime notices under `THIRD_PARTY_LICENSES/` and `app/src/main/assets/licenses/third-party-runtime/`; the source manifest records acquisition and reproducibility limitations. |
-| Fonts, Noto, Mozilla CA data, Anime4K / HDR shaders and other assets | Retain OFL, MPL, and each asset's independent upstream terms; no ownership or blanket custom restriction is asserted here. |
-| Maven, JitPack and other transitive dependencies | Each dependency keeps its own terms. Produce a release-specific dependency/notice inventory before claiming completeness. |
+| ZHINFINITY-owned application changes, including original interpolation/feature code in `app/src/main/cpp/mpvflow/`, `app/src/main/cpp/media3flow_vulkan_jni.cpp`, and Kotlin UI/engine code | Included in the new-release offer to the extent actually owned, including unchanged portions. Mixed upstream material must be identified separately; the directory or header alone is not proof. |
+| mpvRx / mpvEx / mpv-android lineage and other contributors' code | Keep applicable upstream/contributor terms. Including any portion in a separate custom offer requires documented express authority for those exact portions and these terms; prior PolyForm consent or a library replacement is not sufficient evidence. No such complete authorization register is established by this PR. |
+| Contributor/agent-labelled history | Commit author names do not establish copyright assignments or the provenance of generated/copied material. Confirm human contributions, upstream sources, and actual authority; do not claim unknown material. |
+| MPV/libmpv, libplacebo, libbluray, libudfread, FFmpeg | Not relicensed. See `app/src/main/assets/mpv/licenses/`, `app/src/main/assets/ffmpeg/FFMPEG-LICENSE.md`, `THIRD_PARTY_LICENSES/`, and [THIRD_PARTY_SOURCE.md](THIRD_PARTY_SOURCE.md). Preserve component-specific LGPL versions and required debugging, source, replacement, and relink rights/materials. |
+| Media3, AndroidX and native decoder module | Not relicensed. See `media3-decoder-ffmpeg/LICENSE`, `media3-decoder-ffmpeg/NOTICE`, `app/src/main/assets/licenses/media3/`, and each dependency's own terms. |
+| QuickJS, QuickJS-KT, Mbed TLS, wrappers and imported native code | Not relicensed. Retain component notices, including `app/src/main/cpp/third_party/quickjs/LICENSE`, `app/src/main/cpp/mpvflow/mediacodec-vulkan/LICENSE.LGPL`, and MPV licence assets. |
+| Python, yt-dlp, fonts, Noto, Mozilla CA data, Anime4K/HDR shaders and bundled assets | Not blanket-covered. Retain their runtime, PSF, OFL, MPL, and independent upstream notices in component paths and packaged assets. |
+| Maven/JitPack and transitive dependencies | Not relicensed. A complete release-specific dependency/notice inventory remains to be verified. |
 
-## Required before approval and release
+**Consequently, the offer is broader than new additions but cannot honestly
+label the full mixed codebase exclusively permission-only.** Ownership and
+specific authorizations determine actual coverage, and earlier licence grants
+remain independently usable even for owned code. No complete ownership audit
+or blanket upstream approval is asserted here.
 
-1. The owner reviews and approves the exact root `LICENSE`; obtain qualified
-   legal advice on enforceability, attribution, the permission mechanism, and
-   the intended distribution model. `ZHINFINITY` is the supported repository
-   identity, not a verified legal name or evidence of an assignment.
-2. Establish provenance of any code proposed for new coverage. Retain actual
-   upstream/contributor permissions or assignments; repository history and
-   replaced AGPL libraries alone do not prove authority to relicense derived
-   application code. Exclude material with unresolved ownership.
-3. Keep interpolation source/settings and all existing notices unchanged in
-   this PR. Check with `git diff --exit-code
-   7015805f6831cbf8a9fc2e6d5dd5c70af209b638 -- app subtitle-libass
-   media3-decoder-ffmpeg THIRD_PARTY_LICENSES THIRD_PARTY_SOURCE.md
-   HISTORICAL-LICENSE-AGPL-3.0-or-later.txt` (join as one shell command).
-4. For any binary release, separately verify the actual packaged notices,
-   corresponding LGPL source, modifications, build instructions, and any
-   required relinkable application materials. Existing build checks and source
-   URLs are not a legal compliance certificate. The standalone FFmpeg helper
-   recipe and a complete transitive notice inventory still need verification.
-5. Record the approved boundary commit in the eventual release notes and
-   distinguish genuinely new permission-only contributions from earlier code.
-   Do not retag older releases or label the entire mixed repository exclusively
-   permission-only. This PR neither creates nor publishes a tagged release.
+## Approval and distribution gates
 
-A public GitHub repository still allows viewing and GitHub forking under
-[GitHub's platform terms](https://docs.github.com/articles/licensing-a-repository).
-Permission-only terms cannot technically prevent copying or guarantee that
-another infringement will not occur. No repository visibility change is made
-by this proposal.
+1. The owner approves the exact `LICENSE` text and obtains qualified legal
+   advice on scope, enforceability, attribution, and the intended distribution.
+   `ZHINFINITY` is the supported repository identity, not a verified legal name.
+2. Establish a path/portion-level provenance and authority record before
+   claiming coverage of disputed or mixed-source material. Retain the actual
+   upstream/contributor permissions or assignments. Leave unresolved material
+   under its applicable existing terms rather than asserting new authority.
+3. Preserve implementation and all notices in this PR. Verify with one command:
+   `git diff --exit-code 7015805f6831cbf8a9fc2e6d5dd5c70af209b638 -- app subtitle-libass media3-decoder-ffmpeg THIRD_PARTY_LICENSES THIRD_PARTY_SOURCE.md HISTORICAL-LICENSE-AGPL-3.0-or-later.txt`.
+4. For any binary distribution, verify packaged notices, corresponding LGPL
+   source, modifications, build instructions, and any required relinkable
+   application materials. The standalone FFmpeg helper's exact source/build
+   recipe and complete transitive notice inventory still need verification.
+   Existing build checks are not a legal compliance certificate.
+5. Record the approved release commit and version, summarize the release-wide
+   offer and preserved grants accurately, and do not retag old releases or
+   imply that prior recipients' or downstream recipients' rights were revoked.
+
+[GitHub documents its public-repository viewing and forking rights](https://docs.github.com/articles/licensing-a-repository).
+Those platform rights are acknowledged, not expanded into an external reuse
+licence. Permission requirements cannot technically prevent infringement or
+guarantee against future unauthorized publication.
