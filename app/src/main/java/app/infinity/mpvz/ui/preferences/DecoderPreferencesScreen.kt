@@ -367,7 +367,7 @@ object DecoderPreferencesScreen : Screen {
               PreferenceDivider()
 
               Surface(
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp),
+                modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
                 shape = androidx.compose.foundation.shape.RoundedCornerShape(12.dp),
                 color = MaterialTheme.colorScheme.surfaceContainerLow,
               ) {
@@ -433,6 +433,7 @@ object DecoderPreferencesScreen : Screen {
                   )
                 },
                 title = { Text(stringResource(R.string.pref_decoder_mpvflow_target_fps_title)) },
+                summary = { Text("Stored target: ${mpvFlowTargetFps} fps", color = MaterialTheme.colorScheme.outline) },
               )
 
               PreferenceDivider()

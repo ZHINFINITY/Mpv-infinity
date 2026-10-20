@@ -6,6 +6,7 @@
 
 package app.infinity.mpvz.ui.player.controls.components.sheets
 
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -19,17 +20,17 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
-import kotlin.math.roundToInt
 import androidx.compose.ui.res.stringResource
 import app.infinity.mpvz.BuildConfig
 import app.infinity.mpvz.R
 import app.infinity.mpvz.presentation.components.PlayerSheet
 import app.infinity.mpvz.ui.player.Decoder
+import app.infinity.mpvz.ui.player.DecoderUiPolicy
 import app.infinity.mpvz.ui.player.PlaybackEngineMode
 import app.infinity.mpvz.ui.player.PlaybackSession
 import app.infinity.mpvz.ui.player.RendererBackendPolicy
@@ -48,78 +49,59 @@ fun DecodersSheet(
   val gpuApi by PlaybackSession.propString["gpu-api"].collectAsState()
   val decoderPreferences = koinInject<DecoderPreferences>()
   val mpvFlowQuality by decoderPreferences.mpvFlowQuality.collectAsState()
-  val mpvFlowProfile = (mpvFlowQuality.coerceIn(0, 100) * 9f / 100f).roundToInt()
+  val savedProfile = DecoderUiPolicy.profileForQuality(mpvFlowQuality)
+  var profile by remember(savedProfile) { mutableFloatStateOf(savedProfile.toFloat()) }
   val isVulkanActive = gpuApi == "vulkan"
-  val directMediaCodecAllowed =
-    RendererBackendPolicy.canUseDirectMediaCodec(
-      usesVulkan = isVulkanActive,
-      buildSupportsMediaCodecVulkan = BuildConfig.MPV_SUPPORTS_MEDIACODEC_VULKAN,
-    )
-  var selectedTab by remember(selectedEngine) {
-    mutableIntStateOf(
-      when (selectedEngine) {
-        PlaybackEngineMode.AUTO -> 0
-        PlaybackEngineMode.MPV -> 1
-        PlaybackEngineMode.NATIVE -> 2
-      },
-    )
-  }
+  val directMediaCodecAllowed = RendererBackendPolicy.canUseDirectMediaCodec(
+    usesVulkan = isVulkanActive,
+    buildSupportsMediaCodecVulkan = BuildConfig.MPV_SUPPORTS_MEDIACODEC_VULKAN,
+  )
+  val tabs = DecoderUiPolicy.playerEngineTabs()
+  val selectedTab = tabs.indexOf(selectedEngine).coerceAtLeast(0)
+
 
   PlayerSheet(onDismissRequest) {
     Column {
       ScrollableTabRow(selectedTabIndex = selectedTab) {
-        Tab(
-          selected = selectedTab == 0,
-          onClick = {
-            selectedTab = 0
-            onSelectEngine(PlaybackEngineMode.AUTO)
-          },
-          text = { Text("Auto") },
-        )
-        Tab(
-          selected = selectedTab == 1,
-          onClick = {
-            selectedTab = 1
-            onSelectEngine(PlaybackEngineMode.MPV)
-          },
-          text = { Text("MPV") },
-        )
-        Tab(
-          selected = selectedTab == 2,
-          onClick = {
-            selectedTab = 2
-            onSelectEngine(PlaybackEngineMode.NATIVE)
-          },
-          text = { Text("Native") },
-        )
+        tabs.forEachIndexed { index, engine ->
+          Tab(
+            selected = selectedTab == index,
+            onClick = { onSelectEngine(engine) },
+            text = { Text(engine.title) },
+          )
+        }
       }
       LazyColumn {
         item(key = "mpvflow-quality") {
           Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp)) {
-            Row(modifier = Modifier.fillMaxWidth()) {
+            Column {
               Text("Frame interpolation")
               Text(
-                text = "Profile ${mpvFlowProfile + 1}/10 · " +
-                  if (mpvFlowProfile < 3) "Performance" else if (mpvFlowProfile > 6) "Quality" else "Balanced",
-                modifier = Modifier.padding(start = 8.dp),
+                text = "Profile ${profile.toInt() + 1}/${DecoderUiPolicy.PROFILE_COUNT} · " +
+                  DecoderUiPolicy.profileLabel(profile.toInt()),
               )
             }
+            Text("Interpolation trades processing headroom for smoother motion; Vulkan is required.")
             Slider(
-              value = mpvFlowProfile.toFloat(),
-              onValueChange = { profile ->
-                decoderPreferences.mpvFlowQuality.set((profile.roundToInt() * 100 / 9f).roundToInt())
+              value = profile,
+              onValueChange = { profile = it },
+              onValueChangeFinished = {
+                decoderPreferences.mpvFlowQuality.set(DecoderUiPolicy.qualityForProfile(profile.toInt()))
               },
-              valueRange = 0f..9f,
-              steps = 8,
+              valueRange = 0f..(DecoderUiPolicy.PROFILE_COUNT - 1).toFloat(),
+              steps = DecoderUiPolicy.PROFILE_COUNT - 2,
               enabled = isVulkanActive,
             )
-            Row(modifier = Modifier.fillMaxWidth()) {
+            Row(
+              modifier = Modifier.fillMaxWidth(),
+              horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
               Text("Performance")
-              Text("Quality", modifier = Modifier.padding(start = 8.dp))
+              Text("Quality")
             }
           }
         }
-        if (selectedTab != 2 && isVulkanActive && !directMediaCodecAllowed) {
+        if (!directMediaCodecAllowed) {
           item(key = "hwplus-unavailable-info") {
             Text(
               "HW+ is unavailable in this Vulkan build because direct MediaCodec-to-Vulkan import " +
@@ -127,12 +109,12 @@ fun DecodersSheet(
             )
           }
         }
-        if (selectedTab == 2) {
+        if (selectedEngine == PlaybackEngineMode.NATIVE) {
           item(key = "native-active") {
             AudioTrackRow(
               title = "Native playback engine active",
-              isSelected = selectedEngine == PlaybackEngineMode.NATIVE,
-              onClick = { onSelectEngine(PlaybackEngineMode.NATIVE) },
+              isSelected = true,
+              onClick = {},
             )
           }
         } else {

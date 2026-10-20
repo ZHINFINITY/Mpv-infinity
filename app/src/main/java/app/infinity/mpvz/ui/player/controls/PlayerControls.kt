@@ -518,8 +518,7 @@ fun PlayerControls(
         },
         decoder = decoder,
         onUpdateDecoder = { PlaybackSession.setPropertyString("hwdec", it.value) },
-        selectedEngine = activity?.currentEngineSelectionForControls()
-          ?: if (nativeEngineActive) PlaybackEngineMode.NATIVE else playbackEngine,
+        selectedEngine = if (nativeEngineActive) PlaybackEngineMode.NATIVE else PlaybackEngineMode.MPV,
         onSelectEngine = onSelectEngine ?: { decoderPreferences.playbackEngine.set(it) },
         speed = playbackSpeed ?: playerPreferences.defaultSpeed.get(),
         onSpeedChange = {
@@ -2177,9 +2176,7 @@ fun PlayerControls(
       },
       decoder = decoder,
       onUpdateDecoder = { PlaybackSession.setPropertyString("hwdec", it.value) },
-      selectedEngine =
-        activity?.currentEngineSelectionForControls()
-          ?: if (nativeEngineActive) PlaybackEngineMode.NATIVE else playbackEngine,
+      selectedEngine = if (nativeEngineActive) PlaybackEngineMode.NATIVE else PlaybackEngineMode.MPV,
       onSelectEngine = onSelectEngine ?: { decoderPreferences.playbackEngine.set(it) },
       speed = playbackSpeed ?: playerPreferences.defaultSpeed.get(),
       onSpeedChange = {
