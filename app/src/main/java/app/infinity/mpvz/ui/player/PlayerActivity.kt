@@ -251,6 +251,14 @@ class PlayerActivity :
 
   val nativePlaybackSnapshot get() = nativeEngine.snapshot
   private var activeEngineMode = PlaybackEngineMode.MPV
+    set(value) {
+      field = value
+      if (ownsPlaybackSession() && value == PlaybackEngineMode.NATIVE) {
+        MediaPlaybackService.setNativeRendererOwnership(true)
+      }
+      // Keep Native's saved state authoritative during an MPV reload. FILE_LOADED releases
+      // this guard only after MPV has restored the shared settings and seek position.
+    }
   private var engineHandoffJob: Job? = null
   private var manualEngineOverride: Pair<String, PlaybackEngineMode>? = null
   private var manualOrientationOverride = false
@@ -364,11 +372,9 @@ class PlayerActivity :
     return isKnownAudioLaunch(intent)
   }
 
-  override fun isNativeEngineActive(): Boolean =
-    activeEngineMode == PlaybackEngineMode.NATIVE &&
-      (nativeEngine.snapshot.value.isReady ||
-        nativeEngine.snapshot.value.isBuffering ||
-        nativeEngine.hasRenderedFirstFrame.value)
+  // Renderer ownership is authoritative even while Native is preparing/seeking. Readiness
+  // must not route controls or lifecycle saves back to the frozen MPV instance.
+  override fun isNativeEngineActive(): Boolean = activeEngineMode == PlaybackEngineMode.NATIVE
 
   override fun isNativePlaying(): Boolean =
     isNativeEngineActive() && nativeEngine.snapshot.value.isPlaying
@@ -615,7 +621,8 @@ class PlayerActivity :
   private var mpvInitialized = false // Track MPV initialization state
   private var viewModelHostAttached = false
   private var torrentPickerHandoff = false
-  private var savePlaybackStateJob: Job? = null // Track ongoing save job
+  private var savePlaybackStateJob: Job? = null // Track ongoing debounced save job
+  private var immediatePlaybackStateSaveJob: Job? = null
   private var wasPlayingBeforePause = false // Track if video was playing before pause
   private var resumeAfterUnlockJob: Job? = null
   private var jellyfinSessionReporter: JellyfinSessionReporter? = null
@@ -832,6 +839,7 @@ class PlayerActivity :
       return
     }
     playbackOwnerToken = PlaybackActivityOwner.claim()
+    MediaPlaybackService.setNativeRendererOwnership(false)
     pendingSavedPlaylistSelection = savedInstanceState?.toSavedPlaylistSelection()
     if (!beginMediaRequest()) {
       finish()
@@ -974,6 +982,12 @@ class PlayerActivity :
             Log.i(TAG, "MPV pause acknowledged before engine handoff")
           }
 
+          // Commit the outgoing renderer's complete state before changing ownership. Both
+          // engines restore the same stable media record, not the frozen MPV properties.
+          saveVideoPlaybackState(fileName, immediate = true)?.join()
+          val handoffState = withContext(Dispatchers.IO) {
+            playbackStateRepository.getVideoDataByTitle(activeSaveMediaIdentifier.ifBlank { mediaIdentifier })
+          }
           val useNative = effectiveEngine == PlaybackEngineMode.NATIVE
           val currentUri = currentPlayableUri?.takeIf { it.isNotBlank() }
           val sessionReady = PlaybackSession.state.value.phase == PlaybackPhase.READY ||
@@ -1001,6 +1015,7 @@ class PlayerActivity :
               setNativeVideoSurfaceVisible(true)
               binding.player.alpha = 0f
               binding.player.visibility = View.GONE
+              viewModel.clearNativeExternalSubtitles()
               nativeEngine.play(
                 nativeUri,
                 outgoingPositionMs,
@@ -1009,6 +1024,7 @@ class PlayerActivity :
                 mimeType = currentItem?.mimeType,
                 sourceUri = currentItem?.originalUri?.toUri(),
               )
+              applyNativePlaybackState(handoffState)
               engineHandoffJob = lifecycleScope.launch {
                 // Some Android 13 devices need longer than 15 seconds to decode a local
                 // MediaStore/content URI before producing the first frame. Falling back while
@@ -1031,6 +1047,7 @@ class PlayerActivity :
                     PlaybackSession.setPropertyDouble("time-pos", outgoingPositionMs / 1000.0)
                     PlaybackSession.setPropertyBoolean("pause", !outgoingPlaying)
                     if (outgoingPlaying) PlaybackSession.command("play")
+                    MediaPlaybackService.setNativeRendererOwnership(false)
                     setNativeVideoSurfaceVisible(false)
                     binding.player.visibility = View.VISIBLE
                     binding.player.alpha = 1f
@@ -5152,6 +5169,11 @@ class PlayerActivity :
         }
       } finally {
         PlaybackSession.completePositionRestore(loadGeneration)
+        if (ownsPlaybackSession() && activeEngineMode == PlaybackEngineMode.MPV &&
+          PlaybackSession.isCurrentGeneration(loadGeneration)
+        ) {
+          MediaPlaybackService.setNativeRendererOwnership(false)
+        }
       }
     }
 
@@ -5518,7 +5540,7 @@ class PlayerActivity :
   /**
    * Saves the current playback state to the database.
    *
-   * Captures MPV state synchronously, then persists on a background dispatcher.
+   * Captures the owning renderer synchronously, then persists on a background dispatcher.
    * This avoids shutdown races with MPV destruction and collapses duplicate writes.
    *
    * @param mediaTitle The title of the media being played
@@ -5527,8 +5549,8 @@ class PlayerActivity :
   private fun saveVideoPlaybackState(
     mediaTitle: String,
     immediate: Boolean = false,
-  ) {
-    val snapshot = capturePlaybackStateSnapshot(mediaTitle) ?: return
+  ): Job? {
+    val snapshot = capturePlaybackStateSnapshot(mediaTitle) ?: return null
     val appContext = applicationContext
     val directAudiobook = PlaybackSession.queue.value.items
       .firstOrNull { item -> item.stableId == snapshot.mediaIdentifier }
@@ -5547,37 +5569,43 @@ class PlayerActivity :
     val saveRepository = playbackStateRepository
     val savePositionOnQuit = playerPreferences.savePositionOnQuit.get()
     val watchedThreshold = browserPreferences.watchedThreshold.get()
+    val previousImmediateSave = immediatePlaybackStateSaveJob
 
     val saveBlock: suspend kotlinx.coroutines.CoroutineScope.() -> Unit = {
       runCatching {
+        // onPause/onStop/onDestroy can all capture in one frame. Serialize their immutable
+        // snapshots so an older worker cannot finish last and undo a seek or engine handoff.
+        previousImmediateSave?.join()
         if (!immediate) {
           delay(250)
         }
 
-        val oldState = saveRepository.getVideoDataByTitle(snapshot.mediaIdentifier)
-        Log.d(TAG, "Saving playback state for: ${snapshot.mediaTitle} (identifier: ${snapshot.mediaIdentifier})")
+        PlaybackStateSaveCoordinator.persistIfNewest(snapshot.mediaIdentifier, snapshot.captureSequence) {
+          val oldState = saveRepository.getVideoDataByTitle(snapshot.mediaIdentifier)
+          Log.d(TAG, "Saving playback state for: ${snapshot.mediaTitle} (identifier: ${snapshot.mediaIdentifier})")
 
-        val playbackState =
-          PlaybackStatePersistence.buildEntity(
-            oldState = oldState,
-            snapshot = snapshot,
-            savePositionOnQuit = savePositionOnQuit,
-            watchedThreshold = watchedThreshold,
-          )
-        saveRepository.upsert(playbackState)
-        PlaybackStateEvents.notifyChanged(snapshot.mediaIdentifier)
-        directAudiobook?.let { DirectAudiobookResumeStore.recordPlaying(appContext, it) }
-        persistStreamHistoryProgress(appContext, snapshot, streamHistoryKey)
+          val playbackState =
+            PlaybackStatePersistence.buildEntity(
+              oldState = oldState,
+              snapshot = snapshot,
+              savePositionOnQuit = savePositionOnQuit,
+              watchedThreshold = watchedThreshold,
+            )
+          saveRepository.upsert(playbackState)
+          PlaybackStateEvents.notifyChanged(snapshot.mediaIdentifier)
+          directAudiobook?.let { DirectAudiobookResumeStore.recordPlaying(appContext, it) }
+          persistStreamHistoryProgress(appContext, snapshot, streamHistoryKey)
+        }
       }.onFailure { e ->
         Log.e(TAG, "Error saving playback state", e)
       }
     }
 
-    if (immediate) {
+    return if (immediate) {
       lifecycleScope.launch(Dispatchers.IO + kotlinx.coroutines.NonCancellable, block = saveBlock)
+        .also { immediatePlaybackStateSaveJob = it }
     } else {
-      // Launch new save job and track it
-      savePlaybackStateJob = lifecycleScope.launch(Dispatchers.IO, block = saveBlock)
+      lifecycleScope.launch(Dispatchers.IO, block = saveBlock).also { savePlaybackStateJob = it }
     }
   }
 
@@ -5620,15 +5648,35 @@ class PlayerActivity :
     if (saveIdentifier.isBlank()) return null
 
     val nativeSnapshot = nativeEngine.snapshot.value
-    val nativeEngineActive = isNativeEngineActive()
+    val nativeEngineActive = activeEngineMode == PlaybackEngineMode.NATIVE
+    val nativePositionIsKnown = nativeEngine.currentPlayer.currentMediaItem != null
     val liveNativePositionMs = nativeEngine.currentPlayer.currentPosition.coerceAtLeast(0L)
     val liveNativeDurationMs = nativeEngine.currentPlayer.duration.takeIf { it != C.TIME_UNSET }?.coerceAtLeast(0L) ?: 0L
     val mpvPosition = if (nativeEngineActive) null else readMpvIntSecondsOrNull("time-pos")
+    fun mpvDouble(property: String): Double? =
+      if (nativeEngineActive) null else runCatching { PlaybackSession.getPropertyDouble(property) }.getOrNull()
+    fun mpvTrack(property: String): Int? =
+      if (nativeEngineActive) null else runCatching {
+        when (val value = PlaybackSession.getPropertyString(property)) {
+          "no" -> -1
+          else -> value?.toIntOrNull()
+        }
+      }.getOrNull()
+    val speed = mpvDouble("speed")
+    val zoom = mpvDouble("video-zoom")
+    val sid = mpvTrack("sid")
+    val secondarySid = mpvTrack("secondary-sid")
+    val aid = mpvTrack("aid")
+    val subDelay = mpvDouble("sub-delay")
+    val subSpeed = mpvDouble("sub-speed")
+    val audioDelay = mpvDouble("audio-delay")
     return PlaybackStateSnapshot(
       mediaIdentifier = saveIdentifier,
       mediaTitle = mediaTitle,
       currentPosition =
-        if (nativeEngineActive) maxOf(nativeSnapshot.positionMs, liveNativePositionMs).toSecondsInt()
+        // The live value wins after backward/zero seeks; max(snapshot, live) resurrects
+        // the old position until the next 250ms snapshot tick.
+        if (nativeEngineActive) liveNativePositionMs.toSecondsInt()
         else mpvPosition ?: (viewModel.pos ?: 0),
       duration =
         if (nativeEngineActive) maxOf(nativeSnapshot.durationMs, liveNativeDurationMs).toSecondsInt()
@@ -5639,18 +5687,20 @@ class PlayerActivity :
         } else {
           PlaybackSession.isPositionRestorePending(PlaybackSession.state.value.activeGeneration)
         },
-      positionIsKnown = nativeEngineActive || mpvPosition != null,
-      externalSubtitlesAreKnown = nativeEngineActive || mpvPosition != null,
-      playbackSpeed = PlaybackSession.getPropertyDouble("speed") ?: DEFAULT_PLAYBACK_SPEED,
-      videoZoom = PlaybackSession.getPropertyDouble("video-zoom")?.toFloat() ?: viewModel.videoZoom.value,
+      positionIsKnown = if (nativeEngineActive) nativePositionIsKnown else mpvPosition != null,
+      externalSubtitlesAreKnown = if (nativeEngineActive) nativePositionIsKnown else mpvPosition != null,
+      mpvSettingsAreKnown = listOf(sid, secondarySid, aid, subDelay, subSpeed, audioDelay).all { it != null },
+      playbackSettingsAreKnown = if (nativeEngineActive) nativePositionIsKnown else speed != null && zoom != null,
+      playbackSpeed = if (nativeEngineActive) nativePlaybackSpeed().toDouble() else speed ?: DEFAULT_PLAYBACK_SPEED,
+      videoZoom = if (nativeEngineActive) viewModel.videoZoom.value else zoom?.toFloat() ?: viewModel.videoZoom.value,
       videoAspect = viewModel.videoAspect.value.name,
       customAspectRatio = viewModel.currentAspectRatio.value.toFloat(),
-      sid = player.sid,
-      secondarySid = player.secondarySid,
-      subDelayMs = ((PlaybackSession.getPropertyDouble("sub-delay") ?: 0.0) * MILLISECONDS_TO_SECONDS).toInt(),
-      subSpeed = PlaybackSession.getPropertyDouble("sub-speed") ?: DEFAULT_SUB_SPEED,
-      aid = player.aid,
-      audioDelayMs = ((PlaybackSession.getPropertyDouble("audio-delay") ?: 0.0) * MILLISECONDS_TO_SECONDS).toInt(),
+      sid = sid ?: -1,
+      secondarySid = secondarySid ?: -1,
+      subDelayMs = ((subDelay ?: 0.0) * MILLISECONDS_TO_SECONDS).toInt(),
+      subSpeed = subSpeed ?: DEFAULT_SUB_SPEED,
+      aid = aid ?: -1,
+      audioDelayMs = ((audioDelay ?: 0.0) * MILLISECONDS_TO_SECONDS).toInt(),
       externalSubtitles = viewModel.externalSubtitles.joinToString("|"),
     )
   }
@@ -5794,6 +5844,23 @@ class PlayerActivity :
     // Restore video zoom from saved state
     PlaybackSession.setPropertyDouble("video-zoom", state.videoZoom.toDouble())
     viewModel.setVideoZoom(state.videoZoom)
+  }
+
+  /** Restore common per-video settings on Native as well as MPV. MPV-only timing and
+   * track identifiers stay in the shared record untouched; they are not Media3 IDs. */
+  private suspend fun applyNativePlaybackState(state: PlaybackStateEntity?) {
+    nativeSetSpeed(state?.playbackSpeed?.toFloat() ?: DEFAULT_PLAYBACK_SPEED.toFloat())
+    viewModel.setVideoZoom(state?.videoZoom ?: playerPreferences.defaultVideoZoom.get())
+    if (playerPreferences.rememberVideoAspectPerVideo.get() && state != null) {
+      viewModel.restoreVideoAspect(state.videoAspect, state.customAspectRatio, showUpdate = false)
+    } else {
+      viewModel.restoreSavedVideoAspect(showUpdate = false)
+    }
+    state?.externalSubtitles.orEmpty().split("|").filter { it.isNotBlank() }.forEach { uri ->
+      withContext(Dispatchers.IO) {
+        viewModel.addSubtitleSuspend(Uri.parse(uri), select = false, silent = true)
+      }
+    }
   }
 
   private fun restorePlaybackPosition(state: PlaybackStateEntity?) {
@@ -6565,6 +6632,12 @@ class PlayerActivity :
     // callback change visibility or playback state after this load has started.
     engineHandoffJob?.cancel()
     engineHandoffJob = null
+    immediatePlaybackStateSaveJob?.join()
+    val savedPlaybackState =
+      resolvePlaybackState(item.stableId, legacyMediaIdentifier)
+        ?: resolvePlaybackState(mediaIdentifier, legacyMediaIdentifier)
+        ?: playbackStateRepository.getVideoDataByTitle(PlaybackIdentity.forUri(item.playableUri))
+        ?: playbackStateRepository.getVideoDataByTitle(PlaybackIdentity.forLocalPath(item.playableUri))
     val restoreSavedPosition = playerPreferences.savePositionOnQuit.get()
     // Give mpv the resume point as a load-local option so the demuxer starts there instead of
     // decoding at zero and visibly seeking only after FILE_LOADED.
@@ -6572,11 +6645,7 @@ class PlayerActivity :
       if (positionRestoreOverride != null) {
         positionRestoreOverride.positionSeconds?.takeIf { it.isFinite() && it > 0.0 }
       } else if (restoreSavedPosition && !item.isDefinitelyAudioOnly()) {
-        (resolvePlaybackState(item.stableId, legacyMediaIdentifier)
-          ?: resolvePlaybackState(mediaIdentifier, legacyMediaIdentifier)
-          ?: playbackStateRepository.getVideoDataByTitle(PlaybackIdentity.forUri(item.playableUri))
-          ?: playbackStateRepository.getVideoDataByTitle(PlaybackIdentity.forLocalPath(item.playableUri)))
-          ?.lastPosition
+        savedPlaybackState?.lastPosition
           ?.takeIf { it > 0 }
           ?.toDouble()
       } else {
@@ -6662,11 +6731,12 @@ class PlayerActivity :
         nativeEngine.play(
           nativePlayableUri.toUri(),
           startPositionMs = (initialPositionSeconds?.times(1000.0)?.toLong() ?: 0L),
-          autoplay = true,
+          autoplay = positionRestoreOverride?.paused != true,
           headers = nativeItem.headers,
           mimeType = nativeItem.mimeType,
           sourceUri = nativeItem.originalUri.toUri(),
         )
+        applyNativePlaybackState(savedPlaybackState)
         viewModel.onVideoLoadCompleted()
       }
       return
@@ -7617,6 +7687,8 @@ class PlayerActivity :
       // Activity resumes with a stale native surface or no playable session.
       val nativePositionMs = nativeEngine.currentPlayer.currentPosition.coerceAtLeast(0L)
       val nativeWasPlaying = nativeEngine.currentPlayer.isPlaying
+      // Capture before stopping Native; the MPV-backed service must inherit this state.
+      saveVideoPlaybackState(fileName, immediate = true)
       nativeEngine.setPlaying(false)
       activeEngineMode = PlaybackEngineMode.MPV
       viewModel.setNativeEngineActive(false)
@@ -7633,14 +7705,14 @@ class PlayerActivity :
         }
       }
       if (mpvInitialized) {
-        loadPlaylistItem(playlistIndex.coerceAtLeast(0))
-        lifecycleScope.launch {
-          delay(350L)
-          if (ownsPlaybackSession() && mpvInitialized) {
-            PlaybackSession.setPropertyDouble("time-pos", nativePositionMs / 1000.0)
-            PlaybackSession.setPropertyBoolean("pause", !nativeWasPlaying)
-          }
-        }
+        loadPlaylistItemInternal(
+          index = playlistIndex.coerceAtLeast(0),
+          saveCurrentPlaybackState = false,
+          positionRestoreOverride = PlaybackPositionRestoreOverride(
+            positionSeconds = nativePositionMs / 1000.0,
+            paused = !nativeWasPlaying,
+          ),
+        )
       }
     }
 

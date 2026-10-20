@@ -34,6 +34,13 @@ internal data class PlaybackStateSnapshot(
   val positionIsKnown: Boolean = true,
   /** False when the live subtitle list could not be read and an empty value is only a placeholder. */
   val externalSubtitlesAreKnown: Boolean = true,
+  /** Native does not expose MPV track IDs, subtitle timing or audio delay. Keep those intact. */
+  val mpvSettingsAreKnown: Boolean = true,
+  /** A detached service has no authority over the Activity's aspect selection. */
+  val videoPresentationIsKnown: Boolean = true,
+  /** Prevent teardown placeholders from clearing a previously saved speed/zoom. */
+  val playbackSettingsAreKnown: Boolean = positionIsKnown,
+  val captureSequence: Long = PlaybackStateSaveCoordinator.nextSequence(),
 )
 
 internal object PlaybackStatePersistence {
@@ -66,16 +73,16 @@ internal object PlaybackStatePersistence {
     return PlaybackStateEntity(
       mediaTitle = snapshot.mediaIdentifier,
       lastPosition = lastPosition,
-      playbackSpeed = snapshot.playbackSpeed,
-      videoZoom = snapshot.videoZoom,
-      videoAspect = snapshot.videoAspect,
-      customAspectRatio = snapshot.customAspectRatio,
-      sid = snapshot.sid,
-      secondarySid = snapshot.secondarySid,
-      subDelay = snapshot.subDelayMs,
-      subSpeed = snapshot.subSpeed,
-      aid = snapshot.aid,
-      audioDelay = snapshot.audioDelayMs,
+      playbackSpeed = if (snapshot.playbackSettingsAreKnown) snapshot.playbackSpeed else oldState?.playbackSpeed ?: snapshot.playbackSpeed,
+      videoZoom = if (snapshot.playbackSettingsAreKnown) snapshot.videoZoom else oldState?.videoZoom ?: snapshot.videoZoom,
+      videoAspect = if (snapshot.videoPresentationIsKnown) snapshot.videoAspect else oldState?.videoAspect ?: snapshot.videoAspect,
+      customAspectRatio = if (snapshot.videoPresentationIsKnown) snapshot.customAspectRatio else oldState?.customAspectRatio ?: snapshot.customAspectRatio,
+      sid = if (snapshot.mpvSettingsAreKnown) snapshot.sid else oldState?.sid ?: snapshot.sid,
+      secondarySid = if (snapshot.mpvSettingsAreKnown) snapshot.secondarySid else oldState?.secondarySid ?: snapshot.secondarySid,
+      subDelay = if (snapshot.mpvSettingsAreKnown) snapshot.subDelayMs else oldState?.subDelay ?: snapshot.subDelayMs,
+      subSpeed = if (snapshot.mpvSettingsAreKnown) snapshot.subSpeed else oldState?.subSpeed ?: snapshot.subSpeed,
+      aid = if (snapshot.mpvSettingsAreKnown) snapshot.aid else oldState?.aid ?: snapshot.aid,
+      audioDelay = if (snapshot.mpvSettingsAreKnown) snapshot.audioDelayMs else oldState?.audioDelay ?: snapshot.audioDelayMs,
       timeRemaining = timeRemaining,
       externalSubtitles = externalSubtitles,
       hasBeenWatched =

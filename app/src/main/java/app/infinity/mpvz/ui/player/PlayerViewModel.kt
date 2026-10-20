@@ -2782,7 +2782,9 @@ class PlayerViewModel : ViewModel(),
       val uriString = uri.toString()
       val nativeAlreadyRegistered =
         nativeExternalSubtitleTracks.value.any { it.externalFilename == uriString }
-      if (_externalSubtitles.contains(uriString) && (!nativeActive || nativeAlreadyRegistered)) {
+      // The common URI list is history, not proof that the current renderer has loaded it.
+      // A subtitle added in Native still needs sub-add after switching/reloading MPV.
+      if (nativeActive && _externalSubtitles.contains(uriString) && nativeAlreadyRegistered) {
         android.util.Log.d("PlayerViewModel", "Subtitle already tracked, skipping: $uriString")
         return@withLock
       }
@@ -2827,7 +2829,7 @@ class PlayerViewModel : ViewModel(),
         }
 
         // Check if MPV already auto-loaded this subtitle (prevents duplication)
-        val existingTrack = subtitleTracks.value.find { it.externalFilename == mpvPath }
+        val existingTrack = allTracks.value.find { it.type == "sub" && it.externalFilename == mpvPath }
         if (existingTrack != null) {
           android.util.Log.d("PlayerViewModel", "Subtitle already loaded by MPV, skipping sub-add: $mpvPath")
           if (select) {

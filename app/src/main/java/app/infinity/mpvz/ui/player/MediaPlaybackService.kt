@@ -117,6 +117,17 @@ class MediaPlaybackService :
     @Volatile
     private var activeInstance: MediaPlaybackService? = null
 
+    /** True while PlayerActivity's Native renderer owns the shared playback session. */
+    @Volatile
+    private var nativeRendererOwnsPlayback = false
+
+    /** Sets the renderer owner used to gate service-side MPV persistence. */
+    internal fun setNativeRendererOwnership(ownsPlayback: Boolean) {
+      nativeRendererOwnsPlayback = ownsPlayback
+    }
+
+    internal fun isNativeRendererOwner(): Boolean = nativeRendererOwnsPlayback
+
     /**
      * True only while playback is detached from the foreground Activity.
      *
@@ -1749,6 +1760,7 @@ class MediaPlaybackService :
   }
 
   private fun schedulePlaybackStateSave(force: Boolean = false) {
+    if (isNativeRendererOwner()) return
     val queueState = PlaybackSession.queue.value
     val identifier = mediaIdentifier.ifBlank { queueState.currentItem?.stableId.orEmpty() }
     if (identifier.isBlank()) return
@@ -1769,6 +1781,7 @@ class MediaPlaybackService :
   }
 
   private fun savePlaybackStateNow() {
+    if (isNativeRendererOwner()) return
     val queueState = PlaybackSession.queue.value
     val identifier = mediaIdentifier.ifBlank { queueState.currentItem?.stableId.orEmpty() }
     if (identifier.isBlank()) return
@@ -1789,6 +1802,7 @@ class MediaPlaybackService :
   }
 
   private fun savePlaybackStateBeforeTaskRemoval() {
+    if (isNativeRendererOwner()) return
     val queueState = PlaybackSession.queue.value
     val identifier = mediaIdentifier.ifBlank { queueState.currentItem?.stableId.orEmpty() }
     if (identifier.isBlank()) return
@@ -1810,18 +1824,23 @@ class MediaPlaybackService :
   ) {
     if (identifier.isBlank() || capturedSnapshot.mediaIdentifier != identifier) return
 
-    runCatching {
-      val oldState = playbackStateRepository.getVideoDataByTitle(identifier)
-      val playbackState =
-        PlaybackStatePersistence.buildEntity(
-          oldState = oldState,
-          snapshot = capturedSnapshot,
-          savePositionOnQuit = playerPreferences.savePositionOnQuit.get(),
-          watchedThreshold = browserPreferences.watchedThreshold.get(),
-        )
-      playbackStateRepository.upsert(playbackState)
-      PlaybackStateEvents.notifyChanged(identifier)
-    }.onFailure { error ->
+    try {
+      PlaybackStateSaveCoordinator.persistIfNewest(
+        mediaIdentifier = identifier,
+        sequence = capturedSnapshot.captureSequence,
+      ) {
+        val oldState = playbackStateRepository.getVideoDataByTitle(identifier)
+        val playbackState =
+          PlaybackStatePersistence.buildEntity(
+            oldState = oldState,
+            snapshot = capturedSnapshot,
+            savePositionOnQuit = playerPreferences.savePositionOnQuit.get(),
+            watchedThreshold = browserPreferences.watchedThreshold.get(),
+          )
+        playbackStateRepository.upsert(playbackState)
+        PlaybackStateEvents.notifyChanged(identifier)
+      }
+    } catch (error: Exception) {
       Log.e(TAG, "Error saving playback state from service", error)
     }
   }
@@ -1837,6 +1856,21 @@ class MediaPlaybackService :
     if (identifier.isBlank()) return null
 
     val mpvPosition = readMpvIntSecondsOrNull("time-pos")
+    fun nullableDouble(property: String) = runCatching { PlaybackSession.getPropertyDouble(property) }.getOrNull()
+    fun nullableTrack(property: String): Int? = runCatching {
+      when (val value = PlaybackSession.getPropertyString(property)) {
+        "no" -> -1
+        else -> value?.toIntOrNull()
+      }
+    }.getOrNull()
+    val speed = nullableDouble("speed")
+    val zoom = nullableDouble("video-zoom")
+    val sid = nullableTrack("sid")
+    val secondarySid = nullableTrack("secondary-sid")
+    val aid = nullableTrack("aid")
+    val subDelay = nullableDouble("sub-delay")
+    val subSpeed = nullableDouble("sub-speed")
+    val audioDelay = nullableDouble("audio-delay")
 
     return PlaybackStateSnapshot(
       mediaIdentifier = identifier,
@@ -1846,28 +1880,19 @@ class MediaPlaybackService :
       isPositionRestorePending =
         PlaybackSession.isPositionRestorePending(PlaybackSession.state.value.activeGeneration),
       positionIsKnown = mpvPosition != null,
-      playbackSpeed = readMpvDouble("speed", oldState?.playbackSpeed ?: DEFAULT_PLAYBACK_STATE_SPEED),
-      videoZoom = readMpvDouble("video-zoom", oldState?.videoZoom?.toDouble() ?: 0.0).toFloat(),
+      mpvSettingsAreKnown = listOf(sid, secondarySid, aid, subDelay, subSpeed, audioDelay).all { it != null },
+      playbackSettingsAreKnown = speed != null && zoom != null,
+      videoPresentationIsKnown = false,
+      playbackSpeed = speed ?: oldState?.playbackSpeed ?: DEFAULT_PLAYBACK_STATE_SPEED,
+      videoZoom = zoom?.toFloat() ?: oldState?.videoZoom ?: 0f,
       videoAspect = oldState?.videoAspect ?: "Fit",
       customAspectRatio = oldState?.customAspectRatio ?: -1f,
-      sid = readMpvTrackId("sid", oldState?.sid ?: -1),
-      secondarySid = readMpvTrackId("secondary-sid", oldState?.secondarySid ?: -1),
-      subDelayMs =
-        (
-          readMpvDouble(
-            "sub-delay",
-            (oldState?.subDelay ?: 0) / PLAYBACK_STATE_MILLISECONDS_TO_SECONDS.toDouble(),
-          ) * PLAYBACK_STATE_MILLISECONDS_TO_SECONDS
-        ).toInt(),
-      subSpeed = readMpvDouble("sub-speed", oldState?.subSpeed ?: DEFAULT_PLAYBACK_STATE_SUB_SPEED),
-      aid = readMpvTrackId("aid", oldState?.aid ?: -1),
-      audioDelayMs =
-        (
-          readMpvDouble(
-            "audio-delay",
-            (oldState?.audioDelay ?: 0) / PLAYBACK_STATE_MILLISECONDS_TO_SECONDS.toDouble(),
-          ) * PLAYBACK_STATE_MILLISECONDS_TO_SECONDS
-        ).toInt(),
+      sid = sid ?: oldState?.sid ?: -1,
+      secondarySid = secondarySid ?: oldState?.secondarySid ?: -1,
+      subDelayMs = subDelay?.let { (it * PLAYBACK_STATE_MILLISECONDS_TO_SECONDS).toInt() } ?: oldState?.subDelay ?: 0,
+      subSpeed = subSpeed ?: oldState?.subSpeed ?: DEFAULT_PLAYBACK_STATE_SUB_SPEED,
+      aid = aid ?: oldState?.aid ?: -1,
+      audioDelayMs = audioDelay?.let { (it * PLAYBACK_STATE_MILLISECONDS_TO_SECONDS).toInt() } ?: oldState?.audioDelay ?: 0,
       externalSubtitles = oldState?.externalSubtitles.orEmpty(),
       externalSubtitlesAreKnown = false,
     )
@@ -1887,26 +1912,6 @@ class MediaPlaybackService :
       PlaybackSession.getPropertyDouble(property)?.toInt()
         ?: PlaybackSession.getPropertyInt(property)
         ?: fallback
-    }.getOrDefault(fallback)
-
-  private fun readMpvDouble(
-    property: String,
-    fallback: Double,
-  ): Double =
-    runCatching {
-      PlaybackSession.getPropertyDouble(property) ?: fallback
-    }.getOrDefault(fallback)
-
-  private fun readMpvTrackId(
-    property: String,
-    fallback: Int,
-  ): Int =
-    runCatching {
-      when (val value = PlaybackSession.getPropertyString(property)) {
-        null -> fallback
-        "no" -> -1
-        else -> value.toIntOrNull() ?: fallback
-      }
     }.getOrDefault(fallback)
 
   /**
