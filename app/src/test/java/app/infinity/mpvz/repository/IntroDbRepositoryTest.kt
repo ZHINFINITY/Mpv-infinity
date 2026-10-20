@@ -1,3 +1,9 @@
+/*
+ * SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+ *
+ * Copyright (c) 2026 ZHINFINITY. Mpv∞ Covered Code.
+ * See LICENSE for terms.
+ */
 package app.infinity.mpvz.repository
 
 import kotlinx.coroutines.runBlocking
@@ -70,12 +76,13 @@ class IntroDbRepositoryTest {
     val body = """
       {
         "tvdb_id": 77889,
-        "segments": [
-          {"segment_type": "intro", "start_ms": 1250, "end_ms": 45250},
-          {"segment_type": "recap", "start_ms": 0, "end_ms": 8000},
-          {"segment_type": "credits", "start_ms": 121000, "end_ms": 145500},
-          {"segment_type": "preview", "start_ms": 145500, "end_ms": 148250}
-        ]
+        "type": "tv",
+        "season": 2,
+        "episode": 7,
+        "intro": [{"start_ms": 1250, "end_ms": 45250}],
+        "recap": [{"start_ms": 0, "end_ms": 8000}],
+        "credits": [{"start_ms": 121000, "end_ms": 145500}],
+        "preview": [{"start_ms": 145500, "end_ms": 148250}]
       }
     """.trimIndent()
 
@@ -97,10 +104,11 @@ class IntroDbRepositoryTest {
     val body = """
       {
         "tvdb_id": 77889,
-        "segments": [
-          {"segment_type": "intro", "start_ms": 1250, "end_ms": 45250},
-          {"segment_type": "credits", "start_ms": 121000, "end_ms": 145500}
-        ]
+        "type": "tv",
+        "season": 2,
+        "episode": 7,
+        "intro": [{"start_ms": 1250, "end_ms": 45250}],
+        "credits": [{"start_ms": 121000, "end_ms": 145500}]
       }
     """.trimIndent()
     val client = OkHttpClient.Builder().addInterceptor(Interceptor { chain ->
@@ -120,7 +128,7 @@ class IntroDbRepositoryTest {
 
   @Test
   fun emptyAndNotFoundResponsesProduceNoSegments() = runBlocking {
-    assertTrue(repository.parseTheIntroDbMediaBody("{\"tvdb_id\": 77889, \"segments\": []}").isEmpty())
+    assertTrue(repository.parseTheIntroDbMediaBody("{\"tvdb_id\": 77889, \"type\": \"movie\"}").isEmpty())
 
     val notFoundClient = OkHttpClient.Builder().addInterceptor { chain ->
       Response.Builder()
