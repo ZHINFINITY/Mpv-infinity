@@ -19,6 +19,7 @@ import app.infinity.mpvz.utils.media.HttpUtils
 import app.infinity.mpvz.utils.media.M3UParseResult
 import app.infinity.mpvz.utils.media.M3UParser
 import app.infinity.mpvz.utils.media.M3UPlaylistItem
+import app.infinity.mpvz.utils.media.M3USourceUrl
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
@@ -589,7 +590,7 @@ class PlaylistRepository(
         Result.success(
           RemotePlaylist(
             parseResult = parseResult,
-            sourceUrl = M3UParser.sanitizeSourceUrl(sourceUrl),
+            sourceUrl = M3UParser.sanitizeSourceUrl(M3USourceUrl.normalize(sourceUrl)),
           ),
         )
       is M3UParseResult.Error ->

@@ -117,7 +117,7 @@ object M3UParser {
     httpClient: OkHttpClient,
     limits: M3ULimits,
   ): M3UParseResult {
-    val originalUrl = url.toHttpUrlOrNull() ?: return error("Invalid playlist URL")
+    val originalUrl = M3USourceUrl.normalize(url).toHttpUrlOrNull() ?: return error("Invalid playlist URL")
     val username = originalUrl.username
     val password = originalUrl.password
     val safeUrl = originalUrl.newBuilder().username("").password("").build()
