@@ -760,6 +760,7 @@ class IntroDbRepository(
       mediaType = mediaType,
       season = season,
       episode = episode,
+      mapping = request.mapping,
       source = IntroDbResolutionSource.TMDB_SEARCH,
     )
   }
@@ -882,7 +883,6 @@ class IntroDbRepository(
               imdbId = imdbId,
               season = season.takeIf { useEpisodeHints },
               episode = episode.takeIf { useEpisodeHints },
-              mapping = mapping,
             )
           } else if (tmdbId != null && tmdbId > 0) {
             getTheIntroDbSegments(
@@ -904,6 +904,7 @@ class IntroDbRepository(
             mediaType = mediaType,
             season = season.takeIf { useEpisodeHints },
             episode = episode.takeIf { useEpisodeHints },
+            mapping = mapping,
           )
 
         IntroSegmentProvider.ANI_SKIP ->
