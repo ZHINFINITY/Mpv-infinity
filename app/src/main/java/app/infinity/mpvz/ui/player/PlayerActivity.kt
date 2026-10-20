@@ -402,6 +402,10 @@ class PlayerActivity :
     nativeEngine.seekTo(positionMs)
   }
 
+  override fun nativeSeekPreviewTo(positionMs: Long) {
+    nativeEngine.seekPreviewTo(positionMs)
+  }
+
   override fun nativePlaybackPositionSeconds(): Double =
     nativeEngine.snapshot.value.positionMs.coerceAtLeast(0L) / 1000.0
 
@@ -2410,6 +2414,9 @@ class PlayerActivity :
     if (!mpvInitialized && !nativeActive) return
     if (nativeActive) {
       nativeEngine.setPlaying(false)
+      // Capture before stop() transitions Media3 to IDLE and clears the item;
+      // after that point a lifecycle save can only preserve the old database row.
+      saveVideoPlaybackState(fileName, immediate = true)
       nativeEngine.stop()
     }
     // Pause synchronously to freeze the resume position at the close boundary. Muting as well
@@ -5649,7 +5656,16 @@ class PlayerActivity :
 
     val nativeSnapshot = nativeEngine.snapshot.value
     val nativeEngineActive = activeEngineMode == PlaybackEngineMode.NATIVE
-    val nativePositionIsKnown = nativeEngine.currentPlayer.currentMediaItem != null
+    val nativePositionIsKnown =
+      if (nativeEngineActive) {
+        NativePositionPersistencePolicy.isPositionKnown(
+          hasCurrentMediaItem = nativeEngine.currentPlayer.currentMediaItem != null,
+          isReady = nativeSnapshot.isReady,
+          hasEstablishedPlaybackPosition = nativeEngine.hasEstablishedPlaybackPosition,
+        )
+      } else {
+        false
+      }
     val liveNativePositionMs = nativeEngine.currentPlayer.currentPosition.coerceAtLeast(0L)
     val liveNativeDurationMs = nativeEngine.currentPlayer.duration.takeIf { it != C.TIME_UNSET }?.coerceAtLeast(0L) ?: 0L
     val mpvPosition = if (nativeEngineActive) null else readMpvIntSecondsOrNull("time-pos")
@@ -6728,6 +6744,12 @@ class PlayerActivity :
         viewModel.clearNativeExternalSubtitles()
         val nativePlayableUri = PlaybackSession.resolvePlayableUriForNative(nativeItem)
         nativeEngine.setRepeatMode(viewModel.repeatMode.value)
+        Log.d(
+          TAG,
+          "Native restore savedPositionSeconds=${savedPlaybackState?.lastPosition} " +
+            "restoreEnabled=$restoreSavedPosition override=${positionRestoreOverride != null} " +
+            "appliedPositionMs=${initialPositionSeconds?.times(1000.0)?.toLong() ?: 0L}",
+        )
         nativeEngine.play(
           nativePlayableUri.toUri(),
           startPositionMs = (initialPositionSeconds?.times(1000.0)?.toLong() ?: 0L),

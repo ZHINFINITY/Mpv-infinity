@@ -341,21 +341,24 @@ class NativeMedia3Engine(
   private var loopASeconds: Double? = null
   private var loopBSeconds: Double? = null
   private val loopHandler = Handler(Looper.getMainLooper())
-  private var pendingSeekPositionMs: Long? = null
   private var pendingSeekDisplayPositionMs: Long? = null
   private var lastKnownDurationMs: Long = 0L
   private var pendingExternalSelectionId: String? = null
-  private val seekRunnable = Runnable {
-    val positionMs = pendingSeekPositionMs ?: return@Runnable
-    pendingSeekPositionMs = null
-    val targetMs = positionMs.coerceAtLeast(0L)
-    pendingSeekDisplayPositionMs = targetMs
-    // The source is prepared once with a seek-capable extractor. Seeking only moves the existing
-    // extractor/decoder forward; it never rebuilds the MediaSource or flushes the surface.
-    Log.d(logTag, "seek targetMs=$targetMs ${bufferingLogState()}")
-    player.seekTo(targetMs)
-    publishPlaybackSnapshot()
-  }
+  var hasEstablishedPlaybackPosition: Boolean = false
+    private set
+  private val seekDispatcher = NativeSeekDispatcher(
+    nowMs = { SystemClock.uptimeMillis() },
+    postDelayed = { task, delayMs -> loopHandler.postDelayed(task, delayMs); Unit },
+    removeCallbacks = { task -> loopHandler.removeCallbacks(task) },
+    dispatch = { targetMs, committed ->
+      pendingSeekDisplayPositionMs = targetMs
+      // Preserve the tested UHD/Dolby Vision keyframe policy. Preview seeks are throttled;
+      // releasing the thumb immediately dispatches the final target without preparing again.
+      Log.d(logTag, "seek targetMs=$targetMs committed=$committed ${bufferingLogState()}")
+      player.seekTo(targetMs)
+      publishPlaybackSnapshot()
+    },
+  )
   private val timelineRunnable = object : Runnable {
     override fun run() {
       // Keep the subtitle clock alive while paused, buffering, and immediately
@@ -529,7 +532,10 @@ class NativeMedia3Engine(
       }
     }
     override fun onPlaybackStateChanged(playbackState: Int) {
-      if (playbackState == Player.STATE_READY) pendingSeekDisplayPositionMs = null
+      if (playbackState == Player.STATE_READY) {
+        hasEstablishedPlaybackPosition = true
+        pendingSeekDisplayPositionMs = null
+      }
       Log.d(logTag, "playback state=$playbackState ${bufferingLogState()}")
       if (playbackState == Player.STATE_ENDED) {
         val uri = player.currentMediaItem?.localConfiguration?.uri
@@ -991,6 +997,9 @@ class NativeMedia3Engine(
     mimeType: String? = null,
     sourceUri: Uri? = null,
   ) {
+    seekDispatcher.cancel()
+    pendingSeekDisplayPositionMs = null
+    hasEstablishedPlaybackPosition = false
     _hasRenderedFirstFrame.value = false
     endedUri = null
     lastKnownDurationMs = 0L
@@ -1140,19 +1149,21 @@ class NativeMedia3Engine(
   }
 
   fun seekTo(positionMs: Long) {
-    pendingSeekPositionMs = positionMs.coerceAtLeast(0L)
-    loopHandler.removeCallbacks(seekRunnable)
-    loopHandler.postDelayed(seekRunnable, 120L)
+    seekDispatcher.commit(positionMs)
     // Seek controls must not enumerate every subtitle/audio metadata entry on the UI thread.
     publishPlaybackSnapshot()
     startTimelineUpdates()
   }
 
+  fun seekPreviewTo(positionMs: Long) {
+    seekDispatcher.preview(positionMs)
+    publishPlaybackSnapshot()
+    startTimelineUpdates()
+  }
+
   fun seekBy(offsetMs: Long) {
-    val basePositionMs = pendingSeekPositionMs ?: player.currentPosition
-    pendingSeekPositionMs = (basePositionMs + offsetMs).coerceAtLeast(0L)
-    loopHandler.removeCallbacks(seekRunnable)
-    loopHandler.postDelayed(seekRunnable, 120L)
+    val basePositionMs = seekDispatcher.pendingPositionMs ?: player.currentPosition
+    seekDispatcher.preview((basePositionMs + offsetMs).coerceAtLeast(0L))
     // Keep repeated seek-bar updates lightweight; the track/metadata snapshot is unchanged.
     publishPlaybackSnapshot()
     startTimelineUpdates()
@@ -1337,8 +1348,7 @@ class NativeMedia3Engine(
   fun stop() {
     clearLoop()
     loopHandler.removeCallbacks(timelineRunnable)
-    loopHandler.removeCallbacks(seekRunnable)
-    pendingSeekPositionMs = null
+    seekDispatcher.cancel()
     pendingSeekDisplayPositionMs = null
     player.stop()
     player.clearMediaItems()
@@ -1486,8 +1496,7 @@ class NativeMedia3Engine(
   fun release() {
     clearLoop()
     loopHandler.removeCallbacks(timelineRunnable)
-    loopHandler.removeCallbacks(seekRunnable)
-    pendingSeekPositionMs = null
+    seekDispatcher.cancel()
     player.removeListener(listener)
     player.removeAnalyticsListener(analyticsListener)
     attachedView?.player = null

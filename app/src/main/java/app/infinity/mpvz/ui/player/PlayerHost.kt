@@ -87,6 +87,8 @@ interface PlayerHost {
 
   fun nativeSeekTo(positionMs: Long) {}
 
+  fun nativeSeekPreviewTo(positionMs: Long) = nativeSeekTo(positionMs)
+
   fun nativePlaybackPositionSeconds(): Double = 0.0
 
   fun nativePlaybackDurationSeconds(): Double = 0.0
