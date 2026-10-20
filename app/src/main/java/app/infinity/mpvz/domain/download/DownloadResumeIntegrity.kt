@@ -6,6 +6,7 @@
  */
 package app.infinity.mpvz.domain.download
 
+import java.time.Duration
 import java.time.ZonedDateTime
 import java.time.format.DateTimeFormatter
 
@@ -20,16 +21,23 @@ data class DownloadValidators(
   fun matches(responseEtag: String?, responseLastModified: String?): Boolean =
     when {
       etag != null -> responseEtag == etag
-      lastModified != null -> responseLastModified == lastModified
+      lastModified != null -> responseEtag == null && responseLastModified == lastModified
       else -> false
     }
 
   companion object {
-    fun fromResponse(etag: String?, lastModified: String?): DownloadValidators =
-      DownloadValidators(
-        etag = etag?.takeIf(::isStrongEtag),
-        lastModified = lastModified?.takeIf(::isValidLastModified),
-      )
+    fun fromResponse(etag: String?, lastModified: String?, responseDate: String? = null): DownloadValidators {
+      // RFC 9110 §13.1.5 forbids date If-Range when any entity tag is available,
+      // and forbids weak entity tags. Such representations must restart safely.
+      if (etag != null) return DownloadValidators(etag = etag.takeIf(::isStrongEtag))
+      val dateIsStrong = runCatching {
+        val modified = ZonedDateTime.parse(lastModified, DateTimeFormatter.RFC_1123_DATE_TIME)
+        val served = ZonedDateTime.parse(responseDate, DateTimeFormatter.RFC_1123_DATE_TIME)
+        // A conservative margin for clock uncertainty (RFC 9110 §8.8.2.2).
+        Duration.between(modified, served).seconds >= 60L
+      }.getOrDefault(false)
+      return DownloadValidators(lastModified = lastModified.takeIf { dateIsStrong })
+    }
 
     fun isStrongEtag(value: String): Boolean =
       value != "*" && !value.startsWith("W/", ignoreCase = true) && value.matches(ETAG_PATTERN)
