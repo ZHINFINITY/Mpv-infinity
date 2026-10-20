@@ -587,22 +587,12 @@ fun GestureHandler(
                       longPressTriggeredDuringTouch = true
                       haptics.performHapticFeedback(HapticFeedbackType.LongPress)
                       originalSpeed = viewModel.activePlaybackSpeed()
-                      // Native Media3 applies speed synchronously; update it and the feedback
-                      // overlay immediately instead of waiting behind a ramp.
-                      val startSpeed = originalSpeed
+                      // Apply one speed update for MPV as well as Media3. Repeated MPV speed
+                      // writes rebuild the active audio filter chain (notably with pitch
+                      // correction enabled), so ramping through five values can block the
+                      // render thread and present the same frame during the hold gesture.
                       val targetSpeed = 2f
-                      if (viewModel.isNativeEngineActive()) {
-                        viewModel.setPlaybackSpeed(targetSpeed)
-                      } else {
-                        val steps = 5
-                        val stepDelay = 16L // ~one frame per step
-                        for (i in 1..steps) {
-                          val t = i.toFloat() / steps
-                          val intermediateSpeed = startSpeed + (targetSpeed - startSpeed) * t
-                          viewModel.setPlaybackSpeed(intermediateSpeed)
-                          if (i < steps) delay(stepDelay)
-                        }
-                      }
+                      viewModel.setPlaybackSpeed(targetSpeed)
 
                       isDynamicSpeedControlActive = true
                       hasSwipedEnough = false
@@ -967,18 +957,10 @@ fun GestureHandler(
               isDynamicSpeedControlActive = false
               hasSwipedEnough = false
               if (!isSpeedLocked) {
-                // Ramp speed back down incrementally to avoid audio filter stutter
-                val currentSpeed = viewModel.activePlaybackSpeed()
+                // A single restore avoids rebuilding the MPV audio filter chain five times.
                 val targetSpeed = originalSpeed
-                val steps = 5
-                val stepDelay = 16L
                 coroutineScope.launch {
-                  for (i in 1..steps) {
-                    val t = i.toFloat() / steps
-                    val intermediateSpeed = currentSpeed + (targetSpeed - currentSpeed) * t
-                    viewModel.setPlaybackSpeed(intermediateSpeed)
-                    if (i < steps) delay(stepDelay)
-                  }
+                  viewModel.setPlaybackSpeed(targetSpeed)
                 }
               }
               viewModel.playerUpdate.update { PlayerUpdates.None }
