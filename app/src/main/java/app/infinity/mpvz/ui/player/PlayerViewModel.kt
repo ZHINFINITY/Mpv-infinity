@@ -1,10 +1,8 @@
 /*
- * SPDX-License-Identifier: AGPL-3.0-or-later
+ * SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
  *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Affero General Public License as published
- * by the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * Copyright (c) 2026 ZHINFINITY. Mpv∞ Covered Code.
+ * See LICENSE for terms.
  */
 
 package app.infinity.mpvz.ui.player
@@ -3544,6 +3542,9 @@ class PlayerViewModel : ViewModel(),
       )
 
     introLookupJob?.cancel()
+    // Child provider coroutines may outlive cancellation while network work unwinds. Keep their
+    // closure limited to the repository instead of retaining this ViewModel instance.
+    val introRepository = introDbRepository
     introLookupJob =
       viewModelScope.launch {
         val outcome =
@@ -3560,7 +3561,7 @@ class PlayerViewModel : ViewModel(),
                 .map { lookupProvider ->
                   async(Dispatchers.IO) {
                     try {
-                      introDbRepository.lookupSegments(lookupRequest.copy(provider = lookupProvider))
+                      introRepository.lookupSegments(lookupRequest.copy(provider = lookupProvider))
                     } catch (cancellation: kotlinx.coroutines.CancellationException) {
                       throw cancellation
                     } catch (error: Exception) {
@@ -3609,7 +3610,7 @@ class PlayerViewModel : ViewModel(),
               }
             }
           } else {
-            introDbRepository.lookupSegments(lookupRequest)
+            introRepository.lookupSegments(lookupRequest)
           }
 
         if (currentMediaTitle != lookupKey) return@launch
@@ -6947,6 +6948,7 @@ class PlayerViewModel : ViewModel(),
     realtimeSubsJob?.cancel()
     playlistMetadataJob?.cancel()
     introLookupJob?.cancel()
+    introLookupJob = null
     autoCropJob?.cancel()
     autoCropReadinessJob?.cancel()
     mpvStateCollectorsJob?.cancel()

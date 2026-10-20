@@ -1,10 +1,8 @@
 /*
- * SPDX-License-Identifier: AGPL-3.0-or-later
+ * SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
  *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Affero General Public License as published
- * by the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * Copyright (c) 2026 ZHINFINITY. Mpv∞ Covered Code.
+ * See LICENSE for terms.
  */
 
 package app.infinity.mpvz.ui.player
@@ -152,6 +150,8 @@ object PlaybackSession : MPVLib.EventObserver {
 
   @Volatile
   private var initialized = false
+  @Volatile
+  private var activeSurfaceFrameRateHintHz: Double? = null
   private var nativeCoreReady = false
   private var applicationContext: Context? = null
   private var desiredVideoOutput = "gpu"
@@ -184,6 +184,12 @@ object PlaybackSession : MPVLib.EventObserver {
 
   val isInitialized: Boolean
     get() = initialized
+
+  fun surfaceFrameRateHintHz(): Double? = activeSurfaceFrameRateHintHz
+
+  fun setSurfaceFrameRateHintHz(frameRateHz: Double?) {
+    activeSurfaceFrameRateHintHz = frameRateHz?.takeIf { it.isFinite() && it > 0.0 }
+  }
 
   fun invalidateCoreConfiguration() {
     nativeLock.withLock { activeCoreConfigurationKey = null }
@@ -219,6 +225,7 @@ object PlaybackSession : MPVLib.EventObserver {
 
         applicationContext = context.applicationContext
         nativeCoreReady = false
+        activeSurfaceFrameRateHintHz = null
         observedProperties.clear()
         suspendedVideoTrack = null
         deferredVideoSelectionGeneration = null
@@ -266,6 +273,7 @@ object PlaybackSession : MPVLib.EventObserver {
           initialized = false
           nativeCoreReady = false
           activeCoreConfigurationKey = null
+          activeSurfaceFrameRateHintHz = null
           suspendedVideoTrack = null
           deferredVideoSelectionGeneration = null
           pendingStopClearQueue = false
@@ -362,9 +370,9 @@ object PlaybackSession : MPVLib.EventObserver {
     updateState { it.copy(surfaceAttached = false) }
   }
 
-  fun setVideoOutput(videoOutput: String) {
+  fun setVideoOutput(videoOutput: String): Int {
     desiredVideoOutput = videoOutput
-    withCore(Unit, allowInitializing = true) {
+    return withCore(-1, allowInitializing = true) {
       MPVLib.setOptionString("vo", videoOutput)
     }
   }
@@ -527,6 +535,7 @@ object PlaybackSession : MPVLib.EventObserver {
     initialized = false
     nativeCoreReady = false
     activeCoreConfigurationKey = null
+    activeSurfaceFrameRateHintHz = null
     clearTimelinePropertiesLocked()
     updateState { PlaybackSessionState(phase = PlaybackPhase.UNINITIALIZED) }
   }
@@ -959,12 +968,22 @@ object PlaybackSession : MPVLib.EventObserver {
   /**
    * Applies an app-owned integration prerequisite even when a broad mpv.conf ownership group is
    * selected. Use this only for infrastructure required to connect a bundled component to libmpv,
-   * never for a user-facing playback preference.
+   * never for a user-facing playback preference. Before initialization, set the option directly;
+   * on a reused core, update the runtime options property and verify the applied value.
    */
   fun setIntegrationOptionString(
     name: String,
     value: String,
-  ): Int = withCore(-1, allowInitializing = true) { MPVLib.setOptionString(name, value) }
+  ): Int =
+    withCore(-1, allowInitializing = true) {
+      if (!nativeCoreReady) {
+        MPVLib.setOptionString(name, value)
+      } else {
+        val property = "options/$name"
+        MPVLib.setPropertyString(property, value)
+        if (MPVLib.getPropertyString(property) == value) 0 else -1
+      }
+    }
 
   fun getPropertyInt(property: String): Int? = withReadyCore(null) { MPVLib.getPropertyInt(property) }
 
@@ -1059,6 +1078,27 @@ object PlaybackSession : MPVLib.EventObserver {
       }
     }
   }
+
+  /**
+   * Applies the transport pause immediately at an engine boundary. Unlike ordinary UI option
+   * writes, this must not be skipped by mpv.conf ownership or deferred until load completion.
+   * The caller verifies the native property before starting the replacement renderer.
+   */
+  fun setPauseForEngineHandoff(paused: Boolean): Boolean =
+    withCore(default = false) {
+      if (_state.value.phase == PlaybackPhase.STOPPING) return@withCore false
+      AudiobookPlayback.onPauseRequested(paused)
+      desiredPaused = paused
+      val applied =
+        runCatching { MPVLib.setPropertyBoolean("pause", paused) }
+          .onFailure { error -> Log.w(TAG, "Failed to set MPV pause for engine handoff", error) }
+          .isSuccess
+      if (applied) {
+        updateState { it.copy(paused = paused) }
+        propBoolean.emit("pause", paused)
+      }
+      applied
+    }
 
   /** Atomically toggles pause so rapid UI/media-button taps cannot race separate reads and writes. */
   fun togglePause(): Boolean? =

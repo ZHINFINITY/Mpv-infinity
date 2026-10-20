@@ -1,0 +1,175 @@
+name: MPVFlow arm64 Debug APK
+
+on:
+  push:
+    branches:
+      - Mpv∞-flow
+    paths-ignore:
+      - .github/workflows/mpvflow-debug-arm64.yml
+      - .github/workflows/mpv-lgpl-aar.yml
+      - scripts/build-mpv-lgpl-aar.sh
+      - scripts/verify-mpv-aar-lgpl.py
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mpvflow-debug-arm64-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-arm64-debug:
+    name: Build MPVFlow-only MPV∞ arm64-v8a debug APK
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - name: Test arm64 workflow cache and validation invariants
+        run: python3 scripts/tests/mpvflow_arm64_workflow_test.py
+      - name: Test experimental region3 attenuation invariants
+        run: python3 scripts/tests/region3_transition_test.py
+      - name: Test runtime AAR overlay accepts new shared libraries
+        run: python3 scripts/tests/package_mpv_runtime_aar_test.py
+      - name: Test complete MPVFlow focused invariants
+        run: |
+          python3 scripts/tests/mpvflow_flow_only_test.py
+          python3 scripts/tests/mpvflow_native_build_test.py
+      - name: Set up JDK 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: gradle
+      - name: Restore verified Flow-only MPVFlow arm64 runtime
+        id: mpvflow-runtime-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: native-builder/app/build/outputs/apk
+          key: mpvflow-arm64-runtime-v2-builder-1efc82739f6f7034-mpv-c1529642089bfebf-cores2-${{ hashFiles('scripts/build-mpvflow-mpv-runtime.sh', 'scripts/prepare-mpvflow.py', 'scripts/patch-ffmpeg-symver.py', 'app/src/main/cpp/**', 'THIRD_PARTY_LICENSES/**', 'app/src/main/assets/mpv/licenses/**') }}
+      - name: Check legacy runtime cache source compatibility
+        id: mpvflow-runtime-legacy-compat
+        if: ${{ steps.mpvflow-runtime-cache.outputs.cache-hit != 'true' }}
+        run: |
+          set -euo pipefail
+          seed_sha='1dc0a03c540fc7aee19101fdcfa759e0f7aeffd1'
+          if ! git cat-file -e "${seed_sha}^{commit}" 2>/dev/null; then
+            echo "matches_seed=false" >> "$GITHUB_OUTPUT"
+            echo "Legacy runtime cache seed commit is unavailable; requiring a fresh native build."
+            exit 0
+          fi
+          if ! git diff --quiet "$seed_sha" HEAD -- scripts/build-mpvflow-mpv-runtime.sh scripts/prepare-mpvflow.py scripts/patch-ffmpeg-symver.py app/src/main/cpp THIRD_PARTY_LICENSES app/src/main/assets/mpv/licenses; then
+            echo "matches_seed=false" >> "$GITHUB_OUTPUT"
+            echo "Native source, build recipe, or license inputs changed since the verified cache seed."
+            exit 0
+          fi
+          for file in .github/workflows/debug-apk.yml .github/workflows/mpvflow-debug-arm64.yml; do
+            if ! grep -Fq 'ref: 1efc82739f6f7034cd63e7ee8b3ec5431df27467' "$file" || \
+               ! grep -Fq 'ref: c1529642089bfebfc928a1c1664638a7a5d219ba' "$file" || \
+               ! grep -Fq "MPVFLOW_MPV_BUILD_CORES: '2'" "$file"; then
+              echo "matches_seed=false" >> "$GITHUB_OUTPUT"
+              echo "Pinned source/build settings differ from the verified legacy cache seed."
+              exit 0
+            fi
+          done
+          echo "matches_seed=true" >> "$GITHUB_OUTPUT"
+          echo "Native inputs and pinned source/build settings match the verified legacy cache seed."
+      - name: Restore verified legacy Flow-only MPVFlow runtime
+        id: mpvflow-runtime-legacy-cache
+        if: ${{ steps.mpvflow-runtime-cache.outputs.cache-hit != 'true' && steps.mpvflow-runtime-legacy-compat.outputs.matches_seed == 'true' }}
+        uses: actions/cache/restore@v4
+        with:
+          path: native-builder/app/build/outputs/apk
+          key: mpvflow-arm64-runtime-v1-8b9cdaf1e5bcc44928adae0b2f3b9f1d8808504bdc5e129ec67b3e0b4871d812
+      - name: Checkout pinned Android MPV build tools
+        if: ${{ steps.mpvflow-runtime-cache.outputs.cache-hit != 'true' && steps.mpvflow-runtime-legacy-cache.outputs.cache-hit != 'true' }}
+        uses: actions/checkout@v6
+        with:
+          repository: NihilDigit/mpv-android-anvil
+          ref: 1efc82739f6f7034cd63e7ee8b3ec5431df27467
+          path: native-builder
+      - name: Checkout pinned MPV source
+        if: ${{ steps.mpvflow-runtime-cache.outputs.cache-hit != 'true' && steps.mpvflow-runtime-legacy-cache.outputs.cache-hit != 'true' }}
+        uses: actions/checkout@v6
+        with:
+          repository: mpv-player/mpv
+          ref: c1529642089bfebfc928a1c1664638a7a5d219ba
+          path: mpv-source
+      - name: Install Vulkan and shader validation dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y binutils ffmpeg glslang-tools libvulkan-dev mesa-vulkan-drivers
+      - name: Run MPVFlow core and GPU shader regression tests
+        run: ./scripts/test-mpvflow-core.sh
+        env:
+          MPVFLOW_REQUIRE_VULKAN_PIXEL_TEST: '1'
+      - name: Install Android MPV native build dependencies
+        # Gradle still builds libass/Media3 on an MPV runtime cache hit.
+        # Their autotools setup requires autopoint and the other host tools too.
+        run: |
+          sudo apt-get install -y autoconf automake libtool gettext autopoint gperf pkg-config ninja-build cmake pipx nasm yasm zlib1g-dev libssl-dev zip unzip wget curl
+          pipx install meson==1.6.1
+          PIPX_BIN_DIR="$(pipx environment --value PIPX_BIN_DIR)"
+          echo "$PIPX_BIN_DIR" >> "$GITHUB_PATH"
+          export PATH="$PIPX_BIN_DIR:$PATH"
+          "$PIPX_BIN_DIR/meson" --version
+      - name: Make Gradle wrapper executable
+        run: chmod +x ./gradlew
+      - name: Use cached Flow-only MPVFlow arm64 runtime
+        if: ${{ steps.mpvflow-runtime-cache.outputs.cache-hit == 'true' || steps.mpvflow-runtime-legacy-cache.outputs.cache-hit == 'true' }}
+        run: |
+          set -euo pipefail
+          runtime_dir="$GITHUB_WORKSPACE/native-builder/app/build/outputs/apk"
+          [[ -d "$runtime_dir" ]] || { echo "Cached MPVFlow runtime path is missing: $runtime_dir" >&2; exit 1; }
+          apk="$(find "$runtime_dir" -type f -path '*/debug/*' -name '*arm64-v8a-debug*.apk' -print -quit)"
+          [[ -n "$apk" ]] || { echo "Cached MPVFlow arm64 runtime APK is missing" >&2; exit 1; }
+          echo "MPVFLOW_RUNTIME_APK=$apk" >> "$GITHUB_ENV"
+          echo "Using verified cached MPVFlow runtime APK: $apk"
+      - name: Build MPVFlow-only MPV native arm64 debug package
+        if: ${{ steps.mpvflow-runtime-cache.outputs.cache-hit != 'true' && steps.mpvflow-runtime-legacy-cache.outputs.cache-hit != 'true' }}
+        run: ./scripts/build-mpvflow-mpv-runtime.sh
+        env:
+          MPVFLOW_DEBUG_CAPTURE: '1'
+          MPVFLOW_MPV_BUILD_CORES: '2'
+      - name: Overlay MPVFlow MPV/FFmpeg arm64 runtime into MPV∞ AAR
+        run: python3 scripts/package-mpv-runtime-aar.py --runtime-apk "$MPVFLOW_RUNTIME_APK" --mpv-aar app/libs/mpvlib.aar --abis arm64-v8a
+      - name: Test Android NDK path resolver
+        run: python3 scripts/tests/android_ndk_path_test.py
+      - name: Test Media3 FFmpeg runtime verifier
+        run: python3 scripts/tests/verify_media3_dca_runtime_test.py
+      - name: Verify GPL-free MPVFlow arm64 runtime
+        run: python3 scripts/verify-mpv-aar-lgpl.py app/libs/mpvlib.aar --abis arm64-v8a --require-vulkan
+      - name: Verify LGPL-only DTS decoder runtime for Media3
+        run: python3 scripts/verify-media3-dca-runtime.py app/libs/mpvlib.aar --abis arm64-v8a
+      - name: Save verified Flow-only MPVFlow arm64 runtime
+        if: ${{ steps.mpvflow-runtime-cache.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@v4
+        with:
+          path: native-builder/app/build/outputs/apk
+          key: ${{ steps.mpvflow-runtime-cache.outputs.cache-primary-key }}
+      - name: Run complete Kotlin compile and unit tests before APK packaging
+        run: ./gradlew testStandardDebugUnitTest :media3-decoder-ffmpeg:testDebugUnitTest :app:compileStandardDebugKotlin -PtargetAbi=arm64-v8a -PmpvFlowMpvBuild=true --stacktrace --no-daemon --max-workers=2
+      - name: Assemble arm64-v8a debug APK after Kotlin checks
+        run: ./gradlew assembleStandardDebug -PtargetAbi=arm64-v8a -PmpvFlowMpvBuild=true --stacktrace --no-daemon --max-workers=2
+      - name: Verify arm64 DTS wrapper dynamically links the existing FFmpeg runtime
+        run: |
+          set -euo pipefail
+          apk="$(find app/build/outputs/apk/standard/debug -maxdepth 1 -type f -name '*arm64-v8a-debug*.apk' -print -quit)"
+          [[ -n "$apk" ]] || { echo "Standard arm64 debug APK was not produced" >&2; exit 1; }
+          python3 scripts/verify-media3-dca-apk.py "$apk"
+          python3 scripts/verify-region3-shader-apk.py "$apk"
+          python3 scripts/verify-pair-ghost-apk.py "$apk"
+      - name: Upload arm64-v8a debug APK
+        uses: actions/upload-artifact@v7
+        with:
+          name: mpv-infinity-mpvflow-arm64-v8a-debug-${{ github.sha }}
+          path: |
+            app/build/outputs/apk/standard/debug/*arm64-v8a-debug*.apk
+            app/build/outputs/apk/standard/debug/region3-shader-verification.json
+            app/build/outputs/apk/standard/debug/pair-ghost-verification.json
+          if-no-files-found: error
+          retention-days: 14
+          compression-level: 0

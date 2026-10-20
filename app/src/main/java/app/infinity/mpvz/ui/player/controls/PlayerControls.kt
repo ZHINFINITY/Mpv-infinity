@@ -1,21 +1,23 @@
 /*
- * SPDX-License-Identifier: AGPL-3.0-or-later
+ * SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
  *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Affero General Public License as published
- * by the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * Copyright (c) 2026 ZHINFINITY. Mpv∞ Covered Code.
+ * See LICENSE for terms.
  */
 
 package app.infinity.mpvz.ui.player.controls
 
 import app.infinity.mpvz.ui.player.DeclaredPlaybackMediaKind
+import app.infinity.mpvz.ui.player.FlowDurationSummary
+import app.infinity.mpvz.ui.player.FlowVulkanStageTiming
 import app.infinity.mpvz.ui.player.PlaybackPhase
 import app.infinity.mpvz.ui.player.PlaybackSession
 import app.infinity.mpvz.ui.player.declaredMediaKind
 import app.infinity.mpvz.domain.torrent.TorrentStreamingState
 import app.infinity.mpvz.domain.torrent.formatTorrentBytes
 import app.infinity.mpvz.domain.torrent.formatTorrentSpeed
+import app.infinity.mpvz.presentation.crash.DebugLogReader
+import app.infinity.mpvz.presentation.crash.formatMpvFlowTimingSummary
 
 import android.content.res.Configuration.ORIENTATION_PORTRAIT
 import android.os.Debug
@@ -140,6 +142,7 @@ import app.infinity.mpvz.ui.icons.Icon
 import app.infinity.mpvz.ui.icons.Icons
 import app.infinity.mpvz.ui.player.Decoder.Companion.getDecoderFromValue
 import app.infinity.mpvz.ui.player.NativePlaybackSnapshot
+import app.infinity.mpvz.ui.player.NativeStatsDisplay
 import app.infinity.mpvz.ui.player.Panels
 import app.infinity.mpvz.ui.player.PlayerActivity
 import app.infinity.mpvz.ui.player.PlayerUpdates
@@ -2312,19 +2315,93 @@ private fun NativeStatsPageOverlay(
   snapshot: NativePlaybackSnapshot,
   modifier: Modifier = Modifier,
 ) {
-  val quality = if (snapshot.videoWidth > 0 && snapshot.videoHeight > 0) {
-    "${snapshot.videoWidth}×${snapshot.videoHeight}"
-  } else {
-    "--"
-  }
-  val videoBitrate = if (snapshot.videoBitrate > 0) "${snapshot.videoBitrate / 1000} kbps" else "--"
-  val audioBitrate = if (snapshot.audioBitrate > 0) "${snapshot.audioBitrate / 1000} kbps" else "--"
+  val inputResolution = NativeStatsDisplay.resolution(snapshot.videoWidth, snapshot.videoHeight)
+  val rendererResolution = NativeStatsDisplay.resolution(snapshot.videoOutputWidth, snapshot.videoOutputHeight)
+  val inputAspectRatio = NativeStatsDisplay.aspectRatio(
+    snapshot.videoWidth,
+    snapshot.videoHeight,
+    snapshot.videoPixelWidthHeightRatio,
+  )
+  val rendererAspectRatio = NativeStatsDisplay.aspectRatio(
+    snapshot.videoOutputWidth,
+    snapshot.videoOutputHeight,
+    snapshot.videoOutputPixelWidthHeightRatio,
+  )
+  val bitDepth = NativeStatsDisplay.bitDepth(snapshot.videoLumaBitDepth, snapshot.videoChromaBitDepth)
+  val primaries = NativeStatsDisplay.isoCode(snapshot.videoColorPrimariesIsoCode)
+  val transfer = NativeStatsDisplay.isoCode(snapshot.videoTransferCharacteristicsIsoCode)
+  val matrix = NativeStatsDisplay.isoCode(snapshot.videoMatrixCoefficientsIsoCode)
+  val colorRange = NativeStatsDisplay.knownLabel(snapshot.videoColorRange)
+  val hdrStaticMetadata = NativeStatsDisplay.hdrStaticMetadata(snapshot.videoHasHdrStaticMetadata)
+  val frameRate = NativeStatsDisplay.frameRate(snapshot.videoFrameRate)
+  val averageFrameOffset = NativeStatsDisplay.frameOffset(
+    snapshot.frameProcessingOffsetAverageUs,
+    snapshot.frameProcessingSampleCount,
+  )
+  val lastFrameOffset = NativeStatsDisplay.frameOffset(
+    snapshot.frameProcessingOffsetLastUs,
+    snapshot.frameProcessingSampleCount,
+  )
+  val bandwidth = NativeStatsDisplay.bandwidth(snapshot.bandwidthEstimateBps)
+  val sourceSize = NativeStatsDisplay.byteSize(snapshot.sourceSizeBytes)
+  val loadedBytes = NativeStatsDisplay.byteSize(snapshot.bandwidthBytesLoaded)
+  val videoTrackBitrate = NativeStatsDisplay.bitrate(snapshot.videoTrackBitrate.toLong())
+  val audioBitrate = NativeStatsDisplay.bitrate(snapshot.audioBitrate.toLong())
   val videoCodec = nativeStatsCodecLabel(snapshot.videoMimeType, snapshot.videoCodec)
-  val videoDecoder = snapshot.videoDecoder ?: "Media3"
-  val outputRange = snapshot.videoDynamicRange ?: "--"
-  val colorSpace = snapshot.videoColorSpace ?: "--"
-  val audioCodec = snapshot.audioCodec ?: "--"
-  val audioDecoder = snapshot.audioDecoder ?: "Media3"
+  val videoCodecString = NativeStatsDisplay.knownLabel(snapshot.videoCodec)
+  val videoDecoder = NativeStatsDisplay.knownLabel(snapshot.videoDecoder)
+  val renderedFrames = NativeStatsDisplay.frameCount(snapshot.videoRenderedOutputBuffers)
+  val skippedInputFrames = NativeStatsDisplay.frameCount(snapshot.videoSkippedInputBuffers)
+  val skippedOutputFrames = NativeStatsDisplay.frameCount(snapshot.videoSkippedOutputBuffers)
+  val droppedFrames = NativeStatsDisplay.frameCount(snapshot.videoDroppedBuffers)
+  val audioCodec = NativeStatsDisplay.knownLabel(snapshot.audioCodec)
+  val audioDecoder = NativeStatsDisplay.knownLabel(snapshot.audioDecoder)
+  val audioChannels = NativeStatsDisplay.audioChannels(snapshot.audioChannels)
+  val audioSampleRate = NativeStatsDisplay.audioSampleRate(snapshot.audioSampleRate)
+  val duration = NativeStatsDisplay.duration(snapshot.durationMs)
+  val position = NativeStatsDisplay.position(snapshot.positionMs)
+  val bufferAhead = NativeStatsDisplay.bufferedDuration(snapshot.totalBufferedDurationMs)
+  val flow = snapshot.media3Flow
+  val flowSourceRate = if (flow.capturedSourceFps > 0f) {
+    String.format(java.util.Locale.US, "%.1f", flow.capturedSourceFps)
+  } else {
+    "—"
+  }
+  val flowOutputRate = if (flow.outputFps > 0f) String.format(java.util.Locale.US, "%.1f", flow.outputFps) else "—"
+  val flowGeneratedRate = if (flow.generatedFps > 0f) String.format(java.util.Locale.US, "%.1f", flow.generatedFps) else "—"
+  val flowGpuTime = flow.motionPassAverageGpuUs?.let {
+    "${String.format(java.util.Locale.US, "%.1f", it)} µs/pass"
+  }
+    ?: flow.vulkanTimings.motion.status
+  val flowMultiplier = if (flow.capturedSourceFps > 0f && flow.outputFps > 0f) {
+    String.format(java.util.Locale.US, "%.1f", flow.outputFps / flow.capturedSourceFps)
+  } else {
+    "—"
+  }
+  val flowConfidence = flow.confidence?.let { String.format(java.util.Locale.US, "%.0f%%", it * 100f) }
+    ?: "n/a (not read back)"
+  val formatFlowDuration: (FlowDurationSummary) -> String = { summary ->
+    if (summary.sampleCount == 0) {
+      "—"
+    } else {
+      val average = String.format(java.util.Locale.US, "%.1f", summary.averageUs)
+      val p95 = String.format(java.util.Locale.US, "%.1f", summary.p95Us)
+      val maximum = String.format(java.util.Locale.US, "%.1f", summary.maximumUs)
+      "$average/$p95/$maximum µs (n=${summary.sampleCount})"
+    }
+  }
+  val formatFlowPercent: (Float?) -> String = { value ->
+    value?.let { String.format(java.util.Locale.US, "%.1f%%", it) } ?: "—"
+  }
+  val formatVulkanStage: (FlowVulkanStageTiming) -> String = { stage ->
+    val average = stage.averageUs?.let { String.format(java.util.Locale.US, "%.1f", it) } ?: "—"
+    val maximum = stage.maximumUs?.let { String.format(java.util.Locale.US, "%.1f", it) } ?: "—"
+    "$average/$maximum µs n=${stage.completedSamples} ${stage.status}"
+  }
+  val flowVulkan = flow.vulkanTimings
+  val flowGles = flow.glesTimings
+  val flowCpu = flow.cpuTimings
+  val flowCoverage = flow.pixelCoverage
   Surface(
     modifier = modifier,
     color = Color.Transparent,
@@ -2335,13 +2412,152 @@ private fun NativeStatsPageOverlay(
       Text("Engine: Native", style = MaterialTheme.typography.bodySmall, color = Color.White)
       when (page) {
         1 -> {
-          Text("Output: $quality · $outputRange · $colorSpace", style = MaterialTheme.typography.bodySmall, color = Color.White)
-          Text("Video: $videoCodec · Decoder: $videoDecoder", style = MaterialTheme.typography.bodySmall, color = Color.White)
-          Text("Bitrate: $videoBitrate · Duration: ${snapshot.durationMs / 1000}s", style = MaterialTheme.typography.bodySmall, color = Color.White)
+          Text(
+            "Video track (input): $videoCodec · codec/profile string: $videoCodecString · " +
+              "$inputResolution · AR $inputAspectRatio · $frameRate",
+            style = MaterialTheme.typography.bodySmall,
+            color = Color.White,
+          )
+          Text(
+            "Media3 renderer-reported video size: $rendererResolution · AR $rendererAspectRatio",
+            style = MaterialTheme.typography.bodySmall,
+            color = Color.White,
+          )
+          Text(
+            "Video decoder: $videoDecoder · operating mode: -- (not exposed by Media3 analytics)",
+            style = MaterialTheme.typography.bodySmall,
+            color = Color.White,
+          )
+          Text(
+            "Color: ${NativeStatsDisplay.knownLabel(snapshot.videoDynamicRange)} · $bitDepth · " +
+              "primaries ISO $primaries · transfer ISO $transfer · matrix ISO $matrix · range $colorRange",
+            style = MaterialTheme.typography.bodySmall,
+            color = Color.White,
+          )
+          Text(
+            "HDR static metadata (CTA-861.3): $hdrStaticMetadata",
+            style = MaterialTheme.typography.bodySmall,
+            color = Color.White,
+          )
+          Text(
+            "Video track bitrate (format): $videoTrackBitrate · Network bandwidth estimate (Media3): $bandwidth",
+            style = MaterialTheme.typography.bodySmall,
+            color = Color.White,
+          )
+          Text(
+            "Frames: rendered $renderedFrames · skipped input/output $skippedInputFrames/$skippedOutputFrames · " +
+              "dropped $droppedFrames",
+            style = MaterialTheme.typography.bodySmall,
+            color = Color.White,
+          )
+          if (flow.enabled) {
+            Text(
+              "Media3 Flow: ${flow.state} · captured cadence $flowSourceRate fps (n=${flow.capturedPtsSampleCount}) → " +
+                "EGL swap-return $flowOutputRate/${flow.targetFps} fps ($flowMultiplier×) · " +
+                "generated $flowGeneratedRate fps (${"%,d".format(java.util.Locale.US, flow.generatedFrames)} total)",
+              style = MaterialTheme.typography.bodySmall,
+              color = Color.White,
+            )
+            Text(
+              "ME submit ${String.format(java.util.Locale.US, "%.2f", flow.motionEstimateSubmitMs)} ms (CPU-only deadline proxy) · " +
+                "Vulkan motion pass avg $flowGpuTime · " +
+                "confidence $flowConfidence · sink frame drops ${flow.droppedFrames} · " +
+                "inferred tick gaps ${flow.skippedOutputTicks} · sink failures ${flow.outputSubmissionFailures} · " +
+                "skip ${flow.skippedFrames} · " +
+                "motion grid ${flow.motionGridWidth}×${flow.motionGridHeight} · " +
+                "processing ${flow.processingWidth}×${flow.processingHeight}" +
+                (flow.bypassReason?.let { " · $it" } ?: ""),
+              style = MaterialTheme.typography.bodySmall,
+              color = Color.White,
+            )
+            Text(
+              "Vulkan/libplacebo timestamp queries (${flowVulkan.status}, supported=${flowVulkan.timestampsSupported}, " +
+                "period=${String.format(java.util.Locale.US, "%.6f", flowVulkan.timestampPeriodNs)}ns, " +
+                "computeAndGraphics=${flowVulkan.timestampComputeAndGraphics}, " +
+                "queueFamily=${flowVulkan.computeQueueFamily}, validBits=${flowVulkan.timestampValidBits}) " +
+                "avg/max µs: preprocess ${formatVulkanStage(flowVulkan.preprocess)} · " +
+                "analysis ${formatVulkanStage(flowVulkan.analysis)} · motion ${formatVulkanStage(flowVulkan.motion)} · " +
+                "synthesis ${formatVulkanStage(flowVulkan.synthesis)}",
+              style = MaterialTheme.typography.bodySmall,
+              color = Color.White,
+            )
+            Text(
+              "GLES_EXT_disjoint_timer_query staging copy ${formatFlowDuration(flowGles.presentationStagingCopy)} · " +
+                "status ${flowGles.status} valid/pending/disjoint/zero/skipped " +
+                "${flowGles.validResults}/${flowGles.pendingResults}/${flowGles.disjointResultsDiscarded}/" +
+                "${flowGles.zeroDurationResults}/${flowGles.skippedBecausePoolFull}",
+              style = MaterialTheme.typography.bodySmall,
+              color = Color.White,
+            )
+            Text(
+              "Flow queues: pending input ${flow.pendingInputDepth} · in-flight ${flow.inputInFlight} · " +
+                "oldest input ${String.format(java.util.Locale.US, "%.1f", flow.oldestPendingInputAgeMs)} ms · " +
+                "source frames ${flow.sourceFrameDepth} · ready motion pairs ${flow.readyMotionPairDepth} · " +
+                "presentation queued/in-flight ${flow.presentationQueueDepth}/${flow.presentationInFlight} · " +
+                "coalesced ${flow.presentationCoalescedFrames} · " +
+                "source PTS age ${flow.selectedSourcePtsAgeMs?.let { String.format(java.util.Locale.US, "%.1f", it) } ?: "—"} ms · " +
+                "pair PTS gap ${flow.sourcePairPtsGapMs?.let { String.format(java.util.Locale.US, "%.1f", it) } ?: "—"} ms · " +
+                "capture ages ${flow.frame0CaptureAgeMs?.let { String.format(java.util.Locale.US, "%.1f", it) } ?: "—"}/" +
+                "${flow.frame1CaptureAgeMs?.let { String.format(java.util.Locale.US, "%.1f", it) } ?: "—"} ms",
+              style = MaterialTheme.typography.bodySmall,
+              color = Color.White,
+            )
+            Text(
+              "Inferred output tick gaps ${flow.skippedOutputTicks} · latest ${flow.lastOutputTickGapReason} · " +
+                "contexts ${flow.outputTickGapContexts.entries.joinToString(",") { "${it.key}:${it.value}" }.ifEmpty { "none" }} · " +
+                "sink failures ${flow.outputSubmissionFailures} (${flow.lastOutputSubmissionFailureReason}) · " +
+                "callback lateness ${String.format(java.util.Locale.US, "%.1f", flow.outputCallbackLatenessMs)} ms",
+              style = MaterialTheme.typography.bodySmall,
+              color = Color.White,
+            )
+            Text(
+              "Flow CPU avg/p95/max: Media3 input queue ${formatFlowDuration(flowCpu.inputQueueWait)} · " +
+                "handler call ${formatFlowDuration(flowCpu.frameHandlerCall)} · " +
+                "EGL swap ${formatFlowDuration(flowCpu.eglSwapWait)} · " +
+                "input Vulkan submit ${formatFlowDuration(flowCpu.vulkanInputPrepare)} · " +
+                "synthesis submit ${formatFlowDuration(flowCpu.vulkanSynthesisSubmit)}",
+              style = MaterialTheme.typography.bodySmall,
+              color = Color.White,
+            )
+            Text(
+              "Flow pixels (1/8 successfully presented synth frames; n=${flowCoverage.samples}): " +
+                "motion warp ${flowCoverage.motionWarpPixels} (${formatFlowPercent(flowCoverage.motionWarpPercent)}) · " +
+                "source fallback ${flowCoverage.sourceFrameFallbackPixels} " +
+                "(${formatFlowPercent(flowCoverage.sourceFrameFallbackPercent)}) · " +
+                "static blend ${flowCoverage.staticBlendPixels} (${formatFlowPercent(flowCoverage.staticBlendPercent)}) · " +
+                "readback skipped/invalid ${flowCoverage.skippedSamples}/${flowCoverage.invalidSamples}",
+              style = MaterialTheme.typography.bodySmall,
+              color = Color.White,
+            )
+            Text(
+              "Static-path vector probe (1/64 image positions; n=${flowCoverage.staticVectorProbeSamples}; " +
+                "motion cutoff 0.5 processing px; confidence cutoff 0.15): likely motion/confident " +
+                "${flowCoverage.staticVectorLikelyMotionSamples} " +
+                "(${formatFlowPercent(flowCoverage.staticVectorLikelyMotionPercent)}) · uncertain " +
+                "${flowCoverage.staticVectorUncertainMotionSamples} " +
+                "(${formatFlowPercent(flowCoverage.staticVectorUncertainMotionPercent)}) · near-zero/confident " +
+                "${flowCoverage.staticVectorNearZeroConfidentSamples} " +
+                "(${formatFlowPercent(flowCoverage.staticVectorNearZeroConfidentPercent)}) · near-zero/uncertain " +
+                "${flowCoverage.staticVectorNearZeroUncertainSamples} " +
+                "(${formatFlowPercent(flowCoverage.staticVectorNearZeroUncertainPercent)})",
+              style = MaterialTheme.typography.bodySmall,
+              color = Color.White,
+            )
+          }
+          Text(
+            "Position: $position / $duration · Buffer ahead: $bufferAhead",
+            style = MaterialTheme.typography.bodySmall,
+            color = Color.White,
+          )
+          Text(
+            "Frame processing offset: avg $averageFrameOffset · last batch avg $lastFrameOffset",
+            style = MaterialTheme.typography.bodySmall,
+            color = Color.White,
+          )
         }
         2 -> {
           Text("Audio: $audioCodec · Decoder: $audioDecoder", style = MaterialTheme.typography.bodySmall, color = Color.White)
-          Text("Bitrate: $audioBitrate · ${snapshot.audioChannels} ch · ${snapshot.audioSampleRate} Hz", style = MaterialTheme.typography.bodySmall, color = Color.White)
+          Text("Audio track bitrate: $audioBitrate · $audioChannels · $audioSampleRate", style = MaterialTheme.typography.bodySmall, color = Color.White)
           Text("Tracks: ${snapshot.audioTracks.size} audio · ${snapshot.subtitleTracks.size} subtitles", style = MaterialTheme.typography.bodySmall, color = Color.White)
         }
         3 -> {
@@ -2350,23 +2566,40 @@ private fun NativeStatsPageOverlay(
           Text("Selected subtitles: ${snapshot.subtitleTracks.count { it.selected }}", style = MaterialTheme.typography.bodySmall, color = Color.White)
         }
         4 -> {
-          Text("Position: ${snapshot.positionMs / 1000}s / ${snapshot.durationMs / 1000}s", style = MaterialTheme.typography.bodySmall, color = Color.White)
+          Text("Position: $position / $duration", style = MaterialTheme.typography.bodySmall, color = Color.White)
           Text("Speed: ${"%.2f".format(snapshot.speed)}×", style = MaterialTheme.typography.bodySmall, color = Color.White)
           Text("State: ${if (snapshot.isBuffering) "Buffering" else if (snapshot.isPlaying) "Playing" else "Paused"}", style = MaterialTheme.typography.bodySmall, color = Color.White)
+          Text(
+            "Buffer ahead: $bufferAhead · " +
+              "Loading: ${snapshot.isLoading}",
+            style = MaterialTheme.typography.bodySmall,
+            color = Color.White,
+          )
         }
         5 -> {
-          Text("Output: $outputRange · $colorSpace · $quality", style = MaterialTheme.typography.bodySmall, color = Color.White)
-          Text("Video: $videoCodec · $videoBitrate", style = MaterialTheme.typography.bodySmall, color = Color.White)
+          Text("Video track (input): $videoCodec · track bitrate: $videoTrackBitrate", style = MaterialTheme.typography.bodySmall, color = Color.White)
           Text("Audio: $audioCodec · $audioBitrate · Chapters: ${snapshot.chapters.size}", style = MaterialTheme.typography.bodySmall, color = Color.White)
+          Text("Source size: $sourceSize", style = MaterialTheme.typography.bodySmall, color = Color.White)
+          Text(
+            "Network bandwidth estimate (Media3): $bandwidth · Bytes loaded: $loadedBytes",
+            style = MaterialTheme.typography.bodySmall,
+            color = Color.White,
+          )
         }
         else -> {
           Text("Ready: ${snapshot.isReady}", style = MaterialTheme.typography.bodySmall, color = Color.White)
-          Text("Video bitrate: $videoBitrate", style = MaterialTheme.typography.bodySmall, color = Color.White)
-          Text("Audio bitrate: $audioBitrate", style = MaterialTheme.typography.bodySmall, color = Color.White)
-          Text("Playback: ${snapshot.positionMs / 1000}s / ${snapshot.durationMs / 1000}s", style = MaterialTheme.typography.bodySmall, color = Color.White)
+          Text("Video track bitrate: $videoTrackBitrate", style = MaterialTheme.typography.bodySmall, color = Color.White)
+          Text("Audio track bitrate: $audioBitrate", style = MaterialTheme.typography.bodySmall, color = Color.White)
+          Text(
+            "Frames: $frameRate · rendered $renderedFrames · skipped input/output $skippedInputFrames/$skippedOutputFrames · " +
+              "dropped $droppedFrames · offset avg: $averageFrameOffset",
+            style = MaterialTheme.typography.bodySmall,
+            color = Color.White,
+          )
+          Text("Playback: $position / $duration", style = MaterialTheme.typography.bodySmall, color = Color.White)
           val state = if (snapshot.isBuffering) "Buffering" else if (snapshot.isPlaying) "Playing" else "Paused"
           Text(
-            "State: $state · ahead: ${String.format("%.1f", snapshot.totalBufferedDurationMs / 1000.0)}s · loading: ${snapshot.isLoading}",
+            "State: $state · ahead: $bufferAhead · loading: ${snapshot.isLoading}",
             style = MaterialTheme.typography.bodySmall,
             color = Color.White,
           )
@@ -2395,6 +2628,8 @@ private fun nativeStatsCodecLabel(mimeType: String?, codecs: String?): String {
 private data class CustomStatsSnapshot(
   val fileName: String,
   val renderContext: String,
+  val mpvFlowOutputText: String,
+  val mpvPlaybackTimingText: String,
   val video: String,
   val audio: String,
   val cpuPercent: Float,
@@ -2435,6 +2670,8 @@ private fun CustomStatsPageSixOverlay(
       CustomStatsSnapshot(
         fileName = "--",
         renderContext = "--",
+        mpvFlowOutputText = "MPVFlow output telemetry unavailable",
+        mpvPlaybackTimingText = "Pacing telemetry unavailable",
         video = "--",
         audio = "--",
         cpuPercent = 0f,
@@ -2462,6 +2699,8 @@ private fun CustomStatsPageSixOverlay(
     var lastTimeMs = android.os.SystemClock.elapsedRealtime()
     var lastMemorySampleMs = lastTimeMs
     var memorySnapshot = withContext(Dispatchers.Default) { readProcessMemorySnapshot() }
+    var lastMpvFlowDiagnosticReadMs = 0L
+    var mpvFlowOutputText = "No MPVFlow output telemetry captured"
 
     var startBatteryTemp: Float? = null
     var peakBatteryTemp = 0.0f
@@ -2483,6 +2722,15 @@ private fun CustomStatsPageSixOverlay(
 
       val currentCpuMs = runCatching { android.os.Process.getElapsedCpuTime() }.getOrDefault(lastCpuMs)
       val currentTimeMs = android.os.SystemClock.elapsedRealtime()
+      if (currentTimeMs - lastMpvFlowDiagnosticReadMs >= 3_000L) {
+        lastMpvFlowDiagnosticReadMs = currentTimeMs
+        mpvFlowOutputText =
+          withContext(Dispatchers.IO) {
+            runCatching {
+              formatMpvFlowTimingSummary(DebugLogReader.readSnapshot(maxRawLines = 1_000).entries)
+            }.getOrElse { "MPVFlow logcat unavailable (${it.javaClass.simpleName})" }
+          }
+      }
       val cpuDelta = (currentCpuMs - lastCpuMs).coerceAtLeast(0L)
       val timeDelta = (currentTimeMs - lastTimeMs).coerceAtLeast(1L)
       if (currentTimeMs - lastMemorySampleMs >= MEMORY_STATS_SAMPLE_INTERVAL_MS) {
@@ -2635,7 +2883,43 @@ private fun CustomStatsPageSixOverlay(
       val currentHwdec = runCatching { PlaybackSession.getPropertyString("hwdec-current") ?: "no" }.getOrDefault("no")
       val gpuApi = runCatching { PlaybackSession.getPropertyString("gpu-api") ?: "--" }.getOrDefault("--")
       val gpuContext = runCatching { PlaybackSession.getPropertyString("gpu-context") ?: "--" }.getOrDefault("--")
-      val renderContext = "$currentVideoOutput | $gpuApi | $gpuContext"
+      val renderContext = "$currentVideoOutput | hwdec=$currentHwdec | $gpuApi | $gpuContext"
+      val estimatedVfFps =
+        runCatching { PlaybackSession.getPropertyDouble("estimated-vf-fps") }
+          .getOrNull()
+          ?.takeIf { it.isFinite() && it > 0.0 }
+          ?.let { String.format(java.util.Locale.US, "%.1f", it) }
+          ?: "--"
+      val displayFps =
+        runCatching { PlaybackSession.getPropertyDouble("display-fps") }
+          .getOrNull()
+          ?.takeIf { it.isFinite() && it > 0.0 }
+          ?.let { String.format(java.util.Locale.US, "%.1f", it) }
+          ?: "--"
+      val avSyncOffset =
+        runCatching { PlaybackSession.getPropertyDouble("avsync") }
+          .getOrNull()
+          ?.takeIf { it.isFinite() }
+          ?.let { String.format(java.util.Locale.US, "%+.1f ms", it * 1_000.0) }
+          ?: "--"
+      val decoderDrops =
+        runCatching { PlaybackSession.getPropertyInt("decoder-frame-drop-count") }
+          .getOrNull()
+          ?.toString()
+          ?: "--"
+      val outputDrops =
+        runCatching { PlaybackSession.getPropertyInt("frame-drop-count") }
+          .getOrNull()
+          ?.toString()
+          ?: "--"
+      val delayedFrames =
+        runCatching { PlaybackSession.getPropertyInt("vo-delayed-frame-count") }
+          .getOrNull()
+          ?.toString()
+          ?: "--"
+      val mpvPlaybackTimingText =
+        "MPV vf estimate $estimatedVfFps fps (not Flow submits) · display-fps hint $displayFps Hz · A/V offset $avSyncOffset · " +
+          "decoder/VO drops $decoderDrops/$outputDrops · delayed $delayedFrames"
       val decoderEfficiencyText =
         when {
           currentHwdec == "no" || currentHwdec.isBlank() -> "Low (Software Decoding, CPU-heavy)"
@@ -2647,6 +2931,8 @@ private fun CustomStatsPageSixOverlay(
         CustomStatsSnapshot(
           fileName = fileName,
           renderContext = renderContext,
+          mpvFlowOutputText = mpvFlowOutputText,
+          mpvPlaybackTimingText = mpvPlaybackTimingText,
           video = videoCodec,
           audio = audioCodec,
           cpuPercent = smoothedCpuPercent,
@@ -2731,6 +3017,8 @@ private fun CustomStatsPageSixOverlay(
       labelStyle,
       valueStyle,
     )
+    OutlinedLabeled("MPVFlow output", stats.mpvFlowOutputText, labelStyle, valueStyle)
+    OutlinedLabeled("Pacing / sync", stats.mpvPlaybackTimingText, labelStyle, valueStyle)
     OutlinedLabeled("Audio", "${stats.audio} | HDR: ${stats.hdrActive}", labelStyle, valueStyle)
 
     when (val currentTorrentState = torrentState) {

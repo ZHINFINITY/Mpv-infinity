@@ -1,9 +1,25 @@
 # License
 
-## This Build
+## Bundled FFmpeg binaries
 
-This build is compiled with `--disable-gpl --disable-nonfree`, therefore it is
-licensed under **LGPL v2.1+** only. No GPL or non-free components are included.
+The standalone arm64-v8a FFmpeg helper executables are packaged in
+`app/src/main/jniLibs/arm64-v8a` as `libffmpeg_exec.so` and
+`libffprobe_exec.so`. Their embedded configure strings include `--disable-gpl`
+and `--disable-nonfree`, and the FFmpeg libraries report **LGPL 2.1-or-later**.
+See `README.txt` and `COPYING.LGPLv2.1` for their build attribution and full
+license text.
+
+Separately, the Standard and No-Vulkan MPV AARs contain FFmpeg n9.0 native
+libraries built with `--disable-gpl --disable-nonfree --enable-version3`. Because
+those libraries include Apache-2.0-licensed Mbed TLS, the AAR's FFmpeg libraries
+are licensed under **LGPL 3.0-or-later**. See
+`../mpv/licenses/COPYING.LGPLv3` and `../mpv/licenses/mbedtls-LICENSE`.
+
+The AAR's libmpv is built with `-Dgpl=false` under LGPL 2.1-or-later; the
+GPL-licensed Rubber Band dependency is omitted. MPV, libplacebo, Mbed TLS, and
+the MIT-licensed Android wrapper retain their respective terms in
+`../mpv/licenses/`. The AAR license profile must not be inferred from the
+separately bundled FFmpeg command-line tools.
 
 ---
 

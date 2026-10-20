@@ -1,10 +1,8 @@
 /*
- * SPDX-License-Identifier: AGPL-3.0-or-later
+ * SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
  *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Affero General Public License as published
- * by the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * Copyright (c) 2026 ZHINFINITY. Mpv∞ Covered Code.
+ * See LICENSE for terms.
  */
 
 package app.infinity.mpvz.presentation.crash
@@ -18,7 +16,12 @@ import java.util.Calendar
 import java.util.Date
 import java.util.Locale
 
-internal const val DEBUG_LOG_ENTRY_LIMIT = 1_500
+internal const val DEBUG_LOG_ENTRY_LIMIT = 5_000
+private const val MPVFLOW_DIAGNOSTIC_ENTRY_RESERVE = 500
+private const val NATIVE_MEDIA3_FLOW_DIAGNOSTIC_ENTRY_RESERVE = 250
+private const val FLOW_STARTUP_ENTRY_PIN_COUNT = 16
+private const val FLOW_RENDERER_CONFIG_PIN_COUNT = 8
+private const val FLOW_FAILURE_ENTRY_PIN_COUNT = 128
 
 internal enum class DebugLogLevel(
   val code: String,
@@ -48,9 +51,16 @@ internal data class DebugLogSnapshot(
   val rawLineCount: Int,
 )
 
+internal data class DebugLogcatCapture(
+  val lines: List<String>,
+  val exitCode: Int,
+)
+
 /**
  * Reads the current process' logcat in a device-tolerant way.
  *
+ * By default, each read consumes the device's full current (finite, circular) Logcat buffer;
+ * limiting it to a recent tail can evict Flow startup diagnostics before the viewer is opened.
  * Some vendor logcat binaries either do not support --pid or emit a slightly different
  * formatting even when a format is requested. The primary path uses Android's process filter;
  * if that produces no usable entries, a second pass reads a wider snapshot and filters the
@@ -58,8 +68,7 @@ internal data class DebugLogSnapshot(
  * still surfaced instead of being silently discarded.
  */
 internal object DebugLogReader {
-  // Player startup and codec traces can be very verbose. A small tail evicts the earlier
-  // MpvCatalogDiag search/resolver entries before the user opens the viewer.
+  // Explicit test/debug limits only; normal reads omit `-t` and request the complete Logcat ring.
   private const val PRIMARY_RAW_LIMIT = 10_000
   private const val FALLBACK_RAW_LIMIT = 20_000
 
@@ -83,28 +92,23 @@ internal object DebugLogReader {
   private val briefPattern =
     Regex("""^([VDIWEF])/([^\(]+)\(\s*(\d+)\):\s?(.*)$""")
 
-  fun readSnapshot(): DebugLogSnapshot {
+  fun readSnapshot(maxRawLines: Int? = null): DebugLogSnapshot {
     val pid = Process.myPid()
     val failures = mutableListOf<String>()
+    val primaryRawLimit = maxRawLines?.coerceIn(1, PRIMARY_RAW_LIMIT)
+    val fallbackRawLimit = maxRawLines?.coerceIn(primaryRawLimit ?: 1, FALLBACK_RAW_LIMIT)
 
-    val primary =
-      runCommand(
-        listOf(
-          "logcat",
-          "--pid=$pid",
-          "-v",
-          "threadtime",
-          "-d",
-          "-t",
-          PRIMARY_RAW_LIMIT.toString(),
-        ),
-      )
+    val primaryCommand = buildList {
+      addAll(listOf("logcat", "--pid=$pid", "-v", "threadtime", "-d"))
+      primaryRawLimit?.let { addAll(listOf("-t", it.toString())) }
+    }
+    val primary = runCommand(primaryCommand)
 
     if (primary.exitCode == 0) {
       val parsed = parseLines(primary.lines, expectedPid = pid, allowRawFallback = true)
       if (parsed.isNotEmpty()) {
         return DebugLogSnapshot(
-          entries = parsed.takeLast(DEBUG_LOG_ENTRY_LIMIT),
+          entries = retainDebugLogEntries(parsed),
           source = "process-filtered",
           rawLineCount = primary.lines.size,
         )
@@ -113,23 +117,17 @@ internal object DebugLogReader {
       failures += primary.errorMessage("process-filtered logcat")
     }
 
-    val fallback =
-      runCommand(
-        listOf(
-          "logcat",
-          "-v",
-          "threadtime",
-          "-d",
-          "-t",
-          FALLBACK_RAW_LIMIT.toString(),
-        ),
-      )
+    val fallbackCommand = buildList {
+      addAll(listOf("logcat", "-v", "threadtime", "-d"))
+      fallbackRawLimit?.let { addAll(listOf("-t", it.toString())) }
+    }
+    val fallback = runCommand(fallbackCommand)
 
     if (fallback.exitCode == 0) {
       val parsed = parseLines(fallback.lines, expectedPid = pid, allowRawFallback = false)
       if (parsed.isNotEmpty()) {
         return DebugLogSnapshot(
-          entries = parsed.takeLast(DEBUG_LOG_ENTRY_LIMIT),
+          entries = retainDebugLogEntries(parsed),
           source = "pid-fallback",
           rawLineCount = fallback.lines.size,
         )
@@ -147,6 +145,15 @@ internal object DebugLogReader {
     failures += fallback.errorMessage("fallback logcat")
     throw IOException(failures.filter { it.isNotBlank() }.joinToString("; ").ifBlank { "Unable to read logcat" })
   }
+
+  /** Reads every Logcat buffer the OS permits this app process to access, without viewer filters. */
+  fun readAllAccessibleLogcat(): DebugLogcatCapture {
+    val result = runCommand(allAccessibleLogcatCommand())
+    return DebugLogcatCapture(lines = result.lines, exitCode = result.exitCode)
+  }
+
+  internal fun allAccessibleLogcatCommand(): List<String> =
+    listOf("logcat", "-b", "all", "-d", "-v", "threadtime")
 
   internal fun parseForTesting(
     lines: List<String>,
@@ -286,6 +293,315 @@ internal object DebugLogReader {
       val detail = lines.takeLast(3).joinToString(" ").trim()
       return if (detail.isBlank()) "$label exited with code $exitCode" else "$label: $detail"
     }
+  }
+}
+
+internal fun formatAllAccessibleLogcatExport(
+  deviceInfo: String,
+  capture: DebugLogcatCapture,
+): String =
+  buildString {
+    appendLine(deviceInfo.trimEnd())
+    appendLine()
+    appendLine("Logcat: all accessible buffers (logcat -b all -d -v threadtime)")
+    appendLine("Scope: current circular buffers; Android may restrict access to other processes")
+    appendLine("Command exit code: ${capture.exitCode}")
+    appendLine("Captured raw lines: ${capture.lines.size}")
+    appendLine()
+    if (capture.lines.isEmpty()) {
+      appendLine("No log lines were returned; the platform may restrict Logcat access or the buffers may be empty.")
+    } else {
+      capture.lines.forEach { appendLine(it) }
+    }
+  }.trimEnd()
+
+internal fun retainDebugLogEntries(entries: List<DebugLogEntry>): List<DebugLogEntry> {
+  if (entries.size <= DEBUG_LOG_ENTRY_LIMIT) return entries
+
+  val mpvFlowDiagnostics =
+    retainPinnedFlowDiagnostics(entries.filter(DebugLogEntry::isMpvFlowDiagnostic), MPVFLOW_DIAGNOSTIC_ENTRY_RESERVE)
+  val nativeMedia3FlowDiagnostics =
+    retainPinnedFlowDiagnostics(
+      entries.filter(DebugLogEntry::isNativeMedia3FlowDiagnostic),
+      NATIVE_MEDIA3_FLOW_DIAGNOSTIC_ENTRY_RESERVE,
+    )
+  val diagnostics = (mpvFlowDiagnostics + nativeMedia3FlowDiagnostics).distinctBy(DebugLogEntry::id)
+  val recentCapacity = (DEBUG_LOG_ENTRY_LIMIT - diagnostics.size).coerceAtLeast(0)
+  return (entries.takeLast(recentCapacity) + diagnostics)
+    .distinctBy(DebugLogEntry::id)
+    .sortedBy(DebugLogEntry::timeMillis)
+}
+
+internal fun DebugLogEntry.isMpvFlowDiagnostic(): Boolean =
+  tag.contains("vf_mpvflow", ignoreCase = true) ||
+    tag.contains("MpvInfinityFlowVk", ignoreCase = true) ||
+    message.contains("MPVFLOW_DIAGNOSTIC", ignoreCase = true) ||
+    message.contains("MPVFLOW_GPU_DIAGNOSTIC", ignoreCase = true) ||
+    message.contains("vf_mpvflow", ignoreCase = true)
+
+internal fun DebugLogEntry.isNativeMedia3FlowDiagnostic(): Boolean =
+  tag.contains("MpvInfinityFlowVk", ignoreCase = true) ||
+    tag.contains("Mpv∞-Media3Flow", ignoreCase = true) ||
+    message.contains("component=native-media3", ignoreCase = true) ||
+    message.contains("media3_flow_route", ignoreCase = true) ||
+    message.contains("flow_summary", ignoreCase = true)
+
+private fun retainPinnedFlowDiagnostics(
+  entries: List<DebugLogEntry>,
+  reserve: Int,
+): List<DebugLogEntry> {
+  if (entries.size <= reserve) return entries
+  val startup = entries.filter(DebugLogEntry::isFlowStartupRecord).take(FLOW_STARTUP_ENTRY_PIN_COUNT)
+  val latestRendererConfigs =
+    entries
+      .filter { it.message.contains("event=renderer_config", ignoreCase = true) }
+      .takeLast(FLOW_RENDERER_CONFIG_PIN_COUNT)
+  val failures = entries.filter(DebugLogEntry::isFlowFailureRecord).takeLast(FLOW_FAILURE_ENTRY_PIN_COUNT)
+  val latestPresentMode = entries.filter { it.message.contains("event=present_mode", ignoreCase = true) }.takeLast(1)
+  val latestWsiToggle = entries.filter { it.message.contains("event=wsi_diagnostics_toggle", ignoreCase = true) }.takeLast(1)
+  val wsiSwapchains = entries.filter { it.message.contains("event=wsi_swapchain_created", ignoreCase = true) }
+  val wsiSwapchainEvidence = (wsiSwapchains.take(1) + wsiSwapchains.takeLast(1)).distinctBy(DebugLogEntry::id)
+  val wsiTimingEntries =
+    entries
+      .filter { it.message.contains("event=wsi_timing", ignoreCase = true) }
+      .mapNotNull { entry -> entry.flowWsiTimingStage()?.let { it to entry } }
+      .groupBy({ it.first }, { it.second })
+      .values
+      .mapNotNull { it.lastOrNull() }
+  val latestQcomCapabilities = entries.filter { it.message.contains("event=qcom_gpu_timing", ignoreCase = true) }.takeLast(1)
+  val latestQcomDispatchTiming = entries.filter { it.message.contains("event=qcom_dispatch_timing", ignoreCase = true) }.takeLast(1)
+  val latestQcomBlockMatchCapability =
+    entries.filter { it.message.contains("event=qcom_block_match_capability", ignoreCase = true) }.takeLast(1)
+  val latestQcomBlockMatchInit =
+    entries.filter { it.message.contains("event=qcom_block_match_init", ignoreCase = true) }.takeLast(1)
+  val qcomBlockMatchImages =
+    entries
+      .mapNotNull { entry -> entry.flowQcomCreatedImageName()?.let { it to entry } }
+      .groupBy({ it.first }, { it.second })
+      .values
+      .mapNotNull { it.lastOrNull() }
+  val latestQcomBlockMatchImageState =
+    entries
+      .filter {
+        it.message.contains("event=qcom_block_match_image", ignoreCase = true) &&
+          !it.message.contains("state=created", ignoreCase = true)
+      }
+      .takeLast(1)
+  val latestQcomBlockMatchDispatchState =
+    entries.filter { it.message.contains("event=qcom_block_match_dispatch", ignoreCase = true) }.takeLast(1)
+  val pinned =
+    (startup + latestRendererConfigs + failures + latestPresentMode + latestWsiToggle +
+      wsiSwapchainEvidence + wsiTimingEntries + latestQcomCapabilities + latestQcomDispatchTiming +
+      latestQcomBlockMatchCapability + latestQcomBlockMatchInit + qcomBlockMatchImages +
+      latestQcomBlockMatchImageState + latestQcomBlockMatchDispatchState)
+      .distinctBy(DebugLogEntry::id)
+  val tailCapacity = (reserve - pinned.size).coerceAtLeast(0)
+  return (pinned + entries.takeLast(tailCapacity))
+    .distinctBy(DebugLogEntry::id)
+    .sortedBy(DebugLogEntry::timeMillis)
+}
+
+private fun DebugLogEntry.flowWsiTimingStage(): String? {
+  if (!message.contains("event=wsi_timing", ignoreCase = true)) return null
+  return Regex("(?:^|\\s)stage=([^\\s]+)").find(message)?.groupValues?.get(1)
+}
+
+private fun DebugLogEntry.flowQcomCreatedImageName(): String? {
+  if (!message.contains("event=qcom_block_match_image", ignoreCase = true)) return null
+  if (!message.contains("state=created", ignoreCase = true)) return null
+  return Regex("(?:^|\\s)name=([^\\s]+)").find(message)?.groupValues?.get(1)
+}
+
+private fun DebugLogEntry.isFlowStartupRecord(): Boolean =
+  message.contains("event=config", ignoreCase = true) ||
+    message.contains("event=logger_config", ignoreCase = true) ||
+    message.contains("event=renderer_config", ignoreCase = true) ||
+    message.contains("event=renderer_init", ignoreCase = true) ||
+    message.contains("event=compute_capabilities", ignoreCase = true) ||
+    message.contains("event=vulkan_context", ignoreCase = true) ||
+    message.contains("event=queue_state", ignoreCase = true) ||
+    message.contains("event=preflight", ignoreCase = true) ||
+    message.contains("media3_flow_route", ignoreCase = true)
+
+private fun DebugLogEntry.isFlowFailureRecord(): Boolean =
+  message.contains("state=failed", ignoreCase = true) ||
+    message.contains("state=unavailable", ignoreCase = true) ||
+    message.contains("state=passthrough", ignoreCase = true) ||
+    message.contains("state=source_fallback", ignoreCase = true) ||
+    message.contains("event=auto_fallback", ignoreCase = true)
+
+/** Curated export section; the unfiltered Logcat text is separately kept intact. */
+internal fun selectMpvFlowDiagnosticLines(logcat: String): String =
+  logcat.lineSequence()
+    .filter { line ->
+      listOf(
+        "MPVFLOW_DIAGNOSTIC",
+        "MPVFLOW_GPU_DIAGNOSTIC",
+        "vf_mpvflow",
+        "MpvInfinityFlowVk",
+      ).any { marker -> line.contains(marker, ignoreCase = true) }
+    }
+    .joinToString("\n")
+
+internal data class MpvFlowRuntimeCadenceSample(
+  val synthesizedSubmitFps: Double,
+  val targetFps: Int?,
+  val swapSubmitFps: Double?,
+  val synthesizedSubmits: Long?,
+  val windowMillis: Double?,
+  val timeMillis: Long,
+  val renderCallbackFps: Double? = null,
+  val renderFailures: Long? = null,
+  val synthesisRateLimitedCallbacks: Long? = null,
+  val synthesizedRenderCallbacks: Long? = null,
+  val frameRepeatCount: Long? = null,
+  val renderCpuAverageMs: Double? = null,
+  val renderCpuMaximumMs: Double? = null,
+  val swapFailures: Long? = null,
+  val pairAnalysisAttempts: Long? = null,
+  val pairAnalysisFailures: Long? = null,
+  val sourceSyncPercent: Double? = null,
+)
+
+internal fun latestMpvFlowRuntimeCadenceSample(
+  entries: List<DebugLogEntry>,
+): MpvFlowRuntimeCadenceSample? {
+  val entry =
+    entries.lastOrNull { candidate ->
+      candidate.isMpvFlowDiagnostic() && candidate.message.contains("event=runtime_cadence")
+    } ?: return null
+  val fields = Regex("""([A-Za-z_][A-Za-z0-9_]*)=([^\s]+)""")
+    .findAll(entry.message)
+    .associate { it.groupValues[1] to it.groupValues[2] }
+  if (fields["metric"] != "successful_pl_swapchain_submit_not_surfaceflinger_scanout") return null
+
+  fun number(name: String): Double? = fields[name]?.toDoubleOrNull()?.takeIf { it.isFinite() }
+  fun count(name: String): Long? = fields[name]?.toLongOrNull()?.takeIf { it >= 0L }
+
+  val windowMillis = number("window_ms")?.takeIf { it > 0.0 }
+  val synthesizedSubmits = fields["synthesized_submits"]?.toLongOrNull()?.takeIf { it >= 0L }
+  val synthesizedSubmitFps =
+    number("synthesized_submit_fps")?.takeIf { it >= 0.0 }
+      ?: if (synthesizedSubmits != null && windowMillis != null) {
+        synthesizedSubmits * 1_000.0 / windowMillis
+      } else {
+        null
+      }
+      ?: return null
+
+  return MpvFlowRuntimeCadenceSample(
+    synthesizedSubmitFps = synthesizedSubmitFps,
+    targetFps = fields["target_fps"]?.toIntOrNull()?.takeIf { it in 1..240 },
+    swapSubmitFps = number("swap_submit_fps")?.takeIf { it >= 0.0 },
+    synthesizedSubmits = synthesizedSubmits,
+    windowMillis = windowMillis,
+    timeMillis = entry.timeMillis,
+    renderCallbackFps = number("render_callback_fps")?.takeIf { it >= 0.0 },
+    renderFailures = count("render_failures"),
+    synthesisRateLimitedCallbacks = count("synthesis_rate_limited_callbacks"),
+    synthesizedRenderCallbacks = count("synthesized_render_callbacks"),
+    frameRepeatCount = count("frame_repeat_count"),
+    renderCpuAverageMs = number("render_cpu_avg_ms")?.takeIf { it >= 0.0 },
+    renderCpuMaximumMs = number("render_cpu_max_ms")?.takeIf { it >= 0.0 },
+    swapFailures = count("swap_failures"),
+    pairAnalysisAttempts = count("pair_analysis_attempts"),
+    pairAnalysisFailures = count("pair_analysis_failures"),
+    sourceSyncPercent = number("source_sync_pct")?.takeIf { it in 0.0..100.0 },
+  )
+}
+
+internal fun observedMpvFlowPassthroughReasons(entries: List<DebugLogEntry>): List<String> {
+  val reasonPattern = Regex("""(?:^|\s)reason=([A-Za-z0-9_.-]+)""")
+  return entries.asSequence()
+    .filter { entry ->
+      entry.message.contains("MPVFLOW_DIAGNOSTIC") &&
+        entry.message.contains("event=output ") &&
+        entry.message.contains("state=passthrough") &&
+        !entry.message.contains("component=native-media3")
+    }
+    .mapNotNull { entry -> reasonPattern.find(entry.message)?.groupValues?.getOrNull(1) }
+    .distinct()
+    .sorted()
+    .toList()
+}
+
+internal fun isMpvFlowRuntimeCadenceSampleFresh(
+  sample: MpvFlowRuntimeCadenceSample,
+  nowMillis: Long,
+  maxAgeMillis: Long = 12_000L,
+): Boolean {
+  val ageMillis = nowMillis - sample.timeMillis
+  return ageMillis in 0..maxAgeMillis
+}
+
+internal class MpvFlowRuntimeCadenceSampleCache {
+  private var lastFreshSample: MpvFlowRuntimeCadenceSample? = null
+
+  fun update(
+    candidate: MpvFlowRuntimeCadenceSample?,
+    nowMillis: Long,
+  ): MpvFlowRuntimeCadenceSample? {
+    if (candidate != null && isMpvFlowRuntimeCadenceSampleFresh(candidate, nowMillis)) {
+      lastFreshSample = candidate
+    }
+    val retained = lastFreshSample
+    if (retained != null && isMpvFlowRuntimeCadenceSampleFresh(retained, nowMillis)) {
+      return retained
+    }
+    lastFreshSample = null
+    return null
+  }
+}
+
+internal fun formatMpvFlowTimingSummary(entries: List<DebugLogEntry>): String {
+  val fieldPattern = Regex("""([A-Za-z_][A-Za-z0-9_]*)=([^\s]+)""")
+  fun fieldsFor(event: String): Map<String, String>? =
+    entries.lastOrNull { entry ->
+      entry.isMpvFlowDiagnostic() && entry.message.contains("event=$event")
+    }?.let { entry ->
+      fieldPattern.findAll(entry.message)
+        .associate { it.groupValues[1] to it.groupValues[2] }
+    }
+  fun number(fields: Map<String, String>, name: String): Double? =
+    fields[name]?.toDoubleOrNull()?.takeIf { it.isFinite() }
+  fun compact(value: Double?): String = value?.let { String.format(Locale.US, "%.1f", it) } ?: "--"
+
+  val synthesizedOutput = latestMpvFlowRuntimeCadenceSample(entries)?.let { sample ->
+    buildString {
+      append("Successful synthesized submits ${compact(sample.synthesizedSubmitFps)} fps")
+      sample.targetFps?.let { append(" · target $it fps") }
+      if (sample.synthesizedSubmits != null && sample.windowMillis != null) {
+        append(" · ${sample.synthesizedSubmits} in ${compact(sample.windowMillis / 1_000.0)} s")
+      }
+      sample.swapSubmitFps?.let { append(" · all swap submits ${compact(it)} fps") }
+      append(" · not scanout")
+    }
+  }
+
+  val pairFields = fieldsFor("source_pair_synthesis")
+  val pairSummary = pairFields?.let { fields ->
+    val processingMs = number(fields, "processing_ms")
+    val budgetMs = number(fields, "pair_budget_ms")
+    val budgetRatio = number(fields, "budget_ratio")
+      ?: if (processingMs != null && budgetMs != null && budgetMs > 0.0) processingMs / budgetMs else null
+    val percent = budgetRatio?.let { String.format(Locale.US, "%.0f%%", it * 100.0) } ?: "--"
+    val dimensions =
+      if (fields["process_width"] != null && fields["process_height"] != null) {
+        "${fields["process_width"]}×${fields["process_height"]}"
+      } else {
+        "--"
+      }
+    val frames = fields["frames"] ?: "?"
+    val targetFps = fields["target_fps"] ?: "?"
+    "Last pair: $frames generated · ${compact(processingMs)}/${compact(budgetMs)} ms ($percent) · $dimensions · target $targetFps fps"
+  }
+
+  return when {
+    synthesizedOutput != null && pairSummary != null -> "$synthesizedOutput · $pairSummary"
+    synthesizedOutput != null -> synthesizedOutput
+    pairSummary != null -> "Synthesized submit rate not captured · $pairSummary"
+    entries.any(DebugLogEntry::isMpvFlowDiagnostic) -> "MPVFlow active; synthesized submit rate not captured yet"
+    else -> "No MPVFlow output telemetry captured"
   }
 }
 

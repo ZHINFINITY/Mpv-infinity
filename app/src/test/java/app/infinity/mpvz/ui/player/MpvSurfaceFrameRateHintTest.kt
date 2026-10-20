@@ -1,0 +1,55 @@
+/*
+ * SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+ * Copyright (c) 2026 ZHINFINITY. Mpv∞ Covered Code.
+ * See LICENSE for terms.
+ */
+
+package app.infinity.mpvz.ui.player
+
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
+import org.junit.Test
+
+class MpvSurfaceFrameRateHintTest {
+  @Test
+  fun interpolationOutputCadenceOverridesSourceCadence() {
+    assertEquals(60.0, resolveSurfaceFrameRateHint(24.0, 60.0)!!, 0.0)
+  }
+
+  @Test
+  fun interpolationTargetAt120HzOverridesLaterSourceRateMetadata() {
+    assertEquals(120.0, resolveSurfaceFrameRateHint(23.976, 120.0)!!, 0.0)
+  }
+
+  @Test
+  fun sourceCadenceIsUsedWhenInterpolationIsInactive() {
+    assertEquals(23.976, resolveSurfaceFrameRateHint(23.976, null)!!, 0.0)
+  }
+
+  @Test
+  fun invalidInterpolationCadenceFallsBackToValidSourceCadence() {
+    assertEquals(24.0, resolveSurfaceFrameRateHint(24.0, Double.NaN)!!, 0.0)
+  }
+
+  @Test
+  fun invalidRatesProduceNoSurfaceHint() {
+    assertNull(resolveSurfaceFrameRateHint(0.0, -1.0))
+  }
+
+  @Test
+  fun displayRefreshResolverPrefersTheAttachedDisplay() {
+    assertEquals(120f, resolveFlowDisplayRefreshRateHz(120f, 60f)!!, 0f)
+  }
+
+  @Test
+  fun displayRefreshResolverFallsBackToDisplayManager() {
+    assertEquals(90f, resolveFlowDisplayRefreshRateHz(null, 90f)!!, 0f)
+    assertEquals(90f, resolveFlowDisplayRefreshRateHz(Float.NaN, 90f)!!, 0f)
+  }
+
+  @Test
+  fun displayRefreshResolverRejectsOutOfRangeValues() {
+    assertNull(resolveFlowDisplayRefreshRateHz(0f, 0f))
+    assertNull(resolveFlowDisplayRefreshRateHz(500f, -1f))
+  }
+}

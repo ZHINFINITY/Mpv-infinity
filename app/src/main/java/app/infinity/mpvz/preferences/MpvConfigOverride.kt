@@ -1,10 +1,8 @@
 /*
- * SPDX-License-Identifier: AGPL-3.0-or-later
+ * SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
  *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Affero General Public License as published
- * by the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * Copyright (c) 2026 ZHINFINITY. Mpv∞ Covered Code.
+ * See LICENSE for terms.
  */
 
 package app.infinity.mpvz.preferences
@@ -28,7 +26,12 @@ enum class MpvConfigOverride(
         "profile",
         "gpu-api",
         "gpu-context",
+        "vulkan-swap-mode",
       ),
+  ),
+  FLOW_COMPUTE(
+    preferenceKey = "flow_compute",
+    optionNames = setOf("mpvflow-compute-api", "mpvflow-soft-blend"),
   ),
   DECODER(
     preferenceKey = "decoder",
@@ -38,6 +41,7 @@ enum class MpvConfigOverride(
         "hwdec-codecs",
         "vd-lavc-dr",
         "vd-lavc-queue",
+        "vd-lavc-o",
         "vd-lavc-film-grain",
       ),
   ),
@@ -181,6 +185,7 @@ enum class MpvConfigOverride(
         "hr-seek",
         "hr-seek-framedrop",
         "video-sync",
+        "display-fps-override",
         "framedrop",
       ),
   ),
@@ -281,7 +286,21 @@ object MpvConfigControlledFeatures {
 
   val AUTO_CROP = setOf("video-crop")
 
-  val HARDWARE_DECODER = setOf("hwdec", "gpu-api", "gpu-context")
+  val HARDWARE_DECODER = setOf("hwdec", "gpu-api", "gpu-context", "vd-lavc-o")
+
+  val FRAME_INTERPOLATION =
+    setOf(
+      "vf",
+      "hwdec",
+      "interpolation",
+      "video-sync",
+      "display-fps-override",
+      "mpvflow",
+      "mpvflow-soft-blend",
+      "mpvflow-max-dimension",
+      "gpu-api",
+      "gpu-context",
+    )
 }
 
 /** The ownership snapshot used by the active libmpv core. */

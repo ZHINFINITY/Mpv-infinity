@@ -1,10 +1,8 @@
 /*
- * SPDX-License-Identifier: AGPL-3.0-or-later
+ * SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
  *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Affero General Public License as published
- * by the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * Copyright (c) 2026 ZHINFINITY. Mpv∞ Covered Code.
+ * See LICENSE for terms.
  */
 
 package app.infinity.mpvz.presentation.crash
@@ -231,11 +229,18 @@ class CrashActivity : AppCompatActivity() {
       val logcat = StringBuilder()
       // reader.lines() looks much nicer so why not use it on devices that support it?
       reader.lines().forEach(logcat::appendLine)
+      val mpvFlowLines = selectMpvFlowDiagnosticLines(logcat.toString())
+      logcat.appendLine()
+      logcat.appendLine("===== MPVFlow interpolation diagnostics =====")
+      logcat.appendLine(if (mpvFlowLines.isBlank()) "No MPVFlow diagnostics captured." else mpvFlowLines)
       val media3Lines =
         logcat
           .lineSequence()
           .filter { line ->
             listOf(
+              "media3_flow_route",
+              "flow_summary",
+              "MpvInfinityFlowVk",
               "Mpv∞-Media3",
               "ExoPlayer",
               "Media3",

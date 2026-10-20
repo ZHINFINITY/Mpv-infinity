@@ -12,6 +12,7 @@ val localProperties =
 
 val targetAbiProp = project.findProperty("targetAbi")?.toString() ?: localProperties.getProperty("targetAbi")
 val enableX86 = project.findProperty("enableX86") != "false"
+val requestedMpvFlowMpvRuntime = project.findProperty("mpvFlowMpvBuild")?.toString() == "true"
 val x86Abis = if (enableX86) listOf("x86", "x86_64") else emptyList()
 val activeAbis =
   if (!targetAbiProp.isNullOrBlank()) {
@@ -19,7 +20,8 @@ val activeAbis =
   } else {
     listOf("arm64-v8a", "armeabi-v7a") + x86Abis
   }
-val universalOnlyDistributions = setOf("noVulkan", "fongmi")
+val includeMpvFlowMpvRuntime = requestedMpvFlowMpvRuntime && activeAbis == listOf("arm64-v8a")
+val universalOnlyDistributions = setOf("noVulkan")
 val releaseVersionCode = 259
 val versionCodeBandSize = 10_000
 val stableVersionCode = releaseVersionCode * versionCodeBandSize + (versionCodeBandSize - 1)
@@ -56,6 +58,7 @@ android {
 
     buildConfigField("String", "GIT_SHA", "\"${getCommitSha()}\"")
     buildConfigField("int", "GIT_COUNT", getCommitCount())
+    buildConfigField("boolean", "MPV_HAS_MPVFLOW", includeMpvFlowMpvRuntime.toString())
 
     externalNativeBuild {
       cmake {
@@ -80,7 +83,13 @@ android {
       buildConfigField("String", "UPDATE_APK_VARIANT", "\"standard\"")
       buildConfigField("boolean", "SCOPED_STORAGE_ONLY", "false")
       buildConfigField("boolean", "MPV_SUPPORTS_VULKAN", "true")
-      buildConfigField("boolean", "MPV_SUPPORTS_MEDIACODEC_VULKAN", "false")
+      buildConfigField("boolean", "MPV_SUPPORTS_MEDIACODEC_VULKAN", includeMpvFlowMpvRuntime.toString())
+      externalNativeBuild {
+        cmake {
+          arguments += "-DMPVFLOW_ENABLE_VULKAN_BACKEND=ON"
+          arguments += "-DMPVFLOW_MPV_AAR=${projectDir}/libs/mpvlib.aar"
+        }
+      }
     }
 
     create("noVulkan") {
@@ -90,15 +99,11 @@ android {
       buildConfigField("boolean", "SCOPED_STORAGE_ONLY", "false")
       buildConfigField("boolean", "MPV_SUPPORTS_VULKAN", "false")
       buildConfigField("boolean", "MPV_SUPPORTS_MEDIACODEC_VULKAN", "false")
-    }
-
-    create("fongmi") {
-      dimension = "distribution"
-      buildConfigField("boolean", "ENABLE_UPDATE_FEATURE", "true")
-      buildConfigField("String", "UPDATE_APK_VARIANT", "\"fongmi\"")
-      buildConfigField("boolean", "SCOPED_STORAGE_ONLY", "false")
-      buildConfigField("boolean", "MPV_SUPPORTS_VULKAN", "true")
-      buildConfigField("boolean", "MPV_SUPPORTS_MEDIACODEC_VULKAN", "true")
+      externalNativeBuild {
+        cmake {
+          arguments += "-DMPVFLOW_ENABLE_VULKAN_BACKEND=OFF"
+        }
+      }
     }
   }
 
@@ -142,6 +147,9 @@ android {
       applicationIdSuffix = ".debug"
       versionNameSuffix = "-${getCommitCount()}"
       resValue("string", "app_name", "Mpv∞-Debug")
+      ndk {
+        debugSymbolLevel = "none"
+      }
     }
   }
 
@@ -207,8 +215,6 @@ androidComponents {
           .find { it.filterType == FilterConfiguration.FilterType.ABI }
           ?.identifier
 
-      // Keep universal packages for these flavors, but also publish the arm64-v8a split for
-      // modern devices that need the architecture-specific native playback profile.
       if (isUniversalOnly && abi != null && abi != "arm64-v8a") {
         output.enabled.set(false)
       }
@@ -280,7 +286,7 @@ dependencies {
   implementation(libs.kotlinx.immutable.collections)
   implementation(libs.kotlinx.serialization.json)
   implementation(libs.okhttp)
-  implementation(files("libs/quickjs-kt-android-1.0.5-nuvio.aar"))
+  implementation(libs.quickjs.kt.android)
   implementation(libs.retrofit)
   implementation(libs.retrofit.kotlinx.serialization)
   implementation(libs.coil.compose)
@@ -296,8 +302,8 @@ dependencies {
   implementation(libs.androidx.media3.transformer)
   implementation("io.github.peerless2012:ass-kt:0.5.1")
   implementation("io.github.peerless2012:ass-media:0.5.1")
-  implementation(libs.jellyfin.media3.ffmpeg.decoder)
   implementation(project(":subtitle-libass"))
+  implementation(project(":media3-decoder-ffmpeg"))
   implementation(platform(libs.sora.editor.bom))
   implementation(libs.sora.editor)
   implementation(libs.sora.language.textmate)
@@ -313,7 +319,6 @@ dependencies {
 
   "standardImplementation"(files("libs/mpvlib.aar"))
   "noVulkanImplementation"(files("libs/mpvlib-no-vulkun.aar"))
-  "fongmiImplementation"(files("libs/mpvlib-fongmi.aar"))
 
   // Network protocol libraries
   implementation(libs.smbj)
@@ -342,7 +347,7 @@ dependencies {
 
 fun getCommitCount(): String = runCommand("git rev-list --count HEAD") ?: "0"
 
-fun getCommitSha(): String = runCommand("git rev-parse --short HEAD") ?: "unknown"
+fun getCommitSha(): String = runCommand("git rev-parse HEAD") ?: "unknown"
 
 fun runCommand(command: String): String? =
   try {

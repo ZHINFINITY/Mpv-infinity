@@ -1,0 +1,212 @@
+package app.infinity.mpvz.ui.player
+
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
+import org.junit.Test
+
+class Media3FlowPresentationQueueTest {
+  @Test
+  fun newestPendingFrameReplacesOlderReadyFrame() {
+    val queue = Media3FlowPresentationQueue(capacity = 2)
+    val first = queue.acquireForWrite() ?: error("first write lease unavailable")
+    queue.publish(first)
+    val second = queue.acquireForWrite() ?: error("second write lease unavailable")
+    val superseded = queue.publish(second)
+
+    assertEquals(first.slot, superseded)
+    assertEquals(1L, queue.coalescedCount())
+    assertEquals(Media3FlowPresentationQueue.State.FREE, queue.state(first.slot))
+    assertEquals(second.slot, queue.takeNext())
+  }
+
+  @Test
+  fun activePresentationIsNeverReclaimedAndCapacityStaysBounded() {
+    val queue = Media3FlowPresentationQueue(capacity = 2)
+    val active = queue.acquireForWrite() ?: error("active write lease unavailable")
+    queue.publish(active)
+    assertEquals(active.slot, queue.takeNext())
+
+    val pending = queue.acquireForWrite() ?: error("pending write lease unavailable")
+    queue.publish(pending)
+    val replacement = queue.acquireForWrite()
+    assertNotNull(replacement)
+    assertEquals(pending.slot, replacement?.slot)
+    assertTrue(replacement?.replacedPending == true)
+    assertNull(queue.acquireForWrite())
+    assertEquals(Media3FlowPresentationQueue.State.PRESENTING, queue.state(active.slot))
+  }
+
+  @Test
+  fun failedAcquisitionSnapshotsBothPresentingSlotsWithoutChangingTheirOwnership() {
+    val queue = Media3FlowPresentationQueue(capacity = 2)
+    val first = queue.acquireForWrite() ?: error("first write lease unavailable")
+    queue.publish(first)
+    assertEquals(first.slot, queue.takeNext())
+    val second = queue.acquireForWrite() ?: error("second write lease unavailable")
+    queue.publish(second)
+    assertEquals(second.slot, queue.takeNext())
+
+    val attempt = queue.acquireForWriteWithSnapshot()
+
+    assertNull(attempt.lease)
+    assertEquals(2, attempt.slotStates[Media3FlowPresentationQueue.State.PRESENTING])
+    assertEquals(0, attempt.slotStates[Media3FlowPresentationQueue.State.FREE])
+    assertEquals(Media3FlowPresentationQueue.State.PRESENTING, queue.state(first.slot))
+    assertEquals(Media3FlowPresentationQueue.State.PRESENTING, queue.state(second.slot))
+  }
+
+  @Test
+  fun cancelReadyLeavesPresentingSlotOwnedUntilCompletion() {
+    val queue = Media3FlowPresentationQueue(capacity = 2)
+    val active = queue.acquireForWrite() ?: error("active write lease unavailable")
+    queue.publish(active)
+    queue.takeNext()
+    val pending = queue.acquireForWrite() ?: error("pending write lease unavailable")
+    queue.publish(pending)
+
+    assertEquals(listOf(pending.slot), queue.cancelReady())
+    assertFalse(queue.hasReady())
+    assertEquals(Media3FlowPresentationQueue.State.PRESENTING, queue.state(active.slot))
+    assertEquals(Media3FlowPresentationQueue.State.FREE, queue.state(pending.slot))
+    queue.finishPresentation(active.slot)
+    assertEquals(Media3FlowPresentationQueue.State.FREE, queue.state(active.slot))
+  }
+
+  @Test
+  fun abortedWriteCanBeReusedWithoutPublishingIt() {
+    val queue = Media3FlowPresentationQueue(capacity = 2)
+    val lease = queue.acquireForWrite() ?: error("write lease unavailable")
+    queue.abortWrite(lease)
+
+    assertEquals(Media3FlowPresentationQueue.State.FREE, queue.state(lease.slot))
+    assertNull(queue.takeNext())
+    assertEquals(lease.slot, queue.acquireForWrite()?.slot)
+  }
+
+  @Test
+  fun quarantinedPresentationIsNeverReusedAndDoesNotBlockReleaseDetection() {
+    val queue = Media3FlowPresentationQueue(capacity = 2)
+    val lease = queue.acquireForWrite() ?: error("write lease unavailable")
+    queue.publish(lease)
+    val slot = queue.takeNext() ?: error("ready slot unavailable")
+
+    queue.quarantinePresentation(slot)
+
+    assertEquals(Media3FlowPresentationQueue.State.QUARANTINED, queue.state(slot))
+    assertFalse(queue.hasPresenting())
+    val remainingLease = queue.acquireForWrite() ?: error("other bounded slot unavailable")
+    assertTrue(remainingLease.slot != slot)
+    queue.abortWrite(remainingLease)
+  }
+
+  @Test
+  fun quarantiningActiveSlotLeavesPendingFrameCancellableOnFailure() {
+    val queue = Media3FlowPresentationQueue(capacity = 2)
+    val first = queue.acquireForWrite() ?: error("first write lease unavailable")
+    queue.publish(first)
+    val active = queue.takeNext() ?: error("first ready slot unavailable")
+    val second = queue.acquireForWrite() ?: error("second write lease unavailable")
+    queue.publish(second)
+    assertTrue(queue.hasPresenting())
+    assertEquals(Media3FlowPresentationQueue.State.READY, queue.state(second.slot))
+
+    queue.quarantinePresentation(active)
+
+    assertFalse(queue.hasPresenting())
+    assertEquals(listOf(second.slot), queue.cancelReady())
+    assertEquals(Media3FlowPresentationQueue.State.QUARANTINED, queue.state(active))
+    assertEquals(Media3FlowPresentationQueue.State.FREE, queue.state(second.slot))
+    val reusable = queue.acquireForWrite() ?: error("cancelled pending slot should be reusable")
+    assertEquals(second.slot, reusable.slot)
+    queue.abortWrite(reusable)
+  }
+
+  @Test
+  fun thirdBufferAllowsProducerToContinueWhileTwoGpuReadsAreInFlight() {
+    val queue = Media3FlowPresentationQueue(capacity = 3)
+    val first = queue.acquireForWrite() ?: error("first write lease unavailable")
+    queue.publish(first)
+    assertEquals(first.slot, queue.takeNext())
+
+    val second = queue.acquireForWrite() ?: error("second write lease unavailable")
+    queue.publish(second)
+    assertEquals(second.slot, queue.takeNext())
+
+    val third = queue.acquireForWrite()
+
+    assertNotNull("producer should have a staging slot while two GPU reads are in flight", third)
+    assertEquals(2, queue.presentingCount())
+    assertEquals(Media3FlowPresentationQueue.State.WRITING, queue.state(third!!.slot))
+  }
+  @Test
+  fun readyBlocksAdmissionEvenWhenAnotherSlotIsFree() {
+    val queue = Media3FlowPresentationQueue(capacity = 3)
+    val lease = queue.acquireForWrite() ?: error("write lease unavailable")
+    queue.publish(lease)
+
+    assertFalse(queue.canAcceptProduction())
+    assertEquals(Media3FlowPresentationQueue.State.READY, queue.state(lease.slot))
+  }
+
+  @Test
+  fun allPresentingBlocksAdmission() {
+    val queue = Media3FlowPresentationQueue(capacity = 2)
+    repeat(2) {
+      val lease = queue.acquireForWrite() ?: error("write lease unavailable")
+      queue.publish(lease)
+      queue.takeNext()
+    }
+
+    assertFalse(queue.canAcceptProduction())
+  }
+
+  @Test
+  fun freeSlotAdmitsProduction() {
+    val queue = Media3FlowPresentationQueue(capacity = 2)
+
+    assertTrue(queue.canAcceptProduction())
+  }
+
+  @Test
+  fun consumerConsumptionResumesAdmissionWithFreeSlot() {
+    val queue = Media3FlowPresentationQueue(capacity = 2)
+    val lease = queue.acquireForWrite() ?: error("write lease unavailable")
+    queue.publish(lease)
+    assertFalse(queue.canAcceptProduction())
+
+    assertEquals(lease.slot, queue.takeNext())
+    assertTrue(queue.canAcceptProduction())
+  }
+
+  @Test
+  fun consumerFenceReleaseResumesAdmission() {
+    val queue = Media3FlowPresentationQueue(capacity = 2)
+    repeat(2) {
+      val lease = queue.acquireForWrite() ?: error("write lease unavailable")
+      queue.publish(lease)
+      queue.takeNext()
+    }
+    val slot = 0
+    assertFalse(queue.canAcceptProduction())
+
+    queue.finishPresentation(slot)
+    assertTrue(queue.canAcceptProduction())
+  }
+
+  @Test
+  fun admissionDoesNotCoalesceUnderSaturation() {
+    val queue = Media3FlowPresentationQueue(capacity = 2)
+    repeat(2) {
+      val lease = queue.acquireForWrite() ?: error("write lease unavailable")
+      queue.publish(lease)
+      queue.takeNext()
+    }
+    assertFalse(queue.canAcceptProduction())
+    assertNull(queue.acquireForWrite())
+    assertEquals(0L, queue.coalescedCount())
+  }
+
+}

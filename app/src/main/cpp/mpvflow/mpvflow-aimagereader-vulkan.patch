@@ -1,0 +1,285 @@
+diff --git a/meson.build b/meson.build
+index c49aa3cec..4fd1bfa80 100644
+--- a/meson.build
++++ b/meson.build
+@@ -1425,0 +1426,8 @@ endif
++if features['android-media-ndk'] and features['vulkan']
++    sources += files(
++        'video/out/hwdec/hwdec_aimagereader_vk.c',
++        'video/out/hwdec/hwdec_aimagereader_vk_convert.c',
++    )
++endif
++# MPVFLOW_AIMAGE_VULKAN_MAPPER
++
+diff --git a/video/out/gpu/hwdec.c b/video/out/gpu/hwdec.c
+index 721207870..26ba95844 100644
+--- a/video/out/gpu/hwdec.c
++++ b/video/out/gpu/hwdec.c
+@@ -141,0 +142 @@ struct ra_hwdec_mapper *ra_hwdec_mapper_create(struct ra_hwdec *hwdec,
++        .dst_params_ready = true,
+@@ -172 +173,2 @@ int ra_hwdec_mapper_map(struct ra_hwdec_mapper *mapper, struct mp_image *img)
+-    if (mapper->driver->map(mapper) < 0) {
++    int ret = mapper->driver->map(mapper);
++    if (ret < 0) {
+@@ -174 +176 @@ int ra_hwdec_mapper_map(struct ra_hwdec_mapper *mapper, struct mp_image *img)
+-        return -1;
++        return ret;
+@@ -175,0 +178 @@ int ra_hwdec_mapper_map(struct ra_hwdec_mapper *mapper, struct mp_image *img)
++    mapper->dst_params_ready = true;
+diff --git a/video/out/gpu/hwdec.h b/video/out/gpu/hwdec.h
+index ea29b0dc2..55de25640 100644
+--- a/video/out/gpu/hwdec.h
++++ b/video/out/gpu/hwdec.h
+@@ -10,0 +11,3 @@
++// The mapper has no output image yet; skip this frame and try again.
++#define RA_HWDEC_MAP_RETRY (-2)
++
+@@ -62,0 +66,7 @@ struct ra_hwdec_mapper {
++    // Some external-image mappers discover their output parameters on first map.
++    bool dst_params_ready;
++    bool dst_params_preserve_repr;
++    bool dst_params_map_coordinates;
++    bool dst_gl_external_yuv;
++    int dst_num_components;
++    int dst_component_mapping[4];
+diff --git a/video/out/vo_gpu_next.c b/video/out/vo_gpu_next.c
+index dd47f440f..48cb34057 100644
+--- a/video/out/vo_gpu_next.c
++++ b/video/out/vo_gpu_next.c
+@@ -648,5 +648,9 @@ struct frame_priv {
+ struct frame_priv {
+     struct vo *vo;
++    bool hwdec_preloaded;
++    bool mapped_coordinates;
++    struct mp_image_params mapped_params;
++    bool el_hwdec_preloaded;
+     uint64_t frame_id;
+     pl_tex flow_source;
+     pl_tex flow_input;
+@@ -1258 +1262,2 @@ static void setup_hwdec_plane_mapping(struct pl_frame *frame,
+-                                      const struct mp_imgfmt_desc *desc)
++                                      const struct mp_imgfmt_desc *desc,
++                                      struct ra_hwdec_mapper *mapper)
+@@ -1259,0 +1265,8 @@ static void setup_hwdec_plane_mapping(struct pl_frame *frame,
++    if (mapper->dst_num_components) {
++        struct pl_plane *plane = &frame->planes[0];
++        frame->num_planes = 1;
++        plane->components = mapper->dst_num_components;
++        memcpy(plane->component_mapping, mapper->dst_component_mapping,
++               sizeof(plane->component_mapping));
++        return;
++    }
+@@ -1291,10 +1304,22 @@ static bool slot_acquire(struct priv *p, struct hwdec_slot *s,
+-        slot_unmap(p, s);
+-
+-        stats_time_start(p->stats, "hwdec-map");
+-        timer_pool_start(s->timer);
+-        int ret = ra_hwdec_mapper_map(s->mapper, mpi);
+-        timer_pool_stop(s->timer);
+-        stats_time_end(p->stats, "hwdec-map");
+-        if (ret < 0) {
+-            MP_ERR(p, "Mapping hardware decoded surface failed.\n");
+-            return false;
++        struct frame_priv *fp = owner->priv;
++        bool *preloaded_frame = s == &p->el_hwdec
++            ? &fp->el_hwdec_preloaded : &fp->hwdec_preloaded;
++        bool preloaded = *preloaded_frame && s->mapper->src == mpi;
++        if (preloaded) {
++            *preloaded_frame = false;
++        } else {
++            slot_unmap(p, s);
++
++            stats_time_start(p->stats, "hwdec-map");
++            timer_pool_start(s->timer);
++            int ret = ra_hwdec_mapper_map(s->mapper, mpi);
++            timer_pool_stop(s->timer);
++            stats_time_end(p->stats, "hwdec-map");
++            if (ret < 0) {
++                if (ret == RA_HWDEC_MAP_RETRY)
++                    MP_DBG(p, "Hardware decoded frame is not ready yet.\n");
++                else
++                    MP_ERR(p, "Mapping hardware decoded surface failed.\n");
++                return false;
++            }
++            s->perf = timer_pool_measure(s->timer);
+@@ -1302 +1326,0 @@ static bool slot_acquire(struct priv *p, struct hwdec_slot *s,
+-        s->perf = timer_pool_measure(s->timer);
+@@ -1481,4 +1505,2 @@ static bool map_frame(pl_gpu gpu, pl_tex *tex, const struct pl_source_frame *src
+-        // Note: We don't actually need the mapper to map the frame yet, we
+-        // only reconfig the mapper here (potentially creating it) to access
+-        // `dst_params`. In practice, though, this should not matter unless the
+-        // image format changes mid-stream.
++        // Most mappers know dst_params at init. Android external images expose
++        // their actual dimensions/crop only after the first decoder frame maps.
+@@ -1489,0 +1512,16 @@ static bool map_frame(pl_gpu gpu, pl_tex *tex, const struct pl_source_frame *src
++        if (!p->hwdec.mapper->dst_params_ready) {
++            stats_time_start(p->stats, "hwdec-map");
++            timer_pool_start(p->hwdec.timer);
++            int ret = ra_hwdec_mapper_map(p->hwdec.mapper, mpi);
++            timer_pool_stop(p->hwdec.timer);
++            p->hwdec.perf = timer_pool_measure(p->hwdec.timer);
++            stats_time_end(p->stats, "hwdec-map");
++            if (ret < 0) {
++                if (ret != RA_HWDEC_MAP_RETRY)
++                    MP_ERR(vo, "Mapping initial Android hardware texture failed.\n");
++                talloc_free(mpi);
++                return false;
++            }
++            fp->hwdec_preloaded = true;
++        }
++
+@@ -1490,0 +1529,2 @@ static bool map_frame(pl_gpu gpu, pl_tex *tex, const struct pl_source_frame *src
++        fp->mapped_coordinates = p->hwdec.mapper->dst_params_map_coordinates;
++        fp->mapped_params = par;
+@@ -1492,0 +1533 @@ static bool map_frame(pl_gpu gpu, pl_tex *tex, const struct pl_source_frame *src
++    struct pl_color_repr mapped_repr = par.repr;
+@@ -1493,0 +1535,2 @@ static bool map_frame(pl_gpu gpu, pl_tex *tex, const struct pl_source_frame *src
++    if (fp->hwdec && p->hwdec.mapper->dst_params_preserve_repr)
++        par.repr = mapped_repr;
+@@ -1523 +1566 @@ static bool map_frame(pl_gpu gpu, pl_tex *tex, const struct pl_source_frame *src
+-        setup_hwdec_plane_mapping(frame, &desc);
++        setup_hwdec_plane_mapping(frame, &desc, p->hwdec.mapper);
+@@ -1554,0 +1598,19 @@ static bool map_frame(pl_gpu gpu, pl_tex *tex, const struct pl_source_frame *src
++                if (!p->el_hwdec.mapper->dst_params_ready) {
++                    stats_time_start(p->stats, "hwdec-map");
++                    timer_pool_start(p->el_hwdec.timer);
++                    int ret = ra_hwdec_mapper_map(p->el_hwdec.mapper, el);
++                    timer_pool_stop(p->el_hwdec.timer);
++                    p->el_hwdec.perf = timer_pool_measure(p->el_hwdec.timer);
++                    stats_time_end(p->stats, "hwdec-map");
++                    if (ret < 0) {
++                        if (fp->hwdec_preloaded && p->hwdec.mapper &&
++                            p->hwdec.mapper->src == mpi)
++                            ra_hwdec_mapper_unmap(p->hwdec.mapper);
++                        fp->hwdec_preloaded = false;
++                        if (ret != RA_HWDEC_MAP_RETRY)
++                            MP_ERR(vo, "Mapping initial enhancement-layer hardware texture failed.\n");
++                        talloc_free(mpi);
++                        return false;
++                    }
++                    fp->el_hwdec_preloaded = true;
++                }
+@@ -1560,0 +1623 @@ static bool map_frame(pl_gpu gpu, pl_tex *tex, const struct pl_source_frame *src
++        struct pl_color_repr mapped_el_repr = el_par.repr;
+@@ -1561,0 +1625,2 @@ static bool map_frame(pl_gpu gpu, pl_tex *tex, const struct pl_source_frame *src
++        if (fp->el_hwdec && p->el_hwdec.mapper->dst_params_preserve_repr)
++            el_par.repr = mapped_el_repr;
+@@ -1573 +1638 @@ static bool map_frame(pl_gpu gpu, pl_tex *tex, const struct pl_source_frame *src
+-            setup_hwdec_plane_mapping(&fp->el_frame, &desc);
++            setup_hwdec_plane_mapping(&fp->el_frame, &desc, p->el_hwdec.mapper);
+@@ -1611,0 +1677,9 @@ static void unmap_frame(pl_gpu gpu, struct pl_frame *frame,
++    struct priv *mapper_priv = fp->vo->priv;
++    if (fp->hwdec_preloaded && mapper_priv->hwdec.mapper &&
++        mapper_priv->hwdec.mapper->src == mpi)
++        ra_hwdec_mapper_unmap(mapper_priv->hwdec.mapper);
++    fp->hwdec_preloaded = false;
++    if (fp->el_hwdec_preloaded && mapper_priv->el_hwdec.mapper &&
++        mapper_priv->el_hwdec.mapper->src == mpi->enhancement_layer)
++        ra_hwdec_mapper_unmap(mapper_priv->el_hwdec.mapper);
++    fp->el_hwdec_preloaded = false;
+@@ -1768,2 +1841,2 @@ static void apply_target_options(struct priv *p, struct pl_frame *target,
+-static void apply_crop(struct pl_frame *frame, struct mp_rect crop,
+-                       int width, int height)
++static void apply_crop_rect(struct pl_frame *frame, struct pl_rect2df crop,
++                            int width, int height)
+@@ -1771,6 +1844 @@ static void apply_crop(struct pl_frame *frame, struct mp_rect crop,
+-    frame->crop = (struct pl_rect2df) {
+-        .x0 = crop.x0,
+-        .y0 = crop.y0,
+-        .x1 = crop.x1,
+-        .y1 = crop.y1,
+-    };
++    frame->crop = crop;
+@@ -1790,0 +1859,62 @@ static void apply_crop(struct pl_frame *frame, struct mp_rect crop,
++static void apply_crop(struct pl_frame *frame, struct mp_rect crop,
++                       int width, int height)
++{
++    apply_crop_rect(frame, (struct pl_rect2df) {
++        .x0 = crop.x0,
++        .y0 = crop.y0,
++        .x1 = crop.x1,
++        .y1 = crop.y1,
++    }, width, height);
++}
++
++static struct pl_rect2df map_source_rect(struct pl_frame *frame,
++                                         struct mp_rect rect,
++                                         int width, int height,
++                                         const struct frame_priv *fp)
++{
++    struct pl_rect2df mapped = {
++        .x0 = rect.x0,
++        .y0 = rect.y0,
++        .x1 = rect.x1,
++        .y1 = rect.y1,
++    };
++    int mapped_width = width;
++    int mapped_height = height;
++    if (fp->mapped_coordinates && width > 0 && height > 0) {
++        const struct mp_image_params *params = &fp->mapped_params;
++        struct mp_rect bounds = params->crop;
++        if (!mp_image_crop_valid(params))
++            bounds = (struct mp_rect) {0, 0, params->w, params->h};
++        float sx = mp_rect_w(bounds) / (float) width;
++        float sy = mp_rect_h(bounds) / (float) height;
++        mapped = (struct pl_rect2df) {
++            bounds.x0 + rect.x0 * sx,
++            bounds.y0 + rect.y0 * sy,
++            bounds.x0 + rect.x1 * sx,
++            bounds.y0 + rect.y1 * sy,
++        };
++        mapped_width = params->w;
++        mapped_height = params->h;
++    }
++
++    struct pl_frame rotated = *frame;
++    apply_crop_rect(&rotated, mapped, mapped_width, mapped_height);
++    return rotated.crop;
++}
++
++static struct pl_rect2df apply_source_crop(struct pl_frame *frame,
++                                           struct mp_rect crop,
++                                           int width, int height,
++                                           const struct frame_priv *fp)
++{
++    frame->crop = map_source_rect(frame, crop, width, height, fp);
++    if (!fp->mapped_coordinates) {
++        return (struct pl_rect2df) {
++            .x1 = width,
++            .y1 = height,
++        };
++    }
++    return map_source_rect(frame, (struct mp_rect) {0, 0, width, height},
++                           width, height, fp);
++}
++
+@@ -2419 +2549,3 @@ static bool draw_frame(struct vo *vo, struct vo_frame *frame)
+-            apply_crop(image, p->src, vo->params->w, vo->params->h);
++            struct pl_rect2df source_bounds =
++                apply_source_crop(image, p->src, vo->params->w,
++                                  vo->params->h, fp);
+@@ -2431,4 +2563,4 @@ static bool draw_frame(struct vo *vo, struct vo_frame *frame)
+-                        .ml = -image->crop.x0 * rx,
+-                        .mr = (image->crop.x1 - vo->params->w) * rx,
+-                        .mt = -image->crop.y0 * ry,
+-                        .mb = (image->crop.y1 - vo->params->h) * ry,
++                        .ml = (source_bounds.x0 - image->crop.x0) * rx,
++                        .mr = (image->crop.x1 - source_bounds.x1) * rx,
++                        .mt = (source_bounds.y0 - image->crop.y0) * ry,
++                        .mb = (image->crop.y1 - source_bounds.y1) * ry,
+@@ -2961 +3093,3 @@ static void video_screenshot(struct vo *vo, struct voctrl_screenshot *args)
+-    apply_crop(&image, src, mpi->params.w, mpi->params.h);
++    struct frame_priv *fp = mpi->priv;
++    struct pl_rect2df source_bounds =
++        apply_source_crop(&image, src, mpi->params.w, mpi->params.h, fp);
+@@ -2971 +3104,0 @@ static void video_screenshot(struct vo *vo, struct voctrl_screenshot *args)
+-    struct frame_priv *fp = mpi->priv;
+@@ -2980,4 +3113,4 @@ static void video_screenshot(struct vo *vo, struct voctrl_screenshot *args)
+-            .ml = -image.crop.x0 * rx,
+-            .mr = (image.crop.x1 - vo->params->w) * rx,
+-            .mt = -image.crop.y0 * ry,
+-            .mb = (image.crop.y1 - vo->params->h) * ry,
++            .ml = (source_bounds.x0 - image.crop.x0) * rx,
++            .mr = (image.crop.x1 - source_bounds.x1) * rx,
++            .mt = (source_bounds.y0 - image.crop.y0) * ry,
++            .mb = (image.crop.y1 - source_bounds.y1) * ry,

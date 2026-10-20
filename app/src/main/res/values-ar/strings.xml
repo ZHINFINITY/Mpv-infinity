@@ -1284,7 +1284,7 @@
   <string name="ui_mpv_infinity_has_always_required_storage_access_permission_as_it_s_esse">لطالما احتاج Mpv∞ إلى إذن الوصول إلى وحدة التخزين لأنه ضروري للعثور على جميع ملفات الوسائط والترجمة على جهازك، بما فيها الملفات التي لا يدعمها النظام.</string>
   <string name="ui_however_due_to_a_change_in_security_policy_apps_built_for_androi">لكن بسبب تغيير في سياسة الأمان، تتطلب التطبيقات المصممة لنظام Android 11 والإصدارات الأحدث إذنًا إضافيًا لمواصلة الوصول نفسه.</string>
   <string name="ui_please_know_that_this_permission_is_only_used_for_the_auto_disco">يُرجى العلم أن هذا الإذن لا يُستخدم إلا للاكتشاف التلقائي لملفات الوسائط والترجمة على جهازك، ولا يتيح لنا بأي شكل الوصول إلى ملفات البيانات الخاصة التي تخزّنها التطبيقات الأخرى.</string>
-  <string name="ui_mpv_infinity_is_an_open_source_project_you_can_review_the_source_code_a">Mpv∞ مشروع مفتوح المصدر. يمكنك مراجعة الشفرة المصدرية والتحقق من كيفية استخدام الأذونات بزيارة مستودع GitHub الخاص بنا على:</string>
+  <string name="ui_mpv_infinity_is_an_open_source_project_you_can_review_the_source_code_a">Mpv∞ مشروع يتاح كوده المصدري. يمكنك مراجعة الشفرة المصدرية والتحقق من كيفية استخدام الأذونات بزيارة مستودع GitHub الخاص بنا على:</string>
   <string name="ui_be_rest_assured_your_privacy_is_our_utmost_priority_and_we_neith">اطمئن، خصوصيتك هي أولويتنا القصوى. لا نصل إلى ملفاتك لأغراض أخرى ولا ننقلها أو نخزّنها على خوادمنا؛ بل تبقى آمنة على جهازك.</string>
   <string name="ui_app_permissions">أذونات التطبيق</string>
   <string name="ui_permissions_setup_subtitle">قم بتكوين الأذونات لتمكين الميزات الأساسية وتشغيل الوسائط.</string>
@@ -1547,7 +1547,7 @@
   <string name="oss_libtorrent4j_description">روابط Java ومكتبات أصلية لبث BitTorrent.</string>
   <string name="oss_markdown_renderer_description">يعرض Markdown كمحتوى Compose أصلي بتصميم Material 3.</string>
   <string name="oss_mpv_description">محرك تشغيل وسائط أصلي للصوت والفيديو والترجمات.</string>
-  <string name="oss_mpvlib_android_description">غلاف Android لمكتبة libmpv تستخدمه إصدارات Standard وNo-Vulkan وFongMi.</string>
+  <string name="oss_mpvlib_android_description">غلاف Android لمكتبة libmpv تستخدمه إصدارات Standard وNo-Vulkan.</string>
   <string name="oss_quickjs_ng_description">محرك JavaScript مضمّن يُستخدم لحل تحديات yt-dlp.</string>
   <string name="filter_preset_none">بلا</string>
   <string name="filter_preset_vivid">زاهٍ</string>

@@ -18,7 +18,7 @@
   <a href="https://t.me/Infinityzlabs">Join the Mpv∞ Telegram channel</a>
 </p>
 
-**Mpv∞ (Mpv-infinity) is an ad-free, open-source Android media player for high-quality video and audio playback, combining MPV/libmpv with AndroidX Media3/ExoPlayer engines, dual subtitles, HDR, Dolby Vision, HDR10+, chapters, and customizable playback controls.**
+**Mpv∞ (Mpv-infinity) is an ad-free, source-available Android media player for high-quality video and audio playback, combining MPV/libmpv with AndroidX Media3/ExoPlayer engines, dual subtitles, HDR, Dolby Vision, HDR10+, chapters, and customizable playback controls.**
 
 ## Jellyfin Client and Seerr Support
 
@@ -36,7 +36,7 @@ Mpv∞ includes a native **Jellyfin Client** for connecting to Jellyfin media se
 
 <p align="center">
   <img src="https://img.shields.io/badge/Platform-Android-brightgreen.svg" />
-  <img src="https://img.shields.io/badge/License-AGPL_v3-blue.svg" />
+  <img src="https://img.shields.io/badge/License-PolyForm_Noncommercial_1.0.0-blue.svg" />
   <img src="https://img.shields.io/github/v/release/ZHINFINITY/Mpv-infinity.svg?logo=github&label=Release&cacheSeconds=3600" />
   <img src="https://img.shields.io/github/downloads/ZHINFINITY/Mpv-infinity/total?logo=github&cacheSeconds=3600" />
 </p>
@@ -82,7 +82,7 @@ Mpv∞ is a feature-rich Android media player combining the MPV and AndroidX Med
 | **Automatic engine routing** | Auto mode can choose Media3 for supported Dolby Vision items and HLS/DASH streams while keeping ordinary files on MPV. |
 | **Per-video engine selection** | Switch the current item between MPV and Media3 from the decoder controls without changing the global preference. |
 | **Engine-aware playback controls** | Seeking, playback position, chapters, segment actions, and subtitle selection are available through the active engine. |
-| **Media3 audio compatibility** | Media3 playback includes the FFmpeg audio extension for additional audio-format compatibility where supported by the device. |
+| **Media3 audio compatibility** | Media3 audio playback uses the platform-supported decoders; compatible formats vary by device. |
 | **Media3 dual subtitles** | Selectable dialogue and sign subtitle tracks can render together as layered subtitle tracks. |
 | **Media3 chapters and skippable segments** | Media3 exposes chapter-aware timeline information and playable segment actions such as intro, recap, outro, and credits skipping. |
 | **Playback information** | Statistics and decoder controls show the active engine and available output details when reported by the platform. |
@@ -430,12 +430,12 @@ git push origin v1.0.1-preview.1
 
 ## Acknowledgments
 
-Mpv∞ is maintained by **ZHINFINITY** and follows the same open-source lineage model as mpvRx: it is an independent modified Android player based on the open-source **[mpvRx](https://github.com/Riteshp2001/mpvRx)** project, with the earlier **[mpvExtended / mpvEx](https://github.com/marlboro-advance/mpvEx)** and **[mpv-android](https://github.com/mpv-android)** projects acknowledged as part of that lineage. Mpv∞-specific branding, Native Media3 integration, engine routing, fallback handling, controls, themes, and other changes are maintained separately. Mpv∞ is not affiliated with or endorsed by the upstream maintainers.
+Mpv∞ is maintained by **ZHINFINITY** and is an independent Android player in the **[mpvRx](https://github.com/Riteshp2001/mpvRx)** project lineage. The next-version license covers mpvRx-derived portions only to the extent that the relevant rights holders authorized their relicensing. The earlier **[mpvExtended / mpvEx](https://github.com/marlboro-advance/mpvEx)** and **[mpv-android](https://github.com/mpv-android)** projects are acknowledged as part of the lineage; their code and other third-party materials remain subject to their respective rights and license notices. Mpv∞-specific branding, Native Media3 integration, engine routing, fallback handling, controls, themes, and other changes are maintained separately. Mpv∞ is not affiliated with or endorsed by the upstream maintainers.
 
 - [mpv-android](https://github.com/mpv-android)
 - [AndroidX Media3](https://developer.android.com/jetpack/androidx/releases/media3) for the Native/Media3 playback, audio, UI, and effects stack (**Apache-2.0**).
-- [Jellyfin Media3 FFmpeg Decoder](https://github.com/jellyfin/jellyfin-androidx-media) through `org.jellyfin.media3:media3-ffmpeg-decoder:1.9.0+1` for additional codec and multichannel audio support (**GPL-3.0**).
-- **Device-dependent 7.1 audio support** is Mpv∞ integration built on the Media3 audio pipeline, the Jellyfin FFmpeg decoder where selected, and codecs exposed by the user’s Android device; it is not a separate third-party library or a universal device-support guarantee.
+- [QuickJS-KT](https://github.com/dokar3/quickjs-kt) for Kotlin bindings to the embedded JavaScript engine (**Apache-2.0**; bundled QuickJS and c-vector retain their MIT notices).
+- **Device-dependent multichannel audio support** depends on the selected playback engine and codecs available to that engine/device; it is not a universal device-support guarantee.
 - [mpvExtended / mpvEx](https://github.com/marlboro-advance/mpvEx)
 - [mpvKt](https://github.com/abdallahmehiz/mpvKt)
 - [PixelPlayer](https://github.com/theovilardo/PixelPlayer)
@@ -448,13 +448,17 @@ Mpv∞ is maintained by **ZHINFINITY** and follows the same open-source lineage 
 - [Anime4K](https://github.com/bloc97/Anime4K)
 - [**SunnyVishnu3**](https://github.com/SunnyVishnu3) for the `yt-dlp` native integration and SDK 29+ bypass logic.
 
-Individual source files and bundled assets may contain their own copyright and license notices; those notices remain part of the distributed source tree.
+Individual source files, dependencies, and bundled assets may carry their own copyright and license notices. Those notices and terms remain in force and must be retained; the Mpv∞ license does not replace third-party licenses. Permissively licensed components remain available under their respective terms, including any reuse rights those terms grant.
 
 ---
 
 ## License
 
-Distributed under the **GNU Affero General Public License v3.0 or later (AGPL-3.0-or-later)**. See [`LICENSE`](LICENSE) for the license and attribution information. Mpv∞-specific code, branding, and modifications are maintained by **ZHINFINITY**, while upstream copyrights remain with their respective holders.
+For the unreleased next version, Mpv∞ Covered Code identified by `SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0` is licensed under the **[PolyForm Noncommercial License 1.0.0](LICENSE)**. This is a noncommercial source-available license, not an OSI-approved open-source license. Uses outside the purposes permitted by the license require separate permission from the applicable rights holder.
+
+The scope is limited to Mpv∞ code controlled by **ZHINFINITY** and mpvRx-derived material whose rights holders have authorized relicensing for this version. Third-party components are excluded and remain independently governed by their own license texts and notices, including the files in [`THIRD_PARTY_LICENSES/`](THIRD_PARTY_LICENSES/) and component-specific license directories. This preserves the original terms and reuse rights of MIT-, BSD-, and Apache-licensed components.
+
+This change is prospective only. Previously published releases distributed under **AGPL-3.0-or-later** remain under their original terms; see [`HISTORICAL-LICENSE-AGPL-3.0-or-later.txt`](HISTORICAL-LICENSE-AGPL-3.0-or-later.txt) for the preserved license text.
 
 ---
 

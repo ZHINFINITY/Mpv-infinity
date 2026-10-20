@@ -1,10 +1,8 @@
 /*
- * SPDX-License-Identifier: AGPL-3.0-or-later
+ * SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
  *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Affero General Public License as published
- * by the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * Copyright (c) 2026 ZHINFINITY. Mpv∞ Covered Code.
+ * See LICENSE for terms.
  */
 
 package app.infinity.mpvz.ui.editor
@@ -324,7 +322,7 @@ object MpvHelpData {
       option("replaygain-preamp", "<dB>", "Pre-amplification for ReplayGain (default 0)."),
       option("replaygain-clip", "<yes|no>", "Prevent clipping due to ReplayGain (default: yes)."),
       option("replaygain-fallback", "<dB>", "Fallback gain if no ReplayGain data (default 0)."),
-      option("af", "<filter-list>", "Audio filter chain (e.g. af=rubberband, af=lavrresample)."),
+      option("af", "<filter-list>", "Audio filter chain (e.g. af=lavrresample, af=volume)."),
       option(
         "audio-spdif",
         "<codec-list>",

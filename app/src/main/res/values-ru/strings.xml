@@ -1284,7 +1284,7 @@
   <string name="ui_mpv_infinity_has_always_required_storage_access_permission_as_it_s_esse">Mpv∞ всегда требовался доступ к хранилищу, поскольку он необходим для поиска всех медиафайлов и субтитров на устройстве, включая неподдерживаемые системой.</string>
   <string name="ui_however_due_to_a_change_in_security_policy_apps_built_for_androi">Однако из-за изменения политики безопасности приложения для Android 11 и новее теперь требуют дополнительного разрешения для сохранения такого доступа.</string>
   <string name="ui_please_know_that_this_permission_is_only_used_for_the_auto_disco">Это разрешение используется только для автоматического поиска медиафайлов и субтитров на устройстве и не позволяет нам получать доступ к личным данным других приложений.</string>
-  <string name="ui_mpv_infinity_is_an_open_source_project_you_can_review_the_source_code_a">Mpv∞ — проект с открытым исходным кодом. Вы можете проверить код и использование разрешений в нашем репозитории GitHub:</string>
+  <string name="ui_mpv_infinity_is_an_open_source_project_you_can_review_the_source_code_a">Mpv∞ — проект с доступным исходным кодом. Вы можете проверить код и использование разрешений в нашем репозитории GitHub:</string>
   <string name="ui_be_rest_assured_your_privacy_is_our_utmost_priority_and_we_neith">Будьте уверены: конфиденциальность — наш главный приоритет. Мы не используем ваши файлы в других целях, не передаём и не храним их на серверах. Они остаются на устройстве.</string>
   <string name="ui_app_permissions">Разрешения приложения</string>
   <string name="ui_permissions_setup_subtitle">Настройте разрешения для работы основных функций и воспроизведения медиа.</string>
@@ -1547,7 +1547,7 @@
   <string name="oss_libtorrent4j_description">Java-привязки и нативные библиотеки для потоковой передачи BitTorrent.</string>
   <string name="oss_markdown_renderer_description">Отображает Markdown как нативное содержимое Compose с Material 3.</string>
   <string name="oss_mpv_description">Нативный движок воспроизведения аудио, видео и субтитров.</string>
-  <string name="oss_mpvlib_android_description">Android-обёртка libmpv для сборок Standard, No-Vulkan и FongMi.</string>
+  <string name="oss_mpvlib_android_description">Android-обёртка libmpv для сборок Standard и No-Vulkan.</string>
   <string name="oss_quickjs_ng_description">Встроенный движок JavaScript для решения задач yt-dlp.</string>
   <string name="filter_preset_none">Нет</string>
   <string name="filter_preset_vivid">Яркий</string>

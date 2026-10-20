@@ -1,10 +1,8 @@
 /*
- * SPDX-License-Identifier: AGPL-3.0-or-later
+ * SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
  *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Affero General Public License as published
- * by the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * Copyright (c) 2026 ZHINFINITY. Mpv∞ Covered Code.
+ * See LICENSE for terms.
  */
 
 package app.infinity.mpvz.ui.preferences
@@ -1053,18 +1051,60 @@ private val OPEN_SOURCE_LIBRARIES =
       url = "https://github.com/mikepenz/multiplatform-markdown-renderer",
     ),
     OpenSourceLibrary(
+      name = "FFmpeg (MPV runtime)",
+      artifact = "FFmpeg n9.0 libraries in mpvlib.aar and mpvlib-no-vulkun.aar",
+      descriptionRes = R.string.oss_ffmpeg_mpv_runtime_description,
+      license = "LGPL-3.0-or-later",
+      url = "https://ffmpeg.org/legal.html",
+    ),
+    OpenSourceLibrary(
+      name = "FFmpeg tools",
+      artifact = "app/src/main/jniLibs/arm64-v8a/libffmpeg_exec.so, libffprobe_exec.so",
+      descriptionRes = R.string.oss_ffmpeg_cli_description,
+      license = "LGPL-2.1-or-later",
+      url = "https://github.com/hzw1199/Android-FFmpeg-Prebuilt",
+    ),
+    OpenSourceLibrary(
       name = "mpv",
       artifact = "libmpv",
       descriptionRes = R.string.oss_mpv_description,
-      license = "GPL-2.0-or-later / LGPL-2.1-or-later",
+      license = "LGPL-2.1-or-later",
       url = "https://github.com/mpv-player/mpv",
     ),
     OpenSourceLibrary(
+      name = "libplacebo",
+      artifact = "statically linked by libmpv",
+      descriptionRes = R.string.oss_libplacebo_description,
+      license = "LGPL-2.1-or-later",
+      url = "https://github.com/haasn/libplacebo",
+    ),
+    OpenSourceLibrary(
+      name = "Mbed TLS",
+      artifact = "mbedTLS 3.6.7 used by FFmpeg",
+      descriptionRes = R.string.oss_mbedtls_description,
+      license = "Apache-2.0 OR GPL-2.0-or-later (Apache-2.0 selected)",
+      url = "https://github.com/Mbed-TLS/mbedtls",
+    ),
+    OpenSourceLibrary(
       name = "mpvlib Android",
-      artifact = "mpvlib.aar / mpvlib-no-vulkun.aar / mpvlib-fongmi.aar",
+      artifact = "mpvlib.aar / mpvlib-no-vulkun.aar",
       descriptionRes = R.string.oss_mpvlib_android_description,
       license = "MIT",
-      url = "https://github.com/ZHINFINITY/Mpv-infinity",
+      url = "https://github.com/Riteshp2001/mpvlibAndroid",
+    ),
+    OpenSourceLibrary(
+      name = "MPV Anime Build track selector",
+      artifact = "TrackSelector.kt (Kotlin adaptation)",
+      descriptionRes = R.string.oss_mpv_anime_track_selector_description,
+      license = "MIT",
+      url = "https://github.com/Chinna95P/mpv-anime-build",
+    ),
+    OpenSourceLibrary(
+      name = "Cuboid Warptunnel Audio Visualizer",
+      artifact = "CuboidComposable.kt (Android adaptation)",
+      descriptionRes = R.string.oss_cuboid_visualizer_description,
+      license = "MIT",
+      url = "https://codepen.io/NiklasKnaack/pen/WyWqja",
     ),
     OpenSourceLibrary(
       name = "QuickJS-NG",
@@ -1072,5 +1112,26 @@ private val OPEN_SOURCE_LIBRARIES =
       descriptionRes = R.string.oss_quickjs_ng_description,
       license = "MIT",
       url = "https://github.com/quickjs-ng/quickjs",
+    ),
+    OpenSourceLibrary(
+      name = "QuickJS-KT",
+      artifact = "io.github.dokar3:quickjs-kt-android:1.0.5",
+      descriptionRes = R.string.oss_quickjs_kt_description,
+      license = "Apache-2.0",
+      url = "https://github.com/dokar3/quickjs-kt",
+    ),
+    OpenSourceLibrary(
+      name = "QuickJS",
+      artifact = "libquickjs.so bundled by quickjs-kt-android",
+      descriptionRes = R.string.oss_quickjs_kt_description,
+      license = "MIT",
+      url = "https://bellard.org/quickjs/",
+    ),
+    OpenSourceLibrary(
+      name = "c-vector",
+      artifact = "quickjs-kt-android native dependency",
+      descriptionRes = R.string.oss_c_vector_description,
+      license = "MIT",
+      url = "https://github.com/eteran/c-vector",
     ),
   ).sortedBy { library -> library.name.lowercase(Locale.ROOT) }

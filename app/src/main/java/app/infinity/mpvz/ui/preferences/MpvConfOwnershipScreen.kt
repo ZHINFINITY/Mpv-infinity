@@ -1,10 +1,8 @@
 /*
- * SPDX-License-Identifier: AGPL-3.0-or-later
+ * SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
  *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Affero General Public License as published
- * by the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * Copyright (c) 2026 ZHINFINITY. Mpv∞ Covered Code.
+ * See LICENSE for terms.
  */
 
 package app.infinity.mpvz.ui.preferences
@@ -321,6 +319,7 @@ internal fun hasMeaningfulMpvConfig(content: String): Boolean =
 internal fun MpvConfigOverride.titleRes(): Int =
   when (this) {
     MpvConfigOverride.RENDERER -> R.string.pref_mpv_conf_override_renderer
+    MpvConfigOverride.FLOW_COMPUTE -> R.string.pref_mpv_conf_override_flow_compute
     MpvConfigOverride.DECODER -> R.string.pref_mpv_conf_override_decoder
     MpvConfigOverride.HDR_AND_SHADERS -> R.string.pref_mpv_conf_override_hdr_shaders
     MpvConfigOverride.VIDEO_FILTERS -> R.string.pref_mpv_conf_override_video_filters
@@ -339,6 +338,7 @@ internal fun MpvConfigOverride.titleRes(): Int =
 internal fun MpvConfigOverride.summaryRes(): Int =
   when (this) {
     MpvConfigOverride.RENDERER -> R.string.pref_mpv_conf_override_renderer_summary
+    MpvConfigOverride.FLOW_COMPUTE -> R.string.pref_mpv_conf_override_flow_compute_summary
     MpvConfigOverride.DECODER -> R.string.pref_mpv_conf_override_decoder_summary
     MpvConfigOverride.HDR_AND_SHADERS -> R.string.pref_mpv_conf_override_hdr_shaders_summary
     MpvConfigOverride.VIDEO_FILTERS -> R.string.pref_mpv_conf_override_video_filters_summary

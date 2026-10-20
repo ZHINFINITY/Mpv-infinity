@@ -1,0 +1,1659 @@
+diff --git a/video/out/vo_gpu_next.c b/video/out/vo_gpu_next.c
+index bd3d1aa..75ffbb1 100644
+--- a/video/out/vo_gpu_next.c
++++ b/video/out/vo_gpu_next.c
+@@ -21,0 +22,5 @@
++#include <math.h>
++#include <limits.h>
++#include <stdio.h>
++#include <string.h>
++#include <libplacebo/vulkan.h>
+@@ -52,0 +56,4 @@
++#include "mpvflow_gpu.h"
++#include "mpvflow_capture_io.h"
++#include "mpvflow_rate_limit.h"
++#include "mpvflow_synthesis_scale.h"
+@@ -157,0 +163,77 @@ struct priv {
++    // MPVFLOW_GPU_INTEGRATION
++    MPVFlowGPUContext *flow_gpu;
++    MPVFlowGPUPair *flow_pair;
++    bool flow_swapchain_diagnostics_enabled;
++    bool flow_wsi_created_logged;
++    uint64_t flow_pair_ids[2];
++    pl_fmt flow_input_fmt;
++    pl_fmt flow_rgba16f_fmt;
++    bool flow_init_logged;
++    bool flow_active_logged;
++    bool flow_preacquire_logged;
++    bool flow_init_attempted;
++    bool flow_init_retry_pending;
++    unsigned int flow_init_retry_count;
++    int64_t flow_init_retry_after_ns;
++    unsigned int flow_bypass_logged_mask;
++    bool flow_queue_state_logged;
++    const char *flow_queue_last_state;
++    int flow_max_dimension;
++    int flow_synthesis_max_dimension;
++    int flow_compute_api;
++    bool flow_pending_synthesized;
++    bool flow_pending_display_synced;
++    bool flow_pending_rate_limiter_eligible;
++    uint64_t flow_pending_rate_limiter_timestamp_ns;
++    struct mpvflow_rate_limiter flow_rate_limiter;
++    pl_tex flow_cached_synthesis;
++    struct mpvflow_synthesis_identity flow_cached_synthesis_identity;
++    struct pl_color_space flow_cached_synthesis_color;
++    float flow_cached_synthesis_par;
++    int flow_cached_synthesis_policy;
++    uint64_t flow_cadence_last_flip_wait_ns;
++    uint64_t flow_cadence_synthesis_rate_limited;
++    uint64_t flow_cadence_previous_present_budget_skips;
++    int flow_geometry_w;
++    int flow_geometry_h;
++    int64_t flow_timing_last_report_ns;
++    int flow_pending_source_batch;
++    int flow_pending_mix_frames;
++    int64_t flow_cadence_window_start_ns;
++    uint64_t flow_cadence_submitted;
++    uint64_t flow_cadence_synthesized;
++    uint64_t flow_cadence_source_synced;
++    uint64_t flow_cadence_source_unsynced;
++    uint64_t flow_cadence_empty_batch;
++    uint64_t flow_cadence_temporal_pair;
++    uint64_t flow_cadence_flip_wait_total_ns;
++    uint64_t flow_cadence_flip_wait_max_ns;
++    uint64_t flow_cadence_swap_buffers_total_ns;
++    uint64_t flow_cadence_swap_buffers_max_ns;
++    uint64_t flow_cadence_swap_buffers_samples;
++    uint64_t flow_cadence_acquire_call_total_ns;
++    uint64_t flow_cadence_acquire_call_max_ns;
++    uint64_t flow_cadence_acquire_call_samples;
++    int64_t flow_cadence_last_render_ns;
++    uint64_t flow_cadence_render_attempts;
++    uint64_t flow_cadence_render_pair_callbacks;
++    uint64_t flow_cadence_render_synthesized;
++    uint64_t flow_cadence_render_failures;
++    uint64_t flow_cadence_swap_attempts;
++    uint64_t flow_cadence_swap_failures;
++    uint64_t flow_cadence_frame_repeat_count;
++    uint64_t flow_cadence_render_cpu_total_ns;
++    uint64_t flow_cadence_render_cpu_max_ns;
++    uint64_t flow_cadence_render_cpu_samples;
++    uint64_t flow_cadence_callback_interval_total_ns;
++    uint64_t flow_cadence_callback_interval_max_ns;
++    uint64_t flow_cadence_callback_interval_samples;
++    uint64_t flow_cadence_pair_analysis_attempts;
++    uint64_t flow_cadence_pair_analysis_failures;
++    uint64_t flow_cadence_pair_cache_reuses;
++    char flow_capture_base_dir[PATH_MAX];
++    char flow_capture_session_id[81];
++    bool flow_capture_pending;
++    bool flow_capture_paired;
++    int64_t flow_capture_poll_ns;
++
+@@ -184,0 +257,1 @@ static void update_lut(struct priv *p, struct user_lut *lut);
++static void flow_update_context(struct vo *vo);
+@@ -186,0 +260,9 @@ struct gl_next_opts {
++    bool mpvflow;
++    bool mpvflow_visibility_resolver;
++    bool mpvflow_soft_blend;
++    int mpvflow_max_dimension;
++    int mpvflow_synthesis_max_dimension;
++    int mpvflow_target_fps;
++    int mpvflow_quality;
++    int mpvflow_compute_api;
++    char *mpvflow_diagnostic_control_file;
+@@ -213,0 +294,9 @@ const struct m_sub_options gl_next_conf = {
++        {"mpvflow", OPT_BOOL(mpvflow)},
++        {"mpvflow-visibility-resolver", OPT_BOOL(mpvflow_visibility_resolver)},
++        {"mpvflow-soft-blend", OPT_BOOL(mpvflow_soft_blend)},
++        {"mpvflow-max-dimension", OPT_INT(mpvflow_max_dimension), M_RANGE(8, 640)},
++        {"mpvflow-synthesis-max-dimension", OPT_INT(mpvflow_synthesis_max_dimension), M_RANGE(0, 7680)},
++        {"mpvflow-target-fps", OPT_INT(mpvflow_target_fps), M_RANGE(1, 240)},
++        {"mpvflow-quality", OPT_INT(mpvflow_quality), M_RANGE(0, 100)},
++        {"mpvflow-compute-api", OPT_INT(mpvflow_compute_api), M_RANGE(0, 2)},
++        {"mpvflow-diagnostic-control-file", OPT_STRING(mpvflow_diagnostic_control_file)},
+@@ -239,0 +327,8 @@ const struct m_sub_options gl_next_conf = {
++        .mpvflow_max_dimension = 640,
++        .mpvflow_synthesis_max_dimension = 1920,
++        .mpvflow_target_fps = 60,
++        .mpvflow_quality = 60,
++        .mpvflow_compute_api = MPVFLOW_GPU_COMPUTE_AUTO,
++        .mpvflow_visibility_resolver = false,
++        .mpvflow_soft_blend = false,
++        .mpvflow_diagnostic_control_file = NULL,
+@@ -560,0 +651,11 @@ struct frame_priv {
++    uint64_t frame_id;
++    pl_tex flow_source;
++    pl_tex flow_input;
++    pl_tex flow_analysis_source;
++    bool flow_linear_hdr_source;
++    int flow_cap;
++    int flow_synthesis_cap;
++    int flow_synthesis_w, flow_synthesis_h;
++    int flow_w, flow_h;
++    int flow_source_w, flow_source_h;
++    double pts;
+@@ -569,0 +665,560 @@ struct frame_priv {
++static void flow_release_pair(struct priv *p)
++{
++    if (p->flow_pair)
++        mpvflow_gpu_pair_release(p->flow_gpu, p->flow_pair);
++    p->flow_pair = NULL;
++    p->flow_pair_ids[0] = 0;
++    p->flow_pair_ids[1] = 0;
++    /* The output texture is pair-owned and may be destroyed on release. */
++    p->flow_cached_synthesis = NULL;
++    p->flow_cached_synthesis_identity.valid = false;
++}
++
++static void flow_release_pair_for_frame(struct priv *p, uint64_t frame_id)
++{
++    if (p->flow_pair && (p->flow_pair_ids[0] == frame_id ||
++                         p->flow_pair_ids[1] == frame_id))
++        flow_release_pair(p);
++}
++
++static void flow_update_context(struct vo *vo)
++{
++    struct priv *p = vo->priv;
++    const int requested_dimension = MPCLAMP(p->next_opts->mpvflow_max_dimension, 8, 640);
++    const int requested_compute_api = p->next_opts->mpvflow_compute_api;
++    const int requested_synthesis_max_dimension =
++        p->next_opts->mpvflow_synthesis_max_dimension < 0 ? 0 :
++        p->next_opts->mpvflow_synthesis_max_dimension > 7680 ? 7680 :
++        p->next_opts->mpvflow_synthesis_max_dimension;
++    /* Bound mobile analysis cost by target refresh while preserving the app's
++     * selected performance/quality profile. Acquire and render timings are
++     * measured separately; a blocking acquire is not shader execution time. */
++    const int target_fps = MPCLAMP(p->next_opts->mpvflow_target_fps, 1, 240);
++    const int quality = MPCLAMP(p->next_opts->mpvflow_quality, 0, 100);
++    const int target_dimension_limit = target_fps >= 144 ? 320 :
++        target_fps >= 120 ? 448 : target_fps >= 96 ? 440 : 640;
++    /* The app already maps the performance/quality profile to this dimension. */
++    const int effective_dimension = MPCLAMP(requested_dimension, 8, target_dimension_limit);
++    if (!p->next_opts->mpvflow) {
++        flow_release_pair(p);
++        mpvflow_gpu_destroy(p->flow_gpu);
++        p->flow_gpu = NULL;
++        p->flow_input_fmt = NULL;
++        p->flow_rgba16f_fmt = NULL;
++        p->flow_max_dimension = 0;
++        p->flow_synthesis_max_dimension = 0;
++        p->flow_init_logged = false;
++        p->flow_geometry_w = p->flow_geometry_h = 0;
++        p->flow_timing_last_report_ns = 0;
++        p->flow_active_logged = false;
++        p->flow_preacquire_logged = false;
++        p->flow_init_attempted = false;
++        p->flow_init_retry_pending = false;
++        p->flow_init_retry_count = 0;
++        p->flow_init_retry_after_ns = 0;
++        p->flow_bypass_logged_mask = 0;
++        p->flow_pending_synthesized = false;
++        p->flow_pending_display_synced = false;
++        p->flow_pending_rate_limiter_eligible = false;
++        mpvflow_rate_limiter_reset(&p->flow_rate_limiter);
++        p->flow_cadence_last_flip_wait_ns = 0;
++        p->flow_cadence_synthesis_rate_limited = 0;
++        p->flow_cadence_previous_present_budget_skips = 0;
++        p->flow_pending_source_batch = 0;
++        p->flow_pending_mix_frames = 0;
++        p->flow_cadence_window_start_ns = 0;
++        p->flow_cadence_submitted = 0;
++        p->flow_cadence_synthesized = 0;
++        p->flow_cadence_source_synced = 0;
++        p->flow_cadence_source_unsynced = 0;
++        p->flow_cadence_empty_batch = 0;
++        p->flow_cadence_temporal_pair = 0;
++        p->flow_cadence_flip_wait_total_ns = 0;
++        p->flow_cadence_flip_wait_max_ns = 0;
++        p->flow_cadence_swap_buffers_total_ns = 0;
++        p->flow_cadence_swap_buffers_max_ns = 0;
++        p->flow_cadence_swap_buffers_samples = 0;
++        p->flow_cadence_acquire_call_total_ns = 0;
++        p->flow_cadence_acquire_call_max_ns = 0;
++        p->flow_cadence_acquire_call_samples = 0;
++        p->flow_cadence_last_render_ns = 0;
++        p->flow_cadence_render_attempts = 0;
++        p->flow_cadence_render_pair_callbacks = 0;
++        p->flow_cadence_render_synthesized = 0;
++        p->flow_cadence_render_failures = 0;
++        p->flow_cadence_swap_attempts = 0;
++        p->flow_cadence_swap_failures = 0;
++        p->flow_cadence_frame_repeat_count = 0;
++        p->flow_cadence_render_cpu_total_ns = 0;
++        p->flow_cadence_render_cpu_max_ns = 0;
++        p->flow_cadence_render_cpu_samples = 0;
++        p->flow_cadence_callback_interval_total_ns = 0;
++        p->flow_cadence_callback_interval_max_ns = 0;
++        p->flow_cadence_callback_interval_samples = 0;
++        p->flow_cadence_pair_analysis_attempts = 0;
++        p->flow_cadence_pair_analysis_failures = 0;
++        p->flow_cadence_pair_cache_reuses = 0;
++        return;
++    }
++    if (p->flow_max_dimension != effective_dimension ||
++        p->flow_synthesis_max_dimension != requested_synthesis_max_dimension ||
++        p->flow_compute_api != requested_compute_api) {
++        flow_release_pair(p);
++        mpvflow_gpu_destroy(p->flow_gpu);
++        p->flow_gpu = NULL;
++        p->flow_input_fmt = NULL;
++        p->flow_rgba16f_fmt = NULL;
++        p->flow_max_dimension = effective_dimension;
++        p->flow_synthesis_max_dimension = requested_synthesis_max_dimension;
++        p->flow_compute_api = requested_compute_api;
++        p->flow_init_attempted = false;
++        p->flow_init_retry_pending = false;
++        p->flow_init_retry_count = 0;
++        p->flow_init_retry_after_ns = 0;
++        p->flow_geometry_w = p->flow_geometry_h = 0;
++        p->flow_timing_last_report_ns = 0;
++        p->flow_cadence_last_flip_wait_ns = 0;
++        p->flow_cadence_previous_present_budget_skips = 0;
++        p->flow_init_logged = false;
++        p->flow_active_logged = false;
++        p->flow_preacquire_logged = false;
++        p->flow_bypass_logged_mask = 0;
++        p->flow_cadence_window_start_ns = 0;
++        p->flow_cadence_acquire_call_total_ns = 0;
++        p->flow_cadence_acquire_call_max_ns = 0;
++        p->flow_cadence_acquire_call_samples = 0;
++        p->flow_cadence_swap_buffers_total_ns = 0;
++        p->flow_cadence_swap_buffers_max_ns = 0;
++        p->flow_cadence_swap_buffers_samples = 0;
++        p->flow_cadence_last_render_ns = 0;
++        p->flow_cadence_render_attempts = 0;
++        p->flow_cadence_render_pair_callbacks = 0;
++        p->flow_cadence_render_synthesized = 0;
++        p->flow_cadence_render_failures = 0;
++        p->flow_cadence_swap_attempts = 0;
++        p->flow_cadence_swap_failures = 0;
++        p->flow_cadence_frame_repeat_count = 0;
++        p->flow_cadence_render_cpu_total_ns = 0;
++        p->flow_cadence_render_cpu_max_ns = 0;
++        p->flow_cadence_render_cpu_samples = 0;
++        p->flow_cadence_callback_interval_total_ns = 0;
++        p->flow_cadence_callback_interval_max_ns = 0;
++        p->flow_cadence_callback_interval_samples = 0;
++        p->flow_cadence_pair_analysis_attempts = 0;
++        p->flow_cadence_pair_analysis_failures = 0;
++        p->flow_cadence_pair_cache_reuses = 0;
++    }
++    if (p->flow_gpu)
++        return;
++    if (p->flow_init_attempted) {
++        if (!p->flow_init_retry_pending ||
++            mp_time_ns() < p->flow_init_retry_after_ns)
++            return;
++        p->flow_init_attempted = false;
++        p->flow_init_retry_pending = false;
++    }
++    if (!p->gpu) {
++        if (!p->flow_init_logged) {
++            MP_WARN(vo, "MPVFLOW_DIAGNOSTIC event=renderer_init state=unavailable "
++                    "backend=unavailable target_fps=%d reason=gpu_context_missing cpu_fallback=no\n",
++                    p->next_opts->mpvflow_target_fps);
++            p->flow_init_logged = true;
++        }
++        return;
++    }
++    p->flow_init_attempted = true;
++
++    struct MPVFlowGPUConfig config = {
++        .compute_api = (enum MPVFlowGPUComputeAPI) p->next_opts->mpvflow_compute_api,
++        .diagnostic_engine = "mpv",
++        .max_dimension = effective_dimension,
++        .search_radius = target_fps >= 144 ? (quality >= 75 ? 4 : 3) :
++            target_fps >= 120 ? (quality >= 75 ? 5 : 4) :
++            target_fps >= 96 ? (quality >= 60 ? 6 : 5) : (quality >= 60 ? 8 : 6),
++    };
++    enum MPVFlowGPUResult status = MPVFLOW_GPU_INVALID;
++    struct MPVFlowGPUCreateDiagnostics create_diagnostics = {0};
++    MPVFlowGPUContext *ctx = mpvflow_gpu_create(p->gpu, &config, &status,
++                                                &create_diagnostics);
++    MP_INFO(vo, "MPVFLOW_DIAGNOSTIC event=optical_flow_backend engine=mpv "
++            "state=%s attempted=%d reason=%s qcom2_adapter_ready=%d "
++            "qcom2_luma_pass_ready=%d qcom2_seed_reason=%s\n",
++            create_diagnostics.optical_flow_ready ? "ready" :
++                create_diagnostics.optical_flow_attempted ? "disabled" : "not_attempted",
++            create_diagnostics.optical_flow_attempted,
++            create_diagnostics.optical_flow_reason[0]
++                ? create_diagnostics.optical_flow_reason : "unknown",
++            create_diagnostics.qcom_seed_adapter_ready,
++            create_diagnostics.qcom_seed_luma_pass_ready,
++            create_diagnostics.qcom_seed_reason[0]
++                ? create_diagnostics.qcom_seed_reason : "unknown");
++    pl_fmt input_fmt = pl_find_fmt(p->gpu, PL_FMT_UNORM, 4, 8, 8,
++                                   PL_FMT_CAP_SAMPLEABLE | PL_FMT_CAP_RENDERABLE);
++    pl_fmt rgba16f_fmt = pl_find_named_fmt(p->gpu, "rgba16f");
++    const unsigned int rgba16f_required_caps = PL_FMT_CAP_SAMPLEABLE | PL_FMT_CAP_RENDERABLE |
++        PL_FMT_CAP_STORABLE | PL_FMT_CAP_LINEAR;
++    const bool rgba16f_format_ready = rgba16f_fmt && rgba16f_fmt->glsl_format &&
++        !strcmp(rgba16f_fmt->glsl_format, "rgba16f") &&
++        (rgba16f_fmt->caps & rgba16f_required_caps) == rgba16f_required_caps;
++    if (!ctx || !input_fmt) {
++        mpvflow_gpu_destroy(ctx);
++        const char *backend = p->gpu->glsl.vulkan ? "vulkan" : "non_vulkan";
++        const char *reason = !ctx ? "gpu_compute_initialization_failed" : "input_rgba8_format_unavailable";
++        const char *capability_failure =
++            !p->gpu->glsl.compute ? "glsl_compute" :
++            !p->gpu->glsl.vulkan ? "glsl_vulkan" :
++            p->gpu->glsl.version < 450 ? "glsl_version" :
++            p->gpu->limits.max_pushc_size < 20 ? "max_pushc_size" : "none";
++        unsigned int retry_delay_ms = 0;
++        if (!ctx && requested_compute_api == MPVFLOW_GPU_COMPUTE_OPENCL &&
++            create_diagnostics.stage &&
++            !strcmp(create_diagnostics.stage, "opencl_initialization") &&
++            p->flow_init_retry_count < 2) {
++            const int64_t retry_now_ns = mp_time_ns();
++            if (retry_now_ns > 0) {
++                p->flow_init_retry_count++;
++                retry_delay_ms = p->flow_init_retry_count == 1 ? 5000 : 15000;
++                p->flow_init_retry_after_ns = retry_now_ns +
++                    (int64_t) retry_delay_ms * 1000000LL;
++                p->flow_init_retry_pending = true;
++            }
++        }
++        MP_WARN(vo, "MPVFLOW_DIAGNOSTIC event=renderer_init state=unavailable backend=%s "
++                "target_fps=%d reason=%s status=%d input_rgba8=%d cpu_fallback=no "
++                "capability_failure=%s glsl_compute=%d glsl_vulkan=%d glsl_version=%d "
++                "max_pushc_size=%zu required_pushc_size=%zu max_tex_2d_dim=%u "
++                "max_group_threads=%u max_group_size=%ux%ux%u compute_queues=%u "
++                "create_stage=%s failed_pass_mask=0x%x rgba16f_found=%d rgba16f_caps=0x%x "
++                "rgba8_found=%d rgba8_caps=0x%x input_fmt=%s input_fmt_caps=0x%x "
++                "retry_scheduled=%d retry_count=%u retry_delay_ms=%u\n",
++                backend, p->next_opts->mpvflow_target_fps, reason, status, !!input_fmt,
++                capability_failure, p->gpu->glsl.compute, p->gpu->glsl.vulkan,
++                p->gpu->glsl.version, p->gpu->limits.max_pushc_size,
++                create_diagnostics.required_pushc_size,
++                p->gpu->limits.max_tex_2d_dim, p->gpu->glsl.max_group_threads,
++                p->gpu->glsl.max_group_size[0], p->gpu->glsl.max_group_size[1],
++                p->gpu->glsl.max_group_size[2], p->gpu->limits.compute_queues,
++                create_diagnostics.stage ? create_diagnostics.stage : "unknown",
++                create_diagnostics.failed_pass_mask, create_diagnostics.rgba16f_found,
++                create_diagnostics.rgba16f_caps, create_diagnostics.rgba8_found,
++                create_diagnostics.rgba8_caps, input_fmt && input_fmt->name ? input_fmt->name : "missing",
++                input_fmt ? input_fmt->caps : 0, p->flow_init_retry_pending,
++                p->flow_init_retry_count, retry_delay_ms);
++        p->flow_init_logged = true;
++        return;
++    }
++
++    p->flow_gpu = ctx;
++    p->flow_input_fmt = input_fmt;
++    p->flow_rgba16f_fmt = rgba16f_format_ready &&
++        mpvflow_gpu_rgba16f_synthesis_supported(ctx) ? rgba16f_fmt : NULL;
++    p->flow_init_retry_pending = false;
++    p->flow_init_retry_count = 0;
++    p->flow_init_retry_after_ns = 0;
++    p->flow_init_logged = true;
++    MP_INFO(vo, "MPVFLOW_DIAGNOSTIC event=renderer_init state=initialized backend=%s "
++            "target_fps=%d quality=%d requested_compute_api=%d reason=ready status=0 max_dimension=%d requested_max_dimension=%d search_radius=%d "
++            "rgba16f_synthesis_supported=%d rgba16f_format=%s rgba16f_format_caps=0x%x "
++            "cpu_filter=no synthesized_output_cpu_readback=no\n",
++            mpvflow_gpu_get_compute_api_name(ctx), p->next_opts->mpvflow_target_fps,
++            quality, config.compute_api, config.max_dimension, requested_dimension,
++            config.search_radius, !!p->flow_rgba16f_fmt,
++            p->flow_rgba16f_fmt ? p->flow_rgba16f_fmt->name : "unavailable",
++            rgba16f_fmt ? rgba16f_fmt->caps : 0);
++}
++
++static void flow_report_gpu_timing(struct vo *vo)
++{
++    struct priv *p = vo->priv;
++    if (!p->flow_gpu)
++        return;
++    const int64_t now_ns = mp_time_ns();
++    if (now_ns <= 0)
++        return;
++    if (!p->flow_timing_last_report_ns) {
++        p->flow_timing_last_report_ns = now_ns;
++        return;
++    }
++    if (now_ns - p->flow_timing_last_report_ns < 1000000000LL)
++        return;
++    p->flow_timing_last_report_ns = now_ns;
++
++    struct MPVFlowGPUTimingStats stats = {0};
++    mpvflow_gpu_get_timing_stats(p->flow_gpu, &stats);
++    struct MPVFlowGPUQcomDiagnostics qcom = {0};
++    mpvflow_gpu_get_qcom_diagnostics(p->flow_gpu, &qcom);
++    MP_INFO(vo, "MPVFLOW_DIAGNOSTIC component=mpvflow event=qcom_runtime "
++            "engine=mpv state=%s adapter_ready=%d luma_pass_ready=%d "
++            "pair_attempts=%llu dispatches=%llu fallbacks=%llu reason=%s\n",
++            qcom.state, qcom.adapter_ready, qcom.luma_pass_ready,
++            (unsigned long long) qcom.pair_attempts,
++            (unsigned long long) qcom.dispatches,
++            (unsigned long long) qcom.fallbacks, qcom.reason);
++    static const char *const names[MPVFLOW_GPU_STAGE_COUNT] = {
++        "preprocess", "analysis", "motion_fine", "motion_middle",
++        "motion_coarse", "synthesis",
++    };
++    for (uint32_t i = 0; i < stats.stage_count && i < MPVFLOW_GPU_STAGE_COUNT; i++) {
++        const struct MPVFlowGPUStageTiming *stage = &stats.stages[i];
++        const uint64_t unresolved = stage->dispatches > stage->completed_samples
++            ? stage->dispatches - stage->completed_samples : 0;
++        const double average_us = stage->completed_samples
++            ? (double) stage->total_ns / stage->completed_samples / 1000.0 : 0.0;
++        const char *result_status = !stats.compute_timestamps_supported
++            ? "unsupported_timestamp_capability" :
++            !stage->timer_created ? "unsupported_libplacebo_timer" :
++            !stage->completed_samples ? (stage->dispatches ? "pending_or_dropped" : "awaiting_dispatch") :
++            "ready";
++        MP_INFO(vo, "MPVFLOW_DIAGNOSTIC component=mpvflow event=gpu_timing api=Vulkan "
++                "timer_source=libplacebo_timestamp stage=%s result_status=%s "
++                "timing_scope=libplacebo_vulkan_passes opencl_queue_timing=included_by_host_wait_only "
++                "flow_compute_api=%s "
++                "timestamp_supported=%d compute_queue_family=%u queue_timestamp_valid_bits=%u "
++                "timestamp_period_ns=%.6f timestamp_compute_and_graphics=%d timer_created=%d "
++                "dispatches_total=%llu completed_total=%llu unresolved_dispatches_total=%llu "
++                "average_us=%.2f maximum_us=%.2f sample_scope=lifetime poll=nonblocking\n",
++                names[i], result_status, mpvflow_gpu_get_compute_api_name(p->flow_gpu),
++                stats.compute_timestamps_supported,
++                stats.compute_queue_family, stats.compute_timestamp_valid_bits,
++                stats.timestamp_period_ns, stats.timestamp_compute_and_graphics,
++                stage->timer_created, (unsigned long long) stage->dispatches,
++                (unsigned long long) stage->completed_samples, (unsigned long long) unresolved,
++                average_us, (double) stage->maximum_ns / 1000.0);
++    }
++}
++
++static void flow_log_passthrough(struct vo *vo, const char *reason, int status)
++{
++    struct priv *p = vo->priv;
++    unsigned int reason_class =
++        !strcmp(reason, "no_temporal_pair") ? 1u :
++        !strcmp(reason, "gpu_context_unavailable") ? 2u :
++        !strcmp(reason, "no_source_frame") ? 4u : 8u;
++    if (p->flow_bypass_logged_mask & reason_class)
++        return;
++    p->flow_bypass_logged_mask |= reason_class;
++    const char *backend = p->flow_gpu ? mpvflow_gpu_get_compute_api_name(p->flow_gpu) :
++        (p->gpu ? (p->gpu->glsl.vulkan ? "vulkan" : "non_vulkan") : "unavailable");
++    MP_INFO(vo, "MPVFLOW_DIAGNOSTIC event=output state=passthrough renderer_api=vulkan compute_api=%s "
++            "target_fps=%d reason=%s status=%d cpu_fallback=no\n",
++            backend, p->next_opts->mpvflow_target_fps, reason, status);
++}
++
++static struct pl_rect2df apply_source_crop(struct pl_frame *frame,
++                                           struct mp_rect crop,
++                                           int width, int height,
++                                           const struct frame_priv *fp);
++
++static bool flow_prepare_input(struct vo *vo, struct pl_frame *frame,
++                               struct mp_image *mpi, struct frame_priv *fp)
++{
++    struct priv *p = vo->priv;
++    const struct gl_video_opts *opts = p->opts_cache->opts;
++    const bool hdr_input = pl_color_transfer_is_hdr(frame->color.transfer);
++    const bool high_precision_input = hdr_input || frame->repr.bits.color_depth > 8;
++    if (!p->next_opts->mpvflow || !p->flow_gpu || !p->flow_input_fmt)
++        return false;
++    if (fp->flow_input && fp->flow_source && fp->flow_cap == p->flow_max_dimension &&
++        fp->flow_synthesis_cap == p->flow_synthesis_max_dimension &&
++        ((hdr_input && fp->flow_analysis_source) ||
++         (!hdr_input && !fp->flow_analysis_source)))
++        return true;
++    if (fp->flow_source)
++        pl_tex_destroy(p->gpu, &fp->flow_source);
++    if (fp->flow_input)
++        pl_tex_destroy(p->gpu, &fp->flow_input);
++    if (fp->flow_analysis_source)
++        pl_tex_destroy(p->gpu, &fp->flow_analysis_source);
++    fp->flow_w = fp->flow_h = 0;
++    fp->flow_linear_hdr_source = false;
++    fp->flow_cap = 0;
++    fp->flow_synthesis_cap = 0;
++    fp->flow_synthesis_w = fp->flow_synthesis_h = 0;
++
++    const char *reason = NULL;
++    if (frame->rotation != PL_ROTATION_0)
++        reason = "rotated_frame";
++    else if (frame->repr.dovi || frame->enhancement_layer)
++        reason = "dolby_vision_layer";
++    else if (high_precision_input && !p->flow_rgba16f_fmt)
++        reason = "high_precision_rgba16f_synthesis_unavailable";
++    else if (hdr_input && frame->color.primaries == PL_COLOR_PRIM_UNKNOWN)
++        reason = "hdr_unknown_primaries";
++    else if (!hdr_input && frame->color.transfer == PL_COLOR_TRC_UNKNOWN)
++        reason = "unknown_transfer";
++    else if (frame->icc || frame->profile.len)
++        reason = "icc_profile";
++    else if (mpi->film_grain)
++        reason = "film_grain";
++    else if (mpi->fields & MP_IMGFIELD_INTERLACED)
++        reason = "interlaced";
++    else if (opts->blend_subs)
++        reason = "blended_subtitles";
++
++    const int source_w = mpi->w;
++    const int source_h = mpi->h;
++    if (!reason && (source_w < 8 || source_h < 8))
++        reason = "dimensions_below_block_size";
++    if (reason) {
++        MP_DBG(vo, "MPVFLOW_DIAGNOSTIC component=gpu event=bypass reason=%s\n", reason);
++        return false;
++    }
++
++    const struct mpvflow_synthesis_size synthesis_size =
++        mpvflow_synthesis_size_for(source_w, source_h,
++            p->next_opts->mpvflow_synthesis_max_dimension);
++    pl_fmt source_fmt = high_precision_input ? p->flow_rgba16f_fmt : p->flow_input_fmt;
++    pl_tex source_texture = pl_tex_create(p->gpu, pl_tex_params(
++        .w = synthesis_size.width,
++        .h = synthesis_size.height,
++        .d = 0,
++        .format = source_fmt,
++        .sampleable = true,
++        .renderable = true,
++    ));
++    if (!source_texture) {
++        MP_DBG(vo, "MPVFLOW_DIAGNOSTIC component=gpu event=bypass reason=synthesis_source_allocation "
++               "source=%dx%d synthesis=%dx%d format=%s\n", source_w, source_h,
++               synthesis_size.width, synthesis_size.height,
++               source_fmt ? source_fmt->name : "missing");
++        return false;
++    }
++
++    struct pl_color_space source_color = frame->color;
++    if (hdr_input)
++        source_color.transfer = PL_COLOR_TRC_LINEAR;
++    struct pl_frame source_target = {
++        .repr = pl_color_repr_rgb,
++        .color = source_color,
++        .pixel_aspect_ratio = frame->pixel_aspect_ratio,
++        .num_planes = 1,
++        .planes[0] = {
++            .texture = source_texture,
++            .components = 4,
++            .component_mapping = {0, 1, 2, 3},
++        },
++    };
++    // Keep timed overlays out of motion/color sources; composite them once after synthesis.
++    struct pl_frame source_frame = *frame;
++    source_frame.overlays = NULL;
++    source_frame.num_overlays = 0;
++    // Exclude decoder padding/cropped edges from both motion analysis and synthesis.
++    apply_source_crop(&source_frame, p->src, vo->params->w, vo->params->h, fp);
++    struct pl_render_params source_copy_params = pl_render_default_params;
++    source_copy_params.upscaler = &pl_filter_bilinear;
++    source_copy_params.downscaler = &pl_filter_bilinear;
++    stats_time_start(p->stats, "mpvflow-source-copy");
++    bool ok = pl_render_image(p->rr, &source_frame, &source_target, &source_copy_params);
++    stats_time_end(p->stats, "mpvflow-source-copy");
++    if (!ok) {
++        pl_tex_destroy(p->gpu, &source_texture);
++        MP_DBG(vo, "MPVFLOW_DIAGNOSTIC component=gpu event=bypass reason=full_resolution_source_render\n");
++        return false;
++    }
++
++    pl_tex analysis_texture = NULL;
++    pl_tex analysis_source = source_texture;
++    int analysis_w = source_w, analysis_h = source_h;
++    if (hdr_input) {
++        const int largest_source_dim = source_w > source_h ? source_w : source_h;
++        const double analysis_scale = fmin(1.0,
++            (double) p->flow_max_dimension / (double) largest_source_dim);
++        analysis_w = (int) lround(source_w * analysis_scale);
++        analysis_h = (int) lround(source_h * analysis_scale);
++        if (analysis_w < 8 || analysis_h < 8) {
++            pl_tex_destroy(p->gpu, &source_texture);
++            MP_DBG(vo, "MPVFLOW_DIAGNOSTIC component=gpu event=bypass reason=hdr_analysis_dimensions\n");
++            return false;
++        }
++        analysis_texture = pl_tex_create(p->gpu, pl_tex_params(
++            .w = analysis_w,
++            .h = analysis_h,
++            .d = 0,
++            .format = p->flow_input_fmt,
++            .sampleable = true,
++            .renderable = true,
++        ));
++        if (!analysis_texture) {
++            pl_tex_destroy(p->gpu, &source_texture);
++            MP_DBG(vo, "MPVFLOW_DIAGNOSTIC component=gpu event=bypass reason=hdr_analysis_copy_allocation\n");
++            return false;
++        }
++        struct pl_frame analysis_target = {
++            .repr = pl_color_repr_rgb,
++            .color = {
++                .primaries = PL_COLOR_PRIM_BT_709,
++                .transfer = PL_COLOR_TRC_BT_1886,
++            },
++            .pixel_aspect_ratio = frame->pixel_aspect_ratio,
++            .num_planes = 1,
++            .planes[0] = {
++                .texture = analysis_texture,
++                .components = 4,
++                .component_mapping = {0, 1, 2, 3},
++            },
++        };
++        stats_time_start(p->stats, "mpvflow-hdr-analysis-tonemap");
++        bool analysis_ok = pl_render_image(p->rr, &source_frame, &analysis_target,
++                                           &pl_render_default_params);
++        stats_time_end(p->stats, "mpvflow-hdr-analysis-tonemap");
++        if (!analysis_ok) {
++            pl_tex_destroy(p->gpu, &analysis_texture);
++            pl_tex_destroy(p->gpu, &source_texture);
++            MP_DBG(vo, "MPVFLOW_DIAGNOSTIC component=gpu event=bypass reason=hdr_analysis_tonemap\n");
++            return false;
++        }
++        analysis_source = analysis_texture;
++    }
++
++    pl_tex motion_texture = NULL;
++    enum MPVFlowGPUResult status = mpvflow_gpu_prepare_input(
++        p->flow_gpu, analysis_source, &motion_texture);
++    if (status != MPVFLOW_GPU_OK || !motion_texture) {
++        if (analysis_texture)
++            pl_tex_destroy(p->gpu, &analysis_texture);
++        pl_tex_destroy(p->gpu, &source_texture);
++        MP_DBG(vo, "MPVFLOW_DIAGNOSTIC component=gpu event=bypass reason=motion_analysis_downsample status=%d\n",
++               status);
++        return false;
++    }
++
++    fp->flow_source = source_texture;
++    fp->flow_input = motion_texture;
++    fp->flow_analysis_source = analysis_texture;
++    fp->flow_linear_hdr_source = hdr_input;
++    fp->flow_w = motion_texture->params.w;
++    fp->flow_h = motion_texture->params.h;
++    fp->flow_source_w = source_w;
++    fp->flow_source_h = source_h;
++    fp->flow_cap = p->flow_max_dimension;
++    fp->flow_synthesis_cap = p->flow_synthesis_max_dimension;
++    fp->flow_synthesis_w = synthesis_size.width;
++    fp->flow_synthesis_h = synthesis_size.height;
++    if (hdr_input)
++        MP_DBG(vo, "MPVFLOW_DIAGNOSTIC component=gpu event=hdr_analysis_copy state=ready "
++               "source=rgba16f transfer=%s primaries=%s analysis=bt709_bt1886_tonemapped "
++               "storage=%dx%d motion_cap=%d\n",
++               pl_color_transfer_name(frame->color.transfer),
++               pl_color_primaries_name(frame->color.primaries), analysis_w, analysis_h,
++               p->flow_max_dimension);
++    return true;
++}
++
++static void flow_release_frame(struct vo *vo, struct frame_priv *fp)
++{
++    struct priv *p = vo->priv;
++    flow_release_pair_for_frame(p, fp->frame_id);
++    if (fp->flow_source)
++        pl_tex_destroy(p->gpu, &fp->flow_source);
++    if (fp->flow_input)
++        pl_tex_destroy(p->gpu, &fp->flow_input);
++    if (fp->flow_analysis_source)
++        pl_tex_destroy(p->gpu, &fp->flow_analysis_source);
++    fp->flow_w = fp->flow_h = 0;
++    fp->flow_linear_hdr_source = false;
++    fp->flow_source_w = fp->flow_source_h = 0;
++    fp->flow_cap = 0;
++    fp->flow_synthesis_cap = 0;
++    fp->flow_synthesis_w = fp->flow_synthesis_h = 0;
++}
++
+@@ -1109,0 +1737,3 @@ static bool map_frame(pl_gpu gpu, pl_tex *tex, const struct pl_source_frame *src,
++    fp->pts = src->pts;
++    flow_update_context(vo);
++    flow_prepare_input(vo, frame, mpi, fp);
+@@ -1118,0 +1748,1 @@ static void unmap_frame(pl_gpu gpu, struct pl_frame *frame,
++    flow_release_frame(fp->vo, fp);
+@@ -1135,0 +1766,2 @@ static void discard_frame(const struct pl_source_frame *src)
++    struct frame_priv *fp = mpi->priv;
++    flow_release_frame(fp->vo, fp);
+@@ -1341,0 +1977,504 @@ static void update_hook_opts_dynamic(struct priv *p, const struct pl_hook *hook,
++static void flow_capture_terminal(struct priv *p, const char *base_dir,
++                                  const char *session_id, const char *backend,
++                                  const char *reason)
++{
++    if (!p || !base_dir || !session_id || !*session_id)
++        return;
++    char settings[768];
++    snprintf(settings, sizeof(settings),
++             "{\"target_fps\":%d,\"quality\":%d,\"analysis_cap_px\":%d,"
++             "\"synthesis_cap_px\":%d,\"compute_api_requested\":%d,"
++             "\"compute_api_resolved\":\"%s\",\"color_primaries\":\"unknown\","
++             "\"color_transfer\":\"unknown\"}",
++             p->next_opts->mpvflow_target_fps, p->next_opts->mpvflow_quality,
++             p->flow_max_dimension, p->flow_synthesis_max_dimension,
++             p->next_opts->mpvflow_compute_api, backend ? backend : "unknown");
++    (void) mpvflow_capture_io_write_terminal_manifest(
++        base_dir, session_id, "mpv", backend ? backend : "unknown",
++        settings, p->flow_capture_paired,
++        reason ? reason : "capture_stopped_before_synthesis");
++}
++
++static void flow_capture_poll_control(struct vo *vo)
++{
++    struct priv *p = vo->priv;
++    const char *path = p->next_opts->mpvflow_diagnostic_control_file;
++    if (!path || !path[0])
++        return;
++    const int64_t now = mp_time_ns();
++    if (now <= 0 || now - p->flow_capture_poll_ns < 100000000LL)
++        return;
++    p->flow_capture_poll_ns = now;
++    FILE *file = fopen(path, "r");
++    if (!file)
++        return;
++    char line[PATH_MAX + 128] = {0};
++    const bool read_ok = fgets(line, sizeof(line), file) != NULL;
++    fclose(file);
++    if (!read_ok)
++        return;
++
++    char id[81] = {0};
++    char base_dir[PATH_MAX] = {0};
++    bool paired_output = false;
++    int start_fields = sscanf(line, "START_PAIRED\t%80[A-Za-z0-9_-]\t%4095[^\n]", id, base_dir);
++    if (start_fields == 2)
++        paired_output = true;
++    else
++        start_fields = sscanf(line, "START\t%80[A-Za-z0-9_-]\t%4095[^\n]", id, base_dir);
++    if (start_fields == 2 &&
++        base_dir[0] == '/') {
++        if (!strcmp(id, p->flow_capture_session_id))
++            return;
++        if (p->flow_gpu && mpvflow_gpu_capture_active(p->flow_gpu))
++            mpvflow_gpu_capture_stop(p->flow_gpu);
++        else if (p->flow_capture_pending)
++            flow_capture_terminal(p, p->flow_capture_base_dir,
++                p->flow_capture_session_id, "unknown", "capture_replaced_before_synthesis");
++        snprintf(p->flow_capture_session_id, sizeof(p->flow_capture_session_id), "%s", id);
++        snprintf(p->flow_capture_base_dir, sizeof(p->flow_capture_base_dir), "%s", base_dir);
++        p->flow_capture_paired = paired_output;
++        p->flow_capture_pending = true;
++        if (!p->flow_gpu) {
++            flow_capture_terminal(p, p->flow_capture_base_dir,
++                p->flow_capture_session_id, "unavailable", "mpvflow_context_unavailable");
++            p->flow_capture_pending = false;
++            MP_WARN(vo, "MPVFLOW_DIAGNOSTIC component=capture event=start state=failed reason=mpvflow_context_unavailable\n");
++        }
++        return;
++    }
++    if (sscanf(line, "STOP\t%80[A-Za-z0-9_-]", id) == 1 &&
++        !strcmp(id, p->flow_capture_session_id)) {
++        if (p->flow_gpu && mpvflow_gpu_capture_active(p->flow_gpu))
++            mpvflow_gpu_capture_stop(p->flow_gpu);
++        else if (p->flow_capture_pending)
++            flow_capture_terminal(p, p->flow_capture_base_dir,
++                p->flow_capture_session_id,
++                p->flow_gpu ? mpvflow_gpu_get_compute_api_name(p->flow_gpu) : "unknown",
++                "capture_stopped_before_synthesis");
++        p->flow_capture_pending = false;
++        p->flow_capture_paired = false;
++        p->flow_capture_session_id[0] = '\0';
++    }
++}
++
++static bool flow_capture_start_for_pair(struct vo *vo,
++                                        const struct pl_frame *image0,
++                                        const struct pl_frame *image1,
++                                        const struct frame_priv *fp0,
++                                        const struct frame_priv *fp1)
++{
++    struct priv *p = vo->priv;
++    if (!p->flow_capture_pending || !p->flow_gpu || !image0 || !image1 || !fp0 || !fp1)
++        return false;
++    const struct pl_color_space *c0 = &image0->color;
++    const struct pl_color_space *c1 = &image1->color;
++    const bool known_sdr = c0->primaries != PL_COLOR_PRIM_UNKNOWN &&
++        c1->primaries != PL_COLOR_PRIM_UNKNOWN &&
++        c0->transfer != PL_COLOR_TRC_UNKNOWN && c1->transfer != PL_COLOR_TRC_UNKNOWN &&
++        !pl_color_transfer_is_hdr(c0->transfer) && !pl_color_transfer_is_hdr(c1->transfer) &&
++        !pl_color_space_is_hdr(c0) && !pl_color_space_is_hdr(c1) &&
++        !fp0->flow_linear_hdr_source && !fp1->flow_linear_hdr_source;
++    const char *backend = mpvflow_gpu_get_compute_api_name(p->flow_gpu);
++    char settings[1024];
++    if (p->flow_capture_paired) {
++        snprintf(settings, sizeof(settings),
++                 "{\"target_fps\":%d,\"quality\":%d,\"analysis_cap_px\":%d,"
++                 "\"synthesis_cap_px\":%d,\"compute_api_requested\":%d,"
++                 "\"compute_api_resolved\":\"%s\",\"visibility_resolver\":false,"
++                 "\"preserve_motion_blend_on_conflict\":%s,"
++                 "\"comparison_visibility_resolver_override\":true,"
++                 "\"source_dimensions\":[%d,%d],\"processing_dimensions\":[%d,%d],"
++                 "\"color_primaries\":\"%s\",\"color_transfer\":\"%s\"}",
++                 p->next_opts->mpvflow_target_fps, p->next_opts->mpvflow_quality,
++                 p->flow_max_dimension, p->flow_synthesis_max_dimension,
++                 p->next_opts->mpvflow_compute_api, backend ? backend : "unknown",
++                 p->next_opts->mpvflow_soft_blend ? "true" : "false",
++                 fp0->flow_source_w, fp0->flow_source_h, fp0->flow_w, fp0->flow_h,
++                 pl_color_primaries_name(c0->primaries), pl_color_transfer_name(c0->transfer));
++    } else {
++        snprintf(settings, sizeof(settings),
++             "{\"target_fps\":%d,\"quality\":%d,\"analysis_cap_px\":%d,"
++             "\"synthesis_cap_px\":%d,\"compute_api_requested\":%d,"
++             "\"compute_api_resolved\":\"%s\",\"visibility_resolver\":%s,"
++             "\"soft_blend\":%s,\"preserve_motion_blend_on_conflict\":%s,"
++             "\"source_dimensions\":[%d,%d],\"processing_dimensions\":[%d,%d],"
++             "\"color_primaries\":\"%s\",\"color_transfer\":\"%s\"}",
++             p->next_opts->mpvflow_target_fps, p->next_opts->mpvflow_quality,
++             p->flow_max_dimension, p->flow_synthesis_max_dimension,
++             p->next_opts->mpvflow_compute_api, backend ? backend : "unknown",
++             p->next_opts->mpvflow_visibility_resolver ? "true" : "false",
++             p->next_opts->mpvflow_soft_blend ? "true" : "false",
++             p->next_opts->mpvflow_soft_blend ? "true" : "false",
++             fp0->flow_source_w, fp0->flow_source_h, fp0->flow_w, fp0->flow_h,
++             pl_color_primaries_name(c0->primaries), pl_color_transfer_name(c0->transfer));
++    }
++    if (!known_sdr) {
++        flow_capture_terminal(p, p->flow_capture_base_dir,
++            p->flow_capture_session_id, backend,
++            "hdr_dolby_vision_or_unknown_color_refused");
++        p->flow_capture_pending = false;
++        MP_WARN(vo, "MPVFLOW_DIAGNOSTIC component=capture event=start state=refused reason=hdr_dolby_vision_or_unknown_color\n");
++        return false;
++    }
++    const enum MPVFlowGPUResult result = mpvflow_gpu_capture_start(
++        p->flow_gpu, p->flow_capture_base_dir, p->flow_capture_session_id,
++        "mpv", settings, p->flow_capture_paired);
++    p->flow_capture_pending = false;
++    if (result != MPVFLOW_GPU_OK)
++        MP_WARN(vo, "MPVFLOW_DIAGNOSTIC component=capture event=start state=failed status=%d\n", result);
++    return result == MPVFLOW_GPU_OK;
++}
++struct flow_prepared_frame {
++    int nearest;
++    int before;
++    pl_tex output;
++    const char *bypass_reason;
++    int bypass_status;
++    bool prepared;
++};
++
++static void flow_prepare_frame(struct vo *vo, const struct pl_frame_mix *mix,
++                               struct flow_prepared_frame *prepared, bool source_is_still,
++                               bool allow_synthesis, double output_pts)
++{
++    struct priv *p = vo->priv;
++    *prepared = (struct flow_prepared_frame) {
++        .nearest = -1,
++        .before = -1,
++        .bypass_reason = p->flow_gpu ? "no_temporal_pair" : "gpu_context_unavailable",
++        .bypass_status = MPVFLOW_GPU_OK,
++    };
++    flow_update_context(vo);
++    flow_capture_poll_control(vo);
++    prepared->prepared = true;
++    prepared->bypass_reason = p->flow_gpu ? "no_temporal_pair" : "gpu_context_unavailable";
++
++    int before = -1;
++    int after = -1;
++    float nearest_distance = INFINITY;
++    for (int i = 0; i < mix->num_frames; i++) {
++        float ts = mix->timestamps ? mix->timestamps[i] : (i ? 1.0f : 0.0f);
++        float distance = fabsf(ts);
++        if (distance < nearest_distance) {
++            prepared->nearest = i;
++            nearest_distance = distance;
++        }
++        if (ts < 0.0f)
++            before = i;
++        else if (ts > 0.0f && after < 0) {
++            after = i;
++            break;
++        }
++    }
++
++    if (p->paused || source_is_still) {
++        prepared->bypass_reason = p->paused ? "paused" : "still_frame";
++        return;
++    }
++
++    if (p->flow_gpu && mix->timestamps && before >= 0 && after >= 0 && before != after) {
++        float t0 = mix->timestamps[before];
++        float t1 = mix->timestamps[after];
++        float t = -t0 / (t1 - t0);
++        struct pl_frame *image0 = (struct pl_frame *) mix->frames[before];
++        struct pl_frame *image1 = (struct pl_frame *) mix->frames[after];
++        struct mp_image *mpi0 = image0->user_data;
++        struct mp_image *mpi1 = image1->user_data;
++        struct frame_priv *fp0 = mpi0 ? mpi0->priv : NULL;
++        struct frame_priv *fp1 = mpi1 ? mpi1->priv : NULL;
++        float par0 = image0->pixel_aspect_ratio > 0 ? image0->pixel_aspect_ratio : 1.0f;
++        float par1 = image1->pixel_aspect_ratio > 0 ? image1->pixel_aspect_ratio : 1.0f;
++        bool metadata_compatible = pl_color_space_equal(&image0->color, &image1->color) &&
++            fabsf(par0 - par1) < 0.0001f;
++        if (!metadata_compatible) {
++            prepared->bypass_reason = "incompatible_pair_metadata";
++            MP_DBG(vo, "MPVFLOW_DIAGNOSTIC component=gpu event=bypass reason=incompatible_pair_metadata\n");
++        } else if (!fp0 || !fp1) {
++            prepared->bypass_reason = "frame_metadata_unavailable";
++        } else if (!fp0->flow_input || !fp1->flow_input ||
++                   !fp0->flow_source || !fp1->flow_source) {
++            prepared->bypass_reason = "input_unavailable";
++        } else if (fp0->flow_cap != p->flow_max_dimension ||
++                   fp1->flow_cap != p->flow_max_dimension ||
++                   fp0->flow_w != fp1->flow_w || fp0->flow_h != fp1->flow_h ||
++                   fp0->flow_source_w != fp1->flow_source_w || fp0->flow_source_h != fp1->flow_source_h ||
++                   fp0->flow_synthesis_w != fp1->flow_synthesis_w ||
++                   fp0->flow_synthesis_h != fp1->flow_synthesis_h) {
++            prepared->bypass_reason = "incompatible_input_dimensions";
++        }
++
++        const int synthesis_policy = (p->next_opts->mpvflow_soft_blend ? 1 : 0) |
++            (p->next_opts->mpvflow_visibility_resolver ? 2 : 0);
++        int64_t source_pts0_ns = 0, source_pts1_ns = 0, output_pts_ns = 0;
++        const bool temporal_identity_valid = fp0 && fp1 &&
++            t > 0.0f && t < 1.0f &&
++            mpvflow_synthesis_timestamp_ns(fp0->pts, &source_pts0_ns) &&
++            mpvflow_synthesis_timestamp_ns(fp1->pts, &source_pts1_ns) &&
++            mpvflow_synthesis_timestamp_ns(output_pts, &output_pts_ns);
++        if (!allow_synthesis) {
++            const bool cached_identity = temporal_identity_valid && metadata_compatible &&
++                p->flow_pair &&
++                p->flow_cached_synthesis &&
++                mpvflow_synthesis_identity_matches(
++                    &p->flow_cached_synthesis_identity,
++                    fp0->frame_id, fp1->frame_id,
++                    source_pts0_ns, source_pts1_ns, output_pts_ns,
++                    p->next_opts->mpvflow_target_fps) &&
++                p->flow_cached_synthesis_par == (float) par0 &&
++                p->flow_cached_synthesis_policy == synthesis_policy &&
++                pl_color_space_equal(&p->flow_cached_synthesis_color,
++                                     &image0->color);
++            if (cached_identity) {
++                /* Rate-limited redraws must not replace an already-presented
++                 * temporal sample with the nearest source endpoint. Hold for
++                 * less than one target interval, never across source pairs. */
++                prepared->before = before;
++                prepared->output = p->flow_cached_synthesis;
++                prepared->bypass_reason = "synthesis_rate_limited_cached";
++            } else {
++                prepared->bypass_reason = "synthesis_rate_limited";
++            }
++            return;
++        }
++
++        if (t > 0.0f && t < 1.0f && fp0 && fp1 && metadata_compatible &&
++            fp0->flow_input && fp1->flow_input &&
++            fp0->flow_source && fp1->flow_source &&
++            fp0->flow_cap == p->flow_max_dimension && fp1->flow_cap == p->flow_max_dimension &&
++            fp0->flow_w == fp1->flow_w && fp0->flow_h == fp1->flow_h &&
++            fp0->flow_source_w == fp1->flow_source_w &&
++            fp0->flow_source_h == fp1->flow_source_h &&
++            fp0->flow_synthesis_w == fp1->flow_synthesis_w &&
++            fp0->flow_synthesis_h == fp1->flow_synthesis_h) {
++            const bool pair_cache_matches = p->flow_pair &&
++                p->flow_pair_ids[0] == fp0->frame_id &&
++                p->flow_pair_ids[1] == fp1->frame_id;
++            // A slow prior present may defer new vector analysis, but must not
++            // discard synthesis from a pair whose vectors are already cached.
++            if (!pair_cache_matches && !mpvflow_previous_present_budget_available(
++                    p->flow_cadence_last_flip_wait_ns,
++                    p->next_opts->mpvflow_target_fps)) {
++                p->flow_cadence_previous_present_budget_skips++;
++                if (p->flow_pair)
++                    flow_release_pair(p);
++                prepared->bypass_reason = "previous_frame_over_budget";
++                return;
++            }
++            if (!pair_cache_matches) {
++                p->flow_cadence_pair_analysis_attempts++;
++                flow_release_pair(p);
++                MPVFlowGPUPair *pair = NULL;
++                stats_time_start(p->stats, "mpvflow-analysis");
++                enum MPVFlowGPUResult status = mpvflow_gpu_analyze_pair(
++                    p->flow_gpu, fp0->flow_input, fp1->flow_input, &pair);
++                stats_time_end(p->stats, "mpvflow-analysis");
++                if (status == MPVFLOW_GPU_OK && pair) {
++                    p->flow_pair = pair;
++                    p->flow_pair_ids[0] = fp0->frame_id;
++                    p->flow_pair_ids[1] = fp1->frame_id;
++                    if (p->flow_geometry_w != fp0->flow_w || p->flow_geometry_h != fp0->flow_h) {
++                        const int grid_w = (fp0->flow_w - MPVFLOW_GPU_MOTION_FINE_BLOCK_SIZE +
++                            MPVFLOW_GPU_MOTION_GRID_STEP - 1) / MPVFLOW_GPU_MOTION_GRID_STEP + 1;
++                        const int grid_h = (fp0->flow_h - MPVFLOW_GPU_MOTION_FINE_BLOCK_SIZE +
++                            MPVFLOW_GPU_MOTION_GRID_STEP - 1) / MPVFLOW_GPU_MOTION_GRID_STEP + 1;
++                        MP_INFO(vo, "MPVFLOW_DIAGNOSTIC event=motion_geometry state=ready engine=mpv "
++                                "source=%dx%d processing=%dx%d motion_grid=%dx%d grid_step=%d fine_block_size=%d coarse_block_size=%d "
++                                "motion_search_passes_per_pair=6 search_order=center_out_exact_legacy_tie_break\n",
++                                fp0->flow_source_w, fp0->flow_source_h, fp0->flow_w, fp0->flow_h,
++                                grid_w, grid_h, MPVFLOW_GPU_MOTION_GRID_STEP,
++                                MPVFLOW_GPU_MOTION_FINE_BLOCK_SIZE, MPVFLOW_GPU_MOTION_BLOCK_SIZE);
++                        p->flow_geometry_w = fp0->flow_w;
++                        p->flow_geometry_h = fp0->flow_h;
++                    }
++                } else {
++                    p->flow_cadence_pair_analysis_failures++;
++                    prepared->bypass_reason = "pair_analysis_failed";
++                    prepared->bypass_status = status;
++                    MP_DBG(vo, "MPVFLOW_DIAGNOSTIC component=gpu event=bypass reason=pair_analysis status=%d\n",
++                           status);
++                }
++            } else {
++                p->flow_cadence_pair_cache_reuses++;
++            }
++
++            if (p->flow_pair) {
++                (void) flow_capture_start_for_pair(vo, image0, image1, fp0, fp1);
++                pl_tex output = NULL;
++                stats_time_start(p->stats, "mpvflow-synthesis");
++                enum MPVFlowGPUResult status;
++                if (mpvflow_gpu_capture_is_paired(p->flow_gpu)) {
++                    status = mpvflow_gpu_capture_paired_sample(
++                        p->flow_gpu, p->flow_pair, fp0->flow_source, fp1->flow_source, t,
++                        fp0->pts, fp1->pts, output_pts,
++                        p->next_opts->mpvflow_soft_blend,
++                        p->next_opts->mpvflow_visibility_resolver,
++                        p->next_opts->mpvflow_soft_blend,
++                        p->next_opts->mpvflow_soft_blend, &output);
++                } else {
++                    status = mpvflow_gpu_synthesize_with_policy(
++                        p->flow_gpu, p->flow_pair, fp0->flow_source, fp1->flow_source, t,
++                        p->next_opts->mpvflow_visibility_resolver,
++                        p->next_opts->mpvflow_soft_blend,
++                        p->next_opts->mpvflow_soft_blend, &output);
++                }
++                stats_time_end(p->stats, "mpvflow-synthesis");
++                if (status == MPVFLOW_GPU_OK && output) {
++                    if (mpvflow_gpu_capture_active(p->flow_gpu) &&
++                        !mpvflow_gpu_capture_is_paired(p->flow_gpu)) {
++                        const enum MPVFlowGPUResult capture_status = mpvflow_gpu_capture_sample(
++                            p->flow_gpu, p->flow_pair, fp0->flow_source, fp1->flow_source,
++                            output, t, fp0->pts, fp1->pts, output_pts,
++                            p->next_opts->mpvflow_visibility_resolver,
++                            p->next_opts->mpvflow_soft_blend,
++                            p->next_opts->mpvflow_soft_blend);
++                        if (capture_status != MPVFLOW_GPU_OK)
++                            MP_WARN(vo, "MPVFLOW_DIAGNOSTIC component=capture event=sample state=failed status=%d\n",
++                                    capture_status);
++                    }
++                    prepared->before = before;
++                    prepared->output = output;
++                    p->flow_cached_synthesis = output;
++                    p->flow_cached_synthesis_identity = (struct mpvflow_synthesis_identity) {
++                        .pair_before = fp0->frame_id,
++                        .pair_after = fp1->frame_id,
++                        .source_pts_before_ns = source_pts0_ns,
++                        .source_pts_after_ns = source_pts1_ns,
++                        .output_pts_ns = output_pts_ns,
++                        .valid = temporal_identity_valid,
++                    };
++                    p->flow_cached_synthesis_color = image0->color;
++                    p->flow_cached_synthesis_par = (float) par0;
++                    p->flow_cached_synthesis_policy = synthesis_policy;
++                } else {
++                    prepared->bypass_reason = output ? "synthesis_failed" : "synthesis_output_missing";
++                    prepared->bypass_status = status;
++                    flow_release_pair(p);
++                }
++            }
++        }
++    }
++}
++
++static bool flow_render_source_frame(struct vo *vo, const struct pl_frame *source,
++                                    struct pl_frame *target,
++                                    const struct pl_render_params *params,
++                                    const char *bypass_reason)
++{
++    struct priv *p = vo->priv;
++    struct mp_image *mpi = source->user_data;
++    struct frame_priv *fp = mpi ? mpi->priv : NULL;
++    const bool keep_native_resolution =
++        !strcmp(bypass_reason, "paused") || !strcmp(bypass_reason, "still_frame");
++    if (fp && fp->flow_source && !keep_native_resolution &&
++        (fp->flow_synthesis_w < fp->flow_source_w ||
++         fp->flow_synthesis_h < fp->flow_source_h)) {
++        struct pl_color_space source_color = source->color;
++        if (fp->flow_linear_hdr_source)
++            source_color.transfer = PL_COLOR_TRC_LINEAR;
++        // Match source-frame sharpness to synthesized frames after pre-FRC downscaling.
++        struct pl_frame scaled_source = {
++            .repr = pl_color_repr_rgb,
++            .color = source_color,
++            .num_planes = 1,
++            .planes[0] = {
++                .texture = fp->flow_source,
++                .components = 4,
++                .component_mapping = {0, 1, 2, 3},
++            },
++            .rotation = PL_ROTATION_0,
++            .pixel_aspect_ratio = source->pixel_aspect_ratio,
++            .overlays = source->overlays,
++            .num_overlays = source->num_overlays,
++        };
++        stats_time_start(p->stats, "mpvflow-source-render");
++        bool ok = pl_render_image(p->rr, &scaled_source, target, params);
++        stats_time_end(p->stats, "mpvflow-source-render");
++        if (ok)
++            return true;
++        MP_DBG(vo, "MPVFLOW_DIAGNOSTIC component=gpu event=source_resize_fallback reason=render_failed\n");
++    }
++    return pl_render_image(p->rr, source, target, params);
++}
++
++static bool flow_render_frame(struct vo *vo, const struct pl_frame_mix *mix,
++                              struct pl_frame *target,
++                              const struct pl_render_params *params,
++                              const struct flow_prepared_frame *prepared,
++                              bool *synthesized)
++{
++    struct priv *p = vo->priv;
++    *synthesized = false;
++    if (!prepared->prepared)
++        flow_update_context(vo);
++    const char *bypass_reason = prepared->bypass_reason ? prepared->bypass_reason : "no_temporal_pair";
++    int bypass_status = prepared->bypass_status;
++
++    if (prepared->output && prepared->before >= 0 && prepared->before < mix->num_frames) {
++        struct pl_frame *image0 = (struct pl_frame *) mix->frames[prepared->before];
++        struct mp_image *mpi0 = image0->user_data;
++        struct frame_priv *fp0 = mpi0 ? mpi0->priv : NULL;
++        // The source copy already applies the frame crop; retain only the separate overlays.
++        struct pl_color_space flow_color = image0->color;
++        if (fp0 && fp0->flow_linear_hdr_source)
++            flow_color.transfer = PL_COLOR_TRC_LINEAR;
++        struct pl_frame flow_image = {
++            .repr = pl_color_repr_rgb,
++            .color = flow_color,
++            .num_planes = 1,
++            .planes[0] = {
++                .texture = prepared->output,
++                .components = 4,
++                .component_mapping = {0, 1, 2, 3},
++            },
++            .rotation = PL_ROTATION_0,
++            .pixel_aspect_ratio = image0->pixel_aspect_ratio,
++            .overlays = image0->overlays,
++            .num_overlays = image0->num_overlays,
++        };
++        stats_time_start(p->stats, "mpvflow-render");
++        bool ok = pl_render_image(p->rr, &flow_image, target, params);
++        stats_time_end(p->stats, "mpvflow-render");
++        if (ok) {
++            if (!p->flow_active_logged && fp0) {
++                const pl_tex target_texture = target->num_planes > 0 ? target->planes[0].texture : NULL;
++                const int presentation_width = target_texture ? target_texture->params.w : 0;
++                const int presentation_height = target_texture ? target_texture->params.h : 0;
++                MP_INFO(vo, "MPVFLOW_DIAGNOSTIC event=output state=synthesized renderer_api=vulkan compute_api=%s "
++                        "target_fps=%d reason=motion_pair input_path=%s source=%dx%d motion_analysis=%dx%d "
++                        "synthesis_processing=%dx%d presentation_target=%dx%d video_params=%dx%d "
++                        "motion=yes cpu_filter=no synthesized_output_cpu_readback=no\n",
++                        mpvflow_gpu_get_compute_api_name(p->flow_gpu),
++                        p->next_opts->mpvflow_target_fps,
++                        fp0->hwdec ? "direct-hw-surface" : "software-upload",
++                        fp0->flow_source_w, fp0->flow_source_h,
++                        fp0->flow_w, fp0->flow_h,
++                        fp0->flow_synthesis_w, fp0->flow_synthesis_h,
++                        presentation_width, presentation_height,
++                        vo->params ? vo->params->w : 0,
++                        vo->params ? vo->params->h : 0);
++                p->flow_active_logged = true;
++            }
++            *synthesized = true;
++            return true;
++        }
++        bypass_reason = "synthesized_output_render_failed";
++        MP_DBG(vo, "MPVFLOW_DIAGNOSTIC component=gpu event=bypass reason=synthesized_render\n");
++    }
++
++    // This is a direct source-frame pass-through, not the CPU `vf_mpvflow`
++    // filter and not mpv's temporal blend fallback.
++    MP_DBG(vo, "MPVFLOW_DIAGNOSTIC component=gpu event=bypass reason=no_usable_gpu_pair\n");
++    if (prepared->nearest >= 0 && prepared->nearest < mix->num_frames) {
++        bool ok = flow_render_source_frame(vo, mix->frames[prepared->nearest],
++                                           target, params, bypass_reason);
++        if (ok)
++            flow_log_passthrough(vo, bypass_reason, bypass_status);
++        return ok;
++    }
++    bool ok = pl_render_image(p->rr, NULL, target, params);
++    if (ok)
++        flow_log_passthrough(vo, "no_source_frame", bypass_status);
++    return ok;
++}
++
+@@ -1344,0 +2242,38 @@ static bool draw_frame(struct vo *vo, struct vo_frame *frame)
++    p->flow_pending_synthesized = false;
++    p->flow_pending_display_synced = false;
++    p->flow_pending_source_batch = 0;
++    p->flow_pending_mix_frames = 0;
++    const int64_t flow_render_start_ns = p->next_opts->mpvflow ? mp_time_ns() : 0;
++    bool flow_synthesis_rate_limited = false;
++    p->flow_pending_rate_limiter_eligible = false;
++    p->flow_pending_rate_limiter_timestamp_ns = 0;
++    if (p->next_opts->mpvflow && frame->current && !frame->still && !p->paused &&
++        flow_render_start_ns > 0) {
++        p->flow_pending_rate_limiter_eligible = true;
++        p->flow_pending_rate_limiter_timestamp_ns =
++            mpvflow_rate_limiter_timestamp_ns(frame->pts,
++                                              (uint64_t) flow_render_start_ns);
++        if (!mpvflow_rate_limiter_ready(&p->flow_rate_limiter,
++                p->flow_pending_rate_limiter_timestamp_ns,
++                p->next_opts->mpvflow_target_fps)) {
++            flow_synthesis_rate_limited = true;
++            p->flow_pending_rate_limiter_eligible = false;
++            p->flow_pending_rate_limiter_timestamp_ns = 0;
++        }
++    }
++    if (flow_render_start_ns > 0) {
++        if (!p->flow_cadence_window_start_ns)
++            p->flow_cadence_window_start_ns = flow_render_start_ns;
++        p->flow_cadence_render_attempts++;
++        if (frame->num_vsyncs > 0)
++            p->flow_cadence_frame_repeat_count += frame->num_vsyncs;
++        if (p->flow_cadence_last_render_ns > 0 &&
++            flow_render_start_ns > p->flow_cadence_last_render_ns) {
++            const uint64_t interval = flow_render_start_ns - p->flow_cadence_last_render_ns;
++            p->flow_cadence_callback_interval_total_ns += interval;
++            p->flow_cadence_callback_interval_samples++;
++            if (interval > p->flow_cadence_callback_interval_max_ns)
++                p->flow_cadence_callback_interval_max_ns = interval;
++        }
++        p->flow_cadence_last_render_ns = flow_render_start_ns;
++    }
+@@ -1354,1 +2287,2 @@ static bool draw_frame(struct vo *vo, struct vo_frame *frame)
+-                           !frame->still && frame->num_frames > 1 && !p->paused;
++                           !frame->still &&
++                           (frame->num_frames > 1 || p->next_opts->mpvflow) && !p->paused;
+@@ -1403,0 +2338,1 @@ static bool draw_frame(struct vo *vo, struct vo_frame *frame)
++            flow_release_pair(p);
+@@ -1422,0 +2358,1 @@ static bool draw_frame(struct vo *vo, struct vo_frame *frame)
++        fp->frame_id = id;
+@@ -1570,0 +2507,10 @@ static bool draw_frame(struct vo *vo, struct vo_frame *frame)
++    struct pl_frame_mix mix = {0};
++    struct pl_queue_params flow_qparams = {0};
++    enum pl_queue_status flow_queue_status = PL_QUEUE_OK;
++    bool flow_queue_updated = false;
++    struct flow_prepared_frame flow_prepared = {
++        .nearest = -1,
++        .before = -1,
++        .bypass_reason = p->flow_gpu ? "no_temporal_pair" : "gpu_context_unavailable",
++        .bypass_status = MPVFLOW_GPU_OK,
++    };
+@@ -1572,1 +2518,116 @@ static bool draw_frame(struct vo *vo, struct vo_frame *frame)
+-    if (!should_draw || !pl_swapchain_start_frame(p->sw, &swframe)) {
++    if (p->next_opts->mpvflow && gpu && should_draw && frame->current) {
++        // Create and map the timestamped frame mix before a potentially blocking WSI acquire.
++        flow_qparams = *pl_queue_params(
++            .pts = frame->current->pts + pts_offset,
++            .radius = pl_frame_mix_radius(&params),
++            .vsync_duration = can_interpolate ? frame->ideal_frame_vsync_duration : 0,
++            .interpolation_threshold = opts->interpolation_threshold,
++            .drift_compensation = 0,
++        );
++        struct pl_source_frame first;
++        if (pl_queue_peek(p->queue, 0, &first) && flow_qparams.pts < first.pts) {
++            if (first.pts != frame->current->pts)
++                MP_VERBOSE(vo, "Current PTS(%f) != VPTS(%f)\n", frame->current->pts, first.pts);
++            MP_VERBOSE(vo, "Clamping first frame PTS from %f to %f\n", flow_qparams.pts, first.pts);
++            flow_qparams.pts = first.pts;
++        }
++        p->last_pts = flow_qparams.pts;
++        flow_queue_updated = true;
++        flow_queue_status = pl_queue_update(p->queue, &mix, &flow_qparams);
++        switch (flow_queue_status) {
++        case PL_QUEUE_ERR:
++            MP_ERR(vo, "Failed updating frames!\n");
++            break;
++        case PL_QUEUE_EOF:
++            abort(); // we never signal EOF
++        case PL_QUEUE_MORE:
++            if (!frame->still)
++                MP_DBG(vo, "Render queue underrun.\n");
++            break;
++        case PL_QUEUE_OK:
++            break;
++        }
++        if (flow_queue_status != PL_QUEUE_ERR) {
++            flow_prepare_frame(vo, &mix, &flow_prepared, frame->still,
++                               !flow_synthesis_rate_limited, flow_qparams.pts);
++            // Submit queued Flow work, but do not wait for the GPU to become idle.
++            pl_gpu_flush(gpu);
++            if (!p->flow_preacquire_logged) {
++                MP_INFO(vo, "MPVFLOW_DIAGNOSTIC event=producer state=pre_acquire "
++                        "queue_update=before_swapchain compute=before_swapchain "
++                        "flush=pl_gpu_flush_non_idle_may_backpressure=1\n");
++                p->flow_preacquire_logged = true;
++            }
++        }
++    }
++    if (p->gpu && p->gpu->glsl.vulkan && p->sw &&
++        p->flow_swapchain_diagnostics_enabled != p->next_opts->mpvflow) {
++        const bool flow_wsi_requested = p->next_opts->mpvflow;
++        const bool flow_wsi_set =
++            pl_vulkan_swapchain_set_diagnostics(p->sw, flow_wsi_requested);
++        const int flow_parent_msg_level = mp_msg_level(vo->log);
++        if (flow_wsi_set) {
++            p->flow_swapchain_diagnostics_enabled = flow_wsi_requested;
++            if (flow_wsi_requested)
++                p->flow_wsi_created_logged = false;
++        }
++        MP_INFO(vo, "MPVFLOW_DIAGNOSTIC event=wsi_diagnostics_toggle engine=mpv "
++                "requested=%d applied=%d setter_result=%d diagnostics_gate_enabled=%d "
++                "logger_policy=all=info,vo/gpu-next=v parent_msg_level=%d "
++                "libplacebo_info_enabled=%d first_runtime_wsi_sample=next_start_frame\n",
++                flow_wsi_requested, p->flow_swapchain_diagnostics_enabled,
++                flow_wsi_set, p->flow_swapchain_diagnostics_enabled,
++                flow_parent_msg_level, flow_parent_msg_level >= MSGL_V);
++    }
++    if (p->next_opts->mpvflow && !p->flow_wsi_created_logged) {
++        int requested_mode = VK_PRESENT_MODE_FIFO_KHR;
++        int created_mode = VK_PRESENT_MODE_FIFO_KHR;
++        int requested_depth = 0;
++        uint32_t create_min_images = 0, actual_images = 0;
++        if (pl_vulkan_swapchain_get_diagnostics(
++                p->sw, &requested_mode, &created_mode, &requested_depth,
++                &create_min_images, &actual_images)) {
++            const char *requested_name =
++                requested_mode == VK_PRESENT_MODE_MAILBOX_KHR ? "mailbox" :
++                requested_mode == VK_PRESENT_MODE_IMMEDIATE_KHR ? "immediate" :
++                requested_mode == VK_PRESENT_MODE_FIFO_RELAXED_KHR ? "fifo_relaxed" :
++                requested_mode == VK_PRESENT_MODE_FIFO_KHR ? "fifo" : "other";
++            const char *created_name =
++                created_mode == VK_PRESENT_MODE_MAILBOX_KHR ? "mailbox" :
++                created_mode == VK_PRESENT_MODE_IMMEDIATE_KHR ? "immediate" :
++                created_mode == VK_PRESENT_MODE_FIFO_RELAXED_KHR ? "fifo_relaxed" :
++                created_mode == VK_PRESENT_MODE_FIFO_KHR ? "fifo" : "other";
++            MP_INFO(vo, "MPVFLOW_DIAGNOSTIC event=wsi_swapchain_created engine=mpv "
++                    "requested_mode=%s requested_vk=%d created_mode=%s created_vk=%d "
++                    "fallback=%d requested_depth=%d create_min_images=%u actual_images=%u "
++                    "source=successful_vkCreateSwapchainKHR_create_info metric=created_config_not_scanout\n",
++                    requested_name, (int) requested_mode, created_name,
++                    (int) created_mode, requested_mode != created_mode,
++                    requested_depth, create_min_images, actual_images);
++            p->flow_wsi_created_logged = true;
++        }
++    }
++    const int64_t flow_acquire_start_ns = p->next_opts->mpvflow ? mp_time_ns() : 0;
++    const bool swapchain_frame_started =
++        should_draw && pl_swapchain_start_frame(p->sw, &swframe);
++    if (p->next_opts->mpvflow && flow_synthesis_rate_limited && should_draw)
++        p->flow_cadence_synthesis_rate_limited++;
++    if (flow_acquire_start_ns > 0 && should_draw) {
++        const int64_t now_ns = mp_time_ns();
++        const uint64_t wait_ns = now_ns > flow_acquire_start_ns
++            ? (uint64_t) (now_ns - flow_acquire_start_ns) : 0;
++        p->flow_cadence_acquire_call_total_ns += wait_ns;
++        p->flow_cadence_acquire_call_samples++;
++        if (wait_ns > p->flow_cadence_acquire_call_max_ns)
++            p->flow_cadence_acquire_call_max_ns = wait_ns;
++        static int64_t last_report_ns;
++        if (wait_ns >= 2000000 &&
++            (!last_report_ns || now_ns - last_report_ns >= 1000000000LL)) {
++            last_report_ns = now_ns;
++            MP_INFO(vo, "MPVFLOW_DIAGNOSTIC event=swapchain_wait stage=pl_swapchain_start_frame "
++                    "wait_ms=%.3f threshold_ms=2.0 target_fps=%d "
++                    "metric=cpu_blocking_call_not_scanout\n",
++                    wait_ns / 1000000.0, p->next_opts->mpvflow_target_fps);
++        }
++    }
++    if (!should_draw || !swapchain_frame_started) {
+@@ -1574,8 +2635,14 @@ static bool draw_frame(struct vo *vo, struct vo_frame *frame)
+-            // Advance the queue state to the current PTS to discard unused frames
+-            struct pl_queue_params qparams = *pl_queue_params(
+-                .pts = frame->current->pts + pts_offset,
+-                .radius = pl_frame_mix_radius(&params),
+-                .vsync_duration = can_interpolate ? frame->ideal_frame_vsync_duration : 0,
+-                .drift_compensation = 0,
+-            );
+-            pl_queue_update(p->queue, NULL, &qparams);
++            if (flow_queue_updated) {
++                // The mix was already advanced before acquire; now discard its unused mapping.
++                if (flow_queue_status != PL_QUEUE_ERR)
++                    pl_queue_update(p->queue, NULL, &flow_qparams);
++            } else {
++                // Preserve the original no-draw path when no Flow mix was prepared.
++                struct pl_queue_params qparams = *pl_queue_params(
++                    .pts = frame->current->pts + pts_offset,
++                    .radius = pl_frame_mix_radius(&params),
++                    .vsync_duration = can_interpolate ? frame->ideal_frame_vsync_duration : 0,
++                    .drift_compensation = 0,
++                );
++                pl_queue_update(p->queue, NULL, &qparams);
++            }
+@@ -1654,2 +2721,3 @@ static bool draw_frame(struct vo *vo, struct vo_frame *frame)
+-    struct pl_frame_mix mix = {0};
+-    if (frame->current) {
++    if (flow_queue_updated && flow_queue_status == PL_QUEUE_ERR)
++        goto done;
++    if (frame->current && !flow_queue_updated) {
+@@ -1693,0 +2762,2 @@ static bool draw_frame(struct vo *vo, struct vo_frame *frame)
++    }
++    if (frame->current) {
+@@ -1750,0 +2821,26 @@ static bool draw_frame(struct vo *vo, struct vo_frame *frame)
++    if (p->next_opts->mpvflow) {
++        const char *queue_state = p->paused ? "paused" :
++            !frame->num_frames ? "redraw_without_source_batch" :
++            !opts->interpolation ? "interpolation_disabled" :
++            !frame->display_synced ? "display_sync_unavailable" :
++            frame->still ? "still_frame" :
++            !can_interpolate ? "cadence_gate_closed" :
++            mix.num_frames < 2 ? "waiting_for_temporal_pair" :
++            "temporal_pair_available";
++        if (!p->flow_queue_state_logged ||
++            !p->flow_queue_last_state ||
++            strcmp(p->flow_queue_last_state, queue_state) != 0) {
++            MP_INFO(vo, "MPVFLOW_DIAGNOSTIC event=queue_state state=%s "
++                    "vo_frame_batch=%d display_synced=%d interpolation=%d "
++                    "can_interpolate=%d mix_frames=%d vsync_duration_ms=%.3f "
++                    "pts_offset_ms=%.3f target_fps=%d\n",
++                    queue_state, frame->num_frames, frame->display_synced,
++                    opts->interpolation, can_interpolate, mix.num_frames,
++                    frame->ideal_frame_vsync_duration * 1000.0,
++                    pts_offset * 1000.0, p->next_opts->mpvflow_target_fps);
++            p->flow_queue_last_state = queue_state;
++            p->flow_queue_state_logged = true;
++        }
++    } else {
++        p->flow_queue_state_logged = false;
++    }
+@@ -1752,1 +2848,4 @@ static bool draw_frame(struct vo *vo, struct vo_frame *frame)
+-    bool render_ok = pl_render_image_mix(p->rr, &mix, &target, &params);
++    bool flow_synthesized = false;
++    bool render_ok = p->next_opts->mpvflow
++        ? flow_render_frame(vo, &mix, &target, &params, &flow_prepared, &flow_synthesized)
++        : pl_render_image_mix(p->rr, &mix, &target, &params);
+@@ -1780,1 +2879,23 @@ static bool draw_frame(struct vo *vo, struct vo_frame *frame)
+-    p->is_interpolated = pts_offset != 0 && mix.num_frames > 1;
++    p->is_interpolated = p->next_opts->mpvflow
++        ? flow_synthesized : pts_offset != 0 && mix.num_frames > 1;
++    p->flow_pending_synthesized = p->next_opts->mpvflow && flow_synthesized;
++    p->flow_pending_rate_limiter_eligible =
++        p->flow_pending_rate_limiter_eligible && flow_synthesized;
++    if (!p->flow_pending_rate_limiter_eligible)
++        p->flow_pending_rate_limiter_timestamp_ns = 0;
++    p->flow_pending_display_synced = frame->display_synced;
++    p->flow_pending_source_batch = frame->num_frames;
++    p->flow_pending_mix_frames = mix.num_frames;
++    if (p->next_opts->mpvflow) {
++        p->flow_cadence_render_pair_callbacks += mix.num_frames >= 2;
++        p->flow_cadence_render_synthesized += flow_synthesized;
++        p->flow_cadence_render_failures += !render_ok;
++        const int64_t flow_render_end_ns = mp_time_ns();
++        if (flow_render_start_ns > 0 && flow_render_end_ns > flow_render_start_ns) {
++            const uint64_t render_ns = flow_render_end_ns - flow_render_start_ns;
++            p->flow_cadence_render_cpu_total_ns += render_ns;
++            p->flow_cadence_render_cpu_samples++;
++            if (render_ns > p->flow_cadence_render_cpu_max_ns)
++                p->flow_cadence_render_cpu_max_ns = render_ns;
++        }
++    }
+@@ -1797,1 +2918,2 @@ static void flip_page(struct vo *vo)
+-
++    const int64_t flip_start_ns = mp_time_ns();
++    bool submitted = false;
+@@ -1799,1 +2921,6 @@ static void flip_page(struct vo *vo)
+-        if (!pl_swapchain_submit_frame(p->sw))
++        if (p->next_opts->mpvflow)
++            p->flow_cadence_swap_attempts++;
++        submitted = pl_swapchain_submit_frame(p->sw);
++        if (!submitted && p->next_opts->mpvflow)
++            p->flow_cadence_swap_failures++;
++        if (!submitted)
+@@ -1803,0 +2931,139 @@ static void flip_page(struct vo *vo)
++    const int64_t now_ns = mp_time_ns();
++    const uint64_t flip_wait_ns = now_ns > flip_start_ns
++        ? (uint64_t) (now_ns - flip_start_ns) : 0;
++    if (p->next_opts->mpvflow && submitted) {
++        if (p->flow_pending_rate_limiter_eligible && p->flow_pending_synthesized)
++            mpvflow_rate_limiter_commit(&p->flow_rate_limiter,
++                                       p->flow_pending_rate_limiter_timestamp_ns,
++                                       p->next_opts->mpvflow_target_fps);
++        flow_report_gpu_timing(vo);
++        if (!p->flow_cadence_window_start_ns)
++            p->flow_cadence_window_start_ns = now_ns;
++        p->flow_cadence_submitted++;
++        p->flow_cadence_synthesized += p->flow_pending_synthesized;
++        p->flow_cadence_empty_batch += p->flow_pending_source_batch == 0;
++        if (p->flow_pending_source_batch > 0) {
++            if (p->flow_pending_display_synced)
++                p->flow_cadence_source_synced++;
++            else
++                p->flow_cadence_source_unsynced++;
++        }
++        if (p->flow_pending_display_synced && p->flow_pending_mix_frames >= 2)
++            p->flow_cadence_temporal_pair++;
++        p->flow_cadence_flip_wait_total_ns += flip_wait_ns;
++        p->flow_cadence_last_flip_wait_ns = flip_wait_ns;
++        if (flip_wait_ns > p->flow_cadence_flip_wait_max_ns)
++            p->flow_cadence_flip_wait_max_ns = flip_wait_ns;
++        if (now_ns - p->flow_cadence_window_start_ns >= 5000000000LL) {
++            const uint64_t window_ns = now_ns - p->flow_cadence_window_start_ns;
++            const double window_ms = window_ns / 1000000.0;
++            const double submit_fps = p->flow_cadence_submitted * 1000000000.0 / window_ns;
++            const double synth_fps = p->flow_cadence_synthesized * 1000000000.0 / window_ns;
++            const double render_callback_fps = p->flow_cadence_render_attempts * 1000000000.0 / window_ns;
++            const double render_cpu_avg_ms = p->flow_cadence_render_cpu_samples
++                ? (double) p->flow_cadence_render_cpu_total_ns /
++                  p->flow_cadence_render_cpu_samples / 1000000.0 : 0.0;
++            const double callback_interval_avg_ms = p->flow_cadence_callback_interval_samples
++                ? (double) p->flow_cadence_callback_interval_total_ns /
++                  p->flow_cadence_callback_interval_samples / 1000000.0 : 0.0;
++            const double pl_swapchain_start_frame_avg_ms = p->flow_cadence_acquire_call_samples
++                ? (double) p->flow_cadence_acquire_call_total_ns /
++                  p->flow_cadence_acquire_call_samples / 1000000.0 : 0.0;
++            const double swap_buffers_call_avg_ms = p->flow_cadence_swap_buffers_samples
++                ? (double) p->flow_cadence_swap_buffers_total_ns /
++                  p->flow_cadence_swap_buffers_samples / 1000000.0 : 0.0;
++            const uint64_t source_ticks = p->flow_cadence_source_synced +
++                                          p->flow_cadence_source_unsynced;
++            const double source_sync_pct = source_ticks
++                ? 100.0 * p->flow_cadence_source_synced / source_ticks : 0.0;
++            MP_INFO(vo, "MPVFLOW_DIAGNOSTIC event=runtime_cadence metric=successful_pl_swapchain_submit_not_surfaceflinger_scanout "
++                    "window_ms=%.1f target_fps=%d "
++                    "render_callback_fps=%.2f render_callbacks=%llu render_failures=%llu synthesis_rate_limited_callbacks=%llu "
++                    "previous_present_budget_skips=%llu "
++                    "mix_pair_callbacks=%llu synthesized_render_callbacks=%llu frame_repeat_count=%llu "
++                    "render_cpu_avg_ms=%.3f render_cpu_max_ms=%.3f render_cpu_samples=%llu "
++                    "callback_interval_avg_ms=%.3f callback_interval_max_ms=%.3f callback_interval_samples=%llu "
++                    "pl_swapchain_start_frame_avg_ms=%.3f pl_swapchain_start_frame_max_ms=%.3f pl_swapchain_start_frame_samples=%llu "
++                    "swap_submit_fps=%.2f synthesized_submit_fps=%.2f successful_submits=%llu "
++                    "swap_attempts=%llu swap_failures=%llu pair_analysis_attempts=%llu "
++                    "pair_analysis_failures=%llu pair_cache_reuses=%llu synthesized_submits=%llu "
++                    "source_batches=%llu source_sync_pct=%.1f source_unsynced_batches=%llu "
++                    "empty_batch_redraws=%llu temporal_pair_submits=%llu "
++                    "submit_call_avg_ms=%.3f submit_call_max_ms=%.3f "
++                    "swap_buffers_call_avg_ms=%.3f swap_buffers_call_max_ms=%.3f swap_buffers_call_samples=%llu\n",
++                    window_ms, p->next_opts->mpvflow_target_fps, render_callback_fps,
++                    (unsigned long long) p->flow_cadence_render_attempts,
++                    (unsigned long long) p->flow_cadence_render_failures,
++                    (unsigned long long) p->flow_cadence_synthesis_rate_limited,
++                    (unsigned long long) p->flow_cadence_previous_present_budget_skips,
++                    (unsigned long long) p->flow_cadence_render_pair_callbacks,
++                    (unsigned long long) p->flow_cadence_render_synthesized,
++                    (unsigned long long) p->flow_cadence_frame_repeat_count,
++                    render_cpu_avg_ms, p->flow_cadence_render_cpu_max_ns / 1000000.0,
++                    (unsigned long long) p->flow_cadence_render_cpu_samples,
++                    callback_interval_avg_ms,
++                    p->flow_cadence_callback_interval_max_ns / 1000000.0,
++                    (unsigned long long) p->flow_cadence_callback_interval_samples,
++                    pl_swapchain_start_frame_avg_ms,
++                    p->flow_cadence_acquire_call_max_ns / 1000000.0,
++                    (unsigned long long) p->flow_cadence_acquire_call_samples,
++                    submit_fps, synth_fps,
++                    (unsigned long long) p->flow_cadence_submitted,
++                    (unsigned long long) p->flow_cadence_swap_attempts,
++                    (unsigned long long) p->flow_cadence_swap_failures,
++                    (unsigned long long) p->flow_cadence_pair_analysis_attempts,
++                    (unsigned long long) p->flow_cadence_pair_analysis_failures,
++                    (unsigned long long) p->flow_cadence_pair_cache_reuses,
++                    (unsigned long long) p->flow_cadence_synthesized,
++                    (unsigned long long) source_ticks, source_sync_pct,
++                    (unsigned long long) p->flow_cadence_source_unsynced,
++                    (unsigned long long) p->flow_cadence_empty_batch,
++                    (unsigned long long) p->flow_cadence_temporal_pair,
++                    p->flow_cadence_submitted
++                        ? (double) p->flow_cadence_flip_wait_total_ns /
++                          p->flow_cadence_submitted / 1000000.0 : 0.0,
++                    p->flow_cadence_flip_wait_max_ns / 1000000.0,
++                    swap_buffers_call_avg_ms,
++                    p->flow_cadence_swap_buffers_max_ns / 1000000.0,
++                    (unsigned long long) p->flow_cadence_swap_buffers_samples);
++            p->flow_cadence_window_start_ns = now_ns;
++            p->flow_cadence_submitted = 0;
++            p->flow_cadence_synthesized = 0;
++            p->flow_cadence_source_synced = 0;
++            p->flow_cadence_source_unsynced = 0;
++            p->flow_cadence_empty_batch = 0;
++            p->flow_cadence_temporal_pair = 0;
++            p->flow_cadence_flip_wait_total_ns = 0;
++            p->flow_cadence_flip_wait_max_ns = 0;
++            p->flow_cadence_swap_buffers_total_ns = 0;
++            p->flow_cadence_swap_buffers_max_ns = 0;
++            p->flow_cadence_swap_buffers_samples = 0;
++            p->flow_cadence_acquire_call_total_ns = 0;
++            p->flow_cadence_acquire_call_max_ns = 0;
++            p->flow_cadence_acquire_call_samples = 0;
++            p->flow_cadence_render_attempts = 0;
++            p->flow_cadence_synthesis_rate_limited = 0;
++            p->flow_cadence_previous_present_budget_skips = 0;
++            p->flow_cadence_render_pair_callbacks = 0;
++            p->flow_cadence_render_synthesized = 0;
++            p->flow_cadence_render_failures = 0;
++            p->flow_cadence_swap_attempts = 0;
++            p->flow_cadence_swap_failures = 0;
++            p->flow_cadence_frame_repeat_count = 0;
++            p->flow_cadence_render_cpu_total_ns = 0;
++            p->flow_cadence_render_cpu_max_ns = 0;
++            p->flow_cadence_render_cpu_samples = 0;
++            p->flow_cadence_callback_interval_total_ns = 0;
++            p->flow_cadence_callback_interval_max_ns = 0;
++            p->flow_cadence_callback_interval_samples = 0;
++            p->flow_cadence_pair_analysis_attempts = 0;
++            p->flow_cadence_pair_analysis_failures = 0;
++            p->flow_cadence_pair_cache_reuses = 0;
++        }
++    }
++    p->flow_pending_synthesized = false;
++    p->flow_pending_display_synced = false;
++    p->flow_pending_source_batch = 0;
++    p->flow_pending_mix_frames = 0;
++    p->flow_pending_rate_limiter_eligible = false;
++    const int64_t flow_swap_wait_start_ns = p->next_opts->mpvflow ? mp_time_ns() : 0;
+@@ -1804,0 +3071,18 @@ static void flip_page(struct vo *vo)
++    if (flow_swap_wait_start_ns > 0) {
++        const int64_t now_ns = mp_time_ns();
++        const uint64_t wait_ns = now_ns > flow_swap_wait_start_ns
++            ? (uint64_t) (now_ns - flow_swap_wait_start_ns) : 0;
++        p->flow_cadence_swap_buffers_total_ns += wait_ns;
++        p->flow_cadence_swap_buffers_samples++;
++        if (wait_ns > p->flow_cadence_swap_buffers_max_ns)
++            p->flow_cadence_swap_buffers_max_ns = wait_ns;
++        static int64_t last_report_ns;
++        if (wait_ns >= 2000000 &&
++            (!last_report_ns || now_ns - last_report_ns >= 1000000000LL)) {
++            last_report_ns = now_ns;
++            MP_INFO(vo, "MPVFLOW_DIAGNOSTIC event=swapchain_wait stage=swap_buffers "
++                    "wait_ms=%.3f threshold_ms=2.0 target_fps=%d "
++                    "metric=cpu_blocking_call_not_scanout\n",
++                    wait_ns / 1000000.0, p->next_opts->mpvflow_target_fps);
++        }
++    }
+@@ -2466,0 +3751,4 @@ static void uninit(struct vo *vo)
++    flow_release_pair(p);
++    mpvflow_gpu_destroy(p->flow_gpu);
++    p->flow_gpu = NULL;
++    p->flow_input_fmt = NULL;
+@@ -2846,0 +4135,1 @@ static void update_render_options(struct vo *vo)
++    flow_update_context(vo);
+@@ -2878,1 +4167,2 @@ static void update_render_options(struct vo *vo)
+-    pars->params.frame_mixer = opts->interpolation ? map_scaler(p, SCALER_TSCALE) : NULL;
++    pars->params.frame_mixer = opts->interpolation && !p->next_opts->mpvflow
++        ? map_scaler(p, SCALER_TSCALE) : NULL;

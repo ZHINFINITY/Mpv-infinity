@@ -1,0 +1,148 @@
+name: Rebuild LGPL-only MPV AARs
+
+on:
+  push:
+    branches:
+      - Mpv∞-flow
+    paths:
+      - .github/workflows/mpv-lgpl-aar.yml
+      - scripts/build-mpv-lgpl-aar.sh
+      - scripts/package-mpv-aar-udfread.py
+      - scripts/verify-mpv-aar-lgpl.py
+      - scripts/merge-mpv-lgpl-aars.py
+      - scripts/tests/merge_mpv_lgpl_aars_test.py
+      - scripts/tests/mpv_lgpl_builder_patch_test.py
+      - scripts/tests/mpv_lgpl_udfread_packaging_test.py
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: read
+
+concurrency:
+  group: mpv-lgpl-aar-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  preflight:
+    name: Validate ABI routing and AAR merger
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Test single-ABI routing and GPL source patches
+        run: python3 scripts/tests/mpv_lgpl_builder_patch_test.py
+
+      - name: Test four-ABI AAR merge
+        run: python3 scripts/tests/merge_mpv_lgpl_aars_test.py
+
+      - name: Test libudfread AAR packaging
+        run: python3 scripts/tests/mpv_lgpl_udfread_packaging_test.py
+
+      - name: Syntax-check native AAR builder
+        run: bash -n scripts/build-mpv-lgpl-aar.sh
+
+  build-single-abi:
+    name: Build ${{ matrix.abi }} Standard + No-Vulkan AARs
+    needs: preflight
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix:
+        abi:
+          - arm64-v8a
+          - armeabi-v7a
+          - x86
+          - x86_64
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: gradle
+
+      - name: Install MPV Android native build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y autoconf automake libtool gettext autopoint gperf pkg-config ninja-build cmake pipx nasm yasm binutils zlib1g-dev libssl-dev zip unzip wget curl ffmpeg glslang-tools libvulkan-dev mesa-vulkan-drivers
+          pipx install meson==1.6.1
+          PIPX_BIN_DIR="$(pipx environment --value PIPX_BIN_DIR)"
+          echo "$PIPX_BIN_DIR" >> "$GITHUB_PATH"
+          "$PIPX_BIN_DIR/meson" --version
+
+      - name: Make Gradle wrappers executable
+        run: chmod +x ./gradlew
+
+      - name: Rebuild GPL-free AARs for this ABI
+        run: ./scripts/build-mpv-lgpl-aar.sh
+        env:
+          MPV_LGPL_ABIS: ${{ matrix.abi }}
+          MPV_LGPL_BUILD_CORES: '2'
+
+      - name: Verify this ABI in both runtime profiles
+        run: |
+          python3 scripts/verify-mpv-aar-lgpl.py app/libs/mpvlib.aar --abis "${{ matrix.abi }}" --only-selected-abis --require-vulkan
+          python3 scripts/verify-mpv-aar-lgpl.py app/libs/mpvlib-no-vulkun.aar --abis "${{ matrix.abi }}" --only-selected-abis --forbid-vulkan
+
+      - name: Stage single-ABI AAR artifacts
+        run: |
+          mkdir -p mpv-lgpl-output
+          cp app/libs/mpvlib.aar "mpv-lgpl-output/mpvlib-${{ matrix.abi }}.aar"
+          cp app/libs/mpvlib-no-vulkun.aar "mpv-lgpl-output/mpvlib-no-vulkun-${{ matrix.abi }}.aar"
+          sha256sum mpv-lgpl-output/*.aar > "mpv-lgpl-output/SHA256SUMS-${{ matrix.abi }}.txt"
+
+      - name: Upload verified single-ABI AARs
+        uses: actions/upload-artifact@v7
+        with:
+          name: mpv-lgpl-abi-${{ github.sha }}-${{ matrix.abi }}
+          path: mpv-lgpl-output/
+          if-no-files-found: error
+          retention-days: 14
+          compression-level: 0
+
+  package-and-verify:
+    name: Merge and verify four-ABI AARs
+    needs: build-single-abi
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Download all four verified ABI artifacts
+        uses: actions/download-artifact@v8.0.2
+        with:
+          pattern: mpv-lgpl-abi-${{ github.sha }}-*
+          path: matrix-artifacts
+          merge-multiple: false
+
+      - name: Merge ABI archives into the final AARs
+        run: |
+          mkdir -p rebuilt
+          python3 scripts/merge-mpv-lgpl-aars.py matrix-artifacts rebuilt --abis arm64-v8a,armeabi-v7a,x86,x86_64
+
+      - name: Verify both combined four-ABI runtime profiles
+        run: |
+          python3 scripts/verify-mpv-aar-lgpl.py rebuilt/mpvlib.aar --abis arm64-v8a,armeabi-v7a,x86,x86_64 --only-selected-abis --require-vulkan
+          python3 scripts/verify-mpv-aar-lgpl.py rebuilt/mpvlib-no-vulkun.aar --abis arm64-v8a,armeabi-v7a,x86,x86_64 --only-selected-abis --forbid-vulkan
+
+      - name: Record final archive checksums
+        run: cd rebuilt && sha256sum mpvlib.aar mpvlib-no-vulkun.aar > mpv-lgpl-aar-SHA256SUMS.txt
+
+      - name: Upload verified combined AARs
+        uses: actions/upload-artifact@v7
+        with:
+          name: mpv-lgpl-aars-${{ github.sha }}
+          path: rebuilt/
+          if-no-files-found: error
+          retention-days: 14
+          compression-level: 0

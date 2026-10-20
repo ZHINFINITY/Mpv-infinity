@@ -126,6 +126,12 @@ jobs:
         if: steps.activity.outputs.should_build == 'true'
         run: chmod +x ./gradlew
 
+      - name: Verify LGPL-only MPV runtimes
+        if: steps.activity.outputs.should_build == 'true'
+        run: |
+          python3 scripts/verify-mpv-aar-lgpl.py app/libs/mpvlib.aar --abis arm64-v8a,armeabi-v7a,x86,x86_64 --only-selected-abis --require-vulkan
+          python3 scripts/verify-mpv-aar-lgpl.py app/libs/mpvlib-no-vulkun.aar --abis arm64-v8a,armeabi-v7a,x86,x86_64 --only-selected-abis --forbid-vulkan
+
       - name: Build selected preview APKs
         if: steps.activity.outputs.should_build == 'true'
         shell: bash
@@ -133,7 +139,6 @@ jobs:
           set -euo pipefail
           ./gradlew assembleStandardPreview --stacktrace --no-daemon --max-workers=2
           if [[ "$SELECTED_FLAVOR" == "all" ]]; then
-            ./gradlew assembleFongmiPreview --stacktrace --no-daemon --max-workers=2
             ./gradlew assembleNoVulkanPreview --stacktrace --no-daemon --max-workers=2
           fi
 
@@ -185,13 +190,6 @@ jobs:
           done
 
           if [[ "$SELECTED_FLAVOR" == "all" ]]; then
-            flavor_dir="app/build/outputs/apk/fongmi/preview"
-            test -d "$flavor_dir"
-            sign_apk \
-              "$flavor_dir/app-fongmi-universal-preview-unsigned.apk" \
-              "$flavor_dir/app-fongmi-universal-preview.apk" \
-              "fongmi universal preview"
-
             flavor_dir="app/build/outputs/apk/noVulkan/preview"
             test -d "$flavor_dir"
             sign_apk \
@@ -244,7 +242,6 @@ jobs:
           ]
           if selected_flavor == "all":
               builds.extend([
-                  ("fongmi", "universal", "fongmi"),
                   ("noVulkan", "universal", "no-vulkan"),
               ])
           assets = []

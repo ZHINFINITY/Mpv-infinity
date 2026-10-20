@@ -1,10 +1,8 @@
 /*
- * SPDX-License-Identifier: AGPL-3.0-or-later
+ * SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
  *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Affero General Public License as published
- * by the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * Copyright (c) 2026 ZHINFINITY. Mpv∞ Covered Code.
+ * See LICENSE for terms.
  */
 
 package app.infinity.mpvz.ui.preferences
@@ -33,6 +31,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -51,13 +50,15 @@ import app.infinity.mpvz.R
 import app.infinity.mpvz.domain.anime4k.Anime4KManager
 import app.infinity.mpvz.preferences.AdvancedPreferences
 import app.infinity.mpvz.preferences.DecoderPreferences
-import app.infinity.mpvz.preferences.MpvConfigOverride
+import app.infinity.mpvz.preferences.MPVFLOW_TARGET_FPS_OPTIONS
 import app.infinity.mpvz.preferences.MpvConfigControlledFeatures
+import app.infinity.mpvz.preferences.MpvConfigOverride
 import app.infinity.mpvz.preferences.preference.collectAsState
 import app.infinity.mpvz.presentation.Screen
 import app.infinity.mpvz.ui.icons.Icon
 import app.infinity.mpvz.ui.icons.Icons
 import app.infinity.mpvz.ui.player.Debanding
+import app.infinity.mpvz.ui.player.Media3FlowDebugSettingsPolicy
 import app.infinity.mpvz.ui.player.MPVProfile
 import app.infinity.mpvz.ui.player.PlaybackEngineMode
 import app.infinity.mpvz.ui.preferences.components.SwitchPreference
@@ -77,12 +78,24 @@ object DecoderPreferencesScreen : Screen {
   override fun Content() {
     val preferences = koinInject<DecoderPreferences>()
     val advancedPreferences = koinInject<AdvancedPreferences>()
+    val selectedPlaybackEngine by preferences.playbackEngine.collectAsState()
+    val gpuNext by preferences.gpuNext.collectAsState()
+    val useVulkan by preferences.useVulkan.collectAsState()
+    val anime4kEnabledPreference by preferences.enableAnime4K.collectAsState()
+    val anime4kMode by preferences.anime4kMode.collectAsState()
+    val anime4kActivePreference = anime4kEnabledPreference && anime4kMode != "OFF"
+    val mpvFlowFrameInterpolationEnabled by preferences.mpvFlowFrameInterpolation.collectAsState()
+    val mpvFlowVisibilityResolverDebug by preferences.mpvFlowVisibilityResolverDebug.collectAsState()
+    val mpvFlowSoftBlendDebug by preferences.mpvFlowSoftBlendDebug.collectAsState()
+    val mpvFlowTargetFps by preferences.mpvFlowTargetFps.collectAsState()
     val storedConfigOverrides by advancedPreferences.mpvConfOverrides.collectAsState()
     val configOwnedOptions =
       remember(storedConfigOverrides) { MpvConfigOverride.resolveOptionNames(storedConfigOverrides) }
     val profileConfigOwned = "profile" in configOwnedOptions
     val rendererBackendConfigOwned = setOf("gpu-api", "gpu-context").any(configOwnedOptions::contains)
     val decoderConfigOwned = MpvConfigControlledFeatures.HARDWARE_DECODER.any(configOwnedOptions::contains)
+    val frameInterpolationConfigOwned =
+      MpvConfigControlledFeatures.FRAME_INTERPOLATION.any(configOwnedOptions::contains)
     val shadersConfigOwned = MpvConfigControlledFeatures.ANIME4K.any(configOwnedOptions::contains)
     val debandingConfigOwned =
       setOf("vf", "deband", "deband-iterations", "deband-threshold", "deband-range", "deband-grain")
@@ -92,6 +105,22 @@ object DecoderPreferencesScreen : Screen {
     val context = LocalContext.current
     val isDeviceVulkanSupported = remember { VulkanCapabilities.isDeviceSupported(context) }
     val isVulkanSupported = BuildConfig.MPV_SUPPORTS_VULKAN && isDeviceVulkanSupported
+    val mpvFlowAvailable =
+      BuildConfig.MPV_HAS_MPVFLOW &&
+        isVulkanSupported &&
+        !frameInterpolationConfigOwned &&
+        !rendererBackendConfigOwned &&
+        !anime4kActivePreference &&
+        selectedPlaybackEngine != PlaybackEngineMode.NATIVE
+    val nativeMedia3FlowSelected = selectedPlaybackEngine == PlaybackEngineMode.NATIVE
+    val nativeMedia3FlowAvailable = nativeMedia3FlowSelected && isVulkanSupported
+    val showFlowDebugControls =
+      Media3FlowDebugSettingsPolicy.controlsVisible(
+        debugBuild = BuildConfig.DEBUG,
+        mpvFlowRuntimeAvailable = BuildConfig.MPV_HAS_MPVFLOW,
+        nativeMedia3FlowAvailable = nativeMedia3FlowAvailable,
+      )
+    val mpvFlowForcesRenderer = mpvFlowFrameInterpolationEnabled && mpvFlowAvailable
     var showGpuNextWarning by remember { mutableStateOf(false) }
     var anime4kExpanded by remember { mutableStateOf(false) }
     Scaffold(
@@ -183,11 +212,10 @@ object DecoderPreferencesScreen : Screen {
 
               PreferenceDivider()
 
-              val gpuNext by preferences.gpuNext.collectAsState()
-              val useVulkan by preferences.useVulkan.collectAsState() // Added to check Vulkan state
               SwitchPreference(
                 modifier = Modifier.settingsSearchTarget(R.string.pref_decoder_gpu_next_title),
-                value = gpuNext,
+                value = gpuNext || mpvFlowForcesRenderer,
+                enabled = !mpvFlowForcesRenderer,
                 onValueChange = { enabled ->
                   if (enabled && !gpuNext && !useVulkan) { // Only show warning if Vulkan is disabled
                     showGpuNextWarning = true
@@ -201,7 +229,10 @@ object DecoderPreferencesScreen : Screen {
                 title = { Text(stringResource(R.string.pref_decoder_gpu_next_title)) },
                 summary = {
                   Text(
-                    stringResource(R.string.pref_decoder_gpu_next_summary),
+                    stringResource(
+                      if (mpvFlowForcesRenderer) R.string.pref_decoder_flow_forced_renderer_summary
+                      else R.string.pref_decoder_gpu_next_summary,
+                    ),
                     color = MaterialTheme.colorScheme.outline,
                   )
                 },
@@ -256,7 +287,7 @@ object DecoderPreferencesScreen : Screen {
 
               SwitchPreference(
                 modifier = Modifier.settingsSearchTarget(R.string.pref_decoder_vulkan_experimental_title),
-                value = useVulkan && isVulkanSupported,
+                value = (useVulkan || mpvFlowForcesRenderer) && isVulkanSupported,
                 onValueChange = { enabled ->
                   if (isVulkanSupported) {
                     preferences.useVulkan.set(enabled)
@@ -271,12 +302,13 @@ object DecoderPreferencesScreen : Screen {
                     }
                   }
                 },
-                enabled = isVulkanSupported && !rendererBackendConfigOwned,
+                enabled = isVulkanSupported && !rendererBackendConfigOwned && !mpvFlowForcesRenderer,
                 title = { Text(stringResource(R.string.pref_decoder_vulkan_experimental_title)) },
                 summary = {
                   Text(
                     stringResource(
                       when {
+                        mpvFlowForcesRenderer -> R.string.pref_decoder_flow_forced_renderer_summary
                         !BuildConfig.MPV_SUPPORTS_VULKAN && isDeviceVulkanSupported ->
                           R.string.pref_decoder_vulkan_excluded_supported_device
                         !BuildConfig.MPV_SUPPORTS_VULKAN ->
@@ -330,6 +362,77 @@ object DecoderPreferencesScreen : Screen {
                     color = MaterialTheme.colorScheme.outline,
                   )
                 },
+              )
+
+              PreferenceDivider()
+
+              Surface(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp),
+                shape = androidx.compose.foundation.shape.RoundedCornerShape(12.dp),
+                color = MaterialTheme.colorScheme.surfaceContainerLow,
+              ) {
+                SwitchPreference(
+                  modifier = Modifier.settingsSearchTarget(R.string.pref_decoder_mpvflow_title),
+                  value = mpvFlowFrameInterpolationEnabled,
+                  enabled = mpvFlowAvailable || nativeMedia3FlowAvailable || mpvFlowFrameInterpolationEnabled,
+                  onValueChange = { enabled ->
+                    preferences.mpvFlowFrameInterpolation.set(enabled)
+                  },
+                  title = { Text(stringResource(R.string.pref_decoder_mpvflow_title)) },
+                  titleStyle =
+                    MaterialTheme.typography.titleMedium.copy(
+                      fontWeight = FontWeight.SemiBold,
+                      color = MaterialTheme.colorScheme.primary,
+                    ),
+                )
+              }
+
+              PreferenceDivider()
+
+              if (showFlowDebugControls) {
+                SwitchPreference(
+                  modifier = Modifier.settingsSearchTarget(R.string.pref_decoder_mpvflow_visibility_resolver_debug_title),
+                  value = mpvFlowVisibilityResolverDebug,
+                  enabled =
+                    Media3FlowDebugSettingsPolicy.controlEnabled(
+                      mpvFlowAvailable,
+                      nativeMedia3FlowAvailable,
+                      mpvFlowVisibilityResolverDebug,
+                    ),
+                  onValueChange = preferences.mpvFlowVisibilityResolverDebug::set,
+                  title = { Text(stringResource(R.string.pref_decoder_mpvflow_visibility_resolver_debug_title)) },
+                )
+                SwitchPreference(
+                  modifier = Modifier.settingsSearchTarget(R.string.pref_decoder_mpvflow_soft_blend_debug_title),
+                  value = mpvFlowSoftBlendDebug,
+                  enabled =
+                    Media3FlowDebugSettingsPolicy.controlEnabled(
+                      mpvFlowAvailable,
+                      nativeMedia3FlowAvailable,
+                      mpvFlowSoftBlendDebug,
+                    ),
+                  onValueChange = preferences.mpvFlowSoftBlendDebug::set,
+                  title = { Text(stringResource(R.string.pref_decoder_mpvflow_soft_blend_debug_title)) },
+                )
+                PreferenceDivider()
+              }
+
+              ListPreference(
+                modifier = Modifier.settingsSearchTarget(R.string.pref_decoder_mpvflow_target_fps_title),
+                value = mpvFlowTargetFps,
+                onValueChange = preferences.mpvFlowTargetFps::set,
+                values = MPVFLOW_TARGET_FPS_OPTIONS,
+                enabled = mpvFlowAvailable || nativeMedia3FlowAvailable || mpvFlowFrameInterpolationEnabled,
+                valueToText = {
+                  AnnotatedString(
+                    context.getString(
+                      if (it >= 90) R.string.pref_decoder_mpvflow_target_fps_warning_value
+                      else R.string.pref_decoder_mpvflow_target_fps_value,
+                      it,
+                    ),
+                  )
+                },
+                title = { Text(stringResource(R.string.pref_decoder_mpvflow_target_fps_title)) },
               )
 
               PreferenceDivider()

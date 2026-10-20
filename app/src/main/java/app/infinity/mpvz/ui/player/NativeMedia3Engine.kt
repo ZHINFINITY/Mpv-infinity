@@ -10,19 +10,24 @@ import android.util.Log
 import android.view.View
 import android.view.SurfaceView
 import java.io.File
+import app.infinity.mpvz.BuildConfig
 import app.infinity.mpvz.R
 import androidx.media3.common.C
+import androidx.media3.common.ColorInfo
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.text.CueGroup
+import androidx.media3.common.Format
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Metadata
 import androidx.media3.common.Player
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.PlaybackParameters
 import androidx.media3.common.TrackSelectionParameters
+import androidx.media3.common.VideoSize
 import androidx.media3.exoplayer.SeekParameters
 import androidx.media3.common.TrackSelectionOverride
 import androidx.media3.common.Tracks
+import androidx.media3.exoplayer.DecoderCounters
 import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.datasource.FileDataSource
@@ -33,6 +38,7 @@ import androidx.media3.database.StandaloneDatabaseProvider
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.DefaultRenderersFactory
+import androidx.media3.exoplayer.RenderersFactory
 import androidx.media3.extractor.metadata.Chapter
 import androidx.media3.exoplayer.analytics.AnalyticsListener
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
@@ -40,6 +46,7 @@ import androidx.media3.extractor.ExtractorsFactory
 import androidx.media3.ui.CaptionStyleCompat
 import androidx.media3.ui.PlayerView
 import app.infinity.mpvz.ui.player.LibassSubtitleSurfaceView
+import app.infinity.mpvz.preferences.MpvFlowComputeApi
 import androidx.media3.subtitle.libass.LibassSubtitleRenderer
 import io.github.peerless2012.ass.media.AssHandler
 import io.github.peerless2012.ass.media.kt.withAssMkvSupport
@@ -49,6 +56,7 @@ import io.github.peerless2012.ass.media.type.AssRenderType
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import org.json.JSONObject
 import kotlin.math.pow
 
 private object NativeMedia3Cache {
@@ -74,18 +82,41 @@ data class NativePlaybackSnapshot(
   val totalBufferedDurationMs: Long = 0L,
   val videoWidth: Int = 0,
   val videoHeight: Int = 0,
+  val videoOutputWidth: Int = 0,
+  val videoOutputHeight: Int = 0,
+  val videoPixelWidthHeightRatio: Float? = null,
+  val videoOutputPixelWidthHeightRatio: Float? = null,
+  val videoFrameRate: Float = 0f,
   val videoMimeType: String? = null,
   val videoCodec: String? = null,
   val videoDecoder: String? = null,
   val audioDecoder: String? = null,
   val videoDynamicRange: String? = null,
   val videoColorSpace: String? = null,
-  val videoBitrate: Int = 0,
+  val videoLumaBitDepth: Int? = null,
+  val videoChromaBitDepth: Int? = null,
+  val videoColorPrimariesIsoCode: Int? = null,
+  val videoTransferCharacteristicsIsoCode: Int? = null,
+  val videoMatrixCoefficientsIsoCode: Int? = null,
+  val videoColorRange: String? = null,
+  val videoHasHdrStaticMetadata: Boolean? = null,
+  val videoTrackBitrate: Int = 0,
+  val videoRenderedOutputBuffers: Long? = null,
+  val videoSkippedInputBuffers: Long? = null,
+  val videoSkippedOutputBuffers: Long? = null,
+  val videoDroppedBuffers: Long? = null,
+  val frameProcessingOffsetAverageUs: Long = 0L,
+  val frameProcessingOffsetLastUs: Long = 0L,
+  val frameProcessingSampleCount: Long = 0L,
   val audioCodec: String? = null,
   val audioBitrate: Int = 0,
   val audioChannels: Int = 0,
   val audioSampleRate: Int = 0,
+  val bandwidthEstimateBps: Long = 0L,
+  val bandwidthBytesLoaded: Long = 0L,
+  val sourceSizeBytes: Long = 0L,
   val speed: Float = 1f,
+  val media3Flow: Media3FlowDiagnostics = Media3FlowDiagnostics(),
   val subtitleTracks: List<NativeTrack> = emptyList(),
   val audioTracks: List<NativeTrack> = emptyList(),
   val chapters: List<NativeChapter> = emptyList(),
@@ -100,7 +131,28 @@ data class NativeTrack(
   val selected: Boolean,
   val formatId: String? = null,
   val external: Boolean = false,
+  val sampleMimeType: String? = null,
+  val codecs: String? = null,
+  val channelCount: Int = 0,
 )
+
+internal fun media3ResizeModeForAspect(aspect: VideoAspect): Int = when (aspect) {
+  VideoAspect.Fit -> androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_FIT
+  VideoAspect.Crop -> androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_ZOOM
+  VideoAspect.Stretch -> androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_FILL
+}
+
+internal class Media3AspectModeState(initialAspect: VideoAspect = VideoAspect.Fit) {
+  private var selectedAspect = initialAspect
+
+  fun select(aspect: VideoAspect) {
+    selectedAspect = aspect
+  }
+
+  fun resizeMode(): Int = media3ResizeModeForAspect(selectedAspect)
+
+  fun aspect(): VideoAspect = selectedAspect
+}
 
 private data class NativeSubtitleSelection(
   val groupId: String?,
@@ -111,15 +163,110 @@ private data class NativeSubtitleSelection(
   val codecs: String?,
 )
 
+private data class NativeVideoFrameCounts(
+  val renderedOutputBuffers: Long,
+  val skippedInputBuffers: Long,
+  val skippedOutputBuffers: Long,
+  val droppedBuffers: Long,
+) {
+  fun since(previous: NativeVideoFrameCounts) = NativeVideoFrameCounts(
+    renderedOutputBuffers = (renderedOutputBuffers - previous.renderedOutputBuffers).coerceAtLeast(0L),
+    skippedInputBuffers = (skippedInputBuffers - previous.skippedInputBuffers).coerceAtLeast(0L),
+    skippedOutputBuffers = (skippedOutputBuffers - previous.skippedOutputBuffers).coerceAtLeast(0L),
+    droppedBuffers = (droppedBuffers - previous.droppedBuffers).coerceAtLeast(0L),
+  )
+
+  companion object {
+    val ZERO = NativeVideoFrameCounts(0L, 0L, 0L, 0L)
+
+    fun from(counters: DecoderCounters) = NativeVideoFrameCounts(
+      renderedOutputBuffers = counters.renderedOutputBufferCount.toLong(),
+      skippedInputBuffers = counters.skippedInputBufferCount.toLong(),
+      skippedOutputBuffers = counters.skippedOutputBufferCount.toLong(),
+      droppedBuffers = counters.droppedBufferCount.toLong(),
+    )
+  }
+}
+
 data class NativeChapter(
   val title: String,
   val startSeconds: Float,
 )
 
 /** A source-local Android Media3 playback engine. */
-class NativeMedia3Engine(context: Context) {
+class NativeMedia3Engine(
+  context: Context,
+  enableMedia3Flow: Boolean = false,
+  media3FlowTargetFps: Int = 60,
+  media3FlowQuality: Int = 60,
+  media3FlowComputeApi: MpvFlowComputeApi = MpvFlowComputeApi.AUTO,
+  media3FlowVisibilityResolverDebug: Boolean = false,
+  media3FlowSoftBlendDebug: Boolean = false,
+) {
   private val appContext = context.applicationContext
   private val logTag = "Mpv∞-Media3"
+  private val media3FlowDebugSettings =
+    Media3FlowDebugSettingsPolicy.effective(
+      debugBuild = BuildConfig.DEBUG,
+      requestedVisibilityResolver = media3FlowVisibilityResolverDebug,
+      requestedSoftBlend = media3FlowSoftBlendDebug,
+    )
+  private val effectiveMedia3FlowComputeApi =
+    if (media3FlowDebugSettings.visibilityResolverEnabled || media3FlowDebugSettings.softBlendEnabled) {
+      MpvFlowComputeApi.VULKAN
+    } else {
+      media3FlowComputeApi
+    }
+  private val flowDeviceSupported =
+    enableMedia3Flow && Media3FlowVideoSink.deviceSupportsVulkanFlow(appContext)
+  private val media3FlowSink = if (flowDeviceSupported) {
+    Media3FlowVideoSink(
+      appContext,
+      media3FlowTargetFps,
+      media3FlowQuality,
+      effectiveMedia3FlowComputeApi,
+      media3FlowDebugSettings.visibilityResolverEnabled,
+      media3FlowDebugSettings.softBlendEnabled,
+      ::publishFlowDiagnostics,
+    )
+  } else {
+    null
+  }
+  private val _flowDiagnostics = MutableStateFlow(
+    when {
+      !enableMedia3Flow -> Media3FlowDiagnostics()
+      !flowDeviceSupported -> Media3FlowDiagnostics(
+        enabled = true,
+        targetFps = media3FlowTargetFps,
+        state = "unavailable",
+        bypassReason = "vulkan_hardwarebuffer_unavailable",
+      )
+      media3FlowSink?.isPreflightAvailable() != true -> Media3FlowDiagnostics(
+        enabled = true,
+        targetFps = media3FlowTargetFps,
+        state = "unavailable",
+        bypassReason = "vulkan_hardwarebuffer_preflight_failed",
+      )
+      else -> Media3FlowDiagnostics(
+        enabled = true,
+        targetFps = media3FlowTargetFps,
+        state = "waiting_for_supported_video",
+        bypassReason = "awaiting_sdr_format",
+      )
+    },
+  )
+  init {
+    if (enableMedia3Flow) {
+      val diagnostics = _flowDiagnostics.value
+      Log.i(
+        logTag,
+        "media3_flow_route enabled=${diagnostics.enabled} state=${diagnostics.state} " +
+          "reason=${diagnostics.bypassReason ?: "none"} targetFps=${diagnostics.targetFps} " +
+          "deviceVulkanFlowSupported=$flowDeviceSupported sinkCreated=${media3FlowSink != null}",
+      )
+    }
+  }
+
   private val httpDataSourceFactory = DefaultHttpDataSource.Factory()
     .setAllowCrossProtocolRedirects(true)
     .setConnectTimeoutMs(15_000)
@@ -160,17 +307,10 @@ class NativeMedia3Engine(context: Context) {
     // still delivered through Player.Listener.onPlayerError.
     .setStuckBufferingDetectionTimeoutMs(Int.MAX_VALUE)
     .setMediaSourceFactory(mediaSourceFactory)
-    .setRenderersFactory(
-      DefaultRenderersFactory(context.applicationContext)
-        // Prefer platform hardware codecs for 4K/HDR; extensions remain available as fallback.
-        .setExtensionRendererMode(DefaultRenderersFactory.EXTENSION_RENDERER_MODE_ON)
-        // Keep Media3's decoder fallback enabled. Some HDR profile/codec combinations on Xiaomi
-        // devices reject the first candidate even though a compatible Media3 decoder is available.
-        .setEnableDecoderFallback(true)
-        .withAssSupport(assHandler)
-    )
+    .setRenderersFactory(createRenderersFactory())
     .build()
   private var attachedView: PlayerView? = null
+  private val videoAspect = Media3AspectModeState()
   private var subtitleOverlay: LibassSubtitleSurfaceView? = null
   private var libassRenderer: LibassSubtitleRenderer? = null
   private val externalAssEnabled = mutableMapOf<String, Boolean>()
@@ -235,7 +375,7 @@ class NativeMedia3Engine(context: Context) {
     android.graphics.Color.BLACK,
     null,
   )
-  private val _snapshot = MutableStateFlow(NativePlaybackSnapshot())
+  private val _snapshot = MutableStateFlow(NativePlaybackSnapshot(media3Flow = _flowDiagnostics.value))
   val snapshot: StateFlow<NativePlaybackSnapshot> = _snapshot.asStateFlow()
   private val _subtitleCueText = MutableStateFlow("")
   val subtitleCueText: StateFlow<String> = _subtitleCueText.asStateFlow()
@@ -244,6 +384,7 @@ class NativeMedia3Engine(context: Context) {
   val hasRenderedFirstFrame: StateFlow<Boolean> = _hasRenderedFirstFrame.asStateFlow()
   val currentPlayer: Player get() = player
   var onEnded: (() -> Unit)? = null
+  var onPlaybackError: ((PlaybackException) -> Unit)? = null
   private var endedUri: Uri? = null
   private var metadataChapters: List<NativeChapter> = emptyList()
   private var preparationStartedAtMs: Long = 0L
@@ -251,10 +392,41 @@ class NativeMedia3Engine(context: Context) {
   private var sourceSizeBytes: Long = 0L
   private var videoDecoderName: String? = null
   private var audioDecoderName: String? = null
+  private var currentVideoFormat: Format? = null
+  private var currentAudioFormat: Format? = null
+  private var currentVideoSize: VideoSize? = null
+  private var videoDecoderCounters: DecoderCounters? = null
+  private var videoFrameCounterBaseline = NativeVideoFrameCounts.ZERO
+  private var frameProcessingOffsetTotalUs = 0L
+  private var frameProcessingSampleCount = 0L
+  private var frameProcessingOffsetLastUs = 0L
+  private var bandwidthEstimateBps = 0L
+  private var bandwidthBytesLoaded = 0L
   private var selectedNativeSubtitleSelection: NativeSubtitleSelection? = null
   private var restoringNativeSubtitleSelection = false
 
   private val analyticsListener = object : AnalyticsListener {
+    override fun onVideoEnabled(
+      eventTime: AnalyticsListener.EventTime,
+      decoderCounters: DecoderCounters,
+    ) {
+      if (this@NativeMedia3Engine.videoDecoderCounters !== decoderCounters) {
+        decoderCounters.ensureUpdated()
+        videoFrameCounterBaseline = NativeVideoFrameCounts.ZERO
+      }
+      this@NativeMedia3Engine.videoDecoderCounters = decoderCounters
+      publishSnapshot()
+    }
+
+    override fun onVideoDisabled(
+      eventTime: AnalyticsListener.EventTime,
+      decoderCounters: DecoderCounters,
+    ) {
+      decoderCounters.ensureUpdated()
+      this@NativeMedia3Engine.videoDecoderCounters = decoderCounters
+      publishSnapshot()
+    }
+
     override fun onVideoDecoderInitialized(
       eventTime: AnalyticsListener.EventTime,
       decoderName: String,
@@ -274,9 +446,66 @@ class NativeMedia3Engine(context: Context) {
       audioDecoderName = decoderName
       publishSnapshot()
     }
+
+    override fun onVideoInputFormatChanged(
+      eventTime: AnalyticsListener.EventTime,
+      format: Format,
+      decoderReuseEvaluation: androidx.media3.exoplayer.DecoderReuseEvaluation?,
+    ) {
+      currentVideoFormat = format
+      publishSnapshot()
+    }
+
+    override fun onAudioInputFormatChanged(
+      eventTime: AnalyticsListener.EventTime,
+      format: Format,
+      decoderReuseEvaluation: androidx.media3.exoplayer.DecoderReuseEvaluation?,
+    ) {
+      currentAudioFormat = format
+      publishSnapshot()
+    }
+
+    override fun onDroppedVideoFrames(
+      eventTime: AnalyticsListener.EventTime,
+      droppedFrames: Int,
+      elapsedMs: Long,
+    ) {
+      if (droppedFrames > 0) {
+        publishPlaybackSnapshot()
+      }
+    }
+
+    override fun onVideoFrameProcessingOffset(
+      eventTime: AnalyticsListener.EventTime,
+      totalProcessingOffsetUs: Long,
+      frameCount: Int,
+    ) {
+      if (frameCount > 0) {
+        frameProcessingOffsetTotalUs += totalProcessingOffsetUs
+        frameProcessingSampleCount += frameCount.toLong()
+        frameProcessingOffsetLastUs = totalProcessingOffsetUs / frameCount
+        publishPlaybackSnapshot()
+      }
+    }
+
+    override fun onBandwidthEstimate(
+      eventTime: AnalyticsListener.EventTime,
+      totalLoadTimeMs: Int,
+      totalBytesLoaded: Long,
+      bitrateEstimate: Long,
+    ) {
+      bandwidthEstimateBps = bitrateEstimate.coerceAtLeast(0L)
+      bandwidthBytesLoaded = totalBytesLoaded.coerceAtLeast(0L)
+      publishPlaybackSnapshot()
+    }
   }
 
   private val listener = object : Player.Listener {
+    override fun onVideoSizeChanged(videoSize: VideoSize) {
+      currentVideoSize = videoSize
+      publishPlaybackSnapshot()
+    }
+
     override fun onRenderedFirstFrame() {
       val uri = player.currentMediaItem?.localConfiguration?.uri
       val elapsed = preparationStartedAtMs.takeIf { it > 0L }?.let { SystemClock.elapsedRealtime() - it }
@@ -300,6 +529,10 @@ class NativeMedia3Engine(context: Context) {
     }
     override fun onPlayerError(error: PlaybackException) {
       Log.e(logTag, "player error uri=${player.currentMediaItem?.localConfiguration?.uri}", error)
+      onPlaybackError?.let { callback ->
+        runCatching { callback(error) }
+          .onFailure { Log.e(logTag, "Native playback error callback failed", it) }
+      }
     }
 
     override fun onCues(cueGroup: CueGroup) {
@@ -384,9 +617,9 @@ class NativeMedia3Engine(context: Context) {
     // a media layer so the standalone libass bitmap remains visible above the video surface.
     (view.videoSurfaceView as? SurfaceView)?.setZOrderMediaOverlay(true)
     view.useController = false
-    // Do not let a stale portrait measurement stretch native HDR video after rotation.
-    view.resizeMode = androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_FIT
+    view.resizeMode = videoAspect.resizeMode()
     view.player = player
+    media3FlowSink?.setVideoAspect(videoAspect.aspect())
     configureSubtitleView()
     view.post { if (attachedView === view) configureSubtitleView() }
     startTimelineUpdates()
@@ -397,7 +630,7 @@ class NativeMedia3Engine(context: Context) {
     val view = attachedView ?: return
     view.post {
       if (attachedView !== view) return@post
-      view.resizeMode = androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_FIT
+      view.resizeMode = videoAspect.resizeMode()
       view.requestLayout()
       view.videoSurfaceView?.requestLayout()
       view.invalidate()
@@ -406,11 +639,9 @@ class NativeMedia3Engine(context: Context) {
   }
 
   fun setVideoAspect(aspect: VideoAspect) {
-    attachedView?.resizeMode = when (aspect) {
-      VideoAspect.Fit -> androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_FIT
-      VideoAspect.Crop -> androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_ZOOM
-      VideoAspect.Stretch -> androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_FILL
-    }
+    videoAspect.select(aspect)
+    media3FlowSink?.setVideoAspect(aspect)
+    attachedView?.resizeMode = videoAspect.resizeMode()
   }
 
   fun setZoom(zoom: Float) {
@@ -753,6 +984,15 @@ class NativeMedia3Engine(context: Context) {
     lastKnownDurationMs = 0L
     videoDecoderName = null
     audioDecoderName = null
+    currentVideoFormat = null
+    currentAudioFormat = null
+    currentVideoSize = null
+    resetVideoFrameCounterBaseline()
+    frameProcessingOffsetTotalUs = 0L
+    frameProcessingSampleCount = 0L
+    frameProcessingOffsetLastUs = 0L
+    bandwidthEstimateBps = 0L
+    bandwidthBytesLoaded = 0L
     // The player instance survives item changes; reset any ducked/zero output level before the
     // first audio-only item after a video transition.
     player.volume = 1f
@@ -1057,6 +1297,22 @@ class NativeMedia3Engine(context: Context) {
     libassRenderer?.getTrackIds()?.keys?.forEach { id -> libassRenderer?.setTrackEnabled(id, false) }
   }
 
+  private fun createRenderersFactory(): RenderersFactory {
+    val factory: DefaultRenderersFactory = media3FlowSink?.takeIf { it.isPreflightAvailable() }
+      ?.let { Media3FlowRenderersFactory(appContext, it) }
+      ?: DefaultRenderersFactory(appContext)
+    // Keep platform/extension codecs and Media3's standard renderer candidates available for
+    // HDR, DRM, unsupported geometry, or failed Vulkan/HardwareBuffer preflight.
+    factory.setExtensionRendererMode(DefaultRenderersFactory.EXTENSION_RENDERER_MODE_ON)
+    factory.setEnableDecoderFallback(true)
+    return factory.withAssSupport(assHandler)
+  }
+
+  private fun publishFlowDiagnostics(diagnostics: Media3FlowDiagnostics) {
+    _flowDiagnostics.value = diagnostics
+    _snapshot.value = _snapshot.value.copy(media3Flow = diagnostics)
+  }
+
   fun addListener(listener: Player.Listener) = player.addListener(listener)
   fun removeListener(listener: Player.Listener) = player.removeListener(listener)
 
@@ -1068,6 +1324,9 @@ class NativeMedia3Engine(context: Context) {
     pendingSeekDisplayPositionMs = null
     player.stop()
     player.clearMediaItems()
+    currentVideoFormat = null
+    currentVideoSize = null
+    videoDecoderName = null
     _subtitleCueText.value = ""
     selectedNativeSubtitleKey = null
     selectedNativeSubtitleSelection = null
@@ -1079,12 +1338,140 @@ class NativeMedia3Engine(context: Context) {
     publishSnapshot()
   }
 
+  fun startFlowDiagnosticCapture(
+    sessionId: String,
+    baseDirectory: String,
+    pairedOutput: Boolean = false,
+  ): String? =
+    if (media3FlowSink == null) "Media3 Flow/Vulkan unavailable" else
+      media3FlowSink.startFlowDiagnosticCapture(sessionId, baseDirectory, pairedOutput)
+
+  fun stopFlowDiagnosticCapture(sessionId: String): String? =
+    if (media3FlowSink == null) "Media3 Flow/Vulkan unavailable" else media3FlowSink.stopFlowDiagnosticCapture(sessionId)
+
+  /** App-side timing only; SurfaceView scanout requires a companion FrameTimeline trace. */
+  fun flowDiagnosticTimingSnapshot(): JSONObject {
+    val d = _flowDiagnostics.value
+    fun nullable(value: Number?): Any = value ?: JSONObject.NULL
+    fun duration(value: FlowDurationSummary) = JSONObject()
+      .put("average_us", nullable(value.averageUs))
+      .put("p95_us", nullable(value.p95Us))
+      .put("maximum_us", nullable(value.maximumUs))
+      .put("sample_count", value.sampleCount)
+    fun stage(value: FlowVulkanStageTiming) = JSONObject()
+      .put("status", value.status)
+      .put("supported", value.supported)
+      .put("dispatches", value.dispatches)
+      .put("completed_samples", value.completedSamples)
+      .put("pending_or_dropped", value.pendingOrDropped)
+      .put("average_us", nullable(value.averageUs))
+      .put("maximum_us", nullable(value.maximumUs))
+
+    val vulkan = d.vulkanTimings
+    val gles = d.glesTimings
+    val cpu = d.cpuTimings
+    val coverage = d.pixelCoverage
+    val gapContexts = JSONObject()
+    d.outputTickGapContexts.toSortedMap().forEach { (reason, count) -> gapContexts.put(reason, count) }
+    val outputFailureReasons = JSONObject()
+    d.outputSubmissionFailureReasons.toSortedMap().forEach { (reason, count) -> outputFailureReasons.put(reason, count) }
+    val presentationPathFailureReasons = JSONObject()
+    d.presentationPathFailureReasons.toSortedMap().forEach { (reason, count) -> presentationPathFailureReasons.put(reason, count) }
+    val noWritableSlotStates = JSONObject()
+    d.lastNoWritablePresentationSlotStates.toSortedMap().forEach { (state, count) -> noWritableSlotStates.put(state, count) }
+    return JSONObject()
+      .put("schema_version", 1)
+      .put("engine", "native-media3")
+      .put("state", d.state)
+      .put("bypass_reason", d.bypassReason ?: JSONObject.NULL)
+      .put("target_fps", d.targetFps)
+      .put("captured_source_fps_median_pts", d.capturedSourceFps.toDouble())
+      .put("captured_pts_sample_count", d.capturedPtsSampleCount)
+      .put("successful_egl_swap_return_fps", d.outputFps.toDouble())
+      .put("generated_output_fps", d.generatedFps.toDouble())
+      .put("generated_output_frames", d.generatedFrames)
+      .put("sink_dropped_frames", d.droppedFrames)
+      .put("inferred_skipped_output_ticks", d.skippedOutputTicks)
+      .put("output_submission_failures", d.outputSubmissionFailures)
+      .put("last_submission_failure_reason", d.lastOutputSubmissionFailureReason)
+      .put("output_submission_failure_reasons", outputFailureReasons)
+      .put("presentation_path_failure_reasons", presentationPathFailureReasons)
+      .put("last_no_writable_presentation_slot_states", noWritableSlotStates)
+      .put("rate_semantics", "eglSwapBuffers return cadence and generated submits; neither is SurfaceFlinger scanout")
+      .put("actual_displayed_fps_available", false)
+      .put("actual_displayed_fps_source", "Perfetto FrameTimeline companion trace required for SurfaceView")
+      .put("motion_estimate_submit_ms", d.motionEstimateSubmitMs.toDouble())
+      .put("motion_pass_average_gpu_us", nullable(d.motionPassAverageGpuUs))
+      .put("confidence", nullable(d.confidence?.toDouble()))
+      .put("motion_grid", JSONObject().put("width", d.motionGridWidth).put("height", d.motionGridHeight))
+      .put("processing_dimensions", JSONObject().put("width", d.processingWidth).put("height", d.processingHeight))
+      .put("frame_storage_dimensions", JSONObject().put("width", d.frameStorageWidth).put("height", d.frameStorageHeight))
+      .put("cpu_timings", JSONObject()
+        .put("input_queue_wait", duration(cpu.inputQueueWait))
+        .put("frame_handler_call", duration(cpu.frameHandlerCall))
+        .put("egl_swap_wait", duration(cpu.eglSwapWait))
+        .put("vulkan_input_prepare_submit", duration(cpu.vulkanInputPrepare))
+        .put("vulkan_synthesis_submit", duration(cpu.vulkanSynthesisSubmit)))
+      .put("gles_timings", JSONObject()
+        .put("status", gles.status)
+        .put("supported", gles.supported)
+        .put("valid_results", gles.validResults)
+        .put("pending_results", gles.pendingResults)
+        .put("disjoint_results_discarded", gles.disjointResultsDiscarded)
+        .put("zero_duration_results", gles.zeroDurationResults)
+        .put("skipped_because_pool_full", gles.skippedBecausePoolFull)
+        .put("presentation_staging_copy", duration(gles.presentationStagingCopy)))
+      .put("vulkan_timings", JSONObject()
+        .put("status", vulkan.status)
+        .put("timestamps_supported", vulkan.timestampsSupported)
+        .put("timestamp_valid_bits", vulkan.timestampValidBits)
+        .put("timestamp_period_ns", vulkan.timestampPeriodNs)
+        .put("timestamp_compute_and_graphics", vulkan.timestampComputeAndGraphics)
+        .put("compute_queue_family", vulkan.computeQueueFamily)
+        .put("preprocess", stage(vulkan.preprocess))
+        .put("analysis", stage(vulkan.analysis))
+        .put("motion_fine", stage(vulkan.motionFine))
+        .put("motion_middle", stage(vulkan.motionMiddle))
+        .put("motion_coarse", stage(vulkan.motionCoarse))
+        .put("synthesis", stage(vulkan.synthesis)))
+      .put("pixel_coverage", JSONObject()
+        .put("samples", coverage.samples)
+        .put("sampled_pixels", coverage.sampledPixels)
+        .put("motion_warp_pixels", coverage.motionWarpPixels)
+        .put("source_fallback_pixels", coverage.sourceFrameFallbackPixels)
+        .put("static_blend_pixels", coverage.staticBlendPixels)
+        .put("interframe_changed_pixels", coverage.interframeChangedPixels)
+        .put("changed_warp_pixels", coverage.interframeChangedWarpPixels)
+        .put("changed_source_fallback_pixels", coverage.interframeChangedSourceFallbackPixels)
+        .put("changed_static_blend_pixels", coverage.interframeChangedStaticBlendPixels)
+        .put("static_vector_likely_motion", coverage.staticVectorLikelyMotionSamples)
+        .put("static_vector_uncertain_motion", coverage.staticVectorUncertainMotionSamples))
+      .put("queues", JSONObject()
+        .put("pending_input_depth", d.pendingInputDepth)
+        .put("input_in_flight", d.inputInFlight)
+        .put("oldest_pending_input_age_ms", d.oldestPendingInputAgeMs.toDouble())
+        .put("source_frame_depth", d.sourceFrameDepth)
+        .put("ready_motion_pair_depth", d.readyMotionPairDepth)
+        .put("presentation_queue_depth", d.presentationQueueDepth)
+        .put("presentation_in_flight", d.presentationInFlight)
+        .put("presentation_coalesced_frames", d.presentationCoalescedFrames))
+      .put("frame_timing", JSONObject()
+        .put("selected_source_pts_age_ms", nullable(d.selectedSourcePtsAgeMs?.toDouble()))
+        .put("source_pair_pts_gap_ms", nullable(d.sourcePairPtsGapMs?.toDouble()))
+        .put("frame0_capture_age_ms", nullable(d.frame0CaptureAgeMs?.toDouble()))
+        .put("frame1_capture_age_ms", nullable(d.frame1CaptureAgeMs?.toDouble()))
+        .put("output_callback_lateness_ms", d.outputCallbackLatenessMs.toDouble())
+        .put("last_output_tick_gap_reason", d.lastOutputTickGapReason)
+        .put("output_tick_gap_contexts", gapContexts))
+  }
+
   fun release() {
     clearLoop()
     loopHandler.removeCallbacks(timelineRunnable)
     loopHandler.removeCallbacks(seekRunnable)
     pendingSeekPositionMs = null
     player.removeListener(listener)
+    player.removeAnalyticsListener(analyticsListener)
     attachedView?.player = null
     libassRenderer?.close()
     libassRenderer = null
@@ -1093,6 +1480,7 @@ class NativeMedia3Engine(context: Context) {
     attachedView = null
     assHandler.release()
     player.release()
+    media3FlowSink?.release()
   }
 
   private fun publishSnapshot() {
@@ -1129,6 +1517,9 @@ class NativeMedia3Engine(context: Context) {
             language = format.language,
             formatId = externalUri?.let { "external:$it" } ?: format.id,
             external = isExternal,
+            sampleMimeType = format.sampleMimeType,
+            codecs = format.codecs,
+            channelCount = format.channelCount.coerceAtLeast(0),
             selected = if (type == C.TRACK_TYPE_TEXT && selectedNativeSubtitleKey == (groupIndex to trackIndex)) {
               true
             } else group.isTrackSelected(trackIndex),
@@ -1137,10 +1528,12 @@ class NativeMedia3Engine(context: Context) {
       }.flatten()
     val subtitles = tracksOfType(C.TRACK_TYPE_TEXT, "Subtitle")
     val audioTracks = tracksOfType(C.TRACK_TYPE_AUDIO, "Audio")
-    val video = groups.firstOrNull { it.type == C.TRACK_TYPE_VIDEO && it.length > 0 }
-      ?.getTrackFormat(0)
-    val audio = groups.firstOrNull { it.type == C.TRACK_TYPE_AUDIO && it.length > 0 }
-      ?.getTrackFormat(0)
+    // Track groups can describe unselected alternatives; video telemetry is sourced only from
+    // the format actually consumed by the renderer.
+    val video = currentVideoFormat
+    val audio = currentAudioFormat
+      ?: groups.firstOrNull { it.type == C.TRACK_TYPE_AUDIO && it.length > 0 }
+        ?.getTrackFormat(0)
     val reportedDurationMs = player.duration
       .takeIf { it != C.TIME_UNSET && it > 0L }
       ?.also { lastKnownDurationMs = it }
@@ -1153,24 +1546,24 @@ class NativeMedia3Engine(context: Context) {
         mime.contains("dolby-vision") || codecs.startsWith("dvhe") || codecs.startsWith("dvh1") -> "Dolby Vision"
         colorInfo?.colorTransfer == C.COLOR_TRANSFER_HLG -> "HLG"
         colorInfo?.colorTransfer == C.COLOR_TRANSFER_ST2084 -> "HDR10"
-        else -> "SDR"
+        colorInfo?.colorTransfer == C.COLOR_TRANSFER_SDR -> "SDR"
+        else -> null
       }
     }
     val colorSpace =
       when (colorInfo?.colorSpace) {
         C.COLOR_SPACE_BT2020 -> "BT.2020"
         C.COLOR_SPACE_BT709 -> "BT.709"
+        C.COLOR_SPACE_BT601 -> "BT.601"
         else -> null
       }
-    val declaredVideoBitrate = video?.bitrate?.takeIf { it > 0 } ?: 0
-    val estimatedVideoBitrate =
-      if (declaredVideoBitrate == 0 && sourceSizeBytes > 0L && reportedDurationMs > 0L) {
-        ((sourceSizeBytes * 8_000L) / reportedDurationMs)
-          .coerceIn(1L, Int.MAX_VALUE.toLong())
-          .toInt()
-      } else {
-        0
-      }
+    val activeVideoSize = currentVideoSize.takeIf { video != null }
+    val videoFrameCounters = currentVideoFrameCounters()
+    fun isoColorCode(code: Int?, convert: (Int) -> Int): Int? =
+      code
+        ?.takeIf { it != Format.NO_VALUE }
+        ?.let(convert)
+        ?.takeIf { it > 0 }
     _snapshot.value = NativePlaybackSnapshot(
       isPlaying = player.isPlaying,
       isReady = player.playbackState == Player.STATE_READY,
@@ -1182,18 +1575,49 @@ class NativeMedia3Engine(context: Context) {
       totalBufferedDurationMs = player.totalBufferedDuration.coerceAtLeast(0L),
       videoWidth = video?.width ?: 0,
       videoHeight = video?.height ?: 0,
+      videoOutputWidth = activeVideoSize?.width ?: 0,
+      videoOutputHeight = activeVideoSize?.height ?: 0,
+      videoPixelWidthHeightRatio = video?.pixelWidthHeightRatio?.takeIf { it > 0f && it.isFinite() },
+      videoOutputPixelWidthHeightRatio = activeVideoSize?.pixelWidthHeightRatio?.takeIf { it > 0f && it.isFinite() },
+      videoFrameRate = video?.frameRate?.takeIf { it > 0f } ?: 0f,
       videoMimeType = video?.sampleMimeType,
       videoCodec = video?.codecs,
       videoDecoder = videoDecoderName,
       audioDecoder = audioDecoderName,
       videoDynamicRange = dynamicRange,
       videoColorSpace = colorSpace,
-      videoBitrate = declaredVideoBitrate.takeIf { it > 0 } ?: estimatedVideoBitrate,
+      videoLumaBitDepth = colorInfo?.lumaBitdepth?.takeIf { it > 0 },
+      videoChromaBitDepth = colorInfo?.chromaBitdepth?.takeIf { it > 0 },
+      videoColorPrimariesIsoCode =
+        isoColorCode(colorInfo?.colorSpace) { ColorInfo.colorSpaceToIsoColorPrimaries(it) },
+      videoTransferCharacteristicsIsoCode =
+        isoColorCode(colorInfo?.colorTransfer) { ColorInfo.colorTransferToIsoTransferCharacteristics(it) },
+      videoMatrixCoefficientsIsoCode =
+        isoColorCode(colorInfo?.colorSpace) { ColorInfo.colorSpaceToIsoMatrixCoefficients(it) },
+      videoColorRange = when (colorInfo?.colorRange) {
+        C.COLOR_RANGE_FULL -> "Full"
+        C.COLOR_RANGE_LIMITED -> "Limited"
+        else -> null
+      },
+      videoHasHdrStaticMetadata = colorInfo?.hdrStaticInfo?.let { it.size > 0 },
+      videoTrackBitrate = video?.bitrate?.takeIf { it > 0 } ?: 0,
+      videoRenderedOutputBuffers = videoFrameCounters?.renderedOutputBuffers,
+      videoSkippedInputBuffers = videoFrameCounters?.skippedInputBuffers,
+      videoSkippedOutputBuffers = videoFrameCounters?.skippedOutputBuffers,
+      videoDroppedBuffers = videoFrameCounters?.droppedBuffers,
+      frameProcessingOffsetAverageUs =
+        if (frameProcessingSampleCount > 0L) frameProcessingOffsetTotalUs / frameProcessingSampleCount else 0L,
+      frameProcessingOffsetLastUs = frameProcessingOffsetLastUs,
+      frameProcessingSampleCount = frameProcessingSampleCount,
       audioCodec = audio?.codecs ?: audio?.sampleMimeType,
       audioBitrate = audio?.bitrate?.takeIf { it > 0 } ?: 0,
       audioChannels = audio?.channelCount ?: 0,
       audioSampleRate = audio?.sampleRate ?: 0,
+      bandwidthEstimateBps = bandwidthEstimateBps,
+      bandwidthBytesLoaded = bandwidthBytesLoaded,
+      sourceSizeBytes = sourceSizeBytes,
       speed = player.playbackParameters.speed,
+      media3Flow = _flowDiagnostics.value,
       subtitleTracks = subtitles,
       audioTracks = audioTracks,
       chapters = chapters,
@@ -1207,6 +1631,8 @@ class NativeMedia3Engine(context: Context) {
       .takeIf { it != C.TIME_UNSET && it > 0L }
       ?.also { lastKnownDurationMs = it }
       ?: lastKnownDurationMs
+    val activeVideoSize = currentVideoSize.takeIf { currentVideoFormat != null }
+    val videoFrameCounters = currentVideoFrameCounters()
     _snapshot.value = previous.copy(
       isPlaying = player.isPlaying,
       isReady = player.playbackState == Player.STATE_READY,
@@ -1216,8 +1642,40 @@ class NativeMedia3Engine(context: Context) {
       positionMs = (pendingSeekDisplayPositionMs ?: player.currentPosition).coerceAtLeast(0L),
       durationMs = reportedDurationMs,
       totalBufferedDurationMs = player.totalBufferedDuration.coerceAtLeast(0L),
+      videoOutputWidth = activeVideoSize?.width ?: 0,
+      videoOutputHeight = activeVideoSize?.height ?: 0,
+      videoOutputPixelWidthHeightRatio = activeVideoSize?.pixelWidthHeightRatio?.takeIf { it > 0f && it.isFinite() },
+      videoRenderedOutputBuffers = videoFrameCounters?.renderedOutputBuffers,
+      videoSkippedInputBuffers = videoFrameCounters?.skippedInputBuffers,
+      videoSkippedOutputBuffers = videoFrameCounters?.skippedOutputBuffers,
+      videoDroppedBuffers = videoFrameCounters?.droppedBuffers,
+      frameProcessingOffsetAverageUs =
+        if (frameProcessingSampleCount > 0L) frameProcessingOffsetTotalUs / frameProcessingSampleCount else 0L,
+      frameProcessingOffsetLastUs = frameProcessingOffsetLastUs,
+      frameProcessingSampleCount = frameProcessingSampleCount,
+      bandwidthEstimateBps = bandwidthEstimateBps,
+      bandwidthBytesLoaded = bandwidthBytesLoaded,
+      sourceSizeBytes = sourceSizeBytes,
       speed = player.playbackParameters.speed,
+      media3Flow = _flowDiagnostics.value,
     )
+  }
+
+  private fun resetVideoFrameCounterBaseline() {
+    val counters = videoDecoderCounters
+    if (counters == null) {
+      videoFrameCounterBaseline = NativeVideoFrameCounts.ZERO
+      return
+    }
+    counters.ensureUpdated()
+    videoFrameCounterBaseline = NativeVideoFrameCounts.from(counters)
+  }
+
+  private fun currentVideoFrameCounters(): NativeVideoFrameCounts? {
+    if (currentVideoFormat == null) return null
+    val counters = videoDecoderCounters ?: return null
+    counters.ensureUpdated()
+    return NativeVideoFrameCounts.from(counters).since(videoFrameCounterBaseline)
   }
 
   private fun metadataEntriesToChapters(metadata: Metadata): List<NativeChapter> =

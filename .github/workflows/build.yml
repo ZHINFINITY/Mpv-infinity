@@ -16,8 +16,6 @@ on:
         options:
           - standard
           - all
-          - dual
-          - fongmi
           - no_vulkan
 
 permissions:
@@ -43,6 +41,13 @@ jobs:
         with:
           # BuildConfig.GIT_COUNT and preview build identities rely on the real repository history.
           fetch-depth: 0
+
+      - name: Test licence notices and promotion regressions
+        run: |
+          python3 scripts/tests/project_license_test.py
+          python3 scripts/tests/third_party_source_test.py
+          python3 scripts/tests/media3_decoder_ffmpeg_variant_test.py
+          python3 scripts/tests/mpvflow_pair_ghost_runner_test.py
 
       - name: Generate build metadata
         shell: bash
@@ -73,17 +78,19 @@ jobs:
       - name: Make Gradle wrapper executable
         run: chmod +x ./gradlew
 
+      - name: Verify LGPL-only MPV runtimes
+        run: |
+          python3 scripts/verify-mpv-aar-lgpl.py app/libs/mpvlib.aar --abis arm64-v8a,armeabi-v7a,x86,x86_64 --only-selected-abis --require-vulkan
+          python3 scripts/verify-mpv-aar-lgpl.py app/libs/mpvlib-no-vulkun.aar --abis arm64-v8a,armeabi-v7a,x86,x86_64 --only-selected-abis --forbid-vulkan
+
       - name: Build selected release APKs
         shell: bash
         run: |
           set -euo pipefail
           gradle_abi_args=()
           if [[ "$ARM64_ONLY" == "true" ]]; then gradle_abi_args=(-PtargetAbi=arm64-v8a); fi
-          if [[ "$SELECTED_FLAVOR" == "all" || "$SELECTED_FLAVOR" == "dual" || "$SELECTED_FLAVOR" == "standard" ]]; then
+          if [[ "$SELECTED_FLAVOR" == "all" || "$SELECTED_FLAVOR" == "standard" ]]; then
             ./gradlew assembleStandardRelease "${gradle_abi_args[@]}" --stacktrace --no-daemon --max-workers=2
-          fi
-          if [[ "$SELECTED_FLAVOR" == "all" || "$SELECTED_FLAVOR" == "dual" || "$SELECTED_FLAVOR" == "fongmi" ]]; then
-            ./gradlew assembleFongmiRelease --stacktrace --no-daemon --max-workers=2
           fi
           if [[ "$SELECTED_FLAVOR" == "all" || "$SELECTED_FLAVOR" == "no_vulkan" ]]; then
             ./gradlew assembleNoVulkanRelease --stacktrace --no-daemon --max-workers=2
@@ -131,7 +138,7 @@ jobs:
             rm -f "$unsigned"
           }
 
-          if [[ "$SELECTED_FLAVOR" == "all" || "$SELECTED_FLAVOR" == "dual" || "$SELECTED_FLAVOR" == "standard" ]]; then
+          if [[ "$SELECTED_FLAVOR" == "all" || "$SELECTED_FLAVOR" == "standard" ]]; then
             release_dir="app/build/outputs/apk/standard/release"
             test -d "$release_dir"
             if [[ "$ARM64_ONLY" == "true" ]]; then architectures=(arm64-v8a); else architectures=(universal arm64-v8a armeabi-v7a x86 x86_64); fi
@@ -141,16 +148,6 @@ jobs:
                 "$release_dir/app-standard-${abi}-release.apk" \
                 "standard $abi release"
             done
-          fi
-
-          if [[ "$SELECTED_FLAVOR" == "all" || "$SELECTED_FLAVOR" == "dual" || "$SELECTED_FLAVOR" == "fongmi" ]]; then
-            flavor="fongmi"
-            flavor_dir="app/build/outputs/apk/fongmi/release"
-            test -d "$flavor_dir"
-            sign_apk \
-              "$flavor_dir/app-${flavor}-universal-release-unsigned.apk" \
-              "$flavor_dir/app-${flavor}-universal-release.apk" \
-              "$flavor universal release"
           fi
 
           if [[ "$SELECTED_FLAVOR" == "all" || "$SELECTED_FLAVOR" == "no_vulkan" ]]; then
@@ -167,7 +164,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          if [[ "$SELECTED_FLAVOR" == "all" || "$SELECTED_FLAVOR" == "dual" || "$SELECTED_FLAVOR" == "standard" ]]; then
+          if [[ "$SELECTED_FLAVOR" == "all" || "$SELECTED_FLAVOR" == "standard" ]]; then
             release_dir="app/build/outputs/apk/standard/release"
             if [[ "$ARM64_ONLY" == "true" ]]; then architectures=(arm64-v8a); else architectures=(universal arm64-v8a armeabi-v7a x86 x86_64); fi
             for abi in "${architectures[@]}"; do
@@ -176,20 +173,6 @@ jobs:
                 exit 1
               fi
             done
-          fi
-
-          if [[ "$SELECTED_FLAVOR" == "all" || "$SELECTED_FLAVOR" == "dual" || "$SELECTED_FLAVOR" == "fongmi" ]]; then
-            flavor="fongmi"
-            flavor_dir="app/build/outputs/apk/fongmi/release"
-            if ! compgen -G "$flavor_dir/app-${flavor}-universal-release*.apk" >/dev/null; then
-              echo "No universal release APK found for $flavor"
-              exit 1
-            fi
-            if find "$flavor_dir" -maxdepth 1 -type f -name "app-${flavor}-*-release*.apk" ! -name "app-${flavor}-universal-release*.apk" | grep -q .; then
-              echo "$flavor produced an unexpected ABI-specific APK"
-              find "$flavor_dir" -maxdepth 1 -type f -name '*.apk' -print
-              exit 1
-            fi
           fi
 
           if [[ "$SELECTED_FLAVOR" == "all" || "$SELECTED_FLAVOR" == "no_vulkan" ]]; then
@@ -207,7 +190,7 @@ jobs:
           fi
 
       - name: Upload arm64-v8a APK
-        if: ${{ env.SELECTED_FLAVOR == 'all' || env.SELECTED_FLAVOR == 'dual' || env.SELECTED_FLAVOR == 'standard' }}
+        if: ${{ env.SELECTED_FLAVOR == 'all' || env.SELECTED_FLAVOR == 'standard' }}
         uses: actions/upload-artifact@v7
         with:
           name: app-standard-arm64-v8a-release-${{ env.SHORT_SHA }}
@@ -217,7 +200,7 @@ jobs:
           compression-level: 0
 
       - name: Upload armeabi-v7a APK
-        if: ${{ env.ARM64_ONLY != 'true' && (env.SELECTED_FLAVOR == 'all' || env.SELECTED_FLAVOR == 'dual' || env.SELECTED_FLAVOR == 'standard') }}
+        if: ${{ env.ARM64_ONLY != 'true' && (env.SELECTED_FLAVOR == 'all' || env.SELECTED_FLAVOR == 'standard') }}
         uses: actions/upload-artifact@v7
         with:
           name: app-standard-armeabi-v7a-release-${{ env.SHORT_SHA }}
@@ -227,7 +210,7 @@ jobs:
           compression-level: 0
 
       - name: Upload universal APK
-        if: ${{ env.ARM64_ONLY != 'true' && (env.SELECTED_FLAVOR == 'all' || env.SELECTED_FLAVOR == 'dual' || env.SELECTED_FLAVOR == 'standard') }}
+        if: ${{ env.ARM64_ONLY != 'true' && (env.SELECTED_FLAVOR == 'all' || env.SELECTED_FLAVOR == 'standard') }}
         uses: actions/upload-artifact@v7
         with:
           name: app-standard-universal-release-${{ env.SHORT_SHA }}
@@ -237,7 +220,7 @@ jobs:
           compression-level: 0
 
       - name: Upload x86 APK
-        if: ${{ env.ARM64_ONLY != 'true' && (env.SELECTED_FLAVOR == 'all' || env.SELECTED_FLAVOR == 'dual' || env.SELECTED_FLAVOR == 'standard') }}
+        if: ${{ env.ARM64_ONLY != 'true' && (env.SELECTED_FLAVOR == 'all' || env.SELECTED_FLAVOR == 'standard') }}
         uses: actions/upload-artifact@v7
         with:
           name: app-standard-x86-release-${{ env.SHORT_SHA }}
@@ -247,21 +230,11 @@ jobs:
           compression-level: 0
 
       - name: Upload x86_64 APK
-        if: ${{ env.ARM64_ONLY != 'true' && (env.SELECTED_FLAVOR == 'all' || env.SELECTED_FLAVOR == 'dual' || env.SELECTED_FLAVOR == 'standard') }}
+        if: ${{ env.ARM64_ONLY != 'true' && (env.SELECTED_FLAVOR == 'all' || env.SELECTED_FLAVOR == 'standard') }}
         uses: actions/upload-artifact@v7
         with:
           name: app-standard-x86_64-release-${{ env.SHORT_SHA }}
           path: app/build/outputs/apk/standard/release/app-standard-x86_64-release*.apk
-          if-no-files-found: error
-          retention-days: 14
-          compression-level: 0
-
-      - name: Upload Fongmi universal APK
-        if: ${{ env.SELECTED_FLAVOR == 'all' || env.SELECTED_FLAVOR == 'dual' || env.SELECTED_FLAVOR == 'fongmi' }}
-        uses: actions/upload-artifact@v7
-        with:
-          name: app-fongmi-release-${{ env.SHORT_SHA }}
-          path: app/build/outputs/apk/fongmi/release/app-fongmi-universal-release*.apk
           if-no-files-found: error
           retention-days: 14
           compression-level: 0

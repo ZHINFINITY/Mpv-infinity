@@ -1,10 +1,8 @@
 /*
- * SPDX-License-Identifier: AGPL-3.0-or-later
+ * SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
  *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Affero General Public License as published
- * by the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * Copyright (c) 2026 ZHINFINITY. Mpv∞ Covered Code.
+ * See LICENSE for terms.
  */
 
 package app.infinity.mpvz.ui.player
@@ -72,7 +70,11 @@ import androidx.documentfile.provider.DocumentFile
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.media3.common.C
+import androidx.media3.common.PlaybackException
+import androidx.media3.common.util.UnstableApi
+import androidx.media3.exoplayer.ExoPlaybackException
 import androidx.lifecycle.repeatOnLifecycle
+import app.infinity.mpvz.BuildConfig
 import app.infinity.mpvz.R
 import app.infinity.mpvz.catalog.StreamWatchHistory
 import app.infinity.mpvz.database.entities.PlaybackStateEntity
@@ -195,13 +197,58 @@ class PlayerActivity :
 
   /**
    * Binding for the player layout.
-   */
+  */
   private val binding by lazy { PlayerLayoutBinding.inflate(layoutInflater) }
   private val nativeEngine by lazy {
-    NativeMedia3Engine(this).also {
+    NativeMedia3Engine(
+      context = this,
+      enableMedia3Flow = decoderPreferences.mpvFlowFrameInterpolation.get(),
+      media3FlowTargetFps = decoderPreferences.mpvFlowTargetFps.get(),
+      media3FlowQuality = decoderPreferences.mpvFlowQuality.get(),
+      media3FlowComputeApi = decoderPreferences.mpvFlowComputeApi.get(),
+      media3FlowVisibilityResolverDebug = decoderPreferences.mpvFlowVisibilityResolverDebug.get(),
+      media3FlowSoftBlendDebug = BuildConfig.DEBUG && decoderPreferences.mpvFlowSoftBlendDebug.get(),
+    ).also {
       it.onEnded = { runOnUiThread { handleNativePlaybackEnded() } }
+      it.onPlaybackError = { error -> runOnUiThread { handleNativePlaybackError(error) } }
     }
   }
+  private val flowDiagnosticsCaptureManager by lazy { FlowDiagnosticsCaptureManager(this) }
+  internal val flowDiagnosticsCaptureState get() = flowDiagnosticsCaptureManager.state
+
+  internal fun startFlowDiagnosticsCapture(pairedOutput: Boolean = false): String? {
+    if (!BuildConfig.DEBUG) return "debug_build_required"
+    return when (activeEngineMode) {
+      PlaybackEngineMode.AUTO -> "active_engine_unresolved"
+      PlaybackEngineMode.MPV ->
+        flowDiagnosticsCaptureManager.start(
+          engine = "mpv",
+          pairedOutput = pairedOutput,
+          startRequest = { sessionId, baseDirectory ->
+            binding.player.startFlowDiagnosticCapture(
+              sessionId, baseDirectory.absolutePath, pairedOutput)
+          },
+          stopRequest = { sessionId ->
+            binding.player.stopFlowDiagnosticCapture(sessionId)
+          },
+          timingSnapshot = binding.player::flowDiagnosticTimingSnapshot,
+        )
+      PlaybackEngineMode.NATIVE ->
+        flowDiagnosticsCaptureManager.start(
+          engine = "native-media3",
+          pairedOutput = pairedOutput,
+          startRequest = { sessionId, baseDirectory ->
+            nativeEngine.startFlowDiagnosticCapture(
+              sessionId, baseDirectory.absolutePath, pairedOutput)
+          },
+          stopRequest = nativeEngine::stopFlowDiagnosticCapture,
+          timingSnapshot = nativeEngine::flowDiagnosticTimingSnapshot,
+        )
+    }
+  }
+
+  internal fun stopFlowDiagnosticsCapture(): String? = flowDiagnosticsCaptureManager.stop()
+
   val nativePlaybackSnapshot get() = nativeEngine.snapshot
   private var activeEngineMode = PlaybackEngineMode.MPV
   private var engineHandoffJob: Job? = null
@@ -380,6 +427,36 @@ class PlayerActivity :
       (autoplay || viewModel.shouldRepeatPlaylist()) && viewModel.hasNext() -> playNextQueueItem()
       else -> finishAtEofIfRequested()
     }
+  }
+
+  @OptIn(UnstableApi::class)
+  private fun handleNativePlaybackError(error: PlaybackException) {
+    if (activeEngineMode != PlaybackEngineMode.NATIVE || !ownsPlaybackSession() || isFinishing || isDestroyed) return
+    val causeClassNames = buildList {
+      val seen = mutableSetOf<Throwable>()
+      var cause: Throwable? = error
+      while (cause != null && seen.add(cause)) {
+        add(cause.javaClass.name)
+        cause = cause.cause
+      }
+    }
+    val rendererFailure = error as? ExoPlaybackException
+    val fallbackKind = NativePlaybackRecoveryPolicy.fallbackKind(
+      errorCodeName = error.errorCodeName,
+      causeClassNames = causeClassNames,
+      rendererName = rendererFailure?.rendererName,
+      rendererMimeType = rendererFailure?.rendererFormat?.sampleMimeType,
+    ) ?: return
+
+    Log.w(
+      "Mpv∞-PlayerActivity",
+      "Native ${fallbackKind.name.lowercase()} failure; switching this item to MPV " +
+        "(code=${error.errorCodeName},renderer=${rendererFailure?.rendererName ?: "unknown"}," +
+        "format=${rendererFailure?.rendererFormat?.sampleMimeType ?: "unknown"})",
+    )
+    viewModel.showToast(fallbackKind.toastMessage)
+    // The engine handoff snapshots the current position and play/pause state before reloading.
+    selectEngineForCurrentVideo(PlaybackEngineMode.MPV)
   }
 
   override fun nativeSetZoom(zoom: Float) = nativeEngine.setZoom(zoom)
@@ -562,6 +639,8 @@ class PlayerActivity :
   @Volatile private var nativeEofHandled = false
   /** Native and MPV use different audio-track identifiers across an engine handoff. */
   @Volatile private var forceMpvAudioTrackAutoOnNextLoad = false
+  @Volatile private var lastRequestedNativeAudioSelection: AudioTrackFingerprint? = null
+  @Volatile private var pendingMpvAudioSelection: AudioTrackFingerprint? = null
 
   @Volatile private var playWhenFileLoaded = false
   private var pendingVideoParamRefreshRequiresShaderReload = false
@@ -731,6 +810,21 @@ class PlayerActivity :
   override fun onCreate(savedInstanceState: Bundle?) {
     enableEdgeToEdge()
     super.onCreate(savedInstanceState)
+    Log.i(
+      "Mpv∞-BuildIdentity",
+      BuildIdentityDiagnostic.startupLine(
+        gitSha = BuildConfig.GIT_SHA,
+        versionName = BuildConfig.VERSION_NAME,
+        versionCode = BuildConfig.VERSION_CODE,
+        deviceBrand = Build.BRAND,
+        deviceModel = Build.MODEL,
+        deviceProduct = Build.PRODUCT,
+        deviceCodeName = Build.DEVICE,
+        androidRelease = Build.VERSION.RELEASE,
+        androidSdk = Build.VERSION.SDK_INT,
+        buildFingerprint = Build.FINGERPRINT,
+      ),
+    )
     restoreAudioPlaybackSessionIfNeeded()
     if (redirectUnselectedTorrentToPicker(intent, finishCurrent = true)) return
     if (!acceptPreparedPlaybackLaunch(intent)) {
@@ -851,7 +945,7 @@ class PlayerActivity :
             }.coerceAtLeast(0L)
           val outgoingPlaying =
             if (outgoingEngine == PlaybackEngineMode.NATIVE) {
-              nativeEngine.currentPlayer.isPlaying
+              nativeEngine.currentPlayer.playWhenReady
             } else {
               PlaybackSession.getPropertyBoolean("pause") == false
             }
@@ -861,7 +955,23 @@ class PlayerActivity :
           if (outgoingEngine == PlaybackEngineMode.NATIVE) {
             nativeEngine.setPlaying(false)
           } else if (mpvInitialized) {
-            PlaybackSession.setPropertyBoolean("pause", true)
+            val pauseRequested = PlaybackSession.setPauseForEngineHandoff(true)
+            var pauseConfirmed = false
+            if (pauseRequested) {
+              for (attempt in 0 until 20) {
+                if (PlaybackSession.getPropertyBoolean("pause") == true) {
+                  pauseConfirmed = true
+                  break
+                }
+                delay(25L)
+              }
+            }
+            if (!pauseConfirmed) {
+              PlaybackSession.setPauseForEngineHandoff(!outgoingPlaying)
+              Log.e(TAG, "Engine handoff aborted because MPV pause was not acknowledged")
+              return@collect
+            }
+            Log.i(TAG, "MPV pause acknowledged before engine handoff")
           }
 
           val useNative = effectiveEngine == PlaybackEngineMode.NATIVE
@@ -875,7 +985,6 @@ class PlayerActivity :
               // HDR WebDAV playback.
               setNativeVideoSurfaceVisible(false)
               if (outgoingEngine == PlaybackEngineMode.MPV) {
-                PlaybackSession.setPropertyBoolean("pause", true)
                 PlaybackSession.setPropertyBoolean("mute", true)
               }
               val queuedItem = PlaybackSession.queue.value.currentItem
@@ -1067,7 +1176,10 @@ class PlayerActivity :
     }
     viewModel.setNativeAudioToggleListener { id ->
       if (id <= -1001) {
-        nativeEngine.snapshot.value.audioTracks.getOrNull(-1001 - id)?.let(nativeEngine::selectTrack)
+        nativeEngine.snapshot.value.audioTracks.getOrNull(-1001 - id)?.let { track ->
+          lastRequestedNativeAudioSelection = track.toAudioTrackFingerprint()
+          nativeEngine.selectTrack(track)
+        }
       }
     }
     lifecycleScope.launch {
@@ -1496,6 +1608,14 @@ class PlayerActivity :
   }
 
   fun selectEngineForCurrentVideo(engine: PlaybackEngineMode) {
+    if (engine == PlaybackEngineMode.MPV && activeEngineMode == PlaybackEngineMode.NATIVE) {
+      val selectedTrack = nativeEngine.snapshot.value.audioTracks.firstOrNull { it.selected }
+      pendingMpvAudioSelection =
+        lastRequestedNativeAudioSelection ?: selectedTrack?.toAudioTrackFingerprint()
+    } else if (engine == PlaybackEngineMode.NATIVE) {
+      lastRequestedNativeAudioSelection = null
+      pendingMpvAudioSelection = null
+    }
     val mediaId = PlaybackSession.queue.value.currentItem?.stableId ?: activeSaveMediaIdentifier
     if (mediaId.isNotBlank()) manualEngineOverride = mediaId to engine
     engineSelectionRequests.tryEmit(engine)
@@ -4779,20 +4899,7 @@ class PlayerActivity :
       }
       "container-fps" -> {
         if (!mpvInitialized || player.isExiting || isFinishing) return
-        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R && value > 0.0) {
-          try {
-            val surface = player.holder?.surface
-            if (surface != null && surface.isValid) {
-              surface.setFrameRate(
-                value.toFloat(),
-                android.view.Surface.FRAME_RATE_COMPATIBILITY_FIXED_SOURCE,
-              )
-              android.util.Log.i(TAG, "Set display refresh rate to ${value}Hz")
-            }
-          } catch (e: Exception) {
-            android.util.Log.e(TAG, "Failed to set frame rate", e)
-          }
-        }
+        player.updateSurfaceFrameRateHint()
       }
       "sub-scale" -> {
         if (isSecondarySubtitleActive()) {
@@ -5006,9 +5113,17 @@ class PlayerActivity :
         // Apply track selection logic (defaults only apply when no saved state)
         trackSelector.onFileLoaded(hasState)
         if (activeEngineMode == PlaybackEngineMode.MPV && forceMpvAudioTrackAutoOnNextLoad) {
-          // A saved Native track id is not valid for MPV and can leave the handoff silent.
+          // Native and MPV track IDs are not interchangeable. Reset first, then restore only an
+          // unambiguous match by language/label/codec/channel metadata rather than selecting track 0.
           runCatching { PlaybackSession.setPropertyString("aid", "auto") }
           runCatching { PlaybackSession.setPropertyBoolean("mute", false) }
+          pendingMpvAudioSelection?.let { preference ->
+            if (!trackSelector.selectAudioTrackByFingerprint(preference)) {
+              Log.w(TAG, "Could not unambiguously remap the selected Native audio track in MPV")
+            }
+          }
+          pendingMpvAudioSelection = null
+          lastRequestedNativeAudioSelection = null
           forceMpvAudioTrackAutoOnNextLoad = false
         }
 

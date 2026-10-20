@@ -1284,7 +1284,7 @@ Reinicie o aplicativo para que todas as alterações entrem em vigor.</string>
   <string name="ui_mpv_infinity_has_always_required_storage_access_permission_as_it_s_esse">O Mpv∞ sempre exigiu permissão de acesso ao armazenamento, pois ela é essencial para localizar todos os arquivos de mídia e legenda no dispositivo, inclusive os não compatíveis com o sistema.</string>
   <string name="ui_however_due_to_a_change_in_security_policy_apps_built_for_androi">No entanto, devido a uma mudança na política de segurança, apps criados para Android 11 ou superior agora precisam de uma permissão adicional para continuar com o mesmo acesso.</string>
   <string name="ui_please_know_that_this_permission_is_only_used_for_the_auto_disco">Esta permissão é usada apenas para descobrir automaticamente arquivos de mídia e legenda no dispositivo e não permite que acessemos de forma alguma os dados privados armazenados por outros apps.</string>
-  <string name="ui_mpv_infinity_is_an_open_source_project_you_can_review_the_source_code_a">O Mpv∞ é um projeto de código aberto. Você pode revisar o código-fonte e verificar como as permissões são usadas em nosso repositório do GitHub:</string>
+  <string name="ui_mpv_infinity_is_an_open_source_project_you_can_review_the_source_code_a">O Mpv∞ é um projeto com código-fonte disponível. Você pode revisar o código-fonte e verificar como as permissões são usadas em nosso repositório do GitHub:</string>
   <string name="ui_be_rest_assured_your_privacy_is_our_utmost_priority_and_we_neith">Fique tranquilo: sua privacidade é nossa maior prioridade. Não acessamos seus arquivos para outros fins nem os transferimos ou armazenamos em nossos servidores. Eles permanecem seguros no dispositivo.</string>
   <string name="ui_app_permissions">Permissões do aplicativo</string>
   <string name="ui_permissions_setup_subtitle">Configure as permissões para ativar os recursos principais e a reprodução de mídia.</string>
@@ -1547,7 +1547,7 @@ Reinicie o aplicativo para que todas as alterações entrem em vigor.</string>
   <string name="oss_libtorrent4j_description">Vinculações Java e bibliotecas nativas para streaming via BitTorrent.</string>
   <string name="oss_markdown_renderer_description">Renderiza Markdown como conteúdo nativo do Compose com Material 3.</string>
   <string name="oss_mpv_description">Mecanismo nativo de reprodução de áudio, vídeo e legendas.</string>
-  <string name="oss_mpvlib_android_description">Wrapper Android da libmpv usado nas compilações Standard, No-Vulkan e FongMi.</string>
+  <string name="oss_mpvlib_android_description">Wrapper Android da libmpv usado nas compilações Standard e No-Vulkan.</string>
   <string name="oss_quickjs_ng_description">Mecanismo JavaScript incorporado usado para resolver desafios do yt-dlp.</string>
   <string name="filter_preset_none">Nenhum</string>
   <string name="filter_preset_vivid">Vívido</string>

@@ -1,0 +1,3 @@
+-keep class androidx.media3.decoder.ffmpeg.FfmpegAudioRenderer { *; }
+-keep class androidx.media3.decoder.ffmpeg.FfmpegAudioDecoder { *; }
+-keep class androidx.media3.decoder.ffmpeg.FfmpegLibrary { *; }
