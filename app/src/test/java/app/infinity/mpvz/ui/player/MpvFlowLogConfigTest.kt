@@ -11,9 +11,9 @@ import org.junit.Test
 
 class MpvFlowLogConfigTest {
   @Test
-  fun mpvFlowKeepsWarningsGloballyAndSuppressesAlgorithmDiagnostics() {
+  fun mpvFlowKeepsCadenceInfoForFpsAndSuppressesVerboseGlobalNoise() {
     assertEquals(
-      "all=warn,vo/gpu-next=warn",
+      "all=warn,vo/gpu-next=info",
       MpvFlowLogConfig.messageLevelOption(
         mpvFlowEnabled = true,
         frameInterpolationEnabled = true,

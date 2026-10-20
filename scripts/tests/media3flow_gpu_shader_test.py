@@ -327,12 +327,15 @@ assert 'PlaybackSession.setOptionString("display-fps-override", displayRefreshRa
 assert "display_refresh_source=" in MPV_VIEW
 for marker in (
     "FlowOutputDecisionCounters",
+    "FLOW_OUTPUT_DIAGNOSTIC_LOG_MIN_INTERVAL_NS = 250_000_000L",
+):
+    assert marker in SINK, f"Media3 Flow must preserve bounded internal decision tracking: {marker}"
+for marker in (
     "outputDecisionTotals=",
     "motionGridStepSourcePxEstimate=",
     "pixelArtifactQuality=unmeasured_vulkan_ssbo_readback_disabled",
-    "FLOW_OUTPUT_DIAGNOSTIC_LOG_MIN_INTERVAL_NS = 250_000_000L",
 ):
-    assert marker in SINK, f"Media3 Flow must expose bounded decision and spatial-risk diagnostics: {marker}"
+    assert marker not in SINK, f"user diagnostics must omit implementation detail: {marker}"
 assert "estimateFlowMotionGridStepSourcePx" in FLOW_DIAGNOSTICS
 assert "event=player_health" in MPV_VIEW
 for marker in (

@@ -2634,27 +2634,21 @@ class Media3FlowVideoSink(
   }
 
   private fun logPresentedOutput(frame: PresentationFrame, outputState: String, outputReason: String) {
+    // Successful output and normal source-frame fallbacks are visible in statistics.
+    // Avoid formatting per-frame timestamps/algorithm payloads on the render thread.
+    if (outputState != "output_submission_failed") return
     val signature = "$outputState|$outputReason"
     val nowNs = System.nanoTime()
     if (signature == lastLoggedOutputDiagnosticSignature &&
       lastOutputDiagnosticLogAtNs != 0L &&
-      nowNs - lastOutputDiagnosticLogAtNs < FLOW_OUTPUT_DIAGNOSTIC_LOG_MIN_INTERVAL_NS &&
-      outputState != "output_submission_failed"
+      nowNs - lastOutputDiagnosticLogAtNs < FLOW_OUTPUT_DIAGNOSTIC_LOG_MIN_INTERVAL_NS
     ) return
     lastLoggedOutputDiagnosticSignature = signature
     lastOutputDiagnosticLogAtNs = nowNs
-    val alpha = frame.interpolationAlpha
     val outputMessage =
-      "MPVFLOW_DIAGNOSTIC component=native-media3 event=output state=$outputState renderer_api=vulkan " +
-        "requested_compute_api=${requestedComputeApi.name.lowercase()} " +
-        "effective_compute_api=${effectiveComputeApiName()} " +
-        "reason=$outputReason target_fps=$targetFps speed=${formatLogFloat(frame.speed)} " +
-        "source_pts_us=${frame.sourcePtsUs} source_pts0_us=${frame.sourcePts0Us ?: "none"} " +
-        "source_pts1_us=${frame.sourcePts1Us ?: "none"} target_pts_us=${frame.targetPtsUs} " +
-        "interpolation_alpha=${alpha?.let(::formatLogFloat) ?: "none"} " +
-        "fallback_source_frame_pts_us=${if (outputState == "passthrough") frame.sourcePtsUs else "none"} " +
-        "timestamp_source=media3_decoder_pts sync_mode=1x"
-    Log.println(if (outputState == "synthesized") Log.INFO else Log.WARN, logTag, outputMessage)
+      "MPVFLOW_DIAGNOSTIC component=native-media3 event=output state=$outputState " +
+        "reason=$outputReason target_fps=$targetFps speed=${formatLogFloat(frame.speed)}"
+    Log.w(logTag, outputMessage)
   }
 
   private fun makePresentationWindowCurrent(): Boolean {
