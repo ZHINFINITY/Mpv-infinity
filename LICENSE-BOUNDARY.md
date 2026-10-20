@@ -1,9 +1,9 @@
 # Upcoming-release licensing boundary and ownership gaps
 
-## Draft only: do not merge or publish a release yet
+## Owner-approved source policy; no tagged release published
 
-The proposed [Mpv∞ Permission-Only Terms 1.0](LICENSE) are the licence offer for
-all project material in the upcoming release that ZHINFINITY owns or has express
+The [Mpv∞ Permission-Only Terms 1.0](LICENSE) are the licence offer for
+all project material in the covered source snapshot and upcoming release that ZHINFINITY owns or has express
 authority to offer under those exact terms. **This includes carried-forward,
 unchanged user-owned frame-interpolation code and feature updates; it is not
 limited to newly authored additions.** Independently licensed third-party,
@@ -19,10 +19,11 @@ for external code reuse, APK rehosting, app-store release, or republication.
 Sharing official download links is allowed.
 
 This is a custom licence offer, not PolyForm Noncommercial or an open-source
-licence. The owner must approve the exact text; qualified legal review is
-recommended before release. Automated review is not a legal opinion.
+licence. The owner authorized merging this policy after reviewing the draft.
+Qualified legal review is recommended before a tagged/binary release.
+Automated review is not a legal opinion or a compliance certificate.
 
-## What version the proposal covers
+## Effective source boundary and upcoming release
 
 The historical reference snapshot is public PR #85's merge,
 [`7015805f6831cbf8a9fc2e6d5dd5c70af209b638`](https://github.com/ZHINFINITY/Mpv-infinity/commit/7015805f6831cbf8a9fc2e6d5dd5c70af209b638).
@@ -31,13 +32,18 @@ Its root licence is preserved byte-for-byte in
 That reference is **not an authorship cutoff** and does not exclude older
 ZHINFINITY-owned interpolation or feature code from the new release's offer.
 
-The proposed release boundary is the exact source commit of the first upcoming
-release that the owner approves for distribution with the final revised
-`Mpv∞ Permission-Only Terms 1.0`. Record that SHA and the chosen version in
-its release notes and this document before publication. Both are **unassigned**:
-a draft PR commit is not an approved release. No application version bump,
-merge, tag, release publication, history rewrite, or repository visibility change
-is performed by this proposal. Later releases may retain this offer explicitly.
+The effective source boundary is the merge commit of
+[PR #87](https://github.com/ZHINFINITY/Mpv-infinity/pull/87) that first places
+these owner-approved terms on protected `main`. The PR's merge-commit SHA
+uniquely identifies that snapshot without a self-referential commit hash in
+this file. Before that merge this branch is preparatory; after it the offer
+covers the entire owned/expressly authorized portions of that source snapshot,
+not merely the documentation diff. Later source snapshots may retain the offer.
+
+The next tagged release's version and source SHA remain **unassigned**. Record
+both in the release notes and release documentation before publication. This
+policy merge does not bump the application version, create a tag, publish a
+release, rewrite history, or change repository visibility.
 
 This PR changes licensing/documentation, the bounded licence test and its CI
 invocation, and a preview footer label only. There is no new playback feature.
@@ -97,8 +103,8 @@ or blanket upstream approval is asserted here.
 
 ## Approval and distribution gates
 
-1. The owner approves the exact `LICENSE` text and obtains qualified legal
-   advice on scope, enforceability, attribution, and the intended distribution.
+1. The owner has authorized the policy merge. Qualified legal advice on scope,
+   enforceability, attribution, and intended binary distribution is recommended.
    `ZHINFINITY` is the supported repository identity, not a verified legal name.
 2. Establish a path/portion-level provenance and authority record before
    claiming coverage of disputed or mixed-source material. Retain the actual

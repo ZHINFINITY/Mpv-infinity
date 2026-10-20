@@ -4,14 +4,14 @@ Copyright (c) 2026 ZHINFINITY, for original material owned by ZHINFINITY.
 All rights reserved, subject to the exceptions below.
 
 These are custom, project-specific terms, not the PolyForm licence or an
-OSI-approved open-source licence. They are a draft proposal until approved by
-the rights holder and merged for the next source release. They have not been
-approved by legal counsel.
+OSI-approved open-source licence. They apply to covered source versions at the
+effective boundary recorded in LICENSE-BOUNDARY.md and to the upcoming release
+containing them. They have not been approved by legal counsel.
 
 ## 1. Covered material and ownership
 
 "Covered Material" means all copyrightable project code, documentation, and
-other project material in the upcoming Mpv∞ release identified under
+other project material in the covered Mpv∞ source version and upcoming release identified under
 LICENSE-BOUNDARY.md that ZHINFINITY owns or has express authority from the
 relevant rights holders to offer under these exact terms. It includes owned
 or expressly authorized frame-interpolation code and feature updates carried
@@ -32,8 +32,8 @@ ownership or authority is not a basis for claiming coverage. In mixed files,
 these terms apply only to the portions ZHINFINITY owns or is expressly
 authorized to license this way, not automatically to the whole file.
 
-This is the proposed licence offer for Covered Material in the upcoming
-release, not a claim that previously licensed code becomes exclusively
+This is the licence offer for Covered Material in the covered source version
+and upcoming release, not a claim that previously licensed code becomes exclusively
 permission-only. Earlier grants, including grants for unchanged code carried
 into this release, remain available as explained in section 4.
 See THIRD_PARTY_SOURCE.md and LICENSE-BOUNDARY.md for the inventory and gaps.
@@ -118,6 +118,11 @@ restricts modification, replacement, relinking, or reverse engineering for
 debugging modifications to LGPL-covered components where required by their
 licences, or any associated access to required source or relinkable material.
 These terms cannot substitute for compliance with those obligations.
+
+To the extent required by the applicable LGPL or other upstream licence,
+changes to covered upstream library files remain available under that licence,
+including ZHINFINITY-authored changes. Exercising those upstream licence rights
+does not require separate permission under these custom terms.
 
 ## 5. Law and hosting-platform rights
 

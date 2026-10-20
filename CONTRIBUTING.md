@@ -27,7 +27,7 @@ Use short, imperative commit subjects, such as `fix: preserve subtitle selection
 
 ## License
 
-The proposed upcoming release offers custom [Mpv∞ Permission-Only Terms 1.0](LICENSE) for all project material ZHINFINITY owns or has express authority to offer under those exact terms, including unchanged carried-forward interpolation/feature code. It is not limited to new additions. See [LICENSE-BOUNDARY.md](LICENSE-BOUNDARY.md) for the release boundary, preserved grants, third-party terms, ownership gaps, and approval gates. This remains a draft until the owner approves the exact text and it is merged for release.
+The covered source version and upcoming release offer custom [Mpv∞ Permission-Only Terms 1.0](LICENSE) for all project material ZHINFINITY owns or has express authority to offer under those exact terms, including unchanged carried-forward interpolation/feature code. It is not limited to new additions. See [LICENSE-BOUNDARY.md](LICENSE-BOUNDARY.md) for the owner-approved source boundary, preserved grants, third-party terms, ownership gaps, and binary-release gates. Merging this policy does not publish a tagged release.
 
 Everyone may download, install, update, and use official, unmodified app releases from ZHINFINITY or an authorized distributor under LICENSE section 2.1 without asking for permission. The contribution restrictions below concern code reuse and publication, not ordinary app use; independently applicable rights under LICENSE sections 4 and 5 remain intact.
 
