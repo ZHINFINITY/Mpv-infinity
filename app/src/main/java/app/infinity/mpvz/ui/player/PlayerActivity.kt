@@ -648,6 +648,10 @@ class PlayerActivity :
   @Volatile private var forceMpvAudioTrackAutoOnNextLoad = false
   @Volatile private var lastRequestedNativeAudioSelection: AudioTrackFingerprint? = null
   @Volatile private var pendingMpvAudioSelection: AudioTrackFingerprint? = null
+  @Volatile private var pendingSharedTrackMediaId = ""
+  @Volatile private var pendingSharedTrackGeneration = -1L
+  @Volatile private var pendingSharedAudioSelection: String? = null
+  @Volatile private var pendingSharedSubtitleSelection: String? = null
 
   @Volatile private var playWhenFileLoaded = false
   private var pendingVideoParamRefreshRequiresShaderReload = false
@@ -947,7 +951,7 @@ class PlayerActivity :
           val outgoingEngine = activeEngineMode
           val outgoingPositionMs =
             if (outgoingEngine == PlaybackEngineMode.NATIVE) {
-              nativeEngine.currentPlayer.currentPosition.coerceAtLeast(0L)
+              (nativeEngine.positionForPersistenceMs() ?: 0L)
             } else {
               ((PlaybackSession.getPropertyDouble("time-pos") ?: 0.0) * 1000.0).toLong()
             }.coerceAtLeast(0L)
@@ -1196,6 +1200,13 @@ class PlayerActivity :
         nativeEngine.snapshot.value.audioTracks.getOrNull(-1001 - id)?.let { track ->
           lastRequestedNativeAudioSelection = track.toAudioTrackFingerprint()
           nativeEngine.selectTrack(track)
+        }
+      }
+    }
+    lifecycleScope.launch {
+      repeatOnLifecycle(Lifecycle.State.STARTED) {
+        combine(viewModel.audioTracks, viewModel.subtitleTracks) { _, _ -> Unit }.collect {
+          restorePendingMpvTrackSelections()
         }
       }
     }
@@ -1633,13 +1644,15 @@ class PlayerActivity :
       lastRequestedNativeAudioSelection = null
       pendingMpvAudioSelection = null
     }
-    val mediaId = PlaybackSession.queue.value.currentItem?.stableId ?: activeSaveMediaIdentifier
+    val mediaId = if (isNativeEngineActive()) activeSaveMediaIdentifier
+      else PlaybackSession.queue.value.currentItem?.stableId ?: activeSaveMediaIdentifier
     if (mediaId.isNotBlank()) manualEngineOverride = mediaId to engine
     engineSelectionRequests.tryEmit(engine)
   }
 
   fun currentEngineSelectionForControls(): PlaybackEngineMode {
-    val mediaId = PlaybackSession.queue.value.currentItem?.stableId ?: activeSaveMediaIdentifier
+    val mediaId = if (isNativeEngineActive()) activeSaveMediaIdentifier
+      else PlaybackSession.queue.value.currentItem?.stableId ?: activeSaveMediaIdentifier
     return manualEngineOverride
       ?.takeIf { it.first == mediaId }
       ?.second
@@ -2176,7 +2189,7 @@ class PlayerActivity :
       return
     }
     val queueState = PlaybackSession.queue.value
-    val currentItem = queueState.currentItem
+    val currentItem = queueState.currentItem.takeUnless { isNativeEngineActive() }
     val index = queueState.currentIndex.takeIf { currentItem != null && it >= 0 } ?: playlistIndex
     val originalUri = currentItem?.originalUri ?: playlist.getOrNull(index)?.toString() ?: currentPlayableUri
     val stableId = currentItem?.stableId ?: mediaIdentifier.takeIf { it.isNotBlank() }
@@ -2214,7 +2227,9 @@ class PlayerActivity :
       cancelPlaybackLoadRecovery()
       if (::castPlaybackController.isInitialized) castPlaybackController.release()
       cancelSystemBarsAutoHide()
-      if (playbackWasInitialized && ownsPlaybackSession) saveVideoPlaybackState(fileName, immediate = true)
+      if ((playbackWasInitialized || nativeWasActive) && ownsPlaybackSession) {
+        saveVideoPlaybackState(fileName, immediate = true)
+      }
       if (!keepBackgroundPlaybackAlive && nativeWasActive) {
         nativeEngine.setPlaying(false)
         nativeEngine.stop()
@@ -2409,6 +2424,13 @@ class PlayerActivity :
         decoderPreferences.playbackEngine.get() == PlaybackEngineMode.NATIVE
     if (!mpvInitialized && !nativeActive) return
     if (nativeActive) {
+      // finish()/PiP dismissal run before onPause. Native.stop() clears the MediaItem and
+      // resets its clock, so the immutable snapshot must be captured at this close boundary.
+      if (ownsPlaybackSession() && activeEngineMode == PlaybackEngineMode.NATIVE &&
+        nativeEngine.currentPlayer.currentMediaItem != null && fileName.isNotBlank()
+      ) {
+        saveVideoPlaybackState(fileName, immediate = true)
+      }
       nativeEngine.setPlaying(false)
       nativeEngine.stop()
     }
@@ -5173,6 +5195,7 @@ class PlayerActivity :
           PlaybackSession.isCurrentGeneration(loadGeneration)
         ) {
           MediaPlaybackService.setNativeRendererOwnership(false)
+          withContext(Dispatchers.Main) { restorePendingMpvTrackSelections() }
         }
       }
     }
@@ -5649,8 +5672,9 @@ class PlayerActivity :
 
     val nativeSnapshot = nativeEngine.snapshot.value
     val nativeEngineActive = activeEngineMode == PlaybackEngineMode.NATIVE
-    val nativePositionIsKnown = nativeEngine.currentPlayer.currentMediaItem != null
-    val liveNativePositionMs = nativeEngine.currentPlayer.currentPosition.coerceAtLeast(0L)
+    val nativeResumePositionMs = nativeEngine.positionForPersistenceMs()
+    val nativePositionIsKnown = nativeResumePositionMs != null
+    val liveNativePositionMs = nativeResumePositionMs ?: 0L
     val liveNativeDurationMs = nativeEngine.currentPlayer.duration.takeIf { it != C.TIME_UNSET }?.coerceAtLeast(0L) ?: 0L
     val mpvPosition = if (nativeEngineActive) null else readMpvIntSecondsOrNull("time-pos")
     fun mpvDouble(property: String): Double? =
@@ -5702,7 +5726,81 @@ class PlayerActivity :
       aid = aid ?: -1,
       audioDelayMs = ((audioDelay ?: 0.0) * MILLISECONDS_TO_SECONDS).toInt(),
       externalSubtitles = viewModel.externalSubtitles.joinToString("|"),
+      audioSelection = if (nativeEngineActive) nativeEngine.captureAudioSelection()
+        else captureMpvTrackSelection("audio", "aid", pendingSharedAudioSelection),
+      subtitleSelection = if (nativeEngineActive) nativeEngine.captureSubtitleSelection()
+        else captureMpvTrackSelection("sub", "sid", pendingSharedSubtitleSelection),
     )
+  }
+
+  private data class SharedMpvTrack(
+    val id: Int,
+    val metadata: TrackSelectionMetadata,
+    val selected: Boolean,
+  )
+
+  /** Read the owning renderer, not the last UI/other-engine track snapshot. */
+  private fun readSharedMpvTracks(type: String): List<SharedMpvTrack>? = runCatching {
+    val count = PlaybackSession.getPropertyInt("track-list/count") ?: return@runCatching null
+    (0 until count).mapNotNull { index ->
+      val prefix = "track-list/$index"
+      if (PlaybackSession.getPropertyString("$prefix/type") != type) return@mapNotNull null
+      val id = PlaybackSession.getPropertyInt("$prefix/id") ?: return@mapNotNull null
+      SharedMpvTrack(
+        id = id,
+        metadata = TrackSelectionMetadata(
+          language = PlaybackSession.getPropertyString("$prefix/lang")?.takeIf { it.isNotBlank() },
+          label = PlaybackSession.getPropertyString("$prefix/title")?.takeIf { it.isNotBlank() },
+          codec = PlaybackSession.getPropertyString("$prefix/codec")?.takeIf { it.isNotBlank() },
+          channelCount = PlaybackSession.getPropertyInt("$prefix/demux-channel-count")?.takeIf { it > 0 },
+          externalUri = PlaybackSession.getPropertyString("$prefix/external-filename")?.takeIf { it.isNotBlank() }
+            ?.let { raw ->
+              // MPV may expose an fd/path for the same external URI stored by Native.
+              viewModel.originalSubtitleUriForMpvPath(raw) ?: viewModel.externalSubtitles.firstOrNull { uri ->
+                uri == raw || Uri.parse(uri).path == raw
+              } ?: raw
+            },
+        ),
+        selected = PlaybackSession.getPropertyBoolean("$prefix/selected") == true,
+      )
+    }
+  }.getOrNull()
+
+  private fun captureMpvTrackSelection(type: String, property: String, pending: String?): String? {
+    if (pendingSharedTrackMediaId == activeSaveMediaIdentifier &&
+      PlaybackSession.isCurrentGeneration(pendingSharedTrackGeneration) && pending != null
+    ) return pending
+    val tracks = readSharedMpvTracks(type) ?: return null
+    if (tracks.isEmpty()) return null // Opening/teardown is unknown, not an explicit Off choice.
+    val selected = PlaybackSession.getPropertyString(property) ?: return null
+    val selection = if (selected == "no") SharedTrackSelection.Disabled else {
+      val selectedId = selected.toIntOrNull()
+      val index = tracks.indexOfFirst { if (selectedId != null) it.id == selectedId else it.selected }
+      if (index < 0) return null
+      SharedTrackSelection.selected(
+        TrackSelectionFingerprint.capture(tracks[index].metadata, TrackSelectionState.SELECTED, index) ?: return null,
+      )
+    }
+    return PlaybackStatePersistence.encodeSelection(selection)
+  }
+
+  private fun restorePendingMpvTrackSelections() {
+    if (!ownsPlaybackSession() || activeEngineMode != PlaybackEngineMode.MPV ||
+      pendingSharedTrackMediaId != activeSaveMediaIdentifier ||
+      !PlaybackSession.isCurrentGeneration(pendingSharedTrackGeneration) ||
+      PlaybackSession.isPositionRestorePending(pendingSharedTrackGeneration)
+    ) return
+    fun restore(encoded: String?, type: String, property: String): Boolean {
+      if (encoded == null) return true
+      val selection = PlaybackStatePersistence.decodeSelection(encoded) ?: return true
+      val tracks = readSharedMpvTracks(type) ?: return false
+      val index = TrackSelectionMatcher.findMatchIndex(selection, tracks.map { it.metadata }) ?: return false
+      if (index == -1) setTrackSelectionId(property, null)
+      else setTrackSelectionId(property, tracks[index].id)
+      return true
+    }
+    if (restore(pendingSharedAudioSelection, "audio", "aid")) pendingSharedAudioSelection = null
+    if (restore(pendingSharedSubtitleSelection, "sub", "sid")) pendingSharedSubtitleSelection = null
   }
 
   private fun readMpvIntSeconds(
@@ -5769,6 +5867,13 @@ class PlayerActivity :
       if (!PlaybackSession.isCurrentGeneration(loadGeneration)) return@runCatching false
 
       if (positionRestoreOverride == null && !initialPositionApplied) restorePlaybackPosition(state)
+      withContext(Dispatchers.Main) {
+        if (!PlaybackSession.isCurrentGeneration(loadGeneration)) return@withContext
+        pendingSharedTrackMediaId = identifier
+        pendingSharedTrackGeneration = loadGeneration
+        pendingSharedAudioSelection = state?.audioSelection
+        pendingSharedSubtitleSelection = state?.subtitleSelection
+      }
       applyPlaybackState(state, restoreAudioTrack = positionRestoreOverride == null)
 
       if (!PlaybackSession.isCurrentGeneration(loadGeneration)) return@runCatching false
@@ -5812,7 +5917,7 @@ class PlayerActivity :
 
     // Always restore subtitle and audio tracks from saved state
     // User's manual selection has highest priority
-    if (state.sid > 0) {
+    if (state.subtitleSelection == null && state.sid > 0) {
       player.sid = state.sid
       Log.d(TAG, "Restored primary subtitle track: ${state.sid} (user selection)")
     }
@@ -5829,7 +5934,7 @@ class PlayerActivity :
       screenHeight = player.height.takeIf { it > 0 }?.toFloat(),
     )
 
-    if (restoreAudioTrack && state.aid > 0) {
+    if (state.audioSelection == null && restoreAudioTrack && state.aid > 0) {
       player.aid = state.aid
       Log.d(TAG, "Restored audio track: ${state.aid} (user selection)")
     }
@@ -5849,6 +5954,7 @@ class PlayerActivity :
   /** Restore common per-video settings on Native as well as MPV. MPV-only timing and
    * track identifiers stay in the shared record untouched; they are not Media3 IDs. */
   private suspend fun applyNativePlaybackState(state: PlaybackStateEntity?) {
+    nativeEngine.restoreTrackSelections(state?.audioSelection, state?.subtitleSelection)
     nativeSetSpeed(state?.playbackSpeed?.toFloat() ?: DEFAULT_PLAYBACK_SPEED.toFloat())
     viewModel.setVideoZoom(state?.videoZoom ?: playerPreferences.defaultVideoZoom.get())
     if (playerPreferences.rememberVideoAspectPerVideo.get() && state != null) {
@@ -7685,7 +7791,7 @@ class PlayerActivity :
       // MediaPlaybackService is MPV-backed. Hand native playback to MPV before the service is
       // started; otherwise the service and Media3 decode the same item independently and the
       // Activity resumes with a stale native surface or no playable session.
-      val nativePositionMs = nativeEngine.currentPlayer.currentPosition.coerceAtLeast(0L)
+      val nativePositionMs = (nativeEngine.positionForPersistenceMs() ?: 0L)
       val nativeWasPlaying = nativeEngine.currentPlayer.isPlaying
       // Capture before stopping Native; the MPV-backed service must inherit this state.
       saveVideoPlaybackState(fileName, immediate = true)

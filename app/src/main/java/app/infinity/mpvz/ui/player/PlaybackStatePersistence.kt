@@ -8,6 +8,7 @@
 package app.infinity.mpvz.ui.player
 
 import app.infinity.mpvz.database.entities.PlaybackStateEntity
+import kotlinx.serialization.json.Json
 
 internal const val PLAYBACK_STATE_MILLISECONDS_TO_SECONDS = 1000
 internal const val DEFAULT_PLAYBACK_STATE_SPEED = 1.0
@@ -40,6 +41,8 @@ internal data class PlaybackStateSnapshot(
   val videoPresentationIsKnown: Boolean = true,
   /** Prevent teardown placeholders from clearing a previously saved speed/zoom. */
   val playbackSettingsAreKnown: Boolean = positionIsKnown,
+  val audioSelection: String? = null,
+  val subtitleSelection: String? = null,
   val captureSequence: Long = PlaybackStateSaveCoordinator.nextSequence(),
 )
 
@@ -93,7 +96,18 @@ internal object PlaybackStatePersistence {
           duration = duration,
           watchedThreshold = watchedThreshold,
         ),
+      audioSelection = snapshot.audioSelection ?: oldState?.audioSelection,
+      subtitleSelection = snapshot.subtitleSelection ?: oldState?.subtitleSelection,
     )
+  }
+
+  private val selectionJson = Json { encodeDefaults = false }
+
+  fun encodeSelection(selection: TrackSelection): String =
+    selectionJson.encodeToString(SharedTrackSelection.serializer(), selection)
+
+  fun decodeSelection(encoded: String?): TrackSelection? = encoded?.let {
+    runCatching { selectionJson.decodeFromString(SharedTrackSelection.serializer(), it) }.getOrNull()
   }
 
   fun calculateSavePosition(

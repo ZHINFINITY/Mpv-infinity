@@ -341,15 +341,15 @@ class NativeMedia3Engine(
   private var loopASeconds: Double? = null
   private var loopBSeconds: Double? = null
   private val loopHandler = Handler(Looper.getMainLooper())
+  private val seekDispatchPolicy = NativeSeekDispatchPolicy()
   private var pendingSeekPositionMs: Long? = null
   private var pendingSeekDisplayPositionMs: Long? = null
+  private var initialResumeTargetMs: Long? = null
   private var lastKnownDurationMs: Long = 0L
   private var pendingExternalSelectionId: String? = null
   private val seekRunnable = Runnable {
-    val positionMs = pendingSeekPositionMs ?: return@Runnable
-    pendingSeekPositionMs = null
-    val targetMs = positionMs.coerceAtLeast(0L)
-    pendingSeekDisplayPositionMs = targetMs
+    val targetMs = seekDispatchPolicy.dispatch(SystemClock.uptimeMillis()) ?: return@Runnable
+    pendingSeekPositionMs = seekDispatchPolicy.pendingTarget
     // The source is prepared once with a seek-capable extractor. Seeking only moves the existing
     // extractor/decoder forward; it never rebuilds the MediaSource or flushes the surface.
     Log.d(logTag, "seek targetMs=$targetMs ${bufferingLogState()}")
@@ -416,6 +416,11 @@ class NativeMedia3Engine(
   private var bandwidthBytesLoaded = 0L
   private var selectedNativeSubtitleSelection: NativeSubtitleSelection? = null
   private var restoringNativeSubtitleSelection = false
+  private var desiredAudioSelection: TrackSelection? = null
+  private var desiredSubtitleSelection: TrackSelection? = null
+  private var audioSelectionRestored = false
+  private var subtitleSelectionRestored = false
+  private var restoringTrackSelections = false
 
   private val analyticsListener = object : AnalyticsListener {
     override fun onVideoEnabled(
@@ -529,7 +534,12 @@ class NativeMedia3Engine(
       }
     }
     override fun onPlaybackStateChanged(playbackState: Int) {
-      if (playbackState == Player.STATE_READY) pendingSeekDisplayPositionMs = null
+      if (playbackState == Player.STATE_READY &&
+        pendingSeekPositionMs == null && seekDispatchPolicy.pendingTarget == null
+      ) {
+        pendingSeekDisplayPositionMs = null
+        initialResumeTargetMs = null
+      }
       Log.d(logTag, "playback state=$playbackState ${bufferingLogState()}")
       if (playbackState == Player.STATE_ENDED) {
         val uri = player.currentMediaItem?.localConfiguration?.uri
@@ -571,6 +581,7 @@ class NativeMedia3Engine(
           Log.d(logTag, "text track group=${group.mediaTrackGroup.id} index=$index selected=${group.isTrackSelected(index)} mime=${format.sampleMimeType} codecs=${format.codecs} label=${format.label} language=${format.language}")
         }
       }
+      applyRestoredTrackSelections(tracks)
       restoreSelectedNativeSubtitle(tracks)
       applyPendingExternalSelection()
     }
@@ -740,6 +751,7 @@ class NativeMedia3Engine(
         format.id == id || format.label == id
       }
       ?: return null
+    if (!restoringTrackSelections) clearDesiredSelection(C.TRACK_TYPE_TEXT)
     val group = match.first
     val trackIndex = match.second
     val enabled = !group.isTrackSelected(trackIndex)
@@ -785,6 +797,93 @@ class NativeMedia3Engine(
       .build()
     pendingExternalSelectionId = null
     publishSnapshot()
+  }
+
+  fun captureAudioSelection(): String? = captureTrackSelection(C.TRACK_TYPE_AUDIO)
+
+  fun captureSubtitleSelection(): String? = captureTrackSelection(C.TRACK_TYPE_TEXT)
+
+  fun restoreTrackSelections(audio: String?, subtitle: String?) {
+    desiredAudioSelection = PlaybackStatePersistence.decodeSelection(audio)
+    desiredSubtitleSelection = PlaybackStatePersistence.decodeSelection(subtitle)
+    audioSelectionRestored = desiredAudioSelection == null
+    subtitleSelectionRestored = desiredSubtitleSelection == null
+    applyRestoredTrackSelections(player.currentTracks)
+  }
+
+  private fun captureTrackSelection(type: Int): String? {
+    val desired = if (type == C.TRACK_TYPE_AUDIO) desiredAudioSelection else desiredSubtitleSelection
+    val applied = if (type == C.TRACK_TYPE_AUDIO) audioSelectionRestored else subtitleSelectionRestored
+    if (desired != null && !applied) return PlaybackStatePersistence.encodeSelection(desired)
+    val groups = player.currentTracks.groups.filter { it.type == type }
+    if (groups.isEmpty()) return null
+    if (player.trackSelectionParameters.disabledTrackTypes.contains(type)) {
+      return PlaybackStatePersistence.encodeSelection(SharedTrackSelection.Disabled)
+    }
+    val selected = groups.flatMap { group ->
+      (0 until group.length).filter { group.isTrackSelected(it) }.map { group to it }
+    }.firstOrNull() ?: return null
+    val ordinal = groups.takeWhile { it !== selected.first }.sumOf { it.length } + selected.second
+    val fingerprint = trackSelectionMetadata(selected.first.getTrackFormat(selected.second))
+      ?.let { TrackSelectionFingerprint.capture(it, TrackSelectionState.SELECTED, ordinal) }
+      ?: return null
+    return PlaybackStatePersistence.encodeSelection(SharedTrackSelection.selected(fingerprint))
+  }
+
+  private fun applyRestoredTrackSelections(tracks: Tracks) {
+    if (restoringTrackSelections) return
+    restoringTrackSelections = true
+    try {
+      desiredAudioSelection?.takeIf { !audioSelectionRestored }?.let {
+        if (applyRestoredSelection(C.TRACK_TYPE_AUDIO, it, tracks)) audioSelectionRestored = true
+      }
+      desiredSubtitleSelection?.takeIf { !subtitleSelectionRestored }?.let {
+        if (applyRestoredSelection(C.TRACK_TYPE_TEXT, it, tracks)) subtitleSelectionRestored = true
+      }
+    } finally {
+      restoringTrackSelections = false
+    }
+  }
+
+  private fun applyRestoredSelection(type: Int, selection: TrackSelection, tracks: Tracks): Boolean {
+    if (selection.state == TrackSelectionState.UNKNOWN) return false
+    if (selection.state == TrackSelectionState.DISABLED) {
+      player.trackSelectionParameters = player.trackSelectionParameters.buildUpon()
+        .setTrackTypeDisabled(type, true).clearOverridesOfType(type).build()
+      if (type == C.TRACK_TYPE_TEXT) {
+        selectedNativeSubtitleKey = null
+        selectedNativeSubtitleSelection = null
+      }
+      return tracks.groups.any { it.type == type }
+    }
+    val groups = tracks.groups.filter { it.type == type }
+    val candidates = groups.flatMap { group ->
+      (0 until group.length).map { trackSelectionMetadata(group.getTrackFormat(it)) ?: TrackSelectionMetadata() }
+    }
+    val index = TrackSelectionMatcher.findMatchIndex(selection, candidates)
+      ?: return false
+    if (index < 0) return false
+    var remaining = index
+    val match = groups.firstNotNullOfOrNull { group ->
+      if (remaining < group.length) group to remaining else { remaining -= group.length; null }
+    } ?: return false
+    player.trackSelectionParameters = player.trackSelectionParameters.buildUpon()
+      .setTrackTypeDisabled(type, false).clearOverridesOfType(type)
+      .setOverrideForType(TrackSelectionOverride(match.first.mediaTrackGroup, match.second)).build()
+    if (type == C.TRACK_TYPE_TEXT) {
+      selectedNativeSubtitleKey = tracks.groups.indexOf(match.first) to match.second
+      selectedNativeSubtitleSelection = subtitleSelectionFor(match.first, match.second)
+    }
+    return true
+  }
+
+  private fun trackSelectionMetadata(format: Format): TrackSelectionMetadata? {
+    val externalUri = format.id?.takeIf { it.startsWith("external:") }?.removePrefix("external:")
+      ?: format.label?.takeIf { it.startsWith("external:") }?.removePrefix("external:")
+    val metadata = TrackSelectionMetadata(format.language, format.label, format.codecs,
+      format.sampleMimeType, format.channelCount.takeIf { it > 0 }, externalUri)
+    return metadata.takeIf { it.language != null || it.label != null || it.codec != null ||
+      it.mimeType != null || it.channelCount != null || it.externalUri != null }
   }
 
   private fun subtitleSelectionFor(group: Tracks.Group, trackIndex: Int): NativeSubtitleSelection {
@@ -991,6 +1090,11 @@ class NativeMedia3Engine(
     mimeType: String? = null,
     sourceUri: Uri? = null,
   ) {
+    loopHandler.removeCallbacks(seekRunnable)
+    seekDispatchPolicy.reset()
+    pendingSeekPositionMs = null
+    pendingSeekDisplayPositionMs = startPositionMs.coerceAtLeast(0L)
+    initialResumeTargetMs = startPositionMs.coerceAtLeast(0L)
     _hasRenderedFirstFrame.value = false
     endedUri = null
     lastKnownDurationMs = 0L
@@ -1011,6 +1115,10 @@ class NativeMedia3Engine(
     setSubtitlePresentationVisible(true)
     pendingExternalSelectionId = null
     selectedNativeSubtitleSelection = null
+    desiredAudioSelection = null
+    desiredSubtitleSelection = null
+    audioSelectionRestored = false
+    subtitleSelectionRestored = false
     externalAssEnabled.clear()
     libassRenderer?.getTrackIds()?.keys?.toList()?.forEach { id ->
       libassRenderer?.removeTrack(id)
@@ -1140,22 +1248,43 @@ class NativeMedia3Engine(
   }
 
   fun seekTo(positionMs: Long) {
-    pendingSeekPositionMs = positionMs.coerceAtLeast(0L)
+    val targetMs = positionMs.coerceAtLeast(0L)
+    pendingSeekDisplayPositionMs = targetMs
+    val immediateTarget = seekDispatchPolicy.request(targetMs, SystemClock.uptimeMillis())
+    pendingSeekPositionMs = seekDispatchPolicy.pendingTarget
     loopHandler.removeCallbacks(seekRunnable)
-    loopHandler.postDelayed(seekRunnable, 120L)
+    if (immediateTarget != null) {
+      dispatchSeek(immediateTarget)
+    } else {
+      loopHandler.postDelayed(seekRunnable, seekDispatchPolicy.delayUntilDispatch(SystemClock.uptimeMillis()))
+    }
     // Seek controls must not enumerate every subtitle/audio metadata entry on the UI thread.
     publishPlaybackSnapshot()
     startTimelineUpdates()
   }
 
   fun seekBy(offsetMs: Long) {
-    val basePositionMs = pendingSeekPositionMs ?: player.currentPosition
-    pendingSeekPositionMs = (basePositionMs + offsetMs).coerceAtLeast(0L)
-    loopHandler.removeCallbacks(seekRunnable)
-    loopHandler.postDelayed(seekRunnable, 120L)
-    // Keep repeated seek-bar updates lightweight; the track/metadata snapshot is unchanged.
+    val basePositionMs = seekDispatchPolicy.pendingTarget
+      ?: pendingSeekDisplayPositionMs
+      ?: player.currentPosition
+    seekTo(basePositionMs + offsetMs)
+  }
+
+  private fun dispatchSeek(targetMs: Long) {
+    pendingSeekPositionMs = seekDispatchPolicy.pendingTarget
+    // The source is prepared once with a seek-capable extractor. Seeking only moves the existing
+    // extractor/decoder forward; it never rebuilds the MediaSource or flushes the surface.
+    Log.d(logTag, "seek targetMs=$targetMs ${bufferingLogState()}")
+    player.seekTo(targetMs)
     publishPlaybackSnapshot()
-    startTimelineUpdates()
+  }
+
+  /** Desired position for persistence, including a seek that has not reached the player yet. */
+  fun positionForPersistenceMs(): Long? {
+    if (player.currentMediaItem == null) return null
+    return pendingSeekDisplayPositionMs
+      ?: initialResumeTargetMs?.takeIf { player.playbackState != Player.STATE_READY }
+      ?: player.currentPosition.coerceAtLeast(0L)
   }
 
   fun setLoopA(positionSeconds: Double?) {
@@ -1192,6 +1321,7 @@ class NativeMedia3Engine(
   fun selectTrack(track: NativeTrack) {
     val group = player.currentTracks.groups.getOrNull(track.groupIndex) ?: return
     if (group.type != track.type || track.trackIndex !in 0 until group.length) return
+    if (!restoringTrackSelections) clearDesiredSelection(track.type)
     if (track.type == C.TRACK_TYPE_TEXT) {
       selectedNativeSubtitleSelection = subtitleSelectionFor(group, track.trackIndex)
       val format = group.getTrackFormat(track.trackIndex)
@@ -1252,6 +1382,7 @@ class NativeMedia3Engine(
   }
 
   fun selectAudioTrack(group: Tracks.Group, trackIndex: Int) {
+    if (!restoringTrackSelections) clearDesiredSelection(C.TRACK_TYPE_AUDIO)
     player.trackSelectionParameters = player.trackSelectionParameters
       .buildUpon()
       .setTrackTypeDisabled(C.TRACK_TYPE_AUDIO, false)
@@ -1264,6 +1395,7 @@ class NativeMedia3Engine(
     val group = player.currentTracks.groups.getOrNull(groupIndex) ?: return
     if (group.type != C.TRACK_TYPE_TEXT) return
     if (trackIndex !in 0 until group.length) return
+    if (!restoringTrackSelections) clearDesiredSelection(C.TRACK_TYPE_TEXT)
     selectedNativeSubtitleSelection = subtitleSelectionFor(group, trackIndex)
     val format = group.getTrackFormat(trackIndex)
     if (isAssFormat(format.sampleMimeType, format.codecs)) {
@@ -1289,6 +1421,7 @@ class NativeMedia3Engine(
   }
 
   fun disableSubtitles() {
+    if (!restoringTrackSelections) clearDesiredSelection(C.TRACK_TYPE_TEXT)
     disableAssTracks()
     selectedNativeSubtitleKey = null
     selectedNativeSubtitleSelection = null
@@ -1298,6 +1431,16 @@ class NativeMedia3Engine(
       .clearOverridesOfType(C.TRACK_TYPE_TEXT)
       .build()
     publishSnapshot()
+  }
+
+  private fun clearDesiredSelection(type: Int) {
+    if (type == C.TRACK_TYPE_AUDIO) {
+      desiredAudioSelection = null
+      audioSelectionRestored = false
+    } else if (type == C.TRACK_TYPE_TEXT) {
+      desiredSubtitleSelection = null
+      subtitleSelectionRestored = false
+    }
   }
 
   private fun isAssFormat(mime: String?, codecs: String?): Boolean {
@@ -1338,8 +1481,10 @@ class NativeMedia3Engine(
     clearLoop()
     loopHandler.removeCallbacks(timelineRunnable)
     loopHandler.removeCallbacks(seekRunnable)
+    seekDispatchPolicy.reset()
     pendingSeekPositionMs = null
     pendingSeekDisplayPositionMs = null
+    initialResumeTargetMs = null
     player.stop()
     player.clearMediaItems()
     currentVideoFormat = null
@@ -1348,6 +1493,10 @@ class NativeMedia3Engine(
     _subtitleCueText.value = ""
     selectedNativeSubtitleKey = null
     selectedNativeSubtitleSelection = null
+    desiredAudioSelection = null
+    desiredSubtitleSelection = null
+    audioSelectionRestored = false
+    subtitleSelectionRestored = false
     externalAssEnabled.clear()
     libassRenderer?.let { renderer ->
       renderer.getTrackIds().keys.toList().forEach { renderer.removeTrack(it) }
@@ -1487,7 +1636,14 @@ class NativeMedia3Engine(
     clearLoop()
     loopHandler.removeCallbacks(timelineRunnable)
     loopHandler.removeCallbacks(seekRunnable)
+    seekDispatchPolicy.reset()
     pendingSeekPositionMs = null
+    pendingSeekDisplayPositionMs = null
+    initialResumeTargetMs = null
+    desiredAudioSelection = null
+    desiredSubtitleSelection = null
+    audioSelectionRestored = false
+    subtitleSelectionRestored = false
     player.removeListener(listener)
     player.removeAnalyticsListener(analyticsListener)
     attachedView?.player = null

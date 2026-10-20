@@ -1884,9 +1884,10 @@ fun PlayerControls(
                 isSeeking = true
                 resetControlsTimestamp = System.currentTimeMillis()
                 if (nativeEngineActive) {
-                  // Do not flush the Dolby Vision decoder for every pointer event. The Seeker
-                  // already renders this local position; commit one real Media3 seek on release.
+                  // Native coalesces real keyframe seeks at a bounded cadence. Preview the
+                  // scene under the thumb during dragging, not just the timestamp label.
                   nativeSeekPreviewPosition = it
+                  viewModel.seekPreviewTo(it)
                 } else {
                   viewModel.seekPreviewTo(it)
                 }
@@ -1896,6 +1897,13 @@ fun PlayerControls(
                 resetControlsTimestamp = System.currentTimeMillis()
                 viewModel.seekTo(targetPosition.toInt(), fast = false)
                 viewModel.showControls()
+              },
+              onUserInteractionChange = { isInteracting ->
+                if (isInteracting) {
+                  if (nativeEngineActive) viewModel.beginNativeScrub()
+                } else {
+                  viewModel.endNativeScrub()
+                }
               },
               timersInverted = Pair(false, invertDuration),
               durationTimerOnCLick = {

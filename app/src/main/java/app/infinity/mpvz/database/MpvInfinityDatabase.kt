@@ -61,7 +61,7 @@ import app.infinity.mpvz.domain.network.NetworkConnection
     AudiobookshelfServerEntity::class,
     DownloadItemEntity::class,
   ],
-  version = 23,
+  version = 24,
   exportSchema = true,
 )
 @TypeConverters(NetworkProtocolConverter::class, NetworkStreamEntryTypeConverter::class)

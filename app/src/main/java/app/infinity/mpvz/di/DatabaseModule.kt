@@ -806,7 +806,15 @@ val MIGRATION_20_21 =
 	    }
 	  }
 
-	val DatabaseModule =
+val MIGRATION_23_24 =
+  object : Migration(23, 24) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+      db.execSQL("ALTER TABLE `PlaybackStateEntity` ADD COLUMN `audioSelection` TEXT")
+      db.execSQL("ALTER TABLE `PlaybackStateEntity` ADD COLUMN `subtitleSelection` TEXT")
+    }
+  }
+
+val DatabaseModule =
   module {
     single<Json> {
       Json {
@@ -842,7 +850,8 @@ val MIGRATION_20_21 =
           MIGRATION_19_20,
 	          MIGRATION_20_21,
 	          MIGRATION_21_22,
-	          MIGRATION_22_23,
+          MIGRATION_22_23,
+          MIGRATION_23_24,
 	        ).build()
     }
 

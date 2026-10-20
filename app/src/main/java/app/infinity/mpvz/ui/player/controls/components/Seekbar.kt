@@ -26,6 +26,7 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.DragInteraction
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsDraggedAsState
 import androidx.compose.foundation.interaction.collectIsPressedAsState
@@ -49,6 +50,8 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.ripple
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -97,6 +100,7 @@ import `is`.xyz.mpv.Utils
 import kotlinx.collections.immutable.ImmutableList
 import kotlinx.collections.immutable.persistentListOf
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlin.math.min
@@ -283,6 +287,7 @@ internal fun SeekbarWithTimers(
   committedPosition: Float = position,
   onValueChange: (Float) -> Unit,
   onValueChangeFinished: (Float) -> Unit,
+  onUserInteractionChange: (Boolean) -> Unit = {},
   timersInverted: Pair<Boolean, Boolean>,
   positionTimerOnClick: () -> Unit,
   durationTimerOnCLick: () -> Unit,
@@ -307,6 +312,12 @@ internal fun SeekbarWithTimers(
   val clickEvent = LocalPlayerButtonsClickEvent.current
   var isUserInteracting by remember { mutableStateOf(false) }
   var userPosition by remember { mutableFloatStateOf(position) }
+  val interactionCallback by rememberUpdatedState(onUserInteractionChange)
+  DisposableEffect(Unit) {
+    onDispose {
+      if (isUserInteracting) interactionCallback(false)
+    }
+  }
 
   // Animated position for smooth transitions
   val animatedPosition = remember { Animatable(position) }
@@ -356,7 +367,10 @@ internal fun SeekbarWithTimers(
         loopStart = loopStart,
         loopEnd = loopEnd,
         bufferDuration = bufferDuration,
-        onUserInteractionChange = { isUserInteracting = it },
+        onUserInteractionChange = {
+          isUserInteracting = it
+          onUserInteractionChange(it)
+        },
         onUserPositionChange = { userPosition = it },
         onValueChange = onValueChange,
         onValueChangeFinished = onValueChangeFinished,
@@ -427,7 +441,10 @@ internal fun SeekbarWithTimers(
         loopStart = loopStart,
         loopEnd = loopEnd,
         bufferDuration = bufferDuration,
-        onUserInteractionChange = { isUserInteracting = it },
+        onUserInteractionChange = {
+          isUserInteracting = it
+          onUserInteractionChange(it)
+        },
         onUserPositionChange = { userPosition = it },
         onValueChange = onValueChange,
         onValueChangeFinished = onValueChangeFinished,
@@ -484,6 +501,12 @@ private fun SeekbarContent(
   val isSeekerPressed by seekerInteractionSource.collectIsPressedAsState()
   val isSeekerDragged by seekerInteractionSource.collectIsDraggedAsState()
   val isVisuallyInteracting = isUserInteracting || isSeekerPressed || isSeekerDragged
+  val currentInteractionCallback by rememberUpdatedState(onUserInteractionChange)
+  LaunchedEffect(seekerInteractionSource) {
+    seekerInteractionSource.interactions.collect { interaction ->
+      if (interaction is DragInteraction.Cancel) currentInteractionCallback(false)
+    }
+  }
   val clipRange by ClipEditorUiState.state.collectAsState()
   val safeDuration = duration.takeIf { it.isFinite() && it > 0f } ?: 0f
   val seekerRange = 0f..safeDuration.coerceAtLeast(0.1f)

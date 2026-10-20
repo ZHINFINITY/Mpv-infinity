@@ -1601,6 +1601,8 @@ class PlayerViewModel : ViewModel(),
   // Mapping from mpv internal path/URI to the original source URI (resolves deletion issues)
   private val mpvPathToUriMap = mutableMapOf<String, String>()
 
+  internal fun originalSubtitleUriForMpvPath(path: String): String? = mpvPathToUriMap[path]
+
   fun calculateVideoHash(uri: Uri) {
     _videoHash.value = null
     val generation = ++videoHashGeneration
@@ -2616,6 +2618,7 @@ class PlayerViewModel : ViewModel(),
   private var pendingSeekPreviewPosition: Float? = null
   private var seekPreviewJob: Job? = null
   private var frameSeekJob: Job? = null
+  private val nativeScrubPlaybackPolicy = NativeScrubPlaybackPolicy()
 
   private companion object {
     const val TAG = "PlayerViewModel"
@@ -4510,7 +4513,11 @@ class PlayerViewModel : ViewModel(),
    */
   fun seekPreviewTo(position: Float) {
     cancelFrameSeek()
-    if (host.isNativeEngineActive()) return
+    if (host.isNativeEngineActive()) {
+      beginNativeScrub()
+      host.nativeSeekTo((position.coerceAtLeast(0f) * 1000.0).toLong())
+      return
+    }
     synchronized(seekPreviewLock) {
       pendingSeekPreviewPosition = position.coerceAtLeast(0f)
       if (seekPreviewJob?.isActive == true) return
@@ -4538,6 +4545,21 @@ class PlayerViewModel : ViewModel(),
       seekPreviewJob?.cancel()
       seekPreviewJob = null
       pendingSeekPreviewPosition = null
+    }
+  }
+
+  /** Pause native playback for a seekbar drag, preserving the pre-drag state. */
+  fun beginNativeScrub() {
+    if (!host.isNativeEngineActive()) return
+    if (nativeScrubPlaybackPolicy.begin(host.isNativePlaying())) {
+      host.nativePause()
+    }
+  }
+
+  /** Finish or cancel a native seekbar drag and restore only pre-drag playback. */
+  fun endNativeScrub() {
+    if (nativeScrubPlaybackPolicy.end() && host.isNativeEngineActive()) {
+      host.nativeUnpause()
     }
   }
 
