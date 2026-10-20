@@ -49,7 +49,7 @@ import app.infinity.mpvz.ui.player.LibassSubtitleSurfaceView
 import app.infinity.mpvz.preferences.MpvFlowComputeApi
 import androidx.media3.subtitle.libass.LibassSubtitleRenderer
 import io.github.peerless2012.ass.media.AssHandler
-import io.github.peerless2012.ass.media.kt.withAssMkvSupport
+import io.github.peerless2012.ass.media.extractor.AssMatroskaExtractor
 import io.github.peerless2012.ass.media.kt.withAssSupport
 import io.github.peerless2012.ass.media.parser.AssSubtitleParserFactory
 import io.github.peerless2012.ass.media.type.AssRenderType
@@ -280,10 +280,21 @@ class NativeMedia3Engine(
     )
   private val dataSourceFactory = DefaultDataSource.Factory(context.applicationContext, cacheDataSourceFactory)
   private val assHandler = AssHandler(renderType = AssRenderType.OVERLAY_CANVAS)
-  private val assSubtitleParserFactory = AssSubtitleParserFactory(assHandler)
-  private val extractorsFactory: ExtractorsFactory =
+  private val assSubtitleParserFactory = NativeSubtitleParserFactory(AssSubtitleParserFactory(assHandler))
+  private val defaultExtractorsFactory =
     androidx.media3.extractor.DefaultExtractorsFactory()
-      .withAssMkvSupport(assSubtitleParserFactory, assHandler)
+      .setSubtitleParserFactory(assSubtitleParserFactory)
+  private val extractorsFactory: ExtractorsFactory = ExtractorsFactory {
+    // Equivalent to withAssMkvSupport, but its API requires a concrete ASS factory and cannot
+    // accept the bitmap passthrough policy. Keep the same ASS/font-aware Matroska extractor.
+    defaultExtractorsFactory.createExtractors().map { extractor ->
+      if (extractor is androidx.media3.extractor.mkv.MatroskaExtractor) {
+        AssMatroskaExtractor(assSubtitleParserFactory, assHandler)
+      } else {
+        extractor
+      }
+    }.toTypedArray()
+  }
   private val mediaSourceFactory = DefaultMediaSourceFactory(dataSourceFactory, extractorsFactory)
     .setSubtitleParserFactory(assSubtitleParserFactory)
   private val player = ExoPlayer.Builder(context.applicationContext)
@@ -341,6 +352,7 @@ class NativeMedia3Engine(
     pendingSeekDisplayPositionMs = targetMs
     // The source is prepared once with a seek-capable extractor. Seeking only moves the existing
     // extractor/decoder forward; it never rebuilds the MediaSource or flushes the surface.
+    Log.d(logTag, "seek targetMs=$targetMs ${bufferingLogState()}")
     player.seekTo(targetMs)
     publishPlaybackSnapshot()
   }
@@ -518,7 +530,7 @@ class NativeMedia3Engine(
     }
     override fun onPlaybackStateChanged(playbackState: Int) {
       if (playbackState == Player.STATE_READY) pendingSeekDisplayPositionMs = null
-      Log.d(logTag, "playback state=$playbackState uri=${player.currentMediaItem?.localConfiguration?.uri}")
+      Log.d(logTag, "playback state=$playbackState ${bufferingLogState()}")
       if (playbackState == Player.STATE_ENDED) {
         val uri = player.currentMediaItem?.localConfiguration?.uri
         if (uri != null && uri != endedUri) {
@@ -565,7 +577,7 @@ class NativeMedia3Engine(
 
     override fun onIsLoadingChanged(isLoading: Boolean) {
       val elapsed = preparationStartedAtMs.takeIf { it > 0L }?.let { SystemClock.elapsedRealtime() - it }
-      Log.d(logTag, "loading=$isLoading prepareElapsedMs=$elapsed uri=$preparationUri")
+      Log.d(logTag, "loading=$isLoading prepareElapsedMs=$elapsed ${bufferingLogState()}")
     }
 
     override fun onMetadata(metadata: Metadata) {
@@ -1305,7 +1317,7 @@ class NativeMedia3Engine(
     // HDR, DRM, unsupported geometry, or failed Vulkan/HardwareBuffer preflight.
     factory.setExtensionRendererMode(DefaultRenderersFactory.EXTENSION_RENDERER_MODE_ON)
     factory.setEnableDecoderFallback(true)
-    return factory.withAssSupport(assHandler)
+    return NativeSubtitleRenderersFactory(factory.withAssSupport(assHandler))
   }
 
   private fun publishFlowDiagnostics(diagnostics: Media3FlowDiagnostics) {
@@ -1315,6 +1327,12 @@ class NativeMedia3Engine(
 
   fun addListener(listener: Player.Listener) = player.addListener(listener)
   fun removeListener(listener: Player.Listener) = player.removeListener(listener)
+
+  private fun bufferingLogState(): String =
+    "positionMs=${player.currentPosition} bufferedMs=${player.totalBufferedDuration} " +
+      "loading=${player.isLoading} speed=${player.playbackParameters.speed} " +
+      "videoDecoder=${videoDecoderName ?: "unknown"} " +
+      "uri=${player.currentMediaItem?.localConfiguration?.uri}"
 
   fun stop() {
     clearLoop()
