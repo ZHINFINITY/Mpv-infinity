@@ -12,7 +12,6 @@ import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.clickable
@@ -30,7 +29,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -51,11 +49,19 @@ import app.infinity.mpvz.ui.player.MediaPlaybackService
 import app.infinity.mpvz.ui.player.PlaybackSession
 import app.infinity.mpvz.ui.player.PlayerActivity
 import app.infinity.mpvz.ui.player.controls.components.MiniAudioVisualizer
+import app.infinity.mpvz.preferences.AppearancePreferences
+import app.infinity.mpvz.preferences.preference.collectAsState
+import app.infinity.mpvz.ui.theme.GlassSurface
+import org.koin.compose.koinInject
 
 @Composable
 fun AudioMiniPlayer(modifier: Modifier = Modifier) {
   val isServiceRunning = MediaPlaybackService.isForegroundActive()
   val context = LocalContext.current
+  val appearancePreferences = koinInject<AppearancePreferences>()
+  val glassEnabled by appearancePreferences.liquidGlassSurfaces.collectAsState()
+  val glassOpacity by appearancePreferences.glassSurfaceOpacity.collectAsState()
+  val glassHighlight by appearancePreferences.glassSurfaceHighlight.collectAsState()
   val sessionState by PlaybackSession.state.collectAsStateWithLifecycle()
   val paused by PlaybackSession.propBoolean["pause"].collectAsStateWithLifecycle()
   val rawMediaTitle by PlaybackSession.propString["media-title"].collectAsStateWithLifecycle()
@@ -70,7 +76,10 @@ fun AudioMiniPlayer(modifier: Modifier = Modifier) {
       ?: rawMediaTitle?.takeIf { it.isNotBlank() }
       ?: "Audio Track"
 
-  Surface(
+  GlassSurface(
+    enabled = glassEnabled,
+    opacity = glassOpacity,
+    highlight = glassHighlight,
     modifier =
       modifier
         .fillMaxWidth()
@@ -87,10 +96,6 @@ fun AudioMiniPlayer(modifier: Modifier = Modifier) {
             }
           context.startActivity(intent)
         },
-    color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.95f),
-    tonalElevation = 6.dp,
-    shadowElevation = 8.dp,
-    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)),
   ) {
     val primaryContainerColor = MaterialTheme.colorScheme.primaryContainer
 

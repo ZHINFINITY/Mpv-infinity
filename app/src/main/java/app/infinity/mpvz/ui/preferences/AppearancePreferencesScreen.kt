@@ -61,6 +61,8 @@ import app.infinity.mpvz.ui.preferences.components.SwitchPreference
 import app.infinity.mpvz.ui.preferences.components.CustomThemeSettings
 import app.infinity.mpvz.ui.preferences.components.ThemePicker
 import app.infinity.mpvz.ui.theme.DarkMode
+import app.infinity.mpvz.ui.theme.GlassSurface
+import app.infinity.mpvz.ui.theme.GlassSurfacePolicy
 import app.infinity.mpvz.ui.theme.LocalThemeTransitionState
 import app.infinity.mpvz.ui.utils.LocalBackStack
 import app.infinity.mpvz.ui.utils.LocalShowSettingsBackArrow
@@ -73,6 +75,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
 import me.zhanghai.compose.preference.ListPreference
+import me.zhanghai.compose.preference.SliderPreference
 import me.zhanghai.compose.preference.ProvidePreferenceLocals
 import me.zhanghai.compose.preference.SliderPreference
 import org.koin.compose.koinInject
@@ -344,6 +347,12 @@ object AppearancePreferencesScreen : Screen {
 
                   PreferenceDivider()
 
+                  val glassOpacity by preferences.glassSurfaceOpacity.collectAsState()
+                  val glassHighlight by preferences.glassSurfaceHighlight.collectAsState()
+                  SliderPreference(value = glassOpacity.coerceIn(GlassSurfacePolicy.MinOpacity, GlassSurfacePolicy.MaxOpacity), onValueChange = { preferences.glassSurfaceOpacity.set(GlassSurfacePolicy.opacity(it)) }, title = { Text("Surface opacity") }, summary = { Text("${(glassOpacity * 100).toInt()}% · keeps text readable", color = MaterialTheme.colorScheme.outline) }, valueRange = GlassSurfacePolicy.MinOpacity..GlassSurfacePolicy.MaxOpacity, onSliderValueChange = { preferences.glassSurfaceOpacity.set(GlassSurfacePolicy.opacity(it)) }, sliderValue = glassOpacity.coerceIn(GlassSurfacePolicy.MinOpacity, GlassSurfacePolicy.MaxOpacity))
+                  SliderPreference(value = glassHighlight.coerceIn(GlassSurfacePolicy.MinHighlight, GlassSurfacePolicy.MaxHighlight), onValueChange = { preferences.glassSurfaceHighlight.set(GlassSurfacePolicy.highlight(it)) }, title = { Text("Highlight strength") }, summary = { Text("${(glassHighlight * 100).toInt()}% · static gradient, no screen capture", color = MaterialTheme.colorScheme.outline) }, valueRange = GlassSurfacePolicy.MinHighlight..GlassSurfacePolicy.MaxHighlight, onSliderValueChange = { preferences.glassSurfaceHighlight.set(GlassSurfacePolicy.highlight(it)) }, sliderValue = glassHighlight.coerceIn(GlassSurfacePolicy.MinHighlight, GlassSurfacePolicy.MaxHighlight))
+                  GlassSurface(enabled = liquidGlassSurfaces, opacity = glassOpacity, highlight = glassHighlight, modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)) { Text("Preview", modifier = Modifier.padding(16.dp), style = MaterialTheme.typography.titleSmall) }
+                  PreferenceDivider()
                   val useSystemFont by preferences.useSystemFont.collectAsState()
                   SwitchPreference(
                     modifier = Modifier.settingsSearchTarget(R.string.pref_appearance_system_font_title),

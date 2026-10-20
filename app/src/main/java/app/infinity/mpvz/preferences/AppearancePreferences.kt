@@ -51,6 +51,8 @@ class AppearancePreferences(
   val activeCustomThemeId = preferenceStore.getString("active_custom_theme_id", "")
   val amoledMode = preferenceStore.getBoolean("amoled_mode", false)
   val liquidGlassSurfaces = preferenceStore.getBoolean("liquid_glass_surfaces", false)
+  val glassSurfaceOpacity = preferenceStore.getFloat("glass_surface_opacity", 0.88f)
+  val glassSurfaceHighlight = preferenceStore.getFloat("glass_surface_highlight", 0.18f)
   val useSystemFont = preferenceStore.getBoolean("use_system_font", false)
   val unlimitedNameLines = preferenceStore.getBoolean("unlimited_name_lines", false)
   val hidePlayerButtonsBackground = preferenceStore.getBoolean("hide_player_buttons_background", false)
