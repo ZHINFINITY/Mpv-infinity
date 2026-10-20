@@ -72,6 +72,20 @@ assert spec and spec.loader, "could not load MPVFlow preparation module"
 prepare = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(prepare)
 gpu_source = (ROOT / "app/src/main/cpp/mpvflow/mpvflow_gpu.c").read_text(encoding="utf-8")
+gpu_header = (ROOT / "app/src/main/cpp/mpvflow/mpvflow_gpu.h").read_text(encoding="utf-8")
+for marker in (
+    "MPVFLOW_GPU_PASS_PAIR_GATE_FIRST = 1u << 7",
+    "MPVFLOW_GPU_PASS_PAIR_GATE_REDUCE = 1u << 8",
+    "MPVFLOW_GPU_PASS_PAIR_GATE_MERGE = 1u << 9",
+):
+    assert marker in gpu_header, f"pair-gate creation diagnostics must expose a distinct pass mask: missing {marker!r}"
+for marker in (
+    'diagnostics->stage = "pair_ghost_pass_creation"',
+    'event=shader_setup state=failed "\n                 "stage=pair_ghost_pass_creation',
+    "pair_gate_first=%d pair_gate_reduce=%d pair_gate_merge=%d",
+    "*status = MPVFLOW_GPU_UNSUPPORTED_SHADER",
+):
+    assert marker in gpu_source, f"pair-gate shader setup failure must remain diagnosable: missing {marker!r}"
 capture_define = "#define MPVFLOW_DEBUG_CAPTURE 1\n"
 capture_default = prepare.configure_debug_capture_source(gpu_source, enabled=False)
 assert capture_define not in capture_default, "default MPV source preparation must not enable debug capture"

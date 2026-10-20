@@ -1852,8 +1852,25 @@ MPVFlowGPUContext *mpvflow_gpu_create(pl_gpu gpu,
     ctx->pass_pair_gate_reduce = make_pass(gpu, shader_pair_gate_reduce, reduce_desc, 2);
     ctx->pass_pair_gate_merge = make_pass(gpu, shader_pair_gate_merge, gate_merge_desc, 3);
     if (!ctx->pass_pair_gate_first || !ctx->pass_pair_gate_reduce || !ctx->pass_pair_gate_merge) {
-        if (status) *status = MPVFLOW_GPU_ERROR;
+        uint32_t gate_failed_pass_mask = 0;
+        if (!ctx->pass_pair_gate_first)
+            gate_failed_pass_mask |= MPVFLOW_GPU_PASS_PAIR_GATE_FIRST;
+        if (!ctx->pass_pair_gate_reduce)
+            gate_failed_pass_mask |= MPVFLOW_GPU_PASS_PAIR_GATE_REDUCE;
+        if (!ctx->pass_pair_gate_merge)
+            gate_failed_pass_mask |= MPVFLOW_GPU_PASS_PAIR_GATE_MERGE;
+        if (diagnostics) {
+            diagnostics->stage = "pair_ghost_pass_creation";
+            diagnostics->failed_pass_mask = gate_failed_pass_mask;
+        }
+        flow_log(gpu, PL_LOG_WARN,
+                 "MPVFLOW_DIAGNOSTIC event=shader_setup state=failed "
+                 "stage=pair_ghost_pass_creation missing_pass_mask=0x%x "
+                 "pair_gate_first=%d pair_gate_reduce=%d pair_gate_merge=%d",
+                 gate_failed_pass_mask, !!ctx->pass_pair_gate_first,
+                 !!ctx->pass_pair_gate_reduce, !!ctx->pass_pair_gate_merge);
         mpvflow_gpu_destroy(ctx);
+        if (status) *status = MPVFLOW_GPU_UNSUPPORTED_SHADER;
         return NULL;
     }
     flow_log(gpu, PL_LOG_INFO, "MPVFLOW_DIAGNOSTIC event=pair_ghost_experiment state=enabled "

@@ -8,6 +8,7 @@ SOURCE = ROOT / "app/src/main/cpp/mpvflow/mpvflow_gpu.c"
 HARNESS = Path(__file__).with_suffix(".c")
 
 def embedded(name: str, source: str) -> str:
+    """Decode one named C string containing an embedded gate shader."""
     m = re.search(rf"static const char {name}\[\] =\n(.*?);\n", source, re.S)
     if not m:
         raise SystemExit(f"missing embedded {name}")
@@ -16,20 +17,24 @@ def embedded(name: str, source: str) -> str:
         raise SystemExit(f"empty embedded {name}")
     return "".join(ast.literal_eval(x) for x in literals)
 
-def require_vulkan():
+def require_vulkan() -> Path:
+    """Require oracle tooling and return the installed lavapipe ICD file."""
     missing = [x for x in ("glslangValidator", "cc") if not shutil.which(x)]
     if not Path("/usr/include/vulkan/vulkan.h").is_file(): missing.append("Vulkan headers")
     if not any(Path("/usr/lib").glob("**/libvulkan.so*")): missing.append("Vulkan loader")
-    if not list(Path("/usr/share/vulkan/icd.d").glob("lvp_icd*.json")): missing.append("lavapipe")
+    icds = sorted(Path("/usr/share/vulkan/icd.d").glob("lvp_icd*.json"))
+    if not icds: missing.append("lavapipe")
     if missing: raise SystemExit("pair-ghost Vulkan oracle unavailable: " + ", ".join(missing))
+    return icds[0]
 
 def main() -> None:
+    """Compile the exact embedded shaders and execute their Vulkan oracle."""
     ap = argparse.ArgumentParser()
     ap.add_argument("--require-vulkan", action="store_true")
     args = ap.parse_args()
     required = args.require_vulkan or os.environ.get("MPVFLOW_REQUIRE_VULKAN_PIXEL_TEST") == "1"
     # This test is intentionally required in CI; a local non-required invocation may skip.
-    try: require_vulkan()
+    try: icd = require_vulkan()
     except SystemExit:
         if required: raise
         print("pair-ghost Vulkan tooling unavailable; skipping optional local run")
@@ -56,7 +61,7 @@ def main() -> None:
         exe = d / "pair-ghost-vulkan"
         r = subprocess.run(["cc", "-std=gnu11", "-O2", "-Wall", "-Wextra", "-o", str(exe), str(HARNESS), "-lvulkan", "-lm"], text=True, capture_output=True)
         if r.returncode: raise SystemExit(f"pair-ghost harness build failed:\n{r.stdout}{r.stderr}")
-        r = subprocess.run([str(exe), *map(str, spirv)], text=True, capture_output=True, env={**os.environ, "TMPDIR": str(d), "XDG_CACHE_HOME": str(d), "VK_ICD_FILENAMES": "/usr/share/vulkan/icd.d/lvp_icd.json", "LP_NUM_THREADS": "2"})
+        r = subprocess.run([str(exe), *map(str, spirv)], text=True, capture_output=True, env={**os.environ, "TMPDIR": str(d), "XDG_CACHE_HOME": str(d), "VK_ICD_FILENAMES": str(icd), "LP_NUM_THREADS": "2"})
         print(r.stdout, end="")
         if r.returncode: raise SystemExit(r.stderr or "pair-ghost Vulkan harness failed")
     print("MPV Flow pair-ghost exact Vulkan gate checks passed")

@@ -2,6 +2,12 @@
 
 These notes are written in plain English and focus on what changed for real use.
 
+## Unreleased
+
+### Bug fixes
+
+- Folder blacklists now apply only to the exact folder. Existing parent-folder entries no longer hide descendant video folders or audio files.
+
 ## 2.1.5
 
 ### What’s new
