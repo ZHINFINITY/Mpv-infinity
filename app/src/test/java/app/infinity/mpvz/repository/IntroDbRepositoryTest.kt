@@ -6,6 +6,7 @@
  */
 package app.infinity.mpvz.repository
 
+import app.infinity.mpvz.preferences.IntroSegmentProvider
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
 import okhttp3.OkHttpClient
@@ -125,6 +126,99 @@ class IntroDbRepositoryTest {
     assertEquals(121.0, segments[1].normalizedStart, 0.0)
     assertEquals(145.5, segments[1].normalizedEnd, 0.0)
   }
+
+  @Test
+  fun lookupSegmentsExplicitTmdbPreservesMappingInOutgoingUrl() = runBlocking {
+    val requests = mutableListOf<String>()
+    val client = lookupClient(requests)
+    val outcome = IntroDbRepository(client, Json).lookupSegments(
+      IntroDbLookupRequest(
+        mediaTitle = "Example Show",
+        tmdbId = 123,
+        mediaType = "tv",
+        season = 2,
+        episode = 7,
+        provider = IntroSegmentProvider.THE_INTRO_DB,
+        mapping = "official",
+      ),
+    )
+
+    assertTrue(outcome is IntroDbLookupOutcome.Loaded)
+    assertEquals("https://api.theintrodb.org/v4/media?tmdb_id=123&season=2&episode=7&mapping=official", requests.single())
+  }
+
+  @Test
+  fun lookupSegmentsExplicitImdbPreservesMappingInOutgoingUrl() = runBlocking {
+    val requests = mutableListOf<String>()
+    val outcome = IntroDbRepository(lookupClient(requests), Json).lookupSegments(
+      IntroDbLookupRequest(
+        mediaTitle = "Example Show",
+        imdbId = "tt1234567",
+        mediaType = "tv",
+        season = 2,
+        episode = 7,
+        provider = IntroSegmentProvider.THE_INTRO_DB,
+        mapping = "official",
+      ),
+    )
+
+    assertTrue(outcome is IntroDbLookupOutcome.Loaded)
+    assertEquals("https://api.theintrodb.org/v4/media?imdb_id=tt1234567&season=2&episode=7&mapping=official", requests.single())
+  }
+
+  @Test
+  fun lookupSegmentsTmdbSearchFallbackPreservesMappingInOutgoingUrl() = runBlocking {
+    val requests = mutableListOf<String>()
+    val client = lookupClient(requests, includeTmdbSearch = true)
+    val outcome = IntroDbRepository(client, Json).lookupSegments(
+      IntroDbLookupRequest(
+        mediaTitle = "Fallback Show S02E07 1080p.mkv",
+        mediaType = "tv",
+        provider = IntroSegmentProvider.THE_INTRO_DB,
+        mapping = "official",
+      ),
+    )
+
+    assertTrue(outcome is IntroDbLookupOutcome.Loaded)
+    assertEquals(
+      listOf(
+        "https://sub.wyzie.io/api/tmdb/search?q=Fallback+Show",
+        "https://api.theintrodb.org/v4/media?tmdb_id=456&season=2&episode=7&mapping=official",
+      ),
+      requests,
+    )
+  }
+
+  private fun lookupClient(
+    requests: MutableList<String>,
+    includeTmdbSearch: Boolean = false,
+  ): OkHttpClient =
+    OkHttpClient.Builder().addInterceptor(Interceptor { chain ->
+      val url = chain.request().url.toString()
+      requests += url
+      val body =
+        when {
+          includeTmdbSearch && chain.request().url.host == "sub.wyzie.io" ->
+            "{\"results\":[{\"id\":456,\"mediaType\":\"tv\",\"title\":\"Fallback Show\"}]}"
+          else ->
+            """
+              {
+                "tvdb_id": 77889,
+                "type": "tv",
+                "season": 2,
+                "episode": 7,
+                "intro": [{"start_ms": 1250, "end_ms": 45250}]
+              }
+            """.trimIndent()
+        }
+      Response.Builder()
+        .request(chain.request())
+        .protocol(Protocol.HTTP_1_1)
+        .code(200)
+        .message("OK")
+        .body(body.toResponseBody("application/json".toMediaType()))
+        .build()
+    }).build()
 
   @Test
   fun emptyAndNotFoundResponsesProduceNoSegments() = runBlocking {
