@@ -13,6 +13,7 @@ import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
+import app.infinity.mpvz.preferences.AiPreferences
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -57,9 +58,9 @@ private data class OpenAiChatRequest(
 class OpenAiClient(
   private val client: OkHttpClient,
   private val json: Json,
+  private val preferences: AiPreferences,
 ) : AiClient {
   companion object {
-    private const val BASE_URL = "https://api.openai.com/v1"
     private val JSON_MEDIA_TYPE = "application/json".toMediaType()
   }
 
@@ -74,10 +75,11 @@ class OpenAiClient(
   override suspend fun fetchModels(apiKey: String): Result<List<AiModelInfo>> =
     withContext(Dispatchers.IO) {
       runCatching {
+        val baseUrl = baseUrl()
         val request =
           Request
             .Builder()
-            .url("$BASE_URL/models")
+            .url(OpenAiEndpoint.requestUrl(baseUrl, "/models"))
             .header("Authorization", "Bearer $apiKey")
             .get()
             .build()
@@ -101,10 +103,11 @@ class OpenAiClient(
   override suspend fun verifyKey(apiKey: String): Result<String> =
     withContext(Dispatchers.IO) {
       runCatching {
+        val baseUrl = baseUrl()
         val request =
           Request
             .Builder()
-            .url("$BASE_URL/models")
+            .url(OpenAiEndpoint.requestUrl(baseUrl, "/models"))
             .header("Authorization", "Bearer $apiKey")
             .get()
             .build()
@@ -124,6 +127,7 @@ class OpenAiClient(
   ): Result<AiGeneratedContent> =
     withContext(Dispatchers.IO) {
       runCatching {
+        val baseUrl = baseUrl()
         val requestBody =
           json.encodeToString(
             OpenAiChatRequest.serializer(),
@@ -142,7 +146,7 @@ class OpenAiClient(
         val request =
           Request
             .Builder()
-            .url("$BASE_URL/chat/completions")
+            .url(OpenAiEndpoint.requestUrl(baseUrl, "/chat/completions"))
             .header("Authorization", "Bearer $apiKey")
             .post(requestBody.toRequestBody(JSON_MEDIA_TYPE))
             .build()
@@ -163,6 +167,9 @@ class OpenAiClient(
     } catch (_: Exception) {
       body.take(200)
     }
+
+  private fun baseUrl(): String =
+    preferences.openaiBaseUrl.get().trim().ifBlank { OpenAiEndpoint.DEFAULT_BASE_URL }
 
   private fun isReasoningModel(model: String): Boolean {
     val id = model.substringAfterLast('/').lowercase()

@@ -32,6 +32,8 @@ class AiPreferences(
   val openCodeApiKey = preferenceStore.getString("ai_opencode_api_key", "")
   val groqApiKey = preferenceStore.getString("ai_groq_api_key", "")
   val openaiApiKey = preferenceStore.getString("ai_openai_api_key", "")
+  /** OpenAI-compatible API root; blank uses the official OpenAI endpoint. */
+  val openaiBaseUrl = preferenceStore.getString("ai_openai_base_url", "")
   val anthropicApiKey = preferenceStore.getString("ai_anthropic_api_key", "")
   val openrouterApiKey = preferenceStore.getString("ai_openrouter_api_key", "")
   val togetherApiKey = preferenceStore.getString("ai_together_api_key", "")
