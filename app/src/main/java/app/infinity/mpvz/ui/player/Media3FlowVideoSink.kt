@@ -763,6 +763,12 @@ class Media3FlowVideoSink(
   }
 
   override fun flush(resetPosition: Boolean) {
+    // A paused seek needs a fresh one-shot frame even after a previous frame consumed
+    // the stream's initial first-frame permit. Do not restart the playback clock.
+    flushInternal(resetPosition, allowPausedFrame = resetPosition)
+  }
+
+  private fun flushInternal(resetPosition: Boolean, allowPausedFrame: Boolean) {
     val discarded = ArrayList<PendingInput>()
     endOfCurrentInput = false
     endOfInput = false
@@ -783,6 +789,9 @@ class Media3FlowVideoSink(
       lastRenderedPtsUs = C.TIME_UNSET
       firstFrameReported = false
       if (resetPosition) {
+        // Serialized with frame clearing on GL: an old pre-seek frame cannot consume
+        // this new permit before the seek's source-frame generation is installed.
+        allowFirstFrameBeforeStarted = allowPausedFrame
         originPtsUs = C.TIME_UNSET
         lastOutputTick = -1L
       }
@@ -910,7 +919,9 @@ class Media3FlowVideoSink(
     allowFirstFrameBeforeStarted =
       firstFrameReleaseInstruction == VideoSink.RELEASE_FIRST_FRAME_IMMEDIATELY ||
         firstFrameReleaseInstruction == VideoSink.RELEASE_FIRST_FRAME_WHEN_STARTED
-    flush(resetPosition = true)
+    // A new stream still obeys Media3's release instruction; only position-reset
+    // flushes grant an unconditional one-shot paused-seek frame.
+    flushInternal(resetPosition = true, allowPausedFrame = allowFirstFrameBeforeStarted)
     glHandler.post {
       if (format.width > 0 && format.height > 0 && makePbufferCurrent()) {
         configureInputSurface(format.width, format.height)
@@ -1371,7 +1382,13 @@ class Media3FlowVideoSink(
       captureFrame(token.ptsUs, transform)
       storedFrameCount = sourceFrames.size
       dispatchListener { it.onFrameAvailableForRendering() }
-      scheduleDisplayFrame()
+      if (!running && allowFirstFrameBeforeStarted) {
+        // A paused renderer has no Choreographer loop. The decoded seek frame may
+        // arrive after render()'s first one-shot already found an empty source queue.
+        postOneShotRender()
+      } else {
+        scheduleDisplayFrame()
+      }
     } catch (error: RuntimeException) {
       if (!tokenResolved) {
         synchronized(inputLock) {

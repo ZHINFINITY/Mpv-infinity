@@ -50,6 +50,42 @@ class NativePlaybackControlContractTest(unittest.TestCase):
         engine = (PLAYER / 'NativeMedia3Engine.kt').read_text()
         self.assertIn('seekDispatcher.cancel()', function(engine, 'cancelSeekPreview'))
 
+    def test_shared_gesture_and_audio_previews_do_not_acquire_seekbar_pause(self):
+        model = (PLAYER / 'PlayerViewModel.kt').read_text()
+        preview = function(model, 'seekPreviewTo')
+        self.assertNotIn('beginNativeScrub()', preview)
+        self.assertNotIn('host.nativePause()', preview)
+        controls = (PLAYER / 'controls/PlayerControls.kt').read_text()
+        self.assertIn('viewModel.beginNativeScrub()', controls)
+        final = function(model, 'seekTo')
+        self.assertLess(final.index('host.nativeSeekTo('), final.index('endNativeScrub()'))
+
+    def test_position_reset_rearms_one_paused_flow_frame_on_gl_thread(self):
+        sink = (PLAYER / 'Media3FlowVideoSink.kt').read_text()
+        self.assertIn('allowPausedFrame = resetPosition', function(sink, 'flush'))
+        reset = function(sink, 'flushInternal')
+        self.assertIn('allowFirstFrameBeforeStarted = allowPausedFrame', reset)
+        self.assertLess(reset.index('glHandler.post'), reset.index('allowFirstFrameBeforeStarted ='))
+        self.assertIn('allowPausedFrame = allowFirstFrameBeforeStarted', function(sink, 'onInputStreamChanged'))
+        self.assertIn('allowFirstFrameBeforeStarted = false', function(sink, 'renderAtPosition'))
+        # Paused one-shot rendering must not start playback or its continuous display loop.
+        self.assertNotIn('running = true', reset)
+        self.assertNotIn('scheduleDisplayFrame()', reset)
+
+    def test_late_decoded_seek_frame_wakes_a_paused_one_shot(self):
+        sink = (PLAYER / 'Media3FlowVideoSink.kt').read_text()
+        capture = function(sink, 'onInputFrameAvailable')
+        wake = capture.index('if (!running && allowFirstFrameBeforeStarted)')
+        self.assertLess(capture.index('captureFrame(token.ptsUs, transform)'), wake)
+        self.assertIn('postOneShotRender()', capture[wake:])
+        self.assertLess(capture.index('token.generation != streamGeneration'), wake)
+
+    def test_seekbar_disposal_and_drag_cancellation_release_interaction(self):
+        seekbar = (PLAYER / 'controls/components/Seekbar.kt').read_text()
+        self.assertIn('if (isUserInteracting) interactionCallback(false)', seekbar)
+        self.assertIn('interaction is DragInteraction.Cancel', seekbar)
+        self.assertIn('currentInteractionCallback(false)', seekbar)
+
     def test_media_changes_and_teardown_cancel_pending_drag_targets(self):
         engine = (PLAYER / 'NativeMedia3Engine.kt').read_text()
         for name in ('play', 'stop', 'release'):

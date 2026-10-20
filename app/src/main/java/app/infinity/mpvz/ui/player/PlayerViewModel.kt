@@ -4513,7 +4513,8 @@ class PlayerViewModel : ViewModel(),
   fun seekPreviewTo(position: Float) {
     cancelFrameSeek()
     if (host.isNativeEngineActive()) {
-      beginNativeScrub()
+      // Preview is shared by gestures and audio controls. Only the seekbar's explicit
+      // interaction lifecycle may pause playback; other callers do not own its resume.
       host.nativeSeekPreviewTo((position.coerceAtLeast(0f).toDouble() * 1000.0).toLong())
       return
     }
@@ -4583,6 +4584,7 @@ class PlayerViewModel : ViewModel(),
     cancelSeekPreview()
     if (host.isNativeEngineActive()) {
       host.nativeSeekTo(position.toLong() * 1000L)
+      endNativeScrub()
       return
     }
     viewModelScope.launch(Dispatchers.IO) {

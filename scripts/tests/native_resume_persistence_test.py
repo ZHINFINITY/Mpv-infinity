@@ -35,7 +35,7 @@ class NativeResumeIntegrationTest(unittest.TestCase):
         start = model.index("  fun seekPreviewTo(")
         preview = model[start:model.index("  private suspend fun runSeekPreviewLoop", start)]
         self.assertIn("host.nativeSeekPreviewTo(", preview)
-        self.assertIn("beginNativeScrub()", preview)
+        self.assertNotIn("      beginNativeScrub()", preview)
 
     def test_room_upgrade_preserves_existing_position_and_adds_nullable_selections(self):
         schema = json.loads((ROOT / "app/schemas/app.gyrolet.mpv_infinity.database.MpvInfinityDatabase/16.json").read_text())
