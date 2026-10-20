@@ -2618,7 +2618,6 @@ class PlayerViewModel : ViewModel(),
   private var pendingSeekPreviewPosition: Float? = null
   private var seekPreviewJob: Job? = null
   private var frameSeekJob: Job? = null
-  private val nativeScrubPlaybackPolicy = NativeScrubPlaybackPolicy()
 
   private companion object {
     const val TAG = "PlayerViewModel"
@@ -2631,7 +2630,6 @@ class PlayerViewModel : ViewModel(),
     const val SEEK_COALESCE_DELAY_MS = 60L
     const val RELATIVE_SEEK_EOF_GUARD_SECONDS = 0.25
     const val SEEK_TARGET_TOLERANCE_SECONDS = 0.05
-    const val PREVIEW_SEEK_INTERVAL_MS = 100L
     const val FRAME_SEEK_POLL_INTERVAL_MS = 10L
     const val FRAME_SEEK_MIN_SETTLE_POLLS = 8
     const val FRAME_SEEK_MAX_SETTLE_POLLS = 75
@@ -4513,8 +4511,8 @@ class PlayerViewModel : ViewModel(),
   fun seekPreviewTo(position: Float) {
     cancelFrameSeek()
     if (host.isNativeEngineActive()) {
-      // Preview is shared by gestures and audio controls. Only the seekbar's explicit
-      // interaction lifecycle may pause playback; other callers do not own its resume.
+      // Like MPV, live preview does not change play/pause intent. Both engines
+      // conflate pointer events into keyframe seeks at the shared preview cadence.
       host.nativeSeekPreviewTo((position.coerceAtLeast(0f).toDouble() * 1000.0).toLong())
       return
     }
@@ -4536,7 +4534,7 @@ class PlayerViewModel : ViewModel(),
             }
         }
       PlaybackSession.command("seek", target.toString(), "absolute+keyframes")
-      delay(PREVIEW_SEEK_INTERVAL_MS)
+      delay(SEEK_PREVIEW_INTERVAL_MS)
     }
   }
 
@@ -4548,21 +4546,10 @@ class PlayerViewModel : ViewModel(),
     }
   }
 
-  /** Pause native playback for a seekbar drag, preserving the pre-drag state. */
-  fun beginNativeScrub() {
-    if (!host.isNativeEngineActive()) return
-    if (nativeScrubPlaybackPolicy.begin(host.nativePlayWhenReady())) {
-      host.nativePause()
-    }
-  }
-
-  /** Finish or cancel a native seekbar drag and restore only pre-drag playback. */
-  fun endNativeScrub() {
-    if (!nativeScrubPlaybackPolicy.isActive()) return
+  /** Discard a trailing preview on cancellation without changing play/pause intent. */
+  fun cancelSeekPreviewInteraction() {
+    cancelSeekPreview()
     if (host.isNativeEngineActive()) host.nativeCancelSeekPreview()
-    if (nativeScrubPlaybackPolicy.end() && host.isNativeEngineActive()) {
-      host.nativeUnpause()
-    }
   }
 
   fun finishSeekPreview(position: Float) {
@@ -4570,7 +4557,6 @@ class PlayerViewModel : ViewModel(),
       cancelFrameSeek()
       cancelSeekPreview()
       host.nativeSeekTo((position.coerceAtLeast(0f).toDouble() * 1000.0).toLong())
-      endNativeScrub()
     } else {
       seekTo(position.toInt(), fast = false)
     }
@@ -4584,7 +4570,6 @@ class PlayerViewModel : ViewModel(),
     cancelSeekPreview()
     if (host.isNativeEngineActive()) {
       host.nativeSeekTo(position.toLong() * 1000L)
-      endNativeScrub()
       return
     }
     viewModelScope.launch(Dispatchers.IO) {

@@ -1887,10 +1887,8 @@ fun PlayerControls(
                 viewModel.showControls()
               },
               onUserInteractionChange = { isInteracting ->
-                if (isInteracting) {
-                  if (nativeEngineActive) viewModel.beginNativeScrub()
-                } else {
-                  viewModel.endNativeScrub()
+                if (!isInteracting) {
+                  viewModel.cancelSeekPreviewInteraction()
                   nativeSeekPreviewPosition = null
                   isSeeking = false
                 }

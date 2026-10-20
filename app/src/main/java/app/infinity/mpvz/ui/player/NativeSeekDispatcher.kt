@@ -6,7 +6,7 @@ internal class NativeSeekDispatcher(
   private val postDelayed: (Runnable, Long) -> Unit,
   private val removeCallbacks: (Runnable) -> Unit,
   private val dispatch: (positionMs: Long, committed: Boolean) -> Unit,
-  private val throttleMs: Long = 150L,
+  private val throttleMs: Long = SEEK_PREVIEW_INTERVAL_MS,
 ) {
   private val timer = Runnable { onTimer() }
   private var timerScheduled = false

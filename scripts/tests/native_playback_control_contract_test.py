@@ -40,25 +40,27 @@ class NativePlaybackControlContractTest(unittest.TestCase):
         self.assertNotIn('postDelayed', function(engine, 'seekTo'))
         self.assertIn('seekDispatcher.preview(positionMs)', function(engine, 'seekPreviewTo'))
 
-    def test_scrub_uses_play_intent_and_cancels_before_resuming(self):
+    def test_preview_and_final_seek_preserve_play_pause_like_mpv(self):
         model = (PLAYER / 'PlayerViewModel.kt').read_text()
-        self.assertIn('host.nativePlayWhenReady()', function(model, 'beginNativeScrub'))
-        finish = function(model, 'finishSeekPreview')
-        self.assertLess(finish.index('host.nativeSeekTo('), finish.index('endNativeScrub()'))
-        end = function(model, 'endNativeScrub')
-        self.assertLess(end.index('host.nativeCancelSeekPreview()'), end.index('host.nativeUnpause()'))
-        engine = (PLAYER / 'NativeMedia3Engine.kt').read_text()
-        self.assertIn('seekDispatcher.cancel()', function(engine, 'cancelSeekPreview'))
-
-    def test_shared_gesture_and_audio_previews_do_not_acquire_seekbar_pause(self):
-        model = (PLAYER / 'PlayerViewModel.kt').read_text()
-        preview = function(model, 'seekPreviewTo')
-        self.assertNotIn('beginNativeScrub()', preview)
-        self.assertNotIn('host.nativePause()', preview)
+        for name in ('seekPreviewTo', 'finishSeekPreview', 'seekTo', 'cancelSeekPreviewInteraction'):
+            body = function(model, name)
+            self.assertNotIn('host.nativePause()', body)
+            self.assertNotIn('host.nativeUnpause()', body)
+            self.assertNotIn('beginNativeScrub()', body)
+        cancel = function(model, 'cancelSeekPreviewInteraction')
+        self.assertIn('host.nativeCancelSeekPreview()', cancel)
         controls = (PLAYER / 'controls/PlayerControls.kt').read_text()
-        self.assertIn('viewModel.beginNativeScrub()', controls)
-        final = function(model, 'seekTo')
-        self.assertLess(final.index('host.nativeSeekTo('), final.index('endNativeScrub()'))
+        self.assertNotIn('viewModel.beginNativeScrub()', controls)
+        self.assertIn('viewModel.cancelSeekPreviewInteraction()', controls)
+
+    def test_native_and_mpv_share_live_preview_cadence_and_keyframe_policy(self):
+        model = (PLAYER / 'PlayerViewModel.kt').read_text()
+        native = (PLAYER / 'NativeSeekDispatcher.kt').read_text()
+        self.assertIn('delay(SEEK_PREVIEW_INTERVAL_MS)', function(model, 'runSeekPreviewLoop'))
+        self.assertIn('"absolute+keyframes"', function(model, 'runSeekPreviewLoop'))
+        self.assertIn('throttleMs: Long = SEEK_PREVIEW_INTERVAL_MS', native)
+        self.assertIn('SEEK_PREVIEW_INTERVAL_MS = 100L', (PLAYER / 'SeekPreviewPolicy.kt').read_text())
+        self.assertIn('SeekParameters.CLOSEST_SYNC', (PLAYER / 'NativeMedia3Engine.kt').read_text())
 
     def test_position_reset_rearms_one_paused_flow_frame_on_gl_thread(self):
         sink = (PLAYER / 'Media3FlowVideoSink.kt').read_text()

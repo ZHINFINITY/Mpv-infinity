@@ -6,7 +6,7 @@ import org.junit.Test
 
 class NativeSeekDispatcherTest {
   @Test
-  fun continuousDragDispatchesLatestTargetEvery150msWithoutWaitingForRelease() {
+  fun continuousDragDispatchesLatestTargetEvery100msWithoutWaitingForRelease() {
     val fake = FakeTime()
     val events = mutableListOf<Pair<Long, Boolean>>()
     val dispatcher = fake.dispatcher { position, committed -> events += position to committed }
@@ -14,21 +14,21 @@ class NativeSeekDispatcherTest {
     fake.advanceTo(0)
     assertEquals(listOf(100L to false), events)
 
-    for (time in 10L..140L step 10) {
+    for (time in 10L..90L step 10) {
       fake.advanceTo(time)
       dispatcher.preview(time * 10)
     }
-    assertEquals(listOf(0L, 150L), fake.scheduledAt)
-    fake.advanceTo(150)
-    assertEquals(listOf(100L to false, 1400L to false), events)
+    assertEquals(listOf(0L, 100L), fake.scheduledAt)
+    fake.advanceTo(100)
+    assertEquals(listOf(100L to false, 900L to false), events)
     assertNull(dispatcher.pendingPositionMs)
 
-    fake.advanceTo(160)
-    dispatcher.preview(1600)
-    fake.advanceTo(299)
-    dispatcher.preview(2990)
-    fake.advanceTo(300)
-    assertEquals(2990L to false, events.last())
+    fake.advanceTo(110)
+    dispatcher.preview(1100)
+    fake.advanceTo(199)
+    dispatcher.preview(1990)
+    fake.advanceTo(200)
+    assertEquals(1990L to false, events.last())
   }
 
   @Test
