@@ -686,6 +686,7 @@ object PlaybackSession : MPVLib.EventObserver {
     positionRestoreOverride: PlaybackPositionRestoreOverride? = null,
     initialPositionSeconds: Double? = null,
     flattenEditions: Boolean = false,
+    disableWebExtraction: Boolean = app.infinity.mpvz.utils.media.RadioStreamProbe.cachedAudioMimeType(item.playableUri, item.headers) != null,
     commit: ((() -> Long) -> Long)? = null,
   ): Long {
     val resolved = resolvePlayableUri(item)
@@ -702,6 +703,7 @@ object PlaybackSession : MPVLib.EventObserver {
               positionRestoreOverride = positionRestoreOverride,
               initialPositionSeconds = initialPositionSeconds,
               flattenEditions = flattenEditions,
+              disableWebExtraction = disableWebExtraction,
             )
           if (generation >= 0L) {
             previous = activeNetworkStream
@@ -737,6 +739,7 @@ object PlaybackSession : MPVLib.EventObserver {
     positionRestoreOverride: PlaybackPositionRestoreOverride? = null,
     initialPositionSeconds: Double? = null,
     flattenEditions: Boolean = false,
+    disableWebExtraction: Boolean = false,
   ): Long =
     withCore(default = -1L) {
       if (_state.value.phase == PlaybackPhase.STOPPING) return@withCore -1L
@@ -817,6 +820,9 @@ object PlaybackSession : MPVLib.EventObserver {
           add("pause=yes")
           add(if (selectVideoForNewFile) "vid=auto" else "vid=no")
           if (resolvedItem.isDefinitelyAudioOnly()) add("aid=auto")
+          // Confirmed radio mounts are already media; spawning the ytdl hook here can
+          // fail on Android fdsan and is both unnecessary and slower than direct demuxing.
+          if (disableWebExtraction) add("ytdl=no")
           initialPosition?.let { add("start=$it") }
           if (flattenEditions && !MpvConfigOverridePolicy.isOwnedByMpvConf("flatten-editions")) {
             add("flatten-editions=yes")

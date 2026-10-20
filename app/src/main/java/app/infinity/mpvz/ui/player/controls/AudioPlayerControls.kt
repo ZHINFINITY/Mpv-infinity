@@ -167,6 +167,7 @@ import app.infinity.mpvz.ui.icons.Icons
 import app.infinity.mpvz.ui.player.Panels
 import app.infinity.mpvz.ui.player.AudiobookPlayback
 import app.infinity.mpvz.ui.player.PlayerActivity
+import app.infinity.mpvz.ui.player.RadioMetadataPolicy
 import app.infinity.mpvz.ui.player.NativePlaybackSnapshot
 import app.infinity.mpvz.ui.player.PlayerViewModel
 import app.infinity.mpvz.ui.player.RepeatMode
@@ -592,6 +593,12 @@ fun AudioPlayerControls(
   val playbackState by PlaybackSession.state.collectAsStateWithLifecycle()
   val queueState by PlaybackSession.queue.collectAsStateWithLifecycle()
   val currentItem = playbackState.currentItem ?: queueState.currentItem
+  val isRadio = RadioMetadataPolicy.isRadio(
+    queueIsM3u = queueState.isM3u,
+    itemIsAudio = currentItem?.isDefinitelyAudioOnly() == true,
+    streamUri = currentItem?.originalUri ?: currentItem?.playableUri,
+    durationSeconds = duration ?: currentItem?.durationSeconds,
+  )
   val activeBook by AudiobookPlayback.book.collectAsStateWithLifecycle()
   val audiobookChapters by AudiobookPlayback.chapters.collectAsStateWithLifecycle()
   val audiobook = activeBook?.takeIf { it.book.id == currentItem?.audiobook?.bookId }
@@ -755,10 +762,30 @@ fun AudioPlayerControls(
       }
     }
 
+  val rawStreamTitle by PlaybackSession.propString["metadata/by-key/Title"].collectAsState()
+  val rawStreamTitleAlt by PlaybackSession.propString["metadata/by-key/TITLE"].collectAsState()
+  val rawStreamTitleLower by PlaybackSession.propString["metadata/by-key/title"].collectAsState()
+  val rawIcyTitle by PlaybackSession.propString["metadata/by-key/icy-title"].collectAsState()
+  val rawIcyTitleAlt by PlaybackSession.propString["metadata/icy-title"].collectAsState()
+  val rawRadioArtist by PlaybackSession.propString["metadata/by-key/Artist"].collectAsState()
+  val rawRadioArtistUpper by PlaybackSession.propString["metadata/by-key/ARTIST"].collectAsState()
+  val rawRadioArtistLower by PlaybackSession.propString["metadata/by-key/artist"].collectAsState()
+  val rawStreamArtwork by PlaybackSession.propString["metadata/by-key/Artwork"].collectAsState()
+  val rawStreamArtworkAlt by PlaybackSession.propString["metadata/by-key/artwork"].collectAsState()
+
   val currentArtworkUri =
     audiobook?.book?.coverUri?.takeIf { it.isNotBlank() }
       ?: currentItem?.artworkUri?.takeIf { it.isNotBlank() }
       ?: filteredPlaylist.firstOrNull { it.isPlaying || it.path == mediaPath || it.uri.toString() == mediaPath }?.tvgLogo?.takeIf { it.isNotBlank() }
+      ?: (rawStreamArtwork ?: rawStreamArtworkAlt).takeIf { isRadio && RadioMetadataPolicy.isHttpUrl(it) }
+  val radioPresentation = RadioMetadataPolicy.presentation(
+    stationTitle = currentItem?.title,
+    streamTitle = rawStreamTitle ?: rawStreamTitleAlt ?: rawStreamTitleLower,
+    streamArtist = rawRadioArtist ?: rawRadioArtistUpper ?: rawRadioArtistLower,
+    icyTitle = rawIcyTitle ?: rawIcyTitleAlt,
+    explicitArtwork = currentArtworkUri,
+    metadataArtwork = rawStreamArtwork ?: rawStreamArtworkAlt,
+  )
 
   val currentAudioPresentation =
     rememberAudioPresentationMetadata(
@@ -796,8 +823,10 @@ fun AudioPlayerControls(
         ?: "Audio Track",
     )
   }
-  LaunchedEffect(currentItem?.stableId, currentItem?.title, mediaTitle) {
-    val updatedTitle = if (currentItem?.audiobook != null) {
+  LaunchedEffect(currentItem?.stableId, currentItem?.title, mediaTitle, isRadio, rawStreamTitle, rawStreamTitleAlt, rawStreamTitleLower, rawIcyTitle, rawIcyTitleAlt, rawRadioArtist, rawRadioArtistUpper, rawRadioArtistLower) {
+    val updatedTitle = if (isRadio) {
+      radioPresentation.title
+    } else if (currentItem?.audiobook != null) {
       currentItem.title?.takeUnless(::isTransientTransportTitle)
     } else {
       currentItem?.title?.takeUnless(::isTransientTransportTitle)
@@ -810,16 +839,18 @@ fun AudioPlayerControls(
 
   val context = LocalContext.current
   val rawArtist by PlaybackSession.propString["metadata/by-key/Artist"].collectAsState()
+  val rawArtistUpper by PlaybackSession.propString["metadata/by-key/ARTIST"].collectAsState()
+  val rawArtistLower by PlaybackSession.propString["metadata/by-key/artist"].collectAsState()
   val rawArtistAlt by PlaybackSession.propString["metadata/artist"].collectAsState()
   val rawAlbumArtist by PlaybackSession.propString["metadata/by-key/album_artist"].collectAsState()
   val rawPerformer by PlaybackSession.propString["metadata/by-key/PERFORMER"].collectAsState()
   val retrievedArtist = currentAudioPresentation?.artist
 
   val displayArtist =
-    remember(audiobook?.book?.author, currentItem?.artist, rawArtist, rawArtistAlt, rawAlbumArtist, rawPerformer, retrievedArtist) {
-      sequenceOf(audiobook?.book?.author, currentItem?.artist, rawArtist, rawArtistAlt, rawAlbumArtist, rawPerformer, retrievedArtist)
+    remember(isRadio, audiobook?.book?.author, currentItem?.artist, rawArtist, rawArtistUpper, rawArtistLower, rawArtistAlt, rawAlbumArtist, rawPerformer, retrievedArtist) {
+      sequenceOf(if (isRadio) rawArtist ?: rawArtistUpper ?: rawArtistLower else null, audiobook?.book?.author, currentItem?.artist, rawArtist, rawArtistAlt, rawAlbumArtist, rawPerformer, retrievedArtist)
         .filterNotNull()
-        .firstOrNull { it.isNotBlank() } ?: "Unknown Artist"
+        .firstOrNull { it.isNotBlank() } ?: if (isRadio) currentItem?.title.orEmpty() else "Unknown Artist"
     }
 
   val audioPreferences = koinInject<AudioPreferences>()
@@ -883,7 +914,9 @@ fun AudioPlayerControls(
    val isPlaying = if (nativeEngineActive) nativePlaybackSnapshot.isPlaying else optimisticIsPlaying ?: (paused == false)
    // An audiobook is one logical item. MPV still switches its source file at chapter
    // boundaries, but the seekbar must represent the complete book rather than the active file.
-   val currentDurSec = if (isAudiobook && audiobook != null) {
+   val currentDurSec = if (isRadio) {
+     0f
+   } else if (isAudiobook && audiobook != null) {
      (audiobook.durationMs / 1000f).takeIf { it > 0f } ?: preciseDuration.takeIf { it > 0f } ?: duration?.toFloat() ?: 0f
    } else if (preciseDuration > 0f) preciseDuration else duration?.toFloat() ?: 0f
    val currentVolumePercent by viewModel.currentVolumePercent.collectAsState()

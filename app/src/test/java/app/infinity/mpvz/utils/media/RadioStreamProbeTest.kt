@@ -37,8 +37,13 @@ class RadioStreamProbeTest {
           closed.completeExceptionally(error)
         }
       }
-      assertEquals("audio/ogg", RadioStreamProbe.detectAudioMimeType("http://127.0.0.1:${server.localPort}/flacm", emptyMap()))
+      val url = "http://127.0.0.1:${server.localPort}/flacm"
+      assertEquals("audio/ogg", RadioStreamProbe.detectAudioMimeType(url, emptyMap()))
       assertTrue(closed.get(3, TimeUnit.SECONDS))
+      assertEquals("audio/ogg", RadioStreamProbe.cachedAudioMimeType(url, mapOf("Referer" to "http://127.0.0.1")))
+      // The server accepted only one request and is no longer reading: this must be cached.
+      assertEquals("audio/ogg", RadioStreamProbe.detectAudioMimeType(url, emptyMap()))
+      assertNull(RadioStreamProbe.cachedAudioMimeType(url, mapOf("Authorization" to "different-user")))
     }
   }
 

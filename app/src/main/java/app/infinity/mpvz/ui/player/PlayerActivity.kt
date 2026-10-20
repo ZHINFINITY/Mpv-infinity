@@ -4539,10 +4539,20 @@ class PlayerActivity :
       ?: networkPlaylistTitles.getOrNull(playlistIndex)?.takeIf { it.isNotBlank() }
       ?: fileName
 
+  private fun isCurrentRadioPlayback(): Boolean {
+    val queue = PlaybackSession.queue.value
+    val item = PlaybackSession.state.value.currentItem ?: queue.currentItem
+    return (queue.isM3u || isM3uPlaylist) && item?.isDefinitelyAudioOnly() == true ||
+      (intent.getBooleanExtra("radio_stream", false) &&
+        (item == null || item.originalUri == intent.dataString))
+  }
+
   private fun shouldForceCurrentMediaTitle(): Boolean =
-    getPlaylistItemByIndex(playlistIndex)?.fileName?.isNotBlank() == true ||
-      getExplicitIntentTitle() != null ||
-      (!isCurrentStreamM3U() && !HttpUtils.shouldPreferResolvedMediaTitle(extractUriFromIntent(intent), fileName))
+    !isCurrentRadioPlayback() && (
+      getPlaylistItemByIndex(playlistIndex)?.fileName?.isNotBlank() == true ||
+        getExplicitIntentTitle() != null ||
+        (!isCurrentStreamM3U() && !HttpUtils.shouldPreferResolvedMediaTitle(extractUriFromIntent(intent), fileName))
+    )
 
   private fun getExplicitIntentTitle(): String? =
     intent.getStringExtra("title")?.takeIf { !HttpUtils.isLikelyJunkTitle(it) }
@@ -5338,6 +5348,7 @@ class PlayerActivity :
           return@launch
         }
 
+        if (isCurrentRadioPlayback()) return@launch
         // Skip fetching for m3u/m3u8 streams - let MPV provide the title
         if (isCurrentStreamM3U()) {
           Log.d(TAG, "Skipping title fetch for m3u/m3u8 stream: $uri")
@@ -6778,7 +6789,10 @@ class PlayerActivity :
     // Extensionless Icecast mounts are direct audio, not webpages. A bounded header probe
     // avoids feeding an endless radio response to yt-dlp's generic webpage extractor.
     val radioMimeType =
-      if (PlaybackSession.queue.value.isM3u && looksLikeWebSource) {
+      if ((PlaybackSession.queue.value.isM3u || isM3uPlaylist ||
+          intent.getStringExtra("launch_source") == "m3u_playlist") &&
+        (looksLikeWebSource || item.isDefinitelyAudioOnly())
+      ) {
         app.infinity.mpvz.utils.media.RadioStreamProbe.detectAudioMimeType(item.playableUri, item.headers)
       } else {
         null
@@ -6907,6 +6921,7 @@ class PlayerActivity :
         positionRestoreOverride = positionRestoreOverride,
         initialPositionSeconds = initialPositionSeconds,
         flattenEditions = playbackRequiresYtdlp && !MpvConfigOverridePolicy.isOwnedByMpvConf("flatten-editions"),
+        disableWebExtraction = radioMimeType != null,
         commit = { nativeLoad ->
           PlaybackActivityOwner.runIfOwner(playbackOwnerToken, -1L) {
             if (requestGeneration != mediaRequestGeneration) {
@@ -8401,8 +8416,10 @@ class PlayerActivity :
 
     // Update media title (this will trigger UI update)
     val shouldForceTitle =
-      getPlaylistItemByIndex(index)?.fileName?.isNotBlank() == true ||
-        !(uri.toString().lowercase().contains(".m3u8") || uri.toString().lowercase().contains(".m3u"))
+      !isCurrentRadioPlayback() && (
+        getPlaylistItemByIndex(index)?.fileName?.isNotBlank() == true ||
+          !(uri.toString().lowercase().contains(".m3u8") || uri.toString().lowercase().contains(".m3u"))
+      )
     if (shouldForceTitle) {
       PlaybackSession.setPropertyString("force-media-title", fileName)
       viewModel.setMediaTitle(fileName)
@@ -8893,7 +8910,15 @@ class PlayerActivity :
             if (networkSource == null) uri.resolveLocalPath(this)?.let(PlaybackIdentity::forLocalPath) else null,
           title = title,
           artist = existingItem?.artist,
-          mimeType = launchMimeType,
+          // A mixed M3U may contain both radio and TV. Never stamp the selected station's
+          // audio MIME onto every queue item (or lose a previously proven item MIME).
+          mimeType = if (isM3uPlaylist) {
+            existingItem?.mimeType
+              ?: app.infinity.mpvz.utils.media.RadioStreamProbe.cachedAudioMimeType(uri.toString(), headers)
+              ?: launchMimeType.takeIf { index == playlistIndex }
+          } else {
+            launchMimeType
+          },
           headers = headers,
           videoWidth = intentVideoDimension(intent, "width"),
           videoHeight = intentVideoDimension(intent, "height"),

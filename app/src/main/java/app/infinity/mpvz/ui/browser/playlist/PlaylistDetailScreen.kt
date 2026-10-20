@@ -260,6 +260,7 @@ data class PlaylistDetailScreen(
       }
     }
 
+    var preparingPlayback by remember { mutableStateOf(false) }
     fun launchPlaylistPlayback(
       item: PlaylistVideoItem,
       startIndex: Int,
@@ -270,20 +271,40 @@ data class PlaylistDetailScreen(
           ?: fallbackUri.takeIf { !it.scheme.isNullOrBlank() }
           ?: Uri.fromFile(java.io.File(item.video.path))
 
-      val intent =
-        Intent(context, PlayerActivity::class.java).apply {
-          action = Intent.ACTION_VIEW
-          data = playUri
-          putExtra("internal_launch", true)
-          putExtra("local_media_path", item.video.path)
-          putExtra("playlist_index", startIndex)
-          putExtra("playlist_id", playlistId)
-          putExtra("launch_source", if (playlist?.isM3uPlaylist == true) "m3u_playlist" else "playlist")
-          putExtra("is_audio", item.video.isAudio)
-          putExtra("title", item.playlistItem.fileName)
-          buildM3UHeadersExtra(playlist, item.playlistItem)?.let { putExtra("headers", it) }
+      if (preparingPlayback) return
+      preparingPlayback = true
+      coroutineScope.launch {
+        try {
+          val headersExtra = buildM3UHeadersExtra(playlist, item.playlistItem)
+          val headers = headersExtra?.toList()?.chunked(2)?.associate { it[0] to it[1] }.orEmpty()
+          // Do not create the video UI and wait for demuxing to discover that this is radio.
+          // A successful bounded probe is reused by the player; unknown/video URLs keep their old route.
+          val radioMimeType =
+            if (playlist?.isM3uPlaylist == true) {
+              app.infinity.mpvz.utils.media.RadioStreamProbe.detectAudioMimeType(playUri.toString(), headers)
+            } else {
+              null
+            }
+          val intent =
+            Intent(context, PlayerActivity::class.java).apply {
+              action = Intent.ACTION_VIEW
+              data = playUri
+              if (radioMimeType != null) setDataAndType(playUri, radioMimeType)
+              putExtra("internal_launch", true)
+              putExtra("local_media_path", item.video.path)
+              putExtra("playlist_index", startIndex)
+              putExtra("playlist_id", playlistId)
+              putExtra("launch_source", if (playlist?.isM3uPlaylist == true) "m3u_playlist" else "playlist")
+              putExtra("is_audio", radioMimeType != null || item.video.isAudio)
+              putExtra("radio_stream", radioMimeType != null)
+              putExtra("title", item.playlistItem.fileName)
+              headersExtra?.let { putExtra("headers", it) }
+            }
+          context.startActivity(intent)
+        } finally {
+          preparingPlayback = false
         }
-      context.startActivity(intent)
+      }
     }
 
     val navigationBarHeight = app.infinity.mpvz.ui.browser.LocalNavigationBarHeight.current

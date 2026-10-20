@@ -243,6 +243,10 @@ class MediaPlaybackService :
   private var mediaArtist = ""
   private var mediaUri: String? = null
   private var activeArtworkUri: String? = null
+  private var radioStreamTitle: String? = null
+  private var radioStreamArtist: String? = null
+  private var radioIcyTitle: String? = null
+  private var radioStreamArtworkUri: String? = null
   private var paused = false
   private var playbackSpeed = 1.0f
   private var activeQueueItemId: Long = MediaSessionCompat.QueueItem.UNKNOWN_ID.toLong()
@@ -417,6 +421,10 @@ class MediaPlaybackService :
       PlaybackSession.observeProperty("pause", MPVLib.MpvFormat.MPV_FORMAT_FLAG)
       PlaybackSession.observeProperty("media-title", MPVLib.MpvFormat.MPV_FORMAT_STRING)
       PlaybackSession.observeProperty("metadata/artist", MPVLib.MpvFormat.MPV_FORMAT_STRING)
+      listOf("Title", "TITLE", "title", "Artist", "ARTIST", "artist", "icy-title", "Artwork", "artwork")
+        .forEach { key -> PlaybackSession.observeProperty("metadata/by-key/$key", MPVLib.MpvFormat.MPV_FORMAT_STRING) }
+      PlaybackSession.observeProperty("metadata/artwork", MPVLib.MpvFormat.MPV_FORMAT_STRING)
+      PlaybackSession.observeProperty("metadata/icy-title", MPVLib.MpvFormat.MPV_FORMAT_STRING)
       PlaybackSession.observeProperty("time-pos", MPVLib.MpvFormat.MPV_FORMAT_DOUBLE)
       PlaybackSession.observeProperty("duration", MPVLib.MpvFormat.MPV_FORMAT_DOUBLE)
       PlaybackSession.observeProperty("speed", MPVLib.MpvFormat.MPV_FORMAT_DOUBLE)
@@ -766,6 +774,10 @@ class MediaPlaybackService :
     notificationIsAudio = isAudio
     usesAudioBackgroundPlayback = isAudio
     mediaIdentifier = item.stableId
+    radioStreamTitle = null
+    radioStreamArtist = null
+    radioIcyTitle = null
+    radioStreamArtworkUri = null
     mediaTitle = FileTypeUtils.stripExtension(item.title.orEmpty()).ifBlank { getString(R.string.player_unknown_video) }
     mediaArtist = item.artist.orEmpty()
     mediaUri = item.originalUri
@@ -880,6 +892,52 @@ class MediaPlaybackService :
     }
   }
 
+  private fun isCurrentRadioItem(): Boolean {
+    val queue = PlaybackSession.queue.value
+    val item = queue.currentItem ?: return false
+    val duration = mediaDurationSeconds.takeIf { it > 0.0 }?.toInt() ?: item.durationSeconds
+    return RadioMetadataPolicy.isRadio(queue.isM3u, item.isDefinitelyAudioOnly(), item.originalUri.ifBlank { item.playableUri }, duration)
+  }
+
+  private fun updateRadioMetadata(property: String, value: String) {
+    val queue = PlaybackSession.queue.value
+    val item = queue.currentItem ?: return
+    val duration = mediaDurationSeconds.takeIf { it > 0.0 }?.toInt() ?: item.durationSeconds
+    if (!RadioMetadataPolicy.isRadio(queue.isM3u, item.isDefinitelyAudioOnly(), item.originalUri.ifBlank { item.playableUri }, duration)) return
+    when (property.substringAfterLast('/').lowercase(Locale.ROOT)) {
+      "title" -> radioStreamTitle = value
+      "artist" -> radioStreamArtist = value
+      "icy-title" -> radioIcyTitle = value
+      "artwork" -> radioStreamArtworkUri = value
+    }
+    val presentation = RadioMetadataPolicy.presentation(item.title, radioStreamTitle, radioStreamArtist, radioIcyTitle, item.artworkUri, radioStreamArtworkUri)
+    if (mediaTitle == presentation.title && mediaArtist == presentation.artist.orEmpty()) return
+    mediaTitle = presentation.title
+    mediaArtist = presentation.artist.orEmpty()
+    val artworkChanged = activeArtworkUri != presentation.artworkUri
+    activeArtworkUri = presentation.artworkUri
+    if (artworkChanged && item.artworkUri.isNullOrBlank()) loadSessionArtworkUri(presentation.artworkUri, item.stableId)
+    serviceScope.launch {
+      updateMediaSessionMetadata()
+      updateNotification()
+    }
+  }
+
+  private fun loadSessionArtworkUri(artworkUri: String?, expectedIdentifier: String) {
+    if (!RadioMetadataPolicy.isHttpUrl(artworkUri)) return
+    serviceScope.launch {
+      val loaded = withContext(Dispatchers.IO) {
+        EmbeddedArtworkResolver.decodeArtworkUri(this@MediaPlaybackService, artworkUri!!)
+      } ?: return@launch
+      if (mediaIdentifier != expectedIdentifier) return@launch
+      if (replaceOwnedThumbnail(loaded)) {
+        refreshNotificationPalette()
+        updateMediaSessionMetadata()
+        updateNotification()
+      }
+    }
+  }
+
   private fun resolveNotificationIsAudio(
     item: PlaybackItem,
     fallback: Boolean,
@@ -904,12 +962,20 @@ class MediaPlaybackService :
       currentItem?.title?.let { FileTypeUtils.stripExtension(it) }.orEmpty().ifBlank {
         getString(R.string.player_unknown_video)
       }
+    val radioPresentation = currentItem?.let { item ->
+      val duration = mediaDurationSeconds.takeIf { it > 0.0 }?.toInt() ?: item.durationSeconds
+      if (RadioMetadataPolicy.isRadio(queueState.isM3u, item.isDefinitelyAudioOnly(), item.originalUri.ifBlank { item.playableUri }, duration)) {
+        RadioMetadataPolicy.presentation(item.title, radioStreamTitle, radioStreamArtist, radioIcyTitle, item.artworkUri, radioStreamArtworkUri)
+      } else null
+    }
+    val effectiveCurrentTitle = radioPresentation?.title ?: currentTitle
+    val effectiveCurrentArtwork = radioPresentation?.artworkUri ?: currentItem?.artworkUri
     if (currentItem != null &&
       (currentItem.stableId != mediaIdentifier ||
         currentItem.originalUri != mediaUri ||
-        currentTitle != mediaTitle ||
-        currentItem.artist.orEmpty() != mediaArtist ||
-        currentItem.artworkUri != activeArtworkUri)
+        effectiveCurrentTitle != mediaTitle ||
+        (!isCurrentRadioItem() && currentItem.artist.orEmpty() != mediaArtist) ||
+        effectiveCurrentArtwork != activeArtworkUri)
     ) {
       applySessionItem(currentItem)
     } else {
@@ -1244,6 +1310,14 @@ class MediaPlaybackService :
   }
 
   private fun sanitizedDurationMs(): Long {
+    val queue = PlaybackSession.queue.value
+    val item = queue.currentItem
+    if (item != null && RadioMetadataPolicy.isRadio(
+        queueIsM3u = queue.isM3u,
+        itemIsAudio = item.isDefinitelyAudioOnly(),
+        streamUri = item.originalUri.ifBlank { item.playableUri },
+        durationSeconds = mediaDurationSeconds.takeIf { it.isFinite() }?.toInt(),
+      )) return 0L
     val seconds = mediaDurationSeconds.takeIf { it.isFinite() && it > 0.0 } ?: return 0L
     return (seconds * 1000.0).coerceAtMost(Long.MAX_VALUE.toDouble()).toLong()
   }
@@ -1657,6 +1731,10 @@ class MediaPlaybackService :
   ) {
     when (property) {
       "media-title" -> {
+        if (isCurrentRadioItem()) {
+          updateRadioMetadata("metadata/by-key/Title", value)
+          return
+        }
         if (value.isNotBlank()) {
           serviceScope.launch {
             if (mediaTitle == value) return@launch
@@ -1667,6 +1745,10 @@ class MediaPlaybackService :
         }
       }
       "metadata/artist" -> {
+        if (isCurrentRadioItem()) {
+          updateRadioMetadata(property, value)
+          return
+        }
         serviceScope.launch {
           if (mediaArtist == value) return@launch
           mediaArtist = value
@@ -1674,6 +1756,9 @@ class MediaPlaybackService :
           updateNotification()
         }
       }
+      "metadata/by-key/Title", "metadata/by-key/TITLE", "metadata/by-key/title", "metadata/by-key/icy-title", "metadata/icy-title",
+      "metadata/by-key/Artist", "metadata/by-key/ARTIST", "metadata/by-key/artist",
+      "metadata/by-key/Artwork", "metadata/by-key/ARTWORK", "metadata/by-key/artwork", "metadata/artwork" -> updateRadioMetadata(property, value)
     }
   }
 
