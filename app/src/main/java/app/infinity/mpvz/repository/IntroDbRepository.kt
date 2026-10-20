@@ -45,6 +45,8 @@ data class IntroDbLookupRequest(
   val mediaType: String? = null,
   val season: Int? = null,
   val episode: Int? = null,
+  /** Episode order used by the media server; omitted for TVDB default order. */
+  val mapping: String? = null,
   val provider: IntroSegmentProvider = IntroSegmentProvider.INTRO_DB,
 )
 
@@ -332,70 +334,59 @@ class IntroDbRepository(
     mediaType: String,
     season: Int? = null,
     episode: Int? = null,
+    mapping: String? = null,
   ): Result<List<IntroDbSegment>> =
     withContext(Dispatchers.IO) {
       runCatching {
-        fun buildUrl(baseUrl: String): okhttp3.HttpUrl {
-          val urlBuilder = baseUrl.toHttpUrl().newBuilder()
-
-          when {
-            tmdbId != null && tmdbId > 0 -> urlBuilder.addQueryParameter("tmdb_id", tmdbId.toString())
-            !imdbId.isNullOrBlank() -> urlBuilder.addQueryParameter("imdb_id", imdbId)
-            else -> error("TheIntroDB lookup requires a TMDB or IMDb id")
-          }
-
-          if (mediaType.equals("tv", ignoreCase = true) || mediaType.equals("series", ignoreCase = true) || season != null || episode != null) {
-            if (season != null) urlBuilder.addQueryParameter("season", season.toString())
-            if (episode != null) urlBuilder.addQueryParameter("episode", episode.toString())
-          }
-          return urlBuilder.build()
-        }
-
-        val requestV2 =
+        val url = buildTheIntroDbMediaUrl(
+          tmdbId = tmdbId,
+          imdbId = imdbId,
+          mediaType = mediaType,
+          season = season,
+          episode = episode,
+          mapping = mapping,
+        )
+        val request =
           Request
             .Builder()
-            .url(buildUrl(THEINTRODB_MEDIA_V2_URL))
+            .url(url)
             .header("User-Agent", MARKER_PROVIDER_USER_AGENT)
             .header("Accept", "application/json")
             .get()
             .build()
 
-        var responseBody = ""
-        client.newCall(requestV2).execute().use { response ->
-          if (response.isSuccessful) {
-            responseBody = response.body.string()
-          } else if (response.code == 404) {
-            // Fall back to v1 endpoint
-            val requestV1 =
-              Request
-                .Builder()
-                .url(buildUrl(THEINTRODB_MEDIA_V1_URL))
-                .header("User-Agent", MARKER_PROVIDER_USER_AGENT)
-                .header("Accept", "application/json")
-                .get()
-                .build()
-
-            client.newCall(requestV1).execute().use { v1Response ->
-              if (v1Response.isSuccessful) {
-                responseBody = v1Response.body.string()
-              } else if (v1Response.code == 404) {
-                return@use
-              } else {
-                error("TheIntroDB v1 request failed with HTTP ${v1Response.code}")
-              }
-            }
-          } else {
-            error("TheIntroDB request failed with HTTP ${response.code}")
-          }
+        client.newCall(request).execute().use { response ->
+          if (response.code == 404) return@use emptyList()
+          if (!response.isSuccessful) error("TheIntroDB request failed with HTTP ${response.code}")
+          val body = response.body.string()
+          if (body.isBlank()) emptyList() else parseTheIntroDbMediaBody(body)
         }
-
-        if (responseBody.isBlank()) return@runCatching emptyList()
-
-        parseTheIntroDbMediaBody(responseBody)
       }.onFailure { error ->
         Log.w(TAG, "Failed to fetch TheIntroDB data for tmdbId=$tmdbId imdbId=$imdbId", error)
       }
     }
+
+  internal fun buildTheIntroDbMediaUrl(
+    tmdbId: Int? = null,
+    imdbId: String? = null,
+    mediaType: String,
+    season: Int? = null,
+    episode: Int? = null,
+    mapping: String? = null,
+  ): okhttp3.HttpUrl {
+    val urlBuilder = THEINTRODB_MEDIA_URL.toHttpUrl().newBuilder()
+    when {
+      tmdbId != null && tmdbId > 0 -> urlBuilder.addQueryParameter("tmdb_id", tmdbId.toString())
+      !imdbId.isNullOrBlank() -> urlBuilder.addQueryParameter("imdb_id", imdbId)
+      else -> error("TheIntroDB lookup requires a TMDB or IMDb id")
+    }
+    if (mediaType.equals("tv", ignoreCase = true) || mediaType.equals("series", ignoreCase = true) || season != null || episode != null) {
+      if (season != null) urlBuilder.addQueryParameter("season", season.toString())
+      if (episode != null) urlBuilder.addQueryParameter("episode", episode.toString())
+      if (!mapping.isNullOrBlank()) urlBuilder.addQueryParameter("mapping", mapping)
+    }
+    return urlBuilder.build()
+  }
 
   suspend fun getAniSkipSegments(
     malId: Int,
@@ -1252,8 +1243,7 @@ class IntroDbRepository(
 
   companion object {
     private const val TAG = "IntroDbRepository"
-    private const val THEINTRODB_MEDIA_V2_URL = "https://api.theintrodb.org/v2/media"
-    private const val THEINTRODB_MEDIA_V1_URL = "https://api.theintrodb.org/v1/media"
+    private const val THEINTRODB_MEDIA_URL = "https://api.theintrodb.org/v4/media"
     private const val ANISKIP_SKIP_TIMES_URL = "https://api.aniskip.com/v1/skip-times"
     private const val JIKAN_SEARCH_URL = "https://api.jikan.moe/v4/anime"
     private const val MARKER_PROVIDER_USER_AGENT =
