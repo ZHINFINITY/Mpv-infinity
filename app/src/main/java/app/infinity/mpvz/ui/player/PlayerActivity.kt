@@ -5543,10 +5543,16 @@ class PlayerActivity :
         val oldState = saveRepository.getVideoDataByTitle(snapshot.mediaIdentifier)
         Log.d(TAG, "Saving playback state for: ${snapshot.mediaTitle} (identifier: ${snapshot.mediaIdentifier})")
 
+        val snapshotToPersist =
+          if (snapshot.externalSubtitles.isBlank() && !oldState?.externalSubtitles.isNullOrBlank()) {
+            snapshot.copy(externalSubtitles = oldState.externalSubtitles.orEmpty())
+          } else {
+            snapshot
+          }
         val playbackState =
           PlaybackStatePersistence.buildEntity(
             oldState = oldState,
-            snapshot = snapshot,
+            snapshot = snapshotToPersist,
             savePositionOnQuit = savePositionOnQuit,
             watchedThreshold = watchedThreshold,
           )
@@ -5609,12 +5615,13 @@ class PlayerActivity :
     val nativeEngineActive = isNativeEngineActive()
     val liveNativePositionMs = nativeEngine.currentPlayer.currentPosition.coerceAtLeast(0L)
     val liveNativeDurationMs = nativeEngine.currentPlayer.duration.takeIf { it != C.TIME_UNSET }?.coerceAtLeast(0L) ?: 0L
+    val mpvPosition = if (nativeEngineActive) null else readMpvIntSecondsOrNull("time-pos")
     return PlaybackStateSnapshot(
       mediaIdentifier = saveIdentifier,
       mediaTitle = mediaTitle,
       currentPosition =
         if (nativeEngineActive) maxOf(nativeSnapshot.positionMs, liveNativePositionMs).toSecondsInt()
-        else readMpvIntSeconds("time-pos", viewModel.pos ?: 0),
+        else mpvPosition ?: (viewModel.pos ?: 0),
       duration =
         if (nativeEngineActive) maxOf(nativeSnapshot.durationMs, liveNativeDurationMs).toSecondsInt()
         else readMpvIntSeconds("duration", viewModel.duration ?: 0),
@@ -5624,6 +5631,7 @@ class PlayerActivity :
         } else {
           PlaybackSession.isPositionRestorePending(PlaybackSession.state.value.activeGeneration)
         },
+      positionIsKnown = nativeEngineActive || mpvPosition != null,
       playbackSpeed = PlaybackSession.getPropertyDouble("speed") ?: DEFAULT_PLAYBACK_SPEED,
       videoZoom = PlaybackSession.getPropertyDouble("video-zoom")?.toFloat() ?: viewModel.videoZoom.value,
       videoAspect = viewModel.videoAspect.value.name,
@@ -5647,6 +5655,12 @@ class PlayerActivity :
         ?: PlaybackSession.getPropertyInt(property)
         ?: fallback
     }.getOrDefault(fallback)
+
+  private fun readMpvIntSecondsOrNull(property: String): Int? =
+    runCatching {
+      PlaybackSession.getPropertyDouble(property)?.toInt()
+        ?: PlaybackSession.getPropertyInt(property)
+    }.getOrNull()
 
   private fun Long.toSecondsInt(): Int = (this.coerceAtLeast(0L) / 1000L).toInt()
 

@@ -30,6 +30,8 @@ internal data class PlaybackStateSnapshot(
   val audioDelayMs: Int,
   val externalSubtitles: String,
   val isPositionRestorePending: Boolean = false,
+  /** False when the renderer/property read was unavailable (for example after surface teardown). */
+  val positionIsKnown: Boolean = true,
 )
 
 internal object PlaybackStatePersistence {
@@ -46,6 +48,7 @@ internal object PlaybackStatePersistence {
         duration = snapshot.duration,
         savePositionOnQuit = savePositionOnQuit,
         isPositionRestorePending = snapshot.isPositionRestorePending,
+        positionIsKnown = snapshot.positionIsKnown,
       )
     val duration = snapshot.duration
     val timeRemaining = if (duration > lastPosition) duration - lastPosition else 0
@@ -82,11 +85,12 @@ internal object PlaybackStatePersistence {
     duration: Int,
     savePositionOnQuit: Boolean,
     isPositionRestorePending: Boolean = false,
+    positionIsKnown: Boolean = true,
   ): Int {
     if (!savePositionOnQuit) {
       return oldState?.lastPosition ?: 0
     }
-    if (isPositionRestorePending) {
+    if (isPositionRestorePending || !positionIsKnown) {
       return oldState?.lastPosition ?: currentPosition.coerceAtLeast(0)
     }
 

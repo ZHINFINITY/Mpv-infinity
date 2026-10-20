@@ -1845,10 +1845,11 @@ class MediaPlaybackService :
     return PlaybackStateSnapshot(
       mediaIdentifier = identifier,
       mediaTitle = mediaTitle.ifBlank { identifier },
-      currentPosition = readMpvIntSeconds("time-pos", currentPositionSeconds.toInt()),
+      currentPosition = mpvPosition ?: currentPositionSeconds.toInt(),
       duration = readMpvIntSeconds("duration", mediaDurationSeconds.toInt()),
       isPositionRestorePending =
         PlaybackSession.isPositionRestorePending(PlaybackSession.state.value.activeGeneration),
+      positionIsKnown = mpvPosition != null,
       playbackSpeed = readMpvDouble("speed", oldState?.playbackSpeed ?: DEFAULT_PLAYBACK_STATE_SPEED),
       videoZoom = readMpvDouble("video-zoom", oldState?.videoZoom?.toDouble() ?: 0.0).toFloat(),
       videoAspect = oldState?.videoAspect ?: "Fit",
@@ -1874,6 +1875,12 @@ class MediaPlaybackService :
       externalSubtitles = oldState?.externalSubtitles.orEmpty(),
     )
   }
+
+  private fun readMpvIntSecondsOrNull(property: String): Int? =
+    runCatching {
+      PlaybackSession.getPropertyDouble(property)?.toInt()
+        ?: PlaybackSession.getPropertyInt(property)
+    }.getOrNull()
 
   private fun readMpvIntSeconds(
     property: String,
