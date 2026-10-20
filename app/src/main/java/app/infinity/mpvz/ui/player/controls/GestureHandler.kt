@@ -961,8 +961,9 @@ fun GestureHandler(
               hasSwipedEnough = false
               if (!isSpeedLocked) {
                 // A single restore avoids rebuilding the MPV audio filter chain five times.
+                val restoreCommands = SpeedGesturePolicy.restore(originalSpeed, isSpeedLocked)
                 coroutineScope.launch {
-                  SpeedGesturePolicy.restore(originalSpeed, isSpeedLocked).forEach { command ->
+                  restoreCommands.forEach { command ->
                     viewModel.setPlaybackSpeed(command.speed)
                   }
                 }
