@@ -40,7 +40,11 @@ class PlayerRegressionWiringTest(unittest.TestCase):
         self.assertIn('LocalPlayerGlassSurfaceOwner provides liquidGlassSurfaces', drawer)
         self.assertIn('if (LocalPlayerGlassSurfaceOwner.current) return this', controls)
         self.assertIn('border = if (glass) null else border', panel)
-        self.assertIn('.weight(1f, fill = false).fillMaxWidth().verticalScroll(', panel)
+        compact_panel = ''.join(panel.split())
+        self.assertIn('.weight(1f).fillMaxWidth().verticalScroll(', compact_panel)
+        self.assertIn('.width(PlayerControlGridPolicy.panelWidthDp(maxWidth.value).dp)', panel)
+        self.assertIn('.heightIn(max = panelMaxHeight)', panel)
+        self.assertNotIn('weight(1f, fill = false)', panel)
 
     def test_native_custom_ratio_reaches_viewport_and_survives_source_size_callbacks(self):
         engine = source('ui/player/NativeMedia3Engine.kt')
