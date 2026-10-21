@@ -102,14 +102,12 @@ object PlaylistScreen : Screen {
     val focusRequester = remember { FocusRequester() }
 
     // Filter playlists based on search query
-    val filteredPlaylists =
-      if (isSearching && searchQuery.isNotBlank()) {
-        playlistsWithCount.filter { playlistWithCount ->
-          playlistWithCount.playlist.name.contains(searchQuery, ignoreCase = true)
-        }
-      } else {
-        playlistsWithCount
-      }
+    val filteredPlaylists = remember(playlistsWithCount, isSearching, searchQuery) {
+      PlaylistPresentationPolicy.filterPlaylists(
+        playlistsWithCount,
+        if (isSearching) searchQuery else "",
+      ) { it.playlist.name }
+    }
 
     // Request focus when search is activated
     LaunchedEffect(isSearching) {
@@ -279,7 +277,7 @@ object PlaylistScreen : Screen {
           EmptyState(
             icon = Icons.RoundedFilled.Search,
             title = stringResource(R.string.ui_no_playlists_found),
-            message = "Try a different search term",
+            message = stringResource(R.string.playlist_ui_search_hint),
           )
         }
       } else if (playlistsWithCount.isEmpty() && hasCompletedInitialLoad) {
@@ -296,8 +294,8 @@ object PlaylistScreen : Screen {
           ) {
             EmptyState(
               icon = Icons.RoundedFilled.PlaylistAdd,
-              title = stringResource(R.string.ui_no_playlists_yet),
-              message = "Create a playlist or add one from an m3u URL",
+              title = stringResource(R.string.playlist_ui_empty_library),
+              message = stringResource(R.string.playlist_ui_empty_library_hint),
             )
           }
         }
@@ -482,8 +480,9 @@ object PlaylistScreen : Screen {
               (usableWidth / folderMinWidth).toInt().coerceAtLeast(1)
             }
 
-          val ordinaryPlaylists = playlistsWithCount.filterNot { it.isRadioM3u }
-          val radioPlaylists = playlistsWithCount.filter { it.isRadioM3u }
+          val (ordinaryPlaylists, radioPlaylists) = remember(playlistsWithCount) {
+            PlaylistPresentationPolicy.splitByKind(playlistsWithCount) { it.isRadioM3u }
+          }
           LazyVerticalGrid(
             columns = GridCells.Fixed(folderGridColumns),
             state = gridState,
@@ -499,7 +498,7 @@ object PlaylistScreen : Screen {
           ) {
             if (ordinaryPlaylists.isNotEmpty()) {
               item(span = { GridItemSpan(maxLineSpan) }, key = "ordinary-heading") {
-                Text("Playlists", modifier = Modifier.padding(12.dp), style = androidx.compose.material3.MaterialTheme.typography.titleMedium)
+                Text(stringResource(R.string.playlist_ui_library_section, ordinaryPlaylists.size), modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp), style = androidx.compose.material3.MaterialTheme.typography.titleMedium)
               }
             }
             items(
@@ -519,7 +518,7 @@ object PlaylistScreen : Screen {
             }
             if (radioPlaylists.isNotEmpty()) {
               item(span = { GridItemSpan(maxLineSpan) }, key = "radio-heading") {
-                Text("◉ Radio stations", modifier = Modifier.padding(12.dp), style = androidx.compose.material3.MaterialTheme.typography.titleMedium)
+                Text(stringResource(R.string.playlist_ui_radio_section, radioPlaylists.size), modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp), style = androidx.compose.material3.MaterialTheme.typography.titleMedium)
               }
             }
             items(
@@ -561,8 +560,9 @@ object PlaylistScreen : Screen {
             Modifier
               .fillMaxSize(),
         ) {
-          val radioPlaylists = playlistsWithCount.filter { it.isRadioM3u }
-          val ordinaryPlaylists = playlistsWithCount.filterNot { it.isRadioM3u }
+          val (ordinaryPlaylists, radioPlaylists) = remember(playlistsWithCount) {
+            PlaylistPresentationPolicy.splitByKind(playlistsWithCount) { it.isRadioM3u }
+          }
           LazyColumn(
             state = listState,
             modifier = Modifier.fillMaxSize(),
@@ -574,7 +574,7 @@ object PlaylistScreen : Screen {
               ),
             verticalArrangement = Arrangement.spacedBy(0.dp),
           ) {
-            if (ordinaryPlaylists.isNotEmpty()) item { Text("Playlists", modifier = Modifier.padding(12.dp), style = androidx.compose.material3.MaterialTheme.typography.titleMedium) }
+            if (ordinaryPlaylists.isNotEmpty()) item { Text(stringResource(R.string.playlist_ui_library_section, ordinaryPlaylists.size), modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp), style = androidx.compose.material3.MaterialTheme.typography.titleMedium) }
             items(ordinaryPlaylists, key = { it.playlist.id }) { playlistWithCount ->
               PlaylistCard(
                 playlist = playlistWithCount.playlist,
@@ -586,7 +586,7 @@ object PlaylistScreen : Screen {
                 isGridMode = false,
               )
             }
-            if (radioPlaylists.isNotEmpty()) item { Text("◉ Radio stations", modifier = Modifier.padding(12.dp), style = androidx.compose.material3.MaterialTheme.typography.titleMedium) }
+            if (radioPlaylists.isNotEmpty()) item { Text(stringResource(R.string.playlist_ui_radio_section, radioPlaylists.size), modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp), style = androidx.compose.material3.MaterialTheme.typography.titleMedium) }
             items(radioPlaylists, key = { it.playlist.id }) { playlistWithCount ->
               PlaylistCard(
                 playlist = playlistWithCount.playlist,

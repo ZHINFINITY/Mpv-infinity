@@ -63,6 +63,8 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -395,7 +397,14 @@ fun PlaylistSheet(
               )
             }
             Text(
-              text = "$totalCount items",
+              text = if (currentItem != null) {
+                stringResource(
+                  R.string.playlist_actions_now_playing_count,
+                  totalCount,
+                )
+              } else {
+                stringResource(R.string.playlist_actions_playlist_count, totalCount)
+              },
               style = MaterialTheme.typography.bodyMedium,
               color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -577,7 +586,7 @@ private fun DragHandle(
     modifier =
       with(scope) {
         modifier
-          .size(40.dp)
+          .size(48.dp)
           .draggableHandle()
       },
     contentAlignment = Alignment.Center,
@@ -615,6 +624,7 @@ fun PlaylistTrackListItem(
 
   // Use theme colors dynamically
   val accentSecondary = MaterialTheme.colorScheme.tertiary
+  val playingStateDescription = stringResource(R.string.ui_now_playing)
 
   val borderModifier =
     if (effectiveItem.isPlaying) {
@@ -636,7 +646,14 @@ fun PlaylistTrackListItem(
           vertical = MaterialTheme.spacing.extraSmall,
         ).playlistItemGlass()
         .then(borderModifier)
-        .clickable(onClick = onClick),
+        .clickable(onClick = onClick)
+        .semantics {
+          stateDescription = if (effectiveItem.isPlaying) {
+            playingStateDescription
+          } else {
+            ""
+          }
+        },
     color =
       if (effectiveItem.isPlaying) {
         MaterialTheme.colorScheme.tertiary.copy(alpha = 0.15f)
@@ -847,6 +864,7 @@ fun PlaylistTrackGridItem(
   // Use theme colors dynamically
   val accentColor = MaterialTheme.colorScheme.primary
   val accentSecondary = MaterialTheme.colorScheme.tertiary
+  val playingStateDescription = stringResource(R.string.ui_now_playing)
 
   val borderModifier =
     if (effectiveItem.isPlaying) {
@@ -866,7 +884,14 @@ fun PlaylistTrackGridItem(
         .width(200.dp)
         .playlistItemGlass()
         .then(borderModifier)
-        .clickable(onClick = onClick),
+        .clickable(onClick = onClick)
+        .semantics {
+          stateDescription = if (effectiveItem.isPlaying) {
+            playingStateDescription
+          } else {
+            ""
+          }
+        },
     color = MaterialTheme.colorScheme.tertiary.copy(alpha = 0.15f),
     shape = RoundedCornerShape(12.dp),
   ) {

@@ -35,6 +35,8 @@ class SeekbarGlassContracts(unittest.TestCase):
         self.assertIn('loopEnd?.let', draw)
 
     def test_glass_is_master_gated_and_brushes_are_remembered(self):
+        full_source = source('ui/player/controls/components/Seekbar.kt')
+        self.assertIn('import app.infinity.mpvz.preferences.preference.collectAsState', full_source)
         self.assertIn('liquidGlassSurfaces.collectAsState()', self.video)
         self.assertIn('val glass = liquidGlassEnabled', self.video)
         self.assertIn('if (glass)', self.video)

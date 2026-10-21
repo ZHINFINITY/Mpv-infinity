@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -45,6 +46,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.window.Dialog
 import app.infinity.mpvz.ui.icons.Icon
 import app.infinity.mpvz.ui.icons.Icons
@@ -99,15 +101,22 @@ fun PlaylistActionSheet(
 
       Spacer(modifier = Modifier.height(4.dp))
 
+      Text(
+        text = stringResource(app.infinity.mpvz.R.string.playlist_actions_create_group),
+        style = MaterialTheme.typography.labelLarge,
+        color = MaterialTheme.colorScheme.primary,
+        fontWeight = FontWeight.Bold,
+      )
+
       // Action cards
       Card(
         onClick = {
           showCreateDialog = true
         },
-        modifier = (Modifier.fillMaxWidth()).settingsGlassSurface(cornerRadius = 20.dp),
+        modifier = Modifier.fillMaxWidth().heightIn(min = 64.dp),
         colors =
           CardDefaults.cardColors(
-            containerColor = settingsGlassContainerColor(MaterialTheme.colorScheme.surfaceVariant),
+            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f),
           ),
       ) {
         Row(
@@ -143,7 +152,7 @@ fun PlaylistActionSheet(
         }
       }
 
-      Card(onClick = { radioImport = true; showM3UDialog = true }, modifier = (Modifier.fillMaxWidth()).settingsGlassSurface(cornerRadius = 20.dp), colors = CardDefaults.cardColors(containerColor = settingsGlassContainerColor(MaterialTheme.colorScheme.surfaceVariant))) {
+      Card(onClick = { radioImport = true; showM3UDialog = true }, modifier = Modifier.fillMaxWidth().heightIn(min = 64.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f))) {
         Row(modifier = Modifier.fillMaxWidth().padding(16.dp), horizontalArrangement = Arrangement.spacedBy(16.dp), verticalAlignment = Alignment.CenterVertically) {
           Icon(imageVector = Icons.RoundedFilled.Link, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(24.dp))
           Column(modifier = Modifier.weight(1f)) {
@@ -157,10 +166,10 @@ fun PlaylistActionSheet(
           radioImport = false
           showM3UDialog = true
         },
-        modifier = (Modifier.fillMaxWidth()).settingsGlassSurface(cornerRadius = 20.dp),
+        modifier = Modifier.fillMaxWidth().heightIn(min = 64.dp),
         colors =
           CardDefaults.cardColors(
-            containerColor = settingsGlassContainerColor(MaterialTheme.colorScheme.surfaceVariant),
+            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f),
           ),
       ) {
         Row(

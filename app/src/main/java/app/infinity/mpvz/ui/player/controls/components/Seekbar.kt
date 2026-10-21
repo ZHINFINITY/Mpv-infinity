@@ -88,6 +88,7 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import app.infinity.mpvz.preferences.SeekbarStyle
 import app.infinity.mpvz.preferences.AppearancePreferences
+import app.infinity.mpvz.preferences.preference.collectAsState
 import app.infinity.mpvz.ui.player.SkipSegment
 import app.infinity.mpvz.ui.player.clip.ClipEditorUiState
 import app.infinity.mpvz.ui.player.controls.LocalPlayerButtonsClickEvent

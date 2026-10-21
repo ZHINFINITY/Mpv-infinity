@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+  <string name="stream_card_radio_badge">Radio</string>
+  <string name="stream_card_saved">Saved</string>
+  <string name="stream_card_drm">DRM</string>
+  <string name="stream_card_custom_user_agent">UA</string>
+  <string name="stream_card_source">Stream source</string>
+  <string name="stream_card_playlist_iptv">IPTV</string>
+  <string name="stream_card_playlist_music">Music</string>
+  <string name="stream_card_playlist_video">Video</string>
+  <string name="stream_card_save_action">Save stream</string>
+  <string name="stream_card_unsave_action">Remove saved stream</string>
+</resources>

@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -44,6 +45,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -118,9 +120,21 @@ fun AddToPlaylistDialog(
     onDismissRequest = onDismiss,
     title = {
       Text(
-        text =
-          androidx.compose.ui.res
-            .stringResource(app.infinity.mpvz.R.string.ui_add_to_playlist),
+        text = stringResource(
+          app.infinity.mpvz.R.string.playlist_actions_add_title,
+          videos.size,
+          if (isAudio) {
+            stringResource(
+              if (videos.size == 1) app.infinity.mpvz.R.string.playlist_actions_media_song
+              else app.infinity.mpvz.R.string.playlist_actions_media_songs,
+            )
+          } else {
+            stringResource(
+              if (videos.size == 1) app.infinity.mpvz.R.string.playlist_actions_media_video
+              else app.infinity.mpvz.R.string.playlist_actions_media_videos,
+            )
+          },
+        ),
         style = MaterialTheme.typography.headlineMedium,
         fontWeight = FontWeight.Bold,
       )
@@ -132,12 +146,17 @@ fun AddToPlaylistDialog(
       ) {
         // Show video / song count
         Text(
-          text =
-            if (isAudio) {
-              if (videos.size == 1) "Adding 1 song to playlist" else "Adding ${videos.size} songs to playlist"
-            } else {
-              if (videos.size == 1) "Adding 1 video to playlist" else "Adding ${videos.size} videos to playlist"
-            },
+          text = stringResource(
+            app.infinity.mpvz.R.string.playlist_actions_add_title,
+            videos.size,
+            if (isAudio) stringResource(
+              if (videos.size == 1) app.infinity.mpvz.R.string.playlist_actions_media_song
+              else app.infinity.mpvz.R.string.playlist_actions_media_songs,
+            ) else stringResource(
+              if (videos.size == 1) app.infinity.mpvz.R.string.playlist_actions_media_video
+              else app.infinity.mpvz.R.string.playlist_actions_media_videos,
+            ),
+          ),
           style = MaterialTheme.typography.bodyMedium,
           color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -165,9 +184,7 @@ fun AddToPlaylistDialog(
         // Existing playlists
         if (playlistOptions.isNotEmpty()) {
           Text(
-            text =
-              androidx.compose.ui.res
-                .stringResource(app.infinity.mpvz.R.string.ui_existing_playlists),
+            text = stringResource(app.infinity.mpvz.R.string.playlist_actions_existing_heading),
             style = MaterialTheme.typography.labelLarge,
             fontWeight = FontWeight.Bold,
             color = MaterialTheme.colorScheme.primary,
@@ -256,6 +273,7 @@ private fun PlaylistItemCard(
     modifier =
       Modifier
         .fillMaxWidth()
+        .heightIn(min = 64.dp)
         .clip(AppShapeScale.medium)
         .clickable(onClick = onClick),
     shape = AppShapeScale.medium,
@@ -290,7 +308,10 @@ private fun PlaylistItemCard(
         )
         Spacer(modifier = Modifier.height(4.dp))
         Text(
-          text = option.subtitle ?: "${option.itemCount} items",
+          text = option.subtitle ?: stringResource(
+            app.infinity.mpvz.R.string.playlist_actions_playlist_count,
+            option.itemCount,
+          ),
           style = MaterialTheme.typography.bodySmall,
           color = MaterialTheme.colorScheme.onSurfaceVariant,
         )

@@ -9,7 +9,11 @@ assert 'duration < 0' in policy and 'isMusicPlaylist' in policy
 assert 'forceRadio' in repo and 'RadioM3uPlaylistPolicy' in repo
 assert 'Add Radio M3U' in ui and 'radioImport' in ui
 assert 'ordinaryPlaylists' in screen and 'radioPlaylists' in screen
-assert 'Playlists' in screen and 'Radio stations' in screen
+assert 'playlist_ui_library_section, ordinaryPlaylists.size' in screen
+assert 'playlist_ui_radio_section, radioPlaylists.size' in screen
+labels=(ROOT/'app/src/main/res/values/strings_playlist_ui.xml').read_text()
+assert 'name="playlist_ui_library_section">Playlists (%1$d)' in labels
+assert 'name="playlist_ui_radio_section">Radio playlists (%1$d)' in labels
 assert 'stations' in card and 'isRadioM3u' in card
 assert 'removePrefix("Radio/M3U ")' in card
 print('radio playlist category source contract: ok')

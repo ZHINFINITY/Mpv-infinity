@@ -95,6 +95,8 @@ fun FolderCard(
   val thumbnailQuality by browserPreferences.thumbnailQuality.collectAsState()
   val includeAudio by browserPreferences.includeAudioBrowser.collectAsState()
   val liquidGlass by appearancePreferences.liquidGlassSurfaces.collectAsState()
+  val glassOpacity by appearancePreferences.glassSurfaceOpacity.collectAsState()
+  val glassHighlight by appearancePreferences.glassSurfaceHighlight.collectAsState()
   val manualGridColumnsEnabled by browserPreferences.manualGridColumnsEnabled.collectAsState()
   val folderGridColumnsPortrait by browserPreferences.folderGridColumnsPortrait.collectAsState()
   val folderGridColumnsLandscape by browserPreferences.folderGridColumnsLandscape.collectAsState()
@@ -216,8 +218,8 @@ fun FolderCard(
         BrowserGlassSurface(
           modifier = Modifier.matchParentSize(),
           enabled = true,
-          opacity = 0.82f,
-          highlight = 0.18f,
+          opacity = glassOpacity,
+          highlight = glassHighlight,
           cornerRadius = 20.dp,
         )
       }
