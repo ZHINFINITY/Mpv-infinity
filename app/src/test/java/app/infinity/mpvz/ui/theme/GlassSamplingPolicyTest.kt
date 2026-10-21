@@ -20,6 +20,8 @@ class GlassSamplingPolicyTest {
     assertEquals(108 to 192, GlassSamplingPolicy.sampleSize(2160, 3840))
     assertEquals(96 to 54, GlassSamplingPolicy.sampleSize(96, 54))
     assertEquals(1 to 192, GlassSamplingPolicy.sampleSize(1, 10000))
+    assertEquals(192 to 1, GlassSamplingPolicy.sampleSize(Int.MAX_VALUE, 1))
+    assertEquals(192 to 192, GlassSamplingPolicy.sampleSize(Int.MAX_VALUE, Int.MAX_VALUE))
     assertNull(GlassSamplingPolicy.sampleSize(0, 100))
     assertNull(GlassSamplingPolicy.sampleSize(100, -1))
   }

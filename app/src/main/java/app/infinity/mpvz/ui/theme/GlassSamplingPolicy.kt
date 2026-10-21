@@ -15,8 +15,11 @@ object GlassSamplingPolicy {
 
   fun sampleSize(width: Int, height: Int): Pair<Int, Int>? {
     if (width <= 0 || height <= 0) return null
-    val scale = minOf(1.0, MaxSampleEdge.toDouble() / maxOf(width, height))
-    return maxOf(1, (width * scale).toInt()) to maxOf(1, (height * scale).toInt())
+    val longest = maxOf(width, height)
+    if (longest <= MaxSampleEdge) return width to height
+    // Long multiplication avoids overflow; integer scaling keeps the long edge exactly bounded.
+    return maxOf(1, (width.toLong() * MaxSampleEdge / longest).toInt()) to
+      maxOf(1, (height.toLong() * MaxSampleEdge / longest).toInt())
   }
 
   fun interval(playing: Boolean, failures: Int): Long =
