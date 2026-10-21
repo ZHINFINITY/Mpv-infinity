@@ -8,6 +8,11 @@ JAVA = ROOT / "app/src/main/java/app/infinity/mpvz"
 
 
 class LiquidGlassContracts(unittest.TestCase):
+    def test_source_hash_audit_precedes_verified_runtime_overlay(self):
+        workflow = (ROOT / ".github/workflows/debug-apk.yml").read_text()
+        self.assertLess(workflow.index("Verify permission-only and third-party source boundaries"),
+                        workflow.index("Overlay Flow-only runtime into Standard MPV AAR"))
+
     def test_video_has_one_bounded_shared_sampler(self):
         source = (JAVA / "ui/theme/LiquidGlassBackdrop.kt").read_text()
         self.assertEqual(1, source.count("PixelCopy.request("))
