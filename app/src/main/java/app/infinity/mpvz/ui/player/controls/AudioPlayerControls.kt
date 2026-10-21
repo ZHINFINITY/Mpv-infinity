@@ -1918,6 +1918,7 @@ fun AudioPlayerControls(
           )
         }
       }
+      }
     }
 
     val audiobookModeButtons = @Composable {
@@ -1940,7 +1941,6 @@ fun AudioPlayerControls(
           contentDescription = stringResource(R.string.audiobook_chapters),
           tint = MaterialTheme.colorScheme.onSurfaceVariant,
         )
-      }
       }
     }
 
@@ -1985,6 +1985,7 @@ fun AudioPlayerControls(
               verticalAlignment = Alignment.CenterVertically,
               horizontalArrangement = Arrangement.spacedBy(4.dp),
             ) {
+              if (isAudiobook) audiobookModeButtons() else {
                 ReactiveIconButton(
                   onClick = viewModel::toggleShuffle,
                   enabled = playlistModeEnabled,
@@ -2010,6 +2011,7 @@ fun AudioPlayerControls(
                     tint = if (repeatMode != RepeatMode.OFF) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
                   )
                 }
+              }
               ReactiveIconButton(
                 onClick = { viewModel.toggleAudioVisualizer() },
                 onLongClick = { onOpenSheet(Sheets.VisualizerStyle) },
@@ -2058,6 +2060,7 @@ fun AudioPlayerControls(
               verticalAlignment = Alignment.CenterVertically,
               horizontalArrangement = Arrangement.spacedBy(4.dp),
             ) {
+              if (isAudiobook) audiobookModeButtons() else {
                 ReactiveIconButton(
                   onClick = viewModel::toggleShuffle,
                   enabled = playlistModeEnabled,
@@ -2083,6 +2086,7 @@ fun AudioPlayerControls(
                     tint = if (repeatMode != RepeatMode.OFF) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
                   )
                 }
+              }
               ReactiveIconButton(
                 onClick = { viewModel.toggleAudioVisualizer() },
                 onLongClick = { onOpenSheet(Sheets.VisualizerStyle) },

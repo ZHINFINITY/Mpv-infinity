@@ -74,6 +74,7 @@ class LiquidGlassContracts(unittest.TestCase):
         mini = (JAVA / "ui/browser/components/AudioMiniPlayer.kt").read_text()
         self.assertIn("AudioArtworkBackdrop", audio)
         self.assertIn("albumArtBitmap", audio)
+        self.assertEqual(2, audio.count("if (isAudiobook) audiobookModeButtons() else {"))
         self.assertIn("artworkUri", mini)
         self.assertNotIn("repeat(18)", mini)
 
