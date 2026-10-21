@@ -112,7 +112,7 @@ fun AddToPlaylistDialog(
   }
 
   AlertDialog(
-    modifier = Modifier.playerGlassOverlay(),
+    modifier = modifier.playerGlassOverlay(),
     containerColor = androidx.compose.ui.graphics.Color.Transparent,
     tonalElevation = 0.dp,
     onDismissRequest = onDismiss,

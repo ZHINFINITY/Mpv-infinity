@@ -25,6 +25,38 @@ class LiquidGlassContracts(unittest.TestCase):
         self.assertIn("catch (_: RuntimeException)", source)
         self.assertIn("frame.takeIf { allowed }", source)
 
+    def test_runtime_input_uses_explicit_linear_filtering_and_pixel_centres(self):
+        source = (JAVA / "ui/theme/LiquidGlassBackdrop.kt").read_text()
+        self.assertIn("setFilterMode(BitmapShader.FILTER_MODE_LINEAR)", source)
+        self.assertIn("AndroidPaint.FILTER_BITMAP_FLAG", source)
+        self.assertIn("clamp(uv * imageSize, float2(0.5), imageSize - float2(0.5))", source)
+        self.assertNotIn("uv * (imageSize - 1.0)", source)
+        self.assertLess(source.index("val shader = remember {"), source.index(".drawWithCache {"))
+
+    def test_frost_is_shared_bounded_off_thread_and_precedes_publication(self):
+        source = (JAVA / "ui/theme/LiquidGlassBackdrop.kt").read_text()
+        self.assertEqual(1, source.count("GlassFrostPolicy.frostArgb("))
+        self.assertIn("withContext(Dispatchers.Default)", source)
+        self.assertLess(source.index("?.let { frostGlassFrame(it) }"), source.index("frame.value = LiquidGlassFrame("))
+        self.assertIn("frame.value = null // never display a stale frame", source)
+        for forbidden in ("source.setRenderEffect", "source.holder.setFixedSize", "source.setLayerType", "video-scale", "setVideoScalingMode"):
+            self.assertNotIn(forbidden, source)
+        policy = (JAVA / "ui/theme/GlassFrostPolicy.kt").read_text()
+        self.assertIn("GlassSamplingPolicy.MaxSampleEdge", policy)
+        self.assertIn("val result = pixels.copyOf()", policy)
+        self.assertIn("repeat(Passes)", policy)
+        self.assertNotIn("android.", policy)
+
+    def test_subtitle_and_decoder_sheets_share_frost_without_per_sheet_sampling(self):
+        for name in ("SubtitleTracksSheet.kt", "DecodersSheet.kt"):
+            source = (JAVA / "ui/player/controls/components/sheets" / name).read_text()
+            self.assertIn("PlayerSheet(onDismissRequest)", source, name)
+            self.assertNotIn("PixelCopy", source, name)
+            self.assertNotIn("Bitmap.createBitmap", source, name)
+        sheet = (JAVA / "presentation/components/PlayerSheet.kt").read_text()
+        self.assertIn(".liquidGlassPane(", sheet)
+        self.assertIn("enabled = liquidGlassSurfaces", sheet)
+
     def test_artwork_blur_is_background_only_and_off_means_off(self):
         source = (JAVA / "ui/theme/GlassSurface.kt").read_text()
         self.assertIn("liquidGlassPane", source)
@@ -44,6 +76,7 @@ class LiquidGlassContracts(unittest.TestCase):
         for relative in ("ui/player/controls/PlayerButtonTheme.kt",
                          "ui/player/controls/components/ControlsButton.kt"):
             self.assertIn("import androidx.compose.runtime.getValue", (JAVA / relative).read_text())
+        self.assertIn("import androidx.compose.runtime.getValue", (JAVA / "ui/cast/CastPlayerButton.kt").read_text())
 
     def test_panels_and_sheets_leave_sampled_glass_visible(self):
         for path in ("presentation/components/PlayerSheet.kt",

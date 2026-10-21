@@ -52,10 +52,13 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.repeatOnLifecycle
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.withContext
 import kotlin.coroutines.resume
 
 /** Immutable snapshot: window coordinates prevent every control showing the entire frame. */
@@ -120,7 +123,8 @@ fun LiquidGlassBackdropHost(
             delay(GlassSamplingPolicy.RetryIntervalMs)
             continue
           }
-          val bitmap = copyGlassFrame(source, dimensions.first, dimensions.second)
+          // Frost the one unpublished UI copy, not the playing video or each individual sheet.
+          val bitmap = copyGlassFrame(source, dimensions.first, dimensions.second)?.let { frostGlassFrame(it) }
           if (bitmap == null) {
             frame.value = null // never display a stale frame after a lost/secure surface
             failures++
@@ -164,9 +168,26 @@ private suspend fun copyGlassFrame(source: SurfaceView, width: Int, height: Int)
     }
   }
 
+private suspend fun frostGlassFrame(bitmap: Bitmap): Bitmap? = try {
+  withContext(Dispatchers.Default) {
+    val pixels = IntArray(bitmap.width * bitmap.height)
+    bitmap.getPixels(pixels, 0, bitmap.width, 0, 0, bitmap.width, bitmap.height)
+    val frosted = GlassFrostPolicy.frostArgb(pixels, bitmap.width, bitmap.height)
+    bitmap.setPixels(frosted, 0, bitmap.width, 0, 0, bitmap.width, bitmap.height)
+    bitmap
+  }
+} catch (cancelled: CancellationException) {
+  bitmap.recycle() // This bitmap was never published to Compose.
+  throw cancelled
+} catch (_: RuntimeException) {
+  bitmap.recycle()
+  null
+}
+
 /**
- * Background-only optics keep text/icons sharp. API 33+: sampled-scene refraction and 5-tap
- * frost using an original rounded-pane lens. Older Android: filtered scene plus readable film.
+ * Background-only optics keep text/icons sharp. All video panes reuse one smoothly frosted
+ * sample. API 33+ adds bilinear sampled-scene refraction with an original rounded-pane lens.
+ * Older Android uses Paint-filtered frost plus readable film, never nearest-neighbour blocks.
  * With no usable scene (HDR, audio, errors, low-RAM or severe heat): transparent film/rim only.
  */
 @Composable
@@ -185,6 +206,9 @@ fun Modifier.liquidGlassPane(
   val glow = GlassSurfacePolicy.highlight(highlight)
   var paneBounds by remember { mutableStateOf(Rect.Zero) }
   val shape = remember(cornerRadius) { RoundedCornerShape(cornerRadius) }
+  val shader = remember {
+    if (Build.VERSION.SDK_INT >= 33) runCatching { RuntimeShader(GLASS_OPTICS) }.getOrNull() else null
+  }
   return this
     .onGloballyPositioned { coordinates ->
       val windowOrigin = coordinates.localToWindow(Offset.Zero)
@@ -204,7 +228,6 @@ fun Modifier.liquidGlassPane(
     .drawWithCache {
       val radius = cornerRadius.toPx().coerceAtMost(minOf(size.width, size.height) / 2f)
       val paint = AndroidPaint(AndroidPaint.ANTI_ALIAS_FLAG or AndroidPaint.FILTER_BITMAP_FLAG)
-      val shader = if (Build.VERSION.SDK_INT >= 33) runCatching { RuntimeShader(GLASS_OPTICS) }.getOrNull() else null
       val matrix = Matrix()
       var lastImage: ImageBitmap? = null
       var imageShader: BitmapShader? = null
@@ -219,6 +242,10 @@ fun Modifier.liquidGlassPane(
           if (scene.image !== lastImage) {
             lastImage = scene.image
             imageShader = BitmapShader(scene.image.asAndroidBitmap(), Shader.TileMode.CLAMP, Shader.TileMode.CLAMP)
+              .also {
+                // A RuntimeShader input defaults to NEAREST even with FILTER_BITMAP_FLAG.
+                if (Build.VERSION.SDK_INT >= 33) it.setFilterMode(BitmapShader.FILTER_MODE_LINEAR)
+              }
           }
           val sourceShader = imageShader
           if (sourceShader != null) {
@@ -273,7 +300,8 @@ uniform float strength;
 uniform float frost;
 half4 sampleAt(float2 windowPosition) {
   float2 uv = clamp((windowPosition - sceneOrigin) / sceneSize, float2(0.0), float2(1.0));
-  return scene.eval(uv * (imageSize - 1.0));
+  // Pixel centres and explicit bilinear filtering avoid a magnified nearest-neighbour grid.
+  return scene.eval(clamp(uv * imageSize, float2(0.5), imageSize - float2(0.5)));
 }
 half4 main(float2 p) {
   float2 center = pane * 0.5;

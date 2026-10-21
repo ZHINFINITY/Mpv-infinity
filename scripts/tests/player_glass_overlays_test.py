@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Host-level coverage guards, not screenshot or device-rendering assertions."""
 from pathlib import Path
+import re
 import unittest
 ROOT = Path(__file__).resolve().parents[2]
 JAVA = ROOT / "app/src/main/java/app/infinity/mpvz"
@@ -23,9 +24,19 @@ class PlayerGlassOverlayContracts(unittest.TestCase):
             source = self.source(relative)
             start = source.index("AlertDialog(")
             host = source[start:source.index("title =", start)]
-            self.assertIn("modifier = Modifier.playerGlassOverlay()", host, relative)
+            receiver = "modifier" if relative.endswith("AddToPlaylistDialog.kt") else "Modifier"
+            self.assertIn(f"modifier = {receiver}.playerGlassOverlay()", host, relative)
             self.assertIn("containerColor = androidx.compose.ui.graphics.Color.Transparent", host, relative)
             self.assertNotIn("PlayerGlassOverlay(", source, relative)
+
+    def test_playlist_dialog_has_one_outer_argument_per_parameter(self):
+        source = self.source("ui/browser/dialogs/AddToPlaylistDialog.kt")
+        start = source.index("AlertDialog(")
+        call = source[start:source.index("\n  )", start)]
+        arguments = re.findall(r"^    (\w+)\s*=", call, re.MULTILINE)
+        self.assertEqual(len(arguments), len(set(arguments)), arguments)
+        self.assertIn("modifier = modifier.playerGlassOverlay()", call)
+        self.assertIn("tonalElevation = 0.dp", call)
 
     def test_bottom_sheet_surfaces_are_not_opaque_over_glass(self):
         for relative in ("ui/player/controls/components/sheets/AudioPropertiesSheet.kt",
