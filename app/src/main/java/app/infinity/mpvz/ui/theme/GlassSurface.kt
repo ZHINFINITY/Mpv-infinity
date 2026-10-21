@@ -48,7 +48,13 @@ fun GlassSurface(
       .then(if (border && !enabled) Modifier.border(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.25f), shape) else Modifier),
   ) {
     if (enabled && backdrop != null && !hasSharedScene) {
-      Box(Modifier.matchParentSize().graphicsLayer { renderEffect = artworkBlur }) { backdrop.invoke() }
+      // Modifiers are outer-first: the outer clip encloses the complete effect
+      // output; the inner clip also constrains its source before rasterization.
+      val artworkModifier = Modifier.matchParentSize()
+        .clip(shape)
+        .graphicsLayer { renderEffect = artworkBlur }
+        .clip(shape)
+      Box(artworkModifier) { backdrop.invoke() }
       Box(Modifier.matchParentSize().background(MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = alpha * 0.58f)))
     }
     content()

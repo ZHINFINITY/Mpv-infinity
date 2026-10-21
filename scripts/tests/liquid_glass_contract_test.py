@@ -68,7 +68,9 @@ class LiquidGlassContracts(unittest.TestCase):
         source = (JAVA / "ui/theme/GlassSurface.kt").read_text()
         self.assertIn("liquidGlassPane", source)
         self.assertIn("if (enabled && backdrop != null && !hasSharedScene)", source)
-        self.assertIn("matchParentSize().graphicsLayer", source)
+        effect = source.split("val artworkModifier =", 1)[1].split("Box(artworkModifier)", 1)[0]
+        self.assertLess(effect.index(".clip(shape)"), effect.index(".graphicsLayer"))
+        self.assertGreater(effect.rindex(".clip(shape)"), effect.index(".graphicsLayer"))
         self.assertLess(source.index("backdrop.invoke()"), source.index("    content()"))
         self.assertNotIn("PixelCopy", source)
 

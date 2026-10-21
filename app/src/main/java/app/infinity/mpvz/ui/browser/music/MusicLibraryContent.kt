@@ -6,6 +6,7 @@
 
 package app.infinity.mpvz.ui.browser.music
 
+import app.infinity.mpvz.ui.browser.fab.quickPlayFabContainerColor
 import android.graphics.BitmapFactory
 import android.net.Uri
 import android.text.format.DateUtils
@@ -648,8 +649,9 @@ fun MusicLibraryContent(
           expanded = false,
           button = {
             ToggleFloatingActionButton(
+              containerColor = quickPlayFabContainerColor(),
               modifier =
-                Modifier.animateFloatingActionButton(
+                Modifier.settingsGlassSurface(cornerRadius = 20.dp).animateFloatingActionButton(
                   visible = isFabShouldBeVisible,
                   alignment = Alignment.BottomEnd,
                 ),
@@ -677,8 +679,9 @@ fun MusicLibraryContent(
               state = rememberTooltipState(),
             ) {
               ToggleFloatingActionButton(
+                containerColor = quickPlayFabContainerColor(),
                 modifier =
-                  Modifier.animateFloatingActionButton(
+                  Modifier.settingsGlassSurface(cornerRadius = 20.dp).animateFloatingActionButton(
                     visible = isFabShouldBeVisible,
                     alignment = Alignment.BottomEnd,
                   ),

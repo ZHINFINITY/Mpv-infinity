@@ -8,6 +8,9 @@ package app.infinity.mpvz.ui.player.controls
 object PlayerControlGridPolicy {
   const val columnCount: Int = 3
 
+  fun panelWidthDp(availableWidth: Float): Float =
+    if (availableWidth.isFinite()) availableWidth.coerceIn(0f, 380f) else 380f
+
   fun rowCount(itemCount: Int, columns: Int = columnCount): Int {
     require(itemCount >= 0) { "itemCount must not be negative" }
     require(columns > 0) { "columns must be positive" }

@@ -7,6 +7,7 @@
 
 package app.infinity.mpvz.ui.browser.jellyfin
 
+import app.infinity.mpvz.ui.browser.fab.quickPlayFabContainerColor
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Spring
@@ -62,6 +63,8 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
 import androidx.compose.material3.ToggleFloatingActionButton
+import app.infinity.mpvz.ui.preferences.components.settingsGlassContainerColor
+import app.infinity.mpvz.ui.preferences.components.settingsGlassSurface
 import androidx.compose.material3.ToggleFloatingActionButtonDefaults.animateIcon
 import androidx.compose.material3.animateFloatingActionButton
 import androidx.compose.foundation.pager.rememberPagerState
@@ -1131,8 +1134,10 @@ fun JellyfinContent(
         expanded = isFabExpanded && !quickPlayFabDirect,
         button = {
           ToggleFloatingActionButton(
+            containerColor = quickPlayFabContainerColor(),
             modifier =
-              Modifier.animateFloatingActionButton(
+              Modifier.settingsGlassSurface(cornerRadius = 20.dp)
+              .animateFloatingActionButton(
                 visible = isFabShouldBeVisible,
                 alignment = Alignment.BottomEnd,
               ),

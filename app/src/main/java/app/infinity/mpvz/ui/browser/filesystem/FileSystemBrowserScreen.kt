@@ -7,6 +7,7 @@
 
 package app.infinity.mpvz.ui.browser.filesystem
 
+import app.infinity.mpvz.ui.browser.fab.quickPlayFabContainerColor
 import android.content.Context
 import android.content.Intent
 import android.util.Log
@@ -51,6 +52,8 @@ import androidx.compose.material3.PlainTooltip
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.ToggleFloatingActionButton
+import app.infinity.mpvz.ui.preferences.components.settingsGlassContainerColor
+import app.infinity.mpvz.ui.preferences.components.settingsGlassSurface
 import androidx.compose.material3.ToggleFloatingActionButtonDefaults.animateIcon
 import androidx.compose.material3.TooltipAnchorPosition
 import androidx.compose.material3.TooltipBox
@@ -677,8 +680,10 @@ fun FileSystemBrowserScreen(path: String? = null) {
                 state = rememberTooltipState(),
               ) {
                 ToggleFloatingActionButton(
+                  containerColor = quickPlayFabContainerColor(),
                   modifier =
                     Modifier
+                      .settingsGlassSurface(cornerRadius = 20.dp)
                       .animateFloatingActionButton(
                         visible = isFabShouldBeVisible,
                         alignment = Alignment.BottomEnd,

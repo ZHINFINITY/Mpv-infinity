@@ -2779,9 +2779,11 @@ private fun ReactiveSurfaceButton(
       onClick()
     },
     shape = shape,
-    // Preserve the prominent primary affordance while letting the shared lens provide the surface.
-    color = if (liquidGlassSurfaces) color.copy(alpha = 0.22f) else color,
-    shadowElevation = shadowElevation,
+    // One material owner: a second translucent elevated Surface can rasterize a
+    // faceted backing inside the palette-glass circle on device GPUs.
+    color = if (liquidGlassSurfaces) Color.Transparent else color,
+    tonalElevation = 0.dp,
+    shadowElevation = if (liquidGlassSurfaces) 0.dp else shadowElevation,
     enabled = enabled,
     interactionSource = interactionSource,
     modifier =

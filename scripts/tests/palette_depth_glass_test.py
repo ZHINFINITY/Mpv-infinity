@@ -8,7 +8,12 @@ policy = (ROOT / "app/src/main/java/app/infinity/mpvz/ui/player/controls/AudioPa
 audio = (ROOT / "app/src/main/java/app/infinity/mpvz/ui/player/controls/AudioPlayerControls.kt").read_text()
 assert ".clip(shape)" in backdrop
 assert "Modifier.shadow(4.dp" not in backdrop
-assert "innerRimAlpha" in controls
+assert "clipPath(panePath)" in backdrop
+assert "GlassSurfacePolicy.depthOptics" in backdrop
+assert "optics.bodyHighlight" in backdrop
+assert "optics.bodyShade" in backdrop
+assert "optics.rimWidthDp" in backdrop
+assert "Size(bounds.width, (trackHeight / 2f)" not in controls
 assert "useArtworkAsGlassScene(): Boolean = false" in policy
 assert "LocalLiquidGlassBackdrop" not in audio
 assert "AudioVisualizerPaletteCache" in audio

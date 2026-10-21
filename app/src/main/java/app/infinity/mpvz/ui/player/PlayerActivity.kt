@@ -100,6 +100,7 @@ import app.infinity.mpvz.preferences.AudioPlayerOrientation
 import app.infinity.mpvz.preferences.AudioPreferences
 import app.infinity.mpvz.preferences.BrowserPreferences
 import app.infinity.mpvz.preferences.DecoderPreferences
+import app.infinity.mpvz.preferences.InterpolationRuntimeApplyPolicy
 import app.infinity.mpvz.preferences.MpvConfigOverridePolicy
 import app.infinity.mpvz.preferences.PlayerPreferences
 import app.infinity.mpvz.preferences.SubtitlesPreferences
@@ -153,8 +154,6 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.withContext
 import org.koin.android.ext.android.inject
@@ -267,9 +266,6 @@ class PlayerActivity :
       // this guard only after MPV has restored the shared settings and seek position.
     }
   private var engineHandoffJob: Job? = null
-  /** A preference toggle and FPS-sheet commit must never recreate MPV concurrently. */
-  private val interpolationApplyMutex = Mutex()
-  private var interpolationRecreationScheduled = false
   private var pendingInterpolationRestore: PlaybackPositionRestoreOverride? = null
   private var pendingInterpolationEngine: Pair<String, PlaybackEngineMode>? = null
   private var manualEngineOverride: Pair<String, PlaybackEngineMode>? = null
@@ -452,73 +448,15 @@ class PlayerActivity :
 
   /** Apply newly written interpolation controls to the renderer already playing this item. */
   fun applyInterpolationPreferencesFromControls() {
-    lifecycleScope.launch {
-      interpolationApplyMutex.withLock {
-        if (!ownsPlaybackSession() || isFinishing || isDestroyed || interpolationRecreationScheduled) return@withLock
-        if (activeEngineMode == PlaybackEngineMode.NATIVE) {
-          // NativeMedia3Engine reads these immutable constructor options only once.
-          // Capture a one-shot load override even when normal resume-position saving is disabled.
-          pendingInterpolationRestore = PlaybackPositionRestoreOverride(
-            positionSeconds = (nativeEngine.positionForPersistenceMs()
-              ?: nativeEngine.snapshot.value.positionMs).coerceAtLeast(0L) / 1000.0,
-            paused = !nativeEngine.currentPlayer.playWhenReady,
-          )
-          pendingInterpolationEngine = activeSaveMediaIdentifier.ifBlank { mediaIdentifier } to PlaybackEngineMode.NATIVE
-          saveVideoPlaybackState(fileName, immediate = true)?.join()
-          interpolationRecreationScheduled = true
-          recreate()
-          return@withLock
-        }
-        if (!mpvInitialized || player.isExiting || !PlaybackSession.isInitialized) return@withLock
-        val item = PlaybackSession.queue.value.currentItem ?: return@withLock
-        val position = PlaybackSession.getPropertyDouble("time-pos")
-          ?.takeIf { it.isFinite() && it >= 0.0 }
-        val paused = PlaybackSession.getPropertyBoolean("pause") ?: PlaybackSession.state.value.paused
-        val audio = player.aid
-        val subtitle = player.sid
-        val secondarySubtitle = player.secondarySid
-        val aspect = PlaybackSession.getPropertyDouble("video-aspect-override")
-        val zoom = PlaybackSession.getPropertyDouble("video-zoom")
-        val subDelay = PlaybackSession.getPropertyDouble("sub-delay")
-        val subSpeed = PlaybackSession.getPropertyDouble("sub-speed")
-        val audioDelay = PlaybackSession.getPropertyDouble("audio-delay")
-        val playbackSpeed = PlaybackSession.getPropertyDouble("speed")
-        val selectedQuality = PlaybackSession.getPropertyString("ytdl-format")
-
-        PlaybackSession.removeObserver(playerObserver)
-        player.releaseSurface()
-        mpvInitialized = false
-        player.isExiting = false
-        PlaybackSession.invalidateCoreConfiguration()
-        val setupError = setupMPV()
-        if (setupError != null) {
-          Log.e(TAG, "Unable to apply interpolation preferences", IllegalStateException(setupError))
-          return@withLock
-        }
-        isReady = false
-        viewModel.onVideoLoadStarted()
-        selectedQuality?.let { PlaybackSession.setPropertyString("ytdl-format", it) }
-        val generation = PlaybackSession.load(
-          item = item,
-          positionRestoreOverride = PlaybackPositionRestoreOverride(position, paused),
-        )
-        if (generation < 0L) return@withLock
-        val ready = withTimeoutOrNull(15_000L) {
-          PlaybackSession.state.first {
-            it.generation == generation &&
-              it.phase in setOf(PlaybackPhase.READY, PlaybackPhase.BACKGROUND)
-          }
-        }
-        if (ready == null || !ownsPlaybackSession()) return@withLock
-        if (audio >= 0) player.aid = audio
-        if (subtitle >= 0) player.sid = subtitle
-        if (secondarySubtitle >= 0) player.secondarySid = secondarySubtitle
-        aspect?.let { PlaybackSession.setPropertyDouble("video-aspect-override", it) }
-        zoom?.let { PlaybackSession.setPropertyDouble("video-zoom", it) }
-        subDelay?.let { PlaybackSession.setPropertyDouble("sub-delay", it) }
-        subSpeed?.let { PlaybackSession.setPropertyDouble("sub-speed", it) }
-        audioDelay?.let { PlaybackSession.setPropertyDouble("audio-delay", it) }
-        playbackSpeed?.let { PlaybackSession.setPropertyDouble("speed", it) }
+    if (!ownsPlaybackSession() || isFinishing || isDestroyed) return
+    // The MPVFlow and NativeMedia3 flow constructors own their renderer/sink configuration;
+    // this build exposes no verified live reconfiguration API. Never fake success by tearing
+    // down the active session: the preference is saved and takes effect on the next item/load.
+    when (InterpolationRuntimeApplyPolicy.decision(hasLiveReconfigureApi = false, playbackActive = true)) {
+      InterpolationRuntimeApplyPolicy.Decision.APPLY_LIVE -> Unit // Reserved for a verified API.
+      InterpolationRuntimeApplyPolicy.Decision.PENDING_UNTIL_NEXT_PLAYBACK -> {
+        Log.i(TAG, "Interpolation preference saved; live playback unchanged until next playback load")
+        Toast.makeText(this, R.string.toast_interpolation_pending_next_playback, Toast.LENGTH_LONG).show()
       }
     }
   }

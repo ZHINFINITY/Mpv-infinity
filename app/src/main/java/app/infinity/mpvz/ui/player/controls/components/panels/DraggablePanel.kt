@@ -46,6 +46,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import app.infinity.mpvz.ui.player.controls.panelCardsColors
+import app.infinity.mpvz.ui.player.controls.PlayerControlGridPolicy
 import app.infinity.mpvz.preferences.AppearancePreferences
 import app.infinity.mpvz.preferences.preference.collectAsState
 import app.infinity.mpvz.ui.theme.liquidGlassPane
@@ -102,7 +103,9 @@ fun DraggablePanel(
         Modifier
           .offset { IntOffset(offsetX.roundToInt(), 0) }
           .onSizeChanged { panelWidth = it.width }
-          .widthIn(max = 380.dp)
+          // An outer fillMaxWidth makes the constraints tight before widthIn,
+          // defeating its cap. Resolve one exact width shared by header/body.
+          .width(PlayerControlGridPolicy.panelWidthDp(maxWidth.value).dp)
           // Establish a finite viewport so the scroll body cannot paint beyond
           // the panel's rounded root when cards are taller than the sheet.
           .heightIn(max = panelMaxHeight)
@@ -112,7 +115,7 @@ fun DraggablePanel(
       color = if (glass) Color.Transparent else containerColor ?: colors.containerColor,
       contentColor = colors.contentColor,
       tonalElevation = if (glass) 0.dp else tonalElevation,
-      shadowElevation = shadowElevation,
+      shadowElevation = if (glass) 0.dp else shadowElevation,
       border = if (glass) null else border,
     ) {
       Column(modifier = Modifier.fillMaxSize()) {
@@ -150,7 +153,10 @@ fun DraggablePanel(
 
         // Scrollable content
         Column(
-          modifier = Modifier.weight(1f, fill = false).fillMaxWidth().verticalScroll(rememberScrollState()),
+          modifier = Modifier
+            .weight(1f)
+            .fillMaxWidth()
+            .verticalScroll(rememberScrollState()),
         ) {
           content()
         }

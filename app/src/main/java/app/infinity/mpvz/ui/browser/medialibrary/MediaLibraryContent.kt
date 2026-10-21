@@ -7,6 +7,7 @@
 
 package app.infinity.mpvz.ui.browser.medialibrary
 
+import app.infinity.mpvz.ui.browser.fab.quickPlayFabContainerColor
 import android.content.Intent
 import android.os.Environment
 import android.widget.Toast
@@ -45,6 +46,8 @@ import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.ToggleFloatingActionButton
+import app.infinity.mpvz.ui.preferences.components.settingsGlassContainerColor
+import app.infinity.mpvz.ui.preferences.components.settingsGlassSurface
 import androidx.compose.material3.ToggleFloatingActionButtonDefaults.animateIcon
 import androidx.compose.material3.TooltipAnchorPosition
 import androidx.compose.material3.TooltipBox
@@ -519,8 +522,10 @@ fun MediaLibraryContent(forceAudio: Boolean = false) {
             state = rememberTooltipState(),
           ) {
             ToggleFloatingActionButton(
+                  containerColor = quickPlayFabContainerColor(),
               modifier =
-                Modifier.animateFloatingActionButton(
+                Modifier.settingsGlassSurface(cornerRadius = 20.dp)
+                .animateFloatingActionButton(
                   visible = isFabShouldBeVisible,
                   alignment = Alignment.BottomEnd,
                 ),

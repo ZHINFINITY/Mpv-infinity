@@ -5,7 +5,6 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderColors
@@ -23,7 +22,6 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.draw.drawWithCache
-import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import app.infinity.mpvz.preferences.AppearancePreferences
@@ -62,15 +60,18 @@ fun GlassSwitch(
       uncheckedThumbColor = Color.Transparent,
       disabledCheckedThumbColor = Color.Transparent,
       disabledUncheckedThumbColor = Color.Transparent,
-      checkedTrackColor = accent.copy(alpha = if (enabled) 0.32f else 0.10f),
-      uncheckedTrackColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f),
+      checkedTrackColor = Color.Transparent,
+      uncheckedTrackColor = Color.Transparent,
+      disabledCheckedTrackColor = Color.Transparent,
+      disabledUncheckedTrackColor = Color.Transparent,
       checkedBorderColor = Color.Transparent,
       uncheckedBorderColor = Color.Transparent,
+      disabledCheckedBorderColor = Color.Transparent,
+      disabledUncheckedBorderColor = Color.Transparent,
     ),
     thumbContent = if (!glass) thumbContent else ({
       Box(
         Modifier.size(24.dp)
-          .shadow((0.5.dp + depth.dp), RoundedCornerShape(12.dp), clip = false)
           .glassThumbOptics(
             accent = accent,
             highlight = GlassControlPolicy.highlightAlpha(highlight, enabled, checked),
@@ -81,7 +82,7 @@ fun GlassSwitch(
       ) { thumbContent?.invoke() }
     }),
     // Material keeps its minimum interaction box and semantics; optics cover only the track.
-    modifier = modifier.then(if (glass) Modifier.glassTrackOptics(opacity, highlight, 10.dp, height = 20.dp) else Modifier),
+    modifier = modifier.then(if (glass) Modifier.glassTrackOptics(opacity, highlight, 16.dp, height = 32.dp) else Modifier),
   )
 }
 
@@ -127,9 +128,8 @@ fun GlassSlider(
         disabledActiveTrackColor = accent.copy(alpha = 0.16f),
         disabledInactiveTrackColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.06f),
       ),
-      thumb = {
+        thumb = {
         Box(Modifier.size(width = 18.dp, height = 24.dp)
-          .shadow((0.5.dp + depth.dp), RoundedCornerShape(9.dp), clip = false)
           .glassThumbOptics(
             accent = accent,
             highlight = GlassControlPolicy.highlightAlpha(highlight, enabled, value > valueRange.start),
@@ -172,34 +172,37 @@ private fun Modifier.glassTrackOptics(
         size = bounds,
         cornerRadius = androidx.compose.ui.geometry.CornerRadius(corner, corner),
       )
-      // A single upper rim plus a lower inner edge gives the track real depth;
-      // Material still owns the thumb position, touch target, semantics and RTL.
+      // One full contour, not a half-height capsule and a second inset outline.
+      // Native Material retains thumb position, interaction semantics and RTL.
       drawRoundRect(
-        color = Color.White.copy(alpha = highlight * 0.28f),
-        topLeft = androidx.compose.ui.geometry.Offset(inset, top + 0.5.dp.toPx()),
-        size = androidx.compose.ui.geometry.Size(bounds.width, (trackHeight / 2f).coerceAtLeast(1f)),
+        brush = Brush.verticalGradient(listOf(
+          Color.White.copy(alpha = (0.16f + highlight * 0.5f).coerceAtMost(1f)),
+          Color.Transparent,
+          Color.Black.copy(alpha = GlassControlPolicy.shadowAlpha(depth, true)),
+        ), startY = top, endY = top + trackHeight),
+        topLeft = androidx.compose.ui.geometry.Offset(inset, top),
+        size = bounds,
         cornerRadius = androidx.compose.ui.geometry.CornerRadius(corner, corner),
-        style = Stroke(0.7.dp.toPx()),
-      )
-      drawRoundRect(
-        color = Color.Black.copy(alpha = GlassControlPolicy.innerRimAlpha(depth)),
-        topLeft = androidx.compose.ui.geometry.Offset(inset + 0.5.dp.toPx(), top + 0.6.dp.toPx()),
-        size = androidx.compose.ui.geometry.Size((bounds.width - 1.dp.toPx()).coerceAtLeast(1f), (trackHeight - 1.2.dp.toPx()).coerceAtLeast(1f)),
-        cornerRadius = androidx.compose.ui.geometry.CornerRadius((corner - 0.4.dp.toPx()).coerceAtLeast(0f)),
-        style = Stroke(0.7.dp.toPx()),
+        style = Stroke(1.dp.toPx()),
       )
     }
   }
 }
 
+@Composable
 private fun Modifier.glassThumbOptics(
   accent: Color,
   highlight: Float,
   shadow: Float,
   border: Float,
-): Modifier = drawWithCache {
+): Modifier {
+  // A frosted body hides any native thumb-shadow footprint beneath the knob;
+  // only this full, rounded contour and directional reflection remain visible.
+  val body = MaterialTheme.colorScheme.surfaceContainerHigh
+  return drawWithCache {
   val radius = size.minDimension / 2f
   onDrawBehind {
+    drawRoundRect(body, cornerRadius = androidx.compose.ui.geometry.CornerRadius(radius, radius))
     drawRoundRect(
       brush = Brush.verticalGradient(
         listOf(Color.White.copy(alpha = highlight * 0.72f), accent.copy(alpha = 0.08f), Color.Black.copy(alpha = shadow)),
@@ -225,13 +228,7 @@ private fun Modifier.glassThumbOptics(
       cornerRadius = androidx.compose.ui.geometry.CornerRadius(radius, radius),
       style = Stroke(1.dp.toPx()),
     )
-    drawRoundRect(
-      color = Color.Black.copy(alpha = GlassControlPolicy.innerRimAlpha(shadow / 0.12f)),
-      topLeft = androidx.compose.ui.geometry.Offset(0.8.dp.toPx(), 0.8.dp.toPx()),
-      size = androidx.compose.ui.geometry.Size((size.width - 1.6.dp.toPx()).coerceAtLeast(1f), (size.height - 1.6.dp.toPx()).coerceAtLeast(1f)),
-      cornerRadius = androidx.compose.ui.geometry.CornerRadius((radius - 0.8.dp.toPx()).coerceAtLeast(0f)),
-      style = Stroke(0.7.dp.toPx()),
-    )
+  }
   }
 }
 

@@ -85,6 +85,7 @@ internal fun FrameInterpolationPlayerButton(
   val clickEvent = LocalPlayerButtonsClickEvent.current
   val onLabel = stringResource(R.string.player_interpolation_on)
   val offLabel = stringResource(R.string.player_interpolation_off)
+  val nextPlaybackNote = stringResource(R.string.player_interpolation_next_playback_note)
   if (!targetFpsAction) {
     ControlsButton(
       icon = Icons.RoundedFilled.AutoAwesome,
@@ -98,7 +99,7 @@ internal fun FrameInterpolationPlayerButton(
       color = if (enabled) MaterialTheme.colorScheme.primary else contentColor,
       modifier = Modifier.size(buttonSize).semantics {
         role = Role.Switch
-        stateDescription = if (enabled) onLabel else offLabel
+        stateDescription = "${if (enabled) onLabel else offLabel}. $nextPlaybackNote"
       },
     )
   } else if (compact) {

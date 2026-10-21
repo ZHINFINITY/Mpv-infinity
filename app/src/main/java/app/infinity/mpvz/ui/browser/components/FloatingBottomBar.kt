@@ -38,6 +38,10 @@ import androidx.compose.ui.unit.dp
 import app.infinity.mpvz.ui.icons.AppIcon
 import app.infinity.mpvz.ui.icons.Icon
 import app.infinity.mpvz.ui.icons.Icons
+import app.infinity.mpvz.preferences.AppearancePreferences
+import app.infinity.mpvz.preferences.preference.collectAsState
+import app.infinity.mpvz.ui.theme.liquidGlassPane
+import org.koin.compose.koinInject
 
 private data class BarLayoutParams(
   val buttonSize: androidx.compose.ui.unit.Dp,
@@ -72,6 +76,10 @@ fun BrowserBottomBar(
   val configuration = LocalConfiguration.current
   val isTablet = configuration.smallestScreenWidthDp >= 600
   val isLandscape = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
+  val appearance = koinInject<AppearancePreferences>()
+  val liquidGlassSurfaces by appearance.liquidGlassSurfaces.collectAsState()
+  val glassOpacity by appearance.glassSurfaceOpacity.collectAsState()
+  val glassHighlight by appearance.glassSurfaceHighlight.collectAsState()
 
   var lastShowCopy by remember { mutableStateOf(showCopy) }
   var lastShowMove by remember { mutableStateOf(showMove) }
@@ -227,11 +235,20 @@ fun BrowserBottomBar(
             .padding(
               horizontal = layoutParams.surfacePaddingHorizontal,
               vertical = layoutParams.surfacePaddingVertical,
+            )
+            // Keep the browser bar's original Material surface as the disabled
+            // fallback; when enabled, the root itself is transparent and owns
+            // the one shared glass treatment (not a second child overlay).
+            .liquidGlassPane(
+              enabled = liquidGlassSurfaces,
+              opacity = glassOpacity,
+              highlight = glassHighlight,
+              cornerRadius = 100.dp,
             ),
         shape = RoundedCornerShape(percent = 100),
-        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        color = if (liquidGlassSurfaces) Color.Transparent else MaterialTheme.colorScheme.surfaceContainerHigh,
         tonalElevation = 0.dp,
-        shadowElevation = 12.dp,
+        shadowElevation = if (liquidGlassSurfaces) 0.dp else 12.dp,
       ) {
         Row(
           modifier =

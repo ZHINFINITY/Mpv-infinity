@@ -45,6 +45,12 @@ fun FrameInterpolationFpsSheet(activity: PlayerActivity, onDismissRequest: () ->
         modifier = Modifier.padding(horizontal = 24.dp, vertical = 12.dp),
         style = MaterialTheme.typography.titleMedium,
       )
+      Text(
+        stringResource(R.string.player_interpolation_next_playback_note),
+        modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp),
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+      )
       MPVFLOW_TARGET_FPS_OPTIONS.forEach { fps ->
         Row(
           modifier = Modifier.fillMaxWidth()

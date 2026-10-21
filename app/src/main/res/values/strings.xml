@@ -12,6 +12,8 @@
   <string name="player_interpolation_on">On</string>
   <string name="player_interpolation_off">Off</string>
   <string name="player_interpolation_target_fps">Target FPS</string>
+  <string name="toast_interpolation_pending_next_playback">Interpolation changes apply on the next playback load; current playback was not restarted.</string>
+  <string name="player_interpolation_next_playback_note">Saved for the next playback load. Changing this setting does not restart the current video.</string>
   <string name="pref_preferences">Preferences</string>
   <string name="pref_appearance_title">Appearance</string>
   <string name="pref_appearance_summary">Dark mode, Material You</string>

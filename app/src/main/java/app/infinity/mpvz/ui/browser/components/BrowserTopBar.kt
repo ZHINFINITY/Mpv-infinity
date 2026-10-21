@@ -59,6 +59,7 @@ import app.infinity.mpvz.ui.icons.Icon
 import app.infinity.mpvz.ui.icons.Icons
 import app.infinity.mpvz.ui.theme.DarkMode
 import app.infinity.mpvz.ui.theme.LocalThemeTransitionState
+import app.infinity.mpvz.ui.preferences.components.settingsGlassSurface
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import org.koin.compose.koinInject
@@ -421,6 +422,8 @@ private fun SelectionTopBar(
 ) {
   var showDropdown by remember { mutableStateOf(false) }
   val lifecycleOwner = LocalLifecycleOwner.current
+  val appearancePreferences = koinInject<AppearancePreferences>()
+  val liquidGlassSurfaces by appearancePreferences.liquidGlassSurfaces.collectAsState()
 
   DisposableEffect(lifecycleOwner) {
     val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
@@ -430,16 +433,19 @@ private fun SelectionTopBar(
     onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
   }
 
+  val defaultColors = TopAppBarDefaults.topAppBarColors(
+    containerColor =
+      if (MaterialTheme.colorScheme.background == Color.Black) Color.Black
+      else MaterialTheme.colorScheme.surfaceContainer,
+  )
+  val effectiveColors = when {
+    !liquidGlassSurfaces -> colors ?: defaultColors
+    colors != null -> colors.copy(containerColor = Color.Transparent, scrolledContainerColor = Color.Transparent)
+    else -> defaultColors.copy(containerColor = Color.Transparent, scrolledContainerColor = Color.Transparent)
+  }
+
   TopAppBar(
-    colors =
-      colors ?: TopAppBarDefaults.topAppBarColors(
-        containerColor =
-          if (MaterialTheme.colorScheme.background == Color.Black) {
-            Color.Black
-          } else {
-            MaterialTheme.colorScheme.surfaceContainer
-          },
-      ),
+    colors = effectiveColors,
     windowInsets = windowInsets ?: TopAppBarDefaults.windowInsets,
     title = {
       Row(
@@ -676,8 +682,10 @@ private fun SelectionTopBar(
       }
     },
     modifier =
-      modifier.clip(
-        RoundedCornerShape(topStart = 0.dp, topEnd = 0.dp, bottomStart = 28.dp, bottomEnd = 28.dp),
-      ),
+      modifier
+        .settingsGlassSurface(cornerRadius = 28.dp)
+        .clip(
+          RoundedCornerShape(topStart = 0.dp, topEnd = 0.dp, bottomStart = 28.dp, bottomEnd = 28.dp),
+        ),
   )
 }

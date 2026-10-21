@@ -29,6 +29,19 @@ class PlayerSheetSymmetryTest(unittest.TestCase):
         self.assertIn("import androidx.compose.foundation.layout.fillMaxHeight", panel)
         self.assertIn("Column(modifier = Modifier.fillMaxSize())", panel)
         self.assertIn(".verticalScroll(rememberScrollState())", panel)
+        self.assertIn(".fillMaxWidth()", panel)
+        self.assertIn(".width(PlayerControlGridPolicy.panelWidthDp(maxWidth.value).dp)", panel)
+        self.assertNotIn(".widthIn(max = 380.dp)", panel)
+        self.assertIn(".weight(1f)", panel)
+        self.assertNotIn("weight(1f, fill = false)", panel)
+
+    def test_multiselect_toolbar_owns_conditional_shared_glass_root(self):
+        bar = read("ui/browser/components/FloatingBottomBar.kt")
+        self.assertIn("koinInject<AppearancePreferences>()", bar)
+        self.assertIn("liquidGlassSurfaces by appearance.liquidGlassSurfaces.collectAsState()", bar)
+        self.assertIn(".liquidGlassPane(", bar)
+        self.assertIn("color = if (liquidGlassSurfaces) Color.Transparent", bar)
+        self.assertIn("else MaterialTheme.colorScheme.surfaceContainerHigh", bar)
 
     def test_playlist_inner_root_has_theme_fallback_and_shape_clip(self):
         playlist = read("ui/player/controls/components/sheets/PlaylistSheet.kt")

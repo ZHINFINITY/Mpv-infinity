@@ -318,7 +318,10 @@ private fun PlayerControlPanelContent(
     modifier =
       Modifier
         .fillMaxWidth()
-        .padding(start = 14.dp, end = 14.dp, bottom = 20.dp),
+        // Keep the grid's viewport inset symmetric with the header's 16dp
+        // leading inset; the small top inset separates the fixed header from
+        // the first scroll item instead of letting its rounded rim touch it.
+        .padding(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 20.dp),
     verticalArrangement = Arrangement.spacedBy(PanelTileSpacing),
   ) {
     // Fixed rows avoid fractional-width wrap decisions. Every row has

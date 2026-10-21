@@ -196,6 +196,8 @@ jobs:
           python3 scripts/tests/glass_named_surface_coverage_test.py
           python3 scripts/tests/player_interpolation_controls_test.py
           python3 scripts/tests/interpolation_runtime_apply_test.py
+          python3 scripts/tests/quickplay_selection_glass_test.py
+          python3 scripts/tests/glass_depth_no_reload_wiring_test.py
       - name: Run Standard arm64 debug unit tests
         if: ${{ inputs.flavor == 'standard' && inputs.target_abi == 'arm64-v8a' }}
         run: ./gradlew testStandardDebugUnitTest -PtargetAbi=arm64-v8a -PmpvFlowMpvBuild=true --stacktrace --no-daemon --max-workers=2

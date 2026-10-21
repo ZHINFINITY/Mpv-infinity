@@ -4,6 +4,8 @@
 package app.infinity.mpvz.ui.theme
 
 import android.app.ActivityManager
+import android.app.UiModeManager
+import android.view.accessibility.AccessibilityManager
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapShader
@@ -40,11 +42,14 @@ import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.ClipOp
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.clipPath
 import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.layout.onGloballyPositioned
@@ -230,6 +235,17 @@ fun Modifier.liquidGlassPane(
   val alpha = GlassSurfacePolicy.opacity(if (tuning.overrideMaterial) tuning.opacity else opacity)
   val hostView = LocalView.current
   val glow = GlassSurfacePolicy.highlight(if (tuning.overrideMaterial) tuning.highlight else highlight)
+  val reducedMotion = AppMotion.shouldReduceMotion()
+  val highContrast = remember(hostView) {
+    val context = hostView.context
+    if (Build.VERSION.SDK_INT >= 37) {
+      context.getSystemService(AccessibilityManager::class.java)?.isHighContrastTextEnabled == true
+    } else if (Build.VERSION.SDK_INT >= 34) {
+      (context.getSystemService(UiModeManager::class.java)?.contrast ?: 0f) >= 0.5f
+    } else false
+  }
+  val optics = GlassSurfacePolicy.depthOptics(tuning.depth, glow, highContrast)
+  val contrastRim = MaterialTheme.colorScheme.outline
   var paneBounds by remember { mutableStateOf(Rect.Zero) }
   // A large dp radius is commonly used for pills. Keep the shape's radius tied to
   // the actual local bounds instead of letting a wide control inherit a giant
@@ -255,21 +271,60 @@ fun Modifier.liquidGlassPane(
         origin.y + coordinates.size.height)
       if (next != paneBounds) paneBounds = next
     }
-    // Do not paint an un-clipped outer card shadow: it is the square backing seen
-    // behind decoder/settings panes. Depth is rendered as an inset rim below.
+    // Draw only the exterior contour, before clipping the material. Unlike a
+    // translucent elevated Surface, no shadow footprint can show inside the pane.
+    .drawWithCache {
+      val geometry = GlassSurfacePolicy.geometry(size.width, size.height, cornerRadius.toPx())
+      val outline = Path().apply {
+        addRoundRect(androidx.compose.ui.geometry.RoundRect(
+          Rect(0f, 0f, geometry.width, geometry.height), CornerRadius(geometry.safeRadius),
+        ))
+      }
+      onDrawBehind {
+        if (drawRim && optics.shadowAlpha > 0f) {
+          clipPath(outline, ClipOp.Difference) {
+            // Three bounded feather bands approximate a soft, lower-right
+            // contact shadow without a bitmap blur or another native elevation.
+            for (band in 3 downTo 1) {
+              val spread = optics.shadowSpreadDp.dp.toPx() * band / 3f
+              drawRoundRect(
+                Color.Black.copy(alpha = optics.shadowAlpha * (4 - band) / 6f),
+                topLeft = Offset(0.6.dp.toPx(), 1.2.dp.toPx()),
+                size = size,
+                cornerRadius = CornerRadius(geometry.safeRadius),
+                style = Stroke(spread * 2f),
+              )
+            }
+          }
+        }
+      }
+    }
     .clip(shape)
     .drawWithCache {
       val radius = cornerRadius.toPx().coerceAtMost(minOf(size.width, size.height) / 2f)
+      val geometry = GlassSurfacePolicy.geometry(size.width, size.height, radius)
+      // This is deliberately a canvas clip around the complete material pass. The
+      // hardware outline/clip alone did not constrain sampled pixels reliably on
+      // affected devices (notably the settings inset panel).
+      val panePath = Path().apply {
+        addRoundRect(androidx.compose.ui.geometry.RoundRect(
+          rect = Rect(0f, 0f, geometry.width, geometry.height),
+          cornerRadius = CornerRadius(geometry.safeRadius),
+        ))
+      }
       val paint = AndroidPaint(AndroidPaint.ANTI_ALIAS_FLAG or AndroidPaint.FILTER_BITMAP_FLAG)
       val matrix = Matrix()
       var lastImage: ImageBitmap? = null
       var imageShader: BitmapShader? = null
+      val light = GlassSurfacePolicy.TopLeftLight
       val rim = Brush.linearGradient(listOf(
-        Color.White.copy(alpha = (0.10f + glow * 0.30f + tuning.depth * 0.025f).coerceAtMost(1f)),
-        Color.White.copy(alpha = 0.04f),
-        Color.White.copy(alpha = 0.06f + glow * 0.20f + tuning.depth * 0.015f),
-      ))
+        Color.White.copy(alpha = optics.rimHighlight),
+        Color.White.copy(alpha = 0.035f),
+        Color.Black.copy(alpha = optics.rimShade),
+      ), start = Offset(size.width * (1f + light.x) / 2f, size.height * (1f + light.y) / 2f),
+        end = Offset(size.width * (1f - light.x) / 2f, size.height * (1f - light.y) / 2f))
       onDrawBehind {
+        clipPath(panePath) {
         val scene = backdrop?.value
         if (scene != null && scene.boundsInWindow.width > 0f && scene.boundsInWindow.height > 0f) {
           if (scene.image !== lastImage) {
@@ -292,7 +347,8 @@ fun Modifier.liquidGlassPane(
               shader.setFloatUniform("imageSize", scene.image.width.toFloat(), scene.image.height.toFloat())
               shader.setFloatUniform("radius", radius)
               val lensAllowed = scene.refractionEnabled && size.minDimension <= 128.dp.toPx() && size.maxDimension <= 512.dp.toPx()
-              shader.setFloatUniform("strength", if (lensAllowed) 4.dp.toPx() * tuning.refraction else 0f)
+              shader.setFloatUniform("strength", if (lensAllowed) 4.dp.toPx() *
+                GlassSurfacePolicy.refractionStrength(tuning.refraction, reducedMotion, highContrast) else 0f)
               shader.setFloatUniform("frost", 10.dp.toPx() * tuning.frost)
               paint.shader = shader
             }.isSuccess
@@ -310,32 +366,21 @@ fun Modifier.liquidGlassPane(
           }
         }
         // Film guarantees readable controls, even when sampling is intentionally unavailable.
-        drawRoundRect(tint.copy(alpha = alpha * if (scene == null) 0.60f else 0.42f),
+        drawRoundRect(tint.copy(alpha = GlassSurfacePolicy.filmAlpha(
+          alpha * if (scene == null) 0.60f else 0.42f, highContrast)),
           cornerRadius = CornerRadius(radius))
-        drawRoundRect(Brush.verticalGradient(listOf(Color.White.copy(alpha = glow * 0.18f + tuning.depth * 0.025f),
-          Color.Transparent, Color.Black.copy(alpha = 0.04f + tuning.depth * 0.035f))), cornerRadius = CornerRadius(radius))
+        drawRoundRect(Brush.verticalGradient(listOf(
+          Color.White.copy(alpha = optics.bodyHighlight),
+          Color.Transparent,
+          Color.Black.copy(alpha = optics.bodyShade))), cornerRadius = CornerRadius(radius))
         if (drawRim) {
-          drawRoundRect(rim, cornerRadius = CornerRadius(radius), style = Stroke(1.dp.toPx()))
-          if (tuning.depth > 0f && size.minDimension > 4.dp.toPx()) {
-            val inset = 1.5.dp.toPx()
-            drawRoundRect(
-              brush = Brush.verticalGradient(listOf(Color.White.copy(alpha = 0.035f * tuning.depth),
-                Color.Transparent, Color.Black.copy(alpha = 0.045f * tuning.depth))),
-              topLeft = Offset(inset, inset), size = androidx.compose.ui.geometry.Size(size.width - inset * 2, size.height - inset * 2),
-              cornerRadius = CornerRadius((radius - inset).coerceAtLeast(0f)), style = Stroke(1.dp.toPx()),
-            )
-          }
-          // A subtle lower inner rim gives the surface convexity without leaking
-          // outside the rounded clip or producing a second container layer.
-          if (tuning.depth > 0f) {
-            drawRoundRect(
-              color = Color.Black.copy(alpha = 0.035f * tuning.depth),
-              topLeft = Offset(0.7.dp.toPx(), 0.9.dp.toPx()),
-              size = androidx.compose.ui.geometry.Size(size.width - 1.4.dp.toPx(), size.height - 1.8.dp.toPx()),
-              cornerRadius = CornerRadius((radius - 0.8.dp.toPx()).coerceAtLeast(0f)),
-              style = Stroke(0.8.dp.toPx()),
-            )
-          }
+          // A single geometry-matched contour supplies the bright upper face
+          // and lower thickness lip. No second inset rectangle or outline.
+          if (highContrast) drawRoundRect(contrastRim, cornerRadius = CornerRadius(radius),
+            style = Stroke(optics.rimWidthDp.dp.toPx()))
+          else drawRoundRect(rim, cornerRadius = CornerRadius(radius),
+            style = Stroke(optics.rimWidthDp.dp.toPx()))
+        }
         }
       }
     }
