@@ -18,6 +18,7 @@ class PlayerSheetSymmetryTest(unittest.TestCase):
         self.assertIn("buttons.chunked(PlayerControlGridPolicy.columnCount)", drawer)
         self.assertIn("Modifier.weight(1f)", drawer)
         self.assertIn("PlayerControlGridPolicy.columnCount", drawer)
+        self.assertNotIn("ExperimentalLayoutApi", drawer)
 
     def test_sheet_and_scroll_body_are_clipped_and_bounded(self):
         sheet = read("presentation/components/PlayerSheet.kt")
@@ -25,6 +26,7 @@ class PlayerSheetSymmetryTest(unittest.TestCase):
         self.assertIn(".clip(sheetShape)", sheet)
         self.assertIn(".heightIn(max = panelMaxHeight)", panel)
         self.assertIn(".fillMaxHeight()", panel)
+        self.assertIn("import androidx.compose.foundation.layout.fillMaxHeight", panel)
         self.assertIn("Column(modifier = Modifier.fillMaxSize())", panel)
         self.assertIn(".verticalScroll(rememberScrollState())", panel)
 

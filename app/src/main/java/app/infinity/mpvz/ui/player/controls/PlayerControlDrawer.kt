@@ -223,7 +223,6 @@ private fun PlayerControlEdgeHandle(
   }
 }
 
-@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun PlayerControlPanel(
   buttons: List<PlayerButton>,
