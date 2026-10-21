@@ -689,6 +689,7 @@ data class PlaylistDetailScreen(
               } else null,
               selectionManager = selectionManager,
               isM3uPlaylist = playlist?.isM3uPlaylist == true,
+              isRadio = isRadioM3uPlaylist,
               isGridMode = isM3UGrid,
               isAudio = playlist?.isAudio == true || videoItems.any { it.video.isAudio },
               isReorderMode = isReorderMode,
@@ -904,6 +905,7 @@ private fun PlaylistVideoListContent(
   listState: androidx.compose.foundation.lazy.LazyListState,
   modifier: Modifier = Modifier,
   isM3uPlaylist: Boolean = false,
+  isRadio: Boolean = false,
   isAudio: Boolean = false,
   isGridMode: Boolean = false,
 ) {
@@ -1067,7 +1069,7 @@ private fun PlaylistVideoListContent(
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
           ) {
-            gridItems(filteredVideoItems, key = { it.playlistItem.id }) { item ->
+            gridItems(videoItems, key = { it.playlistItem.id }) { item ->
               M3UVideoCard(
                 title = item.video.displayName,
                 url = item.video.path,
@@ -1083,7 +1085,7 @@ private fun PlaylistVideoListContent(
                 isFavorite = item.playlistItem.isFavorite,
                 video = item.video,
                 isGridMode = true,
-                isRadio = isRadioM3uPlaylist,
+                isRadio = isRadio,
                 modifier = Modifier.fillMaxWidth(),
               )
             }
@@ -1095,11 +1097,11 @@ private fun PlaylistVideoListContent(
             contentPadding = PaddingValues(start = 8.dp, end = 8.dp),
           ) {
           items(
-            count = filteredVideoItems.size,
-            key = { index -> filteredVideoItems[index].playlistItem.id },
+            count = videoItems.size,
+            key = { index -> videoItems[index].playlistItem.id },
           ) { index ->
-            ReorderableItem(reorderableLazyListState, key = filteredVideoItems[index].playlistItem.id) {
-              val item = filteredVideoItems[index]
+            ReorderableItem(reorderableLazyListState, key = videoItems[index].playlistItem.id) {
+              val item = videoItems[index]
 
               val progressPercentage =
                 if (item.playlistItem.lastPosition > 0 && item.video.duration > 0) {
@@ -1127,7 +1129,7 @@ private fun PlaylistVideoListContent(
                     isSelected = selectionManager.isSelected(item),
                     isRecentlyPlayed = item.playlistItem.id == mostRecentlyPlayedItem?.playlistItem?.id,
                     isFavorite = item.playlistItem.isFavorite,
-                    isRadio = isRadioM3uPlaylist,
+                    isRadio = isRadio,
                     video = item.video,
                     isGridMode = false,
                     modifier = Modifier.weight(1f),

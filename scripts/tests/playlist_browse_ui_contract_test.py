@@ -20,11 +20,22 @@ class PlaylistBrowseContractTest(unittest.TestCase):
         self.assertIn("categoryCounts", policy)
         self.assertIn("HashMap", policy)
         self.assertIn("remember(m3uFilteredItems, isSearching, searchQuery)", DETAIL)
-        self.assertIn("gridItems(filteredVideoItems", DETAIL)
+        self.assertIn("videoItems = filteredVideoItems", DETAIL)
         self.assertIn("categoryCounts(videoItems, categories)", DETAIL)
         self.assertIn("val videos = remember(videoItems)", DETAIL)
         self.assertIn("val favoriteStreamCount = remember(videoItems)", DETAIL)
         self.assertIn("favoriteCount = favoriteStreamCount", DETAIL)
+
+    def test_list_and_grid_use_declared_child_scope_parameters(self):
+        body = function("PlaylistVideoListContent")
+        self.assertIn("videoItems: List<PlaylistVideoItem>", body)
+        self.assertIn("isRadio: Boolean = false", body)
+        self.assertNotIn("filteredVideoItems", body)
+        self.assertNotIn("isRadioM3uPlaylist", body)
+        self.assertIn("gridItems(videoItems", body)
+        self.assertIn("count = videoItems.size", body)
+        self.assertIn("key = { index -> videoItems[index].playlistItem.id }", body)
+        self.assertEqual(2, body.count("isRadio = isRadio,"))
 
     def test_three_standalone_dialog_roots_are_individually_glassed(self):
         for name in ("IptvSettingsDialog", "CreateIptvPlaylistDialog", "StreamUrlDialog"):
