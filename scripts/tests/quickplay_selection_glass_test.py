@@ -12,6 +12,8 @@ class QuickPlaySelectionGlassTest(unittest.TestCase):
                          'recentlyplayed/RecentlyPlayedScreen.kt', 'music/MusicLibraryContent.kt',
                          'medialibrary/MediaLibraryContent.kt', 'jellyfin/JellyfinContent.kt'):
             text = (BASE / relative).read_text()
+            self.assertIn('import app.infinity.mpvz.ui.preferences.components.settingsGlassSurface', text, relative)
+            self.assertIn('import app.infinity.mpvz.ui.browser.fab.quickPlayFabContainerColor', text, relative)
             calls = text.split('ToggleFloatingActionButton(')[1:]
             self.assertTrue(calls, relative)
             for call in calls:
