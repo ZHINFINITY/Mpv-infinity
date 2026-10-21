@@ -264,10 +264,10 @@ class ThumbnailRepository(
     }
 
     val key = thumbnailKey(video, widthPx, heightPx)
-    synchronized(memoryCache) { memoryCache.get(key) }?.let { return it }
-    // Full-size eviction must not blank a returning lazy row. Paint the bounded preview
-    // immediately; the row restores full quality from disk only after scrolling settles.
-    return synchronized(previewMemoryCache) { previewMemoryCache.get(previewKey(video)) }
+    // Touch both LRU tiers on reuse, not just the full-size entry. Retention follows
+    // recently viewed content rather than only the original generation order.
+    val preview = synchronized(previewMemoryCache) { previewMemoryCache.get(previewKey(video)) }
+    return synchronized(memoryCache) { memoryCache.get(key) } ?: preview
   }
 
   private fun previewKey(video: Video): String =
@@ -277,8 +277,9 @@ class ThumbnailRepository(
     video.path, video.uri.toString(), video.size, video.dateModified, video.duration,
   )
 
-  private suspend fun retainVideoPreview(video: Video, bitmap: Bitmap) {
-    val key = previewKey(video)
+  private suspend fun retainVideoPreview(video: Video, bitmap: Bitmap) = retainPreview(previewKey(video), bitmap)
+
+  private suspend fun retainPreview(key: String, bitmap: Bitmap) {
     synchronized(previewMemoryCache) { previewMemoryCache.get(key) }?.let { return }
     val dimensions = ThumbnailCachePolicy.previewSize(bitmap.width, bitmap.height) ?: return
     val preview = if (dimensions.first == bitmap.width && dimensions.second == bitmap.height) bitmap else {
@@ -1124,12 +1125,10 @@ class ThumbnailRepository(
       val identity = networkThumbnailIdentity(path, connection, fileSize, lastModified)
       val memKey = networkThumbnailMemoryKey(identity, widthPx, heightPx)
       synchronized(memoryCache) { memoryCache.get(memKey) }?.let { return@withContext it }
-      ongoingOperations[memKey]?.let { return@withContext it.await() }
-
-      val candidate =
-        async(start = CoroutineStart.LAZY) {
+      thumbnailRequests.getOrLoad(memKey) {
+          synchronized(memoryCache) { memoryCache.get(memKey) }?.let { return@getOrLoad it }
           if (!isHttpUrl(path)) {
-            return@async getNonHttpNetworkThumbnail(
+            return@getOrLoad getNonHttpNetworkThumbnail(
               path = path,
               connection = connection,
               widthPx = widthPx,
@@ -1142,14 +1141,16 @@ class ThumbnailRepository(
 
           if (hasRecentNetworkThumbnailFailure(identity)) {
             android.util.Log.d("ThumbnailRepository", "Skipping network thumbnail (previously failed): $path")
-            return@async null
+            return@getOrLoad null
           }
 
           val diskKey = networkThumbnailDiskKey(identity)
           readBitmapFromDisk(diskKey, network = true, requestedWidthPx = widthPx, requestedHeightPx = heightPx)?.let { bitmap ->
             val scaled = scaleBitmap(bitmap, widthPx, heightPx)
+            currentCoroutineContext().ensureActive()
             synchronized(memoryCache) { memoryCache.put(memKey, scaled) }
-            return@async scaled
+            retainPreview(networkPreviewKey(identity), scaled)
+            return@getOrLoad scaled
           }
 
           val strategy =
@@ -1166,9 +1167,11 @@ class ThumbnailRepository(
               val scaled = scaleBitmap(bitmap, widthPx, heightPx)
               networkThumbnailFailedAt.remove(identity)
               writeBitmapToDisk(diskKey, scaled, network = true)
+              currentCoroutineContext().ensureActive()
               synchronized(memoryCache) { memoryCache.put(memKey, scaled) }
+              retainPreview(networkPreviewKey(identity), scaled)
               _thumbnailReadyKeys.tryEmit(memKey)
-              return@async scaled
+              return@getOrLoad scaled
             }
           }
           val bitmap =
@@ -1186,24 +1189,18 @@ class ThumbnailRepository(
           if (bitmap == null) {
             android.util.Log.w("ThumbnailRepository", "All strategies failed for network stream $path")
             networkThumbnailFailedAt[identity] = SystemClock.elapsedRealtime()
-            return@async null
+            return@getOrLoad null
           }
 
           networkThumbnailFailedAt.remove(identity)
           writeBitmapToDisk(diskKey, bitmap, network = true)
+          currentCoroutineContext().ensureActive()
           synchronized(memoryCache) { memoryCache.put(memKey, bitmap) }
+          retainPreview(networkPreviewKey(identity), bitmap)
           _thumbnailReadyKeys.tryEmit(memKey)
           bitmap
         }
 
-      val operation =
-        ongoingOperations.putIfAbsent(memKey, candidate)?.also {
-          candidate.cancel()
-        } ?: candidate.also { owned ->
-          owned.invokeOnCompletion { ongoingOperations.remove(memKey, owned) }
-          owned.start()
-        }
-      operation.await()
     }
 
   suspend fun getThumbnailForNetworkSource(
@@ -1244,7 +1241,9 @@ class ThumbnailRepository(
     // Disk cache hit
     readBitmapFromDisk(diskKey, network = true, requestedWidthPx = widthPx, requestedHeightPx = heightPx)?.let { bitmap ->
       val scaled = scaleBitmap(bitmap, widthPx, heightPx)
+      currentCoroutineContext().ensureActive()
       synchronized(memoryCache) { memoryCache.put(memKey, scaled) }
+      retainPreview(networkPreviewKey(identity), scaled)
       return scaled
     }
 
@@ -1292,7 +1291,11 @@ class ThumbnailRepository(
     // Write to disk cache
     writeBitmapToDisk(diskKey, bitmap, network = true)
 
+    currentCoroutineContext().ensureActive()
+
     synchronized(memoryCache) { memoryCache.put(memKey, bitmap) }
+
+    retainPreview(networkPreviewKey(identity), bitmap)
     _thumbnailReadyKeys.tryEmit(memKey)
     return bitmap
   }
@@ -1486,6 +1489,25 @@ class ThumbnailRepository(
       proxy.unregisterStream(streamId)
     }
   }
+
+  /** Pure memory lookup for a returning remote lazy row; never touches disk, DB or proxy. */
+  fun getThumbnailForNetworkPathFromMemory(
+    path: String,
+    widthPx: Int,
+    heightPx: Int,
+    connection: NetworkConnection? = null,
+    fileSize: Long = -1L,
+    lastModified: Long = 0L,
+  ): Bitmap? {
+    if (!appearancePreferences.showNetworkThumbnails.get()) return null
+    val identity = networkThumbnailIdentity(path, connection, fileSize, lastModified)
+    val key = networkThumbnailMemoryKey(identity, widthPx, heightPx)
+    val preview = synchronized(previewMemoryCache) { previewMemoryCache.get(networkPreviewKey(identity)) }
+    return synchronized(memoryCache) { memoryCache.get(key) } ?: preview
+  }
+
+  private fun networkPreviewKey(identity: String): String =
+    "network-preview|$identity|${thumbnailModeKey()}|${thumbnailQualityKey()}"
 
   /** The memory-cache key used by [getThumbnailForNetworkPath]. */
   fun thumbnailKeyForNetworkPath(

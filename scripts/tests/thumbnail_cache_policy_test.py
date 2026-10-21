@@ -30,6 +30,9 @@ class ThumbnailCacheContracts(unittest.TestCase):
         self.assertIn('candidate.invokeOnCompletion', owner)
         self.assertIn('thumbnailRequests = ThumbnailRequestCoalescer<String, Bitmap?>(repositoryScope', repo)
         self.assertIn('thumbnailRequests.getOrLoad(key)', repo)
+        self.assertIn('thumbnailRequests.getOrLoad(memKey)', repo)
+        self.assertNotIn('ongoingOperations', repo)
+        self.assertNotIn('CoroutineStart', repo)
         self.assertIn('thumbnailRequests.cancelAll()', repo)
 
     def test_memory_peeks_and_previews_survive_lazy_row_recreation_without_io(self):
@@ -53,6 +56,18 @@ class ThumbnailCacheContracts(unittest.TestCase):
         self.assertEqual(2, video.count('if (!allowThumbnailLoading || !showThumbnails) return@LaunchedEffect'))
         self.assertIn('else thumbnailRepository.getCachedThumbnail(video, resolvedThumbWidthPx, resolvedThumbHeightPx)', video)
         self.assertIn('else thumbnailRepository.getCachedThumbnail(video, thumbWidthPx, thumbHeightPx)', video)
+
+    def test_remote_rows_reuse_memory_and_never_replace_a_painted_image_with_null(self):
+        repo = source('domain/thumbnail/ThumbnailRepository.kt')
+        remote = source('ui/browser/cards/NetworkVideoCard.kt')
+        self.assertIn('getThumbnailForNetworkPathFromMemory(', remote)
+        self.assertNotIn('mutableStateOf<Bitmap?>(null)', remote)
+        self.assertEqual(5, repo.count('retainPreview(networkPreviewKey(identity),'))
+        self.assertIn('if (loaded != null) thumbnail = loaded', remote)
+        self.assertIn('if (loaded != null) {', remote)
+        peek = repo[repo.index('  fun getThumbnailForNetworkPathFromMemory('):repo.index('  private fun networkPreviewKey')]
+        for forbidden in ('readBitmapFromDisk', 'withContext', 'networkRepository.', 'getNonHttpNetworkThumbnail'):
+            self.assertNotIn(forbidden, peek)
 
     def test_list_branch_cannot_reference_grid_only_dimensions(self):
         video = source('ui/browser/cards/VideoCard.kt')
