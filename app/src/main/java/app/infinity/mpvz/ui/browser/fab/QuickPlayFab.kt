@@ -39,6 +39,8 @@ import app.infinity.mpvz.ui.icons.Icon
 import app.infinity.mpvz.ui.icons.Icons
 import app.infinity.mpvz.utils.history.RecentlyPlayedOps
 import app.infinity.mpvz.utils.media.MediaUtils
+import app.infinity.mpvz.ui.preferences.components.settingsGlassContainerColor
+import app.infinity.mpvz.ui.preferences.components.settingsGlassSurface
 import kotlinx.coroutines.launch
 
 import app.infinity.mpvz.preferences.AppearancePreferences
@@ -119,11 +121,12 @@ fun QuickPlayFab(
       },
       modifier = Modifier
         .padding(bottom = bottomPadding)
+        .settingsGlassSurface(cornerRadius = 20.dp)
         .graphicsLayer {
           scaleX = scale
           scaleY = scale
         },
-      containerColor = MaterialTheme.colorScheme.primaryContainer,
+      containerColor = settingsGlassContainerColor(MaterialTheme.colorScheme.primaryContainer),
       contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
       elevation = FloatingActionButtonDefaults.elevation(
         defaultElevation = 6.dp,

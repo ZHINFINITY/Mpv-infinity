@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SearchBar
 import androidx.compose.material3.SearchBarDefaults
 import androidx.compose.runtime.Composable
@@ -20,6 +21,8 @@ import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import app.infinity.mpvz.ui.preferences.components.settingsGlassContainerColor
+import app.infinity.mpvz.ui.preferences.components.settingsGlassSurface
 
 /**
  * Material 3 search bar used inline at the top of list screens.
@@ -70,8 +73,11 @@ fun InlineSearchBar(
     modifier =
       Modifier
         .windowInsetsPadding(windowInsets)
-        .then(modifier),
+        .then(modifier.settingsGlassSurface(cornerRadius = 28.dp)),
     shape = shape,
+    colors = SearchBarDefaults.colors(
+      containerColor = settingsGlassContainerColor(MaterialTheme.colorScheme.surfaceContainerHigh),
+    ),
     tonalElevation = tonalElevation,
     shadowElevation = shadowElevation,
     windowInsets = WindowInsets(0.dp),

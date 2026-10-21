@@ -271,6 +271,7 @@ fun PlayerControls(
   }
   val decoderPreferences = koinInject<DecoderPreferences>()
   val playbackEngine by decoderPreferences.playbackEngine.collectAsState()
+  val frameInterpolationEnabled by decoderPreferences.mpvFlowFrameInterpolation.collectAsState()
   val showSystemStatusBar by playerPreferences.showSystemStatusBar.collectAsState()
   val showSystemNavigationBar by playerPreferences.showSystemNavigationBar.collectAsState()
   val showControlsDrawer by playerPreferences.showControlsDrawer.collectAsState()
@@ -2249,6 +2250,7 @@ fun PlayerControls(
         isAmbientEnabled,
         backgroundPlaybackEnabled,
         statisticsPage,
+        frameInterpolationEnabled,
       ) {
         buildSet {
           if (isSpeedNonOne) add(PlayerButton.PLAYBACK_SPEED)
@@ -2262,6 +2264,7 @@ fun PlayerControls(
           if (isAmbientEnabled) add(PlayerButton.AMBIENT_MODE)
           if (backgroundPlaybackEnabled) add(PlayerButton.BACKGROUND_PLAYBACK)
           if (statisticsPage == 6) add(PlayerButton.TIME_NETWORK)
+          if (frameInterpolationEnabled) add(PlayerButton.FRAME_INTERPOLATION)
         }
       }
 

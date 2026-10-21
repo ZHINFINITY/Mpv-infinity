@@ -109,11 +109,16 @@ class LiquidGlassContracts(unittest.TestCase):
             self.assertNotIn("androidx.compose.material3.Switch", source, path.name)
             self.assertNotIn("androidx.compose.material3.Slider\n", source, path.name)
 
-    def test_audio_backdrops_use_artwork_not_extra_fake_animations(self):
+    def test_audio_backdrops_use_only_palette_colors_not_artwork_or_fake_animations(self):
         audio = (JAVA / "ui/player/controls/AudioPlayerControls.kt").read_text()
         mini = (JAVA / "ui/browser/components/AudioMiniPlayer.kt").read_text()
-        self.assertIn("AudioGlassScene", audio)
-        self.assertIn("LocalLiquidGlassBackdrop provides frame", audio)
+        scene = (JAVA / "ui/player/controls/AudioPaletteGlassScene.kt").read_text()
+        self.assertIn("AudioPaletteGlassScene", audio)
+        self.assertIn("topArgb = visualizerPalette.primary", audio)
+        self.assertIn("LocalLiquidGlassBackdrop provides frame", scene)
+        self.assertIn("AudioPalettePolicy.gradientRows(topArgb, bottomArgb)", scene)
+        self.assertNotIn("albumArtBitmap", scene)
+        self.assertNotIn("bitmap: Bitmap", scene)
         self.assertNotIn("AudioArtworkBackdrop", audio)
         self.assertIn("albumArtBitmap", audio)
         self.assertEqual(2, audio.count("if (isAudiobook) audiobookModeButtons() else {"))

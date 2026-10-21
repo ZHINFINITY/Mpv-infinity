@@ -25,8 +25,6 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -311,40 +309,37 @@ private fun PlayerControlPanelHeader(onDismissRequest: () -> Unit) {
   }
 }
 
-@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun PlayerControlPanelContent(
   buttons: List<PlayerButton>,
   activeButtons: Set<PlayerButton>,
   renderButton: @Composable (PlayerButton) -> Unit,
 ) {
-  BoxWithConstraints(
+  Column(
     modifier =
       Modifier
         .fillMaxWidth()
         .padding(start = 14.dp, end = 14.dp, bottom = 20.dp),
+    verticalArrangement = Arrangement.spacedBy(PanelTileSpacing),
   ) {
-    // Floor to whole pixels: Dp rounding at some densities made 3 tiles + gaps
-    // exceed the row width, wrapping the grid to 2 columns (issue #590).
-    val density = LocalDensity.current
-    val tileWidth =
-      with(density) {
-        val availablePx = (maxWidth - PanelTileSpacing * (PanelColumnCount - 1)).toPx()
-        kotlin.math.floor(availablePx / PanelColumnCount).toDp()
-      }
-    FlowRow(
-      modifier = Modifier.fillMaxWidth(),
-      horizontalArrangement = Arrangement.spacedBy(PanelTileSpacing),
-      verticalArrangement = Arrangement.spacedBy(PanelTileSpacing),
-      maxItemsInEachRow = PanelColumnCount,
-    ) {
-      buttons.forEach { button ->
-        PlayerControlTile(
-          button = button,
-          active = button in activeButtons,
-          renderButton = renderButton,
-          modifier = Modifier.width(tileWidth),
-        )
+    // Fixed rows avoid fractional-width wrap decisions. Every row has
+    // equal weighted cells, so the third column cannot collapse into a gap.
+    buttons.chunked(PlayerControlGridPolicy.columnCount).forEach { rowButtons ->
+      Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(PanelTileSpacing),
+      ) {
+        rowButtons.forEach { button ->
+          PlayerControlTile(
+            button = button,
+            active = button in activeButtons,
+            renderButton = renderButton,
+            modifier = Modifier.weight(1f),
+          )
+        }
+        repeat(PlayerControlGridPolicy.columnCount - rowButtons.size) {
+          Spacer(Modifier.weight(1f))
+        }
       }
     }
   }

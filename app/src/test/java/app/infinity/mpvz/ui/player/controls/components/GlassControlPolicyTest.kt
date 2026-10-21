@@ -22,4 +22,10 @@ class GlassControlPolicyTest {
     assertTrue(GlassControlPolicy.shadowAlpha(1f, false) < GlassControlPolicy.shadowAlpha(1f, true))
     assertEquals(0.22f, GlassControlPolicy.thumbBorderAlpha(false, true), 0f)
   }
+
+  @Test fun innerRimIsSmallAndBounded() {
+    assertEquals(0f, GlassControlPolicy.innerRimAlpha(-1f), 0f)
+    assertEquals(0.045f, GlassControlPolicy.innerRimAlpha(1f), 0f)
+    assertEquals(0.09f, GlassControlPolicy.innerRimAlpha(8f), 0f)
+  }
 }

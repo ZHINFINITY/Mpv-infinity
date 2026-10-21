@@ -78,6 +78,7 @@ import app.infinity.mpvz.ui.player.Sheets
 import app.infinity.mpvz.ui.player.VideoAspect
 import app.infinity.mpvz.ui.player.controls.components.AbLoopIcon
 import app.infinity.mpvz.ui.player.controls.components.ControlsButton
+import app.infinity.mpvz.ui.player.controls.components.FrameInterpolationPlayerButton
 import app.infinity.mpvz.ui.player.controls.components.playerGlassPane
 import app.infinity.mpvz.ui.player.controls.components.CurrentChapter
 import app.infinity.mpvz.ui.theme.controlColor as defaultControlColor
@@ -365,6 +366,17 @@ fun RenderPlayerButton(
         }
       }
     }
+
+    PlayerButton.FRAME_INTERPOLATION,
+    PlayerButton.FRAME_INTERPOLATION_FPS,
+    -> FrameInterpolationPlayerButton(
+      targetFpsAction = button == PlayerButton.FRAME_INTERPOLATION_FPS,
+      activity = activity,
+      onOpenSheet = onOpenSheet,
+      buttonSize = buttonSize,
+      compact = compact,
+      contentColor = if (hideBackground) controlColor else MaterialTheme.colorScheme.onSurface,
+    )
 
     PlayerButton.HDR_MODE -> {
       val isHdrEnabled by viewModel.isHdrScreenOutputEnabled.collectAsState()

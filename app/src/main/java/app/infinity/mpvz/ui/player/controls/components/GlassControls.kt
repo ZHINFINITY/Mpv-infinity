@@ -172,12 +172,20 @@ private fun Modifier.glassTrackOptics(
         size = bounds,
         cornerRadius = androidx.compose.ui.geometry.CornerRadius(corner, corner),
       )
-      // A single upper rim avoids the old full-outline/double-outline appearance.
+      // A single upper rim plus a lower inner edge gives the track real depth;
+      // Material still owns the thumb position, touch target, semantics and RTL.
       drawRoundRect(
         color = Color.White.copy(alpha = highlight * 0.28f),
         topLeft = androidx.compose.ui.geometry.Offset(inset, top + 0.5.dp.toPx()),
         size = androidx.compose.ui.geometry.Size(bounds.width, (trackHeight / 2f).coerceAtLeast(1f)),
         cornerRadius = androidx.compose.ui.geometry.CornerRadius(corner, corner),
+        style = Stroke(0.7.dp.toPx()),
+      )
+      drawRoundRect(
+        color = Color.Black.copy(alpha = GlassControlPolicy.innerRimAlpha(depth)),
+        topLeft = androidx.compose.ui.geometry.Offset(inset + 0.5.dp.toPx(), top + 0.6.dp.toPx()),
+        size = androidx.compose.ui.geometry.Size((bounds.width - 1.dp.toPx()).coerceAtLeast(1f), (trackHeight - 1.2.dp.toPx()).coerceAtLeast(1f)),
+        cornerRadius = androidx.compose.ui.geometry.CornerRadius((corner - 0.4.dp.toPx()).coerceAtLeast(0f)),
         style = Stroke(0.7.dp.toPx()),
       )
     }
@@ -194,20 +202,35 @@ private fun Modifier.glassThumbOptics(
   onDrawBehind {
     drawRoundRect(
       brush = Brush.verticalGradient(
-        listOf(Color.White.copy(alpha = highlight * 0.38f), accent.copy(alpha = 0.10f), Color.Black.copy(alpha = shadow)),
+        listOf(Color.White.copy(alpha = highlight * 0.72f), accent.copy(alpha = 0.08f), Color.Black.copy(alpha = shadow)),
+      ),
+      cornerRadius = androidx.compose.ui.geometry.CornerRadius(radius, radius),
+    )
+    // A single convex highlight follows the full knob outline. The old half-height
+    // round-rect produced another tiny capsule inside it, making the thumb look faceted.
+    drawRoundRect(
+      brush = Brush.radialGradient(
+        colors = listOf(Color.White.copy(alpha = highlight * 0.40f), Color.Transparent),
+        center = androidx.compose.ui.geometry.Offset(size.width * 0.30f, size.height * 0.22f),
+        radius = radius * 1.7f,
       ),
       cornerRadius = androidx.compose.ui.geometry.CornerRadius(radius, radius),
     )
     drawRoundRect(
-      color = Color.White.copy(alpha = highlight * 0.60f),
-      size = androidx.compose.ui.geometry.Size(size.width, size.height / 2f),
-      cornerRadius = androidx.compose.ui.geometry.CornerRadius(radius, radius),
-      style = Stroke(0.8.dp.toPx()),
-    )
-    drawRoundRect(
-      color = accent.copy(alpha = border),
+      brush = Brush.verticalGradient(listOf(
+        Color.White.copy(alpha = highlight * 0.88f),
+        accent.copy(alpha = border * 0.35f),
+        Color.Black.copy(alpha = shadow),
+      )),
       cornerRadius = androidx.compose.ui.geometry.CornerRadius(radius, radius),
       style = Stroke(1.dp.toPx()),
+    )
+    drawRoundRect(
+      color = Color.Black.copy(alpha = GlassControlPolicy.innerRimAlpha(shadow / 0.12f)),
+      topLeft = androidx.compose.ui.geometry.Offset(0.8.dp.toPx(), 0.8.dp.toPx()),
+      size = androidx.compose.ui.geometry.Size((size.width - 1.6.dp.toPx()).coerceAtLeast(1f), (size.height - 1.6.dp.toPx()).coerceAtLeast(1f)),
+      cornerRadius = androidx.compose.ui.geometry.CornerRadius((radius - 0.8.dp.toPx()).coerceAtLeast(0f)),
+      style = Stroke(0.7.dp.toPx()),
     )
   }
 }

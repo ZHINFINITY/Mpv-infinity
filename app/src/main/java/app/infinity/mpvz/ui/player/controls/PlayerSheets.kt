@@ -42,6 +42,7 @@ import app.infinity.mpvz.ui.player.controls.components.sheets.AudioTracksSheet
 import app.infinity.mpvz.ui.player.controls.components.sheets.ChaptersSheet
 import app.infinity.mpvz.ui.player.controls.components.sheets.DecodersSheet
 import app.infinity.mpvz.ui.player.controls.components.sheets.FrameNavigationSheet
+import app.infinity.mpvz.ui.player.controls.components.sheets.FrameInterpolationFpsSheet
 import app.infinity.mpvz.ui.player.controls.components.sheets.MoreSheet
 import app.infinity.mpvz.ui.player.controls.components.sheets.OnlineSubtitleSearchSheet
 import app.infinity.mpvz.ui.player.controls.components.sheets.PlaybackSpeedSheet
@@ -119,6 +120,10 @@ fun PlayerSheets(
 
   when (sheetShown) {
     Sheets.None -> {}
+    Sheets.FrameInterpolationFps -> {
+      val activity = androidx.activity.compose.LocalActivity.current as app.infinity.mpvz.ui.player.PlayerActivity
+      FrameInterpolationFpsSheet(activity = activity, onDismissRequest = onDismissRequest)
+    }
     Sheets.SubtitleTracks -> {
       val subtitlesPicker =
         rememberLauncherForActivityResult(

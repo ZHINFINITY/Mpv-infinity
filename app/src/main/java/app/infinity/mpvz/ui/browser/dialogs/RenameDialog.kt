@@ -43,6 +43,8 @@ import app.infinity.mpvz.preferences.AiPreferences
 import app.infinity.mpvz.repository.ai.AiService
 import app.infinity.mpvz.ui.icons.Icon
 import app.infinity.mpvz.ui.icons.Icons
+import app.infinity.mpvz.ui.preferences.components.settingsGlassContainerColor
+import app.infinity.mpvz.ui.preferences.components.settingsGlassSurface
 import kotlinx.coroutines.launch
 import org.koin.compose.koinInject
 
@@ -92,6 +94,7 @@ fun RenameDialog(
 
   AlertDialog(
     onDismissRequest = onDismiss,
+    modifier = Modifier.settingsGlassSurface(cornerRadius = 28.dp),
     title = {
       Text(
         text = "Rename $itemType",
@@ -223,7 +226,7 @@ fun RenameDialog(
         )
       }
     },
-    containerColor = MaterialTheme.colorScheme.surface,
+    containerColor = settingsGlassContainerColor(MaterialTheme.colorScheme.surface),
     tonalElevation = 6.dp,
     shape = MaterialTheme.shapes.extraLarge,
   )

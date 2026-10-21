@@ -50,6 +50,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import app.infinity.mpvz.domain.network.NetworkConnection
 import app.infinity.mpvz.domain.network.NetworkProtocol
+import app.infinity.mpvz.ui.preferences.components.settingsGlassContainerColor
+import app.infinity.mpvz.ui.preferences.components.settingsGlassSurface
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -101,9 +103,9 @@ fun EditConnectionSheet(
   ModalBottomSheet(
     onDismissRequest = handleDismiss,
     sheetState = sheetState,
-    modifier = modifier,
+    modifier = modifier.settingsGlassSurface(cornerRadius = 28.dp),
     shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
-    containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+    containerColor = settingsGlassContainerColor(MaterialTheme.colorScheme.surfaceContainerLow),
     dragHandle = { BottomSheetDefaults.DragHandle() },
   ) {
     Column(

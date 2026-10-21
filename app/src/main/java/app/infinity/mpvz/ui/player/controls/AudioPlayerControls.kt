@@ -396,6 +396,18 @@ private fun artworkVisualizerPalette(
   )
 }
 
+/** Palette extraction is background work and returns only immutable ARGB colors. */
+private object AudioVisualizerPaletteCache {
+  private const val MAX_ENTRIES = 12
+  private val values = LinkedHashMap<String, VisualizerPalette>(MAX_ENTRIES, 0.75f, true)
+
+  @Synchronized fun get(key: String): VisualizerPalette? = values[key]
+  @Synchronized fun put(key: String, value: VisualizerPalette) {
+    values[key] = value
+    while (values.size > MAX_ENTRIES) values.remove(values.entries.first().key)
+  }
+}
+
 @Composable
 private fun AudioVisualizerViewport(
   style: AudioVisualizerStyle,
@@ -558,42 +570,6 @@ private fun CoverArtCardImage(
         modifier = Modifier.size(64.dp),
       )
     }
-  }
-}
-
-/** One shared artwork reference for audio controls and their separate popup windows. */
-@Composable
-private fun AudioGlassScene(
-  bitmap: Bitmap?,
-  enabled: Boolean,
-  modifier: Modifier,
-  content: @Composable androidx.compose.foundation.layout.BoxScope.() -> Unit,
-) {
-  val host = androidx.compose.ui.platform.LocalView.current
-  val image = remember(bitmap) { bitmap?.asImageBitmap() }
-  var bounds by remember { mutableStateOf(androidx.compose.ui.geometry.Rect.Zero) }
-  val frame = remember(image, bounds, enabled) {
-    val fitted = image?.let { app.infinity.mpvz.ui.theme.GlassScenePolicy.coverBounds(
-      it.width, it.height, bounds.width, bounds.height) }
-    val imageBounds = fitted?.let { androidx.compose.ui.geometry.Rect(
-      bounds.left + it.left, bounds.top + it.top,
-      bounds.left + it.left + it.width, bounds.top + it.top + it.height) }
-    mutableStateOf(if (enabled && image != null && imageBounds != null)
-      app.infinity.mpvz.ui.theme.LiquidGlassFrame(image, imageBounds, refractionEnabled = false) else null)
-  }
-  androidx.compose.runtime.CompositionLocalProvider(
-    app.infinity.mpvz.ui.theme.LocalLiquidGlassBackdrop provides frame,
-  ) {
-    Box(modifier.onGloballyPositioned { coordinates ->
-      val origin = coordinates.localToWindow(Offset.Zero)
-      val inWindow = IntArray(2)
-      val onScreen = IntArray(2)
-      host.getLocationInWindow(inWindow)
-      host.getLocationOnScreen(onScreen)
-      val x = origin.x + onScreen[0] - inWindow[0]
-      val y = origin.y + onScreen[1] - inWindow[1]
-      bounds = androidx.compose.ui.geometry.Rect(x, y, x + coordinates.size.width, y + coordinates.size.height)
-    }, content = content)
   }
 }
 
@@ -965,12 +941,21 @@ fun AudioPlayerControls(
     key2 = palette,
   ) {
     val artwork = albumArtBitmap
+    val paletteKey = AudioPalettePolicy.cacheIdentity(
+      pathOrUri = currentMediaSource?.takeIf { isAudiobook } ?: mediaPath?.takeIf { it.isNotBlank() } ?: currentMediaSource,
+      artworkUri = currentArtworkUri,
+    )
     value =
-      if (artwork == null) {
+      if (artwork == null || paletteKey == null) {
         palette
       } else {
         withContext(Dispatchers.Default) {
-          runCatching { artworkVisualizerPalette(artwork, palette) }.getOrDefault(palette)
+          // Music glass consumes only these true-color tints; artwork never enters
+          // the glass scene or shader.
+          AudioVisualizerPaletteCache.get(paletteKey)
+            ?: runCatching { artworkVisualizerPalette(artwork, palette) }
+              .getOrDefault(palette)
+              .also { AudioVisualizerPaletteCache.put(paletteKey, it) }
         }
       }
   }
@@ -1177,8 +1162,9 @@ fun AudioPlayerControls(
   val standbyVisualizerBoundary = isStandbyActive && isPortrait && showVisualizer
   val visualizerUsesFullTopAndSides = edgeToEdgeVisualizer || standbyVisualizerBoundary
   val controlsSidePadding = if (edgeToEdgeVisualizer) 16.dp else 0.dp
-  AudioGlassScene(
-    bitmap = albumArtBitmap,
+  AudioPaletteGlassScene(
+    topArgb = visualizerPalette.primary,
+    bottomArgb = visualizerPalette.secondary,
     enabled = liquidGlassSurfaces,
     modifier =
       modifier

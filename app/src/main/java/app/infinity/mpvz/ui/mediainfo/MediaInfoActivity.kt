@@ -88,6 +88,8 @@ import app.infinity.mpvz.ui.theme.DarkMode
 import app.infinity.mpvz.ui.theme.MpvInfinityTheme
 import app.infinity.mpvz.utils.clipboard.SafeClipboard
 import app.infinity.mpvz.utils.media.MediaInfoOps
+import app.infinity.mpvz.ui.preferences.components.settingsGlassContainerColor
+import app.infinity.mpvz.ui.preferences.components.settingsGlassSurface
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -124,7 +126,10 @@ class MediaInfoActivity : AppCompatActivity() {
       )
 
       MpvInfinityTheme {
-        Surface {
+        Surface(
+          color = settingsGlassContainerColor(MaterialTheme.colorScheme.background),
+          modifier = Modifier.settingsGlassSurface(cornerRadius = 0.dp),
+        ) {
           MediaInfoScreen(
             onBack = { finish() },
             isDarkMode = isDarkMode,
@@ -302,7 +307,7 @@ class MediaInfoActivity : AppCompatActivity() {
           },
           colors =
             TopAppBarDefaults.topAppBarColors(
-              containerColor = MaterialTheme.colorScheme.surface,
+              containerColor = settingsGlassContainerColor(MaterialTheme.colorScheme.surface),
               titleContentColor = MaterialTheme.colorScheme.onSurface,
             ),
         )
@@ -620,10 +625,13 @@ class MediaInfoActivity : AppCompatActivity() {
     content: @Composable ColumnScope.() -> Unit,
   ) {
     Card(
-      modifier = modifier,
+      modifier = modifier.settingsGlassSurface(cornerRadius = 24.dp),
       shape = RoundedCornerShape(24.dp),
-      colors = CardDefaults.cardColors(containerColor = containerColor),
-      border = BorderStroke(1.dp, borderColor),
+      colors =
+        CardDefaults.cardColors(
+          containerColor = settingsGlassContainerColor(containerColor),
+        ),
+      border = if (settingsGlassContainerColor(containerColor) == Color.Transparent) null else BorderStroke(1.dp, borderColor),
       content = content,
     )
   }

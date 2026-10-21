@@ -9,6 +9,9 @@
   <string name="generic_ok">OK</string>
   <string name="generic_unit_ms">ms</string>
   <string name="generic_disabled">Disabled</string>
+  <string name="player_interpolation_on">On</string>
+  <string name="player_interpolation_off">Off</string>
+  <string name="player_interpolation_target_fps">Target FPS</string>
   <string name="pref_preferences">Preferences</string>
   <string name="pref_appearance_title">Appearance</string>
   <string name="pref_appearance_summary">Dark mode, Material You</string>

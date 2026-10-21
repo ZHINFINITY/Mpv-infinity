@@ -113,6 +113,8 @@ import app.infinity.mpvz.R
 import app.infinity.mpvz.domain.media.model.Video
 import app.infinity.mpvz.ui.icons.Icon
 import app.infinity.mpvz.ui.icons.Icons
+import app.infinity.mpvz.ui.preferences.components.settingsGlassContainerColor
+import app.infinity.mpvz.ui.preferences.components.settingsGlassSurface
 import app.infinity.mpvz.ui.theme.AppShapeScale
 import app.infinity.mpvz.utils.clipboard.SafeClipboard
 import kotlinx.coroutines.Dispatchers
@@ -214,8 +216,8 @@ fun VideoCompressorOverlay(
       ),
   ) {
     Surface(
-      modifier = Modifier.fillMaxSize(),
-      color = MaterialTheme.colorScheme.background,
+      modifier = Modifier.fillMaxSize().settingsGlassSurface(cornerRadius = 0.dp),
+      color = settingsGlassContainerColor(MaterialTheme.colorScheme.background),
     ) {
       AnimatedContent(
         targetState = screen,

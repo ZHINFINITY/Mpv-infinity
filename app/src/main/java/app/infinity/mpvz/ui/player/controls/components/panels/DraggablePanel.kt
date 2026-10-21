@@ -102,7 +102,10 @@ fun DraggablePanel(
           .offset { IntOffset(offsetX.roundToInt(), 0) }
           .onSizeChanged { panelWidth = it.width }
           .widthIn(max = 380.dp)
+          // Establish a finite viewport so the scroll body cannot paint beyond
+          // the panel's rounded root when cards are taller than the sheet.
           .heightIn(max = panelMaxHeight)
+          .fillMaxHeight()
           .liquidGlassPane(glass, opacity, highlight, 24.dp),
       shape = shape ?: MaterialTheme.shapes.extraLarge,
       color = if (glass) Color.Transparent else containerColor ?: colors.containerColor,
@@ -111,7 +114,7 @@ fun DraggablePanel(
       shadowElevation = shadowElevation,
       border = if (glass) null else border,
     ) {
-      Column {
+      Column(modifier = Modifier.fillMaxSize()) {
         // Drag Handle & Indicator
         Box(
           modifier =

@@ -161,18 +161,9 @@ class AppearancePreferences(
     csv: String,
     usedButtons: MutableSet<PlayerButton>,
   ): List<PlayerButton> =
-    csv
-      .splitToSequence(',')
-      .map { it.trim().uppercase() }
-      .mapNotNull { name ->
-        try {
-          PlayerButton.valueOf(name)
-        } catch (_: IllegalArgumentException) {
-          null
-        }
-      }.filter { it != PlayerButton.NONE }
-      .filter { usedButtons.add(it) }
-      .toList()
+    PlayerControlActionPolicy.parse(csv, usedButtons, PlayerButton.NONE) { name ->
+      runCatching { PlayerButton.valueOf(name) }.getOrNull()
+    }
 }
 
 enum class PortraitPlaybackControlsPosition(

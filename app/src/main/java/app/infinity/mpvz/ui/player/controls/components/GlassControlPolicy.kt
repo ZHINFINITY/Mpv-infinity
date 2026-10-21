@@ -15,4 +15,7 @@ object GlassControlPolicy {
 
   fun thumbBorderAlpha(enabled: Boolean, checked: Boolean): Float =
     if (!enabled) 0.22f else if (checked) 0.68f else 0.34f
+
+  /** Small inset edge; never grows into the flat rectangle/card backing. */
+  fun innerRimAlpha(depth: Float): Float = (depth(depth) * 0.045f).coerceIn(0f, 0.09f)
 }

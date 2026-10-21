@@ -231,7 +231,12 @@ fun Modifier.liquidGlassPane(
   val hostView = LocalView.current
   val glow = GlassSurfacePolicy.highlight(if (tuning.overrideMaterial) tuning.highlight else highlight)
   var paneBounds by remember { mutableStateOf(Rect.Zero) }
-  val shape = remember(cornerRadius) { RoundedCornerShape(cornerRadius) }
+  // A large dp radius is commonly used for pills. Keep the shape's radius tied to
+  // the actual local bounds instead of letting a wide control inherit a giant
+  // rectangle-shaped shadow/material layer.
+  val shape = remember(cornerRadius) {
+    if (cornerRadius.value >= 999f) RoundedCornerShape(50) else RoundedCornerShape(cornerRadius)
+  }
   val shader = remember {
     if (Build.VERSION.SDK_INT >= 33) runCatching { RuntimeShader(GLASS_OPTICS) }.getOrNull() else null
   }
@@ -250,7 +255,8 @@ fun Modifier.liquidGlassPane(
         origin.y + coordinates.size.height)
       if (next != paneBounds) paneBounds = next
     }
-    .then(if (drawRim && tuning.depth > 0f) Modifier.shadow(4.dp * tuning.depth, shape, clip = false) else Modifier)
+    // Do not paint an un-clipped outer card shadow: it is the square backing seen
+    // behind decoder/settings panes. Depth is rendered as an inset rim below.
     .clip(shape)
     .drawWithCache {
       val radius = cornerRadius.toPx().coerceAtMost(minOf(size.width, size.height) / 2f)
@@ -317,6 +323,17 @@ fun Modifier.liquidGlassPane(
                 Color.Transparent, Color.Black.copy(alpha = 0.045f * tuning.depth))),
               topLeft = Offset(inset, inset), size = androidx.compose.ui.geometry.Size(size.width - inset * 2, size.height - inset * 2),
               cornerRadius = CornerRadius((radius - inset).coerceAtLeast(0f)), style = Stroke(1.dp.toPx()),
+            )
+          }
+          // A subtle lower inner rim gives the surface convexity without leaking
+          // outside the rounded clip or producing a second container layer.
+          if (tuning.depth > 0f) {
+            drawRoundRect(
+              color = Color.Black.copy(alpha = 0.035f * tuning.depth),
+              topLeft = Offset(0.7.dp.toPx(), 0.9.dp.toPx()),
+              size = androidx.compose.ui.geometry.Size(size.width - 1.4.dp.toPx(), size.height - 1.8.dp.toPx()),
+              cornerRadius = CornerRadius((radius - 0.8.dp.toPx()).coerceAtLeast(0f)),
+              style = Stroke(0.8.dp.toPx()),
             )
           }
         }

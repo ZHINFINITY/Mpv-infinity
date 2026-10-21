@@ -40,12 +40,14 @@ class SceneStabilityContracts(unittest.TestCase):
         self.assertIn('frame.takeIf { eligible }', renderer)
         self.assertIn('GlassScenePolicy.sourceRect(source.width, source.height, aspect())', renderer)
 
-    def test_audio_uses_screen_space_crop_and_large_panes_do_not_refract(self):
-        audio = source('ui/player/controls/AudioPlayerControls.kt')
+    def test_audio_palette_uses_screen_space_bounds_and_large_panes_do_not_refract(self):
+        audio = source('ui/player/controls/AudioPaletteGlassScene.kt')
         renderer = source('ui/theme/LiquidGlassBackdrop.kt')
         surface = source('ui/theme/GlassSurface.kt')
-        self.assertIn('GlassScenePolicy.coverBounds(', audio)
-        self.assertIn('LiquidGlassFrame(image, imageBounds, refractionEnabled = false)', audio)
+        self.assertIn('coordinates.localToWindow(Offset.Zero)', audio)
+        self.assertIn('hostView.getLocationOnScreen(screen)', audio)
+        self.assertIn('LiquidGlassFrame(it, bounds, refractionEnabled = false)', audio)
+        self.assertNotIn('albumArtBitmap', audio)
         self.assertIn('size.minDimension <= 128.dp.toPx()', renderer)
         self.assertIn('size.maxDimension <= 512.dp.toPx()', renderer)
         self.assertIn('if (enabled && backdrop != null && !hasSharedScene)', surface)

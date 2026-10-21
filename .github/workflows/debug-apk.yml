@@ -189,6 +189,13 @@ jobs:
           python3 scripts/tests/radio_playlist_category_test.py
       - name: Test playlist sheet, drawer, native aspect and notification regression wiring
         run: python3 scripts/tests/player_regression_wiring_test.py
+      - name: Test palette-only glass, surface symmetry and customizable interpolation actions
+        run: |
+          python3 scripts/tests/palette_depth_glass_test.py
+          python3 scripts/tests/player_sheet_symmetry_test.py
+          python3 scripts/tests/glass_named_surface_coverage_test.py
+          python3 scripts/tests/player_interpolation_controls_test.py
+          python3 scripts/tests/interpolation_runtime_apply_test.py
       - name: Run Standard arm64 debug unit tests
         if: ${{ inputs.flavor == 'standard' && inputs.target_abi == 'arm64-v8a' }}
         run: ./gradlew testStandardDebugUnitTest -PtargetAbi=arm64-v8a -PmpvFlowMpvBuild=true --stacktrace --no-daemon --max-workers=2

@@ -153,6 +153,8 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.withContext
 import org.koin.android.ext.android.inject
@@ -265,6 +267,11 @@ class PlayerActivity :
       // this guard only after MPV has restored the shared settings and seek position.
     }
   private var engineHandoffJob: Job? = null
+  /** A preference toggle and FPS-sheet commit must never recreate MPV concurrently. */
+  private val interpolationApplyMutex = Mutex()
+  private var interpolationRecreationScheduled = false
+  private var pendingInterpolationRestore: PlaybackPositionRestoreOverride? = null
+  private var pendingInterpolationEngine: Pair<String, PlaybackEngineMode>? = null
   private var manualEngineOverride: Pair<String, PlaybackEngineMode>? = null
   private var manualOrientationOverride = false
   private val engineSelectionRequests = MutableSharedFlow<PlaybackEngineMode>(extraBufferCapacity = 1)
@@ -441,6 +448,79 @@ class PlayerActivity :
 
   override fun nativeSetRepeatMode(repeatMode: RepeatMode) {
     nativeEngine.setRepeatMode(repeatMode)
+  }
+
+  /** Apply newly written interpolation controls to the renderer already playing this item. */
+  fun applyInterpolationPreferencesFromControls() {
+    lifecycleScope.launch {
+      interpolationApplyMutex.withLock {
+        if (!ownsPlaybackSession() || isFinishing || isDestroyed || interpolationRecreationScheduled) return@withLock
+        if (activeEngineMode == PlaybackEngineMode.NATIVE) {
+          // NativeMedia3Engine reads these immutable constructor options only once.
+          // Capture a one-shot load override even when normal resume-position saving is disabled.
+          pendingInterpolationRestore = PlaybackPositionRestoreOverride(
+            positionSeconds = (nativeEngine.positionForPersistenceMs()
+              ?: nativeEngine.snapshot.value.positionMs).coerceAtLeast(0L) / 1000.0,
+            paused = !nativeEngine.currentPlayer.playWhenReady,
+          )
+          pendingInterpolationEngine = activeSaveMediaIdentifier.ifBlank { mediaIdentifier } to PlaybackEngineMode.NATIVE
+          saveVideoPlaybackState(fileName, immediate = true)?.join()
+          interpolationRecreationScheduled = true
+          recreate()
+          return@withLock
+        }
+        if (!mpvInitialized || player.isExiting || !PlaybackSession.isInitialized) return@withLock
+        val item = PlaybackSession.queue.value.currentItem ?: return@withLock
+        val position = PlaybackSession.getPropertyDouble("time-pos")
+          ?.takeIf { it.isFinite() && it >= 0.0 }
+        val paused = PlaybackSession.getPropertyBoolean("pause") ?: PlaybackSession.state.value.paused
+        val audio = player.aid
+        val subtitle = player.sid
+        val secondarySubtitle = player.secondarySid
+        val aspect = PlaybackSession.getPropertyDouble("video-aspect-override")
+        val zoom = PlaybackSession.getPropertyDouble("video-zoom")
+        val subDelay = PlaybackSession.getPropertyDouble("sub-delay")
+        val subSpeed = PlaybackSession.getPropertyDouble("sub-speed")
+        val audioDelay = PlaybackSession.getPropertyDouble("audio-delay")
+        val playbackSpeed = PlaybackSession.getPropertyDouble("speed")
+        val selectedQuality = PlaybackSession.getPropertyString("ytdl-format")
+
+        PlaybackSession.removeObserver(playerObserver)
+        player.releaseSurface()
+        mpvInitialized = false
+        player.isExiting = false
+        PlaybackSession.invalidateCoreConfiguration()
+        val setupError = setupMPV()
+        if (setupError != null) {
+          Log.e(TAG, "Unable to apply interpolation preferences", IllegalStateException(setupError))
+          return@withLock
+        }
+        isReady = false
+        viewModel.onVideoLoadStarted()
+        selectedQuality?.let { PlaybackSession.setPropertyString("ytdl-format", it) }
+        val generation = PlaybackSession.load(
+          item = item,
+          positionRestoreOverride = PlaybackPositionRestoreOverride(position, paused),
+        )
+        if (generation < 0L) return@withLock
+        val ready = withTimeoutOrNull(15_000L) {
+          PlaybackSession.state.first {
+            it.generation == generation &&
+              it.phase in setOf(PlaybackPhase.READY, PlaybackPhase.BACKGROUND)
+          }
+        }
+        if (ready == null || !ownsPlaybackSession()) return@withLock
+        if (audio >= 0) player.aid = audio
+        if (subtitle >= 0) player.sid = subtitle
+        if (secondarySubtitle >= 0) player.secondarySid = secondarySubtitle
+        aspect?.let { PlaybackSession.setPropertyDouble("video-aspect-override", it) }
+        zoom?.let { PlaybackSession.setPropertyDouble("video-zoom", it) }
+        subDelay?.let { PlaybackSession.setPropertyDouble("sub-delay", it) }
+        subSpeed?.let { PlaybackSession.setPropertyDouble("sub-speed", it) }
+        audioDelay?.let { PlaybackSession.setPropertyDouble("audio-delay", it) }
+        playbackSpeed?.let { PlaybackSession.setPropertyDouble("speed", it) }
+      }
+    }
   }
 
   private fun handleNativePlaybackEnded() {
@@ -874,6 +954,19 @@ class PlayerActivity :
     playbackOwnerToken = PlaybackActivityOwner.claim()
     MediaPlaybackService.setNativeRendererOwnership(false)
     pendingSavedPlaylistSelection = savedInstanceState?.toSavedPlaylistSelection()
+    if (savedInstanceState?.containsKey(STATE_INTERPOLATION_POSITION) == true) {
+      pendingInterpolationRestore = PlaybackPositionRestoreOverride(
+        positionSeconds = savedInstanceState.getDouble(STATE_INTERPOLATION_POSITION).coerceAtLeast(0.0),
+        paused = savedInstanceState.getBoolean(STATE_INTERPOLATION_PAUSED),
+      )
+      val restartMediaId = savedInstanceState.getString(STATE_INTERPOLATION_MEDIA_ID)
+      if (!restartMediaId.isNullOrBlank() &&
+        savedInstanceState.getString(STATE_INTERPOLATION_ENGINE) == PlaybackEngineMode.NATIVE.name
+      ) {
+        pendingInterpolationEngine = restartMediaId to PlaybackEngineMode.NATIVE
+        manualEngineOverride = pendingInterpolationEngine
+      }
+    }
     if (!beginMediaRequest()) {
       finish()
       return
@@ -2341,6 +2434,12 @@ class PlayerActivity :
       outState.putInt(STATE_PLAYLIST_INDEX, index)
       outState.putString(STATE_PLAYLIST_STABLE_ID, stableId)
       outState.putString(STATE_PLAYLIST_ORIGINAL_URI, originalUri)
+    }
+    pendingInterpolationRestore?.positionSeconds?.let { position ->
+      outState.putDouble(STATE_INTERPOLATION_POSITION, position)
+      outState.putBoolean(STATE_INTERPOLATION_PAUSED, pendingInterpolationRestore?.paused == true)
+      outState.putString(STATE_INTERPOLATION_MEDIA_ID, pendingInterpolationEngine?.first)
+      outState.putString(STATE_INTERPOLATION_ENGINE, pendingInterpolationEngine?.second?.name)
     }
     super.onSaveInstanceState(outState)
   }
@@ -6630,6 +6729,10 @@ class PlayerActivity :
     positionRestoreOverride: PlaybackPositionRestoreOverride? = null,
   ) {
     if (!ownsPlaybackSession()) return
+    val loadPositionRestoreOverride = positionRestoreOverride ?: pendingInterpolationRestore
+      ?.takeIf { pendingInterpolationEngine?.first == mediaIdentifier }
+    pendingInterpolationRestore = null
+    pendingInterpolationEngine = null
     mediaLoadJob?.cancel()
     cancelPlaybackLoadRecovery()
     playWhenFileLoaded = true
@@ -6884,7 +6987,7 @@ class PlayerActivity :
             }
           }
           val restoreOverride =
-            positionRestoreOverride ?: AudiobookPlayback.positionForLoad(item, sourceIntent)
+            loadPositionRestoreOverride ?: AudiobookPlayback.positionForLoad(item, sourceIntent)
           issuePlaybackLoad(
             item = item,
             attempt = 0,
@@ -9573,6 +9676,10 @@ class PlayerActivity :
      * Intent action used to return playback result data to the calling activity.
      */
     private const val RESULT_INTENT = "app.infinity.mpvz.ui.player.PlayerActivity.result"
+    private const val STATE_INTERPOLATION_POSITION = "interpolation_restart_position"
+    private const val STATE_INTERPOLATION_PAUSED = "interpolation_restart_paused"
+    private const val STATE_INTERPOLATION_MEDIA_ID = "interpolation_restart_media_id"
+    private const val STATE_INTERPOLATION_ENGINE = "interpolation_restart_engine"
 
     /**
      * Constant for "brightness not set".

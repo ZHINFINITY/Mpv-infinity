@@ -18,6 +18,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.animation.rememberSplineBasedDecay
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.gestures.AnchoredDraggableState
 import androidx.compose.foundation.gestures.DraggableAnchors
 import androidx.compose.foundation.gestures.Orientation
@@ -167,6 +168,10 @@ fun PlayerSheet(
       }
     }
   }
+  val sheetShape = MaterialTheme.shapes.extraLarge.copy(
+    bottomEnd = ZeroCornerSize,
+    bottomStart = ZeroCornerSize,
+  )
   Box(
     modifier =
       Modifier
@@ -218,13 +223,16 @@ fun PlayerSheet(
           }.anchoredDraggable(
             state = anchoredDraggableState,
             orientation = Orientation.Vertical,
-          ).liquidGlassPane(
+          )
+            // Clip before the glass renderer so its backing cannot escape the rounded rim.
+            .clip(sheetShape)
+            .liquidGlassPane(
             enabled = liquidGlassSurfaces,
             opacity = 0.86f,
             highlight = 0.20f,
             cornerRadius = 24.dp,
           ),
-      shape = MaterialTheme.shapes.extraLarge.copy(bottomEnd = ZeroCornerSize, bottomStart = ZeroCornerSize),
+      shape = sheetShape,
       color = if (liquidGlassSurfaces) Color.Transparent else resolvedSurfaceColor,
       contentColor = if (sheetIsDark) Color.White else Color.Black,
       tonalElevation = tonalElevation,

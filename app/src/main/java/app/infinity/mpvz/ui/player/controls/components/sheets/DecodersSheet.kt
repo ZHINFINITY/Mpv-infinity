@@ -10,6 +10,8 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.ScrollableTabRow
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.ui.graphics.Color
 import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -45,7 +47,14 @@ fun DecodersSheet(
 
   PlayerSheet(onDismissRequest) {
     Column {
-      ScrollableTabRow(selectedTabIndex = selectedTab) {
+      ScrollableTabRow(
+        selectedTabIndex = selectedTab,
+        // PlayerSheet owns the glass/backdrop. The default tab-row surface is
+        // opaque and produced the black full-width rectangle in the decoder sheet.
+        containerColor = Color.Transparent,
+        contentColor = MaterialTheme.colorScheme.onSurface,
+        divider = {},
+      ) {
         tabs.forEachIndexed { index, engine ->
           Tab(
             selected = selectedTab == index,
