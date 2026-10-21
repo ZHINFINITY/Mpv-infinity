@@ -243,10 +243,7 @@ fun AddToPlaylistDialog(
         )
       }
     },
-    containerColor = MaterialTheme.colorScheme.surface,
-    tonalElevation = 6.dp,
     shape = MaterialTheme.shapes.extraLarge,
-    modifier = modifier,
   )
 }
 
