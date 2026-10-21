@@ -455,6 +455,7 @@ class PlaylistRepository(
     sourceName: String,
     sourceUrl: String? = null,
     userAgent: String? = null,
+    isAudio: Boolean = false,
   ): Result<Long> =
     try {
       val playlistId =

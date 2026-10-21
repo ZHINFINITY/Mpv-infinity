@@ -10,6 +10,7 @@ package app.infinity.mpvz.ui.player.controls
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.getValue
 import app.infinity.mpvz.ui.player.controls.components.LocalForceDarkPlayerButtonsBackground
 import app.infinity.mpvz.ui.player.controls.components.LocalHidePlayerButtonsBackground
 import app.infinity.mpvz.ui.theme.LocalDarkAppColorScheme

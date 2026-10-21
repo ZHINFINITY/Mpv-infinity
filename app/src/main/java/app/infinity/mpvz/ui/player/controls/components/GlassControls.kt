@@ -16,6 +16,7 @@ import androidx.compose.material3.SwitchDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.Dp
@@ -34,6 +35,7 @@ fun GlassSwitch(
   enabled: Boolean = true,
   glassEnabled: Boolean = true,
   colors: SwitchColors = SwitchDefaults.colors(),
+  thumbContent: (@Composable () -> Unit)? = null,
 ) {
   val appearance = koinInject<AppearancePreferences>()
   val preferenceEnabled by appearance.liquidGlassSurfaces.collectAsState()
@@ -55,11 +57,12 @@ fun GlassSwitch(
       checkedBorderColor = accent.copy(alpha = 0.65f),
       uncheckedBorderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.45f),
     ),
-    thumbContent = if (!glass) null else ({
+    thumbContent = if (!glass) thumbContent else ({
       Box(Modifier.size(24.dp)
         .liquidGlassPane(true, opacity, highlight, 12.dp)
         .border(1.dp, if (enabled) accent.copy(alpha = if (checked) 0.75f else 0.35f)
-          else MaterialTheme.colorScheme.outline.copy(alpha = 0.25f), RoundedCornerShape(12.dp)))
+          else MaterialTheme.colorScheme.outline.copy(alpha = 0.25f), RoundedCornerShape(12.dp)),
+        contentAlignment = Alignment.Center) { thumbContent?.invoke() }
     }),
     modifier = modifier.liquidGlassPane(glass, opacity, highlight, 20.dp),
   )

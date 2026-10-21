@@ -571,7 +571,7 @@ private fun FrameReviewOverlay(
             if (targetChanged) onSeekToFrame(targetFrame, false)
           },
           onValueChangeFinished = {
-            if (!isSeeking) return@Slider
+            if (!isSeeking) return@GlassSlider
             settlingFrame = userSliderFrame
             isSeeking = false
             onSeekToFrame(userSliderFrame, true)

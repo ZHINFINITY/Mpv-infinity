@@ -39,6 +39,11 @@ class LiquidGlassContracts(unittest.TestCase):
                          "interactionSource = interactionSource", "thumbContent =", "thumb =",
                          "liquidGlassPane", "enabled && preferenceEnabled"):
             self.assertIn(expected, source)
+        self.assertIn("thumbContent: (@Composable () -> Unit)? = null", source)
+        self.assertIn("thumbContent?.invoke()", source)
+        for relative in ("ui/player/controls/PlayerButtonTheme.kt",
+                         "ui/player/controls/components/ControlsButton.kt"):
+            self.assertIn("import androidx.compose.runtime.getValue", (JAVA / relative).read_text())
 
     def test_panels_and_sheets_leave_sampled_glass_visible(self):
         for path in ("presentation/components/PlayerSheet.kt",
