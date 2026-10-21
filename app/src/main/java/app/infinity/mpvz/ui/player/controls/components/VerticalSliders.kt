@@ -157,9 +157,9 @@ fun BrightnessSlider(
   val appearance = koinInject<AppearancePreferences>()
   val liquidGlassSurfaces by appearance.liquidGlassSurfaces.collectAsState()
   Surface(
-    modifier = modifier.playerGlassPane(enabled = liquidGlassSurfaces, opacity = 0.82f, highlight = 0.18f, cornerRadius = 24.dp),
+    modifier = modifier.playerGlassPane(enabled = liquidGlassSurfaces, cornerRadius = 24.dp),
     shape = AppShapeScale.extraLarge,
-    color = Color.Black.copy(alpha = 0.5f),
+    color = if (liquidGlassSurfaces) Color.Transparent else Color.Black.copy(alpha = 0.5f),
     contentColor = Color.White,
   ) {
     Column(
@@ -210,9 +210,9 @@ fun VolumeSlider(
   val appearance = koinInject<AppearancePreferences>()
   val liquidGlassSurfaces by appearance.liquidGlassSurfaces.collectAsState()
   Surface(
-    modifier = modifier.playerGlassPane(enabled = liquidGlassSurfaces, opacity = 0.82f, highlight = 0.18f, cornerRadius = 24.dp),
+    modifier = modifier.playerGlassPane(enabled = liquidGlassSurfaces, cornerRadius = 24.dp),
     shape = AppShapeScale.extraLarge,
-    color = Color.Black.copy(alpha = 0.5f),
+    color = if (liquidGlassSurfaces) Color.Transparent else Color.Black.copy(alpha = 0.5f),
     contentColor = Color.White,
   ) {
     Column(

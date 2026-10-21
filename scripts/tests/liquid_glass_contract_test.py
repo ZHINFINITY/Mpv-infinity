@@ -72,11 +72,26 @@ class LiquidGlassContracts(unittest.TestCase):
     def test_audio_backdrops_use_artwork_not_extra_fake_animations(self):
         audio = (JAVA / "ui/player/controls/AudioPlayerControls.kt").read_text()
         mini = (JAVA / "ui/browser/components/AudioMiniPlayer.kt").read_text()
-        self.assertIn("AudioArtworkBackdrop", audio)
+        self.assertIn("AudioGlassScene", audio)
+        self.assertIn("LocalLiquidGlassBackdrop provides frame", audio)
+        self.assertNotIn("AudioArtworkBackdrop", audio)
         self.assertIn("albumArtBitmap", audio)
         self.assertEqual(2, audio.count("if (isAudiobook) audiobookModeButtons() else {"))
         self.assertIn("artworkUri", mini)
         self.assertNotIn("repeat(18)", mini)
+
+    def test_native_control_optics_do_not_cover_touch_boxes(self):
+        controls = (JAVA / "ui/player/controls/components/GlassControls.kt").read_text()
+        self.assertIn("glassTrackOptics", controls)
+        self.assertIn("thumbContent", controls)
+        self.assertNotIn("modifier = modifier.liquidGlassPane", controls)
+        self.assertIn("Material keeps its minimum interaction box", controls)
+
+    def test_audio_transport_has_no_enclosing_optical_surface(self):
+        audio = (JAVA / "ui/player/controls/AudioPlayerControls.kt").read_text()
+        self.assertNotIn("GlassControlSurface(", audio)
+        self.assertIn("ReactiveIconButton", audio)
+        self.assertIn("playerGlassPane(enabled = liquidGlassSurfaces", audio)
 
 
 if __name__ == "__main__":

@@ -509,6 +509,16 @@ fun MusicLibraryContent(
               onSettingsClick = {
                 backStack.add(PreferencesScreen)
               },
+              leadingActions = {
+                Box(modifier = Modifier.size(48.dp), contentAlignment = Alignment.Center) {
+                  Icon(
+                    imageVector = Icons.RoundedFilled.Audiotrack,
+                    contentDescription = stringResource(R.string.ui_music),
+                    tint = MaterialTheme.colorScheme.onSurface,
+                    modifier = Modifier.size(24.dp),
+                  )
+                }
+              },
               onSelectAll = { activeSelectionManager.selectAll() },
               onInvertSelection = { activeSelectionManager.invertSelection() },
               onDeselectAll = { activeSelectionManager.clear() },

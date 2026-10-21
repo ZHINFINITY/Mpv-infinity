@@ -7,6 +7,7 @@
 
 package app.infinity.mpvz.ui.player.controls.components.sheets
 
+import app.infinity.mpvz.presentation.components.playerGlassOverlay
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -121,9 +122,9 @@ fun EqualizerSheet(
   ModalBottomSheet(
     onDismissRequest = onDismissRequest,
     sheetState = sheetState,
-    containerColor = MaterialTheme.colorScheme.surfaceContainer,
+    containerColor = androidx.compose.ui.graphics.Color.Transparent,
     dragHandle = null,
-    modifier = modifier,
+    modifier = modifier.playerGlassOverlay(),
   ) {
     Column(
       modifier =

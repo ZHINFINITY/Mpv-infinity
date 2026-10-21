@@ -46,6 +46,7 @@ import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
@@ -127,7 +128,7 @@ fun LiquidGlassBackdropHost(
           } else {
             failures = 0
             val location = IntArray(2)
-            source.getLocationInWindow(location)
+            source.getLocationOnScreen(location)
             frame.value = LiquidGlassFrame(
               bitmap.asImageBitmap(),
               Rect(location[0].toFloat(), location[1].toFloat(),
@@ -174,17 +175,27 @@ fun Modifier.liquidGlassPane(
   opacity: Float = 0.88f,
   highlight: Float = 0.18f,
   cornerRadius: Dp = 24.dp,
+  drawRim: Boolean = true,
 ): Modifier {
   if (!enabled) return this
   val backdrop = LocalLiquidGlassBackdrop.current
   val tint = MaterialTheme.colorScheme.surfaceContainerHigh
   val alpha = GlassSurfacePolicy.opacity(opacity)
+  val hostView = LocalView.current
   val glow = GlassSurfacePolicy.highlight(highlight)
   var paneBounds by remember { mutableStateOf(Rect.Zero) }
   val shape = remember(cornerRadius) { RoundedCornerShape(cornerRadius) }
   return this
     .onGloballyPositioned { coordinates ->
-      val origin = coordinates.localToWindow(Offset.Zero)
+      val windowOrigin = coordinates.localToWindow(Offset.Zero)
+      val windowLocation = IntArray(2)
+      val screenLocation = IntArray(2)
+      hostView.getLocationInWindow(windowLocation)
+      hostView.getLocationOnScreen(screenLocation)
+      val origin = Offset(
+        windowOrigin.x + (screenLocation[0] - windowLocation[0]),
+        windowOrigin.y + (screenLocation[1] - windowLocation[1]),
+      )
       val next = Rect(origin.x, origin.y, origin.x + coordinates.size.width,
         origin.y + coordinates.size.height)
       if (next != paneBounds) paneBounds = next
@@ -242,7 +253,9 @@ fun Modifier.liquidGlassPane(
           cornerRadius = CornerRadius(radius))
         drawRoundRect(Brush.verticalGradient(listOf(Color.White.copy(alpha = glow * 0.5f),
           Color.Transparent, Color.Black.copy(alpha = 0.08f))), cornerRadius = CornerRadius(radius))
-        drawRoundRect(rim, cornerRadius = CornerRadius(radius), style = Stroke(1.dp.toPx()))
+        if (drawRim) {
+          drawRoundRect(rim, cornerRadius = CornerRadius(radius), style = Stroke(1.dp.toPx()))
+        }
       }
     }
 }

@@ -36,4 +36,14 @@ class RadioMetadataPolicyTest {
     assertFalse(RadioMetadataPolicy.isHttpUrl("https://broken host/art"))
     assertTrue(RadioMetadataPolicy.isHttpUrl("HTTPS://radio.example/cover.jpg"))
   }
+  @Test fun genuineCombinedMediaTitlePreservesApostrophes() {
+    val title = "R.L. Burnside - It's Bad You Know"
+    assertEquals(title, RadioMetadataPolicy.trackFromMediaTitle(title, "Radio Paradise"))
+  }
+  @Test fun mountNamesUrlsAndStationLabelsAreNotTrackMetadata() {
+    assertNull(RadioMetadataPolicy.trackFromMediaTitle("flacm", "Radio Paradise"))
+    assertNull(RadioMetadataPolicy.trackFromMediaTitle("Radio Paradise - Main", "Radio Paradise - Main"))
+    assertNull(RadioMetadataPolicy.trackFromMediaTitle("https://radio.example/Artist - Song", "Station"))
+    assertNull(RadioMetadataPolicy.trackFromMediaTitle(null, "Station"))
+  }
 }

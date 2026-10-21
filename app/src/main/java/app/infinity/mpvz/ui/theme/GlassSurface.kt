@@ -27,6 +27,7 @@ fun GlassSurface(
   opacity: Float = 0.88f,
   highlight: Float = 0.18f,
   cornerRadius: Dp = 24.dp,
+  border: Boolean = true,
   backdrop: (@Composable () -> Unit)? = null,
   content: @Composable () -> Unit,
 ) {
@@ -40,10 +41,10 @@ fun GlassSurface(
   }
   Box(
     modifier = modifier.clip(shape)
-      .liquidGlassPane(enabled, alpha, glow, cornerRadius)
+      .liquidGlassPane(enabled, alpha, glow, cornerRadius, drawRim = border)
       .then(if (!enabled) Modifier.background(MaterialTheme.colorScheme.surfaceContainerHigh, shape) else Modifier)
-      .border(1.dp, if (enabled) Color.White.copy(alpha = 0.12f + glow * 0.42f)
-        else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.25f), shape),
+      .then(if (border) Modifier.border(1.dp, if (enabled) Color.White.copy(alpha = 0.12f + glow * 0.42f)
+        else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.25f), shape) else Modifier),
   ) {
     if (enabled && backdrop != null) {
       Box(Modifier.matchParentSize().graphicsLayer { renderEffect = artworkBlur }) { backdrop.invoke() }
@@ -60,6 +61,7 @@ fun GlassControlSurface(
   opacity: Float,
   highlight: Float,
   cornerRadius: Dp = 20.dp,
+  border: Boolean = true,
   backdrop: (@Composable () -> Unit)? = null,
   content: @Composable () -> Unit,
-) = GlassSurface(modifier, enabled, opacity, highlight, cornerRadius, backdrop, content)
+) = GlassSurface(modifier, enabled, opacity, highlight, cornerRadius, border, backdrop, content)

@@ -65,7 +65,8 @@ fun ExposedTextDropDownMenu(
     ExposedDropdownMenu(
       expanded = expanded,
       onDismissRequest = { expanded = false },
-      modifier = Modifier.heightIn(max = 300.dp),
+      modifier = Modifier.heightIn(max = 300.dp).playerGlassOverlay(16.dp),
+      containerColor = androidx.compose.ui.graphics.Color.Transparent,
     ) {
       options.forEach { option: String ->
         DropdownMenuItem(

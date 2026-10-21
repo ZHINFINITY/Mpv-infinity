@@ -35,6 +35,12 @@ object RadioMetadataPolicy {
     )
   }
 
+  /** A combined live artist/title is useful when demuxers only publish media-title.
+   * A mount name, URL or preserved station label is never promoted into track metadata.
+   */
+  fun trackFromMediaTitle(value: String?, stationTitle: String?): String? =
+    clean(value)?.takeIf { it != clean(stationTitle) && it.contains(" - ") && !it.contains("://") && !isHttpUrl(it) }
+
   fun isHttpUrl(value: String?): Boolean =
     value?.trim()?.let {
       runCatching {

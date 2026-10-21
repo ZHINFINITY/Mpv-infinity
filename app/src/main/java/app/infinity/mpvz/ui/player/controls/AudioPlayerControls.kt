@@ -7,6 +7,7 @@
 
 package app.infinity.mpvz.ui.player.controls
 
+import androidx.compose.ui.layout.onGloballyPositioned
 import app.infinity.mpvz.ui.player.PlaybackSession
 
 import android.Manifest
@@ -183,7 +184,7 @@ import app.infinity.mpvz.ui.player.visualizer.ParticleOverlay
 import app.infinity.mpvz.ui.player.visualizer.VisualizerPalette
 import app.infinity.mpvz.ui.player.visualizer.rememberAudioVisualizerFeatures
 import app.infinity.mpvz.ui.theme.fontFamilyForText
-import app.infinity.mpvz.ui.theme.GlassControlSurface
+import app.infinity.mpvz.ui.player.controls.components.playerGlassPane
 import app.infinity.mpvz.ui.utils.isMpvOptionOwnedByConfig
 
 import app.infinity.mpvz.utils.media.fileExtension
@@ -560,33 +561,34 @@ private fun CoverArtCardImage(
   }
 }
 
-/**
- * Reuses artwork already resolved for the current track as a glass backdrop.
- *
- * This does not resolve metadata or decode a second copy of embedded art. Remote artwork uses the
- * shared RemoteImage loader, which coalesces/cache-hits the cover card request. With no artwork,
- * the glass surface keeps its normal tint fallback instead of inventing another animation.
- */
+/** One shared artwork reference for audio controls and their separate popup windows. */
 @Composable
-private fun AudioArtworkBackdrop(
+private fun AudioGlassScene(
   bitmap: Bitmap?,
-  artworkUrl: String?,
+  enabled: Boolean,
+  modifier: Modifier,
+  content: @Composable androidx.compose.foundation.layout.BoxScope.() -> Unit,
 ) {
-  val imageBitmap = remember(bitmap) { bitmap?.asImageBitmap() }
-  if (imageBitmap != null) {
-    Image(
-      bitmap = imageBitmap,
-      contentDescription = null,
-      contentScale = ContentScale.Crop,
-      modifier = Modifier.fillMaxSize(),
-    )
-  } else if (!artworkUrl.isNullOrBlank() && (artworkUrl.startsWith("http://", ignoreCase = true) || artworkUrl.startsWith("https://", ignoreCase = true))) {
-    RemoteImage(
-      url = artworkUrl,
-      contentDescription = null,
-      contentScale = ContentScale.Crop,
-      modifier = Modifier.fillMaxSize(),
-    )
+  val host = androidx.compose.ui.platform.LocalView.current
+  val image = remember(bitmap) { bitmap?.asImageBitmap() }
+  var bounds by remember { mutableStateOf(androidx.compose.ui.geometry.Rect.Zero) }
+  val frame = remember(image, bounds, enabled) {
+    mutableStateOf(if (enabled && image != null && bounds.width > 0f && bounds.height > 0f)
+      app.infinity.mpvz.ui.theme.LiquidGlassFrame(image, bounds) else null)
+  }
+  androidx.compose.runtime.CompositionLocalProvider(
+    app.infinity.mpvz.ui.theme.LocalLiquidGlassBackdrop provides frame,
+  ) {
+    Box(modifier.onGloballyPositioned { coordinates ->
+      val origin = coordinates.localToWindow(Offset.Zero)
+      val inWindow = IntArray(2)
+      val onScreen = IntArray(2)
+      host.getLocationInWindow(inWindow)
+      host.getLocationOnScreen(onScreen)
+      val x = origin.x + onScreen[0] - inWindow[0]
+      val y = origin.y + onScreen[1] - inWindow[1]
+      bounds = androidx.compose.ui.geometry.Rect(x, y, x + coordinates.size.width, y + coordinates.size.height)
+    }, content = content)
   }
 }
 
@@ -793,6 +795,10 @@ fun AudioPlayerControls(
       }
     }
 
+  val stationHeaderState by PlaybackSession.radioHeaders.collectAsStateWithLifecycle()
+  val stationHeaders = stationHeaderState?.takeIf { it.first == currentItem?.stableId }?.second
+  val rawIcyName by PlaybackSession.propString["metadata/by-key/icy-name"].collectAsState()
+  val rawIcyLogo by PlaybackSession.propString["metadata/by-key/icy-logo"].collectAsState()
   val rawStreamTitle by PlaybackSession.propString["metadata/by-key/Title"].collectAsState()
   val rawStreamTitleAlt by PlaybackSession.propString["metadata/by-key/TITLE"].collectAsState()
   val rawStreamTitleLower by PlaybackSession.propString["metadata/by-key/title"].collectAsState()
@@ -820,14 +826,16 @@ fun AudioPlayerControls(
     audiobook?.book?.coverUri?.takeIf { it.isNotBlank() }
       ?: currentItem?.artworkUri?.takeIf { it.isNotBlank() }
       ?: filteredPlaylist.firstOrNull { it.isPlaying || it.path == mediaPath || it.uri.toString() == mediaPath }?.tvgLogo?.takeIf { it.isNotBlank() }
-      ?: (rawStreamArtwork ?: rawStreamArtworkAlt).takeIf { isRadio && RadioMetadataPolicy.isHttpUrl(it) }
+      ?: (rawStreamArtwork ?: rawStreamArtworkAlt ?: rawIcyLogo ?: stationHeaders?.icyLogo).takeIf { isRadio && RadioMetadataPolicy.isHttpUrl(it) }
   val radioPresentation = RadioMetadataPolicy.presentation(
-    stationTitle = currentItem?.title,
-    streamTitle = rawStreamTitle ?: rawStreamTitleAlt ?: rawStreamTitleLower,
+    stationTitle = rawIcyName ?: stationHeaders?.icyName ?: currentItem?.title,
+    streamTitle = rawStreamTitle?.takeIf { it.isNotBlank() } ?: rawStreamTitleAlt?.takeIf { it.isNotBlank() }
+      ?: rawStreamTitleLower?.takeIf { it.isNotBlank() }
+      ?: RadioMetadataPolicy.trackFromMediaTitle(mediaTitle, currentItem?.title),
     streamArtist = rawRadioArtist ?: rawRadioArtistUpper ?: rawRadioArtistLower,
     icyTitle = rawIcyTitle ?: rawIcyTitleAlt,
     explicitArtwork = currentArtworkUri,
-    metadataArtwork = rawStreamArtwork ?: rawStreamArtworkAlt,
+    metadataArtwork = rawStreamArtwork ?: rawStreamArtworkAlt ?: rawIcyLogo ?: stationHeaders?.icyLogo,
   )
 
   val currentAudioPresentation =
@@ -866,7 +874,7 @@ fun AudioPlayerControls(
         ?: "Audio Track",
     )
   }
-  LaunchedEffect(currentItem?.stableId, currentItem?.title, mediaTitle, isRadio, rawStreamTitle, rawStreamTitleAlt, rawStreamTitleLower, rawIcyTitle, rawIcyTitleAlt, rawRadioArtist, rawRadioArtistUpper, rawRadioArtistLower) {
+  LaunchedEffect(currentItem?.stableId, currentItem?.title, mediaTitle, isRadio, stationHeaders, rawIcyName, rawStreamTitle, rawStreamTitleAlt, rawStreamTitleLower, rawIcyTitle, rawIcyTitleAlt, rawRadioArtist, rawRadioArtistUpper, rawRadioArtistLower) {
     val updatedTitle = if (isRadio) {
       radioPresentation.title
     } else if (currentItem?.audiobook != null) {
@@ -1156,7 +1164,9 @@ fun AudioPlayerControls(
   val standbyVisualizerBoundary = isStandbyActive && isPortrait && showVisualizer
   val visualizerUsesFullTopAndSides = edgeToEdgeVisualizer || standbyVisualizerBoundary
   val controlsSidePadding = if (edgeToEdgeVisualizer) 16.dp else 0.dp
-  Box(
+  AudioGlassScene(
+    bitmap = albumArtBitmap,
+    enabled = liquidGlassSurfaces,
     modifier =
       modifier
         .fillMaxSize()
@@ -1790,16 +1800,6 @@ fun AudioPlayerControls(
       }
       val isPaused = paused ?: false
 
-      GlassControlSurface(
-        enabled = liquidGlassSurfaces,
-        opacity = glassSurfaceOpacity,
-        highlight = glassSurfaceHighlight,
-        cornerRadius = 18.dp,
-        modifier = Modifier.fillMaxWidth(),
-        backdrop = {
-          AudioArtworkBackdrop(bitmap = albumArtBitmap, artworkUrl = currentArtworkUri)
-        },
-      ) {
       SeekbarWithTimers(
         position = timelinePosition,
         committedPosition = timelinePosition,
@@ -1825,20 +1825,9 @@ fun AudioPlayerControls(
         applyHorizontalPadding = false,
         modifier = Modifier.fillMaxWidth(),
       )
-      }
     }
 
     val playbackControlsRow = @Composable {
-      GlassControlSurface(
-        enabled = liquidGlassSurfaces,
-        opacity = glassSurfaceOpacity,
-        highlight = glassSurfaceHighlight,
-        cornerRadius = 22.dp,
-        modifier = Modifier.fillMaxWidth(),
-        backdrop = {
-          AudioArtworkBackdrop(bitmap = albumArtBitmap, artworkUrl = currentArtworkUri)
-        },
-      ) {
       Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.SpaceEvenly,
@@ -1917,7 +1906,6 @@ fun AudioPlayerControls(
             modifier = Modifier.size(28.dp),
           )
         }
-      }
       }
     }
 
@@ -2705,6 +2693,8 @@ private fun ReactiveIconButton(
   val interactionSource = remember { MutableInteractionSource() }
   val isPressed by interactionSource.collectIsPressedAsState()
   val haptic = LocalHapticFeedback.current
+  val appearance = koinInject<AppearancePreferences>()
+  val liquidGlassSurfaces by appearance.liquidGlassSurfaces.collectAsState()
 
   val scale by animateFloatAsState(
     targetValue = if (isPressed) 0.82f else 1f,
@@ -2720,6 +2710,7 @@ private fun ReactiveIconButton(
             scaleX = scale
             scaleY = scale
           }
+          .playerGlassPane(enabled = liquidGlassSurfaces, cornerRadius = 999.dp)
           .clip(CircleShape)
           .combinedClickable(
             interactionSource = interactionSource,
@@ -2748,10 +2739,12 @@ private fun ReactiveIconButton(
       enabled = enabled,
       interactionSource = interactionSource,
       modifier =
-        modifier.graphicsLayer {
-          scaleX = scale
-          scaleY = scale
-        },
+        modifier
+          .graphicsLayer {
+            scaleX = scale
+            scaleY = scale
+          }
+          .playerGlassPane(enabled = liquidGlassSurfaces, cornerRadius = 999.dp),
     ) {
       content()
     }
@@ -2771,6 +2764,8 @@ private fun ReactiveSurfaceButton(
   val interactionSource = remember { MutableInteractionSource() }
   val isPressed by interactionSource.collectIsPressedAsState()
   val haptic = LocalHapticFeedback.current
+  val appearance = koinInject<AppearancePreferences>()
+  val liquidGlassSurfaces by appearance.liquidGlassSurfaces.collectAsState()
 
   val scale by animateFloatAsState(
     targetValue = if (isPressed) 0.88f else 1f,
@@ -2784,7 +2779,8 @@ private fun ReactiveSurfaceButton(
       onClick()
     },
     shape = shape,
-    color = color,
+    // Preserve the prominent primary affordance while letting the shared lens provide the surface.
+    color = if (liquidGlassSurfaces) color.copy(alpha = 0.22f) else color,
     shadowElevation = shadowElevation,
     enabled = enabled,
     interactionSource = interactionSource,
@@ -2792,7 +2788,7 @@ private fun ReactiveSurfaceButton(
       modifier.graphicsLayer {
         scaleX = scale
         scaleY = scale
-      },
+      }.playerGlassPane(enabled = liquidGlassSurfaces, cornerRadius = 999.dp),
   ) {
     content()
   }

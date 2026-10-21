@@ -28,10 +28,14 @@ class RadioStreamProbeTest {
               }
             }
             socket.getOutputStream().apply {
-              write("HTTP/1.1 200 OK\r\nContent-Type: application/ogg\r\nConnection: close\r\n\r\n".toByteArray())
+              write("HTTP/1.1 200 OK\r\nContent-Type: application/ogg\r\nicy-name: Test Station\r\nicy-logo: https://radio.example/logo.jpg\r\nConnection: close\r\n\r\n".toByteArray())
               flush()
             }
-            closed.complete(request.any { it.equals("Range: bytes=0-0", true) } && reader.read() == -1)
+            closed.complete(
+              request.any { it.equals("Range: bytes=0-0", true) } &&
+                request.any { it.equals("Icy-MetaData: 1", true) } &&
+                reader.read() == -1,
+            )
           }
         } catch (error: Throwable) {
           closed.completeExceptionally(error)
@@ -41,6 +45,8 @@ class RadioStreamProbeTest {
       assertEquals("audio/ogg", RadioStreamProbe.detectAudioMimeType(url, emptyMap()))
       assertTrue(closed.get(3, TimeUnit.SECONDS))
       assertEquals("audio/ogg", RadioStreamProbe.cachedAudioMimeType(url, mapOf("Referer" to "http://127.0.0.1")))
+      assertEquals("Test Station", RadioStreamProbe.cachedMetadata(url, emptyMap())?.icyName)
+      assertEquals("https://radio.example/logo.jpg", RadioStreamProbe.cachedMetadata(url, emptyMap())?.icyLogo)
       // The server accepted only one request and is no longer reading: this must be cached.
       assertEquals("audio/ogg", RadioStreamProbe.detectAudioMimeType(url, emptyMap()))
       assertNull(RadioStreamProbe.cachedAudioMimeType(url, mapOf("Authorization" to "different-user")))

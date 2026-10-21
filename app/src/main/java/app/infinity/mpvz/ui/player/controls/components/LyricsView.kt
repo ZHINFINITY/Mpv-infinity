@@ -6,6 +6,7 @@
 
 package app.infinity.mpvz.ui.player.controls.components
 
+import app.infinity.mpvz.presentation.components.playerGlassOverlay
 import app.infinity.mpvz.ui.player.PlaybackSession
 
 import androidx.compose.animation.AnimatedVisibility
@@ -557,6 +558,8 @@ private fun LyricsSyncSheet(
 ) {
   val state by viewModel.lyricsUiState.collectAsState()
   ModalBottomSheet(
+    modifier = Modifier.playerGlassOverlay(),
+    containerColor = Color.Transparent,
     onDismissRequest = onDismiss,
     sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
   ) {

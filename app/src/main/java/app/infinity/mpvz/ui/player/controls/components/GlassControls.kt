@@ -19,6 +19,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import app.infinity.mpvz.preferences.AppearancePreferences
@@ -54,8 +56,8 @@ fun GlassSwitch(
       disabledUncheckedThumbColor = Color.Transparent,
       checkedTrackColor = accent.copy(alpha = if (enabled) 0.32f else 0.10f),
       uncheckedTrackColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f),
-      checkedBorderColor = accent.copy(alpha = 0.65f),
-      uncheckedBorderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.45f),
+      checkedBorderColor = Color.Transparent,
+      uncheckedBorderColor = Color.Transparent,
     ),
     thumbContent = if (!glass) thumbContent else ({
       Box(Modifier.size(24.dp)
@@ -64,7 +66,8 @@ fun GlassSwitch(
           else MaterialTheme.colorScheme.outline.copy(alpha = 0.25f), RoundedCornerShape(12.dp)),
         contentAlignment = Alignment.Center) { thumbContent?.invoke() }
     }),
-    modifier = modifier.liquidGlassPane(glass, opacity, highlight, 20.dp),
+    // Material keeps its minimum interaction box and semantics; optics cover only the track.
+    modifier = modifier.then(if (glass) Modifier.glassTrackOptics(opacity, highlight, 16.dp) else Modifier),
   )
 }
 
@@ -95,7 +98,8 @@ fun GlassSlider(
     Slider(
       value = value,
       onValueChange = onValueChange,
-      modifier = modifier.liquidGlassPane(true, opacity, highlight, 18.dp),
+      // Never lens the full Material slider touch box; optics are limited to track/thumb.
+      modifier = modifier.then(if (glass) Modifier.glassTrackOptics(opacity, highlight, 2.dp, horizontalInset = 12.dp, height = 4.dp) else Modifier),
       enabled = enabled,
       onValueChangeFinished = onValueChangeFinished,
       valueRange = valueRange,
@@ -114,6 +118,38 @@ fun GlassSlider(
           .border(1.dp, accent.copy(alpha = if (enabled) 0.75f else 0.25f), RoundedCornerShape(10.dp)))
       },
     )
+  }
+}
+
+@Composable
+private fun Modifier.glassTrackOptics(
+  opacity: Float,
+  highlight: Float,
+  radius: Dp,
+  horizontalInset: Dp = 0.dp,
+  height: Dp = 32.dp,
+): Modifier {
+  val tint = MaterialTheme.colorScheme.surfaceContainerHigh
+  return drawWithCache {
+  val trackHeight = height.toPx().coerceAtMost(size.height)
+  val top = (size.height - trackHeight) / 2f
+  val inset = horizontalInset.toPx().coerceAtMost(size.width / 2f)
+  val corner = radius.toPx().coerceAtMost(trackHeight / 2f)
+  onDrawBehind {
+    drawRoundRect(
+      color = tint.copy(alpha = opacity * 0.22f),
+      topLeft = androidx.compose.ui.geometry.Offset(inset, top),
+      size = androidx.compose.ui.geometry.Size(size.width - inset * 2f, trackHeight),
+      cornerRadius = androidx.compose.ui.geometry.CornerRadius(corner, corner),
+    )
+    drawRoundRect(
+      color = Color.White.copy(alpha = highlight * 0.42f),
+      topLeft = androidx.compose.ui.geometry.Offset(inset, top),
+      size = androidx.compose.ui.geometry.Size(size.width - inset * 2f, trackHeight),
+      cornerRadius = androidx.compose.ui.geometry.CornerRadius(corner, corner),
+      style = Stroke(1.dp.toPx()),
+    )
+  }
   }
 }
 

@@ -18,6 +18,7 @@ import app.infinity.mpvz.data.network.proxy.HlsStreamingProxy
 import app.infinity.mpvz.data.network.proxy.NetworkStreamingProxy
 import app.infinity.mpvz.domain.network.NetworkPlaybackUri
 import app.infinity.mpvz.preferences.MpvConfigOverridePolicy
+import app.infinity.mpvz.utils.media.RadioStreamProbe
 import `is`.xyz.mpv.MPVLib
 import `is`.xyz.mpv.MPVNode
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -144,6 +145,10 @@ object PlaybackSession : MPVLib.EventObserver {
 
   private val nativeLock = ReentrantLock(true)
   private val observers = CopyOnWriteArraySet<MPVLib.EventObserver>()
+  // Station headers are not native properties: retain them for late UI/service subscribers.
+  private val _radioHeaders = MutableStateFlow<Pair<String, RadioStreamProbe.Metadata>?>(null)
+  val radioHeaders = _radioHeaders.asStateFlow()
+
   private val _state = MutableStateFlow(PlaybackSessionState())
   private val _queue = MutableStateFlow(PlaybackQueueState())
   private val streamSequence = AtomicLong()
@@ -804,6 +809,7 @@ object PlaybackSession : MPVLib.EventObserver {
       initialPositionGeneration = generation.takeIf { initialPosition != null } ?: 0L
       val holdForPositionRestore = pendingPositionRestoreGeneration == generation
       deferredVideoSelectionGeneration = generation.takeIf { videoSelection == PlaybackVideoSelection.DEFERRED }
+      _radioHeaders.value = null
       propString.clearMediaMetadata()
       updateState {
         it.copy(
@@ -816,12 +822,21 @@ object PlaybackSession : MPVLib.EventObserver {
       }
       clearTimelinePropertiesLocked()
       val userAgent = PlaybackHttpHeaders.userAgent(resolvedItem.headers)
-      val headerFields = PlaybackHttpHeaders.toMpvHeaderFields(resolvedItem.headers)
+      val headerFields = buildList {
+        PlaybackHttpHeaders.toMpvHeaderFields(resolvedItem.headers).takeIf { it.isNotBlank() }?.let(::add)
+        // Icecast/Shoutcast only sends in-band StreamTitle blocks when the client opts in.
+        // Scope this to M3U audio so ordinary HTTP media requests retain their exact headers.
+        if (_queue.value.isM3u && resolvedItem.isDefinitelyAudioOnly() &&
+          resolvedItem.headers.keys.none { it.equals("Icy-MetaData", true) }) add("Icy-MetaData: 1")
+      }.joinToString(",")
       // URL-specific headers are request metadata, not a global mpv preference. Always apply the
       // media UA, then restore the post-mpv.conf default for a headerless item.
       MPVLib.setPropertyString("user-agent", userAgent ?: defaultUserAgent.orEmpty())
       MPVLib.setPropertyString("http-header-fields", headerFields)
       MPVLib.setPropertyString("force-media-title", "")
+      val stationHeaders = RadioStreamProbe.cachedMetadata(resolvedItem.playableUri, resolvedItem.headers)
+        ?: RadioStreamProbe.cachedMetadata(resolvedItem.originalUri, resolvedItem.headers)
+      _radioHeaders.value = stationHeaders?.let { resolvedItem.stableId to it }
 
       // Disable the outgoing track only once this replacement request owns the native lock. Doing
       // it during asynchronous URI preparation can blank playback even when that work is cancelled.

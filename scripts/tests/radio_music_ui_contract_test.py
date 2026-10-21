@@ -15,14 +15,32 @@ class RadioMusicUiContracts(unittest.TestCase):
             self.assertIn("RadioMetadataPolicy", source)
         self.assertIn("metadata/by-key/", (JAVA / "ui/player/MediaPlaybackService.kt").read_text())
 
-    def test_music_header_does_not_duplicate_navigation_icons(self):
+    def test_real_station_headers_survive_late_subscribers_and_station_changes(self):
+        probe = (JAVA / "utils/media/RadioStreamProbe.kt").read_text()
+        session = (JAVA / "ui/player/PlaybackSession.kt").read_text()
+        audio = (JAVA / "ui/player/controls/AudioPlayerControls.kt").read_text()
+        service = (JAVA / "ui/player/MediaPlaybackService.kt").read_text()
+        self.assertIn('header("Icy-MetaData", "1")', probe)
+        self.assertIn('response.header("icy-logo")', probe)
+        self.assertIn('response.header("icy-name")', probe)
+        self.assertIn('add("Icy-MetaData: 1")', session)
+        self.assertIn('_radioHeaders.value = null', session)
+        self.assertIn('resolvedItem.stableId to it', session)
+        self.assertNotIn('emitRadioHeaderMetadata', session)
+        self.assertIn('PlaybackSession.radioHeaders.collectAsStateWithLifecycle()', audio)
+        self.assertIn('it.first == currentItem?.stableId', audio)
+        self.assertIn('stationHeaders?.icyLogo', audio)
+        self.assertIn('PlaybackSession.radioHeaders.value?.takeIf { it.first == item.stableId }', service)
+
+    def test_music_header_has_requested_note_but_no_source_chip(self):
         source = (JAVA / "ui/browser/music/MusicLibraryContent.kt").read_text()
         header_start = source.find("leadingActions = {")
         header_end = source.find("onSelectAll =", header_start) if header_start >= 0 else -1
         header = source[header_start:header_end if header_end >= 0 else len(source)]
         self.assertNotIn("MusicSourceChooser(", header)
-        self.assertNotIn("leadingActions", header)
-        self.assertNotIn("Icons.RoundedFilled.Audiotrack", header)
+        self.assertIn("Icons.RoundedFilled.Audiotrack", header)
+        self.assertIn("Modifier.size(24.dp)", header)
+        self.assertIn("MaterialTheme.colorScheme.onSurface", header)
         self.assertNotIn("Icons.RoundedFilled.AudiobookWave", header)
 
 

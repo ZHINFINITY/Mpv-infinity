@@ -7,6 +7,7 @@
 
 package app.infinity.mpvz.ui.browser.dialogs
 
+import app.infinity.mpvz.presentation.components.playerGlassOverlay
 import android.widget.Toast
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -111,6 +112,9 @@ fun AddToPlaylistDialog(
   }
 
   AlertDialog(
+    modifier = Modifier.playerGlassOverlay(),
+    containerColor = androidx.compose.ui.graphics.Color.Transparent,
+    tonalElevation = 0.dp,
     onDismissRequest = onDismiss,
     title = {
       Text(

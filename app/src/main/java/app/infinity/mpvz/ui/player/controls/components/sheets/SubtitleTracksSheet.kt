@@ -7,6 +7,7 @@
 
 package app.infinity.mpvz.ui.player.controls.components.sheets
 
+import app.infinity.mpvz.presentation.components.playerGlassOverlay
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -251,6 +252,9 @@ fun SubtitlesSheet(
         }
       }
     androidx.compose.material3.AlertDialog(
+      modifier = Modifier.playerGlassOverlay(),
+      containerColor = androidx.compose.ui.graphics.Color.Transparent,
+      tonalElevation = 0.dp,
       onDismissRequest = {
         showLanguagePicker = null
         langSearch = ""

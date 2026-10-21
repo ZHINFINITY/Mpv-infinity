@@ -7,6 +7,7 @@
 
 package app.infinity.mpvz.ui.player.controls.components
 
+import app.infinity.mpvz.presentation.components.playerGlassOverlay
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.SizeTransform
 import androidx.compose.animation.fadeIn
@@ -52,21 +53,14 @@ fun CurrentChapter(
     modifier =
       modifier
         .height(45.dp)
+        .playerGlassOverlay(999.dp)
         .widthIn(max = 220.dp)
         .clip(AppShapeScale.full)
         .clickable(onClick = onClick),
     shape = AppShapeScale.full,
-    color =
-      MaterialTheme.colorScheme.surfaceContainer.copy(
-        alpha = 0.55f,
-      ),
+    color = androidx.compose.ui.graphics.Color.Transparent,
     contentColor = MaterialTheme.colorScheme.onSurface,
     tonalElevation = 0.dp,
-    border =
-      BorderStroke(
-        1.dp,
-        MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f),
-      ),
   ) {
     AnimatedContent(
       targetState = chapter,
