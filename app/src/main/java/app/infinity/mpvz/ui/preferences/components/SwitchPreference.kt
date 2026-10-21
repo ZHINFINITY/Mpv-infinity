@@ -39,7 +39,7 @@ fun SwitchPreference(
     modifier =
       modifier
         .fillMaxWidth()
-        .settingsGlassSurface(cornerRadius = 18.dp)
+        .settingsGlassPreferenceRow()
         .clickable(enabled = enabled) { onValueChange(!value) }
         .padding(horizontal = 16.dp, vertical = 12.dp),
     verticalAlignment = Alignment.CenterVertically,

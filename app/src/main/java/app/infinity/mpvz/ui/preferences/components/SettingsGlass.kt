@@ -4,8 +4,8 @@
  */
 package app.infinity.mpvz.ui.preferences.components
 
+import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.Dp
@@ -16,8 +16,11 @@ import app.infinity.mpvz.ui.theme.liquidGlassPane
 import app.infinity.mpvz.ui.theme.LocalGlassCustomization
 import org.koin.compose.koinInject
 
-/** A preference group owns one material; child rows only draw their normal content. */
-val LocalSettingsGlassOwner = compositionLocalOf { false }
+/** Geometry shared by every standalone settings row surface. */
+object SettingsGlassPolicy {
+  const val RowHorizontalInsetDp = 12f
+  const val RowVerticalSpacingDp = 4f
+}
 
 /** Shared master state for native fill/elevation fallbacks around a glass-owned surface. */
 @Composable
@@ -41,9 +44,9 @@ fun Modifier.settingsGlassSurface(
   highlight: Float? = null,
   independent: Boolean = false,
 ): Modifier {
-  if (LocalSettingsGlassOwner.current && !independent) return this
   val appearance = koinInject<AppearancePreferences>()
   val enabled by appearance.liquidGlassSurfaces.collectAsState()
+  if (!enabled) return this
   val tuning = LocalGlassCustomization.current
   return liquidGlassPane(
     enabled = enabled,
@@ -51,6 +54,20 @@ fun Modifier.settingsGlassSurface(
     highlight = highlight ?: tuning.highlight,
     cornerRadius = cornerRadius,
   )
+}
+
+/**
+ * Give each preference its own breathing room only when the optional material is enabled.
+ * Keeping the inset out of [settingsGlassSurface] preserves the library's exact Material
+ * layout when the master switch is off.
+ */
+@Composable
+fun Modifier.settingsGlassPreferenceRow(): Modifier {
+  if (!settingsGlassEnabled()) return this
+  return padding(
+    horizontal = SettingsGlassPolicy.RowHorizontalInsetDp.dp,
+    vertical = SettingsGlassPolicy.RowVerticalSpacingDp.dp,
+  ).settingsGlassSurface(cornerRadius = 18.dp)
 }
 
 /** Keep the caller's exact opaque Material fill when glass is disabled. */

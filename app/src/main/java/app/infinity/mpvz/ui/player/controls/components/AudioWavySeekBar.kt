@@ -462,6 +462,7 @@ fun AudioWavySeekBar(
   val clickEvent = LocalPlayerButtonsClickEvent.current
   val interactionSource = remember { MutableInteractionSource() }
   val dragging by interactionSource.collectIsDraggedAsState()
+  val glassEnabled = app.infinity.mpvz.ui.preferences.components.settingsGlassEnabled()
   var dragPosition by remember { mutableFloatStateOf(0f) }
 
   val boundedDuration = duration.coerceAtLeast(0f)
@@ -538,9 +539,9 @@ fun AudioWavySeekBar(
           activeTrackColor = Color.Transparent,
           inactiveTrackColor = Color.Transparent,
         ),
-        modifier = Modifier
-          .matchParentSize()
-          .alpha(0f),
+        // Keep Material's interaction/semantics layer live; GlassSlider draws
+        // optics only over the real track and thumb, never a card over this box.
+        modifier = Modifier.matchParentSize().alpha(if (glassEnabled) 1f else 0f),
       )
     }
 

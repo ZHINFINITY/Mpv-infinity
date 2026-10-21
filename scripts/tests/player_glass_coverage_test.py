@@ -29,10 +29,11 @@ class PlayerGlassCoverage(unittest.TestCase):
 
     def test_video_control_regions_have_shared_pane_coverage(self):
         text = (PLAYER / "PlayerControls.kt").read_text()
-        # Top, center and bottom capsule variants plus the seekbar container.
+        # Top, center and bottom capsules retain glass; seekbar optics belong to its track/thumb.
         self.assertGreaterEqual(text.count(".playerGlassPane("), 10)
         self.assertIn("useLiquidGlassSeekbar", text)
-        self.assertIn("enabled = useLiquidGlassSeekbar", text)
+        self.assertNotIn(".playerGlassPane(enabled = useLiquidGlassSeekbar", text)
+        self.assertIn("useLiquidGlassSeekbar -> Color.Transparent", text)
         self.assertIn("CurrentChapter", text)
 
     def test_chapter_is_an_overlay_with_an_opaque_off_fallback(self):

@@ -16,9 +16,9 @@ def main() -> None:
     assert "fun Modifier.settingsGlassSurface" in glass
     assert "liquidGlassSurfaces.collectAsState()" in glass
     assert "liquidGlassPane(" in glass
-    assert "settingsGlassSurface" in card and "Color.Transparent" in card
-    assert "settingsGlassSurface" in rows and "GlassSwitch" in rows
-    assert "settingsGlassSurface" in switch and "onValueChange" in switch
+    assert ".settingsGlassSurface(" not in card and "Color.Transparent" in card
+    assert "settingsGlassPreferenceRow" in rows and "GlassSwitch" in rows
+    assert "settingsGlassPreferenceRow" in switch and "onValueChange" in switch
     assert "onCheckedChange" in controls and "onValueChangeFinished" in controls
     assert "horizontalInset" in controls
     print("settings_glass_contract_test: PASS")

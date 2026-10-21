@@ -55,7 +55,7 @@ fun SettingsClickableItem(
 ) {
   val appearance = koinInject<AppearancePreferences>()
   val glassEnabled by appearance.liquidGlassSurfaces.collectAsState()
-  val shape =
+  val shape = if (glassEnabled) RoundedCornerShape(18.dp) else
     RoundedCornerShape(
       topStart = if (isFirstItem) 16.dp else 0.dp,
       topEnd = if (isFirstItem) 16.dp else 0.dp,
@@ -67,7 +67,7 @@ fun SettingsClickableItem(
     modifier =
       modifier
         .fillMaxWidth()
-        .settingsGlassSurface(cornerRadius = 18.dp)
+        .settingsGlassPreferenceRow()
         .clickable(
           enabled = enabled,
           onClick = onClick,

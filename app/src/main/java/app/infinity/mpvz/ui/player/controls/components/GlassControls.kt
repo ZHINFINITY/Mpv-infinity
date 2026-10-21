@@ -6,6 +6,7 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.size
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.foundation.layout.height
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderColors
 import androidx.compose.material3.SliderDefaults
@@ -111,23 +112,33 @@ fun GlassSlider(
       onValueChangeFinished = onValueChangeFinished, valueRange = valueRange, steps = steps,
       colors = colors, interactionSource = interactionSource)
   } else {
+    val glassColors = SliderDefaults.colors(
+      thumbColor = Color.Transparent,
+      activeTrackColor = accent.copy(alpha = 0.52f),
+      inactiveTrackColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f),
+      disabledActiveTrackColor = accent.copy(alpha = 0.16f),
+      disabledInactiveTrackColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.06f),
+    )
     Slider(
       value = value,
       onValueChange = onValueChange,
       // Never lens the full Material slider touch box; optics are limited to track/thumb.
-      modifier = modifier.then(if (glass) Modifier.glassTrackOptics(opacity, highlight, 2.dp, horizontalInset = 12.dp, height = 4.dp) else Modifier),
+      modifier = modifier,
       enabled = enabled,
       onValueChangeFinished = onValueChangeFinished,
       valueRange = valueRange,
       steps = steps,
       interactionSource = interactionSource,
-      colors = SliderDefaults.colors(
-        thumbColor = Color.Transparent,
-        activeTrackColor = accent.copy(alpha = 0.52f),
-        inactiveTrackColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f),
-        disabledActiveTrackColor = accent.copy(alpha = 0.16f),
-        disabledInactiveTrackColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.06f),
-      ),
+      colors = glassColors,
+      track = { sliderState ->
+        SliderDefaults.Track(
+          sliderState = sliderState,
+          enabled = enabled,
+          colors = glassColors,
+          modifier = Modifier.height(4.dp)
+            .glassTrackOptics(opacity, highlight, 2.dp, height = 4.dp),
+        )
+      },
         thumb = {
         Box(Modifier.size(width = 18.dp, height = 24.dp)
           .glassThumbOptics(

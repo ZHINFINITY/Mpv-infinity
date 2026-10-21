@@ -203,6 +203,7 @@ jobs:
           python3 scripts/tests/media_info_playlist_glass_paths_test.py
           python3 scripts/tests/actual_mini_player_glass_contract_test.py
           python3 scripts/tests/mini_player_gesture_contract_test.py
+          python3 scripts/tests/seekbar_glass_contract_test.py
       - name: Run Standard arm64 debug unit tests
         if: ${{ inputs.flavor == 'standard' && inputs.target_abi == 'arm64-v8a' }}
         run: ./gradlew testStandardDebugUnitTest -PtargetAbi=arm64-v8a -PmpvFlowMpvBuild=true --stacktrace --no-daemon --max-workers=2

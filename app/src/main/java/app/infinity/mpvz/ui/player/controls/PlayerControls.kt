@@ -1869,7 +1869,6 @@ fun PlayerControls(
                   .fillMaxWidth()
                   .then(if (isPortrait) Modifier.height(92.dp) else Modifier)
                   .clip(RoundedCornerShape(26.dp))
-                  .playerGlassPane(enabled = useLiquidGlassSeekbar, cornerRadius = 26.dp)
                   .background(
                     when {
                       useLiquidGlassSeekbar -> Color.Transparent
@@ -1881,9 +1880,14 @@ fun PlayerControls(
                       else -> MaterialTheme.colorScheme.surface.copy(alpha = 0.72f)
                     },
                   )
-                  .border(
-                    BorderStroke(1.dp, Color.White.copy(alpha = 0.18f)),
-                    RoundedCornerShape(26.dp),
+                  // Glass optics belong to the seekbar track/thumb. Do not
+                  // turn the full timer/seekbar touch box into a glass card.
+                  .then(
+                    if (useLiquidGlassSeekbar) Modifier
+                    else Modifier.border(
+                      BorderStroke(1.dp, Color.White.copy(alpha = 0.18f)),
+                      RoundedCornerShape(26.dp),
+                    ),
                   )
                   .padding(horizontal = 6.dp)
               } else {

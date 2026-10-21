@@ -23,7 +23,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -31,8 +30,6 @@ import androidx.compose.ui.unit.dp
 import app.infinity.mpvz.ui.theme.LocalEmphasizedTypography
 import app.infinity.mpvz.preferences.AppearancePreferences
 import app.infinity.mpvz.preferences.preference.collectAsState
-import app.infinity.mpvz.ui.preferences.components.settingsGlassSurface
-import app.infinity.mpvz.ui.preferences.components.LocalSettingsGlassOwner
 import org.koin.compose.koinInject
 
 /**
@@ -49,8 +46,7 @@ fun PreferenceCard(
     modifier =
       modifier
         .fillMaxWidth()
-        .padding(horizontal = 16.dp, vertical = 8.dp)
-        .settingsGlassSurface(cornerRadius = 28.dp),
+        .padding(horizontal = 16.dp, vertical = 8.dp),
     shape = MaterialTheme.shapes.extraLargeIncreased,
     colors =
       CardDefaults.cardColors(
@@ -66,9 +62,7 @@ fun PreferenceCard(
       modifier = Modifier.padding(vertical = 8.dp),
       verticalArrangement = Arrangement.spacedBy(0.dp),
     ) {
-      CompositionLocalProvider(LocalSettingsGlassOwner provides true) {
-        content()
-      }
+      content()
     }
   }
 }
