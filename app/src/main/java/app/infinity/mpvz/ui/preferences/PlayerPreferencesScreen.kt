@@ -7,6 +7,10 @@
 
 package app.infinity.mpvz.ui.preferences
 
+import app.infinity.mpvz.ui.preferences.components.settingsGlassContainerColor
+
+import app.infinity.mpvz.ui.preferences.components.settingsGlassSurface
+
 import android.Manifest
 import android.content.ComponentName
 import android.content.Intent
@@ -64,11 +68,11 @@ import app.infinity.mpvz.ui.utils.LocalShowSettingsBackArrow
 import app.infinity.mpvz.ui.utils.currentMpvConfigOverrideOptions
 import app.infinity.mpvz.ui.utils.popSafely
 import kotlinx.serialization.Serializable
-import me.zhanghai.compose.preference.ListPreference
-import me.zhanghai.compose.preference.Preference
+import app.infinity.mpvz.ui.preferences.components.ListPreference
+import app.infinity.mpvz.ui.preferences.components.Preference
 import me.zhanghai.compose.preference.ProvidePreferenceLocals
-import me.zhanghai.compose.preference.SliderPreference
-import me.zhanghai.compose.preference.TextFieldPreference
+import app.infinity.mpvz.ui.preferences.components.SliderPreference
+import app.infinity.mpvz.ui.preferences.components.TextFieldPreference
 import org.koin.compose.koinInject
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
@@ -1171,6 +1175,8 @@ object PlayerPreferencesScreen : Screen {
     }
     if (showVideoMiniPlayerDependencyDialog) {
       AlertDialog(
+      containerColor = settingsGlassContainerColor(androidx.compose.material3.AlertDialogDefaults.containerColor),
+      modifier = androidx.compose.ui.Modifier.settingsGlassSurface(cornerRadius = 28.dp),
         onDismissRequest = { showVideoMiniPlayerDependencyDialog = false },
         title = { Text(stringResource(R.string.pref_video_mini_player_dependency_title)) },
         text = { Text(stringResource(R.string.pref_video_mini_player_dependency_message)) },
@@ -1205,6 +1211,8 @@ object PlayerPreferencesScreen : Screen {
     }
     if (showTemplateDialog) {
       AlertDialog(
+      containerColor = settingsGlassContainerColor(androidx.compose.material3.AlertDialogDefaults.containerColor),
+      modifier = androidx.compose.ui.Modifier.settingsGlassSurface(cornerRadius = 28.dp),
         onDismissRequest = { showTemplateDialog = false },
         title = {
           Text(

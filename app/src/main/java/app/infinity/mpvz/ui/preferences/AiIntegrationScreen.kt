@@ -7,6 +7,10 @@
 
 package app.infinity.mpvz.ui.preferences
 
+import app.infinity.mpvz.ui.preferences.components.settingsGlassContainerColor
+
+import app.infinity.mpvz.ui.preferences.components.settingsGlassSurface
+
 import android.widget.Toast
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -80,9 +84,9 @@ import app.infinity.mpvz.ui.utils.popSafely
 import kotlinx.coroutines.launch
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
-import me.zhanghai.compose.preference.ListPreference
+import app.infinity.mpvz.ui.preferences.components.ListPreference
 import me.zhanghai.compose.preference.ProvidePreferenceLocals
-import me.zhanghai.compose.preference.TextFieldPreference
+import app.infinity.mpvz.ui.preferences.components.TextFieldPreference
 import org.koin.compose.koinInject
 
 private val allLanguages =
@@ -1215,6 +1219,8 @@ val apiKeyInfo =
 
       if (showSubtitleTranslationWarning) {
         AlertDialog(
+      containerColor = settingsGlassContainerColor(androidx.compose.material3.AlertDialogDefaults.containerColor),
+      modifier = androidx.compose.ui.Modifier.settingsGlassSurface(cornerRadius = 28.dp),
           onDismissRequest = {
             showSubtitleTranslationWarning = false
             preferences.subtitleTranslationFirstTime.set(false)

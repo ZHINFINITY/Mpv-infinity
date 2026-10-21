@@ -822,22 +822,23 @@ fun AudioPlayerControls(
   }
   val streamCover = decodedStreamCover?.takeIf { it.first == encodedPicture }?.second
 
-  val currentArtworkUri =
+  val sourceArtworkUri =
     audiobook?.book?.coverUri?.takeIf { it.isNotBlank() }
       ?: currentItem?.artworkUri?.takeIf { it.isNotBlank() }
       ?: filteredPlaylist.firstOrNull { it.isPlaying || it.path == mediaPath || it.uri.toString() == mediaPath }?.tvgLogo?.takeIf { it.isNotBlank() }
-      ?: (rawStreamArtwork ?: rawStreamArtworkAlt ?: rawIcyLogo ?: stationHeaders?.icyLogo).takeIf { isRadio && RadioMetadataPolicy.isHttpUrl(it) }
+      ?: (rawIcyLogo ?: stationHeaders?.icyLogo).takeIf { isRadio && RadioMetadataPolicy.isHttpUrl(it) }
   val radioPresentation = RadioMetadataPolicy.presentation(
     stationTitle = rawIcyName ?: stationHeaders?.icyName ?: currentItem?.title,
     streamTitle = rawStreamTitle?.takeIf { it.isNotBlank() } ?: rawStreamTitleAlt?.takeIf { it.isNotBlank() }
       ?: rawStreamTitleLower?.takeIf { it.isNotBlank() }
-      ?: RadioMetadataPolicy.trackFromMediaTitle(mediaTitle, currentItem?.title),
+      ?: RadioMetadataPolicy.trackFromMediaTitle(mediaTitle, rawIcyName ?: stationHeaders?.icyName ?: currentItem?.title),
     streamArtist = rawRadioArtist ?: rawRadioArtistUpper ?: rawRadioArtistLower,
     icyTitle = rawIcyTitle ?: rawIcyTitleAlt,
-    explicitArtwork = currentArtworkUri,
+    explicitArtwork = sourceArtworkUri,
     metadataArtwork = rawStreamArtwork ?: rawStreamArtworkAlt ?: rawIcyLogo ?: stationHeaders?.icyLogo,
   )
 
+  val currentArtworkUri = if (isRadio) radioPresentation.artworkUri else sourceArtworkUri
   val currentAudioPresentation =
     rememberAudioPresentationMetadata(
       pathOrUri = currentMediaSource?.takeIf { isAudiobook } ?: mediaPath?.takeIf { it.isNotBlank() } ?: currentMediaSource,
@@ -898,10 +899,16 @@ fun AudioPlayerControls(
   val retrievedArtist = currentAudioPresentation?.artist
 
   val displayArtist =
-    remember(isRadio, audiobook?.book?.author, currentItem?.artist, rawArtist, rawArtistUpper, rawArtistLower, rawArtistAlt, rawAlbumArtist, rawPerformer, retrievedArtist) {
-      sequenceOf(if (isRadio) rawArtist ?: rawArtistUpper ?: rawArtistLower else null, audiobook?.book?.author, currentItem?.artist, rawArtist, rawArtistAlt, rawAlbumArtist, rawPerformer, retrievedArtist)
-        .filterNotNull()
-        .firstOrNull { it.isNotBlank() } ?: if (isRadio) currentItem?.title.orEmpty() else "Unknown Artist"
+    remember(isRadio, radioPresentation, stationHeaders, rawIcyName, audiobook?.book?.author, currentItem?.title, currentItem?.artist, rawArtist, rawArtistUpper, rawArtistLower, rawArtistAlt, rawAlbumArtist, rawPerformer, retrievedArtist) {
+      if (isRadio) {
+        // A playlist description is not a song artist. Show only stream-supplied artists;
+        // the station name or an honest live label is the fallback when none is supplied.
+        val station = rawIcyName ?: stationHeaders?.icyName ?: currentItem?.title
+        radioPresentation.artist ?: station?.takeIf { it != radioPresentation.title } ?: "Live radio"
+      } else {
+        sequenceOf(audiobook?.book?.author, currentItem?.artist, rawArtist, rawArtistUpper, rawArtistLower, rawArtistAlt, rawAlbumArtist, rawPerformer, retrievedArtist)
+          .filterNotNull().firstOrNull { it.isNotBlank() } ?: "Unknown Artist"
+      }
     }
 
   val audioPreferences = koinInject<AudioPreferences>()
@@ -1557,7 +1564,7 @@ fun AudioPlayerControls(
         val trackText = when {
           audiobookChapterNumber != null -> "Chapter $audiobookChapterNumber/${audiobookChapters.size}"
           isAudiobook -> "Audiobook"
-          playlistInfo != null -> "Track $playlistInfo"
+          playlistInfo != null -> if (isRadio) "Station $playlistInfo" else "Track $playlistInfo"
           else -> "Audio Media"
         }
 
@@ -1750,7 +1757,7 @@ fun AudioPlayerControls(
                   }
                 }
               },
-              modifier = Modifier.size(40.dp),
+              modifier = Modifier.size(48.dp),
             ) {
               Icon(
                 imageVector = if (isCurrentTrackFavorite) Icons.RoundedFilled.Favorite else Icons.RoundedFilled.FavoriteBorder,
@@ -1762,7 +1769,7 @@ fun AudioPlayerControls(
 
             ReactiveIconButton(
               onClick = { addToPlaylistDialogOpen = true },
-              modifier = Modifier.size(40.dp),
+              modifier = Modifier.size(48.dp),
             ) {
               Icon(
                 imageVector = Icons.RoundedFilled.PlaylistAdd,
@@ -1800,12 +1807,25 @@ fun AudioPlayerControls(
       }
       val isPaused = paused ?: false
 
-      SeekbarWithTimers(
+      if (isRadio) {
+        // Radio has no truthful finite duration; do not expose mpv's live clock as a timeline.
+        Box(
+          modifier = Modifier.fillMaxWidth().height(32.dp),
+          contentAlignment = Alignment.Center,
+        ) {
+          Text(
+            text = "LIVE",
+            style = MaterialTheme.typography.labelLarge,
+            fontWeight = FontWeight.SemiBold,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+          )
+        }
+      } else SeekbarWithTimers(
         position = timelinePosition,
         committedPosition = timelinePosition,
         duration = timelineDuration.coerceAtLeast(1f),
         remaining = effectiveRemaining,
-        onValueChange = { value -> if (!isAudiobook) viewModel.seekPreviewTo(value) },
+        onValueChange = { value -> viewModel.seekPreviewTo(value) },
         onValueChangeFinished = viewModel::seekAudioTo,
         timersInverted = Pair(false, invertDuration),
         durationTimerOnCLick = { playerPreferences.invertDuration.set(!invertDuration) },
@@ -1852,13 +1872,15 @@ fun AudioPlayerControls(
             modifier = Modifier.size(28.dp),
           )
         }
-        ReactiveIconButton(onClick = { viewModel.seekBy(if (isAudiobook) -30 else -audioSeekDuration) }) {
-          Icon(
-            imageVector = Icons.RoundedFilled.FastRewind,
-            contentDescription = null,
-            tint = MaterialTheme.colorScheme.onSurface,
-            modifier = Modifier.size(34.dp),
-          )
+        if (!isRadio) {
+          ReactiveIconButton(onClick = { viewModel.seekBy(if (isAudiobook) -30 else -audioSeekDuration) }) {
+            Icon(
+              imageVector = Icons.RoundedFilled.FastRewind,
+              contentDescription = null,
+              tint = MaterialTheme.colorScheme.onSurface,
+              modifier = Modifier.size(34.dp),
+            )
+          }
         }
         ReactiveSurfaceButton(
           onClick = {
@@ -1879,13 +1901,15 @@ fun AudioPlayerControls(
             )
           }
         }
-        ReactiveIconButton(onClick = { viewModel.seekBy(if (isAudiobook) 30 else audioSeekDuration) }) {
-          Icon(
-            imageVector = Icons.RoundedFilled.FastForward,
-            contentDescription = null,
-            tint = MaterialTheme.colorScheme.onSurface,
-            modifier = Modifier.size(34.dp),
-          )
+        if (!isRadio) {
+          ReactiveIconButton(onClick = { viewModel.seekBy(if (isAudiobook) 30 else audioSeekDuration) }) {
+            Icon(
+              imageVector = Icons.RoundedFilled.FastForward,
+              contentDescription = null,
+              tint = MaterialTheme.colorScheme.onSurface,
+              modifier = Modifier.size(34.dp),
+            )
+          }
         }
         ReactiveIconButton(
           onClick = { if (isAudiobook) viewModel.stepPlaybackChapter(1) else viewModel.playNext() },
@@ -1912,7 +1936,7 @@ fun AudioPlayerControls(
     val audiobookModeButtons = @Composable {
       ReactiveIconButton(
         onClick = { onOpenSheet(Sheets.AudiobookSleepTimer) },
-        modifier = Modifier.size(40.dp),
+        modifier = Modifier.size(48.dp),
       ) {
         Icon(
           imageVector = Icons.RoundedFilled.Timer,
@@ -1922,7 +1946,7 @@ fun AudioPlayerControls(
       }
       ReactiveIconButton(
         onClick = { onOpenSheet(Sheets.Chapters) },
-        modifier = Modifier.size(40.dp),
+        modifier = Modifier.size(48.dp),
       ) {
         Icon(
           imageVector = Icons.RoundedFilled.MenuBook,
@@ -1942,9 +1966,6 @@ fun AudioPlayerControls(
           enabled = !audioFiltersConfigOwned,
           modifier =
             Modifier
-              .clip(
-                CircleShape,
-              ).background(MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.65f))
               .size(48.dp),
         ) {
           Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
@@ -1964,12 +1985,8 @@ fun AudioPlayerControls(
             Row(
               modifier =
                 Modifier
-                  .clip(CircleShape)
-                  .background(
-                    MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.65f),
-                  )
                   .horizontalScroll(rememberScrollState())
-                  .padding(horizontal = 8.dp, vertical = 4.dp),
+                  .padding(horizontal = 0.dp, vertical = 2.dp),
               verticalAlignment = Alignment.CenterVertically,
               horizontalArrangement = Arrangement.spacedBy(4.dp),
             ) {
@@ -1977,7 +1994,7 @@ fun AudioPlayerControls(
                 ReactiveIconButton(
                   onClick = viewModel::toggleShuffle,
                   enabled = playlistModeEnabled,
-                  modifier = Modifier.size(40.dp),
+                  modifier = Modifier.size(48.dp),
                 ) {
                   Icon(
                     imageVector = if (shuffleEnabled) Icons.RoundedFilled.ShuffleOn else Icons.RoundedFilled.Shuffle,
@@ -1987,7 +2004,7 @@ fun AudioPlayerControls(
                 }
                 ReactiveIconButton(
                   onClick = viewModel::cycleRepeatMode,
-                  modifier = Modifier.size(40.dp),
+                  modifier = Modifier.size(48.dp),
                 ) {
                   Icon(
                     imageVector = when (repeatMode) {
@@ -2003,7 +2020,7 @@ fun AudioPlayerControls(
               ReactiveIconButton(
                 onClick = { viewModel.toggleAudioVisualizer() },
                 onLongClick = { onOpenSheet(Sheets.VisualizerStyle) },
-                modifier = Modifier.size(40.dp),
+                modifier = Modifier.size(48.dp),
               ) {
                 Icon(
                   imageVector = if (showVisualizer) Icons.RoundedFilled.AutoAwesome else Icons.RoundedFilled.Audiotrack,
@@ -2020,7 +2037,7 @@ fun AudioPlayerControls(
                     audioPreferences.audioBackgroundPlayback.set(!backgroundPlaybackEnabled)
                   }
                 },
-                modifier = Modifier.size(40.dp),
+                modifier = Modifier.size(48.dp),
               ) {
                 Icon(
                   imageVector = Icons.RoundedFilled.Headset,
@@ -2031,7 +2048,7 @@ fun AudioPlayerControls(
             }
           }
         } else {
-          Spacer(modifier = Modifier.width(12.dp))
+          Spacer(modifier = Modifier.width(4.dp))
           Box(
             modifier = Modifier.weight(1f),
             contentAlignment = Alignment.Center,
@@ -2039,12 +2056,8 @@ fun AudioPlayerControls(
             Row(
               modifier =
                 Modifier
-                  .clip(CircleShape)
-                  .background(
-                    MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.65f),
-                  )
                   .horizontalScroll(rememberScrollState())
-                  .padding(horizontal = 8.dp, vertical = 4.dp),
+                  .padding(horizontal = 0.dp, vertical = 2.dp),
               verticalAlignment = Alignment.CenterVertically,
               horizontalArrangement = Arrangement.spacedBy(4.dp),
             ) {
@@ -2052,7 +2065,7 @@ fun AudioPlayerControls(
                 ReactiveIconButton(
                   onClick = viewModel::toggleShuffle,
                   enabled = playlistModeEnabled,
-                  modifier = Modifier.size(40.dp),
+                  modifier = Modifier.size(48.dp),
                 ) {
                   Icon(
                     imageVector = if (shuffleEnabled) Icons.RoundedFilled.ShuffleOn else Icons.RoundedFilled.Shuffle,
@@ -2062,7 +2075,7 @@ fun AudioPlayerControls(
                 }
                 ReactiveIconButton(
                   onClick = viewModel::cycleRepeatMode,
-                  modifier = Modifier.size(40.dp),
+                  modifier = Modifier.size(48.dp),
                 ) {
                   Icon(
                     imageVector = when (repeatMode) {
@@ -2078,7 +2091,7 @@ fun AudioPlayerControls(
               ReactiveIconButton(
                 onClick = { viewModel.toggleAudioVisualizer() },
                 onLongClick = { onOpenSheet(Sheets.VisualizerStyle) },
-                modifier = Modifier.size(40.dp),
+                modifier = Modifier.size(48.dp),
               ) {
                 Icon(
                   imageVector = if (showVisualizer) Icons.RoundedFilled.AutoAwesome else Icons.RoundedFilled.Audiotrack,
@@ -2088,7 +2101,7 @@ fun AudioPlayerControls(
               }
               ReactiveIconButton(
                 onClick = { showInPlaceLyrics = !showInPlaceLyrics },
-                modifier = Modifier.size(40.dp),
+                modifier = Modifier.size(48.dp),
               ) {
                 Icon(
                   imageVector = Icons.RoundedFilled.Lyrics,
@@ -2105,7 +2118,7 @@ fun AudioPlayerControls(
                     audioPreferences.audioBackgroundPlayback.set(!backgroundPlaybackEnabled)
                   }
                 },
-                modifier = Modifier.size(40.dp),
+                modifier = Modifier.size(48.dp),
               ) {
                 Icon(
                   imageVector = Icons.RoundedFilled.Headset,
@@ -2115,15 +2128,10 @@ fun AudioPlayerControls(
               }
             }
           }
-          Spacer(modifier = Modifier.width(12.dp))
+          Spacer(modifier = Modifier.width(4.dp))
           ReactiveIconButton(
             onClick = { onOpenSheet(if (isAudiobook) Sheets.Chapters else Sheets.Playlist) },
-            modifier =
-              Modifier
-                .clip(
-                  CircleShape,
-                ).background(MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.65f))
-                .size(48.dp),
+            modifier = Modifier.size(48.dp),
           ) {
             Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
               Icon(
@@ -2707,8 +2715,8 @@ private fun ReactiveIconButton(
       modifier =
         modifier
           .graphicsLayer {
-            scaleX = scale
-            scaleY = scale
+            scaleX = scale.coerceAtMost(1f)
+            scaleY = scale.coerceAtMost(1f)
           }
           .playerGlassPane(enabled = liquidGlassSurfaces, cornerRadius = 999.dp)
           .clip(CircleShape)
@@ -2741,8 +2749,8 @@ private fun ReactiveIconButton(
       modifier =
         modifier
           .graphicsLayer {
-            scaleX = scale
-            scaleY = scale
+            scaleX = scale.coerceAtMost(1f)
+            scaleY = scale.coerceAtMost(1f)
           }
           .playerGlassPane(enabled = liquidGlassSurfaces, cornerRadius = 999.dp),
     ) {
@@ -2786,8 +2794,8 @@ private fun ReactiveSurfaceButton(
     interactionSource = interactionSource,
     modifier =
       modifier.graphicsLayer {
-        scaleX = scale
-        scaleY = scale
+        scaleX = scale.coerceAtMost(1f)
+        scaleY = scale.coerceAtMost(1f)
       }.playerGlassPane(enabled = liquidGlassSurfaces, cornerRadius = 999.dp),
   ) {
     content()

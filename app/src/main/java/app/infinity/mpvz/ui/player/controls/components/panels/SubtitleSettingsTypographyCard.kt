@@ -63,8 +63,8 @@ import com.yubyf.truetypeparser.TTFFile
 import kotlinx.collections.immutable.toImmutableList
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import me.zhanghai.compose.preference.ListPreference
-import me.zhanghai.compose.preference.ListPreferenceType
+import app.infinity.mpvz.ui.preferences.components.ListPreference
+import app.infinity.mpvz.ui.preferences.components.ListPreferenceType
 import me.zhanghai.compose.preference.ProvidePreferenceLocals
 import me.zhanghai.compose.preference.preferenceTheme
 import org.koin.compose.koinInject

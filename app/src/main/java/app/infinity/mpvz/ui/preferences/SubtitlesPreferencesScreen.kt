@@ -7,6 +7,10 @@
 
 package app.infinity.mpvz.ui.preferences
 
+import app.infinity.mpvz.ui.preferences.components.settingsGlassContainerColor
+
+import app.infinity.mpvz.ui.preferences.components.settingsGlassSurface
+
 import android.content.Intent
 import android.net.Uri
 import android.widget.Toast
@@ -88,10 +92,10 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
-import me.zhanghai.compose.preference.ListPreference
-import me.zhanghai.compose.preference.Preference
+import app.infinity.mpvz.ui.preferences.components.ListPreference
+import app.infinity.mpvz.ui.preferences.components.Preference
 import me.zhanghai.compose.preference.ProvidePreferenceLocals
-import me.zhanghai.compose.preference.TextFieldPreference
+import app.infinity.mpvz.ui.preferences.components.TextFieldPreference
 import org.koin.compose.koinInject
 import java.io.File
 
@@ -653,6 +657,8 @@ object SubtitlesPreferencesScreen : Screen {
 
               if (showSourcesDialog) {
                 AlertDialog(
+      containerColor = settingsGlassContainerColor(androidx.compose.material3.AlertDialogDefaults.containerColor),
+      modifier = androidx.compose.ui.Modifier.settingsGlassSurface(cornerRadius = 28.dp),
                   onDismissRequest = { showSourcesDialog = false },
                   title = {
                     Row(
@@ -1084,6 +1090,8 @@ object SubtitlesPreferencesScreen : Screen {
 
               if (showClearDialog) {
                 AlertDialog(
+      containerColor = settingsGlassContainerColor(androidx.compose.material3.AlertDialogDefaults.containerColor),
+      modifier = androidx.compose.ui.Modifier.settingsGlassSurface(cornerRadius = 28.dp),
                   onDismissRequest = { showClearDialog = false },
                   title = { Text(stringResource(R.string.pref_subtitles_clear_downloads)) },
                   text = { Text(stringResource(R.string.pref_subtitles_clear_downloads_confirmation)) },
@@ -1190,6 +1198,8 @@ fun MultiChoicePreference(
 
   if (showDialog) {
     AlertDialog(
+      containerColor = settingsGlassContainerColor(androidx.compose.material3.AlertDialogDefaults.containerColor),
+      modifier = androidx.compose.ui.Modifier.settingsGlassSurface(cornerRadius = 28.dp),
       onDismissRequest = { showDialog = false },
       title = title,
       text = {

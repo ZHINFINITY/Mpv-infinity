@@ -14,6 +14,8 @@ class RadioMetadataPolicyTest {
     assertFalse(RadioMetadataPolicy.isRadio(true, true, "file:///music.mp3", null))
     assertFalse(RadioMetadataPolicy.isRadio(true, true, "https://radio.example/live", 180))
     assertTrue(RadioMetadataPolicy.isRadio(true, true, "https://radio.example/live", 1_792_529_064))
+    assertTrue(RadioMetadataPolicy.isRadio(true, true, "https://radio.example/live", 1))
+    assertFalse(RadioMetadataPolicy.isRadio(false, true, "https://radio.example/live", 1))
   }
 
   @Test fun streamMetadataWinsAndStationIsFallbackWithoutInventingArtist() {
@@ -26,9 +28,10 @@ class RadioMetadataPolicyTest {
     assertEquals("Station", RadioMetadataPolicy.presentation("Station", null, null, null, null, null).title)
   }
 
-  @Test fun explicitArtworkWinsAndNonHttpArtworkIsRejected() {
+  @Test fun currentTrackArtworkWinsAndNonHttpArtworkIsRejected() {
     val explicit = RadioMetadataPolicy.presentation("Station", null, null, null, "https://station/logo", "https://stream/art")
-    assertEquals("https://station/logo", explicit.artworkUri)
+    assertEquals("https://stream/art", explicit.artworkUri)
+    assertEquals("https://station/logo", RadioMetadataPolicy.presentation("Station", null, null, null, "https://station/logo", null).artworkUri)
     val metadata = RadioMetadataPolicy.presentation("Station", null, null, null, null, "http://stream/art")
     assertEquals("http://stream/art", metadata.artworkUri)
     assertNull(RadioMetadataPolicy.presentation("Station", null, null, null, "file:///logo", "data:image/png;base64,x").artworkUri)

@@ -37,14 +37,18 @@ class LiquidGlassContracts(unittest.TestCase):
         source = (JAVA / "ui/theme/LiquidGlassBackdrop.kt").read_text()
         self.assertEqual(1, source.count("GlassFrostPolicy.frostArgb("))
         self.assertIn("withContext(Dispatchers.Default)", source)
-        self.assertLess(source.index("?.let { frostGlassFrame(it) }"), source.index("frame.value = LiquidGlassFrame("))
+        self.assertLess(source.index("?.let { frostGlassFrame(it, tuning.frost) }"), source.index("frame.value = LiquidGlassFrame("))
         self.assertIn("frame.value = null // never display a stale frame", source)
         for forbidden in ("source.setRenderEffect", "source.holder.setFixedSize", "source.setLayerType", "video-scale", "setVideoScalingMode"):
             self.assertNotIn(forbidden, source)
         policy = (JAVA / "ui/theme/GlassFrostPolicy.kt").read_text()
         self.assertIn("GlassSamplingPolicy.MaxSampleEdge", policy)
         self.assertIn("val result = pixels.copyOf()", policy)
-        self.assertIn("repeat(Passes)", policy)
+        self.assertIn("GlassCustomizationPolicy.frostPasses(strength)", policy)
+        self.assertIn("repeat(passes)", policy)
+        tuning = (JAVA / "ui/theme/GlassCustomizationPolicy.kt").read_text()
+        self.assertIn("MaximumFrostPasses = 6", tuning)
+        self.assertIn(".coerceIn(0, MaximumFrostPasses)", tuning)
         self.assertNotIn("android.", policy)
 
     def test_subtitle_and_decoder_sheets_share_frost_without_per_sheet_sampling(self):

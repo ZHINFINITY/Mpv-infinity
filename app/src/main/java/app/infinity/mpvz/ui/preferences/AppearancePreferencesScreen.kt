@@ -74,9 +74,9 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
-import me.zhanghai.compose.preference.ListPreference
+import app.infinity.mpvz.ui.preferences.components.ListPreference
 import me.zhanghai.compose.preference.ProvidePreferenceLocals
-import me.zhanghai.compose.preference.SliderPreference
+import app.infinity.mpvz.ui.preferences.components.SliderPreference
 import org.koin.compose.koinInject
 import kotlin.math.roundToInt
 
@@ -348,6 +348,30 @@ object AppearancePreferencesScreen : Screen {
 
                   val glassOpacity by preferences.glassSurfaceOpacity.collectAsState()
                   val glassHighlight by preferences.glassSurfaceHighlight.collectAsState()
+                  val frostStrength by preferences.glassFrostStrength.collectAsState()
+                  val refractionStrength by preferences.glassRefractionStrength.collectAsState()
+                  val depthStrength by preferences.glassDepthStrength.collectAsState()
+                  val motionIntensity by preferences.glassMotionIntensity.collectAsState()
+                  GlassCustomizationPreference(
+                    title = "Frost / blur strength", summary = "Smooth shared frost; lower settings use less work",
+                    value = app.infinity.mpvz.ui.theme.GlassCustomizationPolicy.strength(frostStrength),
+                    enabled = liquidGlassSurfaces, onValueChange = preferences.glassFrostStrength::set,
+                  )
+                  GlassCustomizationPreference(
+                    title = "Refraction strength", summary = "Background lens bending on Android 13+; text stays sharp",
+                    value = app.infinity.mpvz.ui.theme.GlassCustomizationPolicy.strength(refractionStrength),
+                    enabled = liquidGlassSurfaces, onValueChange = preferences.glassRefractionStrength::set,
+                  )
+                  GlassCustomizationPreference(
+                    title = "Glass depth", summary = "Raised rims, inset highlights and soft shadows",
+                    value = app.infinity.mpvz.ui.theme.GlassCustomizationPolicy.strength(depthStrength),
+                    enabled = liquidGlassSurfaces, onValueChange = preferences.glassDepthStrength::set,
+                  )
+                  GlassCustomizationPreference(
+                    title = "Glass motion", summary = "Navigation-lens stretch and bounce; system reduced motion takes priority",
+                    value = app.infinity.mpvz.ui.theme.GlassCustomizationPolicy.motion(motionIntensity), maximum = 1f,
+                    enabled = liquidGlassSurfaces, onValueChange = preferences.glassMotionIntensity::set,
+                  )
                   SliderPreference(
                     value = GlassSurfacePolicy.opacity(glassOpacity),
                     onValueChange = { preferences.glassSurfaceOpacity.set(GlassSurfacePolicy.opacity(it)) },
@@ -1082,4 +1106,22 @@ object AppearancePreferencesScreen : Screen {
       }
     }
   }
+}
+
+@Composable
+private fun GlassCustomizationPreference(
+  title: String,
+  summary: String,
+  value: Float,
+  enabled: Boolean,
+  maximum: Float = 2f,
+  onValueChange: (Float) -> Unit,
+) {
+  val bounded = value.coerceIn(0f, maximum)
+  SliderPreference(
+    value = bounded, onValueChange = { onValueChange(it.coerceIn(0f, maximum)) },
+    sliderValue = bounded, onSliderValueChange = { onValueChange(it.coerceIn(0f, maximum)) },
+    title = { Text(title) }, summary = { Text("${(bounded * 100).toInt()}% · $summary") },
+    valueRange = 0f..maximum, enabled = enabled,
+  )
 }

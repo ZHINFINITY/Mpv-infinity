@@ -21,6 +21,7 @@ import app.infinity.mpvz.utils.media.M3UParser
 import app.infinity.mpvz.utils.media.M3UPlaylistItem
 import app.infinity.mpvz.utils.media.M3URoutingPolicy
 import app.infinity.mpvz.utils.media.M3USourceUrl
+import app.infinity.mpvz.utils.media.RadioM3uPlaylistPolicy
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
@@ -142,7 +143,10 @@ class PlaylistRepository(
   }
 
   suspend fun updatePlaylist(playlist: PlaylistEntity) {
-    playlistDao.updatePlaylist(playlist.copy(updatedAt = System.currentTimeMillis()))
+    val previous = playlistDao.getPlaylistById(playlist.id)
+    val name = if (previous?.isM3uPlaylist == true && RadioM3uPlaylistPolicy.isStoredRadioName(previous.name))
+      RadioM3uPlaylistPolicy.displayName(playlist.name) else playlist.name
+    playlistDao.updatePlaylist(playlist.copy(name = name, updatedAt = System.currentTimeMillis()))
   }
 
   suspend fun deletePlaylist(playlist: PlaylistEntity) {
@@ -175,6 +179,15 @@ class PlaylistRepository(
       classifyAndFilterPlaylists(playlists, isAudio)
     }
     return prioritizeFavorites(filtered)
+  }
+
+  /** Derived category: legacy radio M3U is recognized on load; TV/video M3U is never promoted. */
+  suspend fun isRadioM3uPlaylist(playlist: PlaylistEntity): Boolean {
+    if (!playlist.isM3uPlaylist) return false
+    if (RadioM3uPlaylistPolicy.isStoredRadioName(playlist.name)) return true
+    val items = playlistDao.getPlaylistItems(playlist.id)
+    val result = M3UParseResult.Success(playlist.name, items.map { M3UPlaylistItem(url = it.filePath, title = it.fileName, groupTitle = it.groupTitle, tvgId = it.tvgId, tvgLogo = it.tvgLogo, userAgent = it.userAgent) })
+    return RadioM3uPlaylistPolicy.isRadio(result)
   }
 
   private suspend fun classifyAndFilterPlaylists(
@@ -371,16 +384,17 @@ class PlaylistRepository(
   suspend fun createM3UPlaylist(
     url: String,
     userAgent: String? = null,
+    forceRadio: Boolean = false,
   ): Result<Long> =
     try {
       val remotePlaylist = loadRemotePlaylist(url, userAgent).getOrElse { error -> return Result.failure(error) }
       val playlistId =
         persistM3UPlaylist(
           parseResult = remotePlaylist.parseResult,
-          name = remotePlaylist.parseResult.playlistName,
+          name = if (forceRadio || RadioM3uPlaylistPolicy.isRadio(remotePlaylist.parseResult)) RadioM3uPlaylistPolicy.displayName(remotePlaylist.parseResult.playlistName) else remotePlaylist.parseResult.playlistName,
           sourceUrl = remotePlaylist.sourceUrl,
           userAgent = userAgent,
-          isAudio = M3URoutingPolicy.isMusicPlaylist(remotePlaylist.parseResult),
+          isAudio = forceRadio || M3URoutingPolicy.isMusicPlaylist(remotePlaylist.parseResult),
         )
       Result.success(playlistId)
     } catch (e: CancellationException) {
@@ -392,6 +406,7 @@ class PlaylistRepository(
   suspend fun createM3UPlaylistFromFile(
     context: Context,
     uri: Uri,
+    forceRadio: Boolean = false,
   ): Result<Long> =
     try {
       val parseResult = M3UParser.parseFromUri(context, uri)
@@ -401,9 +416,9 @@ class PlaylistRepository(
           val playlistId =
             persistM3UPlaylist(
               parseResult = parseResult,
-              name = parseResult.playlistName,
+              name = if (forceRadio || RadioM3uPlaylistPolicy.isRadio(parseResult)) RadioM3uPlaylistPolicy.displayName(parseResult.playlistName) else parseResult.playlistName,
               sourceUrl = null,
-              isAudio = M3URoutingPolicy.isMusicPlaylist(parseResult),
+              isAudio = forceRadio || M3URoutingPolicy.isMusicPlaylist(parseResult),
             )
           Result.success(playlistId)
         }

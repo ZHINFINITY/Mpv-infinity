@@ -7,6 +7,10 @@
 
 package app.infinity.mpvz.ui.preferences
 
+import app.infinity.mpvz.ui.preferences.components.settingsGlassContainerColor
+
+import app.infinity.mpvz.ui.preferences.components.settingsGlassSurface
+
 import android.webkit.CookieManager
 import android.webkit.WebView
 import android.webkit.WebViewClient
@@ -154,6 +158,8 @@ object YtdlpSettingsScreen : Screen {
     if (showCustomUserAgentSheet) {
       var draftUserAgent by remember(showCustomUserAgentSheet) { mutableStateOf(customUserAgent) }
       ModalBottomSheet(
+      containerColor = settingsGlassContainerColor(androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainerLow),
+      modifier = androidx.compose.ui.Modifier.settingsGlassSurface(cornerRadius = 28.dp),
         onDismissRequest = { showCustomUserAgentSheet = false },
       ) {
         Column(

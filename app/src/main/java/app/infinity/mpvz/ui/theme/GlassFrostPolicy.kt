@@ -10,12 +10,14 @@ object GlassFrostPolicy {
   const val Passes = 3
   private const val Window = Radius * 2 + 1
 
-  fun frostArgb(pixels: IntArray, width: Int, height: Int): IntArray {
+  fun frostArgb(pixels: IntArray, width: Int, height: Int, strength: Float = 1f): IntArray {
     require(width in 1..GlassSamplingPolicy.MaxSampleEdge && height in 1..GlassSamplingPolicy.MaxSampleEdge)
     require(pixels.size == width * height)
     val result = pixels.copyOf()
+    val passes = GlassCustomizationPolicy.frostPasses(strength)
+    if (passes == 0) return result
     val scratch = IntArray(pixels.size)
-    repeat(Passes) {
+    repeat(passes) {
       boxPass(result, scratch, width, height, horizontal = true)
       boxPass(scratch, result, width, height, horizontal = false)
     }

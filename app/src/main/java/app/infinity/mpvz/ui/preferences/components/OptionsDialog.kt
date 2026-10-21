@@ -7,6 +7,10 @@
 
 package app.infinity.mpvz.ui.preferences.components
 
+import app.infinity.mpvz.ui.preferences.components.settingsGlassContainerColor
+
+import app.infinity.mpvz.ui.preferences.components.settingsGlassSurface
+
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -38,6 +42,7 @@ fun <T> OptionsDialog(
   optionLabel: @Composable (T) -> String,
 ) {
   AlertDialog(
+      modifier = androidx.compose.ui.Modifier.settingsGlassSurface(cornerRadius = 28.dp),
     onDismissRequest = onDismiss,
     title = {
       Text(
@@ -88,7 +93,7 @@ fun <T> OptionsDialog(
         )
       }
     },
-    containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+    containerColor = settingsGlassContainerColor(MaterialTheme.colorScheme.surfaceContainerHigh),
     tonalElevation = 6.dp,
     shape = MaterialTheme.shapes.extraLarge,
     properties =

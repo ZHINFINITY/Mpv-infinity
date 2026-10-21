@@ -20,7 +20,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.unit.dp
-import app.infinity.mpvz.ui.components.IconSwitch
+import app.infinity.mpvz.ui.player.controls.components.GlassSwitch
 
 @Composable
 fun SwitchPreference(
@@ -39,6 +39,7 @@ fun SwitchPreference(
     modifier =
       modifier
         .fillMaxWidth()
+        .settingsGlassSurface(cornerRadius = 18.dp)
         .clickable(enabled = enabled) { onValueChange(!value) }
         .padding(horizontal = 16.dp, vertical = 12.dp),
     verticalAlignment = Alignment.CenterVertically,
@@ -68,7 +69,7 @@ fun SwitchPreference(
       }
     }
 
-    IconSwitch(
+    GlassSwitch(
       checked = value,
       onCheckedChange = onValueChange,
       enabled = enabled,

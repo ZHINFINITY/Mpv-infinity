@@ -46,12 +46,13 @@ fun PlaylistCard(
   modifier: Modifier = Modifier,
   isSelected: Boolean = false,
   isGridMode: Boolean = false,
+  isRadioM3u: Boolean = false,
   thumbnail: android.graphics.Bitmap? = null,
 ) {
   val isFavorites = playlist.name.equals(PlaylistRepository.FAVORITES_PLAYLIST_NAME, ignoreCase = true)
   val displayName =
     when {
-      !isFavorites -> playlist.name
+      !isFavorites -> if (isRadioM3u) "◉ ${playlist.name.removePrefix("Radio/M3U ")}" else playlist.name
       playlist.isAudio -> stringResource(R.string.playlist_favorite_songs)
       else -> stringResource(R.string.playlist_favorite_videos)
     }
@@ -75,6 +76,7 @@ fun PlaylistCard(
       } == true
     val chipText =
       when {
+        isRadioM3u -> if (itemCount == 1) "1 station" else "$itemCount stations"
         isOnlinePlaylist -> stringResource(R.string.playlist_online_badge)
         playlist.isM3uPlaylist -> stringResource(R.string.playlist_m3u_badge)
         else -> "Local"
@@ -121,6 +123,7 @@ fun PlaylistCard(
     modifier = modifier,
     customChipContent = customChipRenderer,
     isGridMode = isGridMode,
+    isAudioOnly = isRadioM3u,
     thumbnail = thumbnailBitmap,
   )
 }

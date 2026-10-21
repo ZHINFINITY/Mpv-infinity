@@ -130,7 +130,8 @@ fun Modifier.browserGlassSceneSource(): Modifier {
 }
 
 @Composable
-fun rememberBrowserGlassMotionAllowed(): Boolean = LocalBrowserCapabilities.current.motion
+fun rememberBrowserGlassMotionAllowed(): Boolean = LocalBrowserCapabilities.current.motion &&
+  !LocalMotionPolicy.current.reduceMotion && LocalGlassCustomization.current.motion > 0f
 
 /** Optics affect only the background node; labels and touch targets remain untouched. */
 @Composable
@@ -146,6 +147,7 @@ fun BrowserGlassSurface(
 ) {
   val scene = LocalBrowserScene.current
   val capabilities = LocalBrowserCapabilities.current
+  val tuning = LocalGlassCustomization.current
   val shape = remember(cornerRadius) { RoundedCornerShape(cornerRadius) }
   val tint = if (selected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerHigh
   val film = GlassSurfacePolicy.opacity(opacity)
@@ -158,7 +160,7 @@ fun BrowserGlassSurface(
   }
   val lens = rememberGraphicsLayer()
   Box(modifier
-    .shadow(if (enabled) if (selected) 7.dp else 12.dp else 0.dp, shape, clip = false)
+    .shadow(if (enabled) (if (selected) 7.dp else 12.dp) * tuning.depth else 0.dp, shape, clip = false)
     .onGloballyPositioned { paneOrigin = it.localToWindow(Offset.Zero) }
     .clip(shape)
     .then(if (!enabled) Modifier.background(tint, shape) else Modifier)) {
@@ -169,14 +171,14 @@ fun BrowserGlassSurface(
         val effect = if (refraction) runCatching {
           shader!!.setFloatUniform("pane", size.width, size.height)
           shader.setFloatUniform("radius", radius)
-          shader.setFloatUniform("bend", (if (selected) 9f else 5f) * density)
+          shader.setFloatUniform("bend", (if (selected) 9f else 5f) * density * tuning.refraction)
           shader.setFloatUniform("motion", deformation.coerceIn(0f, 1f))
-          RenderEffect.createChainEffect(
-            RenderEffect.createRuntimeShaderEffect(shader, "scene"),
-            RenderEffect.createBlurEffect(2f * density, 2f * density, Shader.TileMode.CLAMP),
-          ).asComposeRenderEffect()
-        }.getOrNull() else if (Build.VERSION.SDK_INT >= 31 && scene != null) runCatching {
-          RenderEffect.createBlurEffect(3f * density, 3f * density, Shader.TileMode.CLAMP).asComposeRenderEffect()
+          val lensEffect = RenderEffect.createRuntimeShaderEffect(shader, "scene")
+          (if (tuning.frost > 0f) RenderEffect.createChainEffect(lensEffect,
+            RenderEffect.createBlurEffect(2f * density * tuning.frost, 2f * density * tuning.frost, Shader.TileMode.CLAMP))
+          else lensEffect).asComposeRenderEffect()
+        }.getOrNull() else if (Build.VERSION.SDK_INT >= 31 && scene != null && tuning.frost > 0f) runCatching {
+          RenderEffect.createBlurEffect(3f * density * tuning.frost, 3f * density * tuning.frost, Shader.TileMode.CLAMP).asComposeRenderEffect()
         }.getOrNull() else null
         lens.renderEffect = effect
         val edge = Brush.linearGradient(listOf(

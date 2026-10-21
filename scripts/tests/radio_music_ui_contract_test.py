@@ -15,6 +15,18 @@ class RadioMusicUiContracts(unittest.TestCase):
             self.assertIn("RadioMetadataPolicy", source)
         self.assertIn("metadata/by-key/", (JAVA / "ui/player/MediaPlaybackService.kt").read_text())
 
+    def test_live_radio_cannot_publish_timeline_or_restore_resume(self):
+        policy = (JAVA / "ui/player/RadioMetadataPolicy.kt").read_text()
+        session = (JAVA / "ui/player/PlaybackSession.kt").read_text()
+        service = (JAVA / "ui/player/MediaPlaybackService.kt").read_text()
+        self.assertIn("durationSeconds <= 1", policy)
+        self.assertIn("val isLiveRadio = RadioMetadataPolicy.isRadio", session)
+        self.assertIn("!isLiveRadio &&", session)
+        self.assertIn("initialPosition != null && !isLiveRadio", session)
+        self.assertIn("return 0L", service[service.index("private fun sanitizedDurationMs"):])
+        position = service[service.index("private fun sanitizedPositionMs"):]
+        self.assertIn("if (isCurrentRadioItem()) return 0L", position)
+
     def test_real_station_headers_survive_late_subscribers_and_station_changes(self):
         probe = (JAVA / "utils/media/RadioStreamProbe.kt").read_text()
         session = (JAVA / "ui/player/PlaybackSession.kt").read_text()

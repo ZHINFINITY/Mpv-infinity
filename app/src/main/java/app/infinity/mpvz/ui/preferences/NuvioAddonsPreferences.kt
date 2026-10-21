@@ -1,5 +1,9 @@
 package app.infinity.mpvz.ui.preferences
 
+import app.infinity.mpvz.ui.preferences.components.settingsGlassContainerColor
+
+import app.infinity.mpvz.ui.preferences.components.settingsGlassSurface
+
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.clickable
@@ -45,7 +49,7 @@ import app.infinity.mpvz.catalog.nuvio.PluginRepository
 import app.infinity.mpvz.catalog.nuvio.PluginSettingField
 import app.infinity.mpvz.catalog.nuvio.PluginScraper
 import kotlinx.coroutines.launch
-import me.zhanghai.compose.preference.Preference
+import app.infinity.mpvz.ui.preferences.components.Preference
 import app.infinity.mpvz.ui.icons.Icon
 import app.infinity.mpvz.ui.icons.Icons
 
@@ -240,6 +244,8 @@ private fun PluginProviderSettingsDialog(
   onSave: () -> Unit,
 ) {
   AlertDialog(
+      containerColor = settingsGlassContainerColor(androidx.compose.material3.AlertDialogDefaults.containerColor),
+      modifier = androidx.compose.ui.Modifier.settingsGlassSurface(cornerRadius = 28.dp),
     onDismissRequest = onDismiss,
     title = { Text("${provider.name} settings") },
     text = {
@@ -257,7 +263,9 @@ private fun PluginProviderSettingsDialog(
                   Text(field.label, style = MaterialTheme.typography.labelLarge)
                   Box {
                     OutlinedButton(onClick = { expanded = true }, modifier = Modifier.fillMaxWidth(), enabled = key != null) { Text(field.options.firstOrNull { it.value == value }?.label ?: value.ifBlank { field.placeholder ?: "Select" }, Modifier.fillMaxWidth()) }
-                    DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+                    DropdownMenu(
+      containerColor = settingsGlassContainerColor(androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainer),
+      modifier = androidx.compose.ui.Modifier.settingsGlassSurface(cornerRadius = 12.dp),expanded = expanded, onDismissRequest = { expanded = false }) {
                       field.options.forEach { option -> DropdownMenuItem(text = { Text(option.label) }, onClick = { if (key != null) values[key] = option.value; expanded = false }) }
                     }
                   }
@@ -286,7 +294,9 @@ private fun AddNuvioProviderRepositoryDialog(onDismiss: () -> Unit, onAdd: (Stri
   var url by remember { mutableStateOf("") }
   var error by remember { mutableStateOf<String?>(null) }
   var busy by remember { mutableStateOf(false) }
-  ModalBottomSheet(onDismissRequest = { if (!busy) onDismiss() }) {
+  ModalBottomSheet(
+      containerColor = settingsGlassContainerColor(androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainerLow),
+      modifier = androidx.compose.ui.Modifier.settingsGlassSurface(cornerRadius = 28.dp),onDismissRequest = { if (!busy) onDismiss() }) {
     Column(Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 22.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
       Text("Add Nuvio provider repository", style = MaterialTheme.typography.headlineSmall)
       Text("Paste a Nuvio JavaScript scraper repository URL. This is not a Stremio manifest URL.", color = MaterialTheme.colorScheme.onSurfaceVariant)

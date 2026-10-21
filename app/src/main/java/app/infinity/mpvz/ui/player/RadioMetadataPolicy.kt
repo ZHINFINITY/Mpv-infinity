@@ -2,7 +2,7 @@ package app.infinity.mpvz.ui.player
 
 /** Pure rules for M3U radio presentation; no network lookup or metadata fabrication. */
 object RadioMetadataPolicy {
-  /** Durations above a day are demuxer clock/epoch values, not finite radio items. */
+  /** Durations above a day, or the common one-second probe placeholder, are not finite radio items. */
   const val MAX_FINITE_DURATION_SECONDS = 24 * 60 * 60
   data class Presentation(
     val title: String,
@@ -17,7 +17,7 @@ object RadioMetadataPolicy {
     durationSeconds: Int?,
   ): Boolean =
     queueIsM3u && itemIsAudio && isHttpUrl(streamUri) &&
-      (durationSeconds == null || durationSeconds <= 0 || durationSeconds > MAX_FINITE_DURATION_SECONDS)
+      (durationSeconds == null || durationSeconds <= 1 || durationSeconds > MAX_FINITE_DURATION_SECONDS)
 
   fun presentation(
     stationTitle: String?,
@@ -31,7 +31,7 @@ object RadioMetadataPolicy {
     return Presentation(
       title = title,
       artist = clean(streamArtist),
-      artworkUri = clean(explicitArtwork)?.takeIf(::isHttpUrl) ?: clean(metadataArtwork)?.takeIf(::isHttpUrl),
+      artworkUri = clean(metadataArtwork)?.takeIf(::isHttpUrl) ?: clean(explicitArtwork)?.takeIf(::isHttpUrl),
     )
   }
 

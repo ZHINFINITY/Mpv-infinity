@@ -60,6 +60,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import app.infinity.mpvz.R
 import app.infinity.mpvz.preferences.AdvancedPreferences
+import app.infinity.mpvz.preferences.AppearancePreferences
 import app.infinity.mpvz.preferences.AudioPreferences
 import app.infinity.mpvz.preferences.MpvConfigControlledFeatures
 import app.infinity.mpvz.preferences.PlayerButton
@@ -77,6 +78,7 @@ import app.infinity.mpvz.ui.player.Sheets
 import app.infinity.mpvz.ui.player.VideoAspect
 import app.infinity.mpvz.ui.player.controls.components.AbLoopIcon
 import app.infinity.mpvz.ui.player.controls.components.ControlsButton
+import app.infinity.mpvz.ui.player.controls.components.playerGlassPane
 import app.infinity.mpvz.ui.player.controls.components.CurrentChapter
 import app.infinity.mpvz.ui.theme.controlColor as defaultControlColor
 import app.infinity.mpvz.ui.theme.spacing
@@ -116,6 +118,8 @@ fun RenderPlayerButton(
     val clickEvent = LocalPlayerButtonsClickEvent.current
     val advancedPreferences = koinInject<AdvancedPreferences>()
     val playerPreferences = koinInject<PlayerPreferences>()
+    val appearancePreferences = koinInject<AppearancePreferences>()
+    val liquidGlassSurfaces by appearancePreferences.liquidGlassSurfaces.collectAsState()
     val statisticsPage by advancedPreferences.enabledStatisticsPage.collectAsState()
     when (button) {
     PlayerButton.BACK_ARROW -> {
@@ -135,7 +139,7 @@ fun RenderPlayerButton(
       Surface(
         shape = CircleShape,
         color =
-          if (hideBackground) {
+          if (liquidGlassSurfaces || hideBackground) {
             Color.Transparent
           } else {
             MaterialTheme.colorScheme.surfaceContainer.copy(
@@ -146,7 +150,7 @@ fun RenderPlayerButton(
         tonalElevation = 0.dp,
         shadowElevation = 0.dp,
         border =
-          if (hideBackground) {
+          if (liquidGlassSurfaces || hideBackground) {
             null
           } else {
             BorderStroke(
@@ -169,7 +173,8 @@ fun RenderPlayerButton(
                 clickEvent()
                 onOpenSheet(Sheets.Playlist)
               },
-            ),
+            )
+            .playerGlassPane(enabled = liquidGlassSurfaces, cornerRadius = 999.dp),
       ) {
         Row(
           verticalAlignment = Alignment.CenterVertically,
@@ -217,7 +222,7 @@ fun RenderPlayerButton(
         Surface(
           shape = CircleShape,
           color =
-            if (hideBackground) {
+            if (liquidGlassSurfaces || hideBackground) {
               Color.Transparent
             } else {
               MaterialTheme.colorScheme.surfaceContainer.copy(
@@ -229,7 +234,7 @@ fun RenderPlayerButton(
           tonalElevation = 0.dp,
           shadowElevation = 0.dp,
           border =
-            if (hideBackground) {
+            if (liquidGlassSurfaces || hideBackground) {
               null
             } else {
               BorderStroke(
@@ -249,7 +254,8 @@ fun RenderPlayerButton(
                   clickEvent()
                   onOpenSheet(Sheets.PlaybackSpeed)
                 },
-              ),
+              )
+              .playerGlassPane(enabled = liquidGlassSurfaces, cornerRadius = 999.dp),
         ) {
           Row(
             verticalAlignment = Alignment.CenterVertically,
@@ -299,7 +305,7 @@ fun RenderPlayerButton(
         Surface(
           shape = CircleShape,
           color =
-            if (hideBackground) {
+            if (liquidGlassSurfaces || hideBackground) {
               Color.Transparent
             } else {
               MaterialTheme.colorScheme.surfaceContainer.copy(
@@ -317,7 +323,7 @@ fun RenderPlayerButton(
           tonalElevation = 0.dp,
           shadowElevation = 0.dp,
           border =
-            if (hideBackground) {
+            if (liquidGlassSurfaces || hideBackground) {
               null
             } else {
               BorderStroke(
@@ -337,7 +343,8 @@ fun RenderPlayerButton(
                   clickEvent()
                   onOpenSheet(Sheets.Decoders)
                 },
-              ),
+              )
+              .playerGlassPane(enabled = liquidGlassSurfaces, cornerRadius = 999.dp),
         ) {
           Row(
             verticalAlignment = Alignment.CenterVertically,
@@ -403,9 +410,9 @@ fun RenderPlayerButton(
         if (expanded) {
           Surface(
             shape = MaterialTheme.shapes.extraLarge,
-            color = MaterialTheme.colorScheme.surfaceContainer.copy(alpha = 0.55f),
+            color = if (liquidGlassSurfaces || hideBackground) Color.Transparent else MaterialTheme.colorScheme.surfaceContainer.copy(alpha = 0.55f),
             border =
-              if (hideBackground) {
+              if (liquidGlassSurfaces || hideBackground) {
                 null
               } else {
                 BorderStroke(
@@ -413,7 +420,7 @@ fun RenderPlayerButton(
                   MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f),
                 )
               },
-            modifier = Modifier.height(buttonSize),
+            modifier = Modifier.height(buttonSize).playerGlassPane(enabled = liquidGlassSurfaces, cornerRadius = 999.dp),
           ) {
             Row(
               horizontalArrangement = Arrangement.spacedBy(2.dp),
@@ -431,7 +438,7 @@ fun RenderPlayerButton(
                     .clickable(onClick = {
                       viewModel.frameStepBackward()
                       viewModel.resetFrameNavigationTimer()
-                    }),
+                    }).playerGlassPane(enabled = liquidGlassSurfaces, cornerRadius = 999.dp),
               ) {
                 Box(contentAlignment = Alignment.Center) {
                   AppSymbolIcon(
@@ -450,9 +457,9 @@ fun RenderPlayerButton(
               if (isSnapshotLoading) {
                 Surface(
                   shape = CircleShape,
-                  color = MaterialTheme.colorScheme.surfaceContainer.copy(alpha = 0.55f),
-                  border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)),
-                  modifier = Modifier.size(buttonSize - 4.dp),
+                  color = if (liquidGlassSurfaces || hideBackground) Color.Transparent else MaterialTheme.colorScheme.surfaceContainer.copy(alpha = 0.55f),
+                  border = if (liquidGlassSurfaces || hideBackground) null else BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)),
+                  modifier = Modifier.size(buttonSize - 4.dp).playerGlassPane(enabled = liquidGlassSurfaces, cornerRadius = 999.dp),
                 ) {
                   Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
                     CircularProgressIndicator(
@@ -466,8 +473,8 @@ fun RenderPlayerButton(
                 @OptIn(ExperimentalFoundationApi::class)
                 Surface(
                   shape = CircleShape,
-                  color = MaterialTheme.colorScheme.surfaceContainer.copy(alpha = 0.55f),
-                  border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)),
+                  color = if (liquidGlassSurfaces || hideBackground) Color.Transparent else MaterialTheme.colorScheme.surfaceContainer.copy(alpha = 0.55f),
+                  border = if (liquidGlassSurfaces || hideBackground) null else BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)),
                   modifier =
                     Modifier
                       .size(buttonSize - 4.dp)
@@ -478,7 +485,8 @@ fun RenderPlayerButton(
                           viewModel.resetFrameNavigationTimer()
                         },
                         onLongClick = { onOpenSheet(Sheets.FrameNavigation) },
-                      ),
+                      )
+                      .playerGlassPane(enabled = liquidGlassSurfaces, cornerRadius = 999.dp),
                 ) {
                   Box(contentAlignment = Alignment.Center) {
                     AppSymbolIcon(
@@ -505,7 +513,7 @@ fun RenderPlayerButton(
                     .clickable(onClick = {
                       viewModel.frameStepForward()
                       viewModel.resetFrameNavigationTimer()
-                    }),
+                    }).playerGlassPane(enabled = liquidGlassSurfaces, cornerRadius = 999.dp),
               ) {
                 Box(contentAlignment = Alignment.Center) {
                   AppSymbolIcon(
@@ -550,7 +558,7 @@ fun RenderPlayerButton(
         Surface(
           shape = CircleShape,
           color =
-            if (hideBackground) {
+            if (liquidGlassSurfaces || hideBackground) {
               Color.Transparent
             } else {
               MaterialTheme.colorScheme.surfaceContainer.copy(
@@ -561,7 +569,7 @@ fun RenderPlayerButton(
           tonalElevation = 0.dp,
           shadowElevation = 0.dp,
           border =
-            if (hideBackground) {
+            if (liquidGlassSurfaces || hideBackground) {
               null
             } else {
               BorderStroke(
@@ -585,7 +593,8 @@ fun RenderPlayerButton(
                   clickEvent()
                   viewModel.resetVideoZoom()
                 },
-              ),
+              )
+              .playerGlassPane(enabled = liquidGlassSurfaces, cornerRadius = 999.dp),
         ) {
           Row(
             verticalAlignment = Alignment.CenterVertically,
@@ -866,7 +875,7 @@ fun RenderPlayerButton(
       Surface(
         shape = CircleShape,
         color =
-          if (hideBackground) {
+          if (liquidGlassSurfaces || hideBackground) {
             Color.Transparent
           } else {
             MaterialTheme.colorScheme.surfaceContainer.copy(
@@ -875,7 +884,7 @@ fun RenderPlayerButton(
           },
         contentColor = vFlipColor,
         border =
-          if (hideBackground) {
+          if (liquidGlassSurfaces || hideBackground) {
             null
           } else {
             BorderStroke(
@@ -893,7 +902,8 @@ fun RenderPlayerButton(
                 clickEvent()
                 viewModel.toggleVerticalFlip()
               },
-            ),
+            )
+            .playerGlassPane(enabled = liquidGlassSurfaces, cornerRadius = 999.dp),
       ) {
         Box(contentAlignment = Alignment.Center) {
           AppSymbolIcon(
@@ -930,9 +940,9 @@ fun RenderPlayerButton(
         if (expanded) {
           Surface(
             shape = MaterialTheme.shapes.extraLarge,
-            color = MaterialTheme.colorScheme.surfaceContainer.copy(alpha = 0.55f),
+            color = if (liquidGlassSurfaces || hideBackground) Color.Transparent else MaterialTheme.colorScheme.surfaceContainer.copy(alpha = 0.55f),
             border =
-              if (hideBackground) {
+              if (liquidGlassSurfaces || hideBackground) {
                 null
               } else {
                 BorderStroke(
@@ -940,7 +950,7 @@ fun RenderPlayerButton(
                   MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f),
                 )
               },
-            modifier = Modifier.height(buttonSize),
+            modifier = Modifier.height(buttonSize).playerGlassPane(enabled = liquidGlassSurfaces, cornerRadius = 999.dp),
           ) {
             Row(
               horizontalArrangement = Arrangement.spacedBy(2.dp),
@@ -950,13 +960,13 @@ fun RenderPlayerButton(
               // Point A Button - always transparent background
               Surface(
                 shape = CircleShape,
-                color = if (loopA != null) MaterialTheme.colorScheme.tertiaryContainer else Color.Transparent,
+                color = if (liquidGlassSurfaces || loopA == null) Color.Transparent else MaterialTheme.colorScheme.tertiaryContainer,
                 modifier =
                   Modifier
                     .height(buttonSize - 4.dp)
                     .widthIn(min = buttonSize - 4.dp)
                     .clip(CircleShape)
-                    .clickable(onClick = { viewModel.setLoopA() }),
+                    .clickable(onClick = { viewModel.setLoopA() }).playerGlassPane(enabled = liquidGlassSurfaces, cornerRadius = 999.dp),
               ) {
                 Box(contentAlignment = Alignment.Center) {
                   Text(
@@ -976,8 +986,8 @@ fun RenderPlayerButton(
               // Clear/Close Button - always has background
               Surface(
                 shape = CircleShape,
-                color = MaterialTheme.colorScheme.surfaceContainer.copy(alpha = 0.55f),
-                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)),
+                color = if (liquidGlassSurfaces || hideBackground) Color.Transparent else MaterialTheme.colorScheme.surfaceContainer.copy(alpha = 0.55f),
+                border = if (liquidGlassSurfaces || hideBackground) null else BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)),
                 modifier =
                   Modifier
                     .size(buttonSize - 4.dp)
@@ -985,7 +995,7 @@ fun RenderPlayerButton(
                     .clickable(onClick = {
                       viewModel.clearABLoop()
                       viewModel.toggleABLoopExpanded()
-                    }),
+                    }).playerGlassPane(enabled = liquidGlassSurfaces, cornerRadius = 999.dp),
               ) {
                 Box(contentAlignment = Alignment.Center) {
                   AppSymbolIcon(
@@ -1003,13 +1013,13 @@ fun RenderPlayerButton(
               // Point B Button - always transparent background
               Surface(
                 shape = CircleShape,
-                color = if (loopB != null) MaterialTheme.colorScheme.tertiaryContainer else Color.Transparent,
+                color = if (liquidGlassSurfaces || loopB == null) Color.Transparent else MaterialTheme.colorScheme.tertiaryContainer,
                 modifier =
                   Modifier
                     .height(buttonSize - 4.dp)
                     .widthIn(min = buttonSize - 4.dp)
                     .clip(CircleShape)
-                    .clickable(onClick = { viewModel.setLoopB() }),
+                    .clickable(onClick = { viewModel.setLoopB() }).playerGlassPane(enabled = liquidGlassSurfaces, cornerRadius = 999.dp),
               ) {
                 Box(contentAlignment = Alignment.Center) {
                   Text(
@@ -1032,7 +1042,7 @@ fun RenderPlayerButton(
           Surface(
             shape = CircleShape,
             color =
-              if (hideBackground) {
+              if (liquidGlassSurfaces || hideBackground) {
                 Color.Transparent
               } else {
                 MaterialTheme.colorScheme.surfaceContainer.copy(
@@ -1040,7 +1050,7 @@ fun RenderPlayerButton(
                 )
               },
             border =
-              if (hideBackground) {
+              if (liquidGlassSurfaces || hideBackground) {
                 null
               } else {
                 BorderStroke(
@@ -1065,7 +1075,7 @@ fun RenderPlayerButton(
                       viewModel.toggleABLoopExpanded()
                     }
                   },
-                ),
+                ).playerGlassPane(enabled = liquidGlassSurfaces, cornerRadius = 999.dp),
           ) {
             Box(contentAlignment = Alignment.Center) {
               AbLoopIcon(
@@ -1112,7 +1122,7 @@ fun RenderPlayerButton(
       Surface(
         shape = CircleShape,
         color =
-          if (hideBackground) {
+          if (liquidGlassSurfaces || hideBackground) {
             Color.Transparent
           } else {
             MaterialTheme.colorScheme.surfaceContainer.copy(
@@ -1126,7 +1136,7 @@ fun RenderPlayerButton(
             if (hideBackground) controlColor else MaterialTheme.colorScheme.onSurface
           },
         border =
-          if (hideBackground) {
+          if (liquidGlassSurfaces || hideBackground) {
             null
           } else {
             BorderStroke(
@@ -1158,7 +1168,8 @@ fun RenderPlayerButton(
                 clickEvent()
                 onOpenSheet(Sheets.AmbientConfig)
               },
-            ),
+            )
+            .playerGlassPane(enabled = liquidGlassSurfaces, cornerRadius = 999.dp),
       ) {
         Box(contentAlignment = Alignment.Center) {
           AppSymbolIcon(
@@ -1209,7 +1220,7 @@ fun RenderPlayerButton(
         Surface(
           shape = CircleShape,
           color =
-            if (hideBackground) {
+            if (liquidGlassSurfaces || hideBackground) {
               Color.Transparent
             } else {
               MaterialTheme.colorScheme.surfaceContainer.copy(
@@ -1218,7 +1229,7 @@ fun RenderPlayerButton(
             },
           contentColor = if (hideBackground) controlColor else MaterialTheme.colorScheme.onSurface,
           border =
-            if (hideBackground) {
+            if (liquidGlassSurfaces || hideBackground) {
               null
             } else {
               BorderStroke(
@@ -1237,7 +1248,8 @@ fun RenderPlayerButton(
                   clickEvent()
                   toggleTimeAndNetwork()
                 },
-              ),
+              )
+              .playerGlassPane(enabled = liquidGlassSurfaces, cornerRadius = 999.dp),
         ) {
           Row(
             verticalAlignment = Alignment.CenterVertically,

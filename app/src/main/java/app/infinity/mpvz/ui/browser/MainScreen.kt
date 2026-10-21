@@ -632,17 +632,18 @@ private fun ExpressivePillNavigationBar(
     }
   }
 
+  val glassMotion = app.infinity.mpvz.ui.theme.LocalGlassCustomization.current.motion
   val motionAllowed = liquidGlassSurfaces && rememberBrowserGlassMotionAllowed()
   val fingerDragging = pagerState?.interactionSource?.collectIsDraggedAsState()?.value == true
   val targetIndex = visibleTabs.indexOf(selectedTab).coerceAtLeast(0).toFloat()
   // A single finite spring owns the visual lens. Pager drags follow the finger without lag;
   // programmatic tab changes keep a separate spring trajectory instead of snapping each frame.
   val lensPosition = remember { Animatable(position) }
-  LaunchedEffect(targetIndex, fingerDragging, if (fingerDragging) position else 0f, motionAllowed) {
+  LaunchedEffect(targetIndex, fingerDragging, if (fingerDragging) position else 0f, motionAllowed, glassMotion) {
     when {
       !motionAllowed -> lensPosition.snapTo(targetIndex)
       fingerDragging -> lensPosition.snapTo(position)
-      else -> lensPosition.animateTo(targetIndex, spring(stiffness = 440f, dampingRatio = 0.74f))
+      else -> lensPosition.animateTo(targetIndex, spring(stiffness = 440f, dampingRatio = 1f - 0.26f * glassMotion))
     }
   }
   val lastIndex = (visibleTabs.size - 1).coerceAtLeast(0)
@@ -660,7 +661,7 @@ private fun ExpressivePillNavigationBar(
   val density = LocalDensity.current
   val lensGeometry = with(density) {
     if (motionAllowed) NavigationGlassMotionPolicy.dragGeometry(
-      lensBaseLeft.toPx(), lensBaseWidth.toPx(), visualFraction, direction,
+      lensBaseLeft.toPx(), lensBaseWidth.toPx(), visualFraction, direction, glassMotion,
     ) else NavigationGlassMotionPolicy.settledGeometry(lensBaseLeft.toPx(), lensBaseWidth.toPx())
   }
   val lensSquash = kotlin.math.abs(lensGeometry.deformation) * 4f

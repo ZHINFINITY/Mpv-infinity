@@ -21,11 +21,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.draw.drawWithCache
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import app.infinity.mpvz.preferences.AppearancePreferences
 import app.infinity.mpvz.preferences.preference.collectAsState
 import app.infinity.mpvz.ui.theme.liquidGlassPane
+import app.infinity.mpvz.ui.theme.LocalGlassCustomization
 import org.koin.compose.koinInject
 
 /** Material owns input, state animation, focus, accessibility and RTL; optics only draw behind it. */
@@ -44,6 +46,7 @@ fun GlassSwitch(
   val opacity by appearance.glassSurfaceOpacity.collectAsState()
   val highlight by appearance.glassSurfaceHighlight.collectAsState()
   val glass = preferenceEnabled && glassEnabled
+  val depth = LocalGlassCustomization.current.depth
   val accent = MaterialTheme.colorScheme.primary
   Switch(
     checked = checked,
@@ -61,6 +64,7 @@ fun GlassSwitch(
     ),
     thumbContent = if (!glass) thumbContent else ({
       Box(Modifier.size(24.dp)
+        .shadow((1.dp + depth.coerceIn(0f, 2f).dp), RoundedCornerShape(12.dp), clip = false)
         .liquidGlassPane(true, opacity, highlight, 12.dp)
         .border(1.dp, if (enabled) accent.copy(alpha = if (checked) 0.75f else 0.35f)
           else MaterialTheme.colorScheme.outline.copy(alpha = 0.25f), RoundedCornerShape(12.dp)),
@@ -89,6 +93,7 @@ fun GlassSlider(
   val opacity by appearance.glassSurfaceOpacity.collectAsState()
   val highlight by appearance.glassSurfaceHighlight.collectAsState()
   val glass = preferenceEnabled && glassEnabled
+  val depth = LocalGlassCustomization.current.depth
   val accent = MaterialTheme.colorScheme.primary
   if (!glass) {
     Slider(value = value, onValueChange = onValueChange, modifier = modifier, enabled = enabled,
@@ -114,6 +119,7 @@ fun GlassSlider(
       ),
       thumb = {
         Box(Modifier.size(width = 20.dp, height = 28.dp)
+          .shadow((1.dp + depth.coerceIn(0f, 2f).dp), RoundedCornerShape(10.dp), clip = false)
           .liquidGlassPane(true, opacity, highlight, 10.dp)
           .border(1.dp, accent.copy(alpha = if (enabled) 0.75f else 0.25f), RoundedCornerShape(10.dp)))
       },

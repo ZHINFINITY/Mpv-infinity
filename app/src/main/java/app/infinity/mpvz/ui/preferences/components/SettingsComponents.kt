@@ -25,6 +25,7 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -32,6 +33,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import app.infinity.mpvz.ui.components.IconSwitch
+import app.infinity.mpvz.ui.player.controls.components.GlassSwitch
+import app.infinity.mpvz.preferences.AppearancePreferences
+import app.infinity.mpvz.preferences.preference.collectAsState
+import org.koin.compose.koinInject
 import app.infinity.mpvz.ui.icons.AppIcon
 import app.infinity.mpvz.ui.icons.Icon
 import app.infinity.mpvz.ui.icons.Icons
@@ -48,6 +53,8 @@ fun SettingsClickableItem(
   isLastItem: Boolean = false,
   trailing: @Composable (() -> Unit)? = null,
 ) {
+  val appearance = koinInject<AppearancePreferences>()
+  val glassEnabled by appearance.liquidGlassSurfaces.collectAsState()
   val shape =
     RoundedCornerShape(
       topStart = if (isFirstItem) 16.dp else 0.dp,
@@ -60,6 +67,7 @@ fun SettingsClickableItem(
     modifier =
       modifier
         .fillMaxWidth()
+        .settingsGlassSurface(cornerRadius = 18.dp)
         .clickable(
           enabled = enabled,
           onClick = onClick,
@@ -67,7 +75,8 @@ fun SettingsClickableItem(
           indication = null,
         ),
     shape = shape,
-    color = MaterialTheme.colorScheme.surfaceContainerLow,
+    color = if (glassEnabled) androidx.compose.ui.graphics.Color.Transparent
+    else MaterialTheme.colorScheme.surfaceContainerLow,
   ) {
     Row(
       modifier =
@@ -149,7 +158,7 @@ fun SettingsSwitchItem(
     isLastItem = isLastItem,
     modifier = modifier,
     trailing = {
-      IconSwitch(
+      GlassSwitch(
         checked = isChecked,
         onCheckedChange = null,
         enabled = enabled,

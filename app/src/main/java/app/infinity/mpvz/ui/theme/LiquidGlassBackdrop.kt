@@ -33,6 +33,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawWithCache
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
@@ -102,10 +103,12 @@ fun LiquidGlassBackdropHost(
     }
   }
   val allowed = GlassSamplingPolicy.canSample(enabled, visible, audioOnly, hdr, lowRam, thermal)
+  val tuning = LocalGlassCustomization.current
+  val frostPasses = GlassCustomizationPolicy.frostPasses(tuning.frost)
   val frame = remember { mutableStateOf<LiquidGlassFrame?>(null) }
   val ready by rememberUpdatedState(isReady)
   val playing by rememberUpdatedState(isPlaying)
-  LaunchedEffect(surfaceView, allowed, generation, lifecycleOwner) {
+  LaunchedEffect(surfaceView, allowed, generation, lifecycleOwner, frostPasses) {
     frame.value = null
     val source = surfaceView ?: return@LaunchedEffect
     if (!allowed) return@LaunchedEffect
@@ -124,7 +127,7 @@ fun LiquidGlassBackdropHost(
             continue
           }
           // Frost the one unpublished UI copy, not the playing video or each individual sheet.
-          val bitmap = copyGlassFrame(source, dimensions.first, dimensions.second)?.let { frostGlassFrame(it) }
+          val bitmap = copyGlassFrame(source, dimensions.first, dimensions.second)?.let { frostGlassFrame(it, tuning.frost) }
           if (bitmap == null) {
             frame.value = null // never display a stale frame after a lost/secure surface
             failures++
@@ -168,11 +171,11 @@ private suspend fun copyGlassFrame(source: SurfaceView, width: Int, height: Int)
     }
   }
 
-private suspend fun frostGlassFrame(bitmap: Bitmap): Bitmap? = try {
+private suspend fun frostGlassFrame(bitmap: Bitmap, strength: Float): Bitmap? = try {
   withContext(Dispatchers.Default) {
     val pixels = IntArray(bitmap.width * bitmap.height)
     bitmap.getPixels(pixels, 0, bitmap.width, 0, 0, bitmap.width, bitmap.height)
-    val frosted = GlassFrostPolicy.frostArgb(pixels, bitmap.width, bitmap.height)
+    val frosted = GlassFrostPolicy.frostArgb(pixels, bitmap.width, bitmap.height, strength)
     bitmap.setPixels(frosted, 0, bitmap.width, 0, 0, bitmap.width, bitmap.height)
     bitmap
   }
@@ -200,10 +203,11 @@ fun Modifier.liquidGlassPane(
 ): Modifier {
   if (!enabled) return this
   val backdrop = LocalLiquidGlassBackdrop.current
+  val tuning = LocalGlassCustomization.current
   val tint = MaterialTheme.colorScheme.surfaceContainerHigh
-  val alpha = GlassSurfacePolicy.opacity(opacity)
+  val alpha = GlassSurfacePolicy.opacity(if (tuning.overrideMaterial) tuning.opacity else opacity)
   val hostView = LocalView.current
-  val glow = GlassSurfacePolicy.highlight(highlight)
+  val glow = GlassSurfacePolicy.highlight(if (tuning.overrideMaterial) tuning.highlight else highlight)
   var paneBounds by remember { mutableStateOf(Rect.Zero) }
   val shape = remember(cornerRadius) { RoundedCornerShape(cornerRadius) }
   val shader = remember {
@@ -224,6 +228,7 @@ fun Modifier.liquidGlassPane(
         origin.y + coordinates.size.height)
       if (next != paneBounds) paneBounds = next
     }
+    .then(if (drawRim && tuning.depth > 0f) Modifier.shadow(4.dp * tuning.depth, shape, clip = false) else Modifier)
     .clip(shape)
     .drawWithCache {
       val radius = cornerRadius.toPx().coerceAtMost(minOf(size.width, size.height) / 2f)
@@ -232,9 +237,9 @@ fun Modifier.liquidGlassPane(
       var lastImage: ImageBitmap? = null
       var imageShader: BitmapShader? = null
       val rim = Brush.linearGradient(listOf(
-        Color.White.copy(alpha = 0.24f + glow),
+        Color.White.copy(alpha = (0.24f + glow + tuning.depth * 0.06f).coerceAtMost(1f)),
         Color.White.copy(alpha = 0.04f),
-        Color.White.copy(alpha = 0.12f + glow * 0.35f),
+        Color.White.copy(alpha = 0.12f + glow * 0.35f + tuning.depth * 0.02f),
       ))
       onDrawBehind {
         val scene = backdrop?.value
@@ -258,8 +263,8 @@ fun Modifier.liquidGlassPane(
               shader.setFloatUniform("sceneSize", scene.boundsInWindow.width, scene.boundsInWindow.height)
               shader.setFloatUniform("imageSize", scene.image.width.toFloat(), scene.image.height.toFloat())
               shader.setFloatUniform("radius", radius)
-              shader.setFloatUniform("strength", 9.dp.toPx())
-              shader.setFloatUniform("frost", 10.dp.toPx())
+              shader.setFloatUniform("strength", 9.dp.toPx() * tuning.refraction)
+              shader.setFloatUniform("frost", 10.dp.toPx() * tuning.frost)
               paint.shader = shader
             }.isSuccess
             if (!mapped) {
@@ -278,10 +283,19 @@ fun Modifier.liquidGlassPane(
         // Film guarantees readable controls, even when sampling is intentionally unavailable.
         drawRoundRect(tint.copy(alpha = alpha * if (scene == null) 0.60f else 0.42f),
           cornerRadius = CornerRadius(radius))
-        drawRoundRect(Brush.verticalGradient(listOf(Color.White.copy(alpha = glow * 0.5f),
-          Color.Transparent, Color.Black.copy(alpha = 0.08f))), cornerRadius = CornerRadius(radius))
+        drawRoundRect(Brush.verticalGradient(listOf(Color.White.copy(alpha = glow * 0.5f + tuning.depth * 0.07f),
+          Color.Transparent, Color.Black.copy(alpha = 0.08f + tuning.depth * 0.07f))), cornerRadius = CornerRadius(radius))
         if (drawRim) {
           drawRoundRect(rim, cornerRadius = CornerRadius(radius), style = Stroke(1.dp.toPx()))
+          if (tuning.depth > 0f && size.minDimension > 4.dp.toPx()) {
+            val inset = 1.5.dp.toPx()
+            drawRoundRect(
+              brush = Brush.verticalGradient(listOf(Color.White.copy(alpha = 0.08f * tuning.depth),
+                Color.Transparent, Color.Black.copy(alpha = 0.10f * tuning.depth))),
+              topLeft = Offset(inset, inset), size = androidx.compose.ui.geometry.Size(size.width - inset * 2, size.height - inset * 2),
+              cornerRadius = CornerRadius((radius - inset).coerceAtLeast(0f)), style = Stroke(1.dp.toPx()),
+            )
+          }
         }
       }
     }

@@ -157,7 +157,7 @@ data class PlaylistDetailScreen(
     val playlistTitle =
       when {
         playlist?.name?.equals(PlaylistRepository.FAVORITES_PLAYLIST_NAME, ignoreCase = true) != true ->
-          playlist?.name ?: stringResource(R.string.ui_playlist)
+          playlist?.name?.removePrefix(app.infinity.mpvz.utils.media.RadioM3uPlaylistPolicy.RADIO_PREFIX) ?: stringResource(R.string.ui_playlist)
         playlist?.isAudio == true -> stringResource(R.string.playlist_favorite_songs)
         else -> stringResource(R.string.playlist_favorite_videos)
       }

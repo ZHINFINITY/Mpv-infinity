@@ -1,5 +1,9 @@
 package app.infinity.mpvz.ui.preferences
 
+import app.infinity.mpvz.ui.preferences.components.settingsGlassContainerColor
+
+import app.infinity.mpvz.ui.preferences.components.settingsGlassSurface
+
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.clickable
@@ -85,6 +89,8 @@ fun CatalogAddonsPreferenceCard(viewModel: CatalogViewModel, sources: List<Catal
 
   if (showAddSheet) {
     ModalBottomSheet(
+      containerColor = settingsGlassContainerColor(androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainerLow),
+      modifier = androidx.compose.ui.Modifier.settingsGlassSurface(cornerRadius = 28.dp),
       onDismissRequest = { if (!isAdding) showAddSheet = false },
       shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
     ) {

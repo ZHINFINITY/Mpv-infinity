@@ -32,11 +32,12 @@ fun GlassSurface(
   content: @Composable () -> Unit,
 ) {
   val shape = remember(cornerRadius) { RoundedCornerShape(cornerRadius) }
-  val alpha = GlassSurfacePolicy.opacity(opacity)
-  val glow = GlassSurfacePolicy.highlight(highlight)
-  val artworkBlur = remember(enabled, backdrop != null) {
-    if (enabled && backdrop != null && Build.VERSION.SDK_INT >= 31) {
-      RenderEffect.createBlurEffect(24f, 24f, Shader.TileMode.CLAMP).asComposeRenderEffect()
+  val tuning = LocalGlassCustomization.current
+  val alpha = GlassSurfacePolicy.opacity(if (tuning.overrideMaterial) tuning.opacity else opacity)
+  val glow = GlassSurfacePolicy.highlight(if (tuning.overrideMaterial) tuning.highlight else highlight)
+  val artworkBlur = remember(enabled, backdrop != null, tuning.frost) {
+    if (enabled && backdrop != null && Build.VERSION.SDK_INT >= 31 && tuning.frost > 0f) {
+      RenderEffect.createBlurEffect(24f * tuning.frost, 24f * tuning.frost, Shader.TileMode.CLAMP).asComposeRenderEffect()
     } else null
   }
   Box(

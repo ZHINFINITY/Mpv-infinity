@@ -248,6 +248,7 @@ class MediaPlaybackService :
   private var radioIcyTitle: String? = null
   private var radioStationName: String? = null
   private var radioStreamArtworkUri: String? = null
+  private var radioStationArtworkUri: String? = null
   private var radioPictureBlock: String? = null
   private var paused = false
   private var playbackSpeed = 1.0f
@@ -789,6 +790,7 @@ class MediaPlaybackService :
     radioIcyTitle = null
     radioStationName = null
     radioStreamArtworkUri = null
+    radioStationArtworkUri = null
     radioPictureBlock = null
     mediaTitle = FileTypeUtils.stripExtension(item.title.orEmpty()).ifBlank { getString(R.string.player_unknown_video) }
     mediaArtist = item.artist.orEmpty()
@@ -948,7 +950,7 @@ class MediaPlaybackService :
       "artist" -> radioStreamArtist = value
       "icy-name" -> radioStationName = value
       "icy-title" -> radioIcyTitle = value
-      "icy-logo" -> radioStreamArtworkUri = value
+      "icy-logo" -> radioStationArtworkUri = value
       "artwork" -> radioStreamArtworkUri = value
       "metadata_block_picture" -> {
         val encoded = value.takeIf { it.isNotBlank() }
@@ -970,13 +972,13 @@ class MediaPlaybackService :
         return
       }
     }
-    val presentation = RadioMetadataPolicy.presentation(radioStationName ?: item.title, radioStreamTitle, radioStreamArtist, radioIcyTitle, item.artworkUri, radioStreamArtworkUri)
+    val presentation = RadioMetadataPolicy.presentation(radioStationName ?: item.title, radioStreamTitle, radioStreamArtist, radioIcyTitle, item.artworkUri ?: radioStationArtworkUri, radioStreamArtworkUri)
     val artworkChanged = activeArtworkUri != presentation.artworkUri
     if (mediaTitle == presentation.title && mediaArtist == presentation.artist.orEmpty() && !artworkChanged) return
     mediaTitle = presentation.title
     mediaArtist = presentation.artist.orEmpty()
     activeArtworkUri = presentation.artworkUri
-    if (artworkChanged && item.artworkUri.isNullOrBlank() && radioPictureBlock == null) {
+    if (artworkChanged && radioPictureBlock == null) {
       replaceOwnedThumbnail(null)
       loadSessionArtworkUri(presentation.artworkUri, item.stableId)
     }
@@ -993,7 +995,7 @@ class MediaPlaybackService :
           radioStreamTitle,
           radioStreamArtist,
           radioIcyTitle,
-          item.artworkUri,
+          item.artworkUri ?: radioStationArtworkUri,
           radioStreamArtworkUri,
         )
         .artworkUri
@@ -1051,7 +1053,7 @@ class MediaPlaybackService :
     val radioPresentation = currentItem?.let { item ->
       val duration = mediaDurationSeconds.takeIf { it > 0.0 }?.toInt() ?: item.durationSeconds
       if (RadioMetadataPolicy.isRadio(queueState.isM3u, item.isDefinitelyAudioOnly(), item.originalUri.ifBlank { item.playableUri }, duration)) {
-        RadioMetadataPolicy.presentation(radioStationName ?: item.title, radioStreamTitle, radioStreamArtist, radioIcyTitle, item.artworkUri, radioStreamArtworkUri)
+        RadioMetadataPolicy.presentation(radioStationName ?: item.title, radioStreamTitle, radioStreamArtist, radioIcyTitle, item.artworkUri ?: radioStationArtworkUri, radioStreamArtworkUri)
       } else null
     }
     val effectiveCurrentTitle = radioPresentation?.title ?: currentTitle
@@ -1409,6 +1411,9 @@ class MediaPlaybackService :
   }
 
   private fun sanitizedPositionMs(): Long {
+    // ICY/live streams have no meaningful elapsed position. libmpv can expose
+    // a demuxer clock or epoch-like time-pos; never publish it to MediaSession.
+    if (isCurrentRadioItem()) return 0L
     val livePosition = runCatching { PlaybackSession.getPropertyDouble("time-pos") }.getOrNull()
     if (livePosition != null && livePosition.isFinite() && livePosition >= 0.0) {
       currentPositionSeconds = livePosition
@@ -1818,7 +1823,9 @@ class MediaPlaybackService :
     when (property) {
       "media-title" -> {
         if (isCurrentRadioItem()) {
-          RadioMetadataPolicy.trackFromMediaTitle(value, PlaybackSession.queue.value.currentItem?.title)?.let { title ->
+          val item = PlaybackSession.queue.value.currentItem
+          val headerStation = PlaybackSession.radioHeaders.value?.takeIf { it.first == item?.stableId }?.second?.icyName
+          RadioMetadataPolicy.trackFromMediaTitle(value, radioStationName ?: headerStation ?: item?.title)?.let { title ->
             serviceScope.launch { updateRadioMetadata("icy-title", title) }
           }
           return

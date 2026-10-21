@@ -19,7 +19,7 @@ import app.infinity.mpvz.preferences.AdvancedPreferences
 import app.infinity.mpvz.preferences.MpvConfigOverride
 import app.infinity.mpvz.preferences.preference.collectAsState
 import app.infinity.mpvz.ui.utils.LocalBackStack
-import me.zhanghai.compose.preference.Preference
+import app.infinity.mpvz.ui.preferences.components.Preference
 
 /** Entry row in Advanced settings; the ownership choices live on [MpvConfOwnershipScreen]. */
 @Composable

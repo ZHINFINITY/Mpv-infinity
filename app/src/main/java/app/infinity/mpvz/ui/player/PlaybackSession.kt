@@ -801,12 +801,21 @@ object PlaybackSession : MPVLib.EventObserver {
 
       val generation = _state.value.generation + 1L
       val initialPosition = initialPositionSeconds?.takeIf { it.isFinite() && it > 0.0 }
+      // Live HTTP M3U audio has no meaningful timeline. mpv may expose a
+      // one-second probe duration and a very large time-pos; neither is a
+      // resume point. Preserve restore behavior for ordinary seekable media.
+      val isLiveRadio = RadioMetadataPolicy.isRadio(
+        queueIsM3u = _queue.value.isM3u,
+        itemIsAudio = resolvedItem.isDefinitelyAudioOnly(),
+        streamUri = resolvedItem.originalUri.ifBlank { resolvedItem.playableUri },
+        durationSeconds = resolvedItem.durationSeconds,
+      )
       pendingPositionRestoreGeneration =
         generation.takeIf {
-          positionRestoreOverride != null || (restoreSavedPosition && !resolvedItem.isDefinitelyAudioOnly())
+          !isLiveRadio && (positionRestoreOverride != null || (restoreSavedPosition && !resolvedItem.isDefinitelyAudioOnly()))
         } ?: 0L
       pendingPositionRestoreOverride = positionRestoreOverride?.let { generation to it }
-      initialPositionGeneration = generation.takeIf { initialPosition != null } ?: 0L
+      initialPositionGeneration = generation.takeIf { initialPosition != null && !isLiveRadio } ?: 0L
       val holdForPositionRestore = pendingPositionRestoreGeneration == generation
       deferredVideoSelectionGeneration = generation.takeIf { videoSelection == PlaybackVideoSelection.DEFERRED }
       _radioHeaders.value = null

@@ -289,6 +289,17 @@ fun MpvInfinityTheme(
   val amoledMode by preferences.amoledMode.collectAsState()
   val appTheme by preferences.appTheme.collectAsState()
   val customThemes by preferences.customThemes.collectAsState()
+  val glassFrost by preferences.glassFrostStrength.collectAsState()
+  val glassRefraction by preferences.glassRefractionStrength.collectAsState()
+  val glassDepth by preferences.glassDepthStrength.collectAsState()
+  val glassMotion by preferences.glassMotionIntensity.collectAsState()
+  val glassOpacity by preferences.glassSurfaceOpacity.collectAsState()
+  val glassHighlight by preferences.glassSurfaceHighlight.collectAsState()
+  val glassCustomization = remember(glassFrost, glassRefraction, glassDepth, glassMotion, glassOpacity, glassHighlight) {
+    GlassCustomization(frost = GlassCustomizationPolicy.strength(glassFrost), refraction = GlassCustomizationPolicy.strength(glassRefraction),
+      depth = GlassCustomizationPolicy.strength(glassDepth), motion = GlassCustomizationPolicy.motion(glassMotion),
+      opacity = GlassSurfacePolicy.opacity(glassOpacity), highlight = GlassSurfacePolicy.highlight(glassHighlight), overrideMaterial = true)
+  }
   val activeCustomThemeId by preferences.activeCustomThemeId.collectAsState()
   val customTheme = customThemes.firstOrNull { it.id == activeCustomThemeId }
   val useSystemFont by preferences.useSystemFont.collectAsState()
@@ -335,6 +346,7 @@ fun MpvInfinityTheme(
     LocalMotionPolicy provides rememberMotionPolicy(),
     LocalEmphasizedTypography provides AppEmphasizedTypography,
     LocalDarkAppColorScheme provides darkColorScheme,
+    LocalGlassCustomization provides glassCustomization,
   ) {
     val themedContent: @Composable () -> Unit = {
       ThemeTransitionContent {
