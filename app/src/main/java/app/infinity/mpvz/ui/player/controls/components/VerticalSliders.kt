@@ -32,6 +32,9 @@ import app.infinity.mpvz.ui.icons.Icon
 import app.infinity.mpvz.ui.icons.Icons
 import app.infinity.mpvz.ui.theme.AppShapeScale
 import app.infinity.mpvz.ui.theme.spacing
+import app.infinity.mpvz.preferences.AppearancePreferences
+import app.infinity.mpvz.preferences.preference.collectAsState
+import org.koin.compose.koinInject
 
 fun percentage(
   value: Float,
@@ -151,8 +154,10 @@ fun BrightnessSlider(
   val coercedBrightness = brightness.coerceIn(-negativeRange.endInclusive, positiveRange.endInclusive)
   val percentInt = (coercedBrightness * 100).toInt()
   val percentText = remember(percentInt) { "$percentInt%" }
+  val appearance = koinInject<AppearancePreferences>()
+  val liquidGlassSurfaces by appearance.liquidGlassSurfaces.collectAsState()
   Surface(
-    modifier = modifier,
+    modifier = modifier.playerGlassPane(enabled = liquidGlassSurfaces, opacity = 0.82f, highlight = 0.18f, cornerRadius = 24.dp),
     shape = AppShapeScale.extraLarge,
     color = Color.Black.copy(alpha = 0.5f),
     contentColor = Color.White,
@@ -202,8 +207,10 @@ fun VolumeSlider(
   displayAsPercentage: Boolean = false,
 ) {
   val percentage = volumePercentage.coerceIn(0, 100)
+  val appearance = koinInject<AppearancePreferences>()
+  val liquidGlassSurfaces by appearance.liquidGlassSurfaces.collectAsState()
   Surface(
-    modifier = modifier,
+    modifier = modifier.playerGlassPane(enabled = liquidGlassSurfaces, opacity = 0.82f, highlight = 0.18f, cornerRadius = 24.dp),
     shape = AppShapeScale.extraLarge,
     color = Color.Black.copy(alpha = 0.5f),
     contentColor = Color.White,

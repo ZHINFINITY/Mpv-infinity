@@ -326,6 +326,17 @@ object PlayerPreferencesScreen : Screen {
 
               PreferenceDivider()
 
+              val openRadioM3uInMusic by preferences.openRadioM3uInMusic.collectAsState()
+              SwitchPreference(
+                modifier = Modifier.settingsSearchTarget(R.string.pref_open_radio_m3u_in_music_title),
+                value = openRadioM3uInMusic,
+                onValueChange = preferences.openRadioM3uInMusic::set,
+                title = { Text(stringResource(R.string.pref_open_radio_m3u_in_music_title)) },
+                summary = { Text(stringResource(R.string.pref_open_radio_m3u_in_music_summary), color = MaterialTheme.colorScheme.outline) },
+              )
+
+              PreferenceDivider()
+
               val rememberBrightness by preferences.rememberBrightness.collectAsState()
               SwitchPreference(
                 modifier = Modifier.settingsSearchTarget(R.string.pref_player_remember_brightness),

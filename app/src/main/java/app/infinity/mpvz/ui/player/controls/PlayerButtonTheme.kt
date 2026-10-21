@@ -13,6 +13,9 @@ import androidx.compose.runtime.CompositionLocalProvider
 import app.infinity.mpvz.ui.player.controls.components.LocalForceDarkPlayerButtonsBackground
 import app.infinity.mpvz.ui.player.controls.components.LocalHidePlayerButtonsBackground
 import app.infinity.mpvz.ui.theme.LocalDarkAppColorScheme
+import app.infinity.mpvz.preferences.AppearancePreferences
+import app.infinity.mpvz.preferences.preference.collectAsState
+import org.koin.compose.koinInject
 
 /**
  * Carries the background visibility choice through every player-button implementation.
@@ -26,8 +29,12 @@ internal fun PlayerButtonTheme(
   hideBackground: Boolean,
   content: @Composable () -> Unit,
 ) {
+  val appearance = koinInject<AppearancePreferences>()
+  val liquidGlassSurfaces by appearance.liquidGlassSurfaces.collectAsState()
   CompositionLocalProvider(
-    LocalHidePlayerButtonsBackground provides hideBackground,
+    // Glass is the active pane in this mode; do not let the legacy hide-background
+    // switch suppress the sampled pane.
+    LocalHidePlayerButtonsBackground provides (hideBackground && !liquidGlassSurfaces),
     content = content,
   )
 }

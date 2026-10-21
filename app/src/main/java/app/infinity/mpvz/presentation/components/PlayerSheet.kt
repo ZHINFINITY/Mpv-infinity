@@ -69,6 +69,7 @@ import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 import app.infinity.mpvz.preferences.AppearancePreferences
 import app.infinity.mpvz.preferences.preference.collectAsState
+import app.infinity.mpvz.ui.theme.liquidGlassPane
 import org.koin.compose.koinInject
 
 private val sheetAnimationSpec = tween<Float>(350)
@@ -211,9 +212,15 @@ fun PlayerSheet(
           ).windowInsetsPadding(
             WindowInsets.systemBars
               .only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal),
-          ).imePadding(),
+          ).imePadding()
+          .liquidGlassPane(
+            enabled = liquidGlassSurfaces,
+            opacity = 0.86f,
+            highlight = 0.20f,
+            cornerRadius = 24.dp,
+          ),
       shape = MaterialTheme.shapes.extraLarge.copy(bottomEnd = ZeroCornerSize, bottomStart = ZeroCornerSize),
-      color = resolvedSurfaceColor,
+      color = if (liquidGlassSurfaces) Color.Transparent else resolvedSurfaceColor,
       contentColor = if (sheetIsDark) Color.White else Color.Black,
       tonalElevation = tonalElevation,
       content = {

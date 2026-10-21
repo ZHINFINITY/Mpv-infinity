@@ -45,6 +45,9 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import app.infinity.mpvz.ui.player.controls.panelCardsColors
+import app.infinity.mpvz.preferences.AppearancePreferences
+import app.infinity.mpvz.preferences.preference.collectAsState
+import app.infinity.mpvz.ui.theme.liquidGlassPane
 import app.infinity.mpvz.ui.theme.AppShapeScale
 import kotlin.math.roundToInt
 
@@ -68,6 +71,10 @@ fun DraggablePanel(
 ) {
   var offsetX by remember { mutableFloatStateOf(0f) }
   var panelWidth by remember { mutableIntStateOf(0) }
+  val appearance = org.koin.compose.koinInject<AppearancePreferences>()
+  val glass by appearance.liquidGlassSurfaces.collectAsState()
+  val opacity by appearance.glassSurfaceOpacity.collectAsState()
+  val highlight by appearance.glassSurfaceHighlight.collectAsState()
 
   val configuration = LocalConfiguration.current
   val isPortrait = configuration.orientation == Configuration.ORIENTATION_PORTRAIT
@@ -95,11 +102,12 @@ fun DraggablePanel(
           .offset { IntOffset(offsetX.roundToInt(), 0) }
           .onSizeChanged { panelWidth = it.width }
           .widthIn(max = 380.dp)
-          .heightIn(max = panelMaxHeight),
+          .heightIn(max = panelMaxHeight)
+          .liquidGlassPane(glass, opacity, highlight, 24.dp),
       shape = shape ?: MaterialTheme.shapes.extraLarge,
-      color = containerColor ?: colors.containerColor,
+      color = if (glass) Color.Transparent else containerColor ?: colors.containerColor,
       contentColor = colors.contentColor,
-      tonalElevation = tonalElevation,
+      tonalElevation = if (glass) 0.dp else tonalElevation,
       shadowElevation = shadowElevation,
       border = border,
     ) {

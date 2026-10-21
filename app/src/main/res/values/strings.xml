@@ -756,6 +756,8 @@
   <string name="pref_playlist_mode_title">Enable next/previous navigation</string>
   <string name="pref_playlist_mode_summary">Show next/previous buttons for all videos in folder</string>
   <string name="pref_playlist_mode_summary_disabled">Play videos individually (select multiple for playlist)</string>
+  <string name="pref_open_radio_m3u_in_music_title">Open radio M3U playlists in Music Player</string>
+  <string name="pref_open_radio_m3u_in_music_summary">Open recognized radio and audio-only M3U playlists in Music instead of the video player</string>
 
   <!-- Player - Seeking Section (additional)                      -->
   <string name="pref_online_skip_markers_title">Use online skip markers</string>

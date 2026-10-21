@@ -40,7 +40,6 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import app.infinity.mpvz.ui.components.IconSwitch
 import androidx.compose.material3.Text
@@ -87,6 +86,7 @@ import org.koin.compose.koinInject
 import java.util.Locale
 import kotlin.math.roundToInt
 import kotlin.math.roundToLong
+import app.infinity.mpvz.ui.player.controls.components.GlassSlider
 
 @Composable
 fun FrameNavigationSheet(
@@ -558,7 +558,7 @@ private fun FrameReviewOverlay(
           }
         }
 
-        Slider(
+        GlassSlider(
           value = seekbarFrame.coerceIn(0f, lastFrame.coerceAtLeast(1).toFloat()),
           onValueChange = { newValue ->
             val targetFrame = newValue.roundToInt().coerceIn(0, lastFrame)

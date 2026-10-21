@@ -1,9 +1,9 @@
-/*
- * SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
- * Copyright (c) 2026 ZHINFINITY. Mpv∞ Covered Code.
- */
+/* Copyright (c) 2026 ZHINFINITY. See LICENSE for project-specific terms. */
 package app.infinity.mpvz.ui.theme
 
+import android.graphics.RenderEffect
+import android.graphics.Shader
+import android.os.Build
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Box
@@ -13,13 +13,13 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.compositeOver
+import androidx.compose.ui.graphics.asComposeRenderEffect
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 
-/** Independent static glass styling. No screen capture, live blur, or refraction. */
+/** Shared scene optics for video, or caller-owned artwork blur for audio. Foreground is never blurred. */
 @Composable
 fun GlassSurface(
   modifier: Modifier = Modifier,
@@ -27,24 +27,39 @@ fun GlassSurface(
   opacity: Float = 0.88f,
   highlight: Float = 0.18f,
   cornerRadius: Dp = 24.dp,
+  backdrop: (@Composable () -> Unit)? = null,
   content: @Composable () -> Unit,
 ) {
   val shape = remember(cornerRadius) { RoundedCornerShape(cornerRadius) }
-  val base = MaterialTheme.colorScheme.surfaceContainerHigh
   val alpha = GlassSurfacePolicy.opacity(opacity)
   val glow = GlassSurfacePolicy.highlight(highlight)
-  val fill = remember(enabled, base, alpha, glow) {
-    if (enabled) {
-      val top = Color.White.copy(alpha = glow * 0.35f).compositeOver(base.copy(alpha = alpha))
-      Brush.verticalGradient(listOf(top, base.copy(alpha = alpha)))
-    } else {
-      Brush.verticalGradient(listOf(base, base))
-    }
+  val artworkBlur = remember(enabled, backdrop != null) {
+    if (enabled && backdrop != null && Build.VERSION.SDK_INT >= 31) {
+      RenderEffect.createBlurEffect(24f, 24f, Shader.TileMode.CLAMP).asComposeRenderEffect()
+    } else null
   }
   Box(
-    modifier = modifier
-      .clip(shape)
-      .background(fill)
-      .border(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = if (enabled) glow + 0.18f else 0.25f), shape),
-  ) { content() }
+    modifier = modifier.clip(shape)
+      .liquidGlassPane(enabled, alpha, glow, cornerRadius)
+      .then(if (!enabled) Modifier.background(MaterialTheme.colorScheme.surfaceContainerHigh, shape) else Modifier)
+      .border(1.dp, if (enabled) Color.White.copy(alpha = 0.12f + glow * 0.42f)
+        else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.25f), shape),
+  ) {
+    if (enabled && backdrop != null) {
+      Box(Modifier.matchParentSize().graphicsLayer { renderEffect = artworkBlur }) { backdrop.invoke() }
+      Box(Modifier.matchParentSize().background(MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = alpha * 0.58f)))
+    }
+    content()
+  }
 }
+
+@Composable
+fun GlassControlSurface(
+  modifier: Modifier = Modifier,
+  enabled: Boolean,
+  opacity: Float,
+  highlight: Float,
+  cornerRadius: Dp = 20.dp,
+  backdrop: (@Composable () -> Unit)? = null,
+  content: @Composable () -> Unit,
+) = GlassSurface(modifier, enabled, opacity, highlight, cornerRadius, backdrop, content)

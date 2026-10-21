@@ -17,10 +17,56 @@ class RadioMusicUiContracts(unittest.TestCase):
 
     def test_music_header_does_not_duplicate_navigation_icons(self):
         source = (JAVA / "ui/browser/music/MusicLibraryContent.kt").read_text()
-        header = source[source.index("leadingActions = {"):source.index("onSelectAll =", source.index("leadingActions = {"))]
-        self.assertIn("MusicSourceChooser(", header)
+        header_start = source.find("leadingActions = {")
+        header_end = source.find("onSelectAll =", header_start) if header_start >= 0 else -1
+        header = source[header_start:header_end if header_end >= 0 else len(source)]
+        self.assertNotIn("MusicSourceChooser(", header)
+        self.assertNotIn("leadingActions", header)
         self.assertNotIn("Icons.RoundedFilled.Audiotrack", header)
         self.assertNotIn("Icons.RoundedFilled.AudiobookWave", header)
+
+
+    def test_radio_m3u_policy_is_applied_before_playlist_player_launch(self):
+        policy = (JAVA / "utils/media/M3URoutingPolicy.kt").read_text()
+        network = (JAVA / "ui/browser/networkstreaming/NetworkBrowserViewModel.kt").read_text()
+        repository = (JAVA / "database/repository/PlaylistRepository.kt").read_text()
+        detail = (JAVA / "ui/browser/playlist/PlaylistDetailScreen.kt").read_text()
+        self.assertIn("M3URoutingPolicy.route(parsed)", network)
+        self.assertIn("isAudio = openInMusic", network)
+        self.assertIn("M3URoutingPolicy.isMusicPlaylist", repository)
+        self.assertIn("playlist?.isAudio == true", detail)
+        self.assertIn('"media_library_audio"', detail)
+        self.assertIn('"music_m3u_playlist"', detail)
+        self.assertIn("videoExtensions", policy)
+        self.assertIn("return false", policy)
+
+    def test_radio_setting_is_default_on_and_first_frame_wins_over_stale_video_queue(self):
+        preference = (JAVA / "preferences/PlayerPreferences.kt").read_text()
+        self.assertIn('getBoolean("open_radio_m3u_in_music", true)', preference)
+        controls = (JAVA / "ui/player/controls/PlayerControls.kt").read_text()
+        audio_priority = controls.index("if (activity?.hasPreclassifiedMusicLaunch() == true)")
+        stale_queue_branch = controls.index("when (currentPlaybackItem?.declaredMediaKind())", audio_priority)
+        self.assertLess(audio_priority, stale_queue_branch)
+        detail = (JAVA / "ui/browser/playlist/PlaylistDetailScreen.kt").read_text()
+        self.assertIn("savedEntries.map", detail)
+        self.assertIn("declaredAudio = declaredAudio", detail)
+        self.assertLess(detail.index("val musicRoute"), detail.index("context.startActivity(intent)"))
+
+    def test_raw_m3u_preflight_precedes_player_ui_and_is_reused(self):
+        source = (JAVA / "ui/player/PlayerActivity.kt").read_text()
+        on_create = source[source.index("override fun onCreate("):source.index("private fun shouldPreflightExternalM3u")]
+        self.assertIn("preflightExternalM3u(launchIntent)", on_create)
+        self.assertNotIn("setContentView", on_create)
+        self.assertIn("withTimeoutOrNull(4_000L)", source)
+        self.assertIn('sourceIntent.putExtra("mime_type", "audio/x-mpegurl")', source)
+        self.assertIn("preflightM3uParse = playableUri to result", source)
+        self.assertIn("?.takeIf { it.first == uriString }", source)
+        self.assertIn("startInitializedPlayer()", source)
+        self.assertIn("resumeInitializedPlayer()", source)
+        new_intent = source[source.index("override fun onNewIntent("):source.index("private fun handleNewIntent(")]
+        self.assertIn("m3uPreflightJob?.cancel()", new_intent)
+        self.assertIn("shouldPreflightExternalM3u(intent)", new_intent)
+        self.assertNotIn('extras?.getStringArrayExtra(', source)
 
     def test_source_picker_is_bounded_and_accessible(self):
         source = (JAVA / "ui/browser/music/MusicSourceChooser.kt").read_text()

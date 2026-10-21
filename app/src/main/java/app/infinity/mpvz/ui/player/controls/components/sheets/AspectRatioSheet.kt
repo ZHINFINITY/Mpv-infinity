@@ -25,7 +25,6 @@ import androidx.compose.material3.InputChip
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -44,6 +43,7 @@ import app.infinity.mpvz.ui.player.AutoCropState
 import app.infinity.mpvz.ui.icons.Icon
 import app.infinity.mpvz.ui.icons.Icons
 import app.infinity.mpvz.ui.theme.spacing
+import app.infinity.mpvz.ui.player.controls.components.GlassSwitch
 
 data class AspectRatio(
   val label: String,
@@ -113,7 +113,7 @@ fun AspectRatioSheet(
         },
         supportingContent = { Text(androidx.compose.ui.res.stringResource(autoCropSummary)) },
         trailingContent = {
-          Switch(
+          GlassSwitch(
             checked = autoCropEnabled,
             onCheckedChange = onAutoCropChanged,
             enabled = autoCropControlEnabled,

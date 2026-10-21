@@ -27,7 +27,6 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -52,6 +51,7 @@ import me.zhanghai.compose.preference.ProvidePreferenceLocals
 import org.koin.compose.koinInject
 import kotlin.math.pow
 import kotlin.math.roundToInt
+import app.infinity.mpvz.ui.player.controls.components.GlassSlider
 
 @Composable
 fun PlaybackSpeedSheet(
@@ -110,7 +110,7 @@ fun PlaybackSpeedSheet(
           Icon(Icons.RoundedFilled.Remove, null, modifier = Modifier.size(24.dp))
         }
 
-        Slider(
+        GlassSlider(
           value = speed,
           onValueChange = {
             // Snap to nearest 0.05

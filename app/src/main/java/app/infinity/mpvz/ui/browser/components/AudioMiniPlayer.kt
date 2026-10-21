@@ -42,6 +42,7 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.dp
 import app.infinity.mpvz.ui.icons.Icon
 import app.infinity.mpvz.ui.icons.Icons
@@ -49,6 +50,7 @@ import app.infinity.mpvz.ui.player.MediaPlaybackService
 import app.infinity.mpvz.ui.player.PlaybackSession
 import app.infinity.mpvz.ui.player.PlayerActivity
 import app.infinity.mpvz.ui.player.controls.components.MiniAudioVisualizer
+import coil3.compose.AsyncImage
 import app.infinity.mpvz.preferences.AppearancePreferences
 import app.infinity.mpvz.preferences.preference.collectAsState
 import app.infinity.mpvz.ui.theme.GlassSurface
@@ -71,6 +73,7 @@ fun AudioMiniPlayer(modifier: Modifier = Modifier) {
   if (!isServiceRunning || sessionState.currentItem == null) return
 
   val isPlaying = paused == false
+  val currentArtworkUri = sessionState.currentItem?.artworkUri?.takeIf { it.isNotBlank() }
   val title =
     sessionState.currentItem?.title?.takeIf { it.isNotBlank() }
       ?: rawMediaTitle?.takeIf { it.isNotBlank() }
@@ -80,6 +83,17 @@ fun AudioMiniPlayer(modifier: Modifier = Modifier) {
     enabled = glassEnabled,
     opacity = glassOpacity,
     highlight = glassHighlight,
+    backdrop = {
+      // Reuse the current item's artwork; no second metadata resolution or invented animation.
+      if (!currentArtworkUri.isNullOrBlank()) {
+        AsyncImage(
+          model = currentArtworkUri,
+          contentDescription = null,
+          contentScale = ContentScale.Crop,
+          modifier = Modifier.fillMaxWidth(),
+        )
+      }
+    },
     modifier =
       modifier
         .fillMaxWidth()

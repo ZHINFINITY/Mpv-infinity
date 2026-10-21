@@ -31,7 +31,6 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.SheetValue
-import androidx.compose.material3.Slider
 import app.infinity.mpvz.ui.components.IconSwitch
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberBottomSheetState
@@ -55,6 +54,7 @@ import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlin.math.roundToInt
+import app.infinity.mpvz.ui.player.controls.components.GlassSlider
 
 enum class EqualizerPreset(
   val displayName: String,
@@ -241,7 +241,7 @@ fun EqualizerSheet(
       Spacer(modifier = Modifier.height(8.dp))
 
       var volumeBoostValue by remember(state.volumeBoostDb) { mutableFloatStateOf(state.volumeBoostDb.toFloat()) }
-      Slider(
+      GlassSlider(
         value = volumeBoostValue,
         onValueChange = { newValue ->
           volumeBoostValue = newValue
@@ -354,7 +354,7 @@ private fun BandColumn(
       textAlign = TextAlign.Center,
     )
 
-    Slider(
+    GlassSlider(
       value = sliderValue,
       onValueChange = { newValue ->
         sliderValue = newValue

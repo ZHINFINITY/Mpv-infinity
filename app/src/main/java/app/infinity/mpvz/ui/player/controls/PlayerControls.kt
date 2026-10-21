@@ -167,6 +167,7 @@ import app.infinity.mpvz.ui.player.controls.components.VolumeSlider
 import app.infinity.mpvz.ui.player.controls.components.playerButtonBorderColor
 import app.infinity.mpvz.ui.player.controls.components.playerButtonContainerColor
 import app.infinity.mpvz.ui.player.controls.components.playerButtonContentColor
+import app.infinity.mpvz.ui.player.controls.components.playerGlassPane
 import app.infinity.mpvz.ui.player.controls.components.rememberBufferingState
 import app.infinity.mpvz.ui.player.controls.components.sheets.toFixed
 import app.infinity.mpvz.ui.theme.controlColor
@@ -205,6 +206,7 @@ fun PlayerControls(
   onBackPress: () -> Unit,
   onSelectEngine: ((PlaybackEngineMode) -> Unit)? = null,
   modifier: Modifier = Modifier,
+  onGlassVisibilityChange: (Boolean) -> Unit = {},
 ) {
   val spacing = MaterialTheme.spacing
   val advancedPreferences = koinInject<AdvancedPreferences>()
@@ -450,7 +452,7 @@ fun PlayerControls(
     abs((playbackSpeed ?: 1f) - 1f) > 0.001f
   }
   val useAudioPlayer =
-    when (currentPlaybackItem?.declaredMediaKind()) {
+    if (activity?.hasPreclassifiedMusicLaunch() == true) true else when (currentPlaybackItem?.declaredMediaKind()) {
       DeclaredPlaybackMediaKind.VIDEO -> false
       DeclaredPlaybackMediaKind.AUDIO -> true
       else -> isAudioOnly || activity?.isCurrentMediaKnownAudio() == true
@@ -625,6 +627,10 @@ fun PlayerControls(
     if (!showControlsDrawer && isPlayerDrawerShown) {
       isPlayerDrawerShown = false
     }
+  }
+  // The drawer is also a visible glass consumer even though it hides the transport controls.
+  LaunchedEffect(isPlayerDrawerShown) {
+    onGlassVisibilityChange(isPlayerDrawerShown)
   }
   val setPlayerDrawerShown: (Boolean) -> Unit = { visible ->
     if (showControlsDrawer) {
@@ -1222,11 +1228,14 @@ fun PlayerControls(
                   val buttonInteractionSource = remember { MutableInteractionSource() }
                   Surface(
                     shape = CircleShape,
-                    color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.85f),
+                    color =
+                      if (liquidGlassSurfaces) Color.Transparent
+                      else MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.85f),
                     contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
                     border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.1f)),
                     modifier =
                       Modifier
+                        .playerGlassPane(enabled = liquidGlassSurfaces, opacity = 0.85f, highlight = 0.16f, cornerRadius = 999.dp)
                         .clip(CircleShape)
                         .combinedClickable(
                           interactionSource = buttonInteractionSource,
@@ -1286,11 +1295,14 @@ fun PlayerControls(
                   val buttonInteractionSource = remember { MutableInteractionSource() }
                   Surface(
                     shape = CircleShape,
-                    color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.85f),
+                    color =
+                      if (liquidGlassSurfaces) Color.Transparent
+                      else MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.85f),
                     contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
                     border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.1f)),
                     modifier =
                       Modifier
+                        .playerGlassPane(enabled = liquidGlassSurfaces, opacity = 0.85f, highlight = 0.16f, cornerRadius = 999.dp)
                         .clip(CircleShape)
                         .combinedClickable(
                           interactionSource = buttonInteractionSource,
@@ -1351,11 +1363,14 @@ fun PlayerControls(
                   val buttonInteractionSource = remember { MutableInteractionSource() }
                   Surface(
                     shape = CircleShape,
-                    color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.85f),
+                    color =
+                      if (liquidGlassSurfaces) Color.Transparent
+                      else MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.85f),
                     contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
                     border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.1f)),
                     modifier =
                       Modifier
+                        .playerGlassPane(enabled = liquidGlassSurfaces, opacity = 0.85f, highlight = 0.16f, cornerRadius = 999.dp)
                         .clip(CircleShape)
                         .combinedClickable(
                           interactionSource = buttonInteractionSource,
@@ -1438,10 +1453,11 @@ fun PlayerControls(
               )
             Surface(
               shape = RoundedCornerShape(999.dp),
-              color = segmentSurfaceColor,
+              color = if (liquidGlassSurfaces) Color.Transparent else segmentSurfaceColor,
               border = BorderStroke(1.5.dp, segmentBorderColor),
               modifier =
                 Modifier
+                  .playerGlassPane(enabled = liquidGlassSurfaces, opacity = 0.82f, highlight = 0.16f, cornerRadius = 999.dp)
                   .clip(RoundedCornerShape(999.dp))
                   .clickable {
                     resetControlsTimestamp = System.currentTimeMillis()
@@ -1503,8 +1519,17 @@ fun PlayerControls(
                 }
               Surface(
                 shape = CircleShape,
-                color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.9f),
+                color =
+                  if (liquidGlassSurfaces) Color.Transparent
+                  else MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.9f),
                 border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.3f)),
+                modifier =
+                  Modifier.playerGlassPane(
+                    enabled = liquidGlassSurfaces,
+                    opacity = 0.86f,
+                    highlight = 0.16f,
+                    cornerRadius = 999.dp,
+                  ),
               ) {
                 Row(
                   modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp),
@@ -1560,6 +1585,7 @@ fun PlayerControls(
                   modifier =
                     Modifier
                       .size(56.dp)
+                      .playerGlassPane(enabled = liquidGlassSurfaces, opacity = 0.88f, highlight = 0.18f, cornerRadius = 999.dp)
                       .clip(CircleShape)
                       .clickable(
                         enabled = viewModel.hasPrevious(),
@@ -1568,7 +1594,7 @@ fun PlayerControls(
                           if (viewModel.hasPrevious()) viewModel.playPrevious()
                         },
                       ).then(
-                        if (hideBackground) {
+                        if (hideBackground && !liquidGlassSurfaces) {
                           Modifier.background(brush = buttonShadow, shape = CircleShape)
                         } else {
                           Modifier
@@ -1576,7 +1602,7 @@ fun PlayerControls(
                       ),
                   shape = CircleShape,
                   color =
-                    if (!hideBackground) {
+                    if (!hideBackground && !liquidGlassSurfaces) {
                       playerButtonContainerColor()
                     } else {
                       Color.Transparent
@@ -1585,7 +1611,7 @@ fun PlayerControls(
                   tonalElevation = 0.dp,
                   shadowElevation = 0.dp,
                   border =
-                    if (!hideBackground) {
+                    if (!hideBackground && !liquidGlassSurfaces) {
                       BorderStroke(1.dp, playerButtonBorderColor())
                     } else {
                       null
@@ -1601,7 +1627,7 @@ fun PlayerControls(
                       if (viewModel.hasPrevious()) {
                         if (hideBackground) controlColor else playerButtonContentColor()
                       } else {
-                        if (hideBackground) {
+                        if (hideBackground && !liquidGlassSurfaces) {
                           controlColor.copy(alpha = 0.38f)
                         } else {
                           playerButtonContentColor().copy(alpha = 0.38f)
@@ -1618,13 +1644,14 @@ fun PlayerControls(
                   modifier =
                     Modifier
                       .size(64.dp)
+                      .playerGlassPane(enabled = liquidGlassSurfaces, opacity = 0.88f, highlight = 0.20f, cornerRadius = 999.dp)
                       .clip(CircleShape)
                       .clickable(interaction, ripple(), onClick = {
                         resetControlsTimestamp = System.currentTimeMillis()
                         viewModel.pauseUnpause()
                       })
                       .then(
-                        if (hideBackground) {
+                        if (hideBackground && !liquidGlassSurfaces) {
                           Modifier.background(brush = buttonShadow, shape = CircleShape)
                         } else {
                           Modifier
@@ -1632,7 +1659,7 @@ fun PlayerControls(
                       ),
                   shape = CircleShape,
                   color =
-                    if (!hideBackground) {
+                    if (!hideBackground && !liquidGlassSurfaces) {
                       playerButtonContainerColor()
                     } else {
                       Color.Transparent
@@ -1641,7 +1668,7 @@ fun PlayerControls(
                   tonalElevation = 0.dp,
                   shadowElevation = 0.dp,
                   border =
-                    if (!hideBackground) {
+                    if (!hideBackground && !liquidGlassSurfaces) {
                       BorderStroke(1.dp, playerButtonBorderColor())
                     } else {
                       null
@@ -1661,6 +1688,7 @@ fun PlayerControls(
                   modifier =
                     Modifier
                       .size(56.dp)
+                      .playerGlassPane(enabled = liquidGlassSurfaces, opacity = 0.88f, highlight = 0.18f, cornerRadius = 999.dp)
                       .clip(CircleShape)
                       .clickable(
                         enabled = viewModel.hasNext(),
@@ -1669,7 +1697,7 @@ fun PlayerControls(
                           if (viewModel.hasNext()) viewModel.playNext()
                         },
                       ).then(
-                        if (hideBackground) {
+                        if (hideBackground && !liquidGlassSurfaces) {
                           Modifier.background(brush = buttonShadow, shape = CircleShape)
                         } else {
                           Modifier
@@ -1677,7 +1705,7 @@ fun PlayerControls(
                       ),
                   shape = CircleShape,
                   color =
-                    if (!hideBackground) {
+                    if (!hideBackground && !liquidGlassSurfaces) {
                       playerButtonContainerColor()
                     } else {
                       Color.Transparent
@@ -1686,7 +1714,7 @@ fun PlayerControls(
                   tonalElevation = 0.dp,
                   shadowElevation = 0.dp,
                   border =
-                    if (!hideBackground) {
+                    if (!hideBackground && !liquidGlassSurfaces) {
                       BorderStroke(1.dp, playerButtonBorderColor())
                     } else {
                       null
@@ -1702,7 +1730,7 @@ fun PlayerControls(
                       if (viewModel.hasNext()) {
                         if (hideBackground) controlColor else playerButtonContentColor()
                       } else {
-                        if (hideBackground) {
+                        if (hideBackground && !liquidGlassSurfaces) {
                           controlColor.copy(alpha = 0.38f)
                         } else {
                           playerButtonContentColor().copy(alpha = 0.38f)
@@ -1720,13 +1748,14 @@ fun PlayerControls(
                 modifier =
                   Modifier
                     .size(64.dp)
+                    .playerGlassPane(enabled = liquidGlassSurfaces, opacity = 0.88f, highlight = 0.20f, cornerRadius = 999.dp)
                     .clip(CircleShape)
                     .clickable(interaction, ripple(), onClick = {
                       resetControlsTimestamp = System.currentTimeMillis()
                       viewModel.pauseUnpause()
                     })
                     .then(
-                      if (hideBackground) {
+                      if (hideBackground && !liquidGlassSurfaces) {
                         Modifier.background(brush = buttonShadow, shape = CircleShape)
                       } else {
                         Modifier
@@ -1734,7 +1763,7 @@ fun PlayerControls(
                     ),
                 shape = CircleShape,
                 color =
-                  if (!hideBackground) {
+                  if (!hideBackground && !liquidGlassSurfaces) {
                     playerButtonContainerColor()
                   } else {
                     Color.Transparent
@@ -1743,7 +1772,7 @@ fun PlayerControls(
                 tonalElevation = 0.dp,
                 shadowElevation = 0.dp,
                 border =
-                  if (!hideBackground) {
+                  if (!hideBackground && !liquidGlassSurfaces) {
                     BorderStroke(1.dp, playerButtonBorderColor())
                   } else {
                     null
@@ -1831,12 +1860,10 @@ fun PlayerControls(
                   .fillMaxWidth()
                   .then(if (isPortrait) Modifier.height(92.dp) else Modifier)
                   .clip(RoundedCornerShape(26.dp))
+                  .playerGlassPane(enabled = useLiquidGlassSeekbar, cornerRadius = 26.dp)
                   .background(
                     when {
-                      useLiquidGlassSeekbar -> {
-                        val darkSurface = MaterialTheme.colorScheme.surface.luminance() < 0.5f
-                        if (darkSurface) Color.Black.copy(alpha = 0.24f) else Color.White.copy(alpha = 0.28f)
-                      }
+                      useLiquidGlassSeekbar -> Color.Transparent
                       playerControlsTheme.name == "Glass" -> MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.42f)
                       playerControlsTheme.name == "Glossy" -> {
                         val darkSurface = MaterialTheme.colorScheme.surface.luminance() < 0.5f
@@ -2306,6 +2333,8 @@ private fun NativeStatsPageOverlay(
   snapshot: NativePlaybackSnapshot,
   modifier: Modifier = Modifier,
 ) {
+  val appearancePreferences = koinInject<AppearancePreferences>()
+  val liquidGlassSurfaces by appearancePreferences.liquidGlassSurfaces.collectAsState()
   val inputResolution = NativeStatsDisplay.resolution(snapshot.videoWidth, snapshot.videoHeight)
   val rendererResolution = NativeStatsDisplay.resolution(snapshot.videoOutputWidth, snapshot.videoOutputHeight)
   val inputAspectRatio = NativeStatsDisplay.aspectRatio(
@@ -2364,7 +2393,12 @@ private fun NativeStatsPageOverlay(
   }
     ?: flow.vulkanTimings.motion.status
   Surface(
-    modifier = modifier,
+    modifier = modifier.playerGlassPane(
+      enabled = liquidGlassSurfaces,
+      opacity = 0.86f,
+      highlight = 0.16f,
+      cornerRadius = 12.dp,
+    ),
     color = Color.Transparent,
     shape = MaterialTheme.shapes.medium,
   ) {

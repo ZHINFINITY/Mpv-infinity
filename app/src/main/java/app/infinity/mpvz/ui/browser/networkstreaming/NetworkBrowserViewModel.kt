@@ -34,6 +34,8 @@ import app.infinity.mpvz.ui.player.PlayerActivity
 import app.infinity.mpvz.utils.media.M3UParseResult
 import app.infinity.mpvz.utils.media.M3UParser
 import app.infinity.mpvz.utils.media.M3UPlaylistItem
+import app.infinity.mpvz.utils.media.M3URoute
+import app.infinity.mpvz.utils.media.M3URoutingPolicy
 import app.infinity.mpvz.utils.storage.FileTypeUtils
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.NonCancellable
@@ -189,6 +191,9 @@ class NetworkBrowserViewModel(
     val parsed =
       parseResult as? M3UParseResult.Success
         ?: throw IllegalArgumentException((parseResult as M3UParseResult.Error).message)
+    val openInMusic =
+      playerPreferences.openRadioM3uInMusic.get() &&
+        M3URoutingPolicy.route(parsed) == M3URoute.MUSIC
     val persistentResult =
       parsed.copy(items = parsed.items.map { item -> item.forSavedConnection(connection) })
 
@@ -197,6 +202,7 @@ class NetworkBrowserViewModel(
         .createM3UPlaylistFromParsed(
           parseResult = persistentResult,
           sourceName = file.name,
+          isAudio = openInMusic,
         ).getOrElse { e ->
           Log.e(TAG, "Failed to create playlist from M3U content", e)
           _error.value = "Failed to import playlist: ${e.message}"

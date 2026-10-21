@@ -35,6 +35,9 @@ import app.infinity.mpvz.ui.icons.Icons
 import app.infinity.mpvz.ui.player.controls.LocalPlayerButtonsClickEvent
 import app.infinity.mpvz.ui.theme.LocalDarkAppColorScheme
 import app.infinity.mpvz.ui.theme.spacing
+import app.infinity.mpvz.preferences.AppearancePreferences
+import app.infinity.mpvz.preferences.preference.collectAsState
+import org.koin.compose.koinInject
 
 @Suppress("CompositionLocalAllowlist")
 internal val LocalForceDarkPlayerButtonsBackground = staticCompositionLocalOf { false }
@@ -74,13 +77,17 @@ fun ControlsButton(
 ) {
   val interactionSource = remember { MutableInteractionSource() }
   val hideBackground = LocalHidePlayerButtonsBackground.current
+  val appearance = koinInject<AppearancePreferences>()
+  val liquidGlassSurfaces by appearance.liquidGlassSurfaces.collectAsState()
   val resolvedColor = color ?: playerButtonContentColor()
+  val glassEnabled = liquidGlassSurfaces
 
   val clickEvent = LocalPlayerButtonsClickEvent.current
   Surface(
     modifier =
       modifier
         .clip(CircleShape)
+        .playerGlassPane(enabled = glassEnabled, opacity = 0.88f, highlight = 0.18f, cornerRadius = 999.dp)
         .combinedClickable(
           enabled = enabled,
           onClick = {
@@ -95,12 +102,12 @@ fun ControlsButton(
           indication = ripple(),
         ),
     shape = CircleShape,
-    color = if (hideBackground) Color.Transparent else playerButtonContainerColor(),
+    color = if (glassEnabled || hideBackground) Color.Transparent else playerButtonContainerColor(),
     contentColor = resolvedColor,
     tonalElevation = 0.dp,
     shadowElevation = 0.dp,
     border =
-      if (hideBackground) {
+      if (hideBackground || glassEnabled) {
         null
       } else {
         BorderStroke(

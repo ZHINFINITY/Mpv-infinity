@@ -11,13 +11,13 @@ import androidx.compose.animation.Crossfade
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.size
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchColors
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import app.infinity.mpvz.ui.icons.Icon
 import app.infinity.mpvz.ui.icons.Icons
+import app.infinity.mpvz.ui.player.controls.components.GlassSwitch
 
 @Composable
 fun IconSwitch(
@@ -27,7 +27,7 @@ fun IconSwitch(
   enabled: Boolean = true,
   colors: SwitchColors = SwitchDefaults.colors(),
 ) {
-  Switch(
+  GlassSwitch(
     checked = checked,
     onCheckedChange = onCheckedChange,
     modifier = modifier,

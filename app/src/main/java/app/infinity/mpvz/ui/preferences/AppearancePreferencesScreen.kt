@@ -340,7 +340,7 @@ object AppearancePreferencesScreen : Screen {
                     onValueChange = preferences.liquidGlassSurfaces::set,
                     title = { Text("Liquid glass surfaces") },
                     summary = {
-                      Text("Lightweight translucent navigation and mini-player surfaces. Uses static highlights, not live video refraction.")
+                      Text("Shared sampled video glass on player controls, toggles and sheets. Android 13+ adds lens refraction; older Android uses frosted samples. HDR, low memory and severe heat use a readable translucent fallback. Sampling stops when controls are hidden.")
                     },
                   )
 
@@ -364,7 +364,7 @@ object AppearancePreferencesScreen : Screen {
                     sliderValue = GlassSurfacePolicy.highlight(glassHighlight),
                     onSliderValueChange = { preferences.glassSurfaceHighlight.set(GlassSurfacePolicy.highlight(it)) },
                     title = { Text("Highlight strength") },
-                    summary = { Text("${(GlassSurfacePolicy.highlight(glassHighlight) * 100).toInt()}% · no continuous background capture") },
+                    summary = { Text("${(GlassSurfacePolicy.highlight(glassHighlight) * 100).toInt()}% · edge reflections; text and icons stay sharp") },
                     valueRange = GlassSurfacePolicy.MinHighlight..GlassSurfacePolicy.MaxHighlight,
                     enabled = liquidGlassSurfaces,
                   )

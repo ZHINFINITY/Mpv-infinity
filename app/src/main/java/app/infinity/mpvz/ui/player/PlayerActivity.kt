@@ -123,6 +123,8 @@ import app.infinity.mpvz.utils.media.MediaUtils
 import app.infinity.mpvz.utils.media.fileExtension
 import app.infinity.mpvz.utils.media.resolveSeekMode
 import app.infinity.mpvz.utils.media.M3UParseResult
+import app.infinity.mpvz.utils.media.M3URoute
+import app.infinity.mpvz.utils.media.M3URoutingPolicy
 import app.infinity.mpvz.utils.media.M3UParser
 import app.infinity.mpvz.utils.media.PlaybackStateEvents
 import app.infinity.mpvz.utils.media.SharedUrlExtractor
@@ -250,9 +252,12 @@ class PlayerActivity :
   internal fun stopFlowDiagnosticsCapture(): String? = flowDiagnosticsCaptureManager.stop()
 
   val nativePlaybackSnapshot get() = nativeEngine.snapshot
+  private var glassEngineMode by mutableStateOf(PlaybackEngineMode.MPV)
+  private var glassMediaGeneration by mutableStateOf(0L)
   private var activeEngineMode = PlaybackEngineMode.MPV
     set(value) {
       field = value
+      glassEngineMode = value
       if (ownsPlaybackSession() && value == PlaybackEngineMode.NATIVE) {
         MediaPlaybackService.setNativeRendererOwnership(true)
       }
@@ -361,6 +366,11 @@ class PlayerActivity :
   val player by lazy { binding.player }
 
   override fun currentThumbnailSource(): String? = currentPlayableUri
+
+  /** The audio/video decision was made before creating this shared player Activity. */
+  fun hasPreclassifiedMusicLaunch(): Boolean =
+    (intent.getStringExtra("launch_source") == "music_m3u_playlist" ||
+      intent.getBooleanExtra("radio_music_preclassified", false)) && isKnownAudioLaunch(intent)
 
   override fun isCurrentMediaKnownAudio(): Boolean {
     val extension =
@@ -829,6 +839,10 @@ class PlayerActivity :
       }
     }
 
+  private var preflightM3uParse: Pair<String, M3UParseResult.Success>? = null
+  private var m3uPreflightJob: Job? = null
+  private var playerInitializationComplete = false
+
   override fun onCreate(savedInstanceState: Bundle?) {
     enableEdgeToEdge()
     super.onCreate(savedInstanceState)
@@ -863,6 +877,77 @@ class PlayerActivity :
     // Read from the actual launch intent now that it's safe to (see isSecureFolderLaunch kdoc).
     isSecureFolderLaunch = intent.getStringExtra("launch_source") == "secure_folder"
     isStreamTabPlayback = intent.getBooleanExtra("stream_tab_playback", false)
+    if (shouldPreflightExternalM3u()) {
+      val launchIntent = intent
+      m3uPreflightJob = lifecycleScope.launch {
+        preflightExternalM3u(launchIntent)
+        continuePlayerInitialization()
+      }
+    } else {
+      continuePlayerInitialization()
+    }
+  }
+
+  private fun shouldPreflightExternalM3u(sourceIntent: Intent = intent): Boolean {
+    if (!playerPreferences.openRadioM3uInMusic.get()) return false
+    if (sourceIntent.getStringExtra("launch_source") == "music_m3u_playlist" ||
+      sourceIntent.getBooleanExtra("radio_music_preclassified", false)) return false
+    if (sourceIntent.action == MediaPlaybackService.ACTION_OPEN_PLAYER) return false
+    if (sourceIntent.getBooleanExtra(EXTRA_PREPARED_PLAYBACK_QUEUE, false)) return false
+    if (sourceIntent.getIntExtra("playlist_id", -1) != -1) return false
+    val playlistCount =
+      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+        sourceIntent.getParcelableArrayListExtra("playlist", Uri::class.java)?.size ?: 0
+      } else {
+        @Suppress("DEPRECATION")
+        sourceIntent.getParcelableArrayListExtra<Uri>("playlist")?.size ?: 0
+      }
+    if (playlistCount > 0) return false
+    val playableUri = getPlayableUri(sourceIntent) ?: return false
+    val originalUri = extractUriFromIntent(sourceIntent)?.toString()
+    val mimeType = resolvePlaybackMimeType(sourceIntent.type, sourceIntent.getStringExtra("mime_type"))
+    return M3uPlaybackPolicy.shouldExpandInApp(
+      playableUri = playableUri,
+      originalUri = originalUri,
+      fileName = getFileName(sourceIntent),
+      mimeType = mimeType,
+      hasExistingPlaylist = false,
+      hasPlaylistId = false,
+    ) && (playableUri.startsWith("http://") || playableUri.startsWith("https://") ||
+      playableUri.startsWith("content://") || playableUri.startsWith("file://") ||
+      File(playableUri).isFile)
+  }
+
+  private suspend fun preflightExternalM3u(sourceIntent: Intent) {
+    val playableUri = getPlayableUri(sourceIntent) ?: return
+    val result = try {
+      withContext(Dispatchers.IO) {
+        withTimeoutOrNull(4_000L) { parseM3uSource(playableUri, sourceIntent) }
+      }
+    } catch (cancelled: CancellationException) {
+      throw cancelled
+    } catch (error: Exception) {
+      Log.w(TAG, "M3U preflight unavailable; retaining the existing player route", error)
+      null
+    }
+    if (result is M3UParseResult.Success) preflightM3uParse = playableUri to result
+    if (result is M3UParseResult.Success && result.items.isNotEmpty() &&
+      M3URoutingPolicy.route(result) == M3URoute.MUSIC &&
+      !M3UParser.shouldPlayHlsDirectly(result)
+    ) {
+      // Preserve secure-folder/network source identity; this separate marker only selects the UI.
+      sourceIntent.putExtra("radio_music_preclassified", true)
+      sourceIntent.putExtra("is_audio", true)
+      sourceIntent.putExtra("media_library_audio", true)
+      sourceIntent.putExtra("radio_stream", true)
+      // Keep the marker MIME recognized by M3uPlaybackPolicy so expansion still occurs.
+      sourceIntent.putExtra("mime_type", "audio/x-mpegurl")
+    }
+  }
+
+  private fun continuePlayerInitialization() {
+    if (playerInitializationComplete || isFinishing || isDestroyed || !ownsPlaybackSession()) return
+    playerInitializationComplete = true
     applyInitialVideoOrientation(intent)
     setContentView(binding.root)
     nativeEngine.attach(binding.media3Player)
@@ -1484,6 +1569,9 @@ class PlayerActivity :
     }
 
     setLayoutInDisplayCutoutModeIfSupported(shortEdges = true)
+    // A bounded preflight can finish after onStart/onResume have already run.
+    if (lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)) startInitializedPlayer()
+    if (lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) resumeInitializedPlayer()
   }
 
   override fun attachBaseContext(newBase: Context?) {
@@ -1676,13 +1764,49 @@ class PlayerActivity :
       // The controls ComposeView sits above the native video surface. Do not draw the
       // library custom media backdrop here or it will cover the episode while audio continues.
       MpvInfinityTheme(showCustomThemeBackdrop = false) {
-        Box(modifier = Modifier.fillMaxSize()) {
-          PlayerControls(
-            viewModel = viewModel,
-            onBackPress = ::handleBackPress,
-            onSelectEngine = ::selectEngineForCurrentVideo,
-            modifier = Modifier,
-          )
+        val glass by androidx.compose.runtime.remember(appearancePreferences) {
+          appearancePreferences.liquidGlassSurfaces.changes()
+        }.collectAsState(initial = appearancePreferences.liquidGlassSurfaces.get())
+        val controls by viewModel.controlsShown.collectAsState()
+        val sheet by viewModel.sheetShown.collectAsState()
+        val panel by viewModel.panelShown.collectAsState()
+        val audioOnly by viewModel.isAudioOnly.collectAsState()
+        val state by PlaybackSession.state.collectAsState()
+        val native by nativeEngine.snapshot.collectAsState()
+        val nativeFrame by nativeEngine.hasRenderedFirstFrame.collectAsState()
+        val hdrMode by viewModel.hdrScreenMode.collectAsState()
+        val transfer by PlaybackSession.propString["video-params/gamma"].collectAsState()
+        val nativeActive = glassEngineMode == PlaybackEngineMode.NATIVE
+        var glassDrawerVisible by androidx.compose.runtime.remember { mutableStateOf(false) }
+        val surface = if (nativeActive) binding.media3Player.videoSurfaceView as? android.view.SurfaceView
+          else binding.player
+        val hdr = hdrMode != HdrScreenMode.OFF ||
+          (nativeActive && native.videoDynamicRange in setOf("HDR10", "HLG")) ||
+          (!nativeActive && transfer?.lowercase() in setOf("pq", "hlg", "st2084", "smpte2084"))
+        app.infinity.mpvz.ui.theme.LiquidGlassBackdropHost(
+          surfaceView = surface,
+          enabled = glass,
+          visible = !isInPictureInPictureMode && (controls || glassDrawerVisible || sheet != Sheets.None || panel != Panels.None),
+          audioOnly = audioOnly || hasPreclassifiedMusicLaunch(),
+          hdr = hdr,
+          generation = Triple(glassMediaGeneration, state.generation, state.currentItem?.stableId),
+          isReady = {
+            if (nativeActive) nativeFrame && nativeEngine.hasRenderedFirstFrame.value
+            else binding.player.isSurfaceReady && PlaybackSession.state.value.surfaceAttached
+          },
+          isPlaying = {
+            if (nativeActive) nativeEngine.currentPlayer.isPlaying else !PlaybackSession.state.value.paused
+          },
+        ) {
+          Box(modifier = Modifier.fillMaxSize()) {
+            PlayerControls(
+              viewModel = viewModel,
+              onBackPress = ::handleBackPress,
+              onSelectEngine = ::selectEngineForCurrentVideo,
+              onGlassVisibilityChange = { glassDrawerVisible = it },
+              modifier = Modifier,
+            )
+          }
         }
       }
     }
@@ -2751,6 +2875,10 @@ class PlayerActivity :
 
   override fun onStart() {
     super.onStart()
+    startInitializedPlayer()
+  }
+
+  private fun startInitializedPlayer() {
     if ((!mpvInitialized && !isNativeEngineActive()) || !ownsPlaybackSession()) return
     MediaPlaybackService.activityForeground = true
 
@@ -3276,6 +3404,7 @@ class PlayerActivity :
   private fun beginMediaRequest(): Boolean =
     PlaybackActivityOwner.beginRequest(playbackOwnerToken) {
       mediaRequestGeneration++
+      glassMediaGeneration++
       manualOrientationOverride = false
     }
 
@@ -4094,6 +4223,10 @@ class PlayerActivity :
 
   override fun onResume() {
     super.onResume()
+    resumeInitializedPlayer()
+  }
+
+  private fun resumeInitializedPlayer() {
     if ((!mpvInitialized && !isNativeEngineActive()) || !ownsPlaybackSession()) return
     if (!isInPictureInPictureMode && hasWindowFocus()) completePipExpansion()
     restoreForegroundVideoAndAmbientIfUnlocked()
@@ -6199,7 +6332,29 @@ class PlayerActivity :
    */
   override fun onNewIntent(intent: Intent) {
     super.onNewIntent(intent)
-    handleNewIntent(intent)
+    m3uPreflightJob?.cancel()
+    preflightM3uParse = null
+    if (!playerInitializationComplete) {
+      if (!acceptPreparedPlaybackLaunch(intent) || !beginMediaRequest()) {
+        finish()
+        return
+      }
+      setIntent(intent)
+      pendingSavedPlaylistSelection = null
+      isSecureFolderLaunch = intent.getStringExtra("launch_source") == "secure_folder"
+      isStreamTabPlayback = intent.getBooleanExtra("stream_tab_playback", false)
+      if (shouldPreflightExternalM3u(intent)) {
+        m3uPreflightJob = lifecycleScope.launch {
+          preflightExternalM3u(intent)
+          continuePlayerInitialization()
+        }
+      } else continuePlayerInitialization()
+    } else if (shouldPreflightExternalM3u(intent)) {
+      m3uPreflightJob = lifecycleScope.launch {
+        preflightExternalM3u(intent)
+        if (!isFinishing && !isDestroyed) handleNewIntent(intent)
+      }
+    } else handleNewIntent(intent)
   }
 
   private fun handleNewIntent(sourceIntent: Intent) {
@@ -9264,6 +9419,34 @@ class PlayerActivity :
    */
   fun isCurrentPlaylistM3U(): Boolean = isM3uPlaylist
 
+  private suspend fun parseM3uSource(
+    uriString: String,
+    sourceIntent: Intent,
+  ): M3UParseResult {
+    val requestHeaders =
+      buildPlaybackHeaders(
+        Uri.parse(uriString),
+        PlaybackHttpHeaders.fromFlatPairs(sourceIntent.extras?.getStringArray("headers")),
+      )
+    val userAgent = PlaybackHttpHeaders.userAgent(requestHeaders)
+    return when {
+      uriString.startsWith("http://") || uriString.startsWith("https://") ->
+        M3UParser.parseFromUrl(
+          url = uriString,
+          userAgent = userAgent,
+          headers = requestHeaders,
+          httpClient = networkHttpClient,
+        )
+      uriString.startsWith("content://") || uriString.startsWith("file://") ->
+        M3UParser.parseFromUri(this, Uri.parse(uriString))
+      else -> {
+        val file = File(uriString)
+        if (!file.isFile) return M3UParseResult.Error("Playlist file not found")
+        M3UParser.parseFromStream(file.inputStream(), sourceUrl = file.toURI().toString())
+      }
+    }
+  }
+
   private suspend fun loadDynamicM3uPlaylist(
     uriString: String,
     sourceIntent: Intent,
@@ -9276,22 +9459,11 @@ class PlayerActivity :
       )
     val userAgent = PlaybackHttpHeaders.userAgent(requestHeaders)
     val parseResult =
-      when {
-        uriString.startsWith("http://") || uriString.startsWith("https://") ->
-          M3UParser.parseFromUrl(
-            url = uriString,
-            userAgent = userAgent,
-            headers = requestHeaders,
-            httpClient = networkHttpClient,
-          )
-        uriString.startsWith("content://") || uriString.startsWith("file://") ->
-          M3UParser.parseFromUri(this, Uri.parse(uriString))
-        else -> {
-          val file = File(uriString)
-          if (!file.isFile) return false
-          M3UParser.parseFromStream(file.inputStream(), sourceUrl = file.toURI().toString())
-        }
-      }
+      preflightM3uParse
+        ?.takeIf { it.first == uriString }
+        ?.second
+        ?: parseM3uSource(uriString, sourceIntent)
+    preflightM3uParse = null
     ensureCurrentMediaRequest(requestGeneration)
 
     if (M3UParser.shouldPlayHlsDirectly(parseResult)) {

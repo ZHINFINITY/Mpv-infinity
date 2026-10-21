@@ -19,6 +19,7 @@ import app.infinity.mpvz.utils.media.HttpUtils
 import app.infinity.mpvz.utils.media.M3UParseResult
 import app.infinity.mpvz.utils.media.M3UParser
 import app.infinity.mpvz.utils.media.M3UPlaylistItem
+import app.infinity.mpvz.utils.media.M3URoutingPolicy
 import app.infinity.mpvz.utils.media.M3USourceUrl
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.Flow
@@ -379,6 +380,7 @@ class PlaylistRepository(
           name = remotePlaylist.parseResult.playlistName,
           sourceUrl = remotePlaylist.sourceUrl,
           userAgent = userAgent,
+          isAudio = M3URoutingPolicy.isMusicPlaylist(remotePlaylist.parseResult),
         )
       Result.success(playlistId)
     } catch (e: CancellationException) {
@@ -401,6 +403,7 @@ class PlaylistRepository(
               parseResult = parseResult,
               name = parseResult.playlistName,
               sourceUrl = null,
+              isAudio = M3URoutingPolicy.isMusicPlaylist(parseResult),
             )
           Result.success(playlistId)
         }
@@ -419,6 +422,7 @@ class PlaylistRepository(
     sourceName: String,
     sourceUrl: String? = null,
     userAgent: String? = null,
+    isAudio: Boolean = false,
   ): Result<Long> =
     try {
       val parseResult = M3UParser.parseContent(content, sourceUrl ?: sourceName)
@@ -431,6 +435,7 @@ class PlaylistRepository(
               name = parseResult.playlistName.ifBlank { sourceName.substringBeforeLast('.') },
               sourceUrl = sourceUrl?.let(M3UParser::sanitizeSourceUrl),
               userAgent = userAgent,
+              isAudio = isAudio || M3URoutingPolicy.isMusicPlaylist(parseResult),
             )
           Result.success(playlistId)
         }
@@ -458,6 +463,7 @@ class PlaylistRepository(
           name = parseResult.playlistName.ifBlank { sourceName.substringBeforeLast('.') },
           sourceUrl = sourceUrl?.let(M3UParser::sanitizeSourceUrl),
           userAgent = userAgent,
+          isAudio = isAudio,
         )
       Result.success(playlistId)
     } catch (error: CancellationException) {
@@ -503,6 +509,7 @@ class PlaylistRepository(
     name: String,
     sourceUrl: String?,
     userAgent: String? = null,
+    isAudio: Boolean = false,
   ): Long = remotePlaylistWriteMutex.withLock {
     val now = System.currentTimeMillis()
     val existingPlaylist = sourceUrl?.let { playlistDao.getRemotePlaylistBySourceUrl(it) }
@@ -524,6 +531,7 @@ class PlaylistRepository(
         m3uSourceUrl = sourceUrl,
         isM3uPlaylist = true,
         userAgent = userAgent,
+        isAudio = isAudio,
       )
     val items =
       parseResult.items.mapIndexed { index, item ->

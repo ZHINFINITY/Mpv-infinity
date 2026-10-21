@@ -183,6 +183,7 @@ import app.infinity.mpvz.ui.player.visualizer.ParticleOverlay
 import app.infinity.mpvz.ui.player.visualizer.VisualizerPalette
 import app.infinity.mpvz.ui.player.visualizer.rememberAudioVisualizerFeatures
 import app.infinity.mpvz.ui.theme.fontFamilyForText
+import app.infinity.mpvz.ui.theme.GlassControlSurface
 import app.infinity.mpvz.ui.utils.isMpvOptionOwnedByConfig
 
 import app.infinity.mpvz.utils.media.fileExtension
@@ -559,6 +560,36 @@ private fun CoverArtCardImage(
   }
 }
 
+/**
+ * Reuses artwork already resolved for the current track as a glass backdrop.
+ *
+ * This does not resolve metadata or decode a second copy of embedded art. Remote artwork uses the
+ * shared RemoteImage loader, which coalesces/cache-hits the cover card request. With no artwork,
+ * the glass surface keeps its normal tint fallback instead of inventing another animation.
+ */
+@Composable
+private fun AudioArtworkBackdrop(
+  bitmap: Bitmap?,
+  artworkUrl: String?,
+) {
+  val imageBitmap = remember(bitmap) { bitmap?.asImageBitmap() }
+  if (imageBitmap != null) {
+    Image(
+      bitmap = imageBitmap,
+      contentDescription = null,
+      contentScale = ContentScale.Crop,
+      modifier = Modifier.fillMaxSize(),
+    )
+  } else if (!artworkUrl.isNullOrBlank() && (artworkUrl.startsWith("http://", ignoreCase = true) || artworkUrl.startsWith("https://", ignoreCase = true))) {
+    RemoteImage(
+      url = artworkUrl,
+      contentDescription = null,
+      contentScale = ContentScale.Crop,
+      modifier = Modifier.fillMaxSize(),
+    )
+  }
+}
+
 private enum class CoverSwipeDirection {
   NEXT,
   PREV,
@@ -875,6 +906,8 @@ fun AudioPlayerControls(
   val playerControlsTheme by appearancePreferences.playerControlsTheme.collectAsState()
   val showSeekbarOuterContainer by appearancePreferences.showSeekbarOuterContainer.collectAsState()
   val liquidGlassSurfaces by appearancePreferences.liquidGlassSurfaces.collectAsState()
+  val glassSurfaceOpacity by appearancePreferences.glassSurfaceOpacity.collectAsState()
+  val glassSurfaceHighlight by appearancePreferences.glassSurfaceHighlight.collectAsState()
   val customThemes by appearancePreferences.customThemes.collectAsState()
   val activeCustomThemeId by appearancePreferences.activeCustomThemeId.collectAsState()
   val colorScheme = MaterialTheme.colorScheme
@@ -1757,9 +1790,15 @@ fun AudioPlayerControls(
       }
       val isPaused = paused ?: false
 
-      Box(
-        contentAlignment = Alignment.Center,
+      GlassControlSurface(
+        enabled = liquidGlassSurfaces,
+        opacity = glassSurfaceOpacity,
+        highlight = glassSurfaceHighlight,
+        cornerRadius = 18.dp,
         modifier = Modifier.fillMaxWidth(),
+        backdrop = {
+          AudioArtworkBackdrop(bitmap = albumArtBitmap, artworkUrl = currentArtworkUri)
+        },
       ) {
       SeekbarWithTimers(
         position = timelinePosition,
@@ -1790,6 +1829,16 @@ fun AudioPlayerControls(
     }
 
     val playbackControlsRow = @Composable {
+      GlassControlSurface(
+        enabled = liquidGlassSurfaces,
+        opacity = glassSurfaceOpacity,
+        highlight = glassSurfaceHighlight,
+        cornerRadius = 22.dp,
+        modifier = Modifier.fillMaxWidth(),
+        backdrop = {
+          AudioArtworkBackdrop(bitmap = albumArtBitmap, artworkUrl = currentArtworkUri)
+        },
+      ) {
       Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.SpaceEvenly,
@@ -1891,6 +1940,7 @@ fun AudioPlayerControls(
           contentDescription = stringResource(R.string.audiobook_chapters),
           tint = MaterialTheme.colorScheme.onSurfaceVariant,
         )
+      }
       }
     }
 

@@ -77,6 +77,7 @@ import app.infinity.mpvz.domain.media.model.Video
 import app.infinity.mpvz.preferences.AppearancePreferences
 import app.infinity.mpvz.preferences.BrowserPreferences
 import app.infinity.mpvz.preferences.MediaLayoutMode
+import app.infinity.mpvz.preferences.PlayerPreferences
 import app.infinity.mpvz.preferences.GesturePreferences
 import app.infinity.mpvz.preferences.preference.collectAsState
 import app.infinity.mpvz.presentation.Screen
@@ -130,6 +131,7 @@ data class PlaylistDetailScreen(
     val backStack = LocalBackStack.current
     val coroutineScope = rememberCoroutineScope()
     val browserPreferences = koinInject<BrowserPreferences>()
+    val playerPreferences = koinInject<PlayerPreferences>()
     val playlistRepository = koinInject<PlaylistRepository>()
     val iptvLayoutMode by browserPreferences.iptvLayoutMode.collectAsState()
     val iptvManualGridColumns by browserPreferences.iptvManualGridColumnsEnabled.collectAsState()
@@ -278,14 +280,35 @@ data class PlaylistDetailScreen(
           val headersExtra = buildM3UHeadersExtra(playlist, item.playlistItem)
           val headers = headersExtra?.toList()?.chunked(2)?.associate { it[0] to it[1] }
             ?: mapOf("User-Agent" to app.infinity.mpvz.network.NetworkUserAgent.resolve(context))
-          // Do not create the video UI and wait for demuxing to discover that this is radio.
-          // A successful bounded probe is reused by the player; unknown/video URLs keep their old route.
-          val radioMimeType =
-            if (playlist?.isM3uPlaylist == true) {
-              app.infinity.mpvz.utils.media.RadioStreamProbe.detectAudioMimeType(playUri.toString(), headers)
-            } else {
-              null
+          // Reclassify saved entries too: the owner must not re-import an existing radio M3U.
+          val settingEnabled = playerPreferences.openRadioM3uInMusic.get()
+          val playlistName = playlist?.name.orEmpty()
+          val declaredAudio = playlist?.isAudio == true
+          val savedEntries = videoItems
+          val recognizedMusic = if (settingEnabled && playlist?.isM3uPlaylist == true) {
+            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
+              app.infinity.mpvz.utils.media.M3URoutingPolicy.isMusicPlaylist(
+                app.infinity.mpvz.utils.media.M3UParseResult.Success(
+                  playlistName,
+                  savedEntries.map { saved ->
+                    app.infinity.mpvz.utils.media.M3UPlaylistItem(
+                      url = saved.playlistItem.filePath,
+                      title = saved.playlistItem.fileName,
+                      groupTitle = saved.playlistItem.groupTitle,
+                    )
+                  },
+                ),
+                declaredAudio = declaredAudio,
+              )
             }
+          } else false
+          val radioMimeType =
+            if (recognizedMusic) "audio/*" else if (settingEnabled && playlist?.isM3uPlaylist == true) {
+              app.infinity.mpvz.utils.media.RadioStreamProbe.detectAudioMimeType(playUri.toString(), headers)
+            } else null
+          // Audio mode is declared before Activity creation; opaque audio URLs can use the
+          // bounded header probe, but video/unknown responses never force the Music UI.
+          val musicRoute = settingEnabled && playlist?.isM3uPlaylist == true && radioMimeType != null
           val intent =
             Intent(context, PlayerActivity::class.java).apply {
               action = Intent.ACTION_VIEW
@@ -295,9 +318,10 @@ data class PlaylistDetailScreen(
               putExtra("local_media_path", item.video.path)
               putExtra("playlist_index", startIndex)
               putExtra("playlist_id", playlistId)
-              putExtra("launch_source", if (playlist?.isM3uPlaylist == true) "m3u_playlist" else "playlist")
-              putExtra("is_audio", radioMimeType != null || item.video.isAudio)
-              putExtra("radio_stream", radioMimeType != null)
+              putExtra("launch_source", if (musicRoute) "music_m3u_playlist" else if (playlist?.isM3uPlaylist == true) "m3u_playlist" else "playlist")
+              putExtra("media_library_audio", musicRoute || item.video.isAudio)
+              putExtra("is_audio", musicRoute || radioMimeType != null || item.video.isAudio)
+              putExtra("radio_stream", musicRoute || radioMimeType != null)
               putExtra("title", item.playlistItem.fileName)
               headersExtra?.let { putExtra("headers", it) }
             }

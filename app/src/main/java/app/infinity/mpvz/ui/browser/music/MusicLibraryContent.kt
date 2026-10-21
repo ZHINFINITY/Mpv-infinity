@@ -509,16 +509,6 @@ fun MusicLibraryContent(
               onSettingsClick = {
                 backStack.add(PreferencesScreen)
               },
-              leadingActions = {
-                if (!activeSelectionManager.isInSelectionMode) {
-                  MusicSourceChooser(
-                    hasJellyfin = jellyfinServers.isNotEmpty(),
-                    hasNavidrome = navidromeServers.isNotEmpty(),
-                    onManageServers = { backStack.add(app.infinity.mpvz.ui.preferences.MediaServersPreferencesScreen) },
-                    modifier = Modifier.padding(start = 12.dp, end = 8.dp, top = 4.dp, bottom = 4.dp),
-                  )
-                }
-              },
               onSelectAll = { activeSelectionManager.selectAll() },
               onInvertSelection = { activeSelectionManager.invertSelection() },
               onDeselectAll = { activeSelectionManager.clear() },

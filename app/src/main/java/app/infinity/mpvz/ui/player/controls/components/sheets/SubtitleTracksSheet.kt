@@ -30,7 +30,6 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -51,6 +50,7 @@ import app.infinity.mpvz.ui.player.TrackNode
 import app.infinity.mpvz.ui.theme.spacing
 import kotlinx.collections.immutable.ImmutableList
 import kotlinx.collections.immutable.toImmutableList
+import app.infinity.mpvz.ui.player.controls.components.GlassSwitch
 
 sealed class SubtitleItem {
   data class Track(
@@ -427,7 +427,7 @@ fun SubtitlesSheet(
           verticalAlignment = Alignment.CenterVertically,
         ) {
           Text("Translate embedded subtitles", modifier = Modifier.weight(1f))
-          Switch(checked = translationEnabled, onCheckedChange = { onToggleTranslation() })
+          GlassSwitch(checked = translationEnabled, onCheckedChange = { onToggleTranslation() })
         }
         if (tracks.any { it.external != true } && translationEnabled && configuredLanguages.isNotEmpty()) {
           Column(

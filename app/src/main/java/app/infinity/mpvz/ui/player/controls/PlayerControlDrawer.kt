@@ -71,6 +71,7 @@ import app.infinity.mpvz.ui.icons.Icons
 import app.infinity.mpvz.ui.player.controls.components.LocalHidePlayerButtonsBackground
 import app.infinity.mpvz.ui.player.controls.components.panels.DraggablePanel
 import app.infinity.mpvz.ui.theme.controlColor
+import app.infinity.mpvz.ui.theme.liquidGlassPane
 import app.infinity.mpvz.ui.theme.spacing
 import app.infinity.mpvz.preferences.preference.collectAsState
 import org.koin.compose.koinInject
@@ -388,11 +389,20 @@ private fun PlayerControlTile(
     )
 
   Surface(
-    modifier = modifier.height(104.dp),
+    modifier = modifier
+      .height(104.dp)
+      .liquidGlassPane(
+        enabled = liquidGlassSurfaces || playerControlsTheme.name != "Classic",
+        opacity = if (liquidGlassSurfaces) 0.84f else 0.78f,
+        highlight = if (active) 0.24f else 0.16f,
+        cornerRadius = 18.dp,
+      ),
     shape = RoundedCornerShape(18.dp),
-    color = containerColor,
+    color = if (liquidGlassSurfaces) {
+      if (active) MaterialTheme.colorScheme.primary.copy(alpha = 0.18f) else Color.Transparent
+    } else containerColor,
     contentColor = contentColor,
-    tonalElevation = if (active) 2.dp else 0.dp,
+    tonalElevation = if (active && !liquidGlassSurfaces) 2.dp else 0.dp,
   ) {
     Column(
       modifier =
