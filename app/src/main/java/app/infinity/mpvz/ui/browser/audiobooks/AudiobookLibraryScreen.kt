@@ -60,6 +60,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.PrimaryScrollableTabRow
 import androidx.compose.material3.Tab
 import app.infinity.mpvz.domain.audiobook.AudiobookOnlineMetadata
+import app.infinity.mpvz.ui.components.InlineSearchBar
 import kotlinx.coroutines.launch
 import androidx.compose.material3.PlainTooltip
 import androidx.compose.material3.Scaffold
@@ -551,14 +552,18 @@ object AudiobookLibraryScreen : Screen {
     ) { padding ->
       Column(Modifier.fillMaxSize().padding(padding)) {
         if (contentMode != AudiobookLibraryContentMode.SAF_FOLDER_TREE && search) {
-          OutlinedTextField(
-            value = query,
-            onValueChange = { query = it },
-            singleLine = true,
+          InlineSearchBar(
+            query = query,
+            onQueryChange = { query = it },
+            onSearch = { query = it },
+            windowInsets = androidx.compose.foundation.layout.WindowInsets(0.dp),
             placeholder = { Text(stringResource(R.string.audiobook_search)) },
-            modifier = Modifier
-              .fillMaxWidth()
-              .padding(horizontal = 16.dp, vertical = 8.dp)
+            trailingIcon = {
+              IconButton(onClick = { search = false; query = "" }) {
+                Icon(Icons.RoundedFilled.Close, contentDescription = stringResource(R.string.generic_cancel))
+              }
+            },
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
           )
         }
 
@@ -1225,20 +1230,18 @@ private fun AudiobookOnlineSearchDialog(
         modifier = Modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(10.dp),
       ) {
-        OutlinedTextField(
-          value = searchQuery,
-          onValueChange = { searchQuery = it },
-          label = { Text(stringResource(R.string.audiobook_search_online_query)) },
-          singleLine = true,
+        InlineSearchBar(
+          query = searchQuery,
+          onQueryChange = { searchQuery = it },
+          onSearch = ::performSearch,
+          windowInsets = androidx.compose.foundation.layout.WindowInsets(0.dp),
+          placeholder = { Text(stringResource(R.string.audiobook_search_online_query)) },
           trailingIcon = {
             IconButton(
               onClick = { performSearch(searchQuery) },
               enabled = searchQuery.isNotBlank() && !isSearching,
-            ) {
-              Icon(Icons.RoundedFilled.Search, contentDescription = "Search")
-            }
+            ) { Icon(Icons.RoundedFilled.Search, contentDescription = "Search") }
           },
-          modifier = Modifier.fillMaxWidth(),
         )
 
         if (isSearching) {

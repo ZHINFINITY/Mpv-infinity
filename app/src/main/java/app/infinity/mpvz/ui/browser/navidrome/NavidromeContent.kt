@@ -30,8 +30,6 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.KeyboardActions
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -41,8 +39,6 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.PrimaryScrollableTabRow
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Tab
@@ -57,14 +53,11 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.focus.FocusRequester
-import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -74,6 +67,7 @@ import app.infinity.mpvz.domain.navidrome.NavidromeServer
 import app.infinity.mpvz.repository.JellyfinRepository
 import app.infinity.mpvz.repository.NavidromeRepository
 import app.infinity.mpvz.ui.browser.components.BrowserTopBar
+import app.infinity.mpvz.ui.components.InlineSearchBar
 import app.infinity.mpvz.ui.browser.music.SharedMusicGridCard
 import app.infinity.mpvz.ui.browser.music.SharedMusicTrackListItem
 import app.infinity.mpvz.ui.browser.music.MusicSourceChooser
@@ -110,7 +104,6 @@ fun NavidromeContent(
   var isSearching by rememberSaveable { mutableStateOf(false) }
   var isAddDialogOpen by remember { mutableStateOf(false) }
   var isSortDialogOpen by rememberSaveable { mutableStateOf(false) }
-  val searchFocusRequester = remember { FocusRequester() }
 
   val musicTabs = remember {
     listOf(
@@ -133,12 +126,6 @@ fun NavidromeContent(
       musicTabs.getOrNull(musicPagerState.settledPage)?.let { tab ->
         viewModel.setMusicTab(tab)
       }
-    }
-  }
-
-  LaunchedEffect(isSearching) {
-    if (isSearching) {
-      searchFocusRequester.requestFocus()
     }
   }
 
@@ -182,55 +169,21 @@ fun NavidromeContent(
         .background(headerContainerColor),
     ) {
       if (isSearching) {
-          Column(
-            modifier = Modifier
-              .fillMaxWidth()
-              .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Top))
-              .padding(top = 12.dp, start = 16.dp, end = 16.dp, bottom = 6.dp),
-          verticalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-          OutlinedTextField(
-            value = uiState.searchQuery,
-            onValueChange = viewModel::onSearchQueryChanged,
-            placeholder = { Text("Search songs, albums, artists...") },
-            leadingIcon = {
-              IconButton(onClick = {
-                isSearching = false
-                viewModel.onSearchQueryChanged("")
-              }) {
-                Icon(
-                  Icons.RoundedFilled.ArrowBack,
-                  contentDescription = stringResource(R.string.back),
-                  tint = MaterialTheme.colorScheme.onSurface,
-                )
-              }
-            },
-            trailingIcon = {
-              if (uiState.searchQuery.isNotEmpty()) {
-                IconButton(onClick = { viewModel.onSearchQueryChanged("") }) {
-                  Icon(
-                    Icons.RoundedFilled.Close,
-                    contentDescription = stringResource(R.string.pref_clear_content_desc),
-                    tint = MaterialTheme.colorScheme.onSurface,
-                  )
-                }
-              }
-            },
-            singleLine = true,
-            shape = RoundedCornerShape(28.dp),
-            colors = OutlinedTextFieldDefaults.colors(
-              focusedContainerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-              unfocusedContainerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-              focusedBorderColor = Color.Transparent,
-              unfocusedBorderColor = Color.Transparent,
-            ),
-            modifier = Modifier
-              .fillMaxWidth()
-              .focusRequester(searchFocusRequester),
-            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-            keyboardActions = KeyboardActions(onSearch = { }),
-          )
-        }
+        InlineSearchBar(
+          query = uiState.searchQuery,
+          onQueryChange = viewModel::onSearchQueryChanged,
+          onSearch = viewModel::onSearchQueryChanged,
+          windowInsets = androidx.compose.foundation.layout.WindowInsets(0.dp),
+          placeholder = { Text("Search songs, albums, artists...") },
+          leadingIcon = { Icon(Icons.RoundedFilled.Search, contentDescription = "Search") },
+          trailingIcon = {
+            IconButton(onClick = {
+              isSearching = false
+              viewModel.onSearchQueryChanged("")
+            }) { Icon(Icons.RoundedFilled.Close, contentDescription = stringResource(R.string.generic_cancel)) }
+          },
+          modifier = Modifier.padding(top = 12.dp, start = 16.dp, end = 16.dp, bottom = 6.dp),
+        )
       } else {
         BrowserTopBar(
           title = if (isMusicOnlyMode) stringResource(R.string.ui_music) else (uiState.activeServer?.name ?: stringResource(R.string.pref_navidrome_title)),

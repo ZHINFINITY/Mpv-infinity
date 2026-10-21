@@ -19,6 +19,14 @@ import org.koin.compose.koinInject
 /** A preference group owns one material; child rows only draw their normal content. */
 val LocalSettingsGlassOwner = compositionLocalOf { false }
 
+/** Shared master state for native fill/elevation fallbacks around a glass-owned surface. */
+@Composable
+fun settingsGlassEnabled(): Boolean {
+  val appearance = koinInject<AppearancePreferences>()
+  val enabled by appearance.liquidGlassSurfaces.collectAsState()
+  return enabled
+}
+
 /**
  * Shared background-only optics for settings rows, cards and sheets.
  *

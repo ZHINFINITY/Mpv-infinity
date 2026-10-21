@@ -33,7 +33,12 @@ def main() -> None:
     assert "onSearch(submitted)" in search
     assert "settingsGlassSurface" in search
     assert "settingsGlassContainerColor" in search
-    assert "Color.Transparent" not in search  # helper owns glass/fallback policy
+    for state in ("focused", "unfocused", "disabled", "error"):
+        assert f"{state}ContainerColor = Color.Transparent" in search
+    assert "colors = inputColors" in search
+    assert "else originalInputColors" in search
+    assert "tonalElevation = if (glass) 0.dp else tonalElevation" in search
+    assert "shadowElevation = if (glass) 0.dp else shadowElevation" in search
 
     # File/network edit sheet: conditional transparent Material container + exact
     # rounded local wrapper, without replacing the sheet callbacks or IME padding.

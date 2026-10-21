@@ -77,7 +77,7 @@ import androidx.compose.material3.PrimaryTabRow
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
-import app.infinity.mpvz.ui.components.IconSwitch
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -115,6 +115,8 @@ import app.infinity.mpvz.ui.icons.Icon
 import app.infinity.mpvz.ui.icons.Icons
 import app.infinity.mpvz.ui.preferences.components.settingsGlassContainerColor
 import app.infinity.mpvz.ui.preferences.components.settingsGlassSurface
+import app.infinity.mpvz.ui.preferences.components.settingsGlassEnabled
+import app.infinity.mpvz.ui.player.controls.components.GlassSwitch
 import app.infinity.mpvz.ui.theme.AppShapeScale
 import app.infinity.mpvz.utils.clipboard.SafeClipboard
 import kotlinx.coroutines.Dispatchers
@@ -429,8 +431,12 @@ private fun CompressorConfigSurface(
   }
 
   Scaffold(
+    containerColor = settingsGlassContainerColor(MaterialTheme.colorScheme.background),
     topBar = {
       CenterAlignedTopAppBar(
+        colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
+          containerColor = settingsGlassContainerColor(MaterialTheme.colorScheme.surface),
+        ),
         modifier = Modifier.windowInsetsPadding(WindowInsets.systemBars),
         title = {
           Text(
@@ -483,7 +489,7 @@ private fun CompressorConfigSurface(
         Row(modifier = Modifier.fillMaxSize()) {
           NavigationRail(
             modifier = Modifier.padding(top = 12.dp),
-            containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+            containerColor = settingsGlassContainerColor(MaterialTheme.colorScheme.surfaceContainerLow),
           ) {
             Spacer(modifier = Modifier.weight(1f))
             tabs.forEachIndexed { index, label ->
@@ -610,10 +616,11 @@ private fun CompressorDestinationCard(
   onSetSaveMode: (VideoCompressorSaveMode) -> Unit,
 ) {
   ElevatedCard(
-    modifier = Modifier.fillMaxWidth(),
-    colors = CardDefaults.elevatedCardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
+    modifier = Modifier.fillMaxWidth().settingsGlassSurface(cornerRadius = 28.dp),
+    colors = CardDefaults.elevatedCardColors(containerColor = settingsGlassContainerColor(MaterialTheme.colorScheme.surfaceContainerLow)),
     shape = AppShapeScale.extraLarge,
-  ) {
+        elevation = compressorGlassCardElevation(),
+      ) {
     Column(
       modifier = Modifier.padding(20.dp),
       verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -693,7 +700,7 @@ private fun CompressorBottomBar(
       modifier =
         Modifier
           .fillMaxWidth()
-          .background(MaterialTheme.colorScheme.background.copy(alpha = 0.96f))
+          .background(settingsGlassContainerColor(MaterialTheme.colorScheme.background.copy(alpha = 0.96f)))
           .padding(horizontal = 20.dp, vertical = 16.dp),
     ) {
       Button(
@@ -723,10 +730,11 @@ private fun CompressorBottomBar(
 @Composable
 private fun CompressorInfoCard(state: VideoCompressorUiState) {
   ElevatedCard(
-    modifier = Modifier.fillMaxWidth(),
-    colors = CardDefaults.elevatedCardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
+    modifier = Modifier.fillMaxWidth().settingsGlassSurface(cornerRadius = 28.dp),
+    colors = CardDefaults.elevatedCardColors(containerColor = settingsGlassContainerColor(MaterialTheme.colorScheme.surfaceContainerLow)),
     shape = AppShapeScale.extraLarge,
-  ) {
+        elevation = compressorGlassCardElevation(),
+      ) {
     Row(
       modifier = Modifier.padding(20.dp),
       verticalAlignment = Alignment.CenterVertically,
@@ -867,15 +875,16 @@ private fun CompressorPresetsTab(
       OutlinedCard(
         onClick = { onApplyPreset(preset) },
         enabled = enabled,
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier.fillMaxWidth().settingsGlassSurface(cornerRadius = 20.dp),
         colors =
           CardDefaults.outlinedCardColors(
-            containerColor =
+            containerColor = settingsGlassContainerColor(
               if (state.activePreset == preset) {
                 MaterialTheme.colorScheme.secondaryContainer
               } else {
                 MaterialTheme.colorScheme.surface
               },
+            ),
           ),
         shape = AppShapeScale.largeIncreased,
       ) {
@@ -1172,7 +1181,7 @@ private fun CompressorAudioTab(
           .stringResource(app.infinity.mpvz.R.string.ui_remove_audio),
         style = MaterialTheme.typography.bodyLarge,
       )
-      IconSwitch(checked = state.removeAudio, onCheckedChange = { onToggleRemoveAudio() })
+      GlassSwitch(checked = state.removeAudio, onCheckedChange = { onToggleRemoveAudio() })
     }
 
     AnimatedVisibility(visible = !state.removeAudio) {
@@ -1283,7 +1292,7 @@ private fun CompressorProgressSurface(
           Modifier
             .fillMaxWidth()
             .aspectRatio(16f / 9f)
-            .background(MaterialTheme.colorScheme.surfaceContainer, AppShapeScale.extraLarge),
+            .background(settingsGlassContainerColor(MaterialTheme.colorScheme.surfaceContainer), AppShapeScale.extraLarge),
       ) {
         thumbnail?.let {
           Image(
@@ -1296,9 +1305,10 @@ private fun CompressorProgressSurface(
       }
 
       ElevatedCard(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.elevatedCardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
+        modifier = Modifier.fillMaxWidth().settingsGlassSurface(cornerRadius = 28.dp),
+        colors = CardDefaults.elevatedCardColors(containerColor = settingsGlassContainerColor(MaterialTheme.colorScheme.surfaceContainerLow)),
         shape = AppShapeScale.extraLarge,
+        elevation = compressorGlassCardElevation(),
       ) {
         Column(
           modifier = Modifier.padding(20.dp),
@@ -1393,8 +1403,12 @@ private fun CompressorResultSurface(
     }
 
   Scaffold(
+    containerColor = settingsGlassContainerColor(MaterialTheme.colorScheme.background),
     topBar = {
       CenterAlignedTopAppBar(
+        colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
+          containerColor = settingsGlassContainerColor(MaterialTheme.colorScheme.surface),
+        ),
         modifier = Modifier.windowInsetsPadding(WindowInsets.systemBars),
         title = {
           Text(
@@ -1477,9 +1491,10 @@ private fun CompressorResultSurface(
         }
 
         ElevatedCard(
-          modifier = Modifier.fillMaxWidth(),
-          colors = CardDefaults.elevatedCardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
-        ) {
+          modifier = Modifier.fillMaxWidth().settingsGlassSurface(cornerRadius = 12.dp),
+          colors = CardDefaults.elevatedCardColors(containerColor = settingsGlassContainerColor(MaterialTheme.colorScheme.surfaceContainerLow)),
+        elevation = compressorGlassCardElevation(),
+      ) {
           Column(
             modifier = Modifier.padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
@@ -1499,9 +1514,10 @@ private fun CompressorResultSurface(
 
         if (state.warnings.isNotEmpty()) {
           ElevatedCard(
-            modifier = Modifier.fillMaxWidth(),
-            colors = CardDefaults.elevatedCardColors(containerColor = MaterialTheme.colorScheme.errorContainer),
-          ) {
+            modifier = Modifier.fillMaxWidth().settingsGlassSurface(cornerRadius = 12.dp),
+            colors = CardDefaults.elevatedCardColors(containerColor = settingsGlassContainerColor(MaterialTheme.colorScheme.errorContainer)),
+        elevation = compressorGlassCardElevation(),
+      ) {
             Column(
               modifier = Modifier.padding(16.dp),
               verticalArrangement = Arrangement.spacedBy(8.dp),
@@ -1570,8 +1586,12 @@ private fun CompressorIssueSurface(
   logs: String?,
 ) {
   Scaffold(
+    containerColor = settingsGlassContainerColor(MaterialTheme.colorScheme.background),
     topBar = {
       CenterAlignedTopAppBar(
+        colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
+          containerColor = settingsGlassContainerColor(MaterialTheme.colorScheme.surface),
+        ),
         modifier = Modifier.windowInsetsPadding(WindowInsets.systemBars),
         title = {
           Text(
@@ -1602,9 +1622,10 @@ private fun CompressorIssueSurface(
       contentAlignment = Alignment.Center,
     ) {
       ElevatedCard(
-        modifier = Modifier.fillMaxWidth().widthIn(max = 720.dp),
-        colors = CardDefaults.elevatedCardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
+        modifier = Modifier.fillMaxWidth().widthIn(max = 720.dp).settingsGlassSurface(cornerRadius = 28.dp),
+        colors = CardDefaults.elevatedCardColors(containerColor = settingsGlassContainerColor(MaterialTheme.colorScheme.surfaceContainerLow)),
         shape = AppShapeScale.extraLarge,
+        elevation = compressorGlassCardElevation(),
       ) {
         Column(
           modifier = Modifier.padding(20.dp),
@@ -1716,6 +1737,8 @@ private fun CompressorSettingsSheet(
   }
 
   ModalBottomSheet(
+    modifier = Modifier.settingsGlassSurface(cornerRadius = 28.dp, independent = true),
+    containerColor = settingsGlassContainerColor(MaterialTheme.colorScheme.surfaceContainerHigh),
     onDismissRequest = {
       editingPreset = null
       editingTargetPreset = null
@@ -1749,7 +1772,7 @@ private fun CompressorSettingsSheet(
           stringResource(R.string.compressor_storage_saved),
           style = MaterialTheme.typography.bodyLarge,
         )
-        IconSwitch(checked = state.showStorageSaved, onCheckedChange = { onToggleShowStorageSaved() })
+        GlassSwitch(checked = state.showStorageSaved, onCheckedChange = { onToggleShowStorageSaved() })
       }
       Row(
         modifier = Modifier.fillMaxWidth(),
@@ -1760,7 +1783,7 @@ private fun CompressorSettingsSheet(
           stringResource(R.string.compressor_show_target_size_presets),
           style = MaterialTheme.typography.bodyLarge,
         )
-        IconSwitch(checked = state.showTargetSizePreset, onCheckedChange = { onToggleShowTargetSizePreset() })
+        GlassSwitch(checked = state.showTargetSizePreset, onCheckedChange = { onToggleShowTargetSizePreset() })
       }
 
       HorizontalDivider()
@@ -1779,7 +1802,8 @@ private fun CompressorSettingsSheet(
       presetConfigs.forEach { (preset, config) ->
         OutlinedCard(
           onClick = { editingPreset = preset },
-          modifier = Modifier.fillMaxWidth(),
+          modifier = Modifier.fillMaxWidth().settingsGlassSurface(cornerRadius = 20.dp),
+          colors = CardDefaults.outlinedCardColors(containerColor = settingsGlassContainerColor(MaterialTheme.colorScheme.surface)),
           shape = AppShapeScale.largeIncreased,
         ) {
           Row(
@@ -1818,7 +1842,8 @@ private fun CompressorSettingsSheet(
         ) {
           OutlinedCard(
             onClick = { editingTargetPreset = preset },
-            modifier = Modifier.weight(1f),
+            modifier = Modifier.weight(1f).settingsGlassSurface(cornerRadius = 20.dp),
+            colors = CardDefaults.outlinedCardColors(containerColor = settingsGlassContainerColor(MaterialTheme.colorScheme.surface)),
             shape = AppShapeScale.largeIncreased,
           ) {
             Row(
@@ -1867,7 +1892,8 @@ private fun CompressorSettingsSheet(
       )
       OutlinedCard(
         onClick = { editingDefaultVideo = true },
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier.fillMaxWidth().settingsGlassSurface(cornerRadius = 20.dp),
+        colors = CardDefaults.outlinedCardColors(containerColor = settingsGlassContainerColor(MaterialTheme.colorScheme.surface)),
         shape = AppShapeScale.largeIncreased,
       ) {
         Row(
@@ -1892,7 +1918,8 @@ private fun CompressorSettingsSheet(
       }
       OutlinedCard(
         onClick = { editingDefaultAudio = true },
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier.fillMaxWidth().settingsGlassSurface(cornerRadius = 20.dp),
+        colors = CardDefaults.outlinedCardColors(containerColor = settingsGlassContainerColor(MaterialTheme.colorScheme.surface)),
         shape = AppShapeScale.largeIncreased,
       ) {
         Row(
@@ -1997,6 +2024,8 @@ private fun QualityPresetConfigEditor(
   var bitrate by remember(config) { mutableStateOf(config.audioBitrate.toString()) }
 
   AlertDialog(
+    modifier = Modifier.settingsGlassSurface(cornerRadius = 28.dp, independent = true),
+    containerColor = settingsGlassContainerColor(MaterialTheme.colorScheme.surfaceContainerHigh),
     onDismissRequest = onDismiss,
     title = { Text("Edit $title") },
     text = {
@@ -2077,6 +2106,8 @@ private fun TargetSizePresetEditor(
   var sizeMb by remember(preset) { mutableStateOf(preset?.sizeMb?.toString() ?: "") }
 
   AlertDialog(
+    modifier = Modifier.settingsGlassSurface(cornerRadius = 28.dp, independent = true),
+    containerColor = settingsGlassContainerColor(MaterialTheme.colorScheme.surfaceContainerHigh),
     onDismissRequest = onDismiss,
     title = { Text(stringResource(R.string.compressor_target_size_presets_title)) },
     text = {
@@ -2135,6 +2166,8 @@ private fun DefaultVideoConfigEditor(
   var ratio by remember(config) { mutableStateOf(config.defaultSizeRatio.toString()) }
 
   AlertDialog(
+    modifier = Modifier.settingsGlassSurface(cornerRadius = 28.dp, independent = true),
+    containerColor = settingsGlassContainerColor(MaterialTheme.colorScheme.surfaceContainerHigh),
     onDismissRequest = onDismiss,
     title = { Text(stringResource(R.string.compressor_default_video)) },
     text = {
@@ -2228,6 +2261,8 @@ private fun DefaultAudioConfigEditor(
   var volume by remember(config) { mutableFloatStateOf(config.defaultAudioVolume) }
 
   AlertDialog(
+    modifier = Modifier.settingsGlassSurface(cornerRadius = 28.dp, independent = true),
+    containerColor = settingsGlassContainerColor(MaterialTheme.colorScheme.surfaceContainerHigh),
     onDismissRequest = onDismiss,
     title = { Text(stringResource(R.string.compressor_default_audio)) },
     text = {
@@ -2249,7 +2284,7 @@ private fun DefaultAudioConfigEditor(
             stringResource(R.string.ui_remove_audio),
             style = MaterialTheme.typography.bodyLarge,
           )
-          IconSwitch(checked = removeAudio, onCheckedChange = { removeAudio = it })
+          GlassSwitch(checked = removeAudio, onCheckedChange = { removeAudio = it })
         }
         if (!removeAudio) {
           Text(
@@ -2312,6 +2347,8 @@ private fun CompressorInfoDialog(
   onShare: () -> Unit,
 ) {
   AlertDialog(
+    modifier = Modifier.settingsGlassSurface(cornerRadius = 28.dp, independent = true),
+    containerColor = settingsGlassContainerColor(MaterialTheme.colorScheme.surfaceContainerHigh),
     onDismissRequest = onDismiss,
     title = {
       Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -2351,7 +2388,7 @@ private fun CompressorInfoDialog(
             androidx.compose.ui.res
               .stringResource(app.infinity.mpvz.R.string.ui_show_bitrate),
           )
-          IconSwitch(checked = state.showBitrate, onCheckedChange = { onToggleShowBitrate() })
+          GlassSwitch(checked = state.showBitrate, onCheckedChange = { onToggleShowBitrate() })
         }
         if (state.showBitrate) {
           Row(
@@ -2363,7 +2400,7 @@ private fun CompressorInfoDialog(
               androidx.compose.ui.res
                 .stringResource(app.infinity.mpvz.R.string.ui_use_mbps),
             )
-            IconSwitch(checked = state.useMbps, onCheckedChange = { onToggleBitrateUnit() })
+            GlassSwitch(checked = state.useMbps, onCheckedChange = { onToggleBitrateUnit() })
           }
         }
         Row(
@@ -2375,7 +2412,7 @@ private fun CompressorInfoDialog(
             androidx.compose.ui.res
               .stringResource(app.infinity.mpvz.R.string.ui_preserve_metadata),
           )
-          IconSwitch(checked = state.preserveMetadata, onCheckedChange = { onTogglePreserveMetadata() })
+          GlassSwitch(checked = state.preserveMetadata, onCheckedChange = { onTogglePreserveMetadata() })
         }
         HorizontalDivider()
         Text(
@@ -2421,3 +2458,15 @@ private fun CompressorInfoDialog(
 }
 
 private fun Bitmap.toSafeImageBitmap(): ImageBitmap = asImageBitmap()
+
+/** Shared optics own depth; preserve the original native card elevation only in classic mode. */
+@Composable
+private fun compressorGlassCardElevation() =
+  if (settingsGlassEnabled()) CardDefaults.elevatedCardElevation(
+    defaultElevation = 0.dp,
+    pressedElevation = 0.dp,
+    focusedElevation = 0.dp,
+    hoveredElevation = 0.dp,
+    draggedElevation = 0.dp,
+    disabledElevation = 0.dp,
+  ) else CardDefaults.elevatedCardElevation()

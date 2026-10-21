@@ -19,7 +19,8 @@ class SceneStabilityContracts(unittest.TestCase):
         wrappers = source('ui/preferences/components/SettingsPreferenceWrappers.kt')
         self.assertIn('LocalSettingsGlassOwner provides true', card)
         self.assertIn('if (LocalSettingsGlassOwner.current && !independent) return this', settings)
-        self.assertLess(settings.index('if (LocalSettingsGlassOwner.current'), settings.index('val appearance ='))
+        modifier = settings.split('fun Modifier.settingsGlassSurface(', 1)[1].split('fun settingsGlassContainerColor(', 1)[0]
+        self.assertLess(modifier.index('if (LocalSettingsGlassOwner.current'), modifier.index('val appearance ='))
         self.assertGreaterEqual(wrappers.count('independent = true'), 3)
 
     def test_all_six_appearance_sliders_commit_only_on_release(self):

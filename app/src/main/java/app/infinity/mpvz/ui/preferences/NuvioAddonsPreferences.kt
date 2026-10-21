@@ -1,5 +1,7 @@
 package app.infinity.mpvz.ui.preferences
 
+import app.infinity.mpvz.ui.player.controls.components.GlassSwitch
+
 import app.infinity.mpvz.ui.preferences.components.settingsGlassContainerColor
 
 import app.infinity.mpvz.ui.preferences.components.settingsGlassSurface
@@ -27,7 +29,6 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -149,7 +150,7 @@ fun NuvioAddonsPreferenceCard() {
             }
             providers.forEach { provider ->
           Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            Switch(checked = provider.enabled, enabled = provider.manifestEnabled, onCheckedChange = { repository.toggleScraper(provider.id, it) })
+            GlassSwitch(checked = provider.enabled, enabled = provider.manifestEnabled, onCheckedChange = { repository.toggleScraper(provider.id, it) })
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
               Text(provider.name, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
               Text(provider.description.ifBlank { "Supports ${provider.supportedTypes.joinToString()}" }, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis)
@@ -274,7 +275,7 @@ private fun PluginProviderSettingsDialog(
               }
               "toggle", "switch", "checkbox", "boolean" -> Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 Column(Modifier.weight(1f)) { Text(field.label, style = MaterialTheme.typography.titleSmall); field.description?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) } }
-                Switch(checked = value.equals("true", true), onCheckedChange = { if (key != null) values[key] = it.toString() }, enabled = key != null)
+                GlassSwitch(checked = value.equals("true", true), onCheckedChange = { if (key != null) values[key] = it.toString() }, enabled = key != null)
               }
               else -> OutlinedTextField(value = value, onValueChange = { if (key != null) values[key] = it }, modifier = Modifier.fillMaxWidth(), label = { Text(field.label.ifBlank { key ?: "Setting" }) }, placeholder = field.placeholder?.let { { Text(it) } }, supportingText = field.description?.let { description -> { Text(description) } }, singleLine = true, enabled = key != null)
             }

@@ -77,6 +77,7 @@ import app.infinity.mpvz.presentation.components.RemoteImage
 import app.infinity.mpvz.ui.browser.dialogs.AddToPlaylistDialog
 import app.infinity.mpvz.ui.player.PlaybackSession
 import app.infinity.mpvz.ui.player.controls.components.MiniAudioVisualizer
+import app.infinity.mpvz.ui.player.controls.components.playerGlassPane
 import app.infinity.mpvz.ui.icons.Icon
 import app.infinity.mpvz.ui.icons.Icons
 import app.infinity.mpvz.ui.theme.spacing
@@ -406,6 +407,7 @@ fun PlaylistSheet(
           ) {
             IconButton(
               onClick = { showAddToPlaylistDialog = true },
+              modifier = Modifier.playlistItemGlass(999.dp),
             ) {
               Icon(
                 imageVector = Icons.RoundedFilled.PlaylistAdd,
@@ -414,7 +416,10 @@ fun PlaylistSheet(
               )
             }
 
-            IconButton(onClick = { isListMode = !isListMode }) {
+            IconButton(
+              onClick = { isListMode = !isListMode },
+              modifier = Modifier.playlistItemGlass(999.dp),
+            ) {
               Icon(
                 imageVector = if (isListMode) Icons.RoundedFilled.GridView else Icons.RoundedFilled.ViewList,
                 contentDescription = if (isListMode) "Switch to Grid View" else "Switch to List View",
@@ -537,6 +542,21 @@ fun PlaylistSheet(
   }
 }
 
+/** One locally bounded material per row/card/action; artwork stays content, never a lens input. */
+@Composable
+private fun Modifier.playlistItemGlass(
+  cornerRadius: androidx.compose.ui.unit.Dp = 12.dp,
+): Modifier {
+  val appearance = koinInject<AppearancePreferences>()
+  val enabled by appearance.liquidGlassSurfaces.collectAsState()
+  return playerGlassPane(
+    enabled = enabled,
+    opacity = 0.38f,
+    highlight = 0.14f,
+    cornerRadius = cornerRadius,
+  )
+}
+
 @Composable
 private fun DragHandle(
   scope: ReorderableCollectionItemScope,
@@ -614,7 +634,7 @@ fun PlaylistTrackListItem(
         .padding(
           horizontal = MaterialTheme.spacing.medium,
           vertical = MaterialTheme.spacing.extraSmall,
-        ).clip(RoundedCornerShape(12.dp))
+        ).playlistItemGlass()
         .then(borderModifier)
         .clickable(onClick = onClick),
     color =
@@ -844,7 +864,7 @@ fun PlaylistTrackGridItem(
     modifier =
       modifier
         .width(200.dp)
-        .clip(RoundedCornerShape(12.dp))
+        .playlistItemGlass()
         .then(borderModifier)
         .clickable(onClick = onClick),
     color = MaterialTheme.colorScheme.tertiary.copy(alpha = 0.15f),
