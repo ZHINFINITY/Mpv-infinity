@@ -34,6 +34,8 @@ class SettingsOptionsGlassContract(unittest.TestCase):
             if path == WRAPPERS:
                 continue
             self.assertIsNone(re.search(r'^import me\.zhanghai\.compose\.preference\.(Preference|ListPreference|SliderPreference|TextFieldPreference)\b', path.read_text(), re.M), str(path))
+        for path in (ROOT / 'app/src/main/java').rglob('*.kt'):
+            self.assertNotIn('import app.infinity.mpvz.ui.preferences.components.ListPreferenceType', path.read_text(), str(path))
 
     def test_real_glass_slider_and_outer_option_surfaces_are_used(self):
         source = WRAPPERS.read_text()
