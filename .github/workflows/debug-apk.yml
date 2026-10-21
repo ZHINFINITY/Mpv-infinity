@@ -177,6 +177,8 @@ jobs:
         run: python3 scripts/tests/liquid_glass_contract_test.py
       - name: Test player popup and dialog glass coverage
         run: python3 scripts/tests/player_glass_overlays_test.py
+      - name: Test navigation backdrop and finite liquid-motion contracts
+        run: python3 scripts/tests/navigation_glass_contract_test.py
       - name: Run Standard arm64 debug unit tests
         if: ${{ inputs.flavor == 'standard' && inputs.target_abi == 'arm64-v8a' }}
         run: ./gradlew testStandardDebugUnitTest -PtargetAbi=arm64-v8a -PmpvFlowMpvBuild=true --stacktrace --no-daemon --max-workers=2
