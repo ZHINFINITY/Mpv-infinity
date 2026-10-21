@@ -15,6 +15,8 @@ import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.os.PowerManager
+import android.os.SystemClock
+import android.graphics.Rect as AndroidRect
 import android.view.PixelCopy
 import android.view.SurfaceView
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -51,6 +53,7 @@ import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.repeatOnLifecycle
 import kotlinx.coroutines.CancellationException
@@ -63,7 +66,7 @@ import kotlinx.coroutines.withContext
 import kotlin.coroutines.resume
 
 /** Immutable snapshot: window coordinates prevent every control showing the entire frame. */
-data class LiquidGlassFrame(val image: ImageBitmap, val boundsInWindow: Rect)
+data class LiquidGlassFrame(val image: ImageBitmap, val boundsInWindow: Rect, val refractionEnabled: Boolean = true)
 
 // State is read in the draw phase, not propagated as a new composition tree at sample cadence.
 val LocalLiquidGlassBackdrop = compositionLocalOf<State<LiquidGlassFrame?>?> { null }
@@ -83,6 +86,7 @@ fun LiquidGlassBackdropHost(
   generation: Any?,
   isReady: () -> Boolean,
   isPlaying: () -> Boolean,
+  sampleAspect: () -> Double? = { null },
   content: @Composable () -> Unit,
 ) {
   val context = LocalContext.current
@@ -102,62 +106,80 @@ fun LiquidGlassBackdropHost(
       onDispose { }
     }
   }
-  val allowed = GlassSamplingPolicy.canSample(enabled, visible, audioOnly, hdr, lowRam, thermal)
+  val eligible = GlassSamplingPolicy.canSample(enabled, true, audioOnly, hdr, lowRam, thermal)
+  val allowed = eligible && visible
   val tuning = LocalGlassCustomization.current
   val frostPasses = GlassCustomizationPolicy.frostPasses(tuning.frost)
   val frame = remember { mutableStateOf<LiquidGlassFrame?>(null) }
   val ready by rememberUpdatedState(isReady)
   val playing by rememberUpdatedState(isPlaying)
-  LaunchedEffect(surfaceView, allowed, generation, lifecycleOwner, frostPasses) {
+  val aspect by rememberUpdatedState(sampleAspect)
+  // Visibility changes stop work, but do not flash the last good scene to black during sheet handoff.
+  // Media, safety and lifecycle boundaries always discard the old scene immediately.
+  DisposableEffect(surfaceView, generation, eligible, lifecycleOwner) {
     frame.value = null
+    val observer = LifecycleEventObserver { _, event ->
+      if (event == Lifecycle.Event.ON_STOP || event == Lifecycle.Event.ON_DESTROY) frame.value = null
+    }
+    lifecycleOwner.lifecycle.addObserver(observer)
+    onDispose {
+      lifecycleOwner.lifecycle.removeObserver(observer)
+      frame.value = null
+    }
+  }
+  LaunchedEffect(surfaceView, allowed, generation, lifecycleOwner, frostPasses) {
     val source = surfaceView ?: return@LaunchedEffect
     if (!allowed) return@LaunchedEffect
     lifecycleOwner.repeatOnLifecycle(Lifecycle.State.RESUMED) {
       var failures = 0
-      try {
-        while (currentCoroutineContext().isActive) {
-          if (!ready() || !source.isAttachedToWindow || !source.holder.surface.isValid) {
-            frame.value = null
-            delay(GlassSamplingPolicy.RetryIntervalMs)
-            continue
-          }
-          val dimensions = GlassSamplingPolicy.sampleSize(source.width, source.height)
-          if (dimensions == null) {
-            delay(GlassSamplingPolicy.RetryIntervalMs)
-            continue
-          }
-          // Frost the one unpublished UI copy, not the playing video or each individual sheet.
-          val bitmap = copyGlassFrame(source, dimensions.first, dimensions.second)?.let { frostGlassFrame(it, tuning.frost) }
-          if (bitmap == null) {
-            frame.value = null // never display a stale frame after a lost/secure surface
-            failures++
-            if (failures >= GlassSamplingPolicy.FailureLimit) break
-          } else {
-            failures = 0
-            val location = IntArray(2)
-            source.getLocationOnScreen(location)
-            frame.value = LiquidGlassFrame(
-              bitmap.asImageBitmap(),
-              Rect(location[0].toFloat(), location[1].toFloat(),
-                (location[0] + source.width).toFloat(), (location[1] + source.height).toFloat()),
-            )
-            // Published immutable bitmaps are owned by Compose/GC; never recycle a displayed image.
-          }
-          delay(GlassSamplingPolicy.interval(playing(), failures))
+      var unavailableSince: Long? = null
+      fun transientFailure() {
+        val now = SystemClock.uptimeMillis()
+        val first = unavailableSince ?: now.also { unavailableSince = it }
+        if (!GlassScenePolicy.retainTransientFrame(now - first)) frame.value = null
+      }
+      while (currentCoroutineContext().isActive) {
+        if (!ready() || !source.isAttachedToWindow || !source.holder.surface.isValid) {
+          transientFailure()
+          delay(if (frame.value != null) GlassScenePolicy.TransientGraceMs else GlassSamplingPolicy.RetryIntervalMs)
+          continue
         }
-      } finally {
-        frame.value = null
+        val crop = GlassScenePolicy.sourceRect(source.width, source.height, aspect())
+        val dimensions = crop?.let { GlassSamplingPolicy.sampleSize(it.width, it.height) }
+        if (crop == null || dimensions == null) {
+          transientFailure()
+          delay(GlassSamplingPolicy.RetryIntervalMs)
+          continue
+        }
+        // Only the tiny UI copy is cropped/frosted. The actual video surface remains untouched.
+        val bitmap = copyGlassFrame(source, crop, dimensions.first, dimensions.second)
+          ?.let { frostGlassFrame(it, tuning.frost) }
+        if (bitmap == null) {
+          transientFailure()
+          failures = (failures + 1).coerceAtMost(GlassSamplingPolicy.FailureLimit)
+        } else {
+          failures = 0
+          unavailableSince = null
+          val location = IntArray(2)
+          source.getLocationOnScreen(location)
+          frame.value = LiquidGlassFrame(bitmap.asImageBitmap(), Rect(
+            (location[0] + crop.left).toFloat(), (location[1] + crop.top).toFloat(),
+            (location[0] + crop.left + crop.width).toFloat(), (location[1] + crop.top + crop.height).toFloat()))
+        }
+        // Recover after transient failures instead of permanently disabling glass after three errors.
+        delay(if (failures > 0 && frame.value != null) GlassScenePolicy.TransientGraceMs
+          else GlassSamplingPolicy.interval(playing(), failures))
       }
     }
   }
-  CompositionLocalProvider(LocalLiquidGlassBackdrop provides frame.takeIf { allowed }, content = content)
+  CompositionLocalProvider(LocalLiquidGlassBackdrop provides frame.takeIf { eligible }, content = content)
 }
 
-private suspend fun copyGlassFrame(source: SurfaceView, width: Int, height: Int): Bitmap? =
+private suspend fun copyGlassFrame(source: SurfaceView, crop: GlassScenePolicy.SourceRect, width: Int, height: Int): Bitmap? =
   suspendCancellableCoroutine { continuation ->
     val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
     try {
-      PixelCopy.request(source, bitmap, { result ->
+      PixelCopy.request(source, AndroidRect(crop.left, crop.top, crop.left + crop.width, crop.top + crop.height), bitmap, { result ->
         if (result == PixelCopy.SUCCESS && continuation.isActive) {
           continuation.resume(bitmap)
         } else {
@@ -237,9 +259,9 @@ fun Modifier.liquidGlassPane(
       var lastImage: ImageBitmap? = null
       var imageShader: BitmapShader? = null
       val rim = Brush.linearGradient(listOf(
-        Color.White.copy(alpha = (0.24f + glow + tuning.depth * 0.06f).coerceAtMost(1f)),
+        Color.White.copy(alpha = (0.10f + glow * 0.30f + tuning.depth * 0.025f).coerceAtMost(1f)),
         Color.White.copy(alpha = 0.04f),
-        Color.White.copy(alpha = 0.12f + glow * 0.35f + tuning.depth * 0.02f),
+        Color.White.copy(alpha = 0.06f + glow * 0.20f + tuning.depth * 0.015f),
       ))
       onDrawBehind {
         val scene = backdrop?.value
@@ -263,7 +285,8 @@ fun Modifier.liquidGlassPane(
               shader.setFloatUniform("sceneSize", scene.boundsInWindow.width, scene.boundsInWindow.height)
               shader.setFloatUniform("imageSize", scene.image.width.toFloat(), scene.image.height.toFloat())
               shader.setFloatUniform("radius", radius)
-              shader.setFloatUniform("strength", 9.dp.toPx() * tuning.refraction)
+              val lensAllowed = scene.refractionEnabled && size.minDimension <= 128.dp.toPx() && size.maxDimension <= 512.dp.toPx()
+              shader.setFloatUniform("strength", if (lensAllowed) 4.dp.toPx() * tuning.refraction else 0f)
               shader.setFloatUniform("frost", 10.dp.toPx() * tuning.frost)
               paint.shader = shader
             }.isSuccess
@@ -283,15 +306,15 @@ fun Modifier.liquidGlassPane(
         // Film guarantees readable controls, even when sampling is intentionally unavailable.
         drawRoundRect(tint.copy(alpha = alpha * if (scene == null) 0.60f else 0.42f),
           cornerRadius = CornerRadius(radius))
-        drawRoundRect(Brush.verticalGradient(listOf(Color.White.copy(alpha = glow * 0.5f + tuning.depth * 0.07f),
-          Color.Transparent, Color.Black.copy(alpha = 0.08f + tuning.depth * 0.07f))), cornerRadius = CornerRadius(radius))
+        drawRoundRect(Brush.verticalGradient(listOf(Color.White.copy(alpha = glow * 0.18f + tuning.depth * 0.025f),
+          Color.Transparent, Color.Black.copy(alpha = 0.04f + tuning.depth * 0.035f))), cornerRadius = CornerRadius(radius))
         if (drawRim) {
           drawRoundRect(rim, cornerRadius = CornerRadius(radius), style = Stroke(1.dp.toPx()))
           if (tuning.depth > 0f && size.minDimension > 4.dp.toPx()) {
             val inset = 1.5.dp.toPx()
             drawRoundRect(
-              brush = Brush.verticalGradient(listOf(Color.White.copy(alpha = 0.08f * tuning.depth),
-                Color.Transparent, Color.Black.copy(alpha = 0.10f * tuning.depth))),
+              brush = Brush.verticalGradient(listOf(Color.White.copy(alpha = 0.035f * tuning.depth),
+                Color.Transparent, Color.Black.copy(alpha = 0.045f * tuning.depth))),
               topLeft = Offset(inset, inset), size = androidx.compose.ui.geometry.Size(size.width - inset * 2, size.height - inset * 2),
               cornerRadius = CornerRadius((radius - inset).coerceAtLeast(0f)), style = Stroke(1.dp.toPx()),
             )

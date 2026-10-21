@@ -310,7 +310,7 @@ object FoldersPreferencesScreen : Screen {
     if (showClearAllDialog) {
       AlertDialog(
       containerColor = settingsGlassContainerColor(androidx.compose.material3.AlertDialogDefaults.containerColor),
-      modifier = androidx.compose.ui.Modifier.settingsGlassSurface(cornerRadius = 28.dp),
+      modifier = androidx.compose.ui.Modifier.settingsGlassSurface(cornerRadius = 28.dp, independent = true),
         onDismissRequest = { showClearAllDialog = false },
         title = { Text(stringResource(R.string.pref_folders_clear_all_confirm_title)) },
         text = { Text(stringResource(R.string.pref_folders_clear_all_confirm_message)) },
@@ -445,7 +445,7 @@ private fun NoMediaPreferenceCard(
 
     AlertDialog(
       containerColor = settingsGlassContainerColor(androidx.compose.material3.AlertDialogDefaults.containerColor),
-      modifier = androidx.compose.ui.Modifier.settingsGlassSurface(cornerRadius = 28.dp),
+      modifier = androidx.compose.ui.Modifier.settingsGlassSurface(cornerRadius = 28.dp, independent = true),
       onDismissRequest = { showAddMarkerDialog = false },
       title = { Text(stringResource(R.string.pref_folders_add_marker_title)) },
       text = {
@@ -590,7 +590,7 @@ private fun AddFolderDialog(
 
   AlertDialog(
       containerColor = settingsGlassContainerColor(androidx.compose.material3.AlertDialogDefaults.containerColor),
-      modifier = androidx.compose.ui.Modifier.settingsGlassSurface(cornerRadius = 28.dp),
+      modifier = androidx.compose.ui.Modifier.settingsGlassSurface(cornerRadius = 28.dp, independent = true),
     onDismissRequest = onDismiss,
     title = {
       Row(
@@ -616,7 +616,7 @@ private fun AddFolderDialog(
         }
         DropdownMenu(
       containerColor = settingsGlassContainerColor(androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainer),
-      modifier = androidx.compose.ui.Modifier.settingsGlassSurface(cornerRadius = 12.dp),expanded = showDropdown, onDismissRequest = { showDropdown = false }) {
+      modifier = androidx.compose.ui.Modifier.settingsGlassSurface(cornerRadius = 12.dp, independent = true),expanded = showDropdown, onDismissRequest = { showDropdown = false }) {
           DropdownMenuItem(text = { Text(stringResource(R.string.select_all)) }, onClick = {
             selectionState = selectionState.selectAll(availableFolderPaths)
             showDropdown = false

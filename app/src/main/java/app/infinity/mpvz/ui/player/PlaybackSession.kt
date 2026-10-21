@@ -26,6 +26,11 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 import java.util.ArrayDeque
 import java.util.concurrent.ConcurrentHashMap
@@ -148,6 +153,10 @@ object PlaybackSession : MPVLib.EventObserver {
   // Station headers are not native properties: retain them for late UI/service subscribers.
   private val _radioHeaders = MutableStateFlow<Pair<String, RadioStreamProbe.Metadata>?>(null)
   val radioHeaders = _radioHeaders.asStateFlow()
+  // One bounded probe belongs to the current station only.  It is deliberately
+  // separate from libmpv's live request: never create a second endless stream.
+  private val radioProbeScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+  private var radioProbeJob: Job? = null
 
   private val _state = MutableStateFlow(PlaybackSessionState())
   private val _queue = MutableStateFlow(PlaybackQueueState())
@@ -819,6 +828,8 @@ object PlaybackSession : MPVLib.EventObserver {
       val holdForPositionRestore = pendingPositionRestoreGeneration == generation
       deferredVideoSelectionGeneration = generation.takeIf { videoSelection == PlaybackVideoSelection.DEFERRED }
       _radioHeaders.value = null
+      radioProbeJob?.cancel()
+      radioProbeJob = null
       propString.clearMediaMetadata()
       updateState {
         it.copy(
@@ -846,6 +857,26 @@ object PlaybackSession : MPVLib.EventObserver {
       val stationHeaders = RadioStreamProbe.cachedMetadata(resolvedItem.playableUri, resolvedItem.headers)
         ?: RadioStreamProbe.cachedMetadata(resolvedItem.originalUri, resolvedItem.headers)
       _radioHeaders.value = stationHeaders?.let { resolvedItem.stableId to it }
+      if (stationHeaders == null && _queue.value.isM3u && resolvedItem.isDefinitelyAudioOnly()) {
+        val probeGeneration = generation
+        val probeItem = resolvedItem
+        radioProbeJob = radioProbeScope.launch {
+          // The probe is header-only, timeout-bounded, and cancellation-aware;
+          // detectAudioMimeType also caches the response for the normal load path.
+          RadioStreamProbe.detectAudioMimeType(probeItem.playableUri, probeItem.headers)
+          val metadata = RadioStreamProbe.cachedMetadata(probeItem.playableUri, probeItem.headers)
+            ?: RadioStreamProbe.cachedMetadata(probeItem.originalUri, probeItem.headers)
+          if (metadata != null) {
+            nativeLock.withLock {
+              if (_state.value.generation == probeGeneration &&
+                _state.value.currentItem?.stableId == probeItem.stableId
+              ) {
+                _radioHeaders.value = probeItem.stableId to metadata
+              }
+            }
+          }
+        }
+      }
 
       // Disable the outgoing track only once this replacement request owns the native lock. Doing
       // it during asynchronous URI preparation can blank playback even when that work is cancelled.

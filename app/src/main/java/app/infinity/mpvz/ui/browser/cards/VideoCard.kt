@@ -268,7 +268,11 @@ fun VideoCard(
             }
 
           var thumbnail by remember(thumbnailRequestKey) {
-            mutableStateOf<Bitmap?>(null)
+            // Peek synchronously before the coroutine starts. Lazy-card disposal/reuse must
+            // not show a placeholder for a bitmap already retained by the repository.
+            mutableStateOf(
+              thumbnailRepository.getThumbnailFromMemory(video, resolvedThumbWidthPx, resolvedThumbHeightPx),
+            )
           }
 
           LaunchedEffect(thumbnailRequestKey, allowThumbnailGeneration, allowThumbnailLoading, showThumbnails) {
@@ -590,7 +594,11 @@ fun VideoCard(
 
           // Try to get from memory cache immediately (synchronous, no flicker)
           var thumbnail by remember(thumbnailRequestKey) {
-            mutableStateOf<Bitmap?>(null)
+            // Peek synchronously before the coroutine starts. Lazy-card disposal/reuse must
+            // not show a placeholder for a bitmap already retained by the repository.
+            mutableStateOf(
+              thumbnailRepository.getThumbnailFromMemory(video, resolvedThumbWidthPx, resolvedThumbHeightPx),
+            )
           }
 
           LaunchedEffect(thumbnailRequestKey, allowThumbnailGeneration, allowThumbnailLoading, showThumbnails) {

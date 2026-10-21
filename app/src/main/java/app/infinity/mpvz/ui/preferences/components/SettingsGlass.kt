@@ -5,6 +5,7 @@
 package app.infinity.mpvz.ui.preferences.components
 
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.Dp
@@ -12,7 +13,11 @@ import androidx.compose.ui.unit.dp
 import app.infinity.mpvz.preferences.AppearancePreferences
 import app.infinity.mpvz.preferences.preference.collectAsState
 import app.infinity.mpvz.ui.theme.liquidGlassPane
+import app.infinity.mpvz.ui.theme.LocalGlassCustomization
 import org.koin.compose.koinInject
+
+/** A preference group owns one material; child rows only draw their normal content. */
+val LocalSettingsGlassOwner = compositionLocalOf { false }
 
 /**
  * Shared background-only optics for settings rows, cards and sheets.
@@ -26,15 +31,16 @@ fun Modifier.settingsGlassSurface(
   cornerRadius: Dp = 20.dp,
   opacity: Float? = null,
   highlight: Float? = null,
+  independent: Boolean = false,
 ): Modifier {
+  if (LocalSettingsGlassOwner.current && !independent) return this
   val appearance = koinInject<AppearancePreferences>()
   val enabled by appearance.liquidGlassSurfaces.collectAsState()
-  val storedOpacity by appearance.glassSurfaceOpacity.collectAsState()
-  val storedHighlight by appearance.glassSurfaceHighlight.collectAsState()
+  val tuning = LocalGlassCustomization.current
   return liquidGlassPane(
     enabled = enabled,
-    opacity = opacity ?: storedOpacity,
-    highlight = highlight ?: storedHighlight,
+    opacity = opacity ?: tuning.opacity,
+    highlight = highlight ?: tuning.highlight,
     cornerRadius = cornerRadius,
   )
 }

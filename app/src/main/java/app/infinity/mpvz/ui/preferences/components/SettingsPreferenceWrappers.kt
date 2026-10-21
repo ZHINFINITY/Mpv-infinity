@@ -83,14 +83,14 @@ fun <T> ListPreference(
     if (type == ListPreferenceType.DROPDOWN_MENU) {
       DropdownMenu(
         expanded = open, onDismissRequest = { open = false },
-        modifier = Modifier.settingsGlassSurface(cornerRadius = 12.dp), containerColor = Color.Transparent,
+        modifier = Modifier.settingsGlassSurface(cornerRadius = 12.dp, independent = true), containerColor = Color.Transparent,
       ) { values.forEach { drawOption(it) } }
     }
   }
   if (open && type == ListPreferenceType.ALERT_DIALOG) {
     AlertDialog(
       onDismissRequest = { open = false }, title = title,
-      modifier = Modifier.settingsGlassSurface(cornerRadius = 28.dp), containerColor = Color.Transparent,
+      modifier = Modifier.settingsGlassSurface(cornerRadius = 28.dp, independent = true), containerColor = Color.Transparent,
       text = {
         LazyColumn(Modifier.fillMaxWidth().heightIn(max = 400.dp)) {
           items(values.size) { drawOption(values[it]) }
@@ -149,12 +149,16 @@ fun SliderPreference(
     Column {
       summary?.invoke()
       Row(verticalAlignment = Alignment.CenterVertically) {
-        // Commit the last callback value even when release precedes recomposition.
-        var latest = sliderValue
+        // Keep drag state local: sampled-glass tuning is expensive, so persistence and
+        // app-wide resampling happen once on release rather than for every pointer pixel.
+        var latest by remember(sliderValue) { mutableFloatStateOf(sliderValue) }
         GlassSlider(
-          value = sliderValue, onValueChange = { latest = it; onSliderValueChange(it) },
+          value = latest, onValueChange = { latest = it },
           modifier = Modifier.weight(1f), enabled = enabled,
-          valueRange = valueRange, steps = valueSteps, onValueChangeFinished = { onValueChange(latest) },
+          valueRange = valueRange, steps = valueSteps,
+          // The preference setter is the single commit point; SideEffect above
+          // synchronizes the visual slider state after the store emits.
+          onValueChangeFinished = { onValueChange(latest) },
         )
         if (valueText != null) Box(Modifier.padding(start = LocalPreferenceTheme.current.horizontalSpacing)) { valueText() }
       }
@@ -201,7 +205,7 @@ fun <T> TextFieldPreference(
     val focus = remember { FocusRequester() }
     AlertDialog(
       onDismissRequest = { open = false }, title = title,
-      modifier = Modifier.settingsGlassSurface(cornerRadius = 28.dp), containerColor = Color.Transparent,
+      modifier = Modifier.settingsGlassSurface(cornerRadius = 28.dp, independent = true), containerColor = Color.Transparent,
       text = { Box(Modifier.fillMaxWidth().focusRequester(focus)) { textField(text, { text = it }, confirm) } },
       confirmButton = { TextButton(onClick = confirm) { Text(stringResource(android.R.string.ok)) } },
       dismissButton = { TextButton(onClick = { open = false }) { Text(stringResource(android.R.string.cancel)) } },

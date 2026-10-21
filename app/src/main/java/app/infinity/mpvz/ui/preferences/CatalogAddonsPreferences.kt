@@ -90,7 +90,7 @@ fun CatalogAddonsPreferenceCard(viewModel: CatalogViewModel, sources: List<Catal
   if (showAddSheet) {
     ModalBottomSheet(
       containerColor = settingsGlassContainerColor(androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainerLow),
-      modifier = androidx.compose.ui.Modifier.settingsGlassSurface(cornerRadius = 28.dp),
+      modifier = androidx.compose.ui.Modifier.settingsGlassSurface(cornerRadius = 28.dp, independent = true),
       onDismissRequest = { if (!isAdding) showAddSheet = false },
       shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
     ) {

@@ -42,7 +42,7 @@ fun <T> OptionsDialog(
   optionLabel: @Composable (T) -> String,
 ) {
   AlertDialog(
-      modifier = androidx.compose.ui.Modifier.settingsGlassSurface(cornerRadius = 28.dp),
+      modifier = androidx.compose.ui.Modifier.settingsGlassSurface(cornerRadius = 28.dp, independent = true),
     onDismissRequest = onDismiss,
     title = {
       Text(

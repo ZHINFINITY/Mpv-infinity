@@ -573,8 +573,13 @@ private fun AudioGlassScene(
   val image = remember(bitmap) { bitmap?.asImageBitmap() }
   var bounds by remember { mutableStateOf(androidx.compose.ui.geometry.Rect.Zero) }
   val frame = remember(image, bounds, enabled) {
-    mutableStateOf(if (enabled && image != null && bounds.width > 0f && bounds.height > 0f)
-      app.infinity.mpvz.ui.theme.LiquidGlassFrame(image, bounds) else null)
+    val fitted = image?.let { app.infinity.mpvz.ui.theme.GlassScenePolicy.coverBounds(
+      it.width, it.height, bounds.width, bounds.height) }
+    val imageBounds = fitted?.let { androidx.compose.ui.geometry.Rect(
+      bounds.left + it.left, bounds.top + it.top,
+      bounds.left + it.left + it.width, bounds.top + it.top + it.height) }
+    mutableStateOf(if (enabled && image != null && imageBounds != null)
+      app.infinity.mpvz.ui.theme.LiquidGlassFrame(image, imageBounds, refractionEnabled = false) else null)
   }
   androidx.compose.runtime.CompositionLocalProvider(
     app.infinity.mpvz.ui.theme.LocalLiquidGlassBackdrop provides frame,
@@ -904,7 +909,8 @@ fun AudioPlayerControls(
         // A playlist description is not a song artist. Show only stream-supplied artists;
         // the station name or an honest live label is the fallback when none is supplied.
         val station = rawIcyName ?: stationHeaders?.icyName ?: currentItem?.title
-        radioPresentation.artist ?: station?.takeIf { it != radioPresentation.title } ?: "Live radio"
+        radioPresentation.artist ?: station?.takeIf { it != radioPresentation.title }
+          ?: "No track details provided by this station"
       } else {
         sequenceOf(audiobook?.book?.author, currentItem?.artist, rawArtist, rawArtistUpper, rawArtistLower, rawArtistAlt, rawAlbumArtist, rawPerformer, retrievedArtist)
           .filterNotNull().firstOrNull { it.isNotBlank() } ?: "Unknown Artist"

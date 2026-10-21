@@ -307,7 +307,7 @@ object GesturePreferencesScreen : Screen {
               if (showCustomSeekDialog) {
                 AlertDialog(
       containerColor = settingsGlassContainerColor(androidx.compose.material3.AlertDialogDefaults.containerColor),
-      modifier = androidx.compose.ui.Modifier.settingsGlassSurface(cornerRadius = 28.dp),
+      modifier = androidx.compose.ui.Modifier.settingsGlassSurface(cornerRadius = 28.dp, independent = true),
                   onDismissRequest = { showCustomSeekDialog = false },
                   title = { Text(text = stringResource(id = R.string.pref_player_double_tap_seek_duration)) },
                   text = {

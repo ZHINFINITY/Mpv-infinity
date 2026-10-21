@@ -159,7 +159,7 @@ object YtdlpSettingsScreen : Screen {
       var draftUserAgent by remember(showCustomUserAgentSheet) { mutableStateOf(customUserAgent) }
       ModalBottomSheet(
       containerColor = settingsGlassContainerColor(androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainerLow),
-      modifier = androidx.compose.ui.Modifier.settingsGlassSurface(cornerRadius = 28.dp),
+      modifier = androidx.compose.ui.Modifier.settingsGlassSurface(cornerRadius = 28.dp, independent = true),
         onDismissRequest = { showCustomUserAgentSheet = false },
       ) {
         Column(

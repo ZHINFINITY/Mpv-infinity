@@ -1176,7 +1176,7 @@ object PlayerPreferencesScreen : Screen {
     if (showVideoMiniPlayerDependencyDialog) {
       AlertDialog(
       containerColor = settingsGlassContainerColor(androidx.compose.material3.AlertDialogDefaults.containerColor),
-      modifier = androidx.compose.ui.Modifier.settingsGlassSurface(cornerRadius = 28.dp),
+      modifier = androidx.compose.ui.Modifier.settingsGlassSurface(cornerRadius = 28.dp, independent = true),
         onDismissRequest = { showVideoMiniPlayerDependencyDialog = false },
         title = { Text(stringResource(R.string.pref_video_mini_player_dependency_title)) },
         text = { Text(stringResource(R.string.pref_video_mini_player_dependency_message)) },
@@ -1212,7 +1212,7 @@ object PlayerPreferencesScreen : Screen {
     if (showTemplateDialog) {
       AlertDialog(
       containerColor = settingsGlassContainerColor(androidx.compose.material3.AlertDialogDefaults.containerColor),
-      modifier = androidx.compose.ui.Modifier.settingsGlassSurface(cornerRadius = 28.dp),
+      modifier = androidx.compose.ui.Modifier.settingsGlassSurface(cornerRadius = 28.dp, independent = true),
         onDismissRequest = { showTemplateDialog = false },
         title = {
           Text(

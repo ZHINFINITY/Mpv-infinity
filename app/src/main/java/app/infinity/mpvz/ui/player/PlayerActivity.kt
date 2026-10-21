@@ -1797,6 +1797,10 @@ class PlayerActivity :
           isPlaying = {
             if (nativeActive) nativeEngine.currentPlayer.isPlaying else !PlaybackSession.state.value.paused
           },
+          sampleAspect = {
+            PlaybackSession.getPropertyDouble("video-aspect-override")?.takeIf { it.isFinite() && it > 0.0 }
+              ?: VideoAspectGeometry.currentEffectiveDisplayAspect()
+          },
         ) {
           Box(modifier = Modifier.fillMaxSize()) {
             PlayerControls(

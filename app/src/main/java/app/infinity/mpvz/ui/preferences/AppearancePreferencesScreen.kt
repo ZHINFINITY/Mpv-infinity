@@ -376,7 +376,7 @@ object AppearancePreferencesScreen : Screen {
                     value = GlassSurfacePolicy.opacity(glassOpacity),
                     onValueChange = { preferences.glassSurfaceOpacity.set(GlassSurfacePolicy.opacity(it)) },
                     sliderValue = GlassSurfacePolicy.opacity(glassOpacity),
-                    onSliderValueChange = { preferences.glassSurfaceOpacity.set(GlassSurfacePolicy.opacity(it)) },
+                    onSliderValueChange = {},
                     title = { Text("Surface opacity") },
                     summary = { Text("${(GlassSurfacePolicy.opacity(glassOpacity) * 100).toInt()}% · keeps text readable") },
                     valueRange = GlassSurfacePolicy.MinOpacity..GlassSurfacePolicy.MaxOpacity,
@@ -386,7 +386,7 @@ object AppearancePreferencesScreen : Screen {
                     value = GlassSurfacePolicy.highlight(glassHighlight),
                     onValueChange = { preferences.glassSurfaceHighlight.set(GlassSurfacePolicy.highlight(it)) },
                     sliderValue = GlassSurfacePolicy.highlight(glassHighlight),
-                    onSliderValueChange = { preferences.glassSurfaceHighlight.set(GlassSurfacePolicy.highlight(it)) },
+                    onSliderValueChange = {},
                     title = { Text("Highlight strength") },
                     summary = { Text("${(GlassSurfacePolicy.highlight(glassHighlight) * 100).toInt()}% · edge reflections; text and icons stay sharp") },
                     valueRange = GlassSurfacePolicy.MinHighlight..GlassSurfacePolicy.MaxHighlight,
@@ -1120,7 +1120,7 @@ private fun GlassCustomizationPreference(
   val bounded = value.coerceIn(0f, maximum)
   SliderPreference(
     value = bounded, onValueChange = { onValueChange(it.coerceIn(0f, maximum)) },
-    sliderValue = bounded, onSliderValueChange = { onValueChange(it.coerceIn(0f, maximum)) },
+    sliderValue = bounded, onSliderValueChange = {},
     title = { Text(title) }, summary = { Text("${(bounded * 100).toInt()}% · $summary") },
     valueRange = 0f..maximum, enabled = enabled,
   )

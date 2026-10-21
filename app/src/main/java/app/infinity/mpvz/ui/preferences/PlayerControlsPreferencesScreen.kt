@@ -411,7 +411,7 @@ object PlayerControlsPreferencesScreen : Screen {
             if (showCustomTimeDialog) {
               AlertDialog(
       containerColor = settingsGlassContainerColor(androidx.compose.material3.AlertDialogDefaults.containerColor),
-      modifier = androidx.compose.ui.Modifier.settingsGlassSurface(cornerRadius = 28.dp),
+      modifier = androidx.compose.ui.Modifier.settingsGlassSurface(cornerRadius = 28.dp, independent = true),
                 onDismissRequest = { showCustomTimeDialog = false },
                 title = { Text(text = stringResource(R.string.pref_player_display_hide_player_control_time)) },
                 text = {

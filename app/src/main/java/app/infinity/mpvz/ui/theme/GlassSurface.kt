@@ -33,6 +33,7 @@ fun GlassSurface(
 ) {
   val shape = remember(cornerRadius) { RoundedCornerShape(cornerRadius) }
   val tuning = LocalGlassCustomization.current
+  val hasSharedScene = LocalLiquidGlassBackdrop.current != null
   val alpha = GlassSurfacePolicy.opacity(if (tuning.overrideMaterial) tuning.opacity else opacity)
   val glow = GlassSurfacePolicy.highlight(if (tuning.overrideMaterial) tuning.highlight else highlight)
   val artworkBlur = remember(enabled, backdrop != null, tuning.frost) {
@@ -44,10 +45,9 @@ fun GlassSurface(
     modifier = modifier.clip(shape)
       .liquidGlassPane(enabled, alpha, glow, cornerRadius, drawRim = border)
       .then(if (!enabled) Modifier.background(MaterialTheme.colorScheme.surfaceContainerHigh, shape) else Modifier)
-      .then(if (border) Modifier.border(1.dp, if (enabled) Color.White.copy(alpha = 0.12f + glow * 0.42f)
-        else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.25f), shape) else Modifier),
+      .then(if (border && !enabled) Modifier.border(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.25f), shape) else Modifier),
   ) {
-    if (enabled && backdrop != null) {
+    if (enabled && backdrop != null && !hasSharedScene) {
       Box(Modifier.matchParentSize().graphicsLayer { renderEffect = artworkBlur }) { backdrop.invoke() }
       Box(Modifier.matchParentSize().background(MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = alpha * 0.58f)))
     }

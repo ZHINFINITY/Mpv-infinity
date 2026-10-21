@@ -209,7 +209,7 @@ private fun CustomThemeEditor(
     textAlpha = AndroidColor.alpha(initial.onBackgroundArgb) / 255f
   }
   androidx.compose.material3.ModalBottomSheet(
-      modifier = androidx.compose.ui.Modifier.settingsGlassSurface(cornerRadius = 28.dp),onDismissRequest = onDismiss, sheetState = androidx.compose.material3.rememberModalBottomSheetState(skipPartiallyExpanded = true), containerColor = settingsGlassContainerColor(MaterialTheme.colorScheme.surfaceContainerLow), dragHandle = { androidx.compose.material3.BottomSheetDefaults.DragHandle() }) {
+      modifier = androidx.compose.ui.Modifier.settingsGlassSurface(cornerRadius = 28.dp, independent = true),onDismissRequest = onDismiss, sheetState = androidx.compose.material3.rememberModalBottomSheetState(skipPartiallyExpanded = true), containerColor = settingsGlassContainerColor(MaterialTheme.colorScheme.surfaceContainerLow), dragHandle = { androidx.compose.material3.BottomSheetDefaults.DragHandle() }) {
     Column(modifier = Modifier.fillMaxWidth().fillMaxHeight(0.94f).padding(horizontal = 20.dp, vertical = 8.dp)) {
       Text(if (isNew) "Create custom theme" else "Edit custom theme", style = MaterialTheme.typography.titleLarge)
       Text("Live preview", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)

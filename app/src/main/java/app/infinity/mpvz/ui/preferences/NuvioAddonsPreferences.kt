@@ -245,7 +245,7 @@ private fun PluginProviderSettingsDialog(
 ) {
   AlertDialog(
       containerColor = settingsGlassContainerColor(androidx.compose.material3.AlertDialogDefaults.containerColor),
-      modifier = androidx.compose.ui.Modifier.settingsGlassSurface(cornerRadius = 28.dp),
+      modifier = androidx.compose.ui.Modifier.settingsGlassSurface(cornerRadius = 28.dp, independent = true),
     onDismissRequest = onDismiss,
     title = { Text("${provider.name} settings") },
     text = {
@@ -265,7 +265,7 @@ private fun PluginProviderSettingsDialog(
                     OutlinedButton(onClick = { expanded = true }, modifier = Modifier.fillMaxWidth(), enabled = key != null) { Text(field.options.firstOrNull { it.value == value }?.label ?: value.ifBlank { field.placeholder ?: "Select" }, Modifier.fillMaxWidth()) }
                     DropdownMenu(
       containerColor = settingsGlassContainerColor(androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainer),
-      modifier = androidx.compose.ui.Modifier.settingsGlassSurface(cornerRadius = 12.dp),expanded = expanded, onDismissRequest = { expanded = false }) {
+      modifier = androidx.compose.ui.Modifier.settingsGlassSurface(cornerRadius = 12.dp, independent = true),expanded = expanded, onDismissRequest = { expanded = false }) {
                       field.options.forEach { option -> DropdownMenuItem(text = { Text(option.label) }, onClick = { if (key != null) values[key] = option.value; expanded = false }) }
                     }
                   }
@@ -296,7 +296,7 @@ private fun AddNuvioProviderRepositoryDialog(onDismiss: () -> Unit, onAdd: (Stri
   var busy by remember { mutableStateOf(false) }
   ModalBottomSheet(
       containerColor = settingsGlassContainerColor(androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainerLow),
-      modifier = androidx.compose.ui.Modifier.settingsGlassSurface(cornerRadius = 28.dp),onDismissRequest = { if (!busy) onDismiss() }) {
+      modifier = androidx.compose.ui.Modifier.settingsGlassSurface(cornerRadius = 28.dp, independent = true),onDismissRequest = { if (!busy) onDismiss() }) {
     Column(Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 22.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
       Text("Add Nuvio provider repository", style = MaterialTheme.typography.headlineSmall)
       Text("Paste a Nuvio JavaScript scraper repository URL. This is not a Stremio manifest URL.", color = MaterialTheme.colorScheme.onSurfaceVariant)

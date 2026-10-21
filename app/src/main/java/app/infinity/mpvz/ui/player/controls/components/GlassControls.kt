@@ -64,14 +64,14 @@ fun GlassSwitch(
     ),
     thumbContent = if (!glass) thumbContent else ({
       Box(Modifier.size(24.dp)
-        .shadow((1.dp + depth.coerceIn(0f, 2f).dp), RoundedCornerShape(12.dp), clip = false)
-        .liquidGlassPane(true, opacity, highlight, 12.dp)
+        .shadow((0.5.dp + (depth.coerceIn(0f, 2f) * 0.5f).dp), RoundedCornerShape(12.dp), clip = false)
+        .liquidGlassPane(true, opacity * 0.9f, highlight * 0.8f, 12.dp)
         .border(1.dp, if (enabled) accent.copy(alpha = if (checked) 0.75f else 0.35f)
           else MaterialTheme.colorScheme.outline.copy(alpha = 0.25f), RoundedCornerShape(12.dp)),
         contentAlignment = Alignment.Center) { thumbContent?.invoke() }
     }),
     // Material keeps its minimum interaction box and semantics; optics cover only the track.
-    modifier = modifier.then(if (glass) Modifier.glassTrackOptics(opacity, highlight, 16.dp) else Modifier),
+    modifier = modifier.then(if (glass) Modifier.glassTrackOptics(opacity, highlight, 10.dp, height = 20.dp) else Modifier),
   )
 }
 
@@ -118,10 +118,10 @@ fun GlassSlider(
         disabledInactiveTrackColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.06f),
       ),
       thumb = {
-        Box(Modifier.size(width = 20.dp, height = 28.dp)
-          .shadow((1.dp + depth.coerceIn(0f, 2f).dp), RoundedCornerShape(10.dp), clip = false)
-          .liquidGlassPane(true, opacity, highlight, 10.dp)
-          .border(1.dp, accent.copy(alpha = if (enabled) 0.75f else 0.25f), RoundedCornerShape(10.dp)))
+        Box(Modifier.size(width = 18.dp, height = 24.dp)
+          .shadow((0.5.dp + (depth.coerceIn(0f, 2f) * 0.5f).dp), RoundedCornerShape(9.dp), clip = false)
+          .liquidGlassPane(true, opacity * 0.9f, highlight * 0.8f, 9.dp)
+          .border(1.dp, accent.copy(alpha = if (enabled) 0.65f else 0.22f), RoundedCornerShape(9.dp)))
       },
     )
   }

@@ -661,7 +661,7 @@ object AudioPreferencesScreen : Screen {
 
       AlertDialog(
       containerColor = settingsGlassContainerColor(androidx.compose.material3.AlertDialogDefaults.containerColor),
-      modifier = androidx.compose.ui.Modifier.settingsGlassSurface(cornerRadius = 28.dp),
+      modifier = androidx.compose.ui.Modifier.settingsGlassSurface(cornerRadius = 28.dp, independent = true),
         onDismissRequest = { showMusicTabsDialog = false },
         title = { Text(stringResource(R.string.pref_music_tabs_title)) },
         text = {

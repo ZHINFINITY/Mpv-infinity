@@ -246,7 +246,7 @@ object AdvancedPreferencesScreen : Screen {
     if (showExportDialog && exportStats != null) {
       AlertDialog(
       containerColor = settingsGlassContainerColor(androidx.compose.material3.AlertDialogDefaults.containerColor),
-      modifier = androidx.compose.ui.Modifier.settingsGlassSurface(cornerRadius = 28.dp),
+      modifier = androidx.compose.ui.Modifier.settingsGlassSurface(cornerRadius = 28.dp, independent = true),
         onDismissRequest = { showExportDialog = false },
         title = { Text(stringResource(R.string.pref_export_complete_title)) },
         text = {
@@ -273,7 +273,7 @@ object AdvancedPreferencesScreen : Screen {
     if (showImportDialog && importStats != null) {
       AlertDialog(
       containerColor = settingsGlassContainerColor(androidx.compose.material3.AlertDialogDefaults.containerColor),
-      modifier = androidx.compose.ui.Modifier.settingsGlassSurface(cornerRadius = 28.dp),
+      modifier = androidx.compose.ui.Modifier.settingsGlassSurface(cornerRadius = 28.dp, independent = true),
         onDismissRequest = { showImportDialog = false },
         title = { Text(stringResource(R.string.pref_import_complete_title)) },
         text = {
@@ -297,7 +297,7 @@ object AdvancedPreferencesScreen : Screen {
     pendingAppLanguage?.let { language ->
       AlertDialog(
       containerColor = settingsGlassContainerColor(androidx.compose.material3.AlertDialogDefaults.containerColor),
-      modifier = androidx.compose.ui.Modifier.settingsGlassSurface(cornerRadius = 28.dp),
+      modifier = androidx.compose.ui.Modifier.settingsGlassSurface(cornerRadius = 28.dp, independent = true),
         onDismissRequest = { pendingAppLanguage = null },
         title = { Text(stringResource(R.string.pref_app_language_restart_title)) },
         text = { Text(stringResource(R.string.pref_app_language_restart_message)) },

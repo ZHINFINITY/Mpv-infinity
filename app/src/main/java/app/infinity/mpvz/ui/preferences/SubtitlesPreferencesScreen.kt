@@ -658,7 +658,7 @@ object SubtitlesPreferencesScreen : Screen {
               if (showSourcesDialog) {
                 AlertDialog(
       containerColor = settingsGlassContainerColor(androidx.compose.material3.AlertDialogDefaults.containerColor),
-      modifier = androidx.compose.ui.Modifier.settingsGlassSurface(cornerRadius = 28.dp),
+      modifier = androidx.compose.ui.Modifier.settingsGlassSurface(cornerRadius = 28.dp, independent = true),
                   onDismissRequest = { showSourcesDialog = false },
                   title = {
                     Row(
@@ -1091,7 +1091,7 @@ object SubtitlesPreferencesScreen : Screen {
               if (showClearDialog) {
                 AlertDialog(
       containerColor = settingsGlassContainerColor(androidx.compose.material3.AlertDialogDefaults.containerColor),
-      modifier = androidx.compose.ui.Modifier.settingsGlassSurface(cornerRadius = 28.dp),
+      modifier = androidx.compose.ui.Modifier.settingsGlassSurface(cornerRadius = 28.dp, independent = true),
                   onDismissRequest = { showClearDialog = false },
                   title = { Text(stringResource(R.string.pref_subtitles_clear_downloads)) },
                   text = { Text(stringResource(R.string.pref_subtitles_clear_downloads_confirmation)) },
@@ -1199,7 +1199,7 @@ fun MultiChoicePreference(
   if (showDialog) {
     AlertDialog(
       containerColor = settingsGlassContainerColor(androidx.compose.material3.AlertDialogDefaults.containerColor),
-      modifier = androidx.compose.ui.Modifier.settingsGlassSurface(cornerRadius = 28.dp),
+      modifier = androidx.compose.ui.Modifier.settingsGlassSurface(cornerRadius = 28.dp, independent = true),
       onDismissRequest = { showDialog = false },
       title = title,
       text = {

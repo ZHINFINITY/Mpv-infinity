@@ -18,12 +18,15 @@ class LiquidGlassContracts(unittest.TestCase):
         self.assertEqual(1, source.count("PixelCopy.request("))
         self.assertIn("GlassSamplingPolicy.sampleSize", source)
         self.assertIn("repeatOnLifecycle(Lifecycle.State.RESUMED)", source)
-        self.assertIn("failures >= GlassSamplingPolicy.FailureLimit", source)
+        self.assertIn(".coerceAtMost(GlassSamplingPolicy.FailureLimit)", source)
+        self.assertNotIn("if (failures >= GlassSamplingPolicy.FailureLimit) break", source)
         self.assertIn("ActivityManager", source)
         self.assertIn("currentThermalStatus", source)
         self.assertIn("Build.VERSION.SDK_INT >= 33", source)
         self.assertIn("catch (_: RuntimeException)", source)
-        self.assertIn("frame.takeIf { allowed }", source)
+        self.assertIn("frame.takeIf { eligible }", source)
+        self.assertIn("Lifecycle.Event.ON_STOP", source)
+        self.assertIn("DisposableEffect(surfaceView, generation, eligible, lifecycleOwner)", source)
 
     def test_runtime_input_uses_explicit_linear_filtering_and_pixel_centres(self):
         source = (JAVA / "ui/theme/LiquidGlassBackdrop.kt").read_text()
@@ -38,7 +41,7 @@ class LiquidGlassContracts(unittest.TestCase):
         self.assertEqual(1, source.count("GlassFrostPolicy.frostArgb("))
         self.assertIn("withContext(Dispatchers.Default)", source)
         self.assertLess(source.index("?.let { frostGlassFrame(it, tuning.frost) }"), source.index("frame.value = LiquidGlassFrame("))
-        self.assertIn("frame.value = null // never display a stale frame", source)
+        self.assertIn("GlassScenePolicy.retainTransientFrame(now - first)", source)
         for forbidden in ("source.setRenderEffect", "source.holder.setFixedSize", "source.setLayerType", "video-scale", "setVideoScalingMode"):
             self.assertNotIn(forbidden, source)
         policy = (JAVA / "ui/theme/GlassFrostPolicy.kt").read_text()
@@ -64,7 +67,7 @@ class LiquidGlassContracts(unittest.TestCase):
     def test_artwork_blur_is_background_only_and_off_means_off(self):
         source = (JAVA / "ui/theme/GlassSurface.kt").read_text()
         self.assertIn("liquidGlassPane", source)
-        self.assertIn("if (enabled && backdrop != null)", source)
+        self.assertIn("if (enabled && backdrop != null && !hasSharedScene)", source)
         self.assertIn("matchParentSize().graphicsLayer", source)
         self.assertLess(source.index("backdrop.invoke()"), source.index("    content()"))
         self.assertNotIn("PixelCopy", source)

@@ -245,7 +245,7 @@ object DecoderPreferencesScreen : Screen {
               if (showGpuNextWarning) {
                 AlertDialog(
       containerColor = settingsGlassContainerColor(androidx.compose.material3.AlertDialogDefaults.containerColor),
-      modifier = androidx.compose.ui.Modifier.settingsGlassSurface(cornerRadius = 28.dp),
+      modifier = androidx.compose.ui.Modifier.settingsGlassSurface(cornerRadius = 28.dp, independent = true),
                   onDismissRequest = { showGpuNextWarning = false },
                   title = { Text(stringResource(R.string.pref_decoder_gpu_next_enable_title)) },
                   text = {

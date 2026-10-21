@@ -8,6 +8,7 @@
 package app.infinity.mpvz.domain.thumbnail
 
 import android.app.ActivityManager
+import android.content.ComponentCallbacks2
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
@@ -89,6 +90,7 @@ class ThumbnailRepository(
     KoinJavaComponent.get<NetworkRepository>(NetworkRepository::class.java)
   }
 
+  private val folderMemoryKeys = LruCache<String, String>(256)
   private val memoryCache: LruCache<String, Bitmap>
   private val localDiskDir = File(context.filesDir, "thumbnails/local").apply { mkdirs() }
   private val networkDiskDir = File(context.filesDir, "thumbnails/network").apply { mkdirs() }
@@ -134,15 +136,31 @@ class ThumbnailRepository(
   val thumbnailReadyKeys: SharedFlow<String> = _thumbnailReadyKeys.asSharedFlow()
 
   init {
-    val maxMemoryKb = (Runtime.getRuntime().maxMemory() / 1024L).toInt()
-    val cacheSizeKb = maxMemoryKb / 6
+    val activityManager = context.getSystemService(Context.ACTIVITY_SERVICE) as? ActivityManager
+    val memoryClassBytes = (activityManager?.memoryClass ?: 128).toLong() * 1024L * 1024L
+    val cacheBytes = ThumbnailCachePolicy.maxBytes(memoryClassBytes, activityManager?.isLowRamDevice == true)
     memoryCache =
-      object : LruCache<String, Bitmap>(cacheSizeKb) {
+      object : LruCache<String, Bitmap>((cacheBytes / 1024L).toInt()) {
         override fun sizeOf(
           key: String,
           value: Bitmap,
-        ): Int = value.byteCount / 1024
+        ): Int = ((value.byteCount.toLong() + 1023L) / 1024L).toInt().coerceAtLeast(1)
       }
+
+    context.applicationContext.registerComponentCallbacks(object : ComponentCallbacks2 {
+      override fun onTrimMemory(level: Int) {
+        if (level == ComponentCallbacks2.TRIM_MEMORY_RUNNING_CRITICAL || level == ComponentCallbacks2.TRIM_MEMORY_COMPLETE) {
+          synchronized(memoryCache) { memoryCache.evictAll() }
+        } else if (level == ComponentCallbacks2.TRIM_MEMORY_RUNNING_LOW || level == ComponentCallbacks2.TRIM_MEMORY_BACKGROUND || level == ComponentCallbacks2.TRIM_MEMORY_MODERATE) {
+          synchronized(memoryCache) {
+            memoryCache.trimToSize((ThumbnailCachePolicy.trimBytes(memoryCache.size().toLong() * 1024L, false) / 1024L).toInt())
+          }
+        }
+      }
+
+      override fun onConfigurationChanged(newConfig: android.content.res.Configuration) = Unit
+      override fun onLowMemory() { synchronized(memoryCache) { memoryCache.evictAll() } }
+    })
   }
 
   suspend fun getThumbnail(
@@ -238,6 +256,10 @@ class ThumbnailRepository(
       return@withContext scaled
     }
 
+  /**
+   * Main-thread-safe peek used by cards before launching a coroutine. It only touches the
+   * bounded in-memory cache; disk reads and decoding remain asynchronous.
+   */
   fun getThumbnailFromMemory(
     video: Video,
     widthPx: Int,
@@ -254,6 +276,7 @@ class ThumbnailRepository(
   }
 
   fun clearThumbnailCache() {
+    synchronized(folderMemoryKeys) { folderMemoryKeys.evictAll() }
     folderJobs.values.forEach { it.cancel() }
     folderJobs.clear()
     folderStates.clear()
@@ -1495,6 +1518,13 @@ class ThumbnailRepository(
    * Get a thumbnail for a folder using the first video in the folder.
    * Returns null if the folder has no videos or thumbnail generation fails.
    */
+  /** Constant-time memory-only restoration before a lazy folder card scans its contents. */
+  fun getFolderThumbnailFromMemory(folderId: String): Bitmap? {
+    val key = synchronized(folderMemoryKeys) { folderMemoryKeys.get(folderId) } ?: return null
+    if (!key.endsWith("|${thumbnailModeKey()}|${thumbnailQualityKey()}")) return null
+    return synchronized(memoryCache) { memoryCache.get(key) }
+  }
+
   suspend fun getFolderThumbnail(
     folderId: String,
     videos: List<Video>,
@@ -1514,8 +1544,12 @@ class ThumbnailRepository(
 
       if (filteredVideos.isEmpty()) return@withContext null
 
-      // Use the first video as the folder thumbnail
-      getThumbnail(filteredVideos.first(), widthPx, heightPx)
+      // Store only a bounded reference key; the bitmap remains owned by the shared memory cache.
+      val video = filteredVideos.first()
+      getThumbnail(video, widthPx, heightPx)?.also {
+        val key = thumbnailKey(video, widthPx, heightPx)
+        synchronized(folderMemoryKeys) { folderMemoryKeys.put(folderId, key) }
+      }
     }
 
   private fun folderSignature(

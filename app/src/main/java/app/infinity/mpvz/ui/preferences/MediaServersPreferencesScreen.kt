@@ -247,7 +247,7 @@ object MediaServersPreferencesScreen : Screen {
                         }
                         DropdownMenu(
       containerColor = settingsGlassContainerColor(androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainer),
-      modifier = androidx.compose.ui.Modifier.settingsGlassSurface(cornerRadius = 12.dp),
+      modifier = androidx.compose.ui.Modifier.settingsGlassSurface(cornerRadius = 12.dp, independent = true),
                           expanded = menuExpanded,
                           onDismissRequest = { menuExpanded = false },
                         ) {
@@ -402,7 +402,7 @@ object MediaServersPreferencesScreen : Screen {
                       }
                       DropdownMenu(
       containerColor = settingsGlassContainerColor(androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainer),
-      modifier = androidx.compose.ui.Modifier.settingsGlassSurface(cornerRadius = 12.dp),
+      modifier = androidx.compose.ui.Modifier.settingsGlassSurface(cornerRadius = 12.dp, independent = true),
                         expanded = menuExpanded,
                         onDismissRequest = { menuExpanded = false },
                       ) {
@@ -561,7 +561,7 @@ object MediaServersPreferencesScreen : Screen {
                         }
                         DropdownMenu(
       containerColor = settingsGlassContainerColor(androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainer),
-      modifier = androidx.compose.ui.Modifier.settingsGlassSurface(cornerRadius = 12.dp),
+      modifier = androidx.compose.ui.Modifier.settingsGlassSurface(cornerRadius = 12.dp, independent = true),
                           expanded = menuExpanded,
                           onDismissRequest = { menuExpanded = false },
                         ) {
@@ -755,7 +755,7 @@ object MediaServersPreferencesScreen : Screen {
                         }
                         DropdownMenu(
       containerColor = settingsGlassContainerColor(androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainer),
-      modifier = androidx.compose.ui.Modifier.settingsGlassSurface(cornerRadius = 12.dp),
+      modifier = androidx.compose.ui.Modifier.settingsGlassSurface(cornerRadius = 12.dp, independent = true),
                           expanded = menuExpanded,
                           onDismissRequest = { menuExpanded = false },
                         ) {
