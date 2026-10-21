@@ -60,13 +60,37 @@ class ThumbnailRequestCoalescerTest {
         started.complete(Unit)
         return finish.await()
       }
-      val first = async { coalescer.getOrLoad("same", ::load) }
-      started.await()
-      val second = async { coalescer.getOrLoad("same", ::load) }
+      val first = async(start = kotlinx.coroutines.CoroutineStart.UNDISPATCHED) {
+        coalescer.getOrLoad("same", ::load)
+      }
+      withTimeout(5_000) { started.await() }
+      // Register the second waiter before releasing the first operation. A default-start async
+      // could run after finish.complete, testing two sequential loads rather than coalescing.
+      val second = async(start = kotlinx.coroutines.CoroutineStart.UNDISPATCHED) {
+        coalescer.getOrLoad("same", ::load)
+      }
       finish.complete(7)
       assertEquals(7, first.await())
       assertEquals(7, second.await())
       assertEquals(1, loads)
+    } finally {
+      owner.cancel()
+    }
+  }
+
+  @Test
+  fun completedRequestIsRemovedAndSequentialRequestsLoadAgain() = runBlocking {
+    val owner = SupervisorJob()
+    val scope = CoroutineScope(owner + Dispatchers.Default)
+    try {
+      val coalescer = ThumbnailRequestCoalescer<String, Int>(scope)
+      var loads = 0
+      assertEquals(1, coalescer.getOrLoad("same") { ++loads })
+      assertEquals(0, coalescer.activeRequestCount)
+      assertEquals(2, coalescer.getOrLoad("same") { ++loads })
+      assertEquals(0, coalescer.activeRequestCount)
+      // Bitmap retention belongs to the separate bounded cache, not this in-flight admission map.
+      assertEquals(2, loads)
     } finally {
       owner.cancel()
     }
