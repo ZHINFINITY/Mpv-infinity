@@ -5018,7 +5018,7 @@ class PlayerViewModel : ViewModel(),
     persistGlobal: Boolean = true,
   ) {
     if (host.isNativeEngineActive()) {
-      host.nativeSetVideoAspect(VideoAspect.Stretch)
+      host.nativeSetCustomAspectRatio(ratio)
       if (persistGlobal) playerPreferences.lastCustomAspectRatio.set(ratio.toFloat())
       _currentAspectRatio.value = ratio
       if (showUpdate) playerUpdate.value = PlayerUpdates.AspectRatio

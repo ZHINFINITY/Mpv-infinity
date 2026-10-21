@@ -747,12 +747,10 @@ class ThumbnailRepository(
         BitmapFactory.decodeFile(
           file.absolutePath,
           BitmapFactory.Options().apply {
-            inSampleSize = calculateThumbnailSampleSize(
+            inSampleSize = ThumbnailDecodePolicy.sampleSize(
               bounds.outWidth,
               bounds.outHeight,
-              maxOf(requestedWidthPx, requestedHeightPx)
-                .coerceAtLeast(1)
-                .coerceAtMost(thumbnailMaxSize()),
+              ThumbnailDecodePolicy.targetMaxEdge(requestedWidthPx, requestedHeightPx, thumbnailMaxSize()),
             )
             inPreferredConfig = Bitmap.Config.RGB_565
           },
@@ -841,7 +839,7 @@ class ThumbnailRepository(
   ): Bitmap? {
     val jellyfinImageUrls = extractJellyfinImageUrls(video.path, maxOf(widthPx, heightPx, 400))
     for (url in jellyfinImageUrls) {
-      val jellyfinBitmap = fetchHttpImage(url)
+      val jellyfinBitmap = fetchHttpImage(url, widthPx, heightPx)
       if (jellyfinBitmap != null) {
         return scaleBitmap(jellyfinBitmap, widthPx, heightPx)
       }
@@ -905,7 +903,11 @@ class ThumbnailRepository(
       )
     }.getOrDefault(emptyList())
 
-  private suspend fun fetchHttpImage(url: String): Bitmap? =
+  private suspend fun fetchHttpImage(
+    url: String,
+    widthPx: Int,
+    heightPx: Int,
+  ): Bitmap? =
     withContext(Dispatchers.IO) {
       runCatching {
         val connection =
@@ -915,12 +917,35 @@ class ThumbnailRepository(
             instanceFollowRedirects = true
             setRequestProperty("User-Agent", "MpvInfinity/1.0")
           }
-        if (connection.responseCode in 200..299) {
-          connection.inputStream.use { stream ->
-            BitmapFactory.decodeStream(stream)
+        try {
+          if (connection.responseCode in 200..299 &&
+            connection.contentLengthLong <= ThumbnailDecodePolicy.MaxEncodedImageBytes
+          ) {
+            connection.inputStream.use { stream ->
+              // Probe bounds, then decode once at the visible target rather than full poster size.
+              val bytes = ThumbnailDecodePolicy.readEncodedImage(stream) ?: return@use null
+              val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+              BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
+              if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return@use null
+              BitmapFactory.decodeByteArray(
+                bytes,
+                0,
+                bytes.size,
+                BitmapFactory.Options().apply {
+                  inSampleSize = ThumbnailDecodePolicy.sampleSize(
+                    bounds.outWidth,
+                    bounds.outHeight,
+                    ThumbnailDecodePolicy.targetMaxEdge(widthPx, heightPx, thumbnailMaxSize()),
+                  )
+                  inPreferredConfig = Bitmap.Config.RGB_565
+                },
+              )
+            }
+          } else {
+            null
           }
-        } else {
-          null
+        } finally {
+          connection.disconnect()
         }
       }.getOrNull()
     }
@@ -1163,7 +1188,7 @@ class ThumbnailRepository(
             else -> strategy
           }
           youtubePosterUrl(path)?.let { posterUrl ->
-            fetchHttpImage(posterUrl)?.let { bitmap ->
+            fetchHttpImage(posterUrl, widthPx, heightPx)?.let { bitmap ->
               val scaled = scaleBitmap(bitmap, widthPx, heightPx)
               networkThumbnailFailedAt.remove(identity)
               writeBitmapToDisk(diskKey, scaled, network = true)

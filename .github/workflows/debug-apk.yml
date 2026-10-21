@@ -187,6 +187,8 @@ jobs:
           python3 scripts/tests/thumbnail_cache_policy_test.py
           python3 scripts/tests/scene_stability_contract_test.py
           python3 scripts/tests/radio_playlist_category_test.py
+      - name: Test playlist sheet, drawer, native aspect and notification regression wiring
+        run: python3 scripts/tests/player_regression_wiring_test.py
       - name: Run Standard arm64 debug unit tests
         if: ${{ inputs.flavor == 'standard' && inputs.target_abi == 'arm64-v8a' }}
         run: ./gradlew testStandardDebugUnitTest -PtargetAbi=arm64-v8a -PmpvFlowMpvBuild=true --stacktrace --no-daemon --max-workers=2

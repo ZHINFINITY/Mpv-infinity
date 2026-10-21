@@ -69,6 +69,7 @@ import app.infinity.mpvz.preferences.getPlayerButtonLabel
 import app.infinity.mpvz.ui.icons.Icon
 import app.infinity.mpvz.ui.icons.Icons
 import app.infinity.mpvz.ui.player.controls.components.LocalHidePlayerButtonsBackground
+import app.infinity.mpvz.ui.player.controls.components.LocalPlayerGlassSurfaceOwner
 import app.infinity.mpvz.ui.player.controls.components.panels.DraggablePanel
 import app.infinity.mpvz.ui.theme.controlColor
 import app.infinity.mpvz.ui.theme.liquidGlassPane
@@ -417,12 +418,14 @@ private fun PlayerControlTile(
           Modifier
             .size(56.dp)
             .graphicsLayer {
-              scaleX = PanelIconScale
-              scaleY = PanelIconScale
+              scaleX = if (liquidGlassSurfaces) 1f else PanelIconScale
+              scaleY = if (liquidGlassSurfaces) 1f else PanelIconScale
             },
         contentAlignment = Alignment.Center,
       ) {
-        renderButton(button)
+        CompositionLocalProvider(LocalPlayerGlassSurfaceOwner provides liquidGlassSurfaces) {
+          renderButton(button)
+        }
       }
       Spacer(Modifier.height(4.dp))
       Text(

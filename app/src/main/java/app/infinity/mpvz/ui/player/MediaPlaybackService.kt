@@ -254,6 +254,8 @@ class MediaPlaybackService :
   private var playbackSpeed = 1.0f
   private var activeQueueItemId: Long = MediaSessionCompat.QueueItem.UNKNOWN_ID.toLong()
   private var publishedQueueIndexes: Map<Long, Int> = emptyMap()
+  // Every queue-item identity change invalidates in-flight artwork/favorite work.
+  private val mediaIdentityTracker = MediaSessionIdentityTracker()
 
   // Playlist state — mirrored from PlayerActivity so the notification intent can restore it
   private var notificationIsAudio: Boolean = false
@@ -624,6 +626,14 @@ class MediaPlaybackService :
       }
       val resolvedTitle = FileTypeUtils.stripExtension(title)
       val resolvedIdentifier = identifier?.takeIf { it.isNotBlank() }
+      val currentItem = PlaybackSession.queue.value.currentItem
+      if (currentItem != null &&
+        !MediaSessionItemIdentity(currentItem.stableId, currentItem.originalUri)
+          .acceptsMetadata(resolvedIdentifier, uri)
+      ) {
+        Log.d(TAG, "Ignoring stale media info for $resolvedIdentifier; current=${currentItem.stableId}")
+        return@launch
+      }
       // A metadata-only Activity sync must not erase artwork already resolved for this queue item.
       // Item changes are cleared explicitly in applySessionItem before the next cover is loaded.
       val artworkChanged = thumbnail?.let(::replaceOwnedThumbnail) ?: false
@@ -779,6 +789,8 @@ class MediaPlaybackService :
   }
 
   private fun applySessionItem(item: PlaybackItem) {
+    val identity = MediaSessionItemIdentity(item.stableId, item.originalUri)
+    val itemGeneration = mediaIdentityTracker.advance(identity)
     val itemChanged = mediaIdentifier != item.stableId || mediaUri != item.originalUri
     val artworkChanged = activeArtworkUri != item.artworkUri
     val isAudio = resolveNotificationIsAudio(item, notificationIsAudio)
@@ -811,12 +823,15 @@ class MediaPlaybackService :
     updateMediaSessionMetadata()
     updateMediaSessionPlaybackState()
     updateNotification()
-    loadSessionArtwork(item)
-    refreshFavoriteState(item)
+    loadSessionArtwork(item, itemGeneration)
+    refreshFavoriteState(item, itemGeneration)
     refreshCurrentRadioMetadata()
   }
 
-  private fun refreshFavoriteState(item: PlaybackItem) {
+  private fun refreshFavoriteState(
+    item: PlaybackItem,
+    expectedGeneration: Long = mediaIdentityTracker.generation(),
+  ) {
     favoriteStateJob?.cancel()
     val expectedIdentifier = item.stableId
     val favoritePath = item.originalUri.ifBlank { item.playableUri }
@@ -831,7 +846,10 @@ class MediaPlaybackService :
     favoriteStateJob =
       serviceScope.launch {
         playlistRepository.observeIsFavorite(favoritePath, isAudio).collect { favorite ->
-          if (mediaIdentifier == expectedIdentifier) {
+          if (mediaIdentityTracker.isCurrent(
+              MediaSessionItemIdentity(expectedIdentifier, item.originalUri),
+              expectedGeneration,
+            )) {
             if (isCurrentFavorite != favorite) {
               isCurrentFavorite = favorite
               refreshTransportControls()
@@ -867,7 +885,8 @@ class MediaPlaybackService :
     if (favoritePath.isBlank()) return
     val favoriteName = item.title?.takeIf { it.isNotBlank() } ?: mediaTitle
     val isAudio = resolveNotificationIsAudio(item, notificationIsAudio)
-    val expectedIdentifier = item.stableId
+    val identity = MediaSessionItemIdentity(item.stableId, item.originalUri)
+    val expectedGeneration = mediaIdentityTracker.generation()
 
     serviceScope.launch {
       runCatching {
@@ -877,7 +896,9 @@ class MediaPlaybackService :
           }
         }
       }.onSuccess { favorite ->
-        if (mediaIdentifier == expectedIdentifier && isCurrentFavorite != favorite) {
+        if (mediaIdentityTracker.isCurrent(identity, expectedGeneration) &&
+          isCurrentFavorite != favorite
+        ) {
           isCurrentFavorite = favorite
           refreshTransportControls()
         }
@@ -887,15 +908,20 @@ class MediaPlaybackService :
     }
   }
 
-  private fun loadSessionArtwork(item: PlaybackItem) {
+  private fun loadSessionArtwork(
+    item: PlaybackItem,
+    expectedGeneration: Long = mediaIdentityTracker.generation(),
+  ) {
     val artworkUri = item.artworkUri?.takeIf { it.isNotBlank() } ?: return
-    val expectedIdentifier = item.stableId
+    val identity = MediaSessionItemIdentity(item.stableId, item.originalUri)
     serviceScope.launch {
       val loaded =
         withContext(Dispatchers.IO) {
           EmbeddedArtworkResolver.decodeArtworkUri(this@MediaPlaybackService, artworkUri)
         } ?: return@launch
-      if (mediaIdentifier != expectedIdentifier || activeArtworkUri != artworkUri || radioPictureBlock != null) {
+      if (!mediaIdentityTracker.isCurrent(identity, expectedGeneration) ||
+        activeArtworkUri != artworkUri || radioPictureBlock != null
+      ) {
         return@launch
       }
       val changed = replaceOwnedThumbnail(loaded)
@@ -957,9 +983,13 @@ class MediaPlaybackService :
         if (radioPictureBlock == encoded) return
         radioPictureBlock = encoded
         val expectedIdentifier = item.stableId
+        val identity = MediaSessionItemIdentity(item.stableId, item.originalUri)
+        val expectedGeneration = mediaIdentityTracker.generation()
         serviceScope.launch {
           val cover = withContext(Dispatchers.IO) { RadioArtworkDecoder.decode(encoded) }
-          if (mediaIdentifier != expectedIdentifier || radioPictureBlock != encoded) return@launch
+          if (!mediaIdentityTracker.isCurrent(identity, expectedGeneration) ||
+            radioPictureBlock != encoded
+          ) return@launch
           if (cover != null && replaceOwnedThumbnail(cover)) {
             refreshNotificationPalette()
             updateMediaSessionMetadata()
@@ -1013,11 +1043,16 @@ class MediaPlaybackService :
 
   private fun loadSessionArtworkUri(artworkUri: String?, expectedIdentifier: String) {
     if (!RadioMetadataPolicy.isHttpUrl(artworkUri)) return
+    val currentItem = PlaybackSession.queue.value.currentItem ?: return
+    val identity = MediaSessionItemIdentity(expectedIdentifier, currentItem.originalUri)
+    val expectedGeneration = mediaIdentityTracker.generation()
     serviceScope.launch {
       val loaded = withContext(Dispatchers.IO) {
         EmbeddedArtworkResolver.decodeArtworkUri(this@MediaPlaybackService, artworkUri!!)
       } ?: return@launch
-      if (mediaIdentifier != expectedIdentifier || activeArtworkUri != artworkUri || radioPictureBlock != null) return@launch
+      if (!mediaIdentityTracker.isCurrent(identity, expectedGeneration) ||
+        activeArtworkUri != artworkUri || radioPictureBlock != null
+      ) return@launch
       if (replaceOwnedThumbnail(loaded)) {
         refreshNotificationPalette()
         updateMediaSessionMetadata()

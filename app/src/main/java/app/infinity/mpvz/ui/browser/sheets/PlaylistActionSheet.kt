@@ -32,10 +32,9 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.SheetValue
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.rememberBottomSheetState
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -71,19 +70,19 @@ fun PlaylistActionSheet(
 
   if (!isOpen) return
 
-  val sheetState = rememberBottomSheetState(initialValue = SheetValue.Hidden)
+  val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
   ModalBottomSheet(
       containerColor = settingsGlassContainerColor(MaterialTheme.colorScheme.surfaceContainerLow),
     onDismissRequest = onDismiss,
     sheetState = sheetState,
     dragHandle = { BottomSheetDefaults.DragHandle() },
-    modifier = (modifier).settingsGlassSurface(cornerRadius = 28.dp),
   ) {
     Column(
       modifier =
-        Modifier
+        modifier
           .fillMaxWidth()
+          .settingsGlassSurface(cornerRadius = 28.dp)
           .padding(start = 24.dp, end = 24.dp, top = 8.dp, bottom = 16.dp)
           .verticalScroll(rememberScrollState()),
       verticalArrangement = Arrangement.spacedBy(12.dp),

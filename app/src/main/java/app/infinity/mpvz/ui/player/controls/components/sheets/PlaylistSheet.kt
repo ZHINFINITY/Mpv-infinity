@@ -70,6 +70,7 @@ import androidx.compose.ui.res.stringResource
 import app.infinity.mpvz.R
 import app.infinity.mpvz.domain.media.model.Video
 import app.infinity.mpvz.domain.thumbnail.ThumbnailRepository
+import app.infinity.mpvz.preferences.AppearancePreferences
 import app.infinity.mpvz.preferences.preference.collectAsState
 import app.infinity.mpvz.presentation.components.PlayerSheet
 import app.infinity.mpvz.presentation.components.RemoteImage
@@ -263,6 +264,8 @@ fun PlaylistSheet(
 ) {
   val configuration = LocalConfiguration.current
   val thumbnailRepository = koinInject<ThumbnailRepository>()
+  val appearancePreferences = koinInject<AppearancePreferences>()
+  val liquidGlassSurfaces by appearancePreferences.liquidGlassSurfaces.collectAsState()
 
   val accentColor = MaterialTheme.colorScheme.primary
 
@@ -324,7 +327,11 @@ fun PlaylistSheet(
   ) {
     Surface(
       modifier = Modifier.fillMaxWidth(),
-      color = Color.Transparent,
+      color = if (!liquidGlassSurfaces) {
+        MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = 0.72f)
+      } else {
+        Color.Transparent
+      },
       shape =
         RoundedCornerShape(
           topStart = 16.dp,

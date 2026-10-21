@@ -71,4 +71,21 @@ class PlaybackModelsTest {
     assertEquals("video/mp4", resolvePlaybackMimeType("  ", "video/mp4"))
     assertNull(resolvePlaybackMimeType(null, " "))
   }
+
+  @Test
+  fun rapidQueueAdvancesKeepCurrentItemAndIndexAligned() {
+    val items = listOf(
+      PlaybackItem("a", "file:///a", title = "A"),
+      PlaybackItem("b", "file:///b", title = "B"),
+      PlaybackItem("c", "file:///c", title = "C"),
+    )
+    var state = PlaybackQueueReducer.replace(PlaybackQueueState(), items, 0, true, false)
+
+    state = PlaybackQueueReducer.next(state)!!
+    assertEquals(1, state.currentIndex)
+    assertEquals("b", state.currentItem?.stableId)
+    state = PlaybackQueueReducer.next(state)!!
+    assertEquals(2, state.currentIndex)
+    assertEquals("c", state.currentItem?.stableId)
+  }
 }

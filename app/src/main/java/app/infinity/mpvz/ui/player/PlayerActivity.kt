@@ -509,6 +509,10 @@ class PlayerActivity :
     nativeEngine.setVideoAspect(aspect)
   }
 
+  override fun nativeSetCustomAspectRatio(ratio: Double) {
+    nativeEngine.setCustomAspectRatio(ratio)
+  }
+
   // ==================== State Management ====================
 
   /**
@@ -1244,6 +1248,7 @@ class PlayerActivity :
                   binding.player.alpha = 1f
                   binding.player.visibility = View.VISIBLE
                   viewModel.setAmbientLifecycleActive(true)
+                  viewModel.restartAmbientIfActive()
                 } else if (!ready && ownsPlaybackSession() && activeEngineMode == PlaybackEngineMode.MPV) {
                   setNativeVideoSurfaceVisible(false)
                   binding.player.alpha = 1f
@@ -8609,14 +8614,22 @@ class PlayerActivity :
       startBackgroundPlayback(allowUserPrompt = false)
     }
     val service = mediaPlaybackService ?: return
-    val rawTitle = getPreferredCurrentTitle().ifBlank { fileName.ifBlank { getString(R.string.player_unknown_video) } }
+    val queueSnapshot = PlaybackSession.queue.value
+    val currentQueueItem = queueSnapshot.currentItem
+    val notificationIdentifier = currentQueueItem?.stableId?.takeIf { it.isNotBlank() } ?: mediaIdentifier
+    val durableMediaUri = currentQueueItem?.originalUri ?: currentPlayableUri
+    val artworkPlayableUri = currentQueueItem?.playableUri ?: currentPlayableUri
+    val sourceReady = isReady && (currentQueueItem == null || mediaIdentifier == currentQueueItem.stableId)
+    val audioArtwork = currentQueueItem?.isDefinitelyAudioOnly() == true || isCurrentPlaybackAudio()
+    val rawTitle = currentQueueItem?.title?.takeIf { it.isNotBlank() }
+      ?: getPreferredCurrentTitle().ifBlank { fileName.ifBlank { getString(R.string.player_unknown_video) } }
     val title = FileTypeUtils.stripExtension(rawTitle)
-    val currentQueueItem = PlaybackSession.queue.value.currentItem
-    val notificationIdentifier = currentNotificationMediaIdentifier()
     val artist =
       currentQueueItem?.artist?.takeIf { it.isNotBlank() }
-        ?: runCatching { PlaybackSession.getPropertyString("metadata/artist") }.getOrNull().orEmpty()
-    val thumbnailKey = buildBackgroundThumbnailKey()
+        ?: if (sourceReady) runCatching { PlaybackSession.getPropertyString("metadata/artist") }.getOrNull().orEmpty() else ""
+    val thumbnailKey = currentQueueItem?.let { item ->
+      MediaSessionItemIdentity(item.stableId, item.originalUri).artworkKey(queueSnapshot.currentIndex, item.artworkUri)
+    } ?: buildBackgroundThumbnailKey()
     val cachedThumbnail =
       if (
         thumbnailKey == lastBackgroundThumbnailKey &&
@@ -8631,7 +8644,7 @@ class PlayerActivity :
       title = title,
       artist = artist,
       thumbnail = cachedThumbnail,
-      uri = currentDurableMediaUri(),
+      uri = durableMediaUri,
       identifier = notificationIdentifier,
     )
     // Mirror playlist state into the service so the notification tap-intent can restore it
@@ -8641,7 +8654,7 @@ class PlayerActivity :
     if (!updateThumbnail || thumbnailKey.isBlank()) return
     if (thumbnailKey == lastBackgroundThumbnailKey && cachedThumbnail != null) return
 
-    val request = backgroundArtworkRequestGuard.begin(thumbnailKey, isReady) ?: return
+    val request = backgroundArtworkRequestGuard.begin(thumbnailKey, sourceReady) ?: return
     backgroundServiceSyncJob?.cancel()
     backgroundServiceSyncJob =
       lifecycleScope.launch {
@@ -8654,8 +8667,8 @@ class PlayerActivity :
               app.infinity.mpvz.domain.thumbnail.EmbeddedArtworkResolver.decodeArtworkUri(
                 this@PlayerActivity,
                 currentQueueItem?.artworkUri,
-              ) ?: runCatching { PlaybackSession.grabThumbnail(480) }.getOrNull() ?: runCatching {
-                val uriStr = currentPlayableUri
+              ) ?: (if (!audioArtwork) runCatching { PlaybackSession.grabThumbnail(480) }.getOrNull() else null) ?: runCatching {
+                val uriStr = artworkPlayableUri
                 if (!uriStr.isNullOrBlank()) {
                   val parsedUri = Uri.parse(uriStr)
                   val cleanPath =
@@ -8686,7 +8699,9 @@ class PlayerActivity :
               !mpvInitialized ||
               player.isExiting ||
               isFinishing ||
-              !backgroundArtworkRequestGuard.isCurrent(request, buildBackgroundThumbnailKey(), isReady)
+              !backgroundArtworkRequestGuard.isCurrent(
+                request, buildBackgroundThumbnailKey(), isReady && mediaIdentifier == notificationIdentifier,
+              )
           ) {
             return@launch
           }
@@ -8701,7 +8716,7 @@ class PlayerActivity :
             title = title,
             artist = artist,
             thumbnail = generatedThumbnail,
-            uri = currentDurableMediaUri(),
+            uri = durableMediaUri,
             identifier = notificationIdentifier,
           )
         } finally {
@@ -8711,8 +8726,13 @@ class PlayerActivity :
   }
 
   private fun buildBackgroundThumbnailKey(): String {
+    val queue = PlaybackSession.queue.value
+    queue.currentItem?.let { item ->
+      return MediaSessionItemIdentity(item.stableId, item.originalUri)
+        .artworkKey(queue.currentIndex, item.artworkUri)
+    }
     if (mediaIdentifier.isBlank()) return ""
-    return "$mediaIdentifier|$playlistIndex"
+    return MediaSessionItemIdentity(mediaIdentifier, currentPlayableUri.orEmpty()).artworkKey(playlistIndex, null)
   }
 
   /**

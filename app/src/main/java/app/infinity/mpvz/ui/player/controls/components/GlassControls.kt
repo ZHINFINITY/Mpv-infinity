@@ -16,8 +16,10 @@ import androidx.compose.material3.SwitchDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.draw.drawWithCache
@@ -29,6 +31,9 @@ import app.infinity.mpvz.preferences.preference.collectAsState
 import app.infinity.mpvz.ui.theme.liquidGlassPane
 import app.infinity.mpvz.ui.theme.LocalGlassCustomization
 import org.koin.compose.koinInject
+
+/** A tile may own the glass material while its embedded button retains input/semantics only. */
+val LocalPlayerGlassSurfaceOwner = staticCompositionLocalOf { false }
 
 /** Material owns input, state animation, focus, accessibility and RTL; optics only draw behind it. */
 @Composable
@@ -46,7 +51,7 @@ fun GlassSwitch(
   val opacity by appearance.glassSurfaceOpacity.collectAsState()
   val highlight by appearance.glassSurfaceHighlight.collectAsState()
   val glass = preferenceEnabled && glassEnabled
-  val depth = LocalGlassCustomization.current.depth
+  val depth = GlassControlPolicy.depth(LocalGlassCustomization.current.depth)
   val accent = MaterialTheme.colorScheme.primary
   Switch(
     checked = checked,
@@ -63,12 +68,17 @@ fun GlassSwitch(
       uncheckedBorderColor = Color.Transparent,
     ),
     thumbContent = if (!glass) thumbContent else ({
-      Box(Modifier.size(24.dp)
-        .shadow((0.5.dp + (depth.coerceIn(0f, 2f) * 0.5f).dp), RoundedCornerShape(12.dp), clip = false)
-        .liquidGlassPane(true, opacity * 0.9f, highlight * 0.8f, 12.dp)
-        .border(1.dp, if (enabled) accent.copy(alpha = if (checked) 0.75f else 0.35f)
-          else MaterialTheme.colorScheme.outline.copy(alpha = 0.25f), RoundedCornerShape(12.dp)),
-        contentAlignment = Alignment.Center) { thumbContent?.invoke() }
+      Box(
+        Modifier.size(24.dp)
+          .shadow((0.5.dp + depth.dp), RoundedCornerShape(12.dp), clip = false)
+          .glassThumbOptics(
+            accent = accent,
+            highlight = GlassControlPolicy.highlightAlpha(highlight, enabled, checked),
+            shadow = GlassControlPolicy.shadowAlpha(depth, enabled),
+            border = GlassControlPolicy.thumbBorderAlpha(enabled, checked),
+          ),
+        contentAlignment = Alignment.Center,
+      ) { thumbContent?.invoke() }
     }),
     // Material keeps its minimum interaction box and semantics; optics cover only the track.
     modifier = modifier.then(if (glass) Modifier.glassTrackOptics(opacity, highlight, 10.dp, height = 20.dp) else Modifier),
@@ -93,7 +103,7 @@ fun GlassSlider(
   val opacity by appearance.glassSurfaceOpacity.collectAsState()
   val highlight by appearance.glassSurfaceHighlight.collectAsState()
   val glass = preferenceEnabled && glassEnabled
-  val depth = LocalGlassCustomization.current.depth
+  val depth = GlassControlPolicy.depth(LocalGlassCustomization.current.depth)
   val accent = MaterialTheme.colorScheme.primary
   if (!glass) {
     Slider(value = value, onValueChange = onValueChange, modifier = modifier, enabled = enabled,
@@ -119,9 +129,13 @@ fun GlassSlider(
       ),
       thumb = {
         Box(Modifier.size(width = 18.dp, height = 24.dp)
-          .shadow((0.5.dp + (depth.coerceIn(0f, 2f) * 0.5f).dp), RoundedCornerShape(9.dp), clip = false)
-          .liquidGlassPane(true, opacity * 0.9f, highlight * 0.8f, 9.dp)
-          .border(1.dp, accent.copy(alpha = if (enabled) 0.65f else 0.22f), RoundedCornerShape(9.dp)))
+          .shadow((0.5.dp + depth.dp), RoundedCornerShape(9.dp), clip = false)
+          .glassThumbOptics(
+            accent = accent,
+            highlight = GlassControlPolicy.highlightAlpha(highlight, enabled, value > valueRange.start),
+            shadow = GlassControlPolicy.shadowAlpha(depth, enabled),
+            border = if (enabled) 0.62f else 0.22f,
+          ))
       },
     )
   }
@@ -136,26 +150,65 @@ private fun Modifier.glassTrackOptics(
   height: Dp = 32.dp,
 ): Modifier {
   val tint = MaterialTheme.colorScheme.surfaceContainerHigh
+  val depth = GlassControlPolicy.depth(LocalGlassCustomization.current.depth)
   return drawWithCache {
-  val trackHeight = height.toPx().coerceAtMost(size.height)
-  val top = (size.height - trackHeight) / 2f
-  val inset = horizontalInset.toPx().coerceAtMost(size.width / 2f)
-  val corner = radius.toPx().coerceAtMost(trackHeight / 2f)
+    val trackHeight = height.toPx().coerceAtMost(size.height)
+    val top = (size.height - trackHeight) / 2f
+    val inset = horizontalInset.toPx().coerceAtMost(size.width / 2f)
+    val corner = radius.toPx().coerceAtMost(trackHeight / 2f)
+    val bounds = androidx.compose.ui.geometry.Size(size.width - inset * 2f, trackHeight)
+    onDrawBehind {
+      drawRoundRect(
+        brush = Brush.verticalGradient(
+          listOf(
+            Color.White.copy(alpha = (highlight * 0.32f).coerceIn(0f, 0.32f)),
+            tint.copy(alpha = opacity * 0.20f),
+            Color.Black.copy(alpha = GlassControlPolicy.shadowAlpha(depth, true)),
+          ),
+          startY = top,
+          endY = top + trackHeight,
+        ),
+        topLeft = androidx.compose.ui.geometry.Offset(inset, top),
+        size = bounds,
+        cornerRadius = androidx.compose.ui.geometry.CornerRadius(corner, corner),
+      )
+      // A single upper rim avoids the old full-outline/double-outline appearance.
+      drawRoundRect(
+        color = Color.White.copy(alpha = highlight * 0.28f),
+        topLeft = androidx.compose.ui.geometry.Offset(inset, top + 0.5.dp.toPx()),
+        size = androidx.compose.ui.geometry.Size(bounds.width, (trackHeight / 2f).coerceAtLeast(1f)),
+        cornerRadius = androidx.compose.ui.geometry.CornerRadius(corner, corner),
+        style = Stroke(0.7.dp.toPx()),
+      )
+    }
+  }
+}
+
+private fun Modifier.glassThumbOptics(
+  accent: Color,
+  highlight: Float,
+  shadow: Float,
+  border: Float,
+): Modifier = drawWithCache {
+  val radius = size.minDimension / 2f
   onDrawBehind {
     drawRoundRect(
-      color = tint.copy(alpha = opacity * 0.22f),
-      topLeft = androidx.compose.ui.geometry.Offset(inset, top),
-      size = androidx.compose.ui.geometry.Size(size.width - inset * 2f, trackHeight),
-      cornerRadius = androidx.compose.ui.geometry.CornerRadius(corner, corner),
+      brush = Brush.verticalGradient(
+        listOf(Color.White.copy(alpha = highlight * 0.38f), accent.copy(alpha = 0.10f), Color.Black.copy(alpha = shadow)),
+      ),
+      cornerRadius = androidx.compose.ui.geometry.CornerRadius(radius, radius),
     )
     drawRoundRect(
-      color = Color.White.copy(alpha = highlight * 0.42f),
-      topLeft = androidx.compose.ui.geometry.Offset(inset, top),
-      size = androidx.compose.ui.geometry.Size(size.width - inset * 2f, trackHeight),
-      cornerRadius = androidx.compose.ui.geometry.CornerRadius(corner, corner),
+      color = Color.White.copy(alpha = highlight * 0.60f),
+      size = androidx.compose.ui.geometry.Size(size.width, size.height / 2f),
+      cornerRadius = androidx.compose.ui.geometry.CornerRadius(radius, radius),
+      style = Stroke(0.8.dp.toPx()),
+    )
+    drawRoundRect(
+      color = accent.copy(alpha = border),
+      cornerRadius = androidx.compose.ui.geometry.CornerRadius(radius, radius),
       style = Stroke(1.dp.toPx()),
     )
-  }
   }
 }
 
@@ -166,6 +219,7 @@ fun Modifier.playerGlassPane(
   highlight: Float? = null,
   cornerRadius: Dp = 20.dp,
 ): Modifier {
+  if (LocalPlayerGlassSurfaceOwner.current) return this
   val appearance = koinInject<AppearancePreferences>()
   val preferenceEnabled by appearance.liquidGlassSurfaces.collectAsState()
   val preferredOpacity by appearance.glassSurfaceOpacity.collectAsState()

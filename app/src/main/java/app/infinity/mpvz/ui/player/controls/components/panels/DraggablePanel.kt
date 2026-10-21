@@ -109,7 +109,7 @@ fun DraggablePanel(
       contentColor = colors.contentColor,
       tonalElevation = if (glass) 0.dp else tonalElevation,
       shadowElevation = shadowElevation,
-      border = border,
+      border = if (glass) null else border,
     ) {
       Column {
         // Drag Handle & Indicator
@@ -146,7 +146,7 @@ fun DraggablePanel(
 
         // Scrollable content
         Column(
-          modifier = Modifier.verticalScroll(rememberScrollState()),
+          modifier = Modifier.weight(1f, fill = false).fillMaxWidth().verticalScroll(rememberScrollState()),
         ) {
           content()
         }

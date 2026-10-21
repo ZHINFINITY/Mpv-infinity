@@ -111,12 +111,13 @@ fun PlayerSheet(
       }
   val isImeVisible = WindowInsets.ime.getBottom(density) > 0
   val maxHeight =
-    customMaxHeight ?: when {
-      isImeVisible -> LocalConfiguration.current.screenHeightDp.dp
-      LocalConfiguration.current.orientation == ORIENTATION_PORTRAIT ->
-        LocalConfiguration.current.screenHeightDp.dp * .90f
-      else -> LocalConfiguration.current.screenHeightDp.dp
-    }
+    PlayerSheetLayoutPolicy.maxHeightDp(
+        screenHeightDp = LocalConfiguration.current.screenHeightDp,
+        portrait = LocalConfiguration.current.orientation == ORIENTATION_PORTRAIT,
+        imeVisible = isImeVisible,
+        customMaxHeightDp = customMaxHeight?.value,
+      )
+      .dp
 
   val screenHeightPx =
     with(density) {
@@ -188,6 +189,14 @@ fun PlayerSheet(
     Surface(
       modifier =
         Modifier
+          // Insets belong outside the size constraint. Applying them after
+          // sizeIn made the measured glass root taller than the visible sheet,
+          // so its upper half was painted over the content on portrait/IME.
+          .windowInsetsPadding(
+            WindowInsets.systemBars
+              .only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal),
+          )
+          .imePadding()
           .sizeIn(maxWidth = maxWidth, maxHeight = maxHeight)
           .clickable(
             interactionSource = remember { MutableInteractionSource() },
@@ -209,11 +218,7 @@ fun PlayerSheet(
           }.anchoredDraggable(
             state = anchoredDraggableState,
             orientation = Orientation.Vertical,
-          ).windowInsetsPadding(
-            WindowInsets.systemBars
-              .only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal),
-          ).imePadding()
-          .liquidGlassPane(
+          ).liquidGlassPane(
             enabled = liquidGlassSurfaces,
             opacity = 0.86f,
             highlight = 0.20f,

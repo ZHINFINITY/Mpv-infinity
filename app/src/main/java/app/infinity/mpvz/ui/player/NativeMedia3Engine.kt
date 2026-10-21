@@ -44,6 +44,7 @@ import androidx.media3.exoplayer.analytics.AnalyticsListener
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.extractor.ExtractorsFactory
 import androidx.media3.ui.CaptionStyleCompat
+import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
 import app.infinity.mpvz.ui.player.LibassSubtitleSurfaceView
 import app.infinity.mpvz.preferences.MpvFlowComputeApi
@@ -135,6 +136,18 @@ data class NativeTrack(
   val codecs: String? = null,
   val channelCount: Int = 0,
 )
+
+internal fun media3ContentAspectRatio(customRatio: Double?): Float =
+  customRatio?.toFloat()?.takeIf { it.isFinite() && it > 0f } ?: 0f
+
+internal fun media3NaturalContentAspectRatio(videoSize: VideoSize?): Float? {
+  if (videoSize == null || videoSize.width <= 0 || videoSize.height <= 0) return null
+  val ratio = videoSize.width.toFloat() * videoSize.pixelWidthHeightRatio / videoSize.height
+  return ratio.takeIf { it.isFinite() && it > 0f }
+}
+
+internal fun media3OutputAspect(aspect: VideoAspect, customRatio: Float?): VideoAspect =
+  if (customRatio != null && customRatio.isFinite() && customRatio > 0f) VideoAspect.Stretch else aspect
 
 internal fun media3ResizeModeForAspect(aspect: VideoAspect): Int = when (aspect) {
   VideoAspect.Fit -> androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_FIT
@@ -322,6 +335,7 @@ class NativeMedia3Engine(
     .build()
   private var attachedView: PlayerView? = null
   private val videoAspect = Media3AspectModeState()
+  private var customAspectRatio: Float? = null
   private var subtitleOverlay: LibassSubtitleSurfaceView? = null
   private var libassRenderer: LibassSubtitleRenderer? = null
   private val externalAssEnabled = mutableMapOf<String, Boolean>()
@@ -525,6 +539,12 @@ class NativeMedia3Engine(
     override fun onVideoSizeChanged(videoSize: VideoSize) {
       currentVideoSize = videoSize
       publishPlaybackSnapshot()
+      // PlayerView's own component listener also responds to this event and writes the source
+      // ratio into exo_content_frame. Run after it so a user-selected custom viewport remains
+      // authoritative; for normal modes restore the actual cached source ratio rather than 0f.
+      attachedView?.let { view ->
+        view.post { if (attachedView === view) applyVideoViewport(view) }
+      }
     }
 
     override fun onRenderedFirstFrame() {
@@ -645,11 +665,17 @@ class NativeMedia3Engine(
     // a media layer so the standalone libass bitmap remains visible above the video surface.
     (view.videoSurfaceView as? SurfaceView)?.setZOrderMediaOverlay(true)
     view.useController = false
-    view.resizeMode = videoAspect.resizeMode()
+    applyVideoViewport(view)
     view.player = player
-    media3FlowSink?.setVideoAspect(videoAspect.aspect())
+    media3FlowSink?.setVideoAspect(media3OutputAspect(videoAspect.aspect(), customAspectRatio))
     configureSubtitleView()
-    view.post { if (attachedView === view) configureSubtitleView() }
+    view.post {
+      if (attachedView !== view) return@post
+      // PlayerView may apply its natural ratio while binding the player. Reapply persisted policy
+      // after that callback, including across Activity recreation/view reattachment.
+      applyVideoViewport(view)
+      configureSubtitleView()
+    }
     startTimelineUpdates()
   }
 
@@ -658,7 +684,7 @@ class NativeMedia3Engine(
     val view = attachedView ?: return
     view.post {
       if (attachedView !== view) return@post
-      view.resizeMode = videoAspect.resizeMode()
+      applyVideoViewport(view)
       view.requestLayout()
       view.videoSurfaceView?.requestLayout()
       view.invalidate()
@@ -668,8 +694,39 @@ class NativeMedia3Engine(
 
   fun setVideoAspect(aspect: VideoAspect) {
     videoAspect.select(aspect)
+    customAspectRatio = null
     media3FlowSink?.setVideoAspect(aspect)
-    attachedView?.resizeMode = videoAspect.resizeMode()
+    attachedView?.let(::applyVideoViewport)
+  }
+
+  /** Apply a user-selected display ratio to Media3's actual content viewport. */
+  fun setCustomAspectRatio(ratio: Double) {
+    val value = media3ContentAspectRatio(ratio).takeIf { it > 0f }
+    if (value == null) {
+      setVideoAspect(VideoAspect.Fit)
+      return
+    }
+    customAspectRatio = value
+    videoAspect.select(VideoAspect.Fit)
+    // The content frame already defines the requested ratio; fitting again inside it would
+    // preserve the source ratio and make this control appear ineffective with Flow enabled.
+    media3FlowSink?.setVideoAspect(media3OutputAspect(videoAspect.aspect(), customAspectRatio))
+    attachedView?.let(::applyVideoViewport)
+  }
+
+  private fun applyVideoViewport(view: PlayerView) {
+    view.resizeMode = if (customAspectRatio != null) {
+      androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_FIT
+    } else {
+      videoAspect.resizeMode()
+    }
+    val content = view.findViewById<AspectRatioFrameLayout>(
+      androidx.media3.ui.R.id.exo_content_frame,
+    )
+    val ratio = customAspectRatio ?: media3NaturalContentAspectRatio(currentVideoSize)
+    // A zero ratio disables AspectRatioFrameLayout's natural measurement. Only write a ratio when
+    // one is known; otherwise let PlayerView keep its own pending video-size behavior intact.
+    ratio?.let { content?.setAspectRatio(it) }
   }
 
   fun setZoom(zoom: Float) {

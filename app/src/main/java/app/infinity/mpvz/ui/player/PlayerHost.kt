@@ -109,6 +109,8 @@ interface PlayerHost {
 
   fun nativeSetVideoAspect(aspect: VideoAspect) {}
 
+  fun nativeSetCustomAspectRatio(ratio: Double) {}
+
   /** Called after a user-facing aspect change, allowing the host to persist the current item's state. */
   fun onVideoAspectChanged() {}
 
