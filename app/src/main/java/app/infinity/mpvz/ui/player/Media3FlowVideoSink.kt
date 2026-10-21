@@ -46,6 +46,8 @@ import java.util.concurrent.atomic.AtomicLong
 import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.roundToLong
+import kotlin.coroutines.resume
+import kotlinx.coroutines.suspendCancellableCoroutine
 
 internal class Media3FlowSdrOutputException(message: String) : IllegalStateException(message)
 
@@ -135,8 +137,32 @@ class Media3FlowVideoSink(
     (appContext.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE) != 0
   private val logTag = "Mpv∞-Media3Flow"
   private val displayHz = displayRefreshRate(appContext)
-  private val targetFps = effectiveMpvFlowTargetFps(requestedTargetFps, displayHz)
+  @Volatile private var targetFps = effectiveMpvFlowTargetFps(requestedTargetFps, displayHz)
+  @Volatile private var interpolationEnabled = true
   private val quality = requestedQuality.coerceIn(0, 100)
+  /** Apply runtime controls in GL order without blocking the UI thread. */
+  suspend fun applyRuntimeInterpolation(enabled: Boolean, requestedTargetFps: Int): Boolean =
+    suspendCancellableCoroutine { continuation ->
+      val posted = glHandler.post {
+        if (!continuation.isActive) return@post
+        if (disposed || !preflightAvailable || !flowAvailable) {
+          continuation.resume(false)
+          return@post
+        }
+        try {
+          interpolationEnabled = enabled
+          targetFps = effectiveMpvFlowTargetFps(requestedTargetFps, displayHz)
+          setOutputFrameRate()
+          publishDiagnostics(if (enabled) lastState else "disabled", lastBypassReason, force = true)
+          continuation.resume(true)
+        } catch (error: Throwable) {
+          Log.w(logTag, "Unable to apply live interpolation controls", error)
+          continuation.resume(false)
+        }
+      }
+      if (!posted) continuation.resume(false)
+      continuation.invokeOnCancellation { /* queued work checks isActive before mutating */ }
+    }
   private val maxDimension = Media3FlowAnalysisPolicy.maxDimension(targetFps, quality)
   private val searchRadius = Media3FlowAnalysisPolicy.searchRadius(targetFps, quality)
   private val glThread = HandlerThread("Media3Flow-GLES").apply { start() }
@@ -1842,7 +1868,7 @@ class Media3FlowVideoSink(
       Media3FlowCadence.motionAdmissionProxyMs(it.motionEstimateSubmitMs, null)
     } ?: Float.POSITIVE_INFINITY
     val nowNs = System.nanoTime()
-    val synthesize = bracket != null && pair != null &&
+    val synthesize = interpolationEnabled && bracket != null && pair != null &&
       Media3FlowCadence.needsInterpolation(deltaUs, targetFps, speed) &&
       motionAdmissionProxyMs < deltaUs / 1000f * ANALYSIS_DEADLINE_RESERVE
     lastOutputCallbackLatenessMs = frameTimeNanos?.let {
@@ -3569,7 +3595,7 @@ class Media3FlowVideoSink(
     } else 0f
     val presentationFailures = presentationFailureCounters.snapshot()
     val diagnostics = Media3FlowDiagnostics(
-      enabled = true,
+      enabled = interpolationEnabled,
       capturedSourceFps = Media3FlowCadence.estimateSourceFps(ptsHistory.toList()),
       capturedPtsSampleCount = ptsHistory.size,
       outputFps = outputFps,

@@ -58,6 +58,8 @@ import androidx.compose.ui.unit.dp
 @Stable
 private class BrowserScene(val layer: GraphicsLayer) {
   var stripBounds by mutableStateOf(Rect.Zero)
+  // Render-thread reentrancy guard, not snapshot state: drawing must not invalidate itself.
+  var isRecording = false
 }
 
 private data class BrowserGlassCapabilities(val capture: Boolean, val refraction: Boolean, val motion: Boolean)
@@ -98,7 +100,8 @@ fun BrowserGlassSceneHost(enabled: Boolean, content: @Composable () -> Unit) {
   }
   val allowed = enabled && !lowRam && !powerSave && thermal < 3
   val layer = rememberGraphicsLayer()
-  val scene = remember(layer) { BrowserScene(layer) }
+  // Nested hosts inherit the root display-list instead of shadowing it.
+  val scene = LocalBrowserScene.current ?: remember(layer) { BrowserScene(layer) }
   CompositionLocalProvider(
     LocalBrowserScene provides scene.takeIf { allowed },
     LocalBrowserCapabilities provides BrowserGlassCapabilities(allowed, allowed && motion && Build.VERSION.SDK_INT >= 33, motion && !lowRam && !powerSave && thermal < 3),
@@ -116,13 +119,24 @@ fun Modifier.browserGlassSceneSource(): Modifier {
     val top = (coordinates.size.height - height).toFloat()
     scene.stripBounds = Rect(origin.x, origin.y + top, origin.x + coordinates.size.width, origin.y + coordinates.size.height)
   }.drawWithContent {
+    // BrowserGlassSurface may be inside this source. Never record a source
+    // while it is already being recorded, or the GraphicsLayer capture cycles.
+    if (scene.isRecording) {
+      drawContent()
+      return@drawWithContent
+    }
     val stripHeight = size.height.toInt().coerceAtMost(BrowserGlassStripHeight)
     if (size.width > 0f && stripHeight > 0) {
       val top = size.height - stripHeight
-      scene.layer.record(size = IntSize(size.width.toInt(), stripHeight)) {
-        clipRect {
-          translate(top = -top) { this@drawWithContent.drawContent() }
+      scene.isRecording = true
+      try {
+        scene.layer.record(size = IntSize(size.width.toInt(), stripHeight)) {
+          clipRect {
+            translate(top = -top) { this@drawWithContent.drawContent() }
+          }
         }
+      } finally {
+        scene.isRecording = false
       }
     }
     drawContent()
@@ -187,6 +201,8 @@ fun BrowserGlassSurface(
           Color.White.copy(alpha = 0.10f + glow * 0.35f),
         ))
         onDrawBehind {
+          // A source must never sample itself through a descendant lens.
+          if (scene?.isRecording == true) return@onDrawBehind
           val bounds = scene?.stripBounds
           val hasScene = scene != null && bounds != null && bounds.width > 0f && bounds.height > 0f
           if (hasScene) {

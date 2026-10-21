@@ -727,6 +727,10 @@ fun FileSystemBrowserScreen(path: String? = null) {
           ) {
             if (!quickPlayFabDirect) {
               FloatingActionButtonMenuItem(
+                modifier = Modifier.settingsGlassSurface(cornerRadius = 20.dp),
+                containerColor = settingsGlassContainerColor(MaterialTheme.colorScheme.surfaceContainerHigh),
+                contentColor = MaterialTheme.colorScheme.onSurface,
+
                 onClick = {
                   isFabExpanded.value = false
                   filePicker.launch(arrayOf("video/*"))
@@ -742,6 +746,10 @@ fun FileSystemBrowserScreen(path: String? = null) {
               )
 
               FloatingActionButtonMenuItem(
+                modifier = Modifier.settingsGlassSurface(cornerRadius = 20.dp),
+                containerColor = settingsGlassContainerColor(MaterialTheme.colorScheme.surfaceContainerHigh),
+                contentColor = MaterialTheme.colorScheme.onSurface,
+
                 onClick = {
                   isFabExpanded.value = false
                   coroutineScope.launch {
@@ -767,6 +775,10 @@ fun FileSystemBrowserScreen(path: String? = null) {
               )
 
               FloatingActionButtonMenuItem(
+                modifier = Modifier.settingsGlassSurface(cornerRadius = 20.dp),
+                containerColor = settingsGlassContainerColor(MaterialTheme.colorScheme.surfaceContainerHigh),
+                contentColor = MaterialTheme.colorScheme.onSurface,
+
                 onClick = {
                   isFabExpanded.value = false
                   showLinkDialog.value = true

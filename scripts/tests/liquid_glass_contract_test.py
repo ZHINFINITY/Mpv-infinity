@@ -36,6 +36,22 @@ class LiquidGlassContracts(unittest.TestCase):
         self.assertNotIn("uv * (imageSize - 1.0)", source)
         self.assertLess(source.index("val shader = remember {"), source.index(".drawWithCache {"))
 
+    def test_renderer_uses_native_rounded_bevel_normals_and_directional_optics(self):
+        source = (JAVA / "ui/theme/LiquidGlassBackdrop.kt").read_text()
+        policy = (JAVA / "ui/theme/GlassBevelPolicy.kt").read_text()
+        self.assertIn("GlassBevelPolicy.params(size.width, size.height, radius", source)
+        for uniform in ("setFloatUniform(\"bevel\"", "setFloatUniform(\"light\"",
+                        "setFloatUniform(\"specular\"", "setFloatUniform(\"fresnel\""):
+            self.assertIn(uniform, source)
+        self.assertIn("float bevel", source)
+        self.assertIn("float2 normal", source)
+        self.assertIn("directionalReflection", source)
+        self.assertIn("pow(clamp(grazing", source)
+        # Five samples are used; the sixth occurrence is the helper declaration.
+        self.assertEqual(6, source.count("sampleAt("))
+        self.assertIn("fun edgeNormal", policy)
+        self.assertIn("fun params", policy)
+
     def test_frost_is_shared_bounded_off_thread_and_precedes_publication(self):
         source = (JAVA / "ui/theme/LiquidGlassBackdrop.kt").read_text()
         self.assertEqual(1, source.count("GlassFrostPolicy.frostArgb("))
@@ -113,7 +129,7 @@ class LiquidGlassContracts(unittest.TestCase):
 
     def test_audio_backdrops_use_only_palette_colors_not_artwork_or_fake_animations(self):
         audio = (JAVA / "ui/player/controls/AudioPlayerControls.kt").read_text()
-        mini = (JAVA / "ui/browser/components/AudioMiniPlayer.kt").read_text()
+        mini = (JAVA / "ui/browser/components/MiniPlayer.kt").read_text()
         scene = (JAVA / "ui/player/controls/AudioPaletteGlassScene.kt").read_text()
         self.assertIn("AudioPaletteGlassScene", audio)
         self.assertIn("topArgb = visualizerPalette.primary", audio)
@@ -125,6 +141,8 @@ class LiquidGlassContracts(unittest.TestCase):
         self.assertIn("albumArtBitmap", audio)
         self.assertEqual(2, audio.count("if (isAudiobook) audiobookModeButtons() else {"))
         self.assertIn("artworkUri", mini)
+        self.assertIn("settingsGlassSurface(cornerRadius = 20.dp)", mini)
+        self.assertNotIn("backdrop =", mini)
         self.assertNotIn("repeat(18)", mini)
 
     def test_native_control_optics_do_not_cover_touch_boxes(self):

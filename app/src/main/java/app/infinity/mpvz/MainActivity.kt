@@ -78,10 +78,13 @@ import app.infinity.mpvz.presentation.Screen
 import app.infinity.mpvz.ui.browser.MainScreen
 import app.infinity.mpvz.ui.browser.NavigationBarState
 import app.infinity.mpvz.ui.browser.components.MiniPlayer
+import app.infinity.mpvz.ui.player.controls.AudioPaletteGlassScene
 import app.infinity.mpvz.ui.player.NavigationAnimStyle
 import app.infinity.mpvz.ui.theme.DarkMode
 import app.infinity.mpvz.ui.theme.MpvInfinityTheme
 import app.infinity.mpvz.ui.theme.rememberThemeTransitionState
+import app.infinity.mpvz.ui.theme.BrowserGlassSceneHost
+import app.infinity.mpvz.ui.theme.browserGlassSceneSource
 import android.view.SurfaceHolder
 import android.view.SurfaceView
 import androidx.compose.foundation.background
@@ -572,6 +575,7 @@ class MainActivity : AppCompatActivity() {
 
     val appNavStyle by playerPreferences.appNavStyle.collectAsState()
     val animSpeed by playerPreferences.animationSpeed.collectAsState()
+    val liquidGlassSurfacesForBrowser by appearancePreferences.liquidGlassSurfaces.collectAsState()
 
     val context = LocalContext.current
     val currentVersion =
@@ -620,7 +624,14 @@ class MainActivity : AppCompatActivity() {
       }
 
       if (hasNavEntries) {
-        Box(modifier = Modifier.fillMaxSize()) {
+        BrowserGlassSceneHost(enabled = liquidGlassSurfacesForBrowser) {
+          AudioPaletteGlassScene(
+            topArgb = MaterialTheme.colorScheme.primaryContainer.toArgb(),
+            bottomArgb = MaterialTheme.colorScheme.secondaryContainer.toArgb(),
+            enabled = liquidGlassSurfacesForBrowser,
+            modifier = Modifier.fillMaxSize(),
+          ) {
+          Box(modifier = Modifier.fillMaxSize()) {
           NavDisplay(
             modifier = Modifier.fillMaxSize(),
             backStack = typedBackstack,
@@ -632,7 +643,9 @@ class MainActivity : AppCompatActivity() {
             entryProvider = { route ->
               NavEntry(route) {
                 Surface(
-                  modifier = Modifier.fillMaxSize(),
+                  modifier = Modifier.fillMaxSize().then(
+                    if (route != MainScreen) Modifier.browserGlassSceneSource() else Modifier,
+                  ),
                   color = MaterialTheme.colorScheme.background,
                 ) {
                   route.Content()
@@ -711,6 +724,8 @@ class MainActivity : AppCompatActivity() {
             }
 
           MiniPlayer(modifier = miniPlayerModifier)
+          }
+          }
         }
       }
 

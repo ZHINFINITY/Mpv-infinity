@@ -449,18 +449,37 @@ class PlayerActivity :
   /** Apply newly written interpolation controls to the renderer already playing this item. */
   fun applyInterpolationPreferencesFromControls() {
     if (!ownsPlaybackSession() || isFinishing || isDestroyed) return
-    // The MPVFlow and NativeMedia3 flow constructors own their renderer/sink configuration;
-    // this build exposes no verified live reconfiguration API. Never fake success by tearing
-    // down the active session: the preference is saved and takes effect on the next item/load.
-    when (InterpolationRuntimeApplyPolicy.decision(hasLiveReconfigureApi = false, playbackActive = true)) {
-      InterpolationRuntimeApplyPolicy.Decision.APPLY_LIVE -> Unit // Reserved for a verified API.
-      InterpolationRuntimeApplyPolicy.Decision.PENDING_UNTIL_NEXT_PLAYBACK -> {
-        Log.i(TAG, "Interpolation preference saved; live playback unchanged until next playback load")
-        Toast.makeText(this, R.string.toast_interpolation_pending_next_playback, Toast.LENGTH_LONG).show()
+    val wasNative = isNativeEngineActive()
+    val backend = if (wasNative) nativeEngine else null
+    val enabled = decoderPreferences.mpvFlowFrameInterpolation.get()
+    val targetFps = decoderPreferences.mpvFlowTargetFps.get()
+    lifecycleScope.launch {
+      val liveApplied = backend != null && isNativeEngineActive() && nativeEngine === backend &&
+        backend.applyInterpolationRuntime(enabled = enabled, targetFps = targetFps)
+      val decision = InterpolationRuntimeApplyPolicy.decision(liveApplied, playbackActive = true)
+      if (!ownsPlaybackSession() || isFinishing || isDestroyed || wasNative != isNativeEngineActive() ||
+        (wasNative && nativeEngine !== backend)) return@launch
+      if (decision == InterpolationRuntimeApplyPolicy.Decision.PENDING_UNTIL_NEXT_PLAYBACK) {
+        if (!ownsPlaybackSession() || isFinishing || isDestroyed) return@launch
+        val nativeBackend = isNativeEngineActive()
+        val reason = if (nativeBackend) "native_flow_sink_unavailable" else "mpv_flow_has_no_safe_live_option_api"
+        Log.i(TAG, "Interpolation preference saved; deferred reason=$reason")
+        Toast.makeText(
+          this@PlayerActivity,
+          if (nativeBackend) R.string.toast_interpolation_pending_native_sink
+          else R.string.toast_interpolation_pending_next_playback_reason,
+          Toast.LENGTH_LONG,
+        ).show()
+        return@launch
+      }
+      if (ownsPlaybackSession() && !isFinishing && !isDestroyed &&
+        activeEngineMode == PlaybackEngineMode.NATIVE && nativeEngine === backend
+      ) {
+        Log.i(TAG, "Native interpolation controls applied to the current playback")
+        Toast.makeText(this@PlayerActivity, R.string.toast_interpolation_applied_live, Toast.LENGTH_SHORT).show()
       }
     }
   }
-
   private fun handleNativePlaybackEnded() {
     if (!isNativeEngineActive()) return
     val autoplay = playerPreferences.autoplayNextVideo.get()

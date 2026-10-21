@@ -346,6 +346,12 @@ fun Modifier.liquidGlassPane(
               shader.setFloatUniform("sceneSize", scene.boundsInWindow.width, scene.boundsInWindow.height)
               shader.setFloatUniform("imageSize", scene.image.width.toFloat(), scene.image.height.toFloat())
               shader.setFloatUniform("radius", radius)
+              val bevel = GlassBevelPolicy.params(size.width, size.height, radius,
+                tuning.depth, tuning.refraction, reducedMotion, highContrast)
+              shader.setFloatUniform("bevel", bevel.bevel)
+              shader.setFloatUniform("light", bevel.normalX, bevel.normalY)
+              shader.setFloatUniform("specular", bevel.specular)
+              shader.setFloatUniform("fresnel", bevel.fresnel)
               val lensAllowed = scene.refractionEnabled && size.minDimension <= 128.dp.toPx() && size.maxDimension <= 512.dp.toPx()
               shader.setFloatUniform("strength", if (lensAllowed) 4.dp.toPx() *
                 GlassSurfacePolicy.refractionStrength(tuning.refraction, reducedMotion, highContrast) else 0f)
@@ -395,6 +401,10 @@ uniform float2 sceneOrigin;
 uniform float2 sceneSize;
 uniform float2 imageSize;
 uniform float radius;
+uniform float bevel;
+uniform float2 light;
+uniform float specular;
+uniform float fresnel;
 uniform float strength;
 uniform float frost;
 half4 sampleAt(float2 windowPosition) {
@@ -409,15 +419,21 @@ half4 main(float2 p) {
   float2 nearest = clamp(delta, -core, core);
   float2 radial = delta - nearest;
   float radialLength = length(radial);
-  float distanceToEdge = radius - radialLength;
+  // Rounded-rectangle SDF supplies one coherent body normal at corners and straight edges.
   float2 normal = radial / max(radialLength, 0.001);
-  float edge = 1.0 - smoothstep(0.0, max(radius, 1.0), max(distanceToEdge, 0.0));
-  float2 bent = origin + p - normal * strength * edge * edge;
+  float edgeDistance = radius - radialLength;
+  float bevelBand = 1.0 - smoothstep(0.0, max(bevel, 0.001), max(edgeDistance, 0.0));
+  float grazing = 1.0 - abs(dot(normal, light));
+  float facing = max(dot(normal, light), 0.0);
+  float fresnelTerm = pow(clamp(grazing, 0.0, 1.0), 3.0) * fresnel;
+  float directionalReflection = (facing * specular + fresnelTerm) * bevelBand;
+  float2 bent = origin + p - normal * strength * bevelBand * bevelBand;
+  bent += light * strength * 0.35 * directionalReflection;
   float2 blurX = float2(frost, 0.0);
   float2 blurY = float2(0.0, frost);
   half4 color = sampleAt(bent) * 0.40;
   color += (sampleAt(bent + blurX) + sampleAt(bent - blurX) +
             sampleAt(bent + blurY) + sampleAt(bent - blurY)) * 0.15;
-  return half4(color.rgb, 1.0);
+  return half4(color.rgb + directionalReflection * 0.12, 1.0);
 }
 """

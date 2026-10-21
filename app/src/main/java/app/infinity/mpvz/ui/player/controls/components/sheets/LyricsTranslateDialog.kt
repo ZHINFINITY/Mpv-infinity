@@ -125,12 +125,13 @@ fun LyricsTranslateDialog(
         Surface(
           modifier = Modifier
             .fillMaxWidth()
+            .playerGlassOverlay(12.dp)
             .clip(RoundedCornerShape(12.dp))
             .clickable {
               viewModel.showOriginalLyrics()
               onDismiss()
             },
-          color = if (!state.isTranslationActive) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant,
+          color = androidx.compose.ui.graphics.Color.Transparent,
           shape = RoundedCornerShape(12.dp),
         ) {
           Row(

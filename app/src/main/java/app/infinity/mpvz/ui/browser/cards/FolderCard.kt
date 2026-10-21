@@ -54,6 +54,7 @@ import app.infinity.mpvz.ui.icons.AppIcon
 import app.infinity.mpvz.ui.icons.Icon
 import app.infinity.mpvz.ui.icons.Icons
 import app.infinity.mpvz.ui.theme.AppShapeScale
+import app.infinity.mpvz.ui.theme.BrowserGlassSurface
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.koin.compose.koinInject
@@ -93,6 +94,7 @@ fun FolderCard(
   val showFolderThumbnails by browserPreferences.showFolderThumbnails.collectAsState()
   val thumbnailQuality by browserPreferences.thumbnailQuality.collectAsState()
   val includeAudio by browserPreferences.includeAudioBrowser.collectAsState()
+  val liquidGlass by appearancePreferences.liquidGlassSurfaces.collectAsState()
   val manualGridColumnsEnabled by browserPreferences.manualGridColumnsEnabled.collectAsState()
   val folderGridColumnsPortrait by browserPreferences.folderGridColumnsPortrait.collectAsState()
   val folderGridColumnsLandscape by browserPreferences.folderGridColumnsLandscape.collectAsState()
@@ -207,6 +209,18 @@ fun FolderCard(
     colors = CardDefaults.cardColors(containerColor = Color.Transparent),
   ) {
     Box(modifier = Modifier.fillMaxWidth()) {
+      // Folder cards are rendered by nested destinations too. Keep the ambient
+      // pane inside the card clip so entering a folder cannot lose the browser
+      // scene provider; artwork remains in its own bounded aspect-ratio box.
+      if (liquidGlass) {
+        BrowserGlassSurface(
+          modifier = Modifier.matchParentSize(),
+          enabled = true,
+          opacity = 0.82f,
+          highlight = 0.18f,
+          cornerRadius = 20.dp,
+        )
+      }
       if (isSelected || isActive) {
         Box(
           modifier =

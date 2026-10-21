@@ -27,6 +27,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -69,8 +70,11 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.boundsInWindow
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntOffset
@@ -91,6 +95,10 @@ import app.infinity.mpvz.ui.player.PlayerActivity
 import app.infinity.mpvz.ui.player.TrackNode
 import app.infinity.mpvz.ui.player.declaredMediaKind
 import app.infinity.mpvz.ui.player.toObject
+import app.infinity.mpvz.ui.player.controls.MiniPlayerTransitionAnchor
+import app.infinity.mpvz.ui.preferences.components.settingsGlassContainerColor
+import app.infinity.mpvz.ui.preferences.components.settingsGlassEnabled
+import app.infinity.mpvz.ui.preferences.components.settingsGlassSurface
 import app.infinity.mpvz.ui.utils.LocalBackStack
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -208,11 +216,14 @@ private fun MiniPlayerContent(
     )
 
   val coroutineScope = rememberCoroutineScope()
+  val hostView = LocalView.current
   var offsetX by remember { mutableFloatStateOf(0f) }
+  var verticalDrag by remember { mutableFloatStateOf(0f) }
   val density = LocalDensity.current
   val dismissThresholdPx = with(density) { 100.dp.toPx() }
+  val expandThresholdPx = with(density) { 72.dp.toPx() }
 
-  val launchPlayer = remember(context) {
+  val launchPlayer = remember(context, isAudioOnlyItem) {
     {
       val intent = Intent(context, PlayerActivity::class.java).apply {
         action = MediaPlaybackService.ACTION_OPEN_PLAYER
@@ -243,9 +254,18 @@ private fun MiniPlayerContent(
     }
   }
 
+  val glassEnabled = settingsGlassEnabled()
   Surface(
     modifier = Modifier
       .offset { IntOffset(offsetX.roundToInt(), 0) }
+      .onGloballyPositioned { coordinates ->
+        if (isAudioOnlyItem) {
+          val bounds = coordinates.boundsInWindow()
+          MiniPlayerTransitionAnchor.publish(
+            bounds.left, bounds.top, bounds.width, bounds.height, hostView.width.toFloat(),
+          )
+        }
+      }
       .pointerInput(Unit) {
         detectHorizontalDragGestures(
           onDragEnd = {
@@ -271,11 +291,26 @@ private fun MiniPlayerContent(
           },
         )
       }
+      .pointerInput(Unit) {
+        detectVerticalDragGestures(
+          onDragStart = { verticalDrag = 0f },
+          onVerticalDrag = { change, dragAmount ->
+            verticalDrag += dragAmount
+            change.consume()
+          },
+          onDragEnd = {
+            if (verticalDrag < -expandThresholdPx) launchPlayer()
+            verticalDrag = 0f
+          },
+          onDragCancel = { verticalDrag = 0f },
+        )
+      }
       .clip(RoundedCornerShape(20.dp))
+      .settingsGlassSurface(cornerRadius = 20.dp)
       .clickable { launchPlayer() },
-    color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.96f),
-    tonalElevation = 8.dp,
-    shadowElevation = 10.dp,
+    color = settingsGlassContainerColor(MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.96f)),
+    tonalElevation = if (glassEnabled) 0.dp else 8.dp,
+    shadowElevation = if (glassEnabled) 0.dp else 10.dp,
   ) {
     val primaryContainerColor = MaterialTheme.colorScheme.primaryContainer
 

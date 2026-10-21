@@ -8,6 +8,7 @@ package app.infinity.mpvz.ui.browser.music
 
 import app.infinity.mpvz.ui.browser.fab.quickPlayFabContainerColor
 import app.infinity.mpvz.ui.preferences.components.settingsGlassSurface
+import app.infinity.mpvz.ui.preferences.components.settingsGlassContainerColor
 import android.graphics.BitmapFactory
 import android.net.Uri
 import android.text.format.DateUtils
@@ -711,6 +712,10 @@ fun MusicLibraryContent(
         ) {
           if (!quickPlayFabDirect) {
             FloatingActionButtonMenuItem(
+              modifier = Modifier.settingsGlassSurface(cornerRadius = 20.dp),
+              containerColor = settingsGlassContainerColor(MaterialTheme.colorScheme.surfaceContainerHigh),
+              contentColor = MaterialTheme.colorScheme.onSurface,
+
               onClick = {
                 isFabExpanded.value = false
                 musicViewModel.playAllSongs(context, songs, shuffle = false)
@@ -719,6 +724,10 @@ fun MusicLibraryContent(
               text = { Text("Play All Songs") },
             )
             FloatingActionButtonMenuItem(
+              modifier = Modifier.settingsGlassSurface(cornerRadius = 20.dp),
+              containerColor = settingsGlassContainerColor(MaterialTheme.colorScheme.surfaceContainerHigh),
+              contentColor = MaterialTheme.colorScheme.onSurface,
+
               onClick = {
                 isFabExpanded.value = false
                 musicViewModel.playAllSongs(context, songs, shuffle = true)

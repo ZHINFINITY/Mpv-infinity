@@ -692,6 +692,10 @@ class NativeMedia3Engine(
     }
   }
 
+  /** Applies interpolation controls to the existing Native session without reload or seek. */
+  suspend fun applyInterpolationRuntime(enabled: Boolean, targetFps: Int): Boolean =
+    media3FlowSink?.applyRuntimeInterpolation(enabled, targetFps) == true
+
   fun setVideoAspect(aspect: VideoAspect) {
     videoAspect.select(aspect)
     customAspectRatio = null

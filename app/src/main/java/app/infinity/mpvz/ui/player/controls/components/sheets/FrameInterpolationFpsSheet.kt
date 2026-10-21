@@ -6,6 +6,8 @@ package app.infinity.mpvz.ui.player.controls.components.sheets
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -37,7 +39,7 @@ fun FrameInterpolationFpsSheet(activity: PlayerActivity, onDismissRequest: () ->
   val available = interpolationControlsAvailable(activity)
   PlayerSheet(onDismissRequest = onDismissRequest) {
     Column(
-      modifier = Modifier.fillMaxWidth().selectableGroup().padding(vertical = 12.dp),
+      modifier = Modifier.verticalScroll(rememberScrollState()).fillMaxWidth().selectableGroup().padding(vertical = 12.dp),
       verticalArrangement = Arrangement.spacedBy(2.dp),
     ) {
       Text(

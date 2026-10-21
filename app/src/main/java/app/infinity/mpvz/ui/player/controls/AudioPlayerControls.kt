@@ -103,6 +103,7 @@ import androidx.compose.runtime.produceState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.delay
 import androidx.palette.graphics.Palette
 import app.infinity.mpvz.database.repository.PlaylistRepository
 import app.infinity.mpvz.preferences.AdvancedPreferences
@@ -149,6 +150,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.foundation.layout.offset
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.util.VelocityTracker
 import androidx.compose.ui.unit.IntOffset
 import androidx.core.content.ContextCompat
 import androidx.core.graphics.ColorUtils
@@ -587,6 +589,7 @@ fun AudioPlayerControls(
   onOpenSheet: (Sheets) -> Unit,
   onOpenPanel: (Panels) -> Unit,
   modifier: Modifier = Modifier,
+  onGlassPaletteChanged: (Int, Int) -> Unit = { _, _ -> },
 ) {
   val speedConfigOwned = isMpvOptionOwnedByConfig("speed")
   val audioFiltersConfigOwned = isMpvOptionOwnedByConfig("af")
@@ -959,6 +962,9 @@ fun AudioPlayerControls(
         }
       }
   }
+  LaunchedEffect(visualizerPalette.primary, visualizerPalette.secondary) {
+    onGlassPaletteChanged(visualizerPalette.primary, visualizerPalette.secondary)
+  }
 
    // MPV's pause property is not authoritative after a native Media3 handoff. Use the native
    // snapshot while that engine owns the item, otherwise fall back to MPV's transport state.
@@ -1162,13 +1168,91 @@ fun AudioPlayerControls(
   val standbyVisualizerBoundary = isStandbyActive && isPortrait && showVisualizer
   val visualizerUsesFullTopAndSides = edgeToEdgeVisualizer || standbyVisualizerBoundary
   val controlsSidePadding = if (edgeToEdgeVisualizer) 16.dp else 0.dp
+  // Full player and browser mini-player are separate Activity surfaces. Keep the
+  // gesture presentation-only and hand off through the existing back path after
+  // the settled animation; PlaybackSession owns audio, queue, artwork and item.
+  var miniGesture by remember { mutableStateOf(MiniPlayerGestureState()) }
+  var settleTarget by remember { mutableStateOf<Float?>(null) }
+  var settleStart by remember { mutableStateOf(0f) }
+  var settleGeneration by remember { mutableIntStateOf(0) }
+  var playerOrigin by remember { mutableStateOf(androidx.compose.ui.geometry.Offset.Zero) }
+  val settleAnimation = remember { Animatable(0f) }
+  val currentOnBackPress by androidx.compose.runtime.rememberUpdatedState(onBackPress)
+  val gesturePresentationModifier = modifier
+    .fillMaxSize()
+    .onGloballyPositioned {
+      if (settleTarget == null && miniGesture.progress == 0f) {
+        playerOrigin = it.localToWindow(androidx.compose.ui.geometry.Offset.Zero)
+      }
+    }
+    .pointerInput(Unit) {
+      val velocityTracker = VelocityTracker()
+      detectVerticalDragGestures(
+        onDragStart = {
+          velocityTracker.resetTracking()
+          // A new finger owns the presentation immediately, including a reversal mid-settle.
+          val progress = if (settleTarget != null) settleAnimation.value else miniGesture.progress
+          settleTarget = null
+          settleGeneration++
+          miniGesture = miniGesture.copy(progress = progress)
+        },
+        onVerticalDrag = { change, dragAmount ->
+          velocityTracker.addPosition(change.uptimeMillis, change.position)
+          if (dragAmount > 0f || miniGesture.progress > 0f) {
+            change.consume()
+            miniGesture = MiniPlayerGesturePolicy.drag(miniGesture, dragAmount, size.height.toFloat())
+          }
+        },
+        onDragEnd = {
+          val velocityY = runCatching {
+            // Compose's tracker reports px/sec, preserving the tested velocity policy.
+            velocityTracker.calculateVelocity().y
+          }.getOrDefault(0f)
+          val settled = MiniPlayerGesturePolicy.settle(miniGesture, velocityY)
+          settleStart = miniGesture.progress
+          miniGesture = miniGesture.copy(settled = settled.settled)
+          settleTarget = settled.progress
+          settleGeneration++
+        },
+        onDragCancel = {
+          settleStart = miniGesture.progress
+          settleTarget = 0f
+          settleGeneration++
+        },
+      )
+    }
+    .graphicsLayer {
+      // Read gesture progress here, not in composition: dragging updates the layer only.
+      val progress = (if (settleTarget == null) miniGesture.progress
+        else if (settleAnimation.isRunning) settleAnimation.value else settleStart).coerceIn(0f, 1f)
+      val target = MiniPlayerTransitionAnchor.forViewport(size.width)
+      val transform = MiniPlayerGesturePolicy.transform(progress, size.width, size.height,
+        playerOrigin.x, playerOrigin.y, target)
+      transformOrigin = androidx.compose.ui.graphics.TransformOrigin(0f, 0f)
+      translationX = transform.x
+      translationY = transform.y
+      scaleX = transform.scaleX
+      scaleY = transform.scaleY
+      alpha = 1f - (0.20f * progress)
+    }
+  LaunchedEffect(settleGeneration) {
+    val generation = settleGeneration
+    val target = settleTarget ?: return@LaunchedEffect
+    settleAnimation.snapTo(settleStart)
+    settleAnimation.animateTo(target, animationSpec = tween(durationMillis = 220))
+    if (settleGeneration == generation && settleTarget == target) {
+      miniGesture = if (target == 0f) MiniPlayerGesturePolicy.cancel()
+        else MiniPlayerGestureState(1f, MiniPlayerSettle.Mini)
+      if (target == 1f) currentOnBackPress()
+      settleTarget = null
+    }
+  }
   AudioPaletteGlassScene(
     topArgb = visualizerPalette.primary,
     bottomArgb = visualizerPalette.secondary,
     enabled = liquidGlassSurfaces,
     modifier =
-      modifier
-        .fillMaxSize()
+      gesturePresentationModifier
         .background(MaterialTheme.colorScheme.surface)
         .drawWithCache {
           if (audioPaletteBackground && ambientModeEnabled &&

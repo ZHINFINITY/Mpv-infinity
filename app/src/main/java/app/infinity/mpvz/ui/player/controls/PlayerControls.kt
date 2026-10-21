@@ -95,6 +95,7 @@ import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.Shadow
@@ -482,13 +483,20 @@ fun PlayerControls(
     val speedPresets by playerPreferences.speedPresets.collectAsState()
     val sortedSpeedPresets = remember(speedPresets) { speedPresets.map { it.toFloat() }.sorted() }
 
-    Box(modifier = modifier.fillMaxSize()) {
+    var audioGlassPalette by remember { mutableStateOf<Pair<Int, Int>?>(null) }
+    AudioPaletteGlassScene(
+      topArgb = audioGlassPalette?.first ?: MaterialTheme.colorScheme.primary.toArgb(),
+      bottomArgb = audioGlassPalette?.second ?: MaterialTheme.colorScheme.secondary.toArgb(),
+      enabled = liquidGlassSurfaces,
+      modifier = modifier.fillMaxSize(),
+    ) {
       AudioPlayerControls(
         viewModel = viewModel,
         mediaTitle = mediaTitle,
         onBackPress = onBackPress,
         onOpenSheet = onOpenSheet,
         onOpenPanel = onOpenPanel,
+        onGlassPaletteChanged = { top, bottom -> audioGlassPalette = top to bottom },
       )
 
       PlayerSheets(

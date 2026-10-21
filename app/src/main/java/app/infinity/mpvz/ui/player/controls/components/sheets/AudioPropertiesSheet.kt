@@ -6,8 +6,9 @@
  */
 
 package app.infinity.mpvz.ui.player.controls.components.sheets
-
-import app.infinity.mpvz.presentation.components.playerGlassOverlay
+import app.infinity.mpvz.presentation.components.PlayerSheet
+import app.infinity.mpvz.ui.preferences.components.settingsGlassSurface
+import app.infinity.mpvz.ui.preferences.components.settingsGlassContainerColor
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -18,13 +19,9 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.SheetValue
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.rememberBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
@@ -39,7 +36,6 @@ data class AudioPropertyItem(
   val value: String,
 )
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AudioPropertiesSheet(
   properties: List<AudioPropertyItem>,
@@ -47,18 +43,9 @@ fun AudioPropertiesSheet(
   onDismissRequest: () -> Unit,
   modifier: Modifier = Modifier,
 ) {
-  val sheetState =
-    rememberBottomSheetState(
-      initialValue = SheetValue.Hidden,
-      enabledValues = setOf(SheetValue.Hidden, SheetValue.Expanded),
-    )
-
-  ModalBottomSheet(
+  PlayerSheet(
     onDismissRequest = onDismissRequest,
-    sheetState = sheetState,
-    containerColor = androidx.compose.ui.graphics.Color.Transparent,
-    dragHandle = null,
-    modifier = modifier.playerGlassOverlay(),
+    modifier = modifier,
   ) {
     Column(
       modifier =
@@ -75,7 +62,11 @@ fun AudioPropertiesSheet(
           letterSpacing = 2.sp,
           fontWeight = FontWeight.SemiBold,
         )
-        Surface(shape = RoundedCornerShape(8.dp), color = MaterialTheme.colorScheme.primaryContainer) {
+        Surface(
+          modifier = Modifier.settingsGlassSurface(cornerRadius = 8.dp),
+          shape = RoundedCornerShape(8.dp),
+          color = settingsGlassContainerColor(MaterialTheme.colorScheme.primaryContainer),
+        ) {
           Text(
             text = "ENGINE · $engineLabel",
             style = MaterialTheme.typography.labelSmall,
@@ -94,7 +85,8 @@ fun AudioPropertiesSheet(
             Modifier
               .fillMaxWidth()
               .clip(RoundedCornerShape(12.dp))
-              .background(MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.5f))
+              .settingsGlassSurface(cornerRadius = 12.dp)
+              .background(settingsGlassContainerColor(MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.5f)))
               .padding(horizontal = 16.dp, vertical = 12.dp),
         ) {
           Text(
