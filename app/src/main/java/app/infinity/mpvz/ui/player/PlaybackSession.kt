@@ -424,7 +424,7 @@ object PlaybackSession : MPVLib.EventObserver {
       AudiobookPlayback.capture()
       loadedPlaybackItem = null
 
-      val nextGeneration = _state.value.generation + 1L
+      val nextGeneration = PlaybackGenerationPolicy.next(_state.value.generation)
       suspendedVideoTrack = null
       deferredVideoSelectionGeneration = null
       desiredPaused = true
@@ -557,7 +557,10 @@ object PlaybackSession : MPVLib.EventObserver {
     activeCoreConfigurationKey = null
     activeSurfaceFrameRateHintHz = null
     clearTimelinePropertiesLocked()
-    updateState { PlaybackSessionState(phase = PlaybackPhase.UNINITIALIZED) }
+    // Retire the old token as well as its core. Resetting to zero allowed an old
+    // generation-1 coroutine to become current again after the replacement load.
+    updateState { PlaybackSessionState(phase = PlaybackPhase.UNINITIALIZED,
+      generation = PlaybackGenerationPolicy.next(it.generation)) }
   }
 
   fun replaceQueue(
@@ -808,7 +811,7 @@ object PlaybackSession : MPVLib.EventObserver {
       // from the pre-restore timeline can reach AudioTrack and sound like a glitch/warble.
       beginPlaybackTransitionAudioGuardLocked(canRestore = true)
 
-      val generation = _state.value.generation + 1L
+      val generation = PlaybackGenerationPolicy.next(_state.value.generation)
       val initialPosition = initialPositionSeconds?.takeIf { it.isFinite() && it > 0.0 }
       // Live HTTP M3U audio has no meaningful timeline. mpv may expose a
       // one-second probe duration and a very large time-pos; neither is a

@@ -40,12 +40,12 @@ class GlassDepthNoReloadWiringTest(unittest.TestCase):
         self.assertIn('16.dp, height = 32.dp', switch)
         self.assertNotIn('Size(bounds.width, (trackHeight / 2f)', controls)
         self.assertNotIn('.shadow(', controls)
-    def test_safe_interpolation_route_has_no_renderer_or_media_reload(self):
+    def test_native_route_never_restarts_and_mpv_restart_is_explicitly_scoped(self):
         activity = source('ui/player/PlayerActivity.kt')
-        callback = activity.split('fun applyInterpolationPreferencesFromControls()', 1)[1].split('private fun handleNativePlaybackEnded', 1)[0]
+        callback = activity.split('fun applyInterpolationPreferencesFromControls()', 1)[1].split('private fun requestMpvInterpolationRestart', 1)[0]
         for forbidden in ('recreate()', 'PlaybackSession.load(', 'releaseSurface(', 'setupMPV(', 'startMediaLoad(', 'nativeEngine.stop('):
             self.assertNotIn(forbidden, callback)
-        self.assertIn('toast_interpolation_pending_next_playback', callback)
+        self.assertIn('toast_interpolation_pending_native_sink', callback)
         sheet = source('ui/player/controls/components/sheets/FrameInterpolationFpsSheet.kt')
         self.assertIn('interpolationApplyTimingNote(activity)', sheet)
         controls = source('ui/player/controls/components/FrameInterpolationControls.kt')

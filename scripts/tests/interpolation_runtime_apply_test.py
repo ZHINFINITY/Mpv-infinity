@@ -23,14 +23,22 @@ def main() -> None:
     native = NATIVE.read_text()
     require(activity, "fun applyInterpolationPreferencesFromControls()", "public activity callback")
     require(activity, "InterpolationRuntimeApplyPolicy.decision", "explicit runtime policy")
-    require(activity, "toast_interpolation_pending_next_playback_reason", "user-facing backend-specific pending fallback")
+    require(activity, "toast_interpolation_pending_native_sink", "truthful Native sink-unavailable fallback")
     require(activity, "backend.applyInterpolationRuntime", "actual Native live runtime call")
     require(activity, "val backend = if (wasNative) nativeEngine else null", "MPV must not initialize the lazy Native engine")
-    callback = activity.split("fun applyInterpolationPreferencesFromControls()", 1)[1].split("private fun handleNativePlaybackEnded", 1)[0]
+    callback = activity.split("fun applyInterpolationPreferencesFromControls()", 1)[1].split("private fun requestMpvInterpolationRestart", 1)[0]
     for forbidden in ("recreate()", "releaseSurface()", "PlaybackSession.load(", "setupMPV()", "invalidateCoreConfiguration()"):
         if forbidden in callback:
             raise SystemExit(f"forbidden live playback restart in callback: {forbidden}")
-    require(activity, "mpv_flow_has_no_safe_live_option_api", "truthful MPV deferred reason")
+    require(callback, "if (!wasNative)", "MPV-only restart branch")
+    require(callback, "requestMpvInterpolationRestart()", "scoped MPV restart entry")
+    native_path = callback.split("val backend", 1)[1]
+    if "requestMpvInterpolationRestart()" in native_path:
+        raise SystemExit("Native must never enter the MPV restart transaction")
+    require(activity, "MpvInterpolationRestartTransaction.run(snapshot", "tested MPV transaction")
+    require(activity, "paused = true", "hold reload paused until all live state is restored")
+    require(activity, "forceMpvReload = true", "external subtitle descriptor reattachment")
+    require(activity, "player.interpolationConfigurationApplied(appliedEnabled, appliedFps)", "actual init-option ACK")
     require(activity, "Native interpolation controls applied to the current playback", "live Native confirmation")
     require(sink, "suspend fun applyRuntimeInterpolation", "suspend GL runtime API")
     require(sink, "suspendCancellableCoroutine", "cancellable GL dispatch")
@@ -39,7 +47,7 @@ def main() -> None:
     require(sink, "continuation.resume(true)", "actual apply ACK")
     require(sink, "enabled = interpolationEnabled", "truthful diagnostics enabled state")
     require(native, "suspend fun applyInterpolationRuntime", "suspend Native API")
-    callback = activity.split("fun applyInterpolationPreferencesFromControls()", 1)[1].split("private fun handleNativePlaybackEnded", 1)[0]
+    callback = activity.split("fun applyInterpolationPreferencesFromControls()", 1)[1].split("private fun requestMpvInterpolationRestart", 1)[0]
     require(callback, "lifecycleScope.launch", "nonblocking activity launch")
     require(callback, "backend.applyInterpolationRuntime(enabled = enabled, targetFps = targetFps)", "Native FPS consumption")
     require(callback, "activeEngineMode == PlaybackEngineMode.NATIVE && nativeEngine === backend", "same backend ACK guard")
@@ -52,13 +60,22 @@ def main() -> None:
     timing = controls.split("internal fun interpolationApplyTimingNote", 1)[1].split("internal fun interpolationControlsAvailable", 1)[0]
     require(timing, "activity.isNativeEngineActive()", "actual engine timing")
     require(timing, "interpolation_feedback_mpv_config", "config override explanation")
-    require(timing, "interpolation_feedback_mpv", "MPV explicit next-playback timing")
+    require(timing, "interpolation_feedback_mpv", "MPV explicit controlled-restart timing")
     require(sheet, "interpolationApplyTimingNote(activity)", "FPS sheet engine-specific timing")
     require(sheet, "if (!interpolationEnabled)", "FPS selection does not imply enabled interpolation")
     require(sheet, "interpolation_feedback_target_hint", "explicit enable-first hint")
     require(callback, "requestGeneration != interpolationControlRequestGeneration", "stale request ACK suppression")
     require(callback, "enabled != decoderPreferences.mpvFlowFrameInterpolation.get()", "latest preference ACK")
     require(callback, "if (enabled) R.string.toast_interpolation_applied_live else R.string.interpolation_feedback_off_target_saved", "disabled target is not reported as active synthesis")
+    restart = activity.split("private fun requestMpvInterpolationRestart", 1)[1].split("private fun handleNativePlaybackEnded", 1)[0]
+    require(restart, "mpvInterpolationRestartJob?.isActive == true", "single serialized MPV transaction")
+    require(restart, "request == mediaRequestGeneration", "media request race guard")
+    require(restart, "queueIndexBefore", "queue index race guard")
+    require(restart, "TrackSelectionMatcher.findMatchIndex", "fingerprint-based track remapping")
+    require(restart, "state.positionSeconds", "exact live position restoration")
+    require(restart, 'getPropertyBoolean("pause") == state.paused', "actual pause restoration ACK")
+    session = (ROOT / "app/src/main/java/app/infinity/mpvz/ui/player/PlaybackSession.kt").read_text()
+    require(session, "generation = PlaybackGenerationPolicy.next(it.generation)", "retired-core generation tombstone")
     print("interpolation runtime apply contract: PASS")
 
 

@@ -101,6 +101,7 @@ import app.infinity.mpvz.preferences.AudioPreferences
 import app.infinity.mpvz.preferences.BrowserPreferences
 import app.infinity.mpvz.preferences.DecoderPreferences
 import app.infinity.mpvz.preferences.InterpolationRuntimeApplyPolicy
+import app.infinity.mpvz.preferences.MpvConfigControlledFeatures
 import app.infinity.mpvz.preferences.MpvConfigOverridePolicy
 import app.infinity.mpvz.preferences.PlayerPreferences
 import app.infinity.mpvz.preferences.SubtitlesPreferences
@@ -447,12 +448,18 @@ class PlayerActivity :
   }
 
   private var interpolationControlRequestGeneration = 0L
+  private var mpvInterpolationRestartJob: Job? = null
+  @Volatile private var mpvInterpolationReloadGeneration: Long? = null
 
   /** Apply newly written interpolation controls to the renderer already playing this item. */
   fun applyInterpolationPreferencesFromControls() {
     if (!ownsPlaybackSession() || isFinishing || isDestroyed) return
     val requestGeneration = ++interpolationControlRequestGeneration
     val wasNative = isNativeEngineActive()
+    if (!wasNative) {
+      requestMpvInterpolationRestart()
+      return
+    }
     val backend = if (wasNative) nativeEngine else null
     val enabled = decoderPreferences.mpvFlowFrameInterpolation.get()
     val targetFps = decoderPreferences.mpvFlowTargetFps.get()
@@ -467,13 +474,11 @@ class PlayerActivity :
         (wasNative && nativeEngine !== backend)) return@launch
       if (decision == InterpolationRuntimeApplyPolicy.Decision.PENDING_UNTIL_NEXT_PLAYBACK) {
         if (!ownsPlaybackSession() || isFinishing || isDestroyed) return@launch
-        val nativeBackend = isNativeEngineActive()
-        val reason = if (nativeBackend) "native_flow_sink_unavailable" else "mpv_flow_has_no_safe_live_option_api"
+        val reason = "native_flow_sink_unavailable"
         Log.i(TAG, "Interpolation preference saved; deferred reason=$reason")
         Toast.makeText(
           this@PlayerActivity,
-          if (nativeBackend) R.string.toast_interpolation_pending_native_sink
-          else R.string.toast_interpolation_pending_next_playback_reason,
+          R.string.toast_interpolation_pending_native_sink,
           Toast.LENGTH_LONG,
         ).show()
         return@launch
@@ -487,6 +492,206 @@ class PlayerActivity :
           if (enabled) R.string.toast_interpolation_applied_live else R.string.interpolation_feedback_off_target_saved,
           Toast.LENGTH_SHORT,
         ).show()
+      }
+    }
+  }
+  /** Only the interpolation shortcuts have permission to recreate MPV. Never used by Native. */
+  private fun requestMpvInterpolationRestart() {
+    if (activeEngineMode != PlaybackEngineMode.MPV || mpvInterpolationRestartJob?.isActive == true) return
+    mpvInterpolationRestartJob = lifecycleScope.launch {
+      // Coalesce taps before touching the core. Once a transaction starts, finish restoration
+      // before consuming any newer preference; never cancel in the middle of native teardown.
+      delay(180L)
+      while (true) {
+        val enabled = decoderPreferences.mpvFlowFrameInterpolation.get()
+        val targetFps = decoderPreferences.mpvFlowTargetFps.get()
+        if (!ownsPlaybackSession() || isFinishing || isDestroyed ||
+          activeEngineMode != PlaybackEngineMode.MPV) return@launch
+        if (MpvConfigOverridePolicy.ownsAny(MpvConfigControlledFeatures.FRAME_INTERPOLATION)) {
+          Toast.makeText(this@PlayerActivity, R.string.interpolation_feedback_mpv_config, Toast.LENGTH_LONG).show()
+          return@launch
+        }
+        if (player.interpolationConfigurationApplied(enabled, targetFps)) {
+          Toast.makeText(this@PlayerActivity,
+            if (enabled) R.string.toast_interpolation_applied_live else R.string.interpolation_feedback_off_target_saved,
+            Toast.LENGTH_SHORT).show()
+          return@launch
+        }
+        val session = PlaybackSession.state.value
+        val item = session.currentItem ?: return@launch
+        val position = PlaybackSession.getPropertyDouble("time-pos")
+        if (!isReady || session.phase !in setOf(PlaybackPhase.READY, PlaybackPhase.BACKGROUND) ||
+          activeSaveMediaIdentifier != mediaIdentifier || position == null || !position.isFinite() ||
+          PlaybackSession.getPropertyBoolean("seekable") != true) {
+          Toast.makeText(this@PlayerActivity, R.string.toast_interpolation_restart_not_seekable, Toast.LENGTH_LONG).show()
+          return@launch
+        }
+        val snapshot = MpvInterpolationRestartState(
+          mediaId = activeSaveMediaIdentifier,
+          positionSeconds = position.coerceAtLeast(0.0),
+          paused = PlaybackSession.getPropertyBoolean("pause") ?: session.paused,
+          tracks = listOf("aid" to "audio", "sid" to "sub", "secondary-sid" to "sub", "vid" to "video")
+            .mapNotNull { (property, type) ->
+              captureMpvTrackSelection(type, property, null)?.let { property to it }
+            }.toMap(),
+          doubleProperties = listOf("speed", "audio-delay", "sub-delay", "sub-speed", "volume",
+            "video-zoom", "video-pan-x", "video-pan-y", "sub-scale", "sub-pos", "secondary-sub-pos", "secondary-sub-delay")
+            .mapNotNull { key -> PlaybackSession.getPropertyDouble(key)?.takeIf { it.isFinite() }?.let { key to it } }.toMap(),
+          stringProperties = listOf("video-aspect-override", "video-unscaled", "video-rotate", "keepaspect", "vf", "loop-file", "ab-loop-a", "ab-loop-b")
+            .mapNotNull { key -> PlaybackSession.getPropertyString(key)?.let { key to it } }.toMap(),
+          muted = PlaybackSession.getPropertyBoolean("mute") ?: false,
+          externalSubtitles = viewModel.externalSubtitles,
+        )
+        val request = mediaRequestGeneration
+        val queueBefore = PlaybackSession.queue.value
+        val queueIndexBefore = queueBefore.currentIndex
+        val queueItemBefore = queueBefore.currentItem?.stableId
+        val loopState = viewModel.abLoopState.value
+        val aspect = viewModel.videoAspect.value
+        val customAspect = PlaybackSession.getPropertyDouble("video-aspect-override")
+          ?.toFloat()?.takeIf { it > 0f } ?: 0f
+        var loadGeneration: Long? = null
+        var appliedEnabled = enabled
+        var appliedFps = targetFps
+        fun stillCurrent(): Boolean = ownsPlaybackSession() && !isFinishing && !isDestroyed &&
+          request == mediaRequestGeneration && activeEngineMode == PlaybackEngineMode.MPV &&
+          activeSaveMediaIdentifier == snapshot.mediaId && mediaIdentifier == snapshot.mediaId &&
+          (PlaybackSession.state.value.currentItem?.stableId == item.stableId) &&
+          PlaybackSession.queue.value.currentIndex == queueIndexBefore &&
+          PlaybackSession.queue.value.currentItem?.stableId == queueItemBefore &&
+          (loadGeneration?.let { PlaybackSession.isCurrentGeneration(it) } ?: true)
+        if (InterpolationRuntimeApplyPolicy.decision(false, playbackActive = true,
+            restartAuthorized = true, isMpv = true) !=
+          InterpolationRuntimeApplyPolicy.Decision.RESTART_PRESERVING_STATE) return@launch
+        Toast.makeText(this@PlayerActivity, R.string.toast_interpolation_restarting_mpv, Toast.LENGTH_SHORT).show()
+        var success = false
+        try {
+          success = MpvInterpolationRestartTransaction.run(snapshot,
+            object : MpvInterpolationRestartTransaction.Host {
+              override fun isCurrent(state: MpvInterpolationRestartState) = stillCurrent()
+              override suspend fun freeze(state: MpvInterpolationRestartState): Boolean {
+                if (!PlaybackSession.setPauseForEngineHandoff(true)) return false
+                repeat(20) {
+                  if (!stillCurrent()) return false
+                  if (PlaybackSession.getPropertyBoolean("pause") == true) return true
+                  delay(25L)
+                }
+                return false
+              }
+              override suspend fun reconfigureAndLoad(state: MpvInterpolationRestartState): Long? {
+                // No suspension from the final owner check through initialize + load commit:
+                // an Activity/engine/queue change cannot interleave with core destruction.
+                if (!stillCurrent()) return null
+                cancelPlaybackLoadRecovery()
+                mediaLoadJob?.cancel()
+                engineHandoffJob?.cancel()
+                viewModel.setAmbientLifecycleActive(false)
+                setVideoAmbientPresentationActive(false)
+                appliedEnabled = decoderPreferences.mpvFlowFrameInterpolation.get()
+                appliedFps = decoderPreferences.mpvFlowTargetFps.get()
+                player.forceMpvInterpolationOwner = true
+                player.releaseSurface()
+                PlaybackSession.invalidateCoreConfiguration()
+                check(setupMPV() == null) { "MPV reconfiguration failed" }
+                isReady = false
+                viewModel.onVideoLoadStarted()
+                // Re-resolve item.networkSource/content descriptors through the session owner;
+                // do not reopen its old fd or released network-proxy registration directly.
+                val generation = PlaybackSession.load(
+                  item = item,
+                  positionRestoreOverride = PlaybackPositionRestoreOverride(state.positionSeconds, paused = true),
+                )
+                check(generation >= 0L) { "MPV reload failed" }
+                loadGeneration = generation
+                mpvInterpolationReloadGeneration = generation
+                return generation
+              }
+              override suspend fun awaitAndRestore(state: MpvInterpolationRestartState, generation: Long): Boolean {
+                val ready = withTimeoutOrNull(30_000L) {
+                  PlaybackSession.state.first {
+                    !stillCurrent() || (it.generation == generation &&
+                      it.phase in setOf(PlaybackPhase.READY, PlaybackPhase.BACKGROUND) &&
+                      it.surfaceAttached && !PlaybackSession.isPositionRestorePending(generation))
+                  }
+                } ?: return false
+                if (!stillCurrent() || ready.generation != generation) return false
+                for (uri in state.externalSubtitles) {
+                  withContext(Dispatchers.IO) {
+                    if (stillCurrent() && readSharedMpvTracks("sub").orEmpty().none { it.metadata.externalUri == uri }) {
+                      viewModel.addSubtitleSuspend(Uri.parse(uri), select = false, silent = true, forceMpvReload = true)
+                    }
+                  }
+                  if (!stillCurrent()) return false
+                }
+                val tracksRestored = withTimeoutOrNull(5_000L) {
+                  while (stillCurrent()) {
+                    var restored = true
+                    for ((property, encoded) in state.tracks) {
+                      val selection = PlaybackStatePersistence.decodeSelection(encoded) ?: continue
+                      val type = when (property) { "aid" -> "audio"; "vid" -> "video"; else -> "sub" }
+                      val tracks = readSharedMpvTracks(type).orEmpty()
+                      val index = TrackSelectionMatcher.findMatchIndex(selection, tracks.map { it.metadata })
+                      if (index == null) restored = false
+                      else {
+                        val id = if (index < 0) null else tracks[index].id
+                        setTrackSelectionId(property, id)
+                        if (PlaybackSession.getPropertyString(property) != (id?.toString() ?: "no")) restored = false
+                      }
+                    }
+                    if (restored) return@withTimeoutOrNull true
+                    delay(25L)
+                  }
+                  false
+                } == true
+                if (!stillCurrent()) return false
+                state.doubleProperties.forEach { (key, value) -> PlaybackSession.setPropertyDouble(key, value) }
+                state.stringProperties.forEach { (key, value) -> PlaybackSession.setPropertyString(key, value) }
+                state.doubleProperties["video-zoom"]?.let { viewModel.setVideoZoom(it.toFloat()) }
+                viewModel.restoreVideoAspect(aspect.name, customAspect, showUpdate = false)
+                viewModel.restoreABLoopState(loopState)
+                val positionRestored = withTimeoutOrNull(5_000L) {
+                  while (stillCurrent()) {
+                    val actual = PlaybackSession.getPropertyDouble("time-pos")
+                    if (actual != null && kotlin.math.abs(actual - state.positionSeconds) <= 0.25 &&
+                      PlaybackSession.getPropertyBoolean("seeking") != true) return@withTimeoutOrNull true
+                    delay(25L)
+                  }
+                  false
+                } == true
+                if (!stillCurrent()) return false
+                PlaybackSession.setPropertyBoolean("mute", state.muted)
+                PlaybackSession.setPropertyBoolean("pause", state.paused)
+                viewModel.setAmbientLifecycleActive(true)
+                viewModel.restartAmbientIfActive()
+                // This checks accepted renderer/timing init options, not just saved prefs.
+                return positionRestored && tracksRestored &&
+                  PlaybackSession.getPropertyBoolean("pause") == state.paused &&
+                  player.interpolationConfigurationApplied(appliedEnabled, appliedFps)
+              }
+            })
+        } catch (cancelled: CancellationException) {
+          throw cancelled
+        } catch (error: Throwable) {
+          Log.e(TAG, "Controlled MPV interpolation restart failed", error)
+        } finally {
+          if (mpvInterpolationReloadGeneration == loadGeneration) mpvInterpolationReloadGeneration = null
+          // A failed seek/track confirmation must not leave an otherwise restored video paused.
+          if (stillCurrent()) {
+            PlaybackSession.setPropertyBoolean("mute", snapshot.muted)
+            PlaybackSession.setPropertyBoolean("pause", snapshot.paused)
+            viewModel.setAmbientLifecycleActive(true)
+          }
+        }
+        if (!ownsPlaybackSession() || isFinishing || isDestroyed || request != mediaRequestGeneration ||
+          activeEngineMode != PlaybackEngineMode.MPV || mediaIdentifier != snapshot.mediaId) return@launch
+        Toast.makeText(this@PlayerActivity,
+          if (success && stillCurrent()) R.string.toast_interpolation_restarted_mpv else R.string.toast_interpolation_restart_failed,
+          Toast.LENGTH_LONG).show()
+        if (!success) return@launch
+        // A tap during the reload updates prefs but cannot start a second concurrent teardown.
+        // Consume the latest complete preference pair only after restoring this transaction.
+        if (decoderPreferences.mpvFlowFrameInterpolation.get() == appliedEnabled &&
+          decoderPreferences.mpvFlowTargetFps.get() == appliedFps) break
       }
     }
   }
@@ -1107,6 +1312,9 @@ class PlayerActivity :
           // renderer; otherwise selecting AUTO while MPV is already active unnecessarily enters
           // the handoff path and can stop an active torrent proxy.
           if (effectiveEngine == activeEngineMode) return@collect
+          // Finish the one authorized reconfiguration before an unrelated engine handoff.
+          mpvInterpolationRestartJob?.join()
+          if (!ownsPlaybackSession() || isFinishing || isDestroyed) return@collect
           engineHandoffJob?.cancel()
           val outgoingEngine = activeEngineMode
           val outgoingPositionMs =
@@ -5381,41 +5589,43 @@ class PlayerActivity :
 
     lifecycleScope.launch(Dispatchers.IO) {
       try {
-        // Load playback state (will skip track restoration if preferred language configured)
-        val hasState =
-          loadVideoPlaybackState(
-            identifier = loadedMediaIdentifier,
-            legacyIdentifier = loadedLegacyIdentifier,
-            loadGeneration = loadGeneration,
-            positionRestoreOverride = positionRestoreOverride,
-            initialPositionApplied = initialPositionApplied,
-          )
-        if (!PlaybackSession.isCurrentGeneration(loadGeneration)) return@launch
+        if (mpvInterpolationReloadGeneration != loadGeneration) {
+          // Load playback state (will skip track restoration if preferred language configured)
+          val hasState =
+            loadVideoPlaybackState(
+              identifier = loadedMediaIdentifier,
+              legacyIdentifier = loadedLegacyIdentifier,
+              loadGeneration = loadGeneration,
+              positionRestoreOverride = positionRestoreOverride,
+              initialPositionApplied = initialPositionApplied,
+            )
+          if (!PlaybackSession.isCurrentGeneration(loadGeneration)) return@launch
 
-        // Apply track selection logic (defaults only apply when no saved state)
-        trackSelector.onFileLoaded(hasState)
-        if (activeEngineMode == PlaybackEngineMode.MPV && forceMpvAudioTrackAutoOnNextLoad) {
-          // Native and MPV track IDs are not interchangeable. Reset first, then restore only an
-          // unambiguous match by language/label/codec/channel metadata rather than selecting track 0.
-          runCatching { PlaybackSession.setPropertyString("aid", "auto") }
-          runCatching { PlaybackSession.setPropertyBoolean("mute", false) }
-          pendingMpvAudioSelection?.let { preference ->
-            if (!trackSelector.selectAudioTrackByFingerprint(preference)) {
-              Log.w(TAG, "Could not unambiguously remap the selected Native audio track in MPV")
+          // Apply track selection logic (defaults only apply when no saved state)
+          trackSelector.onFileLoaded(hasState)
+          if (activeEngineMode == PlaybackEngineMode.MPV && forceMpvAudioTrackAutoOnNextLoad) {
+            // Native and MPV track IDs are not interchangeable. Reset first, then restore only an
+            // unambiguous match by language/label/codec/channel metadata rather than selecting track 0.
+            runCatching { PlaybackSession.setPropertyString("aid", "auto") }
+            runCatching { PlaybackSession.setPropertyBoolean("mute", false) }
+            pendingMpvAudioSelection?.let { preference ->
+              if (!trackSelector.selectAudioTrackByFingerprint(preference)) {
+                Log.w(TAG, "Could not unambiguously remap the selected Native audio track in MPV")
+              }
             }
+            pendingMpvAudioSelection = null
+            lastRequestedNativeAudioSelection = null
+            forceMpvAudioTrackAutoOnNextLoad = false
           }
-          pendingMpvAudioSelection = null
-          lastRequestedNativeAudioSelection = null
-          forceMpvAudioTrackAutoOnNextLoad = false
-        }
 
-        // Apply default zoom only if there's no saved state
-        if (!hasState) {
-          withContext(Dispatchers.Main) {
-            if (!PlaybackSession.isCurrentGeneration(loadGeneration)) return@withContext
-            val zoomPreference = playerPreferences.defaultVideoZoom.get()
-            PlaybackSession.setPropertyDouble("video-zoom", zoomPreference.toDouble())
-            viewModel.setVideoZoom(zoomPreference)
+          // Apply default zoom only if there's no saved state
+          if (!hasState) {
+            withContext(Dispatchers.Main) {
+              if (!PlaybackSession.isCurrentGeneration(loadGeneration)) return@withContext
+              val zoomPreference = playerPreferences.defaultVideoZoom.get()
+              PlaybackSession.setPropertyDouble("video-zoom", zoomPreference.toDouble())
+              viewModel.setVideoZoom(zoomPreference)
+            }
           }
         }
       } finally {
@@ -5424,7 +5634,9 @@ class PlayerActivity :
           PlaybackSession.isCurrentGeneration(loadGeneration)
         ) {
           MediaPlaybackService.setNativeRendererOwnership(false)
-          withContext(Dispatchers.Main) { restorePendingMpvTrackSelections() }
+          if (mpvInterpolationReloadGeneration != loadGeneration) {
+            withContext(Dispatchers.Main) { restorePendingMpvTrackSelections() }
+          }
         }
       }
     }
@@ -5497,6 +5709,7 @@ class PlayerActivity :
     }
 
     if (
+      mpvInterpolationReloadGeneration != loadGeneration &&
       subtitlesPreferences.autoEnableSubtitles.get() &&
       subtitlesPreferences.autoloadMatchingSubtitles.get()
     ) {

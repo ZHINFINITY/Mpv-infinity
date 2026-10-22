@@ -96,6 +96,14 @@ class MPVView(
 
   var isExiting = false
   var forceOpenGlFallback = false
+  internal var forceMpvInterpolationOwner = false
+  private var acceptedInterpolationConfiguration: Pair<Boolean, Int>? = null
+
+  internal fun interpolationConfigurationApplied(enabled: Boolean, targetFps: Int): Boolean {
+    val accepted = acceptedInterpolationConfiguration ?: return false
+    return accepted.first == enabled && (!enabled || accepted.second ==
+      effectiveMpvFlowTargetFps(targetFps, currentDisplayRefreshRate()?.hz ?: 0f))
+  }
   var isSurfaceReady = false
     private set
   var onSurfaceReady: (() -> Unit)? = null
@@ -152,7 +160,7 @@ class MPVView(
       mpvFlowRequested &&
         BuildConfig.MPV_HAS_MPVFLOW &&
         !frameInterpolationConfigOwned &&
-        decoderPreferences.playbackEngine.get() != PlaybackEngineMode.NATIVE
+        (forceMpvInterpolationOwner || decoderPreferences.playbackEngine.get() != PlaybackEngineMode.NATIVE)
     val mpvFlowSoftBlendDebugActive =
       BuildConfig.DEBUG &&
         decoderPreferences.mpvFlowSoftBlendDebug.get() &&
@@ -528,6 +536,7 @@ class MPVView(
   var aid: Int by TrackDelegate("aid")
 
   override fun initOptions() {
+    acceptedInterpolationConfiguration = null
     val profile = decoderPreferences.profile.get()
     PlaybackSession.setOptionString("profile", profile)
     val backend = selectRenderBackend()
@@ -552,7 +561,7 @@ class MPVView(
         !frameInterpolationConfigOwned &&
         !anime4kActive &&
         RendererBackendPolicy.canUseDirectGpuFlow(backend.vo, backend.gpuApi) &&
-        decoderPreferences.playbackEngine.get() != PlaybackEngineMode.NATIVE
+        (forceMpvInterpolationOwner || decoderPreferences.playbackEngine.get() != PlaybackEngineMode.NATIVE)
     val flowDisplayFpsOverrideRc =
       when {
         mpvFlowFrameInterpolationCandidate && displayRefreshRate != null ->
@@ -820,6 +829,11 @@ class MPVView(
           } else null
         val enabledResult =
           PlaybackSession.setOptionString("mpvflow", if (mpvFlowFrameInterpolationEnabled) "yes" else "no")
+        acceptedInterpolationConfiguration = if (enabledResult == 0 &&
+          (!mpvFlowFrameInterpolationEnabled || (targetFpsResult == 0 && dimensionResult == 0 &&
+            qualityResult == 0 && mpvFlowComputeApiOptionResult == 0))) {
+          mpvFlowFrameInterpolationEnabled to mpvFlowTargetFps
+        } else null
         "mpvflow_rc=$enabledResult compute_api=${effectiveMpvFlowComputeApi.name.lowercase()} " +
           "compute_api_rc=${mpvFlowComputeApiOptionResult ?: "mpv.conf_or_unavailable"} " +
           "target_fps_rc=${targetFpsResult ?: "unchanged"} " +
@@ -858,7 +872,7 @@ class MPVView(
           anime4kActive -> "anime4k_active"
           !RendererBackendPolicy.canUseDirectGpuFlow(backend.vo, backend.gpuApi) ->
             "requires_gpu_next_vulkan"
-          decoderPreferences.playbackEngine.get() == PlaybackEngineMode.NATIVE -> "native_engine_selected"
+          !forceMpvInterpolationOwner && decoderPreferences.playbackEngine.get() == PlaybackEngineMode.NATIVE -> "native_engine_selected"
           else -> "unsupported_configuration"
         }
       val interpolationHwdecDiagnostic =
@@ -1373,7 +1387,7 @@ class MPVView(
         BuildConfig.MPV_SUPPORTS_VULKAN &&
         !MpvConfigOverridePolicy.ownsAny(MpvConfigControlledFeatures.FRAME_INTERPOLATION) &&
         !anime4kEnabled &&
-        decoderPreferences.playbackEngine.get() != PlaybackEngineMode.NATIVE
+        (forceMpvInterpolationOwner || decoderPreferences.playbackEngine.get() != PlaybackEngineMode.NATIVE)
     val gpuNextEnabled = decoderPreferences.gpuNext.get() || flowRequiresVulkan
     val vulkanEnabled = shouldUseVulkan(
       ignoreForcedOpenGlFallback = ignoreForcedOpenGlFallback,

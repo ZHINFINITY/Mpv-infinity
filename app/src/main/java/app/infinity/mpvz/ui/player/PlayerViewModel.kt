@@ -2775,6 +2775,7 @@ class PlayerViewModel : ViewModel(),
     uri: Uri,
     select: Boolean = true,
     silent: Boolean = false,
+    forceMpvReload: Boolean = false,
   ) {
     subtitleAddMutex.withLock {
       // This method runs on Dispatchers.IO. Use the ViewModel state flow instead of asking the
@@ -2831,7 +2832,7 @@ class PlayerViewModel : ViewModel(),
 
         // Check if MPV already auto-loaded this subtitle (prevents duplication)
         val existingTrack = allTracks.value.find { it.type == "sub" && it.externalFilename == mpvPath }
-        if (existingTrack != null) {
+        if (existingTrack != null && !forceMpvReload) {
           android.util.Log.d("PlayerViewModel", "Subtitle already loaded by MPV, skipping sub-add: $mpvPath")
           if (select) {
             withContext(Dispatchers.Main) {
@@ -6350,6 +6351,11 @@ class PlayerViewModel : ViewModel(),
     }
     _abLoopState.update { it.copy(b = currentPos) }
     if (host.isNativeEngineActive()) host.nativeSetLoopB(currentPos) else PlaybackSession.setPropertyDouble("ab-loop-b", currentPos)
+  }
+
+  /** The interpolation transaction already restored native loop properties. */
+  internal fun restoreABLoopState(state: ABLoopState) {
+    _abLoopState.value = state
   }
 
   fun clearABLoop() {

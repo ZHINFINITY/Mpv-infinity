@@ -22,4 +22,18 @@ class InterpolationRuntimeApplyPolicyTest {
       InterpolationRuntimeApplyPolicy.decision(hasLiveReconfigureApi = true, playbackActive = false),
     )
   }
+  @Test fun explicitPermissionOnlyRestartsAnActiveMpvSession() {
+    assertEquals(InterpolationRuntimeApplyPolicy.Decision.RESTART_PRESERVING_STATE,
+      InterpolationRuntimeApplyPolicy.decision(false, true, restartAuthorized = true, isMpv = true))
+    assertEquals(InterpolationRuntimeApplyPolicy.Decision.PENDING_UNTIL_NEXT_PLAYBACK,
+      InterpolationRuntimeApplyPolicy.decision(false, true, restartAuthorized = false, isMpv = true))
+    assertEquals(InterpolationRuntimeApplyPolicy.Decision.PENDING_UNTIL_NEXT_PLAYBACK,
+      InterpolationRuntimeApplyPolicy.decision(false, false, restartAuthorized = true, isMpv = true))
+    assertEquals(InterpolationRuntimeApplyPolicy.Decision.PENDING_UNTIL_NEXT_PLAYBACK,
+      InterpolationRuntimeApplyPolicy.decision(false, true, restartAuthorized = true, isMpv = false))
+  }
+  @Test fun nativeLiveAcknowledgementAlwaysWinsWithoutRestart() {
+    assertEquals(InterpolationRuntimeApplyPolicy.Decision.APPLY_LIVE,
+      InterpolationRuntimeApplyPolicy.decision(true, true, restartAuthorized = true, isMpv = false))
+  }
 }

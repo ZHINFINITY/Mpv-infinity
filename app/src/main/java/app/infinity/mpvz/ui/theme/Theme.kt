@@ -360,8 +360,10 @@ fun MpvInfinityTheme(
             if (showCustomThemeBackdrop) {
               BrowserGlassSceneHost(
                 enabled = glassEnabled,
-                background = customTheme?.takeUnless { it.isVideo }?.let { theme ->
-                  { CustomThemeBackdrop(theme) {} }
+                background = customTheme?.let { theme ->
+                  // SurfaceView video backdrops remain in the outer sibling;
+                  // never record a hardware video view into a retained UI layer.
+                  { CustomThemeBackdrop(theme.takeUnless { it.isVideo }) {} }
                 },
               ) { content() }
             } else content()
@@ -369,41 +371,44 @@ fun MpvInfinityTheme(
         )
       }
     }
-    if (showCustomThemeBackdrop && (!glassEnabled || customTheme?.isVideo == true)) CustomThemeBackdrop(customTheme, themedContent) else themedContent()
+    // One stable content call site in both modes. Switching between a wrapper
+    // and direct invocation disposed every remembered route/control instance.
+    CustomThemeBackdrop(
+      customTheme.takeIf { showCustomThemeBackdrop && (!glassEnabled || it?.isVideo == true) },
+      themedContent,
+    )
   }
 }
 
 @Composable
 private fun CustomThemeBackdrop(theme: CustomThemeData?, content: @Composable () -> Unit) {
-  if (theme == null) {
-    content()
-    return
-  }
   Box(Modifier.fillMaxSize()) {
-    if (theme.isVideo) {
-      AndroidView(
-        modifier = Modifier.fillMaxSize().graphicsLayer {
-          scaleX = 1f
-          scaleY = 1f
-          alpha = theme.visibility.coerceIn(0.15f, 1f)
-        },
-        factory = { context -> CustomThemeVideoView(context).also { it.applyTheme(theme) } },
-        update = { view -> view.updateThemeEffects(theme) },
-      )
-    } else {
-      val bitmap = remember(theme.mediaPath) { android.graphics.BitmapFactory.decodeFile(theme.mediaPath) }
-      bitmap?.let {
-        Image(
-          bitmap = it.asImageBitmap(),
-          contentDescription = null,
-          contentScale = theme.contentScale(),
-          alignment = BiasAlignment(theme.offsetX, theme.offsetY),
-          colorFilter = theme.mediaColorFilter(),
-          modifier = Modifier.fillMaxSize().blur(theme.blur.dp).graphicsLayer(scaleX = theme.scale, scaleY = theme.scale, alpha = theme.visibility.coerceIn(0.15f, 1f)),
+    if (theme != null) {
+      if (theme.isVideo) {
+        AndroidView(
+          modifier = Modifier.fillMaxSize().graphicsLayer {
+            scaleX = 1f
+            scaleY = 1f
+            alpha = theme.visibility.coerceIn(0.15f, 1f)
+          },
+          factory = { context -> CustomThemeVideoView(context).also { it.applyTheme(theme) } },
+          update = { view -> view.updateThemeEffects(theme) },
         )
+      } else {
+        val bitmap = remember(theme.mediaPath) { android.graphics.BitmapFactory.decodeFile(theme.mediaPath) }
+        bitmap?.let {
+          Image(
+            bitmap = it.asImageBitmap(),
+            contentDescription = null,
+            contentScale = theme.contentScale(),
+            alignment = BiasAlignment(theme.offsetX, theme.offsetY),
+            colorFilter = theme.mediaColorFilter(),
+            modifier = Modifier.fillMaxSize().blur(theme.blur.dp).graphicsLayer(scaleX = theme.scale, scaleY = theme.scale, alpha = theme.visibility.coerceIn(0.15f, 1f)),
+          )
+        }
       }
+      Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = (theme.overlay * 0.35f).coerceIn(0f, 0.35f))))
     }
-    Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = (theme.overlay * 0.35f).coerceIn(0f, 0.35f))))
     content()
   }
 }

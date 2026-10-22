@@ -100,8 +100,7 @@ internal fun FrameInterpolationPlayerButton(
   val offLabel = stringResource(R.string.player_interpolation_off)
   val nextPlaybackNote = interpolationApplyTimingNote(activity)
   val savedState = stringResource(R.string.interpolation_feedback_saved_state, if (enabled) onLabel else offLabel)
-  val toggleTitle = if (activity.isNativeEngineActive()) stringResource(R.string.pref_decoder_mpvflow_title)
-    else stringResource(R.string.interpolation_feedback_saved_title)
+  val toggleTitle = stringResource(R.string.pref_decoder_mpvflow_title)
   if (!targetFpsAction) {
     ControlsButton(
       icon = Icons.RoundedFilled.AutoAwesome,
