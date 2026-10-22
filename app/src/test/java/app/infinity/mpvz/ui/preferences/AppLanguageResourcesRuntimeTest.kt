@@ -47,6 +47,7 @@ class AppLanguageResourcesRuntimeTest {
     assertEquals("#FFFFFFFF", localized.getString(R.string.pref_custom_theme_argb_placeholder))
   }
 
+  @Config(sdk = [28, 35])
   @Test fun indonesianSettingsAndPopupResolveTheirOwnPack() { assertSettingsAndPopupAreLocalized("id") }
   @Test fun vietnameseSettingsAndPopupResolveTheirOwnPack() { assertSettingsAndPopupAreLocalized("vi") }
   @Test fun polishSettingsAndPopupResolveTheirOwnPack() { assertSettingsAndPopupAreLocalized("pl") }

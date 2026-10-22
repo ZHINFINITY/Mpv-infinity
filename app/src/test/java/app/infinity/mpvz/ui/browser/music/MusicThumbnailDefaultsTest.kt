@@ -29,13 +29,17 @@ class MusicThumbnailDefaultsTest {
     assertTrue(library.contains("coverArtSizeDp = coverArtSizeDp"))
     assertTrue(navidrome.contains("browserPreferences.musicCoverArtSize.collectAsState()"))
     val rows = File(root, "app/src/main/java/app/infinity/mpvz/ui/browser/music/SharedMusicComponents.kt").readText()
-    assertTrue(rows.contains("padding(horizontal = 12.dp, vertical = 6.dp)"))
-    assertTrue(rows.contains("padding(horizontal = 16.dp, vertical = 12.dp)"))
+    val policy = File(root, "app/src/main/java/app/infinity/mpvz/ui/theme/BrowserLayoutPolicy.kt").readText()
+    // Row chrome owns the fallback inset; library lists own the inter-item seam.
+    assertTrue(rows.contains("BrowserLayoutPolicy.musicRowPadding(parentOwnsSpacing)"))
     assertTrue(rows.contains("val itemArtSize = boundedSizeDp.dp"))
+    assertTrue(policy.contains("if (parentOwnsSpacing) PaddingValues(0.dp)"))
+    assertTrue(policy.contains("PaddingValues(horizontal = 12.dp, vertical = 6.dp)"))
+    assertTrue(library.contains("Arrangement.spacedBy(BrowserLayoutPolicy.geometry(true).listGap)"))
+    assertTrue(library.contains("parentOwnsSpacing = glassEnabled"))
     for (name in listOf("AlbumListCard", "ArtistListCard")) {
       val actualRow = library.substringAfter("private fun $name(").substringBefore("@Composable")
-      assertTrue(name, actualRow.contains("padding(horizontal = 12.dp, vertical = 6.dp)"))
-      assertTrue(name, actualRow.contains("padding(horizontal = 16.dp, vertical = 12.dp)"))
+      assertTrue(name, actualRow.contains("BrowserLayoutPolicy.musicRowPadding(parentOwnsSpacing)"))
       assertTrue(name, actualRow.contains("color = settingsGlassContainerColor("))
     }
   }

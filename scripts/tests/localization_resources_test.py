@@ -25,12 +25,12 @@ class LocaleResourcesTest(unittest.TestCase):
         source = (ROOT / 'app/src/main/java/app/infinity/mpvz/ui/preferences/AdvancedPreferencesScreen.kt').read_text()
         for code, name in LANGS.items():
             self.assertRegex(source, rf'\b{name}\("{code}"\)')
-            self.assertTrue((RES / f'values-{code}/strings.xml').is_file())
+            self.assertTrue((RES / f"values-{'in' if code == 'id' else code}/strings.xml").is_file())
 
     def test_each_pack_covers_every_canonical_key_and_plural_quantity(self):
         base = entries(RES / 'values/strings.xml')
         for code in LANGS:
-            actual = entries(RES / f'values-{code}/strings.xml')
+            actual = entries(RES / f"values-{'in' if code == 'id' else code}/strings.xml")
             self.assertEqual(set(base), set(actual), code)
             for name, element in base.items():
                 translated = actual[name]
@@ -59,7 +59,7 @@ class LocaleResourcesTest(unittest.TestCase):
             'pref_custom_theme_title', 'pref_custom_theme_summary',
             'pref_custom_theme_create', 'pref_custom_theme_mute_video']
         for code in LANGS:
-            actual = entries(RES / f'values-{code}/strings.xml')
+            actual = entries(RES / f"values-{'in' if code == 'id' else code}/strings.xml")
             for name in required:
                 self.assertTrue((actual[name].text or '').strip(), (code, name))
                 self.assertNotEqual(base[name].text, actual[name].text, (code, name))
@@ -67,6 +67,11 @@ class LocaleResourcesTest(unittest.TestCase):
             changed = sum(actual[name].text != base[name].text for name in human)
             self.assertGreaterEqual(changed, len(human) * 0.85, code)
 
+    def test_indonesian_uses_supported_resource_qualifier_and_modern_selector_tag(self):
+        self.assertTrue((RES / 'values-in/strings.xml').is_file())
+        self.assertFalse((RES / 'values-id/strings.xml').exists())
+        selector = (ROOT / 'app/src/main/java/app/infinity/mpvz/ui/preferences/AdvancedPreferencesScreen.kt').read_text()
+        self.assertIn('Indonesian("id")', selector)
 
 if __name__ == '__main__':
     unittest.main()

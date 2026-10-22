@@ -60,6 +60,11 @@ def main():
         for name in ['pref_custom_theme_title', 'pref_custom_theme_summary', 'pref_custom_theme_mute_video']:
             assert (got[name].text or '').strip(), (code, name)
             assert got[name].text != canonical[name].text, f'{code}: popup still English: {name}'
+        if code in {'hi', 'ru'}:
+            english_fragments = re.compile(r'\b(?:photo|theme|themes|adjust|later|create|mute|selected|rail)\b', re.I)
+            for name, element in got.items():
+                if name.startswith('pref_custom_theme_'):
+                    assert not english_fragments.search(element.text or ''), (code, name, 'mixed-English popup')
     print(f'PASS: {len(LOCALES)} existing locales cover {len(canonical)} canonical keys; {preserved} completed values preserved')
 
 

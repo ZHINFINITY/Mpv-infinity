@@ -35,7 +35,7 @@ class SettingsPopupLocaleContractTest(unittest.TestCase):
         used = set(re.findall(r'R\.string\.(pref_custom_theme_\w+|generic_save)', CUSTOM.read_text()))
         self.assertTrue(used <= keys)
         for code in ['ar','de','es','fr','hi','ja','pt-rBR','ru','zh-rCN','id','vi','fa','pl','ta']:
-            translated = {e.get('name'):e for e in ET.parse(RES / f'values-{code}/strings.xml').getroot()}
+            translated = {e.get('name'):e for e in ET.parse(RES / f"values-{'in' if code == 'id' else code}/strings.xml").getroot()}
             self.assertTrue(keys <= set(translated), code)
             self.assertTrue(all((translated[name].text or '').strip() for name in keys), code)
 

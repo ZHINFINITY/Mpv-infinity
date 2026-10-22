@@ -133,10 +133,16 @@ class FolderCardGlassRuntimeTest {
     val card = File(root, "app/src/main/java/app/infinity/mpvz/ui/browser/cards/FolderCard.kt").readText()
     val screen = File(root, "app/src/main/java/app/infinity/mpvz/ui/browser/folderlist/FolderListScreen.kt").readText()
     val swipe = File(root, "app/src/main/java/app/infinity/mpvz/ui/browser/cards/SwipeableFolderActions.kt").readText()
+    val policy = File(root, "app/src/main/java/app/infinity/mpvz/ui/theme/BrowserLayoutPolicy.kt").readText()
     assertTrue(card.contains("BrowserGlassSurface(") && card.contains("modifier = Modifier.fillMaxWidth()"))
     assertTrue(card.contains("enabled = liquidGlass"))
     assertTrue(!card.contains("BrowserGlassSurface(\n          modifier = Modifier.matchParentSize()"))
-    assertTrue(screen.contains("verticalArrangement = Arrangement.spacedBy(12.dp)"))
+    // The home list delegates both the 12dp glass seam and the non-glass fallback
+    // to the shared geometry policy; do not pin this contract to a wrapper literal.
+    assertTrue(screen.contains("val geometry = BrowserLayoutPolicy.geometry(glassEnabled)"))
+    assertTrue(screen.contains("verticalArrangement = Arrangement.spacedBy(if (glassEnabled) geometry.listGap else 12.dp)"))
+    assertTrue(policy.contains("BrowserLayoutGeometry(12.dp, 12.dp, 12.dp, 6.dp)"))
+    assertTrue(policy.contains("BrowserLayoutGeometry(8.dp, 4.dp, 0.dp, 0.dp)"))
     assertTrue("only the revealed swipe action owns another pane", swipe.indexOf("BrowserGlassSurface(") > swipe.indexOf("if (offsetX > 0f)"))
     assertTrue("glass icon has no square fill", card.contains("background(if (liquidGlass) Color.Transparent else MaterialTheme.colorScheme.surfaceContainerHigh)"))
   }

@@ -30,7 +30,17 @@ class MusicGlassCallersContractTest {
     assertTrue(library.contains("private fun ArtistGridCard"))
     assertTrue(shared.contains("fun SharedMusicTrackListItem") && shared.contains("fun SharedMusicGridCard"))
     assertTrue(shared.contains("fun SharedMusicDetailHeader") && shared.contains(".settingsGlassSurface(cornerRadius = 20.dp)"))
-    assertTrue(library.contains("modifier = Modifier.settingsGlassSurface(cornerRadius = 28.dp)"))
+
+    // Detail sheets own the independent pane. Assert within each real entry-point
+    // scope so formatting/parameter additions do not turn this into a literal-wrapper test.
+    fun body(name: String, next: String): String =
+      library.substringAfter("private fun $name(").substringBefore("private fun $next(")
+    val albumDetail = body("AlbumDetailSheet", "ArtistDetailSheet")
+    val artistDetail = library.substringAfter("private fun ArtistDetailSheet(")
+    for (detail in listOf(albumDetail, artistDetail)) {
+      assertTrue(detail.contains("settingsGlassContainerColor(MaterialTheme.colorScheme.surfaceContainerLow)"))
+      assertTrue(detail.contains("settingsGlassSurface(cornerRadius = 28.dp, independent = true)"))
+    }
   }
 
   @Test
