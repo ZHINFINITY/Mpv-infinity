@@ -79,7 +79,7 @@ internal fun resolveFlowDisplayRefreshRateHz(
     .filterNotNull()
     .firstOrNull { it.isFinite() && it in 20f..360f }
 
-private data class FlowDisplayRefreshRate(val hz: Float, val source: String)
+internal data class FlowDisplayRefreshRate(val hz: Float, val source: String)
 
 class MPVView(
   context: Context,
@@ -121,7 +121,7 @@ class MPVView(
   @Volatile private var cachedDisplayRefreshRate: FlowDisplayRefreshRate? = null
 
   /** Snapshot Android display state on Main before an authorized worker-thread restart. */
-  fun snapshotDisplayRefreshRateOnMain(): FlowDisplayRefreshRate? {
+  internal fun snapshotDisplayRefreshRateOnMain(): FlowDisplayRefreshRate? {
     check(Looper.myLooper() == Looper.getMainLooper()) { "Display snapshot must run on Main" }
     return currentDisplayRefreshRate().also { cachedDisplayRefreshRate = it }
   }

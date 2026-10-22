@@ -42,6 +42,13 @@ class MpvRestartThreadingContractTest {
     assertTrue(hints.contains("if (Looper.myLooper() != Looper.getMainLooper()) return"))
   }
 
+  @Test fun displaySnapshotApiKeepsTheReturnTypeAtTheSameModuleVisibility() {
+    val view = source("MPVView")
+    assertTrue(view.contains("internal data class FlowDisplayRefreshRate("))
+    assertTrue(view.contains("internal fun snapshotDisplayRefreshRateOnMain(): FlowDisplayRefreshRate?"))
+    assertFalse(view.contains("private data class FlowDisplayRefreshRate("))
+  }
+
   @Test fun generationIsPublishedBeforeNativeLoadCanEmitCallbacks() {
     val session = source("PlaybackSession")
     val load = session.substringAfter("  private fun load(")
