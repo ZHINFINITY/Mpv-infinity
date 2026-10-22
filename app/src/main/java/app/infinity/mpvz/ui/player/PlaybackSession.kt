@@ -310,6 +310,10 @@ object PlaybackSession : MPVLib.EventObserver {
       nativeCallbackGate.closeAndDrain()
       nativeLock.withLock {
         applicationContext = context.applicationContext
+        // Retirement has finished. The new lifecycle owner must be allowed to write
+        // pre-init renderer/hwdec/Flow options; other threads remain blocked by
+        // INITIALIZING + initialized=false and the callback gate stays closed.
+        retiringCore = false
         nativeCoreReady = false
         activeSurfaceFrameRateHintHz = null
         observedProperties.clear()

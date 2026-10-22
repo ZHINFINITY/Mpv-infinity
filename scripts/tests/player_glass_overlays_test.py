@@ -13,7 +13,8 @@ class PlayerGlassOverlayContracts(unittest.TestCase):
     def test_shared_outer_surface_uses_settings_and_off_fallback(self):
         source = self.source("presentation/components/PlayerGlassOverlays.kt")
         for token in ("liquidGlassSurfaces.collectAsState()", "glassSurfaceOpacity.collectAsState()",
-                      "glassSurfaceHighlight.collectAsState()", ".liquidGlassPane(enabled, opacity, highlight, cornerRadius)",
+                      "glassSurfaceHighlight.collectAsState()", ".liquidGlassPane(enabled, opacity, highlight, cornerRadius,",
+                      "materialRole = GlassSurfacePolicy.MaterialRole.Regular",
                       "if (enabled) Modifier else Modifier.background", "surfaceContainerHigh"):
             self.assertIn(token, source)
 

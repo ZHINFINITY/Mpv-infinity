@@ -71,6 +71,7 @@ import kotlin.math.roundToInt
 import app.infinity.mpvz.preferences.AppearancePreferences
 import app.infinity.mpvz.preferences.preference.collectAsState
 import app.infinity.mpvz.ui.theme.liquidGlassPane
+import app.infinity.mpvz.ui.theme.GlassSurfacePolicy
 import org.koin.compose.koinInject
 
 private val sheetAnimationSpec = tween<Float>(350)
@@ -231,6 +232,7 @@ fun PlayerSheet(
             opacity = 0.86f,
             highlight = 0.20f,
             cornerRadius = 24.dp,
+            materialRole = GlassSurfacePolicy.MaterialRole.Regular,
           ),
       shape = sheetShape,
       color = if (liquidGlassSurfaces) Color.Transparent else resolvedSurfaceColor,

@@ -45,7 +45,7 @@ def main() -> None:
     assert "fun EditConnectionSheet(" in edit
     assert "onDismissRequest = handleDismiss" in edit
     assert "onSave(updatedConnection" in edit
-    assert "settingsGlassSurface(cornerRadius = 28.dp)" in edit
+    assert "settingsGlassSurface(cornerRadius = 28.dp, independent = true)" in edit
     assert "settingsGlassContainerColor(MaterialTheme.colorScheme.surfaceContainerLow)" in edit
     assert ".imePadding()" in edit
 

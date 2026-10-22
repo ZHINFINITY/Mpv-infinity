@@ -230,6 +230,7 @@ fun Modifier.liquidGlassPane(
   highlight: Float = 0.18f,
   cornerRadius: Dp = 24.dp,
   drawRim: Boolean = true,
+  materialRole: GlassSurfacePolicy.MaterialRole = GlassSurfacePolicy.MaterialRole.Clear,
 ): Modifier {
   if (!enabled) return this
   val backdrop = LocalLiquidGlassBackdrop.current
@@ -240,10 +241,13 @@ fun Modifier.liquidGlassPane(
     return browserGlassPane(enabled,
       if (tuning.overrideMaterial) tuning.opacity else opacity,
       if (tuning.overrideMaterial) tuning.highlight else highlight, cornerRadius,
-      drawRim = drawRim)
+      drawRim = drawRim, materialRole = materialRole)
   }
   val tint = MaterialTheme.colorScheme.surfaceContainerHigh
+  val themedTint = if (materialRole == GlassSurfacePolicy.MaterialRole.Regular)
+    GlassSurfacePolicy.regularTintColor(tint, MaterialTheme.colorScheme.onSurface) else tint
   val alpha = GlassSurfacePolicy.opacity(if (tuning.overrideMaterial) tuning.opacity else opacity)
+  val material = GlassSurfacePolicy.materialTuning(materialRole)
   val hostView = LocalView.current
   val glow = GlassSurfacePolicy.highlight(if (tuning.overrideMaterial) tuning.highlight else highlight)
   val reducedMotion = AppMotion.shouldReduceMotion()
@@ -363,10 +367,18 @@ fun Modifier.liquidGlassPane(
               shader.setFloatUniform("light", bevel.normalX, bevel.normalY)
               shader.setFloatUniform("specular", bevel.specular)
               shader.setFloatUniform("fresnel", bevel.fresnel)
-              val lensAllowed = scene.refractionEnabled && size.minDimension <= 128.dp.toPx() && size.maxDimension <= 512.dp.toPx()
-              shader.setFloatUniform("strength", if (lensAllowed) 4.dp.toPx() *
+              // Keep the bend on normal dialogs and sheets; only very large
+              // surfaces are bounded to avoid turning a full-screen layer into
+              // a refraction pass.
+              val lensAllowed = scene.refractionEnabled &&
+                if (materialRole == GlassSurfacePolicy.MaterialRole.Regular) size.maxDimension <= 1024.dp.toPx()
+                else size.minDimension <= 128.dp.toPx() && size.maxDimension <= 512.dp.toPx()
+              shader.setFloatUniform("strength", if (lensAllowed) 4.dp.toPx() * material.refractionMultiplier *
                 GlassSurfacePolicy.refractionStrength(tuning.refraction, reducedMotion, highContrast) else 0f)
-              shader.setFloatUniform("frost", 10.dp.toPx() * tuning.frost)
+              val frostDp = if (materialRole == GlassSurfacePolicy.MaterialRole.Regular)
+                maxOf(GlassSurfacePolicy.RegularMinimumFrostDp, 10f * tuning.frost * material.frostMultiplier)
+              else 10f * tuning.frost * material.frostMultiplier
+              shader.setFloatUniform("frost", frostDp * density)
               paint.shader = shader
             }.isSuccess
             if (!mapped) {
@@ -387,8 +399,13 @@ fun Modifier.liquidGlassPane(
           }
         }
         // Film guarantees readable controls, even when sampling is intentionally unavailable.
-        drawRoundRect(tint.copy(alpha = GlassSurfacePolicy.filmAlpha(
-          if (scene == null) GlassSurfacePolicy.browserFallbackAlpha(alpha) else alpha * 0.32f, highContrast)),
+        val centerFilm = if (materialRole == GlassSurfacePolicy.MaterialRole.Regular)
+          GlassSurfacePolicy.regularCenterFilmAlpha(alpha)
+        else (alpha * material.tintAlpha).coerceAtMost(0.72f)
+        val filmAlpha = if (materialRole == GlassSurfacePolicy.MaterialRole.Regular) GlassSurfacePolicy.filmAlpha(centerFilm, highContrast)
+          else GlassSurfacePolicy.filmAlpha(
+            if (scene == null) GlassSurfacePolicy.browserFallbackAlpha(alpha) else centerFilm, highContrast)
+        drawRoundRect(themedTint.copy(alpha = filmAlpha),
           cornerRadius = CornerRadius(radius))
         drawRoundRect(Brush.verticalGradient(listOf(
           Color.White.copy(alpha = optics.bodyHighlight),

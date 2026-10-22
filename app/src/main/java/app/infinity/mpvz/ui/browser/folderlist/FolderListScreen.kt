@@ -54,6 +54,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.ToggleFloatingActionButton
 import app.infinity.mpvz.ui.preferences.components.settingsGlassContainerColor
 import app.infinity.mpvz.ui.preferences.components.settingsGlassSurface
+import app.infinity.mpvz.ui.theme.BrowserLayoutPolicy
 import androidx.compose.material3.ToggleFloatingActionButtonDefaults.animateIcon
 import androidx.compose.material3.TooltipAnchorPosition
 import androidx.compose.material3.TooltipBox
@@ -1429,6 +1430,8 @@ private fun GridContent(
   audioOnly: Boolean = false,
   onQuickPlayFolder: ((VideoFolder) -> Unit)? = null,
 ) {
+  val glassEnabled by koinInject<AppearancePreferences>().liquidGlassSurfaces.collectAsState()
+  val geometry = BrowserLayoutPolicy.geometry(glassEnabled)
   val newCountByBucketId =
     remember(foldersWithNewCount) {
       foldersWithNewCount.associate { it.folder.bucketId to it.newVideoCount }
@@ -1467,12 +1470,13 @@ private fun GridContent(
       modifier = Modifier.fillMaxSize(),
       contentPadding =
         PaddingValues(
-          start = 16.dp,
-          end = 16.dp,
+          start = if (glassEnabled) geometry.edgeInset else 16.dp,
+          end = if (glassEnabled) geometry.edgeInset else 16.dp,
+          top = if (glassEnabled) geometry.edgeInset else 0.dp,
           bottom = navigationBarHeight + 24.dp,
         ),
-      horizontalArrangement = Arrangement.spacedBy(12.dp),
-      verticalArrangement = Arrangement.spacedBy(12.dp),
+      horizontalArrangement = Arrangement.spacedBy(if (glassEnabled) geometry.gridGap else 12.dp),
+      verticalArrangement = Arrangement.spacedBy(if (glassEnabled) geometry.gridGap else 12.dp),
     ) {
       items(count = folders.size, key = { index -> folders[index].bucketId }) { index ->
         val folder = folders[index]
@@ -1563,18 +1567,20 @@ private fun ListContent(
       foldersWithNewCount.associate { it.folder.bucketId to it.newVideoCount }
     }
   val recentlyPlayedParent = remember(recentlyPlayedFilePath) { recentlyPlayedFilePath?.let(::File)?.parent }
+  val glassEnabled by koinInject<AppearancePreferences>().liquidGlassSurfaces.collectAsState()
+  val geometry = BrowserLayoutPolicy.geometry(glassEnabled)
 
   Box(modifier = Modifier.fillMaxSize()) {
     LazyColumn(
       state = listState,
       modifier = Modifier.fillMaxSize(),
-      contentPadding =
-        PaddingValues(
-          start = 16.dp,
-          end = 16.dp,
-          bottom = navigationBarHeight + 24.dp,
-        ),
-      verticalArrangement = Arrangement.spacedBy(12.dp),
+      contentPadding = PaddingValues(
+        start = if (glassEnabled) geometry.edgeInset else 16.dp,
+        end = if (glassEnabled) geometry.edgeInset else 16.dp,
+        top = if (glassEnabled) geometry.edgeInset else 0.dp,
+        bottom = navigationBarHeight + 24.dp,
+      ),
+      verticalArrangement = Arrangement.spacedBy(if (glassEnabled) geometry.listGap else 12.dp),
     ) {
       items(folders, key = { it.bucketId }) { folder ->
         val isRecentlyPlayed = recentlyPlayedParent == folder.path
@@ -1740,18 +1746,20 @@ private fun SearchResultsContent(
             maxWidth = maxWidth,
             isGridMode = true,
           )
+        val glassEnabled by koinInject<AppearancePreferences>().liquidGlassSurfaces.collectAsState()
+        val geometry = BrowserLayoutPolicy.geometry(glassEnabled)
         LazyVerticalGrid(
           columns = GridCells.Fixed(spansInfo.spans),
           modifier = Modifier.fillMaxSize(),
           contentPadding =
             PaddingValues(
-              start = 8.dp,
-              end = 8.dp,
-              top = 8.dp,
+              start = geometry.edgeInset,
+              end = geometry.edgeInset,
+              top = if (glassEnabled) geometry.edgeInset else 8.dp,
               bottom = navigationBarHeight + 24.dp,
             ),
-          horizontalArrangement = Arrangement.spacedBy(4.dp),
-          verticalArrangement = Arrangement.spacedBy(10.dp),
+          horizontalArrangement = Arrangement.spacedBy(geometry.gridGap),
+          verticalArrangement = Arrangement.spacedBy(if (glassEnabled) geometry.gridGap else 10.dp),
         ) {
           items(
             count = folders.size,

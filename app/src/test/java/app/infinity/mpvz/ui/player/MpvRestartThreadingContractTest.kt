@@ -49,6 +49,22 @@ class MpvRestartThreadingContractTest {
     assertFalse(view.contains("private data class FlowDisplayRefreshRate("))
   }
 
+  @Test fun replacementCoreOptionsAreAdmittedBeforeInitWhileCallbacksRemainClosed() {
+    val init = source("PlaybackSession").substringAfter("  fun initialize(")
+      .substringBefore("  fun bindSurface(")
+    val retired = init.indexOf("retireCoreForLifecycleChange()")
+    val closed = init.indexOf("nativeCallbackGate.closeAndDrain()")
+    val admitted = init.indexOf("retiringCore = false")
+    val create = init.indexOf("MPVLib.create(")
+    val configure = init.indexOf("initOptions()")
+    val initialized = init.indexOf("MPVLib.init()")
+    val post = init.indexOf("postInitOptions()")
+    val open = init.indexOf("nativeCallbackGate.open()")
+    assertTrue("drain callbacks before admitting the replacement owner", retired >= 0 && closed > retired && admitted > closed)
+    assertTrue("replacement must receive renderer/hwdec/Flow options", admitted < create && create < configure && configure < initialized)
+    assertTrue("post-init options need access before callbacks reopen", initialized < post && post < open)
+  }
+
   @Test fun generationIsPublishedBeforeNativeLoadCanEmitCallbacks() {
     val session = source("PlaybackSession")
     val load = session.substringAfter("  private fun load(")

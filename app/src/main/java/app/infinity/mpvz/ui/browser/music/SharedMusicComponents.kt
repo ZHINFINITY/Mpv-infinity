@@ -69,6 +69,7 @@ import app.infinity.mpvz.ui.icons.Icons
 import app.infinity.mpvz.ui.player.PlaybackSession
 import app.infinity.mpvz.ui.player.controls.components.MiniAudioVisualizer
 import app.infinity.mpvz.ui.theme.AppShapeScale
+import app.infinity.mpvz.ui.theme.BrowserLayoutPolicy
 import app.infinity.mpvz.ui.preferences.components.settingsGlassSurface
 import app.infinity.mpvz.ui.preferences.components.settingsGlassContainerColor
 import org.koin.compose.koinInject
@@ -96,11 +97,12 @@ fun SharedMusicTrackListItem(
   swipeIdentity: String = title,
   isWatched: Boolean? = null,
   onSwipeAction: ((Any) -> Unit)? = null,
+  parentOwnsSpacing: Boolean = false,
 ) {
   Card(
     modifier = modifier
       .fillMaxWidth()
-      .padding(horizontal = 12.dp, vertical = 6.dp)
+      .padding(BrowserLayoutPolicy.musicRowPadding(parentOwnsSpacing))
       .clip(AppShapeScale.large)
       .semantics { selected = isSelected }
       .settingsGlassSurface(cornerRadius = 20.dp)

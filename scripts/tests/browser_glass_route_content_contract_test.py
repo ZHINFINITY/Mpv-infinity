@@ -38,9 +38,10 @@ class BrowserGlassRouteContentContracts(unittest.TestCase):
 
     def test_home_spacing_keeps_last_rows_reachable(self):
         self.assertIn("bottom = navigationBarHeight + 24.dp", FOLDERS)
-        self.assertIn("start = 16.dp", FOLDERS)
-        self.assertIn("end = 16.dp", FOLDERS)
-        self.assertIn("Arrangement.spacedBy(12.dp)", FOLDERS)
+        self.assertIn("start = if (glassEnabled) geometry.edgeInset else 16.dp", FOLDERS)
+        self.assertIn("end = if (glassEnabled) geometry.edgeInset else 16.dp", FOLDERS)
+        self.assertIn("Arrangement.spacedBy(if (glassEnabled) geometry.gridGap else 12.dp)", FOLDERS)
+        self.assertIn("Arrangement.spacedBy(if (glassEnabled) geometry.listGap else 12.dp)", FOLDERS)
         self.assertIn("padding(horizontal = 14.dp, vertical = 16.dp)", CARD)
 
 

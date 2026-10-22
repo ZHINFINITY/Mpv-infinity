@@ -275,9 +275,10 @@ fun BrowserGlassSurface(
   cornerRadius: Dp = 28.dp,
   selected: Boolean = false,
   deformation: Float = 0f,
+  materialRole: GlassSurfacePolicy.MaterialRole = GlassSurfacePolicy.MaterialRole.Clear,
   content: @Composable BoxScope.() -> Unit = {},
 ) {
-  Box(modifier.browserGlassPane(enabled, opacity, highlight, cornerRadius, selected, deformation), content = content)
+  Box(modifier.browserGlassPane(enabled, opacity, highlight, cornerRadius, selected, deformation, materialRole = materialRole), content = content)
 }
 
 /** The shared pane path used by folders, settings and Quick Play outside MainScreen. */
@@ -297,6 +298,7 @@ internal fun Modifier.browserGlassPane(
   selected: Boolean = false,
   deformation: Float = 0f,
   drawRim: Boolean = true,
+  materialRole: GlassSurfacePolicy.MaterialRole = GlassSurfacePolicy.MaterialRole.Clear,
 ): Modifier {
   val hostView = LocalView.current
   val scene = LocalBrowserScene.current
@@ -304,8 +306,11 @@ internal fun Modifier.browserGlassPane(
   val tuning = LocalGlassCustomization.current
   val shape = remember(cornerRadius) { RoundedCornerShape(cornerRadius) }
   val tint = if (selected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerHigh
+  val themedTint = if (materialRole == GlassSurfacePolicy.MaterialRole.Regular)
+    GlassSurfacePolicy.regularTintColor(tint, MaterialTheme.colorScheme.onSurface) else tint
   val film = GlassSurfacePolicy.opacity(if (tuning.overrideMaterial) tuning.opacity else opacity)
   val glow = GlassSurfacePolicy.highlight(if (tuning.overrideMaterial) tuning.highlight else highlight)
+  val material = GlassSurfacePolicy.materialTuning(materialRole)
   // Exactly the same static optical profile as player panes: depth remains
   // visible over an AMOLED/flat backdrop and when motion or capture is reduced.
   val optics = GlassSurfacePolicy.depthOptics(tuning.depth, glow)
@@ -339,16 +344,26 @@ internal fun Modifier.browserGlassPane(
         val effect = if (refraction) runCatching {
           shader!!.setFloatUniform("pane", size.width, size.height)
           shader.setFloatUniform("radius", radius)
-          shader.setFloatUniform("bend", (if (selected) 9f else 5f) * density * tuning.refraction)
+          shader.setFloatUniform("bend", (if (selected) 9f else 5f) * density * tuning.refraction * material.refractionMultiplier)
           shader.setFloatUniform("motion", deformation.coerceIn(0f, 1f))
           shader.setFloatUniform("thickness", tuning.depth)
           shader.setFloatUniform("highlight", glow)
           val lensEffect = RenderEffect.createRuntimeShaderEffect(shader, "scene")
-          (if (tuning.frost > 0f) RenderEffect.createChainEffect(lensEffect,
-            RenderEffect.createBlurEffect(2f * density * tuning.frost, 2f * density * tuning.frost, Shader.TileMode.CLAMP))
+          (if (materialRole == GlassSurfacePolicy.MaterialRole.Regular || tuning.frost > 0f) RenderEffect.createChainEffect(lensEffect,
+            RenderEffect.createBlurEffect(
+              (if (materialRole == GlassSurfacePolicy.MaterialRole.Regular)
+                maxOf(GlassSurfacePolicy.RegularMinimumFrostDp, 2f * tuning.frost * material.frostMultiplier)
+              else 2f * tuning.frost * material.frostMultiplier) * density,
+              (if (materialRole == GlassSurfacePolicy.MaterialRole.Regular)
+                maxOf(GlassSurfacePolicy.RegularMinimumFrostDp, 2f * tuning.frost * material.frostMultiplier)
+              else 2f * tuning.frost * material.frostMultiplier) * density,
+              Shader.TileMode.CLAMP))
           else lensEffect).asComposeRenderEffect()
-        }.getOrNull() else if (Build.VERSION.SDK_INT >= 31 && scene != null && tuning.frost > 0f) runCatching {
-          RenderEffect.createBlurEffect(3f * density * tuning.frost, 3f * density * tuning.frost, Shader.TileMode.CLAMP).asComposeRenderEffect()
+        }.getOrNull() else if (Build.VERSION.SDK_INT >= 31 && scene != null && (tuning.frost > 0f || materialRole == GlassSurfacePolicy.MaterialRole.Regular)) runCatching {
+          val blurDp = if (materialRole == GlassSurfacePolicy.MaterialRole.Regular)
+            maxOf(GlassSurfacePolicy.RegularMinimumFrostDp, 3f * tuning.frost * material.frostMultiplier)
+          else 3f * tuning.frost * material.frostMultiplier
+          RenderEffect.createBlurEffect(blurDp * density, blurDp * density, Shader.TileMode.CLAMP).asComposeRenderEffect()
         }.getOrNull() else null
         lens.renderEffect = effect
         // A route-content lens replaces pixels with their refracted copy, avoiding
@@ -373,7 +388,12 @@ internal fun Modifier.browserGlassPane(
             }
             drawLayer(lens)
           }
-          drawRoundRect(tint.copy(alpha = if (hasScene) film * (if (selected) 0.24f else 0.20f) else GlassSurfacePolicy.browserFallbackAlpha(film)), cornerRadius = CornerRadius(radius))
+          val centerFilm = if (materialRole == GlassSurfacePolicy.MaterialRole.Regular)
+            GlassSurfacePolicy.regularCenterFilmAlpha(film)
+          else film * (if (selected) 0.24f else 0.20f)
+          val fallbackFilm = if (materialRole == GlassSurfacePolicy.MaterialRole.Regular) centerFilm
+            else GlassSurfacePolicy.browserFallbackAlpha(film)
+          drawRoundRect(themedTint.copy(alpha = if (hasScene) centerFilm else fallbackFilm), cornerRadius = CornerRadius(radius))
           drawRoundRect(Brush.verticalGradient(listOf(
             Color.White.copy(alpha = (optics.bodyHighlight + if (selected) glow * 0.24f else 0f).coerceAtMost(0.55f)),
             Color.Transparent,

@@ -17,6 +17,7 @@ import androidx.compose.ui.unit.dp
 import app.infinity.mpvz.preferences.AppearancePreferences
 import app.infinity.mpvz.preferences.preference.collectAsState
 import app.infinity.mpvz.ui.theme.liquidGlassPane
+import app.infinity.mpvz.ui.theme.GlassSurfacePolicy
 import org.koin.compose.koinInject
 
 /** Apply to the entire popup surface, never just its title, text, or menu items.
@@ -31,7 +32,8 @@ fun Modifier.playerGlassOverlay(cornerRadius: Dp = 28.dp): Modifier {
   val highlight by appearance.glassSurfaceHighlight.collectAsState()
   val shape = RoundedCornerShape(cornerRadius)
   return clip(shape)
-    .liquidGlassPane(enabled, opacity, highlight, cornerRadius)
+    .liquidGlassPane(enabled, opacity, highlight, cornerRadius,
+      materialRole = GlassSurfacePolicy.MaterialRole.Regular)
     .then(if (enabled) Modifier else Modifier.background(MaterialTheme.colorScheme.surfaceContainerHigh, shape))
 }
 

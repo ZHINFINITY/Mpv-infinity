@@ -155,6 +155,7 @@ import app.infinity.mpvz.ui.components.InlineSearchBar
 import app.infinity.mpvz.ui.icons.Icon
 import app.infinity.mpvz.ui.icons.Icons
 import app.infinity.mpvz.ui.theme.AppShapeScale
+import app.infinity.mpvz.ui.theme.BrowserLayoutPolicy
 import app.infinity.mpvz.ui.utils.LocalBackStack
 import app.infinity.mpvz.utils.media.MediaUtils
 import app.infinity.mpvz.utils.permission.PermissionUtils
@@ -910,6 +911,8 @@ fun MusicLibraryContent(
         selectedSongForOptions?.let { song ->
           ModalBottomSheet(
             onDismissRequest = { selectedSongForOptions = null },
+            containerColor = settingsGlassContainerColor(MaterialTheme.colorScheme.surfaceContainerLow),
+            modifier = Modifier.settingsGlassSurface(cornerRadius = 28.dp, independent = true),
             sheetState =
               rememberBottomSheetState(
                 initialValue = SheetValue.Hidden,
@@ -1034,6 +1037,8 @@ fun MusicLibraryContent(
           }
           ModalBottomSheet(
             onDismissRequest = { selectedAlbumForOptions = null },
+            containerColor = settingsGlassContainerColor(MaterialTheme.colorScheme.surfaceContainerLow),
+            modifier = Modifier.settingsGlassSurface(cornerRadius = 28.dp, independent = true),
             sheetState =
               rememberBottomSheetState(
                 initialValue = SheetValue.Hidden,
@@ -1111,6 +1116,8 @@ fun MusicLibraryContent(
           }
           ModalBottomSheet(
             onDismissRequest = { selectedArtistForOptions = null },
+            containerColor = settingsGlassContainerColor(MaterialTheme.colorScheme.surfaceContainerLow),
+            modifier = Modifier.settingsGlassSurface(cornerRadius = 28.dp, independent = true),
             sheetState =
               rememberBottomSheetState(
                 initialValue = SheetValue.Hidden,
@@ -1177,6 +1184,8 @@ fun MusicLibraryContent(
         selectedPlaylistForOptions?.let { playlist ->
           ModalBottomSheet(
             onDismissRequest = { selectedPlaylistForOptions = null },
+            containerColor = settingsGlassContainerColor(MaterialTheme.colorScheme.surfaceContainerLow),
+            modifier = Modifier.settingsGlassSurface(cornerRadius = 28.dp, independent = true),
             sheetState =
               rememberBottomSheetState(
                 initialValue = SheetValue.Hidden,
@@ -1410,6 +1419,7 @@ private fun SongsTabContent(
       else -> recentlyPlayedFilePath != null && path == recentlyPlayedFilePath
     }
 
+  val glassEnabled by koinInject<AppearancePreferences>().liquidGlassSurfaces.collectAsState()
   val navBarHeight = LocalNavigationBarHeight.current.takeIf { it > 0.dp } ?: 88.dp
   Column(modifier = Modifier.fillMaxSize()) {
     if (viewMode == MusicViewMode.GRID) {
@@ -1436,11 +1446,21 @@ private fun SongsTabContent(
         LazyColumn(
           state = listState,
           modifier = Modifier.fillMaxSize(),
-          contentPadding = PaddingValues(start = 0.dp, top = 8.dp, end = 32.dp, bottom = navBarHeight + 16.dp)
+          contentPadding = if (glassEnabled) {
+            BrowserLayoutPolicy.listPadding(BrowserLayoutPolicy.geometry(true), top = BrowserLayoutPolicy.geometry(true).edgeInset, bottom = navBarHeight + 16.dp)
+          } else {
+            PaddingValues(start = 0.dp, top = 8.dp, end = 32.dp, bottom = navBarHeight + 16.dp)
+          },
+          verticalArrangement = if (glassEnabled) {
+            Arrangement.spacedBy(BrowserLayoutPolicy.geometry(true).listGap)
+          } else {
+            Arrangement.Top
+          }
         ) {
           items(songs, key = { it.id }) { song ->
             SongListItem(
               song = song,
+              parentOwnsSpacing = glassEnabled,
               isSelected = selectionManager.isSelected(song),
               isPlaying = song.isNowPlaying(),
               coverArtSizeDp = coverArtSizeDp,
@@ -1597,6 +1617,7 @@ private fun SongListItem(
   isSelected: Boolean = false,
   isPlaying: Boolean = false,
   coverArtSizeDp: Int = MusicThumbnailDefaults.DEFAULT_DP,
+  parentOwnsSpacing: Boolean = false,
   onClick: () -> Unit,
   onLongClick: (() -> Unit)? = null
 ) {
@@ -1608,6 +1629,7 @@ private fun SongListItem(
     isPlaying = isPlaying,
     isSelected = isSelected,
     coverArtSizeDp = coverArtSizeDp,
+    parentOwnsSpacing = parentOwnsSpacing,
     onClick = onClick,
     onLongClick = onLongClick
   )
@@ -1629,6 +1651,7 @@ private fun AlbumsTabContent(
     return
   }
 
+  val glassEnabled by koinInject<AppearancePreferences>().liquidGlassSurfaces.collectAsState()
   val navBarHeight = LocalNavigationBarHeight.current.takeIf { it > 0.dp } ?: 88.dp
   if (viewMode == MusicViewMode.GRID) {
     LazyVerticalGrid(
@@ -1653,11 +1676,21 @@ private fun AlbumsTabContent(
       LazyColumn(
         state = listState,
         modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(start = 0.dp, top = 8.dp, end = 32.dp, bottom = navBarHeight + 16.dp)
+        contentPadding = if (glassEnabled) {
+            BrowserLayoutPolicy.listPadding(BrowserLayoutPolicy.geometry(true), top = BrowserLayoutPolicy.geometry(true).edgeInset, bottom = navBarHeight + 16.dp)
+          } else {
+            PaddingValues(start = 0.dp, top = 8.dp, end = 32.dp, bottom = navBarHeight + 16.dp)
+          },
+          verticalArrangement = if (glassEnabled) {
+            Arrangement.spacedBy(BrowserLayoutPolicy.geometry(true).listGap)
+          } else {
+            Arrangement.Top
+          }
       ) {
         items(albums, key = { it.id }) { album ->
           AlbumListCard(
             album = album,
+            parentOwnsSpacing = glassEnabled,
             isSelected = selectionManager.isSelected(album),
             coverArtSizeDp = coverArtSizeDp,
             onClick = { onAlbumClick(album) },
@@ -1771,13 +1804,14 @@ private fun AlbumListCard(
   album: MusicAlbum,
   isSelected: Boolean = false,
   coverArtSizeDp: Int = MusicThumbnailDefaults.DEFAULT_DP,
+  parentOwnsSpacing: Boolean = false,
   onClick: () -> Unit,
   onLongClick: () -> Unit
 ) {
   Surface(
     modifier = Modifier
       .fillMaxWidth()
-      .padding(horizontal = 12.dp, vertical = 6.dp)
+      .padding(BrowserLayoutPolicy.musicRowPadding(parentOwnsSpacing))
       .clip(AppShapeScale.large)
       .settingsGlassSurface(cornerRadius = 20.dp)
       .combinedClickable(onClick = onClick, onLongClick = onLongClick),
@@ -1863,6 +1897,7 @@ private fun ArtistsTabContent(
     return
   }
 
+  val glassEnabled by koinInject<AppearancePreferences>().liquidGlassSurfaces.collectAsState()
   val navBarHeight = LocalNavigationBarHeight.current.takeIf { it > 0.dp } ?: 88.dp
   if (viewMode == MusicViewMode.GRID) {
     LazyVerticalGrid(
@@ -1887,11 +1922,21 @@ private fun ArtistsTabContent(
       LazyColumn(
         state = listState,
         modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(start = 0.dp, top = 8.dp, end = 32.dp, bottom = navBarHeight + 16.dp)
+        contentPadding = if (glassEnabled) {
+            BrowserLayoutPolicy.listPadding(BrowserLayoutPolicy.geometry(true), top = BrowserLayoutPolicy.geometry(true).edgeInset, bottom = navBarHeight + 16.dp)
+          } else {
+            PaddingValues(start = 0.dp, top = 8.dp, end = 32.dp, bottom = navBarHeight + 16.dp)
+          },
+          verticalArrangement = if (glassEnabled) {
+            Arrangement.spacedBy(BrowserLayoutPolicy.geometry(true).listGap)
+          } else {
+            Arrangement.Top
+          }
       ) {
         items(artists, key = { it.id }) { artist ->
           ArtistListCard(
             artist = artist,
+            parentOwnsSpacing = glassEnabled,
             isSelected = selectionManager.isSelected(artist),
             coverArtSizeDp = coverArtSizeDp,
             onClick = { onArtistClick(artist) },
@@ -1989,13 +2034,14 @@ private fun ArtistListCard(
   artist: MusicArtist,
   isSelected: Boolean = false,
   coverArtSizeDp: Int = MusicThumbnailDefaults.DEFAULT_DP,
+  parentOwnsSpacing: Boolean = false,
   onClick: () -> Unit,
   onLongClick: () -> Unit
 ) {
   Surface(
     modifier = Modifier
       .fillMaxWidth()
-      .padding(horizontal = 12.dp, vertical = 6.dp)
+      .padding(BrowserLayoutPolicy.musicRowPadding(parentOwnsSpacing))
       .clip(AppShapeScale.large)
       .settingsGlassSurface(cornerRadius = 20.dp)
       .combinedClickable(onClick = onClick, onLongClick = onLongClick),
@@ -2405,6 +2451,7 @@ private fun PlaylistsTabContent(
     if (playlists.isEmpty()) {
       EmptyMusicState(text = "No playlists found. Create one!")
     } else {
+      val glassEnabled by koinInject<AppearancePreferences>().liquidGlassSurfaces.collectAsState()
       val navBarHeight = LocalNavigationBarHeight.current.takeIf { it > 0.dp } ?: 88.dp
       if (viewMode == MusicViewMode.GRID) {
         LazyVerticalGrid(
@@ -2435,7 +2482,16 @@ private fun PlaylistsTabContent(
           LazyColumn(
             state = listState,
             modifier = Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(start = 0.dp, top = 8.dp, end = 32.dp, bottom = navBarHeight + 16.dp)
+            contentPadding = if (glassEnabled) {
+            BrowserLayoutPolicy.listPadding(BrowserLayoutPolicy.geometry(true), top = BrowserLayoutPolicy.geometry(true).edgeInset, bottom = navBarHeight + 16.dp)
+          } else {
+            PaddingValues(start = 0.dp, top = 8.dp, end = 32.dp, bottom = navBarHeight + 16.dp)
+          },
+          verticalArrangement = if (glassEnabled) {
+            Arrangement.spacedBy(BrowserLayoutPolicy.geometry(true).listGap)
+          } else {
+            Arrangement.Top
+          }
           ) {
             items(playlists, key = { it.id }) { playlist ->
               val details = playlistDetails[playlist.id]
@@ -2480,7 +2536,7 @@ private fun AlbumDetailSheet(
   ModalBottomSheet(
     onDismissRequest = onDismiss,
     containerColor = settingsGlassContainerColor(MaterialTheme.colorScheme.surfaceContainerLow),
-    modifier = Modifier.settingsGlassSurface(cornerRadius = 28.dp),
+    modifier = Modifier.settingsGlassSurface(cornerRadius = 28.dp, independent = true),
     sheetState =
       rememberBottomSheetState(
         initialValue = SheetValue.Hidden,
@@ -2579,7 +2635,7 @@ private fun ArtistDetailSheet(
   ModalBottomSheet(
     onDismissRequest = onDismiss,
     containerColor = settingsGlassContainerColor(MaterialTheme.colorScheme.surfaceContainerLow),
-    modifier = Modifier.settingsGlassSurface(cornerRadius = 28.dp),
+    modifier = Modifier.settingsGlassSurface(cornerRadius = 28.dp, independent = true),
     sheetState =
       rememberBottomSheetState(
         initialValue = SheetValue.Hidden,
@@ -2659,6 +2715,8 @@ private fun CreatePlaylistDialog(
 
   androidx.compose.material3.AlertDialog(
     onDismissRequest = onDismiss,
+    containerColor = settingsGlassContainerColor(androidx.compose.material3.AlertDialogDefaults.containerColor),
+    modifier = Modifier.settingsGlassSurface(cornerRadius = 28.dp, independent = true),
     title = { Text("Create Playlist") },
     text = {
       OutlinedTextField(

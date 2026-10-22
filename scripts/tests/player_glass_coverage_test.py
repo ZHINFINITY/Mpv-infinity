@@ -41,7 +41,8 @@ class PlayerGlassCoverage(unittest.TestCase):
         self.assertIn("playerGlassOverlay(999.dp)", text)
         self.assertIn("color = androidx.compose.ui.graphics.Color.Transparent", text)
         overlay = (ROOT / "app/src/main/java/app/infinity/mpvz/presentation/components/PlayerGlassOverlays.kt").read_text()
-        self.assertIn(".liquidGlassPane(enabled, opacity, highlight, cornerRadius)", overlay)
+        self.assertIn(".liquidGlassPane(enabled, opacity, highlight, cornerRadius,", overlay)
+        self.assertIn("materialRole = GlassSurfacePolicy.MaterialRole.Regular", overlay)
         self.assertIn("MaterialTheme.colorScheme.surfaceContainerHigh", overlay)
 
     def test_glass_toggle_is_not_bypassed_by_legacy_hide_background_local(self):

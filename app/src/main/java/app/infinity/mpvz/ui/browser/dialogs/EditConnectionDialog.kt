@@ -103,7 +103,7 @@ fun EditConnectionSheet(
   ModalBottomSheet(
     onDismissRequest = handleDismiss,
     sheetState = sheetState,
-    modifier = modifier.settingsGlassSurface(cornerRadius = 28.dp),
+    modifier = modifier.settingsGlassSurface(cornerRadius = 28.dp, independent = true),
     shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
     containerColor = settingsGlassContainerColor(MaterialTheme.colorScheme.surfaceContainerLow),
     dragHandle = { BottomSheetDefaults.DragHandle() },

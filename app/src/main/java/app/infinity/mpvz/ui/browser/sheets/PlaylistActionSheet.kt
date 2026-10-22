@@ -75,7 +75,7 @@ fun PlaylistActionSheet(
   val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
   ModalBottomSheet(
-      containerColor = settingsGlassContainerColor(MaterialTheme.colorScheme.surfaceContainerLow),
+    containerColor = settingsGlassContainerColor(MaterialTheme.colorScheme.surfaceContainerLow),
     onDismissRequest = onDismiss,
     sheetState = sheetState,
     dragHandle = { BottomSheetDefaults.DragHandle() },
@@ -84,7 +84,7 @@ fun PlaylistActionSheet(
       modifier =
         modifier
           .fillMaxWidth()
-          .settingsGlassSurface(cornerRadius = 28.dp)
+          .settingsGlassSurface(cornerRadius = 28.dp, independent = true)
           .padding(start = 24.dp, end = 24.dp, top = 8.dp, bottom = 16.dp)
           .verticalScroll(rememberScrollState()),
       verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -220,8 +220,11 @@ fun PlaylistActionSheet(
         modifier =
           (Modifier
             .fillMaxWidth()
-            .padding(16.dp)).settingsGlassSurface(cornerRadius = 20.dp),
+            .padding(16.dp)).settingsGlassSurface(cornerRadius = 28.dp, independent = true),
         shape = MaterialTheme.shapes.extraLarge,
+        colors = CardDefaults.cardColors(
+          containerColor = settingsGlassContainerColor(MaterialTheme.colorScheme.surfaceContainerHighest),
+        ),
       ) {
         Column(
           modifier = Modifier.padding(24.dp),
@@ -341,8 +344,11 @@ fun PlaylistActionSheet(
         modifier =
           (Modifier
             .fillMaxWidth()
-            .padding(16.dp)).settingsGlassSurface(cornerRadius = 20.dp),
+            .padding(16.dp)).settingsGlassSurface(cornerRadius = 28.dp, independent = true),
         shape = MaterialTheme.shapes.extraLarge,
+        colors = CardDefaults.cardColors(
+          containerColor = settingsGlassContainerColor(MaterialTheme.colorScheme.surfaceContainerHighest),
+        ),
       ) {
         Column(
           modifier = Modifier.padding(24.dp),

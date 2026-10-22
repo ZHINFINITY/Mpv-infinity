@@ -69,7 +69,8 @@ import app.infinity.mpvz.ui.icons.Icons
 import app.infinity.mpvz.ui.theme.AppShapeScale
 import app.infinity.mpvz.preferences.AppearancePreferences
 import app.infinity.mpvz.preferences.preference.collectAsState
-import app.infinity.mpvz.ui.theme.liquidGlassPane
+import app.infinity.mpvz.ui.preferences.components.settingsGlassContainerColor
+import app.infinity.mpvz.ui.preferences.components.settingsGlassSurface
 import kotlin.math.roundToInt
 import org.koin.compose.koinInject
 
@@ -323,14 +324,14 @@ fun SortDialog(
         )
       }
     },
-    containerColor = if (glassEnabled) Color.Transparent else MaterialTheme.colorScheme.surfaceContainerHigh,
+    containerColor = settingsGlassContainerColor(MaterialTheme.colorScheme.surfaceContainerHigh),
     tonalElevation = 6.dp,
     shape = MaterialTheme.shapes.extraLarge,
     modifier =
       modifier
         .widthIn(max = 500.dp)
         .fillMaxWidth(0.88f)
-        .liquidGlassPane(enabled = glassEnabled, cornerRadius = 28.dp),
+        .settingsGlassSurface(cornerRadius = 28.dp, independent = true),
     properties =
       DialogProperties(
         usePlatformDefaultWidth = false,

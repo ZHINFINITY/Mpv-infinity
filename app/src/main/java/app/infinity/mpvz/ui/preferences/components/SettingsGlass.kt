@@ -19,6 +19,7 @@ import app.infinity.mpvz.preferences.AppearancePreferences
 import app.infinity.mpvz.preferences.preference.collectAsState
 import app.infinity.mpvz.ui.theme.liquidGlassPane
 import app.infinity.mpvz.ui.theme.LocalGlassCustomization
+import app.infinity.mpvz.ui.theme.GlassSurfacePolicy
 import org.koin.compose.koinInject
 
 /** Shared master state for native fill/elevation fallbacks around a glass-owned surface. */
@@ -54,6 +55,8 @@ fun Modifier.settingsGlassSurface(
     opacity = opacity ?: tuning.opacity,
     highlight = highlight ?: tuning.highlight,
     cornerRadius = cornerRadius,
+    materialRole = if (independent) GlassSurfacePolicy.MaterialRole.Regular
+      else GlassSurfacePolicy.MaterialRole.Clear,
   )
 }
 

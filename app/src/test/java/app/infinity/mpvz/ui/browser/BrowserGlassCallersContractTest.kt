@@ -34,8 +34,9 @@ class BrowserGlassCallersContractTest {
   fun folderGridUsesBalancedSpacingAndSwipeKeepsWatchedCallback() {
     val screen = File(root, "folderlist/FolderListScreen.kt").readText()
     val swipe = File(root, "cards/SwipeableFolderActions.kt").readText()
-    assertTrue(screen.contains("horizontalArrangement = Arrangement.spacedBy(12.dp)"))
-    assertTrue(screen.contains("verticalArrangement = Arrangement.spacedBy(12.dp)"))
+    assertTrue(screen.contains("horizontalArrangement = Arrangement.spacedBy(if (glassEnabled) geometry.gridGap else 12.dp)"))
+    assertTrue(screen.contains("verticalArrangement = Arrangement.spacedBy(if (glassEnabled) geometry.gridGap else 12.dp)"))
+    assertTrue(screen.contains("val geometry = BrowserLayoutPolicy.geometry(glassEnabled)"))
     assertTrue(swipe.contains("currentOnWatchedChange(!currentIsWatched)"))
     assertFalse(swipe.contains("background(MaterialTheme.colorScheme.surface)"))
   }

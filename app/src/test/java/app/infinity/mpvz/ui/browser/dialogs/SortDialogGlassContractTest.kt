@@ -15,8 +15,8 @@ class SortDialogGlassContractTest {
 
   @Test fun actualDialogAndEachSegmentedOptionUseSharedGlassWithMasterFallback() {
     assertTrue(dialog.contains("liquidGlassSurfaces.collectAsState()"))
-    assertTrue(dialog.contains("containerColor = if (glassEnabled) Color.Transparent"))
-    assertTrue(dialog.contains(".liquidGlassPane(enabled = glassEnabled, cornerRadius = 28.dp)"))
+    assertTrue(dialog.contains("containerColor = settingsGlassContainerColor(MaterialTheme.colorScheme.surfaceContainerHigh)"))
+    assertTrue(dialog.contains(".settingsGlassSurface(cornerRadius = 28.dp, independent = true)"))
     val calls = Regex("SegmentedButton\\(\\s*modifier = Modifier\\.liquidGlassPane\\(enabled = glassEnabled").findAll(dialog).count()
     assertTrue("view, both layout choices and sort direction all own glass", calls == 4)
     val order = dialog.substringAfter("private fun SortOrderSelector(").substringBefore("private fun DialogSectionTitle")
