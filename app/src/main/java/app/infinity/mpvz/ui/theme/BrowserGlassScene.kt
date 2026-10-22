@@ -201,7 +201,7 @@ fun BrowserGlassSceneHost(
 fun BrowserGlassRouteContentHost(
   enabled: Boolean,
   routeContent: @Composable () -> Unit,
-  navigationContent: @Composable () -> Unit,
+  navigationContent: @Composable BoxScope.() -> Unit,
 ) {
   val hostView = LocalView.current
   val inheritedRootScene = LocalBrowserScene.current

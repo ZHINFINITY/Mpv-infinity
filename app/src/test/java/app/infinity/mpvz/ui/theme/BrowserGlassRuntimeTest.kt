@@ -123,7 +123,7 @@ class BrowserGlassRuntimeTest {
               val scene = currentBrowserGlassSceneIdentity()
               val instance = remember { ++navInstances }
               SideEffect { navScene = scene }
-              BrowserGlassSurface(modifier = Modifier.padding(top = 100.dp),
+              BrowserGlassSurface(modifier = Modifier.align(androidx.compose.ui.Alignment.BottomStart).padding(bottom = 12.dp),
                 enabled = enabled, opacity = 0.8f, highlight = 0.2f) {
                 Text("Navigation instance $instance", Modifier.clickable { navClicks++ })
               }

@@ -18,7 +18,7 @@ class BrowserGlassRouteContentContracts(unittest.TestCase):
         self.assertIn("navLayer.record(size = IntSize", host)
         self.assertIn("drawLayer(navLayer)", host)
         self.assertIn("lens.alpha = if (scene?.contentLens == true) 1f else GlassSurfacePolicy.browserSampleAlpha(film)", SCENE)
-        self.assertIn("navigationContent: @Composable () -> Unit", host)
+        self.assertIn("navigationContent: @Composable BoxScope.() -> Unit", host)
         self.assertIn("LocalBrowserScene provides navContentScene", host)
         self.assertIn("drawContent()", host)
         self.assertIn("GlassScenePolicy.validCaptureSize", host)
