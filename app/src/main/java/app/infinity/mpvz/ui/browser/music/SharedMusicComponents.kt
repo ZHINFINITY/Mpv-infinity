@@ -584,8 +584,7 @@ fun SharedMusicDetailHeader(
 ) {
   Column(
     modifier = modifier
-      .fillMaxWidth()
-      .settingsGlassSurface(cornerRadius = 20.dp),
+      .fillMaxWidth(),
     verticalArrangement = Arrangement.spacedBy(16.dp),
   ) {
     Row(

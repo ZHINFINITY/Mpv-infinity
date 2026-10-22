@@ -454,7 +454,7 @@ private fun SettingsSectionBlock(
 }
 
 @Composable
-private fun SettingsDestinationGroup(
+internal fun SettingsDestinationGroup(
   section: SettingsSection,
   selectedScreen: Screen?,
   onItemClick: (SettingsDestination) -> Unit,

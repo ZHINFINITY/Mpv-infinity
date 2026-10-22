@@ -42,7 +42,7 @@ import app.infinity.mpvz.preferences.preference.AndroidPreferenceStore
 import app.infinity.mpvz.ui.player.controls.components.GlassSlider
 import app.infinity.mpvz.ui.preferences.components.CustomThemeEditor
 import app.infinity.mpvz.ui.preferences.components.settingsGlassEnabled
-import app.infinity.mpvz.ui.preferences.components.settingsGlassPreferenceRow
+import app.infinity.mpvz.ui.preferences.components.settingsGlassSurface
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -230,13 +230,13 @@ class BrowserGlassRuntimeTest {
     }
   }
 
-  @Test fun actualSettingsCardsKeepBoundsAndSpacingWhenMasterChanges() {
+  @Test fun groupedReferenceSettingsRowsKeepBoundsAndSpacingWhenMasterChanges() {
     composeRule.setContent {
       MaterialTheme {
         BrowserGlassSceneHost(enabled = true) {
           Column(Modifier.width(320.dp)) {
             repeat(2) { index ->
-              Box(Modifier.fillMaxWidth().settingsGlassPreferenceRow().testTag("setting-$index")) {
+              Box(Modifier.fillMaxWidth().settingsGlassSurface(cornerRadius = 18.dp).testTag("setting-$index")) {
                 Text("Setting $index")
               }
             }
@@ -247,7 +247,8 @@ class BrowserGlassRuntimeTest {
     }
     val first = node("setting-0").fetchSemanticsNode().boundsInRoot
     val second = node("setting-1").fetchSemanticsNode().boundsInRoot
-    assertTrue(second.top > first.bottom)
+    // Reference grouped rows are contiguous inside one group card: no overlap, no per-row gap required.
+    assertTrue(second.top >= first.bottom - 0.5f)
     repeat(10) { cycle ->
       val enabled = cycle % 2 == 0
       composeRule.runOnIdle { appearance.liquidGlassSurfaces.set(enabled) }

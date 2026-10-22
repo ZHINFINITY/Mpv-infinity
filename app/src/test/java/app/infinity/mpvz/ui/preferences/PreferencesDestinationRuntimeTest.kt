@@ -87,6 +87,8 @@ class PreferencesDestinationRuntimeTest {
 
     val appearanceText = composeRule.onNodeWithText("Appearance", useUnmergedTree = true).assertIsDisplayed()
     val playerText = composeRule.onNodeWithText("Player", useUnmergedTree = true).assertIsDisplayed()
+    val firstBounds = appearanceText.fetchSemanticsNode().boundsInRoot
+    val secondBounds = playerText.fetchSemanticsNode().boundsInRoot
     assertTrue("destination text must be displayed", firstBounds.height > 0f)
     assertTrue("destination rows must have stable ordering", secondBounds.top > firstBounds.top)
 

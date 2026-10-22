@@ -2,6 +2,7 @@
 package app.infinity.mpvz.ui.browser.music
 
 import java.io.File
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -29,7 +30,11 @@ class MusicGlassCallersContractTest {
     assertTrue(library.contains("private fun AlbumGridCard"))
     assertTrue(library.contains("private fun ArtistGridCard"))
     assertTrue(shared.contains("fun SharedMusicTrackListItem") && shared.contains("fun SharedMusicGridCard"))
-    assertTrue(shared.contains("fun SharedMusicDetailHeader") && shared.contains(".settingsGlassSurface(cornerRadius = 20.dp)"))
+    // Approved reference: the detail header is plain content inside the independent detail-sheet pane,
+    // so it must not add a second nested glass card.
+    val header = shared.substringAfter("fun SharedMusicDetailHeader(").substringBefore("\n}\n")
+    assertTrue(shared.contains("fun SharedMusicDetailHeader"))
+    assertFalse(header.contains("settingsGlassSurface"))
 
     // Detail sheets own the independent pane. Assert within each real entry-point
     // scope so formatting/parameter additions do not turn this into a literal-wrapper test.
