@@ -35,9 +35,10 @@ object PlayerAmbientTintPolicy {
 
   /**
    * Film colour for a glass pane. Only player hosts (which provide a video backdrop) may adopt
-   * the ambient colour; browser and settings panes always keep their themed film.
+   * the ambient colour, and only under light (white) sheet text; browser and settings panes and
+   * light-theme sheets keep their themed film.
    */
-  fun filmColor(themed: Color, ambient: Color?, isPlayerHost: Boolean): Color =
-    if (!isPlayerHost || ambient == null) themed
+  fun filmColor(themed: Color, ambient: Color?, isPlayerHost: Boolean, lightText: Boolean = true): Color =
+    if (!isPlayerHost || ambient == null || !lightText) themed
     else lerp(ambient.copy(alpha = 1f), Color.Black, LegibilityDarkening)
 }

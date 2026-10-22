@@ -71,7 +71,13 @@ import kotlinx.coroutines.withContext
 import kotlin.coroutines.resume
 
 /** Immutable snapshot: window coordinates prevent every control showing the entire frame. */
-data class LiquidGlassFrame(val image: ImageBitmap, val boundsInWindow: Rect, val refractionEnabled: Boolean = true)
+/** [underlayLuma] is the frosted sample's bright-percentile sRGB luma (1 = assume a white backdrop). */
+data class LiquidGlassFrame(
+  val image: ImageBitmap,
+  val boundsInWindow: Rect,
+  val refractionEnabled: Boolean = true,
+  val underlayLuma: Float = 1f,
+)
 
 // State is read in the draw phase, not propagated as a new composition tree at sample cadence.
 val LocalLiquidGlassBackdrop = compositionLocalOf<State<LiquidGlassFrame?>?> { null }
@@ -162,9 +168,10 @@ fun LiquidGlassBackdropHost(
           continue
         }
         // Only the tiny UI copy is cropped/frosted. The actual video surface remains untouched.
-        val bitmap = copyGlassFrame(source, crop, dimensions.first, dimensions.second)
+        val sampled = copyGlassFrame(source, crop, dimensions.first, dimensions.second)
           ?.let { frostGlassFrame(it, tuning.frost) }
-        if (bitmap == null) {
+        val bitmap = sampled?.first
+        if (sampled == null || bitmap == null) {
           transientFailure()
           failures = (failures + 1).coerceAtMost(GlassSamplingPolicy.FailureLimit)
         } else {
@@ -174,7 +181,8 @@ fun LiquidGlassBackdropHost(
           source.getLocationOnScreen(location)
           frame.value = LiquidGlassFrame(bitmap.asImageBitmap(), Rect(
             (location[0] + crop.left).toFloat(), (location[1] + crop.top).toFloat(),
-            (location[0] + crop.left + crop.width).toFloat(), (location[1] + crop.top + crop.height).toFloat()))
+            (location[0] + crop.left + crop.width).toFloat(), (location[1] + crop.top + crop.height).toFloat()),
+            underlayLuma = sampled.second)
         }
         // Recover after transient failures instead of permanently disabling glass after three errors.
         delay(if (failures > 0 && frame.value != null) GlassScenePolicy.TransientGraceMs
@@ -206,13 +214,14 @@ private suspend fun copyGlassFrame(source: SurfaceView, crop: GlassScenePolicy.S
     }
   }
 
-private suspend fun frostGlassFrame(bitmap: Bitmap, strength: Float): Bitmap? = try {
+// Returns the frosted bitmap and its bright-percentile luma, measured on the same background pass.
+private suspend fun frostGlassFrame(bitmap: Bitmap, strength: Float): Pair<Bitmap, Float>? = try {
   withContext(Dispatchers.Default) {
     val pixels = IntArray(bitmap.width * bitmap.height)
     bitmap.getPixels(pixels, 0, bitmap.width, 0, 0, bitmap.width, bitmap.height)
     val frosted = GlassFrostPolicy.frostArgb(pixels, bitmap.width, bitmap.height, strength)
     bitmap.setPixels(frosted, 0, bitmap.width, 0, 0, bitmap.width, bitmap.height)
-    bitmap
+    bitmap to GlassSurfacePolicy.underlayLuma(frosted)
   }
 } catch (cancelled: CancellationException) {
   bitmap.recycle() // This bitmap was never published to Compose.
@@ -266,6 +275,9 @@ fun Modifier.liquidGlassPane(
   }
   val optics = GlassSurfacePolicy.depthOptics(tuning.depth, glow, highContrast)
   val contrastRim = MaterialTheme.colorScheme.outline
+  // Sheet text is white on dark themes and black on light ones (PlayerSheet contentColor).
+  val lightText = GlassSurfacePolicy.srgbLuma(MaterialTheme.colorScheme.onSurface) >= 0.5f
+  val textColor = if (lightText) Color.White else Color.Black
   var paneBounds by remember { mutableStateOf(Rect.Zero) }
   // A large dp radius is commonly used for pills. Keep the shape's radius tied to
   // the actual local bounds instead of letting a wide control inherit a giant
@@ -404,8 +416,13 @@ fun Modifier.liquidGlassPane(
           }
         }
         // Film guarantees readable controls, even when sampling is intentionally unavailable.
+        val filmColor = PlayerAmbientTintPolicy.filmColor(themedTint, PlayerAmbientTint.color,
+          isPlayerHost = backdrop != null, lightText = lightText)
+        // Regular sheets keep the see-through reference film (opacity * 0.42); only a bright
+        // backdrop raises it, bounded at a light RegularMaximumFilmAlpha (never an opaque slab).
         val centerFilm = if (materialRole == GlassSurfacePolicy.MaterialRole.Regular)
-          GlassSurfacePolicy.regularCenterFilmAlpha(alpha)
+          GlassSurfacePolicy.regularAdaptiveFilmAlpha(alpha, scene?.underlayLuma ?: 1f, filmColor, textColor,
+            optics.bodyHighlight, optics.bodyShade)
         else (alpha * material.tintAlpha).coerceAtMost(0.72f)
         val filmAlpha = if (materialRole == GlassSurfacePolicy.MaterialRole.Regular) GlassSurfacePolicy.filmAlpha(centerFilm, highContrast)
           else GlassSurfacePolicy.filmAlpha(
@@ -421,8 +438,7 @@ fun Modifier.liquidGlassPane(
         if (scene != null || backdrop == null) {
           // Player hosts adopt the ambient glow colour (read here, in draw) instead of the
           // theme's dark surface, so sheets and the chapter pill follow the ambience.
-          drawRoundRect(PlayerAmbientTintPolicy.filmColor(themedTint, PlayerAmbientTint.color,
-            isPlayerHost = backdrop != null).copy(alpha = filmAlpha),
+          drawRoundRect(filmColor.copy(alpha = filmAlpha),
             cornerRadius = CornerRadius(radius))
         }
         drawRoundRect(Brush.verticalGradient(listOf(

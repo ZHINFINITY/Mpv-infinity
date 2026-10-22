@@ -389,6 +389,9 @@ internal fun Modifier.browserGlassPane(
   val themedTint = if (materialRole == GlassSurfacePolicy.MaterialRole.Regular)
     GlassSurfacePolicy.regularTintColor(tint, MaterialTheme.colorScheme.onSurface) else tint
   val film = GlassSurfacePolicy.opacity(if (tuning.overrideMaterial) tuning.opacity else opacity)
+  // Popups solve their film against the page behind them (a display list cannot be read back).
+  val popupText = MaterialTheme.colorScheme.onSurface
+  val popupUnderlay = GlassSurfacePolicy.browserUnderlayEstimate(MaterialTheme.colorScheme.background)
   val glow = GlassSurfacePolicy.highlight(if (tuning.overrideMaterial) tuning.highlight else highlight)
   val material = GlassSurfacePolicy.materialTuning(materialRole)
   // Exactly the same static optical profile as player panes: depth remains
@@ -433,16 +436,16 @@ internal fun Modifier.browserGlassPane(
           (if (materialRole == GlassSurfacePolicy.MaterialRole.Regular || tuning.frost > 0f) RenderEffect.createChainEffect(lensEffect,
             RenderEffect.createBlurEffect(
               (if (materialRole == GlassSurfacePolicy.MaterialRole.Regular)
-                maxOf(GlassSurfacePolicy.RegularMinimumFrostDp, 2f * tuning.frost * material.frostMultiplier)
+                maxOf(GlassSurfacePolicy.BrowserPopupMinimumFrostDp, 2f * tuning.frost * material.frostMultiplier)
               else 2f * tuning.frost * material.frostMultiplier) * density,
               (if (materialRole == GlassSurfacePolicy.MaterialRole.Regular)
-                maxOf(GlassSurfacePolicy.RegularMinimumFrostDp, 2f * tuning.frost * material.frostMultiplier)
+                maxOf(GlassSurfacePolicy.BrowserPopupMinimumFrostDp, 2f * tuning.frost * material.frostMultiplier)
               else 2f * tuning.frost * material.frostMultiplier) * density,
               Shader.TileMode.CLAMP))
           else lensEffect).asComposeRenderEffect()
         }.getOrNull() else if (Build.VERSION.SDK_INT >= 31 && scene != null && (tuning.frost > 0f || materialRole == GlassSurfacePolicy.MaterialRole.Regular)) runCatching {
           val blurDp = if (materialRole == GlassSurfacePolicy.MaterialRole.Regular)
-            maxOf(GlassSurfacePolicy.RegularMinimumFrostDp, 3f * tuning.frost * material.frostMultiplier)
+            maxOf(GlassSurfacePolicy.BrowserPopupMinimumFrostDp, 3f * tuning.frost * material.frostMultiplier)
           else 3f * tuning.frost * material.frostMultiplier
           RenderEffect.createBlurEffect(blurDp * density, blurDp * density, Shader.TileMode.CLAMP).asComposeRenderEffect()
         }.getOrNull() else null
@@ -469,10 +472,13 @@ internal fun Modifier.browserGlassPane(
             }
             drawLayer(lens)
           }
+          // Frosted see-through popup film (reference floor opacity * 0.42, light ceiling 0.50).
           val centerFilm = if (materialRole == GlassSurfacePolicy.MaterialRole.Regular)
-            GlassSurfacePolicy.regularCenterFilmAlpha(film)
+            GlassSurfacePolicy.regularAdaptiveFilmAlpha(film, popupUnderlay, themedTint, popupText,
+              optics.bodyHighlight, optics.bodyShade)
           else film * (if (selected) 0.24f else 0.20f)
-          val fallbackFilm = if (materialRole == GlassSurfacePolicy.MaterialRole.Regular) centerFilm
+          // Without a frosted scene the page behind is sharp, so the popup keeps a readable film.
+          val fallbackFilm = if (materialRole == GlassSurfacePolicy.MaterialRole.Regular) GlassSurfacePolicy.RegularNoSceneFilmAlpha
             else GlassSurfacePolicy.browserFallbackAlpha(film)
           drawRoundRect(themedTint.copy(alpha = if (hasScene) centerFilm else fallbackFilm), cornerRadius = CornerRadius(radius))
           drawRoundRect(Brush.verticalGradient(listOf(

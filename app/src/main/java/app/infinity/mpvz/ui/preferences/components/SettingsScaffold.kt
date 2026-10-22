@@ -64,7 +64,7 @@ fun SettingsTopAppBar(
   val glassEnabled = settingsGlassEnabled()
   MaterialTopAppBar(
     title = title,
-    modifier = if (glassEnabled) modifier.settingsGlassSurface(cornerRadius = 28.dp) else modifier,
+    modifier = if (glassEnabled) modifier.settingsGlassSurface(cornerRadius = 0.dp) else modifier,
     navigationIcon = navigationIcon,
     actions = actions,
     windowInsets = windowInsets,

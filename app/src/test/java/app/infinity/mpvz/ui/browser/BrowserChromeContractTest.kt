@@ -51,9 +51,21 @@ class BrowserChromeContractTest {
         .readText()
     assertTrue(topBar.contains("import app.infinity.mpvz.presentation.components.pullrefresh.InfinityLoadingIndicator"))
     assertTrue(topBar.contains("if (title == \"∞\")"))
-    assertTrue(topBar.contains("InfinityLoadingIndicator(modifier = titleModifier, size = 32.dp)"))
+    // Glass top/selection bars run edge to edge; only classic mode rounds the selection bar.
+    assertFalse(topBar.contains("settingsGlassSurface(cornerRadius = 28.dp)"))
+    assertFalse(topBar.contains(").clip(RoundedCornerShape(28.dp))"))
+    assertTrue(topBar.contains("Modifier.settingsGlassSurface(cornerRadius = 0.dp)\n        } else {\n          Modifier.clip(RoundedCornerShape(28.dp))"))
+    assertTrue(topBar.contains("InfinityLoadingIndicator(modifier = titleModifier.semantics { contentDescription = \"Mpv∞\" }, size = 40.dp)"))
     assertTrue(folder.contains("title = if (audiobookMode) \"Audiobooks\" else \"∞\""))
     assertTrue(filesystem.contains("\"∞\""))
     assertFalse(folder.contains("title = if (audiobookMode) \"Audiobooks\" else stringResource(app.infinity.mpvz.R.string.app_name)"))
+  }
+  @Test
+  fun settingsTopBarsAreEdgeToEdgeWhenGlassIsEnabled() {
+    val source =
+      File(root, "app/src/main/java/app/infinity/mpvz/ui/preferences/components/SettingsScaffold.kt")
+        .readText()
+    assertTrue(source.contains("modifier.settingsGlassSurface(cornerRadius = 0.dp)"))
+    assertFalse(source.contains("modifier.settingsGlassSurface(cornerRadius = 28.dp)"))
   }
 }

@@ -38,7 +38,6 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SegmentedButton
-import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import app.infinity.mpvz.ui.player.controls.components.GlassSlider as Slider
 import androidx.compose.material3.Text
@@ -156,10 +155,10 @@ fun SortDialog(
             ) {
               viewModeSelector.options.forEachIndexed { index, option ->
                 SegmentedButton(
-                  modifier = Modifier,
+                  modifier = Modifier.padding(horizontal = 3.dp),
                   selected = option.isSelected,
                   onClick = { if (enableViewModeOptions) option.onClick() },
-                  shape = SegmentedButtonDefaults.itemShape(index = index, count = viewModeSelector.options.size),
+                  shape = RoundedCornerShape(50),
                   colors = themedSegmentedButtonColors(borderAlpha = if (glassEnabled) 0f else 0.3f),
                 ) {
                   Text(text = option.label)
@@ -176,10 +175,10 @@ fun SortDialog(
             ) {
               val isFirstSelected = layoutModeSelector.isFirstOptionSelected
               SegmentedButton(
-                modifier = Modifier,
+                modifier = Modifier.padding(horizontal = 3.dp),
                 selected = isFirstSelected,
                 onClick = { if (enableLayoutModeOptions) layoutModeSelector.onViewModeChange(true) },
-                shape = SegmentedButtonDefaults.itemShape(index = 0, count = 2),
+                shape = RoundedCornerShape(50),
                 colors = themedSegmentedButtonColors(borderAlpha = if (glassEnabled) 0f else 0.3f),
                 icon = {
                   Icon(
@@ -192,10 +191,10 @@ fun SortDialog(
                 Text(text = layoutModeSelector.firstOptionLabel)
               }
               SegmentedButton(
-                modifier = Modifier,
+                modifier = Modifier.padding(horizontal = 3.dp),
                 selected = !isFirstSelected,
                 onClick = { if (enableLayoutModeOptions) layoutModeSelector.onViewModeChange(false) },
-                shape = SegmentedButtonDefaults.itemShape(index = 1, count = 2),
+                shape = RoundedCornerShape(50),
                 colors = themedSegmentedButtonColors(borderAlpha = if (glassEnabled) 0f else 0.3f),
                 icon = {
                   Icon(
@@ -258,7 +257,6 @@ fun SortDialog(
                 modifier =
                   Modifier
                     .fillMaxWidth()
-                    .liquidGlassPane(enabled = glassEnabled, cornerRadius = 18.dp)
                     .clickable { isFieldsExpanded = !isFieldsExpanded }
                     .padding(vertical = 4.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -283,12 +281,14 @@ fun SortDialog(
                     Modifier
                       .fillMaxWidth()
                       .wrapContentHeight(align = Alignment.Top),
-                  horizontalArrangement = Arrangement.spacedBy(6.dp),
-                  verticalArrangement = Arrangement.spacedBy(4.dp),
+                  horizontalArrangement = Arrangement.spacedBy(8.dp),
+                  verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
                   visibilityToggles.forEach { toggle ->
                     FilterChip(
-                      modifier = Modifier.liquidGlassPane(enabled = glassEnabled, cornerRadius = 18.dp),
+                      modifier = Modifier
+                        .widthIn(min = 76.dp)
+                        .liquidGlassPane(enabled = glassEnabled, cornerRadius = 18.dp),
                       shape = RoundedCornerShape(18.dp),
                       selected = toggle.checked,
                       onClick = { toggle.onCheckedChange(!toggle.checked) },
@@ -436,10 +436,10 @@ private fun SortOrderSelector(
   ) {
     options.forEachIndexed { index, label ->
       SegmentedButton(
-        modifier = Modifier,
+        modifier = Modifier.padding(horizontal = 3.dp),
         selected = index == selectedIndex,
         onClick = { onSortOrderChange(index == 0) },
-        shape = SegmentedButtonDefaults.itemShape(index = index, count = options.size),
+        shape = RoundedCornerShape(50),
         colors = themedSegmentedButtonColors(borderAlpha = if (glassEnabled) 0f else 0.3f),
         icon = {
           Icon(

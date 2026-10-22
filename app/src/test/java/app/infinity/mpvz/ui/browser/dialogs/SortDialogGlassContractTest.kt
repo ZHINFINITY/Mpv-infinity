@@ -32,6 +32,23 @@ class SortDialogGlassContractTest {
     assertTrue(type.contains("role = Role.RadioButton"))
   }
 
+  @Test fun sortSectionsRemainScrollableAndFieldsUseBalancedPlainLayout() {
+    assertTrue(dialog.contains(".verticalScroll(rememberScrollState())"))
+    assertTrue(dialog.contains("DialogSectionTitle(text = \"Sort by\")"))
+    val fields = dialog.substringAfter("if (visibilityToggles.isNotEmpty())").substringBefore("confirmButton =")
+    val header = fields.substringBefore("if (isFieldsExpanded)")
+    assertFalse(header.contains("liquidGlassPane"))
+    assertTrue(fields.contains("horizontalArrangement = Arrangement.spacedBy(8.dp)"))
+    assertTrue(fields.contains("verticalArrangement = Arrangement.spacedBy(8.dp)"))
+    assertTrue(fields.contains("widthIn(min = 76.dp)"))
+  }
+
+  @Test fun segmentedHighlightsAreInsetRoundedPills() {
+    assertTrue(dialog.contains("modifier = Modifier.padding(horizontal = 3.dp)"))
+    assertTrue(dialog.contains("shape = RoundedCornerShape(50)"))
+    assertFalse(dialog.contains("SegmentedButtonDefaults.itemShape"))
+  }
+
   @Test fun gridSlidersFieldsAndActionsCannotBypassTheSharedMaterial() {
     assertTrue(dialog.contains("GlassSlider as Slider"))
     assertFalse(dialog.contains("import androidx.compose.material3.Slider"))
@@ -39,7 +56,7 @@ class SortDialogGlassContractTest {
       assertTrue("grid slider must retain label and real input seam", dialog.contains("contentDescription = $name.label"))
     }
     val fields = dialog.substringAfter("if (visibilityToggles.isNotEmpty())").substringBefore("confirmButton =")
-    assertTrue(fields.contains("FilterChip(\n                      modifier = Modifier.liquidGlassPane"))
+    assertTrue(fields.contains("FilterChip(\n                      modifier = Modifier\n                        .widthIn(min = 76.dp)"))
     assertTrue(fields.contains("if (glassEnabled) null else FilterChipDefaults.filterChipBorder"))
     val action = dialog.substringAfter("confirmButton =").substringBefore("tonalElevation =")
     assertTrue(action.contains("modifier = Modifier.liquidGlassPane(enabled = glassEnabled"))

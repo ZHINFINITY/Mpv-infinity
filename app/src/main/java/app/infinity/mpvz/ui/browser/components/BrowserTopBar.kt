@@ -43,6 +43,8 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.boundsInWindow
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.style.BaselineShift
@@ -276,7 +278,7 @@ private fun NormalTopBar(
 
       if (title == "∞") {
         // Keep the browser brand title on the same drawn infinity glyph as pull-to-refresh.
-        InfinityLoadingIndicator(modifier = titleModifier, size = 32.dp)
+        InfinityLoadingIndicator(modifier = titleModifier.semantics { contentDescription = "Mpv∞" }, size = 40.dp)
       } else {
       Text(
         buildAnnotatedString {
@@ -702,13 +704,13 @@ private fun SelectionTopBar(
       }
     },
     modifier =
-      modifier
-        .then(
-          if (liquidGlassSurfaces) {
-            Modifier.settingsGlassSurface(cornerRadius = 0.dp)
-          } else {
-            Modifier
-          },
-        ).clip(RoundedCornerShape(28.dp)),
+      modifier.then(
+        // Liquid Glass: edge-to-edge selection bar. Classic mode keeps its rounded selection bar.
+        if (liquidGlassSurfaces) {
+          Modifier.settingsGlassSurface(cornerRadius = 0.dp)
+        } else {
+          Modifier.clip(RoundedCornerShape(28.dp))
+        },
+      ),
   )
 }

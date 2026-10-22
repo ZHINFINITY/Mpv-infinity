@@ -54,7 +54,90 @@ class ReferenceUiRollbackContractTest {
     val baseline = """        drawRoundRect(themedTint.copy(alpha = filmAlpha),
           cornerRadius = CornerRadius(radius))
 """
-    assertEquals(1, current.split(guarded).size - 1)
+    // Build 1899: adaptive see-through Regular film (593922 target). Each hunk is restored to its
+    // 1898 text first, then the earlier scoped steps run unchanged.
+    val adaptiveFilm = listOf(
+      """/** Immutable snapshot: window coordinates prevent every control showing the entire frame. */
+/** [underlayLuma] is the frosted sample's bright-percentile sRGB luma (1 = assume a white backdrop). */
+data class LiquidGlassFrame(
+  val image: ImageBitmap,
+  val boundsInWindow: Rect,
+  val refractionEnabled: Boolean = true,
+  val underlayLuma: Float = 1f,
+)
+""" to
+        """/** Immutable snapshot: window coordinates prevent every control showing the entire frame. */
+data class LiquidGlassFrame(val image: ImageBitmap, val boundsInWindow: Rect, val refractionEnabled: Boolean = true)
+""",
+      """        // Only the tiny UI copy is cropped/frosted. The actual video surface remains untouched.
+        val sampled = copyGlassFrame(source, crop, dimensions.first, dimensions.second)
+""" to
+        """        // Only the tiny UI copy is cropped/frosted. The actual video surface remains untouched.
+        val bitmap = copyGlassFrame(source, crop, dimensions.first, dimensions.second)
+""",
+      """          ?.let { frostGlassFrame(it, tuning.frost) }
+        val bitmap = sampled?.first
+        if (sampled == null || bitmap == null) {
+""" to
+        """          ?.let { frostGlassFrame(it, tuning.frost) }
+        if (bitmap == null) {
+""",
+      """            (location[0] + crop.left).toFloat(), (location[1] + crop.top).toFloat(),
+            (location[0] + crop.left + crop.width).toFloat(), (location[1] + crop.top + crop.height).toFloat()),
+            underlayLuma = sampled.second)
+""" to
+        """            (location[0] + crop.left).toFloat(), (location[1] + crop.top).toFloat(),
+            (location[0] + crop.left + crop.width).toFloat(), (location[1] + crop.top + crop.height).toFloat()))
+""",
+      """
+// Returns the frosted bitmap and its bright-percentile luma, measured on the same background pass.
+private suspend fun frostGlassFrame(bitmap: Bitmap, strength: Float): Pair<Bitmap, Float>? = try {
+""" to
+        """
+private suspend fun frostGlassFrame(bitmap: Bitmap, strength: Float): Bitmap? = try {
+""",
+      """    bitmap.setPixels(frosted, 0, bitmap.width, 0, 0, bitmap.width, bitmap.height)
+    bitmap to GlassSurfacePolicy.underlayLuma(frosted)
+""" to
+        """    bitmap.setPixels(frosted, 0, bitmap.width, 0, 0, bitmap.width, bitmap.height)
+    bitmap
+""",
+      """  val contrastRim = MaterialTheme.colorScheme.outline
+  // Sheet text is white on dark themes and black on light ones (PlayerSheet contentColor).
+  val lightText = GlassSurfacePolicy.srgbLuma(MaterialTheme.colorScheme.onSurface) >= 0.5f
+  val textColor = if (lightText) Color.White else Color.Black
+""" to
+        """  val contrastRim = MaterialTheme.colorScheme.outline
+""",
+      """        // Film guarantees readable controls, even when sampling is intentionally unavailable.
+        val filmColor = PlayerAmbientTintPolicy.filmColor(themedTint, PlayerAmbientTint.color,
+          isPlayerHost = backdrop != null, lightText = lightText)
+        // Regular sheets keep the see-through reference film (opacity * 0.42); only a bright
+        // backdrop raises it, bounded at a light RegularMaximumFilmAlpha (never an opaque slab).
+""" to
+        """        // Film guarantees readable controls, even when sampling is intentionally unavailable.
+""",
+      """        val centerFilm = if (materialRole == GlassSurfacePolicy.MaterialRole.Regular)
+          GlassSurfacePolicy.regularAdaptiveFilmAlpha(alpha, scene?.underlayLuma ?: 1f, filmColor, textColor,
+            optics.bodyHighlight, optics.bodyShade)
+""" to
+        """        val centerFilm = if (materialRole == GlassSurfacePolicy.MaterialRole.Regular)
+          GlassSurfacePolicy.regularCenterFilmAlpha(alpha)
+""",
+      """          // theme's dark surface, so sheets and the chapter pill follow the ambience.
+          drawRoundRect(filmColor.copy(alpha = filmAlpha),
+""" to
+        """          // theme's dark surface, so sheets and the chapter pill follow the ambience.
+          drawRoundRect(PlayerAmbientTintPolicy.filmColor(themedTint, PlayerAmbientTint.color,
+            isPlayerHost = backdrop != null).copy(alpha = filmAlpha),
+""",
+    )
+    var film = current
+    adaptiveFilm.forEach { (now, before) ->
+      assertEquals(now, 1, film.split(now).size - 1)
+      film = film.replace(now, before)
+    }
+    assertEquals(1, film.split(guarded).size - 1)
     // Build 1897: the playing sample cadence (video behind decoder/subtitle sheets) is the
     // only other permitted change; each hunk is restored to its baseline before hashing.
     val cadence = listOf(
@@ -66,7 +149,7 @@ class ReferenceUiRollbackContractTest {
             SystemClock.uptimeMillis() - sampleStarted,
           ))""" to "          else GlassSamplingPolicy.interval(playing(), failures))",
     )
-    var restored = current.replace(guarded, baseline)
+    var restored = film.replace(guarded, baseline)
     cadence.forEach { (now, before) ->
       assertEquals(now, 1, restored.split(now).size - 1)
       restored = restored.replace(now, before)

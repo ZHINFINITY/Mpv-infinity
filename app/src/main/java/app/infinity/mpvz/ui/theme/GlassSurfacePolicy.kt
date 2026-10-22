@@ -14,8 +14,17 @@ object GlassSurfacePolicy {
   const val MinHighlight = 0f
   const val MaxHighlight = 0.36f
   const val RegularMinimumFrostDp = 12f
-  const val RegularMinimumFilmAlpha = 0.88f
-  const val RegularMaximumFilmAlpha = 0.92f
+  /** Light ceiling: a bright backdrop may darken a sheet/popup this far, never into a slab. */
+  const val RegularMaximumFilmAlpha = 0.50f
+  /** Browser popups only, when no scene can be frosted (power/thermal): the content is unblurred. */
+  const val RegularNoSceneFilmAlpha = 0.85f
+  /** Browser popup blur floor so library/settings text behind a popup is not readable. */
+  const val BrowserPopupMinimumFrostDp = 22f
+  /** Reference (0dd2a9cd) see-through sheet film: opacity * 0.42 over a sampled scene. */
+  const val RegularFloorFilmFactor = 0.42f
+  const val TextContrastTarget = 4.5f
+  /** Browser scenes are display lists (no pixels): allow for thumbnails brighter than the page. */
+  const val BrowserUnderlayMargin = 0.25f
 
   /** Clear keeps compact controls visually connected to media; regular protects text-heavy surfaces. */
   enum class MaterialRole { Clear, Regular }
@@ -32,10 +41,82 @@ object GlassSurfacePolicy {
     MaterialRole.Regular -> MaterialTuning(frostMultiplier = 1.35f, tintAlpha = 0.86f, refractionMultiplier = 0.42f)
   }
 
-  /** Minimum regular center film; translucent and bounded, never an opaque popup rectangle. */
-  fun regularCenterFilmAlpha(opacity: Float): Float {
-    val fraction = (opacity(opacity) - MinOpacity) / (MaxOpacity - MinOpacity)
-    return RegularMinimumFilmAlpha + (RegularMaximumFilmAlpha - RegularMinimumFilmAlpha) * fraction
+  /** See-through floor for regular panes (0.30..0.42); the reference sheet film. */
+  fun regularFloorFilmAlpha(opacity: Float): Float = opacity(opacity) * RegularFloorFilmFactor
+
+  /**
+   * Smallest film, starting at the see-through floor, that keeps [foreground] text at
+   * [TextContrastTarget] over the frosted underlay, including the brightest top sheen and the
+   * lower shade. Dark or ordinary video stays see-through; only a bright backdrop raises the film,
+   * and never above [RegularMaximumFilmAlpha]. [underlaySrgb] is a bright-percentile sRGB luma.
+   */
+  fun regularAdaptiveFilmAlpha(
+    opacity: Float,
+    underlaySrgb: Float,
+    tint: Color,
+    foreground: Color,
+    sheen: Float,
+    shade: Float,
+  ): Float {
+    val floor = regularFloorFilmAlpha(opacity)
+    val u = if (underlaySrgb.isFinite()) underlaySrgb.coerceIn(0f, 1f) else 1f
+    val text = wcagLuminance(foreground)
+    val s = if (sheen.isFinite()) sheen.coerceIn(0f, 1f) else 0f
+    val d = if (shade.isFinite()) shade.coerceIn(0f, 1f) else 0f
+    var a = floor
+    while (a < RegularMaximumFilmAlpha) {
+      val r = u * (1f - a) + tint.red * a
+      val g = u * (1f - a) + tint.green * a
+      val b = u * (1f - a) + tint.blue * a
+      val ok = listOf(
+        Triple(r, g, b),
+        Triple(r + (1f - r) * s, g + (1f - g) * s, b + (1f - b) * s),
+        Triple(r * (1f - d), g * (1f - d), b * (1f - d)),
+      ).all { (cr, cg, cb) ->
+        contrastRatio(text, wcagLuminance(Color(cr.coerceIn(0f, 1f), cg.coerceIn(0f, 1f), cb.coerceIn(0f, 1f)))) >=
+          TextContrastTarget
+      }
+      if (ok) return a
+      a += 0.02f
+    }
+    return RegularMaximumFilmAlpha
+  }
+
+  /** Browser scenes cannot be read back; estimate the frosted underlay from the page colour. */
+  fun browserUnderlayEstimate(background: Color): Float =
+    (srgbLuma(background) + BrowserUnderlayMargin).coerceIn(0f, 1f)
+
+  /**
+   * Bright-percentile sRGB luma of a frosted ARGB sample (sparse, bounded). Using a high
+   * percentile rather than the mean keeps text readable over local highlights.
+   */
+  fun underlayLuma(pixels: IntArray, step: Int = 4, percentile: Float = 0.85f): Float {
+    if (pixels.isEmpty()) return 1f
+    val bins = IntArray(64)
+    var count = 0
+    var i = 0
+    val stride = step.coerceAtLeast(1)
+    while (i < pixels.size) {
+      val p = pixels[i]
+      val luma = (0.2126f * ((p shr 16) and 0xFF) + 0.7152f * ((p shr 8) and 0xFF) + 0.0722f * (p and 0xFF)) / 255f
+      bins[(luma * 63f).toInt().coerceIn(0, 63)]++
+      count++
+      i += stride
+    }
+    val target = (count * percentile.coerceIn(0f, 1f)).toInt().coerceAtLeast(1)
+    var seen = 0
+    for (bin in bins.indices) {
+      seen += bins[bin]
+      if (seen >= target) return (bin + 1) / 64f
+    }
+    return 1f
+  }
+
+  /** WCAG relative luminance of an sRGB colour. */
+  fun wcagLuminance(color: Color): Float {
+    fun linear(c: Float): Float = if (c <= 0.04045f) c / 12.92f
+      else Math.pow(((c + 0.055f) / 1.055f).toDouble(), 2.4).toFloat()
+    return 0.2126f * linear(color.red) + 0.7152f * linear(color.green) + 0.0722f * linear(color.blue)
   }
 
   /**
