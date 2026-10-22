@@ -68,6 +68,7 @@ import app.infinity.mpvz.ui.icons.Icons
 import app.infinity.mpvz.ui.player.PlaybackSession
 import app.infinity.mpvz.ui.player.controls.components.MiniAudioVisualizer
 import app.infinity.mpvz.ui.theme.AppShapeScale
+import app.infinity.mpvz.ui.preferences.components.settingsGlassSurface
 import org.koin.compose.koinInject
 
 @OptIn(ExperimentalFoundationApi::class)
@@ -100,6 +101,7 @@ fun SharedMusicTrackListItem(
       .padding(horizontal = 8.dp, vertical = 3.dp)
       .clip(AppShapeScale.large)
       .semantics { selected = isSelected }
+      .settingsGlassSurface(cornerRadius = 20.dp)
       .then(
         if (onLongClick != null) {
           Modifier.combinedClickable(onClick = onClick, onLongClick = onLongClick)
@@ -264,6 +266,7 @@ fun SharedMusicGridCard(
     modifier = modifier
       .then(if (cardWidth != null) Modifier.width(cardWidth) else Modifier.fillMaxWidth())
       .clip(AppShapeScale.large)
+      .settingsGlassSurface(cornerRadius = 20.dp)
       .combinedClickable(onClick = onClick, onLongClick = onLongClick),
     shape = AppShapeScale.large,
     colors = CardDefaults.cardColors(

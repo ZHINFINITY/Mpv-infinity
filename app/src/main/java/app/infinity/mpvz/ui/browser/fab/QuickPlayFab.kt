@@ -17,6 +17,7 @@ import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.FloatingActionButtonDefaults
 import androidx.compose.material3.MaterialTheme
@@ -63,6 +64,16 @@ fun quickPlayFabContainerColor(): (Float) -> Color {
   val glass by appearance.liquidGlassSurfaces.collectAsState()
   val original = ToggleFloatingActionButtonDefaults.containerColor()
   return if (glass) { _: Float -> Color.Transparent } else original
+}
+
+/** The native Toggle FAB exposes corner-radius progress, not a shape parameter. */
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
+@Composable
+fun quickPlayFabCornerRadius(): (Float) -> Dp {
+  val appearance = koinInject<AppearancePreferences>()
+  val glass by appearance.liquidGlassSurfaces.collectAsState()
+  val original = ToggleFloatingActionButtonDefaults.containerCornerRadius()
+  return if (glass) { _: Float -> 20.dp } else original
 }
 
 /**
@@ -116,6 +127,7 @@ fun QuickPlayFab(
     modifier = modifier,
   ) {
     FloatingActionButton(
+      shape = RoundedCornerShape(20.dp),
       onClick = {
         isPressed = true
         coroutineScope.launch {

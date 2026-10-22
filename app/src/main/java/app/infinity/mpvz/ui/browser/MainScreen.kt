@@ -405,9 +405,10 @@ object MainScreen : Screen {
 
     // Record only browser content, never a parent containing its own navigation lenses.
     app.infinity.mpvz.ui.theme.BrowserGlassSceneHost(
-      enabled = liquidGlassSurfacesForBrowser && !hideNavigationBar && visibleTabs.isNotEmpty() && !isPermissionDenied,
+      enabled = liquidGlassSurfacesForBrowser,
     ) {
     Scaffold(
+      containerColor = app.infinity.mpvz.ui.preferences.components.settingsGlassContainerColor(MaterialTheme.colorScheme.background),
       modifier = Modifier.fillMaxSize(),
     ) { paddingValues ->
       Box(modifier = Modifier.fillMaxSize()) {

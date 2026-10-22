@@ -12,6 +12,10 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.ime
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.background
@@ -23,6 +27,8 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.gestures.detectTransformGestures
@@ -40,12 +46,12 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
+import app.infinity.mpvz.ui.preferences.components.ThemeGlassButton as Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
+import app.infinity.mpvz.ui.preferences.components.ThemeGlassOutlinedButton as OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Text
@@ -65,6 +71,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.platform.LocalDensity
 import app.infinity.mpvz.preferences.AppearancePreferences
 import app.infinity.mpvz.preferences.CustomThemeData
 import app.infinity.mpvz.preferences.copyThemeMedia
@@ -155,7 +162,7 @@ fun CustomThemeSettings(
 }
 
 @Composable
-private fun CustomThemeEditor(
+internal fun CustomThemeEditor(
   initial: CustomThemeData,
   isNew: Boolean,
   onDismiss: () -> Unit,
@@ -210,7 +217,18 @@ private fun CustomThemeEditor(
   }
   androidx.compose.material3.ModalBottomSheet(
       modifier = androidx.compose.ui.Modifier.settingsGlassSurface(cornerRadius = 28.dp, independent = true),onDismissRequest = onDismiss, sheetState = androidx.compose.material3.rememberModalBottomSheetState(skipPartiallyExpanded = true), containerColor = settingsGlassContainerColor(MaterialTheme.colorScheme.surfaceContainerLow), dragHandle = { androidx.compose.material3.BottomSheetDefaults.DragHandle() }) {
-    Column(modifier = Modifier.fillMaxWidth().fillMaxHeight(0.94f).padding(horizontal = 20.dp, vertical = 8.dp)) {
+    Column(
+      modifier = Modifier
+        .fillMaxWidth()
+        .fillMaxHeight()
+        .imePadding()
+        .navigationBarsPadding()
+        .padding(horizontal = 20.dp, vertical = 8.dp),
+    ) {
+      Column(
+        modifier = Modifier.weight(1f).verticalScroll(rememberScrollState()),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+      ) {
       Text(if (isNew) "Create custom theme" else "Edit custom theme", style = MaterialTheme.typography.titleLarge)
       Text("Live preview", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
       // The preview fills the sheet width. Its height is derived from the
@@ -235,13 +253,8 @@ private fun CustomThemeEditor(
         Icon(if (showEditor) Icons.RoundedFilled.Edit else Icons.RoundedFilled.Tune, contentDescription = null)
         Text(if (showEditor) "Hide editing options" else "Edit theme")
       }
-      Column(modifier = Modifier.weight(1f).padding(top = 8.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         if (showEditor) {
-          Card(
-            modifier = Modifier.fillMaxWidth(),
-            colors = androidx.compose.material3.CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
-          ) {
-          Column(modifier = Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+          Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Text("Edit background", style = MaterialTheme.typography.titleMedium)
         Text("Media framing", style = MaterialTheme.typography.titleMedium)
         Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -290,24 +303,56 @@ private fun CustomThemeEditor(
           )
         }
         Text("Colour sliders", style = MaterialTheme.typography.labelLarge)
-        Text("Hue: ${textHue.toInt()}°", style = MaterialTheme.typography.bodySmall)
-        TintedSlider(value = textHue, onValueChange = { textHue = it; updateTextColorFromSliders() }, valueRange = 0f..360f, tint = androidx.compose.ui.graphics.Color(textColorArgb ?: initial.onBackgroundArgb))
-        Text("Saturation: ${(textSaturation * 100).toInt()}%", style = MaterialTheme.typography.bodySmall)
-        TintedSlider(value = textSaturation, onValueChange = { textSaturation = it; updateTextColorFromSliders() }, valueRange = 0f..1f, tint = androidx.compose.ui.graphics.Color(textColorArgb ?: initial.onBackgroundArgb))
-        Text("Brightness: ${(textValue * 100).toInt()}%", style = MaterialTheme.typography.bodySmall)
-        TintedSlider(value = textValue, onValueChange = { textValue = it; updateTextColorFromSliders() }, valueRange = 0f..1f, tint = androidx.compose.ui.graphics.Color(textColorArgb ?: initial.onBackgroundArgb))
-        Text("Opacity: ${(textAlpha * 100).toInt()}%", style = MaterialTheme.typography.bodySmall)
-        TintedSlider(value = textAlpha, onValueChange = { textAlpha = it; updateTextColorFromSliders() }, valueRange = 0f..1f, tint = androidx.compose.ui.graphics.Color(textColorArgb ?: initial.onBackgroundArgb))
-        if (initial.isVideo) Row { Checkbox(checked = muted, onCheckedChange = { muted = it }); Text("Mute video theme") }
-          }
+        ThemeAdjustmentSlider("Hue: ${textHue.toInt()}°", textHue, 0f..360f, { textHue = it; updateTextColorFromSliders() }, androidx.compose.ui.graphics.Color(textColorArgb ?: initial.onBackgroundArgb))
+        ThemeAdjustmentSlider("Saturation: ${(textSaturation * 100).toInt()}%", textSaturation, 0f..1f, { textSaturation = it; updateTextColorFromSliders() }, androidx.compose.ui.graphics.Color(textColorArgb ?: initial.onBackgroundArgb))
+        ThemeAdjustmentSlider("Brightness: ${(textValue * 100).toInt()}%", textValue, 0f..1f, { textValue = it; updateTextColorFromSliders() }, androidx.compose.ui.graphics.Color(textColorArgb ?: initial.onBackgroundArgb))
+        ThemeAdjustmentSlider("Opacity: ${(textAlpha * 100).toInt()}%", textAlpha, 0f..1f, { textAlpha = it; updateTextColorFromSliders() }, androidx.compose.ui.graphics.Color(textColorArgb ?: initial.onBackgroundArgb))
+        if (initial.isVideo) {
+          SwitchPreference(
+            value = muted,
+            onValueChange = { muted = it },
+            title = { Text("Mute video theme") },
+          )
+        }
           }
         }
         OutlinedTextField(value = name, onValueChange = { name = it }, label = { Text("Theme name") }, singleLine = true, modifier = Modifier.fillMaxWidth())
       }
-      Row(modifier = Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-        OutlinedButton(onClick = { resetVisualSettings() }, modifier = Modifier.weight(1f)) { Icon(Icons.RoundedFilled.Refresh, contentDescription = null); Text("Reset") }
-        OutlinedButton(onClick = onDismiss, modifier = Modifier.weight(1f)) { Text("Cancel") }
-        Button(enabled = name.isNotBlank(), onClick = { onSave(edited.copy(name = name.trim())) }, modifier = Modifier.weight(1f)) { Text("Save") }
+      val density = LocalDensity.current
+      val imeVisible = WindowInsets.ime.getBottom(density) > 0
+      val navigationBarDp = with(density) { WindowInsets.navigationBars.getBottom(this).toDp().value }
+      BoxWithConstraints(
+        modifier = Modifier
+          .fillMaxWidth()
+          .padding(top = 8.dp)
+          .padding(bottom = ThemeEditorLayoutPolicy.bottomSpacingDp(navigationBarDp, imeVisible).dp),
+      ) {
+        val buttonModifier = Modifier
+          .heightIn(min = 52.dp)
+          .fillMaxWidth()
+        if (ThemeEditorLayoutPolicy.stackActions(maxWidth.value)) {
+          Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            OutlinedButton(onClick = { resetVisualSettings() }, modifier = buttonModifier) {
+              Icon(Icons.RoundedFilled.Refresh, contentDescription = null)
+              Text("Reset")
+            }
+            OutlinedButton(onClick = onDismiss, modifier = buttonModifier) { Text("Cancel") }
+            Button(enabled = name.isNotBlank(), onClick = { onSave(edited.copy(name = name.trim())) }, modifier = buttonModifier) {
+              Text("Save")
+            }
+          }
+        } else {
+          Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            OutlinedButton(onClick = { resetVisualSettings() }, modifier = Modifier.weight(1f).heightIn(min = 52.dp)) {
+              Icon(Icons.RoundedFilled.Refresh, contentDescription = null)
+              Text("Reset")
+            }
+            OutlinedButton(onClick = onDismiss, modifier = Modifier.weight(1f).heightIn(min = 52.dp)) { Text("Cancel") }
+            Button(enabled = name.isNotBlank(), onClick = { onSave(edited.copy(name = name.trim())) }, modifier = Modifier.weight(1f).heightIn(min = 52.dp)) {
+              Text("Save")
+            }
+          }
+        }
       }
     }
   }
@@ -319,14 +364,18 @@ private fun ThemeAdjustmentSlider(
   value: Float,
   range: ClosedFloatingPointRange<Float>,
   onValueChange: (Float) -> Unit,
+  tint: androidx.compose.ui.graphics.Color = MaterialTheme.colorScheme.primaryContainer,
 ) {
-  Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+  Column(
+    modifier = Modifier.fillMaxWidth().settingsGlassPreferenceRow().padding(12.dp),
+    verticalArrangement = Arrangement.spacedBy(2.dp),
+  ) {
     Text(label, style = MaterialTheme.typography.bodyMedium)
     TintedSlider(
       value = value,
       onValueChange = onValueChange,
       valueRange = range,
-      tint = MaterialTheme.colorScheme.primaryContainer,
+      tint = tint,
     )
   }
 }

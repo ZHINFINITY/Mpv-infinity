@@ -522,6 +522,7 @@ fun FileSystemBrowserScreen(path: String? = null) {
   // Main content
   Box(modifier = Modifier.fillMaxSize()) {
     Scaffold(
+      containerColor = settingsGlassContainerColor(MaterialTheme.colorScheme.background),
       topBar = {
         if (isSearching) {
           // Search mode - show search bar instead of top bar
@@ -680,6 +681,7 @@ fun FileSystemBrowserScreen(path: String? = null) {
                 state = rememberTooltipState(),
               ) {
                 ToggleFloatingActionButton(
+                  containerCornerRadius = app.infinity.mpvz.ui.browser.fab.quickPlayFabCornerRadius(),
                   containerColor = quickPlayFabContainerColor(),
                   modifier =
                     Modifier

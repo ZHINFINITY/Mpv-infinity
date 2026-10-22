@@ -169,6 +169,7 @@ object NetworkBookmarksScreen : Screen {
     }
 
     Scaffold(
+      containerColor = app.infinity.mpvz.ui.preferences.components.settingsGlassContainerColor(MaterialTheme.colorScheme.background),
       topBar = {
         BrowserTopBar(
           title = stringResource(R.string.network_bookmarks_title),

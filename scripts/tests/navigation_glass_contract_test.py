@@ -34,24 +34,28 @@ class NavigationGlassContracts(unittest.TestCase):
     def test_only_browser_content_is_recorded_not_the_navigation(self):
         source = MAIN.read_text()
         self.assertIn("BrowserGlassSceneHost(", source)
-        self.assertIn("liquidGlassSurfacesForBrowser && !hideNavigationBar", source)
+        self.assertIn("enabled = liquidGlassSurfacesForBrowser,", source)
+        self.assertNotIn("liquidGlassSurfacesForBrowser && !hideNavigationBar", source)
         self.assertEqual(1, source.count(".browserGlassSceneSource()"))
         self.assertLess(source.index(".browserGlassSceneSource()"), source.index("Browser source ends here"))
         self.assertLess(source.index("Browser source ends here"), source.index("// Animated bottom navigation bar"))
         renderer = RENDERER.read_text()
-        self.assertIn("private const val BrowserGlassStripHeight = 384", renderer)
+        self.assertIn("fun Modifier.browserGlassSceneSource(): Modifier = this", renderer)
+        self.assertIn("drawRect(producerBrush)", renderer)
+        self.assertNotIn("this@drawWithContent.drawContent()", renderer)
         self.assertIn("scene.layer.record(size = IntSize", renderer)
         for forbidden in ("PixelCopy.request", "Bitmap.createBitmap", "toImageBitmap", "delay(", "while ("):
             self.assertNotIn(forbidden, renderer)
 
     def test_lens_only_affects_background_and_capability_fallbacks_are_explicit(self):
-        source = RENDERER.read_text()
+        source = RENDERER.read_text().split("fun BrowserGlassSurface(", 1)[1]
         self.assertLess(source.index("val shader = remember(enabled, capabilities.refraction)"), source.index(".drawWithCache {"))
         self.assertIn("RuntimeShader(BROWSER_LENS)", source)
         self.assertIn('createRuntimeShaderEffect(shader, "scene")', source)
         self.assertIn("lens.renderEffect = effect", source)
         self.assertIn("drawLayer(scene!!.layer)", source)
-        self.assertLess(source.index("drawLayer(lens)"), source.index("    content()"))
+        self.assertLess(source.index("drawLayer(lens)"), source.rindex("    content()"))
+        source += RENDERER.read_text().split("fun BrowserGlassSurface(", 1)[0]
         for token in ("!lowRam && !powerSave && thermal < 3", "ANIMATOR_DURATION_SCALE", "areAnimatorsEnabled()",
                       "Build.VERSION.SDK_INT >= 33", "Build.VERSION.SDK_INT >= 31", "if (!enabled) Modifier.background"):
             self.assertIn(token, source)

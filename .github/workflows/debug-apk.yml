@@ -207,6 +207,7 @@ jobs:
           python3 scripts/tests/playlist_browse_ui_contract_test.py
           python3 scripts/tests/stream_cards_ui_contract_test.py
           python3 scripts/tests/playlist_actions_regression_contract_test.py
+          python3 scripts/tests/theme_editor_layout_test.py
       - name: Run Standard arm64 debug unit tests
         if: ${{ inputs.flavor == 'standard' && inputs.target_abi == 'arm64-v8a' }}
         run: ./gradlew testStandardDebugUnitTest -PtargetAbi=arm64-v8a -PmpvFlowMpvBuild=true --stacktrace --no-daemon --max-workers=2

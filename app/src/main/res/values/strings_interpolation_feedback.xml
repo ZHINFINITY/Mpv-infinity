@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+  <string name="interpolation_feedback_mpv">MPV: this shortcut saves your preference for the next playback. It does not change interpolation in the video currently playing or restart it.</string>
+  <string name="interpolation_feedback_mpv_config">MPV configuration controls interpolation. This shortcut only saves the app preference; change the overriding mpv.conf options to change the effective setting.</string>
+  <string name="interpolation_feedback_native">Native: changes apply to this playback only when its existing interpolation renderer is ready. Otherwise they are saved for the next playback; the video is not restarted.</string>
+  <string name="interpolation_feedback_saved_title">Frame interpolation (saved preference)</string>
+  <string name="interpolation_feedback_saved_state">Saved preference: %1$s</string>
+  <string name="interpolation_feedback_target_hint">Changing target FPS does not turn interpolation on. Enable frame interpolation to synthesize additional frames.</string>
+  <string name="interpolation_feedback_off_target_saved">Interpolation is off. The target FPS is saved; enable interpolation to synthesize additional frames.</string>
+</resources>

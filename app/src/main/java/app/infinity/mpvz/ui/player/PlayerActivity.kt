@@ -446,9 +446,12 @@ class PlayerActivity :
     nativeEngine.setRepeatMode(repeatMode)
   }
 
+  private var interpolationControlRequestGeneration = 0L
+
   /** Apply newly written interpolation controls to the renderer already playing this item. */
   fun applyInterpolationPreferencesFromControls() {
     if (!ownsPlaybackSession() || isFinishing || isDestroyed) return
+    val requestGeneration = ++interpolationControlRequestGeneration
     val wasNative = isNativeEngineActive()
     val backend = if (wasNative) nativeEngine else null
     val enabled = decoderPreferences.mpvFlowFrameInterpolation.get()
@@ -457,6 +460,9 @@ class PlayerActivity :
       val liveApplied = backend != null && isNativeEngineActive() && nativeEngine === backend &&
         backend.applyInterpolationRuntime(enabled = enabled, targetFps = targetFps)
       val decision = InterpolationRuntimeApplyPolicy.decision(liveApplied, playbackActive = true)
+      if (requestGeneration != interpolationControlRequestGeneration ||
+        enabled != decoderPreferences.mpvFlowFrameInterpolation.get() ||
+        targetFps != decoderPreferences.mpvFlowTargetFps.get()) return@launch
       if (!ownsPlaybackSession() || isFinishing || isDestroyed || wasNative != isNativeEngineActive() ||
         (wasNative && nativeEngine !== backend)) return@launch
       if (decision == InterpolationRuntimeApplyPolicy.Decision.PENDING_UNTIL_NEXT_PLAYBACK) {
@@ -476,7 +482,11 @@ class PlayerActivity :
         activeEngineMode == PlaybackEngineMode.NATIVE && nativeEngine === backend
       ) {
         Log.i(TAG, "Native interpolation controls applied to the current playback")
-        Toast.makeText(this@PlayerActivity, R.string.toast_interpolation_applied_live, Toast.LENGTH_SHORT).show()
+        Toast.makeText(
+          this@PlayerActivity,
+          if (enabled) R.string.toast_interpolation_applied_live else R.string.interpolation_feedback_off_target_saved,
+          Toast.LENGTH_SHORT,
+        ).show()
       }
     }
   }

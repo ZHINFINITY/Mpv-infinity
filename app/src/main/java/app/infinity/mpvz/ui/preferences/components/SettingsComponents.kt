@@ -16,30 +16,19 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Switch
-import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import app.infinity.mpvz.ui.components.IconSwitch
 import app.infinity.mpvz.ui.player.controls.components.GlassSwitch
-import app.infinity.mpvz.preferences.AppearancePreferences
-import app.infinity.mpvz.preferences.preference.collectAsState
-import org.koin.compose.koinInject
 import app.infinity.mpvz.ui.icons.AppIcon
-import app.infinity.mpvz.ui.icons.Icon
-import app.infinity.mpvz.ui.icons.Icons
 
 @Composable
 fun SettingsClickableItem(
@@ -53,17 +42,9 @@ fun SettingsClickableItem(
   isLastItem: Boolean = false,
   trailing: @Composable (() -> Unit)? = null,
 ) {
-  val appearance = koinInject<AppearancePreferences>()
-  val glassEnabled by appearance.liquidGlassSurfaces.collectAsState()
-  val shape = if (glassEnabled) RoundedCornerShape(18.dp) else
-    RoundedCornerShape(
-      topStart = if (isFirstItem) 16.dp else 0.dp,
-      topEnd = if (isFirstItem) 16.dp else 0.dp,
-      bottomStart = if (isLastItem) 16.dp else 0.dp,
-      bottomEnd = if (isLastItem) 16.dp else 0.dp,
-    )
-
-  Surface(
+  // First/last flags remain source-compatible; each row owns the same bounds
+  // and material treatment in both modes.
+  Row(
     modifier =
       modifier
         .fillMaxWidth()
@@ -73,52 +54,43 @@ fun SettingsClickableItem(
           onClick = onClick,
           interactionSource = remember { MutableInteractionSource() },
           indication = null,
-        ),
-    shape = shape,
-    color = if (glassEnabled) androidx.compose.ui.graphics.Color.Transparent
-    else MaterialTheme.colorScheme.surfaceContainerLow,
-  ) {
-    Row(
-      modifier =
-        Modifier
-          .fillMaxWidth()
-          .padding(horizontal = 16.dp, vertical = 14.dp),
-      verticalAlignment = Alignment.CenterVertically,
-    ) {
-      if (icon != null) {
-        Icon(
-          imageVector = icon,
-          contentDescription = null,
-          modifier = Modifier.size(24.dp),
-          tint = MaterialTheme.colorScheme.onSurfaceVariant,
         )
-        Spacer(modifier = Modifier.width(16.dp))
-      }
+        .padding(horizontal = 16.dp, vertical = 14.dp),
+      verticalAlignment = Alignment.CenterVertically,
+  ) {
+    if (icon != null) {
+      Icon(
+        imageVector = icon,
+        contentDescription = null,
+        modifier = Modifier.size(24.dp),
+        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+      )
+      Spacer(modifier = Modifier.width(16.dp))
+    }
 
-      Column(modifier = Modifier.weight(1f)) {
+    Column(modifier = Modifier.weight(1f)) {
+      Text(
+        text = title,
+        style = MaterialTheme.typography.titleMedium,
+        fontWeight = FontWeight.SemiBold,
+        color = MaterialTheme.colorScheme.onSurface,
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
+      )
+      if (description != null) {
         Text(
-          text = title,
-          style = MaterialTheme.typography.titleMedium,
-          fontWeight = FontWeight.SemiBold,
-          color = MaterialTheme.colorScheme.onSurface,
-          maxLines = 1,
+          text = description,
+          style = MaterialTheme.typography.bodyMedium,
+          color = MaterialTheme.colorScheme.onSurfaceVariant,
+          maxLines = 2,
           overflow = TextOverflow.Ellipsis,
         )
-        if (description != null) {
-          Text(
-            text = description,
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            maxLines = 2,
-            overflow = TextOverflow.Ellipsis,
-          )
-        }
       }
+    }
 
-      if (trailing != null) {
-        Spacer(modifier = Modifier.width(8.dp))
-        trailing()
-      }
+    if (trailing != null) {
+      Spacer(modifier = Modifier.width(8.dp))
+      trailing()
     }
   }
 }

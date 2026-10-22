@@ -49,6 +49,16 @@ def main() -> None:
     require(sheet, "applyInterpolationPreferencesFromControls()", "FPS sheet caller")
     require(controls, "mpvFlowFrameInterpolation", "interpolation control preference")
     require(sheet, "mpvFlowTargetFps", "FPS preference")
+    timing = controls.split("internal fun interpolationApplyTimingNote", 1)[1].split("internal fun interpolationControlsAvailable", 1)[0]
+    require(timing, "activity.isNativeEngineActive()", "actual engine timing")
+    require(timing, "interpolation_feedback_mpv_config", "config override explanation")
+    require(timing, "interpolation_feedback_mpv", "MPV explicit next-playback timing")
+    require(sheet, "interpolationApplyTimingNote(activity)", "FPS sheet engine-specific timing")
+    require(sheet, "if (!interpolationEnabled)", "FPS selection does not imply enabled interpolation")
+    require(sheet, "interpolation_feedback_target_hint", "explicit enable-first hint")
+    require(callback, "requestGeneration != interpolationControlRequestGeneration", "stale request ACK suppression")
+    require(callback, "enabled != decoderPreferences.mpvFlowFrameInterpolation.get()", "latest preference ACK")
+    require(callback, "if (enabled) R.string.toast_interpolation_applied_live else R.string.interpolation_feedback_off_target_saved", "disabled target is not reported as active synthesis")
     print("interpolation runtime apply contract: PASS")
 
 

@@ -45,6 +45,19 @@ import app.infinity.mpvz.ui.utils.isAnyMpvOptionOwnedByConfig
 import app.infinity.mpvz.utils.device.VulkanCapabilities
 import org.koin.compose.koinInject
 
+/** The active backend, not the preferred engine or a saved toggle, determines apply timing. */
+@Composable
+internal fun interpolationApplyTimingNote(activity: PlayerActivity): String {
+  val configOwned = isAnyMpvOptionOwnedByConfig(MpvConfigControlledFeatures.FRAME_INTERPOLATION)
+  return stringResource(
+    when {
+      activity.isNativeEngineActive() -> R.string.interpolation_feedback_native
+      configOwned -> R.string.interpolation_feedback_mpv_config
+      else -> R.string.interpolation_feedback_mpv
+    },
+  )
+}
+
 @Composable
 internal fun interpolationControlsAvailable(activity: PlayerActivity): Boolean {
   val preferences = koinInject<DecoderPreferences>()
@@ -85,7 +98,10 @@ internal fun FrameInterpolationPlayerButton(
   val clickEvent = LocalPlayerButtonsClickEvent.current
   val onLabel = stringResource(R.string.player_interpolation_on)
   val offLabel = stringResource(R.string.player_interpolation_off)
-  val nextPlaybackNote = stringResource(R.string.player_interpolation_next_playback_note)
+  val nextPlaybackNote = interpolationApplyTimingNote(activity)
+  val savedState = stringResource(R.string.interpolation_feedback_saved_state, if (enabled) onLabel else offLabel)
+  val toggleTitle = if (activity.isNativeEngineActive()) stringResource(R.string.pref_decoder_mpvflow_title)
+    else stringResource(R.string.interpolation_feedback_saved_title)
   if (!targetFpsAction) {
     ControlsButton(
       icon = Icons.RoundedFilled.AutoAwesome,
@@ -95,11 +111,11 @@ internal fun FrameInterpolationPlayerButton(
       },
       onLongClick = { onOpenSheet(Sheets.FrameInterpolationFps) },
       enabled = available,
-      title = stringResource(R.string.pref_decoder_mpvflow_title),
+      title = toggleTitle,
       color = if (enabled) MaterialTheme.colorScheme.primary else contentColor,
       modifier = Modifier.size(buttonSize).semantics {
         role = Role.Switch
-        stateDescription = "${if (enabled) onLabel else offLabel}. $nextPlaybackNote"
+        stateDescription = "$savedState. $nextPlaybackNote"
       },
     )
   } else if (compact) {

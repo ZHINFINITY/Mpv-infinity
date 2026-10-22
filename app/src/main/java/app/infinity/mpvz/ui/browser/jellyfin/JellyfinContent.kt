@@ -1134,6 +1134,7 @@ fun JellyfinContent(
         expanded = isFabExpanded && !quickPlayFabDirect,
         button = {
           ToggleFloatingActionButton(
+            containerCornerRadius = app.infinity.mpvz.ui.browser.fab.quickPlayFabCornerRadius(),
             containerColor = quickPlayFabContainerColor(),
             modifier =
               Modifier.settingsGlassSurface(cornerRadius = 20.dp)

@@ -52,4 +52,30 @@ class GlassScenePolicyTest {
     assertFalse(GlassScenePolicy.retainTransientFrame(Long.MAX_VALUE))
     assertTrue(GlassScenePolicy.TransientGraceMs <= 1000L)
   }
+
+  @Test fun retainedDisplayListIsNeverDrawnWhileRecordingOrAfterInvalidation() {
+    assertTrue(GlassScenePolicy.canDrawRecordedScene(false, true))
+    assertFalse(GlassScenePolicy.canDrawRecordedScene(true, true))
+    assertFalse(GlassScenePolicy.canDrawRecordedScene(false, false))
+    // Model rapid pager/tap disposal and re-measurement: every invalid state
+    // must remain safe until a fresh successful record publishes it.
+    var valid = true
+    repeat(10_000) { cycle ->
+      valid = false // zero-size/disposed source invalidates retained display list
+      assertFalse(GlassScenePolicy.canDrawRecordedScene(false, valid))
+      valid = cycle % 2 == 0 // only a completed record may publish a new list
+      assertEquals(valid, GlassScenePolicy.canDrawRecordedScene(false, valid))
+    }
+  }
+
+  @Test fun captureGeometryRejectsTransientAndUnboundedSizes() {
+    assertTrue(GlassScenePolicy.validCaptureSize(1f, 1f))
+    assertTrue(GlassScenePolicy.validCaptureSize(8192f, 384f))
+    assertTrue(GlassScenePolicy.validCaptureSize(4096f, 4096f))
+    assertFalse(GlassScenePolicy.validCaptureSize(8192f, 8192f))
+    for (size in listOf(0f, -1f, Float.NaN, Float.POSITIVE_INFINITY, 8193f)) {
+      assertFalse(GlassScenePolicy.validCaptureSize(size, 384f))
+      assertFalse(GlassScenePolicy.validCaptureSize(384f, size))
+    }
+  }
 }

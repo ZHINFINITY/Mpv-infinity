@@ -47,8 +47,11 @@ class GlassDepthNoReloadWiringTest(unittest.TestCase):
             self.assertNotIn(forbidden, callback)
         self.assertIn('toast_interpolation_pending_next_playback', callback)
         sheet = source('ui/player/controls/components/sheets/FrameInterpolationFpsSheet.kt')
-        self.assertIn('player_interpolation_next_playback_note', sheet)
-        self.assertIn('nextPlaybackNote', source('ui/player/controls/components/FrameInterpolationControls.kt'))
+        self.assertIn('interpolationApplyTimingNote(activity)', sheet)
+        controls = source('ui/player/controls/components/FrameInterpolationControls.kt')
+        self.assertIn('nextPlaybackNote = interpolationApplyTimingNote(activity)', controls)
+        for timing in ('interpolation_feedback_native', 'interpolation_feedback_mpv_config', 'interpolation_feedback_mpv'):
+            self.assertIn(timing, controls)
     def test_off_mode_and_accessibility_preserve_readability(self):
         pane = source('ui/theme/LiquidGlassBackdrop.kt').split('fun Modifier.liquidGlassPane(', 1)[1]
         self.assertLess(pane.index('if (!enabled) return this'), pane.index('LocalLiquidGlassBackdrop'))

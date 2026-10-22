@@ -23,23 +23,10 @@ import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.dp
-import app.infinity.mpvz.preferences.AppearancePreferences
-import app.infinity.mpvz.preferences.preference.collectAsState
 import app.infinity.mpvz.ui.player.controls.components.GlassSlider
 import me.zhanghai.compose.preference.ListPreferenceType
 import me.zhanghai.compose.preference.LocalPreferenceTheme
 import me.zhanghai.compose.preference.Preference as LibraryPreference
-import me.zhanghai.compose.preference.ListPreference as LibraryListPreference
-import me.zhanghai.compose.preference.SliderPreference as LibrarySliderPreference
-import me.zhanghai.compose.preference.TextFieldPreference as LibraryTextFieldPreference
-import org.koin.compose.koinInject
-
-@Composable
-private fun glassOptionsEnabled(): Boolean {
-  val appearance = koinInject<AppearancePreferences>()
-  val enabled by appearance.liquidGlassSurfaces.collectAsState()
-  return enabled
-}
 
 /** Retain the existing preference library's row, text, icon, and click semantics. */
 @Composable
@@ -62,11 +49,6 @@ fun <T> ListPreference(
   valueToText: @Composable (T) -> AnnotatedString = { AnnotatedString(it.toString()) },
   item: (@Composable (T, T, () -> Unit) -> Unit)? = null,
 ) {
-  if (!glassOptionsEnabled()) {
-    if (item == null) LibraryListPreference(value, onValueChange, values, title, modifier, enabled, icon, summary, type, valueToText)
-    else LibraryListPreference(value, onValueChange, values, title, modifier, enabled, icon, summary, type, valueToText, item)
-    return
-  }
   var open by rememberSaveable { mutableStateOf(false) }
   val drawOption: @Composable (T) -> Unit = { option ->
     val select = { onValueChange(option); open = false }
@@ -134,10 +116,6 @@ fun SliderPreference(
   enabled: Boolean = true, icon: (@Composable () -> Unit)? = null,
   summary: (@Composable () -> Unit)? = null, valueText: (@Composable () -> Unit)? = null,
 ) {
-  if (!glassOptionsEnabled()) {
-    LibrarySliderPreference(value, onValueChange, sliderValue, onSliderValueChange, title, modifier, valueRange, valueSteps, enabled, icon, summary, valueText)
-    return
-  }
   var previousValue by remember { mutableFloatStateOf(value) }
   SideEffect {
     if (previousValue != value) {
@@ -187,10 +165,6 @@ fun <T> TextFieldPreference(
   summary: (@Composable () -> Unit)? = null, valueToText: (T) -> String = { it.toString() },
   textField: @Composable (TextFieldValue, (TextFieldValue) -> Unit, () -> Unit) -> Unit = { text, change, confirm -> DefaultPreferenceField(text, change, confirm) },
 ) {
-  if (!glassOptionsEnabled()) {
-    LibraryTextFieldPreference(value, onValueChange, title, textToValue, modifier, enabled, icon, summary, valueToText, textField)
-    return
-  }
   var open by rememberSaveable { mutableStateOf(false) }
   Preference(title, modifier, enabled, icon, summary, onClick = { open = true })
   if (open) {

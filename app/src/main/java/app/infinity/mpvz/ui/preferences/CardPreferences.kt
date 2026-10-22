@@ -16,21 +16,15 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import app.infinity.mpvz.ui.theme.LocalEmphasizedTypography
-import app.infinity.mpvz.preferences.AppearancePreferences
-import app.infinity.mpvz.preferences.preference.collectAsState
-import org.koin.compose.koinInject
 
 /**
  * A card container for grouping related preferences, mimicking modern Android settings UI.
@@ -40,31 +34,13 @@ fun PreferenceCard(
   modifier: Modifier = Modifier,
   content: @Composable ColumnScope.() -> Unit,
 ) {
-  val appearance = koinInject<AppearancePreferences>()
-  val glassEnabled by appearance.liquidGlassSurfaces.collectAsState()
-  Card(
-    modifier =
-      modifier
-        .fillMaxWidth()
-        .padding(horizontal = 16.dp, vertical = 8.dp),
-    shape = MaterialTheme.shapes.extraLargeIncreased,
-    colors =
-      CardDefaults.cardColors(
-        containerColor = if (glassEnabled) androidx.compose.ui.graphics.Color.Transparent
-        else MaterialTheme.colorScheme.surfaceContainerLow,
-      ),
-    elevation =
-      CardDefaults.cardElevation(
-        defaultElevation = 0.dp,
-      ),
-  ) {
-    Column(
-      modifier = Modifier.padding(vertical = 8.dp),
-      verticalArrangement = Arrangement.spacedBy(0.dp),
-    ) {
-      content()
-    }
-  }
+  // Individual preference wrappers own their surfaces. Keeping this as a layout-only
+  // scope prevents a disabled-glass fallback from becoming a single group mega-card.
+  Column(
+    modifier = modifier.fillMaxWidth(),
+    verticalArrangement = Arrangement.spacedBy(0.dp),
+    content = content,
+  )
 }
 
 /**

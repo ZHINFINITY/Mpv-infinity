@@ -389,6 +389,7 @@ fun MediaLibraryContent(forceAudio: Boolean = false) {
   }
 
   Scaffold(
+    containerColor = settingsGlassContainerColor(androidx.compose.material3.MaterialTheme.colorScheme.background),
     topBar = {
       if (isSearching) {
         InlineSearchBar(
@@ -522,6 +523,7 @@ fun MediaLibraryContent(forceAudio: Boolean = false) {
             state = rememberTooltipState(),
           ) {
             ToggleFloatingActionButton(
+                  containerCornerRadius = app.infinity.mpvz.ui.browser.fab.quickPlayFabCornerRadius(),
                   containerColor = quickPlayFabContainerColor(),
               modifier =
                 Modifier.settingsGlassSurface(cornerRadius = 20.dp)

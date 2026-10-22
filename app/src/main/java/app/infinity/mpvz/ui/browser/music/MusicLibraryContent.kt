@@ -313,6 +313,7 @@ fun MusicLibraryContent(
   val appearancePreferences = koinInject<AppearancePreferences>()
   val showQuickPlayFab by appearancePreferences.showQuickPlayFab.collectAsState()
   val quickPlayFabDirect by appearancePreferences.quickPlayFabDirect.collectAsState()
+  val liquidGlass by appearancePreferences.liquidGlassSurfaces.collectAsState()
   val isFabVisible = remember { mutableStateOf(true) }
   val isFabExpanded = remember { mutableStateOf(false) }
   val navigationBarHeight = LocalNavigationBarHeight.current
@@ -461,13 +462,15 @@ fun MusicLibraryContent(
   }
 
   Scaffold(
+    containerColor = settingsGlassContainerColor(MaterialTheme.colorScheme.background),
     modifier = modifier.fillMaxSize(),
     topBar = {
       Column(
         modifier = Modifier
           .fillMaxWidth()
           .background(
-            if (MaterialTheme.colorScheme.background == Color.Black) Color.Black else MaterialTheme.colorScheme.surfaceContainer
+            if (liquidGlass) Color.Transparent
+            else if (MaterialTheme.colorScheme.background == Color.Black) Color.Black else MaterialTheme.colorScheme.surfaceContainer
           )
       ) {
         if (isSearchActive) {
@@ -651,6 +654,7 @@ fun MusicLibraryContent(
           expanded = false,
           button = {
             ToggleFloatingActionButton(
+              containerCornerRadius = app.infinity.mpvz.ui.browser.fab.quickPlayFabCornerRadius(),
               containerColor = quickPlayFabContainerColor(),
               modifier =
                 Modifier.settingsGlassSurface(cornerRadius = 20.dp).animateFloatingActionButton(
@@ -681,6 +685,7 @@ fun MusicLibraryContent(
               state = rememberTooltipState(),
             ) {
               ToggleFloatingActionButton(
+                containerCornerRadius = app.infinity.mpvz.ui.browser.fab.quickPlayFabCornerRadius(),
                 containerColor = quickPlayFabContainerColor(),
                 modifier =
                   Modifier.settingsGlassSurface(cornerRadius = 20.dp).animateFloatingActionButton(

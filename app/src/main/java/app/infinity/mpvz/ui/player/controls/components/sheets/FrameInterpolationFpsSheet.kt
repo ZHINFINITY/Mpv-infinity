@@ -29,6 +29,7 @@ import app.infinity.mpvz.preferences.MPVFLOW_TARGET_FPS_OPTIONS
 import app.infinity.mpvz.preferences.preference.collectAsState
 import app.infinity.mpvz.presentation.components.PlayerSheet
 import app.infinity.mpvz.ui.player.PlayerActivity
+import app.infinity.mpvz.ui.player.controls.components.interpolationApplyTimingNote
 import app.infinity.mpvz.ui.player.controls.components.interpolationControlsAvailable
 import org.koin.compose.koinInject
 
@@ -36,6 +37,7 @@ import org.koin.compose.koinInject
 fun FrameInterpolationFpsSheet(activity: PlayerActivity, onDismissRequest: () -> Unit) {
   val preferences = koinInject<DecoderPreferences>()
   val selected by preferences.mpvFlowTargetFps.collectAsState()
+  val interpolationEnabled by preferences.mpvFlowFrameInterpolation.collectAsState()
   val available = interpolationControlsAvailable(activity)
   PlayerSheet(onDismissRequest = onDismissRequest) {
     Column(
@@ -48,11 +50,25 @@ fun FrameInterpolationFpsSheet(activity: PlayerActivity, onDismissRequest: () ->
         style = MaterialTheme.typography.titleMedium,
       )
       Text(
-        stringResource(R.string.player_interpolation_next_playback_note),
+        interpolationApplyTimingNote(activity),
         modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp),
         style = MaterialTheme.typography.bodySmall,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
       )
+      Text(
+        stringResource(R.string.interpolation_feedback_saved_state,
+          stringResource(if (interpolationEnabled) R.string.player_interpolation_on else R.string.player_interpolation_off)),
+        modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp),
+        style = MaterialTheme.typography.bodyMedium,
+      )
+      if (!interpolationEnabled) {
+        Text(
+          stringResource(R.string.interpolation_feedback_target_hint),
+          modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp),
+          style = MaterialTheme.typography.bodySmall,
+          color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+      }
       MPVFLOW_TARGET_FPS_OPTIONS.forEach { fps ->
         Row(
           modifier = Modifier.fillMaxWidth()

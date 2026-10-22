@@ -197,6 +197,7 @@ object FolderListScreen : Screen {
     val appearancePreferences = koinInject<AppearancePreferences>()
     val showQuickPlayFab by appearancePreferences.showQuickPlayFab.collectAsState()
     val quickPlayFabDirect by appearancePreferences.quickPlayFabDirect.collectAsState()
+    val liquidGlass by appearancePreferences.liquidGlassSurfaces.collectAsState()
 
     // State collection
     val videoFolders by viewModel.videoFolders.collectAsState()
@@ -584,6 +585,7 @@ object FolderListScreen : Screen {
     @Composable
     fun FoldersPane() {
       Scaffold(
+        containerColor = if (liquidGlass) Color.Transparent else MaterialTheme.colorScheme.background,
         contentWindowInsets = if (embedded) WindowInsets(0, 0, 0, 0) else ScaffoldDefaults.contentWindowInsets,
         topBar = {
           if (embedded) {
@@ -763,6 +765,7 @@ object FolderListScreen : Screen {
                 state = rememberTooltipState(),
               ) {
                 ToggleFloatingActionButton(
+                  containerCornerRadius = app.infinity.mpvz.ui.browser.fab.quickPlayFabCornerRadius(),
                   containerColor = quickPlayFabContainerColor(),
                   modifier =
                     Modifier.settingsGlassSurface(cornerRadius = 20.dp)

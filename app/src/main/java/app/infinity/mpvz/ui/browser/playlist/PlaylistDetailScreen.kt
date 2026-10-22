@@ -339,6 +339,7 @@ data class PlaylistDetailScreen(
     val miniPlayerClearance = app.infinity.mpvz.ui.browser.NavigationBarState.miniPlayerClearance
 
     Scaffold(
+      containerColor = app.infinity.mpvz.ui.preferences.components.settingsGlassContainerColor(MaterialTheme.colorScheme.background),
       topBar = {
         if (isSearching) {
           // Search mode - show search bar

@@ -21,6 +21,7 @@ import android.provider.Settings
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
@@ -60,14 +61,21 @@ private class BrowserScene(val layer: GraphicsLayer) {
   var stripBounds by mutableStateOf(Rect.Zero)
   // Render-thread reentrancy guard, not snapshot state: drawing must not invalidate itself.
   var isRecording = false
+  // A GraphicsLayer retains its last display list when the source is measured at
+  // zero or leaves composition. Never let a lens consume that detached list.
+  var hasValidDisplayList = false
+
+  fun invalidate() {
+    hasValidDisplayList = false
+  }
 }
 
 private data class BrowserGlassCapabilities(val capture: Boolean, val refraction: Boolean, val motion: Boolean)
 private val LocalBrowserScene = compositionLocalOf<BrowserScene?> { null }
 private val LocalBrowserCapabilities = compositionLocalOf { BrowserGlassCapabilities(false, false, false) }
 
-/** One display-list source, restricted to the bottom 384 physical pixels, excluding navigation.
- * No CPU readback, bitmap, periodic sampler, or whole-window capture is involved.
+/** One independent ambient producer. Its display list contains paint commands only,
+ * never composable descendants or glass consumers. No UI capture or CPU readback.
  */
 @Composable
 fun BrowserGlassSceneHost(enabled: Boolean, content: @Composable () -> Unit) {
@@ -101,47 +109,67 @@ fun BrowserGlassSceneHost(enabled: Boolean, content: @Composable () -> Unit) {
   val allowed = enabled && !lowRam && !powerSave && thermal < 3
   val layer = rememberGraphicsLayer()
   // Nested hosts inherit the root display-list instead of shadowing it.
-  val scene = LocalBrowserScene.current ?: remember(layer) { BrowserScene(layer) }
+  val inheritedScene = LocalBrowserScene.current
+  val ownsScene = inheritedScene == null
+  val scene = inheritedScene ?: remember(layer) { BrowserScene(layer) }
+  val producerTop = MaterialTheme.colorScheme.primaryContainer
+  val producerBottom = MaterialTheme.colorScheme.secondaryContainer
+  val producerBrush = remember(producerTop, producerBottom) {
+    Brush.verticalGradient(listOf(producerTop, producerBottom))
+  }
+  DisposableEffect(scene, allowed, ownsScene) {
+    onDispose {
+      if (ownsScene) scene.invalidate()
+    }
+  }
   CompositionLocalProvider(
     LocalBrowserScene provides scene.takeIf { allowed },
     LocalBrowserCapabilities provides BrowserGlassCapabilities(allowed, allowed && motion && Build.VERSION.SDK_INT >= 33, motion && !lowRam && !powerSave && thermal < 3),
-    content = content,
-  )
-}
-
-/** Apply only to browser content behind navigation: never to a parent containing the lenses. */
-@Composable
-fun Modifier.browserGlassSceneSource(): Modifier {
-  val scene = LocalBrowserScene.current ?: return this
-  return onGloballyPositioned { coordinates ->
-    val origin = coordinates.localToWindow(Offset.Zero)
-    val height = coordinates.size.height.coerceAtMost(BrowserGlassStripHeight)
-    val top = (coordinates.size.height - height).toFloat()
-    scene.stripBounds = Rect(origin.x, origin.y + top, origin.x + coordinates.size.width, origin.y + coordinates.size.height)
-  }.drawWithContent {
-    // BrowserGlassSurface may be inside this source. Never record a source
-    // while it is already being recorded, or the GraphicsLayer capture cycles.
-    if (scene.isRecording) {
-      drawContent()
-      return@drawWithContent
-    }
-    val stripHeight = size.height.toInt().coerceAtMost(BrowserGlassStripHeight)
-    if (size.width > 0f && stripHeight > 0) {
-      val top = size.height - stripHeight
-      scene.isRecording = true
-      try {
-        scene.layer.record(size = IntSize(size.width.toInt(), stripHeight)) {
-          clipRect {
-            translate(top = -top) { this@drawWithContent.drawContent() }
+  ) {
+    Box(Modifier.fillMaxSize()) {
+      if (ownsScene && allowed) {
+        // This sibling has no content lambda. A retained glass RenderNode cannot
+        // enter its source even if a consumer re-records after this draw pass.
+        Box(Modifier.matchParentSize().onGloballyPositioned { coordinates ->
+          if (coordinates.isAttached) {
+            val origin = coordinates.localToWindow(Offset.Zero)
+            scene.stripBounds = Rect(origin.x, origin.y,
+              origin.x + coordinates.size.width, origin.y + coordinates.size.height)
+          } else scene.invalidate()
+        }.drawWithCache {
+          var recorded = false
+          onDrawBehind {
+            if (!GlassScenePolicy.validCaptureSize(size.width, size.height)) {
+              scene.invalidate()
+            } else if (!recorded || !scene.hasValidDisplayList) {
+              scene.invalidate()
+              scene.isRecording = true
+              try {
+                scene.layer.record(size = IntSize(size.width.toInt(), size.height.toInt())) {
+                  // DrawScope only: no drawContent(), drawLayer() or UI tree.
+                  drawRect(producerBrush)
+                }
+                scene.hasValidDisplayList = true
+                recorded = true
+              } finally {
+                scene.isRecording = false
+              }
+            }
           }
-        }
-      } finally {
-        scene.isRecording = false
+        })
       }
+      // A single call site in both modes: never dispose/recreate the browser tree
+      // merely to change its material or enter a low-power fallback.
+      content()
     }
-    drawContent()
   }
 }
+
+/** Compatibility marker. Source ownership lives in the independent host producer;
+ * recording this route's content would reintroduce a source -> consumer -> source cycle.
+ */
+@Composable
+fun Modifier.browserGlassSceneSource(): Modifier = this
 
 @Composable
 fun rememberBrowserGlassMotionAllowed(): Boolean = LocalBrowserCapabilities.current.motion &&
@@ -175,7 +203,7 @@ fun BrowserGlassSurface(
   val lens = rememberGraphicsLayer()
   Box(modifier
     .shadow(if (enabled) (if (selected) 7.dp else 12.dp) * tuning.depth else 0.dp, shape, clip = false)
-    .onGloballyPositioned { paneOrigin = it.localToWindow(Offset.Zero) }
+    .onGloballyPositioned { if (it.isAttached) paneOrigin = it.localToWindow(Offset.Zero) }
     .clip(shape)
     .then(if (!enabled) Modifier.background(tint, shape) else Modifier)) {
     if (enabled) {
@@ -187,6 +215,8 @@ fun BrowserGlassSurface(
           shader.setFloatUniform("radius", radius)
           shader.setFloatUniform("bend", (if (selected) 9f else 5f) * density * tuning.refraction)
           shader.setFloatUniform("motion", deformation.coerceIn(0f, 1f))
+          shader.setFloatUniform("thickness", tuning.depth)
+          shader.setFloatUniform("highlight", glow)
           val lensEffect = RenderEffect.createRuntimeShaderEffect(shader, "scene")
           (if (tuning.frost > 0f) RenderEffect.createChainEffect(lensEffect,
             RenderEffect.createBlurEffect(2f * density * tuning.frost, 2f * density * tuning.frost, Shader.TileMode.CLAMP))
@@ -201,10 +231,10 @@ fun BrowserGlassSurface(
           Color.White.copy(alpha = 0.10f + glow * 0.35f),
         ))
         onDrawBehind {
-          // A source must never sample itself through a descendant lens.
-          if (scene?.isRecording == true) return@onDrawBehind
+          if (size.width < 1f || size.height < 1f) return@onDrawBehind
           val bounds = scene?.stripBounds
-          val hasScene = scene != null && bounds != null && bounds.width > 0f && bounds.height > 0f
+          val hasScene = scene != null && bounds != null && bounds.width > 0f && bounds.height > 0f &&
+            GlassScenePolicy.canDrawRecordedScene(scene.isRecording, scene.hasValidDisplayList)
           if (hasScene) {
             lens.record {
               clipRect {
@@ -219,7 +249,7 @@ fun BrowserGlassSurface(
             Color.Transparent,
             Color.Black.copy(alpha = if (selected) 0.10f else 0.08f),
           )), cornerRadius = CornerRadius(radius))
-          drawRoundRect(edge, cornerRadius = CornerRadius(radius), style = Stroke(1.dp.toPx()))
+          drawRoundRect(edge, cornerRadius = CornerRadius(radius), style = Stroke((1f + 0.5f * tuning.depth).dp.toPx()))
           if (selected && size.height > 4.dp.toPx() && size.width > 4.dp.toPx()) {
             drawRoundRect(Color.Black.copy(alpha = 0.10f), topLeft = Offset(1.dp.toPx(), 1.dp.toPx()),
               size = androidx.compose.ui.geometry.Size(size.width - 2.dp.toPx(), size.height - 2.dp.toPx()),
@@ -232,24 +262,32 @@ fun BrowserGlassSurface(
   }
 }
 
-private const val BrowserGlassStripHeight = 384
-
 private const val BROWSER_LENS = """
 uniform shader scene;
 uniform float2 pane;
 uniform float radius;
 uniform float bend;
 uniform float motion;
+uniform float thickness;
+uniform float highlight;
 half4 main(float2 p) {
   float2 c = p - pane * 0.5;
   float2 q = abs(c) - (pane * 0.5 - radius);
   float distance = length(max(q, 0.0)) + min(max(q.x, q.y), 0.0) - radius;
   float edge = clamp(1.0 + distance / max(radius, 1.0), 0.0, 1.0);
-  float2 normal = normalize(c / max(pane, float2(1.0)) + float2(0.0001));
+  // Analytic rounded-rectangle edge normal: flat sides stay flat; only corners curve.
+  float2 outer = max(q, 0.0);
+  float2 axis = q.x > q.y ? float2(1.0, 0.0) : float2(0.0, 1.0);
+  float2 normal = (length(outer) > 0.0001 ? outer / max(length(outer), 0.0001) : axis) * sign(c);
   float2 bent = p - normal * bend * edge * edge * (1.0 + motion * 0.25);
   half4 color = scene.eval(bent);
   color.r = scene.eval(bent + normal * edge * 0.45).r;
   color.b = scene.eval(bent - normal * edge * 0.45).b;
+  float light = dot(normal, float2(-0.7071068, -0.7071068));
+  float bevel = edge * edge * clamp(thickness, 0.0, 2.0);
+  float specular = pow(max(light, 0.0), 10.0) * bevel * clamp(highlight, 0.0, 1.0) * 0.24;
+  float shade = max(-light, 0.0) * bevel * 0.07;
+  color.rgb = clamp(color.rgb + half3(specular - shade) * color.a, half3(0.0), half3(color.a));
   return color;
 }
 """

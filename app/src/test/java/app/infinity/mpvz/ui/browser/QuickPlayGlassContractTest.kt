@@ -18,6 +18,9 @@ class QuickPlayGlassContractTest {
   private val filesystem =
     File(root, "app/src/main/java/app/infinity/mpvz/ui/browser/filesystem/FileSystemBrowserScreen.kt")
       .readText()
+  private val standaloneFab =
+    File(root, "app/src/main/java/app/infinity/mpvz/ui/browser/fab/QuickPlayFab.kt")
+      .readText()
   private val music =
     File(root, "app/src/main/java/app/infinity/mpvz/ui/browser/music/MusicLibraryContent.kt")
       .readText()
@@ -37,6 +40,16 @@ class QuickPlayGlassContractTest {
     assertTrue(filesystem.contains("filePicker.launch(arrayOf(\"video/*\"))"))
     assertTrue(filesystem.contains("getRecentlyPlayed("))
     assertTrue(filesystem.contains("showLinkDialog.value = true"))
+    assertTrue(filesystem.contains("containerCornerRadius = app.infinity.mpvz.ui.browser.fab.quickPlayFabCornerRadius()"))
+    assertTrue(standaloneFab.contains("ToggleFloatingActionButtonDefaults.containerCornerRadius()"))
+    assertTrue(standaloneFab.contains("return if (glass) { _: Float -> 20.dp } else original"))
+  }
+
+  @Test
+  fun standaloneQuickPlayUsesMatchingNativeShapeAndRealPlaybackCallback() {
+    assertTrue(standaloneFab.contains("shape = RoundedCornerShape(20.dp)"))
+    assertTrue(standaloneFab.contains("RecentlyPlayedOps.getLastPlayedEntity()"))
+    assertTrue(standaloneFab.contains("MediaUtils.playFile("))
   }
 
   @Test

@@ -43,8 +43,11 @@ class SettingsOptionsGlassContract(unittest.TestCase):
         self.assertNotIn('actualGlassSlider', source)
         self.assertGreaterEqual(source.count('containerColor = Color.Transparent'), 3)
         self.assertGreaterEqual(source.count('Modifier.settingsGlassSurface(cornerRadius ='), 3)
-        for original in ('LibraryPreference(', 'LibraryListPreference(', 'LibrarySliderPreference(', 'LibraryTextFieldPreference('):
-            self.assertIn(original, source)
+        self.assertIn('LibraryPreference(', source)
+        self.assertNotIn('LibraryListPreference(', source)
+        self.assertNotIn('LibrarySliderPreference(', source)
+        self.assertNotIn('LibraryTextFieldPreference(', source)
+        self.assertNotIn('if (!glassOptionsEnabled())', source)
         self.assertIn('onValueChangeFinished = { onValueChange(latest) }', source)
         self.assertIn('heightIn(min = 48.dp)', source)
         self.assertIn('Role.RadioButton', source)

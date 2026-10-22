@@ -631,7 +631,7 @@ class MainActivity : AppCompatActivity() {
             enabled = liquidGlassSurfacesForBrowser,
             modifier = Modifier.fillMaxSize(),
           ) {
-          Box(modifier = Modifier.fillMaxSize()) {
+          Box(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
           NavDisplay(
             modifier = Modifier.fillMaxSize(),
             backStack = typedBackstack,
@@ -646,7 +646,8 @@ class MainActivity : AppCompatActivity() {
                   modifier = Modifier.fillMaxSize().then(
                     if (route != MainScreen) Modifier.browserGlassSceneSource() else Modifier,
                   ),
-                  color = MaterialTheme.colorScheme.background,
+                  color = if (liquidGlassSurfacesForBrowser) androidx.compose.ui.graphics.Color.Transparent
+                    else MaterialTheme.colorScheme.background,
                 ) {
                   route.Content()
                 }

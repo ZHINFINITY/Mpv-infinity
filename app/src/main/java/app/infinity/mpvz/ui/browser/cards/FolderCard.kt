@@ -294,7 +294,7 @@ fun FolderCard(
                     .height(thumbHeightDp)
                 }
               ).clip(AppShapeScale.medium)
-                .background(MaterialTheme.colorScheme.surfaceContainerHigh)
+                .background(if (liquidGlass) Color.Transparent else MaterialTheme.colorScheme.surfaceContainerHigh)
                 .combinedClickable(
                   onClick = onThumbClick,
                   onLongClick = onLongClick,
@@ -439,7 +439,7 @@ fun FolderCard(
               Modifier
                 .size(64.dp)
                 .clip(AppShapeScale.medium)
-                .background(MaterialTheme.colorScheme.surfaceContainerHigh)
+                .background(if (liquidGlass) Color.Transparent else MaterialTheme.colorScheme.surfaceContainerHigh)
                 .combinedClickable(
                   onClick = onThumbClick,
                   onLongClick = onLongClick,

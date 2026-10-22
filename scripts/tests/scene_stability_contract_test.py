@@ -21,7 +21,9 @@ class SceneStabilityContracts(unittest.TestCase):
         self.assertNotIn('.settingsGlassSurface(', card)
         self.assertNotIn('LocalSettingsGlassOwner', card + settings)
         row = settings.split('fun Modifier.settingsGlassPreferenceRow()', 1)[1].split('fun settingsGlassContainerColor(', 1)[0]
-        self.assertIn('if (!settingsGlassEnabled()) return this', row)
+        self.assertNotIn('if (!settingsGlassEnabled()) return this', row)
+        self.assertIn('SettingsGlassPolicy.geometry(enabled)', row)
+        self.assertIn('else row.background(MaterialTheme.colorScheme.surfaceContainerLow, shape)', row)
         self.assertEqual(1, row.count('.settingsGlassSurface('))
         self.assertIn('modifier.settingsGlassPreferenceRow()', wrappers)
         self.assertIn('.settingsGlassPreferenceRow()', switch)

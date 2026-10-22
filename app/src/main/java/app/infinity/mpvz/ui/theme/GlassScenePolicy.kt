@@ -6,6 +6,18 @@ import kotlin.math.roundToInt
 /** Geometry applies only to the tiny UI copy, never the decoded video or its SurfaceView. */
 object GlassScenePolicy {
   const val TransientGraceMs = 600L
+  const val MaxSceneDimension = 8192
+  const val MaxScenePixels = 16L * 1024 * 1024
+
+  fun validCaptureSize(width: Float, height: Float): Boolean =
+    width.isFinite() && height.isFinite() &&
+      width >= 1f && height >= 1f &&
+      width <= MaxSceneDimension && height <= MaxSceneDimension &&
+      width.toDouble() * height.toDouble() <= MaxScenePixels
+
+  fun canDrawRecordedScene(isRecording: Boolean, hasValidDisplayList: Boolean): Boolean =
+    !isRecording && hasValidDisplayList
+
   data class SourceRect(val left: Int, val top: Int, val width: Int, val height: Int)
 
   fun sourceRect(width: Int, height: Int, displayAspect: Double?): SourceRect? {

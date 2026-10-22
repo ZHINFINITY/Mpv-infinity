@@ -4,10 +4,15 @@
  */
 package app.infinity.mpvz.ui.preferences.components
 
+import androidx.compose.foundation.background
+import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import app.infinity.mpvz.preferences.AppearancePreferences
@@ -15,12 +20,6 @@ import app.infinity.mpvz.preferences.preference.collectAsState
 import app.infinity.mpvz.ui.theme.liquidGlassPane
 import app.infinity.mpvz.ui.theme.LocalGlassCustomization
 import org.koin.compose.koinInject
-
-/** Geometry shared by every standalone settings row surface. */
-object SettingsGlassPolicy {
-  const val RowHorizontalInsetDp = 12f
-  const val RowVerticalSpacingDp = 4f
-}
 
 /** Shared master state for native fill/elevation fallbacks around a glass-owned surface. */
 @Composable
@@ -56,19 +55,20 @@ fun Modifier.settingsGlassSurface(
   )
 }
 
-/**
- * Give each preference its own breathing room only when the optional material is enabled.
- * Keeping the inset out of [settingsGlassSurface] preserves the library's exact Material
- * layout when the master switch is off.
- */
+/** Every setting receives the same card bounds; the switch only changes its material. */
 @Composable
-fun Modifier.settingsGlassPreferenceRow(): Modifier {
-  if (!settingsGlassEnabled()) return this
-  return padding(
-    horizontal = SettingsGlassPolicy.RowHorizontalInsetDp.dp,
-    vertical = SettingsGlassPolicy.RowVerticalSpacingDp.dp,
-  ).settingsGlassSurface(cornerRadius = 18.dp)
-}
+fun Modifier.settingsGlassPreferenceRow(): Modifier =
+  run {
+    val enabled = settingsGlassEnabled()
+    val geometry = SettingsGlassPolicy.geometry(enabled)
+    val shape = RoundedCornerShape(geometry.cornerRadiusDp.dp)
+    val row = padding(
+      horizontal = geometry.horizontalInsetDp.dp,
+      vertical = geometry.verticalSpacingDp.dp,
+    ).heightIn(min = geometry.minimumHeightDp.dp).clip(shape)
+    if (enabled) row.settingsGlassSurface(cornerRadius = geometry.cornerRadiusDp.dp)
+    else row.background(MaterialTheme.colorScheme.surfaceContainerLow, shape)
+  }
 
 /** Keep the caller's exact opaque Material fill when glass is disabled. */
 @Composable

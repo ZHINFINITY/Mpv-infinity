@@ -361,6 +361,7 @@ data class VideoListScreen(
     }
 
     Scaffold(
+      containerColor = app.infinity.mpvz.ui.preferences.components.settingsGlassContainerColor(MaterialTheme.colorScheme.background),
       contentWindowInsets = if (isAudiobook) {
         WindowInsets(0, 0, 0, 0)
       } else {

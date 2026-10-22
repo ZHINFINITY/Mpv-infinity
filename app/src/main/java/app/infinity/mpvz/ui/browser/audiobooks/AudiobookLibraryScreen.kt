@@ -355,7 +355,7 @@ object AudiobookLibraryScreen : Screen {
     val navBarHeight = LocalNavigationBarHeight.current.takeIf { it > 0.dp } ?: 88.dp
 
     Scaffold(
-      containerColor = MaterialTheme.colorScheme.surfaceContainer,
+      containerColor = app.infinity.mpvz.ui.preferences.components.settingsGlassContainerColor(MaterialTheme.colorScheme.surfaceContainer),
       topBar = {
         BrowserTopBar(
           title = when {

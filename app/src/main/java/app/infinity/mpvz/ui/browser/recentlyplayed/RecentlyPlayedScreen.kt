@@ -256,6 +256,7 @@ object RecentlyPlayedScreen : Screen {
     }
 
     Scaffold(
+      containerColor = settingsGlassContainerColor(MaterialTheme.colorScheme.background),
       topBar = {
         BrowserTopBar(
           title = stringResource(R.string.pref_advanced_enable_recently_played_title),
@@ -308,6 +309,7 @@ object RecentlyPlayedScreen : Screen {
               state = rememberTooltipState(),
             ) {
               ToggleFloatingActionButton(
+                  containerCornerRadius = app.infinity.mpvz.ui.browser.fab.quickPlayFabCornerRadius(),
                   containerColor = quickPlayFabContainerColor(),
                 modifier =
                   Modifier
