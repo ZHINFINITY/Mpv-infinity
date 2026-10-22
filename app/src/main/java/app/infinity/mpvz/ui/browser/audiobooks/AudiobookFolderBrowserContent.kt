@@ -36,7 +36,6 @@ import app.infinity.mpvz.R
 import app.infinity.mpvz.domain.audiobook.AudiobookFolderTree
 import app.infinity.mpvz.ui.icons.Icon
 import app.infinity.mpvz.ui.icons.Icons
-import app.infinity.mpvz.ui.preferences.components.settingsGlassSurface
 
 @Composable
 internal fun AudiobookFolderBrowserContent(
@@ -68,7 +67,7 @@ internal fun AudiobookFolderBrowserContent(
 
   Column(Modifier.fillMaxSize()) {
     Row(
-      modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp).settingsGlassSurface(cornerRadius = 18.dp),
+      modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp),
       verticalAlignment = Alignment.CenterVertically,
       horizontalArrangement = Arrangement.spacedBy(6.dp),
     ) {
@@ -135,7 +134,7 @@ internal fun AudiobookFolderBrowserContent(
         }
         items(listing.folders, key = { "folder:${it.uri}" }) { folder ->
           Row(
-            modifier = Modifier.fillMaxWidth().settingsGlassSurface(cornerRadius = 16.dp).clickable { currentFolderUri = folder.uri }.padding(horizontal = 8.dp, vertical = 10.dp),
+            modifier = Modifier.fillMaxWidth().clickable { currentFolderUri = folder.uri }.padding(horizontal = 8.dp, vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(12.dp),
           ) {
@@ -148,7 +147,7 @@ internal fun AudiobookFolderBrowserContent(
         }
         items(listing.tracks, key = { "track:${it.uri}" }) { track ->
           Row(
-            modifier = Modifier.fillMaxWidth().settingsGlassSurface(cornerRadius = 16.dp).clickable(enabled = !opening) { onPlay(currentFolderUri, track.uri) }
+            modifier = Modifier.fillMaxWidth().clickable(enabled = !opening) { onPlay(currentFolderUri, track.uri) }
               .padding(horizontal = 8.dp, vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(12.dp),

@@ -25,9 +25,10 @@ class BrowserGlassCallersContractTest {
     val topBar = File(root, "components/BrowserTopBar.kt").readText()
     val card = File(root, "cards/VideoCard.kt").readText()
     assertTrue(topBar.contains("containerColor = Color.Transparent"))
-    assertTrue(card.contains("if (liquidGlass)"))
-    assertTrue(card.contains("BrowserGlassSurface"))
-    assertTrue(card.contains("Color.Transparent else MaterialTheme.colorScheme.surfaceContainerHigh"))
+    // Owner-approved reference (0dd2a9cd): nested-folder video rows have no per-row glass card.
+    assertFalse(card.contains("BrowserGlassSurface"))
+    assertFalse(card.contains("settingsGlassSurface"))
+    assertTrue(card.contains(".background(MaterialTheme.colorScheme.surfaceContainerHigh)"))
   }
 
   @Test

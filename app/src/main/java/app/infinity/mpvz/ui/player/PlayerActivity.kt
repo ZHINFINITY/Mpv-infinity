@@ -470,6 +470,8 @@ class PlayerActivity :
   private var mpvInterpolationRestartJob: Job? = null
   private val mpvInterpolationNativeWork = MpvNativeWork()
   @Volatile private var mpvInterpolationReloadGeneration: Long? = null
+  /** Last value chosen by the ambient presentation effect; Main-thread only. */
+  private var composedVideoAmbientPresentationActive = false
 
   /** Apply newly written interpolation controls to the renderer already playing this item. */
   fun applyInterpolationPreferencesFromControls() {
@@ -717,12 +719,22 @@ class PlayerActivity :
                 viewModel.restoreVideoAspect(aspect.name, customAspect, showUpdate = false)
                 viewModel.restoreABLoopState(loopState)
                 val positionRestored = withTimeoutOrNull(5_000L) {
+                  var reissued = false
+                  val started = android.os.SystemClock.uptimeMillis()
                   while (stillCurrent()) {
                     val confirmed = mpvInterpolationNativeWork.execute {
                       if (!stillCurrent()) false else {
                         val actual = PlaybackSession.getPropertyDouble("time-pos")
-                        actual != null && kotlin.math.abs(actual - state.positionSeconds) <= 0.25 &&
-                          PlaybackSession.getPropertyBoolean("seeking") != true
+                        val seeking = PlaybackSession.getPropertyBoolean("seeking")
+                        val restored = MpvPositionRestoreSeekPolicy.isRestored(actual, state.positionSeconds, seeking)
+                        // A restore seek that raced FILE_LOADED can be dropped; re-issue it once, exactly.
+                        if (!restored && !reissued && seeking != true &&
+                          android.os.SystemClock.uptimeMillis() - started >= 1_500L) {
+                          reissued = true
+                          PlaybackSession.commandForGeneration(generation,
+                            *MpvPositionRestoreSeekPolicy.command(state.positionSeconds))
+                        }
+                        restored
                       }
                     }
                     if (confirmed) return@withTimeoutOrNull true
@@ -740,11 +752,17 @@ class PlayerActivity :
                 }
                 if (!stillCurrent()) return false
                 if (stillCurrent()) viewModel.setAmbientLifecycleActive(true)
-                viewModel.restartAmbientIfActive()
-                // This checks accepted renderer/timing init options, not just saved prefs.
-                return positionRestored && tracksRestored &&
-                  pauseRestored &&
-                  player.interpolationConfigurationApplied(appliedEnabled, appliedFps)
+                // This checks accepted renderer/timing init options, not just saved prefs. The
+                // requested change succeeded when the replacement core accepted them and playback
+                // state was handed back; a late position/track confirmation is reported, not treated
+                // as a failed restart (device log 1896: interpolation ran at 120 Hz while the old
+                // 0.25 s keyframe check timed out and showed the failure toast).
+                val optionsApplied = player.interpolationConfigurationApplied(appliedEnabled, appliedFps)
+                if (!positionRestored || !tracksRestored) {
+                  Log.w(TAG, "MPV interpolation reload: options_applied=$optionsApplied " +
+                    "position_restored=$positionRestored tracks_restored=$tracksRestored pause_restored=$pauseRestored")
+                }
+                return optionsApplied && pauseRestored
               }
             })
         } catch (cancelled: CancellationException) {
@@ -763,7 +781,16 @@ class PlayerActivity :
                 }
               }
             }
-            if (stillCurrent()) viewModel.setAmbientLifecycleActive(true)
+            if (stillCurrent()) {
+              viewModel.setAmbientLifecycleActive(true)
+              // Ambient was stopped before teardown; restart it on every exit path, otherwise the
+              // player controls lose the ambient tint and fall back to black after a reload.
+              viewModel.restartAmbientIfActive()
+              // The Compose effect that owns this flag is keyed on an unchanged value after a reload,
+              // so it does not re-run; restore the last composed decision instead of forcing it on.
+              val presentation = composedVideoAmbientPresentationActive
+              setVideoAmbientPresentationActive(presentation, showBackground = presentation)
+            }
           }
         }
         if (!ownsPlaybackSession() || isFinishing || isDestroyed || request != mediaRequestGeneration ||
@@ -2262,6 +2289,7 @@ class PlayerActivity :
       LaunchedEffect(active, presentationActive, videoCrop) {
         // Do not resize the video until a real ambient frame exists. Otherwise MPV briefly
         // renders fullscreen and is then compressed into the ambient aspect window.
+        composedVideoAmbientPresentationActive = presentationActive
         setVideoAmbientPresentationActive(presentationActive, showBackground = presentationActive)
       }
 
@@ -5625,7 +5653,13 @@ class PlayerActivity :
     val initialPositionApplied = PlaybackSession.wasInitialPositionApplied(loadGeneration)
     if (!initialPositionApplied) {
       positionRestoreOverride?.positionSeconds?.let { seconds ->
-        PlaybackSession.setPropertyDouble("time-pos", seconds.coerceAtLeast(0.0))
+        // Same-position restores (interpolation reload, engine handoff) must land on the exact
+        // frame. Writing time-pos honours hr-seek, which is "no" unless precise seeking is enabled,
+        // so MPV snapped to the previous keyframe (seconds away on long-GOP HEVC) and the restart
+        // confirmation then timed out while playback was held paused.
+        MpvPositionRestoreSeekPolicy.command(seconds).let { command ->
+          PlaybackSession.commandForGeneration(loadGeneration, *command)
+        }
       }
     }
     // Extract fileName from intent only if not already set

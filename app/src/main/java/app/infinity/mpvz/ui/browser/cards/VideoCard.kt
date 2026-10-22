@@ -59,7 +59,6 @@ import app.infinity.mpvz.preferences.preference.collectAsState
 import app.infinity.mpvz.ui.icons.Icon
 import app.infinity.mpvz.ui.icons.Icons
 import app.infinity.mpvz.ui.theme.AppShapeScale
-import app.infinity.mpvz.ui.theme.BrowserGlassSurface
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.flowOn
@@ -168,10 +167,6 @@ fun VideoCard(
   // Screens hoist this once and pass it down; collecting per card would register a dozen
   // preference observers for every visible item in a grid.
   val resolvedUiConfig = uiConfig ?: rememberVideoCardUiConfig()
-  val appearancePreferences = koinInject<AppearancePreferences>()
-  val liquidGlass by appearancePreferences.liquidGlassSurfaces.collectAsState()
-  val glassOpacity by appearancePreferences.glassSurfaceOpacity.collectAsState()
-  val glassHighlight by appearancePreferences.glassSurfaceHighlight.collectAsState()
   val maxLines = if (resolvedUiConfig.unlimitedNameLines) Int.MAX_VALUE else 2
 
   val showThumbnails = resolvedUiConfig.showThumbnails
@@ -220,15 +215,6 @@ fun VideoCard(
     colors = CardDefaults.cardColors(containerColor = Color.Transparent),
   ) {
     Box(modifier = Modifier.fillMaxWidth()) {
-      if (liquidGlass) {
-        BrowserGlassSurface(
-          modifier = Modifier.matchParentSize(),
-          enabled = true,
-          opacity = glassOpacity,
-          highlight = glassHighlight,
-          cornerRadius = 20.dp,
-        )
-      }
       if (isSelected) {
         Box(
           modifier =
@@ -322,7 +308,7 @@ fun VideoCard(
                 .fillMaxWidth()
                 .aspectRatio(aspect)
                 .clip(AppShapeScale.medium)
-                .background(if (liquidGlass) Color.Transparent else MaterialTheme.colorScheme.surfaceContainerHigh)
+                .background(MaterialTheme.colorScheme.surfaceContainerHigh)
                 .combinedClickable(
                   onClick = onThumbClick,
                   onLongClick = onLongClick,
@@ -637,7 +623,7 @@ fun VideoCard(
                 .width(thumbWidthDp)
                 .aspectRatio(aspect)
                 .clip(AppShapeScale.medium)
-                .background(if (liquidGlass) Color.Transparent else MaterialTheme.colorScheme.surfaceContainerHigh)
+                .background(MaterialTheme.colorScheme.surfaceContainerHigh)
                 .combinedClickable(
                   onClick = onThumbClick,
                   onLongClick = onLongClick,

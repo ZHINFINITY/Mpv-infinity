@@ -405,8 +405,18 @@ fun Modifier.liquidGlassPane(
         val filmAlpha = if (materialRole == GlassSurfacePolicy.MaterialRole.Regular) GlassSurfacePolicy.filmAlpha(centerFilm, highContrast)
           else GlassSurfacePolicy.filmAlpha(
             if (scene == null) GlassSurfacePolicy.browserFallbackAlpha(alpha) else centerFilm, highContrast)
-        drawRoundRect(themedTint.copy(alpha = filmAlpha),
-          cornerRadius = CornerRadius(radius))
+        // When video sampling is temporarily unavailable, the ambient video
+        // presentation remains underneath this Compose layer. Do not cover it
+        // with the theme's dark surface tint (which reads as a black control
+        // on devices where SurfaceView sampling is unavailable); keep the
+        // fallback to the rim/highlight optics and let the ambient colour show
+        // through. A sampled scene still receives the normal glass film.
+        // Only player backdrop hosts provide LocalLiquidGlassBackdrop; browser/settings fallbacks
+        // (backdrop == null) keep their legibility film.
+        if (scene != null || backdrop == null) {
+          drawRoundRect(themedTint.copy(alpha = filmAlpha),
+            cornerRadius = CornerRadius(radius))
+        }
         drawRoundRect(Brush.verticalGradient(listOf(
           Color.White.copy(alpha = optics.bodyHighlight),
           Color.Transparent,

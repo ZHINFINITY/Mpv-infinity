@@ -27,11 +27,34 @@ class ReferenceUiRollbackContractTest {
       "app/src/main/java/app/infinity/mpvz/ui/player/controls/components/GlassControls.kt" to "c5266167f59009db21006a0b0cb68bea1b144350f8046f77cc6cc216c4447ff3",
       "app/src/main/java/app/infinity/mpvz/presentation/components/PlayerSheet.kt" to "fdcf88d13735e1876059f0e7bdcc41088ecedd06d58fffde0283c9e32967e96a",
       "app/src/main/java/app/infinity/mpvz/presentation/components/PlayerGlassOverlays.kt" to "82a115d195711b391235b5f32a4d7b2bac75e494aef0ff22be55251f9307b54f",
-      "app/src/main/java/app/infinity/mpvz/ui/theme/LiquidGlassBackdrop.kt" to "f10a7bb20ca6e17e57f8500f5857cae1fc6d9ecf9f30c67512b8925ce2d9b7f3",
     )
     expected.forEach { (path, digest) -> assertEquals(path, digest, sha(read(path))) }
   }
 
+  /** Only the player-scoped ambient fallback guard (build 1896 black controls) may differ. */
+  @Test fun liquidGlassBackdropDiffersFromBaselineOnlyByScopedAmbientGuard() {
+    val path = "app/src/main/java/app/infinity/mpvz/ui/theme/LiquidGlassBackdrop.kt"
+    val current = read(path)
+    val guarded = """        // When video sampling is temporarily unavailable, the ambient video
+        // presentation remains underneath this Compose layer. Do not cover it
+        // with the theme's dark surface tint (which reads as a black control
+        // on devices where SurfaceView sampling is unavailable); keep the
+        // fallback to the rim/highlight optics and let the ambient colour show
+        // through. A sampled scene still receives the normal glass film.
+        // Only player backdrop hosts provide LocalLiquidGlassBackdrop; browser/settings fallbacks
+        // (backdrop == null) keep their legibility film.
+        if (scene != null || backdrop == null) {
+          drawRoundRect(themedTint.copy(alpha = filmAlpha),
+            cornerRadius = CornerRadius(radius))
+        }
+"""
+    val baseline = """        drawRoundRect(themedTint.copy(alpha = filmAlpha),
+          cornerRadius = CornerRadius(radius))
+"""
+    assertEquals(1, current.split(guarded).size - 1)
+    assertEquals("f10a7bb20ca6e17e57f8500f5857cae1fc6d9ecf9f30c67512b8925ce2d9b7f3",
+      sha(current.replace(guarded, baseline)))
+  }
   @Test fun expressiveNavigationBodyAndBrowserLensMatchReference() {
     val navigation = read("app/src/main/java/app/infinity/mpvz/ui/browser/MainScreen.kt")
     val start = navigation.indexOf("private fun ExpressivePillNavigationBar(")
