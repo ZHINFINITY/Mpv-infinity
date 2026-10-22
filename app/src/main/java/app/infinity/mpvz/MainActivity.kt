@@ -78,7 +78,6 @@ import app.infinity.mpvz.presentation.Screen
 import app.infinity.mpvz.ui.browser.MainScreen
 import app.infinity.mpvz.ui.browser.NavigationBarState
 import app.infinity.mpvz.ui.browser.components.MiniPlayer
-import app.infinity.mpvz.ui.player.controls.AudioPaletteGlassScene
 import app.infinity.mpvz.ui.player.NavigationAnimStyle
 import app.infinity.mpvz.ui.theme.DarkMode
 import app.infinity.mpvz.ui.theme.MpvInfinityTheme
@@ -320,7 +319,9 @@ class MainActivity : AppCompatActivity() {
         }
       } else {
         MpvInfinityTheme(transitionState = themeTransitionState) {
-          Surface(modifier = Modifier.fillMaxSize()) {
+          Surface(modifier = Modifier.fillMaxSize(),
+            color = app.infinity.mpvz.ui.preferences.components.settingsGlassContainerColor(MaterialTheme.colorScheme.background),
+          ) {
             Navigator()
           }
           if (showRendererBuildNotice) {
@@ -625,13 +626,11 @@ class MainActivity : AppCompatActivity() {
 
       if (hasNavEntries) {
         BrowserGlassSceneHost(enabled = liquidGlassSurfacesForBrowser) {
-          AudioPaletteGlassScene(
-            topArgb = MaterialTheme.colorScheme.primaryContainer.toArgb(),
-            bottomArgb = MaterialTheme.colorScheme.secondaryContainer.toArgb(),
-            enabled = liquidGlassSurfacesForBrowser,
-            modifier = Modifier.fillMaxSize(),
-          ) {
-          Box(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
+          // Music palette sampling belongs only to the music player. Applying
+          // it here overrode the real app scene for ALL nested folders/settings.
+          Box(modifier = Modifier.fillMaxSize().background(
+            if (liquidGlassSurfacesForBrowser) Color.Transparent else MaterialTheme.colorScheme.background,
+          )) {
           NavDisplay(
             modifier = Modifier.fillMaxSize(),
             backStack = typedBackstack,
@@ -725,7 +724,6 @@ class MainActivity : AppCompatActivity() {
             }
 
           MiniPlayer(modifier = miniPlayerModifier)
-          }
           }
         }
       }

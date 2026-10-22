@@ -289,6 +289,7 @@ fun MpvInfinityTheme(
   val amoledMode by preferences.amoledMode.collectAsState()
   val appTheme by preferences.appTheme.collectAsState()
   val customThemes by preferences.customThemes.collectAsState()
+  val glassEnabled by preferences.liquidGlassSurfaces.collectAsState()
   val glassFrost by preferences.glassFrostStrength.collectAsState()
   val glassRefraction by preferences.glassRefractionStrength.collectAsState()
   val glassDepth by preferences.glassDepthStrength.collectAsState()
@@ -355,11 +356,20 @@ fun MpvInfinityTheme(
           typography = if (useSystemFont || localeNeedsSystemFont) SystemTypography else AppTypography,
           shapes = AppShapes,
           motionScheme = MotionScheme.expressive(),
-          content = content,
+          content = {
+            if (showCustomThemeBackdrop) {
+              BrowserGlassSceneHost(
+                enabled = glassEnabled,
+                background = customTheme?.takeUnless { it.isVideo }?.let { theme ->
+                  { CustomThemeBackdrop(theme) {} }
+                },
+              ) { content() }
+            } else content()
+          },
         )
       }
     }
-    if (showCustomThemeBackdrop) CustomThemeBackdrop(customTheme, themedContent) else themedContent()
+    if (showCustomThemeBackdrop && (!glassEnabled || customTheme?.isVideo == true)) CustomThemeBackdrop(customTheme, themedContent) else themedContent()
   }
 }
 

@@ -181,6 +181,7 @@ private fun NormalTopBar(
 ) {
   val preferences = koinInject<AppearancePreferences>()
   val darkMode by preferences.darkMode.collectAsState()
+  val liquidGlassSurfaces by preferences.liquidGlassSurfaces.collectAsState()
   val darkTheme = isSystemInDarkTheme()
   val themeTransition = LocalThemeTransitionState.current
   val coroutineScope = rememberCoroutineScope()
@@ -212,16 +213,19 @@ private fun NormalTopBar(
     }
   }
 
+  val effectiveColors = if (liquidGlassSurfaces) {
+    (colors ?: TopAppBarDefaults.topAppBarColors()).copy(
+      containerColor = Color.Transparent,
+      scrolledContainerColor = Color.Transparent,
+    )
+  } else {
+    colors ?: TopAppBarDefaults.topAppBarColors(
+      containerColor = if (MaterialTheme.colorScheme.background == Color.Black) Color.Black else MaterialTheme.colorScheme.surfaceContainer,
+    )
+  }
+
   TopAppBar(
-    colors =
-      colors ?: TopAppBarDefaults.topAppBarColors(
-        containerColor =
-          if (MaterialTheme.colorScheme.background == Color.Black) {
-            Color.Black
-          } else {
-            MaterialTheme.colorScheme.surfaceContainer
-          },
-      ),
+    colors = effectiveColors,
     windowInsets = windowInsets ?: TopAppBarDefaults.windowInsets,
     title = {
       if (showTitle) {
@@ -387,7 +391,7 @@ private fun NormalTopBar(
         }
       }
     },
-    modifier = modifier,
+    modifier = modifier.settingsGlassSurface(cornerRadius = 28.dp),
   )
 }
 

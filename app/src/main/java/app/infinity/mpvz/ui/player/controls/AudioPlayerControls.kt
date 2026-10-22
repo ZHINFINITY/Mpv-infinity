@@ -151,6 +151,10 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.util.VelocityTracker
+import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
+import androidx.compose.ui.input.nestedscroll.NestedScrollSource
+import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.unit.Velocity
 import androidx.compose.ui.unit.IntOffset
 import androidx.core.content.ContextCompat
 import androidx.core.graphics.ColorUtils
@@ -1178,9 +1182,26 @@ fun AudioPlayerControls(
   var playerOrigin by remember { mutableStateOf(androidx.compose.ui.geometry.Offset.Zero) }
   val settleAnimation = remember { Animatable(0f) }
   val currentOnBackPress by androidx.compose.runtime.rememberUpdatedState(onBackPress)
+  var playerHeightPx by remember { mutableFloatStateOf(0f) }
+  val nestedGestureController = remember {
+    MiniPlayerDragController(
+      state = { miniGesture },
+      setState = { miniGesture = it },
+      extentPx = { playerHeightPx },
+      settle = { velocityY ->
+        settleStart = miniGesture.progress
+        val settled = MiniPlayerGesturePolicy.settle(miniGesture, velocityY)
+        miniGesture = miniGesture.copy(settled = settled.settled)
+        settleTarget = settled.progress
+        settleGeneration++
+      },
+    )
+  }
   val gesturePresentationModifier = modifier
     .fillMaxSize()
+    .nestedScroll(nestedGestureController.nestedScrollConnection)
     .onGloballyPositioned {
+      playerHeightPx = it.size.height.toFloat()
       if (settleTarget == null && miniGesture.progress == 0f) {
         playerOrigin = it.localToWindow(androidx.compose.ui.geometry.Offset.Zero)
       }
@@ -1190,6 +1211,7 @@ fun AudioPlayerControls(
       detectVerticalDragGestures(
         onDragStart = {
           velocityTracker.resetTracking()
+          nestedGestureController.onRootDragStart()
           // A new finger owns the presentation immediately, including a reversal mid-settle.
           val progress = if (settleTarget != null) settleAnimation.value else miniGesture.progress
           settleTarget = null
@@ -1215,9 +1237,11 @@ fun AudioPlayerControls(
           settleGeneration++
         },
         onDragCancel = {
-          settleStart = miniGesture.progress
-          settleTarget = 0f
-          settleGeneration++
+          if (nestedGestureController.onRootDragCancel()) {
+            settleStart = miniGesture.progress
+            settleTarget = 0f
+            settleGeneration++
+          }
         },
       )
     }
@@ -1253,7 +1277,9 @@ fun AudioPlayerControls(
     enabled = liquidGlassSurfaces,
     modifier =
       gesturePresentationModifier
-        .background(MaterialTheme.colorScheme.surface)
+        .background(
+          if (liquidGlassSurfaces) Color.Transparent else MaterialTheme.colorScheme.surface,
+        )
         .drawWithCache {
           if (audioPaletteBackground && ambientModeEnabled &&
             (animatedAmbientTop != Color.Transparent || animatedAmbientBottom != Color.Transparent)) {
@@ -1293,17 +1319,7 @@ fun AudioPlayerControls(
           },
         )
         .padding(horizontal = if (visualizerUsesFullTopAndSides) 0.dp else 16.dp)
-        .padding(top = if (visualizerUsesFullTopAndSides) 0.dp else 6.dp, bottom = 12.dp)
-        .pointerInput(Unit) {
-          var totalDrag = 0f
-          detectVerticalDragGestures(
-            onDragStart = { totalDrag = 0f },
-            onVerticalDrag = { _, dragAmount -> totalDrag += dragAmount },
-            onDragEnd = {
-              if (totalDrag > 160f) onBackPress()
-            },
-          )
-        },
+        .padding(top = if (visualizerUsesFullTopAndSides) 0.dp else 6.dp, bottom = 12.dp),
   ) {
     val headerBar = @Composable {
       Box(modifier = Modifier.fillMaxWidth()) {

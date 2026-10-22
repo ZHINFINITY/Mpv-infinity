@@ -62,6 +62,12 @@ object GlassSurfacePolicy {
   fun filmAlpha(value: Float, highContrast: Boolean): Float =
     if (highContrast) 1f else if (value.isFinite()) value.coerceIn(0f, 1f) else 0.88f
 
+  /** Sampling the theme is supplementary; the actual content underneath remains visible. */
+  fun browserSampleAlpha(value: Float): Float = opacity(value) * 0.40f
+
+  /** No scene (power/thermal fallback or a separate window) must not turn into a solid card. */
+  fun browserFallbackAlpha(value: Float): Float = opacity(value) * 0.28f
+
   fun opacity(value: Float): Float =
     if (value.isFinite()) value.coerceIn(MinOpacity, MaxOpacity) else 0.88f
 

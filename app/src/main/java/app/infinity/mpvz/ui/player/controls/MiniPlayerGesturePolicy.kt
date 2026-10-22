@@ -41,6 +41,13 @@ object MiniPlayerGesturePolicy {
   const val DefaultThreshold = 0.5f
   const val DefaultVelocityThresholdPxPerSecond = 900f
 
+  /** Returns the vertical delta the full player may claim from a nested child. */
+  fun nestedScrollDelta(state: MiniPlayerGestureState, availableY: Float): Float {
+    if (!availableY.isFinite()) return 0f
+    if (availableY <= 0f && state.progress <= 0f) return 0f
+    return availableY
+  }
+
   fun drag(start: MiniPlayerGestureState, deltaY: Float, extentPx: Float): MiniPlayerGestureState {
     if (!extentPx.isFinite() || extentPx <= 0f || !deltaY.isFinite()) return start
     return start.copy(progress = (start.progress + deltaY / extentPx).coerceIn(0f, 1f), settled = start.settled)

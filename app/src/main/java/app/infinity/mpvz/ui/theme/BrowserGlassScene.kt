@@ -37,21 +37,24 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.draw.drawWithContent
-import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ClipOp
+import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.asComposeRenderEffect
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.clipRect
+import androidx.compose.ui.graphics.drawscope.clipPath
 import androidx.compose.ui.graphics.drawscope.translate
 import androidx.compose.ui.graphics.layer.GraphicsLayer
 import androidx.compose.ui.graphics.layer.drawLayer
 import androidx.compose.ui.graphics.rememberGraphicsLayer
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
@@ -74,12 +77,17 @@ private data class BrowserGlassCapabilities(val capture: Boolean, val refraction
 private val LocalBrowserScene = compositionLocalOf<BrowserScene?> { null }
 private val LocalBrowserCapabilities = compositionLocalOf { BrowserGlassCapabilities(false, false, false) }
 
-/** One independent ambient producer. Its display list contains paint commands only,
- * never composable descendants or glass consumers. No UI capture or CPU readback.
+/** App-owned background producer, a sibling of all controls/routes. Its subtree
+ * is isolated from the consumer scene. Never capture the route tree or player UI.
  */
 @Composable
-fun BrowserGlassSceneHost(enabled: Boolean, content: @Composable () -> Unit) {
+fun BrowserGlassSceneHost(
+  enabled: Boolean,
+  background: (@Composable () -> Unit)? = null,
+  content: @Composable () -> Unit,
+) {
   val context = LocalContext.current
+  val hostView = LocalView.current
   val power = remember(context) { context.getSystemService(PowerManager::class.java) }
   val lowRam = remember(context) { context.getSystemService(ActivityManager::class.java)?.isLowRamDevice == true }
   var powerSave by remember { mutableStateOf(power?.isPowerSaveMode == true) }
@@ -124,8 +132,8 @@ fun BrowserGlassSceneHost(enabled: Boolean, content: @Composable () -> Unit) {
   val inheritedScene = LocalBrowserScene.current
   val ownsScene = inheritedScene == null
   val scene = inheritedScene ?: remember(layer) { BrowserScene(layer) }
-  val producerTop = MaterialTheme.colorScheme.primaryContainer
-  val producerBottom = MaterialTheme.colorScheme.secondaryContainer
+  val producerTop = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)
+  val producerBottom = MaterialTheme.colorScheme.secondary.copy(alpha = 0.06f)
   val producerBrush = remember(producerTop, producerBottom) {
     Brush.verticalGradient(listOf(producerTop, producerBottom))
   }
@@ -135,40 +143,46 @@ fun BrowserGlassSceneHost(enabled: Boolean, content: @Composable () -> Unit) {
     }
   }
   CompositionLocalProvider(
-    LocalBrowserScene provides scene.takeIf { allowed },
+    LocalBrowserScene provides scene,
     LocalBrowserCapabilities provides BrowserGlassCapabilities(allowed, allowed && motion && Build.VERSION.SDK_INT >= 33, motion && !lowRam && !powerSave && thermal < 3),
   ) {
     Box(Modifier.fillMaxSize()) {
-      if (ownsScene && allowed) {
-        // This sibling has no content lambda. A retained glass RenderNode cannot
-        // enter its source even if a consumer re-records after this draw pass.
-        Box(Modifier.matchParentSize().onGloballyPositioned { coordinates ->
-          if (coordinates.isAttached) {
-            val origin = coordinates.localToWindow(Offset.Zero)
-            scene.stripBounds = Rect(origin.x, origin.y,
-              origin.x + coordinates.size.width, origin.y + coordinates.size.height)
-          } else scene.invalidate()
-        }.drawWithCache {
-          var recorded = false
-          onDrawBehind {
-            if (!GlassScenePolicy.validCaptureSize(size.width, size.height)) {
+      if (ownsScene && enabled) {
+        // Only this sibling owns the backdrop. Its subtree has no access to the
+        // consumer scene, so even a misplaced glass child cannot sample itself.
+        CompositionLocalProvider(
+          LocalBrowserScene provides null,
+          LocalBrowserCapabilities provides BrowserGlassCapabilities(false, false, false),
+        ) {
+          Box(Modifier.matchParentSize().onGloballyPositioned { coordinates ->
+            if (coordinates.isAttached) {
+              val origin = coordinates.localToWindow(Offset.Zero) + windowScreenOffset(hostView)
+              scene.stripBounds = Rect(origin.x, origin.y,
+                origin.x + coordinates.size.width, origin.y + coordinates.size.height)
+            } else scene.invalidate()
+          }.drawWithContent {
+            if (!allowed || !GlassScenePolicy.validCaptureSize(size.width, size.height)) {
               scene.invalidate()
-            } else if (!recorded || !scene.hasValidDisplayList) {
+              drawContent()
+            } else {
               scene.invalidate()
               scene.isRecording = true
               try {
                 scene.layer.record(size = IntSize(size.width.toInt(), size.height.toInt())) {
-                  // DrawScope only: no drawContent(), drawLayer() or UI tree.
-                  drawRect(producerBrush)
+                  // This draws the isolated BACKGROUND sibling, never content().
+                  this@drawWithContent.drawContent()
                 }
                 scene.hasValidDisplayList = true
-                recorded = true
               } finally {
                 scene.isRecording = false
               }
+              drawLayer(scene.layer)
             }
+          }) {
+            if (background != null) background()
+            else Box(Modifier.matchParentSize().background(MaterialTheme.colorScheme.background).background(producerBrush))
           }
-        })
+        }
       }
       // A single call site in both modes: never dispose/recreate the browser tree
       // merely to change its material or enter a low-power fallback.
@@ -199,6 +213,23 @@ fun BrowserGlassSurface(
   deformation: Float = 0f,
   content: @Composable BoxScope.() -> Unit = {},
 ) {
+  Box(modifier.browserGlassPane(enabled, opacity, highlight, cornerRadius, selected, deformation), content = content)
+}
+
+/** The shared pane path used by folders, settings and Quick Play outside MainScreen. */
+@Composable
+internal fun hasBrowserGlassScene(): Boolean = LocalBrowserScene.current != null
+
+@Composable
+internal fun Modifier.browserGlassPane(
+  enabled: Boolean,
+  opacity: Float,
+  highlight: Float,
+  cornerRadius: Dp,
+  selected: Boolean = false,
+  deformation: Float = 0f,
+): Modifier {
+  val hostView = LocalView.current
   val scene = LocalBrowserScene.current
   val capabilities = LocalBrowserCapabilities.current
   val tuning = LocalGlassCustomization.current
@@ -213,13 +244,24 @@ fun BrowserGlassSurface(
       runCatching { RuntimeShader(BROWSER_LENS) }.getOrNull() else null
   }
   val lens = rememberGraphicsLayer()
-  Box(modifier
-    .shadow(if (enabled) (if (selected) 7.dp else 12.dp) * tuning.depth else 0.dp, shape, clip = false)
-    .onGloballyPositioned { if (it.isAttached) paneOrigin = it.localToWindow(Offset.Zero) }
+  return this
+    .drawWithCache {
+      val radius = cornerRadius.toPx().coerceAtMost(size.minDimension / 2f)
+      val outline = Path().apply {
+        addRoundRect(androidx.compose.ui.geometry.RoundRect(Rect(0f, 0f, size.width, size.height), CornerRadius(radius)))
+      }
+      onDrawBehind {
+        if (enabled && tuning.depth > 0f) clipPath(outline, ClipOp.Difference) {
+          drawRoundRect(Color.Black.copy(alpha = 0.12f * tuning.depth.coerceIn(0f, 2f)),
+            topLeft = Offset(0.5.dp.toPx(), 1.5.dp.toPx()), cornerRadius = CornerRadius(radius),
+            style = Stroke((2f * tuning.depth).dp.toPx()))
+        }
+      }
+    }
+    .onGloballyPositioned { if (it.isAttached) paneOrigin = it.localToWindow(Offset.Zero) + windowScreenOffset(hostView) }
     .clip(shape)
-    .then(if (!enabled) Modifier.background(tint, shape) else Modifier)) {
-    if (enabled) {
-      Box(Modifier.matchParentSize().drawWithCache {
+    .then(if (!enabled) Modifier.background(tint, shape) else Modifier)
+    .then(if (enabled) Modifier.drawWithCache {
         val radius = cornerRadius.toPx().coerceAtMost(size.height / 2f).coerceAtMost(size.width / 2f)
         val refraction = capabilities.refraction && shader != null && Build.VERSION.SDK_INT >= 33
         val effect = if (refraction) runCatching {
@@ -237,6 +279,8 @@ fun BrowserGlassSurface(
           RenderEffect.createBlurEffect(3f * density * tuning.frost, 3f * density * tuning.frost, Shader.TileMode.CLAMP).asComposeRenderEffect()
         }.getOrNull() else null
         lens.renderEffect = effect
+        // Keep the real UI underneath visible; never replace it with an opaque sample.
+        lens.alpha = GlassSurfacePolicy.browserSampleAlpha(film)
         val edge = Brush.linearGradient(listOf(
           Color.White.copy(alpha = 0.20f + glow * 0.65f),
           Color.White.copy(alpha = 0.03f),
@@ -255,7 +299,7 @@ fun BrowserGlassSurface(
             }
             drawLayer(lens)
           }
-          drawRoundRect(tint.copy(alpha = if (hasScene) film * (if (selected) 0.24f else 0.20f) else 0.70f), cornerRadius = CornerRadius(radius))
+          drawRoundRect(tint.copy(alpha = if (hasScene) film * (if (selected) 0.24f else 0.20f) else GlassSurfacePolicy.browserFallbackAlpha(film)), cornerRadius = CornerRadius(radius))
           drawRoundRect(Brush.verticalGradient(listOf(
             Color.White.copy(alpha = if (selected) 0.16f + glow * 0.24f else 0.06f + glow * 0.10f),
             Color.Transparent,
@@ -268,10 +312,15 @@ fun BrowserGlassSurface(
               cornerRadius = CornerRadius((radius - 1.dp.toPx()).coerceAtLeast(0f)), style = Stroke(1.dp.toPx()))
           }
         }
-      })
-    }
-    content()
-  }
+      } else Modifier)
+}
+
+private fun windowScreenOffset(view: android.view.View): Offset {
+  val window = IntArray(2)
+  val screen = IntArray(2)
+  view.getLocationInWindow(window)
+  view.getLocationOnScreen(screen)
+  return Offset((screen[0] - window[0]).toFloat(), (screen[1] - window[1]).toFloat())
 }
 
 private const val BROWSER_LENS = """

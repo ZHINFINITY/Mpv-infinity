@@ -1455,7 +1455,7 @@ private fun GridContent(
         folderGridColumnsPref.coerceAtLeast(1)
       } else {
         val contentHorizontalPadding = 8.dp
-        val itemSpacing = 2.dp
+        val itemSpacing = 8.dp
         val usableWidth = maxWidth - (contentHorizontalPadding * 2) - itemSpacing
         val folderMinWidth = 100.dp
         (usableWidth / folderMinWidth).toInt().coerceAtLeast(1)
@@ -1471,8 +1471,8 @@ private fun GridContent(
           end = 8.dp,
           bottom = navigationBarHeight,
         ),
-      horizontalArrangement = Arrangement.spacedBy(2.dp),
-      verticalArrangement = Arrangement.spacedBy(2.dp),
+      horizontalArrangement = Arrangement.spacedBy(8.dp),
+      verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
       items(count = folders.size, key = { index -> folders[index].bucketId }) { index ->
         val folder = folders[index]

@@ -104,9 +104,12 @@ fun LiquidGlassBackdropHost(
   DisposableEffect(enabled, power) {
     if (enabled && power != null && Build.VERSION.SDK_INT >= 29) {
       thermal = power.currentThermalStatus
-      val listener = PowerManager.OnThermalStatusChangedListener { thermal = it }
-      power.addThermalStatusListener(context.mainExecutor, listener)
-      onDispose { power.removeThermalStatusListener(listener) }
+      val candidate = PowerManager.OnThermalStatusChangedListener { thermal = it }
+      val registered = try { power.addThermalStatusListener(candidate); true }
+        catch (_: RuntimeException) { thermal = PowerManager.THERMAL_STATUS_SEVERE; false }
+      onDispose {
+        if (registered) try { power.removeThermalStatusListener(candidate) } catch (_: RuntimeException) { }
+      }
     } else {
       onDispose { }
     }
@@ -231,6 +234,13 @@ fun Modifier.liquidGlassPane(
   if (!enabled) return this
   val backdrop = LocalLiquidGlassBackdrop.current
   val tuning = LocalGlassCustomization.current
+  // Browser/settings routes share the safe app-background producer. Player video
+  // and music palette hosts retain their existing, independently sampled source.
+  if (backdrop == null && hasBrowserGlassScene()) {
+    return browserGlassPane(enabled,
+      if (tuning.overrideMaterial) tuning.opacity else opacity,
+      if (tuning.overrideMaterial) tuning.highlight else highlight, cornerRadius)
+  }
   val tint = MaterialTheme.colorScheme.surfaceContainerHigh
   val alpha = GlassSurfacePolicy.opacity(if (tuning.overrideMaterial) tuning.opacity else opacity)
   val hostView = LocalView.current
@@ -366,6 +376,10 @@ fun Modifier.liquidGlassPane(
               sourceShader.setLocalMatrix(matrix)
               paint.shader = sourceShader
             }
+            // A color-only music palette is not an opaque image backdrop.
+            // Preserve the real view underneath while adding its extracted tint.
+            paint.alpha = if (scene.refractionEnabled) 255
+              else (255f * GlassSurfacePolicy.browserSampleAlpha(alpha)).toInt()
             drawIntoCanvas { canvas ->
               canvas.nativeCanvas.drawRoundRect(0f, 0f, size.width, size.height, radius, radius, paint)
             }
@@ -373,7 +387,7 @@ fun Modifier.liquidGlassPane(
         }
         // Film guarantees readable controls, even when sampling is intentionally unavailable.
         drawRoundRect(tint.copy(alpha = GlassSurfacePolicy.filmAlpha(
-          alpha * if (scene == null) 0.60f else 0.42f, highContrast)),
+          if (scene == null) GlassSurfacePolicy.browserFallbackAlpha(alpha) else alpha * 0.32f, highContrast)),
           cornerRadius = CornerRadius(radius))
         drawRoundRect(Brush.verticalGradient(listOf(
           Color.White.copy(alpha = optics.bodyHighlight),

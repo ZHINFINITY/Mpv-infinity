@@ -6,6 +6,17 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class GlassSurfacePolicyTest {
+  @Test fun browserPaneAndNoSampleFallbackStayTranslucentAtAllSavedOpacities() {
+    for (value in listOf(Float.NaN, Float.POSITIVE_INFINITY, -1f, 0f, 0.72f, 0.88f, 1f, 2f)) {
+      val sample = GlassSurfacePolicy.browserSampleAlpha(value)
+      val fallback = GlassSurfacePolicy.browserFallbackAlpha(value)
+      assertTrue(sample.isFinite() && sample in 0f..0.40f)
+      assertTrue(fallback.isFinite() && fallback in 0f..0.28f)
+      // Even the sampled theme plus film cannot fully replace what's behind it.
+      assertTrue(1f - (1f - sample) * (1f - fallback) < 0.6f)
+    }
+  }
+
   @Test fun opacityIsBounded() {
     assertEquals(GlassSurfacePolicy.MinOpacity, GlassSurfacePolicy.opacity(0f), 0f)
     assertEquals(GlassSurfacePolicy.MaxOpacity, GlassSurfacePolicy.opacity(2f), 0f)

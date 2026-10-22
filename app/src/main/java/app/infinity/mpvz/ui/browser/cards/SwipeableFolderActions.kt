@@ -39,6 +39,10 @@ import app.infinity.mpvz.ui.icons.Icons
 import app.infinity.mpvz.ui.theme.AppMotion
 import app.infinity.mpvz.ui.theme.AppShapeScale
 import app.infinity.mpvz.ui.theme.LocalMotionPolicy
+import app.infinity.mpvz.preferences.AppearancePreferences
+import app.infinity.mpvz.preferences.preference.collectAsState
+import app.infinity.mpvz.ui.theme.BrowserGlassSurface
+import org.koin.compose.koinInject
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
@@ -52,6 +56,10 @@ fun SwipeableFolderActions(
   content: @Composable () -> Unit,
 ) {
   val density = LocalDensity.current
+  val appearancePreferences = koinInject<AppearancePreferences>()
+  val liquidGlass by appearancePreferences.liquidGlassSurfaces.collectAsState()
+  val glassOpacity by appearancePreferences.glassSurfaceOpacity.collectAsState()
+  val glassHighlight by appearancePreferences.glassSurfaceHighlight.collectAsState()
   val revealPx = with(density) { 88.dp.toPx() }
   val thresholdPx = with(density) { 56.dp.toPx() }
   val scope = rememberCoroutineScope()
@@ -86,8 +94,17 @@ fun SwipeableFolderActions(
 
   val shape = AppShapeScale.large
   Box(
-    modifier = Modifier.fillMaxWidth().clip(shape).background(MaterialTheme.colorScheme.surface),
+    modifier = Modifier.fillMaxWidth().clip(shape).background(if (liquidGlass) androidx.compose.ui.graphics.Color.Transparent else MaterialTheme.colorScheme.surface),
   ) {
+    if (liquidGlass) {
+      BrowserGlassSurface(
+        modifier = Modifier.matchParentSize(),
+        enabled = true,
+        opacity = glassOpacity,
+        highlight = glassHighlight,
+        cornerRadius = 20.dp,
+      )
+    }
     if (offsetX > 0f) {
       val progress = (offsetX / revealPx).coerceIn(0f, 1f)
       Box(modifier = Modifier.matchParentSize(), contentAlignment = Alignment.CenterStart) {
@@ -118,7 +135,7 @@ fun SwipeableFolderActions(
     }
 
     Box(
-      modifier = Modifier.fillMaxWidth().offset { IntOffset(offsetX.roundToInt(), 0) }.background(MaterialTheme.colorScheme.surface)
+      modifier = Modifier.fillMaxWidth().offset { IntOffset(offsetX.roundToInt(), 0) }.background(if (liquidGlass) androidx.compose.ui.graphics.Color.Transparent else MaterialTheme.colorScheme.surface)
         .then(
           if (enabled) {
             Modifier.pointerInput(itemKey, revealPx) {

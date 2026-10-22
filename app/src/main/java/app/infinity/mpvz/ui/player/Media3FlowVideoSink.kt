@@ -130,6 +130,7 @@ class Media3FlowVideoSink(
   private val requestedComputeApi: MpvFlowComputeApi,
   private val visibilityResolverEnabled: Boolean,
   private val softBlendEnabled: Boolean,
+  initialInterpolationEnabled: Boolean,
   private val onDiagnostics: (Media3FlowDiagnostics) -> Unit,
 ) : VideoSink {
   private val appContext = context.applicationContext
@@ -138,14 +139,14 @@ class Media3FlowVideoSink(
   private val logTag = "Mpv∞-Media3Flow"
   private val displayHz = displayRefreshRate(appContext)
   @Volatile private var targetFps = effectiveMpvFlowTargetFps(requestedTargetFps, displayHz)
-  @Volatile private var interpolationEnabled = true
+  @Volatile private var interpolationEnabled = initialInterpolationEnabled
   private val quality = requestedQuality.coerceIn(0, 100)
   /** Apply runtime controls in GL order without blocking the UI thread. */
   suspend fun applyRuntimeInterpolation(enabled: Boolean, requestedTargetFps: Int): Boolean =
     suspendCancellableCoroutine { continuation ->
       val posted = glHandler.post {
         if (!continuation.isActive) return@post
-        if (disposed || !preflightAvailable || !flowAvailable) {
+        if (!NativeInterpolationRuntimePolicy.canMutateLiveSink(disposed, preflightAvailable, flowAvailable)) {
           continuation.resume(false)
           return@post
         }

@@ -69,6 +69,7 @@ import app.infinity.mpvz.ui.player.PlaybackSession
 import app.infinity.mpvz.ui.player.controls.components.MiniAudioVisualizer
 import app.infinity.mpvz.ui.theme.AppShapeScale
 import app.infinity.mpvz.ui.preferences.components.settingsGlassSurface
+import app.infinity.mpvz.ui.preferences.components.settingsGlassContainerColor
 import org.koin.compose.koinInject
 
 @OptIn(ExperimentalFoundationApi::class)
@@ -111,8 +112,8 @@ fun SharedMusicTrackListItem(
       ),
     shape = AppShapeScale.large,
     colors = CardDefaults.cardColors(
-      containerColor = if (isSelected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.6f)
-      else MaterialTheme.colorScheme.primaryContainer.copy(alpha = if (isPlaying) 0.35f else 0f),
+      containerColor = settingsGlassContainerColor(if (isSelected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.6f)
+      else MaterialTheme.colorScheme.primaryContainer.copy(alpha = if (isPlaying) 0.35f else 0f)),
       contentColor = MaterialTheme.colorScheme.onSurface,
     ),
   ) {
@@ -127,7 +128,7 @@ fun SharedMusicTrackListItem(
         modifier = Modifier
           .size(itemArtSize)
           .clip(if (isCircular) CircleShape else AppShapeScale.medium)
-          .background(MaterialTheme.colorScheme.surfaceVariant),
+          .background(settingsGlassContainerColor(MaterialTheme.colorScheme.surfaceVariant)),
         contentAlignment = Alignment.Center,
       ) {
         when {
@@ -270,11 +271,11 @@ fun SharedMusicGridCard(
       .combinedClickable(onClick = onClick, onLongClick = onLongClick),
     shape = AppShapeScale.large,
     colors = CardDefaults.cardColors(
-      containerColor = when {
+      containerColor = settingsGlassContainerColor(when {
         isSelected -> MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.6f)
         isPlaying -> MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.35f)
         else -> Color.Transparent
-      }
+      })
     )
   ) {
     Column(
@@ -288,7 +289,7 @@ fun SharedMusicGridCard(
           .fillMaxWidth()
           .aspectRatio(1f)
           .clip(if (isCircular) CircleShape else AppShapeScale.medium)
-          .background(MaterialTheme.colorScheme.surfaceVariant),
+          .background(settingsGlassContainerColor(MaterialTheme.colorScheme.surfaceVariant)),
         contentAlignment = Alignment.Center,
       ) {
         when {
@@ -477,7 +478,7 @@ fun <T> SharedCompactTrackGridSection(
             modifier = Modifier
               .size(56.dp)
               .clip(RoundedCornerShape(6.dp))
-              .background(MaterialTheme.colorScheme.surfaceContainerHighest),
+              .background(settingsGlassContainerColor(MaterialTheme.colorScheme.surfaceContainerHighest)),
             contentAlignment = Alignment.Center,
           ) {
             if (!artworkUrl.isNullOrBlank()) {
@@ -579,7 +580,9 @@ fun SharedMusicDetailHeader(
   modifier: Modifier = Modifier,
 ) {
   Column(
-    modifier = modifier.fillMaxWidth(),
+    modifier = modifier
+      .fillMaxWidth()
+      .settingsGlassSurface(cornerRadius = 20.dp),
     verticalArrangement = Arrangement.spacedBy(16.dp),
   ) {
     Row(
@@ -590,7 +593,7 @@ fun SharedMusicDetailHeader(
         modifier = Modifier
           .size(64.dp)
           .clip(if (isCircular) CircleShape else RoundedCornerShape(8.dp))
-          .background(MaterialTheme.colorScheme.surfaceVariant),
+          .background(settingsGlassContainerColor(MaterialTheme.colorScheme.surfaceVariant)),
         contentAlignment = Alignment.Center,
       ) {
         if (!artworkUrl.isNullOrBlank()) {

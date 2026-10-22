@@ -41,8 +41,17 @@ class NavigationGlassContracts(unittest.TestCase):
         self.assertLess(source.index("Browser source ends here"), source.index("// Animated bottom navigation bar"))
         renderer = RENDERER.read_text()
         self.assertIn("fun Modifier.browserGlassSceneSource(): Modifier = this", renderer)
-        self.assertIn("drawRect(producerBrush)", renderer)
-        self.assertNotIn("this@drawWithContent.drawContent()", renderer)
+        self.assertIn("if (background != null) background()", renderer)
+        producer = renderer.split("if (ownsScene && enabled)", 1)[1].split("// A single call site", 1)[0]
+        self.assertIn("LocalBrowserScene provides null", producer)
+        self.assertIn("this@drawWithContent.drawContent()", producer)
+        self.assertNotIn("\n      content()", producer)
+        theme = (JAVA / "ui/theme/Theme.kt").read_text()
+        self.assertIn("val glassEnabled by preferences.liquidGlassSurfaces.collectAsState()", theme)
+        self.assertIn("BrowserGlassSceneHost(", theme)
+        self.assertIn("if (showCustomThemeBackdrop) {\n              BrowserGlassSceneHost(", theme)
+        activity = (JAVA / "ui/player/PlayerActivity.kt").read_text()
+        self.assertIn("MpvInfinityTheme(showCustomThemeBackdrop = false)", activity)
         self.assertIn("scene.layer.record(size = IntSize", renderer)
         for forbidden in ("PixelCopy.request", "Bitmap.createBitmap", "toImageBitmap", "delay(", "while ("):
             self.assertNotIn(forbidden, renderer)
@@ -54,7 +63,9 @@ class NavigationGlassContracts(unittest.TestCase):
         self.assertIn('createRuntimeShaderEffect(shader, "scene")', source)
         self.assertIn("lens.renderEffect = effect", source)
         self.assertIn("drawLayer(scene!!.layer)", source)
-        self.assertLess(source.index("drawLayer(lens)"), source.rindex("    content()"))
+        self.assertIn("Box(modifier.browserGlassPane(", source)
+        self.assertIn("lens.alpha = GlassSurfacePolicy.browserSampleAlpha(film)", source)
+        self.assertIn("GlassSurfacePolicy.browserFallbackAlpha(film)", source)
         source += RENDERER.read_text().split("fun BrowserGlassSurface(", 1)[0]
         for token in ("!lowRam && !powerSave && thermal < 3", "ANIMATOR_DURATION_SCALE", "areAnimatorsEnabled()",
                       "Build.VERSION.SDK_INT >= 33", "Build.VERSION.SDK_INT >= 31", "if (!enabled) Modifier.background"):

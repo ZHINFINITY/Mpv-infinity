@@ -926,7 +926,7 @@ fun MusicLibraryContent(
                   modifier = Modifier
                     .size(56.dp)
                     .clip(AppShapeScale.medium)
-                    .background(MaterialTheme.colorScheme.surfaceVariant),
+                    .background(settingsGlassContainerColor(MaterialTheme.colorScheme.surfaceVariant)),
                   contentAlignment = Alignment.Center
                 ) {
                   LocalAlbumArtImage(uri = song.albumArtUri, contentDescription = null, modifier = Modifier.fillMaxSize())
@@ -1050,7 +1050,7 @@ fun MusicLibraryContent(
                   modifier = Modifier
                     .size(56.dp)
                     .clip(AppShapeScale.medium)
-                    .background(MaterialTheme.colorScheme.surfaceVariant),
+                    .background(settingsGlassContainerColor(MaterialTheme.colorScheme.surfaceVariant)),
                   contentAlignment = Alignment.Center
                 ) {
                   LocalAlbumArtImage(uri = album.albumArtUri, contentDescription = null, modifier = Modifier.fillMaxSize())
@@ -1490,14 +1490,15 @@ private fun SongGridCard(
     modifier = Modifier
       .fillMaxWidth()
       .clip(AppShapeScale.large)
+      .settingsGlassSurface(cornerRadius = 20.dp)
       .combinedClickable(onClick = onClick, onLongClick = onLongClick),
     shape = AppShapeScale.large,
     colors = CardDefaults.cardColors(
-      containerColor = when {
+      containerColor = settingsGlassContainerColor(when {
         isSelected -> MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.6f)
         isPlaying -> MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.35f)
         else -> Color.Transparent
-      }
+      })
     )
   ) {
     Column(
@@ -1510,7 +1511,7 @@ private fun SongGridCard(
           .fillMaxWidth()
           .aspectRatio(1f)
           .clip(AppShapeScale.medium)
-          .background(MaterialTheme.colorScheme.surfaceVariant),
+          .background(settingsGlassContainerColor(MaterialTheme.colorScheme.surfaceVariant)),
         contentAlignment = Alignment.Center
       ) {
         LocalAlbumArtImage(
@@ -1686,10 +1687,11 @@ private fun AlbumGridCard(
     modifier = Modifier
       .fillMaxWidth()
       .clip(AppShapeScale.large)
+      .settingsGlassSurface(cornerRadius = 20.dp)
       .combinedClickable(onClick = onClick, onLongClick = onLongClick),
     shape = AppShapeScale.large,
     colors = CardDefaults.cardColors(
-      containerColor = if (isSelected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.6f) else Color.Transparent
+      containerColor = settingsGlassContainerColor(if (isSelected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.6f) else Color.Transparent)
     )
   ) {
     Column(
@@ -1702,7 +1704,7 @@ private fun AlbumGridCard(
           .fillMaxWidth()
           .aspectRatio(1f)
           .clip(AppShapeScale.medium)
-          .background(MaterialTheme.colorScheme.surfaceVariant),
+          .background(settingsGlassContainerColor(MaterialTheme.colorScheme.surfaceVariant)),
         contentAlignment = Alignment.Center
       ) {
         LocalAlbumArtImage(
@@ -1777,6 +1779,7 @@ private fun AlbumListCard(
       .fillMaxWidth()
       .padding(horizontal = 8.dp, vertical = 3.dp)
       .clip(AppShapeScale.large)
+      .settingsGlassSurface(cornerRadius = 20.dp)
       .combinedClickable(onClick = onClick, onLongClick = onLongClick),
     shape = AppShapeScale.large,
     color = if (isSelected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.6f) else Color.Transparent
@@ -1791,7 +1794,7 @@ private fun AlbumListCard(
         modifier = Modifier
           .size(coverArtSizeDp.dp)
           .clip(AppShapeScale.medium)
-          .background(MaterialTheme.colorScheme.surfaceVariant),
+          .background(settingsGlassContainerColor(MaterialTheme.colorScheme.surfaceVariant)),
         contentAlignment = Alignment.Center
       ) {
         LocalAlbumArtImage(
@@ -1918,10 +1921,11 @@ private fun ArtistGridCard(
     modifier = Modifier
       .fillMaxWidth()
       .clip(AppShapeScale.large)
+      .settingsGlassSurface(cornerRadius = 20.dp)
       .combinedClickable(onClick = onClick, onLongClick = onLongClick),
     shape = AppShapeScale.large,
     colors = CardDefaults.cardColors(
-      containerColor = if (isSelected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.6f) else Color.Transparent
+      containerColor = settingsGlassContainerColor(if (isSelected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.6f) else Color.Transparent)
     )
   ) {
     Column(
@@ -1993,6 +1997,7 @@ private fun ArtistListCard(
       .fillMaxWidth()
       .padding(horizontal = 8.dp, vertical = 3.dp)
       .clip(AppShapeScale.large)
+      .settingsGlassSurface(cornerRadius = 20.dp)
       .combinedClickable(onClick = onClick, onLongClick = onLongClick),
     shape = AppShapeScale.large,
     color = if (isSelected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.6f) else Color.Transparent
@@ -2061,7 +2066,7 @@ private fun PlaylistArtCollage(
     modifier = modifier
       .aspectRatio(1f)
       .clip(AppShapeScale.medium)
-      .background(MaterialTheme.colorScheme.surfaceVariant),
+      .background(settingsGlassContainerColor(MaterialTheme.colorScheme.surfaceVariant)),
     contentAlignment = Alignment.Center
   ) {
     when (collageUris.size) {
@@ -2241,10 +2246,11 @@ private fun MusicPlaylistCard(
       modifier = Modifier
         .fillMaxWidth()
         .clip(AppShapeScale.large)
+        .settingsGlassSurface(cornerRadius = 20.dp)
         .combinedClickable(onClick = onClick, onLongClick = onLongClick),
       shape = AppShapeScale.large,
       colors = CardDefaults.cardColors(
-        containerColor = if (isSelected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.6f) else Color.Transparent
+        containerColor = settingsGlassContainerColor(if (isSelected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.6f) else Color.Transparent)
       )
     ) {
       Column(
@@ -2298,6 +2304,7 @@ private fun MusicPlaylistCard(
       modifier = Modifier
         .fillMaxWidth()
         .clip(AppShapeScale.large)
+        .settingsGlassSurface(cornerRadius = 20.dp)
         .combinedClickable(onClick = onClick, onLongClick = onLongClick),
       color = if (isSelected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f) else Color.Transparent
     ) {
@@ -2472,6 +2479,8 @@ private fun AlbumDetailSheet(
 ) {
   ModalBottomSheet(
     onDismissRequest = onDismiss,
+    containerColor = settingsGlassContainerColor(MaterialTheme.colorScheme.surfaceContainerLow),
+    modifier = Modifier.settingsGlassSurface(cornerRadius = 28.dp),
     sheetState =
       rememberBottomSheetState(
         initialValue = SheetValue.Hidden,
@@ -2491,7 +2500,7 @@ private fun AlbumDetailSheet(
           modifier = Modifier
             .size(64.dp)
             .clip(AppShapeScale.medium)
-            .background(MaterialTheme.colorScheme.surfaceVariant),
+            .background(settingsGlassContainerColor(MaterialTheme.colorScheme.surfaceVariant)),
           contentAlignment = Alignment.Center
         ) {
           LocalAlbumArtImage(
@@ -2569,6 +2578,8 @@ private fun ArtistDetailSheet(
 ) {
   ModalBottomSheet(
     onDismissRequest = onDismiss,
+    containerColor = settingsGlassContainerColor(MaterialTheme.colorScheme.surfaceContainerLow),
+    modifier = Modifier.settingsGlassSurface(cornerRadius = 28.dp),
     sheetState =
       rememberBottomSheetState(
         initialValue = SheetValue.Hidden,

@@ -16,6 +16,7 @@ class SettingsPreferenceGlassContractTest {
   private val wrappers = File(root, "app/src/main/java/app/infinity/mpvz/ui/preferences/components/SettingsPreferenceWrappers.kt").readText()
   private val card = File(root, "app/src/main/java/app/infinity/mpvz/ui/preferences/CardPreferences.kt").readText()
   private val switch = File(root, "app/src/main/java/app/infinity/mpvz/ui/preferences/components/SwitchPreference.kt").readText()
+  private val topPreferences = File(root, "app/src/main/java/app/infinity/mpvz/ui/preferences/PreferencesScreen.kt").readText()
   private val customRows = File(root, "app/src/main/java/app/infinity/mpvz/ui/preferences/components/SettingsComponents.kt").readText()
 
   @Test
@@ -31,6 +32,19 @@ class SettingsPreferenceGlassContractTest {
     assertTrue(customRows.contains("SettingsClickableItem("))
     assertFalse(card.contains("CompositionLocalProvider(LocalSettingsGlassOwner"))
     assertFalse(card.contains(".settingsGlassSurface("))
+  }
+
+  @Test
+  fun topPreferencesRouteUsesOneStandaloneRowPerDestination() {
+    assertTrue(topPreferences.contains("settingsGlassPreferenceRow()"))
+    assertTrue(topPreferences.contains("verticalArrangement = Arrangement.spacedBy(4.dp)"))
+    assertTrue(topPreferences.contains("settingsGlassEnabled()"))
+    assertTrue(topPreferences.contains("SettingsDestinationGroup("))
+    val groupBody = topPreferences.substringAfter("internal fun SettingsDestinationGroup")
+      .substringBefore("private fun SettingsDestinationRow")
+    assertFalse(groupBody.contains("if (index < section.items.lastIndex)"))
+    assertFalse(groupBody.contains("Surface("))
+    assertFalse(groupBody.contains("HorizontalDivider("))
   }
 
   @Test

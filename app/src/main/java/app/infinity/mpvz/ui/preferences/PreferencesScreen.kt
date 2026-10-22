@@ -25,7 +25,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -60,6 +59,8 @@ import app.infinity.mpvz.ui.icons.AppIcon
 import app.infinity.mpvz.ui.icons.Icon
 import app.infinity.mpvz.ui.icons.Icons
 import app.infinity.mpvz.ui.securefolder.SecureFolderGateScreen
+import app.infinity.mpvz.ui.preferences.components.settingsGlassEnabled
+import app.infinity.mpvz.ui.preferences.components.settingsGlassPreferenceRow
 import app.infinity.mpvz.ui.theme.LocalEmphasizedTypography
 import app.infinity.mpvz.ui.utils.LocalBackStack
 import app.infinity.mpvz.ui.utils.LocalShowSettingsBackArrow
@@ -67,14 +68,14 @@ import app.infinity.mpvz.ui.utils.popSafely
 import kotlinx.serialization.Serializable
 import org.koin.compose.koinInject
 
-private data class SettingsDestination(
+internal data class SettingsDestination(
   val title: String,
   val summary: String,
   val icon: AppIcon,
   val screen: Screen,
 )
 
-private data class SettingsSection(
+internal data class SettingsSection(
   val title: String,
   val tint: Color,
   val items: List<SettingsDestination>,
@@ -454,33 +455,23 @@ private fun SettingsSectionBlock(
 }
 
 @Composable
-private fun SettingsDestinationGroup(
+internal fun SettingsDestinationGroup(
   section: SettingsSection,
   selectedScreen: Screen?,
   onItemClick: (SettingsDestination) -> Unit,
   modifier: Modifier = Modifier,
 ) {
-  Surface(
+  Column(
     modifier = modifier.fillMaxWidth(),
-    shape = MaterialTheme.shapes.extraLargeIncreased,
-    color = MaterialTheme.colorScheme.surfaceContainerLow,
-    tonalElevation = 1.dp,
+    verticalArrangement = Arrangement.spacedBy(4.dp),
   ) {
-    Column(modifier = Modifier.fillMaxWidth()) {
-      section.items.forEachIndexed { index, item ->
-        SettingsDestinationRow(
-          item = item,
-          tint = section.tint,
-          isSelected = selectedScreen == item.screen,
-          onClick = { onItemClick(item) },
-        )
-        if (index < section.items.lastIndex) {
-          HorizontalDivider(
-            modifier = Modifier.padding(start = 14.dp, end = 18.dp),
-            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f),
-          )
-        }
-      }
+    section.items.forEach { item ->
+      SettingsDestinationRow(
+        item = item,
+        tint = section.tint,
+        isSelected = selectedScreen == item.screen,
+        onClick = { onItemClick(item) },
+      )
     }
   }
 }
@@ -492,8 +483,11 @@ private fun SettingsDestinationRow(
   isSelected: Boolean,
   onClick: () -> Unit,
 ) {
+  // Selection is an opaque Material affordance only in fallback mode; glass
+  // rows must remain optically owned by the shared SettingsGlass master.
+  val glassEnabled = settingsGlassEnabled()
   val rowBgColor =
-    if (isSelected) {
+    if (isSelected && !glassEnabled) {
       MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.5f)
     } else {
       Color.Transparent
@@ -502,9 +496,9 @@ private fun SettingsDestinationRow(
     modifier =
       Modifier
         .fillMaxWidth()
+        .settingsGlassPreferenceRow()
         .background(rowBgColor)
-        .clickable(onClick = onClick)
-        .padding(horizontal = 14.dp, vertical = 13.dp),
+        .clickable(onClick = onClick),
     verticalAlignment = Alignment.CenterVertically,
   ) {
     Surface(

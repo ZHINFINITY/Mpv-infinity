@@ -42,6 +42,13 @@ class MiniPlayerGesturePolicyTest {
     assertEquals(state, MiniPlayerGesturePolicy.drag(state, 20f, Float.POSITIVE_INFINITY))
   }
 
+  @Test fun nestedScrollClaimsOnlyTopEdgeRemainderOrCollapseReversal() {
+    assertEquals(48f, MiniPlayerGesturePolicy.nestedScrollDelta(MiniPlayerGestureState(), 48f), 0f)
+    assertEquals(0f, MiniPlayerGesturePolicy.nestedScrollDelta(MiniPlayerGestureState(), -48f), 0f)
+    assertEquals(-48f, MiniPlayerGesturePolicy.nestedScrollDelta(MiniPlayerGestureState(progress = 0.4f), -48f), 0f)
+    assertEquals(0f, MiniPlayerGesturePolicy.nestedScrollDelta(MiniPlayerGestureState(), Float.NaN), 0f)
+  }
+
   @Test fun collapseTracksTheActualMiniPlayerGeometryContinuously() {
     val target = MiniPlayerTarget(12f, 1800f, 976f, 80f, 1000f)
     val half = MiniPlayerGesturePolicy.transform(0.5f, 1000f, 2000f, 0f, 0f, target)

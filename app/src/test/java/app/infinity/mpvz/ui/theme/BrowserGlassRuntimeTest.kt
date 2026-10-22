@@ -76,6 +76,41 @@ class BrowserGlassRuntimeTest {
 
   @After fun closePreferences() { stopKoin() }
 
+  @Test fun actualAppThemeProvidesSceneOutsideMainScreenAndTracksMasterWithoutRecreatingContent() {
+    var instances = 0
+    composeRule.setContent {
+      MpvInfinityTheme {
+        val identity = remember { ++instances }
+        val glass = settingsGlassEnabled()
+        Text("Root scene ${hasBrowserGlassScene()} mode $glass instance $identity")
+      }
+    }
+    for (enabled in listOf(true, false, true, false, true)) {
+      composeRule.runOnIdle { appearance.liquidGlassSurfaces.set(enabled) }
+      composeRule.waitUntil(5_000) {
+        composeRule.onAllNodes(androidx.compose.ui.test.hasText("Root scene true mode $enabled instance 1"))
+          .fetchSemanticsNodes().isNotEmpty()
+      }
+    }
+    composeRule.runOnIdle { assertEquals(1, instances) }
+  }
+
+  @Test fun actualBackgroundProducerCannotSeeOrCaptureConsumerScene() {
+    composeRule.setContent {
+      MaterialTheme {
+        BrowserGlassSceneHost(enabled = true,
+          background = { Text("Background consumer access ${hasBrowserGlassScene()}") },
+        ) {
+          BrowserGlassSurface(enabled = true, opacity = 0.88f, highlight = 0.18f) {
+            Text("Foreground consumer access ${hasBrowserGlassScene()}")
+          }
+        }
+      }
+    }
+    composeRule.onNodeWithText("Background consumer access false").assertExists()
+    composeRule.onNodeWithText("Foreground consumer access true").assertExists()
+  }
+
   @Test fun actualThermalListenerRegistersAndDisposesWithScene() {
     var visible by mutableStateOf(true)
     val power = RuntimeEnvironment.getApplication().getSystemService(PowerManager::class.java)

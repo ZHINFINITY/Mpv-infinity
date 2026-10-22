@@ -67,6 +67,6 @@ class DestinationGlassCallersContractTest {
     assertTrue(music.contains("if (liquidGlass) Color.Transparent"))
     assertTrue(music.contains("PrimaryScrollableTabRow") && music.contains("containerColor = Color.Transparent"))
     assertTrue(cards.contains("settingsGlassSurface(cornerRadius = 20.dp)"))
-    assertTrue(cards.contains("containerColor = if (isSelected)"))
+    assertTrue(cards.contains("containerColor = settingsGlassContainerColor("))
   }
 }

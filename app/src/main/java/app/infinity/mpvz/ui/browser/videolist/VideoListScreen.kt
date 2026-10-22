@@ -101,6 +101,8 @@ import app.infinity.mpvz.ui.browser.dialogs.RenameDialog
 import app.infinity.mpvz.ui.browser.dialogs.VideoCompressorOverlay
 import app.infinity.mpvz.ui.browser.dialogs.VideoSortDialog
 import app.infinity.mpvz.ui.browser.fab.FabScrollHelper
+import app.infinity.mpvz.ui.preferences.components.settingsGlassContainerColor
+import app.infinity.mpvz.ui.preferences.components.settingsGlassSurface
 import app.infinity.mpvz.ui.browser.selection.SelectionManager
 import app.infinity.mpvz.ui.browser.selection.rememberSelectionManager
 import app.infinity.mpvz.ui.browser.states.EmptyState
@@ -472,6 +474,7 @@ data class VideoListScreen(
             },
             state = rememberTooltipState(),
           ) {
+            val liquidGlass by appearancePreferences.liquidGlassSurfaces.collectAsState()
             FloatingActionButton(
               modifier =
                 Modifier
@@ -480,7 +483,16 @@ data class VideoListScreen(
                   .animateFloatingActionButton(
                     visible = isFabShouldBeVisible,
                     alignment = Alignment.BottomEnd,
-                  ),
+                  )
+                  .settingsGlassSurface(cornerRadius = 20.dp),
+              containerColor = settingsGlassContainerColor(MaterialTheme.colorScheme.primaryContainer),
+              contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+              elevation = androidx.compose.material3.FloatingActionButtonDefaults.elevation(
+                defaultElevation = if (liquidGlass) 0.dp else 6.dp,
+                pressedElevation = if (liquidGlass) 0.dp else 12.dp,
+                focusedElevation = if (liquidGlass) 0.dp else 6.dp,
+                hoveredElevation = if (liquidGlass) 0.dp else 8.dp,
+              ),
               onClick = {
                 coroutineScope.launch {
                   val folderPath =

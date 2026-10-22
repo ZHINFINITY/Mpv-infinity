@@ -57,6 +57,9 @@ internal fun AudioPaletteGlassScene(
         val next = Rect(x, y, x + coordinates.size.width, y + coordinates.size.height)
         if (next != bounds) bounds = next
       },
+      // The scene is a backdrop provider, not an opaque player surface. An opaque
+      // fill here hid the activity's shared glass scene behind the entire music
+      // metadata area. Callers that need a fallback surface own that surface.
       content = content,
     )
   }

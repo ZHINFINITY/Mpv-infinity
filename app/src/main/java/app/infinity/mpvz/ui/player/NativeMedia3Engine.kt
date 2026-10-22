@@ -230,8 +230,11 @@ class NativeMedia3Engine(
     } else {
       media3FlowComputeApi
     }
+  // PlayerActivity keeps one engine across queue items. Do not make sink
+  // construction depend on the preference: an ON shortcut otherwise cannot
+  // enable the next item until the Activity is recreated.
   private val flowDeviceSupported =
-    enableMedia3Flow && Media3FlowVideoSink.deviceSupportsVulkanFlow(appContext)
+    Media3FlowVideoSink.deviceSupportsVulkanFlow(appContext)
   private val media3FlowSink = if (flowDeviceSupported) {
     Media3FlowVideoSink(
       appContext,
@@ -240,6 +243,7 @@ class NativeMedia3Engine(
       effectiveMedia3FlowComputeApi,
       media3FlowDebugSettings.visibilityResolverEnabled,
       media3FlowDebugSettings.softBlendEnabled,
+      enableMedia3Flow,
       ::publishFlowDiagnostics,
     )
   } else {
