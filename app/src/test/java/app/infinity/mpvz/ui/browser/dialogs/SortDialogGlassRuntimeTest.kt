@@ -9,6 +9,7 @@ import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.onParent
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performSemanticsAction
@@ -100,15 +101,22 @@ class SortDialogGlassRuntimeTest {
     }
     composeRule.onNodeWithText("View options").assertIsDisplayed()
     for ((index, enabled) in listOf(false, true, false).withIndex()) {
+      println("SortDialog interaction pass=$index liquidGlass=$enabled")
       composeRule.runOnIdle {
         appearance.liquidGlassSurfaces.set(enabled)
         pairedColumns.value = enabled
       }
       composeRule.waitForIdle()
-      for (label in listOf("Title", "Folder", "List")) {
+      // performScrollTo handles the nearest scrolling ancestor only. Sort types
+      // live in a horizontal strip inside the vertical popup, so reveal that
+      // strip vertically before asking it to reveal one of its own children.
+      composeRule.onNodeWithText("Title").onParent().performScrollTo()
+      composeRule.onNodeWithText("Title").performScrollTo().assertIsDisplayed()
+      for (label in listOf("Folder", "List")) {
         composeRule.onNodeWithText(label).performScrollTo().assertIsDisplayed()
       }
-      composeRule.onNodeWithText("Date").performScrollTo().performClick()
+      composeRule.onNodeWithText("Date").onParent().performScrollTo()
+      composeRule.onNodeWithText("Date").performScrollTo().assertIsDisplayed().performClick()
       composeRule.onNodeWithText("Z-A").performScrollTo().performClick()
       composeRule.onNodeWithText("Tree").performScrollTo().performClick()
       composeRule.onNodeWithText("Grid").performScrollTo().performClick()
