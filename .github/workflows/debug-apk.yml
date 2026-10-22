@@ -209,6 +209,7 @@ jobs:
           python3 scripts/tests/existing_localization_gaps_test.py
           python3 scripts/tests/persian_locale_rtl_test.py
           python3 scripts/tests/settings_popup_locale_contract_test.py
+          python3 scripts/tests/apk_signing_identity_test.py
           python3 scripts/tests/seekbar_glass_contract_test.py
           python3 scripts/tests/playlist_browse_ui_contract_test.py
           python3 scripts/tests/stream_cards_ui_contract_test.py
