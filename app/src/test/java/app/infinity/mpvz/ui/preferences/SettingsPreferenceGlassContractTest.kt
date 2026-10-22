@@ -21,9 +21,9 @@ class SettingsPreferenceGlassContractTest {
 
   @Test
   fun rowsHaveBalancedInsetAndSingleSurfaceOwner() {
-    assertEquals(12f, Regex("RowHorizontalInsetDp = ([0-9]+)f").find(policy)!!.groupValues[1].toFloat(), 0f)
-    assertEquals(4f, Regex("RowVerticalSpacingDp = ([0-9]+)f").find(policy)!!.groupValues[1].toFloat(), 0f)
-    assertEquals(64f, Regex("MinimumHeightDp = ([0-9]+)f").find(policy)!!.groupValues[1].toFloat(), 0f)
+    assertEquals(16f, Regex("RowHorizontalInsetDp = ([0-9]+)f").find(policy)!!.groupValues[1].toFloat(), 0f)
+    assertEquals(8f, Regex("RowVerticalSpacingDp = ([0-9]+)f").find(policy)!!.groupValues[1].toFloat(), 0f)
+    assertEquals(72f, Regex("MinimumHeightDp = ([0-9]+)f").find(policy)!!.groupValues[1].toFloat(), 0f)
     assertTrue(wrappers.contains("modifier.settingsGlassPreferenceRow()"))
     assertTrue(switch.contains(".settingsGlassPreferenceRow()"))
     assertTrue(customRows.contains(".settingsGlassPreferenceRow()"))
@@ -37,11 +37,13 @@ class SettingsPreferenceGlassContractTest {
   @Test
   fun topPreferencesRouteUsesOneStandaloneRowPerDestination() {
     assertTrue(topPreferences.contains("settingsGlassPreferenceRow()"))
-    assertTrue(topPreferences.contains("verticalArrangement = Arrangement.spacedBy(4.dp)"))
     assertTrue(topPreferences.contains("settingsGlassEnabled()"))
     assertTrue(topPreferences.contains("SettingsDestinationGroup("))
     val groupBody = topPreferences.substringAfter("internal fun SettingsDestinationGroup")
-      .substringBefore("private fun SettingsDestinationRow")
+      .substringBefore("private fun SettingsDestinationCard")
+    assertTrue(groupBody.contains("SettingsDestinationCard("))
+    assertFalse(groupBody.contains("Arrangement.spacedBy(")) // Individual rows own their gaps.
+    assertTrue(topPreferences.contains("padding(horizontal = 16.dp, vertical = 12.dp)"))
     assertFalse(groupBody.contains("if (index < section.items.lastIndex)"))
     assertFalse(groupBody.contains("Surface("))
     assertFalse(groupBody.contains("HorizontalDivider("))

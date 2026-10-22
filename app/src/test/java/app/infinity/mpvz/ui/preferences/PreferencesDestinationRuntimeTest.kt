@@ -86,8 +86,10 @@ class PreferencesDestinationRuntimeTest {
       }
     }
 
-    val appearanceText = composeRule.onNodeWithText("Appearance").assertIsDisplayed()
-    val playerText = composeRule.onNodeWithText("Player").assertIsDisplayed()
+    val appearanceText = composeRule.onNodeWithText("Appearance", useUnmergedTree = true).assertIsDisplayed()
+    val playerText = composeRule.onNodeWithText("Player", useUnmergedTree = true).assertIsDisplayed()
+    // The merged clickable row inherits its children's text but reports the entire
+    // card bounds. Measure the unmerged Text nodes to test real content clearance.
     val firstBounds = appearanceText.fetchSemanticsNode().boundsInRoot
     val secondBounds = playerText.fetchSemanticsNode().boundsInRoot
     val firstCard = composeRule.onNodeWithTag("settings-destination-card:Appearance")
@@ -125,8 +127,8 @@ class PreferencesDestinationRuntimeTest {
       }
     }
 
-    val initialAppearance = composeRule.onNodeWithText("Appearance").fetchSemanticsNode().boundsInRoot
-    val initialPlayer = composeRule.onNodeWithText("Player").fetchSemanticsNode().boundsInRoot
+    val initialAppearance = composeRule.onNodeWithText("Appearance", useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
+    val initialPlayer = composeRule.onNodeWithText("Player", useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
     val initialAppearanceCard = composeRule.onNodeWithTag("settings-destination-card:Appearance")
       .fetchSemanticsNode().boundsInRoot
     val initialPlayerCard = composeRule.onNodeWithTag("settings-destination-card:Player")
@@ -134,11 +136,11 @@ class PreferencesDestinationRuntimeTest {
     for (enabled in listOf(false, true, false, true)) {
       composeRule.runOnIdle { appearance.liquidGlassSurfaces.set(enabled) }
       composeRule.waitForIdle()
-      assertSameBounds(initialAppearance, composeRule.onNodeWithText("Appearance").fetchSemanticsNode().boundsInRoot)
-      assertSameBounds(initialPlayer, composeRule.onNodeWithText("Player").fetchSemanticsNode().boundsInRoot)
+      assertSameBounds(initialAppearance, composeRule.onNodeWithText("Appearance", useUnmergedTree = true).fetchSemanticsNode().boundsInRoot)
+      assertSameBounds(initialPlayer, composeRule.onNodeWithText("Player", useUnmergedTree = true).fetchSemanticsNode().boundsInRoot)
       assertSameBounds(initialAppearanceCard, composeRule.onNodeWithTag("settings-destination-card:Appearance").fetchSemanticsNode().boundsInRoot)
       assertSameBounds(initialPlayerCard, composeRule.onNodeWithTag("settings-destination-card:Player").fetchSemanticsNode().boundsInRoot)
-      composeRule.onNodeWithText("Appearance").performClick()
+      composeRule.onNodeWithText("Appearance", useUnmergedTree = true).performClick()
     }
     composeRule.runOnIdle {
       assertEquals(4, clicks.size)
