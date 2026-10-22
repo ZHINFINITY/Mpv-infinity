@@ -2241,4 +2241,8 @@ Bitte starten Sie die App neu, damit alle Änderungen wirksam werden.</string>
   <string name="pref_custom_theme_name">Themenname</string>
   <string name="generic_save">Speichern</string>
   <string name="pref_custom_theme_argb_placeholder" translatable="false">#FFFFFFFF</string>
+  <string name="track_metadata_default">Standard</string>
+  <string name="track_metadata_forced">Erzwungen</string>
+  <string name="track_metadata_sdh">SDH</string>
+  <string name="track_metadata_external">Extern</string>
 </resources>

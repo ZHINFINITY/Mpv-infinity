@@ -70,7 +70,7 @@ class PlayerGlassOverlayContracts(unittest.TestCase):
 
     def test_all_subtitle_dropdowns_have_one_outer_pane(self):
         source = self.source("ui/player/controls/components/sheets/OnlineSubtitleSearchSheet.kt")
-        self.assertEqual(3, source.count("DropdownMenu("))
+        self.assertEqual(3, source.count("GlassDropdownMenu("))
         self.assertEqual(3, source.count(".playerGlassOverlay(12.dp)"))
         self.assertNotIn("PlayerGlassOverlay(", source)
         shared = self.source("presentation/components/ExposedTextDropDownMenu.kt")

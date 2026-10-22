@@ -6,12 +6,13 @@
  */
 
 package app.infinity.mpvz.presentation.components
+import app.infinity.mpvz.ui.theme.GlassDropdownMenu
+import app.infinity.mpvz.ui.theme.GlassExposedDropdownMenu
 
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.ExposedDropdownMenu
 import androidx.compose.material3.ExposedDropdownMenuAnchorType
 import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExposedDropdownMenuDefaults
@@ -62,7 +63,7 @@ fun ExposedTextDropDownMenu(
           .fillMaxWidth(),
     )
 
-    ExposedDropdownMenu(
+    GlassExposedDropdownMenu(
       expanded = expanded,
       onDismissRequest = { expanded = false },
       modifier = Modifier.heightIn(max = 300.dp).playerGlassOverlay(16.dp),

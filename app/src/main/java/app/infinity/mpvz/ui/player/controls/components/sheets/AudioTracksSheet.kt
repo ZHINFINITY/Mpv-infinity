@@ -92,12 +92,7 @@ fun AudioTracksSheet(
           }
         }
         items(embeddedTracks, key = { it.id }) {
-          AudioTrackRow(
-            title = getTrackTitle(it),
-            details = audioTrackDetails(it),
-            isSelected = it.isSelected,
-            onClick = { onSelect(it) },
-          )
+          TrackSheetRow(track = it, selected = it.isSelected, onClick = { onSelect(it) })
         }
         if (externalTracks.isNotEmpty()) {
           item(key = "external_audio_tracks_header") {
@@ -105,12 +100,7 @@ fun AudioTracksSheet(
           }
         }
         items(externalTracks, key = { it.id }) {
-          AudioTrackRow(
-            title = getTrackTitle(it),
-            details = audioTrackDetails(it),
-            isSelected = it.isSelected,
-            onClick = { onSelect(it) },
-          )
+          TrackSheetRow(track = it, selected = it.isSelected, onClick = { onSelect(it) })
         }
         item {
           Column(
@@ -188,18 +178,8 @@ fun AudioTracksSheet(
 
 @Composable
 private fun AudioTrackSectionHeader(title: String) {
-  Text(
-    text = title,
-    modifier =
-      Modifier
-        .fillMaxWidth()
-        .padding(horizontal = MaterialTheme.spacing.medium, vertical = MaterialTheme.spacing.extraSmall),
-    style = MaterialTheme.typography.labelLarge,
-    color = MaterialTheme.colorScheme.primary,
-    fontWeight = FontWeight.Bold,
-  )
+  SheetSectionHeader(title)
 }
-
 @Composable
 fun AudioTrackRow(
   title: String,

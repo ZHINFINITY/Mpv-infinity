@@ -2241,4 +2241,8 @@ Veuillez redémarrer l’application pour appliquer toutes les modifications.</s
   <string name="pref_custom_theme_name">Nom du thème</string>
   <string name="generic_save">Enregistrer</string>
   <string name="pref_custom_theme_argb_placeholder" translatable="false">#FFFFFFFF</string>
+  <string name="track_metadata_default">Par défaut</string>
+  <string name="track_metadata_forced">Forcé</string>
+  <string name="track_metadata_sdh">SME</string>
+  <string name="track_metadata_external">Externe</string>
 </resources>

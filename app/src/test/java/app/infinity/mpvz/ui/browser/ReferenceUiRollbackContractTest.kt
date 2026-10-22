@@ -148,6 +148,14 @@ private suspend fun frostGlassFrame(bitmap: Bitmap, strength: Float): Bitmap? = 
             GlassSamplingPolicy.interval(playing(), failures, thermalNow),
             SystemClock.uptimeMillis() - sampleStarted,
           ))""" to "          else GlassSamplingPolicy.interval(playing(), failures))",
+      // Build 1899: glow-free edge-to-edge bars outside a browser scene (no sheen/rim/shadow).
+      "import androidx.compose.foundation.background\n" to "",
+      """  // Edge-to-edge top/selection bars outside a browser scene (e.g. settings screens): no
+  // white sheen band, rim line or shadow, which read as a glowing bar; page-background film only.
+  if (backdrop == null && GlassSurfacePolicy.isEdgeToEdgeChrome(cornerRadius.value)) {
+    return this.background(MaterialTheme.colorScheme.background.copy(alpha = GlassSurfacePolicy.EdgeChromeNoSceneFilmAlpha))
+  }
+""" to "",
     )
     var restored = film.replace(guarded, baseline)
     cadence.forEach { (now, before) ->

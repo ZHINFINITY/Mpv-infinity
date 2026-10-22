@@ -2226,4 +2226,8 @@
   <string name="pref_custom_theme_name">Nama tema</string>
   <string name="generic_save">Simpan</string>
   <string name="pref_custom_theme_argb_placeholder" translatable="false">#FFFFFFFF</string>
+  <string name="track_metadata_default">Bawaan</string>
+  <string name="track_metadata_forced">Paksa</string>
+  <string name="track_metadata_sdh">SDH</string>
+  <string name="track_metadata_external">Eksternal</string>
 </resources>

@@ -6,6 +6,8 @@
  */
 
 package app.infinity.mpvz.ui.browser.dialogs
+import app.infinity.mpvz.ui.theme.GlassDropdownMenu
+import app.infinity.mpvz.ui.theme.GlassExposedDropdownMenu
 
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
@@ -28,7 +30,6 @@ import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.ExposedDropdownMenu
 import androidx.compose.material3.ExposedDropdownMenuAnchorType
 import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExposedDropdownMenuDefaults
@@ -173,7 +174,7 @@ fun AddConnectionSheet(
                   .fillMaxWidth()
                   .menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable),
             )
-            ExposedDropdownMenu(
+            GlassExposedDropdownMenu(
               expanded = protocolMenuExpanded,
               onDismissRequest = { protocolMenuExpanded = false },
             ) {

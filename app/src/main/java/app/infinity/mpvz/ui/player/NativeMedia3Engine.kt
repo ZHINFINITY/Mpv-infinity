@@ -135,6 +135,9 @@ data class NativeTrack(
   val sampleMimeType: String? = null,
   val codecs: String? = null,
   val channelCount: Int = 0,
+  val isDefault: Boolean = false,
+  val isForced: Boolean = false,
+  val hearingImpaired: Boolean = false,
 )
 
 internal fun media3ContentAspectRatio(customRatio: Double?): Float =
@@ -1753,6 +1756,9 @@ class NativeMedia3Engine(
             sampleMimeType = format.sampleMimeType,
             codecs = format.codecs,
             channelCount = format.channelCount.coerceAtLeast(0),
+            isDefault = format.selectionFlags and C.SELECTION_FLAG_DEFAULT != 0,
+            isForced = format.selectionFlags and C.SELECTION_FLAG_FORCED != 0,
+            hearingImpaired = format.roleFlags and C.ROLE_FLAG_DESCRIBES_MUSIC_AND_SOUND != 0,
             selected = if (type == C.TRACK_TYPE_TEXT && selectedNativeSubtitleKey == (groupIndex to trackIndex)) {
               true
             } else group.isTrackSelected(trackIndex),

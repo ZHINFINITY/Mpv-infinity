@@ -2226,4 +2226,8 @@
   <string name="pref_custom_theme_name">थीम का नाम</string>
   <string name="generic_save">सहेजें</string>
   <string name="pref_custom_theme_argb_placeholder" translatable="false">#FFFFFFFF</string>
+  <string name="track_metadata_default">डिफ़ॉल्ट</string>
+  <string name="track_metadata_forced">अनिवार्य</string>
+  <string name="track_metadata_sdh">SDH</string>
+  <string name="track_metadata_external">बाहरी</string>
 </resources>

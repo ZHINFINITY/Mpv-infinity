@@ -1,4 +1,6 @@
 package app.infinity.mpvz.ui.browser.music
+import app.infinity.mpvz.ui.theme.GlassDropdownMenu
+import app.infinity.mpvz.ui.theme.GlassExposedDropdownMenu
 
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -11,7 +13,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -119,7 +120,7 @@ fun MusicSourceChooser(
       Spacer(Modifier.width(4.dp))
       Icon(Icons.RoundedFilled.ExpandMore, contentDescription = null, modifier = Modifier.size(20.dp))
     }
-    DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+    GlassDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
       MusicSourceItem(stringResource(R.string.music_source_local), MusicSourceProvider.LOCAL, currentSource == MusicSourceProvider.LOCAL) {
         preferences.musicSourceProvider.set(MusicSourceProvider.LOCAL)
         expanded = false

@@ -2226,4 +2226,8 @@
   <string name="pref_custom_theme_name">Tên giao diện</string>
   <string name="generic_save">Lưu</string>
   <string name="pref_custom_theme_argb_placeholder" translatable="false">#FFFFFFFF</string>
+  <string name="track_metadata_default">Mặc định</string>
+  <string name="track_metadata_forced">Bắt buộc</string>
+  <string name="track_metadata_sdh">SDH</string>
+  <string name="track_metadata_external">Bên ngoài</string>
 </resources>

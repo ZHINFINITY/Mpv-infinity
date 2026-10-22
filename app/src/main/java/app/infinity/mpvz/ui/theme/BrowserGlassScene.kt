@@ -133,8 +133,9 @@ fun BrowserGlassSceneHost(
   val inheritedScene = LocalBrowserScene.current
   val ownsScene = inheritedScene == null
   val scene = inheritedScene ?: remember(layer) { BrowserScene(layer) }
-  val producerTop = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)
-  val producerBottom = MaterialTheme.colorScheme.secondary.copy(alpha = 0.06f)
+  val amoledBackdrop = MaterialTheme.colorScheme.background == Color.Black
+  val producerTop = if (amoledBackdrop) Color.Transparent else MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)
+  val producerBottom = if (amoledBackdrop) Color.Transparent else MaterialTheme.colorScheme.secondary.copy(alpha = 0.06f)
   val producerBrush = remember(producerTop, producerBottom) {
     Brush.verticalGradient(listOf(producerTop, producerBottom))
   }
@@ -378,47 +379,45 @@ internal fun Modifier.browserGlassPane(
   deformation: Float = 0f,
   drawRim: Boolean = true,
   materialRole: GlassSurfacePolicy.MaterialRole = GlassSurfacePolicy.MaterialRole.Clear,
-  referenceOptics: Boolean = false,
+  // Retained for source compatibility: every browser pane now uses the navigation
+  // pill's reference material, so this flag no longer selects a different profile.
+  @Suppress("UNUSED_PARAMETER") referenceOptics: Boolean = false,
 ): Modifier {
   val hostView = LocalView.current
   val scene = LocalBrowserScene.current
   val capabilities = LocalBrowserCapabilities.current
   val tuning = LocalGlassCustomization.current
   val shape = remember(cornerRadius) { RoundedCornerShape(cornerRadius) }
-  val tint = if (selected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerHigh
-  val themedTint = if (materialRole == GlassSurfacePolicy.MaterialRole.Regular)
-    GlassSurfacePolicy.regularTintColor(tint, MaterialTheme.colorScheme.onSurface) else tint
+  val regular = materialRole == GlassSurfacePolicy.MaterialRole.Regular
+  // Edge-to-edge chrome (top bars, selection bar) has no floating outline: no rim,
+  // shadow or body sheen, and it is tinted with the page background (true black on AMOLED).
+  val edgeBar = GlassSurfacePolicy.isEdgeToEdgeChrome(cornerRadius.value)
+  val tint = when {
+    selected -> MaterialTheme.colorScheme.primaryContainer
+    edgeBar -> MaterialTheme.colorScheme.background
+    else -> MaterialTheme.colorScheme.surfaceContainerHigh
+  }
+  val themedTint = if (regular) GlassSurfacePolicy.regularTintColor(tint, MaterialTheme.colorScheme.onSurface) else tint
   val film = GlassSurfacePolicy.opacity(if (tuning.overrideMaterial) tuning.opacity else opacity)
   // Popups solve their film against the page behind them (a display list cannot be read back).
   val popupText = MaterialTheme.colorScheme.onSurface
   val popupUnderlay = GlassSurfacePolicy.browserUnderlayEstimate(MaterialTheme.colorScheme.background)
   val glow = GlassSurfacePolicy.highlight(if (tuning.overrideMaterial) tuning.highlight else highlight)
-  val material = GlassSurfacePolicy.materialTuning(materialRole)
-  // Exactly the same static optical profile as player panes: depth remains
-  // visible over an AMOLED/flat backdrop and when motion or capture is reduced.
-  val optics = if (referenceOptics) GlassSurfacePolicy.depthOptics(0f, 0f)
-    else GlassSurfacePolicy.depthOptics(tuning.depth, glow)
+  // Text-bearing popups and menus: frost follows the global frost setting above a readable floor.
+  val blurDp = if (regular) GlassSurfacePolicy.browserPopupFrostDp(tuning.frost)
+    else GlassSurfacePolicy.navigationFrostDp(tuning.frost, refraction = capabilities.refraction)
+  val floating = enabled && drawRim && !edgeBar
   var paneOrigin by remember { mutableStateOf(Offset.Zero) }
   // Runtime shader compilation is remembered, not repeated for every animated width/frame.
-  val shader = remember(enabled, capabilities.refraction) {
-    if (enabled && capabilities.refraction && Build.VERSION.SDK_INT >= 33)
-      runCatching { RuntimeShader(BROWSER_LATEST_LENS) }.getOrNull() else null
+  // Edge bars never bend: the lens edge term would draw a bright line along the bar's bottom.
+  val shader = remember(enabled, capabilities.refraction, edgeBar) {
+    if (enabled && !edgeBar && capabilities.refraction && Build.VERSION.SDK_INT >= 33)
+      runCatching { RuntimeShader(BROWSER_LENS) }.getOrNull() else null
   }
   val lens = rememberGraphicsLayer()
   return this
-    .drawWithCache {
-      val radius = cornerRadius.toPx().coerceAtMost(size.minDimension / 2f)
-      val outline = Path().apply {
-        addRoundRect(androidx.compose.ui.geometry.RoundRect(Rect(0f, 0f, size.width, size.height), CornerRadius(radius)))
-      }
-      onDrawBehind {
-        if (enabled && drawRim && optics.shadowAlpha > 0f) clipPath(outline, ClipOp.Difference) {
-          drawRoundRect(Color.Black.copy(alpha = optics.shadowAlpha),
-            topLeft = Offset(0.5.dp.toPx(), 1.5.dp.toPx()), cornerRadius = CornerRadius(radius),
-            style = Stroke(optics.shadowSpreadDp.dp.toPx()))
-        }
-      }
-    }
+    // Same elevation as the navigation pill (BrowserGlassSurface), scaled by the depth setting.
+    .shadow(if (floating) (if (selected) 7.dp else 12.dp) * tuning.depth else 0.dp, shape, clip = false)
     .onGloballyPositioned { if (it.isAttached) paneOrigin = it.localToWindow(Offset.Zero) + windowScreenOffset(hostView) }
     .clip(shape)
     .then(if (!enabled) Modifier.background(tint, shape) else Modifier)
@@ -428,36 +427,23 @@ internal fun Modifier.browserGlassPane(
         val effect = if (refraction) runCatching {
           shader!!.setFloatUniform("pane", size.width, size.height)
           shader.setFloatUniform("radius", radius)
-          shader.setFloatUniform("bend", (if (selected) 9f else 5f) * density * tuning.refraction * material.refractionMultiplier)
+          shader.setFloatUniform("bend", (if (selected) 9f else 5f) * density * tuning.refraction)
           shader.setFloatUniform("motion", deformation.coerceIn(0f, 1f))
-          shader.setFloatUniform("thickness", tuning.depth)
-          shader.setFloatUniform("highlight", glow)
           val lensEffect = RenderEffect.createRuntimeShaderEffect(shader, "scene")
-          (if (materialRole == GlassSurfacePolicy.MaterialRole.Regular || tuning.frost > 0f) RenderEffect.createChainEffect(lensEffect,
-            RenderEffect.createBlurEffect(
-              (if (materialRole == GlassSurfacePolicy.MaterialRole.Regular)
-                maxOf(GlassSurfacePolicy.BrowserPopupMinimumFrostDp, 2f * tuning.frost * material.frostMultiplier)
-              else 2f * tuning.frost * material.frostMultiplier) * density,
-              (if (materialRole == GlassSurfacePolicy.MaterialRole.Regular)
-                maxOf(GlassSurfacePolicy.BrowserPopupMinimumFrostDp, 2f * tuning.frost * material.frostMultiplier)
-              else 2f * tuning.frost * material.frostMultiplier) * density,
-              Shader.TileMode.CLAMP))
+          (if (blurDp > 0f) RenderEffect.createChainEffect(lensEffect,
+            RenderEffect.createBlurEffect(blurDp * density, blurDp * density, Shader.TileMode.CLAMP))
           else lensEffect).asComposeRenderEffect()
-        }.getOrNull() else if (Build.VERSION.SDK_INT >= 31 && scene != null && (tuning.frost > 0f || materialRole == GlassSurfacePolicy.MaterialRole.Regular)) runCatching {
-          val blurDp = if (materialRole == GlassSurfacePolicy.MaterialRole.Regular)
-            maxOf(GlassSurfacePolicy.BrowserPopupMinimumFrostDp, 3f * tuning.frost * material.frostMultiplier)
-          else 3f * tuning.frost * material.frostMultiplier
+        }.getOrNull() else if (Build.VERSION.SDK_INT >= 31 && scene != null && blurDp > 0f) runCatching {
           RenderEffect.createBlurEffect(blurDp * density, blurDp * density, Shader.TileMode.CLAMP).asComposeRenderEffect()
         }.getOrNull() else null
         lens.renderEffect = effect
-        // A route-content lens replaces pixels with their refracted copy, avoiding
-        // sharp unrefracted text ghosting through. This is not an opaque material tint.
-        // Background-only panes retain bounded translucency over their real content.
-        lens.alpha = if (scene?.contentLens == true) 1f else GlassSurfacePolicy.browserSampleAlpha(film)
+        // Like the navigation pill, the refracted sample fully replaces what is behind the
+        // pane, so content text under popups, menus and the selection pill never reads through.
+        lens.alpha = 1f
         val edge = Brush.linearGradient(listOf(
-          Color.White.copy(alpha = optics.rimHighlight),
+          Color.White.copy(alpha = 0.20f + glow * 0.65f),
           Color.White.copy(alpha = 0.03f),
-          Color.Black.copy(alpha = optics.rimShade),
+          Color.White.copy(alpha = 0.10f + glow * 0.35f),
         ))
         onDrawBehind {
           if (size.width < 1f || size.height < 1f) return@onDrawBehind
@@ -472,22 +458,25 @@ internal fun Modifier.browserGlassPane(
             }
             drawLayer(lens)
           }
-          // Frosted see-through popup film (reference floor opacity * 0.42, light ceiling 0.50).
-          val centerFilm = if (materialRole == GlassSurfacePolicy.MaterialRole.Regular)
-            GlassSurfacePolicy.regularAdaptiveFilmAlpha(film, popupUnderlay, themedTint, popupText,
-              optics.bodyHighlight, optics.bodyShade)
+          val centerFilm = if (regular)
+            GlassSurfacePolicy.regularAdaptiveFilmAlpha(film, popupUnderlay, themedTint, popupText, 0f, 0f)
           else film * (if (selected) 0.24f else 0.20f)
-          // Without a frosted scene the page behind is sharp, so the popup keeps a readable film.
-          val fallbackFilm = if (materialRole == GlassSurfacePolicy.MaterialRole.Regular) GlassSurfacePolicy.RegularNoSceneFilmAlpha
-            else GlassSurfacePolicy.browserFallbackAlpha(film)
+          // Without a scene the page behind is sharp, so keep a readable film (nav pill: 0.70).
+          val fallbackFilm = when {
+            regular -> GlassSurfacePolicy.RegularNoSceneFilmAlpha
+            edgeBar -> GlassSurfacePolicy.EdgeChromeNoSceneFilmAlpha
+            else -> GlassSurfacePolicy.NavigationNoSceneFilmAlpha
+          }
           drawRoundRect(themedTint.copy(alpha = if (hasScene) centerFilm else fallbackFilm), cornerRadius = CornerRadius(radius))
-          drawRoundRect(Brush.verticalGradient(listOf(
-            Color.White.copy(alpha = (optics.bodyHighlight + if (selected) glow * 0.24f else 0f).coerceAtMost(0.55f)),
-            Color.Transparent,
-            Color.Black.copy(alpha = optics.bodyShade),
-          )), cornerRadius = CornerRadius(radius))
-          if (drawRim) drawRoundRect(edge, cornerRadius = CornerRadius(radius), style = Stroke(optics.rimWidthDp.dp.toPx()))
-          if (drawRim && selected && size.height > 4.dp.toPx() && size.width > 4.dp.toPx()) {
+          if (!edgeBar) {
+            drawRoundRect(Brush.verticalGradient(listOf(
+              Color.White.copy(alpha = if (selected) 0.16f + glow * 0.24f else 0.06f + glow * 0.10f),
+              Color.Transparent,
+              Color.Black.copy(alpha = if (selected) 0.10f else 0.08f),
+            )), cornerRadius = CornerRadius(radius))
+          }
+          if (floating) drawRoundRect(edge, cornerRadius = CornerRadius(radius), style = Stroke(1.dp.toPx()))
+          if (floating && selected && size.height > 4.dp.toPx() && size.width > 4.dp.toPx()) {
             drawRoundRect(Color.Black.copy(alpha = 0.10f), topLeft = Offset(1.dp.toPx(), 1.dp.toPx()),
               size = androidx.compose.ui.geometry.Size(size.width - 2.dp.toPx(), size.height - 2.dp.toPx()),
               cornerRadius = CornerRadius((radius - 1.dp.toPx()).coerceAtLeast(0f)), style = Stroke(1.dp.toPx()))

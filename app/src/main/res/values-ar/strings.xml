@@ -2241,4 +2241,8 @@
   <string name="pref_custom_theme_name">اسم السمة</string>
   <string name="generic_save">حفظ</string>
   <string name="pref_custom_theme_argb_placeholder" translatable="false">#FFFFFFFF</string>
+  <string name="track_metadata_default">افتراضي</string>
+  <string name="track_metadata_forced">إجباري</string>
+  <string name="track_metadata_sdh">للصم وضعاف السمع</string>
+  <string name="track_metadata_external">خارجي</string>
 </resources>

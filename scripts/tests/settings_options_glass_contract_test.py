@@ -67,7 +67,9 @@ class SettingsOptionsGlassContract(unittest.TestCase):
                 self.assertIn('settingsGlassSurface(', args, str(path))
                 self.assertIn('settingsGlassContainerColor(', args, str(path))
                 checked += 1
-        self.assertGreaterEqual(checked, 29)
+        # DropdownMenu call sites are centralized in GlassDropdownMenu.kt and
+        # therefore are intentionally excluded from this direct-popup count.
+        self.assertGreaterEqual(checked, 23)
         self.assertIn('Color.Transparent else fallback', (SETTINGS / 'components/SettingsGlass.kt').read_text())
 
 

@@ -6,6 +6,8 @@
  */
 
 package app.infinity.mpvz.ui.browser.components
+import app.infinity.mpvz.ui.theme.GlassDropdownMenu
+import app.infinity.mpvz.ui.theme.GlassExposedDropdownMenu
 
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -16,7 +18,6 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -488,7 +489,7 @@ private fun SelectionTopBar(
           tint = MaterialTheme.colorScheme.onSurface,
         )
 
-        DropdownMenu(
+        GlassDropdownMenu(
           expanded = showDropdown,
           onDismissRequest = { showDropdown = false },
         ) {

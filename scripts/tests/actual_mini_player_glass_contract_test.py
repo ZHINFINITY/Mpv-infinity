@@ -45,11 +45,11 @@ class ActualMiniPlayerGlassContracts(unittest.TestCase):
     def test_invalid_source_still_draws_readable_bounded_fallback(self):
         latest = SCENE.split('internal fun Modifier.browserGlassPane(', 1)[1].split('private fun windowScreenOffset', 1)[0]
         draw = latest[latest.index('val hasScene ='):]
-        self.assertIn("else GlassSurfacePolicy.browserFallbackAlpha(film)", draw)
-        self.assertIn("drawRoundRect(edge", draw)
+        self.assertIn("GlassSurfacePolicy.NavigationNoSceneFilmAlpha", draw)
+        self.assertIn("if (floating) drawRoundRect(edge", draw)
         self.assertNotIn("return@onDrawBehind", draw)
         self.assertIn("if (it.isAttached)", SCENE)
-        self.assertIn('shader.setFloatUniform("thickness", tuning.depth)', SCENE)
+        self.assertIn('(if (selected) 7.dp else 12.dp) * tuning.depth', latest)
         self.assertIn("float2 outer = max(q, 0.0)", SCENE)
 
     def test_actual_mini_player_has_palette_glass_vertical_expand_and_real_callbacks(self):

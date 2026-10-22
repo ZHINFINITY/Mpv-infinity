@@ -2241,4 +2241,8 @@
   <string name="pref_custom_theme_name">Название темы</string>
   <string name="generic_save">Сохранить</string>
   <string name="pref_custom_theme_argb_placeholder" translatable="false">#FFFFFFFF</string>
+  <string name="track_metadata_default">По умолчанию</string>
+  <string name="track_metadata_forced">Принудительные</string>
+  <string name="track_metadata_sdh">SDH</string>
+  <string name="track_metadata_external">Внешние</string>
 </resources>

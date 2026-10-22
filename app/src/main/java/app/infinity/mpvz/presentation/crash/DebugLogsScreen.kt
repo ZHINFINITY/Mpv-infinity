@@ -6,6 +6,8 @@
  */
 
 package app.infinity.mpvz.presentation.crash
+import app.infinity.mpvz.ui.theme.GlassDropdownMenu
+import app.infinity.mpvz.ui.theme.GlassExposedDropdownMenu
 
 import android.content.Context
 import android.content.Intent
@@ -38,7 +40,6 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
@@ -301,7 +302,7 @@ internal fun DebugLogsScreen(onNavigateBack: () -> Unit) {
             IconButton(onClick = { menuExpanded = true }) {
               Icon(Icons.RoundedFilled.MoreVert, contentDescription = "Log options")
             }
-            DropdownMenu(
+            GlassDropdownMenu(
               expanded = menuExpanded,
               onDismissRequest = { menuExpanded = false },
             ) {

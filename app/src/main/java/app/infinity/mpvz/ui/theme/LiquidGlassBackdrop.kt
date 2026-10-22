@@ -21,6 +21,7 @@ import android.os.SystemClock
 import android.graphics.Rect as AndroidRect
 import android.view.PixelCopy
 import android.view.SurfaceView
+import androidx.compose.foundation.background
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
@@ -256,6 +257,11 @@ fun Modifier.liquidGlassPane(
       if (tuning.overrideMaterial) tuning.opacity else opacity,
       if (tuning.overrideMaterial) tuning.highlight else highlight, cornerRadius,
       drawRim = drawRim, materialRole = materialRole)
+  }
+  // Edge-to-edge top/selection bars outside a browser scene (e.g. settings screens): no
+  // white sheen band, rim line or shadow, which read as a glowing bar; page-background film only.
+  if (backdrop == null && GlassSurfacePolicy.isEdgeToEdgeChrome(cornerRadius.value)) {
+    return this.background(MaterialTheme.colorScheme.background.copy(alpha = GlassSurfacePolicy.EdgeChromeNoSceneFilmAlpha))
   }
   val tint = MaterialTheme.colorScheme.surfaceContainerHigh
   val themedTint = if (materialRole == GlassSurfacePolicy.MaterialRole.Regular)

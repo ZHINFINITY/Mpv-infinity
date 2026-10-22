@@ -3,6 +3,8 @@
  * Copyright (c) 2026 ZHINFINITY. Mpv∞ Covered Code. See LICENSE for terms.
  */
 package app.infinity.mpvz.ui.preferences.components
+import app.infinity.mpvz.ui.theme.GlassDropdownMenu
+import app.infinity.mpvz.ui.theme.GlassExposedDropdownMenu
 
 
 import androidx.compose.foundation.background
@@ -64,7 +66,7 @@ fun <T> ListPreference(
   Box(Modifier.fillMaxWidth()) {
     Preference(title, modifier, enabled, icon, summary, onClick = { open = true })
     if (type == ListPreferenceType.DROPDOWN_MENU) {
-      DropdownMenu(
+      GlassDropdownMenu(
         expanded = open, onDismissRequest = { open = false },
         modifier = Modifier.settingsGlassSurface(cornerRadius = 12.dp, independent = true), containerColor = Color.Transparent,
       ) { values.forEach { drawOption(it) } }

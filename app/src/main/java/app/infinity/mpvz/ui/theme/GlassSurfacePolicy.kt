@@ -20,6 +20,28 @@ object GlassSurfacePolicy {
   const val RegularNoSceneFilmAlpha = 0.85f
   /** Browser popup blur floor so library/settings text behind a popup is not readable. */
   const val BrowserPopupMinimumFrostDp = 22f
+  /** Frost floor behind popup/menu text at frost strength 0; the frost setting adds on top. */
+  const val BrowserPopupTextFrostFloorDp = 14f
+  /** Extra popup frost per unit of the global frost setting (0..2). */
+  const val BrowserPopupFrostPerStrengthDp = 6f
+  /** Navigation-pill film when no scene is available (matches BrowserGlassSurface). */
+  const val NavigationNoSceneFilmAlpha = 0.70f
+  /**
+   * Edge-to-edge top/selection bars without a sampled scene: page-background film
+   * (pure black on AMOLED), with no white sheen band, rim line or shadow.
+   */
+  const val EdgeChromeNoSceneFilmAlpha = 0.88f
+
+  /** Popups and menus carry readable text, so their frost never drops below the floor. */
+  fun browserPopupFrostDp(frost: Float): Float =
+    BrowserPopupTextFrostFloorDp + BrowserPopupFrostPerStrengthDp * GlassCustomizationPolicy.strength(frost)
+
+  /** Navigation-pill frost: 2dp per strength unit with refraction, 3dp on the blur-only path. */
+  fun navigationFrostDp(frost: Float, refraction: Boolean): Float =
+    (if (refraction) 2f else 3f) * GlassCustomizationPolicy.strength(frost)
+
+  /** A zero-radius pane is edge-to-edge chrome (top or selection bar), not a floating card. */
+  fun isEdgeToEdgeChrome(cornerRadiusDp: Float): Boolean = cornerRadiusDp <= 0.5f
   /** Reference (0dd2a9cd) see-through sheet film: opacity * 0.42 over a sampled scene. */
   const val RegularFloorFilmFactor = 0.42f
   const val TextContrastTarget = 4.5f

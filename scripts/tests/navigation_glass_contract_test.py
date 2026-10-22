@@ -64,8 +64,11 @@ class NavigationGlassContracts(unittest.TestCase):
         self.assertIn("drawLayer(scene!!.layer)", source)
         self.assertIn("film * (if (selected) 0.24f else 0.20f)", source)
         self.assertNotIn("browserGlassPane(enabled", source)
-        self.assertIn("RuntimeShader(BROWSER_LATEST_LENS)", renderer)
-        self.assertIn("GlassSurfacePolicy.depthOptics(tuning.depth, glow)", renderer)
+        # Every other browser pane now reuses the nav pill reference lens and film.
+        pane = renderer.split("internal fun Modifier.browserGlassPane(", 1)[1].split("private fun windowScreenOffset", 1)[0]
+        self.assertIn("RuntimeShader(BROWSER_LENS)", pane)
+        self.assertIn("film * (if (selected) 0.24f else 0.20f)", pane)
+        self.assertIn("lens.alpha = 1f", pane)
         for token in ("!lowRam && !powerSave && thermal < 3", "ANIMATOR_DURATION_SCALE", "areAnimatorsEnabled()",
                       "Build.VERSION.SDK_INT >= 33", "Build.VERSION.SDK_INT >= 31", "if (!enabled) Modifier.background"):
             self.assertIn(token, renderer)

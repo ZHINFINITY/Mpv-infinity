@@ -6,6 +6,8 @@
  */
 
 package app.infinity.mpvz.ui.browser.audiobooks
+import app.infinity.mpvz.ui.theme.GlassDropdownMenu
+import app.infinity.mpvz.ui.theme.GlassExposedDropdownMenu
 
 import android.app.Application
 import android.graphics.BitmapFactory
@@ -46,7 +48,6 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
@@ -423,7 +424,7 @@ object AudiobookLibraryScreen : Screen {
                   }
                 }
 
-                DropdownMenu(
+                GlassDropdownMenu(
                   expanded = isSourceDropdownOpen,
                   onDismissRequest = { isSourceDropdownOpen = false },
                 ) {
@@ -509,7 +510,7 @@ object AudiobookLibraryScreen : Screen {
             if (!isAbsSource) {
               Box {
                 AudiobookIconButton(Icons.RoundedFilled.Add, stringResource(R.string.audiobook_play_files), !opening) { sourceMenu = true }
-                DropdownMenu(sourceMenu, onDismissRequest = { sourceMenu = false }) {
+                GlassDropdownMenu(sourceMenu, onDismissRequest = { sourceMenu = false }) {
                   DropdownMenuItem(
                     text = { Text(stringResource(R.string.audiobook_play_files)) },
                     leadingIcon = { Icon(Icons.RoundedFilled.PlayCircle, null) },
@@ -525,7 +526,7 @@ object AudiobookLibraryScreen : Screen {
             } else if (absState.libraries.size > 1) {
               Box {
                 AudiobookIconButton(Icons.RoundedFilled.Folder, "Switch Library", true) { isLibDropdownOpen = true }
-                DropdownMenu(isLibDropdownOpen, onDismissRequest = { isLibDropdownOpen = false }) {
+                GlassDropdownMenu(isLibDropdownOpen, onDismissRequest = { isLibDropdownOpen = false }) {
                   absState.libraries.forEach { lib ->
                     DropdownMenuItem(
                       text = {

@@ -472,6 +472,7 @@ fun SubtitlesSheet(
             is SubtitleItem.Track -> {
               val track = item.node
               SubtitleTrackRow(
+                track = track,
                 title = getTrackTitle(track),
                 isSelected = isSubtitleSelected(track.id),
                 selectionIndicator = subtitleSelectionIndicator(track.id),
@@ -493,21 +494,7 @@ fun SubtitlesSheet(
               )
             }
             is SubtitleItem.Header -> {
-              Row(
-                modifier =
-                  Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = MaterialTheme.spacing.medium, vertical = MaterialTheme.spacing.extraSmall),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween,
-              ) {
-                Text(
-                  text = item.title,
-                  style = MaterialTheme.typography.labelLarge,
-                  color = MaterialTheme.colorScheme.primary,
-                  fontWeight = FontWeight.Bold,
-                )
-              }
+              SheetSectionHeader(item.title)
             }
             is SubtitleItem.Off -> {
               Row(
@@ -549,6 +536,7 @@ fun SubtitlesSheet(
 
 @Composable
 fun SubtitleTrackRow(
+  track: TrackNode,
   title: String,
   isSelected: Boolean,
   selectionIndicator: String?,
@@ -560,52 +548,11 @@ fun SubtitleTrackRow(
   isCurrentlyTranslating: Boolean = false,
   modifier: Modifier = Modifier,
 ) {
-  Row(
-    modifier =
-      modifier
-        .fillMaxWidth()
-        .clickable(onClick = onToggle)
-        .padding(horizontal = MaterialTheme.spacing.medium, vertical = MaterialTheme.spacing.extraSmall),
-    verticalAlignment = Alignment.CenterVertically,
-    horizontalArrangement = Arrangement.spacedBy(MaterialTheme.spacing.smaller),
-  ) {
-    Checkbox(checked = isSelected, onCheckedChange = { onToggle() })
-    Text(title, fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal, modifier = Modifier.weight(1f))
-
-    if (selectionIndicator != null) {
-      Surface(
-        shape = CircleShape,
-        color = MaterialTheme.colorScheme.primaryContainer,
-        contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
-      ) {
-        Text(
-          text = selectionIndicator,
-          style = MaterialTheme.typography.labelMedium,
-          fontWeight = FontWeight.Bold,
-          modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-        )
-      }
-    }
-
-    if (isCurrentlyTranslating) {
-      androidx.compose.material3.CircularProgressIndicator(
-        modifier = Modifier.size(MaterialTheme.spacing.large),
-        strokeWidth = MaterialTheme.spacing.smaller,
-      )
-    }
-
+  TrackSheetRow(track, isSelected, onToggle, checkbox = true, secondaryIndicator = selectionIndicator, modifier = modifier, trailing = {
+    if (isCurrentlyTranslating) androidx.compose.material3.CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
     if (isExternal) {
-      if (translationEnabled) {
-        IconButton(onClick = onTranslate) {
-          Icon(
-            Icons.RoundedFilled.Translate,
-            contentDescription =
-              androidx.compose.ui.res
-                .stringResource(app.infinity.mpvz.R.string.ui_translate),
-          )
-        }
-      }
-      IconButton(onClick = onRemove) { Icon(Icons.RoundedFilled.Delete, contentDescription = null) }
+      if (translationEnabled) IconButton(onClick = onTranslate) { Icon(Icons.RoundedFilled.Translate, stringResource(R.string.ui_translate)) }
+      IconButton(onClick = onRemove) { Icon(Icons.RoundedFilled.Delete, null) }
     }
-  }
+  })
 }

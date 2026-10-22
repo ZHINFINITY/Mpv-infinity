@@ -2226,4 +2226,8 @@
   <string name="pref_custom_theme_name">نام پوسته</string>
   <string name="generic_save">ذخیره</string>
   <string name="pref_custom_theme_argb_placeholder" translatable="false">#FFFFFFFF</string>
+  <string name="track_metadata_default">پیش‌فرض</string>
+  <string name="track_metadata_forced">اجباری</string>
+  <string name="track_metadata_sdh">ویژه ناشنوایان</string>
+  <string name="track_metadata_external">خارجی</string>
 </resources>

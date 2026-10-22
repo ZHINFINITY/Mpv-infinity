@@ -108,12 +108,14 @@ class GlassMaterialRolePolicyTest {
     val player = source("ui/theme/LiquidGlassBackdrop.kt")
     // Player sheets keep the 12dp floor; browser popups use the stronger popup floor below.
     assertTrue(player.contains("maxOf(GlassSurfacePolicy.RegularMinimumFrostDp"))
-    assertTrue(browser.contains("val fallbackFilm = if (materialRole == GlassSurfacePolicy.MaterialRole.Regular) GlassSurfacePolicy.RegularNoSceneFilmAlpha"))
+    assertTrue(browser.contains("regular -> GlassSurfacePolicy.RegularNoSceneFilmAlpha"))
     assertTrue(player.contains("val filmAlpha = if (materialRole == GlassSurfacePolicy.MaterialRole.Regular) GlassSurfacePolicy.filmAlpha(centerFilm, highContrast)"))
-    assertTrue(browser.contains("materialRole == GlassSurfacePolicy.MaterialRole.Regular || tuning.frost > 0f"))
+    assertTrue(browser.contains("val blurDp = if (regular) GlassSurfacePolicy.browserPopupFrostDp(tuning.frost)"))
     // Popups blur the library/settings page enough that its text cannot compete with the popup's.
     assertTrue(GlassSurfacePolicy.BrowserPopupMinimumFrostDp >= 20f)
-    assertEquals(3, Regex("maxOf\\(GlassSurfacePolicy\\.BrowserPopupMinimumFrostDp").findAll(browser).count())
+    // Popup frost follows the global frost setting and never drops below the text floor.
+    assertTrue(GlassSurfacePolicy.browserPopupFrostDp(0f) >= GlassSurfacePolicy.BrowserPopupTextFrostFloorDp)
+    assertEquals(2, Regex("createBlurEffect\\(blurDp \\* density, blurDp \\* density").findAll(browser).count())
     // Both renderers solve the regular film instead of using a fixed opaque value.
     for (renderer in listOf(browser, player)) assertTrue(renderer.contains("GlassSurfacePolicy.regularAdaptiveFilmAlpha("))
     assertTrue(player.contains("underlayLuma = sampled.second"))

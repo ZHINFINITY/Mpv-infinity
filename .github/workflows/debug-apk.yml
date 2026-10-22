@@ -56,6 +56,8 @@ jobs:
         run: python3 scripts/tests/player_ambient_glass_contract_test.py
       - name: Test player popup and dialog glass coverage
         run: python3 scripts/tests/player_glass_overlays_test.py
+      - name: Test shared glass dropdown menu contract
+        run: python3 scripts/tests/glass_dropdown_menu_contract_test.py
       - name: Test navigation backdrop and finite liquid-motion contracts
         run: python3 scripts/tests/navigation_glass_contract_test.py
       - name: Test complete player and settings glass coverage

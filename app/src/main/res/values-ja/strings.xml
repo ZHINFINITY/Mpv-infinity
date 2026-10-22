@@ -2241,4 +2241,8 @@
   <string name="pref_custom_theme_name">テーマ名</string>
   <string name="generic_save">保存</string>
   <string name="pref_custom_theme_argb_placeholder" translatable="false">#FFFFFFFF</string>
+  <string name="track_metadata_default">デフォルト</string>
+  <string name="track_metadata_forced">強制</string>
+  <string name="track_metadata_sdh">SDH</string>
+  <string name="track_metadata_external">外部</string>
 </resources>

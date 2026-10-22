@@ -572,6 +572,11 @@ class PlayerViewModel : ViewModel(),
       val forced = PlaybackSession.getPropertyBoolean("track-list/$i/forced")
       val codec = PlaybackSession.getPropertyString("track-list/$i/codec")
       val codecDesc = PlaybackSession.getPropertyString("track-list/$i/codec-desc")
+      val demuxChannels = PlaybackSession.getPropertyString("track-list/$i/demux-channels")
+      val demuxChannelCount = PlaybackSession.getPropertyInt("track-list/$i/demux-channel-count")?.toLong()
+      val audioChannels = PlaybackSession.getPropertyInt("track-list/$i/audio-channels")?.toLong()
+      val demuxSampleRate = PlaybackSession.getPropertyInt("track-list/$i/demux-samplerate")?.toLong()
+      val hearingImpaired = PlaybackSession.getPropertyBoolean("track-list/$i/hearing-impaired")
       val hlsBitrate = PlaybackSession.getPropertyInt("track-list/$i/hls-bitrate")?.toLong()
       val programId = PlaybackSession.getPropertyInt("track-list/$i/program-id")?.toLong()
       val demuxW = PlaybackSession.getPropertyInt("track-list/$i/demux-w")?.toLong()
@@ -593,6 +598,11 @@ class PlayerViewModel : ViewModel(),
           forced = forced,
           codec = codec,
           codecDesc = codecDesc,
+          demuxChannels = demuxChannels,
+          demuxChannelCount = demuxChannelCount,
+          audioChannels = audioChannels,
+          demuxSampleRate = demuxSampleRate,
+          hearingImpaired = hearingImpaired,
           hlsBitrate = hlsBitrate,
           programId = programId,
           demuxW = demuxW,
@@ -634,6 +644,12 @@ class PlayerViewModel : ViewModel(),
         lang = track.language,
         selected = track.selected,
         external = false,
+        codec = track.sampleMimeType,
+        codecDesc = track.codecs,
+        demuxChannelCount = track.channelCount.takeIf { it > 0 }?.toLong(),
+        default = track.isDefault,
+        forced = track.isForced,
+        hearingImpaired = track.hearingImpaired,
       )
     }
     val externalSelection = snapshot.subtitleTracks
@@ -655,6 +671,12 @@ class PlayerViewModel : ViewModel(),
         lang = track.language,
         selected = track.selected,
         external = false,
+        codec = track.sampleMimeType,
+        codecDesc = track.codecs,
+        demuxChannelCount = track.channelCount.takeIf { it > 0 }?.toLong(),
+        default = track.isDefault,
+        forced = track.isForced,
+        hearingImpaired = track.hearingImpaired,
       )
     }
     // Media3 does not expose Matroska Chapters for every extractor/source. Do not erase a chapter

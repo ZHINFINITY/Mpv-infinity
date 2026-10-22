@@ -1,4 +1,6 @@
 package app.infinity.mpvz.ui.preferences
+import app.infinity.mpvz.ui.theme.GlassDropdownMenu
+import app.infinity.mpvz.ui.theme.GlassExposedDropdownMenu
 
 import app.infinity.mpvz.ui.player.controls.components.GlassSwitch
 
@@ -22,7 +24,6 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -264,7 +265,7 @@ private fun PluginProviderSettingsDialog(
                   Text(field.label, style = MaterialTheme.typography.labelLarge)
                   Box {
                     OutlinedButton(onClick = { expanded = true }, modifier = Modifier.fillMaxWidth(), enabled = key != null) { Text(field.options.firstOrNull { it.value == value }?.label ?: value.ifBlank { field.placeholder ?: "Select" }, Modifier.fillMaxWidth()) }
-                    DropdownMenu(
+                    GlassDropdownMenu(
       containerColor = settingsGlassContainerColor(androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainer),
       modifier = androidx.compose.ui.Modifier.settingsGlassSurface(cornerRadius = 12.dp, independent = true),expanded = expanded, onDismissRequest = { expanded = false }) {
                       field.options.forEach { option -> DropdownMenuItem(text = { Text(option.label) }, onClick = { if (key != null) values[key] = option.value; expanded = false }) }

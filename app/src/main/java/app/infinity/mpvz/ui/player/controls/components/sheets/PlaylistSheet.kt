@@ -626,16 +626,8 @@ fun PlaylistTrackListItem(
   val accentSecondary = MaterialTheme.colorScheme.tertiary
   val playingStateDescription = stringResource(R.string.ui_now_playing)
 
-  val borderModifier =
-    if (effectiveItem.isPlaying) {
-      Modifier.border(
-        width = 2.dp,
-        brush = Brush.linearGradient(listOf(accentColor, accentSecondary)),
-        shape = RoundedCornerShape(12.dp),
-      )
-    } else {
-      Modifier
-    }
+  // The playing row is shown by the accent fill alone: no second outline over the row glass.
+  val borderModifier = Modifier
 
   Surface(
     modifier =
@@ -656,7 +648,7 @@ fun PlaylistTrackListItem(
         },
     color =
       if (effectiveItem.isPlaying) {
-        MaterialTheme.colorScheme.tertiary.copy(alpha = 0.15f)
+        MaterialTheme.colorScheme.primary.copy(alpha = 0.18f)
       } else {
         Color.Transparent
       },
@@ -866,16 +858,8 @@ fun PlaylistTrackGridItem(
   val accentSecondary = MaterialTheme.colorScheme.tertiary
   val playingStateDescription = stringResource(R.string.ui_now_playing)
 
-  val borderModifier =
-    if (effectiveItem.isPlaying) {
-      Modifier.border(
-        width = 2.dp,
-        brush = Brush.linearGradient(listOf(accentColor, accentSecondary)),
-        shape = RoundedCornerShape(12.dp),
-      )
-    } else {
-      Modifier
-    }
+  // The playing row is shown by the accent fill alone: no second outline over the row glass.
+  val borderModifier = Modifier
 
   // YouTube-style vertical card
   Surface(
@@ -892,7 +876,7 @@ fun PlaylistTrackGridItem(
             ""
           }
         },
-    color = MaterialTheme.colorScheme.tertiary.copy(alpha = 0.15f),
+    color = if (effectiveItem.isPlaying) MaterialTheme.colorScheme.primary.copy(alpha = 0.18f) else Color.Transparent,
     shape = RoundedCornerShape(12.dp),
   ) {
     Column(

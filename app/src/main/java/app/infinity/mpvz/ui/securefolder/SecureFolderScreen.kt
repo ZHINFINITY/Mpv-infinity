@@ -6,6 +6,8 @@
  */
 
 package app.infinity.mpvz.ui.securefolder
+import app.infinity.mpvz.ui.theme.GlassDropdownMenu
+import app.infinity.mpvz.ui.theme.GlassExposedDropdownMenu
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.core.animateFloatAsState
@@ -23,7 +25,6 @@ import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExtendedFloatingActionButton
@@ -284,7 +285,7 @@ data object SecureFolderScreen : Screen {
                     tint = MaterialTheme.colorScheme.secondary,
                   )
                 }
-                DropdownMenu(expanded = menuExpanded, onDismissRequest = { menuExpanded = false }) {
+                GlassDropdownMenu(expanded = menuExpanded, onDismissRequest = { menuExpanded = false }) {
                   DropdownMenuItem(
                     text = {
                       Text(

@@ -2241,4 +2241,8 @@ Reinicia la aplicación para que se apliquen todos los cambios.</string>
   <string name="pref_custom_theme_name">Nombre del tema</string>
   <string name="generic_save">Guardar</string>
   <string name="pref_custom_theme_argb_placeholder" translatable="false">#FFFFFFFF</string>
+  <string name="track_metadata_default">Predeterminado</string>
+  <string name="track_metadata_forced">Forzado</string>
+  <string name="track_metadata_sdh">SDH</string>
+  <string name="track_metadata_external">Externo</string>
 </resources>

@@ -2226,4 +2226,8 @@
   <string name="pref_custom_theme_name">தீம் பெயர்</string>
   <string name="generic_save">சேமி</string>
   <string name="pref_custom_theme_argb_placeholder" translatable="false">#FFFFFFFF</string>
+  <string name="track_metadata_default">இயல்புநிலை</string>
+  <string name="track_metadata_forced">கட்டாயம்</string>
+  <string name="track_metadata_sdh">SDH</string>
+  <string name="track_metadata_external">வெளிப்புறம்</string>
 </resources>
