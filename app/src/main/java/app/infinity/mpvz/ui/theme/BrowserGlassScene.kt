@@ -96,14 +96,26 @@ fun BrowserGlassSceneHost(enabled: Boolean, content: @Composable () -> Unit) {
     androidx.core.content.ContextCompat.registerReceiver(context, receiver,
       IntentFilter(PowerManager.ACTION_POWER_SAVE_MODE_CHANGED), androidx.core.content.ContextCompat.RECEIVER_NOT_EXPORTED)
     val listener = if (Build.VERSION.SDK_INT >= 29 && power != null) {
-      PowerManager.OnThermalStatusChangedListener { thermal = it }.also {
-        power.addThermalStatusListener(context.mainExecutor, it)
+      val candidate = PowerManager.OnThermalStatusChangedListener { thermal = it }
+      try {
+        // The default overload delivers on this Context's main executor. Thermal
+        // monitoring is optional: a missing/restarting system service must never
+        // prevent composing a browser or opening a popup.
+        power.addThermalStatusListener(candidate)
+        candidate
+      } catch (_: RuntimeException) {
+        thermal = PowerManager.THERMAL_STATUS_SEVERE
+        null
       }
     } else null
     onDispose {
       context.contentResolver.unregisterContentObserver(observer)
       context.unregisterReceiver(receiver)
-      if (Build.VERSION.SDK_INT >= 29 && listener != null) power?.removeThermalStatusListener(listener)
+      if (Build.VERSION.SDK_INT >= 29 && listener != null) {
+        try { power?.removeThermalStatusListener(listener) } catch (_: RuntimeException) {
+          // The service may disappear between registration and disposal.
+        }
+      }
     }
   }
   val allowed = enabled && !lowRam && !powerSave && thermal < 3

@@ -4,12 +4,30 @@ import app.infinity.mpvz.domain.audiobook.AudiobookFolderTrack
 import app.infinity.mpvz.domain.audiobook.directAudiobookFolderIdentity
 import app.infinity.mpvz.domain.audiobook.directAudiobookSelectionIdentity
 import app.infinity.mpvz.domain.audiobook.directAudiobookTrackIdentity
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.resetMain
+import kotlinx.coroutines.test.setMain
+import org.junit.After
+import org.junit.Before
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class DirectAudiobookPlaybackTest {
+  private val mainDispatcher = StandardTestDispatcher()
+
+  @Before
+  fun setUpMainDispatcher() {
+    Dispatchers.setMain(mainDispatcher)
+  }
+
+  @After
+  fun tearDownMainDispatcher() {
+    Dispatchers.resetMain()
+  }
+
   @Test
   fun folderQueueItemKeepsTheSafUriAndExistingPlaybackResumeIdentity() {
     val folderUri = "content://storage/tree/books/document/book"

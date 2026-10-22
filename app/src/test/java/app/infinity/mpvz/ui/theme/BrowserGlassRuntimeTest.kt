@@ -3,6 +3,7 @@ package app.infinity.mpvz.ui.theme
 
 import android.app.Application
 import android.content.Context
+import android.os.PowerManager
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -52,6 +53,7 @@ import org.koin.core.context.stopKoin
 import org.koin.dsl.module
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
+import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
 
@@ -73,6 +75,20 @@ class BrowserGlassRuntimeTest {
   }
 
   @After fun closePreferences() { stopKoin() }
+
+  @Test fun actualThermalListenerRegistersAndDisposesWithScene() {
+    var visible by mutableStateOf(true)
+    val power = RuntimeEnvironment.getApplication().getSystemService(PowerManager::class.java)
+    composeRule.setContent {
+      MaterialTheme {
+        if (visible) BrowserGlassSceneHost(enabled = true) { Text("Thermal scene") }
+      }
+    }
+    composeRule.runOnIdle { assertEquals(1, shadowOf(power).thermalStatusListeners.size) }
+    composeRule.runOnUiThread { visible = false }
+    composeRule.waitForIdle()
+    composeRule.runOnIdle { assertTrue(shadowOf(power).thermalStatusListeners.isEmpty()) }
+  }
 
   @Test fun modeSwitchKeepsBoundsCallbacksAndRememberedContent() {
     var enabled by mutableStateOf(true)
