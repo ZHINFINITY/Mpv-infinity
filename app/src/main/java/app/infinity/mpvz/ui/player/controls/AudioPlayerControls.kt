@@ -1179,7 +1179,14 @@ fun AudioPlayerControls(
   // Full player and browser mini-player are separate Activity surfaces. Keep the
   // gesture presentation-only and hand off through the existing back path after
   // the settled animation; PlaybackSession owns audio, queue, artwork and item.
-  var miniGesture by remember { mutableStateOf(MiniPlayerGestureState()) }
+  // A pending open-from-mini request starts minimized, so the zero-animation launch never
+  // shows one full-size frame before the expansion.
+  var miniGesture by remember {
+    mutableStateOf(
+      if ((playerActivity?.audioOpenFromMiniRequest?.intValue ?: 0) > 0) MiniPlayerGestureState(1f, MiniPlayerSettle.Mini)
+      else MiniPlayerGestureState(),
+    )
+  }
   var settleTarget by remember { mutableStateOf<Float?>(null) }
   var settleStart by remember { mutableStateOf(0f) }
   var settleGeneration by remember { mutableIntStateOf(0) }
@@ -1189,21 +1196,41 @@ fun AudioPlayerControls(
   var playerHeightPx by remember { mutableFloatStateOf(0f) }
   var playerWidthPx by remember { mutableFloatStateOf(0f) }
   var fullArtworkBounds by remember { mutableStateOf<MiniPlayerArtworkTarget?>(null) }
+  // Mornye-style handoff state: programmatic runs (minimize button, open from the mini
+  // player) ease over 300/400 ms; finger releases keep the linear mapping and settle fast.
+  var settleProgrammatic by remember { mutableStateOf(false) }
+  var transitionTranslucent by remember { mutableStateOf(false) }
+  var lastDragDownward by remember { mutableStateOf(false) }
+  val pageContentCoordinates = remember { arrayOfNulls<androidx.compose.ui.layout.LayoutCoordinates>(1) }
+  var coverLocalBounds by remember { mutableStateOf<MusicMinimizeTransitionPolicy.Rect?>(null) }
+  val releaseToTarget: (Float) -> Unit = { velocityY ->
+    val target = MusicMinimizeTransitionPolicy.releaseTargetMiniProgress(
+      miniProgress = miniGesture.progress,
+      velocityYPxPerSecond = velocityY,
+      pageHeightPx = playerHeightPx,
+      movingDown = velocityY > 0f || (velocityY == 0f && lastDragDownward),
+    )
+    settleStart = miniGesture.progress
+    miniGesture = miniGesture.copy(settled = if (target >= 1f) MiniPlayerSettle.Mini else MiniPlayerSettle.Full)
+    settleProgrammatic = false
+    settleTarget = target
+    settleGeneration++
+  }
   val nestedGestureController = remember {
     MiniPlayerDragController(
       state = { miniGesture },
-      setState = { miniGesture = it },
-      extentPx = { playerHeightPx },
-      settle = { velocityY ->
-        settleStart = miniGesture.progress
-        val settled = MiniPlayerGesturePolicy.settle(miniGesture, velocityY)
-        miniGesture = miniGesture.copy(settled = settled.settled)
-        settleTarget = settled.progress
-        settleGeneration++
+      setState = { next ->
+        if (!transitionTranslucent) {
+          transitionTranslucent = playerActivity?.setAudioTransitionTranslucent(true) == true
+        }
+        lastDragDownward = next.progress >= miniGesture.progress
+        miniGesture = next
       },
+      extentPx = { playerHeightPx },
+      settle = { velocityY -> releaseToTarget(velocityY) },
     )
   }
-  val gesturePresentationModifier = modifier
+  val gestureInputModifier = modifier
     .fillMaxSize()
     .nestedScroll(nestedGestureController.nestedScrollConnection)
     .onGloballyPositioned {
@@ -1219,6 +1246,8 @@ fun AudioPlayerControls(
       detectVerticalDragGestures(
         onDragStart = {
           velocityTracker.resetTracking()
+          // Touch-down converts the audio window so the library shows around the panel.
+          transitionTranslucent = playerActivity?.setAudioTransitionTranslucent(true) == true
           nestedGestureController.onRootDragStart()
           // A new finger owns the presentation immediately, including a reversal mid-settle.
           val progress = if (settleTarget != null) settleAnimation.value else miniGesture.progress
@@ -1230,6 +1259,8 @@ fun AudioPlayerControls(
           velocityTracker.addPosition(change.uptimeMillis, change.position)
           if (dragAmount > 0f || miniGesture.progress > 0f) {
             change.consume()
+            if (dragAmount != 0f) lastDragDownward = dragAmount > 0f
+            // Linear: drag delta / page height moves the transition value directly.
             miniGesture = MiniPlayerGesturePolicy.drag(miniGesture, dragAmount, size.height.toFloat())
           }
         },
@@ -1238,48 +1269,96 @@ fun AudioPlayerControls(
             // Compose's tracker reports px/sec, preserving the tested velocity policy.
             velocityTracker.calculateVelocity().y
           }.getOrDefault(0f)
-          val settled = MiniPlayerGesturePolicy.settle(miniGesture, velocityY)
-          settleStart = miniGesture.progress
-          miniGesture = miniGesture.copy(settled = settled.settled)
-          settleTarget = settled.progress
-          settleGeneration++
+          releaseToTarget(velocityY)
         },
         onDragCancel = {
           if (nestedGestureController.onRootDragCancel()) {
             settleStart = miniGesture.progress
+            settleProgrammatic = false
             settleTarget = 0f
             settleGeneration++
           }
         },
       )
     }
-    .graphicsLayer {
-      // Read gesture progress here, not in composition: dragging updates the layer only.
-      val progress = (if (settleTarget == null) miniGesture.progress
-        else if (settleAnimation.isRunning) settleAnimation.value else settleStart).coerceIn(0f, 1f)
-      val target = MiniPlayerTransitionAnchor.forViewport(hostPlayerView.width.toFloat())
-      val transform = MiniPlayerGesturePolicy.transform(progress, size.width, size.height,
-        playerOrigin.x, playerOrigin.y, target)
-      transformOrigin = androidx.compose.ui.graphics.TransformOrigin(0f, 0f)
-      translationX = transform.x
-      translationY = transform.y
-      scaleX = transform.scaleX
-      scaleY = transform.scaleY
-      alpha = 1f - (0.20f * progress)
-    }
+  // The live page transform is applied by AudioPaletteGlassScene's modifier below
+  // (pageTransitionLayer), never to this input-only root.
   LaunchedEffect(settleGeneration) {
     val generation = settleGeneration
     val target = settleTarget ?: return@LaunchedEffect
+    if (!transitionTranslucent) {
+      transitionTranslucent = playerActivity?.setAudioTransitionTranslucent(true) == true
+    }
     settleAnimation.snapTo(settleStart)
-    settleAnimation.animateTo(target, animationSpec = tween(durationMillis = 220))
+    val remaining = kotlin.math.abs(target - settleStart).coerceIn(0f, 1f)
+    val fullDuration = MusicMinimizeTransitionPolicy.settleDurationMs(target, settleProgrammatic)
+    settleAnimation.animateTo(target, animationSpec = tween(
+      // A release from part-way travels only the remaining distance at the same pace.
+      durationMillis = if (settleProgrammatic) fullDuration
+        else (fullDuration * remaining).roundToInt().coerceAtLeast(1),
+      easing = if (settleProgrammatic) androidx.compose.animation.core.EaseInOutCubic
+        else androidx.compose.animation.core.EaseOutCubic,
+    ))
     if (settleGeneration == generation && settleTarget == target) {
       miniGesture = if (target == 0f) MiniPlayerGesturePolicy.cancel()
         else MiniPlayerGestureState(1f, MiniPlayerSettle.Mini)
       if (target == 1f) {
         playerActivity?.onAudioMinimizePresentationComplete()
         currentOnBackPress()
+      } else {
+        // Settled fully open: hide the pages below again.
+        playerActivity?.setAudioTransitionTranslucent(false)
+        transitionTranslucent = false
       }
       settleTarget = null
+      settleProgrammatic = false
+    }
+  }
+  // Opened from the browser mini player: expand from the live mini rect over 400 ms.
+  val openFromMiniRequest = playerActivity?.audioOpenFromMiniRequest?.intValue ?: 0
+  var handledOpenFromMiniRequest by remember { mutableIntStateOf(0) }
+  LaunchedEffect(openFromMiniRequest) {
+    if (openFromMiniRequest == 0 || openFromMiniRequest == handledOpenFromMiniRequest) return@LaunchedEffect
+    handledOpenFromMiniRequest = openFromMiniRequest
+    val anchor = MusicMinimizeTransitionPolicy.currentAnchor(
+      hostPlayerView.width.toFloat(), hostPlayerView.width.toFloat(), hostPlayerView.height.toFloat())
+    if (anchor == null) {
+      playerActivity?.setAudioTransitionTranslucent(false)
+      transitionTranslucent = false
+      return@LaunchedEffect
+    }
+    transitionTranslucent = true
+    miniGesture = MiniPlayerGestureState(1f, MiniPlayerSettle.Mini)
+    settleStart = 1f
+    settleProgrammatic = true
+    settleTarget = 0f
+    settleGeneration++
+  }
+  // One frame of the handoff, or null for the plain slide fallback (no live anchor,
+  // stale window geometry, or translucency unavailable).
+  val currentTransitionFrame: (Float, Float) -> MusicMinimizeTransitionPolicy.Frame? = { pageWidth, pageHeight ->
+    val miniProgress = (if (settleTarget == null) miniGesture.progress
+      else if (settleAnimation.isRunning) settleAnimation.value else settleStart).coerceIn(0f, 1f)
+    val windowWidth = hostPlayerView.width.toFloat()
+    val windowHeight = hostPlayerView.height.toFloat()
+    val anchor = MusicMinimizeTransitionPolicy.currentAnchor(windowWidth, windowWidth, windowHeight)
+    if (miniProgress <= 0f || pageWidth <= 0f || pageHeight <= 0f ||
+      MusicMinimizeTransitionPolicy.useSlideFallback(anchor, windowWidth, windowHeight, transitionTranslucent)) {
+      null
+    } else {
+      val a = anchor!!
+      val mini = MusicMinimizeTransitionPolicy.Rect(a.left, a.top, a.width, a.height)
+      val miniArt = a.artwork?.let { MusicMinimizeTransitionPolicy.Rect(it.left, it.top, it.width, it.height) } ?: mini
+      val cover = coverLocalBounds?.let {
+        MusicMinimizeTransitionPolicy.Rect(playerOrigin.x + it.left, playerOrigin.y + it.top, it.width, it.height)
+      } ?: miniArt
+      MusicMinimizeTransitionPolicy.frame(
+        minimizeProgress = miniProgress,
+        screen = MusicMinimizeTransitionPolicy.Rect(playerOrigin.x, playerOrigin.y, pageWidth, pageHeight),
+        mini = mini,
+        fullArtwork = cover,
+        miniArtwork = miniArt,
+      )
     }
   }
   AudioPaletteGlassScene(
@@ -1287,7 +1366,33 @@ fun AudioPlayerControls(
     bottomArgb = visualizerPalette.secondary,
     enabled = liquidGlassSurfaces,
     modifier =
-      gesturePresentationModifier
+      gestureInputModifier
+        .then(Modifier.graphicsLayer {
+          // pageTransitionLayer: the whole page lerps into the live mini-player rect,
+          // scaled uniformly from the top-left and clipped to the animated rounded rect.
+          val frame = currentTransitionFrame(size.width, size.height)
+          transformOrigin = androidx.compose.ui.graphics.TransformOrigin(0f, 0f)
+          if (frame != null) {
+            val layer = MusicMinimizeTransitionPolicy.pageLayer(frame, playerOrigin.x, playerOrigin.y)
+            translationX = layer.translationX
+            translationY = layer.translationY
+            scaleX = layer.scaleX
+            scaleY = layer.scaleY
+            shape = MusicPageClipShape(frame.clipWidth, frame.clipHeight, frame.clipCornerRadiusDp.dp.toPx())
+            clip = true
+            alpha = frame.contentAlpha
+          } else {
+            val miniProgress = (if (settleTarget == null) miniGesture.progress
+              else if (settleAnimation.isRunning) settleAnimation.value else settleStart).coerceIn(0f, 1f)
+            translationX = 0f
+            translationY = size.height * miniProgress
+            scaleX = 1f
+            scaleY = 1f
+            clip = false
+            alpha = 1f
+          }
+        })
+        .onGloballyPositioned { pageContentCoordinates[0] = it }
         .background(
           if (liquidGlassSurfaces) Color.Transparent else MaterialTheme.colorScheme.surface,
         )
@@ -1338,6 +1443,7 @@ fun AudioPlayerControls(
           onClick = {
             settleStart = (if (settleTarget == null) miniGesture.progress
               else if (settleAnimation.isRunning) settleAnimation.value else settleStart).coerceIn(0f, 1f)
+            settleProgrammatic = true
             settleTarget = 1f
             settleGeneration++
           },
@@ -1606,48 +1712,31 @@ fun AudioPlayerControls(
                   .aspectRatio(1f)
                   .offset { IntOffset(currentOffset.roundToInt(), 0) }
                   .onGloballyPositioned { coordinates ->
-                    // Freeze the unwarped source rectangle for the entire flight.
-                    val bounds = coordinates.miniPlayerScreenBounds(hostPlayerView)
-                    if (settleTarget == null && miniGesture.progress == 0f &&
-                      bounds.width > 0f && bounds.height > 0f) {
-                      fullArtworkBounds = MiniPlayerArtworkTarget(
-                        bounds.left, bounds.top, bounds.width, bounds.height,
-                      )
+                    // Measure the cover inside the page layer (pre-transform), so the
+                    // rectangle stays correct mid-transition and when opening from mini.
+                    val page = pageContentCoordinates[0]
+                    if (page != null && page.isAttached && coordinates.isAttached &&
+                      coordinates.size.width > 0 && coordinates.size.height > 0) {
+                      val local = page.localPositionOf(coordinates, Offset.Zero)
+                      coverLocalBounds = MusicMinimizeTransitionPolicy.Rect(
+                        local.x, local.y, coordinates.size.width.toFloat(), coordinates.size.height.toFloat())
                     }
                   }
                   .graphicsLayer {
-                    // The root card and cover are separate layers. Interpolate the
-                    // cover's measured window rectangle to the measured mini cover;
-                    // this avoids the old constant-48dp/old-position landing jump.
-                    val progress = (if (settleTarget == null) miniGesture.progress
-                      else if (settleAnimation.isRunning) settleAnimation.value else settleStart)
-                      .coerceIn(0f, 1f)
-                    val target = MiniPlayerTransitionAnchor.forViewport(hostPlayerView.width.toFloat())
-                    val parent = MiniPlayerGesturePolicy.transform(
-                      progress = progress,
-                      width = playerWidthPx.takeIf { it > 0f } ?: transitionViewportWidthPx,
-                      height = playerHeightPx,
-                      originX = playerOrigin.x,
-                      originY = playerOrigin.y,
-                      target = target,
-                    )
-                    val full = fullArtworkBounds
-                    val flight = if (full != null && target?.artwork != null) MiniPlayerGesturePolicy.artworkFlight(
-                      progress, parent, playerOrigin.x, playerOrigin.y,
-                      full.left, full.top, full.width, full.height, target?.artwork,
-                    ) else {
-                      // Safe fallback while either activity has not measured its artwork.
-                      val correction = MiniPlayerGesturePolicy.artworkScaleCorrection(
-                        progress = progress, parent = parent, artworkSize = size.width,
-                        targetArtworkSize = miniArtworkSizePx,
-                      )
-                      MiniPlayerArtworkFlight(0f, 0f, correction.scaleX, correction.scaleY)
-                    }
+                    // Separate artwork layer: the cover flies from its full-player bounds to
+                    // the mini-player artwork, compensating the page layer's uniform scale.
+                    val frame = currentTransitionFrame(
+                      playerWidthPx.takeIf { it > 0f } ?: transitionViewportWidthPx, playerHeightPx)
+                    val local = coverLocalBounds
+                    val layer = if (frame != null && local != null) MusicMinimizeTransitionPolicy.artworkLayer(
+                      frame, playerOrigin.x, playerOrigin.y,
+                      MusicMinimizeTransitionPolicy.Rect(playerOrigin.x + local.left, playerOrigin.y + local.top, local.width, local.height),
+                    ) else MusicMinimizeTransitionPolicy.Layer(0f, 0f, 1f, 1f)
                     transformOrigin = androidx.compose.ui.graphics.TransformOrigin(0f, 0f)
-                    translationX = flight.translationX
-                    translationY = flight.translationY
-                    scaleX = flight.scaleX
-                    scaleY = flight.scaleY
+                    translationX = layer.translationX
+                    translationY = layer.translationY
+                    scaleX = layer.scaleX
+                    scaleY = layer.scaleY
                   }
                   .clip(coverShape),
                 shape = coverShape,
@@ -2961,4 +3050,22 @@ private fun String.stripAudioExtension(): String {
   if (dotIndex <= 0) return this
   val ext = substring(dotIndex + 1)
   return if (ext.length in 2..5 && ext.none { it.isWhitespace() }) substring(0, dotIndex) else this
+}
+
+/** Rounded clip in the page layer's own coordinates; after the layer's scale it is the live page rect. */
+private class MusicPageClipShape(
+  private val width: Float,
+  private val height: Float,
+  private val cornerRadiusPx: Float,
+) : androidx.compose.ui.graphics.Shape {
+  override fun createOutline(
+    size: androidx.compose.ui.geometry.Size,
+    layoutDirection: androidx.compose.ui.unit.LayoutDirection,
+    density: androidx.compose.ui.unit.Density,
+  ): androidx.compose.ui.graphics.Outline = androidx.compose.ui.graphics.Outline.Rounded(
+    androidx.compose.ui.geometry.RoundRect(
+      0f, 0f, width.coerceAtMost(size.width), height.coerceAtMost(size.height),
+      androidx.compose.ui.geometry.CornerRadius(cornerRadiusPx),
+    ),
+  )
 }

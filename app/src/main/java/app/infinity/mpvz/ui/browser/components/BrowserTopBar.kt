@@ -55,6 +55,7 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import app.infinity.mpvz.R
 import app.infinity.mpvz.preferences.AppearancePreferences
 import app.infinity.mpvz.preferences.preference.collectAsState
+import app.infinity.mpvz.presentation.components.pullrefresh.InfinityLoadingIndicator
 import app.infinity.mpvz.ui.icons.Icon
 import app.infinity.mpvz.ui.icons.Icons
 import app.infinity.mpvz.ui.theme.DarkMode
@@ -273,6 +274,10 @@ private fun NormalTopBar(
             )
           }
 
+      if (title == "∞") {
+        // Keep the browser brand title on the same drawn infinity glyph as pull-to-refresh.
+        InfinityLoadingIndicator(modifier = titleModifier, size = 32.dp)
+      } else {
       Text(
         buildAnnotatedString {
           append(title)
@@ -307,6 +312,7 @@ private fun NormalTopBar(
             },
           ),
       )
+      }
       }
     },
     navigationIcon = {
@@ -397,7 +403,7 @@ private fun NormalTopBar(
     modifier =
       modifier.then(
         if (liquidGlassSurfaces) {
-          Modifier.settingsGlassSurface(cornerRadius = 28.dp)
+          Modifier.settingsGlassSurface(cornerRadius = 0.dp)
         } else {
           Modifier
         },
@@ -699,7 +705,7 @@ private fun SelectionTopBar(
       modifier
         .then(
           if (liquidGlassSurfaces) {
-            Modifier.settingsGlassSurface(cornerRadius = 28.dp)
+            Modifier.settingsGlassSurface(cornerRadius = 0.dp)
           } else {
             Modifier
           },

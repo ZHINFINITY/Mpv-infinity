@@ -31,7 +31,7 @@ class ReferenceUiRollbackContractTest {
     expected.forEach { (path, digest) -> assertEquals(path, digest, sha(read(path))) }
   }
 
-  /** Only the player-scoped ambient fallback guard (build 1896 black controls) may differ. */
+  /** Only the player-scoped ambient fallback guard and ambient film tint (builds 1896/1897) may differ. */
   @Test fun liquidGlassBackdropDiffersFromBaselineOnlyByScopedAmbientGuard() {
     val path = "app/src/main/java/app/infinity/mpvz/ui/theme/LiquidGlassBackdrop.kt"
     val current = read(path)
@@ -44,7 +44,10 @@ class ReferenceUiRollbackContractTest {
         // Only player backdrop hosts provide LocalLiquidGlassBackdrop; browser/settings fallbacks
         // (backdrop == null) keep their legibility film.
         if (scene != null || backdrop == null) {
-          drawRoundRect(themedTint.copy(alpha = filmAlpha),
+          // Player hosts adopt the ambient glow colour (read here, in draw) instead of the
+          // theme's dark surface, so sheets and the chapter pill follow the ambience.
+          drawRoundRect(PlayerAmbientTintPolicy.filmColor(themedTint, PlayerAmbientTint.color,
+            isPlayerHost = backdrop != null).copy(alpha = filmAlpha),
             cornerRadius = CornerRadius(radius))
         }
 """
@@ -52,8 +55,23 @@ class ReferenceUiRollbackContractTest {
           cornerRadius = CornerRadius(radius))
 """
     assertEquals(1, current.split(guarded).size - 1)
-    assertEquals("f10a7bb20ca6e17e57f8500f5857cae1fc6d9ecf9f30c67512b8925ce2d9b7f3",
-      sha(current.replace(guarded, baseline)))
+    // Build 1897: the playing sample cadence (video behind decoder/subtitle sheets) is the
+    // only other permitted change; each hunk is restored to its baseline before hashing.
+    val cadence = listOf(
+      "  val aspect by rememberUpdatedState(sampleAspect)\n  val thermalNow by rememberUpdatedState(thermal)\n" to
+        "  val aspect by rememberUpdatedState(sampleAspect)\n",
+      "        val sampleStarted = SystemClock.uptimeMillis()\n        val crop =" to "        val crop =",
+      """          else GlassSamplingPolicy.remainingDelay(
+            GlassSamplingPolicy.interval(playing(), failures, thermalNow),
+            SystemClock.uptimeMillis() - sampleStarted,
+          ))""" to "          else GlassSamplingPolicy.interval(playing(), failures))",
+    )
+    var restored = current.replace(guarded, baseline)
+    cadence.forEach { (now, before) ->
+      assertEquals(now, 1, restored.split(now).size - 1)
+      restored = restored.replace(now, before)
+    }
+    assertEquals("f10a7bb20ca6e17e57f8500f5857cae1fc6d9ecf9f30c67512b8925ce2d9b7f3", sha(restored))
   }
   @Test fun expressiveNavigationBodyAndBrowserLensMatchReference() {
     val navigation = read("app/src/main/java/app/infinity/mpvz/ui/browser/MainScreen.kt")

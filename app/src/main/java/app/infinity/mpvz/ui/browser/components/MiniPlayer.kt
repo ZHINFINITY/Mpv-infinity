@@ -16,6 +16,7 @@ import android.net.Uri
 import android.view.SurfaceHolder
 import android.view.SurfaceView
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -28,6 +29,7 @@ import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
+import androidx.compose.ui.input.pointer.util.VelocityTracker
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -111,6 +113,10 @@ import org.koin.compose.koinInject
 import kotlin.math.abs
 import kotlin.math.roundToInt
 
+object MusicMiniPlayerHandoff {
+  @Volatile var suppressNextEnter: Boolean = false
+}
+
 @Composable
 fun MiniPlayer(modifier: Modifier = Modifier) {
   val isServiceRunning = MediaPlaybackService.isForegroundActive()
@@ -156,9 +162,11 @@ fun MiniPlayer(modifier: Modifier = Modifier) {
     NavigationBarState.isMiniPlayerVisible = isMediaActive
   }
 
+  val suppressHandoffEnter = MusicMiniPlayerHandoff.suppressNextEnter
+  if (suppressHandoffEnter) MusicMiniPlayerHandoff.suppressNextEnter = false
   AnimatedVisibility(
     visible = isMediaActive,
-    enter = slideInVertically(initialOffsetY = { it }) + fadeIn(),
+    enter = if (suppressHandoffEnter) EnterTransition.None else slideInVertically(initialOffsetY = { it }) + fadeIn(),
     exit = slideOutVertically(targetOffsetY = { it }) + fadeOut(),
     modifier = modifier,
   ) {
@@ -228,30 +236,35 @@ private fun MiniPlayerContent(
     val surface = miniSurfaceBounds ?: return
     val art = miniArtworkBounds
     MiniPlayerTransitionAnchor.publish(
-      surface.left, surface.top, surface.width, surface.height, hostView.width.toFloat(),
-      art?.left, art?.top, art?.width, art?.height,
+      left = surface.left, top = surface.top, width = surface.width, height = surface.height,
+      viewportWidth = hostView.width.toFloat(), viewportHeight = hostView.height.toFloat(),
+      artworkLeft = art?.left, artworkTop = art?.top, artworkWidth = art?.width, artworkHeight = art?.height,
     )
   }
   val density = LocalDensity.current
   val dismissThresholdPx = with(density) { 100.dp.toPx() }
-  val expandThresholdPx = with(density) { 72.dp.toPx() }
+  val expandThresholdPx = with(density) { 48.dp.toPx() }
 
   val launchPlayer = remember(context, isAudioOnlyItem) {
     {
+      MusicMiniPlayerHandoff.suppressNextEnter = isAudioOnlyItem
       val intent = Intent(context, PlayerActivity::class.java).apply {
         action = MediaPlaybackService.ACTION_OPEN_PLAYER
         putExtra("is_audio", isAudioOnlyItem)
         putExtra("internal_launch", true)
         putExtra("launch_source", "mini_player")
+        putExtra("open_from_mini_player", true)
         flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
       }
       context.startActivity(intent)
+      // Audio expands from the mini rect in Compose; video keeps the window slide.
+      val openEnterAnimation = if (isAudioOnlyItem) 0 else R.anim.slide_in_up
       if (context is Activity) {
         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-          context.overrideActivityTransition(Activity.OVERRIDE_TRANSITION_OPEN, R.anim.slide_in_up, 0)
+          context.overrideActivityTransition(Activity.OVERRIDE_TRANSITION_OPEN, openEnterAnimation, 0)
         } else {
           @Suppress("DEPRECATION")
-          context.overridePendingTransition(R.anim.slide_in_up, 0)
+          context.overridePendingTransition(openEnterAnimation, 0)
         }
       }
     }
@@ -303,14 +316,21 @@ private fun MiniPlayerContent(
         )
       }
       .pointerInput(Unit) {
+        val velocityTracker = VelocityTracker()
         detectVerticalDragGestures(
-          onDragStart = { verticalDrag = 0f },
+          onDragStart = {
+            velocityTracker.resetTracking()
+            verticalDrag = 0f
+          },
           onVerticalDrag = { change, dragAmount ->
+            velocityTracker.addPosition(change.uptimeMillis, change.position)
             verticalDrag += dragAmount
             change.consume()
           },
           onDragEnd = {
-            if (verticalDrag < -expandThresholdPx) launchPlayer()
+            val upwardVelocity = -runCatching { velocityTracker.calculateVelocity().y }.getOrDefault(0f)
+            val expandVelocityPxPerSecond = with(density) { 300.dp.toPx() }
+            if (verticalDrag < -expandThresholdPx || upwardVelocity > expandVelocityPxPerSecond) launchPlayer()
             verticalDrag = 0f
           },
           onDragCancel = { verticalDrag = 0f },

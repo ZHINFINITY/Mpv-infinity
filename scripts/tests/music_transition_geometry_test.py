@@ -6,6 +6,7 @@ import unittest
 ROOT = Path(__file__).resolve().parents[2]
 JAVA = ROOT / 'app/src/main/java/app/infinity/mpvz'
 POLICY = (JAVA / 'ui/player/controls/MiniPlayerGesturePolicy.kt').read_text()
+TRANSITION = (JAVA / 'ui/player/controls/MusicMinimizeTransitionPolicy.kt').read_text()
 CONTROLS = (JAVA / 'ui/player/controls/AudioPlayerControls.kt').read_text()
 MINI = (JAVA / 'ui/browser/components/MiniPlayer.kt').read_text()
 GEOMETRY = (JAVA / 'ui/player/controls/MiniPlayerScreenGeometry.kt').read_text()
@@ -17,24 +18,26 @@ class MusicTransitionGeometryContracts(unittest.TestCase):
         self.assertIn('getLocationOnScreen(screen)', GEOMETRY)
         self.assertIn('getLocationInWindow(window)', GEOMETRY)
         self.assertIn('boundsInWindow().translate(', GEOMETRY)
-        self.assertIn('coordinates.miniPlayerScreenBounds(hostPlayerView)', CONTROLS)
+        self.assertIn('it.miniPlayerScreenBounds(hostPlayerView)', CONTROLS)
         self.assertIn('coordinates.miniPlayerScreenBounds(hostView)', MINI)
 
     def test_actual_full_cover_has_frozen_source_and_top_left_transform_origin(self):
         card = CONTROLS.split('// 3. Current Cover Art Card', 1)[1].split('val lyricsPanel', 1)[0]
-        self.assertIn('settleTarget == null && miniGesture.progress == 0f', card)
-        self.assertIn('fullArtworkBounds = MiniPlayerArtworkTarget(', card)
-        self.assertIn('MiniPlayerGesturePolicy.artworkFlight(', card)
+        # Cover measured inside the page layer (pre-transform), then a separate child layer
+        # compensates the page's uniform scale so it lands on the mini artwork.
+        self.assertIn('page.localPositionOf(coordinates, Offset.Zero)', card)
+        self.assertIn('coverLocalBounds = MusicMinimizeTransitionPolicy.Rect(', card)
+        self.assertIn('MusicMinimizeTransitionPolicy.artworkLayer(', card)
         self.assertIn('transformOrigin = androidx.compose.ui.graphics.TransformOrigin(0f, 0f)', card)
-        self.assertIn('translationX = flight.translationX', card)
-        self.assertIn('translationY = flight.translationY', card)
+        self.assertIn('translationX = layer.translationX', card)
+        self.assertIn('translationY = layer.translationY', card)
         self.assertIn('CoverArtCardImage(', card)
 
     def test_mini_callbacks_preserve_both_measured_endpoints(self):
         self.assertIn('var miniArtworkBounds by remember', MINI)
         self.assertIn('fun publishMiniTransitionGeometry()', MINI)
         self.assertEqual(3, MINI.count('publishMiniTransitionGeometry()'))
-        self.assertIn('art?.left, art?.top, art?.width, art?.height', MINI)
+        self.assertIn('artworkLeft = art?.left', MINI)
         self.assertIn('artworkLeft: Float? = null', POLICY)
         self.assertIn('minOf(target.width, target.height)', POLICY)
 
@@ -56,11 +59,38 @@ class MusicTransitionGeometryContracts(unittest.TestCase):
         self.assertIn('overridePendingTransition(0, exitAnimation)', ACTIVITY)
 
     def test_fallback_and_actual_playback_controls_are_preserved(self):
-        self.assertIn('full != null && target?.artwork != null', CONTROLS)
-        self.assertIn('MiniPlayerGesturePolicy.artworkScaleCorrection(', CONTROLS)
+        self.assertIn('MusicMinimizeTransitionPolicy.useSlideFallback(anchor, windowWidth, windowHeight, transitionTranslucent)', CONTROLS)
+        self.assertIn('translationY = size.height * miniProgress', CONTROLS)
+        self.assertIn('MusicMinimizeTransitionPolicy.frame(', CONTROLS)
         for token in ('ACTION_NOTIFICATION_PLAY_PAUSE', 'ACTION_NOTIFICATION_NEXT',
                       'ACTION_NOTIFICATION_STOP', 'ContentScale.Crop', 'ACTION_OPEN_PLAYER'):
             self.assertIn(token, MINI)
+
+    def test_page_frame_uses_open_zero_convention_and_layer_space_clip(self):
+        # Regression: 1 - miniProgress made the fully open player draw as the mini rect.
+        self.assertNotIn('1f - miniProgress', CONTROLS)
+        self.assertIn('minimizeProgress = miniProgress', CONTROLS)
+        self.assertIn('MusicMinimizeTransitionPolicy.pageLayer(frame, playerOrigin.x, playerOrigin.y)', CONTROLS)
+        self.assertIn('shape = MusicPageClipShape(frame.clipWidth, frame.clipHeight, frame.clipCornerRadiusDp.dp.toPx())', CONTROLS)
+        self.assertIn('alpha = frame.contentAlpha', CONTROLS)
+        self.assertIn('val scale = if (screen.width > 0f) (page.width / screen.width)', TRANSITION)
+        # Live anchor every frame with width and height staleness checks.
+        self.assertIn('MusicMinimizeTransitionPolicy.currentAnchor(windowWidth, windowWidth, windowHeight)', CONTROLS)
+
+    def test_release_and_programmatic_timing_follow_the_approved_spec(self):
+        self.assertIn('MusicMinimizeTransitionPolicy.releaseTargetMiniProgress(', CONTROLS)
+        self.assertIn('settle = { velocityY -> releaseToTarget(velocityY) }', CONTROLS)
+        self.assertIn('MusicMinimizeTransitionPolicy.settleDurationMs(target, settleProgrammatic)', CONTROLS)
+        self.assertIn('androidx.compose.animation.core.EaseInOutCubic', CONTROLS)
+        self.assertIn('SETTLE_OPEN_DURATION_MS', TRANSITION)
+        self.assertIn('LaunchedEffect(openFromMiniRequest)', CONTROLS)
+        self.assertIn('audioOpenFromMiniRequest.intValue++', ACTIVITY)
+
+    def test_window_stays_see_through_until_finish_and_restores_background_when_open(self):
+        complete = ACTIVITY.split('fun onAudioMinimizePresentationComplete()', 1)[1].split('\n  }', 1)[0]
+        self.assertNotIn('setAudioTransitionTranslucent(false)', complete)
+        self.assertIn('audioWindowBackground?.let { window.setBackgroundDrawable(it) }', ACTIVITY)
+        self.assertIn('playerActivity?.setAudioTransitionTranslucent(false)', CONTROLS)
 
     def test_geometry_regressions_execute_real_policy_functions(self):
         test = (ROOT / 'app/src/test/java/app/infinity/mpvz/ui/player/controls/MiniPlayerArtworkFlightTest.kt').read_text()

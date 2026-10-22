@@ -576,7 +576,7 @@ fun FileSystemBrowserScreen(path: String? = null) {
           BrowserTopBar(
             title =
               if (isAtRoot) {
-                stringResource(app.infinity.mpvz.R.string.app_name)
+                "∞"
               } else {
                 breadcrumbs.lastOrNull()?.name ?: "Tree View"
               },

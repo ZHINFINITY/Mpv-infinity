@@ -45,13 +45,12 @@ import app.infinity.mpvz.presentation.components.PlayerSheet
 import app.infinity.mpvz.presentation.components.RepeatingIconButton
 import app.infinity.mpvz.ui.icons.Icon
 import app.infinity.mpvz.ui.icons.Icons
-import app.infinity.mpvz.ui.preferences.components.SwitchPreference
 import app.infinity.mpvz.ui.theme.spacing
-import me.zhanghai.compose.preference.ProvidePreferenceLocals
 import org.koin.compose.koinInject
 import kotlin.math.pow
 import kotlin.math.roundToInt
 import app.infinity.mpvz.ui.player.controls.components.GlassSlider
+import app.infinity.mpvz.ui.player.controls.components.GlassSwitch
 
 @Composable
 fun PlaybackSpeedSheet(
@@ -211,40 +210,42 @@ fun PlaybackSpeedSheet(
         }
       }
 
-      ProvidePreferenceLocals {
-        val audioPreferences = koinInject<AudioPreferences>()
-
-        // Audio Pitch Correction
-        val pitchCorrection by audioPreferences.audioPitchCorrection.collectAsState()
-
-        SwitchPreference(
-          value = pitchCorrection,
-          enabled = pitchCorrectionEnabled,
-          onValueChange = { newValue ->
+      val audioPreferences = koinInject<AudioPreferences>()
+      // Keep this row part of the single PlayerSheet pane. SwitchPreference
+      // supplies its own preference card, creating a second outline and allowing
+      // the pitch control to paint outside a narrow sheet.
+      val pitchCorrection by audioPreferences.audioPitchCorrection.collectAsState()
+      Row(
+        modifier = Modifier.fillMaxWidth().padding(horizontal = MaterialTheme.spacing.medium),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(MaterialTheme.spacing.medium),
+      ) {
+        Column(modifier = Modifier.weight(1f)) {
+          Text(
+            text = stringResource(id = R.string.pref_audio_pitch_correction_title),
+            style = MaterialTheme.typography.bodyMedium,
+            fontWeight = FontWeight.SemiBold,
+          )
+          Text(
+            text = stringResource(id = R.string.pref_audio_pitch_correction_summary),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+          )
+        }
+        GlassSwitch(
+          checked = pitchCorrection,
+          onCheckedChange = { newValue ->
             audioPreferences.audioPitchCorrection.set(newValue)
             PlaybackSession.setPropertyBoolean("audio-pitch-correction", newValue)
           },
-          title = {
-            Text(
-              text = stringResource(id = R.string.pref_audio_pitch_correction_title),
-              style = MaterialTheme.typography.bodyMedium,
-              fontWeight = FontWeight.SemiBold,
-            )
-          },
-          summary = {
-            Text(
-              text = stringResource(id = R.string.pref_audio_pitch_correction_summary),
-              style = MaterialTheme.typography.bodySmall,
-              color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-          },
-          switchModifier = Modifier.scale(0.8f),
+          enabled = pitchCorrectionEnabled,
+          modifier = Modifier.scale(0.8f),
         )
       }
-
       Row(
         modifier =
           Modifier
+            .fillMaxWidth()
             .padding(horizontal = MaterialTheme.spacing.medium),
         horizontalArrangement = Arrangement.spacedBy(MaterialTheme.spacing.smaller),
       ) {

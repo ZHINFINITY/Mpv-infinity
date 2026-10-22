@@ -30,7 +30,7 @@ class QuickPlaySelectionGlassTest(unittest.TestCase):
         self.assertIn('pressedElevation = if (glass) 0.dp else 12.dp', helper)
     def test_selection_bar_preserves_custom_colors_only_outside_glass_mode(self):
         selection = (BASE / 'components/BrowserTopBar.kt').read_text().split('private fun SelectionTopBar', 1)[1]
-        self.assertIn('settingsGlassSurface(cornerRadius = 28.dp)', selection)
+        self.assertIn('settingsGlassSurface(cornerRadius = 0.dp)', selection)
         self.assertIn('scrolledContainerColor = Color.Transparent', selection)
         self.assertIn('colors != null -> colors.copy', selection)
         self.assertIn('!liquidGlassSurfaces -> colors ?: defaultColors', selection)

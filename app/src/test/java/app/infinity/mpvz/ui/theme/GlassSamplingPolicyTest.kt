@@ -27,11 +27,30 @@ class GlassSamplingPolicyTest {
   }
 
   @Test fun pausedAndFailedSourcesDoNotPollAtPlaybackCadence() {
-    assertTrue(GlassSamplingPolicy.PlayingIntervalMs >= 200L)
-    assertEquals(200L, GlassSamplingPolicy.interval(true, 0))
+    // Regression: 200 ms (5 fps) made video behind decoder/subtitle sheets visibly slower.
+    assertTrue(GlassSamplingPolicy.PlayingIntervalMs <= 17L)
+    assertEquals(16L, GlassSamplingPolicy.interval(true, 0))
+    assertEquals(16L, GlassSamplingPolicy.interval(true, 0, thermalStatus = 1))
+    assertEquals(33L, GlassSamplingPolicy.interval(true, 0, thermalStatus = 2))
+    assertEquals(1000L, GlassSamplingPolicy.interval(false, 0, thermalStatus = 0))
     assertEquals(1000L, GlassSamplingPolicy.interval(false, 0))
     assertEquals(1200L, GlassSamplingPolicy.interval(true, 1))
     assertEquals(1200L, GlassSamplingPolicy.interval(false, 2))
     assertEquals(3, GlassSamplingPolicy.FailureLimit)
+  }
+
+  @org.junit.Test fun pacingSubtractsCopyTimeWithoutBusyLooping() {
+    assertEquals(10L, GlassSamplingPolicy.remainingDelay(16L, 6L))
+    assertEquals(1L, GlassSamplingPolicy.remainingDelay(16L, 40L))
+    assertEquals(16L, GlassSamplingPolicy.remainingDelay(16L, -5L))
+    assertEquals(0L, GlassSamplingPolicy.remainingDelay(1000L, 2000L))
+  }
+
+  @org.junit.Test fun backdropLoopUsesPacedThermalAwareInterval() {
+    val source = java.io.File("src/main/java/app/infinity/mpvz/ui/theme/LiquidGlassBackdrop.kt")
+      .takeIf { it.exists() } ?: java.io.File("app/src/main/java/app/infinity/mpvz/ui/theme/LiquidGlassBackdrop.kt")
+    val text = source.readText()
+    assertTrue(text.contains("GlassSamplingPolicy.interval(playing(), failures, thermalNow)"))
+    assertTrue(text.contains("SystemClock.uptimeMillis() - sampleStarted"))
   }
 }

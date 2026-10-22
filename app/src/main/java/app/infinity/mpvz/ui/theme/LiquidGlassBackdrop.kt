@@ -122,6 +122,7 @@ fun LiquidGlassBackdropHost(
   val ready by rememberUpdatedState(isReady)
   val playing by rememberUpdatedState(isPlaying)
   val aspect by rememberUpdatedState(sampleAspect)
+  val thermalNow by rememberUpdatedState(thermal)
   // Visibility changes stop work, but do not flash the last good scene to black during sheet handoff.
   // Media, safety and lifecycle boundaries always discard the old scene immediately.
   DisposableEffect(surfaceView, generation, eligible, lifecycleOwner) {
@@ -152,6 +153,7 @@ fun LiquidGlassBackdropHost(
           delay(if (frame.value != null) GlassScenePolicy.TransientGraceMs else GlassSamplingPolicy.RetryIntervalMs)
           continue
         }
+        val sampleStarted = SystemClock.uptimeMillis()
         val crop = GlassScenePolicy.sourceRect(source.width, source.height, aspect())
         val dimensions = crop?.let { GlassSamplingPolicy.sampleSize(it.width, it.height) }
         if (crop == null || dimensions == null) {
@@ -176,7 +178,10 @@ fun LiquidGlassBackdropHost(
         }
         // Recover after transient failures instead of permanently disabling glass after three errors.
         delay(if (failures > 0 && frame.value != null) GlassScenePolicy.TransientGraceMs
-          else GlassSamplingPolicy.interval(playing(), failures))
+          else GlassSamplingPolicy.remainingDelay(
+            GlassSamplingPolicy.interval(playing(), failures, thermalNow),
+            SystemClock.uptimeMillis() - sampleStarted,
+          ))
       }
     }
   }
@@ -414,7 +419,10 @@ fun Modifier.liquidGlassPane(
         // Only player backdrop hosts provide LocalLiquidGlassBackdrop; browser/settings fallbacks
         // (backdrop == null) keep their legibility film.
         if (scene != null || backdrop == null) {
-          drawRoundRect(themedTint.copy(alpha = filmAlpha),
+          // Player hosts adopt the ambient glow colour (read here, in draw) instead of the
+          // theme's dark surface, so sheets and the chapter pill follow the ambience.
+          drawRoundRect(PlayerAmbientTintPolicy.filmColor(themedTint, PlayerAmbientTint.color,
+            isPlayerHost = backdrop != null).copy(alpha = filmAlpha),
             cornerRadius = CornerRadius(radius))
         }
         drawRoundRect(Brush.verticalGradient(listOf(

@@ -115,13 +115,17 @@ fun SortDialog(
       )
     },
     text = {
-      Column {
+      Column(
+        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+      ) {
         HorizontalDivider()
         Column(
           modifier =
             Modifier
               .fillMaxWidth()
               .verticalScroll(rememberScrollState()),
+          verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
           if (showSortOptions) {
             DialogSectionTitle(text = "Sort by")
@@ -152,7 +156,7 @@ fun SortDialog(
             ) {
               viewModeSelector.options.forEachIndexed { index, option ->
                 SegmentedButton(
-                  modifier = Modifier.liquidGlassPane(enabled = glassEnabled, cornerRadius = 18.dp),
+                  modifier = Modifier,
                   selected = option.isSelected,
                   onClick = { if (enableViewModeOptions) option.onClick() },
                   shape = SegmentedButtonDefaults.itemShape(index = index, count = viewModeSelector.options.size),
@@ -172,7 +176,7 @@ fun SortDialog(
             ) {
               val isFirstSelected = layoutModeSelector.isFirstOptionSelected
               SegmentedButton(
-                modifier = Modifier.liquidGlassPane(enabled = glassEnabled, cornerRadius = 18.dp),
+                modifier = Modifier,
                 selected = isFirstSelected,
                 onClick = { if (enableLayoutModeOptions) layoutModeSelector.onViewModeChange(true) },
                 shape = SegmentedButtonDefaults.itemShape(index = 0, count = 2),
@@ -188,7 +192,7 @@ fun SortDialog(
                 Text(text = layoutModeSelector.firstOptionLabel)
               }
               SegmentedButton(
-                modifier = Modifier.liquidGlassPane(enabled = glassEnabled, cornerRadius = 18.dp),
+                modifier = Modifier,
                 selected = !isFirstSelected,
                 onClick = { if (enableLayoutModeOptions) layoutModeSelector.onViewModeChange(false) },
                 shape = SegmentedButtonDefaults.itemShape(index = 1, count = 2),
@@ -384,8 +388,7 @@ private fun SortTypeSelector(
                   } else {
                     MaterialTheme.colorScheme.surfaceContainerHighest
                   },
-              )
-              .liquidGlassPane(enabled = glassEnabled, cornerRadius = 18.dp),
+              ),
           contentAlignment = Alignment.Center,
         ) {
           Icon(
@@ -433,7 +436,7 @@ private fun SortOrderSelector(
   ) {
     options.forEachIndexed { index, label ->
       SegmentedButton(
-        modifier = Modifier.liquidGlassPane(enabled = glassEnabled, cornerRadius = 18.dp),
+        modifier = Modifier,
         selected = index == selectedIndex,
         onClick = { onSortOrderChange(index == 0) },
         shape = SegmentedButtonDefaults.itemShape(index = index, count = options.size),

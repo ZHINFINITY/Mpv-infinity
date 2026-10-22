@@ -18,6 +18,7 @@ data class MiniPlayerTarget(
   val left: Float, val top: Float, val width: Float, val height: Float,
   val viewportWidth: Float,
   val artwork: MiniPlayerArtworkTarget? = null,
+  val viewportHeight: Float = 0f,
 )
 
 data class MiniPlayerArtworkTarget(
@@ -31,7 +32,7 @@ object MiniPlayerTransitionAnchor {
   fun publish(
     left: Float, top: Float, width: Float, height: Float, viewportWidth: Float,
     artworkLeft: Float? = null, artworkTop: Float? = null,
-    artworkWidth: Float? = null, artworkHeight: Float? = null,
+    artworkWidth: Float? = null, artworkHeight: Float? = null, viewportHeight: Float? = null,
   ) {
     if (!listOf(left, top, width, height, viewportWidth).all { it.isFinite() } ||
       width <= 0f || height <= 0f || viewportWidth <= 0f) return
@@ -43,7 +44,7 @@ object MiniPlayerTransitionAnchor {
       artworkLeft + artworkWidth <= left + width + 2f &&
       artworkTop + artworkHeight <= top + height + 2f
     ) MiniPlayerArtworkTarget(artworkLeft, artworkTop, artworkWidth, artworkHeight) else null
-    target = MiniPlayerTarget(left, top, width, height, viewportWidth, art)
+    target = MiniPlayerTarget(left, top, width, height, viewportWidth, art, viewportHeight ?: 0f)
   }
 
   fun invalidate() { target = null }

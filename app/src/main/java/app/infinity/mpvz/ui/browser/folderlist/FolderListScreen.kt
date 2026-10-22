@@ -636,7 +636,7 @@ object FolderListScreen : Screen {
             )
           } else {
             BrowserTopBar(
-              title = if (audiobookMode) "Audiobooks" else stringResource(app.infinity.mpvz.R.string.app_name),
+              title = if (audiobookMode) "Audiobooks" else "∞",
               isInSelectionMode = selectionManager.isInSelectionMode,
               selectedCount = selectionManager.selectedCount,
               totalCount = videoFolders.size,

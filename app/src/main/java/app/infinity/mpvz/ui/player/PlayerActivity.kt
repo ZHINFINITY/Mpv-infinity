@@ -8,6 +8,7 @@
 package app.infinity.mpvz.ui.player
 
 import android.Manifest
+import app.infinity.mpvz.ui.player.controls.MusicMinimizeTransitionPolicy
 import android.animation.ValueAnimator
 import android.app.KeyguardManager
 import android.app.PendingIntent
@@ -21,6 +22,8 @@ import android.content.pm.ActivityInfo
 import android.content.pm.PackageManager
 import android.content.res.Configuration
 import android.graphics.Bitmap
+import android.graphics.Color
+import android.graphics.drawable.ColorDrawable
 import android.media.AudioAttributes
 import android.media.AudioFocusRequest
 import android.media.AudioManager
@@ -1216,6 +1219,7 @@ class PlayerActivity :
   override fun onCreate(savedInstanceState: Bundle?) {
     enableEdgeToEdge()
     super.onCreate(savedInstanceState)
+    requestAudioOpenFromMini(intent)
     Log.i(
       "Mpv∞-BuildIdentity",
       BuildIdentityDiagnostic.startupLine(
@@ -2293,6 +2297,16 @@ class PlayerActivity :
         setVideoAmbientPresentationActive(presentationActive, showBackground = presentationActive)
       }
 
+      // Player glass cannot sample this ComposeView, so share its colour with the controls.
+      LaunchedEffect(presentationActive, ambientFrame.base) {
+        app.infinity.mpvz.ui.theme.PlayerAmbientTint.publish(
+          if (presentationActive) ambientFrame.base else null,
+        )
+      }
+      androidx.compose.runtime.DisposableEffect(Unit) {
+        onDispose { app.infinity.mpvz.ui.theme.PlayerAmbientTint.clear() }
+      }
+
       LaunchedEffect(
         playbackState.phase,
         playbackState.surfaceAttached,
@@ -3067,11 +3081,55 @@ class PlayerActivity :
 
   /** Called only after the audio UI's position-preserving visual flight has settled. */
   fun onAudioMinimizePresentationComplete() {
+    // Stay translucent: the library is already showing around the landed panel, and
+    // going opaque before finish() would flash a black frame over the mini player.
     audioMinimizePresentationCompleted = true
   }
 
+  /**
+   * Opened from the browser mini player: incremented so AudioPlayerControls can run the
+   * mini-to-full expansion. Only set when the translucent window was actually granted.
+   */
+  val audioOpenFromMiniRequest = androidx.compose.runtime.mutableIntStateOf(0)
+  private var audioWindowBackground: android.graphics.drawable.Drawable? = null
+  private var audioWindowTranslucent = false
+
+  private fun requestAudioOpenFromMini(launchIntent: Intent?) {
+    if (launchIntent?.getBooleanExtra("open_from_mini_player", false) != true) return
+    if (!launchIntent.getBooleanExtra("is_audio", false)) return
+    if (setAudioTransitionTranslucent(true, launchIntent = launchIntent)) {
+      audioOpenFromMiniRequest.intValue++
+    }
+  }
+
+  /**
+   * Audio-only: makes the window see-through for the Mornye-style handoff so the library
+   * shows around the moving panel. Public API 30+ only; returns false when unavailable,
+   * and callers then use the plain slide fallback. Never used for video.
+   */
+  fun setAudioTransitionTranslucent(enabled: Boolean, launchIntent: Intent? = null): Boolean {
+    if (!MusicMinimizeTransitionPolicy.shouldTranslucent(
+        isAudio = isCurrentPlaybackAudio() || launchIntent?.getBooleanExtra("is_audio", false) == true,
+        api = Build.VERSION.SDK_INT,
+      )) return false
+    if (enabled == audioWindowTranslucent) return true
+    return runCatching {
+      if (enabled) {
+        if (audioWindowBackground == null) audioWindowBackground = window.decorView.background
+        window.setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
+      }
+      val success = setTranslucent(enabled)
+      if (!enabled || !success) {
+        audioWindowBackground?.let { window.setBackgroundDrawable(it) }
+      }
+      audioWindowTranslucent = enabled && success
+      success
+    }.onFailure { Log.d(TAG, "Audio translucency transition unavailable", it) }.getOrDefault(false)
+  }
+
   private fun applyMiniPlayerExitTransition() {
-    // Do not slide the entire window again after Compose already landed on the mini player.
+    // Do not slide the window again after Compose already landed the audio panel on the
+    // mini player; other mini-player exits keep the existing slide.
     val exitAnimation = if (audioMinimizePresentationCompleted) 0 else R.anim.slide_out_down
     audioMinimizePresentationCompleted = false
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
@@ -6749,6 +6807,7 @@ class PlayerActivity :
    */
   override fun onNewIntent(intent: Intent) {
     super.onNewIntent(intent)
+    requestAudioOpenFromMini(intent)
     m3uPreflightJob?.cancel()
     preflightM3uParse = null
     if (!playerInitializationComplete) {

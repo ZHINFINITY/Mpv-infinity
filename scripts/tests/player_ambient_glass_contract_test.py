@@ -9,7 +9,8 @@ SOURCE = ROOT / "app/src/main/java/app/infinity/mpvz/ui/theme/LiquidGlassBackdro
 def test_player_glass_does_not_paint_theme_film_without_sampled_scene():
     source = SOURCE.read_text()
     assert "val scene = backdrop?.value" in source
-    assert "if (scene != null || backdrop == null) {\n          drawRoundRect(themedTint.copy(alpha = filmAlpha)" in source
+    assert "if (scene != null || backdrop == null) {" in source
+    assert "drawRoundRect(PlayerAmbientTintPolicy.filmColor(themedTint, PlayerAmbientTint.color,\n            isPlayerHost = backdrop != null).copy(alpha = filmAlpha)" in source
     # Browser/settings fallbacks never receive a player backdrop and must keep their film.
     assert "LocalLiquidGlassBackdrop provides" not in (ROOT / "app/src/main/java/app/infinity/mpvz/ui/theme/BrowserGlassScene.kt").read_text()
     # The sampled-scene path remains intact; this is deliberately not a global

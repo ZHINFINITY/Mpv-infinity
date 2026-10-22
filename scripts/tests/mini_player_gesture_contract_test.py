@@ -19,7 +19,7 @@ class MiniPlayerGestureContracts(unittest.TestCase):
     def test_full_player_tracks_directly_and_settles_from_release_position(self):
         controls = (JAVA / "ui/player/controls/AudioPlayerControls.kt").read_text()
         gesture = controls.split("var miniGesture by remember", 1)[1].split("  AudioPaletteGlassScene(", 1)[0]
-        for token in ("MiniPlayerGesturePolicy.drag(miniGesture", "MiniPlayerGesturePolicy.settle(miniGesture, velocityY)",
+        for token in ("MiniPlayerGesturePolicy.drag(miniGesture", "MusicMinimizeTransitionPolicy.releaseTargetMiniProgress(",
                       "VelocityTracker()", "calculateVelocity().y", "onDragCancel", "settleStart = miniGesture.progress",
                       "settleAnimation.snapTo(settleStart)", "settleAnimation.animateTo(target", "LaunchedEffect(settleGeneration)",
                       "settleGeneration == generation", "currentOnBackPress()"):
@@ -27,10 +27,11 @@ class MiniPlayerGestureContracts(unittest.TestCase):
         self.assertNotIn("currentGesture.value", gesture)
         self.assertNotIn("rememberSaveable", gesture)
         self.assertNotIn("delay(", gesture)
-        layer = gesture.split(".graphicsLayer {", 1)[1]
+        # The live frame is computed per draw from finger/settle progress and the live anchor.
+        layer = gesture.split("val currentTransitionFrame", 1)[1]
         self.assertIn("miniGesture.progress", layer)
-        self.assertIn("MiniPlayerTransitionAnchor.forViewport(hostPlayerView.width.toFloat())", layer)
-        self.assertIn("MiniPlayerGesturePolicy.transform(", layer)
+        self.assertIn("MusicMinimizeTransitionPolicy.currentAnchor(windowWidth, windowWidth, windowHeight)", layer)
+        self.assertIn("MusicMinimizeTransitionPolicy.frame(", layer)
         for forbidden in ("PlaybackSession.", "ACTION_NOTIFICATION_STOP", "load(", "recreate(", "seek("):
             self.assertNotIn(forbidden, gesture)
 

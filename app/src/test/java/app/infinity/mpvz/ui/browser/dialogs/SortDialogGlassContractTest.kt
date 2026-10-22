@@ -18,15 +18,15 @@ class SortDialogGlassContractTest {
     assertTrue(dialog.contains("import app.infinity.mpvz.ui.theme.liquidGlassPane"))
   }
 
-  @Test fun actualDialogAndEachSegmentedOptionUseSharedGlassWithMasterFallback() {
+  @Test fun actualDialogUsesOneSharedGlassPaneForSegmentedOptions() {
     assertTrue(dialog.contains("liquidGlassSurfaces.collectAsState()"))
     assertTrue(dialog.contains("containerColor = settingsGlassContainerColor(MaterialTheme.colorScheme.surfaceContainerHigh)"))
     assertTrue(dialog.contains(".settingsGlassSurface(cornerRadius = 28.dp, independent = true)"))
     val calls = Regex("SegmentedButton\\(\\s*modifier = Modifier\\.liquidGlassPane\\(enabled = glassEnabled").findAll(dialog).count()
-    assertTrue("view, both layout choices and sort direction all own glass", calls == 4)
+    assertTrue("segmented options must not add nested glass panes", calls == 0)
     val order = dialog.substringAfter("private fun SortOrderSelector(").substringBefore("private fun DialogSectionTitle")
     assertTrue(order.contains("glassEnabled: Boolean"))
-    assertTrue(order.contains("Modifier.liquidGlassPane(enabled = glassEnabled"))
+    assertFalse(order.contains("Modifier.liquidGlassPane(enabled = glassEnabled"))
     val type = dialog.substringAfter("private fun SortTypeSelector(").substringBefore("private fun SortOrderSelector")
     assertTrue(type.contains("if (glassEnabled) {\n                    Color.Transparent"))
     assertTrue(type.contains("role = Role.RadioButton"))
