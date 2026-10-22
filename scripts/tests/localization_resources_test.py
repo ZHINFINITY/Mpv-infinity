@@ -7,7 +7,7 @@ import xml.etree.ElementTree as ET
 
 ROOT = Path(__file__).resolve().parents[2]
 RES = ROOT / 'app/src/main/res'
-LANGS = {'id': 'Indonesian', 'vi': 'Vietnamese', 'fa': 'Persian'}
+LANGS = {'id': 'Indonesian', 'vi': 'Vietnamese', 'fa': 'Persian', 'pl': 'Polish', 'ta': 'Tamil'}
 TOKEN = re.compile(r'%%|%(?:\d+\$)?[+#\- 0,.(\d]*[a-zA-Z]|<[^>]+>|\{[^}]+\}|@[A-Za-z0-9_./:-]+')
 
 
@@ -37,10 +37,13 @@ class LocaleResourcesTest(unittest.TestCase):
                 self.assertEqual(element.tag, translated.tag, (code, name))
                 if element.tag == 'plurals':
                     quantities = {e.get('quantity'): e for e in translated}
-                    self.assertEqual({e.get('quantity') for e in element}, set(quantities))
-                    for value in element:
-                        self.assertEqual(sorted(TOKEN.findall(value.text or '')),
-                            sorted(TOKEN.findall(quantities[value.get('quantity')].text or '')), (code, name))
+                    sources = {e.get('quantity'): e for e in element}
+                    expected = set(sources) | {'few', 'many'} if code == 'pl' else set(sources)
+                    self.assertEqual(expected, set(quantities))
+                    for quantity, value in quantities.items():
+                        source = sources.get(quantity, sources['other'])
+                        self.assertEqual(sorted(TOKEN.findall(source.text or '')),
+                            sorted(TOKEN.findall(value.text or '')), (code, name))
                 elif element.get('formatted') == 'false':
                     structure = re.compile(r'<[^>]+>|\{[^}]+\}|@[A-Za-z0-9_./:-]+')
                     self.assertEqual(sorted(structure.findall(element.text or '')),

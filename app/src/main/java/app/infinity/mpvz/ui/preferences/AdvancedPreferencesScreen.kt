@@ -108,6 +108,8 @@ private enum class AppLanguage(
   Indonesian("id"),
   Vietnamese("vi"),
   Persian("fa"),
+  Polish("pl"),
+  Tamil("ta"),
   ;
 
   fun displayName(context: android.content.Context): String {

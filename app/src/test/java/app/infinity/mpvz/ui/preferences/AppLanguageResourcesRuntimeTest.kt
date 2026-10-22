@@ -49,9 +49,23 @@ class AppLanguageResourcesRuntimeTest {
 
   @Test fun indonesianSettingsAndPopupResolveTheirOwnPack() { assertSettingsAndPopupAreLocalized("id") }
   @Test fun vietnameseSettingsAndPopupResolveTheirOwnPack() { assertSettingsAndPopupAreLocalized("vi") }
+  @Test fun polishSettingsAndPopupResolveTheirOwnPack() { assertSettingsAndPopupAreLocalized("pl") }
+  @Test fun tamilSettingsAndPopupResolveTheirOwnPack() { assertSettingsAndPopupAreLocalized("ta") }
   @Test fun persianSettingsAndPopupResolveTheirOwnPackAndDirection() {
     assertSettingsAndPopupAreLocalized("fa")
     assertEquals(View.LAYOUT_DIRECTION_RTL, context("fa").resources.configuration.layoutDirection)
+  }
+  @Test fun polishSecondsUseNativeOneFewAndManyGrammar() {
+    val resources = context("pl").resources
+    assertEquals("1 sekunda", resources.getQuantityString(R.plurals.seconds, 1, 1))
+    assertEquals("2 sekundy", resources.getQuantityString(R.plurals.seconds, 2, 2))
+    assertEquals("5 sekund", resources.getQuantityString(R.plurals.seconds, 5, 5))
+    assertEquals("22 sekundy", resources.getQuantityString(R.plurals.seconds, 22, 22))
+  }
+  @Test fun tamilPluralResourceDoesNotFallBackToEnglish() {
+    val actual = context("ta").resources.getQuantityString(R.plurals.seconds, 2, 2)
+    assertNotEquals(context("en").resources.getQuantityString(R.plurals.seconds, 2, 2), actual)
+    assertTrue(actual.any { it in '\u0B80'..'\u0BFF' })
   }
   @Test fun indonesianLegacyAndModernLanguageTagsResolveTheSameResources() {
     assertEquals(context("id").getString(R.string.pref_custom_theme_title),
