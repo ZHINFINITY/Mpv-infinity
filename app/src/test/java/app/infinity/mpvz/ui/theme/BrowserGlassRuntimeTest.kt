@@ -203,7 +203,8 @@ class BrowserGlassRuntimeTest {
       }
     }
     composeRule.onNodeWithText("Save").assertIsDisplayed()
-    composeRule.onNodeWithText("Edit theme").performClick()
+    composeRule.onNodeWithText("Edit theme").performScrollTo().assertIsDisplayed().performClick()
+    composeRule.onNodeWithText("Hide editing options").assertExists()
     composeRule.onNodeWithText("Custom text colour").performScrollTo().assertIsDisplayed()
     composeRule.onNodeWithText("Reset").assertIsDisplayed().performClick()
     composeRule.onNodeWithText("Save").assertIsDisplayed().performClick()
