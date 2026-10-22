@@ -15,8 +15,8 @@ data class BrowserLayoutGeometry(
 
 object BrowserLayoutPolicy {
   fun geometry(glassEnabled: Boolean): BrowserLayoutGeometry =
-    if (glassEnabled) BrowserLayoutGeometry(12.dp, 12.dp, 12.dp, 6.dp)
-    else BrowserLayoutGeometry(8.dp, 4.dp, 0.dp, 0.dp)
+    // Glass changes optics only; browser layout remains the reference geometry.
+    BrowserLayoutGeometry(8.dp, 4.dp, 0.dp, 0.dp)
 
   fun gridPadding(geometry: BrowserLayoutGeometry, top: Dp = 0.dp, bottom: Dp = 0.dp): PaddingValues =
     PaddingValues(start = geometry.edgeInset, top = top, end = geometry.edgeInset, bottom = bottom)
@@ -24,8 +24,8 @@ object BrowserLayoutPolicy {
   fun listPadding(geometry: BrowserLayoutGeometry, top: Dp = 0.dp, bottom: Dp = 0.dp): PaddingValues =
     PaddingValues(start = geometry.edgeInset, top = top, end = geometry.edgeInset, bottom = bottom)
 
-  /** Library lists own their 12dp pane gaps; standalone/detail rows keep their original insets. */
+  /** Parent-owned list spacing must not add a second row inset. */
   fun musicRowPadding(parentOwnsSpacing: Boolean): PaddingValues =
     if (parentOwnsSpacing) PaddingValues(0.dp)
-    else PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+    else PaddingValues(horizontal = 16.dp, vertical = 12.dp)
 }

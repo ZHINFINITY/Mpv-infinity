@@ -37,7 +37,8 @@ class ThemeEditorLayoutSourceTest(unittest.TestCase):
         self.assertIn("enabled = enabled", actions)
         self.assertIn("settingsGlassSurface", actions)
         self.assertIn("onSave(edited.copy(name = name.trim()))", editor)
-        self.assertIn("settingsGlassPreferenceRow().padding(12.dp)", editor)
+        self.assertIn("settingsGlassSurface", editor)
+        self.assertNotIn("settingsGlassPreferenceRow().padding(12.dp)", editor)
         self.assertNotIn("Card(", editor)
 
     def test_editor_does_not_use_a_fixed_fraction_that_clips_bottom_actions(self):

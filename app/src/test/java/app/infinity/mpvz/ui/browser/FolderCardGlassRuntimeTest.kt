@@ -98,7 +98,7 @@ class FolderCardGlassRuntimeTest {
     assertEquals(5, clicks)
   }
 
-  @Test fun actualFolderPixelsKeepRoundedCornersAndTranslucentBodyUnlikeClassicFill() {
+  @Test fun referenceFolderPixelsStayTransparentAndStableAcrossGlassToggle() {
     val background = Color(0xFF102030)
     composeRule.setContent {
       MaterialTheme {
@@ -114,37 +114,37 @@ class FolderCardGlassRuntimeTest {
     }
     val glass = composeRule.onNodeWithTag("folder-pixels").captureToImage().toPixelMap()
     val corner = glass[0, 0]
-    // Above text/artwork, below the thin rim: this is the actual measured card body.
+    // The reference card has no extra glass-body layer. Sample its upper padding,
+    // safely outside text and the native thumbnail/icon surface.
     val bodyY = (glass.height * 0.08f).toInt().coerceAtLeast(2)
     val body = glass[glass.width / 2, bodyY]
     assertTrue("rounded corner must expose the real backdrop", colorDistance(background, corner) < 0.06f)
-    assertTrue("glass must have visible body depth over a dark backdrop", colorDistance(corner, body) > 0.08f)
+    assertTrue("reference folder adds no enclosing body fill", colorDistance(background, body) < 0.06f)
     composeRule.runOnIdle { appearance.liquidGlassSurfaces.set(false) }
     composeRule.waitForIdle()
     val classic = composeRule.onNodeWithTag("folder-pixels").captureToImage().toPixelMap()
     val classicBody = classic[classic.width / 2, bodyY]
-    assertTrue("glass must not use the opaque native card fill", classicBody.red > body.red + 0.15f)
+    assertTrue("reference body does not change when glass toggles", colorDistance(classicBody, body) < 0.06f)
     assertTrue("classic keeps exactly the same rounded geometry", colorDistance(background, classic[0, 0]) < 0.06f)
   }
 
-  @Test fun actualHomeCallersKeepOneMeasuredPaneAndTwelveDpListSeam() {
+  @Test fun actualHomeCallersKeepReferenceCardGeometrySpacingAndSwipe() {
     val root = generateSequence(File(System.getProperty("user.dir"))) { it.parentFile }
       .first { File(it, "app/src/main/java/app/infinity/mpvz").isDirectory }
     val card = File(root, "app/src/main/java/app/infinity/mpvz/ui/browser/cards/FolderCard.kt").readText()
     val screen = File(root, "app/src/main/java/app/infinity/mpvz/ui/browser/folderlist/FolderListScreen.kt").readText()
     val swipe = File(root, "app/src/main/java/app/infinity/mpvz/ui/browser/cards/SwipeableFolderActions.kt").readText()
-    val policy = File(root, "app/src/main/java/app/infinity/mpvz/ui/theme/BrowserLayoutPolicy.kt").readText()
-    assertTrue(card.contains("BrowserGlassSurface(") && card.contains("modifier = Modifier.fillMaxWidth()"))
-    assertTrue(card.contains("enabled = liquidGlass"))
-    assertTrue(!card.contains("BrowserGlassSurface(\n          modifier = Modifier.matchParentSize()"))
-    // The home list delegates both the 12dp glass seam and the non-glass fallback
-    // to the shared geometry policy; do not pin this contract to a wrapper literal.
-    assertTrue(screen.contains("val geometry = BrowserLayoutPolicy.geometry(glassEnabled)"))
-    assertTrue(screen.contains("verticalArrangement = Arrangement.spacedBy(if (glassEnabled) geometry.listGap else 12.dp)"))
-    assertTrue(policy.contains("BrowserLayoutGeometry(12.dp, 12.dp, 12.dp, 6.dp)"))
-    assertTrue(policy.contains("BrowserLayoutGeometry(8.dp, 4.dp, 0.dp, 0.dp)"))
+    // Reference rollback keeps the card as one measured native pane; any glass
+    // optics belong to the surrounding browser scene, not a nested card child.
+    assertTrue(card.contains("val cardShape = AppShapeScale.large"))
+    assertTrue(!card.contains("BrowserGlassSurface("))
+    assertTrue(card.contains("Box(modifier = Modifier.fillMaxWidth())"))
+    assertTrue(screen.contains("horizontalArrangement = Arrangement.spacedBy(2.dp)"))
+    assertTrue(screen.contains("verticalArrangement = Arrangement.spacedBy(2.dp)"))
+    assertTrue(!screen.contains("BrowserLayoutPolicy"))
     assertTrue("only the revealed swipe action owns another pane", swipe.indexOf("BrowserGlassSurface(") > swipe.indexOf("if (offsetX > 0f)"))
-    assertTrue("glass icon has no square fill", card.contains("background(if (liquidGlass) Color.Transparent else MaterialTheme.colorScheme.surfaceContainerHigh)"))
+    assertTrue("reference icon surface remains native", card.contains("background(MaterialTheme.colorScheme.surfaceContainerHigh)"))
+    assertTrue(card.contains("getFolderThumbnailFromMemory(folder.bucketId)"))
   }
 
   private fun colorDistance(a: Color, b: Color): Float =

@@ -49,4 +49,28 @@ class BrowserMaterialParityContractTest {
     assertTrue(GlassSurfacePolicy.depthOptics(2f, 0.18f).bodyHighlight >
       GlassSurfacePolicy.depthOptics(0f, 0.18f).bodyHighlight)
   }
+
+  @Test fun browserSurfaceKeepsReferenceLensAndReferenceFilmSemantics() {
+    val scene = source("BrowserGlassScene")
+    val browser = scene.substring(scene.indexOf("fun BrowserGlassSurface("), scene.indexOf("/** The shared pane path"))
+    assertTrue(browser.contains("RuntimeShader(BROWSER_LENS)"))
+    assertTrue(browser.contains("shader.setFloatUniform(\"bend\""))
+    assertTrue(browser.contains("shader.setFloatUniform(\"motion\""))
+    assertTrue(browser.contains("film * (if (selected) 0.24f else 0.20f)"))
+    assertTrue(browser.contains("Color.White.copy(alpha = if (selected) 0.16f + glow * 0.24f else 0.06f + glow * 0.10f)"))
+    assertTrue(browser.contains("style = Stroke(1.dp.toPx())"))
+    assertFalse(browser.contains("browserGlassPane(enabled"))
+    assertTrue(scene.contains("private const val BROWSER_LATEST_LENS"))
+  }
+
+  @Test fun navigationCaptureUsesIndependentProducerAndConsumerScenes() {
+    val scene = source("BrowserGlassScene")
+    val route = scene.substring(scene.indexOf("fun BrowserGlassRouteContentHost("), scene.indexOf("/**\n * Compatibility marker"))
+    assertTrue(route.contains("navLayer.record"))
+    assertTrue(route.contains("LocalBrowserScene provides navContentScene"))
+    assertTrue(route.contains("LocalBrowserScene provides inheritedRootScene"))
+    assertTrue(route.contains("navContentScene.isRecording = true"))
+    assertTrue(route.contains("navContentScene.isRecording = false"))
+    assertTrue(scene.contains("canDrawRecordedScene"))
+  }
 }

@@ -54,7 +54,6 @@ import app.infinity.mpvz.ui.icons.AppIcon
 import app.infinity.mpvz.ui.icons.Icon
 import app.infinity.mpvz.ui.icons.Icons
 import app.infinity.mpvz.ui.theme.AppShapeScale
-import app.infinity.mpvz.ui.theme.BrowserGlassSurface
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.koin.compose.koinInject
@@ -94,9 +93,6 @@ fun FolderCard(
   val showFolderThumbnails by browserPreferences.showFolderThumbnails.collectAsState()
   val thumbnailQuality by browserPreferences.thumbnailQuality.collectAsState()
   val includeAudio by browserPreferences.includeAudioBrowser.collectAsState()
-  val liquidGlass by appearancePreferences.liquidGlassSurfaces.collectAsState()
-  val glassOpacity by appearancePreferences.glassSurfaceOpacity.collectAsState()
-  val glassHighlight by appearancePreferences.glassSurfaceHighlight.collectAsState()
   val manualGridColumnsEnabled by browserPreferences.manualGridColumnsEnabled.collectAsState()
   val folderGridColumnsPortrait by browserPreferences.folderGridColumnsPortrait.collectAsState()
   val folderGridColumnsLandscape by browserPreferences.folderGridColumnsLandscape.collectAsState()
@@ -137,8 +133,8 @@ fun FolderCard(
             } else {
               (usableWidth / folderMinWidth).toInt().coerceAtLeast(1)
             }
-          val horizontalPadding = 36.dp
-          val spacing = 12.dp
+          val horizontalPadding = 32.dp
+          val spacing = 8.dp
           val thumbWidthDp =
             if (folderGridColumns > 1) {
               val totalSpacing = spacing * (folderGridColumns - 1)
@@ -196,9 +192,7 @@ fun FolderCard(
     }
   }
 
-  // Native and glass cards must share one generous rounded geometry. A nested
-  // matchParentSize pane can be measured as an empty lazy-item child.
-  val cardShape = AppShapeScale.largeIncreased
+  val cardShape = AppShapeScale.large
 
   Card(
     modifier =
@@ -212,15 +206,7 @@ fun FolderCard(
     shape = cardShape,
     colors = CardDefaults.cardColors(containerColor = Color.Transparent),
   ) {
-    // Own the measured card bounds; do not paint glass in a matchParentSize
-    // child whose parent can strip the node during lazy measurement.
-    BrowserGlassSurface(
-      modifier = Modifier.fillMaxWidth(),
-      enabled = liquidGlass,
-      opacity = glassOpacity,
-      highlight = glassHighlight,
-      cornerRadius = 20.dp,
-    ) {
+    Box(modifier = Modifier.fillMaxWidth()) {
       if (isSelected || isActive) {
         Box(
           modifier =
@@ -261,11 +247,11 @@ fun FolderCard(
           modifier =
             Modifier
               .fillMaxWidth()
-              .padding(horizontal = 14.dp, vertical = 16.dp),
+              .padding(12.dp),
           horizontalAlignment = horizontalAlignment,
         ) {
-          val horizontalPadding = 36.dp
-          val spacing = 12.dp
+          val horizontalPadding = 32.dp
+          val spacing = 8.dp
 
           val thumbWidthDp =
             if (folderGridColumns > 1) {
@@ -292,7 +278,7 @@ fun FolderCard(
                     .height(thumbHeightDp)
                 }
               ).clip(AppShapeScale.medium)
-                .background(if (liquidGlass) Color.Transparent else MaterialTheme.colorScheme.surfaceContainerHigh)
+                .background(MaterialTheme.colorScheme.surfaceContainerHigh)
                 .combinedClickable(
                   onClick = onThumbClick,
                   onLongClick = onLongClick,
@@ -437,7 +423,7 @@ fun FolderCard(
               Modifier
                 .size(64.dp)
                 .clip(AppShapeScale.medium)
-                .background(if (liquidGlass) Color.Transparent else MaterialTheme.colorScheme.surfaceContainerHigh)
+                .background(MaterialTheme.colorScheme.surfaceContainerHigh)
                 .combinedClickable(
                   onClick = onThumbClick,
                   onLongClick = onLongClick,

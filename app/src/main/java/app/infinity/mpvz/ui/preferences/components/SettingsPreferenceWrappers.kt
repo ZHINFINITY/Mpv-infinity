@@ -4,6 +4,7 @@
  */
 package app.infinity.mpvz.ui.preferences.components
 
+
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -38,7 +39,7 @@ fun Preference(
   summary: (@Composable () -> Unit)? = null,
   widgetContainer: (@Composable () -> Unit)? = null,
   onClick: (() -> Unit)? = null,
-) = LibraryPreference(title, modifier.settingsGlassPreferenceRow(), enabled, icon, summary, widgetContainer, onClick)
+) = LibraryPreference(title, modifier.settingsGlassSurface(cornerRadius = 18.dp), enabled, icon, summary, widgetContainer, onClick)
 
 @Composable
 fun <T> ListPreference(

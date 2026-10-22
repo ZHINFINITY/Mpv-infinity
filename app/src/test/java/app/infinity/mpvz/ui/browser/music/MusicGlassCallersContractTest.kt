@@ -44,16 +44,20 @@ class MusicGlassCallersContractTest {
   }
 
   @Test
-  fun glassOnRemovesUnintentionalMaterialBackplatesButOffPreservesFallbacks() {
+  fun referenceBrowseCardsKeepNativeFillsWhileLatestDetailPopupsRemainGlass() {
     val library = source("app/src/main/java/app/infinity/mpvz/ui/browser/music/MusicLibraryContent.kt")
     val shared = source("app/src/main/java/app/infinity/mpvz/ui/browser/music/SharedMusicComponents.kt")
 
-    assertTrue(library.contains("settingsGlassContainerColor(when"))
-    assertTrue(library.contains("settingsGlassContainerColor(if (isSelected)"))
-    assertTrue(shared.contains("settingsGlassContainerColor(when"))
-    assertTrue(shared.contains("settingsGlassContainerColor(if (isSelected)"))
+    for (name in listOf("SongGridCard", "AlbumGridCard", "ArtistGridCard")) {
+      val card = library.substringAfter("private fun $name(").substringBefore("\n@Composable")
+      assertTrue(name, !card.contains(".settingsGlassSurface("))
+      assertTrue(name, card.contains("Card("))
+    }
+    val grid = shared.substringAfter("fun SharedMusicGridCard(").substringBefore("\n@Composable")
+    assertTrue(!grid.contains("settingsGlassSurface("))
+    assertTrue(grid.contains("containerColor = when {"))
     assertTrue(library.contains("containerColor = settingsGlassContainerColor(MaterialTheme.colorScheme.surfaceContainerLow)"))
-    assertTrue(shared.contains(".background(settingsGlassContainerColor(MaterialTheme.colorScheme.surfaceVariant))"))
+    assertTrue(shared.contains(".background(MaterialTheme.colorScheme.surfaceVariant)"))
     assertTrue(shared.contains("contentScale = ContentScale.Crop"))
   }
 }

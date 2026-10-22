@@ -13,20 +13,18 @@ def source(path):
 
 
 class SceneStabilityContracts(unittest.TestCase):
-    def test_each_settings_row_owns_one_material_not_the_whole_group(self):
+    def test_reference_group_owns_material_without_new_individual_row_cards(self):
         card = source('ui/preferences/CardPreferences.kt')
         settings = source('ui/preferences/components/SettingsGlass.kt')
         wrappers = source('ui/preferences/components/SettingsPreferenceWrappers.kt')
         switch = source('ui/preferences/components/SwitchPreference.kt')
-        self.assertNotIn('.settingsGlassSurface(', card)
-        self.assertNotIn('LocalSettingsGlassOwner', card + settings)
-        row = settings.split('fun Modifier.settingsGlassPreferenceRow()', 1)[1].split('fun settingsGlassContainerColor(', 1)[0]
-        self.assertNotIn('if (!settingsGlassEnabled()) return this', row)
-        self.assertIn('SettingsGlassPolicy.geometry(enabled)', row)
-        self.assertIn('else row.background(MaterialTheme.colorScheme.surfaceContainerLow, shape)', row)
-        self.assertEqual(1, row.count('.settingsGlassSurface('))
-        self.assertIn('modifier.settingsGlassPreferenceRow()', wrappers)
-        self.assertIn('.settingsGlassPreferenceRow()', switch)
+        self.assertIn('.padding(horizontal = 16.dp, vertical = 8.dp)', card)
+        self.assertEqual(1, card.count('.settingsGlassSurface('))
+        self.assertIn('LocalSettingsGlassOwner provides true', card)
+        self.assertIn('if (LocalSettingsGlassOwner.current && !independent) return this', settings)
+        self.assertNotIn('settingsGlassPreferenceRow', settings + wrappers + switch)
+        self.assertNotIn('SettingsGlassPolicy.geometry(enabled)', settings)
+        self.assertIn('if (!enabled) return this', settings)
         self.assertGreaterEqual(wrappers.count('independent = true'), 3)
 
     def test_all_six_appearance_sliders_commit_only_on_release(self):

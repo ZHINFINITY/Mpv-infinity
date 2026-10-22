@@ -69,9 +69,6 @@ import app.infinity.mpvz.ui.icons.Icons
 import app.infinity.mpvz.ui.player.PlaybackSession
 import app.infinity.mpvz.ui.player.controls.components.MiniAudioVisualizer
 import app.infinity.mpvz.ui.theme.AppShapeScale
-import app.infinity.mpvz.ui.theme.BrowserLayoutPolicy
-import app.infinity.mpvz.ui.preferences.components.settingsGlassSurface
-import app.infinity.mpvz.ui.preferences.components.settingsGlassContainerColor
 import org.koin.compose.koinInject
 
 @OptIn(ExperimentalFoundationApi::class)
@@ -97,15 +94,13 @@ fun SharedMusicTrackListItem(
   swipeIdentity: String = title,
   isWatched: Boolean? = null,
   onSwipeAction: ((Any) -> Unit)? = null,
-  parentOwnsSpacing: Boolean = false,
 ) {
   Card(
     modifier = modifier
       .fillMaxWidth()
-      .padding(BrowserLayoutPolicy.musicRowPadding(parentOwnsSpacing))
+      .padding(horizontal = 8.dp, vertical = 3.dp)
       .clip(AppShapeScale.large)
       .semantics { selected = isSelected }
-      .settingsGlassSurface(cornerRadius = 20.dp)
       .then(
         if (onLongClick != null) {
           Modifier.combinedClickable(onClick = onClick, onLongClick = onLongClick)
@@ -115,8 +110,8 @@ fun SharedMusicTrackListItem(
       ),
     shape = AppShapeScale.large,
     colors = CardDefaults.cardColors(
-      containerColor = settingsGlassContainerColor(if (isSelected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.6f)
-      else MaterialTheme.colorScheme.primaryContainer.copy(alpha = if (isPlaying) 0.35f else 0f)),
+      containerColor = if (isSelected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.6f)
+      else MaterialTheme.colorScheme.primaryContainer.copy(alpha = if (isPlaying) 0.35f else 0f),
       contentColor = MaterialTheme.colorScheme.onSurface,
     ),
   ) {
@@ -136,7 +131,7 @@ fun SharedMusicTrackListItem(
         modifier = Modifier
           .size(itemArtSize)
           .clip(if (isCircular) CircleShape else AppShapeScale.medium)
-          .background(settingsGlassContainerColor(MaterialTheme.colorScheme.surfaceVariant)),
+          .background(MaterialTheme.colorScheme.surfaceVariant),
         contentAlignment = Alignment.Center,
       ) {
         when {
@@ -276,15 +271,14 @@ fun SharedMusicGridCard(
     modifier = modifier
       .then(if (cardWidth != null) Modifier.width(cardWidth) else Modifier.fillMaxWidth())
       .clip(AppShapeScale.large)
-      .settingsGlassSurface(cornerRadius = 20.dp)
       .combinedClickable(onClick = onClick, onLongClick = onLongClick),
     shape = AppShapeScale.large,
     colors = CardDefaults.cardColors(
-      containerColor = settingsGlassContainerColor(when {
+      containerColor = when {
         isSelected -> MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.6f)
         isPlaying -> MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.35f)
         else -> Color.Transparent
-      })
+      }
     )
   ) {
     Column(
@@ -298,7 +292,7 @@ fun SharedMusicGridCard(
           .fillMaxWidth()
           .aspectRatio(1f)
           .clip(if (isCircular) CircleShape else AppShapeScale.medium)
-          .background(settingsGlassContainerColor(MaterialTheme.colorScheme.surfaceVariant)),
+          .background(MaterialTheme.colorScheme.surfaceVariant),
         contentAlignment = Alignment.Center,
       ) {
         when {
@@ -487,7 +481,7 @@ fun <T> SharedCompactTrackGridSection(
             modifier = Modifier
               .size(56.dp)
               .clip(RoundedCornerShape(6.dp))
-              .background(settingsGlassContainerColor(MaterialTheme.colorScheme.surfaceContainerHighest)),
+              .background(MaterialTheme.colorScheme.surfaceContainerHighest),
             contentAlignment = Alignment.Center,
           ) {
             if (!artworkUrl.isNullOrBlank()) {
@@ -602,7 +596,7 @@ fun SharedMusicDetailHeader(
         modifier = Modifier
           .size(64.dp)
           .clip(if (isCircular) CircleShape else RoundedCornerShape(8.dp))
-          .background(settingsGlassContainerColor(MaterialTheme.colorScheme.surfaceVariant)),
+          .background(MaterialTheme.colorScheme.surfaceVariant),
         contentAlignment = Alignment.Center,
       ) {
         if (!artworkUrl.isNullOrBlank()) {

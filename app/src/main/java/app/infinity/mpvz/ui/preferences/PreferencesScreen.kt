@@ -25,6 +25,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -45,7 +46,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalConfiguration
-import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -60,9 +60,6 @@ import app.infinity.mpvz.ui.icons.AppIcon
 import app.infinity.mpvz.ui.icons.Icon
 import app.infinity.mpvz.ui.icons.Icons
 import app.infinity.mpvz.ui.securefolder.SecureFolderGateScreen
-import app.infinity.mpvz.ui.preferences.components.SettingsGlassPolicy
-import app.infinity.mpvz.ui.preferences.components.settingsGlassEnabled
-import app.infinity.mpvz.ui.preferences.components.settingsGlassPreferenceRow
 import app.infinity.mpvz.ui.theme.LocalEmphasizedTypography
 import app.infinity.mpvz.ui.utils.LocalBackStack
 import app.infinity.mpvz.ui.utils.LocalShowSettingsBackArrow
@@ -378,36 +375,46 @@ private fun SettingsSearchEntry(
   onClick: () -> Unit,
   modifier: Modifier = Modifier,
 ) {
-  Row(
+  Surface(
     modifier =
       modifier
         .fillMaxWidth()
-        .settingsGlassPreferenceRow()
-        .clickable(onClick = onClick)
-        .padding(horizontal = 18.dp, vertical = 12.dp),
-    verticalAlignment = Alignment.CenterVertically,
+        .clip(MaterialTheme.shapes.extraExtraLarge)
+        .clickable(onClick = onClick),
+    shape = MaterialTheme.shapes.extraExtraLarge,
+    color = MaterialTheme.colorScheme.secondaryContainer,
+    tonalElevation = 1.dp,
+    shadowElevation = 1.dp,
   ) {
-    Icon(
-      imageVector = Icons.RoundedFilled.Search,
-      contentDescription = null,
-      modifier = Modifier.size(28.dp),
-      tint = MaterialTheme.colorScheme.onSurfaceVariant,
-    )
-    Spacer(modifier = Modifier.width(14.dp))
-    Column(modifier = Modifier.weight(1f)) {
-      Text(
-        text = stringResource(R.string.settings_search_hint),
-        style = MaterialTheme.typography.titleMedium,
-        fontWeight = FontWeight.Bold,
-        color = MaterialTheme.colorScheme.onSurface,
+    Row(
+      modifier =
+        Modifier
+          .fillMaxWidth()
+          .padding(horizontal = 18.dp, vertical = 16.dp),
+      verticalAlignment = Alignment.CenterVertically,
+    ) {
+      Icon(
+        imageVector = Icons.RoundedFilled.Search,
+        contentDescription = null,
+        modifier = Modifier.size(28.dp),
+        tint = MaterialTheme.colorScheme.onSecondaryContainer,
+      )
+      Spacer(modifier = Modifier.width(14.dp))
+      Column(modifier = Modifier.weight(1f)) {
+        Text(
+          text = stringResource(R.string.settings_search_hint),
+          style = MaterialTheme.typography.titleMedium,
+          fontWeight = FontWeight.Bold,
+          color = MaterialTheme.colorScheme.onSecondaryContainer,
+        )
+      }
+      Icon(
+        imageVector = Icons.RoundedFilled.ChevronRight,
+        contentDescription = null,
+        modifier = Modifier.size(24.dp),
+        tint = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.72f),
       )
     }
-    Icon(
-      imageVector = Icons.RoundedFilled.ChevronRight,
-      contentDescription = null,
-      modifier = Modifier.size(24.dp),
-      tint = MaterialTheme.colorScheme.outline,
-    )
   }
 }
 
@@ -441,45 +448,52 @@ private fun SettingsSectionBlock(
       section = section,
       selectedScreen = selectedScreen,
       onItemClick = onItemClick,
+      modifier = Modifier.padding(horizontal = 16.dp),
     )
   }
 }
 
 @Composable
-internal fun SettingsDestinationGroup(
+private fun SettingsDestinationGroup(
   section: SettingsSection,
   selectedScreen: Screen?,
   onItemClick: (SettingsDestination) -> Unit,
   modifier: Modifier = Modifier,
 ) {
-  // Standalone rows own their outer insets and gaps, exactly like other settings.
-  Column(
+  Surface(
     modifier = modifier.fillMaxWidth(),
+    shape = MaterialTheme.shapes.extraLargeIncreased,
+    color = MaterialTheme.colorScheme.surfaceContainerLow,
+    tonalElevation = 1.dp,
   ) {
-    section.items.forEach { item ->
-      SettingsDestinationCard(
-        item = item,
-        tint = section.tint,
-        isSelected = selectedScreen == item.screen,
-        onClick = { onItemClick(item) },
-      )
+    Column(modifier = Modifier.fillMaxWidth()) {
+      section.items.forEachIndexed { index, item ->
+        SettingsDestinationRow(
+          item = item,
+          tint = section.tint,
+          isSelected = selectedScreen == item.screen,
+          onClick = { onItemClick(item) },
+        )
+        if (index < section.items.lastIndex) {
+          HorizontalDivider(
+            modifier = Modifier.padding(start = 14.dp, end = 18.dp),
+            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f),
+          )
+        }
+      }
     }
   }
 }
 
-/** A standalone destination card; every destination owns its own surface and hit target. */
 @Composable
-private fun SettingsDestinationCard(
+private fun SettingsDestinationRow(
   item: SettingsDestination,
   tint: Color,
   isSelected: Boolean,
   onClick: () -> Unit,
 ) {
-  // Selection is an opaque Material affordance only in fallback mode; glass
-  // rows must remain optically owned by the shared SettingsGlass master.
-  val glassEnabled = settingsGlassEnabled()
   val rowBgColor =
-    if (isSelected && !glassEnabled) {
+    if (isSelected) {
       MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.5f)
     } else {
       Color.Transparent
@@ -488,11 +502,9 @@ private fun SettingsDestinationCard(
     modifier =
       Modifier
         .fillMaxWidth()
-        .settingsGlassPreferenceRow()
-        .testTag("settings-destination-card:${item.title}")
         .background(rowBgColor)
         .clickable(onClick = onClick)
-        .padding(horizontal = 16.dp, vertical = 12.dp),
+        .padding(horizontal = 14.dp, vertical = 13.dp),
     verticalAlignment = Alignment.CenterVertically,
   ) {
     Surface(
@@ -500,7 +512,7 @@ private fun SettingsDestinationCard(
       color = tint.copy(alpha = 0.18f),
     ) {
       Box(
-        modifier = Modifier.size(48.dp).testTag("settings-destination-icon:${item.title}"),
+        modifier = Modifier.size(48.dp),
         contentAlignment = Alignment.Center,
       ) {
         Icon(

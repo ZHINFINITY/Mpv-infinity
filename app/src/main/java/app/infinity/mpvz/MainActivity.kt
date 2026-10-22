@@ -82,8 +82,6 @@ import app.infinity.mpvz.ui.player.NavigationAnimStyle
 import app.infinity.mpvz.ui.theme.DarkMode
 import app.infinity.mpvz.ui.theme.MpvInfinityTheme
 import app.infinity.mpvz.ui.theme.rememberThemeTransitionState
-import app.infinity.mpvz.ui.theme.BrowserGlassSceneHost
-import app.infinity.mpvz.ui.theme.browserGlassSceneSource
 import android.view.SurfaceHolder
 import android.view.SurfaceView
 import androidx.compose.foundation.background
@@ -319,9 +317,7 @@ class MainActivity : AppCompatActivity() {
         }
       } else {
         MpvInfinityTheme(transitionState = themeTransitionState) {
-          Surface(modifier = Modifier.fillMaxSize(),
-            color = app.infinity.mpvz.ui.preferences.components.settingsGlassContainerColor(MaterialTheme.colorScheme.background),
-          ) {
+          Surface(modifier = Modifier.fillMaxSize()) {
             Navigator()
           }
           if (showRendererBuildNotice) {
@@ -576,7 +572,6 @@ class MainActivity : AppCompatActivity() {
 
     val appNavStyle by playerPreferences.appNavStyle.collectAsState()
     val animSpeed by playerPreferences.animationSpeed.collectAsState()
-    val liquidGlassSurfacesForBrowser by appearancePreferences.liquidGlassSurfaces.collectAsState()
 
     val context = LocalContext.current
     val currentVersion =
@@ -625,12 +620,7 @@ class MainActivity : AppCompatActivity() {
       }
 
       if (hasNavEntries) {
-        BrowserGlassSceneHost(enabled = liquidGlassSurfacesForBrowser) {
-          // Music palette sampling belongs only to the music player. Applying
-          // it here overrode the real app scene for ALL nested folders/settings.
-          Box(modifier = Modifier.fillMaxSize().background(
-            if (liquidGlassSurfacesForBrowser) Color.Transparent else MaterialTheme.colorScheme.background,
-          )) {
+        Box(modifier = Modifier.fillMaxSize()) {
           NavDisplay(
             modifier = Modifier.fillMaxSize(),
             backStack = typedBackstack,
@@ -642,11 +632,8 @@ class MainActivity : AppCompatActivity() {
             entryProvider = { route ->
               NavEntry(route) {
                 Surface(
-                  modifier = Modifier.fillMaxSize().then(
-                    if (route != MainScreen) Modifier.browserGlassSceneSource() else Modifier,
-                  ),
-                  color = if (liquidGlassSurfacesForBrowser) androidx.compose.ui.graphics.Color.Transparent
-                    else MaterialTheme.colorScheme.background,
+                  modifier = Modifier.fillMaxSize(),
+                  color = MaterialTheme.colorScheme.background,
                 ) {
                   route.Content()
                 }
@@ -724,7 +711,6 @@ class MainActivity : AppCompatActivity() {
             }
 
           MiniPlayer(modifier = miniPlayerModifier)
-          }
         }
       }
 

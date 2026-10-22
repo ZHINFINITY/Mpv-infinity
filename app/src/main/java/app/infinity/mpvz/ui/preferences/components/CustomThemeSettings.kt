@@ -369,7 +369,7 @@ private fun ThemeAdjustmentSlider(
   tint: androidx.compose.ui.graphics.Color = MaterialTheme.colorScheme.primaryContainer,
 ) {
   Column(
-    modifier = Modifier.fillMaxWidth().settingsGlassPreferenceRow().padding(12.dp),
+    modifier = Modifier.fillMaxWidth().padding(12.dp),
     verticalArrangement = Arrangement.spacedBy(2.dp),
   ) {
     Text(label, style = MaterialTheme.typography.bodyMedium)

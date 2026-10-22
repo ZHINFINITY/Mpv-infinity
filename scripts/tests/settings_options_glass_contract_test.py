@@ -43,11 +43,13 @@ class SettingsOptionsGlassContract(unittest.TestCase):
         self.assertNotIn('actualGlassSlider', source)
         self.assertGreaterEqual(source.count('containerColor = Color.Transparent'), 3)
         self.assertGreaterEqual(source.count('Modifier.settingsGlassSurface(cornerRadius ='), 3)
+        # Keep the existing preference-library row and local wrappers (including
+        # tuning sliders) as the semantic/persistence contract; glass is only
+        # presentation and must not remove those features.
         self.assertIn('LibraryPreference(', source)
-        self.assertNotIn('LibraryListPreference(', source)
-        self.assertNotIn('LibrarySliderPreference(', source)
-        self.assertNotIn('LibraryTextFieldPreference(', source)
-        self.assertNotIn('if (!glassOptionsEnabled())', source)
+        for original in ('fun <T> ListPreference(', 'fun SliderPreference(',
+                         'fun <T> TextFieldPreference('):
+            self.assertIn(original, source)
         self.assertIn('onValueChangeFinished = { onValueChange(latest) }', source)
         self.assertIn('heightIn(min = 48.dp)', source)
         self.assertIn('Role.RadioButton', source)

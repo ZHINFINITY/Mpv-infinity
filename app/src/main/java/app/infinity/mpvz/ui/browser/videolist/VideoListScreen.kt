@@ -114,7 +114,6 @@ import app.infinity.mpvz.ui.securefolder.SecureConfirmDialog
 import app.infinity.mpvz.ui.securefolder.SecureFolderGateScreen
 import app.infinity.mpvz.ui.securefolder.SecureFolderProgressDialog
 import app.infinity.mpvz.ui.theme.AppMotion
-import app.infinity.mpvz.ui.theme.BrowserLayoutPolicy
 import app.infinity.mpvz.ui.utils.LocalBackStack
 import app.infinity.mpvz.ui.utils.popSafely
 import app.infinity.mpvz.utils.history.RecentlyPlayedOps
@@ -1177,9 +1176,6 @@ internal fun VideoListContent(
         val coroutineScope = rememberCoroutineScope()
 
         val hasEnoughItems = videosWithInfo.size > 10
-  val appearancePreferences = koinInject<AppearancePreferences>()
-  val glassEnabled by appearancePreferences.liquidGlassSurfaces.collectAsState()
-  val geometry = BrowserLayoutPolicy.geometry(glassEnabled)
 
         val scrollbarAlpha by androidx.compose.animation.core.animateFloatAsState(
           targetValue = if (hasEnoughItems) 1f else 0f,
@@ -1214,9 +1210,13 @@ internal fun VideoListContent(
                 state = gridState,
                 modifier = Modifier.fillMaxSize(),
                 contentPadding =
-                  BrowserLayoutPolicy.gridPadding(geometry, top = if (glassEnabled) geometry.edgeInset else 0.dp, bottom = bottomPadding),
-                horizontalArrangement = Arrangement.spacedBy(geometry.gridGap),
-                verticalArrangement = Arrangement.spacedBy(geometry.gridGap),
+                  PaddingValues(
+                    start = 8.dp,
+                    end = 8.dp,
+                    bottom = bottomPadding,
+                  ),
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
               ) {
                 items(
                   count = videosWithInfo.size,
@@ -1286,8 +1286,12 @@ internal fun VideoListContent(
               LazyColumn(
                 state = listState,
                 modifier = Modifier.fillMaxSize(),
-                contentPadding = BrowserLayoutPolicy.listPadding(geometry, top = if (glassEnabled) geometry.edgeInset else 0.dp, bottom = bottomPadding),
-                verticalArrangement = Arrangement.spacedBy(geometry.listGap),
+                contentPadding =
+                  PaddingValues(
+                    start = 8.dp,
+                    end = 8.dp,
+                    bottom = bottomPadding,
+                  ),
               ) {
                 items(
                   count = videosWithInfo.size,

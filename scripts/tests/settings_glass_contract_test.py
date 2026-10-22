@@ -16,12 +16,14 @@ def main() -> None:
     assert "fun Modifier.settingsGlassSurface" in glass
     assert "liquidGlassSurfaces.collectAsState()" in glass
     assert "liquidGlassPane(" in glass
-    assert "import androidx.compose.material3.Card" not in card and "Individual preference wrappers own their surfaces" in card
-    assert "settingsGlassPreferenceRow" in rows and "GlassSwitch" in rows
-    assert "SettingsGlassPolicy.geometry(enabled)" in glass
-    assert "geometry.cornerRadiusDp.dp" in glass
+    assert "import androidx.compose.material3.Card" in card
+    assert "LocalSettingsGlassOwner provides true" in card
+    assert ".settingsGlassSurface(cornerRadius = 28.dp)" in card
+    assert "GlassSwitch" in rows
+    assert "settingsGlassPreferenceRow" not in glass + rows + switch
+    assert "LocalSettingsGlassOwner.current && !independent" in glass
     assert "if (settingsGlassEnabled())" not in rows
-    assert "settingsGlassPreferenceRow" in switch and "onValueChange" in switch
+    assert "onValueChange" in switch
     assert "onCheckedChange" in controls and "onValueChangeFinished" in controls
     assert "horizontalInset" in controls
     print("settings_glass_contract_test: PASS")

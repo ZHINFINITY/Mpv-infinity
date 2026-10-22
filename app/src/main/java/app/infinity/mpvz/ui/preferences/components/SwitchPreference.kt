@@ -7,6 +7,7 @@
 
 package app.infinity.mpvz.ui.preferences.components
 
+
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -39,7 +40,7 @@ fun SwitchPreference(
     modifier =
       modifier
         .fillMaxWidth()
-        .settingsGlassPreferenceRow()
+        .settingsGlassSurface(cornerRadius = 18.dp)
         .clickable(enabled = enabled) { onValueChange(!value) }
         .padding(horizontal = 16.dp, vertical = 12.dp),
     verticalAlignment = Alignment.CenterVertically,

@@ -45,13 +45,14 @@ class SortDialogGlassContractTest {
     assertTrue(action.contains("modifier = Modifier.liquidGlassPane(enabled = glassEnabled"))
   }
 
-  @Test fun settingsMasterAndSearchEntryShareTheIndividualRowMaterial() {
+  @Test fun settingsMasterKeepsIndependentPopupGlassAndReferenceSearchGeometry() {
     val settings = source("ui/preferences/components/SettingsGlass")
     assertTrue(settings.contains("if (!enabled) return this"))
     assertTrue(settings.contains("val tuning = LocalGlassCustomization.current"))
     assertTrue(settings.contains("return liquidGlassPane("))
     val search = source("ui/preferences/PreferencesScreen").substringAfter("private fun SettingsSearchEntry(").substringBefore("private fun")
-    assertTrue(search.contains(".settingsGlassPreferenceRow()"))
-    assertFalse(search.contains("color = MaterialTheme.colorScheme.secondaryContainer"))
+    assertFalse(search.contains(".settingsGlassPreferenceRow()"))
+    assertTrue(search.contains("color = MaterialTheme.colorScheme.secondaryContainer"))
+    assertTrue(search.contains("Surface("))
   }
 }

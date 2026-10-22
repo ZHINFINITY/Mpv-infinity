@@ -222,7 +222,10 @@ fun BrowserGlassRouteContentHost(
           .onGloballyPositioned { coordinates ->
             if (coordinates.isAttached && coordinates.size.width > 0 && coordinates.size.height > 0) {
               val origin = coordinates.localToWindow(Offset.Zero) + windowScreenOffset(hostView)
-              navContentScene.stripBounds = Rect(origin.x, origin.y, origin.x + coordinates.size.width, origin.y + coordinates.size.height)
+              val stripHeight = coordinates.size.height.coerceAtMost(BrowserGlassStripHeight)
+              val stripTop = coordinates.size.height - stripHeight
+              navContentScene.stripBounds = Rect(origin.x, origin.y + stripTop,
+                origin.x + coordinates.size.width, origin.y + coordinates.size.height)
             } else navContentScene.invalidate()
           }
           .drawWithContent {
@@ -232,15 +235,20 @@ fun BrowserGlassRouteContentHost(
             } else {
               navContentScene.isRecording = true
               try {
-                navLayer.record(size = IntSize(size.width.toInt(), size.height.toInt())) {
-                  // Ordinary Compose draw display list; no pixel copy or polling.
-                  this@drawWithContent.drawContent()
+                // Match the reference pill's bottom-384-pixel source, but keep
+                // its producer separate from every navigation glass consumer.
+                val stripHeight = size.height.toInt().coerceAtMost(BrowserGlassStripHeight)
+                val stripTop = size.height - stripHeight
+                navLayer.record(size = IntSize(size.width.toInt(), stripHeight)) {
+                  clipRect {
+                    translate(top = -stripTop) { this@drawWithContent.drawContent() }
+                  }
                 }
                 navContentScene.hasValidDisplayList = true
               } finally {
                 navContentScene.isRecording = false
               }
-              drawLayer(navLayer)
+              drawContent()
             }
           },
       ) { routeContent() }
@@ -278,7 +286,77 @@ fun BrowserGlassSurface(
   materialRole: GlassSurfacePolicy.MaterialRole = GlassSurfacePolicy.MaterialRole.Clear,
   content: @Composable BoxScope.() -> Unit = {},
 ) {
-  Box(modifier.browserGlassPane(enabled, opacity, highlight, cornerRadius, selected, deformation, materialRole = materialRole), content = content)
+  // Browser navigation intentionally keeps the original reference optics. Do not route
+  // this surface through browserGlassPane: that path is the newer profile used by
+  // settings/player/folder controls and has different depth/tint semantics.
+  val scene = LocalBrowserScene.current
+  val capabilities = LocalBrowserCapabilities.current
+  val tuning = LocalGlassCustomization.current
+  val hostView = LocalView.current
+  val shape = remember(cornerRadius) { RoundedCornerShape(cornerRadius) }
+  val tint = if (selected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerHigh
+  val film = GlassSurfacePolicy.opacity(opacity)
+  val glow = GlassSurfacePolicy.highlight(highlight)
+  var paneOrigin by remember { mutableStateOf(Offset.Zero) }
+  val shader = remember(enabled, capabilities.refraction) {
+    if (enabled && capabilities.refraction && Build.VERSION.SDK_INT >= 33)
+      runCatching { RuntimeShader(BROWSER_LENS) }.getOrNull() else null
+  }
+  val lens = rememberGraphicsLayer()
+  Box(modifier
+    .shadow(if (enabled) (if (selected) 7.dp else 12.dp) * tuning.depth else 0.dp, shape, clip = false)
+    .onGloballyPositioned { if (it.isAttached) paneOrigin = it.localToWindow(Offset.Zero) + windowScreenOffset(hostView) }
+    .clip(shape)
+    .then(if (!enabled) Modifier.background(tint, shape) else Modifier)) {
+    if (enabled) {
+      Box(Modifier.matchParentSize().drawWithCache {
+        val radius = cornerRadius.toPx().coerceAtMost(size.height / 2f).coerceAtMost(size.width / 2f)
+        val refraction = capabilities.refraction && shader != null && Build.VERSION.SDK_INT >= 33
+        val effect = if (refraction) runCatching {
+          shader!!.setFloatUniform("pane", size.width, size.height)
+          shader.setFloatUniform("radius", radius)
+          shader.setFloatUniform("bend", (if (selected) 9f else 5f) * density * tuning.refraction)
+          shader.setFloatUniform("motion", deformation.coerceIn(0f, 1f))
+          val lensEffect = RenderEffect.createRuntimeShaderEffect(shader, "scene")
+          (if (tuning.frost > 0f) RenderEffect.createChainEffect(lensEffect,
+            RenderEffect.createBlurEffect(2f * density * tuning.frost, 2f * density * tuning.frost, Shader.TileMode.CLAMP))
+          else lensEffect).asComposeRenderEffect()
+        }.getOrNull() else if (Build.VERSION.SDK_INT >= 31 && scene != null && tuning.frost > 0f) runCatching {
+          RenderEffect.createBlurEffect(3f * density * tuning.frost, 3f * density * tuning.frost, Shader.TileMode.CLAMP).asComposeRenderEffect()
+        }.getOrNull() else null
+        lens.renderEffect = effect
+        val edge = Brush.linearGradient(listOf(
+          Color.White.copy(alpha = 0.20f + glow * 0.65f),
+          Color.White.copy(alpha = 0.03f),
+          Color.White.copy(alpha = 0.10f + glow * 0.35f),
+        ))
+        onDrawBehind {
+          val bounds = scene?.stripBounds
+          val hasScene = scene != null && bounds != null && bounds.width > 0f && bounds.height > 0f &&
+            GlassScenePolicy.canDrawRecordedScene(scene.isRecording, scene.hasValidDisplayList)
+          if (hasScene) {
+            lens.record {
+              clipRect { translate(left = bounds!!.left - paneOrigin.x, top = bounds.top - paneOrigin.y) { drawLayer(scene!!.layer) } }
+            }
+            drawLayer(lens)
+          }
+          drawRoundRect(tint.copy(alpha = if (hasScene) film * (if (selected) 0.24f else 0.20f) else 0.70f), cornerRadius = CornerRadius(radius))
+          drawRoundRect(Brush.verticalGradient(listOf(
+            Color.White.copy(alpha = if (selected) 0.16f + glow * 0.24f else 0.06f + glow * 0.10f),
+            Color.Transparent,
+            Color.Black.copy(alpha = if (selected) 0.10f else 0.08f),
+          )), cornerRadius = CornerRadius(radius))
+          drawRoundRect(edge, cornerRadius = CornerRadius(radius), style = Stroke(1.dp.toPx()))
+          if (selected && size.height > 4.dp.toPx() && size.width > 4.dp.toPx()) {
+            drawRoundRect(Color.Black.copy(alpha = 0.10f), topLeft = Offset(1.dp.toPx(), 1.dp.toPx()),
+              size = androidx.compose.ui.geometry.Size(size.width - 2.dp.toPx(), size.height - 2.dp.toPx()),
+              cornerRadius = CornerRadius((radius - 1.dp.toPx()).coerceAtLeast(0f)), style = Stroke(1.dp.toPx()))
+          }
+        }
+      })
+    }
+    content()
+  }
 }
 
 /** The shared pane path used by folders, settings and Quick Play outside MainScreen. */
@@ -299,6 +377,7 @@ internal fun Modifier.browserGlassPane(
   deformation: Float = 0f,
   drawRim: Boolean = true,
   materialRole: GlassSurfacePolicy.MaterialRole = GlassSurfacePolicy.MaterialRole.Clear,
+  referenceOptics: Boolean = false,
 ): Modifier {
   val hostView = LocalView.current
   val scene = LocalBrowserScene.current
@@ -313,12 +392,13 @@ internal fun Modifier.browserGlassPane(
   val material = GlassSurfacePolicy.materialTuning(materialRole)
   // Exactly the same static optical profile as player panes: depth remains
   // visible over an AMOLED/flat backdrop and when motion or capture is reduced.
-  val optics = GlassSurfacePolicy.depthOptics(tuning.depth, glow)
+  val optics = if (referenceOptics) GlassSurfacePolicy.depthOptics(0f, 0f)
+    else GlassSurfacePolicy.depthOptics(tuning.depth, glow)
   var paneOrigin by remember { mutableStateOf(Offset.Zero) }
   // Runtime shader compilation is remembered, not repeated for every animated width/frame.
   val shader = remember(enabled, capabilities.refraction) {
     if (enabled && capabilities.refraction && Build.VERSION.SDK_INT >= 33)
-      runCatching { RuntimeShader(BROWSER_LENS) }.getOrNull() else null
+      runCatching { RuntimeShader(BROWSER_LATEST_LENS) }.getOrNull() else null
   }
   val lens = rememberGraphicsLayer()
   return this
@@ -417,7 +497,29 @@ private fun windowScreenOffset(view: android.view.View): Offset {
   return Offset((screen[0] - window[0]).toFloat(), (screen[1] - window[1]).toFloat())
 }
 
+private const val BrowserGlassStripHeight = 384
+
 private const val BROWSER_LENS = """
+uniform shader scene;
+uniform float2 pane;
+uniform float radius;
+uniform float bend;
+uniform float motion;
+half4 main(float2 p) {
+  float2 c = p - pane * 0.5;
+  float2 q = abs(c) - (pane * 0.5 - radius);
+  float distance = length(max(q, 0.0)) + min(max(q.x, q.y), 0.0) - radius;
+  float edge = clamp(1.0 + distance / max(radius, 1.0), 0.0, 1.0);
+  float2 normal = normalize(c / max(pane, float2(1.0)) + float2(0.0001));
+  float2 bent = p - normal * bend * edge * edge * (1.0 + motion * 0.25);
+  half4 color = scene.eval(bent);
+  color.r = scene.eval(bent + normal * edge * 0.45).r;
+  color.b = scene.eval(bent - normal * edge * 0.45).b;
+  return color;
+}
+"""
+
+private const val BROWSER_LATEST_LENS = """
 uniform shader scene;
 uniform float2 pane;
 uniform float radius;

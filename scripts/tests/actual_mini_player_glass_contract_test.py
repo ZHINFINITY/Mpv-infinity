@@ -12,12 +12,15 @@ MINI = (JAVA / "ui/browser/components/MiniPlayer.kt").read_text()
 
 
 class ActualMiniPlayerGlassContracts(unittest.TestCase):
-    def test_root_host_covers_navigation_and_actual_mini_player(self):
-        host = MAIN[MAIN.index("BrowserGlassSceneHost("):MAIN.index("// Display the update sheet")]
-        for token in ("NavDisplay(",
-                      "MiniPlayer(modifier = miniPlayerModifier)", "browserGlassSceneSource()"):
-            self.assertIn(token, host)
-        self.assertIn("if (liquidGlassSurfacesForBrowser) androidx.compose.ui.graphics.Color.Transparent", host)
+    def test_reference_navigation_host_is_screen_local_and_mini_player_remains_on_stack(self):
+        screen = (JAVA / "ui/browser/MainScreen.kt").read_text()
+        self.assertNotIn("BrowserGlassSceneHost(", MAIN)
+        self.assertNotIn("browserGlassSceneSource()", MAIN)
+        self.assertIn("NavDisplay(", MAIN)
+        self.assertIn("MiniPlayer(modifier = miniPlayerModifier)", MAIN)
+        self.assertIn("BrowserGlassSceneHost(", screen)
+        self.assertIn("liquidGlassSurfacesForBrowser && !hideNavigationBar", screen)
+        self.assertIn("BrowserGlassRouteContentHost(", screen)
 
     def test_retained_producer_can_never_record_a_glass_consumer(self):
         code = re.sub(r"/\*.*?\*/|//[^\n]*", "", SCENE, flags=re.S)
@@ -40,7 +43,8 @@ class ActualMiniPlayerGlassContracts(unittest.TestCase):
         self.assertIn("GlassScenePolicy.canDrawRecordedScene(scene.isRecording, scene.hasValidDisplayList)", code)
 
     def test_invalid_source_still_draws_readable_bounded_fallback(self):
-        draw = SCENE[SCENE.index('val hasScene ='):SCENE.index('private const val BROWSER_LENS')]
+        latest = SCENE.split('internal fun Modifier.browserGlassPane(', 1)[1].split('private fun windowScreenOffset', 1)[0]
+        draw = latest[latest.index('val hasScene ='):]
         self.assertIn("else GlassSurfacePolicy.browserFallbackAlpha(film)", draw)
         self.assertIn("drawRoundRect(edge", draw)
         self.assertNotIn("return@onDrawBehind", draw)

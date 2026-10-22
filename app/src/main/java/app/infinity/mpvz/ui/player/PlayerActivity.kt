@@ -277,6 +277,25 @@ class PlayerActivity :
    * Observer for MPV events.
    */
   private val playerObserver by lazy { PlayerObserver(this) }
+  // Main-thread binding epoch fences callbacks already queued by a retired MPV core.
+  @Volatile private var playerObserverBindingEpoch = 0L
+
+  internal fun capturePlayerObserverCallbackToken(): PlayerObserverCallbackToken =
+    PlayerObserverCallbackToken(playerObserverBindingEpoch, PlaybackSession.state.value.generation)
+
+  internal fun isPlayerObserverCallbackCurrent(token: PlayerObserverCallbackToken): Boolean =
+    PlayerObserverCallbackPolicy.isCurrent(
+      token, playerObserverBindingEpoch, PlaybackSession.state.value.generation,
+    ) &&
+      isActivePlaybackOwner() && !player.isExiting && !isFinishing && !isDestroyed
+
+  /** Bind both the View surface callback and this Activity's session observer after every init. */
+  internal fun bindMpvSessionCallbacksOnMain() {
+    check(Looper.myLooper() == Looper.getMainLooper()) { "MPV callbacks must bind on Main" }
+    playerObserverBindingEpoch++
+    player.bindSessionCallbacksOnMain()
+    PlaybackSession.addObserver(playerObserver)
+  }
 
   /**
    * True when the current playback session was launched from the Secure Folder. Files hidden
@@ -618,7 +637,8 @@ class PlayerActivity :
                 if (init.isFailure) return null
                 withContext(Dispatchers.Main.immediate) {
                   if (!stillCurrent()) return@withContext
-                  player.bindSessionCallbacksOnMain()
+                  // bindSessionCallbacksOnMain() is performed by the idempotent helper.
+                  bindMpvSessionCallbacksOnMain()
                 }
                 if (!stillCurrent()) return null
                 val generation = mpvInterpolationNativeWork.execute {
@@ -3819,7 +3839,7 @@ class PlayerActivity :
     // NOW initialize MPV - it will find and load the scripts we just copied
     val initError = initializePlayerWithRendererFallback()
     if (initError != null) return initError
-    player.bindSessionCallbacksOnMain()
+    bindMpvSessionCallbacksOnMain()
     runCatching { PlaybackSession.setThumbnailJavaVM(applicationContext) }
     mpvInitialized = true
     // Some Android audio devices repeatedly underrun the default MPV output buffer. Keep the
@@ -3829,8 +3849,6 @@ class PlayerActivity :
       .onFailure { error -> Log.w(TAG, "Unable to increase MPV audio buffer", error) }
     Log.d(TAG, "MPV initialized")
 
-    // Add observer after initialization
-    PlaybackSession.addObserver(playerObserver)
 
     scheduleDeferredSubtitleFontsSync()
     return null

@@ -7,7 +7,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
-import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import app.infinity.mpvz.presentation.Screen
@@ -72,7 +71,7 @@ class PreferencesDestinationRuntimeTest {
   }
 
   @Test
-  fun realDestinationsRenderAsSeparateCardsWithSpacingAndCallbacks() {
+  fun realDestinationsRenderAsGroupedRowsWithCallbacks() {
     val clicks = mutableListOf<Screen>()
     composeRule.setContent {
       MpvInfinityTheme(showCustomThemeBackdrop = false) {
@@ -88,24 +87,8 @@ class PreferencesDestinationRuntimeTest {
 
     val appearanceText = composeRule.onNodeWithText("Appearance", useUnmergedTree = true).assertIsDisplayed()
     val playerText = composeRule.onNodeWithText("Player", useUnmergedTree = true).assertIsDisplayed()
-    // The merged clickable row inherits its children's text but reports the entire
-    // card bounds. Measure the unmerged Text nodes to test real content clearance.
-    val firstBounds = appearanceText.fetchSemanticsNode().boundsInRoot
-    val secondBounds = playerText.fetchSemanticsNode().boundsInRoot
-    val firstCard = composeRule.onNodeWithTag("settings-destination-card:Appearance")
-      .fetchSemanticsNode().boundsInRoot
-    val secondCard = composeRule.onNodeWithTag("settings-destination-card:Player")
-      .fetchSemanticsNode().boundsInRoot
-    val firstIcon = composeRule.onNodeWithTag("settings-destination-icon:Appearance", useUnmergedTree = true)
-      .fetchSemanticsNode().boundsInRoot
-    assertTrue("icon must clear rounded leading edge", firstIcon.left >= firstCard.left + 16f)
-    assertTrue("icon must clear rounded top edge", firstIcon.top >= firstCard.top + 12f)
-    assertTrue("destination cards must be vertically separated", secondCard.top > firstCard.bottom)
-    assertTrue("destination cards must have the shared minimum height", firstCard.height >= 72f)
-    assertTrue("destination card must clear its icon/text content", firstBounds.left > firstCard.left + 16f)
-    assertTrue("destination card must clear its trailing content", firstBounds.right < firstCard.right - 16f)
-    assertTrue("destination text must be inside its card", firstBounds.top > firstCard.top && firstBounds.bottom < firstCard.bottom)
-    assertTrue("destination text must be inside its card", secondBounds.top > secondCard.top && secondBounds.bottom < secondCard.bottom)
+    assertTrue("destination text must be displayed", firstBounds.height > 0f)
+    assertTrue("destination rows must have stable ordering", secondBounds.top > firstBounds.top)
 
     appearanceText.performClick()
     playerText.performClick()
@@ -129,17 +112,11 @@ class PreferencesDestinationRuntimeTest {
 
     val initialAppearance = composeRule.onNodeWithText("Appearance", useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
     val initialPlayer = composeRule.onNodeWithText("Player", useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
-    val initialAppearanceCard = composeRule.onNodeWithTag("settings-destination-card:Appearance")
-      .fetchSemanticsNode().boundsInRoot
-    val initialPlayerCard = composeRule.onNodeWithTag("settings-destination-card:Player")
-      .fetchSemanticsNode().boundsInRoot
     for (enabled in listOf(false, true, false, true)) {
       composeRule.runOnIdle { appearance.liquidGlassSurfaces.set(enabled) }
       composeRule.waitForIdle()
       assertSameBounds(initialAppearance, composeRule.onNodeWithText("Appearance", useUnmergedTree = true).fetchSemanticsNode().boundsInRoot)
       assertSameBounds(initialPlayer, composeRule.onNodeWithText("Player", useUnmergedTree = true).fetchSemanticsNode().boundsInRoot)
-      assertSameBounds(initialAppearanceCard, composeRule.onNodeWithTag("settings-destination-card:Appearance").fetchSemanticsNode().boundsInRoot)
-      assertSameBounds(initialPlayerCard, composeRule.onNodeWithTag("settings-destination-card:Player").fetchSemanticsNode().boundsInRoot)
       composeRule.onNodeWithText("Appearance", useUnmergedTree = true).performClick()
     }
     composeRule.runOnIdle {

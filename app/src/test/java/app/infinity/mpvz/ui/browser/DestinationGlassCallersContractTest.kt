@@ -28,6 +28,11 @@ class DestinationGlassCallersContractTest {
       val text = file.readText()
       Regex("(?<![A-Za-z0-9_])Scaffold\\(").findAll(text).forEach { call ->
         val arguments = text.substring(call.range.last + 1).take(250)
+        if (file.name == "MainScreen.kt") {
+          assertTrue("Reference home backdrop must not become a transparent full-screen card",
+            !arguments.contains("settingsGlassContainerColor("))
+          return@forEach
+        }
         assertTrue("Opaque scaffold at ${file.name}:${call.range.first}",
           arguments.contains("containerColor =") &&
             (arguments.contains("settingsGlassContainerColor(") ||
@@ -56,7 +61,9 @@ class DestinationGlassCallersContractTest {
     val folderCard = source("app/src/main/java/app/infinity/mpvz/ui/browser/cards/FolderCard.kt")
     assertTrue(folderList.contains("containerColor = if (liquidGlass) Color.Transparent"))
     assertTrue(folderList.contains("VideoListScreen(") && folderList.contains("selectedFolderBucketId"))
-    assertTrue(folderCard.contains("BrowserGlassSurface(") && folderCard.contains("if (liquidGlass) Color.Transparent"))
+    assertTrue(folderCard.contains("val cardShape = AppShapeScale.large"))
+    assertTrue(!folderCard.contains("BrowserGlassSurface("))
+    assertTrue(folderCard.contains("Box(modifier = Modifier.fillMaxWidth())"))
     assertTrue(folderCard.contains("onQuickPlay: (() -> Unit)?"))
   }
 
@@ -66,7 +73,9 @@ class DestinationGlassCallersContractTest {
     val cards = source("app/src/main/java/app/infinity/mpvz/ui/browser/music/SharedMusicComponents.kt")
     assertTrue(music.contains("if (liquidGlass) Color.Transparent"))
     assertTrue(music.contains("PrimaryScrollableTabRow") && music.contains("containerColor = Color.Transparent"))
-    assertTrue(cards.contains("settingsGlassSurface(cornerRadius = 20.dp)"))
-    assertTrue(cards.contains("containerColor = settingsGlassContainerColor("))
+    val grid = cards.substringAfter("fun SharedMusicGridCard(").substringBefore("\n@Composable")
+    assertTrue(!grid.contains("settingsGlassSurface("))
+    assertTrue(cards.contains("containerColor = when {"))
+    assertTrue(cards.contains("MusicThumbnailDefaults.boundedForList"))
   }
 }

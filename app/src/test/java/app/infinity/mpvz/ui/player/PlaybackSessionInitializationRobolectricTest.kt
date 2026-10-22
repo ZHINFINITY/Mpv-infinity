@@ -26,6 +26,7 @@ import org.robolectric.annotation.Implementation
 import org.robolectric.annotation.Implements
 import org.robolectric.util.ReflectionHelpers
 import `is`.xyz.mpv.MPVLib
+import `is`.xyz.mpv.MPVNode
 
 /**
  * Exercises PlaybackSession's real admission helpers without loading libmpv.so.
@@ -125,6 +126,80 @@ class PlaybackSessionInitializationRobolectricTest {
     assertEquals("accepted", ShadowPlaybackMpvLib.lastOption("owner-option"))
   }
 
+  @Test
+  fun sessionClientsAndMediaServiceLikeObserversReceiveCallbacksAfterCoreReplacement() {
+    val clientEvents = AtomicInteger()
+    val serviceEvents = AtomicInteger()
+    val client = countingObserver(clientEvents)
+    val service = countingObserver(serviceEvents)
+    PlaybackSession.addObserver(client)
+    PlaybackSession.addObserver(service)
+    try {
+      assertTrue(initialize("observer-first").getOrThrow())
+      assertTrue(initialize("observer-second").getOrThrow())
+      ShadowPlaybackMpvLib.emitEvent(MPVLib.MpvEvent.MPV_EVENT_START_FILE)
+      ShadowPlaybackMpvLib.emitEvent(MPVLib.MpvEvent.MPV_EVENT_FILE_LOADED)
+      assertEquals(2, clientEvents.get())
+      assertEquals(2, serviceEvents.get())
+      assertEquals(PlaybackPhase.READY, PlaybackSession.state.value.phase)
+    } finally {
+      PlaybackSession.removeObserver(client)
+      PlaybackSession.removeObserver(service)
+    }
+  }
+
+  @Test
+  fun clientCallbackCompletesPositionRestoreAndPreservesPositionAndPauseIntent() {
+    val clientEvents = AtomicInteger()
+    val item = PlaybackItem.fromUri("file:///tmp/episode.mp4", stableId = "restore-item")
+    val client = object : MPVLib.EventObserver by countingObserver(clientEvents) {
+      override fun event(eventId: Int, data: MPVNode) {
+        clientEvents.incrementAndGet()
+        if (eventId == MPVLib.MpvEvent.MPV_EVENT_FILE_LOADED) {
+          val generation = PlaybackSession.state.value.activeGeneration
+          PlaybackSession.positionRestoreOverride(generation)?.let { restore ->
+            PlaybackSession.setPropertyDouble("time-pos", restore.positionSeconds!!)
+            PlaybackSession.completePositionRestore(generation)
+          }
+        }
+      }
+    }
+    PlaybackSession.addObserver(client)
+    try {
+      for (paused in listOf(false, true)) {
+        assertTrue(initialize("restore-client-$paused").getOrThrow())
+        val generation = PlaybackSession.load(
+          item = item,
+          positionRestoreOverride = PlaybackPositionRestoreOverride(37.25, paused = paused),
+        )
+        assertTrue(generation > 0)
+        assertTrue(PlaybackSession.isPositionRestorePending(generation))
+        assertEquals(PlaybackPhase.LOADING, PlaybackSession.state.value.phase)
+        assertTrue(PlaybackSession.state.value.paused)
+        ShadowPlaybackMpvLib.emitEvent(MPVLib.MpvEvent.MPV_EVENT_START_FILE)
+        ShadowPlaybackMpvLib.emitEvent(MPVLib.MpvEvent.MPV_EVENT_FILE_LOADED)
+        assertEquals(PlaybackPhase.READY, PlaybackSession.state.value.phase)
+        assertFalse(PlaybackSession.isPositionRestorePending(generation))
+        assertEquals(37.25, PlaybackSession.getPropertyDouble("time-pos") ?: -1.0, 0.0)
+        assertEquals(paused, PlaybackSession.state.value.paused)
+        assertEquals(paused, PlaybackSession.getPropertyBoolean("pause"))
+      }
+      assertEquals(4, clientEvents.get())
+    } finally {
+      PlaybackSession.removeObserver(client)
+    }
+  }
+
+  private fun countingObserver(counter: AtomicInteger): MPVLib.EventObserver = object : MPVLib.EventObserver {
+    override fun eventProperty(property: String) = Unit
+    override fun eventProperty(property: String, value: Long) = Unit
+    override fun eventProperty(property: String, value: Boolean) = Unit
+    override fun eventProperty(property: String, value: String) = Unit
+    override fun eventProperty(property: String, value: Double) = Unit
+    override fun eventProperty(property: String, value: MPVNode) = Unit
+    override fun event(eventId: Int, data: MPVNode) { counter.incrementAndGet() }
+  }
+
   private fun initialize(key: String) = PlaybackSession.initialize(
     context = context,
     configDir = "unused/config",
@@ -158,6 +233,7 @@ class ShadowPlaybackMpvLib {
     var destroyCount = 0
     var addObserverCount = 0
     var callbackObserverRegistered = false
+    private var nativeObserver: MPVLib.EventObserver? = null
 
     fun reset() {
       options.clear()
@@ -167,6 +243,7 @@ class ShadowPlaybackMpvLib {
       destroyCount = 0
       addObserverCount = 0
       callbackObserverRegistered = false
+      nativeObserver = null
     }
 
     fun clearRecords() {
@@ -193,10 +270,12 @@ class ShadowPlaybackMpvLib {
     }
 
     @JvmStatic @Implementation
-    fun addObserver(observer: MPVLib.EventObserver) { addObserverCount++; callbackObserverRegistered = true }
+    fun addObserver(observer: MPVLib.EventObserver) { addObserverCount++; nativeObserver = observer; callbackObserverRegistered = true }
 
     @JvmStatic @Implementation
-    fun removeObserver(observer: MPVLib.EventObserver) { callbackObserverRegistered = false }
+    fun removeObserver(observer: MPVLib.EventObserver) { if (nativeObserver === observer) nativeObserver = null; callbackObserverRegistered = false }
+
+    fun emitEvent(eventId: Int) { nativeObserver?.event(eventId, MPVNode.None) }
   }
 
   @Implementation fun create(context: Context) { createCount++ }
@@ -211,6 +290,7 @@ class ShadowPlaybackMpvLib {
   @Implementation fun setPropertyInt(name: String, value: Int) { properties[name] = value.toString() }
   @Implementation fun setPropertyBoolean(name: String, value: Boolean) { properties[name] = value.toString() }
   @Implementation fun setPropertyDouble(name: String, value: Double) { properties[name] = value.toString() }
+  @Implementation fun command(vararg command: String) {}
   @Implementation fun getPropertyInt(name: String): Int? = properties[name]?.toIntOrNull()
   @Implementation fun getPropertyBoolean(name: String): Boolean? = properties[name]?.toBooleanStrictOrNull()
   @Implementation fun getPropertyDouble(name: String): Double? = properties[name]?.toDoubleOrNull()

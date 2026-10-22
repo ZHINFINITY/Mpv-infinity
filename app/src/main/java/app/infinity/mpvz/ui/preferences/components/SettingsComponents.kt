@@ -7,6 +7,7 @@
 
 package app.infinity.mpvz.ui.preferences.components
 
+
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Column
@@ -48,7 +49,7 @@ fun SettingsClickableItem(
     modifier =
       modifier
         .fillMaxWidth()
-        .settingsGlassPreferenceRow()
+        .settingsGlassSurface(cornerRadius = 18.dp)
         .clickable(
           enabled = enabled,
           onClick = onClick,

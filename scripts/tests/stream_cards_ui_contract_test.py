@@ -38,12 +38,14 @@ class StreamCardsContractTest(unittest.TestCase):
         detail = (BASE / "ui/browser/playlist/PlaylistDetailScreen.kt").read_text()
         self.assertGreaterEqual(detail.count("isRadio = "), 2)
 
-    def test_existing_folder_owner_respects_user_material_values(self):
+    def test_reference_folder_card_keeps_native_geometry_and_memory_thumbnail_path(self):
         folder = (BASE / "ui/browser/cards/FolderCard.kt").read_text()
-        self.assertIn("glassSurfaceOpacity.collectAsState()", folder)
-        self.assertIn("glassSurfaceHighlight.collectAsState()", folder)
-        self.assertIn("opacity = glassOpacity", folder)
-        self.assertIn("highlight = glassHighlight", folder)
+        self.assertIn("val cardShape = AppShapeScale.large", folder)
+        self.assertIn("Box(modifier = Modifier.fillMaxWidth())", folder)
+        self.assertIn(".padding(12.dp)", folder)
+        self.assertNotIn("BrowserGlassSurface(", folder)
+        self.assertIn("getFolderThumbnailFromMemory(folder.bucketId)", folder)
+        self.assertIn("onQuickPlay: (() -> Unit)?", folder)
 
 
 if __name__ == "__main__":

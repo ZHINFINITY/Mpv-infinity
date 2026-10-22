@@ -4,15 +4,10 @@
  */
 package app.infinity.mpvz.ui.preferences.components
 
-import androidx.compose.foundation.background
-import androidx.compose.ui.draw.clip
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.heightIn
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import app.infinity.mpvz.preferences.AppearancePreferences
@@ -21,6 +16,9 @@ import app.infinity.mpvz.ui.theme.liquidGlassPane
 import app.infinity.mpvz.ui.theme.LocalGlassCustomization
 import app.infinity.mpvz.ui.theme.GlassSurfacePolicy
 import org.koin.compose.koinInject
+
+/** One grouped preference card owns the shared glass pane; child rows keep native geometry. */
+val LocalSettingsGlassOwner = compositionLocalOf { false }
 
 /** Shared master state for native fill/elevation fallbacks around a glass-owned surface. */
 @Composable
@@ -44,6 +42,7 @@ fun Modifier.settingsGlassSurface(
   highlight: Float? = null,
   independent: Boolean = false,
 ): Modifier {
+  if (LocalSettingsGlassOwner.current && !independent) return this
   val appearance = koinInject<AppearancePreferences>()
   val enabled by appearance.liquidGlassSurfaces.collectAsState()
   if (!enabled) return this
@@ -59,21 +58,6 @@ fun Modifier.settingsGlassSurface(
       else GlassSurfacePolicy.MaterialRole.Clear,
   )
 }
-
-/** Every setting receives the same card bounds; the switch only changes its material. */
-@Composable
-fun Modifier.settingsGlassPreferenceRow(): Modifier =
-  run {
-    val enabled = settingsGlassEnabled()
-    val geometry = SettingsGlassPolicy.geometry(enabled)
-    val shape = RoundedCornerShape(geometry.cornerRadiusDp.dp)
-    val row = padding(
-      horizontal = geometry.horizontalInsetDp.dp,
-      vertical = geometry.verticalSpacingDp.dp,
-    ).heightIn(min = geometry.minimumHeightDp.dp).clip(shape)
-    if (enabled) row.settingsGlassSurface(cornerRadius = geometry.cornerRadiusDp.dp)
-    else row.background(MaterialTheme.colorScheme.surfaceContainerLow, shape)
-  }
 
 /** Keep the caller's exact opaque Material fill when glass is disabled. */
 @Composable

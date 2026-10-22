@@ -240,7 +240,9 @@ object PlaybackSession : MPVLib.EventObserver {
       auxiliary = auxiliaryNetworkStreams.values.toList()
       activeNetworkStream = null
       auxiliaryNetworkStreams.clear()
-      observers.clear()
+      // Observers belong to the process-wide session, not to a native core. Keep the
+      // service and Activity registrations alive across replacement; each Activity
+      // explicitly rebinds its Main-thread callback epoch before issuing loadfile.
       observedProperties.clear()
       activeCoreConfigurationKey = null
       activeSurfaceFrameRateHintHz = null
