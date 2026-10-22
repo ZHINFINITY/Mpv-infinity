@@ -48,6 +48,8 @@ import app.infinity.mpvz.ui.player.ytdlp.YtdlpInstallationStatus
 import app.infinity.mpvz.ui.player.ytdlp.YtdlpManager
 import app.infinity.mpvz.ui.player.ytdlp.YtdlpReleaseChannel
 import app.infinity.mpvz.ui.preferences.components.SwitchPreference
+import app.infinity.mpvz.ui.preferences.components.SettingsScaffold as Scaffold
+import app.infinity.mpvz.ui.preferences.components.SettingsTopAppBar as TopAppBar
 import app.infinity.mpvz.ui.theme.spacing
 import app.infinity.mpvz.ui.utils.LocalBackStack
 import app.infinity.mpvz.ui.utils.currentMpvConfigOverrideOptions

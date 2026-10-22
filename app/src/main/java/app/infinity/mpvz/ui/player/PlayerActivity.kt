@@ -155,7 +155,6 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.withContext
 import org.koin.android.ext.android.inject
@@ -450,6 +449,7 @@ class PlayerActivity :
 
   private var interpolationControlRequestGeneration = 0L
   private var mpvInterpolationRestartJob: Job? = null
+  private val mpvInterpolationNativeWork = MpvNativeWork()
   @Volatile private var mpvInterpolationReloadGeneration: Long? = null
 
   /** Apply newly written interpolation controls to the renderer already playing this item. */
@@ -548,15 +548,29 @@ class PlayerActivity :
         val customAspect = PlaybackSession.getPropertyDouble("video-aspect-override")
           ?.toFloat()?.takeIf { it > 0f } ?: 0f
         var loadGeneration: Long? = null
+        var coreReplacementStarted = false
         var appliedEnabled = enabled
         var appliedFps = targetFps
-        fun stillCurrent(): Boolean = ownsPlaybackSession() && !isFinishing && !isDestroyed &&
-          request == mediaRequestGeneration && activeEngineMode == PlaybackEngineMode.MPV &&
-          activeSaveMediaIdentifier == snapshot.mediaId && mediaIdentifier == snapshot.mediaId &&
-          (PlaybackSession.state.value.currentItem?.stableId == item.stableId) &&
-          PlaybackSession.queue.value.currentIndex == queueIndexBefore &&
-          PlaybackSession.queue.value.currentItem?.stableId == queueItemBefore &&
-          PlaybackSession.isCurrentGeneration(loadGeneration ?: snapshot.sessionGeneration)
+        fun stillCurrent(): Boolean {
+          val session = PlaybackSession.state.value
+          val queue = PlaybackSession.queue.value
+          return !isFinishing && !isDestroyed && activeEngineMode == PlaybackEngineMode.MPV &&
+            activeSaveMediaIdentifier == snapshot.mediaId && mediaIdentifier == snapshot.mediaId &&
+            MpvRestartOwnershipPolicy.accepts(
+              ownsOwner = ownsPlaybackSession(),
+              requestMatches = request == mediaRequestGeneration,
+              mediaMatches = true,
+              queueMatches = queue.currentIndex == queueIndexBefore &&
+                queue.currentItem?.stableId == queueItemBefore,
+              currentItemMatches = session.currentItem?.stableId == item.stableId,
+              currentItemAbsent = session.currentItem == null,
+              phase = session.phase,
+              generation = session.generation,
+              expectedRetiredGeneration = snapshot.sessionGeneration,
+              committedGeneration = loadGeneration,
+              coreReplacementStarted = coreReplacementStarted,
+            )
+        }
         if (InterpolationRuntimeApplyPolicy.decision(false, playbackActive = true,
             restartAuthorized = true, isMpv = true) !=
           InterpolationRuntimeApplyPolicy.Decision.RESTART_PRESERVING_STATE) return@launch
@@ -566,50 +580,62 @@ class PlayerActivity :
             object : MpvInterpolationRestartTransaction.Host {
               override fun isCurrent(state: MpvInterpolationRestartState) = stillCurrent()
               override suspend fun freeze(state: MpvInterpolationRestartState): Boolean {
-                if (!PlaybackSession.setPauseForEngineHandoff(true)) return false
+                if (!mpvInterpolationNativeWork.execute { stillCurrent() && PlaybackSession.setPauseForEngineHandoff(true) }) return false
                 repeat(20) {
                   if (!stillCurrent()) return false
-                  if (PlaybackSession.getPropertyBoolean("pause") == true) return true
+                  if (mpvInterpolationNativeWork.execute { PlaybackSession.getPropertyBoolean("pause") == true }) return true
                   delay(25L)
                 }
                 return false
               }
               override suspend fun reconfigureAndLoad(state: MpvInterpolationRestartState): Long? {
-                // No suspension from the final owner check through initialize + load commit:
-                // an Activity/engine/queue change cannot interleave with core destruction.
                 if (!stillCurrent()) return null
-                // The normal load API prepares fresh proxy/fd resources before its commit hook.
-                // Preparation may block on network I/O; neither Main nor nativeLock owns it.
-                val generation = withContext(Dispatchers.IO) {
+                // SurfaceHolder and other View state are Main-only. Detach first, then perform
+                // every JNI lifecycle call on the serialized native worker. In particular,
+                // initialize/destroy must never be reached through a Main dispatcher.
+                withContext(Dispatchers.Main.immediate) {
+                  if (!stillCurrent()) return@withContext
+                  cancelPlaybackLoadRecovery()
+                  player.snapshotDisplayRefreshRateOnMain()
+                  mediaLoadJob?.cancel()
+                  engineHandoffJob?.cancel()
+                  viewModel.setAmbientLifecycleActive(false)
+                  setVideoAmbientPresentationActive(false)
+                  appliedEnabled = decoderPreferences.mpvFlowFrameInterpolation.get()
+                  appliedFps = decoderPreferences.mpvFlowTargetFps.get()
+                  player.forceMpvInterpolationOwner = true
+                  player.releaseSurface()
+                  isReady = false
+                  viewModel.onVideoLoadStarted()
+                }
+                if (!stillCurrent()) return null
+                coreReplacementStarted = true
+                mpvInterpolationNativeWork.execute { PlaybackSession.invalidateCoreConfiguration() }
+                val init = mpvInterpolationNativeWork.execute {
+                  if (stillCurrent()) player.initializeSession(filesDir.path, cacheDir.path)
+                  else Result.failure(IllegalStateException("Playback owner changed before core initialization"))
+                }
+                if (init.isFailure) return null
+                withContext(Dispatchers.Main.immediate) {
+                  if (!stillCurrent()) return@withContext
+                  player.bindSessionCallbacksOnMain()
+                }
+                if (!stillCurrent()) return null
+                val generation = mpvInterpolationNativeWork.execute {
                   PlaybackSession.load(
                     item = item,
                     verifyNativePathAfterRestart = true,
                     positionRestoreOverride = PlaybackPositionRestoreOverride(state.positionSeconds, paused = true),
+                    onGenerationReserved = { token ->
+                      loadGeneration = token
+                      mpvInterpolationReloadGeneration = token
+                    },
                     commit = { nativeLoad ->
-                      // Only this IO worker waits; Main was suspended by withContext above.
-                      runBlocking(Dispatchers.Main.immediate) {
-                        PlaybackActivityOwner.runIfOwner(playbackOwnerToken, -1L) {
-                          if (!stillCurrent()) -1L
-                          else PlaybackSession.reconfigureCurrentCore(state.sessionGeneration) {
-                            cancelPlaybackLoadRecovery()
-                            mediaLoadJob?.cancel()
-                            engineHandoffJob?.cancel()
-                            viewModel.setAmbientLifecycleActive(false)
-                            setVideoAmbientPresentationActive(false)
-                            appliedEnabled = decoderPreferences.mpvFlowFrameInterpolation.get()
-                            appliedFps = decoderPreferences.mpvFlowTargetFps.get()
-                            player.forceMpvInterpolationOwner = true
-                            player.releaseSurface()
-                            PlaybackSession.invalidateCoreConfiguration()
-                            check(setupMPV() == null) { "MPV reconfiguration failed" }
-                            isReady = false
-                            viewModel.onVideoLoadStarted()
-                            nativeLoad().also { token ->
-                              check(token >= 0L) { "MPV reload failed" }
-                              loadGeneration = token
-                              mpvInterpolationReloadGeneration = token
-                            }
-                          } ?: -1L
+                      if (!stillCurrent()) -1L
+                      else nativeLoad().also { token ->
+                        if (token >= 0L) {
+                          loadGeneration = token
+                          mpvInterpolationReloadGeneration = token
                         }
                       }
                     },
@@ -627,7 +653,7 @@ class PlayerActivity :
                 } ?: return false
                 if (!stillCurrent() || ready.generation != generation) return false
                 for (uri in state.externalSubtitles) {
-                  withContext(Dispatchers.IO) {
+                  mpvInterpolationNativeWork.execute {
                     if (stillCurrent() && readSharedMpvTracks("sub").orEmpty().none { it.metadata.externalUri == uri }) {
                       viewModel.addSubtitleSuspend(Uri.parse(uri), select = false, silent = true, forceMpvReload = true)
                     }
@@ -636,19 +662,23 @@ class PlayerActivity :
                 }
                 val tracksRestored = withTimeoutOrNull(5_000L) {
                   while (stillCurrent()) {
-                    var restored = true
-                    for ((property, encoded) in state.tracks) {
-                      val selection = PlaybackStatePersistence.decodeSelection(encoded) ?: continue
-                      val type = when (property) { "aid" -> "audio"; "vid" -> "video"; else -> "sub" }
-                      val tracks = readSharedMpvTracks(type).orEmpty()
-                      val index = TrackSelectionMatcher.findMatchIndex(selection, tracks.map { it.metadata })
-                      if (index == null) restored = false
-                      else {
-                        val id = if (index < 0) null else tracks[index].id
-                        val expected = id?.toString() ?: "no"
-                        if (PlaybackSession.getPropertyString(property) != expected) setTrackSelectionId(property, id)
-                        if (PlaybackSession.getPropertyString(property) != expected) restored = false
+                    val restored = mpvInterpolationNativeWork.execute {
+                      if (!stillCurrent()) return@execute false
+                      var restored = true
+                      for ((property, encoded) in state.tracks) {
+                        val selection = PlaybackStatePersistence.decodeSelection(encoded) ?: continue
+                        val type = when (property) { "aid" -> "audio"; "vid" -> "video"; else -> "sub" }
+                        val tracks = readSharedMpvTracks(type).orEmpty()
+                        val index = TrackSelectionMatcher.findMatchIndex(selection, tracks.map { it.metadata })
+                        if (index == null) restored = false
+                        else {
+                          val id = if (index < 0) null else tracks[index].id
+                          val expected = id?.toString() ?: "no"
+                          if (PlaybackSession.getPropertyString(property) != expected) setTrackSelectionId(property, id)
+                          if (PlaybackSession.getPropertyString(property) != expected) restored = false
+                        }
                       }
+                      restored
                     }
                     if (restored) return@withTimeoutOrNull true
                     delay(25L)
@@ -656,28 +686,44 @@ class PlayerActivity :
                   false
                 } == true
                 if (!stillCurrent()) return false
-                state.doubleProperties.forEach { (key, value) -> PlaybackSession.setPropertyDouble(key, value) }
-                state.stringProperties.forEach { (key, value) -> PlaybackSession.setPropertyString(key, value) }
+                mpvInterpolationNativeWork.execute {
+                  if (stillCurrent()) {
+                    state.doubleProperties.forEach { (key, value) -> PlaybackSession.setPropertyDouble(key, value) }
+                    state.stringProperties.forEach { (key, value) -> PlaybackSession.setPropertyString(key, value) }
+                  }
+                }
+                if (!stillCurrent()) return false
                 state.doubleProperties["video-zoom"]?.let { viewModel.setVideoZoom(it.toFloat()) }
                 viewModel.restoreVideoAspect(aspect.name, customAspect, showUpdate = false)
                 viewModel.restoreABLoopState(loopState)
                 val positionRestored = withTimeoutOrNull(5_000L) {
                   while (stillCurrent()) {
-                    val actual = PlaybackSession.getPropertyDouble("time-pos")
-                    if (actual != null && kotlin.math.abs(actual - state.positionSeconds) <= 0.25 &&
-                      PlaybackSession.getPropertyBoolean("seeking") != true) return@withTimeoutOrNull true
+                    val confirmed = mpvInterpolationNativeWork.execute {
+                      if (!stillCurrent()) false else {
+                        val actual = PlaybackSession.getPropertyDouble("time-pos")
+                        actual != null && kotlin.math.abs(actual - state.positionSeconds) <= 0.25 &&
+                          PlaybackSession.getPropertyBoolean("seeking") != true
+                      }
+                    }
+                    if (confirmed) return@withTimeoutOrNull true
                     delay(25L)
                   }
                   false
                 } == true
                 if (!stillCurrent()) return false
-                PlaybackSession.setPropertyBoolean("mute", state.muted)
-                PlaybackSession.setPropertyBoolean("pause", state.paused)
-                viewModel.setAmbientLifecycleActive(true)
+                val pauseRestored = mpvInterpolationNativeWork.execute {
+                  if (!stillCurrent()) false else {
+                    PlaybackSession.setPropertyBoolean("mute", state.muted)
+                    PlaybackSession.setPropertyBoolean("pause", state.paused)
+                    PlaybackSession.getPropertyBoolean("pause") == state.paused
+                  }
+                }
+                if (!stillCurrent()) return false
+                if (stillCurrent()) viewModel.setAmbientLifecycleActive(true)
                 viewModel.restartAmbientIfActive()
                 // This checks accepted renderer/timing init options, not just saved prefs.
                 return positionRestored && tracksRestored &&
-                  PlaybackSession.getPropertyBoolean("pause") == state.paused &&
+                  pauseRestored &&
                   player.interpolationConfigurationApplied(appliedEnabled, appliedFps)
               }
             })
@@ -689,9 +735,15 @@ class PlayerActivity :
           if (mpvInterpolationReloadGeneration == loadGeneration) mpvInterpolationReloadGeneration = null
           // A failed seek/track confirmation must not leave an otherwise restored video paused.
           if (stillCurrent()) {
-            PlaybackSession.setPropertyBoolean("mute", snapshot.muted)
-            PlaybackSession.setPropertyBoolean("pause", snapshot.paused)
-            viewModel.setAmbientLifecycleActive(true)
+            withContext(kotlinx.coroutines.NonCancellable) {
+              mpvInterpolationNativeWork.execute {
+                if (stillCurrent()) {
+                  PlaybackSession.setPropertyBoolean("mute", snapshot.muted)
+                  PlaybackSession.setPropertyBoolean("pause", snapshot.paused)
+                }
+              }
+            }
+            if (stillCurrent()) viewModel.setAmbientLifecycleActive(true)
           }
         }
         if (!ownsPlaybackSession() || isFinishing || isDestroyed || request != mediaRequestGeneration ||
@@ -3757,6 +3809,7 @@ class PlayerActivity :
     // NOW initialize MPV - it will find and load the scripts we just copied
     val initError = initializePlayerWithRendererFallback()
     if (initError != null) return initError
+    player.bindSessionCallbacksOnMain()
     runCatching { PlaybackSession.setThumbnailJavaVM(applicationContext) }
     mpvInitialized = true
     // Some Android audio devices repeatedly underrun the default MPV output buffer. Keep the

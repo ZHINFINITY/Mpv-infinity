@@ -296,6 +296,7 @@ internal fun Modifier.browserGlassPane(
   cornerRadius: Dp,
   selected: Boolean = false,
   deformation: Float = 0f,
+  drawRim: Boolean = true,
 ): Modifier {
   val hostView = LocalView.current
   val scene = LocalBrowserScene.current
@@ -303,8 +304,11 @@ internal fun Modifier.browserGlassPane(
   val tuning = LocalGlassCustomization.current
   val shape = remember(cornerRadius) { RoundedCornerShape(cornerRadius) }
   val tint = if (selected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerHigh
-  val film = GlassSurfacePolicy.opacity(opacity)
-  val glow = GlassSurfacePolicy.highlight(highlight)
+  val film = GlassSurfacePolicy.opacity(if (tuning.overrideMaterial) tuning.opacity else opacity)
+  val glow = GlassSurfacePolicy.highlight(if (tuning.overrideMaterial) tuning.highlight else highlight)
+  // Exactly the same static optical profile as player panes: depth remains
+  // visible over an AMOLED/flat backdrop and when motion or capture is reduced.
+  val optics = GlassSurfacePolicy.depthOptics(tuning.depth, glow)
   var paneOrigin by remember { mutableStateOf(Offset.Zero) }
   // Runtime shader compilation is remembered, not repeated for every animated width/frame.
   val shader = remember(enabled, capabilities.refraction) {
@@ -319,10 +323,10 @@ internal fun Modifier.browserGlassPane(
         addRoundRect(androidx.compose.ui.geometry.RoundRect(Rect(0f, 0f, size.width, size.height), CornerRadius(radius)))
       }
       onDrawBehind {
-        if (enabled && tuning.depth > 0f) clipPath(outline, ClipOp.Difference) {
-          drawRoundRect(Color.Black.copy(alpha = 0.12f * tuning.depth.coerceIn(0f, 2f)),
+        if (enabled && drawRim && optics.shadowAlpha > 0f) clipPath(outline, ClipOp.Difference) {
+          drawRoundRect(Color.Black.copy(alpha = optics.shadowAlpha),
             topLeft = Offset(0.5.dp.toPx(), 1.5.dp.toPx()), cornerRadius = CornerRadius(radius),
-            style = Stroke((2f * tuning.depth).dp.toPx()))
+            style = Stroke(optics.shadowSpreadDp.dp.toPx()))
         }
       }
     }
@@ -352,9 +356,9 @@ internal fun Modifier.browserGlassPane(
         // Background-only panes retain bounded translucency over their real content.
         lens.alpha = if (scene?.contentLens == true) 1f else GlassSurfacePolicy.browserSampleAlpha(film)
         val edge = Brush.linearGradient(listOf(
-          Color.White.copy(alpha = 0.20f + glow * 0.65f),
+          Color.White.copy(alpha = optics.rimHighlight),
           Color.White.copy(alpha = 0.03f),
-          Color.White.copy(alpha = 0.10f + glow * 0.35f),
+          Color.Black.copy(alpha = optics.rimShade),
         ))
         onDrawBehind {
           if (size.width < 1f || size.height < 1f) return@onDrawBehind
@@ -371,12 +375,12 @@ internal fun Modifier.browserGlassPane(
           }
           drawRoundRect(tint.copy(alpha = if (hasScene) film * (if (selected) 0.24f else 0.20f) else GlassSurfacePolicy.browserFallbackAlpha(film)), cornerRadius = CornerRadius(radius))
           drawRoundRect(Brush.verticalGradient(listOf(
-            Color.White.copy(alpha = if (selected) 0.16f + glow * 0.24f else 0.06f + glow * 0.10f),
+            Color.White.copy(alpha = (optics.bodyHighlight + if (selected) glow * 0.24f else 0f).coerceAtMost(0.55f)),
             Color.Transparent,
-            Color.Black.copy(alpha = if (selected) 0.10f else 0.08f),
+            Color.Black.copy(alpha = optics.bodyShade),
           )), cornerRadius = CornerRadius(radius))
-          drawRoundRect(edge, cornerRadius = CornerRadius(radius), style = Stroke((1f + 0.5f * tuning.depth).dp.toPx()))
-          if (selected && size.height > 4.dp.toPx() && size.width > 4.dp.toPx()) {
+          if (drawRim) drawRoundRect(edge, cornerRadius = CornerRadius(radius), style = Stroke(optics.rimWidthDp.dp.toPx()))
+          if (drawRim && selected && size.height > 4.dp.toPx() && size.width > 4.dp.toPx()) {
             drawRoundRect(Color.Black.copy(alpha = 0.10f), topLeft = Offset(1.dp.toPx(), 1.dp.toPx()),
               size = androidx.compose.ui.geometry.Size(size.width - 2.dp.toPx(), size.height - 2.dp.toPx()),
               cornerRadius = CornerRadius((radius - 1.dp.toPx()).coerceAtLeast(0f)), style = Stroke(1.dp.toPx()))

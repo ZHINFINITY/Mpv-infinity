@@ -92,19 +92,15 @@ fun SwipeableFolderActions(
     }
   }
 
-  val shape = AppShapeScale.large
+  val shape = AppShapeScale.largeIncreased
+  // FolderCard owns the resting pane. A second full-size glass layer here
+  // compounds its film and rim; only the revealed action needs another material.
   Box(
-    modifier = Modifier.fillMaxWidth().clip(shape).background(if (liquidGlass) androidx.compose.ui.graphics.Color.Transparent else MaterialTheme.colorScheme.surface),
+    modifier = Modifier
+      .fillMaxWidth()
+      .clip(shape)
+      .background(if (liquidGlass) androidx.compose.ui.graphics.Color.Transparent else MaterialTheme.colorScheme.surface),
   ) {
-    if (liquidGlass) {
-      BrowserGlassSurface(
-        modifier = Modifier.matchParentSize(),
-        enabled = true,
-        opacity = glassOpacity,
-        highlight = glassHighlight,
-        cornerRadius = 20.dp,
-      )
-    }
     if (offsetX > 0f) {
       val progress = (offsetX / revealPx).coerceIn(0f, 1f)
       Box(modifier = Modifier.matchParentSize(), contentAlignment = Alignment.CenterStart) {
@@ -116,19 +112,23 @@ fun SwipeableFolderActions(
           targetValue = progress.coerceIn(0.3f, 1f),
           label = "folderSwipeAlpha",
         )
-        Box(
+        BrowserGlassSurface(
           modifier = Modifier.padding(8.dp).size(72.dp).graphicsLayer {
             scaleX = iconScale
             scaleY = iconScale
             this.alpha = alpha
-          }.clip(RoundedCornerShape(28.dp)).background(MaterialTheme.colorScheme.primaryContainer),
-          contentAlignment = Alignment.Center,
+          },
+          enabled = liquidGlass,
+          opacity = glassOpacity,
+          highlight = glassHighlight,
+          cornerRadius = 28.dp,
+          selected = true,
         ) {
           Icon(
             if (isWatched) Icons.RoundedFilled.RemoveCircle else Icons.RoundedFilled.CheckCircle,
             contentDescription = if (isWatched) "Mark folder unwatched" else "Mark folder watched",
             tint = MaterialTheme.colorScheme.onPrimaryContainer,
-            modifier = Modifier.size(28.dp),
+            modifier = Modifier.align(Alignment.Center).size(28.dp),
           )
         }
       }

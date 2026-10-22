@@ -47,6 +47,8 @@ fun Modifier.settingsGlassSurface(
   val enabled by appearance.liquidGlassSurfaces.collectAsState()
   if (!enabled) return this
   val tuning = LocalGlassCustomization.current
+  // Independent geometry never bypasses the master or global material tuning.
+  // liquidGlassPane owns the override policy for both browser and player scenes.
   return liquidGlassPane(
     enabled = enabled,
     opacity = opacity ?: tuning.opacity,

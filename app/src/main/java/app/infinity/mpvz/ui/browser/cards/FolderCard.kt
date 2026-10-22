@@ -196,7 +196,9 @@ fun FolderCard(
     }
   }
 
-  val cardShape = AppShapeScale.large
+  // Native and glass cards must share one generous rounded geometry. A nested
+  // matchParentSize pane can be measured as an empty lazy-item child.
+  val cardShape = AppShapeScale.largeIncreased
 
   Card(
     modifier =
@@ -210,19 +212,15 @@ fun FolderCard(
     shape = cardShape,
     colors = CardDefaults.cardColors(containerColor = Color.Transparent),
   ) {
-    Box(modifier = Modifier.fillMaxWidth()) {
-      // Folder cards are rendered by nested destinations too. Keep the ambient
-      // pane inside the card clip so entering a folder cannot lose the browser
-      // scene provider; artwork remains in its own bounded aspect-ratio box.
-      if (liquidGlass) {
-        BrowserGlassSurface(
-          modifier = Modifier.matchParentSize(),
-          enabled = true,
-          opacity = glassOpacity,
-          highlight = glassHighlight,
-          cornerRadius = 20.dp,
-        )
-      }
+    // Own the measured card bounds; do not paint glass in a matchParentSize
+    // child whose parent can strip the node during lazy measurement.
+    BrowserGlassSurface(
+      modifier = Modifier.fillMaxWidth(),
+      enabled = liquidGlass,
+      opacity = glassOpacity,
+      highlight = glassHighlight,
+      cornerRadius = 20.dp,
+    ) {
       if (isSelected || isActive) {
         Box(
           modifier =

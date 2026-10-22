@@ -239,7 +239,8 @@ fun Modifier.liquidGlassPane(
   if (backdrop == null && hasBrowserGlassScene()) {
     return browserGlassPane(enabled,
       if (tuning.overrideMaterial) tuning.opacity else opacity,
-      if (tuning.overrideMaterial) tuning.highlight else highlight, cornerRadius)
+      if (tuning.overrideMaterial) tuning.highlight else highlight, cornerRadius,
+      drawRim = drawRim)
   }
   val tint = MaterialTheme.colorScheme.surfaceContainerHigh
   val alpha = GlassSurfacePolicy.opacity(if (tuning.overrideMaterial) tuning.opacity else opacity)

@@ -391,7 +391,17 @@ private fun NormalTopBar(
         }
       }
     },
-    modifier = modifier.settingsGlassSurface(cornerRadius = 28.dp),
+    // Apply the shared pane to the measured TopAppBar itself. Keeping the
+    // master gate here prevents a transparent/rounded modifier from replacing
+    // the native header when liquid glass is disabled.
+    modifier =
+      modifier.then(
+        if (liquidGlassSurfaces) {
+          Modifier.settingsGlassSurface(cornerRadius = 28.dp)
+        } else {
+          Modifier
+        },
+      ),
   )
 }
 
@@ -687,9 +697,12 @@ private fun SelectionTopBar(
     },
     modifier =
       modifier
-        .settingsGlassSurface(cornerRadius = 28.dp)
-        .clip(
-          RoundedCornerShape(topStart = 0.dp, topEnd = 0.dp, bottomStart = 28.dp, bottomEnd = 28.dp),
-        ),
+        .then(
+          if (liquidGlassSurfaces) {
+            Modifier.settingsGlassSurface(cornerRadius = 28.dp)
+          } else {
+            Modifier
+          },
+        ).clip(RoundedCornerShape(28.dp)),
   )
 }

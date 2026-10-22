@@ -28,10 +28,10 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Scaffold
+import app.infinity.mpvz.ui.preferences.components.SettingsScaffold as Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
+import app.infinity.mpvz.ui.preferences.components.SettingsTopAppBar as TopAppBar
 import androidx.compose.material3.VerticalDivider
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
@@ -378,46 +378,36 @@ private fun SettingsSearchEntry(
   onClick: () -> Unit,
   modifier: Modifier = Modifier,
 ) {
-  Surface(
+  Row(
     modifier =
       modifier
         .fillMaxWidth()
-        .clip(MaterialTheme.shapes.extraExtraLarge)
-        .clickable(onClick = onClick),
-    shape = MaterialTheme.shapes.extraExtraLarge,
-    color = MaterialTheme.colorScheme.secondaryContainer,
-    tonalElevation = 1.dp,
-    shadowElevation = 1.dp,
+        .settingsGlassPreferenceRow()
+        .clickable(onClick = onClick)
+        .padding(horizontal = 18.dp, vertical = 12.dp),
+    verticalAlignment = Alignment.CenterVertically,
   ) {
-    Row(
-      modifier =
-        Modifier
-          .fillMaxWidth()
-          .padding(horizontal = 18.dp, vertical = 16.dp),
-      verticalAlignment = Alignment.CenterVertically,
-    ) {
-      Icon(
-        imageVector = Icons.RoundedFilled.Search,
-        contentDescription = null,
-        modifier = Modifier.size(28.dp),
-        tint = MaterialTheme.colorScheme.onSecondaryContainer,
-      )
-      Spacer(modifier = Modifier.width(14.dp))
-      Column(modifier = Modifier.weight(1f)) {
-        Text(
-          text = stringResource(R.string.settings_search_hint),
-          style = MaterialTheme.typography.titleMedium,
-          fontWeight = FontWeight.Bold,
-          color = MaterialTheme.colorScheme.onSecondaryContainer,
-        )
-      }
-      Icon(
-        imageVector = Icons.RoundedFilled.ChevronRight,
-        contentDescription = null,
-        modifier = Modifier.size(24.dp),
-        tint = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.72f),
+    Icon(
+      imageVector = Icons.RoundedFilled.Search,
+      contentDescription = null,
+      modifier = Modifier.size(28.dp),
+      tint = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
+    Spacer(modifier = Modifier.width(14.dp))
+    Column(modifier = Modifier.weight(1f)) {
+      Text(
+        text = stringResource(R.string.settings_search_hint),
+        style = MaterialTheme.typography.titleMedium,
+        fontWeight = FontWeight.Bold,
+        color = MaterialTheme.colorScheme.onSurface,
       )
     }
+    Icon(
+      imageVector = Icons.RoundedFilled.ChevronRight,
+      contentDescription = null,
+      modifier = Modifier.size(24.dp),
+      tint = MaterialTheme.colorScheme.outline,
+    )
   }
 }
 

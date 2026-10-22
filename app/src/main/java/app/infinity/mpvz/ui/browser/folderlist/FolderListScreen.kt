@@ -1574,6 +1574,7 @@ private fun ListContent(
           end = 16.dp,
           bottom = navigationBarHeight + 24.dp,
         ),
+      verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
       items(folders, key = { it.bucketId }) { folder ->
         val isRecentlyPlayed = recentlyPlayedParent == folder.path
