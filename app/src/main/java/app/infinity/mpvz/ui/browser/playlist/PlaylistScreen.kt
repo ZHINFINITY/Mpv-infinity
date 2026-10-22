@@ -176,7 +176,7 @@ object PlaylistScreen : Screen {
     )
 
     Scaffold(
-      containerColor = app.infinity.mpvz.ui.preferences.components.settingsGlassContainerColor(MaterialTheme.colorScheme.background),
+      containerColor = app.infinity.mpvz.ui.preferences.components.settingsGlassContainerColor(androidx.compose.material3.MaterialTheme.colorScheme.background),
       topBar = {
         if (isSearching) {
           // Search mode - show search bar

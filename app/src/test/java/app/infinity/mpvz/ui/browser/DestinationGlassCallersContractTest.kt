@@ -13,6 +13,15 @@ class DestinationGlassCallersContractTest {
   private fun source(path: String) = File(root, path).readText()
 
   @Test
+  fun actualScaffoldAndSettingsIconsUseTheirProjectApis() {
+    val playlist = source("app/src/main/java/app/infinity/mpvz/ui/browser/playlist/PlaylistScreen.kt")
+    val rows = source("app/src/main/java/app/infinity/mpvz/ui/preferences/components/SettingsComponents.kt")
+    assertTrue(playlist.contains("settingsGlassContainerColor(androidx.compose.material3.MaterialTheme.colorScheme.background)"))
+    assertTrue(rows.contains("import app.infinity.mpvz.ui.icons.Icon"))
+    assertTrue(!rows.contains("import androidx.compose.material3.Icon"))
+  }
+
+  @Test
   fun everyActualBrowserScaffoldDeclaresConditionalGlassContainer() {
     val browser = File(root, "app/src/main/java/app/infinity/mpvz/ui/browser")
     browser.walkTopDown().filter { it.extension == "kt" }.forEach { file ->
