@@ -331,10 +331,10 @@ class MainActivity : AppCompatActivity() {
             }
             AlertDialog(
               onDismissRequest = acknowledgeNotice,
-              title = { Text(getString(R.string.renderer_build_notice_title)) },
+              title = { Text(stringResource(R.string.renderer_build_notice_title)) },
               text = {
                 Text(
-                  getString(
+                  stringResource(
                     if (deviceSupportsVulkan) {
                       R.string.renderer_build_notice_supported_device
                     } else {
@@ -345,7 +345,7 @@ class MainActivity : AppCompatActivity() {
               },
               confirmButton = {
                 TextButton(onClick = acknowledgeNotice) {
-                  Text(getString(R.string.generic_ok))
+                  Text(stringResource(R.string.generic_ok))
                 }
               },
             )

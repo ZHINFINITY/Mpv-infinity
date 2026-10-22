@@ -71,6 +71,7 @@ import app.infinity.mpvz.preferences.AppearancePreferences
 import app.infinity.mpvz.preferences.preference.collectAsState
 import app.infinity.mpvz.ui.preferences.components.settingsGlassContainerColor
 import app.infinity.mpvz.ui.preferences.components.settingsGlassSurface
+import app.infinity.mpvz.ui.theme.liquidGlassPane
 import kotlin.math.roundToInt
 import org.koin.compose.koinInject
 

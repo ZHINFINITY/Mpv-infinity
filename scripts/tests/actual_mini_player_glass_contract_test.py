@@ -53,7 +53,7 @@ class ActualMiniPlayerGlassContracts(unittest.TestCase):
                       "tonalElevation = if (glassEnabled) 0.dp", "detectVerticalDragGestures",
                       "verticalDrag < -expandThresholdPx", "remember(context, isAudioOnlyItem)",
                       "ACTION_NOTIFICATION_STOP", "MiniPlayerTransitionAnchor.publish",
-                      "boundsInWindow()", "hostView.width.toFloat()", "if (isAudioOnlyItem)"):
+                      "miniPlayerScreenBounds(hostView)", "hostView.width.toFloat()", "if (isAudioOnlyItem)"):
             self.assertIn(token, MINI)
 
 

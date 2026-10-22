@@ -946,6 +946,7 @@ class PlayerActivity :
 
   private var isReady = false // Single flag: true when video loaded and ready
   private var isUserFinishing = false
+  private var audioMinimizePresentationCompleted = false
   private var isBackgroundPlaybackSessionActive = false
   private var reusingPlaybackSessionOnLaunch = false
   private var playbackOwnerToken = 0L
@@ -2982,6 +2983,7 @@ class PlayerActivity :
   override fun finish() {
     if (!hasActivePlaybackEngine() || !ownsPlaybackSession()) {
       super.finish()
+      if (audioMinimizePresentationCompleted) applyMiniPlayerExitTransition()
       return
     }
     runCatching {
@@ -3012,15 +3014,23 @@ class PlayerActivity :
 
     super.finish()
 
-    // Minimizing into the Mini Player: slide the full player down toward the bottom
-    // bar. The browser tab stays in place; the Mini Player slides up to meet it.
-    if (isMiniPlayerEnabled()) {
-      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-        overrideActivityTransition(OVERRIDE_TRANSITION_CLOSE, 0, R.anim.slide_out_down)
-      } else {
-        @Suppress("DEPRECATION")
-        overridePendingTransition(0, R.anim.slide_out_down)
-      }
+    if (isMiniPlayerEnabled() || audioMinimizePresentationCompleted) applyMiniPlayerExitTransition()
+  }
+
+  /** Called only after the audio UI's position-preserving visual flight has settled. */
+  fun onAudioMinimizePresentationComplete() {
+    audioMinimizePresentationCompleted = true
+  }
+
+  private fun applyMiniPlayerExitTransition() {
+    // Do not slide the entire window again after Compose already landed on the mini player.
+    val exitAnimation = if (audioMinimizePresentationCompleted) 0 else R.anim.slide_out_down
+    audioMinimizePresentationCompleted = false
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+      overrideActivityTransition(OVERRIDE_TRANSITION_CLOSE, 0, exitAnimation)
+    } else {
+      @Suppress("DEPRECATION")
+      overridePendingTransition(0, exitAnimation)
     }
   }
 

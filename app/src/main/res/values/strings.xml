@@ -2282,4 +2282,44 @@
   <string name="music_source_jellyfin">Jellyfin Music</string>
   <string name="music_source_navidrome">Navidrome Music</string>
   <string name="music_source_manage_servers">Media Servers</string>
+  <!-- Localized custom-theme settings and popup editor labels. -->
+  <string name="pref_custom_theme_title">Custom themes</string>
+  <string name="pref_custom_theme_summary">Save a photo or video theme and adjust it later.</string>
+  <string name="pref_custom_theme_selected">Selected in theme rail: %1$s</string>
+  <string name="pref_custom_theme_edit">Edit theme</string>
+  <string name="pref_custom_theme_delete">Delete theme</string>
+  <string name="pref_custom_theme_add">Add photo or video theme</string>
+  <string name="pref_custom_theme_create">Create custom theme</string>
+  <string name="pref_custom_theme_edit_title">Edit custom theme</string>
+  <string name="pref_custom_theme_preview">Live preview</string>
+  <string name="pref_custom_theme_hide_options">Hide editing options</string>
+  <string name="pref_custom_theme_edit_background">Edit background</string>
+  <string name="pref_custom_theme_media_framing">Media framing</string>
+  <string name="pref_custom_theme_crop">Crop</string>
+  <string name="pref_custom_theme_fit">Fit</string>
+  <string name="pref_custom_theme_fill">Fill</string>
+  <string name="pref_custom_theme_video_aspect">Video aspect ratio</string>
+  <string name="pref_custom_theme_fill_screen">Fill phone screen</string>
+  <string name="pref_custom_theme_keep_source">Keep source</string>
+  <string name="pref_custom_theme_zoom_scale">Zoom / scale</string>
+  <string name="pref_custom_theme_horizontal_position">Horizontal position</string>
+  <string name="pref_custom_theme_vertical_position">Vertical position</string>
+  <string name="pref_custom_theme_media_appearance">Media appearance</string>
+  <string name="pref_custom_theme_blur">Background blur</string>
+  <string name="pref_custom_theme_brightness">Brightness</string>
+  <string name="pref_custom_theme_saturation">Saturation</string>
+  <string name="pref_custom_theme_transparency">Media transparency</string>
+  <string name="pref_custom_theme_overlay">Dim overlay</string>
+  <string name="pref_custom_theme_panel_opacity">Panel opacity</string>
+  <string name="pref_custom_theme_text_colour">Custom text colour</string>
+  <string name="pref_custom_theme_argb_hex">ARGB hex</string>
+  <string name="pref_custom_theme_colour_sliders">Colour sliders</string>
+  <string name="pref_custom_theme_hue">Hue: %1$d°</string>
+  <string name="pref_custom_theme_saturation_value">Saturation: %1$d%%</string>
+  <string name="pref_custom_theme_brightness_value">Brightness: %1$d%%</string>
+  <string name="pref_custom_theme_opacity_value">Opacity: %1$d%%</string>
+  <string name="pref_custom_theme_mute_video">Mute video theme</string>
+  <string name="pref_custom_theme_name">Theme name</string>
+  <string name="generic_save">Save</string>
+  <string name="pref_custom_theme_argb_placeholder" translatable="false">#FFFFFFFF</string>
 </resources>

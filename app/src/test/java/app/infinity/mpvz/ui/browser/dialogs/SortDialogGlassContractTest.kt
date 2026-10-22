@@ -13,6 +13,11 @@ class SortDialogGlassContractTest {
   private fun source(path: String) = File(root, "app/src/main/java/app/infinity/mpvz/$path.kt").readText()
   private val dialog = source("ui/browser/dialogs/SortDialog")
 
+  @Test fun innerGlassControlsImportTheirExtensionAfterOuterPopupMaterialChanges() {
+    assertTrue(dialog.contains("Modifier.liquidGlassPane("))
+    assertTrue(dialog.contains("import app.infinity.mpvz.ui.theme.liquidGlassPane"))
+  }
+
   @Test fun actualDialogAndEachSegmentedOptionUseSharedGlassWithMasterFallback() {
     assertTrue(dialog.contains("liquidGlassSurfaces.collectAsState()"))
     assertTrue(dialog.contains("containerColor = settingsGlassContainerColor(MaterialTheme.colorScheme.surfaceContainerHigh)"))

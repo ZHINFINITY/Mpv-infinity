@@ -204,6 +204,11 @@ jobs:
           python3 scripts/tests/media_info_playlist_glass_paths_test.py
           python3 scripts/tests/actual_mini_player_glass_contract_test.py
           python3 scripts/tests/mini_player_gesture_contract_test.py
+          python3 scripts/tests/music_transition_geometry_test.py
+          python3 scripts/tests/localization_resources_test.py
+          python3 scripts/tests/existing_localization_gaps_test.py
+          python3 scripts/tests/persian_locale_rtl_test.py
+          python3 scripts/tests/settings_popup_locale_contract_test.py
           python3 scripts/tests/seekbar_glass_contract_test.py
           python3 scripts/tests/playlist_browse_ui_contract_test.py
           python3 scripts/tests/stream_cards_ui_contract_test.py
@@ -286,9 +291,18 @@ jobs:
             fi
             echo "Verified $library: JNI/API exports retained; Flow internals and debug symbols hidden"
           done
+      - name: Verify APK package, ABI, integrity and signing identity
+        if: ${{ inputs.flavor == 'standard' && inputs.target_abi == 'arm64-v8a' }}
+        run: |
+          set -euo pipefail
+          apk="$(find app/build/outputs/apk/standard/debug -type f -name '*arm64-v8a*.apk' -print -quit)"
+          [[ -n "$apk" ]]
+          python3 scripts/verify-debug-apk-artifact.py "$apk" "${apk%.apk}.verification.json"
       - name: Upload debug APKs
         uses: actions/upload-artifact@v4
         with:
           name: mpv-infinity-${{ inputs.flavor }}-debug
-          path: app/build/outputs/apk/**/*.apk
+          path: |
+            app/build/outputs/apk/**/*.apk
+            app/build/outputs/apk/**/*.verification.json
           if-no-files-found: error

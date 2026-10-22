@@ -105,6 +105,9 @@ private enum class AppLanguage(
   PortugueseBrazil("pt-BR"),
   Russian("ru"),
   SimplifiedChinese("zh-CN"),
+  Indonesian("id"),
+  Vietnamese("vi"),
+  Persian("fa"),
   ;
 
   fun displayName(context: android.content.Context): String {

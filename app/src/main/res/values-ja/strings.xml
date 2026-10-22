@@ -1,12 +1,23 @@
-<?xml version='1.0' encoding='UTF-8'?>
+<?xml version='1.0' encoding='utf-8'?>
 <resources>
+  <string name="app_name">Mpv∞</string>
   <string name="generic_reset">リセット</string>
   <string name="generic_share">共有</string>
   <string name="generic_confirm">確認</string>
   <string name="generic_cancel">キャンセル</string>
+  <string name="generic_install">インストール</string>
+  <string name="generic_configure">設定</string>
   <string name="generic_ok">OK</string>
   <string name="generic_unit_ms">ミリ秒</string>
   <string name="generic_disabled">無効</string>
+  <string name="player_interpolation_on">オン</string>
+  <string name="player_interpolation_off">オフ</string>
+  <string name="player_interpolation_target_fps">目標FPS</string>
+  <string name="toast_interpolation_pending_next_playback">補間の変更は次回の再生まで保留されます。このバックエンドには安全なライブ設定APIがないため、現在の再生は再起動されません。</string>
+  <string name="toast_interpolation_pending_next_playback_reason">次回の再生まで保留されます。このバックエンドには安全なライブ設定APIがないため、現在の再生は再起動されません。</string>
+  <string name="toast_interpolation_pending_native_sink">次回の再生まで保留されます。このセッションではNative Vulkanフローのシンクを利用できないため、現在の再生は再起動されません。</string>
+  <string name="toast_interpolation_applied_live">現在の再生に補間を適用しました。</string>
+  <string name="player_interpolation_next_playback_note">Native Vulkanはフローのシンクがすでに有効なら今回の再生にライブ適用します。MPV、または利用できないNativeシンクでは、再起動せず次回の再生に変更を保存します。</string>
   <string name="pref_preferences">設定</string>
   <string name="pref_appearance_title">外観</string>
   <string name="pref_appearance_summary">ダークモード、Material You</string>
@@ -24,9 +35,9 @@
   <string name="pref_appearance_unlimited_name_lines_title">名前をすべて表示</string>
   <string name="pref_appearance_unlimited_name_lines_summary">フォルダー名と動画名を省略せずにすべて表示します</string>
   <string name="pref_appearance_hide_player_buttons_background_title">プレーヤーボタンの背景を非表示</string>
+  <string name="pref_appearance_hide_player_buttons_background_summary">プレーヤーのすべての操作ボタンの背景を非表示にします</string>
   <string name="pref_appearance_force_dark_player_buttons_background_title">プレーヤーボタンの背景を常に暗くする</string>
   <string name="pref_appearance_force_dark_player_buttons_background_summary">ライト、ダーク、自動の各テーマでプレーヤー操作ボタンの背景を暗く保ちます</string>
-  <string name="pref_appearance_hide_player_buttons_background_summary">プレーヤーのすべての操作ボタンの背景を非表示にします</string>
   <string name="pref_appearance_category_file_browser">ファイルブラウザー</string>
   <string name="pref_appearance_category_thumbnails">サムネイル</string>
   <string name="pref_appearance_show_unplayed_old_video_label_title">新しい未再生動画にラベルを表示</string>
@@ -48,12 +59,53 @@
   <string name="pref_appearance_category_navigation">ナビゲーション</string>
   <string name="pref_nav_home_title">ホームタブを表示</string>
   <string name="pref_nav_home_summary">下部ナビゲーションバーのホームを表示または非表示にします</string>
+  <string name="pref_nav_music_title">音楽タブを表示</string>
+  <string name="pref_nav_music_summary">下部ナビゲーションバーに音楽を表示または非表示</string>
   <string name="pref_nav_recents_title">最近使った項目タブを表示</string>
   <string name="pref_nav_recents_summary">下部ナビゲーションバーの最近使った項目を表示または非表示にします</string>
   <string name="pref_nav_playlists_title">プレイリストタブを表示</string>
   <string name="pref_nav_playlists_summary">下部ナビゲーションバーのプレイリストを表示または非表示にします</string>
   <string name="pref_nav_network_title">ネットワークタブを表示</string>
   <string name="pref_nav_network_summary">下部ナビゲーションバーのネットワークを表示または非表示にします</string>
+  <string name="pref_nav_streams_title">ストリームタブを表示</string>
+  <string name="pref_nav_streams_summary">下部ナビゲーションバーのストリームを表示または非表示</string>
+  <string name="pref_nav_jellyfin_title">Jellyfinタブを表示</string>
+  <string name="pref_nav_jellyfin_summary">下部ナビゲーションバーにJellyfinを表示または非表示</string>
+  <string name="pref_nav_jellyfin_auto_title">接続後にJellyfinタブを自動表示</string>
+  <string name="pref_nav_jellyfin_auto_summary">サーバー接続に成功したらJellyfinナビゲーションタブを有効化</string>
+  <string name="pref_nav_navidrome_title">Navidromeタブを表示</string>
+  <string name="pref_nav_navidrome_summary">下部ナビゲーションバーのNavidromeを表示または非表示</string>
+  <string name="pref_nav_audiobooks_title">オーディオブックタブを表示</string>
+  <string name="pref_nav_audiobooks_summary">下部ナビゲーションバーのローカルおよびAudiobookshelfのオーディオブックを表示または非表示</string>
+  <string name="pref_section_network">ネットワーク</string>
+  <string name="pref_media_servers_title">メディアサーバー</string>
+  <string name="pref_media_servers_summary">Jellyfin、Navidrome、Audiobookshelfの接続を管理</string>
+  <string name="pref_audiobookshelf_add_server">Audiobookshelfに接続</string>
+  <string name="pref_audiobookshelf_add_server_desc">Audiobookshelfサーバーを追加して接続</string>
+  <string name="audiobook_source_audiobookshelf">Audiobookshelf</string>
+  <string name="audiobook_source_audiobookshelf_desc">Audiobookshelfサーバーからオーディオブックをストリーミング</string>
+  <string name="audiobook_source_local">ローカルのオーディオブック</string>
+  <string name="pref_audiobookshelf_no_server">Audiobookshelfサーバー未接続</string>
+  <string name="pref_server_active">アクティブ</string>
+  <string name="pref_server_set_active">アクティブに設定</string>
+  <string name="pref_server_more_options">その他のオプション</string>
+  <string name="pref_navidrome_add_server">Navidromeに接続</string>
+  <string name="pref_navidrome_add_server_desc">NavidromeまたはOpenSubsonicサーバーを追加して接続</string>
+  <string name="pref_navidrome_add_another_server">別のサーバーを追加</string>
+  <string name="pref_navidrome_add_another_server_desc">Navidromeサーバーを追加接続</string>
+  <string name="pref_jellyfin_title">Jellyfin</string>
+  <string name="pref_jellyfin_server_management">Jellyfinサーバー管理</string>
+  <string name="pref_jellyfin_add_server">Jellyfinに接続</string>
+  <string name="pref_jellyfin_add_server_desc">Jellyfinサーバーを追加して接続</string>
+  <string name="pref_jellyfin_add_another_server">別のサーバーを追加</string>
+  <string name="pref_jellyfin_add_another_server_desc">追加のJellyfinサーバーに接続</string>
+  <string name="pref_seerr_title">Seerr</string>
+  <string name="pref_seerr_server_management">Seerrサーバー管理</string>
+  <string name="pref_seerr_add_server">Seerrに接続</string>
+  <string name="pref_seerr_add_server_desc">Seerrサーバーを追加して接続</string>
+  <string name="pref_audiobookshelf_title">Audiobookshelf</string>
+  <string name="pref_audiobookshelf_add_another_server">別のサーバーを追加</string>
+  <string name="pref_audiobookshelf_add_another_server_desc">追加のAudiobookshelfサーバーに接続</string>
   <string name="pref_quick_play_fab_title">クイック再生FAB</string>
   <string name="pref_quick_play_fab_summary">ブラウザー画面にクイック再生フローティングアクションボタンを表示</string>
   <string name="pref_quick_play_fab_direct_title">ダイレクト・クイック再生</string>
@@ -70,10 +122,12 @@
   <string name="pref_tree_flatten_depth_title">ツリーパスの圧縮</string>
   <string name="pref_tree_flatten_depth_summary">子が1つだけのフォルダーでは、ナビゲーションごとに%1$sを省略します</string>
   <string name="ytdl_audio_quality_title">yt-dlpの音声品質</string>
+  <string name="player_video_quality">動画品質</string>
+  <string name="player_video_quality_summary">このストリームで利用可能な品質を選択します。</string>
+  <string name="player_video_quality_button">動画品質</string>
   <string name="ytdl_audio_quality_reload_summary">次のリンク、または現在のリンクを再読み込みしたときに使用されます。</string>
   <string name="toast_playback_load_failed">このリンクを読み込めませんでした</string>
   <string name="video_label_new">新着</string>
-  <!-- Theme names -->
   <string name="theme_default">デフォルト</string>
   <string name="theme_dynamic">ダイナミック</string>
   <string name="theme_aurora">オーロラ</string>
@@ -106,16 +160,21 @@
   <string name="theme_tokyo_night">東京の夜</string>
   <string name="theme_kanagawa">Kanagawa</string>
   <string name="theme_rose_pine">Rosé Pine</string>
-  <!-- Settings Search -->
   <string name="settings_search_hint">設定を検索…</string>
   <string name="settings_search_no_results">設定が見つかりません</string>
   <string name="settings_search_title">検索</string>
-  <!-- Player Preferences Hardcoded -->
   <string name="pref_autoplay_title">次へ/前へ移動を有効にする</string>
   <string name="pref_autoplay_summary">フォルダー内のすべての動画に次へ/前へボタンを表示します</string>
   <string name="pref_autoplay_next_video_title">次の動画を自動再生</string>
   <string name="pref_autoplay_next_video_summary">現在の動画が終了したら次の動画を自動的に再生します</string>
   <string name="pref_autoplay_next_video_summary_disabled">終了後も現在の動画に留まります</string>
+  <string name="pref_autoplay_next_audio_title">次の音声を自動再生</string>
+  <string name="pref_autoplay_next_audio_summary">現在のトラック終了時に次の音声トラックを自動的に再生します</string>
+  <string name="pref_autoplay_next_audio_summary_disabled">終了時に現在の音声トラックにとどまります</string>
+  <string name="queue_requires_playback">キューに追加する前に再生を開始してください</string>
+  <string name="queue_added_next">次に再生する項目を%1$d件追加しました</string>
+  <string name="queue_added_end">キューに%1$d件追加しました</string>
+  <string name="save_queue_as_playlist">キューをプレイリストとして保存</string>
   <string name="pref_auto_pip_title">自動ピクチャーインピクチャー</string>
   <string name="pref_auto_pip_summary">ホームまたは戻るを押したときに自動的にPIPモードへ移行します</string>
   <string name="pref_auto_pip_home_only_title">ホームジェスチャーのみでPIP</string>
@@ -136,15 +195,17 @@
   <string name="pref_player_show_chapter_indicators_title">シークバーにチャプター表示を追加</string>
   <string name="pref_player_show_chapter_indicators_summary">シークバー上でチャプターを視覚的に区切ります。</string>
   <string name="pref_show_navigation_bar_title">操作中にナビゲーションバーを表示</string>
-  <!-- Gesture Preferences Hardcoded -->
   <string name="pref_double_tap_seek_area_width_title">ダブルタップシーク領域の幅</string>
-  <!-- Advanced Preferences Hardcoded -->
   <string name="pref_export_settings_title">設定をエクスポート</string>
   <string name="pref_export_settings_summary">設定をXMLファイルにエクスポートします</string>
   <string name="pref_import_settings_title">設定をインポート</string>
   <string name="pref_import_settings_summary">XMLファイルから設定をインポートします</string>
   <string name="pref_enable_lua_scripts_title">スクリプトを有効にする</string>
   <string name="pref_enable_lua_scripts_summary">MPV設定ディレクトリからスクリプトを読み込みます</string>
+  <string name="pref_enable_p2p_streaming_title">P2P トレントストリーミングを有効化</string>
+  <string name="pref_enable_p2p_streaming_summary">マグネットリンクとトレントファイルから再生可能なメディアをストリーミング</string>
+  <string name="pref_enable_hls_proxy_title">HLSストリーミングプロキシを有効化</string>
+  <string name="pref_enable_hls_proxy_summary">適応型HLSマニフェストを正規化し、分離された音声/動画ストリームを処理します</string>
   <string name="pref_manage_lua_scripts_title">スクリプトを管理</string>
   <string name="pref_manage_lua_scripts_summary">有効なスクリプトを管理します</string>
   <string name="pref_clear_config_cache_title">設定キャッシュを消去</string>
@@ -173,6 +234,8 @@
   <string name="pref_player_orientation_reverse_landscape">逆横向き</string>
   <string name="pref_player_orientation_sensor_landscape">センサー横向き</string>
   <string name="pref_player_save_position_on_quit">終了時に位置を保存</string>
+  <string name="pref_player_remember_video_aspect_per_video_title">動画ごとにアスペクト比を記憶</string>
+  <string name="pref_player_remember_video_aspect_per_video_summary">すべての動画に一つのアスペクト比を適用せず、動画ごとに保存したアスペクト比を復元</string>
   <string name="pref_player_double_tap_seek_duration">ダブルタップシーク時間</string>
   <string name="pref_player_custom_skip_duration_title">カスタムスキップ時間</string>
   <string name="pref_player_custom_skip_duration_summary">カスタムスキップボタンで進める時間</string>
@@ -234,10 +297,13 @@
   <string name="pref_gesture_tap_thumbnail_to_select_summary">有効にすると、サムネイルのタップで選択モードになります。無効にすると、タップで動画を再生します。</string>
   <string name="pref_decoder">デコーダー</string>
   <string name="pref_decoder_summary">ハードウェアデコード、ピクセル形式、バンディング除去</string>
+  <string name="pref_decoder_engine_title">再生エンジン</string>
+  <string name="pref_decoder_engine_summary">自動では通常の動画にMPVを、HDR、HLG、Dolby VisionにNativeを使用します。</string>
   <string name="pref_decoder_profile_title">MPVプロファイル</string>
   <string name="pref_decoder_try_hw_dec_title">ハードウェアデコードを試す</string>
   <string name="pref_decoder_gpu_next_title">gpu-nextを使用</string>
   <string name="pref_decoder_gpu_next_summary">新しいレンダリングバックエンド</string>
+  <string name="pref_decoder_flow_forced_renderer_summary">MPVFlowにはVulkanを使用するgpu-nextレンダラーが必要です。これらのコントロールには有効なレンダラーが表示され、MPVFlow有効中はロックされます。</string>
   <string name="pref_decoder_gpu_next_enable_title">gpu-nextを有効にしますか？</string>
   <string name="pref_decoder_gpu_next_warning">gpu-nextを有効にすると、一部の端末で再生中に画面が紫色になる場合があります。</string>
   <string name="pref_decoder_gpu_next_purple_screen_fix">画面が紫色になる場合は、詳細設定（mpv.conf）でopengl-pboを無効にしてください：</string>
@@ -253,6 +319,13 @@
   <string name="renderer_build_notice_unsupported_device">OpenGLを使用中（この端末はVulkan 1.3非対応）</string>
   <string name="pref_decoder_yuv420p_title">YUV420Pピクセル形式を使用</string>
   <string name="pref_decoder_yuv420p_summary">一部の動画コーデックで黒画面を解消し、画質と引き換えに性能も向上する場合があります</string>
+  <string name="pref_decoder_mpvflow_title">フレーム補間</string>
+  <string name="pref_decoder_mpvflow_summary">動きを滑らかにするため中間フレームを生成</string>
+  <string name="pref_decoder_mpvflow_visibility_resolver_debug_title">表示状態リゾルバー</string>
+  <string name="pref_decoder_mpvflow_soft_blend_debug_title">ソフトブレンド</string>
+  <string name="pref_decoder_mpvflow_target_fps_title">MPVFlowの目標フレームレート</string>
+  <string name="pref_decoder_mpvflow_target_fps_value">%1$d fps</string>
+  <string name="pref_decoder_mpvflow_target_fps_warning_value">(!) %1$d fps</string>
   <string name="pref_subtitles">字幕</string>
   <string name="pref_subtitles_summary">優先言語、フォント、検索</string>
   <string name="pref_subtitle_search_title">オンライン字幕検索</string>
@@ -285,6 +358,10 @@
   <string name="pref_audio_pitch_correction_summary">高速再生時に音が高く、低速再生時に低くなるのを防ぎます</string>
   <string name="pref_audio_volume_normalization_title">音量の正規化</string>
   <string name="pref_audio_volume_normalization_summary">一定の音量を保つように音量を自動調整します</string>
+  <string name="pref_audio_drc_title">ダイナミックレンジ压縮 (DRC)</string>
+  <string name="pref_audio_drc_summary">オーディオのダイナミックレンジを圧縮し、静かな台詞を強調して大きな音を軽めます</string>
+  <string name="pref_audio_effects">音声処理</string>
+  <string name="toast_file_not_found">ファイルはもう存在しません</string>
   <string name="pref_music_tabs_title">音楽ライブラリのタブ</string>
   <string name="pref_music_visualizer_title">ミュージックビジュアライザー</string>
   <string name="pref_music_visualizer_summary">音楽の再生中に音声に反応するビジュアライザーを表示します</string>
@@ -292,9 +369,14 @@
   <string name="pref_audio_visualizer_style_blob">ブロブ</string>
   <string name="pref_audio_visualizer_style_galaxy">ギャラクシー</string>
   <string name="pref_audio_visualizer_style_cuboid">キューボイド</string>
+  <string name="pref_audio_visualizer_style_particle">粒子</string>
   <string name="pref_audio_visualizer_galaxy_credit">CodePenのZain Razaに着想を得ています</string>
   <string name="pref_audio_ambient_mode_title">アンビエントモード</string>
+  <string name="pref_audio_palette_background_title">アルバムパレットの背景</string>
+  <string name="pref_audio_palette_background_summary">現在の曲のアートワークから抽出した色を音楽プレーヤーの背景に使用（アプリテーマは使用しない）</string>
   <string name="pref_audio_ambient_mode_summary">音楽プレーヤーでアルバムのアートワークから抽出したダイナミックなグラデーションを表示（ビジュアライザー有効時は無効）</string>
+  <string name="pref_audio_standby_mode_title">音楽プレーヤーのスタンバイモード</string>
+  <string name="pref_audio_standby_mode_summary">操作がないときにアルバムアート、有効なら歌詞、シークバーを表示</string>
   <string name="pref_audio_wavy_seekbar_title">波状シークバー</string>
   <string name="pref_audio_wavy_seekbar_summary">シークバーの上に多層の流体ウェーブビジュアライザーアニメーションを表示</string>
   <string name="pref_audio_channels">音声チャンネル</string>
@@ -309,7 +391,6 @@
   <string name="pref_advanced_summary">設定の場所、mpv.conf</string>
   <string name="pref_codecs_title">対応コーデック</string>
   <string name="pref_codecs_summary">このデバイスのハードウェアアクセラレーションとソフトウェアデコード対応状況</string>
-
   <string name="pref_section_app_language">アプリの言語</string>
   <string name="pref_app_language_title">言語</string>
   <string name="pref_app_language_system_default">システムのデフォルト</string>
@@ -319,6 +400,48 @@
   <string name="pref_advanced_mpv_conf_storage_location">設定の保存場所を選択</string>
   <string name="pref_advanced_mpv_conf">mpv.confを編集</string>
   <string name="pref_advanced_input_conf">input.confを編集</string>
+  <string name="pref_mpv_conf_overrides_title">mpv.conf オプションの制御元</string>
+  <string name="pref_mpv_conf_overrides_summary_app_owned">対応するすべての再生オプションをアプリが制御します（推奨）</string>
+  <string name="pref_mpv_conf_overrides_summary_config_owned">%1$d 個のグループを選択し、アプリの %2$d 個のオプションを mpv.conf に委ねています</string>
+  <string name="pref_mpv_conf_overrides_dialog_title">mpv.conf にオプションを制御させる</string>
+  <string name="pref_mpv_conf_overrides_dialog_message">mpv.conf に委ねるカテゴリまたはオプションを選択します。対応するアプリ操作は無効になります。</string>
+  <string name="pref_mpv_conf_overrides_empty_config_warning">有効な mpv.conf が検出されません。設定されるまで既定値が使用されます。</string>
+  <string name="pref_mpv_conf_overrides_protected_message">ライフサイクル、再生コマンド、ヘッダー、証明書は常にアプリが管理します。</string>
+  <string name="pref_mpv_conf_overrides_reset">すべてのグループをアプリの制御に戻す</string>
+  <string name="pref_mpv_conf_overrides_selected_count">%2$d 個中 %1$d 個のオプションを選択</string>
+  <string name="pref_mpv_conf_ownership_active">%1$d個のオプションがmpv.confに従います</string>
+  <string name="pref_mpv_conf_ownership_inactive">アプリ設定ですべてを制御</string>
+  <string name="pref_mpv_conf_ownership_hint">チェックしたオプションはmpv.confから読み込まれ、アプリではロックされます。</string>
+  <string name="pref_mpv_conf_override_renderer">レンダラーと GPU バックエンド</string>
+  <string name="pref_mpv_conf_override_renderer_summary">GPU API、Vulkan、プロファイル設定を上書きします。</string>
+  <string name="pref_mpv_conf_override_flow_compute">MPVFlow計算API</string>
+  <string name="pref_mpv_conf_override_flow_compute_summary">MPVFlow補間で使用する計算バックエンドを上書き</string>
+  <string name="pref_mpv_conf_override_decoder">ハードウェアデコーダー</string>
+  <string name="pref_mpv_conf_override_decoder_summary">ハードウェアデコーダーと調整設定を上書きします。</string>
+  <string name="pref_mpv_conf_override_hdr_shaders">HDR 出力とシェーダー</string>
+  <string name="pref_mpv_conf_override_hdr_shaders_summary">HDR 出力、Anime4K、シェーダー設定を上書きします。</string>
+  <string name="pref_mpv_conf_override_video_filters">映像フィルター</string>
+  <string name="pref_mpv_conf_override_video_filters_summary">画質フィルター、バンディング除去、変換を上書きします。</string>
+  <string name="pref_mpv_conf_override_video_geometry">映像ジオメトリ</string>
+  <string name="pref_mpv_conf_override_video_geometry_summary">ズーム、パン、アスペクト比設定を上書きします。</string>
+  <string name="pref_mpv_conf_override_audio_output">音声出力</string>
+  <string name="pref_mpv_conf_override_audio_output_summary">音声遅延と音量ブースト設定を上書きします。</string>
+  <string name="pref_mpv_conf_override_audio_filters">音声フィルター</string>
+  <string name="pref_mpv_conf_override_audio_filters_summary">イコライザー、DRC、チャンネルフィルターを上書きします。</string>
+  <string name="pref_mpv_conf_override_subtitle_loading">字幕の読み込み</string>
+  <string name="pref_mpv_conf_override_subtitle_loading_summary">字幕検出、言語、フォント設定を上書きします。</string>
+  <string name="pref_mpv_conf_override_subtitle_style">字幕のタイミングとスタイル</string>
+  <string name="pref_mpv_conf_override_subtitle_style_summary">字幕遅延、位置、フォント、色設定を上書きします。</string>
+  <string name="pref_mpv_conf_override_playback_timing">再生タイミング</string>
+  <string name="pref_mpv_conf_override_playback_timing_summary">再生速度、ピッチ、シーク、同期設定を上書きします。</string>
+  <string name="pref_mpv_conf_override_network_buffering">ネットワークバッファリング</string>
+  <string name="pref_mpv_conf_override_network_buffering_summary">キャッシュ、再接続、バッファリング方針を上書きします。</string>
+  <string name="pref_mpv_conf_override_ytdlp">yt-dlp 連携</string>
+  <string name="pref_mpv_conf_override_ytdlp_summary">アプリ管理の yt-dlp 再生オプションを上書きします。</string>
+  <string name="pref_mpv_conf_override_osd">OSD セーフエリア</string>
+  <string name="pref_mpv_conf_override_osd_summary">OSD マージンとセーフエリア設定を上書きします。</string>
+  <string name="mpv_config_owned_title">mpv.conf が制御中</string>
+  <string name="mpv_config_owned_message">このアプリ操作は、必要なオプションの一部または全部が詳細設定で mpv.conf に割り当てられているため無効です。</string>
   <string name="pref_advanced_dump_logs_title">ログを書き出す</string>
   <string name="pref_advanced_dump_logs_summary">開発者と共有するためにログを書き出してコピーします</string>
   <string name="pref_advanced_verbose_logging_title">詳細ログ</string>
@@ -342,7 +465,6 @@
   <string name="anime4k_mode_title">Anime4Kプリセット</string>
   <string name="anime4k_mode_toast">Anime4K：プリセット%1$s</string>
   <string name="pref_anime4k_quality_title">Anime4Kの品質</string>
-  <!-- Anime4K Modes (Renamed to Presets in UI) -->
   <string name="anime4k_mode_off">オフ</string>
   <string name="anime4k_mode_a">A</string>
   <string name="anime4k_mode_b">B</string>
@@ -368,14 +490,22 @@
   <string name="pref_about_donate_title">寄付</string>
   <string name="pref_about_donate_kofi">Ko-fi</string>
   <string name="pref_about_donate_kofi_summary">Ko-fiで開発者を支援</string>
+  <string name="pref_about_donate_kofi_url">https://ko-fi.com/zhinfinity</string>
   <string name="pref_about_donate_paypal">PayPal</string>
   <string name="pref_about_donate_paypal_summary">PayPalで開発者を支援</string>
+  <string name="pref_about_donate_paypal_url">https://paypal.me/InfinityxEternity</string>
   <string name="pref_about_donate_upi">UPI</string>
+  <string name="pref_about_donate_upi_id">zhjjk001-1@oksbi</string>
   <string name="player_sheets_add_ext_sub">外部字幕を追加</string>
   <string name="player_sheets_add_ext_audio">外部音声トラックを追加</string>
   <string name="player_sheets_embedded_audio_tracks">埋め込み音声トラック</string>
   <string name="player_sheets_external_audio_tracks">外部音声トラック</string>
   <string name="player_sheets_tracks_off">オフ</string>
+  <string name="player_sheets_track_title_w_lang">#%1$d: %2$s (%3$s)</string>
+  <string name="player_sheets_track_title_wo_lang">#%1$d: %2$s</string>
+  <string name="player_sheets_track_lang_wo_title">#%1$d: %2$s</string>
+  <string name="player_sheets_chapter_title_substitute_subtitle">字幕 #%d</string>
+  <string name="player_sheets_chapter_title_substitute_audio">音声 #%d</string>
   <string name="player_sheets_off">オフ</string>
   <string name="player_sheets_subtitles_settings_title">字幕設定</string>
   <string name="player_sheets_subtitles_color_text">テキスト</string>
@@ -465,9 +595,10 @@
   <string name="timer_title">スリープタイマー</string>
   <string name="timer_remaining">残り%s</string>
   <string name="toast_sleep_timer_ended">スリープタイマーが終了しました</string>
+  <string name="volume_slider_absolute_value">%d</string>
+  <string name="github_repo_url">https://github.com/ZHINFINITY/Mpv-infinity</string>
   <string name="swap_the_volume_and_brightness_slider">音量と明るさのスライダーを入れ替える</string>
   <string name="pref_player_display_reduce_player_animation">プレーヤーのアニメーションを減らす</string>
-  <!-- Animation settings -->
   <string name="pref_anim_section">アニメーション</string>
   <string name="pref_anim_controls_style">操作のアニメーションスタイル</string>
   <string name="pref_anim_video_open">動画を開くときのアニメーション</string>
@@ -477,13 +608,13 @@
   <string name="show_splash_ovals_on_double_tap_to_seek">ダブルタップシーク時に波紋を表示</string>
   <string name="show_time_on_double_tap_to_seek">シーク時間を表示</string>
   <string name="player_sheets_frame_navigation_title">フレーム移動</string>
+  <string name="player_sheets_frame_navigation_snapshot_saved">Pictures/mpvSnaps に保存されました</string>
   <string name="player_sheets_frame_navigation_include_subtitles">スナップショットに字幕を含める</string>
   <string name="player_sheets_zoom_slider_label">動画ズーム</string>
   <plurals name="seconds">
     <item quantity="one">%1$d秒</item>
     <item quantity="other">%1$d秒</item>
   </plurals>
-  <!-- Background Playback -->
   <string name="background_playback_title">バックグラウンド再生</string>
   <string name="pref_audio_background_playback_title">バックグラウンド再生（オーディオプレイヤー）</string>
   <string name="pref_audio_background_playback_summary">オーディオプレイヤーを離れたり画面をオフにしても音声を再生し続ける</string>
@@ -504,6 +635,8 @@
   <string name="not_set_video_default">未設定（動画のデフォルトを使用）</string>
   <string name="enter_language_codes">言語コードをカンマ区切りで入力してください（例：eng,jpn,spa）</string>
   <string name="language_codes_placeholder">eng,jpn,spa</string>
+  <string name="enter_subtitle_title_preferences">字幕タイトルのキーワードまたは言語コードを優先順に、カンマ区切りで入力してください。前にある一致が優先されます。</string>
+  <string name="subtitle_title_preferences_placeholder">Full,Dialogue,eng,en</string>
   <string name="pref_audio_channels_auto_safe_desc">安全な自動選択（デフォルト）</string>
   <string name="pref_audio_channels_auto_desc">自動選択</string>
   <string name="pref_audio_channels_mono_desc">モノラルにダウンミックス</string>
@@ -516,12 +649,12 @@
   <string name="clear_font_directory">フォントディレクトリを消去</string>
   <string name="reset_to_default_font">デフォルトフォントに戻す</string>
   <string name="set_as_default">デフォルトに設定</string>
-  <!-- Notification strings -->
   <string name="notification_channel_name">メディア再生</string>
   <string name="notification_channel_description">メディア再生コントロール</string>
   <string name="notification_playing">再生中</string>
   <string name="notification_add_to_favorites">お気に入りに追加</string>
   <string name="notification_saved_to_favorites">お気に入りに保存しました</string>
+  <string name="notification_close">閉じる</string>
   <string name="notification_repeat_off">リピートオフ</string>
   <string name="notification_repeat_one">1曲リピート</string>
   <string name="notification_repeat_all">全曲リピート</string>
@@ -530,13 +663,22 @@
   <string name="notification_permission_disabled">Mpv∞の通知が無効です。再生操作を表示するには有効にしてください。</string>
   <string name="notification_disabled_in_advanced_settings">バックグラウンド再生を使用するには、高度な設定で通知を有効にしてください。</string>
   <string name="pref_advanced_notification_style">通知スタイル</string>
-  <!-- Media Info Activity -->
   <string name="pref_player_use_precise_seeking">高精度シークを使用</string>
-  <!-- Folders Preferences -->
   <string name="pref_folders_title">フォルダー</string>
   <string name="pref_folders_summary">フォルダーの除外リストと.nomediaの処理を管理します</string>
   <string name="pref_folders_include_nomedia_title">.nomediaフォルダーを含める</string>
   <string name="pref_folders_include_nomedia_summary">有効にすると、.nomediaで非表示にされたフォルダーとそのサブフォルダーの動画もスキャンします。</string>
+  <string name="pref_folders_include_hidden_title">隠しメディアフォルダーを含める</string>
+  <string name="pref_folders_include_hidden_summary">ドットで始まるフォルダーと、指定したマーカーファイルを含むフォルダー内の動画をスキャン</string>
+  <string name="pref_folders_hidden_markers_title">マーカーファイル</string>
+  <string name="pref_folders_hidden_markers_summary">これらのファイルを含むフォルダーとサブフォルダーを含めます。ドットで始まるフォルダーは常に含めます。</string>
+  <string name="pref_folders_hidden_markers_empty">マーカーファイル未設定。ドットで始まるフォルダーは引き続き含まれます。</string>
+  <string name="pref_folders_add_marker">マーカーファイルを追加</string>
+  <string name="pref_folders_add_marker_title">隠しフォルダーのマーカーを追加</string>
+  <string name="pref_folders_marker_name">ファイル名</string>
+  <string name="pref_folders_marker_invalid">パス区切り文字を含まないファイル名を入力してください。</string>
+  <string name="pref_folders_marker_duplicate">このマーカーはすでに追加されています。</string>
+  <string name="pref_folders_remove_marker">%1$sを削除</string>
   <string name="pref_folders_empty_title">除外されたフォルダーはありません</string>
   <string name="pref_folders_empty_message">下のボタンをタップして、フォルダー一覧から非表示にするフォルダーを追加します</string>
   <string name="pref_folders_add_folder">フォルダーを除外リストに追加</string>
@@ -548,11 +690,9 @@
   <string name="pref_folders_clear_all_confirm_message">すべてのフォルダーが除外リストから削除されます。後から再追加できます。</string>
   <string name="pref_folders_blacklist">除外リスト</string>
   <string name="pref_folders_blacklisted">フォルダーを除外リストに追加しました</string>
-  <!-- M3U Playlist Strings -->
   <string name="pref_subtitles_searching">検索中…</string>
   <string name="pref_subtitles_found">%d件の字幕が見つかりました</string>
   <string name="pref_subtitles_online_search_title">オンライン字幕検索</string>
-  <!-- M3U Playlist Strings -->
   <string name="playlist_add_m3u_title">M3Uプレイリストを追加</string>
   <string name="playlist_add_m3u_description">M3UプレイリストファイルのURLを入力します</string>
   <string name="playlist_url_label">プレイリストURL</string>
@@ -577,10 +717,6 @@
   <string name="pref_player_safe_area_window_summary">カメラの切り欠きを避けてプレーヤー操作と統計を内側に配置します。</string>
   <string name="pref_subtitles_search_mode_title">検索モード</string>
   <string name="pref_subtitles_subhub_sources_title">SubHubソース</string>
-
-  <!-- ═══════════════════════════════════════════════════════════ -->
-  <!-- Main Settings Hub Section Headers                          -->
-  <!-- ═══════════════════════════════════════════════════════════ -->
   <string name="pref_section_appearance">外観</string>
   <string name="pref_section_playback">再生</string>
   <string name="pref_section_gestures_controls">ジェスチャーと操作</string>
@@ -592,10 +728,6 @@
   <string name="pref_section_ai_summary">AIによる名前変更、字幕翻訳、音声認識、オフラインモデル（OpenCode/Groq/OpenAI）</string>
   <string name="pref_section_advanced">詳細設定</string>
   <string name="pref_section_about">このアプリについて</string>
-
-  <!-- ═══════════════════════════════════════════════════════════ -->
-  <!-- Appearance - Animations Section                            -->
-  <!-- ═══════════════════════════════════════════════════════════ -->
   <string name="pref_section_animations">アニメーション</string>
   <string name="pref_anim_controls_style_title">操作のアニメーションスタイル</string>
   <string name="pref_anim_controls_style_summary">プレーヤー操作の表示と非表示の方法を選択します</string>
@@ -611,16 +743,12 @@
   <string name="pref_anim_speed_normal">標準（%.1f×）</string>
   <string name="pref_anim_speed_slow">遅い（%.1f×）</string>
   <string name="pref_anim_speed_very_slow">非常に遅い（%.1f×）</string>
-
-  <!-- ═══════════════════════════════════════════════════════════ -->
-  <!-- Player - General Section                                   -->
-  <!-- ═══════════════════════════════════════════════════════════ -->
   <string name="pref_section_general">一般</string>
   <string name="pref_playlist_mode_title">次へ/前へ移動を有効にする</string>
   <string name="pref_playlist_mode_summary">フォルダー内のすべての動画に次へ/前へボタンを表示します</string>
   <string name="pref_playlist_mode_summary_disabled">動画を個別に再生（複数選択するとプレイリスト）</string>
-
-  <!-- Player - Seeking Section (additional)                      -->
+  <string name="pref_open_radio_m3u_in_music_title">ラジオのM3Uプレイリストを音楽プレーヤーで開く</string>
+  <string name="pref_open_radio_m3u_in_music_summary">認識したラジオおよび音声のみのM3Uプレイリストを動画プレーヤーではなく音楽で開く</string>
   <string name="pref_online_skip_markers_title">オンラインのスキップマーカーを使用</string>
   <string name="pref_online_skip_markers_summary">選択した提供元からイントロ、振り返り、アウトロ、クレジット、プレビューのマーカーを取得します</string>
   <string name="pref_marker_provider_title">オンラインマーカーの提供元</string>
@@ -631,15 +759,11 @@
   <string name="pref_auto_skip_intro_summary">再生中にオープニングマーカーを自動的にスキップします</string>
   <string name="pref_auto_skip_outro_title">アウトロを自動スキップ</string>
   <string name="pref_auto_skip_outro_summary">再生中にエンディングマーカーを自動的にスキップします</string>
-
-  <!-- Player - Display & Controls Section                        -->
   <string name="pref_section_display_controls">表示と操作</string>
   <string name="pref_player_controls_drawer_title">コントロールの引き出し</string>
   <string name="pref_player_controls_drawer_summary">ドラッグしてコントロールパネルを開くためのエッジハンドルを表示</string>
   <string name="pref_nav_bar_title">操作中にナビゲーションバーを表示</string>
   <string name="pref_nav_bar_summary">プレーヤー操作の上にAndroidシステムナビゲーションバーを表示します</string>
-
-  <!-- Player - Gesture & Action Overlays Section                 -->
   <string name="pref_section_overlays">ジェスチャーと操作のオーバーレイ</string>
   <string name="pref_volume_overlay_title">音量スライダーのオーバーレイ</string>
   <string name="pref_volume_overlay_summary">音量操作のスワイプ中に縦型の音量表示を出します</string>
@@ -657,10 +781,6 @@
   <string name="pref_action_feedback_overlay_summary">カスタムボタン、アンビエント切り替え、字幕ドラッグ、Luaスクリプトからの短いテキストを表示します</string>
   <string name="pref_provider_status_overlay_title">提供元の状態フィードバック</string>
   <string name="pref_provider_status_overlay_summary">Wyzieの字幕およびマーカー検索でオンライン提供元のエラー/状態メッセージを表示します</string>
-
-  <!-- ═══════════════════════════════════════════════════════════ -->
-  <!-- Gestures - Swipe & Speed Section                           -->
-  <!-- ═══════════════════════════════════════════════════════════ -->
   <string name="pref_section_swipe_speed">スワイプと速度</string>
   <string name="pref_sensitivity_low">低</string>
   <string name="pref_sensitivity_medium">中</string>
@@ -673,10 +793,6 @@
   <string name="pref_custom_seek_label">秒</string>
   <string name="pref_double_tap_seek_area_width_summary">現在：%1$d%%</string>
   <string name="pref_custom_seek_summary_format">カスタム（%1$d秒）</string>
-
-  <!-- ═══════════════════════════════════════════════════════════ -->
-  <!-- Player Controls Sections                                   -->
-  <!-- ═══════════════════════════════════════════════════════════ -->
   <string name="pref_section_landscape_controls">横画面のコントロール</string>
   <string name="pref_section_portrait_controls">縦画面のコントロール</string>
   <string name="pref_section_seekbar_style">シークバーのスタイル</string>
@@ -687,10 +803,6 @@
   <string name="pref_none">なし</string>
   <string name="pref_custom_time_summary_format">カスタム（%1$d ms）</string>
   <string name="pref_time_ms_summary">%1$d ms</string>
-
-  <!-- ═══════════════════════════════════════════════════════════ -->
-  <!-- Subtitles Preferences                                      -->
-  <!-- ═══════════════════════════════════════════════════════════ -->
   <string name="pref_section_subtitle_fonts">フォント</string>
   <string name="pref_section_subtitle_search">字幕検索</string>
   <string name="pref_wyzie_api_key_title">Wyzie APIキー</string>
@@ -724,11 +836,23 @@
   <string name="pref_subtitle_search_error">エラー：%1$s</string>
   <string name="pref_subtitle_search_attribution">字幕検索の提供元</string>
   <string name="pref_subtitle_search_link">sub.wyzie.io</string>
-
-  <!-- ═══════════════════════════════════════════════════════════ -->
-  <!-- Advanced Preferences                                       -->
-  <!-- ═══════════════════════════════════════════════════════════ -->
   <string name="pref_section_backup_restore">バックアップと復元</string>
+  <string name="ui_recent_streams">最近のストリームリンク</string>
+  <string name="ui_autofill_stream_url">ストリームURLを自動入力</string>
+  <string name="ui_torrent_media_anime">アニメ</string>
+  <string name="ui_torrent_media_series">シリーズ</string>
+  <string name="ui_torrent_media_movie">映画</string>
+  <string name="ui_torrent_media_torrent">トレント</string>
+  <string name="ui_resume_playback">再開</string>
+  <string name="ui_play_now">再生</string>
+  <string name="ui_show_more">さらに表示</string>
+  <string name="ui_show_less">一部のみ表示</string>
+  <string name="ui_episodes">エピソード</string>
+  <string name="ui_no_torrents_title">保存されたトレントはありません</string>
+  <string name="ui_no_torrents_description">アニメや映画をストリーミングするには、マグネットリンクまたはトレントURLを貼り付けてください。</string>
+  <string name="ui_no_saved_media_title">保存されたリンクはありません</string>
+  <string name="ui_no_saved_media_description">ストリームURLやマグネットリンクを貼り付けるか、最近のリンクから保存してコレクションを作成します。</string>
+  <string name="ui_save_to_media">メディアに保存</string>
   <string name="pref_export_complete_title">エクスポート完了</string>
   <string name="pref_export_complete_text">%1$d件を正常にエクスポートしました！</string>
   <string name="pref_import_complete_title">インポート完了</string>
@@ -743,6 +867,36 @@
   <string name="pref_section_mpv_config">MPV設定</string>
   <string name="pref_config_edit_summary">タップして設定を編集</string>
   <string name="pref_section_scripts">スクリプト（Lua / JS）</string>
+  <string name="pref_section_p2p_streaming">P2P ストリーミング</string>
+  <string name="toast_torrent_streaming_disabled">最初に詳細設定で P2P トレントストリーミングを有効化してください</string>
+  <string name="ui_recent_stream_links">最近のリンク</string>
+  <string name="ui_torrent_files">トレント</string>
+  <plurals name="ui_torrent_group_file_count">
+    <item quantity="one">%1$d 個の再生可能なファイル</item>
+    <item quantity="other">%1$d 個の再生可能なファイル</item>
+  </plurals>
+  <string name="ui_search_episodes">エピソードを検索…</string>
+  <string name="ui_sort_ascending">昇順で並べ替え</string>
+  <string name="ui_sort_descending">降顺で並べ替え</string>
+  <string name="ui_no_matching_episodes">一致するエピソードはありません</string>
+  <string name="ui_buffering">バッファリング中…</string>
+  <string name="ui_expand_torrent_group">トレントファイルを表示</string>
+  <string name="ui_collapse_torrent_group">トレントファイルを隠す</string>
+  <string name="ui_delete_torrent_group">トレントを削除</string>
+  <string name="torrent_picker_back">トレントを閉じる</string>
+  <string name="torrent_picker_choose_title">再生するものを選択</string>
+  <plurals name="torrent_picker_playable_count">
+    <item quantity="one">%1$d 個の再生可能なファイル</item>
+    <item quantity="other">%1$d 個の再生可能なファイル</item>
+  </plurals>
+  <string name="torrent_picker_finding_details">アートワークと詳細を探しています…</string>
+  <string name="torrent_picker_play_file">%1$s を再生</string>
+  <string name="torrent_picker_preparing_title">トレントを読み込んでいます</string>
+  <string name="torrent_picker_preparing_description">ピアに接続して再生可能なファイルを探しています…</string>
+  <string name="torrent_picker_error_title">トレントを開けませんでした</string>
+  <string name="torrent_picker_retry">再試行</string>
+  <string name="torrent_picker_episode_label">シーズン %1$d • エピソード %2$d</string>
+  <string name="torrent_picker_single_episode_label">エピソード %1$d</string>
   <string name="pref_manage_scripts_summary_disabled">最初に保存場所を設定してスクリプトを有効にしてください</string>
   <string name="pref_manage_scripts_summary_none">有効なスクリプトはありません</string>
   <string name="pref_manage_scripts_summary_singular">1個のスクリプトが有効</string>
@@ -757,10 +911,6 @@
   <string name="pref_section_logging">ログ</string>
   <string name="pref_export_failed_toast">エクスポートに失敗しました：%1$s</string>
   <string name="pref_import_failed_toast">インポートに失敗しました：%1$s</string>
-
-  <!-- ═══════════════════════════════════════════════════════════ -->
-  <!-- AI Integration                                             -->
-  <!-- ═══════════════════════════════════════════════════════════ -->
   <string name="pref_ai_features_section">AI機能</string>
   <string name="pref_ai_enabled_title">AI機能を有効にする</string>
   <string name="pref_ai_enabled_summary">AI機能は有効です</string>
@@ -797,6 +947,8 @@
   <string name="pref_translation_section">字幕翻訳</string>
   <string name="pref_enable_translation_title">翻訳を有効にする</string>
   <string name="pref_enable_translation_summary">AIを使用して外部字幕を翻訳します</string>
+  <string name="pref_automatic_subtitle_font_fallback_title">字幕フォントの自動フォールバック</string>
+  <string name="pref_automatic_subtitle_font_fallback_summary">埋め込み字幕フォントに翻訳文字がない場合、互換性のあるフォールバックフォントを使用</string>
   <string name="pref_custom_prompt_section">カスタム指示</string>
   <string name="pref_override_instructions_title">デフォルト指示を上書き</string>
   <string name="pref_override_instructions_enabled_summary">組み込み指示の代わりにカスタム指示を使用します</string>
@@ -812,8 +964,6 @@
   <string name="pref_legacy_prompt_info">古い全体指示が保存されています。タスク固有の指示が空の場合に使用します。</string>
   <string name="pref_translation_warning_title">字幕翻訳</string>
   <string name="pref_translation_warning_text">字幕翻訳は多少不完全な場合があります。最良の結果にはより良いモデルを使い、字幕が正常に動かないと怒らないでください。</string>
-
-  <!-- AI - API Key titles/placeholders for each provider         -->
   <string name="pref_opencode_api_key_title">OpenCode APIキー</string>
   <string name="pref_opencode_api_key_hint">opencode.ai/authでキーを取得</string>
   <string name="pref_opencode_api_key_placeholder">sk-…</string>
@@ -832,18 +982,10 @@
   <string name="pref_together_api_key_title">Together APIキー</string>
   <string name="pref_together_api_key_hint">api.together.ai でキーを取得</string>
   <string name="pref_together_api_key_placeholder">…</string>
-
-  <!-- ═══════════════════════════════════════════════════════════ -->
-  <!-- Folders Preferences                                        -->
-  <!-- ═══════════════════════════════════════════════════════════ -->
   <string name="pref_storage_screen_title">ストレージ</string>
   <string name="pref_media_library_section">メディアライブラリ</string>
   <string name="pref_hidden_folders_section">非表示フォルダー</string>
   <string name="pref_clear_content_desc">消去</string>
-
-  <!-- ═══════════════════════════════════════════════════════════ -->
-  <!-- Search Index Entries (SearchablePreference.kt)             -->
-  <!-- ═══════════════════════════════════════════════════════════ -->
   <string name="search_online_skip_markers_summary">オンラインプロバイダーからイントロ、前回のあらすじ、アウトロ、クレジット、予告のマーカーを取得</string>
   <string name="search_marker_provider_summary">オンラインのイントロ／アウトロマーカーに IntroDB、TIDB、AniSkip、Anime Skip のいずれかを選択</string>
   <string name="search_chapter_detect_summary">オープニング、エンディング、クレジット、予告などのチャプター名からスキップマーカーを作成</string>
@@ -869,25 +1011,13 @@
   <string name="search_custom_ai_prompts_title">カスタムAIプロンプト</string>
   <string name="search_custom_ai_prompts_summary">名前変更、翻訳、整形タスクの既定の指示を上書き</string>
   <string name="search_offline_ai_models_summary">完全オフラインのAI機能向けにローカルLLMをダウンロードして管理</string>
-
-  <!-- ═══════════════════════════════════════════════════════════ -->
-  <!-- Decoder Preferences                                        -->
-  <!-- ═══════════════════════════════════════════════════════════ -->
   <string name="pref_decoder_vulkan_experimental_suffix">（試験的）</string>
   <string name="pref_anime4k_link">github.com/bloc97/Anime4K</string>
-
-  <!-- ═══════════════════════════════════════════════════════════ -->
-  <!-- Dialogs & Common                                           -->
-  <!-- ═══════════════════════════════════════════════════════════ -->
   <string name="generic_hide_key">キーを隠す</string>
   <string name="generic_show_key">キーを表示</string>
   <string name="generic_verify">確認</string>
   <string name="generic_fetch">取得</string>
   <string name="generic_got_it">了解</string>
-
-  <!-- ═══════════════════════════════════════════════════════════ -->
-  <!-- Advanced - Cache Sizes & Counts                            -->
-  <!-- ═══════════════════════════════════════════════════════════ -->
   <string name="pref_clear_playback_history_summary">再生位置、選択した字幕、音声トラック、遅延、速度を消去</string>
   <string name="pref_clear_playback_history_recently_played">最近再生した%1$d件の項目も消去</string>
   <string name="pref_clear_playback_history_recently_played_none">消去する最近再生した項目はありません</string>
@@ -908,8 +1038,6 @@
   <string name="pref_ytdl_prefer_h264_title">H.264（AVC）を優先</string>
   <string name="pref_ytdl_prefer_h264_summary">古い端末との互換性が高まりますが、画質が制限される場合があります</string>
   <string name="pref_ytdl_quality_title">優先する画質</string>
-
-  <!-- Customizable Skip Keywords -->
   <string name="pref_custom_intro_keywords_enabled">オープニングのスキップにカスタムキーワードを使用</string>
   <string name="pref_custom_intro_keywords_summary">既定のキーワードではなくユーザー定義のキーワードでオープニングを判定</string>
   <string name="pref_custom_intro_keywords_title">カスタムオープニングキーワード</string>
@@ -918,7 +1046,6 @@
   <string name="pref_custom_outro_keywords_summary">既定のキーワードではなくユーザー定義のキーワードでエンディングを判定</string>
   <string name="pref_custom_outro_keywords_title">カスタムエンディングキーワード</string>
   <string name="pref_custom_outro_keywords_dialog_desc">エンディング／アウトロのキーワードをカンマ区切りで入力</string>
-  <!-- Extracted UI strings -->
   <string name="generic_unknown_error">不明なエラー</string>
   <string name="toast_error_loading_scripts">スクリプトの読み込みエラー: %1$s</string>
   <string name="toast_copied_value">コピーしました: %1$s</string>
@@ -995,8 +1122,13 @@
   <string name="pref_decoder_vulkan_experimental_title">Vulkan（試験的）</string>
   <string name="hdr_mode_off">オフ</string>
   <string name="hdr_mode_off_description">通常のSDR出力</string>
+  <string name="hdr_mode_bt2100_pq">BT.2100 PQ</string>
+  <string name="hdr_mode_pq_short">PQ</string>
   <string name="hdr_mode_bt2100_pq_description">AstraトーンマッピングとBottosson色域マッピングを使用したHDR10形式のPQ</string>
+  <string name="hdr_mode_bt2100_hlg">BT.2100 HLG</string>
+  <string name="hdr_mode_hlg_short">HLG</string>
   <string name="hdr_mode_bt2100_hlg_description">hdr-toysのAstraおよびBottossonシェーダーチェーンによるHLG HDR</string>
+  <string name="hdr_mode_bt2020">BT.2020</string>
   <string name="hdr_mode_bt2020_description">hdr-toysの色域マッピングを使用したBT.2020 / BT.1886変換</string>
   <string name="hdr_mode_linear">リニアHDR</string>
   <string name="hdr_mode_linear_short">リニア</string>
@@ -1013,8 +1145,32 @@
   <string name="ytdlp_audio_preference">音声の優先設定</string>
   <string name="ytdlp_audio_quality">音質</string>
   <string name="ytdlp_subtitles_language">字幕と言語</string>
+  <string name="ytdlp_cookie_login_title">ログイン</string>
+  <string name="ytdlp_cookie_login_url">ウェブサイトURL</string>
+  <string name="ytdlp_cookie_login_use">このセッションを使用</string>
+  <string name="ytdlp_cookie_login_open">開く</string>
+  <string name="ytdlp_cookie_login_loading">ページを読み込み中…</string>
+  <string name="ytdlp_cookies_login">ログイン</string>
+  <string name="ytdlp_instagram_login_title">Instagramにログイン</string>
+  <string name="ytdlp_instagram_login_use">このセッションを使用</string>
+  <string name="ytdlp_instagram_cookies_title">ウェブサイトのログインCookie</string>
+  <string name="ytdlp_instagram_cookies_summary">アプリ内で任意のウェブサイトにログインすると、yt-dlpが非公開またはログイン必須の動画をダウンロードできるようになります。ファイルはアプリの専用ストレージにコピーされます。</string>
+  <string name="ytdlp_instagram_cookies_not_configured">Cookieファイル未選択</string>
+  <string name="ytdlp_cookies_choose">Cookie</string>
+  <string name="ytdlp_cookies_clear">クリア</string>
+  <string name="ytdlp_custom_user_agent_title">ユーザーエージェント</string>
+  <string name="ytdlp_custom_user_agent_summary">ウェブサイトのログインWebViewで使用する自動ブラウザー識別情報を上書きします。空欄ならサイトごとの推奨デフォルトを使用します。</string>
+  <string name="ytdlp_custom_user_agent_reset">リセット</string>
+  <string name="ytdlp_custom_user_agent_save">保存</string>
   <string name="ytdlp_advanced_networking">高度なネットワーク設定</string>
   <string name="ytdlp_playlist_behavior">プレイリストの動作</string>
+  <string name="ytdlp_download_quality_chooser_title">ダウンロード画質の選択を表示</string>
+  <string name="ytdlp_download_quality_chooser_summary">ネットワークタブに貼り付けた対応リンクをダウンロードする前に画質を確認</string>
+  <string name="ytdlp_download_quality_title">ダウンロード画質を選択</string>
+  <string name="ytdlp_download_quality_any">利用可能な最高画質</string>
+  <string name="ytdlp_download_quality_download">ダウンロード</string>
+  <string name="ytdlp_download_quality_cancel">キャンセル</string>
+  <string name="ytdlp_download_quality_link">このリンクの画質を選択</string>
   <string name="ui_file_size">ファイルサイズ</string>
   <string name="ui_duration">長さ</string>
   <string name="ui_bitrate">ビットレート</string>
@@ -1031,6 +1187,7 @@
   <string name="sort_view_options">並べ替えと表示のオプション</string>
   <string name="ui_view_options">表示オプション</string>
   <string name="ambient_glow">グロー</string>
+  <string name="ambient_style_youtube">YouTube</string>
   <string name="ambient_color">カラー</string>
   <string name="ambient_compositing">合成</string>
   <string name="ambient_visual_style">ビジュアルスタイル</string>
@@ -1042,6 +1199,7 @@
   <string name="lua_no_mpv_folder">MPVフォルダーが選択されていません</string>
   <string name="lua_no_scripts_found">スクリプトが見つかりません</string>
   <string name="ambient_frame_extend">フレーム拡張</string>
+  <string name="ambient_youtube_auto_hint">YouTubeモードは完全自動です。YouTubeのアンビエントモードと同様、現在のフレームを柔らかくぼかして投影した光でバーを照らします。</string>
   <string name="lua_delete_script_title">スクリプトを削除しますか？</string>
   <string name="lua_delete_script_message">"%1$s" を削除しますか？この操作は取り消せません。</string>
   <string name="search_category_advanced">詳細設定</string>
@@ -1124,12 +1282,33 @@
   <string name="media_info_stat_bit_depth">ビット深度</string>
   <string name="media_info_stat_channels">チャンネル</string>
   <string name="media_info_stat_sample_rate">サンプリングレート</string>
+  <string name="onboarding_skip">スキップ</string>
+  <string name="onboarding_get_started">はじめる</string>
+  <string name="onboarding_all_set_title">準備完了</string>
+  <string name="onboarding_all_set_desc">権限はいつでもシステム設定から変更できます。</string>
+  <string name="onboarding_show_tutorial_title">クイックツアーを表示</string>
+  <string name="onboarding_show_tutorial_desc">セットアップ後に3つのヒントを表示</string>
+  <string name="tutorial_tabs_title">セクション</string>
+  <string name="tutorial_tabs_desc">スワイプまたはタップで切り替え。</string>
+  <string name="tutorial_search_title">検索</string>
+  <string name="tutorial_search_desc">どんなファイルもすばやく検索。</string>
+  <string name="tutorial_settings_title">設定</string>
+  <string name="tutorial_settings_desc">ここですべてを調整。</string>
+  <string name="onboarding_missing_permissions_title">未許可</string>
+  <string name="onboarding_missing_permissions_desc">必要になったときに許可できます。</string>
+  <string name="storage_permission_needed_title">ストレージアクセスが必要</string>
+  <string name="storage_permission_needed_desc">メディアの閲覧と再生にはストレージアクセスを許可してください。</string>
+  <string name="storage_permission_grant">アクセスを許可</string>
+  <string name="pref_player_web_stream_links_title">ストリーミングサイトのリンクを開く</string>
+  <string name="pref_player_web_stream_links_summary">YouTube、Vimeo、Twitch、Odysee、Bilibili のリンクで Mpv∞ を候補に表示。オフにすると各アプリが開きます。</string>
   <string name="player_unknown_video">不明な動画</string>
   <string name="ui_logcat">Logcat:</string>
   <string name="ui_home">ホーム</string>
+  <string name="ui_music">音楽</string>
   <string name="ui_recents">最近</string>
   <string name="ui_playlists">プレイリスト</string>
   <string name="ui_network">ネットワーク</string>
+  <string name="ui_streams">ストリーム</string>
   <string name="ui_pinned_folder">ピン留めしたフォルダー</string>
   <string name="ui_folder">フォルダー</string>
   <string name="ui_connect_automatically_on_app_launch">アプリ起動時に自動接続</string>
@@ -1154,6 +1333,8 @@
   <string name="ui_use_https_secure_connection">HTTPSを使用（安全な接続）</string>
   <string name="ui_username">ユーザー名</string>
   <string name="ui_password">パスワード</string>
+  <string name="ui_new_password_keep_existing">新しいパスワード（空白の場合は保存済みのパスワードを維持）</string>
+  <string name="ui_clear_saved_password">保存済みのパスワードをクリア</string>
   <string name="ui_save">保存</string>
   <string name="ui_create_new_playlist">新しいプレイリストを作成</string>
   <string name="ui_existing_playlists">既存のプレイリスト</string>
@@ -1194,8 +1375,14 @@
   <string name="ui_advanced_options">詳細オプション</string>
   <string name="ui_target_size">目標サイズ</string>
   <string name="ui_encoding">エンコード</string>
+  <string name="ui_av1">AV1</string>
+  <string name="ui_h_265">H.265</string>
+  <string name="ui_h_264">H.264</string>
   <string name="ui_resolution">解像度</string>
   <string name="ui_framerate">フレームレート</string>
+  <string name="ui_60fps">60fps</string>
+  <string name="ui_30fps">30fps</string>
+  <string name="ui_24fps">24fps</string>
   <string name="ui_audio_options">音声オプション</string>
   <string name="ui_remove_audio">音声を削除</string>
   <string name="ui_audio_bitrate">音声ビットレート</string>
@@ -1223,10 +1410,19 @@
   <string name="ui_failed_to_delete">削除できませんでした</string>
   <string name="ui_play_recently_played_or_first_video">最近再生した動画または最初の動画を再生</string>
   <string name="ui_videos">動画</string>
+  <string name="ui_audio_tab">オーディオ</string>
   <string name="ui_add_connection">接続を追加</string>
   <string name="ui_local_network">ローカルネットワーク</string>
+  <string name="ui_jellyfin">Jellyfin</string>
   <string name="ui_no_network_connections">ネットワーク接続がありません</string>
   <string name="ui_no_recent_links">最近のストリームリンクやトレントはまだありません。開始するには上にストリームURLを貼り付けてください。</string>
+  <string name="network_bookmark_add">フォルダーをブックマーク</string>
+  <string name="network_bookmark_remove">フォルダーのブックマークを解除</string>
+  <string name="network_bookmarks_title">ブックマークしたフォルダー</string>
+  <string name="network_bookmarks_manage">ブックマークしたフォルダーを管理</string>
+  <string name="network_bookmarks_empty_title">ブックマークしたフォルダーはありません</string>
+  <string name="network_bookmarks_empty_description">リモートフォルダーをブックマークすると、ネットワークページから直接開けます。</string>
+  <string name="network_bookmark_source_format">%1$s • %2$s</string>
   <string name="ui_add_smb_ftp_or_webdav_connections_to_browse_network_files">SMB、FTP、WebDAV接続を追加してネットワークファイルを参照</string>
   <string name="ui_stream_link">ストリームリンク</string>
   <string name="ui_enter_stream_url">ストリームURLを入力…</string>
@@ -1309,6 +1505,8 @@
   <string name="ui_no_android">Androidなし</string>
   <string name="ui_script_runtime">スクリプト実行環境</string>
   <string name="ui_newly_enabled_scripts_can_load_during_playback_scripts_you_turn">新しく有効にしたスクリプトは再生中に読み込めます。無効にしたスクリプトを完全に停止するには、動画を開き直す必要がある場合があります。</string>
+  <string name="ui_media">メディア</string>
+  <string name="ui_saved_media">保存されたリンク</string>
   <string name="ui_media_info">メディア情報</string>
   <string name="ui_analyzing_media_file">メディアファイルを解析中...</string>
   <string name="ui_media_tracks_summary">メディアトラックの概要</string>
@@ -1384,6 +1582,20 @@
   <string name="ui_auto_check_for_updates">アップデートを自動確認</string>
   <string name="ui_check_on_startup">起動時に確認</string>
   <string name="ui_check_for_updates_now">今すぐアップデートを確認</string>
+  <string name="ui_update_channel">アップデートチャンネル</string>
+  <string name="ui_stable_releases">安定版</string>
+  <string name="ui_preview_builds">プレビュー (Nightly)</string>
+  <string name="ui_preview_builds_summary">プレビュービルドは最新の Mpv∞ の変更から公開される署名済みテスト版で、不安定な場合があります。</string>
+  <string name="update_whats_new">新機能</string>
+  <string name="update_no_release_notes">リリースノートはありません。</string>
+  <string name="update_ready_to_install">インストール準備完了</string>
+  <string name="update_available">アップデートがあります</string>
+  <string name="update_version_format">バージョン %1$s</string>
+  <string name="update_release_date">リリース日</string>
+  <string name="update_size">サイズ</string>
+  <string name="update_unknown_size">サイズ不明</string>
+  <string name="update_beta_build_format">ベータ r%1$d</string>
+  <string name="ui_beta_badge_suffix">\u0020(ベータ)</string>
   <string name="ui_core_open_source_dependencies_used_by_mpv_infinity">Mpv∞で使用している主要なオープンソース依存関係。</string>
   <string name="ui_copy_upi_id">UPI IDをコピー</string>
   <string name="ui_already_using_latest_version">すでに最新バージョンです</string>
@@ -1473,6 +1685,31 @@
   <string name="ui_manage_yt_dlp_environment">yt-dlp環境を管理</string>
   <string name="ui_download_the_latest_wrapper_modules_and_compile_python_friendly">最新のラッパーモジュールをダウンロードし、ローカルのサンドボックスフォルダー内でPython対応のネイティブバイナリをコンパイルします。</string>
   <string name="ui_update_to_nightly_build">Nightlyビルドに更新</string>
+  <string name="ui_release_channel">リリースチャンネル</string>
+  <string name="ui_install_stable">安定版をインストール</string>
+  <string name="ui_update_stable">安定版を更新</string>
+  <string name="ui_switch_to_stable">安定版に切り替え</string>
+  <string name="ui_update_nightly">Nightly を更新</string>
+  <string name="ui_switch_to_nightly">Nightly に切り替え</string>
+  <string name="ui_playback_defaults">再生の既定値</string>
+  <string name="ui_maximum_quality">最大画質</string>
+  <string name="ui_automatic">自動</string>
+  <string name="ui_checking_yt_dlp">yt-dlp を確認中</string>
+  <string name="ui_yt_dlp_not_installed">yt-dlp はインストールされていません</string>
+  <string name="ui_yt_dlp_stable_release">安定版</string>
+  <string name="ui_yt_dlp_nightly_build">Nightly ビルド</string>
+  <string name="ui_yt_dlp_master_build">Master ビルド</string>
+  <string name="ui_yt_dlp_custom_build">カスタムビルド</string>
+  <string name="ui_yt_dlp_installed_build">インストール済みビルド</string>
+  <string name="ui_reading_installed_version">インストール済みバージョンを読み取り中…</string>
+  <string name="ui_install_stable_to_play_web_links">対応するウェブリンクを再生するには安定版をインストールしてください。</string>
+  <string name="ytdlp_install_prompt_subtitle">このリンクの再生にはyt-dlpが必要です。今すぐインストールするか、後で設定から構成してください。</string>
+  <string name="ytdlp_installing">yt-dlpをインストール中…</string>
+  <string name="ytdlp_install_failed">yt-dlpをインストールできませんでした。接続を確認してもう一度お試しください。</string>
+  <string name="ui_yt_dlp_build_and_commit">ビルド %1$s • コミット %2$s</string>
+  <string name="ui_yt_dlp_version">バージョン %1$s</string>
+  <string name="ui_yt_dlp_commit">コミット %1$s</string>
+  <string name="ui_version_unavailable">バージョンを取得できません</string>
   <string name="ui_streaming_quality">ストリーミング品質</string>
   <string name="ui_bitrate_caps_apply_when_yt_dlp_reports_audio_bitrate_metadata">yt-dlpが音声ビットレートのメタデータを報告した場合にビットレート上限が適用されます。</string>
   <string name="ui_generated_format_string">生成されたフォーマット文字列</string>
@@ -1480,25 +1717,35 @@
   <string name="ui_automatically_extract_and_load_physical_subtitle_tracks_from_sup">対応URLから実体のある字幕トラックを自動で抽出して読み込みます。</string>
   <string name="ui_include_auto_generated_subtitles">自動生成字幕を含める</string>
   <string name="ui_fetch_auto_caption_tracks_e_g_youtube_speech_to_text_when_regula">通常の字幕がない場合に自動字幕トラック（例: YouTube音声認識）を取得します。</string>
+  <string name="ui_all_or_en_ja">all or en.*,ja</string>
   <string name="ui_overrides_app_subtitle_languages_only_for_yt_dlp_downloads">yt-dlpのダウンロード時のみアプリの字幕言語設定を上書きします。</string>
   <string name="ui_advanced_configurations">詳細設定</string>
   <string name="ui_custom_http_agent_proxy_extractor_args_sponsorblock_and_raw_opti">カスタムHTTPエージェント、プロキシ、抽出引数、SponsorBlock、未加工オプション</string>
   <string name="ui_format_sort">フォーマットの並べ替え</string>
+  <string name="ui_res_fps_hdr_12_vcodec_vp9_2">res,fps,hdr:12,vcodec:vp9.2</string>
   <string name="ui_passed_to_yt_dlp_as_format_sort_for_advanced_ranking">高度な優先順位付けのためformat-sortとしてyt-dlpに渡されます。</string>
   <string name="ui_merge_output_format">結合出力形式</string>
+  <string name="ui_mp4_mkv_webm">mp4, mkv, webm</string>
   <string name="ui_custom_user_agent_override">カスタムUser-Agent上書き</string>
+  <string name="ui_mozilla_5_0">Mozilla/5.0 ...</string>
   <string name="ui_leave_blank_to_use_default_browser_user_agent_helps_bypass_anti">空欄の場合はブラウザーの既定User-Agentを使用します。ボット対策の回避に役立ちます。</string>
   <string name="ui_referer">リファラー</string>
   <string name="ui_cookies_file">Cookieファイル</string>
+  <string name="ui_storage_emulated_0_download_cookies_txt">/storage/emulated/0/Download/cookies.txt</string>
   <string name="ui_proxy">プロキシ</string>
+  <string name="ui_socks5_127_0_0_1_1080">socks5://127.0.0.1:1080</string>
   <string name="ui_extractor_args">抽出引数</string>
+  <string name="ui_youtube_player_client_android_web">youtube:player_client=android,web</string>
   <string name="ui_geo_bypass">地域制限を回避</string>
   <string name="ui_ask_yt_dlp_to_use_its_extractor_level_region_bypass_logic">抽出機能レベルの地域制限回避ロジックを使うようyt-dlpに指示します。</string>
   <string name="ui_live_from_start">ライブを最初から再生</string>
   <string name="ui_start_live_streams_from_the_beginning_when_the_extractor_support">抽出機能が対応している場合、ライブ配信を最初から開始します。</string>
   <string name="ui_sponsorblock_mark">SponsorBlockでマーク</string>
+  <string name="ui_sponsor_selfpromo">sponsor,selfpromo</string>
   <string name="ui_sponsorblock_remove">SponsorBlockで削除</string>
+  <string name="ui_sponsor">sponsor</string>
   <string name="ui_raw_yt_dlp_options">未加工のyt-dlpオプション</string>
+  <string name="ui_extractor_args_2">extractor-args=\"youtube:player_client=android,web\"\ngeo-bypass=</string>
   <string name="ui_anything_not_exposed_above_separate_options_with_new_lines_or_co">上にないオプションを指定できます。改行またはカンマで区切り、カンマを含む値は引用符で囲んでください。</string>
   <string name="ui_video_title">動画タイトル</string>
   <string name="ui_1_06_chapter_1">1:06 • チャプター1</string>
@@ -1546,9 +1793,17 @@
   <string name="oss_libarchive_android_description">字幕アーカイブの展開に使用するAndroid向けlibarchiveバインディング。</string>
   <string name="oss_libtorrent4j_description">BitTorrentストリーミング用のJavaバインディングとネイティブライブラリ。</string>
   <string name="oss_markdown_renderer_description">MarkdownをネイティブのMaterial 3 Composeコンテンツとして描画します。</string>
+  <string name="oss_ffmpeg_mpv_runtime_description">MPV AARに同梱されたFFmpegライブラリ。GPLおよび非フリーオプションなしでビルドされています。</string>
+  <string name="oss_ffmpeg_cli_description">yt-dlpが使用する独立したFFmpegおよびffprobeヘルパー。今回のビルドではLGPL 2.1以降。</string>
+  <string name="oss_libplacebo_description">Vulkanおよび高度なレンダリング用にlibmpvへリンクされた動画レンダラー。</string>
+  <string name="oss_mbedtls_description">FFmpegが使用するTLSライブラリ。デュアルライセンスからApache 2.0を選択。</string>
   <string name="oss_mpv_description">音声、動画、字幕用のネイティブメディア再生エンジン。</string>
   <string name="oss_mpvlib_android_description">Standard、No-Vulkanビルドで使用するAndroid向けlibmpvラッパー。</string>
+  <string name="oss_mpv_anime_track_selector_description">MPV Anime Buildスクリプトをもとにしたトラック選択ロジック。</string>
+  <string name="oss_cuboid_visualizer_description">Niklas Knaackの公開CodePenをもとにしたComposeビジュアライザー。MITライセンス。</string>
   <string name="oss_quickjs_ng_description">yt-dlpのチャレンジ解決に使用する組み込みJavaScriptエンジン。</string>
+  <string name="oss_quickjs_kt_description">カタログスクリプトで使用するKotlinバインディングと組み込みJavaScriptエンジン。</string>
+  <string name="oss_c_vector_description">組み込みJavaScriptエンジンに同梱された低レベルベクターユーティリティ。</string>
   <string name="filter_preset_none">なし</string>
   <string name="filter_preset_vivid">鮮やか</string>
   <string name="filter_preset_warm_tone">暖色調</string>
@@ -1589,42 +1844,6 @@
   <string name="syncplay_connect">接続</string>
   <string name="syncplay_connecting">接続中…</string>
   <string name="syncplay_player_status">Syncplay: %1$s（%2$d 人）</string>
-  <!-- Additional synchronized strings -->
-  <string name="app_name">Mpv∞</string>
-  <string name="github_repo_url">https://github.com/ZHINFINITY/Mpv-infinity</string>
-  <string name="hdr_mode_bt2020">BT.2020</string>
-  <string name="hdr_mode_bt2100_hlg">BT.2100 HLG</string>
-  <string name="hdr_mode_bt2100_pq">BT.2100 PQ</string>
-  <string name="hdr_mode_hlg_short">HLG</string>
-  <string name="hdr_mode_pq_short">PQ</string>
-  <string name="player_sheets_chapter_title_substitute_audio">音声 #%d</string>
-  <string name="player_sheets_chapter_title_substitute_subtitle">字幕 #%d</string>
-  <string name="player_sheets_frame_navigation_snapshot_saved">Pictures/mpvSnaps に保存されました</string>
-  <string name="player_sheets_track_lang_wo_title">#%1$d: %2$s</string>
-  <string name="player_sheets_track_title_w_lang">#%1$d: %2$s (%3$s)</string>
-  <string name="player_sheets_track_title_wo_lang">#%1$d: %2$s</string>
-  <string name="pref_about_donate_kofi_url">https://ko-fi.com/zhinfinity</string>
-  <string name="pref_about_donate_paypal_url">https://paypal.me/InfinityxEternity</string>
-  <string name="pref_about_donate_upi_id">zhjjk001-1@oksbi</string>
-  <string name="ui_24fps">24fps</string>
-  <string name="ui_30fps">30fps</string>
-  <string name="ui_60fps">60fps</string>
-  <string name="ui_all_or_en_ja">all or en.*,ja</string>
-  <string name="ui_av1">AV1</string>
-  <string name="ui_extractor_args_2">extractor-args=\"youtube:player_client=android,web\"\ngeo-bypass=</string>
-  <string name="ui_h_264">H.264</string>
-  <string name="ui_h_265">H.265</string>
-  <string name="ui_mozilla_5_0">Mozilla/5.0 ...</string>
-  <string name="ui_mp4_mkv_webm">mp4, mkv, webm</string>
-  <string name="ui_res_fps_hdr_12_vcodec_vp9_2">res,fps,hdr:12,vcodec:vp9.2</string>
-  <string name="ui_socks5_127_0_0_1_1080">socks5://127.0.0.1:1080</string>
-  <string name="ui_sponsor">sponsor</string>
-  <string name="ui_sponsor_selfpromo">sponsor,selfpromo</string>
-  <string name="ui_storage_emulated_0_download_cookies_txt">/storage/emulated/0/Download/cookies.txt</string>
-  <string name="ui_youtube_player_client_android_web">youtube:player_client=android,web</string>
-  <string name="volume_slider_absolute_value">%d</string>
-
-  <!-- Secure Folder -->
   <string name="secure_folder_title">安全なフォルダ</string>
   <string name="secure_folder_summary">ライブラリから非表示にしたい動画用のPIN保護スペース。</string>
   <string name="secure_folder_dont_ask_again">次回から表示しない</string>
@@ -1734,7 +1953,7 @@
   <string name="pref_codecs_canonical_name">標準名: %s</string>
   <string name="pref_codecs_max_instances">最大同時インスタンス数: %d</string>
   <string name="pref_codecs_supported_profiles">対応プロファイル:</string>
-  <string name="pref_codecs_hdr_tag">10-Bit HDR</string>
+  <string name="pref_codecs_hdr_tag">10ビットHDR</string>
   <string name="pref_codecs_report_copied">コーデックレポートをクリップボードにコピーしました</string>
   <string name="pref_codecs_bitrate_range">ビットレート範囲: %s</string>
   <string name="pref_codecs_sample_rates">対応サンプリングレート:</string>
@@ -1743,116 +1962,11 @@
   <string name="pref_codecs_hardware_features">ハードウェア機能:</string>
   <string name="pref_codecs_min_resolution">最小解像度: %s</string>
   <string name="pref_codecs_alignment">ピクセルアライメント: %1$dx%2$d</string>
-  <string name="ui_music">Music</string>
-  <string name="pref_nav_music_title">音楽タブを表示</string>
-  <string name="pref_nav_music_summary">下部ナビゲーションバーに音楽を表示または非表示</string>
   <string name="player_up_next_title">プレイリスト</string>
   <string name="player_lyrics_title">歌詞</string>
   <string name="lyrics_source_embedded">埋め込み</string>
   <string name="lyrics_source_online">オンライン</string>
   <string name="lyrics_source_local">ローカル (.lrc)</string>
-  <string name="pref_enable_p2p_streaming_title">P2P トレントストリーミングを有効化</string>
-  <string name="pref_enable_p2p_streaming_summary">マグネットリンクとトレントファイルから再生可能なメディアをストリーミング</string>
-  <string name="pref_audio_drc_title">ダイナミックレンジ压縮 (DRC)</string>
-  <string name="pref_audio_drc_summary">オーディオのダイナミックレンジを圧縮し、静かな台詞を強調して大きな音を軽めます</string>
-  <string name="pref_audio_effects">音声処理</string>
-  <string name="toast_file_not_found">ファイルはもう存在しません</string>
-  <string name="pref_audio_visualizer_style_particle">粒子</string>
-  <string name="pref_section_p2p_streaming">P2P ストリーミング</string>
-  <string name="toast_torrent_streaming_disabled">最初に詳細設定で P2P トレントストリーミングを有効化してください</string>
-  <string name="ui_recent_stream_links">最近のリンク</string>
-  <string name="ui_torrent_files">トレント</string>
-  <string name="ui_expand_torrent_group">トレントファイルを表示</string>
-  <string name="ui_collapse_torrent_group">トレントファイルを隠す</string>
-  <string name="ui_delete_torrent_group">トレントを削除</string>
-  <string name="torrent_picker_back">トレントを閉じる</string>
-  <string name="torrent_picker_choose_title">再生するものを選択</string>
-  <string name="torrent_picker_finding_details">アートワークと詳細を探しています…</string>
-  <string name="torrent_picker_play_file">%1$s を再生</string>
-  <string name="torrent_picker_preparing_title">トレントを読み込んでいます</string>
-  <string name="torrent_picker_preparing_description">ピアに接続して再生可能なファイルを探しています…</string>
-  <string name="torrent_picker_error_title">トレントを開けませんでした</string>
-  <string name="torrent_picker_retry">再試行</string>
-  <string name="torrent_picker_episode_label">シーズン %1$d • エピソード %2$d</string>
-  <string name="torrent_picker_single_episode_label">エピソード %1$d</string>
-  <string name="ui_new_password_keep_existing">新しいパスワード（空白の場合は保存済みのパスワードを維持）</string>
-  <string name="ui_clear_saved_password">保存済みのパスワードをクリア</string>
-  <plurals name="ui_torrent_group_file_count">
-    <item quantity="one">%1$d 個の再生可能なファイル</item>
-    <item quantity="other">%1$d 個の再生可能なファイル</item>
-  </plurals>
-  <plurals name="torrent_picker_playable_count">
-    <item quantity="one">%1$d 個の再生可能なファイル</item>
-    <item quantity="other">%1$d 個の再生可能なファイル</item>
-  </plurals>
-    <string name="pref_nav_jellyfin_title">Jellyfinタブを表示</string>
-    <string name="pref_nav_jellyfin_summary">下部ナビゲーションバーにJellyfinを表示または非表示</string>
-    <string name="pref_autoplay_next_audio_title">次の音声を自動再生</string>
-    <string name="pref_autoplay_next_audio_summary">現在のトラック終了時に次の音声トラックを自動的に再生します</string>
-    <string name="pref_autoplay_next_audio_summary_disabled">終了時に現在の音声トラックにとどまります</string>
-    <string name="pref_enable_hls_proxy_title">HLSストリーミングプロキシを有効化</string>
-    <string name="pref_enable_hls_proxy_summary">適応型HLSマニフェストを正規化し、分離された音声/動画ストリームを処理します</string>
-    <string name="ui_recent_streams">最近のストリームリンク</string>
-    <string name="ui_autofill_stream_url">ストリームURLを自動入力</string>
-    <string name="ui_torrent_media_anime">アニメ</string>
-    <string name="ui_torrent_media_series">シリーズ</string>
-    <string name="ui_torrent_media_movie">映画</string>
-    <string name="ui_torrent_media_torrent">トレント</string>
-    <string name="ui_resume_playback">再開</string>
-    <string name="ui_play_now">再生</string>
-    <string name="ui_show_more">さらに表示</string>
-    <string name="ui_show_less">一部のみ表示</string>
-    <string name="ui_episodes">エピソード</string>
-    <string name="ui_no_torrents_title">保存されたトレントはありません</string>
-    <string name="ui_no_torrents_description">アニメや映画をストリーミングするには、マグネットリンクまたはトレントURLを貼り付けてください。</string>
-    <string name="ui_no_saved_media_title">保存されたリンクはありません</string>
-    <string name="ui_no_saved_media_description">ストリームURLやマグネットリンクを貼り付けるか、最近のリンクから保存してコレクションを作成します。</string>
-    <string name="ui_save_to_media">メディアに保存</string>
-    <string name="ui_search_episodes">エピソードを検索…</string>
-    <string name="ui_sort_ascending">昇順で並べ替え</string>
-    <string name="ui_sort_descending">降顺で並べ替え</string>
-    <string name="ui_no_matching_episodes">一致するエピソードはありません</string>
-    <string name="ui_buffering">バッファリング中…</string>
-    <string name="ui_jellyfin">Jellyfin</string>
-    <string name="ui_media">メディア</string>
-    <string name="ui_saved_media">保存されたリンク</string>
-  <string name="pref_mpv_conf_overrides_title">mpv.conf オプションの制御元</string>
-  <string name="pref_mpv_conf_overrides_summary_app_owned">対応するすべての再生オプションをアプリが制御します（推奨）</string>
-  <string name="pref_mpv_conf_overrides_summary_config_owned">%1$d 個のグループを選択し、アプリの %2$d 個のオプションを mpv.conf に委ねています</string>
-  <string name="pref_mpv_conf_overrides_dialog_title">mpv.conf にオプションを制御させる</string>
-  <string name="pref_mpv_conf_overrides_dialog_message">mpv.conf に委ねるカテゴリまたはオプションを選択します。対応するアプリ操作は無効になります。</string>
-  <string name="pref_mpv_conf_overrides_empty_config_warning">有効な mpv.conf が検出されません。設定されるまで既定値が使用されます。</string>
-  <string name="pref_mpv_conf_overrides_protected_message">ライフサイクル、再生コマンド、ヘッダー、証明書は常にアプリが管理します。</string>
-  <string name="pref_mpv_conf_overrides_reset">すべてのグループをアプリの制御に戻す</string>
-  <string name="pref_mpv_conf_overrides_selected_count">%2$d 個中 %1$d 個のオプションを選択</string>
-  <string name="pref_mpv_conf_override_renderer">レンダラーと GPU バックエンド</string>
-  <string name="pref_mpv_conf_override_renderer_summary">GPU API、Vulkan、プロファイル設定を上書きします。</string>
-  <string name="pref_mpv_conf_override_decoder">ハードウェアデコーダー</string>
-  <string name="pref_mpv_conf_override_decoder_summary">ハードウェアデコーダーと調整設定を上書きします。</string>
-  <string name="pref_mpv_conf_override_hdr_shaders">HDR 出力とシェーダー</string>
-  <string name="pref_mpv_conf_override_hdr_shaders_summary">HDR 出力、Anime4K、シェーダー設定を上書きします。</string>
-  <string name="pref_mpv_conf_override_video_filters">映像フィルター</string>
-  <string name="pref_mpv_conf_override_video_filters_summary">画質フィルター、バンディング除去、変換を上書きします。</string>
-  <string name="pref_mpv_conf_override_video_geometry">映像ジオメトリ</string>
-  <string name="pref_mpv_conf_override_video_geometry_summary">ズーム、パン、アスペクト比設定を上書きします。</string>
-  <string name="pref_mpv_conf_override_audio_output">音声出力</string>
-  <string name="pref_mpv_conf_override_audio_output_summary">音声遅延と音量ブースト設定を上書きします。</string>
-  <string name="pref_mpv_conf_override_audio_filters">音声フィルター</string>
-  <string name="pref_mpv_conf_override_audio_filters_summary">イコライザー、DRC、チャンネルフィルターを上書きします。</string>
-  <string name="pref_mpv_conf_override_subtitle_loading">字幕の読み込み</string>
-  <string name="pref_mpv_conf_override_subtitle_loading_summary">字幕検出、言語、フォント設定を上書きします。</string>
-  <string name="pref_mpv_conf_override_subtitle_style">字幕のタイミングとスタイル</string>
-  <string name="pref_mpv_conf_override_subtitle_style_summary">字幕遅延、位置、フォント、色設定を上書きします。</string>
-  <string name="pref_mpv_conf_override_playback_timing">再生タイミング</string>
-  <string name="pref_mpv_conf_override_playback_timing_summary">再生速度、ピッチ、シーク、同期設定を上書きします。</string>
-  <string name="pref_mpv_conf_override_network_buffering">ネットワークバッファリング</string>
-  <string name="pref_mpv_conf_override_network_buffering_summary">キャッシュ、再接続、バッファリング方針を上書きします。</string>
-  <string name="pref_mpv_conf_override_ytdlp">yt-dlp 連携</string>
-  <string name="pref_mpv_conf_override_ytdlp_summary">アプリ管理の yt-dlp 再生オプションを上書きします。</string>
-  <string name="pref_mpv_conf_override_osd">OSD セーフエリア</string>
-  <string name="pref_mpv_conf_override_osd_summary">OSD マージンとセーフエリア設定を上書きします。</string>
-  <string name="mpv_config_owned_title">mpv.conf が制御中</string>
-  <string name="mpv_config_owned_message">このアプリ操作は、必要なオプションの一部または全部が詳細設定で mpv.conf に割り当てられているため無効です。</string>
   <string name="pref_lyrics_translation_category">歌詞の翻訳・ローマ字変換</string>
   <string name="pref_lyrics_auto_translate">外国語の歌詞を自動翻訳</string>
   <string name="pref_lyrics_auto_translate_summary">外国語の歌詞を自動的に優先言語に翻訳</string>
@@ -1866,8 +1980,8 @@
   <string name="lyrics_translation_failed">歌詞を翻訳できませんでした。もう一度お試しください。</string>
   <string name="lyrics_translation_partial">一部の歌詞を翻訳できませんでした。</string>
   <string name="lyrics_select_language">翻訳先言語を選択</string>
-
-  <!-- Clip -->
+  <string name="clip_end_short">終了</string>
+  <string name="clip_start_short">開始</string>
   <string name="clip_action">クリップを作成</string>
   <string name="clip_options">クリップのオプション</string>
   <string name="clip_crop_action">切り抜いてクリップを作成</string>
@@ -1891,8 +2005,6 @@
   <string name="clip_video_unavailable">動画のサイズはまだ利用できません</string>
   <string name="clip_export_busy">別のクリップを作成中です</string>
   <string name="clip_export_failed">クリップの作成に失敗しました: %1$s</string>
-
-  <!-- Seerr (Overseerr / Jellyseerr) Requests & Discover -->
   <string name="seerr_requests">リクエスト</string>
   <string name="seerr_discover">見つける</string>
   <string name="seerr_connect_server">Seerr に接続</string>
@@ -1928,6 +2040,8 @@
   <string name="seerr_status_partially_available">一部利用可能</string>
   <string name="seerr_status_requested">リクエスト済み</string>
   <string name="seerr_status_not_requested">未リクエスト</string>
+  <string name="seerr_status_deleted">削除済み</string>
+  <string name="seerr_status_blacklisted">ブラックリスト登録済み</string>
   <string name="seerr_approve">承認</string>
   <string name="seerr_decline">拒否</string>
   <string name="seerr_delete">削除</string>
@@ -1941,73 +2055,6 @@
   <string name="seerr_tab_movies">映画</string>
   <string name="seerr_tab_tv">ドラマ</string>
   <string name="seerr_tab_my_requests">マイリクエスト</string>
-  <string name="ui_release_channel">リリースチャンネル</string>
-  <string name="ui_install_stable">安定版をインストール</string>
-  <string name="ui_update_stable">安定版を更新</string>
-  <string name="ui_switch_to_stable">安定版に切り替え</string>
-  <string name="ui_update_nightly">Nightly を更新</string>
-  <string name="ui_switch_to_nightly">Nightly に切り替え</string>
-  <string name="ui_playback_defaults">再生の既定値</string>
-  <string name="ui_maximum_quality">最大画質</string>
-  <string name="ui_automatic">自動</string>
-  <string name="ui_checking_yt_dlp">yt-dlp を確認中</string>
-  <string name="ui_yt_dlp_not_installed">yt-dlp はインストールされていません</string>
-  <string name="ui_yt_dlp_stable_release">安定版</string>
-  <string name="ui_yt_dlp_nightly_build">Nightly ビルド</string>
-  <string name="ui_yt_dlp_master_build">Master ビルド</string>
-  <string name="ui_yt_dlp_custom_build">カスタムビルド</string>
-  <string name="ui_yt_dlp_installed_build">インストール済みビルド</string>
-  <string name="ui_reading_installed_version">インストール済みバージョンを読み取り中…</string>
-  <string name="ui_install_stable_to_play_web_links">対応するウェブリンクを再生するには安定版をインストールしてください。</string>
-  <string name="ui_yt_dlp_build_and_commit">ビルド %1$s • コミット %2$s</string>
-  <string name="ui_yt_dlp_version">バージョン %1$s</string>
-  <string name="ui_yt_dlp_commit">コミット %1$s</string>
-  <string name="ui_version_unavailable">バージョンを取得できません</string>
-  <string name="ui_update_channel">アップデートチャンネル</string>
-  <string name="ui_stable_releases">安定版</string>
-  <string name="ui_preview_builds">プレビュー (Nightly)</string>
-  <string name="ui_preview_builds_summary">プレビュービルドは最新の Mpv∞ の変更から公開される署名済みテスト版で、不安定な場合があります。</string>
-  <string name="update_whats_new">新機能</string>
-  <string name="update_no_release_notes">リリースノートはありません。</string>
-  <string name="update_ready_to_install">インストール準備完了</string>
-  <string name="update_available">アップデートがあります</string>
-  <string name="update_version_format">バージョン %1$s</string>
-  <string name="update_release_date">リリース日</string>
-  <string name="update_size">サイズ</string>
-  <string name="update_unknown_size">サイズ不明</string>
-  <string name="update_beta_build_format">ベータ r%1$d</string>
-  <string name="ui_beta_badge_suffix">\u0020(ベータ)</string>
-  <string name="player_video_quality">動画品質</string>
-  <string name="player_video_quality_summary">このストリームで利用可能な品質を選択します。</string>
-  <string name="player_video_quality_button">動画品質</string>
-  <string name="network_bookmark_add">フォルダーをブックマーク</string>
-  <string name="network_bookmark_remove">フォルダーのブックマークを解除</string>
-  <string name="network_bookmarks_title">ブックマークしたフォルダー</string>
-  <string name="network_bookmarks_manage">ブックマークしたフォルダーを管理</string>
-  <string name="network_bookmarks_empty_title">ブックマークしたフォルダーはありません</string>
-  <string name="network_bookmarks_empty_description">リモートフォルダーをブックマークすると、ネットワークページから直接開けます。</string>
-  <string name="network_bookmark_source_format">%1$s • %2$s</string>
-  <string name="onboarding_skip">スキップ</string>
-  <string name="onboarding_get_started">はじめる</string>
-  <string name="onboarding_all_set_title">準備完了</string>
-  <string name="onboarding_all_set_desc">権限はいつでもシステム設定から変更できます。</string>
-  <string name="onboarding_show_tutorial_title">クイックツアーを表示</string>
-  <string name="onboarding_show_tutorial_desc">セットアップ後に3つのヒントを表示</string>
-  <string name="tutorial_tabs_title">セクション</string>
-  <string name="tutorial_tabs_desc">スワイプまたはタップで切り替え。</string>
-  <string name="tutorial_search_title">検索</string>
-  <string name="tutorial_search_desc">どんなファイルもすばやく検索。</string>
-  <string name="tutorial_settings_title">設定</string>
-  <string name="tutorial_settings_desc">ここですべてを調整。</string>
-  <string name="onboarding_missing_permissions_title">未許可</string>
-  <string name="onboarding_missing_permissions_desc">必要になったときに許可できます。</string>
-  <string name="storage_permission_needed_title">ストレージアクセスが必要</string>
-  <string name="storage_permission_needed_desc">メディアの閲覧と再生にはストレージアクセスを許可してください。</string>
-  <string name="storage_permission_grant">アクセスを許可</string>
-  <string name="pref_player_web_stream_links_title">ストリーミングサイトのリンクを開く</string>
-  <string name="pref_player_web_stream_links_summary">YouTube、Vimeo、Twitch、Odysee、Bilibili のリンクで Mpv∞ を候補に表示。オフにすると各アプリが開きます。</string>
-
-  <!-- Downloads -->
   <string name="downloads_title">ダウンロード</string>
   <string name="downloads_notification_channel">ダウンロード</string>
   <string name="downloads_notification_channel_description">ファイルのダウンロード進捗を表示します</string>
@@ -2041,4 +2088,157 @@
   <string name="downloads_episodes_queued">%1$d 話をダウンロードキューに追加しました</string>
   <string name="downloads_play">再生</string>
   <string name="downloads_open_downloads">ダウンロードを開く</string>
+  <string name="extra_features_title">追加機能</string>
+  <string name="extra_features_section_safe">オプションツール</string>
+  <string name="extra_features_intro">必要に応じて追加のライブラリツールを有効にします。これらはオプトイン機能で、デフォルトでは再生動作を変更しません。</string>
+  <string name="extra_features_smart_collections">スマートコレクション</string>
+  <string name="extra_features_smart_collections_summary">未視聴、一部視聴、最近追加、最近再生したメディアの動的コレクションを表示</string>
+  <string name="extra_features_watch_statistics">視聴統計</string>
+  <string name="extra_features_watch_statistics_summary">視聴時間、完了状況、ライブラリのアクティビティ概要を記録</string>
+  <string name="extra_features_watch_statistics_count">最近再生した項目の記録数: %1$d</string>
+  <string name="extra_features_smart_collections_count">動的候補: 最近%1$d件、再生履歴あり%2$d件</string>
+  <string name="extra_features_playback_diagnostics_status">今後の再生エラー記録に向けた診断情報の収集が有効です。</string>
+  <string name="extra_features_library_health_count">最近の履歴にあるローカルファイルの欠落: %1$d</string>
+  <string name="extra_features_quality_filters_count">高品質項目: %1$d件、メディア候補: %2$d件</string>
+  <string name="extra_features_playback_diagnostics">再生診断</string>
+  <string name="extra_features_playback_diagnostics_summary">トラブルシューティングやサポート報告に役立つ再生失敗の詳細を保持</string>
+  <string name="extra_features_library_health">ライブラリ健全性レポート</string>
+  <string name="extra_features_library_health_summary">欠落ファイル、読み込めないメディア、古い項目、サムネイルの失敗を確認</string>
+  <string name="extra_features_quality_filters">メディア品質フィルター</string>
+  <string name="extra_features_quality_filters_summary">解像度、HDR、コーデック、ビットレート、再生時間、字幕の有無でメディアを絞り込み</string>
+  <string name="extra_features_activity_log">ライブラリのアクティビティログ</string>
+  <string name="extra_features_activity_log_summary">最近のライブラリへの追加、削除、名前変更、スキャン、視聴状態の変更を確認</string>
+  <string name="extra_features_activity_log_entry">最近のアクティビティ: %1$s</string>
+  <string name="pref_navidrome_title">Navidrome</string>
+  <string name="pref_navidrome_no_server">音楽を閲覧・再生するには、Navidromeまたは互換性のあるSubsonicサーバーに接続してください。</string>
+  <string name="audiobooks_title">オーディオブック</string>
+  <string name="audiobook_import_files">ブックファイルをインポート</string>
+  <string name="audiobook_import_folder">オーディオブックフォルダーを選択</string>
+  <string name="audiobook_folder_source">フォルダーのソース</string>
+  <string name="audiobook_choose_folder">オーディオブックフォルダーを選択</string>
+  <string name="audiobook_choose_folder_hint">オーディオブックが入ったフォルダーを選択してください。コピーやインポートは行われません。</string>
+  <string name="audiobook_back">戻る</string>
+  <string name="audiobook_root">ルート</string>
+  <string name="audiobook_folder">フォルダー</string>
+  <string name="audiobook_audio_file">音声ファイル</string>
+  <string name="audiobook_importing">%2$d件中%1$d件をインポート中</string>
+  <string name="audiobook_import_failed">ブックをインポートできませんでした: %1$s</string>
+  <string name="audiobook_no_audio">対応する音声ファイルが見つかりません。</string>
+  <string name="audiobook_empty">オーディオブックなし</string>
+  <string name="audiobook_title">書籍タイトル</string>
+  <string name="audiobook_subtitle">サブタイトル</string>
+  <string name="audiobook_stop_before_remove">この本を削除する前に再生を停止してください。</string>
+  <string name="audiobook_author">著者</string>
+  <string name="audiobook_narrator">ナレーター</string>
+  <string name="audiobook_series">シリーズ</string>
+  <string name="audiobook_series_part">巻番号</string>
+  <string name="audiobook_description">説明</string>
+  <string name="audiobook_genre">ジャンル</string>
+  <string name="audiobook_language">言語</string>
+  <string name="audiobook_publisher">出版社</string>
+  <string name="audiobook_published">出版日</string>
+  <string name="audiobook_isbn" translatable="false">ISBN</string>
+  <string name="audiobook_asin" translatable="false">ASIN</string>
+  <string name="audiobook_abridged">短縮版</string>
+  <string name="audiobook_unabridged">完全版</string>
+  <string name="audiobook_details">書籍の詳細</string>
+  <string name="audiobook_edit">書籍を編集</string>
+  <string name="audiobook_search_online_cover">オンラインで表紙と情報を検索</string>
+  <string name="audiobook_search_online_title">オンラインのアートワークを検索</string>
+  <string name="audiobook_search_online_query">タイトル、著者、キーワードで検索</string>
+  <string name="audiobook_search_online_searching">Apple BooksとOpen Libraryを検索中…</string>
+  <string name="audiobook_search_online_empty">この検索条件に一致するオンラインの表紙が見つかりません。</string>
+  <string name="audiobook_save">保存</string>
+  <string name="audiobook_remove">ライブラリから削除</string>
+  <string name="audiobook_remove_confirmation">「%1$s」と再生進捗・ブックマークを削除しますか？音声ファイルは削除されません。</string>
+  <string name="audiobook_continue">続きを聴く</string>
+  <string name="audiobook_start_over">最初から再生</string>
+  <string name="audiobook_mark_finished">完了としてマーク</string>
+  <string name="audiobook_mark_unfinished">未完了としてマーク</string>
+  <string name="audiobook_all">すべての本</string>
+  <string name="audiobook_folders">フォルダー</string>
+  <string name="audiobook_not_started">未再生</string>
+  <string name="audiobook_in_progress">再生中</string>
+  <string name="audiobook_finished">完了</string>
+  <string name="audiobook_remaining">残り%1$s</string>
+  <string name="audiobook_book_time">書籍</string>
+  <string name="audiobook_chapters">チャプター</string>
+  <string name="audiobook_previous_chapter">前のチャプター</string>
+  <string name="audiobook_next_chapter">次のチャプター</string>
+  <string name="stream_link_unsupported">このストリームリンクは対応する直接HTTPまたはHTTPSアドレスではありません。</string>
+  <string name="audiobook_chapter_number">チャプター%1$d</string>
+  <string name="audiobook_files">ファイル</string>
+  <string name="audiobook_bookmarks">ブックマーク</string>
+  <string name="audiobook_add_bookmark">ブックマークを追加</string>
+  <string name="audiobook_bookmark_name">ブックマーク名</string>
+  <string name="audiobook_no_bookmarks">ブックマークなし</string>
+  <string name="audiobook_delete_bookmark">ブックマークを削除</string>
+  <string name="audiobook_sleep_timer">スリープタイマー</string>
+  <string name="audiobook_timer_off">オフ</string>
+  <string name="audiobook_end_chapter">チャプター終了時</string>
+  <string name="audiobook_minutes">%1$d分</string>
+  <string name="audiobook_smart_rewind">一時停止後に巻き戻す</string>
+  <string name="audiobook_seconds">%1$d秒</string>
+  <string name="audiobook_rewind">15秒巻き戻す</string>
+  <string name="audiobook_forward">30秒進む</string>
+  <string name="audiobook_pause">一時停止</string>
+  <string name="audiobook_stop">聴取を停止</string>
+  <string name="audiobook_search">本、著者、ナレーターを検索</string>
+  <string name="audiobook_save_failed">再生進捗を保存できませんでした。</string>
+  <string name="audiobook_play_failed">この本を開けませんでした。ファイルに引き続きアクセスできるか確認してください。</string>
+  <string name="audiobook_retry">再試行</string>
+  <string name="playback_bookmarks_empty">ブックマークまたはチャプターなし</string>
+  <string name="playback_bookmark_update_failed">ブックマークを更新できませんでした。</string>
+  <string name="audiobook_no_text">歌詞または文字起こしデータなし</string>
+  <string name="player_seek_backward">%1$s戻る</string>
+  <string name="player_seek_forward">%1$s進む</string>
+  <string name="audio_swipe_delete_title">音声を削除しますか？</string>
+  <string name="audio_swipe_delete_folder_message">%2$sとそのサブフォルダーにある音声ファイル%1$d件を完全に削除しますか？他のファイルとフォルダーは保持されます。この操作は取り消せません。</string>
+  <string name="audio_swipe_loading">音声ファイルを収集中</string>
+  <string name="audio_swipe_folder_empty">このフォルダーに音声ファイルが見つかりません</string>
+  <string name="playlist_connect_source_title">接続済みソースなし</string>
+  <string name="playlist_connect_source_message">先にネットワークタブでソースを接続してください。ここには接続済みのソースのみ表示されます。</string>
+  <string name="music_source_local">ローカルデバイス</string>
+  <string name="music_source_jellyfin">Jellyfinの音楽</string>
+  <string name="music_source_navidrome">Navidromeの音楽</string>
+  <string name="music_source_manage_servers">メディアサーバー</string>
+  <string name="pref_custom_theme_title">カスタムテーマ</string>
+  <string name="pref_custom_theme_summary">写真または動画のテーマを保存し、後で調整</string>
+  <string name="pref_custom_theme_selected">テーマレールで選択中: %1$s</string>
+  <string name="pref_custom_theme_edit">テーマを編集</string>
+  <string name="pref_custom_theme_delete">テーマを削除</string>
+  <string name="pref_custom_theme_add">写真または動画のテーマを追加</string>
+  <string name="pref_custom_theme_create">カスタムテーマを作成</string>
+  <string name="pref_custom_theme_edit_title">カスタムテーマを編集</string>
+  <string name="pref_custom_theme_preview">ライブプレビュー</string>
+  <string name="pref_custom_theme_hide_options">編集オプションを隠す</string>
+  <string name="pref_custom_theme_edit_background">背景を編集</string>
+  <string name="pref_custom_theme_media_framing">メディアのフレーミング</string>
+  <string name="pref_custom_theme_crop">切り抜き</string>
+  <string name="pref_custom_theme_fit">フィット</string>
+  <string name="pref_custom_theme_fill">塗りつぶし</string>
+  <string name="pref_custom_theme_video_aspect">動画のアスペクト比</string>
+  <string name="pref_custom_theme_fill_screen">スマホ画面に合わせて表示</string>
+  <string name="pref_custom_theme_keep_source">元の状態を維持</string>
+  <string name="pref_custom_theme_zoom_scale">ズーム / 拡大率</string>
+  <string name="pref_custom_theme_horizontal_position">水平位置</string>
+  <string name="pref_custom_theme_vertical_position">垂直位置</string>
+  <string name="pref_custom_theme_media_appearance">メディアの外観</string>
+  <string name="pref_custom_theme_blur">背景のぼかし</string>
+  <string name="pref_custom_theme_brightness">明るさ</string>
+  <string name="pref_custom_theme_saturation">彩度</string>
+  <string name="pref_custom_theme_transparency">メディアの透明度</string>
+  <string name="pref_custom_theme_overlay">暗幕オーバーレイ</string>
+  <string name="pref_custom_theme_panel_opacity">パネルの不透明度</string>
+  <string name="pref_custom_theme_text_colour">カスタム文字色</string>
+  <string name="pref_custom_theme_argb_hex">ARGB 16進数</string>
+  <string name="pref_custom_theme_colour_sliders">カラースライダー</string>
+  <string name="pref_custom_theme_hue">色相: %1$d°</string>
+  <string name="pref_custom_theme_saturation_value">彩度: %1$d%%</string>
+  <string name="pref_custom_theme_brightness_value">明るさ: %1$d%%</string>
+  <string name="pref_custom_theme_opacity_value">不透明度: %1$d%%</string>
+  <string name="pref_custom_theme_mute_video">動画テーマをミュート</string>
+  <string name="pref_custom_theme_name">テーマ名</string>
+  <string name="generic_save">保存</string>
+  <string name="pref_custom_theme_argb_placeholder" translatable="false">#FFFFFFFF</string>
 </resources>

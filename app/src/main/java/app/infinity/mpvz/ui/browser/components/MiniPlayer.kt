@@ -66,6 +66,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.input.pointer.pointerInput
@@ -96,6 +97,8 @@ import app.infinity.mpvz.ui.player.TrackNode
 import app.infinity.mpvz.ui.player.declaredMediaKind
 import app.infinity.mpvz.ui.player.toObject
 import app.infinity.mpvz.ui.player.controls.MiniPlayerTransitionAnchor
+import app.infinity.mpvz.ui.player.controls.miniPlayerScreenBounds
+import app.infinity.mpvz.ui.player.controls.MiniPlayerArtworkTarget
 import app.infinity.mpvz.ui.preferences.components.settingsGlassContainerColor
 import app.infinity.mpvz.ui.preferences.components.settingsGlassEnabled
 import app.infinity.mpvz.ui.preferences.components.settingsGlassSurface
@@ -219,6 +222,16 @@ private fun MiniPlayerContent(
   val hostView = LocalView.current
   var offsetX by remember { mutableFloatStateOf(0f) }
   var verticalDrag by remember { mutableFloatStateOf(0f) }
+  var miniSurfaceBounds by remember { mutableStateOf<Rect?>(null) }
+  var miniArtworkBounds by remember { mutableStateOf<Rect?>(null) }
+  fun publishMiniTransitionGeometry() {
+    val surface = miniSurfaceBounds ?: return
+    val art = miniArtworkBounds
+    MiniPlayerTransitionAnchor.publish(
+      surface.left, surface.top, surface.width, surface.height, hostView.width.toFloat(),
+      art?.left, art?.top, art?.width, art?.height,
+    )
+  }
   val density = LocalDensity.current
   val dismissThresholdPx = with(density) { 100.dp.toPx() }
   val expandThresholdPx = with(density) { 72.dp.toPx() }
@@ -260,10 +273,8 @@ private fun MiniPlayerContent(
       .offset { IntOffset(offsetX.roundToInt(), 0) }
       .onGloballyPositioned { coordinates ->
         if (isAudioOnlyItem) {
-          val bounds = coordinates.boundsInWindow()
-          MiniPlayerTransitionAnchor.publish(
-            bounds.left, bounds.top, bounds.width, bounds.height, hostView.width.toFloat(),
-          )
+          miniSurfaceBounds = coordinates.miniPlayerScreenBounds(hostView)
+          publishMiniTransitionGeometry()
         }
       }
       .pointerInput(Unit) {
@@ -475,6 +486,10 @@ private fun MiniPlayerContent(
         Box(
           modifier = Modifier
             .size(48.dp)
+            .onGloballyPositioned { coordinates ->
+              miniArtworkBounds = coordinates.miniPlayerScreenBounds(hostView)
+              publishMiniTransitionGeometry()
+            }
             .clip(RoundedCornerShape(10.dp))
             .background(MaterialTheme.colorScheme.surfaceVariant),
           contentAlignment = Alignment.Center,

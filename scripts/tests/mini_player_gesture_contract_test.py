@@ -29,7 +29,7 @@ class MiniPlayerGestureContracts(unittest.TestCase):
         self.assertNotIn("delay(", gesture)
         layer = gesture.split(".graphicsLayer {", 1)[1]
         self.assertIn("miniGesture.progress", layer)
-        self.assertIn("MiniPlayerTransitionAnchor.forViewport(size.width)", layer)
+        self.assertIn("MiniPlayerTransitionAnchor.forViewport(hostPlayerView.width.toFloat())", layer)
         self.assertIn("MiniPlayerGesturePolicy.transform(", layer)
         for forbidden in ("PlaybackSession.", "ACTION_NOTIFICATION_STOP", "load(", "recreate(", "seek("):
             self.assertNotIn(forbidden, gesture)
@@ -43,7 +43,7 @@ class MiniPlayerGestureContracts(unittest.TestCase):
         self.assertIn('putExtra("is_audio", isAudioOnlyItem)', mini)
         self.assertIn("detectVerticalDragGestures", mini)
         self.assertIn("MiniPlayerTransitionAnchor.publish(", mini)
-        self.assertIn("boundsInWindow()", mini)
+        self.assertIn("miniPlayerScreenBounds(hostView)", mini)
         self.assertIn("ACTION_NOTIFICATION_PLAY_PAUSE", mini)
         self.assertIn("ACTION_NOTIFICATION_NEXT", mini)
         self.assertIn("detectHorizontalDragGestures", mini)

@@ -72,6 +72,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.platform.LocalDensity
+import app.infinity.mpvz.R
+import androidx.compose.ui.res.stringResource
 import app.infinity.mpvz.preferences.AppearancePreferences
 import app.infinity.mpvz.preferences.CustomThemeData
 import app.infinity.mpvz.preferences.copyThemeMedia
@@ -124,25 +126,25 @@ fun CustomThemeSettings(
   }
 
   Column(modifier = modifier.padding(vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-    Text("Custom themes", style = MaterialTheme.typography.titleMedium)
-    Text("Save a photo or video theme and adjust it later.", color = MaterialTheme.colorScheme.outline, style = MaterialTheme.typography.bodySmall)
+    Text(stringResource(R.string.pref_custom_theme_title), style = MaterialTheme.typography.titleMedium)
+    Text(stringResource(R.string.pref_custom_theme_summary), color = MaterialTheme.colorScheme.outline, style = MaterialTheme.typography.bodySmall)
     themes.firstOrNull { it.id == activeId }?.let { selected ->
       Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
         Column(modifier = Modifier.weight(1f)) {
-          Text("Selected in theme rail: ${selected.name}", style = MaterialTheme.typography.bodySmall)
+          Text(stringResource(R.string.pref_custom_theme_selected, selected.name), style = MaterialTheme.typography.bodySmall)
         }
         IconButton(onClick = { editingExisting = true; draft = selected }) {
-          Icon(Icons.RoundedFilled.Edit, contentDescription = "Edit theme")
+          Icon(Icons.RoundedFilled.Edit, contentDescription = stringResource(R.string.pref_custom_theme_edit))
         }
         IconButton(onClick = {
           preferences.customThemes.set(themes.filterNot { it.id == selected.id })
           preferences.activeCustomThemeId.set("")
           scope.launch(Dispatchers.IO) { runCatching { File(selected.mediaPath).delete() } }
-        }) { Icon(Icons.RoundedFilled.Delete, contentDescription = "Delete theme", tint = MaterialTheme.colorScheme.error) }
+        }) { Icon(Icons.RoundedFilled.Delete, contentDescription = stringResource(R.string.pref_custom_theme_delete), tint = MaterialTheme.colorScheme.error) }
       }
     }
     Button(onClick = { picker.launch(arrayOf("image/*", "video/*")) }, modifier = Modifier.fillMaxWidth()) {
-      Text("Add photo or video theme")
+      Text(stringResource(R.string.pref_custom_theme_add))
     }
   }
 
@@ -229,8 +231,8 @@ internal fun CustomThemeEditor(
         modifier = Modifier.weight(1f).verticalScroll(rememberScrollState()),
         verticalArrangement = Arrangement.spacedBy(10.dp),
       ) {
-      Text(if (isNew) "Create custom theme" else "Edit custom theme", style = MaterialTheme.typography.titleLarge)
-      Text("Live preview", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+      Text(stringResource(if (isNew) R.string.pref_custom_theme_create else R.string.pref_custom_theme_edit_title), style = MaterialTheme.typography.titleLarge)
+      Text(stringResource(R.string.pref_custom_theme_preview), style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
       // The preview fills the sheet width. Its height is derived from the
       // phone viewport ratio, so there is no unexplained side box or distortion.
       Box(modifier = Modifier.fillMaxWidth().clip(MaterialTheme.shapes.large).background(MaterialTheme.colorScheme.surfaceContainer).padding(vertical = 8.dp), contentAlignment = Alignment.Center) {
@@ -251,35 +253,35 @@ internal fun CustomThemeEditor(
       }
       Button(onClick = { showEditor = !showEditor }, modifier = Modifier.fillMaxWidth()) {
         Icon(if (showEditor) Icons.RoundedFilled.Edit else Icons.RoundedFilled.Tune, contentDescription = null)
-        Text(if (showEditor) "Hide editing options" else "Edit theme")
+        Text(stringResource(if (showEditor) R.string.pref_custom_theme_hide_options else R.string.pref_custom_theme_edit))
       }
         if (showEditor) {
           Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        Text("Edit background", style = MaterialTheme.typography.titleMedium)
-        Text("Media framing", style = MaterialTheme.typography.titleMedium)
+        Text(stringResource(R.string.pref_custom_theme_edit_background), style = MaterialTheme.typography.titleMedium)
+        Text(stringResource(R.string.pref_custom_theme_media_framing), style = MaterialTheme.typography.titleMedium)
         Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-          if (fitMode == "crop") Button(onClick = { fitMode = "crop" }) { Text("Crop") } else OutlinedButton(onClick = { fitMode = "crop" }) { Text("Crop") }
-          if (fitMode == "fit") Button(onClick = { fitMode = "fit" }) { Text("Fit") } else OutlinedButton(onClick = { fitMode = "fit" }) { Text("Fit") }
-          if (fitMode == "fill") Button(onClick = { fitMode = "fill" }) { Text("Fill") } else OutlinedButton(onClick = { fitMode = "fill" }) { Text("Fill") }
+          if (fitMode == "crop") Button(onClick = { fitMode = "crop" }) { Text(stringResource(R.string.pref_custom_theme_crop)) } else OutlinedButton(onClick = { fitMode = "crop" }) { Text(stringResource(R.string.pref_custom_theme_crop)) }
+          if (fitMode == "fit") Button(onClick = { fitMode = "fit" }) { Text(stringResource(R.string.pref_custom_theme_fit)) } else OutlinedButton(onClick = { fitMode = "fit" }) { Text(stringResource(R.string.pref_custom_theme_fit)) }
+          if (fitMode == "fill") Button(onClick = { fitMode = "fill" }) { Text(stringResource(R.string.pref_custom_theme_fill)) } else OutlinedButton(onClick = { fitMode = "fill" }) { Text(stringResource(R.string.pref_custom_theme_fill)) }
         }
         if (initial.isVideo) {
-          Text("Video aspect ratio", style = MaterialTheme.typography.labelLarge)
+          Text(stringResource(R.string.pref_custom_theme_video_aspect), style = MaterialTheme.typography.labelLarge)
           Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            if (aspectMode == "screen") Button(onClick = { aspectMode = "screen" }) { Text("Fill phone screen") } else OutlinedButton(onClick = { aspectMode = "screen" }) { Text("Fill phone screen") }
-            if (aspectMode == "source") Button(onClick = { aspectMode = "source" }) { Text("Keep source") } else OutlinedButton(onClick = { aspectMode = "source" }) { Text("Keep source") }
+            if (aspectMode == "screen") Button(onClick = { aspectMode = "screen" }) { Text(stringResource(R.string.pref_custom_theme_fill_screen)) } else OutlinedButton(onClick = { aspectMode = "screen" }) { Text(stringResource(R.string.pref_custom_theme_fill_screen)) }
+            if (aspectMode == "source") Button(onClick = { aspectMode = "source" }) { Text(stringResource(R.string.pref_custom_theme_keep_source)) } else OutlinedButton(onClick = { aspectMode = "source" }) { Text(stringResource(R.string.pref_custom_theme_keep_source)) }
           }
         }
-        ThemeAdjustmentSlider("Zoom / scale", scale, 0.5f..2.5f, { scale = it })
-        ThemeAdjustmentSlider("Horizontal position", offsetX, -1f..1f, { offsetX = it })
-        ThemeAdjustmentSlider("Vertical position", offsetY, -1f..1f, { offsetY = it })
-        Text("Media appearance", style = MaterialTheme.typography.titleMedium)
-        ThemeAdjustmentSlider("Background blur", blur, 0f..24f, { blur = it })
-        ThemeAdjustmentSlider("Brightness", brightness, 0.25f..2f, { brightness = it })
-        ThemeAdjustmentSlider("Saturation", saturation, 0f..2f, { saturation = it })
-        ThemeAdjustmentSlider("Media transparency", visibility, 0.15f..1f, { visibility = it })
-        ThemeAdjustmentSlider("Dim overlay", overlay, 0f..0.65f, { overlay = it })
-        ThemeAdjustmentSlider("Panel opacity", surfaceOpacity, 0.55f..1f, { surfaceOpacity = it })
-        Text("Custom text colour", style = MaterialTheme.typography.titleMedium)
+        ThemeAdjustmentSlider(stringResource(R.string.pref_custom_theme_zoom_scale), scale, 0.5f..2.5f, { scale = it })
+        ThemeAdjustmentSlider(stringResource(R.string.pref_custom_theme_horizontal_position), offsetX, -1f..1f, { offsetX = it })
+        ThemeAdjustmentSlider(stringResource(R.string.pref_custom_theme_vertical_position), offsetY, -1f..1f, { offsetY = it })
+        Text(stringResource(R.string.pref_custom_theme_media_appearance), style = MaterialTheme.typography.titleMedium)
+        ThemeAdjustmentSlider(stringResource(R.string.pref_custom_theme_blur), blur, 0f..24f, { blur = it })
+        ThemeAdjustmentSlider(stringResource(R.string.pref_custom_theme_brightness), brightness, 0.25f..2f, { brightness = it })
+        ThemeAdjustmentSlider(stringResource(R.string.pref_custom_theme_saturation), saturation, 0f..2f, { saturation = it })
+        ThemeAdjustmentSlider(stringResource(R.string.pref_custom_theme_transparency), visibility, 0.15f..1f, { visibility = it })
+        ThemeAdjustmentSlider(stringResource(R.string.pref_custom_theme_overlay), overlay, 0f..0.65f, { overlay = it })
+        ThemeAdjustmentSlider(stringResource(R.string.pref_custom_theme_panel_opacity), surfaceOpacity, 0.55f..1f, { surfaceOpacity = it })
+        Text(stringResource(R.string.pref_custom_theme_text_colour), style = MaterialTheme.typography.titleMedium)
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
           Box(Modifier.size(34.dp).clip(MaterialTheme.shapes.small).background(androidx.compose.ui.graphics.Color(textColorArgb ?: initial.onBackgroundArgb)))
           OutlinedTextField(
@@ -295,28 +297,28 @@ internal fun CustomThemeEditor(
                 textAlpha = AndroidColor.alpha(argb) / 255f
               }
             },
-            label = { Text("ARGB hex") },
-            placeholder = { Text("#FFFFFFFF") },
+            label = { Text(stringResource(R.string.pref_custom_theme_argb_hex)) },
+            placeholder = { Text(stringResource(R.string.pref_custom_theme_argb_placeholder)) },
             singleLine = true,
             isError = textColorArgb == null,
             modifier = Modifier.weight(1f),
           )
         }
-        Text("Colour sliders", style = MaterialTheme.typography.labelLarge)
-        ThemeAdjustmentSlider("Hue: ${textHue.toInt()}°", textHue, 0f..360f, { textHue = it; updateTextColorFromSliders() }, androidx.compose.ui.graphics.Color(textColorArgb ?: initial.onBackgroundArgb))
-        ThemeAdjustmentSlider("Saturation: ${(textSaturation * 100).toInt()}%", textSaturation, 0f..1f, { textSaturation = it; updateTextColorFromSliders() }, androidx.compose.ui.graphics.Color(textColorArgb ?: initial.onBackgroundArgb))
-        ThemeAdjustmentSlider("Brightness: ${(textValue * 100).toInt()}%", textValue, 0f..1f, { textValue = it; updateTextColorFromSliders() }, androidx.compose.ui.graphics.Color(textColorArgb ?: initial.onBackgroundArgb))
-        ThemeAdjustmentSlider("Opacity: ${(textAlpha * 100).toInt()}%", textAlpha, 0f..1f, { textAlpha = it; updateTextColorFromSliders() }, androidx.compose.ui.graphics.Color(textColorArgb ?: initial.onBackgroundArgb))
+        Text(stringResource(R.string.pref_custom_theme_colour_sliders), style = MaterialTheme.typography.labelLarge)
+        ThemeAdjustmentSlider(stringResource(R.string.pref_custom_theme_hue, textHue.toInt()), textHue, 0f..360f, { textHue = it; updateTextColorFromSliders() }, androidx.compose.ui.graphics.Color(textColorArgb ?: initial.onBackgroundArgb))
+        ThemeAdjustmentSlider(stringResource(R.string.pref_custom_theme_saturation_value, (textSaturation * 100).toInt()), textSaturation, 0f..1f, { textSaturation = it; updateTextColorFromSliders() }, androidx.compose.ui.graphics.Color(textColorArgb ?: initial.onBackgroundArgb))
+        ThemeAdjustmentSlider(stringResource(R.string.pref_custom_theme_brightness_value, (textValue * 100).toInt()), textValue, 0f..1f, { textValue = it; updateTextColorFromSliders() }, androidx.compose.ui.graphics.Color(textColorArgb ?: initial.onBackgroundArgb))
+        ThemeAdjustmentSlider(stringResource(R.string.pref_custom_theme_opacity_value, (textAlpha * 100).toInt()), textAlpha, 0f..1f, { textAlpha = it; updateTextColorFromSliders() }, androidx.compose.ui.graphics.Color(textColorArgb ?: initial.onBackgroundArgb))
         if (initial.isVideo) {
           SwitchPreference(
             value = muted,
             onValueChange = { muted = it },
-            title = { Text("Mute video theme") },
+            title = { Text(stringResource(R.string.pref_custom_theme_mute_video)) },
           )
         }
           }
         }
-        OutlinedTextField(value = name, onValueChange = { name = it }, label = { Text("Theme name") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+        OutlinedTextField(value = name, onValueChange = { name = it }, label = { Text(stringResource(R.string.pref_custom_theme_name)) }, singleLine = true, modifier = Modifier.fillMaxWidth())
       }
       val density = LocalDensity.current
       val imeVisible = WindowInsets.ime.getBottom(density) > 0
@@ -334,22 +336,22 @@ internal fun CustomThemeEditor(
           Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             OutlinedButton(onClick = { resetVisualSettings() }, modifier = buttonModifier) {
               Icon(Icons.RoundedFilled.Refresh, contentDescription = null)
-              Text("Reset")
+              Text(stringResource(R.string.generic_reset))
             }
-            OutlinedButton(onClick = onDismiss, modifier = buttonModifier) { Text("Cancel") }
+            OutlinedButton(onClick = onDismiss, modifier = buttonModifier) { Text(stringResource(R.string.generic_cancel)) }
             Button(enabled = name.isNotBlank(), onClick = { onSave(edited.copy(name = name.trim())) }, modifier = buttonModifier) {
-              Text("Save")
+              Text(stringResource(R.string.generic_save))
             }
           }
         } else {
           Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             OutlinedButton(onClick = { resetVisualSettings() }, modifier = Modifier.weight(1f).heightIn(min = 52.dp)) {
               Icon(Icons.RoundedFilled.Refresh, contentDescription = null)
-              Text("Reset")
+              Text(stringResource(R.string.generic_reset))
             }
-            OutlinedButton(onClick = onDismiss, modifier = Modifier.weight(1f).heightIn(min = 52.dp)) { Text("Cancel") }
+            OutlinedButton(onClick = onDismiss, modifier = Modifier.weight(1f).heightIn(min = 52.dp)) { Text(stringResource(R.string.generic_cancel)) }
             Button(enabled = name.isNotBlank(), onClick = { onSave(edited.copy(name = name.trim())) }, modifier = Modifier.weight(1f).heightIn(min = 52.dp)) {
-              Text("Save")
+              Text(stringResource(R.string.generic_save))
             }
           }
         }

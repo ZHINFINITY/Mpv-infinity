@@ -8,6 +8,7 @@
 package app.infinity.mpvz.ui.player.controls
 
 import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.boundsInWindow
 import app.infinity.mpvz.ui.player.PlaybackSession
 
 import android.Manifest
@@ -1105,6 +1106,9 @@ fun AudioPlayerControls(
   val isTablet = configuration.smallestScreenWidthDp >= 600
   val isTabletLandscape = !isPortrait && isTablet
   val isTabletPortrait = isPortrait && isTablet
+  val hostPlayerView = androidx.compose.ui.platform.LocalView.current
+  val transitionViewportWidthPx = with(LocalDensity.current) { configuration.screenWidthDp.dp.toPx() }
+  val miniArtworkSizePx = with(LocalDensity.current) { 48.dp.toPx() }
   val audioStandbyDelaySeconds by audioPreferences.audioStandbyDelaySeconds.collectAsState()
 
   LaunchedEffect(audioStandbyMode, audioStandbyDelaySeconds, isPlaying, isPortrait, lastUserInteractionTime) {
@@ -1183,6 +1187,8 @@ fun AudioPlayerControls(
   val settleAnimation = remember { Animatable(0f) }
   val currentOnBackPress by androidx.compose.runtime.rememberUpdatedState(onBackPress)
   var playerHeightPx by remember { mutableFloatStateOf(0f) }
+  var playerWidthPx by remember { mutableFloatStateOf(0f) }
+  var fullArtworkBounds by remember { mutableStateOf<MiniPlayerArtworkTarget?>(null) }
   val nestedGestureController = remember {
     MiniPlayerDragController(
       state = { miniGesture },
@@ -1202,8 +1208,10 @@ fun AudioPlayerControls(
     .nestedScroll(nestedGestureController.nestedScrollConnection)
     .onGloballyPositioned {
       playerHeightPx = it.size.height.toFloat()
+      playerWidthPx = it.size.width.toFloat()
       if (settleTarget == null && miniGesture.progress == 0f) {
-        playerOrigin = it.localToWindow(androidx.compose.ui.geometry.Offset.Zero)
+        val bounds = it.miniPlayerScreenBounds(hostPlayerView)
+        playerOrigin = androidx.compose.ui.geometry.Offset(bounds.left, bounds.top)
       }
     }
     .pointerInput(Unit) {
@@ -1249,7 +1257,7 @@ fun AudioPlayerControls(
       // Read gesture progress here, not in composition: dragging updates the layer only.
       val progress = (if (settleTarget == null) miniGesture.progress
         else if (settleAnimation.isRunning) settleAnimation.value else settleStart).coerceIn(0f, 1f)
-      val target = MiniPlayerTransitionAnchor.forViewport(size.width)
+      val target = MiniPlayerTransitionAnchor.forViewport(hostPlayerView.width.toFloat())
       val transform = MiniPlayerGesturePolicy.transform(progress, size.width, size.height,
         playerOrigin.x, playerOrigin.y, target)
       transformOrigin = androidx.compose.ui.graphics.TransformOrigin(0f, 0f)
@@ -1267,7 +1275,10 @@ fun AudioPlayerControls(
     if (settleGeneration == generation && settleTarget == target) {
       miniGesture = if (target == 0f) MiniPlayerGesturePolicy.cancel()
         else MiniPlayerGestureState(1f, MiniPlayerSettle.Mini)
-      if (target == 1f) currentOnBackPress()
+      if (target == 1f) {
+        playerActivity?.onAudioMinimizePresentationComplete()
+        currentOnBackPress()
+      }
       settleTarget = null
     }
   }
@@ -1324,7 +1335,12 @@ fun AudioPlayerControls(
     val headerBar = @Composable {
       Box(modifier = Modifier.fillMaxWidth()) {
         ReactiveIconButton(
-          onClick = onBackPress,
+          onClick = {
+            settleStart = (if (settleTarget == null) miniGesture.progress
+              else if (settleAnimation.isRunning) settleAnimation.value else settleStart).coerceIn(0f, 1f)
+            settleTarget = 1f
+            settleGeneration++
+          },
           modifier = Modifier.align(Alignment.CenterStart),
         ) {
           Icon(
@@ -1589,6 +1605,50 @@ fun AudioPlayerControls(
                 modifier = Modifier
                   .aspectRatio(1f)
                   .offset { IntOffset(currentOffset.roundToInt(), 0) }
+                  .onGloballyPositioned { coordinates ->
+                    // Freeze the unwarped source rectangle for the entire flight.
+                    val bounds = coordinates.miniPlayerScreenBounds(hostPlayerView)
+                    if (settleTarget == null && miniGesture.progress == 0f &&
+                      bounds.width > 0f && bounds.height > 0f) {
+                      fullArtworkBounds = MiniPlayerArtworkTarget(
+                        bounds.left, bounds.top, bounds.width, bounds.height,
+                      )
+                    }
+                  }
+                  .graphicsLayer {
+                    // The root card and cover are separate layers. Interpolate the
+                    // cover's measured window rectangle to the measured mini cover;
+                    // this avoids the old constant-48dp/old-position landing jump.
+                    val progress = (if (settleTarget == null) miniGesture.progress
+                      else if (settleAnimation.isRunning) settleAnimation.value else settleStart)
+                      .coerceIn(0f, 1f)
+                    val target = MiniPlayerTransitionAnchor.forViewport(hostPlayerView.width.toFloat())
+                    val parent = MiniPlayerGesturePolicy.transform(
+                      progress = progress,
+                      width = playerWidthPx.takeIf { it > 0f } ?: transitionViewportWidthPx,
+                      height = playerHeightPx,
+                      originX = playerOrigin.x,
+                      originY = playerOrigin.y,
+                      target = target,
+                    )
+                    val full = fullArtworkBounds
+                    val flight = if (full != null && target?.artwork != null) MiniPlayerGesturePolicy.artworkFlight(
+                      progress, parent, playerOrigin.x, playerOrigin.y,
+                      full.left, full.top, full.width, full.height, target?.artwork,
+                    ) else {
+                      // Safe fallback while either activity has not measured its artwork.
+                      val correction = MiniPlayerGesturePolicy.artworkScaleCorrection(
+                        progress = progress, parent = parent, artworkSize = size.width,
+                        targetArtworkSize = miniArtworkSizePx,
+                      )
+                      MiniPlayerArtworkFlight(0f, 0f, correction.scaleX, correction.scaleY)
+                    }
+                    transformOrigin = androidx.compose.ui.graphics.TransformOrigin(0f, 0f)
+                    translationX = flight.translationX
+                    translationY = flight.translationY
+                    scaleX = flight.scaleX
+                    scaleY = flight.scaleY
+                  }
                   .clip(coverShape),
                 shape = coverShape,
                 color = Color.Transparent,
