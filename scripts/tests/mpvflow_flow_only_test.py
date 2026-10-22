@@ -43,7 +43,13 @@ def test_standard_workflow_is_flow_only() -> None:
             f"native cache behavior must keep {pin}"
         )
     for candidate in (workflow, flow_workflow):
-        assert candidate.count("uses: actions/cache/restore@v4") == 2
+        restores = [block for block in candidate.split("- name:") if "uses: actions/cache/restore@v4" in block]
+        expected_ids = {"mpvflow-runtime-cache", "mpvflow-runtime-legacy-cache"}
+        if "id: native-apt-cache\n" in candidate:
+            expected_ids.add("native-apt-cache")
+        actual_ids = {next(line.strip().split(":", 1)[1].strip() for line in block.splitlines()
+                           if line.strip().startswith("id:")) for block in restores}
+        assert len(restores) == len(expected_ids) and actual_ids == expected_ids
         assert "uses: actions/cache/save@v4" in candidate
         assert "MPVFLOW_RUNTIME_APK=$apk" in candidate
         assert "steps.mpvflow-runtime-cache.outputs.cache-hit == 'true'" in candidate

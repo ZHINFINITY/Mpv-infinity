@@ -3,9 +3,14 @@
 """Parse identities only AFTER apksigner has cryptographically verified an APK."""
 import re
 
+_SIGNER_LABELS = (
+    r'Signer #\d+',
+    r'Signer \(minSdkVersion=\d+(?: \(dev release=true\))?, maxSdkVersion=\d+\)',
+    r'V2 Signer:',
+)
 _CERTIFICATE = re.compile(
-    r'^(Signer (?:#\d+|\(minSdkVersion=\d+(?: \(dev release=true\))?, '
-    r'maxSdkVersion=\d+\))) certificate SHA-256 digest:[ \t]*([a-fA-F0-9]{64})[ \t]*$',
+    r'^(' + '|'.join(_SIGNER_LABELS)
+    + r') certificate SHA-256 digest:[ \t]*([a-fA-F0-9]{64})[ \t]*$',
     re.MULTILINE,
 )
 

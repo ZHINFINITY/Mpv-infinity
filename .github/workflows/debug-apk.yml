@@ -60,6 +60,33 @@ jobs:
           distribution: temurin
           java-version: '17'
           cache: gradle
+      - name: Identify runner platform for native APT cache
+        id: native-apt-platform
+        if: ${{ inputs.flavor == 'standard' && inputs.target_abi == 'arm64-v8a' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          source /etc/os-release
+          image_version="${ImageVersion:-unknown}"
+          image_version="$(printf '%s' "$image_version" | tr -c '[:alnum:]._-' '-')"
+          {
+            printf 'arch=%s\n' "$(dpkg --print-architecture)"
+            printf 'os_id=%s\n' "$ID"
+            printf 'version_id=%s\n' "$VERSION_ID"
+            printf 'image_version=%s\n' "$image_version"
+          } >> "$GITHUB_OUTPUT"
+      - name: Restore native APT download archive cache
+        id: native-apt-cache
+        if: ${{ inputs.flavor == 'standard' && inputs.target_abi == 'arm64-v8a' }}
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ runner.temp }}/mpv-native-apt-archives/*.deb
+          key: mpv-native-apt-${{ runner.os }}-${{ steps.native-apt-platform.outputs.arch }}-${{ steps.native-apt-platform.outputs.os_id }}-${{ steps.native-apt-platform.outputs.version_id }}-${{ steps.native-apt-platform.outputs.image_version }}-${{ hashFiles('.github/workflows/debug-apk.yml') }}
+      - name: Prepare native APT archive cache permissions
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/mpv-native-apt-archives"
+          sudo install -d -m0755 -o _apt -g root "$RUNNER_TEMP/mpv-native-apt-archives/partial"
       - name: Restore verified Flow-only MPVFlow arm64 runtime
         id: mpvflow-runtime-cache
         if: ${{ inputs.flavor == 'standard' && inputs.target_abi == 'arm64-v8a' }}
@@ -102,7 +129,14 @@ jobs:
           path: native-builder/app/build/outputs/apk
           key: mpvflow-arm64-runtime-v1-8b9cdaf1e5bcc44928adae0b2f3b9f1d8808504bdc5e129ec67b3e0b4871d812
       - name: Install native subtitle build dependencies
-        run: sudo apt-get update && sudo apt-get install -y autoconf automake libtool gettext autopoint gperf pkg-config
+        run: |
+          set -euo pipefail
+          apt_cache_dir="$RUNNER_TEMP/mpv-native-apt-archives"
+          sudo apt-get update -o Dir::Cache::archives="$apt_cache_dir"
+          sudo apt-get install -y --no-install-recommends \
+            -o Dir::Cache::archives="$apt_cache_dir" \
+            -o APT::Keep-Downloaded-Packages=true \
+            autoconf automake libtool gettext autopoint gperf pkg-config
       - name: Checkout pinned Android MPV build tools
         if: ${{ inputs.flavor == 'standard' && inputs.target_abi == 'arm64-v8a' && steps.mpvflow-runtime-cache.outputs.cache-hit != 'true' && steps.mpvflow-runtime-legacy-cache.outputs.cache-hit != 'true' }}
         uses: actions/checkout@v6
@@ -120,8 +154,23 @@ jobs:
       - name: Install native interpolation build dependencies
         if: ${{ inputs.flavor == 'standard' && inputs.target_abi == 'arm64-v8a' }}
         run: |
-          sudo apt-get update
-          sudo apt-get install -y ninja-build cmake pipx nasm yasm binutils zlib1g-dev libssl-dev zip unzip wget curl ffmpeg glslang-tools libvulkan-dev mesa-vulkan-drivers
+          set -euo pipefail
+          apt_cache_dir="$RUNNER_TEMP/mpv-native-apt-archives"
+          sudo apt-get update -o Dir::Cache::archives="$apt_cache_dir"
+          sudo apt-get install -y --no-install-recommends \
+            -o Dir::Cache::archives="$apt_cache_dir" \
+            -o APT::Keep-Downloaded-Packages=true \
+            ninja-build cmake pipx nasm yasm binutils zlib1g-dev libssl-dev zip unzip wget curl ffmpeg glslang-tools libvulkan-dev mesa-vulkan-drivers
+      - name: Save native APT download archive cache
+        if: ${{ success() && inputs.flavor == 'standard' && inputs.target_abi == 'arm64-v8a' && steps.native-apt-cache.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ runner.temp }}/mpv-native-apt-archives/*.deb
+          key: mpv-native-apt-${{ runner.os }}-${{ steps.native-apt-platform.outputs.arch }}-${{ steps.native-apt-platform.outputs.os_id }}-${{ steps.native-apt-platform.outputs.version_id }}-${{ steps.native-apt-platform.outputs.image_version }}-${{ hashFiles('.github/workflows/debug-apk.yml') }}
+      - name: Install pinned Meson
+        if: ${{ inputs.flavor == 'standard' && inputs.target_abi == 'arm64-v8a' }}
+        run: |
+          set -euo pipefail
           pipx install meson==1.6.1
           PIPX_BIN_DIR="$(pipx environment --value PIPX_BIN_DIR)"
           echo "$PIPX_BIN_DIR" >> "$GITHUB_PATH"
@@ -210,6 +259,7 @@ jobs:
           python3 scripts/tests/persian_locale_rtl_test.py
           python3 scripts/tests/settings_popup_locale_contract_test.py
           python3 scripts/tests/apk_signing_identity_test.py
+          python3 scripts/tests/ci_build_speed_contract_test.py
           python3 scripts/tests/seekbar_glass_contract_test.py
           python3 scripts/tests/playlist_browse_ui_contract_test.py
           python3 scripts/tests/stream_cards_ui_contract_test.py
@@ -217,7 +267,7 @@ jobs:
           python3 scripts/tests/theme_editor_layout_test.py
       - name: Run Standard arm64 debug unit tests
         if: ${{ inputs.flavor == 'standard' && inputs.target_abi == 'arm64-v8a' }}
-        run: ./gradlew testStandardDebugUnitTest -PtargetAbi=arm64-v8a -PmpvFlowMpvBuild=true --stacktrace --no-daemon --max-workers=2
+        run: ./gradlew testStandardDebugUnitTest -PtargetAbi=arm64-v8a -PmpvFlowMpvBuild=true --build-cache --stacktrace --no-daemon --max-workers=2
       - name: Upload combined validation evidence
         if: always()
         uses: actions/upload-artifact@v4
@@ -236,12 +286,12 @@ jobs:
           case "${{ inputs.flavor }}" in
             standard)
               if [[ "${{ inputs.target_abi }}" == "arm64-v8a" ]]; then
-                ./gradlew assembleStandardDebug $ABI_ARGS -PmpvFlowMpvBuild=true --stacktrace --no-daemon --max-workers=2
+                ./gradlew assembleStandardDebug $ABI_ARGS -PmpvFlowMpvBuild=true --build-cache --stacktrace --no-daemon --max-workers=2
               else
-                ./gradlew assembleStandardDebug $ABI_ARGS --stacktrace --no-daemon --max-workers=2
+                ./gradlew assembleStandardDebug $ABI_ARGS --build-cache --stacktrace --no-daemon --max-workers=2
               fi
               ;;
-            no_vulkan) ./gradlew assembleNoVulkanDebug $ABI_ARGS --stacktrace --no-daemon --max-workers=2 ;;
+            no_vulkan) ./gradlew assembleNoVulkanDebug $ABI_ARGS --build-cache --stacktrace --no-daemon --max-workers=2 ;;
           esac
       - name: Verify Flow-only arm64 APK contents
         if: ${{ inputs.flavor == 'standard' && inputs.target_abi == 'arm64-v8a' }}

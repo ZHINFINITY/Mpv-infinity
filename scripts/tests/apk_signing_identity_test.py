@@ -23,6 +23,15 @@ B = 'b2' * 32
 
 
 class SigningIdentityTest(unittest.TestCase):
+    def runner_v2_output(self):
+        return (ROOT / 'scripts/tests/fixtures/apksigner-v2-output.txt').read_text()
+
+    def test_exact_captured_runner_v2_output(self):
+        certificates = signing_certificates(self.runner_v2_output())
+        self.assertEqual([{'signer': 'V2 Signer:', 'sha256':
+            '09feb260e280b210b5b28c3477c598f43f3bdb2814c91123622d9d70b7e4e505'}], certificates)
+        self.assertNotEqual('4e74c127ef4408e0aebaac5fbaebd289dddbb3994116c459152ad6468b9964ff', certificates[0]['sha256'])
+
     def test_legacy_single_signer(self):
         self.assertEqual([{'signer': 'Signer #1', 'sha256': A}],
             signing_certificates(f'Signer #1 certificate SHA-256 digest: {A}\n'))
@@ -43,14 +52,17 @@ class SigningIdentityTest(unittest.TestCase):
 
     def test_source_stamp_and_public_key_are_not_apk_signer_identities(self):
         for text in [f'Source Stamp Signer certificate SHA-256 digest: {A}',
-                     f'Signer #1 public key SHA-256 digest: {A}', 'Verifies\n']:
+                     f'Signer #1 public key SHA-256 digest: {A}',
+                     f'V2 Signer: public key SHA-256 digest: {A}',
+                     f'Unknown Signer: certificate SHA-256 digest: {A}', 'Verifies\n']:
             with self.subTest(text=text), self.assertRaises(ValueError):
                 signing_certificates(text)
 
     def test_malformed_or_short_hash_fails_closed(self):
-        for digest in ['abc', 'x' * 64, A + '00', '']:
-            with self.subTest(digest=digest), self.assertRaises(ValueError):
-                signing_certificates(f'Signer #1 certificate SHA-256 digest: {digest}\n')
+        for label in ['Signer #1', 'V2 Signer:']:
+            for digest in ['abc', 'x' * 64, A + '00', '']:
+                with self.subTest(label=label, digest=digest), self.assertRaises(ValueError):
+                    signing_certificates(f'{label} certificate SHA-256 digest: {digest}\n')
 
     def run_production_verifier(self, directory, signature, verify_error=False):
         directory = Path(directory)
@@ -73,6 +85,13 @@ class SigningIdentityTest(unittest.TestCase):
         with patch.dict(os.environ, {'ANDROID_HOME': str(sdk)}), patch.object(sys, 'argv', ['verify', str(fixture), str(report)]), patch('subprocess.check_output', side_effect=output), contextlib.redirect_stdout(io.StringIO()):
             runpy.run_path(str(ROOT / 'scripts/verify-debug-apk-artifact.py'), run_name='__main__')
         return json.loads(report.read_text())
+
+    def test_production_verifier_replays_exact_captured_runner_output(self):
+        with tempfile.TemporaryDirectory() as directory:
+            result = self.run_production_verifier(directory, self.runner_v2_output())
+            self.assertTrue(result['apkSignatureVerified'])
+            self.assertEqual(signing_certificates(self.runner_v2_output()), result['signingCertificates'])
+            self.assertEqual('09feb260e280b210b5b28c3477c598f43f3bdb2814c91123622d9d70b7e4e505', result['signingCertificateSha256'])
 
     def test_real_verifier_accepts_sdk_aware_certificate_records(self):
         with tempfile.TemporaryDirectory() as directory:
