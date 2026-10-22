@@ -55,7 +55,7 @@ class FolderCardGlassRuntimeTest {
     preferences.edit().clear().commit()
     val store = AndroidPreferenceStore(context, preferences)
     appearance = AppearancePreferences(store)
-    val browser = BrowserPreferences(store)
+    val browser = BrowserPreferences(store, context)
     appearance.liquidGlassSurfaces.set(true)
     browser.showFolderThumbnails.set(false)
     startKoin {
