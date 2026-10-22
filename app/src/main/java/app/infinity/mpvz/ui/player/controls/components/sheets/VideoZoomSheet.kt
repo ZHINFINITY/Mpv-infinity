@@ -194,12 +194,13 @@ private fun ZoomVideoSheet(
     Column(
       modifier =
         Modifier
-          .fillMaxWidth()
-          .padding(horizontal = MaterialTheme.spacing.medium),
+          .fillMaxWidth(),
       verticalArrangement = Arrangement.spacedBy(MaterialTheme.spacing.small),
     ) {
       // Pan & Zoom toggle
       Row(
+        modifier = Modifier.playerSheetSettingRow(active = panAndZoomEnabled),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
         verticalAlignment = Alignment.CenterVertically,
       ) {
         IconSwitch(
@@ -227,7 +228,7 @@ private fun ZoomVideoSheet(
 
       // Action buttons
       Row(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier.fillMaxWidth().padding(horizontal = MaterialTheme.spacing.medium),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
       ) {
         OutlinedButton(

@@ -75,12 +75,14 @@ jobs:
         run: |
           python3 scripts/tests/palette_depth_glass_test.py
           python3 scripts/tests/player_sheet_symmetry_test.py
+          python3 scripts/tests/player_sheet_setting_rows_contract_test.py
           python3 scripts/tests/glass_named_surface_coverage_test.py
           python3 scripts/tests/player_interpolation_controls_test.py
           python3 scripts/tests/interpolation_runtime_apply_test.py
           python3 scripts/tests/quickplay_selection_glass_test.py
           python3 scripts/tests/glass_depth_no_reload_wiring_test.py
           python3 scripts/tests/alternate_search_switch_glass_test.py
+          python3 scripts/tests/accent_switch_colors_contract_test.py
           python3 scripts/tests/video_edit_glass_paths_test.py
           python3 scripts/tests/media_info_playlist_glass_paths_test.py
           python3 scripts/tests/actual_mini_player_glass_contract_test.py

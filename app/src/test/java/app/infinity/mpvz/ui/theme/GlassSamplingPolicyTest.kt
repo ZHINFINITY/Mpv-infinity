@@ -50,7 +50,7 @@ class GlassSamplingPolicyTest {
     val source = java.io.File("src/main/java/app/infinity/mpvz/ui/theme/LiquidGlassBackdrop.kt")
       .takeIf { it.exists() } ?: java.io.File("app/src/main/java/app/infinity/mpvz/ui/theme/LiquidGlassBackdrop.kt")
     val text = source.readText()
-    assertTrue(text.contains("GlassSamplingPolicy.interval(playing(), failures, thermalNow)"))
+    assertTrue(text.contains("GlassSamplingPolicy.interval(playing(), failures, thermalNow, largeSurface)"))
     assertTrue(text.contains("SystemClock.uptimeMillis() - sampleStarted"))
   }
 }

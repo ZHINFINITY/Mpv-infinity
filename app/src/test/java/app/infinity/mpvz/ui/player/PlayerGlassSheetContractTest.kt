@@ -25,7 +25,7 @@ class PlayerGlassSheetContractTest {
     val speed = source("app/src/main/java/app/infinity/mpvz/ui/player/controls/components/sheets/PlaybackSpeedSheet.kt")
     assertFalse(speed.contains("SwitchPreference("))
     assertTrue(speed.contains("GlassSwitch("))
-    assertTrue(speed.contains("modifier = Modifier.fillMaxWidth().padding(horizontal = MaterialTheme.spacing.medium)"))
+    assertTrue(speed.contains("modifier = Modifier.playerSheetSettingRow(active = pitchCorrection)"))
   }
 
   @Test

@@ -93,6 +93,7 @@ import app.infinity.mpvz.ui.browser.selection.rememberSelectionManager
 import app.infinity.mpvz.ui.preferences.components.settingsGlassContainerColor
 import app.infinity.mpvz.ui.preferences.components.settingsGlassSurface
 import app.infinity.mpvz.ui.components.InlineSearchBar
+import app.infinity.mpvz.ui.player.controls.components.GlassSwitch
 import app.infinity.mpvz.ui.icons.Icon
 import app.infinity.mpvz.ui.icons.Icons
 import app.infinity.mpvz.ui.player.PlayerActivity
@@ -836,7 +837,7 @@ private fun IptvSettingsDialog(
           horizontalArrangement = Arrangement.SpaceBetween,
         ) {
           Text("Manual grid columns")
-          Switch(
+          GlassSwitch(
             checked = manualGridColumns,
             onCheckedChange = onManualGridColumnsChange,
           )

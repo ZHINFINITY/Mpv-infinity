@@ -216,7 +216,7 @@ fun PlaybackSpeedSheet(
       // the pitch control to paint outside a narrow sheet.
       val pitchCorrection by audioPreferences.audioPitchCorrection.collectAsState()
       Row(
-        modifier = Modifier.fillMaxWidth().padding(horizontal = MaterialTheme.spacing.medium),
+        modifier = Modifier.playerSheetSettingRow(active = pitchCorrection),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(MaterialTheme.spacing.medium),
       ) {

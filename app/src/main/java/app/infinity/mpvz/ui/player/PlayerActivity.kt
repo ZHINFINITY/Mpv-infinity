@@ -2192,6 +2192,8 @@ class PlayerActivity :
             PlaybackSession.getPropertyDouble("video-aspect-override")?.takeIf { it.isFinite() && it > 0.0 }
               ?: VideoAspectGeometry.currentEffectiveDisplayAspect()
           },
+          transitionKey = sheet to panel,
+          largeSurfaceVisible = glassDrawerVisible || sheet != Sheets.None || panel != Panels.None,
         ) {
           Box(modifier = Modifier.fillMaxSize()) {
             PlayerControls(

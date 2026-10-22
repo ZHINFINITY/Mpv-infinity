@@ -5,6 +5,14 @@ import kotlin.math.roundToInt
 
 /** Geometry applies only to the tiny UI copy, never the decoded video or its SurfaceView. */
 object GlassScenePolicy {
+  /**
+   * A pane samples the full route content only when it is drawn in a different window
+   * from the one recording it (a dialog or dropdown menu). An in-window pane would be
+   * part of its own recording, so it keeps the isolated background scene.
+   */
+  fun samplesPopupContent(hasOwnerWindow: Boolean, sameWindowAsOwner: Boolean): Boolean =
+    hasOwnerWindow && !sameWindowAsOwner
+
   const val TransientGraceMs = 600L
   const val MaxSceneDimension = 8192
   const val MaxScenePixels = 16L * 1024 * 1024

@@ -72,10 +72,22 @@ private class BrowserScene(val layer: GraphicsLayer, val contentLens: Boolean = 
   fun invalidate() {
     hasValidDisplayList = false
   }
+  /** View of the window that records this scene; panes in other windows (dialogs, menus) differ. */
+  var ownerView: android.view.View? = null
+  /** Popup windows currently sampling this scene; recording runs only while > 0. */
+  var popupConsumers by mutableStateOf(0)
+  /** Observable once-per-session flag so a popup window redraws after the first recording. */
+  var popupReady by mutableStateOf(false)
 }
 
 private data class BrowserGlassCapabilities(val capture: Boolean, val refraction: Boolean, val motion: Boolean)
 private val LocalBrowserScene = compositionLocalOf<BrowserScene?> { null }
+/**
+ * Full route content (folders, thumbnails, text) for popup glass. Only panes drawn in a
+ * separate window (dialogs, dropdown menus) may sample it: they are never part of the
+ * recorded route tree, so there is no producer -> consumer cycle.
+ */
+private val LocalBrowserPopupScene = compositionLocalOf<BrowserScene?> { null }
 private val LocalBrowserCapabilities = compositionLocalOf { BrowserGlassCapabilities(false, false, false) }
 
 /** App-owned background producer, a sibling of all controls/routes. Its subtree
@@ -210,14 +222,20 @@ fun BrowserGlassRouteContentHost(
   val rootCapabilities = LocalBrowserCapabilities.current
   val navLayer = rememberGraphicsLayer()
   val navContentScene = remember(navLayer) { BrowserScene(navLayer, contentLens = true) }
+  val popupLayer = rememberGraphicsLayer()
+  val popupScene = remember(popupLayer) { BrowserScene(popupLayer, contentLens = true) }
+  popupScene.ownerView = hostView
   val canCapture = enabled && rootCapabilities.capture
   DisposableEffect(navContentScene, canCapture) {
-    onDispose { navContentScene.invalidate() }
+    onDispose {
+      navContentScene.invalidate()
+      popupScene.invalidate()
+    }
   }
   Box(Modifier.fillMaxSize()) {
     // This producer owns route content only. It is intentionally not given
     // navContentScene, preventing a producer -> consumer -> producer cycle.
-    CompositionLocalProvider(LocalBrowserScene provides inheritedRootScene) {
+    CompositionLocalProvider(LocalBrowserScene provides inheritedRootScene, LocalBrowserPopupScene provides popupScene) {
       Box(
         Modifier
           .fillMaxSize()
@@ -228,13 +246,33 @@ fun BrowserGlassRouteContentHost(
               val stripTop = coordinates.size.height - stripHeight
               navContentScene.stripBounds = Rect(origin.x, origin.y + stripTop,
                 origin.x + coordinates.size.width, origin.y + coordinates.size.height)
-            } else navContentScene.invalidate()
+              popupScene.stripBounds = Rect(origin.x, origin.y,
+                origin.x + coordinates.size.width, origin.y + coordinates.size.height)
+            } else {
+              navContentScene.invalidate()
+              popupScene.invalidate()
+            }
           }
           .drawWithContent {
+            // Read in draw scope: opening the first popup re-runs this draw to start recording.
+            val popupsOpen = popupScene.popupConsumers > 0
             if (!canCapture || !GlassScenePolicy.validCaptureSize(size.width, size.height)) {
               navContentScene.invalidate()
+              popupScene.invalidate()
               drawContent()
             } else {
+              if (popupsOpen && !popupScene.isRecording) {
+                popupScene.isRecording = true
+                try {
+                  popupLayer.record(size = IntSize(size.width.toInt(), size.height.toInt())) {
+                    this@drawWithContent.drawContent()
+                  }
+                  popupScene.hasValidDisplayList = true
+                  if (!popupScene.popupReady) popupScene.popupReady = true
+                } finally {
+                  popupScene.isRecording = false
+                }
+              } else if (!popupsOpen) popupScene.invalidate()
               navContentScene.isRecording = true
               try {
                 // Match the reference pill's bottom-384-pixel source, but keep
@@ -259,6 +297,7 @@ fun BrowserGlassRouteContentHost(
     // bounded route-content scene. It cannot capture or render itself.
     CompositionLocalProvider(
       LocalBrowserScene provides navContentScene,
+      LocalBrowserPopupScene provides popupScene,
       LocalBrowserCapabilities provides rootCapabilities.copy(capture = canCapture, refraction = canCapture && rootCapabilities.refraction),
     ) { navigationContent() }
   }
@@ -302,7 +341,7 @@ fun BrowserGlassSurface(
   var paneOrigin by remember { mutableStateOf(Offset.Zero) }
   val shader = remember(enabled, capabilities.refraction) {
     if (enabled && capabilities.refraction && Build.VERSION.SDK_INT >= 33)
-      runCatching { RuntimeShader(BROWSER_LENS) }.getOrNull() else null
+      GlassShaderCache.shared(BROWSER_LENS) { RuntimeShader(BROWSER_LENS) } else null
   }
   val lens = rememberGraphicsLayer()
   Box(modifier
@@ -384,7 +423,23 @@ internal fun Modifier.browserGlassPane(
   @Suppress("UNUSED_PARAMETER") referenceOptics: Boolean = false,
 ): Modifier {
   val hostView = LocalView.current
-  val scene = LocalBrowserScene.current
+  val routeScene = LocalBrowserScene.current
+  val popupScene = LocalBrowserPopupScene.current
+  // Popup panes (own window) sample the live route content, frosted and refracted by the
+  // global settings, instead of the flat background; in-window panes never do (no cycle).
+  val popupWindow = materialRole == GlassSurfacePolicy.MaterialRole.Regular &&
+    GlassScenePolicy.samplesPopupContent(popupScene?.ownerView != null, popupScene?.ownerView === hostView)
+  DisposableEffect(popupScene, popupWindow) {
+    val target = popupScene
+    if (popupWindow && target != null) target.popupConsumers += 1
+    onDispose {
+      if (popupWindow && target != null) {
+        target.popupConsumers = (target.popupConsumers - 1).coerceAtLeast(0)
+        if (target.popupConsumers == 0) target.popupReady = false
+      }
+    }
+  }
+  val scene = if (popupWindow) popupScene else routeScene
   val capabilities = LocalBrowserCapabilities.current
   val tuning = LocalGlassCustomization.current
   val shape = remember(cornerRadius) { RoundedCornerShape(cornerRadius) }
@@ -412,7 +467,7 @@ internal fun Modifier.browserGlassPane(
   // Edge bars never bend: the lens edge term would draw a bright line along the bar's bottom.
   val shader = remember(enabled, capabilities.refraction, edgeBar) {
     if (enabled && !edgeBar && capabilities.refraction && Build.VERSION.SDK_INT >= 33)
-      runCatching { RuntimeShader(BROWSER_LENS) }.getOrNull() else null
+      GlassShaderCache.shared(BROWSER_LENS) { RuntimeShader(BROWSER_LENS) } else null
   }
   val lens = rememberGraphicsLayer()
   return this
@@ -447,8 +502,10 @@ internal fun Modifier.browserGlassPane(
         ))
         onDrawBehind {
           if (size.width < 1f || size.height < 1f) return@onDrawBehind
+          // Observed state: the popup window redraws once the route window records its first frame.
+          val popupSceneReady = !popupWindow || scene?.popupReady == true
           val bounds = scene?.stripBounds
-          val hasScene = scene != null && bounds != null && bounds.width > 0f && bounds.height > 0f &&
+          val hasScene = popupSceneReady && scene != null && bounds != null && bounds.width > 0f && bounds.height > 0f &&
             GlassScenePolicy.canDrawRecordedScene(scene.isRecording, scene.hasValidDisplayList)
           if (hasScene) {
             lens.record {

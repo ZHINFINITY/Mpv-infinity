@@ -96,7 +96,7 @@ fun ExpressiveSwitch(
       if (checked) {
         MaterialTheme.colorScheme.primary
       } else {
-        MaterialTheme.colorScheme.surfaceContainerHighest
+        MaterialTheme.colorScheme.onSurface.copy(alpha = 0.20f)
       }
 
     val thumbSize by animateDpAsState(
@@ -177,7 +177,9 @@ fun ExpressiveSwitch(
           .scale(iconScale)
           .blur(toggleBlur.value.dp),
       shape = MaterialTheme.shapes.extraLarge,
-      color = if (checked) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.outline,
+      color =
+          if (checked) MaterialTheme.colorScheme.onPrimary
+          else MaterialTheme.colorScheme.onSurfaceVariant,
       shadowElevation = ElevationTokens.Level1,
     ) {
       Box(

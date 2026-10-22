@@ -70,7 +70,6 @@ import app.infinity.mpvz.preferences.AppearancePreferences
 import app.infinity.mpvz.preferences.preference.collectAsState
 import app.infinity.mpvz.ui.preferences.components.settingsGlassContainerColor
 import app.infinity.mpvz.ui.preferences.components.settingsGlassSurface
-import app.infinity.mpvz.ui.theme.liquidGlassPane
 import kotlin.math.roundToInt
 import org.koin.compose.koinInject
 
@@ -215,7 +214,7 @@ fun SortDialog(
                   Modifier
                     .fillMaxWidth()
                     .clip(RoundedCornerShape(8.dp))
-                    .liquidGlassPane(enabled = glassEnabled, cornerRadius = 8.dp)
+                    .popupInnerFill(glassEnabled, 8.dp)
                     .clickable {
                       if (enableLayoutModeOptions) {
                         layoutModeSelector.onCheckboxChange.invoke(!layoutModeSelector.isCheckboxChecked)
@@ -287,8 +286,7 @@ fun SortDialog(
                   visibilityToggles.forEach { toggle ->
                     FilterChip(
                       modifier = Modifier
-                        .widthIn(min = 76.dp)
-                        .liquidGlassPane(enabled = glassEnabled, cornerRadius = 18.dp),
+                        .widthIn(min = 76.dp),
                       shape = RoundedCornerShape(18.dp),
                       selected = toggle.checked,
                       onClick = { toggle.onCheckedChange(!toggle.checked) },
@@ -296,14 +294,23 @@ fun SortDialog(
                       colors =
                         if (glassEnabled) {
                           FilterChipDefaults.filterChipColors(
-                            containerColor = Color.Transparent,
-                            selectedContainerColor = Color.Transparent,
+                            containerColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.06f),
+                            selectedContainerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.20f),
+                            selectedLabelColor = MaterialTheme.colorScheme.primary,
+                            selectedLeadingIconColor = MaterialTheme.colorScheme.primary,
                           )
                         } else {
                           FilterChipDefaults.filterChipColors()
                         },
                       border =
-                        if (glassEnabled) null else FilterChipDefaults.filterChipBorder(
+                        if (glassEnabled) FilterChipDefaults.filterChipBorder(
+                          enabled = true,
+                          selected = toggle.checked,
+                          borderColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.14f),
+                          selectedBorderColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.55f),
+                          borderWidth = 1.dp,
+                          selectedBorderWidth = 1.dp,
+                        ) else FilterChipDefaults.filterChipBorder(
                           enabled = true,
                           selected = toggle.checked,
                           selectedBorderWidth = 1.dp,
@@ -320,7 +327,7 @@ fun SortDialog(
     },
     confirmButton = {
       TextButton(onClick = onDismiss,
-        modifier = Modifier.liquidGlassPane(enabled = glassEnabled, cornerRadius = 18.dp),
+        modifier = Modifier.popupInnerFill(glassEnabled, 18.dp),
       ) {
         Text(
           text =
@@ -382,7 +389,8 @@ private fun SortTypeSelector(
               .background(
                 color =
                   if (glassEnabled) {
-                    Color.Transparent
+                    if (selected) MaterialTheme.colorScheme.primary.copy(alpha = 0.20f)
+                    else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.06f)
                   } else if (selected) {
                     MaterialTheme.colorScheme.primaryContainer
                   } else {
@@ -486,7 +494,8 @@ private fun GridColumnsNextSection(
   if (folderGridColumnSelector != null && videoGridColumnSelector != null) {
     DialogSectionTitle(text = "Grid Columns")
     Row(
-      modifier = Modifier.fillMaxWidth().liquidGlassPane(enabled = glassEnabled, cornerRadius = 18.dp),
+      modifier = Modifier.fillMaxWidth().popupInnerFill(glassEnabled, 18.dp)
+        .padding(horizontal = if (glassEnabled) 12.dp else 0.dp, vertical = if (glassEnabled) 8.dp else 0.dp),
       horizontalArrangement = Arrangement.spacedBy(16.dp),
     ) {
       Column(modifier = Modifier.weight(1f)) {
@@ -563,7 +572,8 @@ private fun GridColumnsNextSection(
     val selector = folderGridColumnSelector ?: videoGridColumnSelector!!
     Row(
       modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
-        .liquidGlassPane(enabled = glassEnabled, cornerRadius = 18.dp),
+        .popupInnerFill(glassEnabled, 18.dp)
+        .padding(horizontal = if (glassEnabled) 12.dp else 0.dp, vertical = if (glassEnabled) 6.dp else 0.dp),
       horizontalArrangement = Arrangement.SpaceBetween,
       verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -630,3 +640,14 @@ data class GridColumnSelector(
   val steps: Int = 2,
   val unitSuffix: String = "cols",
 )
+
+/**
+ * Inner controls of a glass popup sit inside its single pane: a rounded translucent fill,
+ * not another floating glass pane (no nested shadow/rim, no clipped backplate).
+ */
+@Composable
+private fun Modifier.popupInnerFill(enabled: Boolean, cornerRadius: androidx.compose.ui.unit.Dp): Modifier =
+  if (!enabled) this
+  else this
+    .clip(RoundedCornerShape(cornerRadius))
+    .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.06f))

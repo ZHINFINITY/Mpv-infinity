@@ -99,6 +99,11 @@ fun LiquidGlassBackdropHost(
   isReady: () -> Boolean,
   isPlaying: () -> Boolean,
   sampleAspect: () -> Double? = { null },
+  // Changes when a sheet/panel opens or closes: sampling pauses briefly so the open
+  // animation does not compete with PixelCopy, frost and pane redraws.
+  transitionKey: Any? = null,
+  // A sheet/panel covers the video: sample at display cadence. Controls only: half rate.
+  largeSurfaceVisible: Boolean = true,
   content: @Composable () -> Unit,
 ) {
   val context = LocalContext.current
@@ -130,6 +135,18 @@ fun LiquidGlassBackdropHost(
   val playing by rememberUpdatedState(isPlaying)
   val aspect by rememberUpdatedState(sampleAspect)
   val thermalNow by rememberUpdatedState(thermal)
+  val largeSurface by rememberUpdatedState(largeSurfaceVisible)
+  val settleUntil = remember { longArrayOf(0L) }
+  LaunchedEffect(transitionKey) {
+    settleUntil[0] = SystemClock.uptimeMillis() + GlassSamplingPolicy.TransitionSettleMs
+  }
+  // Warm the shared optics program before the first sheet opens (idle, after first frame).
+  LaunchedEffect(enabled) {
+    if (enabled && Build.VERSION.SDK_INT >= 33) {
+      delay(GlassSamplingPolicy.ShaderWarmupDelayMs)
+      GlassShaderCache.shared(GLASS_OPTICS) { RuntimeShader(GLASS_OPTICS) }
+    }
+  }
   // Visibility changes stop work, but do not flash the last good scene to black during sheet handoff.
   // Media, safety and lifecycle boundaries always discard the old scene immediately.
   DisposableEffect(surfaceView, generation, eligible, lifecycleOwner) {
@@ -160,6 +177,11 @@ fun LiquidGlassBackdropHost(
           delay(if (frame.value != null) GlassScenePolicy.TransientGraceMs else GlassSamplingPolicy.RetryIntervalMs)
           continue
         }
+        val settleLeft = GlassSamplingPolicy.settleDelay(SystemClock.uptimeMillis(), settleUntil[0], frame.value != null)
+        if (settleLeft > 0L) {
+          delay(settleLeft)
+          continue
+        }
         val sampleStarted = SystemClock.uptimeMillis()
         val crop = GlassScenePolicy.sourceRect(source.width, source.height, aspect())
         val dimensions = crop?.let { GlassSamplingPolicy.sampleSize(it.width, it.height) }
@@ -188,7 +210,7 @@ fun LiquidGlassBackdropHost(
         // Recover after transient failures instead of permanently disabling glass after three errors.
         delay(if (failures > 0 && frame.value != null) GlassScenePolicy.TransientGraceMs
           else GlassSamplingPolicy.remainingDelay(
-            GlassSamplingPolicy.interval(playing(), failures, thermalNow),
+            GlassSamplingPolicy.interval(playing(), failures, thermalNow, largeSurface),
             SystemClock.uptimeMillis() - sampleStarted,
           ))
       }
@@ -292,7 +314,7 @@ fun Modifier.liquidGlassPane(
     if (cornerRadius.value >= 999f) RoundedCornerShape(50) else RoundedCornerShape(cornerRadius)
   }
   val shader = remember {
-    if (Build.VERSION.SDK_INT >= 33) runCatching { RuntimeShader(GLASS_OPTICS) }.getOrNull() else null
+    if (Build.VERSION.SDK_INT >= 33) GlassShaderCache.shared(GLASS_OPTICS) { RuntimeShader(GLASS_OPTICS) } else null
   }
   return this
     .onGloballyPositioned { coordinates ->

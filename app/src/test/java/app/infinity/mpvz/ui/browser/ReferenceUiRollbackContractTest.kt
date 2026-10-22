@@ -24,7 +24,8 @@ class ReferenceUiRollbackContractTest {
     val expected = mapOf(
       "app/src/main/java/app/infinity/mpvz/ui/player/controls/PlayerControls.kt" to "e94a3ddb5a4e1b9d48964292258dd2fc5174a024b153d5e0e6d4c22712916529",
       "app/src/main/java/app/infinity/mpvz/ui/player/controls/components/Seekbar.kt" to "b0d7ca11fdd2729871e052a0f6ea3b2cba64fb3e29039e5d3c42a7acf4d426c9",
-      "app/src/main/java/app/infinity/mpvz/ui/player/controls/components/GlassControls.kt" to "c5266167f59009db21006a0b0cb68bea1b144350f8046f77cc6cc216c4447ff3",
+      // Build 1901: owner-approved theme/accent switch colours (3D glass depth kept).
+      "app/src/main/java/app/infinity/mpvz/ui/player/controls/components/GlassControls.kt" to "fd791710e4f3461e7df838d9ee0497198bf1a86f50039b917e3df46726367eb9",
       "app/src/main/java/app/infinity/mpvz/presentation/components/PlayerSheet.kt" to "fdcf88d13735e1876059f0e7bdcc41088ecedd06d58fffde0283c9e32967e96a",
       "app/src/main/java/app/infinity/mpvz/presentation/components/PlayerGlassOverlays.kt" to "82a115d195711b391235b5f32a4d7b2bac75e494aef0ff22be55251f9307b54f",
     )
@@ -132,7 +133,51 @@ private suspend fun frostGlassFrame(bitmap: Bitmap, strength: Float): Bitmap? = 
             isPlayerHost = backdrop != null).copy(alpha = filmAlpha),
 """,
     )
+    // Build 1901: sheet-open latency (shared compiled optics, transition settle, controls
+    // cadence). Restored to the 1900 text first; the earlier scoped steps then run unchanged.
+    val latency = listOf(
+      """  sampleAspect: () -> Double? = { null },
+  // Changes when a sheet/panel opens or closes: sampling pauses briefly so the open
+  // animation does not compete with PixelCopy, frost and pane redraws.
+  transitionKey: Any? = null,
+  // A sheet/panel covers the video: sample at display cadence. Controls only: half rate.
+  largeSurfaceVisible: Boolean = true,
+""" to
+        """  sampleAspect: () -> Double? = { null },
+""",
+      """  val thermalNow by rememberUpdatedState(thermal)
+  val largeSurface by rememberUpdatedState(largeSurfaceVisible)
+  val settleUntil = remember { longArrayOf(0L) }
+  LaunchedEffect(transitionKey) {
+    settleUntil[0] = SystemClock.uptimeMillis() + GlassSamplingPolicy.TransitionSettleMs
+  }
+  // Warm the shared optics program before the first sheet opens (idle, after first frame).
+  LaunchedEffect(enabled) {
+    if (enabled && Build.VERSION.SDK_INT >= 33) {
+      delay(GlassSamplingPolicy.ShaderWarmupDelayMs)
+      GlassShaderCache.shared(GLASS_OPTICS) { RuntimeShader(GLASS_OPTICS) }
+    }
+  }
+""" to
+        """  val thermalNow by rememberUpdatedState(thermal)
+""",
+      """        val settleLeft = GlassSamplingPolicy.settleDelay(SystemClock.uptimeMillis(), settleUntil[0], frame.value != null)
+        if (settleLeft > 0L) {
+          delay(settleLeft)
+          continue
+        }
+""" to
+        """""",
+      """GlassSamplingPolicy.interval(playing(), failures, thermalNow, largeSurface),""" to
+        """GlassSamplingPolicy.interval(playing(), failures, thermalNow),""",
+      """GlassShaderCache.shared(GLASS_OPTICS) { RuntimeShader(GLASS_OPTICS) }""" to
+        """runCatching { RuntimeShader(GLASS_OPTICS) }.getOrNull()""",
+    )
     var film = current
+    latency.forEach { (now, before) ->
+      assertEquals(now, 1, film.split(now).size - 1)
+      film = film.replace(now, before)
+    }
     adaptiveFilm.forEach { (now, before) ->
       assertEquals(now, 1, film.split(now).size - 1)
       film = film.replace(now, before)

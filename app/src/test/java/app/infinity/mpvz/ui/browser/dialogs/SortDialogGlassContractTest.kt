@@ -14,8 +14,10 @@ class SortDialogGlassContractTest {
   private val dialog = source("ui/browser/dialogs/SortDialog")
 
   @Test fun innerGlassControlsImportTheirExtensionAfterOuterPopupMaterialChanges() {
-    assertTrue(dialog.contains("Modifier.liquidGlassPane("))
-    assertTrue(dialog.contains("import app.infinity.mpvz.ui.theme.liquidGlassPane"))
+    // Build 1901: inner controls are fills inside the one popup pane, never nested glass panes.
+    assertFalse(dialog.contains("liquidGlassPane("))
+    assertTrue(dialog.contains("private fun Modifier.popupInnerFill(enabled: Boolean"))
+    assertTrue(dialog.contains(".clip(RoundedCornerShape(cornerRadius))"))
   }
 
   @Test fun actualDialogUsesOneSharedGlassPaneForSegmentedOptions() {
@@ -28,7 +30,9 @@ class SortDialogGlassContractTest {
     assertTrue(order.contains("glassEnabled: Boolean"))
     assertFalse(order.contains("Modifier.liquidGlassPane(enabled = glassEnabled"))
     val type = dialog.substringAfter("private fun SortTypeSelector(").substringBefore("private fun SortOrderSelector")
-    assertTrue(type.contains("if (glassEnabled) {\n                    Color.Transparent"))
+    // Build 1901: the Sort-by tiles stay visible with glass on (selected = accent tint).
+    assertTrue(type.contains("if (selected) MaterialTheme.colorScheme.primary.copy(alpha = 0.20f)"))
+    assertFalse(type.contains("Color.Transparent"))
     assertTrue(type.contains("role = Role.RadioButton"))
   }
 
@@ -57,9 +61,12 @@ class SortDialogGlassContractTest {
     }
     val fields = dialog.substringAfter("if (visibilityToggles.isNotEmpty())").substringBefore("confirmButton =")
     assertTrue(fields.contains("FilterChip(\n                      modifier = Modifier\n                        .widthIn(min = 76.dp)"))
-    assertTrue(fields.contains("if (glassEnabled) null else FilterChipDefaults.filterChipBorder"))
+    // Build 1901: chips draw their own accent fill/border; no 48dp touch-target glass backplate.
+    assertTrue(fields.contains("if (glassEnabled) FilterChipDefaults.filterChipBorder("))
+    assertTrue(fields.contains("selectedBorderColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.55f)"))
+    assertFalse(fields.contains("liquidGlassPane"))
     val action = dialog.substringAfter("confirmButton =").substringBefore("tonalElevation =")
-    assertTrue(action.contains("modifier = Modifier.liquidGlassPane(enabled = glassEnabled"))
+    assertTrue(action.contains("modifier = Modifier.popupInnerFill(glassEnabled, 18.dp)"))
   }
 
   @Test fun settingsMasterKeepsIndependentPopupGlassAndReferenceSearchGeometry() {

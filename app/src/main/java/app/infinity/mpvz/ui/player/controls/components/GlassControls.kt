@@ -51,12 +51,27 @@ fun GlassSwitch(
   val highlight by appearance.glassSurfaceHighlight.collectAsState()
   val glass = preferenceEnabled && glassEnabled
   val depth = GlassControlPolicy.depth(LocalGlassCustomization.current.depth)
-  val accent = MaterialTheme.colorScheme.primary
+  val scheme = MaterialTheme.colorScheme
+  val accent = scheme.primary
+  val themedColors = SwitchDefaults.colors(
+    checkedTrackColor = accent,
+    checkedThumbColor = scheme.onPrimary,
+    uncheckedTrackColor = scheme.onSurface.copy(alpha = 0.20f),
+    uncheckedThumbColor = scheme.onSurfaceVariant,
+    checkedBorderColor = accent,
+    uncheckedBorderColor = scheme.outline,
+    disabledCheckedTrackColor = accent.copy(alpha = 0.38f),
+    disabledCheckedThumbColor = scheme.onPrimary.copy(alpha = 0.70f),
+    disabledUncheckedTrackColor = scheme.onSurface.copy(alpha = 0.12f),
+    disabledUncheckedThumbColor = scheme.onSurfaceVariant.copy(alpha = 0.52f),
+    disabledCheckedBorderColor = accent.copy(alpha = 0.38f),
+    disabledUncheckedBorderColor = scheme.outline.copy(alpha = 0.52f),
+  )
   Switch(
     checked = checked,
     onCheckedChange = onCheckedChange,
     enabled = enabled,
-    colors = if (!glass) colors else SwitchDefaults.colors(
+    colors = if (!glass) themedColors else SwitchDefaults.colors(
       checkedThumbColor = Color.Transparent,
       uncheckedThumbColor = Color.Transparent,
       disabledCheckedThumbColor = Color.Transparent,
@@ -75,6 +90,7 @@ fun GlassSwitch(
         Modifier.size(24.dp)
           .glassThumbOptics(
             accent = accent,
+            checked = checked,
             highlight = GlassControlPolicy.highlightAlpha(highlight, enabled, checked),
             shadow = GlassControlPolicy.shadowAlpha(depth, enabled),
             border = GlassControlPolicy.thumbBorderAlpha(enabled, checked),
@@ -83,7 +99,7 @@ fun GlassSwitch(
       ) { thumbContent?.invoke() }
     }),
     // Material keeps its minimum interaction box and semantics; optics cover only the track.
-    modifier = modifier.then(if (glass) Modifier.glassTrackOptics(opacity, highlight, 16.dp, height = 32.dp) else Modifier),
+    modifier = modifier.then(if (glass) Modifier.glassTrackOptics(opacity, highlight, 16.dp, height = 32.dp, checked = checked) else Modifier),
   )
 }
 
@@ -159,8 +175,11 @@ private fun Modifier.glassTrackOptics(
   radius: Dp,
   horizontalInset: Dp = 0.dp,
   height: Dp = 32.dp,
+  checked: Boolean = true,
 ): Modifier {
-  val tint = MaterialTheme.colorScheme.surfaceContainerHigh
+  val scheme = MaterialTheme.colorScheme
+  val tint = if (checked) scheme.primary else scheme.onSurface
+  val tintAlpha = if (checked) 0.72f else 0.20f
   val depth = GlassControlPolicy.depth(LocalGlassCustomization.current.depth)
   return drawWithCache {
     val trackHeight = height.toPx().coerceAtMost(size.height)
@@ -173,7 +192,7 @@ private fun Modifier.glassTrackOptics(
         brush = Brush.verticalGradient(
           listOf(
             Color.White.copy(alpha = (highlight * 0.32f).coerceIn(0f, 0.32f)),
-            tint.copy(alpha = opacity * 0.20f),
+            tint.copy(alpha = if (checked) (0.42f + opacity * 0.30f).coerceAtMost(0.72f) else tintAlpha),
             Color.Black.copy(alpha = GlassControlPolicy.shadowAlpha(depth, true)),
           ),
           startY = top,
@@ -206,17 +225,19 @@ private fun Modifier.glassThumbOptics(
   highlight: Float,
   shadow: Float,
   border: Float,
+  checked: Boolean = true,
 ): Modifier {
   // A frosted body hides any native thumb-shadow footprint beneath the knob;
   // only this full, rounded contour and directional reflection remain visible.
-  val body = MaterialTheme.colorScheme.surfaceContainerHigh
+  val scheme = MaterialTheme.colorScheme
+  val body = if (checked) scheme.onPrimary else scheme.onSurfaceVariant
   return drawWithCache {
   val radius = size.minDimension / 2f
   onDrawBehind {
     drawRoundRect(body, cornerRadius = androidx.compose.ui.geometry.CornerRadius(radius, radius))
     drawRoundRect(
       brush = Brush.verticalGradient(
-        listOf(Color.White.copy(alpha = highlight * 0.72f), accent.copy(alpha = 0.08f), Color.Black.copy(alpha = shadow)),
+        listOf(Color.White.copy(alpha = highlight * 0.72f), accent.copy(alpha = if (checked) 0.18f else 0.08f), Color.Black.copy(alpha = shadow)),
       ),
       cornerRadius = androidx.compose.ui.geometry.CornerRadius(radius, radius),
     )

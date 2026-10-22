@@ -427,8 +427,9 @@ fun SubtitlesSheet(
 
       if (aiEnabled) {
         Row(
-          modifier = Modifier.fillMaxWidth().padding(horizontal = MaterialTheme.spacing.medium),
+          modifier = Modifier.playerSheetSettingRow(active = translationEnabled),
           verticalAlignment = Alignment.CenterVertically,
+          horizontalArrangement = Arrangement.spacedBy(MaterialTheme.spacing.medium),
         ) {
           Text("Translate embedded subtitles", modifier = Modifier.weight(1f))
           GlassSwitch(checked = translationEnabled, onCheckedChange = { onToggleTranslation() })
