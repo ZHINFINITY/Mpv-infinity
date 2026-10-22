@@ -8,6 +8,7 @@ import org.junit.Test
 class MpvInterpolationRestartTransactionTest {
   private fun snapshot(paused: Boolean = false) = MpvInterpolationRestartState(
     mediaId = "media:current-not-next",
+    sessionGeneration = 7L,
     positionSeconds = 123.456789,
     paused = paused,
     tracks = mapOf("aid" to "selected:Japanese", "sid" to "disabled", "secondary-sid" to "selected:external"),
@@ -20,6 +21,8 @@ class MpvInterpolationRestartTransactionTest {
   private class Host : MpvInterpolationRestartTransaction.Host {
     val calls = mutableListOf<String>()
     var current = true
+    var currentGeneration = 7L
+    var committedGeneration: Long? = null
     var freezeAcknowledged = true
     var restoreAcknowledged = true
     var returnedGeneration: Long? = 42L
@@ -30,7 +33,8 @@ class MpvInterpolationRestartTransactionTest {
     var onRestore: () -> Unit = {}
     var actualConfiguration = "old"
     var requestedConfiguration = "interpolation=yes,target-fps=120"
-    override fun isCurrent(state: MpvInterpolationRestartState) = current
+    override fun isCurrent(state: MpvInterpolationRestartState) = current &&
+      currentGeneration == (committedGeneration ?: state.sessionGeneration)
     override suspend fun freeze(state: MpvInterpolationRestartState): Boolean {
       calls += "freeze"
       onFreeze()
@@ -40,6 +44,8 @@ class MpvInterpolationRestartTransactionTest {
       calls += "configure-and-load"
       stateAfterLoad = state
       actualConfiguration = requestedConfiguration
+      committedGeneration = returnedGeneration
+      returnedGeneration?.let { currentGeneration = it }
       onLoad()
       return returnedGeneration
     }
@@ -58,7 +64,7 @@ class MpvInterpolationRestartTransactionTest {
     assertEquals("interpolation=yes,target-fps=120", host.actualConfiguration)
     assertEquals(listOf("freeze", "configure-and-load", "await-ready-and-restore"), host.calls)
     host.requestedConfiguration = "interpolation=no,target-fps=60"
-    assertTrue(MpvInterpolationRestartTransaction.run(snapshot(), host))
+    assertTrue(MpvInterpolationRestartTransaction.run(snapshot().copy(sessionGeneration = 42L), host))
     assertEquals("interpolation=no,target-fps=60", host.actualConfiguration)
   }
   @Test fun exactLivePositionPlayingStateAndTracksSurviveWithoutRounding() = runBlocking {
@@ -91,6 +97,11 @@ class MpvInterpolationRestartTransactionTest {
     assertFalse(MpvInterpolationRestartTransaction.run(snapshot(), host))
     assertEquals(listOf("freeze"), host.calls)
   }
+  @Test fun sameItemNewerGenerationWhileFreezingCannotBeTornDown() = runBlocking {
+    val host = Host().apply { onFreeze = { currentGeneration = 8L } }
+    assertFalse(MpvInterpolationRestartTransaction.run(snapshot(), host))
+    assertEquals(listOf("freeze"), host.calls)
+  }
   @Test fun mediaChangedAfterLoadCannotApplyOldPositionOrTracksToNewItem() = runBlocking {
     val host = Host().apply { onLoad = { current = false } }
     assertFalse(MpvInterpolationRestartTransaction.run(snapshot(), host))
@@ -116,7 +127,8 @@ class MpvInterpolationRestartTransactionTest {
   }
   @Test fun missingMediaOrNonFinitePositionCannotStartARestart() = runBlocking {
     for (invalid in listOf(snapshot().copy(mediaId = ""), snapshot().copy(positionSeconds = Double.NaN),
-      snapshot().copy(positionSeconds = Double.POSITIVE_INFINITY), snapshot().copy(positionSeconds = -1.0))) {
+      snapshot().copy(positionSeconds = Double.POSITIVE_INFINITY), snapshot().copy(positionSeconds = -1.0),
+      snapshot().copy(sessionGeneration = 0L))) {
       val host = Host()
       assertFalse(MpvInterpolationRestartTransaction.run(invalid, host))
       assertTrue(host.calls.isEmpty())

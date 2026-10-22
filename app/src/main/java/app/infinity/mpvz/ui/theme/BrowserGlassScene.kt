@@ -60,7 +60,7 @@ import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 
 @Stable
-private class BrowserScene(val layer: GraphicsLayer) {
+private class BrowserScene(val layer: GraphicsLayer, val contentLens: Boolean = false) {
   var stripBounds by mutableStateOf(Rect.Zero)
   // Render-thread reentrancy guard, not snapshot state: drawing must not invalidate itself.
   var isRecording = false
@@ -191,7 +191,71 @@ fun BrowserGlassSceneHost(
   }
 }
 
-/** Compatibility marker. Source ownership lives in the independent host producer;
+/**
+ * Captures only the ordinary route display list for the floating navigation lens.
+ * The route producer is a sibling of the navigation consumer: it never records the
+ * consumer itself, and route glass continues to sample the independent root backdrop.
+ * A detached or zero-sized layer is invalidated rather than reusing stale pixels.
+ */
+@Composable
+fun BrowserGlassRouteContentHost(
+  enabled: Boolean,
+  routeContent: @Composable () -> Unit,
+  navigationContent: @Composable () -> Unit,
+) {
+  val hostView = LocalView.current
+  val inheritedRootScene = LocalBrowserScene.current
+  val rootCapabilities = LocalBrowserCapabilities.current
+  val navLayer = rememberGraphicsLayer()
+  val navContentScene = remember(navLayer) { BrowserScene(navLayer, contentLens = true) }
+  val canCapture = enabled && rootCapabilities.capture
+  DisposableEffect(navContentScene, canCapture) {
+    onDispose { navContentScene.invalidate() }
+  }
+  Box(Modifier.fillMaxSize()) {
+    // This producer owns route content only. It is intentionally not given
+    // navContentScene, preventing a producer -> consumer -> producer cycle.
+    CompositionLocalProvider(LocalBrowserScene provides inheritedRootScene) {
+      Box(
+        Modifier
+          .fillMaxSize()
+          .onGloballyPositioned { coordinates ->
+            if (coordinates.isAttached && coordinates.size.width > 0 && coordinates.size.height > 0) {
+              val origin = coordinates.localToWindow(Offset.Zero) + windowScreenOffset(hostView)
+              navContentScene.stripBounds = Rect(origin.x, origin.y, origin.x + coordinates.size.width, origin.y + coordinates.size.height)
+            } else navContentScene.invalidate()
+          }
+          .drawWithContent {
+            if (!canCapture || !GlassScenePolicy.validCaptureSize(size.width, size.height)) {
+              navContentScene.invalidate()
+              drawContent()
+            } else {
+              navContentScene.isRecording = true
+              try {
+                navLayer.record(size = IntSize(size.width.toInt(), size.height.toInt())) {
+                  // Ordinary Compose draw display list; no pixel copy or polling.
+                  this@drawWithContent.drawContent()
+                }
+                navContentScene.hasValidDisplayList = true
+              } finally {
+                navContentScene.isRecording = false
+              }
+              drawLayer(navLayer)
+            }
+          },
+      ) { routeContent() }
+    }
+    // The consumer is outside the captured subtree and is the only owner of the
+    // bounded route-content scene. It cannot capture or render itself.
+    CompositionLocalProvider(
+      LocalBrowserScene provides navContentScene,
+      LocalBrowserCapabilities provides rootCapabilities.copy(capture = canCapture, refraction = canCapture && rootCapabilities.refraction),
+    ) { navigationContent() }
+  }
+}
+
+/**
+ * Compatibility marker. Source ownership lives in the independent host producer;
  * recording this route's content would reintroduce a source -> consumer -> source cycle.
  */
 @Composable
@@ -219,6 +283,10 @@ fun BrowserGlassSurface(
 /** The shared pane path used by folders, settings and Quick Play outside MainScreen. */
 @Composable
 internal fun hasBrowserGlassScene(): Boolean = LocalBrowserScene.current != null
+
+/** Identity-only probe for runtime producer/consumer isolation; never exposes pixel data. */
+@Composable
+internal fun currentBrowserGlassSceneIdentity(): Any? = LocalBrowserScene.current
 
 @Composable
 internal fun Modifier.browserGlassPane(
@@ -279,8 +347,10 @@ internal fun Modifier.browserGlassPane(
           RenderEffect.createBlurEffect(3f * density * tuning.frost, 3f * density * tuning.frost, Shader.TileMode.CLAMP).asComposeRenderEffect()
         }.getOrNull() else null
         lens.renderEffect = effect
-        // Keep the real UI underneath visible; never replace it with an opaque sample.
-        lens.alpha = GlassSurfacePolicy.browserSampleAlpha(film)
+        // A route-content lens replaces pixels with their refracted copy, avoiding
+        // sharp unrefracted text ghosting through. This is not an opaque material tint.
+        // Background-only panes retain bounded translucency over their real content.
+        lens.alpha = if (scene?.contentLens == true) 1f else GlassSurfacePolicy.browserSampleAlpha(film)
         val edge = Brush.linearGradient(listOf(
           Color.White.copy(alpha = 0.20f + glow * 0.65f),
           Color.White.copy(alpha = 0.03f),

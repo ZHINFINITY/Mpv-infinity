@@ -45,6 +45,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -59,6 +60,7 @@ import app.infinity.mpvz.ui.icons.AppIcon
 import app.infinity.mpvz.ui.icons.Icon
 import app.infinity.mpvz.ui.icons.Icons
 import app.infinity.mpvz.ui.securefolder.SecureFolderGateScreen
+import app.infinity.mpvz.ui.preferences.components.SettingsGlassPolicy
 import app.infinity.mpvz.ui.preferences.components.settingsGlassEnabled
 import app.infinity.mpvz.ui.preferences.components.settingsGlassPreferenceRow
 import app.infinity.mpvz.ui.theme.LocalEmphasizedTypography
@@ -449,7 +451,6 @@ private fun SettingsSectionBlock(
       section = section,
       selectedScreen = selectedScreen,
       onItemClick = onItemClick,
-      modifier = Modifier.padding(horizontal = 16.dp),
     )
   }
 }
@@ -461,12 +462,12 @@ internal fun SettingsDestinationGroup(
   onItemClick: (SettingsDestination) -> Unit,
   modifier: Modifier = Modifier,
 ) {
+  // Standalone rows own their outer insets and gaps, exactly like other settings.
   Column(
     modifier = modifier.fillMaxWidth(),
-    verticalArrangement = Arrangement.spacedBy(4.dp),
   ) {
     section.items.forEach { item ->
-      SettingsDestinationRow(
+      SettingsDestinationCard(
         item = item,
         tint = section.tint,
         isSelected = selectedScreen == item.screen,
@@ -476,8 +477,9 @@ internal fun SettingsDestinationGroup(
   }
 }
 
+/** A standalone destination card; every destination owns its own surface and hit target. */
 @Composable
-private fun SettingsDestinationRow(
+private fun SettingsDestinationCard(
   item: SettingsDestination,
   tint: Color,
   isSelected: Boolean,
@@ -497,8 +499,10 @@ private fun SettingsDestinationRow(
       Modifier
         .fillMaxWidth()
         .settingsGlassPreferenceRow()
+        .testTag("settings-destination-card:${item.title}")
         .background(rowBgColor)
-        .clickable(onClick = onClick),
+        .clickable(onClick = onClick)
+        .padding(horizontal = 16.dp, vertical = 12.dp),
     verticalAlignment = Alignment.CenterVertically,
   ) {
     Surface(
@@ -506,7 +510,7 @@ private fun SettingsDestinationRow(
       color = tint.copy(alpha = 0.18f),
     ) {
       Box(
-        modifier = Modifier.size(48.dp),
+        modifier = Modifier.size(48.dp).testTag("settings-destination-icon:${item.title}"),
         contentAlignment = Alignment.Center,
       ) {
         Icon(

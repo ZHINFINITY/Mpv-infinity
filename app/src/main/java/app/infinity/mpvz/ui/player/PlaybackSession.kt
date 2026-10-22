@@ -137,7 +137,12 @@ object PlaybackSession : MPVLib.EventObserver {
   private data class ResolvedPlayable(
     val uri: String,
     val registration: NetworkStreamRegistration? = null,
-  )
+    val ownedFd: Int? = null,
+  ) {
+    fun closeUnconsumedFd() {
+      ownedFd?.let { fd -> runCatching { android.os.ParcelFileDescriptor.adoptFd(fd).close() } }
+    }
+  }
 
   /**
    * Video decoding is intentionally disabled while Android has no render surface. Keep the track
@@ -184,6 +189,7 @@ object PlaybackSession : MPVLib.EventObserver {
   private var pendingStopClearQueue = false
   private var desiredPaused = true
   private var loadedGeneration = 0L
+  private var interpolationRestartLoadFence: MpvRestartLoadFence? = null
   private var loadedPlaybackItem: PlaybackItem? = null
   private var loadedAudiobookEnded = false
   private var loadedAudiobookDurationMs = 0L
@@ -214,6 +220,13 @@ object PlaybackSession : MPVLib.EventObserver {
   fun invalidateCoreConfiguration() {
     nativeLock.withLock { activeCoreConfigurationKey = null }
   }
+
+  /** Caller holds PlaybackActivityOwner first, matching the normal load lock order. */
+  internal fun <T : Any> reconfigureCurrentCore(expectedGeneration: Long, commit: () -> T): T? =
+    nativeLock.withLock {
+      if (!initialized || !isCurrentGeneration(expectedGeneration)) null else commit()
+    }
+
 
   val propInt = PlaybackProperty(MPVLib.MpvFormat.MPV_FORMAT_INT64, ::getPropertyInt)
   val propLong = PlaybackProperty(MPVLib.MpvFormat.MPV_FORMAT_INT64) { property -> getPropertyInt(property)?.toLong() }
@@ -530,6 +543,7 @@ object PlaybackSession : MPVLib.EventObserver {
     updateState { it.copy(phase = PlaybackPhase.STOPPING) }
     desiredPaused = true
     loadedGeneration = 0L
+    interpolationRestartLoadFence = null
     defaultUserAgent = null
     pendingPositionRestoreGeneration = 0L
     pendingPositionRestoreOverride = null
@@ -711,13 +725,16 @@ object PlaybackSession : MPVLib.EventObserver {
     flattenEditions: Boolean = false,
     disableWebExtraction: Boolean = app.infinity.mpvz.utils.media.RadioStreamProbe.cachedAudioMimeType(item.playableUri, item.headers) != null,
     commit: ((() -> Long) -> Long)? = null,
+    verifyNativePathAfterRestart: Boolean = false,
   ): Long {
     val resolved = resolvePlayableUri(item)
+    var nativeCommitInvoked = false
     return try {
       var previous: NetworkStreamRegistration? = null
       var previousAuxiliary = emptyList<NetworkStreamRegistration>()
       val performCommit = {
         nativeLock.withLock {
+          nativeCommitInvoked = true
           val generation =
             load(
               playableUri = resolved.uri,
@@ -727,6 +744,7 @@ object PlaybackSession : MPVLib.EventObserver {
               initialPositionSeconds = initialPositionSeconds,
               flattenEditions = flattenEditions,
               disableWebExtraction = disableWebExtraction,
+              verifyNativePathAfterRestart = verifyNativePathAfterRestart,
             )
           if (generation >= 0L) {
             previous = activeNetworkStream
@@ -739,6 +757,7 @@ object PlaybackSession : MPVLib.EventObserver {
       }
       val generation = commit?.invoke(performCommit) ?: performCommit()
       if (generation < 0L) {
+        resolved.closeUnconsumedFd()
         resolved.registration?.let(::releaseNetworkStream)
         generation
       } else {
@@ -755,6 +774,9 @@ object PlaybackSession : MPVLib.EventObserver {
         generation
       }
     } catch (error: Throwable) {
+      // Once native load was invoked, fd ownership is ambiguous; never close a
+      // potentially consumed/reused fd. Fenced pre-commit aborts are unambiguous.
+      if (!nativeCommitInvoked) resolved.closeUnconsumedFd()
       resolved.registration?.let(::releaseNetworkStream)
       throw error
     }
@@ -768,6 +790,7 @@ object PlaybackSession : MPVLib.EventObserver {
     initialPositionSeconds: Double? = null,
     flattenEditions: Boolean = false,
     disableWebExtraction: Boolean = false,
+    verifyNativePathAfterRestart: Boolean = false,
   ): Long =
     withCore(default = -1L) {
       if (_state.value.phase == PlaybackPhase.STOPPING) return@withCore -1L
@@ -812,6 +835,7 @@ object PlaybackSession : MPVLib.EventObserver {
       beginPlaybackTransitionAudioGuardLocked(canRestore = true)
 
       val generation = PlaybackGenerationPolicy.next(_state.value.generation)
+      interpolationRestartLoadFence = if (verifyNativePathAfterRestart) MpvRestartLoadFence(generation, playableUri) else null
       val initialPosition = initialPositionSeconds?.takeIf { it.isFinite() && it > 0.0 }
       // Live HTTP M3U audio has no meaningful timeline. mpv may expose a
       // one-second probe duration and a very large time-pos; neither is a
@@ -1367,6 +1391,13 @@ object PlaybackSession : MPVLib.EventObserver {
           }
           MPVLib.MpvEvent.MPV_EVENT_FILE_LOADED -> {
             val current = _state.value
+            interpolationRestartLoadFence?.let { fence ->
+              if (loadedGeneration == current.generation || !MpvRestartLoadFencePolicy.accepts(
+                  fence, current.generation, MPVLib.getPropertyString("path"),
+                  MPVLib.getPropertyInt("track-list/count") ?: 0)) {
+                return@withLock false
+              }
+            }
             if (current.phase == PlaybackPhase.STOPPING) {
               runCatching { MPVLib.command("stop") }
               return@withLock true
@@ -1858,7 +1889,8 @@ object PlaybackSession : MPVLib.EventObserver {
       val refreshedUri =
         Uri.parse(NetworkPlaybackUri.normalize(item.originalUri)).openContentFd(context)
           ?: error("Unable to reopen content URI for playback")
-      return ResolvedPlayable(refreshedUri)
+      return ResolvedPlayable(refreshedUri,
+        ownedFd = refreshedUri.takeIf { it.startsWith("fd://") }?.removePrefix("fd://")?.toIntOrNull())
     }
 
     // Resolve a local path for native integrations that cannot consume content:// directly.

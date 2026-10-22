@@ -137,8 +137,8 @@ fun FolderCard(
             } else {
               (usableWidth / folderMinWidth).toInt().coerceAtLeast(1)
             }
-          val horizontalPadding = 32.dp
-          val spacing = 8.dp
+          val horizontalPadding = 36.dp
+          val spacing = 12.dp
           val thumbWidthDp =
             if (folderGridColumns > 1) {
               val totalSpacing = spacing * (folderGridColumns - 1)
@@ -263,11 +263,11 @@ fun FolderCard(
           modifier =
             Modifier
               .fillMaxWidth()
-              .padding(12.dp),
+              .padding(horizontal = 14.dp, vertical = 16.dp),
           horizontalAlignment = horizontalAlignment,
         ) {
-          val horizontalPadding = 32.dp
-          val spacing = 8.dp
+          val horizontalPadding = 36.dp
+          val spacing = 12.dp
 
           val thumbWidthDp =
             if (folderGridColumns > 1) {

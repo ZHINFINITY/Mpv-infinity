@@ -36,8 +36,9 @@ class NavigationGlassContracts(unittest.TestCase):
         self.assertIn("BrowserGlassSceneHost(", source)
         self.assertIn("enabled = liquidGlassSurfacesForBrowser,", source)
         self.assertNotIn("liquidGlassSurfacesForBrowser && !hideNavigationBar", source)
-        self.assertEqual(1, source.count(".browserGlassSceneSource()"))
-        self.assertLess(source.index(".browserGlassSceneSource()"), source.index("Browser source ends here"))
+        self.assertEqual(1, source.count("BrowserGlassRouteContentHost("))
+        self.assertLess(source.index("routeContent = {"), source.index("Browser source ends here"))
+        self.assertLess(source.index("Browser source ends here"), source.index("navigationContent = {"))
         self.assertLess(source.index("Browser source ends here"), source.index("// Animated bottom navigation bar"))
         renderer = RENDERER.read_text()
         self.assertIn("fun Modifier.browserGlassSceneSource(): Modifier = this", renderer)
@@ -64,7 +65,7 @@ class NavigationGlassContracts(unittest.TestCase):
         self.assertIn("lens.renderEffect = effect", source)
         self.assertIn("drawLayer(scene!!.layer)", source)
         self.assertIn("Box(modifier.browserGlassPane(", source)
-        self.assertIn("lens.alpha = GlassSurfacePolicy.browserSampleAlpha(film)", source)
+        self.assertIn("lens.alpha = if (scene?.contentLens == true) 1f else GlassSurfacePolicy.browserSampleAlpha(film)", source)
         self.assertIn("GlassSurfacePolicy.browserFallbackAlpha(film)", source)
         source += RENDERER.read_text().split("fun BrowserGlassSurface(", 1)[0]
         for token in ("!lowRam && !powerSave && thermal < 3", "ANIMATOR_DURATION_SCALE", "areAnimatorsEnabled()",

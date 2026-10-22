@@ -9,12 +9,14 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -93,6 +95,54 @@ class BrowserGlassRuntimeTest {
       }
     }
     composeRule.runOnIdle { assertEquals(1, instances) }
+  }
+
+  @Test fun actualNavigationLensIsIsolatedFromItsRouteProducerAndKeepsTapStateAcrossModes() {
+    var enabled by mutableStateOf(true)
+    var rootScene: Any? = null
+    var routeScene: Any? = null
+    var navScene: Any? = null
+    var routeInstances = 0
+    var navInstances = 0
+    var navClicks = 0
+    composeRule.setContent {
+      MaterialTheme {
+        BrowserGlassSceneHost(enabled = enabled) {
+          val root = currentBrowserGlassSceneIdentity()
+          SideEffect { rootScene = root }
+          BrowserGlassRouteContentHost(enabled = enabled,
+            routeContent = {
+              val scene = currentBrowserGlassSceneIdentity()
+              val instance = remember { ++routeInstances }
+              SideEffect { routeScene = scene }
+              BrowserGlassSurface(enabled = enabled, opacity = 0.8f, highlight = 0.2f) {
+                Text("Route instance $instance")
+              }
+            },
+            navigationContent = {
+              val scene = currentBrowserGlassSceneIdentity()
+              val instance = remember { ++navInstances }
+              SideEffect { navScene = scene }
+              BrowserGlassSurface(modifier = Modifier.padding(top = 100.dp),
+                enabled = enabled, opacity = 0.8f, highlight = 0.2f) {
+                Text("Navigation instance $instance", Modifier.clickable { navClicks++ })
+              }
+            },
+          )
+        }
+      }
+    }
+    for (mode in listOf(true, false, true, false, true)) {
+      composeRule.runOnIdle { enabled = mode }
+      composeRule.onNodeWithText("Navigation instance 1").performClick()
+      composeRule.runOnIdle {
+        assertTrue(rootScene != null && rootScene === routeScene)
+        assertTrue(navScene != null && navScene !== rootScene)
+        assertEquals(1, routeInstances)
+        assertEquals(1, navInstances)
+      }
+    }
+    composeRule.runOnIdle { assertEquals(5, navClicks) }
   }
 
   @Test fun actualBackgroundProducerCannotSeeOrCaptureConsumerScene() {

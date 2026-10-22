@@ -1467,12 +1467,12 @@ private fun GridContent(
       modifier = Modifier.fillMaxSize(),
       contentPadding =
         PaddingValues(
-          start = 8.dp,
-          end = 8.dp,
-          bottom = navigationBarHeight,
+          start = 16.dp,
+          end = 16.dp,
+          bottom = navigationBarHeight + 24.dp,
         ),
-      horizontalArrangement = Arrangement.spacedBy(8.dp),
-      verticalArrangement = Arrangement.spacedBy(8.dp),
+      horizontalArrangement = Arrangement.spacedBy(12.dp),
+      verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
       items(count = folders.size, key = { index -> folders[index].bucketId }) { index ->
         val folder = folders[index]
@@ -1570,9 +1570,9 @@ private fun ListContent(
       modifier = Modifier.fillMaxSize(),
       contentPadding =
         PaddingValues(
-          start = 8.dp,
-          end = 8.dp,
-          bottom = navigationBarHeight,
+          start = 16.dp,
+          end = 16.dp,
+          bottom = navigationBarHeight + 24.dp,
         ),
     ) {
       items(folders, key = { it.bucketId }) { folder ->
@@ -1747,10 +1747,10 @@ private fun SearchResultsContent(
               start = 8.dp,
               end = 8.dp,
               top = 8.dp,
-              bottom = navigationBarHeight + 8.dp,
+              bottom = navigationBarHeight + 24.dp,
             ),
           horizontalArrangement = Arrangement.spacedBy(4.dp),
-          verticalArrangement = Arrangement.spacedBy(4.dp),
+          verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
           items(
             count = folders.size,
@@ -1799,7 +1799,7 @@ private fun SearchResultsContent(
             start = 8.dp,
             end = 8.dp,
             top = 8.dp,
-            bottom = navigationBarHeight + 8.dp,
+            bottom = navigationBarHeight + 24.dp,
           ),
       ) {
         items(

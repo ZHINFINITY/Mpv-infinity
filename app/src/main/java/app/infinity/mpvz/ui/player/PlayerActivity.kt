@@ -155,6 +155,7 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.withContext
 import org.koin.android.ext.android.inject
@@ -464,8 +465,15 @@ class PlayerActivity :
     val enabled = decoderPreferences.mpvFlowFrameInterpolation.get()
     val targetFps = decoderPreferences.mpvFlowTargetFps.get()
     lifecycleScope.launch {
-      val liveApplied = backend != null && isNativeEngineActive() && nativeEngine === backend &&
-        backend.applyInterpolationRuntime(enabled = enabled, targetFps = targetFps)
+      val liveApplied = try {
+        backend != null && isNativeEngineActive() && nativeEngine === backend &&
+          backend.applyInterpolationRuntime(enabled = enabled, targetFps = targetFps)
+      } catch (cancelled: CancellationException) {
+        throw cancelled
+      } catch (error: Exception) {
+        Log.e(TAG, "Native interpolation live apply failed", error)
+        false
+      }
       val decision = InterpolationRuntimeApplyPolicy.decision(liveApplied, playbackActive = true)
       if (requestGeneration != interpolationControlRequestGeneration ||
         enabled != decoderPreferences.mpvFlowFrameInterpolation.get() ||
@@ -476,22 +484,12 @@ class PlayerActivity :
         if (!ownsPlaybackSession() || isFinishing || isDestroyed) return@launch
         val reason = "native_flow_sink_unavailable"
         Log.i(TAG, "Interpolation preference saved; deferred reason=$reason")
-        Toast.makeText(
-          this@PlayerActivity,
-          R.string.toast_interpolation_pending_native_sink,
-          Toast.LENGTH_LONG,
-        ).show()
         return@launch
       }
       if (ownsPlaybackSession() && !isFinishing && !isDestroyed &&
         activeEngineMode == PlaybackEngineMode.NATIVE && nativeEngine === backend
       ) {
         Log.i(TAG, "Native interpolation controls applied to the current playback")
-        Toast.makeText(
-          this@PlayerActivity,
-          if (enabled) R.string.toast_interpolation_applied_live else R.string.interpolation_feedback_off_target_saved,
-          Toast.LENGTH_SHORT,
-        ).show()
       }
     }
   }
@@ -508,13 +506,11 @@ class PlayerActivity :
         if (!ownsPlaybackSession() || isFinishing || isDestroyed ||
           activeEngineMode != PlaybackEngineMode.MPV) return@launch
         if (MpvConfigOverridePolicy.ownsAny(MpvConfigControlledFeatures.FRAME_INTERPOLATION)) {
-          Toast.makeText(this@PlayerActivity, R.string.interpolation_feedback_mpv_config, Toast.LENGTH_LONG).show()
+          Log.i(TAG, "Interpolation preference saved; MPV configuration owns the effective setting")
           return@launch
         }
         if (player.interpolationConfigurationApplied(enabled, targetFps)) {
-          Toast.makeText(this@PlayerActivity,
-            if (enabled) R.string.toast_interpolation_applied_live else R.string.interpolation_feedback_off_target_saved,
-            Toast.LENGTH_SHORT).show()
+          Log.i(TAG, "MPV interpolation options already configured; synthesis not inferred from options")
           return@launch
         }
         val session = PlaybackSession.state.value
@@ -528,6 +524,7 @@ class PlayerActivity :
         }
         val snapshot = MpvInterpolationRestartState(
           mediaId = activeSaveMediaIdentifier,
+          sessionGeneration = session.generation,
           positionSeconds = position.coerceAtLeast(0.0),
           paused = PlaybackSession.getPropertyBoolean("pause") ?: session.paused,
           tracks = listOf("aid" to "audio", "sid" to "sub", "secondary-sid" to "sub", "vid" to "video")
@@ -559,11 +556,10 @@ class PlayerActivity :
           (PlaybackSession.state.value.currentItem?.stableId == item.stableId) &&
           PlaybackSession.queue.value.currentIndex == queueIndexBefore &&
           PlaybackSession.queue.value.currentItem?.stableId == queueItemBefore &&
-          (loadGeneration?.let { PlaybackSession.isCurrentGeneration(it) } ?: true)
+          PlaybackSession.isCurrentGeneration(loadGeneration ?: snapshot.sessionGeneration)
         if (InterpolationRuntimeApplyPolicy.decision(false, playbackActive = true,
             restartAuthorized = true, isMpv = true) !=
           InterpolationRuntimeApplyPolicy.Decision.RESTART_PRESERVING_STATE) return@launch
-        Toast.makeText(this@PlayerActivity, R.string.toast_interpolation_restarting_mpv, Toast.LENGTH_SHORT).show()
         var success = false
         try {
           success = MpvInterpolationRestartTransaction.run(snapshot,
@@ -582,29 +578,44 @@ class PlayerActivity :
                 // No suspension from the final owner check through initialize + load commit:
                 // an Activity/engine/queue change cannot interleave with core destruction.
                 if (!stillCurrent()) return null
-                cancelPlaybackLoadRecovery()
-                mediaLoadJob?.cancel()
-                engineHandoffJob?.cancel()
-                viewModel.setAmbientLifecycleActive(false)
-                setVideoAmbientPresentationActive(false)
-                appliedEnabled = decoderPreferences.mpvFlowFrameInterpolation.get()
-                appliedFps = decoderPreferences.mpvFlowTargetFps.get()
-                player.forceMpvInterpolationOwner = true
-                player.releaseSurface()
-                PlaybackSession.invalidateCoreConfiguration()
-                check(setupMPV() == null) { "MPV reconfiguration failed" }
-                isReady = false
-                viewModel.onVideoLoadStarted()
-                // Re-resolve item.networkSource/content descriptors through the session owner;
-                // do not reopen its old fd or released network-proxy registration directly.
-                val generation = PlaybackSession.load(
-                  item = item,
-                  positionRestoreOverride = PlaybackPositionRestoreOverride(state.positionSeconds, paused = true),
-                )
-                check(generation >= 0L) { "MPV reload failed" }
-                loadGeneration = generation
-                mpvInterpolationReloadGeneration = generation
-                return generation
+                // The normal load API prepares fresh proxy/fd resources before its commit hook.
+                // Preparation may block on network I/O; neither Main nor nativeLock owns it.
+                val generation = withContext(Dispatchers.IO) {
+                  PlaybackSession.load(
+                    item = item,
+                    verifyNativePathAfterRestart = true,
+                    positionRestoreOverride = PlaybackPositionRestoreOverride(state.positionSeconds, paused = true),
+                    commit = { nativeLoad ->
+                      // Only this IO worker waits; Main was suspended by withContext above.
+                      runBlocking(Dispatchers.Main.immediate) {
+                        PlaybackActivityOwner.runIfOwner(playbackOwnerToken, -1L) {
+                          if (!stillCurrent()) -1L
+                          else PlaybackSession.reconfigureCurrentCore(state.sessionGeneration) {
+                            cancelPlaybackLoadRecovery()
+                            mediaLoadJob?.cancel()
+                            engineHandoffJob?.cancel()
+                            viewModel.setAmbientLifecycleActive(false)
+                            setVideoAmbientPresentationActive(false)
+                            appliedEnabled = decoderPreferences.mpvFlowFrameInterpolation.get()
+                            appliedFps = decoderPreferences.mpvFlowTargetFps.get()
+                            player.forceMpvInterpolationOwner = true
+                            player.releaseSurface()
+                            PlaybackSession.invalidateCoreConfiguration()
+                            check(setupMPV() == null) { "MPV reconfiguration failed" }
+                            isReady = false
+                            viewModel.onVideoLoadStarted()
+                            nativeLoad().also { token ->
+                              check(token >= 0L) { "MPV reload failed" }
+                              loadGeneration = token
+                              mpvInterpolationReloadGeneration = token
+                            }
+                          } ?: -1L
+                        }
+                      }
+                    },
+                  )
+                }
+                return generation.takeIf { it >= 0L }
               }
               override suspend fun awaitAndRestore(state: MpvInterpolationRestartState, generation: Long): Boolean {
                 val ready = withTimeoutOrNull(30_000L) {
@@ -634,8 +645,9 @@ class PlayerActivity :
                       if (index == null) restored = false
                       else {
                         val id = if (index < 0) null else tracks[index].id
-                        setTrackSelectionId(property, id)
-                        if (PlaybackSession.getPropertyString(property) != (id?.toString() ?: "no")) restored = false
+                        val expected = id?.toString() ?: "no"
+                        if (PlaybackSession.getPropertyString(property) != expected) setTrackSelectionId(property, id)
+                        if (PlaybackSession.getPropertyString(property) != expected) restored = false
                       }
                     }
                     if (restored) return@withTimeoutOrNull true
@@ -684,10 +696,12 @@ class PlayerActivity :
         }
         if (!ownsPlaybackSession() || isFinishing || isDestroyed || request != mediaRequestGeneration ||
           activeEngineMode != PlaybackEngineMode.MPV || mediaIdentifier != snapshot.mediaId) return@launch
-        Toast.makeText(this@PlayerActivity,
-          if (success && stillCurrent()) R.string.toast_interpolation_restarted_mpv else R.string.toast_interpolation_restart_failed,
-          Toast.LENGTH_LONG).show()
-        if (!success) return@launch
+        if (!success || !stillCurrent()) {
+          Log.w(TAG, "Could not confirm MPV interpolation reload/state/options restoration")
+          Toast.makeText(this@PlayerActivity, R.string.toast_interpolation_restart_failed, Toast.LENGTH_LONG).show()
+          return@launch
+        }
+        Log.i(TAG, "MPV reloaded; position, pause, tracks and options confirmed; synthesized frames not inferred")
         // A tap during the reload updates prefs but cannot start a second concurrent teardown.
         // Consume the latest complete preference pair only after restoring this transaction.
         if (decoderPreferences.mpvFlowFrameInterpolation.get() == appliedEnabled &&

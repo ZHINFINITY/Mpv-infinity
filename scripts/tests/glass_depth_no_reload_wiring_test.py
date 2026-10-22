@@ -45,7 +45,7 @@ class GlassDepthNoReloadWiringTest(unittest.TestCase):
         callback = activity.split('fun applyInterpolationPreferencesFromControls()', 1)[1].split('private fun requestMpvInterpolationRestart', 1)[0]
         for forbidden in ('recreate()', 'PlaybackSession.load(', 'releaseSurface(', 'setupMPV(', 'startMediaLoad(', 'nativeEngine.stop('):
             self.assertNotIn(forbidden, callback)
-        self.assertIn('toast_interpolation_pending_native_sink', callback)
+        self.assertIn('native_flow_sink_unavailable', callback)
         sheet = source('ui/player/controls/components/sheets/FrameInterpolationFpsSheet.kt')
         self.assertIn('interpolationApplyTimingNote(activity)', sheet)
         controls = source('ui/player/controls/components/FrameInterpolationControls.kt')

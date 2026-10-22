@@ -411,8 +411,9 @@ object MainScreen : Screen {
       containerColor = app.infinity.mpvz.ui.preferences.components.settingsGlassContainerColor(MaterialTheme.colorScheme.background),
       modifier = Modifier.fillMaxSize(),
     ) { paddingValues ->
-      Box(modifier = Modifier.fillMaxSize()) {
-        Box(modifier = Modifier.fillMaxSize().browserGlassSceneSource()) {
+      app.infinity.mpvz.ui.theme.BrowserGlassRouteContentHost(
+        enabled = liquidGlassSurfacesForBrowser,
+        routeContent = {
         if (visibleTabs.isEmpty()) {
           CompositionLocalProvider(
             LocalNavigationBarHeight provides contentBottomPadding,
@@ -460,8 +461,10 @@ object MainScreen : Screen {
           }
         }
 
-        } // Browser source ends here; navigation cannot capture itself.
+        // Browser source ends here; navigation cannot capture itself.
 
+        },
+        navigationContent = {
         // Animated bottom navigation bar with slide animations
         AnimatedVisibility(
           visible = !hideNavigationBar && visibleTabs.isNotEmpty() && !isPermissionDenied,
@@ -569,10 +572,11 @@ object MainScreen : Screen {
             }
           }
         }
+        },
+      )
       }
-    }
+    } // BrowserGlassSceneHost
   }
-  } // BrowserGlassSceneHost
 }
 
 @Composable

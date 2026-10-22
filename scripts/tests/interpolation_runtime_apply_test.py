@@ -23,7 +23,7 @@ def main() -> None:
     native = NATIVE.read_text()
     require(activity, "fun applyInterpolationPreferencesFromControls()", "public activity callback")
     require(activity, "InterpolationRuntimeApplyPolicy.decision", "explicit runtime policy")
-    require(activity, "toast_interpolation_pending_native_sink", "truthful Native sink-unavailable fallback")
+    require(activity, "native_flow_sink_unavailable", "truthful Native sink-unavailable logging")
     require(activity, "backend.applyInterpolationRuntime", "actual Native live runtime call")
     require(activity, "val backend = if (wasNative) nativeEngine else null", "MPV must not initialize the lazy Native engine")
     callback = activity.split("fun applyInterpolationPreferencesFromControls()", 1)[1].split("private fun requestMpvInterpolationRestart", 1)[0]
@@ -66,16 +66,26 @@ def main() -> None:
     require(sheet, "interpolation_feedback_target_hint", "explicit enable-first hint")
     require(callback, "requestGeneration != interpolationControlRequestGeneration", "stale request ACK suppression")
     require(callback, "enabled != decoderPreferences.mpvFlowFrameInterpolation.get()", "latest preference ACK")
-    require(callback, "if (enabled) R.string.toast_interpolation_applied_live else R.string.interpolation_feedback_off_target_saved", "disabled target is not reported as active synthesis")
+    if "Toast.makeText" in callback or "showSnackbar" in callback:
+        raise SystemExit("routine Native interpolation shortcut popup must stay removed")
     restart = activity.split("private fun requestMpvInterpolationRestart", 1)[1].split("private fun handleNativePlaybackEnded", 1)[0]
+    for removed_popup in ("toast_interpolation_restarting_mpv", "toast_interpolation_restarted_mpv", "toast_interpolation_configured_mpv"):
+        if removed_popup in restart:
+            raise SystemExit(f"routine MPV interpolation popup must stay removed: {removed_popup}")
+    require(restart, "toast_interpolation_restart_failed", "genuine MPV failure feedback preserved")
     require(restart, "mpvInterpolationRestartJob?.isActive == true", "single serialized MPV transaction")
     require(restart, "request == mediaRequestGeneration", "media request race guard")
     require(restart, "queueIndexBefore", "queue index race guard")
+    require(restart, "loadGeneration ?: snapshot.sessionGeneration", "captured pre-reload generation fence")
+    require(restart, "PlaybackSession.reconfigureCurrentCore(state.sessionGeneration)", "atomic native generation fence")
+    require(restart, "PlaybackActivityOwner.runIfOwner", "owner-before-native lock order")
+    require(restart, "verifyNativePathAfterRestart = true", "scoped native-source event identity")
     require(restart, "TrackSelectionMatcher.findMatchIndex", "fingerprint-based track remapping")
     require(restart, "state.positionSeconds", "exact live position restoration")
     require(restart, 'getPropertyBoolean("pause") == state.paused', "actual pause restoration ACK")
     session = (ROOT / "app/src/main/java/app/infinity/mpvz/ui/player/PlaybackSession.kt").read_text()
     require(session, "generation = PlaybackGenerationPolicy.next(it.generation)", "retired-core generation tombstone")
+    require(session, "MpvRestartLoadFencePolicy.accepts", "native FILE_LOADED cannot promote a mismatched source")
     print("interpolation runtime apply contract: PASS")
 
 

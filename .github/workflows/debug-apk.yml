@@ -186,6 +186,7 @@ jobs:
           python3 scripts/tests/settings_options_glass_contract_test.py
           python3 scripts/tests/thumbnail_cache_policy_test.py
           python3 scripts/tests/scene_stability_contract_test.py
+          python3 scripts/tests/browser_glass_route_content_contract_test.py
           python3 scripts/tests/radio_playlist_category_test.py
       - name: Test playlist sheet, drawer, native aspect and notification regression wiring
         run: python3 scripts/tests/player_regression_wiring_test.py

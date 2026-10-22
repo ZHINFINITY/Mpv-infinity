@@ -14,6 +14,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -85,7 +86,7 @@ fun SharedMusicTrackListItem(
   isSelected: Boolean = false,
   fallbackIcon: AppIcon = Icons.RoundedFilled.Audiotrack,
   isCircular: Boolean = false,
-  coverArtSizeDp: Int = 48,
+  coverArtSizeDp: Int = MusicThumbnailDefaults.DEFAULT_DP,
   isFavorite: Boolean = false,
   onFavoriteClick: (() -> Unit)? = null,
   trailingContent: (@Composable () -> Unit)? = null,
@@ -99,7 +100,7 @@ fun SharedMusicTrackListItem(
   Card(
     modifier = modifier
       .fillMaxWidth()
-      .padding(horizontal = 8.dp, vertical = 3.dp)
+      .padding(horizontal = 12.dp, vertical = 6.dp)
       .clip(AppShapeScale.large)
       .semantics { selected = isSelected }
       .settingsGlassSurface(cornerRadius = 20.dp)
@@ -120,11 +121,16 @@ fun SharedMusicTrackListItem(
     Row(
       modifier = Modifier
         .fillMaxWidth()
-        .padding(horizontal = 12.dp, vertical = 8.dp),
+        .padding(horizontal = 16.dp, vertical = 12.dp),
       verticalAlignment = Alignment.CenterVertically,
     ) {
-      val itemArtSize = if (isCircular) (coverArtSizeDp * 1.3f).toInt().coerceAtLeast(48).dp else coverArtSizeDp.dp
-      Box(
+      BoxWithConstraints {
+        val boundedSizeDp = MusicThumbnailDefaults.boundedForList(
+          requestedDp = coverArtSizeDp,
+          availableWidthDp = maxWidth.value.toInt(),
+        )
+        val itemArtSize = boundedSizeDp.dp
+        Box(
         modifier = Modifier
           .size(itemArtSize)
           .clip(if (isCircular) CircleShape else AppShapeScale.medium)
@@ -181,6 +187,7 @@ fun SharedMusicTrackListItem(
             tint = Color.White,
             modifier = Modifier.align(if (isCircular) Alignment.Center else Alignment.TopEnd).padding(4.dp).size(24.dp),
           )
+        }
         }
       }
 

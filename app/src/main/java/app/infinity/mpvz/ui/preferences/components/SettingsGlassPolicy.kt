@@ -14,10 +14,10 @@ data class SettingsGlassGeometry(
 
 /** Pure, host-JVM-testable row geometry. Glass changes optics, never bounds. */
 object SettingsGlassPolicy {
-  const val RowHorizontalInsetDp = 12f
-  const val RowVerticalSpacingDp = 4f
+  const val RowHorizontalInsetDp = 16f
+  const val RowVerticalSpacingDp = 8f
   const val CornerRadiusDp = 18f
-  const val MinimumHeightDp = 64f
+  const val MinimumHeightDp = 72f
 
   fun geometry(glassEnabled: Boolean): SettingsGlassGeometry = SettingsGlassGeometry()
 }

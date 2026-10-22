@@ -1386,7 +1386,7 @@ private fun SongsTabContent(
   viewMode: MusicViewMode,
   recentlyPlayedFilePath: String?,
   isPlaybackActive: Boolean = false,
-  coverArtSizeDp: Int = 48,
+  coverArtSizeDp: Int = MusicThumbnailDefaults.DEFAULT_DP,
   onSongClick: (MusicSong) -> Unit,
   onSongLongClick: (MusicSong) -> Unit,
   selectionManager: app.infinity.mpvz.ui.browser.selection.SelectionManager<MusicSong, Long>,
@@ -1596,7 +1596,7 @@ private fun SongListItem(
   song: MusicSong,
   isSelected: Boolean = false,
   isPlaying: Boolean = false,
-  coverArtSizeDp: Int = 48,
+  coverArtSizeDp: Int = MusicThumbnailDefaults.DEFAULT_DP,
   onClick: () -> Unit,
   onLongClick: (() -> Unit)? = null
 ) {
@@ -1617,7 +1617,7 @@ private fun SongListItem(
 private fun AlbumsTabContent(
   albums: List<MusicAlbum>,
   viewMode: MusicViewMode,
-  coverArtSizeDp: Int = 48,
+  coverArtSizeDp: Int = MusicThumbnailDefaults.DEFAULT_DP,
   onAlbumClick: (MusicAlbum) -> Unit,
   onAlbumLongClick: (MusicAlbum) -> Unit,
   selectionManager: app.infinity.mpvz.ui.browser.selection.SelectionManager<MusicAlbum, Long>,
@@ -1770,24 +1770,24 @@ private fun AlbumGridCard(
 private fun AlbumListCard(
   album: MusicAlbum,
   isSelected: Boolean = false,
-  coverArtSizeDp: Int = 48,
+  coverArtSizeDp: Int = MusicThumbnailDefaults.DEFAULT_DP,
   onClick: () -> Unit,
   onLongClick: () -> Unit
 ) {
   Surface(
     modifier = Modifier
       .fillMaxWidth()
-      .padding(horizontal = 8.dp, vertical = 3.dp)
+      .padding(horizontal = 12.dp, vertical = 6.dp)
       .clip(AppShapeScale.large)
       .settingsGlassSurface(cornerRadius = 20.dp)
       .combinedClickable(onClick = onClick, onLongClick = onLongClick),
     shape = AppShapeScale.large,
-    color = if (isSelected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.6f) else Color.Transparent
+    color = settingsGlassContainerColor(if (isSelected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.6f) else Color.Transparent)
   ) {
     Row(
       modifier = Modifier
         .fillMaxWidth()
-        .padding(horizontal = 12.dp, vertical = 8.dp),
+        .padding(horizontal = 16.dp, vertical = 12.dp),
       verticalAlignment = Alignment.CenterVertically
     ) {
       Box(
@@ -1851,7 +1851,7 @@ private fun AlbumListCard(
 private fun ArtistsTabContent(
   artists: List<MusicArtist>,
   viewMode: MusicViewMode,
-  coverArtSizeDp: Int = 48,
+  coverArtSizeDp: Int = MusicThumbnailDefaults.DEFAULT_DP,
   onArtistClick: (MusicArtist) -> Unit,
   onArtistLongClick: (MusicArtist) -> Unit,
   selectionManager: app.infinity.mpvz.ui.browser.selection.SelectionManager<MusicArtist, Long>,
@@ -1988,27 +1988,27 @@ private fun ArtistGridCard(
 private fun ArtistListCard(
   artist: MusicArtist,
   isSelected: Boolean = false,
-  coverArtSizeDp: Int = 48,
+  coverArtSizeDp: Int = MusicThumbnailDefaults.DEFAULT_DP,
   onClick: () -> Unit,
   onLongClick: () -> Unit
 ) {
   Surface(
     modifier = Modifier
       .fillMaxWidth()
-      .padding(horizontal = 8.dp, vertical = 3.dp)
+      .padding(horizontal = 12.dp, vertical = 6.dp)
       .clip(AppShapeScale.large)
       .settingsGlassSurface(cornerRadius = 20.dp)
       .combinedClickable(onClick = onClick, onLongClick = onLongClick),
     shape = AppShapeScale.large,
-    color = if (isSelected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.6f) else Color.Transparent
+    color = settingsGlassContainerColor(if (isSelected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.6f) else Color.Transparent)
   ) {
     Row(
       modifier = Modifier
         .fillMaxWidth()
-        .padding(horizontal = 12.dp, vertical = 8.dp),
+        .padding(horizontal = 16.dp, vertical = 12.dp),
       verticalAlignment = Alignment.CenterVertically
     ) {
-      val avatarSize = (coverArtSizeDp * 1.3f).toInt().coerceAtLeast(48).dp
+      val avatarSize = coverArtSizeDp.coerceAtLeast(MusicThumbnailDefaults.MIN_DP).dp
       Box(
         modifier = Modifier.size(avatarSize),
         contentAlignment = Alignment.Center
@@ -2236,7 +2236,7 @@ private fun MusicPlaylistCard(
   artUris: List<Uri>,
   isSelected: Boolean,
   isGridMode: Boolean,
-  coverArtSizeDp: Dp = 52.dp,
+  coverArtSizeDp: Dp = MusicThumbnailDefaults.DEFAULT_DP.dp,
   onClick: () -> Unit,
   onLongClick: () -> Unit,
 ) {
@@ -2366,7 +2366,7 @@ private fun PlaylistsTabContent(
   playlists: List<PlaylistEntity>,
   songs: List<MusicSong>,
   viewMode: MusicViewMode,
-  coverArtSizeDp: Dp = 52.dp,
+  coverArtSizeDp: Dp = MusicThumbnailDefaults.DEFAULT_DP.dp,
   onPlaylistClick: (PlaylistEntity) -> Unit,
   onPlaylistLongClick: (PlaylistEntity) -> Unit,
   selectionManager: app.infinity.mpvz.ui.browser.selection.SelectionManager<PlaylistEntity, Long>,
