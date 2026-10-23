@@ -2,7 +2,14 @@
 
 These notes are written in plain English and focus on what changed for real use.
 
-## Unreleased
+## 2.2.0 - The Smooth Motion Update
+### What’s new
+- Frame interpolation. Videos can play smoothly at up to 120 fps, with a one-tap player shortcut and a target-FPS control that keep your place.
+- A new Liquid Glass look across the player, menus, popups, settings, search bars and buttons, with adjustable glass, blur and frost, 3D toggles and sliders, and true-black AMOLED.
+- Menus such as Sort & View, settings choices and server setup now slide up from the bottom.
+- Radio playlists play in the music player with song info and album art, and get their own Radio playlist.
+- Subtitle translation with your own Gemini, DeepL, OpenAI-compatible or Google Cloud key, with clear error messages and keys kept out of logs.
+- Indonesian and Persian translations, plus many missing strings filled in for other languages.
 
 ### Bug fixes
 

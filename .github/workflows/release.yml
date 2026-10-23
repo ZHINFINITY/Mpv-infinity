@@ -10,6 +10,11 @@ on:
         description: Tag to release (for example v2.1.0)
         required: true
         type: string
+      draft:
+        description: Create the release as a draft (not published)
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: write
@@ -203,7 +208,7 @@ jobs:
           target_commitish: ${{ github.sha }}
           body_path: release-notes.md
           generate_release_notes: false
-          draft: false
+          draft: ${{ inputs.draft == true }}
           prerelease: false
           fail_on_unmatched_files: true
           files: release-assets/*.apk
