@@ -5,6 +5,7 @@
  */
 package app.infinity.mpvz.repository.ai
 
+import app.infinity.mpvz.network.awaitText
 import app.infinity.mpvz.preferences.AiPreferences
 import app.infinity.mpvz.preferences.AiProvider
 import kotlinx.coroutines.Dispatchers
@@ -16,6 +17,7 @@ import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import java.io.IOException
 import java.util.concurrent.ConcurrentHashMap
+import kotlin.coroutines.cancellation.CancellationException
 
 /**
  * Translates subtitle text with the provider chosen in Settings > AI Integration (Google Translate,
@@ -81,7 +83,12 @@ class EmbeddedSubtitleTranslator(
         if (cache.size > MAX_CACHE) cache.clear()
         cache[cacheKey] = translated
         translated
-      }.recoverCatching { failure -> throw safeFailure(failure) }
+      }.let { result ->
+        val failure = result.exceptionOrNull() ?: return@let result
+        // Propagate cancellation instead of reporting it as a provider failure.
+        if (failure is CancellationException) throw failure
+        Result.failure(safeFailure(failure))
+      }
     }
 
   /** Kept for existing callers; uses the selected provider like [translate]. */
@@ -118,7 +125,7 @@ class EmbeddedSubtitleTranslator(
     }
 
   /** The free Google endpoint has two hosts; a user-entered endpoint is tried first. */
-  private fun translateGoogleWithFallback(text: String, language: String, settings: Settings): String {
+  private suspend fun translateGoogleWithFallback(text: String, language: String, settings: Settings): String {
     val endpoints =
       listOf(
         settings.endpoint,
@@ -130,6 +137,8 @@ class EmbeddedSubtitleTranslator(
       try {
         return execute(settings, SubtitleTranslationProviders.googleRequest(text, language, endpoint, settings.apiKey))
       } catch (failure: Throwable) {
+        // Cancellation (player closed, cue changed) must end the loop, not try another host.
+        if (failure is CancellationException) throw failure
         last = failure
         // A rejected key will not succeed on another host.
         if (failure is SubtitleTranslationException && failure.message?.contains("API key") == true) break
@@ -138,13 +147,16 @@ class EmbeddedSubtitleTranslator(
     throw last ?: SubtitleTranslationException("No Google Translate endpoint is available")
   }
 
-  private fun execute(settings: Settings, request: TranslationHttpRequest): String {
+  private suspend fun execute(settings: Settings, request: TranslationHttpRequest): String {
     val builder = Request.Builder().url(request.url)
     request.headers.forEach { (name, value) -> builder.header(name, value) }
     val body = request.jsonBody
     if (body != null) builder.post(body.toRequestBody(JSON_MEDIA)) else builder.get()
-    return client.newCall(builder.build()).execute().use { response ->
-      val text = response.body?.string().orEmpty()
+    // awaitText() cancels the OkHttp call when the caller is cancelled; a blocking execute()
+    // kept the dispatcher worker (and the PlayerViewModel lambda) alive until the network
+    // returned, which LeakCanary reported after onCleared().
+    return client.newCall(builder.build()).awaitText().let { response ->
+      val text = response.bodyText
       if (!response.isSuccessful) {
         throw SubtitleTranslationException(
           SubtitleTranslationProviders.httpFailureMessage(settings.provider, response.code, text, settings.apiKey, json),

@@ -33,3 +33,48 @@ internal suspend fun Call.awaitResponse(): Response =
       },
     )
   }
+/** Status and fully read body of a response; the connection is already released. */
+internal class HttpTextResponse(
+  val code: Int,
+  val bodyText: String,
+) {
+  val isSuccessful: Boolean get() = code in 200..299
+}
+
+/**
+ * Runs [block] on the response inside OkHttp's callback while the caller stays suspended,
+ * so cancelling the coroutine cancels the call even while the body is still being read.
+ *
+ * Unlike `execute()`, a cancelled caller is released immediately: the callback drops its
+ * continuation on cancellation, so neither a dispatcher worker nor an OkHttp thread keeps
+ * the caller (for example a ViewModel captured by a coroutine lambda) reachable.
+ */
+internal suspend fun <T> Call.awaitUse(block: (Response) -> T): T =
+  suspendCancellableCoroutine { continuation ->
+    val pending = java.util.concurrent.atomic.AtomicReference(continuation)
+    continuation.invokeOnCancellation {
+      pending.set(null)
+      cancel()
+    }
+    enqueue(
+      object : Callback {
+        override fun onFailure(
+          call: Call,
+          e: IOException,
+        ) {
+          pending.getAndSet(null)?.resumeWith(Result.failure(e))
+        }
+
+        override fun onResponse(
+          call: Call,
+          response: Response,
+        ) {
+          val result = runCatching { response.use(block) }
+          pending.getAndSet(null)?.resumeWith(result)
+        }
+      },
+    )
+  }
+
+/** [awaitUse] that reads the whole body as text. */
+internal suspend fun Call.awaitText(): HttpTextResponse = awaitUse { response -> HttpTextResponse(response.code, response.body.string()) }

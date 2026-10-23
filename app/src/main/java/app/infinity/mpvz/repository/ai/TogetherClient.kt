@@ -6,6 +6,7 @@
  */
 
 package app.infinity.mpvz.repository.ai
+import app.infinity.mpvz.network.awaitText
 
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -150,8 +151,8 @@ class TogetherClient(
             .post(requestBody.toRequestBody(JSON_MEDIA_TYPE))
             .build()
 
-        val response = apiClient.newCall(request).execute()
-        val body = response.body.string()
+        val response = apiClient.newCall(request).awaitText()
+        val body = response.bodyText
 
         if (!response.isSuccessful) throw Exception("Together generate error ${response.code}: ${parseError(body)}")
 

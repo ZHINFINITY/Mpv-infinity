@@ -8,6 +8,12 @@ package app.infinity.mpvz.repository.ai
 import app.infinity.mpvz.preferences.AiPreferences
 import app.infinity.mpvz.preferences.preference.Preference
 import app.infinity.mpvz.preferences.preference.PreferenceStore
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -19,6 +25,7 @@ import okhttp3.mockwebserver.MockWebServer
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -48,6 +55,32 @@ class EmbeddedSubtitleTranslatorHttpTest {
     )
 
   private fun base() = server.url("/").toString().trimEnd('/')
+
+  @Test
+  fun cancelledTranslationPropagatesCancellationAndTriesNoOtherHost() =
+    runBlocking {
+      // Player closed mid-request: the call must stop at once, not be reported as a provider
+      // failure (backoff/toast) and not fall through to the other Google hosts.
+      server.enqueue(MockResponse().setBody("[[[\"late\"]]]").setHeadersDelay(30, TimeUnit.SECONDS))
+      val t =
+        translator(
+          mapOf(
+            "ai_embedded_subtitle_translation_provider" to "Google Translate",
+            "ai_embedded_subtitle_translation_endpoint" to "${base()}/translate_a/single",
+          ),
+        )
+      val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+      var result: Result<String>? = null
+      val job = scope.launch { result = t.translate("Bonjour", "English") }
+      server.takeRequest(5, TimeUnit.SECONDS)
+      job.cancel()
+      withTimeout(3_000) { job.join() }
+      assertTrue(job.isCancelled)
+      assertNull("cancellation must not be turned into a failure Result", result)
+      Thread.sleep(200)
+      assertEquals(1, server.requestCount)
+      scope.cancel()
+    }
 
   @Test
   fun geminiUsesSavedKeyInHeaderAndItsOwnEndpoint() =

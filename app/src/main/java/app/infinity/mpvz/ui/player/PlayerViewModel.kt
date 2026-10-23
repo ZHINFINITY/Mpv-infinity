@@ -2907,6 +2907,7 @@ class PlayerViewModel : ViewModel(),
 
   fun clearEmbeddedSubtitleTranslationCue(native: Boolean = false) {
     embeddedTranslationRequestId += 1L
+    embeddedCueTranslationJob?.cancel()
     embeddedCueTranslationJob = null
     lastEmbeddedCue = ""
     _embeddedTranslatedSubtitle.value = null
@@ -2932,6 +2933,7 @@ class PlayerViewModel : ViewModel(),
   fun resetEmbeddedSubtitleTranslation() {
     embeddedTranslationRequestId += 1L
     embeddedTranslationBackoffUntil = 0L
+    embeddedCueTranslationJob?.cancel()
     embeddedCueTranslationJob = null
     lastEmbeddedCue = ""
     _translationStatus.value = ""
@@ -2972,6 +2974,9 @@ class PlayerViewModel : ViewModel(),
     }
     nativeSubtitleHiddenForTranslation = true
     val requestId = ++embeddedTranslationRequestId
+    // A superseded cue's request is discarded by requestId anyway; cancel it so it stops using
+    // a worker and the network instead of running on in the background.
+    embeddedCueTranslationJob?.cancel()
     embeddedCueTranslationJob = viewModelScope.launch(Dispatchers.IO) {
       _translationStatus.value = "Translating embedded subtitle…"
       // Each provider uses its own endpoint/key; only an unconfigured OpenAI-compatible option
@@ -3017,6 +3022,9 @@ class PlayerViewModel : ViewModel(),
           if (requestId == embeddedTranslationRequestId) _translationStatus.value = ""
         }
       }.onFailure { failure ->
+        // A cancelled request (player closed, cue replaced) is not a provider failure: no
+        // backoff, toast or subtitle restore, and nothing may outlive viewModelScope.
+        if (failure is kotlin.coroutines.cancellation.CancellationException) throw failure
         if (requestId == embeddedTranslationRequestId) {
           withContext(Dispatchers.Main.immediate) {
             _embeddedTranslatedSubtitle.value = null
