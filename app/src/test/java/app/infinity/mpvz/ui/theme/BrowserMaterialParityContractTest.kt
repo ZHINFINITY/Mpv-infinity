@@ -18,7 +18,7 @@ class BrowserMaterialParityContractTest {
     val pane = scene.substring(scene.indexOf("internal fun Modifier.browserGlassPane("), scene.indexOf("private fun windowScreenOffset"))
     val nav = scene.substring(scene.indexOf("fun BrowserGlassSurface("), scene.indexOf("/** The shared pane path"))
     // Same lens shader, sheen, rim and film as the navigation pill (owner's reference look).
-    for (token in listOf("RuntimeShader(BROWSER_LENS)", "film * (if (selected) 0.24f else 0.20f)",
+    for (token in listOf("RuntimeShaderSupport.browserLensEffectOrNull(", "film * (if (selected) 0.24f else 0.20f)",
       "Color.White.copy(alpha = 0.20f + glow * 0.65f)", "Color.White.copy(alpha = 0.10f + glow * 0.35f)",
       "0.06f + glow * 0.10f", "0.16f + glow * 0.24f", "(if (selected) 7.dp else 12.dp) * tuning.depth")) {
       assertTrue("browser pane must match nav pill: $token", pane.contains(token))
@@ -94,7 +94,7 @@ class BrowserMaterialParityContractTest {
   @Test fun browserSurfaceKeepsReferenceLensAndReferenceFilmSemantics() {
     val scene = source("BrowserGlassScene")
     val browser = scene.substring(scene.indexOf("fun BrowserGlassSurface("), scene.indexOf("/** The shared pane path"))
-    assertTrue(browser.contains("RuntimeShader(BROWSER_LENS)"))
+    assertTrue(browser.contains("RuntimeShaderSupport.browserLensEffectOrNull("))
     assertTrue(browser.contains("shader.setFloatUniform(\"bend\""))
     assertTrue(browser.contains("shader.setFloatUniform(\"motion\""))
     assertTrue(browser.contains("film * (if (selected) 0.24f else 0.20f)"))

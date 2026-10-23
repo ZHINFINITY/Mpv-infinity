@@ -7,6 +7,15 @@
         <item name="android:windowBackground">@android:color/black</item>
     </style>
 
+    <!-- Audio-only: see-through from the first frame so minimize/expand can show the library.
+         Video stays on the opaque player theme; converting mid-gesture cancels the drag. -->
+    <style name="Theme.mpvinfinity.Player.Audio" parent="Theme.mpvinfinity.Player">
+        <item name="android:windowIsTranslucent">true</item>
+        <item name="android:windowBackground">@android:color/transparent</item>
+        <item name="android:colorBackgroundCacheHint">@null</item>
+        <item name="android:windowIsFloating">false</item>
+    </style>
+
     <style name="Theme.mpvinfinity.QuickDownload" parent="Theme.Material3.DynamicColors.DayNight.NoActionBar">
         <item name="android:windowIsTranslucent">true</item>
         <item name="android:windowBackground">@android:color/transparent</item>

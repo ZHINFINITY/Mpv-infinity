@@ -170,5 +170,8 @@ internal object PlayerLifecyclePolicy {
     thresholdMs: Long = LONG_BACKGROUND_REBUILD_THRESHOLD_MS,
   ): Boolean = !isAudioMedia && stoppedForMs >= thresholdMs
 
+  /** Reloading media before Android recreates the Surface leaves ColorOS on a black frame. */
+  fun shouldWaitForSurfaceBeforeRebuild(surfaceReady: Boolean): Boolean = !surfaceReady
+
   const val LONG_BACKGROUND_REBUILD_THRESHOLD_MS = 120_000L
 }
