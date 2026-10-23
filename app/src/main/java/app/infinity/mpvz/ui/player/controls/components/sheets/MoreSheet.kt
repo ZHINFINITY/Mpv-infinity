@@ -232,8 +232,8 @@ fun MoreSheet(
         }
       }
       Surface(
-        modifier = Modifier.fillMaxWidth(),
-        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.22f),
+        modifier = Modifier.fillMaxWidth().playerGlassOverlay(cornerRadius = 16.dp),
+        color = androidx.compose.ui.graphics.Color.Transparent,
         tonalElevation = 0.dp,
         shape = MaterialTheme.shapes.medium,
       ) {

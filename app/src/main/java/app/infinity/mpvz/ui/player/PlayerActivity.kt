@@ -1493,6 +1493,9 @@ class PlayerActivity :
     playerInitializationComplete = true
     applyInitialVideoOrientation(intent)
     setContentView(binding.root)
+    if (shouldUseAudioPlayerTheme(intent)) {
+      prepareAudioPlayerSeeThroughLayers()
+    }
     configureNativeEngineIfNeeded()
     lifecycleScope.launch {
       repeatOnLifecycle(Lifecycle.State.STARTED) {
@@ -2636,7 +2639,7 @@ class PlayerActivity :
           if (isAudioOnly) {
             applyPlaybackBrightnessPolicy(isAudio = true)
             viewModel.showControls()
-            binding.player.visibility = View.GONE
+            prepareAudioPlayerSeeThroughLayers()
             try {
               WindowCompat.setDecorFitsSystemWindows(window, false)
               windowInsetsController.apply {
@@ -2650,8 +2653,17 @@ class PlayerActivity :
               Log.e(TAG, "Failed to show system bars for audio playback", e)
             }
           } else {
+            binding.root.setBackgroundColor(Color.BLACK)
             binding.player.clipToOutline = false
             binding.player.visibility = View.VISIBLE
+            binding.media3SubtitleOverlay.visibility = View.VISIBLE
+            binding.clipOverlayHost.visibility = View.VISIBLE
+            if (isNativeEngineActive()) {
+              setNativeVideoSurfaceVisible(true)
+            } else {
+              binding.media3Player.alpha = 0f
+              binding.media3Player.visibility = View.VISIBLE
+            }
             if (isVideoAmbientPresentationActive) {
               binding.root.post(::updateVideoAmbientPlayerBounds)
             } else {
@@ -3265,6 +3277,9 @@ class PlayerActivity :
         isAudio = isCurrentPlaybackAudio() || launchIntent?.getBooleanExtra("is_audio", false) == true,
         api = Build.VERSION.SDK_INT,
       )) return false
+    // Theme already marked the window translucent in onCreate. Still hide the
+    // SurfaceView compositor planes, or minimize paints a black hole.
+    if (enabled) prepareAudioPlayerSeeThroughLayers()
     if (enabled == audioWindowTranslucent) return true
     return runCatching {
       if (enabled) {
@@ -3280,6 +3295,21 @@ class PlayerActivity :
       audioWindowTranslucent = true
       true
     }.onFailure { Log.d(TAG, "Audio translucency transition unavailable", it) }.getOrDefault(false)
+  }
+
+  /**
+   * SurfaceView layers punch an opaque black hole through a translucent window.
+   * Music never paints video, so remove those compositor planes and the layout's
+   * black background so the library can show around the shrinking player.
+   */
+  private fun prepareAudioPlayerSeeThroughLayers() {
+    window.setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
+    binding.root.setBackgroundColor(Color.TRANSPARENT)
+    binding.ambientBackground.visibility = View.GONE
+    binding.player.visibility = View.GONE
+    setNativeVideoSurfaceVisible(false)
+    binding.media3SubtitleOverlay.visibility = View.GONE
+    binding.clipOverlayHost.visibility = View.GONE
   }
 
   private fun applyMiniPlayerExitTransition() {

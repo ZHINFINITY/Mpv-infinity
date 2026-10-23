@@ -7,6 +7,7 @@ on:
       - manus/source-base-media3-port
       - manus/native-auto-engine-fix
       - fix/music-player-lag
+      - fix/v220-music-glass
   workflow_dispatch:
 
 permissions:
@@ -29,6 +30,28 @@ jobs:
           fetch-depth: 0
           submodules: recursive
 
+      - name: Restore verified Flow-only MPVFlow arm64 runtime
+        id: mpvflow-runtime-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: native-builder/app/build/outputs/apk
+          key: mpvflow-arm64-runtime-v2-builder-1efc82739f6f7034-mpv-c1529642089bfebf-cores2-${{ hashFiles('scripts/build-mpvflow-mpv-runtime.sh', 'scripts/prepare-mpvflow.py', 'scripts/patch-ffmpeg-symver.py', 'app/src/main/cpp/**', 'THIRD_PARTY_LICENSES/**', 'app/src/main/assets/mpv/licenses/**') }}
+
+      - name: Use cached Flow-only MPVFlow arm64 runtime
+        if: ${{ steps.mpvflow-runtime-cache.outputs.cache-hit == 'true' }}
+        run: |
+          set -euo pipefail
+          runtime_dir="$GITHUB_WORKSPACE/native-builder/app/build/outputs/apk"
+          [[ -d "$runtime_dir" ]] || { echo "Cached MPVFlow runtime path is missing: $runtime_dir" >&2; exit 1; }
+          apk="$(find "$runtime_dir" -type f -path '*/debug/*' -name '*arm64-v8a-debug*.apk' -print -quit)"
+          [[ -n "$apk" ]] || { echo "Cached MPVFlow arm64 runtime APK is missing" >&2; exit 1; }
+          echo "MPVFLOW_RUNTIME_APK=$apk" >> "$GITHUB_ENV"
+          echo "Using verified cached MPVFlow runtime APK: $apk"
+
+      - name: Overlay Flow-only runtime into Standard MPV AAR
+        if: ${{ steps.mpvflow-runtime-cache.outputs.cache-hit == 'true' }}
+        run: python3 scripts/package-mpv-runtime-aar.py --runtime-apk "$MPVFLOW_RUNTIME_APK" --mpv-aar app/libs/mpvlib.aar --abis arm64-v8a
+
       - name: Set up JDK 17
         uses: actions/setup-java@v5
         with:
@@ -48,7 +71,12 @@ jobs:
         run: chmod +x ./gradlew
 
       - name: Build only Standard arm64-v8a Debug
-        run: ./gradlew :app:assembleStandardDebug -PtargetAbi=arm64-v8a --no-daemon --max-workers=2 --stacktrace
+        run: |
+          FLOW_ARGS=""
+          if [[ "${{ steps.mpvflow-runtime-cache.outputs.cache-hit }}" == "true" ]]; then
+            FLOW_ARGS="-PmpvFlowMpvBuild=true"
+          fi
+          ./gradlew :app:assembleStandardDebug -PtargetAbi=arm64-v8a $FLOW_ARGS --no-daemon --max-workers=2 --stacktrace
 
       - name: Verify only the requested APK is present
         shell: bash

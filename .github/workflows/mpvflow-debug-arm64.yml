@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - Mpv∞-flow
+      - fix/v220-music-glass
     paths-ignore:
       - .github/workflows/mpvflow-debug-arm64.yml
       - .github/workflows/mpv-lgpl-aar.yml

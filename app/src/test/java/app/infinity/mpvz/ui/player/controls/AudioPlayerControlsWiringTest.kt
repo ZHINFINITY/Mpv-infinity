@@ -37,6 +37,8 @@ class AudioPlayerControlsWiringTest {
     val themes = source("app/src/main/res/values/themes.xml")
     assertTrue(activity.contains("Theme.mpvinfinity.Player.Audio"))
     assertTrue(activity.contains("Never call Activity.setTranslucent()"))
+    assertTrue(activity.contains("prepareAudioPlayerSeeThroughLayers"))
+    assertTrue(activity.contains("setNativeVideoSurfaceVisible(false)"))
     assertTrue(themes.contains("name=\"Theme.mpvinfinity.Player.Audio\""))
     assertTrue(themes.contains("android:windowIsTranslucent"))
     assertTrue(controls.contains("Stay see-through. Converting the window opaque mid-session"))
