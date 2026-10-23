@@ -32,7 +32,7 @@ class AudioPreferences(
   val audioAmbientMode = preferenceStore.getBoolean("audio_ambient_mode", true)
   /** Use artwork-derived colors for the music player background instead of the app theme. */
   val audioPaletteBackground = preferenceStore.getBoolean("audio_palette_background", true)
-  val audioStandbyMode = preferenceStore.getBoolean("audio_standby_mode", true)
+  val audioStandbyMode = preferenceStore.getBoolean("audio_standby_mode", false)
   val audioStandbyDelaySeconds = preferenceStore.getInt("audio_standby_delay_seconds", 5)
   val audioWavySeekbar = preferenceStore.getBoolean("audio_wavy_seekbar", true)
   val enabledMusicTabs = preferenceStore.getStringSet(
