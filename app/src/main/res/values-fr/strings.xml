@@ -2245,4 +2245,15 @@ Veuillez redémarrer l’application pour appliquer toutes les modifications.</s
   <string name="track_metadata_forced">Forcé</string>
   <string name="track_metadata_sdh">SME</string>
   <string name="track_metadata_external">Externe</string>
+    <string name="playlist_actions">Actions de la playlist</string>
+    <string name="playlist_export_m3u">Exporter en M3U</string>
+    <string name="playlist_share_m3u">Partager en M3U</string>
+    <string name="playlist_export_success">Playlist exportée</string>
+    <string name="playlist_export_unavailable">La playlist est encore en cours de chargement</string>
+    <string name="playlist_export_error">Impossible d\'exporter la playlist : %1$s</string>
+    <string name="playlist_share_error">Impossible de partager la playlist : %1$s</string>
+    <string name="pref_openai_base_url_title">URL de base de l\'API compatible OpenAI</string>
+    <string name="pref_openai_base_url_summary">Laisser vide pour utiliser le point de terminaison officiel d\'OpenAI</string>
+    <string name="pref_openai_base_url_prompt">Saisissez l\'URL de base d\'une API compatible OpenAI</string>
+    <string name="pref_openai_base_url_invalid">Saisissez une URL HTTP ou HTTPS valide sans identifiants, paramètres de requête ni fragments.</string>
 </resources>

@@ -2245,4 +2245,15 @@
   <string name="track_metadata_forced">強制</string>
   <string name="track_metadata_sdh">SDH</string>
   <string name="track_metadata_external">外部</string>
+    <string name="playlist_actions">プレイリストの操作</string>
+    <string name="playlist_export_m3u">M3U をエクスポート</string>
+    <string name="playlist_share_m3u">M3U を共有</string>
+    <string name="playlist_export_success">プレイリストをエクスポートしました</string>
+    <string name="playlist_export_unavailable">プレイリストを読み込み中です</string>
+    <string name="playlist_export_error">プレイリストをエクスポートできませんでした: %1$s</string>
+    <string name="playlist_share_error">プレイリストを共有できませんでした: %1$s</string>
+    <string name="pref_openai_base_url_title">OpenAI 互換 API のベース URL</string>
+    <string name="pref_openai_base_url_summary">空欄にすると公式の OpenAI エンドポイントを使用します</string>
+    <string name="pref_openai_base_url_prompt">OpenAI 互換 API のベース URL を入力</string>
+    <string name="pref_openai_base_url_invalid">認証情報、クエリパラメータ、フラグメントを含まない有効な HTTP または HTTPS の URL を入力してください。</string>
 </resources>

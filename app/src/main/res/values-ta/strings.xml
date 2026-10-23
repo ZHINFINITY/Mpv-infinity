@@ -2230,4 +2230,15 @@
   <string name="track_metadata_forced">கட்டாயம்</string>
   <string name="track_metadata_sdh">SDH</string>
   <string name="track_metadata_external">வெளிப்புறம்</string>
+    <string name="playlist_actions">பிளேலிஸ்ட் செயல்கள்</string>
+    <string name="playlist_export_m3u">M3U ஏற்றுமதி</string>
+    <string name="playlist_share_m3u">M3U பகிர்</string>
+    <string name="playlist_export_success">பிளேலிஸ்ட் ஏற்றுமதி செய்யப்பட்டது</string>
+    <string name="playlist_export_unavailable">பிளேலிஸ்ட் இன்னும் ஏற்றப்படுகிறது</string>
+    <string name="playlist_export_error">பிளேலிஸ்ட்டை ஏற்றுமதி செய்ய முடியவில்லை: %1$s</string>
+    <string name="playlist_share_error">பிளேலிஸ்ட்டைப் பகிர முடியவில்லை: %1$s</string>
+    <string name="pref_openai_base_url_title">OpenAI-இணக்க API அடிப்படை URL</string>
+    <string name="pref_openai_base_url_summary">அதிகாரப்பூர்வ OpenAI முனையத்தைப் பயன்படுத்த காலியாக விடவும்</string>
+    <string name="pref_openai_base_url_prompt">OpenAI-இணக்க API அடிப்படை URL-ஐ உள்ளிடவும்</string>
+    <string name="pref_openai_base_url_invalid">சான்றுகள், வினவல் அளவுருக்கள் அல்லது துண்டுகள் இல்லாத சரியான HTTP அல்லது HTTPS URL-ஐ உள்ளிடவும்.</string>
 </resources>

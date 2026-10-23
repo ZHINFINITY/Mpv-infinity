@@ -2230,4 +2230,15 @@
   <string name="track_metadata_forced">Paksa</string>
   <string name="track_metadata_sdh">SDH</string>
   <string name="track_metadata_external">Eksternal</string>
+    <string name="playlist_actions">Tindakan playlist</string>
+    <string name="playlist_export_m3u">Ekspor M3U</string>
+    <string name="playlist_share_m3u">Bagikan M3U</string>
+    <string name="playlist_export_success">Playlist diekspor</string>
+    <string name="playlist_export_unavailable">Playlist masih dimuat</string>
+    <string name="playlist_export_error">Tidak dapat mengekspor playlist: %1$s</string>
+    <string name="playlist_share_error">Tidak dapat membagikan playlist: %1$s</string>
+    <string name="pref_openai_base_url_title">URL dasar API yang kompatibel dengan OpenAI</string>
+    <string name="pref_openai_base_url_summary">Kosongkan untuk memakai endpoint resmi OpenAI</string>
+    <string name="pref_openai_base_url_prompt">Masukkan URL dasar API yang kompatibel dengan OpenAI</string>
+    <string name="pref_openai_base_url_invalid">Masukkan URL HTTP atau HTTPS yang valid tanpa kredensial, parameter kueri, atau fragmen.</string>
 </resources>

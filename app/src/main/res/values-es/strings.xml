@@ -2245,4 +2245,15 @@ Reinicia la aplicación para que se apliquen todos los cambios.</string>
   <string name="track_metadata_forced">Forzado</string>
   <string name="track_metadata_sdh">SDH</string>
   <string name="track_metadata_external">Externo</string>
+    <string name="playlist_actions">Acciones de la lista</string>
+    <string name="playlist_export_m3u">Exportar M3U</string>
+    <string name="playlist_share_m3u">Compartir M3U</string>
+    <string name="playlist_export_success">Lista exportada</string>
+    <string name="playlist_export_unavailable">La lista aún se está cargando</string>
+    <string name="playlist_export_error">No se pudo exportar la lista: %1$s</string>
+    <string name="playlist_share_error">No se pudo compartir la lista: %1$s</string>
+    <string name="pref_openai_base_url_title">URL base de API compatible con OpenAI</string>
+    <string name="pref_openai_base_url_summary">Déjalo vacío para usar el endpoint oficial de OpenAI</string>
+    <string name="pref_openai_base_url_prompt">Introduce la URL base de una API compatible con OpenAI</string>
+    <string name="pref_openai_base_url_invalid">Introduce una URL HTTP o HTTPS válida sin credenciales, parámetros de consulta ni fragmentos.</string>
 </resources>

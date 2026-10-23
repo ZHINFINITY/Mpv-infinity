@@ -73,6 +73,7 @@ import app.infinity.mpvz.preferences.preference.collectAsState
 import app.infinity.mpvz.presentation.Screen
 import app.infinity.mpvz.repository.ai.AiModelInfo
 import app.infinity.mpvz.repository.ai.AiService
+import app.infinity.mpvz.repository.ai.OpenAiBaseUrlInput
 import app.infinity.mpvz.ui.icons.Icon
 import app.infinity.mpvz.ui.icons.Icons
 import app.infinity.mpvz.ui.preferences.PreferenceCard
@@ -82,6 +83,8 @@ import app.infinity.mpvz.ui.preferences.components.SwitchPreference
 import app.infinity.mpvz.ui.utils.LocalBackStack
 import app.infinity.mpvz.ui.utils.LocalShowSettingsBackArrow
 import app.infinity.mpvz.ui.utils.popSafely
+import java.util.concurrent.atomic.AtomicInteger
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
@@ -154,6 +157,7 @@ object AiIntegrationScreen : Screen {
     val openCodeKey by preferences.openCodeApiKey.collectAsState()
     val groqKey by preferences.groqApiKey.collectAsState()
     val openaiKey by preferences.openaiApiKey.collectAsState()
+    val openaiBaseUrl by preferences.openaiBaseUrl.collectAsState()
     val anthropicKey by preferences.anthropicApiKey.collectAsState()
     val openrouterKey by preferences.openrouterApiKey.collectAsState()
     val togetherKey by preferences.togetherApiKey.collectAsState()
@@ -188,14 +192,22 @@ object AiIntegrationScreen : Screen {
 
     val json = koinInject<Json>()
 
-    fun loadModels() {
-      if (isLoadingModels) return
+    // Each load takes a token; only the newest load may update the list or the cache, so a
+    // request to a previous endpoint can never repopulate models after the base URL changes.
+    val modelsLoadToken = remember { AtomicInteger() }
+    var modelsJob by remember { mutableStateOf<Job?>(null) }
+
+    fun loadModels(restart: Boolean = false) {
+      if (isLoadingModels && !restart) return
+      modelsJob?.cancel()
+      val token = modelsLoadToken.incrementAndGet()
       val requestedProvider = provider
-      scope.launch {
+      modelsJob = scope.launch {
         isLoadingModels = true
         modelLoadError = null
-        aiService
-          .fetchModelsForProvider(requestedProvider)
+        val result = aiService.fetchModelsForProvider(requestedProvider)
+        if (token != modelsLoadToken.get()) return@launch
+        result
           .onSuccess { fetchedModels ->
             if (provider == requestedProvider) models = fetchedModels
             preferences.availableModelsFor(requestedProvider).set(
@@ -387,6 +399,57 @@ val apiKeyInfo =
                   )
                 }
 
+                if (provider == AiProvider.OPENAI) {
+                  item {
+                    PreferenceCard {
+                      TextFieldPreference(
+                        value = openaiBaseUrl,
+                        onValueChange = { value ->
+                          val normalized = OpenAiBaseUrlInput.normalize(value)
+                          if (normalized != null) {
+                            if (normalized != openaiBaseUrl) {
+                              preferences.openaiBaseUrl.set(normalized)
+                              // Models listed by the previous endpoint do not apply to the new one.
+                              preferences.availableModelsFor(AiProvider.OPENAI).set("")
+                              models = emptyList()
+                              loadModels(restart = true)
+                            }
+                          } else {
+                            Toast.makeText(
+                              context,
+                              R.string.pref_openai_base_url_invalid,
+                              Toast.LENGTH_SHORT,
+                            ).show()
+                          }
+                        },
+                        textToValue = { it.trim() },
+                        title = { Text(stringResource(R.string.pref_openai_base_url_title)) },
+                        summary = {
+                          Text(
+                            if (openaiBaseUrl.isBlank()) {
+                              stringResource(R.string.pref_openai_base_url_summary)
+                            } else {
+                              openaiBaseUrl
+                            },
+                            color = MaterialTheme.colorScheme.outline,
+                          )
+                        },
+                        textField = { value, onValueChange, _ ->
+                          Column {
+                            Text(stringResource(R.string.pref_openai_base_url_prompt))
+                            TextField(
+                              value = value,
+                              onValueChange = onValueChange,
+                              modifier = Modifier.fillMaxWidth(),
+                              placeholder = { Text(stringResource(R.string.pref_openai_base_url_placeholder)) },
+                              singleLine = true,
+                            )
+                          }
+                        },
+                      )
+                    }
+                  }
+                }
                 item {
                   PreferenceCard {
                     TextFieldPreference(
