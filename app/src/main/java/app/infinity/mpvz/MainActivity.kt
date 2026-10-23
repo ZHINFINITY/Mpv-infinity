@@ -619,6 +619,7 @@ class MainActivity : AppCompatActivity() {
         }
       }
 
+      val popupGlassEnabled by appearancePreferences.liquidGlassSurfaces.collectAsState()
       if (hasNavEntries) {
         Box(modifier = Modifier.fillMaxSize()) {
           NavDisplay(
@@ -635,7 +636,15 @@ class MainActivity : AppCompatActivity() {
                   modifier = Modifier.fillMaxSize(),
                   color = MaterialTheme.colorScheme.background,
                 ) {
-                  route.Content()
+                  // MainScreen hosts its own route/popup scenes; every other route gets a
+                  // popup-only producer so its dialogs frost the live screen like Sort & View.
+                  if (route == MainScreen) {
+                    route.Content()
+                  } else {
+                    app.infinity.mpvz.ui.theme.BrowserGlassPopupSceneHost(enabled = popupGlassEnabled) {
+                      route.Content()
+                    }
+                  }
                 }
               }
             },

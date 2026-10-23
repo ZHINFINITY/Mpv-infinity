@@ -76,6 +76,9 @@ class AiPreferences(
     )
   val embeddedSubtitleTranslationApiKey =
     preferenceStore.getString("ai_embedded_subtitle_translation_api_key", "")
+  /** Model for the OpenAI-compatible and Gemini subtitle translators (blank = provider default). */
+  val embeddedSubtitleTranslationModel =
+    preferenceStore.getString("ai_embedded_subtitle_translation_model", "")
 
   val customPromptEnabled = preferenceStore.getBoolean("ai_custom_prompt_enabled", false)
   val customPrompt = preferenceStore.getString("ai_custom_prompt", "")

@@ -7,6 +7,7 @@
 
 package app.infinity.mpvz.ui.preferences.components
 
+import app.infinity.mpvz.ui.components.GlassOptionSheet
 import app.infinity.mpvz.ui.preferences.components.settingsGlassContainerColor
 
 import app.infinity.mpvz.ui.preferences.components.settingsGlassSurface
@@ -41,49 +42,11 @@ fun <T> OptionsDialog(
   onDismiss: () -> Unit,
   optionLabel: @Composable (T) -> String,
 ) {
-  AlertDialog(
-      modifier = androidx.compose.ui.Modifier.settingsGlassSurface(cornerRadius = 28.dp, independent = true),
+  GlassOptionSheet(
     onDismissRequest = onDismiss,
-    title = {
-      Text(
-        text = title,
-        style = MaterialTheme.typography.headlineSmall,
-      )
-    },
-    text = {
-      Column {
-        HorizontalDivider()
-        LazyColumn(
-          contentPadding =
-            androidx.compose.foundation.layout
-              .PaddingValues(vertical = 8.dp),
-          modifier = Modifier.selectableGroup(),
-        ) {
-          items(options, key = { option -> option?.hashCode() ?: System.identityHashCode(option) }) { option ->
-            Row(
-              modifier =
-                Modifier
-                  .fillMaxWidth()
-                  .clickable { onOptionSelected(option) }
-                  .padding(horizontal = 16.dp, vertical = 12.dp),
-              verticalAlignment = Alignment.CenterVertically,
-            ) {
-              RadioButton(
-                selected = option == selectedOption,
-                onClick = { onOptionSelected(option) },
-              )
-              Text(
-                text = optionLabel(option),
-                style = MaterialTheme.typography.bodyLarge,
-                modifier = Modifier.padding(start = 16.dp),
-              )
-            }
-          }
-        }
-        HorizontalDivider()
-      }
-    },
-    confirmButton = {},
+    title = { Text(text = title) },
+    modifier = androidx.compose.ui.Modifier.settingsGlassSurface(cornerRadius = 28.dp, independent = true),
+    containerColor = settingsGlassContainerColor(MaterialTheme.colorScheme.surfaceContainerHigh),
     dismissButton = {
       TextButton(onClick = onDismiss) {
         Text(
@@ -93,14 +56,38 @@ fun <T> OptionsDialog(
         )
       }
     },
-    containerColor = settingsGlassContainerColor(MaterialTheme.colorScheme.surfaceContainerHigh),
-    tonalElevation = 6.dp,
-    shape = MaterialTheme.shapes.extraLarge,
-    properties =
-      DialogProperties(
-        usePlatformDefaultWidth = false,
-        dismissOnBackPress = true,
-        dismissOnClickOutside = true,
-      ),
-  )
+  ) {
+    Column {
+      HorizontalDivider()
+      LazyColumn(
+        contentPadding =
+          androidx.compose.foundation.layout
+            .PaddingValues(vertical = 8.dp),
+        // Bounded by the sheet; long option lists scroll instead of clipping.
+        modifier = Modifier.weight(1f, fill = false).selectableGroup(),
+      ) {
+        items(options, key = { option -> option?.hashCode() ?: System.identityHashCode(option) }) { option ->
+          Row(
+            modifier =
+              Modifier
+                .fillMaxWidth()
+                .clickable { onOptionSelected(option) }
+                .padding(horizontal = 16.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+          ) {
+            RadioButton(
+              selected = option == selectedOption,
+              onClick = { onOptionSelected(option) },
+            )
+            Text(
+              text = optionLabel(option),
+              style = MaterialTheme.typography.bodyLarge,
+              modifier = Modifier.padding(start = 16.dp),
+            )
+          }
+        }
+      }
+      HorizontalDivider()
+    }
+  }
 }

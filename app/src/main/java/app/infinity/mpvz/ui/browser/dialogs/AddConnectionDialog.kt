@@ -6,6 +6,9 @@
  */
 
 package app.infinity.mpvz.ui.browser.dialogs
+import app.infinity.mpvz.ui.components.GlassModalBottomSheet
+import app.infinity.mpvz.ui.components.glassOptionSheetContainerColor
+import app.infinity.mpvz.ui.components.glassOptionSheetModifier
 import app.infinity.mpvz.ui.theme.GlassDropdownMenu
 import app.infinity.mpvz.ui.theme.GlassExposedDropdownMenu
 
@@ -97,15 +100,12 @@ fun AddConnectionSheet(
   }
   val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
-  ModalBottomSheet(
+  GlassModalBottomSheet(
     onDismissRequest = handleDismiss,
     sheetState = sheetState,
-    shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
-    containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
-    dragHandle = { BottomSheetDefaults.DragHandle() },
-  ) {
+    containerColor = glassOptionSheetContainerColor(MaterialTheme.colorScheme.surfaceContainerLow),) {
     Column(
-      modifier = modifier.fillMaxWidth().imePadding().navigationBarsPadding(),
+      modifier = modifier.fillMaxWidth().imePadding(),
     ) {
       Column(
         modifier =

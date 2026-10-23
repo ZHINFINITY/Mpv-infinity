@@ -144,6 +144,7 @@ import app.infinity.mpvz.ui.player.NativePlaybackSnapshot
 import app.infinity.mpvz.ui.player.NativeStatsDisplay
 import app.infinity.mpvz.ui.player.Panels
 import app.infinity.mpvz.ui.player.PlayerActivity
+import app.infinity.mpvz.ui.player.PlayerStatsOverlayPolicy
 import app.infinity.mpvz.ui.player.PlayerUpdates
 import app.infinity.mpvz.ui.player.PlayerViewModel
 import app.infinity.mpvz.ui.player.PlaybackEngineMode
@@ -459,12 +460,19 @@ fun PlayerControls(
       DeclaredPlaybackMediaKind.AUDIO -> true
       else -> isAudioOnly || activity?.isCurrentMediaKnownAudio() == true
     }
-  LaunchedEffect(useAudioPlayer) {
-    if (useAudioPlayer && statisticsPage in 1..5) {
-      advancedPreferences.enabledStatisticsPage.set(0)
-      PlaybackSession.command("script-binding", "stats/display-stats-toggle")
-    }
-  }
+  val declaredMediaKind = currentPlaybackItem?.declaredMediaKind()
+  val statsDecision = PlayerStatsOverlayPolicy.decide(
+    PlayerStatsOverlayPolicy.Input(
+      enabled = statisticsPage in 1..6,
+      page = statisticsPage,
+      engine = if (nativeEngineActive) PlayerStatsOverlayPolicy.Engine.NATIVE
+      else PlayerStatsOverlayPolicy.Engine.MPV,
+      isAudioOnly = useAudioPlayer,
+      musicMode = useAudioPlayer,
+      mediaTypeKnown = declaredMediaKind != DeclaredPlaybackMediaKind.UNKNOWN ||
+        nativeSnapshot.videoWidth > 0 || activity?.isCurrentMediaKnownAudio() == true,
+    ),
+  )
   if (useAudioPlayer) {
     val rawMediaTitle by PlaybackSession.propString["media-title"].collectAsState()
     val queuedTitle =
@@ -723,7 +731,7 @@ fun PlayerControls(
     }
     // Statistics are a video overlay only. Keep them out of the audio/visualizer composition even
     // when the previous video left the persisted statistics page enabled.
-    if (!useAudioPlayer && statisticsPage in 1..6) {
+    if (statsDecision.visible) {
       val statsModifier =
         Modifier
           .align(Alignment.TopStart)

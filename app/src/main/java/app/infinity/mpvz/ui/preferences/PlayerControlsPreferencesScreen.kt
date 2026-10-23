@@ -7,6 +7,7 @@
 
 package app.infinity.mpvz.ui.preferences
 
+import app.infinity.mpvz.ui.components.GlassOptionSheet
 import app.infinity.mpvz.ui.preferences.components.settingsGlassContainerColor
 
 import app.infinity.mpvz.ui.preferences.components.settingsGlassSurface
@@ -409,12 +410,12 @@ object PlayerControlsPreferencesScreen : Screen {
             }
 
             if (showCustomTimeDialog) {
-              AlertDialog(
+              GlassOptionSheet(
       containerColor = settingsGlassContainerColor(androidx.compose.material3.AlertDialogDefaults.containerColor),
       modifier = androidx.compose.ui.Modifier.settingsGlassSurface(cornerRadius = 28.dp, independent = true),
                 onDismissRequest = { showCustomTimeDialog = false },
                 title = { Text(text = stringResource(R.string.pref_player_display_hide_player_control_time)) },
-                text = {
+                content = {
                   Column(
                     modifier =
                       Modifier
@@ -452,8 +453,7 @@ object PlayerControlsPreferencesScreen : Screen {
                   TextButton(onClick = { showCustomTimeDialog = false }) {
                     Text(stringResource(R.string.generic_cancel))
                   }
-                },
-              )
+                },)
             }
           }
         }

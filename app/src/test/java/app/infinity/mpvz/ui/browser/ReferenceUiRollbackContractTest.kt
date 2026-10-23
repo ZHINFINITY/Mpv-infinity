@@ -22,10 +22,10 @@ class ReferenceUiRollbackContractTest {
 
   @Test fun preservedPlayerSourcesKeepBaseline7eFingerprints() {
     val expected = mapOf(
-      "app/src/main/java/app/infinity/mpvz/ui/player/controls/PlayerControls.kt" to "e94a3ddb5a4e1b9d48964292258dd2fc5174a024b153d5e0e6d4c22712916529",
+      "app/src/main/java/app/infinity/mpvz/ui/player/controls/PlayerControls.kt" to "aaf057ec8635d288c447eeda65d2d0eb116bf772ae9c02ba123cb35f42af4093" /* build 1902: stats overlay policy */,
       "app/src/main/java/app/infinity/mpvz/ui/player/controls/components/Seekbar.kt" to "b0d7ca11fdd2729871e052a0f6ea3b2cba64fb3e29039e5d3c42a7acf4d426c9",
-      // Build 1901: owner-approved theme/accent switch colours (3D glass depth kept).
-      "app/src/main/java/app/infinity/mpvz/ui/player/controls/components/GlassControls.kt" to "fd791710e4f3461e7df838d9ee0497198bf1a86f50039b917e3df46726367eb9",
+      // Build 1902: owner-approved contrasting switch colours (3D glass depth kept).
+      "app/src/main/java/app/infinity/mpvz/ui/player/controls/components/GlassControls.kt" to "ae873298a6b622bcdbe5c5366fc6d8fd37009ee395c3531c1df90f9dd31f6320",
       "app/src/main/java/app/infinity/mpvz/presentation/components/PlayerSheet.kt" to "fdcf88d13735e1876059f0e7bdcc41088ecedd06d58fffde0283c9e32967e96a",
       "app/src/main/java/app/infinity/mpvz/presentation/components/PlayerGlassOverlays.kt" to "82a115d195711b391235b5f32a4d7b2bac75e494aef0ff22be55251f9307b54f",
     )
@@ -221,7 +221,8 @@ private suspend fun frostGlassFrame(bitmap: Bitmap, strength: Float): Bitmap? = 
       if (navigation[end] == '}') { depth--; if (depth == 0) { end++; break } }
       end++
     }
-    assertEquals("af3ac184bf4593d62f64a2339843a7bed000174672caacf68ad06d10d32d8f95", sha(navigation.substring(start, end)))
+    // Build 1902: nav pill commits the lens frame before far page jumps and supports drag-to-select.
+    assertEquals("6dd01fe6826b20433d5073e6a41b45f2750f27f2b2ce2a6f0b6418263f8358f6", sha(navigation.substring(start, end)))
     val scene = read("app/src/main/java/app/infinity/mpvz/ui/theme/BrowserGlassScene.kt")
     val lensStart = scene.indexOf("private const val BROWSER_LENS")
     val q = scene.indexOf("\"\"\"", lensStart)

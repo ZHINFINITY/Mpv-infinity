@@ -1,4 +1,6 @@
 package app.infinity.mpvz.ui.preferences
+import app.infinity.mpvz.ui.components.GlassModalBottomSheet
+import app.infinity.mpvz.ui.components.GlassOptionSheet
 import app.infinity.mpvz.ui.theme.GlassDropdownMenu
 import app.infinity.mpvz.ui.theme.GlassExposedDropdownMenu
 
@@ -245,12 +247,12 @@ private fun PluginProviderSettingsDialog(
   onDismiss: () -> Unit,
   onSave: () -> Unit,
 ) {
-  AlertDialog(
+  GlassOptionSheet(
       containerColor = settingsGlassContainerColor(androidx.compose.material3.AlertDialogDefaults.containerColor),
       modifier = androidx.compose.ui.Modifier.settingsGlassSurface(cornerRadius = 28.dp, independent = true),
     onDismissRequest = onDismiss,
     title = { Text("${provider.name} settings") },
-    text = {
+    content = {
       Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Column(Modifier.heightIn(max = 480.dp).verticalScroll(androidx.compose.foundation.rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
           fields.forEachIndexed { index, field ->
@@ -286,8 +288,7 @@ private fun PluginProviderSettingsDialog(
       }
     },
     confirmButton = { Button(onClick = onSave) { Text("Save") } },
-    dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
-  )
+    dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },)
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -296,10 +297,10 @@ private fun AddNuvioProviderRepositoryDialog(onDismiss: () -> Unit, onAdd: (Stri
   var url by remember { mutableStateOf("") }
   var error by remember { mutableStateOf<String?>(null) }
   var busy by remember { mutableStateOf(false) }
-  ModalBottomSheet(
+  GlassModalBottomSheet(
       containerColor = settingsGlassContainerColor(androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainerLow),
-      modifier = androidx.compose.ui.Modifier.settingsGlassSurface(cornerRadius = 28.dp, independent = true),onDismissRequest = { if (!busy) onDismiss() }) {
-    Column(Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 22.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+      paneModifier = androidx.compose.ui.Modifier.settingsGlassSurface(cornerRadius = 28.dp, independent = true),onDismissRequest = { if (!busy) onDismiss() }) {
+    Column(Modifier.fillMaxWidth().padding(horizontal = 22.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
       Text("Add Nuvio provider repository", style = MaterialTheme.typography.headlineSmall)
       Text("Paste a Nuvio JavaScript scraper repository URL. This is not a Stremio manifest URL.", color = MaterialTheme.colorScheme.onSurfaceVariant)
       OutlinedTextField(value = url, onValueChange = { url = it; error = null }, modifier = Modifier.fillMaxWidth(), singleLine = true, label = { Text("Repository URL") }, placeholder = { Text("https://raw.githubusercontent.com/owner/repo/refs/heads/main") }, enabled = !busy)

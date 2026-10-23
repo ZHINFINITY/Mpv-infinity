@@ -7,6 +7,7 @@
 
 package app.infinity.mpvz.ui.browser.dialogs
 
+import app.infinity.mpvz.ui.components.GlassModalBottomSheet
 import android.app.Application
 import android.content.ClipData
 import android.content.Intent
@@ -1736,8 +1737,8 @@ private fun CompressorSettingsSheet(
     }
   }
 
-  ModalBottomSheet(
-    modifier = Modifier.settingsGlassSurface(cornerRadius = 28.dp, independent = true),
+  GlassModalBottomSheet(
+    paneModifier = Modifier.settingsGlassSurface(cornerRadius = 28.dp, independent = true),
     containerColor = settingsGlassContainerColor(MaterialTheme.colorScheme.surfaceContainerHigh),
     onDismissRequest = {
       editingPreset = null
@@ -1746,8 +1747,7 @@ private fun CompressorSettingsSheet(
       editingDefaultVideo = false
       editingDefaultAudio = false
       onDismiss()
-    },
-  ) {
+    },) {
     Column(
       modifier =
         Modifier

@@ -75,6 +75,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -89,6 +90,7 @@ import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInParent
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -283,8 +285,11 @@ object MainScreen : Screen {
       if (targetIndex >= 0) {
         tabNavigationJob?.cancel()
         if (!isAlreadySettled) {
-          tabNavigationJob =
+            tabNavigationJob =
             coroutineScope.launch {
+              // The lens is independent of destination composition. Give it one
+              // frame before a distant page can initialise heavy view-model/list UI.
+              withFrameNanos { }
               pagerState.animateScrollToPage(
                 page = targetIndex,
                 animationSpec =
@@ -651,7 +656,9 @@ private fun ExpressivePillNavigationBar(
     }
   }
   val lastIndex = (visibleTabs.size - 1).coerceAtLeast(0)
-  val visualPosition = (if (!motionAllowed || fingerDragging) position else lensPosition.value).coerceIn(0f, lastIndex.toFloat())
+  var dragPosition by remember { mutableStateOf<Float?>(null) }
+  val visualPosition = (dragPosition ?: if (!motionAllowed || fingerDragging) position else lensPosition.value)
+    .coerceIn(0f, lastIndex.toFloat())
   val visualFloor = visualPosition.toInt().coerceIn(0, lastIndex)
   val visualCeil = (visualFloor + 1).coerceAtMost(lastIndex)
   val visualFraction = (visualPosition - visualFloor).coerceIn(0f, 1f)
@@ -663,6 +670,25 @@ private fun ExpressivePillNavigationBar(
     if (fingerDragging) position - (pagerState?.settledPage ?: 0) else targetIndex - lensPosition.value,
   )
   val density = LocalDensity.current
+  val isRtl = LocalLayoutDirection.current == androidx.compose.ui.unit.LayoutDirection.Rtl
+  val tabCentersPx = remember(tabOffsets, tabWidths, density) {
+    tabOffsets.mapIndexed { index, left -> with(density) { (left + tabWidths[index] / 2).toPx() } }
+  }
+  val dragModifier = Modifier.pointerInput(visibleTabs, tabCentersPx, isRtl) {
+    detectHorizontalDragGestures(
+      onDragStart = { dragPosition = null },
+      onHorizontalDrag = { change, _ ->
+        change.consume()
+        dragPosition = NavPillDragPolicy.tabPositionAtX(change.position.x, tabCentersPx, isRtl)
+      },
+      onDragEnd = {
+        val target = dragPosition?.let { NavPillDragPolicy.nearestTabIndex(it, visibleTabs.size) }
+        dragPosition = null
+        if (target != null) visibleTabs.getOrNull(target)?.let(onTabSelected)
+      },
+      onDragCancel = { dragPosition = null },
+    )
+  }
   val lensGeometry = with(density) {
     if (motionAllowed) NavigationGlassMotionPolicy.dragGeometry(
       lensBaseLeft.toPx(), lensBaseWidth.toPx(), visualFraction, direction, glassMotion,
@@ -682,8 +708,9 @@ private fun ExpressivePillNavigationBar(
     Box(
       modifier =
         Modifier
-          .wrapContentWidth()
-          .horizontalScroll(rememberScrollState())
+            .wrapContentWidth()
+            .then(dragModifier)
+            .horizontalScroll(rememberScrollState())
           .clipToBounds()
           .padding(horizontal = startPadding, vertical = 6.dp),
     ) {

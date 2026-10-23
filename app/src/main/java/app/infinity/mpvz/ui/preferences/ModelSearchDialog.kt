@@ -7,6 +7,7 @@
 
 package app.infinity.mpvz.ui.preferences
 
+import app.infinity.mpvz.ui.components.GlassOptionSheet
 import app.infinity.mpvz.ui.preferences.components.settingsGlassContainerColor
 
 import app.infinity.mpvz.ui.preferences.components.settingsGlassSurface
@@ -61,7 +62,7 @@ fun ModelSearchDialog(
         }.sortedWith(compareByDescending<AiModelInfo> { it.isFree }.thenBy { it.displayName })
     }
 
-  AlertDialog(
+  GlassOptionSheet(
       containerColor = settingsGlassContainerColor(androidx.compose.material3.AlertDialogDefaults.containerColor),
       modifier = androidx.compose.ui.Modifier.settingsGlassSurface(cornerRadius = 28.dp, independent = true),
     onDismissRequest = onDismiss,
@@ -85,7 +86,7 @@ fun ModelSearchDialog(
         shape = RoundedCornerShape(12.dp),
       )
     },
-    text = {
+    content = {
       if (sortedFiltered.isEmpty()) {
         Text(
           text = if (searchQuery.isNotBlank()) "No models match \"$searchQuery\"" else "No models available",
@@ -125,8 +126,7 @@ fun ModelSearchDialog(
             .stringResource(app.infinity.mpvz.R.string.generic_cancel),
         )
       }
-    },
-  )
+    },)
 }
 
 @Composable

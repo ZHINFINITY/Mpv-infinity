@@ -21,6 +21,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.unit.Dp
@@ -29,6 +30,7 @@ import app.infinity.mpvz.preferences.AppearancePreferences
 import app.infinity.mpvz.preferences.preference.collectAsState
 import app.infinity.mpvz.ui.theme.liquidGlassPane
 import app.infinity.mpvz.ui.theme.LocalGlassCustomization
+import app.infinity.mpvz.ui.theme.SwitchContrastPolicy
 import org.koin.compose.koinInject
 
 /** A tile may own the glass material while its embedded button retains input/semantics only. */
@@ -53,19 +55,17 @@ fun GlassSwitch(
   val depth = GlassControlPolicy.depth(LocalGlassCustomization.current.depth)
   val scheme = MaterialTheme.colorScheme
   val accent = scheme.primary
+  val contrast = SwitchContrastPolicy.forSurfaceLuminance(scheme.surface.luminance())
   val themedColors = SwitchDefaults.colors(
-    checkedTrackColor = accent,
-    checkedThumbColor = scheme.onPrimary,
-    uncheckedTrackColor = scheme.onSurface.copy(alpha = 0.20f),
-    uncheckedThumbColor = scheme.onSurfaceVariant,
-    checkedBorderColor = accent,
-    uncheckedBorderColor = scheme.outline,
-    disabledCheckedTrackColor = accent.copy(alpha = 0.38f),
-    disabledCheckedThumbColor = scheme.onPrimary.copy(alpha = 0.70f),
-    disabledUncheckedTrackColor = scheme.onSurface.copy(alpha = 0.12f),
-    disabledUncheckedThumbColor = scheme.onSurfaceVariant.copy(alpha = 0.52f),
-    disabledCheckedBorderColor = accent.copy(alpha = 0.38f),
-    disabledUncheckedBorderColor = scheme.outline.copy(alpha = 0.52f),
+    checkedTrackColor = contrast.checkedTrack, checkedThumbColor = contrast.checkedThumb,
+    uncheckedTrackColor = contrast.uncheckedTrack, uncheckedThumbColor = contrast.uncheckedThumb,
+    checkedBorderColor = contrast.checkedBorder, uncheckedBorderColor = contrast.uncheckedBorder,
+    disabledCheckedTrackColor = contrast.checkedTrack.copy(alpha = .45f),
+    disabledCheckedThumbColor = contrast.checkedThumb.copy(alpha = .70f),
+    disabledUncheckedTrackColor = contrast.uncheckedTrack.copy(alpha = .45f),
+    disabledUncheckedThumbColor = contrast.uncheckedThumb.copy(alpha = .52f),
+    disabledCheckedBorderColor = contrast.checkedBorder.copy(alpha = .45f),
+    disabledUncheckedBorderColor = contrast.uncheckedBorder.copy(alpha = .45f),
   )
   Switch(
     checked = checked,
@@ -89,7 +89,7 @@ fun GlassSwitch(
       Box(
         Modifier.size(24.dp)
           .glassThumbOptics(
-            accent = accent,
+            accent = contrast.checkedTrack,
             checked = checked,
             highlight = GlassControlPolicy.highlightAlpha(highlight, enabled, checked),
             shadow = GlassControlPolicy.shadowAlpha(depth, enabled),

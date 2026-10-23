@@ -259,6 +259,9 @@ class PlayerActivity :
   val nativePlaybackSnapshot get() = nativeEngine.snapshot
   private var glassEngineMode by mutableStateOf(PlaybackEngineMode.MPV)
   private var glassMediaGeneration by mutableStateOf(0L)
+  // MPV's stats.lua exposes a toggle, so retain the last command state and only
+  // toggle when a visibility transition is actually required.
+  private var mpvStatsVisible = false
   private var activeEngineMode = PlaybackEngineMode.MPV
     set(value) {
       field = value
@@ -266,6 +269,7 @@ class PlayerActivity :
       if (ownsPlaybackSession() && value == PlaybackEngineMode.NATIVE) {
         MediaPlaybackService.setNativeRendererOwnership(true)
       }
+      applyStatsOverlayPolicy()
       // Keep Native's saved state authoritative during an MPV reload. FILE_LOADED releases
       // this guard only after MPV has restored the shared settings and seek position.
     }
@@ -296,8 +300,35 @@ class PlayerActivity :
   internal fun bindMpvSessionCallbacksOnMain() {
     check(Looper.myLooper() == Looper.getMainLooper()) { "MPV callbacks must bind on Main" }
     playerObserverBindingEpoch++
+    mpvStatsVisible = false
     player.bindSessionCallbacksOnMain()
     PlaybackSession.addObserver(playerObserver)
+    applyStatsOverlayPolicy()
+  }
+
+  private fun applyStatsOverlayPolicy() {
+    if (activeEngineMode != PlaybackEngineMode.MPV || !mpvInitialized) return
+    val itemKind = PlaybackSession.state.value.currentItem?.declaredMediaKind()
+    val decision = PlayerStatsOverlayPolicy.decide(
+      PlayerStatsOverlayPolicy.Input(
+        enabled = advancedPreferences.enabledStatisticsPage.get() in 1..6,
+        page = advancedPreferences.enabledStatisticsPage.get(),
+        engine = PlayerStatsOverlayPolicy.Engine.MPV,
+        isAudioOnly = viewModel.isAudioOnly.value || isCurrentMediaKnownAudio(),
+        musicMode = hasPreclassifiedMusicLaunch(),
+        mediaTypeKnown = itemKind != DeclaredPlaybackMediaKind.UNKNOWN,
+      ),
+    )
+    if (decision.visible && !mpvStatsVisible) {
+      PlaybackSession.command("script-binding", "stats/display-stats-toggle")
+      mpvStatsVisible = true
+    } else if (!decision.visible && mpvStatsVisible) {
+      PlaybackSession.command("script-binding", "stats/display-stats-toggle")
+      mpvStatsVisible = false
+    }
+    if (decision.visible && decision.page in 1..5) {
+      PlaybackSession.command("script-binding", "stats/display-page-${decision.page}")
+    }
   }
 
   /**
@@ -5647,6 +5678,7 @@ class PlayerActivity :
       MPVLib.MpvEvent.MPV_EVENT_FILE_LOADED -> {
         val loadGeneration = PlaybackSession.state.value.activeGeneration
         if (!PlaybackSession.isCurrentGeneration(loadGeneration)) return
+        applyStatsOverlayPolicy()
         val recovery = pendingMediaLoadRecovery
         if (recovery?.generation == loadGeneration) cancelPlaybackLoadRecovery()
         eofAdvanceJob?.cancel()

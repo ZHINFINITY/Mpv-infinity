@@ -298,6 +298,8 @@ class PlayerViewModel : ViewModel(),
   private var embeddedCueTranslationJob: Job? = null
   private var embeddedTranslationRequestId = 0L
   private var lastEmbeddedCue = ""
+  /** After a provider failure, show original cues for a while instead of retrying every cue. */
+  private var embeddedTranslationBackoffUntil = 0L
   private var nativeSubtitleHiddenForTranslation = false
   private var nativeSubtitleVisibilityListener: ((Boolean) -> Unit)? = null
 
@@ -2929,6 +2931,7 @@ class PlayerViewModel : ViewModel(),
 
   fun resetEmbeddedSubtitleTranslation() {
     embeddedTranslationRequestId += 1L
+    embeddedTranslationBackoffUntil = 0L
     embeddedCueTranslationJob = null
     lastEmbeddedCue = ""
     _translationStatus.value = ""
@@ -2955,6 +2958,10 @@ class PlayerViewModel : ViewModel(),
         ?: java.util.Locale.getDefault().language.ifBlank { "en" }
     lastEmbeddedCue = cue
     _embeddedTranslatedSubtitle.value = null
+    if (android.os.SystemClock.elapsedRealtime() < embeddedTranslationBackoffUntil) {
+      // A recent failure (bad key, quota, offline): keep the original cue visible.
+      return
+    }
     // Suppress the original text cue immediately. This prevents the embedded subtitle
     // from appearing while the translation request is in flight; image-based subtitles
     // never enter this method and therefore retain their existing rendering behavior.
@@ -2967,10 +2974,11 @@ class PlayerViewModel : ViewModel(),
     val requestId = ++embeddedTranslationRequestId
     embeddedCueTranslationJob = viewModelScope.launch(Dispatchers.IO) {
       _translationStatus.value = "Translating embedded subtitle…"
-      val provider = aiPreferences.embeddedSubtitleTranslationProvider.get().trim()
+      // Each provider uses its own endpoint/key; only an unconfigured OpenAI-compatible option
+      // borrows the AI assistant provider. Nothing silently falls back to free Google.
       val result =
-        if (provider.isBlank() || provider.equals("Google Translate", ignoreCase = true)) {
-          embeddedSubtitleTranslator.translateGoogle(cue, target)
+        if (!embeddedSubtitleTranslator.usesAssistantFallback()) {
+          embeddedSubtitleTranslator.translate(cue, target)
         } else {
           aiService.generateWithAi(
             cue,
@@ -3008,15 +3016,24 @@ class PlayerViewModel : ViewModel(),
           }
           if (requestId == embeddedTranslationRequestId) _translationStatus.value = ""
         }
-      }.onFailure {
+      }.onFailure { failure ->
         if (requestId == embeddedTranslationRequestId) {
           withContext(Dispatchers.Main.immediate) {
             _embeddedTranslatedSubtitle.value = null
-            _translationStatus.value = ""
-            if (!aiPreferences.playerSubtitleTranslationEnabled.get()) {
-              if (native) nativeSubtitleVisibilityListener?.invoke(false)
-              else PlaybackSession.setPropertyBoolean("sub-visibility", true)
-              nativeSubtitleHiddenForTranslation = false
+            // Never leave the viewer without subtitles: restore the original cue.
+            if (native) nativeSubtitleVisibilityListener?.invoke(false)
+            else PlaybackSession.setPropertyBoolean("sub-visibility", true)
+            nativeSubtitleHiddenForTranslation = false
+            embeddedTranslationBackoffUntil =
+              android.os.SystemClock.elapsedRealtime() +
+                app.infinity.mpvz.repository.ai.SubtitleTranslationFailurePolicy.BACKOFF_MS
+            val message = app.infinity.mpvz.repository.ai.SubtitleTranslationFailurePolicy.statusMessage(failure)
+            _translationStatus.value = message
+            // Embedded cues have no status row; a toast (at most once per backoff) shows why.
+            showToast(message)
+            viewModelScope.launch {
+              delay(app.infinity.mpvz.repository.ai.SubtitleTranslationFailurePolicy.STATUS_VISIBLE_MS)
+              if (_translationStatus.value == message) _translationStatus.value = ""
             }
           }
         }

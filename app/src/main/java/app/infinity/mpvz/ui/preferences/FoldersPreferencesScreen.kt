@@ -6,6 +6,7 @@
  */
 
 package app.infinity.mpvz.ui.preferences
+import app.infinity.mpvz.ui.components.GlassOptionSheet
 import app.infinity.mpvz.ui.theme.GlassDropdownMenu
 import app.infinity.mpvz.ui.theme.GlassExposedDropdownMenu
 
@@ -444,12 +445,12 @@ private fun NoMediaPreferenceCard(
         else -> null
       }
 
-    AlertDialog(
+    GlassOptionSheet(
       containerColor = settingsGlassContainerColor(androidx.compose.material3.AlertDialogDefaults.containerColor),
       modifier = androidx.compose.ui.Modifier.settingsGlassSurface(cornerRadius = 28.dp, independent = true),
       onDismissRequest = { showAddMarkerDialog = false },
       title = { Text(stringResource(R.string.pref_folders_add_marker_title)) },
-      text = {
+      content = {
         OutlinedTextField(
           value = markerInput,
           onValueChange = { markerInput = it },
@@ -480,8 +481,7 @@ private fun NoMediaPreferenceCard(
         TextButton(onClick = { showAddMarkerDialog = false }) {
           Text(stringResource(R.string.generic_cancel))
         }
-      },
-    )
+      },)
   }
 }
 
@@ -589,7 +589,7 @@ private fun AddFolderDialog(
     }
   val availableFolderPaths = remember(availableFolders) { availableFolders.map { it.path } }
 
-  AlertDialog(
+  GlassOptionSheet(
       containerColor = settingsGlassContainerColor(androidx.compose.material3.AlertDialogDefaults.containerColor),
       modifier = androidx.compose.ui.Modifier.settingsGlassSurface(cornerRadius = 28.dp, independent = true),
     onDismissRequest = onDismiss,
@@ -633,7 +633,7 @@ private fun AddFolderDialog(
         }
       }
     },
-    text = {
+    content = {
       if (isLoading) {
         Box(modifier = Modifier.fillMaxWidth().padding(32.dp), contentAlignment = Alignment.Center) {
           Text(stringResource(R.string.pref_folders_loading))
@@ -726,8 +726,7 @@ private fun AddFolderDialog(
     },
     dismissButton = {
       TextButton(onClick = onDismiss) { Text(stringResource(R.string.generic_cancel)) }
-    },
-  )
+    },)
 }
 
 @Composable

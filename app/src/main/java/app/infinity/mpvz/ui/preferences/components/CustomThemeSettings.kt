@@ -1,5 +1,6 @@
 package app.infinity.mpvz.ui.preferences.components
 
+import app.infinity.mpvz.ui.components.GlassModalBottomSheet
 import app.infinity.mpvz.ui.preferences.components.settingsGlassContainerColor
 
 import app.infinity.mpvz.ui.preferences.components.settingsGlassSurface
@@ -217,14 +218,14 @@ internal fun CustomThemeEditor(
     textValue = hsv[2]
     textAlpha = AndroidColor.alpha(initial.onBackgroundArgb) / 255f
   }
-  androidx.compose.material3.ModalBottomSheet(
-      modifier = androidx.compose.ui.Modifier.settingsGlassSurface(cornerRadius = 28.dp, independent = true),onDismissRequest = onDismiss, sheetState = androidx.compose.material3.rememberModalBottomSheetState(skipPartiallyExpanded = true), containerColor = settingsGlassContainerColor(MaterialTheme.colorScheme.surfaceContainerLow), dragHandle = { androidx.compose.material3.BottomSheetDefaults.DragHandle() }) {
+  GlassModalBottomSheet(
+      paneModifier = androidx.compose.ui.Modifier.settingsGlassSurface(cornerRadius = 28.dp, independent = true),onDismissRequest = onDismiss, sheetState = androidx.compose.material3.rememberModalBottomSheetState(skipPartiallyExpanded = true), containerColor = settingsGlassContainerColor(MaterialTheme.colorScheme.surfaceContainerLow),) {
     Column(
       modifier = Modifier
         .fillMaxWidth()
         .fillMaxHeight()
         .imePadding()
-        .navigationBarsPadding()
+
         .padding(horizontal = 20.dp, vertical = 8.dp),
     ) {
       Column(

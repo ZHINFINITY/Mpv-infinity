@@ -7,6 +7,7 @@
 
 package app.infinity.mpvz.ui.browser.dialogs
 
+import app.infinity.mpvz.ui.components.GlassOptionSheet
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
@@ -104,15 +105,14 @@ fun SortDialog(
 
   val (ascLabel, descLabel) = getLabelForType(sortType, sortOrderAsc)
 
-  AlertDialog(
+  // Opens from the bottom like the Jellyfin server-add sheet; the options scroll inside the
+  // sheet's bounded content area so every row stays reachable above the navigation bar.
+  GlassOptionSheet(
     onDismissRequest = onDismiss,
-    title = {
-      Text(
-        text = title,
-        style = MaterialTheme.typography.titleLarge,
-      )
-    },
-    text = {
+    title = { Text(text = title) },
+    modifier = modifier.settingsGlassSurface(cornerRadius = 28.dp, independent = true),
+    containerColor = settingsGlassContainerColor(MaterialTheme.colorScheme.surfaceContainerHigh),
+    content = {
       Column(
         modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp),
@@ -336,20 +336,6 @@ fun SortDialog(
         )
       }
     },
-    containerColor = settingsGlassContainerColor(MaterialTheme.colorScheme.surfaceContainerHigh),
-    tonalElevation = 6.dp,
-    shape = MaterialTheme.shapes.extraLarge,
-    modifier =
-      modifier
-        .widthIn(max = 500.dp)
-        .fillMaxWidth(0.88f)
-        .settingsGlassSurface(cornerRadius = 28.dp, independent = true),
-    properties =
-      DialogProperties(
-        usePlatformDefaultWidth = false,
-        dismissOnBackPress = true,
-        dismissOnClickOutside = true,
-      ),
   )
 }
 

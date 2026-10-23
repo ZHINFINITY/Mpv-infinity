@@ -7,6 +7,7 @@
 
 package app.infinity.mpvz.ui.preferences
 
+import app.infinity.mpvz.ui.components.GlassOptionSheet
 import app.infinity.mpvz.ui.preferences.components.settingsGlassContainerColor
 
 import app.infinity.mpvz.ui.preferences.components.settingsGlassSurface
@@ -659,12 +660,12 @@ object AudioPreferencesScreen : Screen {
         (musicTabOrder.mapNotNull { tabMap[it] } + (MusicTab.entries - musicTabOrder.mapNotNull { tabMap[it] }.toSet())).distinct()
       }
 
-      AlertDialog(
+      GlassOptionSheet(
       containerColor = settingsGlassContainerColor(androidx.compose.material3.AlertDialogDefaults.containerColor),
       modifier = androidx.compose.ui.Modifier.settingsGlassSurface(cornerRadius = 28.dp, independent = true),
         onDismissRequest = { showMusicTabsDialog = false },
         title = { Text(stringResource(R.string.pref_music_tabs_title)) },
-        text = {
+        content = {
           Column {
             Text(
               text = "Toggle tabs or use arrows to rearrange order:",
@@ -756,8 +757,7 @@ object AudioPreferencesScreen : Screen {
           TextButton(onClick = { showMusicTabsDialog = false }) {
             Text(stringResource(R.string.generic_ok))
           }
-        },
-      )
+        },)
     }
   }
 }

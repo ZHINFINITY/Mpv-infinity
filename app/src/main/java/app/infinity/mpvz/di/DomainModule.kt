@@ -85,6 +85,7 @@ val domainModule =
         get<AiClient>(named("openrouter")),
         get<AiClient>(named("together")),
         get<Json>(),
+        get<app.infinity.mpvz.repository.ai.EmbeddedSubtitleTranslator>(),
       )
     }
     single {

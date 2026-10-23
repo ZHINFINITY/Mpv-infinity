@@ -206,6 +206,62 @@ fun BrowserGlassSceneHost(
 }
 
 /**
+ * Popup-only producer for routes outside [BrowserGlassRouteContentHost] (Settings and the other
+ * pushed screens). Panes drawn in dialog/menu windows above such a route sample its live content,
+ * frosted by the global Liquid Glass settings, exactly like the browser's Sort & View popup,
+ * instead of the flat root background. Recording runs only while a popup consumer is attached.
+ */
+@Composable
+fun BrowserGlassPopupSceneHost(
+  enabled: Boolean,
+  content: @Composable () -> Unit,
+) {
+  val hostView = LocalView.current
+  val rootCapabilities = LocalBrowserCapabilities.current
+  val popupLayer = rememberGraphicsLayer()
+  val popupScene = remember(popupLayer) { BrowserScene(popupLayer, contentLens = true) }
+  popupScene.ownerView = hostView
+  val canCapture = enabled && rootCapabilities.capture
+  DisposableEffect(popupScene) { onDispose { popupScene.invalidate() } }
+  CompositionLocalProvider(LocalBrowserPopupScene provides popupScene) {
+    Box(
+      Modifier
+        .fillMaxSize()
+        .onGloballyPositioned { coordinates ->
+          if (coordinates.isAttached && coordinates.size.width > 0 && coordinates.size.height > 0) {
+            val origin = coordinates.localToWindow(Offset.Zero) + windowScreenOffset(hostView)
+            popupScene.stripBounds = Rect(origin.x, origin.y,
+              origin.x + coordinates.size.width, origin.y + coordinates.size.height)
+          } else {
+            popupScene.invalidate()
+          }
+        }
+        .drawWithContent {
+          // Read in draw scope: attaching the first popup re-runs this draw to start recording.
+          val popupsOpen = popupScene.popupConsumers > 0
+          if (canCapture && popupsOpen && !popupScene.isRecording &&
+            GlassScenePolicy.validCaptureSize(size.width, size.height)
+          ) {
+            popupScene.isRecording = true
+            try {
+              popupLayer.record(size = IntSize(size.width.toInt(), size.height.toInt())) {
+                this@drawWithContent.drawContent()
+              }
+              popupScene.hasValidDisplayList = true
+              if (!popupScene.popupReady) popupScene.popupReady = true
+            } finally {
+              popupScene.isRecording = false
+            }
+          } else if (!popupsOpen || !canCapture) {
+            popupScene.invalidate()
+          }
+          drawContent()
+        },
+    ) { content() }
+  }
+}
+
+/**
  * Captures only the ordinary route display list for the floating navigation lens.
  * The route producer is a sibling of the navigation consumer: it never records the
  * consumer itself, and route glass continues to sample the independent root backdrop.
