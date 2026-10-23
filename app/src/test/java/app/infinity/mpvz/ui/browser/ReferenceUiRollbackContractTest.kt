@@ -250,6 +250,15 @@ import android.graphics.Shader
             }.isSuccess
 """,
       "internal const val GLASS_OPTICS" to "private const val GLASS_OPTICS",
+      // After latency reverse, the isolated remember site still lacks origin/main's SDK 33 guard.
+      """  val shader = remember {
+    runCatching { RuntimeShader(GLASS_OPTICS) }.getOrNull()
+  }
+""" to
+        """  val shader = remember {
+    if (Build.VERSION.SDK_INT >= 33) runCatching { RuntimeShader(GLASS_OPTICS) }.getOrNull() else null
+  }
+""",
     )
     isolation.forEach { (now, before) ->
       assertEquals(now, 1, film.split(now).size - 1)

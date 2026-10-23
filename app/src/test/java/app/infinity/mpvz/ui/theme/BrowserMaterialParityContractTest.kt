@@ -54,7 +54,7 @@ class BrowserMaterialParityContractTest {
     assertTrue(pane.contains("edgeBar -> MaterialTheme.colorScheme.background"))
     assertTrue("edge bars skip the white body sheen", pane.contains("if (!edgeBar) {\n            drawRoundRect(Brush.verticalGradient("))
     // No lens on edge bars (its edge term draws a bright line) and an opaque-enough no-scene film.
-    assertTrue(pane.contains("if (enabled && !edgeBar && capabilities.refraction"))
+    assertTrue(pane.contains("val refraction = enabled && !edgeBar && capabilities.refraction && RuntimeShaderSupport.available()"))
     assertTrue(pane.contains("edgeBar -> GlassSurfacePolicy.EdgeChromeNoSceneFilmAlpha"))
     // Settings and other screens without a browser scene take the same glow-free edge path.
     val fallback = source("LiquidGlassBackdrop").substringAfter("fun Modifier.liquidGlassPane(").substringBefore("val tint = MaterialTheme.colorScheme.surfaceContainerHigh")
