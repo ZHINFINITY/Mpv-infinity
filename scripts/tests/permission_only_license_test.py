@@ -70,12 +70,14 @@ def main() -> None:
     for required in (
         BASELINE, "no new playback feature", "transitive", "AGPL", "mpvRx",
         "legal review", "LicenseRef-MpvInfinity-Permission-Only-1.0",
-        "not an authorship cutoff", "source SHA remain **unassigned**",
+        "not an authorship cutoff", "**v2.2.0** (app version `2.2.0`)",
+        "1fba5a8ec061423feb5ecca9b59fd9d20e814bc5",
         "effective source boundary is the merge commit",
         "unchanged user-owned frame-interpolation code", "authority",
         "not limited to people who already forked",
     ):
         assert required in boundary, required
+    assert "remain **unassigned**" not in boundary, "stale unassigned release record"
     readme = text("README.md")
     for required in (
         "retains its existing grants",
