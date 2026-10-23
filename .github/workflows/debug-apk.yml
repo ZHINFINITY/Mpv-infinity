@@ -134,6 +134,9 @@ jobs:
         with:
           fetch-depth: 0
       - name: Verify combined radio and UI phone-test candidate
+        # Provenance gate for phone-test candidates on this branch only: the pinned SHAs
+        # are not ancestors of main (after a squash) or of other branches.
+        if: github.ref_name == 'test/radio-ui-performance-20261021'
         run: |
           set -euo pipefail
           for required in \
