@@ -6,6 +6,7 @@ on:
       - music-jellyfin-debug
       - manus/source-base-media3-port
       - manus/native-auto-engine-fix
+      - fix/music-player-lag
   workflow_dispatch:
 
 permissions:
