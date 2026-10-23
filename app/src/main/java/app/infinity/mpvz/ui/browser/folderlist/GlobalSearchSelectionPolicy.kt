@@ -11,7 +11,11 @@ package app.infinity.mpvz.ui.browser.folderlist
  * visible results, so actions never run on items the user can no longer see.
  */
 internal object GlobalSearchSelectionPolicy {
-  fun shouldClear(isSearching: Boolean, selectedIds: Collection<Long>, resultIds: Collection<Long>): Boolean {
+  fun shouldClear(
+    isSearching: Boolean,
+    selectedIds: Collection<Long>,
+    resultIds: Collection<Long>,
+  ): Boolean {
     if (!isSearching) return true
     if (selectedIds.isEmpty()) return false
     val visible = resultIds.toHashSet()

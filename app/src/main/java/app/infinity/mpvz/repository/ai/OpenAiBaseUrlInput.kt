@@ -37,7 +37,12 @@ internal object OpenAiBaseUrlInput {
 
   /** Literal-only check (no DNS): loopback, RFC 1918, link-local, IPv6 ULA, `localhost`, `.local`. */
   internal fun isLocalHost(rawHost: String): Boolean {
-    val host = rawHost.trim().removePrefix("[").removeSuffix("]").lowercase()
+    val host =
+      rawHost
+        .trim()
+        .removePrefix("[")
+        .removeSuffix("]")
+        .lowercase()
     if (host.isEmpty()) return false
     if (host == "localhost" || host.endsWith(".localhost") || host.endsWith(".local")) return true
     if (host.contains(':')) {
@@ -45,10 +50,11 @@ internal object OpenAiBaseUrlInput {
     }
     val parts = host.split('.')
     if (parts.size != 4) return false
-    val octets = parts.map { part ->
-      if (part.isEmpty() || part.length > 3 || !part.all(Char::isDigit)) return false
-      part.toInt().also { if (it > 255) return false }
-    }
+    val octets =
+      parts.map { part ->
+        if (part.isEmpty() || part.length > 3 || !part.all(Char::isDigit)) return false
+        part.toInt().also { if (it > 255) return false }
+      }
     val (a, b) = octets
     return a == 127 ||
       a == 10 ||

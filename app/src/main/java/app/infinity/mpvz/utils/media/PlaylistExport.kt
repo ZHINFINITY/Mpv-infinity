@@ -25,19 +25,21 @@ object PlaylistExport {
           licenseType = item.licenseType,
           licenseKey = item.licenseKey,
           // Playback falls back to the playlist-level header, so the export must too.
-          userAgent = item.userAgent?.takeIf { it.isNotBlank() }
-            ?: playlistUserAgent?.takeIf { it.isNotBlank() },
+          userAgent =
+            item.userAgent?.takeIf { it.isNotBlank() }
+              ?: playlistUserAgent?.takeIf { it.isNotBlank() },
         )
       },
       playlistName = playlistName,
     )
 
   fun fileName(playlistName: String): String {
-    val safeName = playlistName
-      .trim()
-      .replace(Regex("[\\\\/:*?\"<>|\\r\\n]+"), "_")
-      .trim('.', ' ')
-      .ifBlank { "playlist" }
+    val safeName =
+      playlistName
+        .trim()
+        .replace(Regex("[\\\\/:*?\"<>|\\r\\n]+"), "_")
+        .trim('.', ' ')
+        .ifBlank { "playlist" }
     return if (safeName.lowercase().endsWith(".m3u")) safeName else "$safeName.m3u"
   }
 }

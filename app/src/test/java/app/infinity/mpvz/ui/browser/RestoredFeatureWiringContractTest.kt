@@ -5,11 +5,11 @@
  */
 package app.infinity.mpvz.ui.browser
 
-import java.io.File
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.io.File
 
 /** Pins the UI wiring of the features restored for 2.2.0 so a later revert fails loudly. */
 class RestoredFeatureWiringContractTest {
@@ -31,7 +31,9 @@ class RestoredFeatureWiringContractTest {
     assertTrue(s.contains("selectedIds = searchSelectionManager.state.selectedIds,"))
     assertFalse(s.contains("selectedIds = searchSelectionManager.getSelectedItems()"))
     // Copy/move started from search must not leave the search selection behind.
-    assertTrue(s.contains("selectionManager.clear()\n          searchSelectionManager.clear()\n          viewModel.refresh()"))
+    assertTrue(
+      s.contains("selectionManager.clear()\n          searchSelectionManager.clear()\n          viewModel.refresh()"),
+    )
     assertTrue(s.contains("showAddToPlaylist = effectiveIsSearching"))
     assertTrue(s.contains("pendingDeleteSearchVideos = searchSelectionManager.getSelectedItems()"))
     assertTrue(s.contains("searchSelectionManager.renameSelected(name)"))
@@ -55,8 +57,10 @@ class RestoredFeatureWiringContractTest {
     assertTrue(s.contains("exportFile.delete()"))
     assertTrue(s.contains("File(shareRoot, java.util.UUID.randomUUID().toString())"))
     assertFalse(s.contains("File(context.cacheDir, fileName)"))
-    assertTrue(source("ui/browser/playlist/PlaylistDetailViewModel.kt")
-      .contains("PlaylistExport.assemble(currentPlaylist.name, items, currentPlaylist.userAgent)"))
+    assertTrue(
+      source("ui/browser/playlist/PlaylistDetailViewModel.kt")
+        .contains("PlaylistExport.assemble(currentPlaylist.name, items, currentPlaylist.userAgent)"),
+    )
   }
 
   @Test
