@@ -90,4 +90,10 @@ class PlayerLifecyclePolicyTest {
       ),
     )
   }
+
+  @Test
+  fun longBackgroundRebuildWaitsForALiveSurface() {
+    assertTrue(PlayerLifecyclePolicy.shouldWaitForSurfaceBeforeRebuild(surfaceReady = false))
+    assertFalse(PlayerLifecyclePolicy.shouldWaitForSurfaceBeforeRebuild(surfaceReady = true))
+  }
 }

@@ -34,6 +34,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.StrokeCap
@@ -44,9 +45,12 @@ import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import app.infinity.mpvz.preferences.AppearancePreferences
+import app.infinity.mpvz.preferences.preference.collectAsState
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import org.koin.compose.koinInject
 
 /**
  * A reusable Box that wraps content with pull-to-refresh functionality.
@@ -81,29 +85,10 @@ fun PullRefreshBox(
   val maxTranslationPx = with(density) { refreshThreshold.toPx() }
 
   val activeJob = remember { mutableStateOf<Job?>(null) }
-  val infiniteTransition = rememberInfiniteTransition(label = "refreshRotation")
-  val infinityDashOffset by
-    infiniteTransition.animateFloat(
-      initialValue = 0f,
-      targetValue = 256.589f,
-      animationSpec =
-        infiniteRepeatable(
-          animation = tween(durationMillis = 2_000, easing = LinearEasing),
-        ),
-      label = "infinityDashOffset",
-    )
-  val infinityPath = remember {
-    Path().apply {
-      moveTo(24.3f, 30f)
-      cubicTo(11.4f, 30f, 5f, 43.3f, 5f, 50f)
-      cubicTo(5f, 56.7f, 11.4f, 70f, 24.3f, 70f)
-      cubicTo(43.6f, 70f, 56.4f, 30f, 75.7f, 30f)
-      cubicTo(88.6f, 30f, 95f, 43.3f, 95f, 50f)
-      cubicTo(95f, 56.7f, 88.6f, 70f, 75.7f, 70f)
-      cubicTo(56.4f, 70f, 43.6f, 30f, 24.3f, 30f)
-      close()
-    }
-  }
+  val appearance = koinInject<AppearancePreferences>()
+  val animateLogo by appearance.animateInfinityLogo.collectAsState()
+  val infinityDashOffset = infinityDashOffset(animateLogo)
+  val infinityPath = remember { infinityGlyphPath() }
 
   val targetTranslationY =
     if (isRefreshing.value) {
@@ -180,31 +165,7 @@ fun PullRefreshBox(
       contentAlignment = Alignment.Center,
     ) {
       Canvas(modifier = Modifier.fillMaxSize()) {
-        val pathScale = minOf(size.width, size.height) / 100f * 0.8f
-        withTransform({
-          translate(size.width / 2f, size.height / 2f)
-          scale(pathScale, pathScale, pivot = Offset.Zero)
-          translate(-50f, -50f)
-        }) {
-          drawPath(
-            path = infinityPath,
-            // Match the readable text color for the current background. This
-            // keeps the loop white on black monochrome/AMOLED themes and
-            // automatically adapts to light, dark, and custom color schemes.
-            color = indicatorColor,
-            style =
-              Stroke(
-                width = 10f,
-                cap = StrokeCap.Round,
-                join = StrokeJoin.Round,
-                pathEffect =
-                  PathEffect.dashPathEffect(
-                    intervals = floatArrayOf(205.271f, 51.318f),
-                    phase = infinityDashOffset,
-                  ),
-              ),
-          )
-        }
+        drawInfinityGlyph(infinityPath, indicatorColor, infinityDashOffset)
       }
     }
   }
@@ -212,43 +173,62 @@ fun PullRefreshBox(
 
 @Composable
 fun InfinityLoadingIndicator(modifier: Modifier = Modifier, size: Dp = 56.dp) {
+  val appearance = koinInject<AppearancePreferences>()
+  val animateLogo by appearance.animateInfinityLogo.collectAsState()
+  val dashOffset = infinityDashOffset(animateLogo)
+  val path = remember { infinityGlyphPath() }
+  val indicatorColor = MaterialTheme.colorScheme.onBackground
+  Canvas(modifier.size(size)) {
+    drawInfinityGlyph(path, indicatorColor, dashOffset)
+  }
+}
+
+@Composable
+private fun infinityDashOffset(animate: Boolean): Float {
+  if (!animate) return 0f
   val transition = rememberInfiniteTransition(label = "catalogInfinityLoading")
-  val dashOffset by transition.animateFloat(
+  val offset by transition.animateFloat(
     initialValue = 0f,
     targetValue = 256.589f,
     animationSpec = infiniteRepeatable(tween(durationMillis = 2_000, easing = LinearEasing)),
     label = "catalogInfinityDashOffset",
   )
-  val path = remember {
-    Path().apply {
-      moveTo(24.3f, 30f)
-      cubicTo(11.4f, 30f, 5f, 43.3f, 5f, 50f)
-      cubicTo(5f, 56.7f, 11.4f, 70f, 24.3f, 70f)
-      cubicTo(43.6f, 70f, 56.4f, 30f, 75.7f, 30f)
-      cubicTo(88.6f, 30f, 95f, 43.3f, 95f, 50f)
-      cubicTo(95f, 56.7f, 88.6f, 70f, 75.7f, 70f)
-      cubicTo(56.4f, 70f, 43.6f, 30f, 24.3f, 30f)
-      close()
-    }
+  return offset
+}
+
+private fun infinityGlyphPath(): Path =
+  Path().apply {
+    moveTo(24.3f, 30f)
+    cubicTo(11.4f, 30f, 5f, 43.3f, 5f, 50f)
+    cubicTo(5f, 56.7f, 11.4f, 70f, 24.3f, 70f)
+    cubicTo(43.6f, 70f, 56.4f, 30f, 75.7f, 30f)
+    cubicTo(88.6f, 30f, 95f, 43.3f, 95f, 50f)
+    cubicTo(95f, 56.7f, 88.6f, 70f, 75.7f, 70f)
+    cubicTo(56.4f, 70f, 43.6f, 30f, 24.3f, 30f)
+    close()
   }
-  val indicatorColor = MaterialTheme.colorScheme.onBackground
-  Canvas(modifier.size(size)) {
-    val scale = minOf(this.size.width, this.size.height) / 100f * 0.8f
-    withTransform({
-      translate(this.size.width / 2f, this.size.height / 2f)
-      scale(scale, scale, pivot = Offset.Zero)
-      translate(-50f, -50f)
-    }) {
-      drawPath(
-        path = path,
-        color = indicatorColor,
-        style = Stroke(
+
+private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawInfinityGlyph(
+  path: Path,
+  color: Color,
+  dashOffset: Float,
+) {
+  val scale = minOf(size.width, size.height) / 100f * 0.8f
+  withTransform({
+    translate(size.width / 2f, size.height / 2f)
+    scale(scale, scale, pivot = Offset.Zero)
+    translate(-50f, -50f)
+  }) {
+    drawPath(
+      path = path,
+      color = color,
+      style =
+        Stroke(
           width = 10f,
           cap = StrokeCap.Round,
           join = StrokeJoin.Round,
           pathEffect = PathEffect.dashPathEffect(floatArrayOf(205.271f, 51.318f), dashOffset),
         ),
-      )
-    }
+    )
   }
 }

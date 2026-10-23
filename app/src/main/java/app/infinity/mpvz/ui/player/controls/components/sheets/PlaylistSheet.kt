@@ -79,7 +79,6 @@ import app.infinity.mpvz.presentation.components.RemoteImage
 import app.infinity.mpvz.ui.browser.dialogs.AddToPlaylistDialog
 import app.infinity.mpvz.ui.player.PlaybackSession
 import app.infinity.mpvz.ui.player.controls.components.MiniAudioVisualizer
-import app.infinity.mpvz.ui.player.controls.components.playerGlassPane
 import app.infinity.mpvz.ui.icons.Icon
 import app.infinity.mpvz.ui.icons.Icons
 import app.infinity.mpvz.ui.theme.spacing
@@ -558,11 +557,11 @@ private fun Modifier.playlistItemGlass(
 ): Modifier {
   val appearance = koinInject<AppearancePreferences>()
   val enabled by appearance.liquidGlassSurfaces.collectAsState()
-  return playerGlassPane(
-    enabled = enabled,
-    opacity = 0.38f,
-    highlight = 0.14f,
-    cornerRadius = cornerRadius,
+  // One shader per row compiled the playlist open on every track. A tinted
+  // fill keeps the glass look without a first-frame stall.
+  return if (!enabled) this else background(
+    color = MaterialTheme.colorScheme.surface.copy(alpha = 0.22f),
+    shape = RoundedCornerShape(cornerRadius),
   )
 }
 

@@ -98,6 +98,8 @@ import app.infinity.mpvz.ui.player.visualizer.WaveVisualizerOverlay
 import app.infinity.mpvz.ui.theme.AppMotion
 import app.infinity.mpvz.ui.theme.spacing
 import app.infinity.mpvz.ui.theme.LocalGlassCustomization
+import app.infinity.mpvz.ui.theme.PlayerAmbientTint
+import app.infinity.mpvz.ui.theme.PlayerAmbientTintPolicy
 import dev.vivvvek.seeker.Seeker
 import dev.vivvvek.seeker.SeekerDefaults
 import dev.vivvvek.seeker.Segment
@@ -111,6 +113,18 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlin.math.min
 import org.koin.compose.koinInject
+
+/** Played/unplayed track colour: ambience when the player glow is live, otherwise theme primary. */
+@Composable
+private fun seekbarAccentColor(): Color {
+  val themed = MaterialTheme.colorScheme.primary
+  return PlayerAmbientTintPolicy.filmColor(
+    themed = themed,
+    ambient = PlayerAmbientTint.color,
+    isPlayerHost = true,
+    lightText = true,
+  )
+}
 
 /** Precomputed, allocation-free drawing data for a single skip segment overlay. */
 private data class SkipSegmentOverlay(
@@ -884,7 +898,7 @@ private fun NormalSeekbar(
   bufferDuration: Float? = null,
   modifier: Modifier = Modifier,
 ) {
-  val primaryColor = MaterialTheme.colorScheme.primary
+  val primaryColor = seekbarAccentColor()
   val trackHeight by animateDpAsState(
     targetValue = if (isScrubbing) 6.dp else 4.dp,
     animationSpec = spring(dampingRatio = AppMotion.Spatial.Expressive.dampingRatio, stiffness = AppMotion.Spatial.Expressive.stiffness),
@@ -1032,7 +1046,7 @@ private fun SquigglySeekbar(
   bufferDuration: Float? = null,
   modifier: Modifier = Modifier,
 ) {
-  val primaryColor = MaterialTheme.colorScheme.primary
+  val primaryColor = seekbarAccentColor()
   val surfaceVariant = MaterialTheme.colorScheme.surfaceVariant
 
   val isInteracting = isScrubbing
@@ -1433,7 +1447,7 @@ private fun SlimSeekbar(
   bufferDuration: Float? = null,
   modifier: Modifier = Modifier,
 ) {
-  val primaryColor = MaterialTheme.colorScheme.primary
+  val primaryColor = seekbarAccentColor()
 
   // Height breathes like other seekbars:
   //   paused  → 7dp  (relaxed/thin)
@@ -1539,7 +1553,7 @@ fun SeekbarStylePreview(
   useWavySeekbar: Boolean = true,
   modifier: Modifier = Modifier,
 ) {
-  val primaryColor = MaterialTheme.colorScheme.primary
+  val primaryColor = seekbarAccentColor()
   val previewProgress = progress
 
   val slimPath = remember { Path() }
@@ -1795,7 +1809,7 @@ fun StandardSeekbar(
   bufferDuration: Float? = null,
   modifier: Modifier = Modifier,
 ) {
-  val primaryColor = MaterialTheme.colorScheme.primary
+  val primaryColor = seekbarAccentColor()
   val isPressed by interactionSource.collectIsPressedAsState()
   val isDragged by interactionSource.collectIsDraggedAsState()
   val isThumbInteracting = isPressed || isDragged || isScrubbing

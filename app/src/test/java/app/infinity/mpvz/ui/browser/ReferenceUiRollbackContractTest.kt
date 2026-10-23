@@ -153,9 +153,9 @@ private suspend fun frostGlassFrame(bitmap: Bitmap, strength: Float): Bitmap? = 
   }
   // Warm the shared optics program before the first sheet opens (idle, after first frame).
   LaunchedEffect(enabled) {
-    if (enabled && Build.VERSION.SDK_INT >= 33) {
+    if (enabled && RuntimeShaderSupport.available()) {
       delay(GlassSamplingPolicy.ShaderWarmupDelayMs)
-      GlassShaderCache.shared(GLASS_OPTICS) { RuntimeShader(GLASS_OPTICS) }
+      RuntimeShaderSupport.glassOpticsOrNull()
     }
   }
 """ to
@@ -170,7 +170,7 @@ private suspend fun frostGlassFrame(bitmap: Bitmap, strength: Float): Bitmap? = 
         """""",
       """GlassSamplingPolicy.interval(playing(), failures, thermalNow, largeSurface),""" to
         """GlassSamplingPolicy.interval(playing(), failures, thermalNow),""",
-      """GlassShaderCache.shared(GLASS_OPTICS) { RuntimeShader(GLASS_OPTICS) }""" to
+      """RuntimeShaderSupport.glassOpticsOrNull()""" to
         """runCatching { RuntimeShader(GLASS_OPTICS) }.getOrNull()""",
     )
     var film = current

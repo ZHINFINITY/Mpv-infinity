@@ -1306,9 +1306,8 @@ fun AudioPlayerControls(
         playerActivity?.onAudioMinimizePresentationComplete()
         currentOnBackPress()
       } else {
-        // Settled fully open: hide the pages below again.
-        playerActivity?.setAudioTransitionTranslucent(false)
-        transitionTranslucent = false
+        // Stay see-through. Converting the window opaque mid-session paints a
+        // black slab over the library and a later drag cannot follow the finger.
       }
       settleTarget = null
       settleProgrammatic = false
@@ -1323,8 +1322,7 @@ fun AudioPlayerControls(
     val anchor = MusicMinimizeTransitionPolicy.currentAnchor(
       hostPlayerView.width.toFloat(), hostPlayerView.width.toFloat(), hostPlayerView.height.toFloat())
     if (anchor == null) {
-      playerActivity?.setAudioTransitionTranslucent(false)
-      transitionTranslucent = false
+      // Missing mini geometry still uses the slide fallback on a see-through window.
       return@LaunchedEffect
     }
     transitionTranslucent = true

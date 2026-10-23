@@ -19,6 +19,7 @@ import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
@@ -70,7 +71,6 @@ import app.infinity.mpvz.ui.player.controls.components.LocalHidePlayerButtonsBac
 import app.infinity.mpvz.ui.player.controls.components.LocalPlayerGlassSurfaceOwner
 import app.infinity.mpvz.ui.player.controls.components.panels.DraggablePanel
 import app.infinity.mpvz.ui.theme.controlColor
-import app.infinity.mpvz.ui.theme.liquidGlassPane
 import app.infinity.mpvz.ui.theme.spacing
 import app.infinity.mpvz.preferences.preference.collectAsState
 import org.koin.compose.koinInject
@@ -389,11 +389,21 @@ private fun PlayerControlTile(
   Surface(
     modifier = modifier
       .height(104.dp)
-      .liquidGlassPane(
-        enabled = liquidGlassSurfaces || playerControlsTheme.name != "Classic",
-        opacity = if (liquidGlassSurfaces) 0.84f else 0.78f,
-        highlight = if (active) 0.24f else 0.16f,
-        cornerRadius = 18.dp,
+      .then(
+        if (liquidGlassSurfaces || playerControlsTheme.name != "Classic") {
+          Modifier.background(
+            color = if (active) {
+              MaterialTheme.colorScheme.primary.copy(alpha = 0.18f)
+            } else if (MaterialTheme.colorScheme.surface.luminance() < 0.5f) {
+              Color.Black.copy(alpha = 0.22f)
+            } else {
+              Color.White.copy(alpha = 0.24f)
+            },
+            shape = RoundedCornerShape(18.dp),
+          )
+        } else {
+          Modifier
+        },
       ),
     shape = RoundedCornerShape(18.dp),
     color = if (liquidGlassSurfaces) {

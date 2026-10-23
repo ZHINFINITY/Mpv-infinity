@@ -331,29 +331,33 @@ internal fun CustomThemeEditor(
           .padding(bottom = ThemeEditorLayoutPolicy.bottomSpacingDp(navigationBarDp, imeVisible).dp),
       ) {
         val buttonModifier = Modifier
-          .heightIn(min = 52.dp)
-          .fillMaxWidth()
-        if (ThemeEditorLayoutPolicy.stackActions(maxWidth.value)) {
-          Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            OutlinedButton(onClick = { resetVisualSettings() }, modifier = buttonModifier) {
-              Icon(Icons.RoundedFilled.Refresh, contentDescription = null)
-              Text(stringResource(R.string.generic_reset))
-            }
-            OutlinedButton(onClick = onDismiss, modifier = buttonModifier) { Text(stringResource(R.string.generic_cancel)) }
-            Button(enabled = name.isNotBlank(), onClick = { onSave(edited.copy(name = name.trim())) }, modifier = buttonModifier) {
-              Text(stringResource(R.string.generic_save))
-            }
+          .heightIn(min = 40.dp)
+          .weight(1f)
+        // Compact in-row actions on every width. The stacked full-width trio was
+        // taking a third of the editor on phones.
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+          OutlinedButton(
+            onClick = { resetVisualSettings() },
+            modifier = buttonModifier,
+            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 8.dp),
+          ) {
+            Icon(Icons.RoundedFilled.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
+            Text(stringResource(R.string.generic_reset), maxLines = 1)
           }
-        } else {
-          Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            OutlinedButton(onClick = { resetVisualSettings() }, modifier = Modifier.weight(1f).heightIn(min = 52.dp)) {
-              Icon(Icons.RoundedFilled.Refresh, contentDescription = null)
-              Text(stringResource(R.string.generic_reset))
-            }
-            OutlinedButton(onClick = onDismiss, modifier = Modifier.weight(1f).heightIn(min = 52.dp)) { Text(stringResource(R.string.generic_cancel)) }
-            Button(enabled = name.isNotBlank(), onClick = { onSave(edited.copy(name = name.trim())) }, modifier = Modifier.weight(1f).heightIn(min = 52.dp)) {
-              Text(stringResource(R.string.generic_save))
-            }
+          OutlinedButton(
+            onClick = onDismiss,
+            modifier = buttonModifier,
+            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 8.dp),
+          ) {
+            Text(stringResource(R.string.generic_cancel), maxLines = 1)
+          }
+          Button(
+            enabled = name.isNotBlank(),
+            onClick = { onSave(edited.copy(name = name.trim())) },
+            modifier = buttonModifier,
+            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 8.dp),
+          ) {
+            Text(stringResource(R.string.generic_save), maxLines = 1)
           }
         }
       }

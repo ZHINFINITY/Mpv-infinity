@@ -61,4 +61,12 @@ class PlayerAmbientTintTest {
     // Read inside the onDrawBehind material pass, not during composition.
     assertTrue(pane.lastIndexOf("onDrawBehind", draw) > pane.lastIndexOf("fun Modifier.liquidGlassPane", draw))
   }
+
+  @Test fun seekbarAccentFollowsPlayerAmbience() {
+    val seekbar = read("app/src/main/java/app/infinity/mpvz/ui/player/controls/components/Seekbar.kt")
+    assertTrue(seekbar.contains("private fun seekbarAccentColor(): Color"))
+    assertTrue(seekbar.contains("PlayerAmbientTintPolicy.filmColor("))
+    assertTrue(seekbar.contains("ambient = PlayerAmbientTint.color"))
+    assertFalse(seekbar.contains("val primaryColor = MaterialTheme.colorScheme.primary"))
+  }
 }

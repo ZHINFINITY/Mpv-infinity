@@ -1363,8 +1363,18 @@ class PlayerActivity :
   private var playerInitializationComplete = false
 
   override fun onCreate(savedInstanceState: Bundle?) {
+    // windowIsTranslucent must be set before the window is created. Converting an
+    // already-opaque player window mid-drag cancels the finger and paints black
+    // over the library.
+    if (shouldUseAudioPlayerTheme(intent)) {
+      setTheme(R.style.Theme_mpvinfinity_Player_Audio)
+    }
     enableEdgeToEdge()
     super.onCreate(savedInstanceState)
+    if (shouldUseAudioPlayerTheme(intent)) {
+      window.setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
+      audioWindowTranslucent = true
+    }
     requestAudioOpenFromMini(intent)
     Log.i(
       "Mpv∞-BuildIdentity",
@@ -3235,6 +3245,7 @@ class PlayerActivity :
   val audioOpenFromMiniRequest = androidx.compose.runtime.mutableIntStateOf(0)
   private var audioWindowBackground: android.graphics.drawable.Drawable? = null
   private var audioWindowTranslucent = false
+  private var pendingRendererRebuildAfterBackground = false
 
   private fun requestAudioOpenFromMini(launchIntent: Intent?) {
     if (launchIntent?.getBooleanExtra("open_from_mini_player", false) != true) return
@@ -3260,12 +3271,14 @@ class PlayerActivity :
         if (audioWindowBackground == null) audioWindowBackground = window.decorView.background
         window.setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
       }
-      val success = setTranslucent(enabled)
-      if (!enabled || !success) {
-        audioWindowBackground?.let { window.setBackgroundDrawable(it) }
-      }
-      audioWindowTranslucent = enabled && success
-      success
+      // Never call Activity.setTranslucent() here: converting an already-created
+      // window relayouts, cancels the minimize drag, and flashes black. The audio
+      // theme is translucent from onCreate, so swapping the drawable is enough.
+      // Keep the window see-through even after settle so a later drag still
+      // shows the library instead of an opaque black slab.
+      window.setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
+      audioWindowTranslucent = true
+      true
     }.onFailure { Log.d(TAG, "Audio translucency transition unavailable", it) }.getOrDefault(false)
   }
 
@@ -4059,7 +4072,10 @@ class PlayerActivity :
     }
 
     player.onSurfaceReady = {
-      if (!isDeviceScreenOffOrLocked() && (isInBackgroundPlayback || lastVid > 0)) {
+      if (pendingRendererRebuildAfterBackground) {
+        pendingRendererRebuildAfterBackground = false
+        rebuildRendererAfterLongBackground()
+      } else if (!isDeviceScreenOffOrLocked() && (isInBackgroundPlayback || lastVid > 0)) {
         enableVideoAfterBackground()
       }
       viewModel.restartAmbientIfActive()
@@ -4910,7 +4926,14 @@ class PlayerActivity :
     val audioMedia = viewModel.isAudioOnly.value || isCurrentMediaKnownAudio() || isKnownAudioLaunch(intent)
     if (PlayerLifecyclePolicy.shouldRebuildRendererAfterBackground(stoppedForMs, audioMedia)) {
       Log.w(TAG, "Rebuilding video renderer after ${stoppedForMs}ms in the background")
-      rebuildRendererAfterLongBackground()
+      pendingRendererRebuildAfterBackground = true
+      val surfaceReady = isNativeEngineActive() || player.isSurfaceReady
+      if (!PlayerLifecyclePolicy.shouldWaitForSurfaceBeforeRebuild(surfaceReady)) {
+        pendingRendererRebuildAfterBackground = false
+        rebuildRendererAfterLongBackground()
+      } else {
+        Log.w(TAG, "Deferring renderer rebuild until the playback surface is ready")
+      }
       viewModel.setAmbientLifecycleActive(true)
       return true
     }
@@ -4926,7 +4949,7 @@ class PlayerActivity :
   }
 
   private fun rebuildRendererAfterLongBackground() {
-    if (fileName.isBlank()) return
+    if (fileName.isBlank() || isFinishing || isDestroyed || !ownsPlaybackSession()) return
     val paused = viewModel.paused == true || PlaybackSession.getPropertyBoolean("pause") == true
     val positionSeconds =
       if (isNativeEngineActive()) nativePlaybackPositionSeconds()
@@ -8174,6 +8197,12 @@ class PlayerActivity :
       sequenceOf(sourceIntent.dataString, sourceIntent.getStringExtra("local_media_path"))
         .filterNotNull()
         .any { source -> source.fileExtension() in FileTypeUtils.AUDIO_EXTENSIONS }
+
+  /** Audio launches use a see-through window from creation so minimize can show the library. */
+  private fun shouldUseAudioPlayerTheme(sourceIntent: Intent?): Boolean =
+    sourceIntent != null &&
+      Build.VERSION.SDK_INT >= 30 &&
+      isKnownAudioLaunch(sourceIntent)
 
   private fun applyPlaybackBrightnessPolicy(
     isAudio: Boolean = viewModel.isAudioOnly.value || isCurrentMediaKnownAudio(),
