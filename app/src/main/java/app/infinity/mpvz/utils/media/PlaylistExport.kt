@@ -12,6 +12,7 @@ object PlaylistExport {
   fun assemble(
     playlistName: String,
     items: Iterable<PlaylistItemEntity>,
+    playlistUserAgent: String? = null,
   ): String =
     M3UExporter.export(
       items.sortedBy { it.position }.map { item ->
@@ -23,7 +24,9 @@ object PlaylistExport {
           groupTitle = item.groupTitle,
           licenseType = item.licenseType,
           licenseKey = item.licenseKey,
-          userAgent = item.userAgent,
+          // Playback falls back to the playlist-level header, so the export must too.
+          userAgent = item.userAgent?.takeIf { it.isNotBlank() }
+            ?: playlistUserAgent?.takeIf { it.isNotBlank() },
         )
       },
       playlistName = playlistName,

@@ -466,7 +466,7 @@ object FolderListScreen : Screen {
       if (
         GlobalSearchSelectionPolicy.shouldClear(
           isSearching = effectiveIsSearching,
-          selectedIds = searchSelectionManager.getSelectedItems().map { it.id },
+          selectedIds = searchSelectionManager.state.selectedIds,
           resultIds = searchVideos.map { it.id },
         )
       ) {
@@ -1252,6 +1252,7 @@ object FolderListScreen : Screen {
           progressDialogOpen.value = false
           operationType.value = null
           selectionManager.clear()
+          searchSelectionManager.clear()
           viewModel.refresh()
         },
       )

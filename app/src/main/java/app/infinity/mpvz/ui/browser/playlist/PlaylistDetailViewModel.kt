@@ -267,7 +267,7 @@ class PlaylistDetailViewModel(
     val currentPlaylist = _playlist.value ?: error("Playlist is not available")
     val items = playlistRepository.getPlaylistItems(playlistId)
     PlaylistExport.fileName(currentPlaylist.name) to
-      PlaylistExport.assemble(currentPlaylist.name, items)
+      PlaylistExport.assemble(currentPlaylist.name, items, currentPlaylist.userAgent)
   }
 
   suspend fun removeVideoFromPlaylist(video: Video) {

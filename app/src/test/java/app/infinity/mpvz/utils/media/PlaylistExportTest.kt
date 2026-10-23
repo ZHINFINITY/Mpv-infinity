@@ -7,6 +7,7 @@
 package app.infinity.mpvz.utils.media
 
 import app.infinity.mpvz.database.entities.PlaylistItemEntity
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -32,6 +33,25 @@ class PlaylistExportTest {
     assertTrue(output.contains("tvg-id=\"two\""))
     assertTrue(output.contains("#KODIPROP:inputstream.adaptive.license_type=widevine"))
     assertTrue(output.contains("#EXTVLCOPT:http-user-agent=Test Agent"))
+  }
+
+  @Test
+  fun playlistLevelUserAgentIsTheFallbackForItemsWithoutTheirOwn() {
+    val items = listOf(
+      PlaylistItemEntity(
+        playlistId = 1, filePath = "https://example.test/a", fileName = "A",
+        position = 0, addedAt = 0, userAgent = "Item Agent",
+      ),
+      PlaylistItemEntity(
+        playlistId = 1, filePath = "https://example.test/b", fileName = "B",
+        position = 1, addedAt = 0, userAgent = " ",
+      ),
+    )
+    val output = PlaylistExport.assemble("Channels", items, playlistUserAgent = "Playlist Agent")
+    assertTrue(output.contains("#EXTVLCOPT:http-user-agent=Item Agent"))
+    assertTrue(output.contains("#EXTVLCOPT:http-user-agent=Playlist Agent"))
+    assertTrue(output.indexOf("Playlist Agent") > output.indexOf("https://example.test/a"))
+    assertFalse(PlaylistExport.assemble("Channels", items.take(1) + items[1].copy(userAgent = null)).contains("Playlist Agent"))
   }
 
   @Test

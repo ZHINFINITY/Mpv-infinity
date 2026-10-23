@@ -83,6 +83,8 @@ import app.infinity.mpvz.ui.preferences.components.SwitchPreference
 import app.infinity.mpvz.ui.utils.LocalBackStack
 import app.infinity.mpvz.ui.utils.LocalShowSettingsBackArrow
 import app.infinity.mpvz.ui.utils.popSafely
+import java.util.concurrent.atomic.AtomicInteger
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
@@ -190,14 +192,22 @@ object AiIntegrationScreen : Screen {
 
     val json = koinInject<Json>()
 
-    fun loadModels() {
-      if (isLoadingModels) return
+    // Each load takes a token; only the newest load may update the list or the cache, so a
+    // request to a previous endpoint can never repopulate models after the base URL changes.
+    val modelsLoadToken = remember { AtomicInteger() }
+    var modelsJob by remember { mutableStateOf<Job?>(null) }
+
+    fun loadModels(restart: Boolean = false) {
+      if (isLoadingModels && !restart) return
+      modelsJob?.cancel()
+      val token = modelsLoadToken.incrementAndGet()
       val requestedProvider = provider
-      scope.launch {
+      modelsJob = scope.launch {
         isLoadingModels = true
         modelLoadError = null
-        aiService
-          .fetchModelsForProvider(requestedProvider)
+        val result = aiService.fetchModelsForProvider(requestedProvider)
+        if (token != modelsLoadToken.get()) return@launch
+        result
           .onSuccess { fetchedModels ->
             if (provider == requestedProvider) models = fetchedModels
             preferences.availableModelsFor(requestedProvider).set(
@@ -397,7 +407,13 @@ val apiKeyInfo =
                         onValueChange = { value ->
                           val normalized = OpenAiBaseUrlInput.normalize(value)
                           if (normalized != null) {
-                            preferences.openaiBaseUrl.set(normalized)
+                            if (normalized != openaiBaseUrl) {
+                              preferences.openaiBaseUrl.set(normalized)
+                              // Models listed by the previous endpoint do not apply to the new one.
+                              preferences.availableModelsFor(AiProvider.OPENAI).set("")
+                              models = emptyList()
+                              loadModels(restart = true)
+                            }
                           } else {
                             Toast.makeText(
                               context,

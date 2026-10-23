@@ -257,20 +257,33 @@ data class PlaylistDetailScreen(
     val mediaInfoError = remember { mutableStateOf<String?>(null) }
     var showUrlDialog by rememberSaveable { mutableStateOf(false) }
     var urlDialogContent by remember { mutableStateOf("") }
-    var pendingExport by remember { mutableStateOf<Pair<String, String>?>(null) }
+    // The pending export lives in an app-private file whose path survives process
+    // recreation while the system document picker is open.
+    var pendingExportPath by rememberSaveable { mutableStateOf<String?>(null) }
     var exportMenuOpen by rememberSaveable { mutableStateOf(false) }
     val createDocumentLauncher = rememberLauncherForActivityResult(
       ActivityResultContracts.CreateDocument("audio/x-mpegurl"),
     ) { uri ->
-      val export = pendingExport
-      pendingExport = null
-      if (uri != null && export != null) {
+      val exportPath = pendingExportPath
+      pendingExportPath = null
+      val exportFile = exportPath?.let(::File)
+      if (uri == null || exportFile == null) {
+        exportFile?.delete()
+        if (uri != null) {
+          Toast.makeText(context, R.string.playlist_export_unavailable, Toast.LENGTH_SHORT).show()
+        }
+      } else {
         coroutineScope.launch {
           try {
             withContext(Dispatchers.IO) {
-              context.contentResolver.openOutputStream(uri)?.use { output ->
-                output.write(export.second.toByteArray(StandardCharsets.UTF_8))
-              } ?: error("Unable to open destination")
+              try {
+                if (!exportFile.isFile) error("Export data is no longer available")
+                context.contentResolver.openOutputStream(uri)?.use { output ->
+                  exportFile.inputStream().use { input -> input.copyTo(output) }
+                } ?: error("Unable to open destination")
+              } finally {
+                exportFile.delete()
+              }
             }
             Toast.makeText(context, R.string.playlist_export_success, Toast.LENGTH_SHORT).show()
           } catch (error: Exception) {
@@ -287,9 +300,13 @@ data class PlaylistDetailScreen(
       }
       coroutineScope.launch {
         try {
-          val export = viewModel.exportM3uContent()
-          pendingExport = export
-          createDocumentLauncher.launch(export.first)
+          val (fileName, content) = viewModel.exportM3uContent()
+          val exportFile = withContext(Dispatchers.IO) {
+            val dir = File(context.cacheDir, "playlist-export").apply { mkdirs() }
+            File.createTempFile("pending-", ".m3u", dir).apply { writeText(content, StandardCharsets.UTF_8) }
+          }
+          pendingExportPath = exportFile.absolutePath
+          createDocumentLauncher.launch(fileName)
         } catch (error: Exception) {
           Toast.makeText(context, context.getString(R.string.playlist_export_error, error.message.orEmpty()), Toast.LENGTH_LONG).show()
         }
@@ -305,7 +322,13 @@ data class PlaylistDetailScreen(
         try {
           val (fileName, content) = viewModel.exportM3uContent()
           val file = withContext(Dispatchers.IO) {
-            File(context.cacheDir, fileName).apply { writeText(content, StandardCharsets.UTF_8) }
+            // One directory per share keeps the recipient's file name while making sure a
+            // later share never overwrites content an earlier recipient has not read yet.
+            val shareRoot = File(context.cacheDir, "playlist-share")
+            val staleBefore = System.currentTimeMillis() - 24L * 60 * 60 * 1000
+            shareRoot.listFiles()?.filter { it.lastModified() < staleBefore }?.forEach { it.deleteRecursively() }
+            val shareDir = File(shareRoot, java.util.UUID.randomUUID().toString()).apply { mkdirs() }
+            File(shareDir, fileName).apply { writeText(content, StandardCharsets.UTF_8) }
           }
           val uri = FileProvider.getUriForFile(context, "${context.packageName}.provider", file)
           val shareIntent = Intent(Intent.ACTION_SEND).apply {
