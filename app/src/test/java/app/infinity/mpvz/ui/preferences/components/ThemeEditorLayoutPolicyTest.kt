@@ -9,8 +9,8 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class ThemeEditorLayoutPolicyTest {
-  @Test fun narrowPortraitStacksActionsBeforeLabelsCanClip() {
-    assertTrue(ThemeEditorLayoutPolicy.stackActions(359f))
+  @Test fun narrowPortraitKeepsCompactInRowActions() {
+    assertFalse(ThemeEditorLayoutPolicy.stackActions(359f))
     assertFalse(ThemeEditorLayoutPolicy.stackActions(360f))
   }
 

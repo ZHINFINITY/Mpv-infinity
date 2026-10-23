@@ -13,7 +13,6 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.navigationBars
@@ -41,7 +40,6 @@ import androidx.compose.animation.shrinkVertically
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.ui.layout.ContentScale
@@ -324,37 +322,37 @@ internal fun CustomThemeEditor(
       val density = LocalDensity.current
       val imeVisible = WindowInsets.ime.getBottom(density) > 0
       val navigationBarDp = with(density) { WindowInsets.navigationBars.getBottom(this).toDp().value }
-      BoxWithConstraints(
+      // Compact in-row actions on every width. The stacked full-width trio was
+      // taking a third of the editor on phones.
+      Row(
         modifier = Modifier
           .fillMaxWidth()
           .padding(top = 8.dp)
           .padding(bottom = ThemeEditorLayoutPolicy.bottomSpacingDp(navigationBarDp, imeVisible).dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
       ) {
         val buttonModifier = Modifier
-          .heightIn(min = 52.dp)
-          .fillMaxWidth()
-        if (ThemeEditorLayoutPolicy.stackActions(maxWidth.value)) {
-          Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            OutlinedButton(onClick = { resetVisualSettings() }, modifier = buttonModifier) {
-              Icon(Icons.RoundedFilled.Refresh, contentDescription = null)
-              Text(stringResource(R.string.generic_reset))
-            }
-            OutlinedButton(onClick = onDismiss, modifier = buttonModifier) { Text(stringResource(R.string.generic_cancel)) }
-            Button(enabled = name.isNotBlank(), onClick = { onSave(edited.copy(name = name.trim())) }, modifier = buttonModifier) {
-              Text(stringResource(R.string.generic_save))
-            }
-          }
-        } else {
-          Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            OutlinedButton(onClick = { resetVisualSettings() }, modifier = Modifier.weight(1f).heightIn(min = 52.dp)) {
-              Icon(Icons.RoundedFilled.Refresh, contentDescription = null)
-              Text(stringResource(R.string.generic_reset))
-            }
-            OutlinedButton(onClick = onDismiss, modifier = Modifier.weight(1f).heightIn(min = 52.dp)) { Text(stringResource(R.string.generic_cancel)) }
-            Button(enabled = name.isNotBlank(), onClick = { onSave(edited.copy(name = name.trim())) }, modifier = Modifier.weight(1f).heightIn(min = 52.dp)) {
-              Text(stringResource(R.string.generic_save))
-            }
-          }
+          .heightIn(min = 40.dp)
+          .weight(1f)
+        OutlinedButton(
+          onClick = { resetVisualSettings() },
+          modifier = buttonModifier,
+        ) {
+          Icon(Icons.RoundedFilled.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
+          Text(stringResource(R.string.generic_reset), maxLines = 1)
+        }
+        OutlinedButton(
+          onClick = onDismiss,
+          modifier = buttonModifier,
+        ) {
+          Text(stringResource(R.string.generic_cancel), maxLines = 1)
+        }
+        Button(
+          enabled = name.isNotBlank(),
+          onClick = { onSave(edited.copy(name = name.trim())) },
+          modifier = buttonModifier,
+        ) {
+          Text(stringResource(R.string.generic_save), maxLines = 1)
         }
       }
     }

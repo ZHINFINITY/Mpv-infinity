@@ -1181,7 +1181,9 @@ class MPVView(
     // Disable MPV's automatic audio selection
     // App will handle track selection manually via TrackSelector to respect user choices
     PlaybackSession.setOptionString("alang", "")
-    PlaybackSession.setOptionString("audio-display", "embedded-first")
+    PlayerLifecyclePolicy.audioDisplayOption(
+      configOwnsAudioDisplay = MpvConfigOverridePolicy.isOwnedByMpvConf("audio-display"),
+    )?.let { PlaybackSession.setOptionString("audio-display", it) }
     PlaybackSession.setOptionString("audio-delay", (audioPreferences.defaultAudioDelay.get() / 1000.0).toString())
     PlaybackSession.setOptionString("audio-pitch-correction", audioPreferences.audioPitchCorrection.get().toString())
     PlaybackSession.setOptionString("volume-max", (audioPreferences.volumeBoostCap.get() + 100).toString())

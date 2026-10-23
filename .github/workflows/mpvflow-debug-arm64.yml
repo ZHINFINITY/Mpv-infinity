@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - Mpv∞-flow
+      - fix/main-player-bugs
     paths-ignore:
       - .github/workflows/mpvflow-debug-arm64.yml
       - .github/workflows/mpv-lgpl-aar.yml

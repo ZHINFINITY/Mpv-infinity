@@ -11,7 +11,10 @@ object ThemeEditorLayoutPolicy {
 
   fun stackActions(maxWidthDp: Float): Boolean {
     require(maxWidthDp > 0f && maxWidthDp.isFinite()) { "maxWidthDp must be positive" }
-    return maxWidthDp < NarrowWidthDp
+    // Always keep Save/Reset/Cancel as three compact buttons in one row. Stacking
+    // them full-width on phones wastes vertical space and is what the Appearance
+    // editor screenshot reported.
+    return false
   }
 
   fun bottomSpacingDp(navigationBarDp: Float, imeVisible: Boolean): Float {

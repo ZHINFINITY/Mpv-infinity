@@ -29,4 +29,19 @@ class AudioPlayerControlsWiringTest {
     assertTrue(scene.contains("backdrop provider, not an opaque player surface"))
     assertTrue(scene.contains("LocalLiquidGlassBackdrop provides frame"))
   }
+
+  @Test
+  fun minimizeKeepsTheAudioWindowSeeThroughOverTheLibrary() {
+    val controls = source("app/src/main/java/app/infinity/mpvz/ui/player/controls/AudioPlayerControls.kt")
+    val activity = source("app/src/main/java/app/infinity/mpvz/ui/player/PlayerActivity.kt")
+    val themes = source("app/src/main/res/values/themes.xml")
+    assertTrue(activity.contains("Theme.mpvinfinity.Player.Audio"))
+    assertTrue(activity.contains("Never call Activity.setTranslucent()"))
+    assertTrue(activity.contains("prepareAudioPlayerSeeThroughLayers"))
+    assertTrue(activity.contains("setNativeVideoSurfaceVisible(false)"))
+    assertTrue(themes.contains("name=\"Theme.mpvinfinity.Player.Audio\""))
+    assertTrue(themes.contains("android:windowIsTranslucent"))
+    assertTrue(controls.contains("Stay see-through. Converting the window opaque mid-session"))
+    assertFalse(controls.contains("playerActivity?.setAudioTransitionTranslucent(false)"))
+  }
 }

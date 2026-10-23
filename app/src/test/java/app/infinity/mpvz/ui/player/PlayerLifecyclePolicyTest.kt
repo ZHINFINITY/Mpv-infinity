@@ -6,7 +6,9 @@
  */
 package app.infinity.mpvz.ui.player
 
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -53,5 +55,45 @@ class PlayerLifecyclePolicyTest {
         isInPictureInPictureMode = false,
       ),
     )
+  }
+
+  @Test
+  fun audioLaunchesSkipNativeMedia3Construction() {
+    assertFalse(PlayerLifecyclePolicy.shouldInitializeNativeMedia3Engine(isAudioLaunch = true))
+    assertTrue(PlayerLifecyclePolicy.shouldInitializeNativeMedia3Engine(isAudioLaunch = false))
+  }
+
+  @Test
+  fun composeCoverArtDisablesMpvEmbeddedAudioDisplay() {
+    assertEquals("no", PlayerLifecyclePolicy.audioDisplayOption(configOwnsAudioDisplay = false))
+    assertNull(PlayerLifecyclePolicy.audioDisplayOption(configOwnsAudioDisplay = true))
+  }
+
+  @Test
+  fun longBackgroundVideoRebuildsTheRendererInsteadOfLeavingABlackSurface() {
+    assertTrue(
+      PlayerLifecyclePolicy.shouldRebuildRendererAfterBackground(
+        stoppedForMs = 15 * 60 * 1000L,
+        isAudioMedia = false,
+      ),
+    )
+    assertFalse(
+      PlayerLifecyclePolicy.shouldRebuildRendererAfterBackground(
+        stoppedForMs = 5_000L,
+        isAudioMedia = false,
+      ),
+    )
+    assertFalse(
+      PlayerLifecyclePolicy.shouldRebuildRendererAfterBackground(
+        stoppedForMs = 15 * 60 * 1000L,
+        isAudioMedia = true,
+      ),
+    )
+  }
+
+  @Test
+  fun longBackgroundRebuildWaitsForALiveSurface() {
+    assertTrue(PlayerLifecyclePolicy.shouldWaitForSurfaceBeforeRebuild(surfaceReady = false))
+    assertFalse(PlayerLifecyclePolicy.shouldWaitForSurfaceBeforeRebuild(surfaceReady = true))
   }
 }

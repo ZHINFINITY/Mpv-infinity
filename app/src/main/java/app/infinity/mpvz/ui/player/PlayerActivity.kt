@@ -218,6 +218,7 @@ class PlayerActivity :
     ).also {
       it.onEnded = { runOnUiThread { handleNativePlaybackEnded() } }
       it.onPlaybackError = { error -> runOnUiThread { handleNativePlaybackError(error) } }
+      nativeEngineConfigured = true
     }
   }
   private val flowDiagnosticsCaptureManager by lazy { FlowDiagnosticsCaptureManager(this) }
@@ -245,18 +246,25 @@ class PlayerActivity :
           engine = "native-media3",
           pairedOutput = pairedOutput,
           startRequest = { sessionId, baseDirectory ->
-            nativeEngine.startFlowDiagnosticCapture(
-              sessionId, baseDirectory.absolutePath, pairedOutput)
+            nativeEngineOrNull()?.startFlowDiagnosticCapture(
+              sessionId, baseDirectory.absolutePath, pairedOutput,
+            ) ?: "native_engine_unavailable"
           },
-          stopRequest = nativeEngine::stopFlowDiagnosticCapture,
-          timingSnapshot = nativeEngine::flowDiagnosticTimingSnapshot,
+          stopRequest = { sessionId -> nativeEngineOrNull()?.stopFlowDiagnosticCapture(sessionId) },
+          timingSnapshot = { nativeEngineOrNull()?.flowDiagnosticTimingSnapshot() },
         )
     }
   }
 
   internal fun stopFlowDiagnosticsCapture(): String? = flowDiagnosticsCaptureManager.stop()
 
-  val nativePlaybackSnapshot get() = nativeEngine.snapshot
+  private var nativeEngineConfigured = false
+  private val idleNativePlaybackSnapshot = kotlinx.coroutines.flow.MutableStateFlow(NativePlaybackSnapshot())
+  private val idleNativeFirstFrame = kotlinx.coroutines.flow.MutableStateFlow(false)
+  private var nativeEngineObserversStarted = false
+  private var playerStoppedAtElapsedRealtime = 0L
+  val nativePlaybackSnapshot get() = nativeEngineOrNull()?.snapshot ?: idleNativePlaybackSnapshot
+  private val nativeFirstFrame get() = nativeEngineOrNull()?.hasRenderedFirstFrame ?: idleNativeFirstFrame
   private var glassEngineMode by mutableStateOf(PlaybackEngineMode.MPV)
   private var glassMediaGeneration by mutableStateOf(0L)
   // MPV's stats.lua exposes a toggle, so retain the last command state and only
@@ -442,62 +450,160 @@ class PlayerActivity :
   // Renderer ownership is authoritative even while Native is preparing/seeking. Readiness
   // must not route controls or lifecycle saves back to the frozen MPV instance.
   override fun isNativeEngineActive(): Boolean = activeEngineMode == PlaybackEngineMode.NATIVE
+    && nativeEngineConfigured
+
+  private fun nativeEngineOrNull(): NativeMedia3Engine? =
+    if (nativeEngineConfigured) nativeEngine else null
+
+  private fun configureNativeEngineIfNeeded(force: Boolean = false) {
+    val isAudioLaunch =
+      isKnownAudioLaunch(intent) ||
+        viewModel.isAudioOnly.value ||
+        isCurrentMediaKnownAudio()
+    if (!force && !PlayerLifecyclePolicy.shouldInitializeNativeMedia3Engine(isAudioLaunch)) {
+      return
+    }
+    if (!nativeEngineConfigured) {
+      nativeEngine.attach(binding.media3Player)
+      nativeEngine.setSubtitleStyle(
+        textColor = subtitlesPreferences.textColor.get(),
+        backgroundColor = subtitlesPreferences.backgroundColor.get(),
+        borderColor = subtitlesPreferences.borderColor.get(),
+        borderSize = subtitlesPreferences.borderSize.get(),
+        fontSize = subtitlesPreferences.fontSize.get(),
+        fontFamily = subtitlesPreferences.font.get(),
+        bold = subtitlesPreferences.bold.get(),
+        italic = subtitlesPreferences.italic.get(),
+      )
+      nativeEngine.setSubtitleScale(subtitlesPreferences.subScale.get())
+      nativeEngine.setSubtitlePosition(subtitlesPreferences.subPos.get())
+    }
+    startNativeEngineObserversIfNeeded()
+  }
+
+  private fun startNativeEngineObserversIfNeeded() {
+    if (nativeEngineObserversStarted || !nativeEngineConfigured) return
+    nativeEngineObserversStarted = true
+    lifecycleScope.launch {
+      repeatOnLifecycle(Lifecycle.State.STARTED) {
+        combine(
+          subtitlesPreferences.textColor.changes(),
+          subtitlesPreferences.backgroundColor.changes(),
+          subtitlesPreferences.borderColor.changes(),
+          subtitlesPreferences.borderSize.changes(),
+          subtitlesPreferences.fontSize.changes(),
+        ) { textColor, backgroundColor, borderColor, borderSize, fontSize ->
+          listOf(textColor, backgroundColor, borderColor, borderSize, fontSize)
+        }.collect { values ->
+          nativeEngine.setSubtitleStyle(
+            textColor = values[0],
+            backgroundColor = values[1],
+            borderColor = values[2],
+            borderSize = values[3],
+            fontSize = values[4],
+            fontFamily = subtitlesPreferences.font.get(),
+            bold = subtitlesPreferences.bold.get(),
+            italic = subtitlesPreferences.italic.get(),
+          )
+        }
+      }
+    }
+    lifecycleScope.launch {
+      repeatOnLifecycle(Lifecycle.State.STARTED) {
+        combine(
+          subtitlesPreferences.subScale.changes(),
+          subtitlesPreferences.subPos.changes(),
+        ) { scale, position -> scale to position }
+          .collect { (scale, position) ->
+            nativeEngine.setSubtitleScale(scale)
+            nativeEngine.setSubtitlePosition(position)
+          }
+      }
+    }
+    lifecycleScope.launch {
+      repeatOnLifecycle(Lifecycle.State.STARTED) {
+        combine(
+          subtitlesPreferences.font.changes(),
+          subtitlesPreferences.bold.changes(),
+          subtitlesPreferences.italic.changes(),
+        ) { font, bold, italic -> font to (bold to italic) }
+          .collect { (font, flags) ->
+            nativeEngine.setSubtitleStyle(
+              textColor = subtitlesPreferences.textColor.get(),
+              backgroundColor = subtitlesPreferences.backgroundColor.get(),
+              borderColor = subtitlesPreferences.borderColor.get(),
+              borderSize = subtitlesPreferences.borderSize.get(),
+              fontSize = subtitlesPreferences.fontSize.get(),
+              fontFamily = font,
+              bold = flags.first,
+              italic = flags.second,
+            )
+          }
+      }
+    }
+  }
 
   override fun isNativePlaying(): Boolean =
-    isNativeEngineActive() && nativeEngine.snapshot.value.isPlaying
+    isNativeEngineActive() && nativeEngineOrNull()?.snapshot?.value?.isPlaying == true
 
   override fun nativePlayWhenReady(): Boolean =
-    isNativeEngineActive() && nativeEngine.currentPlayer.playWhenReady
+    isNativeEngineActive() && nativeEngineOrNull()?.currentPlayer?.playWhenReady == true
 
   override fun nativePlaybackSpeed(): Float =
-    nativeEngine.currentPlayer.playbackParameters.speed
+    nativeEngineOrNull()?.currentPlayer?.playbackParameters?.speed ?: 1f
 
   override fun nativePauseUnpause() {
-    nativeEngine.setPlaying(!nativeEngine.currentPlayer.isPlaying)
+    nativeEngineOrNull()?.let { engine -> engine.setPlaying(!engine.currentPlayer.isPlaying) }
   }
 
   override fun nativePause() {
-    nativeEngine.setPlaying(false)
+    nativeEngineOrNull()?.setPlaying(false)
   }
 
   override fun nativeUnpause() {
-    nativeEngine.setPlaying(true)
+    nativeEngineOrNull()?.setPlaying(true)
   }
 
   override fun nativeSeekBy(offsetMs: Long) {
-    nativeEngine.seekBy(offsetMs)
+    nativeEngineOrNull()?.seekBy(offsetMs)
   }
 
   override fun nativeSeekTo(positionMs: Long) {
-    nativeEngine.seekTo(positionMs)
+    nativeEngineOrNull()?.seekTo(positionMs)
   }
 
   override fun nativeCancelSeekPreview() {
-    nativeEngine.cancelSeekPreview()
+    nativeEngineOrNull()?.cancelSeekPreview()
   }
 
   override fun nativeSeekPreviewTo(positionMs: Long) {
-    nativeEngine.seekPreviewTo(positionMs)
+    nativeEngineOrNull()?.seekPreviewTo(positionMs)
   }
 
   override fun nativePlaybackPositionSeconds(): Double =
-    nativeEngine.snapshot.value.positionMs.coerceAtLeast(0L) / 1000.0
+    (nativeEngineOrNull()?.snapshot?.value?.positionMs?.coerceAtLeast(0L) ?: 0L) / 1000.0
 
   override fun nativePlaybackDurationSeconds(): Double =
-    nativeEngine.snapshot.value.durationMs.coerceAtLeast(0L) / 1000.0
+    (nativeEngineOrNull()?.snapshot?.value?.durationMs?.coerceAtLeast(0L) ?: 0L) / 1000.0
 
-  override fun nativeSetLoopA(positionSeconds: Double?) = nativeEngine.setLoopA(positionSeconds)
+  override fun nativeSetLoopA(positionSeconds: Double?) {
+    nativeEngineOrNull()?.setLoopA(positionSeconds)
+  }
 
-  override fun nativeSetLoopB(positionSeconds: Double?) = nativeEngine.setLoopB(positionSeconds)
+  override fun nativeSetLoopB(positionSeconds: Double?) {
+    nativeEngineOrNull()?.setLoopB(positionSeconds)
+  }
 
-  override fun nativeClearLoop() = nativeEngine.clearLoop()
+  override fun nativeClearLoop() {
+    nativeEngineOrNull()?.clearLoop()
+  }
 
   override fun nativeSetSpeed(speed: Float) {
-    nativeEngine.setSpeed(speed, audioPreferences.audioPitchCorrection.get())
+    nativeEngineOrNull()?.setSpeed(speed, audioPreferences.audioPitchCorrection.get())
   }
 
   override fun nativeSetRepeatMode(repeatMode: RepeatMode) {
-    nativeEngine.setRepeatMode(repeatMode)
+    nativeEngineOrNull()?.setRepeatMode(repeatMode)
   }
 
   private var interpolationControlRequestGeneration = 0L
@@ -847,8 +953,8 @@ class PlayerActivity :
     val autoplay = playerPreferences.autoplayNextVideo.get()
     when {
       viewModel.shouldRepeatCurrentFile() -> {
-        nativeEngine.seekTo(0L)
-        nativeEngine.setPlaying(true)
+        nativeEngineOrNull()?.seekTo(0L)
+        nativeEngineOrNull()?.setPlaying(true)
       }
       (autoplay || viewModel.shouldRepeatPlaylist()) && viewModel.hasNext() -> playNextQueueItem()
       else -> finishAtEofIfRequested()
@@ -885,31 +991,39 @@ class PlayerActivity :
     selectEngineForCurrentVideo(PlaybackEngineMode.MPV)
   }
 
-  override fun nativeSetZoom(zoom: Float) = nativeEngine.setZoom(zoom)
+  override fun nativeSetZoom(zoom: Float) {
+    nativeEngineOrNull()?.setZoom(zoom)
+  }
 
-  override fun nativeSetPan(x: Float, y: Float) = nativeEngine.setPan(x, y)
+  override fun nativeSetPan(x: Float, y: Float) {
+    nativeEngineOrNull()?.setPan(x, y)
+  }
 
-  override fun nativeSetSubtitleScale(scale: Float) = nativeEngine.setSubtitleScale(scale)
+  override fun nativeSetSubtitleScale(scale: Float) {
+    nativeEngineOrNull()?.setSubtitleScale(scale)
+  }
 
-  override fun nativeSetSubtitlePosition(position: Int) = nativeEngine.setSubtitlePosition(position)
+  override fun nativeSetSubtitlePosition(position: Int) {
+    nativeEngineOrNull()?.setSubtitlePosition(position)
+  }
 
   override fun nativeSelectSubtitle(groupIndex: Int, trackIndex: Int) {
-    nativeEngine.selectSubtitleTrack(groupIndex, trackIndex)
+    nativeEngineOrNull()?.selectSubtitleTrack(groupIndex, trackIndex)
   }
 
   override fun nativeDisableSubtitles() {
-    nativeEngine.disableSubtitles()
+    nativeEngineOrNull()?.disableSubtitles()
   }
 
   override fun nativeAddSubtitle(uri: Uri, select: Boolean): Boolean =
-    nativeEngine.addExternalSubtitle(uri, select)
+    nativeEngineOrNull()?.addExternalSubtitle(uri, select) == true
 
   override fun nativeSetVideoAspect(aspect: VideoAspect) {
-    nativeEngine.setVideoAspect(aspect)
+    nativeEngineOrNull()?.setVideoAspect(aspect)
   }
 
   override fun nativeSetCustomAspectRatio(ratio: Double) {
-    nativeEngine.setCustomAspectRatio(ratio)
+    nativeEngineOrNull()?.setCustomAspectRatio(ratio)
   }
 
   // ==================== State Management ====================
@@ -1158,6 +1272,7 @@ class PlayerActivity :
         if (!ownsPlaybackSession()) return
         when (intent?.action) {
           Intent.ACTION_SCREEN_OFF -> {
+            playerStoppedAtElapsedRealtime = android.os.SystemClock.elapsedRealtime()
             screenUnlockPlaybackController.onScreenTurnedOff(
               autoplayAfterScreenUnlockEnabled = playerPreferences.autoplayAfterScreenUnlock.get(),
               wasPlayingBeforePause = wasPlayingBeforePause,
@@ -1248,8 +1363,18 @@ class PlayerActivity :
   private var playerInitializationComplete = false
 
   override fun onCreate(savedInstanceState: Bundle?) {
+    // windowIsTranslucent must be set before the window is created. Converting an
+    // already-opaque player window mid-drag cancels the finger and paints black
+    // over the library.
+    if (shouldUseAudioPlayerTheme(intent)) {
+      setTheme(R.style.Theme_mpvinfinity_Player_Audio)
+    }
     enableEdgeToEdge()
     super.onCreate(savedInstanceState)
+    if (shouldUseAudioPlayerTheme(intent)) {
+      window.setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
+      audioWindowTranslucent = true
+    }
     requestAudioOpenFromMini(intent)
     Log.i(
       "Mpv∞-BuildIdentity",
@@ -1368,19 +1493,10 @@ class PlayerActivity :
     playerInitializationComplete = true
     applyInitialVideoOrientation(intent)
     setContentView(binding.root)
-    nativeEngine.attach(binding.media3Player)
-    nativeEngine.setSubtitleStyle(
-      textColor = subtitlesPreferences.textColor.get(),
-      backgroundColor = subtitlesPreferences.backgroundColor.get(),
-      borderColor = subtitlesPreferences.borderColor.get(),
-      borderSize = subtitlesPreferences.borderSize.get(),
-      fontSize = subtitlesPreferences.fontSize.get(),
-      fontFamily = subtitlesPreferences.font.get(),
-      bold = subtitlesPreferences.bold.get(),
-      italic = subtitlesPreferences.italic.get(),
-    )
-    nativeEngine.setSubtitleScale(subtitlesPreferences.subScale.get())
-    nativeEngine.setSubtitlePosition(subtitlesPreferences.subPos.get())
+    if (shouldUseAudioPlayerTheme(intent)) {
+      prepareAudioPlayerSeeThroughLayers()
+    }
+    configureNativeEngineIfNeeded()
     lifecycleScope.launch {
       repeatOnLifecycle(Lifecycle.State.STARTED) {
         combine(
@@ -1392,7 +1508,7 @@ class PlayerActivity :
         ) { textColor, backgroundColor, borderColor, borderSize, fontSize ->
           listOf(textColor, backgroundColor, borderColor, borderSize, fontSize)
         }.collect { values ->
-          nativeEngine.setSubtitleStyle(
+          nativeEngineOrNull()?.setSubtitleStyle(
             textColor = values[0],
             backgroundColor = values[1],
             borderColor = values[2],
@@ -1412,8 +1528,8 @@ class PlayerActivity :
           subtitlesPreferences.subPos.changes(),
         ) { scale, position -> scale to position }
           .collect { (scale, position) ->
-            nativeEngine.setSubtitleScale(scale)
-            nativeEngine.setSubtitlePosition(position)
+            nativeEngineOrNull()?.setSubtitleScale(scale)
+            nativeEngineOrNull()?.setSubtitlePosition(position)
           }
       }
     }
@@ -1425,7 +1541,7 @@ class PlayerActivity :
           subtitlesPreferences.italic.changes(),
         ) { font, bold, italic -> font to (bold to italic) }
           .collect { (font, flags) ->
-            nativeEngine.setSubtitleStyle(
+            nativeEngineOrNull()?.setSubtitleStyle(
               textColor = subtitlesPreferences.textColor.get(),
               backgroundColor = subtitlesPreferences.backgroundColor.get(),
               borderColor = subtitlesPreferences.borderColor.get(),
@@ -1468,13 +1584,13 @@ class PlayerActivity :
           val outgoingEngine = activeEngineMode
           val outgoingPositionMs =
             if (outgoingEngine == PlaybackEngineMode.NATIVE) {
-              (nativeEngine.positionForPersistenceMs() ?: 0L)
+              (nativeEngineOrNull()?.positionForPersistenceMs() ?: 0L)
             } else {
               ((PlaybackSession.getPropertyDouble("time-pos") ?: 0.0) * 1000.0).toLong()
             }.coerceAtLeast(0L)
           val outgoingPlaying =
             if (outgoingEngine == PlaybackEngineMode.NATIVE) {
-              nativeEngine.currentPlayer.playWhenReady
+              nativeEngineOrNull()?.currentPlayer?.playWhenReady == true
             } else {
               PlaybackSession.getPropertyBoolean("pause") == false
             }
@@ -1482,7 +1598,7 @@ class PlayerActivity :
           // Freeze the outgoing renderer before changing surfaces. This prevents both engines from
           // decoding the same item during the handoff and makes the captured state authoritative.
           if (outgoingEngine == PlaybackEngineMode.NATIVE) {
-            nativeEngine.setPlaying(false)
+            nativeEngineOrNull()?.setPlaying(false)
           } else if (mpvInitialized) {
             val pauseRequested = PlaybackSession.setPauseForEngineHandoff(true)
             var pauseConfirmed = false
@@ -1537,6 +1653,7 @@ class PlayerActivity :
               binding.player.alpha = 0f
               binding.player.visibility = View.GONE
               viewModel.clearNativeExternalSubtitles()
+              configureNativeEngineIfNeeded(force = true)
               nativeEngine.play(
                 nativeUri,
                 outgoingPositionMs,
@@ -1557,7 +1674,7 @@ class PlayerActivity :
                   true
                 } == true
                 if (!rendered || !ownsPlaybackSession()) {
-                  nativeEngine.stop()
+                  nativeEngineOrNull()?.stop()
                   if (ownsPlaybackSession()) {
                     activeEngineMode = PlaybackEngineMode.MPV
                     viewModel.setNativeEngineActive(false)
@@ -1594,7 +1711,7 @@ class PlayerActivity :
               // later surface reattachment.
               binding.player.alpha = 0f
               binding.player.visibility = View.VISIBLE
-              nativeEngine.stop()
+              nativeEngineOrNull()?.stop()
               // This is a renderer handoff, not a user-selected queue change. Avoid the normal
               // loader's outgoing-item stop/report path, which can race the new MPV load.
               val queueItem = PlaybackSession.queue.value.currentItem
@@ -1694,10 +1811,11 @@ class PlayerActivity :
       }
     }
     viewModel.setNativeSubtitleToggleListener { id ->
+      val engine = nativeEngineOrNull() ?: return@setNativeSubtitleToggleListener
       if (id == 0) {
-        nativeEngine.disableSubtitles()
+        engine.disableSubtitles()
       } else {
-        nativeEngine.snapshot.value.subtitleTracks.getOrNull(-id - 1)?.let(nativeEngine::toggleSubtitle)
+        engine.snapshot.value.subtitleTracks.getOrNull(-id - 1)?.let(engine::toggleSubtitle)
       }
     }
     viewModel.setNativeSubtitleVisibilityListener { hidden ->
@@ -1705,19 +1823,21 @@ class PlayerActivity :
       // track. Disabling it breaks normal UTF-8/SRT cue playback after the first cue and also
       // destroys the user's selected-track state. Only change presentation visibility here; ASS/
       // SSA and normal Media3 cue pipelines continue rendering through their existing renderers.
-      nativeEngine.setSubtitlePresentationVisible(!hidden)
+      nativeEngineOrNull()?.setSubtitlePresentationVisible(!hidden)
     }
     viewModel.setNativeExternalSubtitleToggleListener { id ->
+      val engine = nativeEngineOrNull() ?: return@setNativeExternalSubtitleToggleListener
       viewModel.subtitleTracks.value.firstOrNull { it.id == id }?.externalFilename?.let { rawUri ->
-        val enabled = nativeEngine.toggleExternalSubtitle(Uri.parse(rawUri))
+        val enabled = engine.toggleExternalSubtitle(Uri.parse(rawUri))
         enabled?.let { viewModel.setNativeExternalSubtitleSelected(id, it) }
       }
     }
     viewModel.setNativeAudioToggleListener { id ->
+      val engine = nativeEngineOrNull() ?: return@setNativeAudioToggleListener
       if (id <= -1001) {
-        nativeEngine.snapshot.value.audioTracks.getOrNull(-1001 - id)?.let { track ->
+        engine.snapshot.value.audioTracks.getOrNull(-1001 - id)?.let { track ->
           lastRequestedNativeAudioSelection = track.toAudioTrackFingerprint()
-          nativeEngine.selectTrack(track)
+          engine.selectTrack(track)
         }
       }
     }
@@ -1730,7 +1850,7 @@ class PlayerActivity :
     }
     lifecycleScope.launch {
       repeatOnLifecycle(Lifecycle.State.STARTED) {
-        nativeEngine.snapshot.collect { snapshot ->
+        nativePlaybackSnapshot.collect { snapshot ->
           viewModel.setNativeTracks(snapshot)
           val keepNativeScreenOn = snapshot.isPlaying || playerPreferences.keepScreenOnWhenPaused.get()
           binding.media3Player.keepScreenOn = keepNativeScreenOn
@@ -1766,7 +1886,8 @@ class PlayerActivity :
     }
     lifecycleScope.launch {
       repeatOnLifecycle(Lifecycle.State.STARTED) {
-        nativeEngine.subtitleCueText.collect { cue ->
+        val engine = nativeEngineOrNull() ?: return@repeatOnLifecycle
+        engine.subtitleCueText.collect { cue ->
           if (isNativeEngineActive()) {
             viewModel.translateEmbeddedSubtitleCue(cue, native = true)
           }
@@ -2133,7 +2254,7 @@ class PlayerActivity :
       isMiniPlayerEnabled() ||
       PlayerLifecyclePolicy.shouldStartBackgroundPlaybackOnBack(
         backgroundPlaybackEnabled = isBackgroundPlaybackEnabled(),
-        mediaReady = isReady || nativeEngine.snapshot.value.isReady,
+        mediaReady = isReady || nativeEngineOrNull()?.snapshot?.value?.isReady == true,
       )
     ) {
       when (startBackgroundPlayback()) {
@@ -2158,7 +2279,7 @@ class PlayerActivity :
 
   fun selectEngineForCurrentVideo(engine: PlaybackEngineMode) {
     if (engine == PlaybackEngineMode.MPV && activeEngineMode == PlaybackEngineMode.NATIVE) {
-      val selectedTrack = nativeEngine.snapshot.value.audioTracks.firstOrNull { it.selected }
+      val selectedTrack = nativeEngineOrNull()?.snapshot?.value?.audioTracks?.firstOrNull { it.selected }
       pendingMpvAudioSelection =
         lastRequestedNativeAudioSelection ?: selectedTrack?.toAudioTrackFingerprint()
     } else if (engine == PlaybackEngineMode.NATIVE) {
@@ -2194,8 +2315,8 @@ class PlayerActivity :
         val panel by viewModel.panelShown.collectAsState()
         val audioOnly by viewModel.isAudioOnly.collectAsState()
         val state by PlaybackSession.state.collectAsState()
-        val native by nativeEngine.snapshot.collectAsState()
-        val nativeFrame by nativeEngine.hasRenderedFirstFrame.collectAsState()
+        val native by nativePlaybackSnapshot.collectAsState()
+        val nativeFrame by nativeFirstFrame.collectAsState()
         val hdrMode by viewModel.hdrScreenMode.collectAsState()
         val transfer by PlaybackSession.propString["video-params/gamma"].collectAsState()
         val nativeActive = glassEngineMode == PlaybackEngineMode.NATIVE
@@ -2213,11 +2334,11 @@ class PlayerActivity :
           hdr = hdr,
           generation = Triple(glassMediaGeneration, state.generation, state.currentItem?.stableId),
           isReady = {
-            if (nativeActive) nativeFrame && nativeEngine.hasRenderedFirstFrame.value
+            if (nativeActive) nativeFrame && nativeFirstFrame.value
             else binding.player.isSurfaceReady && PlaybackSession.state.value.surfaceAttached
           },
           isPlaying = {
-            if (nativeActive) nativeEngine.currentPlayer.isPlaying else !PlaybackSession.state.value.paused
+            if (nativeActive) nativeEngineOrNull()?.currentPlayer?.isPlaying == true else !PlaybackSession.state.value.paused
           },
           sampleAspect = {
             PlaybackSession.getPropertyDouble("video-aspect-override")?.takeIf { it.isFinite() && it > 0.0 }
@@ -2250,8 +2371,8 @@ class PlayerActivity :
       val lifecycleActive by viewModel.isAmbientLifecycleActive.collectAsState()
       val isAudioOnly by viewModel.isAudioOnly.collectAsState()
       val playbackState by PlaybackSession.state.collectAsState()
-      val nativeSnapshot by nativeEngine.snapshot.collectAsState()
-      val nativeFrameAvailable by nativeEngine.hasRenderedFirstFrame.collectAsState()
+      val nativeSnapshot by nativePlaybackSnapshot.collectAsState()
+      val nativeFrameAvailable by nativeFirstFrame.collectAsState()
       val videoCrop by PlaybackSession.propString["video-crop"].collectAsState()
       val hdrScreenMode by viewModel.hdrScreenMode.collectAsState()
       val orientation = LocalConfiguration.current.orientation
@@ -2300,9 +2421,9 @@ class PlayerActivity :
           isSurfaceReadyProvider = {
             if (nativeActive) {
               surface.holder.surface?.isValid == true &&
-                (nativeEngine.snapshot.value.isReady ||
-                  nativeEngine.snapshot.value.isBuffering ||
-                  nativeEngine.hasRenderedFirstFrame.value)
+                (nativeEngineOrNull()?.snapshot?.value?.isReady == true ||
+                  nativeEngineOrNull()?.snapshot?.value?.isBuffering == true ||
+                  nativeFirstFrame.value)
             } else {
               val state = PlaybackSession.state.value
               state.surfaceAttached &&
@@ -2311,7 +2432,7 @@ class PlayerActivity :
             }
           },
           isPlayingProvider = {
-            if (nativeActive) nativeEngine.currentPlayer.isPlaying else !PlaybackSession.state.value.paused
+            if (nativeActive) nativeEngineOrNull()?.currentPlayer?.isPlaying == true else !PlaybackSession.state.value.paused
           },
           fallbackFrameProvider = { dimension ->
             withContext(Dispatchers.IO) {
@@ -2518,7 +2639,7 @@ class PlayerActivity :
           if (isAudioOnly) {
             applyPlaybackBrightnessPolicy(isAudio = true)
             viewModel.showControls()
-            binding.player.visibility = View.INVISIBLE
+            prepareAudioPlayerSeeThroughLayers()
             try {
               WindowCompat.setDecorFitsSystemWindows(window, false)
               windowInsetsController.apply {
@@ -2532,8 +2653,17 @@ class PlayerActivity :
               Log.e(TAG, "Failed to show system bars for audio playback", e)
             }
           } else {
+            binding.root.setBackgroundColor(Color.BLACK)
             binding.player.clipToOutline = false
             binding.player.visibility = View.VISIBLE
+            binding.media3SubtitleOverlay.visibility = View.VISIBLE
+            binding.clipOverlayHost.visibility = View.VISIBLE
+            if (isNativeEngineActive()) {
+              setNativeVideoSurfaceVisible(true)
+            } else {
+              binding.media3Player.alpha = 0f
+              binding.media3Player.visibility = View.VISIBLE
+            }
             if (isVideoAmbientPresentationActive) {
               binding.root.post(::updateVideoAmbientPlayerBounds)
             } else {
@@ -2555,12 +2685,15 @@ class PlayerActivity :
       isAudioPlayer = { viewModel.isAudioOnly.value || isCurrentMediaKnownAudio() },
       isVideoLoaded = { isReady || isNativeEngineActive() },
       isNativeEngine = { isNativeEngineActive() },
-      isPlaying = { if (isNativeEngineActive()) nativeEngine.currentPlayer.isPlaying else PlaybackSession.getPropertyBoolean("pause") == false },
-      onPlay = { if (isNativeEngineActive()) nativeEngine.setPlaying(true) else PlaybackSession.setPropertyBoolean("pause", false) },
-      onPause = { if (isNativeEngineActive()) nativeEngine.setPlaying(false) else PlaybackSession.setPropertyBoolean("pause", true) },
-      onSeekBy = { offsetMs -> if (isNativeEngineActive()) nativeEngine.seekBy(offsetMs) else PlaybackSession.command("seek", (offsetMs / 1000L).toString(), resolveSeekMode(playerPreferences)) },
-      onClose = { if (isNativeEngineActive()) nativeEngine.setPlaying(false) },
-      nativeVideoSize = { nativeEngine.snapshot.value.videoWidth to nativeEngine.snapshot.value.videoHeight },
+      isPlaying = { if (isNativeEngineActive()) nativeEngineOrNull()?.currentPlayer?.isPlaying == true else PlaybackSession.getPropertyBoolean("pause") == false },
+      onPlay = { if (isNativeEngineActive()) nativeEngineOrNull()?.setPlaying(true) else PlaybackSession.setPropertyBoolean("pause", false) },
+      onPause = { if (isNativeEngineActive()) nativeEngineOrNull()?.setPlaying(false) else PlaybackSession.setPropertyBoolean("pause", true) },
+      onSeekBy = { offsetMs -> if (isNativeEngineActive()) nativeEngineOrNull()?.seekBy(offsetMs) else PlaybackSession.command("seek", (offsetMs / 1000L).toString(), resolveSeekMode(playerPreferences)) },
+      onClose = { if (isNativeEngineActive()) nativeEngineOrNull()?.setPlaying(false) },
+      nativeVideoSize = {
+        (nativeEngineOrNull()?.snapshot?.value?.videoWidth ?: 0) to
+          (nativeEngineOrNull()?.snapshot?.value?.videoHeight ?: 0)
+      },
     )
   }
 
@@ -2570,13 +2703,13 @@ class PlayerActivity :
         activity = this,
         currentMedia = ::currentCastMediaSnapshot,
         pauseLocal = {
-          if (isNativeEngineActive()) nativeEngine.setPlaying(false) else viewModel.pause()
+          if (isNativeEngineActive()) nativeEngineOrNull()?.setPlaying(false) else viewModel.pause()
         },
         restoreLocal = { positionMs, play ->
           if (!isFinishing && !isDestroyed) {
             if (isNativeEngineActive()) {
-              nativeEngine.seekTo(positionMs)
-              nativeEngine.setPlaying(play)
+              nativeEngineOrNull()?.seekTo(positionMs)
+              nativeEngineOrNull()?.setPlaying(play)
             } else {
               viewModel.seekTo((positionMs / 1000L).toInt().coerceAtLeast(0))
               if (play) viewModel.unpause() else viewModel.pause()
@@ -2590,7 +2723,7 @@ class PlayerActivity :
 
   private fun currentCastMediaSnapshot(): CastMediaSnapshot? {
     if (isNativeEngineActive()) {
-      val nativeMediaItem = nativeEngine.currentPlayer.currentMediaItem ?: return null
+      val nativeMediaItem = nativeEngineOrNull()?.currentPlayer?.currentMediaItem ?: return null
       val nativeUri = nativeMediaItem.localConfiguration?.uri ?: return null
       val nativeScheme = nativeUri.scheme?.lowercase()
       if (nativeScheme !in setOf("http", "https", "content", "file")) return null
@@ -2598,9 +2731,9 @@ class PlayerActivity :
         source = nativeUri,
         title = getPreferredCurrentTitle().ifBlank { fileName.ifBlank { nativeUri.lastPathSegment.orEmpty() } },
         mimeType = nativeMediaItem.localConfiguration?.mimeType ?: contentResolver.getType(nativeUri),
-        durationMs = nativeEngine.snapshot.value.durationMs,
-        positionMs = nativeEngine.snapshot.value.positionMs,
-        isPlaying = nativeEngine.currentPlayer.isPlaying,
+        durationMs = nativeEngineOrNull()?.snapshot?.value?.durationMs ?: 0L,
+        positionMs = nativeEngineOrNull()?.snapshot?.value?.positionMs ?: 0L,
+        isPlaying = nativeEngineOrNull()?.currentPlayer?.isPlaying == true,
       )
     }
     if (!isReady || fileName.isBlank()) return null
@@ -2787,9 +2920,9 @@ class PlayerActivity :
     val playbackWasInitialized = mpvInitialized
     val nativeWasActive =
       activeEngineMode == PlaybackEngineMode.NATIVE &&
-        (nativeEngine.currentPlayer.currentMediaItem != null ||
-          nativeEngine.currentPlayer.isPlaying ||
-          nativeEngine.snapshot.value.isReady)
+        (nativeEngineOrNull()?.currentPlayer?.currentMediaItem != null ||
+          nativeEngineOrNull()?.currentPlayer?.isPlaying == true ||
+          nativeEngineOrNull()?.snapshot?.value?.isReady == true)
     if (ownsPlaybackSession && (playbackWasInitialized || nativeWasActive) && wasInPipMode && !isChangingConfigurations) {
       commitPipDismissal()
     }
@@ -2811,10 +2944,10 @@ class PlayerActivity :
         saveVideoPlaybackState(fileName, immediate = true)
       }
       if (!keepBackgroundPlaybackAlive && nativeWasActive) {
-        nativeEngine.setPlaying(false)
-        nativeEngine.stop()
+        nativeEngineOrNull()?.setPlaying(false)
+        nativeEngineOrNull()?.stop()
       }
-      nativeEngine.release()
+      nativeEngineOrNull()?.release()
       if (playbackWasInitialized && ownsPlaybackSession && !keepBackgroundPlaybackAlive) {
         reportJellyfinStop()
       }
@@ -2999,20 +3132,18 @@ class PlayerActivity :
    */
   private fun silenceAudioOnClose() {
     if (isBackgroundPlaybackSessionActive) return
-    val nativeActive =
-      activeEngineMode == PlaybackEngineMode.NATIVE ||
-        decoderPreferences.playbackEngine.get() == PlaybackEngineMode.NATIVE
+    val nativeActive = isNativeEngineActive()
     if (!mpvInitialized && !nativeActive) return
     if (nativeActive) {
       // finish()/PiP dismissal run before onPause. Native.stop() clears the MediaItem and
       // resets its clock, so the immutable snapshot must be captured at this close boundary.
-      if (ownsPlaybackSession() && activeEngineMode == PlaybackEngineMode.NATIVE &&
-        nativeEngine.currentPlayer.currentMediaItem != null && fileName.isNotBlank()
+      if (ownsPlaybackSession() &&
+        nativeEngineOrNull()?.currentPlayer?.currentMediaItem != null && fileName.isNotBlank()
       ) {
         saveVideoPlaybackState(fileName, immediate = true)
       }
-      nativeEngine.setPlaying(false)
-      nativeEngine.stop()
+      nativeEngineOrNull()?.setPlaying(false)
+      nativeEngineOrNull()?.stop()
     }
     // Pause synchronously to freeze the resume position at the close boundary. Muting as well
     // prevents Android AudioTrack/libmpv buffers from draining a short audible tail afterward.
@@ -3126,6 +3257,7 @@ class PlayerActivity :
   val audioOpenFromMiniRequest = androidx.compose.runtime.mutableIntStateOf(0)
   private var audioWindowBackground: android.graphics.drawable.Drawable? = null
   private var audioWindowTranslucent = false
+  private var pendingRendererRebuildAfterBackground = false
 
   private fun requestAudioOpenFromMini(launchIntent: Intent?) {
     if (launchIntent?.getBooleanExtra("open_from_mini_player", false) != true) return
@@ -3145,19 +3277,39 @@ class PlayerActivity :
         isAudio = isCurrentPlaybackAudio() || launchIntent?.getBooleanExtra("is_audio", false) == true,
         api = Build.VERSION.SDK_INT,
       )) return false
+    // Theme already marked the window translucent in onCreate. Still hide the
+    // SurfaceView compositor planes, or minimize paints a black hole.
+    if (enabled) prepareAudioPlayerSeeThroughLayers()
     if (enabled == audioWindowTranslucent) return true
     return runCatching {
       if (enabled) {
         if (audioWindowBackground == null) audioWindowBackground = window.decorView.background
         window.setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
       }
-      val success = setTranslucent(enabled)
-      if (!enabled || !success) {
-        audioWindowBackground?.let { window.setBackgroundDrawable(it) }
-      }
-      audioWindowTranslucent = enabled && success
-      success
+      // Never call Activity.setTranslucent() here: converting an already-created
+      // window relayouts, cancels the minimize drag, and flashes black. The audio
+      // theme is translucent from onCreate, so swapping the drawable is enough.
+      // Keep the window see-through even after settle so a later drag still
+      // shows the library instead of an opaque black slab.
+      window.setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
+      audioWindowTranslucent = true
+      true
     }.onFailure { Log.d(TAG, "Audio translucency transition unavailable", it) }.getOrDefault(false)
+  }
+
+  /**
+   * SurfaceView layers punch an opaque black hole through a translucent window.
+   * Music never paints video, so remove those compositor planes and the layout's
+   * black background so the library can show around the shrinking player.
+   */
+  private fun prepareAudioPlayerSeeThroughLayers() {
+    window.setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
+    binding.root.setBackgroundColor(Color.TRANSPARENT)
+    binding.ambientBackground.visibility = View.GONE
+    binding.player.visibility = View.GONE
+    setNativeVideoSurfaceVisible(false)
+    binding.media3SubtitleOverlay.visibility = View.GONE
+    binding.clipOverlayHost.visibility = View.GONE
   }
 
   private fun applyMiniPlayerExitTransition() {
@@ -3216,11 +3368,13 @@ class PlayerActivity :
       return
     }
     MediaPlaybackService.activityForeground = false
+    playerStoppedAtElapsedRealtime = android.os.SystemClock.elapsedRealtime()
     runCatching {
       pipHelper.onStop()
       if (isNativeEngineActive() && fileName.isNotBlank()) {
         saveVideoPlaybackState(fileName, immediate = true)
       }
+      if (!mpvInitialized && !isNativeEngineActive()) return@runCatching
       if (!mpvInitialized) return@runCatching
 
       if (noisyReceiverRegistered) {
@@ -3282,21 +3436,21 @@ class PlayerActivity :
 
   private fun hasActivePlaybackEngine(): Boolean =
     mpvInitialized ||
-      (activeEngineMode == PlaybackEngineMode.NATIVE &&
-        (nativeEngine.currentPlayer.currentMediaItem != null ||
-          nativeEngine.currentPlayer.isPlaying ||
-          nativeEngine.snapshot.value.isReady))
+      (isNativeEngineActive() &&
+        (nativeEngineOrNull()?.currentPlayer?.currentMediaItem != null ||
+          nativeEngineOrNull()?.currentPlayer?.isPlaying == true ||
+          nativeEngineOrNull()?.snapshot?.value?.isReady == true))
 
   private fun commitPipDismissal(): Boolean {
     val nativePlaybackActive =
-      activeEngineMode == PlaybackEngineMode.NATIVE &&
-        (nativeEngine.currentPlayer.currentMediaItem != null ||
-          nativeEngine.currentPlayer.isPlaying ||
-          nativeEngine.snapshot.value.isReady)
+      isNativeEngineActive() &&
+        (nativeEngineOrNull()?.currentPlayer?.currentMediaItem != null ||
+          nativeEngineOrNull()?.currentPlayer?.isPlaying == true ||
+          nativeEngineOrNull()?.snapshot?.value?.isReady == true)
     if (handledPipDismissal || (!mpvInitialized && !nativePlaybackActive)) return false
     if (!ownsPlaybackSession()) {
-      nativeEngine.setPlaying(false)
-      nativeEngine.stop()
+      nativeEngineOrNull()?.setPlaying(false)
+      nativeEngineOrNull()?.stop()
       handledPipDismissal = true
       return true
     }
@@ -3948,7 +4102,10 @@ class PlayerActivity :
     }
 
     player.onSurfaceReady = {
-      if (!isDeviceScreenOffOrLocked() && (isInBackgroundPlayback || lastVid > 0)) {
+      if (pendingRendererRebuildAfterBackground) {
+        pendingRendererRebuildAfterBackground = false
+        rebuildRendererAfterLongBackground()
+      } else if (!isDeviceScreenOffOrLocked() && (isInBackgroundPlayback || lastVid > 0)) {
         enableVideoAfterBackground()
       }
       viewModel.restartAmbientIfActive()
@@ -4789,13 +4946,58 @@ class PlayerActivity :
 
   private fun restoreForegroundVideoAndAmbientIfUnlocked(): Boolean {
     if ((!mpvInitialized && !isNativeEngineActive()) || !ownsPlaybackSession() || isDeviceScreenOffOrLocked()) return false
+    val stoppedForMs =
+      if (playerStoppedAtElapsedRealtime > 0L) {
+        android.os.SystemClock.elapsedRealtime() - playerStoppedAtElapsedRealtime
+      } else {
+        0L
+      }
+    playerStoppedAtElapsedRealtime = 0L
+    val audioMedia = viewModel.isAudioOnly.value || isCurrentMediaKnownAudio() || isKnownAudioLaunch(intent)
+    if (PlayerLifecyclePolicy.shouldRebuildRendererAfterBackground(stoppedForMs, audioMedia)) {
+      Log.w(TAG, "Rebuilding video renderer after ${stoppedForMs}ms in the background")
+      pendingRendererRebuildAfterBackground = true
+      val surfaceReady = isNativeEngineActive() || player.isSurfaceReady
+      if (!PlayerLifecyclePolicy.shouldWaitForSurfaceBeforeRebuild(surfaceReady)) {
+        pendingRendererRebuildAfterBackground = false
+        rebuildRendererAfterLongBackground()
+      } else {
+        Log.w(TAG, "Deferring renderer rebuild until the playback surface is ready")
+      }
+      viewModel.setAmbientLifecycleActive(true)
+      return true
+    }
     if (isNativeEngineActive()) {
       setNativeVideoSurfaceVisible(true)
+      nativeEngineOrNull()?.refreshAfterConfigurationChange()
     } else {
+      PlaybackSession.markForeground()
       enableVideoAfterBackground()
     }
     viewModel.setAmbientLifecycleActive(true)
     return true
+  }
+
+  private fun rebuildRendererAfterLongBackground() {
+    if (fileName.isBlank() || isFinishing || isDestroyed || !ownsPlaybackSession()) return
+    val paused = viewModel.paused == true || PlaybackSession.getPropertyBoolean("pause") == true
+    val positionSeconds =
+      if (isNativeEngineActive()) nativePlaybackPositionSeconds()
+      else PlaybackSession.getPropertyDouble("time-pos") ?: 0.0
+    val restore = PlaybackPositionRestoreOverride(
+      positionSeconds = positionSeconds.takeIf { it.isFinite() && it > 0.0 },
+      paused = paused,
+    )
+    val playable = currentPlayableUri ?: intent?.dataString
+    if (playable.isNullOrBlank()) return
+    if (isNativeEngineActive()) {
+      nativeEngineOrNull()?.refreshAfterConfigurationChange()
+    }
+    startMediaLoad(
+      playableUri = playable,
+      originalUri = playable,
+      positionRestoreOverride = restore,
+    )
   }
 
   private fun rememberResumeAfterUnlockBeforeForcedPause() {
@@ -5337,7 +5539,7 @@ class PlayerActivity :
     super.onConfigurationChanged(newConfig)
     viewModel.onOrientationChanged()
     if (isNativeEngineActive()) {
-      nativeEngine.refreshAfterConfigurationChange()
+      nativeEngineOrNull()?.refreshAfterConfigurationChange()
     }
     binding.root.post(::updateVideoAmbientPlayerBounds)
     if (isReady) {
@@ -5518,8 +5720,8 @@ class PlayerActivity :
   private fun restartCurrentAtEof() {
     isAdvancingAtEof = false
     if (isNativeEngineActive()) {
-      nativeEngine.seekTo(0L)
-      nativeEngine.setPlaying(true)
+      nativeEngineOrNull()?.seekTo(0L)
+      nativeEngineOrNull()?.setPlaying(true)
       return
     }
     PlaybackSession.command("seek", "0", "absolute")
@@ -6334,17 +6536,17 @@ class PlayerActivity :
     val saveIdentifier = activeSaveMediaIdentifier.ifBlank { mediaIdentifier }
     if (saveIdentifier.isBlank()) return null
 
-    val nativeSnapshot = nativeEngine.snapshot.value
+    val nativeSnapshot = nativeEngineOrNull()?.snapshot?.value
     val nativeEngineActive = activeEngineMode == PlaybackEngineMode.NATIVE
-    val nativeResumePositionMs = nativeEngine.positionForPersistenceMs()
+    val nativeResumePositionMs = nativeEngineOrNull()?.positionForPersistenceMs()
     val nativePositionIsKnown = nativeEngineActive && nativeResumePositionMs != null &&
       NativePositionPersistencePolicy.isPositionKnown(
-        hasCurrentMediaItem = nativeEngine.currentPlayer.currentMediaItem != null,
-        isReady = nativeSnapshot.isReady,
-        hasEstablishedPlaybackPosition = nativeEngine.hasEstablishedPlaybackPosition,
+        hasCurrentMediaItem = nativeEngineOrNull()?.currentPlayer?.currentMediaItem != null,
+        isReady = nativeSnapshot?.isReady == true,
+        hasEstablishedPlaybackPosition = nativeEngineOrNull()?.hasEstablishedPlaybackPosition == true,
       )
     val liveNativePositionMs = nativeResumePositionMs ?: 0L
-    val liveNativeDurationMs = nativeEngine.currentPlayer.duration.takeIf { it != C.TIME_UNSET }?.coerceAtLeast(0L) ?: 0L
+    val liveNativeDurationMs = nativeEngineOrNull()?.currentPlayer?.duration?.takeIf { it != C.TIME_UNSET }?.coerceAtLeast(0L) ?: 0L
     val mpvPosition = if (nativeEngineActive) null else readMpvIntSecondsOrNull("time-pos")
     fun mpvDouble(property: String): Double? =
       if (nativeEngineActive) null else runCatching { PlaybackSession.getPropertyDouble(property) }.getOrNull()
@@ -6372,7 +6574,7 @@ class PlayerActivity :
         if (nativeEngineActive) liveNativePositionMs.toSecondsInt()
         else mpvPosition ?: (viewModel.pos ?: 0),
       duration =
-        if (nativeEngineActive) maxOf(nativeSnapshot.durationMs, liveNativeDurationMs).toSecondsInt()
+        if (nativeEngineActive) maxOf(nativeSnapshot?.durationMs ?: 0L, liveNativeDurationMs).toSecondsInt()
         else readMpvIntSeconds("duration", viewModel.duration ?: 0),
       isPositionRestorePending =
         if (nativeEngineActive) {
@@ -6395,9 +6597,9 @@ class PlayerActivity :
       aid = aid ?: -1,
       audioDelayMs = ((audioDelay ?: 0.0) * MILLISECONDS_TO_SECONDS).toInt(),
       externalSubtitles = viewModel.externalSubtitles.joinToString("|"),
-      audioSelection = if (nativeEngineActive) nativeEngine.captureAudioSelection()
+      audioSelection = if (nativeEngineActive) nativeEngineOrNull()?.captureAudioSelection()
         else captureMpvTrackSelection("audio", "aid", pendingSharedAudioSelection),
-      subtitleSelection = if (nativeEngineActive) nativeEngine.captureSubtitleSelection()
+      subtitleSelection = if (nativeEngineActive) nativeEngineOrNull()?.captureSubtitleSelection()
         else captureMpvTrackSelection("sub", "sid", pendingSharedSubtitleSelection),
     )
   }
@@ -6623,7 +6825,7 @@ class PlayerActivity :
   /** Restore common per-video settings on Native as well as MPV. MPV-only timing and
    * track identifiers stay in the shared record untouched; they are not Media3 IDs. */
   private suspend fun applyNativePlaybackState(state: PlaybackStateEntity?) {
-    nativeEngine.restoreTrackSelections(state?.audioSelection, state?.subtitleSelection)
+    nativeEngineOrNull()?.restoreTrackSelections(state?.audioSelection, state?.subtitleSelection)
     nativeSetSpeed(state?.playbackSpeed?.toFloat() ?: DEFAULT_PLAYBACK_SPEED.toFloat())
     viewModel.setVideoZoom(state?.videoZoom ?: playerPreferences.defaultVideoZoom.get())
     if (playerPreferences.rememberVideoAspectPerVideo.get() && state != null) {
@@ -7543,6 +7745,7 @@ class PlayerActivity :
         binding.player.visibility = View.GONE
         setNativeVideoSurfaceVisible(true)
         viewModel.clearNativeExternalSubtitles()
+        configureNativeEngineIfNeeded(force = true)
         val nativePlayableUri = PlaybackSession.resolvePlayableUriForNative(nativeItem)
         nativeEngine.setRepeatMode(viewModel.repeatMode.value)
         Log.d(
@@ -7573,7 +7776,7 @@ class PlayerActivity :
         // until the MPV surface is ready, avoiding a one-frame scale/deformation during startup.
         viewModel.setAmbientLifecycleActive(false)
         setVideoAmbientPresentationActive(false)
-        nativeEngine.stop()
+        nativeEngineOrNull()?.stop()
         setNativeVideoSurfaceVisible(false)
         binding.player.alpha = 1f
         binding.player.visibility = View.VISIBLE
@@ -8019,10 +8222,17 @@ class PlayerActivity :
 
   private fun isKnownAudioLaunch(sourceIntent: Intent): Boolean =
     sourceIntent.getBooleanExtra("is_audio", false) ||
+      sourceIntent.getBooleanExtra("media_library_audio", false) ||
       sourceIntent.type?.startsWith("audio/") == true ||
       sequenceOf(sourceIntent.dataString, sourceIntent.getStringExtra("local_media_path"))
         .filterNotNull()
         .any { source -> source.fileExtension() in FileTypeUtils.AUDIO_EXTENSIONS }
+
+  /** Audio launches use a see-through window from creation so minimize can show the library. */
+  private fun shouldUseAudioPlayerTheme(sourceIntent: Intent?): Boolean =
+    sourceIntent != null &&
+      Build.VERSION.SDK_INT >= 30 &&
+      isKnownAudioLaunch(sourceIntent)
 
   private fun applyPlaybackBrightnessPolicy(
     isAudio: Boolean = viewModel.isAudioOnly.value || isCurrentMediaKnownAudio(),
@@ -8500,7 +8710,7 @@ class PlayerActivity :
   }
 
   private fun startBackgroundPlaybackInternal(bindToActivity: Boolean): Boolean {
-    if (fileName.isBlank() || (!isReady && !nativeEngine.snapshot.value.isReady)) {
+    if (fileName.isBlank() || (!isReady && nativeEngineOrNull()?.snapshot?.value?.isReady != true)) {
       Log.w(TAG, "Cannot start background playback: video not ready")
       return false
     }
@@ -8509,15 +8719,15 @@ class PlayerActivity :
       // MediaPlaybackService is MPV-backed. Hand native playback to MPV before the service is
       // started; otherwise the service and Media3 decode the same item independently and the
       // Activity resumes with a stale native surface or no playable session.
-      val nativePositionMs = (nativeEngine.positionForPersistenceMs() ?: 0L)
-      val nativeWasPlaying = nativeEngine.currentPlayer.isPlaying
+      val nativePositionMs = (nativeEngineOrNull()?.positionForPersistenceMs() ?: 0L)
+      val nativeWasPlaying = nativeEngineOrNull()?.currentPlayer?.isPlaying == true
       // Capture before stopping Native; the MPV-backed service must inherit this state.
       saveVideoPlaybackState(fileName, immediate = true)
-      nativeEngine.setPlaying(false)
+      nativeEngineOrNull()?.setPlaying(false)
       activeEngineMode = PlaybackEngineMode.MPV
       viewModel.setNativeEngineActive(false)
       forceMpvAudioTrackAutoOnNextLoad = true
-      nativeEngine.stop()
+      nativeEngineOrNull()?.stop()
       setNativeVideoSurfaceVisible(false)
       binding.player.alpha = 1f
       binding.player.visibility = View.VISIBLE
@@ -9079,7 +9289,7 @@ class PlayerActivity :
     // episodes to be audible during the transition. Keep the queue intact; issuePlaybackLoad still
     // awaits this stop before committing the incoming generation.
     PlaybackSession.stop(clearQueue = false)
-    nativeEngine.stop()
+    nativeEngineOrNull()?.stop()
 
     startMediaLoad(playableUri, positionRestoreOverride = positionRestoreOverride)
 
@@ -10038,7 +10248,7 @@ class PlayerActivity :
   private fun disableVideoForBackground() {
     // Native-to-MPV handoff deliberately marks MPV as loading before the service owns it, so
     // isReady can be false even though a playable native session existed moments earlier.
-    if (fileName.isBlank() || (!isReady && !nativeEngine.snapshot.value.isReady && !mpvInitialized)) return
+    if (fileName.isBlank() || (!isReady && nativeEngineOrNull()?.snapshot?.value?.isReady != true && !mpvInitialized)) return
     if (isMiniPlayerEnabled()) return
 
     val currentVid = PlaybackSession.getPropertyInt("vid") ?: -1
