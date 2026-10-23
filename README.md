@@ -9,16 +9,15 @@
   <a href="https://apps.obtainium.imranr.dev/redirect?r=obtainium://app/%7B%22id%22%3A%22app.infinity.mpvz%22%2C%22url%22%3A%22https%3A%2F%2Fgithub.com%2FZHINFINITY%2FMpv-infinity%22%2C%22author%22%3A%22ZHINFINITY%22%2C%22name%22%3A%22Mpv%5Cu221e%22%2C%22preferredApkIndex%22%3A0%2C%22additionalSettings%22%3A%22%7B%5C%22includePrereleases%5C%22%3Afalse%2C%5C%22fallbackToOlderReleases%5C%22%3Atrue%2C%5C%22filterReleaseTitlesByRegEx%5C%22%3A%5C%22%5C%22%2C%5C%22filterReleaseNotesByRegEx%5C%22%3A%5C%22%5C%22%2C%5C%22verifyLatestTag%5C%22%3Afalse%2C%5C%22sortMethodChoice%5C%22%3A%5C%22date%5C%22%2C%5C%22useLatestAssetDateAsReleaseDate%5C%22%3Afalse%2C%5C%22releaseTitleAsVersion%5C%22%3Afalse%2C%5C%22trackOnly%5C%22%3Afalse%2C%5C%22versionExtractionRegEx%5C%22%3A%5C%22%5C%22%2C%5C%22matchGroupToUse%5C%22%3A%5C%22%5C%22%2C%5C%22versionDetection%5C%22%3Atrue%2C%5C%22releaseDateAsVersion%5C%22%3Afalse%2C%5C%22useVersionCodeAsOSVersion%5C%22%3Afalse%2C%5C%22apkFilterRegEx%5C%22%3A%5C%22%5C%22%2C%5C%22invertAPKFilter%5C%22%3Afalse%2C%5C%22autoApkFilterByArch%5C%22%3Atrue%2C%5C%22minimumUpdateAgeDays%5C%22%3A%5C%22%5C%22%2C%5C%22appName%5C%22%3A%5C%22%5C%22%2C%5C%22appAuthor%5C%22%3A%5C%22%5C%22%2C%5C%22shizukuPretendToBeGooglePlay%5C%22%3Afalse%2C%5C%22allowInsecure%5C%22%3Afalse%2C%5C%22exemptFromBackgroundUpdates%5C%22%3Afalse%2C%5C%22skipUpdateNotifications%5C%22%3Afalse%2C%5C%22about%5C%22%3A%5C%22Mpv%5C%5Cu221e%20%5C%5Cu2014%20ad-free%20Android%20media%20player%20with%20MPV%20and%20Native%20Media3%20playback%2C%20HDR%2FDolby%20Vision-capable%20native%20playback%20paths%2C%20Jellyfin%2C%20catalogs%2C%20subtitles%2C%20lyrics%2C%20and%20yt-dlp%20downloads.%5C%22%2C%5C%22refreshBeforeDownload%5C%22%3Afalse%2C%5C%22includeZips%5C%22%3Afalse%2C%5C%22zippedApkFilterRegEx%5C%22%3A%5C%22%5C%22%2C%5C%22includeTarballs%5C%22%3Afalse%2C%5C%22tarballedApkFilterRegEx%5C%22%3A%5C%22%5C%22%7D%22%2C%22overrideSource%22%3Anull%7D"><b>Get Mpv∞ with Obtainium</b></a>
 </p>
 
-
 <p align="center">
-  <b>Powerful and efficient Android video player with Native Media3 and MPV engines.</b>
+  <b>Powerful Android video and music player with MPV and Native Media3 engines.</b>
   <br>
-  <i>High-quality playback, thoughtful controls, and a focused media library without distractions.</i>
+  <i>Smooth-motion frame interpolation up to 120 fps, a Liquid Glass look, and a focused media library without distractions.</i>
   <br>
   <a href="https://t.me/Infinityzlabs">Join the Mpv∞ Telegram channel</a>
 </p>
 
-**Mpv∞ (Mpv-infinity) is an ad-free, source-available Android media player for high-quality video and audio playback, combining MPV/libmpv with AndroidX Media3/ExoPlayer engines, dual subtitles, HDR, Dolby Vision, HDR10+, chapters, and customizable playback controls.**
+**Mpv∞ (Mpv-infinity) is an ad-free, source-available Android media player for high-quality video and audio playback. It combines MPV/libmpv with the AndroidX Media3/ExoPlayer engine and adds real-time frame interpolation up to 120 fps, a Liquid Glass interface, dual subtitles, AI subtitle translation, HDR, Dolby Vision, HDR10+, chapters, radio, and customizable playback controls.**
 
 ## Jellyfin Client and Seerr Support
 
@@ -29,10 +28,9 @@ Mpv∞ includes a native **Jellyfin Client** for connecting to Jellyfin media se
 </p>
 
 > [!IMPORTANT]
-> **Mpv∞ is actively developed by ZHINFINITY.**
+> **Mpv∞ v2.2.0, the Smooth Motion Update, is out.** [Download it from Releases](https://github.com/ZHINFINITY/Mpv-infinity/releases/tag/v2.2.0).
 >
-> The current hotfix release focuses on reliable Native-to-MPV fallback for difficult Dolby Vision files while preserving the existing MPV playback path.
-
+> For smooth motion (frame interpolation) in the MPV player, install the **arm64-v8a** APK, the right one for almost all modern phones. The other APKs don't include smooth motion for the MPV player.
 
 <p align="center">
   <img src="https://img.shields.io/badge/Platform-Android-brightgreen.svg" />
@@ -45,26 +43,41 @@ Mpv∞ includes a native **Jellyfin Client** for connecting to Jellyfin media se
 
 ## Showcase
 
-The screenshots below present the Mpv∞ player surface, video library, About page, Live Wallpaper library, Native engine selector, and chapter navigation.
+These screenshots are from Mpv∞ v2.2.0 with Liquid Glass turned on: the player with the 120 fps smooth-motion button, a folder list, the About page, picture-in-picture, and the frosted chapter and decoder sheets.
 
 <div align="center">
-  <img src="docs/showcase/player-glass.jpg" width="90%" alt="Mpv∞ player with translucent controls and seekbar">
+  <img src="docs/showcase/player-liquid-glass.jpg" width="90%" alt="Mpv∞ player with Liquid Glass controls and the 120 fps frame interpolation button">
 </div>
 
 <br>
 
 <div align="center">
-  <img src="docs/showcase/video-library.jpg" width="31%" alt="Mpv∞ video library">
-  <img src="docs/showcase/about-mpv-infinity.jpg" width="31%" alt="Mpv∞ About page">
-  <img src="docs/showcase/live-wallpapers.jpg" width="31%" alt="Mpv∞ Live Wallpaper library">
+  <img src="docs/showcase/folder-list.jpg" width="31%" alt="Mpv∞ folder list with Liquid Glass">
+  <img src="docs/showcase/about-v2.2.0.jpg" width="31%" alt="Mpv∞ About page showing version 2.2.0">
+  <img src="docs/showcase/picture-in-picture.jpg" width="31%" alt="Mpv∞ picture-in-picture playback on the phone home screen">
 </div>
 
 <br>
 
 <div align="center">
-  <img src="docs/showcase/decoder-native.jpg" width="46%" alt="Mpv∞ Playback engine selector showing MPV and Native">
-  <img src="docs/showcase/chapters.jpg" width="46%" alt="Mpv∞ chapter navigation sheet">
+  <img src="docs/showcase/chapters-sheet.jpg" width="46%" alt="Mpv∞ frosted chapter sheet over the playing video">
+  <img src="docs/showcase/decoder-sheet.jpg" width="46%" alt="Mpv∞ frosted decoder sheet with the MPV and Native engines">
 </div>
+
+---
+
+## What's new in v2.2.0
+
+- 🎞️ **Frame interpolation (smooth motion):** Mpv∞ creates in-between frames on the fly, so 24 and 30 fps movies, anime and sports play fluidly at up to 120 fps (the default target). It runs on your phone's GPU and works in both the MPV and Native players.
+- 👆 **Smooth motion from the player:** add the on/off and target-FPS buttons to your player controls. Playback picks up exactly where you were.
+- 💎 **Liquid Glass look:** a frosted, see-through glass style for the player, menus, popups, settings, search bars and buttons, with adjustable glass, blur and frost, plus 3D toggles and sliders.
+- ⬆️ **Bottom sheets:** Sort & View, settings choices and server setup slide up from the bottom, so every option is easy to reach.
+- 📻 **Radio and music:** radio playlists open in the music player with song info and album art, radio stations get their own Radio playlist, and the music player swipes down smoothly into the mini player.
+- 🌍 **AI subtitle translation:** use your own Gemini, DeepL, OpenAI-compatible or Google Cloud key, or the free Google Translate. Your keys never appear in error messages or logs.
+- 🚀 **Faster and more reliable:** faster thumbnails that stay loaded when you scroll back, a memory-leak fix, playlist export, and long-press options in global search.
+- 🗣️ **More languages:** Indonesian and Persian, plus many missing translations filled in.
+
+Read the full [v2.2.0 release notes](https://github.com/ZHINFINITY/Mpv-infinity/releases/tag/v2.2.0).
 
 ---
 
@@ -73,6 +86,54 @@ The screenshots below present the Mpv∞ player surface, video library, About pa
 Mpv∞ is a feature-rich Android media player combining the MPV and AndroidX Media3 playback engines with customizable controls, advanced video rendering, subtitle tools, audio playback, and practical library features.
 
 <details close>
+<details close>
+<summary><b>🎞️ Frame Interpolation (Smooth Motion)</b></summary>
+
+| Feature | Description |
+|---|---|
+| **Real-time frame interpolation** | Creates in-between frames during playback, so 24 and 30 fps video looks fluid instead of choppy |
+| **Up to 120 fps** | Match your phone's high refresh-rate screen; 120 fps is the default target |
+| **GPU-accelerated** | The heavy work runs on the phone's GPU to keep playback smooth |
+| **Cleaner motion** | Tuned to avoid the blocky "ghost" patches around moving people that other smooth-motion players often show |
+| **Both engines** | Available in the MPV player (arm64-v8a APK) and the Native Media3 player |
+| **Player shortcuts** | Optional on/off and target-FPS buttons for the player controls layout; playback continues from the same position |
+| **Explained settings** | Every frame interpolation setting has a short description of what it does |
+| **Live FPS in statistics** | The statistics screen shows the real playback FPS in both players |
+
+> MPV smooth motion is included in the **arm64-v8a** APK only.
+
+</details>
+
+<details close>
+<summary><b>💎 Liquid Glass Design</b></summary>
+
+| Feature | Description |
+|---|---|
+| **Liquid Glass mode** | Turn it on in Appearance for a frosted, see-through glass style across the player, menus, popups, settings, search bars and buttons |
+| **Customizable glass** | Adjust how strong the glass, blur and frost look |
+| **3D toggles and sliders** | Switches and sliders with real depth, coloured to contrast with the theme (light on dark and AMOLED, dark on light) |
+| **Bottom sheets** | Sort & View, settings choices and server setup slide up from the bottom of the screen |
+| **Frosted player menus** | Decoder, subtitle and chapter sheets keep the video softly visible behind them while the text stays readable |
+| **True black AMOLED** | AMOLED mode stays black, with an edge-to-edge top bar |
+| **Swipeable navigation pill** | Drag the bottom navigation pill to switch tabs, with smooth jumps across several tabs |
+
+</details>
+
+<details close>
+<summary><b>🎵 Music & Radio</b></summary>
+
+| Feature | Description |
+|---|---|
+| **Radio playback** | Radio playlists open straight in the music player with station/song info and album art |
+| **Radio playlist** | Radio stations get their own Radio playlist, with a setting to choose how radio links open |
+| **IPTV, radio and playlist screens** | Redesigned to be cleaner and easier to browse |
+| **Swipe to minimize** | Swipe the music player down and it shrinks smoothly into the mini player |
+| **Album-art colours** | The music player takes its colours from the album cover without stretching the artwork |
+| **Roomier music lists** | More space for songs and artists, with bigger covers by default |
+| **Notification controls** | Skipping songs from the notification shows the right song and artwork |
+
+</details>
+
 <summary><b>⚙️ Dual Playback Engines: MPV + Media3</b></summary>
 
 | Feature | Description |
@@ -250,6 +311,7 @@ Mpv∞ is a feature-rich Android media player combining the MPV and AndroidX Med
 | **Folder Playlist Sheets** | Open playable folders, including nested series folders, as navigable episode or file playlists from the player |
 | **Safer Folder Deletion** | Media-only folder deletion by default, with an explicit option to delete every contained file |
 | **Settings Search Memory** | Search suggestions and recently used settings queries |
+| **Global Search Actions** | Long-press a global search result for options, in both grid and list layouts |
 
 </details>
 
@@ -260,6 +322,9 @@ Mpv∞ is a feature-rich Android media player combining the MPV and AndroidX Med
 |---|---|
 | **Provider Support** | OpenAI, Anthropic, Groq, OpenRouter, Together, and OpenCode Zen with provider-specific models and API protocols |
 | **AI Subtitle Translation** | Translate subtitles with custom prompts |
+| **Embedded Subtitle Translation Providers** | Free Google Translate, or your own Google Cloud, DeepL, Gemini or OpenAI-compatible key, with model selection |
+| **Private API Keys** | Keys are sent only in request headers and never shown in error messages or saved in logs |
+| **Clear Translation Errors** | A short message explains a failed translation, with no silent switch to Google |
 | **AI Subtitle Formatting** | Reformat subtitle styling with custom prompts |
 | **AI File Renaming** | Bulk rename video files with custom rename prompts |
 | **Reasoning-Safe Parsing** | Removes reasoning blocks and code fences while accepting structured provider responses and citations |
@@ -299,12 +364,19 @@ Mpv∞ is a feature-rich Android media player combining the MPV and AndroidX Med
 | **Safe Area / Window Offset** | Prevents camera notch overlap |
 | **Display Cutout Mode** | Full-bleed on notch devices |
 | **Remember Brightness** | Persists brightness level set during playback |
-| **M3U Playlist Support** | Parse and play local M3U playlists |
+| **M3U Playlists** | Play local M3U playlists, and export or share your own playlists as M3U |
 | **yt-dlp Integration** | High-performance streaming support for YouTube, Twitch, Bilibili, and more via a native Python bridge (SDK 29+ bypass) |
 | **yt-dlp Quality Controls** | Independent codec, resolution, FPS, HDR, container, and audio-bitrate preferences |
 | **Dynamic Refresh Rate** | Matches supported display refresh rates to the current video's frame rate for smoother motion |
 | **Audio Blob Visualizer** | OpenGL ES 3.0 FFT-reactive blob with bloom, touch rotation, pinch zoom, and an Audio Settings toggle |
 | **Screenshot Templates** | Filename placeholders for source name, playback position, and millisecond-accurate timestamps |
+
+</details>
+
+<details close>
+<summary><b>🗣️ Languages</b></summary>
+
+The app is translated into many languages, now including **Indonesian** and **Persian**, with missing translations filled in for the existing languages so menus and settings show up in your language.
 
 </details>
 
@@ -318,6 +390,7 @@ For efficient playback, begin with Mpv∞'s default configuration and enable add
 - **Use the built-in `fast` profile** for a lightweight starting point.
 - **Enable Anime4K and other shaders selectively**, because they run on every rendered frame and can increase GPU load.
 - **Check the statistics pages** during long playback to observe battery, thermal, frame, and rendering behavior on your device.
+- **Use frame interpolation when it matters**, because creating extra frames adds GPU work on every frame; turn it off or lower the target FPS for long sessions or when the phone gets warm.
 - **Keep custom mpv.conf settings focused**, since aggressive scaling, debanding, and shader chains can increase startup time, memory use, and power consumption.
 
 Actual power use depends on the device, codec, resolution, refresh rate, renderer, and selected shaders. Mpv∞'s thermal-aware safeguards can reduce shader quality when the device is under sustained load.
@@ -365,11 +438,12 @@ If something breaks or feels inconsistent, please report it through the [Issues]
 
 | Variant | Description |
 |---|---|
+| `arm64-v8a` | Recommended for most current Android devices, and the only APK with MPV smooth motion (frame interpolation) |
 | `universal` | Works on all supported devices |
-| `arm64-v8a` | Recommended for most current Android devices |
 | `armeabi-v7a` | For older 32-bit ARM devices |
 | `x86` | For 32-bit Intel and AMD Android devices |
 | `x86_64` | For 64-bit Intel and AMD Android devices |
+| `no-vulkan` / `no-vulkan-arm64-v8a` | MPV builds without the Vulkan renderer, for devices where Vulkan playback has problems |
 
 ---
 
@@ -403,7 +477,7 @@ Scan with any UPI app (Google Pay, PhonePe, Paytm, BHIM)
 
 ## Release Notes For Maintainers
 
-To cut a signed GitHub release through Actions, configure these repository secrets:
+Signed GitHub releases are built by the **Make release** workflow (`.github/workflows/release.yml`). It needs these repository secrets:
 
 | Secret Name | Description |
 |---|---|
@@ -412,27 +486,32 @@ To cut a signed GitHub release through Actions, configure these repository secre
 | `SIGNING_STORE_PASSWORD` | Password for the keystore |
 | `KEY_PASSWORD` | Password for the signing key |
 
-Then bump `versionCode` and `versionName` in `app/build.gradle.kts`, create a tag, and push it:
+Bump `versionName` and `releaseVersionCode` in `app/build.gradle.kts` through a pull request to `main`. Then either push a version tag:
 
 ```bash
-git tag -a v1.0.1 -m "Release version 1.0.1"
-git push origin v1.0.1
+git tag -a v2.2.1 -m "Release version 2.2.1"
+git push origin v2.2.1
 ```
 
-Preview releases use the same flow with preview tags such as:
+or run **Make release** from the Actions tab with `tag_name` (for example `v2.2.1`). Turn on `draft` to review the release and its APKs before publishing.
+
+Preview releases use the **Make Pre Release** workflow with preview tags such as:
 
 ```bash
-git tag -a v1.0.1-preview.1 -m "Preview release"
-git push origin v1.0.1-preview.1
+git tag -a v2.2.1-preview.1 -m "Preview release"
+git push origin v2.2.1-preview.1
 ```
 
 ---
 
 ## Acknowledgments
 
-Mpv∞ is maintained by **ZHINFINITY** and is an independent Android player in the **[mpvRx](https://github.com/Riteshp2001/mpvRx)** project lineage. Upstream-derived portions keep their applicable terms; a separate offer under the custom terms requires documented express authority for the exact portions and terms, not merely repository control or earlier PolyForm consent. Such authority does not erase prior grants or transfer ownership unless expressly agreed. The earlier **[mpvExtended / mpvEx](https://github.com/marlboro-advance/mpvEx)** and **[mpv-android](https://github.com/mpv-android)** projects are acknowledged as part of the lineage; their code and other third-party materials remain subject to their respective rights and license notices. Mpv∞-specific branding, Native Media3 integration, engine routing, fallback handling, controls, themes, and other changes are maintained separately. Mpv∞ is not affiliated with or endorsed by the upstream maintainers.
+Mpv∞ is maintained by **ZHINFINITY** and is an independent Android player built on **[mpv](https://github.com/mpv-player/mpv)** and libmpv. The earlier **[mpv-android](https://github.com/mpv-android)** and **[mpvExtended / mpvEx](https://github.com/marlboro-advance/mpvEx)** projects are acknowledged as part of its history; their code and other third-party materials remain subject to their respective rights and license notices. Mpv∞-specific branding, frame interpolation, Native Media3 integration, engine routing, fallback handling, controls, themes, Liquid Glass and other changes are maintained separately. Mpv∞ is not affiliated with or endorsed by the upstream maintainers.
 
 - [mpv-android](https://github.com/mpv-android)
+- [mpvlibAndroid](https://github.com/Riteshp2001/mpvlibAndroid) for the MPV library build profiles (**MIT**).
+- [mpv-android-anvil](https://github.com/NihilDigit/mpv-android-anvil) for the builder used for the arm64 MPV smooth-motion runtime (**MIT**).
+
 - [AndroidX Media3](https://developer.android.com/jetpack/androidx/releases/media3) for the Native/Media3 playback, audio, UI, and effects stack (**Apache-2.0**).
 - [QuickJS-KT](https://github.com/dokar3/quickjs-kt) for Kotlin bindings to the embedded JavaScript engine (**Apache-2.0**; bundled QuickJS and c-vector retain their MIT notices).
 - **Device-dependent multichannel audio support** depends on the selected playback engine and codecs available to that engine/device; it is not a universal device-support guarantee.
@@ -456,9 +535,9 @@ Individual source files, dependencies, and bundled assets may carry their own co
 
 **Everyone may download, install, update, and use official, unmodified Mpv∞ app releases from ZHINFINITY or an authorized distributor without asking for permission**, including for personal use or commercial work. Necessary installation and backup copies are allowed, and you may share official download links. This app-use grant does not itself authorize source-code reuse, derivative apps, APK rehosting, or publishing the app in another store or project; independently applicable earlier, third-party, statutory, and platform rights remain exercisable under LICENSE sections 4 and 5.
 
-**Source policy for the covered version and upcoming release:** custom [Mpv∞ Permission-Only Terms 1.0](LICENSE) are offered for all project material **ZHINFINITY owns or has express authority to license under these exact terms**, including unchanged owned/authorized frame-interpolation code and feature updates carried forward from earlier snapshots. Coverage is not limited to new additions. Except for ordinary app use, GitHub platform rights, and independently preserved rights, copying/reusing source, modification, redistribution, and republication require prior written permission, commercial or noncommercial. Attribution alone is not permission, and authorized reuse must not falsely claim original authorship. This is not PolyForm or an open-source licence. The owner has authorized the policy merge; qualified legal review remains recommended before a tagged/binary release. No tagged release is published by this change.
+**Source policy from v2.2.0:** custom [Mpv∞ Permission-Only Terms 1.0](LICENSE) are offered for all project material **ZHINFINITY owns or has express authority to license under these exact terms**, including unchanged owned/authorized frame-interpolation code and feature updates carried forward from earlier snapshots. Coverage is not limited to new additions. Except for ordinary app use, GitHub platform rights, and independently preserved rights, copying/reusing source, modification, redistribution, and republication require prior written permission, commercial or noncommercial. Attribution alone is not permission, and authorized reuse must not falsely claim original authorship. This is not PolyForm or an open-source licence. The owner has authorized the policy merge; qualified legal review remains recommended.
 
-The release boundary, exclusions, inventory, and ownership/authorization gaps are in [LICENSE-BOUNDARY.md](LICENSE-BOUNDARY.md). **The interpolation and feature code already public at commit `7015805f6831cbf8a9fc2e6d5dd5c70af209b638` retains its existing grants**, even when also offered under these terms in the upcoming release. Earlier rights remain usable by anyone entitled to them, not only people who already forked. Existing PolyForm headers refer to the [preserved baseline licence](HISTORICAL-LICENSE-POLYFORM-BASELINE.md); they are not proof of exclusive ownership. Earlier AGPL versions retain their terms; see [HISTORICAL-LICENSE-AGPL-3.0-or-later.txt](HISTORICAL-LICENSE-AGPL-3.0-or-later.txt). Earlier grants do not automatically cover additions they never licensed.
+The release boundary, exclusions, inventory, and ownership/authorization gaps are in [LICENSE-BOUNDARY.md](LICENSE-BOUNDARY.md). **The interpolation and feature code already public at commit `7015805f6831cbf8a9fc2e6d5dd5c70af209b638` retains its existing grants**, even when also offered under these terms in v2.2.0 and later releases. Earlier rights remain usable by anyone entitled to them, not only people who already forked. Existing PolyForm headers refer to the [preserved baseline licence](HISTORICAL-LICENSE-POLYFORM-BASELINE.md); they are not proof of exclusive ownership. Earlier releases keep the licences they were published under; their historical licence texts are preserved in this repository. Earlier grants do not automatically cover additions they never licensed.
 
 Third-party, upstream, and contributor materials keep their applicable terms and notices, including LGPL modification/relinking rights; see [THIRD_PARTY_SOURCE.md](THIRD_PARTY_SOURCE.md), [THIRD_PARTY_LICENSES/](THIRD_PARTY_LICENSES/), and component notices. Unresolved authority is not claimed. **GitHub's built-in public-repository viewing and forking are expressly acceptable, including forks under another user's account.** A public fork may be visible on GitHub; this platform right is not a general licence for external reuse or publication. Applicable law and earlier grants remain unaffected. Licensing cannot technically prevent copying or guarantee against infringement.
 
