@@ -2241,7 +2241,7 @@ class PlayerActivity :
       isMiniPlayerEnabled() ||
       PlayerLifecyclePolicy.shouldStartBackgroundPlaybackOnBack(
         backgroundPlaybackEnabled = isBackgroundPlaybackEnabled(),
-        mediaReady = isReady || nativeEngineOrNull()?.snapshot?.value?.isReady,
+        mediaReady = isReady || nativeEngineOrNull()?.snapshot?.value?.isReady == true,
       )
     ) {
       when (startBackgroundPlayback()) {
@@ -2266,7 +2266,7 @@ class PlayerActivity :
 
   fun selectEngineForCurrentVideo(engine: PlaybackEngineMode) {
     if (engine == PlaybackEngineMode.MPV && activeEngineMode == PlaybackEngineMode.NATIVE) {
-      val selectedTrack = nativeEngineOrNull()?.snapshot?.value?.audioTracks.firstOrNull { it.selected }
+      val selectedTrack = nativeEngineOrNull()?.snapshot?.value?.audioTracks?.firstOrNull { it.selected }
       pendingMpvAudioSelection =
         lastRequestedNativeAudioSelection ?: selectedTrack?.toAudioTrackFingerprint()
     } else if (engine == PlaybackEngineMode.NATIVE) {
@@ -2408,8 +2408,8 @@ class PlayerActivity :
           isSurfaceReadyProvider = {
             if (nativeActive) {
               surface.holder.surface?.isValid == true &&
-                (nativeEngineOrNull()?.snapshot?.value?.isReady ||
-                  nativeEngineOrNull()?.snapshot?.value?.isBuffering ||
+                (nativeEngineOrNull()?.snapshot?.value?.isReady == true ||
+                  nativeEngineOrNull()?.snapshot?.value?.isBuffering == true ||
                   nativeFirstFrame.value)
             } else {
               val state = PlaybackSession.state.value
@@ -2709,8 +2709,8 @@ class PlayerActivity :
         source = nativeUri,
         title = getPreferredCurrentTitle().ifBlank { fileName.ifBlank { nativeUri.lastPathSegment.orEmpty() } },
         mimeType = nativeMediaItem.localConfiguration?.mimeType ?: contentResolver.getType(nativeUri),
-        durationMs = nativeEngineOrNull()?.snapshot?.value?.durationMs,
-        positionMs = nativeEngineOrNull()?.snapshot?.value?.positionMs,
+        durationMs = nativeEngineOrNull()?.snapshot?.value?.durationMs ?: 0L,
+        positionMs = nativeEngineOrNull()?.snapshot?.value?.positionMs ?: 0L,
         isPlaying = nativeEngineOrNull()?.currentPlayer?.isPlaying == true,
       )
     }
