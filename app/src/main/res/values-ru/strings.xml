@@ -2245,4 +2245,15 @@
   <string name="track_metadata_forced">Принудительные</string>
   <string name="track_metadata_sdh">SDH</string>
   <string name="track_metadata_external">Внешние</string>
+    <string name="playlist_actions">Действия с плейлистом</string>
+    <string name="playlist_export_m3u">Экспорт в M3U</string>
+    <string name="playlist_share_m3u">Поделиться M3U</string>
+    <string name="playlist_export_success">Плейлист экспортирован</string>
+    <string name="playlist_export_unavailable">Плейлист ещё загружается</string>
+    <string name="playlist_export_error">Не удалось экспортировать плейлист: %1$s</string>
+    <string name="playlist_share_error">Не удалось поделиться плейлистом: %1$s</string>
+    <string name="pref_openai_base_url_title">Базовый URL API, совместимого с OpenAI</string>
+    <string name="pref_openai_base_url_summary">Оставьте пустым, чтобы использовать официальный адрес OpenAI</string>
+    <string name="pref_openai_base_url_prompt">Введите базовый URL API, совместимого с OpenAI</string>
+    <string name="pref_openai_base_url_invalid">Введите корректный HTTP- или HTTPS-адрес без учётных данных, параметров запроса и фрагментов.</string>
 </resources>

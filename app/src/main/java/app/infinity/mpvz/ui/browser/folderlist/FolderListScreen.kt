@@ -463,8 +463,15 @@ object FolderListScreen : Screen {
         onOperationComplete = { viewModel.refresh() },
       )
     LaunchedEffect(effectiveIsSearching, searchVideos) {
-      if (!effectiveIsSearching) searchSelectionManager.clear()
-      else if (searchSelectionManager.getSelectedItems().any { selected -> searchVideos.none { it.id == selected.id } }) searchSelectionManager.clear()
+      if (
+        GlobalSearchSelectionPolicy.shouldClear(
+          isSearching = effectiveIsSearching,
+          selectedIds = searchSelectionManager.getSelectedItems().map { it.id },
+          resultIds = searchVideos.map { it.id },
+        )
+      ) {
+        searchSelectionManager.clear()
+      }
     }
 
     fun moveSelectedFoldersToSecureFolder() {
@@ -1924,9 +1931,9 @@ private fun SearchResultsContent(
           val video = videos[index]
           VideoCard(
             video = video,
-            isSelected = false,
+            isSelected = selectionManager.isSelected(video),
             onClick = { onVideoClick(video) },
-            onLongClick = {},
+            onLongClick = { onVideoLongClick(video) },
             onThumbClick = { onVideoClick(video) },
             isGridMode = false,
             showSubtitleIndicator = showSubtitleIndicator,

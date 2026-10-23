@@ -2245,4 +2245,15 @@
   <string name="track_metadata_forced">强制</string>
   <string name="track_metadata_sdh">SDH</string>
   <string name="track_metadata_external">外部</string>
+    <string name="playlist_actions">播放列表操作</string>
+    <string name="playlist_export_m3u">导出 M3U</string>
+    <string name="playlist_share_m3u">分享 M3U</string>
+    <string name="playlist_export_success">播放列表已导出</string>
+    <string name="playlist_export_unavailable">播放列表仍在加载</string>
+    <string name="playlist_export_error">无法导出播放列表：%1$s</string>
+    <string name="playlist_share_error">无法分享播放列表：%1$s</string>
+    <string name="pref_openai_base_url_title">OpenAI 兼容 API 基础 URL</string>
+    <string name="pref_openai_base_url_summary">留空则使用 OpenAI 官方端点</string>
+    <string name="pref_openai_base_url_prompt">输入 OpenAI 兼容 API 的基础 URL</string>
+    <string name="pref_openai_base_url_invalid">请输入不含凭据、查询参数或片段的有效 HTTP 或 HTTPS URL。</string>
 </resources>

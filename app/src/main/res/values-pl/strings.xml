@@ -2242,4 +2242,15 @@
   <string name="track_metadata_forced">Wymuszone</string>
   <string name="track_metadata_sdh">SDH</string>
   <string name="track_metadata_external">Zewnętrzne</string>
+    <string name="playlist_actions">Działania playlisty</string>
+    <string name="playlist_export_m3u">Eksportuj M3U</string>
+    <string name="playlist_share_m3u">Udostępnij M3U</string>
+    <string name="playlist_export_success">Wyeksportowano playlistę</string>
+    <string name="playlist_export_unavailable">Playlista wciąż się wczytuje</string>
+    <string name="playlist_export_error">Nie udało się wyeksportować playlisty: %1$s</string>
+    <string name="playlist_share_error">Nie udało się udostępnić playlisty: %1$s</string>
+    <string name="pref_openai_base_url_title">Bazowy URL API zgodnego z OpenAI</string>
+    <string name="pref_openai_base_url_summary">Pozostaw puste, aby użyć oficjalnego punktu końcowego OpenAI</string>
+    <string name="pref_openai_base_url_prompt">Wpisz bazowy URL API zgodnego z OpenAI</string>
+    <string name="pref_openai_base_url_invalid">Wpisz prawidłowy adres HTTP lub HTTPS bez danych logowania, parametrów zapytania i fragmentów.</string>
 </resources>

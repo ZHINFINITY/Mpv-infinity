@@ -73,7 +73,7 @@ import app.infinity.mpvz.preferences.preference.collectAsState
 import app.infinity.mpvz.presentation.Screen
 import app.infinity.mpvz.repository.ai.AiModelInfo
 import app.infinity.mpvz.repository.ai.AiService
-import app.infinity.mpvz.repository.ai.OpenAiEndpoint
+import app.infinity.mpvz.repository.ai.OpenAiBaseUrlInput
 import app.infinity.mpvz.ui.icons.Icon
 import app.infinity.mpvz.ui.icons.Icons
 import app.infinity.mpvz.ui.preferences.PreferenceCard
@@ -395,20 +395,15 @@ val apiKeyInfo =
                       TextFieldPreference(
                         value = openaiBaseUrl,
                         onValueChange = { value ->
-                          val configured = value.trim()
-                          if (configured.isBlank()) {
-                            preferences.openaiBaseUrl.set("")
+                          val normalized = OpenAiBaseUrlInput.normalize(value)
+                          if (normalized != null) {
+                            preferences.openaiBaseUrl.set(normalized)
                           } else {
-                            try {
-                              OpenAiEndpoint.requestUrl(configured, "/models")
-                              preferences.openaiBaseUrl.set(configured)
-                            } catch (_: IllegalArgumentException) {
-                              Toast.makeText(
-                                context,
-                                R.string.pref_openai_base_url_invalid,
-                                Toast.LENGTH_SHORT,
-                              ).show()
-                            }
+                            Toast.makeText(
+                              context,
+                              R.string.pref_openai_base_url_invalid,
+                              Toast.LENGTH_SHORT,
+                            ).show()
                           }
                         },
                         textToValue = { it.trim() },

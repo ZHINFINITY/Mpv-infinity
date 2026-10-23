@@ -2245,4 +2245,15 @@
   <string name="track_metadata_forced">إجباري</string>
   <string name="track_metadata_sdh">للصم وضعاف السمع</string>
   <string name="track_metadata_external">خارجي</string>
+    <string name="playlist_actions">إجراءات قائمة التشغيل</string>
+    <string name="playlist_export_m3u">تصدير M3U</string>
+    <string name="playlist_share_m3u">مشاركة M3U</string>
+    <string name="playlist_export_success">تم تصدير قائمة التشغيل</string>
+    <string name="playlist_export_unavailable">لا تزال قائمة التشغيل قيد التحميل</string>
+    <string name="playlist_export_error">تعذّر تصدير قائمة التشغيل: %1$s</string>
+    <string name="playlist_share_error">تعذّرت مشاركة قائمة التشغيل: %1$s</string>
+    <string name="pref_openai_base_url_title">عنوان URL الأساسي لواجهة API المتوافقة مع OpenAI</string>
+    <string name="pref_openai_base_url_summary">اتركه فارغًا لاستخدام نقطة نهاية OpenAI الرسمية</string>
+    <string name="pref_openai_base_url_prompt">أدخل عنوان URL أساسيًا لواجهة API متوافقة مع OpenAI</string>
+    <string name="pref_openai_base_url_invalid">أدخل عنوان HTTP أو HTTPS صالحًا بدون بيانات اعتماد أو معلمات استعلام أو أجزاء.</string>
 </resources>

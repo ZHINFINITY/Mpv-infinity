@@ -39,7 +39,6 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExtendedFloatingActionButton
@@ -102,6 +101,7 @@ import app.infinity.mpvz.ui.player.controls.components.GlassSwitch
 import app.infinity.mpvz.ui.icons.Icon
 import app.infinity.mpvz.ui.icons.Icons
 import app.infinity.mpvz.ui.player.PlayerActivity
+import app.infinity.mpvz.ui.theme.GlassDropdownMenu
 import app.infinity.mpvz.ui.utils.LocalBackStack
 import app.infinity.mpvz.ui.utils.popSafely
 import app.infinity.mpvz.utils.clipboard.SafeClipboard
@@ -570,7 +570,7 @@ data class PlaylistDetailScreen(
                           tint = MaterialTheme.colorScheme.onSurface,
                         )
                       }
-                      DropdownMenu(
+                      GlassDropdownMenu(
                         expanded = exportMenuOpen,
                         onDismissRequest = { exportMenuOpen = false },
                       ) {
