@@ -192,4 +192,17 @@ class SubtitleTranslationProvidersTest {
       assertTrue("'${e.message}' should contain '$fragment'", e.message.orEmpty().contains(fragment))
     }
   }
+
+  @Test
+  fun redactHidesEveryNonBlankKeyIncludingShortOnes() {
+    val long = SubtitleTranslationProviders.redact("bad key $key for request", key)
+    assertFalse(long.contains(key))
+    assertTrue(long.contains("••••"))
+    val short = SubtitleTranslationProviders.redact("key abc is not valid", "abc")
+    assertFalse(short.contains("abc"))
+    assertEquals("••••", short)
+    assertEquals("quota exceeded", SubtitleTranslationProviders.redact("quota exceeded", "xyz"))
+    assertEquals("quota exceeded", SubtitleTranslationProviders.redact("quota exceeded", "  "))
+    assertEquals("url ?key=•••• end", SubtitleTranslationProviders.redact("url ?key=hidden end", ""))
+  }
 }

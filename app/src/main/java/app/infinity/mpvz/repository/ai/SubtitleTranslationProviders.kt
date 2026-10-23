@@ -425,7 +425,10 @@ object SubtitleTranslationProviders {
 
   fun redact(text: String, apiKey: String): String {
     val key = apiKey.trim()
-    var out = if (key.length >= 4) text.replace(key, "••••") else text
+    // A very short key can't be replaced safely without mangling the rest of the
+    // message, so if one appears anywhere in the text, hide the whole detail.
+    if (key.isNotEmpty() && key.length < 4 && text.contains(key)) return "••••"
+    var out = if (key.isNotEmpty()) text.replace(key, "••••") else text
     out = out.replace(Regex("(?i)(key=)[^&\\s]+"), "$1••••")
     return out
   }

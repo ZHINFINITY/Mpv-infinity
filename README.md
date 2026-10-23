@@ -86,7 +86,6 @@ Read the full [v2.2.0 release notes](https://github.com/ZHINFINITY/Mpv-infinity/
 Mpv∞ is a feature-rich Android media player combining the MPV and AndroidX Media3 playback engines with customizable controls, advanced video rendering, subtitle tools, audio playback, and practical library features.
 
 <details close>
-<details close>
 <summary><b>🎞️ Frame Interpolation (Smooth Motion)</b></summary>
 
 | Feature | Description |
@@ -134,6 +133,7 @@ Mpv∞ is a feature-rich Android media player combining the MPV and AndroidX Med
 
 </details>
 
+<details close>
 <summary><b>⚙️ Dual Playback Engines: MPV + Media3</b></summary>
 
 | Feature | Description |
