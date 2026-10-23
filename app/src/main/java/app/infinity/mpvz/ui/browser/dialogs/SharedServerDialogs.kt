@@ -7,6 +7,9 @@
 
 package app.infinity.mpvz.ui.browser.dialogs
 
+import app.infinity.mpvz.ui.components.GlassModalBottomSheet
+import app.infinity.mpvz.ui.components.glassOptionSheetContainerColor
+import app.infinity.mpvz.ui.components.glassOptionSheetModifier
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
@@ -111,20 +114,17 @@ fun SharedAddServerDialog(
 
   var isPasswordVisible by remember { mutableStateOf(false) }
 
-  ModalBottomSheet(
+  GlassModalBottomSheet(
     onDismissRequest = { if (!isLoading) onDismiss() },
     sheetState = sheetState,
-    shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
-    containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
-    dragHandle = { BottomSheetDefaults.DragHandle() },
-  ) {
+    containerColor = glassOptionSheetContainerColor(MaterialTheme.colorScheme.surfaceContainerLow),) {
     Column(
       modifier =
         Modifier
           .fillMaxWidth()
           .verticalScroll(rememberScrollState())
           .padding(horizontal = 24.dp)
-          .navigationBarsPadding(),
+          ,
       verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
       // Header
@@ -474,20 +474,17 @@ fun <T> SharedManageServersDialog(
       enabledValues = setOf(SheetValue.Hidden, SheetValue.Expanded),
     )
 
-  ModalBottomSheet(
+  GlassModalBottomSheet(
     onDismissRequest = onDismiss,
     sheetState = sheetState,
-    shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
-    containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
-    dragHandle = { BottomSheetDefaults.DragHandle() },
-  ) {
+    containerColor = glassOptionSheetContainerColor(MaterialTheme.colorScheme.surfaceContainerLow),) {
     Column(
       modifier =
         Modifier
           .fillMaxWidth()
           .verticalScroll(rememberScrollState())
           .padding(horizontal = 24.dp)
-          .navigationBarsPadding(),
+          ,
       verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
       // Header

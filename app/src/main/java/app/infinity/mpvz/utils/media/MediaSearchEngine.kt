@@ -80,7 +80,7 @@ object MediaSearchEngine {
     query: String,
     limit: Int = 50,
   ): List<Any> {
-    if (query.isBlank()) return emptyList()
+    if (query.isBlank() || limit <= 0) return emptyList()
 
     val q = query.trim().lowercase()
     val qTokens = tokenize(q)
@@ -101,7 +101,9 @@ object MediaSearchEngine {
     // Optimization: Filter out non-matches BEFORE sorting to drastically reduce sort time
     return results
       .filter { it.second > 0 }
-      .sortedByDescending { it.second }
+      // HashMap iteration order is not stable. Keep equal-score results stable
+      // so search results do not jump around while the user is typing.
+      .sortedWith(compareByDescending<Pair<Any, Int>> { it.second }.thenBy { searchableKey(it.first) })
       .take(limit)
       .map { it.first }
   }
@@ -112,7 +114,7 @@ object MediaSearchEngine {
     videos: List<Video>,
     limit: Int = 50,
   ): List<Video> {
-    if (query.isBlank()) return emptyList()
+    if (query.isBlank() || limit <= 0) return emptyList()
 
     val q = query.trim().lowercase()
     val qTokens = tokenize(q)
@@ -121,9 +123,15 @@ object MediaSearchEngine {
         val name = video.displayName.lowercase()
         video to score(name, tokenize(name), q, qTokens)
       }.filter { it.second > 0 }
-      .sortedByDescending { it.second }
+      .sortedWith(compareByDescending<Pair<Video, Int>> { it.second }.thenBy { it.first.path })
       .take(limit)
       .map { it.first }
+  }
+
+  private fun searchableKey(item: Any): String = when (item) {
+    is Video -> item.path
+    is VideoFolder -> item.path
+    else -> item.toString()
   }
 
   // -------------------------

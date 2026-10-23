@@ -79,6 +79,22 @@ jobs:
       - name: Make Gradle wrapper executable
         run: chmod +x ./gradlew
 
+      - name: Test download validator migration
+        run: python3 scripts/tests/download_validator_migration_test.py
+
+      - name: Run Standard debug JVM regression tests
+        run: ./gradlew :app:testStandardDebugUnitTest -PtargetAbi=arm64-v8a --stacktrace --no-daemon --max-workers=2
+
+      - name: Upload download validation evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: download-validator-evidence
+          path: |
+            app/schemas/**/23.json
+            app/build/test-results/testStandardDebugUnitTest/*.xml
+          if-no-files-found: warn
+
       - name: Verify LGPL-only MPV runtimes
         run: |
           python3 scripts/verify-mpv-aar-lgpl.py app/libs/mpvlib.aar --abis arm64-v8a,armeabi-v7a,x86,x86_64 --only-selected-abis --require-vulkan

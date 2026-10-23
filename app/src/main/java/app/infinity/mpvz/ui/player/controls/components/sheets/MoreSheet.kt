@@ -7,6 +7,7 @@
 
 package app.infinity.mpvz.ui.player.controls.components.sheets
 
+import app.infinity.mpvz.presentation.components.playerGlassOverlay
 import app.infinity.mpvz.ui.player.NativePlaybackSnapshot
 import app.infinity.mpvz.ui.player.PlaybackEngineMode
 import app.infinity.mpvz.ui.player.PlaybackSession
@@ -231,8 +232,9 @@ fun MoreSheet(
         }
       }
       Surface(
-        modifier = Modifier.fillMaxWidth(),
-        color = MaterialTheme.colorScheme.surfaceVariant,
+        modifier = Modifier.fillMaxWidth().playerGlassOverlay(cornerRadius = 16.dp),
+        color = androidx.compose.ui.graphics.Color.Transparent,
+        tonalElevation = 0.dp,
         shape = MaterialTheme.shapes.medium,
       ) {
         Column(modifier = Modifier.fillMaxWidth().padding(MaterialTheme.spacing.small)) {
@@ -383,10 +385,11 @@ fun TimePickerDialog(
   ) {
     Surface(
       shape = AppShapeScale.extraLarge,
-      color = MaterialTheme.colorScheme.surfaceContainerHigh,
-      tonalElevation = 6.dp,
+      color = androidx.compose.ui.graphics.Color.Transparent,
+      tonalElevation = 0.dp,
       modifier =
         modifier
+          .playerGlassOverlay()
           .width(360.dp)
           .padding(MaterialTheme.spacing.medium),
     ) {

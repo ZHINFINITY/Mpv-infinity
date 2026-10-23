@@ -6,6 +6,8 @@
  */
 
 package app.infinity.mpvz.ui.browser.components
+import app.infinity.mpvz.ui.theme.GlassDropdownMenu
+import app.infinity.mpvz.ui.theme.GlassExposedDropdownMenu
 
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -16,7 +18,6 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -43,6 +44,8 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.boundsInWindow
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.style.BaselineShift
@@ -55,10 +58,12 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import app.infinity.mpvz.R
 import app.infinity.mpvz.preferences.AppearancePreferences
 import app.infinity.mpvz.preferences.preference.collectAsState
+import app.infinity.mpvz.presentation.components.pullrefresh.InfinityLoadingIndicator
 import app.infinity.mpvz.ui.icons.Icon
 import app.infinity.mpvz.ui.icons.Icons
 import app.infinity.mpvz.ui.theme.DarkMode
 import app.infinity.mpvz.ui.theme.LocalThemeTransitionState
+import app.infinity.mpvz.ui.preferences.components.settingsGlassSurface
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import org.koin.compose.koinInject
@@ -180,6 +185,7 @@ private fun NormalTopBar(
 ) {
   val preferences = koinInject<AppearancePreferences>()
   val darkMode by preferences.darkMode.collectAsState()
+  val liquidGlassSurfaces by preferences.liquidGlassSurfaces.collectAsState()
   val darkTheme = isSystemInDarkTheme()
   val themeTransition = LocalThemeTransitionState.current
   val coroutineScope = rememberCoroutineScope()
@@ -211,16 +217,19 @@ private fun NormalTopBar(
     }
   }
 
+  val effectiveColors = if (liquidGlassSurfaces) {
+    (colors ?: TopAppBarDefaults.topAppBarColors()).copy(
+      containerColor = Color.Transparent,
+      scrolledContainerColor = Color.Transparent,
+    )
+  } else {
+    colors ?: TopAppBarDefaults.topAppBarColors(
+      containerColor = if (MaterialTheme.colorScheme.background == Color.Black) Color.Black else MaterialTheme.colorScheme.surfaceContainer,
+    )
+  }
+
   TopAppBar(
-    colors =
-      colors ?: TopAppBarDefaults.topAppBarColors(
-        containerColor =
-          if (MaterialTheme.colorScheme.background == Color.Black) {
-            Color.Black
-          } else {
-            MaterialTheme.colorScheme.surfaceContainer
-          },
-      ),
+    colors = effectiveColors,
     windowInsets = windowInsets ?: TopAppBarDefaults.windowInsets,
     title = {
       if (showTitle) {
@@ -268,6 +277,10 @@ private fun NormalTopBar(
             )
           }
 
+      if (title == "∞") {
+        // Keep the browser brand title on the same drawn infinity glyph as pull-to-refresh.
+        InfinityLoadingIndicator(modifier = titleModifier.semantics { contentDescription = "Mpv∞" }, size = 40.dp)
+      } else {
       Text(
         buildAnnotatedString {
           append(title)
@@ -302,6 +315,7 @@ private fun NormalTopBar(
             },
           ),
       )
+      }
       }
     },
     navigationIcon = {
@@ -386,7 +400,17 @@ private fun NormalTopBar(
         }
       }
     },
-    modifier = modifier,
+    // Apply the shared pane to the measured TopAppBar itself. Keeping the
+    // master gate here prevents a transparent/rounded modifier from replacing
+    // the native header when liquid glass is disabled.
+    modifier =
+      modifier.then(
+        if (liquidGlassSurfaces) {
+          Modifier.settingsGlassSurface(cornerRadius = 0.dp)
+        } else {
+          Modifier
+        },
+      ),
   )
 }
 
@@ -421,6 +445,8 @@ private fun SelectionTopBar(
 ) {
   var showDropdown by remember { mutableStateOf(false) }
   val lifecycleOwner = LocalLifecycleOwner.current
+  val appearancePreferences = koinInject<AppearancePreferences>()
+  val liquidGlassSurfaces by appearancePreferences.liquidGlassSurfaces.collectAsState()
 
   DisposableEffect(lifecycleOwner) {
     val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
@@ -430,16 +456,19 @@ private fun SelectionTopBar(
     onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
   }
 
+  val defaultColors = TopAppBarDefaults.topAppBarColors(
+    containerColor =
+      if (MaterialTheme.colorScheme.background == Color.Black) Color.Black
+      else MaterialTheme.colorScheme.surfaceContainer,
+  )
+  val effectiveColors = when {
+    !liquidGlassSurfaces -> colors ?: defaultColors
+    colors != null -> colors.copy(containerColor = Color.Transparent, scrolledContainerColor = Color.Transparent)
+    else -> defaultColors.copy(containerColor = Color.Transparent, scrolledContainerColor = Color.Transparent)
+  }
+
   TopAppBar(
-    colors =
-      colors ?: TopAppBarDefaults.topAppBarColors(
-        containerColor =
-          if (MaterialTheme.colorScheme.background == Color.Black) {
-            Color.Black
-          } else {
-            MaterialTheme.colorScheme.surfaceContainer
-          },
-      ),
+    colors = effectiveColors,
     windowInsets = windowInsets ?: TopAppBarDefaults.windowInsets,
     title = {
       Row(
@@ -460,7 +489,7 @@ private fun SelectionTopBar(
           tint = MaterialTheme.colorScheme.onSurface,
         )
 
-        DropdownMenu(
+        GlassDropdownMenu(
           expanded = showDropdown,
           onDismissRequest = { showDropdown = false },
         ) {
@@ -676,8 +705,13 @@ private fun SelectionTopBar(
       }
     },
     modifier =
-      modifier.clip(
-        RoundedCornerShape(topStart = 0.dp, topEnd = 0.dp, bottomStart = 28.dp, bottomEnd = 28.dp),
+      modifier.then(
+        // Liquid Glass: edge-to-edge selection bar. Classic mode keeps its rounded selection bar.
+        if (liquidGlassSurfaces) {
+          Modifier.settingsGlassSurface(cornerRadius = 0.dp)
+        } else {
+          Modifier.clip(RoundedCornerShape(28.dp))
+        },
       ),
   )
 }

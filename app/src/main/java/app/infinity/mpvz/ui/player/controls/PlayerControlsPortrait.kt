@@ -34,7 +34,9 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import app.infinity.mpvz.R
+import app.infinity.mpvz.preferences.AppearancePreferences
 import app.infinity.mpvz.preferences.PlayerButton
+import app.infinity.mpvz.preferences.preference.collectAsState
 import app.infinity.mpvz.ui.icons.Icon
 import app.infinity.mpvz.ui.icons.Icons
 import app.infinity.mpvz.ui.player.Panels
@@ -47,9 +49,11 @@ import app.infinity.mpvz.ui.player.controls.components.ControlsGroup
 import app.infinity.mpvz.ui.player.controls.components.playerButtonBorderColor
 import app.infinity.mpvz.ui.player.controls.components.playerButtonContainerColor
 import app.infinity.mpvz.ui.player.controls.components.playerButtonContentColor
+import app.infinity.mpvz.ui.player.controls.components.playerGlassPane
 import app.infinity.mpvz.ui.theme.controlColor
 import app.infinity.mpvz.ui.theme.spacing
 import dev.vivvvek.seeker.Segment
+import org.koin.compose.koinInject
 
 @Composable
 fun TopPlayerControlsPortrait(
@@ -64,6 +68,8 @@ fun TopPlayerControlsPortrait(
   translationStatus: String = "",
   translatingTrackName: String = "",
 ) {
+  val appearance = koinInject<AppearancePreferences>()
+  val liquidGlassSurfaces by appearance.liquidGlassSurfaces.collectAsState()
   PlayerButtonTheme(hideBackground) {
     val playlistModeEnabled = viewModel.hasPlaylistSupport()
     val clickEvent = LocalPlayerButtonsClickEvent.current
@@ -98,7 +104,7 @@ fun TopPlayerControlsPortrait(
             Surface(
               shape = CircleShape,
               color =
-                if (hideBackground) {
+                if (liquidGlassSurfaces || hideBackground) {
                   Color.Transparent
                 } else {
                   playerButtonContainerColor()
@@ -110,12 +116,15 @@ fun TopPlayerControlsPortrait(
               },
               enabled = playlistModeEnabled,
               border =
-                if (hideBackground) {
+                if (liquidGlassSurfaces || hideBackground) {
                   null
                 } else {
                   BorderStroke(1.dp, playerButtonBorderColor())
                 },
-              modifier = Modifier.height(45.dp),
+              tonalElevation = 0.dp,
+              shadowElevation = 0.dp,
+              modifier = Modifier.height(45.dp)
+                .playerGlassPane(enabled = liquidGlassSurfaces, cornerRadius = 999.dp),
             ) {
               Row(
                 verticalAlignment = Alignment.CenterVertically,

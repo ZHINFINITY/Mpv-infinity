@@ -6,6 +6,13 @@
  */
 
 package app.infinity.mpvz.ui.preferences
+import app.infinity.mpvz.ui.components.GlassOptionSheet
+import app.infinity.mpvz.ui.theme.GlassDropdownMenu
+import app.infinity.mpvz.ui.theme.GlassExposedDropdownMenu
+
+import app.infinity.mpvz.ui.preferences.components.settingsGlassContainerColor
+
+import app.infinity.mpvz.ui.preferences.components.settingsGlassSurface
 
 import android.app.Application
 import android.net.Uri
@@ -28,14 +35,13 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
-import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Scaffold
+import app.infinity.mpvz.ui.preferences.components.SettingsScaffold as Scaffold
 import app.infinity.mpvz.ui.components.IconSwitch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -305,6 +311,8 @@ object FoldersPreferencesScreen : Screen {
 
     if (showClearAllDialog) {
       AlertDialog(
+      containerColor = settingsGlassContainerColor(androidx.compose.material3.AlertDialogDefaults.containerColor),
+      modifier = androidx.compose.ui.Modifier.settingsGlassSurface(cornerRadius = 28.dp, independent = true),
         onDismissRequest = { showClearAllDialog = false },
         title = { Text(stringResource(R.string.pref_folders_clear_all_confirm_title)) },
         text = { Text(stringResource(R.string.pref_folders_clear_all_confirm_message)) },
@@ -437,10 +445,12 @@ private fun NoMediaPreferenceCard(
         else -> null
       }
 
-    AlertDialog(
+    GlassOptionSheet(
+      containerColor = settingsGlassContainerColor(androidx.compose.material3.AlertDialogDefaults.containerColor),
+      modifier = androidx.compose.ui.Modifier.settingsGlassSurface(cornerRadius = 28.dp, independent = true),
       onDismissRequest = { showAddMarkerDialog = false },
       title = { Text(stringResource(R.string.pref_folders_add_marker_title)) },
-      text = {
+      content = {
         OutlinedTextField(
           value = markerInput,
           onValueChange = { markerInput = it },
@@ -471,8 +481,7 @@ private fun NoMediaPreferenceCard(
         TextButton(onClick = { showAddMarkerDialog = false }) {
           Text(stringResource(R.string.generic_cancel))
         }
-      },
-    )
+      },)
   }
 }
 
@@ -580,7 +589,9 @@ private fun AddFolderDialog(
     }
   val availableFolderPaths = remember(availableFolders) { availableFolders.map { it.path } }
 
-  AlertDialog(
+  GlassOptionSheet(
+      containerColor = settingsGlassContainerColor(androidx.compose.material3.AlertDialogDefaults.containerColor),
+      modifier = androidx.compose.ui.Modifier.settingsGlassSurface(cornerRadius = 28.dp, independent = true),
     onDismissRequest = onDismiss,
     title = {
       Row(
@@ -604,7 +615,9 @@ private fun AddFolderDialog(
             modifier = Modifier.size(24.dp),
           )
         }
-        DropdownMenu(expanded = showDropdown, onDismissRequest = { showDropdown = false }) {
+        GlassDropdownMenu(
+      containerColor = settingsGlassContainerColor(androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainer),
+      modifier = androidx.compose.ui.Modifier.settingsGlassSurface(cornerRadius = 12.dp, independent = true),expanded = showDropdown, onDismissRequest = { showDropdown = false }) {
           DropdownMenuItem(text = { Text(stringResource(R.string.select_all)) }, onClick = {
             selectionState = selectionState.selectAll(availableFolderPaths)
             showDropdown = false
@@ -620,7 +633,7 @@ private fun AddFolderDialog(
         }
       }
     },
-    text = {
+    content = {
       if (isLoading) {
         Box(modifier = Modifier.fillMaxWidth().padding(32.dp), contentAlignment = Alignment.Center) {
           Text(stringResource(R.string.pref_folders_loading))
@@ -713,8 +726,7 @@ private fun AddFolderDialog(
     },
     dismissButton = {
       TextButton(onClick = onDismiss) { Text(stringResource(R.string.generic_cancel)) }
-    },
-  )
+    },)
 }
 
 @Composable

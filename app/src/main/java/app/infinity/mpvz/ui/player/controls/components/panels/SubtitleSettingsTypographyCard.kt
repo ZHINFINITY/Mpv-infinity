@@ -55,6 +55,7 @@ import app.infinity.mpvz.ui.icons.Icons
 import app.infinity.mpvz.ui.player.PlayerViewModel
 import app.infinity.mpvz.ui.player.controls.CARDS_MAX_WIDTH
 import app.infinity.mpvz.ui.player.controls.panelCardsColors
+import app.infinity.mpvz.ui.player.controls.components.playerGlassPane
 import app.infinity.mpvz.ui.theme.spacing
 import app.infinity.mpvz.ui.utils.currentMpvConfigOverrideOptions
 import com.github.k1rakishou.fsaf.FileManager
@@ -62,7 +63,7 @@ import com.yubyf.truetypeparser.TTFFile
 import kotlinx.collections.immutable.toImmutableList
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import me.zhanghai.compose.preference.ListPreference
+import app.infinity.mpvz.ui.preferences.components.ListPreference
 import me.zhanghai.compose.preference.ListPreferenceType
 import me.zhanghai.compose.preference.ProvidePreferenceLocals
 import me.zhanghai.compose.preference.preferenceTheme
@@ -169,6 +170,7 @@ fun SubtitleSettingsTypographyCard(
         IconToggleButton(
           checked = isBold == true,
           enabled = !ownsAny(boldOptions),
+          modifier = Modifier.playerGlassPane(enabled = true, cornerRadius = 14.dp),
           onCheckedChange = {
             preferences.bold.set(it)
             PlaybackSession.setPropertyBoolean("sub-bold", it)
@@ -184,6 +186,7 @@ fun SubtitleSettingsTypographyCard(
         IconToggleButton(
           checked = isItalic == true,
           enabled = !ownsAny(italicOptions),
+          modifier = Modifier.playerGlassPane(enabled = true, cornerRadius = 14.dp),
           onCheckedChange = {
             preferences.italic.set(it)
             PlaybackSession.setPropertyBoolean("sub-italic", it)
@@ -200,6 +203,7 @@ fun SubtitleSettingsTypographyCard(
           IconToggleButton(
             checked = justify == justification,
             enabled = !ownsAny(justifyOptions),
+            modifier = Modifier.playerGlassPane(enabled = true, cornerRadius = 14.dp),
             onCheckedChange = {
               PlaybackSession.setPropertyBoolean("sub-ass-justify", it)
               if (it) {

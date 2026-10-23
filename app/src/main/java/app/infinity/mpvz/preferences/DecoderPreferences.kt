@@ -15,7 +15,7 @@ import app.infinity.mpvz.ui.player.HdrScreenMode
 import app.infinity.mpvz.ui.player.PlaybackEngineMode
 
 internal val MPVFLOW_TARGET_FPS_OPTIONS = listOf(48, 60, 72, 90, 96, 120, 144)
-internal const val DEFAULT_MPVFLOW_TARGET_FPS = 60
+internal const val DEFAULT_MPVFLOW_TARGET_FPS = 120
 internal const val DEFAULT_MPVFLOW_QUALITY = 60
 
 internal fun normalizeMpvFlowQuality(value: Int): Int = value.coerceIn(0, 100)

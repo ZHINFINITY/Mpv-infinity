@@ -2,6 +2,10 @@ plugins {
     id("com.android.library")
 }
 
+// Match the app's explicit CI ABI target; an empty filter retains AGP's default ABIs.
+val requestedAbis = providers.gradleProperty("targetAbi").orNull
+    ?.split(",")?.map { it.trim() }?.filter { it.isNotEmpty() }.orEmpty()
+
 android {
     namespace = "androidx.media3.subtitle.libass"
     compileSdk = 37
@@ -9,6 +13,7 @@ android {
     defaultConfig {
         minSdk = 23
         consumerProguardFiles("consumer-rules.pro")
+        ndk { abiFilters += requestedAbis }
         externalNativeBuild {
             cmake {
                 cppFlags += listOf("-std=c++17", "-fvisibility=hidden")

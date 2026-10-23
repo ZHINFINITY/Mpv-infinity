@@ -39,6 +39,10 @@ import app.infinity.mpvz.ui.icons.Icons
 import app.infinity.mpvz.ui.theme.AppMotion
 import app.infinity.mpvz.ui.theme.AppShapeScale
 import app.infinity.mpvz.ui.theme.LocalMotionPolicy
+import app.infinity.mpvz.preferences.AppearancePreferences
+import app.infinity.mpvz.preferences.preference.collectAsState
+import app.infinity.mpvz.ui.theme.BrowserGlassSurface
+import org.koin.compose.koinInject
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
@@ -52,6 +56,10 @@ fun SwipeableFolderActions(
   content: @Composable () -> Unit,
 ) {
   val density = LocalDensity.current
+  val appearancePreferences = koinInject<AppearancePreferences>()
+  val liquidGlass by appearancePreferences.liquidGlassSurfaces.collectAsState()
+  val glassOpacity by appearancePreferences.glassSurfaceOpacity.collectAsState()
+  val glassHighlight by appearancePreferences.glassSurfaceHighlight.collectAsState()
   val revealPx = with(density) { 88.dp.toPx() }
   val thresholdPx = with(density) { 56.dp.toPx() }
   val scope = rememberCoroutineScope()
@@ -84,9 +92,14 @@ fun SwipeableFolderActions(
     }
   }
 
-  val shape = AppShapeScale.large
+  val shape = AppShapeScale.largeIncreased
+  // FolderCard owns the resting pane. A second full-size glass layer here
+  // compounds its film and rim; only the revealed action needs another material.
   Box(
-    modifier = Modifier.fillMaxWidth().clip(shape).background(MaterialTheme.colorScheme.surface),
+    modifier = Modifier
+      .fillMaxWidth()
+      .clip(shape)
+      .background(if (liquidGlass) androidx.compose.ui.graphics.Color.Transparent else MaterialTheme.colorScheme.surface),
   ) {
     if (offsetX > 0f) {
       val progress = (offsetX / revealPx).coerceIn(0f, 1f)
@@ -99,26 +112,30 @@ fun SwipeableFolderActions(
           targetValue = progress.coerceIn(0.3f, 1f),
           label = "folderSwipeAlpha",
         )
-        Box(
+        BrowserGlassSurface(
           modifier = Modifier.padding(8.dp).size(72.dp).graphicsLayer {
             scaleX = iconScale
             scaleY = iconScale
             this.alpha = alpha
-          }.clip(RoundedCornerShape(28.dp)).background(MaterialTheme.colorScheme.primaryContainer),
-          contentAlignment = Alignment.Center,
+          },
+          enabled = liquidGlass,
+          opacity = glassOpacity,
+          highlight = glassHighlight,
+          cornerRadius = 28.dp,
+          selected = true,
         ) {
           Icon(
             if (isWatched) Icons.RoundedFilled.RemoveCircle else Icons.RoundedFilled.CheckCircle,
             contentDescription = if (isWatched) "Mark folder unwatched" else "Mark folder watched",
             tint = MaterialTheme.colorScheme.onPrimaryContainer,
-            modifier = Modifier.size(28.dp),
+            modifier = Modifier.align(Alignment.Center).size(28.dp),
           )
         }
       }
     }
 
     Box(
-      modifier = Modifier.fillMaxWidth().offset { IntOffset(offsetX.roundToInt(), 0) }.background(MaterialTheme.colorScheme.surface)
+      modifier = Modifier.fillMaxWidth().offset { IntOffset(offsetX.roundToInt(), 0) }.background(if (liquidGlass) androidx.compose.ui.graphics.Color.Transparent else MaterialTheme.colorScheme.surface)
         .then(
           if (enabled) {
             Modifier.pointerInput(itemKey, revealPx) {

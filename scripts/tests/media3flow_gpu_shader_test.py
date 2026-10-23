@@ -214,7 +214,9 @@ for marker in (
 ):
     assert marker in CADENCE, f"Media3 Flow cadence must use checked signed timestamp math: {marker}"
 assert "fun motionAdmissionProxyMs(" in CADENCE
-assert "motionDeadlineAdmission=cpu_submit_proxy_not_gpu_completion" in SINK
+assert "motionDeadlineAdmission=cpu_submit_proxy_not_gpu_completion" not in SINK, (
+    "user diagnostics should omit internal admission-policy implementation details"
+)
 non_monotonic_capture = SINK.split(
     "if (previousPts != null && ptsUs <= previousPts)", 1
 )[1].split("evictOneFrameIfNeeded()", 1)[0]
@@ -277,8 +279,10 @@ assert "vulkanTimestampSupported" in JNI and "compute_queue_timestampValidBits_z
 assert "pending_or_dropped" in (ROOT / "app/src/main/java/app/infinity/mpvz/ui/player/Media3FlowDiagnostics.kt").read_text()
 for stage in ("motionFine", "motionMiddle", "motionCoarse"):
     assert f"{stage} = stages[" in (ROOT / "app/src/main/java/app/infinity/mpvz/ui/player/Media3FlowDiagnostics.kt").read_text()
-assert "Vulkan/libplacebo timestamp queries" in (ROOT / "app/src/main/java/app/infinity/mpvz/ui/player/controls/PlayerControls.kt").read_text()
-assert "GLES_EXT_disjoint_timer_query staging copy" in (ROOT / "app/src/main/java/app/infinity/mpvz/ui/player/controls/PlayerControls.kt").read_text()
+stats_controls = (ROOT / "app/src/main/java/app/infinity/mpvz/ui/player/controls/PlayerControls.kt").read_text()
+assert "Vulkan/libplacebo timestamp queries" not in stats_controls
+assert "GLES_EXT_disjoint_timer_query staging copy" not in stats_controls
+assert "NativeStatsDisplay.interpolationFps(" in stats_controls
 timing_snapshot = JNI.split("nativeGetVulkanTimingStats(", 1)[1].split("nativeDestroyContext(", 1)[0]
 assert "mpvflow_gpu_get_timing_stats" in timing_snapshot
 assert "pl_gpu_finish" not in timing_snapshot and "glFinish" not in timing_snapshot
@@ -323,12 +327,15 @@ assert 'PlaybackSession.setOptionString("display-fps-override", displayRefreshRa
 assert "display_refresh_source=" in MPV_VIEW
 for marker in (
     "FlowOutputDecisionCounters",
+    "FLOW_OUTPUT_DIAGNOSTIC_LOG_MIN_INTERVAL_NS = 250_000_000L",
+):
+    assert marker in SINK, f"Media3 Flow must preserve bounded internal decision tracking: {marker}"
+for marker in (
     "outputDecisionTotals=",
     "motionGridStepSourcePxEstimate=",
     "pixelArtifactQuality=unmeasured_vulkan_ssbo_readback_disabled",
-    "FLOW_OUTPUT_DIAGNOSTIC_LOG_MIN_INTERVAL_NS = 250_000_000L",
 ):
-    assert marker in SINK, f"Media3 Flow must expose bounded decision and spatial-risk diagnostics: {marker}"
+    assert marker not in SINK, f"user diagnostics must omit implementation detail: {marker}"
 assert "estimateFlowMotionGridStepSourcePx" in FLOW_DIAGNOSTICS
 assert "event=player_health" in MPV_VIEW
 for marker in (

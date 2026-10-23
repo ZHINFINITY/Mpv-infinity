@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+  <string name="playlist_ui_library_section">Playlists (%1$d)</string>
+  <string name="playlist_ui_radio_section">Radio playlists (%1$d)</string>
+  <string name="playlist_ui_no_search_results">No matching playlists</string>
+  <string name="playlist_ui_search_hint">Try a different name</string>
+  <string name="playlist_ui_empty_library">Your playlist library is empty</string>
+  <string name="playlist_ui_empty_library_hint">Create a playlist or import an M3U/PLS file.</string>
+  <string name="playlist_ui_m3u_all_count">All (%1$d)</string>
+  <string name="playlist_ui_m3u_saved_count">Saved (%1$d)</string>
+  <string name="playlist_ui_m3u_category_count">%1$s (%2$d)</string>
+  <string name="playlist_ui_no_filter_matches">No matching items</string>
+  <string name="playlist_ui_no_filter_matches_hint">Clear search and filters to see this playlist again.</string>
+  <string name="playlist_ui_no_radio_stations">No radio stations in this playlist</string>
+  <string name="playlist_ui_no_tv_channels">No TV channels in this playlist</string>
+  <string name="playlist_ui_no_songs">No songs in this playlist</string>
+  <string name="playlist_ui_songs_empty_hint">Add songs to get started.</string>
+  <string name="playlist_ui_radio_empty_hint">Import a station list or add a radio stream.</string>
+  <string name="playlist_ui_tv_empty_hint">Import a channel list or add a TV stream.</string>
+  <string name="playlist_ui_clear_filters">Clear search and filters</string>
+</resources>

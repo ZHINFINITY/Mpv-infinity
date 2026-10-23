@@ -17,9 +17,12 @@ import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.FloatingActionButtonDefaults
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
+import androidx.compose.material3.ToggleFloatingActionButtonDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -29,6 +32,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
@@ -39,11 +43,38 @@ import app.infinity.mpvz.ui.icons.Icon
 import app.infinity.mpvz.ui.icons.Icons
 import app.infinity.mpvz.utils.history.RecentlyPlayedOps
 import app.infinity.mpvz.utils.media.MediaUtils
+import app.infinity.mpvz.ui.preferences.components.settingsGlassContainerColor
+import app.infinity.mpvz.ui.preferences.components.settingsGlassSurface
 import kotlinx.coroutines.launch
 
 import app.infinity.mpvz.preferences.AppearancePreferences
 import app.infinity.mpvz.preferences.preference.collectAsState
 import org.koin.compose.koinInject
+
+/** Shared surface used by both the standalone and menu Quick Play FABs. */
+@Composable
+fun Modifier.quickPlayFabSurface(): Modifier =
+  settingsGlassSurface(cornerRadius = 20.dp)
+
+/** Resolve composition locals now; the FAB invokes its progress callback outside composition. */
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
+@Composable
+fun quickPlayFabContainerColor(): (Float) -> Color {
+  val appearance = koinInject<AppearancePreferences>()
+  val glass by appearance.liquidGlassSurfaces.collectAsState()
+  val original = ToggleFloatingActionButtonDefaults.containerColor()
+  return if (glass) { _: Float -> Color.Transparent } else original
+}
+
+/** The native Toggle FAB exposes corner-radius progress, not a shape parameter. */
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
+@Composable
+fun quickPlayFabCornerRadius(): (Float) -> Dp {
+  val appearance = koinInject<AppearancePreferences>()
+  val glass by appearance.liquidGlassSurfaces.collectAsState()
+  val original = ToggleFloatingActionButtonDefaults.containerCornerRadius()
+  return if (glass) { _: Float -> 20.dp } else original
+}
 
 /**
  * A Quick Play Floating Action Button that appears on the main screen.
@@ -64,6 +95,7 @@ fun QuickPlayFab(
   val coroutineScope = rememberCoroutineScope()
   val appearancePreferences = koinInject<AppearancePreferences>()
   val showQuickPlayFab by appearancePreferences.showQuickPlayFab.collectAsState()
+  val glass by appearancePreferences.liquidGlassSurfaces.collectAsState()
   val lastPlayedEntity by RecentlyPlayedOps.observeLastPlayedEntity().collectAsState(initial = null)
   val hasRecentlyPlayed = lastPlayedEntity != null
   var isPressed by remember { mutableStateOf(false) }
@@ -95,6 +127,7 @@ fun QuickPlayFab(
     modifier = modifier,
   ) {
     FloatingActionButton(
+      shape = RoundedCornerShape(20.dp),
       onClick = {
         isPressed = true
         coroutineScope.launch {
@@ -119,15 +152,18 @@ fun QuickPlayFab(
       },
       modifier = Modifier
         .padding(bottom = bottomPadding)
+        .quickPlayFabSurface()
         .graphicsLayer {
           scaleX = scale
           scaleY = scale
         },
-      containerColor = MaterialTheme.colorScheme.primaryContainer,
+      containerColor = settingsGlassContainerColor(MaterialTheme.colorScheme.primaryContainer),
       contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
       elevation = FloatingActionButtonDefaults.elevation(
-        defaultElevation = 6.dp,
-        pressedElevation = 12.dp,
+        defaultElevation = if (glass) 0.dp else 6.dp,
+        pressedElevation = if (glass) 0.dp else 12.dp,
+        focusedElevation = if (glass) 0.dp else 6.dp,
+        hoveredElevation = if (glass) 0.dp else 8.dp,
       ),
     ) {
       Icon(

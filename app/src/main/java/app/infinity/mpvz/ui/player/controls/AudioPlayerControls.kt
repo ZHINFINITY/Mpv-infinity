@@ -7,6 +7,8 @@
 
 package app.infinity.mpvz.ui.player.controls
 
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.boundsInWindow
 import app.infinity.mpvz.ui.player.PlaybackSession
 
 import android.Manifest
@@ -102,6 +104,7 @@ import androidx.compose.runtime.produceState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.delay
 import androidx.palette.graphics.Palette
 import app.infinity.mpvz.database.repository.PlaylistRepository
 import app.infinity.mpvz.preferences.AdvancedPreferences
@@ -148,6 +151,11 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.foundation.layout.offset
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.util.VelocityTracker
+import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
+import androidx.compose.ui.input.nestedscroll.NestedScrollSource
+import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.unit.Velocity
 import androidx.compose.ui.unit.IntOffset
 import androidx.core.content.ContextCompat
 import androidx.core.graphics.ColorUtils
@@ -167,6 +175,7 @@ import app.infinity.mpvz.ui.icons.Icons
 import app.infinity.mpvz.ui.player.Panels
 import app.infinity.mpvz.ui.player.AudiobookPlayback
 import app.infinity.mpvz.ui.player.PlayerActivity
+import app.infinity.mpvz.ui.player.RadioMetadataPolicy
 import app.infinity.mpvz.ui.player.NativePlaybackSnapshot
 import app.infinity.mpvz.ui.player.PlayerViewModel
 import app.infinity.mpvz.ui.player.RepeatMode
@@ -182,6 +191,7 @@ import app.infinity.mpvz.ui.player.visualizer.ParticleOverlay
 import app.infinity.mpvz.ui.player.visualizer.VisualizerPalette
 import app.infinity.mpvz.ui.player.visualizer.rememberAudioVisualizerFeatures
 import app.infinity.mpvz.ui.theme.fontFamilyForText
+import app.infinity.mpvz.ui.player.controls.components.playerGlassPane
 import app.infinity.mpvz.ui.utils.isMpvOptionOwnedByConfig
 
 import app.infinity.mpvz.utils.media.fileExtension
@@ -393,6 +403,18 @@ private fun artworkVisualizerPalette(
   )
 }
 
+/** Palette extraction is background work and returns only immutable ARGB colors. */
+private object AudioVisualizerPaletteCache {
+  private const val MAX_ENTRIES = 12
+  private val values = LinkedHashMap<String, VisualizerPalette>(MAX_ENTRIES, 0.75f, true)
+
+  @Synchronized fun get(key: String): VisualizerPalette? = values[key]
+  @Synchronized fun put(key: String, value: VisualizerPalette) {
+    values[key] = value
+    while (values.size > MAX_ENTRIES) values.remove(values.entries.first().key)
+  }
+}
+
 @Composable
 private fun AudioVisualizerViewport(
   style: AudioVisualizerStyle,
@@ -572,6 +594,7 @@ fun AudioPlayerControls(
   onOpenSheet: (Sheets) -> Unit,
   onOpenPanel: (Panels) -> Unit,
   modifier: Modifier = Modifier,
+  onGlassPaletteChanged: (Int, Int) -> Unit = { _, _ -> },
 ) {
   val speedConfigOwned = isMpvOptionOwnedByConfig("speed")
   val audioFiltersConfigOwned = isMpvOptionOwnedByConfig("af")
@@ -592,6 +615,12 @@ fun AudioPlayerControls(
   val playbackState by PlaybackSession.state.collectAsStateWithLifecycle()
   val queueState by PlaybackSession.queue.collectAsStateWithLifecycle()
   val currentItem = playbackState.currentItem ?: queueState.currentItem
+  val isRadio = RadioMetadataPolicy.isRadio(
+    queueIsM3u = queueState.isM3u,
+    itemIsAudio = currentItem?.isDefinitelyAudioOnly() == true,
+    streamUri = currentItem?.originalUri ?: currentItem?.playableUri,
+    durationSeconds = duration ?: currentItem?.durationSeconds,
+  )
   val activeBook by AudiobookPlayback.book.collectAsStateWithLifecycle()
   val audiobookChapters by AudiobookPlayback.chapters.collectAsStateWithLifecycle()
   val audiobook = activeBook?.takeIf { it.book.id == currentItem?.audiobook?.bookId }
@@ -755,17 +784,56 @@ fun AudioPlayerControls(
       }
     }
 
-  val currentArtworkUri =
+  val stationHeaderState by PlaybackSession.radioHeaders.collectAsStateWithLifecycle()
+  val stationHeaders = stationHeaderState?.takeIf { it.first == currentItem?.stableId }?.second
+  val rawIcyName by PlaybackSession.propString["metadata/by-key/icy-name"].collectAsState()
+  val rawIcyLogo by PlaybackSession.propString["metadata/by-key/icy-logo"].collectAsState()
+  val rawStreamTitle by PlaybackSession.propString["metadata/by-key/Title"].collectAsState()
+  val rawStreamTitleAlt by PlaybackSession.propString["metadata/by-key/TITLE"].collectAsState()
+  val rawStreamTitleLower by PlaybackSession.propString["metadata/by-key/title"].collectAsState()
+  val rawIcyTitle by PlaybackSession.propString["metadata/by-key/icy-title"].collectAsState()
+  val rawIcyTitleAlt by PlaybackSession.propString["metadata/icy-title"].collectAsState()
+  val rawRadioArtist by PlaybackSession.propString["metadata/by-key/Artist"].collectAsState()
+  val rawRadioArtistUpper by PlaybackSession.propString["metadata/by-key/ARTIST"].collectAsState()
+  val rawRadioArtistLower by PlaybackSession.propString["metadata/by-key/artist"].collectAsState()
+  val rawStreamArtwork by PlaybackSession.propString["metadata/by-key/Artwork"].collectAsState()
+  val rawStreamArtworkAlt by PlaybackSession.propString["metadata/by-key/artwork"].collectAsState()
+  val streamPicture by PlaybackSession.propString["metadata/by-key/METADATA_BLOCK_PICTURE"].collectAsState()
+  val streamPictureAlt by PlaybackSession.propString["metadata/by-key/metadata_block_picture"].collectAsState()
+  val encodedPicture = if (isRadio) streamPicture?.takeIf { it.isNotBlank() } ?: streamPictureAlt else null
+  val decodedStreamCover by produceState<Pair<String, Bitmap>?>(null, encodedPicture) {
+    value = null
+    if (!encodedPicture.isNullOrBlank()) {
+      value = withContext(Dispatchers.IO) {
+        app.infinity.mpvz.ui.player.RadioArtworkDecoder.decode(encodedPicture)?.let { encodedPicture to it }
+      }
+    }
+  }
+  val streamCover = decodedStreamCover?.takeIf { it.first == encodedPicture }?.second
+
+  val sourceArtworkUri =
     audiobook?.book?.coverUri?.takeIf { it.isNotBlank() }
       ?: currentItem?.artworkUri?.takeIf { it.isNotBlank() }
       ?: filteredPlaylist.firstOrNull { it.isPlaying || it.path == mediaPath || it.uri.toString() == mediaPath }?.tvgLogo?.takeIf { it.isNotBlank() }
+      ?: (rawIcyLogo ?: stationHeaders?.icyLogo).takeIf { isRadio && RadioMetadataPolicy.isHttpUrl(it) }
+  val radioPresentation = RadioMetadataPolicy.presentation(
+    stationTitle = rawIcyName ?: stationHeaders?.icyName ?: currentItem?.title,
+    streamTitle = rawStreamTitle?.takeIf { it.isNotBlank() } ?: rawStreamTitleAlt?.takeIf { it.isNotBlank() }
+      ?: rawStreamTitleLower?.takeIf { it.isNotBlank() }
+      ?: RadioMetadataPolicy.trackFromMediaTitle(mediaTitle, rawIcyName ?: stationHeaders?.icyName ?: currentItem?.title),
+    streamArtist = rawRadioArtist ?: rawRadioArtistUpper ?: rawRadioArtistLower,
+    icyTitle = rawIcyTitle ?: rawIcyTitleAlt,
+    explicitArtwork = sourceArtworkUri,
+    metadataArtwork = rawStreamArtwork ?: rawStreamArtworkAlt ?: rawIcyLogo ?: stationHeaders?.icyLogo,
+  )
 
+  val currentArtworkUri = if (isRadio) radioPresentation.artworkUri else sourceArtworkUri
   val currentAudioPresentation =
     rememberAudioPresentationMetadata(
       pathOrUri = currentMediaSource?.takeIf { isAudiobook } ?: mediaPath?.takeIf { it.isNotBlank() } ?: currentMediaSource,
       artworkUri = currentArtworkUri,
     )
-  val albumArtBitmap = currentAudioPresentation?.artwork
+  val albumArtBitmap = streamCover.takeIf { isRadio } ?: currentAudioPresentation?.artwork
 
   fun cleanSongTitle(
     title: String,
@@ -789,15 +857,17 @@ fun AudioPlayerControls(
     return titleWithoutExt
   }
 
-  var lastValidTitle by remember {
+  var lastValidTitle by remember(currentItem?.stableId) {
     mutableStateOf(
       currentItem?.title?.takeIf { it.isNotBlank() }?.stripAudioExtension()
         ?: mediaTitle?.takeIf { it.isNotBlank() }?.stripAudioExtension()
         ?: "Audio Track",
     )
   }
-  LaunchedEffect(currentItem?.stableId, currentItem?.title, mediaTitle) {
-    val updatedTitle = if (currentItem?.audiobook != null) {
+  LaunchedEffect(currentItem?.stableId, currentItem?.title, mediaTitle, isRadio, stationHeaders, rawIcyName, rawStreamTitle, rawStreamTitleAlt, rawStreamTitleLower, rawIcyTitle, rawIcyTitleAlt, rawRadioArtist, rawRadioArtistUpper, rawRadioArtistLower) {
+    val updatedTitle = if (isRadio) {
+      radioPresentation.title
+    } else if (currentItem?.audiobook != null) {
       currentItem.title?.takeUnless(::isTransientTransportTitle)
     } else {
       currentItem?.title?.takeUnless(::isTransientTransportTitle)
@@ -810,16 +880,25 @@ fun AudioPlayerControls(
 
   val context = LocalContext.current
   val rawArtist by PlaybackSession.propString["metadata/by-key/Artist"].collectAsState()
+  val rawArtistUpper by PlaybackSession.propString["metadata/by-key/ARTIST"].collectAsState()
+  val rawArtistLower by PlaybackSession.propString["metadata/by-key/artist"].collectAsState()
   val rawArtistAlt by PlaybackSession.propString["metadata/artist"].collectAsState()
   val rawAlbumArtist by PlaybackSession.propString["metadata/by-key/album_artist"].collectAsState()
   val rawPerformer by PlaybackSession.propString["metadata/by-key/PERFORMER"].collectAsState()
   val retrievedArtist = currentAudioPresentation?.artist
 
   val displayArtist =
-    remember(audiobook?.book?.author, currentItem?.artist, rawArtist, rawArtistAlt, rawAlbumArtist, rawPerformer, retrievedArtist) {
-      sequenceOf(audiobook?.book?.author, currentItem?.artist, rawArtist, rawArtistAlt, rawAlbumArtist, rawPerformer, retrievedArtist)
-        .filterNotNull()
-        .firstOrNull { it.isNotBlank() } ?: "Unknown Artist"
+    remember(isRadio, radioPresentation, stationHeaders, rawIcyName, audiobook?.book?.author, currentItem?.title, currentItem?.artist, rawArtist, rawArtistUpper, rawArtistLower, rawArtistAlt, rawAlbumArtist, rawPerformer, retrievedArtist) {
+      if (isRadio) {
+        // A playlist description is not a song artist. Show only stream-supplied artists;
+        // the station name or an honest live label is the fallback when none is supplied.
+        val station = rawIcyName ?: stationHeaders?.icyName ?: currentItem?.title
+        radioPresentation.artist ?: station?.takeIf { it != radioPresentation.title }
+          ?: "No track details provided by this station"
+      } else {
+        sequenceOf(audiobook?.book?.author, currentItem?.artist, rawArtist, rawArtistUpper, rawArtistLower, rawArtistAlt, rawAlbumArtist, rawPerformer, retrievedArtist)
+          .filterNotNull().firstOrNull { it.isNotBlank() } ?: "Unknown Artist"
+      }
     }
 
   val audioPreferences = koinInject<AudioPreferences>()
@@ -832,6 +911,8 @@ fun AudioPlayerControls(
   val playerControlsTheme by appearancePreferences.playerControlsTheme.collectAsState()
   val showSeekbarOuterContainer by appearancePreferences.showSeekbarOuterContainer.collectAsState()
   val liquidGlassSurfaces by appearancePreferences.liquidGlassSurfaces.collectAsState()
+  val glassSurfaceOpacity by appearancePreferences.glassSurfaceOpacity.collectAsState()
+  val glassSurfaceHighlight by appearancePreferences.glassSurfaceHighlight.collectAsState()
   val customThemes by appearancePreferences.customThemes.collectAsState()
   val activeCustomThemeId by appearancePreferences.activeCustomThemeId.collectAsState()
   val colorScheme = MaterialTheme.colorScheme
@@ -868,14 +949,26 @@ fun AudioPlayerControls(
     key2 = palette,
   ) {
     val artwork = albumArtBitmap
+    val paletteKey = AudioPalettePolicy.cacheIdentity(
+      pathOrUri = currentMediaSource?.takeIf { isAudiobook } ?: mediaPath?.takeIf { it.isNotBlank() } ?: currentMediaSource,
+      artworkUri = currentArtworkUri,
+    )
     value =
-      if (artwork == null) {
+      if (artwork == null || paletteKey == null) {
         palette
       } else {
         withContext(Dispatchers.Default) {
-          runCatching { artworkVisualizerPalette(artwork, palette) }.getOrDefault(palette)
+          // Music glass consumes only these true-color tints; artwork never enters
+          // the glass scene or shader.
+          AudioVisualizerPaletteCache.get(paletteKey)
+            ?: runCatching { artworkVisualizerPalette(artwork, palette) }
+              .getOrDefault(palette)
+              .also { AudioVisualizerPaletteCache.put(paletteKey, it) }
         }
       }
+  }
+  LaunchedEffect(visualizerPalette.primary, visualizerPalette.secondary) {
+    onGlassPaletteChanged(visualizerPalette.primary, visualizerPalette.secondary)
   }
 
    // MPV's pause property is not authoritative after a native Media3 handoff. Use the native
@@ -883,7 +976,9 @@ fun AudioPlayerControls(
    val isPlaying = if (nativeEngineActive) nativePlaybackSnapshot.isPlaying else optimisticIsPlaying ?: (paused == false)
    // An audiobook is one logical item. MPV still switches its source file at chapter
    // boundaries, but the seekbar must represent the complete book rather than the active file.
-   val currentDurSec = if (isAudiobook && audiobook != null) {
+   val currentDurSec = if (isRadio) {
+     0f
+   } else if (isAudiobook && audiobook != null) {
      (audiobook.durationMs / 1000f).takeIf { it > 0f } ?: preciseDuration.takeIf { it > 0f } ?: duration?.toFloat() ?: 0f
    } else if (preciseDuration > 0f) preciseDuration else duration?.toFloat() ?: 0f
    val currentVolumePercent by viewModel.currentVolumePercent.collectAsState()
@@ -1011,6 +1106,9 @@ fun AudioPlayerControls(
   val isTablet = configuration.smallestScreenWidthDp >= 600
   val isTabletLandscape = !isPortrait && isTablet
   val isTabletPortrait = isPortrait && isTablet
+  val hostPlayerView = androidx.compose.ui.platform.LocalView.current
+  val transitionViewportWidthPx = with(LocalDensity.current) { configuration.screenWidthDp.dp.toPx() }
+  val miniArtworkSizePx = with(LocalDensity.current) { 48.dp.toPx() }
   val audioStandbyDelaySeconds by audioPreferences.audioStandbyDelaySeconds.collectAsState()
 
   LaunchedEffect(audioStandbyMode, audioStandbyDelaySeconds, isPlaying, isPortrait, lastUserInteractionTime) {
@@ -1078,11 +1176,226 @@ fun AudioPlayerControls(
   val standbyVisualizerBoundary = isStandbyActive && isPortrait && showVisualizer
   val visualizerUsesFullTopAndSides = edgeToEdgeVisualizer || standbyVisualizerBoundary
   val controlsSidePadding = if (edgeToEdgeVisualizer) 16.dp else 0.dp
-  Box(
+  // Full player and browser mini-player are separate Activity surfaces. Keep the
+  // gesture presentation-only and hand off through the existing back path after
+  // the settled animation; PlaybackSession owns audio, queue, artwork and item.
+  // A pending open-from-mini request starts minimized, so the zero-animation launch never
+  // shows one full-size frame before the expansion.
+  var miniGesture by remember {
+    mutableStateOf(
+      if ((playerActivity?.audioOpenFromMiniRequest?.intValue ?: 0) > 0) MiniPlayerGestureState(1f, MiniPlayerSettle.Mini)
+      else MiniPlayerGestureState(),
+    )
+  }
+  var settleTarget by remember { mutableStateOf<Float?>(null) }
+  var settleStart by remember { mutableStateOf(0f) }
+  var settleGeneration by remember { mutableIntStateOf(0) }
+  var playerOrigin by remember { mutableStateOf(androidx.compose.ui.geometry.Offset.Zero) }
+  val settleAnimation = remember { Animatable(0f) }
+  val currentOnBackPress by androidx.compose.runtime.rememberUpdatedState(onBackPress)
+  var playerHeightPx by remember { mutableFloatStateOf(0f) }
+  var playerWidthPx by remember { mutableFloatStateOf(0f) }
+  var fullArtworkBounds by remember { mutableStateOf<MiniPlayerArtworkTarget?>(null) }
+  // Mornye-style handoff state: programmatic runs (minimize button, open from the mini
+  // player) ease over 300/400 ms; finger releases keep the linear mapping and settle fast.
+  var settleProgrammatic by remember { mutableStateOf(false) }
+  var transitionTranslucent by remember { mutableStateOf(false) }
+  var lastDragDownward by remember { mutableStateOf(false) }
+  val pageContentCoordinates = remember { arrayOfNulls<androidx.compose.ui.layout.LayoutCoordinates>(1) }
+  var coverLocalBounds by remember { mutableStateOf<MusicMinimizeTransitionPolicy.Rect?>(null) }
+  val releaseToTarget: (Float) -> Unit = { velocityY ->
+    val target = MusicMinimizeTransitionPolicy.releaseTargetMiniProgress(
+      miniProgress = miniGesture.progress,
+      velocityYPxPerSecond = velocityY,
+      pageHeightPx = playerHeightPx,
+      movingDown = velocityY > 0f || (velocityY == 0f && lastDragDownward),
+    )
+    settleStart = miniGesture.progress
+    miniGesture = miniGesture.copy(settled = if (target >= 1f) MiniPlayerSettle.Mini else MiniPlayerSettle.Full)
+    settleProgrammatic = false
+    settleTarget = target
+    settleGeneration++
+  }
+  val nestedGestureController = remember {
+    MiniPlayerDragController(
+      state = { miniGesture },
+      setState = { next ->
+        if (!transitionTranslucent) {
+          transitionTranslucent = playerActivity?.setAudioTransitionTranslucent(true) == true
+        }
+        lastDragDownward = next.progress >= miniGesture.progress
+        miniGesture = next
+      },
+      extentPx = { playerHeightPx },
+      settle = { velocityY -> releaseToTarget(velocityY) },
+    )
+  }
+  val gestureInputModifier = modifier
+    .fillMaxSize()
+    .nestedScroll(nestedGestureController.nestedScrollConnection)
+    .onGloballyPositioned {
+      playerHeightPx = it.size.height.toFloat()
+      playerWidthPx = it.size.width.toFloat()
+      if (settleTarget == null && miniGesture.progress == 0f) {
+        val bounds = it.miniPlayerScreenBounds(hostPlayerView)
+        playerOrigin = androidx.compose.ui.geometry.Offset(bounds.left, bounds.top)
+      }
+    }
+    .pointerInput(Unit) {
+      val velocityTracker = VelocityTracker()
+      detectVerticalDragGestures(
+        onDragStart = {
+          velocityTracker.resetTracking()
+          // Touch-down converts the audio window so the library shows around the panel.
+          transitionTranslucent = playerActivity?.setAudioTransitionTranslucent(true) == true
+          nestedGestureController.onRootDragStart()
+          // A new finger owns the presentation immediately, including a reversal mid-settle.
+          val progress = if (settleTarget != null) settleAnimation.value else miniGesture.progress
+          settleTarget = null
+          settleGeneration++
+          miniGesture = miniGesture.copy(progress = progress)
+        },
+        onVerticalDrag = { change, dragAmount ->
+          velocityTracker.addPosition(change.uptimeMillis, change.position)
+          if (dragAmount > 0f || miniGesture.progress > 0f) {
+            change.consume()
+            if (dragAmount != 0f) lastDragDownward = dragAmount > 0f
+            // Linear: drag delta / page height moves the transition value directly.
+            miniGesture = MiniPlayerGesturePolicy.drag(miniGesture, dragAmount, size.height.toFloat())
+          }
+        },
+        onDragEnd = {
+          val velocityY = runCatching {
+            // Compose's tracker reports px/sec, preserving the tested velocity policy.
+            velocityTracker.calculateVelocity().y
+          }.getOrDefault(0f)
+          releaseToTarget(velocityY)
+        },
+        onDragCancel = {
+          if (nestedGestureController.onRootDragCancel()) {
+            settleStart = miniGesture.progress
+            settleProgrammatic = false
+            settleTarget = 0f
+            settleGeneration++
+          }
+        },
+      )
+    }
+  // The live page transform is applied by AudioPaletteGlassScene's modifier below
+  // (pageTransitionLayer), never to this input-only root.
+  LaunchedEffect(settleGeneration) {
+    val generation = settleGeneration
+    val target = settleTarget ?: return@LaunchedEffect
+    if (!transitionTranslucent) {
+      transitionTranslucent = playerActivity?.setAudioTransitionTranslucent(true) == true
+    }
+    settleAnimation.snapTo(settleStart)
+    val remaining = kotlin.math.abs(target - settleStart).coerceIn(0f, 1f)
+    val fullDuration = MusicMinimizeTransitionPolicy.settleDurationMs(target, settleProgrammatic)
+    settleAnimation.animateTo(target, animationSpec = tween(
+      // A release from part-way travels only the remaining distance at the same pace.
+      durationMillis = if (settleProgrammatic) fullDuration
+        else (fullDuration * remaining).roundToInt().coerceAtLeast(1),
+      easing = if (settleProgrammatic) androidx.compose.animation.core.EaseInOutCubic
+        else androidx.compose.animation.core.EaseOutCubic,
+    ))
+    if (settleGeneration == generation && settleTarget == target) {
+      miniGesture = if (target == 0f) MiniPlayerGesturePolicy.cancel()
+        else MiniPlayerGestureState(1f, MiniPlayerSettle.Mini)
+      if (target == 1f) {
+        playerActivity?.onAudioMinimizePresentationComplete()
+        currentOnBackPress()
+      } else {
+        // Settled fully open: hide the pages below again.
+        playerActivity?.setAudioTransitionTranslucent(false)
+        transitionTranslucent = false
+      }
+      settleTarget = null
+      settleProgrammatic = false
+    }
+  }
+  // Opened from the browser mini player: expand from the live mini rect over 400 ms.
+  val openFromMiniRequest = playerActivity?.audioOpenFromMiniRequest?.intValue ?: 0
+  var handledOpenFromMiniRequest by remember { mutableIntStateOf(0) }
+  LaunchedEffect(openFromMiniRequest) {
+    if (openFromMiniRequest == 0 || openFromMiniRequest == handledOpenFromMiniRequest) return@LaunchedEffect
+    handledOpenFromMiniRequest = openFromMiniRequest
+    val anchor = MusicMinimizeTransitionPolicy.currentAnchor(
+      hostPlayerView.width.toFloat(), hostPlayerView.width.toFloat(), hostPlayerView.height.toFloat())
+    if (anchor == null) {
+      playerActivity?.setAudioTransitionTranslucent(false)
+      transitionTranslucent = false
+      return@LaunchedEffect
+    }
+    transitionTranslucent = true
+    miniGesture = MiniPlayerGestureState(1f, MiniPlayerSettle.Mini)
+    settleStart = 1f
+    settleProgrammatic = true
+    settleTarget = 0f
+    settleGeneration++
+  }
+  // One frame of the handoff, or null for the plain slide fallback (no live anchor,
+  // stale window geometry, or translucency unavailable).
+  val currentTransitionFrame: (Float, Float) -> MusicMinimizeTransitionPolicy.Frame? = { pageWidth, pageHeight ->
+    val miniProgress = (if (settleTarget == null) miniGesture.progress
+      else if (settleAnimation.isRunning) settleAnimation.value else settleStart).coerceIn(0f, 1f)
+    val windowWidth = hostPlayerView.width.toFloat()
+    val windowHeight = hostPlayerView.height.toFloat()
+    val anchor = MusicMinimizeTransitionPolicy.currentAnchor(windowWidth, windowWidth, windowHeight)
+    if (miniProgress <= 0f || pageWidth <= 0f || pageHeight <= 0f ||
+      MusicMinimizeTransitionPolicy.useSlideFallback(anchor, windowWidth, windowHeight, transitionTranslucent)) {
+      null
+    } else {
+      val a = anchor!!
+      val mini = MusicMinimizeTransitionPolicy.Rect(a.left, a.top, a.width, a.height)
+      val miniArt = a.artwork?.let { MusicMinimizeTransitionPolicy.Rect(it.left, it.top, it.width, it.height) } ?: mini
+      val cover = coverLocalBounds?.let {
+        MusicMinimizeTransitionPolicy.Rect(playerOrigin.x + it.left, playerOrigin.y + it.top, it.width, it.height)
+      } ?: miniArt
+      MusicMinimizeTransitionPolicy.frame(
+        minimizeProgress = miniProgress,
+        screen = MusicMinimizeTransitionPolicy.Rect(playerOrigin.x, playerOrigin.y, pageWidth, pageHeight),
+        mini = mini,
+        fullArtwork = cover,
+        miniArtwork = miniArt,
+      )
+    }
+  }
+  AudioPaletteGlassScene(
+    topArgb = visualizerPalette.primary,
+    bottomArgb = visualizerPalette.secondary,
+    enabled = liquidGlassSurfaces,
     modifier =
-      modifier
-        .fillMaxSize()
-        .background(MaterialTheme.colorScheme.surface)
+      gestureInputModifier
+        .then(Modifier.graphicsLayer {
+          // pageTransitionLayer: the whole page lerps into the live mini-player rect,
+          // scaled uniformly from the top-left and clipped to the animated rounded rect.
+          val frame = currentTransitionFrame(size.width, size.height)
+          transformOrigin = androidx.compose.ui.graphics.TransformOrigin(0f, 0f)
+          if (frame != null) {
+            val layer = MusicMinimizeTransitionPolicy.pageLayer(frame, playerOrigin.x, playerOrigin.y)
+            translationX = layer.translationX
+            translationY = layer.translationY
+            scaleX = layer.scaleX
+            scaleY = layer.scaleY
+            shape = MusicPageClipShape(frame.clipWidth, frame.clipHeight, frame.clipCornerRadiusDp.dp.toPx())
+            clip = true
+            alpha = frame.contentAlpha
+          } else {
+            val miniProgress = (if (settleTarget == null) miniGesture.progress
+              else if (settleAnimation.isRunning) settleAnimation.value else settleStart).coerceIn(0f, 1f)
+            translationX = 0f
+            translationY = size.height * miniProgress
+            scaleX = 1f
+            scaleY = 1f
+            clip = false
+            alpha = 1f
+          }
+        })
+        .onGloballyPositioned { pageContentCoordinates[0] = it }
+        .background(
+          if (liquidGlassSurfaces) Color.Transparent else MaterialTheme.colorScheme.surface,
+        )
         .drawWithCache {
           if (audioPaletteBackground && ambientModeEnabled &&
             (animatedAmbientTop != Color.Transparent || animatedAmbientBottom != Color.Transparent)) {
@@ -1122,22 +1435,18 @@ fun AudioPlayerControls(
           },
         )
         .padding(horizontal = if (visualizerUsesFullTopAndSides) 0.dp else 16.dp)
-        .padding(top = if (visualizerUsesFullTopAndSides) 0.dp else 6.dp, bottom = 12.dp)
-        .pointerInput(Unit) {
-          var totalDrag = 0f
-          detectVerticalDragGestures(
-            onDragStart = { totalDrag = 0f },
-            onVerticalDrag = { _, dragAmount -> totalDrag += dragAmount },
-            onDragEnd = {
-              if (totalDrag > 160f) onBackPress()
-            },
-          )
-        },
+        .padding(top = if (visualizerUsesFullTopAndSides) 0.dp else 6.dp, bottom = 12.dp),
   ) {
     val headerBar = @Composable {
       Box(modifier = Modifier.fillMaxWidth()) {
         ReactiveIconButton(
-          onClick = onBackPress,
+          onClick = {
+            settleStart = (if (settleTarget == null) miniGesture.progress
+              else if (settleAnimation.isRunning) settleAnimation.value else settleStart).coerceIn(0f, 1f)
+            settleProgrammatic = true
+            settleTarget = 1f
+            settleGeneration++
+          },
           modifier = Modifier.align(Alignment.CenterStart),
         ) {
           Icon(
@@ -1402,6 +1711,33 @@ fun AudioPlayerControls(
                 modifier = Modifier
                   .aspectRatio(1f)
                   .offset { IntOffset(currentOffset.roundToInt(), 0) }
+                  .onGloballyPositioned { coordinates ->
+                    // Measure the cover inside the page layer (pre-transform), so the
+                    // rectangle stays correct mid-transition and when opening from mini.
+                    val page = pageContentCoordinates[0]
+                    if (page != null && page.isAttached && coordinates.isAttached &&
+                      coordinates.size.width > 0 && coordinates.size.height > 0) {
+                      val local = page.localPositionOf(coordinates, Offset.Zero)
+                      coverLocalBounds = MusicMinimizeTransitionPolicy.Rect(
+                        local.x, local.y, coordinates.size.width.toFloat(), coordinates.size.height.toFloat())
+                    }
+                  }
+                  .graphicsLayer {
+                    // Separate artwork layer: the cover flies from its full-player bounds to
+                    // the mini-player artwork, compensating the page layer's uniform scale.
+                    val frame = currentTransitionFrame(
+                      playerWidthPx.takeIf { it > 0f } ?: transitionViewportWidthPx, playerHeightPx)
+                    val local = coverLocalBounds
+                    val layer = if (frame != null && local != null) MusicMinimizeTransitionPolicy.artworkLayer(
+                      frame, playerOrigin.x, playerOrigin.y,
+                      MusicMinimizeTransitionPolicy.Rect(playerOrigin.x + local.left, playerOrigin.y + local.top, local.width, local.height),
+                    ) else MusicMinimizeTransitionPolicy.Layer(0f, 0f, 1f, 1f)
+                    transformOrigin = androidx.compose.ui.graphics.TransformOrigin(0f, 0f)
+                    translationX = layer.translationX
+                    translationY = layer.translationY
+                    scaleX = layer.scaleX
+                    scaleY = layer.scaleY
+                  }
                   .clip(coverShape),
                 shape = coverShape,
                 color = Color.Transparent,
@@ -1469,7 +1805,7 @@ fun AudioPlayerControls(
         val trackText = when {
           audiobookChapterNumber != null -> "Chapter $audiobookChapterNumber/${audiobookChapters.size}"
           isAudiobook -> "Audiobook"
-          playlistInfo != null -> "Track $playlistInfo"
+          playlistInfo != null -> if (isRadio) "Station $playlistInfo" else "Track $playlistInfo"
           else -> "Audio Media"
         }
 
@@ -1662,7 +1998,7 @@ fun AudioPlayerControls(
                   }
                 }
               },
-              modifier = Modifier.size(40.dp),
+              modifier = Modifier.size(48.dp),
             ) {
               Icon(
                 imageVector = if (isCurrentTrackFavorite) Icons.RoundedFilled.Favorite else Icons.RoundedFilled.FavoriteBorder,
@@ -1674,7 +2010,7 @@ fun AudioPlayerControls(
 
             ReactiveIconButton(
               onClick = { addToPlaylistDialogOpen = true },
-              modifier = Modifier.size(40.dp),
+              modifier = Modifier.size(48.dp),
             ) {
               Icon(
                 imageVector = Icons.RoundedFilled.PlaylistAdd,
@@ -1712,16 +2048,25 @@ fun AudioPlayerControls(
       }
       val isPaused = paused ?: false
 
-      Box(
-        contentAlignment = Alignment.Center,
-        modifier = Modifier.fillMaxWidth(),
-      ) {
-      SeekbarWithTimers(
+      if (isRadio) {
+        // Radio has no truthful finite duration; do not expose mpv's live clock as a timeline.
+        Box(
+          modifier = Modifier.fillMaxWidth().height(32.dp),
+          contentAlignment = Alignment.Center,
+        ) {
+          Text(
+            text = "LIVE",
+            style = MaterialTheme.typography.labelLarge,
+            fontWeight = FontWeight.SemiBold,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+          )
+        }
+      } else SeekbarWithTimers(
         position = timelinePosition,
         committedPosition = timelinePosition,
         duration = timelineDuration.coerceAtLeast(1f),
         remaining = effectiveRemaining,
-        onValueChange = { value -> if (!isAudiobook) viewModel.seekPreviewTo(value) },
+        onValueChange = { value -> viewModel.seekPreviewTo(value) },
         onValueChangeFinished = viewModel::seekAudioTo,
         timersInverted = Pair(false, invertDuration),
         durationTimerOnCLick = { playerPreferences.invertDuration.set(!invertDuration) },
@@ -1741,7 +2086,6 @@ fun AudioPlayerControls(
         applyHorizontalPadding = false,
         modifier = Modifier.fillMaxWidth(),
       )
-      }
     }
 
     val playbackControlsRow = @Composable {
@@ -1769,13 +2113,15 @@ fun AudioPlayerControls(
             modifier = Modifier.size(28.dp),
           )
         }
-        ReactiveIconButton(onClick = { viewModel.seekBy(if (isAudiobook) -30 else -audioSeekDuration) }) {
-          Icon(
-            imageVector = Icons.RoundedFilled.FastRewind,
-            contentDescription = null,
-            tint = MaterialTheme.colorScheme.onSurface,
-            modifier = Modifier.size(34.dp),
-          )
+        if (!isRadio) {
+          ReactiveIconButton(onClick = { viewModel.seekBy(if (isAudiobook) -30 else -audioSeekDuration) }) {
+            Icon(
+              imageVector = Icons.RoundedFilled.FastRewind,
+              contentDescription = null,
+              tint = MaterialTheme.colorScheme.onSurface,
+              modifier = Modifier.size(34.dp),
+            )
+          }
         }
         ReactiveSurfaceButton(
           onClick = {
@@ -1796,13 +2142,15 @@ fun AudioPlayerControls(
             )
           }
         }
-        ReactiveIconButton(onClick = { viewModel.seekBy(if (isAudiobook) 30 else audioSeekDuration) }) {
-          Icon(
-            imageVector = Icons.RoundedFilled.FastForward,
-            contentDescription = null,
-            tint = MaterialTheme.colorScheme.onSurface,
-            modifier = Modifier.size(34.dp),
-          )
+        if (!isRadio) {
+          ReactiveIconButton(onClick = { viewModel.seekBy(if (isAudiobook) 30 else audioSeekDuration) }) {
+            Icon(
+              imageVector = Icons.RoundedFilled.FastForward,
+              contentDescription = null,
+              tint = MaterialTheme.colorScheme.onSurface,
+              modifier = Modifier.size(34.dp),
+            )
+          }
         }
         ReactiveIconButton(
           onClick = { if (isAudiobook) viewModel.stepPlaybackChapter(1) else viewModel.playNext() },
@@ -1829,7 +2177,7 @@ fun AudioPlayerControls(
     val audiobookModeButtons = @Composable {
       ReactiveIconButton(
         onClick = { onOpenSheet(Sheets.AudiobookSleepTimer) },
-        modifier = Modifier.size(40.dp),
+        modifier = Modifier.size(48.dp),
       ) {
         Icon(
           imageVector = Icons.RoundedFilled.Timer,
@@ -1839,7 +2187,7 @@ fun AudioPlayerControls(
       }
       ReactiveIconButton(
         onClick = { onOpenSheet(Sheets.Chapters) },
-        modifier = Modifier.size(40.dp),
+        modifier = Modifier.size(48.dp),
       ) {
         Icon(
           imageVector = Icons.RoundedFilled.MenuBook,
@@ -1859,9 +2207,6 @@ fun AudioPlayerControls(
           enabled = !audioFiltersConfigOwned,
           modifier =
             Modifier
-              .clip(
-                CircleShape,
-              ).background(MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.65f))
               .size(48.dp),
         ) {
           Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
@@ -1881,12 +2226,8 @@ fun AudioPlayerControls(
             Row(
               modifier =
                 Modifier
-                  .clip(CircleShape)
-                  .background(
-                    MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.65f),
-                  )
                   .horizontalScroll(rememberScrollState())
-                  .padding(horizontal = 8.dp, vertical = 4.dp),
+                  .padding(horizontal = 0.dp, vertical = 2.dp),
               verticalAlignment = Alignment.CenterVertically,
               horizontalArrangement = Arrangement.spacedBy(4.dp),
             ) {
@@ -1894,7 +2235,7 @@ fun AudioPlayerControls(
                 ReactiveIconButton(
                   onClick = viewModel::toggleShuffle,
                   enabled = playlistModeEnabled,
-                  modifier = Modifier.size(40.dp),
+                  modifier = Modifier.size(48.dp),
                 ) {
                   Icon(
                     imageVector = if (shuffleEnabled) Icons.RoundedFilled.ShuffleOn else Icons.RoundedFilled.Shuffle,
@@ -1904,7 +2245,7 @@ fun AudioPlayerControls(
                 }
                 ReactiveIconButton(
                   onClick = viewModel::cycleRepeatMode,
-                  modifier = Modifier.size(40.dp),
+                  modifier = Modifier.size(48.dp),
                 ) {
                   Icon(
                     imageVector = when (repeatMode) {
@@ -1920,7 +2261,7 @@ fun AudioPlayerControls(
               ReactiveIconButton(
                 onClick = { viewModel.toggleAudioVisualizer() },
                 onLongClick = { onOpenSheet(Sheets.VisualizerStyle) },
-                modifier = Modifier.size(40.dp),
+                modifier = Modifier.size(48.dp),
               ) {
                 Icon(
                   imageVector = if (showVisualizer) Icons.RoundedFilled.AutoAwesome else Icons.RoundedFilled.Audiotrack,
@@ -1937,7 +2278,7 @@ fun AudioPlayerControls(
                     audioPreferences.audioBackgroundPlayback.set(!backgroundPlaybackEnabled)
                   }
                 },
-                modifier = Modifier.size(40.dp),
+                modifier = Modifier.size(48.dp),
               ) {
                 Icon(
                   imageVector = Icons.RoundedFilled.Headset,
@@ -1948,7 +2289,7 @@ fun AudioPlayerControls(
             }
           }
         } else {
-          Spacer(modifier = Modifier.width(12.dp))
+          Spacer(modifier = Modifier.width(4.dp))
           Box(
             modifier = Modifier.weight(1f),
             contentAlignment = Alignment.Center,
@@ -1956,12 +2297,8 @@ fun AudioPlayerControls(
             Row(
               modifier =
                 Modifier
-                  .clip(CircleShape)
-                  .background(
-                    MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.65f),
-                  )
                   .horizontalScroll(rememberScrollState())
-                  .padding(horizontal = 8.dp, vertical = 4.dp),
+                  .padding(horizontal = 0.dp, vertical = 2.dp),
               verticalAlignment = Alignment.CenterVertically,
               horizontalArrangement = Arrangement.spacedBy(4.dp),
             ) {
@@ -1969,7 +2306,7 @@ fun AudioPlayerControls(
                 ReactiveIconButton(
                   onClick = viewModel::toggleShuffle,
                   enabled = playlistModeEnabled,
-                  modifier = Modifier.size(40.dp),
+                  modifier = Modifier.size(48.dp),
                 ) {
                   Icon(
                     imageVector = if (shuffleEnabled) Icons.RoundedFilled.ShuffleOn else Icons.RoundedFilled.Shuffle,
@@ -1979,7 +2316,7 @@ fun AudioPlayerControls(
                 }
                 ReactiveIconButton(
                   onClick = viewModel::cycleRepeatMode,
-                  modifier = Modifier.size(40.dp),
+                  modifier = Modifier.size(48.dp),
                 ) {
                   Icon(
                     imageVector = when (repeatMode) {
@@ -1995,7 +2332,7 @@ fun AudioPlayerControls(
               ReactiveIconButton(
                 onClick = { viewModel.toggleAudioVisualizer() },
                 onLongClick = { onOpenSheet(Sheets.VisualizerStyle) },
-                modifier = Modifier.size(40.dp),
+                modifier = Modifier.size(48.dp),
               ) {
                 Icon(
                   imageVector = if (showVisualizer) Icons.RoundedFilled.AutoAwesome else Icons.RoundedFilled.Audiotrack,
@@ -2005,7 +2342,7 @@ fun AudioPlayerControls(
               }
               ReactiveIconButton(
                 onClick = { showInPlaceLyrics = !showInPlaceLyrics },
-                modifier = Modifier.size(40.dp),
+                modifier = Modifier.size(48.dp),
               ) {
                 Icon(
                   imageVector = Icons.RoundedFilled.Lyrics,
@@ -2022,7 +2359,7 @@ fun AudioPlayerControls(
                     audioPreferences.audioBackgroundPlayback.set(!backgroundPlaybackEnabled)
                   }
                 },
-                modifier = Modifier.size(40.dp),
+                modifier = Modifier.size(48.dp),
               ) {
                 Icon(
                   imageVector = Icons.RoundedFilled.Headset,
@@ -2032,15 +2369,10 @@ fun AudioPlayerControls(
               }
             }
           }
-          Spacer(modifier = Modifier.width(12.dp))
+          Spacer(modifier = Modifier.width(4.dp))
           ReactiveIconButton(
             onClick = { onOpenSheet(if (isAudiobook) Sheets.Chapters else Sheets.Playlist) },
-            modifier =
-              Modifier
-                .clip(
-                  CircleShape,
-                ).background(MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.65f))
-                .size(48.dp),
+            modifier = Modifier.size(48.dp),
           ) {
             Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
               Icon(
@@ -2610,6 +2942,8 @@ private fun ReactiveIconButton(
   val interactionSource = remember { MutableInteractionSource() }
   val isPressed by interactionSource.collectIsPressedAsState()
   val haptic = LocalHapticFeedback.current
+  val appearance = koinInject<AppearancePreferences>()
+  val liquidGlassSurfaces by appearance.liquidGlassSurfaces.collectAsState()
 
   val scale by animateFloatAsState(
     targetValue = if (isPressed) 0.82f else 1f,
@@ -2622,9 +2956,10 @@ private fun ReactiveIconButton(
       modifier =
         modifier
           .graphicsLayer {
-            scaleX = scale
-            scaleY = scale
+            scaleX = scale.coerceAtMost(1f)
+            scaleY = scale.coerceAtMost(1f)
           }
+          .playerGlassPane(enabled = liquidGlassSurfaces, cornerRadius = 999.dp)
           .clip(CircleShape)
           .combinedClickable(
             interactionSource = interactionSource,
@@ -2653,10 +2988,12 @@ private fun ReactiveIconButton(
       enabled = enabled,
       interactionSource = interactionSource,
       modifier =
-        modifier.graphicsLayer {
-          scaleX = scale
-          scaleY = scale
-        },
+        modifier
+          .graphicsLayer {
+            scaleX = scale.coerceAtMost(1f)
+            scaleY = scale.coerceAtMost(1f)
+          }
+          .playerGlassPane(enabled = liquidGlassSurfaces, cornerRadius = 999.dp),
     ) {
       content()
     }
@@ -2676,6 +3013,8 @@ private fun ReactiveSurfaceButton(
   val interactionSource = remember { MutableInteractionSource() }
   val isPressed by interactionSource.collectIsPressedAsState()
   val haptic = LocalHapticFeedback.current
+  val appearance = koinInject<AppearancePreferences>()
+  val liquidGlassSurfaces by appearance.liquidGlassSurfaces.collectAsState()
 
   val scale by animateFloatAsState(
     targetValue = if (isPressed) 0.88f else 1f,
@@ -2689,15 +3028,18 @@ private fun ReactiveSurfaceButton(
       onClick()
     },
     shape = shape,
-    color = color,
-    shadowElevation = shadowElevation,
+    // One material owner: a second translucent elevated Surface can rasterize a
+    // faceted backing inside the palette-glass circle on device GPUs.
+    color = if (liquidGlassSurfaces) Color.Transparent else color,
+    tonalElevation = 0.dp,
+    shadowElevation = if (liquidGlassSurfaces) 0.dp else shadowElevation,
     enabled = enabled,
     interactionSource = interactionSource,
     modifier =
       modifier.graphicsLayer {
-        scaleX = scale
-        scaleY = scale
-      },
+        scaleX = scale.coerceAtMost(1f)
+        scaleY = scale.coerceAtMost(1f)
+      }.playerGlassPane(enabled = liquidGlassSurfaces, cornerRadius = 999.dp),
   ) {
     content()
   }
@@ -2708,4 +3050,22 @@ private fun String.stripAudioExtension(): String {
   if (dotIndex <= 0) return this
   val ext = substring(dotIndex + 1)
   return if (ext.length in 2..5 && ext.none { it.isWhitespace() }) substring(0, dotIndex) else this
+}
+
+/** Rounded clip in the page layer's own coordinates; after the layer's scale it is the live page rect. */
+private class MusicPageClipShape(
+  private val width: Float,
+  private val height: Float,
+  private val cornerRadiusPx: Float,
+) : androidx.compose.ui.graphics.Shape {
+  override fun createOutline(
+    size: androidx.compose.ui.geometry.Size,
+    layoutDirection: androidx.compose.ui.unit.LayoutDirection,
+    density: androidx.compose.ui.unit.Density,
+  ): androidx.compose.ui.graphics.Outline = androidx.compose.ui.graphics.Outline.Rounded(
+    androidx.compose.ui.geometry.RoundRect(
+      0f, 0f, width.coerceAtMost(size.width), height.coerceAtMost(size.height),
+      androidx.compose.ui.geometry.CornerRadius(cornerRadiusPx),
+    ),
+  )
 }

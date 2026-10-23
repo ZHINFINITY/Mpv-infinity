@@ -9,6 +9,14 @@
   <string name="generic_ok">OK</string>
   <string name="generic_unit_ms">ms</string>
   <string name="generic_disabled">Disabled</string>
+  <string name="player_interpolation_on">On</string>
+  <string name="player_interpolation_off">Off</string>
+  <string name="player_interpolation_target_fps">Target FPS</string>
+  <string name="toast_interpolation_pending_next_playback">Interpolation changes are deferred until next playback: this backend has no safe live option API; current playback was not restarted.</string>
+  <string name="toast_interpolation_pending_next_playback_reason">Deferred until next playback: this backend has no safe live option API; current playback was not restarted.</string>
+  <string name="toast_interpolation_pending_native_sink">Deferred until next playback: Native Vulkan flow sink is unavailable for this session; current playback was not restarted.</string>
+  <string name="toast_interpolation_applied_live">Interpolation updated for the current playback.</string>
+  <string name="player_interpolation_next_playback_note">Native Vulkan updates this playback live when its flow sink is already active. MPV, or an unavailable Native sink, saves changes for next playback without restarting.</string>
   <string name="pref_preferences">Preferences</string>
   <string name="pref_appearance_title">Appearance</string>
   <string name="pref_appearance_summary">Dark mode, Material You</string>
@@ -308,6 +316,7 @@
   <string name="pref_decoder_yuv420p_title">Use YUV420P pixel format</string>
   <string name="pref_decoder_yuv420p_summary">May fix black screens on some video codecs, can also improve performance at the cost of quality</string>
   <string name="pref_decoder_mpvflow_title">Frame interpolation</string>
+  <string name="pref_decoder_mpvflow_summary">Creates in-between frames for smoother motion.</string>
   <string name="pref_decoder_mpvflow_visibility_resolver_debug_title">Visibility resolver</string>
   <string name="pref_decoder_mpvflow_soft_blend_debug_title">Soft blend</string>
   <string name="pref_decoder_mpvflow_target_fps_title">MPVFlow target frame rate</string>
@@ -755,6 +764,8 @@
   <string name="pref_playlist_mode_title">Enable next/previous navigation</string>
   <string name="pref_playlist_mode_summary">Show next/previous buttons for all videos in folder</string>
   <string name="pref_playlist_mode_summary_disabled">Play videos individually (select multiple for playlist)</string>
+  <string name="pref_open_radio_m3u_in_music_title">Open radio M3U playlists in Music Player</string>
+  <string name="pref_open_radio_m3u_in_music_summary">Open recognized radio and audio-only M3U playlists in Music instead of the video player</string>
 
   <!-- Player - Seeking Section (additional)                      -->
   <string name="pref_online_skip_markers_title">Use online skip markers</string>
@@ -2271,4 +2282,48 @@
   <string name="music_source_jellyfin">Jellyfin Music</string>
   <string name="music_source_navidrome">Navidrome Music</string>
   <string name="music_source_manage_servers">Media Servers</string>
+  <!-- Localized custom-theme settings and popup editor labels. -->
+  <string name="pref_custom_theme_title">Custom themes</string>
+  <string name="pref_custom_theme_summary">Save a photo or video theme and adjust it later.</string>
+  <string name="pref_custom_theme_selected">Selected in theme rail: %1$s</string>
+  <string name="pref_custom_theme_edit">Edit theme</string>
+  <string name="pref_custom_theme_delete">Delete theme</string>
+  <string name="pref_custom_theme_add">Add photo or video theme</string>
+  <string name="pref_custom_theme_create">Create custom theme</string>
+  <string name="pref_custom_theme_edit_title">Edit custom theme</string>
+  <string name="pref_custom_theme_preview">Live preview</string>
+  <string name="pref_custom_theme_hide_options">Hide editing options</string>
+  <string name="pref_custom_theme_edit_background">Edit background</string>
+  <string name="pref_custom_theme_media_framing">Media framing</string>
+  <string name="pref_custom_theme_crop">Crop</string>
+  <string name="pref_custom_theme_fit">Fit</string>
+  <string name="pref_custom_theme_fill">Fill</string>
+  <string name="pref_custom_theme_video_aspect">Video aspect ratio</string>
+  <string name="pref_custom_theme_fill_screen">Fill phone screen</string>
+  <string name="pref_custom_theme_keep_source">Keep source</string>
+  <string name="pref_custom_theme_zoom_scale">Zoom / scale</string>
+  <string name="pref_custom_theme_horizontal_position">Horizontal position</string>
+  <string name="pref_custom_theme_vertical_position">Vertical position</string>
+  <string name="pref_custom_theme_media_appearance">Media appearance</string>
+  <string name="pref_custom_theme_blur">Background blur</string>
+  <string name="pref_custom_theme_brightness">Brightness</string>
+  <string name="pref_custom_theme_saturation">Saturation</string>
+  <string name="pref_custom_theme_transparency">Media transparency</string>
+  <string name="pref_custom_theme_overlay">Dim overlay</string>
+  <string name="pref_custom_theme_panel_opacity">Panel opacity</string>
+  <string name="pref_custom_theme_text_colour">Custom text colour</string>
+  <string name="pref_custom_theme_argb_hex">ARGB hex</string>
+  <string name="pref_custom_theme_colour_sliders">Colour sliders</string>
+  <string name="pref_custom_theme_hue">Hue: %1$d°</string>
+  <string name="pref_custom_theme_saturation_value">Saturation: %1$d%%</string>
+  <string name="pref_custom_theme_brightness_value">Brightness: %1$d%%</string>
+  <string name="pref_custom_theme_opacity_value">Opacity: %1$d%%</string>
+  <string name="pref_custom_theme_mute_video">Mute video theme</string>
+  <string name="pref_custom_theme_name">Theme name</string>
+  <string name="generic_save">Save</string>
+  <string name="pref_custom_theme_argb_placeholder" translatable="false">#FFFFFFFF</string>
+  <string name="track_metadata_default">Default</string>
+  <string name="track_metadata_forced">Forced</string>
+  <string name="track_metadata_sdh">SDH</string>
+  <string name="track_metadata_external">External</string>
 </resources>

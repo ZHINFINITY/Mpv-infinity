@@ -26,6 +26,7 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.DragInteraction
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsDraggedAsState
 import androidx.compose.foundation.interaction.collectIsPressedAsState
@@ -49,6 +50,8 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.ripple
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -65,14 +68,17 @@ import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.clipRect
+import androidx.compose.ui.graphics.drawscope.inset
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -81,6 +87,8 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import app.infinity.mpvz.preferences.SeekbarStyle
+import app.infinity.mpvz.preferences.AppearancePreferences
+import app.infinity.mpvz.preferences.preference.collectAsState
 import app.infinity.mpvz.ui.player.SkipSegment
 import app.infinity.mpvz.ui.player.clip.ClipEditorUiState
 import app.infinity.mpvz.ui.player.controls.LocalPlayerButtonsClickEvent
@@ -89,6 +97,7 @@ import app.infinity.mpvz.ui.player.visualizer.VisualizerPalette
 import app.infinity.mpvz.ui.player.visualizer.WaveVisualizerOverlay
 import app.infinity.mpvz.ui.theme.AppMotion
 import app.infinity.mpvz.ui.theme.spacing
+import app.infinity.mpvz.ui.theme.LocalGlassCustomization
 import dev.vivvvek.seeker.Seeker
 import dev.vivvvek.seeker.SeekerDefaults
 import dev.vivvvek.seeker.Segment
@@ -97,9 +106,11 @@ import `is`.xyz.mpv.Utils
 import kotlinx.collections.immutable.ImmutableList
 import kotlinx.collections.immutable.persistentListOf
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlin.math.min
+import org.koin.compose.koinInject
 
 /** Precomputed, allocation-free drawing data for a single skip segment overlay. */
 private data class SkipSegmentOverlay(
@@ -283,6 +294,7 @@ internal fun SeekbarWithTimers(
   committedPosition: Float = position,
   onValueChange: (Float) -> Unit,
   onValueChangeFinished: (Float) -> Unit,
+  onUserInteractionChange: (Boolean) -> Unit = {},
   timersInverted: Pair<Boolean, Boolean>,
   positionTimerOnClick: () -> Unit,
   durationTimerOnCLick: () -> Unit,
@@ -307,6 +319,12 @@ internal fun SeekbarWithTimers(
   val clickEvent = LocalPlayerButtonsClickEvent.current
   var isUserInteracting by remember { mutableStateOf(false) }
   var userPosition by remember { mutableFloatStateOf(position) }
+  val interactionCallback by rememberUpdatedState(onUserInteractionChange)
+  DisposableEffect(Unit) {
+    onDispose {
+      if (isUserInteracting) interactionCallback(false)
+    }
+  }
 
   // Animated position for smooth transitions
   val animatedPosition = remember { Animatable(position) }
@@ -356,7 +374,10 @@ internal fun SeekbarWithTimers(
         loopStart = loopStart,
         loopEnd = loopEnd,
         bufferDuration = bufferDuration,
-        onUserInteractionChange = { isUserInteracting = it },
+        onUserInteractionChange = {
+          isUserInteracting = it
+          onUserInteractionChange(it)
+        },
         onUserPositionChange = { userPosition = it },
         onValueChange = onValueChange,
         onValueChangeFinished = onValueChangeFinished,
@@ -427,7 +448,10 @@ internal fun SeekbarWithTimers(
         loopStart = loopStart,
         loopEnd = loopEnd,
         bufferDuration = bufferDuration,
-        onUserInteractionChange = { isUserInteracting = it },
+        onUserInteractionChange = {
+          isUserInteracting = it
+          onUserInteractionChange(it)
+        },
         onUserPositionChange = { userPosition = it },
         onValueChange = onValueChange,
         onValueChangeFinished = onValueChangeFinished,
@@ -484,6 +508,12 @@ private fun SeekbarContent(
   val isSeekerPressed by seekerInteractionSource.collectIsPressedAsState()
   val isSeekerDragged by seekerInteractionSource.collectIsDraggedAsState()
   val isVisuallyInteracting = isUserInteracting || isSeekerPressed || isSeekerDragged
+  val currentInteractionCallback by rememberUpdatedState(onUserInteractionChange)
+  LaunchedEffect(seekerInteractionSource) {
+    seekerInteractionSource.interactions.collect { interaction ->
+      if (interaction is DragInteraction.Cancel) currentInteractionCallback(false)
+    }
+  }
   val clipRange by ClipEditorUiState.state.collectAsState()
   val safeDuration = duration.takeIf { it.isFinite() && it > 0f } ?: 0f
   val seekerRange = 0f..safeDuration.coerceAtLeast(0.1f)
@@ -1810,6 +1840,53 @@ fun StandardSeekbar(
     label = "standard_seekbar_thumb_width",
   )
   val thumbHeight = if (isThick) 16.dp else 24.dp
+  val appearance = koinInject<AppearancePreferences>()
+  val liquidGlassEnabled by appearance.liquidGlassSurfaces.collectAsState()
+  val glassOpacity by appearance.glassSurfaceOpacity.collectAsState()
+  val glassHighlight by appearance.glassSurfaceHighlight.collectAsState()
+  val glassDepth = GlassControlPolicy.depth(LocalGlassCustomization.current.depth)
+  val glass = liquidGlassEnabled
+  val glassSurfaceColor = MaterialTheme.colorScheme.surfaceContainerHigh
+  val glassAccentColor = MaterialTheme.colorScheme.primary
+  val opticalTrackHeight = with(LocalDensity.current) { baseTrackHeight.toPx() } * heightFraction
+  val opticalCenterY = with(LocalDensity.current) { thumbHeight.toPx() / 2f }
+  val glassTrackBrush = remember(glassSurfaceColor, glassOpacity, glassHighlight, glassDepth, opticalTrackHeight, opticalCenterY) {
+    Brush.verticalGradient(
+      listOf(
+        Color.White.copy(alpha = (glassHighlight * 0.34f).coerceIn(0f, 0.34f)),
+        glassSurfaceColor.copy(alpha = glassOpacity * 0.22f),
+        Color.Black.copy(alpha = GlassControlPolicy.shadowAlpha(glassDepth, true)),
+      ),
+      startY = opticalCenterY - opticalTrackHeight / 2f,
+      endY = opticalCenterY + opticalTrackHeight / 2f,
+    )
+  }
+  val glassTrackBorderBrush = remember(glassHighlight, glassDepth, opticalTrackHeight, opticalCenterY) {
+    Brush.verticalGradient(
+      listOf(
+        Color.White.copy(alpha = (0.18f + glassHighlight * 0.46f).coerceAtMost(1f)),
+        Color.Transparent,
+        Color.Black.copy(alpha = GlassControlPolicy.shadowAlpha(glassDepth, true)),
+      ),
+      startY = opticalCenterY - opticalTrackHeight / 2f,
+      endY = opticalCenterY + opticalTrackHeight / 2f,
+    )
+  }
+  val glassThumbBrush = remember(glassAccentColor, glassHighlight, glassDepth) {
+    Brush.verticalGradient(
+      listOf(
+        Color.White.copy(alpha = glassHighlight * 0.72f),
+        glassAccentColor.copy(alpha = 0.10f),
+        Color.Black.copy(alpha = GlassControlPolicy.shadowAlpha(glassDepth, true)),
+      ),
+    )
+  }
+  val glassThumbHighlightBrush = remember(glassHighlight) {
+    Brush.radialGradient(
+      listOf(Color.White.copy(alpha = glassHighlight * 0.42f), Color.Transparent),
+    )
+  }
+
   val chapterGapHalfDp by animateDpAsState(
     targetValue = if (isThumbInteracting) 2.dp else 1.5.dp,
     animationSpec =
@@ -1858,6 +1935,28 @@ fun StandardSeekbar(
       unplayedColor = primaryColor.copy(alpha = 0.3f),
     )
 
+    if (glass) {
+      val trackRadius = trackHeight / 2f
+      segments.forEach { segment ->
+        val segmentWidth = (segment.end - segment.start).coerceAtLeast(0f)
+        if (segmentWidth > 0f) {
+          drawRoundRect(
+            brush = glassTrackBrush,
+            topLeft = Offset(segment.start, centerY - trackRadius),
+            size = Size(segmentWidth, trackHeight),
+            cornerRadius = CornerRadius(trackRadius, trackRadius),
+          )
+          drawRoundRect(
+            brush = glassTrackBorderBrush,
+            topLeft = Offset(segment.start, centerY - trackRadius),
+            size = Size(segmentWidth, trackHeight),
+            cornerRadius = CornerRadius(trackRadius, trackRadius),
+            style = Stroke(1.dp.toPx()),
+          )
+        }
+      }
+    }
+
     if ((loopStart != null || loopEnd != null) && safeDuration > 0f) {
       val loopColor = Color(0xFFFFB300)
       val markerWidth = 2.dp.toPx()
@@ -1886,12 +1985,28 @@ fun StandardSeekbar(
     val thumbLeft =
       (playedPx - thumbWidthPx / 2f)
         .coerceIn(0f, (size.width - thumbWidthPx).coerceAtLeast(0f))
-    drawRoundRect(
-      color = primaryColor,
-      topLeft = Offset(thumbLeft, centerY - thumbHeightPx / 2f),
-      size = Size(thumbWidthPx, thumbHeightPx),
-      cornerRadius = CornerRadius(thumbWidthPx / 2f),
-    )
+    val thumbSize = Size(thumbWidthPx, thumbHeightPx)
+    val thumbTopLeft = Offset(thumbLeft, centerY - thumbHeightPx / 2f)
+    if (glass) {
+      val thumbRadius = thumbWidthPx / 2f
+      // Local bounds make the specular highlight move with the thumb, not the screen center.
+      inset(thumbTopLeft.x, thumbTopLeft.y,
+        size.width - thumbTopLeft.x - thumbSize.width,
+        size.height - thumbTopLeft.y - thumbSize.height) {
+        drawRoundRect(glassSurfaceColor, cornerRadius = CornerRadius(thumbRadius, thumbRadius))
+        drawRoundRect(brush = glassThumbBrush, cornerRadius = CornerRadius(thumbRadius, thumbRadius))
+        drawRoundRect(brush = glassThumbHighlightBrush, cornerRadius = CornerRadius(thumbRadius, thumbRadius))
+        drawRoundRect(brush = glassThumbBrush, cornerRadius = CornerRadius(thumbRadius, thumbRadius),
+          style = Stroke(1.dp.toPx()))
+      }
+    } else {
+      drawRoundRect(
+        color = primaryColor,
+        topLeft = thumbTopLeft,
+        size = thumbSize,
+        cornerRadius = CornerRadius(thumbWidthPx / 2f),
+      )
+    }
   }
 }
 

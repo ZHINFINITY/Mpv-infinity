@@ -6,6 +6,11 @@
  */
 
 package app.infinity.mpvz.ui.browser.dialogs
+import app.infinity.mpvz.ui.components.GlassModalBottomSheet
+import app.infinity.mpvz.ui.components.glassOptionSheetContainerColor
+import app.infinity.mpvz.ui.components.glassOptionSheetModifier
+import app.infinity.mpvz.ui.theme.GlassDropdownMenu
+import app.infinity.mpvz.ui.theme.GlassExposedDropdownMenu
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -25,7 +30,6 @@ import androidx.compose.material3.BottomSheetDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.ExposedDropdownMenu
 import androidx.compose.material3.ExposedDropdownMenuAnchorType
 import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExposedDropdownMenuDefaults
@@ -50,6 +54,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import app.infinity.mpvz.domain.network.NetworkConnection
 import app.infinity.mpvz.domain.network.NetworkProtocol
+import app.infinity.mpvz.ui.preferences.components.settingsGlassContainerColor
+import app.infinity.mpvz.ui.preferences.components.settingsGlassSurface
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -98,16 +104,13 @@ fun EditConnectionSheet(
   }
   val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
-  ModalBottomSheet(
+  GlassModalBottomSheet(
     onDismissRequest = handleDismiss,
     sheetState = sheetState,
-    modifier = modifier,
-    shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
-    containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
-    dragHandle = { BottomSheetDefaults.DragHandle() },
-  ) {
+    paneModifier = modifier.settingsGlassSurface(cornerRadius = 28.dp, independent = true),
+    containerColor = settingsGlassContainerColor(MaterialTheme.colorScheme.surfaceContainerLow),) {
     Column(
-      modifier = Modifier.fillMaxWidth().imePadding().navigationBarsPadding(),
+      modifier = Modifier.fillMaxWidth().imePadding(),
     ) {
       Column(
         modifier =
@@ -176,7 +179,7 @@ fun EditConnectionSheet(
                   .fillMaxWidth()
                   .menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable),
             )
-            ExposedDropdownMenu(
+            GlassExposedDropdownMenu(
               expanded = protocolMenuExpanded,
               onDismissRequest = { protocolMenuExpanded = false },
             ) {

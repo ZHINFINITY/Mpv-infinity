@@ -7,6 +7,7 @@
 
 package app.infinity.mpvz.ui.browser.dialogs
 
+import app.infinity.mpvz.presentation.components.playerGlassOverlay
 import android.content.Context
 import android.content.res.Configuration
 import android.os.Environment
@@ -193,10 +194,10 @@ fun FilePickerDialog(
     properties = DialogProperties(usePlatformDefaultWidth = false),
   ) {
     Surface(
-      modifier = modifier.fillMaxWidth(if (isPortrait) 0.9f else 0.50f),
+      modifier = modifier.fillMaxWidth(if (isPortrait) 0.9f else 0.50f).playerGlassOverlay(),
       shape = MaterialTheme.shapes.extraLarge,
-      color = MaterialTheme.colorScheme.surface,
-      tonalElevation = 6.dp,
+      color = androidx.compose.ui.graphics.Color.Transparent,
+      tonalElevation = 0.dp,
     ) {
       Column(
         modifier = Modifier.padding(24.dp),

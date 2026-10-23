@@ -7,6 +7,8 @@
 
 package app.infinity.mpvz.ui.preferences
 
+import app.infinity.mpvz.ui.player.controls.components.GlassSwitch
+
 import android.app.ActivityManager
 import android.content.Context
 import android.content.Intent
@@ -46,11 +48,10 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Scaffold
+import app.infinity.mpvz.ui.preferences.components.SettingsScaffold as Scaffold
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
+import app.infinity.mpvz.ui.preferences.components.SettingsTopAppBar as TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -503,7 +504,7 @@ object AboutScreen : Screen {
                   Text("Auto Check for Updates", style = MaterialTheme.typography.titleMedium, color = cs.onSurface)
                   Text("Check on startup", style = MaterialTheme.typography.bodyMedium, color = cs.onSurfaceVariant)
                 }
-                Switch(checked = autoUpdate, onCheckedChange = updateViewModel::toggleAutoUpdate)
+                GlassSwitch(checked = autoUpdate, onCheckedChange = updateViewModel::toggleAutoUpdate)
               }
               PreferenceDivider()
               Button(

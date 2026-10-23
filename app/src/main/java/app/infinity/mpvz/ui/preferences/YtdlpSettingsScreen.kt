@@ -7,6 +7,11 @@
 
 package app.infinity.mpvz.ui.preferences
 
+import app.infinity.mpvz.ui.components.GlassModalBottomSheet
+import app.infinity.mpvz.ui.preferences.components.settingsGlassContainerColor
+
+import app.infinity.mpvz.ui.preferences.components.settingsGlassSurface
+
 import android.webkit.CookieManager
 import android.webkit.WebView
 import android.webkit.WebViewClient
@@ -44,6 +49,8 @@ import app.infinity.mpvz.ui.player.ytdlp.YtdlpInstallationStatus
 import app.infinity.mpvz.ui.player.ytdlp.YtdlpManager
 import app.infinity.mpvz.ui.player.ytdlp.YtdlpReleaseChannel
 import app.infinity.mpvz.ui.preferences.components.SwitchPreference
+import app.infinity.mpvz.ui.preferences.components.SettingsScaffold as Scaffold
+import app.infinity.mpvz.ui.preferences.components.SettingsTopAppBar as TopAppBar
 import app.infinity.mpvz.ui.theme.spacing
 import app.infinity.mpvz.ui.utils.LocalBackStack
 import app.infinity.mpvz.ui.utils.currentMpvConfigOverrideOptions
@@ -153,9 +160,10 @@ object YtdlpSettingsScreen : Screen {
 
     if (showCustomUserAgentSheet) {
       var draftUserAgent by remember(showCustomUserAgentSheet) { mutableStateOf(customUserAgent) }
-      ModalBottomSheet(
-        onDismissRequest = { showCustomUserAgentSheet = false },
-      ) {
+      GlassModalBottomSheet(
+      containerColor = settingsGlassContainerColor(androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainerLow),
+      paneModifier = androidx.compose.ui.Modifier.settingsGlassSurface(cornerRadius = 28.dp, independent = true),
+        onDismissRequest = { showCustomUserAgentSheet = false },) {
         Column(
           modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 8.dp),
           verticalArrangement = Arrangement.spacedBy(12.dp),

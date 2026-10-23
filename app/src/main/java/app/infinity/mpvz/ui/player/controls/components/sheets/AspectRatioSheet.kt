@@ -22,10 +22,8 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.InputChip
-import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -44,6 +42,7 @@ import app.infinity.mpvz.ui.player.AutoCropState
 import app.infinity.mpvz.ui.icons.Icon
 import app.infinity.mpvz.ui.icons.Icons
 import app.infinity.mpvz.ui.theme.spacing
+import app.infinity.mpvz.ui.player.controls.components.GlassSwitch
 
 data class AspectRatio(
   val label: String,
@@ -107,23 +106,26 @@ fun AspectRatioSheet(
           autoCropState == AutoCropState.ERROR -> app.infinity.mpvz.R.string.ui_auto_crop_black_bars_failed
           else -> app.infinity.mpvz.R.string.ui_auto_crop_black_bars_summary
         }
-      ListItem(
-        content = {
-          Text(androidx.compose.ui.res.stringResource(app.infinity.mpvz.R.string.ui_auto_crop_black_bars))
-        },
-        supportingContent = { Text(androidx.compose.ui.res.stringResource(autoCropSummary)) },
-        trailingContent = {
-          Switch(
-            checked = autoCropEnabled,
-            onCheckedChange = onAutoCropChanged,
-            enabled = autoCropControlEnabled,
-          )
-        },
+      Row(
         modifier =
-          Modifier.clickable(enabled = autoCropControlEnabled) {
-            onAutoCropChanged(!autoCropEnabled)
-          },
-      )
+          Modifier
+            .playerSheetSettingRow(active = autoCropEnabled)
+            .clickable(enabled = autoCropControlEnabled) {
+              onAutoCropChanged(!autoCropEnabled)
+            },
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(MaterialTheme.spacing.medium),
+      ) {
+        Column(modifier = Modifier.weight(1f)) {
+          Text(androidx.compose.ui.res.stringResource(app.infinity.mpvz.R.string.ui_auto_crop_black_bars))
+          Text(androidx.compose.ui.res.stringResource(autoCropSummary))
+        }
+        GlassSwitch(
+          checked = autoCropEnabled,
+          onCheckedChange = onAutoCropChanged,
+          enabled = autoCropControlEnabled,
+        )
+      }
 
       // Preset ratios
       Text(

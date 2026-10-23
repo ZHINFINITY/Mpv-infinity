@@ -8,6 +8,8 @@
 package app.infinity.mpvz.ui.player.controls.components.sheets
 
 import app.infinity.mpvz.ui.player.PlaybackSession
+import app.infinity.mpvz.preferences.AppearancePreferences
+import app.infinity.mpvz.ui.player.controls.components.playerGlassPane
 
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
@@ -40,7 +42,6 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import app.infinity.mpvz.ui.components.IconSwitch
 import androidx.compose.material3.Text
@@ -87,6 +88,7 @@ import org.koin.compose.koinInject
 import java.util.Locale
 import kotlin.math.roundToInt
 import kotlin.math.roundToLong
+import app.infinity.mpvz.ui.player.controls.components.GlassSlider
 
 @Composable
 fun FrameNavigationSheet(
@@ -294,6 +296,8 @@ private fun FrameReviewOverlay(
   val isLandscape = configuration.screenWidthDp > configuration.screenHeightDp
   val density = LocalDensity.current
   val haptic = LocalHapticFeedback.current
+  val appearancePreferences = koinInject<AppearancePreferences>()
+  val liquidGlassSurfaces by appearancePreferences.liquidGlassSurfaces.collectAsState()
   val pixelsPerFrame = with(density) { FrameSwipeDistancePerFrame.toPx() }
   var accumulatedDrag by remember { mutableFloatStateOf(0f) }
   var requestedFrameDelta by remember { mutableIntStateOf(0) }
@@ -379,8 +383,9 @@ private fun FrameReviewOverlay(
       verticalAlignment = Alignment.CenterVertically,
     ) {
       Surface(
+        modifier = Modifier.playerGlassPane(enabled = liquidGlassSurfaces, cornerRadius = 999.dp),
         shape = CircleShape,
-        color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.72f),
+        color = if (liquidGlassSurfaces) Color.Transparent else MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.72f),
         contentColor = MaterialTheme.colorScheme.onSurface,
       ) {
         Text(
@@ -394,9 +399,10 @@ private fun FrameReviewOverlay(
         modifier =
           Modifier
             .size(48.dp)
+            .playerGlassPane(enabled = liquidGlassSurfaces, cornerRadius = 999.dp)
             .clickable(onClick = onDismissRequest),
         shape = CircleShape,
-        color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.72f),
+        color = if (liquidGlassSurfaces) Color.Transparent else MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.72f),
         contentColor = MaterialTheme.colorScheme.onSurface,
       ) {
         Box(contentAlignment = Alignment.Center) {
@@ -416,10 +422,11 @@ private fun FrameReviewOverlay(
       exit = fadeOut() + scaleOut(targetScale = 0.9f),
     ) {
       Surface(
+        modifier = Modifier.playerGlassPane(enabled = liquidGlassSurfaces, cornerRadius = 28.dp),
         shape = MaterialTheme.shapes.extraLarge,
-        color = MaterialTheme.colorScheme.inverseSurface.copy(alpha = 0.9f),
-        contentColor = MaterialTheme.colorScheme.inverseOnSurface,
-        tonalElevation = 6.dp,
+        color = if (liquidGlassSurfaces) Color.Transparent else MaterialTheme.colorScheme.inverseSurface.copy(alpha = 0.9f),
+        contentColor = if (liquidGlassSurfaces) Color.White else MaterialTheme.colorScheme.inverseOnSurface,
+        tonalElevation = if (liquidGlassSurfaces) 0.dp else 6.dp,
       ) {
         Column(
           modifier = Modifier.padding(horizontal = 24.dp, vertical = 14.dp),
@@ -471,9 +478,9 @@ private fun FrameReviewOverlay(
         verticalArrangement = Arrangement.spacedBy(4.dp),
       ) {
         Surface(
-          modifier = Modifier.fillMaxWidth(),
+          modifier = Modifier.fillMaxWidth().playerGlassPane(enabled = liquidGlassSurfaces, cornerRadius = 24.dp),
           shape = MaterialTheme.shapes.extraLarge,
-          color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.68f),
+          color = if (liquidGlassSurfaces) Color.Transparent else MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.68f),
           contentColor = MaterialTheme.colorScheme.onSurface,
         ) {
           if (isLandscape) {
@@ -506,7 +513,8 @@ private fun FrameReviewOverlay(
                 },
                 onSnapshot = onSnapshot,
                 isSnapshotLoading = isSnapshotLoading,
-                buttonColors = frameReviewButtonColors(),
+                buttonColors = frameReviewButtonColors(liquidGlassSurfaces),
+                glass = liquidGlassSurfaces,
               )
               IncludeSubsToggle(
                 includeSubs = includeSubtitles,
@@ -551,14 +559,15 @@ private fun FrameReviewOverlay(
                   },
                   onSnapshot = onSnapshot,
                   isSnapshotLoading = isSnapshotLoading,
-                  buttonColors = frameReviewButtonColors(),
+                  buttonColors = frameReviewButtonColors(liquidGlassSurfaces),
+                glass = liquidGlassSurfaces,
                 )
               }
             }
           }
         }
 
-        Slider(
+        GlassSlider(
           value = seekbarFrame.coerceIn(0f, lastFrame.coerceAtLeast(1).toFloat()),
           onValueChange = { newValue ->
             val targetFrame = newValue.roundToInt().coerceIn(0, lastFrame)
@@ -571,7 +580,7 @@ private fun FrameReviewOverlay(
             if (targetChanged) onSeekToFrame(targetFrame, false)
           },
           onValueChangeFinished = {
-            if (!isSeeking) return@Slider
+            if (!isSeeking) return@GlassSlider
             settlingFrame = userSliderFrame
             isSeeking = false
             onSeekToFrame(userSliderFrame, true)
@@ -586,12 +595,12 @@ private fun FrameReviewOverlay(
 }
 
 @Composable
-private fun frameReviewButtonColors() =
+private fun frameReviewButtonColors(glass: Boolean) =
   ButtonDefaults.buttonColors(
-    containerColor = MaterialTheme.colorScheme.primary,
-    contentColor = MaterialTheme.colorScheme.onPrimary,
-    disabledContainerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.38f),
-    disabledContentColor = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.6f),
+    containerColor = if (glass) Color.Transparent else MaterialTheme.colorScheme.primary,
+    contentColor = if (glass) Color.White else MaterialTheme.colorScheme.onPrimary,
+    disabledContainerColor = if (glass) Color.Transparent else MaterialTheme.colorScheme.primary.copy(alpha = 0.38f),
+    disabledContentColor = if (glass) Color.White.copy(alpha = 0.6f) else MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.6f),
   )
 
 private val FrameSwipeDistancePerFrame = 20.dp
@@ -670,6 +679,7 @@ private fun ControlButtons(
   onSnapshot: () -> Unit,
   isSnapshotLoading: Boolean,
   buttonColors: androidx.compose.material3.ButtonColors,
+  glass: Boolean = false,
 ) {
   Row(
     horizontalArrangement = Arrangement.spacedBy(MaterialTheme.spacing.smaller),
@@ -677,7 +687,8 @@ private fun ControlButtons(
   ) {
     Button(
       onClick = onPreviousFrame,
-      modifier = Modifier.size(56.dp),
+      modifier = Modifier.size(56.dp).playerGlassPane(enabled = glass, cornerRadius = 999.dp),
+      shape = CircleShape,
       enabled = !isSnapshotLoading,
       colors = buttonColors,
       contentPadding = PaddingValues(0.dp),
@@ -691,7 +702,8 @@ private fun ControlButtons(
 
     Button(
       onClick = onPlayPause,
-      modifier = Modifier.size(56.dp),
+      modifier = Modifier.size(56.dp).playerGlassPane(enabled = glass, cornerRadius = 999.dp),
+      shape = CircleShape,
       enabled = !isSnapshotLoading,
       colors = buttonColors,
       contentPadding = PaddingValues(0.dp),
@@ -705,7 +717,8 @@ private fun ControlButtons(
 
     Button(
       onClick = onNextFrame,
-      modifier = Modifier.size(56.dp),
+      modifier = Modifier.size(56.dp).playerGlassPane(enabled = glass, cornerRadius = 999.dp),
+      shape = CircleShape,
       enabled = !isSnapshotLoading,
       colors = buttonColors,
       contentPadding = PaddingValues(0.dp),
@@ -719,7 +732,8 @@ private fun ControlButtons(
 
     Button(
       onClick = onSnapshot,
-      modifier = Modifier.size(56.dp),
+      modifier = Modifier.size(56.dp).playerGlassPane(enabled = glass, cornerRadius = 999.dp),
+      shape = CircleShape,
       enabled = !isSnapshotLoading,
       colors = buttonColors,
       contentPadding = PaddingValues(0.dp),
@@ -728,7 +742,7 @@ private fun ControlButtons(
         CircularProgressIndicator(
           modifier = Modifier.size(32.dp),
           strokeWidth = 2.dp,
-          color = MaterialTheme.colorScheme.onPrimary,
+          color = if (glass) Color.White else MaterialTheme.colorScheme.onPrimary,
         )
       } else {
         Icon(

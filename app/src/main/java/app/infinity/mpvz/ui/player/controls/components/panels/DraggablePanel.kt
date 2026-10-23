@@ -16,6 +16,7 @@ import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -45,6 +46,10 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import app.infinity.mpvz.ui.player.controls.panelCardsColors
+import app.infinity.mpvz.ui.player.controls.PlayerControlGridPolicy
+import app.infinity.mpvz.preferences.AppearancePreferences
+import app.infinity.mpvz.preferences.preference.collectAsState
+import app.infinity.mpvz.ui.theme.liquidGlassPane
 import app.infinity.mpvz.ui.theme.AppShapeScale
 import kotlin.math.roundToInt
 
@@ -68,6 +73,10 @@ fun DraggablePanel(
 ) {
   var offsetX by remember { mutableFloatStateOf(0f) }
   var panelWidth by remember { mutableIntStateOf(0) }
+  val appearance = org.koin.compose.koinInject<AppearancePreferences>()
+  val glass by appearance.liquidGlassSurfaces.collectAsState()
+  val opacity by appearance.glassSurfaceOpacity.collectAsState()
+  val highlight by appearance.glassSurfaceHighlight.collectAsState()
 
   val configuration = LocalConfiguration.current
   val isPortrait = configuration.orientation == Configuration.ORIENTATION_PORTRAIT
@@ -94,16 +103,22 @@ fun DraggablePanel(
         Modifier
           .offset { IntOffset(offsetX.roundToInt(), 0) }
           .onSizeChanged { panelWidth = it.width }
-          .widthIn(max = 380.dp)
-          .heightIn(max = panelMaxHeight),
+          // An outer fillMaxWidth makes the constraints tight before widthIn,
+          // defeating its cap. Resolve one exact width shared by header/body.
+          .width(PlayerControlGridPolicy.panelWidthDp(maxWidth.value).dp)
+          // Establish a finite viewport so the scroll body cannot paint beyond
+          // the panel's rounded root when cards are taller than the sheet.
+          .heightIn(max = panelMaxHeight)
+          .fillMaxHeight()
+          .liquidGlassPane(glass, opacity, highlight, 24.dp),
       shape = shape ?: MaterialTheme.shapes.extraLarge,
-      color = containerColor ?: colors.containerColor,
+      color = if (glass) Color.Transparent else containerColor ?: colors.containerColor,
       contentColor = colors.contentColor,
-      tonalElevation = tonalElevation,
-      shadowElevation = shadowElevation,
-      border = border,
+      tonalElevation = if (glass) 0.dp else tonalElevation,
+      shadowElevation = if (glass) 0.dp else shadowElevation,
+      border = if (glass) null else border,
     ) {
-      Column {
+      Column(modifier = Modifier.fillMaxSize()) {
         // Drag Handle & Indicator
         Box(
           modifier =
@@ -138,7 +153,10 @@ fun DraggablePanel(
 
         // Scrollable content
         Column(
-          modifier = Modifier.verticalScroll(rememberScrollState()),
+          modifier = Modifier
+            .weight(1f)
+            .fillMaxWidth()
+            .verticalScroll(rememberScrollState()),
         ) {
           content()
         }

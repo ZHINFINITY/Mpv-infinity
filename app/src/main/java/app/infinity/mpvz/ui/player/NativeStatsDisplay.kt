@@ -52,6 +52,16 @@ internal object NativeStatsDisplay {
       ?.let { String.format(Locale.ROOT, "%.2f fps", it) }
       ?: UNAVAILABLE
 
+  /** Compact interpolation cadence for the user-facing stats page. */
+  fun interpolationFps(source: Float, output: Float, generated: Float, target: Int): String {
+    fun compact(value: Float): String =
+      value.takeIf { it > 0f && it.isFinite() }
+        ?.let { String.format(Locale.ROOT, "%.1f", it) }
+        ?: UNAVAILABLE
+    val targetText = target.takeIf { it > 0 }?.let { "/$it" } ?: ""
+    return "source ${compact(source)} fps → output ${compact(output)}$targetText fps · generated ${compact(generated)} fps"
+  }
+
   fun bitrate(bitsPerSecond: Long): String =
     bitsPerSecond.takeIf { it > 0L }
       ?.let { String.format(Locale.ROOT, "%.1f kbps", it / 1_000.0) }

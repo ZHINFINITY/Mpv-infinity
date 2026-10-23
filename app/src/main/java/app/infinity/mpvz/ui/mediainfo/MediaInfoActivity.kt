@@ -88,6 +88,8 @@ import app.infinity.mpvz.ui.theme.DarkMode
 import app.infinity.mpvz.ui.theme.MpvInfinityTheme
 import app.infinity.mpvz.utils.clipboard.SafeClipboard
 import app.infinity.mpvz.utils.media.MediaInfoOps
+import app.infinity.mpvz.ui.preferences.components.settingsGlassContainerColor
+import app.infinity.mpvz.ui.preferences.components.settingsGlassSurface
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -124,7 +126,10 @@ class MediaInfoActivity : AppCompatActivity() {
       )
 
       MpvInfinityTheme {
-        Surface {
+        Surface(
+          color = settingsGlassContainerColor(MaterialTheme.colorScheme.background),
+          modifier = Modifier.settingsGlassSurface(cornerRadius = 0.dp),
+        ) {
           MediaInfoScreen(
             onBack = { finish() },
             isDarkMode = isDarkMode,
@@ -141,6 +146,7 @@ class MediaInfoActivity : AppCompatActivity() {
     isDarkMode: Boolean,
   ) {
     val context = LocalContext.current
+    val glass by appearancePreferences.liquidGlassSurfaces.collectAsState()
     val scope = rememberCoroutineScope()
     var isLoading by remember { mutableStateOf(true) }
     var error by remember { mutableStateOf<String?>(null) }
@@ -222,6 +228,7 @@ class MediaInfoActivity : AppCompatActivity() {
     }
 
     Scaffold(
+      containerColor = settingsGlassContainerColor(MaterialTheme.colorScheme.background),
       topBar = {
         TopAppBar(
           title = {
@@ -256,6 +263,7 @@ class MediaInfoActivity : AppCompatActivity() {
             if (!isLoading && error == null && textContent != null) {
               Row(modifier = Modifier.padding(end = 12.dp)) {
                 FilledTonalIconButton(
+                  modifier = Modifier.settingsGlassSurface(cornerRadius = 20.dp),
                   onClick = {
                     scope.launch {
                       copyToClipboard(textContent!!, fileName)
@@ -263,8 +271,8 @@ class MediaInfoActivity : AppCompatActivity() {
                   },
                   colors =
                     IconButtonDefaults.filledTonalIconButtonColors(
-                      containerColor = MaterialTheme.colorScheme.secondaryContainer,
-                      contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+                      containerColor = settingsGlassContainerColor(MaterialTheme.colorScheme.secondaryContainer),
+                      contentColor = if (glass) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSecondaryContainer,
                     ),
                 ) {
                   Icon(
@@ -278,6 +286,7 @@ class MediaInfoActivity : AppCompatActivity() {
                 Spacer(modifier = Modifier.width(8.dp))
 
                 FilledTonalIconButton(
+                  modifier = Modifier.settingsGlassSurface(cornerRadius = 20.dp),
                   onClick = {
                     scope.launch {
                       shareMediaInfo(textContent!!, fileName, fileUri)
@@ -285,8 +294,8 @@ class MediaInfoActivity : AppCompatActivity() {
                   },
                   colors =
                     IconButtonDefaults.filledTonalIconButtonColors(
-                      containerColor = MaterialTheme.colorScheme.secondaryContainer,
-                      contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+                      containerColor = settingsGlassContainerColor(MaterialTheme.colorScheme.secondaryContainer),
+                      contentColor = if (glass) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSecondaryContainer,
                     ),
                 ) {
                   Icon(
@@ -302,7 +311,7 @@ class MediaInfoActivity : AppCompatActivity() {
           },
           colors =
             TopAppBarDefaults.topAppBarColors(
-              containerColor = MaterialTheme.colorScheme.surface,
+              containerColor = settingsGlassContainerColor(MaterialTheme.colorScheme.surface),
               titleContentColor = MaterialTheme.colorScheme.onSurface,
             ),
         )
@@ -369,6 +378,7 @@ class MediaInfoActivity : AppCompatActivity() {
 
   @Composable
   private fun ErrorContent(errorMessage: String) {
+    val glass by appearancePreferences.liquidGlassSurfaces.collectAsState()
     Box(
       modifier =
         Modifier
@@ -377,9 +387,10 @@ class MediaInfoActivity : AppCompatActivity() {
       contentAlignment = Alignment.Center,
     ) {
       Card(
+        modifier = Modifier.settingsGlassSurface(cornerRadius = 28.dp),
         colors =
           CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.errorContainer,
+            containerColor = settingsGlassContainerColor(MaterialTheme.colorScheme.errorContainer),
           ),
         shape = MaterialTheme.shapes.extraLarge,
       ) {
@@ -387,7 +398,7 @@ class MediaInfoActivity : AppCompatActivity() {
           text = "Error: $errorMessage",
           style = MaterialTheme.typography.bodyLarge,
           fontWeight = FontWeight.Medium,
-          color = MaterialTheme.colorScheme.onErrorContainer,
+          color = if (glass) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onErrorContainer,
           modifier = Modifier.padding(24.dp),
         )
       }
@@ -502,7 +513,7 @@ class MediaInfoActivity : AppCompatActivity() {
               androidx.compose.ui.graphics.Brush.verticalGradient(
                 colors =
                   listOf(
-                    MaterialTheme.colorScheme.background,
+                    settingsGlassContainerColor(MaterialTheme.colorScheme.background),
                     MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.25f),
                   ),
               ),
@@ -620,10 +631,13 @@ class MediaInfoActivity : AppCompatActivity() {
     content: @Composable ColumnScope.() -> Unit,
   ) {
     Card(
-      modifier = modifier,
+      modifier = modifier.settingsGlassSurface(cornerRadius = 24.dp),
       shape = RoundedCornerShape(24.dp),
-      colors = CardDefaults.cardColors(containerColor = containerColor),
-      border = BorderStroke(1.dp, borderColor),
+      colors =
+        CardDefaults.cardColors(
+          containerColor = settingsGlassContainerColor(containerColor),
+        ),
+      border = if (settingsGlassContainerColor(containerColor) == Color.Transparent) null else BorderStroke(1.dp, borderColor),
       content = content,
     )
   }
@@ -1496,6 +1510,8 @@ class MediaInfoActivity : AppCompatActivity() {
     val context = LocalContext.current
     AlertDialog(
       onDismissRequest = onDismiss,
+      modifier = Modifier.settingsGlassSurface(cornerRadius = 28.dp, independent = true),
+      containerColor = settingsGlassContainerColor(androidx.compose.material3.AlertDialogDefaults.containerColor),
       title = {
         Text(
           text = label,

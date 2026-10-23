@@ -7,6 +7,12 @@
 
 package app.infinity.mpvz.ui.preferences
 
+import app.infinity.mpvz.ui.preferences.components.settingsGlassContainerColor
+
+import app.infinity.mpvz.ui.preferences.components.settingsGlassSurface
+
+import androidx.compose.ui.unit.dp
+
 import android.content.Intent
 import android.net.Uri
 import android.os.Environment
@@ -27,10 +33,10 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Scaffold
+import app.infinity.mpvz.ui.preferences.components.SettingsScaffold as Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
+import app.infinity.mpvz.ui.preferences.components.SettingsTopAppBar as TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -75,8 +81,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
-import me.zhanghai.compose.preference.ListPreference
-import me.zhanghai.compose.preference.Preference
+import app.infinity.mpvz.ui.preferences.components.ListPreference
+import app.infinity.mpvz.ui.preferences.components.Preference
 import me.zhanghai.compose.preference.ProvidePreferenceLocals
 import org.koin.compose.koinInject
 import java.io.File
@@ -99,6 +105,11 @@ private enum class AppLanguage(
   PortugueseBrazil("pt-BR"),
   Russian("ru"),
   SimplifiedChinese("zh-CN"),
+  Indonesian("id"),
+  Vietnamese("vi"),
+  Persian("fa"),
+  Polish("pl"),
+  Tamil("ta"),
   ;
 
   fun displayName(context: android.content.Context): String {
@@ -239,6 +250,8 @@ object AdvancedPreferencesScreen : Screen {
     // Export results dialog
     if (showExportDialog && exportStats != null) {
       AlertDialog(
+      containerColor = settingsGlassContainerColor(androidx.compose.material3.AlertDialogDefaults.containerColor),
+      modifier = androidx.compose.ui.Modifier.settingsGlassSurface(cornerRadius = 28.dp, independent = true),
         onDismissRequest = { showExportDialog = false },
         title = { Text(stringResource(R.string.pref_export_complete_title)) },
         text = {
@@ -264,6 +277,8 @@ object AdvancedPreferencesScreen : Screen {
     // Import results dialog
     if (showImportDialog && importStats != null) {
       AlertDialog(
+      containerColor = settingsGlassContainerColor(androidx.compose.material3.AlertDialogDefaults.containerColor),
+      modifier = androidx.compose.ui.Modifier.settingsGlassSurface(cornerRadius = 28.dp, independent = true),
         onDismissRequest = { showImportDialog = false },
         title = { Text(stringResource(R.string.pref_import_complete_title)) },
         text = {
@@ -286,6 +301,8 @@ object AdvancedPreferencesScreen : Screen {
 
     pendingAppLanguage?.let { language ->
       AlertDialog(
+      containerColor = settingsGlassContainerColor(androidx.compose.material3.AlertDialogDefaults.containerColor),
+      modifier = androidx.compose.ui.Modifier.settingsGlassSurface(cornerRadius = 28.dp, independent = true),
         onDismissRequest = { pendingAppLanguage = null },
         title = { Text(stringResource(R.string.pref_app_language_restart_title)) },
         text = { Text(stringResource(R.string.pref_app_language_restart_message)) },

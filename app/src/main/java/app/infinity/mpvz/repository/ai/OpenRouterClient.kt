@@ -6,6 +6,7 @@
  */
 
 package app.infinity.mpvz.repository.ai
+import app.infinity.mpvz.network.awaitText
 
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -124,9 +125,10 @@ class OpenRouterClient(
             .get()
             .build()
 
-        val response = apiClient.newCall(request).execute()
-        if (!response.isSuccessful) throw Exception("Invalid API key: ${response.code}")
-        "API key verified successfully"
+        apiClient.newCall(request).execute().use { response ->
+          if (!response.isSuccessful) throw Exception("Invalid API key: ${response.code}")
+          "API key verified successfully"
+        }
       }
     }
 
@@ -164,8 +166,8 @@ class OpenRouterClient(
             .post(requestBody.toRequestBody(JSON_MEDIA_TYPE))
             .build()
 
-        val response = apiClient.newCall(request).execute()
-        val body = response.body.string()
+        val response = apiClient.newCall(request).awaitText()
+        val body = response.bodyText
 
         if (!response.isSuccessful) throw Exception("OpenRouter generate error ${response.code}: ${parseError(body)}")
 

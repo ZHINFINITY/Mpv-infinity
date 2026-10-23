@@ -8,6 +8,13 @@
 package app.infinity.mpvz.ui.player.controls
 
 import android.net.Uri
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.Composable
@@ -18,6 +25,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import app.infinity.mpvz.preferences.AdvancedPreferences
+import app.infinity.mpvz.presentation.components.PlayerSheet
 import app.infinity.mpvz.preferences.MpvConfigControlledFeatures
 import app.infinity.mpvz.preferences.MpvConfigOverride
 import app.infinity.mpvz.preferences.preference.collectAsState
@@ -34,6 +42,7 @@ import app.infinity.mpvz.ui.player.controls.components.sheets.AudioTracksSheet
 import app.infinity.mpvz.ui.player.controls.components.sheets.ChaptersSheet
 import app.infinity.mpvz.ui.player.controls.components.sheets.DecodersSheet
 import app.infinity.mpvz.ui.player.controls.components.sheets.FrameNavigationSheet
+import app.infinity.mpvz.ui.player.controls.components.sheets.FrameInterpolationFpsSheet
 import app.infinity.mpvz.ui.player.controls.components.sheets.MoreSheet
 import app.infinity.mpvz.ui.player.controls.components.sheets.OnlineSubtitleSearchSheet
 import app.infinity.mpvz.ui.player.controls.components.sheets.PlaybackSpeedSheet
@@ -111,6 +120,10 @@ fun PlayerSheets(
 
   when (sheetShown) {
     Sheets.None -> {}
+    Sheets.FrameInterpolationFps -> {
+      val activity = androidx.activity.compose.LocalActivity.current as app.infinity.mpvz.ui.player.PlayerActivity
+      FrameInterpolationFpsSheet(activity = activity, onDismissRequest = onDismissRequest)
+    }
     Sheets.SubtitleTracks -> {
       val subtitlesPicker =
         rememberLauncherForActivityResult(
@@ -553,6 +566,18 @@ fun PlayerSheets(
           swipeOffset = playlistSwipeOffset,
           isAudioOnly = isAudioOnly,
         )
+      } else {
+        // Render an intentional state at the actual sheet host instead of a blank popup.
+        PlayerSheet(onDismissRequest = onDismissRequest) {
+          Column(modifier = Modifier.fillMaxWidth().padding(24.dp)) {
+            Text("Playlist is empty", style = MaterialTheme.typography.titleMedium)
+            Text(
+              "Add tracks to the queue to see them here.",
+              style = MaterialTheme.typography.bodyMedium,
+              color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+          }
+        }
       }
     }
 

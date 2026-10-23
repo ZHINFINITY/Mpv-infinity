@@ -17,6 +17,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.Dp
@@ -24,10 +25,14 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.mediarouter.app.MediaRouteButton
 import app.infinity.mpvz.preferences.PlayerButton
+import app.infinity.mpvz.preferences.AppearancePreferences
+import app.infinity.mpvz.preferences.preference.collectAsState
 import app.infinity.mpvz.ui.icons.Icon
 import app.infinity.mpvz.ui.theme.controlColor
+import app.infinity.mpvz.ui.player.controls.components.playerGlassPane
 import com.google.android.gms.cast.framework.CastButtonFactory
 import androidx.compose.ui.graphics.Color as ComposeColor
+import org.koin.compose.koinInject
 
 /** Uses the SDK button for Cast behavior while keeping the app's rounded symbol visible. */
 @Composable
@@ -37,13 +42,15 @@ fun CastPlayerButton(
   onInvoked: () -> Unit = {},
   contentColor: ComposeColor? = null,
 ) {
+  val appearance = koinInject<AppearancePreferences>()
+  val liquidGlassSurfaces by appearance.liquidGlassSurfaces.collectAsState()
   val castContentDescription =
     androidx.compose.ui.res
       .stringResource(app.infinity.mpvz.R.string.ui_cast)
   Surface(
     shape = CircleShape,
     color =
-      if (hideBackground) {
+      if (hideBackground || liquidGlassSurfaces) {
         ComposeColor.Transparent
       } else {
         MaterialTheme.colorScheme.surfaceContainer.copy(alpha = 0.55f)
@@ -52,12 +59,15 @@ fun CastPlayerButton(
     // matches its sibling buttons instead of staying fixed white.
     contentColor = contentColor ?: if (hideBackground) controlColor else MaterialTheme.colorScheme.onSurface,
     border =
-      if (hideBackground) {
+      if (hideBackground || liquidGlassSurfaces) {
         null
       } else {
         BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
       },
-    modifier = Modifier.size(buttonSize),
+    modifier = Modifier.size(buttonSize).playerGlassPane(
+      enabled = liquidGlassSurfaces && !hideBackground,
+      cornerRadius = 999.dp,
+    ),
   ) {
     Box(contentAlignment = Alignment.Center) {
       AndroidView(

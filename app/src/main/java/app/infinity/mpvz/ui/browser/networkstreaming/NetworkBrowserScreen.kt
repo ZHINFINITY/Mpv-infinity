@@ -152,6 +152,7 @@ data class NetworkBrowserScreen(
     }
 
     Scaffold(
+      containerColor = app.infinity.mpvz.ui.preferences.components.settingsGlassContainerColor(MaterialTheme.colorScheme.background),
       topBar = {
         if (isSearching) {
           InlineSearchBar(

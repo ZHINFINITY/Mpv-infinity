@@ -6,6 +6,8 @@
  */
 
 package app.infinity.mpvz.ui.browser.audiobooks
+import app.infinity.mpvz.ui.theme.GlassDropdownMenu
+import app.infinity.mpvz.ui.theme.GlassExposedDropdownMenu
 
 import android.app.Application
 import android.graphics.BitmapFactory
@@ -46,7 +48,6 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
@@ -60,6 +61,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.PrimaryScrollableTabRow
 import androidx.compose.material3.Tab
 import app.infinity.mpvz.domain.audiobook.AudiobookOnlineMetadata
+import app.infinity.mpvz.ui.components.InlineSearchBar
 import kotlinx.coroutines.launch
 import androidx.compose.material3.PlainTooltip
 import androidx.compose.material3.Scaffold
@@ -354,7 +356,7 @@ object AudiobookLibraryScreen : Screen {
     val navBarHeight = LocalNavigationBarHeight.current.takeIf { it > 0.dp } ?: 88.dp
 
     Scaffold(
-      containerColor = MaterialTheme.colorScheme.surfaceContainer,
+      containerColor = app.infinity.mpvz.ui.preferences.components.settingsGlassContainerColor(MaterialTheme.colorScheme.surfaceContainer),
       topBar = {
         BrowserTopBar(
           title = when {
@@ -422,7 +424,7 @@ object AudiobookLibraryScreen : Screen {
                   }
                 }
 
-                DropdownMenu(
+                GlassDropdownMenu(
                   expanded = isSourceDropdownOpen,
                   onDismissRequest = { isSourceDropdownOpen = false },
                 ) {
@@ -508,7 +510,7 @@ object AudiobookLibraryScreen : Screen {
             if (!isAbsSource) {
               Box {
                 AudiobookIconButton(Icons.RoundedFilled.Add, stringResource(R.string.audiobook_play_files), !opening) { sourceMenu = true }
-                DropdownMenu(sourceMenu, onDismissRequest = { sourceMenu = false }) {
+                GlassDropdownMenu(sourceMenu, onDismissRequest = { sourceMenu = false }) {
                   DropdownMenuItem(
                     text = { Text(stringResource(R.string.audiobook_play_files)) },
                     leadingIcon = { Icon(Icons.RoundedFilled.PlayCircle, null) },
@@ -524,7 +526,7 @@ object AudiobookLibraryScreen : Screen {
             } else if (absState.libraries.size > 1) {
               Box {
                 AudiobookIconButton(Icons.RoundedFilled.Folder, "Switch Library", true) { isLibDropdownOpen = true }
-                DropdownMenu(isLibDropdownOpen, onDismissRequest = { isLibDropdownOpen = false }) {
+                GlassDropdownMenu(isLibDropdownOpen, onDismissRequest = { isLibDropdownOpen = false }) {
                   absState.libraries.forEach { lib ->
                     DropdownMenuItem(
                       text = {
@@ -551,14 +553,18 @@ object AudiobookLibraryScreen : Screen {
     ) { padding ->
       Column(Modifier.fillMaxSize().padding(padding)) {
         if (contentMode != AudiobookLibraryContentMode.SAF_FOLDER_TREE && search) {
-          OutlinedTextField(
-            value = query,
-            onValueChange = { query = it },
-            singleLine = true,
+          InlineSearchBar(
+            query = query,
+            onQueryChange = { query = it },
+            onSearch = { query = it },
+            windowInsets = androidx.compose.foundation.layout.WindowInsets(0.dp),
             placeholder = { Text(stringResource(R.string.audiobook_search)) },
-            modifier = Modifier
-              .fillMaxWidth()
-              .padding(horizontal = 16.dp, vertical = 8.dp)
+            trailingIcon = {
+              IconButton(onClick = { search = false; query = "" }) {
+                Icon(Icons.RoundedFilled.Close, contentDescription = stringResource(R.string.generic_cancel))
+              }
+            },
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
           )
         }
 
@@ -1225,20 +1231,18 @@ private fun AudiobookOnlineSearchDialog(
         modifier = Modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(10.dp),
       ) {
-        OutlinedTextField(
-          value = searchQuery,
-          onValueChange = { searchQuery = it },
-          label = { Text(stringResource(R.string.audiobook_search_online_query)) },
-          singleLine = true,
+        InlineSearchBar(
+          query = searchQuery,
+          onQueryChange = { searchQuery = it },
+          onSearch = ::performSearch,
+          windowInsets = androidx.compose.foundation.layout.WindowInsets(0.dp),
+          placeholder = { Text(stringResource(R.string.audiobook_search_online_query)) },
           trailingIcon = {
             IconButton(
               onClick = { performSearch(searchQuery) },
               enabled = searchQuery.isNotBlank() && !isSearching,
-            ) {
-              Icon(Icons.RoundedFilled.Search, contentDescription = "Search")
-            }
+            ) { Icon(Icons.RoundedFilled.Search, contentDescription = "Search") }
           },
-          modifier = Modifier.fillMaxWidth(),
         )
 
         if (isSearching) {

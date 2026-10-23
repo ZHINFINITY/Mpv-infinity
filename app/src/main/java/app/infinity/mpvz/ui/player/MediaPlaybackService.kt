@@ -117,6 +117,17 @@ class MediaPlaybackService :
     @Volatile
     private var activeInstance: MediaPlaybackService? = null
 
+    /** True while PlayerActivity's Native renderer owns the shared playback session. */
+    @Volatile
+    private var nativeRendererOwnsPlayback = false
+
+    /** Sets the renderer owner used to gate service-side MPV persistence. */
+    internal fun setNativeRendererOwnership(ownsPlayback: Boolean) {
+      nativeRendererOwnsPlayback = ownsPlayback
+    }
+
+    internal fun isNativeRendererOwner(): Boolean = nativeRendererOwnsPlayback
+
     /**
      * True only while playback is detached from the foreground Activity.
      *
@@ -232,10 +243,19 @@ class MediaPlaybackService :
   private var mediaArtist = ""
   private var mediaUri: String? = null
   private var activeArtworkUri: String? = null
+  private var radioStreamTitle: String? = null
+  private var radioStreamArtist: String? = null
+  private var radioIcyTitle: String? = null
+  private var radioStationName: String? = null
+  private var radioStreamArtworkUri: String? = null
+  private var radioStationArtworkUri: String? = null
+  private var radioPictureBlock: String? = null
   private var paused = false
   private var playbackSpeed = 1.0f
   private var activeQueueItemId: Long = MediaSessionCompat.QueueItem.UNKNOWN_ID.toLong()
   private var publishedQueueIndexes: Map<Long, Int> = emptyMap()
+  // Every queue-item identity change invalidates in-flight artwork/favorite work.
+  private val mediaIdentityTracker = MediaSessionIdentityTracker()
 
   // Playlist state — mirrored from PlayerActivity so the notification intent can restore it
   private var notificationIsAudio: Boolean = false
@@ -406,6 +426,12 @@ class MediaPlaybackService :
       PlaybackSession.observeProperty("pause", MPVLib.MpvFormat.MPV_FORMAT_FLAG)
       PlaybackSession.observeProperty("media-title", MPVLib.MpvFormat.MPV_FORMAT_STRING)
       PlaybackSession.observeProperty("metadata/artist", MPVLib.MpvFormat.MPV_FORMAT_STRING)
+      listOf("Title", "TITLE", "title", "Artist", "ARTIST", "artist", "icy-name", "icy-title", "icy-logo", "Artwork", "artwork", "METADATA_BLOCK_PICTURE", "metadata_block_picture")
+        .forEach { key -> PlaybackSession.observeProperty("metadata/by-key/$key", MPVLib.MpvFormat.MPV_FORMAT_STRING) }
+      PlaybackSession.observeProperty("metadata/artwork", MPVLib.MpvFormat.MPV_FORMAT_STRING)
+      PlaybackSession.observeProperty("metadata/icy-title", MPVLib.MpvFormat.MPV_FORMAT_STRING)
+      PlaybackSession.observeProperty("metadata/icy-name", MPVLib.MpvFormat.MPV_FORMAT_STRING)
+      PlaybackSession.observeProperty("metadata/icy-logo", MPVLib.MpvFormat.MPV_FORMAT_STRING)
       PlaybackSession.observeProperty("time-pos", MPVLib.MpvFormat.MPV_FORMAT_DOUBLE)
       PlaybackSession.observeProperty("duration", MPVLib.MpvFormat.MPV_FORMAT_DOUBLE)
       PlaybackSession.observeProperty("speed", MPVLib.MpvFormat.MPV_FORMAT_DOUBLE)
@@ -592,8 +618,22 @@ class MediaPlaybackService :
     identifier: String? = null,
   ) {
     serviceScope.launch {
+      if (isCurrentRadioItem()) {
+        refreshCurrentRadioMetadata()
+        updateMediaSessionPlaybackState()
+        updateNotification()
+        return@launch
+      }
       val resolvedTitle = FileTypeUtils.stripExtension(title)
       val resolvedIdentifier = identifier?.takeIf { it.isNotBlank() }
+      val currentItem = PlaybackSession.queue.value.currentItem
+      if (currentItem != null &&
+        !MediaSessionItemIdentity(currentItem.stableId, currentItem.originalUri)
+          .acceptsMetadata(resolvedIdentifier, uri)
+      ) {
+        Log.d(TAG, "Ignoring stale media info for $resolvedIdentifier; current=${currentItem.stableId}")
+        return@launch
+      }
       // A metadata-only Activity sync must not erase artwork already resolved for this queue item.
       // Item changes are cleared explicitly in applySessionItem before the next cover is loaded.
       val artworkChanged = thumbnail?.let(::replaceOwnedThumbnail) ?: false
@@ -749,12 +789,21 @@ class MediaPlaybackService :
   }
 
   private fun applySessionItem(item: PlaybackItem) {
+    val identity = MediaSessionItemIdentity(item.stableId, item.originalUri)
+    val itemGeneration = mediaIdentityTracker.advance(identity)
     val itemChanged = mediaIdentifier != item.stableId || mediaUri != item.originalUri
     val artworkChanged = activeArtworkUri != item.artworkUri
     val isAudio = resolveNotificationIsAudio(item, notificationIsAudio)
     notificationIsAudio = isAudio
     usesAudioBackgroundPlayback = isAudio
     mediaIdentifier = item.stableId
+    radioStreamTitle = null
+    radioStreamArtist = null
+    radioIcyTitle = null
+    radioStationName = null
+    radioStreamArtworkUri = null
+    radioStationArtworkUri = null
+    radioPictureBlock = null
     mediaTitle = FileTypeUtils.stripExtension(item.title.orEmpty()).ifBlank { getString(R.string.player_unknown_video) }
     mediaArtist = item.artist.orEmpty()
     mediaUri = item.originalUri
@@ -774,11 +823,15 @@ class MediaPlaybackService :
     updateMediaSessionMetadata()
     updateMediaSessionPlaybackState()
     updateNotification()
-    loadSessionArtwork(item)
-    refreshFavoriteState(item)
+    loadSessionArtwork(item, itemGeneration)
+    refreshFavoriteState(item, itemGeneration)
+    refreshCurrentRadioMetadata()
   }
 
-  private fun refreshFavoriteState(item: PlaybackItem) {
+  private fun refreshFavoriteState(
+    item: PlaybackItem,
+    expectedGeneration: Long = mediaIdentityTracker.generation(),
+  ) {
     favoriteStateJob?.cancel()
     val expectedIdentifier = item.stableId
     val favoritePath = item.originalUri.ifBlank { item.playableUri }
@@ -793,7 +846,10 @@ class MediaPlaybackService :
     favoriteStateJob =
       serviceScope.launch {
         playlistRepository.observeIsFavorite(favoritePath, isAudio).collect { favorite ->
-          if (mediaIdentifier == expectedIdentifier) {
+          if (mediaIdentityTracker.isCurrent(
+              MediaSessionItemIdentity(expectedIdentifier, item.originalUri),
+              expectedGeneration,
+            )) {
             if (isCurrentFavorite != favorite) {
               isCurrentFavorite = favorite
               refreshTransportControls()
@@ -829,7 +885,8 @@ class MediaPlaybackService :
     if (favoritePath.isBlank()) return
     val favoriteName = item.title?.takeIf { it.isNotBlank() } ?: mediaTitle
     val isAudio = resolveNotificationIsAudio(item, notificationIsAudio)
-    val expectedIdentifier = item.stableId
+    val identity = MediaSessionItemIdentity(item.stableId, item.originalUri)
+    val expectedGeneration = mediaIdentityTracker.generation()
 
     serviceScope.launch {
       runCatching {
@@ -839,7 +896,9 @@ class MediaPlaybackService :
           }
         }
       }.onSuccess { favorite ->
-        if (mediaIdentifier == expectedIdentifier && isCurrentFavorite != favorite) {
+        if (mediaIdentityTracker.isCurrent(identity, expectedGeneration) &&
+          isCurrentFavorite != favorite
+        ) {
           isCurrentFavorite = favorite
           refreshTransportControls()
         }
@@ -849,19 +908,152 @@ class MediaPlaybackService :
     }
   }
 
-  private fun loadSessionArtwork(item: PlaybackItem) {
+  private fun loadSessionArtwork(
+    item: PlaybackItem,
+    expectedGeneration: Long = mediaIdentityTracker.generation(),
+  ) {
     val artworkUri = item.artworkUri?.takeIf { it.isNotBlank() } ?: return
-    val expectedIdentifier = item.stableId
+    val identity = MediaSessionItemIdentity(item.stableId, item.originalUri)
     serviceScope.launch {
       val loaded =
         withContext(Dispatchers.IO) {
           EmbeddedArtworkResolver.decodeArtworkUri(this@MediaPlaybackService, artworkUri)
         } ?: return@launch
-      if (mediaIdentifier != expectedIdentifier) {
+      if (!mediaIdentityTracker.isCurrent(identity, expectedGeneration) ||
+        activeArtworkUri != artworkUri || radioPictureBlock != null
+      ) {
         return@launch
       }
       val changed = replaceOwnedThumbnail(loaded)
       if (changed) {
+        refreshNotificationPalette()
+        updateMediaSessionMetadata()
+        updateNotification()
+      }
+    }
+  }
+
+  private fun isCurrentRadioItem(): Boolean {
+    val queue = PlaybackSession.queue.value
+    val item = queue.currentItem ?: return false
+    val duration = mediaDurationSeconds.takeIf { it > 0.0 }?.toInt() ?: item.durationSeconds
+    return RadioMetadataPolicy.isRadio(queue.isM3u, item.isDefinitelyAudioOnly(), item.originalUri.ifBlank { item.playableUri }, duration)
+  }
+
+  private fun refreshCurrentRadioMetadata() {
+    val state = PlaybackSession.state.value
+    if (state.phase != PlaybackPhase.READY && state.phase != PlaybackPhase.BACKGROUND) return
+    val item = PlaybackSession.queue.value.currentItem ?: return
+    if (mediaIdentifier != item.stableId || !isCurrentRadioItem()) return
+    PlaybackSession.radioHeaders.value?.takeIf { it.first == item.stableId }?.second?.let { headers ->
+      headers.icyName?.let { updateRadioMetadata("icy-name", it) }
+      headers.icyLogo?.let { updateRadioMetadata("icy-logo", it) }
+    }
+    // A service may attach after these properties were already observed by the UI. Observing
+    // again is deduplicated by PlaybackSession, so seed from the current file once as well.
+    listOf(
+      listOf("Title", "TITLE", "title"),
+      listOf("Artist", "ARTIST", "artist"),
+      listOf("icy-name"),
+      listOf("icy-title"),
+      listOf("icy-logo", "Artwork", "ARTWORK", "artwork"),
+      listOf("METADATA_BLOCK_PICTURE", "metadata_block_picture"),
+    ).forEach { keys ->
+      keys.asSequence().mapNotNull { key ->
+        val property = "metadata/by-key/$key"
+        PlaybackSession.getPropertyString(property)?.takeIf { it.isNotBlank() }?.let { property to it }
+      }.firstOrNull()?.let { (property, value) -> updateRadioMetadata(property, value) }
+    }
+  }
+
+  private fun updateRadioMetadata(property: String, value: String) {
+    val queue = PlaybackSession.queue.value
+    val item = queue.currentItem ?: return
+    val duration = mediaDurationSeconds.takeIf { it > 0.0 }?.toInt() ?: item.durationSeconds
+    if (!RadioMetadataPolicy.isRadio(queue.isM3u, item.isDefinitelyAudioOnly(), item.originalUri.ifBlank { item.playableUri }, duration)) return
+    when (property.substringAfterLast('/').lowercase(Locale.ROOT)) {
+      "title" -> radioStreamTitle = value
+      "artist" -> radioStreamArtist = value
+      "icy-name" -> radioStationName = value
+      "icy-title" -> radioIcyTitle = value
+      "icy-logo" -> radioStationArtworkUri = value
+      "artwork" -> radioStreamArtworkUri = value
+      "metadata_block_picture" -> {
+        val encoded = value.takeIf { it.isNotBlank() }
+        if (radioPictureBlock == encoded) return
+        radioPictureBlock = encoded
+        val expectedIdentifier = item.stableId
+        val identity = MediaSessionItemIdentity(item.stableId, item.originalUri)
+        val expectedGeneration = mediaIdentityTracker.generation()
+        serviceScope.launch {
+          val cover = withContext(Dispatchers.IO) { RadioArtworkDecoder.decode(encoded) }
+          if (!mediaIdentityTracker.isCurrent(identity, expectedGeneration) ||
+            radioPictureBlock != encoded
+          ) return@launch
+          if (cover != null && replaceOwnedThumbnail(cover)) {
+            refreshNotificationPalette()
+            updateMediaSessionMetadata()
+            updateNotification()
+          } else if (cover == null) {
+            radioPictureBlock = null
+            clearRadioArtworkAndLoadFallback(item)
+          }
+        }
+        return
+      }
+    }
+    val presentation = RadioMetadataPolicy.presentation(radioStationName ?: item.title, radioStreamTitle, radioStreamArtist, radioIcyTitle, item.artworkUri ?: radioStationArtworkUri, radioStreamArtworkUri)
+    val artworkChanged = activeArtworkUri != presentation.artworkUri
+    if (mediaTitle == presentation.title && mediaArtist == presentation.artist.orEmpty() && !artworkChanged) return
+    mediaTitle = presentation.title
+    mediaArtist = presentation.artist.orEmpty()
+    activeArtworkUri = presentation.artworkUri
+    if (artworkChanged && radioPictureBlock == null) {
+      replaceOwnedThumbnail(null)
+      loadSessionArtworkUri(presentation.artworkUri, item.stableId)
+    }
+    serviceScope.launch {
+      updateMediaSessionMetadata()
+      updateNotification()
+    }
+  }
+
+  private fun clearRadioArtworkAndLoadFallback(item: PlaybackItem) {
+    val fallbackArtworkUri =
+      RadioMetadataPolicy.presentation(
+          radioStationName ?: item.title,
+          radioStreamTitle,
+          radioStreamArtist,
+          radioIcyTitle,
+          item.artworkUri ?: radioStationArtworkUri,
+          radioStreamArtworkUri,
+        )
+        .artworkUri
+    activeArtworkUri = fallbackArtworkUri
+    replaceOwnedThumbnail(null)
+    refreshNotificationPalette()
+    updateMediaSessionMetadata()
+    updateNotification()
+    if (fallbackArtworkUri == item.artworkUri && !item.artworkUri.isNullOrBlank()) {
+      loadSessionArtwork(item)
+    } else {
+      loadSessionArtworkUri(fallbackArtworkUri, item.stableId)
+    }
+  }
+
+  private fun loadSessionArtworkUri(artworkUri: String?, expectedIdentifier: String) {
+    if (!RadioMetadataPolicy.isHttpUrl(artworkUri)) return
+    val currentItem = PlaybackSession.queue.value.currentItem ?: return
+    val identity = MediaSessionItemIdentity(expectedIdentifier, currentItem.originalUri)
+    val expectedGeneration = mediaIdentityTracker.generation()
+    serviceScope.launch {
+      val loaded = withContext(Dispatchers.IO) {
+        EmbeddedArtworkResolver.decodeArtworkUri(this@MediaPlaybackService, artworkUri!!)
+      } ?: return@launch
+      if (!mediaIdentityTracker.isCurrent(identity, expectedGeneration) ||
+        activeArtworkUri != artworkUri || radioPictureBlock != null
+      ) return@launch
+      if (replaceOwnedThumbnail(loaded)) {
         refreshNotificationPalette()
         updateMediaSessionMetadata()
         updateNotification()
@@ -893,12 +1085,20 @@ class MediaPlaybackService :
       currentItem?.title?.let { FileTypeUtils.stripExtension(it) }.orEmpty().ifBlank {
         getString(R.string.player_unknown_video)
       }
+    val radioPresentation = currentItem?.let { item ->
+      val duration = mediaDurationSeconds.takeIf { it > 0.0 }?.toInt() ?: item.durationSeconds
+      if (RadioMetadataPolicy.isRadio(queueState.isM3u, item.isDefinitelyAudioOnly(), item.originalUri.ifBlank { item.playableUri }, duration)) {
+        RadioMetadataPolicy.presentation(radioStationName ?: item.title, radioStreamTitle, radioStreamArtist, radioIcyTitle, item.artworkUri ?: radioStationArtworkUri, radioStreamArtworkUri)
+      } else null
+    }
+    val effectiveCurrentTitle = radioPresentation?.title ?: currentTitle
+    val effectiveCurrentArtwork = radioPresentation?.artworkUri ?: currentItem?.artworkUri
     if (currentItem != null &&
       (currentItem.stableId != mediaIdentifier ||
         currentItem.originalUri != mediaUri ||
-        currentTitle != mediaTitle ||
-        currentItem.artist.orEmpty() != mediaArtist ||
-        currentItem.artworkUri != activeArtworkUri)
+        effectiveCurrentTitle != mediaTitle ||
+        (!isCurrentRadioItem() && currentItem.artist.orEmpty() != mediaArtist) ||
+        effectiveCurrentArtwork != activeArtworkUri)
     ) {
       applySessionItem(currentItem)
     } else {
@@ -1233,11 +1433,22 @@ class MediaPlaybackService :
   }
 
   private fun sanitizedDurationMs(): Long {
+    val queue = PlaybackSession.queue.value
+    val item = queue.currentItem
+    if (item != null && RadioMetadataPolicy.isRadio(
+        queueIsM3u = queue.isM3u,
+        itemIsAudio = item.isDefinitelyAudioOnly(),
+        streamUri = item.originalUri.ifBlank { item.playableUri },
+        durationSeconds = mediaDurationSeconds.takeIf { it.isFinite() }?.toInt(),
+      )) return 0L
     val seconds = mediaDurationSeconds.takeIf { it.isFinite() && it > 0.0 } ?: return 0L
     return (seconds * 1000.0).coerceAtMost(Long.MAX_VALUE.toDouble()).toLong()
   }
 
   private fun sanitizedPositionMs(): Long {
+    // ICY/live streams have no meaningful elapsed position. libmpv can expose
+    // a demuxer clock or epoch-like time-pos; never publish it to MediaSession.
+    if (isCurrentRadioItem()) return 0L
     val livePosition = runCatching { PlaybackSession.getPropertyDouble("time-pos") }.getOrNull()
     if (livePosition != null && livePosition.isFinite() && livePosition >= 0.0) {
       currentPositionSeconds = livePosition
@@ -1646,6 +1857,14 @@ class MediaPlaybackService :
   ) {
     when (property) {
       "media-title" -> {
+        if (isCurrentRadioItem()) {
+          val item = PlaybackSession.queue.value.currentItem
+          val headerStation = PlaybackSession.radioHeaders.value?.takeIf { it.first == item?.stableId }?.second?.icyName
+          RadioMetadataPolicy.trackFromMediaTitle(value, radioStationName ?: headerStation ?: item?.title)?.let { title ->
+            serviceScope.launch { updateRadioMetadata("icy-title", title) }
+          }
+          return
+        }
         if (value.isNotBlank()) {
           serviceScope.launch {
             if (mediaTitle == value) return@launch
@@ -1656,6 +1875,10 @@ class MediaPlaybackService :
         }
       }
       "metadata/artist" -> {
+        if (isCurrentRadioItem()) {
+          serviceScope.launch { updateRadioMetadata(property, value) }
+          return
+        }
         serviceScope.launch {
           if (mediaArtist == value) return@launch
           mediaArtist = value
@@ -1663,6 +1886,11 @@ class MediaPlaybackService :
           updateNotification()
         }
       }
+      "metadata/by-key/Title", "metadata/by-key/TITLE", "metadata/by-key/title", "metadata/by-key/icy-title", "metadata/icy-title",
+      "metadata/by-key/icy-name", "metadata/icy-name", "metadata/by-key/icy-logo", "metadata/icy-logo",
+      "metadata/by-key/Artist", "metadata/by-key/ARTIST", "metadata/by-key/artist",
+      "metadata/by-key/Artwork", "metadata/by-key/ARTWORK", "metadata/by-key/artwork", "metadata/artwork",
+      "metadata/by-key/METADATA_BLOCK_PICTURE", "metadata/by-key/metadata_block_picture" -> serviceScope.launch { updateRadioMetadata(property, value) }
     }
   }
 
@@ -1749,6 +1977,7 @@ class MediaPlaybackService :
   }
 
   private fun schedulePlaybackStateSave(force: Boolean = false) {
+    if (isNativeRendererOwner()) return
     val queueState = PlaybackSession.queue.value
     val identifier = mediaIdentifier.ifBlank { queueState.currentItem?.stableId.orEmpty() }
     if (identifier.isBlank()) return
@@ -1769,6 +1998,7 @@ class MediaPlaybackService :
   }
 
   private fun savePlaybackStateNow() {
+    if (isNativeRendererOwner()) return
     val queueState = PlaybackSession.queue.value
     val identifier = mediaIdentifier.ifBlank { queueState.currentItem?.stableId.orEmpty() }
     if (identifier.isBlank()) return
@@ -1789,6 +2019,7 @@ class MediaPlaybackService :
   }
 
   private fun savePlaybackStateBeforeTaskRemoval() {
+    if (isNativeRendererOwner()) return
     val queueState = PlaybackSession.queue.value
     val identifier = mediaIdentifier.ifBlank { queueState.currentItem?.stableId.orEmpty() }
     if (identifier.isBlank()) return
@@ -1810,24 +2041,23 @@ class MediaPlaybackService :
   ) {
     if (identifier.isBlank() || capturedSnapshot.mediaIdentifier != identifier) return
 
-    runCatching {
-      val oldState = playbackStateRepository.getVideoDataByTitle(identifier)
-      val snapshot =
-        if (capturedSnapshot.externalSubtitles.isBlank() && !oldState?.externalSubtitles.isNullOrBlank()) {
-          capturedSnapshot.copy(externalSubtitles = oldState.externalSubtitles.orEmpty())
-        } else {
-          capturedSnapshot
-        }
-      val playbackState =
-        PlaybackStatePersistence.buildEntity(
-          oldState = oldState,
-          snapshot = snapshot,
-          savePositionOnQuit = playerPreferences.savePositionOnQuit.get(),
-          watchedThreshold = browserPreferences.watchedThreshold.get(),
-        )
-      playbackStateRepository.upsert(playbackState)
-      PlaybackStateEvents.notifyChanged(identifier)
-    }.onFailure { error ->
+    try {
+      PlaybackStateSaveCoordinator.persistIfNewest(
+        mediaIdentifier = identifier,
+        sequence = capturedSnapshot.captureSequence,
+      ) {
+        val oldState = playbackStateRepository.getVideoDataByTitle(identifier)
+        val playbackState =
+          PlaybackStatePersistence.buildEntity(
+            oldState = oldState,
+            snapshot = capturedSnapshot,
+            savePositionOnQuit = playerPreferences.savePositionOnQuit.get(),
+            watchedThreshold = browserPreferences.watchedThreshold.get(),
+          )
+        playbackStateRepository.upsert(playbackState)
+        PlaybackStateEvents.notifyChanged(identifier)
+      }
+    } catch (error: Exception) {
       Log.e(TAG, "Error saving playback state from service", error)
     }
   }
@@ -1842,38 +2072,54 @@ class MediaPlaybackService :
   ): PlaybackStateSnapshot? {
     if (identifier.isBlank()) return null
 
+    val mpvPosition = readMpvIntSecondsOrNull("time-pos")
+    fun nullableDouble(property: String) = runCatching { PlaybackSession.getPropertyDouble(property) }.getOrNull()
+    fun nullableTrack(property: String): Int? = runCatching {
+      when (val value = PlaybackSession.getPropertyString(property)) {
+        "no" -> -1
+        else -> value?.toIntOrNull()
+      }
+    }.getOrNull()
+    val speed = nullableDouble("speed")
+    val zoom = nullableDouble("video-zoom")
+    val sid = nullableTrack("sid")
+    val secondarySid = nullableTrack("secondary-sid")
+    val aid = nullableTrack("aid")
+    val subDelay = nullableDouble("sub-delay")
+    val subSpeed = nullableDouble("sub-speed")
+    val audioDelay = nullableDouble("audio-delay")
+
     return PlaybackStateSnapshot(
       mediaIdentifier = identifier,
       mediaTitle = mediaTitle.ifBlank { identifier },
-      currentPosition = readMpvIntSeconds("time-pos", currentPositionSeconds.toInt()),
+      currentPosition = mpvPosition ?: currentPositionSeconds.toInt(),
       duration = readMpvIntSeconds("duration", mediaDurationSeconds.toInt()),
       isPositionRestorePending =
         PlaybackSession.isPositionRestorePending(PlaybackSession.state.value.activeGeneration),
-      playbackSpeed = readMpvDouble("speed", oldState?.playbackSpeed ?: DEFAULT_PLAYBACK_STATE_SPEED),
-      videoZoom = readMpvDouble("video-zoom", oldState?.videoZoom?.toDouble() ?: 0.0).toFloat(),
+      positionIsKnown = mpvPosition != null,
+      mpvSettingsAreKnown = listOf(sid, secondarySid, aid, subDelay, subSpeed, audioDelay).all { it != null },
+      playbackSettingsAreKnown = speed != null && zoom != null,
+      videoPresentationIsKnown = false,
+      playbackSpeed = speed ?: oldState?.playbackSpeed ?: DEFAULT_PLAYBACK_STATE_SPEED,
+      videoZoom = zoom?.toFloat() ?: oldState?.videoZoom ?: 0f,
       videoAspect = oldState?.videoAspect ?: "Fit",
       customAspectRatio = oldState?.customAspectRatio ?: -1f,
-      sid = readMpvTrackId("sid", oldState?.sid ?: -1),
-      secondarySid = readMpvTrackId("secondary-sid", oldState?.secondarySid ?: -1),
-      subDelayMs =
-        (
-          readMpvDouble(
-            "sub-delay",
-            (oldState?.subDelay ?: 0) / PLAYBACK_STATE_MILLISECONDS_TO_SECONDS.toDouble(),
-          ) * PLAYBACK_STATE_MILLISECONDS_TO_SECONDS
-        ).toInt(),
-      subSpeed = readMpvDouble("sub-speed", oldState?.subSpeed ?: DEFAULT_PLAYBACK_STATE_SUB_SPEED),
-      aid = readMpvTrackId("aid", oldState?.aid ?: -1),
-      audioDelayMs =
-        (
-          readMpvDouble(
-            "audio-delay",
-            (oldState?.audioDelay ?: 0) / PLAYBACK_STATE_MILLISECONDS_TO_SECONDS.toDouble(),
-          ) * PLAYBACK_STATE_MILLISECONDS_TO_SECONDS
-        ).toInt(),
+      sid = sid ?: oldState?.sid ?: -1,
+      secondarySid = secondarySid ?: oldState?.secondarySid ?: -1,
+      subDelayMs = subDelay?.let { (it * PLAYBACK_STATE_MILLISECONDS_TO_SECONDS).toInt() } ?: oldState?.subDelay ?: 0,
+      subSpeed = subSpeed ?: oldState?.subSpeed ?: DEFAULT_PLAYBACK_STATE_SUB_SPEED,
+      aid = aid ?: oldState?.aid ?: -1,
+      audioDelayMs = audioDelay?.let { (it * PLAYBACK_STATE_MILLISECONDS_TO_SECONDS).toInt() } ?: oldState?.audioDelay ?: 0,
       externalSubtitles = oldState?.externalSubtitles.orEmpty(),
+      externalSubtitlesAreKnown = false,
     )
   }
+
+  private fun readMpvIntSecondsOrNull(property: String): Int? =
+    runCatching {
+      PlaybackSession.getPropertyDouble(property)?.toInt()
+        ?: PlaybackSession.getPropertyInt(property)
+    }.getOrNull()
 
   private fun readMpvIntSeconds(
     property: String,
@@ -1883,26 +2129,6 @@ class MediaPlaybackService :
       PlaybackSession.getPropertyDouble(property)?.toInt()
         ?: PlaybackSession.getPropertyInt(property)
         ?: fallback
-    }.getOrDefault(fallback)
-
-  private fun readMpvDouble(
-    property: String,
-    fallback: Double,
-  ): Double =
-    runCatching {
-      PlaybackSession.getPropertyDouble(property) ?: fallback
-    }.getOrDefault(fallback)
-
-  private fun readMpvTrackId(
-    property: String,
-    fallback: Int,
-  ): Int =
-    runCatching {
-      when (val value = PlaybackSession.getPropertyString(property)) {
-        null -> fallback
-        "no" -> -1
-        else -> value.toIntOrNull() ?: fallback
-      }
     }.getOrDefault(fallback)
 
   /**

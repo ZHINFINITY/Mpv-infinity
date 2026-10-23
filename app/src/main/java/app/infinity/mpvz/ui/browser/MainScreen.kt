@@ -7,11 +7,16 @@
 
 package app.infinity.mpvz.ui.browser
 
+import androidx.compose.foundation.interaction.collectIsDraggedAsState
+import app.infinity.mpvz.ui.theme.browserGlassSceneSource
 import android.annotation.SuppressLint
 import android.content.res.Configuration
+import app.infinity.mpvz.ui.theme.BrowserGlassSurface
+import app.infinity.mpvz.ui.theme.rememberBrowserGlassMotionAllowed
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
@@ -70,6 +75,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -84,6 +90,7 @@ import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInParent
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -173,6 +180,7 @@ object MainScreen : Screen {
     val mediaServerPreferences = koinInject<MediaServerPreferences>()
     val showHomeTab by appearancePreferences.showHomeTab.collectAsState()
     val showMusicTab by appearancePreferences.showMusicTab.collectAsState()
+    val liquidGlassSurfacesForBrowser by appearancePreferences.liquidGlassSurfaces.collectAsState()
     val showRecentsTab by appearancePreferences.showRecentsTab.collectAsState()
     val showPlaylistsTab by appearancePreferences.showPlaylistsTab.collectAsState()
     val showNetworkTab by appearancePreferences.showNetworkTab.collectAsState()
@@ -277,8 +285,11 @@ object MainScreen : Screen {
       if (targetIndex >= 0) {
         tabNavigationJob?.cancel()
         if (!isAlreadySettled) {
-          tabNavigationJob =
+            tabNavigationJob =
             coroutineScope.launch {
+              // The lens is independent of destination composition. Give it one
+              // frame before a distant page can initialise heavy view-model/list UI.
+              withFrameNanos { }
               pagerState.animateScrollToPage(
                 page = targetIndex,
                 animationSpec =
@@ -397,11 +408,16 @@ object MainScreen : Screen {
           ),
       )
 
-    // Scaffold with bottom navigation bar
+    // Record only browser content, never a parent containing its own navigation lenses.
+    app.infinity.mpvz.ui.theme.BrowserGlassSceneHost(
+      enabled = liquidGlassSurfacesForBrowser && !hideNavigationBar && visibleTabs.isNotEmpty() && !isPermissionDenied,
+    ) {
     Scaffold(
       modifier = Modifier.fillMaxSize(),
     ) { paddingValues ->
-      Box(modifier = Modifier.fillMaxSize()) {
+      app.infinity.mpvz.ui.theme.BrowserGlassRouteContentHost(
+        enabled = liquidGlassSurfacesForBrowser,
+        routeContent = {
         if (visibleTabs.isEmpty()) {
           CompositionLocalProvider(
             LocalNavigationBarHeight provides contentBottomPadding,
@@ -449,6 +465,10 @@ object MainScreen : Screen {
           }
         }
 
+        // Browser source ends here; navigation cannot capture itself.
+
+        },
+        navigationContent = {
         // Animated bottom navigation bar with slide animations
         AnimatedVisibility(
           visible = !hideNavigationBar && visibleTabs.isNotEmpty() && !isPermissionDenied,
@@ -556,8 +576,10 @@ object MainScreen : Screen {
             }
           }
         }
+        },
+      )
       }
-    }
+    } // BrowserGlassSceneHost
   }
 }
 
@@ -573,6 +595,8 @@ private fun ExpressivePillNavigationBar(
   val haptics = LocalHapticFeedback.current
   val appearancePreferences = koinInject<AppearancePreferences>()
   val liquidGlassSurfaces by appearancePreferences.liquidGlassSurfaces.collectAsState()
+  val glassOpacity by appearancePreferences.glassSurfaceOpacity.collectAsState()
+  val glassHighlight by appearancePreferences.glassSurfaceHighlight.collectAsState()
 
   val position =
     if (pagerState != null && visibleTabs.isNotEmpty()) {
@@ -617,60 +641,92 @@ private fun ExpressivePillNavigationBar(
     }
   }
 
-  val pageFloor = position.toInt().coerceIn(0, (visibleTabs.size - 1).coerceAtLeast(0))
-  val pageCeil = (pageFloor + 1).coerceIn(0, (visibleTabs.size - 1).coerceAtLeast(0))
-  val fraction = (position - pageFloor).coerceIn(0f, 1f)
-
-  val indicatorLeft =
-    if (tabOffsets.isNotEmpty()) {
-      androidx.compose.ui.unit.lerp(tabOffsets[pageFloor], tabOffsets[pageCeil], fraction)
-    } else {
-      startPadding
+  val glassMotion = app.infinity.mpvz.ui.theme.LocalGlassCustomization.current.motion
+  val motionAllowed = liquidGlassSurfaces && rememberBrowserGlassMotionAllowed()
+  val fingerDragging = pagerState?.interactionSource?.collectIsDraggedAsState()?.value == true
+  val targetIndex = visibleTabs.indexOf(selectedTab).coerceAtLeast(0).toFloat()
+  // A single finite spring owns the visual lens. Pager drags follow the finger without lag;
+  // programmatic tab changes keep a separate spring trajectory instead of snapping each frame.
+  val lensPosition = remember { Animatable(position) }
+  LaunchedEffect(targetIndex, fingerDragging, if (fingerDragging) position else 0f, motionAllowed, glassMotion) {
+    when {
+      !motionAllowed -> lensPosition.snapTo(targetIndex)
+      fingerDragging -> lensPosition.snapTo(position)
+      else -> lensPosition.animateTo(targetIndex, spring(stiffness = 440f, dampingRatio = 1f - 0.26f * glassMotion))
     }
+  }
+  val lastIndex = (visibleTabs.size - 1).coerceAtLeast(0)
+  var dragPosition by remember { mutableStateOf<Float?>(null) }
+  val visualPosition = (dragPosition ?: if (!motionAllowed || fingerDragging) position else lensPosition.value)
+    .coerceIn(0f, lastIndex.toFloat())
+  val visualFloor = visualPosition.toInt().coerceIn(0, lastIndex)
+  val visualCeil = (visualFloor + 1).coerceAtMost(lastIndex)
+  val visualFraction = (visualPosition - visualFloor).coerceIn(0f, 1f)
+  val lensBaseLeft = if (tabOffsets.isEmpty()) startPadding else
+    androidx.compose.ui.unit.lerp(tabOffsets[visualFloor], tabOffsets[visualCeil], visualFraction)
+  val lensBaseWidth = if (tabWidths.isEmpty()) inactiveTabWidth else
+    androidx.compose.ui.unit.lerp(tabWidths[visualFloor], tabWidths[visualCeil], visualFraction)
+  val direction = NavigationGlassMotionPolicy.clampDirection(
+    if (fingerDragging) position - (pagerState?.settledPage ?: 0) else targetIndex - lensPosition.value,
+  )
+  val density = LocalDensity.current
+  val isRtl = LocalLayoutDirection.current == androidx.compose.ui.unit.LayoutDirection.Rtl
+  val tabCentersPx = remember(tabOffsets, tabWidths, density) {
+    tabOffsets.mapIndexed { index, left -> with(density) { (left + tabWidths[index] / 2).toPx() } }
+  }
+  val dragModifier = Modifier.pointerInput(visibleTabs, tabCentersPx, isRtl) {
+    detectHorizontalDragGestures(
+      onDragStart = { dragPosition = null },
+      onHorizontalDrag = { change, _ ->
+        change.consume()
+        dragPosition = NavPillDragPolicy.tabPositionAtX(change.position.x, tabCentersPx, isRtl)
+      },
+      onDragEnd = {
+        val target = dragPosition?.let { NavPillDragPolicy.nearestTabIndex(it, visibleTabs.size) }
+        dragPosition = null
+        if (target != null) visibleTabs.getOrNull(target)?.let(onTabSelected)
+      },
+      onDragCancel = { dragPosition = null },
+    )
+  }
+  val lensGeometry = with(density) {
+    if (motionAllowed) NavigationGlassMotionPolicy.dragGeometry(
+      lensBaseLeft.toPx(), lensBaseWidth.toPx(), visualFraction, direction, glassMotion,
+    ) else NavigationGlassMotionPolicy.settledGeometry(lensBaseLeft.toPx(), lensBaseWidth.toPx())
+  }
+  val lensSquash = kotlin.math.abs(lensGeometry.deformation) * 4f
 
-  val indicatorWidth =
-    if (tabWidths.isNotEmpty()) {
-      androidx.compose.ui.unit.lerp(tabWidths[pageFloor], tabWidths[pageCeil], fraction)
-    } else {
-      inactiveTabWidth
-    }
-
-  Surface(
+  BrowserGlassSurface(
+    enabled = liquidGlassSurfaces,
+    opacity = glassOpacity,
+    highlight = glassHighlight,
+    cornerRadius = 1000.dp,
+    selected = false,
     modifier = modifier
-      .then(if (maxWidth != null) Modifier.widthIn(max = maxWidth) else Modifier)
-      .clip(CircleShape),
-    shape = CircleShape,
-    color = if (liquidGlassSurfaces) {
-      MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.78f)
-    } else {
-      MaterialTheme.colorScheme.surfaceContainerHigh
-    },
-    tonalElevation = if (liquidGlassSurfaces) 3.dp else 6.dp,
-    shadowElevation = if (liquidGlassSurfaces) 12.dp else 8.dp,
-    border =
-      BorderStroke(
-        width = 1.dp,
-        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = if (liquidGlassSurfaces) 0.55f else 0.25f),
-      ),
+      .then(if (maxWidth != null) Modifier.widthIn(max = maxWidth) else Modifier),
   ) {
     Box(
       modifier =
         Modifier
-          .wrapContentWidth()
-          .horizontalScroll(rememberScrollState())
+            .wrapContentWidth()
+            .then(dragModifier)
+            .horizontalScroll(rememberScrollState())
           .clipToBounds()
           .padding(horizontal = startPadding, vertical = 6.dp),
     ) {
-      // Sliding background pill indicator
-      Box(
-        modifier =
-          Modifier
-            .offset(x = indicatorLeft - startPadding, y = 0.dp)
-            .width(indicatorWidth)
-            .height(44.dp)
-            .clip(CircleShape)
-            .background(MaterialTheme.colorScheme.primaryContainer),
-      )
+      // The selected lens is its own glass surface; icons and labels remain in the hit boxes.
+      BrowserGlassSurface(
+        enabled = liquidGlassSurfaces,
+        opacity = glassOpacity,
+        highlight = glassHighlight,
+        cornerRadius = 1000.dp,
+        selected = true,
+        deformation = kotlin.math.abs(lensGeometry.deformation),
+        modifier = Modifier
+          .offset(x = with(density) { lensGeometry.left.toDp() } - startPadding, y = (lensSquash / 2f).dp)
+          .width(with(density) { lensGeometry.width.toDp() })
+          .height((44f - lensSquash).dp),
+      ) {}
 
       // Tab buttons row positioned directly on top of the track
       Row(

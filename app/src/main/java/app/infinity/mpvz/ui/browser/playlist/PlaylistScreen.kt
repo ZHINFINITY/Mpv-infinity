@@ -21,6 +21,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -101,14 +102,12 @@ object PlaylistScreen : Screen {
     val focusRequester = remember { FocusRequester() }
 
     // Filter playlists based on search query
-    val filteredPlaylists =
-      if (isSearching && searchQuery.isNotBlank()) {
-        playlistsWithCount.filter { playlistWithCount ->
-          playlistWithCount.playlist.name.contains(searchQuery, ignoreCase = true)
-        }
-      } else {
-        playlistsWithCount
-      }
+    val filteredPlaylists = remember(playlistsWithCount, isSearching, searchQuery) {
+      PlaylistPresentationPolicy.filterPlaylists(
+        playlistsWithCount,
+        if (isSearching) searchQuery else "",
+      ) { it.playlist.name }
+    }
 
     // Request focus when search is activated
     LaunchedEffect(isSearching) {
@@ -177,6 +176,7 @@ object PlaylistScreen : Screen {
     )
 
     Scaffold(
+      containerColor = app.infinity.mpvz.ui.preferences.components.settingsGlassContainerColor(androidx.compose.material3.MaterialTheme.colorScheme.background),
       topBar = {
         if (isSearching) {
           // Search mode - show search bar
@@ -278,7 +278,7 @@ object PlaylistScreen : Screen {
           EmptyState(
             icon = Icons.RoundedFilled.Search,
             title = stringResource(R.string.ui_no_playlists_found),
-            message = "Try a different search term",
+            message = stringResource(R.string.playlist_ui_search_hint),
           )
         }
       } else if (playlistsWithCount.isEmpty() && hasCompletedInitialLoad) {
@@ -295,8 +295,8 @@ object PlaylistScreen : Screen {
           ) {
             EmptyState(
               icon = Icons.RoundedFilled.PlaylistAdd,
-              title = stringResource(R.string.ui_no_playlists_yet),
-              message = "Create a playlist or add one from an m3u URL",
+              title = stringResource(R.string.playlist_ui_empty_library),
+              message = stringResource(R.string.playlist_ui_empty_library_hint),
             )
           }
         }
@@ -331,13 +331,13 @@ object PlaylistScreen : Screen {
       isOpen = showPlaylistActionSheet,
       onDismiss = { showPlaylistActionSheet = false },
       onCreatePlaylist = viewModel::createPlaylist,
-      onCreateM3UPlaylistFromFile = { uri ->
-        viewModel.createM3UPlaylistFromFile(uri).also { result ->
+      onCreateM3UPlaylistFromFile = { uri, forceRadio ->
+        viewModel.createM3UPlaylistFromFile(uri, forceRadio).also { result ->
           if (result.isSuccess) viewModel.refresh()
         }
       },
-      onCreateM3UPlaylist = { url, userAgent ->
-        viewModel.createM3UPlaylist(url, userAgent).also { result ->
+      onCreateM3UPlaylist = { url, userAgent, forceRadio ->
+        viewModel.createM3UPlaylist(url, userAgent, forceRadio).also { result ->
           if (result.isSuccess) viewModel.refresh()
         }
       },
@@ -347,7 +347,7 @@ object PlaylistScreen : Screen {
     if (showRenameDialog && selectionManager.isSingleSelection) {
       val selectedPlaylist = selectionManager.getSelectedItems().firstOrNull()
       if (selectedPlaylist != null) {
-        var playlistName by remember { mutableStateOf(selectedPlaylist.playlist.name) }
+        var playlistName by remember { mutableStateOf(selectedPlaylist.playlist.name.removePrefix(app.infinity.mpvz.utils.media.RadioM3uPlaylistPolicy.RADIO_PREFIX)) }
         androidx.compose.material3.AlertDialog(
           onDismissRequest = { showRenameDialog = false },
           title = {
@@ -481,6 +481,9 @@ object PlaylistScreen : Screen {
               (usableWidth / folderMinWidth).toInt().coerceAtLeast(1)
             }
 
+          val (ordinaryPlaylists, radioPlaylists) = remember(playlistsWithCount) {
+            PlaylistPresentationPolicy.splitByKind(playlistsWithCount) { it.isRadioM3u }
+          }
           LazyVerticalGrid(
             columns = GridCells.Fixed(folderGridColumns),
             state = gridState,
@@ -494,11 +497,16 @@ object PlaylistScreen : Screen {
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
           ) {
+            if (ordinaryPlaylists.isNotEmpty()) {
+              item(span = { GridItemSpan(maxLineSpan) }, key = "ordinary-heading") {
+                Text(stringResource(R.string.playlist_ui_library_section, ordinaryPlaylists.size), modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp), style = androidx.compose.material3.MaterialTheme.typography.titleMedium)
+              }
+            }
             items(
-              count = playlistsWithCount.size,
-              key = { playlistsWithCount[it].playlist.id },
+              count = ordinaryPlaylists.size,
+              key = { ordinaryPlaylists[it].playlist.id },
             ) { index ->
-              val playlistWithCount = playlistsWithCount[index]
+              val playlistWithCount = ordinaryPlaylists[index]
               PlaylistCard(
                 playlist = playlistWithCount.playlist,
                 itemCount = playlistWithCount.itemCount,
@@ -507,6 +515,27 @@ object PlaylistScreen : Screen {
                 onLongClick = { onPlaylistLongClick(playlistWithCount) },
                 onThumbClick = { onPlaylistClick(playlistWithCount) },
                 isGridMode = true,
+              )
+            }
+            if (radioPlaylists.isNotEmpty()) {
+              item(span = { GridItemSpan(maxLineSpan) }, key = "radio-heading") {
+                Text(stringResource(R.string.playlist_ui_radio_section, radioPlaylists.size), modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp), style = androidx.compose.material3.MaterialTheme.typography.titleMedium)
+              }
+            }
+            items(
+              count = radioPlaylists.size,
+              key = { radioPlaylists[it].playlist.id },
+            ) { index ->
+              val playlistWithCount = radioPlaylists[index]
+              PlaylistCard(
+                playlist = playlistWithCount.playlist,
+                itemCount = playlistWithCount.itemCount,
+                isSelected = selectionManager.isSelected(playlistWithCount),
+                onClick = { onPlaylistClick(playlistWithCount) },
+                onLongClick = { onPlaylistLongClick(playlistWithCount) },
+                onThumbClick = { onPlaylistClick(playlistWithCount) },
+                isGridMode = true,
+                isRadioM3u = true,
               )
             }
           }
@@ -532,6 +561,9 @@ object PlaylistScreen : Screen {
             Modifier
               .fillMaxSize(),
         ) {
+          val (ordinaryPlaylists, radioPlaylists) = remember(playlistsWithCount) {
+            PlaylistPresentationPolicy.splitByKind(playlistsWithCount) { it.isRadioM3u }
+          }
           LazyColumn(
             state = listState,
             modifier = Modifier.fillMaxSize(),
@@ -543,7 +575,8 @@ object PlaylistScreen : Screen {
               ),
             verticalArrangement = Arrangement.spacedBy(0.dp),
           ) {
-            items(playlistsWithCount, key = { it.playlist.id }) { playlistWithCount ->
+            if (ordinaryPlaylists.isNotEmpty()) item { Text(stringResource(R.string.playlist_ui_library_section, ordinaryPlaylists.size), modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp), style = androidx.compose.material3.MaterialTheme.typography.titleMedium) }
+            items(ordinaryPlaylists, key = { it.playlist.id }) { playlistWithCount ->
               PlaylistCard(
                 playlist = playlistWithCount.playlist,
                 itemCount = playlistWithCount.itemCount,
@@ -552,6 +585,19 @@ object PlaylistScreen : Screen {
                 onLongClick = { onPlaylistLongClick(playlistWithCount) },
                 onThumbClick = { onPlaylistClick(playlistWithCount) },
                 isGridMode = false,
+              )
+            }
+            if (radioPlaylists.isNotEmpty()) item { Text(stringResource(R.string.playlist_ui_radio_section, radioPlaylists.size), modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp), style = androidx.compose.material3.MaterialTheme.typography.titleMedium) }
+            items(radioPlaylists, key = { it.playlist.id }) { playlistWithCount ->
+              PlaylistCard(
+                playlist = playlistWithCount.playlist,
+                itemCount = playlistWithCount.itemCount,
+                isSelected = selectionManager.isSelected(playlistWithCount),
+                onClick = { onPlaylistClick(playlistWithCount) },
+                onLongClick = { onPlaylistLongClick(playlistWithCount) },
+                onThumbClick = { onPlaylistClick(playlistWithCount) },
+                isGridMode = false,
+                isRadioM3u = true,
               )
             }
           }

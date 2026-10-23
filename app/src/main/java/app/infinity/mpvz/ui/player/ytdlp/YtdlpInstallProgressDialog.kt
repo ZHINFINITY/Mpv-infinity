@@ -16,7 +16,6 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -28,6 +27,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import app.infinity.mpvz.R
+import app.infinity.mpvz.presentation.components.PlayerGlassOverlay
 
 /**
  * Progress UI shown while [YtdlpManager.runInstall] runs, triggered from
@@ -56,10 +56,8 @@ fun YtdlpInstallProgressDialog(
         dismissOnClickOutside = false,
       ),
   ) {
-    Surface(
-      shape = MaterialTheme.shapes.extraLarge,
-      color = AlertDialogDefaults.containerColor,
-      tonalElevation = AlertDialogDefaults.TonalElevation,
+    PlayerGlassOverlay(
+      cornerRadius = 28.dp,
     ) {
       Column(
         modifier = Modifier.padding(28.dp),

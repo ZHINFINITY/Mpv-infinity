@@ -6,7 +6,10 @@
  */
 
 package app.infinity.mpvz.ui.player.controls.components.sheets
+import app.infinity.mpvz.ui.theme.GlassDropdownMenu
+import app.infinity.mpvz.ui.theme.GlassExposedDropdownMenu
 
+import app.infinity.mpvz.presentation.components.playerGlassOverlay
 import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.basicMarquee
@@ -635,12 +638,12 @@ private fun SubdlEpisodeDropdown(
         modifier = Modifier.size(18.dp),
       )
     }
-    DropdownMenu(
+    GlassDropdownMenu(
       expanded = expanded,
       onDismissRequest = { expanded = false },
-      modifier = Modifier.heightIn(max = 300.dp),
+      modifier = Modifier.heightIn(max = 300.dp).playerGlassOverlay(12.dp),
       shape = RoundedCornerShape(12.dp),
-      containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+      containerColor = androidx.compose.ui.graphics.Color.Transparent,
     ) {
       episodes.forEach { episode ->
         DropdownMenuItem(
@@ -887,12 +890,12 @@ private fun SeriesSelectionControls(
         )
         Icon(Icons.RoundedFilled.ArrowDropDown, contentDescription = null, modifier = Modifier.size(20.dp))
       }
-      DropdownMenu(
+      GlassDropdownMenu(
         expanded = seasonDropdownExpanded.value,
         onDismissRequest = { seasonDropdownExpanded.value = false },
-        modifier = Modifier.heightIn(max = 300.dp),
+        modifier = Modifier.heightIn(max = 300.dp).playerGlassOverlay(12.dp),
         shape = RoundedCornerShape(12.dp),
-        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+        containerColor = androidx.compose.ui.graphics.Color.Transparent,
       ) {
         tvShow.seasons.forEach { season ->
           DropdownMenuItem(
@@ -936,12 +939,12 @@ private fun SeriesSelectionControls(
         )
         Icon(Icons.RoundedFilled.ArrowDropDown, contentDescription = null, modifier = Modifier.size(20.dp))
       }
-      DropdownMenu(
+      GlassDropdownMenu(
         expanded = episodeDropdownExpanded.value,
         onDismissRequest = { episodeDropdownExpanded.value = false },
-        modifier = Modifier.heightIn(max = 300.dp).widthIn(min = 200.dp),
+        modifier = Modifier.heightIn(max = 300.dp).widthIn(min = 200.dp).playerGlassOverlay(12.dp),
         shape = RoundedCornerShape(12.dp),
-        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+        containerColor = androidx.compose.ui.graphics.Color.Transparent,
       ) {
         episodes.forEach { episode ->
           DropdownMenuItem(

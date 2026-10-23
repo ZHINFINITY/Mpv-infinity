@@ -7,6 +7,11 @@
 
 package app.infinity.mpvz.ui.preferences
 
+import app.infinity.mpvz.ui.components.GlassOptionSheet
+import app.infinity.mpvz.ui.preferences.components.settingsGlassContainerColor
+
+import app.infinity.mpvz.ui.preferences.components.settingsGlassSurface
+
 import android.Manifest
 import android.content.ComponentName
 import android.content.Intent
@@ -26,11 +31,11 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Scaffold
+import app.infinity.mpvz.ui.preferences.components.SettingsScaffold as Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TextField
-import androidx.compose.material3.TopAppBar
+import app.infinity.mpvz.ui.preferences.components.SettingsTopAppBar as TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -64,11 +69,11 @@ import app.infinity.mpvz.ui.utils.LocalShowSettingsBackArrow
 import app.infinity.mpvz.ui.utils.currentMpvConfigOverrideOptions
 import app.infinity.mpvz.ui.utils.popSafely
 import kotlinx.serialization.Serializable
-import me.zhanghai.compose.preference.ListPreference
-import me.zhanghai.compose.preference.Preference
+import app.infinity.mpvz.ui.preferences.components.ListPreference
+import app.infinity.mpvz.ui.preferences.components.Preference
 import me.zhanghai.compose.preference.ProvidePreferenceLocals
-import me.zhanghai.compose.preference.SliderPreference
-import me.zhanghai.compose.preference.TextFieldPreference
+import app.infinity.mpvz.ui.preferences.components.SliderPreference
+import app.infinity.mpvz.ui.preferences.components.TextFieldPreference
 import org.koin.compose.koinInject
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
@@ -322,6 +327,17 @@ object PlayerPreferencesScreen : Screen {
                     color = MaterialTheme.colorScheme.outline,
                   )
                 },
+              )
+
+              PreferenceDivider()
+
+              val openRadioM3uInMusic by preferences.openRadioM3uInMusic.collectAsState()
+              SwitchPreference(
+                modifier = Modifier.settingsSearchTarget(R.string.pref_open_radio_m3u_in_music_title),
+                value = openRadioM3uInMusic,
+                onValueChange = preferences.openRadioM3uInMusic::set,
+                title = { Text(stringResource(R.string.pref_open_radio_m3u_in_music_title)) },
+                summary = { Text(stringResource(R.string.pref_open_radio_m3u_in_music_summary), color = MaterialTheme.colorScheme.outline) },
               )
 
               PreferenceDivider()
@@ -1160,6 +1176,8 @@ object PlayerPreferencesScreen : Screen {
     }
     if (showVideoMiniPlayerDependencyDialog) {
       AlertDialog(
+      containerColor = settingsGlassContainerColor(androidx.compose.material3.AlertDialogDefaults.containerColor),
+      modifier = androidx.compose.ui.Modifier.settingsGlassSurface(cornerRadius = 28.dp, independent = true),
         onDismissRequest = { showVideoMiniPlayerDependencyDialog = false },
         title = { Text(stringResource(R.string.pref_video_mini_player_dependency_title)) },
         text = { Text(stringResource(R.string.pref_video_mini_player_dependency_message)) },
@@ -1193,7 +1211,9 @@ object PlayerPreferencesScreen : Screen {
       )
     }
     if (showTemplateDialog) {
-      AlertDialog(
+      GlassOptionSheet(
+      containerColor = settingsGlassContainerColor(androidx.compose.material3.AlertDialogDefaults.containerColor),
+      modifier = androidx.compose.ui.Modifier.settingsGlassSurface(cornerRadius = 28.dp, independent = true),
         onDismissRequest = { showTemplateDialog = false },
         title = {
           Text(
@@ -1201,7 +1221,7 @@ object PlayerPreferencesScreen : Screen {
               .stringResource(app.infinity.mpvz.R.string.ui_filename_template),
           )
         },
-        text = {
+        content = {
           Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             OutlinedTextField(
               value = templateDraft,
@@ -1249,8 +1269,7 @@ object PlayerPreferencesScreen : Screen {
                 .stringResource(app.infinity.mpvz.R.string.generic_cancel),
             )
           }
-        },
-      )
+        },)
     }
   }
 }

@@ -18,6 +18,7 @@ import app.infinity.mpvz.data.network.proxy.HlsStreamingProxy
 import app.infinity.mpvz.data.network.proxy.NetworkStreamingProxy
 import app.infinity.mpvz.domain.network.NetworkPlaybackUri
 import app.infinity.mpvz.preferences.MpvConfigOverridePolicy
+import app.infinity.mpvz.utils.media.RadioStreamProbe
 import `is`.xyz.mpv.MPVLib
 import `is`.xyz.mpv.MPVNode
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -25,6 +26,11 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 import java.util.ArrayDeque
 import java.util.concurrent.ConcurrentHashMap
@@ -71,6 +77,12 @@ class PlaybackProperty<T> internal constructor(
     value: T?,
   ) {
     states[property]?.value = value
+  }
+
+  internal fun clearMediaMetadata() {
+    states.forEach { (property, state) ->
+      if (property == "media-title" || property.startsWith("metadata/")) state.value = null
+    }
   }
 
   internal fun reobserve() {
@@ -125,7 +137,12 @@ object PlaybackSession : MPVLib.EventObserver {
   private data class ResolvedPlayable(
     val uri: String,
     val registration: NetworkStreamRegistration? = null,
-  )
+    val ownedFd: Int? = null,
+  ) {
+    fun closeUnconsumedFd() {
+      ownedFd?.let { fd -> runCatching { android.os.ParcelFileDescriptor.adoptFd(fd).close() } }
+    }
+  }
 
   /**
    * Video decoding is intentionally disabled while Android has no render surface. Keep the track
@@ -137,7 +154,21 @@ object PlaybackSession : MPVLib.EventObserver {
   )
 
   private val nativeLock = ReentrantLock(true)
+  /** Serializes create/init/destroy, but is never held by native callbacks. */
+  private val nativeLifecycleLock = ReentrantLock(true)
+  private val nativeCallbackGate = NativeCallbackGate()
+  @Volatile private var retiringCore = false
+  /** Serializes the authorized MPV reconfiguration transaction without holding nativeLock.
+   * JNI callbacks may be dispatched to the main executor while create/init/load runs. */
   private val observers = CopyOnWriteArraySet<MPVLib.EventObserver>()
+  // Station headers are not native properties: retain them for late UI/service subscribers.
+  private val _radioHeaders = MutableStateFlow<Pair<String, RadioStreamProbe.Metadata>?>(null)
+  val radioHeaders = _radioHeaders.asStateFlow()
+  // One bounded probe belongs to the current station only.  It is deliberately
+  // separate from libmpv's live request: never create a second endless stream.
+  private val radioProbeScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+  private var radioProbeJob: Job? = null
+
   private val _state = MutableStateFlow(PlaybackSessionState())
   private val _queue = MutableStateFlow(PlaybackQueueState())
   private val streamSequence = AtomicLong()
@@ -164,6 +195,7 @@ object PlaybackSession : MPVLib.EventObserver {
   private var pendingStopClearQueue = false
   private var desiredPaused = true
   private var loadedGeneration = 0L
+  private var interpolationRestartLoadFence: MpvRestartLoadFence? = null
   private var loadedPlaybackItem: PlaybackItem? = null
   private var loadedAudiobookEnded = false
   private var loadedAudiobookDurationMs = 0L
@@ -181,6 +213,62 @@ object PlaybackSession : MPVLib.EventObserver {
   private val activeAmbientShaderPaths = linkedSetOf<String>()
   private var desiredAmbientScaleX = 1.0
   private var desiredAmbientScaleY = 1.0
+
+  private fun retireCoreForLifecycleChange() {
+    val wasInitialized = nativeLock.withLock {
+      if (!initialized && !nativeCoreReady) return@withLock false
+      retiringCore = true
+      initialized = false
+      nativeCoreReady = false
+      updateState { it.copy(phase = PlaybackPhase.STOPPING, surfaceAttached = false, paused = true) }
+      true
+    }
+    if (!wasInitialized) return
+    // No callback admitted before this point may outlive destruction. Drain outside nativeLock:
+    // an admitted callback can itself need nativeLock to finish.
+    nativeCallbackGate.closeAndDrain()
+    runCatching { MPVLib.removeObserver(this) }
+    runCatching { MPVLib.setPropertyBoolean("mute", true) }
+    runCatching { MPVLib.setPropertyBoolean("pause", true) }
+    runCatching { MPVLib.detachSurface() }
+    runCatching { MPVLib.destroy() }
+      .onFailure { error -> Log.e(TAG, "Failed to retire libmpv", error) }
+    val active: NetworkStreamRegistration?
+    val auxiliary: List<NetworkStreamRegistration>
+    nativeLock.withLock {
+      active = activeNetworkStream
+      auxiliary = auxiliaryNetworkStreams.values.toList()
+      activeNetworkStream = null
+      auxiliaryNetworkStreams.clear()
+      // Observers belong to the process-wide session, not to a native core. Keep the
+      // service and Activity registrations alive across replacement; each Activity
+      // explicitly rebinds its Main-thread callback epoch before issuing loadfile.
+      observedProperties.clear()
+      activeCoreConfigurationKey = null
+      activeSurfaceFrameRateHintHz = null
+      attachedSurfaceOwner = null
+      loadedPlaybackItem = null
+      loadedAudiobookEnded = false
+      loadedAudiobookDurationMs = 0L
+      suspendedVideoTrack = null
+      deferredVideoSelectionGeneration = null
+      desiredPaused = true
+      loadedGeneration = 0L
+      defaultUserAgent = null
+      pendingPositionRestoreGeneration = 0L
+      pendingPositionRestoreOverride = null
+      initialPositionGeneration = 0L
+      pendingStopClearQueue = false
+      clearSeekAudioGuardLocked(restoreMute = false)
+      clearPlaybackTransitionAudioGuardLocked(restoreMute = false)
+      mutedForTeardown = false
+      resetAmbientShaderTrackingLocked()
+      clearTimelinePropertiesLocked()
+      updateState { PlaybackSessionState(phase = PlaybackPhase.UNINITIALIZED, generation = PlaybackGenerationPolicy.next(it.generation)) }
+    }
+    active?.let(::releaseNetworkStream)
+    auxiliary.forEach(::releaseNetworkStream)
+  }
 
   val isInitialized: Boolean
     get() = initialized
@@ -204,6 +292,7 @@ object PlaybackSession : MPVLib.EventObserver {
   val propNode = PlaybackProperty(MPVLib.MpvFormat.MPV_FORMAT_NODE, ::getPropertyNode)
 
   /** Returns true when this call created the core, false when it was already alive. */
+  /** Native lifecycle entry point. Callers must dispatch this function off Main. */
   fun initialize(
     context: Context,
     configDir: String,
@@ -212,18 +301,21 @@ object PlaybackSession : MPVLib.EventObserver {
     initOptions: () -> Unit,
     postInitOptions: () -> Unit,
     observeProperties: () -> Unit,
-  ): Result<Boolean> =
-    runCatching {
+  ): Result<Boolean> = runCatching {
+    nativeLifecycleLock.lock()
+    try {
+      val reuse = nativeLock.withLock {
+        initialized && activeCoreConfigurationKey == coreConfigurationKey && !retiringCore
+      }
+      if (reuse) return@runCatching false
+      retireCoreForLifecycleChange()
+      nativeCallbackGate.closeAndDrain()
       nativeLock.withLock {
-        if (initialized && activeCoreConfigurationKey == coreConfigurationKey) {
-          return@withLock false
-        }
-        if (initialized) {
-          Log.i(TAG, "Playback core configuration changed; recreating the libmpv core")
-          destroyLocked()
-        }
-
         applicationContext = context.applicationContext
+        // Retirement has finished. The new lifecycle owner must be allowed to write
+        // pre-init renderer/hwdec/Flow options; other threads remain blocked by
+        // INITIALIZING + initialized=false and the callback gate stays closed.
+        retiringCore = false
         nativeCoreReady = false
         activeSurfaceFrameRateHintHz = null
         observedProperties.clear()
@@ -241,62 +333,60 @@ object PlaybackSession : MPVLib.EventObserver {
         mutedForTeardown = false
         resetAmbientShaderTrackingLocked()
         updateState { it.copy(phase = PlaybackPhase.INITIALIZING, error = null) }
-        try {
-          MPVLib.create(context.applicationContext)
-          MPVLib.setOptionString("config", "yes")
-          MPVLib.setOptionString("config-dir", configDir)
-          MPVLib.setOptionString("gpu-shader-cache-dir", cacheDir)
-          MPVLib.setOptionString("icc-cache-dir", cacheDir)
-          // Keep app defaults before initialization. libmpv then parses the native mpv.conf once
-          // during init, preserving its profiles, includes and quoting without runtime replay.
-          initOptions()
-          MPVLib.init()
-          // Runtime properties do not exist between MPVLib.create() and MPVLib.init(). Keep option
-          // writes available in that window, but permit property reads only from this point on.
-          nativeCoreReady = true
-          // Preserve the effective default after mpv.conf has been parsed. Per-media request
-          // headers may temporarily override it, but must not leak into the next item.
-          defaultUserAgent = MPVLib.getPropertyString("user-agent")
-          postInitOptions()
-          MPVLib.setOptionString("force-window", "no")
-          MPVLib.setOptionString("idle", "yes")
-          MPVLib.addObserver(this)
-          reobserveTrackedProperties()
-          observeProperties()
+      }
+      try {
+        MPVLib.create(context.applicationContext)
+        MPVLib.setOptionString("config", "yes")
+        MPVLib.setOptionString("config-dir", configDir)
+        MPVLib.setOptionString("gpu-shader-cache-dir", cacheDir)
+        MPVLib.setOptionString("icc-cache-dir", cacheDir)
+        initOptions()
+        MPVLib.init()
+        nativeLock.withLock { nativeCoreReady = true }
+        val userAgent = MPVLib.getPropertyString("user-agent")
+        postInitOptions()
+        MPVLib.setOptionString("force-window", "no")
+        MPVLib.setOptionString("idle", "yes")
+        nativeLock.withLock {
+          defaultUserAgent = userAgent
           initialized = true
+          retiringCore = false
           activeCoreConfigurationKey = coreConfigurationKey
           updateState { it.copy(phase = PlaybackPhase.IDLE, paused = true, error = null) }
-          true
-        } catch (error: Throwable) {
-          runCatching { MPVLib.removeObserver(this) }
-          runCatching { MPVLib.destroy() }
+        }
+        nativeCallbackGate.open()
+        MPVLib.addObserver(this)
+        // These calls issue JNI property observations and can synchronously produce callbacks;
+        // never execute them while nativeLock is held.
+        reobserveTrackedProperties()
+        observeProperties()
+        true
+      } catch (error: Throwable) {
+        nativeLock.withLock {
+          retiringCore = true
           initialized = false
           nativeCoreReady = false
+        }
+        nativeCallbackGate.closeAndDrain()
+        runCatching { MPVLib.removeObserver(this) }
+        runCatching { MPVLib.destroy() }
+        nativeLock.withLock {
+          initialized = false
+          nativeCoreReady = false
+          retiringCore = false
           activeCoreConfigurationKey = null
           activeSurfaceFrameRateHintHz = null
-          suspendedVideoTrack = null
-          deferredVideoSelectionGeneration = null
-          pendingStopClearQueue = false
-          desiredPaused = true
-          loadedGeneration = 0L
-          defaultUserAgent = null
-          pendingPositionRestoreGeneration = 0L
-          pendingPositionRestoreOverride = null
-          initialPositionGeneration = 0L
-          clearSeekAudioGuardLocked(restoreMute = false)
-          clearPlaybackTransitionAudioGuardLocked(restoreMute = false)
-          mutedForTeardown = false
-          resetAmbientShaderTrackingLocked()
-          updateState {
-            it.copy(
-              phase = PlaybackPhase.ERROR,
-              error = error.message ?: error.javaClass.simpleName,
-            )
-          }
-          throw error
+          attachedSurfaceOwner = null
+          loadedPlaybackItem = null
+          clearTimelinePropertiesLocked()
+          updateState { it.copy(phase = PlaybackPhase.ERROR, error = error.message ?: error.javaClass.simpleName) }
         }
+        throw error
       }
+    } finally {
+      nativeLifecycleLock.unlock()
     }
+  }
 
   fun bindSurface(
     surface: Surface,
@@ -404,7 +494,7 @@ object PlaybackSession : MPVLib.EventObserver {
       AudiobookPlayback.capture()
       loadedPlaybackItem = null
 
-      val nextGeneration = _state.value.generation + 1L
+      val nextGeneration = PlaybackGenerationPolicy.next(_state.value.generation)
       suspendedVideoTrack = null
       deferredVideoSelectionGeneration = null
       desiredPaused = true
@@ -480,10 +570,7 @@ object PlaybackSession : MPVLib.EventObserver {
     * initialization reset. Normal Activity launches reuse the process-wide core.
    */
   fun destroy() {
-    nativeLock.withLock {
-      if (!initialized) return
-      destroyLocked()
-    }
+    nativeLifecycleLock.withLock { retireCoreForLifecycleChange() }
   }
 
   /**
@@ -504,40 +591,6 @@ object PlaybackSession : MPVLib.EventObserver {
       beginPlaybackTransitionAudioGuardLocked(canRestore = false)
       mutedForTeardown = true
     }
-  }
-
-  private fun destroyLocked() {
-    updateState { it.copy(phase = PlaybackPhase.STOPPING) }
-    desiredPaused = true
-    loadedGeneration = 0L
-    defaultUserAgent = null
-    pendingPositionRestoreGeneration = 0L
-    pendingPositionRestoreOverride = null
-    initialPositionGeneration = 0L
-    suspendedVideoTrack = null
-    deferredVideoSelectionGeneration = null
-    pendingStopClearQueue = false
-    clearSeekAudioGuardLocked(restoreMute = false)
-    clearPlaybackTransitionAudioGuardLocked(restoreMute = false)
-    runCatching { MPVLib.setPropertyBoolean("mute", true) }
-    runCatching { MPVLib.setPropertyBoolean("pause", true) }
-    runCatching { MPVLib.setPropertyString("vo", "null") }
-    runCatching { MPVLib.detachSurface() }
-    attachedSurfaceOwner = null
-    runCatching { MPVLib.removeObserver(this) }
-    runCatching { MPVLib.destroy() }
-      .onFailure { error -> Log.e(TAG, "Failed to destroy libmpv", error) }
-    releaseActiveNetworkStreamLocked()
-    releaseAuxiliaryNetworkStreamsLocked()
-    observers.clear()
-    observedProperties.clear()
-    resetAmbientShaderTrackingLocked()
-    initialized = false
-    nativeCoreReady = false
-    activeCoreConfigurationKey = null
-    activeSurfaceFrameRateHintHz = null
-    clearTimelinePropertiesLocked()
-    updateState { PlaybackSessionState(phase = PlaybackPhase.UNINITIALIZED) }
   }
 
   fun replaceQueue(
@@ -686,14 +739,19 @@ object PlaybackSession : MPVLib.EventObserver {
     positionRestoreOverride: PlaybackPositionRestoreOverride? = null,
     initialPositionSeconds: Double? = null,
     flattenEditions: Boolean = false,
+    disableWebExtraction: Boolean = app.infinity.mpvz.utils.media.RadioStreamProbe.cachedAudioMimeType(item.playableUri, item.headers) != null,
     commit: ((() -> Long) -> Long)? = null,
+    verifyNativePathAfterRestart: Boolean = false,
+    onGenerationReserved: ((Long) -> Unit)? = null,
   ): Long {
     val resolved = resolvePlayableUri(item)
+    var nativeCommitInvoked = false
     return try {
       var previous: NetworkStreamRegistration? = null
       var previousAuxiliary = emptyList<NetworkStreamRegistration>()
       val performCommit = {
-        nativeLock.withLock {
+        val commitNative = {
+          nativeCommitInvoked = true
           val generation =
             load(
               playableUri = resolved.uri,
@@ -702,6 +760,9 @@ object PlaybackSession : MPVLib.EventObserver {
               positionRestoreOverride = positionRestoreOverride,
               initialPositionSeconds = initialPositionSeconds,
               flattenEditions = flattenEditions,
+              disableWebExtraction = disableWebExtraction,
+              verifyNativePathAfterRestart = verifyNativePathAfterRestart,
+              onGenerationReserved = onGenerationReserved,
             )
           if (generation >= 0L) {
             previous = activeNetworkStream
@@ -711,12 +772,19 @@ object PlaybackSession : MPVLib.EventObserver {
           }
           generation
         }
+        nativeLock.withLock { commitNative() }
       }
       val generation = commit?.invoke(performCommit) ?: performCommit()
       if (generation < 0L) {
+        resolved.closeUnconsumedFd()
         resolved.registration?.let(::releaseNetworkStream)
         generation
       } else {
+        _queue.update { queue ->
+          if (queue.currentItem?.stableId != item.stableId) queue else {
+            queue.copy(items = queue.items.toMutableList().apply { set(queue.currentIndex, item) })
+          }
+        }
         val previousRegistration = previous
         if (previousRegistration != null && previousRegistration != resolved.registration) {
           releaseNetworkStream(previousRegistration)
@@ -725,6 +793,9 @@ object PlaybackSession : MPVLib.EventObserver {
         generation
       }
     } catch (error: Throwable) {
+      // Once native load was invoked, fd ownership is ambiguous; never close a
+      // potentially consumed/reused fd. Fenced pre-commit aborts are unambiguous.
+      if (!nativeCommitInvoked) resolved.closeUnconsumedFd()
       resolved.registration?.let(::releaseNetworkStream)
       throw error
     }
@@ -737,6 +808,9 @@ object PlaybackSession : MPVLib.EventObserver {
     positionRestoreOverride: PlaybackPositionRestoreOverride? = null,
     initialPositionSeconds: Double? = null,
     flattenEditions: Boolean = false,
+    disableWebExtraction: Boolean = false,
+    verifyNativePathAfterRestart: Boolean = false,
+    onGenerationReserved: ((Long) -> Unit)? = null,
   ): Long =
     withCore(default = -1L) {
       if (_state.value.phase == PlaybackPhase.STOPPING) return@withCore -1L
@@ -780,16 +854,30 @@ object PlaybackSession : MPVLib.EventObserver {
       // from the pre-restore timeline can reach AudioTrack and sound like a glitch/warble.
       beginPlaybackTransitionAudioGuardLocked(canRestore = true)
 
-      val generation = _state.value.generation + 1L
+      val generation = PlaybackGenerationPolicy.next(_state.value.generation)
+      interpolationRestartLoadFence = if (verifyNativePathAfterRestart) MpvRestartLoadFence(generation, playableUri) else null
       val initialPosition = initialPositionSeconds?.takeIf { it.isFinite() && it > 0.0 }
+      // Live HTTP M3U audio has no meaningful timeline. mpv may expose a
+      // one-second probe duration and a very large time-pos; neither is a
+      // resume point. Preserve restore behavior for ordinary seekable media.
+      val isLiveRadio = RadioMetadataPolicy.isRadio(
+        queueIsM3u = _queue.value.isM3u,
+        itemIsAudio = resolvedItem.isDefinitelyAudioOnly(),
+        streamUri = resolvedItem.originalUri.ifBlank { resolvedItem.playableUri },
+        durationSeconds = resolvedItem.durationSeconds,
+      )
       pendingPositionRestoreGeneration =
         generation.takeIf {
-          positionRestoreOverride != null || (restoreSavedPosition && !resolvedItem.isDefinitelyAudioOnly())
+          !isLiveRadio && (positionRestoreOverride != null || (restoreSavedPosition && !resolvedItem.isDefinitelyAudioOnly()))
         } ?: 0L
       pendingPositionRestoreOverride = positionRestoreOverride?.let { generation to it }
-      initialPositionGeneration = generation.takeIf { initialPosition != null } ?: 0L
+      initialPositionGeneration = generation.takeIf { initialPosition != null && !isLiveRadio } ?: 0L
       val holdForPositionRestore = pendingPositionRestoreGeneration == generation
       deferredVideoSelectionGeneration = generation.takeIf { videoSelection == PlaybackVideoSelection.DEFERRED }
+      _radioHeaders.value = null
+      radioProbeJob?.cancel()
+      radioProbeJob = null
+      propString.clearMediaMetadata()
       updateState {
         it.copy(
           phase = PlaybackPhase.LOADING,
@@ -799,14 +887,44 @@ object PlaybackSession : MPVLib.EventObserver {
           error = null,
         )
       }
+      onGenerationReserved?.invoke(generation)
       clearTimelinePropertiesLocked()
       val userAgent = PlaybackHttpHeaders.userAgent(resolvedItem.headers)
-      val headerFields = PlaybackHttpHeaders.toMpvHeaderFields(resolvedItem.headers)
+      val headerFields = buildList {
+        PlaybackHttpHeaders.toMpvHeaderFields(resolvedItem.headers).takeIf { it.isNotBlank() }?.let(::add)
+        // Icecast/Shoutcast only sends in-band StreamTitle blocks when the client opts in.
+        // Scope this to M3U audio so ordinary HTTP media requests retain their exact headers.
+        if (_queue.value.isM3u && resolvedItem.isDefinitelyAudioOnly() &&
+          resolvedItem.headers.keys.none { it.equals("Icy-MetaData", true) }) add("Icy-MetaData: 1")
+      }.joinToString(",")
       // URL-specific headers are request metadata, not a global mpv preference. Always apply the
       // media UA, then restore the post-mpv.conf default for a headerless item.
       MPVLib.setPropertyString("user-agent", userAgent ?: defaultUserAgent.orEmpty())
       MPVLib.setPropertyString("http-header-fields", headerFields)
       MPVLib.setPropertyString("force-media-title", "")
+      val stationHeaders = RadioStreamProbe.cachedMetadata(resolvedItem.playableUri, resolvedItem.headers)
+        ?: RadioStreamProbe.cachedMetadata(resolvedItem.originalUri, resolvedItem.headers)
+      _radioHeaders.value = stationHeaders?.let { resolvedItem.stableId to it }
+      if (stationHeaders == null && _queue.value.isM3u && resolvedItem.isDefinitelyAudioOnly()) {
+        val probeGeneration = generation
+        val probeItem = resolvedItem
+        radioProbeJob = radioProbeScope.launch {
+          // The probe is header-only, timeout-bounded, and cancellation-aware;
+          // detectAudioMimeType also caches the response for the normal load path.
+          RadioStreamProbe.detectAudioMimeType(probeItem.playableUri, probeItem.headers)
+          val metadata = RadioStreamProbe.cachedMetadata(probeItem.playableUri, probeItem.headers)
+            ?: RadioStreamProbe.cachedMetadata(probeItem.originalUri, probeItem.headers)
+          if (metadata != null) {
+            nativeLock.withLock {
+              if (_state.value.generation == probeGeneration &&
+                _state.value.currentItem?.stableId == probeItem.stableId
+              ) {
+                _radioHeaders.value = probeItem.stableId to metadata
+              }
+            }
+          }
+        }
+      }
 
       // Disable the outgoing track only once this replacement request owns the native lock. Doing
       // it during asynchronous URI preparation can blank playback even when that work is cancelled.
@@ -817,6 +935,9 @@ object PlaybackSession : MPVLib.EventObserver {
           add("pause=yes")
           add(if (selectVideoForNewFile) "vid=auto" else "vid=no")
           if (resolvedItem.isDefinitelyAudioOnly()) add("aid=auto")
+          // Confirmed radio mounts are already media; spawning the ytdl hook here can
+          // fail on Android fdsan and is both unnecessary and slower than direct demuxing.
+          if (disableWebExtraction) add("ytdl=no")
           initialPosition?.let { add("start=$it") }
           if (flattenEditions && !MpvConfigOverridePolicy.isOwnedByMpvConf("flatten-editions")) {
             add("flatten-editions=yes")
@@ -1206,229 +1327,262 @@ object PlaybackSession : MPVLib.EventObserver {
     registration?.let(::releaseNetworkStream)
   }
 
+  private inline fun deliverNativeCallback(block: () -> Unit) {
+    if (!nativeCallbackGate.tryEnter()) return
+    try {
+      if (retiringCore || !initialized) return
+      block()
+    } finally {
+      nativeCallbackGate.leave()
+    }
+  }
+
   override fun eventProperty(property: String) {
-    propBoolean.emit(property, null)
-    propString.emit(property, null)
-    propDouble.emit(property, null)
-    propFloat.emit(property, null)
-    propLong.emit(property, null)
-    propInt.emit(property, null)
-    propNode.emit(property, null)
-    observerSnapshot().forEach { observer -> runCatching { observer.eventProperty(property) } }
+    deliverNativeCallback {
+      propBoolean.emit(property, null)
+      propString.emit(property, null)
+      propDouble.emit(property, null)
+      propFloat.emit(property, null)
+      propLong.emit(property, null)
+      propInt.emit(property, null)
+      propNode.emit(property, null)
+      observerSnapshot().forEach { observer -> runCatching { observer.eventProperty(property) } }
+    }
   }
 
   override fun eventProperty(
     property: String,
     value: Long,
   ) {
-    if (shouldSuppressTimelineUpdate(property)) {
-      propLong.emit(property, null)
-      propInt.emit(property, null)
-      return
+    deliverNativeCallback {
+      if (shouldSuppressTimelineUpdate(property)) {
+        propLong.emit(property, null)
+        propInt.emit(property, null)
+        return
+      }
+      propLong.emit(property, value)
+      propInt.emit(property, value.toInt())
+      observerSnapshot().forEach { observer -> runCatching { observer.eventProperty(property, value) } }
     }
-    propLong.emit(property, value)
-    propInt.emit(property, value.toInt())
-    observerSnapshot().forEach { observer -> runCatching { observer.eventProperty(property, value) } }
   }
 
   override fun eventProperty(
     property: String,
     value: Boolean,
   ) {
-    val effectiveValue =
-      if (property == "pause" && _state.value.phase == PlaybackPhase.LOADING) _state.value.paused else value
-    if (property == "pause") updateState { it.copy(paused = effectiveValue) }
-    propBoolean.emit(property, effectiveValue)
-    observerSnapshot().forEach { observer -> runCatching { observer.eventProperty(property, effectiveValue) } }
+    deliverNativeCallback {
+      val effectiveValue =
+        if (property == "pause" && _state.value.phase == PlaybackPhase.LOADING) _state.value.paused else value
+      if (property == "pause") updateState { it.copy(paused = effectiveValue) }
+      propBoolean.emit(property, effectiveValue)
+      observerSnapshot().forEach { observer -> runCatching { observer.eventProperty(property, effectiveValue) } }
+    }
   }
 
   override fun eventProperty(
     property: String,
     value: String,
   ) {
-    propString.emit(property, value)
-    observerSnapshot().forEach { observer -> runCatching { observer.eventProperty(property, value) } }
+    deliverNativeCallback {
+      propString.emit(property, value)
+      observerSnapshot().forEach { observer -> runCatching { observer.eventProperty(property, value) } }
+    }
   }
 
   override fun eventProperty(
     property: String,
     value: Double,
   ) {
-    if (shouldSuppressTimelineUpdate(property)) {
-      propDouble.emit(property, null)
-      propFloat.emit(property, null)
-      return
+    deliverNativeCallback {
+      if (shouldSuppressTimelineUpdate(property)) {
+        propDouble.emit(property, null)
+        propFloat.emit(property, null)
+        return
+      }
+      propDouble.emit(property, value)
+      propFloat.emit(property, value.toFloat())
+      observerSnapshot().forEach { observer -> runCatching { observer.eventProperty(property, value) } }
     }
-    propDouble.emit(property, value)
-    propFloat.emit(property, value.toFloat())
-    observerSnapshot().forEach { observer -> runCatching { observer.eventProperty(property, value) } }
   }
 
   override fun eventProperty(
     property: String,
     value: MPVNode,
   ) {
-    propNode.emit(property, value)
-    observerSnapshot().forEach { observer -> runCatching { observer.eventProperty(property, value) } }
+    deliverNativeCallback {
+      propNode.emit(property, value)
+      observerSnapshot().forEach { observer -> runCatching { observer.eventProperty(property, value) } }
+    }
   }
 
   override fun event(
     eventId: Int,
     data: MPVNode,
   ) {
-    val shouldForward =
-      nativeLock.withLock {
-        when (eventId) {
-          MPVLib.MpvEvent.MPV_EVENT_START_FILE -> {
-            // loadfile 'replace' commands can coalesce inside one mpv dispatch batch, in which case
-            // mpv only ever starts the newest target and emits a single START_FILE for it. Any
-            // per-load FIFO desyncs permanently on that skip, so the started file is always
-            // attributed to the latest requested generation.
-            if (_state.value.phase != PlaybackPhase.STOPPING) {
-              updateState { it.copy(phase = PlaybackPhase.LOADING, activeGeneration = it.generation) }
-            }
-            true
-          }
-          MPVLib.MpvEvent.MPV_EVENT_FILE_LOADED -> {
-            val current = _state.value
-            if (current.phase == PlaybackPhase.STOPPING) {
-              runCatching { MPVLib.command("stop") }
-              return@withLock true
-            }
-            loadedGeneration = current.generation
-            loadedPlaybackItem = current.currentItem
-            loadedAudiobookEnded = false
-            loadedAudiobookDurationMs = ((MPVLib.getPropertyDouble("duration") ?: 0.0) * 1000).toLong().coerceAtLeast(0)
-            current.currentItem?.let { AudiobookPlayback.onFileLoaded(it, current.generation) }
-            val restoringPosition = pendingPositionRestoreGeneration == current.generation
-            val appliedPaused = restoringPosition || desiredPaused
-            // Track/decoder replacement is now complete. Apply the latest user/service intent
-            // once instead of allowing pause writes to race the load operation. Saved-position
-            // loads stay paused until PlayerActivity finishes the database lookup and seek.
-            MPVLib.setPropertyBoolean("pause", appliedPaused)
-            // Surface ownership is the source of truth at this boundary. Activity observers can
-            // detach during recreation, and deferred-generation bookkeeping only covers loads that
-            // started without video. Repair a disabled selection before exposing READY so an
-            // attached player cannot remain on a black frame with audio.
-            if (current.surfaceAttached && current.currentItem?.isDefinitelyAudioOnly() != true) {
-              val selectedVideoTrack = MPVLib.getPropertyInt("vid")
-              if (selectedVideoTrack == null || selectedVideoTrack <= 0) {
-                MPVLib.setPropertyString("vid", "auto")
-              }
-              if (deferredVideoSelectionGeneration == current.generation) {
-                deferredVideoSelectionGeneration = null
-              }
-            }
-            updateState {
-              it.copy(
-                phase =
-                  if (restoringPosition) {
-                    PlaybackPhase.LOADING
-                  } else if (it.phase == PlaybackPhase.BACKGROUND) {
-                    PlaybackPhase.BACKGROUND
-                  } else {
-                    PlaybackPhase.READY
-                  },
-                activeGeneration = it.generation,
-                paused = appliedPaused,
-                error = null,
-              )
-            }
-            propBoolean.emit("pause", appliedPaused)
-            restoreSuspendedVideoTrackLocked()
-            // Some audio-only demuxers do not emit PLAYBACK_RESTART reliably. Keep the normal
-            // restart restoration, but also provide a delayed FILE_LOADED fallback so the
-            // transition guard cannot leave the first music item permanently muted.
-            schedulePlaybackTransitionAudioGuardRestoreLocked(750L)
-            true
-          }
-          MPVLib.MpvEvent.MPV_EVENT_PLAYBACK_RESTART -> {
-            scheduleSeekAudioGuardRestoreLocked(SEEK_AUDIO_RESTORE_DELAY_MS)
-            if (_state.value.phase != PlaybackPhase.STOPPING) {
-              schedulePlaybackTransitionAudioGuardRestoreLocked(PLAYBACK_TRANSITION_AUDIO_RESTORE_DELAY_MS)
-            }
-            true
-          }
-          MPVLib.MpvEvent.MPV_EVENT_END_FILE -> {
-            val current = _state.value
-            if (current.phase == PlaybackPhase.STOPPING) {
-              if (parseEndFileReason(data) == EndFileReason.REDIRECT) {
-                runCatching { MPVLib.command("stop") }
-              } else {
-                finalizeStopLocked()
-              }
-              return@withLock true
-            }
-            if (current.activeGeneration == current.generation) {
-              val reason = parseEndFileReason(data)
-              if (reason == EndFileReason.EOF) AudiobookPlayback.capture(reachedEnd = true)
-              if (reason == EndFileReason.REDIRECT && loadedGeneration != current.generation) {
-                // Redirects emit END_FILE before mpv starts the resolved target. Preserve LOADING;
-                // the following START_FILE belongs to the same app-level generation.
-                updateState { it.copy(activeGeneration = 0L) }
-              } else {
-                val failedBeforeReady = loadedGeneration != current.generation
-                val isFailure =
-                  reason == EndFileReason.ERROR ||
-                    (failedBeforeReady && reason !in setOf(EndFileReason.STOP, EndFileReason.QUIT))
-                val error =
-                  if (isFailure) {
-                    parseEndFileError(data)
-                      ?: "Playback ended before the media became ready (${reason.name.lowercase()})"
-                  } else {
-                    null
-                  }
-                if (isFailure) {
-                  Log.w(
-                    TAG,
-                    "Load generation ${current.generation} failed before FILE_LOADED: $error; " +
-                      "event=${runCatching { data.toJson() }.getOrDefault("unavailable")}",
-                  )
-                }
-                updateState {
-                  it.copy(
-                    phase = if (isFailure) PlaybackPhase.ERROR else PlaybackPhase.IDLE,
-                    activeGeneration = 0L,
-                    paused = true,
-                    error = error,
-                  )
-                }
-                propBoolean.emit("pause", true)
-                clearTimelinePropertiesLocked()
-              }
-            }
-            true
-          }
-          MPVLib.MpvEvent.MPV_EVENT_SHUTDOWN -> {
-            loadedPlaybackItem = null
-            loadedAudiobookEnded = false
-            loadedAudiobookDurationMs = 0L
-            releaseActiveNetworkStream()
-            releaseAuxiliaryNetworkStreams()
-            suspendedVideoTrack = null
-            deferredVideoSelectionGeneration = null
-            desiredPaused = true
-            loadedGeneration = 0L
-            defaultUserAgent = null
-            pendingPositionRestoreGeneration = 0L
-            pendingPositionRestoreOverride = null
-            initialPositionGeneration = 0L
-            pendingStopClearQueue = false
-            clearSeekAudioGuardLocked(restoreMute = false)
-            clearPlaybackTransitionAudioGuardLocked(restoreMute = false)
-            resetAmbientShaderTrackingLocked()
-            initialized = false
-            nativeCoreReady = false
-            clearTimelinePropertiesLocked()
-            updateState { it.copy(phase = PlaybackPhase.UNINITIALIZED, surfaceAttached = false, paused = true) }
-            true
-          }
-          else -> true
-        }
-      }
+    deliverNativeCallback {
+      val shouldForward =
+        nativeLock.withLock {
+          if (retiringCore || !nativeCoreReady) return@withLock false
 
-    if (shouldForward) {
-      observerSnapshot().forEach { observer -> runCatching { observer.event(eventId, data) } }
+          when (eventId) {
+            MPVLib.MpvEvent.MPV_EVENT_START_FILE -> {
+              // loadfile 'replace' commands can coalesce inside one mpv dispatch batch, in which case
+              // mpv only ever starts the newest target and emits a single START_FILE for it. Any
+              // per-load FIFO desyncs permanently on that skip, so the started file is always
+              // attributed to the latest requested generation.
+              if (_state.value.phase != PlaybackPhase.STOPPING) {
+                updateState { it.copy(phase = PlaybackPhase.LOADING, activeGeneration = it.generation) }
+              }
+              true
+            }
+            MPVLib.MpvEvent.MPV_EVENT_FILE_LOADED -> {
+              val current = _state.value
+              interpolationRestartLoadFence?.let { fence ->
+                if (loadedGeneration == current.generation || !MpvRestartLoadFencePolicy.accepts(
+                    fence, current.generation, MPVLib.getPropertyString("path"),
+                    MPVLib.getPropertyInt("track-list/count") ?: 0)) {
+                  return@withLock false
+                }
+              }
+              if (current.phase == PlaybackPhase.STOPPING) {
+                runCatching { MPVLib.command("stop") }
+                return@withLock true
+              }
+              loadedGeneration = current.generation
+              loadedPlaybackItem = current.currentItem
+              loadedAudiobookEnded = false
+              loadedAudiobookDurationMs = ((MPVLib.getPropertyDouble("duration") ?: 0.0) * 1000).toLong().coerceAtLeast(0)
+              current.currentItem?.let { AudiobookPlayback.onFileLoaded(it, current.generation) }
+              val restoringPosition = pendingPositionRestoreGeneration == current.generation
+              val appliedPaused = restoringPosition || desiredPaused
+              // Track/decoder replacement is now complete. Apply the latest user/service intent
+              // once instead of allowing pause writes to race the load operation. Saved-position
+              // loads stay paused until PlayerActivity finishes the database lookup and seek.
+              MPVLib.setPropertyBoolean("pause", appliedPaused)
+              // Surface ownership is the source of truth at this boundary. Activity observers can
+              // detach during recreation, and deferred-generation bookkeeping only covers loads that
+              // started without video. Repair a disabled selection before exposing READY so an
+              // attached player cannot remain on a black frame with audio.
+              if (current.surfaceAttached && current.currentItem?.isDefinitelyAudioOnly() != true) {
+                val selectedVideoTrack = MPVLib.getPropertyInt("vid")
+                if (selectedVideoTrack == null || selectedVideoTrack <= 0) {
+                  MPVLib.setPropertyString("vid", "auto")
+                }
+                if (deferredVideoSelectionGeneration == current.generation) {
+                  deferredVideoSelectionGeneration = null
+                }
+              }
+              updateState {
+                it.copy(
+                  phase =
+                    if (restoringPosition) {
+                      PlaybackPhase.LOADING
+                    } else if (it.phase == PlaybackPhase.BACKGROUND) {
+                      PlaybackPhase.BACKGROUND
+                    } else {
+                      PlaybackPhase.READY
+                    },
+                  activeGeneration = it.generation,
+                  paused = appliedPaused,
+                  error = null,
+                )
+              }
+              propBoolean.emit("pause", appliedPaused)
+              restoreSuspendedVideoTrackLocked()
+              // Some audio-only demuxers do not emit PLAYBACK_RESTART reliably. Keep the normal
+              // restart restoration, but also provide a delayed FILE_LOADED fallback so the
+              // transition guard cannot leave the first music item permanently muted.
+              schedulePlaybackTransitionAudioGuardRestoreLocked(750L)
+              true
+            }
+            MPVLib.MpvEvent.MPV_EVENT_PLAYBACK_RESTART -> {
+              scheduleSeekAudioGuardRestoreLocked(SEEK_AUDIO_RESTORE_DELAY_MS)
+              if (_state.value.phase != PlaybackPhase.STOPPING) {
+                schedulePlaybackTransitionAudioGuardRestoreLocked(PLAYBACK_TRANSITION_AUDIO_RESTORE_DELAY_MS)
+              }
+              true
+            }
+            MPVLib.MpvEvent.MPV_EVENT_END_FILE -> {
+              val current = _state.value
+              if (current.phase == PlaybackPhase.STOPPING) {
+                if (parseEndFileReason(data) == EndFileReason.REDIRECT) {
+                  runCatching { MPVLib.command("stop") }
+                } else {
+                  finalizeStopLocked()
+                }
+                return@withLock true
+              }
+              if (current.activeGeneration == current.generation) {
+                val reason = parseEndFileReason(data)
+                if (reason == EndFileReason.EOF) AudiobookPlayback.capture(reachedEnd = true)
+                if (reason == EndFileReason.REDIRECT && loadedGeneration != current.generation) {
+                  // Redirects emit END_FILE before mpv starts the resolved target. Preserve LOADING;
+                  // the following START_FILE belongs to the same app-level generation.
+                  updateState { it.copy(activeGeneration = 0L) }
+                } else {
+                  val failedBeforeReady = loadedGeneration != current.generation
+                  val isFailure =
+                    reason == EndFileReason.ERROR ||
+                      (failedBeforeReady && reason !in setOf(EndFileReason.STOP, EndFileReason.QUIT))
+                  val error =
+                    if (isFailure) {
+                      parseEndFileError(data)
+                        ?: "Playback ended before the media became ready (${reason.name.lowercase()})"
+                    } else {
+                      null
+                    }
+                  if (isFailure) {
+                    Log.w(
+                      TAG,
+                      "Load generation ${current.generation} failed before FILE_LOADED: $error; " +
+                        "event=${runCatching { data.toJson() }.getOrDefault("unavailable")}",
+                    )
+                  }
+                  updateState {
+                    it.copy(
+                      phase = if (isFailure) PlaybackPhase.ERROR else PlaybackPhase.IDLE,
+                      activeGeneration = 0L,
+                      paused = true,
+                      error = error,
+                    )
+                  }
+                  propBoolean.emit("pause", true)
+                  clearTimelinePropertiesLocked()
+                }
+              }
+              true
+            }
+            MPVLib.MpvEvent.MPV_EVENT_SHUTDOWN -> {
+              loadedPlaybackItem = null
+              loadedAudiobookEnded = false
+              loadedAudiobookDurationMs = 0L
+              releaseActiveNetworkStream()
+              releaseAuxiliaryNetworkStreams()
+              suspendedVideoTrack = null
+              deferredVideoSelectionGeneration = null
+              desiredPaused = true
+              loadedGeneration = 0L
+              defaultUserAgent = null
+              pendingPositionRestoreGeneration = 0L
+              pendingPositionRestoreOverride = null
+              initialPositionGeneration = 0L
+              pendingStopClearQueue = false
+              clearSeekAudioGuardLocked(restoreMute = false)
+              clearPlaybackTransitionAudioGuardLocked(restoreMute = false)
+              resetAmbientShaderTrackingLocked()
+              initialized = false
+              nativeCoreReady = false
+              clearTimelinePropertiesLocked()
+              updateState { it.copy(phase = PlaybackPhase.UNINITIALIZED, surfaceAttached = false, paused = true) }
+              true
+            }
+            else -> true
+          }
+        }
+
+      if (shouldForward) {
+        observerSnapshot().forEach { observer -> runCatching { observer.event(eventId, data) } }
+      }
     }
   }
 
@@ -1782,7 +1936,8 @@ object PlaybackSession : MPVLib.EventObserver {
       val refreshedUri =
         Uri.parse(NetworkPlaybackUri.normalize(item.originalUri)).openContentFd(context)
           ?: error("Unable to reopen content URI for playback")
-      return ResolvedPlayable(refreshedUri)
+      return ResolvedPlayable(refreshedUri,
+        ownedFd = refreshedUri.takeIf { it.startsWith("fd://") }?.removePrefix("fd://")?.toIntOrNull())
     }
 
     // Resolve a local path for native integrations that cannot consume content:// directly.
@@ -1854,20 +2009,20 @@ object PlaybackSession : MPVLib.EventObserver {
     default: T,
     allowInitializing: Boolean = true,
     block: () -> T,
-  ): T =
-    nativeLock.withLock {
-      if (!initialized && !(allowInitializing && _state.value.phase == PlaybackPhase.INITIALIZING)) {
-        return@withLock default
-      }
-      block()
-    }
+  ): T = nativeLock.withLock {
+    val initializingOnLifecycleThread =
+      allowInitializing && _state.value.phase == PlaybackPhase.INITIALIZING &&
+        nativeLifecycleLock.isHeldByCurrentThread
+    if (retiringCore || (!initialized && !initializingOnLifecycleThread)) return@withLock default
+    block()
+  }
 
   private inline fun <T> withReadyCore(
     default: T,
     block: () -> T,
   ): T =
     nativeLock.withLock {
-      if (!nativeCoreReady) return@withLock default
+      if (!nativeCoreReady || retiringCore || (!initialized && !nativeLifecycleLock.isHeldByCurrentThread)) return@withLock default
       block()
     }
 

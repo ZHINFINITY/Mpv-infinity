@@ -190,6 +190,13 @@ android {
     checkReleaseBuilds = false
     abortOnError = false
   }
+
+  testOptions {
+    unitTests {
+      isIncludeAndroidResources = true
+      all { it.maxHeapSize = "2g" }
+    }
+  }
 }
 
 androidComponents {
@@ -255,8 +262,14 @@ dependencies {
   implementation(libs.androidx.compose.material)
   implementation(libs.androidx.ui.tooling.preview)
   debugImplementation(libs.androidx.ui.tooling)
+  debugImplementation(platform(libs.androidx.compose.bom))
+  debugImplementation("androidx.compose.ui:ui-test-manifest")
   debugImplementation(libs.leakcanary.android)
   testImplementation("junit:junit:4.13.2")
+  testImplementation(platform(libs.androidx.compose.bom))
+  testImplementation("androidx.compose.ui:ui-test-junit4")
+  testImplementation("org.robolectric:robolectric:4.16.1")
+  testImplementation("com.squareup.okhttp3:mockwebserver:${libs.versions.okhttp.get()}")
   implementation(libs.bundles.compose.navigation3)
   implementation(libs.androidx.appcompat)
   implementation(libs.androidx.core.ktx)

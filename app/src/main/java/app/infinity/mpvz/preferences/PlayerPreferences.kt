@@ -102,6 +102,7 @@ class PlayerPreferences(
 
   val playlistMode = preferenceStore.getBoolean("playlist_mode", true)
   val playlistViewMode = preferenceStore.getBoolean("playlist_view_mode_list", true) // true = list, false = grid
+  val openRadioM3uInMusic = preferenceStore.getBoolean("open_radio_m3u_in_music", true)
 
   val useWavySeekbar = preferenceStore.getBoolean("use_wavy_seekbar", true)
 

@@ -1,10 +1,28 @@
 package app.infinity.mpvz.ui.player
 
 import app.infinity.mpvz.database.entities.AudiobookEntity
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.resetMain
+import kotlinx.coroutines.test.setMain
+import org.junit.After
+import org.junit.Before
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
 class AudiobookPlaybackTest {
+  private val mainDispatcher = StandardTestDispatcher()
+
+  @Before
+  fun setUpMainDispatcher() {
+    Dispatchers.setMain(mainDispatcher)
+  }
+
+  @After
+  fun tearDownMainDispatcher() {
+    Dispatchers.resetMain()
+  }
+
   @Test
   fun restoresSavedTrackPositionAndHonorsExplicitStartOver() {
     val nowMs = 100_000L

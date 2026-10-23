@@ -7,12 +7,13 @@
 
 package app.infinity.mpvz.ui.browser.dialogs
 
+import app.infinity.mpvz.ui.components.GlassOptionSheet
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
-import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -38,12 +39,10 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SegmentedButton
-import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
-import androidx.compose.material3.Slider
+import app.infinity.mpvz.ui.player.controls.components.GlassSlider as Slider
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.ripple
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -52,9 +51,13 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -64,7 +67,12 @@ import app.infinity.mpvz.ui.icons.AppIcon
 import app.infinity.mpvz.ui.icons.Icon
 import app.infinity.mpvz.ui.icons.Icons
 import app.infinity.mpvz.ui.theme.AppShapeScale
+import app.infinity.mpvz.preferences.AppearancePreferences
+import app.infinity.mpvz.preferences.preference.collectAsState
+import app.infinity.mpvz.ui.preferences.components.settingsGlassContainerColor
+import app.infinity.mpvz.ui.preferences.components.settingsGlassSurface
 import kotlin.math.roundToInt
+import org.koin.compose.koinInject
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -92,25 +100,30 @@ fun SortDialog(
   if (!isOpen) return
 
   var isFieldsExpanded by rememberSaveable { mutableStateOf(false) }
+  val appearancePreferences = koinInject<AppearancePreferences>()
+  val glassEnabled by appearancePreferences.liquidGlassSurfaces.collectAsState()
 
   val (ascLabel, descLabel) = getLabelForType(sortType, sortOrderAsc)
 
-  AlertDialog(
+  // Opens from the bottom like the Jellyfin server-add sheet; the options scroll inside the
+  // sheet's bounded content area so every row stays reachable above the navigation bar.
+  GlassOptionSheet(
     onDismissRequest = onDismiss,
-    title = {
-      Text(
-        text = title,
-        style = MaterialTheme.typography.titleLarge,
-      )
-    },
-    text = {
-      Column {
+    title = { Text(text = title) },
+    modifier = modifier.settingsGlassSurface(cornerRadius = 28.dp, independent = true),
+    containerColor = settingsGlassContainerColor(MaterialTheme.colorScheme.surfaceContainerHigh),
+    content = {
+      Column(
+        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+      ) {
         HorizontalDivider()
         Column(
           modifier =
             Modifier
               .fillMaxWidth()
               .verticalScroll(rememberScrollState()),
+          verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
           if (showSortOptions) {
             DialogSectionTitle(text = "Sort by")
@@ -119,6 +132,7 @@ fun SortDialog(
               onSortTypeChange = onSortTypeChange,
               types = types,
               icons = icons,
+              glassEnabled = glassEnabled,
               modifier = Modifier.fillMaxWidth(),
             )
             Spacer(modifier = Modifier.height(6.dp))
@@ -127,6 +141,7 @@ fun SortDialog(
               onSortOrderChange = onSortOrderChange,
               ascLabel = ascLabel,
               descLabel = descLabel,
+              glassEnabled = glassEnabled,
               modifier = Modifier.fillMaxWidth(),
             )
           }
@@ -139,10 +154,11 @@ fun SortDialog(
             ) {
               viewModeSelector.options.forEachIndexed { index, option ->
                 SegmentedButton(
+                  modifier = Modifier.padding(horizontal = 3.dp),
                   selected = option.isSelected,
                   onClick = { if (enableViewModeOptions) option.onClick() },
-                  shape = SegmentedButtonDefaults.itemShape(index = index, count = viewModeSelector.options.size),
-                  colors = themedSegmentedButtonColors(),
+                  shape = RoundedCornerShape(50),
+                  colors = themedSegmentedButtonColors(borderAlpha = if (glassEnabled) 0f else 0.3f),
                 ) {
                   Text(text = option.label)
                 }
@@ -158,10 +174,11 @@ fun SortDialog(
             ) {
               val isFirstSelected = layoutModeSelector.isFirstOptionSelected
               SegmentedButton(
+                modifier = Modifier.padding(horizontal = 3.dp),
                 selected = isFirstSelected,
                 onClick = { if (enableLayoutModeOptions) layoutModeSelector.onViewModeChange(true) },
-                shape = SegmentedButtonDefaults.itemShape(index = 0, count = 2),
-                colors = themedSegmentedButtonColors(),
+                shape = RoundedCornerShape(50),
+                colors = themedSegmentedButtonColors(borderAlpha = if (glassEnabled) 0f else 0.3f),
                 icon = {
                   Icon(
                     imageVector = layoutModeSelector.firstOptionIcon,
@@ -173,10 +190,11 @@ fun SortDialog(
                 Text(text = layoutModeSelector.firstOptionLabel)
               }
               SegmentedButton(
+                modifier = Modifier.padding(horizontal = 3.dp),
                 selected = !isFirstSelected,
                 onClick = { if (enableLayoutModeOptions) layoutModeSelector.onViewModeChange(false) },
-                shape = SegmentedButtonDefaults.itemShape(index = 1, count = 2),
-                colors = themedSegmentedButtonColors(),
+                shape = RoundedCornerShape(50),
+                colors = themedSegmentedButtonColors(borderAlpha = if (glassEnabled) 0f else 0.3f),
                 icon = {
                   Icon(
                     imageVector = layoutModeSelector.secondOptionIcon,
@@ -196,6 +214,7 @@ fun SortDialog(
                   Modifier
                     .fillMaxWidth()
                     .clip(RoundedCornerShape(8.dp))
+                    .popupInnerFill(glassEnabled, 8.dp)
                     .clickable {
                       if (enableLayoutModeOptions) {
                         layoutModeSelector.onCheckboxChange.invoke(!layoutModeSelector.isCheckboxChecked)
@@ -219,18 +238,19 @@ fun SortDialog(
             }
           }
 
-          GridColumnsNextSection(
-            folderGridColumnSelector = folderGridColumnSelector,
-            videoGridColumnSelector = videoGridColumnSelector,
-          )
+              GridColumnsNextSection(
+                folderGridColumnSelector = folderGridColumnSelector,
+                videoGridColumnSelector = videoGridColumnSelector,
+                glassEnabled = glassEnabled,
+              )
 
           if (visibilityToggles.isNotEmpty()) {
             HorizontalDivider(modifier = Modifier.padding(top = 10.dp))
             Column(
               modifier =
                 Modifier
-                  .fillMaxWidth()
-                  .animateContentSize(animationSpec = tween(durationMillis = 250)),
+                    .fillMaxWidth()
+                    .animateContentSize(animationSpec = tween(durationMillis = 250)),
             ) {
               Row(
                 modifier =
@@ -260,16 +280,37 @@ fun SortDialog(
                     Modifier
                       .fillMaxWidth()
                       .wrapContentHeight(align = Alignment.Top),
-                  horizontalArrangement = Arrangement.spacedBy(6.dp),
-                  verticalArrangement = Arrangement.spacedBy(4.dp),
+                  horizontalArrangement = Arrangement.spacedBy(8.dp),
+                  verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
                   visibilityToggles.forEach { toggle ->
                     FilterChip(
+                      modifier = Modifier
+                        .widthIn(min = 76.dp),
+                      shape = RoundedCornerShape(18.dp),
                       selected = toggle.checked,
                       onClick = { toggle.onCheckedChange(!toggle.checked) },
                       label = { Text(text = toggle.label) },
+                      colors =
+                        if (glassEnabled) {
+                          FilterChipDefaults.filterChipColors(
+                            containerColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.06f),
+                            selectedContainerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.20f),
+                            selectedLabelColor = MaterialTheme.colorScheme.primary,
+                            selectedLeadingIconColor = MaterialTheme.colorScheme.primary,
+                          )
+                        } else {
+                          FilterChipDefaults.filterChipColors()
+                        },
                       border =
-                        FilterChipDefaults.filterChipBorder(
+                        if (glassEnabled) FilterChipDefaults.filterChipBorder(
+                          enabled = true,
+                          selected = toggle.checked,
+                          borderColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.14f),
+                          selectedBorderColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.55f),
+                          borderWidth = 1.dp,
+                          selectedBorderWidth = 1.dp,
+                        ) else FilterChipDefaults.filterChipBorder(
                           enabled = true,
                           selected = toggle.checked,
                           selectedBorderWidth = 1.dp,
@@ -285,7 +326,9 @@ fun SortDialog(
       }
     },
     confirmButton = {
-      TextButton(onClick = onDismiss) {
+      TextButton(onClick = onDismiss,
+        modifier = Modifier.popupInnerFill(glassEnabled, 18.dp),
+      ) {
         Text(
           text =
             androidx.compose.ui.res
@@ -293,19 +336,6 @@ fun SortDialog(
         )
       }
     },
-    containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-    tonalElevation = 6.dp,
-    shape = MaterialTheme.shapes.extraLarge,
-    modifier =
-      modifier
-        .widthIn(max = 500.dp)
-        .fillMaxWidth(0.88f),
-    properties =
-      DialogProperties(
-        usePlatformDefaultWidth = false,
-        dismissOnBackPress = true,
-        dismissOnClickOutside = true,
-      ),
   )
 }
 
@@ -315,6 +345,7 @@ private fun SortTypeSelector(
   onSortTypeChange: (String) -> Unit,
   types: List<String>,
   icons: List<AppIcon>,
+  glassEnabled: Boolean,
   modifier: Modifier = Modifier,
 ) {
   Row(
@@ -330,7 +361,11 @@ private fun SortTypeSelector(
       Column(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(2.dp),
-        modifier = Modifier.padding(2.dp),
+        modifier = Modifier.padding(2.dp).selectable(
+          selected = selected,
+          role = Role.RadioButton,
+          onClick = { onSortTypeChange(type) },
+        ),
       ) {
         Box(
           modifier =
@@ -339,15 +374,14 @@ private fun SortTypeSelector(
               .clip(AppShapeScale.large)
               .background(
                 color =
-                  if (selected) {
+                  if (glassEnabled) {
+                    if (selected) MaterialTheme.colorScheme.primary.copy(alpha = 0.20f)
+                    else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.06f)
+                  } else if (selected) {
                     MaterialTheme.colorScheme.primaryContainer
                   } else {
                     MaterialTheme.colorScheme.surfaceContainerHighest
                   },
-              ).clickable(
-                onClick = { onSortTypeChange(type) },
-                interactionSource = remember { MutableInteractionSource() },
-                indication = ripple(bounded = true),
               ),
           contentAlignment = Alignment.Center,
         ) {
@@ -385,6 +419,7 @@ private fun SortOrderSelector(
   onSortOrderChange: (Boolean) -> Unit,
   ascLabel: String,
   descLabel: String,
+  glassEnabled: Boolean,
   modifier: Modifier = Modifier,
 ) {
   val options = listOf(ascLabel, descLabel)
@@ -395,10 +430,11 @@ private fun SortOrderSelector(
   ) {
     options.forEachIndexed { index, label ->
       SegmentedButton(
+        modifier = Modifier.padding(horizontal = 3.dp),
         selected = index == selectedIndex,
         onClick = { onSortOrderChange(index == 0) },
-        shape = SegmentedButtonDefaults.itemShape(index = index, count = options.size),
-        colors = themedSegmentedButtonColors(),
+        shape = RoundedCornerShape(50),
+        colors = themedSegmentedButtonColors(borderAlpha = if (glassEnabled) 0f else 0.3f),
         icon = {
           Icon(
             imageVector =
@@ -433,6 +469,7 @@ private fun DialogSectionTitle(text: String) {
 private fun GridColumnsNextSection(
   folderGridColumnSelector: GridColumnSelector?,
   videoGridColumnSelector: GridColumnSelector?,
+  glassEnabled: Boolean,
 ) {
   if (folderGridColumnSelector == null && videoGridColumnSelector == null) return
 
@@ -443,7 +480,8 @@ private fun GridColumnsNextSection(
   if (folderGridColumnSelector != null && videoGridColumnSelector != null) {
     DialogSectionTitle(text = "Grid Columns")
     Row(
-      modifier = Modifier.fillMaxWidth(),
+      modifier = Modifier.fillMaxWidth().popupInnerFill(glassEnabled, 18.dp)
+        .padding(horizontal = if (glassEnabled) 12.dp else 0.dp, vertical = if (glassEnabled) 8.dp else 0.dp),
       horizontalArrangement = Arrangement.spacedBy(16.dp),
     ) {
       Column(modifier = Modifier.weight(1f)) {
@@ -477,7 +515,7 @@ private fun GridColumnsNextSection(
           },
           valueRange = folderGridColumnSelector.valueRange,
           steps = folderGridColumnSelector.steps,
-          modifier = Modifier.fillMaxWidth(),
+          modifier = Modifier.fillMaxWidth().semantics { contentDescription = folderGridColumnSelector.label },
         )
       }
 
@@ -512,14 +550,16 @@ private fun GridColumnsNextSection(
           },
           valueRange = videoGridColumnSelector.valueRange,
           steps = videoGridColumnSelector.steps,
-          modifier = Modifier.fillMaxWidth(),
+          modifier = Modifier.fillMaxWidth().semantics { contentDescription = videoGridColumnSelector.label },
         )
       }
     }
   } else {
     val selector = folderGridColumnSelector ?: videoGridColumnSelector!!
     Row(
-      modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+      modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
+        .popupInnerFill(glassEnabled, 18.dp)
+        .padding(horizontal = if (glassEnabled) 12.dp else 0.dp, vertical = if (glassEnabled) 6.dp else 0.dp),
       horizontalArrangement = Arrangement.SpaceBetween,
       verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -542,7 +582,7 @@ private fun GridColumnsNextSection(
       },
       valueRange = selector.valueRange,
       steps = selector.steps,
-      modifier = Modifier.fillMaxWidth(),
+      modifier = Modifier.fillMaxWidth().semantics { contentDescription = selector.label },
     )
   }
 }
@@ -586,3 +626,14 @@ data class GridColumnSelector(
   val steps: Int = 2,
   val unitSuffix: String = "cols",
 )
+
+/**
+ * Inner controls of a glass popup sit inside its single pane: a rounded translucent fill,
+ * not another floating glass pane (no nested shadow/rim, no clipped backplate).
+ */
+@Composable
+private fun Modifier.popupInnerFill(enabled: Boolean, cornerRadius: androidx.compose.ui.unit.Dp): Modifier =
+  if (!enabled) this
+  else this
+    .clip(RoundedCornerShape(cornerRadius))
+    .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.06f))

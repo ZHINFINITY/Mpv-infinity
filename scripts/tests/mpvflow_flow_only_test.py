@@ -43,7 +43,13 @@ def test_standard_workflow_is_flow_only() -> None:
             f"native cache behavior must keep {pin}"
         )
     for candidate in (workflow, flow_workflow):
-        assert candidate.count("uses: actions/cache/restore@v4") == 2
+        restores = [block for block in candidate.split("- name:") if "uses: actions/cache/restore@v4" in block]
+        expected_ids = {"mpvflow-runtime-cache", "mpvflow-runtime-legacy-cache"}
+        if "id: native-apt-cache\n" in candidate:
+            expected_ids.add("native-apt-cache")
+        actual_ids = {next(line.strip().split(":", 1)[1].strip() for line in block.splitlines()
+                           if line.strip().startswith("id:")) for block in restores}
+        assert len(restores) == len(expected_ids) and actual_ids == expected_ids
         assert "uses: actions/cache/save@v4" in candidate
         assert "MPVFLOW_RUNTIME_APK=$apk" in candidate
         assert "steps.mpvflow-runtime-cache.outputs.cache-hit == 'true'" in candidate
@@ -190,8 +196,13 @@ def test_mpvflow_settings_keep_single_toggle_and_target_fps() -> None:
     player = (ROOT / "app/src/main/java/app/infinity/mpvz/ui/player/MPVView.kt").read_text(encoding="utf-8")
 
     assert "settingsSearchTarget(R.string.pref_decoder_mpvflow_title)" in screen
-    assert "Surface(" in screen and "surfaceContainerLow" in screen
-    assert "titleStyle =" in screen and "MaterialTheme.typography.titleMedium" in screen
+    flow_title = screen.index("settingsSearchTarget(R.string.pref_decoder_mpvflow_title)")
+    flow_row_start = screen.rfind("PreferenceDivider()", 0, flow_title)
+    flow_row_end = screen.index("PreferenceDivider()", flow_title)
+    flow_row = screen[flow_row_start:flow_row_end]
+    assert "SwitchPreference(" in flow_row and "Surface(" not in flow_row
+    assert "titleStyle =" not in flow_row and "padding(horizontal" not in flow_row
+    assert "stringResource(R.string.pref_decoder_mpvflow_summary)" in flow_row
     assert screen.count("preferences.mpvFlowFrameInterpolation.set(enabled)") == 1
     assert '<string name="pref_decoder_mpvflow_title">Frame interpolation</string>' in strings
     assert "pref_decoder_mpvflow_compute_api_" not in screen and "pref_decoder_mpvflow_compute_api_" not in strings

@@ -351,6 +351,7 @@ object NetworkStreamingScreen : Screen {
       if (MaterialTheme.colorScheme.background == Color.Black) Color.Black else MaterialTheme.colorScheme.surfaceContainer
 
     Scaffold(
+      containerColor = app.infinity.mpvz.ui.preferences.components.settingsGlassContainerColor(MaterialTheme.colorScheme.background),
       modifier = Modifier.fillMaxSize(),
       topBar = {
         Column(

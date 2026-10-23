@@ -7,6 +7,7 @@
 
 package app.infinity.mpvz.ui.browser.folderlist
 
+import app.infinity.mpvz.ui.browser.fab.quickPlayFabContainerColor
 import android.content.Context
 import android.content.Intent
 import android.util.Log
@@ -51,6 +52,8 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.ScaffoldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.ToggleFloatingActionButton
+import app.infinity.mpvz.ui.preferences.components.settingsGlassContainerColor
+import app.infinity.mpvz.ui.preferences.components.settingsGlassSurface
 import androidx.compose.material3.ToggleFloatingActionButtonDefaults.animateIcon
 import androidx.compose.material3.TooltipAnchorPosition
 import androidx.compose.material3.TooltipBox
@@ -194,6 +197,7 @@ object FolderListScreen : Screen {
     val appearancePreferences = koinInject<AppearancePreferences>()
     val showQuickPlayFab by appearancePreferences.showQuickPlayFab.collectAsState()
     val quickPlayFabDirect by appearancePreferences.quickPlayFabDirect.collectAsState()
+    val liquidGlass by appearancePreferences.liquidGlassSurfaces.collectAsState()
 
     // State collection
     val videoFolders by viewModel.videoFolders.collectAsState()
@@ -581,6 +585,7 @@ object FolderListScreen : Screen {
     @Composable
     fun FoldersPane() {
       Scaffold(
+        containerColor = if (liquidGlass) Color.Transparent else MaterialTheme.colorScheme.background,
         contentWindowInsets = if (embedded) WindowInsets(0, 0, 0, 0) else ScaffoldDefaults.contentWindowInsets,
         topBar = {
           if (embedded) {
@@ -631,7 +636,7 @@ object FolderListScreen : Screen {
             )
           } else {
             BrowserTopBar(
-              title = if (audiobookMode) "Audiobooks" else stringResource(app.infinity.mpvz.R.string.app_name),
+              title = if (audiobookMode) "Audiobooks" else "∞",
               isInSelectionMode = selectionManager.isInSelectionMode,
               selectedCount = selectionManager.selectedCount,
               totalCount = videoFolders.size,
@@ -760,8 +765,11 @@ object FolderListScreen : Screen {
                 state = rememberTooltipState(),
               ) {
                 ToggleFloatingActionButton(
+                  containerCornerRadius = app.infinity.mpvz.ui.browser.fab.quickPlayFabCornerRadius(),
+                  containerColor = quickPlayFabContainerColor(),
                   modifier =
-                    Modifier.animateFloatingActionButton(
+                    Modifier.settingsGlassSurface(cornerRadius = 20.dp)
+                    .animateFloatingActionButton(
                       visible = isFabShouldBeVisible,
                       alignment = Alignment.BottomEnd,
                     ),
@@ -1791,7 +1799,7 @@ private fun SearchResultsContent(
             start = 8.dp,
             end = 8.dp,
             top = 8.dp,
-            bottom = navigationBarHeight + 8.dp,
+            bottom = navigationBarHeight + 24.dp,
           ),
       ) {
         items(

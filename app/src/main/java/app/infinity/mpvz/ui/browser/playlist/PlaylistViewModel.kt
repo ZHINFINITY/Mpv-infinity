@@ -28,6 +28,7 @@ import java.io.File
 data class PlaylistWithCount(
   val playlist: PlaylistEntity,
   val itemCount: Int,
+  val isRadioM3u: Boolean = false,
 )
 
 class PlaylistViewModel(
@@ -68,7 +69,7 @@ class PlaylistViewModel(
           val quickLoad =
             visiblePlaylists(cachedPlaylists)
               .map { playlist ->
-                PlaylistWithCount(playlist, 0) // Show 0 count initially
+                PlaylistWithCount(playlist, 0, repository.isRadioM3uPlaylist(playlist)) // Show 0 count initially
               }
           _playlistsWithCount.value = quickLoad
           _hasCompletedInitialLoad.value = true
@@ -84,7 +85,7 @@ class PlaylistViewModel(
         val playlistsWithCounts =
           visiblePlaylists(playlistsFromDb).map { playlist ->
             val count = getActualVideoCount(playlist.id)
-            PlaylistWithCount(playlist, count)
+            PlaylistWithCount(playlist, count, repository.isRadioM3uPlaylist(playlist))
           }
 
         _playlistsWithCount.value = playlistsWithCounts
@@ -132,7 +133,7 @@ class PlaylistViewModel(
         val playlistsWithCounts =
           visiblePlaylists(playlistsFromDb).map { playlist ->
             val count = getActualVideoCount(playlist.id)
-            PlaylistWithCount(playlist, count)
+            PlaylistWithCount(playlist, count, repository.isRadioM3uPlaylist(playlist))
           }
 
         _playlistsWithCount.value = playlistsWithCounts
@@ -149,10 +150,11 @@ class PlaylistViewModel(
   suspend fun createM3UPlaylist(
     url: String,
     userAgent: String? = null,
-  ): Result<Long> = repository.createM3UPlaylist(url, userAgent)
+    forceRadio: Boolean = false,
+  ): Result<Long> = repository.createM3UPlaylist(url, userAgent, forceRadio)
 
-  suspend fun createM3UPlaylistFromFile(uri: android.net.Uri): Result<Long> =
-    repository.createM3UPlaylistFromFile(getApplication(), uri)
+  suspend fun createM3UPlaylistFromFile(uri: android.net.Uri, forceRadio: Boolean = false): Result<Long> =
+    repository.createM3UPlaylistFromFile(getApplication(), uri, forceRadio)
 
   suspend fun refreshM3UPlaylist(playlistId: Int): Result<Unit> = repository.refreshM3UPlaylist(playlistId)
 

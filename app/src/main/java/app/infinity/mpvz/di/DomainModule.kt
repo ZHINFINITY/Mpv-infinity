@@ -59,7 +59,7 @@ val domainModule =
     single { IntroDbRepository(get(), get()) }
     single { OpenCodeClient(get(), get()) }
     single { GroqClient(get(), get()) }
-    single { OpenAiClient(get(), get()) }
+    single { OpenAiClient(get(), get(), get()) }
     single { AnthropicClient(get(), get()) }
     single { OpenRouterClient(get(), get()) }
     single { TogetherClient(get(), get()) }
@@ -67,7 +67,7 @@ val domainModule =
     single { OpenRouterSpeechClient(get(), get()) }
     single<AiClient>(named("opencode")) { OpenCodeClient(get(), get()) }
     single<AiClient>(named("groq")) { GroqClient(get(), get()) }
-    single<AiClient>(named("openai")) { OpenAiClient(get(), get()) }
+    single<AiClient>(named("openai")) { OpenAiClient(get(), get(), get()) }
     single<AiClient>(named("anthropic")) { AnthropicClient(get(), get()) }
     single<AiClient>(named("openrouter")) { OpenRouterClient(get(), get()) }
     single<AiClient>(named("together")) { TogetherClient(get(), get()) }
@@ -85,6 +85,7 @@ val domainModule =
         get<AiClient>(named("openrouter")),
         get<AiClient>(named("together")),
         get<Json>(),
+        get<app.infinity.mpvz.repository.ai.EmbeddedSubtitleTranslator>(),
       )
     }
     single {

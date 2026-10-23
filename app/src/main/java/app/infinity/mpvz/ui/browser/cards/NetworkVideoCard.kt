@@ -102,7 +102,14 @@ fun NetworkVideoCard(
         null
       }
     }
-  var thumbnail by remember(thumbnailKey) { mutableStateOf<Bitmap?>(null) }
+  var thumbnail by remember(thumbnailKey) {
+    mutableStateOf<Bitmap?>(
+      if (thumbnailKey != null) thumbnailRepository.getThumbnailForNetworkPathFromMemory(
+        path = file.path, widthPx = thumbSizePx, heightPx = thumbSizePx,
+        connection = connection, fileSize = file.size, lastModified = file.lastModified,
+      ) else null,
+    )
+  }
 
   // Subscribe to ready-keys so folder-level prefetch also updates this card
   LaunchedEffect(thumbnailKey) {
@@ -110,8 +117,7 @@ fun NetworkVideoCard(
     thumbnailRepository.thumbnailReadyKeys
       .collect { key ->
         if (key == thumbnailKey) {
-          thumbnail =
-            withContext(Dispatchers.IO) {
+          val loaded = withContext(Dispatchers.IO) {
               thumbnailRepository.getThumbnailForNetworkPath(
                 path = file.path,
                 widthPx = thumbSizePx,
@@ -122,6 +128,7 @@ fun NetworkVideoCard(
                 lastModified = file.lastModified,
               )
             }
+          if (loaded != null) thumbnail = loaded
         }
       }
   }
@@ -129,10 +136,8 @@ fun NetworkVideoCard(
   // On-demand generation
   LaunchedEffect(thumbnailKey, displayThumb) {
     if (thumbnailKey == null || !displayThumb) return@LaunchedEffect
-    if (thumbnail != null) return@LaunchedEffect
     repeat(2) { attempt ->
-      thumbnail =
-        withContext(Dispatchers.IO) {
+      val loaded = withContext(Dispatchers.IO) {
           thumbnailRepository.getThumbnailForNetworkPath(
             path = file.path,
             widthPx = thumbSizePx,
@@ -143,6 +148,10 @@ fun NetworkVideoCard(
             lastModified = file.lastModified,
           )
         }
+      if (loaded != null) {
+        thumbnail = loaded
+        return@LaunchedEffect
+      }
       if (thumbnail != null) return@LaunchedEffect
       if (attempt == 0) delay(30_000L)
     }

@@ -268,18 +268,23 @@ fun VideoCard(
             }
 
           var thumbnail by remember(thumbnailRequestKey) {
-            mutableStateOf<Bitmap?>(null)
+            // Peek synchronously before the coroutine starts. Lazy-card disposal/reuse must
+            // not show a placeholder for a bitmap already retained by the repository.
+            mutableStateOf(
+              thumbnailRepository.getThumbnailFromMemory(video, resolvedThumbWidthPx, resolvedThumbHeightPx),
+            )
           }
 
+          // Paint a retained bitmap before any coroutine. Restore full quality from disk only
+          // when idle; never clear a painted image when the row is paused or leaves the viewport.
           LaunchedEffect(thumbnailRequestKey, allowThumbnailGeneration, allowThumbnailLoading, showThumbnails) {
-            if (!allowThumbnailGeneration && allowThumbnailLoading && thumbnail == null && showThumbnails) {
-              thumbnail =
-                withContext(Dispatchers.IO) {
-                  thumbnailRepository.getThumbnailFromMemory(video, resolvedThumbWidthPx, resolvedThumbHeightPx)
-                }
+            if (!allowThumbnailLoading || !showThumbnails) return@LaunchedEffect
+            val loaded = withContext(Dispatchers.IO) {
+              if (allowThumbnailGeneration) thumbnailRepository.getThumbnail(video, resolvedThumbWidthPx, resolvedThumbHeightPx)
+              else thumbnailRepository.getCachedThumbnail(video, resolvedThumbWidthPx, resolvedThumbHeightPx)
             }
+            if (loaded != null) thumbnail = loaded
           }
-
           // Update thumbnail when the repository emits that this key became ready (folder prefetch or any other source).
           LaunchedEffect(thumbnailRequestKey, allowThumbnailLoading) {
             if (!allowThumbnailLoading) return@LaunchedEffect
@@ -287,22 +292,11 @@ fun VideoCard(
               .filter { key -> thumbnailRepository.isThumbnailKeyForVideo(key, video) }
               .flowOn(Dispatchers.IO)
               .collect {
-                thumbnail =
-                  withContext(Dispatchers.IO) {
-                    thumbnailRepository.getCachedThumbnail(video, resolvedThumbWidthPx, resolvedThumbHeightPx)
-                  }
-              }
-          }
-
-          // Optional immediate generation (used on screens that don't run folder-wide sequential generation).
-          LaunchedEffect(thumbnailRequestKey, allowThumbnailGeneration, allowThumbnailLoading, showThumbnails) {
-            if (allowThumbnailGeneration && allowThumbnailLoading && thumbnail == null && showThumbnails) {
-              thumbnail = runCatching {
-                withContext(Dispatchers.IO) {
-                  thumbnailRepository.getThumbnail(video, resolvedThumbWidthPx, resolvedThumbHeightPx)
+                val loaded = withContext(Dispatchers.IO) {
+                  thumbnailRepository.getCachedThumbnail(video, resolvedThumbWidthPx, resolvedThumbHeightPx)
                 }
-              }.getOrNull()
-            }
+                if (loaded != null) thumbnail = loaded
+              }
           }
 
           val thumbnailBitmap = remember(thumbnail) { thumbnail?.asImageBitmap() }
@@ -590,18 +584,23 @@ fun VideoCard(
 
           // Try to get from memory cache immediately (synchronous, no flicker)
           var thumbnail by remember(thumbnailRequestKey) {
-            mutableStateOf<Bitmap?>(null)
+            // Peek synchronously before the coroutine starts. Lazy-card disposal/reuse must
+            // not show a placeholder for a bitmap already retained by the repository.
+            mutableStateOf(
+              thumbnailRepository.getThumbnailFromMemory(video, thumbWidthPx, thumbHeightPx),
+            )
           }
 
+          // Paint a retained bitmap before any coroutine. Restore full quality from disk only
+          // when idle; never clear a painted image when the row is paused or leaves the viewport.
           LaunchedEffect(thumbnailRequestKey, allowThumbnailGeneration, allowThumbnailLoading, showThumbnails) {
-            if (!allowThumbnailGeneration && allowThumbnailLoading && thumbnail == null && showThumbnails) {
-              thumbnail =
-                withContext(Dispatchers.IO) {
-                  thumbnailRepository.getThumbnailFromMemory(video, thumbWidthPx, thumbHeightPx)
-                }
+            if (!allowThumbnailLoading || !showThumbnails) return@LaunchedEffect
+            val loaded = withContext(Dispatchers.IO) {
+              if (allowThumbnailGeneration) thumbnailRepository.getThumbnail(video, thumbWidthPx, thumbHeightPx)
+              else thumbnailRepository.getCachedThumbnail(video, thumbWidthPx, thumbHeightPx)
             }
+            if (loaded != null) thumbnail = loaded
           }
-
           // Update thumbnail when the repository emits that this key became ready (folder prefetch or any other source).
           LaunchedEffect(thumbnailRequestKey, allowThumbnailLoading) {
             if (!allowThumbnailLoading) return@LaunchedEffect
@@ -609,21 +608,11 @@ fun VideoCard(
               .filter { key -> thumbnailRepository.isThumbnailKeyForVideo(key, video) }
               .flowOn(Dispatchers.IO)
               .collect {
-                thumbnail =
-                  withContext(Dispatchers.IO) {
-                    thumbnailRepository.getCachedThumbnail(video, thumbWidthPx, thumbHeightPx)
-                  }
-              }
-          }
-
-          // Optional immediate generation (used on screens that don't run folder-wide sequential generation).
-          LaunchedEffect(thumbnailRequestKey, allowThumbnailGeneration, allowThumbnailLoading, showThumbnails) {
-            if (allowThumbnailGeneration && allowThumbnailLoading && thumbnail == null && showThumbnails) {
-              thumbnail =
-                withContext(Dispatchers.IO) {
-                  thumbnailRepository.getThumbnail(video, thumbWidthPx, thumbHeightPx)
+                val loaded = withContext(Dispatchers.IO) {
+                  thumbnailRepository.getCachedThumbnail(video, thumbWidthPx, thumbHeightPx)
                 }
-            }
+                if (loaded != null) thumbnail = loaded
+              }
           }
 
           val listThumbnailBitmap = remember(thumbnail) { thumbnail?.asImageBitmap() }

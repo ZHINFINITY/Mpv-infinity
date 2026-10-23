@@ -7,6 +7,7 @@
 
 package app.infinity.mpvz.ui.player.controls.components
 
+import app.infinity.mpvz.presentation.components.playerGlassOverlay
 import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
@@ -36,18 +37,14 @@ fun PlayerUpdate(
 ) {
   Surface(
     shape = CircleShape,
-    color = MaterialTheme.colorScheme.surfaceContainer.copy(alpha = 0.55f),
+    color = androidx.compose.ui.graphics.Color.Transparent,
     contentColor = MaterialTheme.colorScheme.onSurface,
     tonalElevation = 0.dp,
     shadowElevation = 0.dp,
-    border =
-      BorderStroke(
-        1.dp,
-        MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f),
-      ),
     modifier =
       modifier
         .height(45.dp)
+        .playerGlassOverlay(999.dp)
         .animateContentSize(),
   ) {
     Box(

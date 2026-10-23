@@ -18,6 +18,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.animation.rememberSplineBasedDecay
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.gestures.AnchoredDraggableState
 import androidx.compose.foundation.gestures.DraggableAnchors
 import androidx.compose.foundation.gestures.Orientation
@@ -69,6 +70,8 @@ import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 import app.infinity.mpvz.preferences.AppearancePreferences
 import app.infinity.mpvz.preferences.preference.collectAsState
+import app.infinity.mpvz.ui.theme.liquidGlassPane
+import app.infinity.mpvz.ui.theme.GlassSurfacePolicy
 import org.koin.compose.koinInject
 
 private val sheetAnimationSpec = tween<Float>(350)
@@ -110,12 +113,13 @@ fun PlayerSheet(
       }
   val isImeVisible = WindowInsets.ime.getBottom(density) > 0
   val maxHeight =
-    customMaxHeight ?: when {
-      isImeVisible -> LocalConfiguration.current.screenHeightDp.dp
-      LocalConfiguration.current.orientation == ORIENTATION_PORTRAIT ->
-        LocalConfiguration.current.screenHeightDp.dp * .90f
-      else -> LocalConfiguration.current.screenHeightDp.dp
-    }
+    PlayerSheetLayoutPolicy.maxHeightDp(
+        screenHeightDp = LocalConfiguration.current.screenHeightDp,
+        portrait = LocalConfiguration.current.orientation == ORIENTATION_PORTRAIT,
+        imeVisible = isImeVisible,
+        customMaxHeightDp = customMaxHeight?.value,
+      )
+      .dp
 
   val screenHeightPx =
     with(density) {
@@ -165,6 +169,10 @@ fun PlayerSheet(
       }
     }
   }
+  val sheetShape = MaterialTheme.shapes.extraLarge.copy(
+    bottomEnd = ZeroCornerSize,
+    bottomStart = ZeroCornerSize,
+  )
   Box(
     modifier =
       Modifier
@@ -187,6 +195,14 @@ fun PlayerSheet(
     Surface(
       modifier =
         Modifier
+          // Insets belong outside the size constraint. Applying them after
+          // sizeIn made the measured glass root taller than the visible sheet,
+          // so its upper half was painted over the content on portrait/IME.
+          .windowInsetsPadding(
+            WindowInsets.systemBars
+              .only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal),
+          )
+          .imePadding()
           .sizeIn(maxWidth = maxWidth, maxHeight = maxHeight)
           .clickable(
             interactionSource = remember { MutableInteractionSource() },
@@ -208,12 +224,18 @@ fun PlayerSheet(
           }.anchoredDraggable(
             state = anchoredDraggableState,
             orientation = Orientation.Vertical,
-          ).windowInsetsPadding(
-            WindowInsets.systemBars
-              .only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal),
-          ).imePadding(),
-      shape = MaterialTheme.shapes.extraLarge.copy(bottomEnd = ZeroCornerSize, bottomStart = ZeroCornerSize),
-      color = resolvedSurfaceColor,
+          )
+            // Clip before the glass renderer so its backing cannot escape the rounded rim.
+            .clip(sheetShape)
+            .liquidGlassPane(
+            enabled = liquidGlassSurfaces,
+            opacity = 0.86f,
+            highlight = 0.20f,
+            cornerRadius = 24.dp,
+            materialRole = GlassSurfacePolicy.MaterialRole.Regular,
+          ),
+      shape = sheetShape,
+      color = if (liquidGlassSurfaces) Color.Transparent else resolvedSurfaceColor,
       contentColor = if (sheetIsDark) Color.White else Color.Black,
       tonalElevation = tonalElevation,
       content = {

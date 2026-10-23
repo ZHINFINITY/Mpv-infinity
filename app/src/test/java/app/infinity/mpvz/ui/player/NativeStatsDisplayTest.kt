@@ -61,6 +61,18 @@ class NativeStatsDisplayTest {
   }
 
   @Test
+  fun interpolationCadenceKeepsSourceOutputGeneratedAndTargetFpsOnly() {
+    assertEquals(
+      "source 24.0 fps → output 48.0/60 fps · generated 24.0 fps",
+      NativeStatsDisplay.interpolationFps(24f, 48f, 24f, 60),
+    )
+    assertEquals(
+      "source -- fps → output -- fps · generated -- fps",
+      NativeStatsDisplay.interpolationFps(Float.NaN, 0f, -1f, 0),
+    )
+  }
+
+  @Test
   fun bandwidthBufferAndByteSizeMappingsUseMeasuredValuesOnly() {
     assertEquals("--", NativeStatsDisplay.bandwidth(0L))
     assertEquals("2.0 kbps", NativeStatsDisplay.bandwidth(2_000L))

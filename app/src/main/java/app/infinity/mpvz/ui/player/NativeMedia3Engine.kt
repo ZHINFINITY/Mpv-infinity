@@ -44,12 +44,13 @@ import androidx.media3.exoplayer.analytics.AnalyticsListener
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.extractor.ExtractorsFactory
 import androidx.media3.ui.CaptionStyleCompat
+import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
 import app.infinity.mpvz.ui.player.LibassSubtitleSurfaceView
 import app.infinity.mpvz.preferences.MpvFlowComputeApi
 import androidx.media3.subtitle.libass.LibassSubtitleRenderer
 import io.github.peerless2012.ass.media.AssHandler
-import io.github.peerless2012.ass.media.kt.withAssMkvSupport
+import io.github.peerless2012.ass.media.extractor.AssMatroskaExtractor
 import io.github.peerless2012.ass.media.kt.withAssSupport
 import io.github.peerless2012.ass.media.parser.AssSubtitleParserFactory
 import io.github.peerless2012.ass.media.type.AssRenderType
@@ -134,7 +135,22 @@ data class NativeTrack(
   val sampleMimeType: String? = null,
   val codecs: String? = null,
   val channelCount: Int = 0,
+  val isDefault: Boolean = false,
+  val isForced: Boolean = false,
+  val hearingImpaired: Boolean = false,
 )
+
+internal fun media3ContentAspectRatio(customRatio: Double?): Float =
+  customRatio?.toFloat()?.takeIf { it.isFinite() && it > 0f } ?: 0f
+
+internal fun media3NaturalContentAspectRatio(videoSize: VideoSize?): Float? {
+  if (videoSize == null || videoSize.width <= 0 || videoSize.height <= 0) return null
+  val ratio = videoSize.width.toFloat() * videoSize.pixelWidthHeightRatio / videoSize.height
+  return ratio.takeIf { it.isFinite() && it > 0f }
+}
+
+internal fun media3OutputAspect(aspect: VideoAspect, customRatio: Float?): VideoAspect =
+  if (customRatio != null && customRatio.isFinite() && customRatio > 0f) VideoAspect.Stretch else aspect
 
 internal fun media3ResizeModeForAspect(aspect: VideoAspect): Int = when (aspect) {
   VideoAspect.Fit -> androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_FIT
@@ -217,8 +233,11 @@ class NativeMedia3Engine(
     } else {
       media3FlowComputeApi
     }
+  // PlayerActivity keeps one engine across queue items. Do not make sink
+  // construction depend on the preference: an ON shortcut otherwise cannot
+  // enable the next item until the Activity is recreated.
   private val flowDeviceSupported =
-    enableMedia3Flow && Media3FlowVideoSink.deviceSupportsVulkanFlow(appContext)
+    Media3FlowVideoSink.deviceSupportsVulkanFlow(appContext)
   private val media3FlowSink = if (flowDeviceSupported) {
     Media3FlowVideoSink(
       appContext,
@@ -227,6 +246,7 @@ class NativeMedia3Engine(
       effectiveMedia3FlowComputeApi,
       media3FlowDebugSettings.visibilityResolverEnabled,
       media3FlowDebugSettings.softBlendEnabled,
+      enableMedia3Flow,
       ::publishFlowDiagnostics,
     )
   } else {
@@ -280,10 +300,21 @@ class NativeMedia3Engine(
     )
   private val dataSourceFactory = DefaultDataSource.Factory(context.applicationContext, cacheDataSourceFactory)
   private val assHandler = AssHandler(renderType = AssRenderType.OVERLAY_CANVAS)
-  private val assSubtitleParserFactory = AssSubtitleParserFactory(assHandler)
-  private val extractorsFactory: ExtractorsFactory =
+  private val assSubtitleParserFactory = NativeSubtitleParserFactory(AssSubtitleParserFactory(assHandler))
+  private val defaultExtractorsFactory =
     androidx.media3.extractor.DefaultExtractorsFactory()
-      .withAssMkvSupport(assSubtitleParserFactory, assHandler)
+      .setSubtitleParserFactory(assSubtitleParserFactory)
+  private val extractorsFactory: ExtractorsFactory = ExtractorsFactory {
+    // Equivalent to withAssMkvSupport, but its API requires a concrete ASS factory and cannot
+    // accept the bitmap passthrough policy. Keep the same ASS/font-aware Matroska extractor.
+    defaultExtractorsFactory.createExtractors().map { extractor ->
+      if (extractor is androidx.media3.extractor.mkv.MatroskaExtractor) {
+        AssMatroskaExtractor(assSubtitleParserFactory, assHandler)
+      } else {
+        extractor
+      }
+    }.toTypedArray()
+  }
   private val mediaSourceFactory = DefaultMediaSourceFactory(dataSourceFactory, extractorsFactory)
     .setSubtitleParserFactory(assSubtitleParserFactory)
   private val player = ExoPlayer.Builder(context.applicationContext)
@@ -311,6 +342,7 @@ class NativeMedia3Engine(
     .build()
   private var attachedView: PlayerView? = null
   private val videoAspect = Media3AspectModeState()
+  private var customAspectRatio: Float? = null
   private var subtitleOverlay: LibassSubtitleSurfaceView? = null
   private var libassRenderer: LibassSubtitleRenderer? = null
   private val externalAssEnabled = mutableMapOf<String, Boolean>()
@@ -330,20 +362,25 @@ class NativeMedia3Engine(
   private var loopASeconds: Double? = null
   private var loopBSeconds: Double? = null
   private val loopHandler = Handler(Looper.getMainLooper())
-  private var pendingSeekPositionMs: Long? = null
   private var pendingSeekDisplayPositionMs: Long? = null
+  private var initialResumeTargetMs: Long? = null
   private var lastKnownDurationMs: Long = 0L
   private var pendingExternalSelectionId: String? = null
-  private val seekRunnable = Runnable {
-    val positionMs = pendingSeekPositionMs ?: return@Runnable
-    pendingSeekPositionMs = null
-    val targetMs = positionMs.coerceAtLeast(0L)
-    pendingSeekDisplayPositionMs = targetMs
-    // The source is prepared once with a seek-capable extractor. Seeking only moves the existing
-    // extractor/decoder forward; it never rebuilds the MediaSource or flushes the surface.
-    player.seekTo(targetMs)
-    publishPlaybackSnapshot()
-  }
+  var hasEstablishedPlaybackPosition: Boolean = false
+    private set
+  private val seekDispatcher = NativeSeekDispatcher(
+    nowMs = { SystemClock.uptimeMillis() },
+    postDelayed = { task, delayMs -> loopHandler.postDelayed(task, delayMs); Unit },
+    removeCallbacks = { task -> loopHandler.removeCallbacks(task) },
+    dispatch = { targetMs, committed ->
+      pendingSeekDisplayPositionMs = targetMs
+      // Preserve the tested UHD/Dolby Vision keyframe policy. Preview seeks are throttled;
+      // releasing the thumb immediately dispatches the final target without preparing again.
+      Log.d(logTag, "seek targetMs=$targetMs committed=$committed ${bufferingLogState()}")
+      player.seekTo(targetMs)
+      publishPlaybackSnapshot()
+    },
+  )
   private val timelineRunnable = object : Runnable {
     override fun run() {
       // Keep the subtitle clock alive while paused, buffering, and immediately
@@ -404,6 +441,11 @@ class NativeMedia3Engine(
   private var bandwidthBytesLoaded = 0L
   private var selectedNativeSubtitleSelection: NativeSubtitleSelection? = null
   private var restoringNativeSubtitleSelection = false
+  private var desiredAudioSelection: TrackSelection? = null
+  private var desiredSubtitleSelection: TrackSelection? = null
+  private var audioSelectionRestored = false
+  private var subtitleSelectionRestored = false
+  private var restoringTrackSelections = false
 
   private val analyticsListener = object : AnalyticsListener {
     override fun onVideoEnabled(
@@ -504,6 +546,12 @@ class NativeMedia3Engine(
     override fun onVideoSizeChanged(videoSize: VideoSize) {
       currentVideoSize = videoSize
       publishPlaybackSnapshot()
+      // PlayerView's own component listener also responds to this event and writes the source
+      // ratio into exo_content_frame. Run after it so a user-selected custom viewport remains
+      // authoritative; for normal modes restore the actual cached source ratio rather than 0f.
+      attachedView?.let { view ->
+        view.post { if (attachedView === view) applyVideoViewport(view) }
+      }
     }
 
     override fun onRenderedFirstFrame() {
@@ -517,8 +565,14 @@ class NativeMedia3Engine(
       }
     }
     override fun onPlaybackStateChanged(playbackState: Int) {
-      if (playbackState == Player.STATE_READY) pendingSeekDisplayPositionMs = null
-      Log.d(logTag, "playback state=$playbackState uri=${player.currentMediaItem?.localConfiguration?.uri}")
+      if (playbackState == Player.STATE_READY) {
+        hasEstablishedPlaybackPosition = true
+        if (seekDispatcher.pendingPositionMs == null) {
+          pendingSeekDisplayPositionMs = null
+          initialResumeTargetMs = null
+        }
+      }
+      Log.d(logTag, "playback state=$playbackState ${bufferingLogState()}")
       if (playbackState == Player.STATE_ENDED) {
         val uri = player.currentMediaItem?.localConfiguration?.uri
         if (uri != null && uri != endedUri) {
@@ -559,13 +613,14 @@ class NativeMedia3Engine(
           Log.d(logTag, "text track group=${group.mediaTrackGroup.id} index=$index selected=${group.isTrackSelected(index)} mime=${format.sampleMimeType} codecs=${format.codecs} label=${format.label} language=${format.language}")
         }
       }
+      applyRestoredTrackSelections(tracks)
       restoreSelectedNativeSubtitle(tracks)
       applyPendingExternalSelection()
     }
 
     override fun onIsLoadingChanged(isLoading: Boolean) {
       val elapsed = preparationStartedAtMs.takeIf { it > 0L }?.let { SystemClock.elapsedRealtime() - it }
-      Log.d(logTag, "loading=$isLoading prepareElapsedMs=$elapsed uri=$preparationUri")
+      Log.d(logTag, "loading=$isLoading prepareElapsedMs=$elapsed ${bufferingLogState()}")
     }
 
     override fun onMetadata(metadata: Metadata) {
@@ -617,11 +672,17 @@ class NativeMedia3Engine(
     // a media layer so the standalone libass bitmap remains visible above the video surface.
     (view.videoSurfaceView as? SurfaceView)?.setZOrderMediaOverlay(true)
     view.useController = false
-    view.resizeMode = videoAspect.resizeMode()
+    applyVideoViewport(view)
     view.player = player
-    media3FlowSink?.setVideoAspect(videoAspect.aspect())
+    media3FlowSink?.setVideoAspect(media3OutputAspect(videoAspect.aspect(), customAspectRatio))
     configureSubtitleView()
-    view.post { if (attachedView === view) configureSubtitleView() }
+    view.post {
+      if (attachedView !== view) return@post
+      // PlayerView may apply its natural ratio while binding the player. Reapply persisted policy
+      // after that callback, including across Activity recreation/view reattachment.
+      applyVideoViewport(view)
+      configureSubtitleView()
+    }
     startTimelineUpdates()
   }
 
@@ -630,7 +691,7 @@ class NativeMedia3Engine(
     val view = attachedView ?: return
     view.post {
       if (attachedView !== view) return@post
-      view.resizeMode = videoAspect.resizeMode()
+      applyVideoViewport(view)
       view.requestLayout()
       view.videoSurfaceView?.requestLayout()
       view.invalidate()
@@ -638,10 +699,45 @@ class NativeMedia3Engine(
     }
   }
 
+  /** Applies interpolation controls to the existing Native session without reload or seek. */
+  suspend fun applyInterpolationRuntime(enabled: Boolean, targetFps: Int): Boolean =
+    media3FlowSink?.applyRuntimeInterpolation(enabled, targetFps) == true
+
   fun setVideoAspect(aspect: VideoAspect) {
     videoAspect.select(aspect)
+    customAspectRatio = null
     media3FlowSink?.setVideoAspect(aspect)
-    attachedView?.resizeMode = videoAspect.resizeMode()
+    attachedView?.let(::applyVideoViewport)
+  }
+
+  /** Apply a user-selected display ratio to Media3's actual content viewport. */
+  fun setCustomAspectRatio(ratio: Double) {
+    val value = media3ContentAspectRatio(ratio).takeIf { it > 0f }
+    if (value == null) {
+      setVideoAspect(VideoAspect.Fit)
+      return
+    }
+    customAspectRatio = value
+    videoAspect.select(VideoAspect.Fit)
+    // The content frame already defines the requested ratio; fitting again inside it would
+    // preserve the source ratio and make this control appear ineffective with Flow enabled.
+    media3FlowSink?.setVideoAspect(media3OutputAspect(videoAspect.aspect(), customAspectRatio))
+    attachedView?.let(::applyVideoViewport)
+  }
+
+  private fun applyVideoViewport(view: PlayerView) {
+    view.resizeMode = if (customAspectRatio != null) {
+      androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_FIT
+    } else {
+      videoAspect.resizeMode()
+    }
+    val content = view.findViewById<AspectRatioFrameLayout>(
+      androidx.media3.ui.R.id.exo_content_frame,
+    )
+    val ratio = customAspectRatio ?: media3NaturalContentAspectRatio(currentVideoSize)
+    // A zero ratio disables AspectRatioFrameLayout's natural measurement. Only write a ratio when
+    // one is known; otherwise let PlayerView keep its own pending video-size behavior intact.
+    ratio?.let { content?.setAspectRatio(it) }
   }
 
   fun setZoom(zoom: Float) {
@@ -728,6 +824,7 @@ class NativeMedia3Engine(
         format.id == id || format.label == id
       }
       ?: return null
+    if (!restoringTrackSelections) clearDesiredSelection(C.TRACK_TYPE_TEXT)
     val group = match.first
     val trackIndex = match.second
     val enabled = !group.isTrackSelected(trackIndex)
@@ -773,6 +870,93 @@ class NativeMedia3Engine(
       .build()
     pendingExternalSelectionId = null
     publishSnapshot()
+  }
+
+  fun captureAudioSelection(): String? = captureTrackSelection(C.TRACK_TYPE_AUDIO)
+
+  fun captureSubtitleSelection(): String? = captureTrackSelection(C.TRACK_TYPE_TEXT)
+
+  fun restoreTrackSelections(audio: String?, subtitle: String?) {
+    desiredAudioSelection = PlaybackStatePersistence.decodeSelection(audio)
+    desiredSubtitleSelection = PlaybackStatePersistence.decodeSelection(subtitle)
+    audioSelectionRestored = desiredAudioSelection == null
+    subtitleSelectionRestored = desiredSubtitleSelection == null
+    applyRestoredTrackSelections(player.currentTracks)
+  }
+
+  private fun captureTrackSelection(type: Int): String? {
+    val desired = if (type == C.TRACK_TYPE_AUDIO) desiredAudioSelection else desiredSubtitleSelection
+    val applied = if (type == C.TRACK_TYPE_AUDIO) audioSelectionRestored else subtitleSelectionRestored
+    if (desired != null && !applied) return PlaybackStatePersistence.encodeSelection(desired)
+    val groups = player.currentTracks.groups.filter { it.type == type }
+    if (groups.isEmpty()) return null
+    if (player.trackSelectionParameters.disabledTrackTypes.contains(type)) {
+      return PlaybackStatePersistence.encodeSelection(SharedTrackSelection.Disabled)
+    }
+    val selected = groups.flatMap { group ->
+      (0 until group.length).filter { group.isTrackSelected(it) }.map { group to it }
+    }.firstOrNull() ?: return null
+    val ordinal = groups.takeWhile { it !== selected.first }.sumOf { it.length } + selected.second
+    val fingerprint = trackSelectionMetadata(selected.first.getTrackFormat(selected.second))
+      ?.let { TrackSelectionFingerprint.capture(it, TrackSelectionState.SELECTED, ordinal) }
+      ?: return null
+    return PlaybackStatePersistence.encodeSelection(SharedTrackSelection.selected(fingerprint))
+  }
+
+  private fun applyRestoredTrackSelections(tracks: Tracks) {
+    if (restoringTrackSelections) return
+    restoringTrackSelections = true
+    try {
+      desiredAudioSelection?.takeIf { !audioSelectionRestored }?.let {
+        if (applyRestoredSelection(C.TRACK_TYPE_AUDIO, it, tracks)) audioSelectionRestored = true
+      }
+      desiredSubtitleSelection?.takeIf { !subtitleSelectionRestored }?.let {
+        if (applyRestoredSelection(C.TRACK_TYPE_TEXT, it, tracks)) subtitleSelectionRestored = true
+      }
+    } finally {
+      restoringTrackSelections = false
+    }
+  }
+
+  private fun applyRestoredSelection(type: Int, selection: TrackSelection, tracks: Tracks): Boolean {
+    if (selection.state == TrackSelectionState.UNKNOWN) return false
+    if (selection.state == TrackSelectionState.DISABLED) {
+      player.trackSelectionParameters = player.trackSelectionParameters.buildUpon()
+        .setTrackTypeDisabled(type, true).clearOverridesOfType(type).build()
+      if (type == C.TRACK_TYPE_TEXT) {
+        selectedNativeSubtitleKey = null
+        selectedNativeSubtitleSelection = null
+      }
+      return tracks.groups.any { it.type == type }
+    }
+    val groups = tracks.groups.filter { it.type == type }
+    val candidates = groups.flatMap { group ->
+      (0 until group.length).map { trackSelectionMetadata(group.getTrackFormat(it)) ?: TrackSelectionMetadata() }
+    }
+    val index = TrackSelectionMatcher.findMatchIndex(selection, candidates)
+      ?: return false
+    if (index < 0) return false
+    var remaining = index
+    val match = groups.firstNotNullOfOrNull { group ->
+      if (remaining < group.length) group to remaining else { remaining -= group.length; null }
+    } ?: return false
+    player.trackSelectionParameters = player.trackSelectionParameters.buildUpon()
+      .setTrackTypeDisabled(type, false).clearOverridesOfType(type)
+      .setOverrideForType(TrackSelectionOverride(match.first.mediaTrackGroup, match.second)).build()
+    if (type == C.TRACK_TYPE_TEXT) {
+      selectedNativeSubtitleKey = tracks.groups.indexOf(match.first) to match.second
+      selectedNativeSubtitleSelection = subtitleSelectionFor(match.first, match.second)
+    }
+    return true
+  }
+
+  private fun trackSelectionMetadata(format: Format): TrackSelectionMetadata? {
+    val externalUri = format.id?.takeIf { it.startsWith("external:") }?.removePrefix("external:")
+      ?: format.label?.takeIf { it.startsWith("external:") }?.removePrefix("external:")
+    val metadata = TrackSelectionMetadata(format.language, format.label, format.codecs,
+      format.sampleMimeType, format.channelCount.takeIf { it > 0 }, externalUri)
+    return metadata.takeIf { it.language != null || it.label != null || it.codec != null ||
+      it.mimeType != null || it.channelCount != null || it.externalUri != null }
   }
 
   private fun subtitleSelectionFor(group: Tracks.Group, trackIndex: Int): NativeSubtitleSelection {
@@ -979,6 +1163,10 @@ class NativeMedia3Engine(
     mimeType: String? = null,
     sourceUri: Uri? = null,
   ) {
+    seekDispatcher.cancel()
+    pendingSeekDisplayPositionMs = startPositionMs.coerceAtLeast(0L)
+    initialResumeTargetMs = startPositionMs.coerceAtLeast(0L)
+    hasEstablishedPlaybackPosition = false
     _hasRenderedFirstFrame.value = false
     endedUri = null
     lastKnownDurationMs = 0L
@@ -999,6 +1187,10 @@ class NativeMedia3Engine(
     setSubtitlePresentationVisible(true)
     pendingExternalSelectionId = null
     selectedNativeSubtitleSelection = null
+    desiredAudioSelection = null
+    desiredSubtitleSelection = null
+    audioSelectionRestored = false
+    subtitleSelectionRestored = false
     externalAssEnabled.clear()
     libassRenderer?.getTrackIds()?.keys?.toList()?.forEach { id ->
       libassRenderer?.removeTrack(id)
@@ -1128,22 +1320,37 @@ class NativeMedia3Engine(
   }
 
   fun seekTo(positionMs: Long) {
-    pendingSeekPositionMs = positionMs.coerceAtLeast(0L)
-    loopHandler.removeCallbacks(seekRunnable)
-    loopHandler.postDelayed(seekRunnable, 120L)
+    seekDispatcher.commit(positionMs)
     // Seek controls must not enumerate every subtitle/audio metadata entry on the UI thread.
     publishPlaybackSnapshot()
     startTimelineUpdates()
   }
 
+  fun cancelSeekPreview() {
+    seekDispatcher.cancel()
+  }
+
+  fun seekPreviewTo(positionMs: Long) {
+    seekDispatcher.preview(positionMs)
+    publishPlaybackSnapshot()
+    startTimelineUpdates()
+  }
+
   fun seekBy(offsetMs: Long) {
-    val basePositionMs = pendingSeekPositionMs ?: player.currentPosition
-    pendingSeekPositionMs = (basePositionMs + offsetMs).coerceAtLeast(0L)
-    loopHandler.removeCallbacks(seekRunnable)
-    loopHandler.postDelayed(seekRunnable, 120L)
+    val basePositionMs = seekDispatcher.pendingPositionMs ?: player.currentPosition
+    seekDispatcher.preview((basePositionMs + offsetMs).coerceAtLeast(0L))
     // Keep repeated seek-bar updates lightweight; the track/metadata snapshot is unchanged.
     publishPlaybackSnapshot()
     startTimelineUpdates()
+  }
+
+  /** Desired position for persistence, including a seek that has not reached the player yet. */
+  fun positionForPersistenceMs(): Long? {
+    if (player.currentMediaItem == null) return null
+    return seekDispatcher.pendingPositionMs
+      ?: pendingSeekDisplayPositionMs
+      ?: initialResumeTargetMs?.takeIf { player.playbackState != Player.STATE_READY }
+      ?: player.currentPosition.coerceAtLeast(0L)
   }
 
   fun setLoopA(positionSeconds: Double?) {
@@ -1180,6 +1387,7 @@ class NativeMedia3Engine(
   fun selectTrack(track: NativeTrack) {
     val group = player.currentTracks.groups.getOrNull(track.groupIndex) ?: return
     if (group.type != track.type || track.trackIndex !in 0 until group.length) return
+    if (!restoringTrackSelections) clearDesiredSelection(track.type)
     if (track.type == C.TRACK_TYPE_TEXT) {
       selectedNativeSubtitleSelection = subtitleSelectionFor(group, track.trackIndex)
       val format = group.getTrackFormat(track.trackIndex)
@@ -1240,6 +1448,7 @@ class NativeMedia3Engine(
   }
 
   fun selectAudioTrack(group: Tracks.Group, trackIndex: Int) {
+    if (!restoringTrackSelections) clearDesiredSelection(C.TRACK_TYPE_AUDIO)
     player.trackSelectionParameters = player.trackSelectionParameters
       .buildUpon()
       .setTrackTypeDisabled(C.TRACK_TYPE_AUDIO, false)
@@ -1252,6 +1461,7 @@ class NativeMedia3Engine(
     val group = player.currentTracks.groups.getOrNull(groupIndex) ?: return
     if (group.type != C.TRACK_TYPE_TEXT) return
     if (trackIndex !in 0 until group.length) return
+    if (!restoringTrackSelections) clearDesiredSelection(C.TRACK_TYPE_TEXT)
     selectedNativeSubtitleSelection = subtitleSelectionFor(group, trackIndex)
     val format = group.getTrackFormat(trackIndex)
     if (isAssFormat(format.sampleMimeType, format.codecs)) {
@@ -1277,6 +1487,7 @@ class NativeMedia3Engine(
   }
 
   fun disableSubtitles() {
+    if (!restoringTrackSelections) clearDesiredSelection(C.TRACK_TYPE_TEXT)
     disableAssTracks()
     selectedNativeSubtitleKey = null
     selectedNativeSubtitleSelection = null
@@ -1286,6 +1497,16 @@ class NativeMedia3Engine(
       .clearOverridesOfType(C.TRACK_TYPE_TEXT)
       .build()
     publishSnapshot()
+  }
+
+  private fun clearDesiredSelection(type: Int) {
+    if (type == C.TRACK_TYPE_AUDIO) {
+      desiredAudioSelection = null
+      audioSelectionRestored = false
+    } else if (type == C.TRACK_TYPE_TEXT) {
+      desiredSubtitleSelection = null
+      subtitleSelectionRestored = false
+    }
   }
 
   private fun isAssFormat(mime: String?, codecs: String?): Boolean {
@@ -1305,7 +1526,7 @@ class NativeMedia3Engine(
     // HDR, DRM, unsupported geometry, or failed Vulkan/HardwareBuffer preflight.
     factory.setExtensionRendererMode(DefaultRenderersFactory.EXTENSION_RENDERER_MODE_ON)
     factory.setEnableDecoderFallback(true)
-    return factory.withAssSupport(assHandler)
+    return NativeSubtitleRenderersFactory(factory.withAssSupport(assHandler))
   }
 
   private fun publishFlowDiagnostics(diagnostics: Media3FlowDiagnostics) {
@@ -1316,12 +1537,18 @@ class NativeMedia3Engine(
   fun addListener(listener: Player.Listener) = player.addListener(listener)
   fun removeListener(listener: Player.Listener) = player.removeListener(listener)
 
+  private fun bufferingLogState(): String =
+    "positionMs=${player.currentPosition} bufferedMs=${player.totalBufferedDuration} " +
+      "loading=${player.isLoading} speed=${player.playbackParameters.speed} " +
+      "videoDecoder=${videoDecoderName ?: "unknown"} " +
+      "uri=${player.currentMediaItem?.localConfiguration?.uri}"
+
   fun stop() {
     clearLoop()
     loopHandler.removeCallbacks(timelineRunnable)
-    loopHandler.removeCallbacks(seekRunnable)
-    pendingSeekPositionMs = null
+    seekDispatcher.cancel()
     pendingSeekDisplayPositionMs = null
+    initialResumeTargetMs = null
     player.stop()
     player.clearMediaItems()
     currentVideoFormat = null
@@ -1330,6 +1557,10 @@ class NativeMedia3Engine(
     _subtitleCueText.value = ""
     selectedNativeSubtitleKey = null
     selectedNativeSubtitleSelection = null
+    desiredAudioSelection = null
+    desiredSubtitleSelection = null
+    audioSelectionRestored = false
+    subtitleSelectionRestored = false
     externalAssEnabled.clear()
     libassRenderer?.let { renderer ->
       renderer.getTrackIds().keys.toList().forEach { renderer.removeTrack(it) }
@@ -1468,8 +1699,13 @@ class NativeMedia3Engine(
   fun release() {
     clearLoop()
     loopHandler.removeCallbacks(timelineRunnable)
-    loopHandler.removeCallbacks(seekRunnable)
-    pendingSeekPositionMs = null
+    seekDispatcher.cancel()
+    pendingSeekDisplayPositionMs = null
+    initialResumeTargetMs = null
+    desiredAudioSelection = null
+    desiredSubtitleSelection = null
+    audioSelectionRestored = false
+    subtitleSelectionRestored = false
     player.removeListener(listener)
     player.removeAnalyticsListener(analyticsListener)
     attachedView?.player = null
@@ -1520,6 +1756,9 @@ class NativeMedia3Engine(
             sampleMimeType = format.sampleMimeType,
             codecs = format.codecs,
             channelCount = format.channelCount.coerceAtLeast(0),
+            isDefault = format.selectionFlags and C.SELECTION_FLAG_DEFAULT != 0,
+            isForced = format.selectionFlags and C.SELECTION_FLAG_FORCED != 0,
+            hearingImpaired = format.roleFlags and C.ROLE_FLAG_DESCRIBES_MUSIC_AND_SOUND != 0,
             selected = if (type == C.TRACK_TYPE_TEXT && selectedNativeSubtitleKey == (groupIndex to trackIndex)) {
               true
             } else group.isTrackSelected(trackIndex),

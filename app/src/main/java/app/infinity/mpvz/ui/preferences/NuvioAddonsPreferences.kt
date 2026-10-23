@@ -1,4 +1,14 @@
 package app.infinity.mpvz.ui.preferences
+import app.infinity.mpvz.ui.components.GlassModalBottomSheet
+import app.infinity.mpvz.ui.components.GlassOptionSheet
+import app.infinity.mpvz.ui.theme.GlassDropdownMenu
+import app.infinity.mpvz.ui.theme.GlassExposedDropdownMenu
+
+import app.infinity.mpvz.ui.player.controls.components.GlassSwitch
+
+import app.infinity.mpvz.ui.preferences.components.settingsGlassContainerColor
+
+import app.infinity.mpvz.ui.preferences.components.settingsGlassSurface
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateContentSize
@@ -16,14 +26,12 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -45,7 +53,7 @@ import app.infinity.mpvz.catalog.nuvio.PluginRepository
 import app.infinity.mpvz.catalog.nuvio.PluginSettingField
 import app.infinity.mpvz.catalog.nuvio.PluginScraper
 import kotlinx.coroutines.launch
-import me.zhanghai.compose.preference.Preference
+import app.infinity.mpvz.ui.preferences.components.Preference
 import app.infinity.mpvz.ui.icons.Icon
 import app.infinity.mpvz.ui.icons.Icons
 
@@ -145,7 +153,7 @@ fun NuvioAddonsPreferenceCard() {
             }
             providers.forEach { provider ->
           Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            Switch(checked = provider.enabled, enabled = provider.manifestEnabled, onCheckedChange = { repository.toggleScraper(provider.id, it) })
+            GlassSwitch(checked = provider.enabled, enabled = provider.manifestEnabled, onCheckedChange = { repository.toggleScraper(provider.id, it) })
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
               Text(provider.name, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
               Text(provider.description.ifBlank { "Supports ${provider.supportedTypes.joinToString()}" }, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis)
@@ -239,10 +247,12 @@ private fun PluginProviderSettingsDialog(
   onDismiss: () -> Unit,
   onSave: () -> Unit,
 ) {
-  AlertDialog(
+  GlassOptionSheet(
+      containerColor = settingsGlassContainerColor(androidx.compose.material3.AlertDialogDefaults.containerColor),
+      modifier = androidx.compose.ui.Modifier.settingsGlassSurface(cornerRadius = 28.dp, independent = true),
     onDismissRequest = onDismiss,
     title = { Text("${provider.name} settings") },
-    text = {
+    content = {
       Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Column(Modifier.heightIn(max = 480.dp).verticalScroll(androidx.compose.foundation.rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
           fields.forEachIndexed { index, field ->
@@ -257,7 +267,9 @@ private fun PluginProviderSettingsDialog(
                   Text(field.label, style = MaterialTheme.typography.labelLarge)
                   Box {
                     OutlinedButton(onClick = { expanded = true }, modifier = Modifier.fillMaxWidth(), enabled = key != null) { Text(field.options.firstOrNull { it.value == value }?.label ?: value.ifBlank { field.placeholder ?: "Select" }, Modifier.fillMaxWidth()) }
-                    DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+                    GlassDropdownMenu(
+      containerColor = settingsGlassContainerColor(androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainer),
+      modifier = androidx.compose.ui.Modifier.settingsGlassSurface(cornerRadius = 12.dp, independent = true),expanded = expanded, onDismissRequest = { expanded = false }) {
                       field.options.forEach { option -> DropdownMenuItem(text = { Text(option.label) }, onClick = { if (key != null) values[key] = option.value; expanded = false }) }
                     }
                   }
@@ -266,7 +278,7 @@ private fun PluginProviderSettingsDialog(
               }
               "toggle", "switch", "checkbox", "boolean" -> Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 Column(Modifier.weight(1f)) { Text(field.label, style = MaterialTheme.typography.titleSmall); field.description?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) } }
-                Switch(checked = value.equals("true", true), onCheckedChange = { if (key != null) values[key] = it.toString() }, enabled = key != null)
+                GlassSwitch(checked = value.equals("true", true), onCheckedChange = { if (key != null) values[key] = it.toString() }, enabled = key != null)
               }
               else -> OutlinedTextField(value = value, onValueChange = { if (key != null) values[key] = it }, modifier = Modifier.fillMaxWidth(), label = { Text(field.label.ifBlank { key ?: "Setting" }) }, placeholder = field.placeholder?.let { { Text(it) } }, supportingText = field.description?.let { description -> { Text(description) } }, singleLine = true, enabled = key != null)
             }
@@ -276,8 +288,7 @@ private fun PluginProviderSettingsDialog(
       }
     },
     confirmButton = { Button(onClick = onSave) { Text("Save") } },
-    dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
-  )
+    dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },)
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -286,8 +297,10 @@ private fun AddNuvioProviderRepositoryDialog(onDismiss: () -> Unit, onAdd: (Stri
   var url by remember { mutableStateOf("") }
   var error by remember { mutableStateOf<String?>(null) }
   var busy by remember { mutableStateOf(false) }
-  ModalBottomSheet(onDismissRequest = { if (!busy) onDismiss() }) {
-    Column(Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 22.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+  GlassModalBottomSheet(
+      containerColor = settingsGlassContainerColor(androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainerLow),
+      paneModifier = androidx.compose.ui.Modifier.settingsGlassSurface(cornerRadius = 28.dp, independent = true),onDismissRequest = { if (!busy) onDismiss() }) {
+    Column(Modifier.fillMaxWidth().padding(horizontal = 22.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
       Text("Add Nuvio provider repository", style = MaterialTheme.typography.headlineSmall)
       Text("Paste a Nuvio JavaScript scraper repository URL. This is not a Stremio manifest URL.", color = MaterialTheme.colorScheme.onSurfaceVariant)
       OutlinedTextField(value = url, onValueChange = { url = it; error = null }, modifier = Modifier.fillMaxWidth(), singleLine = true, label = { Text("Repository URL") }, placeholder = { Text("https://raw.githubusercontent.com/owner/repo/refs/heads/main") }, enabled = !busy)

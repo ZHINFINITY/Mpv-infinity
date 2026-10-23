@@ -7,6 +7,9 @@
 
 package app.infinity.mpvz.ui.browser.jellyfin.seerr
 
+import app.infinity.mpvz.ui.components.GlassModalBottomSheet
+import app.infinity.mpvz.ui.components.glassOptionSheetContainerColor
+import app.infinity.mpvz.ui.components.glassOptionSheetModifier
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -44,7 +47,6 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.SheetState
 import androidx.compose.material3.SheetValue
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberBottomSheetState
 import androidx.compose.runtime.Composable
@@ -128,11 +130,10 @@ fun SeerrConnectionDialog(
   var isPasswordVisible by remember { mutableStateOf(false) }
   var apiKey by remember(currentApiKey) { mutableStateOf(currentApiKey) }
 
-  ModalBottomSheet(
+  GlassModalBottomSheet(
     onDismissRequest = onDismiss,
     sheetState = sheetState,
-    containerColor = MaterialTheme.colorScheme.surfaceContainer,
-  ) {
+    containerColor = glassOptionSheetContainerColor(MaterialTheme.colorScheme.surfaceContainer),) {
     Column(
       modifier = Modifier
         .fillMaxWidth()

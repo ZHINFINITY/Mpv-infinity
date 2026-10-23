@@ -7,6 +7,10 @@
 
 package app.infinity.mpvz.ui.player.controls.components.sheets
 
+import app.infinity.mpvz.presentation.components.PlayerSheet
+import app.infinity.mpvz.ui.preferences.components.settingsGlassSurface
+import app.infinity.mpvz.ui.preferences.components.settingsGlassContainerColor
+import app.infinity.mpvz.ui.preferences.components.settingsGlassEnabled
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -26,15 +30,10 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.SheetValue
-import androidx.compose.material3.Slider
 import app.infinity.mpvz.ui.components.IconSwitch
 import androidx.compose.material3.Text
-import androidx.compose.material3.rememberBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
@@ -55,6 +54,7 @@ import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlin.math.roundToInt
+import app.infinity.mpvz.ui.player.controls.components.GlassSlider
 
 enum class EqualizerPreset(
   val displayName: String,
@@ -101,7 +101,6 @@ data class EqualizerState(
   val volumeBoostDb: Int = 0,
 )
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun EqualizerSheet(
   state: EqualizerState,
@@ -112,17 +111,8 @@ fun EqualizerSheet(
   onDismissRequest: () -> Unit,
   modifier: Modifier = Modifier,
 ) {
-  val sheetState =
-    rememberBottomSheetState(
-      initialValue = SheetValue.Hidden,
-      enabledValues = setOf(SheetValue.Hidden, SheetValue.Expanded),
-    )
-
-  ModalBottomSheet(
+  PlayerSheet(
     onDismissRequest = onDismissRequest,
-    sheetState = sheetState,
-    containerColor = MaterialTheme.colorScheme.surfaceContainer,
-    dragHandle = null,
     modifier = modifier,
   ) {
     Column(
@@ -241,7 +231,7 @@ fun EqualizerSheet(
       Spacer(modifier = Modifier.height(8.dp))
 
       var volumeBoostValue by remember(state.volumeBoostDb) { mutableFloatStateOf(state.volumeBoostDb.toFloat()) }
-      Slider(
+      GlassSlider(
         value = volumeBoostValue,
         onValueChange = { newValue ->
           volumeBoostValue = newValue
@@ -288,15 +278,17 @@ private fun PresetChip(
   isEnabled: Boolean,
   onClick: (() -> Unit)?,
 ) {
+  val glass = settingsGlassEnabled()
   Box(
     contentAlignment = Alignment.Center,
     modifier =
       Modifier
         .alpha(if (isEnabled) 1f else 0.38f)
         .clip(RoundedCornerShape(50))
+        .settingsGlassSurface(cornerRadius = 999.dp)
         .background(
           if (isSelected) {
-            MaterialTheme.colorScheme.primaryContainer
+            settingsGlassContainerColor(MaterialTheme.colorScheme.primaryContainer)
           } else {
             Color.Transparent
           },
@@ -304,7 +296,7 @@ private fun PresetChip(
           BorderStroke(
             1.dp,
             if (isSelected) {
-              Color.Transparent
+              if (glass) MaterialTheme.colorScheme.primary.copy(alpha = 0.5f) else Color.Transparent
             } else {
               MaterialTheme.colorScheme.outlineVariant
             },
@@ -354,7 +346,7 @@ private fun BandColumn(
       textAlign = TextAlign.Center,
     )
 
-    Slider(
+    GlassSlider(
       value = sliderValue,
       onValueChange = { newValue ->
         sliderValue = newValue

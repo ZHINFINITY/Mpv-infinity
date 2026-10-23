@@ -46,6 +46,8 @@ import java.util.concurrent.atomic.AtomicLong
 import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.roundToLong
+import kotlin.coroutines.resume
+import kotlinx.coroutines.suspendCancellableCoroutine
 
 internal class Media3FlowSdrOutputException(message: String) : IllegalStateException(message)
 
@@ -128,6 +130,7 @@ class Media3FlowVideoSink(
   private val requestedComputeApi: MpvFlowComputeApi,
   private val visibilityResolverEnabled: Boolean,
   private val softBlendEnabled: Boolean,
+  initialInterpolationEnabled: Boolean,
   private val onDiagnostics: (Media3FlowDiagnostics) -> Unit,
 ) : VideoSink {
   private val appContext = context.applicationContext
@@ -135,8 +138,32 @@ class Media3FlowVideoSink(
     (appContext.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE) != 0
   private val logTag = "Mpv∞-Media3Flow"
   private val displayHz = displayRefreshRate(appContext)
-  private val targetFps = effectiveMpvFlowTargetFps(requestedTargetFps, displayHz)
+  @Volatile private var targetFps = effectiveMpvFlowTargetFps(requestedTargetFps, displayHz)
+  @Volatile private var interpolationEnabled = initialInterpolationEnabled
   private val quality = requestedQuality.coerceIn(0, 100)
+  /** Apply runtime controls in GL order without blocking the UI thread. */
+  suspend fun applyRuntimeInterpolation(enabled: Boolean, requestedTargetFps: Int): Boolean =
+    suspendCancellableCoroutine { continuation ->
+      val posted = glHandler.post {
+        if (!continuation.isActive) return@post
+        if (!NativeInterpolationRuntimePolicy.canMutateLiveSink(disposed, preflightAvailable, flowAvailable)) {
+          continuation.resume(false)
+          return@post
+        }
+        try {
+          interpolationEnabled = enabled
+          targetFps = effectiveMpvFlowTargetFps(requestedTargetFps, displayHz)
+          setOutputFrameRate()
+          publishDiagnostics(if (enabled) lastState else "disabled", lastBypassReason, force = true)
+          continuation.resume(true)
+        } catch (error: Throwable) {
+          Log.w(logTag, "Unable to apply live interpolation controls", error)
+          continuation.resume(false)
+        }
+      }
+      if (!posted) continuation.resume(false)
+      continuation.invokeOnCancellation { /* queued work checks isActive before mutating */ }
+    }
   private val maxDimension = Media3FlowAnalysisPolicy.maxDimension(targetFps, quality)
   private val searchRadius = Media3FlowAnalysisPolicy.searchRadius(targetFps, quality)
   private val glThread = HandlerThread("Media3Flow-GLES").apply { start() }
@@ -763,6 +790,12 @@ class Media3FlowVideoSink(
   }
 
   override fun flush(resetPosition: Boolean) {
+    // A paused seek needs a fresh one-shot frame even after a previous frame consumed
+    // the stream's initial first-frame permit. Do not restart the playback clock.
+    flushInternal(resetPosition, allowPausedFrame = resetPosition)
+  }
+
+  private fun flushInternal(resetPosition: Boolean, allowPausedFrame: Boolean) {
     val discarded = ArrayList<PendingInput>()
     endOfCurrentInput = false
     endOfInput = false
@@ -783,6 +816,9 @@ class Media3FlowVideoSink(
       lastRenderedPtsUs = C.TIME_UNSET
       firstFrameReported = false
       if (resetPosition) {
+        // Serialized with frame clearing on GL: an old pre-seek frame cannot consume
+        // this new permit before the seek's source-frame generation is installed.
+        allowFirstFrameBeforeStarted = allowPausedFrame
         originPtsUs = C.TIME_UNSET
         lastOutputTick = -1L
       }
@@ -910,7 +946,9 @@ class Media3FlowVideoSink(
     allowFirstFrameBeforeStarted =
       firstFrameReleaseInstruction == VideoSink.RELEASE_FIRST_FRAME_IMMEDIATELY ||
         firstFrameReleaseInstruction == VideoSink.RELEASE_FIRST_FRAME_WHEN_STARTED
-    flush(resetPosition = true)
+    // A new stream still obeys Media3's release instruction; only position-reset
+    // flushes grant an unconditional one-shot paused-seek frame.
+    flushInternal(resetPosition = true, allowPausedFrame = allowFirstFrameBeforeStarted)
     glHandler.post {
       if (format.width > 0 && format.height > 0 && makePbufferCurrent()) {
         configureInputSurface(format.width, format.height)
@@ -1371,7 +1409,13 @@ class Media3FlowVideoSink(
       captureFrame(token.ptsUs, transform)
       storedFrameCount = sourceFrames.size
       dispatchListener { it.onFrameAvailableForRendering() }
-      scheduleDisplayFrame()
+      if (!running && allowFirstFrameBeforeStarted) {
+        // A paused renderer has no Choreographer loop. The decoded seek frame may
+        // arrive after render()'s first one-shot already found an empty source queue.
+        postOneShotRender()
+      } else {
+        scheduleDisplayFrame()
+      }
     } catch (error: RuntimeException) {
       if (!tokenResolved) {
         synchronized(inputLock) {
@@ -1825,7 +1869,7 @@ class Media3FlowVideoSink(
       Media3FlowCadence.motionAdmissionProxyMs(it.motionEstimateSubmitMs, null)
     } ?: Float.POSITIVE_INFINITY
     val nowNs = System.nanoTime()
-    val synthesize = bracket != null && pair != null &&
+    val synthesize = interpolationEnabled && bracket != null && pair != null &&
       Media3FlowCadence.needsInterpolation(deltaUs, targetFps, speed) &&
       motionAdmissionProxyMs < deltaUs / 1000f * ANALYSIS_DEADLINE_RESERVE
     lastOutputCallbackLatenessMs = frameTimeNanos?.let {
@@ -2617,27 +2661,21 @@ class Media3FlowVideoSink(
   }
 
   private fun logPresentedOutput(frame: PresentationFrame, outputState: String, outputReason: String) {
+    // Successful output and normal source-frame fallbacks are visible in statistics.
+    // Avoid formatting per-frame timestamps/algorithm payloads on the render thread.
+    if (outputState != "output_submission_failed") return
     val signature = "$outputState|$outputReason"
     val nowNs = System.nanoTime()
     if (signature == lastLoggedOutputDiagnosticSignature &&
       lastOutputDiagnosticLogAtNs != 0L &&
-      nowNs - lastOutputDiagnosticLogAtNs < FLOW_OUTPUT_DIAGNOSTIC_LOG_MIN_INTERVAL_NS &&
-      outputState != "output_submission_failed"
+      nowNs - lastOutputDiagnosticLogAtNs < FLOW_OUTPUT_DIAGNOSTIC_LOG_MIN_INTERVAL_NS
     ) return
     lastLoggedOutputDiagnosticSignature = signature
     lastOutputDiagnosticLogAtNs = nowNs
-    val alpha = frame.interpolationAlpha
     val outputMessage =
-      "MPVFLOW_DIAGNOSTIC component=native-media3 event=output state=$outputState renderer_api=vulkan " +
-        "requested_compute_api=${requestedComputeApi.name.lowercase()} " +
-        "effective_compute_api=${effectiveComputeApiName()} " +
-        "reason=$outputReason target_fps=$targetFps speed=${formatLogFloat(frame.speed)} " +
-        "source_pts_us=${frame.sourcePtsUs} source_pts0_us=${frame.sourcePts0Us ?: "none"} " +
-        "source_pts1_us=${frame.sourcePts1Us ?: "none"} target_pts_us=${frame.targetPtsUs} " +
-        "interpolation_alpha=${alpha?.let(::formatLogFloat) ?: "none"} " +
-        "fallback_source_frame_pts_us=${if (outputState == "passthrough") frame.sourcePtsUs else "none"} " +
-        "timestamp_source=media3_decoder_pts sync_mode=1x"
-    Log.println(if (outputState == "synthesized") Log.INFO else Log.WARN, logTag, outputMessage)
+      "MPVFLOW_DIAGNOSTIC component=native-media3 event=output state=$outputState " +
+        "reason=$outputReason target_fps=$targetFps speed=${formatLogFloat(frame.speed)}"
+    Log.w(logTag, outputMessage)
   }
 
   private fun makePresentationWindowCurrent(): Boolean {
@@ -3558,7 +3596,7 @@ class Media3FlowVideoSink(
     } else 0f
     val presentationFailures = presentationFailureCounters.snapshot()
     val diagnostics = Media3FlowDiagnostics(
-      enabled = true,
+      enabled = interpolationEnabled,
       capturedSourceFps = Media3FlowCadence.estimateSourceFps(ptsHistory.toList()),
       capturedPtsSampleCount = ptsHistory.size,
       outputFps = outputFps,
@@ -3620,98 +3658,18 @@ class Media3FlowVideoSink(
 
     val sourceFormat = currentFormat
     val inputSize = sourceFormat?.let { "${it.width}x${it.height}" } ?: "unknown"
-    val motionGridStepSourcePxEstimate =
-      sourceFormat?.let {
-        estimateFlowMotionGridStepSourcePx(
-          it.width,
-          it.height,
-          diagnostics.processingWidth,
-          diagnostics.processingHeight,
-        )
-      }?.let {
-        String.format(java.util.Locale.US, "%.1fx%.1f", it.first, it.second)
-      } ?: "unavailable"
-    val glesTiming = diagnostics.glesTimings
-    val cpuTiming = diagnostics.cpuTimings
-    val vulkanTiming = diagnostics.vulkanTimings
-    val presentationFailures = presentationFailureCounters.snapshot()
-    val gpuElapsed = diagnostics.motionPassAverageGpuUs?.let {
-      "${String.format(java.util.Locale.US, "%.2f", it)}us_per_motion_pass"
-    }
-      ?: vulkanTiming.motion.status
-    val confidence = diagnostics.confidence?.let { formatLogFloat(it) } ?: "n/a"
-    val vulkanStages = "preprocess=${formatVulkanStage(vulkanTiming.preprocess)} " +
-      "analysis=${formatVulkanStage(vulkanTiming.analysis)} " +
-      "motionFine=${formatVulkanStage(vulkanTiming.motionFine)} " +
-      "motionMiddle=${formatVulkanStage(vulkanTiming.motionMiddle)} " +
-      "motionCoarse=${formatVulkanStage(vulkanTiming.motionCoarse)} " +
-      "motionTotal=${formatVulkanStage(vulkanTiming.motion)} " +
-      "synthesis=${formatVulkanStage(vulkanTiming.synthesis)}"
-    val glesStages = "presentationStagingCopy=${formatFlowDuration(glesTiming.presentationStagingCopy)}"
-    val cpuStages = "media3InputQueue=${formatFlowDuration(cpuTiming.inputQueueWait)} " +
-      "frameHandler=${formatFlowDuration(cpuTiming.frameHandlerCall)} " +
-      "eglSwapWait=${formatFlowDuration(cpuTiming.eglSwapWait)} " +
-      "inputPrepareSubmit=${formatFlowDuration(cpuTiming.vulkanInputPrepare)} " +
-      "synthesisSubmit=${formatFlowDuration(cpuTiming.vulkanSynthesisSubmit)}"
     Log.i(
       logTag,
-        "flow_summary ${BuildIdentityDiagnostic.shaField(BuildConfig.GIT_SHA)} " +
-        "renderer_api=vulkan requested_compute_api=${requestedComputeApi.name.lowercase()} " +
-        "effective_compute_api=${effectiveComputeApiName()} state=${diagnostics.state} " +
-        "bypass=${diagnostics.bypassReason ?: "none"} " +
-        "positionUs=$latestPositionUs speed=${formatLogFloat(playbackSpeed)} " +
-        "capturedSourceFps=${formatLogFloat(diagnostics.capturedSourceFps)} " +
-        "capturedPtsSamples=${diagnostics.capturedPtsSampleCount} targetFps=${diagnostics.targetFps} " +
-        "eglSwapReturnFps=${formatLogFloat(diagnostics.outputFps)} " +
+      "flow_summary ${BuildIdentityDiagnostic.shaField(BuildConfig.GIT_SHA)} " +
+        "state=${diagnostics.state} bypass=${diagnostics.bypassReason ?: "none"} " +
+        "input=$inputSize capturedFps=${formatLogFloat(diagnostics.capturedSourceFps)} " +
+        "targetFps=${diagnostics.targetFps} eglSwapReturnFps=${formatLogFloat(diagnostics.outputFps)} " +
+        "generatedFps=${formatLogFloat(diagnostics.generatedFps)} " +
+        "generatedFrames=${diagnostics.generatedFrames} droppedFrames=${diagnostics.droppedFrames} " +
+        "submissionFailures=${diagnostics.outputSubmissionFailures} " +
         "eglSwapInterval=${if (eglSwapIntervalZeroApplied) 0 else "default"} " +
         "outputMetric=successful_eglSwapBuffers_return_not_scanout " +
-        "generatedFps=${formatLogFloat(diagnostics.generatedFps)} " +
-        "generatedTotal=${diagnostics.generatedFrames} inputDropsTotal=${diagnostics.droppedFrames} " +
-        "outputDecisionTotals=${outputDecisionCounters.snapshot().asLogFieldValue()} " +
-        "motionPairAnalysisTotals=${motionPairAnalysisCounters.snapshot().asLogFieldValue()} " +
-        "inferredSkippedOutputTicksTotal=${diagnostics.skippedOutputTicks} skippedTotal=${diagnostics.skippedFrames} " +
-        "outputSubmissionFailures=${diagnostics.outputSubmissionFailures} " +
-        "lastOutputSubmissionFailure=${diagnostics.lastOutputSubmissionFailureReason} " +
-        "outputSubmissionFailureReasons=${presentationFailures.outputSubmissionReasonsAsLogFieldValue()} " +
-        "presentationPathFailureReasons=${presentationFailures.presentationPathReasonsAsLogFieldValue()} " +
-        "lastNoWritableSlotStates=${presentationFailures.lastNoWritableSlotStatesAsLogFieldValue()} " +
-        "tickGapReason=${diagnostics.lastOutputTickGapReason} " +
-        "tickGapContexts=${formatDeadlineReasons(diagnostics.outputTickGapContexts)} " +
-        "motionDeadlineAdmission=cpu_submit_proxy_not_gpu_completion " +
-        "queueDepth=pendingInput:${diagnostics.pendingInputDepth},inFlight:${diagnostics.inputInFlight}," +
-        "sourceFrames:${diagnostics.sourceFrameDepth},readyMotionPairs:${diagnostics.readyMotionPairDepth} " +
-        "presentationQueue=queued:${diagnostics.presentationQueueDepth},inFlight:${diagnostics.presentationInFlight}," +
-        "coalesced:${diagnostics.presentationCoalescedFrames} " +
-        "backpressureDeferredOutputs=${diagnostics.backpressureDeferredOutputs} " +
-        "oldestPendingInputMs=${formatLogFloat(diagnostics.oldestPendingInputAgeMs)} " +
-        "selectedSourcePtsAgeMs=${formatNullableLogFloat(diagnostics.selectedSourcePtsAgeMs)} " +
-        "pairPtsGapMs=${formatNullableLogFloat(diagnostics.sourcePairPtsGapMs)} " +
-        "pairCaptureAgeMs=${formatNullableLogFloat(diagnostics.frame0CaptureAgeMs)}/${formatNullableLogFloat(diagnostics.frame1CaptureAgeMs)} " +
-        "outputCallbackLatenessMs=${formatLogFloat(diagnostics.outputCallbackLatenessMs)} " +
-        "input=$inputSize frameStorage=${diagnostics.frameStorageWidth}x${diagnostics.frameStorageHeight} " +
-        "processing=${diagnostics.processingWidth}x${diagnostics.processingHeight} " +
-        "motionPyramid=quarter>half>full " +
-        "motionGrid=${diagnostics.motionGridWidth}x${diagnostics.motionGridHeight} " +
-        "motionGridStepSourcePxEstimate=$motionGridStepSourcePxEstimate artifactRiskProxy=spatial_sampling_only " +
-        "motionSubmitCpuMs=${formatLogFloat(diagnostics.motionEstimateSubmitMs)} " +
-        "motionPassVulkanAvg=$gpuElapsed vulkanTimerStatus=${vulkanTiming.status} " +
-        "computeTimestampSupported=${vulkanTiming.timestampsSupported} " +
-        "computeQueueFamily=${vulkanTiming.computeQueueFamily} " +
-        "computeTimestampValidBits=${vulkanTiming.timestampValidBits} " +
-        "timestampPeriodNs=${String.format(java.util.Locale.US, "%.6f", vulkanTiming.timestampPeriodNs)} " +
-        "timestampComputeAndGraphics=${vulkanTiming.timestampComputeAndGraphics} " +
-        "vulkanStagesUs={$vulkanStages} " +
-        "glesTimerStatus=${glesTiming.status} glesQueryCounts=valid:${glesTiming.validResults}," +
-        "pending:${glesTiming.pendingResults},disjoint:${glesTiming.disjointResultsDiscarded}," +
-        "zero:${glesTiming.zeroDurationResults},skipped:${glesTiming.skippedBecausePoolFull} " +
-        "glesStagesUs={$glesStages} " +
-        "cpuStagesUs={$cpuStages} coverage=unavailable_vulkan_ssbo_readback_disabled " +
-        "pixelArtifactQuality=unmeasured_vulkan_ssbo_readback_disabled " +
-        "confidence=$confidence displayReportedHz=${formatLogFloat(displayRefreshRate(appContext))} " +
-        "displayModeInitialHz=${formatLogFloat(displayHz)} surfaceHintFps=${formatLogFloat(outputFrameRateHintFps)} " +
-        "matchContentPreference=$matchContentFrameRatePreferenceLabel " +
-        "surfaceSwitchStrategy=$surfaceFrameRateChangeStrategyLabel " +
-        "media3Strategy=${if (changeFrameRateStrategy == C.VIDEO_CHANGE_FRAME_RATE_STRATEGY_OFF) "off" else "only_if_seamless"}",
+        "displayHz=${formatLogFloat(displayRefreshRate(appContext))}",
     )
   }
 

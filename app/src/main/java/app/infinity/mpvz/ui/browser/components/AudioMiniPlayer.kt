@@ -12,10 +12,10 @@ import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -30,7 +30,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -40,22 +39,33 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import app.infinity.mpvz.ui.icons.Icon
 import app.infinity.mpvz.ui.icons.Icons
 import app.infinity.mpvz.ui.player.MediaPlaybackService
 import app.infinity.mpvz.ui.player.PlaybackSession
 import app.infinity.mpvz.ui.player.PlayerActivity
 import app.infinity.mpvz.ui.player.controls.components.MiniAudioVisualizer
+import app.infinity.mpvz.preferences.AppearancePreferences
+import app.infinity.mpvz.preferences.preference.collectAsState
+import app.infinity.mpvz.ui.theme.BrowserGlassSurface
+import org.koin.compose.koinInject
 
 @Composable
 fun AudioMiniPlayer(modifier: Modifier = Modifier) {
   val isServiceRunning = MediaPlaybackService.isForegroundActive()
   val context = LocalContext.current
+  val appearancePreferences = koinInject<AppearancePreferences>()
+  val glassEnabled by appearancePreferences.liquidGlassSurfaces.collectAsState()
+  val glassOpacity by appearancePreferences.glassSurfaceOpacity.collectAsState()
+  val glassHighlight by appearancePreferences.glassSurfaceHighlight.collectAsState()
   val sessionState by PlaybackSession.state.collectAsStateWithLifecycle()
   val paused by PlaybackSession.propBoolean["pause"].collectAsStateWithLifecycle()
   val rawMediaTitle by PlaybackSession.propString["media-title"].collectAsStateWithLifecycle()
@@ -70,27 +80,40 @@ fun AudioMiniPlayer(modifier: Modifier = Modifier) {
       ?: rawMediaTitle?.takeIf { it.isNotBlank() }
       ?: "Audio Track"
 
-  Surface(
+  fun openPlayer() {
+    val intent =
+      Intent(context, PlayerActivity::class.java).apply {
+        action = MediaPlaybackService.ACTION_OPEN_PLAYER
+        putExtra("is_audio", true)
+        putExtra("media_library_audio", true)
+        putExtra("internal_launch", true)
+        putExtra("launch_source", "notification")
+        flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
+      }
+    context.startActivity(intent)
+  }
+
+  BrowserGlassSurface(
+    enabled = glassEnabled,
+    opacity = glassOpacity,
+    highlight = glassHighlight,
     modifier =
       modifier
         .fillMaxWidth()
         .clip(RoundedCornerShape(24.dp))
-        .clickable {
-          val intent =
-            Intent(context, PlayerActivity::class.java).apply {
-              action = MediaPlaybackService.ACTION_OPEN_PLAYER
-              putExtra("is_audio", true)
-              putExtra("media_library_audio", true)
-              putExtra("internal_launch", true)
-              putExtra("launch_source", "notification")
-              flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
-            }
-          context.startActivity(intent)
-        },
-    color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.95f),
-    tonalElevation = 6.dp,
-    shadowElevation = 8.dp,
-    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)),
+        .pointerInput(Unit) {
+          var totalDrag = 0f
+          detectVerticalDragGestures(
+            onVerticalDrag = { change, dragAmount ->
+              totalDrag += dragAmount
+              if (totalDrag < 0f) change.consume()
+            },
+            onDragEnd = { if (totalDrag <= -120f) openPlayer(); totalDrag = 0f },
+            onDragCancel = { totalDrag = 0f },
+          )
+        }
+        .clickable(onClick = ::openPlayer)
+        .semantics { contentDescription = "Open full audio player" },
   ) {
     val primaryContainerColor = MaterialTheme.colorScheme.primaryContainer
 

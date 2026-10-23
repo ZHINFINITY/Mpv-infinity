@@ -6,6 +6,7 @@
 
 package app.infinity.mpvz.ui.player.controls.components.sheets
 
+import app.infinity.mpvz.presentation.components.playerGlassOverlay
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -81,6 +82,9 @@ fun LyricsTranslateDialog(
   }
 
   AlertDialog(
+    modifier = Modifier.playerGlassOverlay(),
+    containerColor = androidx.compose.ui.graphics.Color.Transparent,
+    tonalElevation = 0.dp,
     onDismissRequest = onDismiss,
     title = {
       Row(
@@ -121,12 +125,13 @@ fun LyricsTranslateDialog(
         Surface(
           modifier = Modifier
             .fillMaxWidth()
+            .playerGlassOverlay(12.dp)
             .clip(RoundedCornerShape(12.dp))
             .clickable {
               viewModel.showOriginalLyrics()
               onDismiss()
             },
-          color = if (!state.isTranslationActive) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant,
+          color = androidx.compose.ui.graphics.Color.Transparent,
           shape = RoundedCornerShape(12.dp),
         ) {
           Row(

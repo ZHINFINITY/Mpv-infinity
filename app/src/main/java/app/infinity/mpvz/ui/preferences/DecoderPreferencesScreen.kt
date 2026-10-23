@@ -7,6 +7,10 @@
 
 package app.infinity.mpvz.ui.preferences
 
+import app.infinity.mpvz.ui.preferences.components.settingsGlassContainerColor
+
+import app.infinity.mpvz.ui.preferences.components.settingsGlassSurface
+
 import android.content.Intent
 import android.net.Uri
 import androidx.compose.animation.AnimatedVisibility
@@ -25,11 +29,11 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Scaffold
+import app.infinity.mpvz.ui.preferences.components.SettingsScaffold as Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
+import app.infinity.mpvz.ui.preferences.components.SettingsTopAppBar as TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -67,7 +71,7 @@ import app.infinity.mpvz.ui.utils.LocalShowSettingsBackArrow
 import app.infinity.mpvz.ui.utils.popSafely
 import app.infinity.mpvz.utils.device.VulkanCapabilities
 import kotlinx.serialization.Serializable
-import me.zhanghai.compose.preference.ListPreference
+import app.infinity.mpvz.ui.preferences.components.ListPreference
 import me.zhanghai.compose.preference.ProvidePreferenceLocals
 import org.koin.compose.koinInject
 
@@ -240,6 +244,8 @@ object DecoderPreferencesScreen : Screen {
 
               if (showGpuNextWarning) {
                 AlertDialog(
+      containerColor = settingsGlassContainerColor(androidx.compose.material3.AlertDialogDefaults.containerColor),
+      modifier = androidx.compose.ui.Modifier.settingsGlassSurface(cornerRadius = 28.dp, independent = true),
                   onDismissRequest = { showGpuNextWarning = false },
                   title = { Text(stringResource(R.string.pref_decoder_gpu_next_enable_title)) },
                   text = {
@@ -366,26 +372,18 @@ object DecoderPreferencesScreen : Screen {
 
               PreferenceDivider()
 
-              Surface(
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp),
-                shape = androidx.compose.foundation.shape.RoundedCornerShape(12.dp),
-                color = MaterialTheme.colorScheme.surfaceContainerLow,
-              ) {
-                SwitchPreference(
-                  modifier = Modifier.settingsSearchTarget(R.string.pref_decoder_mpvflow_title),
-                  value = mpvFlowFrameInterpolationEnabled,
-                  enabled = mpvFlowAvailable || nativeMedia3FlowAvailable || mpvFlowFrameInterpolationEnabled,
-                  onValueChange = { enabled ->
-                    preferences.mpvFlowFrameInterpolation.set(enabled)
-                  },
-                  title = { Text(stringResource(R.string.pref_decoder_mpvflow_title)) },
-                  titleStyle =
-                    MaterialTheme.typography.titleMedium.copy(
-                      fontWeight = FontWeight.SemiBold,
-                      color = MaterialTheme.colorScheme.primary,
-                    ),
-                )
-              }
+              SwitchPreference(
+                modifier = Modifier.settingsSearchTarget(R.string.pref_decoder_mpvflow_title),
+                value = mpvFlowFrameInterpolationEnabled,
+                enabled = mpvFlowAvailable || nativeMedia3FlowAvailable || mpvFlowFrameInterpolationEnabled,
+                onValueChange = { enabled ->
+                  preferences.mpvFlowFrameInterpolation.set(enabled)
+                },
+                title = { Text(stringResource(R.string.pref_decoder_mpvflow_title)) },
+                summary = {
+                  Text(stringResource(R.string.pref_decoder_mpvflow_summary))
+                },
+              )
 
               PreferenceDivider()
 
@@ -433,6 +431,7 @@ object DecoderPreferencesScreen : Screen {
                   )
                 },
                 title = { Text(stringResource(R.string.pref_decoder_mpvflow_target_fps_title)) },
+                summary = { Text("Stored target: ${mpvFlowTargetFps} fps", color = MaterialTheme.colorScheme.outline) },
               )
 
               PreferenceDivider()

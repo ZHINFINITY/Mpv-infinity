@@ -63,6 +63,8 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -70,12 +72,14 @@ import androidx.compose.ui.res.stringResource
 import app.infinity.mpvz.R
 import app.infinity.mpvz.domain.media.model.Video
 import app.infinity.mpvz.domain.thumbnail.ThumbnailRepository
+import app.infinity.mpvz.preferences.AppearancePreferences
 import app.infinity.mpvz.preferences.preference.collectAsState
 import app.infinity.mpvz.presentation.components.PlayerSheet
 import app.infinity.mpvz.presentation.components.RemoteImage
 import app.infinity.mpvz.ui.browser.dialogs.AddToPlaylistDialog
 import app.infinity.mpvz.ui.player.PlaybackSession
 import app.infinity.mpvz.ui.player.controls.components.MiniAudioVisualizer
+import app.infinity.mpvz.ui.player.controls.components.playerGlassPane
 import app.infinity.mpvz.ui.icons.Icon
 import app.infinity.mpvz.ui.icons.Icons
 import app.infinity.mpvz.ui.theme.spacing
@@ -263,6 +267,8 @@ fun PlaylistSheet(
 ) {
   val configuration = LocalConfiguration.current
   val thumbnailRepository = koinInject<ThumbnailRepository>()
+  val appearancePreferences = koinInject<AppearancePreferences>()
+  val liquidGlassSurfaces by appearancePreferences.liquidGlassSurfaces.collectAsState()
 
   val accentColor = MaterialTheme.colorScheme.primary
 
@@ -323,8 +329,22 @@ fun PlaylistSheet(
     swipeOffset = swipeOffset,
   ) {
     Surface(
-      modifier = Modifier.fillMaxWidth(),
-      color = Color.Transparent,
+      modifier =
+        Modifier
+          .fillMaxWidth()
+          .clip(
+            RoundedCornerShape(
+              topStart = 16.dp,
+              topEnd = 16.dp,
+              bottomStart = 0.dp,
+              bottomEnd = 0.dp,
+            ),
+          ),
+      color = if (!liquidGlassSurfaces) {
+        MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = 0.72f)
+      } else {
+        Color.Transparent
+      },
       shape =
         RoundedCornerShape(
           topStart = 16.dp,
@@ -377,7 +397,14 @@ fun PlaylistSheet(
               )
             }
             Text(
-              text = "$totalCount items",
+              text = if (currentItem != null) {
+                stringResource(
+                  R.string.playlist_actions_now_playing_count,
+                  totalCount,
+                )
+              } else {
+                stringResource(R.string.playlist_actions_playlist_count, totalCount)
+              },
               style = MaterialTheme.typography.bodyMedium,
               color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -389,6 +416,7 @@ fun PlaylistSheet(
           ) {
             IconButton(
               onClick = { showAddToPlaylistDialog = true },
+              modifier = Modifier.playlistItemGlass(999.dp),
             ) {
               Icon(
                 imageVector = Icons.RoundedFilled.PlaylistAdd,
@@ -397,7 +425,10 @@ fun PlaylistSheet(
               )
             }
 
-            IconButton(onClick = { isListMode = !isListMode }) {
+            IconButton(
+              onClick = { isListMode = !isListMode },
+              modifier = Modifier.playlistItemGlass(999.dp),
+            ) {
               Icon(
                 imageVector = if (isListMode) Icons.RoundedFilled.GridView else Icons.RoundedFilled.ViewList,
                 contentDescription = if (isListMode) "Switch to Grid View" else "Switch to List View",
@@ -520,6 +551,21 @@ fun PlaylistSheet(
   }
 }
 
+/** One locally bounded material per row/card/action; artwork stays content, never a lens input. */
+@Composable
+private fun Modifier.playlistItemGlass(
+  cornerRadius: androidx.compose.ui.unit.Dp = 12.dp,
+): Modifier {
+  val appearance = koinInject<AppearancePreferences>()
+  val enabled by appearance.liquidGlassSurfaces.collectAsState()
+  return playerGlassPane(
+    enabled = enabled,
+    opacity = 0.38f,
+    highlight = 0.14f,
+    cornerRadius = cornerRadius,
+  )
+}
+
 @Composable
 private fun DragHandle(
   scope: ReorderableCollectionItemScope,
@@ -540,7 +586,7 @@ private fun DragHandle(
     modifier =
       with(scope) {
         modifier
-          .size(40.dp)
+          .size(48.dp)
           .draggableHandle()
       },
     contentAlignment = Alignment.Center,
@@ -578,17 +624,10 @@ fun PlaylistTrackListItem(
 
   // Use theme colors dynamically
   val accentSecondary = MaterialTheme.colorScheme.tertiary
+  val playingStateDescription = stringResource(R.string.ui_now_playing)
 
-  val borderModifier =
-    if (effectiveItem.isPlaying) {
-      Modifier.border(
-        width = 2.dp,
-        brush = Brush.linearGradient(listOf(accentColor, accentSecondary)),
-        shape = RoundedCornerShape(12.dp),
-      )
-    } else {
-      Modifier
-    }
+  // The playing row is shown by the accent fill alone: no second outline over the row glass.
+  val borderModifier = Modifier
 
   Surface(
     modifier =
@@ -597,12 +636,19 @@ fun PlaylistTrackListItem(
         .padding(
           horizontal = MaterialTheme.spacing.medium,
           vertical = MaterialTheme.spacing.extraSmall,
-        ).clip(RoundedCornerShape(12.dp))
+        ).playlistItemGlass()
         .then(borderModifier)
-        .clickable(onClick = onClick),
+        .clickable(onClick = onClick)
+        .semantics {
+          stateDescription = if (effectiveItem.isPlaying) {
+            playingStateDescription
+          } else {
+            ""
+          }
+        },
     color =
       if (effectiveItem.isPlaying) {
-        MaterialTheme.colorScheme.tertiary.copy(alpha = 0.15f)
+        MaterialTheme.colorScheme.primary.copy(alpha = 0.18f)
       } else {
         Color.Transparent
       },
@@ -810,27 +856,27 @@ fun PlaylistTrackGridItem(
   // Use theme colors dynamically
   val accentColor = MaterialTheme.colorScheme.primary
   val accentSecondary = MaterialTheme.colorScheme.tertiary
+  val playingStateDescription = stringResource(R.string.ui_now_playing)
 
-  val borderModifier =
-    if (effectiveItem.isPlaying) {
-      Modifier.border(
-        width = 2.dp,
-        brush = Brush.linearGradient(listOf(accentColor, accentSecondary)),
-        shape = RoundedCornerShape(12.dp),
-      )
-    } else {
-      Modifier
-    }
+  // The playing row is shown by the accent fill alone: no second outline over the row glass.
+  val borderModifier = Modifier
 
   // YouTube-style vertical card
   Surface(
     modifier =
       modifier
         .width(200.dp)
-        .clip(RoundedCornerShape(12.dp))
+        .playlistItemGlass()
         .then(borderModifier)
-        .clickable(onClick = onClick),
-    color = MaterialTheme.colorScheme.tertiary.copy(alpha = 0.15f),
+        .clickable(onClick = onClick)
+        .semantics {
+          stateDescription = if (effectiveItem.isPlaying) {
+            playingStateDescription
+          } else {
+            ""
+          }
+        },
+    color = if (effectiveItem.isPlaying) MaterialTheme.colorScheme.primary.copy(alpha = 0.18f) else Color.Transparent,
     shape = RoundedCornerShape(12.dp),
   ) {
     Column(

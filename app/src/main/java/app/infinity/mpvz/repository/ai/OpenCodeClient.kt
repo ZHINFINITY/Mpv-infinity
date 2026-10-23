@@ -6,6 +6,7 @@
  */
 
 package app.infinity.mpvz.repository.ai
+import app.infinity.mpvz.network.awaitText
 
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -45,31 +46,31 @@ class OpenCodeClient(
   override suspend fun fetchModels(apiKey: String): Result<List<AiModelInfo>> =
     withContext(Dispatchers.IO) {
       runCatching {
-        val response =
-          apiClient
-            .newCall(
-              Request
-                .Builder()
-                .url("$BASE_URL/models")
-                .header("Authorization", "Bearer $apiKey")
-                .get()
-                .build(),
-            ).execute()
-        val body = response.body.string()
-        if (!response.isSuccessful) {
-          throw IllegalStateException("OpenCode API error ${response.code}: ${AiResponseParser.error(json, body)}")
-        }
-        AiResponseParser.modelArray(json, body, "OpenCode").mapNotNull { model ->
-          val id = model.string("id") ?: return@mapNotNull null
-          if (!AiModelCapabilities.isTextGenerationModel(id)) return@mapNotNull null
-          val displayName = model.string("name") ?: model.string("display_name") ?: id
-          val pricing = model["pricing"] as? JsonObject
-          AiModelInfo(
-            id = id,
-            displayName = displayName,
-            isFree = AiModelPricing.isZeroCost(pricing) || id.endsWith("-free", ignoreCase = true),
-          )
-        }
+        apiClient
+          .newCall(
+            Request
+              .Builder()
+              .url("$BASE_URL/models")
+              .header("Authorization", "Bearer $apiKey")
+              .get()
+              .build(),
+          ).execute().use { response ->
+            val body = response.body.string()
+            if (!response.isSuccessful) {
+              throw IllegalStateException("OpenCode API error ${response.code}: ${AiResponseParser.error(json, body)}")
+            }
+            AiResponseParser.modelArray(json, body, "OpenCode").mapNotNull { model ->
+              val id = model.string("id") ?: return@mapNotNull null
+              if (!AiModelCapabilities.isTextGenerationModel(id)) return@mapNotNull null
+              val displayName = model.string("name") ?: model.string("display_name") ?: id
+              val pricing = model["pricing"] as? JsonObject
+              AiModelInfo(
+                id = id,
+                displayName = displayName,
+                isFree = AiModelPricing.isZeroCost(pricing) || id.endsWith("-free", ignoreCase = true),
+              )
+            }
+          }
       }
     }
 
@@ -117,8 +118,8 @@ class OpenCodeClient(
               if (protocol == Protocol.GOOGLE) header("x-goog-api-key", apiKey)
             }.post(payload.toString().toRequestBody(JSON_MEDIA_TYPE))
             .build()
-        val response = apiClient.newCall(request).execute()
-        val body = response.body.string()
+        val response = apiClient.newCall(request).awaitText()
+        val body = response.bodyText
         if (!response.isSuccessful) {
           throw IllegalStateException("OpenCode generate error ${response.code}: ${AiResponseParser.error(json, body)}")
         }

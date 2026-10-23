@@ -202,7 +202,7 @@ class DebugLogRepositoryTest {
         frameInterpolationEnabled = true,
         verboseLogging = false,
       )
-    assertEquals("all=info,vo/gpu-next=v", messageLevel)
+    assertEquals("all=warn,vo/gpu-next=info", messageLevel)
 
     fun entry(
       id: String,
@@ -426,7 +426,7 @@ class DebugLogRepositoryTest {
   }
 
   @Test
-  fun formatsMeasuredPairCostWithoutCallingItDisplayedFrameRate() {
+  fun omitsVerbosePairAlgorithmDetailsFromTheUserFacingSummary() {
     val entry =
       DebugLogEntry(
         id = "mpvflow-pair",
@@ -439,10 +439,10 @@ class DebugLogRepositoryTest {
 
     val summary = formatMpvFlowTimingSummary(listOf(entry))
 
-    assertTrue(summary.contains("38.9/42.0 ms (93%)"))
-    assertTrue(summary.contains("480×270"))
-    assertTrue(summary.contains("target 60 fps"))
-    assertTrue(!summary.contains("displayed"))
+    assertEquals("MPVFlow active; synthesized submit rate not captured yet", summary)
+    assertTrue(!summary.contains("38.9/42.0 ms"))
+    assertTrue(!summary.contains("480×270"))
+    assertTrue(!summary.contains("target 60 fps"))
   }
 
   @Test

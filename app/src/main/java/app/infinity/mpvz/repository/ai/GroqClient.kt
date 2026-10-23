@@ -6,6 +6,7 @@
  */
 
 package app.infinity.mpvz.repository.ai
+import app.infinity.mpvz.network.awaitText
 
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -108,12 +109,13 @@ class GroqClient(
             .get()
             .build()
 
-        val response = apiClient.newCall(request).execute()
-        if (!response.isSuccessful) {
-          val body = response.body.string()
-          throw Exception("Invalid API key: ${response.code} $body")
+        apiClient.newCall(request).execute().use { response ->
+          if (!response.isSuccessful) {
+            val body = response.body.string()
+            throw Exception("Invalid API key: ${response.code} $body")
+          }
+          "API key verified successfully"
         }
-        "API key verified successfully"
       }
     }
 
@@ -149,8 +151,8 @@ class GroqClient(
             .post(requestBody.toRequestBody(JSON_MEDIA_TYPE))
             .build()
 
-        val response = apiClient.newCall(request).execute()
-        val body = response.body.string()
+        val response = apiClient.newCall(request).awaitText()
+        val body = response.bodyText
 
         if (!response.isSuccessful) {
           val errorMsg = parseError(body)

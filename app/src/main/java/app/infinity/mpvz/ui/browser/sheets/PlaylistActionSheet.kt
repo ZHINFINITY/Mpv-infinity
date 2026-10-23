@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -32,10 +33,9 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.SheetValue
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.rememberBottomSheetState
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -46,9 +46,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.window.Dialog
 import app.infinity.mpvz.ui.icons.Icon
 import app.infinity.mpvz.ui.icons.Icons
+import app.infinity.mpvz.ui.preferences.components.settingsGlassSurface
+import app.infinity.mpvz.ui.preferences.components.settingsGlassContainerColor
 import app.infinity.mpvz.utils.media.SharedUrlExtractor
 import kotlinx.coroutines.launch
 
@@ -58,28 +61,30 @@ fun PlaylistActionSheet(
   isOpen: Boolean,
   onDismiss: () -> Unit,
   onCreatePlaylist: suspend (String) -> Long,
-  onCreateM3UPlaylistFromFile: suspend (Uri) -> Result<Long>,
-  onCreateM3UPlaylist: suspend (String, String?) -> Result<Long>,
+  onCreateM3UPlaylistFromFile: suspend (Uri, Boolean) -> Result<Long>,
+  onCreateM3UPlaylist: suspend (String, String?, Boolean) -> Result<Long>,
   context: android.content.Context,
   modifier: Modifier = Modifier,
 ) {
   var showCreateDialog by remember { mutableStateOf(false) }
   var showM3UDialog by remember { mutableStateOf(false) }
+  var radioImport by remember { mutableStateOf(false) }
 
   if (!isOpen) return
 
-  val sheetState = rememberBottomSheetState(initialValue = SheetValue.Hidden)
+  val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
   ModalBottomSheet(
+    containerColor = settingsGlassContainerColor(MaterialTheme.colorScheme.surfaceContainerLow),
     onDismissRequest = onDismiss,
     sheetState = sheetState,
     dragHandle = { BottomSheetDefaults.DragHandle() },
-    modifier = modifier,
   ) {
     Column(
       modifier =
-        Modifier
+        modifier
           .fillMaxWidth()
+          .settingsGlassSurface(cornerRadius = 28.dp, independent = true)
           .padding(start = 24.dp, end = 24.dp, top = 8.dp, bottom = 16.dp)
           .verticalScroll(rememberScrollState()),
       verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -96,15 +101,22 @@ fun PlaylistActionSheet(
 
       Spacer(modifier = Modifier.height(4.dp))
 
+      Text(
+        text = stringResource(app.infinity.mpvz.R.string.playlist_actions_create_group),
+        style = MaterialTheme.typography.labelLarge,
+        color = MaterialTheme.colorScheme.primary,
+        fontWeight = FontWeight.Bold,
+      )
+
       // Action cards
       Card(
         onClick = {
           showCreateDialog = true
         },
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier.fillMaxWidth().heightIn(min = 64.dp),
         colors =
           CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant,
+            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f),
           ),
       ) {
         Row(
@@ -140,14 +152,24 @@ fun PlaylistActionSheet(
         }
       }
 
+      Card(onClick = { radioImport = true; showM3UDialog = true }, modifier = Modifier.fillMaxWidth().heightIn(min = 64.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f))) {
+        Row(modifier = Modifier.fillMaxWidth().padding(16.dp), horizontalArrangement = Arrangement.spacedBy(16.dp), verticalAlignment = Alignment.CenterVertically) {
+          Icon(imageVector = Icons.RoundedFilled.Link, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(24.dp))
+          Column(modifier = Modifier.weight(1f)) {
+            Text(text = "Add Radio M3U", style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium)
+            Text(text = "Import internet radio stations into Radio/M3U", style = MaterialTheme.typography.bodySmall)
+          }
+        }
+      }
       Card(
         onClick = {
+          radioImport = false
           showM3UDialog = true
         },
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier.fillMaxWidth().heightIn(min = 64.dp),
         colors =
           CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant,
+            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f),
           ),
       ) {
         Row(
@@ -196,10 +218,13 @@ fun PlaylistActionSheet(
     Dialog(onDismissRequest = { showCreateDialog = false }) {
       Card(
         modifier =
-          Modifier
+          (Modifier
             .fillMaxWidth()
-            .padding(16.dp),
+            .padding(16.dp)).settingsGlassSurface(cornerRadius = 28.dp, independent = true),
         shape = MaterialTheme.shapes.extraLarge,
+        colors = CardDefaults.cardColors(
+          containerColor = settingsGlassContainerColor(MaterialTheme.colorScheme.surfaceContainerHighest),
+        ),
       ) {
         Column(
           modifier = Modifier.padding(24.dp),
@@ -290,7 +315,7 @@ fun PlaylistActionSheet(
         uri?.let {
           isLoading = true
           coroutineScope.launch {
-            val result = onCreateM3UPlaylistFromFile(it)
+            val result = onCreateM3UPlaylistFromFile(it, radioImport)
             result
               .onSuccess {
                 android.widget.Toast
@@ -317,10 +342,13 @@ fun PlaylistActionSheet(
     Dialog(onDismissRequest = { showM3UDialog = false }) {
       Card(
         modifier =
-          Modifier
+          (Modifier
             .fillMaxWidth()
-            .padding(16.dp),
+            .padding(16.dp)).settingsGlassSurface(cornerRadius = 28.dp, independent = true),
         shape = MaterialTheme.shapes.extraLarge,
+        colors = CardDefaults.cardColors(
+          containerColor = settingsGlassContainerColor(MaterialTheme.colorScheme.surfaceContainerHighest),
+        ),
       ) {
         Column(
           modifier = Modifier.padding(24.dp),
@@ -444,6 +472,7 @@ fun PlaylistActionSheet(
                       onCreateM3UPlaylist(
                         normalizedPlaylistUrl,
                         playlistUserAgent.trim().takeIf { it.isNotEmpty() },
+                        radioImport,
                       )
                     result
                       .onSuccess {

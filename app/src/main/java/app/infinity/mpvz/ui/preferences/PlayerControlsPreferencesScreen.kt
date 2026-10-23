@@ -7,6 +7,11 @@
 
 package app.infinity.mpvz.ui.preferences
 
+import app.infinity.mpvz.ui.components.GlassOptionSheet
+import app.infinity.mpvz.ui.preferences.components.settingsGlassContainerColor
+
+import app.infinity.mpvz.ui.preferences.components.settingsGlassSurface
+
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -29,10 +34,10 @@ import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
-import androidx.compose.material3.Scaffold
+import app.infinity.mpvz.ui.preferences.components.SettingsScaffold as Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
+import app.infinity.mpvz.ui.preferences.components.SettingsTopAppBar as TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -63,7 +68,7 @@ import app.infinity.mpvz.ui.utils.LocalBackStack
 import app.infinity.mpvz.ui.utils.LocalShowSettingsBackArrow
 import app.infinity.mpvz.ui.utils.popSafely
 import kotlinx.serialization.Serializable
-import me.zhanghai.compose.preference.ListPreference
+import app.infinity.mpvz.ui.preferences.components.ListPreference
 import me.zhanghai.compose.preference.ProvidePreferenceLocals
 import org.koin.compose.koinInject
 
@@ -405,10 +410,12 @@ object PlayerControlsPreferencesScreen : Screen {
             }
 
             if (showCustomTimeDialog) {
-              AlertDialog(
+              GlassOptionSheet(
+      containerColor = settingsGlassContainerColor(androidx.compose.material3.AlertDialogDefaults.containerColor),
+      modifier = androidx.compose.ui.Modifier.settingsGlassSurface(cornerRadius = 28.dp, independent = true),
                 onDismissRequest = { showCustomTimeDialog = false },
                 title = { Text(text = stringResource(R.string.pref_player_display_hide_player_control_time)) },
-                text = {
+                content = {
                   Column(
                     modifier =
                       Modifier
@@ -446,8 +453,7 @@ object PlayerControlsPreferencesScreen : Screen {
                   TextButton(onClick = { showCustomTimeDialog = false }) {
                     Text(stringResource(R.string.generic_cancel))
                   }
-                },
-              )
+                },)
             }
           }
         }

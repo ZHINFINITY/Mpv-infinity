@@ -7,7 +7,8 @@
 package app.infinity.mpvz.ui.player
 
 internal object MpvFlowLogConfig {
-  const val FLOW_VERBOSE_DIAGNOSTICS = "all=info,vo/gpu-next=v"
+  // MPV emits measured runtime_cadence at INFO; WARN here would erase FPS statistics.
+  const val FLOW_VERBOSE_DIAGNOSTICS = "all=warn,vo/gpu-next=info"
 
   fun messageLevelOption(
     mpvFlowEnabled: Boolean,

@@ -8,8 +8,6 @@
 package app.infinity.mpvz.ui.player.controls
 
 import app.infinity.mpvz.ui.player.DeclaredPlaybackMediaKind
-import app.infinity.mpvz.ui.player.FlowDurationSummary
-import app.infinity.mpvz.ui.player.FlowVulkanStageTiming
 import app.infinity.mpvz.ui.player.PlaybackPhase
 import app.infinity.mpvz.ui.player.PlaybackSession
 import app.infinity.mpvz.ui.player.declaredMediaKind
@@ -97,6 +95,7 @@ import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.Shadow
@@ -145,6 +144,7 @@ import app.infinity.mpvz.ui.player.NativePlaybackSnapshot
 import app.infinity.mpvz.ui.player.NativeStatsDisplay
 import app.infinity.mpvz.ui.player.Panels
 import app.infinity.mpvz.ui.player.PlayerActivity
+import app.infinity.mpvz.ui.player.PlayerStatsOverlayPolicy
 import app.infinity.mpvz.ui.player.PlayerUpdates
 import app.infinity.mpvz.ui.player.PlayerViewModel
 import app.infinity.mpvz.ui.player.PlaybackEngineMode
@@ -169,6 +169,7 @@ import app.infinity.mpvz.ui.player.controls.components.VolumeSlider
 import app.infinity.mpvz.ui.player.controls.components.playerButtonBorderColor
 import app.infinity.mpvz.ui.player.controls.components.playerButtonContainerColor
 import app.infinity.mpvz.ui.player.controls.components.playerButtonContentColor
+import app.infinity.mpvz.ui.player.controls.components.playerGlassPane
 import app.infinity.mpvz.ui.player.controls.components.rememberBufferingState
 import app.infinity.mpvz.ui.player.controls.components.sheets.toFixed
 import app.infinity.mpvz.ui.theme.controlColor
@@ -207,6 +208,7 @@ fun PlayerControls(
   onBackPress: () -> Unit,
   onSelectEngine: ((PlaybackEngineMode) -> Unit)? = null,
   modifier: Modifier = Modifier,
+  onGlassVisibilityChange: (Boolean) -> Unit = {},
 ) {
   val spacing = MaterialTheme.spacing
   val advancedPreferences = koinInject<AdvancedPreferences>()
@@ -271,6 +273,7 @@ fun PlayerControls(
   }
   val decoderPreferences = koinInject<DecoderPreferences>()
   val playbackEngine by decoderPreferences.playbackEngine.collectAsState()
+  val frameInterpolationEnabled by decoderPreferences.mpvFlowFrameInterpolation.collectAsState()
   val showSystemStatusBar by playerPreferences.showSystemStatusBar.collectAsState()
   val showSystemNavigationBar by playerPreferences.showSystemNavigationBar.collectAsState()
   val showControlsDrawer by playerPreferences.showControlsDrawer.collectAsState()
@@ -332,18 +335,6 @@ fun PlayerControls(
   val nativeSnapshot by activity?.nativePlaybackSnapshot?.collectAsState()
     ?: remember { mutableStateOf(NativePlaybackSnapshot()) }
   val nativeEngineActive = activity?.isNativeEngineActive() == true
-  // A Native seek is committed asynchronously. Do not clear the preview on pointer-up: the next
-  // snapshot can still contain the old position, and the seekbar would animate 20m -> 10m before
-  // jumping back to the committed 20m target. Clear it only after Media3 reports the target.
-  LaunchedEffect(nativeEngineActive, nativeSnapshot.positionMs, nativeSeekPreviewPosition, isSeeking) {
-    val target = nativeSeekPreviewPosition
-    if (nativeEngineActive && !isSeeking && target != null) {
-      val actualSeconds = nativeSnapshot.positionMs / 1000f
-      if (kotlin.math.abs(actualSeconds - target) <= 0.75f) {
-        nativeSeekPreviewPosition = null
-      }
-    }
-  }
   val isNativeBuffering = nativeEngineActive && nativeSnapshot.isBuffering
   val showBufferingIndicator =
     (bufferingState.visible || isNativeBuffering) &&
@@ -464,17 +455,24 @@ fun PlayerControls(
     abs((playbackSpeed ?: 1f) - 1f) > 0.001f
   }
   val useAudioPlayer =
-    when (currentPlaybackItem?.declaredMediaKind()) {
+    if (activity?.hasPreclassifiedMusicLaunch() == true) true else when (currentPlaybackItem?.declaredMediaKind()) {
       DeclaredPlaybackMediaKind.VIDEO -> false
       DeclaredPlaybackMediaKind.AUDIO -> true
       else -> isAudioOnly || activity?.isCurrentMediaKnownAudio() == true
     }
-  LaunchedEffect(useAudioPlayer) {
-    if (useAudioPlayer && statisticsPage in 1..5) {
-      advancedPreferences.enabledStatisticsPage.set(0)
-      PlaybackSession.command("script-binding", "stats/display-stats-toggle")
-    }
-  }
+  val declaredMediaKind = currentPlaybackItem?.declaredMediaKind()
+  val statsDecision = PlayerStatsOverlayPolicy.decide(
+    PlayerStatsOverlayPolicy.Input(
+      enabled = statisticsPage in 1..6,
+      page = statisticsPage,
+      engine = if (nativeEngineActive) PlayerStatsOverlayPolicy.Engine.NATIVE
+      else PlayerStatsOverlayPolicy.Engine.MPV,
+      isAudioOnly = useAudioPlayer,
+      musicMode = useAudioPlayer,
+      mediaTypeKnown = declaredMediaKind != DeclaredPlaybackMediaKind.UNKNOWN ||
+        nativeSnapshot.videoWidth > 0 || activity?.isCurrentMediaKnownAudio() == true,
+    ),
+  )
   if (useAudioPlayer) {
     val rawMediaTitle by PlaybackSession.propString["media-title"].collectAsState()
     val queuedTitle =
@@ -493,13 +491,20 @@ fun PlayerControls(
     val speedPresets by playerPreferences.speedPresets.collectAsState()
     val sortedSpeedPresets = remember(speedPresets) { speedPresets.map { it.toFloat() }.sorted() }
 
-    Box(modifier = modifier.fillMaxSize()) {
+    var audioGlassPalette by remember { mutableStateOf<Pair<Int, Int>?>(null) }
+    AudioPaletteGlassScene(
+      topArgb = audioGlassPalette?.first ?: MaterialTheme.colorScheme.primary.toArgb(),
+      bottomArgb = audioGlassPalette?.second ?: MaterialTheme.colorScheme.secondary.toArgb(),
+      enabled = liquidGlassSurfaces,
+      modifier = modifier.fillMaxSize(),
+    ) {
       AudioPlayerControls(
         viewModel = viewModel,
         mediaTitle = mediaTitle,
         onBackPress = onBackPress,
         onOpenSheet = onOpenSheet,
         onOpenPanel = onOpenPanel,
+        onGlassPaletteChanged = { top, bottom -> audioGlassPalette = top to bottom },
       )
 
       PlayerSheets(
@@ -530,8 +535,7 @@ fun PlayerControls(
         },
         decoder = decoder,
         onUpdateDecoder = { PlaybackSession.setPropertyString("hwdec", it.value) },
-        selectedEngine = activity?.currentEngineSelectionForControls()
-          ?: if (nativeEngineActive) PlaybackEngineMode.NATIVE else playbackEngine,
+        selectedEngine = if (nativeEngineActive) PlaybackEngineMode.NATIVE else PlaybackEngineMode.MPV,
         onSelectEngine = onSelectEngine ?: { decoderPreferences.playbackEngine.set(it) },
         speed = playbackSpeed ?: playerPreferences.defaultSpeed.get(),
         onSpeedChange = {
@@ -641,6 +645,10 @@ fun PlayerControls(
       isPlayerDrawerShown = false
     }
   }
+  // The drawer is also a visible glass consumer even though it hides the transport controls.
+  LaunchedEffect(isPlayerDrawerShown) {
+    onGlassVisibilityChange(isPlayerDrawerShown)
+  }
   val setPlayerDrawerShown: (Boolean) -> Unit = { visible ->
     if (showControlsDrawer) {
       isPlayerDrawerShown = visible
@@ -723,7 +731,7 @@ fun PlayerControls(
     }
     // Statistics are a video overlay only. Keep them out of the audio/visualizer composition even
     // when the previous video left the persisted statistics page enabled.
-    if (!useAudioPlayer && statisticsPage in 1..6) {
+    if (statsDecision.visible) {
       val statsModifier =
         Modifier
           .align(Alignment.TopStart)
@@ -1237,11 +1245,14 @@ fun PlayerControls(
                   val buttonInteractionSource = remember { MutableInteractionSource() }
                   Surface(
                     shape = CircleShape,
-                    color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.85f),
+                    color =
+                      if (liquidGlassSurfaces) Color.Transparent
+                      else MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.85f),
                     contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
                     border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.1f)),
                     modifier =
                       Modifier
+                        .playerGlassPane(enabled = liquidGlassSurfaces, opacity = 0.85f, highlight = 0.16f, cornerRadius = 999.dp)
                         .clip(CircleShape)
                         .combinedClickable(
                           interactionSource = buttonInteractionSource,
@@ -1301,11 +1312,14 @@ fun PlayerControls(
                   val buttonInteractionSource = remember { MutableInteractionSource() }
                   Surface(
                     shape = CircleShape,
-                    color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.85f),
+                    color =
+                      if (liquidGlassSurfaces) Color.Transparent
+                      else MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.85f),
                     contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
                     border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.1f)),
                     modifier =
                       Modifier
+                        .playerGlassPane(enabled = liquidGlassSurfaces, opacity = 0.85f, highlight = 0.16f, cornerRadius = 999.dp)
                         .clip(CircleShape)
                         .combinedClickable(
                           interactionSource = buttonInteractionSource,
@@ -1366,11 +1380,14 @@ fun PlayerControls(
                   val buttonInteractionSource = remember { MutableInteractionSource() }
                   Surface(
                     shape = CircleShape,
-                    color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.85f),
+                    color =
+                      if (liquidGlassSurfaces) Color.Transparent
+                      else MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.85f),
                     contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
                     border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.1f)),
                     modifier =
                       Modifier
+                        .playerGlassPane(enabled = liquidGlassSurfaces, opacity = 0.85f, highlight = 0.16f, cornerRadius = 999.dp)
                         .clip(CircleShape)
                         .combinedClickable(
                           interactionSource = buttonInteractionSource,
@@ -1453,10 +1470,11 @@ fun PlayerControls(
               )
             Surface(
               shape = RoundedCornerShape(999.dp),
-              color = segmentSurfaceColor,
+              color = if (liquidGlassSurfaces) Color.Transparent else segmentSurfaceColor,
               border = BorderStroke(1.5.dp, segmentBorderColor),
               modifier =
                 Modifier
+                  .playerGlassPane(enabled = liquidGlassSurfaces, opacity = 0.82f, highlight = 0.16f, cornerRadius = 999.dp)
                   .clip(RoundedCornerShape(999.dp))
                   .clickable {
                     resetControlsTimestamp = System.currentTimeMillis()
@@ -1518,8 +1536,17 @@ fun PlayerControls(
                 }
               Surface(
                 shape = CircleShape,
-                color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.9f),
+                color =
+                  if (liquidGlassSurfaces) Color.Transparent
+                  else MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.9f),
                 border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.3f)),
+                modifier =
+                  Modifier.playerGlassPane(
+                    enabled = liquidGlassSurfaces,
+                    opacity = 0.86f,
+                    highlight = 0.16f,
+                    cornerRadius = 999.dp,
+                  ),
               ) {
                 Row(
                   modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp),
@@ -1575,6 +1602,7 @@ fun PlayerControls(
                   modifier =
                     Modifier
                       .size(56.dp)
+                      .playerGlassPane(enabled = liquidGlassSurfaces, opacity = 0.88f, highlight = 0.18f, cornerRadius = 999.dp)
                       .clip(CircleShape)
                       .clickable(
                         enabled = viewModel.hasPrevious(),
@@ -1583,7 +1611,7 @@ fun PlayerControls(
                           if (viewModel.hasPrevious()) viewModel.playPrevious()
                         },
                       ).then(
-                        if (hideBackground) {
+                        if (hideBackground && !liquidGlassSurfaces) {
                           Modifier.background(brush = buttonShadow, shape = CircleShape)
                         } else {
                           Modifier
@@ -1591,7 +1619,7 @@ fun PlayerControls(
                       ),
                   shape = CircleShape,
                   color =
-                    if (!hideBackground) {
+                    if (!hideBackground && !liquidGlassSurfaces) {
                       playerButtonContainerColor()
                     } else {
                       Color.Transparent
@@ -1600,7 +1628,7 @@ fun PlayerControls(
                   tonalElevation = 0.dp,
                   shadowElevation = 0.dp,
                   border =
-                    if (!hideBackground) {
+                    if (!hideBackground && !liquidGlassSurfaces) {
                       BorderStroke(1.dp, playerButtonBorderColor())
                     } else {
                       null
@@ -1616,7 +1644,7 @@ fun PlayerControls(
                       if (viewModel.hasPrevious()) {
                         if (hideBackground) controlColor else playerButtonContentColor()
                       } else {
-                        if (hideBackground) {
+                        if (hideBackground && !liquidGlassSurfaces) {
                           controlColor.copy(alpha = 0.38f)
                         } else {
                           playerButtonContentColor().copy(alpha = 0.38f)
@@ -1633,13 +1661,14 @@ fun PlayerControls(
                   modifier =
                     Modifier
                       .size(64.dp)
+                      .playerGlassPane(enabled = liquidGlassSurfaces, opacity = 0.88f, highlight = 0.20f, cornerRadius = 999.dp)
                       .clip(CircleShape)
                       .clickable(interaction, ripple(), onClick = {
                         resetControlsTimestamp = System.currentTimeMillis()
                         viewModel.pauseUnpause()
                       })
                       .then(
-                        if (hideBackground) {
+                        if (hideBackground && !liquidGlassSurfaces) {
                           Modifier.background(brush = buttonShadow, shape = CircleShape)
                         } else {
                           Modifier
@@ -1647,7 +1676,7 @@ fun PlayerControls(
                       ),
                   shape = CircleShape,
                   color =
-                    if (!hideBackground) {
+                    if (!hideBackground && !liquidGlassSurfaces) {
                       playerButtonContainerColor()
                     } else {
                       Color.Transparent
@@ -1656,7 +1685,7 @@ fun PlayerControls(
                   tonalElevation = 0.dp,
                   shadowElevation = 0.dp,
                   border =
-                    if (!hideBackground) {
+                    if (!hideBackground && !liquidGlassSurfaces) {
                       BorderStroke(1.dp, playerButtonBorderColor())
                     } else {
                       null
@@ -1676,6 +1705,7 @@ fun PlayerControls(
                   modifier =
                     Modifier
                       .size(56.dp)
+                      .playerGlassPane(enabled = liquidGlassSurfaces, opacity = 0.88f, highlight = 0.18f, cornerRadius = 999.dp)
                       .clip(CircleShape)
                       .clickable(
                         enabled = viewModel.hasNext(),
@@ -1684,7 +1714,7 @@ fun PlayerControls(
                           if (viewModel.hasNext()) viewModel.playNext()
                         },
                       ).then(
-                        if (hideBackground) {
+                        if (hideBackground && !liquidGlassSurfaces) {
                           Modifier.background(brush = buttonShadow, shape = CircleShape)
                         } else {
                           Modifier
@@ -1692,7 +1722,7 @@ fun PlayerControls(
                       ),
                   shape = CircleShape,
                   color =
-                    if (!hideBackground) {
+                    if (!hideBackground && !liquidGlassSurfaces) {
                       playerButtonContainerColor()
                     } else {
                       Color.Transparent
@@ -1701,7 +1731,7 @@ fun PlayerControls(
                   tonalElevation = 0.dp,
                   shadowElevation = 0.dp,
                   border =
-                    if (!hideBackground) {
+                    if (!hideBackground && !liquidGlassSurfaces) {
                       BorderStroke(1.dp, playerButtonBorderColor())
                     } else {
                       null
@@ -1717,7 +1747,7 @@ fun PlayerControls(
                       if (viewModel.hasNext()) {
                         if (hideBackground) controlColor else playerButtonContentColor()
                       } else {
-                        if (hideBackground) {
+                        if (hideBackground && !liquidGlassSurfaces) {
                           controlColor.copy(alpha = 0.38f)
                         } else {
                           playerButtonContentColor().copy(alpha = 0.38f)
@@ -1735,13 +1765,14 @@ fun PlayerControls(
                 modifier =
                   Modifier
                     .size(64.dp)
+                    .playerGlassPane(enabled = liquidGlassSurfaces, opacity = 0.88f, highlight = 0.20f, cornerRadius = 999.dp)
                     .clip(CircleShape)
                     .clickable(interaction, ripple(), onClick = {
                       resetControlsTimestamp = System.currentTimeMillis()
                       viewModel.pauseUnpause()
                     })
                     .then(
-                      if (hideBackground) {
+                      if (hideBackground && !liquidGlassSurfaces) {
                         Modifier.background(brush = buttonShadow, shape = CircleShape)
                       } else {
                         Modifier
@@ -1749,7 +1780,7 @@ fun PlayerControls(
                     ),
                 shape = CircleShape,
                 color =
-                  if (!hideBackground) {
+                  if (!hideBackground && !liquidGlassSurfaces) {
                     playerButtonContainerColor()
                   } else {
                     Color.Transparent
@@ -1758,7 +1789,7 @@ fun PlayerControls(
                 tonalElevation = 0.dp,
                 shadowElevation = 0.dp,
                 border =
-                  if (!hideBackground) {
+                  if (!hideBackground && !liquidGlassSurfaces) {
                     BorderStroke(1.dp, playerButtonBorderColor())
                   } else {
                     null
@@ -1848,10 +1879,7 @@ fun PlayerControls(
                   .clip(RoundedCornerShape(26.dp))
                   .background(
                     when {
-                      useLiquidGlassSeekbar -> {
-                        val darkSurface = MaterialTheme.colorScheme.surface.luminance() < 0.5f
-                        if (darkSurface) Color.Black.copy(alpha = 0.24f) else Color.White.copy(alpha = 0.28f)
-                      }
+                      useLiquidGlassSeekbar -> Color.Transparent
                       playerControlsTheme.name == "Glass" -> MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.42f)
                       playerControlsTheme.name == "Glossy" -> {
                         val darkSurface = MaterialTheme.colorScheme.surface.luminance() < 0.5f
@@ -1860,9 +1888,14 @@ fun PlayerControls(
                       else -> MaterialTheme.colorScheme.surface.copy(alpha = 0.72f)
                     },
                   )
-                  .border(
-                    BorderStroke(1.dp, Color.White.copy(alpha = 0.18f)),
-                    RoundedCornerShape(26.dp),
+                  // Glass optics belong to the seekbar track/thumb. Do not
+                  // turn the full timer/seekbar touch box into a glass card.
+                  .then(
+                    if (useLiquidGlassSeekbar) Modifier
+                    else Modifier.border(
+                      BorderStroke(1.dp, Color.White.copy(alpha = 0.18f)),
+                      RoundedCornerShape(26.dp),
+                    ),
                   )
                   .padding(horizontal = 6.dp)
               } else {
@@ -1884,18 +1917,26 @@ fun PlayerControls(
                 isSeeking = true
                 resetControlsTimestamp = System.currentTimeMillis()
                 if (nativeEngineActive) {
-                  // Do not flush the Dolby Vision decoder for every pointer event. The Seeker
-                  // already renders this local position; commit one real Media3 seek on release.
+                  // Keep the thumb responsive while the engine conflates scene-preview seeks.
                   nativeSeekPreviewPosition = it
-                } else {
-                  viewModel.seekPreviewTo(it)
                 }
+                viewModel.seekPreviewTo(it)
               },
               onValueChangeFinished = { targetPosition ->
                 isSeeking = false
                 resetControlsTimestamp = System.currentTimeMillis()
-                viewModel.seekTo(targetPosition.toInt(), fast = false)
+                viewModel.finishSeekPreview(targetPosition)
+                // The final Native seek now dispatches synchronously and publishes its target.
+                // Do not pin the thumb forever waiting for a nearby keyframe to equal the target.
+                nativeSeekPreviewPosition = null
                 viewModel.showControls()
+              },
+              onUserInteractionChange = { isInteracting ->
+                if (!isInteracting) {
+                  viewModel.cancelSeekPreviewInteraction()
+                  nativeSeekPreviewPosition = null
+                  isSeeking = false
+                }
               },
               timersInverted = Pair(false, invertDuration),
               durationTimerOnCLick = {
@@ -2181,9 +2222,7 @@ fun PlayerControls(
       },
       decoder = decoder,
       onUpdateDecoder = { PlaybackSession.setPropertyString("hwdec", it.value) },
-      selectedEngine =
-        activity?.currentEngineSelectionForControls()
-          ?: if (nativeEngineActive) PlaybackEngineMode.NATIVE else playbackEngine,
+      selectedEngine = if (nativeEngineActive) PlaybackEngineMode.NATIVE else PlaybackEngineMode.MPV,
       onSelectEngine = onSelectEngine ?: { decoderPreferences.playbackEngine.set(it) },
       speed = playbackSpeed ?: playerPreferences.defaultSpeed.get(),
       onSpeedChange = {
@@ -2231,6 +2270,7 @@ fun PlayerControls(
         isAmbientEnabled,
         backgroundPlaybackEnabled,
         statisticsPage,
+        frameInterpolationEnabled,
       ) {
         buildSet {
           if (isSpeedNonOne) add(PlayerButton.PLAYBACK_SPEED)
@@ -2244,6 +2284,7 @@ fun PlayerControls(
           if (isAmbientEnabled) add(PlayerButton.AMBIENT_MODE)
           if (backgroundPlaybackEnabled) add(PlayerButton.BACKGROUND_PLAYBACK)
           if (statisticsPage == 6) add(PlayerButton.TIME_NETWORK)
+          if (frameInterpolationEnabled) add(PlayerButton.FRAME_INTERPOLATION)
         }
       }
 
@@ -2315,6 +2356,8 @@ private fun NativeStatsPageOverlay(
   snapshot: NativePlaybackSnapshot,
   modifier: Modifier = Modifier,
 ) {
+  val appearancePreferences = koinInject<AppearancePreferences>()
+  val liquidGlassSurfaces by appearancePreferences.liquidGlassSurfaces.collectAsState()
   val inputResolution = NativeStatsDisplay.resolution(snapshot.videoWidth, snapshot.videoHeight)
   val rendererResolution = NativeStatsDisplay.resolution(snapshot.videoOutputWidth, snapshot.videoOutputHeight)
   val inputAspectRatio = NativeStatsDisplay.aspectRatio(
@@ -2362,48 +2405,23 @@ private fun NativeStatsPageOverlay(
   val position = NativeStatsDisplay.position(snapshot.positionMs)
   val bufferAhead = NativeStatsDisplay.bufferedDuration(snapshot.totalBufferedDurationMs)
   val flow = snapshot.media3Flow
-  val flowSourceRate = if (flow.capturedSourceFps > 0f) {
-    String.format(java.util.Locale.US, "%.1f", flow.capturedSourceFps)
-  } else {
-    "—"
-  }
-  val flowOutputRate = if (flow.outputFps > 0f) String.format(java.util.Locale.US, "%.1f", flow.outputFps) else "—"
-  val flowGeneratedRate = if (flow.generatedFps > 0f) String.format(java.util.Locale.US, "%.1f", flow.generatedFps) else "—"
+  val flowInterpolationFps = NativeStatsDisplay.interpolationFps(
+    flow.capturedSourceFps,
+    flow.outputFps,
+    flow.generatedFps,
+    flow.targetFps,
+  )
   val flowGpuTime = flow.motionPassAverageGpuUs?.let {
     "${String.format(java.util.Locale.US, "%.1f", it)} µs/pass"
   }
     ?: flow.vulkanTimings.motion.status
-  val flowMultiplier = if (flow.capturedSourceFps > 0f && flow.outputFps > 0f) {
-    String.format(java.util.Locale.US, "%.1f", flow.outputFps / flow.capturedSourceFps)
-  } else {
-    "—"
-  }
-  val flowConfidence = flow.confidence?.let { String.format(java.util.Locale.US, "%.0f%%", it * 100f) }
-    ?: "n/a (not read back)"
-  val formatFlowDuration: (FlowDurationSummary) -> String = { summary ->
-    if (summary.sampleCount == 0) {
-      "—"
-    } else {
-      val average = String.format(java.util.Locale.US, "%.1f", summary.averageUs)
-      val p95 = String.format(java.util.Locale.US, "%.1f", summary.p95Us)
-      val maximum = String.format(java.util.Locale.US, "%.1f", summary.maximumUs)
-      "$average/$p95/$maximum µs (n=${summary.sampleCount})"
-    }
-  }
-  val formatFlowPercent: (Float?) -> String = { value ->
-    value?.let { String.format(java.util.Locale.US, "%.1f%%", it) } ?: "—"
-  }
-  val formatVulkanStage: (FlowVulkanStageTiming) -> String = { stage ->
-    val average = stage.averageUs?.let { String.format(java.util.Locale.US, "%.1f", it) } ?: "—"
-    val maximum = stage.maximumUs?.let { String.format(java.util.Locale.US, "%.1f", it) } ?: "—"
-    "$average/$maximum µs n=${stage.completedSamples} ${stage.status}"
-  }
-  val flowVulkan = flow.vulkanTimings
-  val flowGles = flow.glesTimings
-  val flowCpu = flow.cpuTimings
-  val flowCoverage = flow.pixelCoverage
   Surface(
-    modifier = modifier,
+    modifier = modifier.playerGlassPane(
+      enabled = liquidGlassSurfaces,
+      opacity = 0.86f,
+      highlight = 0.16f,
+      cornerRadius = 12.dp,
+    ),
     color = Color.Transparent,
     shape = MaterialTheme.shapes.medium,
   ) {
@@ -2452,94 +2470,16 @@ private fun NativeStatsPageOverlay(
           )
           if (flow.enabled) {
             Text(
-              "Media3 Flow: ${flow.state} · captured cadence $flowSourceRate fps (n=${flow.capturedPtsSampleCount}) → " +
-                "EGL swap-return $flowOutputRate/${flow.targetFps} fps ($flowMultiplier×) · " +
-                "generated $flowGeneratedRate fps (${"%,d".format(java.util.Locale.US, flow.generatedFrames)} total)",
+              "Media3 Flow: ${flow.state} · $flowInterpolationFps " +
+                "(${"%,d".format(java.util.Locale.US, flow.generatedFrames)} generated total)",
               style = MaterialTheme.typography.bodySmall,
               color = Color.White,
             )
             Text(
-              "ME submit ${String.format(java.util.Locale.US, "%.2f", flow.motionEstimateSubmitMs)} ms (CPU-only deadline proxy) · " +
-                "Vulkan motion pass avg $flowGpuTime · " +
-                "confidence $flowConfidence · sink frame drops ${flow.droppedFrames} · " +
-                "inferred tick gaps ${flow.skippedOutputTicks} · sink failures ${flow.outputSubmissionFailures} · " +
-                "skip ${flow.skippedFrames} · " +
-                "motion grid ${flow.motionGridWidth}×${flow.motionGridHeight} · " +
-                "processing ${flow.processingWidth}×${flow.processingHeight}" +
+              "Performance: motion $flowGpuTime · " +
+                "dropped ${flow.droppedFrames} · skipped ${flow.skippedFrames} · " +
+                "output failures ${flow.outputSubmissionFailures}" +
                 (flow.bypassReason?.let { " · $it" } ?: ""),
-              style = MaterialTheme.typography.bodySmall,
-              color = Color.White,
-            )
-            Text(
-              "Vulkan/libplacebo timestamp queries (${flowVulkan.status}, supported=${flowVulkan.timestampsSupported}, " +
-                "period=${String.format(java.util.Locale.US, "%.6f", flowVulkan.timestampPeriodNs)}ns, " +
-                "computeAndGraphics=${flowVulkan.timestampComputeAndGraphics}, " +
-                "queueFamily=${flowVulkan.computeQueueFamily}, validBits=${flowVulkan.timestampValidBits}) " +
-                "avg/max µs: preprocess ${formatVulkanStage(flowVulkan.preprocess)} · " +
-                "analysis ${formatVulkanStage(flowVulkan.analysis)} · motion ${formatVulkanStage(flowVulkan.motion)} · " +
-                "synthesis ${formatVulkanStage(flowVulkan.synthesis)}",
-              style = MaterialTheme.typography.bodySmall,
-              color = Color.White,
-            )
-            Text(
-              "GLES_EXT_disjoint_timer_query staging copy ${formatFlowDuration(flowGles.presentationStagingCopy)} · " +
-                "status ${flowGles.status} valid/pending/disjoint/zero/skipped " +
-                "${flowGles.validResults}/${flowGles.pendingResults}/${flowGles.disjointResultsDiscarded}/" +
-                "${flowGles.zeroDurationResults}/${flowGles.skippedBecausePoolFull}",
-              style = MaterialTheme.typography.bodySmall,
-              color = Color.White,
-            )
-            Text(
-              "Flow queues: pending input ${flow.pendingInputDepth} · in-flight ${flow.inputInFlight} · " +
-                "oldest input ${String.format(java.util.Locale.US, "%.1f", flow.oldestPendingInputAgeMs)} ms · " +
-                "source frames ${flow.sourceFrameDepth} · ready motion pairs ${flow.readyMotionPairDepth} · " +
-                "presentation queued/in-flight ${flow.presentationQueueDepth}/${flow.presentationInFlight} · " +
-                "coalesced ${flow.presentationCoalescedFrames} · " +
-                "source PTS age ${flow.selectedSourcePtsAgeMs?.let { String.format(java.util.Locale.US, "%.1f", it) } ?: "—"} ms · " +
-                "pair PTS gap ${flow.sourcePairPtsGapMs?.let { String.format(java.util.Locale.US, "%.1f", it) } ?: "—"} ms · " +
-                "capture ages ${flow.frame0CaptureAgeMs?.let { String.format(java.util.Locale.US, "%.1f", it) } ?: "—"}/" +
-                "${flow.frame1CaptureAgeMs?.let { String.format(java.util.Locale.US, "%.1f", it) } ?: "—"} ms",
-              style = MaterialTheme.typography.bodySmall,
-              color = Color.White,
-            )
-            Text(
-              "Inferred output tick gaps ${flow.skippedOutputTicks} · latest ${flow.lastOutputTickGapReason} · " +
-                "contexts ${flow.outputTickGapContexts.entries.joinToString(",") { "${it.key}:${it.value}" }.ifEmpty { "none" }} · " +
-                "sink failures ${flow.outputSubmissionFailures} (${flow.lastOutputSubmissionFailureReason}) · " +
-                "callback lateness ${String.format(java.util.Locale.US, "%.1f", flow.outputCallbackLatenessMs)} ms",
-              style = MaterialTheme.typography.bodySmall,
-              color = Color.White,
-            )
-            Text(
-              "Flow CPU avg/p95/max: Media3 input queue ${formatFlowDuration(flowCpu.inputQueueWait)} · " +
-                "handler call ${formatFlowDuration(flowCpu.frameHandlerCall)} · " +
-                "EGL swap ${formatFlowDuration(flowCpu.eglSwapWait)} · " +
-                "input Vulkan submit ${formatFlowDuration(flowCpu.vulkanInputPrepare)} · " +
-                "synthesis submit ${formatFlowDuration(flowCpu.vulkanSynthesisSubmit)}",
-              style = MaterialTheme.typography.bodySmall,
-              color = Color.White,
-            )
-            Text(
-              "Flow pixels (1/8 successfully presented synth frames; n=${flowCoverage.samples}): " +
-                "motion warp ${flowCoverage.motionWarpPixels} (${formatFlowPercent(flowCoverage.motionWarpPercent)}) · " +
-                "source fallback ${flowCoverage.sourceFrameFallbackPixels} " +
-                "(${formatFlowPercent(flowCoverage.sourceFrameFallbackPercent)}) · " +
-                "static blend ${flowCoverage.staticBlendPixels} (${formatFlowPercent(flowCoverage.staticBlendPercent)}) · " +
-                "readback skipped/invalid ${flowCoverage.skippedSamples}/${flowCoverage.invalidSamples}",
-              style = MaterialTheme.typography.bodySmall,
-              color = Color.White,
-            )
-            Text(
-              "Static-path vector probe (1/64 image positions; n=${flowCoverage.staticVectorProbeSamples}; " +
-                "motion cutoff 0.5 processing px; confidence cutoff 0.15): likely motion/confident " +
-                "${flowCoverage.staticVectorLikelyMotionSamples} " +
-                "(${formatFlowPercent(flowCoverage.staticVectorLikelyMotionPercent)}) · uncertain " +
-                "${flowCoverage.staticVectorUncertainMotionSamples} " +
-                "(${formatFlowPercent(flowCoverage.staticVectorUncertainMotionPercent)}) · near-zero/confident " +
-                "${flowCoverage.staticVectorNearZeroConfidentSamples} " +
-                "(${formatFlowPercent(flowCoverage.staticVectorNearZeroConfidentPercent)}) · near-zero/uncertain " +
-                "${flowCoverage.staticVectorNearZeroUncertainSamples} " +
-                "(${formatFlowPercent(flowCoverage.staticVectorNearZeroUncertainPercent)})",
               style = MaterialTheme.typography.bodySmall,
               color = Color.White,
             )

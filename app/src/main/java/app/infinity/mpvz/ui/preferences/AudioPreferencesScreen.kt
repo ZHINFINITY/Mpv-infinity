@@ -7,6 +7,11 @@
 
 package app.infinity.mpvz.ui.preferences
 
+import app.infinity.mpvz.ui.components.GlassOptionSheet
+import app.infinity.mpvz.ui.preferences.components.settingsGlassContainerColor
+
+import app.infinity.mpvz.ui.preferences.components.settingsGlassSurface
+
 import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -25,10 +30,10 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.RangeSlider
-import androidx.compose.material3.Scaffold
+import app.infinity.mpvz.ui.preferences.components.SettingsScaffold as Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextField
-import androidx.compose.material3.TopAppBar
+import app.infinity.mpvz.ui.preferences.components.SettingsTopAppBar as TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
@@ -61,10 +66,10 @@ import app.infinity.mpvz.ui.utils.currentMpvConfigOverrideOptions
 import app.infinity.mpvz.ui.utils.popSafely
 import app.infinity.mpvz.utils.media.MediaLibraryEvents
 import kotlinx.serialization.Serializable
-import me.zhanghai.compose.preference.ListPreference
+import app.infinity.mpvz.ui.preferences.components.ListPreference
 import me.zhanghai.compose.preference.ProvidePreferenceLocals
-import me.zhanghai.compose.preference.SliderPreference
-import me.zhanghai.compose.preference.TextFieldPreference
+import app.infinity.mpvz.ui.preferences.components.SliderPreference
+import app.infinity.mpvz.ui.preferences.components.TextFieldPreference
 import org.koin.compose.koinInject
 
 import androidx.compose.foundation.layout.Row
@@ -655,10 +660,12 @@ object AudioPreferencesScreen : Screen {
         (musicTabOrder.mapNotNull { tabMap[it] } + (MusicTab.entries - musicTabOrder.mapNotNull { tabMap[it] }.toSet())).distinct()
       }
 
-      AlertDialog(
+      GlassOptionSheet(
+      containerColor = settingsGlassContainerColor(androidx.compose.material3.AlertDialogDefaults.containerColor),
+      modifier = androidx.compose.ui.Modifier.settingsGlassSurface(cornerRadius = 28.dp, independent = true),
         onDismissRequest = { showMusicTabsDialog = false },
         title = { Text(stringResource(R.string.pref_music_tabs_title)) },
-        text = {
+        content = {
           Column {
             Text(
               text = "Toggle tabs or use arrows to rearrange order:",
@@ -750,8 +757,7 @@ object AudioPreferencesScreen : Screen {
           TextButton(onClick = { showMusicTabsDialog = false }) {
             Text(stringResource(R.string.generic_ok))
           }
-        },
-      )
+        },)
     }
   }
 }

@@ -6,6 +6,10 @@
 
 package app.infinity.mpvz.ui.browser.music
 
+import app.infinity.mpvz.ui.components.GlassModalBottomSheet
+import app.infinity.mpvz.ui.browser.fab.quickPlayFabContainerColor
+import app.infinity.mpvz.ui.preferences.components.settingsGlassSurface
+import app.infinity.mpvz.ui.preferences.components.settingsGlassContainerColor
 import android.graphics.BitmapFactory
 import android.net.Uri
 import android.text.format.DateUtils
@@ -310,6 +314,7 @@ fun MusicLibraryContent(
   val appearancePreferences = koinInject<AppearancePreferences>()
   val showQuickPlayFab by appearancePreferences.showQuickPlayFab.collectAsState()
   val quickPlayFabDirect by appearancePreferences.quickPlayFabDirect.collectAsState()
+  val liquidGlass by appearancePreferences.liquidGlassSurfaces.collectAsState()
   val isFabVisible = remember { mutableStateOf(true) }
   val isFabExpanded = remember { mutableStateOf(false) }
   val navigationBarHeight = LocalNavigationBarHeight.current
@@ -458,13 +463,15 @@ fun MusicLibraryContent(
   }
 
   Scaffold(
+    containerColor = settingsGlassContainerColor(MaterialTheme.colorScheme.background),
     modifier = modifier.fillMaxSize(),
     topBar = {
       Column(
         modifier = Modifier
           .fillMaxWidth()
           .background(
-            if (MaterialTheme.colorScheme.background == Color.Black) Color.Black else MaterialTheme.colorScheme.surfaceContainer
+            if (liquidGlass) Color.Transparent
+            else if (MaterialTheme.colorScheme.background == Color.Black) Color.Black else MaterialTheme.colorScheme.surfaceContainer
           )
       ) {
         if (isSearchActive) {
@@ -510,34 +517,13 @@ fun MusicLibraryContent(
                 backStack.add(PreferencesScreen)
               },
               leadingActions = {
-                if (!activeSelectionManager.isInSelectionMode) {
+                Box(modifier = Modifier.size(48.dp), contentAlignment = Alignment.Center) {
                   Icon(
                     imageVector = Icons.RoundedFilled.Audiotrack,
                     contentDescription = stringResource(R.string.ui_music),
-                    modifier = Modifier.size(26.dp),
                     tint = MaterialTheme.colorScheme.onSurface,
+                    modifier = Modifier.size(24.dp),
                   )
-                  MusicSourceChooser(
-                    hasJellyfin = jellyfinServers.isNotEmpty(),
-                    hasNavidrome = navidromeServers.isNotEmpty(),
-                    onManageServers = { backStack.add(app.infinity.mpvz.ui.preferences.MediaServersPreferencesScreen) },
-                    modifier = Modifier.padding(start = 8.dp, end = 6.dp, top = 6.dp, bottom = 6.dp),
-                  )
-                }
-              },
-              additionalActions = {
-                if (!activeSelectionManager.isInSelectionMode) {
-                  IconButton(
-                    onClick = { backStack.add(AudiobookLibraryScreen) },
-                    modifier = Modifier.padding(horizontal = 2.dp),
-                  ) {
-                    Icon(
-                      imageVector = Icons.RoundedFilled.AudiobookWave,
-                      contentDescription = stringResource(R.string.audiobooks_title),
-                      modifier = Modifier.size(22.dp),
-                      tint = MaterialTheme.colorScheme.onSurface,
-                    )
-                  }
                 }
               },
               onSelectAll = { activeSelectionManager.selectAll() },
@@ -669,8 +655,10 @@ fun MusicLibraryContent(
           expanded = false,
           button = {
             ToggleFloatingActionButton(
+              containerCornerRadius = app.infinity.mpvz.ui.browser.fab.quickPlayFabCornerRadius(),
+              containerColor = quickPlayFabContainerColor(),
               modifier =
-                Modifier.animateFloatingActionButton(
+                Modifier.settingsGlassSurface(cornerRadius = 20.dp).animateFloatingActionButton(
                   visible = isFabShouldBeVisible,
                   alignment = Alignment.BottomEnd,
                 ),
@@ -698,8 +686,10 @@ fun MusicLibraryContent(
               state = rememberTooltipState(),
             ) {
               ToggleFloatingActionButton(
+                containerCornerRadius = app.infinity.mpvz.ui.browser.fab.quickPlayFabCornerRadius(),
+                containerColor = quickPlayFabContainerColor(),
                 modifier =
-                  Modifier.animateFloatingActionButton(
+                  Modifier.settingsGlassSurface(cornerRadius = 20.dp).animateFloatingActionButton(
                     visible = isFabShouldBeVisible,
                     alignment = Alignment.BottomEnd,
                   ),
@@ -728,6 +718,10 @@ fun MusicLibraryContent(
         ) {
           if (!quickPlayFabDirect) {
             FloatingActionButtonMenuItem(
+              modifier = Modifier.settingsGlassSurface(cornerRadius = 20.dp),
+              containerColor = settingsGlassContainerColor(MaterialTheme.colorScheme.surfaceContainerHigh),
+              contentColor = MaterialTheme.colorScheme.onSurface,
+
               onClick = {
                 isFabExpanded.value = false
                 musicViewModel.playAllSongs(context, songs, shuffle = false)
@@ -736,6 +730,10 @@ fun MusicLibraryContent(
               text = { Text("Play All Songs") },
             )
             FloatingActionButtonMenuItem(
+              modifier = Modifier.settingsGlassSurface(cornerRadius = 20.dp),
+              containerColor = settingsGlassContainerColor(MaterialTheme.colorScheme.surfaceContainerHigh),
+              contentColor = MaterialTheme.colorScheme.onSurface,
+
               onClick = {
                 isFabExpanded.value = false
                 musicViewModel.playAllSongs(context, songs, shuffle = true)
@@ -911,8 +909,10 @@ fun MusicLibraryContent(
 
         // Song Options Sheet
         selectedSongForOptions?.let { song ->
-          ModalBottomSheet(
+          GlassModalBottomSheet(
             onDismissRequest = { selectedSongForOptions = null },
+            containerColor = settingsGlassContainerColor(MaterialTheme.colorScheme.surfaceContainerLow),
+            paneModifier = Modifier.settingsGlassSurface(cornerRadius = 28.dp, independent = true),
             sheetState =
               rememberBottomSheetState(
                 initialValue = SheetValue.Hidden,
@@ -929,7 +929,7 @@ fun MusicLibraryContent(
                   modifier = Modifier
                     .size(56.dp)
                     .clip(AppShapeScale.medium)
-                    .background(MaterialTheme.colorScheme.surfaceVariant),
+                    .background(settingsGlassContainerColor(MaterialTheme.colorScheme.surfaceVariant)),
                   contentAlignment = Alignment.Center
                 ) {
                   LocalAlbumArtImage(uri = song.albumArtUri, contentDescription = null, modifier = Modifier.fillMaxSize())
@@ -1035,8 +1035,10 @@ fun MusicLibraryContent(
           val albumSongs = remember(songs, album) {
             songs.filter { it.albumId == album.id || it.album.equals(album.title, ignoreCase = true) }
           }
-          ModalBottomSheet(
+          GlassModalBottomSheet(
             onDismissRequest = { selectedAlbumForOptions = null },
+            containerColor = settingsGlassContainerColor(MaterialTheme.colorScheme.surfaceContainerLow),
+            paneModifier = Modifier.settingsGlassSurface(cornerRadius = 28.dp, independent = true),
             sheetState =
               rememberBottomSheetState(
                 initialValue = SheetValue.Hidden,
@@ -1053,7 +1055,7 @@ fun MusicLibraryContent(
                   modifier = Modifier
                     .size(56.dp)
                     .clip(AppShapeScale.medium)
-                    .background(MaterialTheme.colorScheme.surfaceVariant),
+                    .background(settingsGlassContainerColor(MaterialTheme.colorScheme.surfaceVariant)),
                   contentAlignment = Alignment.Center
                 ) {
                   LocalAlbumArtImage(uri = album.albumArtUri, contentDescription = null, modifier = Modifier.fillMaxSize())
@@ -1112,8 +1114,10 @@ fun MusicLibraryContent(
           val artistSongs = remember(songs, artist) {
             songs.filter { it.artist.equals(artist.name, ignoreCase = true) }
           }
-          ModalBottomSheet(
+          GlassModalBottomSheet(
             onDismissRequest = { selectedArtistForOptions = null },
+            containerColor = settingsGlassContainerColor(MaterialTheme.colorScheme.surfaceContainerLow),
+            paneModifier = Modifier.settingsGlassSurface(cornerRadius = 28.dp, independent = true),
             sheetState =
               rememberBottomSheetState(
                 initialValue = SheetValue.Hidden,
@@ -1178,8 +1182,10 @@ fun MusicLibraryContent(
 
         // Playlist Options Sheet
         selectedPlaylistForOptions?.let { playlist ->
-          ModalBottomSheet(
+          GlassModalBottomSheet(
             onDismissRequest = { selectedPlaylistForOptions = null },
+            containerColor = settingsGlassContainerColor(MaterialTheme.colorScheme.surfaceContainerLow),
+            paneModifier = Modifier.settingsGlassSurface(cornerRadius = 28.dp, independent = true),
             sheetState =
               rememberBottomSheetState(
                 initialValue = SheetValue.Hidden,
@@ -1389,7 +1395,7 @@ private fun SongsTabContent(
   viewMode: MusicViewMode,
   recentlyPlayedFilePath: String?,
   isPlaybackActive: Boolean = false,
-  coverArtSizeDp: Int = 48,
+  coverArtSizeDp: Int = MusicThumbnailDefaults.DEFAULT_DP,
   onSongClick: (MusicSong) -> Unit,
   onSongLongClick: (MusicSong) -> Unit,
   selectionManager: app.infinity.mpvz.ui.browser.selection.SelectionManager<MusicSong, Long>,
@@ -1493,6 +1499,7 @@ private fun SongGridCard(
     modifier = Modifier
       .fillMaxWidth()
       .clip(AppShapeScale.large)
+
       .combinedClickable(onClick = onClick, onLongClick = onLongClick),
     shape = AppShapeScale.large,
     colors = CardDefaults.cardColors(
@@ -1598,7 +1605,7 @@ private fun SongListItem(
   song: MusicSong,
   isSelected: Boolean = false,
   isPlaying: Boolean = false,
-  coverArtSizeDp: Int = 48,
+  coverArtSizeDp: Int = MusicThumbnailDefaults.DEFAULT_DP,
   onClick: () -> Unit,
   onLongClick: (() -> Unit)? = null
 ) {
@@ -1619,7 +1626,7 @@ private fun SongListItem(
 private fun AlbumsTabContent(
   albums: List<MusicAlbum>,
   viewMode: MusicViewMode,
-  coverArtSizeDp: Int = 48,
+  coverArtSizeDp: Int = MusicThumbnailDefaults.DEFAULT_DP,
   onAlbumClick: (MusicAlbum) -> Unit,
   onAlbumLongClick: (MusicAlbum) -> Unit,
   selectionManager: app.infinity.mpvz.ui.browser.selection.SelectionManager<MusicAlbum, Long>,
@@ -1689,6 +1696,7 @@ private fun AlbumGridCard(
     modifier = Modifier
       .fillMaxWidth()
       .clip(AppShapeScale.large)
+
       .combinedClickable(onClick = onClick, onLongClick = onLongClick),
     shape = AppShapeScale.large,
     colors = CardDefaults.cardColors(
@@ -1771,7 +1779,7 @@ private fun AlbumGridCard(
 private fun AlbumListCard(
   album: MusicAlbum,
   isSelected: Boolean = false,
-  coverArtSizeDp: Int = 48,
+  coverArtSizeDp: Int = MusicThumbnailDefaults.DEFAULT_DP,
   onClick: () -> Unit,
   onLongClick: () -> Unit
 ) {
@@ -1780,6 +1788,7 @@ private fun AlbumListCard(
       .fillMaxWidth()
       .padding(horizontal = 8.dp, vertical = 3.dp)
       .clip(AppShapeScale.large)
+
       .combinedClickable(onClick = onClick, onLongClick = onLongClick),
     shape = AppShapeScale.large,
     color = if (isSelected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.6f) else Color.Transparent
@@ -1787,7 +1796,7 @@ private fun AlbumListCard(
     Row(
       modifier = Modifier
         .fillMaxWidth()
-        .padding(horizontal = 12.dp, vertical = 8.dp),
+        .padding(horizontal = 16.dp, vertical = 12.dp),
       verticalAlignment = Alignment.CenterVertically
     ) {
       Box(
@@ -1851,7 +1860,7 @@ private fun AlbumListCard(
 private fun ArtistsTabContent(
   artists: List<MusicArtist>,
   viewMode: MusicViewMode,
-  coverArtSizeDp: Int = 48,
+  coverArtSizeDp: Int = MusicThumbnailDefaults.DEFAULT_DP,
   onArtistClick: (MusicArtist) -> Unit,
   onArtistLongClick: (MusicArtist) -> Unit,
   selectionManager: app.infinity.mpvz.ui.browser.selection.SelectionManager<MusicArtist, Long>,
@@ -1921,6 +1930,7 @@ private fun ArtistGridCard(
     modifier = Modifier
       .fillMaxWidth()
       .clip(AppShapeScale.large)
+
       .combinedClickable(onClick = onClick, onLongClick = onLongClick),
     shape = AppShapeScale.large,
     colors = CardDefaults.cardColors(
@@ -1987,7 +1997,7 @@ private fun ArtistGridCard(
 private fun ArtistListCard(
   artist: MusicArtist,
   isSelected: Boolean = false,
-  coverArtSizeDp: Int = 48,
+  coverArtSizeDp: Int = MusicThumbnailDefaults.DEFAULT_DP,
   onClick: () -> Unit,
   onLongClick: () -> Unit
 ) {
@@ -1996,6 +2006,7 @@ private fun ArtistListCard(
       .fillMaxWidth()
       .padding(horizontal = 8.dp, vertical = 3.dp)
       .clip(AppShapeScale.large)
+
       .combinedClickable(onClick = onClick, onLongClick = onLongClick),
     shape = AppShapeScale.large,
     color = if (isSelected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.6f) else Color.Transparent
@@ -2003,10 +2014,10 @@ private fun ArtistListCard(
     Row(
       modifier = Modifier
         .fillMaxWidth()
-        .padding(horizontal = 12.dp, vertical = 8.dp),
+        .padding(horizontal = 16.dp, vertical = 12.dp),
       verticalAlignment = Alignment.CenterVertically
     ) {
-      val avatarSize = (coverArtSizeDp * 1.3f).toInt().coerceAtLeast(48).dp
+      val avatarSize = coverArtSizeDp.coerceAtLeast(MusicThumbnailDefaults.MIN_DP).dp
       Box(
         modifier = Modifier.size(avatarSize),
         contentAlignment = Alignment.Center
@@ -2234,7 +2245,7 @@ private fun MusicPlaylistCard(
   artUris: List<Uri>,
   isSelected: Boolean,
   isGridMode: Boolean,
-  coverArtSizeDp: Dp = 52.dp,
+  coverArtSizeDp: Dp = MusicThumbnailDefaults.DEFAULT_DP.dp,
   onClick: () -> Unit,
   onLongClick: () -> Unit,
 ) {
@@ -2244,6 +2255,7 @@ private fun MusicPlaylistCard(
       modifier = Modifier
         .fillMaxWidth()
         .clip(AppShapeScale.large)
+
         .combinedClickable(onClick = onClick, onLongClick = onLongClick),
       shape = AppShapeScale.large,
       colors = CardDefaults.cardColors(
@@ -2301,6 +2313,7 @@ private fun MusicPlaylistCard(
       modifier = Modifier
         .fillMaxWidth()
         .clip(AppShapeScale.large)
+
         .combinedClickable(onClick = onClick, onLongClick = onLongClick),
       color = if (isSelected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f) else Color.Transparent
     ) {
@@ -2362,7 +2375,7 @@ private fun PlaylistsTabContent(
   playlists: List<PlaylistEntity>,
   songs: List<MusicSong>,
   viewMode: MusicViewMode,
-  coverArtSizeDp: Dp = 52.dp,
+  coverArtSizeDp: Dp = MusicThumbnailDefaults.DEFAULT_DP.dp,
   onPlaylistClick: (PlaylistEntity) -> Unit,
   onPlaylistLongClick: (PlaylistEntity) -> Unit,
   selectionManager: app.infinity.mpvz.ui.browser.selection.SelectionManager<PlaylistEntity, Long>,
@@ -2401,7 +2414,7 @@ private fun PlaylistsTabContent(
     if (playlists.isEmpty()) {
       EmptyMusicState(text = "No playlists found. Create one!")
     } else {
-      val navBarHeight = LocalNavigationBarHeight.current.takeIf { it > 0.dp } ?: 88.dp
+          val navBarHeight = LocalNavigationBarHeight.current.takeIf { it > 0.dp } ?: 88.dp
       if (viewMode == MusicViewMode.GRID) {
         LazyVerticalGrid(
           state = gridState,
@@ -2473,8 +2486,10 @@ private fun AlbumDetailSheet(
   onSongLongClick: (MusicSong) -> Unit,
   onPlayAlbum: () -> Unit
 ) {
-  ModalBottomSheet(
+  GlassModalBottomSheet(
     onDismissRequest = onDismiss,
+    containerColor = settingsGlassContainerColor(MaterialTheme.colorScheme.surfaceContainerLow),
+    paneModifier = Modifier.settingsGlassSurface(cornerRadius = 28.dp, independent = true),
     sheetState =
       rememberBottomSheetState(
         initialValue = SheetValue.Hidden,
@@ -2494,7 +2509,7 @@ private fun AlbumDetailSheet(
           modifier = Modifier
             .size(64.dp)
             .clip(AppShapeScale.medium)
-            .background(MaterialTheme.colorScheme.surfaceVariant),
+            .background(settingsGlassContainerColor(MaterialTheme.colorScheme.surfaceVariant)),
           contentAlignment = Alignment.Center
         ) {
           LocalAlbumArtImage(
@@ -2570,8 +2585,10 @@ private fun ArtistDetailSheet(
   onSongLongClick: (MusicSong) -> Unit,
   onPlayArtist: () -> Unit
 ) {
-  ModalBottomSheet(
+  GlassModalBottomSheet(
     onDismissRequest = onDismiss,
+    containerColor = settingsGlassContainerColor(MaterialTheme.colorScheme.surfaceContainerLow),
+    paneModifier = Modifier.settingsGlassSurface(cornerRadius = 28.dp, independent = true),
     sheetState =
       rememberBottomSheetState(
         initialValue = SheetValue.Hidden,
@@ -2651,6 +2668,8 @@ private fun CreatePlaylistDialog(
 
   androidx.compose.material3.AlertDialog(
     onDismissRequest = onDismiss,
+    containerColor = settingsGlassContainerColor(androidx.compose.material3.AlertDialogDefaults.containerColor),
+    modifier = Modifier.settingsGlassSurface(cornerRadius = 28.dp, independent = true),
     title = { Text("Create Playlist") },
     text = {
       OutlinedTextField(

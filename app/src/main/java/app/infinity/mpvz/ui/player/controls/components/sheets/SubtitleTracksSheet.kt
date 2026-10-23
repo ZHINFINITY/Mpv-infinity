@@ -7,6 +7,7 @@
 
 package app.infinity.mpvz.ui.player.controls.components.sheets
 
+import app.infinity.mpvz.presentation.components.playerGlassOverlay
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -30,7 +31,6 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -51,6 +51,7 @@ import app.infinity.mpvz.ui.player.TrackNode
 import app.infinity.mpvz.ui.theme.spacing
 import kotlinx.collections.immutable.ImmutableList
 import kotlinx.collections.immutable.toImmutableList
+import app.infinity.mpvz.ui.player.controls.components.GlassSwitch
 
 sealed class SubtitleItem {
   data class Track(
@@ -251,6 +252,9 @@ fun SubtitlesSheet(
         }
       }
     androidx.compose.material3.AlertDialog(
+      modifier = Modifier.playerGlassOverlay(),
+      containerColor = androidx.compose.ui.graphics.Color.Transparent,
+      tonalElevation = 0.dp,
       onDismissRequest = {
         showLanguagePicker = null
         langSearch = ""
@@ -423,11 +427,12 @@ fun SubtitlesSheet(
 
       if (aiEnabled) {
         Row(
-          modifier = Modifier.fillMaxWidth().padding(horizontal = MaterialTheme.spacing.medium),
+          modifier = Modifier.playerSheetSettingRow(active = translationEnabled),
           verticalAlignment = Alignment.CenterVertically,
+          horizontalArrangement = Arrangement.spacedBy(MaterialTheme.spacing.medium),
         ) {
           Text("Translate embedded subtitles", modifier = Modifier.weight(1f))
-          Switch(checked = translationEnabled, onCheckedChange = { onToggleTranslation() })
+          GlassSwitch(checked = translationEnabled, onCheckedChange = { onToggleTranslation() })
         }
         if (tracks.any { it.external != true } && translationEnabled && configuredLanguages.isNotEmpty()) {
           Column(
@@ -468,6 +473,7 @@ fun SubtitlesSheet(
             is SubtitleItem.Track -> {
               val track = item.node
               SubtitleTrackRow(
+                track = track,
                 title = getTrackTitle(track),
                 isSelected = isSubtitleSelected(track.id),
                 selectionIndicator = subtitleSelectionIndicator(track.id),
@@ -489,21 +495,7 @@ fun SubtitlesSheet(
               )
             }
             is SubtitleItem.Header -> {
-              Row(
-                modifier =
-                  Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = MaterialTheme.spacing.medium, vertical = MaterialTheme.spacing.extraSmall),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween,
-              ) {
-                Text(
-                  text = item.title,
-                  style = MaterialTheme.typography.labelLarge,
-                  color = MaterialTheme.colorScheme.primary,
-                  fontWeight = FontWeight.Bold,
-                )
-              }
+              SheetSectionHeader(item.title)
             }
             is SubtitleItem.Off -> {
               Row(
@@ -545,6 +537,7 @@ fun SubtitlesSheet(
 
 @Composable
 fun SubtitleTrackRow(
+  track: TrackNode,
   title: String,
   isSelected: Boolean,
   selectionIndicator: String?,
@@ -556,52 +549,11 @@ fun SubtitleTrackRow(
   isCurrentlyTranslating: Boolean = false,
   modifier: Modifier = Modifier,
 ) {
-  Row(
-    modifier =
-      modifier
-        .fillMaxWidth()
-        .clickable(onClick = onToggle)
-        .padding(horizontal = MaterialTheme.spacing.medium, vertical = MaterialTheme.spacing.extraSmall),
-    verticalAlignment = Alignment.CenterVertically,
-    horizontalArrangement = Arrangement.spacedBy(MaterialTheme.spacing.smaller),
-  ) {
-    Checkbox(checked = isSelected, onCheckedChange = { onToggle() })
-    Text(title, fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal, modifier = Modifier.weight(1f))
-
-    if (selectionIndicator != null) {
-      Surface(
-        shape = CircleShape,
-        color = MaterialTheme.colorScheme.primaryContainer,
-        contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
-      ) {
-        Text(
-          text = selectionIndicator,
-          style = MaterialTheme.typography.labelMedium,
-          fontWeight = FontWeight.Bold,
-          modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-        )
-      }
-    }
-
-    if (isCurrentlyTranslating) {
-      androidx.compose.material3.CircularProgressIndicator(
-        modifier = Modifier.size(MaterialTheme.spacing.large),
-        strokeWidth = MaterialTheme.spacing.smaller,
-      )
-    }
-
+  TrackSheetRow(track, isSelected, onToggle, checkbox = true, secondaryIndicator = selectionIndicator, modifier = modifier, trailing = {
+    if (isCurrentlyTranslating) androidx.compose.material3.CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
     if (isExternal) {
-      if (translationEnabled) {
-        IconButton(onClick = onTranslate) {
-          Icon(
-            Icons.RoundedFilled.Translate,
-            contentDescription =
-              androidx.compose.ui.res
-                .stringResource(app.infinity.mpvz.R.string.ui_translate),
-          )
-        }
-      }
-      IconButton(onClick = onRemove) { Icon(Icons.RoundedFilled.Delete, contentDescription = null) }
+      if (translationEnabled) IconButton(onClick = onTranslate) { Icon(Icons.RoundedFilled.Translate, stringResource(R.string.ui_translate)) }
+      IconButton(onClick = onRemove) { Icon(Icons.RoundedFilled.Delete, null) }
     }
-  }
+  })
 }

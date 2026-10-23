@@ -16,6 +16,7 @@ import android.net.Uri
 import android.view.SurfaceHolder
 import android.view.SurfaceView
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -27,6 +28,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
+import androidx.compose.ui.input.pointer.util.VelocityTracker
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -65,12 +68,16 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.boundsInWindow
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntOffset
@@ -91,6 +98,12 @@ import app.infinity.mpvz.ui.player.PlayerActivity
 import app.infinity.mpvz.ui.player.TrackNode
 import app.infinity.mpvz.ui.player.declaredMediaKind
 import app.infinity.mpvz.ui.player.toObject
+import app.infinity.mpvz.ui.player.controls.MiniPlayerTransitionAnchor
+import app.infinity.mpvz.ui.player.controls.miniPlayerScreenBounds
+import app.infinity.mpvz.ui.player.controls.MiniPlayerArtworkTarget
+import app.infinity.mpvz.ui.preferences.components.settingsGlassContainerColor
+import app.infinity.mpvz.ui.preferences.components.settingsGlassEnabled
+import app.infinity.mpvz.ui.preferences.components.settingsGlassSurface
 import app.infinity.mpvz.ui.utils.LocalBackStack
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -99,6 +112,10 @@ import kotlinx.serialization.json.Json
 import org.koin.compose.koinInject
 import kotlin.math.abs
 import kotlin.math.roundToInt
+
+object MusicMiniPlayerHandoff {
+  @Volatile var suppressNextEnter: Boolean = false
+}
 
 @Composable
 fun MiniPlayer(modifier: Modifier = Modifier) {
@@ -145,9 +162,11 @@ fun MiniPlayer(modifier: Modifier = Modifier) {
     NavigationBarState.isMiniPlayerVisible = isMediaActive
   }
 
+  val suppressHandoffEnter = MusicMiniPlayerHandoff.suppressNextEnter
+  if (suppressHandoffEnter) MusicMiniPlayerHandoff.suppressNextEnter = false
   AnimatedVisibility(
     visible = isMediaActive,
-    enter = slideInVertically(initialOffsetY = { it }) + fadeIn(),
+    enter = if (suppressHandoffEnter) EnterTransition.None else slideInVertically(initialOffsetY = { it }) + fadeIn(),
     exit = slideOutVertically(targetOffsetY = { it }) + fadeOut(),
     modifier = modifier,
   ) {
@@ -208,26 +227,44 @@ private fun MiniPlayerContent(
     )
 
   val coroutineScope = rememberCoroutineScope()
+  val hostView = LocalView.current
   var offsetX by remember { mutableFloatStateOf(0f) }
+  var verticalDrag by remember { mutableFloatStateOf(0f) }
+  var miniSurfaceBounds by remember { mutableStateOf<Rect?>(null) }
+  var miniArtworkBounds by remember { mutableStateOf<Rect?>(null) }
+  fun publishMiniTransitionGeometry() {
+    val surface = miniSurfaceBounds ?: return
+    val art = miniArtworkBounds
+    MiniPlayerTransitionAnchor.publish(
+      left = surface.left, top = surface.top, width = surface.width, height = surface.height,
+      viewportWidth = hostView.width.toFloat(), viewportHeight = hostView.height.toFloat(),
+      artworkLeft = art?.left, artworkTop = art?.top, artworkWidth = art?.width, artworkHeight = art?.height,
+    )
+  }
   val density = LocalDensity.current
   val dismissThresholdPx = with(density) { 100.dp.toPx() }
+  val expandThresholdPx = with(density) { 48.dp.toPx() }
 
-  val launchPlayer = remember(context) {
+  val launchPlayer = remember(context, isAudioOnlyItem) {
     {
+      MusicMiniPlayerHandoff.suppressNextEnter = isAudioOnlyItem
       val intent = Intent(context, PlayerActivity::class.java).apply {
         action = MediaPlaybackService.ACTION_OPEN_PLAYER
         putExtra("is_audio", isAudioOnlyItem)
         putExtra("internal_launch", true)
         putExtra("launch_source", "mini_player")
+        putExtra("open_from_mini_player", true)
         flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
       }
       context.startActivity(intent)
+      // Audio expands from the mini rect in Compose; video keeps the window slide.
+      val openEnterAnimation = if (isAudioOnlyItem) 0 else R.anim.slide_in_up
       if (context is Activity) {
         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-          context.overrideActivityTransition(Activity.OVERRIDE_TRANSITION_OPEN, R.anim.slide_in_up, 0)
+          context.overrideActivityTransition(Activity.OVERRIDE_TRANSITION_OPEN, openEnterAnimation, 0)
         } else {
           @Suppress("DEPRECATION")
-          context.overridePendingTransition(R.anim.slide_in_up, 0)
+          context.overridePendingTransition(openEnterAnimation, 0)
         }
       }
     }
@@ -243,9 +280,16 @@ private fun MiniPlayerContent(
     }
   }
 
+  val glassEnabled = settingsGlassEnabled()
   Surface(
     modifier = Modifier
       .offset { IntOffset(offsetX.roundToInt(), 0) }
+      .onGloballyPositioned { coordinates ->
+        if (isAudioOnlyItem) {
+          miniSurfaceBounds = coordinates.miniPlayerScreenBounds(hostView)
+          publishMiniTransitionGeometry()
+        }
+      }
       .pointerInput(Unit) {
         detectHorizontalDragGestures(
           onDragEnd = {
@@ -271,11 +315,33 @@ private fun MiniPlayerContent(
           },
         )
       }
+      .pointerInput(Unit) {
+        val velocityTracker = VelocityTracker()
+        detectVerticalDragGestures(
+          onDragStart = {
+            velocityTracker.resetTracking()
+            verticalDrag = 0f
+          },
+          onVerticalDrag = { change, dragAmount ->
+            velocityTracker.addPosition(change.uptimeMillis, change.position)
+            verticalDrag += dragAmount
+            change.consume()
+          },
+          onDragEnd = {
+            val upwardVelocity = -runCatching { velocityTracker.calculateVelocity().y }.getOrDefault(0f)
+            val expandVelocityPxPerSecond = with(density) { 300.dp.toPx() }
+            if (verticalDrag < -expandThresholdPx || upwardVelocity > expandVelocityPxPerSecond) launchPlayer()
+            verticalDrag = 0f
+          },
+          onDragCancel = { verticalDrag = 0f },
+        )
+      }
       .clip(RoundedCornerShape(20.dp))
+      .settingsGlassSurface(cornerRadius = 20.dp)
       .clickable { launchPlayer() },
-    color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.96f),
-    tonalElevation = 8.dp,
-    shadowElevation = 10.dp,
+    color = settingsGlassContainerColor(MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.96f)),
+    tonalElevation = if (glassEnabled) 0.dp else 8.dp,
+    shadowElevation = if (glassEnabled) 0.dp else 10.dp,
   ) {
     val primaryContainerColor = MaterialTheme.colorScheme.primaryContainer
 
@@ -440,6 +506,10 @@ private fun MiniPlayerContent(
         Box(
           modifier = Modifier
             .size(48.dp)
+            .onGloballyPositioned { coordinates ->
+              miniArtworkBounds = coordinates.miniPlayerScreenBounds(hostView)
+              publishMiniTransitionGeometry()
+            }
             .clip(RoundedCornerShape(10.dp))
             .background(MaterialTheme.colorScheme.surfaceVariant),
           contentAlignment = Alignment.Center,

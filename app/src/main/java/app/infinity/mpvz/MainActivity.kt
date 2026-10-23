@@ -327,10 +327,10 @@ class MainActivity : AppCompatActivity() {
             }
             AlertDialog(
               onDismissRequest = acknowledgeNotice,
-              title = { Text(getString(R.string.renderer_build_notice_title)) },
+              title = { Text(stringResource(R.string.renderer_build_notice_title)) },
               text = {
                 Text(
-                  getString(
+                  stringResource(
                     if (deviceSupportsVulkan) {
                       R.string.renderer_build_notice_supported_device
                     } else {
@@ -341,7 +341,7 @@ class MainActivity : AppCompatActivity() {
               },
               confirmButton = {
                 TextButton(onClick = acknowledgeNotice) {
-                  Text(getString(R.string.generic_ok))
+                  Text(stringResource(R.string.generic_ok))
                 }
               },
             )
@@ -619,6 +619,7 @@ class MainActivity : AppCompatActivity() {
         }
       }
 
+      val popupGlassEnabled by appearancePreferences.liquidGlassSurfaces.collectAsState()
       if (hasNavEntries) {
         Box(modifier = Modifier.fillMaxSize()) {
           NavDisplay(
@@ -635,7 +636,15 @@ class MainActivity : AppCompatActivity() {
                   modifier = Modifier.fillMaxSize(),
                   color = MaterialTheme.colorScheme.background,
                 ) {
-                  route.Content()
+                  // MainScreen hosts its own route/popup scenes; every other route gets a
+                  // popup-only producer so its dialogs frost the live screen like Sort & View.
+                  if (route == MainScreen) {
+                    route.Content()
+                  } else {
+                    app.infinity.mpvz.ui.theme.BrowserGlassPopupSceneHost(enabled = popupGlassEnabled) {
+                      route.Content()
+                    }
+                  }
                 }
               }
             },

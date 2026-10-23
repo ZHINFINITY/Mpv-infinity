@@ -99,7 +99,9 @@ fun FolderCard(
   val context = androidx.compose.ui.platform.LocalContext.current
   val density = LocalDensity.current
   val thumbnailRepository = koinInject<ThumbnailRepository>()
-  var folderThumbnail by remember(folder.bucketId) { mutableStateOf<android.graphics.Bitmap?>(null) }
+  var folderThumbnail by remember(folder.bucketId, thumbnailQuality, showFolderThumbnails) {
+    mutableStateOf(if (showFolderThumbnails) thumbnailRepository.getFolderThumbnailFromMemory(folder.bucketId) else null)
+  }
 
   LaunchedEffect(
     folder.bucketId,

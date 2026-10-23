@@ -10,6 +10,7 @@ PATCH = (ROOT / "app/src/main/cpp/mpvflow/mpvflow-vo-gpu-next.patch").read_text(
 AIMAGE_PATCH = (ROOT / "app/src/main/cpp/mpvflow/mpvflow-aimagereader-vulkan.patch").read_text(encoding="utf-8")
 PREPARE = (ROOT / "scripts/prepare-mpvflow.py").read_text(encoding="utf-8")
 MPV_VIEW = (ROOT / "app/src/main/java/app/infinity/mpvz/ui/player/MPVView.kt").read_text(encoding="utf-8")
+PLAYER_CONTROLS = (ROOT / "app/src/main/java/app/infinity/mpvz/ui/player/controls/PlayerControls.kt").read_text(encoding="utf-8")
 LOG_REPOSITORY = (ROOT / "app/src/main/java/app/infinity/mpvz/presentation/crash/DebugLogRepository.kt").read_text(encoding="utf-8")
 DEBUG_LOGS_SCREEN = (ROOT / "app/src/main/java/app/infinity/mpvz/presentation/crash/DebugLogsScreen.kt").read_text(encoding="utf-8")
 CRASH_ACTIVITY = (ROOT / "app/src/main/java/app/infinity/mpvz/presentation/crash/CrashActivity.kt").read_text(encoding="utf-8")
@@ -189,36 +190,41 @@ require(CRASH_ACTIVITY, '"flow_summary"', "crash export must explicitly include 
 require(MEDIA3_FLOW_SINK, "eglSwapReturnFps=", "Native Media3 summary must report successful EGL swap-return cadence")
 require(MEDIA3_FLOW_SINK, "eglSwapInterval=", "Native Media3 summary must report whether implicit EGL swap pacing was disabled")
 require(MEDIA3_FLOW_SINK, "outputMetric=successful_eglSwapBuffers_return_not_scanout", "Media3 cadence must not be misrepresented as display scanout FPS")
-require(MEDIA3_FLOW_SINK, "vulkanStagesUs=", "Media3 must report nonblocking Vulkan timestamp-query times by compute stage")
-require(MEDIA3_FLOW_SINK, "computeTimestampValidBits=", "Media3 must report exact compute-queue timestamp capability")
-require(MEDIA3_FLOW_SINK, "glesStagesUs=", "GLES presentation timing must remain separately labeled from Vulkan compute")
-require(MEDIA3_FLOW_SINK, "queueDepth=pendingInput:", "Media3 must report input/source/pair queue depth for backlog diagnosis")
-require(MEDIA3_FLOW_SINK, "oldestPendingInputMs=", "Media3 must report the age of the oldest queued decoder input")
-require(MEDIA3_FLOW_SINK, "pairPtsGapMs=", "Media3 must report the source PTS gap and capture age of the selected pair")
-require(MEDIA3_FLOW_SINK, "inferredSkippedOutputTicksTotal=", "Media3 tick-gap totals must not imply confirmed display deadline misses")
-require(MEDIA3_FLOW_SINK, "tickGapContexts=", "Media3 must categorize inferred output tick gaps separately")
-require(MEDIA3_FLOW_SINK, "outputSubmissionFailures=", "Media3 must report actual EGL/output submission failures separately from inferred tick gaps")
-require(MEDIA3_FLOW_SINK, "outputSubmissionFailureReasons=", "Media3 must categorize producer submission and later completion failures")
-require(MEDIA3_FLOW_SINK, "presentationPathFailureReasons=", "Media3 must separately count asynchronous presenter failures")
-require(MEDIA3_FLOW_SINK, "lastNoWritableSlotStates=", "Media3 must report atomic slot occupancy when no producer slot is writable")
-require(MEDIA3_FLOW_SINK, "presentationQueue.acquireForWriteWithSnapshot()", "no-writable-slot diagnostics must snapshot queue state atomically")
-require(MEDIA3_FLOW_SINK, '"producer_no_writable_presentation_slot"', "Media3 must label two-slot backpressure independently from GLES/EGL failures")
-require(MEDIA3_FLOW_SINK, '"presenter_egl_swap_failed"', "Media3 must distinguish asynchronous EGL swap failures from producer staging failures")
-require(MEDIA3_FLOW_SINK, 'failureStage = "staging_framebuffer_validation"', "Media3 must report framebuffer staging failures by producer stage")
-require(MEDIA3_FLOW_SINK, 'failureStage = "staging_gl_error_check"', "Media3 must report staging GLES errors separately from queue pressure")
-require(MEDIA3_FLOW_SINK, 'outputDecisionCounters.record("output_submission_failed", "presentation_stage_failed")', "the established aggregate stage-failure decision label must remain available")
-require(NATIVE_ENGINE, '"output_submission_failure_reasons"', "captured Media3 timing JSON must include categorized output failures")
-require(NATIVE_ENGINE, '"presentation_path_failure_reasons"', "captured Media3 timing JSON must include asynchronous presenter failures")
-require(NATIVE_ENGINE, '"last_no_writable_presentation_slot_states"', "captured Media3 timing JSON must include the last atomic slot state snapshot")
-require(MEDIA3_FLOW_SINK, "motionPairAnalysisTotals=", "Media3 must summarize pair-analysis attempts, deferrals, and outcomes")
-require(MEDIA3_FLOW_SINK, "motionDeadlineAdmission=cpu_submit_proxy_not_gpu_completion", "Media3 must disclose that its current deadline gate uses a CPU submit proxy")
+require(PLAYER_CONTROLS, "NativeStatsDisplay.interpolationFps", "Native stats must retain interpolated output FPS")
+require(PLAYER_CONTROLS, '"Performance: motion $flowGpuTime', "Native stats must retain compact performance counters")
+for verbose_native_stat in (
+    "Vulkan/libplacebo timestamp queries",
+    "GLES_EXT_disjoint_timer_query",
+    "Flow queues:",
+    "Inferred output tick gaps",
+    "Flow CPU avg/p95/max",
+    "Flow pixels (1/8",
+    "Static-path vector probe",
+):
+    assert verbose_native_stat not in PLAYER_CONTROLS, f"Native stats must not expose verbose algorithm detail: {verbose_native_stat}"
+for compact_native_field in (
+    "capturedFps=",
+    "targetFps=",
+    "eglSwapReturnFps=",
+    "generatedFps=",
+    "generatedFrames=",
+    "droppedFrames=",
+    "submissionFailures=",
+):
+    require(MEDIA3_FLOW_SINK, compact_native_field, f"Media3 compact summary is missing {compact_native_field}")
+for removed_native_field in (
+    "vulkanStagesUs=",
+    "glesStagesUs=",
+    "queueDepth=pendingInput:",
+    "inferredSkippedOutputTicksTotal=",
+    "tickGapContexts=",
+    "outputSubmissionFailureReasons=",
+    "presentationPathFailureReasons=",
+    "lastNoWritableSlotStates=",
+    "motionPairAnalysisTotals=",
+):
+    assert removed_native_field not in MEDIA3_FLOW_SINK, f"Media3 summary must not retain verbose field {removed_native_field}"
 require(MPV_VIEW, "pixelArtifactQuality=unmeasured_native_pixel_coverage_unavailable", "MPV must not imply pixel quality without a coverage measurement")
-require(MEDIA3_FLOW_SINK, "artifactRiskProxy=spatial_sampling_only", "Media3 spatial-grid risk must remain explicitly labeled as a proxy")
-require(MEDIA3_FLOW_SINK, "coverage=unavailable_vulkan_ssbo_readback_disabled", "Media3 coverage must remain marked unavailable until GPU readback is implemented")
-require(MEDIA3_FLOW_SINK, "pixelArtifactQuality=unmeasured_vulkan_ssbo_readback_disabled", "Media3 must not claim measured visual quality without pixel evidence")
-require(MEDIA3_FLOW_SINK, "motion_submit_proxy_over_deadline_reserve", "Media3 over-reserve diagnostics must identify the CPU submit proxy rather than imply GPU completion timing")
-require(MEDIA3_FLOW_SINK, "capturedPtsSamples=", "Media3 captured cadence must expose its PTS sample count")
-require(MEDIA3_FLOW_SINK, "outputCallbackLatenessMs=", "Media3 must report Choreographer-to-GL callback lateness")
 media3_analysis_body = MEDIA3_FLOW_SINK.split("private fun analyzeNewestPair()", 1)[1].split(
     "private fun renderAtPosition(", 1
 )[0]

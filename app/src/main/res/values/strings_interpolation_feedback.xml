@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+  <string name="interpolation_feedback_mpv">MPV: interpolation and target-FPS changes reopen this video at the same timestamp, restoring play/pause state and selected tracks. A brief interruption is expected. Accepted settings do not confirm actual frame synthesis.</string>
+  <string name="interpolation_feedback_mpv_config">MPV configuration controls interpolation. This shortcut only saves the app preference; change the overriding mpv.conf options to change the effective setting.</string>
+  <string name="interpolation_feedback_native">Native: changes apply to this playback only when its existing interpolation renderer is ready. Otherwise they are saved for the next playback; the video is not restarted.</string>
+  <string name="interpolation_feedback_saved_title">Frame interpolation (saved preference)</string>
+  <string name="interpolation_feedback_saved_state">Saved preference: %1$s</string>
+  <string name="interpolation_feedback_target_hint">Changing target FPS does not turn interpolation on. Enable frame interpolation to synthesize additional frames.</string>
+  <string name="interpolation_feedback_off_target_saved">Interpolation is off. The target FPS is saved; enable interpolation to synthesize additional frames.</string>
+  <string name="toast_interpolation_restarting_mpv">Applying interpolation settings. Reopening at the same position…</string>
+  <string name="toast_interpolation_restarted_mpv">MPV reopened at the same position; play/pause state and selected tracks restored. Interpolation options accepted; actual frame synthesis is not verified.</string>
+  <string name="toast_interpolation_restart_failed">Could not confirm the interpolation restart. Your setting is saved; reopen the video to apply it.</string>
+  <string name="toast_interpolation_restart_not_seekable">Interpolation setting saved. This video is not ready or cannot seek back safely, so it was not restarted.</string>
+  <string name="toast_interpolation_configured_mpv">MPV already has these interpolation options configured. Actual frame synthesis still depends on the renderer and video.</string>
+</resources>

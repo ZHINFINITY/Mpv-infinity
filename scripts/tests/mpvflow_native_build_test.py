@@ -599,7 +599,7 @@ qcom_source = (ROOT / "app/src/main/cpp/mpvflow/mpvflow_vulkan_qcom.c").read_tex
 assert "MpvFlowLogConfig.messageLevelOption(" in mpv_view_source
 assert 'PlaybackSession.setOptionString("msg-level", logLevel)' in mpv_view_source
 assert "requested_msg_level=$logLevel" in mpv_view_source
-assert 'const val FLOW_VERBOSE_DIAGNOSTICS = "all=info,vo/gpu-next=v"' in flow_log_config_source
+assert 'const val FLOW_VERBOSE_DIAGNOSTICS = "all=warn,vo/gpu-next=info"' in flow_log_config_source
 assert "mpvFlowEnabled -> FLOW_VERBOSE_DIAGNOSTICS" in flow_log_config_source
 child_only_policy = "all=info,vo/gpu-next/libplacebo=v"
 parent_policy = "all=info,vo/gpu-next=v"
@@ -1015,7 +1015,8 @@ for marker in (
     'PlaybackSession.setOptionString("video-sync", "display-resample")',
     "displayRefreshRate != null",
     "flowDisplayFpsOverrideRc == 0",
-    "currentDisplayRefreshRate()",
+    "snapshotDisplayRefreshRateOnMain()",
+    "else cachedDisplayRefreshRate",
     "val mpvFlowFrameInterpolationEnabled =",
     "mpvFlowFrameInterpolationCandidate && flowTimingOptionsReady",
     'PlaybackSession.setOptionString("interpolation", "no")',
@@ -1106,8 +1107,8 @@ for marker in (
     "value = (useVulkan || mpvFlowForcesRenderer) && isVulkanSupported",
     "enabled = !mpvFlowForcesRenderer",
     "settingsSearchTarget(R.string.pref_decoder_mpvflow_title)",
-    "titleStyle =",
-    "MaterialTheme.colorScheme.surfaceContainerLow",
+    "value = mpvFlowFrameInterpolationEnabled",
+    "stringResource(R.string.pref_decoder_mpvflow_summary)",
 ):
     assert marker in decoder_screen, f"the Decoder screen must truthfully distinguish Flow rendering and compute: missing {marker!r}"
 assert "R.string.pref_decoder_mpvflow_compute_api_title" not in decoder_screen

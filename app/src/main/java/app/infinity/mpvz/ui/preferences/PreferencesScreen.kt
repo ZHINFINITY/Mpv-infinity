@@ -7,6 +7,9 @@
 
 package app.infinity.mpvz.ui.preferences
 
+import app.infinity.mpvz.ui.preferences.components.settingsGlassContainerColor
+import app.infinity.mpvz.ui.preferences.components.settingsGlassSurface
+
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -29,10 +32,10 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Scaffold
+import app.infinity.mpvz.ui.preferences.components.SettingsScaffold as Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
+import app.infinity.mpvz.ui.preferences.components.SettingsTopAppBar as TopAppBar
 import androidx.compose.material3.VerticalDivider
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
@@ -67,14 +70,14 @@ import app.infinity.mpvz.ui.utils.popSafely
 import kotlinx.serialization.Serializable
 import org.koin.compose.koinInject
 
-private data class SettingsDestination(
+internal data class SettingsDestination(
   val title: String,
   val summary: String,
   val icon: AppIcon,
   val screen: Screen,
 )
 
-private data class SettingsSection(
+internal data class SettingsSection(
   val title: String,
   val tint: Color,
   val items: List<SettingsDestination>,
@@ -454,16 +457,16 @@ private fun SettingsSectionBlock(
 }
 
 @Composable
-private fun SettingsDestinationGroup(
+internal fun SettingsDestinationGroup(
   section: SettingsSection,
   selectedScreen: Screen?,
   onItemClick: (SettingsDestination) -> Unit,
   modifier: Modifier = Modifier,
 ) {
   Surface(
-    modifier = modifier.fillMaxWidth(),
+    modifier = modifier.fillMaxWidth().settingsGlassSurface(cornerRadius = 28.dp),
     shape = MaterialTheme.shapes.extraLargeIncreased,
-    color = MaterialTheme.colorScheme.surfaceContainerLow,
+    color = settingsGlassContainerColor(MaterialTheme.colorScheme.surfaceContainerLow),
     tonalElevation = 1.dp,
   ) {
     Column(modifier = Modifier.fillMaxWidth()) {

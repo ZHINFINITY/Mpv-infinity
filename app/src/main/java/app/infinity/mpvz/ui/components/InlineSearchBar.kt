@@ -12,14 +12,22 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SearchBar
 import androidx.compose.material3.SearchBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import app.infinity.mpvz.ui.preferences.components.settingsGlassContainerColor
+import app.infinity.mpvz.ui.preferences.components.settingsGlassSurface
+import app.infinity.mpvz.preferences.AppearancePreferences
+import app.infinity.mpvz.preferences.preference.collectAsState
+import org.koin.compose.koinInject
 
 /**
  * Material 3 search bar used inline at the top of list screens.
@@ -45,6 +53,15 @@ fun InlineSearchBar(
   windowInsets: WindowInsets = SearchBarDefaults.windowInsets,
 ) {
   val keyboardController = LocalSoftwareKeyboardController.current
+  val appearance = koinInject<AppearancePreferences>()
+  val glass by appearance.liquidGlassSurfaces.collectAsState()
+  val originalInputColors = SearchBarDefaults.inputFieldColors()
+  val inputColors = if (glass) originalInputColors.copy(
+    focusedContainerColor = Color.Transparent,
+    unfocusedContainerColor = Color.Transparent,
+    disabledContainerColor = Color.Transparent,
+    errorContainerColor = Color.Transparent,
+  ) else originalInputColors
 
   SearchBar(
     inputField = {
@@ -61,6 +78,7 @@ fun InlineSearchBar(
         placeholder = placeholder,
         leadingIcon = leadingIcon,
         trailingIcon = trailingIcon,
+        colors = inputColors,
       )
     },
     expanded = false,
@@ -70,10 +88,13 @@ fun InlineSearchBar(
     modifier =
       Modifier
         .windowInsetsPadding(windowInsets)
-        .then(modifier),
+        .then(modifier.settingsGlassSurface(cornerRadius = 28.dp)),
     shape = shape,
-    tonalElevation = tonalElevation,
-    shadowElevation = shadowElevation,
+    colors = SearchBarDefaults.colors(
+      containerColor = settingsGlassContainerColor(MaterialTheme.colorScheme.surfaceContainerHigh),
+    ),
+    tonalElevation = if (glass) 0.dp else tonalElevation,
+    shadowElevation = if (glass) 0.dp else shadowElevation,
     windowInsets = WindowInsets(0.dp),
     content = {},
   )

@@ -56,6 +56,7 @@ import app.infinity.mpvz.ui.player.PlayerViewModel
 import app.infinity.mpvz.ui.player.applySubtitleLayout
 import app.infinity.mpvz.ui.player.controls.CARDS_MAX_WIDTH
 import app.infinity.mpvz.ui.player.controls.panelCardsColors
+import app.infinity.mpvz.ui.player.controls.components.playerGlassPane
 import app.infinity.mpvz.ui.theme.spacing
 import app.infinity.mpvz.ui.utils.currentMpvConfigOverrideOptions
 import org.koin.compose.koinInject
@@ -107,6 +108,7 @@ fun SubtitleSettingsColorsCard(
         SubColorType.entries.forEach { type ->
           IconToggleButton(
             checked = currentColorType == type,
+            modifier = Modifier.playerGlassPane(enabled = true, cornerRadius = 14.dp),
             onCheckedChange = { currentColorType = type },
           ) {
             Icon(

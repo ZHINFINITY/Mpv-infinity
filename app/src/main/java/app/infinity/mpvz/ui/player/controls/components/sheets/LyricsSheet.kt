@@ -56,6 +56,7 @@ import app.infinity.mpvz.ui.icons.Icon
 import app.infinity.mpvz.ui.icons.Icons
 import app.infinity.mpvz.ui.player.PlayerViewModel
 import app.infinity.mpvz.ui.theme.fontFamilyForText
+import app.infinity.mpvz.presentation.components.playerGlassOverlay
 
 @Composable
 fun LyricsSheet(
@@ -82,9 +83,9 @@ fun LyricsSheet(
   }
 
   Surface(
-    modifier = modifier.fillMaxWidth(),
+    modifier = modifier.fillMaxWidth().playerGlassOverlay(cornerRadius = 28.dp),
     shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
-    color = MaterialTheme.colorScheme.surfaceContainerHigh,
+    color = androidx.compose.ui.graphics.Color.Transparent,
     tonalElevation = 6.dp,
   ) {
     Column(

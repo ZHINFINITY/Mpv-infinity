@@ -24,10 +24,13 @@ permissions:
   contents: read
 
 jobs:
-  build-debug:
-    name: Build ${{ inputs.flavor }} debug APK
+  kotlin-tests:
+    name: Kotlin compile and full unit tests
     runs-on: ubuntu-latest
-    timeout-minutes: 240
+    timeout-minutes: 90
+    permissions:
+      contents: read
+      actions: write
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -39,6 +42,156 @@ jobs:
           distribution: temurin
           java-version: '17'
           cache: gradle
+      - name: Test Native resume and shared track persistence wiring
+        run: python3 scripts/tests/native_resume_persistence_test.py
+      - name: Test download validator migration
+        run: python3 scripts/tests/download_validator_migration_test.py
+      - name: Test Native resume and live-seek contracts
+        run: python3 scripts/tests/native_playback_control_contract_test.py
+      - name: Test combined radio and music UI contracts
+        run: python3 scripts/tests/radio_music_ui_contract_test.py
+      - name: Test independent liquid-glass rendering and coverage contracts
+        run: python3 scripts/tests/liquid_glass_contract_test.py
+      - name: Test player ambient glass fallback contract
+        run: python3 scripts/tests/player_ambient_glass_contract_test.py
+      - name: Test player popup and dialog glass coverage
+        run: python3 scripts/tests/player_glass_overlays_test.py
+      - name: Test shared glass dropdown menu contract
+        run: python3 scripts/tests/glass_dropdown_menu_contract_test.py
+      - name: Test navigation backdrop and finite liquid-motion contracts
+        run: python3 scripts/tests/navigation_glass_contract_test.py
+      - name: Test complete player and settings glass coverage
+        run: |
+          python3 scripts/tests/player_glass_coverage_test.py
+          python3 scripts/tests/settings_glass_contract_test.py
+          python3 scripts/tests/settings_options_glass_contract_test.py
+          python3 scripts/tests/thumbnail_cache_policy_test.py
+          python3 scripts/tests/scene_stability_contract_test.py
+          python3 scripts/tests/browser_glass_route_content_contract_test.py
+          python3 scripts/tests/radio_playlist_category_test.py
+      - name: Test playlist sheet, drawer, native aspect and notification regression wiring
+        run: python3 scripts/tests/player_regression_wiring_test.py
+      - name: Test palette-only glass, surface symmetry and customizable interpolation actions
+        run: |
+          python3 scripts/tests/palette_depth_glass_test.py
+          python3 scripts/tests/player_sheet_symmetry_test.py
+          python3 scripts/tests/player_sheet_setting_rows_contract_test.py
+          python3 scripts/tests/glass_named_surface_coverage_test.py
+          python3 scripts/tests/player_interpolation_controls_test.py
+          python3 scripts/tests/interpolation_runtime_apply_test.py
+          python3 scripts/tests/quickplay_selection_glass_test.py
+          python3 scripts/tests/glass_depth_no_reload_wiring_test.py
+          python3 scripts/tests/alternate_search_switch_glass_test.py
+          python3 scripts/tests/accent_switch_colors_contract_test.py
+          python3 scripts/tests/video_edit_glass_paths_test.py
+          python3 scripts/tests/media_info_playlist_glass_paths_test.py
+          python3 scripts/tests/actual_mini_player_glass_contract_test.py
+          python3 scripts/tests/mini_player_gesture_contract_test.py
+          python3 scripts/tests/music_transition_geometry_test.py
+          python3 scripts/tests/localization_resources_test.py
+          python3 scripts/tests/existing_localization_gaps_test.py
+          python3 scripts/tests/persian_locale_rtl_test.py
+          python3 scripts/tests/settings_popup_locale_contract_test.py
+          python3 scripts/tests/apk_signing_identity_test.py
+          python3 scripts/tests/ci_build_speed_contract_test.py
+          python3 scripts/tests/seekbar_glass_contract_test.py
+          python3 scripts/tests/playlist_browse_ui_contract_test.py
+          python3 scripts/tests/stream_cards_ui_contract_test.py
+          python3 scripts/tests/playlist_actions_regression_contract_test.py
+          python3 scripts/tests/theme_editor_layout_test.py
+      - name: Fail-fast compile of all main and unit-test Kotlin
+        if: ${{ inputs.flavor == 'standard' && inputs.target_abi == 'arm64-v8a' }}
+        run: ./gradlew :app:compileStandardDebugKotlin :app:compileStandardDebugUnitTestKotlin -PtargetAbi=arm64-v8a -PmpvFlowMpvBuild=true --build-cache --stacktrace --no-daemon
+      - name: Run Standard arm64 debug unit tests
+        if: ${{ inputs.flavor == 'standard' && inputs.target_abi == 'arm64-v8a' }}
+        run: ./gradlew testStandardDebugUnitTest -PtargetAbi=arm64-v8a -PmpvFlowMpvBuild=true --build-cache --stacktrace --no-daemon --max-workers=2
+      - name: Upload combined validation evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: combined-radio-ui-validation-evidence
+          path: |
+            app/schemas/**/23.json
+            app/schemas/**/24.json
+            app/build/test-results/testStandardDebugUnitTest/*.xml
+          if-no-files-found: warn
+      - name: Cancel the parallel APK build after a test or compile failure
+        if: ${{ failure() }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh run cancel "$GITHUB_RUN_ID" -R "$GITHUB_REPOSITORY" || true
+
+  build-debug:
+    name: Build ${{ inputs.flavor }} debug APK
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Verify combined radio and UI phone-test candidate
+        # Provenance gate for phone-test candidates on this branch only: the pinned SHAs
+        # are not ancestors of main (after a squash) or of other branches.
+        if: github.ref_name == 'test/radio-ui-performance-20261021'
+        run: |
+          set -euo pipefail
+          for required in \
+            1e380270d4ef44549c0be40f168e859c9d8bb49c \
+            05c0a8acc0ffc0645b5d06b3df1798674b134160 \
+            cbe0f78475dbf34c2e24508a3e56b1cf002823f3 \
+            a3f4a61ff8af33aed7105686f9f450a4e4ce91c7 \
+            6dee37881ebff6958e384e5c9e20f5516c8b2196; do
+            git merge-base --is-ancestor "$required" HEAD
+          done
+          git diff --exit-code 1e380270d4ef44549c0be40f168e859c9d8bb49c HEAD -- \
+            app/src/main/cpp scripts/build-mpvflow-mpv-runtime.sh \
+            scripts/prepare-mpvflow.py scripts/patch-ffmpeg-symver.py \
+            THIRD_PARTY_LICENSES app/src/main/assets/mpv/licenses
+          echo "Verified combined radio/UI candidate with unchanged interpolation runtime: $(git rev-parse HEAD)"
+      - name: Verify permission-only and third-party source boundaries
+        run: |
+          python3 scripts/tests/project_license_test.py
+          python3 scripts/tests/permission_only_license_test.py
+          python3 scripts/tests/third_party_source_test.py
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: gradle
+      - name: Identify runner platform for native APT cache
+        id: native-apt-platform
+        if: ${{ inputs.flavor == 'standard' && inputs.target_abi == 'arm64-v8a' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          source /etc/os-release
+          image_version="${ImageVersion:-unknown}"
+          image_version="$(printf '%s' "$image_version" | tr -c '[:alnum:]._-' '-')"
+          {
+            printf 'arch=%s\n' "$(dpkg --print-architecture)"
+            printf 'os_id=%s\n' "$ID"
+            printf 'version_id=%s\n' "$VERSION_ID"
+            printf 'image_version=%s\n' "$image_version"
+          } >> "$GITHUB_OUTPUT"
+      - name: Restore native APT download archive cache
+        id: native-apt-cache
+        if: ${{ inputs.flavor == 'standard' && inputs.target_abi == 'arm64-v8a' }}
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ runner.temp }}/mpv-native-apt-archives/*.deb
+          key: mpv-native-apt-${{ runner.os }}-${{ steps.native-apt-platform.outputs.arch }}-${{ steps.native-apt-platform.outputs.os_id }}-${{ steps.native-apt-platform.outputs.version_id }}-${{ steps.native-apt-platform.outputs.image_version }}-${{ hashFiles('.github/workflows/debug-apk.yml') }}
+          restore-keys: |
+            mpv-native-apt-${{ runner.os }}-${{ steps.native-apt-platform.outputs.arch }}-${{ steps.native-apt-platform.outputs.os_id }}-${{ steps.native-apt-platform.outputs.version_id }}-
+      - name: Prepare native APT archive cache permissions
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/mpv-native-apt-archives"
+          sudo install -d -m0755 -o _apt -g root "$RUNNER_TEMP/mpv-native-apt-archives/partial"
       - name: Restore verified Flow-only MPVFlow arm64 runtime
         id: mpvflow-runtime-cache
         if: ${{ inputs.flavor == 'standard' && inputs.target_abi == 'arm64-v8a' }}
@@ -81,7 +234,10 @@ jobs:
           path: native-builder/app/build/outputs/apk
           key: mpvflow-arm64-runtime-v1-8b9cdaf1e5bcc44928adae0b2f3b9f1d8808504bdc5e129ec67b3e0b4871d812
       - name: Install native subtitle build dependencies
-        run: sudo apt-get update && sudo apt-get install -y autoconf automake libtool gettext autopoint gperf pkg-config
+        run: |
+          set -euo pipefail
+          scripts/ci/apt-install-with-fallback.sh \
+            autoconf automake libtool gettext autopoint gperf pkg-config
       - name: Checkout pinned Android MPV build tools
         if: ${{ inputs.flavor == 'standard' && inputs.target_abi == 'arm64-v8a' && steps.mpvflow-runtime-cache.outputs.cache-hit != 'true' && steps.mpvflow-runtime-legacy-cache.outputs.cache-hit != 'true' }}
         uses: actions/checkout@v6
@@ -99,8 +255,20 @@ jobs:
       - name: Install native interpolation build dependencies
         if: ${{ inputs.flavor == 'standard' && inputs.target_abi == 'arm64-v8a' }}
         run: |
-          sudo apt-get update
-          sudo apt-get install -y ninja-build cmake pipx nasm yasm binutils zlib1g-dev libssl-dev zip unzip wget curl ffmpeg glslang-tools libvulkan-dev mesa-vulkan-drivers
+          set -euo pipefail
+          # Bounded download with mirror fallback; the default runner mirror took 28 minutes once.
+          scripts/ci/apt-install-with-fallback.sh \
+            ninja-build cmake pipx nasm yasm binutils zlib1g-dev libssl-dev zip unzip wget curl ffmpeg glslang-tools libvulkan-dev mesa-vulkan-drivers
+      - name: Save native APT download archive cache
+        if: ${{ success() && inputs.flavor == 'standard' && inputs.target_abi == 'arm64-v8a' && steps.native-apt-cache.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ runner.temp }}/mpv-native-apt-archives/*.deb
+          key: mpv-native-apt-${{ runner.os }}-${{ steps.native-apt-platform.outputs.arch }}-${{ steps.native-apt-platform.outputs.os_id }}-${{ steps.native-apt-platform.outputs.version_id }}-${{ steps.native-apt-platform.outputs.image_version }}-${{ hashFiles('.github/workflows/debug-apk.yml') }}
+      - name: Install pinned Meson
+        if: ${{ inputs.flavor == 'standard' && inputs.target_abi == 'arm64-v8a' }}
+        run: |
+          set -euo pipefail
           pipx install meson==1.6.1
           PIPX_BIN_DIR="$(pipx environment --value PIPX_BIN_DIR)"
           echo "$PIPX_BIN_DIR" >> "$GITHUB_PATH"
@@ -144,9 +312,6 @@ jobs:
           python3 scripts/tests/mpvflow_flow_only_test.py
           python3 scripts/tests/mpvflow_native_build_test.py
           MPVFLOW_REQUIRE_VULKAN_PIXEL_TEST=1 ./scripts/test-mpvflow-core.sh
-      - name: Run Standard arm64 debug unit tests
-        if: ${{ inputs.flavor == 'standard' && inputs.target_abi == 'arm64-v8a' }}
-        run: ./gradlew testStandardDebugUnitTest -PtargetAbi=arm64-v8a -PmpvFlowMpvBuild=true --stacktrace --no-daemon --max-workers=2
       - name: Build debug APK
         run: |
           chmod +x ./gradlew
@@ -155,17 +320,19 @@ jobs:
           case "${{ inputs.flavor }}" in
             standard)
               if [[ "${{ inputs.target_abi }}" == "arm64-v8a" ]]; then
-                ./gradlew assembleStandardDebug $ABI_ARGS -PmpvFlowMpvBuild=true --stacktrace --no-daemon --max-workers=2
+                ./gradlew assembleStandardDebug $ABI_ARGS -PmpvFlowMpvBuild=true --build-cache --stacktrace --no-daemon --max-workers=2
               else
-                ./gradlew assembleStandardDebug $ABI_ARGS --stacktrace --no-daemon --max-workers=2
+                ./gradlew assembleStandardDebug $ABI_ARGS --build-cache --stacktrace --no-daemon --max-workers=2
               fi
               ;;
-            no_vulkan) ./gradlew assembleNoVulkanDebug $ABI_ARGS --stacktrace --no-daemon --max-workers=2 ;;
+            no_vulkan) ./gradlew assembleNoVulkanDebug $ABI_ARGS --build-cache --stacktrace --no-daemon --max-workers=2 ;;
           esac
       - name: Verify Flow-only arm64 APK contents
         if: ${{ inputs.flavor == 'standard' && inputs.target_abi == 'arm64-v8a' }}
         run: |
           set -euo pipefail
+          mapfile -t apks < <(find app/build/outputs/apk -type f -name '*.apk')
+          [[ "${#apks[@]}" -eq 1 ]] || { echo "Expected exactly one combined Debug APK, found ${#apks[@]}" >&2; exit 1; }
           apk="$(find app/build/outputs/apk/standard/debug -type f -name '*arm64-v8a*.apk' -print -quit)"
           [[ -n "$apk" ]] || { echo "No Standard arm64 debug APK found" >&2; exit 1; }
           apk_entries="$(unzip -Z1 "$apk")"
@@ -209,9 +376,36 @@ jobs:
             fi
             echo "Verified $library: JNI/API exports retained; Flow internals and debug symbols hidden"
           done
+      - name: Verify APK package, ABI, integrity and signing identity
+        if: ${{ inputs.flavor == 'standard' && inputs.target_abi == 'arm64-v8a' }}
+        run: |
+          set -euo pipefail
+          apk="$(find app/build/outputs/apk/standard/debug -type f -name '*arm64-v8a*.apk' -print -quit)"
+          [[ -n "$apk" ]]
+          python3 scripts/verify-debug-apk-artifact.py "$apk" "${apk%.apk}.verification.json"
+      - name: Wait for fail-fast compile and full unit tests before publishing APK
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          # The APK job runs in parallel with the test job; never publish an APK whose tests did not pass.
+          deadline=$((SECONDS + 3600))
+          while :; do
+            state="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}/attempts/${GITHUB_RUN_ATTEMPT}/jobs" \
+              --jq '.jobs[] | select(.name == "Kotlin compile and full unit tests") | "\(.status) \(.conclusion)"')"
+            echo "Kotlin compile and full unit tests: ${state:-not visible yet}"
+            case "$state" in
+              "completed success") break ;;
+              completed*) echo "Unit-test job did not pass; the APK is not published." >&2; exit 1 ;;
+            esac
+            (( SECONDS < deadline )) || { echo "Timed out waiting for unit tests" >&2; exit 1; }
+            sleep 15
+          done
       - name: Upload debug APKs
         uses: actions/upload-artifact@v4
         with:
           name: mpv-infinity-${{ inputs.flavor }}-debug
-          path: app/build/outputs/apk/**/*.apk
+          path: |
+            app/build/outputs/apk/**/*.apk
+            app/build/outputs/apk/**/*.verification.json
           if-no-files-found: error

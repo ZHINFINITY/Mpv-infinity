@@ -6,6 +6,8 @@
  */
 
 package app.infinity.mpvz.ui.browser.jellyfin
+import app.infinity.mpvz.ui.theme.GlassDropdownMenu
+import app.infinity.mpvz.ui.theme.GlassExposedDropdownMenu
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateContentSize
@@ -49,7 +51,6 @@ import androidx.compose.material3.BottomSheetDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -744,7 +745,7 @@ fun JellyfinDetailSheet(
                 }
               }
 
-              DropdownMenu(
+              GlassDropdownMenu(
                 expanded = isDownloadMenuOpen,
                 onDismissRequest = { isDownloadMenuOpen = false },
               ) {
@@ -953,7 +954,7 @@ fun JellyfinDetailSheet(
                 }
               }
 
-              DropdownMenu(
+              GlassDropdownMenu(
                 expanded = isSeasonDropdownExpanded,
                 onDismissRequest = { isSeasonDropdownExpanded = false },
                 shape = RoundedCornerShape(14.dp),

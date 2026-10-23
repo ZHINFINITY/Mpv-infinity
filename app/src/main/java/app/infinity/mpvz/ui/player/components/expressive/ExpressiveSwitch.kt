@@ -44,6 +44,8 @@ import androidx.compose.ui.unit.dp
 import app.infinity.mpvz.ui.icons.Icon
 import app.infinity.mpvz.ui.icons.Icons
 import app.infinity.mpvz.ui.theme.ElevationTokens
+import app.infinity.mpvz.ui.theme.SwitchContrastPolicy
+import androidx.compose.ui.graphics.luminance
 
 private val dpExpressiveSpring = spring<Dp>(dampingRatio = 0.9f, stiffness = 700f)
 
@@ -92,12 +94,8 @@ fun ExpressiveSwitch(
         ),
     contentAlignment = Alignment.CenterStart,
   ) {
-    val trackColor =
-      if (checked) {
-        MaterialTheme.colorScheme.primary
-      } else {
-        MaterialTheme.colorScheme.surfaceContainerHighest
-      }
+    val contrast = SwitchContrastPolicy.forSurfaceLuminance(MaterialTheme.colorScheme.surface.luminance())
+    val trackColor = if (checked) contrast.checkedTrack else contrast.uncheckedTrack
 
     val thumbSize by animateDpAsState(
       targetValue = if (checked) SwitchDimensions.thumbChecked else SwitchDimensions.thumbUnchecked,
@@ -136,7 +134,7 @@ fun ExpressiveSwitch(
 
     val density = LocalDensity.current
     val trackRadiusPx = with(density) { SwitchDimensions.trackRadius.toPx() }
-    val borderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.5f)
+    val borderColor = contrast.uncheckedBorder
     val borderStrokePx = with(density) { SwitchDimensions.borderStroke.toPx() }
 
     Canvas(
@@ -177,7 +175,9 @@ fun ExpressiveSwitch(
           .scale(iconScale)
           .blur(toggleBlur.value.dp),
       shape = MaterialTheme.shapes.extraLarge,
-      color = if (checked) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.outline,
+      color =
+          if (checked) contrast.checkedThumb
+          else contrast.uncheckedThumb,
       shadowElevation = ElevationTokens.Level1,
     ) {
       Box(

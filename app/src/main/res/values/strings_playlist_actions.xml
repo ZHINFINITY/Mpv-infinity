@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+  <string name="playlist_actions_add_title">Add %1$d %2$s to a playlist</string>
+  <string name="playlist_actions_media_song">song</string>
+  <string name="playlist_actions_media_songs">songs</string>
+  <string name="playlist_actions_media_video">video</string>
+  <string name="playlist_actions_media_videos">videos</string>
+  <string name="playlist_actions_existing_heading">Existing playlists</string>
+  <string name="playlist_actions_playlist_count">%1$d items</string>
+  <string name="playlist_actions_video_queue">Video queue</string>
+  <string name="playlist_actions_audio_queue">Audio queue</string>
+  <string name="playlist_actions_now_playing_count">Now playing · %1$d items</string>
+  <string name="playlist_actions_create_group">Create or import</string>
+</resources>

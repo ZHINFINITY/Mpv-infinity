@@ -7,6 +7,11 @@
 
 package app.infinity.mpvz.ui.preferences
 
+import app.infinity.mpvz.ui.components.GlassOptionSheet
+import app.infinity.mpvz.ui.preferences.components.settingsGlassContainerColor
+
+import app.infinity.mpvz.ui.preferences.components.settingsGlassSurface
+
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -19,10 +24,10 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Scaffold
+import app.infinity.mpvz.ui.preferences.components.SettingsScaffold as Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
+import app.infinity.mpvz.ui.preferences.components.SettingsTopAppBar as TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -54,9 +59,9 @@ import app.infinity.mpvz.ui.utils.popSafely
 import kotlinx.collections.immutable.toImmutableList
 import kotlinx.serialization.Serializable
 import me.zhanghai.compose.preference.FooterPreference
-import me.zhanghai.compose.preference.ListPreference
+import app.infinity.mpvz.ui.preferences.components.ListPreference
 import me.zhanghai.compose.preference.ProvidePreferenceLocals
-import me.zhanghai.compose.preference.SliderPreference
+import app.infinity.mpvz.ui.preferences.components.SliderPreference
 import org.koin.compose.koinInject
 
 @Serializable
@@ -301,10 +306,12 @@ object GesturePreferencesScreen : Screen {
               PreferenceDivider()
 
               if (showCustomSeekDialog) {
-                AlertDialog(
+                GlassOptionSheet(
+      containerColor = settingsGlassContainerColor(androidx.compose.material3.AlertDialogDefaults.containerColor),
+      modifier = androidx.compose.ui.Modifier.settingsGlassSurface(cornerRadius = 28.dp, independent = true),
                   onDismissRequest = { showCustomSeekDialog = false },
                   title = { Text(text = stringResource(id = R.string.pref_player_double_tap_seek_duration)) },
-                  text = {
+                  content = {
                     Column {
                       Text(
                         text = stringResource(R.string.pref_custom_seek_dialog_text),
@@ -337,8 +344,7 @@ object GesturePreferencesScreen : Screen {
                     TextButton(onClick = { showCustomSeekDialog = false }) {
                       Text(stringResource(R.string.generic_cancel))
                     }
-                  },
-                )
+                  },)
               }
 
               val doubleTapSeekAreaWidth by preferences.doubleTapSeekAreaWidth.collectAsState()

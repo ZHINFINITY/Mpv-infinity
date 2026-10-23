@@ -16,9 +16,9 @@ import org.junit.Test
 
 class MpvFlowTargetFpsTest {
   @Test
-  fun targetRatesMatchTheOnDeviceChoicesAndDefaultToSixty() {
+  fun targetRatesMatchTheOnDeviceChoicesAndDefaultToOneTwenty() {
     assertEquals(listOf(48, 60, 72, 90, 96, 120, 144), MPVFLOW_TARGET_FPS_OPTIONS)
-    assertEquals(60, DEFAULT_MPVFLOW_TARGET_FPS)
+    assertEquals(120, DEFAULT_MPVFLOW_TARGET_FPS)
   }
 
   @Test

@@ -7,6 +7,7 @@
 
 package app.infinity.mpvz.ui.browser.recentlyplayed
 
+import app.infinity.mpvz.ui.browser.fab.quickPlayFabContainerColor
 import android.content.Intent
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
@@ -49,6 +50,8 @@ import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.ToggleFloatingActionButton
+import app.infinity.mpvz.ui.preferences.components.settingsGlassContainerColor
+import app.infinity.mpvz.ui.preferences.components.settingsGlassSurface
 import androidx.compose.material3.ToggleFloatingActionButtonDefaults.animateIcon
 import androidx.compose.material3.TooltipAnchorPosition
 import androidx.compose.material3.TooltipBox
@@ -253,6 +256,7 @@ object RecentlyPlayedScreen : Screen {
     }
 
     Scaffold(
+      containerColor = settingsGlassContainerColor(MaterialTheme.colorScheme.background),
       topBar = {
         BrowserTopBar(
           title = stringResource(R.string.pref_advanced_enable_recently_played_title),
@@ -305,8 +309,11 @@ object RecentlyPlayedScreen : Screen {
               state = rememberTooltipState(),
             ) {
               ToggleFloatingActionButton(
+                  containerCornerRadius = app.infinity.mpvz.ui.browser.fab.quickPlayFabCornerRadius(),
+                  containerColor = quickPlayFabContainerColor(),
                 modifier =
                   Modifier
+                    .settingsGlassSurface(cornerRadius = 20.dp)
                     .animateFloatingActionButton(
                       visible = isFabShouldBeVisible,
                       alignment = Alignment.BottomEnd,

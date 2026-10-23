@@ -7,6 +7,11 @@
 
 package app.infinity.mpvz.ui.preferences
 
+import app.infinity.mpvz.ui.components.GlassOptionSheet
+import app.infinity.mpvz.ui.preferences.components.settingsGlassContainerColor
+
+import app.infinity.mpvz.ui.preferences.components.settingsGlassSurface
+
 import android.content.Intent
 import android.net.Uri
 import android.widget.Toast
@@ -33,13 +38,13 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Scaffold
+import app.infinity.mpvz.ui.preferences.components.SettingsScaffold as Scaffold
 import androidx.compose.material3.SuggestionChip
 import androidx.compose.material3.SuggestionChipDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TextField
-import androidx.compose.material3.TopAppBar
+import app.infinity.mpvz.ui.preferences.components.SettingsTopAppBar as TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState as collectFlowAsState
@@ -88,10 +93,10 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
-import me.zhanghai.compose.preference.ListPreference
-import me.zhanghai.compose.preference.Preference
+import app.infinity.mpvz.ui.preferences.components.ListPreference
+import app.infinity.mpvz.ui.preferences.components.Preference
 import me.zhanghai.compose.preference.ProvidePreferenceLocals
-import me.zhanghai.compose.preference.TextFieldPreference
+import app.infinity.mpvz.ui.preferences.components.TextFieldPreference
 import org.koin.compose.koinInject
 import java.io.File
 
@@ -652,7 +657,9 @@ object SubtitlesPreferencesScreen : Screen {
               )
 
               if (showSourcesDialog) {
-                AlertDialog(
+                GlassOptionSheet(
+      containerColor = settingsGlassContainerColor(androidx.compose.material3.AlertDialogDefaults.containerColor),
+      modifier = androidx.compose.ui.Modifier.settingsGlassSurface(cornerRadius = 28.dp, independent = true),
                   onDismissRequest = { showSourcesDialog = false },
                   title = {
                     Row(
@@ -686,7 +693,7 @@ object SubtitlesPreferencesScreen : Screen {
                       }
                     }
                   },
-                  text = {
+                  content = {
                     Column(modifier = Modifier.fillMaxWidth()) {
                       sourcesResponse?.key?.let { keyInfo ->
                         val keyType = keyInfo.type?.replaceFirstChar { it.uppercase() } ?: "Unknown"
@@ -923,8 +930,7 @@ object SubtitlesPreferencesScreen : Screen {
                     TextButton(onClick = { showSourcesDialog = false }) {
                       Text(stringResource(android.R.string.ok))
                     }
-                  },
-                )
+                  },)
               }
 
               PreferenceDivider()
@@ -1084,6 +1090,8 @@ object SubtitlesPreferencesScreen : Screen {
 
               if (showClearDialog) {
                 AlertDialog(
+      containerColor = settingsGlassContainerColor(androidx.compose.material3.AlertDialogDefaults.containerColor),
+      modifier = androidx.compose.ui.Modifier.settingsGlassSurface(cornerRadius = 28.dp, independent = true),
                   onDismissRequest = { showClearDialog = false },
                   title = { Text(stringResource(R.string.pref_subtitles_clear_downloads)) },
                   text = { Text(stringResource(R.string.pref_subtitles_clear_downloads_confirmation)) },
@@ -1189,10 +1197,12 @@ fun MultiChoicePreference(
   )
 
   if (showDialog) {
-    AlertDialog(
+    GlassOptionSheet(
+      containerColor = settingsGlassContainerColor(androidx.compose.material3.AlertDialogDefaults.containerColor),
+      modifier = androidx.compose.ui.Modifier.settingsGlassSurface(cornerRadius = 28.dp, independent = true),
       onDismissRequest = { showDialog = false },
       title = title,
-      text = {
+      content = {
         val valuesList = values.toList()
         LazyColumn {
           items(count = valuesList.size, key = { index -> valuesList[index].first }) { index ->
@@ -1254,8 +1264,7 @@ fun MultiChoicePreference(
         TextButton(onClick = { showDialog = false }) {
           Text(stringResource(android.R.string.ok))
         }
-      },
-    )
+      },)
   }
 }
 

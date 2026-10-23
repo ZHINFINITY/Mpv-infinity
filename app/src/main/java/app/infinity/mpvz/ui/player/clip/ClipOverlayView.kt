@@ -78,6 +78,9 @@ import app.infinity.mpvz.R
 import app.infinity.mpvz.ui.icons.Icon as AppIcon
 import app.infinity.mpvz.ui.icons.Icons
 import app.infinity.mpvz.ui.player.Panels
+import app.infinity.mpvz.ui.preferences.components.settingsGlassContainerColor
+import app.infinity.mpvz.ui.preferences.components.settingsGlassSurface
+import app.infinity.mpvz.ui.preferences.components.settingsGlassEnabled
 import app.infinity.mpvz.ui.player.PlaybackSession
 import app.infinity.mpvz.ui.player.PlayerActivity
 import app.infinity.mpvz.ui.player.PlayerViewModel
@@ -994,14 +997,16 @@ private fun ClipCropControls(
   onCancel: () -> Unit,
   onDone: () -> Unit,
 ) {
+  val glass = settingsGlassEnabled()
   BackHandler(onBack = onCancel)
 
   Surface(
+    modifier = Modifier.settingsGlassSurface(cornerRadius = 999.dp, independent = true),
     shape = CircleShape,
-    color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.96f),
+    color = settingsGlassContainerColor(MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.96f)),
     contentColor = MaterialTheme.colorScheme.onSurface,
-    tonalElevation = 6.dp,
-    shadowElevation = 8.dp,
+    tonalElevation = if (glass) 0.dp else 6.dp,
+    shadowElevation = if (glass) 0.dp else 8.dp,
     border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.55f)),
   ) {
     Row(

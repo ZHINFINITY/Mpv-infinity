@@ -25,8 +25,6 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -69,8 +67,10 @@ import app.infinity.mpvz.preferences.getPlayerButtonLabel
 import app.infinity.mpvz.ui.icons.Icon
 import app.infinity.mpvz.ui.icons.Icons
 import app.infinity.mpvz.ui.player.controls.components.LocalHidePlayerButtonsBackground
+import app.infinity.mpvz.ui.player.controls.components.LocalPlayerGlassSurfaceOwner
 import app.infinity.mpvz.ui.player.controls.components.panels.DraggablePanel
 import app.infinity.mpvz.ui.theme.controlColor
+import app.infinity.mpvz.ui.theme.liquidGlassPane
 import app.infinity.mpvz.ui.theme.spacing
 import app.infinity.mpvz.preferences.preference.collectAsState
 import org.koin.compose.koinInject
@@ -223,7 +223,6 @@ private fun PlayerControlEdgeHandle(
   }
 }
 
-@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun PlayerControlPanel(
   buttons: List<PlayerButton>,
@@ -309,40 +308,40 @@ private fun PlayerControlPanelHeader(onDismissRequest: () -> Unit) {
   }
 }
 
-@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun PlayerControlPanelContent(
   buttons: List<PlayerButton>,
   activeButtons: Set<PlayerButton>,
   renderButton: @Composable (PlayerButton) -> Unit,
 ) {
-  BoxWithConstraints(
+  Column(
     modifier =
       Modifier
         .fillMaxWidth()
-        .padding(start = 14.dp, end = 14.dp, bottom = 20.dp),
+        // Keep the grid's viewport inset symmetric with the header's 16dp
+        // leading inset; the small top inset separates the fixed header from
+        // the first scroll item instead of letting its rounded rim touch it.
+        .padding(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 20.dp),
+    verticalArrangement = Arrangement.spacedBy(PanelTileSpacing),
   ) {
-    // Floor to whole pixels: Dp rounding at some densities made 3 tiles + gaps
-    // exceed the row width, wrapping the grid to 2 columns (issue #590).
-    val density = LocalDensity.current
-    val tileWidth =
-      with(density) {
-        val availablePx = (maxWidth - PanelTileSpacing * (PanelColumnCount - 1)).toPx()
-        kotlin.math.floor(availablePx / PanelColumnCount).toDp()
-      }
-    FlowRow(
-      modifier = Modifier.fillMaxWidth(),
-      horizontalArrangement = Arrangement.spacedBy(PanelTileSpacing),
-      verticalArrangement = Arrangement.spacedBy(PanelTileSpacing),
-      maxItemsInEachRow = PanelColumnCount,
-    ) {
-      buttons.forEach { button ->
-        PlayerControlTile(
-          button = button,
-          active = button in activeButtons,
-          renderButton = renderButton,
-          modifier = Modifier.width(tileWidth),
-        )
+    // Fixed rows avoid fractional-width wrap decisions. Every row has
+    // equal weighted cells, so the third column cannot collapse into a gap.
+    buttons.chunked(PlayerControlGridPolicy.columnCount).forEach { rowButtons ->
+      Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(PanelTileSpacing),
+      ) {
+        rowButtons.forEach { button ->
+          PlayerControlTile(
+            button = button,
+            active = button in activeButtons,
+            renderButton = renderButton,
+            modifier = Modifier.weight(1f),
+          )
+        }
+        repeat(PlayerControlGridPolicy.columnCount - rowButtons.size) {
+          Spacer(Modifier.weight(1f))
+        }
       }
     }
   }
@@ -388,11 +387,20 @@ private fun PlayerControlTile(
     )
 
   Surface(
-    modifier = modifier.height(104.dp),
+    modifier = modifier
+      .height(104.dp)
+      .liquidGlassPane(
+        enabled = liquidGlassSurfaces || playerControlsTheme.name != "Classic",
+        opacity = if (liquidGlassSurfaces) 0.84f else 0.78f,
+        highlight = if (active) 0.24f else 0.16f,
+        cornerRadius = 18.dp,
+      ),
     shape = RoundedCornerShape(18.dp),
-    color = containerColor,
+    color = if (liquidGlassSurfaces) {
+      if (active) MaterialTheme.colorScheme.primary.copy(alpha = 0.18f) else Color.Transparent
+    } else containerColor,
     contentColor = contentColor,
-    tonalElevation = if (active) 2.dp else 0.dp,
+    tonalElevation = if (active && !liquidGlassSurfaces) 2.dp else 0.dp,
   ) {
     Column(
       modifier =
@@ -407,12 +415,14 @@ private fun PlayerControlTile(
           Modifier
             .size(56.dp)
             .graphicsLayer {
-              scaleX = PanelIconScale
-              scaleY = PanelIconScale
+              scaleX = if (liquidGlassSurfaces) 1f else PanelIconScale
+              scaleY = if (liquidGlassSurfaces) 1f else PanelIconScale
             },
         contentAlignment = Alignment.Center,
       ) {
-        renderButton(button)
+        CompositionLocalProvider(LocalPlayerGlassSurfaceOwner provides liquidGlassSurfaces) {
+          renderButton(button)
+        }
       }
       Spacer(Modifier.height(4.dp))
       Text(

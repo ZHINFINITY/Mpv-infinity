@@ -39,13 +39,14 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Slider
-import androidx.compose.material3.Switch
+import app.infinity.mpvz.ui.player.controls.components.GlassSlider as Slider
+import app.infinity.mpvz.ui.player.controls.components.GlassSwitch as Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -77,6 +78,7 @@ import app.infinity.mpvz.domain.media.model.Video
 import app.infinity.mpvz.preferences.AppearancePreferences
 import app.infinity.mpvz.preferences.BrowserPreferences
 import app.infinity.mpvz.preferences.MediaLayoutMode
+import app.infinity.mpvz.preferences.PlayerPreferences
 import app.infinity.mpvz.preferences.GesturePreferences
 import app.infinity.mpvz.preferences.preference.collectAsState
 import app.infinity.mpvz.presentation.Screen
@@ -88,7 +90,10 @@ import app.infinity.mpvz.ui.browser.components.BrowserTopBar
 import app.infinity.mpvz.ui.browser.components.ExpressiveScrollBar
 import app.infinity.mpvz.ui.browser.components.fastScrollGlyph
 import app.infinity.mpvz.ui.browser.selection.rememberSelectionManager
+import app.infinity.mpvz.ui.preferences.components.settingsGlassContainerColor
+import app.infinity.mpvz.ui.preferences.components.settingsGlassSurface
 import app.infinity.mpvz.ui.components.InlineSearchBar
+import app.infinity.mpvz.ui.player.controls.components.GlassSwitch
 import app.infinity.mpvz.ui.icons.Icon
 import app.infinity.mpvz.ui.icons.Icons
 import app.infinity.mpvz.ui.player.PlayerActivity
@@ -130,6 +135,7 @@ data class PlaylistDetailScreen(
     val backStack = LocalBackStack.current
     val coroutineScope = rememberCoroutineScope()
     val browserPreferences = koinInject<BrowserPreferences>()
+    val playerPreferences = koinInject<PlayerPreferences>()
     val playlistRepository = koinInject<PlaylistRepository>()
     val iptvLayoutMode by browserPreferences.iptvLayoutMode.collectAsState()
     val iptvManualGridColumns by browserPreferences.iptvManualGridColumnsEnabled.collectAsState()
@@ -149,13 +155,16 @@ data class PlaylistDetailScreen(
     val playlist by viewModel.playlist.collectAsState()
     val videoItems by viewModel.videoItems.collectAsState()
     val categories by viewModel.categories.collectAsState()
-    val videos = videoItems.map { it.video }
+    val videos = remember(videoItems) { videoItems.map { it.video } }
+    val isRadioM3uPlaylist = playlist?.let {
+      it.isM3uPlaylist && app.infinity.mpvz.utils.media.RadioM3uPlaylistPolicy.isStoredRadioName(it.name)
+    } == true
     val isLoading by viewModel.isLoading.collectAsState()
     val isRefreshing = remember { mutableStateOf(false) }
     val playlistTitle =
       when {
         playlist?.name?.equals(PlaylistRepository.FAVORITES_PLAYLIST_NAME, ignoreCase = true) != true ->
-          playlist?.name ?: stringResource(R.string.ui_playlist)
+          playlist?.name?.removePrefix(app.infinity.mpvz.utils.media.RadioM3uPlaylistPolicy.RADIO_PREFIX) ?: stringResource(R.string.ui_playlist)
         playlist?.isAudio == true -> stringResource(R.string.playlist_favorite_songs)
         else -> stringResource(R.string.playlist_favorite_videos)
       }
@@ -167,7 +176,8 @@ data class PlaylistDetailScreen(
     val isM3UGrid = iptvLayoutMode == MediaLayoutMode.GRID
     val keyboardController = LocalSoftwareKeyboardController.current
     val focusRequester = remember { FocusRequester() }
-    val hasFavoriteStreams = remember(videoItems) { videoItems.any { it.playlistItem.isFavorite } }
+    val favoriteStreamCount = remember(videoItems) { videoItems.count { it.playlistItem.isFavorite } }
+    val hasFavoriteStreams = favoriteStreamCount > 0
 
     LaunchedEffect(categories, hasFavoriteStreams, playlist?.isM3uPlaylist) {
       if (playlist?.isM3uPlaylist != true) {
@@ -183,19 +193,14 @@ data class PlaylistDetailScreen(
       }
     }
 
-    val m3uFilteredItems =
+    val m3uFilteredItems = remember(videoItems, selectedM3UFilter, playlist?.isM3uPlaylist) {
       if (playlist?.isM3uPlaylist == true) {
-        when (selectedM3UFilter) {
-          M3U_FILTER_FAVORITES -> videoItems.filter { it.playlistItem.isFavorite }
-          M3U_FILTER_ALL -> videoItems
-          else -> videoItems.filter { it.playlistItem.groupTitle == selectedM3UFilter }
-        }
-      } else {
-        videoItems
-      }
+        PlaylistPresentationPolicy.filterM3uItems(videoItems, selectedM3UFilter, { it.playlistItem.groupTitle }, { it.playlistItem.isFavorite })
+      } else videoItems
+    }
 
     // Filter video items based on category and search query
-    val filteredVideoItems =
+    val filteredVideoItems = remember(m3uFilteredItems, isSearching, searchQuery) {
       if (isSearching && searchQuery.isNotBlank()) {
         m3uFilteredItems.filter { item ->
           item.video.displayName.contains(searchQuery, ignoreCase = true) ||
@@ -210,6 +215,7 @@ data class PlaylistDetailScreen(
       } else {
         m3uFilteredItems
       }
+    }
 
     // Request focus when search is activated
     LaunchedEffect(isSearching) {
@@ -260,6 +266,7 @@ data class PlaylistDetailScreen(
       }
     }
 
+    var preparingPlayback by remember { mutableStateOf(false) }
     fun launchPlaylistPlayback(
       item: PlaylistVideoItem,
       startIndex: Int,
@@ -270,26 +277,70 @@ data class PlaylistDetailScreen(
           ?: fallbackUri.takeIf { !it.scheme.isNullOrBlank() }
           ?: Uri.fromFile(java.io.File(item.video.path))
 
-      val intent =
-        Intent(context, PlayerActivity::class.java).apply {
-          action = Intent.ACTION_VIEW
-          data = playUri
-          putExtra("internal_launch", true)
-          putExtra("local_media_path", item.video.path)
-          putExtra("playlist_index", startIndex)
-          putExtra("playlist_id", playlistId)
-          putExtra("launch_source", if (playlist?.isM3uPlaylist == true) "m3u_playlist" else "playlist")
-          putExtra("is_audio", item.video.isAudio)
-          putExtra("title", item.playlistItem.fileName)
-          buildM3UHeadersExtra(playlist, item.playlistItem)?.let { putExtra("headers", it) }
+      if (preparingPlayback) return
+      preparingPlayback = true
+      coroutineScope.launch {
+        try {
+          val headersExtra = buildM3UHeadersExtra(playlist, item.playlistItem)
+          val headers = headersExtra?.toList()?.chunked(2)?.associate { it[0] to it[1] }
+            ?: mapOf("User-Agent" to app.infinity.mpvz.network.NetworkUserAgent.resolve(context))
+          // Reclassify saved entries too: the owner must not re-import an existing radio M3U.
+          val settingEnabled = playerPreferences.openRadioM3uInMusic.get()
+          val playlistName = playlist?.name.orEmpty()
+          val declaredAudio = playlist?.isAudio == true
+          val savedEntries = videoItems
+          val recognizedMusic = if (settingEnabled && playlist?.isM3uPlaylist == true) {
+            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
+              app.infinity.mpvz.utils.media.M3URoutingPolicy.isMusicPlaylist(
+                app.infinity.mpvz.utils.media.M3UParseResult.Success(
+                  playlistName,
+                  savedEntries.map { saved ->
+                    app.infinity.mpvz.utils.media.M3UPlaylistItem(
+                      url = saved.playlistItem.filePath,
+                      title = saved.playlistItem.fileName,
+                      groupTitle = saved.playlistItem.groupTitle,
+                    )
+                  },
+                ),
+                declaredAudio = declaredAudio,
+              )
+            }
+          } else false
+          val radioMimeType =
+            if (recognizedMusic) "audio/*" else if (settingEnabled && playlist?.isM3uPlaylist == true) {
+              app.infinity.mpvz.utils.media.RadioStreamProbe.detectAudioMimeType(playUri.toString(), headers)
+            } else null
+          // Audio mode is declared before Activity creation; opaque audio URLs can use the
+          // bounded header probe, but video/unknown responses never force the Music UI.
+          val musicRoute = settingEnabled && playlist?.isM3uPlaylist == true && radioMimeType != null
+          val intent =
+            Intent(context, PlayerActivity::class.java).apply {
+              action = Intent.ACTION_VIEW
+              data = playUri
+              if (radioMimeType != null) setDataAndType(playUri, radioMimeType)
+              putExtra("internal_launch", true)
+              putExtra("local_media_path", item.video.path)
+              putExtra("playlist_index", startIndex)
+              putExtra("playlist_id", playlistId)
+              putExtra("launch_source", if (musicRoute) "music_m3u_playlist" else if (playlist?.isM3uPlaylist == true) "m3u_playlist" else "playlist")
+              putExtra("media_library_audio", musicRoute || item.video.isAudio)
+              putExtra("is_audio", musicRoute || radioMimeType != null || item.video.isAudio)
+              putExtra("radio_stream", musicRoute || radioMimeType != null)
+              putExtra("title", item.playlistItem.fileName)
+              headersExtra?.let { putExtra("headers", it) }
+            }
+          context.startActivity(intent)
+        } finally {
+          preparingPlayback = false
         }
-      context.startActivity(intent)
+      }
     }
 
     val navigationBarHeight = app.infinity.mpvz.ui.browser.LocalNavigationBarHeight.current
     val miniPlayerClearance = app.infinity.mpvz.ui.browser.NavigationBarState.miniPlayerClearance
 
     Scaffold(
+      containerColor = app.infinity.mpvz.ui.preferences.components.settingsGlassContainerColor(MaterialTheme.colorScheme.background),
       topBar = {
         if (isSearching) {
           // Search mode - show search bar
@@ -601,17 +652,46 @@ data class PlaylistDetailScreen(
             if (playlist?.isM3uPlaylist == true && (categories.isNotEmpty() || hasFavoriteStreams)) {
               M3UPlaylistFilterRow(
                 categories = categories,
+                categoryCounts = remember(videoItems, categories) { PlaylistPresentationPolicy.categoryCounts(videoItems, categories) { it.playlistItem.groupTitle } },
+                totalCount = videoItems.size,
+                favoriteCount = favoriteStreamCount,
                 hasFavorites = hasFavoriteStreams,
                 selectedFilter = selectedM3UFilter,
                 onFilterSelected = { selectedM3UFilter = it },
               )
             }
 
+            val emptyKind = PlaylistPresentationPolicy.emptyKind(
+              hasUnfilteredItems = videoItems.isNotEmpty(),
+              hasActiveSearch = isSearching && searchQuery.isNotBlank(),
+              hasCategoryFilter = selectedM3UFilter != M3U_FILTER_ALL,
+              isRadio = isRadioM3uPlaylist,
+              isM3u = playlist?.isM3uPlaylist == true,
+              isAudio = playlist?.isAudio == true,
+            )
             PlaylistVideoListContent(
               videoItems = filteredVideoItems,
               isLoading = isLoading && videoItems.isEmpty(),
+              emptyTitle = when (emptyKind) {
+                PlaylistPresentationPolicy.EmptyKind.FILTERED -> stringResource(R.string.playlist_ui_no_filter_matches)
+                PlaylistPresentationPolicy.EmptyKind.RADIO -> stringResource(R.string.playlist_ui_no_radio_stations)
+                PlaylistPresentationPolicy.EmptyKind.TV -> stringResource(R.string.playlist_ui_no_tv_channels)
+                PlaylistPresentationPolicy.EmptyKind.SONGS -> stringResource(R.string.playlist_ui_no_songs)
+                PlaylistPresentationPolicy.EmptyKind.VIDEOS -> stringResource(R.string.ui_no_videos_in_playlist)
+              },
+              emptyHint = when (emptyKind) {
+                PlaylistPresentationPolicy.EmptyKind.FILTERED -> stringResource(R.string.playlist_ui_no_filter_matches_hint)
+                PlaylistPresentationPolicy.EmptyKind.RADIO -> stringResource(R.string.playlist_ui_radio_empty_hint)
+                PlaylistPresentationPolicy.EmptyKind.TV -> stringResource(R.string.playlist_ui_tv_empty_hint)
+                PlaylistPresentationPolicy.EmptyKind.SONGS -> stringResource(R.string.playlist_ui_songs_empty_hint)
+                PlaylistPresentationPolicy.EmptyKind.VIDEOS -> stringResource(R.string.ui_add_videos_to_get_started)
+              },
+              onClearFilters = if (emptyKind == PlaylistPresentationPolicy.EmptyKind.FILTERED) {
+                { selectedM3UFilter = M3U_FILTER_ALL; searchQuery = ""; isSearching = false }
+              } else null,
               selectionManager = selectionManager,
               isM3uPlaylist = playlist?.isM3uPlaylist == true,
+              isRadio = isRadioM3uPlaylist,
               isGridMode = isM3UGrid,
               isAudio = playlist?.isAudio == true || videoItems.any { it.video.isAudio },
               isReorderMode = isReorderMode,
@@ -718,20 +798,35 @@ private fun IptvSettingsDialog(
   onGridColumnsChange: (Int) -> Unit,
   onDismiss: () -> Unit,
 ) {
+  val glass by koinInject<AppearancePreferences>().liquidGlassSurfaces.collectAsState()
   AlertDialog(
     onDismissRequest = onDismiss,
+    modifier = Modifier.settingsGlassSurface(cornerRadius = 28.dp, independent = true),
+    containerColor = settingsGlassContainerColor(MaterialTheme.colorScheme.surfaceContainerHigh),
     title = { Text("IPTV list settings") },
     text = {
       Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Text("Layout", style = MaterialTheme.typography.titleSmall)
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
           FilterChip(
+            modifier = Modifier.settingsGlassSurface(cornerRadius = 18.dp),
+            colors = FilterChipDefaults.filterChipColors(
+              containerColor = settingsGlassContainerColor(MaterialTheme.colorScheme.surfaceContainerHigh),
+              selectedContainerColor = settingsGlassContainerColor(MaterialTheme.colorScheme.secondaryContainer),
+            ),
             selected = layoutMode == MediaLayoutMode.LIST,
+            border = if (glass) null else FilterChipDefaults.filterChipBorder(enabled = true, selected = layoutMode == MediaLayoutMode.LIST),
             onClick = { onLayoutModeChange(MediaLayoutMode.LIST) },
             label = { Text("List") },
           )
           FilterChip(
+            modifier = Modifier.settingsGlassSurface(cornerRadius = 18.dp),
+            colors = FilterChipDefaults.filterChipColors(
+              containerColor = settingsGlassContainerColor(MaterialTheme.colorScheme.surfaceContainerHigh),
+              selectedContainerColor = settingsGlassContainerColor(MaterialTheme.colorScheme.secondaryContainer),
+            ),
             selected = layoutMode == MediaLayoutMode.GRID,
+            border = if (glass) null else FilterChipDefaults.filterChipBorder(enabled = true, selected = layoutMode == MediaLayoutMode.GRID),
             onClick = { onLayoutModeChange(MediaLayoutMode.GRID) },
             label = { Text("Grid") },
           )
@@ -742,7 +837,7 @@ private fun IptvSettingsDialog(
           horizontalArrangement = Arrangement.SpaceBetween,
         ) {
           Text("Manual grid columns")
-          Switch(
+          GlassSwitch(
             checked = manualGridColumns,
             onCheckedChange = onManualGridColumnsChange,
           )
@@ -771,6 +866,8 @@ private fun CreateIptvPlaylistDialog(
   var name by rememberSaveable { mutableStateOf("My IPTV channels") }
   AlertDialog(
     onDismissRequest = onDismiss,
+    modifier = Modifier.settingsGlassSurface(cornerRadius = 28.dp, independent = true),
+    containerColor = settingsGlassContainerColor(MaterialTheme.colorScheme.surfaceContainerHigh),
     title = { Text("Create channel playlist") },
     text = {
       Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -798,6 +895,9 @@ private fun CreateIptvPlaylistDialog(
 private fun PlaylistVideoListContent(
   videoItems: List<PlaylistVideoItem>,
   isLoading: Boolean,
+  emptyTitle: String,
+  emptyHint: String,
+  onClearFilters: (() -> Unit)?,
   selectionManager: app.infinity.mpvz.ui.browser.selection.SelectionManager<PlaylistVideoItem, Int>,
   isReorderMode: Boolean,
   onReorder: (Int, Int) -> Unit,
@@ -807,6 +907,7 @@ private fun PlaylistVideoListContent(
   listState: androidx.compose.foundation.lazy.LazyListState,
   modifier: Modifier = Modifier,
   isM3uPlaylist: Boolean = false,
+  isRadio: Boolean = false,
   isAudio: Boolean = false,
   isGridMode: Boolean = false,
 ) {
@@ -909,19 +1010,21 @@ private fun PlaylistVideoListContent(
             tint = MaterialTheme.colorScheme.onSurfaceVariant,
           )
           Text(
-            text =
-              if (isAudio) "No songs in playlist"
-              else androidx.compose.ui.res.stringResource(app.infinity.mpvz.R.string.ui_no_videos_in_playlist),
+            text = emptyTitle,
             style = MaterialTheme.typography.titleMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
           )
           Text(
-            text =
-              if (isAudio) "Add songs to get started"
-              else androidx.compose.ui.res.stringResource(app.infinity.mpvz.R.string.ui_add_videos_to_get_started),
+            text = emptyHint,
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
           )
+          if (onClearFilters != null) {
+            TextButton(
+              onClick = onClearFilters,
+              modifier = Modifier.settingsGlassSurface(cornerRadius = 18.dp, independent = true),
+            ) { Text(stringResource(R.string.playlist_ui_clear_filters)) }
+          }
         }
       }
     }
@@ -984,6 +1087,7 @@ private fun PlaylistVideoListContent(
                 isFavorite = item.playlistItem.isFavorite,
                 video = item.video,
                 isGridMode = true,
+                isRadio = isRadio,
                 modifier = Modifier.fillMaxWidth(),
               )
             }
@@ -1027,6 +1131,7 @@ private fun PlaylistVideoListContent(
                     isSelected = selectionManager.isSelected(item),
                     isRecentlyPlayed = item.playlistItem.id == mostRecentlyPlayedItem?.playlistItem?.id,
                     isFavorite = item.playlistItem.isFavorite,
+                    isRadio = isRadio,
                     video = item.video,
                     isGridMode = false,
                     modifier = Modifier.weight(1f),
@@ -1098,10 +1203,14 @@ private fun PlaylistVideoListContent(
 @Composable
 private fun M3UPlaylistFilterRow(
   categories: List<String>,
+  categoryCounts: Map<String, Int>,
+  totalCount: Int,
+  favoriteCount: Int,
   hasFavorites: Boolean,
   selectedFilter: String,
   onFilterSelected: (String) -> Unit,
 ) {
+  val glass by koinInject<AppearancePreferences>().liquidGlassSurfaces.collectAsState()
   LazyRow(
     modifier = Modifier.fillMaxWidth(),
     contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
@@ -1109,39 +1218,47 @@ private fun M3UPlaylistFilterRow(
   ) {
     item {
       FilterChip(
+        modifier = Modifier.settingsGlassSurface(cornerRadius = 18.dp),
+        colors = FilterChipDefaults.filterChipColors(
+          containerColor = settingsGlassContainerColor(MaterialTheme.colorScheme.surfaceContainerHigh),
+          selectedContainerColor = settingsGlassContainerColor(MaterialTheme.colorScheme.secondaryContainer),
+        ),
         selected = selectedFilter == M3U_FILTER_ALL,
+        border = if (glass) null else FilterChipDefaults.filterChipBorder(enabled = true, selected = selectedFilter == M3U_FILTER_ALL),
         onClick = { onFilterSelected(M3U_FILTER_ALL) },
-        label = {
-          Text(
-            androidx.compose.ui.res
-              .stringResource(app.infinity.mpvz.R.string.pref_all_sources),
-          )
-        },
+        label = { Text(stringResource(R.string.playlist_ui_m3u_all_count, totalCount)) },
       )
     }
 
     if (hasFavorites) {
       item {
         FilterChip(
+          modifier = Modifier.settingsGlassSurface(cornerRadius = 18.dp),
+          colors = FilterChipDefaults.filterChipColors(
+            containerColor = settingsGlassContainerColor(MaterialTheme.colorScheme.surfaceContainerHigh),
+            selectedContainerColor = settingsGlassContainerColor(MaterialTheme.colorScheme.secondaryContainer),
+          ),
           selected = selectedFilter == M3U_FILTER_FAVORITES,
+          border = if (glass) null else FilterChipDefaults.filterChipBorder(enabled = true, selected = selectedFilter == M3U_FILTER_FAVORITES),
           onClick = { onFilterSelected(M3U_FILTER_FAVORITES) },
-          label = {
-            Text(
-              androidx.compose.ui.res
-                .stringResource(app.infinity.mpvz.R.string.ui_saved),
-            )
-          },
+          label = { Text(stringResource(R.string.playlist_ui_m3u_saved_count, favoriteCount)) },
         )
       }
     }
 
     items(categories, key = { it }) { category ->
       FilterChip(
+        modifier = Modifier.settingsGlassSurface(cornerRadius = 18.dp),
+        colors = FilterChipDefaults.filterChipColors(
+          containerColor = settingsGlassContainerColor(MaterialTheme.colorScheme.surfaceContainerHigh),
+          selectedContainerColor = settingsGlassContainerColor(MaterialTheme.colorScheme.secondaryContainer),
+        ),
         selected = selectedFilter == category,
+        border = if (glass) null else FilterChipDefaults.filterChipBorder(enabled = true, selected = selectedFilter == category),
         onClick = { onFilterSelected(category) },
         label = {
           Text(
-            text = category,
+            text = stringResource(R.string.playlist_ui_m3u_category_count, category, categoryCounts[category] ?: 0),
             maxLines = 1,
             overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
           )
@@ -1167,6 +1284,8 @@ private fun StreamUrlDialog(
 ) {
   androidx.compose.material3.AlertDialog(
     onDismissRequest = onDismiss,
+    modifier = Modifier.settingsGlassSurface(cornerRadius = 28.dp, independent = true),
+    containerColor = settingsGlassContainerColor(MaterialTheme.colorScheme.surfaceContainerHigh),
     title = {
       Text(
         androidx.compose.ui.res
@@ -1305,5 +1424,5 @@ private fun getFileNameFromUri(
     uri.lastPathSegment
   }
 
-private const val M3U_FILTER_ALL = "__m3u_all__"
-private const val M3U_FILTER_FAVORITES = "__m3u_favorites__"
+private const val M3U_FILTER_ALL = PlaylistPresentationPolicy.FILTER_ALL
+private const val M3U_FILTER_FAVORITES = PlaylistPresentationPolicy.FILTER_FAVORITES

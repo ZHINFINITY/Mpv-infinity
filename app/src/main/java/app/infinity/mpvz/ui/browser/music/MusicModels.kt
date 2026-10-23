@@ -9,6 +9,18 @@ package app.infinity.mpvz.ui.browser.music
 import android.net.Uri
 import androidx.compose.runtime.Immutable
 
+/** Shared defaults for music-browser artwork; persisted user values are never changed. */
+object MusicThumbnailDefaults {
+  const val DEFAULT_DP = 100
+  const val MIN_DP = 48
+
+  /** Keeps custom values while preventing an oversized thumbnail on narrow list rows. */
+  fun boundedForList(requestedDp: Int, availableWidthDp: Int): Int =
+    requestedDp.coerceAtLeast(MIN_DP).coerceAtMost(
+      (availableWidthDp * 0.35f).toInt().coerceAtLeast(MIN_DP),
+    )
+}
+
 @Immutable
 enum class MusicTab(val title: String) {
   SONGS("Songs"),

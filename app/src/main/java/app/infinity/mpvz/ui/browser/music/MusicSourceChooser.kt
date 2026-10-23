@@ -1,15 +1,18 @@
 package app.infinity.mpvz.ui.browser.music
+import app.infinity.mpvz.ui.theme.GlassDropdownMenu
+import app.infinity.mpvz.ui.theme.GlassExposedDropdownMenu
 
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -24,6 +27,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.res.painterResource
@@ -48,6 +53,8 @@ fun MusicSourceChooser(
   val currentSource by preferences.musicSourceProvider.collectAsState()
   var expanded by remember { mutableStateOf(false) }
   val lifecycleOwner = LocalLifecycleOwner.current
+  // Reserve three standard action targets and their spacing on compact phones.
+  val maxSourceWidth = (LocalConfiguration.current.screenWidthDp - 180).coerceIn(96, 220).dp
   val sourceTitle = when (currentSource) {
     MusicSourceProvider.LOCAL -> stringResource(R.string.music_source_local)
     MusicSourceProvider.JELLYFIN -> stringResource(R.string.music_source_jellyfin)
@@ -90,6 +97,8 @@ fun MusicSourceChooser(
 
   Surface(
     modifier = modifier
+      .widthIn(max = maxSourceWidth)
+      .heightIn(min = 48.dp)
       .clip(RoundedCornerShape(20.dp))
       .clickable { expanded = true },
     color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.82f),
@@ -101,11 +110,17 @@ fun MusicSourceChooser(
     ) {
       sourceIcon(currentSource, 20.dp)
       Spacer(Modifier.width(6.dp))
-      Text(sourceTitle, style = MaterialTheme.typography.bodyMedium, maxLines = 1)
+      Text(
+        sourceTitle,
+        style = MaterialTheme.typography.bodyMedium,
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
+        modifier = Modifier.weight(1f, fill = false),
+      )
       Spacer(Modifier.width(4.dp))
       Icon(Icons.RoundedFilled.ExpandMore, contentDescription = null, modifier = Modifier.size(20.dp))
     }
-    DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+    GlassDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
       MusicSourceItem(stringResource(R.string.music_source_local), MusicSourceProvider.LOCAL, currentSource == MusicSourceProvider.LOCAL) {
         preferences.musicSourceProvider.set(MusicSourceProvider.LOCAL)
         expanded = false

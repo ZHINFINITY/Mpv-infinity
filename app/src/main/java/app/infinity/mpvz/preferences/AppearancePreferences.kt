@@ -51,6 +51,12 @@ class AppearancePreferences(
   val activeCustomThemeId = preferenceStore.getString("active_custom_theme_id", "")
   val amoledMode = preferenceStore.getBoolean("amoled_mode", false)
   val liquidGlassSurfaces = preferenceStore.getBoolean("liquid_glass_surfaces", false)
+  val glassSurfaceOpacity = preferenceStore.getFloat("glass_surface_opacity", 0.88f)
+  val glassSurfaceHighlight = preferenceStore.getFloat("glass_surface_highlight", 0.18f)
+  val glassFrostStrength = preferenceStore.getFloat("glass_frost_strength", 1f)
+  val glassRefractionStrength = preferenceStore.getFloat("glass_refraction_strength", 1f)
+  val glassDepthStrength = preferenceStore.getFloat("glass_depth_strength", 1f)
+  val glassMotionIntensity = preferenceStore.getFloat("glass_motion_intensity", 1f)
   val useSystemFont = preferenceStore.getBoolean("use_system_font", false)
   val unlimitedNameLines = preferenceStore.getBoolean("unlimited_name_lines", false)
   val hidePlayerButtonsBackground = preferenceStore.getBoolean("hide_player_buttons_background", false)
@@ -155,18 +161,9 @@ class AppearancePreferences(
     csv: String,
     usedButtons: MutableSet<PlayerButton>,
   ): List<PlayerButton> =
-    csv
-      .splitToSequence(',')
-      .map { it.trim().uppercase() }
-      .mapNotNull { name ->
-        try {
-          PlayerButton.valueOf(name)
-        } catch (_: IllegalArgumentException) {
-          null
-        }
-      }.filter { it != PlayerButton.NONE }
-      .filter { usedButtons.add(it) }
-      .toList()
+    PlayerControlActionPolicy.parse(csv, usedButtons, PlayerButton.NONE) { name ->
+      runCatching { PlayerButton.valueOf(name) }.getOrNull()
+    }
 }
 
 enum class PortraitPlaybackControlsPosition(

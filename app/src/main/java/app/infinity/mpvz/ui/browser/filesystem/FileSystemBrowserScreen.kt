@@ -7,6 +7,7 @@
 
 package app.infinity.mpvz.ui.browser.filesystem
 
+import app.infinity.mpvz.ui.browser.fab.quickPlayFabContainerColor
 import android.content.Context
 import android.content.Intent
 import android.util.Log
@@ -51,6 +52,8 @@ import androidx.compose.material3.PlainTooltip
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.ToggleFloatingActionButton
+import app.infinity.mpvz.ui.preferences.components.settingsGlassContainerColor
+import app.infinity.mpvz.ui.preferences.components.settingsGlassSurface
 import androidx.compose.material3.ToggleFloatingActionButtonDefaults.animateIcon
 import androidx.compose.material3.TooltipAnchorPosition
 import androidx.compose.material3.TooltipBox
@@ -519,6 +522,7 @@ fun FileSystemBrowserScreen(path: String? = null) {
   // Main content
   Box(modifier = Modifier.fillMaxSize()) {
     Scaffold(
+      containerColor = settingsGlassContainerColor(MaterialTheme.colorScheme.background),
       topBar = {
         if (isSearching) {
           // Search mode - show search bar instead of top bar
@@ -572,7 +576,7 @@ fun FileSystemBrowserScreen(path: String? = null) {
           BrowserTopBar(
             title =
               if (isAtRoot) {
-                stringResource(app.infinity.mpvz.R.string.app_name)
+                "∞"
               } else {
                 breadcrumbs.lastOrNull()?.name ?: "Tree View"
               },
@@ -677,8 +681,11 @@ fun FileSystemBrowserScreen(path: String? = null) {
                 state = rememberTooltipState(),
               ) {
                 ToggleFloatingActionButton(
+                  containerCornerRadius = app.infinity.mpvz.ui.browser.fab.quickPlayFabCornerRadius(),
+                  containerColor = quickPlayFabContainerColor(),
                   modifier =
                     Modifier
+                      .settingsGlassSurface(cornerRadius = 20.dp)
                       .animateFloatingActionButton(
                         visible = isFabShouldBeVisible,
                         alignment = Alignment.BottomEnd,
@@ -722,6 +729,10 @@ fun FileSystemBrowserScreen(path: String? = null) {
           ) {
             if (!quickPlayFabDirect) {
               FloatingActionButtonMenuItem(
+                modifier = Modifier.settingsGlassSurface(cornerRadius = 20.dp),
+                containerColor = settingsGlassContainerColor(MaterialTheme.colorScheme.surfaceContainerHigh),
+                contentColor = MaterialTheme.colorScheme.onSurface,
+
                 onClick = {
                   isFabExpanded.value = false
                   filePicker.launch(arrayOf("video/*"))
@@ -737,6 +748,10 @@ fun FileSystemBrowserScreen(path: String? = null) {
               )
 
               FloatingActionButtonMenuItem(
+                modifier = Modifier.settingsGlassSurface(cornerRadius = 20.dp),
+                containerColor = settingsGlassContainerColor(MaterialTheme.colorScheme.surfaceContainerHigh),
+                contentColor = MaterialTheme.colorScheme.onSurface,
+
                 onClick = {
                   isFabExpanded.value = false
                   coroutineScope.launch {
@@ -762,6 +777,10 @@ fun FileSystemBrowserScreen(path: String? = null) {
               )
 
               FloatingActionButtonMenuItem(
+                modifier = Modifier.settingsGlassSurface(cornerRadius = 20.dp),
+                containerColor = settingsGlassContainerColor(MaterialTheme.colorScheme.surfaceContainerHigh),
+                contentColor = MaterialTheme.colorScheme.onSurface,
+
                 onClick = {
                   isFabExpanded.value = false
                   showLinkDialog.value = true

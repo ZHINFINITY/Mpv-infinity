@@ -1,5 +1,12 @@
 package app.infinity.mpvz.ui.preferences
 
+import app.infinity.mpvz.ui.components.GlassModalBottomSheet
+import app.infinity.mpvz.ui.player.controls.components.GlassSwitch
+
+import app.infinity.mpvz.ui.preferences.components.settingsGlassContainerColor
+
+import app.infinity.mpvz.ui.preferences.components.settingsGlassSurface
+
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.clickable
@@ -17,7 +24,6 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.MaterialTheme
@@ -73,7 +79,7 @@ fun CatalogAddonsPreferenceCard(viewModel: CatalogViewModel, sources: List<Catal
                 Text(if (isDefaultBuiltinCatalogSource(source)) "Built-in catalog" else source.manifestUrl, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 TextButton(onClick = { viewModel.removeCatalogSource(source.id) }) { Text("Remove", color = MaterialTheme.colorScheme.error) }
               }
-              Switch(checked = source.isEnabled, onCheckedChange = { viewModel.setCatalogSourceEnabled(source.id, it) })
+              GlassSwitch(checked = source.isEnabled, onCheckedChange = { viewModel.setCatalogSourceEnabled(source.id, it) })
             }
           }
           PreferenceDivider()
@@ -84,11 +90,11 @@ fun CatalogAddonsPreferenceCard(viewModel: CatalogViewModel, sources: List<Catal
   }
 
   if (showAddSheet) {
-    ModalBottomSheet(
-      onDismissRequest = { if (!isAdding) showAddSheet = false },
-      shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
-    ) {
-      Column(Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 22.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+    GlassModalBottomSheet(
+      containerColor = settingsGlassContainerColor(androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainerLow),
+      paneModifier = androidx.compose.ui.Modifier.settingsGlassSurface(cornerRadius = 28.dp, independent = true),
+      onDismissRequest = { if (!isAdding) showAddSheet = false },) {
+      Column(Modifier.fillMaxWidth().padding(horizontal = 22.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Text("Add catalog add-on", style = MaterialTheme.typography.headlineSmall)
         Text("Paste a Stremio-compatible catalog or manifest URL. Its catalogs appear in Stream discovery and search.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
         OutlinedTextField(value = newUrl, onValueChange = { newUrl = it; error = null }, modifier = Modifier.fillMaxWidth(), singleLine = true, label = { Text("Add-on URL") }, placeholder = { Text("https://example.com/manifest.json") }, enabled = !isAdding)

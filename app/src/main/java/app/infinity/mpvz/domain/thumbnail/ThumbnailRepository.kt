@@ -8,9 +8,13 @@
 package app.infinity.mpvz.domain.thumbnail
 
 import android.app.ActivityManager
+import android.content.ComponentCallbacks2
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.graphics.Canvas
+import android.graphics.Paint
+import android.graphics.Rect
 import android.graphics.Matrix
 import android.media.MediaMetadataRetriever
 import android.net.Uri
@@ -29,8 +33,6 @@ import app.infinity.mpvz.ui.player.resolveLocalPath
 import `is`.xyz.mpv.FastThumbnails
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.CoroutineStart
-import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
@@ -89,11 +91,13 @@ class ThumbnailRepository(
     KoinJavaComponent.get<NetworkRepository>(NetworkRepository::class.java)
   }
 
+  private val folderMemoryKeys = LruCache<String, String>(256)
+  private val folderPreviewKeys = LruCache<String, String>(256)
   private val memoryCache: LruCache<String, Bitmap>
+  private val previewMemoryCache: LruCache<String, Bitmap>
   private val localDiskDir = File(context.filesDir, "thumbnails/local").apply { mkdirs() }
   private val networkDiskDir = File(context.filesDir, "thumbnails/network").apply { mkdirs() }
   private val diskCacheLock = ReentrantReadWriteLock()
-  private val ongoingOperations = ConcurrentHashMap<String, Deferred<Bitmap?>>()
   private val diskVideoBaseKeyCache = ConcurrentHashMap<String, String>()
   private data class ResolvedMetadata(
     val size: Long,
@@ -102,6 +106,7 @@ class ThumbnailRepository(
   )
   private val localMetadataCache = ConcurrentHashMap<String, ResolvedMetadata>()
   private val repositoryScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+  private val thumbnailRequests = ThumbnailRequestCoalescer<String, Bitmap?>(repositoryScope, ThumbnailCachePolicy.MaxConcurrentRequests)
   private val maxConcurrentFolders = 3
   private val localGenerationParallelism = resolveLocalGenerationParallelism()
   private val localGenerationSemaphore = Semaphore(localGenerationParallelism)
@@ -134,15 +139,42 @@ class ThumbnailRepository(
   val thumbnailReadyKeys: SharedFlow<String> = _thumbnailReadyKeys.asSharedFlow()
 
   init {
-    val maxMemoryKb = (Runtime.getRuntime().maxMemory() / 1024L).toInt()
-    val cacheSizeKb = maxMemoryKb / 6
+    val activityManager = context.getSystemService(Context.ACTIVITY_SERVICE) as? ActivityManager
+    val memoryClassBytes = (activityManager?.memoryClass ?: 128).toLong() * 1024L * 1024L
+    val cacheBytes = ThumbnailCachePolicy.maxBytes(memoryClassBytes, activityManager?.isLowRamDevice == true)
     memoryCache =
-      object : LruCache<String, Bitmap>(cacheSizeKb) {
+      object : LruCache<String, Bitmap>((ThumbnailCachePolicy.primaryBytes(cacheBytes) / 1024L).toInt()) {
         override fun sizeOf(
           key: String,
           value: Bitmap,
-        ): Int = value.byteCount / 1024
+        ): Int = ((value.byteCount.toLong() + 1023L) / 1024L).toInt().coerceAtLeast(1)
       }
+
+    previewMemoryCache =
+      object : LruCache<String, Bitmap>((ThumbnailCachePolicy.previewBytes(cacheBytes) / 1024L).toInt()) {
+        override fun sizeOf(key: String, value: Bitmap): Int =
+          ((value.byteCount.toLong() + 1023L) / 1024L).toInt().coerceAtLeast(1)
+      }
+
+    context.applicationContext.registerComponentCallbacks(object : ComponentCallbacks2 {
+      override fun onTrimMemory(level: Int) {
+        if (level == ComponentCallbacks2.TRIM_MEMORY_RUNNING_CRITICAL || level == ComponentCallbacks2.TRIM_MEMORY_COMPLETE) {
+          synchronized(memoryCache) { memoryCache.evictAll() }
+          synchronized(previewMemoryCache) { previewMemoryCache.evictAll() }
+        } else if (level == ComponentCallbacks2.TRIM_MEMORY_RUNNING_LOW || level == ComponentCallbacks2.TRIM_MEMORY_BACKGROUND || level == ComponentCallbacks2.TRIM_MEMORY_MODERATE) {
+          synchronized(memoryCache) {
+            memoryCache.trimToSize((ThumbnailCachePolicy.trimBytes(memoryCache.size().toLong() * 1024L, false) / 1024L).toInt())
+          }
+          synchronized(previewMemoryCache) { previewMemoryCache.trimToSize(previewMemoryCache.size() / 2) }
+        }
+      }
+
+      override fun onConfigurationChanged(newConfig: android.content.res.Configuration) = Unit
+      override fun onLowMemory() {
+        synchronized(memoryCache) { memoryCache.evictAll() }
+        synchronized(previewMemoryCache) { previewMemoryCache.evictAll() }
+      }
+    })
   }
 
   suspend fun getThumbnail(
@@ -161,51 +193,31 @@ class ThumbnailRepository(
         memoryCache.get(key)
       }?.let { return@withContext it }
 
-      ongoingOperations[key]?.let { return@withContext it.await() }
-
-      val candidate =
-        async(start = CoroutineStart.LAZY) {
-          getCachedThumbnail(video, widthPx, heightPx)?.let { cached ->
-            synchronized(memoryCache) {
-              memoryCache.put(key, cached)
-            }
-            _thumbnailReadyKeys.tryEmit(key)
-            return@async cached
-          }
-
-          val bitmap =
-            when {
-              isHttpUrl(video.path) ->
-                networkGenerationSemaphore.withPermit {
-                  getOrCreateNetworkVideoThumbnail(video, widthPx, heightPx)
-                }
-              isNetworkUrl(video.path) -> null
-              else ->
-                localGenerationSemaphore.withPermit {
-                  generateLocalThumbnail(video, widthPx, heightPx)
-                }
-            } ?: return@async null
-
-          currentCoroutineContext().ensureActive()
-          synchronized(memoryCache) {
-            memoryCache.put(key, bitmap)
-          }
-          writeBitmapToDisk(diskCacheKey(video), bitmap, isNetworkUrl(video.path))
+      // The shared operation belongs to the repository, not to a lazy row or viewport job.
+      // Disposing its waiter cannot cancel a decode another row is awaiting. Admission is
+      // bounded and caller-cancellable, so scrolling cannot queue an unbounded decoder backlog.
+      thumbnailRequests.getOrLoad(key) {
+        synchronized(memoryCache) { memoryCache.get(key) }?.let { return@getOrLoad it }
+        getCachedThumbnail(video, widthPx, heightPx)?.let { cached ->
           _thumbnailReadyKeys.tryEmit(key)
-          bitmap
+          return@getOrLoad cached
         }
-
-      val operation =
-        ongoingOperations.putIfAbsent(key, candidate)?.also {
-          candidate.cancel()
-        } ?: candidate.also { owned ->
-          owned.invokeOnCompletion {
-            ongoingOperations.remove(key, owned)
+        val bitmap = when {
+          isHttpUrl(video.path) -> networkGenerationSemaphore.withPermit {
+            getOrCreateNetworkVideoThumbnail(video, widthPx, heightPx)
           }
-          owned.start()
-        }
-
-      operation.await()
+          isNetworkUrl(video.path) -> null
+          else -> localGenerationSemaphore.withPermit {
+            generateLocalThumbnail(video, widthPx, heightPx)
+          }
+        } ?: return@getOrLoad null
+        currentCoroutineContext().ensureActive()
+        synchronized(memoryCache) { memoryCache.put(key, bitmap) }
+        retainVideoPreview(video, bitmap)
+        writeBitmapToDisk(diskCacheKey(video), bitmap, isNetworkUrl(video.path))
+        _thumbnailReadyKeys.tryEmit(key)
+        bitmap
+      }
     }
 
   suspend fun getCachedThumbnail(
@@ -224,15 +236,24 @@ class ThumbnailRepository(
       }?.let { return@withContext it }
 
       val decoded =
-        readBitmapFromDisk(diskCacheKey(video), isNetworkUrl(video.path))
+        readBitmapFromDisk(
+          diskCacheKey(video),
+          isNetworkUrl(video.path),
+          widthPx,
+          heightPx,
+        )
           ?: return@withContext null
       val scaled = scaleBitmap(decoded, widthPx, heightPx)
-      synchronized(memoryCache) {
-        memoryCache.put(key, scaled)
-      }
+      currentCoroutineContext().ensureActive()
+      synchronized(memoryCache) { memoryCache.put(key, scaled) }
+      retainVideoPreview(video, scaled)
       return@withContext scaled
     }
 
+  /**
+   * Main-thread-safe peek used by cards before launching a coroutine. It only touches the
+   * bounded in-memory cache; disk reads and decoding remain asynchronous.
+   */
   fun getThumbnailFromMemory(
     video: Video,
     widthPx: Int,
@@ -243,17 +264,42 @@ class ThumbnailRepository(
     }
 
     val key = thumbnailKey(video, widthPx, heightPx)
-    return synchronized(memoryCache) {
-      memoryCache.get(key)
+    // Touch both LRU tiers on reuse, not just the full-size entry. Retention follows
+    // recently viewed content rather than only the original generation order.
+    val preview = synchronized(previewMemoryCache) { previewMemoryCache.get(previewKey(video)) }
+    return synchronized(memoryCache) { memoryCache.get(key) } ?: preview
+  }
+
+  private fun previewKey(video: Video): String =
+    "${memoryVideoBaseKey(video)}|${thumbnailModeKey()}|${thumbnailQualityKey()}"
+
+  private fun memoryVideoBaseKey(video: Video): String = ThumbnailCachePolicy.sourceIdentity(
+    video.path, video.uri.toString(), video.size, video.dateModified, video.duration,
+  )
+
+  private suspend fun retainVideoPreview(video: Video, bitmap: Bitmap) = retainPreview(previewKey(video), bitmap)
+
+  private suspend fun retainPreview(key: String, bitmap: Bitmap) {
+    synchronized(previewMemoryCache) { previewMemoryCache.get(key) }?.let { return }
+    val dimensions = ThumbnailCachePolicy.previewSize(bitmap.width, bitmap.height) ?: return
+    val preview = if (dimensions.first == bitmap.width && dimensions.second == bitmap.height) bitmap else {
+      val config = if (bitmap.hasAlpha()) Bitmap.Config.ARGB_8888 else Bitmap.Config.RGB_565
+      Bitmap.createBitmap(dimensions.first, dimensions.second, config).also { target ->
+        Canvas(target).drawBitmap(bitmap, null, Rect(0, 0, target.width, target.height), Paint(Paint.FILTER_BITMAP_FLAG))
+      }
     }
+    currentCoroutineContext().ensureActive()
+    synchronized(previewMemoryCache) { previewMemoryCache.put(key, preview) }
   }
 
   fun clearThumbnailCache() {
+    synchronized(folderMemoryKeys) { folderMemoryKeys.evictAll() }
+    synchronized(folderPreviewKeys) { folderPreviewKeys.evictAll() }
     folderJobs.values.forEach { it.cancel() }
     folderJobs.clear()
     folderStates.clear()
-    ongoingOperations.values.forEach { it.cancel() }
-    ongoingOperations.clear()
+    thumbnailRequests.cancelAll()
+    synchronized(previewMemoryCache) { previewMemoryCache.evictAll() }
     diskVideoBaseKeyCache.clear()
     localMetadataCache.clear()
     networkThumbnailFailedAt.clear()
@@ -373,7 +419,7 @@ class ThumbnailRepository(
     video: Video,
     width: Int,
     height: Int,
-  ): String = "${videoBaseKey(video)}|$width|$height|${thumbnailModeKey()}|${thumbnailQualityKey()}"
+  ): String = "${memoryVideoBaseKey(video)}|$width|$height|${thumbnailModeKey()}|${thumbnailQualityKey()}"
 
   /**
    * Folder prefetch and a visible card may request different sizes for the same source.
@@ -384,7 +430,7 @@ class ThumbnailRepository(
     key: String,
     video: Video,
   ): Boolean =
-    key.startsWith("${videoBaseKey(video)}|") &&
+    key.startsWith("${memoryVideoBaseKey(video)}|") &&
       key.endsWith("|${thumbnailModeKey()}|${thumbnailQualityKey()}")
 
   // Keep extraction-quality changes from reusing smaller legacy images that were
@@ -688,6 +734,8 @@ class ThumbnailRepository(
   private fun readBitmapFromDisk(
     key: String,
     network: Boolean,
+    requestedWidthPx: Int = Int.MAX_VALUE,
+    requestedHeightPx: Int = Int.MAX_VALUE,
   ): Bitmap? =
     diskCacheLock.read {
       val file = File(if (network) networkDiskDir else localDiskDir, keyToFileName(key))
@@ -699,7 +747,11 @@ class ThumbnailRepository(
         BitmapFactory.decodeFile(
           file.absolutePath,
           BitmapFactory.Options().apply {
-            inSampleSize = calculateThumbnailSampleSize(bounds.outWidth, bounds.outHeight, thumbnailMaxSize())
+            inSampleSize = ThumbnailDecodePolicy.sampleSize(
+              bounds.outWidth,
+              bounds.outHeight,
+              ThumbnailDecodePolicy.targetMaxEdge(requestedWidthPx, requestedHeightPx, thumbnailMaxSize()),
+            )
             inPreferredConfig = Bitmap.Config.RGB_565
           },
         )
@@ -787,7 +839,7 @@ class ThumbnailRepository(
   ): Bitmap? {
     val jellyfinImageUrls = extractJellyfinImageUrls(video.path, maxOf(widthPx, heightPx, 400))
     for (url in jellyfinImageUrls) {
-      val jellyfinBitmap = fetchHttpImage(url)
+      val jellyfinBitmap = fetchHttpImage(url, widthPx, heightPx)
       if (jellyfinBitmap != null) {
         return scaleBitmap(jellyfinBitmap, widthPx, heightPx)
       }
@@ -851,7 +903,11 @@ class ThumbnailRepository(
       )
     }.getOrDefault(emptyList())
 
-  private suspend fun fetchHttpImage(url: String): Bitmap? =
+  private suspend fun fetchHttpImage(
+    url: String,
+    widthPx: Int,
+    heightPx: Int,
+  ): Bitmap? =
     withContext(Dispatchers.IO) {
       runCatching {
         val connection =
@@ -861,12 +917,35 @@ class ThumbnailRepository(
             instanceFollowRedirects = true
             setRequestProperty("User-Agent", "MpvInfinity/1.0")
           }
-        if (connection.responseCode in 200..299) {
-          connection.inputStream.use { stream ->
-            BitmapFactory.decodeStream(stream)
+        try {
+          if (connection.responseCode in 200..299 &&
+            connection.contentLengthLong <= ThumbnailDecodePolicy.MaxEncodedImageBytes
+          ) {
+            connection.inputStream.use { stream ->
+              // Probe bounds, then decode once at the visible target rather than full poster size.
+              val bytes = ThumbnailDecodePolicy.readEncodedImage(stream) ?: return@use null
+              val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+              BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
+              if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return@use null
+              BitmapFactory.decodeByteArray(
+                bytes,
+                0,
+                bytes.size,
+                BitmapFactory.Options().apply {
+                  inSampleSize = ThumbnailDecodePolicy.sampleSize(
+                    bounds.outWidth,
+                    bounds.outHeight,
+                    ThumbnailDecodePolicy.targetMaxEdge(widthPx, heightPx, thumbnailMaxSize()),
+                  )
+                  inPreferredConfig = Bitmap.Config.RGB_565
+                },
+              )
+            }
+          } else {
+            null
           }
-        } else {
-          null
+        } finally {
+          connection.disconnect()
         }
       }.getOrNull()
     }
@@ -1071,12 +1150,10 @@ class ThumbnailRepository(
       val identity = networkThumbnailIdentity(path, connection, fileSize, lastModified)
       val memKey = networkThumbnailMemoryKey(identity, widthPx, heightPx)
       synchronized(memoryCache) { memoryCache.get(memKey) }?.let { return@withContext it }
-      ongoingOperations[memKey]?.let { return@withContext it.await() }
-
-      val candidate =
-        async(start = CoroutineStart.LAZY) {
+      thumbnailRequests.getOrLoad(memKey) {
+          synchronized(memoryCache) { memoryCache.get(memKey) }?.let { return@getOrLoad it }
           if (!isHttpUrl(path)) {
-            return@async getNonHttpNetworkThumbnail(
+            return@getOrLoad getNonHttpNetworkThumbnail(
               path = path,
               connection = connection,
               widthPx = widthPx,
@@ -1089,14 +1166,16 @@ class ThumbnailRepository(
 
           if (hasRecentNetworkThumbnailFailure(identity)) {
             android.util.Log.d("ThumbnailRepository", "Skipping network thumbnail (previously failed): $path")
-            return@async null
+            return@getOrLoad null
           }
 
           val diskKey = networkThumbnailDiskKey(identity)
-          readBitmapFromDisk(diskKey, network = true)?.let { bitmap ->
+          readBitmapFromDisk(diskKey, network = true, requestedWidthPx = widthPx, requestedHeightPx = heightPx)?.let { bitmap ->
             val scaled = scaleBitmap(bitmap, widthPx, heightPx)
+            currentCoroutineContext().ensureActive()
             synchronized(memoryCache) { memoryCache.put(memKey, scaled) }
-            return@async scaled
+            retainPreview(networkPreviewKey(identity), scaled)
+            return@getOrLoad scaled
           }
 
           val strategy =
@@ -1109,13 +1188,15 @@ class ThumbnailRepository(
             else -> strategy
           }
           youtubePosterUrl(path)?.let { posterUrl ->
-            fetchHttpImage(posterUrl)?.let { bitmap ->
+            fetchHttpImage(posterUrl, widthPx, heightPx)?.let { bitmap ->
               val scaled = scaleBitmap(bitmap, widthPx, heightPx)
               networkThumbnailFailedAt.remove(identity)
               writeBitmapToDisk(diskKey, scaled, network = true)
+              currentCoroutineContext().ensureActive()
               synchronized(memoryCache) { memoryCache.put(memKey, scaled) }
+              retainPreview(networkPreviewKey(identity), scaled)
               _thumbnailReadyKeys.tryEmit(memKey)
-              return@async scaled
+              return@getOrLoad scaled
             }
           }
           val bitmap =
@@ -1133,24 +1214,18 @@ class ThumbnailRepository(
           if (bitmap == null) {
             android.util.Log.w("ThumbnailRepository", "All strategies failed for network stream $path")
             networkThumbnailFailedAt[identity] = SystemClock.elapsedRealtime()
-            return@async null
+            return@getOrLoad null
           }
 
           networkThumbnailFailedAt.remove(identity)
           writeBitmapToDisk(diskKey, bitmap, network = true)
+          currentCoroutineContext().ensureActive()
           synchronized(memoryCache) { memoryCache.put(memKey, bitmap) }
+          retainPreview(networkPreviewKey(identity), bitmap)
           _thumbnailReadyKeys.tryEmit(memKey)
           bitmap
         }
 
-      val operation =
-        ongoingOperations.putIfAbsent(memKey, candidate)?.also {
-          candidate.cancel()
-        } ?: candidate.also { owned ->
-          owned.invokeOnCompletion { ongoingOperations.remove(memKey, owned) }
-          owned.start()
-        }
-      operation.await()
     }
 
   suspend fun getThumbnailForNetworkSource(
@@ -1189,9 +1264,11 @@ class ThumbnailRepository(
     synchronized(memoryCache) { memoryCache.get(memKey) }?.let { return it }
 
     // Disk cache hit
-    readBitmapFromDisk(diskKey, network = true)?.let { bitmap ->
+    readBitmapFromDisk(diskKey, network = true, requestedWidthPx = widthPx, requestedHeightPx = heightPx)?.let { bitmap ->
       val scaled = scaleBitmap(bitmap, widthPx, heightPx)
+      currentCoroutineContext().ensureActive()
       synchronized(memoryCache) { memoryCache.put(memKey, scaled) }
+      retainPreview(networkPreviewKey(identity), scaled)
       return scaled
     }
 
@@ -1239,7 +1316,11 @@ class ThumbnailRepository(
     // Write to disk cache
     writeBitmapToDisk(diskKey, bitmap, network = true)
 
+    currentCoroutineContext().ensureActive()
+
     synchronized(memoryCache) { memoryCache.put(memKey, bitmap) }
+
+    retainPreview(networkPreviewKey(identity), bitmap)
     _thumbnailReadyKeys.tryEmit(memKey)
     return bitmap
   }
@@ -1434,6 +1515,25 @@ class ThumbnailRepository(
     }
   }
 
+  /** Pure memory lookup for a returning remote lazy row; never touches disk, DB or proxy. */
+  fun getThumbnailForNetworkPathFromMemory(
+    path: String,
+    widthPx: Int,
+    heightPx: Int,
+    connection: NetworkConnection? = null,
+    fileSize: Long = -1L,
+    lastModified: Long = 0L,
+  ): Bitmap? {
+    if (!appearancePreferences.showNetworkThumbnails.get()) return null
+    val identity = networkThumbnailIdentity(path, connection, fileSize, lastModified)
+    val key = networkThumbnailMemoryKey(identity, widthPx, heightPx)
+    val preview = synchronized(previewMemoryCache) { previewMemoryCache.get(networkPreviewKey(identity)) }
+    return synchronized(memoryCache) { memoryCache.get(key) } ?: preview
+  }
+
+  private fun networkPreviewKey(identity: String): String =
+    "network-preview|$identity|${thumbnailModeKey()}|${thumbnailQualityKey()}"
+
   /** The memory-cache key used by [getThumbnailForNetworkPath]. */
   fun thumbnailKeyForNetworkPath(
     path: String,
@@ -1482,6 +1582,15 @@ class ThumbnailRepository(
    * Get a thumbnail for a folder using the first video in the folder.
    * Returns null if the folder has no videos or thumbnail generation fails.
    */
+  /** Constant-time memory-only restoration before a lazy folder card scans its contents. */
+  fun getFolderThumbnailFromMemory(folderId: String): Bitmap? {
+    val key = synchronized(folderMemoryKeys) { folderMemoryKeys.get(folderId) } ?: return null
+    if (!key.endsWith("|${thumbnailModeKey()}|${thumbnailQualityKey()}")) return null
+    synchronized(memoryCache) { memoryCache.get(key) }?.let { return it }
+    val previewKey = synchronized(folderPreviewKeys) { folderPreviewKeys.get(folderId) } ?: return null
+    return synchronized(previewMemoryCache) { previewMemoryCache.get(previewKey) }
+  }
+
   suspend fun getFolderThumbnail(
     folderId: String,
     videos: List<Video>,
@@ -1501,8 +1610,13 @@ class ThumbnailRepository(
 
       if (filteredVideos.isEmpty()) return@withContext null
 
-      // Use the first video as the folder thumbnail
-      getThumbnail(filteredVideos.first(), widthPx, heightPx)
+      // Store only a bounded reference key; the bitmap remains owned by the shared memory cache.
+      val video = filteredVideos.first()
+      getThumbnail(video, widthPx, heightPx)?.also {
+        val key = thumbnailKey(video, widthPx, heightPx)
+        synchronized(folderMemoryKeys) { folderMemoryKeys.put(folderId, key) }
+        synchronized(folderPreviewKeys) { folderPreviewKeys.put(folderId, previewKey(video)) }
+      }
     }
 
   private fun folderSignature(

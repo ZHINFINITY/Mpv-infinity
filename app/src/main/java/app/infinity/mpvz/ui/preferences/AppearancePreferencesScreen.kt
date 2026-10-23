@@ -22,9 +22,9 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Scaffold
+import app.infinity.mpvz.ui.preferences.components.SettingsScaffold as Scaffold
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
+import app.infinity.mpvz.ui.preferences.components.SettingsTopAppBar as TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -61,6 +61,8 @@ import app.infinity.mpvz.ui.preferences.components.SwitchPreference
 import app.infinity.mpvz.ui.preferences.components.CustomThemeSettings
 import app.infinity.mpvz.ui.preferences.components.ThemePicker
 import app.infinity.mpvz.ui.theme.DarkMode
+import app.infinity.mpvz.ui.theme.GlassSurface
+import app.infinity.mpvz.ui.theme.GlassSurfacePolicy
 import app.infinity.mpvz.ui.theme.LocalThemeTransitionState
 import app.infinity.mpvz.ui.utils.LocalBackStack
 import app.infinity.mpvz.ui.utils.LocalShowSettingsBackArrow
@@ -72,9 +74,9 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
-import me.zhanghai.compose.preference.ListPreference
+import app.infinity.mpvz.ui.preferences.components.ListPreference
 import me.zhanghai.compose.preference.ProvidePreferenceLocals
-import me.zhanghai.compose.preference.SliderPreference
+import app.infinity.mpvz.ui.preferences.components.SliderPreference
 import org.koin.compose.koinInject
 import kotlin.math.roundToInt
 
@@ -338,12 +340,67 @@ object AppearancePreferencesScreen : Screen {
                     onValueChange = preferences.liquidGlassSurfaces::set,
                     title = { Text("Liquid glass surfaces") },
                     summary = {
-                      Text("Use translucent, softly outlined surfaces across navigation, headers, cards, and the mini-player")
+                      Text("Shared sampled video glass on player controls, toggles and sheets. Android 13+ adds lens refraction; older Android uses frosted samples. HDR, low memory and severe heat use a readable translucent fallback. Sampling stops when controls are hidden.")
                     },
                   )
 
                   PreferenceDivider()
 
+                  val glassOpacity by preferences.glassSurfaceOpacity.collectAsState()
+                  val glassHighlight by preferences.glassSurfaceHighlight.collectAsState()
+                  val frostStrength by preferences.glassFrostStrength.collectAsState()
+                  val refractionStrength by preferences.glassRefractionStrength.collectAsState()
+                  val depthStrength by preferences.glassDepthStrength.collectAsState()
+                  val motionIntensity by preferences.glassMotionIntensity.collectAsState()
+                  GlassCustomizationPreference(
+                    title = "Frost / blur strength", summary = "Smooth shared frost; lower settings use less work",
+                    value = app.infinity.mpvz.ui.theme.GlassCustomizationPolicy.strength(frostStrength),
+                    enabled = liquidGlassSurfaces, onValueChange = preferences.glassFrostStrength::set,
+                  )
+                  GlassCustomizationPreference(
+                    title = "Refraction strength", summary = "Background lens bending on Android 13+; text stays sharp",
+                    value = app.infinity.mpvz.ui.theme.GlassCustomizationPolicy.strength(refractionStrength),
+                    enabled = liquidGlassSurfaces, onValueChange = preferences.glassRefractionStrength::set,
+                  )
+                  GlassCustomizationPreference(
+                    title = "Glass depth", summary = "Raised rims, inset highlights and soft shadows",
+                    value = app.infinity.mpvz.ui.theme.GlassCustomizationPolicy.strength(depthStrength),
+                    enabled = liquidGlassSurfaces, onValueChange = preferences.glassDepthStrength::set,
+                  )
+                  GlassCustomizationPreference(
+                    title = "Glass motion", summary = "Navigation-lens stretch and bounce; system reduced motion takes priority",
+                    value = app.infinity.mpvz.ui.theme.GlassCustomizationPolicy.motion(motionIntensity), maximum = 1f,
+                    enabled = liquidGlassSurfaces, onValueChange = preferences.glassMotionIntensity::set,
+                  )
+                  SliderPreference(
+                    value = GlassSurfacePolicy.opacity(glassOpacity),
+                    onValueChange = { preferences.glassSurfaceOpacity.set(GlassSurfacePolicy.opacity(it)) },
+                    sliderValue = GlassSurfacePolicy.opacity(glassOpacity),
+                    onSliderValueChange = {},
+                    title = { Text("Surface opacity") },
+                    summary = { Text("${(GlassSurfacePolicy.opacity(glassOpacity) * 100).toInt()}% · keeps text readable") },
+                    valueRange = GlassSurfacePolicy.MinOpacity..GlassSurfacePolicy.MaxOpacity,
+                    enabled = liquidGlassSurfaces,
+                  )
+                  SliderPreference(
+                    value = GlassSurfacePolicy.highlight(glassHighlight),
+                    onValueChange = { preferences.glassSurfaceHighlight.set(GlassSurfacePolicy.highlight(it)) },
+                    sliderValue = GlassSurfacePolicy.highlight(glassHighlight),
+                    onSliderValueChange = {},
+                    title = { Text("Highlight strength") },
+                    summary = { Text("${(GlassSurfacePolicy.highlight(glassHighlight) * 100).toInt()}% · edge reflections; text and icons stay sharp") },
+                    valueRange = GlassSurfacePolicy.MinHighlight..GlassSurfacePolicy.MaxHighlight,
+                    enabled = liquidGlassSurfaces,
+                  )
+                  GlassSurface(
+                    enabled = liquidGlassSurfaces,
+                    opacity = glassOpacity,
+                    highlight = glassHighlight,
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+                  ) {
+                    Text("Preview", modifier = Modifier.padding(16.dp), style = MaterialTheme.typography.titleSmall)
+                  }
+                  PreferenceDivider()
                   val useSystemFont by preferences.useSystemFont.collectAsState()
                   SwitchPreference(
                     modifier = Modifier.settingsSearchTarget(R.string.pref_appearance_system_font_title),
@@ -1049,4 +1106,22 @@ object AppearancePreferencesScreen : Screen {
       }
     }
   }
+}
+
+@Composable
+private fun GlassCustomizationPreference(
+  title: String,
+  summary: String,
+  value: Float,
+  enabled: Boolean,
+  maximum: Float = 2f,
+  onValueChange: (Float) -> Unit,
+) {
+  val bounded = value.coerceIn(0f, maximum)
+  SliderPreference(
+    value = bounded, onValueChange = { onValueChange(it.coerceIn(0f, maximum)) },
+    sliderValue = bounded, onSliderValueChange = {},
+    title = { Text(title) }, summary = { Text("${(bounded * 100).toInt()}% · $summary") },
+    valueRange = 0f..maximum, enabled = enabled,
+  )
 }

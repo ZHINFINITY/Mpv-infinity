@@ -1,12 +1,23 @@
-<?xml version='1.0' encoding='UTF-8'?>
+<?xml version='1.0' encoding='utf-8'?>
 <resources>
+  <string name="app_name">Mpv∞</string>
   <string name="generic_reset">Zurücksetzen</string>
   <string name="generic_share">Teilen</string>
   <string name="generic_confirm">Bestätigen</string>
   <string name="generic_cancel">Abbrechen</string>
+  <string name="generic_install">Installieren</string>
+  <string name="generic_configure">Konfigurieren</string>
   <string name="generic_ok">OK</string>
   <string name="generic_unit_ms">ms</string>
   <string name="generic_disabled">Deaktiviert</string>
+  <string name="player_interpolation_on">Ein</string>
+  <string name="player_interpolation_off">Aus</string>
+  <string name="player_interpolation_target_fps">Ziel-FPS</string>
+  <string name="toast_interpolation_pending_next_playback">Änderungen an der Interpolation werden bis zur nächsten Wiedergabe zurückgestellt: Dieses Backend bietet keine sichere Live-Option-API; die aktuelle Wiedergabe wurde nicht neu gestartet.</string>
+  <string name="toast_interpolation_pending_next_playback_reason">Bis zur nächsten Wiedergabe zurückgestellt: Dieses Backend bietet keine sichere Live-Option-API; die aktuelle Wiedergabe wurde nicht neu gestartet.</string>
+  <string name="toast_interpolation_pending_native_sink">Bis zur nächsten Wiedergabe zurückgestellt: Der native Vulkan-Flow-Sink ist für diese Sitzung nicht verfügbar; die aktuelle Wiedergabe wurde nicht neu gestartet.</string>
+  <string name="toast_interpolation_applied_live">Interpolation für die aktuelle Wiedergabe aktualisiert.</string>
+  <string name="player_interpolation_next_playback_note">Native Vulkan aktualisiert diese Wiedergabe live, wenn sein Flow-Sink bereits aktiv ist. MPV oder ein nicht verfügbarer nativer Sink speichert Änderungen für die nächste Wiedergabe, ohne neu zu starten.</string>
   <string name="pref_preferences">Einstellungen</string>
   <string name="pref_appearance_title">Darstellung</string>
   <string name="pref_appearance_summary">Dunkelmodus, Material You</string>
@@ -24,9 +35,9 @@
   <string name="pref_appearance_unlimited_name_lines_title">Vollständige Namen anzeigen</string>
   <string name="pref_appearance_unlimited_name_lines_summary">Vollständige Ordner- und Videonamen ohne Kürzung anzeigen</string>
   <string name="pref_appearance_hide_player_buttons_background_title">Hintergrund der Player-Schaltflächen ausblenden</string>
+  <string name="pref_appearance_hide_player_buttons_background_summary">Den Hintergrund aller Player-Steuerungsschaltflächen ausblenden</string>
   <string name="pref_appearance_force_dark_player_buttons_background_title">Immer dunkle Hintergründe für Player-Schaltflächen verwenden</string>
   <string name="pref_appearance_force_dark_player_buttons_background_summary">Hintergründe der Player-Steuerelemente im hellen, dunklen und automatischen Design dunkel halten</string>
-  <string name="pref_appearance_hide_player_buttons_background_summary">Den Hintergrund aller Player-Steuerungsschaltflächen ausblenden</string>
   <string name="pref_appearance_category_file_browser">Dateibrowser</string>
   <string name="pref_appearance_category_thumbnails">Vorschaubilder</string>
   <string name="pref_appearance_show_unplayed_old_video_label_title">Kennzeichnung für neue, nicht abgespielte Videos anzeigen</string>
@@ -48,12 +59,53 @@
   <string name="pref_appearance_category_navigation">Navigation</string>
   <string name="pref_nav_home_title">Start-Tab anzeigen</string>
   <string name="pref_nav_home_summary">Start in der unteren Navigationsleiste ein- oder ausblenden</string>
+  <string name="pref_nav_music_title">Musik-Tab anzeigen</string>
+  <string name="pref_nav_music_summary">Musik in der unteren Navigationsleiste anzeigen oder ausblenden</string>
   <string name="pref_nav_recents_title">Zuletzt-Tab anzeigen</string>
   <string name="pref_nav_recents_summary">Zuletzt in der unteren Navigationsleiste ein- oder ausblenden</string>
   <string name="pref_nav_playlists_title">Wiedergabelisten-Tab anzeigen</string>
   <string name="pref_nav_playlists_summary">Wiedergabelisten in der unteren Navigationsleiste ein- oder ausblenden</string>
   <string name="pref_nav_network_title">Netzwerk-Tab anzeigen</string>
   <string name="pref_nav_network_summary">Netzwerk in der unteren Navigationsleiste ein- oder ausblenden</string>
+  <string name="pref_nav_streams_title">Streams-Tab anzeigen</string>
+  <string name="pref_nav_streams_summary">Streams in der unteren Navigationsleiste ein- oder ausblenden</string>
+  <string name="pref_nav_jellyfin_title">Jellyfin-Tab anzeigen</string>
+  <string name="pref_nav_jellyfin_summary">Jellyfin in der unteren Navigationsleiste ein- oder ausblenden</string>
+  <string name="pref_nav_jellyfin_auto_title">Jellyfin-Tab nach erfolgreicher Verbindung automatisch anzeigen</string>
+  <string name="pref_nav_jellyfin_auto_summary">Jellyfin-Navigationstab nach erfolgreicher Serververbindung aktivieren</string>
+  <string name="pref_nav_navidrome_title">Navidrome-Tab anzeigen</string>
+  <string name="pref_nav_navidrome_summary">Navidrome in der unteren Navigationsleiste ein- oder ausblenden</string>
+  <string name="pref_nav_audiobooks_title">Hörbücher-Tab anzeigen</string>
+  <string name="pref_nav_audiobooks_summary">Lokale Hörbücher und Audiobookshelf-Hörbücher in der unteren Navigationsleiste ein- oder ausblenden</string>
+  <string name="pref_section_network">Netzwerk</string>
+  <string name="pref_media_servers_title">Medienserver</string>
+  <string name="pref_media_servers_summary">Jellyfin-, Navidrome- und Audiobookshelf-Verbindungen verwalten</string>
+  <string name="pref_audiobookshelf_add_server">Audiobookshelf verbinden</string>
+  <string name="pref_audiobookshelf_add_server_desc">Audiobookshelf-Server hinzufügen und verbinden</string>
+  <string name="audiobook_source_audiobookshelf">Audiobookshelf</string>
+  <string name="audiobook_source_audiobookshelf_desc">Hörbücher von deinem Audiobookshelf-Server streamen</string>
+  <string name="audiobook_source_local">Lokale Hörbücher</string>
+  <string name="pref_audiobookshelf_no_server">Kein Audiobookshelf-Server verbunden</string>
+  <string name="pref_server_active">Aktiv</string>
+  <string name="pref_server_set_active">Als aktiv festlegen</string>
+  <string name="pref_server_more_options">Weitere Optionen</string>
+  <string name="pref_navidrome_add_server">Navidrome verbinden</string>
+  <string name="pref_navidrome_add_server_desc">Navidrome- oder OpenSubsonic-Server hinzufügen und verbinden</string>
+  <string name="pref_navidrome_add_another_server">Weiteren Server hinzufügen</string>
+  <string name="pref_navidrome_add_another_server_desc">Zusätzlichen Navidrome-Server verbinden</string>
+  <string name="pref_jellyfin_title">Jellyfin</string>
+  <string name="pref_jellyfin_server_management">Jellyfin-Serververwaltung</string>
+  <string name="pref_jellyfin_add_server">Jellyfin verbinden</string>
+  <string name="pref_jellyfin_add_server_desc">Jellyfin-Server hinzufügen und verbinden</string>
+  <string name="pref_jellyfin_add_another_server">Weiteren Server hinzufügen</string>
+  <string name="pref_jellyfin_add_another_server_desc">Zusätzlichen Jellyfin-Server verbinden</string>
+  <string name="pref_seerr_title">Seerr</string>
+  <string name="pref_seerr_server_management">Seerr-Serververwaltung</string>
+  <string name="pref_seerr_add_server">Seerr verbinden</string>
+  <string name="pref_seerr_add_server_desc">Seerr-Server hinzufügen und verbinden</string>
+  <string name="pref_audiobookshelf_title">Audiobookshelf</string>
+  <string name="pref_audiobookshelf_add_another_server">Weiteren Server hinzufügen</string>
+  <string name="pref_audiobookshelf_add_another_server_desc">Zusätzlichen Audiobookshelf-Server verbinden</string>
   <string name="pref_quick_play_fab_title">Schnellwiedergabe-FAB</string>
   <string name="pref_quick_play_fab_summary">Schnellwiedergabe-Button in Browser-Bildschirmen anzeigen</string>
   <string name="pref_quick_play_fab_direct_title">Direkte Schnellwiedergabe</string>
@@ -70,10 +122,12 @@
   <string name="pref_tree_flatten_depth_title">Baumpfad-Komprimierung</string>
   <string name="pref_tree_flatten_depth_summary">%1$s pro Navigationsschritt bei Ordnern mit nur einem Unterordner übersprungen</string>
   <string name="ytdl_audio_quality_title">yt-dlp-Audioqualität</string>
+  <string name="player_video_quality">Videoqualität</string>
+  <string name="player_video_quality_summary">Wähle eine verfügbare Qualität für diesen Stream.</string>
+  <string name="player_video_quality_button">Videoqualität</string>
   <string name="ytdl_audio_quality_reload_summary">Wird für den nächsten Link oder beim erneuten Laden des aktuellen Links verwendet.</string>
   <string name="toast_playback_load_failed">Dieser Link konnte nicht geladen werden</string>
   <string name="video_label_new">NEU</string>
-  <!-- Theme names -->
   <string name="theme_default">Standard</string>
   <string name="theme_dynamic">Dynamisch</string>
   <string name="theme_aurora">Polarlicht</string>
@@ -106,16 +160,21 @@
   <string name="theme_tokyo_night">Tokio-Nacht</string>
   <string name="theme_kanagawa">Kanagawa</string>
   <string name="theme_rose_pine">Rosé Pine</string>
-  <!-- Settings Search -->
   <string name="settings_search_hint">Einstellungen durchsuchen…</string>
   <string name="settings_search_no_results">Keine Einstellungen gefunden</string>
   <string name="settings_search_title">Suchen</string>
-  <!-- Player Preferences Hardcoded -->
   <string name="pref_autoplay_title">Navigation zum nächsten/vorherigen Element aktivieren</string>
   <string name="pref_autoplay_summary">Schaltflächen „Nächstes/Vorheriges“ für alle Videos im Ordner anzeigen</string>
   <string name="pref_autoplay_next_video_title">Nächstes Video automatisch wiedergeben</string>
   <string name="pref_autoplay_next_video_summary">Nach Ende des aktuellen Videos automatisch das nächste wiedergeben</string>
   <string name="pref_autoplay_next_video_summary_disabled">Nach dem Ende beim aktuellen Video bleiben</string>
+  <string name="pref_autoplay_next_audio_title">Nächstes Audio automatisch abspielen</string>
+  <string name="pref_autoplay_next_audio_summary">Nächsten Audiotrack automatisch abspielen, wenn der aktuelle endet</string>
+  <string name="pref_autoplay_next_audio_summary_disabled">Beim aktuellen Audiotrack bleiben, wenn er endet</string>
+  <string name="queue_requires_playback">Starte die Wiedergabe, bevor du Elemente zur Warteschlange hinzufügst</string>
+  <string name="queue_added_next">%1$d Element(e) zur nächsten Wiedergabe hinzugefügt</string>
+  <string name="queue_added_end">%1$d Element(e) zur Warteschlange hinzugefügt</string>
+  <string name="save_queue_as_playlist">Warteschlange als Playlist speichern</string>
   <string name="pref_auto_pip_title">Automatisches Bild-im-Bild</string>
   <string name="pref_auto_pip_summary">Beim Drücken von Startseite oder Zurück automatisch in den PIP-Modus wechseln</string>
   <string name="pref_auto_pip_home_only_title">PIP nur bei Home-Geste</string>
@@ -136,15 +195,17 @@
   <string name="pref_player_show_chapter_indicators_title">Kapitelmarkierungen auf der Suchleiste anzeigen</string>
   <string name="pref_player_show_chapter_indicators_summary">Kapitel entlang der Suchleiste optisch voneinander trennen.</string>
   <string name="pref_show_navigation_bar_title">Navigationsleiste mit Steuerelementen anzeigen</string>
-  <!-- Gesture Preferences Hardcoded -->
   <string name="pref_double_tap_seek_area_width_title">Breite des Doppeltipp-Suchbereichs</string>
-  <!-- Advanced Preferences Hardcoded -->
   <string name="pref_export_settings_title">Einstellungen exportieren</string>
   <string name="pref_export_settings_summary">Einstellungen in eine XML-Datei exportieren</string>
   <string name="pref_import_settings_title">Einstellungen importieren</string>
   <string name="pref_import_settings_summary">Einstellungen aus einer XML-Datei importieren</string>
   <string name="pref_enable_lua_scripts_title">Skripte aktivieren</string>
   <string name="pref_enable_lua_scripts_summary">Skripte aus dem MPV-Konfigurationsverzeichnis laden</string>
+  <string name="pref_enable_p2p_streaming_title">P2P-Torrent-Streaming aktivieren</string>
+  <string name="pref_enable_p2p_streaming_summary">Abspielbare Medien aus Magnet-Links und Torrent-Dateien streamen</string>
+  <string name="pref_enable_hls_proxy_title">HLS-Streaming-Proxy aktivieren</string>
+  <string name="pref_enable_hls_proxy_summary">Adaptive HLS-Manifeste normalisieren und getrennte Audio-/Videostreams verarbeiten</string>
   <string name="pref_manage_lua_scripts_title">Skripte verwalten</string>
   <string name="pref_manage_lua_scripts_summary">Aktivierte Skripte verwalten</string>
   <string name="pref_clear_config_cache_title">Konfigurationscache leeren</string>
@@ -173,6 +234,8 @@
   <string name="pref_player_orientation_reverse_landscape">Umgekehrtes Querformat</string>
   <string name="pref_player_orientation_sensor_landscape">Querformat per Sensor</string>
   <string name="pref_player_save_position_on_quit">Position beim Beenden speichern</string>
+  <string name="pref_player_remember_video_aspect_per_video_title">Seitenverhältnis pro Video speichern</string>
+  <string name="pref_player_remember_video_aspect_per_video_summary">Das gespeicherte Seitenverhältnis für jedes Video wiederherstellen, statt ein globales Seitenverhältnis auf alle Videos anzuwenden</string>
   <string name="pref_player_double_tap_seek_duration">Suchdauer bei Doppeltipp</string>
   <string name="pref_player_custom_skip_duration_title">Benutzerdefinierte Sprungdauer</string>
   <string name="pref_player_custom_skip_duration_summary">Dauer für den Vorwärtssprung mit der benutzerdefinierten Sprungtaste</string>
@@ -234,10 +297,13 @@ Weiter: NEXT</string>
   <string name="pref_gesture_tap_thumbnail_to_select_summary">Wenn aktiviert, wechselt das Antippen von Vorschaubildern in den Auswahlmodus. Wenn deaktiviert, wird das Video abgespielt.</string>
   <string name="pref_decoder">Decoder</string>
   <string name="pref_decoder_summary">Hardware-Decodierung, Pixelformat, Debanding</string>
+  <string name="pref_decoder_engine_title">Wiedergabe-Engine</string>
+  <string name="pref_decoder_engine_summary">Automatisch verwendet MPV für normale Videos und Native für HDR, HLG und Dolby Vision.</string>
   <string name="pref_decoder_profile_title">MPV-Profil</string>
   <string name="pref_decoder_try_hw_dec_title">Hardware-Decodierung versuchen</string>
   <string name="pref_decoder_gpu_next_title">gpu-next verwenden</string>
   <string name="pref_decoder_gpu_next_summary">Ein neues Rendering-Backend</string>
+  <string name="pref_decoder_flow_forced_renderer_summary">MPVFlow erfordert den gpu-next-Renderer mit Vulkan. Diese Steuerelemente zeigen den tatsächlich verwendeten Renderer und bleiben gesperrt, solange MPVFlow aktiviert ist.</string>
   <string name="pref_decoder_gpu_next_enable_title">gpu-next aktivieren?</string>
   <string name="pref_decoder_gpu_next_warning">Das Aktivieren von gpu-next kann bei der Wiedergabe auf einigen Geräten zu violetten Bildschirmen führen.</string>
   <string name="pref_decoder_gpu_next_purple_screen_fix">Falls violette Bildschirme auftreten, opengl-pbo in den erweiterten Einstellungen (mpv.conf) deaktivieren:</string>
@@ -253,6 +319,13 @@ Weiter: NEXT</string>
   <string name="renderer_build_notice_unsupported_device">OpenGL wird verwendet; dieses Gerät unterstützt Vulkan 1.3 nicht.</string>
   <string name="pref_decoder_yuv420p_title">YUV420P-Pixelformat verwenden</string>
   <string name="pref_decoder_yuv420p_summary">Kann schwarze Bildschirme bei einigen Videocodecs beheben und die Leistung auf Kosten der Qualität verbessern</string>
+  <string name="pref_decoder_mpvflow_title">Frame-Interpolation</string>
+  <string name="pref_decoder_mpvflow_summary">Erzeugt Zwischenbilder für flüssigere Bewegungen.</string>
+  <string name="pref_decoder_mpvflow_visibility_resolver_debug_title">Sichtbarkeitsauflösung</string>
+  <string name="pref_decoder_mpvflow_soft_blend_debug_title">Soft Blend</string>
+  <string name="pref_decoder_mpvflow_target_fps_title">MPVFlow-Zielframerate</string>
+  <string name="pref_decoder_mpvflow_target_fps_value">%1$d fps</string>
+  <string name="pref_decoder_mpvflow_target_fps_warning_value">(!) %1$d fps</string>
   <string name="pref_subtitles">Untertitel</string>
   <string name="pref_subtitles_summary">Bevorzugte Sprachen, Schriftarten und Suche</string>
   <string name="pref_subtitle_search_title">Online-Untertitelsuche</string>
@@ -285,6 +358,10 @@ Weiter: NEXT</string>
   <string name="pref_audio_pitch_correction_summary">Verhindert hohe Tonlagen bei schneller und tiefe Tonlagen bei langsamer Wiedergabe</string>
   <string name="pref_audio_volume_normalization_title">Lautstärkenormalisierung</string>
   <string name="pref_audio_volume_normalization_summary">Lautstärke automatisch anpassen, um eine gleichmäßige Lautheit beizubehalten</string>
+  <string name="pref_audio_drc_title">Dynamikbereich-Kompression (DRC)</string>
+  <string name="pref_audio_drc_summary">Dynamikbereich des Tons komprimieren, um leise Dialoge zu verstärken und laute Geräusche zu dämpfen</string>
+  <string name="pref_audio_effects">Audioverarbeitung</string>
+  <string name="toast_file_not_found">Datei ist nicht mehr vorhanden</string>
   <string name="pref_music_tabs_title">Musikbibliothek-Tabs</string>
   <string name="pref_music_visualizer_title">Musikvisualisierung</string>
   <string name="pref_music_visualizer_summary">Während der Musikwiedergabe eine audioreaktive Visualisierung anzeigen</string>
@@ -292,9 +369,14 @@ Weiter: NEXT</string>
   <string name="pref_audio_visualizer_style_blob">Blob</string>
   <string name="pref_audio_visualizer_style_galaxy">Galaxie</string>
   <string name="pref_audio_visualizer_style_cuboid">Quader</string>
+  <string name="pref_audio_visualizer_style_particle">Partikel</string>
   <string name="pref_audio_visualizer_galaxy_credit">Inspiriert von Zain Raza auf CodePen</string>
   <string name="pref_audio_ambient_mode_title">Ambient-Modus</string>
+  <string name="pref_audio_palette_background_title">Album-Palettenhintergrund</string>
+  <string name="pref_audio_palette_background_summary">Farben aus dem Cover des aktuellen Titels als Hintergrund des Musikplayers verwenden, statt des App-Themas</string>
   <string name="pref_audio_ambient_mode_summary">Dynamische Farbverläufe aus dem Album-Cover im Musikplayer anzeigen (deaktiviert, wenn der Visualizer aktiv ist)</string>
+  <string name="pref_audio_standby_mode_title">Standby-Modus des Musikplayers</string>
+  <string name="pref_audio_standby_mode_summary">Nach Inaktivität Cover, sofern aktiviert Liedtexte und die Suchleiste anzeigen</string>
   <string name="pref_audio_wavy_seekbar_title">Wellenförmige Suchleiste</string>
   <string name="pref_audio_wavy_seekbar_summary">Flüssige, mehrschichtige wellenförmige Visualizer-Animation über der Suchleiste anzeigen</string>
   <string name="pref_audio_channels">Audiokanäle</string>
@@ -309,7 +391,6 @@ Weiter: NEXT</string>
   <string name="pref_advanced_summary">Konfigurationsort, mpv.conf</string>
   <string name="pref_codecs_title">Unterstützte Codecs</string>
   <string name="pref_codecs_summary">Hardwarebeschleunigung vs. Software-Dekodierung auf diesem Gerät</string>
-
   <string name="pref_section_app_language">App-Sprache</string>
   <string name="pref_app_language_title">Sprache</string>
   <string name="pref_app_language_system_default">Systemstandard</string>
@@ -319,6 +400,48 @@ Weiter: NEXT</string>
   <string name="pref_advanced_mpv_conf_storage_location">Speicherort der Konfiguration auswählen</string>
   <string name="pref_advanced_mpv_conf">mpv.conf bearbeiten</string>
   <string name="pref_advanced_input_conf">input.conf bearbeiten</string>
+  <string name="pref_mpv_conf_overrides_title">Eigentümerschaft von mpv.conf-Optionen</string>
+  <string name="pref_mpv_conf_overrides_summary_app_owned">Die App steuert alle unterstützten Wiedergabeoptionen (empfohlen)</string>
+  <string name="pref_mpv_conf_overrides_summary_config_owned">%1$d Gruppen ausgewählt, %2$d App-Optionen an mpv.conf übergeben</string>
+  <string name="pref_mpv_conf_overrides_dialog_title">Optionen durch mpv.conf steuern lassen</string>
+  <string name="pref_mpv_conf_overrides_dialog_message">Kategorien oder Optionen auswählen, die an mpv.conf übergeben werden. App-Steuerelemente dafür werden deaktiviert.</string>
+  <string name="pref_mpv_conf_overrides_empty_config_warning">Keine aktive mpv.conf erkannt. Standardwerte werden bis zur Konfiguration verwendet.</string>
+  <string name="pref_mpv_conf_overrides_protected_message">Android-Lebenszyklus, Wiedergabebefehle, Header und Zertifikate bleiben zur Stabilität App-gesteuert.</string>
+  <string name="pref_mpv_conf_overrides_reset">Alle Gruppen wieder durch die App steuern</string>
+  <string name="pref_mpv_conf_overrides_selected_count">%1$d von %2$d Optionen ausgewählt</string>
+  <string name="pref_mpv_conf_ownership_active">%1$d Optionen folgen mpv.conf</string>
+  <string name="pref_mpv_conf_ownership_inactive">App-Einstellungen steuern alles</string>
+  <string name="pref_mpv_conf_ownership_hint">Markierte Optionen werden aus mpv.conf gelesen und in der App gesperrt.</string>
+  <string name="pref_mpv_conf_override_renderer">Renderer und GPU-Backend</string>
+  <string name="pref_mpv_conf_override_renderer_summary">Überschreibt GPU-API-, Vulkan- und Profileinstellungen.</string>
+  <string name="pref_mpv_conf_override_flow_compute">MPVFlow-Compute-API</string>
+  <string name="pref_mpv_conf_override_flow_compute_summary">Das für die MPVFlow-Interpolation verwendete Compute-Backend überschreiben.</string>
+  <string name="pref_mpv_conf_override_decoder">Hardware-Decoder</string>
+  <string name="pref_mpv_conf_override_decoder_summary">Überschreibt Hardware-Decoder- und Abstimmungseinstellungen.</string>
+  <string name="pref_mpv_conf_override_hdr_shaders">HDR-Ausgabe und Shader</string>
+  <string name="pref_mpv_conf_override_hdr_shaders_summary">Überschreibt HDR-Ausgabe, Anime4K- und Shader-Einstellungen.</string>
+  <string name="pref_mpv_conf_override_video_filters">Videofilter</string>
+  <string name="pref_mpv_conf_override_video_filters_summary">Überschreibt Bildfilter, Debanding und Transformationen.</string>
+  <string name="pref_mpv_conf_override_video_geometry">Videogeometrie</string>
+  <string name="pref_mpv_conf_override_video_geometry_summary">Überschreibt Zoom, Verschiebung und Seitenverhältnis.</string>
+  <string name="pref_mpv_conf_override_audio_output">Audioausgabe</string>
+  <string name="pref_mpv_conf_override_audio_output_summary">Überschreibt Audioverzögerungs- und Lautstärkeeinstellungen.</string>
+  <string name="pref_mpv_conf_override_audio_filters">Audiofilter</string>
+  <string name="pref_mpv_conf_override_audio_filters_summary">Überschreibt Equalizer-, DRC- und Kanalfilter.</string>
+  <string name="pref_mpv_conf_override_subtitle_loading">Untertitel laden</string>
+  <string name="pref_mpv_conf_override_subtitle_loading_summary">Überschreibt Untertitelsuche, Sprache und Schriftarten.</string>
+  <string name="pref_mpv_conf_override_subtitle_style">Untertitel-Timing und -Stil</string>
+  <string name="pref_mpv_conf_override_subtitle_style_summary">Überschreibt Verzögerung, Position, Schriftarten und Farben.</string>
+  <string name="pref_mpv_conf_override_playback_timing">Wiedergabe-Timing</string>
+  <string name="pref_mpv_conf_override_playback_timing_summary">Überschreibt Geschwindigkeit, Tonhöhe, Suchen und Sync.</string>
+  <string name="pref_mpv_conf_override_network_buffering">Netzwerkpufferung</string>
+  <string name="pref_mpv_conf_override_network_buffering_summary">Überschreibt Cache, Wiederverbindung und Pufferrichtlinie.</string>
+  <string name="pref_mpv_conf_override_ytdlp">yt-dlp-Integration</string>
+  <string name="pref_mpv_conf_override_ytdlp_summary">Überschreibt App-gesteuerte yt-dlp-Optionen.</string>
+  <string name="pref_mpv_conf_override_osd">Sicherheitsbereich des OSD</string>
+  <string name="pref_mpv_conf_override_osd_summary">Überschreibt OSD-Ränder und Sicherheitsbereiche.</string>
+  <string name="mpv_config_owned_title">Von mpv.conf gesteuert</string>
+  <string name="mpv_config_owned_message">Dieses App-Steuerelement ist deaktiviert, weil mindestens eine benötigte Option in den erweiterten Einstellungen mpv.conf zugewiesen ist.</string>
   <string name="pref_advanced_dump_logs_title">Protokolle ausgeben</string>
   <string name="pref_advanced_dump_logs_summary">Protokolle ausgeben und kopieren, damit sie mit den Entwicklern geteilt werden können</string>
   <string name="pref_advanced_verbose_logging_title">Ausführliche Protokollierung</string>
@@ -342,7 +465,6 @@ Weiter: NEXT</string>
   <string name="anime4k_mode_title">Anime4K-Voreinstellungen</string>
   <string name="anime4k_mode_toast">Anime4K: Voreinstellung %1$s</string>
   <string name="pref_anime4k_quality_title">Anime4K-Qualität</string>
-  <!-- Anime4K Modes (Renamed to Presets in UI) -->
   <string name="anime4k_mode_off">Aus</string>
   <string name="anime4k_mode_a">A</string>
   <string name="anime4k_mode_b">B</string>
@@ -368,14 +490,22 @@ Weiter: NEXT</string>
   <string name="pref_about_donate_title">Spenden</string>
   <string name="pref_about_donate_kofi">Ko-fi</string>
   <string name="pref_about_donate_kofi_summary">Entwickler über Ko-fi unterstützen</string>
+  <string name="pref_about_donate_kofi_url">https://ko-fi.com/zhinfinity</string>
   <string name="pref_about_donate_paypal">PayPal</string>
   <string name="pref_about_donate_paypal_summary">Entwickler über PayPal unterstützen</string>
+  <string name="pref_about_donate_paypal_url">https://paypal.me/InfinityxEternity</string>
   <string name="pref_about_donate_upi">UPI</string>
+  <string name="pref_about_donate_upi_id">zhjjk001-1@oksbi</string>
   <string name="player_sheets_add_ext_sub">Externe Untertitel hinzufügen</string>
   <string name="player_sheets_add_ext_audio">Externe Audiospuren hinzufügen</string>
   <string name="player_sheets_embedded_audio_tracks">Eingebettete Audiospuren</string>
   <string name="player_sheets_external_audio_tracks">Externe Audiospuren</string>
   <string name="player_sheets_tracks_off">Aus</string>
+  <string name="player_sheets_track_title_w_lang">#%1$d: %2$s (%3$s)</string>
+  <string name="player_sheets_track_title_wo_lang">#%1$d: %2$s</string>
+  <string name="player_sheets_track_lang_wo_title">#%1$d: %2$s</string>
+  <string name="player_sheets_chapter_title_substitute_subtitle">Untertitel #%d</string>
+  <string name="player_sheets_chapter_title_substitute_audio">Audio #%d</string>
   <string name="player_sheets_off">Aus</string>
   <string name="player_sheets_subtitles_settings_title">Untertiteleinstellungen</string>
   <string name="player_sheets_subtitles_color_text">Text</string>
@@ -465,9 +595,10 @@ Weiter: NEXT</string>
   <string name="timer_title">Schlaftimer</string>
   <string name="timer_remaining">%s verbleibend</string>
   <string name="toast_sleep_timer_ended">Schlaftimer beendet</string>
+  <string name="volume_slider_absolute_value">%d</string>
+  <string name="github_repo_url">https://github.com/ZHINFINITY/Mpv-infinity</string>
   <string name="swap_the_volume_and_brightness_slider">Lautstärke- und Helligkeitsregler vertauschen</string>
   <string name="pref_player_display_reduce_player_animation">Player-Animationen reduzieren</string>
-  <!-- Animation settings -->
   <string name="pref_anim_section">Animationen</string>
   <string name="pref_anim_controls_style">Animationsstil der Steuerelemente</string>
   <string name="pref_anim_video_open">Animation beim Öffnen eines Videos</string>
@@ -477,13 +608,13 @@ Weiter: NEXT</string>
   <string name="show_splash_ovals_on_double_tap_to_seek">Wellenanimation bei Doppeltipp-Suche anzeigen</string>
   <string name="show_time_on_double_tap_to_seek">Suchzeit anzeigen</string>
   <string name="player_sheets_frame_navigation_title">Frame-Navigation</string>
+  <string name="player_sheets_frame_navigation_snapshot_saved">In Pictures/mpvSnaps gespeichert</string>
   <string name="player_sheets_frame_navigation_include_subtitles">Untertitel in Aufnahme einbeziehen</string>
   <string name="player_sheets_zoom_slider_label">Videozoom</string>
   <plurals name="seconds">
     <item quantity="one">%1$d Sekunde</item>
     <item quantity="other">%1$d Sekunden</item>
   </plurals>
-  <!-- Background Playback -->
   <string name="background_playback_title">Hintergrundwiedergabe</string>
   <string name="pref_audio_background_playback_title">Hintergrundwiedergabe (Audio-Player)</string>
   <string name="pref_audio_background_playback_summary">Audio beim Verlassen des Audio-Players oder Ausschalten des Bildschirms weiterspielen</string>
@@ -504,6 +635,8 @@ Weiter: NEXT</string>
   <string name="not_set_video_default">Nicht festgelegt (Videostandard wird verwendet)</string>
   <string name="enter_language_codes">Sprachcodes durch Kommas getrennt eingeben (z. B. eng,jpn,spa)</string>
   <string name="language_codes_placeholder">eng,jpn,spa</string>
+  <string name="enter_subtitle_title_preferences">Gib Titelstichwörter oder Sprachcodes für Untertitel in Prioritätsreihenfolge ein, durch Kommas getrennt. Frühere Treffer haben Vorrang.</string>
+  <string name="subtitle_title_preferences_placeholder">Full,Dialogue,eng,en</string>
   <string name="pref_audio_channels_auto_safe_desc">Standardmäßige, sichere automatische Auswahl</string>
   <string name="pref_audio_channels_auto_desc">Automatische Auswahl</string>
   <string name="pref_audio_channels_mono_desc">Auf Mono heruntermischen</string>
@@ -516,12 +649,12 @@ Weiter: NEXT</string>
   <string name="clear_font_directory">Schriftartenverzeichnis leeren</string>
   <string name="reset_to_default_font">Auf Standardschrift zurücksetzen</string>
   <string name="set_as_default">Als Standard festlegen</string>
-  <!-- Notification strings -->
   <string name="notification_channel_name">Medienwiedergabe</string>
   <string name="notification_channel_description">Steuerung der Medienwiedergabe</string>
   <string name="notification_playing">Wiedergabe</string>
   <string name="notification_add_to_favorites">Zu Favoriten hinzufügen</string>
   <string name="notification_saved_to_favorites">In Favoriten gespeichert</string>
+  <string name="notification_close">Schließen</string>
   <string name="notification_repeat_off">Wiederholung aus</string>
   <string name="notification_repeat_one">Einen Titel wiederholen</string>
   <string name="notification_repeat_all">Alle wiederholen</string>
@@ -530,13 +663,22 @@ Weiter: NEXT</string>
   <string name="notification_permission_disabled">Benachrichtigungen sind für Mpv∞ deaktiviert. Aktivieren Sie sie, um Wiedergabesteuerungen anzuzeigen.</string>
   <string name="notification_disabled_in_advanced_settings">Aktivieren Sie Benachrichtigungen in den erweiterten Einstellungen, um die Hintergrundwiedergabe zu nutzen.</string>
   <string name="pref_advanced_notification_style">Benachrichtigungsstil</string>
-  <!-- Media Info Activity -->
   <string name="pref_player_use_precise_seeking">Präzise Suche verwenden</string>
-  <!-- Folders Preferences -->
   <string name="pref_folders_title">Ordner</string>
   <string name="pref_folders_summary">Ordner-Sperrliste und .nomedia-Verarbeitung verwalten</string>
   <string name="pref_folders_include_nomedia_title">.nomedia-Ordner einbeziehen</string>
   <string name="pref_folders_include_nomedia_summary">Wenn aktiviert, werden auch Videos aus durch .nomedia ausgeblendeten Ordnern und deren Unterordnern erfasst.</string>
+  <string name="pref_folders_include_hidden_title">Versteckte Medienordner einbeziehen</string>
+  <string name="pref_folders_include_hidden_summary">Videos in punktpräfigierten Ordnern und Ordnern mit ausgewählten Markierungsdateien scannen.</string>
+  <string name="pref_folders_hidden_markers_title">Markierungsdateien</string>
+  <string name="pref_folders_hidden_markers_summary">Ordner mit diesen Dateien und ihre Unterordner werden einbezogen. Punktpräfigierte Ordner werden immer einbezogen.</string>
+  <string name="pref_folders_hidden_markers_empty">Keine Markierungsdateien konfiguriert. Punktpräfigierte Ordner werden weiterhin einbezogen.</string>
+  <string name="pref_folders_add_marker">Markierungsdatei hinzufügen</string>
+  <string name="pref_folders_add_marker_title">Markierung für versteckten Ordner hinzufügen</string>
+  <string name="pref_folders_marker_name">Dateiname</string>
+  <string name="pref_folders_marker_invalid">Gib einen Dateinamen ohne Pfadtrenner ein.</string>
+  <string name="pref_folders_marker_duplicate">Diese Markierung ist bereits enthalten.</string>
+  <string name="pref_folders_remove_marker">%1$s entfernen</string>
   <string name="pref_folders_empty_title">Keine gesperrten Ordner</string>
   <string name="pref_folders_empty_message">Tippen Sie unten, um Ordner hinzuzufügen, die in der Ordnerliste ausgeblendet werden sollen</string>
   <string name="pref_folders_add_folder">Ordner zur Sperrliste hinzufügen</string>
@@ -548,11 +690,9 @@ Weiter: NEXT</string>
   <string name="pref_folders_clear_all_confirm_message">Dadurch werden alle Ordner von der Sperrliste entfernt. Sie können später wieder hinzugefügt werden.</string>
   <string name="pref_folders_blacklist">Sperrliste</string>
   <string name="pref_folders_blacklisted">Ordner zur Sperrliste hinzugefügt</string>
-  <!-- M3U Playlist Strings -->
   <string name="pref_subtitles_searching">Suche…</string>
   <string name="pref_subtitles_found">%d Untertitel gefunden</string>
   <string name="pref_subtitles_online_search_title">Online-Untertitelsuche</string>
-  <!-- M3U Playlist Strings -->
   <string name="playlist_add_m3u_title">M3U-Wiedergabeliste hinzufügen</string>
   <string name="playlist_add_m3u_description">URL einer M3U-Wiedergabelistendatei eingeben</string>
   <string name="playlist_url_label">Wiedergabelisten-URL</string>
@@ -577,10 +717,6 @@ Weiter: NEXT</string>
   <string name="pref_player_safe_area_window_summary">Player-Steuerelemente und Statistiken um Kameraaussparungen herum einrücken.</string>
   <string name="pref_subtitles_search_mode_title">Suchmodus</string>
   <string name="pref_subtitles_subhub_sources_title">SubHub-Quellen</string>
-
-  <!-- ═══════════════════════════════════════════════════════════ -->
-  <!-- Main Settings Hub Section Headers                          -->
-  <!-- ═══════════════════════════════════════════════════════════ -->
   <string name="pref_section_appearance">Darstellung</string>
   <string name="pref_section_playback">Wiedergabe</string>
   <string name="pref_section_gestures_controls">Gesten und Steuerelemente</string>
@@ -592,10 +728,6 @@ Weiter: NEXT</string>
   <string name="pref_section_ai_summary">KI-Umbenennung, Untertitelübersetzung, Sprache-zu-Text, Offline-Modelle (OpenCode/Groq/OpenAI)</string>
   <string name="pref_section_advanced">Erweitert</string>
   <string name="pref_section_about">Über</string>
-
-  <!-- ═══════════════════════════════════════════════════════════ -->
-  <!-- Appearance - Animations Section                            -->
-  <!-- ═══════════════════════════════════════════════════════════ -->
   <string name="pref_section_animations">Animationen</string>
   <string name="pref_anim_controls_style_title">Animationsstil der Steuerelemente</string>
   <string name="pref_anim_controls_style_summary">Festlegen, wie Player-Steuerelemente ein- und ausgeblendet werden</string>
@@ -611,16 +743,12 @@ Weiter: NEXT</string>
   <string name="pref_anim_speed_normal">Normal (%.1f×)</string>
   <string name="pref_anim_speed_slow">Langsam (%.1f×)</string>
   <string name="pref_anim_speed_very_slow">Sehr langsam (%.1f×)</string>
-
-  <!-- ═══════════════════════════════════════════════════════════ -->
-  <!-- Player - General Section                                   -->
-  <!-- ═══════════════════════════════════════════════════════════ -->
   <string name="pref_section_general">Allgemein</string>
   <string name="pref_playlist_mode_title">Navigation zum nächsten/vorherigen Element aktivieren</string>
   <string name="pref_playlist_mode_summary">Schaltflächen „Nächstes/Vorheriges“ für alle Videos im Ordner anzeigen</string>
   <string name="pref_playlist_mode_summary_disabled">Videos einzeln wiedergeben (mehrere für eine Wiedergabeliste auswählen)</string>
-
-  <!-- Player - Seeking Section (additional)                      -->
+  <string name="pref_open_radio_m3u_in_music_title">Radio-M3U-Playlists im Musikplayer öffnen</string>
+  <string name="pref_open_radio_m3u_in_music_summary">Erkannte Radio- und reine Audio-M3U-Playlists im Musikplayer statt im Videoplayer öffnen</string>
   <string name="pref_online_skip_markers_title">Online-Sprungmarken verwenden</string>
   <string name="pref_online_skip_markers_summary">Intro-, Rückblick-, Outro-, Abspann- und Vorschaumarken vom gewählten Anbieter abrufen</string>
   <string name="pref_marker_provider_title">Anbieter für Online-Marken</string>
@@ -631,15 +759,11 @@ Weiter: NEXT</string>
   <string name="pref_auto_skip_intro_summary">Opening-Marken während der Wiedergabe automatisch überspringen</string>
   <string name="pref_auto_skip_outro_title">Outro automatisch überspringen</string>
   <string name="pref_auto_skip_outro_summary">Ending-Marken während der Wiedergabe automatisch überspringen</string>
-
-  <!-- Player - Display & Controls Section                        -->
   <string name="pref_section_display_controls">Anzeige und Steuerelemente</string>
   <string name="pref_player_controls_drawer_title">Steuerungsleiste</string>
   <string name="pref_player_controls_drawer_summary">Randgriff anzeigen, um das Steuerungsfeld durch Ziehen zu öffnen</string>
   <string name="pref_nav_bar_title">Navigationsleiste mit Steuerelementen anzeigen</string>
   <string name="pref_nav_bar_summary">Android-Systemnavigationsleiste über den Player-Steuerelementen anzeigen</string>
-
-  <!-- Player - Gesture & Action Overlays Section                 -->
   <string name="pref_section_overlays">Gesten- und Aktionsanzeigen</string>
   <string name="pref_volume_overlay_title">Lautstärkeregler-Anzeige</string>
   <string name="pref_volume_overlay_summary">Beim Wischen für Lautstärke den vertikalen Lautstärkeregler anzeigen</string>
@@ -657,10 +781,6 @@ Weiter: NEXT</string>
   <string name="pref_action_feedback_overlay_summary">Kurze Textanzeigen von benutzerdefinierten Tasten, Umgebungsmodus, Untertitelverschiebung und Lua-Skripten anzeigen</string>
   <string name="pref_provider_status_overlay_title">Anbieterstatus-Rückmeldung</string>
   <string name="pref_provider_status_overlay_summary">Online-Fehler-/Statusmeldungen für Wyzie-Untertitel- und Markensuchen anzeigen</string>
-
-  <!-- ═══════════════════════════════════════════════════════════ -->
-  <!-- Gestures - Swipe & Speed Section                           -->
-  <!-- ═══════════════════════════════════════════════════════════ -->
   <string name="pref_section_swipe_speed">Wischen und Geschwindigkeit</string>
   <string name="pref_sensitivity_low">Niedrig</string>
   <string name="pref_sensitivity_medium">Mittel</string>
@@ -673,10 +793,6 @@ Weiter: NEXT</string>
   <string name="pref_custom_seek_label">Sekunden</string>
   <string name="pref_double_tap_seek_area_width_summary">Aktuell: %1$d%%</string>
   <string name="pref_custom_seek_summary_format">Benutzerdefiniert (%1$ds)</string>
-
-  <!-- ═══════════════════════════════════════════════════════════ -->
-  <!-- Player Controls Sections                                   -->
-  <!-- ═══════════════════════════════════════════════════════════ -->
   <string name="pref_section_landscape_controls">Steuerelemente im Querformat</string>
   <string name="pref_section_portrait_controls">Steuerelemente im Hochformat</string>
   <string name="pref_section_seekbar_style">Stil der Suchleiste</string>
@@ -687,10 +803,6 @@ Weiter: NEXT</string>
   <string name="pref_none">Keine</string>
   <string name="pref_custom_time_summary_format">Benutzerdefiniert (%1$d ms)</string>
   <string name="pref_time_ms_summary">%1$d ms</string>
-
-  <!-- ═══════════════════════════════════════════════════════════ -->
-  <!-- Subtitles Preferences                                      -->
-  <!-- ═══════════════════════════════════════════════════════════ -->
   <string name="pref_section_subtitle_fonts">Schriftarten</string>
   <string name="pref_section_subtitle_search">Untertitelsuche</string>
   <string name="pref_wyzie_api_key_title">Wyzie-API-Schlüssel</string>
@@ -724,11 +836,23 @@ Weiter: NEXT</string>
   <string name="pref_subtitle_search_error">Fehler: %1$s</string>
   <string name="pref_subtitle_search_attribution">Untertitelsuche bereitgestellt von</string>
   <string name="pref_subtitle_search_link">sub.wyzie.io</string>
-
-  <!-- ═══════════════════════════════════════════════════════════ -->
-  <!-- Advanced Preferences                                       -->
-  <!-- ═══════════════════════════════════════════════════════════ -->
   <string name="pref_section_backup_restore">Sichern und Wiederherstellen</string>
+  <string name="ui_recent_streams">Aktuelle Stream-Links</string>
+  <string name="ui_autofill_stream_url">Stream-URL automatisch ausfüllen</string>
+  <string name="ui_torrent_media_anime">Anime</string>
+  <string name="ui_torrent_media_series">Serie</string>
+  <string name="ui_torrent_media_movie">Film</string>
+  <string name="ui_torrent_media_torrent">Torrent</string>
+  <string name="ui_resume_playback">Fortsetzen</string>
+  <string name="ui_play_now">Abspielen</string>
+  <string name="ui_show_more">Mehr anzeigen</string>
+  <string name="ui_show_less">Weniger anzeigen</string>
+  <string name="ui_episodes">Episoden</string>
+  <string name="ui_no_torrents_title">Keine Torrents gespeichert</string>
+  <string name="ui_no_torrents_description">Fügen Sie oben einen Magnet-Link oder eine Torrent-URL ein, um Anime und Filme zu streamen.</string>
+  <string name="ui_no_saved_media_title">Keine Links gespeichert</string>
+  <string name="ui_no_saved_media_description">Fügen Sie eine Stream-URL oder einen Magnet-Link ein oder speichern Sie aus den letzten Links, um Ihre Mediensammlung aufzubauen.</string>
+  <string name="ui_save_to_media">In Medien speichern</string>
   <string name="pref_export_complete_title">Export abgeschlossen</string>
   <string name="pref_export_complete_text">%1$d Elemente erfolgreich exportiert!</string>
   <string name="pref_import_complete_title">Import abgeschlossen</string>
@@ -743,6 +867,36 @@ Bitte starten Sie die App neu, damit alle Änderungen wirksam werden.</string>
   <string name="pref_section_mpv_config">MPV-Konfiguration</string>
   <string name="pref_config_edit_summary">Zum Bearbeiten der Konfiguration tippen</string>
   <string name="pref_section_scripts">Skripte (Lua / JS)</string>
+  <string name="pref_section_p2p_streaming">P2P-Streaming</string>
+  <string name="toast_torrent_streaming_disabled">Aktiviere zuerst P2P-Torrent-Streaming in den erweiterten Einstellungen</string>
+  <string name="ui_recent_stream_links">Letzte Links</string>
+  <string name="ui_torrent_files">Torrents</string>
+  <plurals name="ui_torrent_group_file_count">
+    <item quantity="one">%1$d abspielbare Datei</item>
+    <item quantity="other">%1$d abspielbare Dateien</item>
+  </plurals>
+  <string name="ui_search_episodes">Episoden suchen…</string>
+  <string name="ui_sort_ascending">Aufsteigend sortieren</string>
+  <string name="ui_sort_descending">Absteigend sortieren</string>
+  <string name="ui_no_matching_episodes">Keine passenden Episoden</string>
+  <string name="ui_buffering">Puffern…</string>
+  <string name="ui_expand_torrent_group">Torrent-Dateien anzeigen</string>
+  <string name="ui_collapse_torrent_group">Torrent-Dateien ausblenden</string>
+  <string name="ui_delete_torrent_group">Torrent entfernen</string>
+  <string name="torrent_picker_back">Torrent schließen</string>
+  <string name="torrent_picker_choose_title">Wähle, was abgespielt werden soll</string>
+  <plurals name="torrent_picker_playable_count">
+    <item quantity="one">%1$d abspielbare Datei</item>
+    <item quantity="other">%1$d abspielbare Dateien</item>
+  </plurals>
+  <string name="torrent_picker_finding_details">Cover und Details werden gesucht…</string>
+  <string name="torrent_picker_play_file">%1$s abspielen</string>
+  <string name="torrent_picker_preparing_title">Torrent wird gelesen</string>
+  <string name="torrent_picker_preparing_description">Verbinde mit Peers und suche abspielbare Dateien…</string>
+  <string name="torrent_picker_error_title">Torrent konnte nicht geöffnet werden</string>
+  <string name="torrent_picker_retry">Erneut versuchen</string>
+  <string name="torrent_picker_episode_label">Staffel %1$d • Folge %2$d</string>
+  <string name="torrent_picker_single_episode_label">Folge %1$d</string>
   <string name="pref_manage_scripts_summary_disabled">Zuerst Speicherort festlegen und Skripte aktivieren</string>
   <string name="pref_manage_scripts_summary_none">Keine Skripte aktiviert</string>
   <string name="pref_manage_scripts_summary_singular">1 Skript aktiviert</string>
@@ -757,10 +911,6 @@ Bitte starten Sie die App neu, damit alle Änderungen wirksam werden.</string>
   <string name="pref_section_logging">Protokollierung</string>
   <string name="pref_export_failed_toast">Export fehlgeschlagen: %1$s</string>
   <string name="pref_import_failed_toast">Import fehlgeschlagen: %1$s</string>
-
-  <!-- ═══════════════════════════════════════════════════════════ -->
-  <!-- AI Integration                                             -->
-  <!-- ═══════════════════════════════════════════════════════════ -->
   <string name="pref_ai_features_section">KI-Funktionen</string>
   <string name="pref_ai_enabled_title">KI-Funktionen aktivieren</string>
   <string name="pref_ai_enabled_summary">KI-Funktionen sind aktiv</string>
@@ -797,6 +947,8 @@ Bitte starten Sie die App neu, damit alle Änderungen wirksam werden.</string>
   <string name="pref_translation_section">Untertitelübersetzung</string>
   <string name="pref_enable_translation_title">Übersetzung aktivieren</string>
   <string name="pref_enable_translation_summary">Externe Untertitel mit KI übersetzen</string>
+  <string name="pref_automatic_subtitle_font_fallback_title">Automatischer Fallback für Untertitelschrift</string>
+  <string name="pref_automatic_subtitle_font_fallback_summary">Eine kompatible Ersatzschrift verwenden, wenn Zeichen in der eingebetteten Untertitelschrift fehlen.</string>
   <string name="pref_custom_prompt_section">Benutzerdefinierte Anweisung</string>
   <string name="pref_override_instructions_title">Standardanweisungen überschreiben</string>
   <string name="pref_override_instructions_enabled_summary">Benutzerdefinierte Anweisung wird anstelle der integrierten verwendet</string>
@@ -812,8 +964,6 @@ Bitte starten Sie die App neu, damit alle Änderungen wirksam werden.</string>
   <string name="pref_legacy_prompt_info">Eine ältere globale Anweisung ist gespeichert. Sie wird verwendet, wenn eine aufgabenspezifische Anweisung leer ist.</string>
   <string name="pref_translation_warning_title">Untertitelübersetzung</string>
   <string name="pref_translation_warning_text">Untertitelübersetzung kann etwas ungenau sein. Für beste Ergebnisse bessere Modelle verwenden und nicht schimpfen, wenn Untertitel nicht perfekt funktionieren.</string>
-
-  <!-- AI - API Key titles/placeholders for each provider         -->
   <string name="pref_opencode_api_key_title">OpenCode-API-Schlüssel</string>
   <string name="pref_opencode_api_key_hint">Schlüssel unter opencode.ai/auth abrufen</string>
   <string name="pref_opencode_api_key_placeholder">sk-…</string>
@@ -832,18 +982,10 @@ Bitte starten Sie die App neu, damit alle Änderungen wirksam werden.</string>
   <string name="pref_together_api_key_title">Together-API-Schlüssel</string>
   <string name="pref_together_api_key_hint">Schlüssel unter api.together.ai abrufen</string>
   <string name="pref_together_api_key_placeholder">…</string>
-
-  <!-- ═══════════════════════════════════════════════════════════ -->
-  <!-- Folders Preferences                                        -->
-  <!-- ═══════════════════════════════════════════════════════════ -->
   <string name="pref_storage_screen_title">Speicher</string>
   <string name="pref_media_library_section">Medienbibliothek</string>
   <string name="pref_hidden_folders_section">Ausgeblendete Ordner</string>
   <string name="pref_clear_content_desc">Leeren</string>
-
-  <!-- ═══════════════════════════════════════════════════════════ -->
-  <!-- Search Index Entries (SearchablePreference.kt)             -->
-  <!-- ═══════════════════════════════════════════════════════════ -->
   <string name="search_online_skip_markers_summary">Markierungen für Intro, Rückblick, Outro, Abspann und Vorschau von einem Online-Anbieter abrufen</string>
   <string name="search_marker_provider_summary">IntroDB, TIDB, AniSkip oder Anime Skip für Online-Intro-/Outro-Markierungen auswählen</string>
   <string name="search_chapter_detect_summary">Sprungmarkierungen aus Kapitelnamen wie Opening, Ending, Abspann oder Vorschau erstellen</string>
@@ -869,25 +1011,13 @@ Bitte starten Sie die App neu, damit alle Änderungen wirksam werden.</string>
   <string name="search_custom_ai_prompts_title">Benutzerdefinierte KI-Prompts</string>
   <string name="search_custom_ai_prompts_summary">Standardanweisungen für Umbenennungs-, Übersetzungs- und Formatierungsaufgaben überschreiben</string>
   <string name="search_offline_ai_models_summary">Lokale LLMs für vollständig offline nutzbare KI-Funktionen herunterladen und verwalten</string>
-
-  <!-- ═══════════════════════════════════════════════════════════ -->
-  <!-- Decoder Preferences                                        -->
-  <!-- ═══════════════════════════════════════════════════════════ -->
   <string name="pref_decoder_vulkan_experimental_suffix">(Experimentell)</string>
   <string name="pref_anime4k_link">github.com/bloc97/Anime4K</string>
-
-  <!-- ═══════════════════════════════════════════════════════════ -->
-  <!-- Dialogs & Common                                           -->
-  <!-- ═══════════════════════════════════════════════════════════ -->
   <string name="generic_hide_key">Schlüssel ausblenden</string>
   <string name="generic_show_key">Schlüssel anzeigen</string>
   <string name="generic_verify">Überprüfen</string>
   <string name="generic_fetch">Abrufen</string>
   <string name="generic_got_it">Verstanden</string>
-
-  <!-- ═══════════════════════════════════════════════════════════ -->
-  <!-- Advanced - Cache Sizes & Counts                            -->
-  <!-- ═══════════════════════════════════════════════════════════ -->
   <string name="pref_clear_playback_history_summary">Wiedergabepositionen, ausgewählte Untertitel, Audiospuren, Verzögerungen und Geschwindigkeiten löschen</string>
   <string name="pref_clear_playback_history_recently_played">Löscht außerdem %1$d kürzlich wiedergegebenes Element bzw. Elemente</string>
   <string name="pref_clear_playback_history_recently_played_none">Keine kürzlich wiedergegebenen Elemente zum Löschen</string>
@@ -908,8 +1038,6 @@ Bitte starten Sie die App neu, damit alle Änderungen wirksam werden.</string>
   <string name="pref_ytdl_prefer_h264_title">H.264 (AVC) bevorzugen</string>
   <string name="pref_ytdl_prefer_h264_summary">Erhöht die Kompatibilität mit älteren Geräten, kann aber die Qualität begrenzen</string>
   <string name="pref_ytdl_quality_title">Bevorzugte Qualität</string>
-
-  <!-- Customizable Skip Keywords -->
   <string name="pref_custom_intro_keywords_enabled">Benutzerdefinierte Schlüsselwörter zum Überspringen von Openings verwenden</string>
   <string name="pref_custom_intro_keywords_summary">Benutzerdefinierte statt standardmäßiger Schlüsselwörter für die Opening-Erkennung verwenden</string>
   <string name="pref_custom_intro_keywords_title">Benutzerdefinierte Opening-Schlüsselwörter</string>
@@ -918,7 +1046,6 @@ Bitte starten Sie die App neu, damit alle Änderungen wirksam werden.</string>
   <string name="pref_custom_outro_keywords_summary">Benutzerdefinierte statt standardmäßiger Schlüsselwörter für die Ending-Erkennung verwenden</string>
   <string name="pref_custom_outro_keywords_title">Benutzerdefinierte Ending-Schlüsselwörter</string>
   <string name="pref_custom_outro_keywords_dialog_desc">Durch Kommas getrennte Schlüsselwörter für Endings/Outros eingeben</string>
-  <!-- Extracted UI strings -->
   <string name="generic_unknown_error">Unbekannter Fehler</string>
   <string name="toast_error_loading_scripts">Fehler beim Laden der Skripte: %1$s</string>
   <string name="toast_copied_value">Kopiert: %1$s</string>
@@ -995,8 +1122,13 @@ Bitte starten Sie die App neu, damit alle Änderungen wirksam werden.</string>
   <string name="pref_decoder_vulkan_experimental_title">Vulkan (Experimentell)</string>
   <string name="hdr_mode_off">Aus</string>
   <string name="hdr_mode_off_description">Normale SDR-Ausgabe</string>
+  <string name="hdr_mode_bt2100_pq">BT.2100 PQ</string>
+  <string name="hdr_mode_pq_short">PQ</string>
   <string name="hdr_mode_bt2100_pq_description">HDR10-artiges PQ mit Astra-Tonemapping und Bottosson-Farbraumabbildung</string>
+  <string name="hdr_mode_bt2100_hlg">BT.2100 HLG</string>
+  <string name="hdr_mode_hlg_short">HLG</string>
   <string name="hdr_mode_bt2100_hlg_description">HLG-HDR über die Astra- und Bottosson-Shader-Kette von hdr-toys</string>
+  <string name="hdr_mode_bt2020">BT.2020</string>
   <string name="hdr_mode_bt2020_description">BT.2020-/BT.1886-Konvertierung mit hdr-toys-Farbraumabbildung</string>
   <string name="hdr_mode_linear">Lineares HDR</string>
   <string name="hdr_mode_linear_short">Linear</string>
@@ -1013,8 +1145,32 @@ Bitte starten Sie die App neu, damit alle Änderungen wirksam werden.</string>
   <string name="ytdlp_audio_preference">Audio-Präferenz</string>
   <string name="ytdlp_audio_quality">Audioqualität</string>
   <string name="ytdlp_subtitles_language">Untertitel &amp; Sprache</string>
+  <string name="ytdlp_cookie_login_title">Anmelden</string>
+  <string name="ytdlp_cookie_login_url">Website-URL</string>
+  <string name="ytdlp_cookie_login_use">Diese Sitzung verwenden</string>
+  <string name="ytdlp_cookie_login_open">Öffnen</string>
+  <string name="ytdlp_cookie_login_loading">Seite wird geladen…</string>
+  <string name="ytdlp_cookies_login">Anmelden</string>
+  <string name="ytdlp_instagram_login_title">Instagram-Anmeldung</string>
+  <string name="ytdlp_instagram_login_use">Diese Sitzung verwenden</string>
+  <string name="ytdlp_instagram_cookies_title">Anmelde-Cookies der Website</string>
+  <string name="ytdlp_instagram_cookies_summary">Melde dich in der App auf einer beliebigen Website an, damit yt-dlp private oder eine Anmeldung erfordernde Videos herunterladen kann. Die Datei wird in einem privaten App-Speicher kopiert.</string>
+  <string name="ytdlp_instagram_cookies_not_configured">Keine Cookie-Datei ausgewählt</string>
+  <string name="ytdlp_cookies_choose">Cookies</string>
+  <string name="ytdlp_cookies_clear">Löschen</string>
+  <string name="ytdlp_custom_user_agent_title">User-Agent</string>
+  <string name="ytdlp_custom_user_agent_summary">Die automatische Browserkennung für die Website-Anmelde-WebView überschreiben. Leer lassen, um die empfohlenen Standardeinstellungen pro Website zu verwenden.</string>
+  <string name="ytdlp_custom_user_agent_reset">Zurücksetzen</string>
+  <string name="ytdlp_custom_user_agent_save">Speichern</string>
   <string name="ytdlp_advanced_networking">Erweiterte Netzwerkeinstellungen</string>
   <string name="ytdlp_playlist_behavior">Wiedergabelistenverhalten</string>
+  <string name="ytdlp_download_quality_chooser_title">Auswahldialog für Downloadqualität anzeigen</string>
+  <string name="ytdlp_download_quality_chooser_summary">Vor dem Herunterladen unterstützter Links, die im Netzwerk-Tab eingefügt wurden, nach der Qualität fragen</string>
+  <string name="ytdlp_download_quality_title">Downloadqualität auswählen</string>
+  <string name="ytdlp_download_quality_any">Beste verfügbare</string>
+  <string name="ytdlp_download_quality_download">Herunterladen</string>
+  <string name="ytdlp_download_quality_cancel">Abbrechen</string>
+  <string name="ytdlp_download_quality_link">Qualität für diesen Link auswählen</string>
   <string name="ui_file_size">Dateigröße</string>
   <string name="ui_duration">Dauer</string>
   <string name="ui_bitrate">Bitrate</string>
@@ -1031,6 +1187,7 @@ Bitte starten Sie die App neu, damit alle Änderungen wirksam werden.</string>
   <string name="sort_view_options">Sortier- &amp; Ansichtsoptionen</string>
   <string name="ui_view_options">Ansichtsoptionen</string>
   <string name="ambient_glow">Leuchten</string>
+  <string name="ambient_style_youtube">YouTube</string>
   <string name="ambient_color">Farbe</string>
   <string name="ambient_compositing">Compositing</string>
   <string name="ambient_visual_style">Visueller Stil</string>
@@ -1042,6 +1199,7 @@ Bitte starten Sie die App neu, damit alle Änderungen wirksam werden.</string>
   <string name="lua_no_mpv_folder">Kein MPV-Ordner ausgewählt</string>
   <string name="lua_no_scripts_found">Keine Skripte gefunden</string>
   <string name="ambient_frame_extend">Frame-Erweiterung</string>
+  <string name="ambient_youtube_auto_hint">Der YouTube-Modus ist vollständig automatisch — die Balken werden durch eine weich verschwommene Projektion des aktuellen Frames beleuchtet, genau wie im Ambient-Modus von YouTube.</string>
   <string name="lua_delete_script_title">Skript löschen?</string>
   <string name="lua_delete_script_message">Soll "%1$s" wirklich gelöscht werden? Diese Aktion kann nicht rückgängig gemacht werden.</string>
   <string name="search_category_advanced">Erweitert</string>
@@ -1124,12 +1282,33 @@ Bitte starten Sie die App neu, damit alle Änderungen wirksam werden.</string>
   <string name="media_info_stat_bit_depth">Bittiefe</string>
   <string name="media_info_stat_channels">Kanäle</string>
   <string name="media_info_stat_sample_rate">Abtastrate</string>
+  <string name="onboarding_skip">Überspringen</string>
+  <string name="onboarding_get_started">Los geht\'s</string>
+  <string name="onboarding_all_set_title">Alles bereit</string>
+  <string name="onboarding_all_set_desc">Berechtigungen jederzeit in den Systemeinstellungen ändern.</string>
+  <string name="onboarding_show_tutorial_title">Kurze Tour anzeigen</string>
+  <string name="onboarding_show_tutorial_desc">Drei kurze Tipps nach der Einrichtung</string>
+  <string name="tutorial_tabs_title">Bereiche</string>
+  <string name="tutorial_tabs_desc">Wischen oder tippen zum Wechseln.</string>
+  <string name="tutorial_search_title">Suche</string>
+  <string name="tutorial_search_desc">Jede Datei schnell finden.</string>
+  <string name="tutorial_settings_title">Einstellungen</string>
+  <string name="tutorial_settings_desc">Hier alles anpassen.</string>
+  <string name="onboarding_missing_permissions_title">Nicht erteilt</string>
+  <string name="onboarding_missing_permissions_desc">Diese können später bei Bedarf erteilt werden.</string>
+  <string name="storage_permission_needed_title">Speicherzugriff erforderlich</string>
+  <string name="storage_permission_needed_desc">Speicherzugriff gewähren, um Medien zu durchsuchen und abzuspielen.</string>
+  <string name="storage_permission_grant">Zugriff gewähren</string>
+  <string name="pref_player_web_stream_links_title">Streaming-Website-Links öffnen</string>
+  <string name="pref_player_web_stream_links_summary">Mpv∞ für Links von YouTube, Vimeo, Twitch, Odysee und Bilibili anbieten. Deaktivieren, damit deren eigene Apps sie öffnen.</string>
   <string name="player_unknown_video">Unbekanntes Video</string>
   <string name="ui_logcat">Logcat:</string>
   <string name="ui_home">Startseite</string>
+  <string name="ui_music">Musik</string>
   <string name="ui_recents">Zuletzt</string>
   <string name="ui_playlists">Wiedergabelisten</string>
   <string name="ui_network">Netzwerk</string>
+  <string name="ui_streams">Streams</string>
   <string name="ui_pinned_folder">Angehefteter Ordner</string>
   <string name="ui_folder">Ordner</string>
   <string name="ui_connect_automatically_on_app_launch">Beim App-Start automatisch verbinden</string>
@@ -1154,6 +1333,8 @@ Bitte starten Sie die App neu, damit alle Änderungen wirksam werden.</string>
   <string name="ui_use_https_secure_connection">HTTPS verwenden (sichere Verbindung)</string>
   <string name="ui_username">Benutzername</string>
   <string name="ui_password">Passwort</string>
+  <string name="ui_new_password_keep_existing">Neues Passwort (leer lassen, um das gespeicherte Passwort zu behalten)</string>
+  <string name="ui_clear_saved_password">Gespeichertes Passwort löschen</string>
   <string name="ui_save">Speichern</string>
   <string name="ui_create_new_playlist">Neue Wiedergabeliste erstellen</string>
   <string name="ui_existing_playlists">Vorhandene Wiedergabelisten</string>
@@ -1194,8 +1375,14 @@ Bitte starten Sie die App neu, damit alle Änderungen wirksam werden.</string>
   <string name="ui_advanced_options">Erweiterte Optionen</string>
   <string name="ui_target_size">Zielgröße</string>
   <string name="ui_encoding">Kodierung</string>
+  <string name="ui_av1">AV1</string>
+  <string name="ui_h_265">H.265</string>
+  <string name="ui_h_264">H.264</string>
   <string name="ui_resolution">Auflösung</string>
   <string name="ui_framerate">Bildrate</string>
+  <string name="ui_60fps">60fps</string>
+  <string name="ui_30fps">30fps</string>
+  <string name="ui_24fps">24fps</string>
   <string name="ui_audio_options">Audiooptionen</string>
   <string name="ui_remove_audio">Audio entfernen</string>
   <string name="ui_audio_bitrate">Audio-Bitrate</string>
@@ -1223,10 +1410,19 @@ Bitte starten Sie die App neu, damit alle Änderungen wirksam werden.</string>
   <string name="ui_failed_to_delete">Löschen fehlgeschlagen</string>
   <string name="ui_play_recently_played_or_first_video">Zuletzt wiedergegebenes oder erstes Video abspielen</string>
   <string name="ui_videos">Videos</string>
+  <string name="ui_audio_tab">Audio</string>
   <string name="ui_add_connection">Verbindung hinzufügen</string>
   <string name="ui_local_network">Lokales Netzwerk</string>
+  <string name="ui_jellyfin">Jellyfin</string>
   <string name="ui_no_network_connections">Keine Netzwerkverbindungen</string>
   <string name="ui_no_recent_links">Noch keine aktuellen Stream-Links oder Torrents. Füge oben eine Stream-URL ein, um zu beginnen.</string>
+  <string name="network_bookmark_add">Ordner als Lesezeichen speichern</string>
+  <string name="network_bookmark_remove">Ordner-Lesezeichen entfernen</string>
+  <string name="network_bookmarks_title">Lesezeichenordner</string>
+  <string name="network_bookmarks_manage">Lesezeichenordner verwalten</string>
+  <string name="network_bookmarks_empty_title">Keine Ordner als Lesezeichen gespeichert</string>
+  <string name="network_bookmarks_empty_description">Speichere einen Remote-Ordner als Lesezeichen, um ihn direkt über die Netzwerkseite zu öffnen.</string>
+  <string name="network_bookmark_source_format">%1$s • %2$s</string>
   <string name="ui_add_smb_ftp_or_webdav_connections_to_browse_network_files">SMB-, FTP- oder WebDAV-Verbindungen hinzufügen, um Netzwerkdateien zu durchsuchen</string>
   <string name="ui_stream_link">Stream-Link</string>
   <string name="ui_enter_stream_url">Stream-URL eingeben…</string>
@@ -1309,6 +1505,8 @@ Bitte starten Sie die App neu, damit alle Änderungen wirksam werden.</string>
   <string name="ui_no_android">Kein Android</string>
   <string name="ui_script_runtime">Skript-Laufzeit</string>
   <string name="ui_newly_enabled_scripts_can_load_during_playback_scripts_you_turn">Neu aktivierte Skripte können während der Wiedergabe geladen werden. Deaktivierte Skripte erfordern eventuell ein erneutes Öffnen des Videos, bevor sie vollständig beendet werden.</string>
+  <string name="ui_media">Medien</string>
+  <string name="ui_saved_media">Gespeicherte Links</string>
   <string name="ui_media_info">Medieninformationen</string>
   <string name="ui_analyzing_media_file">Mediendatei wird analysiert...</string>
   <string name="ui_media_tracks_summary">Übersicht der Medientracks</string>
@@ -1384,6 +1582,20 @@ Bitte starten Sie die App neu, damit alle Änderungen wirksam werden.</string>
   <string name="ui_auto_check_for_updates">Automatisch nach Updates suchen</string>
   <string name="ui_check_on_startup">Beim Start prüfen</string>
   <string name="ui_check_for_updates_now">Jetzt nach Updates suchen</string>
+  <string name="ui_update_channel">Update-Kanal</string>
+  <string name="ui_stable_releases">Stabil</string>
+  <string name="ui_preview_builds">Vorschau (Nightly)</string>
+  <string name="ui_preview_builds_summary">Vorschau-Builds sind signierte Testversionen aus den neuesten Mpv∞-Änderungen und können instabil sein.</string>
+  <string name="update_whats_new">Neuigkeiten</string>
+  <string name="update_no_release_notes">Keine Versionshinweise vorhanden.</string>
+  <string name="update_ready_to_install">Bereit zur Installation</string>
+  <string name="update_available">Update verfügbar</string>
+  <string name="update_version_format">Version %1$s</string>
+  <string name="update_release_date">Veröffentlichungsdatum</string>
+  <string name="update_size">Größe</string>
+  <string name="update_unknown_size">Unbekannte Größe</string>
+  <string name="update_beta_build_format">Beta r%1$d</string>
+  <string name="ui_beta_badge_suffix">\u0020(Beta)</string>
   <string name="ui_core_open_source_dependencies_used_by_mpv_infinity">Von Mpv∞ verwendete zentrale Open-Source-Abhängigkeiten.</string>
   <string name="ui_copy_upi_id">UPI-ID kopieren</string>
   <string name="ui_already_using_latest_version">Die neueste Version wird bereits verwendet</string>
@@ -1473,6 +1685,31 @@ Bitte starten Sie die App neu, damit alle Änderungen wirksam werden.</string>
   <string name="ui_manage_yt_dlp_environment">yt-dlp-Umgebung verwalten</string>
   <string name="ui_download_the_latest_wrapper_modules_and_compile_python_friendly">Neueste Wrapper-Module herunterladen und Python-freundliche native Binärdateien in lokalen Sandbox-Ordnern kompilieren.</string>
   <string name="ui_update_to_nightly_build">Auf Nightly-Build aktualisieren</string>
+  <string name="ui_release_channel">Veröffentlichungskanal</string>
+  <string name="ui_install_stable">Stabile Version installieren</string>
+  <string name="ui_update_stable">Stabile Version aktualisieren</string>
+  <string name="ui_switch_to_stable">Zur stabilen Version wechseln</string>
+  <string name="ui_update_nightly">Nightly aktualisieren</string>
+  <string name="ui_switch_to_nightly">Zu Nightly wechseln</string>
+  <string name="ui_playback_defaults">Wiedergabestandards</string>
+  <string name="ui_maximum_quality">Maximale Qualität</string>
+  <string name="ui_automatic">Automatisch</string>
+  <string name="ui_checking_yt_dlp">yt-dlp wird geprüft</string>
+  <string name="ui_yt_dlp_not_installed">yt-dlp ist nicht installiert</string>
+  <string name="ui_yt_dlp_stable_release">Stabile Version</string>
+  <string name="ui_yt_dlp_nightly_build">Nightly-Build</string>
+  <string name="ui_yt_dlp_master_build">Master-Build</string>
+  <string name="ui_yt_dlp_custom_build">Benutzerdefinierter Build</string>
+  <string name="ui_yt_dlp_installed_build">Installierter Build</string>
+  <string name="ui_reading_installed_version">Installierte Version wird gelesen…</string>
+  <string name="ui_install_stable_to_play_web_links">Installiere die stabile Version, um unterstützte Weblinks abzuspielen.</string>
+  <string name="ytdlp_install_prompt_subtitle">Dieser Link benötigt yt-dlp zur Wiedergabe. Jetzt installieren oder später in den Einstellungen konfigurieren.</string>
+  <string name="ytdlp_installing">yt-dlp wird installiert…</string>
+  <string name="ytdlp_install_failed">yt-dlp konnte nicht installiert werden. Überprüfe deine Verbindung und versuche es erneut.</string>
+  <string name="ui_yt_dlp_build_and_commit">Build %1$s • Commit %2$s</string>
+  <string name="ui_yt_dlp_version">Version %1$s</string>
+  <string name="ui_yt_dlp_commit">Commit %1$s</string>
+  <string name="ui_version_unavailable">Version nicht verfügbar</string>
   <string name="ui_streaming_quality">Streaming-Qualität</string>
   <string name="ui_bitrate_caps_apply_when_yt_dlp_reports_audio_bitrate_metadata">Bitratenbegrenzungen gelten, wenn yt-dlp Metadaten zur Audio-Bitrate meldet.</string>
   <string name="ui_generated_format_string">Erzeugter Format-String</string>
@@ -1480,25 +1717,35 @@ Bitte starten Sie die App neu, damit alle Änderungen wirksam werden.</string>
   <string name="ui_automatically_extract_and_load_physical_subtitle_tracks_from_sup">Physische Untertitelspuren automatisch aus unterstützten URLs extrahieren und laden.</string>
   <string name="ui_include_auto_generated_subtitles">Automatisch erzeugte Untertitel einschließen</string>
   <string name="ui_fetch_auto_caption_tracks_e_g_youtube_speech_to_text_when_regula">Automatische Untertitelspuren (z. B. YouTube Sprache-zu-Text) abrufen, wenn reguläre Untertitel fehlen.</string>
+  <string name="ui_all_or_en_ja">all or en.*,ja</string>
   <string name="ui_overrides_app_subtitle_languages_only_for_yt_dlp_downloads">Überschreibt die Untertitelsprachen der App nur für yt-dlp-Downloads.</string>
   <string name="ui_advanced_configurations">Erweiterte Konfigurationen</string>
   <string name="ui_custom_http_agent_proxy_extractor_args_sponsorblock_and_raw_opti">Benutzerdefinierter HTTP-Agent, Proxy, Extraktorargumente, SponsorBlock und Rohoptionen</string>
   <string name="ui_format_sort">Formatsortierung</string>
+  <string name="ui_res_fps_hdr_12_vcodec_vp9_2">res,fps,hdr:12,vcodec:vp9.2</string>
   <string name="ui_passed_to_yt_dlp_as_format_sort_for_advanced_ranking">Wird für erweiterte Rangfolge als format-sort an yt-dlp übergeben.</string>
   <string name="ui_merge_output_format">Zusammengeführtes Ausgabeformat</string>
+  <string name="ui_mp4_mkv_webm">mp4, mkv, webm</string>
   <string name="ui_custom_user_agent_override">Benutzerdefinierte User-Agent-Überschreibung</string>
+  <string name="ui_mozilla_5_0">Mozilla/5.0 ...</string>
   <string name="ui_leave_blank_to_use_default_browser_user_agent_helps_bypass_anti">Leer lassen, um den standardmäßigen Browser-User-Agent zu verwenden. Hilft beim Umgehen von Anti-Bot-Schutz.</string>
   <string name="ui_referer">Referer</string>
   <string name="ui_cookies_file">Cookies-Datei</string>
+  <string name="ui_storage_emulated_0_download_cookies_txt">/storage/emulated/0/Download/cookies.txt</string>
   <string name="ui_proxy">Proxy</string>
+  <string name="ui_socks5_127_0_0_1_1080">socks5://127.0.0.1:1080</string>
   <string name="ui_extractor_args">Extraktorargumente</string>
+  <string name="ui_youtube_player_client_android_web">youtube:player_client=android,web</string>
   <string name="ui_geo_bypass">Geo-Umgehung</string>
   <string name="ui_ask_yt_dlp_to_use_its_extractor_level_region_bypass_logic">yt-dlp anweisen, die regionale Umgehungslogik auf Extraktorebene zu verwenden.</string>
   <string name="ui_live_from_start">Live von Anfang an</string>
   <string name="ui_start_live_streams_from_the_beginning_when_the_extractor_support">Livestreams von Anfang an starten, wenn der Extraktor dies unterstützt.</string>
   <string name="ui_sponsorblock_mark">SponsorBlock-Markierung</string>
+  <string name="ui_sponsor_selfpromo">sponsor,selfpromo</string>
   <string name="ui_sponsorblock_remove">SponsorBlock-Entfernung</string>
+  <string name="ui_sponsor">sponsor</string>
   <string name="ui_raw_yt_dlp_options">Unverarbeitete yt-dlp-Optionen</string>
+  <string name="ui_extractor_args_2">extractor-args=\"youtube:player_client=android,web\"\ngeo-bypass=</string>
   <string name="ui_anything_not_exposed_above_separate_options_with_new_lines_or_co">Alles, was oben nicht angeboten wird. Optionen durch neue Zeilen oder Kommas trennen; Werte mit Kommas in Anführungszeichen setzen.</string>
   <string name="ui_video_title">Videotitel</string>
   <string name="ui_1_06_chapter_1">1:06 • Kapitel 1</string>
@@ -1546,9 +1793,17 @@ Bitte starten Sie die App neu, damit alle Änderungen wirksam werden.</string>
   <string name="oss_libarchive_android_description">Android-Bindings für libarchive zum Entpacken von Untertitelarchiven.</string>
   <string name="oss_libtorrent4j_description">Java-Bindings und native Bibliotheken für BitTorrent-Streaming.</string>
   <string name="oss_markdown_renderer_description">Rendert Markdown als nativen Material-3-Compose-Inhalt.</string>
+  <string name="oss_ffmpeg_mpv_runtime_description">FFmpeg-Bibliotheken, die in den MPV-AARs gebündelt und ohne GPL- sowie unfreie Optionen erstellt wurden.</string>
+  <string name="oss_ffmpeg_cli_description">Separate eigenständige FFmpeg- und ffprobe-Hilfsprogramme für yt-dlp; für diesen Build gilt LGPL 2.1 oder neuer.</string>
+  <string name="oss_libplacebo_description">Videorenderer, der für Vulkan und erweitertes Rendering mit libmpv verknüpft ist.</string>
+  <string name="oss_mbedtls_description">TLS-Bibliothek für FFmpeg; aus der Doppellizenz wurde Apache 2.0 ausgewählt.</string>
   <string name="oss_mpv_description">Native Medienwiedergabe-Engine für Audio, Video und Untertitel.</string>
   <string name="oss_mpvlib_android_description">Android-libmpv-Wrapper für die Standard- und No-Vulkan-Builds.</string>
+  <string name="oss_mpv_anime_track_selector_description">Logik zur Titelauswahl, angepasst aus dem MPV-Anime-Build-Skript.</string>
+  <string name="oss_cuboid_visualizer_description">Compose-Visualizer, angepasst aus dem öffentlichen CodePen von Niklas Knaack und unter MIT lizenziert.</string>
   <string name="oss_quickjs_ng_description">Eingebettete JavaScript-Engine zum Lösen von yt-dlp-Herausforderungen.</string>
+  <string name="oss_quickjs_kt_description">Kotlin-Bindings und eingebettete JavaScript-Engine für Katalogskripte.</string>
+  <string name="oss_c_vector_description">Low-Level-Vektorhilfsprogramm, das mit der eingebetteten JavaScript-Engine gebündelt ist.</string>
   <string name="filter_preset_none">Keine</string>
   <string name="filter_preset_vivid">Lebendig</string>
   <string name="filter_preset_warm_tone">Warmer Farbton</string>
@@ -1589,42 +1844,6 @@ Bitte starten Sie die App neu, damit alle Änderungen wirksam werden.</string>
   <string name="syncplay_connect">Verbinden</string>
   <string name="syncplay_connecting">Verbindung wird hergestellt…</string>
   <string name="syncplay_player_status">Syncplay: %1$s (%2$d Benutzer)</string>
-  <!-- Additional synchronized strings -->
-  <string name="app_name">Mpv∞</string>
-  <string name="github_repo_url">https://github.com/ZHINFINITY/Mpv-infinity</string>
-  <string name="hdr_mode_bt2020">BT.2020</string>
-  <string name="hdr_mode_bt2100_hlg">BT.2100 HLG</string>
-  <string name="hdr_mode_bt2100_pq">BT.2100 PQ</string>
-  <string name="hdr_mode_hlg_short">HLG</string>
-  <string name="hdr_mode_pq_short">PQ</string>
-  <string name="player_sheets_chapter_title_substitute_audio">Audio #%d</string>
-  <string name="player_sheets_chapter_title_substitute_subtitle">Untertitel #%d</string>
-  <string name="player_sheets_frame_navigation_snapshot_saved">In Pictures/mpvSnaps gespeichert</string>
-  <string name="player_sheets_track_lang_wo_title">#%1$d: %2$s</string>
-  <string name="player_sheets_track_title_w_lang">#%1$d: %2$s (%3$s)</string>
-  <string name="player_sheets_track_title_wo_lang">#%1$d: %2$s</string>
-  <string name="pref_about_donate_kofi_url">https://ko-fi.com/zhinfinity</string>
-  <string name="pref_about_donate_paypal_url">https://paypal.me/InfinityxEternity</string>
-  <string name="pref_about_donate_upi_id">zhjjk001-1@oksbi</string>
-  <string name="ui_24fps">24fps</string>
-  <string name="ui_30fps">30fps</string>
-  <string name="ui_60fps">60fps</string>
-  <string name="ui_all_or_en_ja">all or en.*,ja</string>
-  <string name="ui_av1">AV1</string>
-  <string name="ui_extractor_args_2">extractor-args=\"youtube:player_client=android,web\"\ngeo-bypass=</string>
-  <string name="ui_h_264">H.264</string>
-  <string name="ui_h_265">H.265</string>
-  <string name="ui_mozilla_5_0">Mozilla/5.0 ...</string>
-  <string name="ui_mp4_mkv_webm">mp4, mkv, webm</string>
-  <string name="ui_res_fps_hdr_12_vcodec_vp9_2">res,fps,hdr:12,vcodec:vp9.2</string>
-  <string name="ui_socks5_127_0_0_1_1080">socks5://127.0.0.1:1080</string>
-  <string name="ui_sponsor">sponsor</string>
-  <string name="ui_sponsor_selfpromo">sponsor,selfpromo</string>
-  <string name="ui_storage_emulated_0_download_cookies_txt">/storage/emulated/0/Download/cookies.txt</string>
-  <string name="ui_youtube_player_client_android_web">youtube:player_client=android,web</string>
-  <string name="volume_slider_absolute_value">%d</string>
-
-  <!-- Secure Folder -->
   <string name="secure_folder_title">Sicherer Ordner</string>
   <string name="secure_folder_summary">PIN-geschützter Bereich für Videos, die in der Bibliothek ausgeblendet werden sollen.</string>
   <string name="secure_folder_dont_ask_again">Nicht mehr fragen</string>
@@ -1734,7 +1953,7 @@ Bitte starten Sie die App neu, damit alle Änderungen wirksam werden.</string>
   <string name="pref_codecs_canonical_name">Kanonischer Name: %s</string>
   <string name="pref_codecs_max_instances">Max. gleichzeitige Instanzen: %d</string>
   <string name="pref_codecs_supported_profiles">Unterstützte Profile:</string>
-  <string name="pref_codecs_hdr_tag">10-Bit HDR</string>
+  <string name="pref_codecs_hdr_tag">10-Bit-HDR</string>
   <string name="pref_codecs_report_copied">Codec-Bericht in Zwischenablage kopiert</string>
   <string name="pref_codecs_bitrate_range">Bitratenbereich: %s</string>
   <string name="pref_codecs_sample_rates">Unterstützte Abtastraten:</string>
@@ -1743,116 +1962,11 @@ Bitte starten Sie die App neu, damit alle Änderungen wirksam werden.</string>
   <string name="pref_codecs_hardware_features">Hardware-Funktionen:</string>
   <string name="pref_codecs_min_resolution">Min. Auflösung: %s</string>
   <string name="pref_codecs_alignment">Pixelausrichtung: %1$dx%2$d</string>
-  <string name="ui_music">Music</string>
-  <string name="pref_nav_music_title">Musik-Tab anzeigen</string>
-  <string name="pref_nav_music_summary">Musik in der unteren Navigationsleiste anzeigen oder ausblenden</string>
   <string name="player_up_next_title">Wiedergabeliste</string>
   <string name="player_lyrics_title">Songtext</string>
   <string name="lyrics_source_embedded">Eingebettet</string>
   <string name="lyrics_source_online">Online</string>
   <string name="lyrics_source_local">Lokal (.lrc)</string>
-  <string name="pref_enable_p2p_streaming_title">P2P-Torrent-Streaming aktivieren</string>
-  <string name="pref_enable_p2p_streaming_summary">Abspielbare Medien aus Magnet-Links und Torrent-Dateien streamen</string>
-  <string name="pref_audio_drc_title">Dynamikbereich-Kompression (DRC)</string>
-  <string name="pref_audio_drc_summary">Dynamikbereich des Tons komprimieren, um leise Dialoge zu verstärken und laute Geräusche zu dämpfen</string>
-  <string name="pref_audio_effects">Audioverarbeitung</string>
-  <string name="toast_file_not_found">Datei ist nicht mehr vorhanden</string>
-  <string name="pref_audio_visualizer_style_particle">Partikel</string>
-  <string name="pref_section_p2p_streaming">P2P-Streaming</string>
-  <string name="toast_torrent_streaming_disabled">Aktiviere zuerst P2P-Torrent-Streaming in den erweiterten Einstellungen</string>
-  <string name="ui_recent_stream_links">Letzte Links</string>
-  <string name="ui_torrent_files">Torrents</string>
-  <string name="ui_expand_torrent_group">Torrent-Dateien anzeigen</string>
-  <string name="ui_collapse_torrent_group">Torrent-Dateien ausblenden</string>
-  <string name="ui_delete_torrent_group">Torrent entfernen</string>
-  <string name="torrent_picker_back">Torrent schließen</string>
-  <string name="torrent_picker_choose_title">Wähle, was abgespielt werden soll</string>
-  <string name="torrent_picker_finding_details">Cover und Details werden gesucht…</string>
-  <string name="torrent_picker_play_file">%1$s abspielen</string>
-  <string name="torrent_picker_preparing_title">Torrent wird gelesen</string>
-  <string name="torrent_picker_preparing_description">Verbinde mit Peers und suche abspielbare Dateien…</string>
-  <string name="torrent_picker_error_title">Torrent konnte nicht geöffnet werden</string>
-  <string name="torrent_picker_retry">Erneut versuchen</string>
-  <string name="torrent_picker_episode_label">Staffel %1$d • Folge %2$d</string>
-  <string name="torrent_picker_single_episode_label">Folge %1$d</string>
-  <string name="ui_new_password_keep_existing">Neues Passwort (leer lassen, um das gespeicherte Passwort zu behalten)</string>
-  <string name="ui_clear_saved_password">Gespeichertes Passwort löschen</string>
-  <plurals name="ui_torrent_group_file_count">
-    <item quantity="one">%1$d abspielbare Datei</item>
-    <item quantity="other">%1$d abspielbare Dateien</item>
-  </plurals>
-  <plurals name="torrent_picker_playable_count">
-    <item quantity="one">%1$d abspielbare Datei</item>
-    <item quantity="other">%1$d abspielbare Dateien</item>
-  </plurals>
-    <string name="pref_nav_jellyfin_title">Jellyfin-Tab anzeigen</string>
-    <string name="pref_nav_jellyfin_summary">Jellyfin in der unteren Navigationsleiste ein- oder ausblenden</string>
-    <string name="pref_autoplay_next_audio_title">Nächstes Audio automatisch abspielen</string>
-    <string name="pref_autoplay_next_audio_summary">Nächsten Audiotrack automatisch abspielen, wenn der aktuelle endet</string>
-    <string name="pref_autoplay_next_audio_summary_disabled">Beim aktuellen Audiotrack bleiben, wenn er endet</string>
-    <string name="pref_enable_hls_proxy_title">HLS-Streaming-Proxy aktivieren</string>
-    <string name="pref_enable_hls_proxy_summary">Adaptive HLS-Manifeste normalisieren und getrennte Audio-/Videostreams verarbeiten</string>
-    <string name="ui_recent_streams">Aktuelle Stream-Links</string>
-    <string name="ui_autofill_stream_url">Stream-URL automatisch ausfüllen</string>
-    <string name="ui_torrent_media_anime">Anime</string>
-    <string name="ui_torrent_media_series">Serie</string>
-    <string name="ui_torrent_media_movie">Film</string>
-    <string name="ui_torrent_media_torrent">Torrent</string>
-    <string name="ui_resume_playback">Fortsetzen</string>
-    <string name="ui_play_now">Abspielen</string>
-    <string name="ui_show_more">Mehr anzeigen</string>
-    <string name="ui_show_less">Weniger anzeigen</string>
-    <string name="ui_episodes">Episoden</string>
-    <string name="ui_no_torrents_title">Keine Torrents gespeichert</string>
-    <string name="ui_no_torrents_description">Fügen Sie oben einen Magnet-Link oder eine Torrent-URL ein, um Anime und Filme zu streamen.</string>
-    <string name="ui_no_saved_media_title">Keine Links gespeichert</string>
-    <string name="ui_no_saved_media_description">Fügen Sie eine Stream-URL oder einen Magnet-Link ein oder speichern Sie aus den letzten Links, um Ihre Mediensammlung aufzubauen.</string>
-    <string name="ui_save_to_media">In Medien speichern</string>
-    <string name="ui_search_episodes">Episoden suchen…</string>
-    <string name="ui_sort_ascending">Aufsteigend sortieren</string>
-    <string name="ui_sort_descending">Absteigend sortieren</string>
-    <string name="ui_no_matching_episodes">Keine passenden Episoden</string>
-    <string name="ui_buffering">Puffern…</string>
-    <string name="ui_jellyfin">Jellyfin</string>
-    <string name="ui_media">Medien</string>
-    <string name="ui_saved_media">Gespeicherte Links</string>
-  <string name="pref_mpv_conf_overrides_title">Eigentümerschaft von mpv.conf-Optionen</string>
-  <string name="pref_mpv_conf_overrides_summary_app_owned">Die App steuert alle unterstützten Wiedergabeoptionen (empfohlen)</string>
-  <string name="pref_mpv_conf_overrides_summary_config_owned">%1$d Gruppen ausgewählt, %2$d App-Optionen an mpv.conf übergeben</string>
-  <string name="pref_mpv_conf_overrides_dialog_title">Optionen durch mpv.conf steuern lassen</string>
-  <string name="pref_mpv_conf_overrides_dialog_message">Kategorien oder Optionen auswählen, die an mpv.conf übergeben werden. App-Steuerelemente dafür werden deaktiviert.</string>
-  <string name="pref_mpv_conf_overrides_empty_config_warning">Keine aktive mpv.conf erkannt. Standardwerte werden bis zur Konfiguration verwendet.</string>
-  <string name="pref_mpv_conf_overrides_protected_message">Android-Lebenszyklus, Wiedergabebefehle, Header und Zertifikate bleiben zur Stabilität App-gesteuert.</string>
-  <string name="pref_mpv_conf_overrides_reset">Alle Gruppen wieder durch die App steuern</string>
-  <string name="pref_mpv_conf_overrides_selected_count">%1$d von %2$d Optionen ausgewählt</string>
-  <string name="pref_mpv_conf_override_renderer">Renderer und GPU-Backend</string>
-  <string name="pref_mpv_conf_override_renderer_summary">Überschreibt GPU-API-, Vulkan- und Profileinstellungen.</string>
-  <string name="pref_mpv_conf_override_decoder">Hardware-Decoder</string>
-  <string name="pref_mpv_conf_override_decoder_summary">Überschreibt Hardware-Decoder- und Abstimmungseinstellungen.</string>
-  <string name="pref_mpv_conf_override_hdr_shaders">HDR-Ausgabe und Shader</string>
-  <string name="pref_mpv_conf_override_hdr_shaders_summary">Überschreibt HDR-Ausgabe, Anime4K- und Shader-Einstellungen.</string>
-  <string name="pref_mpv_conf_override_video_filters">Videofilter</string>
-  <string name="pref_mpv_conf_override_video_filters_summary">Überschreibt Bildfilter, Debanding und Transformationen.</string>
-  <string name="pref_mpv_conf_override_video_geometry">Videogeometrie</string>
-  <string name="pref_mpv_conf_override_video_geometry_summary">Überschreibt Zoom, Verschiebung und Seitenverhältnis.</string>
-  <string name="pref_mpv_conf_override_audio_output">Audioausgabe</string>
-  <string name="pref_mpv_conf_override_audio_output_summary">Überschreibt Audioverzögerungs- und Lautstärkeeinstellungen.</string>
-  <string name="pref_mpv_conf_override_audio_filters">Audiofilter</string>
-  <string name="pref_mpv_conf_override_audio_filters_summary">Überschreibt Equalizer-, DRC- und Kanalfilter.</string>
-  <string name="pref_mpv_conf_override_subtitle_loading">Untertitel laden</string>
-  <string name="pref_mpv_conf_override_subtitle_loading_summary">Überschreibt Untertitelsuche, Sprache und Schriftarten.</string>
-  <string name="pref_mpv_conf_override_subtitle_style">Untertitel-Timing und -Stil</string>
-  <string name="pref_mpv_conf_override_subtitle_style_summary">Überschreibt Verzögerung, Position, Schriftarten und Farben.</string>
-  <string name="pref_mpv_conf_override_playback_timing">Wiedergabe-Timing</string>
-  <string name="pref_mpv_conf_override_playback_timing_summary">Überschreibt Geschwindigkeit, Tonhöhe, Suchen und Sync.</string>
-  <string name="pref_mpv_conf_override_network_buffering">Netzwerkpufferung</string>
-  <string name="pref_mpv_conf_override_network_buffering_summary">Überschreibt Cache, Wiederverbindung und Pufferrichtlinie.</string>
-  <string name="pref_mpv_conf_override_ytdlp">yt-dlp-Integration</string>
-  <string name="pref_mpv_conf_override_ytdlp_summary">Überschreibt App-gesteuerte yt-dlp-Optionen.</string>
-  <string name="pref_mpv_conf_override_osd">Sicherheitsbereich des OSD</string>
-  <string name="pref_mpv_conf_override_osd_summary">Überschreibt OSD-Ränder und Sicherheitsbereiche.</string>
-  <string name="mpv_config_owned_title">Von mpv.conf gesteuert</string>
-  <string name="mpv_config_owned_message">Dieses App-Steuerelement ist deaktiviert, weil mindestens eine benötigte Option in den erweiterten Einstellungen mpv.conf zugewiesen ist.</string>
   <string name="pref_lyrics_translation_category">Songtext-Übersetzung &amp; Romanisierung</string>
   <string name="pref_lyrics_auto_translate">Fremdsprachige Songtexte automatisch übersetzen</string>
   <string name="pref_lyrics_auto_translate_summary">Fremdsprachige Songtexte automatisch in die bevorzugte Sprache übersetzen</string>
@@ -1866,8 +1980,8 @@ Bitte starten Sie die App neu, damit alle Änderungen wirksam werden.</string>
   <string name="lyrics_translation_failed">Der Songtext konnte nicht übersetzt werden. Versuche es erneut.</string>
   <string name="lyrics_translation_partial">Einige Songtextzeilen konnten nicht übersetzt werden.</string>
   <string name="lyrics_select_language">Zielsprache auswählen</string>
-
-  <!-- Clip -->
+  <string name="clip_end_short">Ende</string>
+  <string name="clip_start_short">Start</string>
   <string name="clip_action">Clip erstellen</string>
   <string name="clip_options">Clip-Optionen</string>
   <string name="clip_crop_action">Zuschneiden &amp; Clip erstellen</string>
@@ -1891,8 +2005,6 @@ Bitte starten Sie die App neu, damit alle Änderungen wirksam werden.</string>
   <string name="clip_video_unavailable">Videoabmessungen sind noch nicht verfügbar</string>
   <string name="clip_export_busy">Ein anderer Clip wird bereits erstellt</string>
   <string name="clip_export_failed">Clip fehlgeschlagen: %1$s</string>
-
-  <!-- Seerr (Overseerr / Jellyseerr) Requests & Discover -->
   <string name="seerr_requests">Anfragen</string>
   <string name="seerr_discover">Entdecken</string>
   <string name="seerr_connect_server">Mit Seerr verbinden</string>
@@ -1928,6 +2040,8 @@ Bitte starten Sie die App neu, damit alle Änderungen wirksam werden.</string>
   <string name="seerr_status_partially_available">Teilweise verfügbar</string>
   <string name="seerr_status_requested">Angefragt</string>
   <string name="seerr_status_not_requested">Nicht angefragt</string>
+  <string name="seerr_status_deleted">Gelöscht</string>
+  <string name="seerr_status_blacklisted">Auf die schwarze Liste gesetzt</string>
   <string name="seerr_approve">Genehmigen</string>
   <string name="seerr_decline">Ablehnen</string>
   <string name="seerr_delete">Löschen</string>
@@ -1941,73 +2055,6 @@ Bitte starten Sie die App neu, damit alle Änderungen wirksam werden.</string>
   <string name="seerr_tab_movies">Filme</string>
   <string name="seerr_tab_tv">Serien</string>
   <string name="seerr_tab_my_requests">Meine Anfragen</string>
-  <string name="ui_release_channel">Veröffentlichungskanal</string>
-  <string name="ui_install_stable">Stabile Version installieren</string>
-  <string name="ui_update_stable">Stabile Version aktualisieren</string>
-  <string name="ui_switch_to_stable">Zur stabilen Version wechseln</string>
-  <string name="ui_update_nightly">Nightly aktualisieren</string>
-  <string name="ui_switch_to_nightly">Zu Nightly wechseln</string>
-  <string name="ui_playback_defaults">Wiedergabestandards</string>
-  <string name="ui_maximum_quality">Maximale Qualität</string>
-  <string name="ui_automatic">Automatisch</string>
-  <string name="ui_checking_yt_dlp">yt-dlp wird geprüft</string>
-  <string name="ui_yt_dlp_not_installed">yt-dlp ist nicht installiert</string>
-  <string name="ui_yt_dlp_stable_release">Stabile Version</string>
-  <string name="ui_yt_dlp_nightly_build">Nightly-Build</string>
-  <string name="ui_yt_dlp_master_build">Master-Build</string>
-  <string name="ui_yt_dlp_custom_build">Benutzerdefinierter Build</string>
-  <string name="ui_yt_dlp_installed_build">Installierter Build</string>
-  <string name="ui_reading_installed_version">Installierte Version wird gelesen…</string>
-  <string name="ui_install_stable_to_play_web_links">Installiere die stabile Version, um unterstützte Weblinks abzuspielen.</string>
-  <string name="ui_yt_dlp_build_and_commit">Build %1$s • Commit %2$s</string>
-  <string name="ui_yt_dlp_version">Version %1$s</string>
-  <string name="ui_yt_dlp_commit">Commit %1$s</string>
-  <string name="ui_version_unavailable">Version nicht verfügbar</string>
-  <string name="ui_update_channel">Update-Kanal</string>
-  <string name="ui_stable_releases">Stabil</string>
-  <string name="ui_preview_builds">Vorschau (Nightly)</string>
-  <string name="ui_preview_builds_summary">Vorschau-Builds sind signierte Testversionen aus den neuesten Mpv∞-Änderungen und können instabil sein.</string>
-  <string name="update_whats_new">Neuigkeiten</string>
-  <string name="update_no_release_notes">Keine Versionshinweise vorhanden.</string>
-  <string name="update_ready_to_install">Bereit zur Installation</string>
-  <string name="update_available">Update verfügbar</string>
-  <string name="update_version_format">Version %1$s</string>
-  <string name="update_release_date">Veröffentlichungsdatum</string>
-  <string name="update_size">Größe</string>
-  <string name="update_unknown_size">Unbekannte Größe</string>
-  <string name="update_beta_build_format">Beta r%1$d</string>
-  <string name="ui_beta_badge_suffix">\u0020(Beta)</string>
-  <string name="player_video_quality">Videoqualität</string>
-  <string name="player_video_quality_summary">Wähle eine verfügbare Qualität für diesen Stream.</string>
-  <string name="player_video_quality_button">Videoqualität</string>
-  <string name="network_bookmark_add">Ordner als Lesezeichen speichern</string>
-  <string name="network_bookmark_remove">Ordner-Lesezeichen entfernen</string>
-  <string name="network_bookmarks_title">Lesezeichenordner</string>
-  <string name="network_bookmarks_manage">Lesezeichenordner verwalten</string>
-  <string name="network_bookmarks_empty_title">Keine Ordner als Lesezeichen gespeichert</string>
-  <string name="network_bookmarks_empty_description">Speichere einen Remote-Ordner als Lesezeichen, um ihn direkt über die Netzwerkseite zu öffnen.</string>
-  <string name="network_bookmark_source_format">%1$s • %2$s</string>
-  <string name="onboarding_skip">Überspringen</string>
-  <string name="onboarding_get_started">Los geht\'s</string>
-  <string name="onboarding_all_set_title">Alles bereit</string>
-  <string name="onboarding_all_set_desc">Berechtigungen jederzeit in den Systemeinstellungen ändern.</string>
-  <string name="onboarding_show_tutorial_title">Kurze Tour anzeigen</string>
-  <string name="onboarding_show_tutorial_desc">Drei kurze Tipps nach der Einrichtung</string>
-  <string name="tutorial_tabs_title">Bereiche</string>
-  <string name="tutorial_tabs_desc">Wischen oder tippen zum Wechseln.</string>
-  <string name="tutorial_search_title">Suche</string>
-  <string name="tutorial_search_desc">Jede Datei schnell finden.</string>
-  <string name="tutorial_settings_title">Einstellungen</string>
-  <string name="tutorial_settings_desc">Hier alles anpassen.</string>
-  <string name="onboarding_missing_permissions_title">Nicht erteilt</string>
-  <string name="onboarding_missing_permissions_desc">Diese können später bei Bedarf erteilt werden.</string>
-  <string name="storage_permission_needed_title">Speicherzugriff erforderlich</string>
-  <string name="storage_permission_needed_desc">Speicherzugriff gewähren, um Medien zu durchsuchen und abzuspielen.</string>
-  <string name="storage_permission_grant">Zugriff gewähren</string>
-  <string name="pref_player_web_stream_links_title">Streaming-Website-Links öffnen</string>
-  <string name="pref_player_web_stream_links_summary">Mpv∞ für Links von YouTube, Vimeo, Twitch, Odysee und Bilibili anbieten. Deaktivieren, damit deren eigene Apps sie öffnen.</string>
-
-  <!-- Downloads -->
   <string name="downloads_title">Downloads</string>
   <string name="downloads_notification_channel">Downloads</string>
   <string name="downloads_notification_channel_description">Zeigt den Fortschritt von Datei-Downloads</string>
@@ -2041,4 +2088,161 @@ Bitte starten Sie die App neu, damit alle Änderungen wirksam werden.</string>
   <string name="downloads_episodes_queued">%1$d Episoden zum Download eingereiht</string>
   <string name="downloads_play">Abspielen</string>
   <string name="downloads_open_downloads">Downloads öffnen</string>
+  <string name="extra_features_title">Zusatzfunktionen</string>
+  <string name="extra_features_section_safe">Optionale Werkzeuge</string>
+  <string name="extra_features_intro">Aktiviere zusätzliche Bibliothekswerkzeuge nach Bedarf. Diese Funktionen sind optional und ändern das Wiedergabeverhalten standardmäßig nicht.</string>
+  <string name="extra_features_smart_collections">Intelligente Sammlungen</string>
+  <string name="extra_features_smart_collections_summary">Dynamische Sammlungen für ungesehene, teilweise gesehene, kürzlich hinzugefügte und kürzlich abgespielte Medien anzeigen.</string>
+  <string name="extra_features_watch_statistics">Wiedergabestatistiken</string>
+  <string name="extra_features_watch_statistics_summary">Wiedergabezeit, Fortschritt und Zusammenfassungen der Bibliotheksaktivität erfassen.</string>
+  <string name="extra_features_watch_statistics_count">Zuletzt abgespielte Einträge erfasst: %1$d</string>
+  <string name="extra_features_smart_collections_count">Dynamische Kandidaten: %1$d kürzlich, %2$d mit Wiedergabeverlauf</string>
+  <string name="extra_features_playback_diagnostics_status">Die Diagnoseaufzeichnung ist für zukünftige Wiedergabefehler aktiviert.</string>
+  <string name="extra_features_library_health_count">Fehlende lokale Dateien im aktuellen Verlauf: %1$d</string>
+  <string name="extra_features_quality_filters_count">Einträge hoher Qualität: %1$d; Medienkandidaten: %2$d</string>
+  <string name="extra_features_playback_diagnostics">Wiedergabediagnose</string>
+  <string name="extra_features_playback_diagnostics_summary">Nützliche Details zu Wiedergabefehlern für Fehlerbehebung und Supportberichte speichern.</string>
+  <string name="extra_features_library_health">Bibliothekszustandsbericht</string>
+  <string name="extra_features_library_health_summary">Fehlende Dateien, nicht lesbare Medien, veraltete Einträge und fehlgeschlagene Vorschaubilder finden.</string>
+  <string name="extra_features_quality_filters">Medienqualitätsfilter</string>
+  <string name="extra_features_quality_filters_summary">Medien nach Auflösung, HDR, Codec, Bitrate, Dauer und Untertitelverfügbarkeit filtern.</string>
+  <string name="extra_features_activity_log">Bibliotheksaktivitätsprotokoll</string>
+  <string name="extra_features_activity_log_summary">Kürzliche Hinzufügungen, Entfernungen, Umbenennungen, Scans und Änderungen des Wiedergabestatus anzeigen.</string>
+  <string name="extra_features_activity_log_entry">Letzte Aktivität: %1$s</string>
+  <string name="pref_navidrome_title">Navidrome</string>
+  <string name="pref_navidrome_no_server">Verbinde einen Navidrome- oder kompatiblen Subsonic-Server, um deine Musik zu durchsuchen und abzuspielen.</string>
+  <string name="audiobooks_title">Hörbücher</string>
+  <string name="audiobook_import_files">Buchdateien importieren</string>
+  <string name="audiobook_import_folder">Hörbuchordner auswählen</string>
+  <string name="audiobook_folder_source">Ordnerquelle</string>
+  <string name="audiobook_choose_folder">Hörbuchordner auswählen</string>
+  <string name="audiobook_choose_folder_hint">Wähle den Ordner mit deinen Hörbüchern aus. Es wird nichts kopiert oder importiert.</string>
+  <string name="audiobook_back">Zurück</string>
+  <string name="audiobook_root">Stammverzeichnis</string>
+  <string name="audiobook_folder">Ordner</string>
+  <string name="audiobook_audio_file">Audiodatei</string>
+  <string name="audiobook_importing">%1$d von %2$d wird importiert</string>
+  <string name="audiobook_import_failed">Buch konnte nicht importiert werden: %1$s</string>
+  <string name="audiobook_no_audio">Keine unterstützten Audiodateien gefunden.</string>
+  <string name="audiobook_empty">Keine Hörbücher</string>
+  <string name="audiobook_title">Buchtitel</string>
+  <string name="audiobook_subtitle">Untertitel</string>
+  <string name="audiobook_stop_before_remove">Beende zuerst das Anhören dieses Buchs, bevor du es entfernst.</string>
+  <string name="audiobook_author">Autor</string>
+  <string name="audiobook_narrator">Sprecher</string>
+  <string name="audiobook_series">Serie</string>
+  <string name="audiobook_series_part">Buchnummer</string>
+  <string name="audiobook_description">Beschreibung</string>
+  <string name="audiobook_genre">Genre</string>
+  <string name="audiobook_language">Sprache</string>
+  <string name="audiobook_publisher">Verlag</string>
+  <string name="audiobook_published">Veröffentlicht</string>
+  <string name="audiobook_isbn" translatable="false">ISBN</string>
+  <string name="audiobook_asin" translatable="false">ASIN</string>
+  <string name="audiobook_abridged">Gekürzt</string>
+  <string name="audiobook_unabridged">Ungekürzt</string>
+  <string name="audiobook_details">Buchdetails</string>
+  <string name="audiobook_edit">Buch bearbeiten</string>
+  <string name="audiobook_search_online_cover">Online-Cover und -Infos suchen</string>
+  <string name="audiobook_search_online_title">Online-Bildmaterial suchen</string>
+  <string name="audiobook_search_online_query">Nach Titel, Autor oder Stichwörtern suchen</string>
+  <string name="audiobook_search_online_searching">Apple Books und Open Library werden durchsucht…</string>
+  <string name="audiobook_search_online_empty">Keine Online-Cover für diese Anfrage gefunden.</string>
+  <string name="audiobook_save">Speichern</string>
+  <string name="audiobook_remove">Aus Bibliothek entfernen</string>
+  <string name="audiobook_remove_confirmation">„%1$s“ und den Hörfortschritt sowie Lesezeichen entfernen? Audiodateien werden nicht gelöscht.</string>
+  <string name="audiobook_continue">Weiterhören</string>
+  <string name="audiobook_start_over">Von vorne beginnen</string>
+  <string name="audiobook_mark_finished">Als abgeschlossen markieren</string>
+  <string name="audiobook_mark_unfinished">Als nicht abgeschlossen markieren</string>
+  <string name="audiobook_all">Alle Bücher</string>
+  <string name="audiobook_folders">Ordner</string>
+  <string name="audiobook_not_started">Nicht begonnen</string>
+  <string name="audiobook_in_progress">In Bearbeitung</string>
+  <string name="audiobook_finished">Abgeschlossen</string>
+  <string name="audiobook_remaining">%1$s verbleibend</string>
+  <string name="audiobook_book_time">Buch</string>
+  <string name="audiobook_chapters">Kapitel</string>
+  <string name="audiobook_previous_chapter">Vorheriges Kapitel</string>
+  <string name="audiobook_next_chapter">Nächstes Kapitel</string>
+  <string name="stream_link_unsupported">Dieser Stream-Link ist keine unterstützte direkte HTTP- oder HTTPS-Adresse.</string>
+  <string name="audiobook_chapter_number">Kapitel %1$d</string>
+  <string name="audiobook_files">Dateien</string>
+  <string name="audiobook_bookmarks">Lesezeichen</string>
+  <string name="audiobook_add_bookmark">Lesezeichen hinzufügen</string>
+  <string name="audiobook_bookmark_name">Name des Lesezeichens</string>
+  <string name="audiobook_no_bookmarks">Keine Lesezeichen</string>
+  <string name="audiobook_delete_bookmark">Lesezeichen löschen</string>
+  <string name="audiobook_sleep_timer">Einschlaf-Timer</string>
+  <string name="audiobook_timer_off">Aus</string>
+  <string name="audiobook_end_chapter">Kapitelende</string>
+  <string name="audiobook_minutes">%1$d Minuten</string>
+  <string name="audiobook_smart_rewind">Nach einer Pause zurückspulen</string>
+  <string name="audiobook_seconds">%1$d Sekunden</string>
+  <string name="audiobook_rewind">15 Sekunden zurück</string>
+  <string name="audiobook_forward">30 Sekunden vor</string>
+  <string name="audiobook_pause">Pause</string>
+  <string name="audiobook_stop">Anhören beenden</string>
+  <string name="audiobook_search">Bücher, Autoren und Sprecher suchen</string>
+  <string name="audiobook_save_failed">Der Hörfortschritt konnte nicht gespeichert werden.</string>
+  <string name="audiobook_play_failed">Dieses Buch konnte nicht geöffnet werden. Prüfe, ob die Dateien noch zugänglich sind.</string>
+  <string name="audiobook_retry">Erneut versuchen</string>
+  <string name="playback_bookmarks_empty">Keine Lesezeichen oder Kapitel</string>
+  <string name="playback_bookmark_update_failed">Lesezeichen konnten nicht aktualisiert werden.</string>
+  <string name="audiobook_no_text">Keine bereitgestellten Liedtexte oder kein Transkript</string>
+  <string name="player_seek_backward">%1$s zurückspulen</string>
+  <string name="player_seek_forward">%1$s vorspulen</string>
+  <string name="audio_swipe_delete_title">Audio löschen?</string>
+  <string name="audio_swipe_delete_folder_message">%1$d Audiodateien in %2$s und seinen Unterordnern dauerhaft löschen? Andere Dateien und Ordner bleiben erhalten. Dies kann nicht rückgängig gemacht werden.</string>
+  <string name="audio_swipe_loading">Audiodateien werden gesammelt</string>
+  <string name="audio_swipe_folder_empty">Keine Audiodateien in diesem Ordner gefunden</string>
+  <string name="playlist_connect_source_title">Keine verbundenen Quellen</string>
+  <string name="playlist_connect_source_message">Verbinde zuerst eine Quelle im Netzwerk-Tab — hier werden nur verbundene Quellen angezeigt.</string>
+  <string name="music_source_local">Lokales Gerät</string>
+  <string name="music_source_jellyfin">Jellyfin-Musik</string>
+  <string name="music_source_navidrome">Navidrome-Musik</string>
+  <string name="music_source_manage_servers">Medienserver</string>
+  <string name="pref_custom_theme_title">Benutzerdefinierte Themen</string>
+  <string name="pref_custom_theme_summary">Ein Foto- oder Videothema speichern und später anpassen.</string>
+  <string name="pref_custom_theme_selected">Im Themenband ausgewählt: %1$s</string>
+  <string name="pref_custom_theme_edit">Thema bearbeiten</string>
+  <string name="pref_custom_theme_delete">Thema löschen</string>
+  <string name="pref_custom_theme_add">Foto- oder Videothema hinzufügen</string>
+  <string name="pref_custom_theme_create">Benutzerdefiniertes Thema erstellen</string>
+  <string name="pref_custom_theme_edit_title">Benutzerdefiniertes Thema bearbeiten</string>
+  <string name="pref_custom_theme_preview">Live-Vorschau</string>
+  <string name="pref_custom_theme_hide_options">Bearbeitungsoptionen ausblenden</string>
+  <string name="pref_custom_theme_edit_background">Hintergrund bearbeiten</string>
+  <string name="pref_custom_theme_media_framing">Medienrahmen</string>
+  <string name="pref_custom_theme_crop">Zuschneiden</string>
+  <string name="pref_custom_theme_fit">Einpassen</string>
+  <string name="pref_custom_theme_fill">Ausfüllen</string>
+  <string name="pref_custom_theme_video_aspect">Video-Seitenverhältnis</string>
+  <string name="pref_custom_theme_fill_screen">Telefonbildschirm ausfüllen</string>
+  <string name="pref_custom_theme_keep_source">Quelle beibehalten</string>
+  <string name="pref_custom_theme_zoom_scale">Zoom / Skalierung</string>
+  <string name="pref_custom_theme_horizontal_position">Horizontale Position</string>
+  <string name="pref_custom_theme_vertical_position">Vertikale Position</string>
+  <string name="pref_custom_theme_media_appearance">Medienerscheinungsbild</string>
+  <string name="pref_custom_theme_blur">Hintergrundunschärfe</string>
+  <string name="pref_custom_theme_brightness">Helligkeit</string>
+  <string name="pref_custom_theme_saturation">Sättigung</string>
+  <string name="pref_custom_theme_transparency">Medientransparenz</string>
+  <string name="pref_custom_theme_overlay">Abdunkelndes Overlay</string>
+  <string name="pref_custom_theme_panel_opacity">Panel-Deckkraft</string>
+  <string name="pref_custom_theme_text_colour">Benutzerdefinierte Textfarbe</string>
+  <string name="pref_custom_theme_argb_hex">ARGB-Hex</string>
+  <string name="pref_custom_theme_colour_sliders">Farbregler</string>
+  <string name="pref_custom_theme_hue">Farbton: %1$d°</string>
+  <string name="pref_custom_theme_saturation_value">Sättigung: %1$d%%</string>
+  <string name="pref_custom_theme_brightness_value">Helligkeit: %1$d%%</string>
+  <string name="pref_custom_theme_opacity_value">Deckkraft: %1$d%%</string>
+  <string name="pref_custom_theme_mute_video">Videothema stummschalten</string>
+  <string name="pref_custom_theme_name">Themenname</string>
+  <string name="generic_save">Speichern</string>
+  <string name="pref_custom_theme_argb_placeholder" translatable="false">#FFFFFFFF</string>
+  <string name="track_metadata_default">Standard</string>
+  <string name="track_metadata_forced">Erzwungen</string>
+  <string name="track_metadata_sdh">SDH</string>
+  <string name="track_metadata_external">Extern</string>
 </resources>

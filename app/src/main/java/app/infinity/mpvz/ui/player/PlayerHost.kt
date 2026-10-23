@@ -75,6 +75,8 @@ interface PlayerHost {
 
   fun isNativePlaying(): Boolean = false
 
+  fun nativePlayWhenReady(): Boolean = isNativePlaying()
+
   fun nativePlaybackSpeed(): Float = 1f
 
   fun nativePauseUnpause() {}
@@ -86,6 +88,10 @@ interface PlayerHost {
   fun nativeSeekBy(offsetMs: Long) {}
 
   fun nativeSeekTo(positionMs: Long) {}
+
+  fun nativeSeekPreviewTo(positionMs: Long) = nativeSeekTo(positionMs)
+
+  fun nativeCancelSeekPreview() {}
 
   fun nativePlaybackPositionSeconds(): Double = 0.0
 
@@ -102,6 +108,8 @@ interface PlayerHost {
   fun nativeSetRepeatMode(repeatMode: RepeatMode) {}
 
   fun nativeSetVideoAspect(aspect: VideoAspect) {}
+
+  fun nativeSetCustomAspectRatio(ratio: Double) {}
 
   /** Called after a user-facing aspect change, allowing the host to persist the current item's state. */
   fun onVideoAspectChanged() {}

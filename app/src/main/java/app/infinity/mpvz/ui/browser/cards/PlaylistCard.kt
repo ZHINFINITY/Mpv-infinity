@@ -20,6 +20,7 @@ import app.infinity.mpvz.database.entities.PlaylistEntity
 import app.infinity.mpvz.database.repository.PlaylistRepository
 import app.infinity.mpvz.domain.media.model.VideoFolder
 import app.infinity.mpvz.ui.icons.Icons
+import app.infinity.mpvz.utils.media.RadioM3uPlaylistPolicy
 import app.infinity.mpvz.ui.player.ytdlp.YtdlpManager
 import app.infinity.mpvz.ui.theme.AppShapeScale
 
@@ -46,12 +47,15 @@ fun PlaylistCard(
   modifier: Modifier = Modifier,
   isSelected: Boolean = false,
   isGridMode: Boolean = false,
+  isRadioM3u: Boolean = false,
   thumbnail: android.graphics.Bitmap? = null,
 ) {
   val isFavorites = playlist.name.equals(PlaylistRepository.FAVORITES_PLAYLIST_NAME, ignoreCase = true)
+  // Classify radio by the stored policy/prefix before consulting the audio flag.
+  val radioPlaylist = isRadioM3u || RadioM3uPlaylistPolicy.isStoredRadioName(playlist.name)
   val displayName =
     when {
-      !isFavorites -> playlist.name
+      !isFavorites -> if (radioPlaylist) "◉ ${playlist.name.removePrefix("Radio/M3U ")}" else playlist.name
       playlist.isAudio -> stringResource(R.string.playlist_favorite_songs)
       else -> stringResource(R.string.playlist_favorite_videos)
     }
@@ -75,15 +79,17 @@ fun PlaylistCard(
       } == true
     val chipText =
       when {
+        radioPlaylist -> if (itemCount == 1) "1 station" else "$itemCount stations"
         isOnlinePlaylist -> stringResource(R.string.playlist_online_badge)
-        playlist.isM3uPlaylist -> stringResource(R.string.playlist_m3u_badge)
-        else -> "Local"
+        playlist.isM3uPlaylist -> stringResource(R.string.stream_card_playlist_iptv)
+        playlist.isAudio -> stringResource(R.string.stream_card_playlist_music)
+        else -> stringResource(R.string.stream_card_playlist_video)
       }
 
     // Use Material Design theme colors
     val materialTheme = androidx.compose.material3.MaterialTheme.colorScheme
     val (chipColor, chipBgColor) =
-      if (playlist.isM3uPlaylist) {
+      if (radioPlaylist) {
         Pair(materialTheme.tertiary, materialTheme.tertiaryContainer)
       } else {
         Pair(materialTheme.primary, materialTheme.primaryContainer)
@@ -121,6 +127,7 @@ fun PlaylistCard(
     modifier = modifier,
     customChipContent = customChipRenderer,
     isGridMode = isGridMode,
+    isAudioOnly = radioPlaylist,
     thumbnail = thumbnailBitmap,
   )
 }

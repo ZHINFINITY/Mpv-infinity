@@ -40,9 +40,11 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import app.infinity.mpvz.R
 import app.infinity.mpvz.domain.media.model.Video
 import app.infinity.mpvz.domain.network.NetworkPlaybackUri
 import app.infinity.mpvz.domain.thumbnail.ThumbnailRepository
@@ -52,6 +54,10 @@ import app.infinity.mpvz.presentation.components.RemoteImage
 import app.infinity.mpvz.ui.icons.Icon
 import app.infinity.mpvz.ui.icons.Icons
 import app.infinity.mpvz.ui.theme.AppShapeScale
+import app.infinity.mpvz.ui.theme.BrowserGlassSurface
+import app.infinity.mpvz.ui.preferences.components.settingsGlassSurface
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.selected
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.withContext
@@ -78,10 +84,15 @@ fun M3UVideoCard(
   isFavorite: Boolean = false,
   video: Video? = null,
   isGridMode: Boolean = false,
+  isRadio: Boolean = false,
 ) {
   val thumbnailRepository = koinInject<ThumbnailRepository>()
   val appearancePreferences = koinInject<AppearancePreferences>()
   val showNetworkThumbnails by appearancePreferences.showNetworkThumbnails.collectAsState()
+  val liquidGlass by appearancePreferences.liquidGlassSurfaces.collectAsState()
+  val glassOpacity by appearancePreferences.glassSurfaceOpacity.collectAsState()
+  val glassHighlight by appearancePreferences.glassSurfaceHighlight.collectAsState()
+  val sourceLabel = remember(url) { StreamingCardPresentationPolicy.safeSourceLabel(url) }
   var thumbnail by remember(url, logoUrl) { mutableStateOf<android.graphics.Bitmap?>(null) }
   val networkReference = remember(url) { NetworkPlaybackUri.parse(url) }
   val isYouTubeArtwork =
@@ -189,13 +200,15 @@ fun M3UVideoCard(
   val unlimitedNameLines by appearancePreferences.unlimitedNameLines.collectAsState()
   val maxLines = if (unlimitedNameLines) Int.MAX_VALUE else 2
 
-  val thumbnailWidth = 128.dp
+  val thumbnailWidth = if (isRadio) 64.dp else 96.dp
+  val thumbnailAspect = if (isRadio) 1f else 16f / 9f
 
   Card(
     modifier =
       modifier
         .fillMaxWidth()
         .clip(AppShapeScale.large)
+        .semantics { selected = isSelected }
         .combinedClickable(
           onClick = onClick,
           onLongClick = onLongClick,
@@ -204,6 +217,15 @@ fun M3UVideoCard(
     colors = CardDefaults.cardColors(containerColor = Color.Transparent),
   ) {
     Box(modifier = Modifier.fillMaxWidth()) {
+      if (liquidGlass) {
+        BrowserGlassSurface(
+          modifier = Modifier.matchParentSize(),
+          enabled = true,
+          opacity = glassOpacity,
+          highlight = glassHighlight,
+          cornerRadius = 20.dp,
+        )
+      }
       if (isSelected) {
         Box(
           modifier =
@@ -225,7 +247,7 @@ fun M3UVideoCard(
             modifier =
               Modifier
                 .fillMaxWidth()
-                .aspectRatio(16f / 9f)
+                .aspectRatio(thumbnailAspect)
                 .clip(RoundedCornerShape(12.dp))
                 .background(MaterialTheme.colorScheme.surfaceContainerHigh)
                 .combinedClickable(onClick = onClick, onLongClick = onLongClick),
@@ -237,7 +259,7 @@ fun M3UVideoCard(
                 bitmap = currentImageBitmap,
                 contentDescription = title,
                 modifier = Modifier.matchParentSize(),
-                contentScale = ContentScale.Crop,
+                contentScale = if (isRadio) ContentScale.Fit else ContentScale.Crop,
               )
             } else if (!logoUrl.isNullOrBlank()) {
               RemoteImage(
@@ -264,23 +286,24 @@ fun M3UVideoCard(
               maxLines = 2,
               minLines = 2,
               overflow = TextOverflow.Ellipsis,
-              modifier = Modifier.fillMaxWidth().padding(end = if (onFavoriteClick != null) 34.dp else 0.dp),
+              modifier = Modifier.fillMaxWidth().padding(end = if (onFavoriteClick != null) 52.dp else 0.dp),
             )
             if (onFavoriteClick != null) {
               IconButton(
                 onClick = onFavoriteClick,
-                modifier = Modifier.size(32.dp).align(Alignment.TopEnd),
+                modifier = Modifier.size(48.dp).align(Alignment.TopEnd)
+                  .settingsGlassSurface(cornerRadius = 24.dp, independent = true),
               ) {
                 Icon(
                   imageVector = Icons.RoundedFilled.Bookmarks,
-                  contentDescription = if (isFavorite) "Unsave stream" else "Save stream",
+                  contentDescription = stringResource(if (isFavorite) R.string.stream_card_unsave_action else R.string.stream_card_save_action),
                   tint = if (isFavorite) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
                 )
               }
             }
           }
           Text(
-            text = url,
+            text = sourceLabel,
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             maxLines = 2,
@@ -292,7 +315,14 @@ fun M3UVideoCard(
             horizontalArrangement = Arrangement.spacedBy(4.dp),
             verticalArrangement = Arrangement.spacedBy(4.dp),
           ) {
-            if (!groupTitle.isNullOrBlank()) {
+            if (isRadio) {
+            M3UMetadataChip(
+              text = stringResource(R.string.stream_card_radio_badge),
+              containerColor = MaterialTheme.colorScheme.primaryContainer,
+              contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+            )
+          }
+          if (!groupTitle.isNullOrBlank()) {
               M3UMetadataChip(
                 text = groupTitle,
                 containerColor = MaterialTheme.colorScheme.secondaryContainer,
@@ -301,21 +331,21 @@ fun M3UVideoCard(
             }
             if (hasDrm) {
               M3UMetadataChip(
-                text = "DRM",
+                text = stringResource(R.string.stream_card_drm),
                 containerColor = MaterialTheme.colorScheme.errorContainer,
                 contentColor = MaterialTheme.colorScheme.onErrorContainer,
               )
             }
             if (hasCustomUserAgent) {
               M3UMetadataChip(
-                text = "UA",
+                text = stringResource(R.string.stream_card_custom_user_agent),
                 containerColor = MaterialTheme.colorScheme.tertiaryContainer,
                 contentColor = MaterialTheme.colorScheme.onTertiaryContainer,
               )
             }
             if (isFavorite) {
               M3UMetadataChip(
-                text = "Saved",
+                text = stringResource(R.string.stream_card_saved),
                 containerColor = MaterialTheme.colorScheme.primaryContainer,
                 contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
               )
@@ -333,7 +363,7 @@ fun M3UVideoCard(
         modifier =
           Modifier
             .width(thumbnailWidth)
-            .aspectRatio(16f / 9f)
+            .aspectRatio(thumbnailAspect)
             .clip(RoundedCornerShape(12.dp))
             .background(MaterialTheme.colorScheme.surfaceContainerHigh)
             .combinedClickable(
@@ -348,7 +378,7 @@ fun M3UVideoCard(
             bitmap = currentImageBitmap,
             contentDescription = null,
             modifier = Modifier.matchParentSize(),
-            contentScale = ContentScale.Crop,
+            contentScale = if (isRadio) ContentScale.Fit else ContentScale.Crop,
           )
         } else if (!logoUrl.isNullOrBlank()) {
           RemoteImage(
@@ -392,7 +422,7 @@ fun M3UVideoCard(
           fontWeight = if (isFavorite) FontWeight.SemiBold else FontWeight.Normal,
         )
         Text(
-          url,
+          sourceLabel,
           style = MaterialTheme.typography.bodySmall,
           color = MaterialTheme.colorScheme.onSurfaceVariant,
           maxLines = 2,
@@ -406,6 +436,13 @@ fun M3UVideoCard(
             androidx.compose.foundation.layout.Arrangement
               .spacedBy(6.dp),
         ) {
+          if (isRadio) {
+            M3UMetadataChip(
+              text = stringResource(R.string.stream_card_radio_badge),
+              containerColor = MaterialTheme.colorScheme.primaryContainer,
+              contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+            )
+          }
           if (!groupTitle.isNullOrBlank()) {
             M3UMetadataChip(
               text = groupTitle,
@@ -415,21 +452,21 @@ fun M3UVideoCard(
           }
           if (hasDrm) {
             M3UMetadataChip(
-              text = "DRM",
+              text = stringResource(R.string.stream_card_drm),
               containerColor = MaterialTheme.colorScheme.errorContainer,
               contentColor = MaterialTheme.colorScheme.onErrorContainer,
             )
           }
           if (hasCustomUserAgent) {
             M3UMetadataChip(
-              text = "UA",
+              text = stringResource(R.string.stream_card_custom_user_agent),
               containerColor = MaterialTheme.colorScheme.tertiaryContainer,
               contentColor = MaterialTheme.colorScheme.onTertiaryContainer,
             )
           }
           if (isFavorite) {
             M3UMetadataChip(
-              text = "Saved",
+              text = stringResource(R.string.stream_card_saved),
               containerColor = MaterialTheme.colorScheme.primaryContainer,
               contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
             )
@@ -439,10 +476,13 @@ fun M3UVideoCard(
 
         if (onFavoriteClick != null) {
           Spacer(modifier = Modifier.width(8.dp))
-          IconButton(onClick = onFavoriteClick) {
+          IconButton(
+            onClick = onFavoriteClick,
+            modifier = Modifier.size(48.dp).settingsGlassSurface(cornerRadius = 24.dp, independent = true),
+          ) {
             Icon(
               imageVector = Icons.RoundedFilled.Bookmarks,
-              contentDescription = if (isFavorite) "Unsave stream" else "Save stream",
+              contentDescription = stringResource(if (isFavorite) R.string.stream_card_unsave_action else R.string.stream_card_save_action),
               tint =
                 if (isFavorite) {
                   MaterialTheme.colorScheme.primary

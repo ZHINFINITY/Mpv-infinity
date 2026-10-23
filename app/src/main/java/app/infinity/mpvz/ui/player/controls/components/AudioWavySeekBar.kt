@@ -22,7 +22,6 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -56,6 +55,7 @@ import kotlinx.collections.immutable.persistentListOf
 import kotlinx.coroutines.isActive
 import kotlin.math.PI
 import kotlin.math.sin
+import app.infinity.mpvz.ui.player.controls.components.GlassSlider
 
 /**
  * Shifts lightness and saturation of a Compose Color to produce
@@ -462,6 +462,7 @@ fun AudioWavySeekBar(
   val clickEvent = LocalPlayerButtonsClickEvent.current
   val interactionSource = remember { MutableInteractionSource() }
   val dragging by interactionSource.collectIsDraggedAsState()
+  val glassEnabled = app.infinity.mpvz.ui.preferences.components.settingsGlassEnabled()
   var dragPosition by remember { mutableFloatStateOf(0f) }
 
   val boundedDuration = duration.coerceAtLeast(0f)
@@ -521,7 +522,7 @@ fun AudioWavySeekBar(
         modifier = Modifier.matchParentSize(),
       )
 
-      Slider(
+      GlassSlider(
         value = shownPosition,
         onValueChange = {
           dragPosition = it
@@ -538,9 +539,9 @@ fun AudioWavySeekBar(
           activeTrackColor = Color.Transparent,
           inactiveTrackColor = Color.Transparent,
         ),
-        modifier = Modifier
-          .matchParentSize()
-          .alpha(0f),
+        // Keep Material's interaction/semantics layer live; GlassSlider draws
+        // optics only over the real track and thumb, never a card over this box.
+        modifier = Modifier.matchParentSize().alpha(if (glassEnabled) 1f else 0f),
       )
     }
 

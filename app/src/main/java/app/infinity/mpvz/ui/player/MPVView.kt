@@ -10,6 +10,7 @@ package app.infinity.mpvz.ui.player
 import android.content.Context
 import android.hardware.display.DisplayManager
 import android.os.Environment
+import android.os.Looper
 import android.util.AttributeSet
 import android.util.Log
 import android.view.Display
@@ -78,7 +79,7 @@ internal fun resolveFlowDisplayRefreshRateHz(
     .filterNotNull()
     .firstOrNull { it.isFinite() && it in 20f..360f }
 
-private data class FlowDisplayRefreshRate(val hz: Float, val source: String)
+internal data class FlowDisplayRefreshRate(val hz: Float, val source: String)
 
 class MPVView(
   context: Context,
@@ -96,6 +97,14 @@ class MPVView(
 
   var isExiting = false
   var forceOpenGlFallback = false
+  internal var forceMpvInterpolationOwner = false
+  private var acceptedInterpolationConfiguration: Pair<Boolean, Int>? = null
+
+  internal fun interpolationConfigurationApplied(enabled: Boolean, targetFps: Int): Boolean {
+    val accepted = acceptedInterpolationConfiguration ?: return false
+    return accepted.first == enabled && (!enabled || accepted.second ==
+      effectiveMpvFlowTargetFps(targetFps, currentDisplayRefreshRate()?.hz ?: 0f))
+  }
   var isSurfaceReady = false
     private set
   var onSurfaceReady: (() -> Unit)? = null
@@ -108,6 +117,14 @@ class MPVView(
   private var mpvFlowDiagnosticsEnabled = false
   private var mpvFlowOsdStatsEnabled = false
   @Volatile private var latestMpvFlowRuntimeSample: MpvFlowRuntimeCadenceSample? = null
+
+  @Volatile private var cachedDisplayRefreshRate: FlowDisplayRefreshRate? = null
+
+  /** Snapshot Android display state on Main before an authorized worker-thread restart. */
+  internal fun snapshotDisplayRefreshRateOnMain(): FlowDisplayRefreshRate? {
+    check(Looper.myLooper() == Looper.getMainLooper()) { "Display snapshot must run on Main" }
+    return currentDisplayRefreshRate().also { cachedDisplayRefreshRate = it }
+  }
 
   private fun currentDisplayRefreshRate(): FlowDisplayRefreshRate? {
     val viewDisplay = display
@@ -140,7 +157,9 @@ class MPVView(
     val frameInterpolationConfigOwned =
       MpvConfigOverridePolicy.ownsAny(MpvConfigControlledFeatures.FRAME_INTERPOLATION)
     val mpvFlowRequested = decoderPreferences.mpvFlowFrameInterpolation.get()
-    val displayRefreshRate = currentDisplayRefreshRate()
+    val displayRefreshRate =
+      if (Looper.myLooper() == Looper.getMainLooper()) snapshotDisplayRefreshRateOnMain()
+      else cachedDisplayRefreshRate
     val requestedMpvFlowTargetFps =
       effectiveMpvFlowTargetFps(
         decoderPreferences.mpvFlowTargetFps.get(),
@@ -152,7 +171,7 @@ class MPVView(
       mpvFlowRequested &&
         BuildConfig.MPV_HAS_MPVFLOW &&
         !frameInterpolationConfigOwned &&
-        decoderPreferences.playbackEngine.get() != PlaybackEngineMode.NATIVE
+        (forceMpvInterpolationOwner || decoderPreferences.playbackEngine.get() != PlaybackEngineMode.NATIVE)
     val mpvFlowSoftBlendDebugActive =
       BuildConfig.DEBUG &&
         decoderPreferences.mpvFlowSoftBlendDebug.get() &&
@@ -188,13 +207,17 @@ class MPVView(
       // PlaybackSession may reuse a core and skip initOptions for this view.
       configureMpvFlowCaptureControl("after_initialize")
     }
-    if (result.isSuccess) {
-      holder.removeCallback(this)
-      holder.addCallback(this)
-      if (holder.surface.isValid && !isSurfaceReady) surfaceCreated(holder)
-    }
-    updateMpvFlowDiagnostics()
+    // Diagnostics and SurfaceHolder binding are Main-only; bindSessionCallbacksOnMain() owns them.
     return result
+  }
+
+  /** SurfaceHolder is an Android view binding and must only be touched on Main. */
+  fun bindSessionCallbacksOnMain() {
+    check(Looper.myLooper() == Looper.getMainLooper()) { "Surface binding must run on Main" }
+    holder.removeCallback(this)
+    holder.addCallback(this)
+    if (holder.surface.isValid && !isSurfaceReady) surfaceCreated(holder)
+    updateMpvFlowDiagnostics()
   }
 
   fun releaseSurface() {
@@ -208,6 +231,7 @@ class MPVView(
   }
 
   private fun updateMpvFlowDiagnostics() {
+    if (Looper.myLooper() != Looper.getMainLooper()) return
     if ((mpvFlowOsdStatsEnabled || mpvFlowDiagnosticsEnabled) && isSurfaceReady && holder.surface.isValid) {
       startMpvFlowDiagnostics()
     } else {
@@ -528,13 +552,16 @@ class MPVView(
   var aid: Int by TrackDelegate("aid")
 
   override fun initOptions() {
+    acceptedInterpolationConfiguration = null
     val profile = decoderPreferences.profile.get()
     PlaybackSession.setOptionString("profile", profile)
     val backend = selectRenderBackend()
     val useVulkan = backend.gpuApi == "vulkan"
     val hwdecMode = preferredHwdecMode(useVulkan)
     val mpvFlowFrameInterpolationPreference = decoderPreferences.mpvFlowFrameInterpolation.get()
-    val displayRefreshRate = currentDisplayRefreshRate()
+    val displayRefreshRate =
+      if (Looper.myLooper() == Looper.getMainLooper()) snapshotDisplayRefreshRateOnMain()
+      else cachedDisplayRefreshRate
     val mpvFlowTargetFps =
       effectiveMpvFlowTargetFps(
         decoderPreferences.mpvFlowTargetFps.get(),
@@ -552,7 +579,7 @@ class MPVView(
         !frameInterpolationConfigOwned &&
         !anime4kActive &&
         RendererBackendPolicy.canUseDirectGpuFlow(backend.vo, backend.gpuApi) &&
-        decoderPreferences.playbackEngine.get() != PlaybackEngineMode.NATIVE
+        (forceMpvInterpolationOwner || decoderPreferences.playbackEngine.get() != PlaybackEngineMode.NATIVE)
     val flowDisplayFpsOverrideRc =
       when {
         mpvFlowFrameInterpolationCandidate && displayRefreshRate != null ->
@@ -820,6 +847,11 @@ class MPVView(
           } else null
         val enabledResult =
           PlaybackSession.setOptionString("mpvflow", if (mpvFlowFrameInterpolationEnabled) "yes" else "no")
+        acceptedInterpolationConfiguration = if (enabledResult == 0 &&
+          (!mpvFlowFrameInterpolationEnabled || (targetFpsResult == 0 && dimensionResult == 0 &&
+            qualityResult == 0 && mpvFlowComputeApiOptionResult == 0))) {
+          mpvFlowFrameInterpolationEnabled to mpvFlowTargetFps
+        } else null
         "mpvflow_rc=$enabledResult compute_api=${effectiveMpvFlowComputeApi.name.lowercase()} " +
           "compute_api_rc=${mpvFlowComputeApiOptionResult ?: "mpv.conf_or_unavailable"} " +
           "target_fps_rc=${targetFpsResult ?: "unchanged"} " +
@@ -858,7 +890,7 @@ class MPVView(
           anime4kActive -> "anime4k_active"
           !RendererBackendPolicy.canUseDirectGpuFlow(backend.vo, backend.gpuApi) ->
             "requires_gpu_next_vulkan"
-          decoderPreferences.playbackEngine.get() == PlaybackEngineMode.NATIVE -> "native_engine_selected"
+          !forceMpvInterpolationOwner && decoderPreferences.playbackEngine.get() == PlaybackEngineMode.NATIVE -> "native_engine_selected"
           else -> "unsupported_configuration"
         }
       val interpolationHwdecDiagnostic =
@@ -1077,6 +1109,7 @@ class MPVView(
   }
 
   internal fun updateSurfaceFrameRateHint() {
+    if (Looper.myLooper() != Looper.getMainLooper()) return
     if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
       val coreIsInitialized = PlaybackSession.isInitialized
       val activeInterpolationFrameRate =
@@ -1373,7 +1406,7 @@ class MPVView(
         BuildConfig.MPV_SUPPORTS_VULKAN &&
         !MpvConfigOverridePolicy.ownsAny(MpvConfigControlledFeatures.FRAME_INTERPOLATION) &&
         !anime4kEnabled &&
-        decoderPreferences.playbackEngine.get() != PlaybackEngineMode.NATIVE
+        (forceMpvInterpolationOwner || decoderPreferences.playbackEngine.get() != PlaybackEngineMode.NATIVE)
     val gpuNextEnabled = decoderPreferences.gpuNext.get() || flowRequiresVulkan
     val vulkanEnabled = shouldUseVulkan(
       ignoreForcedOpenGlFallback = ignoreForcedOpenGlFallback,

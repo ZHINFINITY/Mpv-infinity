@@ -6,6 +6,12 @@
  */
 
 package app.infinity.mpvz.ui.preferences
+import app.infinity.mpvz.ui.theme.GlassDropdownMenu
+import app.infinity.mpvz.ui.theme.GlassExposedDropdownMenu
+
+import app.infinity.mpvz.ui.preferences.components.settingsGlassContainerColor
+
+import app.infinity.mpvz.ui.preferences.components.settingsGlassSurface
 
 import android.app.Application
 import androidx.compose.foundation.clickable
@@ -20,16 +26,15 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Scaffold
+import app.infinity.mpvz.ui.preferences.components.SettingsScaffold as Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
+import app.infinity.mpvz.ui.preferences.components.SettingsTopAppBar as TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -71,7 +76,7 @@ import app.infinity.mpvz.ui.utils.LocalBackStack
 import app.infinity.mpvz.ui.utils.LocalShowSettingsBackArrow
 import app.infinity.mpvz.ui.utils.popSafely
 import kotlinx.serialization.Serializable
-import me.zhanghai.compose.preference.Preference
+import app.infinity.mpvz.ui.preferences.components.Preference
 import me.zhanghai.compose.preference.ProvidePreferenceLocals
 
 @Serializable
@@ -241,7 +246,9 @@ object MediaServersPreferencesScreen : Screen {
                             contentDescription = stringResource(R.string.pref_server_more_options),
                           )
                         }
-                        DropdownMenu(
+                        GlassDropdownMenu(
+      containerColor = settingsGlassContainerColor(androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainer),
+      modifier = androidx.compose.ui.Modifier.settingsGlassSurface(cornerRadius = 12.dp, independent = true),
                           expanded = menuExpanded,
                           onDismissRequest = { menuExpanded = false },
                         ) {
@@ -394,7 +401,9 @@ object MediaServersPreferencesScreen : Screen {
                           contentDescription = stringResource(R.string.pref_server_more_options),
                         )
                       }
-                      DropdownMenu(
+                      GlassDropdownMenu(
+      containerColor = settingsGlassContainerColor(androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainer),
+      modifier = androidx.compose.ui.Modifier.settingsGlassSurface(cornerRadius = 12.dp, independent = true),
                         expanded = menuExpanded,
                         onDismissRequest = { menuExpanded = false },
                       ) {
@@ -551,7 +560,9 @@ object MediaServersPreferencesScreen : Screen {
                             contentDescription = stringResource(R.string.pref_server_more_options),
                           )
                         }
-                        DropdownMenu(
+                        GlassDropdownMenu(
+      containerColor = settingsGlassContainerColor(androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainer),
+      modifier = androidx.compose.ui.Modifier.settingsGlassSurface(cornerRadius = 12.dp, independent = true),
                           expanded = menuExpanded,
                           onDismissRequest = { menuExpanded = false },
                         ) {
@@ -743,7 +754,9 @@ object MediaServersPreferencesScreen : Screen {
                             contentDescription = stringResource(R.string.pref_server_more_options),
                           )
                         }
-                        DropdownMenu(
+                        GlassDropdownMenu(
+      containerColor = settingsGlassContainerColor(androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainer),
+      modifier = androidx.compose.ui.Modifier.settingsGlassSurface(cornerRadius = 12.dp, independent = true),
                           expanded = menuExpanded,
                           onDismissRequest = { menuExpanded = false },
                         ) {
