@@ -23,7 +23,7 @@ class ReferenceUiRollbackContractTest {
   @Test fun preservedPlayerSourcesKeepBaseline7eFingerprints() {
     val expected = mapOf(
       "app/src/main/java/app/infinity/mpvz/ui/player/controls/PlayerControls.kt" to "aaf057ec8635d288c447eeda65d2d0eb116bf772ae9c02ba123cb35f42af4093" /* build 1902: stats overlay policy */,
-      "app/src/main/java/app/infinity/mpvz/ui/player/controls/components/Seekbar.kt" to "b0d7ca11fdd2729871e052a0f6ea3b2cba64fb3e29039e5d3c42a7acf4d426c9",
+      "app/src/main/java/app/infinity/mpvz/ui/player/controls/components/Seekbar.kt" to "c4fa131f595e02ef7ddc3eb317605397fc5c8020366c315b1b140e20094c63c7", // ambient seekbar accent
       // Build 1902: owner-approved contrasting switch colours (3D glass depth kept).
       "app/src/main/java/app/infinity/mpvz/ui/player/controls/components/GlassControls.kt" to "ae873298a6b622bcdbe5c5366fc6d8fd37009ee395c3531c1df90f9dd31f6320",
       "app/src/main/java/app/infinity/mpvz/presentation/components/PlayerSheet.kt" to "fdcf88d13735e1876059f0e7bdcc41088ecedd06d58fffde0283c9e32967e96a",
@@ -153,9 +153,9 @@ private suspend fun frostGlassFrame(bitmap: Bitmap, strength: Float): Bitmap? = 
   }
   // Warm the shared optics program before the first sheet opens (idle, after first frame).
   LaunchedEffect(enabled) {
-    if (enabled && RuntimeShaderSupport.available()) {
+    if (enabled && Build.VERSION.SDK_INT >= 33) {
       delay(GlassSamplingPolicy.ShaderWarmupDelayMs)
-      RuntimeShaderSupport.glassOpticsOrNull()
+      GlassShaderCache.shared(GLASS_OPTICS) { RuntimeShader(GLASS_OPTICS) }
     }
   }
 """ to
@@ -170,7 +170,7 @@ private suspend fun frostGlassFrame(bitmap: Bitmap, strength: Float): Bitmap? = 
         """""",
       """GlassSamplingPolicy.interval(playing(), failures, thermalNow, largeSurface),""" to
         """GlassSamplingPolicy.interval(playing(), failures, thermalNow),""",
-      """RuntimeShaderSupport.glassOpticsOrNull()""" to
+      """GlassShaderCache.shared(GLASS_OPTICS) { RuntimeShader(GLASS_OPTICS) }""" to
         """runCatching { RuntimeShader(GLASS_OPTICS) }.getOrNull()""",
     )
     var film = current

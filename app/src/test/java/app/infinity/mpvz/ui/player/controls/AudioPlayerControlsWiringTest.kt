@@ -35,7 +35,7 @@ class AudioPlayerControlsWiringTest {
     val controls = source("app/src/main/java/app/infinity/mpvz/ui/player/controls/AudioPlayerControls.kt")
     val activity = source("app/src/main/java/app/infinity/mpvz/ui/player/PlayerActivity.kt")
     val themes = source("app/src/main/res/values/themes.xml")
-    assertTrue(activity.contains("Theme.mpvinfinity.Player.Audio"))
+    assertTrue(activity.contains("Theme_mpvinfinity_Player_Audio"))
     assertTrue(activity.contains("Never call Activity.setTranslucent()"))
     assertTrue(activity.contains("prepareAudioPlayerSeeThroughLayers"))
     assertTrue(activity.contains("setNativeVideoSurfaceVisible(false)"))

@@ -11,6 +11,7 @@ import android.content.Intent
 import android.content.IntentFilter
 import android.database.ContentObserver
 import android.graphics.RenderEffect
+import android.graphics.RuntimeShader
 import android.graphics.Shader
 import android.os.Build
 import android.os.Handler
@@ -394,6 +395,10 @@ fun BrowserGlassSurface(
   val film = GlassSurfacePolicy.opacity(opacity)
   val glow = GlassSurfacePolicy.highlight(highlight)
   var paneOrigin by remember { mutableStateOf(Offset.Zero) }
+  val shader = remember(enabled, capabilities.refraction) {
+    if (enabled && capabilities.refraction && Build.VERSION.SDK_INT >= 33)
+      GlassShaderCache.shared(BROWSER_LENS) { RuntimeShader(BROWSER_LENS) } else null
+  }
   val lens = rememberGraphicsLayer()
   Box(modifier
     .shadow(if (enabled) (if (selected) 7.dp else 12.dp) * tuning.depth else 0.dp, shape, clip = false)
@@ -403,15 +408,17 @@ fun BrowserGlassSurface(
     if (enabled) {
       Box(Modifier.matchParentSize().drawWithCache {
         val radius = cornerRadius.toPx().coerceAtMost(size.height / 2f).coerceAtMost(size.width / 2f)
-        val refraction = capabilities.refraction && RuntimeShaderSupport.available()
-        val effect = if (refraction) RuntimeShaderSupport.browserLensEffectOrNull(
-          paneWidth = size.width,
-          paneHeight = size.height,
-          radius = radius,
-          bend = (if (selected) 9f else 5f) * density * tuning.refraction,
-          motion = deformation.coerceIn(0f, 1f),
-          frostPx = if (tuning.frost > 0f) 2f * density * tuning.frost else 0f,
-        ) else if (Build.VERSION.SDK_INT >= 31 && scene != null && tuning.frost > 0f) runCatching {
+        val refraction = capabilities.refraction && shader != null && Build.VERSION.SDK_INT >= 33
+        val effect = if (refraction) runCatching {
+          shader!!.setFloatUniform("pane", size.width, size.height)
+          shader.setFloatUniform("radius", radius)
+          shader.setFloatUniform("bend", (if (selected) 9f else 5f) * density * tuning.refraction)
+          shader.setFloatUniform("motion", deformation.coerceIn(0f, 1f))
+          val lensEffect = RenderEffect.createRuntimeShaderEffect(shader, "scene")
+          (if (tuning.frost > 0f) RenderEffect.createChainEffect(lensEffect,
+            RenderEffect.createBlurEffect(2f * density * tuning.frost, 2f * density * tuning.frost, Shader.TileMode.CLAMP))
+          else lensEffect).asComposeRenderEffect()
+        }.getOrNull() else if (Build.VERSION.SDK_INT >= 31 && scene != null && tuning.frost > 0f) runCatching {
           RenderEffect.createBlurEffect(3f * density * tuning.frost, 3f * density * tuning.frost, Shader.TileMode.CLAMP).asComposeRenderEffect()
         }.getOrNull() else null
         lens.renderEffect = effect
@@ -514,6 +521,10 @@ internal fun Modifier.browserGlassPane(
   var paneOrigin by remember { mutableStateOf(Offset.Zero) }
   // Runtime shader compilation is remembered, not repeated for every animated width/frame.
   // Edge bars never bend: the lens edge term would draw a bright line along the bar's bottom.
+  val shader = remember(enabled, capabilities.refraction, edgeBar) {
+    if (enabled && !edgeBar && capabilities.refraction && Build.VERSION.SDK_INT >= 33)
+      GlassShaderCache.shared(BROWSER_LENS) { RuntimeShader(BROWSER_LENS) } else null
+  }
   val lens = rememberGraphicsLayer()
   return this
     // Same elevation as the navigation pill (BrowserGlassSurface), scaled by the depth setting.
@@ -523,15 +534,17 @@ internal fun Modifier.browserGlassPane(
     .then(if (!enabled) Modifier.background(tint, shape) else Modifier)
     .then(if (enabled) Modifier.drawWithCache {
         val radius = cornerRadius.toPx().coerceAtMost(size.height / 2f).coerceAtMost(size.width / 2f)
-        val refraction = enabled && !edgeBar && capabilities.refraction && RuntimeShaderSupport.available()
-        val effect = if (refraction) RuntimeShaderSupport.browserLensEffectOrNull(
-          paneWidth = size.width,
-          paneHeight = size.height,
-          radius = radius,
-          bend = (if (selected) 9f else 5f) * density * tuning.refraction,
-          motion = deformation.coerceIn(0f, 1f),
-          frostPx = if (blurDp > 0f) blurDp * density else 0f,
-        ) else if (Build.VERSION.SDK_INT >= 31 && scene != null && blurDp > 0f) runCatching {
+        val refraction = capabilities.refraction && shader != null && Build.VERSION.SDK_INT >= 33
+        val effect = if (refraction) runCatching {
+          shader!!.setFloatUniform("pane", size.width, size.height)
+          shader.setFloatUniform("radius", radius)
+          shader.setFloatUniform("bend", (if (selected) 9f else 5f) * density * tuning.refraction)
+          shader.setFloatUniform("motion", deformation.coerceIn(0f, 1f))
+          val lensEffect = RenderEffect.createRuntimeShaderEffect(shader, "scene")
+          (if (blurDp > 0f) RenderEffect.createChainEffect(lensEffect,
+            RenderEffect.createBlurEffect(blurDp * density, blurDp * density, Shader.TileMode.CLAMP))
+          else lensEffect).asComposeRenderEffect()
+        }.getOrNull() else if (Build.VERSION.SDK_INT >= 31 && scene != null && blurDp > 0f) runCatching {
           RenderEffect.createBlurEffect(blurDp * density, blurDp * density, Shader.TileMode.CLAMP).asComposeRenderEffect()
         }.getOrNull() else null
         lens.renderEffect = effect
@@ -595,7 +608,7 @@ private fun windowScreenOffset(view: android.view.View): Offset {
 
 private const val BrowserGlassStripHeight = 384
 
-internal const val BROWSER_LENS = """
+private const val BROWSER_LENS = """
 uniform shader scene;
 uniform float2 pane;
 uniform float radius;

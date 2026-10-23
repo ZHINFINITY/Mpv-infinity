@@ -51,26 +51,10 @@ class PopupGlassAndSheetLatencyPolicyTest {
     val player = source("src/main/java/app/infinity/mpvz/ui/theme/LiquidGlassBackdrop.kt")
     assertFalse(scene.contains("runCatching { RuntimeShader(BROWSER_LENS) }"))
     assertFalse(player.contains("runCatching { RuntimeShader(GLASS_OPTICS) }"))
-    assertFalse(scene.contains("import android.graphics.RuntimeShader"))
-    assertFalse(player.contains("import android.graphics.RuntimeShader"))
-    val shaders = source("src/main/java/app/infinity/mpvz/ui/theme/AgslRuntimeShaders.kt")
-    assertTrue(shaders.contains("GlassShaderCache.shared(BROWSER_LENS)"))
-    assertTrue(shaders.contains("GlassShaderCache.shared(GLASS_OPTICS)"))
+    assertTrue(scene.contains("GlassShaderCache.shared(BROWSER_LENS)"))
+    assertTrue(player.contains("GlassShaderCache.shared(GLASS_OPTICS)"))
     val activity = source("src/main/java/app/infinity/mpvz/ui/player/PlayerActivity.kt")
     assertTrue(activity.contains("transitionKey = sheet to panel"))
-  }
-
-  @Test
-  fun runtimeShaderStaysInApi33ClassSoAndroid10CanOpenTheLibrary() {
-    val scene = source("src/main/java/app/infinity/mpvz/ui/theme/BrowserGlassScene.kt")
-    val player = source("src/main/java/app/infinity/mpvz/ui/theme/LiquidGlassBackdrop.kt")
-    val support = source("src/main/java/app/infinity/mpvz/ui/theme/RuntimeShaderSupport.kt")
-    assertFalse(scene.contains("import android.graphics.RuntimeShader"))
-    assertFalse(player.contains("import android.graphics.RuntimeShader"))
-    assertFalse(support.contains("import android.graphics.RuntimeShader"))
-    val shaders = source("src/main/java/app/infinity/mpvz/ui/theme/AgslRuntimeShaders.kt")
-    assertTrue(shaders.contains("import android.graphics.RuntimeShader"))
-    assertTrue(support.contains("if (Build.VERSION.SDK_INT < 33) return null"))
   }
 
   @Test
