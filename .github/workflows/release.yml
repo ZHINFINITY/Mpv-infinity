@@ -158,7 +158,7 @@ jobs:
           flow_apk="$release_dir/app-standard-arm64-v8a-release-unsigned.apk"
           test -f "$flow_apk"
           entries="$(unzip -Z1 "$flow_apk")"
-          for library in libmpv.so libplayer.so libplacebo.so libudfread.so libmedia3flow_vulkan.so; do
+          for library in libmpv.so libplayer.so libplacebo.so libudfread.so libmedia3flow_vulkan.so libffmpegJNI.so libmedia3_subtitle_libass.so libass.so; do
             grep -Fx "lib/arm64-v8a/$library" <<< "$entries" >/dev/null || { echo "Flow arm64 release APK is missing $library" >&2; exit 1; }
           done
           if grep -E '^lib/[^/]+/librife_vfi\.so$' <<< "$entries" >/dev/null; then
