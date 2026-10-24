@@ -58,6 +58,8 @@ class PlayerStatsChipOwnerTest {
     val text = file.readText()
     assertTrue(text.contains("CustomStatsPageSixOverlay"))
     assertTrue(text.contains("NativeStatsPageOverlay"))
+    assertTrue(text.contains("else if (statisticsPage in 1..6)"))
+    assertFalse(text.contains("else if (statisticsPage == 6)"))
   }
 
   @Test

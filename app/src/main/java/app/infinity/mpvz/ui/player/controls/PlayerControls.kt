@@ -812,7 +812,7 @@ fun PlayerControls(
           ).padding(top = 16.dp, start = 14.dp)
       if (activity?.isNativeEngineActive() == true) {
         NativeStatsPageOverlay(page = statisticsPage, snapshot = nativeSnapshot, modifier = statsModifier)
-      } else if (statisticsPage == 6) {
+      } else if (statisticsPage in 1..6) {
         CustomStatsPageSixOverlay(viewModel = viewModel, modifier = statsModifier)
       }
     }

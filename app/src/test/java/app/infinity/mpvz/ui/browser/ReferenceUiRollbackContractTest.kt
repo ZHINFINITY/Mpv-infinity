@@ -22,7 +22,7 @@ class ReferenceUiRollbackContractTest {
 
   @Test fun preservedPlayerSourcesKeepBaseline7eFingerprints() {
     val expected = mapOf(
-      "app/src/main/java/app/infinity/mpvz/ui/player/controls/PlayerControls.kt" to "4ba1f839991c75295c020669be23de6e3b52cb31971a8e9475c1cc08afab204b" /* music-path: hide compose stats while a sheet/panel is open */,
+      "app/src/main/java/app/infinity/mpvz/ui/player/controls/PlayerControls.kt" to "db766e35c35ca217a49d0124eaf46f6702c73d1e671c3ade4504b394df87a19c" /* Flow extras on MPV pages 1-6; mpvRx lua clear unchanged */,
       "app/src/main/java/app/infinity/mpvz/ui/player/controls/components/Seekbar.kt" to "b0d7ca11fdd2729871e052a0f6ea3b2cba64fb3e29039e5d3c42a7acf4d426c9",
       // Build 1902: owner-approved contrasting switch colours (3D glass depth kept).
       "app/src/main/java/app/infinity/mpvz/ui/player/controls/components/GlassControls.kt" to "ae873298a6b622bcdbe5c5366fc6d8fd37009ee395c3531c1df90f9dd31f6320",
@@ -278,3 +278,5 @@ private suspend fun frostGlassFrame(bitmap: Bitmap, strength: Float): Bitmap? = 
     assertTrue(scene.contains("private const val BROWSER_LATEST_LENS"))
   }
 }
+      "app/src/main/java/app/infinity/mpvz/ui/player/controls/PlayerControls.kt" to "db766e35c35ca217a49d0124eaf46f6702c73d1e671c3ade4504b394df87a19c" /* Flow extras on MPV pages 1-6; mpvRx lua clear unchanged */,
+      "app/src/main/java/app/infinity/mpvz/ui/player/controls/PlayerControls.kt" to "db766e35c35ca217a49d0124eaf46f6702c73d1e671c3ade4504b394df87a19c" /* Flow extras on MPV pages 1-6; mpvRx lua clear unchanged */,
