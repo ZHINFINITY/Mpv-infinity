@@ -291,39 +291,20 @@ fun MoreSheet(
               )
             },
             onClick = {
-              if (activeEngine == PlaybackEngineMode.NATIVE) {
-                advancedPreferences.enabledStatisticsPage.set(page.takeIf { it in 1..6 } ?: 0)
-                return@FilterChip
-              }
               val isConsoleOpen = PlaybackSession.getPropertyBoolean("user-data/mpv/console/open") == true
-
-              // If we are choosing any page OTHER than Console, close the console if it's currently open
               if (page != 7 && isConsoleOpen) {
                 PlaybackSession.command("script-message-to", "console", "disable")
               }
-
-              when (page) {
-                0 -> {
-                  if (statisticsPage in 1..5) PlaybackSession.command("script-binding", "stats/display-stats-toggle")
+              if (page == 7) {
+                if (!isConsoleOpen) {
+                  PlaybackSession.command("script-message-to", "console", "enable")
                 }
-                6 -> {
-                  if (statisticsPage in 1..5) PlaybackSession.command("script-binding", "stats/display-stats-toggle")
-                }
-                7 -> {
-                  if (statisticsPage in 1..5) PlaybackSession.command("script-binding", "stats/display-stats-toggle")
-                  // Enable console only if it is not already open
-                  if (!isConsoleOpen) {
-                    PlaybackSession.command("script-message-to", "console", "enable")
-                  }
-                }
-                else -> {
-                  if (statisticsPage == 0 || statisticsPage == 6 || statisticsPage == 7) {
-                    PlaybackSession.command("script-binding", "stats/display-stats-toggle")
-                  }
-                  PlaybackSession.command("script-binding", "stats/display-page-$page")
-                }
+                advancedPreferences.enabledStatisticsPage.set(7)
+                return@FilterChip
               }
-              advancedPreferences.enabledStatisticsPage.set(page)
+              // PlayerActivity.applyStatsOverlayPolicy owns stats.lua. Toggling here
+              // stacked page 2 on page 1 and left Off unable to clear the OSD.
+              advancedPreferences.enabledStatisticsPage.set(page.takeIf { it in 1..6 } ?: 0)
             },
             selected = statisticsPage == page,
             leadingIcon = null,

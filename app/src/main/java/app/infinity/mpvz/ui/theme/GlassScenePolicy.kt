@@ -55,4 +55,14 @@ object GlassScenePolicy {
   }
 
   fun retainTransientFrame(elapsedMs: Long): Boolean = elapsedMs in 0 until TransientGraceMs
+
+  /**
+   * Player ambience / interpolation must not flash a clear pane. Keep the last frosted
+   * sample unless the surface, eligibility, or lifecycle actually ended.
+   */
+  fun shouldKeepLastFrostedFrame(
+    lifecycleStopped: Boolean,
+    sourceChanged: Boolean,
+    ineligible: Boolean,
+  ): Boolean = !lifecycleStopped && !sourceChanged && !ineligible
 }

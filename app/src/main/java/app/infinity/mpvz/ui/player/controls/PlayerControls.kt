@@ -616,6 +616,8 @@ fun PlayerControls(
       else -> isAudioOnly || activity?.isCurrentMediaKnownAudio() == true
     }
   val declaredMediaKind = currentPlaybackItem?.declaredMediaKind()
+  val sheetForStats by viewModel.sheetShown.collectAsState()
+  val panelForStats by viewModel.panelShown.collectAsState()
   val statsDecision = PlayerStatsOverlayPolicy.decide(
     PlayerStatsOverlayPolicy.Input(
       enabled = statisticsPage in 1..6,
@@ -626,6 +628,7 @@ fun PlayerControls(
       musicMode = useAudioPlayer,
       mediaTypeKnown = declaredMediaKind != DeclaredPlaybackMediaKind.UNKNOWN ||
         nativeSnapshot.videoWidth > 0 || activity?.isCurrentMediaKnownAudio() == true,
+      sheetOrPanelOpen = sheetForStats != Sheets.None || panelForStats != Panels.None,
     ),
   )
   if (useAudioPlayer) {

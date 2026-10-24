@@ -41,4 +41,11 @@ class PlayerStatsOverlayPolicyTest {
     ).forEach { assertFalse(PlayerStatsOverlayPolicy.decide(it).visible) }
     assertTrue(PlayerStatsOverlayPolicy.decide(input(PlayerStatsOverlayPolicy.Engine.NATIVE)).visible)
   }
+
+  @Test fun sheetOpenHidesComposeStatsEvenWhenAPageIsEnabled() {
+    val hidden = PlayerStatsOverlayPolicy.decide(
+      input(PlayerStatsOverlayPolicy.Engine.MPV).copy(sheetOrPanelOpen = true),
+    )
+    assertFalse(hidden.visible)
+  }
 }

@@ -78,4 +78,11 @@ class GlassScenePolicyTest {
       assertFalse(GlassScenePolicy.validCaptureSize(384f, size))
     }
   }
+
+  @Test fun ambienceKeepsLastFrostedFrameUnlessSurfaceOrLifecycleEnded() {
+    assertTrue(GlassScenePolicy.shouldKeepLastFrostedFrame(false, false, false))
+    assertFalse(GlassScenePolicy.shouldKeepLastFrostedFrame(lifecycleStopped = true, sourceChanged = false, ineligible = false))
+    assertFalse(GlassScenePolicy.shouldKeepLastFrostedFrame(lifecycleStopped = false, sourceChanged = true, ineligible = false))
+    assertFalse(GlassScenePolicy.shouldKeepLastFrostedFrame(lifecycleStopped = false, sourceChanged = false, ineligible = true))
+  }
 }

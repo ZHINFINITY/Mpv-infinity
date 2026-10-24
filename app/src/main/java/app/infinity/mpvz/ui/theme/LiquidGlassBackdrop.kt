@@ -149,15 +149,15 @@ fun LiquidGlassBackdropHost(
   }
   // Visibility changes stop work, but do not flash the last good scene to black during sheet handoff.
   // Media, safety and lifecycle boundaries always discard the old scene immediately.
-  DisposableEffect(surfaceView, generation, eligible, lifecycleOwner) {
-    frame.value = null
+  DisposableEffect(surfaceView, eligible, lifecycleOwner) {
+    if (!eligible) frame.value = null
     val observer = LifecycleEventObserver { _, event ->
       if (event == Lifecycle.Event.ON_STOP || event == Lifecycle.Event.ON_DESTROY) frame.value = null
     }
     lifecycleOwner.lifecycle.addObserver(observer)
     onDispose {
       lifecycleOwner.lifecycle.removeObserver(observer)
-      frame.value = null
+      if (!eligible) frame.value = null
     }
   }
   LaunchedEffect(surfaceView, allowed, generation, lifecycleOwner, frostPasses) {
@@ -169,7 +169,14 @@ fun LiquidGlassBackdropHost(
       fun transientFailure() {
         val now = SystemClock.uptimeMillis()
         val first = unavailableSince ?: now.also { unavailableSince = it }
-        if (!GlassScenePolicy.retainTransientFrame(now - first)) frame.value = null
+        // Keep the last frosted sample during ambience/interpolation hiccups.
+        if (!GlassScenePolicy.retainTransientFrame(now - first) &&
+          !GlassScenePolicy.shouldKeepLastFrostedFrame(
+            lifecycleStopped = false,
+            sourceChanged = false,
+            ineligible = !eligible,
+          )
+        ) frame.value = null
       }
       while (currentCoroutineContext().isActive) {
         if (!ready() || !source.isAttachedToWindow || !source.holder.surface.isValid) {
