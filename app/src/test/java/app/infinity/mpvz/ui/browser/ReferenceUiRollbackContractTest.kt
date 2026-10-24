@@ -22,7 +22,7 @@ class ReferenceUiRollbackContractTest {
 
   @Test fun preservedPlayerSourcesKeepBaseline7eFingerprints() {
     val expected = mapOf(
-      "app/src/main/java/app/infinity/mpvz/ui/player/controls/PlayerControls.kt" to "98217b2f7f4e1f8975c37a799c5e3355f04637cce4282792fec11608aedb1a26" /* music-path: skip stats.lua, hide album-art SurfaceView, expand in-app via mpvRx sheet */,
+      "app/src/main/java/app/infinity/mpvz/ui/player/controls/PlayerControls.kt" to "4ba1f839991c75295c020669be23de6e3b52cb31971a8e9475c1cc08afab204b" /* music-path: hide compose stats while a sheet/panel is open */,
       "app/src/main/java/app/infinity/mpvz/ui/player/controls/components/Seekbar.kt" to "b0d7ca11fdd2729871e052a0f6ea3b2cba64fb3e29039e5d3c42a7acf4d426c9",
       // Build 1902: owner-approved contrasting switch colours (3D glass depth kept).
       "app/src/main/java/app/infinity/mpvz/ui/player/controls/components/GlassControls.kt" to "ae873298a6b622bcdbe5c5366fc6d8fd37009ee395c3531c1df90f9dd31f6320",
@@ -174,6 +174,48 @@ private suspend fun frostGlassFrame(bitmap: Bitmap, strength: Float): Bitmap? = 
         """runCatching { RuntimeShader(GLASS_OPTICS) }.getOrNull()""",
     )
     var film = current
+    // Keep last frosted sample during ambience/interpolation; reverse before hashing.
+    val frostRetention = listOf(
+      """  DisposableEffect(surfaceView, eligible, lifecycleOwner) {
+    if (!eligible) frame.value = null
+    val observer = LifecycleEventObserver { _, event ->
+      if (event == Lifecycle.Event.ON_STOP || event == Lifecycle.Event.ON_DESTROY) frame.value = null
+    }
+    lifecycleOwner.lifecycle.addObserver(observer)
+    onDispose {
+      lifecycleOwner.lifecycle.removeObserver(observer)
+      if (!eligible) frame.value = null
+    }
+  }
+""" to
+        """  DisposableEffect(surfaceView, generation, eligible, lifecycleOwner) {
+    frame.value = null
+    val observer = LifecycleEventObserver { _, event ->
+      if (event == Lifecycle.Event.ON_STOP || event == Lifecycle.Event.ON_DESTROY) frame.value = null
+    }
+    lifecycleOwner.lifecycle.addObserver(observer)
+    onDispose {
+      lifecycleOwner.lifecycle.removeObserver(observer)
+      frame.value = null
+    }
+  }
+""",
+      """        // Keep the last frosted sample during ambience/interpolation hiccups.
+        if (!GlassScenePolicy.retainTransientFrame(now - first) &&
+          !GlassScenePolicy.shouldKeepLastFrostedFrame(
+            lifecycleStopped = false,
+            sourceChanged = false,
+            ineligible = !eligible,
+          )
+        ) frame.value = null
+""" to
+        """        if (!GlassScenePolicy.retainTransientFrame(now - first)) frame.value = null
+""",
+    )
+    frostRetention.forEach { (now, before) ->
+      assertEquals(now, 1, film.split(now).size - 1)
+      film = film.replace(now, before)
+    }
     latency.forEach { (now, before) ->
       assertEquals(now, 1, film.split(now).size - 1)
       film = film.replace(now, before)
