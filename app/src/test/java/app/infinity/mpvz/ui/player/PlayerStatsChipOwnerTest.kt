@@ -15,6 +15,7 @@ class PlayerStatsChipOwnerTest {
     assertTrue(text.contains("PlayerStatsLuaCommandPolicy.apply("))
     assertTrue(text.contains("PlayerStatsLuaCommandPolicy.forChip("))
     assertTrue(text.contains("luaShown = PlayerStatsLuaCommandPolicy.isLuaShown()"))
+    assertTrue(text.contains("previousPage = statisticsPage"))
     assertTrue(text.contains("advancedPreferences.enabledStatisticsPage.set(page)"))
     assertFalse(text.contains("if (statisticsPage in 1..5) PlaybackSession.command(\"script-binding\", \"stats/display-stats-toggle\")"))
     assertFalse(text.contains("PlayerStatsLuaOverlayPolicy"))
@@ -52,6 +53,7 @@ class PlayerStatsChipOwnerTest {
     assertTrue(text.contains("user-data/mpvrx/startup-stats-applied"))
     assertTrue(text.contains("PlayerStatsLuaCommandPolicy.forStartup"))
     assertTrue(text.contains("PlayerStatsLuaCommandPolicy.apply"))
+    assertTrue(text.contains("PlayerStatsLuaCommandPolicy.onCoreRecreated()"))
     assertFalse(text.contains("stats/display-page-\$it"))
   }
 

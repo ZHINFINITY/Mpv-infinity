@@ -173,5 +173,11 @@ internal object PlayerLifecyclePolicy {
   /** Reloading media before Android recreates the Surface leaves ColorOS on a black frame. */
   fun shouldWaitForSurfaceBeforeRebuild(surfaceReady: Boolean): Boolean = !surfaceReady
 
+  /** Music keeps its own session. Video must remember time-pos before OEM Surface teardown. */
+  fun shouldCaptureForegroundResumePosition(isAudioMedia: Boolean): Boolean = !isAudioMedia
+
+  fun resumePositionSeconds(positionSeconds: Double?): Double? =
+    positionSeconds?.takeIf { it.isFinite() && it > 0.0 }
+
   const val LONG_BACKGROUND_REBUILD_THRESHOLD_MS = 900_000L
 }

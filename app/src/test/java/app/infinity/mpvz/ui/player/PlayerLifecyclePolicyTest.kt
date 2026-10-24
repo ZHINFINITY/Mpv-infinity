@@ -72,4 +72,13 @@ class PlayerLifecyclePolicyTest {
     assertTrue(PlayerLifecyclePolicy.shouldWaitForSurfaceBeforeRebuild(surfaceReady = false))
     assertFalse(PlayerLifecyclePolicy.shouldWaitForSurfaceBeforeRebuild(surfaceReady = true))
   }
+
+  @Test
+  fun videoBackgroundCapturesResumePositionAndSkipsMusic() {
+    assertTrue(PlayerLifecyclePolicy.shouldCaptureForegroundResumePosition(isAudioMedia = false))
+    assertFalse(PlayerLifecyclePolicy.shouldCaptureForegroundResumePosition(isAudioMedia = true))
+    assertEquals(12.5, PlayerLifecyclePolicy.resumePositionSeconds(12.5))
+    assertEquals(null, PlayerLifecyclePolicy.resumePositionSeconds(0.0))
+    assertEquals(null, PlayerLifecyclePolicy.resumePositionSeconds(Double.NaN))
+  }
 }

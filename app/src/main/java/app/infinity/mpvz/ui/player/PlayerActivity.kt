@@ -1075,6 +1075,7 @@ class PlayerActivity :
   private var isInBackgroundPlayback = false // Track if we are currently in background playback mode
   private var screenStateReceiverRegistered = false
   private var mpvInitialized = false // Track MPV initialization state
+  private var pendingForegroundResumePositionSeconds: Double? = null
   private var viewModelHostAttached = false
   private var torrentPickerHandoff = false
   private var savePlaybackStateJob: Job? = null // Track ongoing debounced save job
@@ -3099,6 +3100,7 @@ class PlayerActivity :
         restoreSystemUI()
       }
 
+      captureForegroundResumePosition()
       saveVideoPlaybackState(fileName, immediate = true)
       persistAudioPlaybackSnapshot()
     }.onFailure { e ->
@@ -3251,6 +3253,7 @@ class PlayerActivity :
     MediaPlaybackService.activityForeground = false
     playerStoppedAtElapsedRealtime = android.os.SystemClock.elapsedRealtime()
     runCatching {
+      captureForegroundResumePosition()
       pipHelper.onStop()
       if (isNativeEngineActive() && fileName.isNotBlank()) {
         saveVideoPlaybackState(fileName, immediate = true)
@@ -3988,6 +3991,7 @@ class PlayerActivity :
       } else if (!isDeviceScreenOffOrLocked() && (isInBackgroundPlayback || lastVid > 0)) {
         enableVideoAfterBackground()
       }
+      restoreForegroundResumePositionIfNeeded()
       viewModel.restartAmbientIfActive()
       binding.root.post(::updateVideoAmbientPlayerBounds)
     }
@@ -4854,6 +4858,7 @@ class PlayerActivity :
       PlaybackSession.markForeground()
       enableVideoAfterBackground()
     }
+    restoreForegroundResumePositionIfNeeded()
     viewModel.setAmbientLifecycleActive(true)
     return true
   }
@@ -4861,9 +4866,12 @@ class PlayerActivity :
   private fun rebuildRendererAfterLongBackground() {
     if (fileName.isBlank() || isFinishing || isDestroyed || !ownsPlaybackSession()) return
     val paused = viewModel.paused == true || PlaybackSession.getPropertyBoolean("pause") == true
+    val captured = pendingForegroundResumePositionSeconds
+    pendingForegroundResumePositionSeconds = null
     val positionSeconds =
-      if (isNativeEngineActive()) nativePlaybackPositionSeconds()
-      else PlaybackSession.getPropertyDouble("time-pos") ?: 0.0
+      captured
+        ?: if (isNativeEngineActive()) nativePlaybackPositionSeconds()
+        else PlaybackSession.getPropertyDouble("time-pos") ?: 0.0
     val restore = PlaybackPositionRestoreOverride(
       positionSeconds = positionSeconds.takeIf { it.isFinite() && it > 0.0 },
       paused = paused,
@@ -10155,6 +10163,29 @@ class PlayerActivity :
       }
       lastVid = -1
     }
+  }
+
+  private fun currentPlaybackIsAudioMedia(): Boolean =
+    viewModel.isAudioOnly.value || isCurrentMediaKnownAudio() || isKnownAudioLaunch(intent)
+
+  private fun captureForegroundResumePosition() {
+    if (!PlayerLifecyclePolicy.shouldCaptureForegroundResumePosition(currentPlaybackIsAudioMedia())) return
+    val live =
+      if (isNativeEngineActive()) nativePlaybackPositionSeconds()
+      else PlaybackSession.getPropertyDouble("time-pos")
+    PlayerLifecyclePolicy.resumePositionSeconds(live)?.let { pendingForegroundResumePositionSeconds = it }
+  }
+
+  private fun restoreForegroundResumePositionIfNeeded() {
+    val seconds = PlayerLifecyclePolicy.resumePositionSeconds(pendingForegroundResumePositionSeconds) ?: return
+    if (currentPlaybackIsAudioMedia() || isFinishing || isDestroyed || !ownsPlaybackSession()) return
+    if (isNativeEngineActive()) {
+      nativeEngineOrNull()?.seekTo((seconds * 1000.0).toLong())
+    } else {
+      if (!player.isSurfaceReady) return
+      PlaybackSession.setPropertyDouble("time-pos", seconds)
+    }
+    pendingForegroundResumePositionSeconds = null
   }
 
   companion object {
