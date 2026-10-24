@@ -58,6 +58,7 @@ class AppearancePreferences(
   val glassDepthStrength = preferenceStore.getFloat("glass_depth_strength", 1f)
   val glassMotionIntensity = preferenceStore.getFloat("glass_motion_intensity", 1f)
   val useSystemFont = preferenceStore.getBoolean("use_system_font", false)
+  val animateInfinityLogo = preferenceStore.getBoolean("animate_infinity_logo", true)
   val unlimitedNameLines = preferenceStore.getBoolean("unlimited_name_lines", false)
   val hidePlayerButtonsBackground = preferenceStore.getBoolean("hide_player_buttons_background", false)
   val forceDarkPlayerButtonsBackground = preferenceStore.getBoolean("force_dark_player_buttons_background", false)

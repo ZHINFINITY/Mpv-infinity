@@ -44,9 +44,12 @@ import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import app.infinity.mpvz.preferences.AppearancePreferences
+import app.infinity.mpvz.preferences.preference.collectAsState
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import org.koin.compose.koinInject
 
 /**
  * A reusable Box that wraps content with pull-to-refresh functionality.
@@ -81,17 +84,9 @@ fun PullRefreshBox(
   val maxTranslationPx = with(density) { refreshThreshold.toPx() }
 
   val activeJob = remember { mutableStateOf<Job?>(null) }
-  val infiniteTransition = rememberInfiniteTransition(label = "refreshRotation")
-  val infinityDashOffset by
-    infiniteTransition.animateFloat(
-      initialValue = 0f,
-      targetValue = 256.589f,
-      animationSpec =
-        infiniteRepeatable(
-          animation = tween(durationMillis = 2_000, easing = LinearEasing),
-        ),
-      label = "infinityDashOffset",
-    )
+  val appearance = koinInject<AppearancePreferences>()
+  val animateLogo by appearance.animateInfinityLogo.collectAsState()
+  val infinityDashOffset = infinityDashOffset(animateLogo)
   val infinityPath = remember {
     Path().apply {
       moveTo(24.3f, 30f)
@@ -212,13 +207,9 @@ fun PullRefreshBox(
 
 @Composable
 fun InfinityLoadingIndicator(modifier: Modifier = Modifier, size: Dp = 56.dp) {
-  val transition = rememberInfiniteTransition(label = "catalogInfinityLoading")
-  val dashOffset by transition.animateFloat(
-    initialValue = 0f,
-    targetValue = 256.589f,
-    animationSpec = infiniteRepeatable(tween(durationMillis = 2_000, easing = LinearEasing)),
-    label = "catalogInfinityDashOffset",
-  )
+  val appearance = koinInject<AppearancePreferences>()
+  val animateLogo by appearance.animateInfinityLogo.collectAsState()
+  val dashOffset = infinityDashOffset(animateLogo)
   val path = remember {
     Path().apply {
       moveTo(24.3f, 30f)
@@ -251,4 +242,17 @@ fun InfinityLoadingIndicator(modifier: Modifier = Modifier, size: Dp = 56.dp) {
       )
     }
   }
+}
+
+@Composable
+private fun infinityDashOffset(animate: Boolean): Float {
+  if (!animate) return 0f
+  val transition = rememberInfiniteTransition(label = "catalogInfinityLoading")
+  val offset by transition.animateFloat(
+    initialValue = 0f,
+    targetValue = 256.589f,
+    animationSpec = infiniteRepeatable(tween(durationMillis = 2_000, easing = LinearEasing)),
+    label = "catalogInfinityDashOffset",
+  )
+  return offset
 }
