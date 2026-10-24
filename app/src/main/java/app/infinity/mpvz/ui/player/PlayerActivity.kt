@@ -308,14 +308,22 @@ class PlayerActivity :
   internal fun bindMpvSessionCallbacksOnMain() {
     check(Looper.myLooper() == Looper.getMainLooper()) { "MPV callbacks must bind on Main" }
     playerObserverBindingEpoch++
-    mpvStatsVisible = false
-    mpvStatsPage = 0
+    // Interpolation recreates the core while stats.lua OSD can still be drawn.
+    // Keep overlayDepth: display-page on a still-drawn OSD stacks. Hide that many
+    // layers first, then restore at most one persisted page.
+    if (PlayerStatsLuaOverlayPolicy.overlayDepth > 0 || mpvStatsVisible) {
+      pendingStatsLuaReset = true
+    } else {
+      mpvStatsVisible = false
+      mpvStatsPage = 0
+    }
     player.bindSessionCallbacksOnMain()
     PlaybackSession.addObserver(playerObserver)
     applyStatsOverlayPolicy()
   }
 
   private var mpvStatsPage = 0
+  private var pendingStatsLuaReset = false
 
   private fun applyStatsOverlayPolicy() {
     if (activeEngineMode != PlaybackEngineMode.MPV || !mpvInitialized) return
@@ -331,29 +339,36 @@ class PlayerActivity :
       // can turn a hidden overlay back on. Force it off and detach the surface.
       hideMpvSurfaceForMusic()
     }
+    val moreIsSender = viewModel.sheetShown.value == Sheets.More && !isMusic && !pendingStatsLuaReset
     val sheetOrPanelOpen =
       (viewModel.sheetShown.value != Sheets.None && viewModel.sheetShown.value != Sheets.More) ||
         viewModel.panelShown.value != Panels.None
     val requestedPage = advancedPreferences.enabledStatisticsPage.get()
+    val forceReset = pendingStatsLuaReset
+    pendingStatsLuaReset = false
     val result = PlayerStatsLuaOverlayPolicy.decide(
       PlayerStatsLuaOverlayPolicy.Input(
         requestedPage = requestedPage,
         currentlyVisible = mpvStatsVisible,
         currentlyPage = mpvStatsPage,
+        overlayDepth = PlayerStatsLuaOverlayPolicy.overlayDepth,
         sheetOrPanelOpen = sheetOrPanelOpen,
         isMusic = isMusic,
+        forceReset = forceReset,
+        senderIsMoreSheet = moreIsSender,
       ),
     )
-    // More chips already sent the mpvRx stats.lua commands. Sync ownership
-    // state only so interpolation restore and music hide stay single-owner.
-    if (viewModel.sheetShown.value == Sheets.More && !isMusic) {
-      mpvStatsVisible = result.visible
-      mpvStatsPage = result.page
+    // More chips already sent the lua commands. Do not rewrite overlay tracking
+    // from the preference — that is what made Off look hidden while OSD stayed up.
+    if (moreIsSender) {
+      mpvStatsVisible = PlayerStatsLuaOverlayPolicy.overlayDepth > 0
+      mpvStatsPage = if (mpvStatsVisible) result.page else 0
       return
     }
     result.commands.forEach { command ->
       PlaybackSession.command(*command.args.toTypedArray())
     }
+    PlayerStatsLuaOverlayPolicy.record(result)
     mpvStatsVisible = result.visible
     mpvStatsPage = result.page
   }
@@ -1735,15 +1750,20 @@ class PlayerActivity :
                   binding.player.visibility = View.VISIBLE
                   viewModel.setAmbientLifecycleActive(true)
                   viewModel.restartAmbientIfActive()
-                  // Media3 tore down stats.lua's OSD. Forget the last toggle so MPV can
-                  // show the persisted statistics page again on this core.
+                  // Media3 tore down stats.lua's OSD. Depth is stale; show at most one page.
+                  PlayerStatsLuaOverlayPolicy.reset()
                   mpvStatsVisible = false
+                  mpvStatsPage = 0
                   applyStatsOverlayPolicy()
                 } else if (!ready && ownsPlaybackSession() && activeEngineMode == PlaybackEngineMode.MPV) {
                   setNativeVideoSurfaceVisible(false)
                   binding.player.alpha = 1f
                   binding.player.visibility = View.VISIBLE
+                  if (PlayerStatsLuaOverlayPolicy.overlayDepth > 0 || mpvStatsVisible) {
+                    pendingStatsLuaReset = true
+                  }
                   mpvStatsVisible = false
+                  mpvStatsPage = 0
                   applyStatsOverlayPolicy()
                 }
                 // Apply the captured state once after MPV is ready. Repeated time-pos writes

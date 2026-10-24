@@ -640,14 +640,16 @@ fun AudioPlayerControls(
   var showInPlaceLyrics by rememberSaveable { mutableStateOf(false) }
   var wasLyricsActiveBeforeLandscape by rememberSaveable { mutableStateOf(false) }
   var isStandbyActive by remember { mutableStateOf(false) }
+  var isLyricsFullscreen by remember { mutableStateOf(false) }
   var lastUserInteractionTime by remember { mutableLongStateOf(System.currentTimeMillis()) }
 
   val resetInactivityTimer = {
     lastUserInteractionTime = System.currentTimeMillis()
     isStandbyActive = false
+    isLyricsFullscreen = false
   }
 
-  BackHandler(enabled = isStandbyActive) {
+  BackHandler(enabled = isStandbyActive || isLyricsFullscreen) {
     resetInactivityTimer()
   }
 
@@ -1112,6 +1114,16 @@ fun AudioPlayerControls(
     if (audioStandbyMode && isPlaying) {
       kotlinx.coroutines.delay(audioStandbyDelaySeconds.coerceIn(1, 60) * 1000L)
       isStandbyActive = true
+    }
+  }
+
+  // mpvRx: lyrics (including delay) go fullscreen after idle even when standby is off.
+  LaunchedEffect(showInPlaceLyrics, isPlaying, isTabletLandscape, lastUserInteractionTime) {
+    if (showInPlaceLyrics && !isTabletLandscape && isPlaying) {
+      kotlinx.coroutines.delay(5_000L)
+      isLyricsFullscreen = true
+    } else {
+      isLyricsFullscreen = false
     }
   }
 
@@ -1596,7 +1608,7 @@ fun AudioPlayerControls(
           app.infinity.mpvz.ui.player.controls.components.LyricsView(
             viewModel = viewModel,
             modifier = Modifier.fillMaxSize(),
-            isLyricsFullscreen = isStandbyActive,
+            isLyricsFullscreen = isStandbyActive || isLyricsFullscreen,
             onTap = resetInactivityTimer,
           )
         } else {
@@ -2455,7 +2467,7 @@ fun AudioPlayerControls(
           }
         } else {
           androidx.compose.animation.AnimatedVisibility(
-            visible = !isStandbyActive,
+            visible = !isStandbyActive && !isLyricsFullscreen,
             enter = fadeIn(animationSpec = tween(300)) + androidx.compose.animation.expandVertically(animationSpec = tween(300)),
             exit = fadeOut(animationSpec = tween(300)) + androidx.compose.animation.shrinkVertically(animationSpec = tween(300)),
           ) {
@@ -2467,12 +2479,12 @@ fun AudioPlayerControls(
           }
           centerVisualizerView(Modifier.weight(1f).fillMaxWidth(), false)
         }
-        if (isStandbyActive) {
+        if (isStandbyActive || isLyricsFullscreen) {
           seekbarView()
         }
 
         androidx.compose.animation.AnimatedVisibility(
-          visible = !isStandbyActive,
+          visible = !isStandbyActive && !isLyricsFullscreen,
           enter = fadeIn(animationSpec = tween(300)) + androidx.compose.animation.expandVertically(animationSpec = tween(300)),
           exit = fadeOut(animationSpec = tween(300)) + androidx.compose.animation.shrinkVertically(animationSpec = tween(300)),
         ) {
