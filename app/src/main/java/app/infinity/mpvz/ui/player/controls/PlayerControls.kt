@@ -218,7 +218,7 @@ internal fun AudioPlayerScreen(
   val liquidGlassSurfaces by appearancePreferences.liquidGlassSurfaces.collectAsState()
   val activity = LocalActivity.current as? PlayerActivity
   val nativeEngineActive = activity?.isNativeEngineActive() == true
-  val nativeSnapshot by activity?.nativePlaybackSnapshot?.collectAsState()
+  val nativeSnapshot by activity?.nativePlaybackSnapshot?.collectAsState(initial = NativePlaybackSnapshot())
     ?: remember { mutableStateOf(NativePlaybackSnapshot()) }
   val playbackQueue by PlaybackSession.queue.collectAsStateWithLifecycle()
   val currentPlaybackItem = playbackQueue.currentItem
@@ -487,7 +487,7 @@ fun PlayerControls(
   val isPlayerSeeking = isSeeking || (mpvSeeking ?: false)
   val activity = LocalActivity.current as? PlayerActivity
   val streamPlaybackHidesQuality = activity?.isStreamTabPlayback == true
-  val nativeSnapshot by activity?.nativePlaybackSnapshot?.collectAsState()
+  val nativeSnapshot by activity?.nativePlaybackSnapshot?.collectAsState(initial = NativePlaybackSnapshot())
     ?: remember { mutableStateOf(NativePlaybackSnapshot()) }
   val nativeEngineActive = activity?.isNativeEngineActive() == true
   val isNativeBuffering = nativeEngineActive && nativeSnapshot.isBuffering
