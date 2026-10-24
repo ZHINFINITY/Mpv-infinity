@@ -1021,14 +1021,9 @@ class MPVView(
     val isMusic =
       PlaybackSession.queue.value.currentItem?.isDefinitelyAudioOnly() == true ||
         PlaybackSession.queue.value.currentItem?.declaredMediaKind() == DeclaredPlaybackMediaKind.AUDIO
-    if (!isMusic) {
-      advancedPreferences.enabledStatisticsPage.get().let {
-        if (it in 1..5) {
-          PlaybackSession.command("script-binding", "stats/display-stats-toggle")
-          PlaybackSession.command("script-binding", "stats/display-page-$it")
-        }
-      }
-    }
+    // PlayerActivity.applyStatsOverlayPolicy owns the toggle. A second command here
+    // after Media3→MPV would flip a visible overlay off.
+    if (isMusic) return
   }
 
   fun applyOsdSafeAreaMargins(insets: WindowInsetsCompat? = null) {

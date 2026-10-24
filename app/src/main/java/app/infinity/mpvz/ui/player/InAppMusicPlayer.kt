@@ -104,6 +104,8 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.compose.runtime.collectAsState
 
 /*
  * Mini player <-> full music player as one live sheet inside the browser.
@@ -488,7 +490,9 @@ fun InAppMusicPlayerSheet(
 ) {
   val context = LocalContext.current
   val sessionState by PlaybackSession.state.collectAsStateWithLifecycle()
-  val serviceOwnsPlayback = MediaPlaybackService.isForegroundActive()
+  val serviceOwnsPlayback by MediaPlaybackService.foregroundActive.collectAsStateWithLifecycle()
+  val lifecycle = LocalLifecycleOwner.current.lifecycle
+  val lifecycleState by lifecycle.currentStateFlow.collectAsState()
   val store = viewModel<InAppMusicPlayerStore>()
   val isTelevision = remember(context) {
     val modeType = context.resources.configuration.uiMode and Configuration.UI_MODE_TYPE_MASK
@@ -510,6 +514,12 @@ fun InAppMusicPlayerSheet(
   }
   LaunchedEffect(canShow, state.isContentRequested) {
     if (!canShow && !state.isContentRequested) store.release()
+  }
+
+  val shownInApp = state.isOpen && lifecycleState.isAtLeast(androidx.lifecycle.Lifecycle.State.STARTED)
+  DisposableEffect(shownInApp) {
+    MediaPlaybackService.setInAppPlayerVisible(shownInApp)
+    onDispose { MediaPlaybackService.setInAppPlayerVisible(false) }
   }
 
   PredictiveBackHandler(enabled = state.isOpen && canShow) { progress ->

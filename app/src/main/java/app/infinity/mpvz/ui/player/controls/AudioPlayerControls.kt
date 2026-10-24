@@ -1226,67 +1226,72 @@ fun AudioPlayerControls(
       settle = { velocityY -> releaseToTarget(velocityY) },
     )
   }
+  val liveSheetDrag =
+    if (inAppSheet != null) {
+      // mpvRx: the live sheet tracks the finger in window space. Do not also lerp this page
+      // into the mini-player rect; that fights the sheet and can leave a black full player.
+      Modifier.inAppMusicSheetDrag(
+        state = inAppSheet,
+        collapsing = true,
+        enabled = !isSheetOpen && !showInPlaceLyrics,
+      )
+    } else {
+      Modifier.nestedScroll(nestedGestureController.nestedScrollConnection)
+    }
+  val activityMinimizeDrag =
+    if (inAppSheet != null) {
+      Modifier
+    } else {
+      Modifier
+        .onGloballyPositioned {
+          playerHeightPx = it.size.height.toFloat()
+          playerWidthPx = it.size.width.toFloat()
+          if (settleTarget == null && miniGesture.progress == 0f) {
+            val bounds = it.miniPlayerScreenBounds(hostPlayerView)
+            playerOrigin = androidx.compose.ui.geometry.Offset(bounds.left, bounds.top)
+          }
+        }
+        .pointerInput(Unit) {
+          val velocityTracker = VelocityTracker()
+          detectVerticalDragGestures(
+            onDragStart = {
+              velocityTracker.resetTracking()
+              transitionTranslucent = playerActivity?.setAudioTransitionTranslucent(true) == true
+              nestedGestureController.onRootDragStart()
+              val progress = if (settleTarget != null) settleAnimation.value else miniGesture.progress
+              settleTarget = null
+              settleGeneration++
+              miniGesture = miniGesture.copy(progress = progress)
+            },
+            onVerticalDrag = { change, dragAmount ->
+              velocityTracker.addPosition(change.uptimeMillis, change.position)
+              if (dragAmount > 0f || miniGesture.progress > 0f) {
+                change.consume()
+                if (dragAmount != 0f) lastDragDownward = dragAmount > 0f
+                miniGesture = MiniPlayerGesturePolicy.drag(miniGesture, dragAmount, size.height.toFloat())
+              }
+            },
+            onDragEnd = {
+              val velocityY = runCatching {
+                velocityTracker.calculateVelocity().y
+              }.getOrDefault(0f)
+              releaseToTarget(velocityY)
+            },
+            onDragCancel = {
+              if (nestedGestureController.onRootDragCancel()) {
+                settleStart = miniGesture.progress
+                settleProgrammatic = false
+                settleTarget = 0f
+                settleGeneration++
+              }
+            },
+          )
+        }
+    }
   val gestureInputModifier = modifier
     .fillMaxSize()
-    .then(
-      if (inAppSheet != null) {
-        Modifier.inAppMusicSheetDrag(
-          state = inAppSheet,
-          collapsing = true,
-          enabled = !isSheetOpen,
-        )
-      } else {
-        Modifier.nestedScroll(nestedGestureController.nestedScrollConnection)
-      },
-    )
-    .onGloballyPositioned {
-      playerHeightPx = it.size.height.toFloat()
-      playerWidthPx = it.size.width.toFloat()
-      if (settleTarget == null && miniGesture.progress == 0f) {
-        val bounds = it.miniPlayerScreenBounds(hostPlayerView)
-        playerOrigin = androidx.compose.ui.geometry.Offset(bounds.left, bounds.top)
-      }
-    }
-    .pointerInput(Unit) {
-      val velocityTracker = VelocityTracker()
-      detectVerticalDragGestures(
-        onDragStart = {
-          velocityTracker.resetTracking()
-          // Touch-down converts the audio window so the library shows around the panel.
-          transitionTranslucent = playerActivity?.setAudioTransitionTranslucent(true) == true
-          nestedGestureController.onRootDragStart()
-          // A new finger owns the presentation immediately, including a reversal mid-settle.
-          val progress = if (settleTarget != null) settleAnimation.value else miniGesture.progress
-          settleTarget = null
-          settleGeneration++
-          miniGesture = miniGesture.copy(progress = progress)
-        },
-        onVerticalDrag = { change, dragAmount ->
-          velocityTracker.addPosition(change.uptimeMillis, change.position)
-          if (dragAmount > 0f || miniGesture.progress > 0f) {
-            change.consume()
-            if (dragAmount != 0f) lastDragDownward = dragAmount > 0f
-            // Linear: drag delta / page height moves the transition value directly.
-            miniGesture = MiniPlayerGesturePolicy.drag(miniGesture, dragAmount, size.height.toFloat())
-          }
-        },
-        onDragEnd = {
-          val velocityY = runCatching {
-            // Compose's tracker reports px/sec, preserving the tested velocity policy.
-            velocityTracker.calculateVelocity().y
-          }.getOrDefault(0f)
-          releaseToTarget(velocityY)
-        },
-        onDragCancel = {
-          if (nestedGestureController.onRootDragCancel()) {
-            settleStart = miniGesture.progress
-            settleProgrammatic = false
-            settleTarget = 0f
-            settleGeneration++
-          }
-        },
-      )
-    }
+    .then(liveSheetDrag)
+    .then(activityMinimizeDrag)
   // The live page transform is applied by AudioPaletteGlassScene's modifier below
   // (pageTransitionLayer), never to this input-only root.
   LaunchedEffect(settleGeneration) {
@@ -1376,6 +1381,15 @@ fun AudioPlayerControls(
         .then(Modifier.graphicsLayer {
           // pageTransitionLayer: the whole page lerps into the live mini-player rect,
           // scaled uniformly from the top-left and clipped to the animated rounded rect.
+          if (inAppSheet != null) {
+            translationX = 0f
+            translationY = 0f
+            scaleX = 1f
+            scaleY = 1f
+            clip = false
+            alpha = 1f
+            return@graphicsLayer
+          }
           val frame = currentTransitionFrame(size.width, size.height)
           transformOrigin = androidx.compose.ui.graphics.TransformOrigin(0f, 0f)
           if (frame != null) {
@@ -1400,7 +1414,9 @@ fun AudioPlayerControls(
         })
         .onGloballyPositioned { pageContentCoordinates[0] = it }
         .background(
-          if (liquidGlassSurfaces) Color.Transparent else MaterialTheme.colorScheme.surface,
+          // mpvRx paints an opaque surface so Now Playing never sits on a hidden browser
+          // (which reads as a completely black full player). Liquid glass still frosts on top.
+          MaterialTheme.colorScheme.surface,
         )
         .drawWithCache {
           if (audioPaletteBackground && ambientModeEnabled &&

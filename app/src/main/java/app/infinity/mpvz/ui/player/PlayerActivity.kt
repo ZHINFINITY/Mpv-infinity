@@ -1688,10 +1688,16 @@ class PlayerActivity :
                   binding.player.visibility = View.VISIBLE
                   viewModel.setAmbientLifecycleActive(true)
                   viewModel.restartAmbientIfActive()
+                  // Media3 tore down stats.lua's OSD. Forget the last toggle so MPV can
+                  // show the persisted statistics page again on this core.
+                  mpvStatsVisible = false
+                  applyStatsOverlayPolicy()
                 } else if (!ready && ownsPlaybackSession() && activeEngineMode == PlaybackEngineMode.MPV) {
                   setNativeVideoSurfaceVisible(false)
                   binding.player.alpha = 1f
                   binding.player.visibility = View.VISIBLE
+                  mpvStatsVisible = false
+                  applyStatsOverlayPolicy()
                 }
                 // Apply the captured state once after MPV is ready. Repeated time-pos writes
                 // during 4K/HDR handoff force repeated demuxer seeks and cause audible stalls.
@@ -1775,6 +1781,11 @@ class PlayerActivity :
             playerPreferences.orientation.get() == PlayerOrientation.Video &&
             snapshot.videoWidth > 0 && snapshot.videoHeight > 0
           ) {
+            // Album-art still reports a video size. Music must not inherit landscape
+            // from the previous video or from square cover art.
+            if (viewModel.isAudioOnly.value || isCurrentMediaKnownAudio() || isKnownAudioLaunch(intent)) {
+              setOrientation()
+            } else {
             val targetOrientation =
               if (snapshot.videoWidth > snapshot.videoHeight) {
                 ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
@@ -1782,6 +1793,7 @@ class PlayerActivity :
                 ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT
               }
             if (requestedOrientation != targetOrientation) requestedOrientation = targetOrientation
+            }
           }
         }
       }
@@ -2542,6 +2554,7 @@ class PlayerActivity :
             viewModel.showControls()
             hideMpvSurfaceForMusic()
             applyStatsOverlayPolicy()
+            setOrientation()
             try {
               WindowCompat.setDecorFitsSystemWindows(window, false)
               windowInsetsController.apply {
