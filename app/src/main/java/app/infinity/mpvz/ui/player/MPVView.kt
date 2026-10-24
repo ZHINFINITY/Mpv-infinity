@@ -1021,14 +1021,14 @@ class MPVView(
 
   }
 
-  fun applyStartupStatistics() {
+  fun applyStartupStatistics(force: Boolean = false) {
     val isMusic =
       PlaybackSession.queue.value.currentItem?.isDefinitelyAudioOnly() == true ||
         PlaybackSession.queue.value.currentItem?.declaredMediaKind() == DeclaredPlaybackMediaKind.AUDIO
     if (isMusic) return
     // The native core survives Activity recreation and playlist loads. A toggle on every
     // load would turn an already enabled statistics overlay off on the next file.
-    if (PlaybackSession.getPropertyString(PlayerStatsLuaCommandPolicy.STARTUP_APPLIED_PROPERTY) ==
+    if (!force && PlaybackSession.getPropertyString(PlayerStatsLuaCommandPolicy.STARTUP_APPLIED_PROPERTY) ==
       PlayerStatsLuaCommandPolicy.STARTUP_APPLIED_YES) return
     PlaybackSession.setPropertyString(
       PlayerStatsLuaCommandPolicy.STARTUP_APPLIED_PROPERTY,

@@ -45,6 +45,10 @@ def main() -> None:
         "if (page in 1..5) Decision(displayPage = page, luaVisible = true) else null",
         "interpolation restore is display-page only",
     )
+    require(policy, "fun forVideoResume(page: Int, luaShown: Boolean): Decision?", "video resume display-page")
+    require(policy, "fun forMusicHide(luaShown: Boolean, consoleOpen: Boolean): Decision", "music Off hide path")
+    require(policy, "fun shouldWaitForPlaybackBeforeRestore", "wait for file-loaded/time-pos")
+    require(policy, "fun shouldReapplyAfterVoReconfig", "vo-reconfig reapplies once")
     forbid(policy, "Decision(toggleLua = true, displayPage = page, luaVisible = true)", "startup must not toggle")
     require(policy, 'VISIBLE_PROPERTY = "user-data/mpvrx/stats-lua-visible"', "lua visibility property")
     require(policy, "fun onCoreRecreated()", "core recreate resets startup flag")
@@ -55,8 +59,22 @@ def main() -> None:
 
     require(mpv_view, "PlayerStatsLuaCommandPolicy.forStartup", "startup restore uses show-state")
     require(mpv_view, "PlayerStatsLuaCommandPolicy.onCoreRecreated()", "new core resets startup-stats-applied")
+    require(mpv_view, "fun applyStartupStatistics(force: Boolean = false)", "force restore after vo-reconfig")
     reload = activity.split("MPV reloaded; position, pause, tracks and options confirmed; synthesized frames not inferred", 1)[1]
-    require(reload, "player.applyStartupStatistics()", "interpolation restart restores lua after success")
+    reload_block = reload.split("private fun handleNativePlaybackEnded()", 1)[0]
+    require(reload_block, "scheduleInterpolationStatsRestore(", "interpolation restore waits for lua")
+    forbid(reload_block, "player.applyStartupStatistics()", "reload success is not fire-and-forget display-page")
+    require(activity, "MPV_EVENT_VIDEO_RECONFIG", "vo-reconfig reapplies restore")
+    require(activity, "tryApplyInterpolationStatsRestore(", "file-loaded applies restore")
+    require(activity, "hideMpvSurfaceAndOverlayForAudioOrMinimize()", "music/minimize hide helper")
+    require(activity, "binding.player.visibility = View.GONE", "music GONE surface")
+    require(activity, "binding.media3SubtitleOverlay.visibility = View.GONE", "music GONE subtitle overlay")
+    forbid(activity, "View.INVISIBLE", "INVISIBLE still composites stats.lua")
+    require(activity, "forMusicHide(", "music uses Off hide path")
+    require(activity, "forVideoResume(", "video return uses display-page")
+    require(activity, "onAudioMinimizePresentationComplete()", "minimize completion exists")
+    minimize = activity.split("fun onAudioMinimizePresentationComplete()", 1)[1].split("val audioOpenFromMiniRequest", 1)[0]
+    require(minimize, "hideMpvSurfaceAndOverlayForAudioOrMinimize()", "minimize hides compositor")
 
     require(lifecycle, "LONG_BACKGROUND_REBUILD_THRESHOLD_MS = 900_000L", "15-minute ColorOS rebuild")
     require(lifecycle, "fun shouldCaptureForegroundResumePosition", "video captures last position")

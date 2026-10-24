@@ -32,6 +32,10 @@ internal object PlayerStatsLuaCommandPolicy {
     PlaybackSession.setPropertyString(VISIBLE_PROPERTY, VISIBLE_NO)
   }
 
+  fun onVoReconfig() {
+    PlaybackSession.setPropertyString(VISIBLE_PROPERTY, VISIBLE_NO)
+  }
+
   fun forChip(toPage: Int, previousPage: Int, luaShown: Boolean, consoleOpen: Boolean): Decision {
     val disableConsole = toPage != 7 && consoleOpen
     return when (toPage) {
@@ -56,6 +60,18 @@ internal object PlayerStatsLuaCommandPolicy {
 
   fun forStartup(page: Int): Decision? =
     if (page in 1..5) Decision(displayPage = page, luaVisible = true) else null
+
+  fun forVideoResume(page: Int, luaShown: Boolean): Decision? =
+    if (page in 1..5 && !luaShown) Decision(displayPage = page, luaVisible = true) else null
+
+  fun forMusicHide(luaShown: Boolean, consoleOpen: Boolean): Decision =
+    forChip(toPage = 0, previousPage = 0, luaShown = luaShown, consoleOpen = consoleOpen)
+
+  fun shouldWaitForPlaybackBeforeRestore(fileLoaded: Boolean, timePosFinite: Boolean): Boolean =
+    fileLoaded && timePosFinite
+
+  fun shouldReapplyAfterVoReconfig(luaRestored: Boolean, alreadyReapplied: Boolean): Boolean =
+    luaRestored && !alreadyReapplied
 
   fun apply(decision: Decision) {
     if (decision.disableConsole) {

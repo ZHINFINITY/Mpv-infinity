@@ -88,4 +88,35 @@ class PlayerStatsLuaCommandPolicyTest {
     assertNull(PlayerStatsLuaCommandPolicy.forStartup(6))
     assertNull(PlayerStatsLuaCommandPolicy.forStartup(7))
   }
+
+  @Test
+  fun musicHideUsesOffPathWithoutDisplayPage() {
+    val hideShown = PlayerStatsLuaCommandPolicy.forMusicHide(luaShown = true, consoleOpen = false)
+    assertTrue(hideShown.toggleLua)
+    assertNull(hideShown.displayPage)
+    assertEquals(false, hideShown.luaVisible)
+    val hideHidden = PlayerStatsLuaCommandPolicy.forMusicHide(luaShown = false, consoleOpen = false)
+    assertFalse(hideHidden.toggleLua)
+    assertNull(hideHidden.displayPage)
+  }
+
+  @Test
+  fun videoResumeRestoresWithDisplayPageOnly() {
+    val resume = PlayerStatsLuaCommandPolicy.forVideoResume(1, luaShown = false)!!
+    assertFalse(resume.toggleLua)
+    assertEquals(1, resume.displayPage)
+    assertEquals(true, resume.luaVisible)
+    assertNull(PlayerStatsLuaCommandPolicy.forVideoResume(1, luaShown = true))
+    assertNull(PlayerStatsLuaCommandPolicy.forVideoResume(0, luaShown = false))
+  }
+
+  @Test
+  fun interpolationRestoreWaitsForPlaybackThenReappliesVoReconfigOnce() {
+    assertFalse(PlayerStatsLuaCommandPolicy.shouldWaitForPlaybackBeforeRestore(false, true))
+    assertFalse(PlayerStatsLuaCommandPolicy.shouldWaitForPlaybackBeforeRestore(true, false))
+    assertTrue(PlayerStatsLuaCommandPolicy.shouldWaitForPlaybackBeforeRestore(true, true))
+    assertTrue(PlayerStatsLuaCommandPolicy.shouldReapplyAfterVoReconfig(luaRestored = true, alreadyReapplied = false))
+    assertFalse(PlayerStatsLuaCommandPolicy.shouldReapplyAfterVoReconfig(luaRestored = true, alreadyReapplied = true))
+    assertFalse(PlayerStatsLuaCommandPolicy.shouldReapplyAfterVoReconfig(luaRestored = false, alreadyReapplied = false))
+  }
 }

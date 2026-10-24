@@ -32,7 +32,9 @@ class PlayerStatsChipOwnerTest {
     assertTrue(text.contains("player.applyStartupStatistics()"))
     assertTrue(text.contains("MPV reloaded; position, pause, tracks and options confirmed; synthesized frames not inferred"))
     val reloadTail = text.substringAfter("MPV reloaded; position, pause, tracks and options confirmed; synthesized frames not inferred")
-    assertTrue(reloadTail.contains("player.applyStartupStatistics()"))
+    val reloadBlock = reloadTail.substringBefore("private fun handleNativePlaybackEnded")
+    assertTrue(reloadBlock.contains("scheduleInterpolationStatsRestore("))
+    assertFalse(reloadBlock.contains("player.applyStartupStatistics()"))
     assertFalse(text.contains("applyStatsOverlayPolicy"))
     assertFalse(text.contains("PlayerStatsLuaOverlayPolicy"))
     assertFalse(text.contains("pendingStatsLuaReset"))
@@ -40,7 +42,10 @@ class PlayerStatsChipOwnerTest {
     assertTrue(text.contains("configureNativeEngineIfNeeded"))
     assertTrue(text.contains("shouldInitializeNativeMedia3Engine"))
     assertTrue(text.contains("private val nativeEngine by lazy"))
-    assertTrue(text.contains("View.INVISIBLE"))
+    assertTrue(text.contains("hideMpvSurfaceAndOverlayForAudioOrMinimize()"))
+    assertTrue(text.contains("binding.player.visibility = View.GONE"))
+    assertTrue(text.contains("binding.media3SubtitleOverlay.visibility = View.GONE"))
+    assertFalse(text.contains("View.INVISIBLE"))
   }
 
   @Test
@@ -49,7 +54,7 @@ class PlayerStatsChipOwnerTest {
       .takeIf { it.exists() }
       ?: File("app/src/main/java/app/infinity/mpvz/ui/player/MPVView.kt")
     val text = file.readText()
-    assertTrue(text.contains("fun applyStartupStatistics()"))
+    assertTrue(text.contains("fun applyStartupStatistics(force: Boolean = false)"))
     assertTrue(text.contains("PlayerStatsLuaCommandPolicy.STARTUP_APPLIED_PROPERTY"))
     assertTrue(text.contains("PlayerStatsLuaCommandPolicy.forStartup"))
     assertTrue(text.contains("PlayerStatsLuaCommandPolicy.apply"))
