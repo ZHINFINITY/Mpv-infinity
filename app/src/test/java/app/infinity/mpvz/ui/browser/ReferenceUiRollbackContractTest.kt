@@ -153,9 +153,9 @@ private suspend fun frostGlassFrame(bitmap: Bitmap, strength: Float): Bitmap? = 
   }
   // Warm the shared optics program before the first sheet opens (idle, after first frame).
   LaunchedEffect(enabled) {
-    if (enabled && Build.VERSION.SDK_INT >= 33) {
+    if (enabled && RuntimeShaderSupport.available()) {
       delay(GlassSamplingPolicy.ShaderWarmupDelayMs)
-      GlassShaderCache.shared(GLASS_OPTICS) { RuntimeShader(GLASS_OPTICS) }
+      RuntimeShaderSupport.glassOpticsOrNull()
     }
   }
 """ to
@@ -170,7 +170,7 @@ private suspend fun frostGlassFrame(bitmap: Bitmap, strength: Float): Bitmap? = 
         """""",
       """GlassSamplingPolicy.interval(playing(), failures, thermalNow, largeSurface),""" to
         """GlassSamplingPolicy.interval(playing(), failures, thermalNow),""",
-      """GlassShaderCache.shared(GLASS_OPTICS) { RuntimeShader(GLASS_OPTICS) }""" to
+      """RuntimeShaderSupport.glassOpticsOrNull()""" to
         """runCatching { RuntimeShader(GLASS_OPTICS) }.getOrNull()""",
     )
     var film = current
@@ -225,6 +225,95 @@ private suspend fun frostGlassFrame(bitmap: Bitmap, strength: Float): Bitmap? = 
       assertEquals(now, 1, film.split(now).size - 1)
       film = film.replace(now, before)
     }
+    val isolation = listOf(
+      """import android.graphics.Paint as AndroidPaint
+import android.graphics.Shader
+""" to
+        """import android.graphics.Paint as AndroidPaint
+import android.graphics.RuntimeShader
+import android.graphics.Shader
+""",
+      """            val bevel = GlassBevelPolicy.params(size.width, size.height, radius,
+              tuning.depth, tuning.refraction, reducedMotion, highContrast)
+            // Keep the bend on normal dialogs and sheets; only very large
+            // surfaces are bounded to avoid turning a full-screen layer into
+            // a refraction pass.
+            val lensAllowed = scene.refractionEnabled &&
+              if (materialRole == GlassSurfacePolicy.MaterialRole.Regular) size.maxDimension <= 1024.dp.toPx()
+              else size.minDimension <= 128.dp.toPx() && size.maxDimension <= 512.dp.toPx()
+            val frostDp = if (materialRole == GlassSurfacePolicy.MaterialRole.Regular)
+              maxOf(GlassSurfacePolicy.RegularMinimumFrostDp, 10f * tuning.frost * material.frostMultiplier)
+            else 10f * tuning.frost * material.frostMultiplier
+            val mapped = RuntimeShaderSupport.bindGlassOpticsOrNull(
+              shader = shader,
+              sourceShader = sourceShader,
+              paint = paint,
+              paneWidth = size.width,
+              paneHeight = size.height,
+              originX = paneBounds.left,
+              originY = paneBounds.top,
+              sceneLeft = scene.boundsInWindow.left,
+              sceneTop = scene.boundsInWindow.top,
+              sceneWidth = scene.boundsInWindow.width,
+              sceneHeight = scene.boundsInWindow.height,
+              imageWidth = scene.image.width.toFloat(),
+              imageHeight = scene.image.height.toFloat(),
+              radius = radius,
+              bevel = bevel.bevel,
+              lightX = bevel.normalX,
+              lightY = bevel.normalY,
+              specular = bevel.specular,
+              fresnel = bevel.fresnel,
+              strength = if (lensAllowed) 4.dp.toPx() * material.refractionMultiplier *
+                GlassSurfacePolicy.refractionStrength(tuning.refraction, reducedMotion, highContrast) else 0f,
+              frostPx = frostDp * density,
+            )
+""" to
+        """            val mapped = shader != null && Build.VERSION.SDK_INT >= 33 && runCatching {
+              sourceShader.setLocalMatrix(null)
+              shader.setInputShader("scene", sourceShader)
+              shader.setFloatUniform("pane", size.width, size.height)
+              shader.setFloatUniform("origin", paneBounds.left, paneBounds.top)
+              shader.setFloatUniform("sceneOrigin", scene.boundsInWindow.left, scene.boundsInWindow.top)
+              shader.setFloatUniform("sceneSize", scene.boundsInWindow.width, scene.boundsInWindow.height)
+              shader.setFloatUniform("imageSize", scene.image.width.toFloat(), scene.image.height.toFloat())
+              shader.setFloatUniform("radius", radius)
+              val bevel = GlassBevelPolicy.params(size.width, size.height, radius,
+                tuning.depth, tuning.refraction, reducedMotion, highContrast)
+              shader.setFloatUniform("bevel", bevel.bevel)
+              shader.setFloatUniform("light", bevel.normalX, bevel.normalY)
+              shader.setFloatUniform("specular", bevel.specular)
+              shader.setFloatUniform("fresnel", bevel.fresnel)
+              // Keep the bend on normal dialogs and sheets; only very large
+              // surfaces are bounded to avoid turning a full-screen layer into
+              // a refraction pass.
+              val lensAllowed = scene.refractionEnabled &&
+                if (materialRole == GlassSurfacePolicy.MaterialRole.Regular) size.maxDimension <= 1024.dp.toPx()
+                else size.minDimension <= 128.dp.toPx() && size.maxDimension <= 512.dp.toPx()
+              shader.setFloatUniform("strength", if (lensAllowed) 4.dp.toPx() * material.refractionMultiplier *
+                GlassSurfacePolicy.refractionStrength(tuning.refraction, reducedMotion, highContrast) else 0f)
+              val frostDp = if (materialRole == GlassSurfacePolicy.MaterialRole.Regular)
+                maxOf(GlassSurfacePolicy.RegularMinimumFrostDp, 10f * tuning.frost * material.frostMultiplier)
+              else 10f * tuning.frost * material.frostMultiplier
+              shader.setFloatUniform("frost", frostDp * density)
+              paint.shader = shader
+            }.isSuccess
+""",
+      "internal const val GLASS_OPTICS" to "private const val GLASS_OPTICS",
+      // After latency reverse, the isolated remember site still lacks origin/main's SDK 33 guard.
+      """  val shader = remember {
+    runCatching { RuntimeShader(GLASS_OPTICS) }.getOrNull()
+  }
+""" to
+        """  val shader = remember {
+    if (Build.VERSION.SDK_INT >= 33) runCatching { RuntimeShader(GLASS_OPTICS) }.getOrNull() else null
+  }
+""",
+    )
+    isolation.forEach { (now, before) ->
+      assertEquals(now, 1, film.split(now).size - 1)
+      film = film.replace(now, before)
+    }
     adaptiveFilm.forEach { (now, before) ->
       assertEquals(now, 1, film.split(now).size - 1)
       film = film.replace(now, before)
@@ -271,10 +360,10 @@ private suspend fun frostGlassFrame(bitmap: Bitmap, strength: Float): Bitmap? = 
     // Build 1902: nav pill commits the lens frame before far page jumps and supports drag-to-select.
     assertEquals("6dd01fe6826b20433d5073e6a41b45f2750f27f2b2ce2a6f0b6418263f8358f6", sha(navigation.substring(start, end)))
     val scene = read("app/src/main/java/app/infinity/mpvz/ui/theme/BrowserGlassScene.kt")
-    val lensStart = scene.indexOf("private const val BROWSER_LENS")
+    val lensStart = scene.indexOf("internal const val BROWSER_LENS")
     val q = scene.indexOf("\"\"\"", lensStart)
     val lensEnd = scene.indexOf("\"\"\"", q + 3) + 3
-    assertEquals("5c4a067ebbd5aabfb2239fd33f3bcb1ead3f03532bb04287499462ac96e8bb1e", sha(scene.substring(lensStart, lensEnd)))
+    assertEquals("2d28e2fd38cafae49de118a956a611050585dc89d60846548a5cbfd7b7050369", sha(scene.substring(lensStart, lensEnd)))
     assertTrue(scene.contains("private const val BROWSER_LATEST_LENS"))
   }
 }
