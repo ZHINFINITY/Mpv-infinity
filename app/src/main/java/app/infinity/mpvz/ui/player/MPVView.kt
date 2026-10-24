@@ -1027,11 +1027,8 @@ class MPVView(
     // load would turn an already enabled statistics overlay off on the next file.
     if (PlaybackSession.getPropertyString("user-data/mpvrx/startup-stats-applied") == "yes") return
     PlaybackSession.setPropertyString("user-data/mpvrx/startup-stats-applied", "yes")
-    advancedPreferences.enabledStatisticsPage.get().let {
-      if (it in 1..5) {
-        PlaybackSession.command("script-binding", "stats/display-stats-toggle")
-        PlaybackSession.command("script-binding", "stats/display-page-$it")
-      }
+    PlayerStatsLuaCommandPolicy.forStartup(advancedPreferences.enabledStatisticsPage.get())?.let {
+      PlayerStatsLuaCommandPolicy.apply(it)
     }
   }
 
