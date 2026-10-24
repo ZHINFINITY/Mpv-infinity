@@ -51,7 +51,8 @@ def should_wait_for_playback_before_restore(file_loaded: bool, time_pos_finite: 
 
 
 def should_reapply_after_vo_reconfig(lua_restored: bool, already_reapplied: bool) -> bool:
-    return lua_restored and not already_reapplied
+    # display-page-N is a toggle; a second restore after vo-reconfig hides a live overlay.
+    return False
 
 
 @dataclass
@@ -205,12 +206,12 @@ def test_interpolation_waits_then_reapplies_once() -> None:
     assert_true(("script-binding", "stats/display-stats-toggle") not in player.lua.commands, "no toggle on restore")
 
     player.on_vo_reconfig()
-    assert_true(player.lua.shown and player.lua.page == 1, "vo-reconfig re-applies page 1 once")
+    assert_true(player.lua.shown and player.lua.page == 1, "vo-reconfig must not toggle away page 1")
     shown_after_first = player.lua.shown
     player.on_vo_reconfig()
     assert_true(player.lua.shown == shown_after_first, "second vo-reconfig must not invert page 1")
     display_pages = [cmd for cmd in player.lua.commands if cmd[1].startswith("stats/display-page-")]
-    assert_true(len(display_pages) == 2, f"display-page should apply twice, got {display_pages}")
+    assert_true(len(display_pages) == 1, f"display-page should apply once after interpolation, got {display_pages}")
 
 
 def test_off_never_toggles_hidden_lua() -> None:

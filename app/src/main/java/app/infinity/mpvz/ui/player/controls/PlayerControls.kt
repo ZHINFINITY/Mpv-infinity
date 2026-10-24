@@ -139,6 +139,7 @@ import app.infinity.mpvz.preferences.preference.minusAssign
 import app.infinity.mpvz.preferences.preference.plusAssign
 import app.infinity.mpvz.ui.icons.Icon
 import app.infinity.mpvz.ui.icons.Icons
+import app.infinity.mpvz.ui.player.Decoder
 import app.infinity.mpvz.ui.player.Decoder.Companion.getDecoderFromValue
 import app.infinity.mpvz.ui.player.NativePlaybackSnapshot
 import app.infinity.mpvz.ui.player.NativeStatsDisplay
@@ -313,7 +314,10 @@ internal fun AudioPlayerScreen(
         }
       },
       decoder = decoder,
-      onUpdateDecoder = { PlaybackSession.setPropertyString("hwdec", it.value) },
+      onUpdateDecoder = {
+        decoderPreferences.tryHWDecoding.set(it != Decoder.SW)
+        PlaybackSession.setPropertyString("hwdec", it.value)
+      },
       selectedEngine = if (nativeEngineActive) PlaybackEngineMode.NATIVE else PlaybackEngineMode.MPV,
       onSelectEngine = onSelectEngine ?: { decoderPreferences.playbackEngine.set(it) },
       speed = playbackSpeed ?: playerPreferences.defaultSpeed.get(),
@@ -2289,7 +2293,10 @@ fun PlayerControls(
         }
       },
       decoder = decoder,
-      onUpdateDecoder = { PlaybackSession.setPropertyString("hwdec", it.value) },
+      onUpdateDecoder = {
+        decoderPreferences.tryHWDecoding.set(it != Decoder.SW)
+        PlaybackSession.setPropertyString("hwdec", it.value)
+      },
       selectedEngine = if (nativeEngineActive) PlaybackEngineMode.NATIVE else PlaybackEngineMode.MPV,
       onSelectEngine = onSelectEngine ?: { decoderPreferences.playbackEngine.set(it) },
       speed = playbackSpeed ?: playerPreferences.defaultSpeed.get(),

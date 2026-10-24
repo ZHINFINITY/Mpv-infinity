@@ -71,7 +71,7 @@ internal object PlayerStatsLuaCommandPolicy {
     fileLoaded && timePosFinite
 
   fun shouldReapplyAfterVoReconfig(luaRestored: Boolean, alreadyReapplied: Boolean): Boolean =
-    luaRestored && !alreadyReapplied
+    false
 
   fun apply(decision: Decision) {
     if (decision.disableConsole) {

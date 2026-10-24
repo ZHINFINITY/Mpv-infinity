@@ -47,7 +47,7 @@ internal object AudioPlaybackResumeStore {
     paused: Boolean,
   ): Boolean {
     val currentItem = queueState.currentItem ?: return false
-    if (!currentItem.isDefinitelyAudioOnly() ||
+    if (currentItem.declaredMediaKind() == DeclaredPlaybackMediaKind.VIDEO ||
       currentItem.audiobook != null ||
       currentItem.torrentFileIndex != null ||
       currentItem.requiresTorrentResolution()
@@ -59,7 +59,7 @@ internal object AudioPlaybackResumeStore {
     val canSaveQueue =
       queueState.items.size <= MAX_PERSISTED_QUEUE_ITEMS &&
         queueState.items.all { item ->
-          item.isDefinitelyAudioOnly() &&
+          item.declaredMediaKind() != DeclaredPlaybackMediaKind.VIDEO &&
             item.audiobook == null &&
             item.torrentFileIndex == null &&
             !item.requiresTorrentResolution()
@@ -102,7 +102,9 @@ internal object AudioPlaybackResumeStore {
       }.getOrNull()
     val validSnapshot = snapshot?.takeIf { snapshot ->
         snapshot.currentItem?.let { item ->
-          item.isDefinitelyAudioOnly() && item.audiobook == null && !item.requiresTorrentResolution()
+          item.declaredMediaKind() != DeclaredPlaybackMediaKind.VIDEO &&
+            item.audiobook == null &&
+            !item.requiresTorrentResolution()
         } == true
       }
     if (snapshot != null && validSnapshot == null) {

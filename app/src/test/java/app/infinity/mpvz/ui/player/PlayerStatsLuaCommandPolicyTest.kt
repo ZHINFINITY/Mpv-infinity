@@ -115,7 +115,7 @@ class PlayerStatsLuaCommandPolicyTest {
     assertFalse(PlayerStatsLuaCommandPolicy.shouldWaitForPlaybackBeforeRestore(false, true))
     assertFalse(PlayerStatsLuaCommandPolicy.shouldWaitForPlaybackBeforeRestore(true, false))
     assertTrue(PlayerStatsLuaCommandPolicy.shouldWaitForPlaybackBeforeRestore(true, true))
-    assertTrue(PlayerStatsLuaCommandPolicy.shouldReapplyAfterVoReconfig(luaRestored = true, alreadyReapplied = false))
+    assertFalse(PlayerStatsLuaCommandPolicy.shouldReapplyAfterVoReconfig(luaRestored = true, alreadyReapplied = false))
     assertFalse(PlayerStatsLuaCommandPolicy.shouldReapplyAfterVoReconfig(luaRestored = true, alreadyReapplied = true))
     assertFalse(PlayerStatsLuaCommandPolicy.shouldReapplyAfterVoReconfig(luaRestored = false, alreadyReapplied = false))
   }

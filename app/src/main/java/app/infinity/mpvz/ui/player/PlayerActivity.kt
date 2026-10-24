@@ -410,9 +410,9 @@ class PlayerActivity :
     ) {
       return
     }
+    // display-page-N is a toggle. A second restore after vo-reconfig hides a live overlay
+    // and leaves Off able to invert it back. The file-loaded restore already showed the page.
     interpolationStatsVoReconfigReapplied = true
-    PlayerStatsLuaCommandPolicy.onVoReconfig()
-    player.applyStartupStatistics(force = true)
   }
 
   /**
@@ -921,7 +921,10 @@ class PlayerActivity :
                   Log.w(TAG, "MPV interpolation reload: options_applied=$optionsApplied " +
                     "position_restored=$positionRestored tracks_restored=$tracksRestored pause_restored=$pauseRestored")
                 }
-                return optionsApplied && pauseRestored
+                if (!optionsApplied) {
+                  Log.w(TAG, "MPV interpolation reload: init-option ACK pending after restore; keeping playback")
+                }
+                return pauseRestored
               }
             })
         } catch (cancelled: CancellationException) {
@@ -3839,8 +3842,12 @@ class PlayerActivity :
         putExtra("is_audio", true)
         putExtra("media_library_audio", true)
         putExtra("title", currentItem.title)
+        putExtra("media_artist", currentItem.artist)
         putExtra("media_identifier", currentItem.stableId)
         putExtra("playlist_index", snapshot.queueState.currentIndex)
+        currentItem.artworkUri?.takeIf { it.isNotBlank() }?.let { artwork ->
+          putStringArrayListExtra("playlist_artwork_urls", arrayListOf(artwork))
+        }
         val headerPairs = currentItem.headers.flatMap { (name, value) -> listOf(name, value) }
         if (headerPairs.isNotEmpty()) putExtra("headers", headerPairs.toTypedArray())
         currentItem.networkSource?.let { source ->
