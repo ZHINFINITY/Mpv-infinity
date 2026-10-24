@@ -42,8 +42,9 @@ class MpvPositionRestoreSeekPolicyTest {
     assertFalse(fileLoaded.contains("setPropertyDouble(\"time-pos\""))
     assertTrue(activity.contains("MpvPositionRestoreSeekPolicy.isRestored(actual, state.positionSeconds, seeking)"))
     assertFalse(activity.contains("kotlin.math.abs(actual - state.positionSeconds) <= 0.25"))
-    // Success is the accepted renderer options plus handed-back pause state, not a timing race.
-    assertTrue(activity.contains("return optionsApplied && pauseRestored"))
+    // Success is handed-back pause/playback, not an init-option ACK that can lag behind a completed restart.
+    assertTrue(activity.contains("return pauseRestored"))
+    assertFalse(activity.contains("return optionsApplied && pauseRestored"))
   }
 
   @Test fun ambientIsRestartedOnEveryRestartExitPath() {
