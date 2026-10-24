@@ -8,6 +8,7 @@
 package app.infinity.mpvz.ui.player.controls
 
 import app.infinity.mpvz.ui.player.PlaybackSession
+import app.infinity.mpvz.ui.player.PlayerStatsLuaCommandPolicy
 
 import android.content.Context
 import android.content.Intent
@@ -1209,17 +1210,15 @@ fun RenderPlayerButton(
       val clockFormat by playerPreferences.clockFormat.collectAsState()
       val stat by rememberTimeAndNetworkStat(clockFormat)
       val toggleTimeAndNetwork = {
-        if (PlaybackSession.getPropertyBoolean("user-data/mpv/console/open") == true) {
-          PlaybackSession.command("script-message-to", "console", "disable")
-        }
-        if (statisticsPage == 6) {
-          advancedPreferences.enabledStatisticsPage.set(0)
-        } else {
-          if (statisticsPage in 1..5) {
-            PlaybackSession.command("script-binding", "stats/display-stats-toggle")
-          }
-          advancedPreferences.enabledStatisticsPage.set(6)
-        }
+        val nextPage = if (statisticsPage == 6) 0 else 6
+        PlayerStatsLuaCommandPolicy.apply(
+          PlayerStatsLuaCommandPolicy.forChip(
+            toPage = nextPage,
+            luaShown = PlayerStatsLuaCommandPolicy.isLuaShown(),
+            consoleOpen = PlaybackSession.getPropertyBoolean("user-data/mpv/console/open") == true,
+          ),
+        )
+        advancedPreferences.enabledStatisticsPage.set(nextPage)
         onOpenSheet(Sheets.None)
       }
       if (compact) {

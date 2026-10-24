@@ -11,6 +11,7 @@ import app.infinity.mpvz.presentation.components.playerGlassOverlay
 import app.infinity.mpvz.ui.player.NativePlaybackSnapshot
 import app.infinity.mpvz.ui.player.PlaybackEngineMode
 import app.infinity.mpvz.ui.player.PlaybackSession
+import app.infinity.mpvz.ui.player.PlayerStatsLuaCommandPolicy
 
 import android.content.res.Configuration
 import android.text.format.DateUtils
@@ -292,29 +293,13 @@ fun MoreSheet(
             },
             onClick = {
               val isConsoleOpen = PlaybackSession.getPropertyBoolean("user-data/mpv/console/open") == true
-              if (page != 7 && isConsoleOpen) {
-                PlaybackSession.command("script-message-to", "console", "disable")
-              }
-              when (page) {
-                0 -> {
-                  if (statisticsPage in 1..5) PlaybackSession.command("script-binding", "stats/display-stats-toggle")
-                }
-                6 -> {
-                  if (statisticsPage in 1..5) PlaybackSession.command("script-binding", "stats/display-stats-toggle")
-                }
-                7 -> {
-                  if (statisticsPage in 1..5) PlaybackSession.command("script-binding", "stats/display-stats-toggle")
-                  if (!isConsoleOpen) {
-                    PlaybackSession.command("script-binding", "console/enable")
-                  }
-                }
-                else -> {
-                  if (statisticsPage == 0 || statisticsPage == 6 || statisticsPage == 7) {
-                    PlaybackSession.command("script-binding", "stats/display-stats-toggle")
-                  }
-                  PlaybackSession.command("script-binding", "stats/display-page-$page")
-                }
-              }
+              PlayerStatsLuaCommandPolicy.apply(
+                PlayerStatsLuaCommandPolicy.forChip(
+                  toPage = page,
+                  luaShown = PlayerStatsLuaCommandPolicy.isLuaShown(),
+                  consoleOpen = isConsoleOpen,
+                ),
+              )
               advancedPreferences.enabledStatisticsPage.set(page)
             },
             selected = statisticsPage == page,

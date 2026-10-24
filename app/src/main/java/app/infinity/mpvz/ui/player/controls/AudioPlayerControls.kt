@@ -604,7 +604,7 @@ fun AudioPlayerControls(
   val audioSeekDuration by gesturePreferences.doubleTapToSeekDuration.collectAsState()
   val paused by PlaybackSession.propBoolean["pause"].collectAsState()
   val playerActivity = LocalActivity.current as? PlayerActivity
-  val nativePlaybackSnapshot by playerActivity?.nativePlaybackSnapshot?.collectAsState(initial = NativePlaybackSnapshot())
+  val nativePlaybackSnapshot by playerActivity?.nativePlaybackSnapshot?.collectAsState()
     ?: remember { mutableStateOf(NativePlaybackSnapshot()) }
   val nativeEngineActive = playerActivity?.isNativeEngineActive() == true
   var optimisticIsPlaying by remember { mutableStateOf<Boolean?>(null) }
