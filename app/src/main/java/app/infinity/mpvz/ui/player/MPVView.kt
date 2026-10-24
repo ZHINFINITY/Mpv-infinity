@@ -203,6 +203,9 @@ class MPVView(
       mpvFlowDiagnosticsEnabled = false
       mpvFlowCaptureControlConfigured = false
     }
+    if (result.getOrNull() == true) {
+      PlayerStatsLuaCommandPolicy.onCoreRecreated()
+    }
     if (result.isSuccess && BuildConfig.DEBUG && BuildConfig.MPV_HAS_MPVFLOW) {
       // PlaybackSession may reuse a core and skip initOptions for this view.
       configureMpvFlowCaptureControl("after_initialize")
@@ -1018,15 +1021,19 @@ class MPVView(
 
   }
 
-  fun applyStartupStatistics() {
+  fun applyStartupStatistics(force: Boolean = false) {
     val isMusic =
       PlaybackSession.queue.value.currentItem?.isDefinitelyAudioOnly() == true ||
         PlaybackSession.queue.value.currentItem?.declaredMediaKind() == DeclaredPlaybackMediaKind.AUDIO
     if (isMusic) return
     // The native core survives Activity recreation and playlist loads. A toggle on every
     // load would turn an already enabled statistics overlay off on the next file.
-    if (PlaybackSession.getPropertyString("user-data/mpvrx/startup-stats-applied") == "yes") return
-    PlaybackSession.setPropertyString("user-data/mpvrx/startup-stats-applied", "yes")
+    if (!force && PlaybackSession.getPropertyString(PlayerStatsLuaCommandPolicy.STARTUP_APPLIED_PROPERTY) ==
+      PlayerStatsLuaCommandPolicy.STARTUP_APPLIED_YES) return
+    PlaybackSession.setPropertyString(
+      PlayerStatsLuaCommandPolicy.STARTUP_APPLIED_PROPERTY,
+      PlayerStatsLuaCommandPolicy.STARTUP_APPLIED_YES,
+    )
     PlayerStatsLuaCommandPolicy.forStartup(advancedPreferences.enabledStatisticsPage.get())?.let {
       PlayerStatsLuaCommandPolicy.apply(it)
     }

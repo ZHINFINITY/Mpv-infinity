@@ -296,6 +296,7 @@ fun MoreSheet(
               PlayerStatsLuaCommandPolicy.apply(
                 PlayerStatsLuaCommandPolicy.forChip(
                   toPage = page,
+                  previousPage = statisticsPage,
                   luaShown = PlayerStatsLuaCommandPolicy.isLuaShown(),
                   consoleOpen = isConsoleOpen,
                 ),
