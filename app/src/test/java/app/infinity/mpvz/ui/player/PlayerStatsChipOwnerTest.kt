@@ -50,7 +50,7 @@ class PlayerStatsChipOwnerTest {
       ?: File("app/src/main/java/app/infinity/mpvz/ui/player/MPVView.kt")
     val text = file.readText()
     assertTrue(text.contains("fun applyStartupStatistics()"))
-    assertTrue(text.contains("user-data/mpvrx/startup-stats-applied"))
+    assertTrue(text.contains("PlayerStatsLuaCommandPolicy.STARTUP_APPLIED_PROPERTY"))
     assertTrue(text.contains("PlayerStatsLuaCommandPolicy.forStartup"))
     assertTrue(text.contains("PlayerStatsLuaCommandPolicy.apply"))
     assertTrue(text.contains("PlayerStatsLuaCommandPolicy.onCoreRecreated()"))
