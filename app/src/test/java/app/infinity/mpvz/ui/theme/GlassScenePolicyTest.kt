@@ -81,7 +81,8 @@ class GlassScenePolicyTest {
 
   @Test fun ambienceKeepsLastFrostedFrameUnlessSurfaceOrLifecycleEnded() {
     assertTrue(GlassScenePolicy.shouldKeepLastFrostedFrame(false, false, false))
-    assertFalse(GlassScenePolicy.shouldKeepLastFrostedFrame(lifecycleStopped = true, sourceChanged = false, ineligible = false))
+    // Background ON_STOP is not a destroy; keep frost so resume is not a clear pane.
+    assertTrue(GlassScenePolicy.shouldKeepLastFrostedFrame(lifecycleStopped = true, sourceChanged = false, ineligible = false))
     assertFalse(GlassScenePolicy.shouldKeepLastFrostedFrame(lifecycleStopped = false, sourceChanged = true, ineligible = false))
     assertFalse(GlassScenePolicy.shouldKeepLastFrostedFrame(lifecycleStopped = false, sourceChanged = false, ineligible = true))
   }

@@ -176,10 +176,13 @@ private suspend fun frostGlassFrame(bitmap: Bitmap, strength: Float): Bitmap? = 
     var film = current
     // Keep last frosted sample during ambience/interpolation; reverse before hashing.
     val frostRetention = listOf(
-      """  DisposableEffect(surfaceView, eligible, lifecycleOwner) {
+      """  // Visibility changes stop work, but do not flash the last good scene to black during sheet handoff.
+  // Destroy and ineligible still discard. Background stop keeps the last frost so
+  // resume is not a clear pane for a second.
+  DisposableEffect(surfaceView, eligible, lifecycleOwner) {
     if (!eligible) frame.value = null
     val observer = LifecycleEventObserver { _, event ->
-      if (event == Lifecycle.Event.ON_STOP || event == Lifecycle.Event.ON_DESTROY) frame.value = null
+      if (event == Lifecycle.Event.ON_DESTROY) frame.value = null
     }
     lifecycleOwner.lifecycle.addObserver(observer)
     onDispose {
@@ -188,7 +191,9 @@ private suspend fun frostGlassFrame(bitmap: Bitmap, strength: Float): Bitmap? = 
     }
   }
 """ to
-        """  DisposableEffect(surfaceView, generation, eligible, lifecycleOwner) {
+        """  // Visibility changes stop work, but do not flash the last good scene to black during sheet handoff.
+  // Media, safety and lifecycle boundaries always discard the old scene immediately.
+  DisposableEffect(surfaceView, generation, eligible, lifecycleOwner) {
     frame.value = null
     val observer = LifecycleEventObserver { _, event ->
       if (event == Lifecycle.Event.ON_STOP || event == Lifecycle.Event.ON_DESTROY) frame.value = null

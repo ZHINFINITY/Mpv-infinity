@@ -332,7 +332,8 @@ class PlayerActivity :
       hideMpvSurfaceForMusic()
     }
     val sheetOrPanelOpen =
-      viewModel.sheetShown.value != Sheets.None || viewModel.panelShown.value != Panels.None
+      (viewModel.sheetShown.value != Sheets.None && viewModel.sheetShown.value != Sheets.More) ||
+        viewModel.panelShown.value != Panels.None
     val requestedPage = advancedPreferences.enabledStatisticsPage.get()
     val result = PlayerStatsLuaOverlayPolicy.decide(
       PlayerStatsLuaOverlayPolicy.Input(
@@ -343,6 +344,13 @@ class PlayerActivity :
         isMusic = isMusic,
       ),
     )
+    // More chips already sent the mpvRx stats.lua commands. Sync ownership
+    // state only so interpolation restore and music hide stay single-owner.
+    if (viewModel.sheetShown.value == Sheets.More && !isMusic) {
+      mpvStatsVisible = result.visible
+      mpvStatsPage = result.page
+      return
+    }
     result.commands.forEach { command ->
       PlaybackSession.command(*command.args.toTypedArray())
     }
@@ -352,8 +360,10 @@ class PlayerActivity :
 
   /** Album art is a video track. INVISIBLE still lets stats.lua and cover art draw. */
   private fun hideMpvSurfaceForMusic() {
-    binding.player.alpha = 0f
-    binding.player.visibility = View.GONE
+    // mpvRx keeps the SurfaceView laid out with INVISIBLE. GONE collapses it and
+    // warps the next video for a few seconds while Android recreates the Surface.
+    binding.player.alpha = 1f
+    binding.player.visibility = View.INVISIBLE
   }
 
   /**

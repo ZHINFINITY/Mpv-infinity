@@ -148,11 +148,12 @@ fun LiquidGlassBackdropHost(
     }
   }
   // Visibility changes stop work, but do not flash the last good scene to black during sheet handoff.
-  // Media, safety and lifecycle boundaries always discard the old scene immediately.
+  // Destroy and ineligible still discard. Background stop keeps the last frost so
+  // resume is not a clear pane for a second.
   DisposableEffect(surfaceView, eligible, lifecycleOwner) {
     if (!eligible) frame.value = null
     val observer = LifecycleEventObserver { _, event ->
-      if (event == Lifecycle.Event.ON_STOP || event == Lifecycle.Event.ON_DESTROY) frame.value = null
+      if (event == Lifecycle.Event.ON_DESTROY) frame.value = null
     }
     lifecycleOwner.lifecycle.addObserver(observer)
     onDispose {

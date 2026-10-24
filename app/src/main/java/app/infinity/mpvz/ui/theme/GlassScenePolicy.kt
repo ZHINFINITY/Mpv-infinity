@@ -58,11 +58,12 @@ object GlassScenePolicy {
 
   /**
    * Player ambience / interpolation must not flash a clear pane. Keep the last frosted
-   * sample unless the surface, eligibility, or lifecycle actually ended.
+   * sample unless the surface or eligibility actually ended. Background stop
+   * is not destroy: resume must reuse the last frost instead of a clear pane.
    */
   fun shouldKeepLastFrostedFrame(
     lifecycleStopped: Boolean,
     sourceChanged: Boolean,
     ineligible: Boolean,
-  ): Boolean = !lifecycleStopped && !sourceChanged && !ineligible
+  ): Boolean = !sourceChanged && !ineligible
 }

@@ -302,9 +302,21 @@ fun MoreSheet(
                 advancedPreferences.enabledStatisticsPage.set(7)
                 return@FilterChip
               }
-              // PlayerActivity.applyStatsOverlayPolicy owns stats.lua. Toggling here
-              // stacked page 2 on page 1 and left Off unable to clear the OSD.
-              advancedPreferences.enabledStatisticsPage.set(page.takeIf { it in 1..6 } ?: 0)
+              // mpvRx issues stats.lua here so Off/page apply immediately, not after More closes.
+              when (page) {
+                0, 6 -> {
+                  if (statisticsPage in 1..5) {
+                    PlaybackSession.command("script-binding", "stats/display-stats-toggle")
+                  }
+                }
+                else -> {
+                  if (statisticsPage == 0 || statisticsPage == 6 || statisticsPage == 7) {
+                    PlaybackSession.command("script-binding", "stats/display-stats-toggle")
+                  }
+                  PlaybackSession.command("script-binding", "stats/display-page-$page")
+                }
+              }
+              advancedPreferences.enabledStatisticsPage.set(page)
             },
             selected = statisticsPage == page,
             leadingIcon = null,
