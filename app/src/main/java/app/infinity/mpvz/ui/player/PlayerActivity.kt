@@ -309,16 +309,32 @@ class PlayerActivity :
   private fun applyStatsOverlayPolicy() {
     if (activeEngineMode != PlaybackEngineMode.MPV || !mpvInitialized) return
     val itemKind = PlaybackSession.state.value.currentItem?.declaredMediaKind()
+    val isMusic =
+      viewModel.isAudioOnly.value ||
+        isCurrentMediaKnownAudio() ||
+        hasPreclassifiedMusicLaunch() ||
+        isKnownAudioLaunch(intent) ||
+        itemKind == DeclaredPlaybackMediaKind.AUDIO
     val decision = PlayerStatsOverlayPolicy.decide(
       PlayerStatsOverlayPolicy.Input(
         enabled = advancedPreferences.enabledStatisticsPage.get() in 1..6,
         page = advancedPreferences.enabledStatisticsPage.get(),
         engine = PlayerStatsOverlayPolicy.Engine.MPV,
-        isAudioOnly = viewModel.isAudioOnly.value || isCurrentMediaKnownAudio(),
-        musicMode = hasPreclassifiedMusicLaunch(),
-        mediaTypeKnown = itemKind != DeclaredPlaybackMediaKind.UNKNOWN,
+        isAudioOnly = isMusic,
+        musicMode = isMusic,
+        mediaTypeKnown = itemKind != DeclaredPlaybackMediaKind.UNKNOWN || isMusic,
       ),
     )
+    if (isMusic) {
+      // stats.lua is an OSD over the MPV surface. Toggling it blindly on audio
+      // can turn a hidden overlay back on. Force it off and detach the surface.
+      hideMpvSurfaceForMusic()
+      if (mpvStatsVisible) {
+        PlaybackSession.command("script-binding", "stats/display-stats-toggle")
+        mpvStatsVisible = false
+      }
+      return
+    }
     if (decision.visible && !mpvStatsVisible) {
       PlaybackSession.command("script-binding", "stats/display-stats-toggle")
       mpvStatsVisible = true
@@ -329,6 +345,12 @@ class PlayerActivity :
     if (decision.visible && decision.page in 1..5) {
       PlaybackSession.command("script-binding", "stats/display-page-${decision.page}")
     }
+  }
+
+  /** Album art is a video track. INVISIBLE still lets stats.lua and cover art draw. */
+  private fun hideMpvSurfaceForMusic() {
+    binding.player.alpha = 0f
+    binding.player.visibility = View.GONE
   }
 
   /**
@@ -2515,10 +2537,11 @@ class PlayerActivity :
     lifecycleScope.launch {
       repeatOnLifecycle(Lifecycle.State.STARTED) {
         viewModel.isAudioOnly.collect { isAudioOnly ->
-          if (isAudioOnly) {
+          if (isAudioOnly || isCurrentMediaKnownAudio() || hasPreclassifiedMusicLaunch()) {
             applyPlaybackBrightnessPolicy(isAudio = true)
             viewModel.showControls()
-            binding.player.visibility = View.INVISIBLE
+            hideMpvSurfaceForMusic()
+            applyStatsOverlayPolicy()
             try {
               WindowCompat.setDecorFitsSystemWindows(window, false)
               windowInsetsController.apply {
@@ -2533,6 +2556,7 @@ class PlayerActivity :
             }
           } else {
             binding.player.clipToOutline = false
+            binding.player.alpha = 1f
             binding.player.visibility = View.VISIBLE
             if (isVideoAmbientPresentationActive) {
               binding.root.post(::updateVideoAmbientPlayerBounds)

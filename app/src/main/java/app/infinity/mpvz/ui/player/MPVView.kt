@@ -1016,9 +1016,12 @@ class MPVView(
       Debanding.GPU -> PlaybackSession.setOptionString("deband", "yes")
     }
 
-    // Keep the MPV stats OSD video-only. Otherwise a music item can inherit the previous
-    // video's stats overlay when MPV is reused for audio playback.
-    if (PlaybackSession.queue.value.currentItem?.isDefinitelyAudioOnly() != true) {
+    // Keep the MPV stats OSD video-only. Album-art covers are video tracks, so a
+    // music item can inherit the previous overlay unless we skip it here.
+    val isMusic =
+      PlaybackSession.queue.value.currentItem?.isDefinitelyAudioOnly() == true ||
+        PlaybackSession.queue.value.currentItem?.declaredMediaKind() == DeclaredPlaybackMediaKind.AUDIO
+    if (!isMusic) {
       advancedPreferences.enabledStatisticsPage.get().let {
         if (it in 1..5) {
           PlaybackSession.command("script-binding", "stats/display-stats-toggle")

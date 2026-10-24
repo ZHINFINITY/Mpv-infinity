@@ -176,6 +176,14 @@ class MediaPlaybackService :
 
     internal fun takeAudioOwnershipForDetachedPlayback(): Boolean = activeInstance?.takeAudioOwnership() == true
 
+    internal fun skipToNextFromApp(): Boolean = activeInstance?.playNextFromSession() == true
+
+    internal fun skipToPreviousFromApp() {
+      activeInstance?.playPreviousFromSession()
+    }
+
+    internal fun playQueueItemFromApp(index: Int): Boolean = activeInstance?.playQueueItemFromSession(index) == true
+
     /**
      * Marks that playback is being handed back to a foreground Activity (e.g. reopening the
      * player from the Mini Player / playback notification). Release the service-owned focus
@@ -742,6 +750,18 @@ class MediaPlaybackService :
     if (!canHandleTransportAction()) return
     schedulePlaybackStateSave(force = true)
     PlaybackSession.playPrevious()?.let(::applySessionItem) ?: refreshTransportControls()
+  }
+
+  private fun playQueueItemFromSession(index: Int): Boolean {
+    if (!canHandleTransportAction()) return false
+    schedulePlaybackStateSave(force = true)
+    val item = PlaybackSession.playQueueItem(index)
+    if (item == null) {
+      refreshTransportControls()
+      return false
+    }
+    applySessionItem(item)
+    return true
   }
 
   private fun handleMediaPreviousAction() {

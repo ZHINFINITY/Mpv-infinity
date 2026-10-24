@@ -147,11 +147,15 @@ enum class AutoCropState {
 }
 
 @Suppress("TooManyFunctions")
-class PlayerViewModel : ViewModel(),
+class PlayerViewModel(
+  private val hostedInBrowser: Boolean = false,
+) : ViewModel(),
   KoinComponent {
   private var hostReference = WeakReference<PlayerHost>(null)
   private val host: PlayerHost
     get() = checkNotNull(hostReference.get()) { "Player host is not attached" }
+
+  fun minimizeToMiniPlayer(): Boolean = hostReference.get()?.minimizeToMiniPlayer() == true
 
   fun attachHost(host: PlayerHost) {
     hostReference = WeakReference(host)
@@ -541,6 +545,7 @@ class PlayerViewModel : ViewModel(),
 
   private val _isMpvCoreReady = MutableStateFlow(false)
   private var mpvStateCollectorsJob: Job? = null
+  private var detachedPlaybackJob: Job? = null
 
   // High-precision position and duration for smooth seekbar
   private val _precisePosition = MutableStateFlow(0f)
@@ -1807,6 +1812,7 @@ class PlayerViewModel : ViewModel(),
   )
 
   init {
+    if (!hostedInBrowser) {
     viewModelScope.launch {
       decoderPreferences.gpuNext.changes().collect { enabled ->
         _isGpuNextEnabled.value = enabled
@@ -1819,6 +1825,11 @@ class PlayerViewModel : ViewModel(),
         reconcileHdrModeWithRenderer()
       }
     }
+    }
+    if (hostedInBrowser) {
+      // The in-app music sheet only mirrors the live session. It must not steal
+      // Syncplay, ambient, equalizer, or other process-wide player bindings.
+    } else {
     syncplayManager.playbackStateProvider = { currentSyncplayPlaybackState() }
     syncplayManager.fileInfoProvider = { currentSyncplayFileInfo() }
     syncplayManager.onRemotePause = { shouldPause ->
@@ -1843,6 +1854,7 @@ class PlayerViewModel : ViewModel(),
           PlaybackSession.command("seek", pos.toString(), "absolute+exact")
         }
       }
+    }
     }
 
     // Single adaptive polling loop for playback position.
@@ -1871,7 +1883,9 @@ class PlayerViewModel : ViewModel(),
           // produced redundant bridge traffic, stale positions, and unnecessary work on every
           // playback tick; it also prevented auto-skip from following Native playback.
           val time =
-            if (host.isNativeEngineActive()) {
+            if (hostedInBrowser) {
+              PlaybackSession.getPropertyDouble("time-pos") ?: Double.NaN
+            } else if (host.isNativeEngineActive()) {
               host.nativePlaybackPositionSeconds()
             } else {
               PlaybackSession.getPropertyDouble("time-pos") ?: Double.NaN
@@ -1901,6 +1915,7 @@ class PlayerViewModel : ViewModel(),
       }
     }
 
+    if (!hostedInBrowser) {
     // ── Thermal monitor ────────────────────────────────────────────────────────
     // Sample Android's PowerManager.getThermalHeadroom() every 10 s during active
     // playback.  When thermal margin shrinks the ambient shader sample budget is
@@ -1996,12 +2011,28 @@ class PlayerViewModel : ViewModel(),
 
     // Track selection is now handled by TrackSelector in PlayerActivity
 
-    // Restore repeat mode and shuffle state from preferences
-    _repeatMode.value = playerPreferences.repeatMode.get()
-    _shuffleEnabled.value = playerPreferences.shuffleEnabled.get()
-    PlaybackSession.setRepeatMode(_repeatMode.value)
-    PlaybackSession.setShuffleEnabled(_shuffleEnabled.value)
+    }
 
+    // Restore repeat mode and shuffle state from preferences.
+    // The in-app music sheet mirrors the live session; it must not rewrite shuffle/repeat.
+    if (!hostedInBrowser) {
+      _repeatMode.value = playerPreferences.repeatMode.get()
+      _shuffleEnabled.value = playerPreferences.shuffleEnabled.get()
+      PlaybackSession.setRepeatMode(_repeatMode.value)
+      PlaybackSession.setShuffleEnabled(_shuffleEnabled.value)
+    }
+
+    if (hostedInBrowser) {
+      viewModelScope.launch {
+        sheetShown.collect { shownSheet ->
+          if (shownSheet == Sheets.Playlist) {
+            refreshPlaylistItems(forceMetadata = true)
+          } else {
+            playlistMetadataJob?.cancel()
+          }
+        }
+      }
+    } else run {
     // Observe volume boost cap changes to enforce limits dynamically (in PiP)
     viewModelScope.launch(playbackStateDispatcher) {
       audioPreferences.volumeBoostCap.changes().collect { cap ->
@@ -2075,6 +2106,7 @@ class PlayerViewModel : ViewModel(),
     }
 
     setupCustomButtons()
+    }
   }
 
   fun onMpvCoreInitialized() {
@@ -2103,6 +2135,44 @@ class PlayerViewModel : ViewModel(),
     _volumeBoostCap.value = null
     _precisePosition.value = 0f
     _preciseDuration.value = 0f
+  }
+
+  /**
+   * Adopts the core [MediaPlaybackService] is playing, for the in-app music sheet. Unlike
+   * [onMpvCoreInitialized] it loads no scripts and writes nothing to mpv, so opening the sheet can
+   * never interrupt the audio that is already playing.
+   */
+  fun attachToDetachedPlayback() {
+    if (!hostedInBrowser || detachedPlaybackJob?.isActive == true) return
+    detachedPlaybackJob =
+      viewModelScope.launch(playbackStateDispatcher) {
+        PlaybackSession.getPropertyDouble("time-pos")?.let { _precisePosition.value = it.toFloat() }
+        PlaybackSession.getPropertyDouble("duration")?.takeIf { it > 0.0 }?.let { _preciseDuration.value = it.toFloat() }
+        _isMpvCoreReady.value = true
+        startMpvStateCollectors()
+        refreshPlaylistItems()
+        launch {
+          PlaybackSession.queue.drop(1).collect { refreshPlaylistItems() }
+        }
+        launch {
+          PlaybackSession.queue
+            .map { it.shuffleEnabled }
+            .distinctUntilChanged()
+            .collect { _shuffleEnabled.value = it }
+        }
+      }
+  }
+
+  fun detachFromDetachedPlayback() {
+    if (!hostedInBrowser) return
+    detachedPlaybackJob?.cancel()
+    detachedPlaybackJob = null
+    viewModelScope.launch(playbackStateDispatcher) {
+      if (detachedPlaybackJob != null) return@launch
+      _isMpvCoreReady.value = false
+      mpvStateCollectorsJob?.cancel()
+      mpvStateCollectorsJob = null
+    }
   }
 
   private fun startMpvStateCollectors() {

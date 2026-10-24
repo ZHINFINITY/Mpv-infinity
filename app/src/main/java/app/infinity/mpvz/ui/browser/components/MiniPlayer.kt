@@ -95,6 +95,8 @@ import app.infinity.mpvz.ui.player.MediaPlaybackService
 import app.infinity.mpvz.ui.player.PlaybackPhase
 import app.infinity.mpvz.ui.player.PlaybackSession
 import app.infinity.mpvz.ui.player.PlayerActivity
+import app.infinity.mpvz.ui.player.LocalInAppMusicSheet
+import app.infinity.mpvz.ui.player.inAppMusicSheetMiniSource
 import app.infinity.mpvz.ui.player.TrackNode
 import app.infinity.mpvz.ui.player.declaredMediaKind
 import app.infinity.mpvz.ui.player.toObject
@@ -226,6 +228,7 @@ private fun MiniPlayerContent(
       artworkUri = if (isAudioOnlyItem) currentItem?.artworkUri else null,
     )
 
+  val musicSheet = LocalInAppMusicSheet.current
   val coroutineScope = rememberCoroutineScope()
   val hostView = LocalView.current
   var offsetX by remember { mutableFloatStateOf(0f) }
@@ -245,8 +248,11 @@ private fun MiniPlayerContent(
   val dismissThresholdPx = with(density) { 100.dp.toPx() }
   val expandThresholdPx = with(density) { 48.dp.toPx() }
 
-  val launchPlayer = remember(context, isAudioOnlyItem) {
+  val launchPlayer = remember(context, isAudioOnlyItem, musicSheet) {
     {
+      if (isAudioOnlyItem && musicSheet?.expand() == true) {
+        // Full music player is the in-app sheet, not PlayerActivity.
+      } else {
       MusicMiniPlayerHandoff.suppressNextEnter = isAudioOnlyItem
       val intent = Intent(context, PlayerActivity::class.java).apply {
         action = MediaPlaybackService.ACTION_OPEN_PLAYER
@@ -267,6 +273,7 @@ private fun MiniPlayerContent(
           context.overridePendingTransition(openEnterAnimation, 0)
         }
       }
+      }
     }
   }
 
@@ -283,6 +290,7 @@ private fun MiniPlayerContent(
   val glassEnabled = settingsGlassEnabled()
   Surface(
     modifier = Modifier
+      .inAppMusicSheetMiniSource(musicSheet, RoundedCornerShape(20.dp))
       .offset { IntOffset(offsetX.roundToInt(), 0) }
       .onGloballyPositioned { coordinates ->
         if (isAudioOnlyItem) {

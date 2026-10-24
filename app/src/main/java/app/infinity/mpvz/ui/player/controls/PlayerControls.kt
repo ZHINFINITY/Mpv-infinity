@@ -147,6 +147,7 @@ import app.infinity.mpvz.ui.player.PlayerActivity
 import app.infinity.mpvz.ui.player.PlayerStatsOverlayPolicy
 import app.infinity.mpvz.ui.player.PlayerUpdates
 import app.infinity.mpvz.ui.player.PlayerViewModel
+import app.infinity.mpvz.ui.player.InAppMusicSheetState
 import app.infinity.mpvz.ui.player.PlaybackEngineMode
 import app.infinity.mpvz.ui.player.AudiobookPlayback
 import app.infinity.mpvz.ui.player.Sheets
@@ -195,6 +196,160 @@ fun <T> playerControlsExitAnimationSpec(durationMillis: Int = 300): FiniteAnimat
 
 fun <T> playerControlsEnterAnimationSpec(durationMillis: Int = 100): FiniteAnimationSpec<T> =
   tween(durationMillis = durationMillis, easing = LinearOutSlowInEasing)
+
+@OptIn(
+  ExperimentalMaterial3Api::class,
+  ExperimentalMaterial3ExpressiveApi::class,
+  ExperimentalFoundationApi::class,
+)
+@Composable
+@Suppress("ViewModelForwarding")
+internal fun AudioPlayerScreen(
+  viewModel: PlayerViewModel,
+  onBackPress: () -> Unit,
+  modifier: Modifier = Modifier,
+  titleForControls: () -> String? = { null },
+  inAppSheet: InAppMusicSheetState? = null,
+  onSelectEngine: ((PlaybackEngineMode) -> Unit)? = null,
+) {
+  val playerPreferences = koinInject<PlayerPreferences>()
+  val decoderPreferences = koinInject<DecoderPreferences>()
+  val appearancePreferences = koinInject<AppearancePreferences>()
+  val liquidGlassSurfaces by appearancePreferences.liquidGlassSurfaces.collectAsState()
+  val activity = LocalActivity.current as? PlayerActivity
+  val nativeEngineActive = activity?.isNativeEngineActive() == true
+  val nativeSnapshot by activity?.nativePlaybackSnapshot?.collectAsState()
+    ?: remember { mutableStateOf(NativePlaybackSnapshot()) }
+  val playbackQueue by PlaybackSession.queue.collectAsStateWithLifecycle()
+  val currentPlaybackItem = playbackQueue.currentItem
+  val chapters by viewModel.chapters.collectAsState(persistentListOf())
+  val currentChapter by PlaybackSession.propInt["chapter"].collectAsState()
+  val playbackSpeed by PlaybackSession.propFloat["speed"].collectAsState()
+  val configuredDecoder by PlaybackSession.propString["hwdec"].collectAsState()
+  val activeDecoder by PlaybackSession.propString["hwdec-current"].collectAsState()
+  val decoder = remember(activeDecoder, configuredDecoder) {
+    getDecoderFromValue(activeDecoder?.takeIf { it.isNotBlank() } ?: configuredDecoder ?: "auto")
+  }
+  val onOpenSheet: (Sheets) -> Unit = remember(viewModel) {
+    {
+      viewModel.sheetShown.update { _ -> it }
+      if (it == Sheets.None) {
+        viewModel.showControls()
+      } else {
+        viewModel.hideControls()
+        viewModel.panelShown.update { Panels.None }
+      }
+    }
+  }
+  val onOpenPanel: (Panels) -> Unit = remember(viewModel) {
+    {
+      viewModel.panelShown.update { _ -> it }
+      if (it == Panels.None) {
+        viewModel.showControls()
+      } else {
+        viewModel.hideControls()
+        viewModel.sheetShown.update { Sheets.None }
+      }
+    }
+  }
+  val rawMediaTitle by PlaybackSession.propString["media-title"].collectAsState()
+  val queuedTitle =
+    playbackQueue.currentItem?.title?.takeIf { playbackQueue.isExplicitQueue && it.isNotBlank() }
+  val mediaTitle =
+    remember(queuedTitle, rawMediaTitle, activity) {
+      queuedTitle
+        ?: titleForControls()?.takeIf { it.isNotBlank() }
+        ?: activity?.getTitleForControls()?.takeIf { it.isNotBlank() }
+        ?: rawMediaTitle?.takeIf { it.isNotBlank() }
+    }
+  val sheetShown by viewModel.sheetShown.collectAsState()
+  val subtitles by viewModel.subtitleTracks.collectAsState(persistentListOf())
+  val audioTracks by viewModel.audioTracks.collectAsState(persistentListOf())
+  val sleepTimerTimeRemaining by viewModel.remainingTime.collectAsState()
+  val speedPresets by playerPreferences.speedPresets.collectAsState()
+  val sortedSpeedPresets = remember(speedPresets) { speedPresets.map { it.toFloat() }.sorted() }
+
+  var audioGlassPalette by remember { mutableStateOf<Pair<Int, Int>?>(null) }
+  AudioPaletteGlassScene(
+    topArgb = audioGlassPalette?.first ?: MaterialTheme.colorScheme.primary.toArgb(),
+    bottomArgb = audioGlassPalette?.second ?: MaterialTheme.colorScheme.secondary.toArgb(),
+    enabled = liquidGlassSurfaces,
+    modifier = modifier.fillMaxSize(),
+  ) {
+    AudioPlayerControls(
+      viewModel = viewModel,
+      mediaTitle = mediaTitle,
+      onBackPress = onBackPress,
+      onOpenSheet = onOpenSheet,
+      onOpenPanel = onOpenPanel,
+      onGlassPaletteChanged = { top, bottom -> audioGlassPalette = top to bottom },
+      inAppSheet = inAppSheet,
+    )
+
+    PlayerSheets(
+      viewModel = viewModel,
+      sheetShown = sheetShown,
+      subtitles = subtitles.toImmutableList(),
+      onAddSubtitle = viewModel::addSubtitle,
+      onToggleSubtitle = viewModel::toggleSubtitle,
+      isSubtitleSelected = viewModel::isSubtitleSelected,
+      subtitleSelectionIndicator = viewModel::subtitleSelectionIndicator,
+      onRemoveSubtitle = viewModel::removeSubtitle,
+      audioTracks = audioTracks.toImmutableList(),
+      onAddAudio = viewModel::addAudio,
+      onSelectAudio = viewModel::selectAudioTrack,
+      chapter = chapters.getOrNull(currentChapter ?: 0),
+      chapters = chapters.toImmutableList(),
+      onSeekToChapter = {
+        val selectedChapter = chapters.getOrNull(it)
+        if (currentPlaybackItem?.audiobook != null && selectedChapter != null) {
+          viewModel.seekToPlaybackChapter(selectedChapter)
+        } else if (nativeEngineActive && selectedChapter != null) {
+          activity?.nativeSeekTo((selectedChapter.start * 1000.0).toLong())
+          activity?.nativeUnpause()
+        } else {
+          PlaybackSession.setPropertyInt("chapter", it)
+          viewModel.unpause()
+        }
+      },
+      decoder = decoder,
+      onUpdateDecoder = { PlaybackSession.setPropertyString("hwdec", it.value) },
+      selectedEngine = if (nativeEngineActive) PlaybackEngineMode.NATIVE else PlaybackEngineMode.MPV,
+      onSelectEngine = onSelectEngine ?: { decoderPreferences.playbackEngine.set(it) },
+      speed = playbackSpeed ?: playerPreferences.defaultSpeed.get(),
+      onSpeedChange = {
+        val speed = it.toFixed(2)
+        if (activity?.isNativeEngineActive() == true) activity.nativeSetSpeed(speed.toFloat())
+        else PlaybackSession.setPropertyFloat("speed", speed)
+      },
+      onMakeDefaultSpeed = { playerPreferences.defaultSpeed.set(it.toFixed(2)) },
+      onAddSpeedPreset = { playerPreferences.speedPresets += it.toFixed(2).toString() },
+      onRemoveSpeedPreset = { playerPreferences.speedPresets -= it.toFixed(2).toString() },
+      onResetSpeedPresets = playerPreferences.speedPresets::delete,
+      speedPresets = sortedSpeedPresets,
+      onResetDefaultSpeed = {
+        val speed = playerPreferences.defaultSpeed.deleteAndGet().toFixed(2)
+        if (activity?.isNativeEngineActive() == true) activity.nativeSetSpeed(speed.toFloat())
+        else PlaybackSession.setPropertyFloat("speed", speed)
+      },
+      sleepTimerTimeRemaining = sleepTimerTimeRemaining,
+      onStartSleepTimer = viewModel::startTimer,
+      onOpenPanel = onOpenPanel,
+      onShowSheet = onOpenSheet,
+      activeEngine = if (nativeEngineActive) PlaybackEngineMode.NATIVE else PlaybackEngineMode.MPV,
+      nativeSnapshot = nativeSnapshot,
+      onDisableNativeSubtitles = { activity?.nativeDisableSubtitles() },
+      onDismissRequest = { onOpenSheet(Sheets.None) },
+    )
+
+    val panel by viewModel.panelShown.collectAsState()
+    PlayerPanels(
+      panelShown = panel,
+      viewModel = viewModel,
+      onDismissRequest = { onOpenPanel(Panels.None) },
+    )
+  }
+}
 
 @OptIn(
   ExperimentalMaterial3Api::class,
@@ -474,104 +629,16 @@ fun PlayerControls(
     ),
   )
   if (useAudioPlayer) {
-    val rawMediaTitle by PlaybackSession.propString["media-title"].collectAsState()
-    val queuedTitle =
-      playbackQueue.currentItem?.title?.takeIf { playbackQueue.isExplicitQueue && it.isNotBlank() }
-    val mediaTitle =
-      remember(queuedTitle, rawMediaTitle, activity) {
-        queuedTitle
-          ?: activity?.getTitleForControls()
-          ?: rawMediaTitle?.takeIf { it.isNotBlank() }
-      }
-
-    val sheetShown by viewModel.sheetShown.collectAsState()
-    val subtitles by viewModel.subtitleTracks.collectAsState(persistentListOf())
-    val audioTracks by viewModel.audioTracks.collectAsState(persistentListOf())
-    val sleepTimerTimeRemaining by viewModel.remainingTime.collectAsState()
-    val speedPresets by playerPreferences.speedPresets.collectAsState()
-    val sortedSpeedPresets = remember(speedPresets) { speedPresets.map { it.toFloat() }.sorted() }
-
-    var audioGlassPalette by remember { mutableStateOf<Pair<Int, Int>?>(null) }
-    AudioPaletteGlassScene(
-      topArgb = audioGlassPalette?.first ?: MaterialTheme.colorScheme.primary.toArgb(),
-      bottomArgb = audioGlassPalette?.second ?: MaterialTheme.colorScheme.secondary.toArgb(),
-      enabled = liquidGlassSurfaces,
-      modifier = modifier.fillMaxSize(),
-    ) {
-      AudioPlayerControls(
-        viewModel = viewModel,
-        mediaTitle = mediaTitle,
-        onBackPress = onBackPress,
-        onOpenSheet = onOpenSheet,
-        onOpenPanel = onOpenPanel,
-        onGlassPaletteChanged = { top, bottom -> audioGlassPalette = top to bottom },
-      )
-
-      PlayerSheets(
-        viewModel = viewModel,
-        sheetShown = sheetShown,
-        subtitles = subtitles.toImmutableList(),
-        onAddSubtitle = viewModel::addSubtitle,
-        onToggleSubtitle = viewModel::toggleSubtitle,
-        isSubtitleSelected = viewModel::isSubtitleSelected,
-        subtitleSelectionIndicator = viewModel::subtitleSelectionIndicator,
-        onRemoveSubtitle = viewModel::removeSubtitle,
-        audioTracks = audioTracks.toImmutableList(),
-        onAddAudio = viewModel::addAudio,
-        onSelectAudio = viewModel::selectAudioTrack,
-        chapter = chapters.getOrNull(currentChapter ?: 0),
-        chapters = chapters.toImmutableList(),
-        onSeekToChapter = {
-          val selectedChapter = chapters.getOrNull(it)
-          if (currentPlaybackItem?.audiobook != null && selectedChapter != null) {
-            viewModel.seekToPlaybackChapter(selectedChapter)
-          } else if (nativeEngineActive && selectedChapter != null) {
-            activity?.nativeSeekTo((selectedChapter.start * 1000.0).toLong())
-            activity?.nativeUnpause()
-          } else {
-            PlaybackSession.setPropertyInt("chapter", it)
-            viewModel.unpause()
-          }
-        },
-        decoder = decoder,
-        onUpdateDecoder = { PlaybackSession.setPropertyString("hwdec", it.value) },
-        selectedEngine = if (nativeEngineActive) PlaybackEngineMode.NATIVE else PlaybackEngineMode.MPV,
-        onSelectEngine = onSelectEngine ?: { decoderPreferences.playbackEngine.set(it) },
-        speed = playbackSpeed ?: playerPreferences.defaultSpeed.get(),
-        onSpeedChange = {
-        val speed = it.toFixed(2)
-        if (activity?.isNativeEngineActive() == true) activity.nativeSetSpeed(speed.toFloat())
-        else PlaybackSession.setPropertyFloat("speed", speed)
-      },
-        onMakeDefaultSpeed = { playerPreferences.defaultSpeed.set(it.toFixed(2)) },
-        onAddSpeedPreset = { playerPreferences.speedPresets += it.toFixed(2).toString() },
-        onRemoveSpeedPreset = { playerPreferences.speedPresets -= it.toFixed(2).toString() },
-        onResetSpeedPresets = playerPreferences.speedPresets::delete,
-        speedPresets = sortedSpeedPresets,
-        onResetDefaultSpeed = {
-          val speed = playerPreferences.defaultSpeed.deleteAndGet().toFixed(2)
-          if (activity?.isNativeEngineActive() == true) activity.nativeSetSpeed(speed.toFloat())
-          else PlaybackSession.setPropertyFloat("speed", speed)
-        },
-        sleepTimerTimeRemaining = sleepTimerTimeRemaining,
-        onStartSleepTimer = viewModel::startTimer,
-        onOpenPanel = onOpenPanel,
-        onShowSheet = onOpenSheet,
-        activeEngine = if (nativeEngineActive) PlaybackEngineMode.NATIVE else PlaybackEngineMode.MPV,
-        nativeSnapshot = nativeSnapshot,
-        onDisableNativeSubtitles = { activity?.nativeDisableSubtitles() },
-        onDismissRequest = { onOpenSheet(Sheets.None) },
-      )
-
-      val panel by viewModel.panelShown.collectAsState()
-      PlayerPanels(
-        panelShown = panel,
-        viewModel = viewModel,
-        onDismissRequest = { onOpenPanel(Panels.None) },
-      )
-    }
+    AudioPlayerScreen(
+      viewModel = viewModel,
+      onBackPress = onBackPress,
+      modifier = modifier,
+      titleForControls = { activity?.getTitleForControls() },
+      onSelectEngine = onSelectEngine,
+    )
     return
   }
+
 
   val playerActivity = LocalActivity.current as PlayerActivity
   val configuration = LocalConfiguration.current

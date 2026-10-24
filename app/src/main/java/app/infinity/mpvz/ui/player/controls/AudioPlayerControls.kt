@@ -10,6 +10,8 @@ package app.infinity.mpvz.ui.player.controls
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.boundsInWindow
 import app.infinity.mpvz.ui.player.PlaybackSession
+import app.infinity.mpvz.ui.player.InAppMusicSheetState
+import app.infinity.mpvz.ui.player.inAppMusicSheetDrag
 
 import android.Manifest
 import android.content.pm.PackageManager
@@ -107,7 +109,6 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.delay
 import androidx.palette.graphics.Palette
 import app.infinity.mpvz.database.repository.PlaylistRepository
-import app.infinity.mpvz.preferences.AdvancedPreferences
 import app.infinity.mpvz.repository.JellyfinRepository
 import app.infinity.mpvz.domain.media.model.Video
 import app.infinity.mpvz.ui.browser.dialogs.AddToPlaylistDialog
@@ -595,10 +596,10 @@ fun AudioPlayerControls(
   onOpenPanel: (Panels) -> Unit,
   modifier: Modifier = Modifier,
   onGlassPaletteChanged: (Int, Int) -> Unit = { _, _ -> },
+  inAppSheet: InAppMusicSheetState? = null,
 ) {
   val speedConfigOwned = isMpvOptionOwnedByConfig("speed")
   val audioFiltersConfigOwned = isMpvOptionOwnedByConfig("af")
-  val advancedPreferences = koinInject<AdvancedPreferences>()
   val gesturePreferences = koinInject<GesturePreferences>()
   val audioSeekDuration by gesturePreferences.doubleTapToSeekDuration.collectAsState()
   val paused by PlaybackSession.propBoolean["pause"].collectAsState()
@@ -629,11 +630,6 @@ fun AudioPlayerControls(
     val normalized = value?.trim()?.uppercase(Locale.ROOT).orEmpty()
     return normalized.isBlank() || normalized.contains("/API/") || normalized.contains("/ITEMS/") ||
       normalized.contains("/FILE/") || normalized.startsWith("DEV/") || normalized.contains("AUDIOBOOKSHELF") && normalized.contains("HTTP")
-  }
-  LaunchedEffect(currentItem?.stableId, currentItem?.isDefinitelyAudioOnly()) {
-    if (currentItem?.isDefinitelyAudioOnly() == true && advancedPreferences.enabledStatisticsPage.get() in 1..5) {
-      PlaybackSession.command("script-binding", "stats/display-stats-toggle")
-    }
   }
   val playlistItems by viewModel.playlistItems.collectAsState()
   val filteredPlaylist =
@@ -1232,7 +1228,17 @@ fun AudioPlayerControls(
   }
   val gestureInputModifier = modifier
     .fillMaxSize()
-    .nestedScroll(nestedGestureController.nestedScrollConnection)
+    .then(
+      if (inAppSheet != null) {
+        Modifier.inAppMusicSheetDrag(
+          state = inAppSheet,
+          collapsing = true,
+          enabled = !isSheetOpen,
+        )
+      } else {
+        Modifier.nestedScroll(nestedGestureController.nestedScrollConnection)
+      },
+    )
     .onGloballyPositioned {
       playerHeightPx = it.size.height.toFloat()
       playerWidthPx = it.size.width.toFloat()
@@ -1441,11 +1447,13 @@ fun AudioPlayerControls(
       Box(modifier = Modifier.fillMaxWidth()) {
         ReactiveIconButton(
           onClick = {
-            settleStart = (if (settleTarget == null) miniGesture.progress
-              else if (settleAnimation.isRunning) settleAnimation.value else settleStart).coerceIn(0f, 1f)
-            settleProgrammatic = true
-            settleTarget = 1f
-            settleGeneration++
+            if (inAppSheet?.collapse() != true) {
+              settleStart = (if (settleTarget == null) miniGesture.progress
+                else if (settleAnimation.isRunning) settleAnimation.value else settleStart).coerceIn(0f, 1f)
+              settleProgrammatic = true
+              settleTarget = 1f
+              settleGeneration++
+            }
           },
           modifier = Modifier.align(Alignment.CenterStart),
         ) {
