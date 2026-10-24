@@ -278,5 +278,3 @@ private suspend fun frostGlassFrame(bitmap: Bitmap, strength: Float): Bitmap? = 
     assertTrue(scene.contains("private const val BROWSER_LATEST_LENS"))
   }
 }
-      "app/src/main/java/app/infinity/mpvz/ui/player/controls/PlayerControls.kt" to "db766e35c35ca217a49d0124eaf46f6702c73d1e671c3ade4504b394df87a19c" /* Flow extras on MPV pages 1-6; mpvRx lua clear unchanged */,
-      "app/src/main/java/app/infinity/mpvz/ui/player/controls/PlayerControls.kt" to "db766e35c35ca217a49d0124eaf46f6702c73d1e671c3ade4504b394df87a19c" /* Flow extras on MPV pages 1-6; mpvRx lua clear unchanged */,
