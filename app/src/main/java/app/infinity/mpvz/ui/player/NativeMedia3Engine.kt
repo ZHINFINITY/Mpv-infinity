@@ -300,7 +300,6 @@ class NativeMedia3Engine(
     )
   private val dataSourceFactory = DefaultDataSource.Factory(context.applicationContext, cacheDataSourceFactory)
   private val assHandler = AssHandler(renderType = AssRenderType.OVERLAY_CANVAS)
-  // Composite: ASS/SSA via libass, WebVTT/SRT/TTML via Media3 DefaultSubtitleParserFactory.
   private val assSubtitleParserFactory = NativeSubtitleParserFactory(AssSubtitleParserFactory(assHandler))
   private val defaultExtractorsFactory =
     androidx.media3.extractor.DefaultExtractorsFactory()

@@ -2,34 +2,27 @@ package app.infinity.mpvz.ui.player
 
 import androidx.media3.common.Format
 import androidx.media3.common.MimeTypes
-import androidx.media3.extractor.text.DefaultSubtitleParserFactory
 import androidx.media3.extractor.text.SubtitleParser
 
 /**
- * Composite Native subtitle parser. ASS/SSA stays on libass. WebVTT, SRT, TTML and other
- * DefaultSubtitleParserFactory formats use Media3. Bitmap PGS/DVB remain raw samples.
+ * Keeps bitmap subtitles as raw samples so Media3's legacy text renderer can decode them off the
+ * playback thread. The ASS parser remains delegated to the existing factory.
  */
 internal class NativeSubtitleParserFactory(
-  private val assFactory: SubtitleParser.Factory,
-  private val defaultFactory: SubtitleParser.Factory = DefaultSubtitleParserFactory(),
+  private val delegate: SubtitleParser.Factory,
 ) : SubtitleParser.Factory {
   override fun supportsFormat(format: Format): Boolean {
-    if (isBitmapSubtitle(format)) return false
-    return assFactory.supportsFormat(format) || defaultFactory.supportsFormat(format)
+    return !isBitmapSubtitle(format) && delegate.supportsFormat(format)
   }
 
   override fun getCueReplacementBehavior(format: Format): Int {
     check(!isBitmapSubtitle(format)) { "Bitmap subtitles must remain raw samples: $format" }
-    return factoryFor(format).getCueReplacementBehavior(format)
+    return delegate.getCueReplacementBehavior(format)
   }
 
   override fun create(format: Format): SubtitleParser {
     check(!isBitmapSubtitle(format)) { "Bitmap subtitles must remain raw samples: $format" }
-    return factoryFor(format).create(format)
-  }
-
-  private fun factoryFor(format: Format): SubtitleParser.Factory {
-    return if (assFactory.supportsFormat(format)) assFactory else defaultFactory
+    return delegate.create(format)
   }
 
   companion object {
