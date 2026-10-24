@@ -11,15 +11,18 @@ internal object PlayerStatsOverlayPolicy {
     val isAudioOnly: Boolean,
     val musicMode: Boolean,
     val mediaTypeKnown: Boolean,
-    val sheetOrPanelOpen: Boolean = false,
   )
   data class Decision(val action: Action, val page: Int? = null) {
     val visible: Boolean get() = action == Action.SHOW_PAGE
   }
 
   fun decide(input: Input): Decision {
-    val canShow = input.enabled && input.page in 1..6 && input.mediaTypeKnown &&
-      !input.isAudioOnly && !input.musicMode && !input.sheetOrPanelOpen
+    val composePage = when (input.engine) {
+      Engine.NATIVE -> input.page in 1..6
+      Engine.MPV -> input.page == 6
+    }
+    val canShow = input.enabled && composePage && input.mediaTypeKnown &&
+      !input.isAudioOnly && !input.musicMode
     return if (canShow) Decision(Action.SHOW_PAGE, input.page) else Decision(Action.HIDE)
   }
 }

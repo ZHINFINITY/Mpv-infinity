@@ -616,8 +616,6 @@ fun PlayerControls(
       else -> isAudioOnly || activity?.isCurrentMediaKnownAudio() == true
     }
   val declaredMediaKind = currentPlaybackItem?.declaredMediaKind()
-  val sheetForStats by viewModel.sheetShown.collectAsState()
-  val panelForStats by viewModel.panelShown.collectAsState()
   val statsDecision = PlayerStatsOverlayPolicy.decide(
     PlayerStatsOverlayPolicy.Input(
       enabled = statisticsPage in 1..6,
@@ -628,7 +626,6 @@ fun PlayerControls(
       musicMode = useAudioPlayer,
       mediaTypeKnown = declaredMediaKind != DeclaredPlaybackMediaKind.UNKNOWN ||
         nativeSnapshot.videoWidth > 0 || activity?.isCurrentMediaKnownAudio() == true,
-      sheetOrPanelOpen = sheetForStats != Sheets.None || panelForStats != Panels.None,
     ),
   )
   if (useAudioPlayer) {
@@ -799,8 +796,9 @@ fun PlayerControls(
             .zIndex(0f),
       )
     }
-    // Statistics are a video overlay only. Keep them out of the audio/visualizer composition even
-    // when the previous video left the persisted statistics page enabled.
+    // mpvRx: pages 1-5 are stats.lua OSD only. Page 6 is CustomStatsPageSixOverlay
+    // only. Do not hide Compose because More is open; lua already stays up.
+    // Native Media3 has no stats.lua, so keep NativeStatsPageOverlay for 1-6.
     if (statsDecision.visible) {
       val statsModifier =
         Modifier
@@ -812,7 +810,7 @@ fun PlayerControls(
           ).padding(top = 16.dp, start = 14.dp)
       if (activity?.isNativeEngineActive() == true) {
         NativeStatsPageOverlay(page = statisticsPage, snapshot = nativeSnapshot, modifier = statsModifier)
-      } else if (statisticsPage in 1..6) {
+      } else if (statisticsPage == 6) {
         CustomStatsPageSixOverlay(viewModel = viewModel, modifier = statsModifier)
       }
     }
