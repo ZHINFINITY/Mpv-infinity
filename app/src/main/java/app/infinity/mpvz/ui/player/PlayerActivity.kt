@@ -144,13 +144,17 @@ import `is`.xyz.mpv.Utils
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.DelicateCoroutinesApi
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.drop
+import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.merge
@@ -192,6 +196,7 @@ private enum class BackgroundPlaybackStartResult {
  * @see MediaPlaybackService for background playback functionality
  */
 @Suppress("TooManyFunctions", "LargeClass")
+@OptIn(ExperimentalCoroutinesApi::class)
 class PlayerActivity :
   AppCompatActivity(),
   PlayerHost {
@@ -218,7 +223,7 @@ class PlayerActivity :
     ).also {
       it.onEnded = { runOnUiThread { handleNativePlaybackEnded() } }
       it.onPlaybackError = { error -> runOnUiThread { handleNativePlaybackError(error) } }
-      nativeEngineConfigured = true
+      nativeEngineConfigured.value = true
     }
   }
   private val flowDiagnosticsCaptureManager by lazy { FlowDiagnosticsCaptureManager(this) }
@@ -258,13 +263,17 @@ class PlayerActivity :
 
   internal fun stopFlowDiagnosticsCapture(): String? = flowDiagnosticsCaptureManager.stop()
 
-  private var nativeEngineConfigured = false
-  private val idleNativePlaybackSnapshot = kotlinx.coroutines.flow.MutableStateFlow(NativePlaybackSnapshot())
-  private val idleNativeFirstFrame = kotlinx.coroutines.flow.MutableStateFlow(false)
+  private val nativeEngineConfigured = MutableStateFlow(false)
+  private val idleNativePlaybackSnapshot = MutableStateFlow(NativePlaybackSnapshot())
+  private val idleNativeFirstFrame = MutableStateFlow(false)
   private var playerStoppedAtElapsedRealtime = 0L
   private var pendingRendererRebuildAfterBackground = false
-  val nativePlaybackSnapshot get() = nativeEngineOrNull()?.snapshot ?: idleNativePlaybackSnapshot
-  private val nativeFirstFrame get() = nativeEngineOrNull()?.hasRenderedFirstFrame ?: idleNativeFirstFrame
+  val nativePlaybackSnapshot = nativeEngineConfigured.flatMapLatest { configured ->
+    if (configured) nativeEngine.snapshot else idleNativePlaybackSnapshot
+  }
+  private val nativeFirstFrame = nativeEngineConfigured.flatMapLatest { configured ->
+    if (configured) nativeEngine.hasRenderedFirstFrame else idleNativeFirstFrame
+  }
   private var glassEngineMode by mutableStateOf(PlaybackEngineMode.MPV)
   private var glassMediaGeneration by mutableStateOf(0L)
   private var activeEngineMode = PlaybackEngineMode.MPV
@@ -427,10 +436,10 @@ class PlayerActivity :
   // Renderer ownership is authoritative even while Native is preparing/seeking. Readiness
   // must not route controls or lifecycle saves back to the frozen MPV instance.
   override fun isNativeEngineActive(): Boolean = activeEngineMode == PlaybackEngineMode.NATIVE
-    && nativeEngineConfigured
+    && nativeEngineConfigured.value
 
   private fun nativeEngineOrNull(): NativeMedia3Engine? =
-    if (nativeEngineConfigured) nativeEngine else null
+    if (nativeEngineConfigured.value) nativeEngine else null
 
   private fun configureNativeEngineIfNeeded(force: Boolean = false) {
     val isAudioLaunch =
@@ -440,7 +449,7 @@ class PlayerActivity :
     if (!force && !PlayerLifecyclePolicy.shouldInitializeNativeMedia3Engine(isAudioLaunch)) {
       return
     }
-    if (!nativeEngineConfigured) {
+    if (!nativeEngineConfigured.value) {
       nativeEngine.attach(binding.media3Player)
       nativeEngine.setSubtitleStyle(
         textColor = subtitlesPreferences.textColor.get(),
@@ -542,7 +551,7 @@ class PlayerActivity :
     val targetFps = decoderPreferences.mpvFlowTargetFps.get()
     lifecycleScope.launch {
       val liveApplied = try {
-        backend != null && isNativeEngineActive() && nativeEngineConfigured && nativeEngine === backend &&
+        backend != null && isNativeEngineActive() && nativeEngineConfigured.value && nativeEngine === backend &&
           backend.applyInterpolationRuntime(enabled = enabled, targetFps = targetFps)
       } catch (cancelled: CancellationException) {
         throw cancelled
@@ -555,7 +564,7 @@ class PlayerActivity :
         enabled != decoderPreferences.mpvFlowFrameInterpolation.get() ||
         targetFps != decoderPreferences.mpvFlowTargetFps.get()) return@launch
       if (!ownsPlaybackSession() || isFinishing || isDestroyed || wasNative != isNativeEngineActive() ||
-        (wasNative && nativeEngineConfigured && nativeEngine !== backend)) return@launch
+        (wasNative && nativeEngineConfigured.value && nativeEngine !== backend)) return@launch
       if (decision == InterpolationRuntimeApplyPolicy.Decision.PENDING_UNTIL_NEXT_PLAYBACK) {
         if (!ownsPlaybackSession() || isFinishing || isDestroyed) return@launch
         val reason = "native_flow_sink_unavailable"
@@ -563,7 +572,7 @@ class PlayerActivity :
         return@launch
       }
       if (ownsPlaybackSession() && !isFinishing && !isDestroyed &&
-        activeEngineMode == PlaybackEngineMode.NATIVE && nativeEngineConfigured && nativeEngine === backend
+        activeEngineMode == PlaybackEngineMode.NATIVE && nativeEngineConfigured.value && nativeEngine === backend
       ) {
         Log.i(TAG, "Native interpolation controls applied to the current playback")
       }
@@ -1791,8 +1800,9 @@ class PlayerActivity :
     }
     lifecycleScope.launch {
       repeatOnLifecycle(Lifecycle.State.STARTED) {
-        val engine = nativeEngineOrNull() ?: return@repeatOnLifecycle
-        engine.subtitleCueText.collect { cue ->
+        nativeEngineConfigured.flatMapLatest { configured ->
+          if (configured) nativeEngine.subtitleCueText else emptyFlow()
+        }.collect { cue ->
           if (isNativeEngineActive()) {
             viewModel.translateEmbeddedSubtitleCue(cue, native = true)
           }
@@ -2220,8 +2230,8 @@ class PlayerActivity :
         val panel by viewModel.panelShown.collectAsState()
         val audioOnly by viewModel.isAudioOnly.collectAsState()
         val state by PlaybackSession.state.collectAsState()
-        val native by nativePlaybackSnapshot.collectAsState()
-        val nativeFrame by nativeFirstFrame.collectAsState()
+        val native by nativePlaybackSnapshot.collectAsState(initial = NativePlaybackSnapshot())
+        val nativeFrame by nativeFirstFrame.collectAsState(initial = false)
         val hdrMode by viewModel.hdrScreenMode.collectAsState()
         val transfer by PlaybackSession.propString["video-params/gamma"].collectAsState()
         val nativeActive = glassEngineMode == PlaybackEngineMode.NATIVE
@@ -2239,7 +2249,7 @@ class PlayerActivity :
           hdr = hdr,
           generation = Triple(glassMediaGeneration, state.generation, state.currentItem?.stableId),
           isReady = {
-            if (nativeActive) nativeFrame && nativeFirstFrame.value
+            if (nativeActive) nativeFrame
             else binding.player.isSurfaceReady && PlaybackSession.state.value.surfaceAttached
           },
           isPlaying = {
@@ -2276,8 +2286,8 @@ class PlayerActivity :
       val lifecycleActive by viewModel.isAmbientLifecycleActive.collectAsState()
       val isAudioOnly by viewModel.isAudioOnly.collectAsState()
       val playbackState by PlaybackSession.state.collectAsState()
-      val nativeSnapshot by nativePlaybackSnapshot.collectAsState()
-      val nativeFrameAvailable by nativeFirstFrame.collectAsState()
+      val nativeSnapshot by nativePlaybackSnapshot.collectAsState(initial = NativePlaybackSnapshot())
+      val nativeFrameAvailable by nativeFirstFrame.collectAsState(initial = false)
       val videoCrop by PlaybackSession.propString["video-crop"].collectAsState()
       val hdrScreenMode by viewModel.hdrScreenMode.collectAsState()
       val orientation = LocalConfiguration.current.orientation
@@ -2328,7 +2338,7 @@ class PlayerActivity :
               surface.holder.surface?.isValid == true &&
                 (nativeEngineOrNull()?.snapshot?.value?.isReady == true ||
                   nativeEngineOrNull()?.snapshot?.value?.isBuffering == true ||
-                  nativeFirstFrame.value)
+                  nativeFrameAvailable)
             } else {
               val state = PlaybackSession.state.value
               state.surfaceAttached &&
@@ -4875,6 +4885,7 @@ class PlayerActivity :
       playableUri = playable,
       originalUri = playable,
       positionRestoreOverride = restore,
+      preserveTorrentSession = activeTorrentSourceUri != null,
     )
   }
 

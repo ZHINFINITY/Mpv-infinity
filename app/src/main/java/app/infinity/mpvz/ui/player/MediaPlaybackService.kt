@@ -421,13 +421,13 @@ class MediaPlaybackService :
       combine(
         audioPreferences.backgroundPlayback.changes(),
         audioPreferences.audioBackgroundPlayback.changes(),
-        inAppPlayerVisible,
-      ) { videoEnabled, audioEnabled, inAppVisible ->
-        if (inAppVisible) true
-        else if (usesAudioBackgroundPlayback) audioEnabled else videoEnabled
+      ) { videoEnabled, audioEnabled ->
+        if (usesAudioBackgroundPlayback) audioEnabled else videoEnabled
       }.drop(1).collect { enabled ->
         if (!serviceMediaKindInitialized) return@collect
-        if (!enabled) {
+        // Closing the in-app music sheet is not a background-preference or app-lifecycle
+        // transition. Mini-player handoff via startBackgroundPlayback must keep playing.
+        if (!enabled && !inAppPlayerVisible.value) {
           Log.d(TAG, "Background playback disabled; stopping service")
           stopDetachedPlaybackIfNeeded()
           stopForegroundNotification()

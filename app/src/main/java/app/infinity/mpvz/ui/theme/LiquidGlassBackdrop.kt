@@ -149,7 +149,7 @@ fun LiquidGlassBackdropHost(
   // Visibility changes stop work, but do not flash the last good scene to black during sheet handoff.
   // Destroy and ineligible still discard. Background stop keeps the last frost so
   // resume is not a clear pane for a second.
-  DisposableEffect(surfaceView, eligible, lifecycleOwner) {
+  DisposableEffect(surfaceView, generation, eligible, lifecycleOwner) {
     if (!eligible) frame.value = null
     val observer = LifecycleEventObserver { _, event ->
       if (event == Lifecycle.Event.ON_DESTROY) frame.value = null
@@ -157,7 +157,9 @@ fun LiquidGlassBackdropHost(
     lifecycleOwner.lifecycle.addObserver(observer)
     onDispose {
       lifecycleOwner.lifecycle.removeObserver(observer)
-      if (!eligible) frame.value = null
+      // New generation/surface: drop the previous source frost. Background ON_STOP
+      // does not dispose this effect, so resume can keep the last frosted frame.
+      frame.value = null
     }
   }
   LaunchedEffect(surfaceView, allowed, generation, lifecycleOwner, frostPasses) {

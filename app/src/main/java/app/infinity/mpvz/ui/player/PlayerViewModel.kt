@@ -7105,7 +7105,9 @@ class PlayerViewModel(
     // still unwinding can otherwise retain this ViewModel (observed in LeakCanary).
     hostReference.clear()
     nativeSubtitleVisibilityListener = null
-    realtimeSubtitleService.stop()
+    if (!hostedInBrowser) {
+      realtimeSubtitleService.stop()
+    }
     subtitleSearchJob?.cancel()
     subtitleSearchJob = null
     mediaSearchJob?.cancel()
@@ -7144,7 +7146,9 @@ class PlayerViewModel(
     // Stop the realtime subtitle service and delete its temp .srt file.
     // Without this the file lingers in cacheDir until the system reclaims
     // it, and the service may keep an active session open.
-    runCatching { stopRealtimeSubtitles(showToastMessage = false) }
+    if (!hostedInBrowser) {
+      runCatching { stopRealtimeSubtitles(showToastMessage = false) }
+    }
 
 
     // The metadataCache (Pair<String, String> entries) is small and
@@ -7152,10 +7156,14 @@ class PlayerViewModel(
     // here keeps the working set fresh for the next session.
     runCatching { metadataCache.evictAll() }
 
-    runCatching { syncplayManager.clearPlayerBindings() }
+    if (!hostedInBrowser) {
+      runCatching { syncplayManager.clearPlayerBindings() }
+    }
     runCatching { audioEqualizerManager.release() }
-    _isAmbientLifecycleActive.value = false
-    runCatching { disableAmbientShader() }
+    if (!hostedInBrowser) {
+      _isAmbientLifecycleActive.value = false
+      runCatching { disableAmbientShader() }
+    }
 
     super.onCleared()
   }

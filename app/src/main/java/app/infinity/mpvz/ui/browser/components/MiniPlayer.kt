@@ -254,7 +254,7 @@ private fun MiniPlayerContent(
     {
       if (useInAppSheet && musicSheet != null) {
         musicSheet.expand()
-      } else if (!isAudioOnlyItem) {
+      } else {
       MusicMiniPlayerHandoff.suppressNextEnter = isAudioOnlyItem
       val intent = Intent(context, PlayerActivity::class.java).apply {
         action = MediaPlaybackService.ACTION_OPEN_PLAYER
