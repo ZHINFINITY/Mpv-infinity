@@ -11,7 +11,6 @@ import android.graphics.Bitmap
 import android.graphics.BitmapShader
 import android.graphics.Matrix
 import android.graphics.Paint as AndroidPaint
-import android.graphics.RuntimeShader
 import android.graphics.Shader
 import android.os.Build
 import android.os.Handler
@@ -142,21 +141,24 @@ fun LiquidGlassBackdropHost(
   }
   // Warm the shared optics program before the first sheet opens (idle, after first frame).
   LaunchedEffect(enabled) {
-    if (enabled && Build.VERSION.SDK_INT >= 33) {
+    if (enabled && RuntimeShaderSupport.available()) {
       delay(GlassSamplingPolicy.ShaderWarmupDelayMs)
-      GlassShaderCache.shared(GLASS_OPTICS) { RuntimeShader(GLASS_OPTICS) }
+      RuntimeShaderSupport.glassOpticsOrNull()
     }
   }
   // Visibility changes stop work, but do not flash the last good scene to black during sheet handoff.
-  // Media, safety and lifecycle boundaries always discard the old scene immediately.
+  // Destroy and ineligible still discard. Background stop keeps the last frost so
+  // resume is not a clear pane for a second.
   DisposableEffect(surfaceView, generation, eligible, lifecycleOwner) {
-    frame.value = null
+    if (!eligible) frame.value = null
     val observer = LifecycleEventObserver { _, event ->
-      if (event == Lifecycle.Event.ON_STOP || event == Lifecycle.Event.ON_DESTROY) frame.value = null
+      if (event == Lifecycle.Event.ON_DESTROY) frame.value = null
     }
     lifecycleOwner.lifecycle.addObserver(observer)
     onDispose {
       lifecycleOwner.lifecycle.removeObserver(observer)
+      // New generation/surface: drop the previous source frost. Background ON_STOP
+      // does not dispose this effect, so resume can keep the last frosted frame.
       frame.value = null
     }
   }
@@ -169,7 +171,14 @@ fun LiquidGlassBackdropHost(
       fun transientFailure() {
         val now = SystemClock.uptimeMillis()
         val first = unavailableSince ?: now.also { unavailableSince = it }
-        if (!GlassScenePolicy.retainTransientFrame(now - first)) frame.value = null
+        // Keep the last frosted sample during ambience/interpolation hiccups.
+        if (!GlassScenePolicy.retainTransientFrame(now - first) &&
+          !GlassScenePolicy.shouldKeepLastFrostedFrame(
+            lifecycleStopped = false,
+            sourceChanged = false,
+            ineligible = !eligible,
+          )
+        ) frame.value = null
       }
       while (currentCoroutineContext().isActive) {
         if (!ready() || !source.isAttachedToWindow || !source.holder.surface.isValid) {
@@ -314,7 +323,7 @@ fun Modifier.liquidGlassPane(
     if (cornerRadius.value >= 999f) RoundedCornerShape(50) else RoundedCornerShape(cornerRadius)
   }
   val shader = remember {
-    if (Build.VERSION.SDK_INT >= 33) GlassShaderCache.shared(GLASS_OPTICS) { RuntimeShader(GLASS_OPTICS) } else null
+    RuntimeShaderSupport.glassOpticsOrNull()
   }
   return this
     .onGloballyPositioned { coordinates ->
@@ -397,35 +406,41 @@ fun Modifier.liquidGlassPane(
           }
           val sourceShader = imageShader
           if (sourceShader != null) {
-            val mapped = shader != null && Build.VERSION.SDK_INT >= 33 && runCatching {
-              sourceShader.setLocalMatrix(null)
-              shader.setInputShader("scene", sourceShader)
-              shader.setFloatUniform("pane", size.width, size.height)
-              shader.setFloatUniform("origin", paneBounds.left, paneBounds.top)
-              shader.setFloatUniform("sceneOrigin", scene.boundsInWindow.left, scene.boundsInWindow.top)
-              shader.setFloatUniform("sceneSize", scene.boundsInWindow.width, scene.boundsInWindow.height)
-              shader.setFloatUniform("imageSize", scene.image.width.toFloat(), scene.image.height.toFloat())
-              shader.setFloatUniform("radius", radius)
-              val bevel = GlassBevelPolicy.params(size.width, size.height, radius,
-                tuning.depth, tuning.refraction, reducedMotion, highContrast)
-              shader.setFloatUniform("bevel", bevel.bevel)
-              shader.setFloatUniform("light", bevel.normalX, bevel.normalY)
-              shader.setFloatUniform("specular", bevel.specular)
-              shader.setFloatUniform("fresnel", bevel.fresnel)
-              // Keep the bend on normal dialogs and sheets; only very large
-              // surfaces are bounded to avoid turning a full-screen layer into
-              // a refraction pass.
-              val lensAllowed = scene.refractionEnabled &&
-                if (materialRole == GlassSurfacePolicy.MaterialRole.Regular) size.maxDimension <= 1024.dp.toPx()
-                else size.minDimension <= 128.dp.toPx() && size.maxDimension <= 512.dp.toPx()
-              shader.setFloatUniform("strength", if (lensAllowed) 4.dp.toPx() * material.refractionMultiplier *
-                GlassSurfacePolicy.refractionStrength(tuning.refraction, reducedMotion, highContrast) else 0f)
-              val frostDp = if (materialRole == GlassSurfacePolicy.MaterialRole.Regular)
-                maxOf(GlassSurfacePolicy.RegularMinimumFrostDp, 10f * tuning.frost * material.frostMultiplier)
-              else 10f * tuning.frost * material.frostMultiplier
-              shader.setFloatUniform("frost", frostDp * density)
-              paint.shader = shader
-            }.isSuccess
+            val bevel = GlassBevelPolicy.params(size.width, size.height, radius,
+              tuning.depth, tuning.refraction, reducedMotion, highContrast)
+            // Keep the bend on normal dialogs and sheets; only very large
+            // surfaces are bounded to avoid turning a full-screen layer into
+            // a refraction pass.
+            val lensAllowed = scene.refractionEnabled &&
+              if (materialRole == GlassSurfacePolicy.MaterialRole.Regular) size.maxDimension <= 1024.dp.toPx()
+              else size.minDimension <= 128.dp.toPx() && size.maxDimension <= 512.dp.toPx()
+            val frostDp = if (materialRole == GlassSurfacePolicy.MaterialRole.Regular)
+              maxOf(GlassSurfacePolicy.RegularMinimumFrostDp, 10f * tuning.frost * material.frostMultiplier)
+            else 10f * tuning.frost * material.frostMultiplier
+            val mapped = RuntimeShaderSupport.bindGlassOpticsOrNull(
+              shader = shader,
+              sourceShader = sourceShader,
+              paint = paint,
+              paneWidth = size.width,
+              paneHeight = size.height,
+              originX = paneBounds.left,
+              originY = paneBounds.top,
+              sceneLeft = scene.boundsInWindow.left,
+              sceneTop = scene.boundsInWindow.top,
+              sceneWidth = scene.boundsInWindow.width,
+              sceneHeight = scene.boundsInWindow.height,
+              imageWidth = scene.image.width.toFloat(),
+              imageHeight = scene.image.height.toFloat(),
+              radius = radius,
+              bevel = bevel.bevel,
+              lightX = bevel.normalX,
+              lightY = bevel.normalY,
+              specular = bevel.specular,
+              fresnel = bevel.fresnel,
+              strength = if (lensAllowed) 4.dp.toPx() * material.refractionMultiplier *
+                GlassSurfacePolicy.refractionStrength(tuning.refraction, reducedMotion, highContrast) else 0f,
+              frostPx = frostDp * density,
+            )
             if (!mapped) {
               matrix.setScale(scene.boundsInWindow.width / scene.image.width,
                 scene.boundsInWindow.height / scene.image.height)
@@ -487,7 +502,7 @@ fun Modifier.liquidGlassPane(
 }
 
 // Original analytic edge lens. Only the background shader is distorted; control content is not.
-private const val GLASS_OPTICS = """
+internal const val GLASS_OPTICS = """
 uniform shader scene;
 uniform float2 pane;
 uniform float2 origin;

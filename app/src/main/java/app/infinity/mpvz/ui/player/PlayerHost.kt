@@ -44,6 +44,9 @@ interface PlayerHost {
 
   fun abandonAudioFocus()
 
+  /** Collapses the full player into the in-app mini player. Browser sheet returns true. */
+  fun minimizeToMiniPlayer(): Boolean = false
+
   fun currentMediaLookupHint(): String? = null
 
   fun currentPlayerLookupHints(): PlayerLookupHints = PlayerLookupHints()

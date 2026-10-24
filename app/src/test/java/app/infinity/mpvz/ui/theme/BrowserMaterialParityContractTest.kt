@@ -18,7 +18,7 @@ class BrowserMaterialParityContractTest {
     val pane = scene.substring(scene.indexOf("internal fun Modifier.browserGlassPane("), scene.indexOf("private fun windowScreenOffset"))
     val nav = scene.substring(scene.indexOf("fun BrowserGlassSurface("), scene.indexOf("/** The shared pane path"))
     // Same lens shader, sheen, rim and film as the navigation pill (owner's reference look).
-    for (token in listOf("RuntimeShader(BROWSER_LENS)", "film * (if (selected) 0.24f else 0.20f)",
+    for (token in listOf("RuntimeShaderSupport.browserLensEffectOrNull(", "film * (if (selected) 0.24f else 0.20f)",
       "Color.White.copy(alpha = 0.20f + glow * 0.65f)", "Color.White.copy(alpha = 0.10f + glow * 0.35f)",
       "0.06f + glow * 0.10f", "0.16f + glow * 0.24f", "(if (selected) 7.dp else 12.dp) * tuning.depth")) {
       assertTrue("browser pane must match nav pill: $token", pane.contains(token))
@@ -54,7 +54,7 @@ class BrowserMaterialParityContractTest {
     assertTrue(pane.contains("edgeBar -> MaterialTheme.colorScheme.background"))
     assertTrue("edge bars skip the white body sheen", pane.contains("if (!edgeBar) {\n            drawRoundRect(Brush.verticalGradient("))
     // No lens on edge bars (its edge term draws a bright line) and an opaque-enough no-scene film.
-    assertTrue(pane.contains("if (enabled && !edgeBar && capabilities.refraction"))
+    assertTrue(pane.contains("enabled && !edgeBar && capabilities.refraction && RuntimeShaderSupport.available()"))
     assertTrue(pane.contains("edgeBar -> GlassSurfacePolicy.EdgeChromeNoSceneFilmAlpha"))
     // Settings and other screens without a browser scene take the same glow-free edge path.
     val fallback = source("LiquidGlassBackdrop").substringAfter("fun Modifier.liquidGlassPane(").substringBefore("val tint = MaterialTheme.colorScheme.surfaceContainerHigh")
@@ -94,9 +94,10 @@ class BrowserMaterialParityContractTest {
   @Test fun browserSurfaceKeepsReferenceLensAndReferenceFilmSemantics() {
     val scene = source("BrowserGlassScene")
     val browser = scene.substring(scene.indexOf("fun BrowserGlassSurface("), scene.indexOf("/** The shared pane path"))
-    assertTrue(browser.contains("RuntimeShader(BROWSER_LENS)"))
-    assertTrue(browser.contains("shader.setFloatUniform(\"bend\""))
-    assertTrue(browser.contains("shader.setFloatUniform(\"motion\""))
+    assertTrue(browser.contains("RuntimeShaderSupport.browserLensEffectOrNull("))
+    val shaders = source("AgslRuntimeShaders")
+    assertTrue(shaders.contains("shader.setFloatUniform(\"bend\""))
+    assertTrue(shaders.contains("shader.setFloatUniform(\"motion\""))
     assertTrue(browser.contains("film * (if (selected) 0.24f else 0.20f)"))
     assertTrue(browser.contains("Color.White.copy(alpha = if (selected) 0.16f + glow * 0.24f else 0.06f + glow * 0.10f)"))
     assertTrue(browser.contains("style = Stroke(1.dp.toPx())"))

@@ -95,6 +95,8 @@ import app.infinity.mpvz.ui.player.MediaPlaybackService
 import app.infinity.mpvz.ui.player.PlaybackPhase
 import app.infinity.mpvz.ui.player.PlaybackSession
 import app.infinity.mpvz.ui.player.PlayerActivity
+import app.infinity.mpvz.ui.player.LocalInAppMusicSheet
+import app.infinity.mpvz.ui.player.inAppMusicSheetMiniSource
 import app.infinity.mpvz.ui.player.TrackNode
 import app.infinity.mpvz.ui.player.declaredMediaKind
 import app.infinity.mpvz.ui.player.toObject
@@ -112,6 +114,7 @@ import kotlinx.serialization.json.Json
 import org.koin.compose.koinInject
 import kotlin.math.abs
 import kotlin.math.roundToInt
+import app.infinity.mpvz.ui.player.inAppMusicSheetDrag
 
 object MusicMiniPlayerHandoff {
   @Volatile var suppressNextEnter: Boolean = false
@@ -119,7 +122,7 @@ object MusicMiniPlayerHandoff {
 
 @Composable
 fun MiniPlayer(modifier: Modifier = Modifier) {
-  val isServiceRunning = MediaPlaybackService.isForegroundActive()
+  val isServiceRunning by MediaPlaybackService.foregroundActive.collectAsStateWithLifecycle()
   val context = LocalContext.current
   val sessionState by PlaybackSession.state.collectAsStateWithLifecycle()
   val playerPreferences: PlayerPreferences = koinInject()
@@ -226,6 +229,7 @@ private fun MiniPlayerContent(
       artworkUri = if (isAudioOnlyItem) currentItem?.artworkUri else null,
     )
 
+  val musicSheet = LocalInAppMusicSheet.current
   val coroutineScope = rememberCoroutineScope()
   val hostView = LocalView.current
   var offsetX by remember { mutableFloatStateOf(0f) }
@@ -245,8 +249,12 @@ private fun MiniPlayerContent(
   val dismissThresholdPx = with(density) { 100.dp.toPx() }
   val expandThresholdPx = with(density) { 48.dp.toPx() }
 
-  val launchPlayer = remember(context, isAudioOnlyItem) {
+  val useInAppSheet = isAudioOnlyItem && musicSheet?.isAvailable == true
+  val launchPlayer = remember(context, isAudioOnlyItem, useInAppSheet, musicSheet) {
     {
+      if (useInAppSheet && musicSheet != null) {
+        musicSheet.expand()
+      } else {
       MusicMiniPlayerHandoff.suppressNextEnter = isAudioOnlyItem
       val intent = Intent(context, PlayerActivity::class.java).apply {
         action = MediaPlaybackService.ACTION_OPEN_PLAYER
@@ -267,6 +275,7 @@ private fun MiniPlayerContent(
           context.overridePendingTransition(openEnterAnimation, 0)
         }
       }
+      }
     }
   }
 
@@ -283,6 +292,7 @@ private fun MiniPlayerContent(
   val glassEnabled = settingsGlassEnabled()
   Surface(
     modifier = Modifier
+      .inAppMusicSheetMiniSource(musicSheet, RoundedCornerShape(20.dp))
       .offset { IntOffset(offsetX.roundToInt(), 0) }
       .onGloballyPositioned { coordinates ->
         if (isAudioOnlyItem) {
@@ -315,27 +325,38 @@ private fun MiniPlayerContent(
           },
         )
       }
-      .pointerInput(Unit) {
-        val velocityTracker = VelocityTracker()
-        detectVerticalDragGestures(
-          onDragStart = {
-            velocityTracker.resetTracking()
-            verticalDrag = 0f
-          },
-          onVerticalDrag = { change, dragAmount ->
-            velocityTracker.addPosition(change.uptimeMillis, change.position)
-            verticalDrag += dragAmount
-            change.consume()
-          },
-          onDragEnd = {
-            val upwardVelocity = -runCatching { velocityTracker.calculateVelocity().y }.getOrDefault(0f)
-            val expandVelocityPxPerSecond = with(density) { 300.dp.toPx() }
-            if (verticalDrag < -expandThresholdPx || upwardVelocity > expandVelocityPxPerSecond) launchPlayer()
-            verticalDrag = 0f
-          },
-          onDragCancel = { verticalDrag = 0f },
-        )
-      }
+      .then(
+        if (useInAppSheet && musicSheet != null) {
+          Modifier.inAppMusicSheetDrag(
+            state = musicSheet,
+            collapsing = false,
+            enabled = true,
+            onDown = musicSheet::prewarm,
+          )
+        } else {
+          Modifier.pointerInput(Unit) {
+            val velocityTracker = VelocityTracker()
+            detectVerticalDragGestures(
+              onDragStart = {
+                velocityTracker.resetTracking()
+                verticalDrag = 0f
+              },
+              onVerticalDrag = { change, dragAmount ->
+                velocityTracker.addPosition(change.uptimeMillis, change.position)
+                verticalDrag += dragAmount
+                change.consume()
+              },
+              onDragEnd = {
+                val upwardVelocity = -runCatching { velocityTracker.calculateVelocity().y }.getOrDefault(0f)
+                val expandVelocityPxPerSecond = with(density) { 300.dp.toPx() }
+                if (verticalDrag < -expandThresholdPx || upwardVelocity > expandVelocityPxPerSecond) launchPlayer()
+                verticalDrag = 0f
+              },
+              onDragCancel = { verticalDrag = 0f },
+            )
+          }
+        },
+      )
       .clip(RoundedCornerShape(20.dp))
       .settingsGlassSurface(cornerRadius = 20.dp)
       .clickable { launchPlayer() },

@@ -6,10 +6,15 @@
 
 package app.infinity.mpvz.ui.player.controls.components
 
-import app.infinity.mpvz.presentation.components.playerGlassOverlay
 import app.infinity.mpvz.ui.player.PlaybackSession
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandHorizontally
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkHorizontally
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.Spring
@@ -38,15 +43,12 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.State
@@ -57,6 +59,7 @@ import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.withFrameNanos
 import kotlin.math.max
 import app.infinity.mpvz.preferences.preference.collectAsState
@@ -95,7 +98,7 @@ import app.infinity.mpvz.ui.player.controls.components.sheets.LyricsTranslateDia
 import app.infinity.mpvz.ui.theme.fontFamilyForText
 import org.koin.compose.koinInject
 
-@OptIn(ExperimentalLayoutApi::class, ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun LyricsView(
   viewModel: PlayerViewModel,
@@ -112,7 +115,6 @@ fun LyricsView(
   val density = LocalDensity.current
   var lyricsViewportPx by remember { mutableIntStateOf(0) }
   var showTranslateDialog by remember { mutableStateOf(false) }
-  var showSyncSheet by remember { mutableStateOf(false) }
 
   val currentPosMs = remember(precisePosition, state.syncOffsetMs) {
     (precisePosition * 1000).toLong() + state.syncOffsetMs
@@ -481,14 +483,15 @@ fun LyricsView(
         )
       }
 
-      // Bottom Bar: Translate Button & Sync Timing Adjustments (Only visible when synced lyrics are present)
+      // mpvRx in-place delay bar. A transparent glass popup drew an empty top sheet.
       AnimatedVisibility(visible = state.lyrics?.synced?.isNotEmpty() == true) {
-        Column(
+        var isSyncExpanded by rememberSaveable { mutableStateOf(false) }
+        Row(
           modifier = Modifier
             .fillMaxWidth()
-            .padding(top = 10.dp, bottom = 4.dp),
+            .padding(horizontal = 16.dp, vertical = 6.dp),
+          verticalAlignment = Alignment.CenterVertically,
         ) {
-          // Medium size Translate button (Square with rounded corners)
           Surface(
             onClick = { showTranslateDialog = true },
             shape = RoundedCornerShape(12.dp),
@@ -512,22 +515,100 @@ fun LyricsView(
               }
             }
           }
-
-          Spacer(modifier = Modifier.height(8.dp))
-
-          Surface(
-            onClick = { showSyncSheet = true },
-            shape = RoundedCornerShape(12.dp),
-            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.75f),
-            modifier = Modifier.size(40.dp),
+          Spacer(modifier = Modifier.width(8.dp))
+          Box(
+            modifier = Modifier
+              .weight(1f)
+              .height(40.dp),
+            contentAlignment = Alignment.CenterEnd,
           ) {
-            Box(contentAlignment = Alignment.Center) {
-              Icon(
-                imageVector = Icons.RoundedFilled.Tune,
-                contentDescription = "Lyrics delay",
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.size(22.dp),
-              )
+            androidx.compose.animation.AnimatedVisibility(
+              visible = isSyncExpanded,
+              enter = fadeIn(animationSpec = tween(220)) +
+                slideInHorizontally(initialOffsetX = { it }, animationSpec = spring(dampingRatio = 0.85f, stiffness = 350f)) +
+                expandHorizontally(expandFrom = Alignment.End, animationSpec = spring(dampingRatio = 0.85f, stiffness = 350f)),
+              exit = fadeOut(animationSpec = tween(180)) +
+                slideOutHorizontally(targetOffsetX = { it }, animationSpec = tween(180)) +
+                shrinkHorizontally(shrinkTowards = Alignment.End, animationSpec = tween(180)),
+            ) {
+              Surface(
+                shape = RoundedCornerShape(12.dp),
+                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.65f),
+                modifier = Modifier
+                  .fillMaxWidth()
+                  .height(40.dp),
+              ) {
+                Row(
+                  modifier = Modifier
+                    .fillMaxSize()
+                    .padding(horizontal = 4.dp),
+                  verticalAlignment = Alignment.CenterVertically,
+                ) {
+                  SyncOffsetButton(
+                    label = "-0.5s",
+                    modifier = Modifier.weight(1f),
+                    onClick = { viewModel.adjustLyricsSyncOffset(-500) },
+                  )
+                  SyncOffsetButton(
+                    label = "-0.1s",
+                    modifier = Modifier.weight(1f),
+                    onClick = { viewModel.adjustLyricsSyncOffset(-100) },
+                  )
+                  SyncOffsetButton(
+                    label = "${if (state.syncOffsetMs >= 0) "+" else ""}${state.syncOffsetMs / 1000f}s",
+                    modifier = Modifier.weight(1.2f),
+                    emphasized = true,
+                    onClick = { viewModel.resetLyricsSyncOffset() },
+                  )
+                  SyncOffsetButton(
+                    label = "+0.1s",
+                    modifier = Modifier.weight(1f),
+                    onClick = { viewModel.adjustLyricsSyncOffset(100) },
+                  )
+                  SyncOffsetButton(
+                    label = "+0.5s",
+                    modifier = Modifier.weight(1f),
+                    onClick = { viewModel.adjustLyricsSyncOffset(500) },
+                  )
+                  Box(
+                    modifier = Modifier
+                      .clip(RoundedCornerShape(8.dp))
+                      .clickable { isSyncExpanded = false }
+                      .padding(horizontal = 6.dp, vertical = 6.dp),
+                    contentAlignment = Alignment.Center,
+                  ) {
+                    Icon(
+                      imageVector = Icons.RoundedFilled.Close,
+                      contentDescription = stringResource(R.string.ui_close),
+                      tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                      modifier = Modifier.size(16.dp),
+                    )
+                  }
+                }
+              }
+            }
+            androidx.compose.animation.AnimatedVisibility(
+              visible = !isSyncExpanded,
+              enter = fadeIn(animationSpec = tween(220)) +
+                expandHorizontally(expandFrom = Alignment.End, animationSpec = spring(dampingRatio = 0.85f, stiffness = 350f)),
+              exit = fadeOut(animationSpec = tween(180)) +
+                shrinkHorizontally(shrinkTowards = Alignment.End, animationSpec = tween(180)),
+            ) {
+              Surface(
+                onClick = { isSyncExpanded = true },
+                shape = RoundedCornerShape(12.dp),
+                color = if (state.syncOffsetMs != 0) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant,
+                modifier = Modifier.size(40.dp),
+              ) {
+                Box(contentAlignment = Alignment.Center) {
+                  Icon(
+                    imageVector = Icons.RoundedFilled.Timer,
+                    contentDescription = "Lyrics delay",
+                    tint = if (state.syncOffsetMs != 0) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(22.dp),
+                  )
+                }
+              }
             }
           }
         }
@@ -540,63 +621,6 @@ fun LyricsView(
       viewModel = viewModel,
       onDismiss = { showTranslateDialog = false },
     )
-  }
-
-  if (showSyncSheet) {
-    LyricsSyncSheet(
-      viewModel = viewModel,
-      onDismiss = { showSyncSheet = false },
-    )
-  }
-}
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun LyricsSyncSheet(
-  viewModel: PlayerViewModel,
-  onDismiss: () -> Unit,
-) {
-  val state by viewModel.lyricsUiState.collectAsState()
-  ModalBottomSheet(
-    modifier = Modifier.playerGlassOverlay(),
-    containerColor = Color.Transparent,
-    onDismissRequest = onDismiss,
-    sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
-  ) {
-    Column(
-      modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 8.dp),
-      horizontalAlignment = Alignment.CenterHorizontally,
-    ) {
-      Text("Lyrics delay", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-      Spacer(modifier = Modifier.height(8.dp))
-      val delayControls = listOf(
-        "+0.5s" to { viewModel.adjustLyricsSyncOffset(500) },
-        "+0.1s" to { viewModel.adjustLyricsSyncOffset(100) },
-        "Reset" to { viewModel.resetLyricsSyncOffset() },
-        "-0.1s" to { viewModel.adjustLyricsSyncOffset(-100) },
-        "-0.5s" to { viewModel.adjustLyricsSyncOffset(-500) },
-      )
-      val delayListState = rememberLazyListState(initialFirstVisibleItemIndex = 1)
-      LazyColumn(
-        state = delayListState,
-        modifier = Modifier.fillMaxWidth().height(176.dp).padding(bottom = 12.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-      ) {
-        itemsIndexed(delayControls) { index, (label, onClick) ->
-          if (index == 2) {
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-              Text(
-                text = "Current: ${if (state.syncOffsetMs >= 0) "+" else ""}${state.syncOffsetMs / 1000f}s",
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-              )
-              SyncOffsetButton(label = label, emphasized = true, onClick = onClick)
-            }
-          } else {
-            SyncOffsetButton(label = label, onClick = onClick)
-          }
-        }
-      }
-    }
   }
 }
 

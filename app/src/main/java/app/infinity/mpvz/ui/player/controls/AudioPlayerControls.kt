@@ -10,6 +10,8 @@ package app.infinity.mpvz.ui.player.controls
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.boundsInWindow
 import app.infinity.mpvz.ui.player.PlaybackSession
+import app.infinity.mpvz.ui.player.InAppMusicSheetState
+import app.infinity.mpvz.ui.player.inAppMusicSheetDrag
 
 import android.Manifest
 import android.content.pm.PackageManager
@@ -107,7 +109,6 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.delay
 import androidx.palette.graphics.Palette
 import app.infinity.mpvz.database.repository.PlaylistRepository
-import app.infinity.mpvz.preferences.AdvancedPreferences
 import app.infinity.mpvz.repository.JellyfinRepository
 import app.infinity.mpvz.domain.media.model.Video
 import app.infinity.mpvz.ui.browser.dialogs.AddToPlaylistDialog
@@ -595,15 +596,15 @@ fun AudioPlayerControls(
   onOpenPanel: (Panels) -> Unit,
   modifier: Modifier = Modifier,
   onGlassPaletteChanged: (Int, Int) -> Unit = { _, _ -> },
+  inAppSheet: InAppMusicSheetState? = null,
 ) {
   val speedConfigOwned = isMpvOptionOwnedByConfig("speed")
   val audioFiltersConfigOwned = isMpvOptionOwnedByConfig("af")
-  val advancedPreferences = koinInject<AdvancedPreferences>()
   val gesturePreferences = koinInject<GesturePreferences>()
   val audioSeekDuration by gesturePreferences.doubleTapToSeekDuration.collectAsState()
   val paused by PlaybackSession.propBoolean["pause"].collectAsState()
   val playerActivity = LocalActivity.current as? PlayerActivity
-  val nativePlaybackSnapshot by playerActivity?.nativePlaybackSnapshot?.collectAsState()
+  val nativePlaybackSnapshot by playerActivity?.nativePlaybackSnapshot?.collectAsState(initial = NativePlaybackSnapshot())
     ?: remember { mutableStateOf(NativePlaybackSnapshot()) }
   val nativeEngineActive = playerActivity?.isNativeEngineActive() == true
   var optimisticIsPlaying by remember { mutableStateOf<Boolean?>(null) }
@@ -630,11 +631,6 @@ fun AudioPlayerControls(
     return normalized.isBlank() || normalized.contains("/API/") || normalized.contains("/ITEMS/") ||
       normalized.contains("/FILE/") || normalized.startsWith("DEV/") || normalized.contains("AUDIOBOOKSHELF") && normalized.contains("HTTP")
   }
-  LaunchedEffect(currentItem?.stableId, currentItem?.isDefinitelyAudioOnly()) {
-    if (currentItem?.isDefinitelyAudioOnly() == true && advancedPreferences.enabledStatisticsPage.get() in 1..5) {
-      PlaybackSession.command("script-binding", "stats/display-stats-toggle")
-    }
-  }
   val playlistItems by viewModel.playlistItems.collectAsState()
   val filteredPlaylist =
     remember(playlistItems) {
@@ -644,14 +640,16 @@ fun AudioPlayerControls(
   var showInPlaceLyrics by rememberSaveable { mutableStateOf(false) }
   var wasLyricsActiveBeforeLandscape by rememberSaveable { mutableStateOf(false) }
   var isStandbyActive by remember { mutableStateOf(false) }
+  var isLyricsFullscreen by remember { mutableStateOf(false) }
   var lastUserInteractionTime by remember { mutableLongStateOf(System.currentTimeMillis()) }
 
   val resetInactivityTimer = {
     lastUserInteractionTime = System.currentTimeMillis()
     isStandbyActive = false
+    isLyricsFullscreen = false
   }
 
-  BackHandler(enabled = isStandbyActive) {
+  BackHandler(enabled = isStandbyActive || isLyricsFullscreen) {
     resetInactivityTimer()
   }
 
@@ -1119,6 +1117,16 @@ fun AudioPlayerControls(
     }
   }
 
+  // mpvRx: lyrics (including delay) go fullscreen after idle even when standby is off.
+  LaunchedEffect(showInPlaceLyrics, isPlaying, isTabletLandscape, lastUserInteractionTime) {
+    if (showInPlaceLyrics && !isTabletLandscape && isPlaying) {
+      kotlinx.coroutines.delay(5_000L)
+      isLyricsFullscreen = true
+    } else {
+      isLyricsFullscreen = false
+    }
+  }
+
   val ambientModeEnabled by audioPreferences.audioAmbientMode.collectAsState()
 
   val ambientColors by produceState<Pair<Color, Color>?>(
@@ -1230,57 +1238,72 @@ fun AudioPlayerControls(
       settle = { velocityY -> releaseToTarget(velocityY) },
     )
   }
+  val liveSheetDrag =
+    if (inAppSheet != null) {
+      // mpvRx: the live sheet tracks the finger in window space. Do not also lerp this page
+      // into the mini-player rect; that fights the sheet and can leave a black full player.
+      Modifier.inAppMusicSheetDrag(
+        state = inAppSheet,
+        collapsing = true,
+        enabled = !isSheetOpen && !showInPlaceLyrics,
+      )
+    } else {
+      Modifier.nestedScroll(nestedGestureController.nestedScrollConnection)
+    }
+  val activityMinimizeDrag =
+    if (inAppSheet != null) {
+      Modifier
+    } else {
+      Modifier
+        .onGloballyPositioned {
+          playerHeightPx = it.size.height.toFloat()
+          playerWidthPx = it.size.width.toFloat()
+          if (settleTarget == null && miniGesture.progress == 0f) {
+            val bounds = it.miniPlayerScreenBounds(hostPlayerView)
+            playerOrigin = androidx.compose.ui.geometry.Offset(bounds.left, bounds.top)
+          }
+        }
+        .pointerInput(Unit) {
+          val velocityTracker = VelocityTracker()
+          detectVerticalDragGestures(
+            onDragStart = {
+              velocityTracker.resetTracking()
+              transitionTranslucent = playerActivity?.setAudioTransitionTranslucent(true) == true
+              nestedGestureController.onRootDragStart()
+              val progress = if (settleTarget != null) settleAnimation.value else miniGesture.progress
+              settleTarget = null
+              settleGeneration++
+              miniGesture = miniGesture.copy(progress = progress)
+            },
+            onVerticalDrag = { change, dragAmount ->
+              velocityTracker.addPosition(change.uptimeMillis, change.position)
+              if (dragAmount > 0f || miniGesture.progress > 0f) {
+                change.consume()
+                if (dragAmount != 0f) lastDragDownward = dragAmount > 0f
+                miniGesture = MiniPlayerGesturePolicy.drag(miniGesture, dragAmount, size.height.toFloat())
+              }
+            },
+            onDragEnd = {
+              val velocityY = runCatching {
+                velocityTracker.calculateVelocity().y
+              }.getOrDefault(0f)
+              releaseToTarget(velocityY)
+            },
+            onDragCancel = {
+              if (nestedGestureController.onRootDragCancel()) {
+                settleStart = miniGesture.progress
+                settleProgrammatic = false
+                settleTarget = 0f
+                settleGeneration++
+              }
+            },
+          )
+        }
+    }
   val gestureInputModifier = modifier
     .fillMaxSize()
-    .nestedScroll(nestedGestureController.nestedScrollConnection)
-    .onGloballyPositioned {
-      playerHeightPx = it.size.height.toFloat()
-      playerWidthPx = it.size.width.toFloat()
-      if (settleTarget == null && miniGesture.progress == 0f) {
-        val bounds = it.miniPlayerScreenBounds(hostPlayerView)
-        playerOrigin = androidx.compose.ui.geometry.Offset(bounds.left, bounds.top)
-      }
-    }
-    .pointerInput(Unit) {
-      val velocityTracker = VelocityTracker()
-      detectVerticalDragGestures(
-        onDragStart = {
-          velocityTracker.resetTracking()
-          // Touch-down converts the audio window so the library shows around the panel.
-          transitionTranslucent = playerActivity?.setAudioTransitionTranslucent(true) == true
-          nestedGestureController.onRootDragStart()
-          // A new finger owns the presentation immediately, including a reversal mid-settle.
-          val progress = if (settleTarget != null) settleAnimation.value else miniGesture.progress
-          settleTarget = null
-          settleGeneration++
-          miniGesture = miniGesture.copy(progress = progress)
-        },
-        onVerticalDrag = { change, dragAmount ->
-          velocityTracker.addPosition(change.uptimeMillis, change.position)
-          if (dragAmount > 0f || miniGesture.progress > 0f) {
-            change.consume()
-            if (dragAmount != 0f) lastDragDownward = dragAmount > 0f
-            // Linear: drag delta / page height moves the transition value directly.
-            miniGesture = MiniPlayerGesturePolicy.drag(miniGesture, dragAmount, size.height.toFloat())
-          }
-        },
-        onDragEnd = {
-          val velocityY = runCatching {
-            // Compose's tracker reports px/sec, preserving the tested velocity policy.
-            velocityTracker.calculateVelocity().y
-          }.getOrDefault(0f)
-          releaseToTarget(velocityY)
-        },
-        onDragCancel = {
-          if (nestedGestureController.onRootDragCancel()) {
-            settleStart = miniGesture.progress
-            settleProgrammatic = false
-            settleTarget = 0f
-            settleGeneration++
-          }
-        },
-      )
-    }
+    .then(liveSheetDrag)
+    .then(activityMinimizeDrag)
   // The live page transform is applied by AudioPaletteGlassScene's modifier below
   // (pageTransitionLayer), never to this input-only root.
   LaunchedEffect(settleGeneration) {
@@ -1370,6 +1393,15 @@ fun AudioPlayerControls(
         .then(Modifier.graphicsLayer {
           // pageTransitionLayer: the whole page lerps into the live mini-player rect,
           // scaled uniformly from the top-left and clipped to the animated rounded rect.
+          if (inAppSheet != null) {
+            translationX = 0f
+            translationY = 0f
+            scaleX = 1f
+            scaleY = 1f
+            clip = false
+            alpha = 1f
+            return@graphicsLayer
+          }
           val frame = currentTransitionFrame(size.width, size.height)
           transformOrigin = androidx.compose.ui.graphics.TransformOrigin(0f, 0f)
           if (frame != null) {
@@ -1394,7 +1426,9 @@ fun AudioPlayerControls(
         })
         .onGloballyPositioned { pageContentCoordinates[0] = it }
         .background(
-          if (liquidGlassSurfaces) Color.Transparent else MaterialTheme.colorScheme.surface,
+          // mpvRx paints an opaque surface so Now Playing never sits on a hidden browser
+          // (which reads as a completely black full player). Liquid glass still frosts on top.
+          MaterialTheme.colorScheme.surface,
         )
         .drawWithCache {
           if (audioPaletteBackground && ambientModeEnabled &&
@@ -1441,11 +1475,13 @@ fun AudioPlayerControls(
       Box(modifier = Modifier.fillMaxWidth()) {
         ReactiveIconButton(
           onClick = {
-            settleStart = (if (settleTarget == null) miniGesture.progress
-              else if (settleAnimation.isRunning) settleAnimation.value else settleStart).coerceIn(0f, 1f)
-            settleProgrammatic = true
-            settleTarget = 1f
-            settleGeneration++
+            if (inAppSheet?.collapse() != true) {
+              settleStart = (if (settleTarget == null) miniGesture.progress
+                else if (settleAnimation.isRunning) settleAnimation.value else settleStart).coerceIn(0f, 1f)
+              settleProgrammatic = true
+              settleTarget = 1f
+              settleGeneration++
+            }
           },
           modifier = Modifier.align(Alignment.CenterStart),
         ) {
@@ -1572,7 +1608,7 @@ fun AudioPlayerControls(
           app.infinity.mpvz.ui.player.controls.components.LyricsView(
             viewModel = viewModel,
             modifier = Modifier.fillMaxSize(),
-            isLyricsFullscreen = isStandbyActive,
+            isLyricsFullscreen = isStandbyActive || isLyricsFullscreen,
             onTap = resetInactivityTimer,
           )
         } else {
@@ -2431,7 +2467,7 @@ fun AudioPlayerControls(
           }
         } else {
           androidx.compose.animation.AnimatedVisibility(
-            visible = !isStandbyActive,
+            visible = !isStandbyActive && !isLyricsFullscreen,
             enter = fadeIn(animationSpec = tween(300)) + androidx.compose.animation.expandVertically(animationSpec = tween(300)),
             exit = fadeOut(animationSpec = tween(300)) + androidx.compose.animation.shrinkVertically(animationSpec = tween(300)),
           ) {
@@ -2443,12 +2479,12 @@ fun AudioPlayerControls(
           }
           centerVisualizerView(Modifier.weight(1f).fillMaxWidth(), false)
         }
-        if (isStandbyActive) {
+        if (isStandbyActive || isLyricsFullscreen) {
           seekbarView()
         }
 
         androidx.compose.animation.AnimatedVisibility(
-          visible = !isStandbyActive,
+          visible = !isStandbyActive && !isLyricsFullscreen,
           enter = fadeIn(animationSpec = tween(300)) + androidx.compose.animation.expandVertically(animationSpec = tween(300)),
           exit = fadeOut(animationSpec = tween(300)) + androidx.compose.animation.shrinkVertically(animationSpec = tween(300)),
         ) {

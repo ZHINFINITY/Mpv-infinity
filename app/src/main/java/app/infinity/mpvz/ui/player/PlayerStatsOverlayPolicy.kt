@@ -17,7 +17,11 @@ internal object PlayerStatsOverlayPolicy {
   }
 
   fun decide(input: Input): Decision {
-    val canShow = input.enabled && input.page in 1..6 && input.mediaTypeKnown &&
+    val composePage = when (input.engine) {
+      Engine.NATIVE -> input.page in 1..6
+      Engine.MPV -> input.page == 6
+    }
+    val canShow = input.enabled && composePage && input.mediaTypeKnown &&
       !input.isAudioOnly && !input.musicMode
     return if (canShow) Decision(Action.SHOW_PAGE, input.page) else Decision(Action.HIDE)
   }

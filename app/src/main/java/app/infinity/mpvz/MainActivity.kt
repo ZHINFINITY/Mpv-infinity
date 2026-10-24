@@ -78,6 +78,10 @@ import app.infinity.mpvz.presentation.Screen
 import app.infinity.mpvz.ui.browser.MainScreen
 import app.infinity.mpvz.ui.browser.NavigationBarState
 import app.infinity.mpvz.ui.browser.components.MiniPlayer
+import app.infinity.mpvz.ui.player.InAppMusicPlayerSheet
+import app.infinity.mpvz.ui.player.LocalInAppMusicSheet
+import app.infinity.mpvz.ui.player.coveredByInAppMusicSheet
+import app.infinity.mpvz.ui.player.rememberInAppMusicSheetState
 import app.infinity.mpvz.ui.player.NavigationAnimStyle
 import app.infinity.mpvz.ui.theme.DarkMode
 import app.infinity.mpvz.ui.theme.MpvInfinityTheme
@@ -599,9 +603,11 @@ class MainActivity : AppCompatActivity() {
     val isDownloading by (updateViewModel?.isDownloading ?: fallbackIsDownloading).collectAsState()
     val downloadProgress by (updateViewModel?.downloadProgress ?: fallbackDownloadProgress).collectAsState()
 
+    val inAppMusicSheet = rememberInAppMusicSheetState()
     // Provide both LocalBackStack and the LazyList/Grid states to all screens
     CompositionLocalProvider(
       LocalBackStack provides typedBackstack,
+      LocalInAppMusicSheet provides inAppMusicSheet,
     ) {
       val hasNavEntries = typedBackstack.isNotEmpty()
 
@@ -623,7 +629,9 @@ class MainActivity : AppCompatActivity() {
       if (hasNavEntries) {
         Box(modifier = Modifier.fillMaxSize()) {
           NavDisplay(
-            modifier = Modifier.fillMaxSize(),
+            modifier = Modifier
+              .fillMaxSize()
+              .coveredByInAppMusicSheet(inAppMusicSheet),
             backStack = typedBackstack,
             onBack = {
               if (typedBackstack.size <= 1 || !typedBackstack.popSafely()) {
@@ -720,6 +728,7 @@ class MainActivity : AppCompatActivity() {
             }
 
           MiniPlayer(modifier = miniPlayerModifier)
+          InAppMusicPlayerSheet(state = inAppMusicSheet)
         }
       }
 

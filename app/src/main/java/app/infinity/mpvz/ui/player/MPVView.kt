@@ -1016,14 +1016,21 @@ class MPVView(
       Debanding.GPU -> PlaybackSession.setOptionString("deband", "yes")
     }
 
-    // Keep the MPV stats OSD video-only. Otherwise a music item can inherit the previous
-    // video's stats overlay when MPV is reused for audio playback.
-    if (PlaybackSession.queue.value.currentItem?.isDefinitelyAudioOnly() != true) {
-      advancedPreferences.enabledStatisticsPage.get().let {
-        if (it in 1..5) {
-          PlaybackSession.command("script-binding", "stats/display-stats-toggle")
-          PlaybackSession.command("script-binding", "stats/display-page-$it")
-        }
+  }
+
+  fun applyStartupStatistics() {
+    val isMusic =
+      PlaybackSession.queue.value.currentItem?.isDefinitelyAudioOnly() == true ||
+        PlaybackSession.queue.value.currentItem?.declaredMediaKind() == DeclaredPlaybackMediaKind.AUDIO
+    if (isMusic) return
+    // The native core survives Activity recreation and playlist loads. A toggle on every
+    // load would turn an already enabled statistics overlay off on the next file.
+    if (PlaybackSession.getPropertyString("user-data/mpvrx/startup-stats-applied") == "yes") return
+    PlaybackSession.setPropertyString("user-data/mpvrx/startup-stats-applied", "yes")
+    advancedPreferences.enabledStatisticsPage.get().let {
+      if (it in 1..5) {
+        PlaybackSession.command("script-binding", "stats/display-stats-toggle")
+        PlaybackSession.command("script-binding", "stats/display-page-$it")
       }
     }
   }
