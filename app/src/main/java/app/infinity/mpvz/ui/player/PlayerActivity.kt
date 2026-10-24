@@ -1762,7 +1762,7 @@ class PlayerActivity :
       if (id == 0) {
         nativeEngineOrNull()?.disableSubtitles()
       } else {
-        nativeEngineOrNull()?.snapshot?.value?.subtitleTracks.getOrNull(-id - 1)?.let { track -> nativeEngineOrNull()?.toggleSubtitle(track) }
+        nativeEngineOrNull()?.snapshot?.value?.subtitleTracks?.getOrNull(-id - 1)?.let { track -> nativeEngineOrNull()?.toggleSubtitle(track) }
       }
     }
     viewModel.setNativeSubtitleVisibilityListener { hidden ->
@@ -1780,7 +1780,7 @@ class PlayerActivity :
     }
     viewModel.setNativeAudioToggleListener { id ->
       if (id <= -1001) {
-        nativeEngineOrNull()?.snapshot?.value?.audioTracks.getOrNull(-1001 - id)?.let { track ->
+        nativeEngineOrNull()?.snapshot?.value?.audioTracks?.getOrNull(-1001 - id)?.let { track ->
           lastRequestedNativeAudioSelection = track.toAudioTrackFingerprint()
           nativeEngineOrNull()?.selectTrack(track)
         }
@@ -2230,7 +2230,7 @@ class PlayerActivity :
 
   fun selectEngineForCurrentVideo(engine: PlaybackEngineMode) {
     if (engine == PlaybackEngineMode.MPV && activeEngineMode == PlaybackEngineMode.NATIVE) {
-      val selectedTrack = nativeEngineOrNull()?.snapshot?.value?.audioTracks.firstOrNull { it.selected }
+      val selectedTrack = nativeEngineOrNull()?.snapshot?.value?.audioTracks?.firstOrNull { it.selected }
       pendingMpvAudioSelection =
         lastRequestedNativeAudioSelection ?: selectedTrack?.toAudioTrackFingerprint()
     } else if (engine == PlaybackEngineMode.NATIVE) {
@@ -2646,7 +2646,10 @@ class PlayerActivity :
       onPause = { if (isNativeEngineActive()) nativeEngineOrNull()?.setPlaying(false) else PlaybackSession.setPropertyBoolean("pause", true) },
       onSeekBy = { offsetMs -> if (isNativeEngineActive()) nativeEngineOrNull()?.seekBy(offsetMs) else PlaybackSession.command("seek", (offsetMs / 1000L).toString(), resolveSeekMode(playerPreferences)) },
       onClose = { if (isNativeEngineActive()) nativeEngineOrNull()?.setPlaying(false) },
-      nativeVideoSize = { nativeEngineOrNull()?.snapshot?.value?.videoWidth to nativeEngineOrNull()?.snapshot?.value?.videoHeight },
+      nativeVideoSize = {
+        (nativeEngineOrNull()?.snapshot?.value?.videoWidth ?: 0) to
+          (nativeEngineOrNull()?.snapshot?.value?.videoHeight ?: 0)
+      },
     )
   }
 
@@ -2684,8 +2687,8 @@ class PlayerActivity :
         source = nativeUri,
         title = getPreferredCurrentTitle().ifBlank { fileName.ifBlank { nativeUri.lastPathSegment.orEmpty() } },
         mimeType = nativeMediaItem.localConfiguration?.mimeType ?: contentResolver.getType(nativeUri),
-        durationMs = nativeEngineOrNull()?.snapshot?.value?.durationMs,
-        positionMs = nativeEngineOrNull()?.snapshot?.value?.positionMs,
+        durationMs = nativeEngineOrNull()?.snapshot?.value?.durationMs ?: 0L,
+        positionMs = nativeEngineOrNull()?.snapshot?.value?.positionMs ?: 0L,
         isPlaying = nativeEngineOrNull()?.currentPlayer?.isPlaying == true,
       )
     }
@@ -6475,8 +6478,8 @@ class PlayerActivity :
     val nativePositionIsKnown = nativeEngineActive && nativeResumePositionMs != null &&
       NativePositionPersistencePolicy.isPositionKnown(
         hasCurrentMediaItem = nativeEngineOrNull()?.currentPlayer?.currentMediaItem != null,
-        isReady = nativeSnapshot.isReady,
-        hasEstablishedPlaybackPosition = nativeEngineOrNull()?.hasEstablishedPlaybackPosition,
+        isReady = nativeSnapshot?.isReady == true,
+        hasEstablishedPlaybackPosition = nativeEngineOrNull()?.hasEstablishedPlaybackPosition == true,
       )
     val liveNativePositionMs = nativeResumePositionMs ?: 0L
     val liveNativeDurationMs = nativeEngineOrNull()?.currentPlayer?.duration?.takeIf { it != C.TIME_UNSET }?.coerceAtLeast(0L) ?: 0L
@@ -6507,7 +6510,7 @@ class PlayerActivity :
         if (nativeEngineActive) liveNativePositionMs.toSecondsInt()
         else mpvPosition ?: (viewModel.pos ?: 0),
       duration =
-        if (nativeEngineActive) maxOf(nativeSnapshot.durationMs, liveNativeDurationMs).toSecondsInt()
+        if (nativeEngineActive) maxOf(nativeSnapshot?.durationMs ?: 0L, liveNativeDurationMs).toSecondsInt()
         else readMpvIntSeconds("duration", viewModel.duration ?: 0),
       isPositionRestorePending =
         if (nativeEngineActive) {
