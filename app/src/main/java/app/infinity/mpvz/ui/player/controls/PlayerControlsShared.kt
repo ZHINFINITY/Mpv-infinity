@@ -1215,6 +1215,9 @@ fun RenderPlayerButton(
         if (statisticsPage == 6) {
           advancedPreferences.enabledStatisticsPage.set(0)
         } else {
+          if (statisticsPage in 1..5) {
+            PlaybackSession.command("script-binding", "stats/display-stats-toggle")
+          }
           advancedPreferences.enabledStatisticsPage.set(6)
         }
         onOpenSheet(Sheets.None)

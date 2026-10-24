@@ -1016,14 +1016,23 @@ class MPVView(
       Debanding.GPU -> PlaybackSession.setOptionString("deband", "yes")
     }
 
-    // Keep the MPV stats OSD video-only. Album-art covers are video tracks, so a
-    // music item can inherit the previous overlay unless we skip it here.
+  }
+
+  fun applyStartupStatistics() {
     val isMusic =
       PlaybackSession.queue.value.currentItem?.isDefinitelyAudioOnly() == true ||
         PlaybackSession.queue.value.currentItem?.declaredMediaKind() == DeclaredPlaybackMediaKind.AUDIO
-    // PlayerActivity.applyStatsOverlayPolicy owns the toggle. A second command here
-    // after Media3→MPV would flip a visible overlay off.
     if (isMusic) return
+    // The native core survives Activity recreation and playlist loads. A toggle on every
+    // load would turn an already enabled statistics overlay off on the next file.
+    if (PlaybackSession.getPropertyString("user-data/mpvrx/startup-stats-applied") == "yes") return
+    PlaybackSession.setPropertyString("user-data/mpvrx/startup-stats-applied", "yes")
+    advancedPreferences.enabledStatisticsPage.get().let {
+      if (it in 1..5) {
+        PlaybackSession.command("script-binding", "stats/display-stats-toggle")
+        PlaybackSession.command("script-binding", "stats/display-page-$it")
+      }
+    }
   }
 
   fun applyOsdSafeAreaMargins(insets: WindowInsetsCompat? = null) {

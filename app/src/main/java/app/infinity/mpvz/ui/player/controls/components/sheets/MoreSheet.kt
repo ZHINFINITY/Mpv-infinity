@@ -11,7 +11,6 @@ import app.infinity.mpvz.presentation.components.playerGlassOverlay
 import app.infinity.mpvz.ui.player.NativePlaybackSnapshot
 import app.infinity.mpvz.ui.player.PlaybackEngineMode
 import app.infinity.mpvz.ui.player.PlaybackSession
-import app.infinity.mpvz.ui.player.PlayerStatsLuaOverlayPolicy
 
 import android.content.res.Configuration
 import android.text.format.DateUtils
@@ -296,14 +295,25 @@ fun MoreSheet(
               if (page != 7 && isConsoleOpen) {
                 PlaybackSession.command("script-message-to", "console", "disable")
               }
-              // MoreSheet is the only chip owner. Hide every stats.lua overlay
-              // first so page 2 never stacks on page 1, then show at most one page.
-              val chip = PlayerStatsLuaOverlayPolicy.applyChip(fromPage = statisticsPage, toPage = page)
-              chip.commands.forEach { command ->
-                PlaybackSession.command(*command.args.toTypedArray())
-              }
-              if (page == 7 && !isConsoleOpen) {
-                PlaybackSession.command("script-message-to", "console", "enable")
+              when (page) {
+                0 -> {
+                  if (statisticsPage in 1..5) PlaybackSession.command("script-binding", "stats/display-stats-toggle")
+                }
+                6 -> {
+                  if (statisticsPage in 1..5) PlaybackSession.command("script-binding", "stats/display-stats-toggle")
+                }
+                7 -> {
+                  if (statisticsPage in 1..5) PlaybackSession.command("script-binding", "stats/display-stats-toggle")
+                  if (!isConsoleOpen) {
+                    PlaybackSession.command("script-binding", "console/enable")
+                  }
+                }
+                else -> {
+                  if (statisticsPage == 0 || statisticsPage == 6 || statisticsPage == 7) {
+                    PlaybackSession.command("script-binding", "stats/display-stats-toggle")
+                  }
+                  PlaybackSession.command("script-binding", "stats/display-page-$page")
+                }
               }
               advancedPreferences.enabledStatisticsPage.set(page)
             },

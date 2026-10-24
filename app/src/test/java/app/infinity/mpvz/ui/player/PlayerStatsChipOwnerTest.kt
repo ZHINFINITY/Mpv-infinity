@@ -7,32 +7,57 @@ import java.io.File
 
 class PlayerStatsChipOwnerTest {
   @Test
-  fun moreSheetIsTheOnlyChipSenderAndReplacesPages() {
+  fun moreSheetMatchesMpvRxStatsChipCommands() {
     val file = File("src/main/java/app/infinity/mpvz/ui/player/controls/components/sheets/MoreSheet.kt")
       .takeIf { it.exists() }
       ?: File("app/src/main/java/app/infinity/mpvz/ui/player/controls/components/sheets/MoreSheet.kt")
     val text = file.readText()
-    assertTrue(text.contains("PlayerStatsLuaOverlayPolicy.applyChip"))
+    assertTrue(text.contains("when (page)"))
+    assertTrue(text.contains("if (statisticsPage in 1..5) PlaybackSession.command(\"script-binding\", \"stats/display-stats-toggle\")"))
+    assertTrue(text.contains("PlaybackSession.command(\"script-binding\", \"stats/display-page-\$page\")"))
+    assertTrue(text.contains("PlaybackSession.command(\"script-binding\", \"console/enable\")"))
     assertTrue(text.contains("advancedPreferences.enabledStatisticsPage.set(page)"))
-    assertFalse("MoreSheet must not send display-page without hide-first", text.contains("stats/display-page-\$page"))
+    assertFalse(text.contains("PlayerStatsLuaOverlayPolicy"))
+    assertFalse(text.contains("applyChip"))
+    assertFalse(text.contains("overlayDepth"))
   }
 
   @Test
-  fun activityDoesNotCompeteWhileMoreIsSender() {
+  fun activityDoesNotSendCompetingStatsLuaCommands() {
     val file = File("src/main/java/app/infinity/mpvz/ui/player/PlayerActivity.kt")
       .takeIf { it.exists() }
       ?: File("app/src/main/java/app/infinity/mpvz/ui/player/PlayerActivity.kt")
     val text = file.readText()
-    assertTrue(text.contains("senderIsMoreSheet = moreIsSender"))
-    assertTrue("Activity must skip competing lua when More is the sender", text.contains("if (moreIsSender)"))
-    val moreSkip = text.substringAfter("if (moreIsSender)")
-      .substringBefore("result.commands.forEach")
-    assertTrue("More-sender skip must return before sending lua commands", moreSkip.contains("return"))
-    assertTrue(text.contains("pendingStatsLuaReset"))
+    assertTrue(text.contains("player.applyStartupStatistics()"))
+    assertFalse(text.contains("applyStatsOverlayPolicy"))
+    assertFalse(text.contains("PlayerStatsLuaOverlayPolicy"))
+    assertFalse(text.contains("pendingStatsLuaReset"))
+    assertFalse(text.contains("mpvStatsVisible"))
     assertTrue(text.contains("configureNativeEngineIfNeeded"))
     assertTrue(text.contains("shouldInitializeNativeMedia3Engine"))
     assertTrue(text.contains("private val nativeEngine by lazy"))
     assertTrue(text.contains("View.INVISIBLE"))
+  }
+
+  @Test
+  fun mpvViewAppliesStartupStatisticsOncePerCore() {
+    val file = File("src/main/java/app/infinity/mpvz/ui/player/MPVView.kt")
+      .takeIf { it.exists() }
+      ?: File("app/src/main/java/app/infinity/mpvz/ui/player/MPVView.kt")
+    val text = file.readText()
+    assertTrue(text.contains("fun applyStartupStatistics()"))
+    assertTrue(text.contains("user-data/mpvrx/startup-stats-applied"))
+    assertTrue(text.contains("stats/display-page-\$it"))
+  }
+
+  @Test
+  fun flowInterpolationStatsRowRemains() {
+    val file = File("src/main/java/app/infinity/mpvz/ui/player/controls/PlayerControls.kt")
+      .takeIf { it.exists() }
+      ?: File("app/src/main/java/app/infinity/mpvz/ui/player/controls/PlayerControls.kt")
+    val text = file.readText()
+    assertTrue(text.contains("CustomStatsPageSixOverlay"))
+    assertTrue(text.contains("NativeStatsPageOverlay"))
   }
 
   @Test

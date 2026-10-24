@@ -267,9 +267,6 @@ class PlayerActivity :
   private val nativeFirstFrame get() = nativeEngineOrNull()?.hasRenderedFirstFrame ?: idleNativeFirstFrame
   private var glassEngineMode by mutableStateOf(PlaybackEngineMode.MPV)
   private var glassMediaGeneration by mutableStateOf(0L)
-  // MPV's stats.lua exposes a toggle, so retain the last command state and only
-  // toggle when a visibility transition is actually required.
-  private var mpvStatsVisible = false
   private var activeEngineMode = PlaybackEngineMode.MPV
     set(value) {
       field = value
@@ -277,7 +274,6 @@ class PlayerActivity :
       if (ownsPlaybackSession() && value == PlaybackEngineMode.NATIVE) {
         MediaPlaybackService.setNativeRendererOwnership(true)
       }
-      applyStatsOverlayPolicy()
       // Keep Native's saved state authoritative during an MPV reload. FILE_LOADED releases
       // this guard only after MPV has restored the shared settings and seek position.
     }
@@ -308,69 +304,8 @@ class PlayerActivity :
   internal fun bindMpvSessionCallbacksOnMain() {
     check(Looper.myLooper() == Looper.getMainLooper()) { "MPV callbacks must bind on Main" }
     playerObserverBindingEpoch++
-    // Interpolation recreates the core while stats.lua OSD can still be drawn.
-    // Keep overlayDepth: display-page on a still-drawn OSD stacks. Hide that many
-    // layers first, then restore at most one persisted page.
-    if (PlayerStatsLuaOverlayPolicy.overlayDepth > 0 || mpvStatsVisible) {
-      pendingStatsLuaReset = true
-    } else {
-      mpvStatsVisible = false
-      mpvStatsPage = 0
-    }
     player.bindSessionCallbacksOnMain()
     PlaybackSession.addObserver(playerObserver)
-    applyStatsOverlayPolicy()
-  }
-
-  private var mpvStatsPage = 0
-  private var pendingStatsLuaReset = false
-
-  private fun applyStatsOverlayPolicy() {
-    if (activeEngineMode != PlaybackEngineMode.MPV || !mpvInitialized) return
-    val itemKind = PlaybackSession.state.value.currentItem?.declaredMediaKind()
-    val isMusic =
-      viewModel.isAudioOnly.value ||
-        isCurrentMediaKnownAudio() ||
-        hasPreclassifiedMusicLaunch() ||
-        isKnownAudioLaunch(intent) ||
-        itemKind == DeclaredPlaybackMediaKind.AUDIO
-    if (isMusic) {
-      // stats.lua is an OSD over the MPV surface. Toggling it blindly on audio
-      // can turn a hidden overlay back on. Force it off and detach the surface.
-      hideMpvSurfaceForMusic()
-    }
-    val moreIsSender = viewModel.sheetShown.value == Sheets.More && !isMusic && !pendingStatsLuaReset
-    val sheetOrPanelOpen =
-      (viewModel.sheetShown.value != Sheets.None && viewModel.sheetShown.value != Sheets.More) ||
-        viewModel.panelShown.value != Panels.None
-    val requestedPage = advancedPreferences.enabledStatisticsPage.get()
-    val forceReset = pendingStatsLuaReset
-    pendingStatsLuaReset = false
-    val result = PlayerStatsLuaOverlayPolicy.decide(
-      PlayerStatsLuaOverlayPolicy.Input(
-        requestedPage = requestedPage,
-        currentlyVisible = mpvStatsVisible,
-        currentlyPage = mpvStatsPage,
-        overlayDepth = PlayerStatsLuaOverlayPolicy.overlayDepth,
-        sheetOrPanelOpen = sheetOrPanelOpen,
-        isMusic = isMusic,
-        forceReset = forceReset,
-        senderIsMoreSheet = moreIsSender,
-      ),
-    )
-    // More chips already sent the lua commands. Do not rewrite overlay tracking
-    // from the preference — that is what made Off look hidden while OSD stayed up.
-    if (moreIsSender) {
-      mpvStatsVisible = PlayerStatsLuaOverlayPolicy.overlayDepth > 0
-      mpvStatsPage = if (mpvStatsVisible) result.page else 0
-      return
-    }
-    result.commands.forEach { command ->
-      PlaybackSession.command(*command.args.toTypedArray())
-    }
-    PlayerStatsLuaOverlayPolicy.record(result)
-    mpvStatsVisible = result.visible
-    mpvStatsPage = result.page
   }
 
   /** Album art is a video track. INVISIBLE still lets stats.lua and cover art draw. */
@@ -1750,21 +1685,10 @@ class PlayerActivity :
                   binding.player.visibility = View.VISIBLE
                   viewModel.setAmbientLifecycleActive(true)
                   viewModel.restartAmbientIfActive()
-                  // Media3 tore down stats.lua's OSD. Depth is stale; show at most one page.
-                  PlayerStatsLuaOverlayPolicy.reset()
-                  mpvStatsVisible = false
-                  mpvStatsPage = 0
-                  applyStatsOverlayPolicy()
                 } else if (!ready && ownsPlaybackSession() && activeEngineMode == PlaybackEngineMode.MPV) {
                   setNativeVideoSurfaceVisible(false)
                   binding.player.alpha = 1f
                   binding.player.visibility = View.VISIBLE
-                  if (PlayerStatsLuaOverlayPolicy.overlayDepth > 0 || mpvStatsVisible) {
-                    pendingStatsLuaReset = true
-                  }
-                  mpvStatsVisible = false
-                  mpvStatsPage = 0
-                  applyStatsOverlayPolicy()
                 }
                 // Apply the captured state once after MPV is ready. Repeated time-pos writes
                 // during 4K/HDR handoff force repeated demuxer seeks and cause audible stalls.
@@ -2616,23 +2540,11 @@ class PlayerActivity :
   private fun setupAudioPlayerViewObserver() {
     lifecycleScope.launch {
       repeatOnLifecycle(Lifecycle.State.STARTED) {
-        combine(
-          advancedPreferences.enabledStatisticsPage.changes(),
-          viewModel.sheetShown,
-          viewModel.panelShown,
-        ) { _, _, _ -> Unit }.collect {
-          applyStatsOverlayPolicy()
-        }
-      }
-    }
-    lifecycleScope.launch {
-      repeatOnLifecycle(Lifecycle.State.STARTED) {
         viewModel.isAudioOnly.collect { isAudioOnly ->
           if (isAudioOnly || isCurrentMediaKnownAudio() || hasPreclassifiedMusicLaunch()) {
             applyPlaybackBrightnessPolicy(isAudio = true)
             viewModel.showControls()
             hideMpvSurfaceForMusic()
-            applyStatsOverlayPolicy()
             setOrientation()
             try {
               WindowCompat.setDecorFitsSystemWindows(window, false)
@@ -5846,7 +5758,6 @@ class PlayerActivity :
       MPVLib.MpvEvent.MPV_EVENT_FILE_LOADED -> {
         val loadGeneration = PlaybackSession.state.value.activeGeneration
         if (!PlaybackSession.isCurrentGeneration(loadGeneration)) return
-        applyStatsOverlayPolicy()
         val recovery = pendingMediaLoadRecovery
         if (recovery?.generation == loadGeneration) cancelPlaybackLoadRecovery()
         eofAdvanceJob?.cancel()
@@ -7775,6 +7686,7 @@ class PlayerActivity :
       ensureCurrentMediaRequest(requestGeneration)
       throw IllegalStateException("libmpv core is unavailable")
     }
+    player.applyStartupStatistics()
 
     val request =
       PendingMediaLoadRecovery(
