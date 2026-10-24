@@ -2,6 +2,28 @@
 
 These notes are written in plain English and focus on what changed for real use.
 
+## 2.2.1 - polish after 2.2.0
+
+Mpv ∞ — polish after 2.2.0
+
+### Music 🎵
+
+- Songs open faster
+- Mini player and full Now Playing feel the same as they should
+- Playback stats stay off music
+
+### Video 🎬
+
+- Come back to a video and it picks up where you left off
+- Stats pages switch cleanly, and Off turns them off
+- Smoother motion keeps your stats on screen
+
+### Looks ✨
+
+- Older phones skip the fancy glass so they don’t crash
+- You can freeze the infinity logo
+- Theme Save, Reset, and Cancel sit in one row
+
 ## 2.2.0 - The Smooth Motion Update
 ### What’s new
 - Frame interpolation. Videos can play smoothly at up to 120 fps, with a one-tap player shortcut and a target-FPS control that keep your place.
