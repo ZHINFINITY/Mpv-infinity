@@ -248,6 +248,8 @@ fun SubtitleSettingsTypographyCard(
           selectedValue = font?.takeUnless { it == DEFAULT_SUBTITLE_FONT_FAMILY }.orEmpty().ifEmpty { "Default" },
           options = fonts.toImmutableList(),
           label = stringResource(R.string.player_sheets_sub_typography_font),
+          modifier = Modifier.playerGlassPane(enabled = true, cornerRadius = 14.dp),
+          glassStyle = true,
           onValueChangedEvent = {
             val storedFont = if (it == "Default") "" else it
             val actualFont = storedFont.ifBlank { DEFAULT_SUBTITLE_FONT_FAMILY }

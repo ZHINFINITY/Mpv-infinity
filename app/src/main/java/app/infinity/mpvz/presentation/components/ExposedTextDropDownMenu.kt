@@ -6,6 +6,8 @@
  */
 
 package app.infinity.mpvz.presentation.components
+
+import androidx.compose.ui.graphics.Color
 import app.infinity.mpvz.ui.theme.GlassDropdownMenu
 import app.infinity.mpvz.ui.theme.GlassExposedDropdownMenu
 
@@ -16,8 +18,9 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExposedDropdownMenuAnchorType
 import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExposedDropdownMenuDefaults
-import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -38,6 +41,7 @@ fun ExposedTextDropDownMenu(
   modifier: Modifier = Modifier,
   leadingIcon: (@Composable () -> Unit)? = null,
   enabled: Boolean = true,
+  glassStyle: Boolean = false,
 ) {
   var expanded by remember { mutableStateOf(false) }
 
@@ -56,7 +60,17 @@ fun ExposedTextDropDownMenu(
         ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded)
       },
       leadingIcon = leadingIcon,
-      colors = OutlinedTextFieldDefaults.colors(),
+      colors = if (glassStyle) {
+        OutlinedTextFieldDefaults.colors(
+          focusedContainerColor = Color.Transparent,
+          unfocusedContainerColor = Color.Transparent,
+          disabledContainerColor = Color.Transparent,
+          focusedBorderColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.55f),
+          unfocusedBorderColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.28f),
+        )
+      } else {
+        OutlinedTextFieldDefaults.colors()
+      },
       modifier =
         Modifier
           .menuAnchor(ExposedDropdownMenuAnchorType.PrimaryEditable)
