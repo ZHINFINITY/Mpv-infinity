@@ -72,6 +72,23 @@ object GlassSliderPolicy {
   }
 }
 
+/** Shared control geometry: modestly larger than Material's original glass treatment. */
+object GlassControlGeometryPolicy {
+  const val switchThumbWidthDp = 34f
+  const val switchThumbHeightDp = 25f
+  const val switchTrackHeightDp = 34f
+  const val sliderThumbWidthDp = 30f
+  const val sliderThumbHeightDp = 24f
+  const val sliderTrackHeightDp = 5f
+  const val oldSwitchThumbWidthDp = 30f
+  const val oldSwitchThumbHeightDp = 22f
+  const val oldSliderThumbWidthDp = 28f
+  const val oldSliderThumbHeightDp = 22f
+
+  fun isSlightlyLarger(value: Float, oldValue: Float): Boolean =
+    value > oldValue && value <= oldValue * 1.16f
+}
+
 /** Shared press feedback. Values are consumed in graphicsLayer/draw lambdas only. */
 @Composable
 fun Modifier.glassPressFeedback(
@@ -134,15 +151,15 @@ fun GlassSwitch(
     thumbContent = if (!glass) thumbContent else {
       {
         Box(
-          Modifier.size(width = 30.dp, height = 22.dp)
+          Modifier.size(width = GlassControlGeometryPolicy.switchThumbWidthDp.dp, height = GlassControlGeometryPolicy.switchThumbHeightDp.dp)
             .glassRimLight(androidx.compose.foundation.shape.RoundedCornerShape(12.dp), ambient = contrast.checkedTrack, highContrast = true)
-            .glassCapsuleBody(contrast.checkedTrack, enabled, checked),
+            .glassCapsuleBody(contrast.checkedThumb, enabled, checked),
           contentAlignment = Alignment.Center,
         ) { thumbContent?.invoke() }
       }
     },
     // Material keeps its minimum interaction box while the custom capsule is drawn inside it.
-    modifier = modifier.then(if (glass) Modifier.glassTrackOptics(opacity, highlight, 16.dp, height = 32.dp, checked = checked) else Modifier),
+    modifier = modifier.then(if (glass) Modifier.glassTrackOptics(opacity, highlight, 16.dp, height = GlassControlGeometryPolicy.switchTrackHeightDp.dp, checked = checked) else Modifier),
   )
 }
 
@@ -177,8 +194,8 @@ fun GlassSlider(
       interactionSource = interactionSource, colors = colors)
   } else {
     val glassColors = SliderDefaults.colors(
-      thumbColor = Color.Transparent, activeTrackColor = accent.copy(alpha = .72f),
-      inactiveTrackColor = MaterialTheme.colorScheme.onSurface.copy(alpha = .14f),
+      thumbColor = Color.Transparent, activeTrackColor = Color.Transparent,
+      inactiveTrackColor = Color.Transparent,
       disabledActiveTrackColor = accent.copy(alpha = .18f), disabledInactiveTrackColor = MaterialTheme.colorScheme.onSurface.copy(alpha = .07f),
     )
     val pressed by interactionSource.collectIsDraggedAsState()
@@ -189,7 +206,8 @@ fun GlassSlider(
       track = { sliderState ->
         SliderDefaults.Track(
           sliderState = sliderState, enabled = enabled, colors = glassColors,
-          modifier = Modifier.height(4.dp).glassTrackOptics(opacity, highlight, 2.dp, height = 4.dp)
+          modifier = Modifier.height(GlassControlGeometryPolicy.sliderTrackHeightDp.dp)
+            .glassSliderGroove(sliderState.coercedValueAsFraction, accent, opacity, highlight)
             .then(if (steps > 0) Modifier.glassTickDots(steps, accent) else Modifier),
         )
       },
@@ -197,7 +215,7 @@ fun GlassSlider(
         val sx by animateFloatAsState(GlassSliderPolicy.stretch(pressed), spring(stiffness = Spring.StiffnessMediumLow), label = "sliderStretch")
         val sy by animateFloatAsState(GlassSliderPolicy.squash(pressed), spring(stiffness = Spring.StiffnessMediumLow), label = "sliderSquash")
         Box(
-          Modifier.size(width = 28.dp, height = 22.dp).graphicsLayer { scaleX = sx; scaleY = sy }
+          Modifier.size(width = GlassControlGeometryPolicy.sliderThumbWidthDp.dp, height = GlassControlGeometryPolicy.sliderThumbHeightDp.dp).graphicsLayer { scaleX = sx; scaleY = sy }
             .glassRimLight(androidx.compose.foundation.shape.RoundedCornerShape(12.dp), ambient = accent, highContrast = true)
             .glassCapsuleBody(accent, enabled, value > valueRange.start),
         )
@@ -214,15 +232,26 @@ private fun Modifier.glassTickDots(steps: Int, accent: Color): Modifier = drawWi
   }
 }
 
+private fun Modifier.glassSliderGroove(fraction: Float, accent: Color, opacity: Float, highlight: Float): Modifier = drawWithCache {
+  val radius = size.height / 2f
+  onDrawBehind {
+    val fillWidth = size.width * fraction.coerceIn(0f, 1f)
+    drawRoundRect(Brush.verticalGradient(listOf(Color.Black.copy(alpha = .24f), Color.Transparent, Color.White.copy(alpha = .16f))), cornerRadius = androidx.compose.ui.geometry.CornerRadius(radius, radius))
+    if (fillWidth > 0f) {
+      drawRoundRect(Brush.verticalGradient(listOf(Color.White.copy(alpha = (.30f * highlight).coerceAtMost(.34f)), accent.copy(alpha = (.58f + opacity * .18f).coerceAtMost(.82f)), accent.copy(alpha = .78f))), size = androidx.compose.ui.geometry.Size(fillWidth, size.height), cornerRadius = androidx.compose.ui.geometry.CornerRadius(radius, radius))
+    }
+  }
+}
+
 private fun Modifier.glassCapsuleBody(accent: Color, enabled: Boolean, checked: Boolean): Modifier = drawWithCache {
   val shape = androidx.compose.foundation.shape.RoundedCornerShape(12.dp)
   onDrawBehind {
     val radius = size.height / 2f
     drawRoundRect(
-      brush = Brush.verticalGradient(listOf(Color.White.copy(alpha = if (enabled) .78f else .35f), if (checked) accent.copy(alpha = .28f) else Color.Transparent, Color.Black.copy(alpha = if (enabled) .18f else .08f))),
+      brush = Brush.verticalGradient(listOf(Color.White.copy(alpha = if (enabled) .72f else .30f), if (checked) accent.copy(alpha = .28f) else Color.Transparent, Color.Black.copy(alpha = if (enabled) .24f else .10f))),
       cornerRadius = androidx.compose.ui.geometry.CornerRadius(radius, radius),
     )
-    drawRoundRect(Brush.radialGradient(listOf(Color.White.copy(alpha = .32f), Color.Transparent), center = androidx.compose.ui.geometry.Offset(size.width * .25f, size.height * .18f), radius = size.width), cornerRadius = androidx.compose.ui.geometry.CornerRadius(radius, radius))
+    drawRoundRect(Brush.radialGradient(listOf(Color.White.copy(alpha = .44f), Color.Transparent), center = androidx.compose.ui.geometry.Offset(size.width * .25f, size.height * .18f), radius = size.width), cornerRadius = androidx.compose.ui.geometry.CornerRadius(radius, radius))
   }
 }
 
@@ -235,8 +264,8 @@ private fun Modifier.glassTrackOptics(opacity: Float, highlight: Float, radius: 
     val top = (size.height - trackHeight) / 2f
     val corner = radius.toPx().coerceAtMost(trackHeight / 2f)
     onDrawBehind {
-      drawRoundRect(Brush.verticalGradient(listOf(Color.White.copy(alpha = highlight * .28f), tint.copy(alpha = if (checked) (.42f + opacity * .28f).coerceAtMost(.72f) else .20f), Color.Black.copy(alpha = .14f))), topLeft = androidx.compose.ui.geometry.Offset(0f, top), size = androidx.compose.ui.geometry.Size(size.width, trackHeight), cornerRadius = androidx.compose.ui.geometry.CornerRadius(corner, corner))
-      drawRoundRect(Brush.verticalGradient(listOf(Color.White.copy(alpha = .18f), Color.Transparent, Color.Black.copy(alpha = .18f))), topLeft = androidx.compose.ui.geometry.Offset(0f, top), size = androidx.compose.ui.geometry.Size(size.width, trackHeight), cornerRadius = androidx.compose.ui.geometry.CornerRadius(corner, corner), style = Stroke(1.dp.toPx()))
+      drawRoundRect(Brush.verticalGradient(listOf(Color.Black.copy(alpha = .28f), tint.copy(alpha = if (checked) (.38f + opacity * .30f).coerceAtMost(.76f) else .22f), Color.White.copy(alpha = .14f))), topLeft = androidx.compose.ui.geometry.Offset(0f, top), size = androidx.compose.ui.geometry.Size(size.width, trackHeight), cornerRadius = androidx.compose.ui.geometry.CornerRadius(corner, corner))
+      drawRoundRect(Brush.verticalGradient(listOf(Color.Black.copy(alpha = .22f), Color.Transparent, Color.White.copy(alpha = .22f))), topLeft = androidx.compose.ui.geometry.Offset(0f, top), size = androidx.compose.ui.geometry.Size(size.width, trackHeight), cornerRadius = androidx.compose.ui.geometry.CornerRadius(corner, corner), style = Stroke(1.dp.toPx()))
     }
   }
 }

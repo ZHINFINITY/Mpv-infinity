@@ -1170,20 +1170,32 @@ private fun GlassCustomizationPreference(
 
 @Composable
 private fun GlassLivePreview(enabled: Boolean, opacity: Float, highlight: Float, modifier: Modifier = Modifier) {
-  GlassSurface(enabled = enabled, opacity = opacity, highlight = highlight, cornerRadius = 20.dp, modifier = modifier) {
-    androidx.compose.foundation.layout.Box(Modifier.height(132.dp).fillMaxWidth()) {
-      Canvas(Modifier.matchParentSize()) {
+  // Keep the colourful scene in GlassSurface's source layer. Previously it was emitted as
+  // foreground content after liquidGlassPane, so the pane had nothing to frost or refract.
+  GlassSurface(
+    enabled = enabled,
+    opacity = opacity,
+    highlight = highlight,
+    cornerRadius = 20.dp,
+    modifier = modifier,
+    backdrop = {
+      Canvas(Modifier.fillMaxSize()) {
         val step = size.width / 7f
-        for (i in 0..7) drawRect(androidx.compose.ui.graphics.Color.hsv(i * 45f, 0.72f, 0.95f), androidx.compose.ui.geometry.Offset(i * step, 0f), androidx.compose.ui.geometry.Size(step + 2f, size.height))
+        for (i in 0..7) drawRect(
+          androidx.compose.ui.graphics.Color.hsv(i * 45f, 0.72f, 0.95f),
+          androidx.compose.ui.geometry.Offset(i * step, 0f),
+          androidx.compose.ui.geometry.Size(step + 2f, size.height),
+        )
       }
-      Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text(stringResource(R.string.pref_glass_preview), style = MaterialTheme.typography.titleSmall)
-        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-          listOf("A", "B", "C").forEach { Text(it, Modifier.background(MaterialTheme.colorScheme.surface.copy(alpha = .42f), RoundedCornerShape(12.dp)).padding(horizontal = 10.dp, vertical = 4.dp)) }
-          GlassSwitch(checked = true, onCheckedChange = null, modifier = Modifier.size(40.dp))
-        }
-        GlassSlider(value = .65f, onValueChange = {}, modifier = Modifier.fillMaxWidth())
+    },
+  ) {
+    Column(Modifier.height(132.dp).fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+      Text(stringResource(R.string.pref_glass_preview), style = MaterialTheme.typography.titleSmall)
+      Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        listOf("A", "B", "C").forEach { Text(it, Modifier.background(MaterialTheme.colorScheme.surface.copy(alpha = .42f), RoundedCornerShape(12.dp)).padding(horizontal = 10.dp, vertical = 4.dp)) }
+        GlassSwitch(checked = true, onCheckedChange = null, modifier = Modifier.size(40.dp))
       }
+      GlassSlider(value = .65f, onValueChange = {}, modifier = Modifier.fillMaxWidth())
     }
   }
 }
