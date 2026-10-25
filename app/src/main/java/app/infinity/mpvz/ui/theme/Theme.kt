@@ -296,10 +296,19 @@ fun MpvInfinityTheme(
   val glassMotion by preferences.glassMotionIntensity.collectAsState()
   val glassOpacity by preferences.glassSurfaceOpacity.collectAsState()
   val glassHighlight by preferences.glassSurfaceHighlight.collectAsState()
-  val glassCustomization = remember(glassFrost, glassRefraction, glassDepth, glassMotion, glassOpacity, glassHighlight) {
+  val glassRimStrength by preferences.glassRimStrength.collectAsState()
+  val glassRimWidth by preferences.glassRimWidth.collectAsState()
+  val glassRimSoftness by preferences.glassRimSoftness.collectAsState()
+  val glassCustomization = remember(
+    glassFrost, glassRefraction, glassDepth, glassMotion, glassOpacity, glassHighlight,
+    glassRimStrength, glassRimWidth, glassRimSoftness,
+  ) {
     GlassCustomization(frost = GlassCustomizationPolicy.strength(glassFrost), refraction = GlassCustomizationPolicy.strength(glassRefraction),
       depth = GlassCustomizationPolicy.strength(glassDepth), motion = GlassCustomizationPolicy.motion(glassMotion),
-      opacity = GlassSurfacePolicy.opacity(glassOpacity), highlight = GlassSurfacePolicy.highlight(glassHighlight), overrideMaterial = true)
+      opacity = GlassSurfacePolicy.opacity(glassOpacity), highlight = GlassSurfacePolicy.highlight(glassHighlight), overrideMaterial = true,
+      rimStrength = GlassRimLightPolicy.strength(glassRimStrength),
+      rimWidthDp = GlassRimLightPolicy.widthDp(glassRimWidth),
+      rimSoftness = GlassRimLightPolicy.softness(glassRimSoftness))
   }
   val activeCustomThemeId by preferences.activeCustomThemeId.collectAsState()
   val customTheme = customThemes.firstOrNull { it.id == activeCustomThemeId }
