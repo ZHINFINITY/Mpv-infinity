@@ -187,5 +187,28 @@ internal object PlayerLifecyclePolicy {
   fun resumePositionSeconds(positionSeconds: Double?): Double? =
     positionSeconds?.takeIf { it.isFinite() && it > 0.0 }
 
+  /**
+   * Whether service-owned playback must pause because the whole app just left the foreground.
+   *
+   * After a minimize, Back or background round trip the playback service owns the session and
+   * the full player is the in-app music sheet (or Mini Player) inside the library, not a
+   * PlayerActivity. Turning background playback off there only changed the preference: nothing
+   * applied it when the app was left, so music kept playing in the background until the app
+   * was restarted. Leaving the app now honours the setting for the current media kind, exactly
+   * like PlayerActivity does. Inside the app (sheet <-> Mini Player) playback is unaffected.
+   */
+  fun shouldPauseDetachedPlaybackOnAppBackground(
+    serviceOwnsPlayback: Boolean,
+    isAudio: Boolean,
+    audioBackgroundPlaybackEnabled: Boolean,
+    videoBackgroundPlaybackEnabled: Boolean,
+    hasActiveItem: Boolean,
+    isPaused: Boolean,
+  ): Boolean {
+    if (!serviceOwnsPlayback || !hasActiveItem || isPaused) return false
+    val backgroundPlaybackEnabled = if (isAudio) audioBackgroundPlaybackEnabled else videoBackgroundPlaybackEnabled
+    return !backgroundPlaybackEnabled
+  }
+
   const val LONG_BACKGROUND_REBUILD_THRESHOLD_MS = 900_000L
 }

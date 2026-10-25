@@ -206,6 +206,14 @@ class MediaPlaybackService :
     }
 
     /**
+     * Called by the Application when its last started Activity stops (never for a configuration
+     * change). This is the "stop once I leave" half of [setInAppPlayerVisible]: service-owned
+     * playback that is not allowed to continue in the background pauses here. Returns whether
+     * playback was paused.
+     */
+    internal fun onAppBackgrounded(): Boolean = activeInstance?.pauseDetachedPlaybackIfBackgroundDisabled() == true
+
+    /**
      * Marks that playback is being handed back to a foreground Activity (e.g. reopening the
      * player from the Mini Player / playback notification). Release the service-owned focus
      * immediately, but never mutate mpv's pause state: the foreground Activity will acquire
@@ -1232,6 +1240,30 @@ class MediaPlaybackService :
     paused = !shouldPlay
     PlaybackSession.setPropertyBoolean("pause", paused)
     refreshTransportControls()
+  }
+
+  private fun pauseDetachedPlaybackIfBackgroundDisabled(): Boolean {
+    val state = PlaybackSession.state.value
+    val shouldPause =
+      PlayerLifecyclePolicy.shouldPauseDetachedPlaybackOnAppBackground(
+        serviceOwnsPlayback =
+          isServiceRunning && !mpvAccessReleased && !activityForeground && !handingBackToActivity &&
+            !state.surfaceAttached,
+        isAudio = usesAudioBackgroundPlayback,
+        audioBackgroundPlaybackEnabled = audioPreferences.audioBackgroundPlayback.get(),
+        videoBackgroundPlaybackEnabled = audioPreferences.backgroundPlayback.get(),
+        hasActiveItem =
+          state.currentItem != null &&
+            state.phase != PlaybackPhase.IDLE &&
+            state.phase != PlaybackPhase.UNINITIALIZED,
+        isPaused = PlaybackSession.getPropertyBoolean("pause") != false,
+      )
+    if (!shouldPause) return false
+    paused = true
+    PlaybackSession.setPropertyBoolean("pause", true)
+    refreshTransportControls()
+    Log.d(TAG, "Paused detached playback: background playback is off and the app left the foreground")
+    return true
   }
 
   private fun stopPlaybackAndService(force: Boolean = false) {
