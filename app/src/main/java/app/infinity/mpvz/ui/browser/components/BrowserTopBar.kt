@@ -186,6 +186,7 @@ private fun NormalTopBar(
   val preferences = koinInject<AppearancePreferences>()
   val darkMode by preferences.darkMode.collectAsState()
   val liquidGlassSurfaces by preferences.liquidGlassSurfaces.collectAsState()
+  val animateInfinityLogo by preferences.animateInfinityLogo.collectAsState()
   val darkTheme = isSystemInDarkTheme()
   val themeTransition = LocalThemeTransitionState.current
   val coroutineScope = rememberCoroutineScope()
@@ -279,7 +280,11 @@ private fun NormalTopBar(
 
       if (title == "∞") {
         // Keep the browser brand title on the same drawn infinity glyph as pull-to-refresh.
-        InfinityLoadingIndicator(modifier = titleModifier.semantics { contentDescription = "Mpv∞" }, size = 40.dp)
+        InfinityLoadingIndicator(
+          modifier = titleModifier.semantics { contentDescription = "Mpv∞" },
+          size = 40.dp,
+          animate = animateInfinityLogo,
+        )
       } else {
       Text(
         buildAnnotatedString {
