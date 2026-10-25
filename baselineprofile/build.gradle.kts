@@ -3,7 +3,8 @@
  * Copyright (c) 2026 ZHINFINITY. Mpv∞ Covered Code. See LICENSE for terms.
  */
 plugins {
-  id("com.android.test")
+  alias(libs.plugins.android.test)
+  alias(libs.plugins.androidx.baselineprofile)
 }
 
 android {
@@ -16,9 +17,25 @@ android {
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
   }
 
+  // Match the app's distribution dimension so the plugin can resolve the
+  // standardRelease target used by the CI profile run.
+  flavorDimensions += "distribution"
+  productFlavors {
+    create("standard") {
+      dimension = "distribution"
+    }
+    create("noVulkan") {
+      dimension = "distribution"
+    }
+  }
+
   testOptions {
     execution = "ANDROIDX_TEST_ORCHESTRATOR"
   }
+}
+
+baselineProfile {
+  useConnectedDevices = true
 }
 
 dependencies {

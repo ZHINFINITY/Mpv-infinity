@@ -31,6 +31,7 @@ val previewVersionCode =
 
 plugins {
   alias(libs.plugins.android.application)
+  alias(libs.plugins.androidx.baselineprofile)
   alias(libs.plugins.kotlin.compose.compiler)
   alias(libs.plugins.kotlinx.serialization)
   alias(libs.plugins.ksp)
@@ -233,6 +234,14 @@ androidComponents {
   }
 }
 
+baselineProfile {
+  variants {
+    standardRelease {
+      mergeIntoMain = false
+    }
+  }
+}
+
 kotlin {
   compilerOptions {
     freeCompilerArgs.addAll(
@@ -253,6 +262,7 @@ room {
 }
 
 dependencies {
+  baselineProfile(project(":baselineprofile"))
   implementation(libs.androidx.activity.compose)
   implementation(platform(libs.androidx.compose.bom))
   implementation(libs.androidx.ui)

@@ -45,13 +45,10 @@ jobs:
       - name: Make Gradle wrapper executable
         run: chmod +x ./gradlew
 
-      # The AAR and libtorrent4j both publish x86_64 native libraries. Keeping
-      # this explicit prevents the default multi-ABI build from wasting runner
-      # time and ensures the emulator executes the same native code it profiles.
-      - name: Build Standard release for the emulator
-        run: ./gradlew :app:assembleStandardRelease -PtargetAbi=x86_64 --stacktrace --no-daemon --max-workers=3
-
-      - name: Run baseline profile journeys on API 35 x86_64
+      # The Baseline Profile Gradle plugin builds the benchmark variant,
+      # installs it on the connected emulator, runs the macrobenchmark journey,
+      # and writes a human-readable profile into app/src/.../generated.
+      - name: Generate Standard release baseline profile on API 35 x86_64
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: 35
@@ -64,44 +61,20 @@ jobs:
           emulator-options: -no-window -noaudio -no-boot-anim -camera-back none
           disable-animations: true
           script: |
-            ./gradlew :baselineprofile:connectedStandardReleaseAndroidTest --stacktrace --no-daemon --max-workers=3
-            adb root || true
-            adb wait-for-device
+            ./gradlew :app:generateStandardReleaseBaselineProfile -PtargetAbi=x86_64 --no-daemon --stacktrace --max-workers=3
+            profile="$(find app/src -type f -path '*/generated/baselineProfiles/*' | head -n 1)"
+            test -n "$profile" && test -s "$profile"
+            grep -q 'Lapp/infinity/mpvz/' "$profile"
             mkdir -p baseline-profile-artifact
-            found=""
-            for candidate in \
-              /data/misc/profiles/ref/app.infinity.mpvz/primary.prof \
-              /data/misc/profiles/cur/0/app.infinity.mpvz/primary.prof; do
-              if adb shell "test -s '$candidate'" >/dev/null 2>&1; then
-                found="$candidate"
-                break
-              fi
-            done
-            if [ -z "$found" ]; then
-              echo 'No ART profile found after BaselineProfileRule; dumping profile directories.'
-              adb shell 'find /data/misc/profiles -type f -maxdepth 5 2>/dev/null || true'
-              exit 1
-            fi
-            adb pull "$found" baseline-profile-artifact/primary.prof
-            profman=""
-            for candidate in "$ANDROID_HOME/build-tools/35.0.0/profman" "$ANDROID_HOME/build-tools/34.0.0/profman"; do
-              if [ -x "$candidate" ]; then profman="$candidate"; break; fi
-            done
-            if [ -n "$profman" ]; then
-              "$profman" --dump-classes-and-methods --profile-file=baseline-profile-artifact/primary.prof > baseline-profile-artifact/baseline-prof.txt
-              test -s baseline-profile-artifact/baseline-prof.txt
-              cp baseline-profile-artifact/baseline-prof.txt baseline-prof-generated.txt
-            else
-              echo 'profman is unavailable on this runner; preserving binary profile artifact.'
-            fi
+            cp "$profile" baseline-profile-artifact/
+            echo "Generated $profile ($(wc -l < "$profile") lines)"
 
       - name: Upload generated profile
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: baseline-profile-${{ github.sha }}
+          name: baseline-profile
           path: |
             baseline-profile-artifact/**
-            baseline-prof-generated.txt
           if-no-files-found: error
           retention-days: 14
