@@ -2243,4 +2243,6 @@
     <string name="pref_openai_base_url_summary">आधिकारिक OpenAI एंडपॉइंट के लिए खाली छोड़ें</string>
     <string name="pref_openai_base_url_prompt">OpenAI-संगत API का बेस URL दर्ज करें</string>
     <string name="pref_openai_base_url_invalid">क्रेडेंशियल, क्वेरी पैरामीटर या फ़्रैगमेंट के बिना एक मान्य HTTP या HTTPS URL दर्ज करें।</string>
+  <string name="pref_advanced_frame_time_overlay_title">फ़्रेम-टाइम ओवरले</string>
+  <string name="pref_advanced_frame_time_overlay_summary">इस विंडो के लिए अटकने वाले फ़्रेम का प्रतिशत और p90/p99 फ़्रेम टाइम दिखाएँ</string>
 </resources>

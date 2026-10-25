@@ -2258,4 +2258,6 @@ Reinicie o aplicativo para que todas as alterações entrem em vigor.</string>
     <string name="pref_openai_base_url_summary">Deixe em branco para usar o endpoint oficial da OpenAI</string>
     <string name="pref_openai_base_url_prompt">Digite a URL base de uma API compatível com OpenAI</string>
     <string name="pref_openai_base_url_invalid">Digite uma URL HTTP ou HTTPS válida, sem credenciais, parâmetros de consulta ou fragmentos.</string>
+  <string name="pref_advanced_frame_time_overlay_title">Sobreposição de tempo de quadro</string>
+  <string name="pref_advanced_frame_time_overlay_summary">Mostra a porcentagem de quadros travados e o tempo de quadro p90/p99 desta janela</string>
 </resources>

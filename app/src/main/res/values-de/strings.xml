@@ -2258,4 +2258,6 @@ Bitte starten Sie die App neu, damit alle Änderungen wirksam werden.</string>
     <string name="pref_openai_base_url_summary">Leer lassen, um den offiziellen OpenAI-Endpunkt zu verwenden</string>
     <string name="pref_openai_base_url_prompt">Basis-URL einer OpenAI-kompatiblen API eingeben</string>
     <string name="pref_openai_base_url_invalid">Gib eine gültige HTTP- oder HTTPS-URL ohne Anmeldedaten, Abfrageparameter oder Fragmente ein.</string>
+  <string name="pref_advanced_frame_time_overlay_title">Frame-Zeit-Overlay</string>
+  <string name="pref_advanced_frame_time_overlay_summary">Anteil ruckelnder Frames und p90/p99-Frame-Zeit für dieses Fenster anzeigen</string>
 </resources>

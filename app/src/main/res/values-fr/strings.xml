@@ -2258,4 +2258,6 @@ Veuillez redémarrer l’application pour appliquer toutes les modifications.</s
     <string name="pref_openai_base_url_summary">Laisser vide pour utiliser le point de terminaison officiel d\'OpenAI</string>
     <string name="pref_openai_base_url_prompt">Saisissez l\'URL de base d\'une API compatible OpenAI</string>
     <string name="pref_openai_base_url_invalid">Saisissez une URL HTTP ou HTTPS valide sans identifiants, paramètres de requête ni fragments.</string>
+  <string name="pref_advanced_frame_time_overlay_title">Superposition du temps d’image</string>
+  <string name="pref_advanced_frame_time_overlay_summary">Affiche le pourcentage d’images saccadées et le temps d’image p90/p99 de cette fenêtre</string>
 </resources>

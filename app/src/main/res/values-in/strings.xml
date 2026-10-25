@@ -2243,4 +2243,6 @@
     <string name="pref_openai_base_url_summary">Kosongkan untuk memakai endpoint resmi OpenAI</string>
     <string name="pref_openai_base_url_prompt">Masukkan URL dasar API yang kompatibel dengan OpenAI</string>
     <string name="pref_openai_base_url_invalid">Masukkan URL HTTP atau HTTPS yang valid tanpa kredensial, parameter kueri, atau fragmen.</string>
+  <string name="pref_advanced_frame_time_overlay_title">Overlay waktu frame</string>
+  <string name="pref_advanced_frame_time_overlay_summary">Tampilkan persentase frame tersendat dan waktu frame p90/p99 untuk jendela ini</string>
 </resources>

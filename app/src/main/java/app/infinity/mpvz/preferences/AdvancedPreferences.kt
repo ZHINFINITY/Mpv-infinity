@@ -21,6 +21,7 @@ class AdvancedPreferences(
   val mpvConfOverrides = preferenceStore.getStringSet("mpv_conf_overrides", emptySet())
 
   val verboseLogging = preferenceStore.getBoolean("verbose_logging", BuildConfig.BUILD_TYPE != "release")
+  val showFrameTimeOverlay = preferenceStore.getBoolean("show_frame_time_overlay", false)
 
   val enabledStatisticsPage = preferenceStore.getInt("enabled_stats_page", 0)
 

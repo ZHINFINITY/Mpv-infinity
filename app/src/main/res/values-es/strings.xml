@@ -2258,4 +2258,6 @@ Reinicia la aplicación para que se apliquen todos los cambios.</string>
     <string name="pref_openai_base_url_summary">Déjalo vacío para usar el endpoint oficial de OpenAI</string>
     <string name="pref_openai_base_url_prompt">Introduce la URL base de una API compatible con OpenAI</string>
     <string name="pref_openai_base_url_invalid">Introduce una URL HTTP o HTTPS válida sin credenciales, parámetros de consulta ni fragmentos.</string>
+  <string name="pref_advanced_frame_time_overlay_title">Superposición de tiempo de fotograma</string>
+  <string name="pref_advanced_frame_time_overlay_summary">Muestra el porcentaje de fotogramas con tirones y el tiempo de fotograma p90/p99 de esta ventana</string>
 </resources>

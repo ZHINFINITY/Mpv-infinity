@@ -1081,6 +1081,7 @@ object AdvancedPreferencesScreen : Screen {
             PreferenceCard {
               val activity = LocalActivity.current!!
               val verboseLogging by preferences.verboseLogging.collectAsState()
+              val showFrameTimeOverlay by preferences.showFrameTimeOverlay.collectAsState()
 
               SwitchPreference(
                 modifier = Modifier.settingsSearchTarget(R.string.pref_advanced_verbose_logging_title),
@@ -1093,6 +1094,16 @@ object AdvancedPreferencesScreen : Screen {
                     color = MaterialTheme.colorScheme.outline,
                   )
                 },
+              )
+
+              PreferenceDivider()
+
+              SwitchPreference(
+                modifier = Modifier.settingsSearchTarget(R.string.pref_advanced_frame_time_overlay_title),
+                value = showFrameTimeOverlay,
+                onValueChange = preferences.showFrameTimeOverlay::set,
+                title = { Text(stringResource(R.string.pref_advanced_frame_time_overlay_title)) },
+                summary = { Text(stringResource(R.string.pref_advanced_frame_time_overlay_summary), color = MaterialTheme.colorScheme.outline) },
               )
 
               PreferenceDivider()

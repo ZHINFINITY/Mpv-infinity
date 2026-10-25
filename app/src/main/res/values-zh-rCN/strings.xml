@@ -2258,4 +2258,6 @@
     <string name="pref_openai_base_url_summary">留空则使用 OpenAI 官方端点</string>
     <string name="pref_openai_base_url_prompt">输入 OpenAI 兼容 API 的基础 URL</string>
     <string name="pref_openai_base_url_invalid">请输入不含凭据、查询参数或片段的有效 HTTP 或 HTTPS URL。</string>
+  <string name="pref_advanced_frame_time_overlay_title">帧时间浮层</string>
+  <string name="pref_advanced_frame_time_overlay_summary">显示此窗口的卡顿帧百分比以及 p90/p99 帧时间</string>
 </resources>

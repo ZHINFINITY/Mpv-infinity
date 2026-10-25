@@ -221,6 +221,7 @@ fun LiquidGlassBackdropHost(
             (location[0] + crop.left).toFloat(), (location[1] + crop.top).toFloat(),
             (location[0] + crop.left + crop.width).toFloat(), (location[1] + crop.top + crop.height).toFloat()),
             underlayLuma = sampled.second)
+          captureBuffers.markPublished(bitmap)
         }
         // Recover after transient failures instead of permanently disabling glass after three errors.
         delay(if (failures > 0 && frame.value != null) GlassScenePolicy.TransientGraceMs
@@ -234,11 +235,12 @@ fun LiquidGlassBackdropHost(
   CompositionLocalProvider(LocalLiquidGlassBackdrop provides frame.takeIf { eligible }, content = content)
 }
 
-private class GlassCaptureBuffers {
+internal class GlassCaptureBuffers {
   private var first: Bitmap? = null
   private var second: Bitmap? = null
   private val retired = ArrayList<Bitmap>(2)
   private var nextFirst = true
+  private var published: Bitmap? = null
   var pixels: IntArray = IntArray(0)
     private set
   val lumaBins = IntArray(64)
@@ -251,15 +253,28 @@ private class GlassCaptureBuffers {
       pixels = IntArray(width * height)
       nextFirst = true
     }
-    val result = if (nextFirst) first else second
+    // The last bitmap handed to Compose remains drawable until the state swap is
+    // observed. Never let PixelCopy or frosting write into that published image.
+    val preferred = if (nextFirst) first else second
+    val alternate = if (preferred === first) second else first
+    val result = when {
+      preferred != null && preferred !== published -> preferred
+      alternate != null && alternate !== published -> alternate
+      else -> null
+    }
     nextFirst = !nextFirst
     return result
+  }
+  fun markPublished(bitmap: Bitmap) {
+    check(bitmap === first || bitmap === second)
+    published = bitmap
   }
   fun recycle() {
     first?.recycle(); second?.recycle()
     retired.forEach { it.recycle() }
     retired.clear()
     first = null; second = null
+    published = null
     pixels = IntArray(0)
   }
 }
@@ -283,12 +298,11 @@ private suspend fun copyGlassFrame(source: SurfaceView, crop: GlassScenePolicy.S
 private suspend fun frostGlassFrame(bitmap: Bitmap, strength: Float, pixels: IntArray, lumaBins: IntArray): Pair<Bitmap, Float>? = try {
   withContext(Dispatchers.Default) {
     bitmap.getPixels(pixels, 0, bitmap.width, 0, 0, bitmap.width, bitmap.height)
-    val luma = if (Build.VERSION.SDK_INT < 31) {
-      val frosted = GlassFrostPolicy.frostArgb(pixels, bitmap.width, bitmap.height, strength)
-      bitmap.setPixels(frosted, 0, bitmap.width, 0, 0, bitmap.width, bitmap.height)
-      GlassSurfacePolicy.underlayLuma(frosted, lumaBins)
-    } else GlassSurfacePolicy.underlayLuma(pixels, lumaBins)
-    bitmap to luma
+    // Every API level keeps the same CPU frost on this tiny sample: the API 33+ refraction
+    // shader and the older paint path both expect an already-frosted input (visual parity).
+    val frosted = GlassFrostPolicy.frostArgb(pixels, bitmap.width, bitmap.height, strength)
+    bitmap.setPixels(frosted, 0, bitmap.width, 0, 0, bitmap.width, bitmap.height)
+    bitmap to GlassSurfacePolicy.underlayLuma(frosted, lumaBins)
   }
 } catch (cancelled: CancellationException) {
   throw cancelled
@@ -482,18 +496,6 @@ fun Modifier.liquidGlassPane(
               sourceShader.setLocalMatrix(matrix)
               paint.shader = sourceShader
             }
-            // API 31/32 has no runtime shader path: blur only this sampled paint, never the
-            // surrounding pane content. The sigma is the analytic equivalent of the CPU passes.
-            if (Build.VERSION.SDK_INT in 31..32) {
-              val passes = GlassCustomizationPolicy.frostPasses(tuning.frost)
-              paint.setRenderEffect(
-                if (passes > 0) android.graphics.RenderEffect.createBlurEffect(
-                  GlassSamplingPolicy.frostSigma(GlassFrostPolicy.Radius, passes),
-                  GlassSamplingPolicy.frostSigma(GlassFrostPolicy.Radius, passes),
-                  Shader.TileMode.CLAMP,
-                ) else null,
-              )
-            }
             // A color-only music palette is not an opaque image backdrop.
             // Preserve the real view underneath while adding its extracted tint.
             paint.alpha = if (scene.refractionEnabled) 255
@@ -501,7 +503,6 @@ fun Modifier.liquidGlassPane(
             drawIntoCanvas { canvas ->
               canvas.nativeCanvas.drawRoundRect(0f, 0f, size.width, size.height, radius, radius, paint)
             }
-            if (Build.VERSION.SDK_INT >= 31) paint.setRenderEffect(null)
           }
         }
         // Film guarantees readable controls, even when sampling is intentionally unavailable.

@@ -2243,4 +2243,6 @@
     <string name="pref_openai_base_url_summary">அதிகாரப்பூர்வ OpenAI முனையத்தைப் பயன்படுத்த காலியாக விடவும்</string>
     <string name="pref_openai_base_url_prompt">OpenAI-இணக்க API அடிப்படை URL-ஐ உள்ளிடவும்</string>
     <string name="pref_openai_base_url_invalid">சான்றுகள், வினவல் அளவுருக்கள் அல்லது துண்டுகள் இல்லாத சரியான HTTP அல்லது HTTPS URL-ஐ உள்ளிடவும்.</string>
+  <string name="pref_advanced_frame_time_overlay_title">ஃப்ரேம் நேர மேலடுக்கு</string>
+  <string name="pref_advanced_frame_time_overlay_summary">இந்த சாளரத்தில் தடுமாறும் ஃப்ரேம்களின் சதவீதம் மற்றும் p90/p99 ஃப்ரேம் நேரத்தைக் காட்டு</string>
 </resources>

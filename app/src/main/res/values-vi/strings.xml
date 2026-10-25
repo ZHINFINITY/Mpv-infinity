@@ -2243,4 +2243,6 @@
     <string name="pref_openai_base_url_summary">Để trống để dùng điểm cuối chính thức của OpenAI</string>
     <string name="pref_openai_base_url_prompt">Nhập URL gốc của API tương thích OpenAI</string>
     <string name="pref_openai_base_url_invalid">Nhập URL HTTP hoặc HTTPS hợp lệ, không chứa thông tin đăng nhập, tham số truy vấn hoặc phân đoạn.</string>
+  <string name="pref_advanced_frame_time_overlay_title">Lớp phủ thời gian khung hình</string>
+  <string name="pref_advanced_frame_time_overlay_summary">Hiển thị tỷ lệ khung hình bị giật và thời gian khung hình p90/p99 cho cửa sổ này</string>
 </resources>

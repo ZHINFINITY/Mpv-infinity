@@ -2243,4 +2243,6 @@
     <string name="pref_openai_base_url_summary">برای استفاده از نقطه پایانی رسمی OpenAI خالی بگذارید</string>
     <string name="pref_openai_base_url_prompt">نشانی پایه یک API سازگار با OpenAI را وارد کنید</string>
     <string name="pref_openai_base_url_invalid">یک نشانی HTTP یا HTTPS معتبر بدون اطلاعات ورود، پارامتر پرس‌وجو یا بخش وارد کنید.</string>
+  <string name="pref_advanced_frame_time_overlay_title">نمایش زمان فریم</string>
+  <string name="pref_advanced_frame_time_overlay_summary">نمایش درصد فریم‌های ناروان و زمان فریم p90/p99 برای این پنجره</string>
 </resources>

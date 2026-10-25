@@ -442,9 +442,10 @@ fun PlayerControls(
   val duration by PlaybackSession.propInt["duration"].collectAsState()
   val playbackQueue by PlaybackSession.queue.collectAsStateWithLifecycle()
   val preciseDuration by viewModel.preciseDuration.collectAsState()
-  // Position is collected only by the seekbar leaf below; this snapshot avoids making
-  // the full controls tree recompose on every interpolation tick.
-  val precisePosition = viewModel.precisePosition.value
+  // Keep the State object, not its value: reading position here would recompose the full
+  // controls tree on every interpolation tick. The seekbar leaf collects its own copy and
+  // the audiobook chapter index below derives from it, changing only on chapter boundaries.
+  val precisePositionState = viewModel.precisePosition.collectAsState()
   val demuxerCacheTime by PlaybackSession.propDouble["demuxer-cache-time"].collectAsState()
   val mpvPlaybackSpeed by PlaybackSession.propFloat["speed"].collectAsState()
   val seekbarDuration = if (preciseDuration > 0) preciseDuration else duration?.toFloat() ?: 0f
@@ -574,12 +575,13 @@ fun PlayerControls(
   val audiobookChapters by AudiobookPlayback.chapters.collectAsStateWithLifecycle()
   val activeAudiobook by AudiobookPlayback.book.collectAsStateWithLifecycle()
   val currentPlaybackItem = playbackQueue.currentItem
-  val audiobookChapterIndex = remember(
+  val audiobookChapterIndex by remember(
     currentPlaybackItem?.audiobook,
     audiobookChapters,
     activeAudiobook?.tracks,
     chapters,
-  ) {
+  ) { derivedStateOf {
+    val precisePosition = precisePositionState.value
     val info = currentPlaybackItem?.audiobook
     if (info == null || audiobookChapters.isEmpty()) {
       -1
@@ -597,7 +599,7 @@ fun PlayerControls(
         chapters.indexOfLast { it.start <= seconds }
       }
     }
-  }
+  } }
   val currentChapter = if (nativeEngineActive) {
     chapters.indexOfLast { it.start <= nativeSnapshot.positionMs / 1000f }.takeIf { it >= 0 }
   } else if (audiobookChapterIndex >= 0) {

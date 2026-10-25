@@ -2258,4 +2258,6 @@
     <string name="pref_openai_base_url_summary">空欄にすると公式の OpenAI エンドポイントを使用します</string>
     <string name="pref_openai_base_url_prompt">OpenAI 互換 API のベース URL を入力</string>
     <string name="pref_openai_base_url_invalid">認証情報、クエリパラメータ、フラグメントを含まない有効な HTTP または HTTPS の URL を入力してください。</string>
+  <string name="pref_advanced_frame_time_overlay_title">フレーム時間オーバーレイ</string>
+  <string name="pref_advanced_frame_time_overlay_summary">このウィンドウのカクつきフレームの割合と p90/p99 フレーム時間を表示</string>
 </resources>

@@ -70,6 +70,13 @@ internal object EmbeddedArtworkResolver {
     })
   }
 
+  private fun decodeFileSampled(path: String): Bitmap? =
+    runCatching { java.io.File(path).inputStream().use(ThumbnailDecodePolicy::readEncodedImage) }
+      .getOrNull()?.let(::decodeBytesSampled)
+
+  private fun decodeStreamSampled(input: java.io.InputStream): Bitmap? =
+    ThumbnailDecodePolicy.readEncodedImage(input)?.let(::decodeBytesSampled)
+
   fun decodeArtworkUri(
     context: Context,
     artworkUri: String?,
@@ -80,10 +87,10 @@ internal object EmbeddedArtworkResolver {
     return runCatching {
       val decoded =
         when (uri.scheme?.lowercase()) {
-          null, "" -> BitmapFactory.decodeFile(artworkUri)
-          "file" -> BitmapFactory.decodeFile(uri.path)
+          null, "" -> decodeFileSampled(artworkUri)
+          "file" -> uri.path?.let(::decodeFileSampled)
           "content", "android.resource" ->
-            context.contentResolver.openInputStream(uri)?.use { input -> BitmapFactory.decodeStream(input) }
+            context.contentResolver.openInputStream(uri)?.use(::decodeStreamSampled)
           "http", "https" -> {
             val connection = (java.net.URL(artworkUri).openConnection() as java.net.HttpURLConnection).apply {
               connectTimeout = 8000
@@ -91,9 +98,7 @@ internal object EmbeddedArtworkResolver {
               instanceFollowRedirects = true
               setRequestProperty("User-Agent", "Mozilla/5.0 (Android) MpvInfinity")
             }
-            connection.inputStream.use { input ->
-              BitmapFactory.decodeStream(input)
-            }
+            connection.inputStream.use(::decodeStreamSampled)
           }
           else -> null
         }
@@ -119,7 +124,7 @@ internal object EmbeddedArtworkResolver {
       ?.firstNotNullOfOrNull { candidate ->
         candidate
           .takeIf { it.isFile && it.canRead() }
-          ?.let { BitmapFactory.decodeFile(it.path) }
+          ?.let { decodeFileSampled(it.path) }
       }
 
   fun decodeRetrieverArtwork(retriever: MediaMetadataRetriever): Bitmap? {
