@@ -61,7 +61,8 @@ class LiquidGlassContracts(unittest.TestCase):
         source = (JAVA / "ui/theme/LiquidGlassBackdrop.kt").read_text()
         self.assertEqual(1, source.count("GlassFrostPolicy.frostArgb("))
         self.assertIn("withContext(Dispatchers.Default)", source)
-        self.assertLess(source.index("?.let { frostGlassFrame(it, tuning.frost) }"), source.index("frame.value = LiquidGlassFrame("))
+        # Capture now acquires a reusable unpublished buffer before frosting; publication still follows it.
+        self.assertLess(source.index("frostGlassFrame(target, tuning.frost"), source.index("frame.value = LiquidGlassFrame("))
         self.assertIn("GlassScenePolicy.retainTransientFrame(now - first)", source)
         for forbidden in ("source.setRenderEffect", "source.holder.setFixedSize", "source.setLayerType", "video-scale", "setVideoScalingMode"):
             self.assertNotIn(forbidden, source)

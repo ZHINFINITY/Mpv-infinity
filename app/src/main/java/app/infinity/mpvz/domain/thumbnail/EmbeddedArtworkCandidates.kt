@@ -58,6 +58,18 @@ object EmbeddedArtworkCandidates {
 }
 
 internal object EmbeddedArtworkResolver {
+  private const val ArtworkMaxEdge = 1024
+
+  private fun decodeBytesSampled(bytes: ByteArray): Bitmap? {
+    val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+    BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
+    if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null
+    return BitmapFactory.decodeByteArray(bytes, 0, bytes.size, BitmapFactory.Options().apply {
+      inSampleSize = ThumbnailDecodePolicy.sampleSize(bounds.outWidth, bounds.outHeight, ArtworkMaxEdge)
+      inPreferredConfig = Bitmap.Config.ARGB_8888
+    })
+  }
+
   fun decodeArtworkUri(
     context: Context,
     artworkUri: String?,
@@ -113,7 +125,7 @@ internal object EmbeddedArtworkResolver {
   fun decodeRetrieverArtwork(retriever: MediaMetadataRetriever): Bitmap? {
     retriever.embeddedPicture
       ?.takeIf { it.isNotEmpty() }
-      ?.let { bytes -> BitmapFactory.decodeByteArray(bytes, 0, bytes.size) }
+      ?.let { bytes -> decodeBytesSampled(bytes) }
       ?.let { return it }
 
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {

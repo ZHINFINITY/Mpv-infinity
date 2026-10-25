@@ -131,6 +131,8 @@ fun LiquidGlassBackdropHost(
   val tuning = LocalGlassCustomization.current
   val frostPasses = GlassCustomizationPolicy.frostPasses(tuning.frost)
   val frame = remember { mutableStateOf<LiquidGlassFrame?>(null) }
+  val captureBuffers = remember { GlassCaptureBuffers() }
+  DisposableEffect(Unit) { onDispose { captureBuffers.recycle() } }
   val ready by rememberUpdatedState(isReady)
   val playing by rememberUpdatedState(isPlaying)
   val aspect by rememberUpdatedState(sampleAspect)
@@ -201,8 +203,11 @@ fun LiquidGlassBackdropHost(
           continue
         }
         // Only the tiny UI copy is cropped/frosted. The actual video surface remains untouched.
-        val sampled = copyGlassFrame(source, crop, dimensions.first, dimensions.second)
-          ?.let { frostGlassFrame(it, tuning.frost) }
+        val sampled = captureBuffers.acquire(dimensions.first, dimensions.second)?.let { target ->
+          copyGlassFrame(source, crop, target)?.let {
+            frostGlassFrame(target, tuning.frost, captureBuffers.pixels, captureBuffers.lumaBins)
+          }
+        }
         val bitmap = sampled?.first
         if (sampled == null || bitmap == null) {
           transientFailure()
@@ -229,38 +234,65 @@ fun LiquidGlassBackdropHost(
   CompositionLocalProvider(LocalLiquidGlassBackdrop provides frame.takeIf { eligible }, content = content)
 }
 
-private suspend fun copyGlassFrame(source: SurfaceView, crop: GlassScenePolicy.SourceRect, width: Int, height: Int): Bitmap? =
+private class GlassCaptureBuffers {
+  private var first: Bitmap? = null
+  private var second: Bitmap? = null
+  private val retired = ArrayList<Bitmap>(2)
+  private var nextFirst = true
+  var pixels: IntArray = IntArray(0)
+    private set
+  val lumaBins = IntArray(64)
+  fun acquire(width: Int, height: Int): Bitmap? {
+    if (width <= 0 || height <= 0) return null
+    if (first?.width != width || first?.height != height) {
+      first?.let(retired::add); second?.let(retired::add)
+      first = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+      second = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+      pixels = IntArray(width * height)
+      nextFirst = true
+    }
+    val result = if (nextFirst) first else second
+    nextFirst = !nextFirst
+    return result
+  }
+  fun recycle() {
+    first?.recycle(); second?.recycle()
+    retired.forEach { it.recycle() }
+    retired.clear()
+    first = null; second = null
+    pixels = IntArray(0)
+  }
+}
+
+private suspend fun copyGlassFrame(source: SurfaceView, crop: GlassScenePolicy.SourceRect, bitmap: Bitmap): Bitmap? =
   suspendCancellableCoroutine { continuation ->
-    val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
     try {
       PixelCopy.request(source, AndroidRect(crop.left, crop.top, crop.left + crop.width, crop.top + crop.height), bitmap, { result ->
         if (result == PixelCopy.SUCCESS && continuation.isActive) {
           continuation.resume(bitmap)
         } else {
-          bitmap.recycle() // only unpublished/failed copies can be recycled safely
           if (continuation.isActive) continuation.resume(null)
         }
       }, Handler(Looper.getMainLooper()))
     } catch (_: RuntimeException) {
-      bitmap.recycle()
       if (continuation.isActive) continuation.resume(null)
     }
   }
 
 // Returns the frosted bitmap and its bright-percentile luma, measured on the same background pass.
-private suspend fun frostGlassFrame(bitmap: Bitmap, strength: Float): Pair<Bitmap, Float>? = try {
+private suspend fun frostGlassFrame(bitmap: Bitmap, strength: Float, pixels: IntArray, lumaBins: IntArray): Pair<Bitmap, Float>? = try {
   withContext(Dispatchers.Default) {
-    val pixels = IntArray(bitmap.width * bitmap.height)
     bitmap.getPixels(pixels, 0, bitmap.width, 0, 0, bitmap.width, bitmap.height)
-    val frosted = GlassFrostPolicy.frostArgb(pixels, bitmap.width, bitmap.height, strength)
-    bitmap.setPixels(frosted, 0, bitmap.width, 0, 0, bitmap.width, bitmap.height)
-    bitmap to GlassSurfacePolicy.underlayLuma(frosted)
+    val luma = if (Build.VERSION.SDK_INT < 31) {
+      val frosted = GlassFrostPolicy.frostArgb(pixels, bitmap.width, bitmap.height, strength)
+      bitmap.setPixels(frosted, 0, bitmap.width, 0, 0, bitmap.width, bitmap.height)
+      GlassSurfacePolicy.underlayLuma(frosted, lumaBins)
+    } else GlassSurfacePolicy.underlayLuma(pixels, lumaBins)
+    bitmap to luma
   }
 } catch (cancelled: CancellationException) {
-  bitmap.recycle() // This bitmap was never published to Compose.
   throw cancelled
 } catch (_: RuntimeException) {
-  bitmap.recycle()
   null
 }
 
@@ -450,6 +482,18 @@ fun Modifier.liquidGlassPane(
               sourceShader.setLocalMatrix(matrix)
               paint.shader = sourceShader
             }
+            // API 31/32 has no runtime shader path: blur only this sampled paint, never the
+            // surrounding pane content. The sigma is the analytic equivalent of the CPU passes.
+            if (Build.VERSION.SDK_INT in 31..32) {
+              val passes = GlassCustomizationPolicy.frostPasses(tuning.frost)
+              paint.setRenderEffect(
+                if (passes > 0) android.graphics.RenderEffect.createBlurEffect(
+                  GlassSamplingPolicy.frostSigma(GlassFrostPolicy.Radius, passes),
+                  GlassSamplingPolicy.frostSigma(GlassFrostPolicy.Radius, passes),
+                  Shader.TileMode.CLAMP,
+                ) else null,
+              )
+            }
             // A color-only music palette is not an opaque image backdrop.
             // Preserve the real view underneath while adding its extracted tint.
             paint.alpha = if (scene.refractionEnabled) 255
@@ -457,6 +501,7 @@ fun Modifier.liquidGlassPane(
             drawIntoCanvas { canvas ->
               canvas.nativeCanvas.drawRoundRect(0f, 0f, size.width, size.height, radius, radius, paint)
             }
+            if (Build.VERSION.SDK_INT >= 31) paint.setRenderEffect(null)
           }
         }
         // Film guarantees readable controls, even when sampling is intentionally unavailable.
