@@ -22,7 +22,7 @@ class ReferenceUiRollbackContractTest {
 
   @Test fun preservedPlayerSourcesKeepBaseline7eFingerprints() {
     val expected = mapOf(
-      "app/src/main/java/app/infinity/mpvz/ui/player/controls/PlayerControls.kt" to "2219b79942125f0f6de4c1e543742605b6949a126d07fc4f05d32fc11240b27a" /* restore 7cd7e collectAsState on StateFlow snapshot getter */,
+      "app/src/main/java/app/infinity/mpvz/ui/player/controls/PlayerControls.kt" to "7057ce0d9f4909273252ee5ab550da350d91166e98895d5af582ce112ed09005" /* 1901 (380a778b) stats overlay + music-entry stats hide restored; clean-room BrowserMusicSheetState replaces the mpvRx sheet type */,
       "app/src/main/java/app/infinity/mpvz/ui/player/controls/components/Seekbar.kt" to "b0d7ca11fdd2729871e052a0f6ea3b2cba64fb3e29039e5d3c42a7acf4d426c9",
       // Build 1902: owner-approved contrasting switch colours (3D glass depth kept).
       "app/src/main/java/app/infinity/mpvz/ui/player/controls/components/GlassControls.kt" to "ae873298a6b622bcdbe5c5366fc6d8fd37009ee395c3531c1df90f9dd31f6320",

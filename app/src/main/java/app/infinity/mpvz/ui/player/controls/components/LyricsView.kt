@@ -6,7 +6,6 @@
 
 package app.infinity.mpvz.ui.player.controls.components
 
-import app.infinity.mpvz.presentation.components.playerGlassOverlay
 import app.infinity.mpvz.ui.player.PlaybackSession
 
 import androidx.compose.animation.AnimatedVisibility
@@ -16,6 +15,7 @@ import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
@@ -42,11 +42,9 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.State
@@ -112,7 +110,8 @@ fun LyricsView(
   val density = LocalDensity.current
   var lyricsViewportPx by remember { mutableIntStateOf(0) }
   var showTranslateDialog by remember { mutableStateOf(false) }
-  var showSyncSheet by remember { mutableStateOf(false) }
+  // Lyrics delay is edited in place below the lyrics; a modal glass sheet rendered empty here.
+  var isSyncExpanded by remember { mutableStateOf(false) }
 
   val currentPosMs = remember(precisePosition, state.syncOffsetMs) {
     (precisePosition * 1000).toLong() + state.syncOffsetMs
@@ -516,19 +515,30 @@ fun LyricsView(
           Spacer(modifier = Modifier.height(8.dp))
 
           Surface(
-            onClick = { showSyncSheet = true },
+            onClick = { isSyncExpanded = !isSyncExpanded },
             shape = RoundedCornerShape(12.dp),
-            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.75f),
+            color = if (isSyncExpanded || state.syncOffsetMs != 0) MaterialTheme.colorScheme.primaryContainer
+              else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.75f),
             modifier = Modifier.size(40.dp),
           ) {
             Box(contentAlignment = Alignment.Center) {
               Icon(
                 imageVector = Icons.RoundedFilled.Tune,
                 contentDescription = "Lyrics delay",
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                tint = if (isSyncExpanded || state.syncOffsetMs != 0) MaterialTheme.colorScheme.primary
+                  else MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.size(22.dp),
               )
             }
+          }
+
+          AnimatedVisibility(visible = isSyncExpanded) {
+            LyricsDelayPill(
+              offsetMs = state.syncOffsetMs,
+              onAdjust = viewModel::adjustLyricsSyncOffset,
+              onReset = viewModel::resetLyricsSyncOffset,
+              modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+            )
           }
         }
       }
@@ -542,61 +552,29 @@ fun LyricsView(
     )
   }
 
-  if (showSyncSheet) {
-    LyricsSyncSheet(
-      viewModel = viewModel,
-      onDismiss = { showSyncSheet = false },
-    )
-  }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+// In-place delay pill: -0.5 s, -0.1 s, current offset (tap to reset), +0.1 s, +0.5 s.
 @Composable
-private fun LyricsSyncSheet(
-  viewModel: PlayerViewModel,
-  onDismiss: () -> Unit,
+private fun LyricsDelayPill(
+  offsetMs: Int,
+  onAdjust: (Int) -> Unit,
+  onReset: () -> Unit,
+  modifier: Modifier = Modifier,
 ) {
-  val state by viewModel.lyricsUiState.collectAsState()
-  ModalBottomSheet(
-    modifier = Modifier.playerGlassOverlay(),
-    containerColor = Color.Transparent,
-    onDismissRequest = onDismiss,
-    sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+  val current = "${if (offsetMs >= 0) "+" else ""}${offsetMs / 1000f}s"
+  Row(
+    modifier = modifier
+      .clip(RoundedCornerShape(12.dp))
+      .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.75f))
+      .padding(horizontal = 4.dp),
+    verticalAlignment = Alignment.CenterVertically,
   ) {
-    Column(
-      modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 8.dp),
-      horizontalAlignment = Alignment.CenterHorizontally,
-    ) {
-      Text("Lyrics delay", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-      Spacer(modifier = Modifier.height(8.dp))
-      val delayControls = listOf(
-        "+0.5s" to { viewModel.adjustLyricsSyncOffset(500) },
-        "+0.1s" to { viewModel.adjustLyricsSyncOffset(100) },
-        "Reset" to { viewModel.resetLyricsSyncOffset() },
-        "-0.1s" to { viewModel.adjustLyricsSyncOffset(-100) },
-        "-0.5s" to { viewModel.adjustLyricsSyncOffset(-500) },
-      )
-      val delayListState = rememberLazyListState(initialFirstVisibleItemIndex = 1)
-      LazyColumn(
-        state = delayListState,
-        modifier = Modifier.fillMaxWidth().height(176.dp).padding(bottom = 12.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-      ) {
-        itemsIndexed(delayControls) { index, (label, onClick) ->
-          if (index == 2) {
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-              Text(
-                text = "Current: ${if (state.syncOffsetMs >= 0) "+" else ""}${state.syncOffsetMs / 1000f}s",
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-              )
-              SyncOffsetButton(label = label, emphasized = true, onClick = onClick)
-            }
-          } else {
-            SyncOffsetButton(label = label, onClick = onClick)
-          }
-        }
-      }
-    }
+    SyncOffsetButton(label = "-0.5s", modifier = Modifier.weight(1f)) { onAdjust(-500) }
+    SyncOffsetButton(label = "-0.1s", modifier = Modifier.weight(1f)) { onAdjust(-100) }
+    SyncOffsetButton(label = current, modifier = Modifier.weight(1.2f), emphasized = true, onClick = onReset)
+    SyncOffsetButton(label = "+0.1s", modifier = Modifier.weight(1f)) { onAdjust(100) }
+    SyncOffsetButton(label = "+0.5s", modifier = Modifier.weight(1f)) { onAdjust(500) }
   }
 }
 
