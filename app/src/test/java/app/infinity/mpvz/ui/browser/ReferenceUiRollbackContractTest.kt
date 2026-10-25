@@ -339,6 +339,11 @@ import android.graphics.Shader
     return this.background(MaterialTheme.colorScheme.background.copy(alpha = GlassSurfacePolicy.EdgeChromeNoSceneFilmAlpha))
   }
 """ to "",
+      // Build 1908: unsupported or glass-crashed devices skip sampling (GlassDeviceSupport), and
+      // the startup sentinel watches the first glass frames. Optics and cadence are unchanged.
+      "canSample(enabled && GlassDeviceSupport.allowsGlass(context), true," to "canSample(enabled, true,",
+      "  val allowed = eligible && visible\n  GlassStartupWatch(active = allowed)\n" to
+        "  val allowed = eligible && visible\n",
     )
     var restored = film.replace(guarded, baseline)
     cadence.forEach { (now, before) ->

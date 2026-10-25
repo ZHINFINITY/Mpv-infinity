@@ -1415,6 +1415,17 @@ fun AudioPlayerControls(
       }
     }
   }
+  // PlayerActivity-hosted minimize: let the library show the real mini player under the fading
+  // page from the first frame, so the morph lands on it instead of vanishing first.
+  if (inAppSheet == null) {
+    val activityMinimizing = miniGesture.progress > 0f
+    LaunchedEffect(activityMinimizing) {
+      app.infinity.mpvz.ui.browser.components.MusicMiniPlayerHandoff.onActivityMinimizeProgress(activityMinimizing)
+    }
+    DisposableEffect(Unit) {
+      onDispose { app.infinity.mpvz.ui.browser.components.MusicMiniPlayerHandoff.onActivityPageDisposed() }
+    }
+  }
   // Back landed the page on the mini rect but the Activity stayed (a sheet or panel took Back,
   // or the background handoff failed): grow back to full rather than staying parked there.
   val minimizeAbortRequest = playerActivity?.audioMinimizeAbortRequest?.intValue ?: 0

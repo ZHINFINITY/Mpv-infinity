@@ -335,13 +335,24 @@ object AppearancePreferencesScreen : Screen {
 
                   PreferenceDivider()
 
+                  val glassContext = androidx.compose.ui.platform.LocalContext.current
+                  val glassVerdict = remember(glassContext, liquidGlassSurfaces) {
+                    app.infinity.mpvz.ui.theme.GlassDeviceSupport.verdict(glassContext)
+                  }
                   SwitchPreference(
-                    value = liquidGlassSurfaces,
-                    onValueChange = preferences.liquidGlassSurfaces::set,
+                    value = liquidGlassSurfaces && !glassVerdict.hard,
+                    onValueChange = { on ->
+                      // Switching it back on after a recorded glass crash is the user's retry.
+                      if (on) app.infinity.mpvz.ui.theme.GlassDeviceSupport.clearCrashRecord(glassContext)
+                      preferences.liquidGlassSurfaces.set(on)
+                    },
                     title = { Text("Liquid glass surfaces") },
                     summary = {
-                      Text("Shared sampled video glass on player controls, toggles and sheets. Android 13+ adds lens refraction; older Android uses frosted samples. HDR, low memory and severe heat use a readable translucent fallback. Sampling stops when controls are hidden.")
+                      Text(
+                        app.infinity.mpvz.ui.theme.GlassDeviceSupportText.summary(glassVerdict),
+                      )
                     },
+                    enabled = !glassVerdict.hard,
                   )
 
                   PreferenceDivider()

@@ -125,8 +125,9 @@ fun LiquidGlassBackdropHost(
       onDispose { }
     }
   }
-  val eligible = GlassSamplingPolicy.canSample(enabled, true, audioOnly, hdr, lowRam, thermal)
+  val eligible = GlassSamplingPolicy.canSample(enabled && GlassDeviceSupport.allowsGlass(context), true, audioOnly, hdr, lowRam, thermal)
   val allowed = eligible && visible
+  GlassStartupWatch(active = allowed)
   val tuning = LocalGlassCustomization.current
   val frostPasses = GlassCustomizationPolicy.frostPasses(tuning.frost)
   val frame = remember { mutableStateOf<LiquidGlassFrame?>(null) }

@@ -45,7 +45,8 @@ internal object MiniPlayerResumePolicy {
     isServiceRunning: Boolean,
     isSettingsScreen: Boolean,
     snapshot: AudioPlaybackResumeSnapshot?,
-  ): Boolean = !isServiceRunning && !isSettingsScreen && snapshot?.currentItem != null
+  ): Boolean =
+    !isServiceRunning && !isSettingsScreen && snapshot?.currentItem != null && !snapshot.closedByUser
 
   /**
    * A plain MAIN launch without media is the one PlayerActivity restores from the saved snapshot

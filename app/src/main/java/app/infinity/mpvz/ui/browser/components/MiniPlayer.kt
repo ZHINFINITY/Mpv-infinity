@@ -7,6 +7,9 @@
 
 package app.infinity.mpvz.ui.browser.components
 
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.MutableStateFlow
 import androidx.lifecycle.repeatOnLifecycle
 import app.infinity.mpvz.ui.player.AudioPlaybackResumeStore
 import app.infinity.mpvz.ui.player.AudioPlaybackResumeSnapshot
@@ -123,11 +126,77 @@ import app.infinity.mpvz.ui.player.browserMusicSheetDrag
 
 object MusicMiniPlayerHandoff {
   @Volatile var suppressNextEnter: Boolean = false
+
+  /**
+   * A music minimize hosted by PlayerActivity (the first song opened from the library). The
+   * service reports foreground only once PlayerActivity has left, so without this the real mini
+   * player stayed hidden for the whole morph and then slid in afterwards: the page "vanished" and
+   * only then turned into the mini player. While this is not Idle the library shows the mini
+   * player at once, under the fading page, exactly like the in-app sheet does.
+   */
+  private val _activityMinimize = MutableStateFlow(ActivityMinimizePhase.Idle)
+  val activityMinimize: StateFlow<ActivityMinimizePhase> = _activityMinimize.asStateFlow()
+
+  fun onActivityMinimizeProgress(minimizing: Boolean) {
+    _activityMinimize.value = ActivityMinimizePolicy.onProgress(_activityMinimize.value, minimizing)
+  }
+
+  fun onActivityPageDisposed() {
+    _activityMinimize.value = ActivityMinimizePolicy.onPageDisposed(_activityMinimize.value)
+  }
+
+  fun onServiceForeground() {
+    _activityMinimize.value = ActivityMinimizePhase.Idle
+  }
+
+  fun expireLanded() {
+    _activityMinimize.compareAndSet(ActivityMinimizePhase.Landed, ActivityMinimizePhase.Idle)
+  }
+}
+
+enum class ActivityMinimizePhase { Idle, Morphing, Landed }
+
+/** Pure transitions for [MusicMiniPlayerHandoff.activityMinimize]; unit tested. */
+internal object ActivityMinimizePolicy {
+  /** Landed waits this long for the service to report foreground before giving up. */
+  const val LANDED_TIMEOUT_MS = 4_000L
+
+  fun onProgress(phase: ActivityMinimizePhase, minimizing: Boolean): ActivityMinimizePhase =
+    when {
+      minimizing -> ActivityMinimizePhase.Morphing
+      // Grown back to full inside PlayerActivity: the real mini player hides again.
+      phase == ActivityMinimizePhase.Morphing -> ActivityMinimizePhase.Idle
+      else -> phase
+    }
+
+  /** The page went away mid-morph or landed: keep the mini player until the service takes over. */
+  fun onPageDisposed(phase: ActivityMinimizePhase): ActivityMinimizePhase =
+    if (phase == ActivityMinimizePhase.Morphing) ActivityMinimizePhase.Landed else phase
+
+  fun showsMiniPlayer(isServiceRunning: Boolean, phase: ActivityMinimizePhase, isAudioOnlyItem: Boolean): Boolean =
+    isServiceRunning || (isAudioOnlyItem && phase != ActivityMinimizePhase.Idle)
+
+  /** No slide/fade while the morph lands on it; the morph is the enter animation. */
+  fun skipsEnterAnimation(suppressNextEnter: Boolean, phase: ActivityMinimizePhase): Boolean =
+    suppressNextEnter || phase != ActivityMinimizePhase.Idle
+
+  /**
+   * A session is live whenever there is a current item in an active phase, including while
+   * PlayerActivity is in front (the service then reports not-foreground). The resume card must
+   * never be offered behind a live session.
+   */
+  fun sessionLive(hasCurrentItem: Boolean, phase: PlaybackPhase): Boolean =
+    hasCurrentItem &&
+      phase != PlaybackPhase.IDLE &&
+      phase != PlaybackPhase.STOPPING &&
+      phase != PlaybackPhase.UNINITIALIZED &&
+      phase != PlaybackPhase.ERROR
 }
 
 @Composable
 fun MiniPlayer(modifier: Modifier = Modifier) {
   val isServiceRunning by MediaPlaybackService.foregroundActive.collectAsStateWithLifecycle()
+  val activityMinimize by MusicMiniPlayerHandoff.activityMinimize.collectAsStateWithLifecycle()
   val context = LocalContext.current
   val sessionState by PlaybackSession.state.collectAsStateWithLifecycle()
   val playerPreferences: PlayerPreferences = koinInject()
@@ -156,13 +225,23 @@ fun MiniPlayer(modifier: Modifier = Modifier) {
 
   val isMiniPlayerAllowed = isAudioOnlyItem || enableVideoMiniPlayer
 
-  val isMediaActive = isServiceRunning && currentItem != null &&
-    !isSettingsScreen &&
-    isMiniPlayerAllowed &&
-    sessionState.phase != PlaybackPhase.IDLE &&
-    sessionState.phase != PlaybackPhase.STOPPING &&
-    sessionState.phase != PlaybackPhase.UNINITIALIZED &&
-    sessionState.phase != PlaybackPhase.ERROR
+  val sessionLive = ActivityMinimizePolicy.sessionLive(currentItem != null, sessionState.phase)
+  val isMediaActive =
+    ActivityMinimizePolicy.showsMiniPlayer(isServiceRunning, activityMinimize, isAudioOnlyItem) &&
+      sessionLive &&
+      !isSettingsScreen &&
+      isMiniPlayerAllowed
+  LaunchedEffect(activityMinimize, isServiceRunning) {
+    if (activityMinimize == ActivityMinimizePhase.Idle) return@LaunchedEffect
+    if (isServiceRunning) {
+      MusicMiniPlayerHandoff.onServiceForeground()
+    } else if (activityMinimize == ActivityMinimizePhase.Landed) {
+      // PlayerActivity is gone but the service never took over (e.g. playback stopped):
+      // do not leave a mini player for a session nobody owns.
+      kotlinx.coroutines.delay(ActivityMinimizePolicy.LANDED_TIMEOUT_MS)
+      MusicMiniPlayerHandoff.expireLanded()
+    }
+  }
 
   // Keep the mini player alive while browser selection mode is active. Its outer
   // placement is lifted above the selection actions instead of hiding/overlapping.
@@ -182,13 +261,14 @@ fun MiniPlayer(modifier: Modifier = Modifier) {
       }
     }
   }
-  val offerResume = MiniPlayerResumePolicy.shouldOffer(isServiceRunning, isSettingsScreen, resumeSnapshot)
+  val offerResume = MiniPlayerResumePolicy.shouldOffer(isServiceRunning || sessionLive, isSettingsScreen, resumeSnapshot)
   SideEffect {
     NavigationBarState.isMiniPlayerVisible = isMediaActive || offerResume
   }
 
-  val suppressHandoffEnter = MusicMiniPlayerHandoff.suppressNextEnter
-  if (suppressHandoffEnter) MusicMiniPlayerHandoff.suppressNextEnter = false
+  val suppressHandoffEnter =
+    ActivityMinimizePolicy.skipsEnterAnimation(MusicMiniPlayerHandoff.suppressNextEnter, activityMinimize)
+  if (MusicMiniPlayerHandoff.suppressNextEnter) MusicMiniPlayerHandoff.suppressNextEnter = false
   AnimatedVisibility(
     visible = isMediaActive,
     enter = if (suppressHandoffEnter) EnterTransition.None else slideInVertically(initialOffsetY = { it }) + fadeIn(),

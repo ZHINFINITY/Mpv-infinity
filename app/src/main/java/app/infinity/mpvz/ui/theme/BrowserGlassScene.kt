@@ -138,7 +138,9 @@ fun BrowserGlassSceneHost(
       }
     }
   }
-  val allowed = enabled && !lowRam && !powerSave && thermal < 3
+  val allowed = enabled && !lowRam && !powerSave && thermal < 3 &&
+    GlassDeviceSupport.allowsGlass(context)
+  GlassStartupWatch(active = allowed && LocalBrowserScene.current == null)
   val layer = rememberGraphicsLayer()
   // Nested hosts inherit the root display-list instead of shadowing it.
   val inheritedScene = LocalBrowserScene.current

@@ -1191,6 +1191,9 @@ class PlayerActivity :
   private var audioFocusRequest: AudioFocusRequest? = null
 
   private var audioFocusRequestActive = false
+  // Set once requestAudioFocus() has handed [audioFocusRequest] to AudioManager; from then on its
+  // listener sits in AudioManager's map until abandonAudioFocusRequest(), whatever focus we hold.
+  private var audioFocusRequestSubmitted = false
   private var holdsAudioFocus = false
   private var resumeOnAudioFocusGain = false
   private var playbackDelayedForAudioFocus = false
@@ -1249,8 +1252,9 @@ class PlayerActivity :
   /**
    * Listener for audio focus changes.
    */
-  private val audioFocusChangeListener =
-    AudioManager.OnAudioFocusChangeListener { focusChange ->
+  // The handler captures this Activity; AudioManager only ever sees the weak wrapper below.
+  private val audioFocusChangeHandler =
+    AudioFocusChangeHandler { focusChange ->
       PlaybackActivityOwner.runIfOwner(playbackOwnerToken, Unit) {
         when (focusChange) {
           AudioManager.AUDIOFOCUS_LOSS -> {
@@ -1309,6 +1313,7 @@ class PlayerActivity :
         }
       }
     }
+  private val audioFocusChangeListener = WeakAudioFocusListener(audioFocusChangeHandler)
 
   private var preflightM3uParse: Pair<String, M3UParseResult.Success>? = null
   private var m3uPreflightJob: Job? = null
@@ -2754,6 +2759,7 @@ class PlayerActivity :
       return false
     }
     val req = audioFocusRequest ?: return false
+    audioFocusRequestSubmitted = true
     val result = audioManager.requestAudioFocus(req)
     return when (result) {
       AudioManager.AUDIOFOCUS_REQUEST_GRANTED -> {
@@ -2871,6 +2877,9 @@ class PlayerActivity :
     }
     val pipDismissalCommitted = handledPipDismissal
     pendingPipExitResolution = false
+    if (AudioFocusRegistrationPolicy.releaseOnDestroy(isChangingConfigurations, holdsAudioFocus)) {
+      releaseAudioFocusRegistration()
+    }
     val keepBackgroundPlaybackAlive =
       ownsPlaybackSession && !pipDismissalCommitted && PlayerLifecyclePolicy.shouldKeepBackgroundPlaybackAliveOnDestroy(
         backgroundPlaybackEnabled = (playbackWasInitialized || nativeWasActive) && isBackgroundPlaybackEnabled(),
@@ -3049,9 +3058,20 @@ class PlayerActivity :
     resumeOnAudioFocusGain = false
     playbackDelayedForAudioFocus = false
     restoreDuckedAudioVolume()
-    if (audioFocusRequestActive) {
+    releaseAudioFocusRegistration()
+  }
+
+  /**
+   * Removes this Activity's request from AudioManager without touching playback. Called from
+   * [abandonAudioFocus] and unconditionally from onDestroy, including the keep-alive Mini Player
+   * handoff, where cleanupAudio() does not run. The service owns its own focus request, so this
+   * never takes focus away from it.
+   */
+  private fun releaseAudioFocusRegistration() {
+    if (AudioFocusRegistrationPolicy.mustAbandon(audioFocusRequestSubmitted)) {
       audioFocusRequest?.let { req -> runCatching { audioManager.abandonAudioFocusRequest(req) } }
     }
+    audioFocusRequestSubmitted = false
     audioFocusRequestActive = false
     holdsAudioFocus = false
   }
