@@ -2105,6 +2105,10 @@ class MediaPlaybackService :
         playbackStateRepository.upsert(playbackState)
         PlaybackStateEvents.notifyChanged(identifier)
       }
+    } catch (error: kotlinx.coroutines.CancellationException) {
+      // A newer save superseded this one (savePlaybackStateNow cancels it before writing the
+      // final state). Not an error, and cancellation must propagate.
+      throw error
     } catch (error: Exception) {
       Log.e(TAG, "Error saving playback state from service", error)
     }

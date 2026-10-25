@@ -325,6 +325,21 @@ class PlayerActivity :
     binding.media3SubtitleOverlay.visibility = View.GONE
   }
 
+  /**
+   * Shows MPV's SurfaceView for video. While the current item is music it stays GONE: a visible
+   * surface composites MPV's cover-art video and stats.lua under the music page, which is the
+   * black/stats area seen during the first minimize. Engine handoffs used to set VISIBLE
+   * directly and undo the music hide.
+   */
+  private fun showMpvSurfaceUnlessMusic(alpha: Float = 1f) {
+    if (isCurrentPlaybackAudio()) {
+      hideMpvSurfaceAndOverlayForAudioOrMinimize()
+      return
+    }
+    binding.player.alpha = alpha
+    binding.player.visibility = View.VISIBLE
+  }
+
   private fun restoreMpvSurfaceForVideo() {
     binding.player.clipToOutline = false
     binding.player.alpha = 1f
@@ -1614,8 +1629,7 @@ class PlayerActivity :
                     if (outgoingPlaying) PlaybackSession.command("play")
                     MediaPlaybackService.setNativeRendererOwnership(false)
                     setNativeVideoSurfaceVisible(false)
-                    binding.player.visibility = View.VISIBLE
-                    binding.player.alpha = 1f
+                    showMpvSurfaceUnlessMusic()
                   }
                   return@launch
                 }
@@ -1636,8 +1650,7 @@ class PlayerActivity :
               // Keep MPV's SurfaceView attached while the queue is reloaded. INVISIBLE causes
               // unbindSurface() to set vid=no; audio then continues while video waits for a
               // later surface reattachment.
-              binding.player.alpha = 0f
-              binding.player.visibility = View.VISIBLE
+              showMpvSurfaceUnlessMusic(alpha = 0f)
               nativeEngineOrNull()?.stop()
               // This is a renderer handoff, not a user-selected queue change. Avoid the normal
               // loader's outgoing-item stop/report path, which can race the new MPV load.
@@ -1706,14 +1719,12 @@ class PlayerActivity :
                   // leaves its last frame composited on top of MPV. Hide the view fully so the
                   // media-overlay plane is removed and MPV video becomes visible.
                   setNativeVideoSurfaceVisible(false)
-                  binding.player.alpha = 1f
-                  binding.player.visibility = View.VISIBLE
+                  showMpvSurfaceUnlessMusic()
                   viewModel.setAmbientLifecycleActive(true)
                   viewModel.restartAmbientIfActive()
                 } else if (!ready && ownsPlaybackSession() && activeEngineMode == PlaybackEngineMode.MPV) {
                   setNativeVideoSurfaceVisible(false)
-                  binding.player.alpha = 1f
-                  binding.player.visibility = View.VISIBLE
+                  showMpvSurfaceUnlessMusic()
                 }
                 // Apply the captured state once after MPV is ready. Repeated time-pos writes
                 // during 4K/HDR handoff force repeated demuxer seeks and cause audible stalls.
@@ -3215,7 +3226,8 @@ class PlayerActivity :
    * and callers then use the plain slide fallback. Never used for video.
    */
   fun setAudioTransitionTranslucent(enabled: Boolean, launchIntent: Intent? = null): Boolean {
-    if (!MusicMinimizeTransitionPolicy.shouldTranslucent(
+    // Turning translucency off must always be allowed: by then the item may already be a video.
+    if (enabled && !MusicMinimizeTransitionPolicy.shouldTranslucent(
         isAudio = isCurrentPlaybackAudio() || launchIntent?.getBooleanExtra("is_audio", false) == true,
         api = Build.VERSION.SDK_INT,
       )) return false
@@ -7720,8 +7732,7 @@ class PlayerActivity :
         setVideoAmbientPresentationActive(false)
         nativeEngineOrNull()?.stop()
         setNativeVideoSurfaceVisible(false)
-        binding.player.alpha = 1f
-        binding.player.visibility = View.VISIBLE
+        showMpvSurfaceUnlessMusic()
       }
     }
     if (!PlaybackSession.awaitStopCompletion()) {
@@ -8669,8 +8680,7 @@ class PlayerActivity :
       forceMpvAudioTrackAutoOnNextLoad = true
       nativeEngineOrNull()?.stop()
       setNativeVideoSurfaceVisible(false)
-      binding.player.alpha = 1f
-      binding.player.visibility = View.VISIBLE
+      showMpvSurfaceUnlessMusic()
       if (!mpvInitialized) {
         val setupError = setupMPV()
         if (setupError != null) {

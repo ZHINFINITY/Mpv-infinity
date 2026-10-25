@@ -1018,13 +1018,9 @@ class MPVView(
 
     // Keep the MPV stats OSD video-only. Otherwise a music item can inherit the previous
     // video's stats overlay when MPV is reused for audio playback.
+    StatsLuaOverlay.onCoreStarted()
     if (PlaybackSession.queue.value.currentItem?.isDefinitelyAudioOnly() != true) {
-      advancedPreferences.enabledStatisticsPage.get().let {
-        if (it in 1..5) {
-          PlaybackSession.command("script-binding", "stats/display-stats-toggle")
-          PlaybackSession.command("script-binding", "stats/display-page-$it")
-        }
-      }
+      StatsLuaOverlay.show(advancedPreferences.enabledStatisticsPage.get())
     }
   }
 

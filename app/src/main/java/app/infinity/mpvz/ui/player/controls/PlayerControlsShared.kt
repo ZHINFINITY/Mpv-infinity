@@ -7,6 +7,7 @@
 
 package app.infinity.mpvz.ui.player.controls
 
+import app.infinity.mpvz.ui.player.StatsLuaOverlay
 import app.infinity.mpvz.ui.player.PlaybackSession
 
 import android.content.Context
@@ -1215,9 +1216,7 @@ fun RenderPlayerButton(
         if (statisticsPage == 6) {
           advancedPreferences.enabledStatisticsPage.set(0)
         } else {
-          if (statisticsPage in 1..5) {
-            PlaybackSession.command("script-binding", "stats/display-stats-toggle")
-          }
+          StatsLuaOverlay.hide()
           advancedPreferences.enabledStatisticsPage.set(6)
         }
         onOpenSheet(Sheets.None)

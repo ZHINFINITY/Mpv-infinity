@@ -1,5 +1,6 @@
 package app.infinity.mpvz.ui.player
 
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -12,11 +13,12 @@ class PlayerStatsChipOwnerTest {
       .takeIf { it.exists() }
       ?: File("app/src/main/java/app/infinity/mpvz/ui/player/controls/components/sheets/MoreSheet.kt")
     val text = file.readText()
-    // Known-good 380a778b: Off/6/7 toggle lua only when a lua page is the persisted page,
-    // entering a lua page from Off toggles once, then display-page selects the page.
-    assertTrue(text.contains("if (statisticsPage in 1..5) PlaybackSession.command(\"script-binding\", \"stats/display-stats-toggle\")"))
-    assertTrue(text.contains("if (statisticsPage == 0 || statisticsPage == 6 || statisticsPage == 7) {"))
-    assertTrue(text.contains("PlaybackSession.command(\"script-binding\", \"stats/display-page-\$page\")"))
+    // Same 380a778b sequence (toggle on once, then display-page-N; toggle off for Off/6/7),
+    // sent through StatsLuaOverlay so the app knows the real overlay state and music can
+    // never flip a blind toggle that turns stats ON (owner report: stats over a FLAC).
+    assertTrue(text.contains("StatsLuaOverlay.show(page)"))
+    assertEquals(3, Regex("StatsLuaOverlay\\.hide\\(\\)").findAll(text).count())
+    assertFalse(text.contains("stats/display-stats-toggle"))
     assertTrue(text.contains("if (activeEngine == PlaybackEngineMode.NATIVE) {"))
     assertTrue(text.contains("advancedPreferences.enabledStatisticsPage.set(page)"))
     assertFalse(text.contains("PlayerStatsLuaCommandPolicy"))
@@ -49,8 +51,11 @@ class PlayerStatsChipOwnerTest {
       ?: File("app/src/main/java/app/infinity/mpvz/ui/player/MPVView.kt")
     val text = file.readText()
     val postInit = text.substringAfter("override fun postInitOptions()").substringBefore("\n  }\n")
-    assertTrue(postInit.contains("PlaybackSession.command(\"script-binding\", \"stats/display-stats-toggle\")"))
-    assertTrue(postInit.contains("PlaybackSession.command(\"script-binding\", \"stats/display-page-\$it\")"))
+    // A new core has no overlay; video restores the saved page once, audio never does.
+    assertTrue(postInit.contains("StatsLuaOverlay.onCoreStarted()"))
+    assertTrue(postInit.contains("isDefinitelyAudioOnly() != true"))
+    assertTrue(postInit.contains("StatsLuaOverlay.show(advancedPreferences.enabledStatisticsPage.get())"))
+    assertTrue(postInit.indexOf("onCoreStarted()") < postInit.indexOf("StatsLuaOverlay.show("))
     assertFalse(text.contains("applyStartupStatistics"))
     assertFalse(text.contains("PlayerStatsLuaCommandPolicy"))
   }
@@ -105,5 +110,31 @@ class PlayerStatsChipOwnerTest {
     assertTrue(text.contains("Lyrics delay"))
     assertFalse(text.contains("ModalBottomSheet"))
     assertFalse(text.contains("playerGlassOverlay"))
+  }
+
+  @Test
+  fun onlyTheTrackerSendsTheRawStatsToggle() {
+    val root = File("src/main/java").takeIf { it.exists() } ?: File("app/src/main/java")
+    val offenders = root.walkTopDown()
+      .filter { it.isFile && it.extension == "kt" && it.name != "StatsLuaOverlay.kt" }
+      .filter { it.readText().contains("stats/display-stats-toggle") }
+      .map { it.name }
+      .toList()
+    assertEquals(emptyList<String>(), offenders)
+    val tracker = File(root, "app/infinity/mpvz/ui/player/StatsLuaOverlay.kt").readText()
+    // hide() never turns stats on; show() toggles only when the overlay is not already up.
+    assertTrue(tracker.contains("fun hide() {\n    if (!shown) return"))
+    assertTrue(tracker.contains("if (page !in 1..5) return"))
+    assertTrue(tracker.contains("if (!shown) {"))
+  }
+
+  @Test
+  fun musicPathsOnlyHideStats() {
+    val root = File("src/main/java").takeIf { it.exists() } ?: File("app/src/main/java")
+    for (name in listOf("controls/AudioPlayerControls.kt", "controls/PlayerControls.kt")) {
+      val text = File(root, "app/infinity/mpvz/ui/player/$name").readText()
+      assertTrue(name, text.contains("StatsLuaOverlay.hide()"))
+      assertFalse(name, text.contains("StatsLuaOverlay.show("))
+    }
   }
 }

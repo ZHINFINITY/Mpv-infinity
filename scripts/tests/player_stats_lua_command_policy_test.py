@@ -35,10 +35,22 @@ def main() -> None:
     # Known-good 380a778b stats.lua wiring: no policy object, no Activity restore machinery.
     if POLICY.exists():
         raise SystemExit("forbidden PlayerStatsLuaCommandPolicy.kt is back")
-    require(more, 'if (statisticsPage in 1..5) PlaybackSession.command("script-binding", "stats/display-stats-toggle")', "known-good Off toggle")
-    require(more, 'PlaybackSession.command("script-binding", "stats/display-page-$page")', "known-good page select")
+    # Same 380a778b command sequence (toggle on once + display-page-N; toggle off for Off/6/7),
+    # sent through StatsLuaOverlay so the app tracks the real overlay state and music never
+    # flips a blind toggle that turns stats ON (owner report: stats over a FLAC).
+    tracker = (ROOT / "app/src/main/java/app/infinity/mpvz/ui/player/StatsLuaOverlay.kt").read_text(encoding="utf-8")
+    require(tracker, 'PlaybackSession.command("script-binding", "stats/display-stats-toggle")', "tracker toggle")
+    require(tracker, 'PlaybackSession.command("script-binding", "stats/display-page-$page")', "tracker page select")
+    require(tracker, "fun hide() {\n    if (!shown) return", "hide never turns stats on")
+    require(more, "0 -> {\n                  StatsLuaOverlay.hide()", "known-good Off hides")
+    require(more, "StatsLuaOverlay.show(page)", "known-good page select")
     require(more, "if (activeEngine == PlaybackEngineMode.NATIVE) {", "Native chip only sets the page")
-    require(mpv_view, 'PlaybackSession.command("script-binding", "stats/display-page-$it")', "postInitOptions restore")
+    require(mpv_view, "StatsLuaOverlay.onCoreStarted()", "new core starts with no overlay")
+    require(mpv_view, "StatsLuaOverlay.show(advancedPreferences.enabledStatisticsPage.get())", "postInitOptions restore")
+    require(mpv_view, "isDefinitelyAudioOnly() != true", "postInitOptions restore is video-only")
+    for path in (ROOT / "app/src/main/java").rglob("*.kt"):
+        if path.name != "StatsLuaOverlay.kt":
+            forbid(path.read_text(encoding="utf-8"), "stats/display-stats-toggle", path.name + " raw stats toggle")
     for text, label in ((activity, "PlayerActivity"), (mpv_view, "MPVView"), (more, "MoreSheet")):
         forbid(text, "PlayerStatsLuaCommandPolicy", label + " policy object")
         forbid(text, "applyStartupStatistics", label + " startup restore helper")
@@ -71,9 +83,12 @@ def main() -> None:
     forbid(activity, "collectAsState(initial = NativePlaybackSnapshot())", "idle snapshot initial")
     forbid(controls, "collectAsState(initial = NativePlaybackSnapshot())", "PlayerControls idle snapshot initial")
     forbid(audio, "collectAsState(initial = NativePlaybackSnapshot())", "AudioPlayerControls idle snapshot initial")
-    # Known-good 380a778b music stats hides: per track in AudioPlayerControls and once on entry in PlayerControls.
-    require(audio, 'if (currentItem?.isDefinitelyAudioOnly() == true && advancedPreferences.enabledStatisticsPage.get() in 1..5) {\n      PlaybackSession.command("script-binding", "stats/display-stats-toggle")', "1901 per-track music stats hide")
-    require(controls, 'if (useAudioPlayer && statisticsPage in 1..5) {\n      advancedPreferences.enabledStatisticsPage.set(0)\n      PlaybackSession.command("script-binding", "stats/display-stats-toggle")', "1901 music entry stats hide")
+    # 380a778b music stats hides kept in the same places (per track and on music entry), but
+    # they can only hide: a hide when stats are already off no longer toggles them back on.
+    require(audio, "if (currentItem?.isDefinitelyAudioOnly() == true) StatsLuaOverlay.hide()", "per-track music stats hide")
+    require(controls, "if (useAudioPlayer) StatsLuaOverlay.hide()", "music entry stats hide")
+    forbid(audio, "StatsLuaOverlay.show(", "music never shows stats")
+    forbid(controls, "StatsLuaOverlay.show(", "music entry never shows stats")
     require(engine, "NativeSubtitleParserFactory(AssSubtitleParserFactory(assHandler))", "ASS-only native factory")
     forbid(engine, "DefaultSubtitleParserFactory", "composite VTT parser stays reverted")
     print("player stats lua command and native cue wiring contracts: PASS")

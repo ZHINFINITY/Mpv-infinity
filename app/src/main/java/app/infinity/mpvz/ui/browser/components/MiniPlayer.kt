@@ -7,6 +7,9 @@
 
 package app.infinity.mpvz.ui.browser.components
 
+import androidx.lifecycle.repeatOnLifecycle
+import app.infinity.mpvz.ui.player.AudioPlaybackResumeStore
+import app.infinity.mpvz.ui.player.AudioPlaybackResumeSnapshot
 import android.app.Activity
 import android.content.Context
 import android.content.Intent
@@ -161,8 +164,25 @@ fun MiniPlayer(modifier: Modifier = Modifier) {
 
   // Keep the mini player alive while browser selection mode is active. Its outer
   // placement is lifted above the selection actions instead of hiding/overlapping.
+  // After the service stops or the process dies, offer the saved music session (song, queue,
+  // position) in the same slot instead of forgetting it.
+  val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+  var resumeSnapshot by remember { mutableStateOf<AudioPlaybackResumeSnapshot?>(null) }
+  val resumeScope = androidx.compose.runtime.rememberCoroutineScope()
+  LaunchedEffect(isServiceRunning, lifecycleOwner) {
+    if (isServiceRunning) {
+      resumeSnapshot = null
+      return@LaunchedEffect
+    }
+    lifecycleOwner.repeatOnLifecycle(androidx.lifecycle.Lifecycle.State.RESUMED) {
+      resumeSnapshot = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+        AudioPlaybackResumeStore.load(context.applicationContext)
+      }
+    }
+  }
+  val offerResume = MiniPlayerResumePolicy.shouldOffer(isServiceRunning, isSettingsScreen, resumeSnapshot)
   SideEffect {
-    NavigationBarState.isMiniPlayerVisible = isMediaActive
+    NavigationBarState.isMiniPlayerVisible = isMediaActive || offerResume
   }
 
   val suppressHandoffEnter = MusicMiniPlayerHandoff.suppressNextEnter
@@ -180,6 +200,28 @@ fun MiniPlayer(modifier: Modifier = Modifier) {
       hasRealVideo = hasRealVideo,
       detachedPlaybackActive = isServiceRunning,
     )
+  }
+  AnimatedVisibility(
+    visible = offerResume && !isMediaActive,
+    enter = slideInVertically(initialOffsetY = { it }) + fadeIn(),
+    exit = fadeOut(),
+    modifier = modifier,
+  ) {
+    resumeSnapshot?.let { snapshot ->
+      MiniPlayerResumeCard(
+        snapshot = snapshot,
+        onResume = {
+          resumeSnapshot = null
+          context.startActivity(MiniPlayerResumePolicy.resumeIntent(context))
+        },
+        onDismiss = {
+          resumeSnapshot = null
+          val appContext = context.applicationContext
+          // clear() commits encrypted prefs synchronously; keep it off the main thread.
+          resumeScope.launch(kotlinx.coroutines.Dispatchers.IO) { AudioPlaybackResumeStore.clear(appContext) }
+        },
+      )
+    }
   }
 }
 

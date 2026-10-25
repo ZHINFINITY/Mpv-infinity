@@ -7,6 +7,7 @@
 
 package app.infinity.mpvz.ui.player.controls
 
+import app.infinity.mpvz.ui.player.StatsLuaOverlay
 import app.infinity.mpvz.ui.player.DeclaredPlaybackMediaKind
 import app.infinity.mpvz.ui.player.PlaybackPhase
 import app.infinity.mpvz.ui.player.PlaybackSession
@@ -614,11 +615,10 @@ fun PlayerControls(
       DeclaredPlaybackMediaKind.AUDIO -> true
       else -> isAudioOnly || activity?.isCurrentMediaKnownAudio() == true
     }
+  // Music never shows stats.lua. The user's chosen page is kept (not reset to 0); the next MPV
+  // core started for a video shows it again (MPVView.postInitOptions).
   LaunchedEffect(useAudioPlayer) {
-    if (useAudioPlayer && statisticsPage in 1..5) {
-      advancedPreferences.enabledStatisticsPage.set(0)
-      PlaybackSession.command("script-binding", "stats/display-stats-toggle")
-    }
+    if (useAudioPlayer) StatsLuaOverlay.hide()
   }
   if (useAudioPlayer) {
     AudioPlayerScreen(

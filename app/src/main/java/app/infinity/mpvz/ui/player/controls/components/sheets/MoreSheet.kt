@@ -7,6 +7,7 @@
 
 package app.infinity.mpvz.ui.player.controls.components.sheets
 
+import app.infinity.mpvz.ui.player.StatsLuaOverlay
 import app.infinity.mpvz.presentation.components.playerGlassOverlay
 import app.infinity.mpvz.ui.player.NativePlaybackSnapshot
 import app.infinity.mpvz.ui.player.PlaybackEngineMode
@@ -304,23 +305,20 @@ fun MoreSheet(
 
               when (page) {
                 0 -> {
-                  if (statisticsPage in 1..5) PlaybackSession.command("script-binding", "stats/display-stats-toggle")
+                  StatsLuaOverlay.hide()
                 }
                 6 -> {
-                  if (statisticsPage in 1..5) PlaybackSession.command("script-binding", "stats/display-stats-toggle")
+                  StatsLuaOverlay.hide()
                 }
                 7 -> {
-                  if (statisticsPage in 1..5) PlaybackSession.command("script-binding", "stats/display-stats-toggle")
+                  StatsLuaOverlay.hide()
                   // Enable console only if it is not already open
                   if (!isConsoleOpen) {
                     PlaybackSession.command("script-message-to", "console", "enable")
                   }
                 }
                 else -> {
-                  if (statisticsPage == 0 || statisticsPage == 6 || statisticsPage == 7) {
-                    PlaybackSession.command("script-binding", "stats/display-stats-toggle")
-                  }
-                  PlaybackSession.command("script-binding", "stats/display-page-$page")
+                  StatsLuaOverlay.show(page)
                 }
               }
               advancedPreferences.enabledStatisticsPage.set(page)

@@ -5,6 +5,7 @@
 package app.infinity.mpvz.ui.preferences.components
 
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button as MaterialButton
@@ -23,6 +24,7 @@ internal fun ThemeGlassButton(
   onClick: () -> Unit,
   modifier: Modifier = Modifier,
   enabled: Boolean = true,
+  contentPadding: PaddingValues = ButtonDefaults.ContentPadding,
   content: @Composable RowScope.() -> Unit,
 ) {
   val glass = settingsGlassEnabled()
@@ -36,6 +38,7 @@ internal fun ThemeGlassButton(
       containerColor = if (glass) Color.Transparent else MaterialTheme.colorScheme.primary,
       contentColor = if (glass) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onPrimary,
     ),
+    contentPadding = contentPadding,
     content = content,
   )
 }
@@ -45,6 +48,7 @@ internal fun ThemeGlassOutlinedButton(
   onClick: () -> Unit,
   modifier: Modifier = Modifier,
   enabled: Boolean = true,
+  contentPadding: PaddingValues = ButtonDefaults.ContentPadding,
   content: @Composable RowScope.() -> Unit,
 ) {
   val glass = settingsGlassEnabled()
@@ -59,6 +63,7 @@ internal fun ThemeGlassOutlinedButton(
       containerColor = Color.Transparent,
       contentColor = if (glass) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.primary,
     ),
+    contentPadding = contentPadding,
     content = content,
   )
 }

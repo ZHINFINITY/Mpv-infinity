@@ -6,6 +6,7 @@
  */
 package app.infinity.mpvz.ui.player
 
+import app.infinity.mpvz.ui.player.controls.MusicMinimizeTransitionPolicy
 import android.content.ContentResolver
 import android.content.Context
 import android.media.AudioManager
@@ -14,7 +15,6 @@ import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.LocalActivity
-import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animate
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.gestures.awaitEachGesture
@@ -23,7 +23,6 @@ import androidx.compose.foundation.gestures.awaitVerticalTouchSlopOrCancellation
 import androidx.compose.foundation.gestures.verticalDrag
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
@@ -125,7 +124,8 @@ class BrowserMusicSheetState internal constructor(
     if (!isAvailable) return false
     prewarm()
     motion.expand()
-    runSettle(initialVelocity = 0f)
+    // Start moving on the first frame instead of easing in from rest.
+    runSettle(initialVelocity = MusicMinimizeTransitionPolicy.PROGRAMMATIC_KICK_PROGRESS_PER_SECOND)
     return true
   }
 
@@ -133,13 +133,27 @@ class BrowserMusicSheetState internal constructor(
   fun collapse(): Boolean {
     if (!isShowing) return false
     motion.collapse()
-    runSettle(initialVelocity = 0f)
+    runSettle(initialVelocity = -MusicMinimizeTransitionPolicy.PROGRAMMATIC_KICK_PROGRESS_PER_SECOND)
     return true
+  }
+
+  internal var sheetWidthPx: Float = 0f
+  internal var sheetHeightPx: Float = 0f
+
+  /** Finger-locked: the page's top edge travels from the screen top to the live mini player. */
+  internal fun refreshTravel() {
+    if (sheetHeightPx <= 0f) return
+    travelPx = MusicMinimizeTransitionPolicy.dragTravelPx(
+      pageTop = 0f,
+      miniTop = MusicMinimizeTransitionPolicy.currentAnchor(sheetWidthPx, sheetWidthPx, sheetHeightPx)?.top,
+      pageHeight = sheetHeightPx,
+    )
   }
 
   internal fun beginDrag() {
     if (!isAvailable && !isShowing) return
     prewarm()
+    refreshTravel()
     // Cancelling the running settle is safe: its generation is now stale, so its cleanup no-ops.
     settleJob?.cancel()
     motion.beginDrag()
@@ -227,8 +241,12 @@ class BrowserMusicSheetState internal constructor(
   internal companion object {
     const val KEEP_CONTENT_AFTER_COLLAPSE_MS = 4_000L
 
+    // Same spring as the PlayerActivity minimize, so both directions feel identical.
     private val SettleSpring =
-      spring<Float>(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = 650f)
+      spring<Float>(
+        dampingRatio = MusicMinimizeTransitionPolicy.SETTLE_DAMPING_RATIO,
+        stiffness = MusicMinimizeTransitionPolicy.SETTLE_STIFFNESS,
+      )
   }
 }
 
@@ -322,19 +340,20 @@ fun BrowserMusicSheet(state: BrowserMusicSheetState) {
   BackHandler(enabled = state.isShowing) { state.collapse() }
 
   if (!state.isContentComposed) return
-  val cornerPx = with(LocalDensity.current) { 28.dp.toPx() }
   Box(
     modifier =
       Modifier
         .fillMaxSize()
-        .onSizeChanged { state.travelPx = it.height.toFloat() }
+        .onSizeChanged { size ->
+          state.sheetWidthPx = size.width.toFloat()
+          state.sheetHeightPx = size.height.toFloat()
+          state.refreshTravel()
+        }
         .graphicsLayer {
-          val p = state.progress
-          translationY = (1f - p) * size.height
-          // A resting collapsed sheet is offscreen and invisible; alpha 0 also skips its draw.
-          alpha = if (p <= 0f) 0f else 1f
-          shape = RoundedCornerShape(cornerPx * (1f - p))
-          clip = p < 1f
+          // The page itself morphs into the mini player (AudioPlayerControls draws the same
+          // transition as the PlayerActivity minimize). Here only: a resting collapsed sheet
+          // draws nothing.
+          alpha = if (state.progress <= 0f) 0f else 1f
         }
         .then(if (state.isShowing) Modifier else Modifier.clearAndSetSemantics {}),
   ) {

@@ -10,9 +10,17 @@ import kotlin.math.abs
 
 /** Pure, device-free mechanics for the audio full-player/miniplayer handoff. */
 object MusicMinimizeTransitionPolicy {
-  const val SETTLE_OPEN_DURATION_MS = 220
-  const val CLOSE_DURATION_MS = 300
-  const val OPEN_DURATION_MS = 400
+  /**
+   * Settle physics. Every settle (finger release, tap, Back) is the same critically damped
+   * spring, so the motion never bounces and a release keeps the finger's speed instead of
+   * restarting from rest. 650 lands a full open or close in about a quarter second.
+   */
+  const val SETTLE_DAMPING_RATIO = 1f
+  const val SETTLE_STIFFNESS = 650f
+  /** Programmatic runs (tap, Back, minimize button) start moving on their very first frame. */
+  const val PROGRAMMATIC_KICK_PROGRESS_PER_SECOND = 3.5f
+  /** Fast flicks are capped so a stray 20 000 px/s sample cannot teleport the page. */
+  const val MAX_SETTLE_PROGRESS_PER_SECOND = 12f
   const val CLOSE_VELOCITY_PAGE_PER_SECOND = 1f
   const val CLOSE_VALUE = 0.7f
 
@@ -122,11 +130,84 @@ object MusicMinimizeTransitionPolicy {
     return 1f - settleTarget(1f - miniProgress, pageVelocity, movingDown)
   }
 
-  /** Animation duration for a settle toward [targetMiniProgress]. */
-  fun settleDurationMs(targetMiniProgress: Float, programmatic: Boolean): Int = when {
-    targetMiniProgress >= 1f -> CLOSE_DURATION_MS
-    programmatic -> OPEN_DURATION_MS
-    else -> SETTLE_OPEN_DURATION_MS
+  /**
+   * Distance the page's top edge travels between full and mini. Dragging by exactly this many
+   * pixels moves the edge by the same amount, so the page stays locked under the finger.
+   * Falls back to the page height when the mini player has not been measured.
+   */
+  fun dragTravelPx(pageTop: Float, miniTop: Float?, pageHeight: Float): Float {
+    val fallback = if (pageHeight.isFinite() && pageHeight > 0f) pageHeight else 1f
+    if (miniTop == null || !miniTop.isFinite() || !pageTop.isFinite()) return fallback
+    val travel = miniTop - pageTop
+    return if (travel >= fallback * .3f) travel else fallback
+  }
+
+  /**
+   * Initial spring velocity (miniProgress per second) for a settle from [start] to [target].
+   * A finger release carries its own velocity; a programmatic run gets a small kick toward the
+   * target so it never starts with a slow ease-in. A release velocity pointing away from the
+   * target (a flick that the position rule overruled) is dropped rather than fought.
+   */
+  fun settleInitialVelocity(
+    start: Float,
+    target: Float,
+    programmatic: Boolean,
+    releaseVelocityYPxPerSecond: Float,
+    travelPx: Float,
+  ): Float {
+    val direction = when {
+      target > start -> 1f
+      target < start -> -1f
+      else -> return 0f
+    }
+    if (programmatic) return direction * PROGRAMMATIC_KICK_PROGRESS_PER_SECOND
+    if (!releaseVelocityYPxPerSecond.isFinite() || !travelPx.isFinite() || travelPx <= 0f) return 0f
+    val v = (releaseVelocityYPxPerSecond / travelPx)
+      .coerceIn(-MAX_SETTLE_PROGRESS_PER_SECOND, MAX_SETTLE_PROGRESS_PER_SECOND)
+    return if (v * direction > 0f) v else 0f
+  }
+
+  private fun smoothstep(edge0: Float, edge1: Float, x: Float): Float {
+    val t = ((x - edge0) / (edge1 - edge0)).coerceIn(0f, 1f)
+    return t * t * (3f - 2f * t)
+  }
+
+  /**
+   * Text, buttons and the seek bar leave early, so mid-flight the card is just colour and
+   * cover instead of a shrinking copy of every control.
+   */
+  fun chromeAlpha(minimizeProgress: Float): Float =
+    if (!minimizeProgress.isFinite()) 1f else 1f - smoothstep(0f, .4f, minimizeProgress)
+
+  /**
+   * The palette card itself stays solid for most of the flight and dissolves only in the last
+   * quarter, cross-fading with the real mini player that sits at the same rectangle.
+   */
+  fun surfaceAlpha(minimizeProgress: Float): Float =
+    if (!minimizeProgress.isFinite()) 1f else 1f - smoothstep(.75f, 1f, minimizeProgress)
+
+  const val FULL_COVER_RADIUS_DP = 32f
+  const val MINI_COVER_RADIUS_DP = 8f
+
+  /** Corner radius of the flying cover, in on-screen dp. */
+  fun coverRadiusDp(minimizeProgress: Float): Float {
+    val p = if (minimizeProgress.isFinite()) minimizeProgress.coerceIn(0f, 1f) else 0f
+    return FULL_COVER_RADIUS_DP + (MINI_COVER_RADIUS_DP - FULL_COVER_RADIUS_DP) * p
+  }
+
+  /**
+   * Layer for the single flying cover, drawn above the page (not inside its scaled layer).
+   * [measuredFull] is the cover's unwarped window rectangle; width and height scale separately
+   * only if the target is not the same shape, which for square covers never happens.
+   */
+  fun flyingCoverLayer(frame: Frame, measuredFull: Rect): Layer {
+    if (measuredFull.width <= 0f || measuredFull.height <= 0f) return Layer(0f, 0f, 1f, 1f)
+    return Layer(
+      frame.artwork.left - measuredFull.left,
+      frame.artwork.top - measuredFull.top,
+      frame.artwork.width / measuredFull.width,
+      frame.artwork.height / measuredFull.height,
+    )
   }
 
   fun backgroundAlpha(settledOpen: Boolean, inTransition: Boolean): Float = if (settledOpen && !inTransition) 1f else 0f
