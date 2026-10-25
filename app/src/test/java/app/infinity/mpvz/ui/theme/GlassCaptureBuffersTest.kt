@@ -14,7 +14,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 
 // Plain Application: this pure buffer test must not boot the app's Koin graph (already started by other suites).
-@Config(application = android.app.Application::class)
+@Config(sdk = [35], application = android.app.Application::class)
 @RunWith(RobolectricTestRunner::class)
 class GlassCaptureBuffersTest {
   @Test fun publishedBitmapIsNeverReturnedForTheNextWrite() {
