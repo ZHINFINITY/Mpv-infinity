@@ -96,6 +96,7 @@ class MPVView(
 
   var isExiting = false
   var forceOpenGlFallback = false
+  private var acceptedInterpolationConfiguration: Pair<Boolean, Int>? = null
   var isSurfaceReady = false
     private set
   var onSurfaceReady: (() -> Unit)? = null
@@ -164,6 +165,7 @@ class MPVView(
       if (mpvFlowSoftBlendDebugActive) MpvFlowComputeApi.VULKAN else requestedMpvFlowComputeApi
     mpvFlowOsdStatsEnabled = mpvFlowFrameInterpolationActive
     mpvFlowDiagnosticsEnabled = BuildConfig.DEBUG && mpvFlowFrameInterpolationActive
+    acceptedInterpolationConfiguration = mpvFlowFrameInterpolationActive to requestedMpvFlowTargetFps
     val coreConfigurationKey =
       "${requestedBackend.configurationKey}|conf=${MpvConfigOverridePolicy.configurationKey()}|" +
         "mpvflow=${if (mpvFlowFrameInterpolationActive) "$requestedMpvFlowTargetFps,compute_api=${effectiveMpvFlowComputeApi.nativeValue},quality=$requestedMpvFlowQuality,soft_blend=$mpvFlowSoftBlendDebugActive" else "off"}"
@@ -984,16 +986,19 @@ class MPVView(
       Debanding.GPU -> PlaybackSession.setOptionString("deband", "yes")
     }
 
-    // Keep the MPV stats OSD video-only. Otherwise a music item can inherit the previous
-    // video's stats overlay when MPV is reused for audio playback.
+    // Keep the MPV stats OSD video-only. Restore pages 1-5 with display-page-N
+    // only so a leftover toggle cannot invert hide/show after Off or core recreate.
     if (PlaybackSession.queue.value.currentItem?.isDefinitelyAudioOnly() != true) {
-      advancedPreferences.enabledStatisticsPage.get().let {
-        if (it in 1..5) {
-          PlaybackSession.command("script-binding", "stats/display-stats-toggle")
-          PlaybackSession.command("script-binding", "stats/display-page-$it")
-        }
+      PlayerStatsLuaCommandPolicy.forStartup(advancedPreferences.enabledStatisticsPage.get())?.let {
+        PlayerStatsLuaCommandPolicy.apply(it)
       }
     }
+  }
+
+  internal fun interpolationConfigurationApplied(enabled: Boolean, targetFps: Int): Boolean {
+    val accepted = acceptedInterpolationConfiguration ?: return false
+    return accepted.first == enabled && (!enabled || accepted.second ==
+      effectiveMpvFlowTargetFps(targetFps, currentDisplayRefreshRate()?.hz ?: 0f))
   }
 
   fun applyOsdSafeAreaMargins(insets: WindowInsetsCompat? = null) {

@@ -8,6 +8,7 @@
 package app.infinity.mpvz.ui.player.controls
 
 import android.net.Uri
+import androidx.activity.compose.LocalActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.Composable
@@ -27,6 +28,7 @@ import app.infinity.mpvz.ui.player.Panels
 import app.infinity.mpvz.ui.player.PlaybackEngineMode
 import app.infinity.mpvz.ui.player.Sheets
 import app.infinity.mpvz.ui.player.TrackNode
+import app.infinity.mpvz.ui.player.PlayerActivity
 import app.infinity.mpvz.ui.player.controls.components.MpvConfigOwnedSheet
 import app.infinity.mpvz.ui.player.controls.components.sheets.AmbientSheet
 import app.infinity.mpvz.ui.player.controls.components.sheets.AspectRatioSheet
@@ -35,6 +37,7 @@ import app.infinity.mpvz.ui.player.controls.components.sheets.ChaptersSheet
 import app.infinity.mpvz.ui.player.controls.components.sheets.DecodersSheet
 import app.infinity.mpvz.ui.player.controls.components.sheets.FrameNavigationSheet
 import app.infinity.mpvz.ui.player.controls.components.sheets.MoreSheet
+import app.infinity.mpvz.ui.player.controls.components.sheets.FrameInterpolationFpsSheet
 import app.infinity.mpvz.ui.player.controls.components.sheets.OnlineSubtitleSearchSheet
 import app.infinity.mpvz.ui.player.controls.components.sheets.PlaybackSpeedSheet
 import app.infinity.mpvz.ui.player.controls.components.sheets.PlaylistSheet
@@ -517,6 +520,13 @@ fun PlayerSheets(
         onCancelFrameSeek = viewModel::cancelFrameSeek,
         onDismissRequest = onDismissRequest,
       )
+    }
+
+    Sheets.FrameInterpolationFps -> {
+      val activity = LocalActivity.current as? PlayerActivity
+      if (activity != null) {
+        FrameInterpolationFpsSheet(activity = activity, onDismissRequest = onDismissRequest)
+      }
     }
 
     Sheets.Playlist -> {

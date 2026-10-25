@@ -472,7 +472,12 @@ fun PlayerControls(
   LaunchedEffect(useAudioPlayer) {
     if (useAudioPlayer && statisticsPage in 1..5) {
       advancedPreferences.enabledStatisticsPage.set(0)
-      PlaybackSession.command("script-binding", "stats/display-stats-toggle")
+      app.infinity.mpvz.ui.player.PlayerStatsLuaCommandPolicy.apply(
+        app.infinity.mpvz.ui.player.PlayerStatsLuaCommandPolicy.forMusicHide(
+          luaShown = app.infinity.mpvz.ui.player.PlayerStatsLuaCommandPolicy.isLuaShown() || statisticsPage in 1..5,
+          consoleOpen = PlaybackSession.getPropertyBoolean("user-data/mpv/console/open") == true,
+        ),
+      )
     }
   }
   if (useAudioPlayer) {

@@ -115,6 +115,15 @@ internal object PlayerLifecyclePolicy {
     backgroundPlaybackSessionActive: Boolean,
   ): Boolean = backgroundPlaybackEnabled && backgroundPlaybackSessionActive
 
+  fun shouldResumeAfterBackgroundHandoff(
+    backgroundPlaybackSessionActive: Boolean,
+    wasPlayingBeforeHandoff: Boolean,
+    isInPictureInPictureMode: Boolean,
+  ): Boolean =
+    backgroundPlaybackSessionActive &&
+      wasPlayingBeforeHandoff &&
+      !isInPictureInPictureMode
+
   fun shouldTreatStopAsPipDismissal(
     wasInPictureInPictureMode: Boolean,
     isInPictureInPictureMode: Boolean,
@@ -142,4 +151,19 @@ internal object PlayerLifecyclePolicy {
       !isUserFinishing &&
       !isFinishing &&
       (!isInPictureInPictureMode || isScreenOffOrLocked)
+
+  fun shouldRebuildRendererAfterBackground(
+    stoppedForMs: Long,
+    isAudioMedia: Boolean,
+    thresholdMs: Long = LONG_BACKGROUND_REBUILD_THRESHOLD_MS,
+  ): Boolean = !isAudioMedia && stoppedForMs >= thresholdMs
+
+  fun shouldWaitForSurfaceBeforeRebuild(surfaceReady: Boolean): Boolean = !surfaceReady
+
+  fun shouldCaptureForegroundResumePosition(isAudioMedia: Boolean): Boolean = !isAudioMedia
+
+  fun resumePositionSeconds(positionSeconds: Double?): Double? =
+    positionSeconds?.takeIf { it.isFinite() && it > 0.0 }
+
+  const val LONG_BACKGROUND_REBUILD_THRESHOLD_MS = 900_000L
 }

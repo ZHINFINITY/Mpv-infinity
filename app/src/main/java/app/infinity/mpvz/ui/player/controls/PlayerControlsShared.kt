@@ -78,6 +78,7 @@ import app.infinity.mpvz.ui.player.VideoAspect
 import app.infinity.mpvz.ui.player.controls.components.AbLoopIcon
 import app.infinity.mpvz.ui.player.controls.components.ControlsButton
 import app.infinity.mpvz.ui.player.controls.components.CurrentChapter
+import app.infinity.mpvz.ui.player.controls.components.FrameInterpolationPlayerButton
 import app.infinity.mpvz.ui.theme.controlColor as defaultControlColor
 import app.infinity.mpvz.ui.theme.spacing
 import app.infinity.mpvz.ui.utils.isAnyMpvOptionOwnedByConfig
@@ -392,6 +393,8 @@ fun RenderPlayerButton(
       val context = LocalContext.current
 
       AnimatedContent(
+
+      AnimatedContent(
         targetState = isExpanded && !compact,
         transitionSpec = {
           (fadeIn(animationSpec = tween(200)) + expandHorizontally(animationSpec = tween(250)))
@@ -538,6 +541,17 @@ fun RenderPlayerButton(
           )
         }
       }
+    }
+
+    PlayerButton.FRAME_INTERPOLATION -> {
+      FrameInterpolationPlayerButton(
+        targetFpsAction = false,
+        activity = activity,
+        onOpenSheet = onOpenSheet,
+        buttonSize = buttonSize,
+        compact = compact,
+        contentColor = if (hideBackground) controlColor else MaterialTheme.colorScheme.onSurface,
+      )
     }
 
     PlayerButton.VIDEO_ZOOM -> {
@@ -1186,15 +1200,26 @@ fun RenderPlayerButton(
       val clockFormat by playerPreferences.clockFormat.collectAsState()
       val stat by rememberTimeAndNetworkStat(clockFormat)
       val toggleTimeAndNetwork = {
-        if (PlaybackSession.getPropertyBoolean("user-data/mpv/console/open") == true) {
-          PlaybackSession.command("script-message-to", "console", "disable")
-        }
+        val consoleOpen = PlaybackSession.getPropertyBoolean("user-data/mpv/console/open") == true
         if (statisticsPage == 6) {
+          app.infinity.mpvz.ui.player.PlayerStatsLuaCommandPolicy.apply(
+            app.infinity.mpvz.ui.player.PlayerStatsLuaCommandPolicy.forChip(
+              toPage = 0,
+              previousPage = statisticsPage,
+              luaShown = app.infinity.mpvz.ui.player.PlayerStatsLuaCommandPolicy.isLuaShown(),
+              consoleOpen = consoleOpen,
+            ),
+          )
           advancedPreferences.enabledStatisticsPage.set(0)
         } else {
-          if (statisticsPage in 1..5) {
-            PlaybackSession.command("script-binding", "stats/display-stats-toggle")
-          }
+          app.infinity.mpvz.ui.player.PlayerStatsLuaCommandPolicy.apply(
+            app.infinity.mpvz.ui.player.PlayerStatsLuaCommandPolicy.forChip(
+              toPage = 6,
+              previousPage = statisticsPage,
+              luaShown = app.infinity.mpvz.ui.player.PlayerStatsLuaCommandPolicy.isLuaShown() || statisticsPage in 1..5,
+              consoleOpen = consoleOpen,
+            ),
+          )
           advancedPreferences.enabledStatisticsPage.set(6)
         }
         onOpenSheet(Sheets.None)

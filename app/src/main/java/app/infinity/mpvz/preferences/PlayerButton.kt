@@ -29,6 +29,7 @@ enum class PlayerButton(
   SCREEN_ROTATION(Icons.RoundedFilled.ScreenRotation),
   FRAME_NAVIGATION(Icons.RoundedFilled.Screenshot),
   VIDEO_ZOOM(Icons.RoundedFilled.ZoomIn),
+  FRAME_INTERPOLATION(Icons.RoundedFilled.AutoAwesome),
   PICTURE_IN_PICTURE(Icons.RoundedFilled.PictureInPictureAlt),
   CAST(Icons.RoundedFilled.Cast),
   ASPECT_RATIO(Icons.RoundedFilled.AspectRatio),
@@ -78,6 +79,7 @@ fun getPlayerButtonLabel(button: PlayerButton): String =
     PlayerButton.SCREEN_ROTATION -> stringResource(R.string.btn_label_rotation)
     PlayerButton.FRAME_NAVIGATION -> stringResource(R.string.btn_label_frame_nav)
     PlayerButton.VIDEO_ZOOM -> stringResource(R.string.btn_label_zoom)
+    PlayerButton.FRAME_INTERPOLATION -> stringResource(R.string.btn_label_frame_interpolation)
     PlayerButton.PICTURE_IN_PICTURE -> stringResource(R.string.btn_label_pip)
     PlayerButton.CAST -> stringResource(R.string.btn_label_cast)
     PlayerButton.ASPECT_RATIO -> stringResource(R.string.btn_label_aspect)

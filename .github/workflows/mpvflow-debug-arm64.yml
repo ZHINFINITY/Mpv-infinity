@@ -30,6 +30,8 @@ jobs:
           fetch-depth: 0
       - name: Test arm64 workflow cache and validation invariants
         run: python3 scripts/tests/mpvflow_arm64_workflow_test.py
+      - name: Test stats Off and interpolation shortcut wiring
+        run: python3 scripts/tests/mpvflow_stats_off_interpolation_test.py
       - name: Test experimental region3 attenuation invariants
         run: python3 scripts/tests/region3_transition_test.py
       - name: Test runtime AAR overlay accepts new shared libraries

@@ -138,6 +138,7 @@ enum class Sheets {
   Lyrics,
   AudiobookRewind,
   AudiobookSleepTimer,
+  FrameInterpolationFps,
 }
 
 enum class Panels {

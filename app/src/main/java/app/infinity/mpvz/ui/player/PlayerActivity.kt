@@ -100,6 +100,7 @@ import app.infinity.mpvz.preferences.AudioPlayerOrientation
 import app.infinity.mpvz.preferences.AudioPreferences
 import app.infinity.mpvz.preferences.BrowserPreferences
 import app.infinity.mpvz.preferences.DecoderPreferences
+import app.infinity.mpvz.preferences.MpvConfigControlledFeatures
 import app.infinity.mpvz.preferences.MpvConfigOverridePolicy
 import app.infinity.mpvz.preferences.PlayerPreferences
 import app.infinity.mpvz.preferences.SubtitlesPreferences
@@ -611,6 +612,10 @@ class PlayerActivity :
   private var noisyReceiverRegistered = false
   private var lastVid = -1 // Track video track for background playback optimization
   private var isInBackgroundPlayback = false // Track if we are currently in background playback mode
+  private var pendingForegroundResumePositionSeconds: Double? = null
+  private var playerStoppedAtElapsedRealtime = 0L
+  private var pendingRendererRebuildAfterBackground = false
+  private var mpvInterpolationRestartJob: Job? = null
   private var screenStateReceiverRegistered = false
   private var mpvInitialized = false // Track MPV initialization state
   private var viewModelHostAttached = false
@@ -2447,6 +2452,7 @@ class PlayerActivity :
         restoreSystemUI()
       }
 
+      captureForegroundResumePosition()
       saveVideoPlaybackState(fileName, immediate = true)
       persistAudioPlaybackSnapshot()
     }.onFailure { e ->
@@ -2544,7 +2550,9 @@ class PlayerActivity :
       return
     }
     MediaPlaybackService.activityForeground = false
+    playerStoppedAtElapsedRealtime = android.os.SystemClock.elapsedRealtime()
     runCatching {
+      captureForegroundResumePosition()
       pipHelper.onStop()
       if (isNativeEngineActive() && fileName.isNotBlank()) {
         saveVideoPlaybackState(fileName, immediate = true)
@@ -2708,13 +2716,24 @@ class PlayerActivity :
       setupWindowFlags()
       setupSystemUI()
 
+      val resumeAfterBackgroundHandoff =
+        PlayerLifecyclePolicy.shouldResumeAfterBackgroundHandoff(
+          backgroundPlaybackSessionActive = isBackgroundPlaybackSessionActive,
+          wasPlayingBeforeHandoff = PlaybackSession.getPropertyBoolean("pause") == false,
+          isInPictureInPictureMode = isInPictureInPictureMode,
+        )
       if (restoreForegroundVideoAndAmbientIfUnlocked()) {
         // Foreground playback owns the session again after unlock or app return.
         if (MediaPlaybackService.isRunning()) endBackgroundPlayback()
         isBackgroundPlaybackSessionActive = false
         // The detached service released focus during the handoff; take it back over so a
         // future focus loss (e.g. a phone call) pauses the now-foreground playback.
-        if (viewModel.paused != true) requestAudioFocus()
+        if (resumeAfterBackgroundHandoff) {
+          val focusGranted = requestAudioFocus()
+          PlaybackSession.setPropertyBoolean("pause", !focusGranted)
+        } else if (viewModel.paused != true) {
+          requestAudioFocus()
+        }
       }
 
       if (!noisyReceiverRegistered) {
@@ -3259,6 +3278,14 @@ class PlayerActivity :
     player.onSurfaceReady = {
       if (!isDeviceScreenOffOrLocked() && (isInBackgroundPlayback || lastVid > 0)) {
         enableVideoAfterBackground()
+      }
+      if (pendingRendererRebuildAfterBackground &&
+        !PlayerLifecyclePolicy.shouldWaitForSurfaceBeforeRebuild(player.isSurfaceReady)
+      ) {
+        pendingRendererRebuildAfterBackground = false
+        rebuildRendererAfterLongBackground()
+      } else {
+        restoreForegroundResumePositionIfNeeded()
       }
       viewModel.restartAmbientIfActive()
       binding.root.post(::updateVideoAmbientPlayerBounds)
@@ -4095,11 +4122,35 @@ class PlayerActivity :
 
   private fun restoreForegroundVideoAndAmbientIfUnlocked(): Boolean {
     if ((!mpvInitialized && !isNativeEngineActive()) || !ownsPlaybackSession() || isDeviceScreenOffOrLocked()) return false
+    val stoppedForMs =
+      if (playerStoppedAtElapsedRealtime > 0L) {
+        android.os.SystemClock.elapsedRealtime() - playerStoppedAtElapsedRealtime
+      } else {
+        0L
+      }
+    playerStoppedAtElapsedRealtime = 0L
+    val audioMedia = viewModel.isAudioOnly.value || isCurrentMediaKnownAudio() || isKnownAudioLaunch(intent)
+    if (PlayerLifecyclePolicy.shouldRebuildRendererAfterBackground(stoppedForMs, audioMedia)) {
+      Log.w(TAG, "Rebuilding video renderer after ${stoppedForMs}ms in the background")
+      pendingRendererRebuildAfterBackground = true
+      val surfaceReady = isNativeEngineActive() || player.isSurfaceReady
+      if (!PlayerLifecyclePolicy.shouldWaitForSurfaceBeforeRebuild(surfaceReady)) {
+        pendingRendererRebuildAfterBackground = false
+        rebuildRendererAfterLongBackground()
+      } else {
+        Log.w(TAG, "Deferring renderer rebuild until the playback surface is ready")
+      }
+      viewModel.setAmbientLifecycleActive(true)
+      return true
+    }
     if (isNativeEngineActive()) {
       setNativeVideoSurfaceVisible(true)
+      nativeEngine.refreshAfterConfigurationChange()
     } else {
+      PlaybackSession.markForeground()
       enableVideoAfterBackground()
     }
+    restoreForegroundResumePositionIfNeeded()
     viewModel.setAmbientLifecycleActive(true)
     return true
   }
@@ -9110,6 +9161,117 @@ class PlayerActivity :
       }
       lastVid = -1
     }
+  }
+
+  override fun applyInterpolationPreferencesFromControls() {
+    if (isNativeEngineActive()) {
+      Log.i(TAG, "Interpolation preference saved; Native applies it on the next playback")
+      return
+    }
+    requestMpvInterpolationRestart()
+  }
+
+  private fun requestMpvInterpolationRestart() {
+    if (activeEngineMode != PlaybackEngineMode.MPV || mpvInterpolationRestartJob?.isActive == true) return
+    mpvInterpolationRestartJob = lifecycleScope.launch {
+      delay(180L)
+      val enabled = decoderPreferences.mpvFlowFrameInterpolation.get()
+      val targetFps = decoderPreferences.mpvFlowTargetFps.get()
+      if (!ownsPlaybackSession() || isFinishing || isDestroyed || activeEngineMode != PlaybackEngineMode.MPV) return@launch
+      if (MpvConfigOverridePolicy.ownsAny(MpvConfigControlledFeatures.FRAME_INTERPOLATION)) {
+        Log.i(TAG, "Interpolation preference saved; MPV configuration owns the effective setting")
+        return@launch
+      }
+      if (player.interpolationConfigurationApplied(enabled, targetFps)) {
+        Toast.makeText(this@PlayerActivity, R.string.toast_interpolation_configured_mpv, Toast.LENGTH_SHORT).show()
+        return@launch
+      }
+      val session = PlaybackSession.state.value
+      val item = session.currentItem
+      val position = PlaybackSession.getPropertyDouble("time-pos")
+      val playable = currentPlayableUri ?: intent?.dataString
+      if (item == null || playable.isNullOrBlank() || !isReady ||
+        session.phase !in setOf(PlaybackPhase.READY, PlaybackPhase.BACKGROUND) ||
+        position == null || !position.isFinite() ||
+        PlaybackSession.getPropertyBoolean("seekable") != true
+      ) {
+        Toast.makeText(this@PlayerActivity, R.string.toast_interpolation_restart_not_seekable, Toast.LENGTH_LONG).show()
+        return@launch
+      }
+      val paused = PlaybackSession.getPropertyBoolean("pause") ?: session.paused
+      Toast.makeText(this@PlayerActivity, R.string.toast_interpolation_restarting_mpv, Toast.LENGTH_SHORT).show()
+      PlaybackSession.setPauseForEngineHandoff(true)
+      PlayerStatsLuaCommandPolicy.onCoreRecreated()
+      val initError = initializePlayerWithRendererFallback()
+      if (initError != null) {
+        Toast.makeText(this@PlayerActivity, R.string.toast_interpolation_restart_failed, Toast.LENGTH_LONG).show()
+        Log.e(TAG, "MPV interpolation restart failed: $initError")
+        return@launch
+      }
+      if (!PlaybackSession.isInitialized) {
+        Toast.makeText(this@PlayerActivity, R.string.toast_interpolation_restart_failed, Toast.LENGTH_LONG).show()
+        return@launch
+      }
+      runCatching { PlaybackSession.addObserver(playerObserver) }
+      startMediaLoad(
+        playableUri = playable,
+        originalUri = item.originalUri.takeIf { it.isNotBlank() } ?: playable,
+        preserveTorrentSession = activeTorrentSourceUri != null || item.torrentFileIndex != null,
+        positionRestoreOverride = PlaybackPositionRestoreOverride(
+          positionSeconds = position.coerceAtLeast(0.0),
+          paused = paused,
+        ),
+      )
+      Toast.makeText(this@PlayerActivity, R.string.toast_interpolation_restarted_mpv, Toast.LENGTH_SHORT).show()
+    }
+  }
+
+  private fun currentPlaybackIsAudioMedia(): Boolean =
+    viewModel.isAudioOnly.value || isCurrentMediaKnownAudio() || isKnownAudioLaunch(intent)
+
+  private fun captureForegroundResumePosition() {
+    if (!PlayerLifecyclePolicy.shouldCaptureForegroundResumePosition(currentPlaybackIsAudioMedia())) return
+    val live =
+      if (isNativeEngineActive()) nativePlaybackPositionSeconds()
+      else PlaybackSession.getPropertyDouble("time-pos")
+    PlayerLifecyclePolicy.resumePositionSeconds(live)?.let { pendingForegroundResumePositionSeconds = it }
+  }
+
+  private fun restoreForegroundResumePositionIfNeeded() {
+    val seconds = PlayerLifecyclePolicy.resumePositionSeconds(pendingForegroundResumePositionSeconds) ?: return
+    if (currentPlaybackIsAudioMedia() || isFinishing || isDestroyed || !ownsPlaybackSession()) return
+    if (isNativeEngineActive()) {
+      nativeEngine.seekTo((seconds * 1000.0).toLong())
+    } else {
+      if (!player.isSurfaceReady) return
+      PlaybackSession.setPropertyDouble("time-pos", seconds)
+    }
+    pendingForegroundResumePositionSeconds = null
+  }
+
+  private fun rebuildRendererAfterLongBackground() {
+    if (fileName.isBlank() || isFinishing || isDestroyed || !ownsPlaybackSession()) return
+    val paused = viewModel.paused == true || PlaybackSession.getPropertyBoolean("pause") == true
+    val captured = pendingForegroundResumePositionSeconds
+    pendingForegroundResumePositionSeconds = null
+    val positionSeconds =
+      captured
+        ?: if (isNativeEngineActive()) nativePlaybackPositionSeconds()
+        else PlaybackSession.getPropertyDouble("time-pos") ?: 0.0
+    val restore = PlaybackPositionRestoreOverride(
+      positionSeconds = positionSeconds.takeIf { it.isFinite() && it > 0.0 },
+      paused = paused,
+    )
+    val playable = currentPlayableUri ?: intent?.dataString
+    if (playable.isNullOrBlank()) return
+    if (isNativeEngineActive()) {
+      nativeEngine.refreshAfterConfigurationChange()
+    }
+    startMediaLoad(
+      playableUri = playable,
+      originalUri = playable,
+      positionRestoreOverride = restore,
+    )
   }
 
   companion object {

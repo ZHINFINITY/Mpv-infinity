@@ -71,6 +71,8 @@ interface PlayerHost {
 
   fun onQueueShuffleChanged(enabled: Boolean)
 
+  fun applyInterpolationPreferencesFromControls() {}
+
   fun isNativeEngineActive(): Boolean = false
 
   fun isNativePlaying(): Boolean = false
