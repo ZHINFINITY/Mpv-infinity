@@ -7,6 +7,8 @@
 
 package app.infinity.mpvz.ui.player.controls.components.sheets
 
+import app.infinity.mpvz.ui.components.GlassChip
+
 import app.infinity.mpvz.ui.player.PlaybackSession
 
 import androidx.compose.foundation.layout.Arrangement
@@ -24,7 +26,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -149,7 +150,7 @@ fun PlaybackSpeedSheet(
           items(speedPresets, key = { it }) { presetSpeed ->
             val isDefault = defaultPresets.any { kotlin.math.abs(it - presetSpeed) < 0.001f }
 
-            FilterChip(
+            GlassChip(
               selected = kotlin.math.abs(presetSpeed - speed) < 0.01f,
               onClick = { onSpeedChange(presetSpeed) },
               label = { Text("${presetSpeed.toFixed(2)}") },
