@@ -64,6 +64,30 @@ internal object AgslRuntimeShaders {
     return chained.asComposeRenderEffect()
   }
 
+  fun browserLensHandle(
+    paneWidth: Float,
+    paneHeight: Float,
+    radius: Float,
+    bend: Float,
+    frostPx: Float,
+  ): BrowserLensEffectHandle? = runCatching {
+    val shader = browserLens() ?: return@runCatching null
+    shader.setFloatUniform("pane", paneWidth, paneHeight)
+    shader.setFloatUniform("radius", radius)
+    shader.setFloatUniform("bend", bend)
+    shader.setFloatUniform("motion", 0f)
+    val lensEffect = RenderEffect.createRuntimeShaderEffect(shader, "scene")
+    val chained = if (frostPx > 0f) {
+      RenderEffect.createChainEffect(
+        lensEffect,
+        RenderEffect.createBlurEffect(frostPx, frostPx, Shader.TileMode.CLAMP),
+      )
+    } else lensEffect
+    BrowserLensEffectHandle(chained.asComposeRenderEffect()) { motion ->
+      shader.setFloatUniform("motion", motion.coerceIn(0f, 1f))
+    }
+  }.getOrNull()
+
   fun bindGlassOptics(
     shader: Any,
     sourceShader: BitmapShader,

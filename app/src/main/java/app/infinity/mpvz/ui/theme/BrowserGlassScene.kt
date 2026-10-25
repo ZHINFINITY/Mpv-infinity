@@ -515,6 +515,8 @@ internal fun Modifier.browserGlassPane(
   val floating = enabled && drawRim && !edgeBar
   var paneOrigin by remember { mutableStateOf(Offset.Zero) }
   // Runtime shader compilation is remembered, not repeated for every animated width/frame.
+  // The navigation pill continues to use RuntimeShaderSupport.browserLensEffectOrNull(
+  // unchanged; this pane uses a handle so deformation only updates a uniform.
   // Edge bars never bend: the lens edge term would draw a bright line along the bar's bottom.
   val lens = rememberGraphicsLayer()
   return this
@@ -526,14 +528,14 @@ internal fun Modifier.browserGlassPane(
     .then(if (enabled) Modifier.drawWithCache {
         val radius = cornerRadius.toPx().coerceAtMost(size.height / 2f).coerceAtMost(size.width / 2f)
         val refraction = enabled && !edgeBar && capabilities.refraction && RuntimeShaderSupport.available()
-        val effect = if (refraction) RuntimeShaderSupport.browserLensEffectOrNull(
+        val lensHandle = if (refraction) RuntimeShaderSupport.browserLensHandleOrNull(
           paneWidth = size.width,
           paneHeight = size.height,
           radius = radius,
           bend = (if (selected) 9f else 5f) * density * tuning.refraction,
-          motion = deformation.coerceIn(0f, 1f),
           frostPx = if (blurDp > 0f) blurDp * density else 0f,
-        ) else if (Build.VERSION.SDK_INT >= 31 && scene != null && blurDp > 0f) runCatching {
+        ) else null
+        val effect = lensHandle?.effect ?: if (!refraction && Build.VERSION.SDK_INT >= 31 && scene != null && blurDp > 0f) runCatching {
           RenderEffect.createBlurEffect(blurDp * density, blurDp * density, Shader.TileMode.CLAMP).asComposeRenderEffect()
         }.getOrNull() else null
         lens.renderEffect = effect
@@ -547,6 +549,7 @@ internal fun Modifier.browserGlassPane(
         ))
         onDrawBehind {
           if (size.width < 1f || size.height < 1f) return@onDrawBehind
+          lensHandle?.updateMotion(deformation.coerceIn(0f, 1f))
           // Observed state: the popup window redraws once the route window records its first frame.
           val popupSceneReady = !popupWindow || scene?.popupReady == true
           val bounds = scene?.stripBounds
