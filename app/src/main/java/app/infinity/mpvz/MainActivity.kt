@@ -72,6 +72,7 @@ import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.unit.dp
 import app.infinity.mpvz.preferences.AppearancePreferences
+import app.infinity.mpvz.preferences.AdvancedPreferences
 import app.infinity.mpvz.preferences.PlayerPreferences
 import app.infinity.mpvz.preferences.preference.collectAsState
 import app.infinity.mpvz.presentation.Screen
@@ -86,6 +87,7 @@ import app.infinity.mpvz.ui.player.NavigationAnimStyle
 import app.infinity.mpvz.ui.theme.DarkMode
 import app.infinity.mpvz.ui.theme.MpvInfinityTheme
 import app.infinity.mpvz.ui.theme.rememberThemeTransitionState
+import app.infinity.mpvz.ui.performance.FrameTimeOverlay
 import android.view.SurfaceHolder
 import android.view.SurfaceView
 import androidx.compose.foundation.background
@@ -180,6 +182,7 @@ private fun screenNavTransition(
  */
 class MainActivity : AppCompatActivity() {
   private val appearancePreferences by inject<AppearancePreferences>()
+  private val advancedPreferences by inject<AdvancedPreferences>()
   private val playerPreferences by inject<PlayerPreferences>()
   private var appliedEdgeToEdgeDarkMode: Boolean? = null
   private lateinit var pipHelper: MPVPipHelper
@@ -224,6 +227,7 @@ class MainActivity : AppCompatActivity() {
       val sessionState by PlaybackSession.state.collectAsState()
       val enableVideoMiniPlayer by playerPreferences.enableVideoMiniPlayer.collectAsState()
       val autoPiPOnNavigation by playerPreferences.autoPiPOnNavigation.collectAsState()
+      val showFrameTimeOverlay by advancedPreferences.showFrameTimeOverlay.collectAsState()
       val trackListNode by PlaybackSession.propNode["track-list"].collectAsState()
       val rendererNoticePreferences =
         remember { getSharedPreferences(RENDERER_NOTICE_PREFERENCES, MODE_PRIVATE) }
@@ -352,6 +356,7 @@ class MainActivity : AppCompatActivity() {
           }
         }
       }
+      FrameTimeOverlay(this@MainActivity, showFrameTimeOverlay)
     }
   }
 

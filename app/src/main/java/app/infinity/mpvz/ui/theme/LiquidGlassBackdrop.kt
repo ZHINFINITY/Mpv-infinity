@@ -131,6 +131,8 @@ fun LiquidGlassBackdropHost(
   val tuning = LocalGlassCustomization.current
   val frostPasses = GlassCustomizationPolicy.frostPasses(tuning.frost)
   val frame = remember { mutableStateOf<LiquidGlassFrame?>(null) }
+  val captureBuffers = remember { GlassCaptureBuffers() }
+  DisposableEffect(Unit) { onDispose { captureBuffers.recycle() } }
   val ready by rememberUpdatedState(isReady)
   val playing by rememberUpdatedState(isPlaying)
   val aspect by rememberUpdatedState(sampleAspect)
@@ -201,8 +203,11 @@ fun LiquidGlassBackdropHost(
           continue
         }
         // Only the tiny UI copy is cropped/frosted. The actual video surface remains untouched.
-        val sampled = copyGlassFrame(source, crop, dimensions.first, dimensions.second)
-          ?.let { frostGlassFrame(it, tuning.frost) }
+        val sampled = captureBuffers.acquire(dimensions.first, dimensions.second)?.let { target ->
+          copyGlassFrame(source, crop, target)?.let {
+            frostGlassFrame(target, tuning.frost, captureBuffers.pixels, captureBuffers.lumaBins)
+          }
+        }
         val bitmap = sampled?.first
         if (sampled == null || bitmap == null) {
           transientFailure()
@@ -216,6 +221,7 @@ fun LiquidGlassBackdropHost(
             (location[0] + crop.left).toFloat(), (location[1] + crop.top).toFloat(),
             (location[0] + crop.left + crop.width).toFloat(), (location[1] + crop.top + crop.height).toFloat()),
             underlayLuma = sampled.second)
+          captureBuffers.markPublished(bitmap)
         }
         // Recover after transient failures instead of permanently disabling glass after three errors.
         delay(if (failures > 0 && frame.value != null) GlassScenePolicy.TransientGraceMs
@@ -229,38 +235,78 @@ fun LiquidGlassBackdropHost(
   CompositionLocalProvider(LocalLiquidGlassBackdrop provides frame.takeIf { eligible }, content = content)
 }
 
-private suspend fun copyGlassFrame(source: SurfaceView, crop: GlassScenePolicy.SourceRect, width: Int, height: Int): Bitmap? =
+internal class GlassCaptureBuffers {
+  private var first: Bitmap? = null
+  private var second: Bitmap? = null
+  private val retired = ArrayList<Bitmap>(2)
+  private var nextFirst = true
+  private var published: Bitmap? = null
+  var pixels: IntArray = IntArray(0)
+    private set
+  val lumaBins = IntArray(64)
+  fun acquire(width: Int, height: Int): Bitmap? {
+    if (width <= 0 || height <= 0) return null
+    if (first?.width != width || first?.height != height) {
+      first?.let(retired::add); second?.let(retired::add)
+      first = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+      second = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+      pixels = IntArray(width * height)
+      nextFirst = true
+    }
+    // The last bitmap handed to Compose remains drawable until the state swap is
+    // observed. Never let PixelCopy or frosting write into that published image.
+    val preferred = if (nextFirst) first else second
+    val alternate = if (preferred === first) second else first
+    val result = when {
+      preferred != null && preferred !== published -> preferred
+      alternate != null && alternate !== published -> alternate
+      else -> null
+    }
+    nextFirst = !nextFirst
+    return result
+  }
+  fun markPublished(bitmap: Bitmap) {
+    check(bitmap === first || bitmap === second)
+    published = bitmap
+  }
+  fun recycle() {
+    first?.recycle(); second?.recycle()
+    retired.forEach { it.recycle() }
+    retired.clear()
+    first = null; second = null
+    published = null
+    pixels = IntArray(0)
+  }
+}
+
+private suspend fun copyGlassFrame(source: SurfaceView, crop: GlassScenePolicy.SourceRect, bitmap: Bitmap): Bitmap? =
   suspendCancellableCoroutine { continuation ->
-    val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
     try {
       PixelCopy.request(source, AndroidRect(crop.left, crop.top, crop.left + crop.width, crop.top + crop.height), bitmap, { result ->
         if (result == PixelCopy.SUCCESS && continuation.isActive) {
           continuation.resume(bitmap)
         } else {
-          bitmap.recycle() // only unpublished/failed copies can be recycled safely
           if (continuation.isActive) continuation.resume(null)
         }
       }, Handler(Looper.getMainLooper()))
     } catch (_: RuntimeException) {
-      bitmap.recycle()
       if (continuation.isActive) continuation.resume(null)
     }
   }
 
 // Returns the frosted bitmap and its bright-percentile luma, measured on the same background pass.
-private suspend fun frostGlassFrame(bitmap: Bitmap, strength: Float): Pair<Bitmap, Float>? = try {
+private suspend fun frostGlassFrame(bitmap: Bitmap, strength: Float, pixels: IntArray, lumaBins: IntArray): Pair<Bitmap, Float>? = try {
   withContext(Dispatchers.Default) {
-    val pixels = IntArray(bitmap.width * bitmap.height)
     bitmap.getPixels(pixels, 0, bitmap.width, 0, 0, bitmap.width, bitmap.height)
+    // Every API level keeps the same CPU frost on this tiny sample: the API 33+ refraction
+    // shader and the older paint path both expect an already-frosted input (visual parity).
     val frosted = GlassFrostPolicy.frostArgb(pixels, bitmap.width, bitmap.height, strength)
     bitmap.setPixels(frosted, 0, bitmap.width, 0, 0, bitmap.width, bitmap.height)
-    bitmap to GlassSurfacePolicy.underlayLuma(frosted)
+    bitmap to GlassSurfacePolicy.underlayLuma(frosted, lumaBins)
   }
 } catch (cancelled: CancellationException) {
-  bitmap.recycle() // This bitmap was never published to Compose.
   throw cancelled
 } catch (_: RuntimeException) {
-  bitmap.recycle()
   null
 }
 

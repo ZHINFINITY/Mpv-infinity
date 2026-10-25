@@ -2262,4 +2262,6 @@
   <string name="pref_glass_rim_width_summary">Thickness of the lit edge in dp</string>
   <string name="pref_glass_rim_softness">Rim softness</string>
   <string name="pref_glass_rim_softness_summary">How softly the edge light fades</string>
+  <string name="pref_advanced_frame_time_overlay_title">Nakładka czasu klatki</string>
+  <string name="pref_advanced_frame_time_overlay_summary">Pokazuj odsetek klatek z przycięciami i czas klatki p90/p99 dla tego okna</string>
 </resources>

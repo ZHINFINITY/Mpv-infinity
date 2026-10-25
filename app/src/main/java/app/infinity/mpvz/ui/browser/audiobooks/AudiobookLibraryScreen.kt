@@ -1278,7 +1278,11 @@ private fun AudiobookOnlineSearchDialog(
             modifier = Modifier.fillMaxWidth().heightIn(max = 280.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
           ) {
-            items(searchResults) { result ->
+            itemsIndexed(
+              searchResults,
+              key = { index, result -> "${result.provider}:${result.coverUrl}:${result.title}:$index" },
+              contentType = { _, _ -> "online_audiobook_result" },
+            ) { _, result ->
               Surface(
                 shape = RoundedCornerShape(8.dp),
                 color = MaterialTheme.colorScheme.surfaceContainerHigh,

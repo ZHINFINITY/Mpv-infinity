@@ -2265,4 +2265,6 @@
   <string name="pref_glass_rim_width_summary">Thickness of the lit edge in dp</string>
   <string name="pref_glass_rim_softness">Rim softness</string>
   <string name="pref_glass_rim_softness_summary">How softly the edge light fades</string>
+  <string name="pref_advanced_frame_time_overlay_title">帧时间浮层</string>
+  <string name="pref_advanced_frame_time_overlay_summary">显示此窗口的卡顿帧百分比以及 p90/p99 帧时间</string>
 </resources>
