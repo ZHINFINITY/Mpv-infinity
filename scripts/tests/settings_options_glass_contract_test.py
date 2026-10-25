@@ -41,7 +41,9 @@ class SettingsOptionsGlassContract(unittest.TestCase):
         source = WRAPPERS.read_text()
         self.assertIn('GlassSlider(', source)
         self.assertNotIn('actualGlassSlider', source)
-        self.assertGreaterEqual(source.count('containerColor = Color.Transparent'), 3)
+        # Conditional: transparent over glass, the opaque Material fill when glass is off.
+        self.assertGreaterEqual(source.count('containerColor = settingsGlassContainerColor(MaterialTheme.colorScheme.surfaceContainer'), 3)
+        self.assertNotIn('containerColor = Color.Transparent', source)
         self.assertGreaterEqual(source.count('Modifier.settingsGlassSurface(cornerRadius ='), 3)
         # Keep the existing preference-library row and local wrappers (including
         # tuning sliders) as the semantic/persistence contract; glass is only
@@ -61,7 +63,7 @@ class SettingsOptionsGlassContract(unittest.TestCase):
             if path == WRAPPERS:
                 continue
             source = path.read_text()
-            for match in re.finditer(r'\b(AlertDialog|DropdownMenu|ModalBottomSheet)\s*\(', masked(source)):
+            for match in re.finditer(r'\b(AlertDialog|DropdownMenu|ModalBottomSheet|GlassOptionSheet|GlassModalBottomSheet)\s*\(', masked(source)):
                 begin = source.index('(', match.start())
                 args = arguments(source, begin)
                 self.assertIn('settingsGlassSurface(', args, str(path))

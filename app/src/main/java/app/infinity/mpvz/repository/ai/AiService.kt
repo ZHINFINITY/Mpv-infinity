@@ -18,12 +18,7 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
-import kotlinx.serialization.json.jsonArray
-import kotlinx.serialization.json.jsonPrimitive
 import java.io.File
-import java.net.HttpURLConnection
-import java.net.URL
-import java.net.URLEncoder
 import java.security.MessageDigest
 import java.util.Locale
 
@@ -37,6 +32,8 @@ class AiService(
   private val openRouterClient: AiClient,
   private val togetherClient: AiClient,
   private val json: Json,
+  /** Dedicated subtitle translation providers (Google, DeepL, Gemini, OpenAI-compatible). */
+  private val subtitleTranslator: EmbeddedSubtitleTranslator? = null,
 ) {
   companion object {
     private const val TAG = "AiService"
@@ -297,8 +294,10 @@ class AiService(
         val fmt = subtitleFormat?.lowercase(Locale.ROOT)
         val normalizedContent = content.replace("\r\n", "\n").replace("\r", "\n")
 
-        if (preferences.embeddedSubtitleTranslationProvider.get() == "Google Translate") {
-          return@withContext translateWithGoogle(
+        val translator = subtitleTranslator
+        if (translator != null && !translator.usesAssistantFallback()) {
+          return@withContext translateWithProvider(
+            translator,
             normalizedContent,
             targetLanguage,
             fmt,
@@ -387,88 +386,100 @@ class AiService(
       }
     }
 
-  private fun googleLanguageCode(language: String): String =
-    mapOf(
-      "afrikaans" to "af", "arabic" to "ar", "bengali" to "bn", "bulgarian" to "bg",
-      "catalan" to "ca", "chinese (simplified)" to "zh-CN", "chinese (traditional)" to "zh-TW",
-      "croatian" to "hr", "czech" to "cs", "danish" to "da", "dutch" to "nl",
-      "english" to "en", "estonian" to "et", "finnish" to "fi", "french" to "fr",
-      "german" to "de", "greek" to "el", "gujarati" to "gu", "hebrew" to "iw",
-      "hindi" to "hi", "hungarian" to "hu", "indonesian" to "id", "italian" to "it",
-      "japanese" to "ja", "kannada" to "kn", "korean" to "ko", "latvian" to "lv",
-      "lithuanian" to "lt", "malay" to "ms", "malayalam" to "ml", "marathi" to "mr",
-      "norwegian" to "no", "persian" to "fa", "polish" to "pl", "portuguese" to "pt",
-      "punjabi" to "pa", "romanian" to "ro", "russian" to "ru", "serbian" to "sr",
-      "slovak" to "sk", "slovenian" to "sl", "spanish" to "es", "swahili" to "sw",
-      "swedish" to "sv", "tamil" to "ta", "telugu" to "te", "thai" to "th",
-      "turkish" to "tr", "ukrainian" to "uk", "urdu" to "ur", "vietnamese" to "vi",
-    )[language.trim().lowercase(Locale.ROOT)] ?: language.trim().ifBlank { "en" }
-
-  private suspend fun translateWithGoogle(
+  private suspend fun translateWithProvider(
+    translator: EmbeddedSubtitleTranslator,
     content: String,
     targetLanguage: String,
     fmt: String?,
     onProgress: (SubtitleTranslationProgress) -> Unit,
   ): Result<String> =
     try {
-      val chunks =
-        when (fmt) {
-          "srt", "vtt", "sbv", "srv1", "srv2", "srv3" ->
-            content.split(Regex("\\n{2,}")).map(String::trim).filter { it.isNotBlank() }
-          else -> content.lines().filter { it.isNotBlank() }
+      if (fmt == "ass" || fmt == "ssa") {
+        translateAssWithProvider(translator, content, targetLanguage, onProgress)
+      } else {
+        val chunks =
+          when (fmt) {
+            "srt", "vtt", "sbv", "srv1", "srv2", "srv3" ->
+              content.split(Regex("\\n{2,}")).map(String::trim).filter { it.isNotBlank() }
+            else -> content.lines().filter { it.isNotBlank() }
+          }
+        if (chunks.isEmpty()) {
+          Result.success(content)
+        } else {
+          val translated =
+            chunks.mapIndexed { index, chunk ->
+              val value = translateProviderChunk(translator, chunk, targetLanguage, fmt)
+              onProgress(SubtitleTranslationProgress((index + 1).toFloat() / chunks.size, index + 1, chunks.size))
+              value
+            }
+          Result.success(
+            if (fmt in setOf("srt", "vtt", "sbv", "srv1", "srv2", "srv3")) translated.joinToString("\n\n") else translated.joinToString("\n"),
+          )
         }
-      if (chunks.isEmpty()) return Result.success(content)
-      val translated = chunks.mapIndexed { index, chunk ->
-        val value = translateGoogleChunk(chunk, targetLanguage, fmt)
-        onProgress(SubtitleTranslationProgress((index + 1).toFloat() / chunks.size, index + 1, chunks.size))
-        value
       }
-      Result.success(if (fmt in setOf("srt", "vtt", "sbv", "srv1", "srv2", "srv3")) translated.joinToString("\n\n") else translated.joinToString("\n"))
+    } catch (e: kotlin.coroutines.cancellation.CancellationException) {
+      throw e
     } catch (e: Exception) {
-      Log.e(TAG, "Google subtitle translation failed", e)
+      // Translator messages are key-free; never log request URLs or headers.
+      Log.w(TAG, "Subtitle translation failed: ${e.message}")
       Result.failure(e)
     }
 
-  private fun translateGoogleChunk(chunk: String, targetLanguage: String, fmt: String?): String {
+  private suspend fun translateProviderChunk(
+    translator: EmbeddedSubtitleTranslator,
+    chunk: String,
+    targetLanguage: String,
+    fmt: String?,
+  ): String {
     if (fmt == "vtt" && chunk.trim().equals("WEBVTT", ignoreCase = true)) return chunk
     val lines = chunk.lines()
     val timingIndex = lines.indexOfFirst { it.contains("-->") }
     if (fmt in setOf("srt", "vtt", "sbv", "srv1", "srv2", "srv3") && timingIndex >= 0) {
       val firstText = timingIndex + 1
       if (firstText >= lines.size) return chunk
-      val translated = translateGoogleText(lines.drop(firstText).joinToString("\n"), targetLanguage)
+      val translated = translateProviderText(translator, lines.drop(firstText).joinToString("\n"), targetLanguage)
       return (lines.take(firstText) + translated.lines()).joinToString("\n")
     }
-    return translateGoogleText(chunk, targetLanguage)
+    return translateProviderText(translator, chunk, targetLanguage)
   }
 
-  private fun translateGoogleText(text: String, targetLanguage: String): String {
-    if (text.isBlank()) return text
-    val endpoint = preferences.embeddedSubtitleTranslationEndpoint.get().trim()
-    require(endpoint.isNotBlank()) { "Google translation endpoint is empty" }
-    val querySeparator = if (endpoint.contains("?")) "&" else "?"
-    val url =
-      URL(
-        endpoint + querySeparator +
-          "client=gtx&sl=auto&tl=${URLEncoder.encode(googleLanguageCode(targetLanguage), "UTF-8")}" +
-          "&dt=t&q=${URLEncoder.encode(text, "UTF-8")}" +
-          preferences.embeddedSubtitleTranslationApiKey.get().takeIf { it.isNotBlank() }?.let { "&key=${URLEncoder.encode(it, "UTF-8")}" }.orEmpty(),
-      )
-    val connection = (url.openConnection() as HttpURLConnection).apply {
-      requestMethod = "GET"
-      connectTimeout = 15_000
-      readTimeout = 30_000
-    }
-    return try {
-      val http = connection
-      val response = http.inputStream.bufferedReader().use { it.readText() }
-      require(http.responseCode in 200..299) { "Google endpoint returned HTTP ${http.responseCode}" }
-      json.parseToJsonElement(response).jsonArray.first().jsonArray.joinToString("") { part ->
-        part.jsonArray.firstOrNull()?.jsonPrimitive?.contentOrNull.orEmpty()
+  private suspend fun translateProviderText(
+    translator: EmbeddedSubtitleTranslator,
+    text: String,
+    targetLanguage: String,
+  ): String = if (text.isBlank()) text else translator.translate(text, targetLanguage).getOrThrow()
+
+  /** ASS/SSA with a translation API: headers stay verbatim; only Dialogue text is sent, tags kept. */
+  private suspend fun translateAssWithProvider(
+    translator: EmbeddedSubtitleTranslator,
+    content: String,
+    targetLanguage: String,
+    onProgress: (SubtitleTranslationProgress) -> Unit,
+  ): Result<String> {
+    val lines = content.lines().toMutableList()
+    val dialogue = lines.indices.filter { lines[it].startsWith("Dialogue:", ignoreCase = true) }
+    if (dialogue.isEmpty()) return Result.success(content)
+    dialogue.forEachIndexed { n, index ->
+      val line = lines[index]
+      var pos = -1
+      var count = 0
+      while (count < 9) {
+        pos = line.indexOf(',', pos + 1)
+        if (pos == -1) break
+        count++
       }
-    } finally {
-      connection.disconnect()
+      if (pos != -1 && pos + 1 < line.length) {
+        val text = line.substring(pos + 1)
+        val leadingTags = Regex("^(\\{[^}]*\\})+").find(text)?.value.orEmpty()
+        val body = text.removePrefix(leadingTags)
+        if (body.isNotBlank()) {
+          val translated = translateProviderText(translator, body.replace("\\N", "\n"), targetLanguage)
+          lines[index] = line.substring(0, pos + 1) + leadingTags + translated.trim().replace("\n", "\\N")
+        }
+      }
+      onProgress(SubtitleTranslationProgress((n + 1).toFloat() / dialogue.size, n + 1, dialogue.size))
     }
+    return Result.success(lines.joinToString("\n"))
   }
 
   /**

@@ -7,6 +7,7 @@
 
 package app.infinity.mpvz.ui.preferences
 
+import app.infinity.mpvz.ui.components.GlassOptionSheet
 import app.infinity.mpvz.ui.preferences.components.settingsGlassContainerColor
 
 import app.infinity.mpvz.ui.preferences.components.settingsGlassSurface
@@ -72,6 +73,7 @@ import app.infinity.mpvz.preferences.preference.collectAsState
 import app.infinity.mpvz.presentation.Screen
 import app.infinity.mpvz.repository.ai.AiModelInfo
 import app.infinity.mpvz.repository.ai.AiService
+import app.infinity.mpvz.repository.ai.OpenAiBaseUrlInput
 import app.infinity.mpvz.ui.icons.Icon
 import app.infinity.mpvz.ui.icons.Icons
 import app.infinity.mpvz.ui.preferences.PreferenceCard
@@ -81,6 +83,8 @@ import app.infinity.mpvz.ui.preferences.components.SwitchPreference
 import app.infinity.mpvz.ui.utils.LocalBackStack
 import app.infinity.mpvz.ui.utils.LocalShowSettingsBackArrow
 import app.infinity.mpvz.ui.utils.popSafely
+import java.util.concurrent.atomic.AtomicInteger
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
@@ -153,6 +157,7 @@ object AiIntegrationScreen : Screen {
     val openCodeKey by preferences.openCodeApiKey.collectAsState()
     val groqKey by preferences.groqApiKey.collectAsState()
     val openaiKey by preferences.openaiApiKey.collectAsState()
+    val openaiBaseUrl by preferences.openaiBaseUrl.collectAsState()
     val anthropicKey by preferences.anthropicApiKey.collectAsState()
     val openrouterKey by preferences.openrouterApiKey.collectAsState()
     val togetherKey by preferences.togetherApiKey.collectAsState()
@@ -172,6 +177,7 @@ object AiIntegrationScreen : Screen {
     val embeddedTranslationProvider by preferences.embeddedSubtitleTranslationProvider.collectAsState()
     val embeddedTranslationEndpoint by preferences.embeddedSubtitleTranslationEndpoint.collectAsState()
     val embeddedTranslationApiKey by preferences.embeddedSubtitleTranslationApiKey.collectAsState()
+    val embeddedTranslationModel by preferences.embeddedSubtitleTranslationModel.collectAsState()
     val realtimeSubsEnabled by preferences.realtimeSubsEnabled.collectAsState()
 
     var models by remember { mutableStateOf<List<AiModelInfo>>(emptyList()) }
@@ -186,14 +192,22 @@ object AiIntegrationScreen : Screen {
 
     val json = koinInject<Json>()
 
-    fun loadModels() {
-      if (isLoadingModels) return
+    // Each load takes a token; only the newest load may update the list or the cache, so a
+    // request to a previous endpoint can never repopulate models after the base URL changes.
+    val modelsLoadToken = remember { AtomicInteger() }
+    var modelsJob by remember { mutableStateOf<Job?>(null) }
+
+    fun loadModels(restart: Boolean = false) {
+      if (isLoadingModels && !restart) return
+      modelsJob?.cancel()
+      val token = modelsLoadToken.incrementAndGet()
       val requestedProvider = provider
-      scope.launch {
+      modelsJob = scope.launch {
         isLoadingModels = true
         modelLoadError = null
-        aiService
-          .fetchModelsForProvider(requestedProvider)
+        val result = aiService.fetchModelsForProvider(requestedProvider)
+        if (token != modelsLoadToken.get()) return@launch
+        result
           .onSuccess { fetchedModels ->
             if (provider == requestedProvider) models = fetchedModels
             preferences.availableModelsFor(requestedProvider).set(
@@ -385,6 +399,57 @@ val apiKeyInfo =
                   )
                 }
 
+                if (provider == AiProvider.OPENAI) {
+                  item {
+                    PreferenceCard {
+                      TextFieldPreference(
+                        value = openaiBaseUrl,
+                        onValueChange = { value ->
+                          val normalized = OpenAiBaseUrlInput.normalize(value)
+                          if (normalized != null) {
+                            if (normalized != openaiBaseUrl) {
+                              preferences.openaiBaseUrl.set(normalized)
+                              // Models listed by the previous endpoint do not apply to the new one.
+                              preferences.availableModelsFor(AiProvider.OPENAI).set("")
+                              models = emptyList()
+                              loadModels(restart = true)
+                            }
+                          } else {
+                            Toast.makeText(
+                              context,
+                              R.string.pref_openai_base_url_invalid,
+                              Toast.LENGTH_SHORT,
+                            ).show()
+                          }
+                        },
+                        textToValue = { it.trim() },
+                        title = { Text(stringResource(R.string.pref_openai_base_url_title)) },
+                        summary = {
+                          Text(
+                            if (openaiBaseUrl.isBlank()) {
+                              stringResource(R.string.pref_openai_base_url_summary)
+                            } else {
+                              openaiBaseUrl
+                            },
+                            color = MaterialTheme.colorScheme.outline,
+                          )
+                        },
+                        textField = { value, onValueChange, _ ->
+                          Column {
+                            Text(stringResource(R.string.pref_openai_base_url_prompt))
+                            TextField(
+                              value = value,
+                              onValueChange = onValueChange,
+                              modifier = Modifier.fillMaxWidth(),
+                              placeholder = { Text(stringResource(R.string.pref_openai_base_url_placeholder)) },
+                              singleLine = true,
+                            )
+                          }
+                        },
+                      )
+                    }
+                  }
+                }
                 item {
                   PreferenceCard {
                     TextFieldPreference(
@@ -1012,48 +1077,79 @@ val apiKeyInfo =
                     onLanguagesChange = { preferences.autoTranslateLanguages.set(it) },
                   )
                   PreferenceDivider()
+                  val translationProvider = app.infinity.mpvz.repository.ai.SubtitleTranslationProvider.fromLabel(embeddedTranslationProvider)
                   ListPreference(
-                    value = embeddedTranslationProvider,
-                    onValueChange = { preferences.embeddedSubtitleTranslationProvider.set(it) },
-                    values = listOf("Google Translate", "OpenAI-compatible", "DeepL", "Gemini"),
+                    value = translationProvider.label,
+                    onValueChange = { label ->
+                      val picked = app.infinity.mpvz.repository.ai.SubtitleTranslationProvider.fromLabel(label)
+                      preferences.embeddedSubtitleTranslationProvider.set(picked.label)
+                      // All providers share one endpoint field: swap a built-in default for the new
+                      // provider's default so Gemini/DeepL never call Google's URL; keep custom URLs.
+                      preferences.embeddedSubtitleTranslationEndpoint.set(
+                        app.infinity.mpvz.repository.ai.SubtitleTranslationProviders.endpointAfterProviderChange(picked, preferences.embeddedSubtitleTranslationEndpoint.get()),
+                      )
+                    },
+                    values = app.infinity.mpvz.repository.ai.SubtitleTranslationProvider.labels,
                     valueToText = { androidx.compose.ui.text.AnnotatedString(it) },
                     title = { Text("Embedded subtitle translation provider") },
                     summary = {
                       Text(
-                        if (embeddedTranslationProvider == "Google Translate") {
-                          "Free Google Translate endpoint; no API key required"
-                        } else {
-                          "Uses the endpoint and API key below"
+                        when (translationProvider) {
+                          app.infinity.mpvz.repository.ai.SubtitleTranslationProvider.GOOGLE -> "Free Google Translate endpoint; no API key required"
+                          app.infinity.mpvz.repository.ai.SubtitleTranslationProvider.DEEPL -> "DeepL API with your key (free keys ending in :fx use the free host)"
+                          app.infinity.mpvz.repository.ai.SubtitleTranslationProvider.GEMINI -> "Google Gemini API with your key"
+                          app.infinity.mpvz.repository.ai.SubtitleTranslationProvider.OPENAI_COMPATIBLE ->
+                            "Any OpenAI-compatible chat API; leave endpoint and key empty to use the AI provider above"
                         },
                         color = MaterialTheme.colorScheme.outline,
                       )
                     },
                   )
                   PreferenceDivider()
+                  val endpointPlaceholder =
+                    if (translationProvider == app.infinity.mpvz.repository.ai.SubtitleTranslationProvider.OPENAI_COMPATIBLE) {
+                      app.infinity.mpvz.repository.ai.SubtitleTranslationProviders.OPENAI_DEFAULT_BASE
+                    } else {
+                      app.infinity.mpvz.repository.ai.SubtitleTranslationProviders.defaultEndpoint(translationProvider, embeddedTranslationApiKey)
+                    }
                   TextFieldPreference(
                     value = embeddedTranslationEndpoint,
                     onValueChange = { preferences.embeddedSubtitleTranslationEndpoint.set(it.trim()) },
                     textToValue = { it.trim() },
                     title = { Text("Subtitle translation endpoint") },
-                    summary = { Text("Google free endpoint or a compatible translation API URL", color = MaterialTheme.colorScheme.outline) },
+                    summary = {
+                      Text(
+                        embeddedTranslationEndpoint.ifBlank { "Default: $endpointPlaceholder" },
+                        color = MaterialTheme.colorScheme.outline,
+                      )
+                    },
                     textField = { value, onValueChange, _ ->
                       TextField(
                         value = value,
                         onValueChange = onValueChange,
                         modifier = Modifier.fillMaxWidth(),
-                        placeholder = { Text("https://translate.googleapis.com/translate_a/single") },
+                        placeholder = { Text(endpointPlaceholder) },
                         singleLine = true,
                       )
                     },
                   )
-                  if (embeddedTranslationProvider != "Google Translate") {
+                  if (translationProvider != app.infinity.mpvz.repository.ai.SubtitleTranslationProvider.GOOGLE) {
                     PreferenceDivider()
                     TextFieldPreference(
                       value = embeddedTranslationApiKey,
                       onValueChange = { preferences.embeddedSubtitleTranslationApiKey.set(it.trim()) },
                       textToValue = { it.trim() },
                       title = { Text("Subtitle translation API key") },
-                      summary = { Text("Optional key for the selected translation API", color = MaterialTheme.colorScheme.outline) },
+                      summary = {
+                        Text(
+                          when {
+                            embeddedTranslationApiKey.isNotBlank() -> "Key saved"
+                            translationProvider == app.infinity.mpvz.repository.ai.SubtitleTranslationProvider.OPENAI_COMPATIBLE -> "Optional for local servers"
+                            else -> "Required for ${translationProvider.label}"
+                          },
+                          color = MaterialTheme.colorScheme.outline,
+                        )
+                      },
                       textField = { value, onValueChange, _ ->
                         TextField(
                           value = value,
@@ -1062,6 +1158,34 @@ val apiKeyInfo =
                           placeholder = { Text("API key") },
                           singleLine = true,
                           visualTransformation = PasswordVisualTransformation(),
+                        )
+                      },
+                    )
+                  }
+                  if (translationProvider == app.infinity.mpvz.repository.ai.SubtitleTranslationProvider.GEMINI || translationProvider == app.infinity.mpvz.repository.ai.SubtitleTranslationProvider.OPENAI_COMPATIBLE) {
+                    val isGemini = translationProvider == app.infinity.mpvz.repository.ai.SubtitleTranslationProvider.GEMINI
+                    val modelPlaceholder = if (isGemini) app.infinity.mpvz.repository.ai.SubtitleTranslationProviders.GEMINI_DEFAULT_MODEL else "Model name"
+                    PreferenceDivider()
+                    TextFieldPreference(
+                      value = embeddedTranslationModel,
+                      onValueChange = { preferences.embeddedSubtitleTranslationModel.set(it.trim()) },
+                      textToValue = { it.trim() },
+                      title = { Text("Subtitle translation model") },
+                      summary = {
+                        Text(
+                          embeddedTranslationModel.ifBlank {
+                            if (isGemini) "Default: $modelPlaceholder" else "Uses the OpenAI model selected above when empty"
+                          },
+                          color = MaterialTheme.colorScheme.outline,
+                        )
+                      },
+                      textField = { value, onValueChange, _ ->
+                        TextField(
+                          value = value,
+                          onValueChange = onValueChange,
+                          modifier = Modifier.fillMaxWidth(),
+                          placeholder = { Text(modelPlaceholder) },
+                          singleLine = true,
                         )
                       },
                     )
@@ -1218,7 +1342,7 @@ val apiKeyInfo =
       }
 
       if (showSubtitleTranslationWarning) {
-        AlertDialog(
+        GlassOptionSheet(
       containerColor = settingsGlassContainerColor(androidx.compose.material3.AlertDialogDefaults.containerColor),
       modifier = androidx.compose.ui.Modifier.settingsGlassSurface(cornerRadius = 28.dp, independent = true),
           onDismissRequest = {
@@ -1231,7 +1355,7 @@ val apiKeyInfo =
                 .stringResource(app.infinity.mpvz.R.string.pref_translation_section),
             )
           },
-          text = {
+          content = {
             Text(
               androidx.compose.ui.res.stringResource(
                 app.infinity.mpvz.R.string.ui_subtitle_translation_can_be_a_bit_messy,
@@ -1249,8 +1373,7 @@ val apiKeyInfo =
                   .stringResource(app.infinity.mpvz.R.string.got_it),
               )
             }
-          },
-        )
+          },)
       }
     }
   }

@@ -7,6 +7,7 @@
 
 package app.infinity.mpvz.ui.preferences
 
+import app.infinity.mpvz.ui.components.GlassOptionSheet
 import app.infinity.mpvz.ui.preferences.components.settingsGlassContainerColor
 
 import app.infinity.mpvz.ui.preferences.components.settingsGlassSurface
@@ -305,12 +306,12 @@ object GesturePreferencesScreen : Screen {
               PreferenceDivider()
 
               if (showCustomSeekDialog) {
-                AlertDialog(
+                GlassOptionSheet(
       containerColor = settingsGlassContainerColor(androidx.compose.material3.AlertDialogDefaults.containerColor),
       modifier = androidx.compose.ui.Modifier.settingsGlassSurface(cornerRadius = 28.dp, independent = true),
                   onDismissRequest = { showCustomSeekDialog = false },
                   title = { Text(text = stringResource(id = R.string.pref_player_double_tap_seek_duration)) },
-                  text = {
+                  content = {
                     Column {
                       Text(
                         text = stringResource(R.string.pref_custom_seek_dialog_text),
@@ -343,8 +344,7 @@ object GesturePreferencesScreen : Screen {
                     TextButton(onClick = { showCustomSeekDialog = false }) {
                       Text(stringResource(R.string.generic_cancel))
                     }
-                  },
-                )
+                  },)
               }
 
               val doubleTapSeekAreaWidth by preferences.doubleTapSeekAreaWidth.collectAsState()

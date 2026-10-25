@@ -124,6 +124,12 @@ class BuildSpeedContractTest(unittest.TestCase):
                      'Verify permission-only and third-party source boundaries']:
             self.assertIn(name, BUILD)
         self.assertIn('python3 scripts/tests/apk_signing_identity_test.py', WORKFLOW)
+        # The candidate provenance gate pins test-branch SHAs; it must not run on main or
+        # other branches, where those commits need not be ancestors (Codex review on PR #98).
+        self.assertEqual(
+            "github.ref_name == 'test/radio-ui-performance-20261021'",
+            BUILD['Verify combined radio and UI phone-test candidate'].get('if'),
+        )
 
 
 if __name__ == '__main__':

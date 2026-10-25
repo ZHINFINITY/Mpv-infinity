@@ -29,6 +29,8 @@
   <string name="pref_appearance_amoled_mode_summary">Usar fundo totalmente preto em temas escuros</string>
   <string name="pref_appearance_system_font_title">Usar fonte do sistema</string>
   <string name="pref_appearance_system_font_summary">Usar a fonte do sistema Android em todo o Mpv∞ no lugar da Google Sans Flex</string>
+  <string name="pref_appearance_animate_infinity_logo_title">Animar logotipo do infinito</string>
+  <string name="pref_appearance_animate_infinity_logo_summary">Repete a animação do símbolo do infinito da biblioteca. Desative para mostrar uma marca estática.</string>
   <string name="pref_appearance_material_you_title">Material You</string>
   <string name="pref_appearance_material_you_summary">Ativar cores dinâmicas</string>
   <string name="pref_appearance_material_you_summary_disabled">Disponível somente no Android 12 ou superior</string>
@@ -2245,4 +2247,15 @@ Reinicie o aplicativo para que todas as alterações entrem em vigor.</string>
   <string name="track_metadata_forced">Forçado</string>
   <string name="track_metadata_sdh">SDH</string>
   <string name="track_metadata_external">Externo</string>
+    <string name="playlist_actions">Ações da playlist</string>
+    <string name="playlist_export_m3u">Exportar M3U</string>
+    <string name="playlist_share_m3u">Compartilhar M3U</string>
+    <string name="playlist_export_success">Playlist exportada</string>
+    <string name="playlist_export_unavailable">A playlist ainda está carregando</string>
+    <string name="playlist_export_error">Não foi possível exportar a playlist: %1$s</string>
+    <string name="playlist_share_error">Não foi possível compartilhar a playlist: %1$s</string>
+    <string name="pref_openai_base_url_title">URL base da API compatível com OpenAI</string>
+    <string name="pref_openai_base_url_summary">Deixe em branco para usar o endpoint oficial da OpenAI</string>
+    <string name="pref_openai_base_url_prompt">Digite a URL base de uma API compatível com OpenAI</string>
+    <string name="pref_openai_base_url_invalid">Digite uma URL HTTP ou HTTPS válida, sem credenciais, parâmetros de consulta ou fragmentos.</string>
 </resources>

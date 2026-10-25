@@ -3,6 +3,7 @@
  * Copyright (c) 2026 ZHINFINITY. Mpv∞ Covered Code. See LICENSE for terms.
  */
 package app.infinity.mpvz.ui.preferences.components
+import app.infinity.mpvz.ui.components.GlassOptionSheet
 import app.infinity.mpvz.ui.theme.GlassDropdownMenu
 import app.infinity.mpvz.ui.theme.GlassExposedDropdownMenu
 
@@ -68,22 +69,23 @@ fun <T> ListPreference(
     if (type == ListPreferenceType.DROPDOWN_MENU) {
       GlassDropdownMenu(
         expanded = open, onDismissRequest = { open = false },
-        modifier = Modifier.settingsGlassSurface(cornerRadius = 12.dp, independent = true), containerColor = Color.Transparent,
+        modifier = Modifier.settingsGlassSurface(cornerRadius = 12.dp, independent = true),
+        containerColor = settingsGlassContainerColor(MaterialTheme.colorScheme.surfaceContainer),
       ) { values.forEach { drawOption(it) } }
     }
   }
   if (open && type == ListPreferenceType.ALERT_DIALOG) {
-    AlertDialog(
+    GlassOptionSheet(
       onDismissRequest = { open = false }, title = title,
-      modifier = Modifier.settingsGlassSurface(cornerRadius = 28.dp, independent = true), containerColor = Color.Transparent,
-      text = {
-        LazyColumn(Modifier.fillMaxWidth().heightIn(max = 400.dp)) {
-          items(values.size) { drawOption(values[it]) }
-        }
-      },
-      confirmButton = {},
+      modifier = Modifier.settingsGlassSurface(cornerRadius = 28.dp, independent = true),
+      containerColor = settingsGlassContainerColor(MaterialTheme.colorScheme.surfaceContainerHigh),
       dismissButton = { TextButton(onClick = { open = false }) { Text(stringResource(android.R.string.cancel)) } },
-    )
+    ) {
+      // Bounded by the sheet (max 90% of the screen); every option scrolls into reach.
+      LazyColumn(Modifier.fillMaxWidth()) {
+        items(values.size) { drawOption(values[it]) }
+      }
+    }
   }
 }
 
@@ -180,13 +182,15 @@ fun <T> TextFieldPreference(
       if (parsed != null) { onValueChange(parsed); open = false }
     }
     val focus = remember { FocusRequester() }
-    AlertDialog(
+    GlassOptionSheet(
       onDismissRequest = { open = false }, title = title,
-      modifier = Modifier.settingsGlassSurface(cornerRadius = 28.dp, independent = true), containerColor = Color.Transparent,
-      text = { Box(Modifier.fillMaxWidth().focusRequester(focus)) { textField(text, { text = it }, confirm) } },
+      modifier = Modifier.settingsGlassSurface(cornerRadius = 28.dp, independent = true),
+      containerColor = settingsGlassContainerColor(MaterialTheme.colorScheme.surfaceContainerHigh),
       confirmButton = { TextButton(onClick = confirm) { Text(stringResource(android.R.string.ok)) } },
       dismissButton = { TextButton(onClick = { open = false }) { Text(stringResource(android.R.string.cancel)) } },
-    )
+    ) {
+      Box(Modifier.fillMaxWidth().focusRequester(focus)) { textField(text, { text = it }, confirm) }
+    }
     LaunchedEffect(focus) { runCatching { focus.requestFocus() } }
   }
 }

@@ -29,6 +29,8 @@
   <string name="pref_appearance_amoled_mode_summary">استفاده از پس زمینه سیاه خالص برای موضوعات تاریک</string>
   <string name="pref_appearance_system_font_title">استفاده از فونت سیستم</string>
   <string name="pref_appearance_system_font_summary">استفاده ازAndroidنوع سیستم در سراسر MPv∞ به جای Google Sans Flex</string>
+  <string name="pref_appearance_animate_infinity_logo_title">متحرک‌سازی لوگوی بی‌نهایت</string>
+  <string name="pref_appearance_animate_infinity_logo_summary">نماد بی‌نهایت کتابخانه به‌صورت پیوسته متحرک می‌شود. برای نمایش نشان ثابت، آن را خاموش کنید.</string>
   <string name="pref_appearance_material_you_title">Material You</string>
   <string name="pref_appearance_material_you_summary">ایجاد رنگ های پویا</string>
   <string name="pref_appearance_material_you_summary_disabled">فقط در دسترسAndroid12 و بالاتر</string>
@@ -2230,4 +2232,15 @@
   <string name="track_metadata_forced">اجباری</string>
   <string name="track_metadata_sdh">ویژه ناشنوایان</string>
   <string name="track_metadata_external">خارجی</string>
+    <string name="playlist_actions">کنش‌های فهرست پخش</string>
+    <string name="playlist_export_m3u">صدور M3U</string>
+    <string name="playlist_share_m3u">اشتراک‌گذاری M3U</string>
+    <string name="playlist_export_success">فهرست پخش صادر شد</string>
+    <string name="playlist_export_unavailable">فهرست پخش هنوز در حال بارگیری است</string>
+    <string name="playlist_export_error">صدور فهرست پخش ممکن نشد: %1$s</string>
+    <string name="playlist_share_error">اشتراک‌گذاری فهرست پخش ممکن نشد: %1$s</string>
+    <string name="pref_openai_base_url_title">نشانی پایه API سازگار با OpenAI</string>
+    <string name="pref_openai_base_url_summary">برای استفاده از نقطه پایانی رسمی OpenAI خالی بگذارید</string>
+    <string name="pref_openai_base_url_prompt">نشانی پایه یک API سازگار با OpenAI را وارد کنید</string>
+    <string name="pref_openai_base_url_invalid">یک نشانی HTTP یا HTTPS معتبر بدون اطلاعات ورود، پارامتر پرس‌وجو یا بخش وارد کنید.</string>
 </resources>

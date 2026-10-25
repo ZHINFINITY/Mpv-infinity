@@ -19,7 +19,10 @@ class AudioPlayerControlsWiringTest {
     val controls = source("app/src/main/java/app/infinity/mpvz/ui/player/controls/AudioPlayerControls.kt")
     assertTrue(controls.contains("MiniPlayerDragController"))
     assertTrue(controls.contains("nestedGestureController.nestedScrollConnection"))
-    assertTrue(controls.contains("if (liquidGlassSurfaces) Color.Transparent"))
+    assertTrue(controls.contains("Modifier.browserMusicSheetDrag("))
+    assertFalse(controls.contains("mpvRx"))
+    assertTrue(controls.contains("MaterialTheme.colorScheme.surface"))
+    assertTrue(controls.contains("if (inAppSheet != null)"))
     assertFalse(controls.contains("if (totalDrag > 160f) onBackPress()"))
   }
 

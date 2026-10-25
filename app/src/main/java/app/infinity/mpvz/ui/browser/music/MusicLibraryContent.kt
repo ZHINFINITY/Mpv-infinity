@@ -6,6 +6,7 @@
 
 package app.infinity.mpvz.ui.browser.music
 
+import app.infinity.mpvz.ui.components.GlassModalBottomSheet
 import app.infinity.mpvz.ui.browser.fab.quickPlayFabContainerColor
 import app.infinity.mpvz.ui.preferences.components.settingsGlassSurface
 import app.infinity.mpvz.ui.preferences.components.settingsGlassContainerColor
@@ -908,10 +909,10 @@ fun MusicLibraryContent(
 
         // Song Options Sheet
         selectedSongForOptions?.let { song ->
-          ModalBottomSheet(
+          GlassModalBottomSheet(
             onDismissRequest = { selectedSongForOptions = null },
             containerColor = settingsGlassContainerColor(MaterialTheme.colorScheme.surfaceContainerLow),
-            modifier = Modifier.settingsGlassSurface(cornerRadius = 28.dp, independent = true),
+            paneModifier = Modifier.settingsGlassSurface(cornerRadius = 28.dp, independent = true),
             sheetState =
               rememberBottomSheetState(
                 initialValue = SheetValue.Hidden,
@@ -1034,10 +1035,10 @@ fun MusicLibraryContent(
           val albumSongs = remember(songs, album) {
             songs.filter { it.albumId == album.id || it.album.equals(album.title, ignoreCase = true) }
           }
-          ModalBottomSheet(
+          GlassModalBottomSheet(
             onDismissRequest = { selectedAlbumForOptions = null },
             containerColor = settingsGlassContainerColor(MaterialTheme.colorScheme.surfaceContainerLow),
-            modifier = Modifier.settingsGlassSurface(cornerRadius = 28.dp, independent = true),
+            paneModifier = Modifier.settingsGlassSurface(cornerRadius = 28.dp, independent = true),
             sheetState =
               rememberBottomSheetState(
                 initialValue = SheetValue.Hidden,
@@ -1113,10 +1114,10 @@ fun MusicLibraryContent(
           val artistSongs = remember(songs, artist) {
             songs.filter { it.artist.equals(artist.name, ignoreCase = true) }
           }
-          ModalBottomSheet(
+          GlassModalBottomSheet(
             onDismissRequest = { selectedArtistForOptions = null },
             containerColor = settingsGlassContainerColor(MaterialTheme.colorScheme.surfaceContainerLow),
-            modifier = Modifier.settingsGlassSurface(cornerRadius = 28.dp, independent = true),
+            paneModifier = Modifier.settingsGlassSurface(cornerRadius = 28.dp, independent = true),
             sheetState =
               rememberBottomSheetState(
                 initialValue = SheetValue.Hidden,
@@ -1181,10 +1182,10 @@ fun MusicLibraryContent(
 
         // Playlist Options Sheet
         selectedPlaylistForOptions?.let { playlist ->
-          ModalBottomSheet(
+          GlassModalBottomSheet(
             onDismissRequest = { selectedPlaylistForOptions = null },
             containerColor = settingsGlassContainerColor(MaterialTheme.colorScheme.surfaceContainerLow),
-            modifier = Modifier.settingsGlassSurface(cornerRadius = 28.dp, independent = true),
+            paneModifier = Modifier.settingsGlassSurface(cornerRadius = 28.dp, independent = true),
             sheetState =
               rememberBottomSheetState(
                 initialValue = SheetValue.Hidden,
@@ -2485,10 +2486,10 @@ private fun AlbumDetailSheet(
   onSongLongClick: (MusicSong) -> Unit,
   onPlayAlbum: () -> Unit
 ) {
-  ModalBottomSheet(
+  GlassModalBottomSheet(
     onDismissRequest = onDismiss,
     containerColor = settingsGlassContainerColor(MaterialTheme.colorScheme.surfaceContainerLow),
-    modifier = Modifier.settingsGlassSurface(cornerRadius = 28.dp, independent = true),
+    paneModifier = Modifier.settingsGlassSurface(cornerRadius = 28.dp, independent = true),
     sheetState =
       rememberBottomSheetState(
         initialValue = SheetValue.Hidden,
@@ -2584,10 +2585,10 @@ private fun ArtistDetailSheet(
   onSongLongClick: (MusicSong) -> Unit,
   onPlayArtist: () -> Unit
 ) {
-  ModalBottomSheet(
+  GlassModalBottomSheet(
     onDismissRequest = onDismiss,
     containerColor = settingsGlassContainerColor(MaterialTheme.colorScheme.surfaceContainerLow),
-    modifier = Modifier.settingsGlassSurface(cornerRadius = 28.dp, independent = true),
+    paneModifier = Modifier.settingsGlassSurface(cornerRadius = 28.dp, independent = true),
     sheetState =
       rememberBottomSheetState(
         initialValue = SheetValue.Hidden,

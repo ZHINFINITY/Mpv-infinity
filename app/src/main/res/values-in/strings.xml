@@ -29,6 +29,8 @@
   <string name="pref_appearance_amoled_mode_summary">Gunakan latar belakang hitam murni untuk tema gelap</string>
   <string name="pref_appearance_system_font_title">Gunakan font sistem</string>
   <string name="pref_appearance_system_font_summary">Gunakan jenis huruf sistem Android di Mpv∞ alih-alih Google Sans Flex</string>
+  <string name="pref_appearance_animate_infinity_logo_title">Animasikan logo tak hingga</string>
+  <string name="pref_appearance_animate_infinity_logo_summary">Putar animasi simbol tak hingga di pustaka secara berulang. Matikan untuk menampilkan tanda diam.</string>
   <string name="pref_appearance_material_you_title">Material You</string>
   <string name="pref_appearance_material_you_summary">Aktifkan warna dinamis</string>
   <string name="pref_appearance_material_you_summary_disabled">Hanya tersedia di Android 12 ke atas</string>
@@ -2230,4 +2232,15 @@
   <string name="track_metadata_forced">Paksa</string>
   <string name="track_metadata_sdh">SDH</string>
   <string name="track_metadata_external">Eksternal</string>
+    <string name="playlist_actions">Tindakan playlist</string>
+    <string name="playlist_export_m3u">Ekspor M3U</string>
+    <string name="playlist_share_m3u">Bagikan M3U</string>
+    <string name="playlist_export_success">Playlist diekspor</string>
+    <string name="playlist_export_unavailable">Playlist masih dimuat</string>
+    <string name="playlist_export_error">Tidak dapat mengekspor playlist: %1$s</string>
+    <string name="playlist_share_error">Tidak dapat membagikan playlist: %1$s</string>
+    <string name="pref_openai_base_url_title">URL dasar API yang kompatibel dengan OpenAI</string>
+    <string name="pref_openai_base_url_summary">Kosongkan untuk memakai endpoint resmi OpenAI</string>
+    <string name="pref_openai_base_url_prompt">Masukkan URL dasar API yang kompatibel dengan OpenAI</string>
+    <string name="pref_openai_base_url_invalid">Masukkan URL HTTP atau HTTPS yang valid tanpa kredensial, parameter kueri, atau fragmen.</string>
 </resources>

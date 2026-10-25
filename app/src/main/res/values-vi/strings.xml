@@ -29,6 +29,8 @@
   <string name="pref_appearance_amoled_mode_summary">Sử dụng nền đen thuần túy cho chủ đề tối</string>
   <string name="pref_appearance_system_font_title">Sử dụng phông chữ hệ thống</string>
   <string name="pref_appearance_system_font_summary">Sử dụng kiểu chữ hệ thống Android trên Mpv∞ thay vì Google Sans Flex</string>
+  <string name="pref_appearance_animate_infinity_logo_title">Tạo hiệu ứng logo vô cực</string>
+  <string name="pref_appearance_animate_infinity_logo_summary">Lặp lại hiệu ứng biểu tượng vô cực trong thư viện. Tắt để hiển thị biểu tượng tĩnh.</string>
   <string name="pref_appearance_material_you_title">Material You</string>
   <string name="pref_appearance_material_you_summary">Bật màu động</string>
   <string name="pref_appearance_material_you_summary_disabled">Chỉ có trên Android 12 trở lên</string>
@@ -2230,4 +2232,15 @@
   <string name="track_metadata_forced">Bắt buộc</string>
   <string name="track_metadata_sdh">SDH</string>
   <string name="track_metadata_external">Bên ngoài</string>
+    <string name="playlist_actions">Thao tác danh sách phát</string>
+    <string name="playlist_export_m3u">Xuất M3U</string>
+    <string name="playlist_share_m3u">Chia sẻ M3U</string>
+    <string name="playlist_export_success">Đã xuất danh sách phát</string>
+    <string name="playlist_export_unavailable">Danh sách phát vẫn đang tải</string>
+    <string name="playlist_export_error">Không thể xuất danh sách phát: %1$s</string>
+    <string name="playlist_share_error">Không thể chia sẻ danh sách phát: %1$s</string>
+    <string name="pref_openai_base_url_title">URL gốc của API tương thích OpenAI</string>
+    <string name="pref_openai_base_url_summary">Để trống để dùng điểm cuối chính thức của OpenAI</string>
+    <string name="pref_openai_base_url_prompt">Nhập URL gốc của API tương thích OpenAI</string>
+    <string name="pref_openai_base_url_invalid">Nhập URL HTTP hoặc HTTPS hợp lệ, không chứa thông tin đăng nhập, tham số truy vấn hoặc phân đoạn.</string>
 </resources>

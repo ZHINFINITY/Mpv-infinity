@@ -22,14 +22,15 @@ class NativePlaybackControlContractTest(unittest.TestCase):
     def test_normal_close_captures_native_position_before_media_is_cleared(self):
         activity = (PLAYER / 'PlayerActivity.kt').read_text()
         body = function(activity, 'silenceAudioOnClose')
-        self.assertLess(body.index('saveVideoPlaybackState('), body.index('nativeEngine.stop()'))
+        self.assertLess(body.index('saveVideoPlaybackState('), body.index('nativeEngineOrNull()?.stop()'))
+        self.assertNotIn('nativeEngine.', body)
         self.assertIn('immediate = true', body)
 
     def test_native_preview_routes_to_engine_instead_of_returning_without_a_seek(self):
         view_model = (PLAYER / 'PlayerViewModel.kt').read_text()
         self.assertIn('host.nativeSeekPreviewTo(', function(view_model, 'seekPreviewTo'))
         activity = (PLAYER / 'PlayerActivity.kt').read_text()
-        self.assertIn('nativeEngine.seekPreviewTo(positionMs)', function(activity, 'nativeSeekPreviewTo'))
+        self.assertIn('nativeEngineOrNull()?.seekPreviewTo(positionMs)', function(activity, 'nativeSeekPreviewTo'))
         controls = (PLAYER / 'controls/PlayerControls.kt').read_text()
         self.assertIn('viewModel.seekPreviewTo(it)', controls)
         self.assertIn('viewModel.finishSeekPreview(targetPosition)', controls)

@@ -7,6 +7,9 @@
 
 package app.infinity.mpvz.ui.preferences
 
+import app.infinity.mpvz.ui.preferences.components.settingsGlassContainerColor
+import app.infinity.mpvz.ui.preferences.components.settingsGlassSurface
+
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -461,9 +464,9 @@ internal fun SettingsDestinationGroup(
   modifier: Modifier = Modifier,
 ) {
   Surface(
-    modifier = modifier.fillMaxWidth(),
+    modifier = modifier.fillMaxWidth().settingsGlassSurface(cornerRadius = 28.dp),
     shape = MaterialTheme.shapes.extraLargeIncreased,
-    color = MaterialTheme.colorScheme.surfaceContainerLow,
+    color = settingsGlassContainerColor(MaterialTheme.colorScheme.surfaceContainerLow),
     tonalElevation = 1.dp,
   ) {
     Column(modifier = Modifier.fillMaxWidth()) {

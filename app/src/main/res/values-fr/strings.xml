@@ -29,6 +29,8 @@
   <string name="pref_appearance_amoled_mode_summary">Utiliser un arrière-plan noir pur pour les thèmes sombres</string>
   <string name="pref_appearance_system_font_title">Utiliser la police système</string>
   <string name="pref_appearance_system_font_summary">Utiliser la police système Android dans Mpv∞ à la place de Google Sans Flex</string>
+  <string name="pref_appearance_animate_infinity_logo_title">Animer le logo infini</string>
+  <string name="pref_appearance_animate_infinity_logo_summary">Anime en boucle le symbole infini de la bibliothèque. Désactivez pour afficher une marque fixe.</string>
   <string name="pref_appearance_material_you_title">Material You</string>
   <string name="pref_appearance_material_you_summary">Activer les couleurs dynamiques</string>
   <string name="pref_appearance_material_you_summary_disabled">Disponible uniquement sur Android 12 et versions ultérieures</string>
@@ -2245,4 +2247,15 @@ Veuillez redémarrer l’application pour appliquer toutes les modifications.</s
   <string name="track_metadata_forced">Forcé</string>
   <string name="track_metadata_sdh">SME</string>
   <string name="track_metadata_external">Externe</string>
+    <string name="playlist_actions">Actions de la playlist</string>
+    <string name="playlist_export_m3u">Exporter en M3U</string>
+    <string name="playlist_share_m3u">Partager en M3U</string>
+    <string name="playlist_export_success">Playlist exportée</string>
+    <string name="playlist_export_unavailable">La playlist est encore en cours de chargement</string>
+    <string name="playlist_export_error">Impossible d\'exporter la playlist : %1$s</string>
+    <string name="playlist_share_error">Impossible de partager la playlist : %1$s</string>
+    <string name="pref_openai_base_url_title">URL de base de l\'API compatible OpenAI</string>
+    <string name="pref_openai_base_url_summary">Laisser vide pour utiliser le point de terminaison officiel d\'OpenAI</string>
+    <string name="pref_openai_base_url_prompt">Saisissez l\'URL de base d\'une API compatible OpenAI</string>
+    <string name="pref_openai_base_url_invalid">Saisissez une URL HTTP ou HTTPS valide sans identifiants, paramètres de requête ni fragments.</string>
 </resources>

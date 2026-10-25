@@ -22,6 +22,7 @@ import app.infinity.mpvz.ui.browser.base.BaseBrowserViewModel
 import app.infinity.mpvz.ui.player.extractLocalPath
 import app.infinity.mpvz.ui.player.resolveUri
 import app.infinity.mpvz.utils.media.M3UParser
+import app.infinity.mpvz.utils.media.PlaylistExport
 import app.infinity.mpvz.utils.storage.FileTypeUtils
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -259,6 +260,14 @@ class PlaylistDetailViewModel(
     _playlist.value?.let { playlist ->
       playlistRepository.updatePlaylist(playlist.copy(name = newName))
     }
+  }
+
+  /** Builds an export from the complete ordered database snapshot, never the filtered UI list. */
+  suspend fun exportM3uContent(): Pair<String, String> = withContext(Dispatchers.IO) {
+    val currentPlaylist = _playlist.value ?: error("Playlist is not available")
+    val items = playlistRepository.getPlaylistItems(playlistId)
+    PlaylistExport.fileName(currentPlaylist.name) to
+      PlaylistExport.assemble(currentPlaylist.name, items, currentPlaylist.userAgent)
   }
 
   suspend fun removeVideoFromPlaylist(video: Video) {

@@ -60,12 +60,17 @@ def main():
     for fn in ("CompressorProgressSurface", "CompressorResultSurface", "CompressorIssueSurface"):
         assert fn in comp
     # Settings sheet and all five dialog entry points must own conditional material.
-    sheet=calls(comp,"ModalBottomSheet")
+    # The pane moves with the sheet content (GlassModalBottomSheet), never on the raw sheet modifier.
+    assert not calls(comp,"ModalBottomSheet")
+    sheet=calls(comp,"GlassModalBottomSheet")
     dialogs=calls(comp,"AlertDialog")
     assert len(sheet)==1 and "settingsGlassSurface" in sheet[0] and "settingsGlassContainerColor" in sheet[0]
     assert len(dialogs)==5
     assert all("settingsGlassSurface" in a and "settingsGlassContainerColor" in a for a in dialogs)
-    for popup in named_calls(comp, 'ModalBottomSheet') + named_calls(comp, 'AlertDialog'):
+    for popup in named_calls(comp, 'GlassModalBottomSheet'):
+        assert 'settingsGlassSurface(' in popup['paneModifier']
+        assert popup['containerColor'].startswith('settingsGlassContainerColor(')
+    for popup in named_calls(comp, 'AlertDialog'):
         assert 'settingsGlassSurface(' in popup['modifier']
         assert popup['containerColor'].startswith('settingsGlassContainerColor(')
     # Shared switch optics are used for every actual compressor toggle.

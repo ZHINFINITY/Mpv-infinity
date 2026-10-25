@@ -29,6 +29,8 @@
   <string name="pref_appearance_amoled_mode_summary">Für dunkle Designs einen vollständig schwarzen Hintergrund verwenden</string>
   <string name="pref_appearance_system_font_title">Systemschrift verwenden</string>
   <string name="pref_appearance_system_font_summary">In Mpv∞ die Android-Systemschrift anstelle von Google Sans Flex verwenden</string>
+  <string name="pref_appearance_animate_infinity_logo_title">Unendlich-Logo animieren</string>
+  <string name="pref_appearance_animate_infinity_logo_summary">Das Unendlich-Symbol der Mediathek in Schleife animieren. Deaktivieren, um ein statisches Zeichen zu zeigen.</string>
   <string name="pref_appearance_material_you_title">Material You</string>
   <string name="pref_appearance_material_you_summary">Dynamische Farben aktivieren</string>
   <string name="pref_appearance_material_you_summary_disabled">Nur unter Android 12 oder höher verfügbar</string>
@@ -2245,4 +2247,15 @@ Bitte starten Sie die App neu, damit alle Änderungen wirksam werden.</string>
   <string name="track_metadata_forced">Erzwungen</string>
   <string name="track_metadata_sdh">SDH</string>
   <string name="track_metadata_external">Extern</string>
+    <string name="playlist_actions">Playlist-Aktionen</string>
+    <string name="playlist_export_m3u">M3U exportieren</string>
+    <string name="playlist_share_m3u">M3U teilen</string>
+    <string name="playlist_export_success">Playlist exportiert</string>
+    <string name="playlist_export_unavailable">Playlist wird noch geladen</string>
+    <string name="playlist_export_error">Playlist konnte nicht exportiert werden: %1$s</string>
+    <string name="playlist_share_error">Playlist konnte nicht geteilt werden: %1$s</string>
+    <string name="pref_openai_base_url_title">Basis-URL der OpenAI-kompatiblen API</string>
+    <string name="pref_openai_base_url_summary">Leer lassen, um den offiziellen OpenAI-Endpunkt zu verwenden</string>
+    <string name="pref_openai_base_url_prompt">Basis-URL einer OpenAI-kompatiblen API eingeben</string>
+    <string name="pref_openai_base_url_invalid">Gib eine gültige HTTP- oder HTTPS-URL ohne Anmeldedaten, Abfrageparameter oder Fragmente ein.</string>
 </resources>

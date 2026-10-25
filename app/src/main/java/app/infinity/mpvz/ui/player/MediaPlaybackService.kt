@@ -76,6 +76,8 @@ import java.lang.ref.WeakReference
 import java.util.Locale
 import kotlin.math.abs
 import kotlin.math.ceil
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asStateFlow
 
 /**
  * Background playback service for mpv with MediaSession integration.
@@ -168,6 +170,7 @@ class MediaPlaybackService :
             service.handingBackToActivity = false
           }
         }
+        publishForegroundActive()
       }
 
     internal fun relinquishMediaSessionToActivity() {
@@ -175,6 +178,32 @@ class MediaPlaybackService :
     }
 
     internal fun takeAudioOwnershipForDetachedPlayback(): Boolean = activeInstance?.takeAudioOwnership() == true
+
+    internal fun skipToNextFromApp(): Boolean = activeInstance?.playNextFromSession() == true
+
+    internal fun skipToPreviousFromApp() {
+      activeInstance?.playPreviousFromSession()
+    }
+
+    internal fun playQueueItemFromApp(index: Int): Boolean = activeInstance?.playQueueItemFromSession(index) == true
+
+    private val _foregroundActive = MutableStateFlow(false)
+    internal val foregroundActive = _foregroundActive.asStateFlow()
+
+    private fun publishForegroundActive() {
+      _foregroundActive.value = isForegroundActive()
+    }
+
+    private val inAppPlayerVisible = MutableStateFlow(false)
+
+    /**
+     * The in-app music sheet shows the full player while the service keeps owning playback. While
+     * it is visible, turning background playback off means "stop once I leave", as it does in
+     * PlayerActivity, instead of stopping the playback the user is looking at.
+     */
+    internal fun setInAppPlayerVisible(visible: Boolean) {
+      inAppPlayerVisible.value = visible
+    }
 
     /**
      * Marks that playback is being handed back to a foreground Activity (e.g. reopening the
@@ -188,6 +217,7 @@ class MediaPlaybackService :
         service.handingBackToActivity = true
         service.abandonAudioOwnership()
       }
+      publishForegroundActive()
     }
 
     internal fun isActivityHandoffInProgress(): Boolean = activeInstance?.handingBackToActivity == true
@@ -362,6 +392,7 @@ class MediaPlaybackService :
   private fun deactivateMediaSession() {
     foregroundReady = false
     if (::mediaSession.isInitialized) mediaSession.isActive = false
+    publishForegroundActive()
   }
 
   override fun onCreate() {
@@ -372,6 +403,7 @@ class MediaPlaybackService :
     isServiceRunning = true
     mpvAccessReleased = false
     handingBackToActivity = false
+    publishForegroundActive()
 
     // Ensure notification channel exists before starting foreground service
     createNotificationChannel(this)
@@ -393,7 +425,9 @@ class MediaPlaybackService :
         if (usesAudioBackgroundPlayback) audioEnabled else videoEnabled
       }.drop(1).collect { enabled ->
         if (!serviceMediaKindInitialized) return@collect
-        if (!enabled) {
+        // Closing the in-app music sheet is not a background-preference or app-lifecycle
+        // transition. Mini-player handoff via startBackgroundPlayback must keep playing.
+        if (!enabled && !inAppPlayerVisible.value) {
           Log.d(TAG, "Background playback disabled; stopping service")
           stopDetachedPlaybackIfNeeded()
           stopForegroundNotification()
@@ -572,10 +606,12 @@ class MediaPlaybackService :
       foregroundReady = false
       mediaSession.isActive = false
       stopSelf(startId)
+      publishForegroundActive()
       return START_NOT_STICKY
     }
     foregroundReady = true
     syncMediaSessionVisibility()
+    publishForegroundActive()
     Log.d(TAG, "Foreground service started successfully")
 
     return START_NOT_STICKY
@@ -742,6 +778,18 @@ class MediaPlaybackService :
     if (!canHandleTransportAction()) return
     schedulePlaybackStateSave(force = true)
     PlaybackSession.playPrevious()?.let(::applySessionItem) ?: refreshTransportControls()
+  }
+
+  private fun playQueueItemFromSession(index: Int): Boolean {
+    if (!canHandleTransportAction()) return false
+    schedulePlaybackStateSave(force = true)
+    val item = PlaybackSession.playQueueItem(index)
+    if (item == null) {
+      refreshTransportControls()
+      return false
+    }
+    applySessionItem(item)
+    return true
   }
 
   private fun handleMediaPreviousAction() {
@@ -2211,6 +2259,7 @@ class MediaPlaybackService :
       if (activeInstance === this) activeInstance = null
       stopDetachedPlaybackIfNeeded()
       handingBackToActivity = false
+      publishForegroundActive()
       super.onDestroy()
     }
   }

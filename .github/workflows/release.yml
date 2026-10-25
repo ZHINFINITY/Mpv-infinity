@@ -10,6 +10,11 @@ on:
         description: Tag to release (for example v2.1.0)
         required: true
         type: string
+      draft:
+        description: Create the release as a draft (not published)
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: write
@@ -18,7 +23,7 @@ jobs:
   release-for-github:
     name: Release for GitHub
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 90
 
     steps:
       - name: Checkout repository
@@ -84,6 +89,97 @@ jobs:
           set -euo pipefail
           ./gradlew assembleStandardRelease --stacktrace --no-daemon --max-workers=2
           ./gradlew assembleNoVulkanRelease --stacktrace --no-daemon --max-workers=2
+
+      # The Standard arm64-v8a release ships the same Flow-only MPVFlow runtime as the
+      # tested arm64 debug builds, so MPV-engine frame interpolation is available.
+      # Other ABIs and non-Vulkan builds keep the stock runtime (built above).
+      - name: Keep stock multi-ABI Standard release outputs
+        shell: bash
+        run: |
+          set -euo pipefail
+          release_dir="app/build/outputs/apk/standard/release"
+          mkdir -p "$RUNNER_TEMP/standard-stock"
+          cp "$release_dir"/*.apk "$RUNNER_TEMP/standard-stock/"
+          rm -f "$RUNNER_TEMP/standard-stock/app-standard-arm64-v8a-release-unsigned.apk"
+          ls -1 "$RUNNER_TEMP/standard-stock"
+
+      - name: Restore verified Flow-only MPVFlow arm64 runtime
+        id: mpvflow-runtime-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: native-builder/app/build/outputs/apk
+          key: mpvflow-arm64-runtime-v2-builder-1efc82739f6f7034-mpv-c1529642089bfebf-cores2-${{ hashFiles('scripts/build-mpvflow-mpv-runtime.sh', 'scripts/prepare-mpvflow.py', 'scripts/patch-ffmpeg-symver.py', 'app/src/main/cpp/**', 'THIRD_PARTY_LICENSES/**', 'app/src/main/assets/mpv/licenses/**') }}
+
+      - name: Checkout pinned Android MPV build tools
+        if: ${{ steps.mpvflow-runtime-cache.outputs.cache-hit != 'true' }}
+        uses: actions/checkout@v6
+        with:
+          repository: NihilDigit/mpv-android-anvil
+          ref: 1efc82739f6f7034cd63e7ee8b3ec5431df27467
+          path: native-builder
+
+      - name: Checkout pinned MPV source
+        if: ${{ steps.mpvflow-runtime-cache.outputs.cache-hit != 'true' }}
+        uses: actions/checkout@v6
+        with:
+          repository: mpv-player/mpv
+          ref: c1529642089bfebfc928a1c1664638a7a5d219ba
+          path: mpv-source
+
+      - name: Install native interpolation build dependencies
+        if: ${{ steps.mpvflow-runtime-cache.outputs.cache-hit != 'true' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/mpv-native-apt-archives"
+          sudo install -d -m0755 -o _apt -g root "$RUNNER_TEMP/mpv-native-apt-archives/partial"
+          scripts/ci/apt-install-with-fallback.sh \
+            ninja-build cmake pipx nasm yasm binutils zlib1g-dev libssl-dev zip unzip wget curl ffmpeg glslang-tools libvulkan-dev mesa-vulkan-drivers
+          pipx install meson==1.6.1
+          echo "$(pipx environment --value PIPX_BIN_DIR)" >> "$GITHUB_PATH"
+
+      - name: Build Flow-only MPVFlow arm64 runtime
+        if: ${{ steps.mpvflow-runtime-cache.outputs.cache-hit != 'true' }}
+        run: ./scripts/build-mpvflow-mpv-runtime.sh
+        env:
+          MPVFLOW_MPV_BUILD_CORES: '2'
+
+      - name: Overlay Flow-only runtime and build Standard arm64-v8a release
+        shell: bash
+        run: |
+          set -euo pipefail
+          runtime_dir="$GITHUB_WORKSPACE/native-builder/app/build/outputs/apk"
+          apk="$(find "$runtime_dir" -type f -path '*/debug/*' -name '*arm64-v8a-debug*.apk' -print -quit)"
+          [[ -n "$apk" ]] || { echo "MPVFlow arm64 runtime APK is missing" >&2; exit 1; }
+          python3 scripts/package-mpv-runtime-aar.py --runtime-apk "$apk" --mpv-aar app/libs/mpvlib.aar --abis arm64-v8a
+          python3 scripts/verify-mpv-aar-lgpl.py app/libs/mpvlib.aar --abis arm64-v8a,armeabi-v7a,x86,x86_64 --require-vulkan
+          # The stock pass above configured CMake from the stock AAR and its IMPORTED libmpv.so
+          # would be packaged again (v2.2.0 shipped stock libmpv this way). Start native clean.
+          rm -rf app/.cxx app/build/intermediates/cxx
+          ./gradlew assembleStandardRelease -PtargetAbi=arm64-v8a -PmpvFlowMpvBuild=true --stacktrace --no-daemon --max-workers=2
+          release_dir="app/build/outputs/apk/standard/release"
+          flow_apk="$release_dir/app-standard-arm64-v8a-release-unsigned.apk"
+          test -f "$flow_apk"
+          libmpv_copy="$(mktemp)"
+          unzip -p "$flow_apk" lib/arm64-v8a/libmpv.so > "$libmpv_copy"
+          if ! grep -aqF 'mpvflow-target-fps' "$libmpv_copy"; then
+            echo "Flow arm64 release APK packaged a libmpv.so without the MPV interpolation runtime" >&2
+            exit 1
+          fi
+          rm -f "$libmpv_copy"
+          entries="$(unzip -Z1 "$flow_apk")"
+          for library in libmpv.so libplayer.so libplacebo.so libudfread.so libmedia3flow_vulkan.so libffmpegJNI.so libmedia3_subtitle_libass.so libass.so; do
+            grep -Fx "lib/arm64-v8a/$library" <<< "$entries" >/dev/null || { echo "Flow arm64 release APK is missing $library" >&2; exit 1; }
+          done
+          if grep -E '^lib/[^/]+/librife_vfi\.so$' <<< "$entries" >/dev/null; then
+            echo "RIFE native library unexpectedly present" >&2; exit 1
+          fi
+          if grep -Ev '^lib/arm64-v8a/' <<< "$entries" | grep -E '^lib/' >/dev/null; then
+            echo "Flow arm64 release APK contains non-arm64 native libraries" >&2; exit 1
+          fi
+          cp "$RUNNER_TEMP/standard-stock/"*.apk "$release_dir/"
+          ls -1 "$release_dir"
+          echo "Standard arm64-v8a release built with the Flow-only MPVFlow runtime."
 
       - name: Sign and verify release APKs
         shell: bash
@@ -203,7 +299,7 @@ jobs:
           target_commitish: ${{ github.sha }}
           body_path: release-notes.md
           generate_release_notes: false
-          draft: false
+          draft: ${{ inputs.draft == true }}
           prerelease: false
           fail_on_unmatched_files: true
           files: release-assets/*.apk

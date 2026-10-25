@@ -28,6 +28,8 @@
   <string name="pref_appearance_amoled_mode_summary">Use pure black background for dark themes</string>
   <string name="pref_appearance_system_font_title">Use system font</string>
   <string name="pref_appearance_system_font_summary">Use the Android system typeface across Mpv∞ instead of Google Sans Flex</string>
+  <string name="pref_appearance_animate_infinity_logo_title">Animate infinity logo</string>
+  <string name="pref_appearance_animate_infinity_logo_summary">Loop the library infinity symbol. Turn this off to show a still mark.</string>
   <string name="pref_appearance_material_you_title">Material You</string>
   <string name="pref_appearance_material_you_summary">Enable dynamic colors</string>
   <string name="pref_appearance_material_you_summary_disabled">Only available on Android 12 and above</string>
@@ -2326,4 +2328,15 @@
   <string name="track_metadata_forced">Forced</string>
   <string name="track_metadata_sdh">SDH</string>
   <string name="track_metadata_external">External</string>
+    <string name="playlist_actions">Playlist actions</string>
+    <string name="playlist_export_m3u">Export M3U</string>
+    <string name="playlist_share_m3u">Share M3U</string>
+    <string name="playlist_export_success">Playlist exported</string>
+    <string name="playlist_export_unavailable">Playlist is still loading</string>
+    <string name="playlist_export_error">Could not export playlist: %1$s</string>
+    <string name="playlist_share_error">Could not share playlist: %1$s</string>
+    <string name="pref_openai_base_url_title">OpenAI-compatible API base URL</string>
+    <string name="pref_openai_base_url_summary">Blank uses the official OpenAI endpoint</string>
+    <string name="pref_openai_base_url_prompt">Enter an OpenAI-compatible API base URL</string>
+    <string name="pref_openai_base_url_invalid">Enter a valid HTTP or HTTPS URL without credentials, query parameters, or fragments.</string>
 </resources>

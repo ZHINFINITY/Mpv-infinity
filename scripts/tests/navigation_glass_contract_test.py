@@ -57,16 +57,21 @@ class NavigationGlassContracts(unittest.TestCase):
     def test_reference_lens_is_separate_from_latest_controls_and_capability_fallbacks(self):
         renderer = RENDERER.read_text()
         source = renderer.split("fun BrowserGlassSurface(", 1)[1].split("/** The shared pane path", 1)[0]
-        self.assertLess(source.index("val shader = remember(enabled, capabilities.refraction)"), source.index(".drawWithCache {"))
-        self.assertIn("RuntimeShader(BROWSER_LENS)", source)
-        self.assertIn('createRuntimeShaderEffect(shader, "scene")', source)
+        # RuntimeShader is only touched from AgslRuntimeShaders (API 33+), cached once per process.
+        agsl = (JAVA / "ui/theme/AgslRuntimeShaders.kt").read_text()
+        self.assertIn("GlassShaderCache.shared(BROWSER_LENS) { RuntimeShader(BROWSER_LENS) }", agsl)
+        self.assertIn('createRuntimeShaderEffect(shader, "scene")', agsl)
+        self.assertNotIn("RuntimeShader(", source)
+        self.assertLess(source.index(".drawWithCache {"), source.index("RuntimeShaderSupport.browserLensEffectOrNull("))
+        self.assertIn("capabilities.refraction && RuntimeShaderSupport.available()", source)
         self.assertIn("lens.renderEffect = effect", source)
         self.assertIn("drawLayer(scene!!.layer)", source)
         self.assertIn("film * (if (selected) 0.24f else 0.20f)", source)
         self.assertNotIn("browserGlassPane(enabled", source)
         # Every other browser pane now reuses the nav pill reference lens and film.
         pane = renderer.split("internal fun Modifier.browserGlassPane(", 1)[1].split("private fun windowScreenOffset", 1)[0]
-        self.assertIn("RuntimeShader(BROWSER_LENS)", pane)
+        self.assertIn("RuntimeShaderSupport.browserLensEffectOrNull(", pane)
+        self.assertNotIn("RuntimeShader(", pane)
         self.assertIn("film * (if (selected) 0.24f else 0.20f)", pane)
         self.assertIn("lens.alpha = 1f", pane)
         for token in ("!lowRam && !powerSave && thermal < 3", "ANIMATOR_DURATION_SCALE", "areAnimatorsEnabled()",

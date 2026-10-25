@@ -1,5 +1,6 @@
 package app.infinity.mpvz.ui.preferences
 
+import app.infinity.mpvz.ui.components.GlassModalBottomSheet
 import app.infinity.mpvz.ui.player.controls.components.GlassSwitch
 
 import app.infinity.mpvz.ui.preferences.components.settingsGlassContainerColor
@@ -89,13 +90,11 @@ fun CatalogAddonsPreferenceCard(viewModel: CatalogViewModel, sources: List<Catal
   }
 
   if (showAddSheet) {
-    ModalBottomSheet(
+    GlassModalBottomSheet(
       containerColor = settingsGlassContainerColor(androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainerLow),
-      modifier = androidx.compose.ui.Modifier.settingsGlassSurface(cornerRadius = 28.dp, independent = true),
-      onDismissRequest = { if (!isAdding) showAddSheet = false },
-      shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
-    ) {
-      Column(Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 22.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+      paneModifier = androidx.compose.ui.Modifier.settingsGlassSurface(cornerRadius = 28.dp, independent = true),
+      onDismissRequest = { if (!isAdding) showAddSheet = false },) {
+      Column(Modifier.fillMaxWidth().padding(horizontal = 22.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Text("Add catalog add-on", style = MaterialTheme.typography.headlineSmall)
         Text("Paste a Stremio-compatible catalog or manifest URL. Its catalogs appear in Stream discovery and search.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
         OutlinedTextField(value = newUrl, onValueChange = { newUrl = it; error = null }, modifier = Modifier.fillMaxWidth(), singleLine = true, label = { Text("Add-on URL") }, placeholder = { Text("https://example.com/manifest.json") }, enabled = !isAdding)

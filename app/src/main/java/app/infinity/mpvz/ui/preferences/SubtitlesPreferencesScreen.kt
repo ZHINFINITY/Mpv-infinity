@@ -7,6 +7,7 @@
 
 package app.infinity.mpvz.ui.preferences
 
+import app.infinity.mpvz.ui.components.GlassOptionSheet
 import app.infinity.mpvz.ui.preferences.components.settingsGlassContainerColor
 
 import app.infinity.mpvz.ui.preferences.components.settingsGlassSurface
@@ -656,7 +657,7 @@ object SubtitlesPreferencesScreen : Screen {
               )
 
               if (showSourcesDialog) {
-                AlertDialog(
+                GlassOptionSheet(
       containerColor = settingsGlassContainerColor(androidx.compose.material3.AlertDialogDefaults.containerColor),
       modifier = androidx.compose.ui.Modifier.settingsGlassSurface(cornerRadius = 28.dp, independent = true),
                   onDismissRequest = { showSourcesDialog = false },
@@ -692,7 +693,7 @@ object SubtitlesPreferencesScreen : Screen {
                       }
                     }
                   },
-                  text = {
+                  content = {
                     Column(modifier = Modifier.fillMaxWidth()) {
                       sourcesResponse?.key?.let { keyInfo ->
                         val keyType = keyInfo.type?.replaceFirstChar { it.uppercase() } ?: "Unknown"
@@ -929,8 +930,7 @@ object SubtitlesPreferencesScreen : Screen {
                     TextButton(onClick = { showSourcesDialog = false }) {
                       Text(stringResource(android.R.string.ok))
                     }
-                  },
-                )
+                  },)
               }
 
               PreferenceDivider()
@@ -1197,12 +1197,12 @@ fun MultiChoicePreference(
   )
 
   if (showDialog) {
-    AlertDialog(
+    GlassOptionSheet(
       containerColor = settingsGlassContainerColor(androidx.compose.material3.AlertDialogDefaults.containerColor),
       modifier = androidx.compose.ui.Modifier.settingsGlassSurface(cornerRadius = 28.dp, independent = true),
       onDismissRequest = { showDialog = false },
       title = title,
-      text = {
+      content = {
         val valuesList = values.toList()
         LazyColumn {
           items(count = valuesList.size, key = { index -> valuesList[index].first }) { index ->
@@ -1264,8 +1264,7 @@ fun MultiChoicePreference(
         TextButton(onClick = { showDialog = false }) {
           Text(stringResource(android.R.string.ok))
         }
-      },
-    )
+      },)
   }
 }
 

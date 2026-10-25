@@ -7,6 +7,7 @@
 
 package app.infinity.mpvz.ui.preferences
 
+import app.infinity.mpvz.ui.components.GlassOptionSheet
 import app.infinity.mpvz.ui.preferences.components.settingsGlassContainerColor
 
 import app.infinity.mpvz.ui.preferences.components.settingsGlassSurface
@@ -1210,7 +1211,7 @@ object PlayerPreferencesScreen : Screen {
       )
     }
     if (showTemplateDialog) {
-      AlertDialog(
+      GlassOptionSheet(
       containerColor = settingsGlassContainerColor(androidx.compose.material3.AlertDialogDefaults.containerColor),
       modifier = androidx.compose.ui.Modifier.settingsGlassSurface(cornerRadius = 28.dp, independent = true),
         onDismissRequest = { showTemplateDialog = false },
@@ -1220,7 +1221,7 @@ object PlayerPreferencesScreen : Screen {
               .stringResource(app.infinity.mpvz.R.string.ui_filename_template),
           )
         },
-        text = {
+        content = {
           Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             OutlinedTextField(
               value = templateDraft,
@@ -1268,8 +1269,7 @@ object PlayerPreferencesScreen : Screen {
                 .stringResource(app.infinity.mpvz.R.string.generic_cancel),
             )
           }
-        },
-      )
+        },)
     }
   }
 }

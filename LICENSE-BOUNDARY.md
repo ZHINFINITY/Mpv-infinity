@@ -1,6 +1,6 @@
 # Upcoming-release licensing boundary and ownership gaps
 
-## Owner-approved source policy; no tagged release published
+## Owner-approved source policy; first tagged release v2.2.0
 
 The [Mpv∞ Permission-Only Terms 1.0](LICENSE) are the licence offer for
 all project material in the covered source snapshot and upcoming release that ZHINFINITY owns or has express
@@ -40,9 +40,12 @@ this file. Before that merge this branch is preparatory; after it the offer
 covers the entire owned/expressly authorized portions of that source snapshot,
 not merely the documentation diff. Later source snapshots may retain the offer.
 
-The next tagged release's version and source SHA remain **unassigned**. Record
-both in the release notes and release documentation before publication. This
-policy merge does not bump the application version, create a tag, publish a
+The "upcoming release" in this document is **v2.2.0** (app version `2.2.0`),
+the first tagged release under these terms. Its tag `v2.2.0` points to source
+commit [`1fba5a8ec061423feb5ecca9b59fd9d20e814bc5`](https://github.com/ZHINFINITY/Mpv-infinity/commit/1fba5a8ec061423feb5ecca9b59fd9d20e814bc5),
+the merge of [PR #101](https://github.com/ZHINFINITY/Mpv-infinity/pull/101) on
+protected `main`; it was published on 23 October 2026. The policy merge itself
+(PR #87) did not bump the application version, create a tag, publish a
 release, rewrite history, or change repository visibility.
 
 This PR changes licensing/documentation, the bounded licence test and its CI

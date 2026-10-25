@@ -113,7 +113,10 @@ class PlayerGlassOverlayContracts(unittest.TestCase):
 
     def test_audio_popup_siblings_share_the_actual_extracted_palette_provider(self):
         controls = self.source("ui/player/controls/PlayerControls.kt")
-        audio_branch = controls.split("if (useAudioPlayer) {", 1)[1].split("    return", 1)[0]
+        # The music branch delegates to AudioPlayerScreen, which the browser sheet also hosts.
+        branch = controls.split("if (useAudioPlayer) {", 1)[1].split("    return", 1)[0]
+        self.assertIn("AudioPlayerScreen(", branch)
+        audio_branch = controls.split("internal fun AudioPlayerScreen(", 1)[1].split("\n}\n", 1)[0]
         self.assertLess(audio_branch.index("AudioPaletteGlassScene("), audio_branch.index("AudioPlayerControls("))
         self.assertLess(audio_branch.index("AudioPlayerControls("), audio_branch.index("PlayerSheets("))
         self.assertIn("onGlassPaletteChanged = { top, bottom -> audioGlassPalette = top to bottom }", audio_branch)

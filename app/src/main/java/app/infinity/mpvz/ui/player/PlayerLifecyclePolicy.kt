@@ -152,4 +152,32 @@ internal object PlayerLifecyclePolicy {
       !isUserFinishing &&
       !isFinishing &&
       (!isInPictureInPictureMode || isScreenOffOrLocked)
+
+  /** Music never needs Media3. Building it on song tap or mini-player expand stalls the UI. */
+  fun shouldInitializeNativeMedia3Engine(isAudioLaunch: Boolean): Boolean = !isAudioLaunch
+
+  /** Compose already draws cover art. MPV's embedded audio-display would stack a second image. */
+  fun audioDisplayOption(configOwnsAudioDisplay: Boolean): String? =
+    if (configOwnsAudioDisplay) null else "no"
+
+  /**
+   * After a long screen-off or background interval, OEM decoders (especially ColorOS/Realme)
+   * keep the session alive but drop the video Surface. Rebuild instead of showing a black frame.
+   */
+  fun shouldRebuildRendererAfterBackground(
+    stoppedForMs: Long,
+    isAudioMedia: Boolean,
+    thresholdMs: Long = LONG_BACKGROUND_REBUILD_THRESHOLD_MS,
+  ): Boolean = !isAudioMedia && stoppedForMs >= thresholdMs
+
+  /** Reloading media before Android recreates the Surface leaves ColorOS on a black frame. */
+  fun shouldWaitForSurfaceBeforeRebuild(surfaceReady: Boolean): Boolean = !surfaceReady
+
+  /** Music keeps its own session. Video must remember time-pos before OEM Surface teardown. */
+  fun shouldCaptureForegroundResumePosition(isAudioMedia: Boolean): Boolean = !isAudioMedia
+
+  fun resumePositionSeconds(positionSeconds: Double?): Double? =
+    positionSeconds?.takeIf { it.isFinite() && it > 0.0 }
+
+  const val LONG_BACKGROUND_REBUILD_THRESHOLD_MS = 900_000L
 }

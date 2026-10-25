@@ -115,7 +115,9 @@ class GlassMaterialRolePolicyTest {
     assertTrue(GlassSurfacePolicy.BrowserPopupMinimumFrostDp >= 20f)
     // Popup frost follows the global frost setting and never drops below the text floor.
     assertTrue(GlassSurfacePolicy.browserPopupFrostDp(0f) >= GlassSurfacePolicy.BrowserPopupTextFrostFloorDp)
-    assertEquals(2, Regex("createBlurEffect\\(blurDp \\* density, blurDp \\* density").findAll(browser).count())
+    // API 31 fallback still blurs in the pane; the API 33 chain lives in AgslRuntimeShaders.
+    assertEquals(1, Regex("createBlurEffect\\(blurDp \\* density, blurDp \\* density").findAll(browser).count())
+    assertTrue(source("ui/theme/AgslRuntimeShaders.kt").contains("createBlurEffect(frostPx, frostPx"))
     // Both renderers solve the regular film instead of using a fixed opaque value.
     for (renderer in listOf(browser, player)) assertTrue(renderer.contains("GlassSurfacePolicy.regularAdaptiveFilmAlpha("))
     assertTrue(player.contains("underlayLuma = sampled.second"))

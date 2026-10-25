@@ -134,6 +134,9 @@ jobs:
         with:
           fetch-depth: 0
       - name: Verify combined radio and UI phone-test candidate
+        # Provenance gate for phone-test candidates on this branch only: the pinned SHAs
+        # are not ancestors of main (after a squash) or of other branches.
+        if: github.ref_name == 'test/radio-ui-performance-20261021'
         run: |
           set -euo pipefail
           for required in \
@@ -343,6 +346,13 @@ jobs:
             echo "RIFE native library unexpectedly present in the Flow-only APK" >&2
             exit 1
           fi
+          libmpv_copy="$(mktemp)"
+          unzip -p "$apk" lib/arm64-v8a/libmpv.so > "$libmpv_copy"
+          if ! grep -aqF 'mpvflow-target-fps' "$libmpv_copy"; then
+            echo "Packaged libmpv.so lacks the MPV interpolation runtime (stock libmpv packaged)" >&2
+            exit 1
+          fi
+          rm -f "$libmpv_copy"
           echo "Verified Flow runtime libraries and confirmed librife_vfi.so is absent: $apk"
       - name: Verify native library symbol hygiene
         if: ${{ inputs.flavor == 'standard' && inputs.target_abi == 'arm64-v8a' }}

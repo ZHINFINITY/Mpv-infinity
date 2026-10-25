@@ -78,6 +78,10 @@ import app.infinity.mpvz.presentation.Screen
 import app.infinity.mpvz.ui.browser.MainScreen
 import app.infinity.mpvz.ui.browser.NavigationBarState
 import app.infinity.mpvz.ui.browser.components.MiniPlayer
+import app.infinity.mpvz.ui.player.BrowserMusicSheet
+import app.infinity.mpvz.ui.player.LocalBrowserMusicSheet
+import app.infinity.mpvz.ui.player.hiddenUnderBrowserMusicSheet
+import app.infinity.mpvz.ui.player.rememberBrowserMusicSheetState
 import app.infinity.mpvz.ui.player.NavigationAnimStyle
 import app.infinity.mpvz.ui.theme.DarkMode
 import app.infinity.mpvz.ui.theme.MpvInfinityTheme
@@ -599,9 +603,11 @@ class MainActivity : AppCompatActivity() {
     val isDownloading by (updateViewModel?.isDownloading ?: fallbackIsDownloading).collectAsState()
     val downloadProgress by (updateViewModel?.downloadProgress ?: fallbackDownloadProgress).collectAsState()
 
+    val browserMusicSheet = rememberBrowserMusicSheetState()
     // Provide both LocalBackStack and the LazyList/Grid states to all screens
     CompositionLocalProvider(
       LocalBackStack provides typedBackstack,
+      LocalBrowserMusicSheet provides browserMusicSheet,
     ) {
       val hasNavEntries = typedBackstack.isNotEmpty()
 
@@ -619,10 +625,13 @@ class MainActivity : AppCompatActivity() {
         }
       }
 
+      val popupGlassEnabled by appearancePreferences.liquidGlassSurfaces.collectAsState()
       if (hasNavEntries) {
         Box(modifier = Modifier.fillMaxSize()) {
           NavDisplay(
-            modifier = Modifier.fillMaxSize(),
+            modifier = Modifier
+              .fillMaxSize()
+              .hiddenUnderBrowserMusicSheet(browserMusicSheet),
             backStack = typedBackstack,
             onBack = {
               if (typedBackstack.size <= 1 || !typedBackstack.popSafely()) {
@@ -635,7 +644,15 @@ class MainActivity : AppCompatActivity() {
                   modifier = Modifier.fillMaxSize(),
                   color = MaterialTheme.colorScheme.background,
                 ) {
-                  route.Content()
+                  // MainScreen hosts its own route/popup scenes; every other route gets a
+                  // popup-only producer so its dialogs frost the live screen like Sort & View.
+                  if (route == MainScreen) {
+                    route.Content()
+                  } else {
+                    app.infinity.mpvz.ui.theme.BrowserGlassPopupSceneHost(enabled = popupGlassEnabled) {
+                      route.Content()
+                    }
+                  }
                 }
               }
             },
@@ -711,6 +728,7 @@ class MainActivity : AppCompatActivity() {
             }
 
           MiniPlayer(modifier = miniPlayerModifier)
+          BrowserMusicSheet(state = browserMusicSheet)
         }
       }
 

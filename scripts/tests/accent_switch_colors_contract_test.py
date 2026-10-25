@@ -13,10 +13,10 @@ ALLOW_RAW = {GLASS}
 class AccentSwitchColorsContract(unittest.TestCase):
     def test_shared_switch_has_accent_checked_and_visible_unchecked_colors(self):
         source = GLASS.read_text()
-        self.assertIn("checkedTrackColor = accent", source)
-        self.assertIn("checkedThumbColor = scheme.onPrimary", source)
-        self.assertIn("uncheckedTrackColor = scheme.onSurface.copy(alpha = 0.20f)", source)
-        self.assertIn("uncheckedThumbColor = scheme.onSurfaceVariant", source)
+        self.assertIn("checkedTrackColor = contrast.checkedTrack", source)
+        self.assertIn("checkedThumbColor = contrast.checkedThumb", source)
+        self.assertIn("uncheckedTrackColor = contrast.uncheckedTrack", source)
+        self.assertIn("uncheckedThumbColor = contrast.uncheckedThumb", source)
         self.assertIn("colors = if (!glass) themedColors", source)
         self.assertIn("tint = if (checked) scheme.primary else scheme.onSurface", source)
         self.assertIn("body = if (checked) scheme.onPrimary else scheme.onSurfaceVariant", source)
@@ -24,10 +24,10 @@ class AccentSwitchColorsContract(unittest.TestCase):
 
     def test_expressive_switch_uses_primary_and_contrasting_thumb(self):
         source = EXPRESSIVE.read_text()
-        self.assertIn("MaterialTheme.colorScheme.primary", source)
-        self.assertIn("onSurface.copy(alpha = 0.20f)", source)
-        self.assertIn("MaterialTheme.colorScheme.onPrimary", source)
-        self.assertIn("MaterialTheme.colorScheme.onSurfaceVariant", source)
+        self.assertIn("SwitchContrastPolicy", source)
+        self.assertIn("contrast.uncheckedTrack", source)
+        self.assertIn("contrast.checkedThumb", source)
+        self.assertIn("contrast.uncheckedThumb", source)
 
     def test_no_raw_material_switch_outside_shared_component(self):
         for path in JAVA.rglob("*.kt"):

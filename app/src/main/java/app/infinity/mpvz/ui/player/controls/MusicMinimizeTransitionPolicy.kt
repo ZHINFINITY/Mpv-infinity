@@ -131,6 +131,13 @@ object MusicMinimizeTransitionPolicy {
 
   fun backgroundAlpha(settledOpen: Boolean, inTransition: Boolean): Float = if (settledOpen && !inTransition) 1f else 0f
 
+  /**
+   * After every finger lifts, a page left strictly between full and mini with no settle in
+   * flight is a dropped gesture (cancelled nested child). It must settle, never stay frozen.
+   */
+  fun needsReleaseSettle(settleInFlight: Boolean, miniProgress: Float): Boolean =
+    !settleInFlight && miniProgress.isFinite() && miniProgress > 0f && miniProgress < 1f
+
   fun shouldTranslucent(isAudio: Boolean, api: Int): Boolean = isAudio && api >= 30
 
   fun useSlideFallback(anchor: MiniPlayerTarget?, currentWindowWidth: Float, currentWindowHeight: Float, translucencyAvailable: Boolean = true): Boolean =

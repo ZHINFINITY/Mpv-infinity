@@ -421,6 +421,21 @@ object AppearancePreferencesScreen : Screen {
                       )
                     },
                   )
+                  val animateInfinityLogo by preferences.animateInfinityLogo.collectAsState()
+                  SwitchPreference(
+                    modifier = Modifier.settingsSearchTarget(R.string.pref_appearance_animate_infinity_logo_title),
+                    value = animateInfinityLogo,
+                    onValueChange = preferences.animateInfinityLogo::set,
+                    title = {
+                      Text(text = stringResource(id = R.string.pref_appearance_animate_infinity_logo_title))
+                    },
+                    summary = {
+                      Text(
+                        text = stringResource(id = R.string.pref_appearance_animate_infinity_logo_summary),
+                        color = MaterialTheme.colorScheme.outline,
+                      )
+                    },
+                  )
                 }
               }
             }

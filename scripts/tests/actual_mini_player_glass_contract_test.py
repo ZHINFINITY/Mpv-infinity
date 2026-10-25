@@ -55,7 +55,8 @@ class ActualMiniPlayerGlassContracts(unittest.TestCase):
     def test_actual_mini_player_has_palette_glass_vertical_expand_and_real_callbacks(self):
         for token in ("settingsGlassSurface", "settingsGlassContainerColor",
                       "tonalElevation = if (glassEnabled) 0.dp", "detectVerticalDragGestures",
-                      "verticalDrag < -expandThresholdPx", "remember(context, isAudioOnlyItem)",
+                      "verticalDrag < -expandThresholdPx", "remember(context, isAudioOnlyItem, useInAppSheet, musicSheet)",
+                      "musicSheet.expand()", "Modifier.browserMusicSheetDrag(", "fromMiniPlayer = true",
                       "ACTION_NOTIFICATION_STOP", "MiniPlayerTransitionAnchor.publish",
                       "miniPlayerScreenBounds(hostView)", "hostView.width.toFloat()", "if (isAudioOnlyItem)"):
             self.assertIn(token, MINI)

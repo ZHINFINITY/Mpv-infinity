@@ -7,6 +7,7 @@
 
 package app.infinity.mpvz.ui.preferences
 
+import app.infinity.mpvz.ui.components.GlassModalBottomSheet
 import app.infinity.mpvz.ui.preferences.components.settingsGlassContainerColor
 
 import app.infinity.mpvz.ui.preferences.components.settingsGlassSurface
@@ -159,11 +160,10 @@ object YtdlpSettingsScreen : Screen {
 
     if (showCustomUserAgentSheet) {
       var draftUserAgent by remember(showCustomUserAgentSheet) { mutableStateOf(customUserAgent) }
-      ModalBottomSheet(
+      GlassModalBottomSheet(
       containerColor = settingsGlassContainerColor(androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainerLow),
-      modifier = androidx.compose.ui.Modifier.settingsGlassSurface(cornerRadius = 28.dp, independent = true),
-        onDismissRequest = { showCustomUserAgentSheet = false },
-      ) {
+      paneModifier = androidx.compose.ui.Modifier.settingsGlassSurface(cornerRadius = 28.dp, independent = true),
+        onDismissRequest = { showCustomUserAgentSheet = false },) {
         Column(
           modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 8.dp),
           verticalArrangement = Arrangement.spacedBy(12.dp),

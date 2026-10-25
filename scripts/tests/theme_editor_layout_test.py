@@ -24,7 +24,9 @@ class ThemeEditorLayoutSourceTest(unittest.TestCase):
         self.assertIn(".verticalScroll(rememberScrollState())", editor)
         self.assertIn("BoxWithConstraints(", editor)
         self.assertIn(".imePadding()", editor)
-        self.assertIn(".navigationBarsPadding()", editor)
+        # GlassModalBottomSheet owns the single bottom inset; a second nav-bar pad doubled it.
+        self.assertIn("GlassModalBottomSheet(", editor)
+        self.assertNotIn(".navigationBarsPadding()", editor)
         self.assertIn("heightIn(min = 52.dp)", editor)
         self.assertIn("ThemeEditorLayoutPolicy.stackActions", editor)
 
