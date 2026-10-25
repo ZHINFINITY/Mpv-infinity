@@ -5,7 +5,9 @@ Source: https://github.com/androidx/media/tree/1.11.1/libraries/decoder_ffmpeg
 Pinned source commit: 8c6678b657ede1e7883fc164ef73ed483c7796c3
 License: Apache License 2.0; see Media3-FFmpeg-decoder-APACHE-2.0.txt.
 
-The adapter exposes only DTS, DTS Express, and DTS-HD via FFmpeg's DCA decoder. It
+The adapter is a Native-engine audio fallback for formats the device cannot decode
+(DTS/DTS-HD, TrueHD, AC-3/E-AC-3, AAC, MP3, Vorbis, Opus, FLAC, ALAC, AMR, G.711, GSM),
+using FFmpeg's built-in LGPL decoders. It
 links dynamically to the existing FFmpeg 9.0-series shared libraries in the MPV
 runtime; the MPVFlow arm64 build pins n9.0.2. The runtime is built with GPL and
 nonfree support disabled, under LGPL-3.0-or-later. It adds no separate FFmpeg decoder

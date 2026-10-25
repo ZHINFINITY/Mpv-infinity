@@ -111,17 +111,55 @@ public final class FfmpegLibrary {
   /**
    * Returns the name of the FFmpeg decoder that could be used to decode the format, or {@code null}
    * if it's unsupported.
+   *
+   * <p>Every audio format Media3 can route to a decoder and the app's shared LGPL FFmpeg runtime can
+   * decode. The app installs this renderer with {@code EXTENSION_RENDERER_MODE_ON}, so the phone's
+   * own decoders keep handling what they can; this renderer only wins when the platform reports the
+   * format as unsupported or beyond its capabilities. Video is never claimed. Formats FFmpeg has no
+   * decoder for (AC-4, MPEG-H, DTS:X/UHD, IAMF, DSD bit order unknown) stay unmapped. CI proves each
+   * returned decoder is compiled into the packaged libavcodec (scripts/ffmpeg_decoder_inventory.py).
    */
   @Nullable
   /* package */ static String getCodecName(String mimeType) {
     switch (mimeType) {
+      case MimeTypes.AUDIO_AAC:
+        return "aac";
+      case MimeTypes.AUDIO_MPEG:
+        return "mp3";
+      case MimeTypes.AUDIO_MPEG_L1:
+        return "mp1";
+      case MimeTypes.AUDIO_MPEG_L2:
+        return "mp2";
+      case MimeTypes.AUDIO_AC3:
+        return "ac3";
+      case MimeTypes.AUDIO_E_AC3:
+      case MimeTypes.AUDIO_E_AC3_JOC:
+        return "eac3";
+      case MimeTypes.AUDIO_TRUEHD:
+        return "truehd";
       case MimeTypes.AUDIO_DTS:
       case MimeTypes.AUDIO_DTS_EXPRESS:
       case MimeTypes.AUDIO_DTS_HD:
         return "dca";
+      case MimeTypes.AUDIO_VORBIS:
+        return "vorbis";
+      case MimeTypes.AUDIO_OPUS:
+        return "opus";
+      case MimeTypes.AUDIO_FLAC:
+        return "flac";
+      case MimeTypes.AUDIO_ALAC:
+        return "alac";
+      case MimeTypes.AUDIO_AMR_NB:
+        return "amrnb";
+      case MimeTypes.AUDIO_AMR_WB:
+        return "amrwb";
+      case MimeTypes.AUDIO_MLAW:
+        return "pcm_mulaw";
+      case MimeTypes.AUDIO_ALAW:
+        return "pcm_alaw";
+      case MimeTypes.AUDIO_MSGSM:
+        return "gsm_ms";
       default:
-        // The shared LGPL FFmpeg runtime has other decoders. Keep this Media3 extension scoped to
-        // DTS so it cannot claim unrelated audio formats or video tracks.
         return null;
     }
   }
