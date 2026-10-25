@@ -6,6 +6,8 @@
 
 package app.infinity.mpvz.ui.player.controls.components
 
+import app.infinity.mpvz.ui.components.GlassChip
+
 import app.infinity.mpvz.ui.player.PlaybackSession
 
 import androidx.compose.animation.AnimatedVisibility
@@ -39,7 +41,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -187,7 +188,7 @@ fun LyricsView(
           horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
           verticalAlignment = Alignment.CenterVertically,
         ) {
-          FilterChip(
+          GlassChip(
             selected = state.selectedSource == LyricsSourceType.EMBEDDED || state.selectedSource == LyricsSourceType.LOCAL,
             onClick = { viewModel.switchLyricsSource(LyricsSourceType.EMBEDDED) },
             label = {
@@ -202,7 +203,7 @@ fun LyricsView(
             ),
           )
 
-          FilterChip(
+          GlassChip(
             selected = state.selectedSource == LyricsSourceType.ONLINE,
             onClick = { viewModel.switchLyricsSource(LyricsSourceType.ONLINE) },
             label = {

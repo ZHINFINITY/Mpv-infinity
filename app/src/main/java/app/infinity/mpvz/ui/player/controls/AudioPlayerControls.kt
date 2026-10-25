@@ -7,6 +7,8 @@
 
 package app.infinity.mpvz.ui.player.controls
 
+import app.infinity.mpvz.ui.components.GlassChip
+
 import app.infinity.mpvz.ui.player.StatsLuaOverlay
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.boundsInWindow
@@ -2800,7 +2802,7 @@ private fun DualPaneSidePanel(
       horizontalArrangement = Arrangement.spacedBy(8.dp),
       verticalAlignment = Alignment.CenterVertically,
     ) {
-      androidx.compose.material3.FilterChip(
+      GlassChip(
         selected = selectedTab == 0,
         onClick = { selectedTab = 0 },
         label = { Text(stringResource(R.string.player_up_next_title), fontWeight = FontWeight.Bold) },
@@ -2809,7 +2811,7 @@ private fun DualPaneSidePanel(
           selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer,
         ),
       )
-      androidx.compose.material3.FilterChip(
+      GlassChip(
         selected = selectedTab == 1,
         onClick = { selectedTab = 1 },
         label = { Text(stringResource(R.string.player_lyrics_title), fontWeight = FontWeight.Bold) },
