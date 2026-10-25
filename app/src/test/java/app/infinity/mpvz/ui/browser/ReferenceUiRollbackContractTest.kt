@@ -27,10 +27,10 @@ class ReferenceUiRollbackContractTest {
       "app/src/main/java/app/infinity/mpvz/ui/player/controls/components/Seekbar.kt" to "b0d7ca11fdd2729871e052a0f6ea3b2cba64fb3e29039e5d3c42a7acf4d426c9",
       // Build 1910: shared rimLight/thick-surface routing is intentionally owned by this stream.
       // Build 1910 integration: union of the rim-light routing and thickSurface stream edits.
-      "app/src/main/java/app/infinity/mpvz/ui/player/controls/components/GlassControls.kt" to "0f2f6530bc900c4b7b35253a397e4f9a23cba04a5188f6d9fbb7d6d6174a7f12",
+      "app/src/main/java/app/infinity/mpvz/ui/player/controls/components/GlassControls.kt" to "b9d10c335d9bb952f1f685ccbbdf7e4b94c211d6576085f108bf62c3c31895e6",
       // Build 1910: player sheets opt into the centralized inner thickness bands.
       // Build 1910 integration: edge-attached landscape sheets draw one rim on the asymmetric shape.
-      "app/src/main/java/app/infinity/mpvz/presentation/components/PlayerSheet.kt" to "92438ec6f04a8c7c465b011bee6675b90e5ed00859edf6f7e64e0c4d0ed8ba77",
+      "app/src/main/java/app/infinity/mpvz/presentation/components/PlayerSheet.kt" to "7838a785e17d4bd1479a348a04c6f9ac7af0bacc0891ba817b165a1f53348c81",
       "app/src/main/java/app/infinity/mpvz/presentation/components/PlayerGlassOverlays.kt" to "82a115d195711b391235b5f32a4d7b2bac75e494aef0ff22be55251f9307b54f",
     )
     expected.forEach { (path, digest) -> assertEquals(path, digest, sha(read(path))) }
@@ -535,7 +535,7 @@ import android.graphics.Shader
       end++
     }
     // Build 1902: nav pill commits the lens frame before far page jumps and supports drag-to-select.
-    assertEquals("6dd01fe6826b20433d5073e6a41b45f2750f27f2b2ce2a6f0b6418263f8358f6", sha(navigation.substring(start, end)))
+    assertEquals("f13efde0a185e1150f1ddf2d8d38d4498069977eaaee3714d6547cc547484171", sha(navigation.substring(start, end)))
     val scene = read("app/src/main/java/app/infinity/mpvz/ui/theme/BrowserGlassScene.kt")
     val lensStart = scene.indexOf("internal const val BROWSER_LENS")
     val q = scene.indexOf("\"\"\"", lensStart)

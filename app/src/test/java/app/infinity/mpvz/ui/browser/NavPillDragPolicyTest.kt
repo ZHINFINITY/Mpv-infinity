@@ -33,7 +33,9 @@ class NavPillDragPolicyTest {
 
   @Test fun dragDeltaFollowsFingerAndClampsAtEnds() {
     val centers = listOf(20f, 80f, 140f)
-    assertEquals(1f, NavPillDragPolicy.positionAfterDrag(80f, 30f, centers), 0.001f)
+    // The pill follows the finger continuously: half way between tab 1 (80) and tab 2 (140).
+    assertEquals(1.5f, NavPillDragPolicy.positionAfterDrag(80f, 30f, centers), 0.001f)
+    assertEquals(1f, NavPillDragPolicy.positionAfterDrag(20f, 60f, centers), 0.001f)
     assertEquals(0f, NavPillDragPolicy.positionAfterDrag(20f, -500f, centers), 0.001f)
     assertEquals(2f, NavPillDragPolicy.positionAfterDrag(80f, 500f, centers), 0.001f)
   }

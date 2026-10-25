@@ -75,6 +75,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
@@ -634,9 +635,13 @@ private fun ExpressivePillNavigationBar(
   val spacing = 4.dp
   val startPadding = 6.dp
 
-  val tabWidths = remember(position, visibleTabs) {
+  // While the pill is dragged the hovered tab opens like it does during a pager swipe, so its
+  // label has room. The gesture itself maps the finger against centres frozen at drag start.
+  var dragPosition by remember { mutableStateOf<Float?>(null) }
+  val layoutPosition = dragPosition ?: position
+  val tabWidths = remember(layoutPosition, visibleTabs) {
     visibleTabs.mapIndexed { index, tab ->
-      val fraction = (1f - kotlin.math.abs(position - index)).coerceIn(0f, 1f)
+      val fraction = (1f - kotlin.math.abs(layoutPosition - index)).coerceIn(0f, 1f)
       androidx.compose.ui.unit.lerp(inactiveTabWidth, activeTabWidth(tab), fraction)
     }
   }
@@ -665,7 +670,6 @@ private fun ExpressivePillNavigationBar(
     }
   }
   val lastIndex = (visibleTabs.size - 1).coerceAtLeast(0)
-  var dragPosition by remember { mutableStateOf<Float?>(null) }
   var hoveredTab by remember { mutableIntStateOf(targetIndex.toInt().coerceIn(0, lastIndex)) }
   val visualPosition = (dragPosition ?: if (!motionAllowed || fingerDragging) position else lensPosition.value)
     .coerceIn(0f, lastIndex.toFloat())
@@ -684,9 +688,13 @@ private fun ExpressivePillNavigationBar(
   val tabCentersPx = remember(tabOffsets, tabWidths, density) {
     tabOffsets.mapIndexed { index, left -> with(density) { (left + tabWidths[index] / 2).toPx() } }
   }
-  val dragModifier = Modifier.pointerInput(visibleTabs, tabCentersPx, isRtl, targetIndex) {
+  // Read, not keyed: tab centres move while the hovered tab opens, and restarting the
+  // pointerInput on every width change would cancel the drag mid-gesture.
+  val latestTabCenters by rememberUpdatedState(tabCentersPx)
+  val dragModifier = Modifier.pointerInput(visibleTabs, isRtl, targetIndex) {
     awaitEachGesture {
       val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
+      val tabCentersPx = latestTabCenters
       val startCenter = tabCentersPx.getOrNull(targetIndex.toInt()) ?: down.position.x
       val tracker = VelocityTracker()
       tracker.addPosition(down.uptimeMillis, down.position)

@@ -26,7 +26,6 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.staticCompositionLocalOf
-import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -41,17 +40,25 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalView
+import android.os.Build
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.LinearOutSlowInEasing
 import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import app.infinity.mpvz.preferences.AppearancePreferences
 import app.infinity.mpvz.preferences.preference.collectAsState
+import app.infinity.mpvz.ui.theme.GlassDeviceSupport
+import app.infinity.mpvz.ui.theme.GlassWaterRippleShader
 import app.infinity.mpvz.ui.theme.LocalGlassCustomization
 import app.infinity.mpvz.ui.theme.SwitchContrastPolicy
 import app.infinity.mpvz.ui.theme.glassRimLight
 import app.infinity.mpvz.ui.theme.liquidGlassPane
+import kotlinx.coroutines.launch
 import org.koin.compose.koinInject
 
 // Build 1910: retain a named inset token for shared settings/control sizing contracts.
@@ -62,13 +69,33 @@ val LocalPlayerGlassSurfaceOwner = staticCompositionLocalOf { false }
 /** Pure wave geometry used by the glass touch feedback and JVM contracts. */
 object GlassWaterRipplePolicy {
   const val DurationMs = 560
+
+  /** Ring radius as a fraction of the element's larger side: starts small, ends past the edge. */
   fun radiusFraction(progress: Float): Float = .10f + progress.coerceIn(0f, 1f) * 1.15f
+
+  /** Quadratic decay: strong at the touch, settled to zero when the wave finishes. */
   fun amplitude(progress: Float): Float {
     val remaining = 1f - progress.coerceIn(0f, 1f)
     return remaining * remaining
   }
+
+  /** The ring widens a little as it travels, like a real water wave. */
+  fun ringWidthPx(maxDimensionPx: Float, progress: Float): Float =
+    (maxDimensionPx * (.10f + .08f * progress.coerceIn(0f, 1f))).coerceAtLeast(6f)
+
+  /** Peak displacement in px: follows the global refraction tuning, capped for small chips. */
+  fun displacementPx(densityPx: Float, refraction: Float, amplitude: Float): Float =
+    5f * densityPx * refraction.coerceIn(0f, 2f) * amplitude.coerceIn(0f, 1f)
+
+  /** Crest highlight: follows the global rim/highlight tuning, subtler on true-black AMOLED. */
+  fun crestLight(rimStrength: Float, amplitude: Float, amoled: Boolean): Float =
+    (if (amoled) .10f else .18f) * rimStrength.coerceIn(0f, 2f) * amplitude.coerceIn(0f, 1f)
+
   fun useRefraction(glassEnabled: Boolean, deviceAllowsGlass: Boolean, sdkInt: Int): Boolean =
     glassEnabled && deviceAllowsGlass && sdkInt >= 33
+
+  /** Only an active wave installs a RenderEffect; idle or finished buttons hold none. */
+  fun isActive(progress: Float): Boolean = progress < 1f
 }
 
 /** Pure slider geometry used by rendering and unit tests. */
@@ -103,12 +130,19 @@ object GlassControlGeometryPolicy {
     value > oldValue && value <= oldValue * 1.16f
 }
 
-/** Shared press feedback. Values are consumed in graphicsLayer/draw lambdas only. */
+/**
+ * Shared press feedback. Values are consumed in graphicsLayer/draw lambdas only.
+ *
+ * [glass] is the caller's Liquid Glass state: with glass on (and a supported device on
+ * API 33+) the press also sends a refractive water wave across the element; otherwise a
+ * soft, shape-clipped fade is drawn instead.
+ */
 @Composable
 fun Modifier.glassPressFeedback(
   interactionSource: MutableInteractionSource,
   enabled: Boolean = true,
   reducedMotion: Boolean = false,
+  glass: Boolean = false,
 ): Modifier {
   var pressed by remember { mutableStateOf(false) }
   LaunchedEffect(interactionSource, enabled) {
@@ -124,48 +158,120 @@ fun Modifier.glassPressFeedback(
     spring(stiffness = Spring.StiffnessMediumLow), label = "glassPress",
   )
   return graphicsLayer { scaleX = scale; scaleY = scale }
-    .glassWaterRipple(interactionSource, enabled)
+    .glassWaterRipple(interactionSource, enabled, glass = glass)
 }
 
-/** Touch-origin wave; callers place their shape clip before this modifier. */
+/**
+ * Touch-origin water wave. Callers place their shape clip before this modifier, so both the
+ * refraction and the fade stay inside the button's own shape.
+ *
+ * Cost model: one Animatable per element, read only inside graphicsLayer/draw lambdas (no
+ * recomposition per frame), a RenderEffect only while the wave is running, and no loops
+ * or polling when idle. A new press restarts the wave from the new touch point.
+ */
 @Composable
 fun Modifier.glassWaterRipple(
   interactionSource: MutableInteractionSource,
   enabled: Boolean = true,
   intensity: Float = 1f,
+  glass: Boolean = false,
 ): Modifier {
+  val context = LocalContext.current
+  val tuning = LocalGlassCustomization.current
+  val amoled = MaterialTheme.colorScheme.surface == Color.Black
+  val refraction = remember(glass, context) {
+    GlassWaterRipplePolicy.useRefraction(
+      glassEnabled = glass,
+      deviceAllowsGlass = glass && GlassDeviceSupport.allowsGlass(context),
+      sdkInt = Build.VERSION.SDK_INT,
+    )
+  }
+  val progress = remember { Animatable(1f) }
   var origin by remember { mutableStateOf(Offset.Unspecified) }
-  var progress by remember { mutableFloatStateOf(1f) }
   LaunchedEffect(interactionSource, enabled) {
     interactionSource.interactions.collect { interaction ->
       if (interaction is PressInteraction.Press && enabled) {
         origin = interaction.pressPosition
-        val start = withFrameNanos { it }
-        while (true) {
-          progress = ((withFrameNanos { it } - start) / 1_000_000f / GlassWaterRipplePolicy.DurationMs).coerceIn(0f, 1f)
-          if (progress >= 1f) break
+        // launch so the collector keeps receiving presses; Animatable cancels the old wave.
+        launch {
+          progress.snapTo(0f)
+          progress.animateTo(1f, tween(GlassWaterRipplePolicy.DurationMs, easing = LinearOutSlowInEasing))
         }
-        origin = Offset.Unspecified
       }
     }
   }
-  return drawWithCache {
+  val refractive =
+    if (refraction && Build.VERSION.SDK_INT >= 33) {
+      graphicsLayer {
+        val p = progress.value
+        val o = origin
+        renderEffect =
+          if (GlassWaterRipplePolicy.isActive(p) && o != Offset.Unspecified) {
+            val amplitude = GlassWaterRipplePolicy.amplitude(p) * intensity
+            GlassWaterRippleEffects.create(
+              width = size.width,
+              height = size.height,
+              origin = o,
+              radiusPx = size.maxDimension * GlassWaterRipplePolicy.radiusFraction(p),
+              ringWidthPx = GlassWaterRipplePolicy.ringWidthPx(size.maxDimension, p),
+              displacementPx = GlassWaterRipplePolicy.displacementPx(density, tuning.refraction, amplitude),
+              light = GlassWaterRipplePolicy.crestLight(tuning.rimStrength, amplitude, amoled),
+            )
+          } else {
+            null
+          }
+      }
+    } else {
+      // Keep the caller's chain (tags, clip, glass surface, size); never restart from Modifier.
+      this
+    }
+  return refractive.drawWithCache {
     onDrawWithContent {
       drawContent()
-      if (origin != Offset.Unspecified && progress < 1f) {
-        val radius = size.maxDimension * GlassWaterRipplePolicy.radiusFraction(progress)
+      val p = progress.value
+      val o = origin
+      // The fade is the whole effect on fallback devices, and a faint companion glow when the
+      // shader is unavailable at runtime (e.g. a driver failure after start-up).
+      // Idle draws never touch the shader; it is only looked up while a wave is running.
+      if (GlassWaterRipplePolicy.isActive(p) && o != Offset.Unspecified &&
+        !(refraction && GlassWaterRippleEffects.available())
+      ) {
+        val radius = size.maxDimension * GlassWaterRipplePolicy.radiusFraction(p)
         drawCircle(
           brush = Brush.radialGradient(
-            listOf(Color.White.copy(alpha = GlassWaterRipplePolicy.amplitude(progress) * .20f * intensity), Color.Transparent),
-            center = origin,
+            listOf(
+              Color.White.copy(alpha = GlassWaterRipplePolicy.amplitude(p) * (if (amoled) .12f else .20f) * intensity),
+              Color.Transparent,
+            ),
+            center = o,
             radius = radius,
           ),
           radius = radius,
-          center = origin,
+          center = o,
         )
       }
     }
   }
+}
+
+/** Keeps every reference to the API 33 shader class behind an SDK check. */
+private object GlassWaterRippleEffects {
+  fun available(): Boolean = Build.VERSION.SDK_INT >= 33 && GlassWaterRippleShader.available
+
+  fun create(
+    width: Float,
+    height: Float,
+    origin: Offset,
+    radiusPx: Float,
+    ringWidthPx: Float,
+    displacementPx: Float,
+    light: Float,
+  ): androidx.compose.ui.graphics.RenderEffect? =
+    if (Build.VERSION.SDK_INT >= 33) {
+      GlassWaterRippleShader.effect(width, height, origin.x, origin.y, radiusPx, ringWidthPx, displacementPx, light)
+    } else {
+      null
+    }
 }
 
 @Composable

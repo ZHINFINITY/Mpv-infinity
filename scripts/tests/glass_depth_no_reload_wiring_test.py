@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Runtime source-route checks; these do not claim phone/GPU visual verification."""
 from pathlib import Path
+import re
 import unittest
 
 JAVA = Path(__file__).resolve().parents[2] / 'app/src/main/java/app/infinity/mpvz'
@@ -37,7 +38,11 @@ class GlassDepthNoReloadWiringTest(unittest.TestCase):
         for name in ('checkedTrackColor', 'uncheckedTrackColor', 'disabledCheckedTrackColor',
                      'disabledUncheckedTrackColor', 'checkedBorderColor', 'uncheckedBorderColor'):
             self.assertIn(name + ' = Color.Transparent', switch)
-        self.assertIn('16.dp, height = 32.dp', switch)
+        # The custom material must be at least as tall as Material's 32dp native track.
+        self.assertIn('16.dp, height = GlassControlGeometryPolicy.switchTrackHeightDp.dp', switch)
+        track = re.search(r'const val switchTrackHeightDp = ([0-9.]+)f', controls)
+        self.assertIsNotNone(track)
+        self.assertGreaterEqual(float(track.group(1)), 32.0)
         self.assertNotIn('Size(bounds.width, (trackHeight / 2f)', controls)
         self.assertNotIn('.shadow(', controls)
     def test_native_route_never_restarts_and_mpv_restart_is_explicitly_scoped(self):

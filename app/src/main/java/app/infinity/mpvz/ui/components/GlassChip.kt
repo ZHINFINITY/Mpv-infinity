@@ -56,7 +56,7 @@ fun GlassChip(
     modifier = modifier.defaultMinSize(minWidth = 48.dp, minHeight = 48.dp)
       // Keep the press indication inside the pill instead of the layout bounds.
       .clip(chipShape)
-      .glassPressFeedback(source, enabled)
+      .glassPressFeedback(source, enabled, glass = true)
       .semantics { this.selected = selected; this.role = Role.Checkbox }
       .clickable(interactionSource = source, role = Role.Checkbox, enabled = enabled, onClick = onClick),
     shape = chipShape,

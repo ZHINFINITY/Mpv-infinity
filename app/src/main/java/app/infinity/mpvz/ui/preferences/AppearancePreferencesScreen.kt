@@ -1193,7 +1193,7 @@ private fun GlassLivePreview(enabled: Boolean, opacity: Float, highlight: Float,
       Text(stringResource(R.string.pref_glass_preview), style = MaterialTheme.typography.titleSmall)
       Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
         listOf("A", "B", "C").forEach { Text(it, Modifier.background(MaterialTheme.colorScheme.surface.copy(alpha = .42f), RoundedCornerShape(12.dp)).padding(horizontal = 10.dp, vertical = 4.dp)) }
-        GlassSwitch(checked = true, onCheckedChange = null, modifier = Modifier.size(40.dp))
+        GlassSwitch(checked = true, onCheckedChange = null)
       }
       GlassSlider(value = .65f, onValueChange = {}, modifier = Modifier.fillMaxWidth())
     }

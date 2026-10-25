@@ -36,7 +36,7 @@ internal fun ThemeGlassButton(
   MaterialButton(
     onClick = onClick,
     modifier = modifier.clip(shape).settingsGlassSurface(cornerRadius = 26.dp)
-      .glassPressFeedback(interactionSource, enabled),
+      .glassPressFeedback(interactionSource, enabled, glass = glass),
     enabled = enabled,
     shape = shape,
     colors = ButtonDefaults.buttonColors(
@@ -63,7 +63,7 @@ internal fun ThemeGlassOutlinedButton(
   MaterialOutlinedButton(
     onClick = onClick,
     modifier = modifier.clip(shape).settingsGlassSurface(cornerRadius = 26.dp)
-      .glassPressFeedback(interactionSource, enabled),
+      .glassPressFeedback(interactionSource, enabled, glass = glass),
     enabled = enabled,
     shape = shape,
     border = if (glass) null else BorderStroke(1.dp, MaterialTheme.colorScheme.outline),

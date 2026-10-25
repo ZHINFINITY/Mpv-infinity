@@ -88,8 +88,9 @@ fun ControlsButton(
     modifier =
       modifier
         .clip(CircleShape)
+        // Feedback wraps the glass pane so the water wave refracts the glass itself.
+        .glassPressFeedback(interactionSource, enabled, glass = glassEnabled)
         .playerGlassPane(enabled = glassEnabled, opacity = 0.88f, highlight = 0.18f, cornerRadius = 999.dp)
-        .glassPressFeedback(interactionSource, enabled)
         .combinedClickable(
           enabled = enabled,
           onClick = {

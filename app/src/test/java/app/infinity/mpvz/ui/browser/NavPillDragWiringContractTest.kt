@@ -21,4 +21,17 @@ class NavPillDragWiringContractTest {
     assertTrue(source.contains("NavPillDragPolicy.flingSnappedIndex"))
     assertTrue(source.contains("visibleTabs.getOrNull(target)?.let(onTabSelected)"))
   }
+
+  @Test
+  fun hoveredTabOpensDuringDragAndTheGestureIsNotRestartedByLayoutChanges() {
+    val source =
+      File(root, "app/src/main/java/app/infinity/mpvz/ui/browser/MainScreen.kt").readText()
+    // Labels fade in with tabFraction; the hovered tab must widen with the drag or they clip.
+    assertTrue(source.contains("val layoutPosition = dragPosition ?: position"))
+    assertTrue(source.contains("remember(layoutPosition, visibleTabs)"))
+    // Tab centres change while tabs widen; keying pointerInput on them would cancel the drag.
+    assertTrue(source.contains("Modifier.pointerInput(visibleTabs, isRtl, targetIndex)"))
+    assertTrue(source.contains("rememberUpdatedState(tabCentersPx)"))
+    assertTrue(!source.contains("pointerInput(visibleTabs, tabCentersPx"))
+  }
 }
