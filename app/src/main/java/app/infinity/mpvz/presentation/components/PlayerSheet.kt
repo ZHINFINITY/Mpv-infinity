@@ -28,14 +28,17 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.only
+import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.foundation.layout.systemBars
 import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.shape.ZeroCornerSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -60,8 +63,10 @@ import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.Velocity
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.flow.collectLatest
@@ -70,11 +75,52 @@ import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 import app.infinity.mpvz.preferences.AppearancePreferences
 import app.infinity.mpvz.preferences.preference.collectAsState
-import app.infinity.mpvz.ui.theme.liquidGlassPane
 import app.infinity.mpvz.ui.theme.GlassSurfacePolicy
+import app.infinity.mpvz.ui.theme.glassRimLight
+import app.infinity.mpvz.ui.theme.liquidGlassPane
 import org.koin.compose.koinInject
 
 private val sheetAnimationSpec = tween<Float>(350)
+
+internal enum class SideSheetCorner { TopStart, TopEnd, BottomStart, BottomEnd }
+internal enum class SideSheetEdge { Top, Bottom, Start, End }
+
+/** Pure geometry contract for the display-attached landscape player sheet. */
+internal object PlayerSideSheetLayoutPolicy {
+  const val InnerCornerRadiusDp = 24f
+
+  fun isLandscape(orientation: Int): Boolean = orientation == ORIENTATION_LANDSCAPE
+
+  fun innerCorners(layoutDirection: LayoutDirection): Set<SideSheetCorner> =
+    if (layoutDirection == LayoutDirection.Ltr) {
+      setOf(SideSheetCorner.TopStart, SideSheetCorner.BottomStart)
+    } else {
+      setOf(SideSheetCorner.TopEnd, SideSheetCorner.BottomEnd)
+    }
+
+  fun backgroundBleedsToScreenEdges(landscape: Boolean): Set<SideSheetEdge> =
+    if (landscape) SideSheetEdge.entries.toSet() else emptySet()
+
+  fun contentUsesSafeInsets(landscape: Boolean): Set<SideSheetEdge> =
+    if (landscape) SideSheetEdge.entries.toSet() else emptySet()
+
+  fun shape(layoutDirection: LayoutDirection) =
+    if (layoutDirection == LayoutDirection.Ltr) {
+      RoundedCornerShape(
+        topStart = InnerCornerRadiusDp.dp,
+        bottomStart = InnerCornerRadiusDp.dp,
+        topEnd = 0.dp,
+        bottomEnd = 0.dp,
+      )
+    } else {
+      RoundedCornerShape(
+        topStart = 0.dp,
+        bottomStart = 0.dp,
+        topEnd = InnerCornerRadiusDp.dp,
+        bottomEnd = InnerCornerRadiusDp.dp,
+      )
+    }
+}
 
 @SuppressLint("ConfigurationScreenWidthHeight")
 @Composable
@@ -120,6 +166,8 @@ fun PlayerSheet(
         customMaxHeightDp = customMaxHeight?.value,
       )
       .dp
+  val landscape = PlayerSideSheetLayoutPolicy.isLandscape(LocalConfiguration.current.orientation)
+  val layoutDirection = LocalLayoutDirection.current
 
   val screenHeightPx =
     with(density) {
@@ -169,10 +217,15 @@ fun PlayerSheet(
       }
     }
   }
-  val sheetShape = MaterialTheme.shapes.extraLarge.copy(
-    bottomEnd = ZeroCornerSize,
-    bottomStart = ZeroCornerSize,
-  )
+  val sheetShape =
+    if (landscape) {
+      PlayerSideSheetLayoutPolicy.shape(layoutDirection)
+    } else {
+      MaterialTheme.shapes.extraLarge.copy(
+        bottomEnd = ZeroCornerSize,
+        bottomStart = ZeroCornerSize,
+      )
+    }
   Box(
     modifier =
       Modifier
@@ -190,7 +243,7 @@ fun PlayerSheet(
             }
           anchoredDraggableState.updateAnchors(anchors)
         },
-    contentAlignment = Alignment.BottomCenter,
+    contentAlignment = if (landscape) Alignment.CenterEnd else Alignment.BottomCenter,
   ) {
     Surface(
       modifier =
@@ -198,12 +251,19 @@ fun PlayerSheet(
           // Insets belong outside the size constraint. Applying them after
           // sizeIn made the measured glass root taller than the visible sheet,
           // so its upper half was painted over the content on portrait/IME.
-          .windowInsetsPadding(
-            WindowInsets.systemBars
-              .only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal),
+          .then(
+            if (landscape) {
+              Modifier.fillMaxHeight().sizeIn(maxWidth = maxWidth)
+            } else {
+              Modifier
+                .windowInsetsPadding(
+                  WindowInsets.systemBars
+                    .only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal),
+                )
+                .imePadding()
+                .sizeIn(maxWidth = maxWidth, maxHeight = maxHeight)
+            },
           )
-          .imePadding()
-          .sizeIn(maxWidth = maxWidth, maxHeight = maxHeight)
           .clickable(
             interactionSource = remember { MutableInteractionSource() },
             indication = null,
@@ -228,12 +288,16 @@ fun PlayerSheet(
             // Clip before the glass renderer so its backing cannot escape the rounded rim.
             .clip(sheetShape)
             .liquidGlassPane(
-            enabled = liquidGlassSurfaces,
-            opacity = 0.86f,
-            highlight = 0.20f,
-            cornerRadius = 24.dp,
-            materialRole = GlassSurfacePolicy.MaterialRole.Regular,
-          ),
+              enabled = liquidGlassSurfaces,
+              opacity = 0.86f,
+              highlight = 0.20f,
+              cornerRadius = 24.dp,
+              materialRole = GlassSurfacePolicy.MaterialRole.Regular,
+            )
+            .glassRimLight(
+              shape = sheetShape,
+              enabled = landscape && liquidGlassSurfaces,
+            ),
       shape = sheetShape,
       color = if (liquidGlassSurfaces) Color.Transparent else resolvedSurfaceColor,
       contentColor = if (sheetIsDark) Color.White else Color.Black,
@@ -243,7 +307,11 @@ fun PlayerSheet(
           enabled = anchoredDraggableState.targetValue == 0,
           onBack = internalOnDismissRequest,
         )
-        content()
+        if (landscape) {
+          Box(Modifier.windowInsetsPadding(WindowInsets.safeDrawing)) { content() }
+        } else {
+          content()
+        }
       },
     )
 

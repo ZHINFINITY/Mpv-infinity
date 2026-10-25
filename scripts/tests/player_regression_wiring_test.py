@@ -23,8 +23,13 @@ class PlayerRegressionWiringTest(unittest.TestCase):
     def test_sheet_insets_are_outside_its_constrained_glass_content(self):
         text = source('presentation/components/PlayerSheet.kt')
         surface = text.split('Surface(', 1)[1]
-        self.assertLess(surface.index('.windowInsetsPadding('), surface.index('.sizeIn('))
-        self.assertLess(surface.index('.imePadding()'), surface.index('.sizeIn('))
+        # Portrait keeps its historical outer system/IME insets before the size
+        # bound. Landscape deliberately moves safeDrawing padding inside the
+        # full-height surface so the glass can bleed behind system bars.
+        portrait = surface.split('if (landscape)', 1)[1].split('} else {', 1)[1]
+        self.assertLess(portrait.index('.windowInsetsPadding('), portrait.index('.sizeIn('))
+        self.assertLess(portrait.index('.imePadding()'), portrait.index('.sizeIn('))
+        self.assertIn('WindowInsets.safeDrawing', text)
         self.assertIn('PlayerSheetLayoutPolicy.maxHeightDp(', text)
 
     def test_episode_playlist_has_glass_and_material_fallback(self):
