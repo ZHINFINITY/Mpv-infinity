@@ -28,7 +28,10 @@ import androidx.compose.animation.shrinkHorizontally
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.awaitHorizontalTouchSlopOrCancellation
+import androidx.compose.foundation.gestures.horizontalDrag
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
@@ -85,7 +88,13 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.util.VelocityTracker
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInParent
 import androidx.compose.ui.platform.LocalDensity
@@ -657,6 +666,7 @@ private fun ExpressivePillNavigationBar(
   }
   val lastIndex = (visibleTabs.size - 1).coerceAtLeast(0)
   var dragPosition by remember { mutableStateOf<Float?>(null) }
+  var hoveredTab by remember { mutableIntStateOf(targetIndex.toInt().coerceIn(0, lastIndex)) }
   val visualPosition = (dragPosition ?: if (!motionAllowed || fingerDragging) position else lensPosition.value)
     .coerceIn(0f, lastIndex.toFloat())
   val visualFloor = visualPosition.toInt().coerceIn(0, lastIndex)
@@ -674,20 +684,58 @@ private fun ExpressivePillNavigationBar(
   val tabCentersPx = remember(tabOffsets, tabWidths, density) {
     tabOffsets.mapIndexed { index, left -> with(density) { (left + tabWidths[index] / 2).toPx() } }
   }
-  val dragModifier = Modifier.pointerInput(visibleTabs, tabCentersPx, isRtl) {
-    detectHorizontalDragGestures(
-      onDragStart = { dragPosition = null },
-      onHorizontalDrag = { change, _ ->
-        change.consume()
-        dragPosition = NavPillDragPolicy.tabPositionAtX(change.position.x, tabCentersPx, isRtl)
-      },
-      onDragEnd = {
-        val target = dragPosition?.let { NavPillDragPolicy.nearestTabIndex(it, visibleTabs.size) }
+  val dragModifier = Modifier.pointerInput(visibleTabs, tabCentersPx, isRtl, targetIndex) {
+    awaitEachGesture {
+      val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
+      val startCenter = tabCentersPx.getOrNull(targetIndex.toInt()) ?: down.position.x
+      val tracker = VelocityTracker()
+      tracker.addPosition(down.uptimeMillis, down.position)
+      var totalDelta = 0f
+      var dragging = false
+      val slop = awaitHorizontalTouchSlopOrCancellation(down.id) { change, overSlop ->
+        if (NavPillDragPolicy.crossedTouchSlop(overSlop)) {
+          dragging = true
+          totalDelta += overSlop
+          change.consume()
+          val next = NavPillDragPolicy.positionAfterDrag(startCenter, totalDelta, tabCentersPx, isRtl)
+          dragPosition = next
+          val hovered = NavPillDragPolicy.hoveredTabIndex(next, visibleTabs.size)
+          if (hovered != hoveredTab) {
+            hoveredTab = hovered
+            haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+          }
+        }
+      }
+      if (slop == null || !dragging) {
         dragPosition = null
-        if (target != null) visibleTabs.getOrNull(target)?.let(onTabSelected)
-      },
-      onDragCancel = { dragPosition = null },
-    )
+        return@awaitEachGesture
+      }
+      var completed = false
+      try {
+        completed = horizontalDrag(slop.id) { change ->
+          val delta = change.position.x - change.previousPosition.x
+          totalDelta += delta
+          tracker.addPosition(change.uptimeMillis, change.position)
+          val next = NavPillDragPolicy.positionAfterDrag(startCenter, totalDelta, tabCentersPx, isRtl)
+          dragPosition = next
+          val hovered = NavPillDragPolicy.hoveredTabIndex(next, visibleTabs.size)
+          if (hovered != hoveredTab) {
+            hoveredTab = hovered
+            haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+          }
+          change.consume()
+        }
+      } finally {
+        val velocity = runCatching { tracker.calculateVelocity().x }.getOrDefault(0f)
+        val releasePosition = dragPosition ?: targetIndex
+        val target = NavPillDragPolicy.flingSnappedIndex(
+          releasePosition, velocity, visibleTabs.size, isRtl,
+        )
+        dragPosition = null
+        hoveredTab = target
+        if (completed) visibleTabs.getOrNull(target)?.let(onTabSelected)
+      }
+    }
   }
   val lensGeometry = with(density) {
     if (motionAllowed) NavigationGlassMotionPolicy.dragGeometry(
@@ -734,7 +782,11 @@ private fun ExpressivePillNavigationBar(
         verticalAlignment = Alignment.CenterVertically,
       ) {
         visibleTabs.forEachIndexed { index, tab ->
-          val tabFraction = (1f - kotlin.math.abs(position - index)).coerceIn(0f, 1f)
+          val tabFraction = if (dragPosition != null) {
+            (1f - kotlin.math.abs(visualPosition - index)).coerceIn(0f, 1f)
+          } else {
+            (1f - kotlin.math.abs(position - index)).coerceIn(0f, 1f)
+          }
           val tabWidth = tabWidths.getOrElse(index) { inactiveTabWidth }
 
           val contentColor =
@@ -750,6 +802,10 @@ private fun ExpressivePillNavigationBar(
                 .width(tabWidth)
                 .height(44.dp)
                 .clip(CircleShape)
+                .semantics {
+                  role = Role.Tab
+                  selected = if (dragPosition != null) hoveredTab == index else index == targetIndex.toInt()
+                }
                 .clickable(
                   interactionSource = remember { MutableInteractionSource() },
                   indication = androidx.compose.material3.ripple(bounded = true),
