@@ -169,6 +169,7 @@ import kotlin.math.roundToInt
 import app.infinity.mpvz.R
 import app.infinity.mpvz.domain.thumbnail.EmbeddedArtworkResolver
 import app.infinity.mpvz.presentation.components.RemoteImage
+import app.infinity.mpvz.preferences.AdvancedPreferences
 import app.infinity.mpvz.preferences.AppearancePreferences
 import app.infinity.mpvz.preferences.AudioPreferences
 import app.infinity.mpvz.preferences.AudioVisualizerStyle
@@ -604,6 +605,7 @@ fun AudioPlayerControls(
 ) {
   val speedConfigOwned = isMpvOptionOwnedByConfig("speed")
   val audioFiltersConfigOwned = isMpvOptionOwnedByConfig("af")
+  val advancedPreferences = koinInject<AdvancedPreferences>()
   val gesturePreferences = koinInject<GesturePreferences>()
   val audioSeekDuration by gesturePreferences.doubleTapToSeekDuration.collectAsState()
   val paused by PlaybackSession.propBoolean["pause"].collectAsState()
@@ -634,6 +636,11 @@ fun AudioPlayerControls(
     val normalized = value?.trim()?.uppercase(Locale.ROOT).orEmpty()
     return normalized.isBlank() || normalized.contains("/API/") || normalized.contains("/ITEMS/") ||
       normalized.contains("/FILE/") || normalized.startsWith("DEV/") || normalized.contains("AUDIOBOOKSHELF") && normalized.contains("HTTP")
+  }
+  LaunchedEffect(currentItem?.stableId, currentItem?.isDefinitelyAudioOnly()) {
+    if (currentItem?.isDefinitelyAudioOnly() == true && advancedPreferences.enabledStatisticsPage.get() in 1..5) {
+      PlaybackSession.command("script-binding", "stats/display-stats-toggle")
+    }
   }
   val playlistItems by viewModel.playlistItems.collectAsState()
   val filteredPlaylist =

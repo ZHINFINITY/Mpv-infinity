@@ -71,6 +71,9 @@ def main() -> None:
     forbid(activity, "collectAsState(initial = NativePlaybackSnapshot())", "idle snapshot initial")
     forbid(controls, "collectAsState(initial = NativePlaybackSnapshot())", "PlayerControls idle snapshot initial")
     forbid(audio, "collectAsState(initial = NativePlaybackSnapshot())", "AudioPlayerControls idle snapshot initial")
+    # Known-good 380a778b music stats hides: per track in AudioPlayerControls and once on entry in PlayerControls.
+    require(audio, 'if (currentItem?.isDefinitelyAudioOnly() == true && advancedPreferences.enabledStatisticsPage.get() in 1..5) {\n      PlaybackSession.command("script-binding", "stats/display-stats-toggle")', "1901 per-track music stats hide")
+    require(controls, 'if (useAudioPlayer && statisticsPage in 1..5) {\n      advancedPreferences.enabledStatisticsPage.set(0)\n      PlaybackSession.command("script-binding", "stats/display-stats-toggle")', "1901 music entry stats hide")
     require(engine, "NativeSubtitleParserFactory(AssSubtitleParserFactory(assHandler))", "ASS-only native factory")
     forbid(engine, "DefaultSubtitleParserFactory", "composite VTT parser stays reverted")
     print("player stats lua command and native cue wiring contracts: PASS")
