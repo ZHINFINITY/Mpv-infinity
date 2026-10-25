@@ -168,7 +168,7 @@ fun LyricsSheet(
           label = {
             Text(if (state.embeddedLyrics?.sourceType == LyricsSourceType.LOCAL) "Local (.lrc)" else "Embedded")
           },
-          enabled = hasEmbedded || state.selectedSource == LyricsSourceType.EMBEDDED,,
+          enabled = hasEmbedded || state.selectedSource == LyricsSourceType.EMBEDDED,
         )
 
         GlassChip(
@@ -176,7 +176,7 @@ fun LyricsSheet(
           onClick = { viewModel.switchLyricsSource(LyricsSourceType.ONLINE) },
           label = {
             Text("Online (LRCLIB)")
-          },,
+          },
         )
 
         if (state.isLoading) {

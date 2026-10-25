@@ -7,6 +7,7 @@
 
 package app.infinity.mpvz.ui.player.controls.components.sheets
 
+import app.infinity.mpvz.presentation.components.playerGlassOverlay
 import app.infinity.mpvz.ui.components.GlassChip
 
 import app.infinity.mpvz.ui.player.StatsLuaOverlay
@@ -295,7 +296,7 @@ fun MoreSheet(
             onClick = {
               if (activeEngine == PlaybackEngineMode.NATIVE) {
                 advancedPreferences.enabledStatisticsPage.set(page.takeIf { it in 1..6 } ?: 0)
-                return@FilterChip
+                return@GlassChip
               }
               val isConsoleOpen = PlaybackSession.getPropertyBoolean("user-data/mpv/console/open") == true
 

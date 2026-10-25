@@ -54,6 +54,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
+import app.infinity.mpvz.preferences.preference.collectAsState as collectPreferenceAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -2265,7 +2266,7 @@ class PlayerActivity :
       // The controls ComposeView sits above the native video surface. Do not draw the
       // library custom media backdrop here or it will cover the episode while audio continues.
       MpvInfinityTheme(showCustomThemeBackdrop = false) {
-        val showFrameTimeOverlay by advancedPreferences.showFrameTimeOverlay.collectAsState()
+        val showFrameTimeOverlay by advancedPreferences.showFrameTimeOverlay.collectPreferenceAsState()
         val glass by androidx.compose.runtime.remember(appearancePreferences) {
           appearancePreferences.liquidGlassSurfaces.changes()
         }.collectAsState(initial = appearancePreferences.liquidGlassSurfaces.get())

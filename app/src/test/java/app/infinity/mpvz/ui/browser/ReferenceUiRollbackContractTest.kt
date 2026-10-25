@@ -29,7 +29,8 @@ class ReferenceUiRollbackContractTest {
       // Build 1910 integration: union of the rim-light routing and thickSurface stream edits.
       "app/src/main/java/app/infinity/mpvz/ui/player/controls/components/GlassControls.kt" to "0f2f6530bc900c4b7b35253a397e4f9a23cba04a5188f6d9fbb7d6d6174a7f12",
       // Build 1910: player sheets opt into the centralized inner thickness bands.
-      "app/src/main/java/app/infinity/mpvz/presentation/components/PlayerSheet.kt" to "f65b41859ea24b2fa0f5746d192ae1fa319fdd250e6e62c704c4c352201e72cc",
+      // Build 1910 integration: edge-attached landscape sheets draw one rim on the asymmetric shape.
+      "app/src/main/java/app/infinity/mpvz/presentation/components/PlayerSheet.kt" to "92438ec6f04a8c7c465b011bee6675b90e5ed00859edf6f7e64e0c4d0ed8ba77",
       "app/src/main/java/app/infinity/mpvz/presentation/components/PlayerGlassOverlays.kt" to "82a115d195711b391235b5f32a4d7b2bac75e494aef0ff22be55251f9307b54f",
     )
     expected.forEach { (path, digest) -> assertEquals(path, digest, sha(read(path))) }

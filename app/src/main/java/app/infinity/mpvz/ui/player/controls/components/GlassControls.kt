@@ -38,8 +38,6 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 
-// Build 1910: retain a named inset token for shared settings/control sizing contracts.
-private val horizontalInset = 16.dp
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalView
@@ -53,6 +51,9 @@ import app.infinity.mpvz.ui.theme.SwitchContrastPolicy
 import app.infinity.mpvz.ui.theme.glassRimLight
 import app.infinity.mpvz.ui.theme.liquidGlassPane
 import org.koin.compose.koinInject
+
+// Build 1910: retain a named inset token for shared settings/control sizing contracts.
+private val horizontalInset = 16.dp
 
 val LocalPlayerGlassSurfaceOwner = staticCompositionLocalOf { false }
 
