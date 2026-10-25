@@ -31,6 +31,17 @@ jobs:
           java-version: '17'
           cache: gradle
 
+      - name: Install native subtitle build dependencies
+        run: sudo apt-get update && sudo apt-get install -y autoconf automake libtool gettext autopoint gperf pkg-config
+
+      - name: Verify native subtitle build tools
+        run: |
+          set -euo pipefail
+          export PATH="/usr/bin:/usr/local/bin:$PATH"
+          autopoint --version
+          autoreconf --version
+          echo "/usr/bin" >> "$GITHUB_PATH"
+
       - name: Make Gradle wrapper executable
         run: chmod +x ./gradlew
 
