@@ -9,6 +9,7 @@ package app.infinity.mpvz.ui.player.controls
 
 import androidx.activity.compose.LocalActivity
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.SizeTransform
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
@@ -55,7 +56,10 @@ fun PlayerPanels(
     contentAlignment = Alignment.CenterEnd,
     contentKey = { it.name },
     transitionSpec = {
-      fadeIn() + slideInHorizontally { it / 3 } togetherWith fadeOut() + slideOutHorizontally { it / 2 }
+      // clip = false: the edge-attached Subtitles panel's glass reaches past its slot to the
+      // display edges and must not be cut at the content bounds.
+      (fadeIn() + slideInHorizontally { it / 3 } togetherWith fadeOut() + slideOutHorizontally { it / 2 })
+        .using(SizeTransform(clip = false))
     },
     modifier = modifier,
   ) { currentPanel ->

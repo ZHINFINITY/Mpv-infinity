@@ -23,13 +23,8 @@ class PlayerRegressionWiringTest(unittest.TestCase):
     def test_sheet_insets_are_outside_its_constrained_glass_content(self):
         text = source('presentation/components/PlayerSheet.kt')
         surface = text.split('Surface(', 1)[1]
-        # Portrait keeps its historical outer system/IME insets before the size
-        # bound. Landscape deliberately moves safeDrawing padding inside the
-        # full-height surface so the glass can bleed behind system bars.
-        portrait = surface.split('if (landscape)', 1)[1].split('} else {', 1)[1]
-        self.assertLess(portrait.index('.windowInsetsPadding('), portrait.index('.sizeIn('))
-        self.assertLess(portrait.index('.imePadding()'), portrait.index('.sizeIn('))
-        self.assertIn('WindowInsets.safeDrawing', text)
+        self.assertLess(surface.index('.windowInsetsPadding('), surface.index('.sizeIn('))
+        self.assertLess(surface.index('.imePadding()'), surface.index('.sizeIn('))
         self.assertIn('PlayerSheetLayoutPolicy.maxHeightDp(', text)
 
     def test_episode_playlist_has_glass_and_material_fallback(self):
@@ -47,7 +42,11 @@ class PlayerRegressionWiringTest(unittest.TestCase):
         self.assertIn('border = if (glass) null else border', panel)
         compact_panel = ''.join(panel.split())
         self.assertIn('.weight(1f).fillMaxWidth().verticalScroll(', compact_panel)
-        self.assertIn('.width(PlayerControlGridPolicy.panelWidthDp(maxWidth.value).dp)', panel)
+        # One exact width from the grid policy, shared by the 1909 path and the
+        # build 1933 edge-attached path (which measures it as fixed constraints).
+        self.assertIn('val panelWidthDp = PlayerControlGridPolicy.panelWidthDp(maxWidth.value).dp', panel)
+        self.assertIn('.width(panelWidthDp)', panel)
+        self.assertIn('width = panelWidthPx + bleed.end,', panel)
         self.assertIn('.heightIn(max = panelMaxHeight)', panel)
         self.assertNotIn('weight(1f, fill = false)', panel)
 
