@@ -39,7 +39,6 @@ import app.infinity.mpvz.preferences.preference.collectAsState
 import app.infinity.mpvz.ui.icons.Icons
 import app.infinity.mpvz.ui.player.PlayerActivity
 import app.infinity.mpvz.ui.player.Sheets
-import app.infinity.mpvz.ui.player.controls.LocalHidePlayerButtonsBackground
 import app.infinity.mpvz.ui.player.controls.LocalPlayerButtonsClickEvent
 import app.infinity.mpvz.ui.utils.isAnyMpvOptionOwnedByConfig
 import app.infinity.mpvz.utils.device.VulkanCapabilities

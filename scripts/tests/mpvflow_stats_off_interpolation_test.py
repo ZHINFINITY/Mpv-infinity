@@ -7,6 +7,7 @@ ACTIVITY = ROOT / "app/src/main/java/app/infinity/mpvz/ui/player/PlayerActivity.
 MPV = ROOT / "app/src/main/java/app/infinity/mpvz/ui/player/MPVView.kt"
 POLICY = ROOT / "app/src/main/java/app/infinity/mpvz/ui/player/PlayerStatsLuaCommandPolicy.kt"
 SHORTCUT = ROOT / "app/src/main/java/app/infinity/mpvz/ui/player/controls/components/FrameInterpolationControls.kt"
+SHARED = ROOT / "app/src/main/java/app/infinity/mpvz/ui/player/controls/PlayerControlsShared.kt"
 
 
 def require(text: str, needle: str, label: str) -> None:
@@ -25,11 +26,23 @@ def main() -> None:
     mpv = MPV.read_text(encoding="utf-8")
     policy = POLICY.read_text(encoding="utf-8")
     shortcut = SHORTCUT.read_text(encoding="utf-8")
+    shared = SHARED.read_text(encoding="utf-8")
 
     require(more, "PlayerStatsLuaCommandPolicy.forChip(", "More sheet Off uses lua command policy")
     require(more, 'Text("Engine: ${activeEngine.title}"', "More sheet keeps v2.1.5 Engine row")
     require(more, 'Text("Output: MPV renderer"', "More sheet keeps v2.1.5 MPV Output row")
     forbid(more, "scanout", "More sheet must not claim scanout FPS")
+    require(more, "Decoder:", "More sheet keeps v2.1.5 Decoder row")
+
+    frame_nav = shared.split("PlayerButton.FRAME_NAVIGATION")[1].split("PlayerButton.FRAME_INTERPOLATION")[0]
+    if frame_nav.count("AnimatedContent(") != 1:
+        raise SystemExit("FRAME_NAVIGATION must keep a single AnimatedContent call")
+    forbid(
+        shortcut,
+        "import app.infinity.mpvz.ui.player.controls.LocalHidePlayerButtonsBackground",
+        "hide-background local is in the components package",
+    )
+    require(shortcut, "LocalHidePlayerButtonsBackground.current", "FPS chip still honors hidden button backgrounds")
 
     require(policy, "clearOsd = true", "Off clears leftover OSD")
     require(policy, "fun forStartup(page: Int): Decision? =", "startup restore helper stays")

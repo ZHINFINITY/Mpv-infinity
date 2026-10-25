@@ -393,8 +393,6 @@ fun RenderPlayerButton(
       val context = LocalContext.current
 
       AnimatedContent(
-
-      AnimatedContent(
         targetState = isExpanded && !compact,
         transitionSpec = {
           (fadeIn(animationSpec = tween(200)) + expandHorizontally(animationSpec = tween(250)))
