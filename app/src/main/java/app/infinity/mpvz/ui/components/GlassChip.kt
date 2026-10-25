@@ -20,6 +20,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
@@ -53,6 +54,8 @@ fun GlassChip(
   val source = remember { MutableInteractionSource() }
   Surface(
     modifier = modifier.defaultMinSize(minWidth = 48.dp, minHeight = 48.dp)
+      // Keep the press indication inside the pill instead of the layout bounds.
+      .clip(chipShape)
       .glassPressFeedback(source, enabled)
       .semantics { this.selected = selected; this.role = Role.Checkbox }
       .clickable(interactionSource = source, role = Role.Checkbox, enabled = enabled, onClick = onClick),

@@ -9,6 +9,8 @@ package app.infinity.mpvz.ui.cast
 
 import android.graphics.Color
 import android.graphics.drawable.ColorDrawable
+import android.graphics.drawable.GradientDrawable
+import android.os.Bundle
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
@@ -24,6 +26,9 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.mediarouter.app.MediaRouteButton
+import androidx.mediarouter.app.MediaRouteChooserDialog
+import androidx.mediarouter.app.MediaRouteChooserDialogFragment
+import androidx.mediarouter.app.MediaRouteDialogFactory
 import app.infinity.mpvz.preferences.PlayerButton
 import app.infinity.mpvz.preferences.AppearancePreferences
 import app.infinity.mpvz.preferences.preference.collectAsState
@@ -32,6 +37,7 @@ import app.infinity.mpvz.ui.theme.controlColor
 import app.infinity.mpvz.ui.player.controls.components.playerGlassPane
 import com.google.android.gms.cast.framework.CastButtonFactory
 import androidx.compose.ui.graphics.Color as ComposeColor
+import app.infinity.mpvz.ui.theme.GlassSurfacePolicy
 import org.koin.compose.koinInject
 
 /** Uses the SDK button for Cast behavior while keeping the app's rounded symbol visible. */
@@ -44,6 +50,8 @@ fun CastPlayerButton(
 ) {
   val appearance = koinInject<AppearancePreferences>()
   val liquidGlassSurfaces by appearance.liquidGlassSurfaces.collectAsState()
+  val glassOpacity by appearance.glassSurfaceOpacity.collectAsState()
+  val glassHighlight by appearance.glassSurfaceHighlight.collectAsState()
   val castContentDescription =
     androidx.compose.ui.res
       .stringResource(app.infinity.mpvz.R.string.ui_cast)
@@ -76,6 +84,10 @@ fun CastPlayerButton(
             setBackgroundColor(Color.TRANSPARENT)
             contentDescription = castContentDescription
             CastButtonFactory.setUpMediaRouteButton(context.applicationContext, this)
+            setDialogFactory(
+              if (liquidGlassSurfaces) glassMediaRouteDialogFactory(glassOpacity, glassHighlight)
+              else MediaRouteDialogFactory.getDefault(),
+            )
             setRemoteIndicatorDrawable(ColorDrawable(Color.TRANSPARENT))
           }
         },
@@ -92,3 +104,24 @@ fun CastPlayerButton(
     }
   }
 }
+
+/** MediaRouter owns the chooser window; retain its route discovery and apply a glass-aware window. */
+private fun glassMediaRouteDialogFactory(opacity: Float, highlight: Float): MediaRouteDialogFactory =
+  object : MediaRouteDialogFactory() {
+    override fun onCreateChooserDialogFragment(): MediaRouteChooserDialogFragment =
+      object : MediaRouteChooserDialogFragment() {
+        override fun onCreateChooserDialog(context: android.content.Context, savedInstanceState: Bundle?): MediaRouteChooserDialog =
+          object : MediaRouteChooserDialog(context) {
+            override fun onCreate(state: Bundle?) {
+              super.onCreate(state)
+              window?.setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
+              window?.decorView?.background = GradientDrawable().apply {
+                shape = GradientDrawable.RECTANGLE
+                cornerRadius = 28f * resources.displayMetrics.density
+                setColor(Color.argb((GlassSurfacePolicy.opacity(opacity) * 255).toInt().coerceIn(1, 255), 32, 36, 44))
+                setStroke((resources.displayMetrics.density).toInt().coerceAtLeast(1), Color.argb((GlassSurfacePolicy.highlight(highlight) * 150).toInt().coerceIn(1, 150), 255, 255, 255))
+              }
+            }
+          }
+      }
+  }

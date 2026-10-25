@@ -26,6 +26,8 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.staticCompositionLocalOf
+import androidx.compose.runtime.withFrameNanos
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawWithCache
@@ -56,6 +58,18 @@ import org.koin.compose.koinInject
 private val horizontalInset = 16.dp
 
 val LocalPlayerGlassSurfaceOwner = staticCompositionLocalOf { false }
+
+/** Pure wave geometry used by the glass touch feedback and JVM contracts. */
+object GlassWaterRipplePolicy {
+  const val DurationMs = 560
+  fun radiusFraction(progress: Float): Float = .10f + progress.coerceIn(0f, 1f) * 1.15f
+  fun amplitude(progress: Float): Float {
+    val remaining = 1f - progress.coerceIn(0f, 1f)
+    return remaining * remaining
+  }
+  fun useRefraction(glassEnabled: Boolean, deviceAllowsGlass: Boolean, sdkInt: Int): Boolean =
+    glassEnabled && deviceAllowsGlass && sdkInt >= 33
+}
 
 /** Pure slider geometry used by rendering and unit tests. */
 object GlassSliderPolicy {
@@ -93,6 +107,48 @@ fun Modifier.glassPressFeedback(
     spring(stiffness = Spring.StiffnessMediumLow), label = "glassPress",
   )
   return graphicsLayer { scaleX = scale; scaleY = scale }
+    .glassWaterRipple(interactionSource, enabled)
+}
+
+/** Touch-origin wave; callers place their shape clip before this modifier. */
+@Composable
+fun Modifier.glassWaterRipple(
+  interactionSource: MutableInteractionSource,
+  enabled: Boolean = true,
+  intensity: Float = 1f,
+): Modifier {
+  var origin by remember { mutableStateOf(Offset.Unspecified) }
+  var progress by remember { mutableFloatStateOf(1f) }
+  LaunchedEffect(interactionSource, enabled) {
+    interactionSource.interactions.collect { interaction ->
+      if (interaction is PressInteraction.Press && enabled) {
+        origin = interaction.pressPosition
+        val start = withFrameNanos { it }
+        while (true) {
+          progress = ((withFrameNanos { it } - start) / 1_000_000f / GlassWaterRipplePolicy.DurationMs).coerceIn(0f, 1f)
+          if (progress >= 1f) break
+        }
+        origin = Offset.Unspecified
+      }
+    }
+  }
+  return drawWithCache {
+    onDrawWithContent {
+      drawContent()
+      if (origin != Offset.Unspecified && progress < 1f) {
+        val radius = size.maxDimension * GlassWaterRipplePolicy.radiusFraction(progress)
+        drawCircle(
+          brush = Brush.radialGradient(
+            listOf(Color.White.copy(alpha = GlassWaterRipplePolicy.amplitude(progress) * .20f * intensity), Color.Transparent),
+            center = origin,
+            radius = radius,
+          ),
+          radius = radius,
+          center = origin,
+        )
+      }
+    }
+  }
 }
 
 @Composable
