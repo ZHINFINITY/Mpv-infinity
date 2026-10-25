@@ -8,14 +8,15 @@ import org.junit.Test
 
 class PlayerStatsLuaCommandPolicyTest {
   @Test
-  fun offDoesNotToggleWhenLuaIsAlreadyHidden() {
+  fun offHidesEvenWhenVisiblePropertyIsNo() {
     val off = PlayerStatsLuaCommandPolicy.forChip(
       toPage = 0,
       previousPage = 1,
       luaShown = false,
       consoleOpen = false,
     )
-    assertFalse(off.toggleLua)
+    assertTrue(off.toggleLua)
+    assertTrue(off.clearOsd)
     assertNull(off.displayPage)
     assertEquals(false, off.luaVisible)
   }
@@ -29,32 +30,26 @@ class PlayerStatsLuaCommandPolicyTest {
       consoleOpen = false,
     )
     assertTrue(off.toggleLua)
+    assertTrue(off.clearOsd)
     assertEquals(false, off.luaVisible)
-    assertFalse(
-      PlayerStatsLuaCommandPolicy.forChip(
-        toPage = 0,
-        previousPage = 2,
-        luaShown = false,
-        consoleOpen = false,
-      ).toggleLua,
-    )
   }
 
   @Test
-  fun interpolationRestartRestoresLuaWithDisplayPageOnly() {
+  fun offStillClearsOneshotAfterInterpolationRestore() {
     val restored = PlayerStatsLuaCommandPolicy.forStartup(1)!!
     assertFalse(restored.toggleLua)
     assertEquals(1, restored.displayPage)
     assertEquals(true, restored.luaVisible)
-    val offAfterVanishedOverlay =
+    val offAfterVanishedFlag =
       PlayerStatsLuaCommandPolicy.forChip(
         toPage = 0,
         previousPage = 1,
         luaShown = false,
         consoleOpen = false,
       )
-    assertFalse(offAfterVanishedOverlay.toggleLua)
-    assertNull(offAfterVanishedOverlay.displayPage)
+    assertTrue(offAfterVanishedFlag.toggleLua)
+    assertTrue(offAfterVanishedFlag.clearOsd)
+    assertNull(offAfterVanishedFlag.displayPage)
   }
 
   @Test
@@ -68,6 +63,7 @@ class PlayerStatsLuaCommandPolicyTest {
     assertFalse(page.toggleLua)
     assertEquals(3, page.displayPage)
     assertEquals(true, page.luaVisible)
+    assertFalse(page.clearOsd)
   }
 
   @Test
@@ -80,6 +76,7 @@ class PlayerStatsLuaCommandPolicyTest {
     )
     assertTrue(page.toggleLua)
     assertEquals(1, page.displayPage)
+    assertFalse(page.clearOsd)
   }
 
   @Test
@@ -93,10 +90,12 @@ class PlayerStatsLuaCommandPolicyTest {
   fun musicHideUsesOffPathWithoutDisplayPage() {
     val hideShown = PlayerStatsLuaCommandPolicy.forMusicHide(luaShown = true, consoleOpen = false)
     assertTrue(hideShown.toggleLua)
+    assertTrue(hideShown.clearOsd)
     assertNull(hideShown.displayPage)
     assertEquals(false, hideShown.luaVisible)
     val hideHidden = PlayerStatsLuaCommandPolicy.forMusicHide(luaShown = false, consoleOpen = false)
     assertFalse(hideHidden.toggleLua)
+    assertTrue(hideHidden.clearOsd)
     assertNull(hideHidden.displayPage)
   }
 

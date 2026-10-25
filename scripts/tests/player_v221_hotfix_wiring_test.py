@@ -58,6 +58,8 @@ def main() -> None:
     vo = activity.split("private fun onInterpolationVoReconfig", 1)[1].split("True when the current playback session was launched from the Secure Folder", 1)[0]
     forbid(vo, "player.applyStartupStatistics(force = true)", "vo-reconfig must not send a second display-page")
     require(policy, "fun shouldReapplyAfterVoReconfig(luaRestored: Boolean, alreadyReapplied: Boolean): Boolean =\n    false", "vo-reconfig policy does not toggle")
+    require(policy, "toggleLua = previousPage in 1..5 || luaShown", "Off hides even when VISIBLE_PROPERTY is no")
+    require(policy, 'PlaybackSession.command("show-text", "", "0")', "Off clears leftover oneshot OSD")
     require(build, "hotfix/v2.2.1-player-restore", "hotfix branch is arm64-only")
     require(build, "OVERLAY_MPVFLOW_ARM64", "signed CI overlay flag")
     require(build, "Overlay Flow-only runtime and rebuild Standard arm64-v8a release", "cached Flow overlay before sign")

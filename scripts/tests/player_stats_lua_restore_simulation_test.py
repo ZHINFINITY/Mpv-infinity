@@ -1,5 +1,12 @@
 #!/usr/bin/env python3
-"""Simulate interpolation stats restore and music/minimize compositor hiding."""
+"""Simulate interpolation stats restore and music/minimize compositor hiding.
+
+stats.lua contract (upstream):
+  display-stats-toggle  -> persistent overlay; second toggle hides
+  display-page-N        -> oneshot (~4s); does not hide an already-shown overlay
+  mixed persistent/oneshot -> no-op
+  show-text "" 0        -> clears leftover OSD (oneshot or osd_message overlay)
+"""
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -18,14 +25,25 @@ class Decision:
     lua_visible: Optional[bool] = None
     disable_console: bool = False
     enable_console: bool = False
+    clear_osd: bool = False
 
 
 def for_chip(to_page: int, previous_page: int, lua_shown: bool, console_open: bool) -> Decision:
     disable_console = to_page != 7 and console_open
     if to_page in (0, 6):
-        return Decision(toggle_lua=lua_shown, lua_visible=False, disable_console=disable_console)
+        return Decision(
+            toggle_lua=previous_page in range(1, 6) or lua_shown,
+            lua_visible=False,
+            disable_console=disable_console,
+            clear_osd=True,
+        )
     if to_page == 7:
-        return Decision(toggle_lua=lua_shown, lua_visible=False, enable_console=not console_open)
+        return Decision(
+            toggle_lua=previous_page in range(1, 6) or lua_shown,
+            lua_visible=False,
+            enable_console=not console_open,
+            clear_osd=True,
+        )
     return Decision(
         toggle_lua=previous_page in (0, 6, 7),
         display_page=to_page,
@@ -60,33 +78,46 @@ class StatsLua:
     bound: bool = False
     shown: bool = False
     page: int = 0
+    mode: Optional[str] = None  # "oneshot" | "toggle" | None
     commands: list[tuple[str, ...]] = field(default_factory=list)
 
     def handle(self, *args: str) -> None:
         self.commands.append(args)
+        if args == ("show-text", "", "0"):
+            self.shown = False
+            self.mode = None
+            return
         if args == ("script-binding", "stats/display-stats-toggle"):
             if not self.bound:
                 return
-            self.shown = not self.shown
+            if self.shown and self.mode == "toggle":
+                self.shown = False
+                self.mode = None
+            elif self.shown and self.mode == "oneshot":
+                return  # mixed mode no-op
+            else:
+                self.shown = True
+                self.mode = "toggle"
             return
         if len(args) == 2 and args[0] == "script-binding" and args[1].startswith("stats/display-page-"):
             page = int(args[1].rsplit("-", 1)[1])
             if not self.bound:
                 return
-            if self.shown and self.page == page:
-                self.shown = False
-            else:
-                self.shown = True
-                self.page = page
+            if self.shown and self.mode == "toggle":
+                return  # mixed mode no-op
+            self.shown = True
+            self.page = page
+            self.mode = "oneshot"
 
     def bind(self) -> None:
         self.bound = True
         self.shown = False
         self.page = 0
+        self.mode = None
 
     def vo_reconfig(self) -> None:
-        if self.bound:
-            self.shown = False
+        # stats.lua reprints a persistent overlay; it does not hide oneshot either.
+        return
 
 
 class Player:
@@ -111,6 +142,8 @@ class Player:
             self.lua.handle("script-binding", "stats/display-stats-toggle")
         if decision.display_page is not None:
             self.lua.handle("script-binding", f"stats/display-page-{decision.display_page}")
+        if decision.clear_osd:
+            self.lua.handle("show-text", "", "0")
         if decision.lua_visible is not None:
             self.lua_visible = decision.lua_visible
 
@@ -160,6 +193,8 @@ class Player:
 
     def on_vo_reconfig(self) -> None:
         if not should_reapply_after_vo_reconfig(self.lua_restored, self.vo_reapplied):
+            self.lua.vo_reconfig()
+            self.lua_visible = False
             return
         self.lua.vo_reconfig()
         self.lua_visible = False
@@ -177,6 +212,11 @@ class Player:
 
     def composites_stats(self) -> bool:
         return self.player_visibility != GONE and self.lua.shown
+
+    def off_chip(self, previous_page: int = 1, lua_shown_flag: Optional[bool] = None) -> None:
+        shown_flag = self.lua_visible if lua_shown_flag is None else lua_shown_flag
+        self.apply(for_chip(0, previous_page, shown_flag, False))
+        self.enabled_page = 0
 
 
 def assert_true(cond: bool, message: str) -> None:
@@ -214,15 +254,29 @@ def test_interpolation_waits_then_reapplies_once() -> None:
     assert_true(len(display_pages) == 1, f"display-page should apply once after interpolation, got {display_pages}")
 
 
-def test_off_never_toggles_hidden_lua() -> None:
-    off = for_chip(0, 1, lua_shown=False, console_open=False)
-    assert_true(not off.toggle_lua, "Off must not toggle hidden lua")
-    assert_true(off.display_page is None, "Off must not send display-page")
+def test_off_hides_after_interpolation_when_visible_property_is_no() -> None:
+    player = Player()
+    player.interpolation_reload_success()
+    player.on_file_loaded()
+    player.on_first_time_pos(12.5)
+    player.on_vo_reconfig()
+    assert_true(player.lua.shown, "oneshot overlay is still on screen")
+    assert_true(not player.lua_visible, "vo-reconfig lied that lua is hidden")
+    player.off_chip(previous_page=1, lua_shown_flag=False)
+    assert_true(not player.lua.shown, "Off must clear oneshot leftover")
+    assert_true(("script-binding", "stats/display-stats-toggle") in player.lua.commands, "Off still sends hide toggle")
+    assert_true(("show-text", "", "0") in player.lua.commands, "Off sends empty OSD clear")
+    assert_true(player.enabled_page == 0, "Off pref is page 0")
+
+
+def test_off_hides_when_chip_already_shows_off() -> None:
     player = Player()
     player.lua.bind()
-    player.apply(off)
-    assert_true(not player.lua.shown, "hidden lua stays hidden")
-    assert_true(("script-binding", "stats/display-stats-toggle") not in player.lua.commands, "no invert on Off")
+    player.lua.handle("script-binding", "stats/display-page-1")
+    assert_true(player.lua.shown, "oneshot page is visible")
+    player.enabled_page = 0
+    player.off_chip(previous_page=0, lua_shown_flag=False)
+    assert_true(not player.lua.shown, "tapping Off again still clears leftover OSD")
 
 
 def test_music_and_minimize_use_gone_and_hide_lua_once() -> None:
@@ -265,7 +319,8 @@ def test_music_skips_interpolation_restore() -> None:
 
 def main() -> None:
     test_interpolation_waits_then_reapplies_once()
-    test_off_never_toggles_hidden_lua()
+    test_off_hides_after_interpolation_when_visible_property_is_no()
+    test_off_hides_when_chip_already_shows_off()
     test_music_and_minimize_use_gone_and_hide_lua_once()
     test_music_skips_interpolation_restore()
     print("player stats.lua interpolation/music simulations: PASS")

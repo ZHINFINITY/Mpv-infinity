@@ -38,7 +38,13 @@ def main() -> None:
         "fun forChip(toPage: Int, previousPage: Int, luaShown: Boolean, consoleOpen: Boolean)",
         "mpvRx MoreSheet page decision",
     )
-    require(policy, "0, 6 -> Decision(\n        toggleLua = luaShown", "Off never toggles hidden lua")
+    require(
+        policy,
+        "toggleLua = previousPage in 1..5 || luaShown",
+        "Off hides from previous lua page even if VISIBLE_PROPERTY is no",
+    )
+    require(policy, "clearOsd = true", "Off unconditionally clears leftover OSD")
+    require(policy, 'PlaybackSession.command("show-text", "", "0")', "Off sends empty OSD hide")
     require(policy, "fun forStartup(page: Int): Decision?", "interpolation restore decision")
     require(
         policy,
