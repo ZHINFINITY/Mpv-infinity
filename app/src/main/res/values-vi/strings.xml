@@ -2243,4 +2243,11 @@
     <string name="pref_openai_base_url_summary">Để trống để dùng điểm cuối chính thức của OpenAI</string>
     <string name="pref_openai_base_url_prompt">Nhập URL gốc của API tương thích OpenAI</string>
     <string name="pref_openai_base_url_invalid">Nhập URL HTTP hoặc HTTPS hợp lệ, không chứa thông tin đăng nhập, tham số truy vấn hoặc phân đoạn.</string>
+  <string name="pref_glass_preview">Live glass preview</string>
+  <string name="pref_glass_rim_strength">Rim strength</string>
+  <string name="pref_glass_rim_strength_summary">Brightness of the shared lit edge</string>
+  <string name="pref_glass_rim_width">Rim width</string>
+  <string name="pref_glass_rim_width_summary">Thickness of the lit edge in dp</string>
+  <string name="pref_glass_rim_softness">Rim softness</string>
+  <string name="pref_glass_rim_softness_summary">How softly the edge light fades</string>
 </resources>

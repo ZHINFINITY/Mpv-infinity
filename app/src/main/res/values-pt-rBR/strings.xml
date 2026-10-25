@@ -2258,4 +2258,11 @@ Reinicie o aplicativo para que todas as alterações entrem em vigor.</string>
     <string name="pref_openai_base_url_summary">Deixe em branco para usar o endpoint oficial da OpenAI</string>
     <string name="pref_openai_base_url_prompt">Digite a URL base de uma API compatível com OpenAI</string>
     <string name="pref_openai_base_url_invalid">Digite uma URL HTTP ou HTTPS válida, sem credenciais, parâmetros de consulta ou fragmentos.</string>
+  <string name="pref_glass_preview">Live glass preview</string>
+  <string name="pref_glass_rim_strength">Rim strength</string>
+  <string name="pref_glass_rim_strength_summary">Brightness of the shared lit edge</string>
+  <string name="pref_glass_rim_width">Rim width</string>
+  <string name="pref_glass_rim_width_summary">Thickness of the lit edge in dp</string>
+  <string name="pref_glass_rim_softness">Rim softness</string>
+  <string name="pref_glass_rim_softness_summary">How softly the edge light fades</string>
 </resources>

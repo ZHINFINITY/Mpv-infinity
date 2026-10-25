@@ -469,6 +469,7 @@ internal fun Modifier.browserGlassPane(
   deformation: Float = 0f,
   drawRim: Boolean = true,
   materialRole: GlassSurfacePolicy.MaterialRole = GlassSurfacePolicy.MaterialRole.Clear,
+  thickSurface: Boolean = false,
   // Retained for source compatibility: every browser pane now uses the navigation
   // pill's reference material, so this flag no longer selects a different profile.
   @Suppress("UNUSED_PARAMETER") referenceOptics: Boolean = false,
@@ -520,8 +521,8 @@ internal fun Modifier.browserGlassPane(
   // Edge bars never bend: the lens edge term would draw a bright line along the bar's bottom.
   val lens = rememberGraphicsLayer()
   return this
-    // Same elevation as the navigation pill (BrowserGlassSurface), scaled by the depth setting.
-    .shadow(if (floating) (if (selected) 7.dp else 12.dp) * tuning.depth else 0.dp, shape, clip = false)
+    // Cheap baked depth/rim replaces per-pane elevation shadows in dense lists.
+    // Reference geometry (the navigation pill remains unchanged): (if (selected) 7.dp else 12.dp) * tuning.depth
     .onGloballyPositioned { if (it.isAttached) paneOrigin = it.localToWindow(Offset.Zero) + windowScreenOffset(hostView) }
     .clip(shape)
     .then(if (!enabled) Modifier.background(tint, shape) else Modifier)
@@ -588,6 +589,7 @@ internal fun Modifier.browserGlassPane(
           }
         }
       } else Modifier)
+    .glassRimLight(shape = shape, enabled = floating, highContrast = false)
 }
 
 private fun windowScreenOffset(view: android.view.View): Offset {

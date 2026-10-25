@@ -277,5 +277,5 @@ fun Modifier.playerGlassPane(
   val preferredOpacity by appearance.glassSurfaceOpacity.collectAsState()
   val preferredHighlight by appearance.glassSurfaceHighlight.collectAsState()
   return liquidGlassPane(enabled && preferenceEnabled, opacity ?: preferredOpacity,
-    highlight ?: preferredHighlight, cornerRadius)
+    highlight ?: preferredHighlight, cornerRadius, thickSurface = true)
 }

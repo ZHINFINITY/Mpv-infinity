@@ -20,6 +20,9 @@ import androidx.compose.material3.CardColors
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.graphics.Color
+import androidx.compose.runtime.getValue
+import app.infinity.mpvz.preferences.preference.collectAsState
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -107,13 +110,34 @@ fun PlayerPanels(
 
 val CARDS_MAX_WIDTH = 420.dp
 val panelCardsColors: @Composable () -> CardColors = {
-  // Higher alpha for better readability in panels (less transparent)
-  val alpha = 0.85f
-
+  val appearance = org.koin.compose.koinInject<app.infinity.mpvz.preferences.AppearancePreferences>()
+  val glassPreference by appearance.liquidGlassSurfaces.collectAsState()
+  val context = androidx.compose.ui.platform.LocalContext.current
+  val deviceAllowsGlass = remember(context) { app.infinity.mpvz.ui.theme.GlassDeviceSupport.allowsGlass(context) }
+  val glass = glassPreference && deviceAllowsGlass
+  val scheme = MaterialTheme.colorScheme
   CardDefaults.cardColors(
-    containerColor = MaterialTheme.colorScheme.surfaceContainer.copy(alpha = alpha),
-    contentColor = MaterialTheme.colorScheme.onSurface,
-    disabledContainerColor = MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = alpha),
-    disabledContentColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f),
+    containerColor = PanelCardFrostPolicy.container(scheme.surfaceContainer, scheme.onSurface, glass),
+    contentColor = scheme.onSurface,
+    disabledContainerColor = PanelCardFrostPolicy.container(scheme.surfaceContainerHighest, scheme.onSurface, glass),
+    disabledContentColor = scheme.onSurface.copy(alpha = 0.38f),
   )
+}
+
+/**
+ * Inner cards inside glass sheets (e.g. the subtitle Typography card) are a lighter second
+ * frost layer over the already-frosted sheet instead of a near-opaque block. Without glass
+ * (setting off or unsupported device) they keep the classic readable 0.85 surface.
+ */
+object PanelCardFrostPolicy {
+  const val ClassicAlpha = 0.85f
+  /** Second frost layer: translucent so the sheet's frost shows through. */
+  const val GlassAlpha = 0.36f
+  /** Slight lift toward the content colour so the card still separates from the sheet. */
+  const val GlassLift = 0.07f
+
+  fun container(base: Color, onSurface: Color, glass: Boolean): Color =
+    if (!glass) base.copy(alpha = ClassicAlpha)
+    else androidx.compose.ui.graphics.lerp(base.copy(alpha = 1f), onSurface.copy(alpha = 1f), GlassLift)
+      .copy(alpha = GlassAlpha)
 }

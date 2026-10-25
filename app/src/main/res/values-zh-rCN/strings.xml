@@ -2258,4 +2258,11 @@
     <string name="pref_openai_base_url_summary">留空则使用 OpenAI 官方端点</string>
     <string name="pref_openai_base_url_prompt">输入 OpenAI 兼容 API 的基础 URL</string>
     <string name="pref_openai_base_url_invalid">请输入不含凭据、查询参数或片段的有效 HTTP 或 HTTPS URL。</string>
+  <string name="pref_glass_preview">Live glass preview</string>
+  <string name="pref_glass_rim_strength">Rim strength</string>
+  <string name="pref_glass_rim_strength_summary">Brightness of the shared lit edge</string>
+  <string name="pref_glass_rim_width">Rim width</string>
+  <string name="pref_glass_rim_width_summary">Thickness of the lit edge in dp</string>
+  <string name="pref_glass_rim_softness">Rim softness</string>
+  <string name="pref_glass_rim_softness_summary">How softly the edge light fades</string>
 </resources>

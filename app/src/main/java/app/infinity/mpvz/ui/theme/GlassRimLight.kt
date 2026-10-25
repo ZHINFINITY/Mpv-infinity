@@ -104,14 +104,16 @@ object GlassRimLightPolicy {
  *
  * @param shape the surface's own shape; edge-attached sheets pass a shape rounded only on
  *   their free edge and the rim follows it.
- * @param ambient optional colour the light is tinted toward (video dominant colour).
+ * @param ambient optional colour the light is tinted toward (video dominant colour). It is
+ *   read only inside the draw pass, so a smoothly changing ambient colour redraws the rim
+ *   without recomposing the surface; brushes are rebuilt only when the colour changes.
  * @param boost read only inside the draw pass, so animating it never recomposes.
  */
 @Composable
 fun Modifier.glassRimLight(
   shape: Shape,
   enabled: Boolean = true,
-  ambient: Color? = null,
+  ambient: (() -> Color?)? = null,
   boost: () -> Float = { 0f },
   highContrast: Boolean = false,
 ): Modifier {
@@ -119,7 +121,6 @@ fun Modifier.glassRimLight(
   val tuning = LocalGlassCustomization.current
   if (tuning.rimStrength <= 0f) return this
   val darkTheme = GlassSurfacePolicy.srgbLuma(MaterialTheme.colorScheme.surface) < 0.5f
-  val light = GlassRimLightPolicy.lightColor(ambient)
   val widthDp = tuning.rimWidthDp
   return drawWithCache {
     val outline = if (shape === RectangleShape) null else shape.createOutline(size, layoutDirection, this)
@@ -132,7 +133,7 @@ fun Modifier.glassRimLight(
       }
     }
     val width = widthDp.dp.toPx()
-    fun brushFor(rim: GlassRimLightPolicy.Rim): Brush = Brush.linearGradient(
+    fun brushFor(rim: GlassRimLightPolicy.Rim, light: Color): Brush = Brush.linearGradient(
       0f to light.copy(alpha = rim.highlightAlpha),
       rim.highlightStop to light.copy(alpha = rim.highlightAlpha * 0.42f),
       0.5f to light.copy(alpha = rim.highlightAlpha * 0.08f),
@@ -141,7 +142,7 @@ fun Modifier.glassRimLight(
       start = Offset.Zero,
       end = Offset(size.width, size.height),
     )
-    fun glowFor(rim: GlassRimLightPolicy.Rim): Brush = Brush.linearGradient(
+    fun glowFor(rim: GlassRimLightPolicy.Rim, light: Color): Brush = Brush.linearGradient(
       0f to light.copy(alpha = rim.glowAlpha),
       rim.highlightStop to light.copy(alpha = rim.glowAlpha * 0.3f),
       0.5f to Color.Transparent,
@@ -150,17 +151,24 @@ fun Modifier.glassRimLight(
     )
     val restRim = GlassRimLightPolicy.rim(tuning.rimStrength, tuning.rimSoftness, darkTheme,
       highContrast = highContrast)
-    val restBrush = brushFor(restRim)
-    val restGlow = glowFor(restRim)
+    var cachedLight = Color.White
+    var restBrush = brushFor(restRim, cachedLight)
+    var restGlow = glowFor(restRim, cachedLight)
     onDrawBehind {
+      val light = GlassRimLightPolicy.lightColor(ambient?.invoke())
+      if (light != cachedLight) {
+        cachedLight = light
+        restBrush = brushFor(restRim, light)
+        restGlow = glowFor(restRim, light)
+      }
       val b = boost()
       val rim: GlassRimLightPolicy.Rim
       val edge: Brush
       val halo: Brush
       if (b > 0.001f) {
         rim = GlassRimLightPolicy.rim(tuning.rimStrength, tuning.rimSoftness, darkTheme, b, highContrast)
-        edge = brushFor(rim)
-        halo = glowFor(rim)
+        edge = brushFor(rim, light)
+        halo = glowFor(rim, light)
       } else {
         rim = restRim; edge = restBrush; halo = restGlow
       }
@@ -174,3 +182,13 @@ fun Modifier.glassRimLight(
     }
   }
 }
+
+/** Static-colour convenience (controls tinted by a fixed accent). */
+@Composable
+fun Modifier.glassRimLight(
+  shape: Shape,
+  ambient: Color,
+  enabled: Boolean = true,
+  boost: () -> Float = { 0f },
+  highContrast: Boolean = false,
+): Modifier = glassRimLight(shape, enabled, { ambient }, boost, highContrast)

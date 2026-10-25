@@ -9,6 +9,8 @@ package app.infinity.mpvz.ui.preferences
 
 import android.widget.Toast
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
@@ -18,6 +20,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.IconButton
@@ -39,6 +42,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.shape.RoundedCornerShape
 import app.infinity.mpvz.R
 import app.infinity.mpvz.domain.thumbnail.ThumbnailRepository
 import app.infinity.mpvz.preferences.AppearancePreferences
@@ -63,6 +67,8 @@ import app.infinity.mpvz.ui.preferences.components.ThemePicker
 import app.infinity.mpvz.ui.theme.DarkMode
 import app.infinity.mpvz.ui.theme.GlassSurface
 import app.infinity.mpvz.ui.theme.GlassSurfacePolicy
+import app.infinity.mpvz.ui.player.controls.components.GlassSwitch
+import app.infinity.mpvz.ui.player.controls.components.GlassSlider
 import app.infinity.mpvz.ui.theme.LocalThemeTransitionState
 import app.infinity.mpvz.ui.utils.LocalBackStack
 import app.infinity.mpvz.ui.utils.LocalShowSettingsBackArrow
@@ -363,6 +369,9 @@ object AppearancePreferencesScreen : Screen {
                   val refractionStrength by preferences.glassRefractionStrength.collectAsState()
                   val depthStrength by preferences.glassDepthStrength.collectAsState()
                   val motionIntensity by preferences.glassMotionIntensity.collectAsState()
+                  val glassRimStrength by preferences.glassRimStrength.collectAsState()
+                  val glassRimWidth by preferences.glassRimWidth.collectAsState()
+                  val glassRimSoftness by preferences.glassRimSoftness.collectAsState()
                   GlassCustomizationPreference(
                     title = "Frost / blur strength", summary = "Smooth shared frost; lower settings use less work",
                     value = app.infinity.mpvz.ui.theme.GlassCustomizationPolicy.strength(frostStrength),
@@ -383,6 +392,15 @@ object AppearancePreferencesScreen : Screen {
                     value = app.infinity.mpvz.ui.theme.GlassCustomizationPolicy.motion(motionIntensity), maximum = 1f,
                     enabled = liquidGlassSurfaces, onValueChange = preferences.glassMotionIntensity::set,
                   )
+                  SliderPreference(value = glassRimStrength, onValueChange = { preferences.glassRimStrength.set(it) },
+                    sliderValue = glassRimStrength, onSliderValueChange = {}, title = { Text(stringResource(R.string.pref_glass_rim_strength)) },
+                    summary = { Text(stringResource(R.string.pref_glass_rim_strength_summary)) }, valueRange = 0f..2f, enabled = liquidGlassSurfaces)
+                  SliderPreference(value = glassRimWidth, onValueChange = { preferences.glassRimWidth.set(it) },
+                    sliderValue = glassRimWidth, onSliderValueChange = {}, title = { Text(stringResource(R.string.pref_glass_rim_width)) },
+                    summary = { Text(stringResource(R.string.pref_glass_rim_width_summary)) }, valueRange = 0.5f..3f, enabled = liquidGlassSurfaces)
+                  SliderPreference(value = glassRimSoftness, onValueChange = { preferences.glassRimSoftness.set(it) },
+                    sliderValue = glassRimSoftness, onSliderValueChange = {}, title = { Text(stringResource(R.string.pref_glass_rim_softness)) },
+                    summary = { Text(stringResource(R.string.pref_glass_rim_softness_summary)) }, valueRange = 0f..1f, enabled = liquidGlassSurfaces)
                   SliderPreference(
                     value = GlassSurfacePolicy.opacity(glassOpacity),
                     onValueChange = { preferences.glassSurfaceOpacity.set(GlassSurfacePolicy.opacity(it)) },
@@ -403,14 +421,12 @@ object AppearancePreferencesScreen : Screen {
                     valueRange = GlassSurfacePolicy.MinHighlight..GlassSurfacePolicy.MaxHighlight,
                     enabled = liquidGlassSurfaces,
                   )
-                  GlassSurface(
+                  GlassLivePreview(
                     enabled = liquidGlassSurfaces,
                     opacity = glassOpacity,
                     highlight = glassHighlight,
                     modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
-                  ) {
-                    Text("Preview", modifier = Modifier.padding(16.dp), style = MaterialTheme.typography.titleSmall)
-                  }
+                  )
                   PreferenceDivider()
                   val useSystemFont by preferences.useSystemFont.collectAsState()
                   SwitchPreference(
@@ -1150,4 +1166,24 @@ private fun GlassCustomizationPreference(
     title = { Text(title) }, summary = { Text("${(bounded * 100).toInt()}% · $summary") },
     valueRange = 0f..maximum, enabled = enabled,
   )
+}
+
+@Composable
+private fun GlassLivePreview(enabled: Boolean, opacity: Float, highlight: Float, modifier: Modifier = Modifier) {
+  GlassSurface(enabled = enabled, opacity = opacity, highlight = highlight, cornerRadius = 20.dp, modifier = modifier) {
+    androidx.compose.foundation.layout.Box(Modifier.height(132.dp).fillMaxWidth()) {
+      Canvas(Modifier.matchParentSize()) {
+        val step = size.width / 7f
+        for (i in 0..7) drawRect(androidx.compose.ui.graphics.Color.hsv(i * 45f, 0.72f, 0.95f), androidx.compose.ui.geometry.Offset(i * step, 0f), androidx.compose.ui.geometry.Size(step + 2f, size.height))
+      }
+      Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text(stringResource(R.string.pref_glass_preview), style = MaterialTheme.typography.titleSmall)
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+          listOf("A", "B", "C").forEach { Text(it, Modifier.background(MaterialTheme.colorScheme.surface.copy(alpha = .42f), RoundedCornerShape(12.dp)).padding(horizontal = 10.dp, vertical = 4.dp)) }
+          GlassSwitch(checked = true, onCheckedChange = null, modifier = Modifier.size(40.dp))
+        }
+        GlassSlider(value = .65f, onValueChange = {}, modifier = Modifier.fillMaxWidth())
+      }
+    }
+  }
 }

@@ -24,9 +24,10 @@ class ReferenceUiRollbackContractTest {
     val expected = mapOf(
       "app/src/main/java/app/infinity/mpvz/ui/player/controls/PlayerControls.kt" to "1a29ee054893fd002e66dd5d5a6125c56c1e7a06f13ec0b63fdfe19a90732d37" /* music entry hides stats via StatsLuaOverlay (no blind toggle, saved page kept); before that: 1901 (380a778b) stats overlay + music-entry stats hide restored; clean-room BrowserMusicSheetState replaces the mpvRx sheet type */,
       "app/src/main/java/app/infinity/mpvz/ui/player/controls/components/Seekbar.kt" to "b0d7ca11fdd2729871e052a0f6ea3b2cba64fb3e29039e5d3c42a7acf4d426c9",
-      // Build 1902: owner-approved contrasting switch colours (3D glass depth kept).
-      "app/src/main/java/app/infinity/mpvz/ui/player/controls/components/GlassControls.kt" to "ae873298a6b622bcdbe5c5366fc6d8fd37009ee395c3531c1df90f9dd31f6320",
-      "app/src/main/java/app/infinity/mpvz/presentation/components/PlayerSheet.kt" to "fdcf88d13735e1876059f0e7bdcc41088ecedd06d58fffde0283c9e32967e96a",
+      // Build 1910: shared rimLight/thick-surface routing is intentionally owned by this stream.
+      "app/src/main/java/app/infinity/mpvz/ui/player/controls/components/GlassControls.kt" to "d94976ed6e0e989d023f9c633ff6a48676617ab5069985af0f08a0b116eb4f2a",
+      // Build 1910: player sheets opt into the centralized inner thickness bands.
+      "app/src/main/java/app/infinity/mpvz/presentation/components/PlayerSheet.kt" to "f65b41859ea24b2fa0f5746d192ae1fa319fdd250e6e62c704c4c352201e72cc",
       "app/src/main/java/app/infinity/mpvz/presentation/components/PlayerGlassOverlays.kt" to "82a115d195711b391235b5f32a4d7b2bac75e494aef0ff22be55251f9307b54f",
     )
     expected.forEach { (path, digest) -> assertEquals(path, digest, sha(read(path))) }
@@ -350,7 +351,8 @@ import android.graphics.Shader
       assertEquals(now, 1, restored.split(now).size - 1)
       restored = restored.replace(now, before)
     }
-    assertEquals("f10a7bb20ca6e17e57f8500f5857cae1fc6d9ecf9f30c67512b8925ce2d9b7f3", sha(restored))
+    // Build 1910: centralized rim/depth bands replace the old pane-local contour and shadow.
+    assertEquals("95d9619a4b835790e4233be81e3efc820bd9a0f7866491bd9dad8a22d22276b7", sha(restored))
   }
   @Test fun expressiveNavigationBodyAndBrowserLensMatchReference() {
     val navigation = read("app/src/main/java/app/infinity/mpvz/ui/browser/MainScreen.kt")

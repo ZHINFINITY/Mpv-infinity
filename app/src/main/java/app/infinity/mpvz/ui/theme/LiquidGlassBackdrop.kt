@@ -278,6 +278,7 @@ fun Modifier.liquidGlassPane(
   cornerRadius: Dp = 24.dp,
   drawRim: Boolean = true,
   materialRole: GlassSurfacePolicy.MaterialRole = GlassSurfacePolicy.MaterialRole.Clear,
+  thickSurface: Boolean = false,
 ): Modifier {
   if (!enabled) return this
   val backdrop = LocalLiquidGlassBackdrop.current
@@ -288,7 +289,7 @@ fun Modifier.liquidGlassPane(
     return browserGlassPane(enabled,
       if (tuning.overrideMaterial) tuning.opacity else opacity,
       if (tuning.overrideMaterial) tuning.highlight else highlight, cornerRadius,
-      drawRim = drawRim, materialRole = materialRole)
+      drawRim = drawRim, materialRole = materialRole, thickSurface = thickSurface)
   }
   // Edge-to-edge top/selection bars outside a browser scene (e.g. settings screens): no
   // white sheen band, rim line or shadow, which read as a glowing bar; page-background film only.
@@ -351,22 +352,6 @@ fun Modifier.liquidGlassPane(
         ))
       }
       onDrawBehind {
-        if (drawRim && optics.shadowAlpha > 0f) {
-          clipPath(outline, ClipOp.Difference) {
-            // Three bounded feather bands approximate a soft, lower-right
-            // contact shadow without a bitmap blur or another native elevation.
-            for (band in 3 downTo 1) {
-              val spread = optics.shadowSpreadDp.dp.toPx() * band / 3f
-              drawRoundRect(
-                Color.Black.copy(alpha = optics.shadowAlpha * (4 - band) / 6f),
-                topLeft = Offset(0.6.dp.toPx(), 1.2.dp.toPx()),
-                size = size,
-                cornerRadius = CornerRadius(geometry.safeRadius),
-                style = Stroke(spread * 2f),
-              )
-            }
-          }
-        }
       }
     }
     .clip(shape)
@@ -387,12 +372,12 @@ fun Modifier.liquidGlassPane(
       var lastImage: ImageBitmap? = null
       var imageShader: BitmapShader? = null
       val light = GlassSurfacePolicy.TopLeftLight
-      val rim = Brush.linearGradient(listOf(
-        Color.White.copy(alpha = optics.rimHighlight),
-        Color.White.copy(alpha = 0.035f),
-        Color.Black.copy(alpha = optics.rimShade),
-      ), start = Offset(size.width * (1f + light.x) / 2f, size.height * (1f + light.y) / 2f),
-        end = Offset(size.width * (1f - light.x) / 2f, size.height * (1f - light.y) / 2f))
+      val depthTop = Brush.verticalGradient(
+        listOf(Color.White.copy(alpha = if (thickSurface) optics.bodyHighlight * 0.72f else 0f), Color.Transparent),
+        startY = 0f, endY = 10.dp.toPx().coerceAtLeast(1f))
+      val depthBottom = Brush.verticalGradient(
+        listOf(Color.Transparent, Color.Black.copy(alpha = if (thickSurface) optics.bodyShade * 0.72f else 0f)),
+        startY = (size.height - 12.dp.toPx()).coerceAtLeast(0f), endY = size.height)
       onDrawBehind {
         clipPath(panePath) {
         val scene = backdrop?.value
@@ -489,17 +474,15 @@ fun Modifier.liquidGlassPane(
           Color.White.copy(alpha = optics.bodyHighlight),
           Color.Transparent,
           Color.Black.copy(alpha = optics.bodyShade))), cornerRadius = CornerRadius(radius))
-        if (drawRim) {
-          // A single geometry-matched contour supplies the bright upper face
-          // and lower thickness lip. No second inset rectangle or outline.
-          if (highContrast) drawRoundRect(contrastRim, cornerRadius = CornerRadius(radius),
-            style = Stroke(optics.rimWidthDp.dp.toPx()))
-          else drawRoundRect(rim, cornerRadius = CornerRadius(radius),
-            style = Stroke(optics.rimWidthDp.dp.toPx()))
+        if (thickSurface) {
+          drawRoundRect(depthTop, cornerRadius = CornerRadius(radius))
+          drawRoundRect(depthBottom, cornerRadius = CornerRadius(radius))
         }
         }
       }
     }
+    .glassRimLight(shape = shape, enabled = drawRim, ambient = if (backdrop != null) ({ PlayerAmbientTint.color }) else null,
+      highContrast = highContrast)
 }
 
 // Original analytic edge lens. Only the background shader is distorted; control content is not.

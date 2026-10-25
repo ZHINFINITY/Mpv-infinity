@@ -233,6 +233,7 @@ fun PlayerSheet(
             highlight = 0.20f,
             cornerRadius = 24.dp,
             materialRole = GlassSurfacePolicy.MaterialRole.Regular,
+            thickSurface = true,
           ),
       shape = sheetShape,
       color = if (liquidGlassSurfaces) Color.Transparent else resolvedSurfaceColor,
