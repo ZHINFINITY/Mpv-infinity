@@ -225,4 +225,17 @@ object MusicMinimizeTransitionPolicy {
     !translucencyAvailable || anchor == null || !currentWindowWidth.isFinite() || !currentWindowHeight.isFinite() ||
       abs(anchor.viewportWidth - currentWindowWidth) > currentWindowWidth * .05f ||
       (anchor.viewportHeight > 0f && abs(anchor.viewportHeight - currentWindowHeight) > currentWindowHeight * .05f)
+
+  enum class RootBackgroundAction { Clear, Restore, Keep }
+
+  /**
+   * What to do with PlayerActivity's opaque root background when window translucency changes.
+   * See-through clears it once (remembering it); opaque restores it once; otherwise nothing.
+   */
+  fun rootBackgroundAction(seeThrough: Boolean, currentlyCleared: Boolean): RootBackgroundAction =
+    when {
+      seeThrough && !currentlyCleared -> RootBackgroundAction.Clear
+      !seeThrough && currentlyCleared -> RootBackgroundAction.Restore
+      else -> RootBackgroundAction.Keep
+    }
 }

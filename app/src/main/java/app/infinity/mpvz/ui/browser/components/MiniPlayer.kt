@@ -72,6 +72,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.input.pointer.pointerInput
@@ -221,6 +223,64 @@ fun MiniPlayer(modifier: Modifier = Modifier) {
           resumeScope.launch(kotlinx.coroutines.Dispatchers.IO) { AudioPlaybackResumeStore.clear(appContext) }
         },
       )
+    }
+  }
+  // No live mini player yet (the first song opened from the library): lay out an invisible
+  // stand-in in the same slot, so the first music minimize has a landing rect and morphs into
+  // it instead of falling back to the plain slide.
+  if (MiniPlayerAnchorProbePolicy.shouldProbe(isMediaActive = isMediaActive, isSettingsScreen = isSettingsScreen)) {
+    MiniPlayerAnchorProbe(modifier)
+  }
+}
+
+/** When the invisible landing-rect stand-in is laid out. Pure for unit tests. */
+object MiniPlayerAnchorProbePolicy {
+  fun shouldProbe(isMediaActive: Boolean, isSettingsScreen: Boolean): Boolean =
+    !isMediaActive && !isSettingsScreen
+}
+
+/**
+ * Invisible copy of the audio mini player's outer geometry: the same slot modifier, row padding,
+ * 48 dp cover and two text lines (so its height follows the font scale like the real one). It
+ * draws nothing, has no input handlers and no semantics; it only publishes the landing rect.
+ */
+@Composable
+internal fun MiniPlayerAnchorProbe(modifier: Modifier) {
+  val hostView = LocalView.current
+  var surfaceBounds by remember { mutableStateOf<Rect?>(null) }
+  var artworkBounds by remember { mutableStateOf<Rect?>(null) }
+  fun publish() {
+    val surface = surfaceBounds ?: return
+    val art = artworkBounds
+    MiniPlayerTransitionAnchor.publish(
+      left = surface.left, top = surface.top, width = surface.width, height = surface.height,
+      viewportWidth = hostView.width.toFloat(), viewportHeight = hostView.height.toFloat(),
+      artworkLeft = art?.left, artworkTop = art?.top, artworkWidth = art?.width, artworkHeight = art?.height,
+    )
+  }
+  Row(
+    modifier = modifier
+      .graphicsLayer { alpha = 0f }
+      .clearAndSetSemantics {}
+      .fillMaxWidth()
+      .onGloballyPositioned { coordinates ->
+        surfaceBounds = coordinates.miniPlayerScreenBounds(hostView)
+        publish()
+      }
+      .padding(horizontal = 12.dp, vertical = 8.dp),
+    verticalAlignment = Alignment.CenterVertically,
+  ) {
+    Box(
+      modifier = Modifier
+        .size(48.dp)
+        .onGloballyPositioned { coordinates ->
+          artworkBounds = coordinates.miniPlayerScreenBounds(hostView)
+          publish()
+        },
+    )
+    Column(modifier = Modifier.weight(1f).padding(start = 12.dp)) {
+      Text(text = " ", style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold), maxLines = 1)
+      Text(text = " ", style = MaterialTheme.typography.labelSmall, maxLines = 1)
     }
   }
 }

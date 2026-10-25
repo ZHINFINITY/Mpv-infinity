@@ -81,4 +81,42 @@ class PlayerLifecyclePolicyTest {
     assertEquals(null, PlayerLifecyclePolicy.resumePositionSeconds(0.0))
     assertEquals(null, PlayerLifecyclePolicy.resumePositionSeconds(Double.NaN))
   }
+
+  // Owner report (build 1906): the first minimize after a fresh install stopped the song. Audio
+  // background playback defaults to off, and onDestroy only kept the session for that preference,
+  // so the Mini Player handoff was torn down and the queue cleared.
+  @Test
+  fun miniPlayerHandoffKeepsTheSessionEvenWithBackgroundPlaybackOff() {
+    assertTrue(
+      PlayerLifecyclePolicy.shouldKeepBackgroundPlaybackAliveOnDestroy(
+        backgroundPlaybackEnabled = false,
+        backgroundPlaybackSessionActive = true,
+        miniPlayerHandoff = true,
+      ),
+    )
+  }
+
+  @Test
+  fun keepAliveStillNeedsAnActiveServiceSession() {
+    assertFalse(
+      PlayerLifecyclePolicy.shouldKeepBackgroundPlaybackAliveOnDestroy(
+        backgroundPlaybackEnabled = true,
+        backgroundPlaybackSessionActive = false,
+        miniPlayerHandoff = true,
+      ),
+    )
+    assertFalse(
+      PlayerLifecyclePolicy.shouldKeepBackgroundPlaybackAliveOnDestroy(
+        backgroundPlaybackEnabled = false,
+        backgroundPlaybackSessionActive = true,
+        miniPlayerHandoff = false,
+      ),
+    )
+    assertTrue(
+      PlayerLifecyclePolicy.shouldKeepBackgroundPlaybackAliveOnDestroy(
+        backgroundPlaybackEnabled = true,
+        backgroundPlaybackSessionActive = true,
+      ),
+    )
+  }
 }

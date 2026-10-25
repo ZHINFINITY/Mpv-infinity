@@ -110,10 +110,18 @@ internal object PlayerLifecyclePolicy {
     mediaReady: Boolean,
   ): Boolean = backgroundPlaybackEnabled && mediaReady
 
+  /**
+   * Whether onDestroy hands the live session to the service instead of stopping it. Either the
+   * background-playback preference allows it, or the user explicitly minimized into the Mini
+   * Player ([miniPlayerHandoff]). The Mini Player does not depend on that preference (audio
+   * background playback defaults to off), so without the second case the first minimize after a
+   * fresh install stopped the song, cleared the queue and left only the resume card behind.
+   */
   fun shouldKeepBackgroundPlaybackAliveOnDestroy(
     backgroundPlaybackEnabled: Boolean,
     backgroundPlaybackSessionActive: Boolean,
-  ): Boolean = backgroundPlaybackEnabled && backgroundPlaybackSessionActive
+    miniPlayerHandoff: Boolean = false,
+  ): Boolean = backgroundPlaybackSessionActive && (backgroundPlaybackEnabled || miniPlayerHandoff)
 
   /** Preserve an intentional pause while restoring a playing service handoff. */
   fun shouldResumeAfterBackgroundHandoff(

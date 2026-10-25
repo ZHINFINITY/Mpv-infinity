@@ -42,6 +42,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.util.VelocityTracker
 import androidx.compose.ui.layout.LayoutCoordinates
+import androidx.compose.ui.layout.layout
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
@@ -150,14 +151,20 @@ class BrowserMusicSheetState internal constructor(
     )
   }
 
-  internal fun beginDrag() {
-    if (!isAvailable && !isShowing) return
+  /**
+   * Starts a finger drag. From the mini player it may open a collapsed sheet; from the full
+   * player ([fromMiniPlayer] false) it only applies while the sheet is actually showing. A
+   * collapsed sheet must never claim a gesture: it is not on screen.
+   */
+  internal fun beginDrag(fromMiniPlayer: Boolean = true): Boolean {
+    if (!MusicSheetInputPolicy.mayBeginDrag(fromMiniPlayer, isAvailable, isShowing)) return false
     prewarm()
     refreshTravel()
     // Cancelling the running settle is safe: its generation is now stale, so its cleanup no-ops.
     settleJob?.cancel()
     motion.beginDrag()
     publish()
+    return true
   }
 
   internal fun dragBy(deltaYPx: Float) {
@@ -278,6 +285,8 @@ fun Modifier.browserMusicSheetDrag(
     .pointerInput(state, fromMiniPlayer) {
       awaitEachGesture {
         val down = awaitFirstDown(requireUnconsumed = false)
+        // The full page only reacts while it is on screen; see browserMusicSheetPresence.
+        if (!fromMiniPlayer && !state.isShowing) return@awaitEachGesture
         onDown()
         val tracker = VelocityTracker()
         fun windowY(local: androidx.compose.ui.geometry.Offset): Float =
@@ -294,7 +303,7 @@ fun Modifier.browserMusicSheetDrag(
             }
           }
         if (afterSlop == null || !claimed) return@awaitEachGesture
-        state.beginDrag()
+        if (!state.beginDrag(fromMiniPlayer)) return@awaitEachGesture
         var completed = false
         try {
           val y = windowY(afterSlop.position)
@@ -314,6 +323,33 @@ fun Modifier.browserMusicSheetDrag(
         }
       }
     }
+}
+
+/**
+ * Keeps a collapsed sheet's pre-composed player completely out of the way. The page is still
+ * measured (so a reopen is instant) but is not placed while the sheet is collapsed and at rest,
+ * and an unplaced layout neither draws nor receives touches.
+ *
+ * An alpha of 0 is not enough: invisible content still hit-tests. That left a full-screen,
+ * invisible player above the library and the mini player for seconds after every collapse,
+ * swallowing taps and scrolls while the music kept playing (the "frozen after minimize" bug).
+ */
+fun Modifier.browserMusicSheetPresence(state: BrowserMusicSheetState): Modifier =
+  layout { measurable, constraints ->
+    val placeable = measurable.measure(constraints)
+    layout(placeable.width, placeable.height) {
+      if (MusicSheetInputPolicy.isOnScreen(state.isShowing, state.progress)) placeable.place(0, 0)
+    }
+  }
+
+/** Input rules for the browser music sheet, kept pure so they can be unit tested. */
+object MusicSheetInputPolicy {
+  /** Only a showing sheet, or one mid-flight, is on screen and may take touches. */
+  fun isOnScreen(isShowing: Boolean, progress: Float): Boolean = isShowing || progress > 0f
+
+  /** Mini-player drags may open an available sheet; full-page drags need a visible sheet. */
+  fun mayBeginDrag(fromMiniPlayer: Boolean, isAvailable: Boolean, isShowing: Boolean): Boolean =
+    if (fromMiniPlayer) isAvailable || isShowing else isShowing
 }
 
 /** Fades the mini player out as the sheet rises over it, without recomposing it. */
@@ -349,12 +385,7 @@ fun BrowserMusicSheet(state: BrowserMusicSheetState) {
           state.sheetHeightPx = size.height.toFloat()
           state.refreshTravel()
         }
-        .graphicsLayer {
-          // The page itself morphs into the mini player (AudioPlayerControls draws the same
-          // transition as the PlayerActivity minimize). Here only: a resting collapsed sheet
-          // draws nothing.
-          alpha = if (state.progress <= 0f) 0f else 1f
-        }
+        .browserMusicSheetPresence(state)
         .then(if (state.isShowing) Modifier else Modifier.clearAndSetSemantics {}),
   ) {
     BrowserMusicSheetContent(state)

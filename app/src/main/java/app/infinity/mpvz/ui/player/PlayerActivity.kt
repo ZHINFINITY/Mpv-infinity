@@ -1101,6 +1101,9 @@ class PlayerActivity :
   private var pendingPipExitResolution = false
   private var pendingBackgroundTransition = false
   private var pendingBackNavigationBackgroundTransition = false
+  // Back/minimize took the Mini Player branch: the service keeps the session even when the
+  // background-playback preference is off. Cleared when the handoff fails or the service ends.
+  private var miniPlayerHandoffRequested = false
   private var noisyReceiverRegistered = false
   private var lastVid = -1 // Track video track for background playback optimization
   private var isInBackgroundPlayback = false // Track if we are currently in background playback mode
@@ -2196,8 +2199,9 @@ class PlayerActivity :
 
     // Background playback or Mini Player handoff on Back: return to the browser while handing
     // the live MPV session to the foreground service. This is also the PiP-failure fallback.
+    val miniPlayerHandoff = isMiniPlayerEnabled()
     if (
-      isMiniPlayerEnabled() ||
+      miniPlayerHandoff ||
       PlayerLifecyclePolicy.shouldStartBackgroundPlaybackOnBack(
         backgroundPlaybackEnabled = isBackgroundPlaybackEnabled(),
         mediaReady = isReady || nativeEngineOrNull()?.snapshot?.value?.isReady == true,
@@ -2205,10 +2209,12 @@ class PlayerActivity :
     ) {
       when (startBackgroundPlayback()) {
         BackgroundPlaybackStartResult.Started -> {
+          miniPlayerHandoffRequested = miniPlayerHandoff
           pendingBackNavigationBackgroundTransition = true
           completePendingBackgroundHandoff()
         }
         BackgroundPlaybackStartResult.PendingPermission -> {
+          miniPlayerHandoffRequested = miniPlayerHandoff
           pendingBackNavigationBackgroundTransition = true
         }
         BackgroundPlaybackStartResult.Blocked -> {
@@ -2869,6 +2875,7 @@ class PlayerActivity :
       ownsPlaybackSession && !pipDismissalCommitted && PlayerLifecyclePolicy.shouldKeepBackgroundPlaybackAliveOnDestroy(
         backgroundPlaybackEnabled = (playbackWasInitialized || nativeWasActive) && isBackgroundPlaybackEnabled(),
         backgroundPlaybackSessionActive = isBackgroundPlaybackSessionActive,
+        miniPlayerHandoff = (playbackWasInitialized || nativeWasActive) && miniPlayerHandoffRequested,
       )
 
 
@@ -3210,6 +3217,10 @@ class PlayerActivity :
    */
   val audioOpenFromMiniRequest = androidx.compose.runtime.mutableIntStateOf(0)
   private var audioWindowBackground: android.graphics.drawable.Drawable? = null
+  // player_layout's root paints opaque black for video. A translucent window alone does not
+  // show the library through it, so the first music minimize showed black behind the page.
+  private var audioRootBackground: android.graphics.drawable.Drawable? = null
+  private var audioRootBackgroundCleared = false
   private var audioWindowTranslucent = false
 
   private fun requestAudioOpenFromMini(launchIntent: Intent?) {
@@ -3241,9 +3252,31 @@ class PlayerActivity :
       if (!enabled || !success) {
         audioWindowBackground?.let { window.setBackgroundDrawable(it) }
       }
+      setPlayerRootSeeThrough(enabled && success)
       audioWindowTranslucent = enabled && success
       success
     }.onFailure { Log.d(TAG, "Audio translucency transition unavailable", it) }.getOrDefault(false)
+  }
+
+  /**
+   * Clears (or restores) the player root's opaque video background together with window
+   * translucency, so the area the music page uncovers shows the library underneath.
+   */
+  private fun setPlayerRootSeeThrough(seeThrough: Boolean) {
+    val root = binding.root
+    when (MusicMinimizeTransitionPolicy.rootBackgroundAction(seeThrough, audioRootBackgroundCleared)) {
+      MusicMinimizeTransitionPolicy.RootBackgroundAction.Clear -> {
+        audioRootBackground = root.background
+        root.background = null
+        audioRootBackgroundCleared = true
+      }
+      MusicMinimizeTransitionPolicy.RootBackgroundAction.Restore -> {
+        root.background = audioRootBackground
+        audioRootBackground = null
+        audioRootBackgroundCleared = false
+      }
+      MusicMinimizeTransitionPolicy.RootBackgroundAction.Keep -> Unit
+    }
   }
 
   private fun applyMiniPlayerExitTransition() {
@@ -3783,8 +3816,8 @@ class PlayerActivity :
     setIntent(
       Intent(sourceIntent).apply {
         action = Intent.ACTION_VIEW
-        data = Uri.parse(currentItem.originalUri)
-        type = currentItem.mimeType?.takeIf(String::isNotBlank) ?: "audio/*"
+        // setDataAndType + file:// for raw paths; see AudioResumeLaunch for the two old bugs.
+        AudioResumeLaunch.applyTo(this, currentItem.originalUri, currentItem.mimeType)
         putExtra("is_audio", true)
         putExtra("media_library_audio", true)
         putExtra("title", currentItem.title)
@@ -3890,8 +3923,8 @@ class PlayerActivity :
     val mediaIntent =
       Intent(sourceIntent).apply {
         action = Intent.ACTION_VIEW
-        data = Uri.parse(currentItem.originalUri)
-        type = currentItem.mimeType ?: sourceIntent.type
+        // Data and type together: assigning type after data cleared the data.
+        AudioResumeLaunch.applyTo(this, currentItem.originalUri, currentItem.mimeType, sourceIntent.type)
         putExtra("title", currentItem.title)
         putExtra("media_identifier", currentItem.stableId)
         putExtra("playlist_index", queueState.currentIndex)
@@ -7070,8 +7103,13 @@ class PlayerActivity :
         intent =
           Intent(intent).apply {
             action = Intent.ACTION_VIEW
-            data = Uri.parse(fallbackUri)
-            if (type.isNullOrBlank() && getBooleanExtra("is_audio", false)) type = "audio/*"
+            // Data and type together (setType clears data); raw paths become file:// URIs.
+            AudioResumeLaunch.applyTo(
+              this,
+              fallbackUri,
+              type,
+              fallbackMimeType = "audio/*".takeIf { getBooleanExtra("is_audio", false) },
+            )
           }
       }
     }
@@ -8811,6 +8849,7 @@ class PlayerActivity :
     isBackgroundPlaybackSessionActive = false
     pendingBackgroundTransition = false
     pendingBackNavigationBackgroundTransition = false
+    miniPlayerHandoffRequested = false
 
     if (handoffToActivity) {
       // The foreground Activity already owns playback, so service teardown must not stop it.
@@ -8963,6 +9002,7 @@ class PlayerActivity :
 
         val failedBackgroundHandoff = pendingBackNavigationBackgroundTransition
         pendingBackNavigationBackgroundTransition = false
+        miniPlayerHandoffRequested = false
         setActivityMediaSessionActive(true)
         if (failedBackgroundHandoff) {
           Toast.makeText(this@PlayerActivity, R.string.toast_playback_load_failed, Toast.LENGTH_LONG).show()
