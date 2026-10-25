@@ -2258,13 +2258,13 @@ Bitte starten Sie die App neu, damit alle Änderungen wirksam werden.</string>
     <string name="pref_openai_base_url_summary">Leer lassen, um den offiziellen OpenAI-Endpunkt zu verwenden</string>
     <string name="pref_openai_base_url_prompt">Basis-URL einer OpenAI-kompatiblen API eingeben</string>
     <string name="pref_openai_base_url_invalid">Gib eine gültige HTTP- oder HTTPS-URL ohne Anmeldedaten, Abfrageparameter oder Fragmente ein.</string>
-  <string name="pref_glass_preview">Live glass preview</string>
-  <string name="pref_glass_rim_strength">Rim strength</string>
-  <string name="pref_glass_rim_strength_summary">Brightness of the shared lit edge</string>
-  <string name="pref_glass_rim_width">Rim width</string>
-  <string name="pref_glass_rim_width_summary">Thickness of the lit edge in dp</string>
-  <string name="pref_glass_rim_softness">Rim softness</string>
-  <string name="pref_glass_rim_softness_summary">How softly the edge light fades</string>
+  <string name="pref_glass_preview">Live-Glasvorschau</string>
+  <string name="pref_glass_rim_strength">Randstärke</string>
+  <string name="pref_glass_rim_strength_summary">Helligkeit der gemeinsamen Lichtkante</string>
+  <string name="pref_glass_rim_width">Randbreite</string>
+  <string name="pref_glass_rim_width_summary">Dicke der Lichtkante in dp</string>
+  <string name="pref_glass_rim_softness">Randweichheit</string>
+  <string name="pref_glass_rim_softness_summary">Wie weich das Kantenlicht ausläuft</string>
   <string name="pref_advanced_frame_time_overlay_title">Frame-Zeit-Overlay</string>
   <string name="pref_advanced_frame_time_overlay_summary">Anteil ruckelnder Frames und p90/p99-Frame-Zeit für dieses Fenster anzeigen</string>
 </resources>

@@ -27,7 +27,7 @@ class ReferenceUiRollbackContractTest {
       "app/src/main/java/app/infinity/mpvz/ui/player/controls/components/Seekbar.kt" to "b0d7ca11fdd2729871e052a0f6ea3b2cba64fb3e29039e5d3c42a7acf4d426c9",
       // Build 1910: shared rimLight/thick-surface routing is intentionally owned by this stream.
       // Build 1910 integration: union of the rim-light routing and thickSurface stream edits.
-      "app/src/main/java/app/infinity/mpvz/ui/player/controls/components/GlassControls.kt" to "b9d10c335d9bb952f1f685ccbbdf7e4b94c211d6576085f108bf62c3c31895e6",
+      "app/src/main/java/app/infinity/mpvz/ui/player/controls/components/GlassControls.kt" to "733d685b01b46c268d89e3d67e294952306fa7388da5885e1442b444e6c0ff6a",
       // Build 1910: player sheets opt into the centralized inner thickness bands.
       // Build 1910 integration: edge-attached landscape sheets draw one rim on the asymmetric shape.
       "app/src/main/java/app/infinity/mpvz/presentation/components/PlayerSheet.kt" to "7838a785e17d4bd1479a348a04c6f9ac7af0bacc0891ba817b165a1f53348c81",

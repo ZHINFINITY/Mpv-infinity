@@ -2255,13 +2255,13 @@
     <string name="pref_openai_base_url_summary">Pozostaw puste, aby użyć oficjalnego punktu końcowego OpenAI</string>
     <string name="pref_openai_base_url_prompt">Wpisz bazowy URL API zgodnego z OpenAI</string>
     <string name="pref_openai_base_url_invalid">Wpisz prawidłowy adres HTTP lub HTTPS bez danych logowania, parametrów zapytania i fragmentów.</string>
-  <string name="pref_glass_preview">Live glass preview</string>
-  <string name="pref_glass_rim_strength">Rim strength</string>
-  <string name="pref_glass_rim_strength_summary">Brightness of the shared lit edge</string>
-  <string name="pref_glass_rim_width">Rim width</string>
-  <string name="pref_glass_rim_width_summary">Thickness of the lit edge in dp</string>
-  <string name="pref_glass_rim_softness">Rim softness</string>
-  <string name="pref_glass_rim_softness_summary">How softly the edge light fades</string>
+  <string name="pref_glass_preview">Podgląd szkła na żywo</string>
+  <string name="pref_glass_rim_strength">Siła krawędzi</string>
+  <string name="pref_glass_rim_strength_summary">Jasność wspólnej podświetlonej krawędzi</string>
+  <string name="pref_glass_rim_width">Szerokość krawędzi</string>
+  <string name="pref_glass_rim_width_summary">Grubość podświetlonej krawędzi w dp</string>
+  <string name="pref_glass_rim_softness">Miękkość krawędzi</string>
+  <string name="pref_glass_rim_softness_summary">Jak łagodnie zanika światło krawędzi</string>
   <string name="pref_advanced_frame_time_overlay_title">Nakładka czasu klatki</string>
   <string name="pref_advanced_frame_time_overlay_summary">Pokazuj odsetek klatek z przycięciami i czas klatki p90/p99 dla tego okna</string>
 </resources>

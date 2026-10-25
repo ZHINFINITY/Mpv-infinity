@@ -120,7 +120,23 @@ object GlassControlGeometryPolicy {
   const val switchTrackHeightDp = 34f
   const val sliderThumbWidthDp = 30f
   const val sliderThumbHeightDp = 24f
-  const val sliderTrackHeightDp = 5f
+  const val sliderTrackHeightDp = 6f
+  const val oldSliderTrackHeightDp = 5f
+
+  /** Material places a custom switch thumb's centre 16dp from either end of its 52dp track. */
+  const val materialSwitchThumbCentreInsetDp = 16f
+  /** Clear glass visible between the capsule thumb and the end of its groove. */
+  const val switchThumbEndGapDp = 2f
+
+  /**
+   * How far the drawn switch groove extends past Material's 52dp track on each side so the
+   * capsule thumb sits fully inside it, with [switchThumbEndGapDp] to spare, when on and off.
+   */
+  fun switchTrackOverhangDp(
+    thumbWidthDp: Float = switchThumbWidthDp,
+    centreInsetDp: Float = materialSwitchThumbCentreInsetDp,
+    endGapDp: Float = switchThumbEndGapDp,
+  ): Float = (thumbWidthDp / 2f - centreInsetDp + endGapDp).coerceAtLeast(0f)
   const val oldSwitchThumbWidthDp = 30f
   const val oldSwitchThumbHeightDp = 22f
   const val oldSliderThumbWidthDp = 28f
@@ -315,13 +331,13 @@ fun GlassSwitch(
         Box(
           Modifier.size(width = GlassControlGeometryPolicy.switchThumbWidthDp.dp, height = GlassControlGeometryPolicy.switchThumbHeightDp.dp)
             .glassRimLight(androidx.compose.foundation.shape.RoundedCornerShape(12.dp), ambient = contrast.checkedTrack, highContrast = true)
-            .glassCapsuleBody(contrast.checkedThumb, enabled, checked),
+            .glassCapsuleBody(contrast.checkedThumb, enabled, checked, base = contrast.uncheckedThumb),
           contentAlignment = Alignment.Center,
         ) { thumbContent?.invoke() }
       }
     },
     // Material keeps its minimum interaction box while the custom capsule is drawn inside it.
-    modifier = modifier.then(if (glass) Modifier.glassTrackOptics(opacity, highlight, 16.dp, height = GlassControlGeometryPolicy.switchTrackHeightDp.dp, checked = checked) else Modifier),
+    modifier = modifier.then(if (glass) Modifier.glassTrackOptics(opacity, highlight, 16.dp, height = GlassControlGeometryPolicy.switchTrackHeightDp.dp, checked = checked, overhang = GlassControlGeometryPolicy.switchTrackOverhangDp().dp) else Modifier),
   )
 }
 
@@ -398,19 +414,39 @@ private fun Modifier.glassSliderGroove(fraction: Float, accent: Color, opacity: 
   val radius = size.height / 2f
   onDrawBehind {
     val fillWidth = size.width * fraction.coerceIn(0f, 1f)
-    drawRoundRect(Brush.verticalGradient(listOf(Color.Black.copy(alpha = .24f), Color.Transparent, Color.White.copy(alpha = .16f))), cornerRadius = androidx.compose.ui.geometry.CornerRadius(radius, radius))
+    val corner = androidx.compose.ui.geometry.CornerRadius(radius, radius)
+    // Sunken groove: shaded under its top lip, lit along its lower lip.
+    drawRoundRect(Brush.verticalGradient(listOf(Color.Black.copy(alpha = .34f), Color.Black.copy(alpha = .10f), Color.White.copy(alpha = .18f))), cornerRadius = corner)
+    drawRoundRect(Brush.verticalGradient(listOf(Color.Black.copy(alpha = .30f), Color.Transparent, Color.White.copy(alpha = .20f))), cornerRadius = corner, style = Stroke(1.dp.toPx().coerceAtMost(radius)))
     if (fillWidth > 0f) {
-      drawRoundRect(Brush.verticalGradient(listOf(Color.White.copy(alpha = (.30f * highlight).coerceAtMost(.34f)), accent.copy(alpha = (.58f + opacity * .18f).coerceAtMost(.82f)), accent.copy(alpha = .78f))), size = androidx.compose.ui.geometry.Size(fillWidth, size.height), cornerRadius = androidx.compose.ui.geometry.CornerRadius(radius, radius))
+      val fill = androidx.compose.ui.geometry.Size(fillWidth.coerceAtLeast(size.height), size.height)
+      // Raised accent fill: glossy crest on top, deeper accent underneath.
+      drawRoundRect(Brush.verticalGradient(listOf(Color.White.copy(alpha = (.34f * highlight).coerceIn(.12f, .40f)), accent.copy(alpha = (.62f + opacity * .18f).coerceAtMost(.86f)), accent.copy(alpha = .92f))), size = fill, cornerRadius = corner)
+      val crestInset = size.height * .22f
+      if (fill.width > crestInset * 2f) {
+        drawLine(Color.White.copy(alpha = (.42f * highlight).coerceIn(.16f, .48f)), androidx.compose.ui.geometry.Offset(crestInset + radius * .5f, crestInset), androidx.compose.ui.geometry.Offset(fill.width - crestInset - radius * .5f, crestInset), strokeWidth = (size.height * .16f).coerceAtLeast(.5f), cap = androidx.compose.ui.graphics.StrokeCap.Round)
+      }
     }
   }
 }
 
-private fun Modifier.glassCapsuleBody(accent: Color, enabled: Boolean, checked: Boolean): Modifier = drawWithCache {
-  val shape = androidx.compose.foundation.shape.RoundedCornerShape(12.dp)
+private fun Modifier.glassCapsuleBody(accent: Color, enabled: Boolean, checked: Boolean, base: Color? = null): Modifier = drawWithCache {
+  val shadowOffset = 1.5.dp.toPx()
+  val shadowSpread = 1.dp.toPx()
   onDrawBehind {
     val radius = size.height / 2f
+    // Contact shadow: the thumb floats just above its groove.
     drawRoundRect(
-      brush = Brush.verticalGradient(listOf(Color.White.copy(alpha = if (enabled) .72f else .30f), if (checked) accent.copy(alpha = .28f) else Color.Transparent, Color.Black.copy(alpha = if (enabled) .24f else .10f))),
+      color = Color.Black.copy(alpha = if (enabled) .26f else .12f),
+      topLeft = androidx.compose.ui.geometry.Offset(-shadowSpread * .5f, shadowOffset),
+      size = androidx.compose.ui.geometry.Size(size.width + shadowSpread, size.height + shadowSpread * .5f),
+      cornerRadius = androidx.compose.ui.geometry.CornerRadius(radius + shadowSpread, radius + shadowSpread),
+    )
+    if (base != null) {
+      drawRoundRect(base.copy(alpha = if (enabled) .94f else .48f), cornerRadius = androidx.compose.ui.geometry.CornerRadius(radius, radius))
+    }
+    drawRoundRect(
+      brush = Brush.verticalGradient(listOf(Color.White.copy(alpha = if (base != null) (if (enabled) .40f else .18f) else if (enabled) .72f else .30f), if (checked && base == null) accent.copy(alpha = .28f) else Color.Transparent, Color.Black.copy(alpha = if (enabled) .28f else .10f))),
       cornerRadius = androidx.compose.ui.geometry.CornerRadius(radius, radius),
     )
     drawRoundRect(Brush.radialGradient(listOf(Color.White.copy(alpha = .44f), Color.Transparent), center = androidx.compose.ui.geometry.Offset(size.width * .25f, size.height * .18f), radius = size.width), cornerRadius = androidx.compose.ui.geometry.CornerRadius(radius, radius))
@@ -418,16 +454,19 @@ private fun Modifier.glassCapsuleBody(accent: Color, enabled: Boolean, checked: 
 }
 
 @Composable
-private fun Modifier.glassTrackOptics(opacity: Float, highlight: Float, radius: Dp, height: Dp, checked: Boolean = true): Modifier {
+private fun Modifier.glassTrackOptics(opacity: Float, highlight: Float, radius: Dp, height: Dp, checked: Boolean = true, overhang: Dp = 0.dp): Modifier {
   val scheme = MaterialTheme.colorScheme
   val tint = if (checked) scheme.primary else scheme.onSurface
   return drawWithCache {
     val trackHeight = height.toPx().coerceAtMost(size.height)
     val top = (size.height - trackHeight) / 2f
     val corner = radius.toPx().coerceAtMost(trackHeight / 2f)
+    val extra = overhang.toPx().coerceAtLeast(0f)
+    val left = -extra
+    val trackWidth = size.width + extra * 2f
     onDrawBehind {
-      drawRoundRect(Brush.verticalGradient(listOf(Color.Black.copy(alpha = .28f), tint.copy(alpha = if (checked) (.38f + opacity * .30f).coerceAtMost(.76f) else .22f), Color.White.copy(alpha = .14f))), topLeft = androidx.compose.ui.geometry.Offset(0f, top), size = androidx.compose.ui.geometry.Size(size.width, trackHeight), cornerRadius = androidx.compose.ui.geometry.CornerRadius(corner, corner))
-      drawRoundRect(Brush.verticalGradient(listOf(Color.Black.copy(alpha = .22f), Color.Transparent, Color.White.copy(alpha = .22f))), topLeft = androidx.compose.ui.geometry.Offset(0f, top), size = androidx.compose.ui.geometry.Size(size.width, trackHeight), cornerRadius = androidx.compose.ui.geometry.CornerRadius(corner, corner), style = Stroke(1.dp.toPx()))
+      drawRoundRect(Brush.verticalGradient(listOf(Color.Black.copy(alpha = .28f), tint.copy(alpha = if (checked) (.38f + opacity * .30f).coerceAtMost(.76f) else .22f), Color.White.copy(alpha = .14f))), topLeft = androidx.compose.ui.geometry.Offset(left, top), size = androidx.compose.ui.geometry.Size(trackWidth, trackHeight), cornerRadius = androidx.compose.ui.geometry.CornerRadius(corner, corner))
+      drawRoundRect(Brush.verticalGradient(listOf(Color.Black.copy(alpha = .22f), Color.Transparent, Color.White.copy(alpha = .22f))), topLeft = androidx.compose.ui.geometry.Offset(left, top), size = androidx.compose.ui.geometry.Size(trackWidth, trackHeight), cornerRadius = androidx.compose.ui.geometry.CornerRadius(corner, corner), style = Stroke(1.dp.toPx()))
     }
   }
 }

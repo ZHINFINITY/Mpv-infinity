@@ -91,8 +91,11 @@ internal object EdgeAttachedPanelPolicy {
    * bleed. Keep the largest value seen for the current window geometry so the glass stays
    * pinned to the edge and the panel does not relayout on every animation frame.
    */
-  fun settle(previous: EdgeBleed, measured: EdgeBleed): EdgeBleed =
-    EdgeBleed(
+  fun settle(previous: EdgeBleed, measured: EdgeBleed, hostGeometryChanged: Boolean = false): EdgeBleed =
+    // A resized host (system bars shown/hidden, split-screen resize) is a new geometry: take
+    // the fresh measurement so the glass and its content padding never keep a stale gap.
+    if (hostGeometryChanged) measured
+    else EdgeBleed(
       top = maxOf(previous.top, measured.top),
       bottom = maxOf(previous.bottom, measured.bottom),
       end = maxOf(previous.end, measured.end),

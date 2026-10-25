@@ -2258,13 +2258,13 @@ Veuillez redémarrer l’application pour appliquer toutes les modifications.</s
     <string name="pref_openai_base_url_summary">Laisser vide pour utiliser le point de terminaison officiel d\'OpenAI</string>
     <string name="pref_openai_base_url_prompt">Saisissez l\'URL de base d\'une API compatible OpenAI</string>
     <string name="pref_openai_base_url_invalid">Saisissez une URL HTTP ou HTTPS valide sans identifiants, paramètres de requête ni fragments.</string>
-  <string name="pref_glass_preview">Live glass preview</string>
-  <string name="pref_glass_rim_strength">Rim strength</string>
-  <string name="pref_glass_rim_strength_summary">Brightness of the shared lit edge</string>
-  <string name="pref_glass_rim_width">Rim width</string>
-  <string name="pref_glass_rim_width_summary">Thickness of the lit edge in dp</string>
-  <string name="pref_glass_rim_softness">Rim softness</string>
-  <string name="pref_glass_rim_softness_summary">How softly the edge light fades</string>
+  <string name="pref_glass_preview">Aperçu du verre en direct</string>
+  <string name="pref_glass_rim_strength">Intensité du liseré</string>
+  <string name="pref_glass_rim_strength_summary">Luminosité du liseré lumineux commun</string>
+  <string name="pref_glass_rim_width">Largeur du liseré</string>
+  <string name="pref_glass_rim_width_summary">Épaisseur du liseré lumineux en dp</string>
+  <string name="pref_glass_rim_softness">Douceur du liseré</string>
+  <string name="pref_glass_rim_softness_summary">Douceur du fondu de la lumière du bord</string>
   <string name="pref_advanced_frame_time_overlay_title">Superposition du temps d’image</string>
   <string name="pref_advanced_frame_time_overlay_summary">Affiche le pourcentage d’images saccadées et le temps d’image p90/p99 de cette fenêtre</string>
 </resources>

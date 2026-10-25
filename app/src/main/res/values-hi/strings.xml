@@ -2243,13 +2243,13 @@
     <string name="pref_openai_base_url_summary">आधिकारिक OpenAI एंडपॉइंट के लिए खाली छोड़ें</string>
     <string name="pref_openai_base_url_prompt">OpenAI-संगत API का बेस URL दर्ज करें</string>
     <string name="pref_openai_base_url_invalid">क्रेडेंशियल, क्वेरी पैरामीटर या फ़्रैगमेंट के बिना एक मान्य HTTP या HTTPS URL दर्ज करें।</string>
-  <string name="pref_glass_preview">Live glass preview</string>
-  <string name="pref_glass_rim_strength">Rim strength</string>
-  <string name="pref_glass_rim_strength_summary">Brightness of the shared lit edge</string>
-  <string name="pref_glass_rim_width">Rim width</string>
-  <string name="pref_glass_rim_width_summary">Thickness of the lit edge in dp</string>
-  <string name="pref_glass_rim_softness">Rim softness</string>
-  <string name="pref_glass_rim_softness_summary">How softly the edge light fades</string>
+  <string name="pref_glass_preview">लाइव ग्लास पूर्वावलोकन</string>
+  <string name="pref_glass_rim_strength">किनारे की तीव्रता</string>
+  <string name="pref_glass_rim_strength_summary">साझा चमकीले किनारे की चमक</string>
+  <string name="pref_glass_rim_width">किनारे की चौड़ाई</string>
+  <string name="pref_glass_rim_width_summary">चमकीले किनारे की मोटाई (dp में)</string>
+  <string name="pref_glass_rim_softness">किनारे की कोमलता</string>
+  <string name="pref_glass_rim_softness_summary">किनारे की रोशनी कितनी कोमलता से फीकी होती है</string>
   <string name="pref_advanced_frame_time_overlay_title">फ़्रेम-टाइम ओवरले</string>
   <string name="pref_advanced_frame_time_overlay_summary">इस विंडो के लिए अटकने वाले फ़्रेम का प्रतिशत और p90/p99 फ़्रेम टाइम दिखाएँ</string>
 </resources>

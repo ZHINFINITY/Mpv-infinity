@@ -97,10 +97,21 @@ fun DraggablePanel(
   val isPortrait = configuration.orientation == Configuration.ORIENTATION_PORTRAIT
   val attached = EdgeAttachedPanelPolicy.attaches(attachToScreenEdges, isPortrait)
   val layoutDirection = LocalLayoutDirection.current
-  // Keyed on window geometry so rotation/resizing re-measures the distance to the edges.
-  var edgeBleed by remember(attached, configuration.screenWidthDp, configuration.screenHeightDp) {
+  val insetDensity = LocalDensity.current
+  val safeInsets = WindowInsets.safeDrawing
+  val insetKey = listOf(
+    safeInsets.getTop(insetDensity),
+    safeInsets.getBottom(insetDensity),
+    safeInsets.getLeft(insetDensity, layoutDirection),
+    safeInsets.getRight(insetDensity, layoutDirection),
+  )
+  // Keyed on window geometry and safe insets so rotation, resizing and system bars appearing
+  // or hiding re-measure the distance to the edges instead of keeping a stale value.
+  var edgeBleed by remember(attached, configuration.screenWidthDp, configuration.screenHeightDp, insetKey) {
     mutableStateOf(EdgeBleed.Zero)
   }
+  // Last measured host size; not state, so tracking it never triggers recomposition.
+  val lastHostSize = remember(attached) { IntArray(2) { -1 } }
 
   BoxWithConstraints(
     modifier =
@@ -121,7 +132,10 @@ fun DraggablePanel(
                   rootHeight = root.size.height,
                   layoutDirection = layoutDirection,
                 )
-              val settled = EdgeAttachedPanelPolicy.settle(edgeBleed, measured)
+              val hostChanged = lastHostSize[0] != coordinates.size.width || lastHostSize[1] != coordinates.size.height
+              lastHostSize[0] = coordinates.size.width
+              lastHostSize[1] = coordinates.size.height
+              val settled = EdgeAttachedPanelPolicy.settle(edgeBleed, measured, hostGeometryChanged = hostChanged)
               if (settled != edgeBleed) edgeBleed = settled
             }
           } else {

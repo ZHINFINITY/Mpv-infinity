@@ -2243,13 +2243,13 @@
     <string name="pref_openai_base_url_summary">برای استفاده از نقطه پایانی رسمی OpenAI خالی بگذارید</string>
     <string name="pref_openai_base_url_prompt">نشانی پایه یک API سازگار با OpenAI را وارد کنید</string>
     <string name="pref_openai_base_url_invalid">یک نشانی HTTP یا HTTPS معتبر بدون اطلاعات ورود، پارامتر پرس‌وجو یا بخش وارد کنید.</string>
-  <string name="pref_glass_preview">Live glass preview</string>
-  <string name="pref_glass_rim_strength">Rim strength</string>
-  <string name="pref_glass_rim_strength_summary">Brightness of the shared lit edge</string>
-  <string name="pref_glass_rim_width">Rim width</string>
-  <string name="pref_glass_rim_width_summary">Thickness of the lit edge in dp</string>
-  <string name="pref_glass_rim_softness">Rim softness</string>
-  <string name="pref_glass_rim_softness_summary">How softly the edge light fades</string>
+  <string name="pref_glass_preview">پیش‌نمایش زندهٔ شیشه</string>
+  <string name="pref_glass_rim_strength">شدت لبه</string>
+  <string name="pref_glass_rim_strength_summary">روشنایی لبهٔ نورانی مشترک</string>
+  <string name="pref_glass_rim_width">پهنای لبه</string>
+  <string name="pref_glass_rim_width_summary">ضخامت لبهٔ نورانی بر حسب dp</string>
+  <string name="pref_glass_rim_softness">نرمی لبه</string>
+  <string name="pref_glass_rim_softness_summary">میزان نرمی محو شدن نور لبه</string>
   <string name="pref_advanced_frame_time_overlay_title">نمایش زمان فریم</string>
   <string name="pref_advanced_frame_time_overlay_summary">نمایش درصد فریم‌های ناروان و زمان فریم p90/p99 برای این پنجره</string>
 </resources>

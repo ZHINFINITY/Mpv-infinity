@@ -104,4 +104,22 @@ class EdgeAttachedPanelPolicyTest {
     val panels = File(main, "app/infinity/mpvz/ui/player/controls/PlayerPanels.kt").readText()
     assertTrue(panels.contains(".using(SizeTransform(clip = false))"))
   }
+
+  @Test
+  fun resizedHostTakesTheFreshBleedInsteadOfKeepingAStaleGap() {
+    // System bars were visible (host inset by 80px top/bottom), then hidden: host grows.
+    val withBars = EdgeBleed(top = 80, bottom = 80, end = 40)
+    val immersive = EdgeBleed(top = 0, bottom = 0, end = 40)
+    assertEquals(immersive, EdgeAttachedPanelPolicy.settle(withBars, immersive, hostGeometryChanged = true))
+    // Same host geometry (only a slide transient): the settled value is kept.
+    assertEquals(withBars, EdgeAttachedPanelPolicy.settle(withBars, immersive, hostGeometryChanged = false))
+  }
+
+  @Test
+  fun draggablePanelReMeasuresWhenInsetsOrHostSizeChange() {
+    val main = File("src/main/java").takeIf { it.isDirectory } ?: File("app/src/main/java")
+    val panel = File(main, "app/infinity/mpvz/ui/player/controls/components/panels/DraggablePanel.kt").readText()
+    assertTrue(panel.contains("remember(attached, configuration.screenWidthDp, configuration.screenHeightDp, insetKey)"))
+    assertTrue(panel.contains("EdgeAttachedPanelPolicy.settle(edgeBleed, measured, hostGeometryChanged = hostChanged)"))
+  }
 }

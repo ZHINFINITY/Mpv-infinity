@@ -2258,13 +2258,13 @@ Reinicia la aplicación para que se apliquen todos los cambios.</string>
     <string name="pref_openai_base_url_summary">Déjalo vacío para usar el endpoint oficial de OpenAI</string>
     <string name="pref_openai_base_url_prompt">Introduce la URL base de una API compatible con OpenAI</string>
     <string name="pref_openai_base_url_invalid">Introduce una URL HTTP o HTTPS válida sin credenciales, parámetros de consulta ni fragmentos.</string>
-  <string name="pref_glass_preview">Live glass preview</string>
-  <string name="pref_glass_rim_strength">Rim strength</string>
-  <string name="pref_glass_rim_strength_summary">Brightness of the shared lit edge</string>
-  <string name="pref_glass_rim_width">Rim width</string>
-  <string name="pref_glass_rim_width_summary">Thickness of the lit edge in dp</string>
-  <string name="pref_glass_rim_softness">Rim softness</string>
-  <string name="pref_glass_rim_softness_summary">How softly the edge light fades</string>
+  <string name="pref_glass_preview">Vista previa del cristal en vivo</string>
+  <string name="pref_glass_rim_strength">Intensidad del borde</string>
+  <string name="pref_glass_rim_strength_summary">Brillo del borde iluminado compartido</string>
+  <string name="pref_glass_rim_width">Ancho del borde</string>
+  <string name="pref_glass_rim_width_summary">Grosor del borde iluminado en dp</string>
+  <string name="pref_glass_rim_softness">Suavidad del borde</string>
+  <string name="pref_glass_rim_softness_summary">Con qué suavidad se desvanece la luz del borde</string>
   <string name="pref_advanced_frame_time_overlay_title">Superposición de tiempo de fotograma</string>
   <string name="pref_advanced_frame_time_overlay_summary">Muestra el porcentaje de fotogramas con tirones y el tiempo de fotograma p90/p99 de esta ventana</string>
 </resources>

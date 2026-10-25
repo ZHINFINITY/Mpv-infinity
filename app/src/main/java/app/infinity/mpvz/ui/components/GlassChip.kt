@@ -5,6 +5,7 @@
 package app.infinity.mpvz.ui.components
 
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Row
@@ -52,10 +53,15 @@ fun GlassChip(
   }
   val chipShape = shape ?: RoundedCornerShape(24.dp)
   val source = remember { MutableInteractionSource() }
+  val scheme = MaterialTheme.colorScheme
+  val fill = GlassChipMaterial.fill(selected, enabled, scheme.primary, scheme.onSurface)
   Surface(
     modifier = modifier.defaultMinSize(minWidth = 48.dp, minHeight = 48.dp)
       // Keep the press indication inside the pill instead of the layout bounds.
       .clip(chipShape)
+      // Frosted body (accent glow when selected), then the shared lit edge on top of it.
+      .background(Brush.verticalGradient(fill), chipShape)
+      .glassRimLight(chipShape, enabled = true, ambient = if (selected) ({ scheme.primary }) else null)
       .glassPressFeedback(source, enabled, glass = true)
       .semantics { this.selected = selected; this.role = Role.Checkbox }
       .clickable(interactionSource = source, role = Role.Checkbox, enabled = enabled, onClick = onClick),
@@ -70,6 +76,18 @@ fun GlassChip(
       leadingIcon?.invoke()
       label()
       trailingIcon?.invoke()
+    }
+  }
+}
+
+/** Glass chip body: a translucent frosted fill, lifted toward the accent when selected. */
+internal object GlassChipMaterial {
+  fun fill(selected: Boolean, enabled: Boolean, accent: Color, onSurface: Color): List<Color> {
+    val dim = if (enabled) 1f else .5f
+    return if (selected) {
+      listOf(accent.copy(alpha = .34f * dim), accent.copy(alpha = .18f * dim))
+    } else {
+      listOf(onSurface.copy(alpha = .10f * dim), onSurface.copy(alpha = .05f * dim))
     }
   }
 }
