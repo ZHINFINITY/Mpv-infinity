@@ -23,6 +23,13 @@ REQUIRED_LIBS = {
     "libudfread.so",
     "libc++_shared.so",
 }
+REQUIRED_MPVFLOW_MARKERS = (
+    "mpvflow-target-fps",
+    "mpvflow-max-dimension",
+    "mpvflow-quality",
+    "mpvflow-compute-api",
+    "MPVFlow Synth:",
+)
 PRESERVE_FROM_MPV_INFINITY = {"libplayer.so"}
 KNOWN_SYSTEM_LIBS = {
     "libandroid.so", "libc.so", "libdl.so", "libEGL.so", "libGLESv1_CM.so",
@@ -126,6 +133,12 @@ def assert_lgpl_runtime(abi: str, entries: dict[str, bytes], temp: Path) -> None
             feature_block = text.split(feature_marker, 1)[1][:2048]
             if re.search(r"(?<![A-Za-z0-9_-])gpl(?![A-Za-z0-9_-])", feature_block, re.IGNORECASE):
                 raise SystemExit(f"MPV was built with its GPL feature enabled for {abi}")
+            missing_flow = [marker for marker in REQUIRED_MPVFLOW_MARKERS if marker not in text]
+            if missing_flow:
+                raise SystemExit(
+                    f"{abi}/libmpv.so is missing MPVFlow option/OSD markers required to apply interpolation at init: "
+                    + ", ".join(missing_flow)
+                )
 
 
 def parse_abis(value: str) -> tuple[str, ...]:

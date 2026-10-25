@@ -32,6 +32,13 @@ ANDROID_SYSTEM_LIBS = {
     "libvulkan.so",
     "libz.so",
 }
+REQUIRED_MPVFLOW_MARKERS = (
+    "mpvflow-target-fps",
+    "mpvflow-max-dimension",
+    "mpvflow-quality",
+    "mpvflow-compute-api",
+    "MPVFlow Synth:",
+)
 REQUIRED_LIBS = {
     "libavcodec.so",
     "libavdevice.so",
@@ -121,6 +128,7 @@ def verify_mpv(
     require_vulkan: bool,
     forbid_vulkan: bool,
     placebo_path: Path | None = None,
+    require_mpvflow: bool = False,
 ) -> None:
     text = run_tool(["strings", "-a", str(path)])
     if re.search(r"--enable-gpl\b", text):
@@ -145,6 +153,12 @@ def verify_mpv(
             verify_placebo_logger_export(abi, path, "libmpv.so")
     if forbid_vulkan and has_vulkan:
         raise SystemExit(f"No-Vulkan {abi}/libmpv.so still enables Vulkan")
+    if require_mpvflow:
+        missing = [marker for marker in REQUIRED_MPVFLOW_MARKERS if marker not in text]
+        if missing:
+            raise SystemExit(
+                f"{abi}/libmpv.so is missing MPVFlow interpolation option/OSD markers: {', '.join(missing)}"
+            )
 
 
 def verify_ffmpeg(abi: str, name: str, path: Path) -> None:
@@ -178,6 +192,11 @@ def main() -> None:
         "--only-selected-abis",
         action="store_true",
         help="Fail if the AAR also contains other JNI ABI directories.",
+    )
+    parser.add_argument(
+        "--require-mpvflow",
+        action="store_true",
+        help="Require MPVFlow vo-gpu-next option names and the stats.lua Synth row in libmpv.",
     )
     args = parser.parse_args()
     abis = parse_abis(args.abis)
@@ -229,6 +248,7 @@ def main() -> None:
                             args.require_vulkan,
                             args.forbid_vulkan,
                             paths.get("libplacebo.so"),
+                            args.require_mpvflow,
                         )
 
     print(f"Verified {args.aar}: FFmpeg is LGPL-only and MPV's GPL, Rubber Band, and DVD navigation features are disabled for {', '.join(abis)}.")
@@ -238,6 +258,8 @@ def main() -> None:
         print("The Standard profile retains MPV's Vulkan feature.")
     if args.forbid_vulkan:
         print("The No-Vulkan profile has MPV's Vulkan feature disabled.")
+    if args.require_mpvflow:
+        print("libmpv contains MPVFlow interpolation options and the stats.lua Synth row.")
 
 
 if __name__ == "__main__":

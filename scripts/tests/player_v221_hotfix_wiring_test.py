@@ -39,9 +39,12 @@ def main() -> None:
     require(mpv_view, "acceptedInterpolationConfiguration", "accepted interpolation config stays")
 
     require(enums, "HWPlus(\"HW+\", \"mediacodec\")", "HW+ value is still mediacodec")
-    require(enums, 'val token = value.substringBefore(\',\').trim()', "interpolation hwdec lists map from first token")
-    require(enums, "HW.value -> HW", "copy path stays HW")
-    require(enums, "HWPlus.value -> HWPlus", "direct mediacodec stays HW+")
+    require(
+        enums,
+        "fun getDecoderFromValue(value: String): Decoder = Decoder.entries.firstOrNull { it.value == value } ?: Auto",
+        "decoder mapping copies origin/Mpv∞-flow exact values, not first-token fallback lists",
+    )
+    forbid(enums, "substringBefore(',')", "fallback hwdec lists must not map to HW+")
 
     require(controls, "decoderPreferences.tryHWDecoding.set(it != Decoder.SW)", "decoder sheet persists hardware decoding")
     require(controls, 'PlaybackSession.setPropertyString("hwdec", it.value)', "decoder sheet still sets hwdec")
@@ -60,10 +63,12 @@ def main() -> None:
     require(policy, "fun shouldReapplyAfterVoReconfig(luaRestored: Boolean, alreadyReapplied: Boolean): Boolean =\n    false", "vo-reconfig policy does not toggle")
     require(policy, "toggleLua = previousPage in 1..5 || luaShown", "Off hides even when VISIBLE_PROPERTY is no")
     require(policy, 'PlaybackSession.command("show-text", "", "0")', "Off clears leftover oneshot OSD")
+    require(policy, "if (page in 1..5) Decision(toggleLua = true, displayPage = page, luaVisible = true) else null", "startup copies mpvRx toggle then display-page")
     require(build, "hotfix/v2.2.1-player-restore", "hotfix branch is arm64-only")
     require(build, "OVERLAY_MPVFLOW_ARM64", "signed CI overlay flag")
     require(build, "Overlay Flow-only runtime and rebuild Standard arm64-v8a release", "cached Flow overlay before sign")
     require(build, "-PmpvFlowMpvBuild=true", "Flow arm64 signed rebuild")
+    require(build, "--require-mpvflow", "overlaid libmpv must contain mpvflow options before sign")
     forbid(build, "softprops/action-gh-release", "CI/CD must not publish a GitHub Release")
     print("v2.2.1 hotfix surrounding wiring contracts: PASS")
 

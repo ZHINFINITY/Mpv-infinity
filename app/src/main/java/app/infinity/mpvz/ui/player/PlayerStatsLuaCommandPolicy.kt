@@ -5,10 +5,11 @@
 package app.infinity.mpvz.ui.player
 
 /**
- * stats.lua starts hidden on a new core. [display-page-N] is oneshot (~4s) and does not hide.
- * Interpolation restore therefore sends only [display-page-N] and must not extra-toggle.
- * Off copies mpvRx: hide when the previous chip was a lua page, and always clear leftover OSD
- * even if [VISIBLE_PROPERTY] was forced to no by vo-reconfig / core recreate.
+ * Copied from mpvRx MoreSheet and MPVView.applyStartupStatistics.
+ * [display-stats-toggle] shows or hides a persistent overlay. [display-page-N] then
+ * selects that page (page-switch while shown; oneshot if still hidden). Off hides with
+ * the same toggle when the previous chip was a lua page, or when the overlay is shown.
+ * Empty OSD clear covers leftover oneshot text after interpolation vo-reconfig.
  */
 internal object PlayerStatsLuaCommandPolicy {
   const val VISIBLE_PROPERTY = "user-data/mpvrx/stats-lua-visible"
@@ -63,10 +64,10 @@ internal object PlayerStatsLuaCommandPolicy {
   }
 
   fun forStartup(page: Int): Decision? =
-    if (page in 1..5) Decision(displayPage = page, luaVisible = true) else null
+    if (page in 1..5) Decision(toggleLua = true, displayPage = page, luaVisible = true) else null
 
   fun forVideoResume(page: Int, luaShown: Boolean): Decision? =
-    if (page in 1..5 && !luaShown) Decision(displayPage = page, luaVisible = true) else null
+    if (page in 1..5 && !luaShown) Decision(toggleLua = true, displayPage = page, luaVisible = true) else null
 
   fun forMusicHide(luaShown: Boolean, consoleOpen: Boolean): Decision =
     forChip(toPage = 0, previousPage = 0, luaShown = luaShown, consoleOpen = consoleOpen)
@@ -91,7 +92,7 @@ internal object PlayerStatsLuaCommandPolicy {
       PlaybackSession.command("script-binding", "console/enable")
     }
     if (decision.clearOsd) {
-      // oneshot [display-page-N] ignores display-stats-toggle (mixed mode). Empty OSD clears it.
+      // Extra hide for leftover oneshot OSD. Persistent overlays are already closed by toggle.
       PlaybackSession.command("show-text", "", "0")
     }
     decision.luaVisible?.let { visible ->

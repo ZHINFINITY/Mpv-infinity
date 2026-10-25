@@ -131,7 +131,7 @@ jobs:
           apk="$(find "$runtime_dir" -type f -path '*/debug/*' -name '*arm64-v8a-debug*.apk' -print -quit)"
           [[ -n "$apk" ]] || { echo "Cached MPVFlow arm64 runtime APK is missing" >&2; exit 1; }
           python3 scripts/package-mpv-runtime-aar.py --runtime-apk "$apk" --mpv-aar app/libs/mpvlib.aar --abis arm64-v8a
-          python3 scripts/verify-mpv-aar-lgpl.py app/libs/mpvlib.aar --abis arm64-v8a --require-vulkan
+          python3 scripts/verify-mpv-aar-lgpl.py app/libs/mpvlib.aar --abis arm64-v8a --require-vulkan --require-mpvflow
           ./gradlew assembleStandardRelease -PtargetAbi=arm64-v8a -PmpvFlowMpvBuild=true --stacktrace --no-daemon --max-workers=2
           flow_apk="app/build/outputs/apk/standard/release/app-standard-arm64-v8a-release-unsigned.apk"
           test -f "$flow_apk"

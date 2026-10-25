@@ -3,8 +3,7 @@
 
 stats.lua contract (upstream):
   display-stats-toggle  -> persistent overlay; second toggle hides
-  display-page-N        -> oneshot (~4s); does not hide an already-shown overlay
-  mixed persistent/oneshot -> no-op
+  display-page-N        -> oneshot (~4s) if hidden; page switch if persistent overlay is already shown
   show-text "" 0        -> clears leftover OSD (oneshot or osd_message overlay)
 """
 from __future__ import annotations
@@ -53,11 +52,11 @@ def for_chip(to_page: int, previous_page: int, lua_shown: bool, console_open: bo
 
 
 def for_startup(page: int) -> Optional[Decision]:
-    return Decision(display_page=page, lua_visible=True) if page in range(1, 6) else None
+    return Decision(toggle_lua=True, display_page=page, lua_visible=True) if page in range(1, 6) else None
 
 
 def for_video_resume(page: int, lua_shown: bool) -> Optional[Decision]:
-    return Decision(display_page=page, lua_visible=True) if page in range(1, 6) and not lua_shown else None
+    return Decision(toggle_lua=True, display_page=page, lua_visible=True) if page in range(1, 6) and not lua_shown else None
 
 
 def for_music_hide(lua_shown: bool, console_open: bool) -> Decision:
@@ -93,8 +92,6 @@ class StatsLua:
             if self.shown and self.mode == "toggle":
                 self.shown = False
                 self.mode = None
-            elif self.shown and self.mode == "oneshot":
-                return  # mixed mode no-op
             else:
                 self.shown = True
                 self.mode = "toggle"
@@ -103,11 +100,10 @@ class StatsLua:
             page = int(args[1].rsplit("-", 1)[1])
             if not self.bound:
                 return
-            if self.shown and self.mode == "toggle":
-                return  # mixed mode no-op
             self.shown = True
             self.page = page
-            self.mode = "oneshot"
+            if self.mode != "toggle":
+                self.mode = "oneshot"
 
     def bind(self) -> None:
         self.bound = True
@@ -242,8 +238,9 @@ def test_interpolation_waits_then_reapplies_once() -> None:
     player.on_first_time_pos(12.5)
     assert_true(player.lua.shown and player.lua.page == 1, "restore shows page 1 after lua is alive")
     commands = [cmd for cmd in player.lua.commands if cmd[0] == "script-binding"]
-    assert_true(all(cmd[1].startswith("stats/display-page-") for cmd in commands), "restore is display-page only")
-    assert_true(("script-binding", "stats/display-stats-toggle") not in player.lua.commands, "no toggle on restore")
+    assert_true(("script-binding", "stats/display-stats-toggle") in player.lua.commands, "startup copies mpvRx toggle")
+    assert_true(("script-binding", "stats/display-page-1") in player.lua.commands, "startup then selects page 1")
+    assert_true(player.lua.mode == "toggle", "toggle then display-page stays persistent")
 
     player.on_vo_reconfig()
     assert_true(player.lua.shown and player.lua.page == 1, "vo-reconfig must not toggle away page 1")
@@ -293,7 +290,7 @@ def test_music_and_minimize_use_gone_and_hide_lua_once() -> None:
     assert_true(not player.composites_stats(), "Now Playing must not show lua")
     player.hide_for_music_or_minimize()
     toggles = [cmd for cmd in player.lua.commands if cmd == ("script-binding", "stats/display-stats-toggle")]
-    assert_true(len(toggles) == 1, "second music hide must not invert")
+    assert_true(len(toggles) == 2, f"startup plus first music hide toggle once each; second hide must not invert, got {toggles}")
 
     player.is_music = False
     player.restore_video_surface()
@@ -301,8 +298,8 @@ def test_music_and_minimize_use_gone_and_hide_lua_once() -> None:
     assert_true(player.lua.shown and player.lua.page == 1, "video stats return via display-page")
     resume = for_video_resume(1, lua_shown=False)
     assert_true(
-        resume is not None and not resume.toggle_lua and resume.display_page == 1,
-        "video resume is display-page only",
+        resume is not None and resume.toggle_lua and resume.display_page == 1,
+        "video resume copies mpvRx toggle then display-page",
     )
     assert_true(("script-binding", "stats/display-page-1") in player.lua.commands, "video resume sent display-page-1")
 

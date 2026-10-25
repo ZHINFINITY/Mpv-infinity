@@ -37,7 +37,7 @@ class PlayerStatsLuaCommandPolicyTest {
   @Test
   fun offStillClearsOneshotAfterInterpolationRestore() {
     val restored = PlayerStatsLuaCommandPolicy.forStartup(1)!!
-    assertFalse(restored.toggleLua)
+    assertTrue(restored.toggleLua)
     assertEquals(1, restored.displayPage)
     assertEquals(true, restored.luaVisible)
     val offAfterVanishedFlag =
@@ -100,9 +100,9 @@ class PlayerStatsLuaCommandPolicyTest {
   }
 
   @Test
-  fun videoResumeRestoresWithDisplayPageOnly() {
+  fun videoResumeCopiesMpvRxToggleThenDisplayPage() {
     val resume = PlayerStatsLuaCommandPolicy.forVideoResume(1, luaShown = false)!!
-    assertFalse(resume.toggleLua)
+    assertTrue(resume.toggleLua)
     assertEquals(1, resume.displayPage)
     assertEquals(true, resume.luaVisible)
     assertNull(PlayerStatsLuaCommandPolicy.forVideoResume(1, luaShown = true))

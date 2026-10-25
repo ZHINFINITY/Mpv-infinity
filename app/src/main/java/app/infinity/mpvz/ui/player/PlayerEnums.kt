@@ -75,14 +75,7 @@ enum class Decoder(
   ;
 
   companion object {
-    fun getDecoderFromValue(value: String): Decoder {
-      val token = value.substringBefore(',').trim()
-      return when (token) {
-        HW.value -> HW
-        HWPlus.value -> HWPlus
-        else -> Decoder.entries.firstOrNull { it.value == token } ?: Auto
-      }
-    }
+    fun getDecoderFromValue(value: String): Decoder = Decoder.entries.firstOrNull { it.value == value } ?: Auto
   }
 }
 

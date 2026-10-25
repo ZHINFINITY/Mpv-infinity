@@ -48,14 +48,13 @@ def main() -> None:
     require(policy, "fun forStartup(page: Int): Decision?", "interpolation restore decision")
     require(
         policy,
-        "if (page in 1..5) Decision(displayPage = page, luaVisible = true) else null",
-        "interpolation restore is display-page only",
+        "if (page in 1..5) Decision(toggleLua = true, displayPage = page, luaVisible = true) else null",
+        "interpolation restore copies mpvRx toggle then display-page",
     )
     require(policy, "fun forVideoResume(page: Int, luaShown: Boolean): Decision?", "video resume display-page")
     require(policy, "fun forMusicHide(luaShown: Boolean, consoleOpen: Boolean): Decision", "music Off hide path")
     require(policy, "fun shouldWaitForPlaybackBeforeRestore", "wait for file-loaded/time-pos")
     require(policy, "fun shouldReapplyAfterVoReconfig", "vo-reconfig reapplies once")
-    forbid(policy, "Decision(toggleLua = true, displayPage = page, luaVisible = true)", "startup must not toggle")
     require(policy, 'VISIBLE_PROPERTY = "user-data/mpvrx/stats-lua-visible"', "lua visibility property")
     require(policy, "fun onCoreRecreated()", "core recreate resets startup flag")
 
