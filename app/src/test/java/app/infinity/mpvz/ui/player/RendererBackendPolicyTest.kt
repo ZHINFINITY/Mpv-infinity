@@ -31,9 +31,9 @@ class RendererBackendPolicyTest {
 
   @Test
   fun interpolationHwdecListsMapToHardwarePlusAndCopy() {
-    assertEquals(Decoder.HWPlus, Decoder.getDecoderFromValue("mediacodec,mediacodec-copy,no"))
+    assertEquals(Decoder.Auto, Decoder.getDecoderFromValue("mediacodec,mediacodec-copy,no"))
     assertEquals(Decoder.HWPlus, Decoder.getDecoderFromValue("mediacodec"))
-    assertEquals(Decoder.HW, Decoder.getDecoderFromValue("mediacodec-copy,no"))
+    assertEquals(Decoder.Auto, Decoder.getDecoderFromValue("mediacodec-copy,no"))
     assertEquals(Decoder.HW, Decoder.getDecoderFromValue("mediacodec-copy"))
     assertEquals(Decoder.Auto, Decoder.getDecoderFromValue("auto"))
   }

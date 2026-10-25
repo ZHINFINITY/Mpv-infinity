@@ -11,6 +11,7 @@ POLICY = ROOT / "app/src/main/java/app/infinity/mpvz/ui/player/PlayerStatsLuaCom
 SHORTCUT = ROOT / "app/src/main/java/app/infinity/mpvz/ui/player/controls/components/FrameInterpolationControls.kt"
 MPV_VIEW = ROOT / "app/src/main/java/app/infinity/mpvz/ui/player/MPVView.kt"
 BUILD = ROOT / ".github/workflows/build.yml"
+POLICY_TEST = ROOT / "app/src/test/java/app/infinity/mpvz/ui/player/RendererBackendPolicyTest.kt"
 
 
 def require(text: str, needle: str, label: str) -> None:
@@ -32,6 +33,7 @@ def main() -> None:
     shortcut = SHORTCUT.read_text(encoding="utf-8")
     mpv_view = MPV_VIEW.read_text(encoding="utf-8")
     build = BUILD.read_text(encoding="utf-8")
+    policy_test = POLICY_TEST.read_text(encoding="utf-8")
 
     require(shortcut, "preferences.mpvFlowFrameInterpolation.set(!preferences.mpvFlowFrameInterpolation.get())", "shortcut still writes the interpolation pref")
     require(shortcut, "activity.applyInterpolationPreferencesFromControls()", "shortcut still asks activity to apply")
@@ -45,6 +47,18 @@ def main() -> None:
         "decoder mapping copies origin/Mpv∞-flow exact values, not first-token fallback lists",
     )
     forbid(enums, "substringBefore(',')", "fallback hwdec lists must not map to HW+")
+    require(
+        policy_test,
+        'assertEquals(Decoder.Auto, Decoder.getDecoderFromValue("mediacodec,mediacodec-copy,no"))',
+        "interpolation hwdec lists stay Auto under exact-match mapping",
+    )
+    require(
+        policy_test,
+        'assertEquals(Decoder.Auto, Decoder.getDecoderFromValue("mediacodec-copy,no"))',
+        "copy-fallback hwdec lists stay Auto under exact-match mapping",
+    )
+    require(policy_test, 'assertEquals(Decoder.HWPlus, Decoder.getDecoderFromValue("mediacodec"))', "direct mediacodec still maps to HW+")
+    require(policy_test, 'assertEquals(Decoder.HW, Decoder.getDecoderFromValue("mediacodec-copy"))', "copy mediacodec still maps to HW")
 
     require(controls, "decoderPreferences.tryHWDecoding.set(it != Decoder.SW)", "decoder sheet persists hardware decoding")
     require(controls, 'PlaybackSession.setPropertyString("hwdec", it.value)', "decoder sheet still sets hwdec")
