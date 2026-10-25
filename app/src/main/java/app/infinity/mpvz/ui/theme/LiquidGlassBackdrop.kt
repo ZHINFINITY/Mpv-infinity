@@ -398,6 +398,22 @@ fun Modifier.liquidGlassPane(
         ))
       }
       onDrawBehind {
+        if (drawRim && optics.shadowAlpha > 0f) {
+          clipPath(outline, ClipOp.Difference) {
+            // Three bounded feather bands approximate a soft, lower-right
+            // contact shadow without a bitmap blur or another native elevation.
+            for (band in 3 downTo 1) {
+              val spread = optics.shadowSpreadDp.dp.toPx() * band / 3f
+              drawRoundRect(
+                Color.Black.copy(alpha = optics.shadowAlpha * (4 - band) / 6f),
+                topLeft = Offset(0.6.dp.toPx(), 1.2.dp.toPx()),
+                size = size,
+                cornerRadius = CornerRadius(geometry.safeRadius),
+                style = Stroke(spread * 2f),
+              )
+            }
+          }
+        }
       }
     }
     // Build 1910: clip the sampled material to the explicit rounded path before native drawing.
