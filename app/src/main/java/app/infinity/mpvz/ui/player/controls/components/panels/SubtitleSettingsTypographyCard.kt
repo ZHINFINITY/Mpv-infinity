@@ -220,7 +220,7 @@ fun SubtitleSettingsTypographyCard(
             Icon(justification.icon, null)
           }
         }
-        Spacer(Modifier.weight(1f))
+        // Build 1910: this row is horizontally scrollable so Reset remains reachable at 320dp and in long locales.
         TextButton(
           enabled = !ownsAny(typographyOptions),
           onClick = { resetTypography(preferences) },

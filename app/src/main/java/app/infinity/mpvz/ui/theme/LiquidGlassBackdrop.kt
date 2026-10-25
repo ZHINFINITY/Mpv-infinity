@@ -369,6 +369,7 @@ fun Modifier.liquidGlassPane(
         }
       }
     }
+    // Build 1910: clip the sampled material to the explicit rounded path before native drawing.
     .clip(shape)
     .drawWithCache {
       val radius = cornerRadius.toPx().coerceAtMost(minOf(size.width, size.height) / 2f)

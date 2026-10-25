@@ -37,6 +37,9 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+
+// Build 1910: retain a named inset token for shared settings/control sizing contracts.
+private val horizontalInset = 16.dp
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalView
@@ -137,7 +140,8 @@ fun GlassSwitch(
         ) { thumbContent?.invoke() }
       }
     },
-    modifier = modifier.then(if (glass) Modifier.glassTrackOptics(opacity, highlight, 16.dp, 32.dp, checked) else Modifier),
+    // Material keeps its minimum interaction box while the custom capsule is drawn inside it.
+    modifier = modifier.then(if (glass) Modifier.glassTrackOptics(opacity, highlight, 16.dp, height = 32.dp, checked = checked) else Modifier),
   )
 }
 
@@ -181,10 +185,10 @@ fun GlassSlider(
       value = value, onValueChange = report, modifier = modifier, enabled = enabled,
       onValueChangeFinished = { lastBucket = null; onValueChangeFinished?.invoke() },
       valueRange = valueRange, steps = steps, interactionSource = interactionSource, colors = glassColors,
-      track = { state ->
+      track = { sliderState ->
         SliderDefaults.Track(
-          sliderState = state, enabled = enabled, colors = glassColors,
-          modifier = Modifier.height(4.dp).glassTrackOptics(opacity, highlight, 2.dp, 4.dp)
+          sliderState = sliderState, enabled = enabled, colors = glassColors,
+          modifier = Modifier.height(4.dp).glassTrackOptics(opacity, highlight, 2.dp, height = 4.dp)
             .then(if (steps > 0) Modifier.glassTickDots(steps, accent) else Modifier),
         )
       },

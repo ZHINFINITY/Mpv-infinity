@@ -155,6 +155,7 @@ class LiquidGlassContracts(unittest.TestCase):
         self.assertIn("glassTrackOptics", controls)
         self.assertIn("thumbContent", controls)
         self.assertNotIn("modifier = modifier.liquidGlassPane", controls)
+        # Build 1910: the native minimum box is documented at the shared capsule modifier.
         self.assertIn("Material keeps its minimum interaction box", controls)
 
     def test_audio_transport_has_no_enclosing_optical_surface(self):
