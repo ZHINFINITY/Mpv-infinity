@@ -47,6 +47,13 @@ def main() -> None:
     require(native, "internal suspend fun restartCurrentItemForInterpolation", "Native controlled reload API")
     require(native, "player.setMediaItem(item, state.positionMs)", "same MediaItem and exact timestamp")
     require(native, "player.playWhenReady = state.playWhenReady", "prior Native play state restored")
+    native_apply = native.split("suspend fun applyInterpolationRuntime", 1)[1].split("\n  /**", 1)[0]
+    require(native_apply, "shouldReleaseFlowOutputSurfaceBeforeNativeRendererReselect(", "Flow-to-Native surface-release policy")
+    release_index = native_apply.find("flowSink.clearOutputSurfaceInfo()")
+    reselect_index = native_apply.find("nativeTrackSelector.invalidateRendererEligibility()")
+    if release_index < 0 or reselect_index < 0 or release_index >= reselect_index:
+        raise SystemExit("Flow EGL output must be fenced before Native renderer re-selection")
+    require(sink, "releaseFence.await(GL_INIT_TIMEOUT_MS, TimeUnit.MILLISECONDS)", "fenced Flow EGL output release")
     callback = activity.split("fun applyInterpolationPreferencesFromControls()", 1)[1].split("private fun requestMpvInterpolationRestart", 1)[0]
     require(callback, "lifecycleScope.launch", "nonblocking activity launch")
     require(callback, "backend.restartCurrentItemForInterpolation(", "Native shortcut reload call")

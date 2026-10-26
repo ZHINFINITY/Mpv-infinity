@@ -42,6 +42,21 @@ class NativeInterpolationRuntimePolicyTest {
     assertFalse(canApply(true, false, false, true, true, preflightAvailable = false, allowRetryAfterResourceFailure = true))
   }
 
+  @Test fun flowEglSurfaceIsReleasedOnlyForFlowToNativePassthroughTransition() {
+    fun shouldRelease(previous: Boolean, current: Boolean, nativePassthrough: Boolean) =
+      NativeInterpolationRuntimePolicy.shouldReleaseFlowOutputSurfaceBeforeNativeRendererReselect(
+        previousInterpolationEnabled = previous,
+        interpolationEnabled = current,
+        requiresNativePassthrough = nativePassthrough,
+      )
+
+    assertTrue(shouldRelease(previous = true, current = false, nativePassthrough = true))
+    assertFalse(shouldRelease(previous = true, current = false, nativePassthrough = false))
+    assertFalse(shouldRelease(previous = false, current = false, nativePassthrough = true))
+    assertFalse(shouldRelease(previous = true, current = true, nativePassthrough = true))
+    assertFalse(shouldRelease(previous = false, current = true, nativePassthrough = true))
+  }
+
   @Test fun actualSinkConstructionAndAcknowledgementUsePersistedStateAndEligibility() {
     val root = generateSequence(File(requireNotNull(System.getProperty("user.dir")))) { it.parentFile }
       .first { File(it, "app/src/main/java/app/infinity/mpvz").isDirectory }
@@ -79,6 +94,14 @@ class NativeInterpolationRuntimePolicyTest {
     assertTrue(engine.contains("invalidate(null)"))
     assertTrue(engine.contains("nativeTrackSelector.invalidateRendererEligibility()"))
     assertTrue(engine.contains("Media3FlowFormatPolicy.shouldReevaluateNativeRenderer("))
+    assertTrue(engine.contains("NativeInterpolationRuntimePolicy.shouldReleaseFlowOutputSurfaceBeforeNativeRendererReselect("))
+    val apply = engine.substringAfter("suspend fun applyInterpolationRuntime").substringBefore("\n  /**")
+    val releaseIndex = apply.indexOf("flowSink.clearOutputSurfaceInfo()")
+    val reselectIndex = apply.indexOf("nativeTrackSelector.invalidateRendererEligibility()")
+    assertTrue(releaseIndex >= 0 && reselectIndex >= 0 && releaseIndex < reselectIndex)
+    val clearSurface = sink.substringAfter("override fun clearOutputSurfaceInfo()").substringBefore("\n  override fun")
+    assertTrue(clearSurface.contains("destroyWindowSurface { releaseFence.countDown() }"))
+    assertTrue(clearSurface.contains("releaseFence.await(GL_INIT_TIMEOUT_MS, TimeUnit.MILLISECONDS)"))
   }
 
   @Test fun startupUsesPersistedInterpolationStateBeforeRendererSelection() {

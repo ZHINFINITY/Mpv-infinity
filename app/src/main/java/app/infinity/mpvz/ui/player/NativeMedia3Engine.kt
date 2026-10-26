@@ -761,6 +761,17 @@ class NativeMedia3Engine(
         requiresNativeHdrPassthrough = requiresNativePassthrough,
       )
     ) {
+      if (
+        NativeInterpolationRuntimePolicy.shouldReleaseFlowOutputSurfaceBeforeNativeRendererReselect(
+          previousInterpolationEnabled = wasEnabled,
+          interpolationEnabled = isEnabled,
+          requiresNativePassthrough = requiresNativePassthrough,
+        )
+      ) {
+        // Flow's EGL window surface shares PlayerView's BufferQueue; fence its release before the
+        // stock MediaCodec renderer reconnects that surface.
+        flowSink.clearOutputSurfaceInfo()
+      }
       nativeTrackSelector.invalidateRendererEligibility()
       Log.i(logTag, "Native Flow renderer eligibility changed; reselecting HDR output path enabled=$isEnabled")
     }

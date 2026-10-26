@@ -3948,8 +3948,6 @@ class Media3FlowVideoSink(
         isEquivalentToAssumedSdrDefault = ColorInfo.isEquivalentToAssumedSdrDefault(colorInfo),
         decoderSdrRequestAvailable = sdkInt >= 31,
         interpolationEnabled = interpolationEnabled,
-        width = format.width,
-        height = format.height,
       )
     }
 
@@ -3960,13 +3958,10 @@ class Media3FlowVideoSink(
         mimeType = format.sampleMimeType.orEmpty().lowercase(),
         codecs = format.codecs.orEmpty().lowercase(),
         colorSpace = colorInfo?.colorSpace ?: Format.NO_VALUE,
-        colorRange = colorInfo?.colorRange ?: Format.NO_VALUE,
         colorTransfer = colorInfo?.colorTransfer ?: Format.NO_VALUE,
         lumaBitdepth = colorInfo?.lumaBitdepth ?: Format.NO_VALUE,
         chromaBitdepth = colorInfo?.chromaBitdepth ?: Format.NO_VALUE,
         hasHdrStaticInfo = colorInfo?.hdrStaticInfo?.isNotEmpty() == true,
-        width = format.width,
-        height = format.height,
       )
     }
 
