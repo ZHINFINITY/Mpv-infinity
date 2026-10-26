@@ -37,7 +37,7 @@ def runtime_verifier_command() -> None:
     aar = Path("runtime.aar")
     verifier = SCRIPT.with_name("verify-media3-dca-runtime.py")
     with patch.object(MODULE.subprocess, "run") as run:
-        MODULE.verify_media3_runtime(aar, ("arm64-v8a",))
+        MODULE.verify_media3_runtime(aar, ("arm64-v8a", "x86_64"))
     assert run.call_args.args[0] == [
         sys.executable,
         str(verifier),
@@ -46,6 +46,9 @@ def runtime_verifier_command() -> None:
         "arm64-v8a",
     ]
     assert run.call_args.kwargs == {"check": True}
+    with patch.object(MODULE.subprocess, "run") as run:
+        MODULE.verify_media3_runtime(aar, ("x86_64",))
+    run.assert_not_called()
 
 
 def overlay_case(*, omit_udfread: bool = False) -> None:

@@ -140,8 +140,11 @@ def parse_abis(value: str) -> tuple[str, ...]:
 
 
 def verify_media3_runtime(aar_path: Path, abis: tuple[str, ...]) -> None:
+    if "arm64-v8a" not in abis:
+        print("Skipping Media3 DCA decoder inventory: verifier supports arm64-v8a only.")
+        return
     verifier = Path(__file__).with_name("verify-media3-dca-runtime.py")
-    command = [sys.executable, str(verifier), str(aar_path), "--abis", *abis]
+    command = [sys.executable, str(verifier), str(aar_path), "--abis", "arm64-v8a"]
     subprocess.run(command, check=True)
 
 
