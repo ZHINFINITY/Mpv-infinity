@@ -7,6 +7,8 @@
 
 package app.infinity.mpvz.ui.browser.fab
 
+import app.infinity.mpvz.ui.browser.NavigationBarState
+
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
@@ -111,7 +113,7 @@ fun QuickPlayFab(
   )
 
   AnimatedVisibility(
-    visible = visible && hasRecentlyPlayed && showQuickPlayFab,
+    visible = visible && hasRecentlyPlayed && showQuickPlayFab && !NavigationBarState.isMiniPlayerVisible,
     enter = scaleIn(
       animationSpec = spring(
         dampingRatio = Spring.DampingRatioMediumBouncy,
