@@ -1093,11 +1093,20 @@ class MPVView(
     width: Int,
     height: Int,
   ) {
+    if (BuildConfig.DEBUG) {
+      Log.d(
+        TAG,
+        "MPV_ASPECT_DIAGNOSTIC component=surface event=surface_changed format=$format width=$width height=$height",
+      )
+    }
     PlaybackSession.resizeSurface(width, height, owner = this)
     updateSurfaceFrameRateHint()
   }
 
   override fun surfaceCreated(holder: android.view.SurfaceHolder) {
+    if (BuildConfig.DEBUG) {
+      Log.d(TAG, "MPV_ASPECT_DIAGNOSTIC component=surface event=surface_created valid=${holder.surface.isValid}")
+    }
     isSurfaceReady = PlaybackSession.bindSurface(holder.surface, width, height, this)
     updateSurfaceFrameRateHint()
     updateMpvFlowDiagnostics()
@@ -1109,6 +1118,9 @@ class MPVView(
   }
 
   override fun surfaceDestroyed(holder: android.view.SurfaceHolder) {
+    if (BuildConfig.DEBUG) {
+      Log.d(TAG, "MPV_ASPECT_DIAGNOSTIC component=surface event=surface_destroyed")
+    }
     stopMpvFlowDiagnostics()
     isSurfaceReady = false
     PlaybackSession.unbindSurface(this)
