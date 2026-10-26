@@ -47,6 +47,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import app.infinity.mpvz.R
 import app.infinity.mpvz.ui.icons.Icon
 import app.infinity.mpvz.ui.icons.Icons
 import app.infinity.mpvz.ui.player.MediaPlaybackService
@@ -69,12 +70,15 @@ fun AudioMiniPlayer(modifier: Modifier = Modifier) {
   val sessionState by PlaybackSession.state.collectAsStateWithLifecycle()
   val paused by PlaybackSession.propBoolean["pause"].collectAsStateWithLifecycle()
   val rawMediaTitle by PlaybackSession.propString["media-title"].collectAsStateWithLifecycle()
+  val rawArtist by PlaybackSession.propString["metadata/by-key/Artist"].collectAsStateWithLifecycle()
+  val rawAlbum by PlaybackSession.propString["metadata/by-key/Album"].collectAsStateWithLifecycle()
   val duration by PlaybackSession.propInt["duration"].collectAsStateWithLifecycle()
   val position by PlaybackSession.propInt["time-pos"].collectAsStateWithLifecycle()
 
   if (!isServiceRunning || sessionState.currentItem == null) return
 
   val isPlaying = paused == false
+  val artist = rawArtist?.takeIf { it.isNotBlank() } ?: rawAlbum?.takeIf { it.isNotBlank() } ?: context.getString(R.string.mini_player_unknown_artist)
   val title =
     sessionState.currentItem?.title?.takeIf { it.isNotBlank() }
       ?: rawMediaTitle?.takeIf { it.isNotBlank() }
@@ -168,7 +172,7 @@ fun AudioMiniPlayer(modifier: Modifier = Modifier) {
           color = MaterialTheme.colorScheme.onSurface,
           maxLines = 1,
           overflow = TextOverflow.Ellipsis,
-          modifier = Modifier.basicMarquee(),
+          modifier = Modifier.basicMarquee(initialDelayMillis = 650),
         )
         Row(
           verticalAlignment = Alignment.CenterVertically,
@@ -181,7 +185,7 @@ fun AudioMiniPlayer(modifier: Modifier = Modifier) {
             barCount = 3,
           )
           Text(
-            text = if (isPlaying) "Playing" else "Paused",
+            text = artist,
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             maxLines = 1,
@@ -200,7 +204,7 @@ fun AudioMiniPlayer(modifier: Modifier = Modifier) {
             ),
           )
         },
-        modifier = Modifier.size(36.dp),
+        modifier = Modifier.size(48.dp).clip(CircleShape),
       ) {
         AnimatedContent(
           targetState = isPlaying,
@@ -225,7 +229,7 @@ fun AudioMiniPlayer(modifier: Modifier = Modifier) {
             ),
           )
         },
-        modifier = Modifier.size(36.dp),
+        modifier = Modifier.size(48.dp).clip(CircleShape),
       ) {
         Icon(
           imageVector = Icons.RoundedFilled.SkipNext,
@@ -244,7 +248,7 @@ fun AudioMiniPlayer(modifier: Modifier = Modifier) {
             ),
           )
         },
-        modifier = Modifier.size(32.dp),
+        modifier = Modifier.size(48.dp).clip(CircleShape),
       ) {
         Icon(
           imageVector = Icons.RoundedFilled.Close,

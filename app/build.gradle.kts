@@ -279,6 +279,9 @@ dependencies {
   implementation(libs.composables.material.symbols.rounded.filled.android)
   implementation(libs.composables.material.symbols.rounded.filled.cmp)
   implementation(libs.androidx.compose.animation.graphics)
+  // Liquid Glass lens engine (Kyant0/AndroidLiquidGlass, Apache-2.0). Used only behind
+  // KyantGlassSupport (API 33+, GlassDeviceSupport verdict, glass setting on).
+  implementation(libs.kyant.backdrop)
   implementation(libs.mediasession)
   implementation(libs.androidx.documentfile)
   implementation(libs.androidx.palette)

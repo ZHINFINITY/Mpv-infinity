@@ -312,11 +312,13 @@ fun MusicLibraryContent(
   val visibleTabs by musicViewModel.visibleTabs.collectAsState()
 
   val appearancePreferences = koinInject<AppearancePreferences>()
-  val showQuickPlayFab by appearancePreferences.showQuickPlayFab.collectAsState()
+  val showQuickPlayFabPreference by appearancePreferences.showQuickPlayFab.collectAsState()
+  val showQuickPlayFab = app.infinity.mpvz.ui.browser.fab.quickPlayFabAllowed(showQuickPlayFabPreference)
   val quickPlayFabDirect by appearancePreferences.quickPlayFabDirect.collectAsState()
   val liquidGlass by appearancePreferences.liquidGlassSurfaces.collectAsState()
   val isFabVisible = remember { mutableStateOf(true) }
   val isFabExpanded = remember { mutableStateOf(false) }
+  app.infinity.mpvz.ui.browser.fab.QuickPlayMenuVisibilityEffect(showQuickPlayFab) { isFabExpanded.value = false }
   val navigationBarHeight = LocalNavigationBarHeight.current
 
   val initialPageIndex = remember(selectedTab, visibleTabs) {

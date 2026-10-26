@@ -7,6 +7,8 @@
 
 package app.infinity.mpvz.ui.browser.fab
 
+import app.infinity.mpvz.ui.browser.NavigationBarState
+
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
@@ -51,6 +53,18 @@ import app.infinity.mpvz.preferences.AppearancePreferences
 import app.infinity.mpvz.preferences.preference.collectAsState
 import org.koin.compose.koinInject
 
+/** The mini-player owns the lower browser lane while it is visible. */
+fun quickPlayFabAllowed(showPreferenceEnabled: Boolean): Boolean =
+  showPreferenceEnabled && !NavigationBarState.isMiniPlayerVisible
+
+/** Clear menu state when Quick Play is hidden so an invisible menu cannot keep intercepting Back. */
+@Composable
+fun QuickPlayMenuVisibilityEffect(available: Boolean, onClose: () -> Unit) {
+  LaunchedEffect(available) {
+    if (!available) onClose()
+  }
+}
+
 /** Shared surface used by both the standalone and menu Quick Play FABs. */
 @Composable
 fun Modifier.quickPlayFabSurface(): Modifier =
@@ -94,7 +108,7 @@ fun QuickPlayFab(
   val context = LocalContext.current
   val coroutineScope = rememberCoroutineScope()
   val appearancePreferences = koinInject<AppearancePreferences>()
-  val showQuickPlayFab by appearancePreferences.showQuickPlayFab.collectAsState()
+  val showQuickPlayFabPreference by appearancePreferences.showQuickPlayFab.collectAsState()
   val glass by appearancePreferences.liquidGlassSurfaces.collectAsState()
   val lastPlayedEntity by RecentlyPlayedOps.observeLastPlayedEntity().collectAsState(initial = null)
   val hasRecentlyPlayed = lastPlayedEntity != null
@@ -111,7 +125,7 @@ fun QuickPlayFab(
   )
 
   AnimatedVisibility(
-    visible = visible && hasRecentlyPlayed && showQuickPlayFab,
+    visible = visible && hasRecentlyPlayed && quickPlayFabAllowed(showQuickPlayFabPreference),
     enter = scaleIn(
       animationSpec = spring(
         dampingRatio = Spring.DampingRatioMediumBouncy,

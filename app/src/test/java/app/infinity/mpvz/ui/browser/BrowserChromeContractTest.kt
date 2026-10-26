@@ -55,7 +55,9 @@ class BrowserChromeContractTest {
     assertFalse(topBar.contains("settingsGlassSurface(cornerRadius = 28.dp)"))
     assertFalse(topBar.contains(").clip(RoundedCornerShape(28.dp))"))
     assertTrue(topBar.contains("Modifier.settingsGlassSurface(cornerRadius = 0.dp)\n        } else {\n          Modifier.clip(RoundedCornerShape(28.dp))"))
-    assertTrue(topBar.contains("InfinityLoadingIndicator(modifier = titleModifier.semantics { contentDescription = \"Mpv∞\" }, size = 40.dp)"))
+    // The home logo keeps its title modifier, semantics and 40 dp size; it is now also the only
+    // infinity mark that follows "Animate infinity logo" (pull-to-refresh always loops).
+    assertTrue(topBar.contains("InfinityLoadingIndicator(\n          modifier = titleModifier.semantics { contentDescription = \"Mpv∞\" },\n          size = 40.dp,\n          animate = animateInfinityLogo,\n        )"))
     assertTrue(folder.contains("title = if (audiobookMode) \"Audiobooks\" else \"∞\""))
     assertTrue(filesystem.contains("\"∞\""))
     assertFalse(folder.contains("title = if (audiobookMode) \"Audiobooks\" else stringResource(app.infinity.mpvz.R.string.app_name)"))

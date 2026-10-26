@@ -50,6 +50,26 @@ internal fun catalogItemIdentityKey(item: MediaItem): String =
     item.providerId?.let { "provider:$it" } ?: "id:${item.id}",
   ).joinToString(separator = "") { part -> "${part.length}:$part" }
 
+/** One original catalog entry paired with a unique, saveable key for a rail occurrence. */
+internal data class CatalogRailItem(
+  val item: MediaItem,
+  val lazyListKey: String,
+)
+
+/** Preserve every rail entry while making repeated catalog identities Compose-safe. */
+internal fun catalogRailItemsWithUniqueKeys(items: List<MediaItem>): List<CatalogRailItem> {
+  val occurrences = mutableMapOf<String, Int>()
+  return items.map { item ->
+    val identity = catalogItemIdentityKey(item)
+    val occurrence = occurrences[identity] ?: 0
+    occurrences[identity] = occurrence + 1
+    CatalogRailItem(
+      item = item,
+      lazyListKey = if (occurrence == 0) identity else "duplicate:${identity.length}:$identity:$occurrence",
+    )
+  }
+}
+
 /** TV catalog entries without episode rows can still be resolved by their provider identity. */
 internal fun canResolveCatalogItemWithoutEpisodes(item: MediaItem): Boolean =
   item.type == MediaType.TV &&

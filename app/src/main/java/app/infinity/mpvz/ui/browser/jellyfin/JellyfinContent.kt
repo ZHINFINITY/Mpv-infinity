@@ -136,7 +136,8 @@ fun JellyfinContent(
   val navidromeRepository = koinInject<NavidromeRepository>()
   val navidromeServers by navidromeRepository.allServers.collectAsState(initial = emptyList())
   val layoutMode by browserPreferences.jellyfinLayoutMode.collectAsState()
-  val showQuickPlayFab by appearancePreferences.showQuickPlayFab.collectAsState()
+  val showQuickPlayFabPreference by appearancePreferences.showQuickPlayFab.collectAsState()
+  val showQuickPlayFab = app.infinity.mpvz.ui.browser.fab.quickPlayFabAllowed(showQuickPlayFabPreference)
   val quickPlayFabDirect by appearancePreferences.quickPlayFabDirect.collectAsState()
 
   val allDownloads by viewModel.downloads.collectAsState()
@@ -156,6 +157,7 @@ fun JellyfinContent(
   var isSeerrRequestsOpen by rememberSaveable { mutableStateOf(false) }
   var isSortDialogOpen by rememberSaveable { mutableStateOf(false) }
   var isFabExpanded by remember { mutableStateOf(false) }
+  app.infinity.mpvz.ui.browser.fab.QuickPlayMenuVisibilityEffect(showQuickPlayFab) { isFabExpanded = false }
   val isFabVisible = remember { mutableStateOf(true) }
   val searchFocusRequester = remember { FocusRequester() }
   val scope = rememberCoroutineScope()

@@ -57,6 +57,12 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import com.kyant.backdrop.drawBackdrop
+import com.kyant.backdrop.effects.blur
+import com.kyant.backdrop.effects.lens
+import app.infinity.mpvz.ui.theme.lens.LocalLensGlassEnabled
+import app.infinity.mpvz.ui.theme.lens.LocalPageBackdrop
+import app.infinity.mpvz.ui.theme.lens.LensGlassPolicy
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
@@ -125,11 +131,14 @@ fun LiquidGlassBackdropHost(
       onDispose { }
     }
   }
-  val eligible = GlassSamplingPolicy.canSample(enabled, true, audioOnly, hdr, lowRam, thermal)
+  val eligible = GlassSamplingPolicy.canSample(enabled && GlassDeviceSupport.allowsGlass(context), true, audioOnly, hdr, lowRam, thermal)
   val allowed = eligible && visible
+  GlassStartupWatch(active = allowed)
   val tuning = LocalGlassCustomization.current
   val frostPasses = GlassCustomizationPolicy.frostPasses(tuning.frost)
   val frame = remember { mutableStateOf<LiquidGlassFrame?>(null) }
+  val captureBuffers = remember { GlassCaptureBuffers() }
+  DisposableEffect(Unit) { onDispose { captureBuffers.recycle() } }
   val ready by rememberUpdatedState(isReady)
   val playing by rememberUpdatedState(isPlaying)
   val aspect by rememberUpdatedState(sampleAspect)
@@ -200,8 +209,11 @@ fun LiquidGlassBackdropHost(
           continue
         }
         // Only the tiny UI copy is cropped/frosted. The actual video surface remains untouched.
-        val sampled = copyGlassFrame(source, crop, dimensions.first, dimensions.second)
-          ?.let { frostGlassFrame(it, tuning.frost) }
+        val sampled = captureBuffers.acquire(dimensions.first, dimensions.second)?.let { target ->
+          copyGlassFrame(source, crop, target)?.let {
+            frostGlassFrame(target, tuning.frost, captureBuffers.pixels, captureBuffers.lumaBins)
+          }
+        }
         val bitmap = sampled?.first
         if (sampled == null || bitmap == null) {
           transientFailure()
@@ -215,6 +227,7 @@ fun LiquidGlassBackdropHost(
             (location[0] + crop.left).toFloat(), (location[1] + crop.top).toFloat(),
             (location[0] + crop.left + crop.width).toFloat(), (location[1] + crop.top + crop.height).toFloat()),
             underlayLuma = sampled.second)
+          captureBuffers.markPublished(bitmap)
         }
         // Recover after transient failures instead of permanently disabling glass after three errors.
         delay(if (failures > 0 && frame.value != null) GlassScenePolicy.TransientGraceMs
@@ -228,38 +241,78 @@ fun LiquidGlassBackdropHost(
   CompositionLocalProvider(LocalLiquidGlassBackdrop provides frame.takeIf { eligible }, content = content)
 }
 
-private suspend fun copyGlassFrame(source: SurfaceView, crop: GlassScenePolicy.SourceRect, width: Int, height: Int): Bitmap? =
+internal class GlassCaptureBuffers {
+  private var first: Bitmap? = null
+  private var second: Bitmap? = null
+  private val retired = ArrayList<Bitmap>(2)
+  private var nextFirst = true
+  private var published: Bitmap? = null
+  var pixels: IntArray = IntArray(0)
+    private set
+  val lumaBins = IntArray(64)
+  fun acquire(width: Int, height: Int): Bitmap? {
+    if (width <= 0 || height <= 0) return null
+    if (first?.width != width || first?.height != height) {
+      first?.let(retired::add); second?.let(retired::add)
+      first = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+      second = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+      pixels = IntArray(width * height)
+      nextFirst = true
+    }
+    // The last bitmap handed to Compose remains drawable until the state swap is
+    // observed. Never let PixelCopy or frosting write into that published image.
+    val preferred = if (nextFirst) first else second
+    val alternate = if (preferred === first) second else first
+    val result = when {
+      preferred != null && preferred !== published -> preferred
+      alternate != null && alternate !== published -> alternate
+      else -> null
+    }
+    nextFirst = !nextFirst
+    return result
+  }
+  fun markPublished(bitmap: Bitmap) {
+    check(bitmap === first || bitmap === second)
+    published = bitmap
+  }
+  fun recycle() {
+    first?.recycle(); second?.recycle()
+    retired.forEach { it.recycle() }
+    retired.clear()
+    first = null; second = null
+    published = null
+    pixels = IntArray(0)
+  }
+}
+
+private suspend fun copyGlassFrame(source: SurfaceView, crop: GlassScenePolicy.SourceRect, bitmap: Bitmap): Bitmap? =
   suspendCancellableCoroutine { continuation ->
-    val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
     try {
       PixelCopy.request(source, AndroidRect(crop.left, crop.top, crop.left + crop.width, crop.top + crop.height), bitmap, { result ->
         if (result == PixelCopy.SUCCESS && continuation.isActive) {
           continuation.resume(bitmap)
         } else {
-          bitmap.recycle() // only unpublished/failed copies can be recycled safely
           if (continuation.isActive) continuation.resume(null)
         }
       }, Handler(Looper.getMainLooper()))
     } catch (_: RuntimeException) {
-      bitmap.recycle()
       if (continuation.isActive) continuation.resume(null)
     }
   }
 
 // Returns the frosted bitmap and its bright-percentile luma, measured on the same background pass.
-private suspend fun frostGlassFrame(bitmap: Bitmap, strength: Float): Pair<Bitmap, Float>? = try {
+private suspend fun frostGlassFrame(bitmap: Bitmap, strength: Float, pixels: IntArray, lumaBins: IntArray): Pair<Bitmap, Float>? = try {
   withContext(Dispatchers.Default) {
-    val pixels = IntArray(bitmap.width * bitmap.height)
     bitmap.getPixels(pixels, 0, bitmap.width, 0, 0, bitmap.width, bitmap.height)
+    // Every API level keeps the same CPU frost on this tiny sample: the API 33+ refraction
+    // shader and the older paint path both expect an already-frosted input (visual parity).
     val frosted = GlassFrostPolicy.frostArgb(pixels, bitmap.width, bitmap.height, strength)
     bitmap.setPixels(frosted, 0, bitmap.width, 0, 0, bitmap.width, bitmap.height)
-    bitmap to GlassSurfacePolicy.underlayLuma(frosted)
+    bitmap to GlassSurfacePolicy.underlayLuma(frosted, lumaBins)
   }
 } catch (cancelled: CancellationException) {
-  bitmap.recycle() // This bitmap was never published to Compose.
   throw cancelled
 } catch (_: RuntimeException) {
-  bitmap.recycle()
   null
 }
 
@@ -277,6 +330,7 @@ fun Modifier.liquidGlassPane(
   cornerRadius: Dp = 24.dp,
   drawRim: Boolean = true,
   materialRole: GlassSurfacePolicy.MaterialRole = GlassSurfacePolicy.MaterialRole.Clear,
+  thickSurface: Boolean = false,
 ): Modifier {
   if (!enabled) return this
   val backdrop = LocalLiquidGlassBackdrop.current
@@ -287,7 +341,7 @@ fun Modifier.liquidGlassPane(
     return browserGlassPane(enabled,
       if (tuning.overrideMaterial) tuning.opacity else opacity,
       if (tuning.overrideMaterial) tuning.highlight else highlight, cornerRadius,
-      drawRim = drawRim, materialRole = materialRole)
+      drawRim = drawRim, materialRole = materialRole, thickSurface = thickSurface)
   }
   // Edge-to-edge top/selection bars outside a browser scene (e.g. settings screens): no
   // white sheen band, rim line or shadow, which read as a glowing bar; page-background film only.
@@ -368,6 +422,7 @@ fun Modifier.liquidGlassPane(
         }
       }
     }
+    // Build 1910: clip the sampled material to the explicit rounded path before native drawing.
     .clip(shape)
     .drawWithCache {
       val radius = cornerRadius.toPx().coerceAtMost(minOf(size.width, size.height) / 2f)
@@ -386,12 +441,12 @@ fun Modifier.liquidGlassPane(
       var lastImage: ImageBitmap? = null
       var imageShader: BitmapShader? = null
       val light = GlassSurfacePolicy.TopLeftLight
-      val rim = Brush.linearGradient(listOf(
-        Color.White.copy(alpha = optics.rimHighlight),
-        Color.White.copy(alpha = 0.035f),
-        Color.Black.copy(alpha = optics.rimShade),
-      ), start = Offset(size.width * (1f + light.x) / 2f, size.height * (1f + light.y) / 2f),
-        end = Offset(size.width * (1f - light.x) / 2f, size.height * (1f - light.y) / 2f))
+      val depthTop = Brush.verticalGradient(
+        listOf(Color.White.copy(alpha = if (thickSurface) optics.bodyHighlight * 0.72f else 0f), Color.Transparent),
+        startY = 0f, endY = 10.dp.toPx().coerceAtLeast(1f))
+      val depthBottom = Brush.verticalGradient(
+        listOf(Color.Transparent, Color.Black.copy(alpha = if (thickSurface) optics.bodyShade * 0.72f else 0f)),
+        startY = (size.height - 12.dp.toPx()).coerceAtLeast(0f), endY = size.height)
       onDrawBehind {
         clipPath(panePath) {
         val scene = backdrop?.value
@@ -488,17 +543,33 @@ fun Modifier.liquidGlassPane(
           Color.White.copy(alpha = optics.bodyHighlight),
           Color.Transparent,
           Color.Black.copy(alpha = optics.bodyShade))), cornerRadius = CornerRadius(radius))
-        if (drawRim) {
-          // A single geometry-matched contour supplies the bright upper face
-          // and lower thickness lip. No second inset rectangle or outline.
-          if (highContrast) drawRoundRect(contrastRim, cornerRadius = CornerRadius(radius),
-            style = Stroke(optics.rimWidthDp.dp.toPx()))
-          else drawRoundRect(rim, cornerRadius = CornerRadius(radius),
-            style = Stroke(optics.rimWidthDp.dp.toPx()))
+        if (thickSurface) {
+          drawRoundRect(depthTop, cornerRadius = CornerRadius(radius))
+          drawRoundRect(depthBottom, cornerRadius = CornerRadius(radius))
         }
         }
       }
     }
+    .then(if (LocalLensGlassEnabled.current && LocalPageBackdrop.current != null) {
+      val pageBackdrop = LocalPageBackdrop.current!!
+      Modifier.drawBackdrop(
+        backdrop = pageBackdrop,
+        shape = { shape },
+        effects = {
+          // Kyant order is colour filter -> blur -> lens; this surface has no filter.
+          blur((2.5f * tuning.frost).coerceIn(0f, 8f))
+          lens(
+            refractionHeight = LensGlassPolicy.refractionHeightPx(24.dp.toPx(), 24.dp.toPx(), tuning.lensDepth),
+            refractionAmount = LensGlassPolicy.refractionAmountPx(size.minDimension, size.minDimension, tuning.lensRefraction),
+            depthEffect = tuning.lensDepth > 0f,
+            chromaticAberration = tuning.colourEdge,
+          )
+        },
+        onDrawSurface = { drawRoundRect(Color.Transparent, cornerRadius = CornerRadius(24.dp.toPx())) },
+      )
+    } else Modifier)
+    .glassRimLight(shape = shape, enabled = drawRim, ambient = if (backdrop != null) ({ PlayerAmbientTint.color }) else null,
+      highContrast = highContrast)
 }
 
 // Original analytic edge lens. Only the background shader is distorted; control content is not.

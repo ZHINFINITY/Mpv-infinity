@@ -17,9 +17,11 @@ class AccentSwitchColorsContract(unittest.TestCase):
         self.assertIn("checkedThumbColor = contrast.checkedThumb", source)
         self.assertIn("uncheckedTrackColor = contrast.uncheckedTrack", source)
         self.assertIn("uncheckedThumbColor = contrast.uncheckedThumb", source)
-        self.assertIn("colors = if (!glass) themedColors", source)
-        self.assertIn("tint = if (checked) scheme.primary else scheme.onSurface", source)
-        self.assertIn("body = if (checked) scheme.onPrimary else scheme.onSurfaceVariant", source)
+        # Build 1910: GlassSwitch now routes classic colors through tuned contrast colors.
+        self.assertIn("colors = if (glass) transparent else tuned", source)
+        # Build 1910: capsule rendering uses the shared contrast policy instead of legacy tint/body tokens.
+        self.assertIn("contrast.checkedTrack", source)
+        self.assertIn("contrast.uncheckedTrack", source)
         self.assertIn("checked = checked", source)
 
     def test_expressive_switch_uses_primary_and_contrasting_thumb(self):

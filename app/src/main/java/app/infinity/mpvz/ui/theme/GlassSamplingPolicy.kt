@@ -9,7 +9,7 @@ object GlassSamplingPolicy {
    * frames are copied at display-like cadence. The copy is at most [MaxSampleEdge] px and the
    * frost is a small box blur, so this stays cheap; warm devices halve it, severe heat stops it.
    */
-  const val PlayingIntervalMs = 16L
+  const val PlayingIntervalMs = 33L
   const val WarmPlayingIntervalMs = 33L
   const val PausedIntervalMs = 1000L
   const val RetryIntervalMs = 1200L
@@ -30,6 +30,11 @@ object GlassSamplingPolicy {
 
   /** Controls-only cadence: small buttons over the video do not need display rate. */
   const val ControlsPlayingIntervalMs = 33L
+  /** Gaussian sigma equivalent of n separable box passes of radius r. */
+  fun frostSigma(radius: Int = GlassFrostPolicy.Radius, passes: Int = GlassFrostPolicy.Passes): Float {
+    require(radius >= 0 && passes >= 0)
+    return kotlin.math.sqrt(passes * (((2 * radius + 1) * (2 * radius + 1) - 1) / 12f))
+  }
   /** No new samples while a sheet/panel open or close animation runs. */
   const val TransitionSettleMs = 320L
   const val ShaderWarmupDelayMs = 600L
