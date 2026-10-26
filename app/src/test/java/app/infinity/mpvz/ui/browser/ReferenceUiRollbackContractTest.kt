@@ -23,9 +23,9 @@ class ReferenceUiRollbackContractTest {
   @Test fun preservedPlayerSourcesKeepPinnedFingerprints() {
     val expected = mapOf(
       // Build 1910 smoothness: chapter index via derivedStateOf so position ticks do not recompose the whole overlay.
-      "app/src/main/java/app/infinity/mpvz/ui/player/controls/PlayerControls.kt" to "2219b79942125f0f6de4c1e543742605b6949a126d07fc4f05d32fc11240b27a" /* music entry hides stats via StatsLuaOverlay (no blind toggle, saved page kept); before that: 1901 (380a778b) stats overlay + music-entry stats hide restored; clean-room BrowserMusicSheetState replaces the mpvRx sheet type; outer-container preference now gates the track glass rail */,
+      "app/src/main/java/app/infinity/mpvz/ui/player/controls/PlayerControls.kt" to "3ff3bd6e586f03fbded16e85c7d21042689e767362a1996d4d5a33fd3774e447" /* music entry hides stats via StatsLuaOverlay (no blind toggle, saved page kept); before that: 1901 (380a778b) stats overlay + music-entry stats hide restored; clean-room BrowserMusicSheetState replaces the mpvRx sheet type; outer-container preference now gates the track glass rail */,
       // Owner follow-up: music uses its legacy visual rail while video retains the global-glass path.
-      "app/src/main/java/app/infinity/mpvz/ui/player/controls/components/Seekbar.kt" to "b0d7ca11fdd2729871e052a0f6ea3b2cba64fb3e29039e5d3c42a7acf4d426c9",
+      "app/src/main/java/app/infinity/mpvz/ui/player/controls/components/Seekbar.kt" to "5e3cbc03be3aa7b35f464e0ee313615192d8d1cdcfbc7e8a819b7a6c2331843c",
       // Build 1910: shared rimLight/thick-surface routing is intentionally owned by this stream.
       // Build 1910 integration: union of the rim-light routing and thickSurface stream edits.
       // Owner follow-up: rounded player panes preserve the press shadow and inherit global glass tuning.
