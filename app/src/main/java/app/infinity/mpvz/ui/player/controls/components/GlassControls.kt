@@ -42,6 +42,7 @@ import app.infinity.mpvz.ui.theme.lens.LocalLensGlassEnabled
 import com.kyant.backdrop.backdrops.layerBackdrop
 import com.kyant.backdrop.backdrops.rememberLayerBackdrop
 import app.infinity.mpvz.ui.theme.lens.lensControlThumb
+import app.infinity.mpvz.ui.theme.lens.videoLensChip
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
@@ -526,6 +527,15 @@ fun Modifier.playerGlassPane(enabled: Boolean, opacity: Float? = null, highlight
   val preferenceEnabled by appearance.liquidGlassSurfaces.collectAsState()
   val preferredOpacity by appearance.glassSurfaceOpacity.collectAsState()
   val preferredHighlight by appearance.glassSurfaceHighlight.collectAsState()
-  return liquidGlassPane(enabled && preferenceEnabled, opacity ?: preferredOpacity,
+  val frame = app.infinity.mpvz.ui.theme.LocalLiquidGlassBackdrop.current
+  val on = enabled && preferenceEnabled
+  // Pill/circle chips refract the player's single existing video sample through the lens engine
+  // (API 33+, supported device). Sheets/panels and every fallback keep the frosted pane below.
+  if (on && frame != null && LocalLensGlassEnabled.current && app.infinity.mpvz.ui.theme.lens.VideoLensPolicy.isLensChip(cornerRadius.value)) {
+    return videoLensChip(frame, cornerRadius.value,
+      app.infinity.mpvz.ui.theme.GlassSurfacePolicy.opacity(opacity ?: preferredOpacity),
+      app.infinity.mpvz.ui.theme.GlassSurfacePolicy.highlight(highlight ?: preferredHighlight))
+  }
+  return liquidGlassPane(on, opacity ?: preferredOpacity,
     highlight ?: preferredHighlight, cornerRadius, thickSurface = true)
 }

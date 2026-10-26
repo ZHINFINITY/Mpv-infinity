@@ -7,6 +7,15 @@
 
 package app.infinity.mpvz.ui.preferences
 
+import androidx.compose.foundation.layout.Box
+import com.kyant.backdrop.backdrops.layerBackdrop
+import com.kyant.backdrop.drawBackdrop
+import com.kyant.backdrop.effects.blur
+import com.kyant.backdrop.effects.lens
+import androidx.compose.ui.platform.testTag
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.ui.draw.clip
+import androidx.compose.foundation.layout.Spacer
 import android.widget.Toast
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.Canvas
@@ -1186,32 +1195,111 @@ private fun GlassCustomizationPreference(
 
 @Composable
 private fun GlassLivePreview(enabled: Boolean, opacity: Float, highlight: Float, modifier: Modifier = Modifier) {
-  // Keep the colourful scene in GlassSurface's source layer. Previously it was emitted as
-  // foreground content after liquidGlassPane, so the pane had nothing to frost or refract.
+  val lens = enabled && app.infinity.mpvz.ui.theme.lens.LocalLensGlassEnabled.current
+  if (lens) {
+    LensGlassPreview(opacity, highlight, modifier)
+    return
+  }
+  // Frosted fallback: the checkerboard stays in GlassSurface's source layer so the pane frosts it.
   GlassSurface(
     enabled = enabled,
     opacity = opacity,
     highlight = highlight,
     cornerRadius = 20.dp,
     modifier = modifier,
-    backdrop = {
-      Canvas(Modifier.fillMaxSize()) {
-        val step = size.width / 7f
-        for (i in 0..7) drawRect(
-          androidx.compose.ui.graphics.Color.hsv(i * 45f, 0.72f, 0.95f),
-          androidx.compose.ui.geometry.Offset(i * step, 0f),
-          androidx.compose.ui.geometry.Size(step + 2f, size.height),
-        )
-      }
-    },
+    backdrop = { GlassPreviewCheckerboard(Modifier.fillMaxSize()) },
   ) {
-    Column(Modifier.height(132.dp).fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-      Text(stringResource(R.string.pref_glass_preview), style = MaterialTheme.typography.titleSmall)
-      Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-        listOf("A", "B", "C").forEach { Text(it, Modifier.background(MaterialTheme.colorScheme.surface.copy(alpha = .42f), RoundedCornerShape(12.dp)).padding(horizontal = 10.dp, vertical = 4.dp)) }
-        GlassSwitch(checked = true, onCheckedChange = null)
-      }
-      GlassSlider(value = .65f, onValueChange = {}, modifier = Modifier.fillMaxWidth())
+    GlassPreviewContent(Modifier.height(132.dp).fillMaxWidth().padding(16.dp))
+  }
+}
+
+/** Two-colour checkerboard; straight edges make refraction, magnification and colour edges visible. */
+@Composable
+internal fun GlassPreviewCheckerboard(modifier: Modifier = Modifier) {
+  Canvas(modifier) {
+    val cell = GlassPreviewPolicy.CellDp.dp.toPx()
+    val columns = kotlin.math.ceil(size.width / cell).toInt()
+    val rows = kotlin.math.ceil(size.height / cell).toInt()
+    drawRect(GlassPreviewPolicy.ColourB)
+    for (r in 0 until rows) for (c in 0 until columns) {
+      if (GlassPreviewPolicy.isColourA(r, c)) drawRect(
+        GlassPreviewPolicy.ColourA,
+        androidx.compose.ui.geometry.Offset(c * cell, r * cell),
+        androidx.compose.ui.geometry.Size(cell, cell),
+      )
     }
   }
+}
+
+@Composable
+private fun GlassPreviewContent(modifier: Modifier) {
+  Column(modifier, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+    Text(stringResource(R.string.pref_glass_preview), style = MaterialTheme.typography.titleSmall)
+    Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+      listOf("A", "B", "C").forEach { Text(it, Modifier.background(MaterialTheme.colorScheme.surface.copy(alpha = .42f), RoundedCornerShape(12.dp)).padding(horizontal = 10.dp, vertical = 4.dp)) }
+      Spacer(Modifier.weight(1f))
+      var on by remember { mutableStateOf(true) }
+      GlassSwitch(checked = on, onCheckedChange = { on = it })
+    }
+    var level by remember { mutableFloatStateOf(.65f) }
+    GlassSlider(value = level, onValueChange = { level = it }, modifier = Modifier.fillMaxWidth())
+  }
+}
+
+/**
+ * Lens preview: the checkerboard is recorded as a SIBLING layer, and an inset glass card above it
+ * refracts, magnifies and (optionally) colour-splits its edges with the live Liquid Glass settings.
+ */
+@Composable
+private fun LensGlassPreview(opacity: Float, highlight: Float, modifier: Modifier) {
+  val tuning = app.infinity.mpvz.ui.theme.LocalGlassCustomization.current
+  val checker = com.kyant.backdrop.backdrops.rememberLayerBackdrop()
+  val cardShape = RoundedCornerShape(GlassPreviewPolicy.CardRadiusDp.dp)
+  val surface = MaterialTheme.colorScheme.surface
+  val surfaceAlpha = GlassPreviewPolicy.surfaceAlpha(GlassSurfacePolicy.opacity(opacity))
+  val rimAlpha = GlassSurfacePolicy.highlight(highlight).coerceIn(0f, 1f)
+  Box(modifier.height(GlassPreviewPolicy.HeightDp.dp).clip(RoundedCornerShape(20.dp)).testTag("glass_preview_lens")) {
+    GlassPreviewCheckerboard(Modifier.matchParentSize().layerBackdrop(checker))
+    Box(
+      Modifier
+        .matchParentSize()
+        .padding(GlassPreviewPolicy.InsetDp.dp)
+        .drawBackdrop(
+          backdrop = checker,
+          shape = { cardShape },
+          effects = {
+            blur(GlassPreviewPolicy.blurDp(tuning.frost).dp.toPx())
+            lens(
+              refractionHeight = app.infinity.mpvz.ui.theme.lens.LensGlassPolicy.refractionHeightPx(
+                GlassPreviewPolicy.RefractionHeightDp.dp.toPx(), GlassPreviewPolicy.CardRadiusDp.dp.toPx(), tuning.lensDepth),
+              refractionAmount = app.infinity.mpvz.ui.theme.lens.LensGlassPolicy.refractionAmountPx(
+                GlassPreviewPolicy.RefractionAmountDp.dp.toPx(), size.minDimension, tuning.lensRefraction),
+              depthEffect = true,
+              chromaticAberration = tuning.colourEdge,
+            )
+          },
+          highlight = { com.kyant.backdrop.highlight.Highlight.Default.copy(alpha = rimAlpha) },
+          onDrawSurface = { drawRect(surface.copy(alpha = surfaceAlpha)) },
+        ),
+    ) {
+      GlassPreviewContent(Modifier.fillMaxSize().padding(14.dp))
+    }
+  }
+}
+
+/** Pure numbers for the live preview (unit-tested). */
+internal object GlassPreviewPolicy {
+  const val CellDp = 14f
+  const val HeightDp = 176f
+  const val InsetDp = 18f
+  const val CardRadiusDp = 24f
+  const val RefractionHeightDp = 18f
+  const val RefractionAmountDp = 30f
+  val ColourA = androidx.compose.ui.graphics.Color(0xFFE53935)
+  val ColourB = androidx.compose.ui.graphics.Color(0xFF1E63D6)
+  fun isColourA(row: Int, column: Int): Boolean = (row + column) % 2 == 0
+  /** Frost setting (0..2) to a modest blur, so the checker edges stay visible through the lens. */
+  fun blurDp(frost: Float): Float = (if (frost.isFinite()) frost else 1f).coerceIn(0f, 2f) * 1.5f
+  /** The tint keeps text readable but never hides the checkerboard. */
+  fun surfaceAlpha(opacity: Float): Float = ((if (opacity.isFinite()) opacity else .5f) * 0.35f).coerceIn(0.06f, 0.40f)
 }
