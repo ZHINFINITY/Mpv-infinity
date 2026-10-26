@@ -2,8 +2,7 @@
 
 ## 2.2.3
 
-- Frame interpolation and its existing target-FPS controls are available in the stable build when the required playback runtime is present.
-- Soft Blend and Visibility Resolver are available in stable playback settings and respect the selected engine, Vulkan support, and mpv.conf ownership.
+- Small bug fixes.
 
 ## 2.2.2
 
