@@ -145,13 +145,15 @@ object RecentlyPlayedScreen : Screen {
     val advancedPreferences = koinInject<AdvancedPreferences>()
     val appearancePreferences = koinInject<AppearancePreferences>()
     val enableRecentlyPlayed by advancedPreferences.enableRecentlyPlayed.collectAsState()
-    val showQuickPlayFab by appearancePreferences.showQuickPlayFab.collectAsState()
+    val showQuickPlayFabPreference by appearancePreferences.showQuickPlayFab.collectAsState()
+    val showQuickPlayFab = app.infinity.mpvz.ui.browser.fab.quickPlayFabAllowed(showQuickPlayFabPreference)
     val quickPlayFabDirect by appearancePreferences.quickPlayFabDirect.collectAsState()
     val navigationBarHeight = app.infinity.mpvz.ui.browser.LocalNavigationBarHeight.current
 
     // FAB visibility for scroll-based hiding
     val isFabVisible = remember { mutableStateOf(true) }
     val isFabExpanded = remember { mutableStateOf(false) }
+    app.infinity.mpvz.ui.browser.fab.QuickPlayMenuVisibilityEffect(showQuickPlayFab) { isFabExpanded.value = false }
     val showLinkDialog = remember { mutableStateOf(false) }
 
     val coroutineScope = rememberCoroutineScope()

@@ -175,7 +175,8 @@ fun FileSystemBrowserScreen(path: String? = null) {
   val coroutineScope = rememberCoroutineScope()
   val browserPreferences = koinInject<BrowserPreferences>()
   val appearancePreferences = koinInject<app.infinity.mpvz.preferences.AppearancePreferences>()
-  val showQuickPlayFab by appearancePreferences.showQuickPlayFab.collectAsState()
+  val showQuickPlayFabPreference by appearancePreferences.showQuickPlayFab.collectAsState()
+  val showQuickPlayFab = app.infinity.mpvz.ui.browser.fab.quickPlayFabAllowed(showQuickPlayFabPreference)
   val quickPlayFabDirect by appearancePreferences.quickPlayFabDirect.collectAsState()
   val playerPreferences = koinInject<app.infinity.mpvz.preferences.PlayerPreferences>()
   val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
@@ -236,6 +237,7 @@ fun FileSystemBrowserScreen(path: String? = null) {
   // FAB visibility for scroll-based hiding
   val isFabVisible = remember { mutableStateOf(true) }
   val isFabExpanded = remember { mutableStateOf(false) }
+  app.infinity.mpvz.ui.browser.fab.QuickPlayMenuVisibilityEffect(showQuickPlayFab) { isFabExpanded.value = false }
 
   // Search state
   var searchQuery by rememberSaveable { mutableStateOf("") }

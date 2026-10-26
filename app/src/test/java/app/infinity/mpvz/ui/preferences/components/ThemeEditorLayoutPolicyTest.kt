@@ -4,19 +4,32 @@
  */
 package app.infinity.mpvz.ui.preferences.components
 
-import org.junit.Assert.assertFalse
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class ThemeEditorLayoutPolicyTest {
-  @Test fun narrowPortraitStacksActionsBeforeLabelsCanClip() {
-    assertTrue(ThemeEditorLayoutPolicy.stackActions(359f))
-    assertFalse(ThemeEditorLayoutPolicy.stackActions(360f))
+  @Test fun fittingLabelKeepsItsSize() {
+    assertNull(ThemeEditorLayoutPolicy.nextLabelSp(14f, overflowing = false))
   }
 
-  @Test fun landscapeAndWidePortraitShareTheSameActionGeometry() {
-    assertFalse(ThemeEditorLayoutPolicy.stackActions(640f))
-    assertFalse(ThemeEditorLayoutPolicy.stackActions(420f))
+  @Test fun overflowingLabelStepsDownButNeverBelowTheFloor() {
+    assertEquals(13.5f, ThemeEditorLayoutPolicy.nextLabelSp(14f, overflowing = true)!!, 0.001f)
+    assertEquals(ThemeEditorLayoutPolicy.MinLabelSp, ThemeEditorLayoutPolicy.nextLabelSp(11.2f, true)!!, 0.001f)
+    // At the floor the ellipsis is the last resort; the fit loop must terminate.
+    assertNull(ThemeEditorLayoutPolicy.nextLabelSp(ThemeEditorLayoutPolicy.MinLabelSp, true))
+  }
+
+  @Test fun fitLoopTerminatesFromAnyStartingSize() {
+    var sp = 40f
+    var steps = 0
+    while (true) {
+      sp = ThemeEditorLayoutPolicy.nextLabelSp(sp, overflowing = true) ?: break
+      steps++
+      assertTrue(steps < 100)
+    }
+    assertEquals(ThemeEditorLayoutPolicy.MinLabelSp, sp, 0.001f)
   }
 
   @Test fun bottomSpacingIncludesNavigationBarAndImeBreathingRoom() {
