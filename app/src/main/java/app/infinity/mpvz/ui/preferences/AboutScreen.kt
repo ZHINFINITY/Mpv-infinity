@@ -8,6 +8,8 @@
 package app.infinity.mpvz.ui.preferences
 
 import app.infinity.mpvz.ui.player.controls.components.GlassSwitch
+import app.infinity.mpvz.ui.components.GlassModalBottomSheet
+import app.infinity.mpvz.ui.components.ControlRowSpacing
 
 import android.app.ActivityManager
 import android.content.Context
@@ -35,6 +37,8 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
@@ -47,6 +51,7 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import app.infinity.mpvz.ui.preferences.components.SettingsScaffold as Scaffold
 import androidx.compose.material3.Surface
@@ -67,6 +72,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.activity.ComponentActivity
@@ -117,7 +123,7 @@ object AboutScreen : Screen {
         TopAppBar(
           title = {
             Text(
-              modifier = Modifier.settingsSearchTarget(R.string.pref_about_title),
+              modifier = Modifier.settingsSearchTarget(R.string.pref_about_title).padding(vertical = 3.dp),
               text = stringResource(id = R.string.pref_about_title),
               style = MaterialTheme.typography.headlineSmall,
               fontWeight = FontWeight.ExtraBold,
@@ -164,28 +170,9 @@ object AboutScreen : Screen {
           Box(
             modifier =
               Modifier
-                .drawWithCache {
-                  val cx = size.width - size.width * fraction
-                  val cy = size.height * fraction
-
-                  val gradient =
-                    Brush.radialGradient(
-                      colors = listOf(colorPrimary, colorTertiary),
-                      center = Offset(cx, cy),
-                      radius = 800f,
-                    )
-
-                  onDrawBehind {
-                    drawRoundRect(
-                      brush = gradient,
-                      cornerRadius =
-                        CornerRadius(
-                          cornerRadius.toPx(),
-                          cornerRadius.toPx(),
-                        ),
-                    )
-                  }
-                }.padding(16.dp),
+                .clip(RoundedCornerShape(cornerRadius))
+                .background(colorPrimary)
+                .padding(16.dp),
           ) {
             Column {
               Row(verticalAlignment = Alignment.CenterVertically) {
@@ -490,39 +477,26 @@ object AboutScreen : Screen {
 
         Spacer(Modifier.height(8.dp))
 
-        PreferenceSectionHeader(title = "Updates")
+        PreferenceSectionHeader(title = stringResource(R.string.r1944_updates_title))
         if (updateViewModel != null) {
           val autoUpdate by updateViewModel.isAutoUpdateEnabled.collectAsState()
           val updateState by updateViewModel.updateState.collectAsState()
           PreferenceCard {
-            Column(modifier = Modifier.padding(16.dp)) {
-              Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-              ) {
-                Column(modifier = Modifier.weight(1f)) {
-                  Text("Auto Check for Updates", style = MaterialTheme.typography.titleMedium, color = cs.onSurface)
-                  Text("Check on startup", style = MaterialTheme.typography.bodyMedium, color = cs.onSurfaceVariant)
+            Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(ControlRowSpacing.StackedGap)) {
+              Row(modifier = Modifier.fillMaxWidth().padding(end = ControlRowSpacing.EndPadding), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(ControlRowSpacing.TextToControlGap)) {
+                Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                  Text(stringResource(R.string.r1944_auto_check_updates), style = MaterialTheme.typography.titleMedium, color = cs.onSurface)
+                  Text(stringResource(R.string.r1944_check_on_startup), style = MaterialTheme.typography.bodyMedium, color = cs.onSurfaceVariant)
                 }
                 GlassSwitch(checked = autoUpdate, onCheckedChange = updateViewModel::toggleAutoUpdate)
               }
               PreferenceDivider()
-              Button(
-                onClick = { updateViewModel.checkForUpdate(manual = true) },
-                modifier = Modifier.fillMaxWidth().height(50.dp),
-                shape = RoundedCornerShape(12.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = cs.surfaceVariant, contentColor = cs.onSurfaceVariant),
-              ) { Text("Check for Updates Now") }
-              if (updateState is UpdateViewModel.UpdateState.NoUpdate) {
-                Spacer(Modifier.height(8.dp))
-                Text(
-                  text = stringResource(R.string.ui_already_using_latest_version),
-                  style = MaterialTheme.typography.bodyMedium,
-                  color = cs.primary,
-                )
+              Button(onClick = { updateViewModel.checkForUpdate(manual = true) }, modifier = Modifier.fillMaxWidth().heightIn(min = 50.dp), shape = RoundedCornerShape(12.dp), colors = ButtonDefaults.buttonColors(containerColor = cs.surfaceVariant, contentColor = cs.onSurfaceVariant)) {
+                Text(stringResource(R.string.r1944_check_updates_now), textAlign = TextAlign.Center)
               }
             }
           }
+          if (updateState !is UpdateViewModel.UpdateState.Idle) UpdateResultSheet(updateState, updateViewModel::dismiss, { updateViewModel.checkForUpdate(manual = true) }, updateViewModel::downloadUpdate, updateViewModel::installUpdate)
         }
 
         Spacer(Modifier.height(8.dp))
@@ -540,6 +514,27 @@ object AboutScreen : Screen {
 
         Spacer(Modifier.height(12.dp))
       }
+    }
+  }
+}
+
+@Composable
+private fun UpdateResultSheet(state: UpdateViewModel.UpdateState, onDismiss: () -> Unit, onRetry: () -> Unit, onDownload: (app.infinity.mpvz.domain.update.Release) -> Unit, onInstall: (app.infinity.mpvz.domain.update.Release) -> Unit) {
+  GlassModalBottomSheet(onDismissRequest = onDismiss) {
+    Column(Modifier.fillMaxWidth().padding(start = 20.dp, end = 20.dp, bottom = 12.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+      Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        Icon(when (state) { UpdateViewModel.UpdateState.Loading -> Icons.RoundedFilled.Refresh; UpdateViewModel.UpdateState.NoUpdate -> Icons.RoundedFilled.CheckCircle; is UpdateViewModel.UpdateState.Available, is UpdateViewModel.UpdateState.ReadyToInstall -> Icons.RoundedFilled.CloudDownload; UpdateViewModel.UpdateState.Error -> Icons.RoundedFilled.ErrorOutline; else -> Icons.RoundedFilled.Info }, null, Modifier.size(32.dp), tint = MaterialTheme.colorScheme.primary)
+        Text(stringResource(R.string.r1944_updates_title), style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+      }
+      when (state) {
+        UpdateViewModel.UpdateState.Loading -> Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) { CircularProgressIndicator(Modifier.size(24.dp)); Text(stringResource(R.string.r1944_checking_updates), style = MaterialTheme.typography.bodyLarge) }
+        UpdateViewModel.UpdateState.NoUpdate -> Text(stringResource(R.string.r1944_latest_version), style = MaterialTheme.typography.bodyLarge)
+        UpdateViewModel.UpdateState.Error -> Text(stringResource(R.string.r1944_update_error), style = MaterialTheme.typography.bodyLarge)
+        is UpdateViewModel.UpdateState.Available -> { val r=state.release; Text("${r.name} (${r.tagName})", style=MaterialTheme.typography.titleMedium); Text(r.body.ifBlank { stringResource(R.string.r1944_update_available) }, Modifier.heightIn(max=120.dp).verticalScroll(rememberScrollState()), style=MaterialTheme.typography.bodyMedium); Row(Modifier.fillMaxWidth(), horizontalArrangement=Arrangement.End) { Button(onClick=onDismiss){Text(stringResource(R.string.r1944_cancel))}; Spacer(Modifier.width(8.dp)); Button(onClick={onDownload(r)}){Icon(Icons.RoundedFilled.Download,null); Spacer(Modifier.width(6.dp)); Text(stringResource(R.string.r1944_download_update))} }; return@Column }
+        is UpdateViewModel.UpdateState.ReadyToInstall -> { val r=state.release; Text("${r.name} (${r.tagName})", style=MaterialTheme.typography.titleMedium); Text(stringResource(R.string.r1944_update_ready), style=MaterialTheme.typography.bodyLarge); Row(Modifier.fillMaxWidth(), horizontalArrangement=Arrangement.End) { Button(onClick=onDismiss){Text(stringResource(R.string.r1944_cancel))}; Spacer(Modifier.width(8.dp)); Button(onClick={onInstall(r)}){Text(stringResource(R.string.r1944_install_update))} }; return@Column }
+        else -> Unit
+      }
+      Row(Modifier.fillMaxWidth(), horizontalArrangement=Arrangement.End) { if (state is UpdateViewModel.UpdateState.Error) Button(onClick=onRetry){Text(stringResource(R.string.r1944_retry))}; Spacer(Modifier.width(8.dp)); Button(onClick=onDismiss){Text(stringResource(R.string.r1944_cancel))} }
     }
   }
 }
@@ -1128,6 +1123,7 @@ private val OPEN_SOURCE_LIBRARIES =
       license = "MIT",
       url = "https://bellard.org/quickjs/",
     ),
+    OpenSourceLibrary(name = "Backdrop (Liquid Glass)", artifact = "io.github.kyant0:backdrop:2.0.1", descriptionRes = R.string.oss_backdrop_liquid_glass_description, license = "Apache-2.0 (assets/licenses/backdrop-apache-2.0.txt)", url = "https://github.com/Kyant0/AndroidLiquidGlass"),
     OpenSourceLibrary(
       name = "c-vector",
       artifact = "quickjs-kt-android native dependency",

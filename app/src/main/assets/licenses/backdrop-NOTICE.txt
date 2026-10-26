@@ -1,0 +1,1 @@
+Backdrop / AndroidLiquidGlass, Copyright Kyant0, licensed under the Apache License 2.0; portions of sample components adapted
