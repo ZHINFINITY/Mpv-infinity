@@ -30,4 +30,28 @@ class PlayerObserverCallbackPolicyTest {
     assertTrue(PlayerObserverCallbackPolicy.isCurrent(idleCallback, currentBindingEpoch = 1L, currentGeneration = 0L))
     assertFalse(PlayerObserverCallbackPolicy.isCurrent(idleCallback, currentBindingEpoch = 1L, currentGeneration = 1L))
   }
+
+  @Test
+  fun queuedNativeErrorFromAnOldMediaItemIsRejectedAfterTheEpochAdvances() {
+    val oldItem = NativePlaybackErrorToken(mediaItemEpoch = 12L, playbackGeneration = 4L)
+    val currentItem = NativePlaybackErrorToken(mediaItemEpoch = 13L, playbackGeneration = 4L)
+
+    assertFalse(PlaybackItemEpochPolicy.isCurrent(oldItem, currentEpoch = 13L, currentPlaybackGeneration = 4L))
+    assertTrue(PlaybackItemEpochPolicy.isCurrent(currentItem, currentEpoch = 13L, currentPlaybackGeneration = 4L))
+  }
+
+  @Test
+  fun queuedNativeErrorFromAnOldPlaybackSessionIsRejectedEvenWhenItemEpochMatches() {
+    val queued = NativePlaybackErrorToken(mediaItemEpoch = 13L, playbackGeneration = 4L)
+
+    assertFalse(PlaybackItemEpochPolicy.isCurrent(queued, currentEpoch = 13L, currentPlaybackGeneration = 5L))
+  }
+
+  @Test
+  fun eventItemTagPreservesTheOriginalTokenAndRejectsUnrelatedTags() {
+    val token = NativePlaybackErrorToken(mediaItemEpoch = 13L, playbackGeneration = 4L)
+
+    assertTrue(PlaybackItemEpochPolicy.tokenFromMediaItemTag(token) === token)
+    assertFalse(PlaybackItemEpochPolicy.tokenFromMediaItemTag("unrelated") != null)
+  }
 }
