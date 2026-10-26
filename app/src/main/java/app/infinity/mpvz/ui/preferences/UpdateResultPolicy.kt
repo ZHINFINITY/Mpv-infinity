@@ -17,3 +17,13 @@ fun UpdateViewModel.UpdateState.toAboutUpdateResult(): AboutUpdateResult = when 
   UpdateViewModel.UpdateState.Error -> AboutUpdateResult.Error
   UpdateViewModel.UpdateState.Idle -> AboutUpdateResult.Checking
 }
+
+/**
+ * The About sheet only reports status (checking, up to date, error). An available or
+ * ready-to-install release is shown by MainActivity's UpdateSheet, which observes the SAME
+ * activity-scoped UpdateViewModel; showing both would stack two sheets.
+ */
+fun UpdateViewModel.UpdateState.isAboutSheetState(): Boolean = when (this) {
+  UpdateViewModel.UpdateState.Loading, UpdateViewModel.UpdateState.NoUpdate, UpdateViewModel.UpdateState.Error -> true
+  else -> false
+}

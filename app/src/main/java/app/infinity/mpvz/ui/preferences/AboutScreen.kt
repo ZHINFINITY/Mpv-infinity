@@ -496,7 +496,7 @@ object AboutScreen : Screen {
               }
             }
           }
-          if (updateState !is UpdateViewModel.UpdateState.Idle) UpdateResultSheet(updateState, updateViewModel::dismiss, { updateViewModel.checkForUpdate(manual = true) }, updateViewModel::downloadUpdate, updateViewModel::installUpdate)
+          if (updateState.isAboutSheetState()) UpdateResultSheet(updateState, updateViewModel::dismissNoUpdate, { updateViewModel.checkForUpdate(manual = true) }, updateViewModel::downloadUpdate, updateViewModel::installUpdate)
         }
 
         Spacer(Modifier.height(8.dp))
