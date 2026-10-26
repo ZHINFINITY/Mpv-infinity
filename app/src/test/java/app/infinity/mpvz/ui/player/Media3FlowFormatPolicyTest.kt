@@ -35,7 +35,7 @@ class Media3FlowFormatPolicyTest {
   }
 
   @Test
-  fun untaggedTenBitHevcUsesNativeOutputOnlyWhenInterpolationIsOff() {
+  fun untagged1080pMain10HevcUsesLegacySdrFlowPathWhenInterpolationIsOff() {
     val codecs = "hvc1.2.4.H120.90"
     assertTrue(
       Media3FlowFormatPolicy.requiresSdrOutputRequest(
@@ -49,22 +49,40 @@ class Media3FlowFormatPolicyTest {
         hasHdrStaticInfo = false,
       ),
     )
+    assertFalse(
+      Media3FlowFormatPolicy.requiresNativeHdrPassthrough(
+        mimeType = MimeTypes.VIDEO_H265,
+        codecs = codecs,
+        colorSpace = Format.NO_VALUE,
+        colorRange = Format.NO_VALUE,
+        colorTransfer = Format.NO_VALUE,
+        lumaBitdepth = 10,
+        chromaBitdepth = 10,
+        hasHdrStaticInfo = false,
+        width = 1920,
+        height = 1080,
+      ),
+    )
     assertTrue(
-      "Ambiguous 10-bit input can use Flow when interpolation is on and SDR conversion is available",
+      "Main10 HEVC can use Flow with interpolation on and SDR conversion available",
       supports(
         mimeType = MimeTypes.VIDEO_H265,
         codecs = codecs,
+        width = 1920,
+        height = 1080,
         lumaBitdepth = 10,
         chromaBitdepth = 10,
         decoderSdrRequestAvailable = true,
         interpolationEnabled = true,
       ),
     )
-    assertFalse(
-      "Ambiguous 10-bit input must preserve native output when interpolation is off",
+    assertTrue(
+      "Legacy untagged 1080p Main10 HEVC remains eligible through the SDR output path when interpolation is off",
       supports(
         mimeType = MimeTypes.VIDEO_H265,
         codecs = codecs,
+        width = 1920,
+        height = 1080,
         lumaBitdepth = 10,
         chromaBitdepth = 10,
         decoderSdrRequestAvailable = true,
@@ -72,13 +90,29 @@ class Media3FlowFormatPolicyTest {
       ),
     )
     assertFalse(
+      "Unknown 4K Main10 HEVC keeps the native output path",
       supports(
         mimeType = MimeTypes.VIDEO_H265,
         codecs = codecs,
+        width = 3840,
+        height = 2160,
+        lumaBitdepth = 10,
+        chromaBitdepth = 10,
+        decoderSdrRequestAvailable = true,
+        interpolationEnabled = false,
+      ),
+    )
+    assertFalse(
+      "The legacy path still requires decoder-side SDR conversion",
+      supports(
+        mimeType = MimeTypes.VIDEO_H265,
+        codecs = codecs,
+        width = 1920,
+        height = 1080,
         lumaBitdepth = 10,
         chromaBitdepth = 10,
         decoderSdrRequestAvailable = false,
-        interpolationEnabled = true,
+        interpolationEnabled = false,
       ),
     )
   }
@@ -420,6 +454,29 @@ class Media3FlowFormatPolicyTest {
   }
 
   @Test
+  fun actualUntagged1080pMain10HevcFormatKeepsLegacySdrFlowWhenInterpolationIsOff() {
+    val colorInfo =
+      ColorInfo.Builder()
+        .setColorSpace(Format.NO_VALUE)
+        .setColorRange(Format.NO_VALUE)
+        .setColorTransfer(Format.NO_VALUE)
+        .setLumaBitdepth(10)
+        .setChromaBitdepth(10)
+        .build()
+    val format =
+      Format.Builder()
+        .setSampleMimeType(MimeTypes.VIDEO_H265)
+        .setCodecs("hvc1.2.4.H120.90")
+        .setWidth(1920)
+        .setHeight(1080)
+        .setColorInfo(colorInfo)
+        .build()
+
+    assertTrue(Media3FlowVideoSink.supportsFormat(format, sdkInt = 34, interpolationEnabled = false))
+    assertFalse(Media3FlowVideoSink.requiresNativeHdrPassthrough(format))
+  }
+
+  @Test
   fun actualFormatGateRejectsInvalidRotationAndNonPositivePixelRatio() {
     val sdrColorInfo =
       ColorInfo.Builder()
@@ -498,6 +555,8 @@ class Media3FlowFormatPolicyTest {
   private fun supports(
     mimeType: String,
     codecs: String = "",
+    width: Int = Format.NO_VALUE,
+    height: Int = Format.NO_VALUE,
     colorSpace: Int = Format.NO_VALUE,
     colorRange: Int = Format.NO_VALUE,
     colorTransfer: Int = Format.NO_VALUE,
@@ -519,6 +578,8 @@ class Media3FlowFormatPolicyTest {
     return Media3FlowFormatPolicy.supportsSdrInterpolation(
       mimeType = mimeType,
       codecs = codecs,
+      width = width,
+      height = height,
       colorSpace = colorInfo.colorSpace,
       colorRange = colorInfo.colorRange,
       colorTransfer = colorInfo.colorTransfer,

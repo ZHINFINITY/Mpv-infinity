@@ -4,12 +4,13 @@ import androidx.media3.common.C
 import androidx.media3.common.Format
 import androidx.media3.common.MimeTypes
 
-/** Eligibility and color-normalization policy for the Media3 Flow SDR interpolation path. */
+/** Eligibility and color-normalization policy for the Media3 Flow SDR video path. */
 internal object Media3FlowFormatPolicy {
   /**
    * Whether a format that reaches the Flow path would need decoder normalization to the BT.709
-   * SDR video transfer curve before storage in RGBA8. HDR/Dolby Vision and ambiguous high-bit-depth
-   * formats bypass Flow while interpolation is off; when on, they may use verified SDR conversion.
+   * SDR video transfer curve before storage in RGBA8. Explicit HDR/Dolby Vision and ambiguous
+   * high-bit-depth formats bypass Flow while interpolation is off, except for the legacy SDR
+   * Main10 HEVC compatibility case handled by [isLegacySdrMain10Hevc].
    */
   fun requiresSdrOutputRequest(
     mimeType: String,
@@ -42,17 +43,34 @@ internal object Media3FlowFormatPolicy {
     mimeType: String,
     codecs: String,
     colorSpace: Int,
+    colorRange: Int,
     colorTransfer: Int,
     lumaBitdepth: Int,
     chromaBitdepth: Int,
     hasHdrStaticInfo: Boolean,
+    width: Int,
+    height: Int,
   ): Boolean {
     if (isDolbyVision(mimeType, codecs) || hasHdrStaticInfo) return true
     if (colorTransfer == C.COLOR_TRANSFER_ST2084 || colorTransfer == C.COLOR_TRANSFER_HLG) return true
 
     // Missing/unspecified transfer metadata cannot safely distinguish HDR from SDR on a
-    // high-bit-depth or BT.2020 stream, so leave the original metadata with Media3's normal path.
+    // high-bit-depth or BT.2020 stream. The old Native Media3 path did play untagged Main10 HEVC
+    // at up to 1080p as SDR; keep that narrow behavior when no explicit HDR/gamut signal exists.
     val transferUnknown = colorTransfer == Format.NO_VALUE || colorTransfer == 0
+    if (
+      transferUnknown &&
+      isLegacySdrMain10Hevc(
+        mimeType = mimeType,
+        codecs = codecs,
+        colorSpace = colorSpace,
+        colorRange = colorRange,
+        hasHdrStaticInfo = hasHdrStaticInfo,
+        width = width,
+        height = height,
+      )
+    ) return false
+
     return transferUnknown &&
       (colorSpace == C.COLOR_SPACE_BT2020 ||
         lumaBitdepth > 8 || chromaBitdepth > 8 || codecSignalsHighBitDepth(codecs))
@@ -66,8 +84,9 @@ internal object Media3FlowFormatPolicy {
 
   /**
    * When interpolation is off, HDR/Dolby Vision and ambiguous high-bit-depth formats retain the
-   * platform's native output path. When on, those formats may use verified decoder-side SDR
-   * conversion for Flow. DRM and non-video routing remain caller gates.
+   * platform's native output path, except for the narrowly scoped legacy SDR Main10 HEVC case.
+   * When on, those formats may use verified decoder-side SDR conversion for Flow. DRM and
+   * non-video routing remain caller gates.
    */
   fun supportsSdrInterpolation(
     mimeType: String,
@@ -81,6 +100,8 @@ internal object Media3FlowFormatPolicy {
     isEquivalentToAssumedSdrDefault: Boolean,
     decoderSdrRequestAvailable: Boolean,
     interpolationEnabled: Boolean = true,
+    width: Int = Format.NO_VALUE,
+    height: Int = Format.NO_VALUE,
   ): Boolean {
     if (
       !interpolationEnabled &&
@@ -88,10 +109,13 @@ internal object Media3FlowFormatPolicy {
         mimeType = mimeType,
         codecs = codecs,
         colorSpace = colorSpace,
+        colorRange = colorRange,
         colorTransfer = colorTransfer,
         lumaBitdepth = lumaBitdepth,
         chromaBitdepth = chromaBitdepth,
         hasHdrStaticInfo = hasHdrStaticInfo,
+        width = width,
+        height = height,
       )
     ) return false
 
@@ -132,6 +156,30 @@ internal object Media3FlowFormatPolicy {
       codec.startsWith("dva1") ||
       codec.startsWith("dvav") ||
       codec.startsWith("dav1")
+  }
+
+  private fun isLegacySdrMain10Hevc(
+    mimeType: String,
+    codecs: String,
+    colorSpace: Int,
+    colorRange: Int,
+    hasHdrStaticInfo: Boolean,
+    width: Int,
+    height: Int,
+  ): Boolean {
+    if (mimeType != MimeTypes.VIDEO_H265 || hasHdrStaticInfo) return false
+    val colorSpaceUnknown = colorSpace == Format.NO_VALUE || colorSpace == 0
+    val colorRangeUnspecifiedOrLimited =
+      colorRange == Format.NO_VALUE || colorRange == 0 || colorRange == C.COLOR_RANGE_LIMITED
+    val dimensionsAre1080pOrSmaller =
+      width > 0 && height > 0 && maxOf(width, height) <= 1920 && minOf(width, height) <= 1080
+    val codecParts = codecs.lowercase().substringBefore(',').trim().split('.')
+    val codecName = codecParts.firstOrNull()
+    val isMain10Profile =
+      (codecName == "hvc1" || codecName == "hev1") &&
+        codecParts.getOrNull(1)?.toIntOrNull() == 2
+    return colorSpaceUnknown && colorRangeUnspecifiedOrLimited &&
+      dimensionsAre1080pOrSmaller && isMain10Profile
   }
 
   private fun codecSignalsHighBitDepth(codecs: String): Boolean {
