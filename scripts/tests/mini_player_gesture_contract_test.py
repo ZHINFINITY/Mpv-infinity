@@ -29,7 +29,9 @@ class MiniPlayerGestureContracts(unittest.TestCase):
         self.assertNotIn("delay(", gesture)
         # The live frame is computed per draw from finger/settle progress and the live anchor.
         layer = gesture.split("val currentTransitionFrame", 1)[1]
-        self.assertIn("miniGesture.progress", layer)
+        # Progress comes from one source: finger, settle, or the in-app sheet.
+        self.assertIn("currentMiniProgress()", layer)
+        self.assertIn("else if (settleTarget == null) miniGesture.progress", gesture)
         self.assertIn("MusicMinimizeTransitionPolicy.currentAnchor(windowWidth, windowWidth, windowHeight)", layer)
         self.assertIn("MusicMinimizeTransitionPolicy.frame(", layer)
         for forbidden in ("PlaybackSession.", "ACTION_NOTIFICATION_STOP", "load(", "recreate(", "seek("):

@@ -6,6 +6,8 @@
 
 package app.infinity.mpvz.ui.player.controls.components.sheets
 
+import app.infinity.mpvz.ui.components.GlassChip
+
 import app.infinity.mpvz.ui.player.PlaybackSession
 
 import androidx.compose.animation.AnimatedVisibility
@@ -31,7 +33,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilterChip
-import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -161,29 +162,21 @@ fun LyricsSheet(
         val hasEmbedded = state.embeddedLyrics != null && state.embeddedLyrics?.isValid() == true
         val hasOnline = state.onlineLyrics != null && state.onlineLyrics?.isValid() == true
 
-        FilterChip(
+        GlassChip(
           selected = state.selectedSource == LyricsSourceType.EMBEDDED || state.selectedSource == LyricsSourceType.LOCAL,
           onClick = { viewModel.switchLyricsSource(LyricsSourceType.EMBEDDED) },
           label = {
             Text(if (state.embeddedLyrics?.sourceType == LyricsSourceType.LOCAL) "Local (.lrc)" else "Embedded")
           },
           enabled = hasEmbedded || state.selectedSource == LyricsSourceType.EMBEDDED,
-          colors = FilterChipDefaults.filterChipColors(
-            selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
-            selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer,
-          ),
         )
 
-        FilterChip(
+        GlassChip(
           selected = state.selectedSource == LyricsSourceType.ONLINE,
           onClick = { viewModel.switchLyricsSource(LyricsSourceType.ONLINE) },
           label = {
             Text("Online (LRCLIB)")
           },
-          colors = FilterChipDefaults.filterChipColors(
-            selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
-            selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer,
-          ),
         )
 
         if (state.isLoading) {

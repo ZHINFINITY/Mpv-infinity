@@ -22,35 +22,44 @@ def main() -> None:
     sink = SINK.read_text()
     native = NATIVE.read_text()
     require(activity, "fun applyInterpolationPreferencesFromControls()", "public activity callback")
-    require(activity, "InterpolationRuntimeApplyPolicy.decision", "explicit runtime policy")
-    require(activity, "native_flow_sink_unavailable", "truthful Native sink-unavailable logging")
-    require(activity, "backend.applyInterpolationRuntime", "actual Native live runtime call")
-    require(activity, "val backend = if (wasNative) nativeEngine else null", "MPV must not initialize the lazy Native engine")
+    require(activity, "NativeInterpolationRestartPolicy.capture", "exact Native restart snapshot")
+    require(activity, "Flow is unavailable for this device or format", "truthful Native unavailable logging")
     callback = activity.split("fun applyInterpolationPreferencesFromControls()", 1)[1].split("private fun requestMpvInterpolationRestart", 1)[0]
     for forbidden in ("recreate()", "releaseSurface()", "PlaybackSession.load(", "setupMPV()", "invalidateCoreConfiguration()"):
         if forbidden in callback:
             raise SystemExit(f"forbidden live playback restart in callback: {forbidden}")
-    require(callback, "if (!wasNative)", "MPV-only restart branch")
+    require(callback, "if (!isNativeEngineActive())", "MPV-only restart branch")
     require(callback, "requestMpvInterpolationRestart()", "scoped MPV restart entry")
-    native_path = callback.split("val backend", 1)[1]
+    native_path = callback.split("private fun requestNativeInterpolationRestart()", 1)[1]
     if "requestMpvInterpolationRestart()" in native_path:
-        raise SystemExit("Native must never enter the MPV restart transaction")
+      raise SystemExit("Native must never enter the MPV restart transaction")
     require(activity, "MpvInterpolationRestartTransaction.run(snapshot", "tested MPV transaction")
     require(activity, "paused = true", "hold reload paused until all live state is restored")
     require(activity, "forceMpvReload = true", "external subtitle descriptor reattachment")
     require(activity, "player.interpolationConfigurationApplied(appliedEnabled, appliedFps)", "actual init-option ACK")
-    require(activity, "Native interpolation controls applied to the current playback", "live Native confirmation")
     require(sink, "suspend fun applyRuntimeInterpolation", "suspend GL runtime API")
     require(sink, "suspendCancellableCoroutine", "cancellable GL dispatch")
     require(sink, "glHandler.post", "GL handler dispatch")
     require(sink, "continuation.isActive", "cancellation guard")
     require(sink, "continuation.resume(true)", "actual apply ACK")
     require(sink, "enabled = interpolationEnabled", "truthful diagnostics enabled state")
-    require(native, "suspend fun applyInterpolationRuntime", "suspend Native API")
+    require(native, "suspend fun applyInterpolationRuntime", "suspend Native runtime API")
+    require(native, "internal suspend fun restartCurrentItemForInterpolation", "Native controlled reload API")
+    require(native, "player.setMediaItem(item, state.positionMs)", "same MediaItem and exact timestamp")
+    require(native, "player.playWhenReady = state.playWhenReady", "prior Native play state restored")
+    native_apply = native.split("suspend fun applyInterpolationRuntime", 1)[1].split("\n  /**", 1)[0]
+    require(native_apply, "shouldReleaseFlowOutputSurfaceBeforeNativeRendererReselect(", "Flow-to-Native surface-release policy")
+    release_index = native_apply.find("flowSink.clearOutputSurfaceInfo()")
+    reselect_index = native_apply.find("nativeTrackSelector.invalidateRendererEligibility()")
+    if release_index < 0 or reselect_index < 0 or release_index >= reselect_index:
+        raise SystemExit("Flow EGL output must be fenced before Native renderer re-selection")
+    require(sink, "releaseFence.await(GL_INIT_TIMEOUT_MS, TimeUnit.MILLISECONDS)", "fenced Flow EGL output release")
     callback = activity.split("fun applyInterpolationPreferencesFromControls()", 1)[1].split("private fun requestMpvInterpolationRestart", 1)[0]
     require(callback, "lifecycleScope.launch", "nonblocking activity launch")
-    require(callback, "backend.applyInterpolationRuntime(enabled = enabled, targetFps = targetFps)", "Native FPS consumption")
-    require(callback, "activeEngineMode == PlaybackEngineMode.NATIVE && nativeEngine === backend", "same backend ACK guard")
+    require(callback, "backend.restartCurrentItemForInterpolation(", "Native shortcut reload call")
+    require(callback, "activeEngineMode == PlaybackEngineMode.NATIVE && nativeEngineConfigured", "Native ownership guard")
+    require(callback, "pendingNativeInterpolationFallbackState = state", "same-item error fallback snapshot")
+    require(callback, "requestGeneration != interpolationControlRequestGeneration", "latest toggle coalescing")
     if "runOnGlThreadSync" in callback:
         raise SystemExit("UI callback must not synchronously wait for GL")
     require(controls, "applyInterpolationPreferencesFromControls()", "interpolation toggle caller")

@@ -38,11 +38,16 @@ class PlayerRegressionWiringTest(unittest.TestCase):
         panel = source('ui/player/controls/components/panels/DraggablePanel.kt')
         controls = source('ui/player/controls/components/GlassControls.kt')
         self.assertIn('LocalPlayerGlassSurfaceOwner provides liquidGlassSurfaces', drawer)
-        self.assertIn('if (LocalPlayerGlassSurfaceOwner.current) return this', controls)
+        self.assertIn('if (LocalPlayerGlassSurfaceOwner.current) return clipped', controls)
+        self.assertIn('val clipped = this.clip(shape)', controls)
         self.assertIn('border = if (glass) null else border', panel)
         compact_panel = ''.join(panel.split())
         self.assertIn('.weight(1f).fillMaxWidth().verticalScroll(', compact_panel)
-        self.assertIn('.width(PlayerControlGridPolicy.panelWidthDp(maxWidth.value).dp)', panel)
+        # One exact width from the grid policy, shared by the 1909 path and the
+        # build 1933 edge-attached path (which measures it as fixed constraints).
+        self.assertIn('val panelWidthDp = PlayerControlGridPolicy.panelWidthDp(maxWidth.value).dp', panel)
+        self.assertIn('.width(panelWidthDp)', panel)
+        self.assertIn('width = panelWidthPx + bleed.end,', panel)
         self.assertIn('.heightIn(max = panelMaxHeight)', panel)
         self.assertNotIn('weight(1f, fill = false)', panel)
 

@@ -142,11 +142,30 @@ class Media3FlowVideoSink(
   @Volatile private var interpolationEnabled = initialInterpolationEnabled
   private val quality = requestedQuality.coerceIn(0, 100)
   /** Apply runtime controls in GL order without blocking the UI thread. */
-  suspend fun applyRuntimeInterpolation(enabled: Boolean, requestedTargetFps: Int): Boolean =
+  suspend fun applyRuntimeInterpolation(
+    enabled: Boolean,
+    requestedTargetFps: Int,
+    requestedFormatEligible: Boolean,
+    allowRetryAfterResourceFailure: Boolean = false,
+  ): Boolean =
     suspendCancellableCoroutine { continuation ->
       val posted = glHandler.post {
         if (!continuation.isActive) return@post
-        if (!NativeInterpolationRuntimePolicy.canMutateLiveSink(disposed, preflightAvailable, flowAvailable)) {
+        // HDR/Dolby Vision may not feed this sink while interpolation is off. If the requested
+        // state is format-eligible, accept it before first Flow initialization so the engine can
+        // reselect. A failed resource setup is retried only for an explicit controlled reload;
+        // ordinary changes still avoid retries, and disabling interpolation always remains safe.
+        if (!NativeInterpolationRuntimePolicy.canApplyRuntimeConfiguration(
+            disposed = disposed,
+            preflightAvailable = preflightAvailable,
+            flowResourcesAttempted = flowResourcesAttempted,
+            flowAvailable = flowAvailable,
+            currentInterpolationEnabled = interpolationEnabled,
+            requestedInterpolationEnabled = enabled,
+            requestedFormatEligible = requestedFormatEligible,
+            allowRetryAfterResourceFailure = allowRetryAfterResourceFailure,
+          )
+        ) {
           continuation.resume(false)
           return@post
         }
@@ -352,6 +371,7 @@ class Media3FlowVideoSink(
   private var outputHardwareBuffer: HardwareBuffer? = null
   private var outputImageHandle = 0L
   private var flowAvailable = false
+  private var flowResourcesAttempted = false
   @Volatile private var preflightAvailable = false
   @Volatile var preflightFailureReason: String? = null
     private set
@@ -360,7 +380,8 @@ class Media3FlowVideoSink(
     logFlowRecordOnce(
       "flow-config",
       Log.INFO,
-      "event=config requested_enabled=true renderer=native-media3 capture=gles3 renderer_api=vulkan " +
+      "event=config requested_enabled=$initialInterpolationEnabled runtime_enabled=$interpolationEnabled " +
+        "renderer=native-media3 capture=gles3 renderer_api=vulkan " +
         "requested_compute_api=${requestedComputeApi.name.lowercase()} " +
         "visibility_resolver=$visibilityResolverEnabled soft_blend=$softBlendEnabled " +
         "target_fps=$targetFps source_pts=media3_decoder sync_mode=1x hardware_decoder=media3 " +
@@ -473,6 +494,9 @@ class Media3FlowVideoSink(
   }
 
   fun isPreflightAvailable(): Boolean = preflightAvailable && !disposed
+
+  /** The effective flag used by the live output callback, not the startup preference snapshot. */
+  fun isInterpolationEnabled(): Boolean = interpolationEnabled
 
   fun startFlowDiagnosticCapture(
     sessionId: String,
@@ -912,17 +936,45 @@ class Media3FlowVideoSink(
 
   override fun clearOutputSurfaceInfo() {
     val previousSurface = outputSurface
-    outputSurfaceGeneration.incrementAndGet()
+    val generation = outputSurfaceGeneration.incrementAndGet()
     outputAvailable = false
     presentationSurfaceReady = false
     outputSurface = null
-    glHandler.post {
+    // Media3 may let MediaCodec reconnect to PlayerView as soon as this callback returns. Fence
+    // both Flow threads so the EGL producer releases that BufferQueue before the codec reconnects.
+    val releaseFence = CountDownLatch(1)
+    val releaseStartedNs = System.nanoTime()
+    val clearOnGlThread = {
       cancelDisplayFrame()
       clearFrameRateHint(previousSurface)
       outputWallTimes.clear()
       generatedWallTimes.clear()
       if (makePbufferCurrent()) cancelPendingPresentationBuffers()
-      destroyWindowSurface()
+      destroyWindowSurface { releaseFence.countDown() }
+    }
+    val posted = if (Looper.myLooper() == glThread.looper) {
+      clearOnGlThread()
+      true
+    } else {
+      glHandler.post { clearOnGlThread() }
+    }
+    if (!posted) {
+      if (!disposed) Log.e(logTag, "event=output_surface_release state=gl_thread_unavailable generation=$generation")
+      return
+    }
+    val completed = try {
+      releaseFence.await(GL_INIT_TIMEOUT_MS, TimeUnit.MILLISECONDS)
+    } catch (interrupted: InterruptedException) {
+      Thread.currentThread().interrupt()
+      false
+    }
+    val waitedMs = (System.nanoTime() - releaseStartedNs) / 1_000_000L
+    if (completed) {
+      if (isDebuggable) {
+        Log.d(logTag, "event=output_surface_release state=complete generation=$generation wait_ms=$waitedMs")
+      }
+    } else {
+      Log.e(logTag, "event=output_surface_release state=timeout generation=$generation wait_ms=$waitedMs")
     }
   }
 
@@ -2807,29 +2859,38 @@ class Media3FlowVideoSink(
     if (presentationQueue.hasReady()) schedulePresentationDrain()
   }
 
-  private fun destroyWindowSurface() {
+  private fun destroyWindowSurface(onDestroyed: (() -> Unit)? = null) {
     presentationSurfaceReady = false
-    presentationHandler.post { destroyWindowSurfaceOnPresentationThread() }
+    if (!presentationHandler.post { destroyWindowSurfaceOnPresentationThread(onDestroyed) }) {
+      Log.e(logTag, "event=output_surface_release state=presentation_thread_unavailable")
+    }
   }
 
-  private fun destroyWindowSurfaceOnPresentationThread() {
+  private fun destroyWindowSurfaceOnPresentationThread(onDestroyed: (() -> Unit)? = null) {
     presentationSurfaceReady = false
     if (presentationQueue.hasPresenting()) {
-      presentationHandler.postDelayed(
-        { destroyWindowSurfaceOnPresentationThread() },
-        PRESENTATION_FENCE_POLL_DELAY_MS,
-      )
+      if (!presentationHandler.postDelayed(
+          { destroyWindowSurfaceOnPresentationThread(onDestroyed) },
+          PRESENTATION_FENCE_POLL_DELAY_MS,
+        )
+      ) {
+        Log.e(logTag, "event=output_surface_release state=presentation_fence_unavailable")
+      }
       return
     }
     if (eglDisplay == EGL14.EGL_NO_DISPLAY) {
       windowSurface = EGL14.EGL_NO_SURFACE
+      onDestroyed?.invoke()
       return
     }
     makePresentationPbufferCurrent()
-    if (windowSurface != EGL14.EGL_NO_SURFACE) EGL14.eglDestroySurface(eglDisplay, windowSurface)
+    if (windowSurface != EGL14.EGL_NO_SURFACE && !EGL14.eglDestroySurface(eglDisplay, windowSurface)) {
+      Log.e(logTag, "event=output_surface_release state=egl_destroy_failed error=0x${EGL14.eglGetError().toString(16)}")
+    }
     windowSurface = EGL14.EGL_NO_SURFACE
     eglSwapIntervalAttempted = false
     eglSwapIntervalZeroApplied = false
+    onDestroyed?.invoke()
   }
 
   private fun drawPresentationFullscreenTriangle() {
@@ -2939,6 +3000,7 @@ class Media3FlowVideoSink(
   }
 
   private fun ensureProcessingResources(decoderWidth: Int, decoderHeight: Int) {
+    flowResourcesAttempted = true
     val frameSize = Media3FlowGeometry.processingFrameSize(decoderWidth, decoderHeight)
     val sourceWidth = frameSize.width
     val sourceHeight = frameSize.height
@@ -3853,9 +3915,17 @@ class Media3FlowVideoSink(
 
     @JvmStatic
     fun supportsFormat(format: Format): Boolean =
-      supportsFormat(format, Build.VERSION.SDK_INT)
+      supportsFormat(format, Build.VERSION.SDK_INT, interpolationEnabled = true)
 
-    internal fun supportsFormat(format: Format, sdkInt: Int): Boolean {
+    @JvmStatic
+    fun supportsFormat(format: Format, interpolationEnabled: Boolean): Boolean =
+      supportsFormat(format, Build.VERSION.SDK_INT, interpolationEnabled)
+
+    internal fun supportsFormat(
+      format: Format,
+      sdkInt: Int,
+      interpolationEnabled: Boolean = true,
+    ): Boolean {
       val supportedRotation = format.rotationDegrees == 0 || format.rotationDegrees == 90 ||
         format.rotationDegrees == 180 || format.rotationDegrees == 270
       if (format.width < 16 || format.height < 16 || !supportedRotation ||
@@ -3874,9 +3944,24 @@ class Media3FlowVideoSink(
         colorTransfer = colorInfo?.colorTransfer ?: Format.NO_VALUE,
         lumaBitdepth = colorInfo?.lumaBitdepth ?: Format.NO_VALUE,
         chromaBitdepth = colorInfo?.chromaBitdepth ?: Format.NO_VALUE,
-        hasHdrStaticInfo = colorInfo?.hdrStaticInfo != null,
+        hasHdrStaticInfo = colorInfo?.hdrStaticInfo?.isNotEmpty() == true,
         isEquivalentToAssumedSdrDefault = ColorInfo.isEquivalentToAssumedSdrDefault(colorInfo),
         decoderSdrRequestAvailable = sdkInt >= 31,
+        interpolationEnabled = interpolationEnabled,
+      )
+    }
+
+    @JvmStatic
+    fun requiresNativeHdrPassthrough(format: Format): Boolean {
+      val colorInfo = format.colorInfo
+      return Media3FlowFormatPolicy.requiresNativeHdrPassthrough(
+        mimeType = format.sampleMimeType.orEmpty().lowercase(),
+        codecs = format.codecs.orEmpty().lowercase(),
+        colorSpace = colorInfo?.colorSpace ?: Format.NO_VALUE,
+        colorTransfer = colorInfo?.colorTransfer ?: Format.NO_VALUE,
+        lumaBitdepth = colorInfo?.lumaBitdepth ?: Format.NO_VALUE,
+        chromaBitdepth = colorInfo?.chromaBitdepth ?: Format.NO_VALUE,
+        hasHdrStaticInfo = colorInfo?.hdrStaticInfo?.isNotEmpty() == true,
       )
     }
 
@@ -3891,7 +3976,7 @@ class Media3FlowVideoSink(
         colorTransfer = colorInfo?.colorTransfer ?: Format.NO_VALUE,
         lumaBitdepth = colorInfo?.lumaBitdepth ?: Format.NO_VALUE,
         chromaBitdepth = colorInfo?.chromaBitdepth ?: Format.NO_VALUE,
-        hasHdrStaticInfo = colorInfo?.hdrStaticInfo != null,
+        hasHdrStaticInfo = colorInfo?.hdrStaticInfo?.isNotEmpty() == true,
       )
     }
 

@@ -93,7 +93,9 @@ public final class Media3FlowRenderersFactory extends DefaultRenderersFactory {
               codecOperatingRate,
               deviceNeedsNoPostProcessWorkaround,
               tunnelingAudioSessionId);
+      boolean interpolationEnabled = flowSink.isInterpolationEnabled();
       if (Build.VERSION.SDK_INT >= 31
+          && Media3FlowVideoSink.supportsFormat(format, interpolationEnabled)
           && Media3FlowVideoSink.requiresSdrOutputTransferRequest(format)) {
         mediaFormat.setInteger(
             MediaFormat.KEY_COLOR_TRANSFER_REQUEST, MediaFormat.COLOR_TRANSFER_SDR_VIDEO);
@@ -109,7 +111,8 @@ public final class Media3FlowRenderersFactory extends DefaultRenderersFactory {
 
     @Override
     protected int supportsFormat(MediaCodecSelector mediaCodecSelector, Format format) {
-      if (!flowSink.isPreflightAvailable() || !Media3FlowVideoSink.supportsFormat(format)) {
+      if (!flowSink.isPreflightAvailable()
+          || !Media3FlowVideoSink.supportsFormat(format, flowSink.isInterpolationEnabled())) {
         return RendererCapabilities.create(C.FORMAT_UNSUPPORTED_TYPE);
       }
       try {

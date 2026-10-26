@@ -7,6 +7,7 @@
 
 package app.infinity.mpvz.ui.player.controls
 
+import app.infinity.mpvz.ui.player.PlayerStatsLuaCommandPolicy
 import app.infinity.mpvz.ui.player.DeclaredPlaybackMediaKind
 import app.infinity.mpvz.ui.player.PlaybackPhase
 import app.infinity.mpvz.ui.player.PlaybackSession
@@ -144,10 +145,9 @@ import app.infinity.mpvz.ui.player.NativePlaybackSnapshot
 import app.infinity.mpvz.ui.player.NativeStatsDisplay
 import app.infinity.mpvz.ui.player.Panels
 import app.infinity.mpvz.ui.player.PlayerActivity
-import app.infinity.mpvz.ui.player.PlayerStatsOverlayPolicy
 import app.infinity.mpvz.ui.player.PlayerUpdates
 import app.infinity.mpvz.ui.player.PlayerViewModel
-import app.infinity.mpvz.ui.player.InAppMusicSheetState
+import app.infinity.mpvz.ui.player.BrowserMusicSheetState
 import app.infinity.mpvz.ui.player.PlaybackEngineMode
 import app.infinity.mpvz.ui.player.AudiobookPlayback
 import app.infinity.mpvz.ui.player.Sheets
@@ -209,7 +209,7 @@ internal fun AudioPlayerScreen(
   onBackPress: () -> Unit,
   modifier: Modifier = Modifier,
   titleForControls: () -> String? = { null },
-  inAppSheet: InAppMusicSheetState? = null,
+  inAppSheet: BrowserMusicSheetState? = null,
   onSelectEngine: ((PlaybackEngineMode) -> Unit)? = null,
 ) {
   val playerPreferences = koinInject<PlayerPreferences>()
@@ -442,7 +442,10 @@ fun PlayerControls(
   val duration by PlaybackSession.propInt["duration"].collectAsState()
   val playbackQueue by PlaybackSession.queue.collectAsStateWithLifecycle()
   val preciseDuration by viewModel.preciseDuration.collectAsState()
-  val precisePosition by viewModel.precisePosition.collectAsState()
+  // Keep the State object, not its value: reading position here would recompose the full
+  // controls tree on every interpolation tick. The seekbar leaf collects its own copy and
+  // the audiobook chapter index below derives from it, changing only on chapter boundaries.
+  val precisePositionState = viewModel.precisePosition.collectAsState()
   val demuxerCacheTime by PlaybackSession.propDouble["demuxer-cache-time"].collectAsState()
   val mpvPlaybackSpeed by PlaybackSession.propFloat["speed"].collectAsState()
   val seekbarDuration = if (preciseDuration > 0) preciseDuration else duration?.toFloat() ?: 0f
@@ -572,13 +575,13 @@ fun PlayerControls(
   val audiobookChapters by AudiobookPlayback.chapters.collectAsStateWithLifecycle()
   val activeAudiobook by AudiobookPlayback.book.collectAsStateWithLifecycle()
   val currentPlaybackItem = playbackQueue.currentItem
-  val audiobookChapterIndex = remember(
+  val audiobookChapterIndex by remember(
     currentPlaybackItem?.audiobook,
     audiobookChapters,
     activeAudiobook?.tracks,
-    precisePosition,
     chapters,
-  ) {
+  ) { derivedStateOf {
+    val precisePosition = precisePositionState.value
     val info = currentPlaybackItem?.audiobook
     if (info == null || audiobookChapters.isEmpty()) {
       -1
@@ -596,7 +599,7 @@ fun PlayerControls(
         chapters.indexOfLast { it.start <= seconds }
       }
     }
-  }
+  } }
   val currentChapter = if (nativeEngineActive) {
     chapters.indexOfLast { it.start <= nativeSnapshot.positionMs / 1000f }.takeIf { it >= 0 }
   } else if (audiobookChapterIndex >= 0) {
@@ -615,19 +618,18 @@ fun PlayerControls(
       DeclaredPlaybackMediaKind.AUDIO -> true
       else -> isAudioOnly || activity?.isCurrentMediaKnownAudio() == true
     }
-  val declaredMediaKind = currentPlaybackItem?.declaredMediaKind()
-  val statsDecision = PlayerStatsOverlayPolicy.decide(
-    PlayerStatsOverlayPolicy.Input(
-      enabled = statisticsPage in 1..6,
-      page = statisticsPage,
-      engine = if (nativeEngineActive) PlayerStatsOverlayPolicy.Engine.NATIVE
-      else PlayerStatsOverlayPolicy.Engine.MPV,
-      isAudioOnly = useAudioPlayer,
-      musicMode = useAudioPlayer,
-      mediaTypeKnown = declaredMediaKind != DeclaredPlaybackMediaKind.UNKNOWN ||
-        nativeSnapshot.videoWidth > 0 || activity?.isCurrentMediaKnownAudio() == true,
-    ),
-  )
+  // Music never shows stats.lua. The user's chosen page is kept (not reset to 0); the next MPV
+  // core started for a video shows it again (MPVView.postInitOptions).
+  LaunchedEffect(useAudioPlayer) {
+    if (useAudioPlayer) {
+      PlayerStatsLuaCommandPolicy.apply(
+        PlayerStatsLuaCommandPolicy.forMusicHide(
+          luaShown = PlayerStatsLuaCommandPolicy.isLuaShown(),
+          consoleOpen = PlaybackSession.getPropertyBoolean("user-data/mpv/console/open") == true,
+        ),
+      )
+    }
+  }
   if (useAudioPlayer) {
     AudioPlayerScreen(
       viewModel = viewModel,
@@ -796,10 +798,9 @@ fun PlayerControls(
             .zIndex(0f),
       )
     }
-    // mpvRx: pages 1-5 are stats.lua OSD only. Page 6 is CustomStatsPageSixOverlay
-    // only. Do not hide Compose because More is open; lua already stays up.
-    // Native Media3 has no stats.lua, so keep NativeStatsPageOverlay for 1-6.
-    if (statsDecision.visible) {
+    // Statistics are a video overlay only. Keep them out of the audio/visualizer composition even
+    // when the previous video left the persisted statistics page enabled.
+    if (!useAudioPlayer && statisticsPage in 1..6) {
       val statsModifier =
         Modifier
           .align(Alignment.TopStart)
@@ -1932,8 +1933,8 @@ fun PlayerControls(
                 if (showChapterIndicators) chapters.toImmutableList() else persistentListOf()
               }
             val skipSegmentsImmutable = remember(skipSegments) { skipSegments.toImmutableList() }
-            // The outer-box preference controls container visibility. Liquid glass only changes
-            // the appearance when that independently-enabled container is present.
+            // The preference controls both the outer box and the track's glass rail.
+            // Global liquid glass styles the rail only when this container is enabled.
             val seekbarContainerEnabled = showSeekbarOuterContainer
             val useLiquidGlassSeekbar = liquidGlassSurfaces && seekbarContainerEnabled
 
@@ -2021,6 +2022,7 @@ fun PlayerControls(
               loopStart = abLoopA?.toFloat(),
               loopEnd = abLoopB?.toFloat(),
               bufferDuration = stableDemuxerCacheTime.takeIf { showBufferedRange && it > 0f },
+              glassTrackEnabled = seekbarContainerEnabled,
               isPortrait = isPortrait,
             )
             }

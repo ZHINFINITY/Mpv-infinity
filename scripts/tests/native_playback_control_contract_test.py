@@ -22,14 +22,15 @@ class NativePlaybackControlContractTest(unittest.TestCase):
     def test_normal_close_captures_native_position_before_media_is_cleared(self):
         activity = (PLAYER / 'PlayerActivity.kt').read_text()
         body = function(activity, 'silenceAudioOnClose')
-        self.assertLess(body.index('saveVideoPlaybackState('), body.index('nativeEngine.stop()'))
+        self.assertLess(body.index('saveVideoPlaybackState('), body.index('nativeEngineOrNull()?.stop()'))
+        self.assertNotIn('nativeEngine.', body)
         self.assertIn('immediate = true', body)
 
     def test_native_preview_routes_to_engine_instead_of_returning_without_a_seek(self):
         view_model = (PLAYER / 'PlayerViewModel.kt').read_text()
         self.assertIn('host.nativeSeekPreviewTo(', function(view_model, 'seekPreviewTo'))
         activity = (PLAYER / 'PlayerActivity.kt').read_text()
-        self.assertIn('nativeEngine.seekPreviewTo(positionMs)', function(activity, 'nativeSeekPreviewTo'))
+        self.assertIn('nativeEngineOrNull()?.seekPreviewTo(positionMs)', function(activity, 'nativeSeekPreviewTo'))
         controls = (PLAYER / 'controls/PlayerControls.kt').read_text()
         self.assertIn('viewModel.seekPreviewTo(it)', controls)
         self.assertIn('viewModel.finishSeekPreview(targetPosition)', controls)
@@ -92,6 +93,24 @@ class NativePlaybackControlContractTest(unittest.TestCase):
         engine = (PLAYER / 'NativeMedia3Engine.kt').read_text()
         for name in ('play', 'stop', 'release'):
             self.assertIn('seekDispatcher.cancel()', function(engine, name))
+
+    def test_media3_timeline_tick_is_light_but_metadata_and_track_events_remain_full(self):
+        engine = (PLAYER / 'NativeMedia3Engine.kt').read_text()
+        timeline = engine.split('private val timelineRunnable = object : Runnable {', 1)[1].split(
+            'private val loopRunnable', 1)[0]
+        self.assertIn('publishPlaybackSnapshot()', timeline)
+        self.assertNotIn('publishSnapshot()', timeline)
+
+        listener = engine.split('private val listener = object : Player.Listener {', 1)[1].split(
+            '\n  init {', 1)[0]
+        metadata = listener.split('override fun onMetadata(metadata: Metadata) {', 1)[1].split(
+            'override fun onEvents', 1)[0]
+        self.assertIn('metadataEntriesToChapters(metadata)', metadata)
+        self.assertIn('publishSnapshot()', metadata)
+        events = listener.split('override fun onEvents(player: Player, events: Player.Events) {', 1)[1].split(
+            '\n    }\n  }', 1)[0]
+        self.assertIn('events.contains(Player.EVENT_TRACKS_CHANGED)', events)
+        self.assertIn('publishSnapshot()', events)
 
 
 if __name__ == '__main__':

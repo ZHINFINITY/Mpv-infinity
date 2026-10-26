@@ -46,6 +46,17 @@ internal class MiniPlayerDragController(
       return consume(available.y)
     }
 
+    // Settle on release, not after the child's fling animation. A child list used to
+    // fling for its whole duration (scrolling underneath the moving page) before
+    // onPostFling arrived, which left the half-minimized player frozen meanwhile.
+    override suspend fun onPreFling(available: Velocity): Velocity {
+      if (!nestedGestureActive || settleDispatched) return Velocity.Zero
+      settleDispatched = true
+      nestedGestureActive = false
+      settle(available.y.takeIf { it.isFinite() } ?: 0f)
+      return available
+    }
+
     override suspend fun onPostFling(consumed: Velocity, available: Velocity): Velocity {
       if (nestedGestureActive && !settleDispatched) {
         settleDispatched = true
@@ -71,4 +82,16 @@ internal class MiniPlayerDragController(
 
   /** Root cancellation must not erase a nested child handoff awaiting post-fling. */
   fun onRootDragCancel(): Boolean = !nestedGestureActive
+
+  /**
+   * Called after every finger has lifted. A nested child whose gesture was cancelled (for
+   * example it left composition mid-drag) never flings, so nothing would settle the page.
+   * Returns true when the caller must settle; a later fling callback is then ignored.
+   */
+  fun claimReleaseSettle(): Boolean {
+    if (settleDispatched) return false
+    settleDispatched = true
+    nestedGestureActive = false
+    return true
+  }
 }
