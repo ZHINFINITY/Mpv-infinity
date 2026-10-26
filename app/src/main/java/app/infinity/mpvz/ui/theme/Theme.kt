@@ -7,6 +7,9 @@
 
 package app.infinity.mpvz.ui.theme
 
+import app.infinity.mpvz.ui.theme.lens.LensGlassPolicy
+import app.infinity.mpvz.ui.theme.lens.LocalLensGlassEnabled
+
 import android.content.Context
 import android.graphics.Bitmap
 import android.os.Build
@@ -310,6 +313,14 @@ fun MpvInfinityTheme(
       rimWidthDp = GlassRimLightPolicy.widthDp(glassRimWidth),
       rimSoftness = GlassRimLightPolicy.softness(glassRimSoftness))
   }
+  val lensContext = LocalContext.current
+  val lensGlassEnabled = remember(glassEnabled) {
+    LensGlassPolicy.lensAllowed(
+      sdkInt = android.os.Build.VERSION.SDK_INT,
+      deviceSupported = GlassDeviceSupport.allowsGlass(lensContext),
+      glassEnabled = glassEnabled,
+    )
+  }
   val activeCustomThemeId by preferences.activeCustomThemeId.collectAsState()
   val customTheme = customThemes.firstOrNull { it.id == activeCustomThemeId }
   val useSystemFont by preferences.useSystemFont.collectAsState()
@@ -357,6 +368,7 @@ fun MpvInfinityTheme(
     LocalEmphasizedTypography provides AppEmphasizedTypography,
     LocalDarkAppColorScheme provides darkColorScheme,
     LocalGlassCustomization provides glassCustomization,
+    LocalLensGlassEnabled provides lensGlassEnabled,
   ) {
     val themedContent: @Composable () -> Unit = {
       ThemeTransitionContent {

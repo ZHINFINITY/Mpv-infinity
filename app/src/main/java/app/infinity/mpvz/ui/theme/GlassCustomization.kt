@@ -20,5 +20,11 @@ data class GlassCustomization(
   val rimWidthDp: Float = GlassRimLightPolicy.DefaultWidthDp,
   /** How far the top-left highlight spreads along the edge before fading, 0..1. */
   val rimSoftness: Float = GlassRimLightPolicy.DefaultSoftness,
+  /** Lens refraction (how far the glass edge bends what is behind it), 0..2 (1 = default). */
+  val lensRefraction: Float = 1f,
+  /** Lens depth (magnification / thickness of the bend band), 0..2 (1 = default). */
+  val lensDepth: Float = 1f,
+  /** Thin rainbow (chromatic) edge on lens surfaces. */
+  val colourEdge: Boolean = true,
 )
 val LocalGlassCustomization = staticCompositionLocalOf { GlassCustomization() }
