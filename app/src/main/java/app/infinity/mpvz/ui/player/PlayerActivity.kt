@@ -1162,6 +1162,7 @@ class PlayerActivity :
   private var isReady = false // Single flag: true when video loaded and ready
   private var isUserFinishing = false
   private var audioMinimizePresentationCompleted = false
+  val audioMinimizeAbortRequest = androidx.compose.runtime.mutableIntStateOf(0)
   private var isBackgroundPlaybackSessionActive = false
   private var reusingPlaybackSessionOnLaunch = false
   private var playbackOwnerToken = 0L
@@ -1318,8 +1319,7 @@ class PlayerActivity :
   /**
    * Listener for audio focus changes.
    */
-  private val audioFocusChangeListener =
-    AudioManager.OnAudioFocusChangeListener { focusChange ->
+  private val audioFocusChangeHandler = AudioFocusChangeHandler { focusChange ->
       PlaybackActivityOwner.runIfOwner(playbackOwnerToken, Unit) {
         when (focusChange) {
           AudioManager.AUDIOFOCUS_LOSS -> {
@@ -1377,7 +1377,8 @@ class PlayerActivity :
           }
         }
       }
-    }
+  }
+  private val audioFocusChangeListener = WeakAudioFocusListener(audioFocusChangeHandler)
 
   private var preflightM3uParse: Pair<String, M3UParseResult.Success>? = null
   private var m3uPreflightJob: Job? = null
@@ -1570,8 +1571,13 @@ class PlayerActivity :
         ).collect { engine ->
           val currentQueueItem = PlaybackSession.queue.value.currentItem
           val effectiveEngine =
-            when (engine) {
-              PlaybackEngineMode.AUTO ->
+            when {
+              // Music always plays on MPV, matching the load path. Without this, the preference
+              // re-emitted on every start handed a playing song to Native Media3 and restarted it.
+              currentQueueItem?.isDefinitelyAudioOnly() == true ||
+                currentQueueItem?.declaredMediaKind() == DeclaredPlaybackMediaKind.AUDIO ->
+                PlaybackEngineMode.MPV
+              engine == PlaybackEngineMode.AUTO ->
                 if (currentQueueItem?.isHdrOrDolbyVision() == true &&
                   currentQueueItem.requiresTorrentResolution().not()
                 ) {
@@ -2231,12 +2237,14 @@ class PlayerActivity :
     if (viewModel.sheetShown.value != Sheets.None) {
       viewModel.sheetShown.update { Sheets.None }
       viewModel.showControls()
+      abortLandedAudioMinimize()
       return
     }
 
     if (viewModel.panelShown.value != Panels.None) {
       viewModel.panelShown.update { Panels.None }
       viewModel.showControls()
+      abortLandedAudioMinimize()
       return
     }
 
@@ -3257,6 +3265,16 @@ class PlayerActivity :
   }
 
   /**
+   * Notify the audio controls when a landed minimize did not leave the Activity, so it can grow
+   * the page back to full size instead of leaving it parked on the mini-player rectangle.
+   */
+  private fun abortLandedAudioMinimize() {
+    if (!audioMinimizePresentationCompleted || isFinishing || isDestroyed) return
+    audioMinimizePresentationCompleted = false
+    audioMinimizeAbortRequest.intValue++
+  }
+
+  /**
    * Opened from the browser mini player: incremented so AudioPlayerControls can run the
    * mini-to-full expansion. Only set when the translucent window was actually granted.
    */
@@ -3834,8 +3852,7 @@ class PlayerActivity :
     setIntent(
       Intent(sourceIntent).apply {
         action = Intent.ACTION_VIEW
-        data = Uri.parse(currentItem.originalUri)
-        type = currentItem.mimeType?.takeIf(String::isNotBlank) ?: "audio/*"
+        AudioResumeLaunch.applyTo(this, currentItem.originalUri, currentItem.mimeType)
         putExtra("is_audio", true)
         putExtra("media_library_audio", true)
         putExtra("title", currentItem.title)
@@ -3936,8 +3953,7 @@ class PlayerActivity :
     val mediaIntent =
       Intent(sourceIntent).apply {
         action = Intent.ACTION_VIEW
-        data = Uri.parse(currentItem.originalUri)
-        type = currentItem.mimeType ?: sourceIntent.type
+        AudioResumeLaunch.applyTo(this, currentItem.originalUri, currentItem.mimeType, sourceIntent.type)
         putExtra("title", currentItem.title)
         putExtra("media_identifier", currentItem.stableId)
         putExtra("playlist_index", queueState.currentIndex)
@@ -7121,8 +7137,12 @@ class PlayerActivity :
         intent =
           Intent(intent).apply {
             action = Intent.ACTION_VIEW
-            data = Uri.parse(fallbackUri)
-            if (type.isNullOrBlank() && getBooleanExtra("is_audio", false)) type = "audio/*"
+            AudioResumeLaunch.applyTo(
+              this,
+              fallbackUri,
+              type,
+              fallbackMimeType = "audio/*".takeIf { getBooleanExtra("is_audio", false) },
+            )
           }
       }
     }
@@ -8709,7 +8729,12 @@ class PlayerActivity :
   }
 
   private fun startBackgroundPlaybackInternal(bindToActivity: Boolean): Boolean {
-    if (fileName.isBlank() || (!isReady && nativeEngineOrNull()?.snapshot?.value?.isReady != true)) {
+    // A reopened Activity may lag the live MPV session's READY/BACKGROUND state; that session is
+    // still a valid handoff source even before this Activity's own `isReady` flag catches up.
+    val mpvSessionReady =
+      !isNativeEngineActive() &&
+        PlaybackSession.state.value.phase.let { it == PlaybackPhase.READY || it == PlaybackPhase.BACKGROUND }
+    if (fileName.isBlank() || (!isReady && !mpvSessionReady && nativeEngineOrNull()?.snapshot?.value?.isReady != true)) {
       Log.w(TAG, "Cannot start background playback: video not ready")
       return false
     }
@@ -9015,6 +9040,7 @@ class PlayerActivity :
         setActivityMediaSessionActive(true)
         if (failedBackgroundHandoff) {
           Toast.makeText(this@PlayerActivity, R.string.toast_playback_load_failed, Toast.LENGTH_LONG).show()
+          abortLandedAudioMinimize()
         }
         endBackgroundPlayback()
       }

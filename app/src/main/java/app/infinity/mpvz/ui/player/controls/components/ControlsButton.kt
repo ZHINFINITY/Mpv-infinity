@@ -27,6 +27,11 @@ import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
@@ -80,15 +85,26 @@ fun ControlsButton(
   val hideBackground = LocalHidePlayerButtonsBackground.current
   val appearance = koinInject<AppearancePreferences>()
   val liquidGlassSurfaces by appearance.liquidGlassSurfaces.collectAsState()
-  val resolvedColor = color ?: playerButtonContentColor()
   val glassEnabled = liquidGlassSurfaces
+  val resolvedColor = color ?: playerButtonContentColor()
+  val pressed by interactionSource.collectIsPressedAsState()
+  val lift by animateFloatAsState(if (pressed && glassEnabled) 1.04f else 1f, spring(stiffness = Spring.StiffnessMediumLow), label = "glassButtonLift")
 
   val clickEvent = LocalPlayerButtonsClickEvent.current
   Surface(
     modifier =
       modifier
+        .graphicsLayer {
+          shape = CircleShape
+          clip = true
+          scaleX = lift
+          scaleY = lift
+          shadowElevation = if (pressed && glassEnabled) 5.dp.toPx() else 0f
+        }
         .clip(CircleShape)
-        .playerGlassPane(enabled = glassEnabled, opacity = 0.88f, highlight = 0.18f, cornerRadius = 999.dp)
+        // Feedback wraps the glass pane so the water wave refracts the glass itself.
+        .glassPressFeedback(interactionSource, enabled, glass = glassEnabled)
+        .playerGlassPane(enabled = glassEnabled, cornerRadius = 999.dp)
         .combinedClickable(
           enabled = enabled,
           onClick = {

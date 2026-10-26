@@ -30,7 +30,7 @@ class SceneStabilityContracts(unittest.TestCase):
     def test_all_six_appearance_sliders_commit_only_on_release(self):
         appearance = source('ui/preferences/AppearancePreferencesScreen.kt')
         wrappers = source('ui/preferences/components/SettingsPreferenceWrappers.kt')
-        self.assertEqual(5, appearance.count('GlassCustomizationPreference('))  # four calls + declaration
+        self.assertEqual(7, appearance.count('GlassCustomizationPreference('))  # six calls (incl. lens refraction/depth) + declaration
         self.assertGreaterEqual(appearance.count('onSliderValueChange = {}'), 3)  # opacity, highlight, four-control helper
         self.assertNotRegex(appearance, r'onSliderValueChange\s*=\s*\{[^}]*glassSurface(?:Opacity|Highlight)\.set')
         self.assertIn('value = latest, onValueChange = { latest = it }', wrappers)
@@ -39,7 +39,8 @@ class SceneStabilityContracts(unittest.TestCase):
     def test_transient_failures_recover_without_cross_media_or_lifecycle_retention(self):
         renderer = source('ui/theme/LiquidGlassBackdrop.kt')
         self.assertIn('DisposableEffect(surfaceView, generation, eligible, lifecycleOwner)', renderer)
-        self.assertIn('Lifecycle.Event.ON_STOP', renderer)
+        self.assertIn('if (event == Lifecycle.Event.ON_DESTROY) frame.value = null', renderer)
+        self.assertNotIn('Lifecycle.Event.ON_STOP', renderer)
         self.assertIn('GlassScenePolicy.retainTransientFrame(now - first)', renderer)
         self.assertNotIn('if (failures >= GlassSamplingPolicy.FailureLimit) break', renderer)
         self.assertIn('frame.takeIf { eligible }', renderer)
@@ -51,7 +52,7 @@ class SceneStabilityContracts(unittest.TestCase):
         surface = source('ui/theme/GlassSurface.kt')
         self.assertIn('coordinates.localToWindow(Offset.Zero)', audio)
         self.assertIn('hostView.getLocationOnScreen(screen)', audio)
-        self.assertIn('LiquidGlassFrame(it, bounds, refractionEnabled = false)', audio)
+        self.assertIn('LiquidGlassFrame(it, next, refractionEnabled = false)', audio)
         self.assertNotIn('albumArtBitmap', audio)
         self.assertIn('size.minDimension <= 128.dp.toPx()', renderer)
         self.assertIn('size.maxDimension <= 512.dp.toPx()', renderer)

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Verify the DTS bridge can reuse the existing LGPL-only FFmpeg runtime."""
+"""Verify the Media3 FFmpeg audio fallback can reuse the existing LGPL-only FFmpeg runtime."""
 
 from __future__ import annotations
 
@@ -11,6 +11,7 @@ import tempfile
 import zipfile
 from pathlib import Path
 
+from ffmpeg_decoder_inventory import InventoryError, verify_library
 from ffmpeg_runtime_config import RuntimeEvidenceError, verify_runtime_evidence
 
 
@@ -73,6 +74,10 @@ def verify(aar_path: Path, abis: list[str], readelf: str, strings: str) -> None:
                 effective_flags = verify_runtime_evidence(text)
             except RuntimeEvidenceError as error:
                 raise SystemExit(f"{abi}: {error}") from error
+            try:
+                decoders = verify_library(avcodec)
+            except InventoryError as error:
+                raise SystemExit(f"{abi}: {error}") from error
 
             symbol_groups = (
                 ("avcodec", REQUIRED_AVCODEC_SYMBOLS),
@@ -93,7 +98,8 @@ def verify(aar_path: Path, abis: list[str], readelf: str, strings: str) -> None:
             print(
                 f"OK {abi}: FFmpeg n9.0; CONFIG_GPL={effective_flags['CONFIG_GPL']}, "
                 f"CONFIG_NONFREE={effective_flags['CONFIG_NONFREE']}; LGPL-3.0-or-later; "
-                "DCA marker and all JNI-required dynamic symbols present"
+                "DCA marker and all JNI-required dynamic symbols present; "
+                f"{len(decoders)} mapped audio decoders present"
             )
 
 

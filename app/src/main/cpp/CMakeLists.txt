@@ -69,7 +69,13 @@ if(MPVFLOW_ENABLE_VULKAN_BACKEND)
     if(NOT EXISTS "${MPVFLOW_MPV_AAR}")
         message(FATAL_ERROR "Vulkan Media3 Flow requires an mpv AAR: ${MPVFLOW_MPV_AAR}")
     endif()
+    # The AAR is read at configure time and the extracted library is packaged as an IMPORTED
+    # runtime file. Re-run configure when the AAR changes, otherwise a reused configure (the
+    # release workflow builds stock first, then overlays the interpolation runtime) packages a
+    # stale stock libmpv.so over the new one.
+    set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${MPVFLOW_MPV_AAR}")
     set(MPVFLOW_AAR_EXTRACT_DIR "${CMAKE_CURRENT_BINARY_DIR}/mpvflow-mpv-aar")
+    file(REMOVE_RECURSE "${MPVFLOW_AAR_EXTRACT_DIR}")
     file(ARCHIVE_EXTRACT
         INPUT "${MPVFLOW_MPV_AAR}"
         DESTINATION "${MPVFLOW_AAR_EXTRACT_DIR}"

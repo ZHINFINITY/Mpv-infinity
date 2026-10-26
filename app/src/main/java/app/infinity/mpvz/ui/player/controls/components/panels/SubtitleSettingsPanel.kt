@@ -37,6 +37,7 @@ fun SubtitleSettingsPanel(
 ) {
   DraggablePanel(
     modifier = modifier,
+    attachToScreenEdges = true,
     header = {
       Row(
         verticalAlignment = Alignment.CenterVertically,

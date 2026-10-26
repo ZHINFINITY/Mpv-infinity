@@ -20,7 +20,7 @@ class ReferenceUiRollbackContractTest {
       sha(read("app/src/main/java/app/infinity/mpvz/ui/browser/cards/FolderCard.kt")))
   }
 
-  @Test fun preservedPlayerSourcesKeepBaseline7eFingerprints() {
+  @Test fun preservedPlayerSourcesKeepPinnedFingerprints() {
     val expected = mapOf(
       "app/src/main/java/app/infinity/mpvz/ui/player/controls/PlayerControls.kt" to "2219b79942125f0f6de4c1e543742605b6949a126d07fc4f05d32fc11240b27a" /* restore 7cd7e collectAsState on StateFlow snapshot getter */,
       "app/src/main/java/app/infinity/mpvz/ui/player/controls/components/Seekbar.kt" to "b0d7ca11fdd2729871e052a0f6ea3b2cba64fb3e29039e5d3c42a7acf4d426c9",
@@ -339,13 +339,20 @@ import android.graphics.Shader
     return this.background(MaterialTheme.colorScheme.background.copy(alpha = GlassSurfacePolicy.EdgeChromeNoSceneFilmAlpha))
   }
 """ to "",
+      // Build 1908: unsupported or glass-crashed devices skip sampling (GlassDeviceSupport), and
+      // the startup sentinel watches the first glass frames. Optics and cadence are unchanged.
+      "canSample(enabled && GlassDeviceSupport.allowsGlass(context), true," to "canSample(enabled, true,",
+      "  val allowed = eligible && visible\n  GlassStartupWatch(active = allowed)\n" to
+        "  val allowed = eligible && visible\n",
     )
     var restored = film.replace(guarded, baseline)
     cadence.forEach { (now, before) ->
       assertEquals(now, 1, restored.split(now).size - 1)
       restored = restored.replace(now, before)
     }
-    assertEquals("f10a7bb20ca6e17e57f8500f5857cae1fc6d9ecf9f30c67512b8925ce2d9b7f3", sha(restored))
+    // Build 1910: centralized rim/depth bands replace the old pane-local contour; the integration
+    // keeps the bounded three-band lower-right exterior contact shadow (depth cue, no bitmap blur).
+    assertEquals("38c2ac4b3a6ab2a9bc5809e2cfe23e2266bf75f489e8ff5c9fd41469db5ee641", sha(restored))
   }
   @Test fun expressiveNavigationBodyAndBrowserLensMatchReference() {
     val navigation = read("app/src/main/java/app/infinity/mpvz/ui/browser/MainScreen.kt")
@@ -360,7 +367,11 @@ import android.graphics.Shader
       end++
     }
     // Build 1902: nav pill commits the lens frame before far page jumps and supports drag-to-select.
-    assertEquals("6dd01fe6826b20433d5073e6a41b45f2750f27f2b2ce2a6f0b6418263f8358f6", sha(navigation.substring(start, end)))
+    // Build 1943: the drag moved to the shared Initial-pass navPillDragGesture (1942's Main-pass
+    // slop detector never started on the phone).
+    // Owner follow-up: retain the normal 44dp selected outline/placement; the glass refraction
+    // follows finger-driven drag motion without an elevated pop or altered tab hit targets.
+    assertEquals("635f4f7e8f53d772c9903ffbea7eb06dc43f8fbdda6fce3507d0f2a6b3589f40", sha(navigation.substring(start, end)))
     val scene = read("app/src/main/java/app/infinity/mpvz/ui/theme/BrowserGlassScene.kt")
     val lensStart = scene.indexOf("internal const val BROWSER_LENS")
     val q = scene.indexOf("\"\"\"", lensStart)

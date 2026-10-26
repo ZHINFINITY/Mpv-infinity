@@ -153,10 +153,20 @@ jobs:
           [[ -n "$apk" ]] || { echo "MPVFlow arm64 runtime APK is missing" >&2; exit 1; }
           python3 scripts/package-mpv-runtime-aar.py --runtime-apk "$apk" --mpv-aar app/libs/mpvlib.aar --abis arm64-v8a
           python3 scripts/verify-mpv-aar-lgpl.py app/libs/mpvlib.aar --abis arm64-v8a,armeabi-v7a,x86,x86_64 --require-vulkan
+          # The stock pass above configured CMake from the stock AAR and its IMPORTED libmpv.so
+          # would be packaged again (v2.2.0 shipped stock libmpv this way). Start native clean.
+          rm -rf app/.cxx app/build/intermediates/cxx
           ./gradlew assembleStandardRelease -PtargetAbi=arm64-v8a -PmpvFlowMpvBuild=true --stacktrace --no-daemon --max-workers=2
           release_dir="app/build/outputs/apk/standard/release"
           flow_apk="$release_dir/app-standard-arm64-v8a-release-unsigned.apk"
           test -f "$flow_apk"
+          libmpv_copy="$(mktemp)"
+          unzip -p "$flow_apk" lib/arm64-v8a/libmpv.so > "$libmpv_copy"
+          if ! grep -aqF 'mpvflow-target-fps' "$libmpv_copy"; then
+            echo "Flow arm64 release APK packaged a libmpv.so without the MPV interpolation runtime" >&2
+            exit 1
+          fi
+          rm -f "$libmpv_copy"
           entries="$(unzip -Z1 "$flow_apk")"
           for library in libmpv.so libplayer.so libplacebo.so libudfread.so libmedia3flow_vulkan.so libffmpegJNI.so libmedia3_subtitle_libass.so libass.so; do
             grep -Fx "lib/arm64-v8a/$library" <<< "$entries" >/dev/null || { echo "Flow arm64 release APK is missing $library" >&2; exit 1; }

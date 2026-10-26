@@ -25,7 +25,7 @@ def main() -> None:
     require(activity, "InterpolationRuntimeApplyPolicy.decision", "explicit runtime policy")
     require(activity, "native_flow_sink_unavailable", "truthful Native sink-unavailable logging")
     require(activity, "backend.applyInterpolationRuntime", "actual Native live runtime call")
-    require(activity, "val backend = if (wasNative) nativeEngine else null", "MPV must not initialize the lazy Native engine")
+    require(activity, "val backend = if (wasNative) nativeEngineOrNull() else null", "MPV must not initialize the lazy Native engine")
     callback = activity.split("fun applyInterpolationPreferencesFromControls()", 1)[1].split("private fun requestMpvInterpolationRestart", 1)[0]
     for forbidden in ("recreate()", "releaseSurface()", "PlaybackSession.load(", "setupMPV()", "invalidateCoreConfiguration()"):
         if forbidden in callback:
@@ -50,7 +50,7 @@ def main() -> None:
     callback = activity.split("fun applyInterpolationPreferencesFromControls()", 1)[1].split("private fun requestMpvInterpolationRestart", 1)[0]
     require(callback, "lifecycleScope.launch", "nonblocking activity launch")
     require(callback, "backend.applyInterpolationRuntime(enabled = enabled, targetFps = targetFps)", "Native FPS consumption")
-    require(callback, "activeEngineMode == PlaybackEngineMode.NATIVE && nativeEngine === backend", "same backend ACK guard")
+    require(callback, "activeEngineMode == PlaybackEngineMode.NATIVE && nativeEngineConfigured && nativeEngine === backend", "same backend ACK guard without lazy construction")
     if "runOnGlThreadSync" in callback:
         raise SystemExit("UI callback must not synchronously wait for GL")
     require(controls, "applyInterpolationPreferencesFromControls()", "interpolation toggle caller")

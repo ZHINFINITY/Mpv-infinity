@@ -7,6 +7,8 @@
 
 package app.infinity.mpvz.ui.preferences
 
+import app.infinity.mpvz.ui.components.GlassChip
+
 import app.infinity.mpvz.ui.components.GlassModalBottomSheet
 import app.infinity.mpvz.ui.preferences.components.settingsGlassContainerColor
 
@@ -333,7 +335,7 @@ object YtdlpSettingsScreen : Screen {
               verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
               YtdlPlaylistMode.entries.forEach { mode ->
-                FilterChip(
+                GlassChip(
                   selected = playlistMode == mode,
                   enabled = playbackOptionsEnabled,
                   onClick = { ytdlPreferences.playlistMode.set(mode) },
@@ -518,7 +520,7 @@ private fun WebsiteCookieLoginDialog(
             horizontalArrangement = Arrangement.spacedBy(6.dp),
           ) {
             savedSites.forEach { host ->
-              FilterChip(
+              GlassChip(
                 selected = websiteUrl.contains(host, ignoreCase = true),
                 onClick = {
                   websiteUrl = "https://$host/"

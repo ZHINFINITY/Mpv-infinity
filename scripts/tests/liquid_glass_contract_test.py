@@ -25,7 +25,10 @@ class LiquidGlassContracts(unittest.TestCase):
         self.assertIn("Build.VERSION.SDK_INT >= 33", source)
         self.assertIn("catch (_: RuntimeException)", source)
         self.assertIn("frame.takeIf { eligible }", source)
-        self.assertIn("Lifecycle.Event.ON_STOP", source)
+        # Destroy still discards the scene; a background stop keeps the last frost so resume
+        # is not a clear pane. A new media generation re-keys the effect and clears it.
+        self.assertIn("if (event == Lifecycle.Event.ON_DESTROY) frame.value = null", source)
+        self.assertNotIn("Lifecycle.Event.ON_STOP", source)
         self.assertIn("DisposableEffect(surfaceView, generation, eligible, lifecycleOwner)", source)
 
     def test_runtime_input_uses_explicit_linear_filtering_and_pixel_centres(self):
@@ -37,7 +40,9 @@ class LiquidGlassContracts(unittest.TestCase):
         self.assertLess(source.index("val shader = remember {"), source.index(".drawWithCache {"))
 
     def test_renderer_uses_native_rounded_bevel_normals_and_directional_optics(self):
-        source = (JAVA / "ui/theme/LiquidGlassBackdrop.kt").read_text()
+        # Uniforms are set in AgslRuntimeShaders so API < 33 never loads RuntimeShader.
+        source = ((JAVA / "ui/theme/LiquidGlassBackdrop.kt").read_text() +
+                  (JAVA / "ui/theme/AgslRuntimeShaders.kt").read_text())
         policy = (JAVA / "ui/theme/GlassBevelPolicy.kt").read_text()
         self.assertIn("GlassBevelPolicy.params(size.width, size.height, radius", source)
         for uniform in ("setFloatUniform(\"bevel\"", "setFloatUniform(\"light\"",
@@ -56,7 +61,8 @@ class LiquidGlassContracts(unittest.TestCase):
         source = (JAVA / "ui/theme/LiquidGlassBackdrop.kt").read_text()
         self.assertEqual(1, source.count("GlassFrostPolicy.frostArgb("))
         self.assertIn("withContext(Dispatchers.Default)", source)
-        self.assertLess(source.index("?.let { frostGlassFrame(it, tuning.frost) }"), source.index("frame.value = LiquidGlassFrame("))
+        # Capture now acquires a reusable unpublished buffer before frosting; publication still follows it.
+        self.assertLess(source.index("frostGlassFrame(target, tuning.frost"), source.index("frame.value = LiquidGlassFrame("))
         self.assertIn("GlassScenePolicy.retainTransientFrame(now - first)", source)
         for forbidden in ("source.setRenderEffect", "source.holder.setFixedSize", "source.setLayerType", "video-scale", "setVideoScalingMode"):
             self.assertNotIn(forbidden, source)
@@ -141,7 +147,8 @@ class LiquidGlassContracts(unittest.TestCase):
         self.assertIn("albumArtBitmap", audio)
         self.assertEqual(2, audio.count("if (isAudiobook) audiobookModeButtons() else {"))
         self.assertIn("artworkUri", mini)
-        self.assertIn("settingsGlassSurface(cornerRadius = 20.dp)", mini)
+        self.assertIn("BrowserGlassSurface(", mini)
+        self.assertIn("cornerRadius = 20.dp", mini)
         self.assertNotIn("backdrop =", mini)
         self.assertNotIn("repeat(18)", mini)
 
@@ -150,6 +157,7 @@ class LiquidGlassContracts(unittest.TestCase):
         self.assertIn("glassTrackOptics", controls)
         self.assertIn("thumbContent", controls)
         self.assertNotIn("modifier = modifier.liquidGlassPane", controls)
+        # Build 1910: the native minimum box is documented at the shared capsule modifier.
         self.assertIn("Material keeps its minimum interaction box", controls)
 
     def test_audio_transport_has_no_enclosing_optical_surface(self):

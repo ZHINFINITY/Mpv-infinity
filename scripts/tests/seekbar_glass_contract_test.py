@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Source wiring guards; visual quality and touch behavior still need phone testing."""
 from pathlib import Path
+import re
 import unittest
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -71,8 +72,13 @@ class SeekbarGlassContracts(unittest.TestCase):
             'fun GlassSlider(', 1)[1].split('private fun Modifier.glassTrackOptics', 1)[0]
         self.assertIn('track = { sliderState ->', slider)
         self.assertIn('SliderDefaults.Track(', slider)
-        self.assertIn('modifier = Modifier.height(4.dp)', slider)
-        self.assertIn('.glassTrackOptics(opacity, highlight, 2.dp, height = 4.dp)', slider)
+        # The styling stays on the real, thin track (now a recessed glass groove).
+        self.assertIn('modifier = Modifier.height(GlassControlGeometryPolicy.sliderTrackHeightDp.dp)', slider)
+        self.assertIn('.glassSliderGroove(sliderState.coercedValueAsFraction', slider)
+        controls = source('ui/player/controls/components/GlassControls.kt')
+        track = re.search(r'const val sliderTrackHeightDp = ([0-9.]+)f', controls)
+        self.assertIsNotNone(track)
+        self.assertLessEqual(float(track.group(1)), 6.0)
         self.assertNotIn('modifier = modifier.then(', slider)
 
 

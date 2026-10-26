@@ -29,6 +29,8 @@
   <string name="pref_appearance_amoled_mode_summary">பயன்படுத்து pure black பின்னணி க்காக இருள் themes</string>
   <string name="pref_appearance_system_font_title">பயன்படுத்து கணினி எழுத்துரு</string>
   <string name="pref_appearance_system_font_summary">பயன்படுத்து Android கணினி typeface across Mpv∞ பதிலாக இன் Google Sans Flex</string>
+  <string name="pref_appearance_animate_infinity_logo_title">முடிவிலி லோகோவை அனிமேட் செய்</string>
+  <string name="pref_appearance_animate_infinity_logo_summary">நூலகத்தின் முடிவிலி குறியீட்டைத் தொடர்ந்து அனிமேட் செய்யும். நிலையான குறியைக் காட்ட இதை அணைக்கவும்.</string>
   <string name="pref_appearance_material_you_title">Material நீங்கள்</string>
   <string name="pref_appearance_material_you_summary">இயக்கு இயங்கும் வண்ணங்கள்</string>
   <string name="pref_appearance_material_you_summary_disabled">மட்டும் கிடைக்கிறது இயக்கம் Android 12 மற்றும் மேலே</string>
@@ -2241,4 +2243,11 @@
     <string name="pref_openai_base_url_summary">அதிகாரப்பூர்வ OpenAI முனையத்தைப் பயன்படுத்த காலியாக விடவும்</string>
     <string name="pref_openai_base_url_prompt">OpenAI-இணக்க API அடிப்படை URL-ஐ உள்ளிடவும்</string>
     <string name="pref_openai_base_url_invalid">சான்றுகள், வினவல் அளவுருக்கள் அல்லது துண்டுகள் இல்லாத சரியான HTTP அல்லது HTTPS URL-ஐ உள்ளிடவும்.</string>
+  <string name="pref_glass_preview">நேரடி கண்ணாடி முன்னோட்டம்</string>
+  <string name="pref_glass_rim_strength">விளிம்பு வலிமை</string>
+  <string name="pref_glass_rim_strength_summary">பொது ஒளிரும் விளிம்பின் பிரகாசம்</string>
+  <string name="pref_glass_rim_width">விளிம்பு அகலம்</string>
+  <string name="pref_glass_rim_width_summary">ஒளிரும் விளிம்பின் தடிமன் (dp)</string>
+  <string name="pref_glass_rim_softness">விளிம்பு மென்மை</string>
+  <string name="pref_glass_rim_softness_summary">விளிம்பு ஒளி எவ்வளவு மென்மையாக மங்குகிறது</string>
 </resources>

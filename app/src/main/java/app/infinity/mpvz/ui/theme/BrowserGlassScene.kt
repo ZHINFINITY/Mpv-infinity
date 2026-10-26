@@ -58,6 +58,7 @@ import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
+import app.infinity.mpvz.ui.theme.lens.LocalLensGlassEnabled
 
 @Stable
 private class BrowserScene(val layer: GraphicsLayer, val contentLens: Boolean = false) {
@@ -138,7 +139,9 @@ fun BrowserGlassSceneHost(
       }
     }
   }
-  val allowed = enabled && !lowRam && !powerSave && thermal < 3
+  val allowed = enabled && !lowRam && !powerSave && thermal < 3 &&
+    GlassDeviceSupport.allowsGlass(context)
+  GlassStartupWatch(active = allowed && LocalBrowserScene.current == null)
   val layer = rememberGraphicsLayer()
   // Nested hosts inherit the root display-list instead of shadowing it.
   val inheritedScene = LocalBrowserScene.current
@@ -387,6 +390,7 @@ fun BrowserGlassSurface(
   // settings/player/folder controls and has different depth/tint semantics.
   val scene = LocalBrowserScene.current
   val capabilities = LocalBrowserCapabilities.current
+  val lensEnabled = LocalLensGlassEnabled.current
   val tuning = LocalGlassCustomization.current
   val hostView = LocalView.current
   val shape = remember(cornerRadius) { RoundedCornerShape(cornerRadius) }
@@ -403,7 +407,9 @@ fun BrowserGlassSurface(
     if (enabled) {
       Box(Modifier.matchParentSize().drawWithCache {
         val radius = cornerRadius.toPx().coerceAtMost(size.height / 2f).coerceAtMost(size.width / 2f)
-        val refraction = capabilities.refraction && RuntimeShaderSupport.available()
+        // The route scene is a sibling producer; never self-sample. The lens
+        // shader is additionally gated by the shared API/device/user verdict.
+        val refraction = selected && lensEnabled && capabilities.refraction && RuntimeShaderSupport.available()
         val effect = if (refraction) RuntimeShaderSupport.browserLensEffectOrNull(
           paneWidth = size.width,
           paneHeight = size.height,
@@ -467,6 +473,7 @@ internal fun Modifier.browserGlassPane(
   deformation: Float = 0f,
   drawRim: Boolean = true,
   materialRole: GlassSurfacePolicy.MaterialRole = GlassSurfacePolicy.MaterialRole.Clear,
+  thickSurface: Boolean = false,
   // Retained for source compatibility: every browser pane now uses the navigation
   // pill's reference material, so this flag no longer selects a different profile.
   @Suppress("UNUSED_PARAMETER") referenceOptics: Boolean = false,
@@ -513,25 +520,27 @@ internal fun Modifier.browserGlassPane(
   val floating = enabled && drawRim && !edgeBar
   var paneOrigin by remember { mutableStateOf(Offset.Zero) }
   // Runtime shader compilation is remembered, not repeated for every animated width/frame.
+  // The navigation pill continues to use RuntimeShaderSupport.browserLensEffectOrNull(
+  // unchanged; this pane uses a handle so deformation only updates a uniform.
   // Edge bars never bend: the lens edge term would draw a bright line along the bar's bottom.
   val lens = rememberGraphicsLayer()
   return this
-    // Same elevation as the navigation pill (BrowserGlassSurface), scaled by the depth setting.
-    .shadow(if (floating) (if (selected) 7.dp else 12.dp) * tuning.depth else 0.dp, shape, clip = false)
+    // Cheap baked depth/rim replaces per-pane elevation shadows in dense lists.
+    // Reference geometry (the navigation pill remains unchanged): (if (selected) 7.dp else 12.dp) * tuning.depth
     .onGloballyPositioned { if (it.isAttached) paneOrigin = it.localToWindow(Offset.Zero) + windowScreenOffset(hostView) }
     .clip(shape)
     .then(if (!enabled) Modifier.background(tint, shape) else Modifier)
     .then(if (enabled) Modifier.drawWithCache {
         val radius = cornerRadius.toPx().coerceAtMost(size.height / 2f).coerceAtMost(size.width / 2f)
         val refraction = enabled && !edgeBar && capabilities.refraction && RuntimeShaderSupport.available()
-        val effect = if (refraction) RuntimeShaderSupport.browserLensEffectOrNull(
+        val lensHandle = if (refraction) RuntimeShaderSupport.browserLensHandleOrNull(
           paneWidth = size.width,
           paneHeight = size.height,
           radius = radius,
           bend = (if (selected) 9f else 5f) * density * tuning.refraction,
-          motion = deformation.coerceIn(0f, 1f),
           frostPx = if (blurDp > 0f) blurDp * density else 0f,
-        ) else if (Build.VERSION.SDK_INT >= 31 && scene != null && blurDp > 0f) runCatching {
+        ) else null
+        val effect = lensHandle?.effect ?: if (!refraction && Build.VERSION.SDK_INT >= 31 && scene != null && blurDp > 0f) runCatching {
           RenderEffect.createBlurEffect(blurDp * density, blurDp * density, Shader.TileMode.CLAMP).asComposeRenderEffect()
         }.getOrNull() else null
         lens.renderEffect = effect
@@ -545,6 +554,7 @@ internal fun Modifier.browserGlassPane(
         ))
         onDrawBehind {
           if (size.width < 1f || size.height < 1f) return@onDrawBehind
+          lensHandle?.updateMotion(deformation.coerceIn(0f, 1f))
           // Observed state: the popup window redraws once the route window records its first frame.
           val popupSceneReady = !popupWindow || scene?.popupReady == true
           val bounds = scene?.stripBounds
@@ -583,6 +593,7 @@ internal fun Modifier.browserGlassPane(
           }
         }
       } else Modifier)
+    .glassRimLight(shape = shape, enabled = floating, highContrast = false)
 }
 
 private fun windowScreenOffset(view: android.view.View): Offset {

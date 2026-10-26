@@ -22,7 +22,7 @@ val activeAbis =
   }
 val includeMpvFlowMpvRuntime = requestedMpvFlowMpvRuntime && activeAbis == listOf("arm64-v8a")
 val universalOnlyDistributions = setOf("noVulkan")
-val releaseVersionCode = 261
+val releaseVersionCode = 262
 val versionCodeBandSize = 10_000
 val stableVersionCode = releaseVersionCode * versionCodeBandSize + (versionCodeBandSize - 1)
 val previewVersionCode =
@@ -50,7 +50,7 @@ android {
     // Stable occupies the top of its version band. Preview uses the next band's commit-count
     // offset, so Stable -> Preview -> newer Preview -> next Stable is always an Android upgrade.
     versionCode = stableVersionCode
-    versionName = "2.2.1"
+    versionName = "2.2.2"
 
     vectorDrawables {
       useSupportLibrary = true
@@ -279,6 +279,9 @@ dependencies {
   implementation(libs.composables.material.symbols.rounded.filled.android)
   implementation(libs.composables.material.symbols.rounded.filled.cmp)
   implementation(libs.androidx.compose.animation.graphics)
+  // Liquid Glass lens engine (Kyant0/AndroidLiquidGlass, Apache-2.0). Used only behind
+  // KyantGlassSupport (API 33+, GlassDeviceSupport verdict, glass setting on).
+  implementation(libs.kyant.backdrop)
   implementation(libs.mediasession)
   implementation(libs.androidx.documentfile)
   implementation(libs.androidx.palette)

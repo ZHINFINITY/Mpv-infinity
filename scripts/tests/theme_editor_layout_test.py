@@ -22,13 +22,23 @@ class ThemeEditorLayoutSourceTest(unittest.TestCase):
     def test_editor_body_scrolls_while_actions_are_outside_scroll_container(self):
         editor = read("ui/preferences/components/CustomThemeSettings.kt")
         self.assertIn(".verticalScroll(rememberScrollState())", editor)
-        self.assertIn("BoxWithConstraints(", editor)
+        self.assertIn("ThemeEditorActionRow(", editor)
+        # The action row is after (outside) the weighted scroll column.
+        self.assertLess(editor.index(".verticalScroll(rememberScrollState())"), editor.index("ThemeEditorActionRow("))
         self.assertIn(".imePadding()", editor)
         # GlassModalBottomSheet owns the single bottom inset; a second nav-bar pad doubled it.
         self.assertIn("GlassModalBottomSheet(", editor)
         self.assertNotIn(".navigationBarsPadding()", editor)
-        self.assertIn("heightIn(min = 52.dp)", editor)
-        self.assertIn("ThemeEditorLayoutPolicy.stackActions", editor)
+        # Owner request: Reset, Cancel and Save always share one row with equal size.
+        actions = read("ui/preferences/components/ThemeEditorActions.kt")
+        self.assertIn("heightIn(min = 52.dp)", actions)
+        self.assertIn("Modifier.weight(1f).fillMaxHeight()", actions)
+        self.assertIn("height(IntrinsicSize.Min)", actions)
+        self.assertIn("Icons.RoundedFilled.Refresh", actions)
+        self.assertIn("maxLines = 1", actions)
+        self.assertIn("ThemeEditorLayoutPolicy.nextLabelSp(", actions)
+        self.assertNotIn("Column(", actions)
+        self.assertNotIn("stackActions", editor)
 
     def test_actual_actions_use_shared_material_without_changing_handlers(self):
         editor = read("ui/preferences/components/CustomThemeSettings.kt")

@@ -13,7 +13,6 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.navigationBars
@@ -324,38 +323,19 @@ internal fun CustomThemeEditor(
       val density = LocalDensity.current
       val imeVisible = WindowInsets.ime.getBottom(density) > 0
       val navigationBarDp = with(density) { WindowInsets.navigationBars.getBottom(this).toDp().value }
-      BoxWithConstraints(
+      // Actions sit outside the scroll container so they stay reachable above the inset.
+      Box(
         modifier = Modifier
           .fillMaxWidth()
           .padding(top = 8.dp)
           .padding(bottom = ThemeEditorLayoutPolicy.bottomSpacingDp(navigationBarDp, imeVisible).dp),
       ) {
-        val buttonModifier = Modifier
-          .heightIn(min = 52.dp)
-          .fillMaxWidth()
-        if (ThemeEditorLayoutPolicy.stackActions(maxWidth.value)) {
-          Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            OutlinedButton(onClick = { resetVisualSettings() }, modifier = buttonModifier) {
-              Icon(Icons.RoundedFilled.Refresh, contentDescription = null)
-              Text(stringResource(R.string.generic_reset))
-            }
-            OutlinedButton(onClick = onDismiss, modifier = buttonModifier) { Text(stringResource(R.string.generic_cancel)) }
-            Button(enabled = name.isNotBlank(), onClick = { onSave(edited.copy(name = name.trim())) }, modifier = buttonModifier) {
-              Text(stringResource(R.string.generic_save))
-            }
-          }
-        } else {
-          Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            OutlinedButton(onClick = { resetVisualSettings() }, modifier = Modifier.weight(1f).heightIn(min = 52.dp)) {
-              Icon(Icons.RoundedFilled.Refresh, contentDescription = null)
-              Text(stringResource(R.string.generic_reset))
-            }
-            OutlinedButton(onClick = onDismiss, modifier = Modifier.weight(1f).heightIn(min = 52.dp)) { Text(stringResource(R.string.generic_cancel)) }
-            Button(enabled = name.isNotBlank(), onClick = { onSave(edited.copy(name = name.trim())) }, modifier = Modifier.weight(1f).heightIn(min = 52.dp)) {
-              Text(stringResource(R.string.generic_save))
-            }
-          }
-        }
+        ThemeEditorActionRow(
+          saveEnabled = name.isNotBlank(),
+          onReset = { resetVisualSettings() },
+          onCancel = onDismiss,
+          onSave = { onSave(edited.copy(name = name.trim())) },
+        )
       }
     }
   }

@@ -6,6 +6,7 @@ jsch = "2.28.7"
 kotlin = "2.4.10"
 ksp = "2.3.11"
 composeBom = "2026.08.00"
+kyantBackdrop = "2.0.1"
 activityCompose = "1.13.0"
 koin = "4.2.2"
 lazycolumnscrollbar = "2.2.0"
@@ -54,6 +55,7 @@ libarchiveAndroid = "1.1.6"
 ktlint = "14.2.0"
 
 [libraries]
+kyant-backdrop = { module = "io.github.kyant0:backdrop", version.ref = "kyantBackdrop" }
 androidx-profileinstaller = { group = "androidx.profileinstaller", name = "profileinstaller", version.ref = "profileinstaller" }
 androidx-activity-compose = { group = "androidx.activity", name = "activity-compose", version.ref = "activityCompose" }
 androidx-compose-bom = { group = "androidx.compose", name = "compose-bom", version.ref = "composeBom" }

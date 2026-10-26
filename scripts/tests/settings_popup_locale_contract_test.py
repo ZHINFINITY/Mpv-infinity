@@ -7,6 +7,7 @@ import xml.etree.ElementTree as ET
 
 ROOT = Path(__file__).resolve().parents[2]
 CUSTOM = ROOT / 'app/src/main/java/app/infinity/mpvz/ui/preferences/components/CustomThemeSettings.kt'
+ACTIONS = ROOT / 'app/src/main/java/app/infinity/mpvz/ui/preferences/components/ThemeEditorActions.kt'
 ACTIVITY = ROOT / 'app/src/main/java/app/infinity/mpvz/MainActivity.kt'
 RES = ROOT / 'app/src/main/res'
 
@@ -18,7 +19,12 @@ class SettingsPopupLocaleContractTest(unittest.TestCase):
         self.assertEqual(labels, [], 'custom-theme settings labels must use stringResource')
         self.assertIn('stringResource(R.string.pref_custom_theme_title)', source)
         self.assertIn('stringResource(R.string.pref_custom_theme_selected, selected.name)', source)
-        self.assertIn('stringResource(R.string.generic_cancel)', source)
+        # Reset/Cancel/Save live in the shared one-row action bar the editor uses.
+        self.assertIn('ThemeEditorActionRow(', source)
+        actions = ACTIONS.read_text()
+        self.assertEqual(re.findall(r'Text\("|contentDescription\s*=\s*"', actions), [])
+        for key in ('generic_reset', 'generic_cancel', 'generic_save'):
+            self.assertIn(f'stringResource(R.string.{key})', actions)
 
     def test_activity_dialog_reads_recomposing_compose_resources(self):
         source = ACTIVITY.read_text()
