@@ -120,7 +120,6 @@ import app.infinity.mpvz.ui.player.components.VideoAmbientBackground
 import app.infinity.mpvz.ui.player.components.rememberVideoAmbientFrame
 import app.infinity.mpvz.ui.player.ytdlp.YtdlpManager
 import app.infinity.mpvz.ui.theme.MpvInfinityTheme
-import app.infinity.mpvz.ui.performance.FrameTimeOverlay
 import app.infinity.mpvz.ui.torrent.TorrentSelectionActivity
 import app.infinity.mpvz.utils.device.VulkanCapabilities
 import app.infinity.mpvz.utils.history.RecentlyPlayedOps
@@ -2266,7 +2265,6 @@ class PlayerActivity :
       // The controls ComposeView sits above the native video surface. Do not draw the
       // library custom media backdrop here or it will cover the episode while audio continues.
       MpvInfinityTheme(showCustomThemeBackdrop = false) {
-        val showFrameTimeOverlay by advancedPreferences.showFrameTimeOverlay.collectPreferenceAsState()
         val glass by androidx.compose.runtime.remember(appearancePreferences) {
           appearancePreferences.liquidGlassSurfaces.changes()
         }.collectAsState(initial = appearancePreferences.liquidGlassSurfaces.get())
@@ -2316,7 +2314,6 @@ class PlayerActivity :
               modifier = Modifier,
             )
           }
-          FrameTimeOverlay(this@PlayerActivity, showFrameTimeOverlay)
         }
       }
     }

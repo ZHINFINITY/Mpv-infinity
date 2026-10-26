@@ -2250,6 +2250,4 @@
   <string name="pref_glass_rim_width_summary">ஒளிரும் விளிம்பின் தடிமன் (dp)</string>
   <string name="pref_glass_rim_softness">விளிம்பு மென்மை</string>
   <string name="pref_glass_rim_softness_summary">விளிம்பு ஒளி எவ்வளவு மென்மையாக மங்குகிறது</string>
-  <string name="pref_advanced_frame_time_overlay_title">ஃப்ரேம் நேர மேலடுக்கு</string>
-  <string name="pref_advanced_frame_time_overlay_summary">இந்த சாளரத்தில் தடுமாறும் ஃப்ரேம்களின் சதவீதம் மற்றும் p90/p99 ஃப்ரேம் நேரத்தைக் காட்டு</string>
 </resources>

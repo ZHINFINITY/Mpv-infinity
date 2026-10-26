@@ -308,6 +308,7 @@ internal fun SeekbarWithTimers(
   skipSegments: ImmutableList<SkipSegment>,
   paused: Boolean,
   seekbarStyle: SeekbarStyle = SeekbarStyle.Wavy,
+  glassTrackEnabled: Boolean = true,
   useWavySeekbar: Boolean = true,
   showWavyVisualizer: Boolean = false,
   waveFeatures: AudioFeatures? = null,
@@ -389,6 +390,7 @@ internal fun SeekbarWithTimers(
         onValueChangeFinished = onValueChangeFinished,
         scope = scope,
         animatedPosition = animatedPosition,
+        glassTrackEnabled = glassTrackEnabled,
         modifier = Modifier.fillMaxWidth().height(if (showWavyVisualizer) 64.dp else 44.dp),
       )
 
@@ -463,6 +465,7 @@ internal fun SeekbarWithTimers(
         onValueChangeFinished = onValueChangeFinished,
         scope = scope,
         animatedPosition = animatedPosition,
+        glassTrackEnabled = glassTrackEnabled,
         modifier = Modifier.weight(1f).height(if (showWavyVisualizer) 64.dp else 48.dp),
       )
 
@@ -491,6 +494,7 @@ private fun SeekbarContent(
   isPortrait: Boolean,
   isUserInteracting: Boolean,
   seekbarStyle: SeekbarStyle,
+  glassTrackEnabled: Boolean,
   useWavySeekbar: Boolean,
   showWavyVisualizer: Boolean = false,
   waveFeatures: AudioFeatures? = null,
@@ -619,7 +623,7 @@ private fun SeekbarContent(
         Modifier
           .fillMaxWidth()
           .height(32.dp)
-          .playerGlassPane(enabled = liquidGlassSurfaces, cornerRadius = 999.dp),
+          .playerGlassPane(enabled = liquidGlassSurfaces && glassTrackEnabled, cornerRadius = 999.dp),
       contentAlignment = Alignment.Center,
     ) {
       when (seekbarStyle) {
@@ -644,6 +648,7 @@ private fun SeekbarContent(
             isScrubbing = isVisuallyInteracting,
             seekbarStyle = SeekbarStyle.Standard,
             interactionSource = seekerInteractionSource,
+            glassEnabled = glassTrackEnabled,
             loopStart = loopStart,
             loopEnd = loopEnd,
             bufferDuration = bufferDuration,
@@ -674,6 +679,7 @@ private fun SeekbarContent(
             isScrubbing = isVisuallyInteracting,
             seekbarStyle = SeekbarStyle.Thick,
             interactionSource = seekerInteractionSource,
+            glassEnabled = glassTrackEnabled,
             loopStart = loopStart,
             loopEnd = loopEnd,
             bufferDuration = bufferDuration,
@@ -1775,6 +1781,7 @@ fun StandardSeekbar(
   loopStart: Float? = null,
   loopEnd: Float? = null,
   bufferDuration: Float? = null,
+  glassEnabled: Boolean = true,
   modifier: Modifier = Modifier,
 ) = StandardSeekbar(
   positionProvider = { position },
@@ -1787,6 +1794,7 @@ fun StandardSeekbar(
   loopStart = loopStart,
   loopEnd = loopEnd,
   bufferDuration = bufferDuration,
+  glassEnabled = glassEnabled,
   modifier = modifier,
 )
 
@@ -1802,6 +1810,7 @@ fun StandardSeekbar(
   loopStart: Float? = null,
   loopEnd: Float? = null,
   bufferDuration: Float? = null,
+  glassEnabled: Boolean = true,
   modifier: Modifier = Modifier,
 ) {
   val primaryColor = MaterialTheme.colorScheme.primary
@@ -1854,7 +1863,7 @@ fun StandardSeekbar(
   val glassOpacity by appearance.glassSurfaceOpacity.collectAsState()
   val glassHighlight by appearance.glassSurfaceHighlight.collectAsState()
   val glassDepth = GlassControlPolicy.depth(LocalGlassCustomization.current.depth)
-  val glass = liquidGlassEnabled
+  val glass = liquidGlassEnabled && glassEnabled
   val glassSurfaceColor = MaterialTheme.colorScheme.surfaceContainerHigh
   val glassAccentColor = MaterialTheme.colorScheme.primary
   val opticalTrackHeight = with(LocalDensity.current) { baseTrackHeight.toPx() } * heightFraction

@@ -2265,6 +2265,4 @@
   <string name="pref_glass_rim_width_summary">سُمك الحافة المضيئة بوحدة dp</string>
   <string name="pref_glass_rim_softness">نعومة الحافة</string>
   <string name="pref_glass_rim_softness_summary">مدى نعومة تلاشي ضوء الحافة</string>
-  <string name="pref_advanced_frame_time_overlay_title">طبقة زمن الإطارات</string>
-  <string name="pref_advanced_frame_time_overlay_summary">عرض نسبة الإطارات المتقطعة وزمن الإطار p90/p99 لهذه النافذة</string>
 </resources>

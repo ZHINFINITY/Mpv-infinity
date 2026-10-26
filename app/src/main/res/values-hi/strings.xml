@@ -2250,6 +2250,4 @@
   <string name="pref_glass_rim_width_summary">चमकीले किनारे की मोटाई (dp में)</string>
   <string name="pref_glass_rim_softness">किनारे की कोमलता</string>
   <string name="pref_glass_rim_softness_summary">किनारे की रोशनी कितनी कोमलता से फीकी होती है</string>
-  <string name="pref_advanced_frame_time_overlay_title">फ़्रेम-टाइम ओवरले</string>
-  <string name="pref_advanced_frame_time_overlay_summary">इस विंडो के लिए अटकने वाले फ़्रेम का प्रतिशत और p90/p99 फ़्रेम टाइम दिखाएँ</string>
 </resources>

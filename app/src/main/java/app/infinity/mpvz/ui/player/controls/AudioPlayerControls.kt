@@ -936,7 +936,6 @@ fun AudioPlayerControls(
   val audioStandbyMode by audioPreferences.audioStandbyMode.collectAsState()
   val backgroundPlaybackEnabled by audioPreferences.audioBackgroundPlayback.collectAsState()
   val playerControlsTheme by appearancePreferences.playerControlsTheme.collectAsState()
-  val showSeekbarOuterContainer by appearancePreferences.showSeekbarOuterContainer.collectAsState()
   val liquidGlassSurfaces by appearancePreferences.liquidGlassSurfaces.collectAsState()
   val glassSurfaceOpacity by appearancePreferences.glassSurfaceOpacity.collectAsState()
   val glassSurfaceHighlight by appearancePreferences.glassSurfaceHighlight.collectAsState()
@@ -2229,6 +2228,7 @@ fun AudioPlayerControls(
         skipSegments = persistentListOf(),
         paused = isPaused,
         seekbarStyle = seekbarStyle,
+        glassTrackEnabled = false,
         showWavyVisualizer = audioWavySeekbar,
         waveFeatures = if (audioWavySeekbar) visualizerFeatures else null,
         wavePalette = visualizerPalette,

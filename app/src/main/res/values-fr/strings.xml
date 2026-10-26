@@ -2265,6 +2265,4 @@ Veuillez redémarrer l’application pour appliquer toutes les modifications.</s
   <string name="pref_glass_rim_width_summary">Épaisseur du liseré lumineux en dp</string>
   <string name="pref_glass_rim_softness">Douceur du liseré</string>
   <string name="pref_glass_rim_softness_summary">Douceur du fondu de la lumière du bord</string>
-  <string name="pref_advanced_frame_time_overlay_title">Superposition du temps d’image</string>
-  <string name="pref_advanced_frame_time_overlay_summary">Affiche le pourcentage d’images saccadées et le temps d’image p90/p99 de cette fenêtre</string>
 </resources>

@@ -2265,6 +2265,4 @@ Reinicie o aplicativo para que todas as alterações entrem em vigor.</string>
   <string name="pref_glass_rim_width_summary">Espessura da borda iluminada em dp</string>
   <string name="pref_glass_rim_softness">Suavidade da borda</string>
   <string name="pref_glass_rim_softness_summary">Quão suavemente a luz da borda se desvanece</string>
-  <string name="pref_advanced_frame_time_overlay_title">Sobreposição de tempo de quadro</string>
-  <string name="pref_advanced_frame_time_overlay_summary">Mostra a porcentagem de quadros travados e o tempo de quadro p90/p99 desta janela</string>
 </resources>

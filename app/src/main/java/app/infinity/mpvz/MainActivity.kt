@@ -87,7 +87,6 @@ import app.infinity.mpvz.ui.player.NavigationAnimStyle
 import app.infinity.mpvz.ui.theme.DarkMode
 import app.infinity.mpvz.ui.theme.MpvInfinityTheme
 import app.infinity.mpvz.ui.theme.rememberThemeTransitionState
-import app.infinity.mpvz.ui.performance.FrameTimeOverlay
 import android.view.SurfaceHolder
 import android.view.SurfaceView
 import androidx.compose.foundation.background
@@ -227,7 +226,6 @@ class MainActivity : AppCompatActivity() {
       val sessionState by PlaybackSession.state.collectAsState()
       val enableVideoMiniPlayer by playerPreferences.enableVideoMiniPlayer.collectAsState()
       val autoPiPOnNavigation by playerPreferences.autoPiPOnNavigation.collectAsState()
-      val showFrameTimeOverlay by advancedPreferences.showFrameTimeOverlay.collectAsState()
       val trackListNode by PlaybackSession.propNode["track-list"].collectAsState()
       val rendererNoticePreferences =
         remember { getSharedPreferences(RENDERER_NOTICE_PREFERENCES, MODE_PRIVATE) }
@@ -356,7 +354,6 @@ class MainActivity : AppCompatActivity() {
           }
         }
       }
-      FrameTimeOverlay(this@MainActivity, showFrameTimeOverlay)
     }
   }
 

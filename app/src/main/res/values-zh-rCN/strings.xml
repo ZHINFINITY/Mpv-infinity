@@ -2265,6 +2265,4 @@
   <string name="pref_glass_rim_width_summary">高光边缘的粗细（dp）</string>
   <string name="pref_glass_rim_softness">边缘柔和度</string>
   <string name="pref_glass_rim_softness_summary">边缘光线淡出的柔和程度</string>
-  <string name="pref_advanced_frame_time_overlay_title">帧时间浮层</string>
-  <string name="pref_advanced_frame_time_overlay_summary">显示此窗口的卡顿帧百分比以及 p90/p99 帧时间</string>
 </resources>

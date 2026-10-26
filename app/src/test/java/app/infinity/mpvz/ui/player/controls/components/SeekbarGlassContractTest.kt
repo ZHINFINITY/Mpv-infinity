@@ -18,14 +18,38 @@ class SeekbarGlassContractTest {
     val track = seekbar.substringAfter("// Visual seekbar (smaller, centered) - always drawn on top of the wave")
       .substringBefore("val activeClip")
     assertTrue(track.contains(".height(32.dp)"))
-    assertTrue(track.contains(".playerGlassPane(enabled = liquidGlassSurfaces, cornerRadius = 999.dp)"))
+    assertTrue(track.contains(".playerGlassPane(enabled = liquidGlassSurfaces && glassTrackEnabled, cornerRadius = 999.dp)"))
     assertTrue(seekbar.contains("val liquidGlassSurfaces by appearance.liquidGlassSurfaces.collectAsState()"))
+    assertTrue(seekbar.contains("glassEnabled = glassTrackEnabled"))
+    assertTrue(seekbar.contains("val glass = liquidGlassEnabled && glassEnabled"))
 
     val seeker = seekbar.substringAfter("Seeker(").substringBefore("\n    )")
     assertTrue("keep the existing enlarged touch target", seeker.contains(".height(touchAreaHeight)"))
     assertTrue("keep the visual Seeker transparent so only the rendered track changes", seeker.contains(".graphicsLayer(alpha = 0f)"))
     assertTrue(seeker.contains("onValueChange = { newPosition ->"))
     assertTrue(seeker.contains("onValueChangeFinished = {"))
+  }
+
+  @Test
+  fun musicKeepsLegacySeekbarAndQueueItemsKeepTheirOwnDurations() {
+    val audio = source("ui/player/controls/AudioPlayerControls.kt")
+    val musicSeekbar = audio.substringAfter("val seekbarView = @Composable {")
+      .substringBefore("val playbackControlsRow = @Composable {")
+    assertTrue(musicSeekbar.contains("glassTrackEnabled = false"))
+
+    val musicLibrary = source("ui/browser/music/MusicLibraryViewModel.kt")
+    val playSong = musicLibrary.substringAfter("fun playSong(").substringBefore("fun playAllSongs(")
+    val playAll = musicLibrary.substringAfter("fun playAllSongs(").substringBefore("fun createPlaylist(")
+    val duration = "durationSeconds = item.durationMs.takeIf { it > 0L }?.div(1000L)?.toInt()"
+    assertTrue(playSong.contains(duration))
+    assertTrue(playAll.contains(duration))
+
+    val appearance = source("preferences/AppearancePreferences.kt")
+    assertTrue(appearance.contains("getBoolean(\"show_seekbar_outer_container\", false)"))
+    val playerControls = source("ui/player/controls/PlayerControls.kt")
+    assertTrue(playerControls.contains("val seekbarContainerEnabled = showSeekbarOuterContainer"))
+    assertTrue(playerControls.contains("if (seekbarContainerEnabled)"))
+    assertTrue(playerControls.contains("val useLiquidGlassSeekbar = liquidGlassSurfaces && seekbarContainerEnabled"))
   }
 
   @Test

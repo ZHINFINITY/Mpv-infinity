@@ -2262,6 +2262,4 @@
   <string name="pref_glass_rim_width_summary">Grubość podświetlonej krawędzi w dp</string>
   <string name="pref_glass_rim_softness">Miękkość krawędzi</string>
   <string name="pref_glass_rim_softness_summary">Jak łagodnie zanika światło krawędzi</string>
-  <string name="pref_advanced_frame_time_overlay_title">Nakładka czasu klatki</string>
-  <string name="pref_advanced_frame_time_overlay_summary">Pokazuj odsetek klatek z przycięciami i czas klatki p90/p99 dla tego okna</string>
 </resources>
