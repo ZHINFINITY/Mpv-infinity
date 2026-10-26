@@ -94,6 +94,24 @@ class NativePlaybackControlContractTest(unittest.TestCase):
         for name in ('play', 'stop', 'release'):
             self.assertIn('seekDispatcher.cancel()', function(engine, name))
 
+    def test_media3_timeline_tick_is_light_but_metadata_and_track_events_remain_full(self):
+        engine = (PLAYER / 'NativeMedia3Engine.kt').read_text()
+        timeline = engine.split('private val timelineRunnable = object : Runnable {', 1)[1].split(
+            'private val loopRunnable', 1)[0]
+        self.assertIn('publishPlaybackSnapshot()', timeline)
+        self.assertNotIn('publishSnapshot()', timeline)
+
+        listener = engine.split('private val listener = object : Player.Listener {', 1)[1].split(
+            '\n  init {', 1)[0]
+        metadata = listener.split('override fun onMetadata(metadata: Metadata) {', 1)[1].split(
+            'override fun onEvents', 1)[0]
+        self.assertIn('metadataEntriesToChapters(metadata)', metadata)
+        self.assertIn('publishSnapshot()', metadata)
+        events = listener.split('override fun onEvents(player: Player, events: Player.Events) {', 1)[1].split(
+            '\n    }\n  }', 1)[0]
+        self.assertIn('events.contains(Player.EVENT_TRACKS_CHANGED)', events)
+        self.assertIn('publishSnapshot()', events)
+
 
 if __name__ == '__main__':
     unittest.main()

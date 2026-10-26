@@ -386,7 +386,7 @@ class NativeMedia3Engine(
       // Keep the subtitle clock alive while paused, buffering, and immediately
       // after a seek. MPV renders from its current clock in all of these states.
       if (player.currentMediaItem == null) return
-      publishSnapshot()
+      publishPlaybackSnapshot()
       subtitleOverlay?.setPositionUs(player.currentPosition.coerceAtLeast(0L) * 1000L)
       // Keep the seekbar responsive without forcing a 10 Hz Compose/native snapshot loop on a
       // 4K HDR decoder. Direct commands remain immediate; the UI only needs a quarter-second tick.
