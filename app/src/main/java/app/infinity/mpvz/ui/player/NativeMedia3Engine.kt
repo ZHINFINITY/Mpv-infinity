@@ -770,7 +770,8 @@ class NativeMedia3Engine(
   /**
    * Re-prepares the same Native media item after a shortcut changes Flow configuration. Keep the
    * original MediaItem and track parameters so request headers, MIME metadata, and subtitle
-   * configurations are not rebuilt or discarded. Playback remains paused until a ready frame.
+   * configurations are not rebuilt or discarded. Keep playback paused until a ready frame, then
+   * explicitly reissue the captured play command so a playing item resumes without a user tap.
    */
   internal suspend fun restartCurrentItemForInterpolation(
     state: NativeInterpolationRestartState,
@@ -875,12 +876,14 @@ class NativeMedia3Engine(
       }
 
       player.playWhenReady = state.playWhenReady
+      if (state.playWhenReady) player.play()
       playStateRestored = true
       publishSnapshot()
       Log.i(
         logTag,
         "Native interpolation reload ready positionMs=${state.positionMs} " +
-          "playWhenReady=${state.playWhenReady}",
+          "playWhenReady=${player.playWhenReady} isPlaying=${player.isPlaying} " +
+          "suppressionReason=${player.playbackSuppressionReason}",
       )
       return NativeInterpolationRestartResult.APPLIED
     } catch (cancelled: CancellationException) {
@@ -894,7 +897,7 @@ class NativeMedia3Engine(
       if (!playStateRestored && !reloadFailed && isCurrent() &&
         player.currentMediaItem?.localConfiguration?.uri?.toString() == state.mediaUri
       ) {
-        player.playWhenReady = state.playWhenReady
+        if (state.playWhenReady) player.play() else player.pause()
       }
     }
   }

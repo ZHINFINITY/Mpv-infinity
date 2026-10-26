@@ -78,7 +78,7 @@ class NativeInterpolationRestartPolicyTest {
     assertFalse(owns(ownsSession = false))
   }
 
-  @Test fun nativeShortcutReloadUsesSameMediaItemAndRestoresOnlyAfterReady() {
+  @Test fun nativeShortcutReloadUsesSameMediaItemAndRestoresPlayIntentAfterReadyFrame() {
     val root = generateSequence(File(requireNotNull(System.getProperty("user.dir")))) { it.parentFile }
       .first { File(it, "app/src/main/java/app/infinity/mpvz").isDirectory }
     val base = File(root, "app/src/main/java/app/infinity/mpvz/ui/player")
@@ -99,7 +99,14 @@ class NativeInterpolationRestartPolicyTest {
     assertTrue(reload.contains("readinessListener?.let { player.removeListener(it) }"))
     assertTrue(reload.contains("snapshot.first"))
     assertTrue(reload.contains("hasRenderedFirstFrame.first"))
-    assertTrue(reload.indexOf("readySnapshot?.isReady") < reload.indexOf("player.playWhenReady = state.playWhenReady"))
+    val playIntentRestore = reload.indexOf("player.playWhenReady = state.playWhenReady")
+    val explicitPlay = reload.indexOf("if (state.playWhenReady) player.play()")
+    assertTrue(reload.indexOf("readySnapshot?.isReady") < reload.indexOf("firstFrameRendered"))
+    assertTrue(reload.indexOf("firstFrameRendered") < playIntentRestore)
+    assertTrue(playIntentRestore < explicitPlay)
+    assertTrue(explicitPlay < reload.indexOf("return NativeInterpolationRestartResult.APPLIED"))
+    assertTrue(reload.contains("if (state.playWhenReady) player.play() else player.pause()"))
+    assertTrue(reload.contains("player.playbackSuppressionReason"))
     assertFalse(reload.contains("MediaItem.Builder"))
   }
 
