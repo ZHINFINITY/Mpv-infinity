@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.2.3
+
+- Frame interpolation and its existing target-FPS controls are available in the stable build when the required playback runtime is present.
+- Soft Blend and Visibility Resolver are available in stable playback settings and respect the selected engine, Vulkan support, and mpv.conf ownership.
+
 ## 2.2.2
 
 - 🎞️ Native playback feels smoother by doing less repeated work during routine updates, while track and chapter information stays current.

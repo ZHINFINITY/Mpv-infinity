@@ -173,12 +173,15 @@ class MPVView(
         !frameInterpolationConfigOwned &&
         (forceMpvInterpolationOwner || decoderPreferences.playbackEngine.get() != PlaybackEngineMode.NATIVE)
     val mpvFlowSoftBlendDebugActive =
-      BuildConfig.DEBUG &&
-        decoderPreferences.mpvFlowSoftBlendDebug.get() &&
-        mpvFlowFrameInterpolationActive &&
-        requestedBackend.gpuApi == "vulkan" &&
-        !MpvConfigOverridePolicy.isOwnedByMpvConf("mpvflow-soft-blend") &&
-        !MpvConfigOverridePolicy.isOwnedByMpvConf("mpvflow-compute-api")
+      Media3FlowDebugSettingsPolicy.mpvFlowFeatureEnabled(
+        debugBuild = BuildConfig.DEBUG,
+        requested = decoderPreferences.mpvFlowSoftBlendDebug.get(),
+        interpolationActive = mpvFlowFrameInterpolationActive,
+        vulkanBackend = requestedBackend.gpuApi == "vulkan",
+        mpvConfOwnsOption =
+          MpvConfigOverridePolicy.isOwnedByMpvConf("mpvflow-soft-blend") ||
+            MpvConfigOverridePolicy.isOwnedByMpvConf("mpvflow-compute-api"),
+      )
     val effectiveMpvFlowComputeApi =
       if (mpvFlowSoftBlendDebugActive) MpvFlowComputeApi.VULKAN else requestedMpvFlowComputeApi
     mpvFlowOsdStatsEnabled = mpvFlowFrameInterpolationActive
@@ -781,12 +784,15 @@ class MPVView(
     PlaybackSession.setOptionString("vd-lavc-queue", "no")
 
     val mpvFlowSoftBlendDebugEnabled =
-      BuildConfig.DEBUG &&
-        decoderPreferences.mpvFlowSoftBlendDebug.get() &&
-        mpvFlowFrameInterpolationEnabled &&
-        backend.gpuApi == "vulkan" &&
-        !MpvConfigOverridePolicy.isOwnedByMpvConf("mpvflow-soft-blend") &&
-        !MpvConfigOverridePolicy.isOwnedByMpvConf("mpvflow-compute-api")
+      Media3FlowDebugSettingsPolicy.mpvFlowFeatureEnabled(
+        debugBuild = BuildConfig.DEBUG,
+        requested = decoderPreferences.mpvFlowSoftBlendDebug.get(),
+        interpolationActive = mpvFlowFrameInterpolationEnabled,
+        vulkanBackend = backend.gpuApi == "vulkan",
+        mpvConfOwnsOption =
+          MpvConfigOverridePolicy.isOwnedByMpvConf("mpvflow-soft-blend") ||
+            MpvConfigOverridePolicy.isOwnedByMpvConf("mpvflow-compute-api"),
+      )
     val effectiveMpvFlowComputeApi =
       if (mpvFlowSoftBlendDebugEnabled) MpvFlowComputeApi.VULKAN else mpvFlowComputeApi
     val mpvFlowComputeApiOptionResult =
@@ -803,10 +809,13 @@ class MPVView(
         null
       }
     val mpvFlowVisibilityResolverDebugEnabled =
-      BuildConfig.DEBUG &&
-        decoderPreferences.mpvFlowVisibilityResolverDebug.get() &&
-        mpvFlowFrameInterpolationEnabled &&
-        backend.gpuApi == "vulkan"
+      Media3FlowDebugSettingsPolicy.mpvFlowFeatureEnabled(
+        debugBuild = BuildConfig.DEBUG,
+        requested = decoderPreferences.mpvFlowVisibilityResolverDebug.get(),
+        interpolationActive = mpvFlowFrameInterpolationEnabled,
+        vulkanBackend = backend.gpuApi == "vulkan",
+        mpvConfOwnsOption = MpvConfigOverridePolicy.isOwnedByMpvConf("mpvflow-visibility-resolver"),
+      )
     val mpvFlowVisibilityResolverOptionResult =
       if (BuildConfig.MPV_HAS_MPVFLOW &&
         !MpvConfigOverridePolicy.isOwnedByMpvConf("mpvflow-visibility-resolver")) {

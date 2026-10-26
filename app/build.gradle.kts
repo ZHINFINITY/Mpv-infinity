@@ -22,7 +22,7 @@ val activeAbis =
   }
 val includeMpvFlowMpvRuntime = requestedMpvFlowMpvRuntime && activeAbis == listOf("arm64-v8a")
 val universalOnlyDistributions = setOf("noVulkan")
-val releaseVersionCode = 262
+val releaseVersionCode = 263
 val versionCodeBandSize = 10_000
 val stableVersionCode = releaseVersionCode * versionCodeBandSize + (versionCodeBandSize - 1)
 val previewVersionCode =
@@ -50,7 +50,7 @@ android {
     // Stable occupies the top of its version band. Preview uses the next band's commit-count
     // offset, so Stable -> Preview -> newer Preview -> next Stable is always an Android upgrade.
     versionCode = stableVersionCode
-    versionName = "2.2.2"
+    versionName = "2.2.3"
 
     vectorDrawables {
       useSupportLibrary = true
