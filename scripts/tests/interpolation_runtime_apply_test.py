@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Static contract checks for applying interpolation preferences to live playback."""
+import re
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -45,15 +46,23 @@ def main() -> None:
     require(sink, "enabled = interpolationEnabled", "truthful diagnostics enabled state")
     require(native, "suspend fun applyInterpolationRuntime", "suspend Native runtime API")
     require(native, "internal suspend fun restartCurrentItemForInterpolation", "Native controlled reload API")
-    require(native, "player.setMediaItem(item, state.positionMs)", "same MediaItem and exact timestamp")
+    require(native, "val taggedItem = tagMediaItemForNextPlayback(item)", "same Native MediaItem tagged for event identity")
+    require(native, "player.setMediaItem(taggedItem, state.positionMs)", "same playback position preserved")
+    restart = native.split("internal suspend fun restartCurrentItemForInterpolation", 1)[1].split("suspend fun applyInterpolationRuntime", 1)[0]
+    post_replacement = restart.split("player.setMediaItem(taggedItem, state.positionMs)", 1)[1]
+    require(post_replacement, "player.currentMediaItem != taggedItem", "tagged MediaItem identity used for restart guards")
+    if re.search(r"player\.currentMediaItem\s*!=\s*item\b", post_replacement):
+        raise SystemExit("restart guard must not compare a tagged current item to the original untagged MediaItem")
     require(native, "player.playWhenReady = state.playWhenReady", "prior Native play state restored")
     native_apply = native.split("suspend fun applyInterpolationRuntime", 1)[1].split("\n  /**", 1)[0]
     require(native_apply, "shouldReleaseFlowOutputSurfaceBeforeNativeRendererReselect(", "Flow-to-Native surface-release policy")
-    release_index = native_apply.find("flowSink.clearOutputSurfaceInfo()")
+    require(native_apply, "if (!flowSink.clearOutputSurfaceInfoAndAwait())", "abort renderer reselection when the EGL fence fails")
+    release_index = native_apply.find("flowSink.clearOutputSurfaceInfoAndAwait()")
     reselect_index = native_apply.find("nativeTrackSelector.invalidateRendererEligibility()")
     if release_index < 0 or reselect_index < 0 or release_index >= reselect_index:
         raise SystemExit("Flow EGL output must be fenced before Native renderer re-selection")
     require(sink, "releaseFence.await(GL_INIT_TIMEOUT_MS, TimeUnit.MILLISECONDS)", "fenced Flow EGL output release")
+    require(sink, "if (outputSurfaceReleaseFailed)", "reject surface recreation after an unconfirmed EGL release")
     callback = activity.split("fun applyInterpolationPreferencesFromControls()", 1)[1].split("private fun requestMpvInterpolationRestart", 1)[0]
     require(callback, "lifecycleScope.launch", "nonblocking activity launch")
     require(callback, "backend.restartCurrentItemForInterpolation(", "Native shortcut reload call")

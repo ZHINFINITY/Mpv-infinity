@@ -96,10 +96,10 @@ class NativeInterpolationRuntimePolicyTest {
     assertTrue(engine.contains("Media3FlowFormatPolicy.shouldReevaluateNativeRenderer("))
     assertTrue(engine.contains("NativeInterpolationRuntimePolicy.shouldReleaseFlowOutputSurfaceBeforeNativeRendererReselect("))
     val apply = engine.substringAfter("suspend fun applyInterpolationRuntime").substringBefore("\n  /**")
-    val releaseIndex = apply.indexOf("flowSink.clearOutputSurfaceInfo()")
+    val releaseIndex = apply.indexOf("flowSink.clearOutputSurfaceInfoAndAwait()")
     val reselectIndex = apply.indexOf("nativeTrackSelector.invalidateRendererEligibility()")
     assertTrue(releaseIndex >= 0 && reselectIndex >= 0 && releaseIndex < reselectIndex)
-    val clearSurface = sink.substringAfter("override fun clearOutputSurfaceInfo()").substringBefore("\n  override fun")
+    val clearSurface = sink.substringAfter("internal fun clearOutputSurfaceInfoAndAwait()").substringBefore("\n  override fun")
     assertTrue(clearSurface.contains("destroyWindowSurface { releaseFence.countDown() }"))
     assertTrue(clearSurface.contains("releaseFence.await(GL_INIT_TIMEOUT_MS, TimeUnit.MILLISECONDS)"))
   }

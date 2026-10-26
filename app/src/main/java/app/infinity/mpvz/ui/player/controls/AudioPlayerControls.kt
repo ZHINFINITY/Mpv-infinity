@@ -14,8 +14,11 @@ import app.infinity.mpvz.ui.player.StatsLuaOverlay
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.boundsInWindow
 import app.infinity.mpvz.ui.player.PlaybackSession
+import app.infinity.mpvz.ui.player.AudioPlayerSheetState
 import app.infinity.mpvz.ui.player.BrowserMusicSheetState
+import app.infinity.mpvz.ui.player.InAppMusicSheetState
 import app.infinity.mpvz.ui.player.browserMusicSheetDrag
+import app.infinity.mpvz.ui.player.inAppMusicSheetDrag
 
 import android.Manifest
 import android.content.pm.PackageManager
@@ -620,7 +623,7 @@ fun AudioPlayerControls(
   onOpenPanel: (Panels) -> Unit,
   modifier: Modifier = Modifier,
   onGlassPaletteChanged: (Int, Int) -> Unit = { _, _ -> },
-  inAppSheet: BrowserMusicSheetState? = null,
+  inAppSheet: AudioPlayerSheetState? = null,
 ) {
   val speedConfigOwned = isMpvOptionOwnedByConfig("speed")
   val audioFiltersConfigOwned = isMpvOptionOwnedByConfig("af")
@@ -1282,16 +1285,24 @@ fun AudioPlayerControls(
     )
   }
   val liveSheetDrag =
-    if (inAppSheet != null) {
-      // Hosted in the browser sheet: the sheet itself slides with the finger, so this page
-      // stays untransformed (no scale, so the artwork is never stretched).
-      Modifier.browserMusicSheetDrag(
-        state = inAppSheet,
-        fromMiniPlayer = false,
-        enabled = !isSheetOpen && !showInPlaceLyrics,
-      )
-    } else {
-      Modifier.nestedScroll(nestedGestureController.nestedScrollConnection)
+    when (val sheet = inAppSheet) {
+      is BrowserMusicSheetState -> {
+        // Hosted in the browser sheet: the sheet itself slides with the finger, so this page
+        // stays untransformed (no scale, so the artwork is never stretched).
+        Modifier.browserMusicSheetDrag(
+          state = sheet,
+          fromMiniPlayer = false,
+          enabled = !isSheetOpen && !showInPlaceLyrics,
+        )
+      }
+      is InAppMusicSheetState ->
+        Modifier.inAppMusicSheetDrag(
+          state = sheet,
+          collapsing = true,
+          enabled = sheet.isSettledOpen,
+        )
+      null -> Modifier.nestedScroll(nestedGestureController.nestedScrollConnection)
+      else -> Modifier
     }
   // The input root is never transformed (the page layer below is), so its bounds are stable
   // mid-flight in both the Activity and the in-app sheet.

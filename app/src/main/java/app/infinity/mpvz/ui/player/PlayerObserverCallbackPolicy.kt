@@ -15,3 +15,17 @@ internal object PlayerObserverCallbackPolicy {
     currentGeneration: Long,
   ): Boolean = token.bindingEpoch == currentBindingEpoch && token.generation == currentGeneration
 }
+
+internal object PlaybackItemEpochPolicy {
+  fun tokenFromMediaItemTag(tag: Any?): NativePlaybackErrorToken? = tag as? NativePlaybackErrorToken
+
+  fun isCurrent(
+    token: NativePlaybackErrorToken,
+    currentEpoch: Long,
+    currentPlaybackGeneration: Long,
+  ): Boolean =
+    token.mediaItemEpoch == currentEpoch && token.playbackGeneration == currentPlaybackGeneration
+}
+
+/** Immutable identity attached to a MediaItem so AnalyticsListener EventTime retains the event's source. */
+internal data class NativePlaybackErrorToken(val mediaItemEpoch: Long, val playbackGeneration: Long)
