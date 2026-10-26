@@ -27,3 +27,6 @@ fun UpdateViewModel.UpdateState.isAboutSheetState(): Boolean = when (this) {
   UpdateViewModel.UpdateState.Loading, UpdateViewModel.UpdateState.NoUpdate, UpdateViewModel.UpdateState.Error -> true
   else -> false
 }
+
+fun UpdateViewModel.UpdateState.shouldShowAboutSheet(isManualCheck: Boolean): Boolean =
+  isManualCheck && isAboutSheetState()

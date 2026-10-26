@@ -19,7 +19,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.platform.testTag
 import androidx.compose.foundation.layout.RowScope
 
-/** A stable value column: changing the value never changes the description's available width. */
+/** A tabular value box sized for the endpoints and expanded when a formatted value is wider. */
 @Composable
 fun SliderValueBadge(
   valueText: String,
@@ -30,8 +30,12 @@ fun SliderValueBadge(
 ) {
   val measurer = rememberTextMeasurer()
   val tabular = remember(style) { style.copy(fontFeatureSettings = "tnum") }
-  val width = remember(tabular, minimumText, maximumText) {
-    maxOf(measurer.measure(minimumText, tabular).size.width, measurer.measure(maximumText, tabular).size.width)
+  val width = remember(tabular, valueText, minimumText, maximumText) {
+    maxOf(
+      measurer.measure(valueText, tabular).size.width,
+      measurer.measure(minimumText, tabular).size.width,
+      measurer.measure(maximumText, tabular).size.width,
+    )
   }
   Box(
     modifier = modifier
@@ -45,9 +49,9 @@ fun SliderValueBadge(
 }
 
 /**
- * Settings slider summary: a fixed-width value box (sized for the widest of [minimumText] /
- * [maximumText], tabular figures) followed by the description. The description's position,
- * width and wrapping never depend on the current value.
+ * Settings slider summary: a tabular value box sized for the widest of the current value and
+ * declared endpoints, followed by the description. Values within the endpoint width keep the
+ * description stable; longer formatted values expand the box to avoid clipping.
  */
 @Composable
 fun SliderValueSummary(

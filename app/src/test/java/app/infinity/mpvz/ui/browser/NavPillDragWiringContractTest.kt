@@ -19,7 +19,10 @@ class NavPillDragWiringContractTest {
     val scroll = main.indexOf(".horizontalScroll(pillScroll)")
     assertTrue(main.contains("Modifier.navPillDragGesture("))
     assertTrue(drag in 0 until scroll)
-    assertTrue(main.contains("onRelease = { target -> visibleTabs.getOrNull(target)?.let(onTabSelected) }"))
+    assertTrue(main.contains("val latestVisibleTabs by rememberUpdatedState(visibleTabs)"))
+    assertTrue(main.contains("val latestOnTabSelected by rememberUpdatedState(onTabSelected)"))
+    assertTrue(main.contains("onRelease = { target -> latestVisibleTabs.getOrNull(target)?.let(latestOnTabSelected) }"))
+    assertTrue(!main.contains("onRelease = { target -> visibleTabs.getOrNull(target)?.let(onTabSelected) }"))
     // Build 1942 regression: slop on the Main pass lost the gesture to the inner scrollable.
     assertTrue(!gesture.contains("awaitHorizontalTouchSlopOrCancellation"))
     assertTrue(!gesture.contains("horizontalDrag("))

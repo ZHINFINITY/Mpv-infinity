@@ -39,7 +39,14 @@ internal fun Modifier.navPillDragGesture(
     // Centres are frozen at drag start: tabs widen while hovered, and remapping the finger
     // against moving centres would make the lens run away from it.
     val centers = tabCenters()
-    val startCenter = centers.getOrNull(selectedIndex) ?: down.position.x
+    val startScrollOffset = scrollState?.value?.toFloat() ?: 0f
+    val startCenter = NavPillDragPolicy.contentXFromViewport(
+      viewportX = down.position.x,
+      scrollOffsetPx = startScrollOffset,
+      viewportSizePx = scrollState?.viewportSize?.toFloat() ?: 0f,
+      isRtl = isRtl,
+    )
+    var lastScrollOffset = startScrollOffset
     val slop = viewConfiguration.touchSlop
     val tracker = VelocityTracker()
     tracker.addPosition(down.uptimeMillis, down.position)
@@ -47,10 +54,20 @@ internal fun Modifier.navPillDragGesture(
     var totalDelta = 0f
 
     fun update(delta: Float) {
-      totalDelta += delta
-      val next = NavPillDragPolicy.positionAfterDrag(startCenter, totalDelta, centers, isRtl)
+      val currentScrollOffset = scrollState?.value?.toFloat() ?: lastScrollOffset
+      totalDelta += (if (isRtl) -delta else delta) + (currentScrollOffset - lastScrollOffset)
+      lastScrollOffset = currentScrollOffset
+      var next = NavPillDragPolicy.positionAfterDrag(startCenter, totalDelta, centers)
       onDragPosition(next)
       keepLensVisible(scrollState, next, centers)
+      val afterAutoScroll = scrollState?.value?.toFloat() ?: lastScrollOffset
+      val autoScrollDelta = afterAutoScroll - lastScrollOffset
+      if (autoScrollDelta != 0f) {
+        totalDelta += autoScrollDelta
+        lastScrollOffset = afterAutoScroll
+        next = NavPillDragPolicy.positionAfterDrag(startCenter, totalDelta, centers)
+        onDragPosition(next)
+      }
       val now = NavPillDragPolicy.hoveredTabIndex(next, tabCount)
       if (now != hovered) {
         hovered = now
@@ -96,7 +113,9 @@ internal fun Modifier.navPillDragGesture(
       }
     } finally {
       val velocity = runCatching { tracker.calculateVelocity().x }.getOrDefault(0f)
-      val releasePosition = NavPillDragPolicy.positionAfterDrag(startCenter, totalDelta, centers, isRtl)
+      val finalScrollOffset = scrollState?.value?.toFloat() ?: lastScrollOffset
+      val finalDelta = totalDelta + (finalScrollOffset - lastScrollOffset)
+      val releasePosition = NavPillDragPolicy.positionAfterDrag(startCenter, finalDelta, centers)
       onDragPosition(null)
       if (released) {
         val target = NavPillDragPolicy.flingSnappedIndex(releasePosition, velocity, tabCount, isRtl)

@@ -24,7 +24,7 @@ internal object AgslRuntimeShaders {
     GlassShaderCache.shared(GLASS_OPTICS) { RuntimeShader(GLASS_OPTICS) }
 
   fun browserLens(): RuntimeShader? =
-    GlassShaderCache.shared(BROWSER_LENS) { RuntimeShader(BROWSER_LENS) }
+    runCatching { RuntimeShader(BROWSER_LENS) }.getOrNull()
 
   fun browserLensEffect(
     paneWidth: Float,

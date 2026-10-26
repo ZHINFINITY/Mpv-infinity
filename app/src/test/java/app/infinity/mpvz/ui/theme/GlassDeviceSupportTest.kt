@@ -47,7 +47,18 @@ class GlassDeviceSupportTest {
     val scene = IllegalArgumentException().apply {
       stackTrace = arrayOf(StackTraceElement("app.infinity.mpvz.ui.theme.BrowserGlassSceneKt", "draw", "BrowserGlassScene.kt", 1))
     }
-    assertTrue(GlassDeviceSupport.isGlassCrash(scene))
+    assertFalse("host wrapper frames alone must not take glass away", GlassDeviceSupport.isGlassCrash(scene))
+    val shaderSupport = IllegalStateException().apply {
+      stackTrace = arrayOf(StackTraceElement("app.infinity.mpvz.ui.theme.RuntimeShaderSupport", "browserLens", "RuntimeShaderSupport.kt", 1))
+    }
+    assertTrue(GlassDeviceSupport.isGlassCrash(shaderSupport))
+    val deepShaderFrame = IllegalStateException().apply {
+      stackTrace = Array(13) { index ->
+        if (index == 12) StackTraceElement("android.graphics.RuntimeShader", "setFloatUniform", "RuntimeShader.java", 1)
+        else StackTraceElement("app.infinity.mpvz.ui.browser.MainScreen", "draw", "MainScreen.kt", index + 1)
+      }
+    }
+    assertFalse("deep incidental shader frames must not count", GlassDeviceSupport.isGlassCrash(deepShaderFrame))
     val unrelated = NullPointerException().apply {
       stackTrace = arrayOf(StackTraceElement("app.infinity.mpvz.ui.player.PlayerActivity", "onCreate", "PlayerActivity.kt", 1))
     }

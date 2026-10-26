@@ -29,9 +29,10 @@ class InfinityLogoPreferenceScopeTest {
     assertFalse("PullRefreshBox must not read the logo preference", "animateInfinityLogo" in pullRefresh)
     val refreshBody = pullRefresh.substringAfter("fun PullRefreshBox(").substringBefore("fun InfinityLoadingIndicator(")
     assertTrue(
-      "the pull-to-refresh mark always loops",
-      "val infinityDashOffset = infinityDashOffset(animate = true)" in refreshBody,
+      "the pull-to-refresh mark loops only while refreshing or pulled",
+      "val infinityDashOffset = infinityDashOffset(animate = isRefreshing.value || state.distanceFraction > 0f)" in refreshBody,
     )
+    assertFalse("hidden refresh indicators must stop the infinite transition", "infinityDashOffset(animate = true)" in refreshBody)
     assertTrue(
       "loading indicators loop unless a caller opts out",
       "fun InfinityLoadingIndicator(modifier: Modifier = Modifier, size: Dp = 56.dp, animate: Boolean = true)" in pullRefresh,

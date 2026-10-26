@@ -40,6 +40,56 @@ class NavPillDragPolicyTest {
     assertEquals(2f, NavPillDragPolicy.positionAfterDrag(80f, 500f, centers), 0.001f)
   }
 
+  @Test fun dragOriginTracksTouchedTabAndScrollOffsetInsteadOfSelectedTab() {
+    val centers = listOf(20f, 80f, 140f)
+    val touchInContent =
+      NavPillDragPolicy.contentXFromViewport(
+        viewportX = 50f,
+        scrollOffsetPx = 90f,
+        viewportSizePx = 200f,
+        isRtl = false,
+      )
+    assertEquals(2f, NavPillDragPolicy.positionAfterDrag(touchInContent, 0f, centers), 0.001f)
+  }
+
+  @Test fun rtlDragOriginUsesLogicalStartAndNonzeroScrollOffset() {
+    val centers = listOf(20f, 80f, 140f)
+    val touchInContent =
+      NavPillDragPolicy.contentXFromViewport(
+        viewportX = 60f,
+        scrollOffsetPx = 30f,
+        viewportSizePx = 160f,
+        isRtl = true,
+      )
+    assertEquals(130f, touchInContent, 0.001f)
+    assertEquals(1.8333333f, NavPillDragPolicy.positionAfterDrag(touchInContent, 0f, centers), 0.001f)
+  }
+
+  @Test fun stationaryFingerTracksContentAsAutoScrollAdvances() {
+    val beforeAutoScroll = NavPillDragPolicy.contentXFromViewport(
+      viewportX = 100f,
+      scrollOffsetPx = 10f,
+      viewportSizePx = 180f,
+      isRtl = false,
+    )
+    val afterAutoScroll = NavPillDragPolicy.contentXFromViewport(
+      viewportX = 100f,
+      scrollOffsetPx = 30f,
+      viewportSizePx = 180f,
+      isRtl = false,
+    )
+    assertEquals(20f, afterAutoScroll - beforeAutoScroll, 0.001f)
+  }
+
+  @Test fun directRtlTabMappingStillReflectsPhysicalCoordinates() {
+    val centers = listOf(20f, 80f, 140f)
+    assertEquals(
+      2f,
+      NavPillDragPolicy.positionAfterDrag(20f, 0f, centers, isRtl = true),
+      0.001f,
+    )
+  }
+
   @Test fun hoveredTabUsesNearestPillPosition() {
     assertEquals(1, NavPillDragPolicy.hoveredTabIndex(1.49f, 3))
     assertEquals(2, NavPillDragPolicy.hoveredTabIndex(1.51f, 3))

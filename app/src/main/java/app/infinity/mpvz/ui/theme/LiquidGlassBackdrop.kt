@@ -558,8 +558,9 @@ fun Modifier.liquidGlassPane(
         effects = {
           // Kyant order is colour filter -> blur -> lens; this surface has no filter.
           blur((2.5f * tuning.frost).coerceIn(0f, 8f))
+          val minCornerRadiusPx = cornerRadius.toPx().coerceAtMost(size.minDimension / 2f)
           lens(
-            refractionHeight = LensGlassPolicy.refractionHeightPx(24.dp.toPx(), 24.dp.toPx(), tuning.lensDepth),
+            refractionHeight = LensGlassPolicy.refractionHeightPx(24.dp.toPx(), minCornerRadiusPx, tuning.lensDepth),
             refractionAmount = LensGlassPolicy.refractionAmountPx(size.minDimension, size.minDimension, tuning.lensRefraction),
             depthEffect = tuning.lensDepth > 0f,
             chromaticAberration = tuning.colourEdge,

@@ -27,7 +27,6 @@ import app.infinity.mpvz.preferences.PlayerPreferences
 import app.infinity.mpvz.presentation.crash.CrashActivity
 import app.infinity.mpvz.presentation.crash.GlobalExceptionHandler
 import app.infinity.mpvz.repository.NetworkRepository
-import app.infinity.mpvz.ui.player.MediaPlaybackService
 import app.infinity.mpvz.ui.player.PlaybackPhase
 import app.infinity.mpvz.ui.player.PlaybackSession
 import app.infinity.mpvz.ui.player.PlayerActivity
@@ -148,9 +147,6 @@ class App :
     startedActivityCount = (startedActivityCount - 1).coerceAtLeast(0)
     if (startedActivityCount == 0 && !activity.isChangingConfigurations) {
       pauseVideoWhenBackgroundPlaybackDisabled(activity)
-      // Service-owned playback (the in-app music sheet / Mini Player after a minimize or a
-      // background round trip) has no PlayerActivity to apply the setting when the app is left.
-      MediaPlaybackService.onAppBackgrounded()
       getKoin().get<app.infinity.mpvz.domain.syncplay.SyncplayManager>().onAppBackgrounded()
     }
   }
