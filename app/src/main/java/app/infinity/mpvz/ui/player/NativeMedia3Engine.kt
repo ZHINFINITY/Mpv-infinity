@@ -772,7 +772,7 @@ class NativeMedia3Engine(
    * original MediaItem and track parameters so request headers, MIME metadata, and subtitle
    * configurations are not rebuilt or discarded. Playback remains paused until a ready frame.
    */
-  suspend fun restartCurrentItemForInterpolation(
+  internal suspend fun restartCurrentItemForInterpolation(
     state: NativeInterpolationRestartState,
     enabled: Boolean,
     targetFps: Int,

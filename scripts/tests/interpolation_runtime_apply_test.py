@@ -44,7 +44,7 @@ def main() -> None:
     require(sink, "continuation.resume(true)", "actual apply ACK")
     require(sink, "enabled = interpolationEnabled", "truthful diagnostics enabled state")
     require(native, "suspend fun applyInterpolationRuntime", "suspend Native runtime API")
-    require(native, "suspend fun restartCurrentItemForInterpolation", "Native controlled reload API")
+    require(native, "internal suspend fun restartCurrentItemForInterpolation", "Native controlled reload API")
     require(native, "player.setMediaItem(item, state.positionMs)", "same MediaItem and exact timestamp")
     require(native, "player.playWhenReady = state.playWhenReady", "prior Native play state restored")
     callback = activity.split("fun applyInterpolationPreferencesFromControls()", 1)[1].split("private fun requestMpvInterpolationRestart", 1)[0]

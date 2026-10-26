@@ -83,7 +83,7 @@ class NativeInterpolationRestartPolicyTest {
       .first { File(it, "app/src/main/java/app/infinity/mpvz").isDirectory }
     val base = File(root, "app/src/main/java/app/infinity/mpvz/ui/player")
     val engine = File(base, "NativeMedia3Engine.kt").readText()
-    val reload = engine.substringAfter("suspend fun restartCurrentItemForInterpolation")
+    val reload = engine.substringAfter("internal suspend fun restartCurrentItemForInterpolation")
       .substringBefore("fun setVideoAspect")
 
     assertTrue(reload.contains("player.setMediaItem(item, state.positionMs)"))
