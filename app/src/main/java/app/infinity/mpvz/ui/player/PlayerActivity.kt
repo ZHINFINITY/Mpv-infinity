@@ -283,6 +283,8 @@ class PlayerActivity :
       // this guard only after MPV has restored the shared settings and seek position.
     }
   private var engineHandoffJob: Job? = null
+  private var nativeInterpolationRestartJob: Job? = null
+  private var pendingNativeInterpolationFallbackState: NativeInterpolationRestartState? = null
   private var pendingInterpolationRestore: PlaybackPositionRestoreOverride? = null
   private var pendingInterpolationEngine: Pair<String, PlaybackEngineMode>? = null
   private var manualEngineOverride: Pair<String, PlaybackEngineMode>? = null
@@ -555,6 +557,25 @@ class PlayerActivity :
     nativeEngineOrNull()?.setRepeatMode(repeatMode)
   }
 
+  override fun onVideoAspectChanged() {
+    if (!BuildConfig.DEBUG || isNativeEngineActive()) return
+    val surface = binding.player
+    val valid = runCatching { surface.holder.surface.isValid }.getOrDefault(false)
+    Log.d(
+      TAG,
+      "MPV_ASPECT_DIAGNOSTIC event=aspect_change aspect=${viewModel.videoAspect.value} " +
+        "override=${PlaybackSession.getPropertyDouble("video-aspect-override") ?: "unavailable"} " +
+        "panscan=${PlaybackSession.getPropertyDouble("panscan") ?: "unavailable"} " +
+        "interpolation=${PlaybackSession.getPropertyString("interpolation") ?: "unavailable"} " +
+        "videoSync=${PlaybackSession.getPropertyString("video-sync") ?: "unavailable"} " +
+        "vo=${PlaybackSession.getPropertyString("vo") ?: "unavailable"} " +
+        "gpuApi=${PlaybackSession.getPropertyString("gpu-api") ?: "unavailable"} " +
+        "gpuContext=${PlaybackSession.getPropertyString("gpu-context") ?: "unavailable"} " +
+        "surface=${surface.width}x${surface.height} valid=$valid " +
+        "attached=${PlaybackSession.state.value.surfaceAttached} ambient=$composedVideoAmbientPresentationActive",
+    )
+  }
+
   private var interpolationControlRequestGeneration = 0L
   private var mpvInterpolationRestartJob: Job? = null
   private val mpvInterpolationNativeWork = MpvNativeWork()
@@ -562,44 +583,114 @@ class PlayerActivity :
   /** Last value chosen by the ambient presentation effect; Main-thread only. */
   private var composedVideoAmbientPresentationActive = false
 
-  /** Apply newly written interpolation controls to the renderer already playing this item. */
+  /** Apply newly written interpolation controls through the active engine's controlled reload. */
   fun applyInterpolationPreferencesFromControls() {
     if (!ownsPlaybackSession() || isFinishing || isDestroyed) return
-    val requestGeneration = ++interpolationControlRequestGeneration
-    val wasNative = isNativeEngineActive()
-    if (!wasNative) {
+    interpolationControlRequestGeneration++
+    if (!isNativeEngineActive()) {
       requestMpvInterpolationRestart()
       return
     }
-    val backend = if (wasNative) nativeEngineOrNull() else null
-    val enabled = decoderPreferences.mpvFlowFrameInterpolation.get()
-    val targetFps = decoderPreferences.mpvFlowTargetFps.get()
-    lifecycleScope.launch {
-      val liveApplied = try {
-        backend != null && isNativeEngineActive() && nativeEngineConfigured && nativeEngine === backend &&
-          backend.applyInterpolationRuntime(enabled = enabled, targetFps = targetFps)
-      } catch (cancelled: CancellationException) {
-        throw cancelled
-      } catch (error: Exception) {
-        Log.e(TAG, "Native interpolation live apply failed", error)
-        false
-      }
-      val decision = InterpolationRuntimeApplyPolicy.decision(liveApplied, playbackActive = true)
-      if (requestGeneration != interpolationControlRequestGeneration ||
-        enabled != decoderPreferences.mpvFlowFrameInterpolation.get() ||
-        targetFps != decoderPreferences.mpvFlowTargetFps.get()) return@launch
-      if (!ownsPlaybackSession() || isFinishing || isDestroyed || wasNative != isNativeEngineActive() ||
-        (wasNative && nativeEngineConfigured && nativeEngine !== backend)) return@launch
-      if (decision == InterpolationRuntimeApplyPolicy.Decision.PENDING_UNTIL_NEXT_PLAYBACK) {
-        if (!ownsPlaybackSession() || isFinishing || isDestroyed) return@launch
-        val reason = "native_flow_sink_unavailable"
-        Log.i(TAG, "Interpolation preference saved; deferred reason=$reason")
+    requestNativeInterpolationRestart()
+  }
+
+  /** Native shortcuts re-prepare the same MediaItem and restore its exact position and play intent. */
+  private fun requestNativeInterpolationRestart() {
+    if (activeEngineMode != PlaybackEngineMode.NATIVE || nativeInterpolationRestartJob?.isActive == true) return
+    nativeInterpolationRestartJob = lifecycleScope.launch {
+      delay(180L)
+      while (true) {
+        val requestGeneration = interpolationControlRequestGeneration
+        val enabled = decoderPreferences.mpvFlowFrameInterpolation.get()
+        val targetFps = decoderPreferences.mpvFlowTargetFps.get()
+        if (!ownsPlaybackSession() || isFinishing || isDestroyed ||
+          activeEngineMode != PlaybackEngineMode.NATIVE || !nativeEngineConfigured
+        ) return@launch
+
+        val backend = nativeEngineOrNull() ?: return@launch
+        val player = backend.currentPlayer
+        val item = player.currentMediaItem ?: return@launch
+        val mediaUri = item.localConfiguration?.uri?.toString()
+        val stableMediaId = activeSaveMediaIdentifier.ifBlank { mediaIdentifier }
+        val state = NativeInterpolationRestartPolicy.capture(
+          stableMediaId = stableMediaId,
+          mediaUri = mediaUri,
+          positionMs = backend.positionForPersistenceMs() ?: player.currentPosition,
+          playWhenReady = player.playWhenReady &&
+            player.playbackState != androidx.media3.common.Player.STATE_ENDED,
+          mediaRequestGeneration = mediaRequestGeneration,
+        ) ?: run {
+          Log.w(TAG, "Native interpolation reload skipped because the current item has no stable position")
+          return@launch
+        }
+
+        fun stillCurrent(): Boolean {
+          val activeBackend = nativeEngineOrNull()
+          val activePlayer = activeBackend?.currentPlayer
+          return NativeInterpolationRestartPolicy.stillOwns(
+            state = state,
+            currentStableMediaId = activeSaveMediaIdentifier.ifBlank { mediaIdentifier },
+            currentMediaUri = activePlayer?.currentMediaItem?.localConfiguration?.uri?.toString(),
+            currentMediaRequestGeneration = mediaRequestGeneration,
+            nativeActive = activeEngineMode == PlaybackEngineMode.NATIVE && nativeEngineConfigured &&
+              activeBackend === backend &&
+              manualEngineOverride?.takeIf { it.first == state.stableMediaId }?.second != PlaybackEngineMode.MPV,
+            ownsPlaybackSession = ownsPlaybackSession() && !isFinishing && !isDestroyed,
+          )
+        }
+        if (!stillCurrent()) return@launch
+        pendingNativeInterpolationFallbackState = state
+
+        val result = try {
+          backend.restartCurrentItemForInterpolation(
+            state = state,
+            enabled = enabled,
+            targetFps = targetFps,
+            isCurrent = ::stillCurrent,
+          )
+        } catch (cancelled: CancellationException) {
+          throw cancelled
+        } catch (error: Exception) {
+          Log.e(TAG, "Native interpolation controlled reload failed", error)
+          NativeInterpolationRestartResult.PLAYBACK_FAILED
+        }
+
+        when (result) {
+          NativeInterpolationRestartResult.APPLIED -> {
+            if (pendingNativeInterpolationFallbackState == state) pendingNativeInterpolationFallbackState = null
+            Log.i(TAG, "Native interpolation shortcut reloaded the same item at ${state.positionMs} ms")
+          }
+          NativeInterpolationRestartResult.FLOW_UNAVAILABLE -> {
+            if (pendingNativeInterpolationFallbackState == state) pendingNativeInterpolationFallbackState = null
+            Log.w(TAG, "Native interpolation reload not applied; Flow is unavailable for this device or format")
+            if (!stillCurrent()) return@launch
+            if (requestGeneration != interpolationControlRequestGeneration ||
+              enabled != decoderPreferences.mpvFlowFrameInterpolation.get() ||
+              targetFps != decoderPreferences.mpvFlowTargetFps.get()
+            ) continue
+            return@launch
+          }
+          NativeInterpolationRestartResult.SUPERSEDED -> {
+            if (!stillCurrent()) return@launch
+            if (pendingNativeInterpolationFallbackState == state) pendingNativeInterpolationFallbackState = null
+          }
+          NativeInterpolationRestartResult.PLAYBACK_FAILED -> {
+            Log.w(TAG, "Native interpolation reload failed; switching this item to MPV")
+            // Decoder errors may already have requested the same fallback. The per-item override
+            // and ownership guard keep this idempotent while covering unclassified failures too.
+            if (stillCurrent()) {
+              selectEngineForCurrentVideo(PlaybackEngineMode.MPV)
+            }
+            return@launch
+          }
+        }
+
+        if (!stillCurrent()) return@launch
+        if (requestGeneration != interpolationControlRequestGeneration ||
+          enabled != decoderPreferences.mpvFlowFrameInterpolation.get() ||
+          targetFps != decoderPreferences.mpvFlowTargetFps.get()
+        ) continue
         return@launch
-      }
-      if (ownsPlaybackSession() && !isFinishing && !isDestroyed &&
-        activeEngineMode == PlaybackEngineMode.NATIVE && nativeEngineConfigured && nativeEngine === backend
-      ) {
-        Log.i(TAG, "Native interpolation controls applied to the current playback")
       }
     }
   }
@@ -1538,21 +1629,36 @@ class PlayerActivity :
           if (effectiveEngine == activeEngineMode) return@collect
           // Finish the one authorized reconfiguration before an unrelated engine handoff.
           mpvInterpolationRestartJob?.join()
+          nativeInterpolationRestartJob?.join()
           if (!ownsPlaybackSession() || isFinishing || isDestroyed) return@collect
           engineHandoffJob?.cancel()
           val outgoingEngine = activeEngineMode
-          val outgoingPositionMs =
-            if (outgoingEngine == PlaybackEngineMode.NATIVE) {
+          val pendingNativeRestart = pendingNativeInterpolationFallbackState?.takeIf { state ->
+            outgoingEngine == PlaybackEngineMode.NATIVE &&
+              NativeInterpolationRestartPolicy.stillOwns(
+                state = state,
+                currentStableMediaId = activeSaveMediaIdentifier.ifBlank { mediaIdentifier },
+                currentMediaUri = nativeEngineOrNull()?.currentPlayer?.currentMediaItem
+                  ?.localConfiguration?.uri?.toString(),
+                currentMediaRequestGeneration = mediaRequestGeneration,
+                nativeActive = true,
+                ownsPlaybackSession = ownsPlaybackSession(),
+              )
+          }
+          val outgoingPositionMs = (
+            pendingNativeRestart?.positionMs ?: if (outgoingEngine == PlaybackEngineMode.NATIVE) {
               (nativeEngineOrNull()?.positionForPersistenceMs() ?: 0L)
             } else {
               ((PlaybackSession.getPropertyDouble("time-pos") ?: 0.0) * 1000.0).toLong()
-            }.coerceAtLeast(0L)
+            }
+          ).coerceAtLeast(0L)
           val outgoingPlaying =
-            if (outgoingEngine == PlaybackEngineMode.NATIVE) {
+            pendingNativeRestart?.playWhenReady ?: if (outgoingEngine == PlaybackEngineMode.NATIVE) {
               nativeEngineOrNull()?.currentPlayer?.playWhenReady == true
             } else {
               PlaybackSession.getPropertyBoolean("pause") == false
             }
+          if (outgoingEngine == PlaybackEngineMode.NATIVE) pendingNativeInterpolationFallbackState = null
 
           // Freeze the outgoing renderer before changing surfaces. This prevents both engines from
           // decoding the same item during the handoff and makes the captured state authoritative.

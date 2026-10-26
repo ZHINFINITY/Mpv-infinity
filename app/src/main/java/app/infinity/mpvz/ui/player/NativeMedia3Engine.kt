@@ -55,6 +55,9 @@ import io.github.peerless2012.ass.media.extractor.AssMatroskaExtractor
 import io.github.peerless2012.ass.media.kt.withAssSupport
 import io.github.peerless2012.ass.media.parser.AssSubtitleParserFactory
 import io.github.peerless2012.ass.media.type.AssRenderType
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -729,15 +732,25 @@ class NativeMedia3Engine(
     }
   }
 
-  /** Applies interpolation controls live and reselects the HDR renderer when its eligibility changes. */
-  suspend fun applyInterpolationRuntime(enabled: Boolean, targetFps: Int): Boolean {
+  /** Applies interpolation controls and reselects the HDR renderer when its eligibility changes. */
+  suspend fun applyInterpolationRuntime(
+    enabled: Boolean,
+    targetFps: Int,
+    allowRetryAfterResourceFailure: Boolean = false,
+  ): Boolean {
     val flowSink = media3FlowSink ?: return false
     val wasEnabled = flowSink.isInterpolationEnabled()
     val currentFormat = currentVideoFormat
     val requestedFormatEligible = currentFormat?.let {
       Media3FlowVideoSink.supportsFormat(it, enabled)
     } ?: true
-    if (!flowSink.applyRuntimeInterpolation(enabled, targetFps, requestedFormatEligible)) return false
+    if (!flowSink.applyRuntimeInterpolation(
+        enabled,
+        targetFps,
+        requestedFormatEligible,
+        allowRetryAfterResourceFailure,
+      )
+    ) return false
     val isEnabled = flowSink.isInterpolationEnabled()
     val requiresNativePassthrough = currentFormat?.let {
       Media3FlowVideoSink.requiresNativeHdrPassthrough(it)
@@ -752,6 +765,138 @@ class NativeMedia3Engine(
       Log.i(logTag, "Native Flow renderer eligibility changed; reselecting HDR output path enabled=$isEnabled")
     }
     return true
+  }
+
+  /**
+   * Re-prepares the same Native media item after a shortcut changes Flow configuration. Keep the
+   * original MediaItem and track parameters so request headers, MIME metadata, and subtitle
+   * configurations are not rebuilt or discarded. Playback remains paused until a ready frame.
+   */
+  suspend fun restartCurrentItemForInterpolation(
+    state: NativeInterpolationRestartState,
+    enabled: Boolean,
+    targetFps: Int,
+    isCurrent: () -> Boolean,
+  ): NativeInterpolationRestartResult {
+    val item = player.currentMediaItem ?: return NativeInterpolationRestartResult.SUPERSEDED
+    val mediaUri = item.localConfiguration?.uri?.toString()
+      ?: return NativeInterpolationRestartResult.SUPERSEDED
+    if (mediaUri != state.mediaUri || !isCurrent()) return NativeInterpolationRestartResult.SUPERSEDED
+
+    val trackSelectionParameters = player.trackSelectionParameters
+    val playbackParameters = player.playbackParameters
+    val volume = player.volume
+    val hadVideo = currentVideoFormat != null && player.playbackState != Player.STATE_ENDED
+    var playStateRestored = false
+    var reloadFailed = false
+    var readinessListener: Player.Listener? = null
+    player.playWhenReady = false
+    try {
+      if (!applyInterpolationRuntime(
+          enabled = enabled,
+          targetFps = targetFps,
+          allowRetryAfterResourceFailure = true,
+        )
+      ) {
+        return NativeInterpolationRestartResult.FLOW_UNAVAILABLE
+      }
+      if (!isCurrent() || player.currentMediaItem != item ||
+        player.currentMediaItem?.localConfiguration?.uri?.toString() != state.mediaUri
+      ) {
+        return NativeInterpolationRestartResult.SUPERSEDED
+      }
+
+      seekDispatcher.cancel()
+      pendingSeekDisplayPositionMs = state.positionMs
+      initialResumeTargetMs = state.positionMs
+      hasEstablishedPlaybackPosition = false
+      _hasRenderedFirstFrame.value = false
+      endedUri = null
+      lastKnownDurationMs = 0L
+      videoDecoderName = null
+      audioDecoderName = null
+      currentVideoFormat = null
+      currentAudioFormat = null
+      currentVideoSize = null
+      resetVideoFrameCounterBaseline()
+      frameProcessingOffsetTotalUs = 0L
+      frameProcessingSampleCount = 0L
+      frameProcessingOffsetLastUs = 0L
+      bandwidthEstimateBps = 0L
+      bandwidthBytesLoaded = 0L
+      preparationStartedAtMs = SystemClock.elapsedRealtime()
+      preparationUri = item.localConfiguration?.uri
+
+      var hasLeftReadyState = player.playbackState != Player.STATE_READY
+      val listener = object : Player.Listener {
+        override fun onPlaybackStateChanged(playbackState: Int) {
+          if (playbackState != Player.STATE_READY) hasLeftReadyState = true
+        }
+      }
+      readinessListener = listener
+      player.addListener(listener)
+      player.setMediaItem(item, state.positionMs)
+      if (player.playbackState != Player.STATE_READY) hasLeftReadyState = true
+      player.trackSelectionParameters = trackSelectionParameters
+      player.playbackParameters = playbackParameters
+      player.volume = volume
+      player.prepare()
+      publishSnapshot()
+      startTimelineUpdates()
+
+      val readySnapshot = withTimeoutOrNull(30_000L) {
+        snapshot.first {
+          !isCurrent() || player.currentMediaItem != item || player.playerError != null ||
+            (hasLeftReadyState && it.isReady)
+        }
+      }
+      if (!isCurrent() || player.currentMediaItem != item ||
+        player.currentMediaItem?.localConfiguration?.uri?.toString() != state.mediaUri
+      ) {
+        return NativeInterpolationRestartResult.SUPERSEDED
+      }
+      if (player.playerError != null || readySnapshot?.isReady != true) {
+        reloadFailed = true
+        return NativeInterpolationRestartResult.PLAYBACK_FAILED
+      }
+      if (hadVideo) {
+        val firstFrameRendered = withTimeoutOrNull(30_000L) {
+          hasRenderedFirstFrame.first {
+            it || !isCurrent() || player.currentMediaItem != item
+          }
+        } == true
+        if (!isCurrent() || player.currentMediaItem != item) {
+          return NativeInterpolationRestartResult.SUPERSEDED
+        }
+        if (!firstFrameRendered || player.playerError != null) {
+          reloadFailed = true
+          return NativeInterpolationRestartResult.PLAYBACK_FAILED
+        }
+      }
+
+      player.playWhenReady = state.playWhenReady
+      playStateRestored = true
+      publishSnapshot()
+      Log.i(
+        logTag,
+        "Native interpolation reload ready positionMs=${state.positionMs} " +
+          "playWhenReady=${state.playWhenReady}",
+      )
+      return NativeInterpolationRestartResult.APPLIED
+    } catch (cancelled: CancellationException) {
+      throw cancelled
+    } catch (error: Exception) {
+      reloadFailed = true
+      Log.e(logTag, "Native interpolation controlled reload failed", error)
+      return NativeInterpolationRestartResult.PLAYBACK_FAILED
+    } finally {
+      readinessListener?.let { player.removeListener(it) }
+      if (!playStateRestored && !reloadFailed && isCurrent() &&
+        player.currentMediaItem?.localConfiguration?.uri?.toString() == state.mediaUri
+      ) {
+        player.playWhenReady = state.playWhenReady
+      }
+    }
   }
 
   fun setVideoAspect(aspect: VideoAspect) {

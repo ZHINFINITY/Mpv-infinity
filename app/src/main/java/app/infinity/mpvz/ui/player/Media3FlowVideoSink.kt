@@ -146,13 +146,15 @@ class Media3FlowVideoSink(
     enabled: Boolean,
     requestedTargetFps: Int,
     requestedFormatEligible: Boolean,
+    allowRetryAfterResourceFailure: Boolean = false,
   ): Boolean =
     suspendCancellableCoroutine { continuation ->
       val posted = glHandler.post {
         if (!continuation.isActive) return@post
         // HDR/Dolby Vision may not feed this sink while interpolation is off. If the requested
         // state is format-eligible, accept it before first Flow initialization so the engine can
-        // reselect; do not retry a failed resource setup, but always allow disabling interpolation.
+        // reselect. A failed resource setup is retried only for an explicit controlled reload;
+        // ordinary changes still avoid retries, and disabling interpolation always remains safe.
         if (!NativeInterpolationRuntimePolicy.canApplyRuntimeConfiguration(
             disposed = disposed,
             preflightAvailable = preflightAvailable,
@@ -161,6 +163,7 @@ class Media3FlowVideoSink(
             currentInterpolationEnabled = interpolationEnabled,
             requestedInterpolationEnabled = enabled,
             requestedFormatEligible = requestedFormatEligible,
+            allowRetryAfterResourceFailure = allowRetryAfterResourceFailure,
           )
         ) {
           continuation.resume(false)

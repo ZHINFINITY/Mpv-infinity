@@ -17,6 +17,7 @@ class NativeInterpolationRuntimePolicyTest {
       formatEligible: Boolean,
       disposed: Boolean = false,
       preflightAvailable: Boolean = true,
+      allowRetryAfterResourceFailure: Boolean = false,
     ) = NativeInterpolationRuntimePolicy.canApplyRuntimeConfiguration(
       disposed = disposed,
       preflightAvailable = preflightAvailable,
@@ -25,16 +26,20 @@ class NativeInterpolationRuntimePolicyTest {
       currentInterpolationEnabled = currentEnabled,
       requestedInterpolationEnabled = requestedEnabled,
       requestedFormatEligible = formatEligible,
+      allowRetryAfterResourceFailure = allowRetryAfterResourceFailure,
     )
 
     assertTrue(canApply(false, false, false, true, true))
     assertFalse(canApply(false, false, false, true, false))
     assertFalse(canApply(true, false, false, true, true))
+    assertTrue(canApply(true, false, false, true, true, allowRetryAfterResourceFailure = true))
+    assertFalse(canApply(true, false, false, true, false, allowRetryAfterResourceFailure = true))
     assertTrue(canApply(true, false, true, false, false))
     assertTrue(canApply(true, true, false, true, true))
     assertFalse(canApply(false, false, false, true, true, disposed = true))
     assertFalse(canApply(false, false, false, true, true, preflightAvailable = false))
     assertTrue(canApply(true, false, true, false, false, preflightAvailable = false))
+    assertFalse(canApply(true, false, false, true, true, preflightAvailable = false, allowRetryAfterResourceFailure = true))
   }
 
   @Test fun actualSinkConstructionAndAcknowledgementUsePersistedStateAndEligibility() {
@@ -50,6 +55,7 @@ class NativeInterpolationRuntimePolicyTest {
     assertTrue(sink.contains("flowResourcesAttempted = flowResourcesAttempted"))
     assertTrue(sink.contains("flowResourcesAttempted = true"))
     assertTrue(sink.contains("requestedFormatEligible = requestedFormatEligible"))
+    assertTrue(sink.contains("allowRetryAfterResourceFailure = allowRetryAfterResourceFailure"))
     assertTrue(engine.contains("Media3FlowVideoSink.supportsFormat(it, enabled)"))
     val apply = sink.substringAfter("suspend fun applyRuntimeInterpolation").substringBefore("private val maxDimension")
     assertTrue(apply.indexOf("glHandler.post") < apply.indexOf("interpolationEnabled = enabled"))

@@ -1087,12 +1087,27 @@ class MPVView(
     width: Int,
     height: Int,
   ) {
-    PlaybackSession.resizeSurface(width, height, owner = this)
+    val resizeAccepted = PlaybackSession.resizeSurface(width, height, owner = this)
+    if (BuildConfig.DEBUG) {
+      Log.d(
+        TAG,
+        "MPV_ASPECT_DIAGNOSTIC event=surface_changed size=${width}x$height " +
+          "accepted=$resizeAccepted valid=${holder.surface.isValid} " +
+          "attached=${PlaybackSession.state.value.surfaceAttached} mpvFlowActive=$mpvFlowOsdStatsEnabled",
+      )
+    }
     updateSurfaceFrameRateHint()
   }
 
   override fun surfaceCreated(holder: android.view.SurfaceHolder) {
     isSurfaceReady = PlaybackSession.bindSurface(holder.surface, width, height, this)
+    if (BuildConfig.DEBUG) {
+      Log.d(
+        TAG,
+        "MPV_ASPECT_DIAGNOSTIC event=surface_created size=${width}x$height " +
+          "bound=$isSurfaceReady valid=${holder.surface.isValid}",
+      )
+    }
     updateSurfaceFrameRateHint()
     updateMpvFlowDiagnostics()
     post {
@@ -1103,6 +1118,13 @@ class MPVView(
   }
 
   override fun surfaceDestroyed(holder: android.view.SurfaceHolder) {
+    if (BuildConfig.DEBUG) {
+      Log.d(
+        TAG,
+        "MPV_ASPECT_DIAGNOSTIC event=surface_destroyed size=${width}x$height " +
+          "valid=${holder.surface.isValid} attached=${PlaybackSession.state.value.surfaceAttached}",
+      )
+    }
     stopMpvFlowDiagnostics()
     isSurfaceReady = false
     PlaybackSession.unbindSurface(this)
