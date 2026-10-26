@@ -23,9 +23,9 @@ class ReferenceUiRollbackContractTest {
   @Test fun preservedPlayerSourcesKeepPinnedFingerprints() {
     val expected = mapOf(
       // Build 1910 smoothness: chapter index via derivedStateOf so position ticks do not recompose the whole overlay.
-      "app/src/main/java/app/infinity/mpvz/ui/player/controls/PlayerControls.kt" to "10a289b5003018c991c03db0e5f357d3d4bdba5ab40bd280c5148a889ccc3674" /* music entry hides stats via StatsLuaOverlay (no blind toggle, saved page kept); before that: 1901 (380a778b) stats overlay + music-entry stats hide restored; clean-room BrowserMusicSheetState replaces the mpvRx sheet type; outer-container preference now gates the track glass rail */,
+      "app/src/main/java/app/infinity/mpvz/ui/player/controls/PlayerControls.kt" to "2219b79942125f0f6de4c1e543742605b6949a126d07fc4f05d32fc11240b27a" /* music entry hides stats via StatsLuaOverlay (no blind toggle, saved page kept); before that: 1901 (380a778b) stats overlay + music-entry stats hide restored; clean-room BrowserMusicSheetState replaces the mpvRx sheet type; outer-container preference now gates the track glass rail */,
       // Owner follow-up: music uses its legacy visual rail while video retains the global-glass path.
-      "app/src/main/java/app/infinity/mpvz/ui/player/controls/components/Seekbar.kt" to "5e3cbc03be3aa7b35f464e0ee313615192d8d1cdcfbc7e8a819b7a6c2331843c",
+      "app/src/main/java/app/infinity/mpvz/ui/player/controls/components/Seekbar.kt" to "b0d7ca11fdd2729871e052a0f6ea3b2cba64fb3e29039e5d3c42a7acf4d426c9",
       // Build 1910: shared rimLight/thick-surface routing is intentionally owned by this stream.
       // Build 1910 integration: union of the rim-light routing and thickSurface stream edits.
       // Owner follow-up: rounded player panes preserve the press shadow and inherit global glass tuning.
@@ -38,8 +38,8 @@ class ReferenceUiRollbackContractTest {
     expected.forEach { (path, digest) -> assertEquals(path, digest, sha(read(path))) }
   }
 
-  /** Only the player-scoped ambient fallback guard and ambient film tint (builds 1896/1897) may differ. */
-  @Test fun liquidGlassBackdropDiffersFromBaselineOnlyByScopedAmbientGuard() {
+  /** Keep the player-scoped ambient guard and bound lens refraction to the pane's actual corner radius. */
+  @Test fun liquidGlassBackdropPreservesScopedAmbientAndBoundedRefraction() {
     val path = "app/src/main/java/app/infinity/mpvz/ui/theme/LiquidGlassBackdrop.kt"
     val current = read(path)
     val guarded = """        // When video sampling is temporarily unavailable, the ambient video
@@ -522,7 +522,9 @@ import android.graphics.Shader
     }
     // Build 1910: centralized rim/depth bands replace the old pane-local contour; the integration
     // keeps the bounded three-band lower-right exterior contact shadow (depth cue, no bitmap blur).
-    assertEquals("38c2ac4b3a6ab2a9bc5809e2cfe23e2266bf75f489e8ff5c9fd41469db5ee641", sha(restored))
+    assertTrue(current.contains("val minCornerRadiusPx = cornerRadius.toPx().coerceAtMost(size.minDimension / 2f)"))
+    assertTrue(current.contains("refractionHeight = LensGlassPolicy.refractionHeightPx(24.dp.toPx(), minCornerRadiusPx, tuning.lensDepth)"))
+    assertEquals("01f65408e855f52c32f53739d1c461968c0be81f37d4cd4834fc8d0b86a20e66", sha(restored))
   }
   @Test fun expressiveNavigationBodyAndBrowserLensMatchReference() {
     val navigation = read("app/src/main/java/app/infinity/mpvz/ui/browser/MainScreen.kt")
@@ -541,7 +543,7 @@ import android.graphics.Shader
     // slop detector never started on the phone).
     // Owner follow-up: retain the normal 44dp selected outline/placement; the glass refraction
     // follows finger-driven drag motion without an elevated pop or altered tab hit targets.
-    assertEquals("635f4f7e8f53d772c9903ffbea7eb06dc43f8fbdda6fce3507d0f2a6b3589f40", sha(navigation.substring(start, end)))
+    assertEquals("561c75e9c2e4dab1ab798f4e56b9c684618f781a573ec8fdbd5745c9a4257380", sha(navigation.substring(start, end)))
     val scene = read("app/src/main/java/app/infinity/mpvz/ui/theme/BrowserGlassScene.kt")
     val lensStart = scene.indexOf("internal const val BROWSER_LENS")
     val q = scene.indexOf("\"\"\"", lensStart)
