@@ -489,6 +489,7 @@ object AboutScreen : Screen {
         if (updateViewModel != null) {
           val autoUpdate by updateViewModel.isAutoUpdateEnabled.collectAsState()
           val updateState by updateViewModel.updateState.collectAsState()
+          val isManualUpdateCheck by updateViewModel.isManualUpdateCheck.collectAsState()
           PreferenceCard {
             Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(ControlRowSpacing.StackedGap)) {
               Row(modifier = Modifier.fillMaxWidth().padding(end = ControlRowSpacing.EndPadding), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(ControlRowSpacing.TextToControlGap)) {
@@ -504,7 +505,10 @@ object AboutScreen : Screen {
               }
             }
           }
-          if (updateState.isAboutSheetState()) UpdateResultSheet(updateState, updateViewModel::dismissNoUpdate, { updateViewModel.checkForUpdate(manual = true) }, updateViewModel::downloadUpdate, updateViewModel::installUpdate)
+          if (updateState.shouldShowAboutSheet(isManualUpdateCheck)) {
+            UpdateResultSheet(updateState, updateViewModel::dismissNoUpdate,
+              { updateViewModel.checkForUpdate(manual = true) }, updateViewModel::downloadUpdate, updateViewModel::installUpdate)
+          }
         }
 
         Spacer(Modifier.height(8.dp))

@@ -25,7 +25,8 @@ class LiquidGlassContracts(unittest.TestCase):
         self.assertIn("Build.VERSION.SDK_INT >= 33", source)
         self.assertIn("catch (_: RuntimeException)", source)
         self.assertIn("frame.takeIf { eligible }", source)
-        self.assertIn("Lifecycle.Event.ON_STOP", source)
+        self.assertIn("event == Lifecycle.Event.ON_DESTROY", source)
+        self.assertNotIn("Lifecycle.Event.ON_STOP", source)
         self.assertIn("DisposableEffect(surfaceView, generation, eligible, lifecycleOwner)", source)
 
     def test_runtime_input_uses_explicit_linear_filtering_and_pixel_centres(self):
@@ -40,9 +41,11 @@ class LiquidGlassContracts(unittest.TestCase):
         source = (JAVA / "ui/theme/LiquidGlassBackdrop.kt").read_text()
         policy = (JAVA / "ui/theme/GlassBevelPolicy.kt").read_text()
         self.assertIn("GlassBevelPolicy.params(size.width, size.height, radius", source)
+        shader_setters = (JAVA / "ui/theme/AgslRuntimeShaders.kt").read_text()
+        self.assertIn("RuntimeShaderSupport.bindGlassOpticsOrNull(", source)
         for uniform in ("setFloatUniform(\"bevel\"", "setFloatUniform(\"light\"",
                         "setFloatUniform(\"specular\"", "setFloatUniform(\"fresnel\""):
-            self.assertIn(uniform, source)
+            self.assertIn(uniform, shader_setters)
         self.assertIn("float bevel", source)
         self.assertIn("float2 normal", source)
         self.assertIn("directionalReflection", source)
@@ -56,7 +59,12 @@ class LiquidGlassContracts(unittest.TestCase):
         source = (JAVA / "ui/theme/LiquidGlassBackdrop.kt").read_text()
         self.assertEqual(1, source.count("GlassFrostPolicy.frostArgb("))
         self.assertIn("withContext(Dispatchers.Default)", source)
-        self.assertLess(source.index("?.let { frostGlassFrame(it, tuning.frost) }"), source.index("frame.value = LiquidGlassFrame("))
+        copy_index = source.index("copyGlassFrame(source, crop, target)")
+        frost_index = source.index("frostGlassFrame(target, tuning.frost, captureBuffers.pixels, captureBuffers.lumaBins)")
+        publish_index = source.index("frame.value = LiquidGlassFrame(")
+        self.assertLess(copy_index, frost_index)
+        self.assertLess(frost_index, publish_index)
+        self.assertLess(publish_index, source.index("captureBuffers.markPublished(bitmap)"))
         self.assertIn("GlassScenePolicy.retainTransientFrame(now - first)", source)
         for forbidden in ("source.setRenderEffect", "source.holder.setFixedSize", "source.setLayerType", "video-scale", "setVideoScalingMode"):
             self.assertNotIn(forbidden, source)

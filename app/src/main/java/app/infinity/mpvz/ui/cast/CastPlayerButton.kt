@@ -86,13 +86,15 @@ fun CastPlayerButton(
             contentDescription = castContentDescription
             CastButtonFactory.setUpMediaRouteButton(context.applicationContext, this)
             setDialogFactory(
-              if (liquidGlassSurfaces) GlassMediaRouteDialogFactory(glassOpacity, glassHighlight)
-              else MediaRouteDialogFactory.getDefault(),
+              mediaRouteDialogFactory(liquidGlassSurfaces, glassOpacity, glassHighlight),
             )
             setRemoteIndicatorDrawable(ColorDrawable(Color.TRANSPARENT))
           }
         },
         update = { button ->
+          button.setDialogFactory(
+            mediaRouteDialogFactory(liquidGlassSurfaces, glassOpacity, glassHighlight),
+          )
           button.setOnClickListener { onInvoked() }
         },
         modifier = Modifier.fillMaxSize(),
@@ -105,6 +107,14 @@ fun CastPlayerButton(
     }
   }
 }
+
+private fun mediaRouteDialogFactory(
+  liquidGlassSurfaces: Boolean,
+  glassOpacity: Float,
+  glassHighlight: Float,
+): MediaRouteDialogFactory =
+  if (liquidGlassSurfaces) GlassMediaRouteDialogFactory(glassOpacity, glassHighlight)
+  else MediaRouteDialogFactory.getDefault()
 
 private const val ARG_GLASS_OPACITY = "app.infinity.mpvz.cast.glass_opacity"
 private const val ARG_GLASS_HIGHLIGHT = "app.infinity.mpvz.cast.glass_highlight"

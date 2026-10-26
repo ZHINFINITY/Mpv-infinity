@@ -79,6 +79,7 @@ import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.lerp
@@ -122,7 +123,6 @@ import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.launch
 import kotlinx.serialization.Serializable
 import org.koin.compose.koinInject
-import kotlin.math.roundToInt
 
 @Serializable
 object MainScreen : Screen {
@@ -662,7 +662,6 @@ private fun ExpressivePillNavigationBar(
     }
   }
   val lastIndex = (visibleTabs.size - 1).coerceAtLeast(0)
-var dragPosition by remember { mutableStateOf<Float?>(null) }
   var hoveredTab by remember { mutableIntStateOf(targetIndex.toInt().coerceIn(0, lastIndex)) }
   val visualPosition = (dragPosition ?: if (!motionAllowed || fingerDragging) position else lensPosition.value)
     .coerceIn(0f, lastIndex.toFloat())
@@ -684,6 +683,8 @@ var dragPosition by remember { mutableStateOf<Float?>(null) }
 // Read, not keyed: tab centres move while the hovered tab opens, and restarting the
   // pointerInput on every width change would cancel the drag mid-gesture.
   val latestTabCenters by rememberUpdatedState(tabCentersPx)
+  val latestVisibleTabs by rememberUpdatedState(visibleTabs)
+  val latestOnTabSelected by rememberUpdatedState(onTabSelected)
   val pillScroll = rememberScrollState()
   val dragModifier = Modifier.navPillDragGesture(
     tabCount = visibleTabs.size,
@@ -696,7 +697,7 @@ var dragPosition by remember { mutableStateOf<Float?>(null) }
       if (index != hoveredTab && dragPosition != null) haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
       hoveredTab = index
     },
-    onRelease = { target -> visibleTabs.getOrNull(target)?.let(onTabSelected) },
+    onRelease = { target -> latestVisibleTabs.getOrNull(target)?.let(latestOnTabSelected) },
   )
   val lensGeometry = with(density) {
     if (motionAllowed) NavigationGlassMotionPolicy.dragGeometry(

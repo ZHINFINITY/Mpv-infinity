@@ -102,7 +102,15 @@ class Round1944LensContractTest {
 
   @Test fun aboutSheetNeverDuplicatesTheAppUpdateSheet() {
     val about = src("ui/preferences/AboutScreen.kt")
-    assertTrue(about.contains("if (updateState.isAboutSheetState()) UpdateResultSheet(updateState, updateViewModel::dismissNoUpdate,"))
+    val updateViewModel = src("ui/update/UpdateViewModel.kt")
+    assertTrue(about.contains("if (updateState.shouldShowAboutSheet(isManualUpdateCheck))"))
+    assertTrue(about.contains("val isManualUpdateCheck by updateViewModel.isManualUpdateCheck.collectAsState()"))
+    assertTrue(updateViewModel.contains("startupUpdateCheckJob = viewModelScope.launch"))
+    assertTrue(updateViewModel.contains("StartupUpdateCheckPolicy.shouldRunDelayedStartupCheck("))
+    assertTrue(updateViewModel.contains("UpdateCheckRequestPolicy.shouldStartAutomaticCheck("))
+    assertTrue(updateViewModel.contains("updateCheckRequestGeneration += 1L"))
+    assertTrue(updateViewModel.contains("startupUpdateCheckJob?.cancel()"))
+    assertTrue(updateViewModel.contains("else {\n      cancelStartupUpdateCheck()\n    }"))
     val main = src("MainActivity.kt")
     assertTrue(main.contains("is UpdateViewModel.UpdateState.Available -> {"))
     assertTrue(UpdateViewModel.UpdateState.Loading.isAboutSheetState())

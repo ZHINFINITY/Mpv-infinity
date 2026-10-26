@@ -70,9 +70,17 @@ internal object EmbeddedArtworkResolver {
     })
   }
 
-  private fun decodeFileSampled(path: String): Bitmap? =
-    runCatching { java.io.File(path).inputStream().use(ThumbnailDecodePolicy::readEncodedImage) }
-      .getOrNull()?.let(::decodeBytesSampled)
+  private fun decodeFileSampled(path: String): Bitmap? = runCatching {
+    // File-backed sidecars can be sampled directly without allocating the full compressed file
+    // or applying the smaller cap intended for remote/content streams.
+    val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+    BitmapFactory.decodeFile(path, bounds)
+    if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return@runCatching null
+    BitmapFactory.decodeFile(path, BitmapFactory.Options().apply {
+      inSampleSize = ThumbnailDecodePolicy.sampleSize(bounds.outWidth, bounds.outHeight, ArtworkMaxEdge)
+      inPreferredConfig = Bitmap.Config.ARGB_8888
+    })
+  }.getOrNull()
 
   private fun decodeStreamSampled(input: java.io.InputStream): Bitmap? =
     ThumbnailDecodePolicy.readEncodedImage(input)?.let(::decodeBytesSampled)

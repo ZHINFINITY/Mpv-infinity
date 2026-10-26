@@ -21,6 +21,20 @@ internal object NavPillDragPolicy {
 
   fun hoveredTabIndex(position: Float, tabCount: Int): Int = nearestTabIndex(position, tabCount)
 
+  /** Converts a viewport-local touch x to logical content coordinates, including RTL scrolling. */
+  fun contentXFromViewport(
+    viewportX: Float,
+    scrollOffsetPx: Float,
+    viewportSizePx: Float,
+    isRtl: Boolean,
+  ): Float {
+    if (!viewportX.isFinite()) return 0f
+    val scroll = scrollOffsetPx.takeIf { it.isFinite() } ?: 0f
+    val viewport = viewportSizePx.takeIf { it.isFinite() } ?: 0f
+    val logicalViewportX = if (isRtl) viewport - viewportX else viewportX
+    return logicalViewportX + scroll
+  }
+
   /** Converts a finger displacement in pixels into a clamped tab-centre position. */
   fun positionAfterDrag(
     startCenterPx: Float,

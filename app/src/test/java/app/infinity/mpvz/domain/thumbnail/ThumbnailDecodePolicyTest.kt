@@ -1,8 +1,10 @@
 package app.infinity.mpvz.domain.thumbnail
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.io.File
 
 class ThumbnailDecodePolicyTest {
   @Test
@@ -40,5 +42,15 @@ class ThumbnailDecodePolicyTest {
     org.junit.Assert.assertArrayEquals(small, ThumbnailDecodePolicy.readEncodedImage(small.inputStream()))
     val oversized = ByteArray(ThumbnailDecodePolicy.MaxEncodedImageBytes.toInt() + 1)
     assertEquals(null, ThumbnailDecodePolicy.readEncodedImage(oversized.inputStream()))
+  }
+
+  @Test
+  fun localArtworkSidecarsAreSampledFromFilesWithoutTheStreamByteCap() {
+    val relative = "src/main/java/app/infinity/mpvz/domain/thumbnail/EmbeddedArtworkCandidates.kt"
+    val source = listOf(File(relative), File("app/$relative")).first { it.isFile }.readText()
+    val fileDecoder = source.substringAfter("private fun decodeFileSampled(").substringBefore("private fun decodeStreamSampled(")
+    assertTrue(fileDecoder.contains("BitmapFactory.decodeFile(path, bounds)"))
+    assertTrue(fileDecoder.contains("ThumbnailDecodePolicy.sampleSize(bounds.outWidth, bounds.outHeight, ArtworkMaxEdge)"))
+    assertFalse(fileDecoder.contains("ThumbnailDecodePolicy.readEncodedImage"))
   }
 }

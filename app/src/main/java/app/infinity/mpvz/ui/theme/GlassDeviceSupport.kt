@@ -60,22 +60,19 @@ object GlassDeviceSupport {
       else -> Verdict.Supported
     }
 
+  private const val GLASS_CRASH_STACK_FRAME_LIMIT = 12
   private val glassClassMarkers = listOf(
     "android.graphics.RuntimeShader",
-    "android.graphics.RenderEffect",
-    "android.graphics.RenderNode",
     "app.infinity.mpvz.ui.theme.AgslRuntimeShaders",
     "app.infinity.mpvz.ui.theme.RuntimeShaderSupport",
     "app.infinity.mpvz.ui.theme.GlassShaderCache",
-    "app.infinity.mpvz.ui.theme.BrowserGlass",
-    "app.infinity.mpvz.ui.theme.LiquidGlass",
-    "app.infinity.mpvz.ui.player.controls.PlayerGlass",
   )
 
-  /** Pure: whether a crash went through glass rendering code. */
+  /** Pure: whether a crash originated in the top frames of a specific glass shader path. */
   fun isGlassCrash(throwable: Throwable): Boolean =
     generateSequence(throwable) { it.cause }.take(8).any { error ->
-      error.stackTrace.any { frame -> glassClassMarkers.any { frame.className.startsWith(it) } }
+      error.stackTrace.take(GLASS_CRASH_STACK_FRAME_LIMIT)
+        .any { frame -> glassClassMarkers.any { frame.className.startsWith(it) } }
     }
 
   /**

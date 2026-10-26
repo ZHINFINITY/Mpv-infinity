@@ -5,11 +5,16 @@ import android.app.Application
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.SideEffect
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.unit.dp
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -41,5 +46,27 @@ class SliderValueSummaryRuntimeTest {
       assertEquals("width changed for $next", first.width, b.width, 0.01f)
       assertEquals("top moved for $next", first.top, b.top, 0.01f)
     }
+  }
+
+  @Test fun badgeMeasuresACurrentValueWiderThanItsEndpoints() {
+    val value = "duration 120 minutes"
+    val expectedBadgeWidthPx = mutableFloatStateOf(0f)
+    compose.setContent {
+      MaterialTheme {
+        val measurer = rememberTextMeasurer()
+        val density = LocalDensity.current
+        val style = MaterialTheme.typography.bodySmall.copy(fontFeatureSettings = "tnum")
+        SideEffect {
+          expectedBadgeWidthPx.floatValue = with(density) {
+            measurer.measure(value, style).size.width.toDp().toPx() + 16.dp.toPx()
+          }
+        }
+        SliderValueSummary(value, "0", "60", "duration", Modifier.width(320.dp))
+      }
+    }
+    compose.waitForIdle()
+    val badgeWidth = compose.onNodeWithTag("slider_value_badge", useUnmergedTree = true)
+      .fetchSemanticsNode().boundsInRoot.width
+    assertTrue("current value must fit inside the measured badge", badgeWidth >= expectedBadgeWidthPx.floatValue - 0.5f)
   }
 }

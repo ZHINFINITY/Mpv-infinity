@@ -46,7 +46,7 @@ class PopupGlassAndSheetLatencyPolicyTest {
   }
 
   @Test
-  fun glassProgramsAreCompiledOncePerSourceNotPerPane() {
+  fun mutableBrowserLensIsPerPaneWhileStaticGlassOpticsRemainCached() {
     val scene = source("src/main/java/app/infinity/mpvz/ui/theme/BrowserGlassScene.kt")
     val player = source("src/main/java/app/infinity/mpvz/ui/theme/LiquidGlassBackdrop.kt")
     assertFalse(scene.contains("runCatching { RuntimeShader(BROWSER_LENS) }"))
@@ -54,7 +54,8 @@ class PopupGlassAndSheetLatencyPolicyTest {
     assertFalse(scene.contains("import android.graphics.RuntimeShader"))
     assertFalse(player.contains("import android.graphics.RuntimeShader"))
     val shaders = source("src/main/java/app/infinity/mpvz/ui/theme/AgslRuntimeShaders.kt")
-    assertTrue(shaders.contains("GlassShaderCache.shared(BROWSER_LENS)"))
+    assertFalse(shaders.contains("GlassShaderCache.shared(BROWSER_LENS)"))
+    assertTrue(shaders.contains("runCatching { RuntimeShader(BROWSER_LENS) }.getOrNull()"))
     assertTrue(shaders.contains("GlassShaderCache.shared(GLASS_OPTICS)"))
     val activity = source("src/main/java/app/infinity/mpvz/ui/player/PlayerActivity.kt")
     assertTrue(activity.contains("transitionKey = sheet to panel"))

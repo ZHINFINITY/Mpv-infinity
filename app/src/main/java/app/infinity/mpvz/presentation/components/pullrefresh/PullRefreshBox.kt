@@ -81,8 +81,8 @@ fun PullRefreshBox(
   val maxTranslationPx = with(density) { refreshThreshold.toPx() }
 
   val activeJob = remember { mutableStateOf<Job?>(null) }
-  // The pull-to-refresh mark always loops; "Animate infinity logo" only affects the home logo.
-  val infinityDashOffset = infinityDashOffset(animate = true)
+  // The refresh mark loops while visible; the home-logo preference remains separate.
+  val infinityDashOffset = infinityDashOffset(animate = isRefreshing.value || state.distanceFraction > 0f)
   val infinityPath = remember {
     Path().apply {
       moveTo(24.3f, 30f)

@@ -410,17 +410,18 @@ fun BrowserGlassSurface(
         // The route scene is a sibling producer; never self-sample. The lens
         // shader is additionally gated by the shared API/device/user verdict.
         val refraction = selected && lensEnabled && capabilities.refraction && RuntimeShaderSupport.available()
-        val effect = if (refraction) RuntimeShaderSupport.browserLensEffectOrNull(
+        val lensEffect = if (refraction) RuntimeShaderSupport.browserLensEffectOrNull(
           paneWidth = size.width,
           paneHeight = size.height,
           radius = radius,
           bend = (if (selected) 9f else 5f) * density * tuning.refraction,
           motion = deformation.coerceIn(0f, 1f),
           frostPx = if (tuning.frost > 0f) 2f * density * tuning.frost else 0f,
-        ) else if (Build.VERSION.SDK_INT >= 31 && scene != null && tuning.frost > 0f) runCatching {
+        ) else null
+        val blurFallback = if (Build.VERSION.SDK_INT >= 31 && scene != null && tuning.frost > 0f) runCatching {
           RenderEffect.createBlurEffect(3f * density * tuning.frost, 3f * density * tuning.frost, Shader.TileMode.CLAMP).asComposeRenderEffect()
         }.getOrNull() else null
-        lens.renderEffect = effect
+        lens.renderEffect = lensEffect ?: blurFallback
         val edge = Brush.linearGradient(listOf(
           Color.White.copy(alpha = 0.20f + glow * 0.65f),
           Color.White.copy(alpha = 0.03f),
@@ -540,10 +541,10 @@ internal fun Modifier.browserGlassPane(
           bend = (if (selected) 9f else 5f) * density * tuning.refraction,
           frostPx = if (blurDp > 0f) blurDp * density else 0f,
         ) else null
-        val effect = lensHandle?.effect ?: if (!refraction && Build.VERSION.SDK_INT >= 31 && scene != null && blurDp > 0f) runCatching {
+        val blurFallback = if (Build.VERSION.SDK_INT >= 31 && scene != null && blurDp > 0f) runCatching {
           RenderEffect.createBlurEffect(blurDp * density, blurDp * density, Shader.TileMode.CLAMP).asComposeRenderEffect()
         }.getOrNull() else null
-        lens.renderEffect = effect
+        lens.renderEffect = lensHandle?.effect ?: blurFallback
         // Like the navigation pill, the refracted sample fully replaces what is behind the
         // pane, so content text under popups, menus and the selection pill never reads through.
         lens.alpha = 1f

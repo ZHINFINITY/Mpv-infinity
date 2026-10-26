@@ -25,13 +25,24 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
-class UpdateViewModel(
+class UpdateViewModel private constructor(
   application: Application,
+  private val startupUpdateCheckDelayMs: Long,
+  private val updateCheckOverride: (suspend (AppUpdateChannel, Boolean) -> Release?)?,
 ) : AndroidViewModel(application) {
+  constructor(application: Application) : this(application, UPDATE_CHECK_STARTUP_DELAY_MS, null)
+
+  internal constructor(
+    application: Application,
+    updateCheckOverride: suspend (AppUpdateChannel, Boolean) -> Release?,
+  ) : this(application, UPDATE_CHECK_STARTUP_DELAY_MS, updateCheckOverride)
+
   private val updateManager = UpdateManager(application)
 
   private val _updateState = MutableStateFlow<UpdateState>(UpdateState.Idle)
   val updateState: StateFlow<UpdateState> = _updateState.asStateFlow()
+  private val _isManualUpdateCheck = MutableStateFlow(false)
+  val isManualUpdateCheck: StateFlow<Boolean> = _isManualUpdateCheck.asStateFlow()
 
   private val _downloadProgress = MutableStateFlow<Float>(0f)
   val downloadProgress: StateFlow<Float> = _downloadProgress.asStateFlow()
@@ -39,6 +50,8 @@ class UpdateViewModel(
   private val _isDownloading = MutableStateFlow(false)
   val isDownloading: StateFlow<Boolean> = _isDownloading.asStateFlow()
   private var updateCheckJob: Job? = null
+  private var startupUpdateCheckJob: Job? = null
+  private var updateCheckRequestGeneration = 0L
 
   private val prefs = application.getSharedPreferences("Mpv∞_prefs", Context.MODE_PRIVATE)
   private val _isAutoUpdateEnabled =
@@ -74,6 +87,8 @@ class UpdateViewModel(
     _isAutoUpdateEnabled.value = enabled
     if (enabled) {
       checkForUpdate(manual = false)
+    } else {
+      cancelStartupUpdateCheck()
     }
   }
 
@@ -87,9 +102,19 @@ class UpdateViewModel(
     // client + GitHub API call competed with cold-start rendering.
     // See issue 1.5 in the startup audit.
     if (BuildConfig.ENABLE_UPDATE_FEATURE && isAutoUpdateEnabled.value) {
-      viewModelScope.launch {
-        delay(UPDATE_CHECK_STARTUP_DELAY_MS)
-        checkForUpdate(manual = false)
+      val scheduledGeneration = updateCheckRequestGeneration
+      startupUpdateCheckJob = viewModelScope.launch {
+        delay(startupUpdateCheckDelayMs)
+        if (!StartupUpdateCheckPolicy.shouldRunDelayedStartupCheck(
+            scheduledGeneration = scheduledGeneration,
+            currentGeneration = updateCheckRequestGeneration,
+            manualCheckInProgress = _isManualUpdateCheck.value,
+          )
+        ) {
+          return@launch
+        }
+        startupUpdateCheckJob = null
+        startUpdateCheck(manual = false)
       }
     }
   }
@@ -124,6 +149,9 @@ class UpdateViewModel(
   }
 
   fun dismissNoUpdate() {
+    updateCheckJob?.cancel()
+    updateCheckJob = null
+    _isManualUpdateCheck.value = false
     _updateState.value = UpdateState.Idle
   }
 
@@ -133,11 +161,36 @@ class UpdateViewModel(
       return
     }
 
+    if (!manual && !UpdateCheckRequestPolicy.shouldStartAutomaticCheck(
+        manualCheckInProgress = _isManualUpdateCheck.value,
+        manualRequestActive = updateCheckJob?.isActive == true,
+      )
+    ) {
+      return
+    }
+
+    cancelStartupUpdateCheck()
+    startUpdateCheck(manual)
+  }
+
+  private fun cancelStartupUpdateCheck() {
+    updateCheckRequestGeneration += 1L
+    startupUpdateCheckJob?.cancel()
+    startupUpdateCheckJob = null
+  }
+
+  private fun startUpdateCheck(manual: Boolean) {
+    _isManualUpdateCheck.value = manual
     updateCheckJob?.cancel()
     updateCheckJob = viewModelScope.launch {
       _updateState.value = UpdateState.Loading
       try {
-        val release = updateManager.checkForUpdate(channel = _updateChannel.value, forceShow = manual)
+        val release =
+          if (updateCheckOverride == null) {
+            updateManager.checkForUpdate(channel = _updateChannel.value, forceShow = manual)
+          } else {
+            updateCheckOverride.invoke(_updateChannel.value, manual)
+          }
         if (release != null) {
           val existingFile = updateManager.getApkFile(release)
           if (existingFile != null) {
