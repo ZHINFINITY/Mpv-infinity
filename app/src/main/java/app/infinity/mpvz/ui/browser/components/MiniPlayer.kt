@@ -647,7 +647,7 @@ private fun MiniPlayerContent(
                 .graphicsLayer(compositingStrategy = CompositingStrategy.Offscreen)
                 .drawWithContent {
                   drawContent()
-                  drawRect(Brush.horizontalGradient(listOf(Color.Transparent, Color.White, Color.White, Color.Transparent)), blendMode = BlendMode.DstIn)
+                  drawRect(miniMarqueeFade(size.width, 6.dp.toPx(), 16.dp.toPx()), blendMode = BlendMode.DstIn)
                 }
                 .basicMarquee(initialDelayMillis = 650),
             )
@@ -766,7 +766,7 @@ private fun MiniPlayerContent(
                 .graphicsLayer(compositingStrategy = CompositingStrategy.Offscreen)
                 .drawWithContent {
                   drawContent()
-                  drawRect(Brush.horizontalGradient(listOf(Color.Transparent, Color.White, Color.White, Color.Transparent)), blendMode = BlendMode.DstIn)
+                  drawRect(miniMarqueeFade(size.width, 6.dp.toPx(), 16.dp.toPx()), blendMode = BlendMode.DstIn)
                 }
                 .basicMarquee(initialDelayMillis = 650),
             )
@@ -886,4 +886,12 @@ private fun rememberMiniPlayerCoverArt(
     }
   }
   return bitmap
+}
+
+/** Fixed-width edge fades: a short title is never washed out, and the first letters stay readable at rest. */
+internal fun miniMarqueeFade(width: Float, startFadePx: Float, endFadePx: Float): Brush {
+  val w = width.coerceAtLeast(1f)
+  val a = (startFadePx / w).coerceIn(0f, .25f)
+  val b = (1f - endFadePx / w).coerceIn(.75f, 1f)
+  return Brush.horizontalGradient(0f to Color.Transparent, a to Color.White, b to Color.White, 1f to Color.Transparent, startX = 0f, endX = w)
 }

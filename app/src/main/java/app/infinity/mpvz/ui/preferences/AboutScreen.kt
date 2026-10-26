@@ -7,6 +7,8 @@
 
 package app.infinity.mpvz.ui.preferences
 
+import app.infinity.mpvz.ui.preferences.components.settingsGlassContainerColor
+import app.infinity.mpvz.ui.preferences.components.settingsGlassSurface
 import app.infinity.mpvz.ui.player.controls.components.GlassSwitch
 import app.infinity.mpvz.ui.components.GlassModalBottomSheet
 import app.infinity.mpvz.ui.components.ControlRowSpacing
@@ -520,7 +522,11 @@ object AboutScreen : Screen {
 
 @Composable
 private fun UpdateResultSheet(state: UpdateViewModel.UpdateState, onDismiss: () -> Unit, onRetry: () -> Unit, onDownload: (app.infinity.mpvz.domain.update.Release) -> Unit, onInstall: (app.infinity.mpvz.domain.update.Release) -> Unit) {
-  GlassModalBottomSheet(onDismissRequest = onDismiss) {
+  GlassModalBottomSheet(
+    containerColor = settingsGlassContainerColor(MaterialTheme.colorScheme.surfaceContainerLow),
+    paneModifier = Modifier.settingsGlassSurface(cornerRadius = 28.dp, independent = true),
+    onDismissRequest = onDismiss,
+  ) {
     Column(Modifier.fillMaxWidth().padding(start = 20.dp, end = 20.dp, bottom = 12.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
       Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
         Icon(when (state) { UpdateViewModel.UpdateState.Loading -> Icons.RoundedFilled.Refresh; UpdateViewModel.UpdateState.NoUpdate -> Icons.RoundedFilled.CheckCircle; is UpdateViewModel.UpdateState.Available, is UpdateViewModel.UpdateState.ReadyToInstall -> Icons.RoundedFilled.CloudDownload; UpdateViewModel.UpdateState.Error -> Icons.RoundedFilled.ErrorOutline; else -> Icons.RoundedFilled.Info }, null, Modifier.size(32.dp), tint = MaterialTheme.colorScheme.primary)

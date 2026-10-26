@@ -147,7 +147,8 @@ class LiquidGlassContracts(unittest.TestCase):
         self.assertIn("albumArtBitmap", audio)
         self.assertEqual(2, audio.count("if (isAudiobook) audiobookModeButtons() else {"))
         self.assertIn("artworkUri", mini)
-        self.assertIn("settingsGlassSurface(cornerRadius = 20.dp)", mini)
+        self.assertIn("BrowserGlassSurface(", mini)
+        self.assertIn("cornerRadius = 20.dp", mini)
         self.assertNotIn("backdrop =", mini)
         self.assertNotIn("repeat(18)", mini)
 

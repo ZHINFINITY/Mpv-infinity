@@ -707,6 +707,8 @@ private fun ExpressivePillNavigationBar(
   // return to the original bar geometry once the selection settles.
   val lensPopActive = LocalLensGlassEnabled.current && motionAllowed &&
     (dragPosition != null || fingerDragging || kotlin.math.abs(lensPosition.value - targetIndex) > 0.001f)
+  // Finite stretch/bounce from the "Glass motion" setting still squashes the lens while it moves.
+  val lensSquash = kotlin.math.abs(lensGeometry.deformation) * 4f
   val lensPop = NavigationGlassLensPolicy.geometry(
     left = lensGeometry.left,
     width = lensGeometry.width,
@@ -739,9 +741,9 @@ private fun ExpressivePillNavigationBar(
         selected = true,
         deformation = kotlin.math.abs(lensGeometry.deformation),
         modifier = Modifier
-          .offset(x = with(density) { lensPop.left.toDp() } - startPadding, y = lensPop.offsetY.dp)
+          .offset(x = with(density) { lensPop.left.toDp() } - startPadding, y = lensPop.offsetY.dp + (lensSquash / 2f).dp)
           .width(with(density) { lensPop.width.toDp() })
-          .height(with(density) { lensPop.height.toDp() }),
+          .height(with(density) { lensPop.height.toDp() } - lensSquash.dp),
       ) {}
 
       // Tab buttons row positioned directly on top of the track

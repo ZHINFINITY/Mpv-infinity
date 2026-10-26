@@ -30,7 +30,7 @@ class SceneStabilityContracts(unittest.TestCase):
     def test_all_six_appearance_sliders_commit_only_on_release(self):
         appearance = source('ui/preferences/AppearancePreferencesScreen.kt')
         wrappers = source('ui/preferences/components/SettingsPreferenceWrappers.kt')
-        self.assertEqual(5, appearance.count('GlassCustomizationPreference('))  # four calls + declaration
+        self.assertEqual(7, appearance.count('GlassCustomizationPreference('))  # six calls (incl. lens refraction/depth) + declaration
         self.assertGreaterEqual(appearance.count('onSliderValueChange = {}'), 3)  # opacity, highlight, four-control helper
         self.assertNotRegex(appearance, r'onSliderValueChange\s*=\s*\{[^}]*glassSurface(?:Opacity|Highlight)\.set')
         self.assertIn('value = latest, onValueChange = { latest = it }', wrappers)

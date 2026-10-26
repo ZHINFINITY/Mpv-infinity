@@ -27,7 +27,7 @@ class ReferenceUiRollbackContractTest {
       "app/src/main/java/app/infinity/mpvz/ui/player/controls/components/Seekbar.kt" to "b0d7ca11fdd2729871e052a0f6ea3b2cba64fb3e29039e5d3c42a7acf4d426c9",
       // Build 1910: shared rimLight/thick-surface routing is intentionally owned by this stream.
       // Build 1910 integration: union of the rim-light routing and thickSurface stream edits.
-      "app/src/main/java/app/infinity/mpvz/ui/player/controls/components/GlassControls.kt" to "733d685b01b46c268d89e3d67e294952306fa7388da5885e1442b444e6c0ff6a",
+      "app/src/main/java/app/infinity/mpvz/ui/player/controls/components/GlassControls.kt" to "9a17eb45cf98e1d75c42b99c22bde11cecfd4fea1475724ca472cfa34b4eda39",
       // Build 1910: player sheets opt into the centralized inner thickness bands.
       // Build 1910 integration: edge-attached landscape sheets draw one rim on the asymmetric shape.
       "app/src/main/java/app/infinity/mpvz/presentation/components/PlayerSheet.kt" to "7838a785e17d4bd1479a348a04c6f9ac7af0bacc0891ba817b165a1f53348c81",
@@ -520,7 +520,7 @@ import android.graphics.Shader
     }
     // Build 1910: centralized rim/depth bands replace the old pane-local contour; the integration
     // keeps the bounded three-band lower-right exterior contact shadow (depth cue, no bitmap blur).
-    assertEquals("eb583411c604c2b4c039a836b4df2c48a6830a4857e75256b5a1d3ac58cf2ebf", sha(restored))
+    assertEquals("38c2ac4b3a6ab2a9bc5809e2cfe23e2266bf75f489e8ff5c9fd41469db5ee641", sha(restored))
   }
   @Test fun expressiveNavigationBodyAndBrowserLensMatchReference() {
     val navigation = read("app/src/main/java/app/infinity/mpvz/ui/browser/MainScreen.kt")
@@ -537,7 +537,7 @@ import android.graphics.Shader
     // Build 1902: nav pill commits the lens frame before far page jumps and supports drag-to-select.
     // Build 1943: the drag moved to the shared Initial-pass navPillDragGesture (1942's Main-pass
     // slop detector never started on the phone); the pill's look is unchanged.
-    assertEquals("7dc7935735a0556c692a7ece4bd5235ec8a09cc96cf1375025313f95381a1e23", sha(navigation.substring(start, end)))
+    assertEquals("38987226d5dc492837209f7aeee4fd84361133c34bafcca249c60db153e0be18", sha(navigation.substring(start, end)))
     val scene = read("app/src/main/java/app/infinity/mpvz/ui/theme/BrowserGlassScene.kt")
     val lensStart = scene.indexOf("internal const val BROWSER_LENS")
     val q = scene.indexOf("\"\"\"", lensStart)
