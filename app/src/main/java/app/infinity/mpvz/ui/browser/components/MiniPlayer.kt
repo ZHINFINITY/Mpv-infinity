@@ -29,10 +29,15 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.ui.input.pointer.util.VelocityTracker
@@ -91,6 +96,7 @@ import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntOffset
@@ -98,6 +104,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import app.infinity.mpvz.R
 import app.infinity.mpvz.domain.thumbnail.EmbeddedArtworkResolver
+import app.infinity.mpvz.preferences.AppearancePreferences
 import app.infinity.mpvz.preferences.PlayerPreferences
 import app.infinity.mpvz.preferences.preference.collectAsState
 import app.infinity.mpvz.ui.browser.NavigationBarState
@@ -484,10 +491,13 @@ private fun MiniPlayerContent(
   }
 
   val glassEnabled = settingsGlassEnabled()
+  val appearance = koinInject<AppearancePreferences>()
+  val glassOpacity by appearance.glassSurfaceOpacity.collectAsState()
+  val glassHighlight by appearance.glassSurfaceHighlight.collectAsState()
   BrowserGlassSurface(
     enabled = glassEnabled,
-    opacity = 0.88f,
-    highlight = 0.18f,
+    opacity = glassOpacity,
+    highlight = glassHighlight,
     cornerRadius = 20.dp,
     modifier = Modifier
       .fadeUnderBrowserMusicSheet(if (useInAppSheet) musicSheet else null)
@@ -576,6 +586,17 @@ private fun MiniPlayerContent(
       Row(
         modifier = Modifier
           .fillMaxWidth()
+          .drawBehind {
+            val dur = duration?.toFloat() ?: 0f
+            val pos = positionState.value?.toFloat() ?: 0f
+            val progressFraction = if (dur > 0f) (pos / dur).coerceIn(0f, 1f) else 0f
+            val trackY = size.height - 2.dp.toPx()
+            val radius = androidx.compose.ui.geometry.CornerRadius(1.dp.toPx())
+            drawRoundRect(color = progressTrackColor, topLeft = androidx.compose.ui.geometry.Offset(0f, trackY), size = Size(size.width, 2.dp.toPx()), cornerRadius = radius)
+            if (progressFraction > 0f) {
+              drawRoundRect(color = primaryContainerColor.copy(alpha = 0.72f), topLeft = androidx.compose.ui.geometry.Offset(0f, trackY), size = Size(size.width * progressFraction, 2.dp.toPx()), cornerRadius = radius)
+            }
+          }
           .height(76.dp)
           .padding(4.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -663,9 +684,12 @@ private fun MiniPlayerContent(
         // Control Buttons
         Row(
           verticalAlignment = Alignment.CenterVertically,
-          horizontalArrangement = Arrangement.spacedBy(2.dp),
+          horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-          IconButton(
+          MiniPlayerGlassButton(
+            glassEnabled = glassEnabled,
+            opacity = glassOpacity,
+            highlight = glassHighlight,
             onClick = {
               context.startService(
                 Intent(context, MediaPlaybackService::class.java).setAction(
@@ -673,7 +697,6 @@ private fun MiniPlayerContent(
                 ),
               )
             },
-            modifier = Modifier.size(48.dp).clip(CircleShape),
           ) {
             AnimatedContent(
               targetState = isPlaying,
@@ -682,20 +705,22 @@ private fun MiniPlayerContent(
             ) { playing ->
               Icon(
                 imageVector = if (playing) Icons.RoundedFilled.Pause else Icons.RoundedFilled.PlayArrow,
-                contentDescription = null,
+                contentDescription = stringResource(if (playing) R.string.downloads_pause else R.string.ui_play),
                 tint = MaterialTheme.colorScheme.onSurface,
                 modifier = Modifier.size(26.dp),
               )
             }
           }
 
-          IconButton(
+          MiniPlayerGlassButton(
+            glassEnabled = glassEnabled,
+            opacity = glassOpacity,
+            highlight = glassHighlight,
             onClick = { dismissPlayer() },
-            modifier = Modifier.size(48.dp).clip(CircleShape),
           ) {
             Icon(
               imageVector = Icons.RoundedFilled.Close,
-              contentDescription = null,
+              contentDescription = stringResource(R.string.ui_close),
               tint = MaterialTheme.colorScheme.onSurfaceVariant,
               modifier = Modifier.size(18.dp),
             )
@@ -712,8 +737,11 @@ private fun MiniPlayerContent(
             val pos = positionState.value?.toFloat() ?: 0f
             val progressFraction = if (dur > 0f) (pos / dur).coerceIn(0f, 1f) else 0f
             val trackY = size.height - 2.dp.toPx()
-            drawRect(color = progressTrackColor, topLeft = androidx.compose.ui.geometry.Offset(0f, trackY), size = Size(size.width, 2.dp.toPx()))
-            drawRect(color = primaryContainerColor, topLeft = androidx.compose.ui.geometry.Offset(0f, trackY), size = Size(size.width * progressFraction, 2.dp.toPx()))
+            val radius = androidx.compose.ui.geometry.CornerRadius(1.dp.toPx())
+            drawRoundRect(color = progressTrackColor, topLeft = androidx.compose.ui.geometry.Offset(0f, trackY), size = Size(size.width, 2.dp.toPx()), cornerRadius = radius)
+            if (progressFraction > 0f) {
+              drawRoundRect(color = primaryContainerColor.copy(alpha = 0.72f), topLeft = androidx.compose.ui.geometry.Offset(0f, trackY), size = Size(size.width * progressFraction, 2.dp.toPx()), cornerRadius = radius)
+            }
           }
           .padding(horizontal = 12.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -782,7 +810,10 @@ private fun MiniPlayerContent(
         Spacer(modifier = Modifier.width(8.dp))
 
         // Play / Pause Action Button
-        IconButton(
+        MiniPlayerGlassButton(
+          glassEnabled = glassEnabled,
+          opacity = glassOpacity,
+          highlight = glassHighlight,
           onClick = {
             context.startService(
               Intent(context, MediaPlaybackService::class.java).setAction(
@@ -790,7 +821,6 @@ private fun MiniPlayerContent(
               ),
             )
           },
-          modifier = Modifier.size(48.dp).clip(CircleShape),
         ) {
           AnimatedContent(
             targetState = isPlaying,
@@ -799,15 +829,19 @@ private fun MiniPlayerContent(
           ) { playing ->
             Icon(
               imageVector = if (playing) Icons.RoundedFilled.Pause else Icons.RoundedFilled.PlayArrow,
-              contentDescription = null,
+              contentDescription = stringResource(if (playing) R.string.downloads_pause else R.string.ui_play),
               tint = MaterialTheme.colorScheme.onSurface,
               modifier = Modifier.size(26.dp),
             )
           }
         }
 
+        Spacer(modifier = Modifier.width(8.dp))
         // Next Track Action Button
-        IconButton(
+        MiniPlayerGlassButton(
+          glassEnabled = glassEnabled,
+          opacity = glassOpacity,
+          highlight = glassHighlight,
           onClick = {
             context.startService(
               Intent(context, MediaPlaybackService::class.java).setAction(
@@ -815,29 +849,81 @@ private fun MiniPlayerContent(
               ),
             )
           },
-          modifier = Modifier.size(48.dp).clip(CircleShape),
         ) {
           Icon(
             imageVector = Icons.RoundedFilled.SkipNext,
-            contentDescription = null,
+            contentDescription = stringResource(R.string.ui_next),
             tint = MaterialTheme.colorScheme.onSurface,
             modifier = Modifier.size(24.dp),
           )
         }
 
+        Spacer(modifier = Modifier.width(8.dp))
         // Close Action Button
-        IconButton(
+        MiniPlayerGlassButton(
+          glassEnabled = glassEnabled,
+          opacity = glassOpacity,
+          highlight = glassHighlight,
           onClick = { dismissPlayer() },
-          modifier = Modifier.size(48.dp).clip(CircleShape),
         ) {
           Icon(
             imageVector = Icons.RoundedFilled.Close,
-            contentDescription = null,
+            contentDescription = stringResource(R.string.ui_close),
             tint = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.size(18.dp),
           )
         }
       }
+    }
+  }
+}
+
+@Composable
+private fun MiniPlayerGlassButton(
+  glassEnabled: Boolean,
+  opacity: Float,
+  highlight: Float,
+  onClick: () -> Unit,
+  content: @Composable () -> Unit,
+) {
+  val interactionSource = remember { MutableInteractionSource() }
+  val pressed by interactionSource.collectIsPressedAsState()
+  val motionAmount = if (app.infinity.mpvz.ui.theme.LocalMotionPolicy.current.reduceMotion) {
+    0f
+  } else {
+    app.infinity.mpvz.ui.theme.LocalGlassCustomization.current.motion.coerceIn(0f, 1f)
+  }
+  val lift by animateFloatAsState(
+    targetValue = if (pressed && glassEnabled) 1f + 0.04f * motionAmount else 1f,
+    animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
+    label = "miniGlassButtonLift",
+  )
+  Box(
+    modifier = Modifier
+      .size(48.dp)
+      .graphicsLayer {
+        shape = CircleShape
+        clip = true
+        scaleX = lift
+        scaleY = lift
+        shadowElevation = if (pressed && glassEnabled) 4.dp.toPx() * motionAmount else 0f
+      }
+      .clip(CircleShape),
+    contentAlignment = Alignment.Center,
+  ) {
+    BrowserGlassSurface(
+      enabled = glassEnabled,
+      opacity = opacity,
+      highlight = highlight,
+      cornerRadius = 999.dp,
+      modifier = Modifier.matchParentSize(),
+    )
+    IconButton(
+      onClick = onClick,
+      modifier = Modifier.matchParentSize().clip(CircleShape),
+      interactionSource = interactionSource,
+    ) {
+      content()
     }
   }
 }

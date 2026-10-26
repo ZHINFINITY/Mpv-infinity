@@ -37,6 +37,8 @@ class Round1944LensContractTest {
     assertTrue(slider.contains(".then(if (lensEnabled) Modifier.layerBackdrop(trackBackdrop) else Modifier)"))
     assertTrue(slider.contains(".lensControlThumb(trackBackdrop"))
     assertTrue(slider.contains("collectIsPressedAsState()"))
+    assertTrue(slider.contains("appearance.glassSurfaceOpacity.collectAsState()"))
+    assertTrue(slider.contains("appearance.glassSurfaceHighlight.collectAsState()"))
     val switch = g.substring(g.indexOf("fun GlassSwitch("), g.indexOf("fun GlassSlider("))
     // Lens switch: the track is a separate sibling box drawn under the Material Switch.
     val trackBox = switch.indexOf("Box(Modifier.matchParentSize().layerBackdrop(trackBackdrop)")
@@ -68,7 +70,12 @@ class Round1944LensContractTest {
     val g = src("ui/player/controls/components/GlassControls.kt")
     val pane = g.substring(g.indexOf("fun Modifier.playerGlassPane("))
     assertTrue(pane.contains("LocalLensGlassEnabled.current && app.infinity.mpvz.ui.theme.lens.VideoLensPolicy.isLensChip(cornerRadius.value)"))
-    assertTrue(pane.contains("return liquidGlassPane(on,"))
+    assertTrue(pane.contains("val clipped = this.clip(shape)"))
+    assertTrue(pane.contains("return clipped.liquidGlassPane(on,"))
+    assertTrue(pane.contains("return clipped.videoLensChip(frame,"))
+    assertTrue(pane.contains("if (LocalPlayerGlassSurfaceOwner.current) return clipped"))
+    assertTrue(pane.contains("appearance.glassSurfaceOpacity.collectAsState()"))
+    assertTrue(pane.contains("appearance.glassSurfaceHighlight.collectAsState()"))
     // One sampler: the adapter reuses the existing captured frame, no new capture.
     val chip = src("ui/theme/lens/VideoLensChip.kt")
     assertFalse(chip.contains("PixelCopy"))

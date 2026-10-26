@@ -44,11 +44,14 @@ import com.kyant.backdrop.backdrops.rememberLayerBackdrop
 import app.infinity.mpvz.ui.theme.lens.lensControlThumb
 import app.infinity.mpvz.ui.theme.lens.videoLensChip
 import androidx.compose.foundation.interaction.collectIsPressedAsState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.draw.clip
 import android.os.Build
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.LinearOutSlowInEasing
@@ -522,7 +525,13 @@ private fun Modifier.glassTrackOptics(opacity: Float, highlight: Float, radius: 
 
 @Composable
 fun Modifier.playerGlassPane(enabled: Boolean, opacity: Float? = null, highlight: Float? = null, cornerRadius: Dp = 20.dp): Modifier {
-  if (LocalPlayerGlassSurfaceOwner.current) return this
+  val shape = remember(cornerRadius) {
+    if (cornerRadius.value >= 999f) CircleShape else RoundedCornerShape(cornerRadius)
+  }
+  // Append the clip after the caller's lift/shadow layer so the glass and ripple stay round
+  // without clipping away the visible press shadow.
+  val clipped = this.clip(shape)
+  if (LocalPlayerGlassSurfaceOwner.current) return clipped
   val appearance = koinInject<AppearancePreferences>()
   val preferenceEnabled by appearance.liquidGlassSurfaces.collectAsState()
   val preferredOpacity by appearance.glassSurfaceOpacity.collectAsState()
@@ -532,10 +541,10 @@ fun Modifier.playerGlassPane(enabled: Boolean, opacity: Float? = null, highlight
   // Pill/circle chips refract the player's single existing video sample through the lens engine
   // (API 33+, supported device). Sheets/panels and every fallback keep the frosted pane below.
   if (on && frame != null && LocalLensGlassEnabled.current && app.infinity.mpvz.ui.theme.lens.VideoLensPolicy.isLensChip(cornerRadius.value)) {
-    return videoLensChip(frame, cornerRadius.value,
+    return clipped.videoLensChip(frame, cornerRadius.value,
       app.infinity.mpvz.ui.theme.GlassSurfacePolicy.opacity(opacity ?: preferredOpacity),
       app.infinity.mpvz.ui.theme.GlassSurfacePolicy.highlight(highlight ?: preferredHighlight))
   }
-  return liquidGlassPane(on, opacity ?: preferredOpacity,
+  return clipped.liquidGlassPane(on, opacity ?: preferredOpacity,
     highlight ?: preferredHighlight, cornerRadius, thickSurface = true)
 }

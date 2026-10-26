@@ -20,14 +20,16 @@ class ReferenceUiRollbackContractTest {
       sha(read("app/src/main/java/app/infinity/mpvz/ui/browser/cards/FolderCard.kt")))
   }
 
-  @Test fun preservedPlayerSourcesKeepBaseline7eFingerprints() {
+  @Test fun preservedPlayerSourcesKeepPinnedFingerprints() {
     val expected = mapOf(
       // Build 1910 smoothness: chapter index via derivedStateOf so position ticks do not recompose the whole overlay.
       "app/src/main/java/app/infinity/mpvz/ui/player/controls/PlayerControls.kt" to "87b0086a84b1522cc6525a37d70f8c0e9a6c31d0b3dc7d0919dd4c1b779761c9" /* music entry hides stats via StatsLuaOverlay (no blind toggle, saved page kept); before that: 1901 (380a778b) stats overlay + music-entry stats hide restored; clean-room BrowserMusicSheetState replaces the mpvRx sheet type */,
-      "app/src/main/java/app/infinity/mpvz/ui/player/controls/components/Seekbar.kt" to "b0d7ca11fdd2729871e052a0f6ea3b2cba64fb3e29039e5d3c42a7acf4d426c9",
+      // Owner follow-up: the timeline retains safe drag semantics with a rounded global-glass groove.
+      "app/src/main/java/app/infinity/mpvz/ui/player/controls/components/Seekbar.kt" to "87b7c80200ea23a5ea1161d216271742f0ea05cbc94451d617f65a962b908a23",
       // Build 1910: shared rimLight/thick-surface routing is intentionally owned by this stream.
       // Build 1910 integration: union of the rim-light routing and thickSurface stream edits.
-      "app/src/main/java/app/infinity/mpvz/ui/player/controls/components/GlassControls.kt" to "9a17eb45cf98e1d75c42b99c22bde11cecfd4fea1475724ca472cfa34b4eda39",
+      // Owner follow-up: rounded player panes preserve the press shadow and inherit global glass tuning.
+      "app/src/main/java/app/infinity/mpvz/ui/player/controls/components/GlassControls.kt" to "e24bbf860220c3cd5e97021232c09f52b85a1731266186034fb4695918fc3222",
       // Build 1910: player sheets opt into the centralized inner thickness bands.
       // Build 1910 integration: edge-attached landscape sheets draw one rim on the asymmetric shape.
       "app/src/main/java/app/infinity/mpvz/presentation/components/PlayerSheet.kt" to "7838a785e17d4bd1479a348a04c6f9ac7af0bacc0891ba817b165a1f53348c81",
@@ -537,9 +539,9 @@ import android.graphics.Shader
     // Build 1902: nav pill commits the lens frame before far page jumps and supports drag-to-select.
     // Build 1943: the drag moved to the shared Initial-pass navPillDragGesture (1942's Main-pass
     // slop detector never started on the phone).
-    // Build 1944 (owner-approved): the lens pops above the bar and magnifies the hovered tab
-    // while dragged; hit targets and semantics are unchanged.
-    assertEquals("f6f97d0dcd46149f5471d861c1a3fd208033b1a25f6e2634b32f9b5779887036", sha(navigation.substring(start, end)))
+    // Owner follow-up: retain the normal 44dp selected outline/placement; the glass refraction
+    // follows finger-driven drag motion without an elevated pop or altered tab hit targets.
+    assertEquals("635f4f7e8f53d772c9903ffbea7eb06dc43f8fbdda6fce3507d0f2a6b3589f40", sha(navigation.substring(start, end)))
     val scene = read("app/src/main/java/app/infinity/mpvz/ui/theme/BrowserGlassScene.kt")
     val lensStart = scene.indexOf("internal const val BROWSER_LENS")
     val q = scene.indexOf("\"\"\"", lensStart)

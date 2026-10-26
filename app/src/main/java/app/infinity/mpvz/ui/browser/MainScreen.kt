@@ -13,7 +13,6 @@ import android.annotation.SuppressLint
 import android.content.res.Configuration
 import app.infinity.mpvz.ui.theme.BrowserGlassSurface
 import app.infinity.mpvz.ui.theme.rememberBrowserGlassMotionAllowed
-import app.infinity.mpvz.ui.theme.lens.LocalLensGlassEnabled
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.animateContentSize
@@ -703,18 +702,6 @@ private fun ExpressivePillNavigationBar(
       lensBaseLeft.toPx(), lensBaseWidth.toPx(), visualFraction, direction, glassMotion,
     ) else NavigationGlassMotionPolicy.settledGeometry(lensBaseLeft.toPx(), lensBaseWidth.toPx())
   }
-  // Keep the lens elevated during touch and the finite destination spring, then
-  // return to the original bar geometry once the selection settles.
-  val lensPopActive = LocalLensGlassEnabled.current && motionAllowed &&
-    (dragPosition != null || fingerDragging || kotlin.math.abs(lensPosition.value - targetIndex) > 0.001f)
-  // Finite stretch/bounce from the "Glass motion" setting still squashes the lens while it moves.
-  val lensSquash = kotlin.math.abs(lensGeometry.deformation) * 4f
-  val lensPop = NavigationGlassLensPolicy.geometry(
-    left = lensGeometry.left,
-    width = lensGeometry.width,
-    active = lensPopActive,
-  )
-
   BrowserGlassSurface(
     enabled = liquidGlassSurfaces,
     opacity = glassOpacity,
@@ -741,9 +728,9 @@ private fun ExpressivePillNavigationBar(
         selected = true,
         deformation = kotlin.math.abs(lensGeometry.deformation),
         modifier = Modifier
-          .offset(x = with(density) { lensPop.left.toDp() } - startPadding, y = lensPop.offsetY.dp + (lensSquash / 2f).dp)
-          .width(with(density) { lensPop.width.toDp() })
-          .height(with(density) { lensPop.height.toDp() } - lensSquash.dp),
+          .offset(x = with(density) { lensGeometry.left.toDp() } - startPadding, y = 0.dp)
+          .width(with(density) { lensGeometry.width.toDp() })
+          .height(44.dp),
       ) {}
 
       // Tab buttons row positioned directly on top of the track
@@ -768,18 +755,9 @@ private fun ExpressivePillNavigationBar(
 
           Box(
             modifier =
-              Modifier
+            Modifier
                 .width(tabWidth)
                 .height(44.dp)
-                .graphicsLayer {
-                  // Magnify only the visual content under the lens; the 48dp
-                  // tab hit target and semantics remain unchanged.
-                  val magnify = if (lensPopActive && index == hoveredTab) {
-                    NavigationGlassLensPolicy.MaxMagnification
-                  } else 1f
-                  scaleX = magnify
-                  scaleY = magnify
-                }
                 .clip(CircleShape)
                 .semantics {
                   role = Role.Tab

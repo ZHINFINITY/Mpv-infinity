@@ -95,6 +95,8 @@ fun ControlsButton(
     modifier =
       modifier
         .graphicsLayer {
+          shape = CircleShape
+          clip = true
           scaleX = lift
           scaleY = lift
           shadowElevation = if (pressed && glassEnabled) 5.dp.toPx() else 0f
@@ -102,7 +104,7 @@ fun ControlsButton(
         .clip(CircleShape)
         // Feedback wraps the glass pane so the water wave refracts the glass itself.
         .glassPressFeedback(interactionSource, enabled, glass = glassEnabled)
-        .playerGlassPane(enabled = glassEnabled, opacity = 0.88f, highlight = 0.18f, cornerRadius = 999.dp)
+        .playerGlassPane(enabled = glassEnabled, cornerRadius = 999.dp)
         .combinedClickable(
           enabled = enabled,
           onClick = {

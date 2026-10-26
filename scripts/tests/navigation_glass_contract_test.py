@@ -25,8 +25,10 @@ class NavigationGlassContracts(unittest.TestCase):
         source = self.section()
         for token in ("rememberBrowserGlassMotionAllowed()", "collectIsDraggedAsState()", "Animatable(position)",
                       "lensPosition.snapTo(position)", "lensPosition.animateTo(targetIndex, spring(",
-                      "if (fingerDragging) position else 0f", "lensSquash", "NavigationGlassMotionPolicy"):
+                      "if (fingerDragging) position else 0f", "NavigationGlassMotionPolicy",
+                      ".height(44.dp)", "Modifier.navPillDragGesture("):
             self.assertIn(token, source)
+        self.assertNotIn("lensPop", source)
         self.assertNotIn("isScrollInProgress", source)
         for forbidden in ("while (", "rememberInfiniteTransition", "withFrameNanos", "PixelCopy"):
             self.assertNotIn(forbidden, source)
