@@ -123,6 +123,14 @@ internal object PlayerLifecyclePolicy {
     miniPlayerHandoff: Boolean = false,
   ): Boolean = backgroundPlaybackSessionActive && (backgroundPlaybackEnabled || miniPlayerHandoff)
 
+  /** Pause state belongs to the active renderer; the inactive MPV core may stay paused. */
+  fun activeEnginePausedState(
+    activeEngine: PlaybackEngineMode,
+    nativePlayWhenReady: Boolean?,
+    mpvPaused: Boolean?,
+  ): Boolean? =
+    if (activeEngine == PlaybackEngineMode.NATIVE) nativePlayWhenReady?.not() else mpvPaused
+
   /** Preserve an intentional pause while restoring a playing service handoff. */
   fun shouldResumeAfterBackgroundHandoff(
     backgroundPlaybackSessionActive: Boolean,
@@ -177,6 +185,13 @@ internal object PlayerLifecyclePolicy {
     isAudioMedia: Boolean,
     thresholdMs: Long = LONG_BACKGROUND_REBUILD_THRESHOLD_MS,
   ): Boolean = !isAudioMedia && stoppedForMs >= thresholdMs
+
+  /** Recover Native playback if backgrounding dropped its item or left it idle. */
+  fun shouldRecoverNativePlayback(
+    hasCurrentMediaItem: Boolean,
+    playbackIsIdle: Boolean,
+    mediaLoadInProgress: Boolean,
+  ): Boolean = !mediaLoadInProgress && (!hasCurrentMediaItem || playbackIsIdle)
 
   /** Reloading media before Android recreates the Surface leaves ColorOS on a black frame. */
   fun shouldWaitForSurfaceBeforeRebuild(surfaceReady: Boolean): Boolean = !surfaceReady

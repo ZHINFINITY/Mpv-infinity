@@ -13,6 +13,46 @@ import org.junit.Test
 
 class PlayerLifecyclePolicyTest {
   @Test
+  fun activeNativePlayIntentOverridesTheInactiveMpvPauseState() {
+    assertEquals(
+      false,
+      PlayerLifecyclePolicy.activeEnginePausedState(
+        activeEngine = PlaybackEngineMode.NATIVE,
+        nativePlayWhenReady = true,
+        mpvPaused = true,
+      ),
+    )
+    assertEquals(
+      true,
+      PlayerLifecyclePolicy.activeEnginePausedState(
+        activeEngine = PlaybackEngineMode.NATIVE,
+        nativePlayWhenReady = false,
+        mpvPaused = false,
+      ),
+    )
+    assertEquals(
+      null,
+      PlayerLifecyclePolicy.activeEnginePausedState(
+        activeEngine = PlaybackEngineMode.NATIVE,
+        nativePlayWhenReady = null,
+        mpvPaused = false,
+      ),
+    )
+  }
+
+  @Test
+  fun mpvPauseStateRemainsAuthoritativeWhenMpvIsActive() {
+    assertEquals(
+      true,
+      PlayerLifecyclePolicy.activeEnginePausedState(
+        activeEngine = PlaybackEngineMode.MPV,
+        nativePlayWhenReady = true,
+        mpvPaused = true,
+      ),
+    )
+  }
+
+  @Test
   fun backgroundHandoffResumesPlayingSession() {
     assertTrue(
       PlayerLifecyclePolicy.shouldResumeAfterBackgroundHandoff(
@@ -71,6 +111,38 @@ class PlayerLifecyclePolicyTest {
     assertFalse(PlayerLifecyclePolicy.shouldRebuildRendererAfterBackground(fifteen, isAudioMedia = true))
     assertTrue(PlayerLifecyclePolicy.shouldWaitForSurfaceBeforeRebuild(surfaceReady = false))
     assertFalse(PlayerLifecyclePolicy.shouldWaitForSurfaceBeforeRebuild(surfaceReady = true))
+  }
+
+  @Test
+  fun nativeForegroundRecoveryReloadsMissingOrIdleMediaButNotAnActiveLoad() {
+    assertTrue(
+      PlayerLifecyclePolicy.shouldRecoverNativePlayback(
+        hasCurrentMediaItem = false,
+        playbackIsIdle = true,
+        mediaLoadInProgress = false,
+      ),
+    )
+    assertTrue(
+      PlayerLifecyclePolicy.shouldRecoverNativePlayback(
+        hasCurrentMediaItem = true,
+        playbackIsIdle = true,
+        mediaLoadInProgress = false,
+      ),
+    )
+    assertFalse(
+      PlayerLifecyclePolicy.shouldRecoverNativePlayback(
+        hasCurrentMediaItem = false,
+        playbackIsIdle = true,
+        mediaLoadInProgress = true,
+      ),
+    )
+    assertFalse(
+      PlayerLifecyclePolicy.shouldRecoverNativePlayback(
+        hasCurrentMediaItem = true,
+        playbackIsIdle = false,
+        mediaLoadInProgress = false,
+      ),
+    )
   }
 
   @Test

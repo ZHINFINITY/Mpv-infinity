@@ -1111,6 +1111,7 @@ class PlayerActivity :
   private var screenStateReceiverRegistered = false
   private var mpvInitialized = false // Track MPV initialization state
   private var pendingForegroundResumePositionSeconds: Double? = null
+  private var pendingNativeForegroundPlayIntent: Boolean? = null
   private var viewModelHostAttached = false
   private var torrentPickerHandoff = false
   private var savePlaybackStateJob: Job? = null // Track ongoing debounced save job
@@ -1199,6 +1200,7 @@ class PlayerActivity :
   private var resumeOnAudioFocusGain = false
   private var playbackDelayedForAudioFocus = false
   private var volumeBeforeAudioFocusDuck: Double? = null
+  private var volumeBeforeAudioFocusDuckEngine: PlaybackEngineMode? = null
 
   // ==================== Broadcast Receivers ====================
 
@@ -1213,7 +1215,7 @@ class PlayerActivity :
       ) {
         if (!ownsPlaybackSession()) return
         if (intent?.action == AudioManager.ACTION_AUDIO_BECOMING_NOISY) {
-          viewModel.pause()
+          pauseActiveEngine()
           window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         }
       }
@@ -1232,7 +1234,7 @@ class PlayerActivity :
             screenUnlockPlaybackController.onScreenTurnedOff(
               autoplayAfterScreenUnlockEnabled = playerPreferences.autoplayAfterScreenUnlock.get(),
               wasPlayingBeforePause = wasPlayingBeforePause,
-              isCurrentlyPaused = viewModel.paused,
+              isCurrentlyPaused = activeEnginePausedState(),
               backgroundPlaybackActive = isBackgroundPlaybackEnabled(),
               isUserFinishing = isUserFinishing,
               isFinishing = isFinishing,
@@ -1268,9 +1270,8 @@ class PlayerActivity :
             // MediaPlaybackService so minimizing into the Mini Player does not pause.
             val handoff = isFinishing || isDestroyed || MediaPlaybackService.isActivityHandoffInProgress()
             if (!handoff) {
-              // Focus callbacks must not use the ordinary pause action: it abandons focus and can
-              // erase the resume intent while Android is still dispatching a transient focus cycle.
-              PlaybackSession.setPropertyBoolean("pause", true)
+              // Keep focus-callback semantics without pausing an inactive MPV core during Native playback.
+              setActiveEnginePlaying(false)
             }
           }
 
@@ -1278,20 +1279,27 @@ class PlayerActivity :
             holdsAudioFocus = false
             val handoff = isFinishing || isDestroyed || MediaPlaybackService.isActivityHandoffInProgress()
             if (!handoff) {
-              val wasPlaying = PlaybackSession.getPropertyBoolean("pause") == false
+              val wasPlaying =
+                activeEnginePausedState()?.let { paused -> !paused }
+                  ?: (!isNativeEngineActive() && PlaybackSession.getPropertyBoolean("pause") == false)
               // Android can dispatch the same transient loss more than once during a call. Once a
               // playing session has requested resume, a later callback must not overwrite it merely
-              // because the first callback already paused mpv.
+              // because the first callback already paused the active renderer.
               resumeOnAudioFocusGain = resumeOnAudioFocusGain || wasPlaying
-              PlaybackSession.setPropertyBoolean("pause", true)
+              setActiveEnginePlaying(false)
             }
           }
 
           AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK -> {
             if (volumeBeforeAudioFocusDuck == null) {
-              PlaybackSession.getPropertyDouble("volume")?.let { volume ->
-                volumeBeforeAudioFocusDuck = volume
-                PlaybackSession.setPropertyDouble("volume", volume * 0.5)
+              val engine = activeEngineMode
+              val volume =
+                if (isNativeEngineActive()) nativeEngineOrNull()?.currentPlayer?.volume?.toDouble()
+                else PlaybackSession.getPropertyDouble("volume")
+              volume?.let {
+                volumeBeforeAudioFocusDuck = it
+                volumeBeforeAudioFocusDuckEngine = engine
+                setPlaybackVolumeForEngine(engine, it * 0.5)
               }
             }
           }
@@ -1304,7 +1312,7 @@ class PlayerActivity :
               val shouldResume = resumeOnAudioFocusGain || playbackDelayedForAudioFocus
               resumeOnAudioFocusGain = false
               playbackDelayedForAudioFocus = false
-              if (shouldResume) PlaybackSession.setPropertyBoolean("pause", false)
+              if (shouldResume) setActiveEnginePlaying(true)
             }
           }
 
@@ -3077,9 +3085,23 @@ class PlayerActivity :
     holdsAudioFocus = false
   }
 
+  private fun setPlaybackVolumeForEngine(
+    engine: PlaybackEngineMode,
+    volume: Double,
+  ) {
+    if (engine == PlaybackEngineMode.NATIVE) {
+      nativeEngineOrNull()?.currentPlayer?.volume = volume.toFloat()
+    } else {
+      PlaybackSession.setPropertyDouble("volume", volume)
+    }
+  }
+
   private fun restoreDuckedAudioVolume() {
-    volumeBeforeAudioFocusDuck?.let { volume -> PlaybackSession.setPropertyDouble("volume", volume) }
+    volumeBeforeAudioFocusDuck?.let { volume ->
+      setPlaybackVolumeForEngine(volumeBeforeAudioFocusDuckEngine ?: activeEngineMode, volume)
+    }
     volumeBeforeAudioFocusDuck = null
+    volumeBeforeAudioFocusDuckEngine = null
   }
 
   private fun cleanupAudio() {
@@ -3398,16 +3420,16 @@ class PlayerActivity :
           }
         } else {
           rememberResumeAfterUnlockBeforeForcedPause()
-          viewModel.pause()
+          pauseActiveEngine()
         }
         return@runCatching
       }
 
       if (isDeviceScreenOffOrLocked() && !isBackgroundPlaybackEnabled()) {
         rememberResumeAfterUnlockBeforeForcedPause()
-        viewModel.pause()
+        pauseActiveEngine()
       } else if (!isBackgroundPlaybackSessionActive && (isUserFinishing || isFinishing)) {
-        viewModel.pause()
+        pauseActiveEngine()
       } else if (isBackgroundPlaybackSessionActive && !isInBackgroundPlayback && !isInPictureInPictureMode) {
         hideMpvSurfaceAndOverlayForAudioOrMinimize()
         disableVideoForBackground()
@@ -3541,7 +3563,12 @@ class PlayerActivity :
       val resumeAfterBackgroundHandoff =
         PlayerLifecyclePolicy.shouldResumeAfterBackgroundHandoff(
           backgroundPlaybackSessionActive = isBackgroundPlaybackSessionActive,
-          wasPlayingBeforeHandoff = PlaybackSession.getPropertyBoolean("pause") == false,
+          wasPlayingBeforeHandoff =
+            if (isNativeEngineActive()) {
+              activeEnginePausedState()?.not() ?: (PlaybackSession.getPropertyBoolean("pause") == false)
+            } else {
+              PlaybackSession.getPropertyBoolean("pause") == false
+            },
           isInPictureInPictureMode = isInPictureInPictureMode,
         )
       if (restoreForegroundVideoAndAmbientIfUnlocked()) {
@@ -3552,8 +3579,12 @@ class PlayerActivity :
         // future focus loss (e.g. a phone call) pauses the now-foreground playback.
         if (resumeAfterBackgroundHandoff) {
           val focusGranted = requestAudioFocus()
-          PlaybackSession.setPropertyBoolean("pause", !focusGranted)
-        } else if (viewModel.paused != true) {
+          if (isNativeEngineActive()) {
+            if (focusGranted) nativeEngineOrNull()?.setPlaying(true)
+          } else {
+            PlaybackSession.setPropertyBoolean("pause", !focusGranted)
+          }
+        } else if (activeEnginePausedState() != true) {
           requestAudioFocus()
         }
       }
@@ -4947,6 +4978,36 @@ class PlayerActivity :
     return keyguardManager.isDeviceLocked || !powerManager.isInteractive
   }
 
+  private fun activeEnginePausedState(): Boolean? =
+    PlayerLifecyclePolicy.activeEnginePausedState(
+      activeEngine = activeEngineMode,
+      nativePlayWhenReady = nativeEngineOrNull()?.currentPlayer?.let { player ->
+        if (player.playbackState == androidx.media3.common.Player.STATE_ENDED) null else player.playWhenReady
+      },
+      mpvPaused = viewModel.paused,
+    )
+
+  private fun setActiveEnginePlaying(playing: Boolean) {
+    if (isNativeEngineActive()) {
+      nativeEngineOrNull()?.setPlaying(playing)
+    } else {
+      PlaybackSession.setPropertyBoolean("pause", !playing)
+    }
+  }
+
+  private fun pauseActiveEngine() {
+    if (isNativeEngineActive()) {
+      val engine = nativeEngineOrNull()
+      if (engine != null) {
+        engine.setPlaying(false)
+      } else {
+        viewModel.pause()
+      }
+    } else {
+      viewModel.pause()
+    }
+  }
+
   private fun restoreForegroundVideoAndAmbientIfUnlocked(): Boolean {
     if ((!mpvInitialized && !isNativeEngineActive()) || !ownsPlaybackSession() || isDeviceScreenOffOrLocked()) return false
     val stoppedForMs =
@@ -4971,8 +5032,35 @@ class PlayerActivity :
       return true
     }
     if (isNativeEngineActive()) {
+      val nativeEngine = nativeEngineOrNull()
+      val nativePlayer = nativeEngine?.currentPlayer
+      val shouldRecoverNative =
+        PlayerLifecyclePolicy.shouldRecoverNativePlayback(
+          hasCurrentMediaItem = nativePlayer?.currentMediaItem != null,
+          playbackIsIdle = nativePlayer?.playbackState == androidx.media3.common.Player.STATE_IDLE,
+          mediaLoadInProgress = mediaLoadJob?.isActive == true,
+        )
+      val hasPlayableSource = !currentPlayableUri.isNullOrBlank() || !intent?.dataString.isNullOrBlank()
+      if (shouldRecoverNative && hasPlayableSource) {
+        Log.w(TAG, "Recovering Native video after foreground return from a missing or idle player")
+        rebuildRendererAfterLongBackground()
+        viewModel.setAmbientLifecycleActive(true)
+        return true
+      }
       setNativeVideoSurfaceVisible(true)
-      nativeEngineOrNull()?.refreshAfterConfigurationChange()
+      nativeEngineOrNull()?.let { engine ->
+        val nativePlayIntent = pendingNativeForegroundPlayIntent
+        engine.refreshAfterConfigurationChange()
+        val player = engine.currentPlayer
+        if ((nativePlayIntent ?: player.playWhenReady) &&
+          player.currentMediaItem != null &&
+          player.playbackState != androidx.media3.common.Player.STATE_ENDED &&
+          !player.isPlaying
+        ) {
+          engine.setPlaying(true)
+        }
+      }
+      pendingNativeForegroundPlayIntent = null
     } else {
       PlaybackSession.markForeground()
       enableVideoAfterBackground()
@@ -4983,8 +5071,13 @@ class PlayerActivity :
   }
 
   private fun rebuildRendererAfterLongBackground() {
-    if (fileName.isBlank() || isFinishing || isDestroyed || !ownsPlaybackSession()) return
-    val paused = viewModel.paused == true || PlaybackSession.getPropertyBoolean("pause") == true
+    val playable = currentPlayableUri?.takeIf { it.isNotBlank() } ?: intent?.dataString?.takeIf { it.isNotBlank() }
+    if (playable.isNullOrBlank() || isFinishing || isDestroyed || !ownsPlaybackSession()) return
+    val mpvPaused = viewModel.paused == true || PlaybackSession.getPropertyBoolean("pause") == true
+    val nativePlayIntent = pendingNativeForegroundPlayIntent
+    pendingNativeForegroundPlayIntent = null
+    val nativePaused = nativePlayIntent?.let { wasPlaying -> !wasPlaying } ?: activeEnginePausedState()
+    val paused = if (isNativeEngineActive()) nativePaused ?: mpvPaused else mpvPaused
     val captured = pendingForegroundResumePositionSeconds
     pendingForegroundResumePositionSeconds = null
     val positionSeconds =
@@ -4995,8 +5088,6 @@ class PlayerActivity :
       positionSeconds = positionSeconds.takeIf { it.isFinite() && it > 0.0 },
       paused = paused,
     )
-    val playable = currentPlayableUri ?: intent?.dataString
-    if (playable.isNullOrBlank()) return
     if (isNativeEngineActive()) {
       nativeEngineOrNull()?.refreshAfterConfigurationChange()
     }
@@ -5012,12 +5103,12 @@ class PlayerActivity :
     screenUnlockPlaybackController.onScreenTurnedOff(
       autoplayAfterScreenUnlockEnabled = playerPreferences.autoplayAfterScreenUnlock.get(),
       wasPlayingBeforePause = wasPlayingBeforePause,
-      isCurrentlyPaused = viewModel.paused,
+      isCurrentlyPaused = activeEnginePausedState(),
       backgroundPlaybackActive = false,
       isUserFinishing = isUserFinishing,
       isFinishing = isFinishing,
     )
-    wasPlayingBeforePause = viewModel.paused == false || wasPlayingBeforePause
+    wasPlayingBeforePause = activeEnginePausedState() == false || wasPlayingBeforePause
   }
 
   private fun resumePlaybackAfterScreenUnlockIfNeeded() {
@@ -5030,8 +5121,12 @@ class PlayerActivity :
           val deviceLocked = isDeviceScreenOffOrLocked()
           if (screenUnlockPlaybackController.consumeResumeAfterUnlockIfReady(deviceLocked)) {
             wasPlayingBeforePause = false
-            if (viewModel.paused == true && !isFinishing && !isUserFinishing) {
-              viewModel.unpause()
+            if (activeEnginePausedState() == true && !isFinishing && !isUserFinishing) {
+              if (isNativeEngineActive()) {
+                if (requestAudioFocus()) nativeEngineOrNull()?.setPlaying(true)
+              } else {
+                viewModel.unpause()
+              }
             }
             return@launch
           }
@@ -8730,7 +8825,9 @@ class PlayerActivity :
       // started; otherwise the service and Media3 decode the same item independently and the
       // Activity resumes with a stale native surface or no playable session.
       val nativePositionMs = (nativeEngineOrNull()?.positionForPersistenceMs() ?: 0L)
-      val nativeWasPlaying = nativeEngineOrNull()?.currentPlayer?.isPlaying == true
+      val nativeWasPlaying = nativeEngineOrNull()?.currentPlayer?.let { player ->
+        player.playWhenReady && player.playbackState != androidx.media3.common.Player.STATE_ENDED
+      } == true
       // Capture before stopping Native; the MPV-backed service must inherit this state.
       saveVideoPlaybackState(fileName, immediate = true)
       nativeEngineOrNull()?.setPlaying(false)
@@ -10299,6 +10396,11 @@ class PlayerActivity :
     viewModel.isAudioOnly.value || isCurrentMediaKnownAudio() || isKnownAudioLaunch(intent)
 
   private fun captureForegroundResumePosition() {
+    if (isNativeEngineActive()) {
+      pendingNativeForegroundPlayIntent = nativeEngineOrNull()?.currentPlayer?.let { player ->
+        if (player.playbackState == androidx.media3.common.Player.STATE_ENDED) null else player.playWhenReady
+      }
+    }
     if (!PlayerLifecyclePolicy.shouldCaptureForegroundResumePosition(currentPlaybackIsAudioMedia())) return
     val live =
       if (isNativeEngineActive()) nativePlaybackPositionSeconds()

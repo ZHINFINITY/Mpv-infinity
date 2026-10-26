@@ -22,6 +22,11 @@ class VideoBackgroundResumeWiringTest {
     File(root, "app/infinity/mpvz/ui/player/PlayerActivity.kt").readText()
   }
 
+  private val viewModel: String by lazy {
+    val root = File("src/main/java").takeIf { it.exists() } ?: File("app/src/main/java")
+    File(root, "app/infinity/mpvz/ui/player/PlayerViewModel.kt").readText()
+  }
+
   private fun body(signature: String): String {
     val start = activity.indexOf(signature)
     assertTrue("missing $signature", start >= 0)
@@ -72,7 +77,10 @@ class VideoBackgroundResumeWiringTest {
       restore,
       "if (isNativeEngineActive()) {",
       "setNativeVideoSurfaceVisible(true)",
-      "nativeEngineOrNull()?.refreshAfterConfigurationChange()",
+      "nativeEngineOrNull()?.let { engine ->",
+      "engine.refreshAfterConfigurationChange()",
+      "player.playWhenReady &&",
+      "engine.setPlaying(true)",
       "enableVideoAfterBackground()",
       "restoreForegroundResumePositionIfNeeded()",
     )
@@ -102,6 +110,107 @@ class VideoBackgroundResumeWiringTest {
   }
 
   @Test
+  fun screenUnlockResumeUsesNativePlaybackIntentInsteadOfMpvPauseState() {
+    assertInOrder(
+      body("private fun activeEnginePausedState()"),
+      "activeEngine = activeEngineMode",
+      "nativePlayWhenReady = nativeEngineOrNull()?.currentPlayer?.let",
+      "if (player.playbackState == androidx.media3.common.Player.STATE_ENDED) null else player.playWhenReady",
+      "mpvPaused = viewModel.paused",
+    )
+    assertInOrder(
+      body("private fun resumePlaybackAfterScreenUnlockIfNeeded()"),
+      "if (activeEnginePausedState() == true",
+      "if (isNativeEngineActive())",
+      "if (requestAudioFocus()) nativeEngineOrNull()?.setPlaying(true)",
+      "viewModel.unpause()",
+    )
+  }
+
+  @Test
+  fun missingOrIdleNativeMediaIsRebuiltWhenReturningToForeground() {
+    val restore = body("private fun restoreForegroundVideoAndAmbientIfUnlocked()")
+    assertInOrder(
+      restore,
+      "val nativeEngine = nativeEngineOrNull()",
+      "val nativePlayer = nativeEngine?.currentPlayer",
+      "PlayerLifecyclePolicy.shouldRecoverNativePlayback(",
+      "hasCurrentMediaItem = nativePlayer?.currentMediaItem != null",
+      "playbackIsIdle = nativePlayer?.playbackState == androidx.media3.common.Player.STATE_IDLE",
+      "mediaLoadInProgress = mediaLoadJob?.isActive == true",
+      "val hasPlayableSource = !currentPlayableUri.isNullOrBlank() || !intent?.dataString.isNullOrBlank()",
+      "if (shouldRecoverNative && hasPlayableSource)",
+      "rebuildRendererAfterLongBackground()",
+      "return true",
+    )
+  }
+
+  @Test
+  fun nativeRecoveryUsesCapturedPlayIntentAndIntentUriFallback() {
+    assertTrue(
+      body("private fun captureForegroundResumePosition()")
+        .contains("pendingNativeForegroundPlayIntent = nativeEngineOrNull()?.currentPlayer?.let"),
+    )
+    assertTrue(
+      body("private fun restoreForegroundVideoAndAmbientIfUnlocked()")
+        .contains("(nativePlayIntent ?: player.playWhenReady)"),
+    )
+    assertInOrder(
+      body("private fun rebuildRendererAfterLongBackground()"),
+      "val playable = currentPlayableUri?.takeIf { it.isNotBlank() } ?: intent?.dataString?.takeIf { it.isNotBlank() }",
+      "val nativePlayIntent = pendingNativeForegroundPlayIntent",
+      "pendingNativeForegroundPlayIntent = null",
+      "val nativePaused = nativePlayIntent?.let { wasPlaying -> !wasPlaying } ?: activeEnginePausedState()",
+      "val paused = if (isNativeEngineActive()) nativePaused ?: mpvPaused else mpvPaused",
+      "startMediaLoad(",
+    )
+  }
+
+  @Test
+  fun audioFocusAndSystemControlsFollowTheActiveEngine() {
+    val focus = activity.substringAfter("private val audioFocusChangeHandler =").substringBefore("private val audioFocusChangeListener")
+    assertTrue(focus.contains("activeEnginePausedState()"))
+    assertTrue(focus.contains("setActiveEnginePlaying(false)"))
+    assertTrue(focus.contains("if (shouldResume) setActiveEnginePlaying(true)"))
+    assertTrue(!focus.contains("PlaybackSession.setPropertyBoolean(\"pause\","))
+    assertInOrder(
+      body("private fun setActiveEnginePlaying(playing: Boolean)"),
+      "if (isNativeEngineActive())",
+      "nativeEngineOrNull()?.setPlaying(playing)",
+      "PlaybackSession.setPropertyBoolean(\"pause\", !playing)",
+    )
+
+    val pause = viewModel.substringAfter("fun pause()").substringBefore("fun unpause()")
+    val unpause = viewModel.substringAfter("fun unpause()").substringBefore("// ==================== UI Control")
+    assertTrue(pause.contains("if (host.isNativeEngineActive())"))
+    assertTrue(pause.contains("host.nativePause()"))
+    assertTrue(unpause.contains("if (host.isNativeEngineActive())"))
+    assertTrue(unpause.contains("host.nativeUnpause()"))
+  }
+
+  @Test
+  fun forcedPausePathsUseTheActiveRenderer() {
+    val noisy = activity.substringAfter("private val noisyReceiver =").substringBefore("private val screenStateReceiver")
+    assertTrue(noisy.contains("pauseActiveEngine()"))
+    assertInOrder(
+      body("private fun pauseActiveEngine()"),
+      "if (isNativeEngineActive())",
+      "engine.setPlaying(false)",
+      "viewModel.pause()",
+    )
+    assertInOrder(
+      body("override fun onStop()"),
+      "rememberResumeAfterUnlockBeforeForcedPause()",
+      "pauseActiveEngine()",
+      "if (isDeviceScreenOffOrLocked() && !isBackgroundPlaybackEnabled())",
+      "rememberResumeAfterUnlockBeforeForcedPause()",
+      "pauseActiveEngine()",
+      "else if (!isBackgroundPlaybackSessionActive && (isUserFinishing || isFinishing))",
+      "pauseActiveEngine()",
+    )
+  }
+
+  @Test
   fun resumeSeekUsesTheActiveEngine() {
     assertInOrder(
       body("private fun restoreForegroundResumePositionIfNeeded()"),
@@ -112,6 +221,20 @@ class VideoBackgroundResumeWiringTest {
       "PlaybackSession.setPropertyDouble(\"time-pos\", seconds)",
       "pendingForegroundResumePositionSeconds = null",
     )
+  }
+
+  @Test
+  fun audioAndSubtitleTrackRoutingFollowsTheActiveEngine() {
+    val trackFlows = viewModel.substringAfter("val subtitleTracks: StateFlow").substringBefore("val videoQualityTracks:")
+    assertTrue(trackFlows.contains("nativeExternalSubtitleTracks, activePlaybackEngine"))
+    assertTrue(trackFlows.contains("nativeAudioTracks, activePlaybackEngine"))
+    assertTrue(trackFlows.contains("PlaybackTrackSourcePolicy.forActiveEngine"))
+    assertTrue(!trackFlows.contains("decoderPreferences.playbackEngine"))
+
+    val audioSelection = viewModel.substringAfter("fun selectAudioTrack(").substringBefore("private fun currentItemRequiresYtdlp")
+    assertTrue(audioSelection.contains("activePlaybackEngine.value == PlaybackEngineMode.NATIVE"))
+    val subtitleSelection = viewModel.substringAfter("fun toggleSubtitle(").substringBefore("fun isSubtitleSelected(")
+    assertTrue(subtitleSelection.contains("activePlaybackEngine.value == PlaybackEngineMode.NATIVE"))
   }
 
   @Test
