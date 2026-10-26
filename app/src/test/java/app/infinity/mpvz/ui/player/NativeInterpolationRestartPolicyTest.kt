@@ -78,7 +78,7 @@ class NativeInterpolationRestartPolicyTest {
     assertFalse(owns(ownsSession = false))
   }
 
-  @Test fun nativeShortcutReloadUsesSameMediaItemAndRestoresPlayIntentAfterReadyFrame() {
+  @Test fun nativeShortcutReloadRestoresPlayIntentBeforeWaitingForFirstFrame() {
     val root = generateSequence(File(requireNotNull(System.getProperty("user.dir")))) { it.parentFile }
       .first { File(it, "app/src/main/java/app/infinity/mpvz").isDirectory }
     val base = File(root, "app/src/main/java/app/infinity/mpvz/ui/player")
@@ -93,18 +93,21 @@ class NativeInterpolationRestartPolicyTest {
     assertTrue(reload.contains("player.playWhenReady = false"))
     assertTrue(reload.contains("var reloadFailed = false"))
     assertTrue(reload.contains("reloadFailed = true"))
+    assertTrue(reload.contains("if (hadVideo && state.playWhenReady)"))
     assertTrue(reload.contains("!playStateRestored && !reloadFailed && isCurrent()"))
     assertTrue(reload.contains("player.addListener(listener)"))
     assertTrue(reload.contains("hasLeftReadyState && it.isReady"))
     assertTrue(reload.contains("readinessListener?.let { player.removeListener(it) }"))
     assertTrue(reload.contains("snapshot.first"))
     assertTrue(reload.contains("hasRenderedFirstFrame.first"))
+    val readyState = reload.indexOf("readySnapshot?.isReady")
     val playIntentRestore = reload.indexOf("player.playWhenReady = state.playWhenReady")
     val explicitPlay = reload.indexOf("if (state.playWhenReady) player.play()")
-    assertTrue(reload.indexOf("readySnapshot?.isReady") < reload.indexOf("firstFrameRendered"))
-    assertTrue(reload.indexOf("firstFrameRendered") < playIntentRestore)
+    val firstFrameWait = reload.indexOf("val firstFrameRendered")
+    assertTrue(readyState < playIntentRestore)
     assertTrue(playIntentRestore < explicitPlay)
-    assertTrue(explicitPlay < reload.indexOf("return NativeInterpolationRestartResult.APPLIED"))
+    assertTrue(explicitPlay < firstFrameWait)
+    assertTrue(firstFrameWait < reload.indexOf("return NativeInterpolationRestartResult.APPLIED"))
     assertTrue(reload.contains("if (state.playWhenReady) player.play() else player.pause()"))
     assertTrue(reload.contains("player.playbackSuppressionReason"))
     assertFalse(reload.contains("MediaItem.Builder"))

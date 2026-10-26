@@ -781,8 +781,9 @@ class NativeMedia3Engine(
   /**
    * Re-prepares the same Native media item after a shortcut changes Flow configuration. Keep the
    * original MediaItem and track parameters so request headers, MIME metadata, and subtitle
-   * configurations are not rebuilt or discarded. Keep playback paused until a ready frame, then
-   * explicitly reissue the captured play command so a playing item resumes without a user tap.
+   * configurations are not rebuilt or discarded. Keep playback paused while replacing and
+   * preparing the item, then restore play intent as soon as Media3 is ready so first-frame output
+   * cannot deadlock behind a paused player.
    */
   internal suspend fun restartCurrentItemForInterpolation(
     state: NativeInterpolationRestartState,
@@ -871,7 +872,15 @@ class NativeMedia3Engine(
         reloadFailed = true
         return NativeInterpolationRestartResult.PLAYBACK_FAILED
       }
-      if (hadVideo) {
+      // A seeked first frame may not be emitted while Media3 remains paused. Restore autoplay
+      // immediately after READY, before waiting for that frame, or the resume can deadlock.
+      player.playWhenReady = state.playWhenReady
+      if (state.playWhenReady) player.play()
+      playStateRestored = true
+      publishSnapshot()
+      // A paused item must stay paused; only an item that should be advancing can satisfy this
+      // rendered-frame wait without changing the user's requested play state.
+      if (hadVideo && state.playWhenReady) {
         val firstFrameRendered = withTimeoutOrNull(30_000L) {
           hasRenderedFirstFrame.first {
             it || !isCurrent() || player.currentMediaItem != item
@@ -886,10 +895,6 @@ class NativeMedia3Engine(
         }
       }
 
-      player.playWhenReady = state.playWhenReady
-      if (state.playWhenReady) player.play()
-      playStateRestored = true
-      publishSnapshot()
       Log.i(
         logTag,
         "Native interpolation reload ready positionMs=${state.positionMs} " +
