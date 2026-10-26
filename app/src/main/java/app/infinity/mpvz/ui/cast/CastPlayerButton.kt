@@ -134,8 +134,8 @@ class GlassMediaRouteChooserDialogFragment : MediaRouteChooserDialogFragment() {
 
 private class GlassMediaRouteChooserDialog(
   private val dialogContext: Context,
-  private val opacity: Float,
-  private val highlight: Float,
+  private val glassOpacity: Float,
+  private val glassHighlight: Float,
 ) : MediaRouteChooserDialog(dialogContext) {
   override fun onCreate(state: Bundle?) {
     super.onCreate(state)
@@ -144,10 +144,10 @@ private class GlassMediaRouteChooserDialog(
       GradientDrawable().apply {
         shape = GradientDrawable.RECTANGLE
         cornerRadius = 28f * dialogContext.resources.displayMetrics.density
-        setColor(Color.argb((GlassSurfacePolicy.opacity(opacity) * 255).toInt().coerceIn(1, 255), 32, 36, 44))
+        setColor(Color.argb((GlassSurfacePolicy.opacity(glassOpacity) * 255).toInt().coerceIn(1, 255), 32, 36, 44))
         setStroke(
           dialogContext.resources.displayMetrics.density.toInt().coerceAtLeast(1),
-          Color.argb((GlassSurfacePolicy.highlight(highlight) * 150).toInt().coerceIn(1, 150), 255, 255, 255),
+          Color.argb((GlassSurfacePolicy.highlight(glassHighlight) * 150).toInt().coerceIn(1, 150), 255, 255, 255),
         )
       }
   }

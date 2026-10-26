@@ -33,4 +33,37 @@ class NativeInterpolationRuntimePolicyTest {
     assertTrue(apply.indexOf("setOutputFrameRate()") < apply.indexOf("continuation.resume(true)"))
     assertTrue(apply.contains("continuation.resume(false)"))
   }
+
+  @Test fun hdrRendererSelectionUsesEffectiveRuntimeFlagAndKeepsTrackParameters() {
+    val root = generateSequence(File(requireNotNull(System.getProperty("user.dir")))) { it.parentFile }
+      .first { File(it, "app/src/main/java/app/infinity/mpvz").isDirectory }
+    val base = File(root, "app/src/main/java/app/infinity/mpvz/ui/player")
+    val engine = File(base, "NativeMedia3Engine.kt").readText()
+    val sink = File(base, "Media3FlowVideoSink.kt").readText()
+    val renderers = File(base, "Media3FlowRenderersFactory.java").readText()
+    assertTrue(sink.contains("fun isInterpolationEnabled(): Boolean = interpolationEnabled"))
+    assertTrue(renderers.contains("Media3FlowVideoSink.supportsFormat(format, interpolationEnabled)"))
+    assertTrue(renderers.contains("flowSink.isInterpolationEnabled()"))
+    assertTrue(!renderers.contains("Media3FlowVideoSink.supportsFormat(format)"))
+    assertTrue(engine.contains(".setTrackSelector(nativeTrackSelector)"))
+    assertTrue(engine.contains("fun invalidateRendererEligibility()"))
+    assertTrue(engine.contains("invalidate(null)"))
+    assertTrue(engine.contains("nativeTrackSelector.invalidateRendererEligibility()"))
+    assertTrue(engine.contains("Media3FlowFormatPolicy.shouldReevaluateNativeRenderer("))
+  }
+
+  @Test fun startupUsesPersistedInterpolationStateBeforeRendererSelection() {
+    val root = generateSequence(File(requireNotNull(System.getProperty("user.dir")))) { it.parentFile }
+      .first { File(it, "app/src/main/java/app/infinity/mpvz").isDirectory }
+    val base = File(root, "app/src/main/java/app/infinity/mpvz/ui/player")
+    val activity = File(base, "PlayerActivity.kt").readText()
+    val engine = File(base, "NativeMedia3Engine.kt").readText()
+    val renderers = File(base, "Media3FlowRenderersFactory.java").readText()
+    val sinkCreation = engine.indexOf("private val media3FlowSink")
+    val playerCreation = engine.indexOf("private val player = ExoPlayer.Builder")
+    assertTrue(activity.contains("enableMedia3Flow = decoderPreferences.mpvFlowFrameInterpolation.get()"))
+    assertTrue(sinkCreation >= 0 && sinkCreation < playerCreation)
+    assertTrue(engine.contains("      enableMedia3Flow,\n      ::publishFlowDiagnostics,"))
+    assertTrue(renderers.contains("Media3FlowVideoSink.supportsFormat(format, flowSink.isInterpolationEnabled())"))
+  }
 }

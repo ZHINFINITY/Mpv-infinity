@@ -360,7 +360,8 @@ class Media3FlowVideoSink(
     logFlowRecordOnce(
       "flow-config",
       Log.INFO,
-      "event=config requested_enabled=true renderer=native-media3 capture=gles3 renderer_api=vulkan " +
+      "event=config requested_enabled=$initialInterpolationEnabled runtime_enabled=$interpolationEnabled " +
+        "renderer=native-media3 capture=gles3 renderer_api=vulkan " +
         "requested_compute_api=${requestedComputeApi.name.lowercase()} " +
         "visibility_resolver=$visibilityResolverEnabled soft_blend=$softBlendEnabled " +
         "target_fps=$targetFps source_pts=media3_decoder sync_mode=1x hardware_decoder=media3 " +
@@ -473,6 +474,9 @@ class Media3FlowVideoSink(
   }
 
   fun isPreflightAvailable(): Boolean = preflightAvailable && !disposed
+
+  /** The effective flag used by the live output callback, not the startup preference snapshot. */
+  fun isInterpolationEnabled(): Boolean = interpolationEnabled
 
   fun startFlowDiagnosticCapture(
     sessionId: String,
@@ -3853,9 +3857,17 @@ class Media3FlowVideoSink(
 
     @JvmStatic
     fun supportsFormat(format: Format): Boolean =
-      supportsFormat(format, Build.VERSION.SDK_INT)
+      supportsFormat(format, Build.VERSION.SDK_INT, interpolationEnabled = true)
 
-    internal fun supportsFormat(format: Format, sdkInt: Int): Boolean {
+    @JvmStatic
+    fun supportsFormat(format: Format, interpolationEnabled: Boolean): Boolean =
+      supportsFormat(format, Build.VERSION.SDK_INT, interpolationEnabled)
+
+    internal fun supportsFormat(
+      format: Format,
+      sdkInt: Int,
+      interpolationEnabled: Boolean = true,
+    ): Boolean {
       val supportedRotation = format.rotationDegrees == 0 || format.rotationDegrees == 90 ||
         format.rotationDegrees == 180 || format.rotationDegrees == 270
       if (format.width < 16 || format.height < 16 || !supportedRotation ||
@@ -3874,9 +3886,24 @@ class Media3FlowVideoSink(
         colorTransfer = colorInfo?.colorTransfer ?: Format.NO_VALUE,
         lumaBitdepth = colorInfo?.lumaBitdepth ?: Format.NO_VALUE,
         chromaBitdepth = colorInfo?.chromaBitdepth ?: Format.NO_VALUE,
-        hasHdrStaticInfo = colorInfo?.hdrStaticInfo != null,
+        hasHdrStaticInfo = colorInfo?.hdrStaticInfo?.isNotEmpty() == true,
         isEquivalentToAssumedSdrDefault = ColorInfo.isEquivalentToAssumedSdrDefault(colorInfo),
         decoderSdrRequestAvailable = sdkInt >= 31,
+        interpolationEnabled = interpolationEnabled,
+      )
+    }
+
+    @JvmStatic
+    fun requiresNativeHdrPassthrough(format: Format): Boolean {
+      val colorInfo = format.colorInfo
+      return Media3FlowFormatPolicy.requiresNativeHdrPassthrough(
+        mimeType = format.sampleMimeType.orEmpty().lowercase(),
+        codecs = format.codecs.orEmpty().lowercase(),
+        colorSpace = colorInfo?.colorSpace ?: Format.NO_VALUE,
+        colorTransfer = colorInfo?.colorTransfer ?: Format.NO_VALUE,
+        lumaBitdepth = colorInfo?.lumaBitdepth ?: Format.NO_VALUE,
+        chromaBitdepth = colorInfo?.chromaBitdepth ?: Format.NO_VALUE,
+        hasHdrStaticInfo = colorInfo?.hdrStaticInfo?.isNotEmpty() == true,
       )
     }
 
@@ -3891,7 +3918,7 @@ class Media3FlowVideoSink(
         colorTransfer = colorInfo?.colorTransfer ?: Format.NO_VALUE,
         lumaBitdepth = colorInfo?.lumaBitdepth ?: Format.NO_VALUE,
         chromaBitdepth = colorInfo?.chromaBitdepth ?: Format.NO_VALUE,
-        hasHdrStaticInfo = colorInfo?.hdrStaticInfo != null,
+        hasHdrStaticInfo = colorInfo?.hdrStaticInfo?.isNotEmpty() == true,
       )
     }
 

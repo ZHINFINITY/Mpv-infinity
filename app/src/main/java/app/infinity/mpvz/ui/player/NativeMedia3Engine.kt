@@ -28,6 +28,7 @@ import androidx.media3.exoplayer.SeekParameters
 import androidx.media3.common.TrackSelectionOverride
 import androidx.media3.common.Tracks
 import androidx.media3.exoplayer.DecoderCounters
+import androidx.media3.exoplayer.trackselection.DefaultTrackSelector
 import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.datasource.FileDataSource
@@ -209,6 +210,13 @@ data class NativeChapter(
   val startSeconds: Float,
 )
 
+private class NativeRendererTrackSelector(context: Context) : DefaultTrackSelector(context) {
+  /** Re-run renderer mapping without replacing the user's audio, subtitle, or video parameters. */
+  fun invalidateRendererEligibility() {
+    invalidate(null)
+  }
+}
+
 /** A source-local Android Media3 playback engine. */
 class NativeMedia3Engine(
   context: Context,
@@ -317,7 +325,9 @@ class NativeMedia3Engine(
   }
   private val mediaSourceFactory = DefaultMediaSourceFactory(dataSourceFactory, extractorsFactory)
     .setSubtitleParserFactory(assSubtitleParserFactory)
+  private val nativeTrackSelector = NativeRendererTrackSelector(appContext)
   private val player = ExoPlayer.Builder(context.applicationContext)
+    .setTrackSelector(nativeTrackSelector)
     .setLoadControl(
       DefaultLoadControl.Builder()
         .setBufferDurationsMs(
@@ -429,7 +439,7 @@ class NativeMedia3Engine(
   private var sourceSizeBytes: Long = 0L
   private var videoDecoderName: String? = null
   private var audioDecoderName: String? = null
-  private var currentVideoFormat: Format? = null
+  @Volatile private var currentVideoFormat: Format? = null
   private var currentAudioFormat: Format? = null
   private var currentVideoSize: VideoSize? = null
   private var videoDecoderCounters: DecoderCounters? = null
@@ -495,6 +505,26 @@ class NativeMedia3Engine(
       decoderReuseEvaluation: androidx.media3.exoplayer.DecoderReuseEvaluation?,
     ) {
       currentVideoFormat = format
+      if (BuildConfig.DEBUG) {
+        val colorInfo = format.colorInfo
+        val flowSink = media3FlowSink
+        val flowInterpolationEnabled = flowSink?.isInterpolationEnabled() == true
+        val flowFormatEligible = flowSink?.isPreflightAvailable() == true &&
+          Media3FlowVideoSink.supportsFormat(format, flowInterpolationEnabled)
+        android.util.Log.i(
+          "Mpv∞-Media3Flow",
+          "MPVFLOW_DIAGNOSTIC component=native-media3 event=video_input_format " +
+            "mime=${format.sampleMimeType ?: "unknown"} codecs=${format.codecs ?: "unknown"} " +
+            "resolution=${format.width}x${format.height} " +
+            "color_space=${colorInfo?.colorSpace ?: Format.NO_VALUE} " +
+            "color_range=${colorInfo?.colorRange ?: Format.NO_VALUE} " +
+            "color_transfer=${colorInfo?.colorTransfer ?: Format.NO_VALUE} " +
+            "luma_bitdepth=${colorInfo?.lumaBitdepth ?: Format.NO_VALUE} " +
+            "chroma_bitdepth=${colorInfo?.chromaBitdepth ?: Format.NO_VALUE} " +
+            "hdr_static_metadata=${colorInfo?.hdrStaticInfo?.let { it.isNotEmpty() } == true} " +
+            "flow_runtime_enabled=$flowInterpolationEnabled flow_format_eligible=$flowFormatEligible",
+        )
+      }
       publishSnapshot()
     }
 
@@ -699,9 +729,27 @@ class NativeMedia3Engine(
     }
   }
 
-  /** Applies interpolation controls to the existing Native session without reload or seek. */
-  suspend fun applyInterpolationRuntime(enabled: Boolean, targetFps: Int): Boolean =
-    media3FlowSink?.applyRuntimeInterpolation(enabled, targetFps) == true
+  /** Applies interpolation controls live and reselects the HDR renderer when its eligibility changes. */
+  suspend fun applyInterpolationRuntime(enabled: Boolean, targetFps: Int): Boolean {
+    val flowSink = media3FlowSink ?: return false
+    val wasEnabled = flowSink.isInterpolationEnabled()
+    if (!flowSink.applyRuntimeInterpolation(enabled, targetFps)) return false
+    val isEnabled = flowSink.isInterpolationEnabled()
+    val currentFormat = currentVideoFormat
+    val requiresNativePassthrough = currentFormat?.let {
+      Media3FlowVideoSink.requiresNativeHdrPassthrough(it)
+    } == true
+    if (Media3FlowFormatPolicy.shouldReevaluateNativeRenderer(
+        previousInterpolationEnabled = wasEnabled,
+        interpolationEnabled = isEnabled,
+        requiresNativeHdrPassthrough = requiresNativePassthrough,
+      )
+    ) {
+      nativeTrackSelector.invalidateRendererEligibility()
+      Log.i(logTag, "Native Flow renderer eligibility changed; reselecting HDR output path enabled=$isEnabled")
+    }
+    return true
+  }
 
   fun setVideoAspect(aspect: VideoAspect) {
     videoAspect.select(aspect)
