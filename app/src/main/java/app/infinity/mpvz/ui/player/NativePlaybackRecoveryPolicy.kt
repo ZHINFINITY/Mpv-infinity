@@ -1,10 +1,10 @@
 package app.infinity.mpvz.ui.player
 
-internal enum class NativePlaybackFallbackKind(val toastMessage: String) {
-  AUDIO_DECODER("Native could not decode the selected audio track; switching to MPV."),
-  VIDEO_DECODER("Native could not decode this video; switching to MPV."),
-  UNSUPPORTED_MEDIA("Native could not read this media; switching to MPV."),
-  GENERIC_DECODER("Native could not decode this media; switching to MPV."),
+internal enum class NativePlaybackFallbackKind {
+  AUDIO_DECODER,
+  VIDEO_DECODER,
+  UNSUPPORTED_MEDIA,
+  GENERIC_DECODER,
 }
 
 /** Media3 errors MPV can often recover from with a different demuxer/decoder. */

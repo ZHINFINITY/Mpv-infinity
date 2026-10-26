@@ -3,19 +3,38 @@ package app.infinity.mpvz.ui.player
 
 import java.io.File
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class NativeInterpolationRuntimePolicyTest {
-  @Test fun onlyAlivePreflightedReadySinkMayMutateLive() {
-    for (disposed in listOf(false, true)) {
-      for (preflight in listOf(false, true)) {
-        for (ready in listOf(false, true)) {
-          assertEquals(!disposed && preflight && ready,
-            NativeInterpolationRuntimePolicy.canMutateLiveSink(disposed, preflight, ready))
-        }
-      }
-    }
+  @Test fun flowCanStartBeforeInitializationOnlyForEligibleFormatsAndCanAlwaysBeDisabled() {
+    fun canApply(
+      flowResourcesAttempted: Boolean,
+      flowAvailable: Boolean,
+      currentEnabled: Boolean,
+      requestedEnabled: Boolean,
+      formatEligible: Boolean,
+      disposed: Boolean = false,
+      preflightAvailable: Boolean = true,
+    ) = NativeInterpolationRuntimePolicy.canApplyRuntimeConfiguration(
+      disposed = disposed,
+      preflightAvailable = preflightAvailable,
+      flowResourcesAttempted = flowResourcesAttempted,
+      flowAvailable = flowAvailable,
+      currentInterpolationEnabled = currentEnabled,
+      requestedInterpolationEnabled = requestedEnabled,
+      requestedFormatEligible = formatEligible,
+    )
+
+    assertTrue(canApply(false, false, false, true, true))
+    assertFalse(canApply(false, false, false, true, false))
+    assertFalse(canApply(true, false, false, true, true))
+    assertTrue(canApply(true, false, true, false, false))
+    assertTrue(canApply(true, true, false, true, true))
+    assertFalse(canApply(false, false, false, true, true, disposed = true))
+    assertFalse(canApply(false, false, false, true, true, preflightAvailable = false))
+    assertTrue(canApply(true, false, true, false, false, preflightAvailable = false))
   }
 
   @Test fun actualSinkConstructionAndAcknowledgementUsePersistedStateAndEligibility() {
@@ -27,7 +46,11 @@ class NativeInterpolationRuntimePolicyTest {
     assertTrue(engine.contains("Media3FlowVideoSink.deviceSupportsVulkanFlow(appContext)"))
     assertTrue(!engine.contains("enableMedia3Flow && Media3FlowVideoSink.deviceSupportsVulkanFlow"))
     assertTrue(sink.contains("interpolationEnabled = initialInterpolationEnabled"))
-    assertTrue(sink.contains("NativeInterpolationRuntimePolicy.canMutateLiveSink"))
+    assertTrue(sink.contains("NativeInterpolationRuntimePolicy.canApplyRuntimeConfiguration"))
+    assertTrue(sink.contains("flowResourcesAttempted = flowResourcesAttempted"))
+    assertTrue(sink.contains("flowResourcesAttempted = true"))
+    assertTrue(sink.contains("requestedFormatEligible = requestedFormatEligible"))
+    assertTrue(engine.contains("Media3FlowVideoSink.supportsFormat(it, enabled)"))
     val apply = sink.substringAfter("suspend fun applyRuntimeInterpolation").substringBefore("private val maxDimension")
     assertTrue(apply.indexOf("glHandler.post") < apply.indexOf("interpolationEnabled = enabled"))
     assertTrue(apply.indexOf("setOutputFrameRate()") < apply.indexOf("continuation.resume(true)"))

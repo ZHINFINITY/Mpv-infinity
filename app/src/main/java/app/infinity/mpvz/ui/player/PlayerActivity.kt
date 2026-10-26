@@ -935,8 +935,8 @@ class PlayerActivity :
         "(code=${error.errorCodeName},renderer=${rendererFailure?.rendererName ?: "unknown"}," +
         "format=${rendererFailure?.rendererFormat?.sampleMimeType ?: "unknown"})",
     )
-    viewModel.showToast(fallbackKind.toastMessage)
-    // The engine handoff snapshots the current position and play/pause state before reloading.
+    // Recover without a blocking user-facing popup. The engine handoff snapshots position and
+    // play/pause state, and records an item-local override rather than changing the global engine.
     selectEngineForCurrentVideo(PlaybackEngineMode.MPV)
   }
 

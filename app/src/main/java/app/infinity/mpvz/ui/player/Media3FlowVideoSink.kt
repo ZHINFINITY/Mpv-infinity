@@ -142,11 +142,27 @@ class Media3FlowVideoSink(
   @Volatile private var interpolationEnabled = initialInterpolationEnabled
   private val quality = requestedQuality.coerceIn(0, 100)
   /** Apply runtime controls in GL order without blocking the UI thread. */
-  suspend fun applyRuntimeInterpolation(enabled: Boolean, requestedTargetFps: Int): Boolean =
+  suspend fun applyRuntimeInterpolation(
+    enabled: Boolean,
+    requestedTargetFps: Int,
+    requestedFormatEligible: Boolean,
+  ): Boolean =
     suspendCancellableCoroutine { continuation ->
       val posted = glHandler.post {
         if (!continuation.isActive) return@post
-        if (!NativeInterpolationRuntimePolicy.canMutateLiveSink(disposed, preflightAvailable, flowAvailable)) {
+        // HDR/Dolby Vision may not feed this sink while interpolation is off. If the requested
+        // state is format-eligible, accept it before first Flow initialization so the engine can
+        // reselect; do not retry a failed resource setup, but always allow disabling interpolation.
+        if (!NativeInterpolationRuntimePolicy.canApplyRuntimeConfiguration(
+            disposed = disposed,
+            preflightAvailable = preflightAvailable,
+            flowResourcesAttempted = flowResourcesAttempted,
+            flowAvailable = flowAvailable,
+            currentInterpolationEnabled = interpolationEnabled,
+            requestedInterpolationEnabled = enabled,
+            requestedFormatEligible = requestedFormatEligible,
+          )
+        ) {
           continuation.resume(false)
           return@post
         }
@@ -352,6 +368,7 @@ class Media3FlowVideoSink(
   private var outputHardwareBuffer: HardwareBuffer? = null
   private var outputImageHandle = 0L
   private var flowAvailable = false
+  private var flowResourcesAttempted = false
   @Volatile private var preflightAvailable = false
   @Volatile var preflightFailureReason: String? = null
     private set
@@ -2943,6 +2960,7 @@ class Media3FlowVideoSink(
   }
 
   private fun ensureProcessingResources(decoderWidth: Int, decoderHeight: Int) {
+    flowResourcesAttempted = true
     val frameSize = Media3FlowGeometry.processingFrameSize(decoderWidth, decoderHeight)
     val sourceWidth = frameSize.width
     val sourceHeight = frameSize.height

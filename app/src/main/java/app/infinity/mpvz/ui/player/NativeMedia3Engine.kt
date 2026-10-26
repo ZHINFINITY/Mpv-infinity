@@ -733,9 +733,12 @@ class NativeMedia3Engine(
   suspend fun applyInterpolationRuntime(enabled: Boolean, targetFps: Int): Boolean {
     val flowSink = media3FlowSink ?: return false
     val wasEnabled = flowSink.isInterpolationEnabled()
-    if (!flowSink.applyRuntimeInterpolation(enabled, targetFps)) return false
-    val isEnabled = flowSink.isInterpolationEnabled()
     val currentFormat = currentVideoFormat
+    val requestedFormatEligible = currentFormat?.let {
+      Media3FlowVideoSink.supportsFormat(it, enabled)
+    } ?: true
+    if (!flowSink.applyRuntimeInterpolation(enabled, targetFps, requestedFormatEligible)) return false
+    val isEnabled = flowSink.isInterpolationEnabled()
     val requiresNativePassthrough = currentFormat?.let {
       Media3FlowVideoSink.requiresNativeHdrPassthrough(it)
     } == true
