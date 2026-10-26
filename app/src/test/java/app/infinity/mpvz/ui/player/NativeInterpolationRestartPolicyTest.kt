@@ -109,7 +109,7 @@ class NativeInterpolationRestartPolicyTest {
     val activity = File(root, "app/src/main/java/app/infinity/mpvz/ui/player/PlayerActivity.kt").readText()
     val restart = activity.substringAfter("private fun requestNativeInterpolationRestart()")
       .substringBefore("private fun requestMpvInterpolationRestart()")
-    val handoff = activity.substringAfter("val outgoingEngine = activeEngineMode")
+    val handoff = activity.substringAfter("// Finish the one authorized reconfiguration before an unrelated engine handoff.")
       .substringBefore("// Freeze the outgoing renderer")
 
     assertTrue(restart.contains("pendingNativeInterpolationFallbackState = state"))
