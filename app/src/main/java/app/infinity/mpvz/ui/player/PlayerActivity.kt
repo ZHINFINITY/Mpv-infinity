@@ -1319,8 +1319,7 @@ class PlayerActivity :
   /**
    * Listener for audio focus changes.
    */
-  private val audioFocusChangeListener =
-    AudioManager.OnAudioFocusChangeListener { focusChange ->
+  private val audioFocusChangeHandler = AudioFocusChangeHandler { focusChange ->
       PlaybackActivityOwner.runIfOwner(playbackOwnerToken, Unit) {
         when (focusChange) {
           AudioManager.AUDIOFOCUS_LOSS -> {
@@ -1378,7 +1377,8 @@ class PlayerActivity :
           }
         }
       }
-    }
+  }
+  private val audioFocusChangeListener = WeakAudioFocusListener(audioFocusChangeHandler)
 
   private var preflightM3uParse: Pair<String, M3UParseResult.Success>? = null
   private var m3uPreflightJob: Job? = null
@@ -3852,8 +3852,7 @@ class PlayerActivity :
     setIntent(
       Intent(sourceIntent).apply {
         action = Intent.ACTION_VIEW
-        data = Uri.parse(currentItem.originalUri)
-        type = currentItem.mimeType?.takeIf(String::isNotBlank) ?: "audio/*"
+        AudioResumeLaunch.applyTo(this, currentItem.originalUri, currentItem.mimeType)
         putExtra("is_audio", true)
         putExtra("media_library_audio", true)
         putExtra("title", currentItem.title)
@@ -3954,8 +3953,7 @@ class PlayerActivity :
     val mediaIntent =
       Intent(sourceIntent).apply {
         action = Intent.ACTION_VIEW
-        data = Uri.parse(currentItem.originalUri)
-        type = currentItem.mimeType ?: sourceIntent.type
+        AudioResumeLaunch.applyTo(this, currentItem.originalUri, currentItem.mimeType, sourceIntent.type)
         putExtra("title", currentItem.title)
         putExtra("media_identifier", currentItem.stableId)
         putExtra("playlist_index", queueState.currentIndex)
@@ -7139,8 +7137,12 @@ class PlayerActivity :
         intent =
           Intent(intent).apply {
             action = Intent.ACTION_VIEW
-            data = Uri.parse(fallbackUri)
-            if (type.isNullOrBlank() && getBooleanExtra("is_audio", false)) type = "audio/*"
+            AudioResumeLaunch.applyTo(
+              this,
+              fallbackUri,
+              type,
+              fallbackMimeType = "audio/*".takeIf { getBooleanExtra("is_audio", false) },
+            )
           }
       }
     }

@@ -16,6 +16,8 @@ import androidx.compose.ui.layout.boundsInWindow
 import app.infinity.mpvz.ui.player.PlaybackSession
 import app.infinity.mpvz.ui.player.BrowserMusicSheetState
 import app.infinity.mpvz.ui.player.browserMusicSheetDrag
+import app.infinity.mpvz.ui.player.InAppMusicSheetState
+import app.infinity.mpvz.ui.player.inAppMusicSheetDrag
 
 import android.Manifest
 import android.content.pm.PackageManager
@@ -620,8 +622,10 @@ fun AudioPlayerControls(
   onOpenPanel: (Panels) -> Unit,
   modifier: Modifier = Modifier,
   onGlassPaletteChanged: (Int, Int) -> Unit = { _, _ -> },
-  inAppSheet: BrowserMusicSheetState? = null,
+  inAppSheet: Any? = null,
 ) {
+  val inAppMusicSheet = inAppSheet as? InAppMusicSheetState
+  val browserMusicSheet = inAppSheet as? BrowserMusicSheetState
   val speedConfigOwned = isMpvOptionOwnedByConfig("speed")
   val audioFiltersConfigOwned = isMpvOptionOwnedByConfig("af")
   val gesturePreferences = koinInject<GesturePreferences>()
@@ -1282,15 +1286,22 @@ fun AudioPlayerControls(
     )
   }
   val liveSheetDrag =
-    if (inAppSheet != null) {
+    when {
+      inAppMusicSheet != null ->
+        Modifier.inAppMusicSheetDrag(
+          state = inAppMusicSheet,
+          collapsing = true,
+          enabled = !isSheetOpen && !showInPlaceLyrics,
+        )
+      browserMusicSheet != null ->
       // Hosted in the browser sheet: the sheet itself slides with the finger, so this page
       // stays untransformed (no scale, so the artwork is never stretched).
       Modifier.browserMusicSheetDrag(
-        state = inAppSheet,
+        state = browserMusicSheet,
         fromMiniPlayer = false,
         enabled = !isSheetOpen && !showInPlaceLyrics,
       )
-    } else {
+      else ->
       Modifier.nestedScroll(nestedGestureController.nestedScrollConnection)
     }
   // The input root is never transformed (the page layer below is), so its bounds are stable
@@ -1477,7 +1488,8 @@ fun AudioPlayerControls(
   // stale window geometry, or translucency unavailable).
   // 0 = full player, 1 = mini player. Read only from draw-phase lambdas, never in composition.
   val currentMiniProgress: () -> Float = {
-    (if (inAppSheet != null) 1f - inAppSheet.progress
+    (if (inAppMusicSheet != null) 1f - inAppMusicSheet.expansion
+      else if (browserMusicSheet != null) 1f - browserMusicSheet.progress
       else if (settleTarget == null) miniGesture.progress
       else if (settleAnimation.isRunning) settleAnimation.value else settleStart).coerceIn(0f, 1f)
   }
@@ -1597,7 +1609,8 @@ fun AudioPlayerControls(
       Box(modifier = Modifier.fillMaxWidth()) {
         ReactiveIconButton(
           onClick = {
-            if (inAppSheet?.collapse() != true) {
+            val collapsedSheet = inAppMusicSheet?.collapse() ?: browserMusicSheet?.collapse()
+            if (collapsedSheet != true) {
               settleStart = (if (settleTarget == null) miniGesture.progress
                 else if (settleAnimation.isRunning) settleAnimation.value else settleStart).coerceIn(0f, 1f)
               settleProgrammatic = true
