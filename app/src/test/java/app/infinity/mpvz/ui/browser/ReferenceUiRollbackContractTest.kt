@@ -535,7 +535,9 @@ import android.graphics.Shader
       end++
     }
     // Build 1902: nav pill commits the lens frame before far page jumps and supports drag-to-select.
-    assertEquals("f13efde0a185e1150f1ddf2d8d38d4498069977eaaee3714d6547cc547484171", sha(navigation.substring(start, end)))
+    // Build 1943: the drag moved to the shared Initial-pass navPillDragGesture (1942's Main-pass
+    // slop detector never started on the phone); the pill's look is unchanged.
+    assertEquals("7dc7935735a0556c692a7ece4bd5235ec8a09cc96cf1375025313f95381a1e23", sha(navigation.substring(start, end)))
     val scene = read("app/src/main/java/app/infinity/mpvz/ui/theme/BrowserGlassScene.kt")
     val lensStart = scene.indexOf("internal const val BROWSER_LENS")
     val q = scene.indexOf("\"\"\"", lensStart)

@@ -28,10 +28,6 @@ import androidx.compose.animation.shrinkHorizontally
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.gestures.awaitEachGesture
-import androidx.compose.foundation.gestures.awaitFirstDown
-import androidx.compose.foundation.gestures.awaitHorizontalTouchSlopOrCancellation
-import androidx.compose.foundation.gestures.horizontalDrag
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
@@ -89,9 +85,6 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.nestedscroll.nestedScroll
-import androidx.compose.ui.input.pointer.PointerEventPass
-import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.input.pointer.util.VelocityTracker
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.selected
@@ -691,60 +684,20 @@ private fun ExpressivePillNavigationBar(
   // Read, not keyed: tab centres move while the hovered tab opens, and restarting the
   // pointerInput on every width change would cancel the drag mid-gesture.
   val latestTabCenters by rememberUpdatedState(tabCentersPx)
-  val dragModifier = Modifier.pointerInput(visibleTabs, isRtl, targetIndex) {
-    awaitEachGesture {
-      val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
-      val tabCentersPx = latestTabCenters
-      val startCenter = tabCentersPx.getOrNull(targetIndex.toInt()) ?: down.position.x
-      val tracker = VelocityTracker()
-      tracker.addPosition(down.uptimeMillis, down.position)
-      var totalDelta = 0f
-      var dragging = false
-      val slop = awaitHorizontalTouchSlopOrCancellation(down.id) { change, overSlop ->
-        if (NavPillDragPolicy.crossedTouchSlop(overSlop)) {
-          dragging = true
-          totalDelta += overSlop
-          change.consume()
-          val next = NavPillDragPolicy.positionAfterDrag(startCenter, totalDelta, tabCentersPx, isRtl)
-          dragPosition = next
-          val hovered = NavPillDragPolicy.hoveredTabIndex(next, visibleTabs.size)
-          if (hovered != hoveredTab) {
-            hoveredTab = hovered
-            haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-          }
-        }
-      }
-      if (slop == null || !dragging) {
-        dragPosition = null
-        return@awaitEachGesture
-      }
-      var completed = false
-      try {
-        completed = horizontalDrag(slop.id) { change ->
-          val delta = change.position.x - change.previousPosition.x
-          totalDelta += delta
-          tracker.addPosition(change.uptimeMillis, change.position)
-          val next = NavPillDragPolicy.positionAfterDrag(startCenter, totalDelta, tabCentersPx, isRtl)
-          dragPosition = next
-          val hovered = NavPillDragPolicy.hoveredTabIndex(next, visibleTabs.size)
-          if (hovered != hoveredTab) {
-            hoveredTab = hovered
-            haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-          }
-          change.consume()
-        }
-      } finally {
-        val velocity = runCatching { tracker.calculateVelocity().x }.getOrDefault(0f)
-        val releasePosition = dragPosition ?: targetIndex
-        val target = NavPillDragPolicy.flingSnappedIndex(
-          releasePosition, velocity, visibleTabs.size, isRtl,
-        )
-        dragPosition = null
-        hoveredTab = target
-        if (completed) visibleTabs.getOrNull(target)?.let(onTabSelected)
-      }
-    }
-  }
+  val pillScroll = rememberScrollState()
+  val dragModifier = Modifier.navPillDragGesture(
+    tabCount = visibleTabs.size,
+    selectedIndex = targetIndex.toInt(),
+    isRtl = isRtl,
+    tabCenters = { latestTabCenters },
+    scrollState = pillScroll,
+    onDragPosition = { dragPosition = it },
+    onHoverChanged = { index ->
+      if (index != hoveredTab && dragPosition != null) haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+      hoveredTab = index
+    },
+    onRelease = { target -> visibleTabs.getOrNull(target)?.let(onTabSelected) },
+  )
   val lensGeometry = with(density) {
     if (motionAllowed) NavigationGlassMotionPolicy.dragGeometry(
       lensBaseLeft.toPx(), lensBaseWidth.toPx(), visualFraction, direction, glassMotion,
@@ -766,7 +719,7 @@ private fun ExpressivePillNavigationBar(
         Modifier
             .wrapContentWidth()
             .then(dragModifier)
-            .horizontalScroll(rememberScrollState())
+            .horizontalScroll(pillScroll)
           .clipToBounds()
           .padding(horizontal = startPadding, vertical = 6.dp),
     ) {

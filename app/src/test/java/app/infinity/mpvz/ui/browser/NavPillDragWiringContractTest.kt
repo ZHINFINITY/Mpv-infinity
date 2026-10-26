@@ -12,14 +12,22 @@ class NavPillDragWiringContractTest {
 
   @Test
   fun navigationBarOwnsSlopAwareDragAndNavigatesOnRelease() {
-    val source =
-      File(root, "app/src/main/java/app/infinity/mpvz/ui/browser/MainScreen.kt").readText()
-    assertTrue(source.contains("awaitEachGesture"))
-    assertTrue(source.contains("pass = PointerEventPass.Initial"))
-    assertTrue(source.contains("awaitHorizontalTouchSlopOrCancellation"))
-    assertTrue(source.contains("NavPillDragPolicy.positionAfterDrag"))
-    assertTrue(source.contains("NavPillDragPolicy.flingSnappedIndex"))
-    assertTrue(source.contains("visibleTabs.getOrNull(target)?.let(onTabSelected)"))
+    val main = File(root, "app/src/main/java/app/infinity/mpvz/ui/browser/MainScreen.kt").readText()
+    val gesture = File(root, "app/src/main/java/app/infinity/mpvz/ui/browser/NavPillDragGesture.kt").readText()
+    // The pill wires the shared gesture outside its own horizontalScroll (outer = Initial first).
+    val drag = main.indexOf(".then(dragModifier)")
+    val scroll = main.indexOf(".horizontalScroll(pillScroll)")
+    assertTrue(main.contains("Modifier.navPillDragGesture("))
+    assertTrue(drag in 0 until scroll)
+    assertTrue(main.contains("onRelease = { target -> visibleTabs.getOrNull(target)?.let(onTabSelected) }"))
+    // Build 1942 regression: slop on the Main pass lost the gesture to the inner scrollable.
+    assertTrue(!gesture.contains("awaitHorizontalTouchSlopOrCancellation"))
+    assertTrue(!gesture.contains("horizontalDrag("))
+    assertTrue(gesture.contains("awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)"))
+    assertTrue(Regex("awaitPointerEvent\\(PointerEventPass\\.Initial\\)").findAll(gesture).count() == 2)
+    assertTrue(!Regex("awaitPointerEvent\\(\\)").containsMatchIn(gesture))
+    assertTrue(gesture.contains("NavPillDragPolicy.positionAfterDrag"))
+    assertTrue(gesture.contains("NavPillDragPolicy.flingSnappedIndex"))
   }
 
   @Test
@@ -30,7 +38,9 @@ class NavPillDragWiringContractTest {
     assertTrue(source.contains("val layoutPosition = dragPosition ?: position"))
     assertTrue(source.contains("remember(layoutPosition, visibleTabs)"))
     // Tab centres change while tabs widen; keying pointerInput on them would cancel the drag.
-    assertTrue(source.contains("Modifier.pointerInput(visibleTabs, isRtl, targetIndex)"))
+    val gesture = File(root, "app/src/main/java/app/infinity/mpvz/ui/browser/NavPillDragGesture.kt").readText()
+    assertTrue(gesture.contains("pointerInput(tabCount, selectedIndex, isRtl)"))
+    assertTrue(source.contains("tabCenters = { latestTabCenters }"))
     assertTrue(source.contains("rememberUpdatedState(tabCentersPx)"))
     assertTrue(!source.contains("pointerInput(visibleTabs, tabCentersPx"))
   }

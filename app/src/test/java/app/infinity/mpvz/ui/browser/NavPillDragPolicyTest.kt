@@ -51,4 +51,23 @@ class NavPillDragPolicyTest {
     assertEquals(0, NavPillDragPolicy.flingSnappedIndex(1f, 1200f, 4, isRtl = true))
     assertEquals(1, NavPillDragPolicy.flingSnappedIndex(1f, 100f, 4))
   }
+
+  @Test
+  fun slopIsDecidedOnceFromTotalTravelAndVerticalMovesAreReleased() {
+    val slop = 24f
+    assertEquals(NavPillDragPolicy.SlopDecision.Undecided, NavPillDragPolicy.classifySlop(10f, 4f, slop))
+    // 1942 needed the overshoot past the slop to exceed the slop again; one slop is enough now.
+    assertEquals(NavPillDragPolicy.SlopDecision.Horizontal, NavPillDragPolicy.classifySlop(25f, 3f, slop))
+    assertEquals(NavPillDragPolicy.SlopDecision.Vertical, NavPillDragPolicy.classifySlop(20f, 30f, slop))
+    assertEquals(NavPillDragPolicy.SlopDecision.Vertical, NavPillDragPolicy.classifySlop(30f, 30f, slop))
+    assertEquals(NavPillDragPolicy.SlopDecision.Vertical, NavPillDragPolicy.classifySlop(Float.NaN, 0f, slop))
+  }
+
+  @Test
+  fun overflowingPillScrollsToKeepTheLensVisible() {
+    assertEquals(0f, NavPillDragPolicy.autoScrollDelta(lensCenter = 150f, scroll = 0f, viewport = 300f), 0f)
+    assertEquals(36f, NavPillDragPolicy.autoScrollDelta(lensCenter = 280f, scroll = 0f, viewport = 300f), 0.001f)
+    assertEquals(-26f, NavPillDragPolicy.autoScrollDelta(lensCenter = 130f, scroll = 100f, viewport = 300f), 0.001f)
+    assertEquals(0f, NavPillDragPolicy.autoScrollDelta(lensCenter = 130f, scroll = 100f, viewport = 0f), 0f)
+  }
 }

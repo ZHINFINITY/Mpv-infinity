@@ -66,5 +66,35 @@ internal object NavPillDragPolicy {
 
   fun crossedTouchSlop(distance: Float): Boolean = distance.isFinite() && abs(distance) >= TouchSlopPx
 
+  enum class SlopDecision { Undecided, Horizontal, Vertical }
+
+  /**
+   * Decides a pill gesture from the finger's absolute travel since touch-down. Horizontal wins
+   * only when it crossed the slop and dominates the vertical travel; a mostly vertical move is
+   * handed back untouched (scrolling the page, pulling the system back gesture, etc.).
+   */
+  fun classifySlop(absDx: Float, absDy: Float, slopPx: Float): SlopDecision {
+    if (!absDx.isFinite() || !absDy.isFinite()) return SlopDecision.Vertical
+    val slop = slopPx.coerceAtLeast(1f)
+    return when {
+      absDx >= slop && absDx > absDy -> SlopDecision.Horizontal
+      absDy >= slop -> SlopDecision.Vertical
+      else -> SlopDecision.Undecided
+    }
+  }
+
+  /** Scroll needed so a lens centre at [lensCenter] stays [marginPx] inside the viewport. */
+  fun autoScrollDelta(lensCenter: Float, scroll: Float, viewport: Float, marginPx: Float = 56f): Float {
+    if (viewport <= 0f || !lensCenter.isFinite()) return 0f
+    val margin = marginPx.coerceAtMost(viewport / 2f)
+    val left = scroll + margin
+    val right = scroll + viewport - margin
+    return when {
+      lensCenter > right -> lensCenter - right
+      lensCenter < left -> lensCenter - left
+      else -> 0f
+    }
+  }
+
   private fun Float.roundToInt(): Int = kotlin.math.round(this).toInt()
 }
