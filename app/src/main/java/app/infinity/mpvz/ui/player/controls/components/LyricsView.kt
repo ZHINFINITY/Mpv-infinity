@@ -6,21 +6,18 @@
 
 package app.infinity.mpvz.ui.player.controls.components
 
+import app.infinity.mpvz.ui.components.GlassChip
+
 import app.infinity.mpvz.ui.player.PlaybackSession
 
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.expandHorizontally
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.shrinkHorizontally
-import androidx.compose.animation.slideInHorizontally
-import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
@@ -43,7 +40,7 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.FilterChip
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -59,7 +56,6 @@ import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.withFrameNanos
 import kotlin.math.max
 import app.infinity.mpvz.preferences.preference.collectAsState
@@ -98,7 +94,7 @@ import app.infinity.mpvz.ui.player.controls.components.sheets.LyricsTranslateDia
 import app.infinity.mpvz.ui.theme.fontFamilyForText
 import org.koin.compose.koinInject
 
-@OptIn(ExperimentalLayoutApi::class)
+@OptIn(ExperimentalLayoutApi::class, ExperimentalMaterial3Api::class)
 @Composable
 fun LyricsView(
   viewModel: PlayerViewModel,
@@ -115,6 +111,8 @@ fun LyricsView(
   val density = LocalDensity.current
   var lyricsViewportPx by remember { mutableIntStateOf(0) }
   var showTranslateDialog by remember { mutableStateOf(false) }
+  // Lyrics delay is edited in place below the lyrics; a modal glass sheet rendered empty here.
+  var isSyncExpanded by remember { mutableStateOf(false) }
 
   val currentPosMs = remember(precisePosition, state.syncOffsetMs) {
     (precisePosition * 1000).toLong() + state.syncOffsetMs
@@ -190,7 +188,7 @@ fun LyricsView(
           horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
           verticalAlignment = Alignment.CenterVertically,
         ) {
-          FilterChip(
+          GlassChip(
             selected = state.selectedSource == LyricsSourceType.EMBEDDED || state.selectedSource == LyricsSourceType.LOCAL,
             onClick = { viewModel.switchLyricsSource(LyricsSourceType.EMBEDDED) },
             label = {
@@ -205,7 +203,7 @@ fun LyricsView(
             ),
           )
 
-          FilterChip(
+          GlassChip(
             selected = state.selectedSource == LyricsSourceType.ONLINE,
             onClick = { viewModel.switchLyricsSource(LyricsSourceType.ONLINE) },
             label = {
@@ -483,15 +481,14 @@ fun LyricsView(
         )
       }
 
-      // mpvRx in-place delay bar. A transparent glass popup drew an empty top sheet.
+      // Bottom Bar: Translate Button & Sync Timing Adjustments (Only visible when synced lyrics are present)
       AnimatedVisibility(visible = state.lyrics?.synced?.isNotEmpty() == true) {
-        var isSyncExpanded by rememberSaveable { mutableStateOf(false) }
-        Row(
+        Column(
           modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 6.dp),
-          verticalAlignment = Alignment.CenterVertically,
+            .padding(top = 10.dp, bottom = 4.dp),
         ) {
+          // Medium size Translate button (Square with rounded corners)
           Surface(
             onClick = { showTranslateDialog = true },
             shape = RoundedCornerShape(12.dp),
@@ -515,101 +512,34 @@ fun LyricsView(
               }
             }
           }
-          Spacer(modifier = Modifier.width(8.dp))
-          Box(
-            modifier = Modifier
-              .weight(1f)
-              .height(40.dp),
-            contentAlignment = Alignment.CenterEnd,
+
+          Spacer(modifier = Modifier.height(8.dp))
+
+          Surface(
+            onClick = { isSyncExpanded = !isSyncExpanded },
+            shape = RoundedCornerShape(12.dp),
+            color = if (isSyncExpanded || state.syncOffsetMs != 0) MaterialTheme.colorScheme.primaryContainer
+              else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.75f),
+            modifier = Modifier.size(40.dp),
           ) {
-            androidx.compose.animation.AnimatedVisibility(
-              visible = isSyncExpanded,
-              enter = fadeIn(animationSpec = tween(220)) +
-                slideInHorizontally(initialOffsetX = { it }, animationSpec = spring(dampingRatio = 0.85f, stiffness = 350f)) +
-                expandHorizontally(expandFrom = Alignment.End, animationSpec = spring(dampingRatio = 0.85f, stiffness = 350f)),
-              exit = fadeOut(animationSpec = tween(180)) +
-                slideOutHorizontally(targetOffsetX = { it }, animationSpec = tween(180)) +
-                shrinkHorizontally(shrinkTowards = Alignment.End, animationSpec = tween(180)),
-            ) {
-              Surface(
-                shape = RoundedCornerShape(12.dp),
-                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.65f),
-                modifier = Modifier
-                  .fillMaxWidth()
-                  .height(40.dp),
-              ) {
-                Row(
-                  modifier = Modifier
-                    .fillMaxSize()
-                    .padding(horizontal = 4.dp),
-                  verticalAlignment = Alignment.CenterVertically,
-                ) {
-                  SyncOffsetButton(
-                    label = "-0.5s",
-                    modifier = Modifier.weight(1f),
-                    onClick = { viewModel.adjustLyricsSyncOffset(-500) },
-                  )
-                  SyncOffsetButton(
-                    label = "-0.1s",
-                    modifier = Modifier.weight(1f),
-                    onClick = { viewModel.adjustLyricsSyncOffset(-100) },
-                  )
-                  SyncOffsetButton(
-                    label = "${if (state.syncOffsetMs >= 0) "+" else ""}${state.syncOffsetMs / 1000f}s",
-                    modifier = Modifier.weight(1.2f),
-                    emphasized = true,
-                    onClick = { viewModel.resetLyricsSyncOffset() },
-                  )
-                  SyncOffsetButton(
-                    label = "+0.1s",
-                    modifier = Modifier.weight(1f),
-                    onClick = { viewModel.adjustLyricsSyncOffset(100) },
-                  )
-                  SyncOffsetButton(
-                    label = "+0.5s",
-                    modifier = Modifier.weight(1f),
-                    onClick = { viewModel.adjustLyricsSyncOffset(500) },
-                  )
-                  Box(
-                    modifier = Modifier
-                      .clip(RoundedCornerShape(8.dp))
-                      .clickable { isSyncExpanded = false }
-                      .padding(horizontal = 6.dp, vertical = 6.dp),
-                    contentAlignment = Alignment.Center,
-                  ) {
-                    Icon(
-                      imageVector = Icons.RoundedFilled.Close,
-                      contentDescription = stringResource(R.string.ui_close),
-                      tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                      modifier = Modifier.size(16.dp),
-                    )
-                  }
-                }
-              }
+            Box(contentAlignment = Alignment.Center) {
+              Icon(
+                imageVector = Icons.RoundedFilled.Tune,
+                contentDescription = "Lyrics delay",
+                tint = if (isSyncExpanded || state.syncOffsetMs != 0) MaterialTheme.colorScheme.primary
+                  else MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(22.dp),
+              )
             }
-            androidx.compose.animation.AnimatedVisibility(
-              visible = !isSyncExpanded,
-              enter = fadeIn(animationSpec = tween(220)) +
-                expandHorizontally(expandFrom = Alignment.End, animationSpec = spring(dampingRatio = 0.85f, stiffness = 350f)),
-              exit = fadeOut(animationSpec = tween(180)) +
-                shrinkHorizontally(shrinkTowards = Alignment.End, animationSpec = tween(180)),
-            ) {
-              Surface(
-                onClick = { isSyncExpanded = true },
-                shape = RoundedCornerShape(12.dp),
-                color = if (state.syncOffsetMs != 0) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant,
-                modifier = Modifier.size(40.dp),
-              ) {
-                Box(contentAlignment = Alignment.Center) {
-                  Icon(
-                    imageVector = Icons.RoundedFilled.Timer,
-                    contentDescription = "Lyrics delay",
-                    tint = if (state.syncOffsetMs != 0) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.size(22.dp),
-                  )
-                }
-              }
-            }
+          }
+
+          AnimatedVisibility(visible = isSyncExpanded) {
+            LyricsDelayPill(
+              offsetMs = state.syncOffsetMs,
+              onAdjust = viewModel::adjustLyricsSyncOffset,
+              onReset = viewModel::resetLyricsSyncOffset,
+              modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+            )
           }
         }
       }
@@ -621,6 +551,31 @@ fun LyricsView(
       viewModel = viewModel,
       onDismiss = { showTranslateDialog = false },
     )
+  }
+
+}
+
+// In-place delay pill: -0.5 s, -0.1 s, current offset (tap to reset), +0.1 s, +0.5 s.
+@Composable
+private fun LyricsDelayPill(
+  offsetMs: Int,
+  onAdjust: (Int) -> Unit,
+  onReset: () -> Unit,
+  modifier: Modifier = Modifier,
+) {
+  val current = "${if (offsetMs >= 0) "+" else ""}${offsetMs / 1000f}s"
+  Row(
+    modifier = modifier
+      .clip(RoundedCornerShape(12.dp))
+      .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.75f))
+      .padding(horizontal = 4.dp),
+    verticalAlignment = Alignment.CenterVertically,
+  ) {
+    SyncOffsetButton(label = "-0.5s", modifier = Modifier.weight(1f)) { onAdjust(-500) }
+    SyncOffsetButton(label = "-0.1s", modifier = Modifier.weight(1f)) { onAdjust(-100) }
+    SyncOffsetButton(label = current, modifier = Modifier.weight(1.2f), emphasized = true, onClick = onReset)
+    SyncOffsetButton(label = "+0.1s", modifier = Modifier.weight(1f)) { onAdjust(100) }
+    SyncOffsetButton(label = "+0.5s", modifier = Modifier.weight(1f)) { onAdjust(500) }
   }
 }
 

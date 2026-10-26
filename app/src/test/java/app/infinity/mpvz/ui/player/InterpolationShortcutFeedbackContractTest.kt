@@ -11,14 +11,21 @@ class InterpolationShortcutFeedbackContractTest {
   private fun source(path: String) = File(root, "app/src/main/java/app/infinity/mpvz/$path").readText()
   private val activity get() = source("ui/player/PlayerActivity.kt")
 
-  @Test fun nativeShortcutStillRunsAcknowledgedLiveApplyWithoutRoutinePopup() {
+  @Test fun nativeShortcutUsesControlledReloadWithoutRoutinePopup() {
     val callback = activity.substringAfter("fun applyInterpolationPreferencesFromControls()")
-      .substringBefore("private fun requestMpvInterpolationRestart")
-    assertTrue(callback.contains("backend.applyInterpolationRuntime(enabled = enabled, targetFps = targetFps)"))
+      .substringBefore("private fun requestNativeInterpolationRestart")
+    assertTrue(callback.contains("requestNativeInterpolationRestart()"))
     assertTrue(callback.contains("requestMpvInterpolationRestart()"))
-    assertTrue(callback.contains("native_flow_sink_unavailable"))
     assertFalse(callback.contains("Toast.makeText"))
     assertFalse(callback.contains("showSnackbar"))
+
+    val restart = activity.substringAfter("private fun requestNativeInterpolationRestart")
+      .substringBefore("private fun requestMpvInterpolationRestart")
+    assertTrue(restart.contains("NativeInterpolationRestartPolicy.capture"))
+    assertTrue(restart.contains("backend.restartCurrentItemForInterpolation"))
+    assertTrue(restart.contains("pendingNativeInterpolationFallbackState = state"))
+    assertFalse(restart.contains("Toast.makeText"))
+    assertFalse(restart.contains("showSnackbar"))
   }
   @Test fun mpvShortcutStillReopensAndRestoresWithoutProgressOrSuccessPopup() {
     val restart = activity.substringAfter("private fun requestMpvInterpolationRestart")

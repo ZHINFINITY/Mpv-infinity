@@ -251,6 +251,7 @@ private fun PlayerControlPanel(
     },
     tonalElevation = 2.dp,
     shadowElevation = 10.dp,
+    attachToScreenEdges = true,
     border = BorderStroke(
       1.dp,
       if (liquidGlassSurfaces || playerControlsTheme.name != "Classic") {

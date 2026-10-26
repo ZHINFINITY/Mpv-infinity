@@ -53,9 +53,12 @@ class ActualMiniPlayerGlassContracts(unittest.TestCase):
         self.assertIn("float2 outer = max(q, 0.0)", SCENE)
 
     def test_actual_mini_player_has_palette_glass_vertical_expand_and_real_callbacks(self):
-        for token in ("settingsGlassSurface", "settingsGlassContainerColor",
-                      "tonalElevation = if (glassEnabled) 0.dp", "detectVerticalDragGestures",
-                      "verticalDrag < -expandThresholdPx", "remember(context, isAudioOnlyItem)",
+        # Build 1944: the owner asked for nav-pill Liquid Glass on the mini player, so it uses the
+        # shared BrowserGlassSurface (global glass settings + device fallback) with a flat fill when off.
+        for token in ("BrowserGlassSurface(", "enabled = glassEnabled",
+                      "if (!glassEnabled) Modifier.background(", "detectVerticalDragGestures",
+                      "verticalDrag < -expandThresholdPx", "remember(context, isAudioOnlyItem, useInAppSheet, musicSheet)",
+                      "musicSheet.expand()", "Modifier.browserMusicSheetDrag(", "fromMiniPlayer = true",
                       "ACTION_NOTIFICATION_STOP", "MiniPlayerTransitionAnchor.publish",
                       "miniPlayerScreenBounds(hostView)", "hostView.width.toFloat()", "if (isAudioOnlyItem)"):
             self.assertIn(token, MINI)

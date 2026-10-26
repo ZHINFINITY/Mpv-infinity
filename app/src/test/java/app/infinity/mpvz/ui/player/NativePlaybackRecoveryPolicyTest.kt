@@ -32,14 +32,26 @@ class NativePlaybackRecoveryPolicyTest {
     )
 
     assertEquals(NativePlaybackFallbackKind.AUDIO_DECODER, kind)
+  }
+
+  @Test
+  fun phoneReportedMain10HevcDecoderInitializationFailureFallsBackAsVideo() {
     assertEquals(
-      "Native could not decode the selected audio track; switching to MPV.",
-      kind?.toastMessage,
+      NativePlaybackFallbackKind.VIDEO_DECODER,
+      NativePlaybackRecoveryPolicy.fallbackKind(
+        errorCodeName = "ERROR_CODE_DECODER_INIT_FAILED",
+        causeClassNames = listOf(
+          "androidx.media3.exoplayer.mediacodec.MediaCodecRenderer.DecoderInitializationException",
+          "java.lang.IllegalArgumentException",
+        ),
+        rendererName = "MediaCodecVideoRenderer",
+        rendererMimeType = "video/hevc",
+      ),
     )
   }
 
   @Test
-  fun videoRendererFailureKeepsVideoSpecificFallbackMessage() {
+  fun videoRendererFailureIsClassifiedAsVideo() {
     assertEquals(
       NativePlaybackFallbackKind.VIDEO_DECODER,
       NativePlaybackRecoveryPolicy.fallbackKind(

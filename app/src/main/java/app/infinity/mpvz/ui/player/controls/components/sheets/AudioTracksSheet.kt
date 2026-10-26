@@ -7,6 +7,8 @@
 
 package app.infinity.mpvz.ui.player.controls.components.sheets
 
+import app.infinity.mpvz.ui.components.GlassChip
+
 import app.infinity.mpvz.ui.player.PlaybackSession
 
 import androidx.compose.foundation.clickable
@@ -20,7 +22,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -120,7 +121,7 @@ fun AudioTracksSheet(
               horizontalArrangement = Arrangement.spacedBy(MaterialTheme.spacing.smaller),
             ) {
               items(AudioChannels.entries, key = { it.name }) {
-                FilterChip(
+                GlassChip(
                   selected = audioChannels == it,
                   enabled = if (it == AudioChannels.ReverseStereo) reverseStereoEnabled else audioChannelsEnabled,
                   onClick = {
@@ -151,7 +152,7 @@ fun AudioTracksSheet(
               horizontalArrangement = Arrangement.spacedBy(MaterialTheme.spacing.smaller),
             ) {
               item {
-                FilterChip(
+                GlassChip(
                   selected = volumeNormalization,
                   enabled = audioEffectsEnabled,
                   onClick = { audioPreferences.volumeNormalization.set(!volumeNormalization) },
@@ -160,7 +161,7 @@ fun AudioTracksSheet(
                 )
               }
               item {
-                FilterChip(
+                GlassChip(
                   selected = drcEnabled,
                   enabled = audioEffectsEnabled,
                   onClick = { audioPreferences.drcEnabled.set(!drcEnabled) },

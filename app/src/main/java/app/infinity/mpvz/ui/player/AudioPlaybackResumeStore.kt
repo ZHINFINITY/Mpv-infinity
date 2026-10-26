@@ -20,6 +20,12 @@ internal data class AudioPlaybackResumeSnapshot(
   val queueState: PlaybackQueueState,
   val positionSeconds: Double,
   val paused: Boolean,
+  /**
+   * The user closed the session (mini player X, notification close or swipe). The snapshot is
+   * kept for a later process-recreation restore, but the library does not offer it as a resume card:
+   * offering it right after X looked like a second mini player for the song just closed.
+   */
+  val closedByUser: Boolean = false,
 ) {
   val currentItem: PlaybackItem?
     get() = queueState.currentItem
@@ -36,7 +42,12 @@ internal object AudioPlaybackResumeStore {
   private const val PREFS_NAME = "audio_playback_resume"
   private const val SNAPSHOT_KEY = "snapshot_v1"
   private const val SNAPSHOT_VERSION = 1
-  private const val MAX_PERSISTED_QUEUE_ITEMS = 100
+  /**
+   * Upper bound on persisted queue items. A library "play song" queues the whole library, which used
+   * to exceed the old limit of 100 and fall back to saving only the current song, so a resumed
+   * session "did not know the library". Larger queues now keep a window around the current song.
+   */
+  internal const val MAX_PERSISTED_QUEUE_ITEMS = 500
 
   @Volatile private var cachedPreferences: SharedPreferences? = null
 
@@ -45,6 +56,7 @@ internal object AudioPlaybackResumeStore {
     queueState: PlaybackQueueState,
     positionSeconds: Double,
     paused: Boolean,
+    closedByUser: Boolean = false,
   ): Boolean {
     val currentItem = queueState.currentItem ?: return false
     if (!currentItem.isDefinitelyAudioOnly() ||
@@ -56,16 +68,18 @@ internal object AudioPlaybackResumeStore {
       return false
     }
 
+    val (windowStart, windowEnd) =
+      queueWindow(queueState.items.size, queueState.currentIndex, MAX_PERSISTED_QUEUE_ITEMS)
+    val windowItems = queueState.items.subList(windowStart, windowEnd)
     val canSaveQueue =
-      queueState.items.size <= MAX_PERSISTED_QUEUE_ITEMS &&
-        queueState.items.all { item ->
-          item.isDefinitelyAudioOnly() &&
-            item.audiobook == null &&
-            item.torrentFileIndex == null &&
-            !item.requiresTorrentResolution()
-        }
-    val savedItems = if (canSaveQueue) queueState.items else listOf(currentItem)
-    val savedIndex = if (canSaveQueue) queueState.currentIndex else 0
+      windowItems.all { item ->
+        item.isDefinitelyAudioOnly() &&
+          item.audiobook == null &&
+          item.torrentFileIndex == null &&
+          !item.requiresTorrentResolution()
+      }
+    val savedItems = if (canSaveQueue) windowItems else listOf(currentItem)
+    val savedIndex = if (canSaveQueue) queueState.currentIndex - windowStart else 0
     val savedQueue =
       queueState.copy(
         items = savedItems,
@@ -79,6 +93,7 @@ internal object AudioPlaybackResumeStore {
         queueState = savedQueue,
         positionSeconds = positionSeconds.takeIf { it.isFinite() && it >= 0.0 } ?: 0.0,
         paused = paused,
+        closedByUser = closedByUser,
       )
 
     val preferences = preferences(context) ?: return false
@@ -111,6 +126,16 @@ internal object AudioPlaybackResumeStore {
     return validSnapshot
   }
 
+  /**
+   * Half-open [start, end) range of at most [max] queue items that contains [currentIndex]. The
+   * current song sits a quarter into the window, so "next" has more room than "previous".
+   */
+  internal fun queueWindow(size: Int, currentIndex: Int, max: Int): Pair<Int, Int> {
+    if (size <= max) return 0 to size
+    val start = (currentIndex - max / 4).coerceIn(0, size - max)
+    return start to start + max
+  }
+
   fun clear(context: Context) {
     runCatching { preferences(context)?.edit()?.remove(SNAPSHOT_KEY)?.commit() }
       .onFailure { error -> Log.e(TAG, "Unable to clear the audio playback snapshot", error) }
@@ -140,6 +165,7 @@ internal object AudioPlaybackResumeStore {
       put("version", SNAPSHOT_VERSION)
       put("positionSeconds", snapshot.positionSeconds)
       put("paused", snapshot.paused)
+      put("closedByUser", snapshot.closedByUser)
       put("currentIndex", snapshot.queueState.currentIndex)
       put("explicitQueue", snapshot.queueState.isExplicitQueue)
       put("m3u", snapshot.queueState.isM3u)
@@ -180,6 +206,7 @@ internal object AudioPlaybackResumeStore {
         ),
       positionSeconds = root.optDouble("positionSeconds", 0.0).takeIf { it.isFinite() && it >= 0.0 } ?: 0.0,
       paused = root.optBoolean("paused", true),
+      closedByUser = root.optBoolean("closedByUser", false),
     )
   }
 

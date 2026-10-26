@@ -13,11 +13,13 @@ internal data class Media3FlowDebugSettings(
 )
 
 internal object Media3FlowDebugSettingsPolicy {
+  /** These user-facing synthesis controls are available in stable builds too. */
+  @Suppress("UNUSED_PARAMETER")
   fun controlsVisible(
     debugBuild: Boolean,
     mpvFlowRuntimeAvailable: Boolean,
     nativeMedia3FlowAvailable: Boolean,
-  ): Boolean = debugBuild && (mpvFlowRuntimeAvailable || nativeMedia3FlowAvailable)
+  ): Boolean = mpvFlowRuntimeAvailable || nativeMedia3FlowAvailable
 
   fun controlEnabled(
     mpvFlowAvailable: Boolean,
@@ -25,18 +27,30 @@ internal object Media3FlowDebugSettingsPolicy {
     currentValue: Boolean,
   ): Boolean = mpvFlowAvailable || nativeMedia3FlowAvailable || currentValue
 
+  /** Debug-only instrumentation remains gated separately; these settings are runtime features. */
+  @Suppress("UNUSED_PARAMETER")
   fun effective(
     debugBuild: Boolean,
     requestedVisibilityResolver: Boolean,
     requestedSoftBlend: Boolean,
   ): Media3FlowDebugSettings {
-    val softBlendEnabled = debugBuild && requestedSoftBlend
+    val softBlendEnabled = requestedSoftBlend
     // The shared synthesis pipeline only runs the resolver post-pass when soft blend is off.
     // Prefer the requested soft blend when both saved preferences happen to be enabled.
-    val visibilityResolverEnabled = debugBuild && requestedVisibilityResolver && !softBlendEnabled
+    val visibilityResolverEnabled = requestedVisibilityResolver && !softBlendEnabled
     return Media3FlowDebugSettings(
       visibilityResolverEnabled = visibilityResolverEnabled,
       softBlendEnabled = softBlendEnabled,
     )
   }
+
+  /** MPVFlow runtime options are user-facing features, not diagnostics restricted to debug builds. */
+  @Suppress("UNUSED_PARAMETER")
+  fun mpvFlowFeatureEnabled(
+    debugBuild: Boolean,
+    requested: Boolean,
+    interpolationActive: Boolean,
+    vulkanBackend: Boolean,
+    mpvConfOwnsOption: Boolean,
+  ): Boolean = requested && interpolationActive && vulkanBackend && !mpvConfOwnsOption
 }

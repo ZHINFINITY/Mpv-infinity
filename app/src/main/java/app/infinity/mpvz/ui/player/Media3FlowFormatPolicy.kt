@@ -7,9 +7,9 @@ import androidx.media3.common.MimeTypes
 /** Eligibility and color-normalization policy for the Media3 Flow SDR interpolation path. */
 internal object Media3FlowFormatPolicy {
   /**
-   * Whether the decoder must normalize its output to the BT.709 SDR video transfer curve before
-   * Media3Flow stores pixels in RGBA8. The request is made only through the decoder's documented
-   * color-transfer request; a later output-format check rejects a request the codec ignored.
+   * Whether a format that reaches the Flow path would need decoder normalization to the BT.709
+   * SDR video transfer curve before storage in RGBA8. HDR/Dolby Vision and ambiguous high-bit-depth
+   * formats bypass Flow while interpolation is off; when on, they may use verified SDR conversion.
    */
   fun requiresSdrOutputRequest(
     mimeType: String,
@@ -35,8 +35,39 @@ internal object Media3FlowFormatPolicy {
   }
 
   /**
-   * The Flow renderer may be selected only when the source is already SDR/default SDR, or the
-   * platform supports the decoder-side SDR request. DRM and non-video routing remain caller gates.
+   * True when the source must retain the platform decoder/display color path while interpolation
+   * is off, instead of being normalized and copied through Flow's SDR RGBA8 capture surface.
+   */
+  fun requiresNativeHdrPassthrough(
+    mimeType: String,
+    codecs: String,
+    colorSpace: Int,
+    colorTransfer: Int,
+    lumaBitdepth: Int,
+    chromaBitdepth: Int,
+    hasHdrStaticInfo: Boolean,
+  ): Boolean {
+    if (isDolbyVision(mimeType, codecs) || hasHdrStaticInfo) return true
+    if (colorTransfer == C.COLOR_TRANSFER_ST2084 || colorTransfer == C.COLOR_TRANSFER_HLG) return true
+
+    // Missing/unspecified transfer metadata cannot safely distinguish HDR from SDR on a
+    // high-bit-depth or BT.2020 stream, so leave the original metadata with Media3's normal path.
+    val transferUnknown = colorTransfer == Format.NO_VALUE || colorTransfer == 0
+    return transferUnknown &&
+      (colorSpace == C.COLOR_SPACE_BT2020 ||
+        lumaBitdepth > 8 || chromaBitdepth > 8 || codecSignalsHighBitDepth(codecs))
+  }
+
+  fun shouldReevaluateNativeRenderer(
+    previousInterpolationEnabled: Boolean,
+    interpolationEnabled: Boolean,
+    requiresNativeHdrPassthrough: Boolean,
+  ): Boolean = previousInterpolationEnabled != interpolationEnabled && requiresNativeHdrPassthrough
+
+  /**
+   * When interpolation is off, HDR/Dolby Vision and ambiguous high-bit-depth formats retain the
+   * platform's native output path. When on, those formats may use verified decoder-side SDR
+   * conversion for Flow. DRM and non-video routing remain caller gates.
    */
   fun supportsSdrInterpolation(
     mimeType: String,
@@ -49,7 +80,21 @@ internal object Media3FlowFormatPolicy {
     hasHdrStaticInfo: Boolean,
     isEquivalentToAssumedSdrDefault: Boolean,
     decoderSdrRequestAvailable: Boolean,
+    interpolationEnabled: Boolean = true,
   ): Boolean {
+    if (
+      !interpolationEnabled &&
+      requiresNativeHdrPassthrough(
+        mimeType = mimeType,
+        codecs = codecs,
+        colorSpace = colorSpace,
+        colorTransfer = colorTransfer,
+        lumaBitdepth = lumaBitdepth,
+        chromaBitdepth = chromaBitdepth,
+        hasHdrStaticInfo = hasHdrStaticInfo,
+      )
+    ) return false
+
     val requiresRequest = requiresSdrOutputRequest(
       mimeType = mimeType,
       codecs = codecs,
@@ -82,7 +127,11 @@ internal object Media3FlowFormatPolicy {
     val mime = mimeType.lowercase()
     val codec = codecs.lowercase().substringBefore(',').trim()
     return mime == MimeTypes.VIDEO_DOLBY_VISION ||
-      codec.startsWith("dvhe") || codec.startsWith("dvh1")
+      codec.startsWith("dvhe") ||
+      codec.startsWith("dvh1") ||
+      codec.startsWith("dva1") ||
+      codec.startsWith("dvav") ||
+      codec.startsWith("dav1")
   }
 
   private fun codecSignalsHighBitDepth(codecs: String): Boolean {

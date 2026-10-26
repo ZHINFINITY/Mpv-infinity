@@ -17,22 +17,25 @@ class Media3FlowFormatPolicyTest {
       MimeTypes.VIDEO_VP9,
       MimeTypes.VIDEO_AV1,
     ).forEach { mimeType ->
-      assertTrue(
-        "$mimeType SDR should be eligible",
-        supports(
-          mimeType = mimeType,
-          colorSpace = C.COLOR_SPACE_BT709,
-          colorRange = C.COLOR_RANGE_LIMITED,
-          colorTransfer = C.COLOR_TRANSFER_SDR,
-          lumaBitdepth = 8,
-          chromaBitdepth = 8,
-        ),
-      )
+      listOf(false, true).forEach { interpolationEnabled ->
+        assertTrue(
+          "$mimeType SDR should be eligible when interpolation=$interpolationEnabled",
+          supports(
+            mimeType = mimeType,
+            colorSpace = C.COLOR_SPACE_BT709,
+            colorRange = C.COLOR_RANGE_LIMITED,
+            colorTransfer = C.COLOR_TRANSFER_SDR,
+            lumaBitdepth = 8,
+            chromaBitdepth = 8,
+            interpolationEnabled = interpolationEnabled,
+          ),
+        )
+      }
     }
   }
 
   @Test
-  fun untaggedTenBitHevcRequiresVerifiedDecoderSdrNormalization() {
+  fun untaggedTenBitHevcUsesNativeOutputOnlyWhenInterpolationIsOff() {
     val codecs = "hvc1.2.4.H120.90"
     assertTrue(
       Media3FlowFormatPolicy.requiresSdrOutputRequest(
@@ -47,12 +50,25 @@ class Media3FlowFormatPolicyTest {
       ),
     )
     assertTrue(
+      "Ambiguous 10-bit input can use Flow when interpolation is on and SDR conversion is available",
       supports(
         mimeType = MimeTypes.VIDEO_H265,
         codecs = codecs,
         lumaBitdepth = 10,
         chromaBitdepth = 10,
         decoderSdrRequestAvailable = true,
+        interpolationEnabled = true,
+      ),
+    )
+    assertFalse(
+      "Ambiguous 10-bit input must preserve native output when interpolation is off",
+      supports(
+        mimeType = MimeTypes.VIDEO_H265,
+        codecs = codecs,
+        lumaBitdepth = 10,
+        chromaBitdepth = 10,
+        decoderSdrRequestAvailable = true,
+        interpolationEnabled = false,
       ),
     )
     assertFalse(
@@ -62,6 +78,7 @@ class Media3FlowFormatPolicyTest {
         lumaBitdepth = 10,
         chromaBitdepth = 10,
         decoderSdrRequestAvailable = false,
+        interpolationEnabled = true,
       ),
     )
   }
@@ -133,7 +150,7 @@ class Media3FlowFormatPolicyTest {
   }
 
   @Test
-  fun hdrTransfersStaticMetadataAndDolbyVisionRequireDecoderSdrOutput() {
+  fun hdrAndDolbyVisionUseNativePassthroughOnlyWhenInterpolationIsOff() {
     val hdrCases = listOf(
       Triple(MimeTypes.VIDEO_H265, "hvc1.2.4.L120.B0", C.COLOR_TRANSFER_ST2084),
       Triple(MimeTypes.VIDEO_H265, "hvc1.2.4.L120.B0", C.COLOR_TRANSFER_HLG),
@@ -141,7 +158,7 @@ class Media3FlowFormatPolicyTest {
     )
     hdrCases.forEach { (mimeType, codecs, transfer) ->
       assertTrue(
-        "$mimeType/$codecs should request SDR output",
+        "$mimeType/$codecs would require SDR normalization if copied into Flow RGBA8",
         Media3FlowFormatPolicy.requiresSdrOutputRequest(
           mimeType = mimeType,
           codecs = codecs,
@@ -154,7 +171,7 @@ class Media3FlowFormatPolicyTest {
         ),
       )
       assertTrue(
-        "$mimeType/$codecs should be eligible when decoder-side SDR conversion is available",
+        "$mimeType/$codecs may use Flow when interpolation is on and decoder conversion is available",
         supports(
           mimeType = mimeType,
           codecs = codecs,
@@ -164,6 +181,21 @@ class Media3FlowFormatPolicyTest {
           lumaBitdepth = 10,
           chromaBitdepth = 10,
           decoderSdrRequestAvailable = true,
+          interpolationEnabled = true,
+        ),
+      )
+      assertFalse(
+        "$mimeType/$codecs must remain native when interpolation is off",
+        supports(
+          mimeType = mimeType,
+          codecs = codecs,
+          colorSpace = C.COLOR_SPACE_BT2020,
+          colorRange = C.COLOR_RANGE_LIMITED,
+          colorTransfer = transfer,
+          lumaBitdepth = 10,
+          chromaBitdepth = 10,
+          decoderSdrRequestAvailable = true,
+          interpolationEnabled = false,
         ),
       )
       assertFalse(
@@ -177,11 +209,13 @@ class Media3FlowFormatPolicyTest {
           lumaBitdepth = 10,
           chromaBitdepth = 10,
           decoderSdrRequestAvailable = false,
+          interpolationEnabled = true,
         ),
       )
     }
 
     assertTrue(
+      "HDR static metadata may use Flow with interpolation enabled and decoder conversion available",
       supports(
         mimeType = MimeTypes.VIDEO_H265,
         colorTransfer = C.COLOR_TRANSFER_SDR,
@@ -189,6 +223,19 @@ class Media3FlowFormatPolicyTest {
         chromaBitdepth = 10,
         hasHdrStaticInfo = true,
         decoderSdrRequestAvailable = true,
+        interpolationEnabled = true,
+      ),
+    )
+    assertFalse(
+      "HDR static metadata must retain native output when interpolation is off",
+      supports(
+        mimeType = MimeTypes.VIDEO_H265,
+        colorTransfer = C.COLOR_TRANSFER_SDR,
+        lumaBitdepth = 10,
+        chromaBitdepth = 10,
+        hasHdrStaticInfo = true,
+        decoderSdrRequestAvailable = true,
+        interpolationEnabled = false,
       ),
     )
     assertFalse(
@@ -199,12 +246,13 @@ class Media3FlowFormatPolicyTest {
         chromaBitdepth = 10,
         hasHdrStaticInfo = true,
         decoderSdrRequestAvailable = false,
+        interpolationEnabled = true,
       ),
     )
   }
 
   @Test
-  fun untaggedHighBitDepthWideGamutAndUnusualTransfersRequestSdrOutput() {
+  fun untaggedHighBitDepthAndWideGamutUseNativeOutputOnlyWhenInterpolationIsOff() {
     val cases = listOf(
       Triple(MimeTypes.VIDEO_H265, "hvc1.2.4.L120.B0", C.COLOR_SPACE_BT2020),
       Triple(MimeTypes.VIDEO_VP9, "vp09.02.10.10.01.09.16.09.01", Format.NO_VALUE),
@@ -213,7 +261,7 @@ class Media3FlowFormatPolicyTest {
     )
     cases.forEach { (mimeType, codecs, colorSpace) ->
       assertTrue(
-        "$mimeType/$codecs must request SDR normalization",
+        "$mimeType/$codecs would require SDR normalization if copied into Flow RGBA8",
         Media3FlowFormatPolicy.requiresSdrOutputRequest(
           mimeType = mimeType,
           codecs = codecs,
@@ -226,11 +274,23 @@ class Media3FlowFormatPolicyTest {
         ),
       )
       assertTrue(
+        "$mimeType/$codecs may use Flow when interpolation is on and SDR conversion is available",
         supports(
           mimeType = mimeType,
           codecs = codecs,
           colorSpace = colorSpace,
           decoderSdrRequestAvailable = true,
+          interpolationEnabled = true,
+        ),
+      )
+      assertFalse(
+        "$mimeType/$codecs must keep native output when interpolation is off",
+        supports(
+          mimeType = mimeType,
+          codecs = codecs,
+          colorSpace = colorSpace,
+          decoderSdrRequestAvailable = true,
+          interpolationEnabled = false,
         ),
       )
       assertFalse(
@@ -239,6 +299,7 @@ class Media3FlowFormatPolicyTest {
           codecs = codecs,
           colorSpace = colorSpace,
           decoderSdrRequestAvailable = false,
+          interpolationEnabled = true,
         ),
       )
     }
@@ -256,6 +317,31 @@ class Media3FlowFormatPolicyTest {
         lumaBitdepth = 10,
         chromaBitdepth = 10,
         hasHdrStaticInfo = false,
+      ),
+    )
+    assertTrue(
+      "Explicitly tagged BT.2020 SDR remains eligible for Flow",
+      supports(
+        mimeType = MimeTypes.VIDEO_H265,
+        codecs = "hvc1.2.4.L120.B0",
+        colorSpace = C.COLOR_SPACE_BT2020,
+        colorRange = C.COLOR_RANGE_LIMITED,
+        colorTransfer = C.COLOR_TRANSFER_SDR,
+        lumaBitdepth = 10,
+        chromaBitdepth = 10,
+      ),
+    )
+    assertTrue(
+      "Explicitly tagged BT.2020 SDR stays eligible when interpolation is off",
+      supports(
+        mimeType = MimeTypes.VIDEO_H265,
+        codecs = "hvc1.2.4.L120.B0",
+        colorSpace = C.COLOR_SPACE_BT2020,
+        colorRange = C.COLOR_RANGE_LIMITED,
+        colorTransfer = C.COLOR_TRANSFER_SDR,
+        lumaBitdepth = 10,
+        chromaBitdepth = 10,
+        interpolationEnabled = false,
       ),
     )
     assertTrue(
@@ -285,14 +371,15 @@ class Media3FlowFormatPolicyTest {
   }
 
   @Test
-  fun actualFormatGateAcceptsMain10RotationAndAnamorphicPixels() {
+  fun actualFormatGateAcceptsExplicitSdrTenBitRotationAndAnamorphicPixels() {
     val colorInfo =
       ColorInfo.Builder()
-        .setColorSpace(Format.NO_VALUE)
-        .setColorRange(Format.NO_VALUE)
-        .setColorTransfer(Format.NO_VALUE)
+        .setColorSpace(C.COLOR_SPACE_BT2020)
+        .setColorRange(C.COLOR_RANGE_LIMITED)
+        .setColorTransfer(C.COLOR_TRANSFER_SDR)
         .setLumaBitdepth(10)
         .setChromaBitdepth(10)
+        .setHdrStaticInfo(byteArrayOf())
         .build()
     val format =
       Format.Builder()
@@ -305,7 +392,31 @@ class Media3FlowFormatPolicyTest {
         .build()
 
     assertTrue(Media3FlowVideoSink.supportsFormat(format, sdkInt = 34))
-    assertFalse(Media3FlowVideoSink.supportsFormat(format, sdkInt = 30))
+    assertTrue(Media3FlowVideoSink.supportsFormat(format, sdkInt = 34, interpolationEnabled = false))
+    assertTrue(Media3FlowVideoSink.supportsFormat(format, sdkInt = 30))
+  }
+
+  @Test
+  fun actualHdrFormatUsesNativeOutputOnlyWhenInterpolationIsOff() {
+    val hdrColorInfo =
+      ColorInfo.Builder()
+        .setColorSpace(C.COLOR_SPACE_BT2020)
+        .setColorRange(C.COLOR_RANGE_LIMITED)
+        .setColorTransfer(C.COLOR_TRANSFER_ST2084)
+        .setLumaBitdepth(10)
+        .setChromaBitdepth(10)
+        .build()
+    val format =
+      Format.Builder()
+        .setSampleMimeType(MimeTypes.VIDEO_H265)
+        .setWidth(1920)
+        .setHeight(1080)
+        .setColorInfo(hdrColorInfo)
+        .build()
+
+    assertTrue(Media3FlowVideoSink.supportsFormat(format, sdkInt = 34, interpolationEnabled = true))
+    assertFalse(Media3FlowVideoSink.supportsFormat(format, sdkInt = 34, interpolationEnabled = false))
+    assertTrue(Media3FlowVideoSink.requiresNativeHdrPassthrough(format))
   }
 
   @Test
@@ -339,9 +450,49 @@ class Media3FlowFormatPolicyTest {
 
   @Test
   fun dolbyVisionCaptureSourceIsRecognizedEvenWhenColorTransferLooksSdr() {
-    assertTrue(Media3FlowFormatPolicy.isDolbyVision(MimeTypes.VIDEO_DOLBY_VISION, "dvhe.05.06"))
-    assertTrue(Media3FlowFormatPolicy.isDolbyVision(MimeTypes.VIDEO_H265, "dvh1.08.06"))
+    val dolbyVisionCodecs =
+      listOf(
+        MimeTypes.VIDEO_H265 to "dvhe.05.06",
+        MimeTypes.VIDEO_H265 to "dvh1.08.06",
+        MimeTypes.VIDEO_H264 to "dva1.05.06",
+        MimeTypes.VIDEO_AV1 to "dvav.09.06",
+        MimeTypes.VIDEO_AV1 to "dav1.09.06",
+      )
+    dolbyVisionCodecs.forEach { (mimeType, codec) ->
+      assertTrue(codec, Media3FlowFormatPolicy.isDolbyVision(mimeType, codec))
+      assertFalse(
+        "$codec must remain native when interpolation is off even if transfer metadata says SDR",
+        supports(
+          mimeType = mimeType,
+          codecs = codec,
+          colorTransfer = C.COLOR_TRANSFER_SDR,
+          lumaBitdepth = 8,
+          chromaBitdepth = 8,
+          interpolationEnabled = false,
+        ),
+      )
+      assertTrue(
+        "$codec may use Flow when interpolation is on and decoder-side SDR conversion is available",
+        supports(
+          mimeType = mimeType,
+          codecs = codec,
+          colorTransfer = C.COLOR_TRANSFER_SDR,
+          lumaBitdepth = 8,
+          chromaBitdepth = 8,
+          interpolationEnabled = true,
+        ),
+      )
+    }
+    assertTrue(Media3FlowFormatPolicy.isDolbyVision(MimeTypes.VIDEO_DOLBY_VISION, ""))
     assertFalse(Media3FlowFormatPolicy.isDolbyVision(MimeTypes.VIDEO_H265, "hvc1.1.6.L93.B0"))
+  }
+
+  @Test
+  fun rendererSelectionIsReevaluatedOnlyWhenNativePassthroughEligibilityChanges() {
+    assertTrue(Media3FlowFormatPolicy.shouldReevaluateNativeRenderer(true, false, true))
+    assertTrue(Media3FlowFormatPolicy.shouldReevaluateNativeRenderer(false, true, true))
+    assertFalse(Media3FlowFormatPolicy.shouldReevaluateNativeRenderer(true, true, true))
+    assertFalse(Media3FlowFormatPolicy.shouldReevaluateNativeRenderer(true, false, false))
   }
 
   private fun supports(
@@ -354,6 +505,7 @@ class Media3FlowFormatPolicyTest {
     chromaBitdepth: Int = Format.NO_VALUE,
     hasHdrStaticInfo: Boolean = false,
     decoderSdrRequestAvailable: Boolean = true,
+    interpolationEnabled: Boolean = true,
   ): Boolean {
     val colorInfo =
       ColorInfo.Builder()
@@ -375,6 +527,7 @@ class Media3FlowFormatPolicyTest {
       hasHdrStaticInfo = colorInfo.hdrStaticInfo != null,
       isEquivalentToAssumedSdrDefault = ColorInfo.isEquivalentToAssumedSdrDefault(colorInfo),
       decoderSdrRequestAvailable = decoderSdrRequestAvailable,
+      interpolationEnabled = interpolationEnabled,
     )
   }
 }

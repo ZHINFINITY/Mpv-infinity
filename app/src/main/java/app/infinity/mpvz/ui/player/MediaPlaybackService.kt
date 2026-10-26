@@ -206,6 +206,14 @@ class MediaPlaybackService :
     }
 
     /**
+     * Called by the Application when its last started Activity stops (never for a configuration
+     * change). This is the "stop once I leave" half of [setInAppPlayerVisible]: service-owned
+     * playback that is not allowed to continue in the background pauses here. Returns whether
+     * playback was paused.
+     */
+    internal fun onAppBackgrounded(): Boolean = activeInstance?.pauseDetachedPlaybackIfBackgroundDisabled() == true
+
+    /**
      * Marks that playback is being handed back to a foreground Activity (e.g. reopening the
      * player from the Mini Player / playback notification). Release the service-owned focus
      * immediately, but never mutate mpv's pause state: the foreground Activity will acquire
@@ -335,9 +343,19 @@ class MediaPlaybackService :
   private var noisyReceiverRegistered = false
   @Volatile
   private var foregroundReady = false
-  private val audioFocusChangeListener =
-    AudioManager.OnAudioFocusChangeListener { change ->
-      if (mpvAccessReleased || handingBackToActivity) return@OnAudioFocusChangeListener
+  // Set once the request reached AudioManager; its listener stays in AudioManager's map until
+  // abandoned, even when the request was refused or focus was lost later.
+  private var audioFocusRequestSubmitted = false
+
+  // The user closed this session (mini player X, notification close/swipe). Every later save of this
+  // service instance carries it, including the ones from stop and onDestroy, so the library does not
+  // pop the session straight back up as a resume card. A new service instance starts clear.
+  @Volatile private var userClosedSession = false
+
+  // Captures the service; AudioManager only sees the weak wrapper below (see WeakAudioFocusListener).
+  private val audioFocusChangeHandler =
+    AudioFocusChangeHandler { change ->
+      if (mpvAccessReleased || handingBackToActivity) return@AudioFocusChangeHandler
       when (change) {
         AudioManager.AUDIOFOCUS_LOSS -> {
           resumeAfterFocusGain = false
@@ -359,7 +377,7 @@ class MediaPlaybackService :
           }
         }
         AudioManager.AUDIOFOCUS_GAIN -> {
-          if (!ownsAudioFocus) return@OnAudioFocusChangeListener
+          if (!ownsAudioFocus) return@AudioFocusChangeHandler
           hasAudioFocus = true
           restoreDuckedVolume()
           if (resumeAfterFocusGain) PlaybackSession.setPropertyBoolean("pause", false)
@@ -367,6 +385,7 @@ class MediaPlaybackService :
         }
       }
     }
+  private val audioFocusChangeListener = WeakAudioFocusListener(audioFocusChangeHandler)
   private val noisyReceiver =
     object : BroadcastReceiver() {
       override fun onReceive(
@@ -529,6 +548,7 @@ class MediaPlaybackService :
         ACTION_NOTIFICATION_CLOSE,
         ACTION_NOTIFICATION_STOP,
         -> {
+          userClosedSession = true
           stopPlaybackAndService(force = true)
           return START_NOT_STICKY
         }
@@ -734,6 +754,7 @@ class MediaPlaybackService :
         ).setOnAudioFocusChangeListener(audioFocusChangeListener)
         .build()
         .also { audioFocusRequest = it }
+    audioFocusRequestSubmitted = true
     hasAudioFocus = audioManager.requestAudioFocus(request) == AudioManager.AUDIOFOCUS_REQUEST_GRANTED
     ownsAudioFocus = hasAudioFocus
     return hasAudioFocus
@@ -741,15 +762,17 @@ class MediaPlaybackService :
 
   private fun abandonAudioOwnership() {
     restoreDuckedVolume()
+    val request = audioFocusRequest
+    if (AudioFocusRegistrationPolicy.mustAbandon(audioFocusRequestSubmitted) && request != null) {
+      // Also after a refused request or a lost focus: the listener is registered either way.
+      runCatching { audioManager.abandonAudioFocusRequest(request) }
+    } else if (ownsAudioFocus) {
+      Log.w(TAG, "Owned audio focus without a request; focus may remain held")
+    }
+    audioFocusRequestSubmitted = false
     if (!ownsAudioFocus) {
       resumeAfterFocusGain = false
       return
-    }
-    val request = audioFocusRequest
-    if (request != null) {
-      audioManager.abandonAudioFocusRequest(request)
-    } else {
-      Log.w(TAG, "Owned audio focus without a request; focus may remain held")
     }
     audioFocusRequest = null
     ownsAudioFocus = false
@@ -1219,6 +1242,30 @@ class MediaPlaybackService :
     refreshTransportControls()
   }
 
+  private fun pauseDetachedPlaybackIfBackgroundDisabled(): Boolean {
+    val state = PlaybackSession.state.value
+    val shouldPause =
+      PlayerLifecyclePolicy.shouldPauseDetachedPlaybackOnAppBackground(
+        serviceOwnsPlayback =
+          isServiceRunning && !mpvAccessReleased && !activityForeground && !handingBackToActivity &&
+            !state.surfaceAttached,
+        isAudio = usesAudioBackgroundPlayback,
+        audioBackgroundPlaybackEnabled = audioPreferences.audioBackgroundPlayback.get(),
+        videoBackgroundPlaybackEnabled = audioPreferences.backgroundPlayback.get(),
+        hasActiveItem =
+          state.currentItem != null &&
+            state.phase != PlaybackPhase.IDLE &&
+            state.phase != PlaybackPhase.UNINITIALIZED,
+        isPaused = PlaybackSession.getPropertyBoolean("pause") != false,
+      )
+    if (!shouldPause) return false
+    paused = true
+    PlaybackSession.setPropertyBoolean("pause", true)
+    refreshTransportControls()
+    Log.d(TAG, "Paused detached playback: background playback is off and the app left the foreground")
+    return true
+  }
+
   private fun stopPlaybackAndService(force: Boolean = false) {
     if (!force && !canHandleTransportAction()) return
     handingBackToActivity = false
@@ -1347,7 +1394,10 @@ class MediaPlaybackService :
               if (!canHandleTransportAction()) return
               when (action) {
                 ACTION_NOTIFICATION_MEDIA_FAVORITE -> toggleCurrentMediaNotificationFavorite()
-                ACTION_NOTIFICATION_CLOSE -> stopPlaybackAndService(force = true)
+                ACTION_NOTIFICATION_CLOSE -> {
+                  userClosedSession = true
+                  stopPlaybackAndService(force = true)
+                }
               }
             }
           },
@@ -2040,7 +2090,7 @@ class MediaPlaybackService :
     playbackStateSaveJob?.cancel()
     playbackStateSaveJob =
       serviceScope.launch(Dispatchers.IO) {
-        AudioPlaybackResumeStore.save(applicationContext, queueState, resumePositionSeconds, resumePaused)
+        AudioPlaybackResumeStore.save(applicationContext, queueState, resumePositionSeconds, resumePaused, closedByUser = userClosedSession)
         snapshot?.let { persistPlaybackState(identifier, it) }
       }
   }
@@ -2058,7 +2108,7 @@ class MediaPlaybackService :
     playbackStateSaveJob?.cancel()
     persistenceScope.launch {
       runCatching {
-        AudioPlaybackResumeStore.save(applicationContext, queueState, resumePositionSeconds, resumePaused)
+        AudioPlaybackResumeStore.save(applicationContext, queueState, resumePositionSeconds, resumePaused, closedByUser = userClosedSession)
         snapshot?.let { persistPlaybackState(identifier, it) }
       }.onFailure { error ->
         Log.e(TAG, "Error force-saving playback state", error)
@@ -2078,7 +2128,7 @@ class MediaPlaybackService :
     val pendingSave = playbackStateSaveJob
     runBlocking(Dispatchers.IO) {
       pendingSave?.cancelAndJoin()
-      AudioPlaybackResumeStore.save(applicationContext, queueState, resumePositionSeconds, resumePaused)
+      AudioPlaybackResumeStore.save(applicationContext, queueState, resumePositionSeconds, resumePaused, closedByUser = userClosedSession)
       snapshot?.let { persistPlaybackState(identifier, it) }
     }
   }
@@ -2105,6 +2155,10 @@ class MediaPlaybackService :
         playbackStateRepository.upsert(playbackState)
         PlaybackStateEvents.notifyChanged(identifier)
       }
+    } catch (error: kotlinx.coroutines.CancellationException) {
+      // A newer save superseded this one (savePlaybackStateNow cancels it before writing the
+      // final state). Not an error, and cancellation must propagate.
+      throw error
     } catch (error: Exception) {
       Log.e(TAG, "Error saving playback state from service", error)
     }

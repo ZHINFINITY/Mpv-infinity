@@ -54,6 +54,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
+import app.infinity.mpvz.preferences.preference.collectAsState as collectPreferenceAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -215,11 +216,12 @@ class PlayerActivity :
       media3FlowQuality = decoderPreferences.mpvFlowQuality.get(),
       media3FlowComputeApi = decoderPreferences.mpvFlowComputeApi.get(),
       media3FlowVisibilityResolverDebug = decoderPreferences.mpvFlowVisibilityResolverDebug.get(),
-      media3FlowSoftBlendDebug = BuildConfig.DEBUG && decoderPreferences.mpvFlowSoftBlendDebug.get(),
+      media3FlowSoftBlendDebug = decoderPreferences.mpvFlowSoftBlendDebug.get(),
     ).also {
       it.onEnded = { runOnUiThread { handleNativePlaybackEnded() } }
       it.onPlaybackError = { error -> runOnUiThread { handleNativePlaybackError(error) } }
       nativeEngineConfigured = true
+      nativeEngineBuilt.value = true
     }
   }
   private val flowDiagnosticsCaptureManager by lazy { FlowDiagnosticsCaptureManager(this) }
@@ -260,6 +262,8 @@ class PlayerActivity :
   internal fun stopFlowDiagnosticsCapture(): String? = flowDiagnosticsCaptureManager.stop()
 
   private var nativeEngineConfigured = false
+  /** Observable twin of [nativeEngineConfigured] for collectors that start before a video needs it. */
+  private val nativeEngineBuilt = MutableStateFlow(false)
   private val idleNativePlaybackSnapshot = MutableStateFlow(NativePlaybackSnapshot())
   private val idleNativeFirstFrame = MutableStateFlow(false)
   private var playerStoppedAtElapsedRealtime = 0L
@@ -279,6 +283,8 @@ class PlayerActivity :
       // this guard only after MPV has restored the shared settings and seek position.
     }
   private var engineHandoffJob: Job? = null
+  private var nativeInterpolationRestartJob: Job? = null
+  private var pendingNativeInterpolationFallbackState: NativeInterpolationRestartState? = null
   private var pendingInterpolationRestore: PlaybackPositionRestoreOverride? = null
   private var pendingInterpolationEngine: Pair<String, PlaybackEngineMode>? = null
   private var manualEngineOverride: Pair<String, PlaybackEngineMode>? = null
@@ -620,6 +626,25 @@ class PlayerActivity :
     nativeEngineOrNull()?.setRepeatMode(repeatMode)
   }
 
+  override fun onVideoAspectChanged() {
+    if (!BuildConfig.DEBUG || isNativeEngineActive()) return
+    val surface = binding.player
+    val valid = runCatching { surface.holder.surface.isValid }.getOrDefault(false)
+    Log.d(
+      TAG,
+      "MPV_ASPECT_DIAGNOSTIC event=aspect_change aspect=${viewModel.videoAspect.value} " +
+        "override=${PlaybackSession.getPropertyDouble("video-aspect-override") ?: "unavailable"} " +
+        "panscan=${PlaybackSession.getPropertyDouble("panscan") ?: "unavailable"} " +
+        "interpolation=${PlaybackSession.getPropertyString("interpolation") ?: "unavailable"} " +
+        "videoSync=${PlaybackSession.getPropertyString("video-sync") ?: "unavailable"} " +
+        "vo=${PlaybackSession.getPropertyString("vo") ?: "unavailable"} " +
+        "gpuApi=${PlaybackSession.getPropertyString("gpu-api") ?: "unavailable"} " +
+        "gpuContext=${PlaybackSession.getPropertyString("gpu-context") ?: "unavailable"} " +
+        "surface=${surface.width}x${surface.height} valid=$valid " +
+        "attached=${PlaybackSession.state.value.surfaceAttached} ambient=$composedVideoAmbientPresentationActive",
+    )
+  }
+
   private var interpolationControlRequestGeneration = 0L
   private var mpvInterpolationRestartJob: Job? = null
   private val mpvInterpolationNativeWork = MpvNativeWork()
@@ -632,44 +657,114 @@ class PlayerActivity :
   /** Last value chosen by the ambient presentation effect; Main-thread only. */
   private var composedVideoAmbientPresentationActive = false
 
-  /** Apply newly written interpolation controls to the renderer already playing this item. */
+  /** Apply newly written interpolation controls through the active engine's controlled reload. */
   fun applyInterpolationPreferencesFromControls() {
     if (!ownsPlaybackSession() || isFinishing || isDestroyed) return
-    val requestGeneration = ++interpolationControlRequestGeneration
-    val wasNative = isNativeEngineActive()
-    if (!wasNative) {
+    interpolationControlRequestGeneration++
+    if (!isNativeEngineActive()) {
       requestMpvInterpolationRestart()
       return
     }
-    val backend = if (wasNative) nativeEngineOrNull() else null
-    val enabled = decoderPreferences.mpvFlowFrameInterpolation.get()
-    val targetFps = decoderPreferences.mpvFlowTargetFps.get()
-    lifecycleScope.launch {
-      val liveApplied = try {
-        backend != null && isNativeEngineActive() && nativeEngineConfigured && nativeEngine === backend &&
-          backend.applyInterpolationRuntime(enabled = enabled, targetFps = targetFps)
-      } catch (cancelled: CancellationException) {
-        throw cancelled
-      } catch (error: Exception) {
-        Log.e(TAG, "Native interpolation live apply failed", error)
-        false
-      }
-      val decision = InterpolationRuntimeApplyPolicy.decision(liveApplied, playbackActive = true)
-      if (requestGeneration != interpolationControlRequestGeneration ||
-        enabled != decoderPreferences.mpvFlowFrameInterpolation.get() ||
-        targetFps != decoderPreferences.mpvFlowTargetFps.get()) return@launch
-      if (!ownsPlaybackSession() || isFinishing || isDestroyed || wasNative != isNativeEngineActive() ||
-        (wasNative && nativeEngineConfigured && nativeEngine !== backend)) return@launch
-      if (decision == InterpolationRuntimeApplyPolicy.Decision.PENDING_UNTIL_NEXT_PLAYBACK) {
-        if (!ownsPlaybackSession() || isFinishing || isDestroyed) return@launch
-        val reason = "native_flow_sink_unavailable"
-        Log.i(TAG, "Interpolation preference saved; deferred reason=$reason")
+    requestNativeInterpolationRestart()
+  }
+
+  /** Native shortcuts re-prepare the same MediaItem and restore its exact position and play intent. */
+  private fun requestNativeInterpolationRestart() {
+    if (activeEngineMode != PlaybackEngineMode.NATIVE || nativeInterpolationRestartJob?.isActive == true) return
+    nativeInterpolationRestartJob = lifecycleScope.launch {
+      delay(180L)
+      while (true) {
+        val requestGeneration = interpolationControlRequestGeneration
+        val enabled = decoderPreferences.mpvFlowFrameInterpolation.get()
+        val targetFps = decoderPreferences.mpvFlowTargetFps.get()
+        if (!ownsPlaybackSession() || isFinishing || isDestroyed ||
+          activeEngineMode != PlaybackEngineMode.NATIVE || !nativeEngineConfigured
+        ) return@launch
+
+        val backend = nativeEngineOrNull() ?: return@launch
+        val player = backend.currentPlayer
+        val item = player.currentMediaItem ?: return@launch
+        val mediaUri = item.localConfiguration?.uri?.toString()
+        val stableMediaId = activeSaveMediaIdentifier.ifBlank { mediaIdentifier }
+        val state = NativeInterpolationRestartPolicy.capture(
+          stableMediaId = stableMediaId,
+          mediaUri = mediaUri,
+          positionMs = backend.positionForPersistenceMs() ?: player.currentPosition,
+          playWhenReady = player.playWhenReady &&
+            player.playbackState != androidx.media3.common.Player.STATE_ENDED,
+          mediaRequestGeneration = mediaRequestGeneration,
+        ) ?: run {
+          Log.w(TAG, "Native interpolation reload skipped because the current item has no stable position")
+          return@launch
+        }
+
+        fun stillCurrent(): Boolean {
+          val activeBackend = nativeEngineOrNull()
+          val activePlayer = activeBackend?.currentPlayer
+          return NativeInterpolationRestartPolicy.stillOwns(
+            state = state,
+            currentStableMediaId = activeSaveMediaIdentifier.ifBlank { mediaIdentifier },
+            currentMediaUri = activePlayer?.currentMediaItem?.localConfiguration?.uri?.toString(),
+            currentMediaRequestGeneration = mediaRequestGeneration,
+            nativeActive = activeEngineMode == PlaybackEngineMode.NATIVE && nativeEngineConfigured &&
+              activeBackend === backend &&
+              manualEngineOverride?.takeIf { it.first == state.stableMediaId }?.second != PlaybackEngineMode.MPV,
+            ownsPlaybackSession = ownsPlaybackSession() && !isFinishing && !isDestroyed,
+          )
+        }
+        if (!stillCurrent()) return@launch
+        pendingNativeInterpolationFallbackState = state
+
+        val result = try {
+          backend.restartCurrentItemForInterpolation(
+            state = state,
+            enabled = enabled,
+            targetFps = targetFps,
+            isCurrent = ::stillCurrent,
+          )
+        } catch (cancelled: CancellationException) {
+          throw cancelled
+        } catch (error: Exception) {
+          Log.e(TAG, "Native interpolation controlled reload failed", error)
+          NativeInterpolationRestartResult.PLAYBACK_FAILED
+        }
+
+        when (result) {
+          NativeInterpolationRestartResult.APPLIED -> {
+            if (pendingNativeInterpolationFallbackState == state) pendingNativeInterpolationFallbackState = null
+            Log.i(TAG, "Native interpolation shortcut reloaded the same item at ${state.positionMs} ms")
+          }
+          NativeInterpolationRestartResult.FLOW_UNAVAILABLE -> {
+            if (pendingNativeInterpolationFallbackState == state) pendingNativeInterpolationFallbackState = null
+            Log.w(TAG, "Native interpolation reload not applied; Flow is unavailable for this device or format")
+            if (!stillCurrent()) return@launch
+            if (requestGeneration != interpolationControlRequestGeneration ||
+              enabled != decoderPreferences.mpvFlowFrameInterpolation.get() ||
+              targetFps != decoderPreferences.mpvFlowTargetFps.get()
+            ) continue
+            return@launch
+          }
+          NativeInterpolationRestartResult.SUPERSEDED -> {
+            if (!stillCurrent()) return@launch
+            if (pendingNativeInterpolationFallbackState == state) pendingNativeInterpolationFallbackState = null
+          }
+          NativeInterpolationRestartResult.PLAYBACK_FAILED -> {
+            Log.w(TAG, "Native interpolation reload failed; switching this item to MPV")
+            // Decoder errors may already have requested the same fallback. The per-item override
+            // and ownership guard keep this idempotent while covering unclassified failures too.
+            if (stillCurrent()) {
+              selectEngineForCurrentVideo(PlaybackEngineMode.MPV)
+            }
+            return@launch
+          }
+        }
+
+        if (!stillCurrent()) return@launch
+        if (requestGeneration != interpolationControlRequestGeneration ||
+          enabled != decoderPreferences.mpvFlowFrameInterpolation.get() ||
+          targetFps != decoderPreferences.mpvFlowTargetFps.get()
+        ) continue
         return@launch
-      }
-      if (ownsPlaybackSession() && !isFinishing && !isDestroyed &&
-        activeEngineMode == PlaybackEngineMode.NATIVE && nativeEngineConfigured && nativeEngine === backend
-      ) {
-        Log.i(TAG, "Native interpolation controls applied to the current playback")
       }
     }
   }
@@ -1006,8 +1101,8 @@ class PlayerActivity :
         "(code=${error.errorCodeName},renderer=${rendererFailure?.rendererName ?: "unknown"}," +
         "format=${rendererFailure?.rendererFormat?.sampleMimeType ?: "unknown"})",
     )
-    viewModel.showToast(fallbackKind.toastMessage)
-    // The engine handoff snapshots the current position and play/pause state before reloading.
+    // Recover without a blocking user-facing popup. The engine handoff snapshots position and
+    // play/pause state, and records an item-local override rather than changing the global engine.
     selectEngineForCurrentVideo(PlaybackEngineMode.MPV)
   }
 
@@ -1173,12 +1268,16 @@ class PlayerActivity :
   private var pendingPipExitResolution = false
   private var pendingBackgroundTransition = false
   private var pendingBackNavigationBackgroundTransition = false
+  // Back/minimize took the Mini Player branch: the service keeps the session even when the
+  // background-playback preference is off. Cleared when the handoff fails or the service ends.
+  private var miniPlayerHandoffRequested = false
   private var noisyReceiverRegistered = false
   private var lastVid = -1 // Track video track for background playback optimization
   private var isInBackgroundPlayback = false // Track if we are currently in background playback mode
   private var screenStateReceiverRegistered = false
   private var mpvInitialized = false // Track MPV initialization state
   private var pendingForegroundResumePositionSeconds: Double? = null
+  private var pendingNativeForegroundPlayIntent: Boolean? = null
   private var viewModelHostAttached = false
   private var torrentPickerHandoff = false
   private var savePlaybackStateJob: Job? = null // Track ongoing debounced save job
@@ -1260,10 +1359,14 @@ class PlayerActivity :
   private var audioFocusRequest: AudioFocusRequest? = null
 
   private var audioFocusRequestActive = false
+  // Set once requestAudioFocus() has handed [audioFocusRequest] to AudioManager; from then on its
+  // listener sits in AudioManager's map until abandonAudioFocusRequest(), whatever focus we hold.
+  private var audioFocusRequestSubmitted = false
   private var holdsAudioFocus = false
   private var resumeOnAudioFocusGain = false
   private var playbackDelayedForAudioFocus = false
   private var volumeBeforeAudioFocusDuck: Double? = null
+  private var volumeBeforeAudioFocusDuckEngine: PlaybackEngineMode? = null
 
   // ==================== Broadcast Receivers ====================
 
@@ -1278,7 +1381,7 @@ class PlayerActivity :
       ) {
         if (!ownsPlaybackSession()) return
         if (intent?.action == AudioManager.ACTION_AUDIO_BECOMING_NOISY) {
-          viewModel.pause()
+          pauseActiveEngine()
           window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         }
       }
@@ -1297,7 +1400,7 @@ class PlayerActivity :
             screenUnlockPlaybackController.onScreenTurnedOff(
               autoplayAfterScreenUnlockEnabled = playerPreferences.autoplayAfterScreenUnlock.get(),
               wasPlayingBeforePause = wasPlayingBeforePause,
-              isCurrentlyPaused = viewModel.paused,
+              isCurrentlyPaused = activeEnginePausedState(),
               backgroundPlaybackActive = isBackgroundPlaybackEnabled(),
               isUserFinishing = isUserFinishing,
               isFinishing = isFinishing,
@@ -1318,8 +1421,9 @@ class PlayerActivity :
   /**
    * Listener for audio focus changes.
    */
-  private val audioFocusChangeListener =
-    AudioManager.OnAudioFocusChangeListener { focusChange ->
+  // The handler captures this Activity; AudioManager only ever sees the weak wrapper below.
+  private val audioFocusChangeHandler =
+    AudioFocusChangeHandler { focusChange ->
       PlaybackActivityOwner.runIfOwner(playbackOwnerToken, Unit) {
         when (focusChange) {
           AudioManager.AUDIOFOCUS_LOSS -> {
@@ -1332,9 +1436,8 @@ class PlayerActivity :
             // MediaPlaybackService so minimizing into the Mini Player does not pause.
             val handoff = isFinishing || isDestroyed || MediaPlaybackService.isActivityHandoffInProgress()
             if (!handoff) {
-              // Focus callbacks must not use the ordinary pause action: it abandons focus and can
-              // erase the resume intent while Android is still dispatching a transient focus cycle.
-              PlaybackSession.setPropertyBoolean("pause", true)
+              // Keep focus-callback semantics without pausing an inactive MPV core during Native playback.
+              setActiveEnginePlaying(false)
             }
           }
 
@@ -1342,20 +1445,27 @@ class PlayerActivity :
             holdsAudioFocus = false
             val handoff = isFinishing || isDestroyed || MediaPlaybackService.isActivityHandoffInProgress()
             if (!handoff) {
-              val wasPlaying = PlaybackSession.getPropertyBoolean("pause") == false
+              val wasPlaying =
+                activeEnginePausedState()?.let { paused -> !paused }
+                  ?: (!isNativeEngineActive() && PlaybackSession.getPropertyBoolean("pause") == false)
               // Android can dispatch the same transient loss more than once during a call. Once a
               // playing session has requested resume, a later callback must not overwrite it merely
-              // because the first callback already paused mpv.
+              // because the first callback already paused the active renderer.
               resumeOnAudioFocusGain = resumeOnAudioFocusGain || wasPlaying
-              PlaybackSession.setPropertyBoolean("pause", true)
+              setActiveEnginePlaying(false)
             }
           }
 
           AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK -> {
             if (volumeBeforeAudioFocusDuck == null) {
-              PlaybackSession.getPropertyDouble("volume")?.let { volume ->
-                volumeBeforeAudioFocusDuck = volume
-                PlaybackSession.setPropertyDouble("volume", volume * 0.5)
+              val engine = activeEngineMode
+              val volume =
+                if (isNativeEngineActive()) nativeEngineOrNull()?.currentPlayer?.volume?.toDouble()
+                else PlaybackSession.getPropertyDouble("volume")
+              volume?.let {
+                volumeBeforeAudioFocusDuck = it
+                volumeBeforeAudioFocusDuckEngine = engine
+                setPlaybackVolumeForEngine(engine, it * 0.5)
               }
             }
           }
@@ -1368,7 +1478,7 @@ class PlayerActivity :
               val shouldResume = resumeOnAudioFocusGain || playbackDelayedForAudioFocus
               resumeOnAudioFocusGain = false
               playbackDelayedForAudioFocus = false
-              if (shouldResume) PlaybackSession.setPropertyBoolean("pause", false)
+              if (shouldResume) setActiveEnginePlaying(true)
             }
           }
 
@@ -1378,6 +1488,7 @@ class PlayerActivity :
         }
       }
     }
+  private val audioFocusChangeListener = WeakAudioFocusListener(audioFocusChangeHandler)
 
   private var preflightM3uParse: Pair<String, M3UParseResult.Success>? = null
   private var m3uPreflightJob: Job? = null
@@ -1570,8 +1681,14 @@ class PlayerActivity :
         ).collect { engine ->
           val currentQueueItem = PlaybackSession.queue.value.currentItem
           val effectiveEngine =
-            when (engine) {
-              PlaybackEngineMode.AUTO ->
+            when {
+              // Music always plays on MPV, matching the load path. Without this, the preference
+              // re-emitted on every start handed a playing song to Native Media3: Vulkan preflight
+              // blocked Main for ~1 s, Media3 restarted the track, then MPV restarted it again.
+              currentQueueItem?.isDefinitelyAudioOnly() == true ||
+                currentQueueItem?.declaredMediaKind() == DeclaredPlaybackMediaKind.AUDIO ->
+                PlaybackEngineMode.MPV
+              engine == PlaybackEngineMode.AUTO ->
                 if (currentQueueItem?.isHdrOrDolbyVision() == true &&
                   currentQueueItem.requiresTorrentResolution().not()
                 ) {
@@ -1587,21 +1704,36 @@ class PlayerActivity :
           if (effectiveEngine == activeEngineMode) return@collect
           // Finish the one authorized reconfiguration before an unrelated engine handoff.
           mpvInterpolationRestartJob?.join()
+          nativeInterpolationRestartJob?.join()
           if (!ownsPlaybackSession() || isFinishing || isDestroyed) return@collect
           engineHandoffJob?.cancel()
           val outgoingEngine = activeEngineMode
-          val outgoingPositionMs =
-            if (outgoingEngine == PlaybackEngineMode.NATIVE) {
+          val pendingNativeRestart = pendingNativeInterpolationFallbackState?.takeIf { state ->
+            outgoingEngine == PlaybackEngineMode.NATIVE &&
+              NativeInterpolationRestartPolicy.stillOwns(
+                state = state,
+                currentStableMediaId = activeSaveMediaIdentifier.ifBlank { mediaIdentifier },
+                currentMediaUri = nativeEngineOrNull()?.currentPlayer?.currentMediaItem
+                  ?.localConfiguration?.uri?.toString(),
+                currentMediaRequestGeneration = mediaRequestGeneration,
+                nativeActive = true,
+                ownsPlaybackSession = ownsPlaybackSession(),
+              )
+          }
+          val outgoingPositionMs = (
+            pendingNativeRestart?.positionMs ?: if (outgoingEngine == PlaybackEngineMode.NATIVE) {
               (nativeEngineOrNull()?.positionForPersistenceMs() ?: 0L)
             } else {
               ((PlaybackSession.getPropertyDouble("time-pos") ?: 0.0) * 1000.0).toLong()
-            }.coerceAtLeast(0L)
+            }
+          ).coerceAtLeast(0L)
           val outgoingPlaying =
-            if (outgoingEngine == PlaybackEngineMode.NATIVE) {
+            pendingNativeRestart?.playWhenReady ?: if (outgoingEngine == PlaybackEngineMode.NATIVE) {
               nativeEngineOrNull()?.currentPlayer?.playWhenReady == true
             } else {
               PlaybackSession.getPropertyBoolean("pause") == false
             }
+          if (outgoingEngine == PlaybackEngineMode.NATIVE) pendingNativeInterpolationFallbackState = null
 
           // Freeze the outgoing renderer before changing surfaces. This prevents both engines from
           // decoding the same item during the handoff and makes the captured state authoritative.
@@ -1695,8 +1827,7 @@ class PlayerActivity :
                     if (outgoingPlaying) PlaybackSession.command("play")
                     MediaPlaybackService.setNativeRendererOwnership(false)
                     setNativeVideoSurfaceVisible(false)
-                    binding.player.visibility = View.VISIBLE
-                    binding.player.alpha = 1f
+                    showMpvSurfaceUnlessMusic()
                   }
                   return@launch
                 }
@@ -1717,8 +1848,7 @@ class PlayerActivity :
               // Keep MPV's SurfaceView attached while the queue is reloaded. INVISIBLE causes
               // unbindSurface() to set vid=no; audio then continues while video waits for a
               // later surface reattachment.
-              binding.player.alpha = 0f
-              binding.player.visibility = View.VISIBLE
+              showMpvSurfaceUnlessMusic(alpha = 0f)
               nativeEngineOrNull()?.stop()
               // This is a renderer handoff, not a user-selected queue change. Avoid the normal
               // loader's outgoing-item stop/report path, which can race the new MPV load.
@@ -1787,14 +1917,12 @@ class PlayerActivity :
                   // leaves its last frame composited on top of MPV. Hide the view fully so the
                   // media-overlay plane is removed and MPV video becomes visible.
                   setNativeVideoSurfaceVisible(false)
-                  binding.player.alpha = 1f
-                  binding.player.visibility = View.VISIBLE
+                  showMpvSurfaceUnlessMusic()
                   viewModel.setAmbientLifecycleActive(true)
                   viewModel.restartAmbientIfActive()
                 } else if (!ready && ownsPlaybackSession() && activeEngineMode == PlaybackEngineMode.MPV) {
                   setNativeVideoSurfaceVisible(false)
-                  binding.player.alpha = 1f
-                  binding.player.visibility = View.VISIBLE
+                  showMpvSurfaceUnlessMusic()
                 }
                 // Apply the captured state once after MPV is ready. Repeated time-pos writes
                 // during 4K/HDR handoff force repeated demuxer seeks and cause audible stalls.
@@ -1897,6 +2025,9 @@ class PlayerActivity :
     }
     lifecycleScope.launch {
       repeatOnLifecycle(Lifecycle.State.STARTED) {
+        // The engine is built lazily (music never needs it). Returning here used to drop
+        // embedded-cue translation for a video reached later from an audio session.
+        nativeEngineBuilt.first { it }
         val engine = nativeEngineOrNull() ?: return@repeatOnLifecycle
         engine.subtitleCueText.collect { cue ->
           if (isNativeEngineActive()) {
@@ -2231,12 +2362,14 @@ class PlayerActivity :
     if (viewModel.sheetShown.value != Sheets.None) {
       viewModel.sheetShown.update { Sheets.None }
       viewModel.showControls()
+      abortLandedAudioMinimize()
       return
     }
 
     if (viewModel.panelShown.value != Panels.None) {
       viewModel.panelShown.update { Panels.None }
       viewModel.showControls()
+      abortLandedAudioMinimize()
       return
     }
 
@@ -2261,8 +2394,9 @@ class PlayerActivity :
 
     // Background playback or Mini Player handoff on Back: return to the browser while handing
     // the live MPV session to the foreground service. This is also the PiP-failure fallback.
+    val miniPlayerHandoff = isMiniPlayerEnabled()
     if (
-      isMiniPlayerEnabled() ||
+      miniPlayerHandoff ||
       PlayerLifecyclePolicy.shouldStartBackgroundPlaybackOnBack(
         backgroundPlaybackEnabled = isBackgroundPlaybackEnabled(),
         mediaReady = isReady || nativeEngineOrNull()?.snapshot?.value?.isReady == true,
@@ -2270,10 +2404,12 @@ class PlayerActivity :
     ) {
       when (startBackgroundPlayback()) {
         BackgroundPlaybackStartResult.Started -> {
+          miniPlayerHandoffRequested = miniPlayerHandoff
           pendingBackNavigationBackgroundTransition = true
           completePendingBackgroundHandoff()
         }
         BackgroundPlaybackStartResult.PendingPermission -> {
+          miniPlayerHandoffRequested = miniPlayerHandoff
           pendingBackNavigationBackgroundTransition = true
         }
         BackgroundPlaybackStartResult.Blocked -> {
@@ -2813,6 +2949,7 @@ class PlayerActivity :
       return false
     }
     val req = audioFocusRequest ?: return false
+    audioFocusRequestSubmitted = true
     val result = audioManager.requestAudioFocus(req)
     return when (result) {
       AudioManager.AUDIOFOCUS_REQUEST_GRANTED -> {
@@ -2930,10 +3067,14 @@ class PlayerActivity :
     }
     val pipDismissalCommitted = handledPipDismissal
     pendingPipExitResolution = false
+    if (AudioFocusRegistrationPolicy.releaseOnDestroy(isChangingConfigurations, holdsAudioFocus)) {
+      releaseAudioFocusRegistration()
+    }
     val keepBackgroundPlaybackAlive =
       ownsPlaybackSession && !pipDismissalCommitted && PlayerLifecyclePolicy.shouldKeepBackgroundPlaybackAliveOnDestroy(
         backgroundPlaybackEnabled = (playbackWasInitialized || nativeWasActive) && isBackgroundPlaybackEnabled(),
         backgroundPlaybackSessionActive = isBackgroundPlaybackSessionActive,
+        miniPlayerHandoff = (playbackWasInitialized || nativeWasActive) && miniPlayerHandoffRequested,
       )
 
 
@@ -3107,16 +3248,41 @@ class PlayerActivity :
     resumeOnAudioFocusGain = false
     playbackDelayedForAudioFocus = false
     restoreDuckedAudioVolume()
-    if (audioFocusRequestActive) {
+    releaseAudioFocusRegistration()
+  }
+
+  /**
+   * Removes this Activity's request from AudioManager without touching playback. Called from
+   * [abandonAudioFocus] and unconditionally from onDestroy, including the keep-alive Mini Player
+   * handoff, where cleanupAudio() does not run. The service owns its own focus request, so this
+   * never takes focus away from it.
+   */
+  private fun releaseAudioFocusRegistration() {
+    if (AudioFocusRegistrationPolicy.mustAbandon(audioFocusRequestSubmitted)) {
       audioFocusRequest?.let { req -> runCatching { audioManager.abandonAudioFocusRequest(req) } }
     }
+    audioFocusRequestSubmitted = false
     audioFocusRequestActive = false
     holdsAudioFocus = false
   }
 
+  private fun setPlaybackVolumeForEngine(
+    engine: PlaybackEngineMode,
+    volume: Double,
+  ) {
+    if (engine == PlaybackEngineMode.NATIVE) {
+      nativeEngineOrNull()?.currentPlayer?.volume = volume.toFloat()
+    } else {
+      PlaybackSession.setPropertyDouble("volume", volume)
+    }
+  }
+
   private fun restoreDuckedAudioVolume() {
-    volumeBeforeAudioFocusDuck?.let { volume -> PlaybackSession.setPropertyDouble("volume", volume) }
+    volumeBeforeAudioFocusDuck?.let { volume ->
+      setPlaybackVolumeForEngine(volumeBeforeAudioFocusDuckEngine ?: activeEngineMode, volume)
+    }
     volumeBeforeAudioFocusDuck = null
+    volumeBeforeAudioFocusDuckEngine = null
   }
 
   private fun cleanupAudio() {
@@ -3257,11 +3423,28 @@ class PlayerActivity :
   }
 
   /**
+   * Incremented when a landed music minimize did not leave the Activity (Back was consumed by
+   * a sheet or panel, or the background handoff failed). AudioPlayerControls grows the page back
+   * to full instead of leaving it parked on the mini rect, where it looks frozen.
+   */
+  val audioMinimizeAbortRequest = androidx.compose.runtime.mutableIntStateOf(0)
+
+  private fun abortLandedAudioMinimize() {
+    if (!audioMinimizePresentationCompleted || isFinishing || isDestroyed) return
+    audioMinimizePresentationCompleted = false
+    audioMinimizeAbortRequest.intValue++
+  }
+
+  /**
    * Opened from the browser mini player: incremented so AudioPlayerControls can run the
    * mini-to-full expansion. Only set when the translucent window was actually granted.
    */
   val audioOpenFromMiniRequest = androidx.compose.runtime.mutableIntStateOf(0)
   private var audioWindowBackground: android.graphics.drawable.Drawable? = null
+  // player_layout's root paints opaque black for video. A translucent window alone does not
+  // show the library through it, so the first music minimize showed black behind the page.
+  private var audioRootBackground: android.graphics.drawable.Drawable? = null
+  private var audioRootBackgroundCleared = false
   private var audioWindowTranslucent = false
 
   private fun requestAudioOpenFromMini(launchIntent: Intent?) {
@@ -3278,7 +3461,8 @@ class PlayerActivity :
    * and callers then use the plain slide fallback. Never used for video.
    */
   fun setAudioTransitionTranslucent(enabled: Boolean, launchIntent: Intent? = null): Boolean {
-    if (!MusicMinimizeTransitionPolicy.shouldTranslucent(
+    // Turning translucency off must always be allowed: by then the item may already be a video.
+    if (enabled && !MusicMinimizeTransitionPolicy.shouldTranslucent(
         isAudio = isCurrentPlaybackAudio() || launchIntent?.getBooleanExtra("is_audio", false) == true,
         api = Build.VERSION.SDK_INT,
       )) return false
@@ -3292,9 +3476,31 @@ class PlayerActivity :
       if (!enabled || !success) {
         audioWindowBackground?.let { window.setBackgroundDrawable(it) }
       }
+      setPlayerRootSeeThrough(enabled && success)
       audioWindowTranslucent = enabled && success
       success
     }.onFailure { Log.d(TAG, "Audio translucency transition unavailable", it) }.getOrDefault(false)
+  }
+
+  /**
+   * Clears (or restores) the player root's opaque video background together with window
+   * translucency, so the area the music page uncovers shows the library underneath.
+   */
+  private fun setPlayerRootSeeThrough(seeThrough: Boolean) {
+    val root = binding.root
+    when (MusicMinimizeTransitionPolicy.rootBackgroundAction(seeThrough, audioRootBackgroundCleared)) {
+      MusicMinimizeTransitionPolicy.RootBackgroundAction.Clear -> {
+        audioRootBackground = root.background
+        root.background = null
+        audioRootBackgroundCleared = true
+      }
+      MusicMinimizeTransitionPolicy.RootBackgroundAction.Restore -> {
+        root.background = audioRootBackground
+        audioRootBackground = null
+        audioRootBackgroundCleared = false
+      }
+      MusicMinimizeTransitionPolicy.RootBackgroundAction.Keep -> Unit
+    }
   }
 
   private fun applyMiniPlayerExitTransition() {
@@ -3395,16 +3601,16 @@ class PlayerActivity :
           }
         } else {
           rememberResumeAfterUnlockBeforeForcedPause()
-          viewModel.pause()
+          pauseActiveEngine()
         }
         return@runCatching
       }
 
       if (isDeviceScreenOffOrLocked() && !isBackgroundPlaybackEnabled()) {
         rememberResumeAfterUnlockBeforeForcedPause()
-        viewModel.pause()
+        pauseActiveEngine()
       } else if (!isBackgroundPlaybackSessionActive && (isUserFinishing || isFinishing)) {
-        viewModel.pause()
+        pauseActiveEngine()
       } else if (isBackgroundPlaybackSessionActive && !isInBackgroundPlayback && !isInPictureInPictureMode) {
         hideMpvSurfaceAndOverlayForAudioOrMinimize()
         disableVideoForBackground()
@@ -3538,7 +3744,12 @@ class PlayerActivity :
       val resumeAfterBackgroundHandoff =
         PlayerLifecyclePolicy.shouldResumeAfterBackgroundHandoff(
           backgroundPlaybackSessionActive = isBackgroundPlaybackSessionActive,
-          wasPlayingBeforeHandoff = PlaybackSession.getPropertyBoolean("pause") == false,
+          wasPlayingBeforeHandoff =
+            if (isNativeEngineActive()) {
+              activeEnginePausedState()?.not() ?: (PlaybackSession.getPropertyBoolean("pause") == false)
+            } else {
+              PlaybackSession.getPropertyBoolean("pause") == false
+            },
           isInPictureInPictureMode = isInPictureInPictureMode,
         )
       if (restoreForegroundVideoAndAmbientIfUnlocked()) {
@@ -3549,8 +3760,12 @@ class PlayerActivity :
         // future focus loss (e.g. a phone call) pauses the now-foreground playback.
         if (resumeAfterBackgroundHandoff) {
           val focusGranted = requestAudioFocus()
-          PlaybackSession.setPropertyBoolean("pause", !focusGranted)
-        } else if (viewModel.paused != true) {
+          if (isNativeEngineActive()) {
+            if (focusGranted) nativeEngineOrNull()?.setPlaying(true)
+          } else {
+            PlaybackSession.setPropertyBoolean("pause", !focusGranted)
+          }
+        } else if (activeEnginePausedState() != true) {
           requestAudioFocus()
         }
       }
@@ -3834,13 +4049,18 @@ class PlayerActivity :
     setIntent(
       Intent(sourceIntent).apply {
         action = Intent.ACTION_VIEW
-        data = Uri.parse(currentItem.originalUri)
-        type = currentItem.mimeType?.takeIf(String::isNotBlank) ?: "audio/*"
+        // setDataAndType + file:// for raw paths; see AudioResumeLaunch for the two old bugs.
+        AudioResumeLaunch.applyTo(this, currentItem.originalUri, currentItem.mimeType)
         putExtra("is_audio", true)
         putExtra("media_library_audio", true)
         putExtra("title", currentItem.title)
+        // Restore the last song with its artist and cover, not only its title.
+        putExtra("media_artist", currentItem.artist)
         putExtra("media_identifier", currentItem.stableId)
         putExtra("playlist_index", snapshot.queueState.currentIndex)
+        currentItem.artworkUri?.takeIf { it.isNotBlank() }?.let { artwork ->
+          putStringArrayListExtra("playlist_artwork_urls", arrayListOf(artwork))
+        }
         val headerPairs = currentItem.headers.flatMap { (name, value) -> listOf(name, value) }
         if (headerPairs.isNotEmpty()) putExtra("headers", headerPairs.toTypedArray())
         currentItem.networkSource?.let { source ->
@@ -3936,8 +4156,8 @@ class PlayerActivity :
     val mediaIntent =
       Intent(sourceIntent).apply {
         action = Intent.ACTION_VIEW
-        data = Uri.parse(currentItem.originalUri)
-        type = currentItem.mimeType ?: sourceIntent.type
+        // Data and type together: assigning type after data cleared the data.
+        AudioResumeLaunch.applyTo(this, currentItem.originalUri, currentItem.mimeType, sourceIntent.type)
         putExtra("title", currentItem.title)
         putExtra("media_identifier", currentItem.stableId)
         putExtra("playlist_index", queueState.currentIndex)
@@ -4939,6 +5159,36 @@ class PlayerActivity :
     return keyguardManager.isDeviceLocked || !powerManager.isInteractive
   }
 
+  private fun activeEnginePausedState(): Boolean? =
+    PlayerLifecyclePolicy.activeEnginePausedState(
+      activeEngine = activeEngineMode,
+      nativePlayWhenReady = nativeEngineOrNull()?.currentPlayer?.let { player ->
+        if (player.playbackState == androidx.media3.common.Player.STATE_ENDED) null else player.playWhenReady
+      },
+      mpvPaused = viewModel.paused,
+    )
+
+  private fun setActiveEnginePlaying(playing: Boolean) {
+    if (isNativeEngineActive()) {
+      nativeEngineOrNull()?.setPlaying(playing)
+    } else {
+      PlaybackSession.setPropertyBoolean("pause", !playing)
+    }
+  }
+
+  private fun pauseActiveEngine() {
+    if (isNativeEngineActive()) {
+      val engine = nativeEngineOrNull()
+      if (engine != null) {
+        engine.setPlaying(false)
+      } else {
+        viewModel.pause()
+      }
+    } else {
+      viewModel.pause()
+    }
+  }
+
   private fun restoreForegroundVideoAndAmbientIfUnlocked(): Boolean {
     if ((!mpvInitialized && !isNativeEngineActive()) || !ownsPlaybackSession() || isDeviceScreenOffOrLocked()) return false
     val stoppedForMs =
@@ -4963,8 +5213,35 @@ class PlayerActivity :
       return true
     }
     if (isNativeEngineActive()) {
+      val nativeEngine = nativeEngineOrNull()
+      val nativePlayer = nativeEngine?.currentPlayer
+      val shouldRecoverNative =
+        PlayerLifecyclePolicy.shouldRecoverNativePlayback(
+          hasCurrentMediaItem = nativePlayer?.currentMediaItem != null,
+          playbackIsIdle = nativePlayer?.playbackState == androidx.media3.common.Player.STATE_IDLE,
+          mediaLoadInProgress = mediaLoadJob?.isActive == true,
+        )
+      val hasPlayableSource = !currentPlayableUri.isNullOrBlank() || !intent?.dataString.isNullOrBlank()
+      if (shouldRecoverNative && hasPlayableSource) {
+        Log.w(TAG, "Recovering Native video after foreground return from a missing or idle player")
+        rebuildRendererAfterLongBackground()
+        viewModel.setAmbientLifecycleActive(true)
+        return true
+      }
       setNativeVideoSurfaceVisible(true)
-      nativeEngineOrNull()?.refreshAfterConfigurationChange()
+      nativeEngineOrNull()?.let { engine ->
+        val nativePlayIntent = pendingNativeForegroundPlayIntent
+        engine.refreshAfterConfigurationChange()
+        val player = engine.currentPlayer
+        if ((nativePlayIntent ?: player.playWhenReady) &&
+          player.currentMediaItem != null &&
+          player.playbackState != androidx.media3.common.Player.STATE_ENDED &&
+          !player.isPlaying
+        ) {
+          engine.setPlaying(true)
+        }
+      }
+      pendingNativeForegroundPlayIntent = null
     } else {
       PlaybackSession.markForeground()
       enableVideoAfterBackground()
@@ -4975,8 +5252,13 @@ class PlayerActivity :
   }
 
   private fun rebuildRendererAfterLongBackground() {
-    if (fileName.isBlank() || isFinishing || isDestroyed || !ownsPlaybackSession()) return
-    val paused = viewModel.paused == true || PlaybackSession.getPropertyBoolean("pause") == true
+    val playable = currentPlayableUri?.takeIf { it.isNotBlank() } ?: intent?.dataString?.takeIf { it.isNotBlank() }
+    if (playable.isNullOrBlank() || isFinishing || isDestroyed || !ownsPlaybackSession()) return
+    val mpvPaused = viewModel.paused == true || PlaybackSession.getPropertyBoolean("pause") == true
+    val nativePlayIntent = pendingNativeForegroundPlayIntent
+    pendingNativeForegroundPlayIntent = null
+    val nativePaused = nativePlayIntent?.let { wasPlaying -> !wasPlaying } ?: activeEnginePausedState()
+    val paused = if (isNativeEngineActive()) nativePaused ?: mpvPaused else mpvPaused
     val captured = pendingForegroundResumePositionSeconds
     pendingForegroundResumePositionSeconds = null
     val positionSeconds =
@@ -4987,8 +5269,6 @@ class PlayerActivity :
       positionSeconds = positionSeconds.takeIf { it.isFinite() && it > 0.0 },
       paused = paused,
     )
-    val playable = currentPlayableUri ?: intent?.dataString
-    if (playable.isNullOrBlank()) return
     if (isNativeEngineActive()) {
       nativeEngineOrNull()?.refreshAfterConfigurationChange()
     }
@@ -5004,12 +5284,12 @@ class PlayerActivity :
     screenUnlockPlaybackController.onScreenTurnedOff(
       autoplayAfterScreenUnlockEnabled = playerPreferences.autoplayAfterScreenUnlock.get(),
       wasPlayingBeforePause = wasPlayingBeforePause,
-      isCurrentlyPaused = viewModel.paused,
+      isCurrentlyPaused = activeEnginePausedState(),
       backgroundPlaybackActive = false,
       isUserFinishing = isUserFinishing,
       isFinishing = isFinishing,
     )
-    wasPlayingBeforePause = viewModel.paused == false || wasPlayingBeforePause
+    wasPlayingBeforePause = activeEnginePausedState() == false || wasPlayingBeforePause
   }
 
   private fun resumePlaybackAfterScreenUnlockIfNeeded() {
@@ -5022,8 +5302,12 @@ class PlayerActivity :
           val deviceLocked = isDeviceScreenOffOrLocked()
           if (screenUnlockPlaybackController.consumeResumeAfterUnlockIfReady(deviceLocked)) {
             wasPlayingBeforePause = false
-            if (viewModel.paused == true && !isFinishing && !isUserFinishing) {
-              viewModel.unpause()
+            if (activeEnginePausedState() == true && !isFinishing && !isUserFinishing) {
+              if (isNativeEngineActive()) {
+                if (requestAudioFocus()) nativeEngineOrNull()?.setPlaying(true)
+              } else {
+                viewModel.unpause()
+              }
             }
             return@launch
           }
@@ -5912,6 +6196,7 @@ class PlayerActivity :
       MPVLib.MpvEvent.MPV_EVENT_VIDEO_RECONFIG -> {
         onInterpolationVoReconfig()
       }
+
 
       MPVLib.MpvEvent.MPV_EVENT_END_FILE -> {
         val recovery = pendingMediaLoadRecovery ?: return
@@ -7121,8 +7406,13 @@ class PlayerActivity :
         intent =
           Intent(intent).apply {
             action = Intent.ACTION_VIEW
-            data = Uri.parse(fallbackUri)
-            if (type.isNullOrBlank() && getBooleanExtra("is_audio", false)) type = "audio/*"
+            // Data and type together (setType clears data); raw paths become file:// URIs.
+            AudioResumeLaunch.applyTo(
+              this,
+              fallbackUri,
+              type,
+              fallbackMimeType = "audio/*".takeIf { getBooleanExtra("is_audio", false) },
+            )
           }
       }
     }
@@ -7783,8 +8073,7 @@ class PlayerActivity :
         setVideoAmbientPresentationActive(false)
         nativeEngineOrNull()?.stop()
         setNativeVideoSurfaceVisible(false)
-        binding.player.alpha = 1f
-        binding.player.visibility = View.VISIBLE
+        showMpvSurfaceUnlessMusic()
       }
     }
     if (!PlaybackSession.awaitStopCompletion()) {
@@ -8709,7 +8998,12 @@ class PlayerActivity :
   }
 
   private fun startBackgroundPlaybackInternal(bindToActivity: Boolean): Boolean {
-    if (fileName.isBlank() || (!isReady && nativeEngineOrNull()?.snapshot?.value?.isReady != true)) {
+    // A reopened Activity reuses the live MPV core; its own isReady can lag behind the session
+    // that is already playing. Minimizing in that window used to stop the song entirely.
+    val mpvSessionReady =
+      !isNativeEngineActive() &&
+        PlaybackSession.state.value.phase.let { it == PlaybackPhase.READY || it == PlaybackPhase.BACKGROUND }
+    if (fileName.isBlank() || (!isReady && !mpvSessionReady && nativeEngineOrNull()?.snapshot?.value?.isReady != true)) {
       Log.w(TAG, "Cannot start background playback: video not ready")
       return false
     }
@@ -8719,7 +9013,9 @@ class PlayerActivity :
       // started; otherwise the service and Media3 decode the same item independently and the
       // Activity resumes with a stale native surface or no playable session.
       val nativePositionMs = (nativeEngineOrNull()?.positionForPersistenceMs() ?: 0L)
-      val nativeWasPlaying = nativeEngineOrNull()?.currentPlayer?.isPlaying == true
+      val nativeWasPlaying = nativeEngineOrNull()?.currentPlayer?.let { player ->
+        player.playWhenReady && player.playbackState != androidx.media3.common.Player.STATE_ENDED
+      } == true
       // Capture before stopping Native; the MPV-backed service must inherit this state.
       saveVideoPlaybackState(fileName, immediate = true)
       nativeEngineOrNull()?.setPlaying(false)
@@ -8728,8 +9024,7 @@ class PlayerActivity :
       forceMpvAudioTrackAutoOnNextLoad = true
       nativeEngineOrNull()?.stop()
       setNativeVideoSurfaceVisible(false)
-      binding.player.alpha = 1f
-      binding.player.visibility = View.VISIBLE
+      showMpvSurfaceUnlessMusic()
       if (!mpvInitialized) {
         val setupError = setupMPV()
         if (setupError != null) {
@@ -8860,6 +9155,7 @@ class PlayerActivity :
     isBackgroundPlaybackSessionActive = false
     pendingBackgroundTransition = false
     pendingBackNavigationBackgroundTransition = false
+    miniPlayerHandoffRequested = false
 
     if (handoffToActivity) {
       // The foreground Activity already owns playback, so service teardown must not stop it.
@@ -9012,9 +9308,11 @@ class PlayerActivity :
 
         val failedBackgroundHandoff = pendingBackNavigationBackgroundTransition
         pendingBackNavigationBackgroundTransition = false
+        miniPlayerHandoffRequested = false
         setActivityMediaSessionActive(true)
         if (failedBackgroundHandoff) {
           Toast.makeText(this@PlayerActivity, R.string.toast_playback_load_failed, Toast.LENGTH_LONG).show()
+          abortLandedAudioMinimize()
         }
         endBackgroundPlayback()
       }
@@ -10286,6 +10584,11 @@ class PlayerActivity :
     viewModel.isAudioOnly.value || isCurrentMediaKnownAudio() || isKnownAudioLaunch(intent)
 
   private fun captureForegroundResumePosition() {
+    if (isNativeEngineActive()) {
+      pendingNativeForegroundPlayIntent = nativeEngineOrNull()?.currentPlayer?.let { player ->
+        if (player.playbackState == androidx.media3.common.Player.STATE_ENDED) null else player.playWhenReady
+      }
+    }
     if (!PlayerLifecyclePolicy.shouldCaptureForegroundResumePosition(currentPlaybackIsAudioMedia())) return
     val live =
       if (isNativeEngineActive()) nativePlaybackPositionSeconds()

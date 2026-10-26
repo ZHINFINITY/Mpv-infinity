@@ -222,9 +222,29 @@ def test_mpvflow_settings_keep_single_toggle_and_target_fps() -> None:
     assert "decoderPreferences.mpvFlowTargetFps.get()" in player
 
 
+def test_owner_debug_apk_gates_native_dts_ffmpeg_fallback() -> None:
+    """Native's DTS/DTS-HD fallback must be verified in the APK the owner installs."""
+    workflow = (ROOT / ".github/workflows/debug-apk.yml").read_text(encoding="utf-8")
+    step = workflow.split("- name: Verify Native DTS FFmpeg audio fallback is packaged", 1)
+    assert len(step) == 2, "debug-apk.yml lost the Native DTS packaging gate"
+    body = step[1].split("\n      - name:", 1)[0]
+    assert 'python3 scripts/verify-media3-dca-apk.py "$apk"' in body
+    assert "inputs.target_abi == 'arm64-v8a'" in body
+    assert workflow.index("Verify Native DTS FFmpeg") > workflow.index("- name: Build debug APK")
+    engine = (ROOT / "app/src/main/java/app/infinity/mpvz/ui/player/NativeMedia3Engine.kt").read_text(
+        encoding="utf-8"
+    )
+    # Same extension mode as 380a778b / v2.2.0: platform decoders first, FFmpeg when they can't.
+    assert "setExtensionRendererMode(DefaultRenderersFactory.EXTENSION_RENDERER_MODE_ON)" in engine
+    assert "factory.setEnableDecoderFallback(true)" in engine
+    gradle = (ROOT / "app/build.gradle.kts").read_text(encoding="utf-8")
+    assert 'implementation(project(":media3-decoder-ffmpeg"))' in gradle
+
+
 def main() -> None:
     test_standard_workflow_is_flow_only()
     test_mpvflow_settings_keep_single_toggle_and_target_fps()
+    test_owner_debug_apk_gates_native_dts_ffmpeg_fallback()
     print("Flow-only MPVFlow Standard arm64 workflow tests passed.")
 
 

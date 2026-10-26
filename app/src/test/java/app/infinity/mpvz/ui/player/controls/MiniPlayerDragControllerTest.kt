@@ -46,4 +46,45 @@ class MiniPlayerDragControllerTest {
     assertEquals(1200f, h.lastVelocity, 0f)
     assertTrue(h.state.progress > 0f)
   }
+
+  @Test
+  fun preFlingSettlesOnReleaseAndConsumesChildFling() = runBlocking {
+    val h = Harness()
+    val connection = h.controller.nestedScrollConnection
+    connection.onPostScroll(Offset.Zero, Offset(0f, 120f), NestedScrollSource.UserInput)
+    val consumed = connection.onPreFling(Velocity(0f, 900f))
+    assertEquals(Velocity(0f, 900f), consumed)
+    assertEquals(1, h.settleCount)
+    assertEquals(900f, h.lastVelocity, 0f)
+    // The post-fling that follows the same gesture must not settle a second time.
+    connection.onPostFling(Velocity.Zero, Velocity.Zero)
+    assertEquals(1, h.settleCount)
+  }
+
+  @Test
+  fun preFlingLeavesNormalListFlingAlone() = runBlocking {
+    val h = Harness()
+    assertEquals(Velocity.Zero, h.controller.nestedScrollConnection.onPreFling(Velocity(0f, -900f)))
+    assertEquals(0, h.settleCount)
+  }
+
+  @Test
+  fun releaseClaimSettlesADroppedNestedGestureOnlyOnce() = runBlocking {
+    val h = Harness()
+    val connection = h.controller.nestedScrollConnection
+    connection.onPostScroll(Offset.Zero, Offset(0f, 200f), NestedScrollSource.UserInput)
+    assertTrue(h.controller.claimReleaseSettle())
+    assertFalse(h.controller.claimReleaseSettle())
+    connection.onPostFling(Velocity.Zero, Velocity(0f, 500f))
+    assertEquals(0, h.settleCount)
+  }
+
+  @Test
+  fun onlyAPartlyMinimizedPageWithoutSettleNeedsReleaseSettle() {
+    assertTrue(MusicMinimizeTransitionPolicy.needsReleaseSettle(false, 0.4f))
+    assertFalse(MusicMinimizeTransitionPolicy.needsReleaseSettle(true, 0.4f))
+    assertFalse(MusicMinimizeTransitionPolicy.needsReleaseSettle(false, 0f))
+    assertFalse(MusicMinimizeTransitionPolicy.needsReleaseSettle(false, 1f))
+    assertFalse(MusicMinimizeTransitionPolicy.needsReleaseSettle(false, Float.NaN))
+  }
 }
