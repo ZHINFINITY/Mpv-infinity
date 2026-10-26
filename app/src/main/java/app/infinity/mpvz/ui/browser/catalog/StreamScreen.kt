@@ -96,6 +96,7 @@ import app.infinity.mpvz.catalog.MediaType
 import app.infinity.mpvz.catalog.StreamOption
 import app.infinity.mpvz.catalog.catalogArtworkCandidates
 import app.infinity.mpvz.catalog.catalogItemIdentityKey
+import app.infinity.mpvz.catalog.catalogRailItemsWithUniqueKeys
 import app.infinity.mpvz.presentation.Screen
 import app.infinity.mpvz.presentation.components.RemoteImageWithFallback
 import app.infinity.mpvz.presentation.components.pullrefresh.InfinityLoadingIndicator
@@ -885,11 +886,13 @@ private fun LazyListScope.streamCatalogRail(
         shape = RoundedCornerShape(22.dp),
         color = MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = .78f),
       ) {
+        val railItems = catalogRailItemsWithUniqueKeys(items)
         LazyRow(
           contentPadding = PaddingValues(horizontal = 10.dp, vertical = 10.dp),
           horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-          items(items, key = ::catalogItemIdentityKey) { item ->
+          items(railItems, key = { it.lazyListKey }) { railItem ->
+            val item = railItem.item
             Box(Modifier.width(142.dp)) {
               NuvioCatalogPosterCard(
                 item,
