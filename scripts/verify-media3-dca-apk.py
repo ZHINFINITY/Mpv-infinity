@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
-"""Verify arm64 APK packaging for the dynamically linked Media3 DTS bridge."""
+"""Verify arm64 APK packaging for the dynamically linked Media3 FFmpeg audio fallback.
+
+Checks linking, LGPL-only licensing, notices, and that every FFmpeg decoder FfmpegLibrary maps
+(DTS, TrueHD, AC-3/E-AC-3, AAC, MP3, Opus, FLAC, ...) is really compiled into libavcodec.so.
+"""
 
 from __future__ import annotations
 
@@ -10,6 +14,7 @@ import tempfile
 import zipfile
 from pathlib import Path
 
+from ffmpeg_decoder_inventory import InventoryError, verify_library
 from ffmpeg_runtime_config import RuntimeEvidenceError, verify_runtime_evidence
 
 
@@ -60,11 +65,15 @@ def verify(apk_path: Path, readelf: str, strings: str) -> None:
             effective_flags = verify_runtime_evidence(runtime)
         except RuntimeEvidenceError as error:
             raise SystemExit(f"APK's FFmpeg runtime failed licensing/DCA verification: {error}") from error
+        try:
+            decoders = verify_library(extracted["libavcodec.so"])
+        except InventoryError as error:
+            raise SystemExit(f"APK's FFmpeg runtime cannot serve the Native audio fallback: {error}") from error
 
         notice_path = "assets/licenses/media3/NOTICE.txt"
         license_path = "assets/licenses/media3/APACHE-2.0.txt"
         if entries.count(notice_path) != 1 or entries.count(license_path) != 1:
-            raise SystemExit("APK is missing the Media3 DTS notice or Apache-2.0 license")
+            raise SystemExit("APK is missing the Media3 FFmpeg audio notice or Apache-2.0 license")
         notice = apk.read(notice_path).decode("utf-8")
         apache_license = apk.read(license_path).decode("utf-8")
         if "Apache License 2.0" not in notice or "LGPL-3.0-or-later" not in notice:
@@ -76,7 +85,8 @@ def verify(apk_path: Path, readelf: str, strings: str) -> None:
             f"OK {apk_path}: arm64 Media3 wrapper dynamically uses one FFmpeg runtime "
             f"(CONFIG_GPL={effective_flags['CONFIG_GPL']}, "
             f"CONFIG_NONFREE={effective_flags['CONFIG_NONFREE']}); LGPL DCA evidence, "
-            "no duplicate decoder libraries; notices packaged"
+            "no duplicate decoder libraries; notices packaged; "
+            f"{len(decoders)} mapped audio decoders present ({', '.join(decoders)})"
         )
 
 

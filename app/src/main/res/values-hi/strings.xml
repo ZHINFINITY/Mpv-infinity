@@ -29,6 +29,8 @@
   <string name="pref_appearance_amoled_mode_summary">डार्क थीम के लिए शुद्ध काला बैकग्राउंड इस्तेमाल करें</string>
   <string name="pref_appearance_system_font_title">सिस्टम फॉन्ट इस्तेमाल करें</string>
   <string name="pref_appearance_system_font_summary">Google Sans Flex की जगह Mpv∞ में Android सिस्टम टाइपफेस इस्तेमाल करें</string>
+  <string name="pref_appearance_animate_infinity_logo_title">इन्फिनिटी लोगो एनिमेट करें</string>
+  <string name="pref_appearance_animate_infinity_logo_summary">लाइब्रेरी के इन्फिनिटी चिह्न को लगातार एनिमेट करें। स्थिर चिह्न दिखाने के लिए इसे बंद करें।</string>
   <string name="pref_appearance_material_you_title">Material You</string>
   <string name="pref_appearance_material_you_summary">डायनामिक कलर्स सक्षम करें</string>
   <string name="pref_appearance_material_you_summary_disabled">सिर्फ Android 12 और उससे ऊपर पर उपलब्ध</string>
@@ -2241,4 +2243,11 @@
     <string name="pref_openai_base_url_summary">आधिकारिक OpenAI एंडपॉइंट के लिए खाली छोड़ें</string>
     <string name="pref_openai_base_url_prompt">OpenAI-संगत API का बेस URL दर्ज करें</string>
     <string name="pref_openai_base_url_invalid">क्रेडेंशियल, क्वेरी पैरामीटर या फ़्रैगमेंट के बिना एक मान्य HTTP या HTTPS URL दर्ज करें।</string>
+  <string name="pref_glass_preview">लाइव ग्लास पूर्वावलोकन</string>
+  <string name="pref_glass_rim_strength">किनारे की तीव्रता</string>
+  <string name="pref_glass_rim_strength_summary">साझा चमकीले किनारे की चमक</string>
+  <string name="pref_glass_rim_width">किनारे की चौड़ाई</string>
+  <string name="pref_glass_rim_width_summary">चमकीले किनारे की मोटाई (dp में)</string>
+  <string name="pref_glass_rim_softness">किनारे की कोमलता</string>
+  <string name="pref_glass_rim_softness_summary">किनारे की रोशनी कितनी कोमलता से फीकी होती है</string>
 </resources>

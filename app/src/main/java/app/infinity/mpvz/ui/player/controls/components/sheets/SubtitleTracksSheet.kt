@@ -7,6 +7,8 @@
 
 package app.infinity.mpvz.ui.player.controls.components.sheets
 
+import app.infinity.mpvz.ui.components.GlassChip
+
 import app.infinity.mpvz.presentation.components.playerGlassOverlay
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -22,7 +24,6 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.FilledTonalIconButton
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -446,7 +447,7 @@ fun SubtitlesSheet(
             )
             Row(horizontalArrangement = Arrangement.spacedBy(MaterialTheme.spacing.small)) {
               configuredLanguages.take(2).forEach { code ->
-                FilterChip(
+                GlassChip(
                   selected = embeddedTranslationLanguage.equals(code, ignoreCase = true),
                   onClick = { onEmbeddedTranslationLanguageChange(code) },
                   label = { Text(codeToName[code.lowercase()] ?: code.uppercase()) },

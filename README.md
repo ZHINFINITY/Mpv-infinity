@@ -552,3 +552,7 @@ Third-party, upstream, and contributor materials keep their applicable terms and
    <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=ZHINFINITY/Mpv-infinity&type=date&legend=top-left" />
  </picture>
 </a>
+
+### Liquid Glass credit
+
+Thanks to [Kyant0/AndroidLiquidGlass](https://github.com/Kyant0/AndroidLiquidGlass) for the Backdrop Liquid Glass engine (Apache-2.0).

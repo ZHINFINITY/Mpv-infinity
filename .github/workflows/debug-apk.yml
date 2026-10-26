@@ -52,6 +52,8 @@ jobs:
         run: python3 scripts/tests/radio_music_ui_contract_test.py
       - name: Test independent liquid-glass rendering and coverage contracts
         run: python3 scripts/tests/liquid_glass_contract_test.py
+      - name: Test FFmpeg audio decoder inventory
+        run: python3 scripts/tests/ffmpeg_decoder_inventory_test.py
       - name: Test player ambient glass fallback contract
         run: python3 scripts/tests/player_ambient_glass_contract_test.py
       - name: Test player popup and dialog glass coverage
@@ -87,6 +89,7 @@ jobs:
           python3 scripts/tests/media_info_playlist_glass_paths_test.py
           python3 scripts/tests/actual_mini_player_glass_contract_test.py
           python3 scripts/tests/mini_player_gesture_contract_test.py
+          python3 scripts/tests/music_playback_recovery_contract_test.py
           python3 scripts/tests/music_transition_geometry_test.py
           python3 scripts/tests/localization_resources_test.py
           python3 scripts/tests/existing_localization_gaps_test.py
@@ -346,7 +349,23 @@ jobs:
             echo "RIFE native library unexpectedly present in the Flow-only APK" >&2
             exit 1
           fi
+          libmpv_copy="$(mktemp)"
+          unzip -p "$apk" lib/arm64-v8a/libmpv.so > "$libmpv_copy"
+          if ! grep -aqF 'mpvflow-target-fps' "$libmpv_copy"; then
+            echo "Packaged libmpv.so lacks the MPV interpolation runtime (stock libmpv packaged)" >&2
+            exit 1
+          fi
+          rm -f "$libmpv_copy"
           echo "Verified Flow runtime libraries and confirmed librife_vfi.so is absent: $apk"
+      - name: Verify Native DTS FFmpeg audio fallback is packaged
+        if: ${{ inputs.flavor == 'standard' && inputs.target_abi == 'arm64-v8a' }}
+        run: |
+          set -euo pipefail
+          apk="$(find app/build/outputs/apk/standard/debug -type f -name '*arm64-v8a*.apk' -print -quit)"
+          [[ -n "$apk" ]] || { echo "No Standard arm64 debug APK found" >&2; exit 1; }
+          # Native (Media3) plays DTS / DTS Express / DTS-HD through libffmpegJNI.so, which must
+          # link the packaged LGPL FFmpeg and find its DCA decoder. Same gate as the MPVFlow build.
+          python3 scripts/verify-media3-dca-apk.py "$apk"
       - name: Verify native library symbol hygiene
         if: ${{ inputs.flavor == 'standard' && inputs.target_abi == 'arm64-v8a' }}
         run: |

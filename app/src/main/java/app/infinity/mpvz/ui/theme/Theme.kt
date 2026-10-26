@@ -7,6 +7,9 @@
 
 package app.infinity.mpvz.ui.theme
 
+import app.infinity.mpvz.ui.theme.lens.LensGlassPolicy
+import app.infinity.mpvz.ui.theme.lens.LocalLensGlassEnabled
+
 import android.content.Context
 import android.graphics.Bitmap
 import android.os.Build
@@ -296,10 +299,33 @@ fun MpvInfinityTheme(
   val glassMotion by preferences.glassMotionIntensity.collectAsState()
   val glassOpacity by preferences.glassSurfaceOpacity.collectAsState()
   val glassHighlight by preferences.glassSurfaceHighlight.collectAsState()
-  val glassCustomization = remember(glassFrost, glassRefraction, glassDepth, glassMotion, glassOpacity, glassHighlight) {
+  val glassRimStrength by preferences.glassRimStrength.collectAsState()
+  val glassRimWidth by preferences.glassRimWidth.collectAsState()
+  val glassRimSoftness by preferences.glassRimSoftness.collectAsState()
+  val lensRefraction by preferences.lensRefraction.collectAsState()
+  val lensDepth by preferences.lensDepth.collectAsState()
+  val colourEdge by preferences.colourEdge.collectAsState()
+  val glassCustomization = remember(
+    glassFrost, glassRefraction, glassDepth, glassMotion, glassOpacity, glassHighlight,
+    glassRimStrength, glassRimWidth, glassRimSoftness, lensRefraction, lensDepth, colourEdge,
+  ) {
     GlassCustomization(frost = GlassCustomizationPolicy.strength(glassFrost), refraction = GlassCustomizationPolicy.strength(glassRefraction),
       depth = GlassCustomizationPolicy.strength(glassDepth), motion = GlassCustomizationPolicy.motion(glassMotion),
-      opacity = GlassSurfacePolicy.opacity(glassOpacity), highlight = GlassSurfacePolicy.highlight(glassHighlight), overrideMaterial = true)
+      opacity = GlassSurfacePolicy.opacity(glassOpacity), highlight = GlassSurfacePolicy.highlight(glassHighlight), overrideMaterial = true,
+      rimStrength = GlassRimLightPolicy.strength(glassRimStrength),
+      rimWidthDp = GlassRimLightPolicy.widthDp(glassRimWidth),
+      rimSoftness = GlassRimLightPolicy.softness(glassRimSoftness),
+      lensRefraction = glassRefraction.coerceIn(0f, 2f) * lensRefraction.coerceIn(0f, 2f),
+      lensDepth = glassDepth.coerceIn(0f, 2f) * lensDepth.coerceIn(0f, 2f),
+      colourEdge = colourEdge)
+  }
+  val lensContext = LocalContext.current
+  val lensGlassEnabled = remember(glassEnabled) {
+    LensGlassPolicy.lensAllowed(
+      sdkInt = android.os.Build.VERSION.SDK_INT,
+      deviceSupported = GlassDeviceSupport.allowsGlass(lensContext),
+      glassEnabled = glassEnabled,
+    )
   }
   val activeCustomThemeId by preferences.activeCustomThemeId.collectAsState()
   val customTheme = customThemes.firstOrNull { it.id == activeCustomThemeId }
@@ -348,6 +374,7 @@ fun MpvInfinityTheme(
     LocalEmphasizedTypography provides AppEmphasizedTypography,
     LocalDarkAppColorScheme provides darkColorScheme,
     LocalGlassCustomization provides glassCustomization,
+    LocalLensGlassEnabled provides lensGlassEnabled,
   ) {
     val themedContent: @Composable () -> Unit = {
       ThemeTransitionContent {

@@ -12,7 +12,12 @@ assert "clipPath(panePath)" in backdrop
 assert "GlassSurfacePolicy.depthOptics" in backdrop
 assert "optics.bodyHighlight" in backdrop
 assert "optics.bodyShade" in backdrop
-assert "optics.rimWidthDp" in backdrop
+# Build 1910: the pane rim is drawn by the shared glassRimLight primitive, whose width
+# follows the user's Rim Width slider (high-contrast keeps its stronger rim there).
+rim = (ROOT / "app/src/main/java/app/infinity/mpvz/ui/theme/GlassRimLight.kt").read_text()
+assert ".glassRimLight(shape = shape, enabled = drawRim" in backdrop
+assert "tuning.rimWidthDp" in rim
+assert "highContrast" in rim
 assert "Size(bounds.width, (trackHeight / 2f)" not in controls
 assert "useArtworkAsGlassScene(): Boolean = false" in policy
 assert "LocalLiquidGlassBackdrop" not in audio

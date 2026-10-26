@@ -6,8 +6,10 @@ Source: https://github.com/androidx/media/tree/1.11.1/libraries/decoder_ffmpeg
 Pinned source commit: 8c6678b657ede1e7883fc164ef73ed483c7796c3
 License: Apache License 2.0; see LICENSE in this module.
 
-Local changes: the MIME mapping is restricted to DTS, DTS Express, and DTS-HD, all
-mapped to FFmpeg's DCA decoder. The JNI wrapper is dynamically linked to the existing
+Local changes: the MIME mapping covers the audio formats Media3 can route and FFmpeg's
+native LGPL decoders handle (DTS/DTS Express/DTS-HD, TrueHD, AC-3, E-AC-3, AAC, MP1/MP2/MP3,
+Vorbis, Opus, FLAC, ALAC, AMR-NB/WB, G.711 mu-law/A-law, and MS-GSM). Video is never
+claimed, and missing codec-private data no longer throws. The JNI wrapper is dynamically linked to the existing
 FFmpeg 9.0-series shared libraries packaged in app/libs/mpvlib.aar. The MPVFlow arm64
 build pins FFmpeg n9.0.2. That runtime is built with --disable-gpl --disable-nonfree
 --enable-version3 and carries LGPL-3.0-or-later;

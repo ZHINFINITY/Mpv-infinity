@@ -7,6 +7,12 @@
 
 package app.infinity.mpvz.ui.browser.components
 
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.MutableStateFlow
+import androidx.lifecycle.repeatOnLifecycle
+import app.infinity.mpvz.ui.player.AudioPlaybackResumeStore
+import app.infinity.mpvz.ui.player.AudioPlaybackResumeSnapshot
 import android.app.Activity
 import android.content.Context
 import android.content.Intent
@@ -23,10 +29,15 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.ui.input.pointer.util.VelocityTracker
@@ -45,6 +56,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -67,9 +79,15 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.BlendMode
+import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
@@ -78,6 +96,7 @@ import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntOffset
@@ -85,6 +104,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import app.infinity.mpvz.R
 import app.infinity.mpvz.domain.thumbnail.EmbeddedArtworkResolver
+import app.infinity.mpvz.preferences.AppearancePreferences
 import app.infinity.mpvz.preferences.PlayerPreferences
 import app.infinity.mpvz.preferences.preference.collectAsState
 import app.infinity.mpvz.ui.browser.NavigationBarState
@@ -95,8 +115,8 @@ import app.infinity.mpvz.ui.player.MediaPlaybackService
 import app.infinity.mpvz.ui.player.PlaybackPhase
 import app.infinity.mpvz.ui.player.PlaybackSession
 import app.infinity.mpvz.ui.player.PlayerActivity
-import app.infinity.mpvz.ui.player.LocalInAppMusicSheet
-import app.infinity.mpvz.ui.player.inAppMusicSheetMiniSource
+import app.infinity.mpvz.ui.player.LocalBrowserMusicSheet
+import app.infinity.mpvz.ui.player.fadeUnderBrowserMusicSheet
 import app.infinity.mpvz.ui.player.TrackNode
 import app.infinity.mpvz.ui.player.declaredMediaKind
 import app.infinity.mpvz.ui.player.toObject
@@ -106,6 +126,7 @@ import app.infinity.mpvz.ui.player.controls.MiniPlayerArtworkTarget
 import app.infinity.mpvz.ui.preferences.components.settingsGlassContainerColor
 import app.infinity.mpvz.ui.preferences.components.settingsGlassEnabled
 import app.infinity.mpvz.ui.preferences.components.settingsGlassSurface
+import app.infinity.mpvz.ui.theme.BrowserGlassSurface
 import app.infinity.mpvz.ui.utils.LocalBackStack
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -114,15 +135,81 @@ import kotlinx.serialization.json.Json
 import org.koin.compose.koinInject
 import kotlin.math.abs
 import kotlin.math.roundToInt
-import app.infinity.mpvz.ui.player.inAppMusicSheetDrag
+import app.infinity.mpvz.ui.player.browserMusicSheetDrag
 
 object MusicMiniPlayerHandoff {
   @Volatile var suppressNextEnter: Boolean = false
+
+  /**
+   * A music minimize hosted by PlayerActivity (the first song opened from the library). The
+   * service reports foreground only once PlayerActivity has left, so without this the real mini
+   * player stayed hidden for the whole morph and then slid in afterwards: the page "vanished" and
+   * only then turned into the mini player. While this is not Idle the library shows the mini
+   * player at once, under the fading page, exactly like the in-app sheet does.
+   */
+  private val _activityMinimize = MutableStateFlow(ActivityMinimizePhase.Idle)
+  val activityMinimize: StateFlow<ActivityMinimizePhase> = _activityMinimize.asStateFlow()
+
+  fun onActivityMinimizeProgress(minimizing: Boolean) {
+    _activityMinimize.value = ActivityMinimizePolicy.onProgress(_activityMinimize.value, minimizing)
+  }
+
+  fun onActivityPageDisposed() {
+    _activityMinimize.value = ActivityMinimizePolicy.onPageDisposed(_activityMinimize.value)
+  }
+
+  fun onServiceForeground() {
+    _activityMinimize.value = ActivityMinimizePhase.Idle
+  }
+
+  fun expireLanded() {
+    _activityMinimize.compareAndSet(ActivityMinimizePhase.Landed, ActivityMinimizePhase.Idle)
+  }
+}
+
+enum class ActivityMinimizePhase { Idle, Morphing, Landed }
+
+/** Pure transitions for [MusicMiniPlayerHandoff.activityMinimize]; unit tested. */
+internal object ActivityMinimizePolicy {
+  /** Landed waits this long for the service to report foreground before giving up. */
+  const val LANDED_TIMEOUT_MS = 4_000L
+
+  fun onProgress(phase: ActivityMinimizePhase, minimizing: Boolean): ActivityMinimizePhase =
+    when {
+      minimizing -> ActivityMinimizePhase.Morphing
+      // Grown back to full inside PlayerActivity: the real mini player hides again.
+      phase == ActivityMinimizePhase.Morphing -> ActivityMinimizePhase.Idle
+      else -> phase
+    }
+
+  /** The page went away mid-morph or landed: keep the mini player until the service takes over. */
+  fun onPageDisposed(phase: ActivityMinimizePhase): ActivityMinimizePhase =
+    if (phase == ActivityMinimizePhase.Morphing) ActivityMinimizePhase.Landed else phase
+
+  fun showsMiniPlayer(isServiceRunning: Boolean, phase: ActivityMinimizePhase, isAudioOnlyItem: Boolean): Boolean =
+    isServiceRunning || (isAudioOnlyItem && phase != ActivityMinimizePhase.Idle)
+
+  /** No slide/fade while the morph lands on it; the morph is the enter animation. */
+  fun skipsEnterAnimation(suppressNextEnter: Boolean, phase: ActivityMinimizePhase): Boolean =
+    suppressNextEnter || phase != ActivityMinimizePhase.Idle
+
+  /**
+   * A session is live whenever there is a current item in an active phase, including while
+   * PlayerActivity is in front (the service then reports not-foreground). The resume card must
+   * never be offered behind a live session.
+   */
+  fun sessionLive(hasCurrentItem: Boolean, phase: PlaybackPhase): Boolean =
+    hasCurrentItem &&
+      phase != PlaybackPhase.IDLE &&
+      phase != PlaybackPhase.STOPPING &&
+      phase != PlaybackPhase.UNINITIALIZED &&
+      phase != PlaybackPhase.ERROR
 }
 
 @Composable
 fun MiniPlayer(modifier: Modifier = Modifier) {
   val isServiceRunning by MediaPlaybackService.foregroundActive.collectAsStateWithLifecycle()
+  val activityMinimize by MusicMiniPlayerHandoff.activityMinimize.collectAsStateWithLifecycle()
   val context = LocalContext.current
   val sessionState by PlaybackSession.state.collectAsStateWithLifecycle()
   val playerPreferences: PlayerPreferences = koinInject()
@@ -151,22 +238,50 @@ fun MiniPlayer(modifier: Modifier = Modifier) {
 
   val isMiniPlayerAllowed = isAudioOnlyItem || enableVideoMiniPlayer
 
-  val isMediaActive = isServiceRunning && currentItem != null &&
-    !isSettingsScreen &&
-    isMiniPlayerAllowed &&
-    sessionState.phase != PlaybackPhase.IDLE &&
-    sessionState.phase != PlaybackPhase.STOPPING &&
-    sessionState.phase != PlaybackPhase.UNINITIALIZED &&
-    sessionState.phase != PlaybackPhase.ERROR
+  val sessionLive = ActivityMinimizePolicy.sessionLive(currentItem != null, sessionState.phase)
+  val isMediaActive =
+    ActivityMinimizePolicy.showsMiniPlayer(isServiceRunning, activityMinimize, isAudioOnlyItem) &&
+      sessionLive &&
+      !isSettingsScreen &&
+      isMiniPlayerAllowed
+  LaunchedEffect(activityMinimize, isServiceRunning) {
+    if (activityMinimize == ActivityMinimizePhase.Idle) return@LaunchedEffect
+    if (isServiceRunning) {
+      MusicMiniPlayerHandoff.onServiceForeground()
+    } else if (activityMinimize == ActivityMinimizePhase.Landed) {
+      // PlayerActivity is gone but the service never took over (e.g. playback stopped):
+      // do not leave a mini player for a session nobody owns.
+      kotlinx.coroutines.delay(ActivityMinimizePolicy.LANDED_TIMEOUT_MS)
+      MusicMiniPlayerHandoff.expireLanded()
+    }
+  }
 
   // Keep the mini player alive while browser selection mode is active. Its outer
   // placement is lifted above the selection actions instead of hiding/overlapping.
+  // After the service stops or the process dies, offer the saved music session (song, queue,
+  // position) in the same slot instead of forgetting it.
+  val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+  var resumeSnapshot by remember { mutableStateOf<AudioPlaybackResumeSnapshot?>(null) }
+  val resumeScope = androidx.compose.runtime.rememberCoroutineScope()
+  LaunchedEffect(isServiceRunning, lifecycleOwner) {
+    if (isServiceRunning) {
+      resumeSnapshot = null
+      return@LaunchedEffect
+    }
+    lifecycleOwner.repeatOnLifecycle(androidx.lifecycle.Lifecycle.State.RESUMED) {
+      resumeSnapshot = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+        AudioPlaybackResumeStore.load(context.applicationContext)
+      }
+    }
+  }
+  val offerResume = MiniPlayerResumePolicy.shouldOffer(isServiceRunning || sessionLive, isSettingsScreen, resumeSnapshot)
   SideEffect {
-    NavigationBarState.isMiniPlayerVisible = isMediaActive
+    NavigationBarState.isMiniPlayerVisible = isMediaActive || offerResume
   }
 
-  val suppressHandoffEnter = MusicMiniPlayerHandoff.suppressNextEnter
-  if (suppressHandoffEnter) MusicMiniPlayerHandoff.suppressNextEnter = false
+  val suppressHandoffEnter =
+    ActivityMinimizePolicy.skipsEnterAnimation(MusicMiniPlayerHandoff.suppressNextEnter, activityMinimize)
+  if (MusicMiniPlayerHandoff.suppressNextEnter) MusicMiniPlayerHandoff.suppressNextEnter = false
   AnimatedVisibility(
     visible = isMediaActive,
     enter = if (suppressHandoffEnter) EnterTransition.None else slideInVertically(initialOffsetY = { it }) + fadeIn(),
@@ -180,6 +295,86 @@ fun MiniPlayer(modifier: Modifier = Modifier) {
       hasRealVideo = hasRealVideo,
       detachedPlaybackActive = isServiceRunning,
     )
+  }
+  AnimatedVisibility(
+    visible = offerResume && !isMediaActive,
+    enter = slideInVertically(initialOffsetY = { it }) + fadeIn(),
+    exit = fadeOut(),
+    modifier = modifier,
+  ) {
+    resumeSnapshot?.let { snapshot ->
+      MiniPlayerResumeCard(
+        snapshot = snapshot,
+        onResume = {
+          resumeSnapshot = null
+          context.startActivity(MiniPlayerResumePolicy.resumeIntent(context))
+        },
+        onDismiss = {
+          resumeSnapshot = null
+          val appContext = context.applicationContext
+          // clear() commits encrypted prefs synchronously; keep it off the main thread.
+          resumeScope.launch(kotlinx.coroutines.Dispatchers.IO) { AudioPlaybackResumeStore.clear(appContext) }
+        },
+      )
+    }
+  }
+  // No live mini player yet (the first song opened from the library): lay out an invisible
+  // stand-in in the same slot, so the first music minimize has a landing rect and morphs into
+  // it instead of falling back to the plain slide.
+  if (MiniPlayerAnchorProbePolicy.shouldProbe(isMediaActive = isMediaActive, isSettingsScreen = isSettingsScreen)) {
+    MiniPlayerAnchorProbe(modifier)
+  }
+}
+
+/** When the invisible landing-rect stand-in is laid out. Pure for unit tests. */
+object MiniPlayerAnchorProbePolicy {
+  fun shouldProbe(isMediaActive: Boolean, isSettingsScreen: Boolean): Boolean =
+    !isMediaActive && !isSettingsScreen
+}
+
+/**
+ * Invisible copy of the audio mini player's outer geometry: the same slot modifier, row padding,
+ * 48 dp cover and two text lines (so its height follows the font scale like the real one). It
+ * draws nothing, has no input handlers and no semantics; it only publishes the landing rect.
+ */
+@Composable
+internal fun MiniPlayerAnchorProbe(modifier: Modifier) {
+  val hostView = LocalView.current
+  var surfaceBounds by remember { mutableStateOf<Rect?>(null) }
+  var artworkBounds by remember { mutableStateOf<Rect?>(null) }
+  fun publish() {
+    val surface = surfaceBounds ?: return
+    val art = artworkBounds
+    MiniPlayerTransitionAnchor.publish(
+      left = surface.left, top = surface.top, width = surface.width, height = surface.height,
+      viewportWidth = hostView.width.toFloat(), viewportHeight = hostView.height.toFloat(),
+      artworkLeft = art?.left, artworkTop = art?.top, artworkWidth = art?.width, artworkHeight = art?.height,
+    )
+  }
+  Row(
+    modifier = modifier
+      .graphicsLayer { alpha = 0f }
+      .clearAndSetSemantics {}
+      .fillMaxWidth()
+      .onGloballyPositioned { coordinates ->
+        surfaceBounds = coordinates.miniPlayerScreenBounds(hostView)
+        publish()
+      }
+      .padding(horizontal = 12.dp, vertical = 8.dp),
+    verticalAlignment = Alignment.CenterVertically,
+  ) {
+    Box(
+      modifier = Modifier
+        .size(48.dp)
+        .onGloballyPositioned { coordinates ->
+          artworkBounds = coordinates.miniPlayerScreenBounds(hostView)
+          publish()
+        },
+    )
+    Column(modifier = Modifier.weight(1f).padding(start = 12.dp)) {
+      Text(text = " ", style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold), maxLines = 1)
+      Text(text = " ", style = MaterialTheme.typography.labelSmall, maxLines = 1)
+    }
   }
 }
 
@@ -196,6 +391,8 @@ private fun MiniPlayerContent(
   val currentItem = sessionState.currentItem
   val paused by PlaybackSession.propBoolean["pause"].collectAsStateWithLifecycle()
   val rawMediaTitle by PlaybackSession.propString["media-title"].collectAsStateWithLifecycle()
+  val rawArtist by PlaybackSession.propString["metadata/by-key/Artist"].collectAsStateWithLifecycle()
+  val rawAlbum by PlaybackSession.propString["metadata/by-key/Album"].collectAsStateWithLifecycle()
   val duration by PlaybackSession.propInt["duration"].collectAsStateWithLifecycle()
   val positionState = PlaybackSession.propInt["time-pos"].collectAsStateWithLifecycle()
   val videoAspectRaw by PlaybackSession.propDouble["video-params/aspect"].collectAsStateWithLifecycle()
@@ -203,6 +400,10 @@ private fun MiniPlayerContent(
   val videoHeight by PlaybackSession.propLong["video-params/h"].collectAsStateWithLifecycle()
 
   val isPlaying = paused == false
+  val artist = currentItem?.artist?.takeIf { it.isNotBlank() }
+    ?: rawArtist?.takeIf { it.isNotBlank() }
+    ?: rawAlbum?.takeIf { it.isNotBlank() }
+    ?: context.getString(R.string.mini_player_unknown_artist)
   val title =
     queueState.currentItem?.title?.takeIf { queueState.isExplicitQueue && it.isNotBlank() }
       ?: rawMediaTitle?.takeIf { it.isNotBlank() }
@@ -229,7 +430,7 @@ private fun MiniPlayerContent(
       artworkUri = if (isAudioOnlyItem) currentItem?.artworkUri else null,
     )
 
-  val musicSheet = LocalInAppMusicSheet.current
+  val musicSheet = LocalBrowserMusicSheet.current
   val coroutineScope = rememberCoroutineScope()
   val hostView = LocalView.current
   var offsetX by remember { mutableFloatStateOf(0f) }
@@ -250,7 +451,7 @@ private fun MiniPlayerContent(
   val expandThresholdPx = with(density) { 48.dp.toPx() }
 
   val useInAppSheet = isAudioOnlyItem && musicSheet?.isAvailable == true
-  val launchPlayer = remember(context, isAudioOnlyItem, useInAppSheet, musicSheet) {
+  val launchPlayer: () -> Unit = remember(context, isAudioOnlyItem, useInAppSheet, musicSheet) {
     {
       if (useInAppSheet && musicSheet != null) {
         musicSheet.expand()
@@ -290,9 +491,16 @@ private fun MiniPlayerContent(
   }
 
   val glassEnabled = settingsGlassEnabled()
-  Surface(
+  val appearance = koinInject<AppearancePreferences>()
+  val glassOpacity by appearance.glassSurfaceOpacity.collectAsState()
+  val glassHighlight by appearance.glassSurfaceHighlight.collectAsState()
+  BrowserGlassSurface(
+    enabled = glassEnabled,
+    opacity = glassOpacity,
+    highlight = glassHighlight,
+    cornerRadius = 20.dp,
     modifier = Modifier
-      .inAppMusicSheetMiniSource(musicSheet, RoundedCornerShape(20.dp))
+      .fadeUnderBrowserMusicSheet(if (useInAppSheet) musicSheet else null)
       .offset { IntOffset(offsetX.roundToInt(), 0) }
       .onGloballyPositioned { coordinates ->
         if (isAudioOnlyItem) {
@@ -327,10 +535,9 @@ private fun MiniPlayerContent(
       }
       .then(
         if (useInAppSheet && musicSheet != null) {
-          Modifier.inAppMusicSheetDrag(
+          Modifier.browserMusicSheetDrag(
             state = musicSheet,
-            collapsing = false,
-            enabled = true,
+            fromMiniPlayer = true,
             onDown = musicSheet::prewarm,
           )
         } else {
@@ -358,13 +565,11 @@ private fun MiniPlayerContent(
         },
       )
       .clip(RoundedCornerShape(20.dp))
-      .settingsGlassSurface(cornerRadius = 20.dp)
+      .then(if (!glassEnabled) Modifier.background(MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.96f)) else Modifier)
       .clickable { launchPlayer() },
-    color = settingsGlassContainerColor(MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.96f)),
-    tonalElevation = if (glassEnabled) 0.dp else 8.dp,
-    shadowElevation = if (glassEnabled) 0.dp else 10.dp,
   ) {
     val primaryContainerColor = MaterialTheme.colorScheme.primaryContainer
+    val progressTrackColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.14f)
 
     if (isVideoMode) {
       // Calculate aspect ratio for video surface container
@@ -381,6 +586,17 @@ private fun MiniPlayerContent(
       Row(
         modifier = Modifier
           .fillMaxWidth()
+          .drawBehind {
+            val dur = duration?.toFloat() ?: 0f
+            val pos = positionState.value?.toFloat() ?: 0f
+            val progressFraction = if (dur > 0f) (pos / dur).coerceIn(0f, 1f) else 0f
+            val trackY = size.height - 2.dp.toPx()
+            val radius = androidx.compose.ui.geometry.CornerRadius(1.dp.toPx())
+            drawRoundRect(color = progressTrackColor, topLeft = androidx.compose.ui.geometry.Offset(0f, trackY), size = Size(size.width, 2.dp.toPx()), cornerRadius = radius)
+            if (progressFraction > 0f) {
+              drawRoundRect(color = primaryContainerColor.copy(alpha = 0.72f), topLeft = androidx.compose.ui.geometry.Offset(0f, trackY), size = Size(size.width * progressFraction, 2.dp.toPx()), cornerRadius = radius)
+            }
+          }
           .height(76.dp)
           .padding(4.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -448,11 +664,17 @@ private fun MiniPlayerContent(
               color = MaterialTheme.colorScheme.onSurface,
               maxLines = 1,
               overflow = TextOverflow.Ellipsis,
-              modifier = Modifier.basicMarquee(),
+              modifier = Modifier
+                .graphicsLayer(compositingStrategy = CompositingStrategy.Offscreen)
+                .drawWithContent {
+                  drawContent()
+                  drawRect(miniMarqueeFade(size.width, 6.dp.toPx(), 16.dp.toPx()), blendMode = BlendMode.DstIn)
+                }
+                .basicMarquee(initialDelayMillis = 650),
             )
           }
           Text(
-            text = if (isPlaying) "Playing Video" else "Paused",
+            text = artist,
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             maxLines = 1,
@@ -462,9 +684,12 @@ private fun MiniPlayerContent(
         // Control Buttons
         Row(
           verticalAlignment = Alignment.CenterVertically,
-          horizontalArrangement = Arrangement.spacedBy(2.dp),
+          horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-          IconButton(
+          MiniPlayerGlassButton(
+            glassEnabled = glassEnabled,
+            opacity = glassOpacity,
+            highlight = glassHighlight,
             onClick = {
               context.startService(
                 Intent(context, MediaPlaybackService::class.java).setAction(
@@ -472,7 +697,6 @@ private fun MiniPlayerContent(
                 ),
               )
             },
-            modifier = Modifier.size(36.dp),
           ) {
             AnimatedContent(
               targetState = isPlaying,
@@ -481,20 +705,22 @@ private fun MiniPlayerContent(
             ) { playing ->
               Icon(
                 imageVector = if (playing) Icons.RoundedFilled.Pause else Icons.RoundedFilled.PlayArrow,
-                contentDescription = null,
+                contentDescription = stringResource(if (playing) R.string.downloads_pause else R.string.ui_play),
                 tint = MaterialTheme.colorScheme.onSurface,
                 modifier = Modifier.size(26.dp),
               )
             }
           }
 
-          IconButton(
+          MiniPlayerGlassButton(
+            glassEnabled = glassEnabled,
+            opacity = glassOpacity,
+            highlight = glassHighlight,
             onClick = { dismissPlayer() },
-            modifier = Modifier.size(32.dp),
           ) {
             Icon(
               imageVector = Icons.RoundedFilled.Close,
-              contentDescription = null,
+              contentDescription = stringResource(R.string.ui_close),
               tint = MaterialTheme.colorScheme.onSurfaceVariant,
               modifier = Modifier.size(18.dp),
             )
@@ -510,14 +736,11 @@ private fun MiniPlayerContent(
             val dur = duration?.toFloat() ?: 0f
             val pos = positionState.value?.toFloat() ?: 0f
             val progressFraction = if (dur > 0f) (pos / dur).coerceIn(0f, 1f) else 0f
+            val trackY = size.height - 2.dp.toPx()
+            val radius = androidx.compose.ui.geometry.CornerRadius(1.dp.toPx())
+            drawRoundRect(color = progressTrackColor, topLeft = androidx.compose.ui.geometry.Offset(0f, trackY), size = Size(size.width, 2.dp.toPx()), cornerRadius = radius)
             if (progressFraction > 0f) {
-              drawRect(
-                color = primaryContainerColor.copy(alpha = 0.35f),
-                size = Size(
-                  width = size.width * progressFraction,
-                  height = size.height,
-                ),
-              )
+              drawRoundRect(color = primaryContainerColor.copy(alpha = 0.72f), topLeft = androidx.compose.ui.geometry.Offset(0f, trackY), size = Size(size.width * progressFraction, 2.dp.toPx()), cornerRadius = radius)
             }
           }
           .padding(horizontal = 12.dp, vertical = 8.dp),
@@ -567,11 +790,17 @@ private fun MiniPlayerContent(
               color = MaterialTheme.colorScheme.onSurface,
               maxLines = 1,
               overflow = TextOverflow.Ellipsis,
-              modifier = Modifier.basicMarquee(),
+              modifier = Modifier
+                .graphicsLayer(compositingStrategy = CompositingStrategy.Offscreen)
+                .drawWithContent {
+                  drawContent()
+                  drawRect(miniMarqueeFade(size.width, 6.dp.toPx(), 16.dp.toPx()), blendMode = BlendMode.DstIn)
+                }
+                .basicMarquee(initialDelayMillis = 650),
             )
           }
           Text(
-            text = if (isPlaying) "Playing" else "Paused",
+            text = artist,
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             maxLines = 1,
@@ -581,7 +810,10 @@ private fun MiniPlayerContent(
         Spacer(modifier = Modifier.width(8.dp))
 
         // Play / Pause Action Button
-        IconButton(
+        MiniPlayerGlassButton(
+          glassEnabled = glassEnabled,
+          opacity = glassOpacity,
+          highlight = glassHighlight,
           onClick = {
             context.startService(
               Intent(context, MediaPlaybackService::class.java).setAction(
@@ -589,7 +821,6 @@ private fun MiniPlayerContent(
               ),
             )
           },
-          modifier = Modifier.size(36.dp),
         ) {
           AnimatedContent(
             targetState = isPlaying,
@@ -598,15 +829,19 @@ private fun MiniPlayerContent(
           ) { playing ->
             Icon(
               imageVector = if (playing) Icons.RoundedFilled.Pause else Icons.RoundedFilled.PlayArrow,
-              contentDescription = null,
+              contentDescription = stringResource(if (playing) R.string.downloads_pause else R.string.ui_play),
               tint = MaterialTheme.colorScheme.onSurface,
               modifier = Modifier.size(26.dp),
             )
           }
         }
 
+        Spacer(modifier = Modifier.width(8.dp))
         // Next Track Action Button
-        IconButton(
+        MiniPlayerGlassButton(
+          glassEnabled = glassEnabled,
+          opacity = glassOpacity,
+          highlight = glassHighlight,
           onClick = {
             context.startService(
               Intent(context, MediaPlaybackService::class.java).setAction(
@@ -614,29 +849,81 @@ private fun MiniPlayerContent(
               ),
             )
           },
-          modifier = Modifier.size(36.dp),
         ) {
           Icon(
             imageVector = Icons.RoundedFilled.SkipNext,
-            contentDescription = null,
+            contentDescription = stringResource(R.string.ui_next),
             tint = MaterialTheme.colorScheme.onSurface,
             modifier = Modifier.size(24.dp),
           )
         }
 
+        Spacer(modifier = Modifier.width(8.dp))
         // Close Action Button
-        IconButton(
+        MiniPlayerGlassButton(
+          glassEnabled = glassEnabled,
+          opacity = glassOpacity,
+          highlight = glassHighlight,
           onClick = { dismissPlayer() },
-          modifier = Modifier.size(32.dp),
         ) {
           Icon(
             imageVector = Icons.RoundedFilled.Close,
-            contentDescription = null,
+            contentDescription = stringResource(R.string.ui_close),
             tint = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.size(18.dp),
           )
         }
       }
+    }
+  }
+}
+
+@Composable
+private fun MiniPlayerGlassButton(
+  glassEnabled: Boolean,
+  opacity: Float,
+  highlight: Float,
+  onClick: () -> Unit,
+  content: @Composable () -> Unit,
+) {
+  val interactionSource = remember { MutableInteractionSource() }
+  val pressed by interactionSource.collectIsPressedAsState()
+  val motionAmount = if (app.infinity.mpvz.ui.theme.LocalMotionPolicy.current.reduceMotion) {
+    0f
+  } else {
+    app.infinity.mpvz.ui.theme.LocalGlassCustomization.current.motion.coerceIn(0f, 1f)
+  }
+  val lift by animateFloatAsState(
+    targetValue = if (pressed && glassEnabled) 1f + 0.04f * motionAmount else 1f,
+    animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
+    label = "miniGlassButtonLift",
+  )
+  Box(
+    modifier = Modifier
+      .size(48.dp)
+      .graphicsLayer {
+        shape = CircleShape
+        clip = true
+        scaleX = lift
+        scaleY = lift
+        shadowElevation = if (pressed && glassEnabled) 4.dp.toPx() * motionAmount else 0f
+      }
+      .clip(CircleShape),
+    contentAlignment = Alignment.Center,
+  ) {
+    BrowserGlassSurface(
+      enabled = glassEnabled,
+      opacity = opacity,
+      highlight = highlight,
+      cornerRadius = 999.dp,
+      modifier = Modifier.matchParentSize(),
+    )
+    IconButton(
+      onClick = onClick,
+      modifier = Modifier.matchParentSize().clip(CircleShape),
+      interactionSource = interactionSource,
+    ) {
+      content()
     }
   }
 }
@@ -685,4 +972,12 @@ private fun rememberMiniPlayerCoverArt(
     }
   }
   return bitmap
+}
+
+/** Fixed-width edge fades: a short title is never washed out, and the first letters stay readable at rest. */
+internal fun miniMarqueeFade(width: Float, startFadePx: Float, endFadePx: Float): Brush {
+  val w = width.coerceAtLeast(1f)
+  val a = (startFadePx / w).coerceIn(0f, .25f)
+  val b = (1f - endFadePx / w).coerceIn(.75f, 1f)
+  return Brush.horizontalGradient(0f to Color.Transparent, a to Color.White, b to Color.White, 1f to Color.Transparent, startX = 0f, endX = w)
 }

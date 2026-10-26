@@ -209,7 +209,7 @@ internal fun AudioPlayerScreen(
   onBackPress: () -> Unit,
   modifier: Modifier = Modifier,
   titleForControls: () -> String? = { null },
-  inAppSheet: InAppMusicSheetState? = null,
+  inAppSheet: Any? = null,
   onSelectEngine: ((PlaybackEngineMode) -> Unit)? = null,
 ) {
   val playerPreferences = koinInject<PlayerPreferences>()

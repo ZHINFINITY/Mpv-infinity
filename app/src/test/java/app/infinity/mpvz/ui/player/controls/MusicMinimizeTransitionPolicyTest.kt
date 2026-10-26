@@ -33,11 +33,56 @@ class MusicMinimizeTransitionPolicyTest {
     assertEquals(0f, MusicMinimizeTransitionPolicy.releaseTargetMiniProgress(.1f, 5000f, 0f, true), 0f)
   }
 
-  @Test fun durationsMatchCloseSettleAndOpenFromMini() {
-    assertEquals(300, MusicMinimizeTransitionPolicy.settleDurationMs(1f, programmatic = false))
-    assertEquals(300, MusicMinimizeTransitionPolicy.settleDurationMs(1f, programmatic = true))
-    assertEquals(220, MusicMinimizeTransitionPolicy.settleDurationMs(0f, programmatic = false))
-    assertEquals(400, MusicMinimizeTransitionPolicy.settleDurationMs(0f, programmatic = true))
+  // The fixed 220/300/400 ms tweens were replaced by one critically damped spring so a settle
+  // continues the finger's speed instead of restarting from zero (owner: "stuck"/laggy minimize).
+  @Test fun settleSpringIsCriticallyDampedAndStiff() {
+    assertEquals(1f, MusicMinimizeTransitionPolicy.SETTLE_DAMPING_RATIO, 0f)
+    assertTrue(MusicMinimizeTransitionPolicy.SETTLE_STIFFNESS >= 400f)
+  }
+
+  @Test fun releaseVelocityCarriesIntoTheSettleTowardTheTarget() {
+    // Downward flick of 1600 px/s over 800 px of travel = 2 progress/s toward minimized.
+    assertEquals(2f, MusicMinimizeTransitionPolicy.settleInitialVelocity(.4f, 1f, false, 1600f, 800f), .0001f)
+    // A flick against the chosen target is dropped, never fought.
+    assertEquals(0f, MusicMinimizeTransitionPolicy.settleInitialVelocity(.2f, 0f, false, 1600f, 800f), 0f)
+    // Absurd samples are capped.
+    assertEquals(MusicMinimizeTransitionPolicy.MAX_SETTLE_PROGRESS_PER_SECOND,
+      MusicMinimizeTransitionPolicy.settleInitialVelocity(.1f, 1f, false, 1e7f, 800f), 0f)
+    // Invalid travel or velocity never produces NaN.
+    assertEquals(0f, MusicMinimizeTransitionPolicy.settleInitialVelocity(.1f, 1f, false, Float.NaN, 800f), 0f)
+    assertEquals(0f, MusicMinimizeTransitionPolicy.settleInitialVelocity(.1f, 1f, false, 900f, 0f), 0f)
+    // Already at the target: nothing to do.
+    assertEquals(0f, MusicMinimizeTransitionPolicy.settleInitialVelocity(1f, 1f, true, 0f, 800f), 0f)
+  }
+
+  @Test fun programmaticSettleStartsMovingOnTheFirstFrame() {
+    val kick = MusicMinimizeTransitionPolicy.PROGRAMMATIC_KICK_PROGRESS_PER_SECOND
+    assertEquals(kick, MusicMinimizeTransitionPolicy.settleInitialVelocity(0f, 1f, true, 0f, 800f), 0f)
+    assertEquals(-kick, MusicMinimizeTransitionPolicy.settleInitialVelocity(1f, 0f, true, 0f, 800f), 0f)
+  }
+
+  @Test fun chromeLeavesEarlyWhileThePaletteCardStaysUntilLate() {
+    assertEquals(1f, MusicMinimizeTransitionPolicy.chromeAlpha(0f), 0f)
+    assertEquals(0f, MusicMinimizeTransitionPolicy.chromeAlpha(.4f), .0001f)
+    assertEquals(1f, MusicMinimizeTransitionPolicy.surfaceAlpha(.5f), 0f)
+    assertEquals(0f, MusicMinimizeTransitionPolicy.surfaceAlpha(1f), .0001f)
+    assertEquals(1f, MusicMinimizeTransitionPolicy.chromeAlpha(Float.NaN), 0f)
+  }
+
+  @Test fun flyingCoverIsIdentityWhenOpenAndLandsOnTheMiniArtwork() {
+    val open = MusicMinimizeTransitionPolicy.frame(0f, screen, mini, fullArt, miniArt)
+    val atOpen = MusicMinimizeTransitionPolicy.flyingCoverLayer(open, fullArt)
+    assertEquals(0f, atOpen.translationX, .01f)
+    assertEquals(0f, atOpen.translationY, .01f)
+    assertEquals(1f, atOpen.scaleX, .0001f)
+    assertEquals(1f, atOpen.scaleY, .0001f)
+    val closed = MusicMinimizeTransitionPolicy.frame(1f, screen, mini, fullArt, miniArt)
+    val atMini = MusicMinimizeTransitionPolicy.flyingCoverLayer(closed, fullArt)
+    assertEquals(miniArt.left - fullArt.left, atMini.translationX, .5f)
+    assertEquals(miniArt.top - fullArt.top, atMini.translationY, .5f)
+    assertEquals(miniArt.width / fullArt.width, atMini.scaleX, .001f)
+    // Square cover to square mini art: uniform scale, so the cover is never stretched.
+    assertEquals(atMini.scaleX, atMini.scaleY, .001f)
   }
 
   @Test fun settleEasingStartsAtCurrentValue() {

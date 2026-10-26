@@ -29,6 +29,8 @@
   <string name="pref_appearance_amoled_mode_summary">Utiliser un arrière-plan noir pur pour les thèmes sombres</string>
   <string name="pref_appearance_system_font_title">Utiliser la police système</string>
   <string name="pref_appearance_system_font_summary">Utiliser la police système Android dans Mpv∞ à la place de Google Sans Flex</string>
+  <string name="pref_appearance_animate_infinity_logo_title">Animer le logo infini</string>
+  <string name="pref_appearance_animate_infinity_logo_summary">Anime en boucle le symbole infini de la bibliothèque. Désactivez pour afficher une marque fixe.</string>
   <string name="pref_appearance_material_you_title">Material You</string>
   <string name="pref_appearance_material_you_summary">Activer les couleurs dynamiques</string>
   <string name="pref_appearance_material_you_summary_disabled">Disponible uniquement sur Android 12 et versions ultérieures</string>
@@ -2256,4 +2258,11 @@ Veuillez redémarrer l’application pour appliquer toutes les modifications.</s
     <string name="pref_openai_base_url_summary">Laisser vide pour utiliser le point de terminaison officiel d\'OpenAI</string>
     <string name="pref_openai_base_url_prompt">Saisissez l\'URL de base d\'une API compatible OpenAI</string>
     <string name="pref_openai_base_url_invalid">Saisissez une URL HTTP ou HTTPS valide sans identifiants, paramètres de requête ni fragments.</string>
+  <string name="pref_glass_preview">Aperçu du verre en direct</string>
+  <string name="pref_glass_rim_strength">Intensité du liseré</string>
+  <string name="pref_glass_rim_strength_summary">Luminosité du liseré lumineux commun</string>
+  <string name="pref_glass_rim_width">Largeur du liseré</string>
+  <string name="pref_glass_rim_width_summary">Épaisseur du liseré lumineux en dp</string>
+  <string name="pref_glass_rim_softness">Douceur du liseré</string>
+  <string name="pref_glass_rim_softness_summary">Douceur du fondu de la lumière du bord</string>
 </resources>

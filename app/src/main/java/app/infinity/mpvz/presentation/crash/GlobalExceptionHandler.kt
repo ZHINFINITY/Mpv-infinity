@@ -19,6 +19,8 @@ class GlobalExceptionHandler(
     t: Thread,
     e: Throwable,
   ) {
+    // A crash inside glass rendering turns glass off for the next launch (classic UI).
+    app.infinity.mpvz.ui.theme.GlassDeviceSupport.recordCrash(context, e)
     val intent = Intent(context, activity)
     intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
     intent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TASK)

@@ -29,6 +29,8 @@
   <string name="pref_appearance_amoled_mode_summary">Usar un fondo negro puro en los temas oscuros</string>
   <string name="pref_appearance_system_font_title">Usar la fuente del sistema</string>
   <string name="pref_appearance_system_font_summary">Usar la tipografía del sistema Android en todo Mpv∞ en lugar de Google Sans Flex</string>
+  <string name="pref_appearance_animate_infinity_logo_title">Animar el logotipo de infinito</string>
+  <string name="pref_appearance_animate_infinity_logo_summary">Repite la animación del símbolo de infinito de la biblioteca. Desactívalo para mostrar una marca fija.</string>
   <string name="pref_appearance_material_you_title">Material You</string>
   <string name="pref_appearance_material_you_summary">Activar colores dinámicos</string>
   <string name="pref_appearance_material_you_summary_disabled">Solo disponible en Android 12 o superior</string>
@@ -2256,4 +2258,11 @@ Reinicia la aplicación para que se apliquen todos los cambios.</string>
     <string name="pref_openai_base_url_summary">Déjalo vacío para usar el endpoint oficial de OpenAI</string>
     <string name="pref_openai_base_url_prompt">Introduce la URL base de una API compatible con OpenAI</string>
     <string name="pref_openai_base_url_invalid">Introduce una URL HTTP o HTTPS válida sin credenciales, parámetros de consulta ni fragmentos.</string>
+  <string name="pref_glass_preview">Vista previa del cristal en vivo</string>
+  <string name="pref_glass_rim_strength">Intensidad del borde</string>
+  <string name="pref_glass_rim_strength_summary">Brillo del borde iluminado compartido</string>
+  <string name="pref_glass_rim_width">Ancho del borde</string>
+  <string name="pref_glass_rim_width_summary">Grosor del borde iluminado en dp</string>
+  <string name="pref_glass_rim_softness">Suavidad del borde</string>
+  <string name="pref_glass_rim_softness_summary">Con qué suavidad se desvanece la luz del borde</string>
 </resources>

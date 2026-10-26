@@ -29,6 +29,8 @@
   <string name="pref_appearance_amoled_mode_summary">Gunakan latar belakang hitam murni untuk tema gelap</string>
   <string name="pref_appearance_system_font_title">Gunakan font sistem</string>
   <string name="pref_appearance_system_font_summary">Gunakan jenis huruf sistem Android di Mpv∞ alih-alih Google Sans Flex</string>
+  <string name="pref_appearance_animate_infinity_logo_title">Animasikan logo tak hingga</string>
+  <string name="pref_appearance_animate_infinity_logo_summary">Putar animasi simbol tak hingga di pustaka secara berulang. Matikan untuk menampilkan tanda diam.</string>
   <string name="pref_appearance_material_you_title">Material You</string>
   <string name="pref_appearance_material_you_summary">Aktifkan warna dinamis</string>
   <string name="pref_appearance_material_you_summary_disabled">Hanya tersedia di Android 12 ke atas</string>
@@ -2241,4 +2243,11 @@
     <string name="pref_openai_base_url_summary">Kosongkan untuk memakai endpoint resmi OpenAI</string>
     <string name="pref_openai_base_url_prompt">Masukkan URL dasar API yang kompatibel dengan OpenAI</string>
     <string name="pref_openai_base_url_invalid">Masukkan URL HTTP atau HTTPS yang valid tanpa kredensial, parameter kueri, atau fragmen.</string>
+  <string name="pref_glass_preview">Pratinjau kaca langsung</string>
+  <string name="pref_glass_rim_strength">Kekuatan tepi</string>
+  <string name="pref_glass_rim_strength_summary">Kecerahan tepi bercahaya bersama</string>
+  <string name="pref_glass_rim_width">Lebar tepi</string>
+  <string name="pref_glass_rim_width_summary">Ketebalan tepi bercahaya dalam dp</string>
+  <string name="pref_glass_rim_softness">Kelembutan tepi</string>
+  <string name="pref_glass_rim_softness_summary">Seberapa lembut cahaya tepi memudar</string>
 </resources>

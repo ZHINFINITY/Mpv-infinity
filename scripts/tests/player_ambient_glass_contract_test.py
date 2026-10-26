@@ -16,7 +16,13 @@ def test_player_glass_does_not_paint_theme_film_without_sampled_scene():
     assert "LocalLiquidGlassBackdrop provides" not in (ROOT / "app/src/main/java/app/infinity/mpvz/ui/theme/BrowserGlassScene.kt").read_text()
     # The sampled-scene path remains intact; this is deliberately not a global
     # disable of the Liquid Glass material.
-    assert "paint.shader = shader" in source
+    # The AGSL bind lives in AgslRuntimeShaders (API 33+ only); a failed bind falls back to
+    # the mapped bitmap scene rather than a theme film.
+    agsl = (ROOT / "app/src/main/java/app/infinity/mpvz/ui/theme/AgslRuntimeShaders.kt").read_text()
+    assert "RuntimeShaderSupport.bindGlassOpticsOrNull(" in source
+    assert "AgslRuntimeShaders.bindGlassOptics(" in (ROOT / "app/src/main/java/app/infinity/mpvz/ui/theme/RuntimeShaderSupport.kt").read_text()
+    assert "paint.shader = runtime" in agsl
+    assert "paint.shader = sourceShader" in source
     assert "let the ambient colour show" in source
 
 
