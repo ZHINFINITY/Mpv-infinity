@@ -372,6 +372,9 @@ object AppearancePreferencesScreen : Screen {
                   val glassRimStrength by preferences.glassRimStrength.collectAsState()
                   val glassRimWidth by preferences.glassRimWidth.collectAsState()
                   val glassRimSoftness by preferences.glassRimSoftness.collectAsState()
+                  val lensRefraction by preferences.lensRefraction.collectAsState()
+                  val lensDepth by preferences.lensDepth.collectAsState()
+                  val colourEdge by preferences.colourEdge.collectAsState()
                   GlassCustomizationPreference(
                     title = "Frost / blur strength", summary = "Smooth shared frost; lower settings use less work",
                     value = app.infinity.mpvz.ui.theme.GlassCustomizationPolicy.strength(frostStrength),
@@ -387,6 +390,17 @@ object AppearancePreferencesScreen : Screen {
                     value = app.infinity.mpvz.ui.theme.GlassCustomizationPolicy.strength(depthStrength),
                     enabled = liquidGlassSurfaces, onValueChange = preferences.glassDepthStrength::set,
                   )
+                  GlassCustomizationPreference(
+                    title = stringResource(R.string.pref_glass_lens_refraction), summary = stringResource(R.string.pref_glass_lens_refraction_summary),
+                    value = lensRefraction, enabled = liquidGlassSurfaces, onValueChange = preferences.lensRefraction::set,
+                  )
+                  GlassCustomizationPreference(
+                    title = stringResource(R.string.pref_glass_lens_depth), summary = stringResource(R.string.pref_glass_lens_depth_summary),
+                    value = lensDepth, enabled = liquidGlassSurfaces, onValueChange = preferences.lensDepth::set,
+                  )
+                  SwitchPreference(value = colourEdge, onValueChange = preferences.colourEdge::set,
+                    title = { Text(stringResource(R.string.pref_glass_colour_edge)) },
+                    summary = { Text(stringResource(R.string.pref_glass_colour_edge_summary)) }, enabled = liquidGlassSurfaces)
                   GlassCustomizationPreference(
                     title = "Glass motion", summary = "Navigation-lens stretch and bounce; system reduced motion takes priority",
                     value = app.infinity.mpvz.ui.theme.GlassCustomizationPolicy.motion(motionIntensity), maximum = 1f,

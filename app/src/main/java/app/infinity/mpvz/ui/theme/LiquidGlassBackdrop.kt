@@ -57,6 +57,12 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import com.kyant.backdrop.drawBackdrop
+import com.kyant.backdrop.effects.blur
+import com.kyant.backdrop.effects.lens
+import app.infinity.mpvz.ui.theme.lens.LocalLensGlassEnabled
+import app.infinity.mpvz.ui.theme.lens.LocalPageBackdrop
+import app.infinity.mpvz.ui.theme.lens.LensGlassPolicy
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
@@ -544,6 +550,24 @@ fun Modifier.liquidGlassPane(
         }
       }
     }
+    .then(if (LocalLensGlassEnabled.current && LocalPageBackdrop.current != null) {
+      val pageBackdrop = LocalPageBackdrop.current!!
+      Modifier.drawBackdrop(
+        backdrop = pageBackdrop,
+        shape = { shape },
+        effects = {
+          // Kyant order is colour filter -> blur -> lens; this surface has no filter.
+          blur((2.5f * tuning.frost).coerceIn(0f, 8f))
+          lens(
+            refractionHeight = LensGlassPolicy.refractionHeightPx(24.dp.toPx(), 24.dp.toPx(), tuning.lensDepth),
+            refractionAmount = LensGlassPolicy.refractionAmountPx(size.minDimension, size.minDimension, tuning.lensRefraction),
+            depthEffect = tuning.lensDepth > 0f,
+            chromaticAberration = tuning.colourEdge,
+          )
+        },
+        onDrawSurface = { drawRoundRect(Color.Transparent, cornerRadius = CornerRadius(24.dp.toPx())) },
+      )
+    } else Modifier)
     .glassRimLight(shape = shape, enabled = drawRim, ambient = if (backdrop != null) ({ PlayerAmbientTint.color }) else null,
       highContrast = highContrast)
 }
