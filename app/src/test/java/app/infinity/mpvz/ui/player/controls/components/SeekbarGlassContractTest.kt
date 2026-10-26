@@ -48,6 +48,7 @@ class SeekbarGlassContractTest {
     assertTrue(appearance.contains("getBoolean(\"show_seekbar_outer_container\", false)"))
     val playerControls = source("ui/player/controls/PlayerControls.kt")
     assertTrue(playerControls.contains("val seekbarContainerEnabled = showSeekbarOuterContainer"))
+    assertTrue(playerControls.contains("glassTrackEnabled = seekbarContainerEnabled"))
     assertTrue(playerControls.contains("if (seekbarContainerEnabled)"))
     assertTrue(playerControls.contains("val useLiquidGlassSeekbar = liquidGlassSurfaces && seekbarContainerEnabled"))
   }

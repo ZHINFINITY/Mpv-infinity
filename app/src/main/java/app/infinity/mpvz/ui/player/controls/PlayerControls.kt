@@ -1926,8 +1926,8 @@ fun PlayerControls(
                 if (showChapterIndicators) chapters.toImmutableList() else persistentListOf()
               }
             val skipSegmentsImmutable = remember(skipSegments) { skipSegments.toImmutableList() }
-            // The outer-box preference controls container visibility. Liquid glass only changes
-            // the appearance when that independently-enabled container is present.
+            // The preference controls both the outer box and the track's glass rail.
+            // Global liquid glass styles the rail only when this container is enabled.
             val seekbarContainerEnabled = showSeekbarOuterContainer
             val useLiquidGlassSeekbar = liquidGlassSurfaces && seekbarContainerEnabled
 
@@ -2015,6 +2015,7 @@ fun PlayerControls(
               loopStart = abLoopA?.toFloat(),
               loopEnd = abLoopB?.toFloat(),
               bufferDuration = stableDemuxerCacheTime.takeIf { showBufferedRange && it > 0f },
+              glassTrackEnabled = seekbarContainerEnabled,
               isPortrait = isPortrait,
             )
             }
