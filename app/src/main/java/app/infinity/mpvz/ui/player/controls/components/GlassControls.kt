@@ -38,6 +38,14 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import app.infinity.mpvz.ui.theme.lens.LocalLensGlassEnabled
+import app.infinity.mpvz.ui.theme.lens.LensGlassPolicy
+import app.infinity.mpvz.ui.theme.lens.LocalPageBackdrop
+import com.kyant.backdrop.backdrops.rememberBackdrop
+import com.kyant.backdrop.backdrops.rememberCombinedBackdrop
+import com.kyant.backdrop.drawBackdrop
+import com.kyant.backdrop.effects.blur
+import com.kyant.backdrop.effects.lens
 
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
@@ -306,6 +314,9 @@ fun GlassSwitch(
   val highlight by appearance.glassSurfaceHighlight.collectAsState()
   val glass = preferenceEnabled && glassEnabled
   val scheme = MaterialTheme.colorScheme
+  val pageBackdrop = LocalPageBackdrop.current
+  val lensEnabled = LocalLensGlassEnabled.current && pageBackdrop != null
+  val customization = LocalGlassCustomization.current
   val contrast = SwitchContrastPolicy.forSurfaceLuminance(scheme.surface.luminance())
   val tuned = SwitchDefaults.colors(
     checkedTrackColor = contrast.checkedTrack, checkedThumbColor = contrast.checkedThumb,
@@ -328,10 +339,23 @@ fun GlassSwitch(
     colors = if (glass) transparent else tuned,
     thumbContent = if (!glass) thumbContent else {
       {
+        val thumbShape = androidx.compose.foundation.shape.RoundedCornerShape(12.dp)
+        val thumb = Modifier
+          .size(width = GlassControlGeometryPolicy.switchThumbWidthDp.dp, height = GlassControlGeometryPolicy.switchThumbHeightDp.dp)
+          .glassRimLight(thumbShape, ambient = contrast.checkedTrack, highContrast = true)
+          .glassCapsuleBody(contrast.checkedThumb, enabled, checked, base = contrast.uncheckedThumb)
         Box(
-          Modifier.size(width = GlassControlGeometryPolicy.switchThumbWidthDp.dp, height = GlassControlGeometryPolicy.switchThumbHeightDp.dp)
-            .glassRimLight(androidx.compose.foundation.shape.RoundedCornerShape(12.dp), ambient = contrast.checkedTrack, highContrast = true)
-            .glassCapsuleBody(contrast.checkedThumb, enabled, checked, base = contrast.uncheckedThumb),
+          if (lensEnabled) thumb.drawBackdrop(
+            backdrop = pageBackdrop!!,
+            shape = { thumbShape },
+            effects = {
+              val height = LensGlassPolicy.refractionHeightPx(5.dp.toPx(), 12.dp.toPx(), customization.lensDepth)
+              val amount = LensGlassPolicy.refractionAmountPx(10.dp.toPx(), size.minDimension, customization.lensRefraction)
+              blur(3.dp.toPx())
+              lens(height, amount, chromaticAberration = customization.colourEdge)
+            },
+            onDrawSurface = { drawRoundRect(Color.White.copy(alpha = .92f)) },
+          ) else thumb,
           contentAlignment = Alignment.Center,
         ) { thumbContent?.invoke() }
       }
@@ -356,6 +380,9 @@ fun GlassSlider(
   val highlight by appearance.glassSurfaceHighlight.collectAsState()
   val glass = preferenceEnabled && glassEnabled
   val accent = MaterialTheme.colorScheme.primary
+  val pageBackdrop = LocalPageBackdrop.current
+  val lensEnabled = LocalLensGlassEnabled.current && pageBackdrop != null
+  val customization = LocalGlassCustomization.current
   val haptics = LocalHapticFeedback.current
   var lastBucket by remember { mutableStateOf<Int?>(null) }
   val report: (Float) -> Unit = { next ->
@@ -386,16 +413,29 @@ fun GlassSlider(
           sliderState = sliderState, enabled = enabled, colors = glassColors,
           modifier = Modifier.height(GlassControlGeometryPolicy.sliderTrackHeightDp.dp)
             .glassSliderGroove(sliderState.coercedValueAsFraction, accent, opacity, highlight)
-            .then(if (steps > 0) Modifier.glassTickDots(steps, accent) else Modifier),
+            .then(Modifier.glassTickDots(if (steps > 0) steps else 4, accent)),
         )
       },
       thumb = {
         val sx by animateFloatAsState(GlassSliderPolicy.stretch(pressed), spring(stiffness = Spring.StiffnessMediumLow), label = "sliderStretch")
         val sy by animateFloatAsState(GlassSliderPolicy.squash(pressed), spring(stiffness = Spring.StiffnessMediumLow), label = "sliderSquash")
+        val thumbShape = androidx.compose.foundation.shape.RoundedCornerShape(12.dp)
+        val thumb = Modifier.size(width = GlassControlGeometryPolicy.sliderThumbWidthDp.dp, height = GlassControlGeometryPolicy.sliderThumbHeightDp.dp)
+          .graphicsLayer { scaleX = sx; scaleY = sy }
+          .glassRimLight(thumbShape, ambient = accent, highContrast = true)
+          .glassCapsuleBody(accent, enabled, value > valueRange.start)
         Box(
-          Modifier.size(width = GlassControlGeometryPolicy.sliderThumbWidthDp.dp, height = GlassControlGeometryPolicy.sliderThumbHeightDp.dp).graphicsLayer { scaleX = sx; scaleY = sy }
-            .glassRimLight(androidx.compose.foundation.shape.RoundedCornerShape(12.dp), ambient = accent, highContrast = true)
-            .glassCapsuleBody(accent, enabled, value > valueRange.start),
+          if (lensEnabled) thumb.drawBackdrop(
+            backdrop = pageBackdrop!!,
+            shape = { androidx.compose.foundation.shape.RoundedCornerShape(12.dp) },
+            effects = {
+              val height = LensGlassPolicy.refractionHeightPx(6.dp.toPx(), 12.dp.toPx(), customization.lensDepth)
+              val amount = LensGlassPolicy.refractionAmountPx(14.dp.toPx(), size.minDimension, customization.lensRefraction)
+              blur(3.dp.toPx())
+              lens(height, amount, chromaticAberration = customization.colourEdge)
+            },
+            onDrawSurface = { drawRoundRect(Color.White.copy(alpha = .92f)) },
+          ) else thumb,
         )
       },
     )

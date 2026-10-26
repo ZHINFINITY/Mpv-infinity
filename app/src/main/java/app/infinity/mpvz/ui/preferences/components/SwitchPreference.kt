@@ -22,6 +22,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.unit.dp
 import app.infinity.mpvz.ui.player.controls.components.GlassSwitch
+import app.infinity.mpvz.ui.components.ControlRowSpacing
 
 @Composable
 fun SwitchPreference(
@@ -42,7 +43,7 @@ fun SwitchPreference(
         .fillMaxWidth()
         .settingsGlassSurface(cornerRadius = 18.dp)
         .clickable(enabled = enabled) { onValueChange(!value) }
-        .padding(horizontal = 16.dp, vertical = 12.dp),
+        .padding(start = ControlRowSpacing.StartPadding, end = ControlRowSpacing.EndPadding, vertical = 12.dp),
     verticalAlignment = Alignment.CenterVertically,
   ) {
     if (icon != null) {
@@ -58,7 +59,7 @@ fun SwitchPreference(
       modifier =
         Modifier
           .weight(1f)
-          .padding(end = 16.dp),
+          .padding(end = ControlRowSpacing.TextToControlGap),
     ) {
       ProvideTextStyle(value = titleStyle) {
         title()
