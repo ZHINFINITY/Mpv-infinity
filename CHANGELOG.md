@@ -1,5 +1,18 @@
 # Changelog
 
+## 2.2.3
+
+- Frame interpolation and its existing target-FPS controls are available in the stable build when the required playback runtime is present.
+- Soft Blend and Visibility Resolver are available in stable playback settings and respect the selected engine, Vulkan support, and mpv.conf ownership.
+
+## 2.2.2
+
+- 🎞️ Native playback feels smoother by doing less repeated work during routine updates, while track and chapter information stays current.
+- ✨ Liquid Glass is refined across player controls, popups, and settings, with a safe fallback on unsupported devices.
+- 🎵 Music minimizes and restores more smoothly, resumes better in the background, keeps the classic seekbar, and shows the right duration for each track.
+- 🎬 The video seekbar outer-container switch now works and is off by default.
+
+
 These notes are written in plain English and focus on what changed for real use.
 
 ## 2.2.1 - polish after 2.2.0

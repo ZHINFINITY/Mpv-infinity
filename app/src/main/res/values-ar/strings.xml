@@ -2256,4 +2256,13 @@
     <string name="pref_openai_base_url_summary">اتركه فارغًا لاستخدام نقطة نهاية OpenAI الرسمية</string>
     <string name="pref_openai_base_url_prompt">أدخل عنوان URL أساسيًا لواجهة API متوافقة مع OpenAI</string>
     <string name="pref_openai_base_url_invalid">أدخل عنوان HTTP أو HTTPS صالحًا بدون بيانات اعتماد أو معلمات استعلام أو أجزاء.</string>
+<string name="pref_appearance_animate_infinity_logo_title">تحريك شعار اللانهاية</string>
+<string name="pref_appearance_animate_infinity_logo_summary">تكرار حركة رمز اللانهاية في المكتبة. أوقفه لعرض شعار ثابت.</string>
+<string name="pref_glass_preview">معاينة حية للزجاج</string>
+<string name="pref_glass_rim_strength">قوة الحافة</string>
+<string name="pref_glass_rim_strength_summary">سطوع الحافة المضيئة المشتركة</string>
+<string name="pref_glass_rim_width">عرض الحافة</string>
+<string name="pref_glass_rim_width_summary">سُمك الحافة المضيئة بوحدة dp</string>
+<string name="pref_glass_rim_softness">نعومة الحافة</string>
+<string name="pref_glass_rim_softness_summary">مدى نعومة تلاشي ضوء الحافة</string>
 </resources>

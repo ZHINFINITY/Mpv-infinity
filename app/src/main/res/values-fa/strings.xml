@@ -2241,4 +2241,13 @@
     <string name="pref_openai_base_url_summary">برای استفاده از نقطه پایانی رسمی OpenAI خالی بگذارید</string>
     <string name="pref_openai_base_url_prompt">نشانی پایه یک API سازگار با OpenAI را وارد کنید</string>
     <string name="pref_openai_base_url_invalid">یک نشانی HTTP یا HTTPS معتبر بدون اطلاعات ورود، پارامتر پرس‌وجو یا بخش وارد کنید.</string>
+<string name="pref_appearance_animate_infinity_logo_title">متحرک‌سازی لوگوی بی‌نهایت</string>
+<string name="pref_appearance_animate_infinity_logo_summary">نماد بی‌نهایت کتابخانه به‌صورت پیوسته متحرک می‌شود. برای نمایش نشان ثابت، آن را خاموش کنید.</string>
+<string name="pref_glass_preview">پیش‌نمایش زندهٔ شیشه</string>
+<string name="pref_glass_rim_strength">شدت لبه</string>
+<string name="pref_glass_rim_strength_summary">روشنایی لبهٔ نورانی مشترک</string>
+<string name="pref_glass_rim_width">پهنای لبه</string>
+<string name="pref_glass_rim_width_summary">ضخامت لبهٔ نورانی بر حسب dp</string>
+<string name="pref_glass_rim_softness">نرمی لبه</string>
+<string name="pref_glass_rim_softness_summary">میزان نرمی محو شدن نور لبه</string>
 </resources>
