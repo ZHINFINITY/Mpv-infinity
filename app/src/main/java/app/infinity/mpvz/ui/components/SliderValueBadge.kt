@@ -16,6 +16,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.platform.testTag
+import androidx.compose.foundation.layout.RowScope
 
 /** A stable value column: changing the value never changes the description's available width. */
 @Composable
@@ -41,3 +43,25 @@ fun SliderValueBadge(
     Text(valueText, style = tabular, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
   }
 }
+
+/**
+ * Settings slider summary: a fixed-width value box (sized for the widest of [minimumText] /
+ * [maximumText], tabular figures) followed by the description. The description's position,
+ * width and wrapping never depend on the current value.
+ */
+@Composable
+fun SliderValueSummary(
+  valueText: String,
+  minimumText: String,
+  maximumText: String,
+  description: String,
+  modifier: Modifier = Modifier,
+) {
+  androidx.compose.foundation.layout.Row(modifier, verticalAlignment = Alignment.Top) {
+    SliderValueBadge(valueText, minimumText, maximumText,
+      modifier = Modifier.testTag("slider_value_badge"), style = MaterialTheme.typography.bodySmall)
+    androidx.compose.foundation.layout.Spacer(Modifier.width(8.dp))
+    Text(description, modifier = Modifier.weight(1f).testTag("slider_value_description"))
+  }
+}
+

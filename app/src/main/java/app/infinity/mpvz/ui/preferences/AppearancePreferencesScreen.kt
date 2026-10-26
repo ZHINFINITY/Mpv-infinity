@@ -421,7 +421,8 @@ object AppearancePreferencesScreen : Screen {
                     sliderValue = GlassSurfacePolicy.opacity(glassOpacity),
                     onSliderValueChange = {},
                     title = { Text("Surface opacity") },
-                    summary = { Text("${(GlassSurfacePolicy.opacity(glassOpacity) * 100).toInt()}% · keeps text readable") },
+                    summary = { app.infinity.mpvz.ui.components.SliderValueSummary("${(GlassSurfacePolicy.opacity(glassOpacity) * 100).toInt()}%",
+                      "${(GlassSurfacePolicy.MinOpacity * 100).toInt()}%", "${(GlassSurfacePolicy.MaxOpacity * 100).toInt()}%", "keeps text readable") },
                     valueRange = GlassSurfacePolicy.MinOpacity..GlassSurfacePolicy.MaxOpacity,
                     enabled = liquidGlassSurfaces,
                   )
@@ -431,7 +432,8 @@ object AppearancePreferencesScreen : Screen {
                     sliderValue = GlassSurfacePolicy.highlight(glassHighlight),
                     onSliderValueChange = {},
                     title = { Text("Highlight strength") },
-                    summary = { Text("${(GlassSurfacePolicy.highlight(glassHighlight) * 100).toInt()}% · edge reflections; text and icons stay sharp") },
+                    summary = { app.infinity.mpvz.ui.components.SliderValueSummary("${(GlassSurfacePolicy.highlight(glassHighlight) * 100).toInt()}%",
+                      "${(GlassSurfacePolicy.MinHighlight * 100).toInt()}%", "${(GlassSurfacePolicy.MaxHighlight * 100).toInt()}%", "edge reflections; text and icons stay sharp") },
                     valueRange = GlassSurfacePolicy.MinHighlight..GlassSurfacePolicy.MaxHighlight,
                     enabled = liquidGlassSurfaces,
                   )
@@ -1177,7 +1179,7 @@ private fun GlassCustomizationPreference(
   SliderPreference(
     value = bounded, onValueChange = { onValueChange(it.coerceIn(0f, maximum)) },
     sliderValue = bounded, onSliderValueChange = {},
-    title = { Text(title) }, summary = { Text("${(bounded * 100).toInt()}% · $summary") },
+    title = { Text(title) }, summary = { app.infinity.mpvz.ui.components.SliderValueSummary("${(bounded * 100).toInt()}%", "0%", "${(maximum * 100).toInt()}%", summary) },
     valueRange = 0f..maximum, enabled = enabled,
   )
 }

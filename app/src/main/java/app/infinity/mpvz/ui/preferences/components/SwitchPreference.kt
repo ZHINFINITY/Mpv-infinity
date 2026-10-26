@@ -43,7 +43,7 @@ fun SwitchPreference(
         .fillMaxWidth()
         .settingsGlassSurface(cornerRadius = 18.dp)
         .clickable(enabled = enabled) { onValueChange(!value) }
-        .padding(start = ControlRowSpacing.StartPadding, end = ControlRowSpacing.EndPadding, vertical = 12.dp),
+        .padding(start = ControlRowSpacing.StartPadding, top = 12.dp, end = ControlRowSpacing.EndPadding, bottom = 12.dp),
     verticalAlignment = Alignment.CenterVertically,
   ) {
     if (icon != null) {
