@@ -340,6 +340,7 @@ class Media3FlowVideoSink(
   @Volatile private var eglSwapIntervalZeroApplied = false
   private var presentationReleaseStarted = false
   @Volatile private var outputSurface: Surface? = null
+  @Volatile private var outputSurfaceReleaseFailed = false
   private var inputTextureId = 0
   private var inputSurfaceTexture: SurfaceTexture? = null
   private var inputSurface: Surface? = null
@@ -905,6 +906,10 @@ class Media3FlowVideoSink(
   }
 
   override fun setOutputSurfaceInfo(outputSurface: Surface, outputResolution: Size) {
+    if (outputSurfaceReleaseFailed) {
+      Log.e(logTag, "event=output_surface_set state=terminal_release_failure")
+      return
+    }
     val previousSurface = this.outputSurface
     outputSurfaceGeneration.incrementAndGet()
     presentationSurfaceReady = false
@@ -912,6 +917,10 @@ class Media3FlowVideoSink(
     this.outputResolution = outputResolution
     outputAvailable = outputSurface.isValid
     glHandler.post {
+      if (outputSurfaceReleaseFailed) {
+        Log.e(logTag, "event=output_surface_set state=terminal_release_failure")
+        return@post
+      }
       firstFrameReported = false
       if (previousSurface !== outputSurface) {
         clearFrameRateHint(previousSurface)
@@ -935,6 +944,12 @@ class Media3FlowVideoSink(
   }
 
   override fun clearOutputSurfaceInfo() {
+    clearOutputSurfaceInfoAndAwait()
+  }
+
+  /** Returns false permanently for this sink instance if Flow cannot prove its EGL surface is released. */
+  internal fun clearOutputSurfaceInfoAndAwait(): Boolean {
+    if (outputSurfaceReleaseFailed) return false
     val previousSurface = outputSurface
     val generation = outputSurfaceGeneration.incrementAndGet()
     outputAvailable = false
@@ -945,22 +960,35 @@ class Media3FlowVideoSink(
     val releaseFence = CountDownLatch(1)
     val releaseStartedNs = System.nanoTime()
     val clearOnGlThread = {
-      cancelDisplayFrame()
-      clearFrameRateHint(previousSurface)
-      outputWallTimes.clear()
-      generatedWallTimes.clear()
-      if (makePbufferCurrent()) cancelPendingPresentationBuffers()
-      destroyWindowSurface { releaseFence.countDown() }
+      try {
+        cancelDisplayFrame()
+        clearFrameRateHint(previousSurface)
+        outputWallTimes.clear()
+        generatedWallTimes.clear()
+        if (makePbufferCurrent()) cancelPendingPresentationBuffers()
+        destroyWindowSurface { releaseFence.countDown() }
+      } catch (failure: RuntimeException) {
+        outputSurfaceReleaseFailed = true
+        Log.e(logTag, "event=output_surface_release state=gl_thread_failure generation=$generation", failure)
+        releaseFence.countDown()
+      }
     }
-    val posted = if (Looper.myLooper() == glThread.looper) {
-      clearOnGlThread()
-      true
-    } else {
-      glHandler.post { clearOnGlThread() }
+    val posted = try {
+      if (Looper.myLooper() == glThread.looper) {
+        clearOnGlThread()
+        true
+      } else {
+        glHandler.post { clearOnGlThread() }
+      }
+    } catch (failure: RuntimeException) {
+      outputSurfaceReleaseFailed = true
+      Log.e(logTag, "event=output_surface_release state=gl_thread_post_failure generation=$generation", failure)
+      false
     }
     if (!posted) {
+      outputSurfaceReleaseFailed = true
       if (!disposed) Log.e(logTag, "event=output_surface_release state=gl_thread_unavailable generation=$generation")
-      return
+      return false
     }
     val completed = try {
       releaseFence.await(GL_INIT_TIMEOUT_MS, TimeUnit.MILLISECONDS)
@@ -969,13 +997,17 @@ class Media3FlowVideoSink(
       false
     }
     val waitedMs = (System.nanoTime() - releaseStartedNs) / 1_000_000L
-    if (completed) {
+    if (completed && !outputSurfaceReleaseFailed) {
       if (isDebuggable) {
         Log.d(logTag, "event=output_surface_release state=complete generation=$generation wait_ms=$waitedMs")
       }
+      return true
     } else {
-      Log.e(logTag, "event=output_surface_release state=timeout generation=$generation wait_ms=$waitedMs")
+      outputSurfaceReleaseFailed = true
+      val failureState = if (completed) "release_failed" else "timeout"
+      Log.e(logTag, "event=output_surface_release state=$failureState generation=$generation wait_ms=$waitedMs")
     }
+    return false
   }
 
   override fun setChangeFrameRateStrategy(changeFrameRateStrategy: Int) {
@@ -2883,9 +2915,13 @@ class Media3FlowVideoSink(
       onDestroyed?.invoke()
       return
     }
-    makePresentationPbufferCurrent()
+    if (!makePresentationPbufferCurrent()) {
+      Log.e(logTag, "event=output_surface_release state=presentation_pbuffer_unavailable")
+      return
+    }
     if (windowSurface != EGL14.EGL_NO_SURFACE && !EGL14.eglDestroySurface(eglDisplay, windowSurface)) {
       Log.e(logTag, "event=output_surface_release state=egl_destroy_failed error=0x${EGL14.eglGetError().toString(16)}")
+      return
     }
     windowSurface = EGL14.EGL_NO_SURFACE
     eglSwapIntervalAttempted = false

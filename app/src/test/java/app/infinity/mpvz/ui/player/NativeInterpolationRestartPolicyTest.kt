@@ -86,7 +86,8 @@ class NativeInterpolationRestartPolicyTest {
     val reload = engine.substringAfter("internal suspend fun restartCurrentItemForInterpolation")
       .substringBefore("fun setVideoAspect")
 
-    assertTrue(reload.contains("player.setMediaItem(item, state.positionMs)"))
+    assertTrue(reload.contains("val taggedItem = tagMediaItemForNextPlayback(item)"))
+    assertTrue(reload.contains("player.setMediaItem(taggedItem, state.positionMs)"))
     assertTrue(reload.contains("player.trackSelectionParameters = trackSelectionParameters"))
     assertTrue(reload.contains("player.playbackParameters = playbackParameters"))
     assertTrue(reload.contains("player.volume = volume"))
@@ -111,6 +112,30 @@ class NativeInterpolationRestartPolicyTest {
     assertTrue(reload.contains("if (state.playWhenReady) player.play() else player.pause()"))
     assertTrue(reload.contains("player.playbackSuppressionReason"))
     assertFalse(reload.contains("MediaItem.Builder"))
+  }
+
+  @Test fun staleNativeEndedItemOrSessionCannotAdvanceTheCurrentPlayback() {
+    val staleItem = NativePlaybackErrorToken(mediaItemEpoch = 12L, playbackGeneration = 4L)
+    val currentItem = NativePlaybackErrorToken(mediaItemEpoch = 13L, playbackGeneration = 4L)
+
+    assertFalse(PlaybackItemEpochPolicy.isCurrent(staleItem, currentEpoch = 13L, currentPlaybackGeneration = 4L))
+    assertFalse(PlaybackItemEpochPolicy.isCurrent(currentItem, currentEpoch = 13L, currentPlaybackGeneration = 5L))
+    assertTrue(PlaybackItemEpochPolicy.isCurrent(currentItem, currentEpoch = 13L, currentPlaybackGeneration = 4L))
+
+    val root = generateSequence(File(requireNotNull(System.getProperty("user.dir")))) { it.parentFile }
+      .first { File(it, "app/src/main/java/app/infinity/mpvz").isDirectory }
+    val playerDir = File(root, "app/src/main/java/app/infinity/mpvz/ui/player")
+    val engine = File(playerDir, "NativeMedia3Engine.kt").readText()
+    val activity = File(playerDir, "PlayerActivity.kt").readText()
+    val endedEvent = engine.substringAfter("if (playbackState == Player.STATE_ENDED)")
+      .substringBefore("override fun onCues")
+    val endedCallback = activity.substringAfter("engine.onEnded = { itemToken ->")
+      .substringBefore("engine.onPlaybackError =")
+
+    assertTrue(endedEvent.contains("onEnded?.invoke(itemToken)"))
+    assertTrue(endedEvent.contains("PlaybackItemEpochPolicy.isCurrent("))
+    assertTrue(endedCallback.contains("capturePlayerObserverCallbackToken()"))
+    assertTrue(endedCallback.contains("PlaybackItemEpochPolicy.isCurrent("))
   }
 
   @Test fun decoderFallbackConsumesTheOriginalSnapshotWithoutChangingGlobalEnginePreference() {

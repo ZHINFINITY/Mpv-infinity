@@ -147,7 +147,7 @@ import app.infinity.mpvz.ui.player.Panels
 import app.infinity.mpvz.ui.player.PlayerActivity
 import app.infinity.mpvz.ui.player.PlayerUpdates
 import app.infinity.mpvz.ui.player.PlayerViewModel
-import app.infinity.mpvz.ui.player.BrowserMusicSheetState
+import app.infinity.mpvz.ui.player.AudioPlayerSheetState
 import app.infinity.mpvz.ui.player.PlaybackEngineMode
 import app.infinity.mpvz.ui.player.AudiobookPlayback
 import app.infinity.mpvz.ui.player.Sheets
@@ -209,7 +209,7 @@ internal fun AudioPlayerScreen(
   onBackPress: () -> Unit,
   modifier: Modifier = Modifier,
   titleForControls: () -> String? = { null },
-  inAppSheet: BrowserMusicSheetState? = null,
+  inAppSheet: AudioPlayerSheetState? = null,
   onSelectEngine: ((PlaybackEngineMode) -> Unit)? = null,
 ) {
   val playerPreferences = koinInject<PlayerPreferences>()

@@ -80,7 +80,7 @@ class BrowserMusicSheetState internal constructor(
   private val scope: CoroutineScope,
   flingVelocityPx: Float = MusicSheetMotion.DEFAULT_FLING_VELOCITY_PX,
   private val keepContentAfterCollapseMs: Long = KEEP_CONTENT_AFTER_COLLAPSE_MS,
-) {
+) : AudioPlayerSheetState {
   private val motion = MusicSheetMotion(flingVelocityPx)
   private var progressState by mutableFloatStateOf(0f)
   private var phaseState by mutableStateOf(MusicSheetPhase.Collapsed)
@@ -88,7 +88,7 @@ class BrowserMusicSheetState internal constructor(
   private var releaseContentJob: Job? = null
 
   /** 0 = mini player, 1 = full player. Read it in draw/layer lambdas, not in composition. */
-  val progress: Float get() = progressState
+  override val progress: Float get() = progressState
 
   val phase: MusicSheetPhase get() = phaseState
 
@@ -131,7 +131,7 @@ class BrowserMusicSheetState internal constructor(
   }
 
   /** Back to the mini player. Returns false when the sheet was not showing. */
-  fun collapse(): Boolean {
+  override fun collapse(): Boolean {
     if (!isShowing) return false
     motion.collapse()
     runSettle(initialVelocity = -MusicMinimizeTransitionPolicy.PROGRAMMATIC_KICK_PROGRESS_PER_SECOND)

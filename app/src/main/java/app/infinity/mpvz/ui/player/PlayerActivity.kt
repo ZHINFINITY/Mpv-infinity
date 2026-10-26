@@ -217,9 +217,36 @@ class PlayerActivity :
       media3FlowComputeApi = decoderPreferences.mpvFlowComputeApi.get(),
       media3FlowVisibilityResolverDebug = decoderPreferences.mpvFlowVisibilityResolverDebug.get(),
       media3FlowSoftBlendDebug = decoderPreferences.mpvFlowSoftBlendDebug.get(),
-    ).also {
-      it.onEnded = { runOnUiThread { handleNativePlaybackEnded() } }
-      it.onPlaybackError = { error -> runOnUiThread { handleNativePlaybackError(error) } }
+    ).also { engine ->
+      engine.onEnded = { itemToken ->
+        val callbackToken = capturePlayerObserverCallbackToken()
+        runOnUiThread {
+          if (!isPlayerObserverCallbackCurrent(callbackToken) ||
+            !PlaybackItemEpochPolicy.isCurrent(
+              itemToken,
+              currentEpoch = engine.currentPlaybackMediaEpoch,
+              currentPlaybackGeneration = PlaybackSession.state.value.generation,
+            ) ||
+            !ownsPlaybackSession() || isFinishing || isDestroyed ||
+            !isNativeEngineActive() || nativeEngineOrNull() !== engine
+          ) return@runOnUiThread
+          handleNativePlaybackEnded()
+        }
+      }
+      engine.onPlaybackError = { error, itemToken ->
+        val callbackToken = capturePlayerObserverCallbackToken()
+        runOnUiThread {
+          if (!isPlayerObserverCallbackCurrent(callbackToken) ||
+            !PlaybackItemEpochPolicy.isCurrent(
+              itemToken,
+              currentEpoch = engine.currentPlaybackMediaEpoch,
+              currentPlaybackGeneration = PlaybackSession.state.value.generation,
+            ) ||
+            !ownsPlaybackSession() || !isNativeEngineActive() || nativeEngineOrNull() !== engine
+          ) return@runOnUiThread
+          handleNativePlaybackError(error)
+        }
+      }
       nativeEngineConfigured = true
       nativeEngineBuilt.value = true
     }
@@ -336,6 +363,16 @@ class PlayerActivity :
         consoleOpen = PlaybackSession.getPropertyBoolean("user-data/mpv/console/open") == true,
       ),
     )
+  }
+
+  /** Keep MPV's compositor surface hidden for audio, including engine handoffs back to MPV. */
+  private fun showMpvSurfaceUnlessMusic(alpha: Float = 1f) {
+    if (isCurrentPlaybackAudio()) {
+      hideMpvSurfaceAndOverlayForAudioOrMinimize()
+      return
+    }
+    binding.player.alpha = alpha
+    binding.player.visibility = View.VISIBLE
   }
 
   private fun restoreMpvSurfaceForVideo() {
@@ -3090,6 +3127,8 @@ class PlayerActivity :
         nativeEngineOrNull()?.setPlaying(false)
         nativeEngineOrNull()?.stop()
       }
+      nativeEngineOrNull()?.onEnded = null
+      nativeEngineOrNull()?.onPlaybackError = null
       nativeEngineOrNull()?.release()
       if (playbackWasInitialized && ownsPlaybackSession && !keepBackgroundPlaybackAlive) {
         reportJellyfinStop()

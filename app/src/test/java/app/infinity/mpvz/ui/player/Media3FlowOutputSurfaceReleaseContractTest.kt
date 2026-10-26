@@ -22,7 +22,8 @@ class Media3FlowOutputSurfaceReleaseContractTest {
     assertTrue(clear.contains("releaseFence.await(GL_INIT_TIMEOUT_MS, TimeUnit.MILLISECONDS)"))
     assertTrue(clear.indexOf("releaseFence.await") > clear.indexOf("val posted = if"))
     assertTrue(clear.contains("event=output_surface_release state=complete"))
-    assertTrue(clear.contains("event=output_surface_release state=timeout"))
+    assertTrue(clear.contains("val failureState = if (completed) \"release_failed\" else \"timeout\""))
+    assertTrue(clear.contains("event=output_surface_release state=\$failureState"))
   }
 
   @Test fun releaseFenceCompletesOnlyAfterPresentationDrainAndEglDestroy() {
