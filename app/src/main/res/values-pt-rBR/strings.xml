@@ -2256,4 +2256,13 @@ Reinicie o aplicativo para que todas as alterações entrem em vigor.</string>
     <string name="pref_openai_base_url_summary">Deixe em branco para usar o endpoint oficial da OpenAI</string>
     <string name="pref_openai_base_url_prompt">Digite a URL base de uma API compatível com OpenAI</string>
     <string name="pref_openai_base_url_invalid">Digite uma URL HTTP ou HTTPS válida, sem credenciais, parâmetros de consulta ou fragmentos.</string>
+<string name="pref_appearance_animate_infinity_logo_title">Animar logotipo do infinito</string>
+<string name="pref_appearance_animate_infinity_logo_summary">Repete a animação do símbolo do infinito da biblioteca. Desative para mostrar uma marca estática.</string>
+<string name="pref_glass_preview">Prévia do vidro ao vivo</string>
+<string name="pref_glass_rim_strength">Intensidade da borda</string>
+<string name="pref_glass_rim_strength_summary">Brilho da borda iluminada compartilhada</string>
+<string name="pref_glass_rim_width">Largura da borda</string>
+<string name="pref_glass_rim_width_summary">Espessura da borda iluminada em dp</string>
+<string name="pref_glass_rim_softness">Suavidade da borda</string>
+<string name="pref_glass_rim_softness_summary">Quão suavemente a luz da borda se desvanece</string>
 </resources>

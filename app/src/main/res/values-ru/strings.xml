@@ -2256,4 +2256,13 @@
     <string name="pref_openai_base_url_summary">Оставьте пустым, чтобы использовать официальный адрес OpenAI</string>
     <string name="pref_openai_base_url_prompt">Введите базовый URL API, совместимого с OpenAI</string>
     <string name="pref_openai_base_url_invalid">Введите корректный HTTP- или HTTPS-адрес без учётных данных, параметров запроса и фрагментов.</string>
+<string name="pref_appearance_animate_infinity_logo_title">Анимировать логотип бесконечности</string>
+<string name="pref_appearance_animate_infinity_logo_summary">Зацикленная анимация символа бесконечности в медиатеке. Отключите, чтобы показывать статичный знак.</string>
+<string name="pref_glass_preview">Живой предпросмотр стекла</string>
+<string name="pref_glass_rim_strength">Яркость кромки</string>
+<string name="pref_glass_rim_strength_summary">Яркость общей светящейся кромки</string>
+<string name="pref_glass_rim_width">Ширина кромки</string>
+<string name="pref_glass_rim_width_summary">Толщина светящейся кромки в dp</string>
+<string name="pref_glass_rim_softness">Мягкость кромки</string>
+<string name="pref_glass_rim_softness_summary">Насколько плавно угасает свет кромки</string>
 </resources>

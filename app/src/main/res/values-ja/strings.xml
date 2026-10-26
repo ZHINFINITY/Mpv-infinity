@@ -2256,4 +2256,13 @@
     <string name="pref_openai_base_url_summary">空欄にすると公式の OpenAI エンドポイントを使用します</string>
     <string name="pref_openai_base_url_prompt">OpenAI 互換 API のベース URL を入力</string>
     <string name="pref_openai_base_url_invalid">認証情報、クエリパラメータ、フラグメントを含まない有効な HTTP または HTTPS の URL を入力してください。</string>
+<string name="pref_appearance_animate_infinity_logo_title">インフィニティロゴをアニメーション</string>
+<string name="pref_appearance_animate_infinity_logo_summary">ライブラリの無限記号をループ再生します。オフにすると静止したマークを表示します。</string>
+<string name="pref_glass_preview">ガラスのライブプレビュー</string>
+<string name="pref_glass_rim_strength">縁の強さ</string>
+<string name="pref_glass_rim_strength_summary">共通の光る縁の明るさ</string>
+<string name="pref_glass_rim_width">縁の幅</string>
+<string name="pref_glass_rim_width_summary">光る縁の太さ（dp）</string>
+<string name="pref_glass_rim_softness">縁の柔らかさ</string>
+<string name="pref_glass_rim_softness_summary">縁の光がどれだけ柔らかく消えるか</string>
 </resources>
