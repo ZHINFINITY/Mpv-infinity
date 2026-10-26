@@ -302,16 +302,22 @@ fun MpvInfinityTheme(
   val glassRimStrength by preferences.glassRimStrength.collectAsState()
   val glassRimWidth by preferences.glassRimWidth.collectAsState()
   val glassRimSoftness by preferences.glassRimSoftness.collectAsState()
+  val lensRefraction by preferences.lensRefraction.collectAsState()
+  val lensDepth by preferences.lensDepth.collectAsState()
+  val colourEdge by preferences.colourEdge.collectAsState()
   val glassCustomization = remember(
     glassFrost, glassRefraction, glassDepth, glassMotion, glassOpacity, glassHighlight,
-    glassRimStrength, glassRimWidth, glassRimSoftness,
+    glassRimStrength, glassRimWidth, glassRimSoftness, lensRefraction, lensDepth, colourEdge,
   ) {
     GlassCustomization(frost = GlassCustomizationPolicy.strength(glassFrost), refraction = GlassCustomizationPolicy.strength(glassRefraction),
       depth = GlassCustomizationPolicy.strength(glassDepth), motion = GlassCustomizationPolicy.motion(glassMotion),
       opacity = GlassSurfacePolicy.opacity(glassOpacity), highlight = GlassSurfacePolicy.highlight(glassHighlight), overrideMaterial = true,
       rimStrength = GlassRimLightPolicy.strength(glassRimStrength),
       rimWidthDp = GlassRimLightPolicy.widthDp(glassRimWidth),
-      rimSoftness = GlassRimLightPolicy.softness(glassRimSoftness))
+      rimSoftness = GlassRimLightPolicy.softness(glassRimSoftness),
+      lensRefraction = glassRefraction.coerceIn(0f, 2f) * lensRefraction.coerceIn(0f, 2f),
+      lensDepth = glassDepth.coerceIn(0f, 2f) * lensDepth.coerceIn(0f, 2f),
+      colourEdge = colourEdge)
   }
   val lensContext = LocalContext.current
   val lensGlassEnabled = remember(glassEnabled) {
