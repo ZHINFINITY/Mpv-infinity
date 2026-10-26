@@ -168,10 +168,13 @@ object AboutScreen : Screen {
             .then(settingsHighlight)
             .verticalScroll(settingsScrollState),
       ) {
-        PreferenceCard {
+        // The header is its own single surface: nesting it in PreferenceCard drew the card's
+        // 28dp glass edge 8dp below the coloured box (the "doubled bottom edge").
+        Box(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)) {
           Box(
             modifier =
               Modifier
+                .fillMaxWidth()
                 .clip(RoundedCornerShape(cornerRadius))
                 .background(colorPrimary)
                 .padding(16.dp),
@@ -304,7 +307,10 @@ object AboutScreen : Screen {
                     .clip(RoundedCornerShape(12.dp))
                     .clickable {
                       SafeClipboard.copyPlainText(context, "Mpv∞_device_info", collectDeviceInfo())
-                    },
+                    }
+                    // Keep glyphs clear of the 12dp ripple clip's corners (the last line's
+                    // first letter was cut by the bottom-left curve).
+                    .padding(horizontal = 6.dp, vertical = 6.dp),
               ) {
                 Row(
                   verticalAlignment = Alignment.CenterVertically,

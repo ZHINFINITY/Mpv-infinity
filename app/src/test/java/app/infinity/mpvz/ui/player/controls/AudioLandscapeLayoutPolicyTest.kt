@@ -49,4 +49,22 @@ class AudioLandscapeLayoutPolicyTest {
     assertTrue(branch.contains("SkipNext"))
     assertTrue(branch.contains("ReactiveSurfaceButton"))
   }
+
+  @Test
+  fun landscapeTransportIsLabelledAndPlayFitsTheMeasuredRow() {
+    val src = listOf(
+      File("src/main/java/app/infinity/mpvz/ui/player/controls/AudioPlayerControls.kt"),
+      File("app/src/main/java/app/infinity/mpvz/ui/player/controls/AudioPlayerControls.kt"),
+    ).first { it.isFile }.readText()
+    val start = src.indexOf("val landscapePlaybackControlsRow = @Composable {")
+    val row = src.substring(start, src.indexOf("val audiobookModeButtons = @Composable {", start))
+    assertTrue("every transport icon has a TalkBack label", !row.contains("contentDescription = null"))
+    for (key in listOf("pref_gesture_media_previous", "audio_landscape_seek_back", "audio_landscape_seek_forward", "pref_gesture_media_next", "ui_play", "audiobook_pause")) {
+      assertTrue(key, row.contains("R.string.$key"))
+    }
+    // The main row can be 48dp on short displays; a fixed 64dp play button would overflow it.
+    assertTrue(!row.contains("Modifier.size(64.dp)"))
+    assertTrue(row.contains("Modifier.heightIn(max = 64.dp).fillMaxHeight().aspectRatio(1f)"))
+    assertTrue(AudioLandscapeLayoutPolicy.measure(320f, 640f).mainRowDp >= 48f)
+  }
 }

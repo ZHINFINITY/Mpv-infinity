@@ -103,4 +103,13 @@ class Round1944LensContractTest {
     assertTrue(UpdateViewModel.UpdateState.Error.isAboutSheetState())
     assertFalse(UpdateViewModel.UpdateState.Idle.isAboutSheetState())
   }
+
+  @Test fun aboutHeaderIsOneSurfaceAndDeviceInfoGlyphsClearTheCornerClip() {
+    val about = src("ui/preferences/AboutScreen.kt")
+    val header = about.indexOf("Box(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)) {")
+    assertTrue(header > 0)
+    // The coloured header box is not nested inside a PreferenceCard any more.
+    assertFalse(about.substring(about.lastIndexOf("Column(", header), header).contains("PreferenceCard {"))
+    assertTrue(about.contains(".padding(horizontal = 6.dp, vertical = 6.dp),"))
+  }
 }

@@ -7,6 +7,7 @@
 
 package app.infinity.mpvz.ui.player.controls
 
+import androidx.compose.foundation.layout.heightIn
 import app.infinity.mpvz.ui.components.GlassChip
 
 import app.infinity.mpvz.ui.player.StatsLuaOverlay
@@ -2339,22 +2340,23 @@ fun AudioPlayerControls(
           onClick = { if (isAudiobook) viewModel.stepPlaybackChapter(-1) else viewModel.playPrevious() },
           enabled = if (isAudiobook) AudiobookPlayback.currentChapter() != null else playlistModeEnabled,
           modifier = Modifier.size(48.dp),
-        ) { Icon(Icons.RoundedFilled.SkipPrevious, contentDescription = null, modifier = Modifier.size(28.dp)) }
+        ) { Icon(Icons.RoundedFilled.SkipPrevious, contentDescription = stringResource(R.string.pref_gesture_media_previous), modifier = Modifier.size(28.dp)) }
         ReactiveIconButton(
           onClick = { viewModel.seekBy(if (isAudiobook) -30 else -audioSeekDuration) },
           enabled = !isRadio,
           modifier = Modifier.size(48.dp),
-        ) { Icon(Icons.RoundedFilled.FastRewind, contentDescription = null, modifier = Modifier.size(30.dp)) }
+        ) { Icon(Icons.RoundedFilled.FastRewind, contentDescription = stringResource(R.string.audio_landscape_seek_back), modifier = Modifier.size(30.dp)) }
         ReactiveSurfaceButton(
           onClick = { optimisticIsPlaying = !isPlaying; viewModel.pauseUnpause() },
           shape = CircleShape,
           color = MaterialTheme.colorScheme.primary,
-          modifier = Modifier.size(64.dp),
+          // Fit the measured landscape row (48–72dp) instead of overflowing it on short displays.
+          modifier = Modifier.heightIn(max = 64.dp).fillMaxHeight().aspectRatio(1f),
           shadowElevation = 8.dp,
         ) {
           Icon(
             imageVector = if (isPlaying) Icons.RoundedFilled.Pause else Icons.RoundedFilled.PlayArrow,
-            contentDescription = null,
+            contentDescription = stringResource(if (isPlaying) R.string.audiobook_pause else R.string.ui_play),
             tint = MaterialTheme.colorScheme.onPrimary,
             modifier = Modifier.size(36.dp),
           )
@@ -2363,12 +2365,12 @@ fun AudioPlayerControls(
           onClick = { viewModel.seekBy(if (isAudiobook) 30 else audioSeekDuration) },
           enabled = !isRadio,
           modifier = Modifier.size(48.dp),
-        ) { Icon(Icons.RoundedFilled.FastForward, contentDescription = null, modifier = Modifier.size(30.dp)) }
+        ) { Icon(Icons.RoundedFilled.FastForward, contentDescription = stringResource(R.string.audio_landscape_seek_forward), modifier = Modifier.size(30.dp)) }
         ReactiveIconButton(
           onClick = { if (isAudiobook) viewModel.stepPlaybackChapter(1) else viewModel.playNext() },
           enabled = if (isAudiobook) true else playlistModeEnabled,
           modifier = Modifier.size(48.dp),
-        ) { Icon(Icons.RoundedFilled.SkipNext, contentDescription = null, modifier = Modifier.size(28.dp)) }
+        ) { Icon(Icons.RoundedFilled.SkipNext, contentDescription = stringResource(R.string.pref_gesture_media_next), modifier = Modifier.size(28.dp)) }
       }
     }
 
