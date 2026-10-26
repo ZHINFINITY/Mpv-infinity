@@ -189,7 +189,12 @@ public final class FfmpegAudioDecoder
    * not required.
    */
   @Nullable
-  private static byte[] getExtraData(String mimeType, List<byte[]> initializationData) {
+  /* package */ static byte[] getExtraData(String mimeType, List<byte[]> initializationData) {
+    // Streams can arrive without codec-private data (for example AAC without an
+    // AudioSpecificConfig). FFmpeg then reads the in-band headers, so never index past the list.
+    if (initializationData.isEmpty()) {
+      return null;
+    }
     switch (mimeType) {
       case MimeTypes.AUDIO_AAC:
       case MimeTypes.AUDIO_OPUS:
@@ -197,7 +202,7 @@ public final class FfmpegAudioDecoder
       case MimeTypes.AUDIO_ALAC:
         return getAlacExtraData(initializationData);
       case MimeTypes.AUDIO_VORBIS:
-        return getVorbisExtraData(initializationData);
+        return initializationData.size() < 2 ? null : getVorbisExtraData(initializationData);
       case MimeTypes.AUDIO_FLAC:
         return getFlacExtraData(initializationData);
       default:
