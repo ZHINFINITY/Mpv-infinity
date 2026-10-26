@@ -58,6 +58,7 @@ import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
+import app.infinity.mpvz.ui.theme.lens.LocalLensGlassEnabled
 
 @Stable
 private class BrowserScene(val layer: GraphicsLayer, val contentLens: Boolean = false) {
@@ -389,6 +390,7 @@ fun BrowserGlassSurface(
   // settings/player/folder controls and has different depth/tint semantics.
   val scene = LocalBrowserScene.current
   val capabilities = LocalBrowserCapabilities.current
+  val lensEnabled = LocalLensGlassEnabled.current
   val tuning = LocalGlassCustomization.current
   val hostView = LocalView.current
   val shape = remember(cornerRadius) { RoundedCornerShape(cornerRadius) }
@@ -405,7 +407,9 @@ fun BrowserGlassSurface(
     if (enabled) {
       Box(Modifier.matchParentSize().drawWithCache {
         val radius = cornerRadius.toPx().coerceAtMost(size.height / 2f).coerceAtMost(size.width / 2f)
-        val refraction = capabilities.refraction && RuntimeShaderSupport.available()
+        // The route scene is a sibling producer; never self-sample. The lens
+        // shader is additionally gated by the shared API/device/user verdict.
+        val refraction = selected && lensEnabled && capabilities.refraction && RuntimeShaderSupport.available()
         val effect = if (refraction) RuntimeShaderSupport.browserLensEffectOrNull(
           paneWidth = size.width,
           paneHeight = size.height,
