@@ -79,7 +79,7 @@ class VideoBackgroundResumeWiringTest {
       "setNativeVideoSurfaceVisible(true)",
       "nativeEngineOrNull()?.let { engine ->",
       "engine.refreshAfterConfigurationChange()",
-      "player.playWhenReady &&",
+      "(nativePlayIntent ?: player.playWhenReady) &&",
       "engine.setPlaying(true)",
       "enableVideoAfterBackground()",
       "restoreForegroundResumePositionIfNeeded()",
