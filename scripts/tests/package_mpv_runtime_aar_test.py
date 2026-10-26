@@ -33,6 +33,24 @@ def patch_runtime_validation() -> None:
     }
 
 
+def runtime_verifier_command() -> None:
+    aar = Path("runtime.aar")
+    verifier = SCRIPT.with_name("verify-media3-dca-runtime.py")
+    with patch.object(MODULE.subprocess, "run") as run:
+        MODULE.verify_media3_runtime(aar, ("arm64-v8a", "x86_64"))
+    assert run.call_args.args[0] == [
+        sys.executable,
+        str(verifier),
+        str(aar),
+        "--abis",
+        "arm64-v8a",
+    ]
+    assert run.call_args.kwargs == {"check": True}
+    with patch.object(MODULE.subprocess, "run") as run:
+        MODULE.verify_media3_runtime(aar, ("x86_64",))
+    run.assert_not_called()
+
+
 def overlay_case(*, omit_udfread: bool = False) -> None:
     abi = "x86_64"
     runtime_libs = sorted(MODULE.REQUIRED_LIBS)
@@ -63,6 +81,8 @@ def overlay_case(*, omit_udfread: bool = False) -> None:
                     aar.writestr(f"jni/{abi}/{name}", f"old:{name}".encode())
 
         patch_runtime_validation()
+        verification_calls: list[tuple[Path, tuple[str, ...]]] = []
+        MODULE.verify_media3_runtime = lambda path, abis: verification_calls.append((path, abis))
         argv = [
             str(SCRIPT),
             "--runtime-apk",
@@ -79,9 +99,14 @@ def overlay_case(*, omit_udfread: bool = False) -> None:
                 except SystemExit as error:
                     assert "libudfread.so" in str(error)
                     assert "missing required native libraries" in str(error)
+                    assert verification_calls == []
                     return
                 raise AssertionError("runtime overlay accepted an APK without required libudfread.so")
             MODULE.main()
+            assert len(verification_calls) == 1
+            verified_path, verified_abis = verification_calls[0]
+            assert verified_path.suffix == ".tmp"
+            assert verified_abis == (abi,)
 
         with zipfile.ZipFile(mpv_aar) as result:
             assert result.testzip() is None
@@ -97,6 +122,7 @@ def overlay_case(*, omit_udfread: bool = False) -> None:
 def main() -> None:
     assert "librife_vfi.so" not in MODULE.REQUIRED_LIBS
     assert "libudfread.so" in MODULE.REQUIRED_LIBS
+    runtime_verifier_command()
     overlay_case(omit_udfread=True)
     overlay_case()
     print("MPV runtime AAR overlay tests passed (Flow-only closure and stale-RIFE pruning).")

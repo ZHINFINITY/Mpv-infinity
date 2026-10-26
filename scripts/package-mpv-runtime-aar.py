@@ -7,6 +7,7 @@ import os
 from pathlib import Path
 import re
 import subprocess
+import sys
 import tempfile
 import zipfile
 
@@ -136,6 +137,15 @@ def parse_abis(value: str) -> tuple[str, ...]:
     if unknown:
         raise SystemExit(f"Unsupported ABI name(s): {', '.join(unknown)}")
     return abis
+
+
+def verify_media3_runtime(aar_path: Path, abis: tuple[str, ...]) -> None:
+    if "arm64-v8a" not in abis:
+        print("Skipping Media3 DCA decoder inventory: verifier supports arm64-v8a only.")
+        return
+    verifier = Path(__file__).with_name("verify-media3-dca-runtime.py")
+    command = [sys.executable, str(verifier), str(aar_path), "--abis", "arm64-v8a"]
+    subprocess.run(command, check=True)
 
 
 def main() -> None:
@@ -282,6 +292,7 @@ def main() -> None:
                 info = zipfile.ZipInfo(name)
                 info.compress_type = zipfile.ZIP_DEFLATED
                 output.writestr(info, blob)
+        verify_media3_runtime(Path(temp_name), abis)
         os.replace(temp_name, aar_path)
     finally:
         if os.path.exists(temp_name):
