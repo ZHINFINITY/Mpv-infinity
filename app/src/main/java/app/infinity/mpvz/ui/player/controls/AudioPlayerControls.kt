@@ -412,6 +412,21 @@ private fun artworkVisualizerPalette(
   )
 }
 
+private fun Modifier.audioMarqueeFade(): Modifier =
+  graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
+    .drawWithCache {
+      val edgeFade = Brush.horizontalGradient(
+        0f to Color.Transparent,
+        0.06f to Color.White,
+        0.94f to Color.White,
+        1f to Color.Transparent,
+      )
+      onDrawWithContent {
+        drawContent()
+        drawRect(brush = edgeFade, blendMode = BlendMode.DstIn)
+      }
+    }
+
 /** Palette extraction is background work and returns only immutable ARGB colors. */
 private object AudioVisualizerPaletteCache {
   private const val MAX_ENTRIES = 12
@@ -1918,7 +1933,7 @@ fun AudioPlayerControls(
           color = MaterialTheme.colorScheme.onSurface,
           maxLines = 1,
           overflow = TextOverflow.Ellipsis,
-          modifier = Modifier.basicMarquee(iterations = Int.MAX_VALUE),
+          modifier = Modifier.audioMarqueeFade().basicMarquee(iterations = Int.MAX_VALUE),
         )
         Spacer(modifier = Modifier.height(2.dp))
 
@@ -1930,7 +1945,7 @@ fun AudioPlayerControls(
           color = MaterialTheme.colorScheme.onSurfaceVariant,
           maxLines = 1,
           overflow = TextOverflow.Ellipsis,
-          modifier = Modifier.basicMarquee(iterations = Int.MAX_VALUE),
+          modifier = Modifier.audioMarqueeFade().basicMarquee(iterations = Int.MAX_VALUE),
         )
         Spacer(modifier = Modifier.height(2.dp))
 
@@ -2312,6 +2327,51 @@ fun AudioPlayerControls(
       }
     }
 
+    // Landscape always keeps the complete five-control transport row. Seeking is
+    // disabled for live radio, rather than removing a control and changing the row.
+    val landscapePlaybackControlsRow = @Composable {
+      Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceEvenly,
+        verticalAlignment = Alignment.CenterVertically,
+      ) {
+        ReactiveIconButton(
+          onClick = { if (isAudiobook) viewModel.stepPlaybackChapter(-1) else viewModel.playPrevious() },
+          enabled = if (isAudiobook) AudiobookPlayback.currentChapter() != null else playlistModeEnabled,
+          modifier = Modifier.size(48.dp),
+        ) { Icon(Icons.RoundedFilled.SkipPrevious, contentDescription = null, modifier = Modifier.size(28.dp)) }
+        ReactiveIconButton(
+          onClick = { viewModel.seekBy(if (isAudiobook) -30 else -audioSeekDuration) },
+          enabled = !isRadio,
+          modifier = Modifier.size(48.dp),
+        ) { Icon(Icons.RoundedFilled.FastRewind, contentDescription = null, modifier = Modifier.size(30.dp)) }
+        ReactiveSurfaceButton(
+          onClick = { optimisticIsPlaying = !isPlaying; viewModel.pauseUnpause() },
+          shape = CircleShape,
+          color = MaterialTheme.colorScheme.primary,
+          modifier = Modifier.size(64.dp),
+          shadowElevation = 8.dp,
+        ) {
+          Icon(
+            imageVector = if (isPlaying) Icons.RoundedFilled.Pause else Icons.RoundedFilled.PlayArrow,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.onPrimary,
+            modifier = Modifier.size(36.dp),
+          )
+        }
+        ReactiveIconButton(
+          onClick = { viewModel.seekBy(if (isAudiobook) 30 else audioSeekDuration) },
+          enabled = !isRadio,
+          modifier = Modifier.size(48.dp),
+        ) { Icon(Icons.RoundedFilled.FastForward, contentDescription = null, modifier = Modifier.size(30.dp)) }
+        ReactiveIconButton(
+          onClick = { if (isAudiobook) viewModel.stepPlaybackChapter(1) else viewModel.playNext() },
+          enabled = if (isAudiobook) true else playlistModeEnabled,
+          modifier = Modifier.size(48.dp),
+        ) { Icon(Icons.RoundedFilled.SkipNext, contentDescription = null, modifier = Modifier.size(28.dp)) }
+      }
+    }
+
     val audiobookModeButtons = @Composable {
       ReactiveIconButton(
         onClick = { onOpenSheet(Sheets.AudiobookSleepTimer) },
@@ -2605,88 +2665,52 @@ fun AudioPlayerControls(
           }
         }
       }
-    } else if (false && isTabletLandscape) {
-      Row(
-        modifier = Modifier.fillMaxSize(),
-        horizontalArrangement = Arrangement.spacedBy(20.dp),
-        verticalAlignment = Alignment.CenterVertically,
-      ) {
-        Column(
-          modifier = Modifier
-            .weight(1f)
-            .fillMaxHeight(),
-          verticalArrangement = Arrangement.SpaceBetween,
-          horizontalAlignment = Alignment.CenterHorizontally,
-        ) {
-          headerBar()
-          Spacer(modifier = Modifier.height(4.dp))
-          losslessBadge()
-          Spacer(modifier = Modifier.height(6.dp))
-          centerVisualizerView(
-            Modifier
-              .weight(1f)
-              .fillMaxWidth()
-              .padding(vertical = 12.dp, horizontal = 24.dp),
-            false,
-          )
-          Spacer(modifier = Modifier.height(6.dp))
-          trackMetadataView()
-          Spacer(modifier = Modifier.height(8.dp))
-          seekbarView()
-          Spacer(modifier = Modifier.height(8.dp))
-          playbackControlsRow()
-          Spacer(modifier = Modifier.height(12.dp))
-          bottomActionRow()
-        }
-
-        if (showInPlaceLyrics || wasLyricsActiveBeforeLandscape) {
-          lyricsPanel(Modifier.weight(1.1f).fillMaxHeight())
-        } else {
-          Surface(
-            modifier = Modifier.weight(1.1f).fillMaxHeight().clip(RoundedCornerShape(24.dp)),
-            color = MaterialTheme.colorScheme.surfaceContainerLow,
-            shape = RoundedCornerShape(24.dp),
-          ) {
-            DualPaneSidePanel(viewModel = viewModel, playlist = filteredPlaylist)
-          }
-        }
-      }
     } else {
-      Column(
-        modifier = Modifier.fillMaxSize(),
-        verticalArrangement = Arrangement.spacedBy(10.dp),
-      ) {
+      // WindowInsets.safeDrawing is consumed by the page modifier above. BoxWithConstraints
+      // therefore measures the actual safe height, including a landscape cutout/gesture edge.
+      BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+        val landscapeMetrics = AudioLandscapeLayoutPolicy.measure(
+          availableHeightDp = maxHeight.value,
+          availableWidthDp = maxWidth.value,
+        )
         Row(
-          modifier = Modifier.weight(1f).fillMaxWidth(),
-          horizontalArrangement = Arrangement.spacedBy(20.dp),
+          modifier = Modifier.fillMaxSize(),
+          horizontalArrangement = Arrangement.spacedBy(12.dp),
           verticalAlignment = Alignment.CenterVertically,
         ) {
           Box(
-            modifier = Modifier.weight(1f).fillMaxHeight(),
+            modifier = Modifier.weight(0.9f).fillMaxHeight(),
             contentAlignment = Alignment.Center,
           ) {
             centerVisualizerView(
-              Modifier.fillMaxSize().padding(horizontal = 12.dp, vertical = 8.dp),
+              Modifier.size(landscapeMetrics.artworkDp.dp),
               true,
             )
           }
           Column(
-            modifier = Modifier.weight(1f).fillMaxHeight(),
-            verticalArrangement = Arrangement.spacedBy(6.dp),
+            modifier = Modifier.weight(1.1f).fillMaxHeight(),
+            verticalArrangement = Arrangement.spacedBy(landscapeMetrics.gapDp.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
           ) {
-            if (showInPlaceLyrics) {
-              lyricsPanel(Modifier.weight(1f, fill = true).fillMaxWidth())
-            } else {
-              if (!isStandbyActive) headerBar()
-              if (!isStandbyActive && !isAudiobook) losslessBadge()
-              if (!isStandbyActive) trackMetadataView()
-              Spacer(modifier = Modifier.weight(1f))
+            Box(modifier = Modifier.fillMaxWidth().height(landscapeMetrics.headerDp.dp)) {
+              headerBar()
+              Box(modifier = Modifier.align(Alignment.BottomStart)) { losslessBadge() }
             }
-            seekbarView()
-            if (!showInPlaceLyrics && !isStandbyActive) {
-              playbackControlsRow()
-              bottomActionRow()
+            if (showInPlaceLyrics) {
+              lyricsPanel(Modifier.weight(1f).fillMaxWidth())
+            } else {
+              Box(modifier = Modifier.fillMaxWidth().height(landscapeMetrics.metadataDp.dp)) {
+                trackMetadataView()
+              }
+              Box(modifier = Modifier.fillMaxWidth().height(landscapeMetrics.seekbarDp.dp)) {
+                seekbarView()
+              }
+              Box(modifier = Modifier.fillMaxWidth().height(landscapeMetrics.mainRowDp.dp)) {
+                landscapePlaybackControlsRow()
+              }
+              Box(modifier = Modifier.fillMaxWidth().height(landscapeMetrics.extrasRowDp.dp)) {
+                bottomActionRow()
+              }
             }
           }
         }
