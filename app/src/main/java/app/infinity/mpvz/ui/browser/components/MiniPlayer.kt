@@ -51,6 +51,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -73,11 +74,15 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.BlendMode
+import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
@@ -114,6 +119,7 @@ import app.infinity.mpvz.ui.player.controls.MiniPlayerArtworkTarget
 import app.infinity.mpvz.ui.preferences.components.settingsGlassContainerColor
 import app.infinity.mpvz.ui.preferences.components.settingsGlassEnabled
 import app.infinity.mpvz.ui.preferences.components.settingsGlassSurface
+import app.infinity.mpvz.ui.theme.BrowserGlassSurface
 import app.infinity.mpvz.ui.utils.LocalBackStack
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -378,6 +384,8 @@ private fun MiniPlayerContent(
   val currentItem = sessionState.currentItem
   val paused by PlaybackSession.propBoolean["pause"].collectAsStateWithLifecycle()
   val rawMediaTitle by PlaybackSession.propString["media-title"].collectAsStateWithLifecycle()
+  val rawArtist by PlaybackSession.propString["metadata/by-key/Artist"].collectAsStateWithLifecycle()
+  val rawAlbum by PlaybackSession.propString["metadata/by-key/Album"].collectAsStateWithLifecycle()
   val duration by PlaybackSession.propInt["duration"].collectAsStateWithLifecycle()
   val positionState = PlaybackSession.propInt["time-pos"].collectAsStateWithLifecycle()
   val videoAspectRaw by PlaybackSession.propDouble["video-params/aspect"].collectAsStateWithLifecycle()
@@ -385,6 +393,10 @@ private fun MiniPlayerContent(
   val videoHeight by PlaybackSession.propLong["video-params/h"].collectAsStateWithLifecycle()
 
   val isPlaying = paused == false
+  val artist = currentItem?.artist?.takeIf { it.isNotBlank() }
+    ?: rawArtist?.takeIf { it.isNotBlank() }
+    ?: rawAlbum?.takeIf { it.isNotBlank() }
+    ?: context.getString(R.string.mini_player_unknown_artist)
   val title =
     queueState.currentItem?.title?.takeIf { queueState.isExplicitQueue && it.isNotBlank() }
       ?: rawMediaTitle?.takeIf { it.isNotBlank() }
@@ -472,7 +484,11 @@ private fun MiniPlayerContent(
   }
 
   val glassEnabled = settingsGlassEnabled()
-  Surface(
+  BrowserGlassSurface(
+    enabled = glassEnabled,
+    opacity = 0.88f,
+    highlight = 0.18f,
+    cornerRadius = 20.dp,
     modifier = Modifier
       .fadeUnderBrowserMusicSheet(if (useInAppSheet) musicSheet else null)
       .offset { IntOffset(offsetX.roundToInt(), 0) }
@@ -539,13 +555,11 @@ private fun MiniPlayerContent(
         },
       )
       .clip(RoundedCornerShape(20.dp))
-      .settingsGlassSurface(cornerRadius = 20.dp)
+      .then(if (!glassEnabled) Modifier.background(MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.96f)) else Modifier)
       .clickable { launchPlayer() },
-    color = settingsGlassContainerColor(MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.96f)),
-    tonalElevation = if (glassEnabled) 0.dp else 8.dp,
-    shadowElevation = if (glassEnabled) 0.dp else 10.dp,
   ) {
     val primaryContainerColor = MaterialTheme.colorScheme.primaryContainer
+    val progressTrackColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.14f)
 
     if (isVideoMode) {
       // Calculate aspect ratio for video surface container
@@ -629,11 +643,17 @@ private fun MiniPlayerContent(
               color = MaterialTheme.colorScheme.onSurface,
               maxLines = 1,
               overflow = TextOverflow.Ellipsis,
-              modifier = Modifier.basicMarquee(),
+              modifier = Modifier
+                .graphicsLayer(compositingStrategy = CompositingStrategy.Offscreen)
+                .drawWithContent {
+                  drawContent()
+                  drawRect(Brush.horizontalGradient(listOf(Color.Transparent, Color.White, Color.White, Color.Transparent)), blendMode = BlendMode.DstIn)
+                }
+                .basicMarquee(initialDelayMillis = 650),
             )
           }
           Text(
-            text = if (isPlaying) "Playing Video" else "Paused",
+            text = artist,
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             maxLines = 1,
@@ -653,7 +673,7 @@ private fun MiniPlayerContent(
                 ),
               )
             },
-            modifier = Modifier.size(36.dp),
+            modifier = Modifier.size(48.dp).clip(CircleShape),
           ) {
             AnimatedContent(
               targetState = isPlaying,
@@ -671,7 +691,7 @@ private fun MiniPlayerContent(
 
           IconButton(
             onClick = { dismissPlayer() },
-            modifier = Modifier.size(32.dp),
+            modifier = Modifier.size(48.dp).clip(CircleShape),
           ) {
             Icon(
               imageVector = Icons.RoundedFilled.Close,
@@ -691,15 +711,9 @@ private fun MiniPlayerContent(
             val dur = duration?.toFloat() ?: 0f
             val pos = positionState.value?.toFloat() ?: 0f
             val progressFraction = if (dur > 0f) (pos / dur).coerceIn(0f, 1f) else 0f
-            if (progressFraction > 0f) {
-              drawRect(
-                color = primaryContainerColor.copy(alpha = 0.35f),
-                size = Size(
-                  width = size.width * progressFraction,
-                  height = size.height,
-                ),
-              )
-            }
+            val trackY = size.height - 2.dp.toPx()
+            drawRect(color = progressTrackColor, topLeft = androidx.compose.ui.geometry.Offset(0f, trackY), size = Size(size.width, 2.dp.toPx()))
+            drawRect(color = primaryContainerColor, topLeft = androidx.compose.ui.geometry.Offset(0f, trackY), size = Size(size.width * progressFraction, 2.dp.toPx()))
           }
           .padding(horizontal = 12.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -748,11 +762,17 @@ private fun MiniPlayerContent(
               color = MaterialTheme.colorScheme.onSurface,
               maxLines = 1,
               overflow = TextOverflow.Ellipsis,
-              modifier = Modifier.basicMarquee(),
+              modifier = Modifier
+                .graphicsLayer(compositingStrategy = CompositingStrategy.Offscreen)
+                .drawWithContent {
+                  drawContent()
+                  drawRect(Brush.horizontalGradient(listOf(Color.Transparent, Color.White, Color.White, Color.Transparent)), blendMode = BlendMode.DstIn)
+                }
+                .basicMarquee(initialDelayMillis = 650),
             )
           }
           Text(
-            text = if (isPlaying) "Playing" else "Paused",
+            text = artist,
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             maxLines = 1,
@@ -770,7 +790,7 @@ private fun MiniPlayerContent(
               ),
             )
           },
-          modifier = Modifier.size(36.dp),
+          modifier = Modifier.size(48.dp).clip(CircleShape),
         ) {
           AnimatedContent(
             targetState = isPlaying,
@@ -795,7 +815,7 @@ private fun MiniPlayerContent(
               ),
             )
           },
-          modifier = Modifier.size(36.dp),
+          modifier = Modifier.size(48.dp).clip(CircleShape),
         ) {
           Icon(
             imageVector = Icons.RoundedFilled.SkipNext,
@@ -808,7 +828,7 @@ private fun MiniPlayerContent(
         // Close Action Button
         IconButton(
           onClick = { dismissPlayer() },
-          modifier = Modifier.size(32.dp),
+          modifier = Modifier.size(48.dp).clip(CircleShape),
         ) {
           Icon(
             imageVector = Icons.RoundedFilled.Close,

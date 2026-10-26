@@ -1,8 +1,8 @@
 package app.infinity.mpvz.ui.preferences
 
 import app.infinity.mpvz.ui.update.UpdateViewModel
-import kotlin.test.Test
-import kotlin.test.assertEquals
+import org.junit.Assert.assertEquals
+import org.junit.Test
 
 class UpdateResultPolicyTest {
   @Test fun mapsManualOutcomesToStableUiStates() {

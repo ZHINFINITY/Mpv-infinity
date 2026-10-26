@@ -696,7 +696,7 @@ class MainActivity : AppCompatActivity() {
                     end = 12.dp,
                     bottom =
                       (if (NavigationBarState.isNavBarVisible) {
-                        NavigationBarState.navigationBarClearance
+                        NavigationBarState.navigationBarClearance + 10.dp
                       } else {
                         12.dp
                       }) +
