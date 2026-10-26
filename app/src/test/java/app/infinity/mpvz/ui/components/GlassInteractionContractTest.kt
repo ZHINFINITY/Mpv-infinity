@@ -25,7 +25,10 @@ class GlassInteractionContractTest {
   fun castChooserUsesGlassFactoryWhenLiquidGlassIsEnabled() {
     val cast = source("src/main/java/app/infinity/mpvz/ui/cast/CastPlayerButton.kt")
     assertTrue(cast.contains("setDialogFactory("))
-    assertTrue(cast.contains("glassMediaRouteDialogFactory"))
+    assertTrue(cast.contains("GlassMediaRouteDialogFactory"))
+    assertTrue(
+      cast.contains("class GlassMediaRouteChooserDialogFragment : MediaRouteChooserDialogFragment()"),
+    )
     assertTrue(cast.contains("GlassSurfacePolicy.opacity"))
     assertTrue(cast.contains("GlassSurfacePolicy.highlight"))
     assertTrue(cast.contains("setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))"))
