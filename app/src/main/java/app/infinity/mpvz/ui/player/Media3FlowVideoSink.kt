@@ -936,17 +936,45 @@ class Media3FlowVideoSink(
 
   override fun clearOutputSurfaceInfo() {
     val previousSurface = outputSurface
-    outputSurfaceGeneration.incrementAndGet()
+    val generation = outputSurfaceGeneration.incrementAndGet()
     outputAvailable = false
     presentationSurfaceReady = false
     outputSurface = null
-    glHandler.post {
+    // Media3 may let MediaCodec reconnect to PlayerView as soon as this callback returns. Fence
+    // both Flow threads so the EGL producer releases that BufferQueue before the codec reconnects.
+    val releaseFence = CountDownLatch(1)
+    val releaseStartedNs = System.nanoTime()
+    val clearOnGlThread = {
       cancelDisplayFrame()
       clearFrameRateHint(previousSurface)
       outputWallTimes.clear()
       generatedWallTimes.clear()
       if (makePbufferCurrent()) cancelPendingPresentationBuffers()
-      destroyWindowSurface()
+      destroyWindowSurface { releaseFence.countDown() }
+    }
+    val posted = if (Looper.myLooper() == glThread.looper) {
+      clearOnGlThread()
+      true
+    } else {
+      glHandler.post { clearOnGlThread() }
+    }
+    if (!posted) {
+      if (!disposed) Log.e(logTag, "event=output_surface_release state=gl_thread_unavailable generation=$generation")
+      return
+    }
+    val completed = try {
+      releaseFence.await(GL_INIT_TIMEOUT_MS, TimeUnit.MILLISECONDS)
+    } catch (interrupted: InterruptedException) {
+      Thread.currentThread().interrupt()
+      false
+    }
+    val waitedMs = (System.nanoTime() - releaseStartedNs) / 1_000_000L
+    if (completed) {
+      if (isDebuggable) {
+        Log.d(logTag, "event=output_surface_release state=complete generation=$generation wait_ms=$waitedMs")
+      }
+    } else {
+      Log.e(logTag, "event=output_surface_release state=timeout generation=$generation wait_ms=$waitedMs")
     }
   }
 
@@ -2831,29 +2859,38 @@ class Media3FlowVideoSink(
     if (presentationQueue.hasReady()) schedulePresentationDrain()
   }
 
-  private fun destroyWindowSurface() {
+  private fun destroyWindowSurface(onDestroyed: (() -> Unit)? = null) {
     presentationSurfaceReady = false
-    presentationHandler.post { destroyWindowSurfaceOnPresentationThread() }
+    if (!presentationHandler.post { destroyWindowSurfaceOnPresentationThread(onDestroyed) }) {
+      Log.e(logTag, "event=output_surface_release state=presentation_thread_unavailable")
+    }
   }
 
-  private fun destroyWindowSurfaceOnPresentationThread() {
+  private fun destroyWindowSurfaceOnPresentationThread(onDestroyed: (() -> Unit)? = null) {
     presentationSurfaceReady = false
     if (presentationQueue.hasPresenting()) {
-      presentationHandler.postDelayed(
-        { destroyWindowSurfaceOnPresentationThread() },
-        PRESENTATION_FENCE_POLL_DELAY_MS,
-      )
+      if (!presentationHandler.postDelayed(
+          { destroyWindowSurfaceOnPresentationThread(onDestroyed) },
+          PRESENTATION_FENCE_POLL_DELAY_MS,
+        )
+      ) {
+        Log.e(logTag, "event=output_surface_release state=presentation_fence_unavailable")
+      }
       return
     }
     if (eglDisplay == EGL14.EGL_NO_DISPLAY) {
       windowSurface = EGL14.EGL_NO_SURFACE
+      onDestroyed?.invoke()
       return
     }
     makePresentationPbufferCurrent()
-    if (windowSurface != EGL14.EGL_NO_SURFACE) EGL14.eglDestroySurface(eglDisplay, windowSurface)
+    if (windowSurface != EGL14.EGL_NO_SURFACE && !EGL14.eglDestroySurface(eglDisplay, windowSurface)) {
+      Log.e(logTag, "event=output_surface_release state=egl_destroy_failed error=0x${EGL14.eglGetError().toString(16)}")
+    }
     windowSurface = EGL14.EGL_NO_SURFACE
     eglSwapIntervalAttempted = false
     eglSwapIntervalZeroApplied = false
+    onDestroyed?.invoke()
   }
 
   private fun drawPresentationFullscreenTriangle() {
