@@ -8,12 +8,12 @@ import android.graphics.BitmapShader
 import android.os.Build
 import androidx.annotation.RequiresApi
 
-/** A browser lens effect is immutable at the Compose layer; motion remains a shader uniform. */
+/** Retains the browser lens effect and exposes refreshed effects for animated motion. */
 internal class BrowserLensEffectHandle internal constructor(
   val effect: androidx.compose.ui.graphics.RenderEffect,
-  private val motionUpdater: (Float) -> Unit,
+  private val motionUpdater: (Float) -> androidx.compose.ui.graphics.RenderEffect?,
 ) {
-  fun updateMotion(value: Float) = motionUpdater(value)
+  fun updateMotion(value: Float): androidx.compose.ui.graphics.RenderEffect? = motionUpdater(value)
 }
 
 /**

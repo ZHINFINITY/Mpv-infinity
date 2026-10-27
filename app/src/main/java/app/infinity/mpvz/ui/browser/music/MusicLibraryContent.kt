@@ -646,8 +646,9 @@ fun MusicLibraryContent(
     floatingActionButton = {
       val isPlaylistsTab = visibleTabs.getOrNull(pagerState.currentPage) == MusicTab.PLAYLISTS
       val isFoldersTab = visibleTabs.getOrNull(pagerState.currentPage) == MusicTab.FOLDERS
-      val isFabShouldBeVisible =
-        showQuickPlayFab && !activeSelectionManager.isInSelectionMode && isFabVisible.value && !MainScreen.getPermissionDeniedState()
+      val isPlaylistFabShouldBeVisible =
+        !activeSelectionManager.isInSelectionMode && isFabVisible.value && !MainScreen.getPermissionDeniedState()
+      val isFabShouldBeVisible = showQuickPlayFab && isPlaylistFabShouldBeVisible
 
       if (isFoldersTab) {
         // FolderListScreen.MediaStoreFolderListContent renders its own FAB, skip ours.
@@ -661,7 +662,7 @@ fun MusicLibraryContent(
               containerColor = quickPlayFabContainerColor(),
               modifier =
                 Modifier.settingsGlassSurface(cornerRadius = 20.dp).animateFloatingActionButton(
-                  visible = isFabShouldBeVisible,
+                  visible = isPlaylistFabShouldBeVisible,
                   alignment = Alignment.BottomEnd,
                 ),
               checked = false,
