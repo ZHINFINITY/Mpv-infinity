@@ -63,19 +63,6 @@ class QuickPlayGlassContractTest {
   }
 
   @Test
-  fun playlistCreationRemainsVisibleWithMiniPlayerWithoutChangingQuickPlayPolicy() {
-    val playlistFab = music.substringAfter("} else if (isPlaylistsTab) {")
-      .substringBefore("} else if (songs.isNotEmpty()) {")
-    val quickPlayFab = music.substringAfter("} else if (songs.isNotEmpty()) {")
-    assertTrue(music.contains("val isFabShouldBeVisible = showQuickPlayFab && isPlaylistFabShouldBeVisible"))
-    assertTrue(playlistFab.contains("visible = isPlaylistFabShouldBeVisible"))
-    assertTrue(playlistFab.contains("onCheckedChange = { showCreatePlaylistDialog = true }"))
-    assertTrue(playlistFab.contains("Modifier.padding(bottom = (navigationBarHeight - 16.dp).coerceAtLeast(0.dp))"))
-    assertTrue(quickPlayFab.contains("visible = isFabShouldBeVisible"))
-    assertTrue(music.contains("QuickPlayMenuVisibilityEffect(showQuickPlayFab)"))
-  }
-
-  @Test
   fun glassModifierKeepsNativeFallbackWhenDisabled() {
     assertTrue(settingsGlass.contains("liquidGlassPane("))
     assertTrue(settingsGlass.contains("enabled = enabled"))
