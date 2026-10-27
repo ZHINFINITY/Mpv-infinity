@@ -2339,4 +2339,11 @@
     <string name="pref_openai_base_url_summary">Blank uses the official OpenAI endpoint</string>
     <string name="pref_openai_base_url_prompt">Enter an OpenAI-compatible API base URL</string>
     <string name="pref_openai_base_url_invalid">Enter a valid HTTP or HTTPS URL without credentials, query parameters, or fragments.</string>
+<string name="pref_glass_preview">Live glass preview</string>
+<string name="pref_glass_rim_strength">Rim strength</string>
+<string name="pref_glass_rim_strength_summary">Brightness of the shared lit edge</string>
+<string name="pref_glass_rim_width">Rim width</string>
+<string name="pref_glass_rim_width_summary">Thickness of the lit edge in dp</string>
+<string name="pref_glass_rim_softness">Rim softness</string>
+<string name="pref_glass_rim_softness_summary">How softly the edge light fades</string>
 </resources>

@@ -57,6 +57,13 @@ class AppearancePreferences(
   val glassRefractionStrength = preferenceStore.getFloat("glass_refraction_strength", 1f)
   val glassDepthStrength = preferenceStore.getFloat("glass_depth_strength", 1f)
   val glassMotionIntensity = preferenceStore.getFloat("glass_motion_intensity", 1f)
+  // Lit edge (rim light) tuning, see GlassRimLightPolicy for ranges and defaults.
+  val glassRimStrength = preferenceStore.getFloat("glass_rim_strength", 1f)
+  val glassRimWidth = preferenceStore.getFloat("glass_rim_width", 1.2f)
+  val glassRimSoftness = preferenceStore.getFloat("glass_rim_softness", 0.5f)
+  val lensRefraction = preferenceStore.getFloat("lens_refraction", 1f)
+  val lensDepth = preferenceStore.getFloat("lens_depth", 1f)
+  val colourEdge = preferenceStore.getBoolean("lens_colour_edge", true)
   val useSystemFont = preferenceStore.getBoolean("use_system_font", false)
   val animateInfinityLogo = preferenceStore.getBoolean("animate_infinity_logo", true)
   val unlimitedNameLines = preferenceStore.getBoolean("unlimited_name_lines", false)

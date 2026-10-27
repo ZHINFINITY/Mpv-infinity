@@ -20,20 +20,27 @@ class ReferenceUiRollbackContractTest {
       sha(read("app/src/main/java/app/infinity/mpvz/ui/browser/cards/FolderCard.kt")))
   }
 
-  @Test fun preservedPlayerSourcesKeepBaseline7eFingerprints() {
+  @Test fun preservedPlayerSourcesKeepPinnedFingerprints() {
     val expected = mapOf(
-      "app/src/main/java/app/infinity/mpvz/ui/player/controls/PlayerControls.kt" to "2219b79942125f0f6de4c1e543742605b6949a126d07fc4f05d32fc11240b27a" /* restore 7cd7e collectAsState on StateFlow snapshot getter */,
+      // Build 1910 smoothness: chapter index via derivedStateOf so position ticks do not recompose the whole overlay.
+      "app/src/main/java/app/infinity/mpvz/ui/player/controls/PlayerControls.kt" to "2219b79942125f0f6de4c1e543742605b6949a126d07fc4f05d32fc11240b27a" /* music entry hides stats via StatsLuaOverlay (no blind toggle, saved page kept); before that: 1901 (380a778b) stats overlay + music-entry stats hide restored; clean-room BrowserMusicSheetState replaces the mpvRx sheet type; outer-container preference now gates the track glass rail */,
+      // Owner follow-up: music uses its legacy visual rail while video retains the global-glass path.
       "app/src/main/java/app/infinity/mpvz/ui/player/controls/components/Seekbar.kt" to "b0d7ca11fdd2729871e052a0f6ea3b2cba64fb3e29039e5d3c42a7acf4d426c9",
-      // Build 1902: owner-approved contrasting switch colours (3D glass depth kept).
-      "app/src/main/java/app/infinity/mpvz/ui/player/controls/components/GlassControls.kt" to "ae873298a6b622bcdbe5c5366fc6d8fd37009ee395c3531c1df90f9dd31f6320",
-      "app/src/main/java/app/infinity/mpvz/presentation/components/PlayerSheet.kt" to "fdcf88d13735e1876059f0e7bdcc41088ecedd06d58fffde0283c9e32967e96a",
+      // Build 1910: shared rimLight/thick-surface routing is intentionally owned by this stream.
+      // Build 1910 integration: union of the rim-light routing and thickSurface stream edits.
+      // Owner follow-up: rounded player panes preserve the press shadow and inherit global glass tuning.
+      // Accessibility follow-up: shared press, slider, and lens feedback respects reduced motion.
+      "app/src/main/java/app/infinity/mpvz/ui/player/controls/components/GlassControls.kt" to "e5ef3b62703cb91f04ae7275c2ae4d5838b6ea5cd6fa6662ed4b6d223c84d814",
+      // Build 1910: player sheets opt into the centralized inner thickness bands.
+      // Build 1910 integration: edge-attached landscape sheets draw one rim on the asymmetric shape.
+      "app/src/main/java/app/infinity/mpvz/presentation/components/PlayerSheet.kt" to "7838a785e17d4bd1479a348a04c6f9ac7af0bacc0891ba817b165a1f53348c81",
       "app/src/main/java/app/infinity/mpvz/presentation/components/PlayerGlassOverlays.kt" to "82a115d195711b391235b5f32a4d7b2bac75e494aef0ff22be55251f9307b54f",
     )
     expected.forEach { (path, digest) -> assertEquals(path, digest, sha(read(path))) }
   }
 
-  /** Only the player-scoped ambient fallback guard and ambient film tint (builds 1896/1897) may differ. */
-  @Test fun liquidGlassBackdropDiffersFromBaselineOnlyByScopedAmbientGuard() {
+  /** Keep the player-scoped ambient guard and bound lens refraction to the pane's actual corner radius. */
+  @Test fun liquidGlassBackdropPreservesScopedAmbientAndBoundedRefraction() {
     val path = "app/src/main/java/app/infinity/mpvz/ui/theme/LiquidGlassBackdrop.kt"
     val current = read(path)
     val guarded = """        // When video sampling is temporarily unavailable, the ambient video
@@ -174,6 +181,170 @@ private suspend fun frostGlassFrame(bitmap: Bitmap, strength: Float): Bitmap? = 
         """runCatching { RuntimeShader(GLASS_OPTICS) }.getOrNull()""",
     )
     var film = current
+    // Build 1910 smoothness: capture reuses a double-buffered bitmap pair and pixel/luma scratch
+    // arrays (GlassCaptureBuffers) instead of allocating per frame. Restored first, hunk by hunk.
+    val smoothness = listOf(
+      """  val frostPasses = GlassCustomizationPolicy.frostPasses(tuning.frost)
+  val frame = remember { mutableStateOf<LiquidGlassFrame?>(null) }
+  val captureBuffers = remember { GlassCaptureBuffers() }
+  DisposableEffect(Unit) { onDispose { captureBuffers.recycle() } }
+  val ready by rememberUpdatedState(isReady)
+  val playing by rememberUpdatedState(isPlaying)
+""" to
+        """  val frostPasses = GlassCustomizationPolicy.frostPasses(tuning.frost)
+  val frame = remember { mutableStateOf<LiquidGlassFrame?>(null) }
+  val ready by rememberUpdatedState(isReady)
+  val playing by rememberUpdatedState(isPlaying)
+""",
+      """        }
+        // Only the tiny UI copy is cropped/frosted. The actual video surface remains untouched.
+        val sampled = captureBuffers.acquire(dimensions.first, dimensions.second)?.let { target ->
+          copyGlassFrame(source, crop, target)?.let {
+            frostGlassFrame(target, tuning.frost, captureBuffers.pixels, captureBuffers.lumaBins)
+          }
+        }
+        val bitmap = sampled?.first
+        if (sampled == null || bitmap == null) {
+""" to
+        """        }
+        // Only the tiny UI copy is cropped/frosted. The actual video surface remains untouched.
+        val sampled = copyGlassFrame(source, crop, dimensions.first, dimensions.second)
+          ?.let { frostGlassFrame(it, tuning.frost) }
+        val bitmap = sampled?.first
+        if (sampled == null || bitmap == null) {
+""",
+      """            (location[0] + crop.left + crop.width).toFloat(), (location[1] + crop.top + crop.height).toFloat()),
+            underlayLuma = sampled.second)
+          captureBuffers.markPublished(bitmap)
+        }
+        // Recover after transient failures instead of permanently disabling glass after three errors.
+""" to
+        """            (location[0] + crop.left + crop.width).toFloat(), (location[1] + crop.top + crop.height).toFloat()),
+            underlayLuma = sampled.second)
+        }
+        // Recover after transient failures instead of permanently disabling glass after three errors.
+""",
+      """}
+
+internal class GlassCaptureBuffers {
+  private var first: Bitmap? = null
+  private var second: Bitmap? = null
+  private val retired = ArrayList<Bitmap>(2)
+  private var nextFirst = true
+  private var published: Bitmap? = null
+  var pixels: IntArray = IntArray(0)
+    private set
+  val lumaBins = IntArray(64)
+  fun acquire(width: Int, height: Int): Bitmap? {
+    if (width <= 0 || height <= 0) return null
+    if (first?.width != width || first?.height != height) {
+      first?.let(retired::add); second?.let(retired::add)
+      first = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+      second = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+      pixels = IntArray(width * height)
+      nextFirst = true
+    }
+    // The last bitmap handed to Compose remains drawable until the state swap is
+    // observed. Never let PixelCopy or frosting write into that published image.
+    val preferred = if (nextFirst) first else second
+    val alternate = if (preferred === first) second else first
+    val result = when {
+      preferred != null && preferred !== published -> preferred
+      alternate != null && alternate !== published -> alternate
+      else -> null
+    }
+    nextFirst = !nextFirst
+    return result
+  }
+  fun markPublished(bitmap: Bitmap) {
+    check(bitmap === first || bitmap === second)
+    published = bitmap
+  }
+  fun recycle() {
+    first?.recycle(); second?.recycle()
+    retired.forEach { it.recycle() }
+    retired.clear()
+    first = null; second = null
+    published = null
+    pixels = IntArray(0)
+  }
+}
+
+private suspend fun copyGlassFrame(source: SurfaceView, crop: GlassScenePolicy.SourceRect, bitmap: Bitmap): Bitmap? =
+  suspendCancellableCoroutine { continuation ->
+    try {
+      PixelCopy.request(source, AndroidRect(crop.left, crop.top, crop.left + crop.width, crop.top + crop.height), bitmap, { result ->
+""" to
+        """}
+
+private suspend fun copyGlassFrame(source: SurfaceView, crop: GlassScenePolicy.SourceRect, width: Int, height: Int): Bitmap? =
+  suspendCancellableCoroutine { continuation ->
+    val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+    try {
+      PixelCopy.request(source, AndroidRect(crop.left, crop.top, crop.left + crop.width, crop.top + crop.height), bitmap, { result ->
+""",
+      """          continuation.resume(bitmap)
+        } else {
+          if (continuation.isActive) continuation.resume(null)
+        }
+      }, Handler(Looper.getMainLooper()))
+    } catch (_: RuntimeException) {
+      if (continuation.isActive) continuation.resume(null)
+    }
+""" to
+        """          continuation.resume(bitmap)
+        } else {
+          bitmap.recycle() // only unpublished/failed copies can be recycled safely
+          if (continuation.isActive) continuation.resume(null)
+        }
+      }, Handler(Looper.getMainLooper()))
+    } catch (_: RuntimeException) {
+      bitmap.recycle()
+      if (continuation.isActive) continuation.resume(null)
+    }
+""",
+      """
+// Returns the frosted bitmap and its bright-percentile luma, measured on the same background pass.
+private suspend fun frostGlassFrame(bitmap: Bitmap, strength: Float, pixels: IntArray, lumaBins: IntArray): Pair<Bitmap, Float>? = try {
+  withContext(Dispatchers.Default) {
+    bitmap.getPixels(pixels, 0, bitmap.width, 0, 0, bitmap.width, bitmap.height)
+    // Every API level keeps the same CPU frost on this tiny sample: the API 33+ refraction
+    // shader and the older paint path both expect an already-frosted input (visual parity).
+    val frosted = GlassFrostPolicy.frostArgb(pixels, bitmap.width, bitmap.height, strength)
+    bitmap.setPixels(frosted, 0, bitmap.width, 0, 0, bitmap.width, bitmap.height)
+    bitmap to GlassSurfacePolicy.underlayLuma(frosted, lumaBins)
+  }
+} catch (cancelled: CancellationException) {
+  throw cancelled
+} catch (_: RuntimeException) {
+  null
+}
+
+""" to
+        """
+// Returns the frosted bitmap and its bright-percentile luma, measured on the same background pass.
+private suspend fun frostGlassFrame(bitmap: Bitmap, strength: Float): Pair<Bitmap, Float>? = try {
+  withContext(Dispatchers.Default) {
+    val pixels = IntArray(bitmap.width * bitmap.height)
+    bitmap.getPixels(pixels, 0, bitmap.width, 0, 0, bitmap.width, bitmap.height)
+    val frosted = GlassFrostPolicy.frostArgb(pixels, bitmap.width, bitmap.height, strength)
+    bitmap.setPixels(frosted, 0, bitmap.width, 0, 0, bitmap.width, bitmap.height)
+    bitmap to GlassSurfacePolicy.underlayLuma(frosted)
+  }
+} catch (cancelled: CancellationException) {
+  bitmap.recycle() // This bitmap was never published to Compose.
+  throw cancelled
+} catch (_: RuntimeException) {
+  bitmap.recycle()
+  null
+}
+
+""",
+    )
+    smoothness.forEach { (now, before) ->
+      assertEquals(now, 1, film.split(now).size - 1)
+      film = film.replace(now, before)
+    }
     // Keep last frosted sample during ambience/interpolation; reverse before hashing.
     val frostRetention = listOf(
       """  // Visibility changes stop work, but do not flash the last good scene to black during sheet handoff.
@@ -339,13 +510,39 @@ import android.graphics.Shader
     return this.background(MaterialTheme.colorScheme.background.copy(alpha = GlassSurfacePolicy.EdgeChromeNoSceneFilmAlpha))
   }
 """ to "",
+      // Build 1908: unsupported or glass-crashed devices skip sampling (GlassDeviceSupport), and
+      // the startup sentinel watches the first glass frames. Optics and cadence are unchanged.
+      "canSample(enabled && GlassDeviceSupport.allowsGlass(context), true," to "canSample(enabled, true,",
+      "  val allowed = eligible && visible\n  GlassStartupWatch(active = allowed)\n" to
+        "  val allowed = eligible && visible\n",
     )
     var restored = film.replace(guarded, baseline)
     cadence.forEach { (now, before) ->
       assertEquals(now, 1, restored.split(now).size - 1)
       restored = restored.replace(now, before)
     }
-    assertEquals("f10a7bb20ca6e17e57f8500f5857cae1fc6d9ecf9f30c67512b8925ce2d9b7f3", sha(restored))
+    // Build 1910: centralized rim/depth bands replace the old pane-local contour; the integration
+    // keeps the bounded three-band lower-right exterior contact shadow (depth cue, no bitmap blur).
+    assertTrue(current.contains("val minCornerRadiusPx = cornerRadius.toPx().coerceAtMost(size.minDimension / 2f)"))
+    assertTrue(current.contains("refractionHeight = LensGlassPolicy.refractionHeightPx(24.dp.toPx(), minCornerRadiusPx, tuning.lensDepth)"))
+    assertEquals("01f65408e855f52c32f53739d1c461968c0be81f37d4cd4834fc8d0b86a20e66", sha(restored))
+  }
+  @Test fun glassChipAndPlayerControlsRespectAccessibilityMotion() {
+    val chip = read("app/src/main/java/app/infinity/mpvz/ui/components/GlassChip.kt")
+    assertTrue(chip.contains("verticalAlignment = Alignment.CenterVertically"))
+    val controls = read("app/src/main/java/app/infinity/mpvz/ui/player/controls/components/GlassControls.kt")
+    assertTrue(controls.contains("reducedMotion: Boolean = AppMotion.shouldReduceMotion()"))
+    assertTrue(controls.contains(".glassWaterRipple(interactionSource, enabled, glass = glass && !reducedMotion)"))
+    assertTrue(controls.contains("if (reducedMotion) snap<Float>() else spring<Float>"))
+    assertEquals(2, controls.split("val reducedMotion = AppMotion.shouldReduceMotion()").size - 1)
+    assertTrue(controls.contains("!(refraction && GlassWaterRippleEffects.available())"))
+    assertTrue(controls.contains("if (lensEnabled && !reducedMotion && (switchPressed || switchDragged)) 1f else 0f"))
+    assertTrue(controls.contains("if (lensEnabled && !reducedMotion && (pressed || touched)) 1f else 0f"))
+    assertTrue(controls.contains("GlassSliderPolicy.stretch(pressed, reducedMotion)"))
+    assertTrue(controls.contains("GlassSliderPolicy.squash(pressed, reducedMotion)"))
+    assertTrue(controls.contains("The fade is the whole effect on fallback devices"))
+    assertEquals(1f, app.infinity.mpvz.ui.player.controls.components.GlassSliderPolicy.stretch(true, reducedMotion = true), 0f)
+    assertEquals(1f, app.infinity.mpvz.ui.player.controls.components.GlassSliderPolicy.squash(true, reducedMotion = true), 0f)
   }
   @Test fun expressiveNavigationBodyAndBrowserLensMatchReference() {
     val navigation = read("app/src/main/java/app/infinity/mpvz/ui/browser/MainScreen.kt")
@@ -360,7 +557,11 @@ import android.graphics.Shader
       end++
     }
     // Build 1902: nav pill commits the lens frame before far page jumps and supports drag-to-select.
-    assertEquals("6dd01fe6826b20433d5073e6a41b45f2750f27f2b2ce2a6f0b6418263f8358f6", sha(navigation.substring(start, end)))
+    // Build 1943: the drag moved to the shared Initial-pass navPillDragGesture (1942's Main-pass
+    // slop detector never started on the phone).
+    // Owner follow-up: retain the normal 44dp selected outline/placement; the glass refraction
+    // follows finger-driven drag motion without an elevated pop or altered tab hit targets.
+    assertEquals("555f92e1272db06d7ae9df41021a817c546cad73a9bbf6f03de981609b6ef1f1", sha(navigation.substring(start, end)))
     val scene = read("app/src/main/java/app/infinity/mpvz/ui/theme/BrowserGlassScene.kt")
     val lensStart = scene.indexOf("internal const val BROWSER_LENS")
     val q = scene.indexOf("\"\"\"", lensStart)

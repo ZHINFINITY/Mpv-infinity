@@ -25,8 +25,10 @@ class NavigationGlassContracts(unittest.TestCase):
         source = self.section()
         for token in ("rememberBrowserGlassMotionAllowed()", "collectIsDraggedAsState()", "Animatable(position)",
                       "lensPosition.snapTo(position)", "lensPosition.animateTo(targetIndex, spring(",
-                      "if (fingerDragging) position else 0f", "lensSquash", "NavigationGlassMotionPolicy"):
+                      "if (fingerDragging) position else 0f", "NavigationGlassMotionPolicy",
+                      ".height(44.dp)", "Modifier.navPillDragGesture("):
             self.assertIn(token, source)
+        self.assertNotIn("lensPop", source)
         self.assertNotIn("isScrollInProgress", source)
         for forbidden in ("while (", "rememberInfiniteTransition", "withFrameNanos", "PixelCopy"):
             self.assertNotIn(forbidden, source)
@@ -57,16 +59,25 @@ class NavigationGlassContracts(unittest.TestCase):
     def test_reference_lens_is_separate_from_latest_controls_and_capability_fallbacks(self):
         renderer = RENDERER.read_text()
         source = renderer.split("fun BrowserGlassSurface(", 1)[1].split("/** The shared pane path", 1)[0]
-        self.assertLess(source.index("val shader = remember(enabled, capabilities.refraction)"), source.index(".drawWithCache {"))
-        self.assertIn("RuntimeShader(BROWSER_LENS)", source)
-        self.assertIn('createRuntimeShaderEffect(shader, "scene")', source)
-        self.assertIn("lens.renderEffect = effect", source)
+        # RuntimeShader is only touched from AgslRuntimeShaders (API 33+); mutable lenses are per pane.
+        agsl = (JAVA / "ui/theme/AgslRuntimeShaders.kt").read_text()
+        self.assertNotIn("GlassShaderCache.shared(BROWSER_LENS)", agsl)
+        self.assertIn("runCatching { RuntimeShader(BROWSER_LENS) }.getOrNull()", agsl)
+        self.assertIn('createRuntimeShaderEffect(shader, "scene")', agsl)
+        self.assertNotIn("RuntimeShader(", source)
+        self.assertLess(source.index(".drawWithCache {"), source.index("RuntimeShaderSupport.browserLensEffectOrNull("))
+        self.assertIn("capabilities.refraction && RuntimeShaderSupport.available()", source)
+        self.assertIn("val blurFallback = if (Build.VERSION.SDK_INT >= 31 && scene != null && tuning.frost > 0f)", source)
+        self.assertIn("lens.renderEffect = lensEffect ?: blurFallback", source)
         self.assertIn("drawLayer(scene!!.layer)", source)
         self.assertIn("film * (if (selected) 0.24f else 0.20f)", source)
         self.assertNotIn("browserGlassPane(enabled", source)
         # Every other browser pane now reuses the nav pill reference lens and film.
         pane = renderer.split("internal fun Modifier.browserGlassPane(", 1)[1].split("private fun windowScreenOffset", 1)[0]
-        self.assertIn("RuntimeShader(BROWSER_LENS)", pane)
+        self.assertIn("RuntimeShaderSupport.browserLensEffectOrNull(", pane)
+        self.assertIn("val blurFallback = if (Build.VERSION.SDK_INT >= 31 && scene != null && blurDp > 0f)", pane)
+        self.assertIn("lens.renderEffect = lensHandle?.effect ?: blurFallback", pane)
+        self.assertNotIn("RuntimeShader(", pane)
         self.assertIn("film * (if (selected) 0.24f else 0.20f)", pane)
         self.assertIn("lens.alpha = 1f", pane)
         for token in ("!lowRam && !powerSave && thermal < 3", "ANIMATOR_DURATION_SCALE", "areAnimatorsEnabled()",

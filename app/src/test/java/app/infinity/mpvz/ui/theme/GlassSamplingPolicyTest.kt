@@ -28,15 +28,20 @@ class GlassSamplingPolicyTest {
 
   @Test fun pausedAndFailedSourcesDoNotPollAtPlaybackCadence() {
     // Regression: 200 ms (5 fps) made video behind decoder/subtitle sheets visibly slower.
-    assertTrue(GlassSamplingPolicy.PlayingIntervalMs <= 17L)
-    assertEquals(16L, GlassSamplingPolicy.interval(true, 0))
-    assertEquals(16L, GlassSamplingPolicy.interval(true, 0, thermalStatus = 1))
+    assertEquals(33L, GlassSamplingPolicy.PlayingIntervalMs)
+    assertEquals(33L, GlassSamplingPolicy.interval(true, 0))
+    assertEquals(33L, GlassSamplingPolicy.interval(true, 0, thermalStatus = 1))
     assertEquals(33L, GlassSamplingPolicy.interval(true, 0, thermalStatus = 2))
     assertEquals(1000L, GlassSamplingPolicy.interval(false, 0, thermalStatus = 0))
     assertEquals(1000L, GlassSamplingPolicy.interval(false, 0))
     assertEquals(1200L, GlassSamplingPolicy.interval(true, 1))
     assertEquals(1200L, GlassSamplingPolicy.interval(false, 2))
     assertEquals(3, GlassSamplingPolicy.FailureLimit)
+  }
+
+  @Test fun boxPassSigmaMatchesAnalyticMapping() {
+    assertEquals(kotlin.math.sqrt(6f), GlassSamplingPolicy.frostSigma(2, 3), 0.0001f)
+    assertTrue(GlassSamplingPolicy.frostSigma(2, 6) > GlassSamplingPolicy.frostSigma(2, 3))
   }
 
   @org.junit.Test fun pacingSubtractsCopyTimeWithoutBusyLooping() {

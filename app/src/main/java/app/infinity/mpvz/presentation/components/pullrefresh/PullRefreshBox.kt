@@ -44,12 +44,9 @@ import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import app.infinity.mpvz.preferences.AppearancePreferences
-import app.infinity.mpvz.preferences.preference.collectAsState
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import org.koin.compose.koinInject
 
 /**
  * A reusable Box that wraps content with pull-to-refresh functionality.
@@ -84,9 +81,8 @@ fun PullRefreshBox(
   val maxTranslationPx = with(density) { refreshThreshold.toPx() }
 
   val activeJob = remember { mutableStateOf<Job?>(null) }
-  val appearance = koinInject<AppearancePreferences>()
-  val animateLogo by appearance.animateInfinityLogo.collectAsState()
-  val infinityDashOffset = infinityDashOffset(animateLogo)
+  // The refresh mark loops while visible; the home-logo preference remains separate.
+  val infinityDashOffset = infinityDashOffset(animate = isRefreshing.value || state.distanceFraction > 0f)
   val infinityPath = remember {
     Path().apply {
       moveTo(24.3f, 30f)
@@ -206,10 +202,10 @@ fun PullRefreshBox(
 }
 
 @Composable
-fun InfinityLoadingIndicator(modifier: Modifier = Modifier, size: Dp = 56.dp) {
-  val appearance = koinInject<AppearancePreferences>()
-  val animateLogo by appearance.animateInfinityLogo.collectAsState()
-  val dashOffset = infinityDashOffset(animateLogo)
+fun InfinityLoadingIndicator(modifier: Modifier = Modifier, size: Dp = 56.dp, animate: Boolean = true) {
+  // Loading and refresh indicators always loop; only the home top-bar logo passes the
+  // "Animate infinity logo" preference through [animate].
+  val dashOffset = infinityDashOffset(animate)
   val path = remember {
     Path().apply {
       moveTo(24.3f, 30f)

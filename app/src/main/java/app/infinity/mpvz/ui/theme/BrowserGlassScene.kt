@@ -58,6 +58,7 @@ import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
+import app.infinity.mpvz.ui.theme.lens.LocalLensGlassEnabled
 
 @Stable
 private class BrowserScene(val layer: GraphicsLayer, val contentLens: Boolean = false) {
@@ -138,7 +139,9 @@ fun BrowserGlassSceneHost(
       }
     }
   }
-  val allowed = enabled && !lowRam && !powerSave && thermal < 3
+  val allowed = enabled && !lowRam && !powerSave && thermal < 3 &&
+    GlassDeviceSupport.allowsGlass(context)
+  GlassStartupWatch(active = allowed && LocalBrowserScene.current == null)
   val layer = rememberGraphicsLayer()
   // Nested hosts inherit the root display-list instead of shadowing it.
   val inheritedScene = LocalBrowserScene.current
@@ -387,6 +390,11 @@ fun BrowserGlassSurface(
   // settings/player/folder controls and has different depth/tint semantics.
   val scene = LocalBrowserScene.current
   val capabilities = LocalBrowserCapabilities.current
+  val lensEnabled = LocalLensGlassEnabled.current
+  val refractionEnabled = enabled && selected && lensEnabled && capabilities.refraction && RuntimeShaderSupport.available()
+  val browserLensShader = remember(refractionEnabled) {
+    if (refractionEnabled) RuntimeShaderSupport.browserLensShaderOrNull() else null
+  }
   val tuning = LocalGlassCustomization.current
   val hostView = LocalView.current
   val shape = remember(cornerRadius) { RoundedCornerShape(cornerRadius) }
@@ -403,18 +411,22 @@ fun BrowserGlassSurface(
     if (enabled) {
       Box(Modifier.matchParentSize().drawWithCache {
         val radius = cornerRadius.toPx().coerceAtMost(size.height / 2f).coerceAtMost(size.width / 2f)
-        val refraction = capabilities.refraction && RuntimeShaderSupport.available()
-        val effect = if (refraction) RuntimeShaderSupport.browserLensEffectOrNull(
+        // The route scene is a sibling producer; never self-sample. The lens
+        // shader is additionally gated by the shared API/device/user verdict.
+        val refraction = refractionEnabled
+        val lensEffect = if (refraction) RuntimeShaderSupport.browserLensEffectOrNull(
+          shader = browserLensShader,
           paneWidth = size.width,
           paneHeight = size.height,
           radius = radius,
           bend = (if (selected) 9f else 5f) * density * tuning.refraction,
           motion = deformation.coerceIn(0f, 1f),
           frostPx = if (tuning.frost > 0f) 2f * density * tuning.frost else 0f,
-        ) else if (Build.VERSION.SDK_INT >= 31 && scene != null && tuning.frost > 0f) runCatching {
+        ) else null
+        val blurFallback = if (Build.VERSION.SDK_INT >= 31 && scene != null && tuning.frost > 0f) runCatching {
           RenderEffect.createBlurEffect(3f * density * tuning.frost, 3f * density * tuning.frost, Shader.TileMode.CLAMP).asComposeRenderEffect()
         }.getOrNull() else null
-        lens.renderEffect = effect
+        lens.renderEffect = lensEffect ?: blurFallback
         val edge = Brush.linearGradient(listOf(
           Color.White.copy(alpha = 0.20f + glow * 0.65f),
           Color.White.copy(alpha = 0.03f),
@@ -467,6 +479,7 @@ internal fun Modifier.browserGlassPane(
   deformation: Float = 0f,
   drawRim: Boolean = true,
   materialRole: GlassSurfacePolicy.MaterialRole = GlassSurfacePolicy.MaterialRole.Clear,
+  thickSurface: Boolean = false,
   // Retained for source compatibility: every browser pane now uses the navigation
   // pill's reference material, so this flag no longer selects a different profile.
   @Suppress("UNUSED_PARAMETER") referenceOptics: Boolean = false,
@@ -512,29 +525,30 @@ internal fun Modifier.browserGlassPane(
     else GlassSurfacePolicy.navigationFrostDp(tuning.frost, refraction = capabilities.refraction)
   val floating = enabled && drawRim && !edgeBar
   var paneOrigin by remember { mutableStateOf(Offset.Zero) }
-  // Runtime shader compilation is remembered, not repeated for every animated width/frame.
+  // The navigation pill's RuntimeShaderSupport.browserLensEffectOrNull(...) path remains unchanged.
+  // This handle retains static geometry and refreshes only the lightweight effect chain per motion frame.
   // Edge bars never bend: the lens edge term would draw a bright line along the bar's bottom.
   val lens = rememberGraphicsLayer()
   return this
-    // Same elevation as the navigation pill (BrowserGlassSurface), scaled by the depth setting.
-    .shadow(if (floating) (if (selected) 7.dp else 12.dp) * tuning.depth else 0.dp, shape, clip = false)
+    // Cheap baked depth/rim replaces per-pane elevation shadows in dense lists.
+    // Reference geometry (the navigation pill remains unchanged): (if (selected) 7.dp else 12.dp) * tuning.depth
     .onGloballyPositioned { if (it.isAttached) paneOrigin = it.localToWindow(Offset.Zero) + windowScreenOffset(hostView) }
     .clip(shape)
     .then(if (!enabled) Modifier.background(tint, shape) else Modifier)
     .then(if (enabled) Modifier.drawWithCache {
         val radius = cornerRadius.toPx().coerceAtMost(size.height / 2f).coerceAtMost(size.width / 2f)
         val refraction = enabled && !edgeBar && capabilities.refraction && RuntimeShaderSupport.available()
-        val effect = if (refraction) RuntimeShaderSupport.browserLensEffectOrNull(
+        val lensHandle = if (refraction) RuntimeShaderSupport.browserLensHandleOrNull(
           paneWidth = size.width,
           paneHeight = size.height,
           radius = radius,
           bend = (if (selected) 9f else 5f) * density * tuning.refraction,
-          motion = deformation.coerceIn(0f, 1f),
           frostPx = if (blurDp > 0f) blurDp * density else 0f,
-        ) else if (Build.VERSION.SDK_INT >= 31 && scene != null && blurDp > 0f) runCatching {
+        ) else null
+        val blurFallback = if (Build.VERSION.SDK_INT >= 31 && scene != null && blurDp > 0f) runCatching {
           RenderEffect.createBlurEffect(blurDp * density, blurDp * density, Shader.TileMode.CLAMP).asComposeRenderEffect()
         }.getOrNull() else null
-        lens.renderEffect = effect
+        lens.renderEffect = lensHandle?.effect ?: blurFallback
         // Like the navigation pill, the refracted sample fully replaces what is behind the
         // pane, so content text under popups, menus and the selection pill never reads through.
         lens.alpha = 1f
@@ -551,6 +565,7 @@ internal fun Modifier.browserGlassPane(
           val hasScene = popupSceneReady && scene != null && bounds != null && bounds.width > 0f && bounds.height > 0f &&
             GlassScenePolicy.canDrawRecordedScene(scene.isRecording, scene.hasValidDisplayList)
           if (hasScene) {
+            lens.renderEffect = lensHandle?.updateMotion(deformation.coerceIn(0f, 1f)) ?: blurFallback
             lens.record {
               clipRect {
                 translate(left = bounds!!.left - paneOrigin.x, top = bounds.top - paneOrigin.y) { drawLayer(scene!!.layer) }
@@ -583,6 +598,7 @@ internal fun Modifier.browserGlassPane(
           }
         }
       } else Modifier)
+    .glassRimLight(shape = shape, enabled = floating, highContrast = false)
 }
 
 private fun windowScreenOffset(view: android.view.View): Offset {

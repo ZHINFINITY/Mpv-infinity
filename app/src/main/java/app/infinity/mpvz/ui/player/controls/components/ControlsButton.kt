@@ -88,6 +88,7 @@ fun ControlsButton(
     modifier =
       modifier
         .clip(CircleShape)
+        .glassPressFeedback(interactionSource, enabled, glass = glassEnabled)
         .playerGlassPane(enabled = glassEnabled, opacity = 0.88f, highlight = 0.18f, cornerRadius = 999.dp)
         .combinedClickable(
           enabled = enabled,

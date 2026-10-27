@@ -312,11 +312,13 @@ fun MusicLibraryContent(
   val visibleTabs by musicViewModel.visibleTabs.collectAsState()
 
   val appearancePreferences = koinInject<AppearancePreferences>()
-  val showQuickPlayFab by appearancePreferences.showQuickPlayFab.collectAsState()
+  val showQuickPlayFabPreference by appearancePreferences.showQuickPlayFab.collectAsState()
+  val showQuickPlayFab = app.infinity.mpvz.ui.browser.fab.quickPlayFabAllowed(showQuickPlayFabPreference)
   val quickPlayFabDirect by appearancePreferences.quickPlayFabDirect.collectAsState()
   val liquidGlass by appearancePreferences.liquidGlassSurfaces.collectAsState()
   val isFabVisible = remember { mutableStateOf(true) }
   val isFabExpanded = remember { mutableStateOf(false) }
+  app.infinity.mpvz.ui.browser.fab.QuickPlayMenuVisibilityEffect(showQuickPlayFab) { isFabExpanded.value = false }
   val navigationBarHeight = LocalNavigationBarHeight.current
 
   val initialPageIndex = remember(selectedTab, visibleTabs) {
@@ -644,8 +646,9 @@ fun MusicLibraryContent(
     floatingActionButton = {
       val isPlaylistsTab = visibleTabs.getOrNull(pagerState.currentPage) == MusicTab.PLAYLISTS
       val isFoldersTab = visibleTabs.getOrNull(pagerState.currentPage) == MusicTab.FOLDERS
-      val isFabShouldBeVisible =
-        showQuickPlayFab && !activeSelectionManager.isInSelectionMode && isFabVisible.value && !MainScreen.getPermissionDeniedState()
+      val isPlaylistFabShouldBeVisible =
+        !activeSelectionManager.isInSelectionMode && isFabVisible.value && !MainScreen.getPermissionDeniedState()
+      val isFabShouldBeVisible = showQuickPlayFab && isPlaylistFabShouldBeVisible
 
       if (isFoldersTab) {
         // FolderListScreen.MediaStoreFolderListContent renders its own FAB, skip ours.
@@ -659,7 +662,7 @@ fun MusicLibraryContent(
               containerColor = quickPlayFabContainerColor(),
               modifier =
                 Modifier.settingsGlassSurface(cornerRadius = 20.dp).animateFloatingActionButton(
-                  visible = isFabShouldBeVisible,
+                  visible = isPlaylistFabShouldBeVisible,
                   alignment = Alignment.BottomEnd,
                 ),
               checked = false,

@@ -233,6 +233,8 @@ fun PlayerSheet(
             highlight = 0.20f,
             cornerRadius = 24.dp,
             materialRole = GlassSurfacePolicy.MaterialRole.Regular,
+            // Build 1933: keep the 1910 depth bands; placement stays the 1909 bottom sheet.
+            thickSurface = true,
           ),
       shape = sheetShape,
       color = if (liquidGlassSurfaces) Color.Transparent else resolvedSurfaceColor,
