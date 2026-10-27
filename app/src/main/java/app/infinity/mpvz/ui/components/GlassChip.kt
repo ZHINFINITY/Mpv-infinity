@@ -20,6 +20,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
@@ -72,6 +73,7 @@ fun GlassChip(
     Row(
       modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
       horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(8.dp),
+      verticalAlignment = Alignment.CenterVertically,
     ) {
       leadingIcon?.invoke()
       label()

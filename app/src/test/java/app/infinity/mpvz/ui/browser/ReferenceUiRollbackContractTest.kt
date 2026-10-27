@@ -29,7 +29,8 @@ class ReferenceUiRollbackContractTest {
       // Build 1910: shared rimLight/thick-surface routing is intentionally owned by this stream.
       // Build 1910 integration: union of the rim-light routing and thickSurface stream edits.
       // Owner follow-up: rounded player panes preserve the press shadow and inherit global glass tuning.
-      "app/src/main/java/app/infinity/mpvz/ui/player/controls/components/GlassControls.kt" to "e24bbf860220c3cd5e97021232c09f52b85a1731266186034fb4695918fc3222",
+      // Accessibility follow-up: shared press, slider, and lens feedback respects reduced motion.
+      "app/src/main/java/app/infinity/mpvz/ui/player/controls/components/GlassControls.kt" to "e5ef3b62703cb91f04ae7275c2ae4d5838b6ea5cd6fa6662ed4b6d223c84d814",
       // Build 1910: player sheets opt into the centralized inner thickness bands.
       // Build 1910 integration: edge-attached landscape sheets draw one rim on the asymmetric shape.
       "app/src/main/java/app/infinity/mpvz/presentation/components/PlayerSheet.kt" to "7838a785e17d4bd1479a348a04c6f9ac7af0bacc0891ba817b165a1f53348c81",
@@ -525,6 +526,23 @@ import android.graphics.Shader
     assertTrue(current.contains("val minCornerRadiusPx = cornerRadius.toPx().coerceAtMost(size.minDimension / 2f)"))
     assertTrue(current.contains("refractionHeight = LensGlassPolicy.refractionHeightPx(24.dp.toPx(), minCornerRadiusPx, tuning.lensDepth)"))
     assertEquals("01f65408e855f52c32f53739d1c461968c0be81f37d4cd4834fc8d0b86a20e66", sha(restored))
+  }
+  @Test fun glassChipAndPlayerControlsRespectAccessibilityMotion() {
+    val chip = read("app/src/main/java/app/infinity/mpvz/ui/components/GlassChip.kt")
+    assertTrue(chip.contains("verticalAlignment = Alignment.CenterVertically"))
+    val controls = read("app/src/main/java/app/infinity/mpvz/ui/player/controls/components/GlassControls.kt")
+    assertTrue(controls.contains("reducedMotion: Boolean = AppMotion.shouldReduceMotion()"))
+    assertTrue(controls.contains(".glassWaterRipple(interactionSource, enabled, glass = glass && !reducedMotion)"))
+    assertTrue(controls.contains("if (reducedMotion) snap<Float>() else spring<Float>"))
+    assertEquals(2, controls.split("val reducedMotion = AppMotion.shouldReduceMotion()").size - 1)
+    assertTrue(controls.contains("!(refraction && GlassWaterRippleEffects.available())"))
+    assertTrue(controls.contains("if (lensEnabled && !reducedMotion && (switchPressed || switchDragged)) 1f else 0f"))
+    assertTrue(controls.contains("if (lensEnabled && !reducedMotion && (pressed || touched)) 1f else 0f"))
+    assertTrue(controls.contains("GlassSliderPolicy.stretch(pressed, reducedMotion)"))
+    assertTrue(controls.contains("GlassSliderPolicy.squash(pressed, reducedMotion)"))
+    assertTrue(controls.contains("The fade is the whole effect on fallback devices"))
+    assertEquals(1f, app.infinity.mpvz.ui.player.controls.components.GlassSliderPolicy.stretch(true, reducedMotion = true), 0f)
+    assertEquals(1f, app.infinity.mpvz.ui.player.controls.components.GlassSliderPolicy.squash(true, reducedMotion = true), 0f)
   }
   @Test fun expressiveNavigationBodyAndBrowserLensMatchReference() {
     val navigation = read("app/src/main/java/app/infinity/mpvz/ui/browser/MainScreen.kt")

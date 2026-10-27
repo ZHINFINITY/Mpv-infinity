@@ -58,9 +58,11 @@ import androidx.compose.animation.core.LinearOutSlowInEasing
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.snap
 import androidx.compose.animation.core.spring
 import app.infinity.mpvz.preferences.AppearancePreferences
 import app.infinity.mpvz.preferences.preference.collectAsState
+import app.infinity.mpvz.ui.theme.AppMotion
 import app.infinity.mpvz.ui.theme.GlassDeviceSupport
 import app.infinity.mpvz.ui.theme.GlassWaterRippleShader
 import app.infinity.mpvz.ui.theme.LocalGlassCustomization
@@ -166,7 +168,7 @@ object GlassControlGeometryPolicy {
 fun Modifier.glassPressFeedback(
   interactionSource: MutableInteractionSource,
   enabled: Boolean = true,
-  reducedMotion: Boolean = false,
+  reducedMotion: Boolean = AppMotion.shouldReduceMotion(),
   glass: Boolean = false,
 ): Modifier {
   var pressed by remember { mutableStateOf(false) }
@@ -178,12 +180,13 @@ fun Modifier.glassPressFeedback(
       }
     }
   }
+  val feedbackSpec = if (reducedMotion) snap<Float>() else spring<Float>(stiffness = Spring.StiffnessMediumLow)
   val scale by animateFloatAsState(
     if (pressed && !reducedMotion) 0.96f else 1f,
-    spring(stiffness = Spring.StiffnessMediumLow), label = "glassPress",
+    feedbackSpec, label = "glassPress",
   )
   return graphicsLayer { scaleX = scale; scaleY = scale }
-    .glassWaterRipple(interactionSource, enabled, glass = glass)
+    .glassWaterRipple(interactionSource, enabled, glass = glass && !reducedMotion)
 }
 
 /**
@@ -318,6 +321,7 @@ fun GlassSwitch(
   // Lens thumb: needs the shader engine (API 33+, supported device, glass on). The track is
   // recorded by a SIBLING box under the Switch, so the thumb never samples its own layer.
   val lensEnabled = glass && LocalLensGlassEnabled.current
+  val reducedMotion = AppMotion.shouldReduceMotion()
   val contrast = SwitchContrastPolicy.forSurfaceLuminance(scheme.surface.luminance())
   val tuned = SwitchDefaults.colors(
     checkedTrackColor = contrast.checkedTrack, checkedThumbColor = contrast.checkedThumb,
@@ -338,9 +342,10 @@ fun GlassSwitch(
   val switchInteraction = remember { MutableInteractionSource() }
   val switchPressed by switchInteraction.collectIsPressedAsState()
   val switchDragged by switchInteraction.collectIsDraggedAsState()
+  val lensMotionSpec = if (reducedMotion) snap<Float>() else spring<Float>(dampingRatio = 0.62f, stiffness = Spring.StiffnessMediumLow)
   val lensProgress by animateFloatAsState(
-    if (lensEnabled && (switchPressed || switchDragged)) 1f else 0f,
-    spring(dampingRatio = 0.62f, stiffness = Spring.StiffnessMediumLow), label = "switchLens",
+    if (lensEnabled && !reducedMotion && (switchPressed || switchDragged)) 1f else 0f,
+    lensMotionSpec, label = "switchLens",
   )
   val trackBackdrop = rememberLayerBackdrop()
   val trackOptics = Modifier.glassTrackOptics(opacity, highlight, 16.dp, height = GlassControlGeometryPolicy.switchTrackHeightDp.dp,
@@ -409,6 +414,7 @@ fun GlassSlider(
       onValueChangeFinished = onValueChangeFinished, valueRange = valueRange, steps = steps,
       interactionSource = interactionSource, colors = colors)
   } else {
+    val reducedMotion = AppMotion.shouldReduceMotion()
     val glassColors = SliderDefaults.colors(
       thumbColor = Color.Transparent, activeTrackColor = Color.Transparent,
       inactiveTrackColor = Color.Transparent,
@@ -416,9 +422,10 @@ fun GlassSlider(
     )
     val pressed by interactionSource.collectIsDraggedAsState()
     val touched by interactionSource.collectIsPressedAsState()
+    val lensMotionSpec = if (reducedMotion) snap<Float>() else spring<Float>(dampingRatio = 0.62f, stiffness = Spring.StiffnessMediumLow)
     val lensProgress by animateFloatAsState(
-      if (lensEnabled && (pressed || touched)) 1f else 0f,
-      spring(dampingRatio = 0.62f, stiffness = Spring.StiffnessMediumLow), label = "sliderLens",
+      if (lensEnabled && !reducedMotion && (pressed || touched)) 1f else 0f,
+      lensMotionSpec, label = "sliderLens",
     )
     // Recorded by the track (a sibling of the thumb in Slider's layout), never by the thumb.
     val trackBackdrop = rememberLayerBackdrop()
@@ -436,8 +443,9 @@ fun GlassSlider(
         )
       },
       thumb = {
-        val sx by animateFloatAsState(GlassSliderPolicy.stretch(pressed), spring(stiffness = Spring.StiffnessMediumLow), label = "sliderStretch")
-        val sy by animateFloatAsState(GlassSliderPolicy.squash(pressed), spring(stiffness = Spring.StiffnessMediumLow), label = "sliderSquash")
+        val stretchSpec = if (reducedMotion) snap<Float>() else spring<Float>(stiffness = Spring.StiffnessMediumLow)
+        val sx by animateFloatAsState(GlassSliderPolicy.stretch(pressed, reducedMotion), stretchSpec, label = "sliderStretch")
+        val sy by animateFloatAsState(GlassSliderPolicy.squash(pressed, reducedMotion), stretchSpec, label = "sliderSquash")
         val thumbShape = androidx.compose.foundation.shape.RoundedCornerShape(12.dp)
         val base = Modifier.size(width = GlassControlGeometryPolicy.sliderThumbWidthDp.dp, height = GlassControlGeometryPolicy.sliderThumbHeightDp.dp)
           .graphicsLayer { scaleX = sx; scaleY = sy }
