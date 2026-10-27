@@ -663,6 +663,9 @@ private fun ExpressivePillNavigationBar(
   }
   val lastIndex = (visibleTabs.size - 1).coerceAtLeast(0)
   var hoveredTab by remember { mutableIntStateOf(targetIndex.toInt().coerceIn(0, lastIndex)) }
+  LaunchedEffect(targetIndex, lastIndex) {
+    hoveredTab = targetIndex.toInt().coerceIn(0, lastIndex)
+  }
   val visualPosition = (dragPosition ?: if (!motionAllowed || fingerDragging) position else lensPosition.value)
     .coerceIn(0f, lastIndex.toFloat())
   val visualFloor = visualPosition.toInt().coerceIn(0, lastIndex)

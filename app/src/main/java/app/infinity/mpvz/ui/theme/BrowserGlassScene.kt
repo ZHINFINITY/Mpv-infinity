@@ -391,6 +391,10 @@ fun BrowserGlassSurface(
   val scene = LocalBrowserScene.current
   val capabilities = LocalBrowserCapabilities.current
   val lensEnabled = LocalLensGlassEnabled.current
+  val refractionEnabled = enabled && selected && lensEnabled && capabilities.refraction && RuntimeShaderSupport.available()
+  val browserLensShader = remember(refractionEnabled) {
+    if (refractionEnabled) RuntimeShaderSupport.browserLensShaderOrNull() else null
+  }
   val tuning = LocalGlassCustomization.current
   val hostView = LocalView.current
   val shape = remember(cornerRadius) { RoundedCornerShape(cornerRadius) }
@@ -409,8 +413,9 @@ fun BrowserGlassSurface(
         val radius = cornerRadius.toPx().coerceAtMost(size.height / 2f).coerceAtMost(size.width / 2f)
         // The route scene is a sibling producer; never self-sample. The lens
         // shader is additionally gated by the shared API/device/user verdict.
-        val refraction = selected && lensEnabled && capabilities.refraction && RuntimeShaderSupport.available()
+        val refraction = refractionEnabled
         val lensEffect = if (refraction) RuntimeShaderSupport.browserLensEffectOrNull(
+          shader = browserLensShader,
           paneWidth = size.width,
           paneHeight = size.height,
           radius = radius,

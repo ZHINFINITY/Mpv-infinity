@@ -37,6 +37,9 @@ class NavPillDragWiringContractTest {
   fun hoveredTabOpensDuringDragAndTheGestureIsNotRestartedByLayoutChanges() {
     val source =
       File(root, "app/src/main/java/app/infinity/mpvz/ui/browser/MainScreen.kt").readText()
+    val hoverSync = source.substringAfter("var hoveredTab by remember").substringBefore("val visualPosition")
+    assertTrue(hoverSync.contains("LaunchedEffect(targetIndex, lastIndex)"))
+    assertTrue(hoverSync.contains("hoveredTab = targetIndex.toInt().coerceIn(0, lastIndex)"))
     // Labels fade in with tabFraction; the hovered tab must widen with the drag or they clip.
     assertTrue(source.contains("val layoutPosition = dragPosition ?: position"))
     assertTrue(source.contains("remember(layoutPosition, visibleTabs)"))

@@ -27,6 +27,7 @@ internal object AgslRuntimeShaders {
     runCatching { RuntimeShader(BROWSER_LENS) }.getOrNull()
 
   fun browserLensEffect(
+    shader: Any?,
     paneWidth: Float,
     paneHeight: Float,
     radius: Float,
@@ -35,10 +36,12 @@ internal object AgslRuntimeShaders {
     frostPx: Float,
   ): androidx.compose.ui.graphics.RenderEffect? = runCatching {
     // Any driver/uniform failure falls back to the frosted pane instead of crashing the draw.
-    browserLensEffectUnchecked(paneWidth, paneHeight, radius, bend, motion, frostPx)
+    val runtimeShader = shader as? RuntimeShader ?: return@runCatching null
+    browserLensEffectUnchecked(runtimeShader, paneWidth, paneHeight, radius, bend, motion, frostPx)
   }.getOrNull()
 
   private fun browserLensEffectUnchecked(
+    shader: RuntimeShader,
     paneWidth: Float,
     paneHeight: Float,
     radius: Float,
@@ -46,7 +49,6 @@ internal object AgslRuntimeShaders {
     motion: Float,
     frostPx: Float,
   ): androidx.compose.ui.graphics.RenderEffect? {
-    val shader = browserLens() ?: return null
     shader.setFloatUniform("pane", paneWidth, paneHeight)
     shader.setFloatUniform("radius", radius)
     shader.setFloatUniform("bend", bend)

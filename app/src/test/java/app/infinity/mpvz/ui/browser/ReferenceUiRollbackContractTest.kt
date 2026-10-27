@@ -543,7 +543,7 @@ import android.graphics.Shader
     // slop detector never started on the phone).
     // Owner follow-up: retain the normal 44dp selected outline/placement; the glass refraction
     // follows finger-driven drag motion without an elevated pop or altered tab hit targets.
-    assertEquals("561c75e9c2e4dab1ab798f4e56b9c684618f781a573ec8fdbd5745c9a4257380", sha(navigation.substring(start, end)))
+    assertEquals("555f92e1272db06d7ae9df41021a817c546cad73a9bbf6f03de981609b6ef1f1", sha(navigation.substring(start, end)))
     val scene = read("app/src/main/java/app/infinity/mpvz/ui/theme/BrowserGlassScene.kt")
     val lensStart = scene.indexOf("internal const val BROWSER_LENS")
     val q = scene.indexOf("\"\"\"", lensStart)
