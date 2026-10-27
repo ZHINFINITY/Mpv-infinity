@@ -12,6 +12,7 @@ import android.graphics.Color
 import android.graphics.drawable.ColorDrawable
 import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
+import android.util.TypedValue
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
@@ -21,6 +22,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.core.content.ContextCompat
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.Dp
@@ -154,11 +156,38 @@ private class GlassMediaRouteChooserDialog(
       GradientDrawable().apply {
         shape = GradientDrawable.RECTANGLE
         cornerRadius = 28f * dialogContext.resources.displayMetrics.density
-        setColor(Color.argb((GlassSurfacePolicy.opacity(glassOpacity) * 255).toInt().coerceIn(1, 255), 32, 36, 44))
+        val backgroundColor = dialogBackgroundColor(dialogContext)
+        val alpha = (GlassSurfacePolicy.opacity(glassOpacity) * 255).toInt().coerceIn(1, 255)
+        setColor(Color.argb(alpha, Color.red(backgroundColor), Color.green(backgroundColor), Color.blue(backgroundColor)))
         setStroke(
           dialogContext.resources.displayMetrics.density.toInt().coerceAtLeast(1),
           Color.argb((GlassSurfacePolicy.highlight(glassHighlight) * 150).toInt().coerceIn(1, 150), 255, 255, 255),
         )
       }
   }
+}
+
+internal fun resolveDialogThemeColor(
+  resourceId: Int,
+  type: Int,
+  data: Int,
+  fallbackColor: Int,
+  resolveResourceColor: (Int) -> Int,
+): Int =
+  when {
+    resourceId != 0 -> runCatching { resolveResourceColor(resourceId) }.getOrDefault(fallbackColor)
+    type in TypedValue.TYPE_FIRST_COLOR_INT..TypedValue.TYPE_LAST_COLOR_INT -> data
+    else -> fallbackColor
+  }
+
+private fun dialogBackgroundColor(context: Context): Int {
+  val fallbackColor = Color.rgb(32, 36, 44)
+  val value = TypedValue()
+  if (!context.theme.resolveAttribute(android.R.attr.colorBackground, value, true)) return fallbackColor
+  return resolveDialogThemeColor(
+    resourceId = value.resourceId,
+    type = value.type,
+    data = value.data,
+    fallbackColor = fallbackColor,
+  ) { resourceId -> ContextCompat.getColor(context, resourceId) }
 }

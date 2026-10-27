@@ -21,11 +21,6 @@ import android.os.Build
 import android.widget.ImageView
 import android.widget.Toast
 import androidx.annotation.StringRes
-import androidx.compose.animation.core.RepeatMode
-import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -149,16 +144,6 @@ object AboutScreen : Screen {
       val cs = MaterialTheme.colorScheme
       val colorPrimary = cs.surfaceVariant
       val colorTertiary = cs.surfaceVariant
-      val transition = rememberInfiniteTransition()
-      val fraction by transition.animateFloat(
-        initialValue = 0f,
-        targetValue = 1f,
-        animationSpec =
-          infiniteRepeatable(
-            animation = tween(durationMillis = 5000),
-            repeatMode = RepeatMode.Reverse,
-          ),
-      )
       val cornerRadius = 28.dp
 
       Column(
