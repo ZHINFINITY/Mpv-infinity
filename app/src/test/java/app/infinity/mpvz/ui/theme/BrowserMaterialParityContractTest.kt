@@ -45,7 +45,7 @@ class BrowserMaterialParityContractTest {
     assertTrue(pane.contains("GlassSurfacePolicy.browserPopupFrostDp(tuning.frost)"))
     assertTrue(pane.contains("GlassSurfacePolicy.navigationFrostDp(tuning.frost"))
     assertTrue(pane.contains("val blurFallback = if (Build.VERSION.SDK_INT >= 31 && scene != null && blurDp > 0f)"))
-    assertTrue(pane.contains("lens.renderEffect = lensHandle?.effect ?: blurFallback"))
+    assertTrue(pane.contains("lens.renderEffect = lensHandle?.updateMotion(deformation.coerceIn(0f, 1f)) ?: blurFallback"))
     val dispatch = source("LiquidGlassBackdrop").substringAfter("if (backdrop == null && hasBrowserGlassScene()) {").substringBefore("val tint =")
     assertTrue("Do not add a second frame to borderless controls", dispatch.contains("drawRim = drawRim"))
   }

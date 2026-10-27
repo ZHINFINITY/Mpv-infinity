@@ -525,9 +525,8 @@ internal fun Modifier.browserGlassPane(
     else GlassSurfacePolicy.navigationFrostDp(tuning.frost, refraction = capabilities.refraction)
   val floating = enabled && drawRim && !edgeBar
   var paneOrigin by remember { mutableStateOf(Offset.Zero) }
-  // Runtime shader compilation is remembered, not repeated for every animated width/frame.
-  // The navigation pill continues to use RuntimeShaderSupport.browserLensEffectOrNull(
-  // unchanged; this pane uses a handle so deformation only updates a uniform.
+  // The navigation pill's RuntimeShaderSupport.browserLensEffectOrNull(...) path remains unchanged.
+  // This handle retains static geometry and refreshes only the lightweight effect chain per motion frame.
   // Edge bars never bend: the lens edge term would draw a bright line along the bar's bottom.
   val lens = rememberGraphicsLayer()
   return this
@@ -560,13 +559,13 @@ internal fun Modifier.browserGlassPane(
         ))
         onDrawBehind {
           if (size.width < 1f || size.height < 1f) return@onDrawBehind
-          lensHandle?.updateMotion(deformation.coerceIn(0f, 1f))
           // Observed state: the popup window redraws once the route window records its first frame.
           val popupSceneReady = !popupWindow || scene?.popupReady == true
           val bounds = scene?.stripBounds
           val hasScene = popupSceneReady && scene != null && bounds != null && bounds.width > 0f && bounds.height > 0f &&
             GlassScenePolicy.canDrawRecordedScene(scene.isRecording, scene.hasValidDisplayList)
           if (hasScene) {
+            lens.renderEffect = lensHandle?.updateMotion(deformation.coerceIn(0f, 1f)) ?: blurFallback
             lens.record {
               clipRect {
                 translate(left = bounds!!.left - paneOrigin.x, top = bounds.top - paneOrigin.y) { drawLayer(scene!!.layer) }

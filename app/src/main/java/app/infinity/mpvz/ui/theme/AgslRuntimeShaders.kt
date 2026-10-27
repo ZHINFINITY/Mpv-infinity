@@ -53,6 +53,13 @@ internal object AgslRuntimeShaders {
     shader.setFloatUniform("radius", radius)
     shader.setFloatUniform("bend", bend)
     shader.setFloatUniform("motion", motion)
+    return createBrowserLensComposeEffect(shader, frostPx)
+  }
+
+  private fun createBrowserLensComposeEffect(
+    shader: RuntimeShader,
+    frostPx: Float,
+  ): androidx.compose.ui.graphics.RenderEffect {
     val lensEffect = RenderEffect.createRuntimeShaderEffect(shader, "scene")
     val chained =
       if (frostPx > 0f) {
@@ -78,15 +85,12 @@ internal object AgslRuntimeShaders {
     shader.setFloatUniform("radius", radius)
     shader.setFloatUniform("bend", bend)
     shader.setFloatUniform("motion", 0f)
-    val lensEffect = RenderEffect.createRuntimeShaderEffect(shader, "scene")
-    val chained = if (frostPx > 0f) {
-      RenderEffect.createChainEffect(
-        lensEffect,
-        RenderEffect.createBlurEffect(frostPx, frostPx, Shader.TileMode.CLAMP),
-      )
-    } else lensEffect
-    BrowserLensEffectHandle(chained.asComposeRenderEffect()) { motion ->
-      shader.setFloatUniform("motion", motion.coerceIn(0f, 1f))
+    val initialEffect = createBrowserLensComposeEffect(shader, frostPx)
+    BrowserLensEffectHandle(initialEffect) { motion ->
+      runCatching {
+        shader.setFloatUniform("motion", motion.coerceIn(0f, 1f))
+        createBrowserLensComposeEffect(shader, frostPx)
+      }.getOrNull()
     }
   }.getOrNull()
 

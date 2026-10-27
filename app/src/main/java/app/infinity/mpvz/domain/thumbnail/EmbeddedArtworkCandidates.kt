@@ -82,6 +82,22 @@ internal object EmbeddedArtworkResolver {
     })
   }.getOrNull()
 
+  private fun decodeUriSampled(context: Context, uri: Uri): Bitmap? = runCatching {
+    val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+    context.contentResolver.openInputStream(uri)?.use { input ->
+      BitmapFactory.decodeStream(input, null, bounds)
+    }
+    if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return@runCatching null
+
+    val options = BitmapFactory.Options().apply {
+      inSampleSize = ThumbnailDecodePolicy.sampleSize(bounds.outWidth, bounds.outHeight, ArtworkMaxEdge)
+      inPreferredConfig = Bitmap.Config.ARGB_8888
+    }
+    context.contentResolver.openInputStream(uri)?.use { input ->
+      BitmapFactory.decodeStream(input, null, options)
+    }
+  }.getOrNull()
+
   private fun decodeStreamSampled(input: java.io.InputStream): Bitmap? =
     ThumbnailDecodePolicy.readEncodedImage(input)?.let(::decodeBytesSampled)
 
@@ -98,7 +114,7 @@ internal object EmbeddedArtworkResolver {
           null, "" -> decodeFileSampled(artworkUri)
           "file" -> uri.path?.let(::decodeFileSampled)
           "content", "android.resource" ->
-            context.contentResolver.openInputStream(uri)?.use(::decodeStreamSampled)
+            decodeUriSampled(context, uri)
           "http", "https" -> {
             val connection = (java.net.URL(artworkUri).openConnection() as java.net.HttpURLConnection).apply {
               connectTimeout = 8000

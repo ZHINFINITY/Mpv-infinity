@@ -45,6 +45,25 @@ class ThumbnailDecodePolicyTest {
   }
 
   @Test
+  fun contentArtworkUrisAreSampledWithoutRemovingTheHttpByteCap() {
+    val relative = "src/main/java/app/infinity/mpvz/domain/thumbnail/EmbeddedArtworkCandidates.kt"
+    val source = listOf(File(relative), File("app/$relative")).first { it.isFile }.readText()
+    val uriDecoder = source.substringAfter("private fun decodeUriSampled(").substringBefore("private fun decodeStreamSampled(")
+    assertEquals(2, uriDecoder.split("contentResolver.openInputStream(uri)").size - 1)
+    assertTrue(uriDecoder.contains("BitmapFactory.decodeStream(input, null, bounds)"))
+    assertTrue(uriDecoder.contains("BitmapFactory.decodeStream(input, null, options)"))
+    assertTrue(uriDecoder.contains("ThumbnailDecodePolicy.sampleSize(bounds.outWidth, bounds.outHeight, ArtworkMaxEdge)"))
+    assertTrue(uriDecoder.contains("Bitmap.Config.ARGB_8888"))
+
+    val providerBranch = source.substringAfter("\"content\", \"android.resource\" ->")
+      .substringBefore("\"http\", \"https\" ->")
+    assertTrue(providerBranch.contains("decodeUriSampled(context, uri)"))
+    assertFalse(providerBranch.contains("decodeStreamSampled"))
+    val httpBranch = source.substringAfter("\"http\", \"https\" ->").substringBefore("else -> null")
+    assertTrue(httpBranch.contains("connection.inputStream.use(::decodeStreamSampled)"))
+  }
+
+  @Test
   fun localArtworkSidecarsAreSampledFromFilesWithoutTheStreamByteCap() {
     val relative = "src/main/java/app/infinity/mpvz/domain/thumbnail/EmbeddedArtworkCandidates.kt"
     val source = listOf(File(relative), File("app/$relative")).first { it.isFile }.readText()
