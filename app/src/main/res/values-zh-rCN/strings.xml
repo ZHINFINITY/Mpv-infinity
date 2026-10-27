@@ -2256,4 +2256,13 @@
     <string name="pref_openai_base_url_summary">留空则使用 OpenAI 官方端点</string>
     <string name="pref_openai_base_url_prompt">输入 OpenAI 兼容 API 的基础 URL</string>
     <string name="pref_openai_base_url_invalid">请输入不含凭据、查询参数或片段的有效 HTTP 或 HTTPS URL。</string>
+<string name="pref_appearance_animate_infinity_logo_title">无限标志动画</string>
+<string name="pref_appearance_animate_infinity_logo_summary">循环播放媒体库中的无限符号动画。关闭后显示静态标志。</string>
+<string name="pref_glass_preview">实时玻璃预览</string>
+<string name="pref_glass_rim_strength">边缘强度</string>
+<string name="pref_glass_rim_strength_summary">共享高光边缘的亮度</string>
+<string name="pref_glass_rim_width">边缘宽度</string>
+<string name="pref_glass_rim_width_summary">高光边缘的粗细（dp）</string>
+<string name="pref_glass_rim_softness">边缘柔和度</string>
+<string name="pref_glass_rim_softness_summary">边缘光线淡出的柔和程度</string>
 </resources>
