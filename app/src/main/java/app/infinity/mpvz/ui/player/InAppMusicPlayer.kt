@@ -125,7 +125,7 @@ val LocalInAppMusicSheet = staticCompositionLocalOf<InAppMusicSheetState?> { nul
 @Stable
 class InAppMusicSheetState internal constructor(
   private val scope: CoroutineScope,
-) {
+) : AudioPlayerSheetState {
   private val animatedExpansion = Animatable(0f).apply { updateBounds(0f, 1f) }
   private var dragExpansion by mutableFloatStateOf(Float.NaN)
   private var motionJob: Job? = null
@@ -135,6 +135,9 @@ class InAppMusicSheetState internal constructor(
   /** 0 rests on the mini player, 1 fills the window. */
   val expansion: Float
     get() = dragExpansion.takeUnless(Float::isNaN) ?: animatedExpansion.value
+
+  override val progress: Float
+    get() = expansion
 
   /** Opening or open; false while the sheet collapses or rests on the mini player. */
   var isOpen by mutableStateOf(false)
@@ -202,7 +205,7 @@ class InAppMusicSheetState internal constructor(
     return true
   }
 
-  fun collapse(): Boolean {
+  override fun collapse(): Boolean {
     if (!isVisible) return false
     isOpen = false
     animateTo(0f, 0f)

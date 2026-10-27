@@ -153,6 +153,12 @@ private fun normalizedReadAheadValue(
   return safeBufferPosition.coerceIn(safePlayedPosition, duration)
 }
 
+/** Keeps scrubbing finite and clamped without changing valid seek targets. */
+internal fun clampSeekbarPosition(value: Float, duration: Float): Float {
+  val safeDuration = duration.takeIf { it.isFinite() && it > 0f } ?: return 0f
+  return value.takeIf { it.isFinite() }?.coerceIn(0f, safeDuration) ?: 0f
+}
+
 private val segmentDrawPath = ThreadLocal.withInitial { Path() }
 
 /**
@@ -302,6 +308,7 @@ internal fun SeekbarWithTimers(
   skipSegments: ImmutableList<SkipSegment>,
   paused: Boolean,
   seekbarStyle: SeekbarStyle = SeekbarStyle.Wavy,
+  glassTrackEnabled: Boolean = true,
   useWavySeekbar: Boolean = true,
   showWavyVisualizer: Boolean = false,
   waveFeatures: AudioFeatures? = null,
@@ -383,6 +390,7 @@ internal fun SeekbarWithTimers(
         onValueChangeFinished = onValueChangeFinished,
         scope = scope,
         animatedPosition = animatedPosition,
+        glassTrackEnabled = glassTrackEnabled,
         modifier = Modifier.fillMaxWidth().height(if (showWavyVisualizer) 64.dp else 44.dp),
       )
 
@@ -457,6 +465,7 @@ internal fun SeekbarWithTimers(
         onValueChangeFinished = onValueChangeFinished,
         scope = scope,
         animatedPosition = animatedPosition,
+        glassTrackEnabled = glassTrackEnabled,
         modifier = Modifier.weight(1f).height(if (showWavyVisualizer) 64.dp else 48.dp),
       )
 
@@ -485,6 +494,7 @@ private fun SeekbarContent(
   isPortrait: Boolean,
   isUserInteracting: Boolean,
   seekbarStyle: SeekbarStyle,
+  glassTrackEnabled: Boolean,
   useWavySeekbar: Boolean,
   showWavyVisualizer: Boolean = false,
   waveFeatures: AudioFeatures? = null,
@@ -516,6 +526,8 @@ private fun SeekbarContent(
   }
   val clipRange by ClipEditorUiState.state.collectAsState()
   val safeDuration = duration.takeIf { it.isFinite() && it > 0f } ?: 0f
+  val appearance = koinInject<AppearancePreferences>()
+  val liquidGlassSurfaces by appearance.liquidGlassSurfaces.collectAsState()
   val seekerRange = 0f..safeDuration.coerceAtLeast(0.1f)
   val safeCommittedPosition =
     committedPosition
@@ -610,7 +622,8 @@ private fun SeekbarContent(
       modifier =
         Modifier
           .fillMaxWidth()
-          .height(32.dp),
+          .height(32.dp)
+          .playerGlassPane(enabled = liquidGlassSurfaces && glassTrackEnabled, cornerRadius = 999.dp),
       contentAlignment = Alignment.Center,
     ) {
       when (seekbarStyle) {
@@ -635,6 +648,7 @@ private fun SeekbarContent(
             isScrubbing = isVisuallyInteracting,
             seekbarStyle = SeekbarStyle.Standard,
             interactionSource = seekerInteractionSource,
+            glassEnabled = glassTrackEnabled,
             loopStart = loopStart,
             loopEnd = loopEnd,
             bufferDuration = bufferDuration,
@@ -665,6 +679,7 @@ private fun SeekbarContent(
             isScrubbing = isVisuallyInteracting,
             seekbarStyle = SeekbarStyle.Thick,
             interactionSource = seekerInteractionSource,
+            glassEnabled = glassTrackEnabled,
             loopStart = loopStart,
             loopEnd = loopEnd,
             bufferDuration = bufferDuration,
@@ -775,14 +790,14 @@ private fun SeekbarContent(
           gap = 0.dp,
         ),
       onValueChange = { newPosition ->
-        val targetPosition = newPosition.coerceIn(0f, safeDuration)
+        val targetPosition = clampSeekbarPosition(newPosition, safeDuration)
         onUserInteractionChange(true)
         latestInteractionPosition = targetPosition
         onUserPositionChange(targetPosition)
         onValueChange(targetPosition)
       },
       onValueChangeFinished = {
-        val targetPosition = latestInteractionPosition.coerceIn(0f, safeDuration)
+        val targetPosition = clampSeekbarPosition(latestInteractionPosition, safeDuration)
         scope.launch {
           animatedPosition.snapTo(targetPosition)
           onUserPositionChange(targetPosition)
@@ -1766,6 +1781,7 @@ fun StandardSeekbar(
   loopStart: Float? = null,
   loopEnd: Float? = null,
   bufferDuration: Float? = null,
+  glassEnabled: Boolean = true,
   modifier: Modifier = Modifier,
 ) = StandardSeekbar(
   positionProvider = { position },
@@ -1778,6 +1794,7 @@ fun StandardSeekbar(
   loopStart = loopStart,
   loopEnd = loopEnd,
   bufferDuration = bufferDuration,
+  glassEnabled = glassEnabled,
   modifier = modifier,
 )
 
@@ -1793,6 +1810,7 @@ fun StandardSeekbar(
   loopStart: Float? = null,
   loopEnd: Float? = null,
   bufferDuration: Float? = null,
+  glassEnabled: Boolean = true,
   modifier: Modifier = Modifier,
 ) {
   val primaryColor = MaterialTheme.colorScheme.primary
@@ -1845,7 +1863,7 @@ fun StandardSeekbar(
   val glassOpacity by appearance.glassSurfaceOpacity.collectAsState()
   val glassHighlight by appearance.glassSurfaceHighlight.collectAsState()
   val glassDepth = GlassControlPolicy.depth(LocalGlassCustomization.current.depth)
-  val glass = liquidGlassEnabled
+  val glass = liquidGlassEnabled && glassEnabled
   val glassSurfaceColor = MaterialTheme.colorScheme.surfaceContainerHigh
   val glassAccentColor = MaterialTheme.colorScheme.primary
   val opticalTrackHeight = with(LocalDensity.current) { baseTrackHeight.toPx() } * heightFraction

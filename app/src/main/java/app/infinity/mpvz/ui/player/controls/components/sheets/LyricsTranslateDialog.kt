@@ -6,6 +6,8 @@
 
 package app.infinity.mpvz.ui.player.controls.components.sheets
 
+import app.infinity.mpvz.ui.components.GlassChip
+
 import app.infinity.mpvz.presentation.components.playerGlassOverlay
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -26,7 +28,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -167,7 +168,7 @@ fun LyricsTranslateDialog(
           horizontalArrangement = Arrangement.spacedBy(8.dp),
           verticalAlignment = Alignment.CenterVertically,
         ) {
-          FilterChip(
+          GlassChip(
             selected = displayMode == LyricsTranslationDisplayMode.DualLine,
             onClick = { audioPreferences.lyricsTranslationDisplayMode.set(LyricsTranslationDisplayMode.DualLine) },
             label = { Text("Dual-Line", fontWeight = FontWeight.Bold, fontSize = 12.sp) },
@@ -177,7 +178,7 @@ fun LyricsTranslateDialog(
               selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer,
             ),
           )
-          FilterChip(
+          GlassChip(
             selected = displayMode == LyricsTranslationDisplayMode.Replace,
             onClick = { audioPreferences.lyricsTranslationDisplayMode.set(LyricsTranslationDisplayMode.Replace) },
             label = { Text("Replace Original", fontWeight = FontWeight.Bold, fontSize = 12.sp) },

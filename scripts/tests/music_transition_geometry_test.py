@@ -27,11 +27,18 @@ class MusicTransitionGeometryContracts(unittest.TestCase):
         # compensates the page's uniform scale so it lands on the mini artwork.
         self.assertIn('page.localPositionOf(coordinates, Offset.Zero)', card)
         self.assertIn('coverLocalBounds = MusicMinimizeTransitionPolicy.Rect(', card)
-        self.assertIn('MusicMinimizeTransitionPolicy.artworkLayer(', card)
-        self.assertIn('transformOrigin = androidx.compose.ui.graphics.TransformOrigin(0f, 0f)', card)
-        self.assertIn('translationX = layer.translationX', card)
-        self.assertIn('translationY = layer.translationY', card)
         self.assertIn('CoverArtCardImage(', card)
+        # Mid-flight the in-page cover hides; the single visible cover is the flying overlay
+        # above the page (owner report: duplicate/stretched artwork during minimize).
+        self.assertIn('currentTransitionFrame(', card)
+        self.assertIn(') != null) 0f else 1f', card)
+        flying = CONTROLS.split('// FlyingCover:', 1)[1].split('CoverArtCardImage(', 1)[0]
+        self.assertIn('MusicMinimizeTransitionPolicy.flyingCoverLayer(', flying)
+        self.assertIn('transformOrigin = androidx.compose.ui.graphics.TransformOrigin(0f, 0f)', flying)
+        self.assertIn('translationX = layer.translationX', flying)
+        self.assertIn('translationY = layer.translationY', flying)
+        # Placed in the layout phase and transformed in the draw phase: no per-frame recomposition.
+        self.assertIn('.layout { measurable, _ ->', flying)
 
     def test_mini_callbacks_preserve_both_measured_endpoints(self):
         self.assertIn('var miniArtworkBounds by remember', MINI)
@@ -59,8 +66,9 @@ class MusicTransitionGeometryContracts(unittest.TestCase):
         self.assertIn('overridePendingTransition(0, exitAnimation)', ACTIVITY)
 
     def test_fallback_and_actual_playback_controls_are_preserved(self):
-        self.assertIn('MusicMinimizeTransitionPolicy.useSlideFallback(anchor, windowWidth, windowHeight, transitionTranslucent)', CONTROLS)
-        self.assertIn('translationY = size.height * miniProgress', CONTROLS)
+        # The in-app sheet shares the browser window, so it never needs the slide fallback.
+        self.assertIn('MusicMinimizeTransitionPolicy.useSlideFallback(anchor, windowWidth, windowHeight, inAppSheet != null || transitionTranslucent)', CONTROLS)
+        self.assertIn('translationY = size.height * currentMiniProgress()', CONTROLS)
         self.assertIn('MusicMinimizeTransitionPolicy.frame(', CONTROLS)
         for token in ('ACTION_NOTIFICATION_PLAY_PAUSE', 'ACTION_NOTIFICATION_NEXT',
                       'ACTION_NOTIFICATION_STOP', 'ContentScale.Crop', 'ACTION_OPEN_PLAYER'):
@@ -72,7 +80,9 @@ class MusicTransitionGeometryContracts(unittest.TestCase):
         self.assertIn('minimizeProgress = miniProgress', CONTROLS)
         self.assertIn('MusicMinimizeTransitionPolicy.pageLayer(frame, playerOrigin.x, playerOrigin.y)', CONTROLS)
         self.assertIn('shape = MusicPageClipShape(frame.clipWidth, frame.clipHeight, frame.clipCornerRadiusDp.dp.toPx())', CONTROLS)
-        self.assertIn('alpha = frame.contentAlpha', CONTROLS)
+        # Split fades: page surface (palette) stays until late, chrome fades early.
+        self.assertIn('alpha = MusicMinimizeTransitionPolicy.surfaceAlpha(currentMiniProgress())', CONTROLS)
+        self.assertIn('MusicMinimizeTransitionPolicy.chromeAlpha(currentMiniProgress())', CONTROLS)
         self.assertIn('val scale = if (screen.width > 0f) (page.width / screen.width)', TRANSITION)
         # Live anchor every frame with width and height staleness checks.
         self.assertIn('MusicMinimizeTransitionPolicy.currentAnchor(windowWidth, windowWidth, windowHeight)', CONTROLS)
@@ -80,9 +90,13 @@ class MusicTransitionGeometryContracts(unittest.TestCase):
     def test_release_and_programmatic_timing_follow_the_approved_spec(self):
         self.assertIn('MusicMinimizeTransitionPolicy.releaseTargetMiniProgress(', CONTROLS)
         self.assertIn('settle = { velocityY -> releaseToTarget(velocityY) }', CONTROLS)
-        self.assertIn('MusicMinimizeTransitionPolicy.settleDurationMs(target, settleProgrammatic)', CONTROLS)
-        self.assertIn('androidx.compose.animation.core.EaseInOutCubic', CONTROLS)
-        self.assertIn('SETTLE_OPEN_DURATION_MS', TRANSITION)
+        # Owner-approved respec: one critically damped spring from the release velocity (or a
+        # programmatic kick) replaces the fixed tween durations.
+        self.assertIn('androidx.compose.animation.core.spring(', CONTROLS)
+        self.assertIn('MusicMinimizeTransitionPolicy.settleInitialVelocity(', CONTROLS)
+        self.assertIn('SETTLE_DAMPING_RATIO', TRANSITION)
+        self.assertIn('SETTLE_STIFFNESS', TRANSITION)
+        self.assertNotIn('settleDurationMs(', CONTROLS)
         self.assertIn('LaunchedEffect(openFromMiniRequest)', CONTROLS)
         self.assertIn('audioOpenFromMiniRequest.intValue++', ACTIVITY)
 

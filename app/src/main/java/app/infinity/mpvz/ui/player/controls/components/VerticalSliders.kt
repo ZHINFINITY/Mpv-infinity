@@ -21,6 +21,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
@@ -34,6 +35,7 @@ import app.infinity.mpvz.ui.theme.AppShapeScale
 import app.infinity.mpvz.ui.theme.spacing
 import app.infinity.mpvz.preferences.AppearancePreferences
 import app.infinity.mpvz.preferences.preference.collectAsState
+import app.infinity.mpvz.ui.theme.glassRimLight
 import org.koin.compose.koinInject
 
 fun percentage(
@@ -55,16 +57,21 @@ fun VerticalSlider(
   overflowRange: ClosedFloatingPointRange<Float>? = null,
   colorStart: Color = MaterialTheme.colorScheme.primaryContainer,
   colorEnd: Color = MaterialTheme.colorScheme.primary,
+  glassEnabled: Boolean = true,
 ) {
   val coercedValue = value.coerceIn(range)
   val gradientBrush = remember(colorStart, colorEnd) { Brush.verticalGradient(listOf(colorStart, colorEnd)) }
+  val appearance = koinInject<AppearancePreferences>()
+  val preferenceEnabled by appearance.liquidGlassSurfaces.collectAsState()
+  val useGlass = glassEnabled && preferenceEnabled
   Box(
     modifier =
       modifier
         .height(130.dp)
         .width(36.dp)
-        .clip(AppShapeScale.largeIncreased)
-        .background(Color.Black.copy(alpha = 0.3f)),
+        .clip(CircleShape)
+        .background(if (useGlass) Color.Transparent else Color.Black.copy(alpha = 0.3f))
+        .playerGlassPane(enabled = useGlass, cornerRadius = 999.dp),
     contentAlignment = Alignment.BottomCenter,
   ) {
     val targetHeight by animateFloatAsState(
@@ -75,9 +82,10 @@ fun VerticalSlider(
     Box(
       Modifier
         .fillMaxWidth()
-        .fillMaxHeight(targetHeight.coerceAtLeast(0.05f)) // Keep a tiny amount visible
-        .clip(AppShapeScale.largeIncreased)
-        .background(gradientBrush),
+        .fillMaxHeight(targetHeight.coerceAtLeast(0.05f))
+        .clip(CircleShape)
+        .background(gradientBrush)
+        .glassRimLight(CircleShape, ambient = colorEnd, highContrast = true),
     )
     if (overflowRange != null && overflowValue != null) {
       val overflowHeight by animateFloatAsState(
@@ -88,7 +96,7 @@ fun VerticalSlider(
         Modifier
           .fillMaxWidth()
           .fillMaxHeight(overflowHeight)
-          .clip(AppShapeScale.largeIncreased)
+          .clip(CircleShape)
           .background(MaterialTheme.colorScheme.errorContainer),
       )
     }
@@ -104,16 +112,21 @@ fun VerticalSlider(
   overflowRange: ClosedRange<Int>? = null,
   colorStart: Color = MaterialTheme.colorScheme.primaryContainer,
   colorEnd: Color = MaterialTheme.colorScheme.primary,
+  glassEnabled: Boolean = true,
 ) {
   val coercedValue = value.coerceIn(range)
   val gradientBrush = remember(colorStart, colorEnd) { Brush.verticalGradient(listOf(colorStart, colorEnd)) }
+  val appearance = koinInject<AppearancePreferences>()
+  val preferenceEnabled by appearance.liquidGlassSurfaces.collectAsState()
+  val useGlass = glassEnabled && preferenceEnabled
   Box(
     modifier =
       modifier
         .height(130.dp)
         .width(36.dp)
-        .clip(AppShapeScale.largeIncreased)
-        .background(Color.Black.copy(alpha = 0.3f)),
+        .clip(CircleShape)
+        .background(if (useGlass) Color.Transparent else Color.Black.copy(alpha = 0.3f))
+        .playerGlassPane(enabled = useGlass, cornerRadius = 999.dp),
     contentAlignment = Alignment.BottomCenter,
   ) {
     val targetHeight by animateFloatAsState(
@@ -125,8 +138,9 @@ fun VerticalSlider(
       Modifier
         .fillMaxWidth()
         .fillMaxHeight(targetHeight.coerceAtLeast(0.05f))
-        .clip(AppShapeScale.largeIncreased)
-        .background(gradientBrush),
+        .clip(CircleShape)
+        .background(gradientBrush)
+        .glassRimLight(CircleShape, ambient = colorEnd, highContrast = true),
     )
     if (overflowRange != null && overflowValue != null) {
       val overflowHeight by animateFloatAsState(
@@ -137,7 +151,7 @@ fun VerticalSlider(
         Modifier
           .fillMaxWidth()
           .fillMaxHeight(overflowHeight)
-          .clip(AppShapeScale.largeIncreased)
+          .clip(CircleShape)
           .background(MaterialTheme.colorScheme.errorContainer),
       )
     }
@@ -181,6 +195,7 @@ fun BrightnessSlider(
         overflowRange = negativeRange,
         colorStart = MaterialTheme.colorScheme.primaryContainer,
         colorEnd = MaterialTheme.colorScheme.primary,
+        glassEnabled = liquidGlassSurfaces,
       )
       Icon(
         when {
@@ -239,6 +254,7 @@ fun VolumeSlider(
         overflowRange = boostRange,
         colorStart = MaterialTheme.colorScheme.primaryContainer,
         colorEnd = MaterialTheme.colorScheme.primary,
+        glassEnabled = liquidGlassSurfaces,
       )
       Icon(
         when (percentage) {

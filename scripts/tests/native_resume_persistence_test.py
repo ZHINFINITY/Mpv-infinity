@@ -16,16 +16,24 @@ class NativeResumeIntegrationTest(unittest.TestCase):
         start = source.index("  private fun silenceAudioOnClose()")
         close = source[start:source.index("  override fun onPause()", start)]
         self.assertLess(close.index("saveVideoPlaybackState(fileName, immediate = true)"),
-                        close.index("nativeEngine.stop()"))
+                        close.index("nativeEngineOrNull()?.stop()"))
         self.assertIn("(playbackWasInitialized || nativeWasActive) && ownsPlaybackSession", source)
+
+    def test_lifecycle_paths_never_construct_the_lazy_native_engine(self):
+        source = (PLAYER / "PlayerActivity.kt").read_text()
+        # Music never builds Media3; close/save paths must use the non-constructing accessor.
+        self.assertIn("if (nativeEngineConfigured) nativeEngine else null", source)
+        start = source.index("  private fun silenceAudioOnClose()")
+        close = source[start:source.index("  override fun onPause()", start)]
+        self.assertNotIn("nativeEngine.", close)
 
     def test_save_uses_pending_native_seek_target_not_stale_live_clock(self):
         source = (PLAYER / "PlayerActivity.kt").read_text()
         capture = source[source.index("  private fun capturePlaybackStateSnapshot("):
                          source.index("  private data class SharedMpvTrack")]
-        self.assertIn("nativeEngine.positionForPersistenceMs()", capture)
-        self.assertIn("nativeEngine.captureAudioSelection()", capture)
-        self.assertIn("nativeEngine.captureSubtitleSelection()", capture)
+        self.assertIn("nativeEngineOrNull()?.positionForPersistenceMs()", capture)
+        self.assertIn("nativeEngineOrNull()?.captureAudioSelection()", capture)
+        self.assertIn("nativeEngineOrNull()?.captureSubtitleSelection()", capture)
 
     def test_native_drag_sends_scene_preview_before_release(self):
         controls = (PLAYER / "controls/PlayerControls.kt").read_text()

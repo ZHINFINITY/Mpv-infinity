@@ -13,6 +13,7 @@ FLOW_DIAGNOSTICS = (ROOT / "app/src/main/java/app/infinity/mpvz/ui/player/Media3
 NATIVE = (ROOT / "app/src/main/java/app/infinity/mpvz/ui/player/Media3FlowVulkanNative.kt").read_text(encoding="utf-8")
 NATIVE_ENGINE = (ROOT / "app/src/main/java/app/infinity/mpvz/ui/player/NativeMedia3Engine.kt").read_text(encoding="utf-8")
 DEBUG_SETTINGS = (ROOT / "app/src/main/java/app/infinity/mpvz/ui/player/Media3FlowDebugSettings.kt").read_text(encoding="utf-8")
+PLAYER_ACTIVITY = (ROOT / "app/src/main/java/app/infinity/mpvz/ui/player/PlayerActivity.kt").read_text(encoding="utf-8")
 DECODER_PREFERENCES = (ROOT / "app/src/main/java/app/infinity/mpvz/ui/preferences/DecoderPreferencesScreen.kt").read_text(encoding="utf-8")
 JNI = (ROOT / "app/src/main/cpp/media3flow_vulkan_jni.cpp").read_text(encoding="utf-8")
 CMAKE = (ROOT / "app/src/main/cpp/CMakeLists.txt").read_text(encoding="utf-8")
@@ -114,11 +115,15 @@ assert "mpvflow_gpu_capture_paired_sample(" in JNI and "source0->texture, source
 assert "Media3FlowDebugSettingsPolicy.effective(" in NATIVE_ENGINE
 assert "visibilityResolverEnabled || media3FlowDebugSettings.softBlendEnabled" in NATIVE_ENGINE
 assert "MpvFlowComputeApi.VULKAN" in NATIVE_ENGINE
-assert "media3FlowVisibilityResolverDebug =" in (ROOT / "app/src/main/java/app/infinity/mpvz/ui/player/PlayerActivity.kt").read_text(encoding="utf-8")
-assert "media3FlowSoftBlendDebug =" in (ROOT / "app/src/main/java/app/infinity/mpvz/ui/player/PlayerActivity.kt").read_text(encoding="utf-8")
+assert "media3FlowVisibilityResolverDebug = decoderPreferences.mpvFlowVisibilityResolverDebug.get()" in PLAYER_ACTIVITY
+assert re.search(r"media3FlowSoftBlendDebug\s*=\s*decoderPreferences\.mpvFlowSoftBlendDebug\.get\(\)", PLAYER_ACTIVITY), (
+    "Native Media3 must receive the stored Soft Blend preference in release builds"
+)
+assert "media3FlowSoftBlendDebug = BuildConfig.DEBUG" not in PLAYER_ACTIVITY
 assert "nativeMedia3FlowAvailable" in DECODER_PREFERENCES and "controlsVisible(" in DECODER_PREFERENCES
-assert "softBlendEnabled = debugBuild && requestedSoftBlend" in DEBUG_SETTINGS
+assert "softBlendEnabled = requestedSoftBlend" in DEBUG_SETTINGS
 assert "requestedVisibilityResolver && !softBlendEnabled" in DEBUG_SETTINGS
+assert "requested && interpolationActive && vulkanBackend && !mpvConfOwnsOption" in DEBUG_SETTINGS
 for marker in (
     "pl_vulkan_create(", "pl_vulkan_wrap(", "pl_vulkan_release_ex(", "pl_vulkan_hold_ex(",
     "VK_KHR_EXTERNAL_SEMAPHORE_FD_EXTENSION_NAME", "vkImportSemaphoreFdKHR", "vkGetSemaphoreFdKHR",

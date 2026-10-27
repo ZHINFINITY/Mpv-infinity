@@ -8,10 +8,13 @@
 package app.infinity.mpvz.ui.player.controls.components.sheets
 
 import app.infinity.mpvz.presentation.components.playerGlassOverlay
+import app.infinity.mpvz.ui.components.GlassChip
+
+import app.infinity.mpvz.ui.player.PlayerStatsLuaCommandPolicy
+import app.infinity.mpvz.ui.player.controls.components.playerGlassPane
 import app.infinity.mpvz.ui.player.NativePlaybackSnapshot
 import app.infinity.mpvz.ui.player.PlaybackEngineMode
 import app.infinity.mpvz.ui.player.PlaybackSession
-import app.infinity.mpvz.ui.player.PlayerStatsLuaCommandPolicy
 
 import android.content.res.Configuration
 import android.text.format.DateUtils
@@ -33,7 +36,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LocalContentColor
@@ -233,7 +235,7 @@ fun MoreSheet(
         }
       }
       Surface(
-        modifier = Modifier.fillMaxWidth().playerGlassOverlay(cornerRadius = 16.dp),
+        modifier = Modifier.fillMaxWidth().playerGlassPane(enabled = true, cornerRadius = 16.dp),
         color = androidx.compose.ui.graphics.Color.Transparent,
         tonalElevation = 0.dp,
         shape = MaterialTheme.shapes.medium,
@@ -274,7 +276,7 @@ fun MoreSheet(
         horizontalArrangement = Arrangement.spacedBy(MaterialTheme.spacing.smaller),
       ) {
         items(8, key = { it }) { page ->
-          FilterChip(
+          GlassChip(
             label = {
               Text(
                 if (page == 7) {
@@ -292,6 +294,10 @@ fun MoreSheet(
               )
             },
             onClick = {
+              if (activeEngine == PlaybackEngineMode.NATIVE) {
+                advancedPreferences.enabledStatisticsPage.set(page.takeIf { it in 1..6 } ?: 0)
+                return@GlassChip
+              }
               val isConsoleOpen = PlaybackSession.getPropertyBoolean("user-data/mpv/console/open") == true
               PlayerStatsLuaCommandPolicy.apply(
                 PlayerStatsLuaCommandPolicy.forChip(
@@ -333,7 +339,7 @@ fun MoreSheet(
           horizontalArrangement = Arrangement.spacedBy(MaterialTheme.spacing.smaller),
         ) {
           items(Anime4KManager.Mode.entries, key = { it.name }) { mode ->
-            FilterChip(
+            GlassChip(
               label = { Text(stringResource(mode.titleRes)) },
               selected = anime4KUiState.selectedMode == mode.name,
               enabled = anime4KEnabled && (anime4KUiState.allowHighRes || mode == Anime4KManager.Mode.OFF),
@@ -423,7 +429,7 @@ fun TimePickerDialog(
             verticalArrangement = Arrangement.spacedBy(8.dp),
           ) {
             sleepTimerPresets.forEach { minutes ->
-              FilterChip(
+              GlassChip(
                 selected = false,
                 onClick = {
                   onTimeSelect(minutes * 60)
