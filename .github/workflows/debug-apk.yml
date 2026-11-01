@@ -347,6 +347,15 @@ jobs:
             exit 1
           fi
           echo "Verified Flow runtime libraries and confirmed librife_vfi.so is absent: $apk"
+      - name: Verify Native DTS FFmpeg audio fallback is packaged
+        if: ${{ inputs.flavor == 'standard' && inputs.target_abi == 'arm64-v8a' }}
+        run: |
+          set -euo pipefail
+          apk="$(find app/build/outputs/apk/standard/debug -type f -name '*arm64-v8a*.apk' -print -quit)"
+          [[ -n "$apk" ]] || { echo "No Standard arm64 debug APK found" >&2; exit 1; }
+          # Native (Media3) plays DTS / DTS Express / DTS-HD through libffmpegJNI.so, which must
+          # link the packaged LGPL FFmpeg and find its DCA decoder. Same gate as the MPVFlow build.
+          python3 scripts/verify-media3-dca-apk.py "$apk"
       - name: Verify native library symbol hygiene
         if: ${{ inputs.flavor == 'standard' && inputs.target_abi == 'arm64-v8a' }}
         run: |
