@@ -228,9 +228,21 @@ def test_owner_debug_apk_gates_native_dts_ffmpeg_fallback() -> None:
     step = workflow.split("- name: Verify Native DTS FFmpeg audio fallback is packaged", 1)
     assert len(step) == 2, "debug-apk.yml lost the Native DTS packaging gate"
     body = step[1].split("\n      - name:", 1)[0]
-    assert 'python3 scripts/verify-media3-dca-apk.py "$apk"' in body
-    assert "inputs.target_abi == 'arm64-v8a'" in body
+    assert 'python3 scripts/verify-media3-dca-apk.py "$candidate"' in body
+    assert "inputs.flavor == 'standard' || inputs.flavor == 'no_vulkan'" in body
+    assert "inputs.target_abi == 'arm64-v8a' || inputs.target_abi == 'all'" in body
+    assert "standard) gradle_flavor=standard ;;" in body
+    assert "no_vulkan) gradle_flavor=noVulkan ;;" in body
+    assert 'apk_dir="app/build/outputs/apk/$gradle_flavor/debug"' in body
+    assert "find \"$apk_dir\" -type f -name '*.apk' -print0" in body
+    assert "unzip -Z1 \"$candidate\" | grep -Fxq 'lib/arm64-v8a/libffmpegJNI.so'" in body
+    assert "while IFS= read -r -d '' candidate; do" in body
+    assert "verified=$((verified + 1))" in body
+    assert "(( verified > 0 ))" in body
+    assert "app/build/outputs/apk/standard/debug" not in body
+    assert "-name '*arm64-v8a*.apk'" not in body
     assert workflow.index("Verify Native DTS FFmpeg") > workflow.index("- name: Build debug APK")
+    assert workflow.index("Verify Native DTS FFmpeg") < workflow.index("- name: Upload debug APKs")
     engine = (ROOT / "app/src/main/java/app/infinity/mpvz/ui/player/NativeMedia3Engine.kt").read_text(
         encoding="utf-8"
     )
@@ -245,7 +257,7 @@ def main() -> None:
     test_standard_workflow_is_flow_only()
     test_mpvflow_settings_keep_single_toggle_and_target_fps()
     test_owner_debug_apk_gates_native_dts_ffmpeg_fallback()
-    print("Flow-only MPVFlow Standard arm64 workflow tests passed.")
+    print("Flow-only MPVFlow and Native DTS APK workflow tests passed.")
 
 
 if __name__ == "__main__":
