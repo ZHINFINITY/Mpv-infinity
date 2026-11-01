@@ -41,7 +41,7 @@ class MiniPlayer1944ContractTest {
     assertTrue(m.contains("val trackY = size.height - 2.dp.toPx()"))
   }
 
-  @Test fun everyQuickPlayRouteHidesWhenTheMiniPlayerOwnsTheBrowserLane() {
+  @Test fun directQuickPlayHidesButNonDirectMenusRemainWhenMiniPlayerOwnsTheBrowserLane() {
     val fab = src("ui/browser/fab/QuickPlayFab.kt")
     assertTrue(fab.contains("showPreferenceEnabled && !NavigationBarState.isMiniPlayerVisible"))
     assertTrue(fab.contains("quickPlayFabAllowed(showQuickPlayFabPreference)"))
@@ -61,7 +61,15 @@ class MiniPlayer1944ContractTest {
       assertTrue("Quick Play lane not gated in $path", src(path).contains("quickPlayFabAllowed(showQuickPlayFabPreference)"))
     }
     routes.dropLast(1).forEach { path ->
-      assertTrue("stale Quick Play menu not cleared in $path", src(path).contains("QuickPlayMenuVisibilityEffect(showQuickPlayFab)"))
+      val source = src(path)
+      assertTrue(
+        "non-direct action menu stays available in $path",
+        source.contains("QuickPlayMenuVisibilityEffect(showQuickPlayFab && !quickPlayFabDirect)"),
+      )
+      assertTrue(
+        "direct Quick Play remains gated in $path",
+        source.contains("(!quickPlayFabDirect || quickPlayFabDirectAllowed)"),
+      )
     }
     assertTrue(src("MainActivity.kt").contains("NavigationBarState.navigationBarClearance + 10.dp"))
   }
