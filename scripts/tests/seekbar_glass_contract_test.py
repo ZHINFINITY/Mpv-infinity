@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """Source wiring guards; visual quality and touch behavior still need phone testing."""
 from pathlib import Path
-import re
 import unittest
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -68,17 +67,17 @@ class SeekbarGlassContracts(unittest.TestCase):
         self.assertNotIn('visualOnly', slider)
 
     def test_settings_and_music_slider_style_the_actual_thin_track(self):
-        slider = source('ui/player/controls/components/GlassControls.kt').split(
-            'fun GlassSlider(', 1)[1].split('private fun Modifier.glassTrackOptics', 1)[0]
+        controls = source('ui/player/controls/components/GlassControls.kt')
+        slider = controls.split('fun GlassSlider(', 1)[1].split(
+            'private fun Modifier.glassTickDots', 1
+        )[0]
         self.assertIn('track = { sliderState ->', slider)
         self.assertIn('SliderDefaults.Track(', slider)
-        # The styling stays on the real, thin track (now a recessed glass groove).
         self.assertIn('modifier = Modifier.height(GlassControlGeometryPolicy.sliderTrackHeightDp.dp)', slider)
-        self.assertIn('.glassSliderGroove(sliderState.coercedValueAsFraction', slider)
-        controls = source('ui/player/controls/components/GlassControls.kt')
-        track = re.search(r'const val sliderTrackHeightDp = ([0-9.]+)f', controls)
-        self.assertIsNotNone(track)
-        self.assertLessEqual(float(track.group(1)), 6.0)
+        self.assertIn('.glassSliderGroove(sliderState.coercedValueAsFraction, accent, opacity, highlight)', slider)
+        self.assertIn('.then(Modifier.glassTickDots(if (steps > 0) steps else 4, accent))', slider)
+        geometry = controls.split('object GlassControlGeometryPolicy {', 1)[1].split('\n}', 1)[0]
+        self.assertIn('const val sliderTrackHeightDp = 6f', geometry)
         self.assertNotIn('modifier = modifier.then(', slider)
 
 
