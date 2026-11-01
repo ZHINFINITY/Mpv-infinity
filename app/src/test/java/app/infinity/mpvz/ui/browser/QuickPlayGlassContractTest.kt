@@ -68,7 +68,11 @@ class QuickPlayGlassContractTest {
       .substringBefore("} else if (songs.isNotEmpty()) {")
     val quickPlayFab = music.substringAfter("} else if (songs.isNotEmpty()) {")
     val mainScreen = File(root, "app/src/main/java/app/infinity/mpvz/ui/browser/MainScreen.kt").readText()
-    assertTrue(music.contains("val isFabShouldBeVisible = showQuickPlayFab && isPlaylistFabShouldBeVisible"))
+    val quickPlayVisibility = music.substringAfter("val isFabShouldBeVisible =")
+      .substringBefore("if (isFoldersTab)")
+    assertTrue(quickPlayVisibility.contains("showQuickPlayFab &&"))
+    assertTrue(quickPlayVisibility.contains("(!quickPlayFabDirect || quickPlayFabDirectAllowed)"))
+    assertTrue(quickPlayVisibility.contains("isPlaylistFabShouldBeVisible"))
     assertTrue(playlistFab.contains("visible = isPlaylistFabShouldBeVisible"))
     assertTrue(playlistFab.contains("onCheckedChange = { showCreatePlaylistDialog = true }"))
     assertTrue(playlistFab.contains("Modifier.padding(bottom = (navigationBarHeight - 16.dp).coerceAtLeast(0.dp))"))
@@ -76,7 +80,7 @@ class QuickPlayGlassContractTest {
     assertTrue(mainScreen.contains("val contentBottomPadding = remember(miniPlayerNavClearance) { 88.dp + miniPlayerNavClearance }"))
     assertTrue(mainScreen.contains("LocalNavigationBarHeight provides contentBottomPadding"))
     assertTrue(quickPlayFab.contains("visible = isFabShouldBeVisible"))
-    assertTrue(music.contains("QuickPlayMenuVisibilityEffect(showQuickPlayFab)"))
+    assertTrue(music.contains("QuickPlayMenuVisibilityEffect(showQuickPlayFab && !quickPlayFabDirect)"))
   }
 
   @Test
