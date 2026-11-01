@@ -53,6 +53,24 @@ class SliderValueSummaryRuntimeTest {
     }
   }
 
+  @Test fun glassTickDotsAreSkippedBeforeDensePositionsAreBuilt() {
+    val policy = app.infinity.mpvz.ui.player.controls.components.GlassSliderPolicy
+    assertTrue(policy.tickDotsFit(96f, 15, 6f))
+    assertFalse(policy.tickDotsFit(95.9f, 15, 6f))
+    assertFalse(policy.tickDotsFit(100f, 16, 6f))
+    assertFalse(policy.tickDotsFit(100f, Int.MAX_VALUE, 6f))
+    assertFalse(policy.tickDotsFit(100f, 0, 6f))
+    assertFalse(policy.tickDotsFit(100f, -1, 6f))
+    assertFalse(policy.tickDotsFit(Float.NaN, 4, 6f))
+    assertFalse(policy.tickDotsFit(100f, 4, Float.NaN))
+    val controls = File(root, "app/src/main/java/app/infinity/mpvz/ui/player/controls/components/GlassControls.kt").readText()
+    val tickDots = controls.substringAfter("private fun Modifier.glassTickDots")
+      .substringBefore("private fun Modifier.glassSliderGroove")
+    assertTrue(tickDots.contains("GlassSliderPolicy.tickDotsFit(size.width, steps, 6.dp.toPx())"))
+    assertTrue(tickDots.contains("val positions = if (dotsFit)"))
+    assertTrue(tickDots.contains("if (dotsFit) positions.forEach"))
+  }
+
   @Test fun badgeMeasuresACurrentValueWiderThanItsEndpoints() {
     val value = "duration 120 minutes"
     val expectedBadgeWidthPx = mutableFloatStateOf(0f)

@@ -683,6 +683,12 @@ private fun ExpressivePillNavigationBar(
     retainedFinalDragPosition = null
     retainedFinalDragTarget = null
   }
+  LaunchedEffect(fingerDragging) {
+    if (fingerDragging) {
+      retainedFinalDragPosition = null
+      retainedFinalDragTarget = null
+    }
+  }
   val lastIndex = (visibleTabs.size - 1).coerceAtLeast(0)
   var hoveredTab by remember { mutableIntStateOf(targetIndex.toInt().coerceIn(0, lastIndex)) }
   LaunchedEffect(targetIndex, lastIndex) {

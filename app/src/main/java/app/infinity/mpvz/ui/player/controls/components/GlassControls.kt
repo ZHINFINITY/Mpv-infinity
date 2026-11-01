@@ -117,6 +117,14 @@ object GlassSliderPolicy {
     if (pressed && !reducedMotion) 0.92f else 1f
   fun tickPositions(steps: Int): List<Float> =
     if (steps <= 0) emptyList() else (0..steps + 1).map { it.toFloat() / (steps + 1) }
+  /** Guard dense ranges before allocating tick positions, so 3 dp dots retain a visible gap. */
+  fun tickDotsFit(widthPx: Float, steps: Int, minimumSpacingPx: Float): Boolean =
+    steps > 0 &&
+      widthPx.isFinite() &&
+      minimumSpacingPx.isFinite() &&
+      widthPx > 0f &&
+      minimumSpacingPx > 0f &&
+      widthPx / (steps.toFloat() + 1f) >= minimumSpacingPx
   fun hapticBucket(value: Float, range: ClosedFloatingPointRange<Float>, steps: Int): Int {
     val fraction = ((value - range.start) / (range.endInclusive - range.start)).coerceIn(0f, 1f)
     val buckets = if (steps > 0) steps + 1 else 20
@@ -463,10 +471,19 @@ fun GlassSlider(
 }
 
 private fun Modifier.glassTickDots(steps: Int, accent: Color): Modifier = drawWithCache {
-  val positions = GlassSliderPolicy.tickPositions(steps)
+  val dotsFit = GlassSliderPolicy.tickDotsFit(size.width, steps, 6.dp.toPx())
+  val positions = if (dotsFit) GlassSliderPolicy.tickPositions(steps) else emptyList()
+  val dotRadius = 1.5.dp.toPx()
+  val dotColor = accent.copy(alpha = .72f)
   onDrawWithContent {
     drawContent()
-    positions.forEach { x -> drawCircle(accent.copy(alpha = .72f), radius = 1.5.dp.toPx(), center = androidx.compose.ui.geometry.Offset(size.width * x, size.height / 2f)) }
+    if (dotsFit) positions.forEach { x ->
+      drawCircle(
+        color = dotColor,
+        radius = dotRadius,
+        center = androidx.compose.ui.geometry.Offset(size.width * x, size.height / 2f),
+      )
+    }
   }
 }
 

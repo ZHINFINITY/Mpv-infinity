@@ -30,7 +30,8 @@ class ReferenceUiRollbackContractTest {
       // Build 1910 integration: union of the rim-light routing and thickSurface stream edits.
       // Owner follow-up: rounded player panes preserve the press shadow and inherit global glass tuning.
       // Accessibility follow-up: shared press, slider, and lens feedback respects reduced motion.
-      "app/src/main/java/app/infinity/mpvz/ui/player/controls/components/GlassControls.kt" to "e5ef3b62703cb91f04ae7275c2ae4d5838b6ea5cd6fa6662ed4b6d223c84d814",
+      // UI follow-up: density-aware tick-dot spacing keeps dense slider marks distinct.
+      "app/src/main/java/app/infinity/mpvz/ui/player/controls/components/GlassControls.kt" to "ed552aa11c92a586c98a9e75374156943cad8cbaa18113b1e85cd91ec68f516e",
       // Build 1910: player sheets opt into the centralized inner thickness bands.
       // Build 1910 integration: edge-attached landscape sheets draw one rim on the asymmetric shape.
       "app/src/main/java/app/infinity/mpvz/presentation/components/PlayerSheet.kt" to "7838a785e17d4bd1479a348a04c6f9ac7af0bacc0891ba817b165a1f53348c81",
@@ -568,7 +569,18 @@ import android.graphics.Shader
     // Owner follow-up: retain the normal 44dp selected outline/placement; the glass refraction
     // follows finger-driven drag motion without an elevated pop or altered tab hit targets.
     // Integration follow-up: hold the final drag position until the pager and lens finish settling.
-    assertEquals("a78810e070b39255b66d4a0091936bdeff86910ada4a44f14f86a4ece99a6738", sha(navigation.substring(start, end)))
+    // Pager interruption clears only its transient release state; keep the fingerprint for the rest.
+    val navBody = navigation.substring(start, end)
+    val pagerDragCleanup = """
+      LaunchedEffect(fingerDragging) {
+        if (fingerDragging) {
+          retainedFinalDragPosition = null
+          retainedFinalDragTarget = null
+        }
+      }
+    """.trimIndent().prependIndent("  ") + "\n"
+    assertEquals(1, navBody.split(pagerDragCleanup).size - 1)
+    assertEquals("a78810e070b39255b66d4a0091936bdeff86910ada4a44f14f86a4ece99a6738", sha(navBody.replace(pagerDragCleanup, "")))
     val scene = read("app/src/main/java/app/infinity/mpvz/ui/theme/BrowserGlassScene.kt")
     val lensStart = scene.indexOf("internal const val BROWSER_LENS")
     val q = scene.indexOf("\"\"\"", lensStart)

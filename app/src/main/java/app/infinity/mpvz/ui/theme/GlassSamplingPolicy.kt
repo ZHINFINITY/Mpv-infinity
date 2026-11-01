@@ -10,7 +10,7 @@ object GlassSamplingPolicy {
    * frost is a small box blur, so this stays cheap; warm devices halve it, severe heat stops it.
    */
   const val PlayingIntervalMs = 33L
-  const val WarmPlayingIntervalMs = 33L
+  const val WarmPlayingIntervalMs = 66L
   const val PausedIntervalMs = 1000L
   const val RetryIntervalMs = 1200L
   const val FailureLimit = 3

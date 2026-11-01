@@ -29,6 +29,11 @@ class NavPillDragWiringContractTest {
     assertTrue(main.contains("!pager.isScrollInProgress"))
     assertTrue(main.contains("!lensPosition.isRunning"))
     assertTrue(main.contains("retainedFinalDragPosition = null"))
+    val pagerDragCleanup =
+      main.substringAfter("LaunchedEffect(fingerDragging)").substringBefore("val lastIndex")
+    assertTrue(pagerDragCleanup.contains("if (fingerDragging)"))
+    assertTrue(pagerDragCleanup.contains("retainedFinalDragPosition = null"))
+    assertTrue(pagerDragCleanup.contains("retainedFinalDragTarget = null"))
     assertTrue(gesture.contains("onRelease: (Int, Float) -> Unit"))
     assertTrue(gesture.contains("onRelease(target, releasePosition)"))
     assertTrue(!main.contains("onRelease = { target -> visibleTabs.getOrNull(target)?.let(onTabSelected) }"))
