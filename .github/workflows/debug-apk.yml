@@ -361,9 +361,13 @@ jobs:
 
           verified=0
           while IFS= read -r -d '' candidate; do
-            candidate_entries="$(unzip -Z1 "$candidate")" || continue
-            if ! grep -Fxq 'lib/arm64-v8a/libffmpegJNI.so' <<< "$candidate_entries"; then
+            candidate_entries="$(unzip -Z1 "$candidate")"
+            if ! grep -q '^lib/arm64-v8a/' <<< "$candidate_entries"; then
               continue
+            fi
+            if ! grep -Fxq 'lib/arm64-v8a/libffmpegJNI.so' <<< "$candidate_entries"; then
+              echo "arm64 APK lacks lib/arm64-v8a/libffmpegJNI.so: $candidate" >&2
+              exit 1
             fi
             echo "Verifying arm64 Media3 FFmpeg fallback in $candidate"
             python3 scripts/verify-media3-dca-apk.py "$candidate"
