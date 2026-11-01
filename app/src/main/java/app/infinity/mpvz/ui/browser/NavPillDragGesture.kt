@@ -9,6 +9,7 @@ import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.positionChange
 import androidx.compose.ui.input.pointer.util.VelocityTracker
+import androidx.compose.ui.unit.dp
 import kotlin.math.abs
 
 /**
@@ -34,6 +35,8 @@ internal fun Modifier.navPillDragGesture(
   onHoverChanged: (Int) -> Unit,
   onRelease: (Int, Float) -> Unit,
 ): Modifier = pointerInput(tabCount, selectedIndex, isRtl) {
+  val flingThresholdPxPerSecond = 300.dp.toPx()
+  val autoScrollMarginPx = 56.dp.toPx()
   awaitEachGesture {
     val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
     // Centres are frozen at drag start: tabs widen while hovered, and remapping the finger
@@ -59,7 +62,7 @@ internal fun Modifier.navPillDragGesture(
       lastScrollOffset = currentScrollOffset
       var next = NavPillDragPolicy.positionAfterDrag(startCenter, totalDelta, centers)
       onDragPosition(next)
-      keepLensVisible(scrollState, next, centers)
+      keepLensVisible(scrollState, next, centers, autoScrollMarginPx)
       val afterAutoScroll = scrollState?.value?.toFloat() ?: lastScrollOffset
       val autoScrollDelta = afterAutoScroll - lastScrollOffset
       if (autoScrollDelta != 0f) {
@@ -118,7 +121,13 @@ internal fun Modifier.navPillDragGesture(
       val releasePosition = NavPillDragPolicy.positionAfterDrag(startCenter, finalDelta, centers)
       onDragPosition(null)
       if (released) {
-        val target = NavPillDragPolicy.flingSnappedIndex(releasePosition, velocity, tabCount, isRtl)
+        val target = NavPillDragPolicy.flingSnappedIndex(
+          releasePosition,
+          velocity,
+          tabCount,
+          isRtl,
+          thresholdPxPerSecond = flingThresholdPxPerSecond,
+        )
         onHoverChanged(target)
         onRelease(target, releasePosition)
       } else {
@@ -129,7 +138,7 @@ internal fun Modifier.navPillDragGesture(
 }
 
 /** Scrolls an overflowing pill so the dragged lens never leaves the visible strip. */
-private fun keepLensVisible(scrollState: ScrollState?, position: Float, centers: List<Float>) {
+private fun keepLensVisible(scrollState: ScrollState?, position: Float, centers: List<Float>, marginPx: Float) {
   if (scrollState == null || scrollState.maxValue <= 0 || centers.isEmpty()) return
   val floor = position.toInt().coerceIn(0, centers.lastIndex)
   val ceil = (floor + 1).coerceAtMost(centers.lastIndex)
@@ -139,6 +148,7 @@ private fun keepLensVisible(scrollState: ScrollState?, position: Float, centers:
     lensCenter = lensCenter,
     scroll = scrollState.value.toFloat(),
     viewport = scrollState.viewportSize.toFloat(),
+    marginPx = marginPx,
   )
   if (shift != 0f) scrollState.dispatchRawDelta(shift)
 }

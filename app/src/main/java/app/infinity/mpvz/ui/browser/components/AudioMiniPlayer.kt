@@ -47,6 +47,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import app.infinity.mpvz.R
 import app.infinity.mpvz.ui.icons.Icon
 import app.infinity.mpvz.ui.icons.Icons
@@ -121,7 +122,12 @@ fun AudioMiniPlayer(modifier: Modifier = Modifier) {
           )
         }
         .clickable(onClick = ::openPlayer)
-        .semantics { contentDescription = "Open full audio player" },
+        .semantics {
+          contentDescription = "Open full audio player"
+          stateDescription = context.getString(
+            if (isPlaying) R.string.notification_playing else R.string.downloads_paused,
+          )
+        },
   ) {
     val primaryContainerColor = MaterialTheme.colorScheme.primaryContainer
 

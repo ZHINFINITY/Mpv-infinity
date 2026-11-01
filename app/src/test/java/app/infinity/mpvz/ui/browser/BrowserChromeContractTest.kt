@@ -77,6 +77,16 @@ class BrowserChromeContractTest {
   }
 
   @Test
+  fun audioMiniPlayerExposesLocalizedPlaybackStateToAccessibility() {
+    val source =
+      File(root, "app/src/main/java/app/infinity/mpvz/ui/browser/components/AudioMiniPlayer.kt")
+        .readText()
+    assertTrue(source.contains("text = artist"))
+    assertTrue(source.contains("stateDescription = context.getString("))
+    assertTrue(source.contains("R.string.notification_playing else R.string.downloads_paused"))
+  }
+
+  @Test
   fun directQuickPlayGateDoesNotHideNonDirectActionMenusWithMiniPlayer() {
     val helper = File(root, "app/src/main/java/app/infinity/mpvz/ui/browser/fab/QuickPlayFab.kt").readText()
     assertTrue(helper.contains("showPreferenceEnabled && !NavigationBarState.isMiniPlayerVisible"))

@@ -276,8 +276,10 @@ internal class GlassCaptureBuffers {
     published = bitmap
   }
   fun recycle() {
-    first?.recycle(); second?.recycle()
-    retired.forEach { it.recycle() }
+    val publishedBitmap = published
+    first?.let { if (it !== publishedBitmap) it.recycle() }
+    second?.let { if (it !== publishedBitmap) it.recycle() }
+    retired.forEach { if (it !== publishedBitmap) it.recycle() }
     retired.clear()
     first = null; second = null
     published = null

@@ -7,9 +7,11 @@ package app.infinity.mpvz.ui.theme
 import android.graphics.Bitmap
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotSame
 import org.junit.Assert.assertSame
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 
@@ -38,5 +40,31 @@ class GlassCaptureBuffersTest {
     assertEquals(32, resized.width)
     assertEquals(32, resized.height)
     buffers.recycle()
+  }
+
+  @Test fun recyclePreservesPublishedBitmapButRecyclesItsSpareBuffer() {
+    val buffers = GlassCaptureBuffers()
+    val published = buffers.acquire(16, 16)!!
+    val spare = buffers.acquire(16, 16)!!
+    buffers.markPublished(published)
+
+    buffers.recycle()
+
+    assertFalse(published.isRecycled)
+    assertTrue(spare.isRecycled)
+  }
+
+  @Test fun recyclePreservesPublishedBitmapAfterResize() {
+    val buffers = GlassCaptureBuffers()
+    val published = buffers.acquire(8, 8)!!
+    val spare = buffers.acquire(8, 8)!!
+    buffers.markPublished(published)
+    val active = buffers.acquire(32, 32)!!
+
+    buffers.recycle()
+
+    assertFalse(published.isRecycled)
+    assertTrue(spare.isRecycled)
+    assertTrue(active.isRecycled)
   }
 }
