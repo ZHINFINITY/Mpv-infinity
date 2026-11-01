@@ -235,7 +235,20 @@ def test_owner_debug_apk_gates_native_dts_ffmpeg_fallback() -> None:
     assert "no_vulkan) gradle_flavor=noVulkan ;;" in body
     assert 'apk_dir="app/build/outputs/apk/$gradle_flavor/debug"' in body
     assert "find \"$apk_dir\" -type f -name '*.apk' -print0" in body
-    assert "unzip -Z1 \"$candidate\" | grep -Fxq 'lib/arm64-v8a/libffmpegJNI.so'" in body
+    assert "set -euo pipefail" in body
+    assert 'candidate_entries="$(unzip -Z1 "$candidate")"' in body
+    assert 'candidate_entries="$(unzip -Z1 "$candidate")" || continue' not in body
+    arm64_filter = "if ! grep -q '^lib/arm64-v8a/' <<< \"$candidate_entries\"; then"
+    wrapper_check = "if ! grep -Fxq 'lib/arm64-v8a/libffmpegJNI.so' <<< \"$candidate_entries\"; then"
+    assert arm64_filter in body
+    assert wrapper_check in body
+    missing_wrapper_start = body.index(wrapper_check)
+    missing_wrapper_end = body.index('echo "Verifying arm64 Media3 FFmpeg fallback', missing_wrapper_start)
+    missing_wrapper_block = body[missing_wrapper_start:missing_wrapper_end]
+    assert 'echo "arm64 APK lacks lib/arm64-v8a/libffmpegJNI.so: $candidate" >&2' in missing_wrapper_block
+    assert "exit 1" in missing_wrapper_block
+    assert body.index(arm64_filter) < missing_wrapper_start
+    assert missing_wrapper_start < body.index('python3 scripts/verify-media3-dca-apk.py "$candidate"')
     assert "while IFS= read -r -d '' candidate; do" in body
     assert "verified=$((verified + 1))" in body
     assert "(( verified > 0 ))" in body
