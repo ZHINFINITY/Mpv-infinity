@@ -361,7 +361,8 @@ jobs:
 
           verified=0
           while IFS= read -r -d '' candidate; do
-            if ! unzip -Z1 "$candidate" | grep -Fxq 'lib/arm64-v8a/libffmpegJNI.so'; then
+            candidate_entries="$(unzip -Z1 "$candidate")" || continue
+            if ! grep -Fxq 'lib/arm64-v8a/libffmpegJNI.so' <<< "$candidate_entries"; then
               continue
             fi
             echo "Verifying arm64 Media3 FFmpeg fallback in $candidate"
