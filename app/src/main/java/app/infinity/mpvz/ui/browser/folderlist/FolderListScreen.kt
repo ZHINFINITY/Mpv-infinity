@@ -197,8 +197,9 @@ object FolderListScreen : Screen {
     val advancedPreferences = koinInject<app.infinity.mpvz.preferences.AdvancedPreferences>()
     val appearancePreferences = koinInject<AppearancePreferences>()
     val showQuickPlayFabPreference by appearancePreferences.showQuickPlayFab.collectAsState()
-    val showQuickPlayFab = app.infinity.mpvz.ui.browser.fab.quickPlayFabAllowed(showQuickPlayFabPreference)
+    val showQuickPlayFab = showQuickPlayFabPreference
     val quickPlayFabDirect by appearancePreferences.quickPlayFabDirect.collectAsState()
+    val quickPlayFabDirectAllowed = app.infinity.mpvz.ui.browser.fab.quickPlayFabAllowed(showQuickPlayFabPreference)
     val liquidGlass by appearancePreferences.liquidGlassSurfaces.collectAsState()
 
     // State collection
@@ -357,7 +358,7 @@ object FolderListScreen : Screen {
     // FAB state
     val isFabVisible = remember { mutableStateOf(true) }
     val isFabExpanded = remember { mutableStateOf(false) }
-    app.infinity.mpvz.ui.browser.fab.QuickPlayMenuVisibilityEffect(showQuickPlayFab) { isFabExpanded.value = false }
+    app.infinity.mpvz.ui.browser.fab.QuickPlayMenuVisibilityEffect(showQuickPlayFab && !quickPlayFabDirect) { isFabExpanded.value = false }
 
     // File picker
     val filePicker =
@@ -789,6 +790,7 @@ object FolderListScreen : Screen {
         floatingActionButton = {
           val isFabShouldBeVisible =
             showQuickPlayFab &&
+              (!quickPlayFabDirect || quickPlayFabDirectAllowed) &&
               !selectionManager.isInSelectionMode &&
               isFabVisible.value &&
               !app.infinity.mpvz.ui.browser.MainScreen

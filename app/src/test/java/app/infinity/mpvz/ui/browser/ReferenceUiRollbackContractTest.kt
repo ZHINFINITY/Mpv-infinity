@@ -525,6 +525,12 @@ import android.graphics.Shader
     // keeps the bounded three-band lower-right exterior contact shadow (depth cue, no bitmap blur).
     assertTrue(current.contains("val minCornerRadiusPx = cornerRadius.toPx().coerceAtMost(size.minDimension / 2f)"))
     assertTrue(current.contains("refractionHeight = LensGlassPolicy.refractionHeightPx(24.dp.toPx(), minCornerRadiusPx, tuning.lensDepth)"))
+    assertTrue(current.contains("refractionAmount = LensGlassPolicy.refractionAmountPx(16.dp.toPx(), size.minDimension, tuning.lensRefraction)"))
+    val fixedRefraction =
+      "refractionAmount = LensGlassPolicy.refractionAmountPx(16.dp.toPx(), size.minDimension, tuning.lensRefraction)," to
+        "refractionAmount = LensGlassPolicy.refractionAmountPx(size.minDimension, size.minDimension, tuning.lensRefraction),"
+    assertEquals(1, restored.split(fixedRefraction.first).size - 1)
+    restored = restored.replace(fixedRefraction.first, fixedRefraction.second)
     assertEquals("01f65408e855f52c32f53739d1c461968c0be81f37d4cd4834fc8d0b86a20e66", sha(restored))
   }
   @Test fun glassChipAndPlayerControlsRespectAccessibilityMotion() {
@@ -561,7 +567,8 @@ import android.graphics.Shader
     // slop detector never started on the phone).
     // Owner follow-up: retain the normal 44dp selected outline/placement; the glass refraction
     // follows finger-driven drag motion without an elevated pop or altered tab hit targets.
-    assertEquals("555f92e1272db06d7ae9df41021a817c546cad73a9bbf6f03de981609b6ef1f1", sha(navigation.substring(start, end)))
+    // Integration follow-up: hold the final drag position until the pager and lens finish settling.
+    assertEquals("a78810e070b39255b66d4a0091936bdeff86910ada4a44f14f86a4ece99a6738", sha(navigation.substring(start, end)))
     val scene = read("app/src/main/java/app/infinity/mpvz/ui/theme/BrowserGlassScene.kt")
     val lensStart = scene.indexOf("internal const val BROWSER_LENS")
     val q = scene.indexOf("\"\"\"", lensStart)

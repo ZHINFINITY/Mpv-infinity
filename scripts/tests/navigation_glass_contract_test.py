@@ -29,7 +29,10 @@ class NavigationGlassContracts(unittest.TestCase):
                       ".height(44.dp)", "Modifier.navPillDragGesture("):
             self.assertIn(token, source)
         self.assertNotIn("lensPop", source)
-        self.assertNotIn("isScrollInProgress", source)
+        spring = source.split("LaunchedEffect(targetIndex, fingerDragging", 1)[1].split(
+            "LaunchedEffect(retainedFinalDragTarget", 1)[0]
+        self.assertNotIn("isScrollInProgress", spring)
+        self.assertIn("!pager.isScrollInProgress", source)
         for forbidden in ("while (", "rememberInfiniteTransition", "withFrameNanos", "PixelCopy"):
             self.assertNotIn(forbidden, source)
 

@@ -561,7 +561,7 @@ fun Modifier.liquidGlassPane(
           val minCornerRadiusPx = cornerRadius.toPx().coerceAtMost(size.minDimension / 2f)
           lens(
             refractionHeight = LensGlassPolicy.refractionHeightPx(24.dp.toPx(), minCornerRadiusPx, tuning.lensDepth),
-            refractionAmount = LensGlassPolicy.refractionAmountPx(size.minDimension, size.minDimension, tuning.lensRefraction),
+            refractionAmount = LensGlassPolicy.refractionAmountPx(16.dp.toPx(), size.minDimension, tuning.lensRefraction),
             depthEffect = tuning.lensDepth > 0f,
             chromaticAberration = tuning.colourEdge,
           )

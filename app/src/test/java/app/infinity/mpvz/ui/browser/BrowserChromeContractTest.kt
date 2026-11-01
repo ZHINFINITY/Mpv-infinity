@@ -62,6 +62,45 @@ class BrowserChromeContractTest {
     assertTrue(filesystem.contains("\"∞\""))
     assertFalse(folder.contains("title = if (audiobookMode) \"Audiobooks\" else stringResource(app.infinity.mpvz.R.string.app_name)"))
   }
+
+  @Test
+  fun audioMiniPlayerUsesQueueArtistBeforeUnknownFallback() {
+    val source =
+      File(root, "app/src/main/java/app/infinity/mpvz/ui/browser/components/AudioMiniPlayer.kt")
+        .readText()
+    val artistStart = source.indexOf("val artist =")
+    val titleStart = source.indexOf("val title =", artistStart)
+    val artistExpression = source.substring(artistStart, titleStart)
+    assertTrue(artistExpression.indexOf("rawArtist") < artistExpression.indexOf("rawAlbum"))
+    assertTrue(artistExpression.indexOf("rawAlbum") < artistExpression.indexOf("sessionState.currentItem?.artist"))
+    assertTrue(artistExpression.indexOf("sessionState.currentItem?.artist") < artistExpression.indexOf("context.getString"))
+  }
+
+  @Test
+  fun directQuickPlayGateDoesNotHideNonDirectActionMenusWithMiniPlayer() {
+    val helper = File(root, "app/src/main/java/app/infinity/mpvz/ui/browser/fab/QuickPlayFab.kt").readText()
+    assertTrue(helper.contains("showPreferenceEnabled && !NavigationBarState.isMiniPlayerVisible"))
+    assertTrue(helper.contains("quickPlayFabAllowed(showQuickPlayFabPreference)"))
+    val screens =
+      listOf(
+        "ui/browser/filesystem/FileSystemBrowserScreen.kt",
+        "ui/browser/folderlist/FolderListScreen.kt",
+        "ui/browser/recentlyplayed/RecentlyPlayedScreen.kt",
+        "ui/browser/medialibrary/MediaLibraryContent.kt",
+        "ui/browser/jellyfin/JellyfinContent.kt",
+        "ui/browser/music/MusicLibraryContent.kt",
+      )
+    for (path in screens) {
+      val source = File(root, "app/src/main/java/app/infinity/mpvz/$path").readText()
+      assertTrue("preference-only menu visibility in $path", source.contains("val showQuickPlayFab = showQuickPlayFabPreference"))
+      assertTrue("separate direct guard in $path", source.contains("quickPlayFabAllowed(showQuickPlayFabPreference)"))
+      assertTrue("non-direct menu remains open in $path", source.contains("QuickPlayMenuVisibilityEffect(showQuickPlayFab && !quickPlayFabDirect)"))
+      assertTrue("direct Quick Play remains mini-player-gated in $path", source.contains("(!quickPlayFabDirect || quickPlayFabDirectAllowed)"))
+    }
+    val music = File(root, "app/src/main/java/app/infinity/mpvz/ui/browser/music/MusicLibraryContent.kt").readText()
+    assertTrue("Playlists FAB remains independent", music.contains("visible = isPlaylistFabShouldBeVisible"))
+  }
+
   @Test
   fun settingsTopBarsAreEdgeToEdgeWhenGlassIsEnabled() {
     val source =

@@ -78,7 +78,11 @@ fun AudioMiniPlayer(modifier: Modifier = Modifier) {
   if (!isServiceRunning || sessionState.currentItem == null) return
 
   val isPlaying = paused == false
-  val artist = rawArtist?.takeIf { it.isNotBlank() } ?: rawAlbum?.takeIf { it.isNotBlank() } ?: context.getString(R.string.mini_player_unknown_artist)
+  val artist =
+    rawArtist?.takeIf { it.isNotBlank() }
+      ?: rawAlbum?.takeIf { it.isNotBlank() }
+      ?: sessionState.currentItem?.artist?.takeIf { it.isNotBlank() }
+      ?: context.getString(R.string.mini_player_unknown_artist)
   val title =
     sessionState.currentItem?.title?.takeIf { it.isNotBlank() }
       ?: rawMediaTitle?.takeIf { it.isNotBlank() }

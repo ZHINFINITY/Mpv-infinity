@@ -46,8 +46,6 @@ fun SliderItem(
   enabled: Boolean = true,
   icon: @Composable () -> Unit = {},
 ) {
-  val haptic = LocalHapticFeedback.current
-
   Row(
     modifier =
       modifier
@@ -82,7 +80,6 @@ fun SliderItem(
           val newValue = it.roundToInt()
           if (newValue != value) {
             onChange(newValue)
-            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
           }
         },
         modifier = Modifier.fillMaxWidth(),
@@ -107,8 +104,6 @@ fun SliderItem(
   enabled: Boolean = true,
   icon: @Composable () -> Unit = {},
 ) {
-  val haptic = LocalHapticFeedback.current
-
   Row(
     modifier =
       modifier
@@ -143,7 +138,6 @@ fun SliderItem(
           val newValue = it
           if (newValue != value) {
             onChange(newValue)
-            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
           }
         },
         modifier = Modifier.fillMaxWidth(),

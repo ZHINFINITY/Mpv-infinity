@@ -45,7 +45,8 @@ class BrowserMaterialParityContractTest {
     assertTrue(pane.contains("GlassSurfacePolicy.browserPopupFrostDp(tuning.frost)"))
     assertTrue(pane.contains("GlassSurfacePolicy.navigationFrostDp(tuning.frost"))
     assertTrue(pane.contains("val blurFallback = if (Build.VERSION.SDK_INT >= 31 && scene != null && blurDp > 0f)"))
-    assertTrue(pane.contains("lens.renderEffect = lensHandle?.updateMotion(deformation.coerceIn(0f, 1f)) ?: blurFallback"))
+    assertTrue(pane.contains("val effect = updatedEffect ?: blurFallback"))
+    assertTrue(pane.contains("if (lens.renderEffect !== effect) lens.renderEffect = effect"))
     val dispatch = source("LiquidGlassBackdrop").substringAfter("if (backdrop == null && hasBrowserGlassScene()) {").substringBefore("val tint =")
     assertTrue("Do not add a second frame to borderless controls", dispatch.contains("drawRim = drawRim"))
   }
@@ -87,7 +88,11 @@ class BrowserMaterialParityContractTest {
     val liquid = source("LiquidGlassBackdrop")
     assertTrue(liquid.contains("cornerRadius.toPx().coerceAtMost(size.minDimension / 2f)"))
     assertTrue(liquid.contains("LensGlassPolicy.refractionHeightPx(24.dp.toPx(), minCornerRadiusPx, tuning.lensDepth)"))
+    assertTrue(liquid.contains("LensGlassPolicy.refractionAmountPx(16.dp.toPx(), size.minDimension, tuning.lensRefraction)"))
     assertEquals(16f, LensGlassPolicy.refractionHeightPx(24f, 16f, 1f), 0.001f)
+    assertEquals(16f, LensGlassPolicy.refractionAmountPx(16f, 100f, 1f), 0.001f)
+    assertEquals(10f, LensGlassPolicy.refractionAmountPx(16f, 10f, 1f), 0.001f)
+    assertEquals(32f, LensGlassPolicy.refractionAmountPx(16f, 100f, 2f), 0.001f)
   }
 
   @Test fun visibleStaticDepthDoesNotDependOnSuccessfulGpuRefraction() {

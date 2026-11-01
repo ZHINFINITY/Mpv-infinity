@@ -146,14 +146,15 @@ object RecentlyPlayedScreen : Screen {
     val appearancePreferences = koinInject<AppearancePreferences>()
     val enableRecentlyPlayed by advancedPreferences.enableRecentlyPlayed.collectAsState()
     val showQuickPlayFabPreference by appearancePreferences.showQuickPlayFab.collectAsState()
-    val showQuickPlayFab = app.infinity.mpvz.ui.browser.fab.quickPlayFabAllowed(showQuickPlayFabPreference)
+    val showQuickPlayFab = showQuickPlayFabPreference
     val quickPlayFabDirect by appearancePreferences.quickPlayFabDirect.collectAsState()
+    val quickPlayFabDirectAllowed = app.infinity.mpvz.ui.browser.fab.quickPlayFabAllowed(showQuickPlayFabPreference)
     val navigationBarHeight = app.infinity.mpvz.ui.browser.LocalNavigationBarHeight.current
 
     // FAB visibility for scroll-based hiding
     val isFabVisible = remember { mutableStateOf(true) }
     val isFabExpanded = remember { mutableStateOf(false) }
-    app.infinity.mpvz.ui.browser.fab.QuickPlayMenuVisibilityEffect(showQuickPlayFab) { isFabExpanded.value = false }
+    app.infinity.mpvz.ui.browser.fab.QuickPlayMenuVisibilityEffect(showQuickPlayFab && !quickPlayFabDirect) { isFabExpanded.value = false }
     val showLinkDialog = remember { mutableStateOf(false) }
 
     val coroutineScope = rememberCoroutineScope()
@@ -283,7 +284,11 @@ object RecentlyPlayedScreen : Screen {
       },
       floatingActionButton = {
         val isFabShouldBeVisible =
-          showQuickPlayFab && !selectionManager.isInSelectionMode && isFabVisible.value && filteredRecentItems.isNotEmpty()
+          showQuickPlayFab &&
+            (!quickPlayFabDirect || quickPlayFabDirectAllowed) &&
+            !selectionManager.isInSelectionMode &&
+            isFabVisible.value &&
+            filteredRecentItems.isNotEmpty()
 
         FloatingActionButtonMenu(
           modifier =

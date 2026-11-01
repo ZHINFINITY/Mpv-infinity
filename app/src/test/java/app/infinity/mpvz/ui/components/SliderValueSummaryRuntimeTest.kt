@@ -3,6 +3,7 @@ package app.infinity.mpvz.ui.components
 
 import android.app.Application
 import androidx.compose.foundation.layout.width
+import java.io.File
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.mutableFloatStateOf
@@ -14,6 +15,7 @@ import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.unit.dp
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -26,6 +28,9 @@ import org.robolectric.annotation.Config
 @Config(application = Application::class, sdk = [35])
 class SliderValueSummaryRuntimeTest {
   @get:Rule val compose = createComposeRule()
+  private val root =
+    generateSequence(File(System.getProperty("user.dir"))) { it.parentFile }
+      .first { File(it, "app/src/main/java/app/infinity/mpvz").isDirectory }
 
   @Test fun descriptionKeepsItsPositionAndWidthForEveryValue() {
     val value = mutableStateOf("0%")
@@ -68,5 +73,17 @@ class SliderValueSummaryRuntimeTest {
     val badgeWidth = compose.onNodeWithTag("slider_value_badge", useUnmergedTree = true)
       .fetchSemanticsNode().boundsInRoot.width
     assertTrue("current value must fit inside the measured badge", badgeWidth >= expectedBadgeWidthPx.floatValue - 0.5f)
+  }
+
+  @Test fun horizontalSliderItemsDoNotDuplicateGlassSliderTickHaptics() {
+    val sliderItem = File(root, "app/src/main/java/app/infinity/mpvz/presentation/components/SliderItem.kt").readText()
+    val horizontalSliders = sliderItem.substringAfter("fun SliderItem(").substringBefore("fun VerticalSliderItem(")
+    assertTrue(horizontalSliders.contains("GlassSlider("))
+    assertFalse(horizontalSliders.contains("LocalHapticFeedback.current"))
+    assertFalse(horizontalSliders.contains("HapticFeedbackType.TextHandleMove"))
+    val glassControls =
+      File(root, "app/src/main/java/app/infinity/mpvz/ui/player/controls/components/GlassControls.kt")
+        .readText()
+    assertTrue(glassControls.contains("HapticFeedbackType.SegmentFrequentTick"))
   }
 }

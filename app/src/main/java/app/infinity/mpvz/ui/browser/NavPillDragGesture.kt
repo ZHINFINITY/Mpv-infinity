@@ -32,7 +32,7 @@ internal fun Modifier.navPillDragGesture(
   scrollState: ScrollState? = null,
   onDragPosition: (Float?) -> Unit,
   onHoverChanged: (Int) -> Unit,
-  onRelease: (Int) -> Unit,
+  onRelease: (Int, Float) -> Unit,
 ): Modifier = pointerInput(tabCount, selectedIndex, isRtl) {
   awaitEachGesture {
     val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
@@ -120,7 +120,7 @@ internal fun Modifier.navPillDragGesture(
       if (released) {
         val target = NavPillDragPolicy.flingSnappedIndex(releasePosition, velocity, tabCount, isRtl)
         onHoverChanged(target)
-        onRelease(target)
+        onRelease(target, releasePosition)
       } else {
         onHoverChanged(selectedIndex)
       }

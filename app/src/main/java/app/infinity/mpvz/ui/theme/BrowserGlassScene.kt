@@ -526,7 +526,7 @@ internal fun Modifier.browserGlassPane(
   val floating = enabled && drawRim && !edgeBar
   var paneOrigin by remember { mutableStateOf(Offset.Zero) }
   // The navigation pill's RuntimeShaderSupport.browserLensEffectOrNull(...) path remains unchanged.
-  // This handle retains static geometry and refreshes only the lightweight effect chain per motion frame.
+  // This handle retains static geometry and refreshes the lightweight effect chain only when motion changes.
   // Edge bars never bend: the lens edge term would draw a bright line along the bar's bottom.
   val lens = rememberGraphicsLayer()
   return this
@@ -549,6 +549,8 @@ internal fun Modifier.browserGlassPane(
           RenderEffect.createBlurEffect(blurDp * density, blurDp * density, Shader.TileMode.CLAMP).asComposeRenderEffect()
         }.getOrNull() else null
         lens.renderEffect = lensHandle?.effect ?: blurFallback
+        var lastAppliedMotion: Float? = if (lensHandle?.effect != null) 0f else null
+        var lastAppliedEffect = lensHandle?.effect
         // Like the navigation pill, the refracted sample fully replaces what is behind the
         // pane, so content text under popups, menus and the selection pill never reads through.
         lens.alpha = 1f
@@ -565,7 +567,20 @@ internal fun Modifier.browserGlassPane(
           val hasScene = popupSceneReady && scene != null && bounds != null && bounds.width > 0f && bounds.height > 0f &&
             GlassScenePolicy.canDrawRecordedScene(scene.isRecording, scene.hasValidDisplayList)
           if (hasScene) {
-            lens.renderEffect = lensHandle?.updateMotion(deformation.coerceIn(0f, 1f)) ?: blurFallback
+            val motion = deformation.takeIf { it.isFinite() }?.coerceIn(0f, 1f) ?: 0f
+            val updatedEffect =
+              if (lensHandle == null) {
+                null
+              } else if (motion == lastAppliedMotion && lastAppliedEffect != null) {
+                lastAppliedEffect
+              } else {
+                lensHandle.updateMotion(motion)?.also { effect ->
+                  lastAppliedMotion = motion
+                  lastAppliedEffect = effect
+                }
+              }
+            val effect = updatedEffect ?: blurFallback
+            if (lens.renderEffect !== effect) lens.renderEffect = effect
             lens.record {
               clipRect {
                 translate(left = bounds!!.left - paneOrigin.x, top = bounds.top - paneOrigin.y) { drawLayer(scene!!.layer) }

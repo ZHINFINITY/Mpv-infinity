@@ -18,7 +18,15 @@ class BrowserLensMotionCachePolicyTest {
     val browser = source("src/main/java/app/infinity/mpvz/ui/theme/BrowserGlassScene.kt")
     val pane = browser.substringAfter("internal fun Modifier.browserGlassPane(")
     assertTrue(pane.contains("browserLensHandleOrNull("))
-    assertTrue(pane.contains("lens.renderEffect = lensHandle?.updateMotion(deformation.coerceIn(0f, 1f)) ?: blurFallback"))
+    assertTrue(pane.contains("var lastAppliedMotion: Float? = if (lensHandle?.effect != null) 0f else null"))
+    assertTrue(pane.contains("var lastAppliedEffect = lensHandle?.effect"))
+    assertTrue(pane.contains("deformation.takeIf { it.isFinite() }?.coerceIn(0f, 1f) ?: 0f"))
+    assertTrue(pane.contains("motion == lastAppliedMotion && lastAppliedEffect != null"))
+    assertTrue(pane.contains("lensHandle.updateMotion(motion)?.also { effect ->"))
+    assertTrue(pane.contains("lastAppliedMotion = motion"))
+    assertTrue(pane.contains("lastAppliedEffect = effect"))
+    assertTrue(pane.contains("val effect = updatedEffect ?: blurFallback"))
+    assertTrue(pane.contains("if (lens.renderEffect !== effect) lens.renderEffect = effect"))
     assertFalse(pane.contains("browserLensEffectOrNull(\n          paneWidth"))
   }
 

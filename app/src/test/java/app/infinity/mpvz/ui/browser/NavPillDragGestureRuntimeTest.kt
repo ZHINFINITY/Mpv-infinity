@@ -39,6 +39,7 @@ class NavPillDragGestureRuntimeTest {
 
   private val clicks = mutableStateListOf<Int>()
   private val releases = mutableStateListOf<Int>()
+  private val releasePositions = mutableStateListOf<Float>()
   private val positions = mutableStateListOf<Float?>()
 
   @Composable
@@ -56,7 +57,10 @@ class NavPillDragGestureRuntimeTest {
           tabCenters = { centers },
           onDragPosition = { positions += it },
           onHoverChanged = {},
-          onRelease = { releases += it },
+          onRelease = { target, releasePosition ->
+            releases += target
+            releasePositions += releasePosition
+          },
         )
         .horizontalScroll(rememberScrollState()),
     ) {
@@ -75,6 +79,7 @@ class NavPillDragGestureRuntimeTest {
     }
     composeRule.waitForIdle()
     assertEquals(listOf(2), releases.toList())
+    assertTrue("release reports the final finger position", releasePositions.single() > 1f)
     assertTrue("a drag must not also click a tab", clicks.isEmpty())
     assertTrue("the lens must follow the finger", positions.filterNotNull().any { it > 1f })
     assertEquals("drag state is cleared on release", null, positions.last())
