@@ -19,8 +19,12 @@ class BrowserMaterialParityContractTest {
     val scene = source("BrowserGlassScene")
     val pane = scene.substring(scene.indexOf("internal fun Modifier.browserGlassPane("), scene.indexOf("private fun windowScreenOffset"))
     val nav = scene.substring(scene.indexOf("fun BrowserGlassSurface("), scene.indexOf("/** The shared pane path"))
-    // Same lens shader, sheen, rim and film as the navigation pill (owner's reference look).
-    for (token in listOf("RuntimeShaderSupport.browserLensEffectOrNull(", "film * (if (selected) 0.24f else 0.20f)",
+    // Each pane keeps its own lens handle while matching the navigation pill's material.
+    assertTrue("browser pane must use its per-pane lens handle",
+      pane.contains("RuntimeShaderSupport.browserLensHandleOrNull("))
+    assertTrue("nav pill reference changed: RuntimeShaderSupport.browserLensEffectOrNull(",
+      nav.contains("RuntimeShaderSupport.browserLensEffectOrNull("))
+    for (token in listOf("film * (if (selected) 0.24f else 0.20f)",
       "Color.White.copy(alpha = 0.20f + glow * 0.65f)", "Color.White.copy(alpha = 0.10f + glow * 0.35f)",
       "0.06f + glow * 0.10f", "0.16f + glow * 0.24f", "(if (selected) 7.dp else 12.dp) * tuning.depth")) {
       assertTrue("browser pane must match nav pill: $token", pane.contains(token))
