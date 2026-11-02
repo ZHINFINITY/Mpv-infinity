@@ -409,12 +409,22 @@ class MiniPlayerHandoffAndResumeTest {
   @Test
   fun aReplacementSessionDuringStoppingGetsItsOwnClosePersistenceToken() {
     val marker = ClosedAudioSessionMarker()
-    val outgoing = item("outgoing-stopping")
+    val outgoing =
+      PlaybackItem.fromUri(
+        uri = "file:///outgoing-stopping.mp3",
+        stableId = "outgoing-stopping",
+        mimeType = "audio/mpeg",
+      )
     marker.mark(generation = 71L, currentItem = outgoing, positionSeconds = 19.0, paused = true)
     assertTrue(marker.beginClosePersistence(71L, outgoing))
     assertTrue(marker.isClosePersistencePending(71L, outgoing))
 
-    val incoming = item("incoming-stopping")
+    val incoming =
+      PlaybackItem.fromUri(
+        uri = "file:///incoming-stopping.mp3",
+        stableId = "incoming-stopping",
+        mimeType = "audio/mpeg",
+      )
     val incomingState = PlaybackSessionState(phase = PlaybackPhase.STOPPING, generation = 72L, currentItem = incoming)
     assertTrue(marker.resetForNewPlayback(incomingState, incoming.stableId, incoming.originalUri))
     assertFalse(marker.isClosePersistencePending(72L, incoming))
@@ -424,9 +434,23 @@ class MiniPlayerHandoffAndResumeTest {
     marker.finishClosePersistence(71L, outgoing)
     assertTrue("the old close completion must not clear the replacement close token", marker.isClosePersistencePending(72L, incoming))
     var staleCloseWrote = false
-    assertFalse(marker.persistIfCloseIsCurrent(71L, outgoing) { staleCloseWrote = true })
+    assertFalse(marker.persistIfCloseIsCurrent(71L, outgoing) { staleCloseWrote = true; false })
     assertFalse(staleCloseWrote)
-    assertTrue(marker.persistIfCloseIsCurrent(72L, incoming) {})
+    assertTrue(marker.persistIfCloseIsCurrent(72L, incoming) { true })
+  }
+
+  @Test
+  fun sameUriWithDifferentStableIdDoesNotReuseClosedMarker() {
+    val outgoing = PlaybackItem.fromUri(uri = "file:///same.mp3", stableId = "outgoing", mimeType = "audio/mpeg")
+    val incoming = PlaybackItem.fromUri(uri = "file:///same.mp3", stableId = "incoming", mimeType = "audio/mpeg")
+    val marker = ClosedAudioSessionMarker()
+    marker.mark(generation = 81L, currentItem = outgoing, positionSeconds = 29.0, paused = true)
+    val incomingState = PlaybackSessionState(phase = PlaybackPhase.STOPPING, generation = 82L, currentItem = incoming)
+
+    assertFalse(marker.isCurrentClosedSession(82L, incoming))
+    assertNull(marker.snapshotFor(incoming))
+    assertTrue(marker.resetForNewPlayback(incomingState, incoming.stableId, incoming.originalUri))
+    assertNull(marker.snapshotFor(outgoing))
   }
 
   @Test
@@ -577,6 +601,38 @@ class AudioPlaybackResumeStorePersistenceTest {
   }
 
   @Test
+  fun activitySaveInvalidatesAnOlderQueuedServiceResumeWrite() {
+    val marker = ClosedAudioSessionMarker()
+    val outgoingItem = item("queued-service-old")
+    val incomingItem = item("activity-new")
+    val oldSequence = marker.reserveResumeSaveSequence()
+    val oldSession = PlaybackSessionState(phase = PlaybackPhase.READY, generation = 41L, currentItem = outgoingItem)
+    val incomingCapture =
+      PlaybackResumeStateCapture(
+        queueState = queue(listOf(incomingItem)),
+        sessionState = PlaybackSessionState(phase = PlaybackPhase.READY, generation = 42L, currentItem = incomingItem),
+        position = PlaybackResumePositionCapture(positionSeconds = 8.25, isKnown = true),
+        paused = false,
+      )
+
+    assertTrue(marker.persistActivitySnapshot(application, incomingCapture))
+    assertFalse(
+      marker.persistResumeSnapshotIfCurrent(
+        sessionState = oldSession,
+        currentItem = outgoingItem,
+        closedByUser = false,
+        resumeSaveSequence = oldSequence,
+      ) {
+        AudioPlaybackResumeStore.save(application, queue(listOf(outgoingItem)), 3.0, paused = false, closedByUser = false)
+      },
+    )
+
+    val restored = requireNotNull(AudioPlaybackResumeStore.load(application))
+    assertEquals("activity-new", restored.queueState.currentItem?.stableId)
+    assertEquals(8.25, restored.positionSeconds, 0.0)
+  }
+
+  @Test
   fun activityResetAndSaveCannotBeOvertakenByAnOlderClosedSnapshotWrite() {
     val marker = ClosedAudioSessionMarker()
     val outgoingItem = item("close-race-old")
@@ -592,15 +648,15 @@ class AudioPlaybackResumeStorePersistenceTest {
           marker.persistIfCloseIsCurrent(81L, outgoingItem) {
             closeEntered.countDown()
             assertTrue(releaseClose.await(3, TimeUnit.SECONDS))
-            assertTrue(
-              AudioPlaybackResumeStore.save(
-                application,
-                queue(listOf(outgoingItem)),
-                22.0,
-                paused = true,
-                closedByUser = true,
-              ),
+            val committed = AudioPlaybackResumeStore.save(
+              application,
+              queue(listOf(outgoingItem)),
+              22.0,
+              paused = true,
+              closedByUser = true,
             )
+            assertTrue(committed)
+            committed
           },
         )
       } catch (error: Throwable) {
@@ -849,7 +905,7 @@ class AudioPlaybackResumeStorePersistenceTest {
     var activeQueue = queue(listOf(item("closed")))
     var saveSucceeded = false
 
-    runBlocking {
+    val persisted = runBlocking {
       persistBeforePlaybackTeardown(
         persist = {
           saveSucceeded = AudioPlaybackResumeStore.save(
@@ -859,17 +915,39 @@ class AudioPlaybackResumeStorePersistenceTest {
             paused = true,
             closedByUser = true,
           )
+          saveSucceeded
         },
         teardown = { activeQueue = queue(emptyList()) },
       )
     }
 
+    assertTrue(persisted)
     assertTrue(saveSucceeded)
     assertNull(activeQueue.currentItem)
     val restored = AudioPlaybackResumeStore.load(application)
     assertNotNull(restored)
     assertTrue(restored!!.closedByUser)
     assertEquals("closed", restored.queueState.currentItem?.stableId)
+  }
+
+  @Test
+  fun failedCloseSnapshotDoesNotClearThePlaybackQueue() {
+    var activeQueue = queue(listOf(item("retry-close")))
+    var teardownCalled = false
+
+    val persisted = runBlocking {
+      persistBeforePlaybackTeardown(
+        persist = { false },
+        teardown = {
+          teardownCalled = true
+          activeQueue = queue(emptyList())
+        },
+      )
+    }
+
+    assertFalse(persisted)
+    assertFalse(teardownCalled)
+    assertEquals("retry-close", activeQueue.currentItem?.stableId)
   }
 
   @Test
