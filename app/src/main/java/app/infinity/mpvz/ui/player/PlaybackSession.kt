@@ -1065,7 +1065,7 @@ object PlaybackSession : MPVLib.EventObserver {
     }
 
   /** Captures the queue identity and resume position under the replacement-load lock. */
-  fun captureResumeState(
+  internal fun captureResumeState(
     fallbackPositionSeconds: Double,
     allowNativePropertyReads: Boolean = true,
   ): PlaybackResumeStateCapture =
