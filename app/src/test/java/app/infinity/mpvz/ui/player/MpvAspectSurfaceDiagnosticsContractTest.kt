@@ -77,7 +77,7 @@ class MpvAspectSurfaceDiagnosticsContractTest {
     assertTrue(nextSuspension > aspectRestore)
     assertTrue(loadVideoPlaybackState.contains("hasSavedState = state != null"))
     assertTrue(loadVideoPlaybackState.contains("rememberVideoAspectPerVideo = playerPreferences.rememberVideoAspectPerVideo.get()"))
-    assertTrue(loadVideoPlaybackState.contains("loadGenerationIsCurrent = { PlaybackSession.isCurrentGeneration(loadGeneration) }"))
+    assertTrue(loadVideoPlaybackState.contains("loadGenerationIsCurrent = { shouldApplyMpvAspectRestoreForLoad(loadGeneration) }"))
     assertFalse(applyPlaybackState.contains("restoreVideoAspect("))
   }
 
@@ -142,5 +142,12 @@ class MpvAspectSurfaceDiagnosticsContractTest {
     assertTrue(activity.contains("if (shouldApplyMpvAspectRestoreForLoad(loadGeneration))"))
     assertTrue(nativeRestore.contains("shouldApplyAspectRestoreForLoad("))
     assertTrue(nativeRestore.contains("aspectChangeIntent.mediaRequestGeneration == requestGeneration"))
+    val aspectCallback = activity.substringAfter("override fun onVideoAspectChanged() {")
+      .substringBefore("private var interpolationControlRequestGeneration")
+    val viewModel = source("ui/player/PlayerViewModel.kt")
+    val customAspect = viewModel.substringAfter("fun setCustomAspectRatio(")
+      .substringBefore("fun restoreSavedVideoAspect(")
+    assertTrue(aspectCallback.contains("noteUserAspectChange()"))
+    assertTrue(customAspect.contains("host.onVideoAspectChanged()"))
   }
 }

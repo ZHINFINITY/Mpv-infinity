@@ -5155,7 +5155,10 @@ class PlayerViewModel(
       host.nativeSetCustomAspectRatio(ratio)
       if (persistGlobal) playerPreferences.lastCustomAspectRatio.set(ratio.toFloat())
       _currentAspectRatio.value = ratio
-      if (showUpdate) playerUpdate.value = PlayerUpdates.AspectRatio
+      if (showUpdate) {
+        playerUpdate.value = PlayerUpdates.AspectRatio
+        host.onVideoAspectChanged()
+      }
       return
     }
     if (MpvConfigOverridePolicy.ownsAny(MpvConfigControlledFeatures.VIDEO_ASPECT)) return

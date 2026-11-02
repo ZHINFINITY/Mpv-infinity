@@ -713,6 +713,7 @@ class PlayerActivity :
   }
 
   override fun onVideoAspectChanged() {
+    noteUserAspectChange()
     if (!BuildConfig.DEBUG || isNativeEngineActive()) return
     val surface = binding.player
     val valid = runCatching { surface.holder.surface.isValid }.getOrDefault(false)

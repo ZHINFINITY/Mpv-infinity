@@ -100,7 +100,6 @@ fun PlayerSheets(
   nativeSnapshot: NativePlaybackSnapshot = NativePlaybackSnapshot(),
   onDisableNativeSubtitles: () -> Unit = {},
   onDismissRequest: () -> Unit,
-  onUserAspectChange: () -> Unit = {},
 ) {
   val advancedPreferences = koinInject<AdvancedPreferences>()
   val storedConfigOverrides by advancedPreferences.mpvConfOverrides.collectAsState()
@@ -487,7 +486,6 @@ fun PlayerSheets(
         autoCropControlEnabled = MpvConfigControlledFeatures.AUTO_CROP.none(configOwnedOptions::contains),
         onAutoCropChanged = viewModel::setAutoCropBlackBars,
         onSelectRatio = { ratio ->
-          onUserAspectChange()
           if (ratio < 0) {
             // Default selected - apply Fit mode
             viewModel.changeVideoAspect(app.infinity.mpvz.ui.player.VideoAspect.Fit)
@@ -498,7 +496,6 @@ fun PlayerSheets(
         },
         onAddCustomRatio = { label, ratio ->
           playerPreferences.customAspectRatios.set(customRatiosSet + "$label|$ratio")
-          onUserAspectChange()
           viewModel.setCustomAspectRatio(ratio)
         },
         onDeleteCustomRatio = { ratio ->
@@ -506,7 +503,6 @@ fun PlayerSheets(
           playerPreferences.customAspectRatios.set(customRatiosSet - toRemove)
           // If the deleted ratio is currently active, reset to default (Fit)
           if (kotlin.math.abs(currentRatio - ratio.ratio) < 0.01) {
-            onUserAspectChange()
             viewModel.changeVideoAspect(app.infinity.mpvz.ui.player.VideoAspect.Fit)
           }
         },
