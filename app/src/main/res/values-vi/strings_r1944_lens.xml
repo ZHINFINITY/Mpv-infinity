@@ -1,8 +1,8 @@
 <resources>
-    <string name="pref_glass_lens_refraction">Refraction</string>
-    <string name="pref_glass_lens_refraction_summary">Lens bending strength</string>
-    <string name="pref_glass_lens_depth">Lens depth</string>
-    <string name="pref_glass_lens_depth_summary">Magnification thickness</string>
-    <string name="pref_glass_colour_edge">Colour edge</string>
-    <string name="pref_glass_colour_edge_summary">Show a subtle chromatic lens edge</string>
+    <string name="pref_glass_lens_refraction">Khúc xạ</string>
+    <string name="pref_glass_lens_refraction_summary">Độ mạnh uốn cong của thấu kính</string>
+    <string name="pref_glass_lens_depth">Độ sâu thấu kính</string>
+    <string name="pref_glass_lens_depth_summary">Độ dày phóng đại</string>
+    <string name="pref_glass_colour_edge">Viền màu</string>
+    <string name="pref_glass_colour_edge_summary">Hiển thị viền màu tinh tế của thấu kính</string>
 </resources>

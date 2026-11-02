@@ -1,8 +1,8 @@
 <resources>
-    <string name="pref_glass_lens_refraction">Refraction</string>
-    <string name="pref_glass_lens_refraction_summary">Lens bending strength</string>
-    <string name="pref_glass_lens_depth">Lens depth</string>
-    <string name="pref_glass_lens_depth_summary">Magnification thickness</string>
-    <string name="pref_glass_colour_edge">Colour edge</string>
-    <string name="pref_glass_colour_edge_summary">Show a subtle chromatic lens edge</string>
+    <string name="pref_glass_lens_refraction">屈折</string>
+    <string name="pref_glass_lens_refraction_summary">レンズの屈折強度</string>
+    <string name="pref_glass_lens_depth">レンズの深さ</string>
+    <string name="pref_glass_lens_depth_summary">拡大効果の厚み</string>
+    <string name="pref_glass_colour_edge">色収差エッジ</string>
+    <string name="pref_glass_colour_edge_summary">さりげない色収差のレンズエッジを表示</string>
 </resources>

@@ -40,8 +40,10 @@ class DetachedPlaybackBackgroundSettingWiringTest {
     val stopped = body(source("app/infinity/mpvz/App.kt"), "override fun onActivityStopped(activity: Activity)")
     val guard = stopped.indexOf("startedActivityCount == 0 && !activity.isChangingConfigurations")
     val hook = stopped.indexOf("MediaPlaybackService.onAppBackgrounded()")
+    val blockEnd = stopped.indexOf("\n    }", guard)
     assertTrue("app-leave guard missing", guard >= 0)
-    assertTrue("service-owned playback must be handled when the app is left", hook > guard)
+    assertTrue("app-leave guard block missing", blockEnd > guard)
+    assertTrue("service-owned playback must be handled when the app is left", hook > guard && hook < blockEnd)
   }
 
   @Test

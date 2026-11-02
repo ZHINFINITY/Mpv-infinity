@@ -67,7 +67,11 @@ class GlassInteractionContractTest {
     // Regression: the fallback branch once returned the bare Modifier companion, silently
     // dropping every caller modifier (test tags, clip, glass surface) on non-refraction paths.
     val ripple = controls.substringAfter("fun Modifier.glassWaterRipple(").substringBefore("private object GlassWaterRippleEffects")
-    assertTrue(!Regex("else \\{\\s*(//[^\\n]*\\s*)*Modifier\\s*\\}").containsMatchIn(ripple))
+    val bareCompanionFallback = Regex("else\\s*(?:Modifier\\b|\\{\\s*(?://[^\\n]*\\s*)*Modifier\\s*\\})")
+    assertTrue(!bareCompanionFallback.containsMatchIn(ripple))
+    assertTrue(bareCompanionFallback.containsMatchIn("else Modifier"))
+    assertTrue(bareCompanionFallback.containsMatchIn("else { // comment\\n Modifier }"))
+    assertTrue(!bareCompanionFallback.containsMatchIn("else { this }"))
     assertTrue(ripple.contains("return refractive.drawWithCache"))
     // No frame polling loops; one Animatable drives the wave and a new press restarts it.
     assertTrue(!controls.contains("withFrameNanos"))

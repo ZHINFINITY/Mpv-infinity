@@ -85,8 +85,16 @@ class VideoBackgroundResumeWiringTest {
       "restoreForegroundResumePositionIfNeeded()",
     )
     // MPV defers the rebuild until Android hands back a Surface (ColorOS black frame).
+    val surfaceReadyStart = activity.indexOf("player.onSurfaceReady = {")
+    assertTrue("missing player.onSurfaceReady callback", surfaceReadyStart >= 0)
+    val surfaceReadyEnd = activity.indexOf(
+      "\n    }\n\n    // NOW initialize MPV",
+      surfaceReadyStart,
+    )
+    assertTrue("unterminated player.onSurfaceReady callback", surfaceReadyEnd > surfaceReadyStart)
+    val surfaceReady = activity.substring(surfaceReadyStart, surfaceReadyEnd)
     assertInOrder(
-      activity,
+      surfaceReady,
       "player.onSurfaceReady = {",
       "if (pendingRendererRebuildAfterBackground) {",
       "rebuildRendererAfterLongBackground()",
@@ -314,6 +322,7 @@ class VideoBackgroundResumeWiringTest {
       conditionalStop,
       "nativeLock.withLock",
       "currentState.generation != expected.generation",
+      "return@withLock false",
       "beforeStop()",
       "stop(clearQueue = false)",
     )
@@ -327,9 +336,10 @@ class VideoBackgroundResumeWiringTest {
     )
     val systemStop = service.substringAfter("override fun onStop()")
       .substringBefore("override fun onSkipToNext()")
-    assertTrue(
-      systemStop.indexOf("userClosedSession = true") <
-        systemStop.indexOf("if (!canHandleTransportAction()) return"),
+    assertInOrder(
+      systemStop,
+      "markUserClosedSession()",
+      "if (!canHandleTransportAction()) return",
     )
   }
 }

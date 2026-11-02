@@ -1,8 +1,8 @@
 <resources>
-    <string name="pref_glass_lens_refraction">Refraction</string>
-    <string name="pref_glass_lens_refraction_summary">Lens bending strength</string>
-    <string name="pref_glass_lens_depth">Lens depth</string>
-    <string name="pref_glass_lens_depth_summary">Magnification thickness</string>
-    <string name="pref_glass_colour_edge">Colour edge</string>
-    <string name="pref_glass_colour_edge_summary">Show a subtle chromatic lens edge</string>
+    <string name="pref_glass_lens_refraction">شکست نور</string>
+    <string name="pref_glass_lens_refraction_summary">شدت خمیدگی لنز</string>
+    <string name="pref_glass_lens_depth">عمق لنز</string>
+    <string name="pref_glass_lens_depth_summary">ضخامت بزرگ‌نمایی</string>
+    <string name="pref_glass_colour_edge">لبهٔ رنگی</string>
+    <string name="pref_glass_colour_edge_summary">نمایش یک لبهٔ رنگی ظریف برای لنز</string>
 </resources>

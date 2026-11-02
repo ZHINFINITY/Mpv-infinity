@@ -1,8 +1,8 @@
 <resources>
-    <string name="pref_glass_lens_refraction">Refraction</string>
-    <string name="pref_glass_lens_refraction_summary">Lens bending strength</string>
-    <string name="pref_glass_lens_depth">Lens depth</string>
-    <string name="pref_glass_lens_depth_summary">Magnification thickness</string>
-    <string name="pref_glass_colour_edge">Colour edge</string>
-    <string name="pref_glass_colour_edge_summary">Show a subtle chromatic lens edge</string>
+    <string name="pref_glass_lens_refraction">अपवर्तन</string>
+    <string name="pref_glass_lens_refraction_summary">लेंस के मुड़ने की तीव्रता</string>
+    <string name="pref_glass_lens_depth">लेंस की गहराई</string>
+    <string name="pref_glass_lens_depth_summary">आवर्धन की मोटाई</string>
+    <string name="pref_glass_colour_edge">रंगीन किनारा</string>
+    <string name="pref_glass_colour_edge_summary">लेंस का हल्का क्रोमैटिक किनारा दिखाएँ</string>
 </resources>

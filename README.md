@@ -489,11 +489,11 @@ Signed GitHub releases are built by the **Make release** workflow (`.github/work
 Bump `versionName` and `releaseVersionCode` in `app/build.gradle.kts` through a pull request to `main`. Then either push a version tag:
 
 ```bash
-git tag -a v2.2.1 -m "Release version 2.2.1"
-git push origin v2.2.1
+git tag -a v2.2.3 -m "Release version 2.2.3"
+git push origin v2.2.3
 ```
 
-or run **Make release** from the Actions tab with `tag_name` (for example `v2.2.1`). Turn on `draft` to review the release and its APKs before publishing.
+or run **Make release** from the Actions tab with `tag_name` (for example `v2.2.3`). Turn on `draft` to review the release and its APKs before publishing.
 
 Preview releases use the **Make Pre Release** workflow with preview tags such as:
 

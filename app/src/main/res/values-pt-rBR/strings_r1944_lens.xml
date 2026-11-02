@@ -1,8 +1,8 @@
 <resources>
-    <string name="pref_glass_lens_refraction">Refraction</string>
-    <string name="pref_glass_lens_refraction_summary">Lens bending strength</string>
-    <string name="pref_glass_lens_depth">Lens depth</string>
-    <string name="pref_glass_lens_depth_summary">Magnification thickness</string>
-    <string name="pref_glass_colour_edge">Colour edge</string>
-    <string name="pref_glass_colour_edge_summary">Show a subtle chromatic lens edge</string>
+    <string name="pref_glass_lens_refraction">Refração</string>
+    <string name="pref_glass_lens_refraction_summary">Intensidade da curvatura da lente</string>
+    <string name="pref_glass_lens_depth">Profundidade da lente</string>
+    <string name="pref_glass_lens_depth_summary">Espessura da ampliação</string>
+    <string name="pref_glass_colour_edge">Borda de cor</string>
+    <string name="pref_glass_colour_edge_summary">Mostrar uma borda cromática sutil na lente</string>
 </resources>

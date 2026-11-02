@@ -1,8 +1,8 @@
 <resources>
-    <string name="pref_glass_lens_refraction">Refraction</string>
-    <string name="pref_glass_lens_refraction_summary">Lens bending strength</string>
-    <string name="pref_glass_lens_depth">Lens depth</string>
-    <string name="pref_glass_lens_depth_summary">Magnification thickness</string>
-    <string name="pref_glass_colour_edge">Colour edge</string>
-    <string name="pref_glass_colour_edge_summary">Show a subtle chromatic lens edge</string>
+    <string name="pref_glass_lens_refraction">折射</string>
+    <string name="pref_glass_lens_refraction_summary">镜片弯曲强度</string>
+    <string name="pref_glass_lens_depth">镜片深度</string>
+    <string name="pref_glass_lens_depth_summary">放大厚度</string>
+    <string name="pref_glass_colour_edge">色彩边缘</string>
+    <string name="pref_glass_colour_edge_summary">显示细微的镜片色差边缘</string>
 </resources>

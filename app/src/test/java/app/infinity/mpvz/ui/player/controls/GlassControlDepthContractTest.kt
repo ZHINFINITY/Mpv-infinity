@@ -50,6 +50,8 @@ class GlassControlDepthContractTest {
     val idle = GlassChipMaterial.fill(selected = false, enabled = true, accent = accent, onSurface = Color.White)
     val disabled = GlassChipMaterial.fill(selected = true, enabled = false, accent = accent, onSurface = Color.White)
     assertEquals(accent.red, selected.first().red, 0.001f)
+    assertEquals(accent.green, selected.first().green, 0.001f)
+    assertEquals(accent.blue, selected.first().blue, 0.001f)
     assertTrue(selected.first().alpha > idle.first().alpha)
     assertTrue(disabled.first().alpha < selected.first().alpha)
     assertTrue(idle.all { it.alpha > 0f })

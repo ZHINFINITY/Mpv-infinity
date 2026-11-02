@@ -1,16 +1,16 @@
 <resources>
-<string name="r1944_updates_title">Updates</string>
-<string name="r1944_auto_check_updates">Auto Check for Updates</string>
-<string name="r1944_check_on_startup">Check on startup</string>
-<string name="r1944_check_updates_now">Check for Updates Now</string>
-<string name="r1944_checking_updates">Checking for updates…</string>
-<string name="r1944_latest_version">Already using the latest version</string>
-<string name="r1944_update_available">A new update is available.</string>
-<string name="r1944_update_ready">The update is downloaded and ready to install.</string>
-<string name="r1944_update_error">Unable to check for updates. Check your network connection.</string>
-<string name="r1944_download_update">Download</string>
-<string name="r1944_install_update">Install</string>
-<string name="r1944_retry">Retry</string>
-<string name="r1944_cancel">Cancel</string>
-<string name="oss_backdrop_liquid_glass_description">Liquid Glass backdrop and frosted surface effects for Android.</string>
+<string name="r1944_updates_title">Actualizaciones</string>
+<string name="r1944_auto_check_updates">Buscar actualizaciones automáticamente</string>
+<string name="r1944_check_on_startup">Buscar actualizaciones al iniciar</string>
+<string name="r1944_check_updates_now">Buscar actualizaciones ahora</string>
+<string name="r1944_checking_updates">Buscando actualizaciones…</string>
+<string name="r1944_latest_version">Ya estás usando la última versión</string>
+<string name="r1944_update_available">Hay una nueva actualización disponible.</string>
+<string name="r1944_update_ready">La actualización se ha descargado y está lista para instalar.</string>
+<string name="r1944_update_error">No se pueden buscar actualizaciones. Comprueba tu conexión de red.</string>
+<string name="r1944_download_update">Descargar</string>
+<string name="r1944_install_update">Instalar</string>
+<string name="r1944_retry">Reintentar</string>
+<string name="r1944_cancel">Cancelar</string>
+<string name="oss_backdrop_liquid_glass_description">Efectos de fondo Liquid Glass y de superficie esmerilada para Android.</string>
 </resources>
