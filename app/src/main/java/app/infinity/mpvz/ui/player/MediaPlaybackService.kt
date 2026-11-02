@@ -74,6 +74,7 @@ import org.koin.core.component.KoinComponent
 import org.koin.core.component.inject
 import java.lang.ref.WeakReference
 import java.util.Locale
+import java.util.concurrent.locks.ReentrantLock
 import kotlin.math.abs
 import kotlin.math.ceil
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -119,6 +120,16 @@ internal class ClosedAudioSessionMarker {
   private var closePersistencePending = false
   private var pendingCloseSnapshot: ClosedAudioSessionSnapshot? = null
   private var latestResumeSaveSequence = 0L
+  private val resumePersistenceLock = ReentrantLock()
+
+  private fun <T> withResumePersistenceLock(block: () -> T): T {
+    resumePersistenceLock.lock()
+    return try {
+      block()
+    } finally {
+      resumePersistenceLock.unlock()
+    }
+  }
 
   @Synchronized
   fun reserveResumeSaveSequence(): Long {
@@ -257,51 +268,67 @@ internal class ClosedAudioSessionMarker {
     closePersistencePending = false
   }
 
-  @Synchronized
   fun persistIfCloseIsCurrent(
     generation: Long,
     currentItem: PlaybackItem?,
     persist: () -> Boolean,
-  ): Boolean {
-    if (!isClosePersistencePending(generation, currentItem)) return false
-    return persist()
-  }
+  ): Boolean =
+    withResumePersistenceLock {
+      if (!isClosePersistencePending(generation, currentItem)) return@withResumePersistenceLock false
+      val persisted = persist()
+      persisted && isClosePersistencePending(generation, currentItem)
+    }
 
-  @Synchronized
   fun persistResumeSnapshotIfCurrent(
     sessionState: PlaybackSessionState,
     currentItem: PlaybackItem?,
     closedByUser: Boolean,
     resumeSaveSequence: Long,
     persist: () -> Boolean,
-  ): Boolean {
-    if (resumeSaveSequence != latestResumeSaveSequence) return false
-    val markerApplies = appliesToCapture(closedSnapshot, sessionState, currentItem)
-    if (markerApplies != closedByUser) return false
-    return persist()
-  }
+  ): Boolean =
+    withResumePersistenceLock {
+      val canPersist = synchronized(this) {
+        resumeSaveSequence == latestResumeSaveSequence &&
+          appliesToCapture(closedSnapshot, sessionState, currentItem) == closedByUser
+      }
+      if (!canPersist) return@withResumePersistenceLock false
+      val persisted = persist()
+      persisted && synchronized(this) {
+        resumeSaveSequence == latestResumeSaveSequence &&
+          appliesToCapture(closedSnapshot, sessionState, currentItem) == closedByUser
+      }
+    }
 
-  @Synchronized
   fun persistActivitySnapshot(
     context: Context,
     playbackCapture: PlaybackResumeStateCapture,
-  ): Boolean {
-    val currentItem = playbackCapture.queueState.currentItem ?: run {
-      closedSnapshot = null
-      reserveResumeSaveSequence()
-      return false
+  ): Boolean =
+    withResumePersistenceLock {
+      val currentItem = playbackCapture.queueState.currentItem
+      if (currentItem == null) {
+        synchronized(this) {
+          closedSnapshot = null
+          reserveResumeSaveSequence()
+        }
+        return@withResumePersistenceLock false
+      }
+      val sessionState = playbackCapture.sessionState.copy(currentItem = currentItem)
+      var activitySaveSequence = 0L
+      val closedSnapshot = synchronized(this) {
+        resetForNewPlayback(sessionState, currentItem.stableId, currentItem.originalUri)
+        activitySaveSequence = reserveResumeSaveSequence()
+        snapshotForCapture(sessionState, currentItem)
+      }
+      val persisted =
+        persistAudioResumeSnapshotForActivity(
+          context = context,
+          playbackCapture = playbackCapture,
+          closedByUser = closedSnapshot != null,
+          closedSnapshot = closedSnapshot,
+        )
+      persisted && synchronized(this) { activitySaveSequence == latestResumeSaveSequence }
     }
-    val sessionState = playbackCapture.sessionState.copy(currentItem = currentItem)
-    resetForNewPlayback(sessionState, currentItem.stableId, currentItem.originalUri)
-    reserveResumeSaveSequence()
-    val closedSnapshot = snapshotForCapture(sessionState, currentItem)
-    return persistAudioResumeSnapshotForActivity(
-      context = context,
-      playbackCapture = playbackCapture,
-      closedByUser = closedSnapshot != null,
-      closedSnapshot = closedSnapshot,
-    )
-  }
+
 }
 
 internal fun shouldTransferPendingPlaybackStateSave(
@@ -344,6 +371,9 @@ internal suspend fun persistBeforePlaybackTeardown(
   return true
 }
 
+internal fun shouldMarkClosedAudioSession(currentItem: PlaybackItem?): Boolean =
+  currentItem?.isDefinitelyAudioOnly() == true
+
 internal fun shouldSkipSynchronousPlaybackStateSave(
   nativeRendererOwner: Boolean,
   identifier: String,
@@ -351,7 +381,7 @@ internal fun shouldSkipSynchronousPlaybackStateSave(
   currentItem: PlaybackItem?,
 ): Boolean =
   (nativeRendererOwner || identifier.isBlank()) &&
-    !(closedByUser && currentItem?.isDefinitelyAudioOnly() == true)
+    !(closedByUser && shouldMarkClosedAudioSession(currentItem))
 
 internal fun saveSynchronousAudioResumeSnapshotIfAllowed(
   context: Context,
@@ -462,7 +492,9 @@ class MediaPlaybackService :
 
     internal fun isAudioSessionClosedByUser(): Boolean {
       val playbackCapture = PlaybackSession.captureResumeState(fallbackPositionSeconds = 0.0, allowNativePropertyReads = false)
-      return closedAudioSessionMarker.isClosed(playbackCapture.sessionState, playbackCapture.queueState.currentItem)
+      val currentItem = playbackCapture.queueState.currentItem
+      if (!shouldMarkClosedAudioSession(currentItem)) return false
+      return closedAudioSessionMarker.isClosed(playbackCapture.sessionState, currentItem)
     }
 
     internal fun closedAudioSessionSnapshotFor(currentItem: PlaybackItem?): ClosedAudioSessionSnapshot? =
@@ -1165,6 +1197,7 @@ class MediaPlaybackService :
         allowNativePropertyReads = !isNativeRendererOwner(),
       )
     val currentItem = capture.queueState.currentItem
+    if (!shouldMarkClosedAudioSession(currentItem)) return
     if (closedAudioSessionMarker.isClosePersistencePending(capture.sessionState.generation, currentItem)) return
     closedAudioSessionMarker.mark(
       generation = capture.sessionState.generation,

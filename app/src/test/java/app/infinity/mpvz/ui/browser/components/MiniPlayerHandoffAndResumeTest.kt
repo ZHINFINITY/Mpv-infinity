@@ -23,6 +23,7 @@ import app.infinity.mpvz.ui.player.persistBeforePlaybackTeardown
 import app.infinity.mpvz.ui.player.resumePositionPhaseForSnapshot
 import app.infinity.mpvz.ui.player.saveSynchronousAudioResumeSnapshotIfAllowed
 import app.infinity.mpvz.ui.player.selectResumePositionForSnapshot
+import app.infinity.mpvz.ui.player.shouldMarkClosedAudioSession
 import app.infinity.mpvz.ui.player.shouldResetClosedAudioSessionForMetadata
 import app.infinity.mpvz.ui.player.shouldResetClosedAudioSessionForStartIntent
 import app.infinity.mpvz.ui.player.shouldSkipSynchronousPlaybackStateSave
@@ -201,12 +202,21 @@ class MiniPlayerHandoffAndResumeTest {
     val closeBranch = service.substringAfter("ACTION_NOTIFICATION_CLOSE,\n        ACTION_NOTIFICATION_STOP,").substringBefore("return START_NOT_STICKY")
     assertTrue("mini player X / notification close records the closed session", "markUserClosedSession()" in closeBranch)
     assertTrue(closeBranch.contains("stopPlaybackAndService(force = true)"))
+    val markerBody = service.substringAfter("private fun markUserClosedSession()")
+      .substringBefore("private fun resetUserClosedSessionForNewPlayback(")
+    assertTrue(markerBody.contains("if (!shouldMarkClosedAudioSession(currentItem)) return"))
     val closeStateGetter = service.substringAfter("internal fun isAudioSessionClosedByUser()")
       .substringBefore("internal fun closedAudioSessionSnapshotFor")
+    assertTrue(closeStateGetter.contains("if (!shouldMarkClosedAudioSession(currentItem)) return false"))
     assertTrue(closeStateGetter.contains("closedAudioSessionMarker.isClosed"))
     assertFalse(closeStateGetter.contains("activeInstance"))
     val newItemWiring = service.substringAfter("private fun applySessionItem(").substringBefore("val identity =")
     assertTrue(newItemWiring.contains("resetUserClosedSessionForNewPlayback("))
+
+    val closePersistMethod = service.substringAfter("fun persistIfCloseIsCurrent(")
+      .substringBefore("fun persistResumeSnapshotIfCurrent(")
+    assertTrue(closePersistMethod.contains("withResumePersistenceLock"))
+    assertFalse(closePersistMethod.contains("synchronized(this)"))
 
     val store = File(root, "app/src/main/java/app/infinity/mpvz/ui/player/AudioPlaybackResumeStore.kt").readText()
     assertTrue("""put("closedByUser", snapshot.closedByUser)""" in store)
@@ -286,6 +296,9 @@ class MiniPlayerHandoffAndResumeTest {
         currentItem = videoItem,
       ),
     )
+    assertTrue(shouldMarkClosedAudioSession(audioItem))
+    assertFalse(shouldMarkClosedAudioSession(videoItem))
+    assertFalse(shouldMarkClosedAudioSession(null))
   }
 
   @Test
@@ -666,6 +679,18 @@ class AudioPlaybackResumeStorePersistenceTest {
     closeThread.start()
     assertTrue(closeEntered.await(3, TimeUnit.SECONDS))
 
+    val markerReadStarted = CountDownLatch(1)
+    val markerReadFinished = CountDownLatch(1)
+    val markerReadResult = AtomicBoolean(false)
+    val markerReadThread = Thread {
+      markerReadStarted.countDown()
+      markerReadResult.set(marker.isClosePersistencePending(81L, outgoingItem))
+      markerReadFinished.countDown()
+    }
+    markerReadThread.start()
+    assertTrue(markerReadStarted.await(3, TimeUnit.SECONDS))
+    val markerReadReturnedBeforeRelease = markerReadFinished.await(1, TimeUnit.SECONDS)
+
     val incomingItem = item("close-race-new")
     val incomingCapture =
       PlaybackResumeStateCapture(
@@ -675,6 +700,7 @@ class AudioPlaybackResumeStorePersistenceTest {
         paused = false,
       )
     val activityStarted = CountDownLatch(1)
+    val activityFinished = CountDownLatch(1)
     val activityFailure = AtomicReference<Throwable?>(null)
     val activityResult = AtomicBoolean(false)
     val activityThread = Thread {
@@ -683,23 +709,26 @@ class AudioPlaybackResumeStorePersistenceTest {
         activityResult.set(marker.persistActivitySnapshot(application, incomingCapture))
       } catch (error: Throwable) {
         activityFailure.set(error)
+      } finally {
+        activityFinished.countDown()
       }
     }
     activityThread.start()
     assertTrue(activityStarted.await(3, TimeUnit.SECONDS))
-    val blockedDeadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(3)
-    while (activityThread.state != Thread.State.BLOCKED && activityThread.isAlive && System.nanoTime() < blockedDeadline) {
-      Thread.yield()
-    }
-    assertEquals("Activity reset/save waits until the current close write commits", Thread.State.BLOCKED, activityThread.state)
+    val activityReturnedBeforeRelease = activityFinished.await(100, TimeUnit.MILLISECONDS)
 
     releaseClose.countDown()
     closeThread.join(3_000)
     activityThread.join(3_000)
+    markerReadThread.join(3_000)
     assertFalse(closeThread.isAlive)
     assertFalse(activityThread.isAlive)
+    assertFalse(markerReadThread.isAlive)
     closeFailure.get()?.let { throw AssertionError("closed snapshot write failed", it) }
     activityFailure.get()?.let { throw AssertionError("Activity snapshot write failed", it) }
+    assertTrue("marker state queries do not wait for the store commit", markerReadReturnedBeforeRelease)
+    assertTrue(markerReadResult.get())
+    assertFalse("Activity writes remain ordered behind the in-flight close write", activityReturnedBeforeRelease)
     assertTrue(activityResult.get())
 
     val restored = requireNotNull(AudioPlaybackResumeStore.load(application))
