@@ -56,7 +56,11 @@ def main() -> None:
     require(native, "player.playWhenReady = state.playWhenReady", "prior Native play state restored")
     native_apply = native.split("suspend fun applyInterpolationRuntime", 1)[1].split("\n  /**", 1)[0]
     require(native_apply, "shouldReleaseFlowOutputSurfaceBeforeNativeRendererReselect(", "Flow-to-Native surface-release policy")
-    require(native_apply, "if (!flowSink.clearOutputSurfaceInfoAndAwait())", "abort renderer reselection when the EGL fence fails")
+    if not re.search(
+        r"if\s*\(\s*!withContext\(Dispatchers\.IO\)\s*\{\s*flowSink\.clearOutputSurfaceInfoAndAwait\(\)\s*\}\s*\)",
+        native_apply,
+    ):
+        raise SystemExit("missing abort renderer reselection when the EGL fence fails")
     release_index = native_apply.find("flowSink.clearOutputSurfaceInfoAndAwait()")
     reselect_index = native_apply.find("nativeTrackSelector.invalidateRendererEligibility()")
     if release_index < 0 or reselect_index < 0 or release_index >= reselect_index:

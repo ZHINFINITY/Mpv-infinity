@@ -112,6 +112,17 @@ class NativePlaybackControlContractTest(unittest.TestCase):
         self.assertIn('events.contains(Player.EVENT_TRACKS_CHANGED)', events)
         self.assertIn('publishSnapshot()', events)
 
+    def test_native_snapshot_collector_reselects_after_lazy_engine_build(self):
+        activity = (PLAYER / 'PlayerActivity.kt').read_text()
+        snapshot_marker = 'nativePlaybackSnapshot.collect { snapshot ->'
+        snapshot_start = activity.index(snapshot_marker)
+        selector_start = activity.rfind('nativeEngineBuilt.collectLatest {', 0, snapshot_start)
+        self.assertGreaterEqual(selector_start, 0)
+        collector_end = activity.index('setupSystemBarsAutoHide()', snapshot_start)
+        self.assertIn(snapshot_marker, activity[selector_start:collector_end])
+        # Do not suspend this observer on music sessions that never construct Native.
+        self.assertNotIn('nativeEngineBuilt.first { it }', activity[selector_start:snapshot_start])
+
 
 if __name__ == '__main__':
     unittest.main()

@@ -149,6 +149,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.drop
@@ -2020,41 +2021,45 @@ class PlayerActivity :
     }
     lifecycleScope.launch {
       repeatOnLifecycle(Lifecycle.State.STARTED) {
-        nativePlaybackSnapshot.collect { snapshot ->
-          viewModel.setNativeTracks(snapshot)
-          val keepNativeScreenOn = snapshot.isPlaying || playerPreferences.keepScreenOnWhenPaused.get()
-          binding.media3Player.keepScreenOn = keepNativeScreenOn
-          if (keepNativeScreenOn) {
-            window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-          } else if (isNativeEngineActive()) {
-            window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-          }
-          if (!snapshot.isEnded) {
-            nativeEofHandled = false
-          } else if (isNativeEngineActive() && !nativeEofHandled) {
-            nativeEofHandled = true
-            handleEndOfFile(
-              isEof = true,
-              nativeDurationSecs = (snapshot.durationMs / 1000L).toInt(),
-              nativePositionSecs = (snapshot.positionMs / 1000L).toInt(),
-            )
-          }
-          if (!hasManualOrientationOverride() &&
-            playerPreferences.orientation.get() == PlayerOrientation.Video &&
-            snapshot.videoWidth > 0 && snapshot.videoHeight > 0
-          ) {
-            // Album-art still reports a video size. Music must not inherit landscape
-            // from the previous video or from square cover art.
-            if (viewModel.isAudioOnly.value || isCurrentMediaKnownAudio() || isKnownAudioLaunch(intent)) {
-              setOrientation()
-            } else {
-            val targetOrientation =
-              if (snapshot.videoWidth > snapshot.videoHeight) {
-                ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+        // This getter selects the idle flow until lazy Native construction. Re-evaluate it when
+        // the engine is built so this collector switches without stalling audio-only sessions.
+        nativeEngineBuilt.collectLatest {
+          nativePlaybackSnapshot.collect { snapshot ->
+            viewModel.setNativeTracks(snapshot)
+            val keepNativeScreenOn = snapshot.isPlaying || playerPreferences.keepScreenOnWhenPaused.get()
+            binding.media3Player.keepScreenOn = keepNativeScreenOn
+            if (keepNativeScreenOn) {
+              window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+            } else if (isNativeEngineActive()) {
+              window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+            }
+            if (!snapshot.isEnded) {
+              nativeEofHandled = false
+            } else if (isNativeEngineActive() && !nativeEofHandled) {
+              nativeEofHandled = true
+              handleEndOfFile(
+                isEof = true,
+                nativeDurationSecs = (snapshot.durationMs / 1000L).toInt(),
+                nativePositionSecs = (snapshot.positionMs / 1000L).toInt(),
+              )
+            }
+            if (!hasManualOrientationOverride() &&
+              playerPreferences.orientation.get() == PlayerOrientation.Video &&
+              snapshot.videoWidth > 0 && snapshot.videoHeight > 0
+            ) {
+              // Album-art still reports a video size. Music must not inherit landscape
+              // from the previous video or from square cover art.
+              if (viewModel.isAudioOnly.value || isCurrentMediaKnownAudio() || isKnownAudioLaunch(intent)) {
+                setOrientation()
               } else {
-                ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT
+                val targetOrientation =
+                  if (snapshot.videoWidth > snapshot.videoHeight) {
+                    ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+                  } else {
+                    ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT
+                  }
+                if (requestedOrientation != targetOrientation) requestedOrientation = targetOrientation
               }
-            if (requestedOrientation != targetOrientation) requestedOrientation = targetOrientation
             }
           }
         }
