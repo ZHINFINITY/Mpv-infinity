@@ -75,9 +75,9 @@ class NavigationGlassContracts(unittest.TestCase):
         self.assertIn("drawLayer(scene!!.layer)", source)
         self.assertIn("film * (if (selected) 0.24f else 0.20f)", source)
         self.assertNotIn("browserGlassPane(enabled", source)
-        # Every other browser pane now reuses the nav pill reference lens and film.
+        # Browser panes share the nav pill material while keeping independent lens handles.
         pane = renderer.split("internal fun Modifier.browserGlassPane(", 1)[1].split("private fun windowScreenOffset", 1)[0]
-        self.assertIn("RuntimeShaderSupport.browserLensEffectOrNull(", pane)
+        self.assertIn("RuntimeShaderSupport.browserLensHandleOrNull(", pane)
         self.assertIn("val blurFallback = if (Build.VERSION.SDK_INT >= 31 && scene != null && blurDp > 0f)", pane)
         self.assertIn("lens.renderEffect = lensHandle?.effect ?: blurFallback", pane)
         self.assertNotIn("RuntimeShader(", pane)

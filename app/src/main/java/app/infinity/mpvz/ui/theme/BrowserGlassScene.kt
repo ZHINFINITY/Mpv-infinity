@@ -525,7 +525,7 @@ internal fun Modifier.browserGlassPane(
     else GlassSurfacePolicy.navigationFrostDp(tuning.frost, refraction = capabilities.refraction)
   val floating = enabled && drawRim && !edgeBar
   var paneOrigin by remember { mutableStateOf(Offset.Zero) }
-  // The navigation pill's RuntimeShaderSupport.browserLensEffectOrNull(...) path remains unchanged.
+  // The navigation pill keeps its own shader path; this pane retains a per-pane lens handle.
   // This handle retains static geometry and refreshes the lightweight effect chain only when motion changes.
   // Edge bars never bend: the lens edge term would draw a bright line along the bar's bottom.
   val lens = rememberGraphicsLayer()
