@@ -123,6 +123,32 @@ internal fun shouldSkipSynchronousPlaybackStateSave(
   (nativeRendererOwner || identifier.isBlank()) &&
     !(closedByUser && currentItem?.isDefinitelyAudioOnly() == true)
 
+internal fun saveSynchronousAudioResumeSnapshotIfAllowed(
+  context: Context,
+  nativeRendererOwner: Boolean,
+  identifier: String,
+  queueState: PlaybackQueueState,
+  positionSeconds: Double,
+  paused: Boolean,
+  closedByUser: Boolean,
+): Boolean {
+  if (
+    shouldSkipSynchronousPlaybackStateSave(
+      nativeRendererOwner = nativeRendererOwner,
+      identifier = identifier,
+      closedByUser = closedByUser,
+      currentItem = queueState.currentItem,
+    )
+  ) return false
+  return AudioPlaybackResumeStore.save(
+    context,
+    queueState,
+    positionSeconds,
+    paused,
+    closedByUser = closedByUser,
+  )
+}
+
 /**
  * Background playback service for mpv with MediaSession integration.
  * On Android 16+ (API 36), uses progress-centric notifications with chapter segment indicators.
@@ -2272,6 +2298,7 @@ class MediaPlaybackService :
     val now = SystemClock.elapsedRealtime()
     if (!force && now - lastPlaybackStateSaveTime < PLAYBACK_STATE_SAVE_INTERVAL_MS) return
     lastPlaybackStateSaveTime = now
+    val closedByUser = userClosedSession
     val snapshot = capturePlaybackStateSnapshot(identifier, oldState = null)
     val resumePositionSeconds = PlaybackSession.getPropertyDouble("time-pos") ?: currentPositionSeconds
     val resumePaused = PlaybackSession.getPropertyBoolean("pause") ?: paused
@@ -2279,7 +2306,7 @@ class MediaPlaybackService :
     playbackStateSaveJob?.cancel()
     playbackStateSaveJob =
       serviceScope.launch(Dispatchers.IO) {
-        AudioPlaybackResumeStore.save(applicationContext, queueState, resumePositionSeconds, resumePaused, closedByUser = userClosedSession)
+        AudioPlaybackResumeStore.save(applicationContext, queueState, resumePositionSeconds, resumePaused, closedByUser = closedByUser)
         snapshot?.let { persistPlaybackState(identifier, it) }
       }
   }
@@ -2293,16 +2320,18 @@ class MediaPlaybackService :
     val snapshot = capturePlaybackStateSnapshot(identifier, oldState = null)
     val resumePositionSeconds = PlaybackSession.getPropertyDouble("time-pos") ?: currentPositionSeconds
     val resumePaused = PlaybackSession.getPropertyBoolean("pause") ?: paused
+    val closedByUser = userClosedSession
 
     playbackStateSaveJob?.cancel()
-    persistenceScope.launch {
-      runCatching {
-        AudioPlaybackResumeStore.save(applicationContext, queueState, resumePositionSeconds, resumePaused, closedByUser = userClosedSession)
-        snapshot?.let { persistPlaybackState(identifier, it) }
-      }.onFailure { error ->
-        Log.e(TAG, "Error force-saving playback state", error)
+    playbackStateSaveJob =
+      persistenceScope.launch {
+        runCatching {
+          AudioPlaybackResumeStore.save(applicationContext, queueState, resumePositionSeconds, resumePaused, closedByUser = closedByUser)
+          snapshot?.let { persistPlaybackState(identifier, it) }
+        }.onFailure { error ->
+          Log.e(TAG, "Error force-saving playback state", error)
+        }
       }
-    }
   }
 
   private fun savePlaybackStateSynchronously() {
@@ -2333,11 +2362,13 @@ class MediaPlaybackService :
     val pendingSave = playbackStateSaveJob
     runBlocking(Dispatchers.IO) {
       pendingSave?.cancelAndJoin()
-      AudioPlaybackResumeStore.save(
-        applicationContext,
-        queueState,
-        resumePositionSeconds,
-        resumePaused,
+      saveSynchronousAudioResumeSnapshotIfAllowed(
+        context = applicationContext,
+        nativeRendererOwner = nativeRendererOwner,
+        identifier = identifier,
+        queueState = queueState,
+        positionSeconds = resumePositionSeconds,
+        paused = resumePaused,
         closedByUser = closedByUser,
       )
       snapshot?.let { persistPlaybackState(identifier, it) }
