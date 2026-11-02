@@ -181,6 +181,7 @@ fun Modifier.glassPressFeedback(
 ): Modifier {
   var pressed by remember { mutableStateOf(false) }
   LaunchedEffect(interactionSource, enabled) {
+    pressed = false
     interactionSource.interactions.collect { interaction: Interaction ->
       when (interaction) {
         is PressInteraction.Press -> pressed = enabled
@@ -225,6 +226,8 @@ fun Modifier.glassWaterRipple(
   val progress = remember { Animatable(1f) }
   var origin by remember { mutableStateOf(Offset.Unspecified) }
   LaunchedEffect(interactionSource, enabled) {
+    progress.snapTo(1f)
+    origin = Offset.Unspecified
     interactionSource.interactions.collect { interaction ->
       if (interaction is PressInteraction.Press && enabled) {
         origin = interaction.pressPosition
@@ -366,8 +369,8 @@ fun GlassSwitch(
         .lensControlThumb(trackBackdrop, thumbShape, if (checked) contrast.checkedThumb else contrast.uncheckedThumb) { lensProgress }
         .glassRimLight(thumbShape, ambient = contrast.checkedTrack, highContrast = true)
       else base
-        .glassRimLight(thumbShape, ambient = contrast.checkedTrack, highContrast = true)
-        .glassCapsuleBody(contrast.checkedThumb, enabled, checked, base = contrast.uncheckedThumb),
+        .glassCapsuleBody(contrast.checkedThumb, enabled, checked, base = contrast.uncheckedThumb)
+        .glassRimLight(thumbShape, ambient = contrast.checkedTrack, highContrast = true),
       contentAlignment = Alignment.Center,
     ) { thumbContent?.invoke() }
   }
@@ -462,8 +465,8 @@ fun GlassSlider(
             .lensControlThumb(trackBackdrop, thumbShape, Color.White) { lensProgress }
             .glassRimLight(thumbShape, ambient = accent, highContrast = true)
           else base
-            .glassRimLight(thumbShape, ambient = accent, highContrast = true)
-            .glassCapsuleBody(accent, enabled, value > valueRange.start),
+            .glassCapsuleBody(accent, enabled, value > valueRange.start)
+            .glassRimLight(thumbShape, ambient = accent, highContrast = true),
         )
       },
     )

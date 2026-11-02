@@ -68,26 +68,29 @@ fun GlassChip(
     onSurface = scheme.onSurface,
     customContainerColor = customContainerColor,
   )
-  val borderColor = customContainerColor?.let { color ->
-    color.copy(alpha = color.alpha * if (selected) .76f else .22f)
-  } ?: if (selected) {
-    scheme.primary.copy(alpha = .76f)
-  } else {
-    scheme.onSurface.copy(alpha = .22f)
-  }
+  val borderColor = GlassChipMaterial.dimColor(
+    customContainerColor?.let { color ->
+      color.copy(alpha = color.alpha * if (selected) .76f else .22f)
+    } ?: if (selected) {
+      scheme.primary.copy(alpha = .76f)
+    } else {
+      scheme.onSurface.copy(alpha = .22f)
+    },
+    enabled,
+  )
   Surface(
     modifier = modifier.defaultMinSize(minWidth = 48.dp, minHeight = 48.dp)
       // Keep the press indication inside the pill instead of the layout bounds.
       .clip(chipShape)
       // Frosted body (accent glow when selected), then the shared lit edge on top of it.
       .background(Brush.verticalGradient(fill), chipShape)
-      .glassRimLight(chipShape, enabled = true, ambient = if (selected) ({ scheme.primary }) else null)
+      .glassRimLight(chipShape, enabled = enabled, ambient = if (selected) ({ scheme.primary }) else null)
       .glassPressFeedback(source, enabled, glass = true)
       .semantics { this.selected = selected; this.role = Role.Checkbox }
       .clickable(interactionSource = source, role = Role.Checkbox, enabled = enabled, onClick = onClick),
     shape = chipShape,
     color = Color.Transparent,
-    contentColor = customLabelColor ?: LocalContentColor.current,
+    contentColor = GlassChipMaterial.dimColor(customLabelColor ?: LocalContentColor.current, enabled),
     border = BorderStroke(1.dp, borderColor),
   ) {
     Row(
@@ -104,6 +107,11 @@ fun GlassChip(
 
 /** Glass chip body: a translucent frosted fill, lifted toward the accent when selected. */
 internal object GlassChipMaterial {
+  private const val DisabledAlpha = .5f
+
+  fun dimColor(color: Color, enabled: Boolean): Color =
+    color.copy(alpha = color.alpha * if (enabled) 1f else DisabledAlpha)
+
   fun fill(
     selected: Boolean,
     enabled: Boolean,
@@ -111,7 +119,7 @@ internal object GlassChipMaterial {
     onSurface: Color,
     customContainerColor: Color? = null,
   ): List<Color> {
-    val dim = if (enabled) 1f else .5f
+    val dim = if (enabled) 1f else DisabledAlpha
     val baseColor = customContainerColor ?: if (selected) accent else onSurface
     val customAlpha = customContainerColor?.alpha ?: 1f
     return if (selected) {
