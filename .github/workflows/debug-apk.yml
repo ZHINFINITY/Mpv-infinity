@@ -344,9 +344,39 @@ jobs:
           done
           if grep -E '^lib/[^/]+/librife_vfi\.so$' <<< "$apk_entries" >/dev/null; then
             echo "RIFE native library unexpectedly present in the Flow-only APK" >&2
-            exit 1
-          fi
-          echo "Verified Flow runtime libraries and confirmed librife_vfi.so is absent: $apk"
+              exit 1
+            fi
+            echo "Verified Flow runtime libraries and confirmed librife_vfi.so is absent: $apk"
+      - name: Verify Native DTS FFmpeg audio fallback is packaged
+        if: ${{ (inputs.flavor == 'standard' || inputs.flavor == 'no_vulkan') && (inputs.target_abi == 'arm64-v8a' || inputs.target_abi == 'all') }}
+        run: |
+          set -euo pipefail
+          case "${{ inputs.flavor }}" in
+            standard) gradle_flavor=standard ;;
+            no_vulkan) gradle_flavor=noVulkan ;;
+            *) echo "Unsupported flavor: ${{ inputs.flavor }}" >&2; exit 1 ;;
+          esac
+          apk_dir="app/build/outputs/apk/$gradle_flavor/debug"
+          [[ -d "$apk_dir" ]] || { echo "No APK output directory: $apk_dir" >&2; exit 1; }
+
+          verified=0
+          while IFS= read -r -d '' candidate; do
+            candidate_entries="$(unzip -Z1 "$candidate")"
+            if ! grep -q '^lib/arm64-v8a/' <<< "$candidate_entries"; then
+              continue
+            fi
+            if ! grep -Fxq 'lib/arm64-v8a/libffmpegJNI.so' <<< "$candidate_entries"; then
+              echo "arm64 APK lacks lib/arm64-v8a/libffmpegJNI.so: $candidate" >&2
+              exit 1
+            fi
+            echo "Verifying arm64 Media3 FFmpeg fallback in $candidate"
+            python3 scripts/verify-media3-dca-apk.py "$candidate"
+            verified=$((verified + 1))
+          done < <(find "$apk_dir" -type f -name '*.apk' -print0)
+
+          (( verified > 0 )) || { echo "No APK with arm64 Media3 FFmpeg fallback found under $apk_dir" >&2; exit 1; }
+          # Native (Media3) plays DTS / DTS Express / DTS-HD through libffmpegJNI.so, which must
+          # link the packaged LGPL FFmpeg and find its DCA decoder. Same gate as the MPVFlow build.
       - name: Verify native library symbol hygiene
         if: ${{ inputs.flavor == 'standard' && inputs.target_abi == 'arm64-v8a' }}
         run: |
