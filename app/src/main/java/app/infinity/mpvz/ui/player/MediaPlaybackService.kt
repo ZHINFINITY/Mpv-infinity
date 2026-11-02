@@ -106,6 +106,14 @@ internal fun shouldResetClosedAudioSessionForMetadata(
     .acceptsMetadata(resolvedIdentifier, resolvedUri)
 }
 
+internal fun persistBeforePlaybackTeardown(
+  persist: () -> Unit,
+  teardown: () -> Unit,
+) {
+  persist()
+  teardown()
+}
+
 /**
  * Background playback service for mpv with MediaSession integration.
  * On Android 16+ (API 36), uses progress-centric notifications with chapter segment indicators.
@@ -175,6 +183,8 @@ class MediaPlaybackService :
       activeInstance?.let { service ->
         service.foregroundReady && !activityForeground && !service.handingBackToActivity
       } == true
+
+    internal fun isAudioSessionClosedByUser(): Boolean = activeInstance?.userClosedSession == true
 
     /** True once the service owns the foreground notification, independent of Activity focus. */
     internal fun isNotificationOwnerReady(): Boolean = activeInstance?.foregroundReady == true
@@ -1427,9 +1437,19 @@ class MediaPlaybackService :
   private fun stopPlaybackAndService(force: Boolean = false) {
     if (!force && !canHandleTransportAction()) return
     handingBackToActivity = false
-    schedulePlaybackStateSave(force = true)
-    torrentStreamingEngine.stopStream()
-    PlaybackSession.stop(clearQueue = true)
+    if (userClosedSession) {
+      persistBeforePlaybackTeardown(
+        persist = ::savePlaybackStateSynchronously,
+        teardown = {
+          torrentStreamingEngine.stopStream()
+          PlaybackSession.stop(clearQueue = true)
+        },
+      )
+    } else {
+      schedulePlaybackStateSave(force = true)
+      torrentStreamingEngine.stopStream()
+      PlaybackSession.stop(clearQueue = true)
+    }
     paused = true
     mediaSession.setPlaybackState(
       PlaybackStateCompat
@@ -2276,7 +2296,7 @@ class MediaPlaybackService :
     }
   }
 
-  private fun savePlaybackStateBeforeTaskRemoval() {
+  private fun savePlaybackStateSynchronously() {
     if (isNativeRendererOwner()) return
     val queueState = PlaybackSession.queue.value
     val identifier = mediaIdentifier.ifBlank { queueState.currentItem?.stableId.orEmpty() }
@@ -2481,7 +2501,7 @@ class MediaPlaybackService :
 
   override fun onTaskRemoved(rootIntent: Intent?) {
     Log.d(TAG, "Task removed - keeping foreground background playback active")
-    savePlaybackStateBeforeTaskRemoval()
+    savePlaybackStateSynchronously()
     super.onTaskRemoved(rootIntent)
   }
 }

@@ -4164,7 +4164,8 @@ class PlayerActivity :
     if (queueState.currentItem == null) return
     val positionSeconds = PlaybackSession.getPropertyDouble("time-pos") ?: 0.0
     val paused = PlaybackSession.getPropertyBoolean("pause") ?: PlaybackSession.state.value.paused
-    AudioPlaybackResumeStore.save(applicationContext, queueState, positionSeconds, paused)
+    val closedByUser = MediaPlaybackService.isAudioSessionClosedByUser()
+    AudioPlaybackResumeStore.save(applicationContext, queueState, positionSeconds, paused, closedByUser = closedByUser)
   }
 
   private fun attachToSavedPlaybackSessionIfValid(sourceIntent: Intent = intent): Boolean {

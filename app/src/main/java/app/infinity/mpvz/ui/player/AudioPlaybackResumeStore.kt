@@ -123,6 +123,10 @@ internal object AudioPlaybackResumeStore {
     val savedItems =
       (if (canSaveQueue) windowItems else listOf(currentItem))
         .map { item -> item.copy(headers = item.headers.toMap()) }
+    if (savedItems.any { it.originalUri.isBlank() }) {
+      clear(context)
+      return false
+    }
     val savedIndex = if (canSaveQueue) queueState.currentIndex - windowStart else 0
     val savedQueue =
       queueState.copy(
@@ -358,7 +362,9 @@ internal object AudioPlaybackResumeStore {
     val sourceItems = root.optJSONArray("items") ?: throw IllegalArgumentException("Missing audio queue")
     val items = buildList {
       for (index in 0 until sourceItems.length()) {
-        decodeItem(sourceItems.optJSONObject(index))?.let(::add)
+        val item = decodeItem(sourceItems.optJSONObject(index))
+          ?: throw IllegalArgumentException("Invalid audio queue item at index $index")
+        add(item)
       }
     }
     require(items.isNotEmpty()) { "Empty audio queue" }
@@ -394,7 +400,9 @@ internal object AudioPlaybackResumeStore {
     val sourceItems = root.optJSONArray("items") ?: throw IllegalArgumentException("Missing audio queue")
     val items = buildList {
       for (index in 0 until sourceItems.length()) {
-        decodeItem(sourceItems.optJSONObject(index))?.let(::add)
+        val item = decodeItem(sourceItems.optJSONObject(index))
+          ?: throw IllegalArgumentException("Invalid legacy audio queue item at index $index")
+        add(item)
       }
     }
     require(items.isNotEmpty()) { "Empty audio queue" }
