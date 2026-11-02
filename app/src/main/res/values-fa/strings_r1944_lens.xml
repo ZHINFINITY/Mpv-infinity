@@ -1,0 +1,8 @@
+<resources>
+    <string name="pref_glass_lens_refraction">شکست نور</string>
+    <string name="pref_glass_lens_refraction_summary">شدت خمیدگی لنز</string>
+    <string name="pref_glass_lens_depth">عمق لنز</string>
+    <string name="pref_glass_lens_depth_summary">ضخامت بزرگ‌نمایی</string>
+    <string name="pref_glass_colour_edge">لبهٔ رنگی</string>
+    <string name="pref_glass_colour_edge_summary">نمایش یک لبهٔ رنگی ظریف برای لنز</string>
+</resources>

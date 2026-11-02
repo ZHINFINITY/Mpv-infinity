@@ -1,0 +1,16 @@
+<resources>
+<string name="r1944_updates_title">अपडेट्स</string>
+<string name="r1944_auto_check_updates">अपडेट्स के लिए स्वचालित जाँच</string>
+<string name="r1944_check_on_startup">स्टार्टअप पर जाँचें</string>
+<string name="r1944_check_updates_now">अभी अपडेट्स की जाँच करें</string>
+<string name="r1944_checking_updates">अपडेट्स की जाँच की जा रही है…</string>
+<string name="r1944_latest_version">आप पहले से नवीनतम संस्करण का उपयोग कर रहे हैं</string>
+<string name="r1944_update_available">एक नया अपडेट उपलब्ध है।</string>
+<string name="r1944_update_ready">अपडेट डाउनलोड हो गया है और इंस्टॉल करने के लिए तैयार है।</string>
+<string name="r1944_update_error">अपडेट्स की जाँच नहीं की जा सकी। अपना नेटवर्क कनेक्शन जाँचें।</string>
+<string name="r1944_download_update">डाउनलोड</string>
+<string name="r1944_install_update">इंस्टॉल</string>
+<string name="r1944_retry">पुनः प्रयास करें</string>
+<string name="r1944_cancel">रद्द करें</string>
+<string name="oss_backdrop_liquid_glass_description">Android के लिए Liquid Glass बैकड्रॉप और फ्रॉस्टेड सतह प्रभाव।</string>
+</resources>

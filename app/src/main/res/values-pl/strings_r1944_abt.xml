@@ -1,0 +1,16 @@
+<resources>
+<string name="r1944_updates_title">Aktualizacje</string>
+<string name="r1944_auto_check_updates">Automatyczne sprawdzanie aktualizacji</string>
+<string name="r1944_check_on_startup">Sprawdzaj przy uruchamianiu</string>
+<string name="r1944_check_updates_now">Sprawdź aktualizacje teraz</string>
+<string name="r1944_checking_updates">Sprawdzanie aktualizacji…</string>
+<string name="r1944_latest_version">Korzystasz już z najnowszej wersji</string>
+<string name="r1944_update_available">Dostępna jest nowa aktualizacja.</string>
+<string name="r1944_update_ready">Aktualizacja została pobrana i jest gotowa do zainstalowania.</string>
+<string name="r1944_update_error">Nie można sprawdzić dostępności aktualizacji. Sprawdź połączenie sieciowe.</string>
+<string name="r1944_download_update">Pobierz</string>
+<string name="r1944_install_update">Zainstaluj</string>
+<string name="r1944_retry">Ponów próbę</string>
+<string name="r1944_cancel">Anuluj</string>
+<string name="oss_backdrop_liquid_glass_description">Efekty tła Liquid Glass i matowej powierzchni dla systemu Android.</string>
+</resources>

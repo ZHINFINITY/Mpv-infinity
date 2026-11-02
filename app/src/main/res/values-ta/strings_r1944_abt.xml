@@ -1,0 +1,16 @@
+<resources>
+<string name="r1944_updates_title">புதுப்பிப்புகள்</string>
+<string name="r1944_auto_check_updates">புதுப்பிப்புகளைத் தானாகச் சரிபார்க்கவும்</string>
+<string name="r1944_check_on_startup">தொடக்கத்தில் சரிபார்க்கவும்</string>
+<string name="r1944_check_updates_now">புதுப்பிப்புகளை இப்போது சரிபார்க்கவும்</string>
+<string name="r1944_checking_updates">புதுப்பிப்புகள் சரிபார்க்கப்படுகின்றன…</string>
+<string name="r1944_latest_version">நீங்கள் ஏற்கனவே சமீபத்திய பதிப்பைப் பயன்படுத்துகிறீர்கள்</string>
+<string name="r1944_update_available">புதிய புதுப்பிப்பு உள்ளது.</string>
+<string name="r1944_update_ready">புதுப்பிப்பு பதிவிறக்கப்பட்டு நிறுவத் தயாராக உள்ளது.</string>
+<string name="r1944_update_error">புதுப்பிப்புகளைச் சரிபார்க்க முடியவில்லை. உங்கள் பிணைய இணைப்பைச் சரிபார்க்கவும்.</string>
+<string name="r1944_download_update">பதிவிறக்கவும்</string>
+<string name="r1944_install_update">நிறுவவும்</string>
+<string name="r1944_retry">மீண்டும் முயற்சிக்கவும்</string>
+<string name="r1944_cancel">ரத்துசெய்</string>
+<string name="oss_backdrop_liquid_glass_description">Android-க்கான Liquid Glass பின்னணி மற்றும் உறைந்த கண்ணாடி மேற்பரப்பு விளைவுகள்.</string>
+</resources>

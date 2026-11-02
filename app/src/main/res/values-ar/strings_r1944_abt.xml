@@ -1,0 +1,16 @@
+<resources>
+<string name="r1944_updates_title">التحديثات</string>
+<string name="r1944_auto_check_updates">التحقق التلقائي من التحديثات</string>
+<string name="r1944_check_on_startup">التحقق عند بدء التشغيل</string>
+<string name="r1944_check_updates_now">التحقق من التحديثات الآن</string>
+<string name="r1944_checking_updates">جارٍ التحقق من التحديثات…</string>
+<string name="r1944_latest_version">أنت تستخدم أحدث إصدار بالفعل</string>
+<string name="r1944_update_available">يتوفر تحديث جديد.</string>
+<string name="r1944_update_ready">تم تنزيل التحديث وهو جاهز للتثبيت.</string>
+<string name="r1944_update_error">تعذّر التحقق من التحديثات. تحقّق من اتصالك بالشبكة.</string>
+<string name="r1944_download_update">تنزيل</string>
+<string name="r1944_install_update">تثبيت</string>
+<string name="r1944_retry">إعادة المحاولة</string>
+<string name="r1944_cancel">إلغاء</string>
+<string name="oss_backdrop_liquid_glass_description">خلفية Liquid Glass وتأثيرات الأسطح الزجاجية المصنَّفرة لنظام Android.</string>
+</resources>

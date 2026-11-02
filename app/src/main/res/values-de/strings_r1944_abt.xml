@@ -1,0 +1,16 @@
+<resources>
+<string name="r1944_updates_title">Aktualisierungen</string>
+<string name="r1944_auto_check_updates">Automatisch nach Updates suchen</string>
+<string name="r1944_check_on_startup">Beim Start nach Updates suchen</string>
+<string name="r1944_check_updates_now">Jetzt nach Updates suchen</string>
+<string name="r1944_checking_updates">Nach Updates wird gesucht…</string>
+<string name="r1944_latest_version">Sie verwenden bereits die neueste Version</string>
+<string name="r1944_update_available">Ein neues Update ist verfügbar.</string>
+<string name="r1944_update_ready">Das Update wurde heruntergeladen und kann installiert werden.</string>
+<string name="r1944_update_error">Updates können nicht gesucht werden. Überprüfen Sie Ihre Netzwerkverbindung.</string>
+<string name="r1944_download_update">Herunterladen</string>
+<string name="r1944_install_update">Installieren</string>
+<string name="r1944_retry">Erneut versuchen</string>
+<string name="r1944_cancel">Abbrechen</string>
+<string name="oss_backdrop_liquid_glass_description">Liquid-Glass-Hintergrund und mattierte Oberflächeneffekte für Android.</string>
+</resources>

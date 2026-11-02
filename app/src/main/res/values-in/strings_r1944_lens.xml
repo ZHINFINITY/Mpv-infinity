@@ -1,0 +1,8 @@
+<resources>
+    <string name="pref_glass_lens_refraction">Pembiasan</string>
+    <string name="pref_glass_lens_refraction_summary">Kekuatan pembengkokan lensa</string>
+    <string name="pref_glass_lens_depth">Kedalaman lensa</string>
+    <string name="pref_glass_lens_depth_summary">Ketebalan pembesaran</string>
+    <string name="pref_glass_colour_edge">Tepi warna</string>
+    <string name="pref_glass_colour_edge_summary">Tampilkan tepi lensa kromatik yang halus</string>
+</resources>

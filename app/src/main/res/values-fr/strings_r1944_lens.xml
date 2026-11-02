@@ -1,0 +1,8 @@
+<resources>
+    <string name="pref_glass_lens_refraction">Réfraction</string>
+    <string name="pref_glass_lens_refraction_summary">Intensité de courbure de la lentille</string>
+    <string name="pref_glass_lens_depth">Profondeur de la lentille</string>
+    <string name="pref_glass_lens_depth_summary">Épaisseur de l’agrandissement</string>
+    <string name="pref_glass_colour_edge">Bord coloré</string>
+    <string name="pref_glass_colour_edge_summary">Afficher un léger bord chromatique de la lentille</string>
+</resources>

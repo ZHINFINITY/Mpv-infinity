@@ -1,0 +1,8 @@
+<resources>
+    <string name="pref_glass_lens_refraction">الانكسار</string>
+    <string name="pref_glass_lens_refraction_summary">قوة انحناء العدسة</string>
+    <string name="pref_glass_lens_depth">عمق العدسة</string>
+    <string name="pref_glass_lens_depth_summary">سماكة التكبير</string>
+    <string name="pref_glass_colour_edge">حافة لونية</string>
+    <string name="pref_glass_colour_edge_summary">إظهار حافة لونية خفيفة للعدسة</string>
+</resources>

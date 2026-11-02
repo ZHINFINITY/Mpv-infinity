@@ -1,0 +1,8 @@
+<resources>
+    <string name="pref_glass_lens_refraction">अपवर्तन</string>
+    <string name="pref_glass_lens_refraction_summary">लेंस के मुड़ने की तीव्रता</string>
+    <string name="pref_glass_lens_depth">लेंस की गहराई</string>
+    <string name="pref_glass_lens_depth_summary">आवर्धन की मोटाई</string>
+    <string name="pref_glass_colour_edge">रंगीन किनारा</string>
+    <string name="pref_glass_colour_edge_summary">लेंस का हल्का क्रोमैटिक किनारा दिखाएँ</string>
+</resources>

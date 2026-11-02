@@ -1,0 +1,16 @@
+<resources>
+<string name="r1944_updates_title">Bản cập nhật</string>
+<string name="r1944_auto_check_updates">Tự động kiểm tra bản cập nhật</string>
+<string name="r1944_check_on_startup">Kiểm tra khi khởi động</string>
+<string name="r1944_check_updates_now">Kiểm tra bản cập nhật ngay</string>
+<string name="r1944_checking_updates">Đang kiểm tra bản cập nhật…</string>
+<string name="r1944_latest_version">Bạn đang sử dụng phiên bản mới nhất</string>
+<string name="r1944_update_available">Có bản cập nhật mới.</string>
+<string name="r1944_update_ready">Bản cập nhật đã được tải xuống và sẵn sàng để cài đặt.</string>
+<string name="r1944_update_error">Không thể kiểm tra bản cập nhật. Hãy kiểm tra kết nối mạng của bạn.</string>
+<string name="r1944_download_update">Tải xuống</string>
+<string name="r1944_install_update">Cài đặt</string>
+<string name="r1944_retry">Thử lại</string>
+<string name="r1944_cancel">Hủy</string>
+<string name="oss_backdrop_liquid_glass_description">Hiệu ứng nền Liquid Glass và bề mặt kính mờ cho Android.</string>
+</resources>

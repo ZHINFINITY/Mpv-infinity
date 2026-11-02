@@ -28,7 +28,7 @@ Mpv∞ includes a native **Jellyfin Client** for connecting to Jellyfin media se
 </p>
 
 > [!IMPORTANT]
-> **Mpv∞ v2.2.0, the Smooth Motion Update, is out.** [Download it from Releases](https://github.com/ZHINFINITY/Mpv-infinity/releases/tag/v2.2.0).
+> **Mpv∞ v2.2.3 is out.** [Download it from Releases](https://github.com/ZHINFINITY/Mpv-infinity/releases/tag/v2.2.3).
 >
 > For smooth motion (frame interpolation) in the MPV player, install the **arm64-v8a** APK, the right one for almost all modern phones. The other APKs don't include smooth motion for the MPV player.
 
@@ -489,11 +489,11 @@ Signed GitHub releases are built by the **Make release** workflow (`.github/work
 Bump `versionName` and `releaseVersionCode` in `app/build.gradle.kts` through a pull request to `main`. Then either push a version tag:
 
 ```bash
-git tag -a v2.2.1 -m "Release version 2.2.1"
-git push origin v2.2.1
+git tag -a v2.2.3 -m "Release version 2.2.3"
+git push origin v2.2.3
 ```
 
-or run **Make release** from the Actions tab with `tag_name` (for example `v2.2.1`). Turn on `draft` to review the release and its APKs before publishing.
+or run **Make release** from the Actions tab with `tag_name` (for example `v2.2.3`). Turn on `draft` to review the release and its APKs before publishing.
 
 Preview releases use the **Make Pre Release** workflow with preview tags such as:
 
@@ -552,3 +552,7 @@ Third-party, upstream, and contributor materials keep their applicable terms and
    <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=ZHINFINITY/Mpv-infinity&type=date&legend=top-left" />
  </picture>
 </a>
+
+### Liquid Glass credit
+
+Thanks to [Kyant0/AndroidLiquidGlass](https://github.com/Kyant0/AndroidLiquidGlass) for the Backdrop Liquid Glass engine (Apache-2.0).

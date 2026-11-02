@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+  <string name="audio_landscape_seek_back">पीछे जाएँ</string>
+  <string name="audio_landscape_seek_forward">आगे जाएँ</string>
+</resources>

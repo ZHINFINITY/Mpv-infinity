@@ -1,0 +1,16 @@
+<resources>
+<string name="r1944_updates_title">Обновления</string>
+<string name="r1944_auto_check_updates">Автоматически проверять обновления</string>
+<string name="r1944_check_on_startup">Проверять при запуске</string>
+<string name="r1944_check_updates_now">Проверить обновления сейчас</string>
+<string name="r1944_checking_updates">Проверка обновлений…</string>
+<string name="r1944_latest_version">Вы используете последнюю версию</string>
+<string name="r1944_update_available">Доступно новое обновление.</string>
+<string name="r1944_update_ready">Обновление загружено и готово к установке.</string>
+<string name="r1944_update_error">Не удалось проверить наличие обновлений. Проверьте подключение к сети.</string>
+<string name="r1944_download_update">Скачать</string>
+<string name="r1944_install_update">Установить</string>
+<string name="r1944_retry">Повторить</string>
+<string name="r1944_cancel">Отмена</string>
+<string name="oss_backdrop_liquid_glass_description">Эффекты фона Liquid Glass и матовой поверхности для Android.</string>
+</resources>

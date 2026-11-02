@@ -67,12 +67,17 @@ class SeekbarGlassContracts(unittest.TestCase):
         self.assertNotIn('visualOnly', slider)
 
     def test_settings_and_music_slider_style_the_actual_thin_track(self):
-        slider = source('ui/player/controls/components/GlassControls.kt').split(
-            'fun GlassSlider(', 1)[1].split('private fun Modifier.glassTrackOptics', 1)[0]
+        controls = source('ui/player/controls/components/GlassControls.kt')
+        slider = controls.split('fun GlassSlider(', 1)[1].split(
+            'private fun Modifier.glassTickDots', 1
+        )[0]
         self.assertIn('track = { sliderState ->', slider)
         self.assertIn('SliderDefaults.Track(', slider)
-        self.assertIn('modifier = Modifier.height(4.dp)', slider)
-        self.assertIn('.glassTrackOptics(opacity, highlight, 2.dp, height = 4.dp)', slider)
+        self.assertIn('modifier = Modifier.height(GlassControlGeometryPolicy.sliderTrackHeightDp.dp)', slider)
+        self.assertIn('.glassSliderGroove(sliderState.coercedValueAsFraction, accent, opacity, highlight)', slider)
+        self.assertIn('.then(Modifier.glassTickDots(if (steps > 0) steps else 4, accent))', slider)
+        geometry = controls.split('object GlassControlGeometryPolicy {', 1)[1].split('\n}', 1)[0]
+        self.assertIn('const val sliderTrackHeightDp = 6f', geometry)
         self.assertNotIn('modifier = modifier.then(', slider)
 
 

@@ -1,0 +1,16 @@
+<resources>
+<string name="r1944_updates_title">Atualizações</string>
+<string name="r1944_auto_check_updates">Verificar atualizações automaticamente</string>
+<string name="r1944_check_on_startup">Verificar ao iniciar</string>
+<string name="r1944_check_updates_now">Verificar atualizações agora</string>
+<string name="r1944_checking_updates">Verificando atualizações…</string>
+<string name="r1944_latest_version">Você já está usando a versão mais recente</string>
+<string name="r1944_update_available">Há uma nova atualização disponível.</string>
+<string name="r1944_update_ready">A atualização foi baixada e está pronta para ser instalada.</string>
+<string name="r1944_update_error">Não foi possível verificar se há atualizações. Verifique sua conexão de rede.</string>
+<string name="r1944_download_update">Baixar</string>
+<string name="r1944_install_update">Instalar</string>
+<string name="r1944_retry">Tentar novamente</string>
+<string name="r1944_cancel">Cancelar</string>
+<string name="oss_backdrop_liquid_glass_description">Efeitos de plano de fundo Liquid Glass e superfície fosca para Android.</string>
+</resources>

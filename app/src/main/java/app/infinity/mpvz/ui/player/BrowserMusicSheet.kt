@@ -203,11 +203,13 @@ class BrowserMusicSheetState internal constructor(
   }
 
   private fun runSettle(initialVelocity: Float) {
+    val previousSettleJob = settleJob
+    settleJob = null
+    previousSettleJob?.cancel()
     publish()
     val destination = motion.target ?: run { onRested(); return }
     val generation = motion.settleGeneration
     val start = motion.progress
-    settleJob?.cancel()
     settleJob =
       scope.launch {
         try {
