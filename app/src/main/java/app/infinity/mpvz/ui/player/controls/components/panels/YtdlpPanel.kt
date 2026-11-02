@@ -7,6 +7,8 @@
 
 package app.infinity.mpvz.ui.player.controls.components.panels
 
+import app.infinity.mpvz.ui.components.GlassChip
+
 import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.*
@@ -211,7 +213,7 @@ fun YtdlpPanel(
               modifier = Modifier.weight(1f),
             ) {
               quickQualities.forEach { (level, label) ->
-                FilterChip(
+                GlassChip(
                   selected = ytdlQuality == level,
                   enabled = formatOptionsEnabled,
                   onClick = {
@@ -281,7 +283,7 @@ fun YtdlpPanel(
                 codecPreference
               }
             YtdlCodecPreference.commonPlaybackChoices.forEach { codec ->
-              FilterChip(
+              GlassChip(
                 selected = selectedCodec == codec,
                 enabled = formatOptionsEnabled,
                 onClick = {

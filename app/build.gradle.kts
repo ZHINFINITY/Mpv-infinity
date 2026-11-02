@@ -269,6 +269,8 @@ dependencies {
   testImplementation(platform(libs.androidx.compose.bom))
   testImplementation("androidx.compose.ui:ui-test-junit4")
   testImplementation("org.robolectric:robolectric:4.16.1")
+  testImplementation("androidx.media3:media3-test-utils:${libs.versions.media3.get()}")
+  testImplementation("androidx.media3:media3-test-utils-robolectric:${libs.versions.media3.get()}")
   testImplementation("com.squareup.okhttp3:mockwebserver:${libs.versions.okhttp.get()}")
   implementation(libs.bundles.compose.navigation3)
   implementation(libs.androidx.appcompat)

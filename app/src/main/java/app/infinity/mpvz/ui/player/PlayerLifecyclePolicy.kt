@@ -110,10 +110,113 @@ internal object PlayerLifecyclePolicy {
     mediaReady: Boolean,
   ): Boolean = backgroundPlaybackEnabled && mediaReady
 
+  /**
+   * Whether onDestroy hands the live session to the service instead of stopping it. Either the
+   * background-playback preference allows it, or the user explicitly minimized into the Mini
+   * Player ([miniPlayerHandoff]). The Mini Player does not depend on that preference (audio
+   * background playback defaults to off), so without the second case the first minimize after a
+   * fresh install stopped the song, cleared the queue and left only the resume card behind.
+   */
   fun shouldKeepBackgroundPlaybackAliveOnDestroy(
     backgroundPlaybackEnabled: Boolean,
     backgroundPlaybackSessionActive: Boolean,
-  ): Boolean = backgroundPlaybackEnabled && backgroundPlaybackSessionActive
+    miniPlayerHandoff: Boolean = false,
+  ): Boolean = backgroundPlaybackSessionActive && (backgroundPlaybackEnabled || miniPlayerHandoff)
+
+  fun shouldStopPlaybackAfterFailedForegroundPromotion(
+    activityHandoffRequested: Boolean,
+    activityRelinquishedPlayback: Boolean,
+    foregroundPromotionFailed: Boolean,
+    foregroundReady: Boolean,
+  ): Boolean =
+    activityHandoffRequested && activityRelinquishedPlayback && foregroundPromotionFailed && !foregroundReady
+
+  data class FailedForegroundPromotionIdentity(
+    val generation: Long,
+    val stableId: String,
+    val originalUri: String,
+    val torrentFileIndex: Int?,
+  )
+
+  class FailedPromotionHandoffState {
+    private var pendingFailure: FailedForegroundPromotionIdentity? = null
+    private var pendingRelinquish: FailedForegroundPromotionIdentity? = null
+
+    @Synchronized
+    fun noteActivityRelinquished(identity: FailedForegroundPromotionIdentity?) {
+      if (identity == null) {
+        clear()
+        return
+      }
+      if (pendingFailure != null && pendingFailure != identity) pendingFailure = null
+      pendingRelinquish = identity
+    }
+
+    @Synchronized
+    fun recordFailure(identity: FailedForegroundPromotionIdentity?) {
+      if (identity == null) {
+        clear()
+        return
+      }
+      if (pendingRelinquish != null && pendingRelinquish != identity) pendingRelinquish = null
+      pendingFailure = identity
+    }
+
+    @Synchronized
+    fun wasRelinquished(identity: FailedForegroundPromotionIdentity?): Boolean =
+      identity != null && pendingRelinquish == identity
+
+    @Synchronized
+    fun pendingFailureFor(identity: FailedForegroundPromotionIdentity?): FailedForegroundPromotionIdentity? =
+      identity?.takeIf { pendingFailure == it }
+
+    @Synchronized
+    fun takeFailureForRelinquishedActivity(identity: FailedForegroundPromotionIdentity?): FailedForegroundPromotionIdentity? {
+      noteActivityRelinquished(identity)
+      val failure = pendingFailure
+      if (identity == null || failure != identity) return null
+      pendingFailure = null
+      if (pendingRelinquish == identity) pendingRelinquish = null
+      return failure
+    }
+
+    @Synchronized
+    fun discardStaleFor(identity: FailedForegroundPromotionIdentity?) {
+      if (pendingFailure != identity) pendingFailure = null
+      if (pendingRelinquish != identity) pendingRelinquish = null
+    }
+
+    @Synchronized
+    fun consume(identity: FailedForegroundPromotionIdentity) {
+      if (pendingFailure == identity) pendingFailure = null
+      if (pendingRelinquish == identity) pendingRelinquish = null
+    }
+
+    @Synchronized
+    fun clear() {
+      pendingFailure = null
+      pendingRelinquish = null
+    }
+  }
+
+  fun shouldApplyPendingFailedPromotionCleanup(
+    failedIdentity: FailedForegroundPromotionIdentity?,
+    currentIdentity: FailedForegroundPromotionIdentity?,
+    activityRelinquishedPlayback: Boolean,
+    foregroundReady: Boolean,
+  ): Boolean =
+    activityRelinquishedPlayback && !foregroundReady &&
+      failedIdentity != null && currentIdentity != null &&
+      failedIdentity == currentIdentity &&
+      failedIdentity.stableId.isNotBlank() && failedIdentity.originalUri.isNotBlank()
+
+  /** Pause state belongs to the active renderer; the inactive MPV core may stay paused. */
+  fun activeEnginePausedState(
+    activeEngine: PlaybackEngineMode,
+    nativePlayWhenReady: Boolean?,
+    mpvPaused: Boolean?,
+  ): Boolean? =
+    if (activeEngine == PlaybackEngineMode.NATIVE) nativePlayWhenReady?.not() else mpvPaused
 
   /** Preserve an intentional pause while restoring a playing service handoff. */
   fun shouldResumeAfterBackgroundHandoff(
@@ -170,6 +273,13 @@ internal object PlayerLifecyclePolicy {
     thresholdMs: Long = LONG_BACKGROUND_REBUILD_THRESHOLD_MS,
   ): Boolean = !isAudioMedia && stoppedForMs >= thresholdMs
 
+  /** Recover Native playback if backgrounding dropped its item or left it idle. */
+  fun shouldRecoverNativePlayback(
+    hasCurrentMediaItem: Boolean,
+    playbackIsIdle: Boolean,
+    mediaLoadInProgress: Boolean,
+  ): Boolean = !mediaLoadInProgress && (!hasCurrentMediaItem || playbackIsIdle)
+
   /** Reloading media before Android recreates the Surface leaves ColorOS on a black frame. */
   fun shouldWaitForSurfaceBeforeRebuild(surfaceReady: Boolean): Boolean = !surfaceReady
 
@@ -178,6 +288,29 @@ internal object PlayerLifecyclePolicy {
 
   fun resumePositionSeconds(positionSeconds: Double?): Double? =
     positionSeconds?.takeIf { it.isFinite() && it > 0.0 }
+
+  /**
+   * Whether service-owned playback must pause because the whole app just left the foreground.
+   *
+   * After a minimize, Back or background round trip the playback service owns the session and
+   * the full player is the in-app music sheet (or Mini Player) inside the library, not a
+   * PlayerActivity. Turning background playback off there only changed the preference: nothing
+   * applied it when the app was left, so music kept playing in the background until the app
+   * was restarted. Leaving the app now honours the setting for the current media kind, exactly
+   * like PlayerActivity does. Inside the app (sheet <-> Mini Player) playback is unaffected.
+   */
+  fun shouldPauseDetachedPlaybackOnAppBackground(
+    serviceOwnsPlayback: Boolean,
+    isAudio: Boolean,
+    audioBackgroundPlaybackEnabled: Boolean,
+    videoBackgroundPlaybackEnabled: Boolean,
+    hasActiveItem: Boolean,
+    isPaused: Boolean,
+  ): Boolean {
+    if (!serviceOwnsPlayback || !hasActiveItem || isPaused) return false
+    val backgroundPlaybackEnabled = if (isAudio) audioBackgroundPlaybackEnabled else videoBackgroundPlaybackEnabled
+    return !backgroundPlaybackEnabled
+  }
 
   const val LONG_BACKGROUND_REBUILD_THRESHOLD_MS = 900_000L
 }

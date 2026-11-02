@@ -7,8 +7,8 @@
 
 package app.infinity.mpvz.ui.player.controls
 
-import app.infinity.mpvz.ui.player.PlaybackSession
 import app.infinity.mpvz.ui.player.PlayerStatsLuaCommandPolicy
+import app.infinity.mpvz.ui.player.PlaybackSession
 
 import android.content.Context
 import android.content.Intent

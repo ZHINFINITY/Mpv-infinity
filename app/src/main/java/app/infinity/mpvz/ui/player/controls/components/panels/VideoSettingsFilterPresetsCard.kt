@@ -7,6 +7,8 @@
 
 package app.infinity.mpvz.ui.player.controls.components.panels
 
+import app.infinity.mpvz.ui.components.GlassChip
+
 import app.infinity.mpvz.ui.player.PlaybackSession
 
 import androidx.compose.foundation.layout.Arrangement
@@ -17,7 +19,6 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -98,7 +99,7 @@ fun VideoSettingsFilterPresetsCard(modifier: Modifier = Modifier) {
         verticalArrangement = Arrangement.spacedBy(8.dp),
       ) {
         FilterPreset.entries.forEach { preset ->
-          FilterChip(
+          GlassChip(
             selected = currentPreset == preset,
             enabled = presetsEnabled,
             onClick = {

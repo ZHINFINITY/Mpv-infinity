@@ -629,13 +629,14 @@ class PlayerViewModel(
   private val nativeSubtitleTracks = MutableStateFlow<List<TrackNode>>(emptyList())
   private val nativeExternalSubtitleTracks = MutableStateFlow<List<TrackNode>>(emptyList())
   private val nativeAudioTracks = MutableStateFlow<List<TrackNode>>(emptyList())
-  private val nativeEngineActive = MutableStateFlow(false)
+  private val activePlaybackEngine = MutableStateFlow(PlaybackEngineMode.MPV)
   private val nativeChapters = MutableStateFlow<List<Segment>>(emptyList())
   private var nativeSubtitleToggleListener: ((Int) -> Unit)? = null
   private var nativeExternalSubtitleToggleListener: ((Int) -> Unit)? = null
   private var nativeAudioToggleListener: ((Int) -> Unit)? = null
   fun setNativeEngineActive(active: Boolean) {
-    nativeEngineActive.value = active
+    activePlaybackEngine.value = if (active) PlaybackEngineMode.NATIVE else PlaybackEngineMode.MPV
+    if (active) nativeChapters.value = emptyList()
   }
 
   fun setNativeTracks(snapshot: NativePlaybackSnapshot) {
@@ -688,7 +689,7 @@ class PlayerViewModel(
     }
     // Media3 does not expose Matroska Chapters for every extractor/source. Do not erase a chapter
     // list already obtained from mpv while the native engine is still preparing its tracks.
-    if (snapshot.chapters.isNotEmpty()) {
+    if (snapshot.chaptersKnown) {
       nativeChapters.value = snapshot.chapters.map { chapter ->
         Segment(chapter.title, chapter.startSeconds)
       }
@@ -768,18 +769,29 @@ class PlayerViewModel(
       .stateIn(viewModelScope, SharingStarted.Eagerly, persistentListOf())
 
   val subtitleTracks: StateFlow<List<TrackNode>> =
-    combine(allTracks, nativeSubtitleTracks, nativeExternalSubtitleTracks, nativeEngineActive, decoderPreferences.playbackEngine.changes()) { tracks, nativeTracks, externalTracks, nativeActive, engine ->
-      if (nativeActive || engine == PlaybackEngineMode.NATIVE) nativeTracks + externalTracks else tracks.filter { it.isSubtitle }
+    combine(allTracks, nativeSubtitleTracks, nativeExternalSubtitleTracks, activePlaybackEngine) { tracks, nativeTracks, externalTracks, activeEngine ->
+      PlaybackTrackSourcePolicy.forActiveEngine(
+        activeEngine = activeEngine,
+        mpvTracks = tracks.filter { it.isSubtitle },
+        nativeTracks = nativeTracks + externalTracks,
+      )
     }.stateIn(viewModelScope, SharingStarted.Eagerly, persistentListOf())
 
   val audioTracks: StateFlow<List<TrackNode>> =
-    combine(allTracks, nativeAudioTracks, nativeEngineActive, decoderPreferences.playbackEngine.changes()) { tracks, nativeTracks, nativeActive, engine ->
-      if (nativeActive || engine == PlaybackEngineMode.NATIVE) nativeTracks else tracks.filter { it.isAudio }
+    combine(allTracks, nativeAudioTracks, activePlaybackEngine) { tracks, nativeTracks, activeEngine ->
+      PlaybackTrackSourcePolicy.forActiveEngine(
+        activeEngine = activeEngine,
+        mpvTracks = tracks.filter { it.isAudio },
+        nativeTracks = nativeTracks,
+      )
     }.stateIn(viewModelScope, SharingStarted.Eagerly, persistentListOf())
 
   val videoQualityTracks: StateFlow<List<TrackNode>> =
-    combine(allTracks, PlaybackSession.state) { tracks, session ->
+    combine(allTracks, PlaybackSession.state, activePlaybackEngine) { tracks, session, activeEngine ->
       val item = session.currentItem
+      if (activeEngine == PlaybackEngineMode.NATIVE) {
+        return@combine persistentListOf()
+      }
       val isNetworkStream =
         sequenceOf(item?.originalUri, item?.playableUri)
           .filterNotNull()
@@ -818,6 +830,7 @@ class PlayerViewModel(
       .stateIn(viewModelScope, SharingStarted.Eagerly, false)
 
   fun selectVideoQuality(track: TrackNode) {
+    if (activePlaybackEngine.value == PlaybackEngineMode.NATIVE) return
     if (currentItemRequiresYtdlp() && !MpvConfigOverridePolicy.isOwnedByMpvConf("ytdl-format")) {
       val selectedAudio = pairedYtdlTrack(track, TrackNode::isAudio)
         ?: allTracks.value.firstOrNull { candidate -> candidate.isAudio && candidate.isSelected }
@@ -839,10 +852,11 @@ class PlayerViewModel(
   }
 
   fun selectAudioTrack(track: TrackNode) {
-    if (nativeEngineActive.value || decoderPreferences.playbackEngine.get() == PlaybackEngineMode.NATIVE) {
+    if (activePlaybackEngine.value == PlaybackEngineMode.NATIVE) {
       nativeAudioToggleListener?.invoke(track.id)
       return
     }
+    if (track.id <= 0) return
     if (getTrackSelectionId("aid") == track.id) {
       setTrackSelectionId("aid", null)
       return
@@ -979,13 +993,13 @@ class PlayerViewModel(
       }.stateIn(viewModelScope, SharingStarted.Eagerly, persistentListOf())
 
   val chapters: StateFlow<List<dev.vivvvek.seeker.Segment>> =
-    combine(mpvChapters, nativeChapters, nativeEngineActive, AudiobookPlayback.chapters) { mpv, native, nativeActive, audiobookChapters ->
+    combine(mpvChapters, nativeChapters, activePlaybackEngine, AudiobookPlayback.chapters) { mpv, native, activeEngine, audiobookChapters ->
       when {
         PlaybackSession.state.value.currentItem?.audiobook != null && audiobookChapters.isNotEmpty() ->
           audiobookChapters.map { chapter ->
             Segment(chapter.title, chapter.bookStartMs / 1000f)
           }
-        nativeActive && native.isNotEmpty() -> native
+        activeEngine == PlaybackEngineMode.NATIVE -> native
         else -> mpv
       }
     }.stateIn(viewModelScope, SharingStarted.Eagerly, persistentListOf())
@@ -2874,7 +2888,7 @@ class PlayerViewModel(
     subtitleAddMutex.withLock {
       // This method runs on Dispatchers.IO. Use the ViewModel state flow instead of asking the
       // Media3 host, whose ExoPlayer instance is main-thread confined.
-      val nativeActive = nativeEngineActive.value
+      val nativeActive = activePlaybackEngine.value == PlaybackEngineMode.NATIVE
       val uriString = uri.toString()
       val nativeAlreadyRegistered =
         nativeExternalSubtitleTracks.value.any { it.externalFilename == uriString }
@@ -4375,10 +4389,9 @@ class PlayerViewModel(
   }
 
   fun toggleSubtitle(id: Int) {
-    // During a native handoff the active engine can be Native before the persisted preference
-    // is updated. Route the click by the actual active engine, otherwise this would write MPV's
-    // sid/sub-visibility properties while Media3 is the visible player.
-    if (nativeEngineActive.value || decoderPreferences.playbackEngine.get() == PlaybackEngineMode.NATIVE) {
+    // The in-player engine choice is local to this item; it may intentionally differ from the
+    // global preference. Route by the renderer that currently owns playback.
+    if (activePlaybackEngine.value == PlaybackEngineMode.NATIVE) {
       if (id <= -10_000) {
         nativeExternalSubtitleToggleListener?.invoke(id)
         return
@@ -4407,7 +4420,7 @@ class PlayerViewModel(
   }
 
   fun isSubtitleSelected(id: Int): Boolean {
-    if (nativeEngineActive.value || decoderPreferences.playbackEngine.get() == PlaybackEngineMode.NATIVE) {
+    if (activePlaybackEngine.value == PlaybackEngineMode.NATIVE) {
       return subtitleTracks.value.firstOrNull { it.id == id }?.selected == true
     }
     val primarySid = getTrackSelectionId("sid")
@@ -4416,7 +4429,7 @@ class PlayerViewModel(
   }
 
   fun subtitleSelectionIndicator(id: Int): String? {
-    if (decoderPreferences.playbackEngine.get() == PlaybackEngineMode.NATIVE) {
+    if (activePlaybackEngine.value == PlaybackEngineMode.NATIVE) {
       return if (subtitleTracks.value.firstOrNull { it.id == id }?.selected == true) "P" else null
     }
     val primarySid = getTrackSelectionId("sid")

@@ -72,16 +72,17 @@ import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.unit.dp
 import app.infinity.mpvz.preferences.AppearancePreferences
+import app.infinity.mpvz.preferences.AdvancedPreferences
 import app.infinity.mpvz.preferences.PlayerPreferences
 import app.infinity.mpvz.preferences.preference.collectAsState
 import app.infinity.mpvz.presentation.Screen
 import app.infinity.mpvz.ui.browser.MainScreen
 import app.infinity.mpvz.ui.browser.NavigationBarState
 import app.infinity.mpvz.ui.browser.components.MiniPlayer
-import app.infinity.mpvz.ui.player.InAppMusicPlayerSheet
-import app.infinity.mpvz.ui.player.LocalInAppMusicSheet
-import app.infinity.mpvz.ui.player.coveredByInAppMusicSheet
-import app.infinity.mpvz.ui.player.rememberInAppMusicSheetState
+import app.infinity.mpvz.ui.player.BrowserMusicSheet
+import app.infinity.mpvz.ui.player.LocalBrowserMusicSheet
+import app.infinity.mpvz.ui.player.hiddenUnderBrowserMusicSheet
+import app.infinity.mpvz.ui.player.rememberBrowserMusicSheetState
 import app.infinity.mpvz.ui.player.NavigationAnimStyle
 import app.infinity.mpvz.ui.theme.DarkMode
 import app.infinity.mpvz.ui.theme.MpvInfinityTheme
@@ -180,6 +181,7 @@ private fun screenNavTransition(
  */
 class MainActivity : AppCompatActivity() {
   private val appearancePreferences by inject<AppearancePreferences>()
+  private val advancedPreferences by inject<AdvancedPreferences>()
   private val playerPreferences by inject<PlayerPreferences>()
   private var appliedEdgeToEdgeDarkMode: Boolean? = null
   private lateinit var pipHelper: MPVPipHelper
@@ -603,11 +605,11 @@ class MainActivity : AppCompatActivity() {
     val isDownloading by (updateViewModel?.isDownloading ?: fallbackIsDownloading).collectAsState()
     val downloadProgress by (updateViewModel?.downloadProgress ?: fallbackDownloadProgress).collectAsState()
 
-    val inAppMusicSheet = rememberInAppMusicSheetState()
+    val browserMusicSheet = rememberBrowserMusicSheetState()
     // Provide both LocalBackStack and the LazyList/Grid states to all screens
     CompositionLocalProvider(
       LocalBackStack provides typedBackstack,
-      LocalInAppMusicSheet provides inAppMusicSheet,
+      LocalBrowserMusicSheet provides browserMusicSheet,
     ) {
       val hasNavEntries = typedBackstack.isNotEmpty()
 
@@ -631,7 +633,7 @@ class MainActivity : AppCompatActivity() {
           NavDisplay(
             modifier = Modifier
               .fillMaxSize()
-              .coveredByInAppMusicSheet(inAppMusicSheet),
+              .hiddenUnderBrowserMusicSheet(browserMusicSheet),
             backStack = typedBackstack,
             onBack = {
               if (typedBackstack.size <= 1 || !typedBackstack.popSafely()) {
@@ -691,7 +693,7 @@ class MainActivity : AppCompatActivity() {
                     end = 12.dp,
                     bottom =
                       (if (NavigationBarState.isNavBarVisible) {
-                        NavigationBarState.navigationBarClearance
+                        NavigationBarState.navigationBarClearance + 10.dp
                       } else {
                         12.dp
                       }) +
@@ -728,7 +730,7 @@ class MainActivity : AppCompatActivity() {
             }
 
           MiniPlayer(modifier = miniPlayerModifier)
-          InAppMusicPlayerSheet(state = inAppMusicSheet)
+          BrowserMusicSheet(state = browserMusicSheet)
         }
       }
 

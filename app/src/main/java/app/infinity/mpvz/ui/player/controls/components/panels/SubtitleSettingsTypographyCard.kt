@@ -220,7 +220,7 @@ fun SubtitleSettingsTypographyCard(
             Icon(justification.icon, null)
           }
         }
-        Spacer(Modifier.weight(1f))
+        // Build 1910: this row is horizontally scrollable so Reset remains reachable at 320dp and in long locales.
         TextButton(
           enabled = !ownsAny(typographyOptions),
           onClick = { resetTypography(preferences) },
@@ -248,6 +248,8 @@ fun SubtitleSettingsTypographyCard(
           selectedValue = font?.takeUnless { it == DEFAULT_SUBTITLE_FONT_FAMILY }.orEmpty().ifEmpty { "Default" },
           options = fonts.toImmutableList(),
           label = stringResource(R.string.player_sheets_sub_typography_font),
+          modifier = Modifier.playerGlassPane(enabled = true, cornerRadius = 14.dp),
+          glassStyle = true,
           onValueChangedEvent = {
             val storedFont = if (it == "Default") "" else it
             val actualFont = storedFont.ifBlank { DEFAULT_SUBTITLE_FONT_FAMILY }

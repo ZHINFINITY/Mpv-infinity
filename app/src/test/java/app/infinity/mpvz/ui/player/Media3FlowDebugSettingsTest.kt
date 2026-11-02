@@ -7,12 +7,30 @@ import org.junit.Test
 
 class Media3FlowDebugSettingsTest {
   @Test
-  fun nativeFlowMakesDebugControlsVisibleWithoutTheMpvFlowRuntime() {
+  fun releaseBuildShowsControlsWhenEitherFlowRuntimeIsAvailable() {
     assertTrue(
       Media3FlowDebugSettingsPolicy.controlsVisible(
-        debugBuild = true,
+        debugBuild = false,
+        mpvFlowRuntimeAvailable = true,
+        nativeMedia3FlowAvailable = false,
+      ),
+    )
+    assertTrue(
+      Media3FlowDebugSettingsPolicy.controlsVisible(
+        debugBuild = false,
         mpvFlowRuntimeAvailable = false,
         nativeMedia3FlowAvailable = true,
+      ),
+    )
+  }
+
+  @Test
+  fun releaseBuildHidesControlsWhenNeitherFlowRuntimeIsAvailable() {
+    assertFalse(
+      Media3FlowDebugSettingsPolicy.controlsVisible(
+        debugBuild = false,
+        mpvFlowRuntimeAvailable = false,
+        nativeMedia3FlowAvailable = false,
       ),
     )
   }
@@ -43,11 +61,11 @@ class Media3FlowDebugSettingsTest {
   }
 
   @Test
-  fun resolverAndSoftBlendPreferencesReachTheirIndependentNativeModes() {
+  fun releaseBuildAppliesEitherNativeModeAndSoftBlendWinsOnConflict() {
     assertEquals(
       Media3FlowDebugSettings(visibilityResolverEnabled = true),
       Media3FlowDebugSettingsPolicy.effective(
-        debugBuild = true,
+        debugBuild = false,
         requestedVisibilityResolver = true,
         requestedSoftBlend = false,
       ),
@@ -55,19 +73,15 @@ class Media3FlowDebugSettingsTest {
     assertEquals(
       Media3FlowDebugSettings(softBlendEnabled = true),
       Media3FlowDebugSettingsPolicy.effective(
-        debugBuild = true,
+        debugBuild = false,
         requestedVisibilityResolver = false,
         requestedSoftBlend = true,
       ),
     )
-  }
-
-  @Test
-  fun softBlendWinsWhenBothPoliciesWerePreviouslySavedAsEnabled() {
     assertEquals(
       Media3FlowDebugSettings(softBlendEnabled = true),
       Media3FlowDebugSettingsPolicy.effective(
-        debugBuild = true,
+        debugBuild = false,
         requestedVisibilityResolver = true,
         requestedSoftBlend = true,
       ),
@@ -75,20 +89,41 @@ class Media3FlowDebugSettingsTest {
   }
 
   @Test
-  fun releaseBuildDisablesBothDebugPoliciesAndHidesNativeOnlyControls() {
-    assertEquals(
-      Media3FlowDebugSettings(),
-      Media3FlowDebugSettingsPolicy.effective(
+  fun releaseBuildHonorsMpvFlowRequestButKeepsRuntimeAndConfigOwnershipChecks() {
+    assertTrue(
+      Media3FlowDebugSettingsPolicy.mpvFlowFeatureEnabled(
         debugBuild = false,
-        requestedVisibilityResolver = true,
-        requestedSoftBlend = true,
+        requested = true,
+        interpolationActive = true,
+        vulkanBackend = true,
+        mpvConfOwnsOption = false,
       ),
     )
     assertFalse(
-      Media3FlowDebugSettingsPolicy.controlsVisible(
+      Media3FlowDebugSettingsPolicy.mpvFlowFeatureEnabled(
         debugBuild = false,
-        mpvFlowRuntimeAvailable = false,
-        nativeMedia3FlowAvailable = true,
+        requested = true,
+        interpolationActive = false,
+        vulkanBackend = true,
+        mpvConfOwnsOption = false,
+      ),
+    )
+    assertFalse(
+      Media3FlowDebugSettingsPolicy.mpvFlowFeatureEnabled(
+        debugBuild = false,
+        requested = true,
+        interpolationActive = true,
+        vulkanBackend = false,
+        mpvConfOwnsOption = false,
+      ),
+    )
+    assertFalse(
+      Media3FlowDebugSettingsPolicy.mpvFlowFeatureEnabled(
+        debugBuild = false,
+        requested = true,
+        interpolationActive = true,
+        vulkanBackend = true,
+        mpvConfOwnsOption = true,
       ),
     )
   }

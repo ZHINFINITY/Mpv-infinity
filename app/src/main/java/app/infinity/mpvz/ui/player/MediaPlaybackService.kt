@@ -74,10 +74,342 @@ import org.koin.core.component.KoinComponent
 import org.koin.core.component.inject
 import java.lang.ref.WeakReference
 import java.util.Locale
+import java.util.concurrent.locks.ReentrantLock
 import kotlin.math.abs
 import kotlin.math.ceil
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+
+internal fun shouldResetClosedAudioSessionForStartIntent(
+  action: String?,
+  identifier: String?,
+  uri: String?,
+): Boolean =
+  (action == null || action == Intent.ACTION_VIEW) &&
+    (!identifier.isNullOrBlank() || !uri.isNullOrBlank())
+
+internal fun shouldResetClosedAudioSessionForMetadata(
+  sessionState: PlaybackSessionState,
+  closedSessionGeneration: Long?,
+  identifier: String?,
+  uri: String?,
+): Boolean {
+  if (closedSessionGeneration == null || sessionState.generation == closedSessionGeneration) return false
+  val resolvedIdentifier = identifier?.takeIf { it.isNotBlank() }
+  val resolvedUri = uri?.takeIf { it.isNotBlank() }
+  if (sessionState.phase != PlaybackPhase.LOADING &&
+    sessionState.phase != PlaybackPhase.READY &&
+    sessionState.phase != PlaybackPhase.BACKGROUND
+  ) return false
+  val item = sessionState.currentItem ?: return false
+  if (resolvedIdentifier == null && resolvedUri == null) return false
+  return MediaSessionItemIdentity(item.stableId, item.originalUri)
+    .acceptsMetadata(resolvedIdentifier, resolvedUri)
+}
+
+internal data class ClosedAudioSessionSnapshot(
+  val generation: Long,
+  val stableId: String?,
+  val originalUri: String?,
+  val positionSeconds: Double,
+  val paused: Boolean,
+)
+
+internal class ClosedAudioSessionMarker {
+  private var closedSnapshot: ClosedAudioSessionSnapshot? = null
+  private var closePersistencePending = false
+  private var pendingCloseSnapshot: ClosedAudioSessionSnapshot? = null
+  private var latestResumeSaveSequence = 0L
+  private val resumePersistenceLock = ReentrantLock()
+
+  private fun <T> withResumePersistenceLock(block: () -> T): T {
+    resumePersistenceLock.lock()
+    return try {
+      block()
+    } finally {
+      resumePersistenceLock.unlock()
+    }
+  }
+
+  @Synchronized
+  fun reserveResumeSaveSequence(): Long {
+    latestResumeSaveSequence += 1L
+    return latestResumeSaveSequence
+  }
+
+  private fun matchesItem(
+    snapshot: ClosedAudioSessionSnapshot?,
+    currentItem: PlaybackItem?,
+  ): Boolean {
+    currentItem ?: return false
+    val closedStableId = snapshot?.stableId?.takeIf { it.isNotBlank() }
+    val currentStableId = currentItem.stableId.takeIf { it.isNotBlank() }
+    return when {
+      closedStableId != null || currentStableId != null -> closedStableId != null && closedStableId == currentStableId
+      else -> snapshot?.originalUri == currentItem.originalUri
+    }
+  }
+
+  private fun matchesSession(
+    snapshot: ClosedAudioSessionSnapshot?,
+    generation: Long,
+    currentItem: PlaybackItem?,
+  ): Boolean = snapshot?.generation == generation && matchesItem(snapshot, currentItem)
+
+  private fun appliesToCapture(
+    snapshot: ClosedAudioSessionSnapshot?,
+    sessionState: PlaybackSessionState,
+    currentItem: PlaybackItem?,
+  ): Boolean =
+    matchesItem(snapshot, currentItem) &&
+      (snapshot?.generation == sessionState.generation || sessionState.phase == PlaybackPhase.STOPPING)
+
+  @Synchronized
+  fun mark(
+    generation: Long,
+    currentItem: PlaybackItem?,
+    positionSeconds: Double,
+    paused: Boolean,
+  ) {
+    // Keep the pre-pause snapshot only while this close's persistence is active. After an attempt
+    // finishes without teardown, a later user close must capture its current position and pause state.
+    if (isClosePersistencePending(generation, currentItem)) return
+    closedSnapshot =
+      ClosedAudioSessionSnapshot(
+        generation = generation,
+        stableId = currentItem?.stableId,
+        originalUri = currentItem?.originalUri,
+        positionSeconds = positionSeconds.takeIf { it.isFinite() && it >= 0.0 } ?: 0.0,
+        paused = paused,
+      )
+    reserveResumeSaveSequence()
+  }
+
+  @Synchronized
+  fun resetForNewPlayback(
+    sessionState: PlaybackSessionState,
+    identifier: String?,
+    uri: String?,
+  ): Boolean {
+    val closed = closedSnapshot ?: return false
+    val item = sessionState.currentItem ?: return false
+    val itemChanged = !matchesItem(closed, item)
+    val generationChanged = closed.generation != sessionState.generation
+    if (!itemChanged && !generationChanged) return false
+    val resolvedIdentifier = identifier?.takeIf { it.isNotBlank() }
+    val resolvedUri = uri?.takeIf { it.isNotBlank() }
+    if (resolvedIdentifier == null && resolvedUri == null) return false
+    val phaseAllowsReset =
+      sessionState.phase in setOf(PlaybackPhase.LOADING, PlaybackPhase.READY, PlaybackPhase.BACKGROUND) ||
+        (itemChanged && sessionState.phase in setOf(PlaybackPhase.STOPPING, PlaybackPhase.IDLE))
+    if (!phaseAllowsReset) return false
+    if (!MediaSessionItemIdentity(item.stableId, item.originalUri).acceptsMetadata(resolvedIdentifier, resolvedUri)) return false
+    closedSnapshot = null
+    reserveResumeSaveSequence()
+    return true
+  }
+
+  @Synchronized
+  fun isClosed(
+    sessionState: PlaybackSessionState,
+    currentItem: PlaybackItem?,
+  ): Boolean {
+    val closed = closedSnapshot ?: return false
+    if (appliesToCapture(closed, sessionState, currentItem)) return true
+    closedSnapshot = null
+    reserveResumeSaveSequence()
+    return false
+  }
+
+  @Synchronized
+  fun snapshotFor(currentItem: PlaybackItem?): ClosedAudioSessionSnapshot? {
+    if (currentItem == null) {
+      if (closedSnapshot != null) {
+        closedSnapshot = null
+        reserveResumeSaveSequence()
+      }
+      return null
+    }
+    return closedSnapshot?.takeIf { closed ->
+      matchesItem(closed, currentItem)
+    }
+  }
+
+  @Synchronized
+  fun snapshotForCapture(
+    sessionState: PlaybackSessionState,
+    currentItem: PlaybackItem?,
+  ): ClosedAudioSessionSnapshot? =
+    closedSnapshot?.takeIf { appliesToCapture(it, sessionState, currentItem) }
+
+  @Synchronized
+  fun isCurrentClosedSession(generation: Long, currentItem: PlaybackItem?): Boolean {
+    return matchesSession(closedSnapshot, generation, currentItem)
+  }
+
+  @Synchronized
+  fun beginClosePersistence(generation: Long, currentItem: PlaybackItem?): Boolean {
+    val closed = closedSnapshot ?: return false
+    if (!matchesSession(closed, generation, currentItem)) return false
+    if (isClosePersistencePending(generation, currentItem)) return false
+    pendingCloseSnapshot = closed
+    closePersistencePending = true
+    return true
+  }
+
+  @Synchronized
+  fun isClosePersistencePending(generation: Long, currentItem: PlaybackItem?): Boolean =
+    closePersistencePending &&
+      matchesSession(pendingCloseSnapshot, generation, currentItem) &&
+      matchesSession(closedSnapshot, generation, currentItem)
+
+  @Synchronized
+  fun finishClosePersistence(generation: Long, currentItem: PlaybackItem?) {
+    if (!matchesSession(pendingCloseSnapshot, generation, currentItem)) return
+    pendingCloseSnapshot = null
+    closePersistencePending = false
+  }
+
+  fun persistIfCloseIsCurrent(
+    generation: Long,
+    currentItem: PlaybackItem?,
+    persist: () -> Boolean,
+  ): Boolean =
+    withResumePersistenceLock {
+      if (!isClosePersistencePending(generation, currentItem)) return@withResumePersistenceLock false
+      val persisted = persist()
+      persisted && isClosePersistencePending(generation, currentItem)
+    }
+
+  fun persistResumeSnapshotIfCurrent(
+    sessionState: PlaybackSessionState,
+    currentItem: PlaybackItem?,
+    closedByUser: Boolean,
+    resumeSaveSequence: Long,
+    persist: () -> Boolean,
+  ): Boolean =
+    withResumePersistenceLock {
+      val canPersist = synchronized(this) {
+        resumeSaveSequence == latestResumeSaveSequence &&
+          appliesToCapture(closedSnapshot, sessionState, currentItem) == closedByUser
+      }
+      if (!canPersist) return@withResumePersistenceLock false
+      val persisted = persist()
+      persisted && synchronized(this) {
+        resumeSaveSequence == latestResumeSaveSequence &&
+          appliesToCapture(closedSnapshot, sessionState, currentItem) == closedByUser
+      }
+    }
+
+  fun persistActivitySnapshot(
+    context: Context,
+    playbackCapture: PlaybackResumeStateCapture,
+  ): Boolean =
+    withResumePersistenceLock {
+      val currentItem = playbackCapture.queueState.currentItem
+      if (currentItem == null) {
+        synchronized(this) {
+          closedSnapshot = null
+          reserveResumeSaveSequence()
+        }
+        return@withResumePersistenceLock false
+      }
+      val sessionState = playbackCapture.sessionState.copy(currentItem = currentItem)
+      var activitySaveSequence = 0L
+      val closedSnapshot = synchronized(this) {
+        resetForNewPlayback(sessionState, currentItem.stableId, currentItem.originalUri)
+        activitySaveSequence = reserveResumeSaveSequence()
+        snapshotForCapture(sessionState, currentItem)
+      }
+      val persisted =
+        persistAudioResumeSnapshotForActivity(
+          context = context,
+          playbackCapture = playbackCapture,
+          closedByUser = closedSnapshot != null,
+          closedSnapshot = closedSnapshot,
+        )
+      persisted && synchronized(this) { activitySaveSequence == latestResumeSaveSequence }
+    }
+
+}
+
+internal fun shouldTransferPendingPlaybackStateSave(
+  phase: PlaybackPhase,
+  currentIdentifier: String,
+  currentItem: PlaybackItem?,
+  pendingIdentifier: String,
+  pendingItem: PlaybackItem?,
+): Boolean {
+  if (phase !in setOf(PlaybackPhase.STOPPING, PlaybackPhase.IDLE) || currentIdentifier != pendingIdentifier) return false
+  val liveItem = currentItem ?: return true
+  val capturedItem = pendingItem ?: return false
+  return liveItem.stableId == capturedItem.stableId && liveItem.originalUri == capturedItem.originalUri
+}
+
+internal fun persistAudioResumeSnapshotForActivity(
+  context: Context,
+  playbackCapture: PlaybackResumeStateCapture,
+  closedByUser: Boolean,
+  closedSnapshot: ClosedAudioSessionSnapshot?,
+): Boolean {
+  val queueState = playbackCapture.queueState
+  val currentItem = queueState.currentItem ?: return false
+  val matchingClosedSnapshot = closedSnapshot?.takeIf { it.stableId == currentItem.stableId }
+  return AudioPlaybackResumeStore.save(
+    context,
+    queueState,
+    matchingClosedSnapshot?.positionSeconds ?: playbackCapture.position.positionSeconds,
+    matchingClosedSnapshot?.paused ?: playbackCapture.paused,
+    closedByUser = closedByUser,
+  )
+}
+
+internal suspend fun persistBeforePlaybackTeardown(
+  persist: suspend () -> Boolean,
+  teardown: suspend () -> Unit,
+) : Boolean {
+  if (!persist()) return false
+  teardown()
+  return true
+}
+
+internal fun shouldMarkClosedAudioSession(currentItem: PlaybackItem?): Boolean =
+  AudioPlaybackResumeStore.canPersistCurrentItem(currentItem)
+
+internal fun shouldSkipSynchronousPlaybackStateSave(
+  nativeRendererOwner: Boolean,
+  identifier: String,
+  closedByUser: Boolean,
+  currentItem: PlaybackItem?,
+): Boolean =
+  (nativeRendererOwner || identifier.isBlank()) &&
+    !(closedByUser && shouldMarkClosedAudioSession(currentItem))
+
+internal fun saveSynchronousAudioResumeSnapshotIfAllowed(
+  context: Context,
+  nativeRendererOwner: Boolean,
+  identifier: String,
+  queueState: PlaybackQueueState,
+  positionSeconds: Double,
+  paused: Boolean,
+  closedByUser: Boolean,
+): Boolean {
+  if (
+    shouldSkipSynchronousPlaybackStateSave(
+      nativeRendererOwner = nativeRendererOwner,
+      identifier = identifier,
+      closedByUser = closedByUser,
+      currentItem = queueState.currentItem,
+    )
+  ) return false
+  return AudioPlaybackResumeStore.save(
+    context,
+    queueState,
+    positionSeconds,
+    paused,
+    closedByUser = closedByUser,
+  )
+}
 
 /**
  * Background playback service for mpv with MediaSession integration.
@@ -87,11 +419,22 @@ class MediaPlaybackService :
   MediaBrowserServiceCompat(),
   MPVLib.EventObserver,
   KoinComponent {
+  private data class PendingPlaybackStateSave(
+    val playbackCapture: PlaybackResumeStateCapture,
+    val identifier: String,
+    val resumeSaveSequence: Long,
+    val resumePositionSeconds: Double,
+    val resumePaused: Boolean,
+    val closedByUser: Boolean,
+    val snapshot: PlaybackStateSnapshot?,
+  )
+
   companion object {
     private const val TAG = "MediaPlaybackService"
 
     // Final state saves must outlive serviceScope, which is cancelled during teardown.
     private val persistenceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val closedAudioSessionMarker = ClosedAudioSessionMarker()
     private const val NOTIFICATION_ID = 1
     private const val NOTIFICATION_CHANNEL_ID = "Mpv∞_playback_channel"
     private const val PLAYBACK_STATE_SAVE_INTERVAL_MS = 5000L
@@ -109,6 +452,7 @@ class MediaPlaybackService :
     const val ACTION_NOTIFICATION_MEDIA_FAVORITE = "app.infinity.mpvz.action.NOTIFICATION_MEDIA_FAVORITE"
     const val ACTION_NOTIFICATION_CLOSE = "app.infinity.mpvz.action.NOTIFICATION_CLOSE"
     const val ACTION_NOTIFICATION_STOP = "app.infinity.mpvz.action.NOTIFICATION_STOP"
+    const val EXTRA_PLAYER_ACTIVITY_HANDOFF = "app.infinity.mpvz.extra.PLAYER_ACTIVITY_HANDOFF"
 
     @Volatile
     internal var thumbnail: Bitmap? = null
@@ -118,6 +462,8 @@ class MediaPlaybackService :
 
     @Volatile
     private var activeInstance: MediaPlaybackService? = null
+
+    private val failedPromotionHandoffState = PlayerLifecyclePolicy.FailedPromotionHandoffState()
 
     /** True while PlayerActivity's Native renderer owns the shared playback session. */
     @Volatile
@@ -145,6 +491,35 @@ class MediaPlaybackService :
       activeInstance?.let { service ->
         service.foregroundReady && !activityForeground && !service.handingBackToActivity
       } == true
+
+    internal fun isAudioSessionClosedByUser(): Boolean {
+      val playbackCapture = PlaybackSession.captureResumeState(fallbackPositionSeconds = 0.0, allowNativePropertyReads = false)
+      val currentItem = playbackCapture.queueState.currentItem
+      if (!shouldMarkClosedAudioSession(currentItem)) return false
+      return closedAudioSessionMarker.isClosed(playbackCapture.sessionState, currentItem)
+    }
+
+    internal fun closedAudioSessionSnapshotFor(currentItem: PlaybackItem?): ClosedAudioSessionSnapshot? =
+      closedAudioSessionMarker.snapshotFor(currentItem)
+
+    internal fun resetClosedAudioSessionForNewPlayback(
+      sessionState: PlaybackSessionState,
+      identifier: String?,
+      uri: String?,
+    ): Boolean = closedAudioSessionMarker.resetForNewPlayback(sessionState, identifier, uri)
+
+    internal fun persistActivityAudioResumeSnapshot(
+      context: Context,
+      playbackCapture: PlaybackResumeStateCapture,
+    ): Boolean = closedAudioSessionMarker.persistActivitySnapshot(context, playbackCapture)
+
+    internal fun isAudioClosePersistencePending(): Boolean {
+      val playbackCapture = PlaybackSession.captureResumeState(fallbackPositionSeconds = 0.0, allowNativePropertyReads = false)
+      return closedAudioSessionMarker.isClosePersistencePending(
+        playbackCapture.sessionState.generation,
+        playbackCapture.queueState.currentItem,
+      )
+    }
 
     /** True once the service owns the foreground notification, independent of Activity focus. */
     internal fun isNotificationOwnerReady(): Boolean = activeInstance?.foregroundReady == true
@@ -177,7 +552,16 @@ class MediaPlaybackService :
       activeInstance?.deactivateMediaSession()
     }
 
-    internal fun takeAudioOwnershipForDetachedPlayback(): Boolean = activeInstance?.takeAudioOwnership() == true
+    internal fun takeAudioOwnershipForDetachedPlayback(): Boolean =
+      activeInstance?.let { service ->
+        val failedPromotion = PlayerLifecyclePolicy.shouldStopPlaybackAfterFailedForegroundPromotion(
+          activityHandoffRequested = service.playerActivityHandoffRequested,
+          activityRelinquishedPlayback = service.activityRelinquishedPlayback,
+          foregroundPromotionFailed = service.foregroundPromotionFailed,
+          foregroundReady = service.foregroundReady,
+        )
+        !failedPromotion && service.takeAudioOwnership()
+      } == true
 
     internal fun skipToNextFromApp(): Boolean = activeInstance?.playNextFromSession() == true
 
@@ -206,6 +590,14 @@ class MediaPlaybackService :
     }
 
     /**
+     * Called by the Application when its last started Activity stops (never for a configuration
+     * change). This is the "stop once I leave" half of [setInAppPlayerVisible]: service-owned
+     * playback that is not allowed to continue in the background pauses here. Returns whether
+     * playback was paused.
+     */
+    internal fun onAppBackgrounded(): Boolean = activeInstance?.pauseDetachedPlaybackIfBackgroundDisabled() == true
+
+    /**
      * Marks that playback is being handed back to a foreground Activity (e.g. reopening the
      * player from the Mini Player / playback notification). Release the service-owned focus
      * immediately, but never mutate mpv's pause state: the foreground Activity will acquire
@@ -221,6 +613,30 @@ class MediaPlaybackService :
     }
 
     internal fun isActivityHandoffInProgress(): Boolean = activeInstance?.handingBackToActivity == true
+
+    private fun captureFailedPromotionIdentity(): PlayerLifecyclePolicy.FailedForegroundPromotionIdentity? {
+      val state = PlaybackSession.state.value
+      val item = state.currentItem ?: return null
+      return PlayerLifecyclePolicy.FailedForegroundPromotionIdentity(
+        generation = state.generation,
+        stableId = item.stableId,
+        originalUri = item.originalUri,
+        torrentFileIndex = item.torrentFileIndex,
+      )
+    }
+
+    internal fun notifyPlayerActivityRelinquishedPlayback(): PlayerLifecyclePolicy.FailedForegroundPromotionIdentity? {
+      val currentIdentity = captureFailedPromotionIdentity()
+      val service = activeInstance
+      if (service != null && !service.mpvAccessReleased) {
+        failedPromotionHandoffState.noteActivityRelinquished(currentIdentity)
+        service.activityRelinquishedPlayback = true
+        service.stopPlaybackAfterFailedPromotionIfReady()
+        return null
+      }
+
+      return failedPromotionHandoffState.takeFailureForRelinquishedActivity(currentIdentity)
+    }
 
     /** Releases every service-owned MPV access before an Activity destroys the global core. */
     internal fun prepareForMpvShutdown() {
@@ -309,6 +725,7 @@ class MediaPlaybackService :
   private var lastThumbnailSource: WeakReference<Bitmap>? = null
   private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
   private var playbackStateSaveJob: Job? = null
+  @Volatile private var pendingPlaybackStateSave: PendingPlaybackStateSave? = null
   private var favoriteStateJob: Job? = null
   private var favoriteActionJob: Job? = null
   private val mediaFavoriteActionMutex = Mutex()
@@ -335,9 +752,20 @@ class MediaPlaybackService :
   private var noisyReceiverRegistered = false
   @Volatile
   private var foregroundReady = false
-  private val audioFocusChangeListener =
-    AudioManager.OnAudioFocusChangeListener { change ->
-      if (mpvAccessReleased || handingBackToActivity) return@OnAudioFocusChangeListener
+  private var playerActivityHandoffRequested = false
+  private var activityRelinquishedPlayback = false
+  private var foregroundPromotionFailed = false
+  private var stoppedForFailedPromotion = false
+  private var playerActivityHandoffIdentity: PlayerLifecyclePolicy.FailedForegroundPromotionIdentity? = null
+  // Set once the request reached AudioManager; its listener stays in AudioManager's map until
+  // abandoned, even when the request was refused or focus was lost later.
+  @Volatile
+  private var audioFocusRequestSubmitted = false
+
+  // Captures the service; AudioManager only sees the weak wrapper below (see WeakAudioFocusListener).
+  private val audioFocusChangeHandler =
+    AudioFocusChangeHandler { change ->
+      if (mpvAccessReleased || handingBackToActivity) return@AudioFocusChangeHandler
       when (change) {
         AudioManager.AUDIOFOCUS_LOSS -> {
           resumeAfterFocusGain = false
@@ -359,7 +787,7 @@ class MediaPlaybackService :
           }
         }
         AudioManager.AUDIOFOCUS_GAIN -> {
-          if (!ownsAudioFocus) return@OnAudioFocusChangeListener
+          if (!ownsAudioFocus) return@AudioFocusChangeHandler
           hasAudioFocus = true
           restoreDuckedVolume()
           if (resumeAfterFocusGain) PlaybackSession.setPropertyBoolean("pause", false)
@@ -367,6 +795,7 @@ class MediaPlaybackService :
         }
       }
     }
+  private val audioFocusChangeListener = WeakAudioFocusListener(audioFocusChangeHandler)
   private val noisyReceiver =
     object : BroadcastReceiver() {
       override fun onReceive(
@@ -488,10 +917,21 @@ class MediaPlaybackService :
   ): Int {
     Log.d(TAG, "Service starting with startId: $startId")
 
+    if (intent?.getBooleanExtra(EXTRA_PLAYER_ACTIVITY_HANDOFF, false) == true) {
+      playerActivityHandoffRequested = true
+      playerActivityHandoffIdentity = captureFailedPromotionIdentity()
+      failedPromotionHandoffState.discardStaleFor(playerActivityHandoffIdentity)
+      activityRelinquishedPlayback = failedPromotionHandoffState.wasRelinquished(playerActivityHandoffIdentity)
+      foregroundPromotionFailed = false
+      stoppedForFailedPromotion = false
+    }
+
     // MediaButtonReceiver launches us with startForegroundService(). Android 16 enforces the
     // promotion deadline even when there is no live playback session and this start will be
     // stopped immediately, so no validation or action branch may run before this call.
     if (!startForegroundNotification()) {
+      foregroundReady = false
+      recordForegroundPromotionFailure()
       stopSelf(startId)
       return START_NOT_STICKY
     }
@@ -529,6 +969,7 @@ class MediaPlaybackService :
         ACTION_NOTIFICATION_CLOSE,
         ACTION_NOTIFICATION_STOP,
         -> {
+          markUserClosedSession()
           stopPlaybackAndService(force = true)
           return START_NOT_STICKY
         }
@@ -539,6 +980,9 @@ class MediaPlaybackService :
       val artist = it.getStringExtra("media_artist")
       val uri = it.getStringExtra("media_uri")
       val identifier = it.getStringExtra("media_identifier")
+      if (shouldResetClosedAudioSessionForStartIntent(it.action, identifier, uri)) {
+        resetUserClosedSessionForNewPlayback(PlaybackSession.state.value, identifier, uri)
+      }
       if (it.hasExtra("audio_background_playback")) {
         val isAudio = it.getBooleanExtra("audio_background_playback", false)
         usesAudioBackgroundPlayback = isAudio
@@ -605,16 +1049,67 @@ class MediaPlaybackService :
     if (!startForegroundNotification()) {
       foregroundReady = false
       mediaSession.isActive = false
+      recordForegroundPromotionFailure()
       stopSelf(startId)
       publishForegroundActive()
       return START_NOT_STICKY
     }
     foregroundReady = true
+    failedPromotionHandoffState.clear()
+    playerActivityHandoffRequested = false
+    playerActivityHandoffIdentity = null
+    activityRelinquishedPlayback = false
+    foregroundPromotionFailed = false
+    stoppedForFailedPromotion = false
     syncMediaSessionVisibility()
     publishForegroundActive()
     Log.d(TAG, "Foreground service started successfully")
 
     return START_NOT_STICKY
+  }
+
+  private fun recordForegroundPromotionFailure() {
+    foregroundPromotionFailed = true
+    failedPromotionHandoffState.recordFailure(
+      if (playerActivityHandoffRequested) playerActivityHandoffIdentity else null,
+    )
+    stopPlaybackAfterFailedPromotionIfReady()
+  }
+
+  private fun stopPlaybackAfterFailedPromotionIfReady() {
+    val failedIdentity = failedPromotionHandoffState.pendingFailureFor(playerActivityHandoffIdentity)
+    val currentIdentity = captureFailedPromotionIdentity()
+    val shouldStop = PlayerLifecyclePolicy.shouldStopPlaybackAfterFailedForegroundPromotion(
+      activityHandoffRequested = playerActivityHandoffRequested,
+      activityRelinquishedPlayback = activityRelinquishedPlayback,
+      foregroundPromotionFailed = foregroundPromotionFailed,
+      foregroundReady = foregroundReady,
+    ) && PlayerLifecyclePolicy.shouldApplyPendingFailedPromotionCleanup(
+      failedIdentity = failedIdentity,
+      currentIdentity = currentIdentity,
+      activityRelinquishedPlayback = activityRelinquishedPlayback,
+      foregroundReady = foregroundReady,
+    )
+    if (failedIdentity != null && failedIdentity != currentIdentity) {
+      failedPromotionHandoffState.discardStaleFor(currentIdentity)
+    }
+    if (!shouldStop || failedIdentity == null || stoppedForFailedPromotion || mpvAccessReleased) return
+
+    val stoppedCurrentSession = PlaybackSession.stopIfCurrentIdentity(failedIdentity) {
+      runCatching { torrentStreamingEngine.stopStream() }
+        .onFailure { error -> Log.e(TAG, "Error stopping torrent stream after failed foreground promotion", error) }
+    }
+    if (!stoppedCurrentSession) {
+      failedPromotionHandoffState.discardStaleFor(captureFailedPromotionIdentity())
+      return
+    }
+
+    failedPromotionHandoffState.consume(failedIdentity)
+    stoppedForFailedPromotion = true
+    Log.w(TAG, "Stopping detached MPV playback after the Activity handoff lost foreground promotion")
+    paused = true
+    abandonAudioOwnership()
+    stopForegroundNotification()
   }
 
   @SuppressLint("ForegroundServiceType")
@@ -654,6 +1149,11 @@ class MediaPlaybackService :
     identifier: String? = null,
   ) {
     serviceScope.launch {
+      val sessionState = PlaybackSession.state.value
+      val currentItem = sessionState.currentItem
+      // This handles PlayerActivity's already-bound-service path only after a new live generation;
+      // reopening the same notification session or syncing artwork cannot clear the close marker.
+      resetUserClosedSessionForNewPlayback(sessionState, identifier, uri)
       if (isCurrentRadioItem()) {
         refreshCurrentRadioMetadata()
         updateMediaSessionPlaybackState()
@@ -662,7 +1162,6 @@ class MediaPlaybackService :
       }
       val resolvedTitle = FileTypeUtils.stripExtension(title)
       val resolvedIdentifier = identifier?.takeIf { it.isNotBlank() }
-      val currentItem = PlaybackSession.queue.value.currentItem
       if (currentItem != null &&
         !MediaSessionItemIdentity(currentItem.stableId, currentItem.originalUri)
           .acceptsMetadata(resolvedIdentifier, uri)
@@ -691,6 +1190,31 @@ class MediaPlaybackService :
       updateMediaSessionPlaybackState()
       updateNotification()
     }
+  }
+
+  private fun markUserClosedSession() {
+    val capture =
+      PlaybackSession.captureResumeState(
+        fallbackPositionSeconds = currentPositionSeconds,
+        allowNativePropertyReads = !isNativeRendererOwner(),
+      )
+    val currentItem = capture.queueState.currentItem
+    if (!shouldMarkClosedAudioSession(currentItem)) return
+    if (closedAudioSessionMarker.isClosePersistencePending(capture.sessionState.generation, currentItem)) return
+    closedAudioSessionMarker.mark(
+      generation = capture.sessionState.generation,
+      currentItem = currentItem,
+      positionSeconds = capture.position.positionSeconds,
+      paused = capture.paused,
+    )
+  }
+
+  private fun resetUserClosedSessionForNewPlayback(
+    sessionState: PlaybackSessionState,
+    identifier: String?,
+    uri: String?,
+  ) {
+    resetClosedAudioSessionForNewPlayback(sessionState, identifier, uri)
   }
 
   private fun replaceOwnedThumbnail(source: Bitmap?): Boolean {
@@ -734,6 +1258,7 @@ class MediaPlaybackService :
         ).setOnAudioFocusChangeListener(audioFocusChangeListener)
         .build()
         .also { audioFocusRequest = it }
+    audioFocusRequestSubmitted = true
     hasAudioFocus = audioManager.requestAudioFocus(request) == AudioManager.AUDIOFOCUS_REQUEST_GRANTED
     ownsAudioFocus = hasAudioFocus
     return hasAudioFocus
@@ -741,15 +1266,17 @@ class MediaPlaybackService :
 
   private fun abandonAudioOwnership() {
     restoreDuckedVolume()
+    val request = audioFocusRequest
+    if (AudioFocusRegistrationPolicy.mustAbandon(audioFocusRequestSubmitted) && request != null) {
+      // Also after a refused request or a lost focus: the listener is registered either way.
+      runCatching { audioManager.abandonAudioFocusRequest(request) }
+    } else if (ownsAudioFocus) {
+      Log.w(TAG, "Owned audio focus without a request; focus may remain held")
+    }
+    audioFocusRequestSubmitted = false
     if (!ownsAudioFocus) {
       resumeAfterFocusGain = false
       return
-    }
-    val request = audioFocusRequest
-    if (request != null) {
-      audioManager.abandonAudioFocusRequest(request)
-    } else {
-      Log.w(TAG, "Owned audio focus without a request; focus may remain held")
     }
     audioFocusRequest = null
     ownsAudioFocus = false
@@ -837,9 +1364,12 @@ class MediaPlaybackService :
   }
 
   private fun applySessionItem(item: PlaybackItem) {
+    val itemChanged = mediaIdentifier != item.stableId || mediaUri != item.originalUri
+    if (itemChanged) closedAudioSessionMarker.reserveResumeSaveSequence()
+    val sessionState = PlaybackSession.state.value.copy(currentItem = item)
+    resetUserClosedSessionForNewPlayback(sessionState, item.stableId, item.originalUri)
     val identity = MediaSessionItemIdentity(item.stableId, item.originalUri)
     val itemGeneration = mediaIdentityTracker.advance(identity)
-    val itemChanged = mediaIdentifier != item.stableId || mediaUri != item.originalUri
     val artworkChanged = activeArtworkUri != item.artworkUri
     val isAudio = resolveNotificationIsAudio(item, notificationIsAudio)
     notificationIsAudio = isAudio
@@ -1219,9 +1749,37 @@ class MediaPlaybackService :
     refreshTransportControls()
   }
 
+  private fun pauseDetachedPlaybackIfBackgroundDisabled(): Boolean {
+    val state = PlaybackSession.state.value
+    val shouldPause =
+      PlayerLifecyclePolicy.shouldPauseDetachedPlaybackOnAppBackground(
+        serviceOwnsPlayback =
+          isServiceRunning && !mpvAccessReleased && !activityForeground && !handingBackToActivity &&
+            !state.surfaceAttached,
+        isAudio = usesAudioBackgroundPlayback,
+        audioBackgroundPlaybackEnabled = audioPreferences.audioBackgroundPlayback.get(),
+        videoBackgroundPlaybackEnabled = audioPreferences.backgroundPlayback.get(),
+        hasActiveItem =
+          state.currentItem != null &&
+            state.phase != PlaybackPhase.IDLE &&
+            state.phase != PlaybackPhase.UNINITIALIZED,
+        isPaused = PlaybackSession.getPropertyBoolean("pause") != false,
+      )
+    if (!shouldPause) return false
+    paused = true
+    PlaybackSession.setPropertyBoolean("pause", true)
+    refreshTransportControls()
+    Log.d(TAG, "Paused detached playback: background playback is off and the app left the foreground")
+    return true
+  }
+
   private fun stopPlaybackAndService(force: Boolean = false) {
     if (!force && !canHandleTransportAction()) return
     handingBackToActivity = false
+    if (isAudioSessionClosedByUser()) {
+      stopClosedSessionAndService()
+      return
+    }
     schedulePlaybackStateSave(force = true)
     torrentStreamingEngine.stopStream()
     PlaybackSession.stop(clearQueue = true)
@@ -1236,6 +1794,136 @@ class MediaPlaybackService :
     abandonAudioOwnership()
     stopForegroundNotification()
     stopSelf()
+  }
+
+  private fun stopClosedSessionAndService() {
+    val nativeRendererOwner = isNativeRendererOwner()
+    val playbackCapture =
+      PlaybackSession.captureResumeState(
+        fallbackPositionSeconds = currentPositionSeconds,
+        allowNativePropertyReads = !nativeRendererOwner,
+      )
+    val queueState = playbackCapture.queueState
+    val currentItem = queueState.currentItem ?: return
+    val closeGeneration = playbackCapture.sessionState.generation
+    val identifier = mediaIdentifier.ifBlank { currentItem.stableId }
+    val closedByUser = closedAudioSessionMarker.isClosed(playbackCapture.sessionState, currentItem)
+    if (!closedByUser || !closedAudioSessionMarker.isCurrentClosedSession(closeGeneration, currentItem)) return
+    if (!closedAudioSessionMarker.beginClosePersistence(closeGeneration, currentItem)) return
+    val closedSnapshot = if (closedByUser) closedAudioSessionMarker.snapshotFor(currentItem) else null
+    val snapshot =
+      if (!nativeRendererOwner && identifier.isNotBlank() && playbackCapture.position.isKnown &&
+        playbackCapture.sessionState.phase in setOf(PlaybackPhase.READY, PlaybackPhase.BACKGROUND)
+      ) {
+        capturePlaybackStateSnapshot(identifier, oldState = null)
+      } else {
+        null
+      }
+    val positionSeconds = closedSnapshot?.positionSeconds ?: playbackCapture.position.positionSeconds
+    val resumePaused = closedSnapshot?.paused ?: playbackCapture.paused
+    val pendingSave = playbackStateSaveJob
+    playbackStateSaveJob = null
+
+    // Stop playback immediately, but keep the queue and service alive until the final snapshot is
+    // durably written on the process-wide IO scope.
+    paused = true
+    if (nativeRendererOwner) {
+      PlayerActivity.pauseNativePlaybackForClosedSession(closeGeneration, currentItem)
+    } else {
+      PlaybackSession.setPropertyBoolean("pause", true)
+    }
+    mediaSession.setPlaybackState(
+      PlaybackStateCompat
+        .Builder()
+        .setActions(0L)
+        .setState(PlaybackStateCompat.STATE_STOPPED, (positionSeconds * 1000).toLong(), 0f, SystemClock.elapsedRealtime())
+        .build(),
+    )
+    abandonAudioOwnership()
+
+    var teardownStarted = false
+    var allowCapturedSessionTeardown = false
+    suspend fun teardown() {
+      if (teardownStarted) return
+      teardownStarted = true
+      withContext(Dispatchers.Main.immediate) {
+        val liveState = PlaybackSession.state.value
+        val liveItem = PlaybackSession.queue.value.currentItem
+        val stillClosingCapturedSession =
+          closedAudioSessionMarker.isCurrentClosedSession(closeGeneration, currentItem) &&
+            liveState.generation == closeGeneration &&
+            liveItem?.let { current ->
+              current.stableId == currentItem.stableId && current.originalUri == currentItem.originalUri
+            } == true
+        if (!stillClosingCapturedSession) {
+          if (liveItem == null) {
+            closedAudioSessionMarker.snapshotFor(null)
+          } else {
+            resetUserClosedSessionForNewPlayback(liveState.copy(currentItem = liveItem), liveItem.stableId, liveItem.originalUri)
+          }
+          return@withContext
+        }
+        if (!allowCapturedSessionTeardown) return@withContext
+        if (nativeRendererOwner) {
+          runCatching { PlayerActivity.stopNativePlaybackForClosedSession(closeGeneration, currentItem) }
+            .onFailure { error -> Log.e(TAG, "Error stopping Native playback after user close", error) }
+        }
+        runCatching { torrentStreamingEngine.stopStream() }
+          .onFailure { error -> Log.e(TAG, "Error stopping stream after user close", error) }
+        runCatching { PlaybackSession.stop(clearQueue = true) }
+          .onFailure { error -> Log.e(TAG, "Error clearing playback after user close", error) }
+        stopForegroundNotification()
+        stopSelf()
+      }
+    }
+
+    persistenceScope.launch {
+      var closeSnapshotPersisted = false
+      try {
+        closeSnapshotPersisted = persistBeforePlaybackTeardown(
+          persist = {
+            pendingSave?.cancelAndJoin()
+            var persistedClosedSession = false
+            for (attempt in 0..1) {
+              persistedClosedSession = closedAudioSessionMarker.persistIfCloseIsCurrent(closeGeneration, currentItem) {
+                saveSynchronousAudioResumeSnapshotIfAllowed(
+                  context = applicationContext,
+                  nativeRendererOwner = nativeRendererOwner,
+                  identifier = identifier,
+                  queueState = queueState,
+                  positionSeconds = positionSeconds,
+                  paused = resumePaused,
+                  closedByUser = closedByUser,
+                )
+              }
+              if (persistedClosedSession || !closedAudioSessionMarker.isClosePersistencePending(closeGeneration, currentItem)) break
+              if (attempt == 0) kotlinx.coroutines.delay(100L)
+            }
+            if (persistedClosedSession && closedAudioSessionMarker.isCurrentClosedSession(closeGeneration, currentItem)) {
+              try {
+                snapshot?.let { persistPlaybackState(identifier, it) }
+              } catch (error: Exception) {
+                Log.e(TAG, "Error saving playback history after audio resume snapshot", error)
+              }
+            }
+            allowCapturedSessionTeardown = persistedClosedSession
+            persistedClosedSession
+          },
+          teardown = ::teardown,
+        )
+      } catch (error: kotlinx.coroutines.CancellationException) {
+        throw error
+      } catch (error: Exception) {
+        Log.e(TAG, "Error persisting playback state before user-close teardown", error)
+      } finally {
+        teardown()
+        closedAudioSessionMarker.finishClosePersistence(closeGeneration, currentItem)
+      }
+      if (!closeSnapshotPersisted) {
+        Log.e(TAG, "Audio resume snapshot was not committed; leaving the closed playback queue intact for retry")
+        withContext(Dispatchers.Main.immediate) { refreshTransportControls() }
+      }
+    }
   }
 
   private fun stopDetachedPlaybackIfNeeded() {
@@ -1298,6 +1986,8 @@ class MediaPlaybackService :
             }
 
             override fun onStop() {
+              // A system Stop is an explicit close even during a brief ownership handoff.
+              markUserClosedSession()
               if (!canHandleTransportAction()) return
               Log.d(TAG, "onStop called")
               stopPlaybackAndService()
@@ -1347,7 +2037,10 @@ class MediaPlaybackService :
               if (!canHandleTransportAction()) return
               when (action) {
                 ACTION_NOTIFICATION_MEDIA_FAVORITE -> toggleCurrentMediaNotificationFavorite()
-                ACTION_NOTIFICATION_CLOSE -> stopPlaybackAndService(force = true)
+                ACTION_NOTIFICATION_CLOSE -> {
+                  markUserClosedSession()
+                  stopPlaybackAndService(force = true)
+                }
               }
             }
           },
@@ -1363,7 +2056,7 @@ class MediaPlaybackService :
     !mpvAccessReleased && !activityForeground && !handingBackToActivity
 
   private fun canHandleTransportAction(): Boolean =
-    !mpvAccessReleased && (activityForeground || !handingBackToActivity)
+    !mpvAccessReleased && !isAudioClosePersistencePending() && (activityForeground || !handingBackToActivity)
 
   private fun currentNotificationStyle(): NotificationStyle =
     advancedPreferences.notificationStyle
@@ -1410,6 +2103,7 @@ class MediaPlaybackService :
   }
 
   private fun updateMediaSessionPlaybackState() {
+    if (isAudioClosePersistencePending()) return
     try {
       val duration = sanitizedDurationMs()
       var actions =
@@ -1469,6 +2163,7 @@ class MediaPlaybackService :
       return
     }
     if (!foregroundReady) return
+    if (isAudioClosePersistencePending()) return
 
     try {
       val notificationManager = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
@@ -2024,61 +2719,186 @@ class MediaPlaybackService :
     }
   }
 
+  private fun capturePendingPlaybackStateSave(
+    playbackCapture: PlaybackResumeStateCapture,
+    identifier: String,
+  ): PendingPlaybackStateSave {
+    val queueState = playbackCapture.queueState
+    val currentItem = queueState.currentItem
+    val closedByUser = closedAudioSessionMarker.isClosed(playbackCapture.sessionState, currentItem)
+    val closedSnapshot =
+      if (closedByUser) closedAudioSessionMarker.snapshotForCapture(playbackCapture.sessionState, currentItem) else null
+    val snapshot =
+      if (playbackCapture.sessionState.phase in setOf(PlaybackPhase.READY, PlaybackPhase.BACKGROUND) &&
+        playbackCapture.position.isKnown
+      ) {
+        capturePlaybackStateSnapshot(identifier, oldState = null)
+      } else {
+        null
+      }
+    return PendingPlaybackStateSave(
+      playbackCapture = playbackCapture,
+      identifier = identifier,
+      resumeSaveSequence = closedAudioSessionMarker.reserveResumeSaveSequence(),
+      resumePositionSeconds = closedSnapshot?.positionSeconds ?: playbackCapture.position.positionSeconds,
+      resumePaused = closedSnapshot?.paused ?: playbackCapture.paused,
+      closedByUser = closedByUser,
+      snapshot = snapshot,
+    )
+  }
+
+  private suspend fun persistPlaybackStateSave(save: PendingPlaybackStateSave) {
+    try {
+      val playbackCapture = save.playbackCapture
+      closedAudioSessionMarker.persistResumeSnapshotIfCurrent(
+        sessionState = playbackCapture.sessionState,
+        currentItem = playbackCapture.queueState.currentItem,
+        closedByUser = save.closedByUser,
+        resumeSaveSequence = save.resumeSaveSequence,
+      ) {
+        AudioPlaybackResumeStore.save(
+          applicationContext,
+          playbackCapture.queueState,
+          save.resumePositionSeconds,
+          save.resumePaused,
+          closedByUser = save.closedByUser,
+        )
+      }
+      save.snapshot?.let { persistPlaybackState(save.identifier, it) }
+    } catch (error: kotlinx.coroutines.CancellationException) {
+      throw error
+    } catch (error: Exception) {
+      Log.e(TAG, "Error saving playback state from service", error)
+    } finally {
+      if (pendingPlaybackStateSave === save) pendingPlaybackStateSave = null
+    }
+  }
+
   private fun schedulePlaybackStateSave(force: Boolean = false) {
-    if (isNativeRendererOwner()) return
-    val queueState = PlaybackSession.queue.value
+    if (isNativeRendererOwner() || isAudioClosePersistencePending()) return
+    val playbackCapture = PlaybackSession.captureResumeState(currentPositionSeconds)
+    val queueState = playbackCapture.queueState
     val identifier = mediaIdentifier.ifBlank { queueState.currentItem?.stableId.orEmpty() }
     if (identifier.isBlank()) return
 
     val now = SystemClock.elapsedRealtime()
     if (!force && now - lastPlaybackStateSaveTime < PLAYBACK_STATE_SAVE_INTERVAL_MS) return
     lastPlaybackStateSaveTime = now
-    val snapshot = capturePlaybackStateSnapshot(identifier, oldState = null)
-    val resumePositionSeconds = PlaybackSession.getPropertyDouble("time-pos") ?: currentPositionSeconds
-    val resumePaused = PlaybackSession.getPropertyBoolean("pause") ?: paused
-
-    playbackStateSaveJob?.cancel()
+    val save = capturePendingPlaybackStateSave(playbackCapture, identifier)
+    val previousSave = playbackStateSaveJob
+    previousSave?.cancel()
+    pendingPlaybackStateSave = save
     playbackStateSaveJob =
       serviceScope.launch(Dispatchers.IO) {
-        AudioPlaybackResumeStore.save(applicationContext, queueState, resumePositionSeconds, resumePaused)
-        snapshot?.let { persistPlaybackState(identifier, it) }
+        previousSave?.cancelAndJoin()
+        persistPlaybackStateSave(save)
       }
   }
 
   private fun savePlaybackStateNow() {
-    if (isNativeRendererOwner()) return
-    val queueState = PlaybackSession.queue.value
-    val identifier = mediaIdentifier.ifBlank { queueState.currentItem?.stableId.orEmpty() }
-    if (identifier.isBlank()) return
-    // Every libmpv read happens here, so the database write can safely outlive the service.
-    val snapshot = capturePlaybackStateSnapshot(identifier, oldState = null)
-    val resumePositionSeconds = PlaybackSession.getPropertyDouble("time-pos") ?: currentPositionSeconds
-    val resumePaused = PlaybackSession.getPropertyBoolean("pause") ?: paused
-
-    playbackStateSaveJob?.cancel()
-    persistenceScope.launch {
-      runCatching {
-        AudioPlaybackResumeStore.save(applicationContext, queueState, resumePositionSeconds, resumePaused)
-        snapshot?.let { persistPlaybackState(identifier, it) }
-      }.onFailure { error ->
-        Log.e(TAG, "Error force-saving playback state", error)
+    if (isNativeRendererOwner() || isAudioClosePersistencePending()) return
+    val playbackCapture = PlaybackSession.captureResumeState(currentPositionSeconds)
+    val queueState = playbackCapture.queueState
+    val pending = pendingPlaybackStateSave
+    val phase = playbackCapture.sessionState.phase
+    val identifier =
+      mediaIdentifier.ifBlank {
+        (
+          queueState.currentItem?.stableId
+            ?: pending?.takeIf { phase in setOf(PlaybackPhase.STOPPING, PlaybackPhase.IDLE) }?.identifier
+        ).orEmpty()
       }
+    if (identifier.isBlank()) return
+
+    if (phase in setOf(PlaybackPhase.STOPPING, PlaybackPhase.IDLE)) {
+      if (
+        pending == null ||
+        !shouldTransferPendingPlaybackStateSave(
+          phase = playbackCapture.sessionState.phase,
+          currentIdentifier = identifier,
+          currentItem = queueState.currentItem,
+          pendingIdentifier = pending.identifier,
+          pendingItem = pending.playbackCapture.queueState.currentItem,
+        )
+      ) return
+
+      pendingPlaybackStateSave = null
+      val previousSave = playbackStateSaveJob
+      previousSave?.cancel()
+      playbackStateSaveJob =
+        persistenceScope.launch {
+          previousSave?.cancelAndJoin()
+          persistPlaybackStateSave(pending)
+        }
+      return
     }
+
+    // Every libmpv read happens here, so the database write can safely outlive the service.
+    val save = capturePendingPlaybackStateSave(playbackCapture, identifier)
+    val previousSave = playbackStateSaveJob
+    previousSave?.cancel()
+    pendingPlaybackStateSave = save
+    playbackStateSaveJob =
+      persistenceScope.launch {
+        previousSave?.cancelAndJoin()
+        persistPlaybackStateSave(save)
+      }
   }
 
-  private fun savePlaybackStateBeforeTaskRemoval() {
-    if (isNativeRendererOwner()) return
-    val queueState = PlaybackSession.queue.value
+  private fun savePlaybackStateSynchronously() {
+    val nativeRendererOwner = isNativeRendererOwner()
+    val playbackCapture =
+      PlaybackSession.captureResumeState(
+        fallbackPositionSeconds = currentPositionSeconds,
+        allowNativePropertyReads = !nativeRendererOwner,
+      )
+    val queueState = playbackCapture.queueState
     val identifier = mediaIdentifier.ifBlank { queueState.currentItem?.stableId.orEmpty() }
-    if (identifier.isBlank()) return
-    val snapshot = capturePlaybackStateSnapshot(identifier, oldState = null)
-    val resumePositionSeconds = PlaybackSession.getPropertyDouble("time-pos") ?: currentPositionSeconds
-    val resumePaused = PlaybackSession.getPropertyBoolean("pause") ?: paused
+    val closedByUser = closedAudioSessionMarker.isClosed(playbackCapture.sessionState, queueState.currentItem)
+    if (closedAudioSessionMarker.isClosePersistencePending(playbackCapture.sessionState.generation, queueState.currentItem)) return
+    val shouldSkipSave =
+      shouldSkipSynchronousPlaybackStateSave(
+        nativeRendererOwner = nativeRendererOwner,
+        identifier = identifier,
+        closedByUser = closedByUser,
+        currentItem = queueState.currentItem,
+      )
+    if (shouldSkipSave) return
+    val snapshot =
+      if (nativeRendererOwner || identifier.isBlank() || !playbackCapture.position.isKnown ||
+        playbackCapture.sessionState.phase !in setOf(PlaybackPhase.READY, PlaybackPhase.BACKGROUND)
+      ) {
+        null
+      } else {
+        capturePlaybackStateSnapshot(identifier, oldState = null)
+      }
+    val closedSnapshot =
+      if (closedByUser) closedAudioSessionMarker.snapshotForCapture(playbackCapture.sessionState, queueState.currentItem) else null
+    val fallbackPositionSeconds = playbackCapture.position.positionSeconds
+    val fallbackPaused = if (nativeRendererOwner) playbackCapture.sessionState.paused else paused
+    val resumePositionSeconds = closedSnapshot?.positionSeconds ?: fallbackPositionSeconds
+    val resumePaused = closedSnapshot?.paused ?: fallbackPaused
+    val resumeSaveSequence = closedAudioSessionMarker.reserveResumeSaveSequence()
 
     val pendingSave = playbackStateSaveJob
     runBlocking(Dispatchers.IO) {
       pendingSave?.cancelAndJoin()
-      AudioPlaybackResumeStore.save(applicationContext, queueState, resumePositionSeconds, resumePaused)
+      closedAudioSessionMarker.persistResumeSnapshotIfCurrent(
+        sessionState = playbackCapture.sessionState,
+        currentItem = queueState.currentItem,
+        closedByUser = closedByUser,
+        resumeSaveSequence = resumeSaveSequence,
+      ) {
+        saveSynchronousAudioResumeSnapshotIfAllowed(
+          context = applicationContext,
+          nativeRendererOwner = nativeRendererOwner,
+          identifier = identifier,
+          queueState = queueState,
+          positionSeconds = resumePositionSeconds,
+          paused = resumePaused,
+          closedByUser = closedByUser,
+        )
+      }
       snapshot?.let { persistPlaybackState(identifier, it) }
     }
   }
@@ -2105,6 +2925,10 @@ class MediaPlaybackService :
         playbackStateRepository.upsert(playbackState)
         PlaybackStateEvents.notifyChanged(identifier)
       }
+    } catch (error: kotlinx.coroutines.CancellationException) {
+      // A newer save superseded this one (savePlaybackStateNow cancels it before writing the
+      // final state). Not an error, and cancellation must propagate.
+      throw error
     } catch (error: Exception) {
       Log.e(TAG, "Error saving playback state from service", error)
     }
@@ -2208,6 +3032,7 @@ class MediaPlaybackService :
     try {
       Log.d(TAG, "Service destroyed")
 
+      stopPlaybackAfterFailedPromotionIfReady()
       releaseMpvAccessBeforeShutdown()
       foregroundReady = false
       abandonAudioOwnership()
@@ -2266,7 +3091,7 @@ class MediaPlaybackService :
 
   override fun onTaskRemoved(rootIntent: Intent?) {
     Log.d(TAG, "Task removed - keeping foreground background playback active")
-    savePlaybackStateBeforeTaskRemoval()
+    savePlaybackStateSynchronously()
     super.onTaskRemoved(rootIntent)
   }
 }

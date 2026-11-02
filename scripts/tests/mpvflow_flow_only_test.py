@@ -222,10 +222,55 @@ def test_mpvflow_settings_keep_single_toggle_and_target_fps() -> None:
     assert "decoderPreferences.mpvFlowTargetFps.get()" in player
 
 
+def test_owner_debug_apk_gates_native_dts_ffmpeg_fallback() -> None:
+    """Native's DTS/DTS-HD fallback must be verified in the APK the owner installs."""
+    workflow = (ROOT / ".github/workflows/debug-apk.yml").read_text(encoding="utf-8")
+    step = workflow.split("- name: Verify Native DTS FFmpeg audio fallback is packaged", 1)
+    assert len(step) == 2, "debug-apk.yml lost the Native DTS packaging gate"
+    body = step[1].split("\n      - name:", 1)[0]
+    assert 'python3 scripts/verify-media3-dca-apk.py "$candidate"' in body
+    assert "inputs.flavor == 'standard' || inputs.flavor == 'no_vulkan'" in body
+    assert "inputs.target_abi == 'arm64-v8a' || inputs.target_abi == 'all'" in body
+    assert "standard) gradle_flavor=standard ;;" in body
+    assert "no_vulkan) gradle_flavor=noVulkan ;;" in body
+    assert 'apk_dir="app/build/outputs/apk/$gradle_flavor/debug"' in body
+    assert "find \"$apk_dir\" -type f -name '*.apk' -print0" in body
+    assert "set -euo pipefail" in body
+    assert 'candidate_entries="$(unzip -Z1 "$candidate")"' in body
+    assert 'candidate_entries="$(unzip -Z1 "$candidate")" || continue' not in body
+    arm64_filter = "if ! grep -q '^lib/arm64-v8a/' <<< \"$candidate_entries\"; then"
+    wrapper_check = "if ! grep -Fxq 'lib/arm64-v8a/libffmpegJNI.so' <<< \"$candidate_entries\"; then"
+    assert arm64_filter in body
+    assert wrapper_check in body
+    missing_wrapper_start = body.index(wrapper_check)
+    missing_wrapper_end = body.index('echo "Verifying arm64 Media3 FFmpeg fallback', missing_wrapper_start)
+    missing_wrapper_block = body[missing_wrapper_start:missing_wrapper_end]
+    assert 'echo "arm64 APK lacks lib/arm64-v8a/libffmpegJNI.so: $candidate" >&2' in missing_wrapper_block
+    assert "exit 1" in missing_wrapper_block
+    assert body.index(arm64_filter) < missing_wrapper_start
+    assert missing_wrapper_start < body.index('python3 scripts/verify-media3-dca-apk.py "$candidate"')
+    assert "while IFS= read -r -d '' candidate; do" in body
+    assert "verified=$((verified + 1))" in body
+    assert "(( verified > 0 ))" in body
+    assert "app/build/outputs/apk/standard/debug" not in body
+    assert "-name '*arm64-v8a*.apk'" not in body
+    assert workflow.index("Verify Native DTS FFmpeg") > workflow.index("- name: Build debug APK")
+    assert workflow.index("Verify Native DTS FFmpeg") < workflow.index("- name: Upload debug APKs")
+    engine = (ROOT / "app/src/main/java/app/infinity/mpvz/ui/player/NativeMedia3Engine.kt").read_text(
+        encoding="utf-8"
+    )
+    # Same extension mode as 380a778b / v2.2.0: platform decoders first, FFmpeg when they can't.
+    assert "setExtensionRendererMode(DefaultRenderersFactory.EXTENSION_RENDERER_MODE_ON)" in engine
+    assert "factory.setEnableDecoderFallback(true)" in engine
+    gradle = (ROOT / "app/build.gradle.kts").read_text(encoding="utf-8")
+    assert 'implementation(project(":media3-decoder-ffmpeg"))' in gradle
+
+
 def main() -> None:
     test_standard_workflow_is_flow_only()
     test_mpvflow_settings_keep_single_toggle_and_target_fps()
-    print("Flow-only MPVFlow Standard arm64 workflow tests passed.")
+    test_owner_debug_apk_gates_native_dts_ffmpeg_fallback()
+    print("Flow-only MPVFlow and Native DTS APK workflow tests passed.")
 
 
 if __name__ == "__main__":
