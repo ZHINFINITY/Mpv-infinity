@@ -193,14 +193,25 @@ class MiniPlayerHandoffAndResumeTest {
       mimeType = "video/mp4",
     )
 
-    assertFalse(
+    val nativeBlankIdSaveIsSkipped =
       shouldSkipSynchronousPlaybackStateSave(
         nativeRendererOwner = true,
         identifier = "",
         closedByUser = true,
         currentItem = audioItem,
+      )
+    assertFalse(nativeBlankIdSaveIsSkipped)
+    val closedAudioQueue = PlaybackQueueState(items = listOf(audioItem), currentIndex = 0)
+    assertTrue(
+      AudioPlaybackResumeStore.save(
+        application,
+        closedAudioQueue,
+        positionSeconds = 12.0,
+        paused = true,
+        closedByUser = true,
       ),
     )
+    assertTrue(AudioPlaybackResumeStore.load(application)?.closedByUser == true)
     assertFalse(
       shouldSkipSynchronousPlaybackStateSave(
         nativeRendererOwner = false,

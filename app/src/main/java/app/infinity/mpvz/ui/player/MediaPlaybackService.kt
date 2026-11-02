@@ -2309,28 +2309,37 @@ class MediaPlaybackService :
     val queueState = PlaybackSession.queue.value
     val identifier = mediaIdentifier.ifBlank { queueState.currentItem?.stableId.orEmpty() }
     val nativeRendererOwner = isNativeRendererOwner()
+    val closedByUser = userClosedSession
     val shouldSkipSave =
       shouldSkipSynchronousPlaybackStateSave(
         nativeRendererOwner = nativeRendererOwner,
         identifier = identifier,
-        closedByUser = userClosedSession,
+        closedByUser = closedByUser,
         currentItem = queueState.currentItem,
       )
     if (shouldSkipSave) return
     val snapshot =
       if (nativeRendererOwner || identifier.isBlank()) null
       else capturePlaybackStateSnapshot(identifier, oldState = null)
+    val fallbackPositionSeconds = currentPositionSeconds
+    val fallbackPaused = if (nativeRendererOwner) PlaybackSession.state.value.paused else paused
     val resumePositionSeconds =
-      if (nativeRendererOwner) currentPositionSeconds
-      else PlaybackSession.getPropertyDouble("time-pos") ?: currentPositionSeconds
+      if (nativeRendererOwner) fallbackPositionSeconds
+      else PlaybackSession.getPropertyDouble("time-pos") ?: fallbackPositionSeconds
     val resumePaused =
-      if (nativeRendererOwner) PlaybackSession.state.value.paused
-      else PlaybackSession.getPropertyBoolean("pause") ?: paused
+      if (nativeRendererOwner) fallbackPaused
+      else PlaybackSession.getPropertyBoolean("pause") ?: fallbackPaused
 
     val pendingSave = playbackStateSaveJob
     runBlocking(Dispatchers.IO) {
       pendingSave?.cancelAndJoin()
-      AudioPlaybackResumeStore.save(applicationContext, queueState, resumePositionSeconds, resumePaused, closedByUser = userClosedSession)
+      AudioPlaybackResumeStore.save(
+        applicationContext,
+        queueState,
+        resumePositionSeconds,
+        resumePaused,
+        closedByUser = closedByUser,
+      )
       snapshot?.let { persistPlaybackState(identifier, it) }
     }
   }
