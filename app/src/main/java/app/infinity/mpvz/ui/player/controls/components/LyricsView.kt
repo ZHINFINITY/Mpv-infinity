@@ -188,8 +188,9 @@ fun LyricsView(
           horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
           verticalAlignment = Alignment.CenterVertically,
         ) {
+          val embeddedSelected = state.selectedSource == LyricsSourceType.EMBEDDED || state.selectedSource == LyricsSourceType.LOCAL
           GlassChip(
-            selected = state.selectedSource == LyricsSourceType.EMBEDDED || state.selectedSource == LyricsSourceType.LOCAL,
+            selected = embeddedSelected,
             onClick = { viewModel.switchLyricsSource(LyricsSourceType.EMBEDDED) },
             label = {
               Text(
@@ -201,10 +202,13 @@ fun LyricsView(
               selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
               selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer,
             ),
+            glassContainerColor = if (embeddedSelected) MaterialTheme.colorScheme.primaryContainer else null,
+            glassContentColor = if (embeddedSelected) MaterialTheme.colorScheme.onPrimaryContainer else null,
           )
 
+          val onlineSelected = state.selectedSource == LyricsSourceType.ONLINE
           GlassChip(
-            selected = state.selectedSource == LyricsSourceType.ONLINE,
+            selected = onlineSelected,
             onClick = { viewModel.switchLyricsSource(LyricsSourceType.ONLINE) },
             label = {
               Text(stringResource(R.string.lyrics_source_online), fontWeight = FontWeight.Bold)
@@ -213,6 +217,8 @@ fun LyricsView(
               selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
               selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer,
             ),
+            glassContainerColor = if (onlineSelected) MaterialTheme.colorScheme.primaryContainer else null,
+            glassContentColor = if (onlineSelected) MaterialTheme.colorScheme.onPrimaryContainer else null,
           )
 
           if (state.isLoading) {

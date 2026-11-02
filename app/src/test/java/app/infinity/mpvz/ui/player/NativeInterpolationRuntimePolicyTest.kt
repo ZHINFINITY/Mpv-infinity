@@ -1,11 +1,189 @@
 /* Copyright (c) 2026 ZHINFINITY. See LICENSE for project-specific terms. */
 package app.infinity.mpvz.ui.player
 
+import android.app.Application
+import android.content.Context
+import android.net.Uri
+import androidx.media3.common.C
+import androidx.media3.common.Format
+import androidx.media3.common.MediaItem
+import androidx.media3.common.MimeTypes
+import androidx.media3.common.Player
+import androidx.media3.common.TrackGroup
+import androidx.media3.common.util.UnstableApi
+import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.Renderer
+import androidx.media3.exoplayer.RenderersFactory
+import androidx.media3.exoplayer.drm.DrmSessionManagerProvider
+import androidx.media3.test.utils.FakeMediaSource
+import androidx.media3.exoplayer.source.MediaSource
+import androidx.media3.exoplayer.source.TrackGroupArray
+import androidx.media3.exoplayer.text.SubtitleDecoderFactory
+import androidx.media3.exoplayer.text.TextRenderer
+import androidx.media3.exoplayer.upstream.LoadErrorHandlingPolicy
+import androidx.media3.test.utils.FakeAudioRenderer
+import androidx.media3.test.utils.FakeClock
+import androidx.media3.test.utils.FakeTimeline
+import androidx.media3.test.utils.FakeVideoRenderer
+import androidx.media3.test.utils.TestExoPlayerBuilder
+import androidx.media3.test.utils.robolectric.TestPlayerRunHelper
+import androidx.test.core.app.ApplicationProvider
 import java.io.File
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
+
+@OptIn(UnstableApi::class)
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [35], application = Application::class)
+class NativeMedia3EngineReloadBehaviorTest {
+  @Test fun reloadRestoresSavedPositionAndAudioSubtitleSelections() {
+    val context = ApplicationProvider.getApplicationContext<Context>()
+    val tracks = TrackGroupArray(
+      TrackGroup(
+        "audio",
+        audioFormat("en", "English"),
+        audioFormat("ja", "Japanese"),
+      ),
+      TrackGroup(
+        "subtitles",
+        subtitleFormat("en", "English captions"),
+        subtitleFormat("ja", "Japanese captions"),
+      ),
+    )
+    val fakeSourceFactory = object : MediaSource.Factory {
+      override fun createMediaSource(mediaItem: MediaItem): MediaSource {
+        val timeline = FakeTimeline(
+          FakeTimeline.TimelineWindowDefinition.Builder()
+            .setMediaItem(mediaItem)
+            .setDurationUs(180_000_000L)
+            .build(),
+        )
+        return FakeMediaSource.Builder()
+          .setTimeline(timeline)
+          .setTrackGroupArray(tracks)
+          .build()
+      }
+
+      override fun getSupportedTypes(): IntArray = intArrayOf(C.CONTENT_TYPE_OTHER)
+
+      override fun setDrmSessionManagerProvider(
+        drmSessionManagerProvider: DrmSessionManagerProvider,
+      ): MediaSource.Factory = this
+
+      override fun setLoadErrorHandlingPolicy(
+        loadErrorHandlingPolicy: LoadErrorHandlingPolicy,
+      ): MediaSource.Factory = this
+    }
+    val testClock = FakeClock(true)
+    val engine = NativeMedia3Engine(
+      context = context,
+      playerFactoryForTesting = { playerContext, trackSelector ->
+        TestExoPlayerBuilder(playerContext)
+          .setTrackSelector(trackSelector)
+          .setClock(testClock)
+          .setMediaSourceFactory(fakeSourceFactory)
+          .setRenderersFactory(
+            RenderersFactory { eventHandler, videoListener, audioListener, textOutput, _ ->
+              val rendererHandler = testClock.createHandler(eventHandler.looper, null)
+              arrayOf<Renderer>(
+                FakeVideoRenderer(rendererHandler, videoListener),
+                FakeAudioRenderer(rendererHandler, audioListener),
+                TextRenderer(textOutput, eventHandler.looper, SubtitleDecoderFactory.DEFAULT),
+              )
+            },
+          )
+          .build()
+      },
+    )
+    val player = engine.currentPlayer as ExoPlayer
+    val uri = Uri.parse("test://native/reload.mkv")
+    val savedPositionMs = 32_000L
+    val savedAudio = selectedTrack("ja", "Japanese", MimeTypes.AUDIO_AAC, channelCount = 2)
+    val savedSubtitle = selectedTrack("ja", "Japanese captions", MimeTypes.TEXT_VTT)
+
+    try {
+      engine.play(uri, startPositionMs = 0L, autoplay = false)
+      engine.restoreTrackSelections(savedAudio, savedSubtitle)
+      TestPlayerRunHelper.advance(player).untilState(Player.STATE_READY)
+      player.seekTo(savedPositionMs)
+      TestPlayerRunHelper.runUntilPendingCommandsAreFullyHandled(player)
+      val persistedPositionSeconds = PlaybackStatePersistence.calculateSavePosition(
+        oldState = null,
+        currentPosition = (requireNotNull(engine.positionForPersistenceMs()) / 1000L).toInt(),
+        duration = 180,
+        savePositionOnQuit = true,
+      )
+      val persistedPositionMs = persistedPositionSeconds.toLong() * 1000L
+      assertEquals(savedPositionMs, persistedPositionMs)
+
+      TestPlayerRunHelper.runUntilPendingCommandsAreFullyHandled(player)
+      assertEquals("ja", selectedLanguage(player, C.TRACK_TYPE_AUDIO))
+      assertEquals("ja", selectedLanguage(player, C.TRACK_TYPE_TEXT))
+
+      val persistedAudio = requireNotNull(engine.captureAudioSelection())
+      val persistedSubtitle = requireNotNull(engine.captureSubtitleSelection())
+      engine.play(uri, startPositionMs = persistedPositionMs, autoplay = false)
+      engine.restoreTrackSelections(persistedAudio, persistedSubtitle)
+      TestPlayerRunHelper.advance(player).untilState(Player.STATE_READY)
+      TestPlayerRunHelper.runUntilPendingCommandsAreFullyHandled(player)
+
+      assertEquals(persistedPositionMs, engine.positionForPersistenceMs())
+      assertEquals("ja", selectedLanguage(player, C.TRACK_TYPE_AUDIO))
+      assertEquals("ja", selectedLanguage(player, C.TRACK_TYPE_TEXT))
+    } finally {
+      engine.release()
+    }
+  }
+
+  private fun audioFormat(language: String, label: String) =
+    Format.Builder()
+      .setId("audio-$language")
+      .setLanguage(language)
+      .setLabel(label)
+      .setSampleMimeType(MimeTypes.AUDIO_AAC)
+      .setChannelCount(2)
+      .build()
+
+  private fun subtitleFormat(language: String, label: String) =
+    Format.Builder()
+      .setId("text-$language")
+      .setLanguage(language)
+      .setLabel(label)
+      .setSampleMimeType(MimeTypes.TEXT_VTT)
+      .build()
+
+  private fun selectedTrack(
+    language: String,
+    label: String,
+    mimeType: String,
+    channelCount: Int? = null,
+  ): String {
+    val fingerprint = requireNotNull(
+      TrackSelectionFingerprint.capture(
+        TrackSelectionMetadata(language, label, mimeType = mimeType, channelCount = channelCount),
+        TrackSelectionState.SELECTED,
+        ordinal = 1,
+      ),
+    )
+    return PlaybackStatePersistence.encodeSelection(SharedTrackSelection.selected(fingerprint))
+  }
+
+  private fun selectedLanguage(player: ExoPlayer, type: Int): String? =
+    player.currentTracks.groups
+      .asSequence()
+      .filter { it.type == type }
+      .flatMap { group ->
+        (0 until group.length).asSequence()
+          .filter(group::isTrackSelected)
+          .map { group.getTrackFormat(it).language }
+      }
+      .singleOrNull()
+}
 
 class NativeInterpolationRuntimePolicyTest {
   @Test fun flowCanStartBeforeInitializationOnlyForEligibleFormatsAndCanAlwaysBeDisabled() {
@@ -153,7 +331,7 @@ class NativeInterpolationRuntimePolicyTest {
     val engine = File(base, "NativeMedia3Engine.kt").readText()
     val renderers = File(base, "Media3FlowRenderersFactory.java").readText()
     val sinkCreation = engine.indexOf("private val media3FlowSink")
-    val playerCreation = engine.indexOf("private val player = ExoPlayer.Builder")
+    val playerCreation = engine.indexOf("private val player =")
     assertTrue(activity.contains("enableMedia3Flow = decoderPreferences.mpvFlowFrameInterpolation.get()"))
     assertTrue(sinkCreation >= 0 && sinkCreation < playerCreation)
     assertTrue(engine.contains("      enableMedia3Flow,\n      ::publishFlowDiagnostics,"))

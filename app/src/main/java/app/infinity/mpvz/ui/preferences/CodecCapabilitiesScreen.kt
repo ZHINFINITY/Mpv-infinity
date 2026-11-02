@@ -825,6 +825,8 @@ object CodecCapabilitiesScreen : Screen {
                 onClick = { selectedFilter = CodecFilter.HARDWARE },
                 label = { Text(stringResource(R.string.pref_codecs_filter_hardware, hwCount)) },
                 shape = RoundedCornerShape(12.dp),
+                glassContainerColor = MaterialTheme.colorScheme.primaryContainer,
+                glassContentColor = MaterialTheme.colorScheme.onPrimaryContainer,
                 colors = FilterChipDefaults.filterChipColors(
                   selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
                   selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer,
@@ -835,6 +837,8 @@ object CodecCapabilitiesScreen : Screen {
                 onClick = { selectedFilter = CodecFilter.SOFTWARE },
                 label = { Text(stringResource(R.string.pref_codecs_filter_software, swCount)) },
                 shape = RoundedCornerShape(12.dp),
+                glassContainerColor = MaterialTheme.colorScheme.tertiaryContainer,
+                glassContentColor = MaterialTheme.colorScheme.onTertiaryContainer,
                 colors = FilterChipDefaults.filterChipColors(
                   selectedContainerColor = MaterialTheme.colorScheme.tertiaryContainer,
                   selectedLabelColor = MaterialTheme.colorScheme.onTertiaryContainer,

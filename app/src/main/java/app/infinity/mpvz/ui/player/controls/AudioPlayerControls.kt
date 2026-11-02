@@ -2860,6 +2860,8 @@ private fun DualPaneSidePanel(
           selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
           selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer,
         ),
+        glassContainerColor = if (selectedTab == 0) MaterialTheme.colorScheme.primaryContainer else null,
+        glassContentColor = if (selectedTab == 0) MaterialTheme.colorScheme.onPrimaryContainer else null,
       )
       GlassChip(
         selected = selectedTab == 1,
@@ -2869,6 +2871,8 @@ private fun DualPaneSidePanel(
           selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
           selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer,
         ),
+        glassContainerColor = if (selectedTab == 1) MaterialTheme.colorScheme.primaryContainer else null,
+        glassContentColor = if (selectedTab == 1) MaterialTheme.colorScheme.onPrimaryContainer else null,
       )
     }
 

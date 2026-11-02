@@ -248,7 +248,7 @@ private class NativeRendererTrackSelector(context: Context) : DefaultTrackSelect
 }
 
 /** A source-local Android Media3 playback engine. */
-class NativeMedia3Engine(
+class NativeMedia3Engine internal constructor(
   context: Context,
   enableMedia3Flow: Boolean = false,
   media3FlowTargetFps: Int = 60,
@@ -256,6 +256,7 @@ class NativeMedia3Engine(
   media3FlowComputeApi: MpvFlowComputeApi = MpvFlowComputeApi.AUTO,
   media3FlowVisibilityResolverDebug: Boolean = false,
   media3FlowSoftBlendDebug: Boolean = false,
+  private val playerFactoryForTesting: ((Context, DefaultTrackSelector) -> ExoPlayer)? = null,
 ) {
   private val appContext = context.applicationContext
   private val logTag = "Mpv∞-Media3"
@@ -356,7 +357,8 @@ class NativeMedia3Engine(
   private val mediaSourceFactory = DefaultMediaSourceFactory(dataSourceFactory, extractorsFactory)
     .setSubtitleParserFactory(assSubtitleParserFactory)
   private val nativeTrackSelector = NativeRendererTrackSelector(appContext)
-  private val player = ExoPlayer.Builder(context.applicationContext)
+  private val player = playerFactoryForTesting?.invoke(appContext, nativeTrackSelector)
+    ?: ExoPlayer.Builder(context.applicationContext)
     .setTrackSelector(nativeTrackSelector)
     .setLoadControl(
       DefaultLoadControl.Builder()
