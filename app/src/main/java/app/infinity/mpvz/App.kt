@@ -78,6 +78,10 @@ class App :
     if (!BuildConfig.MPV_SUPPORTS_VULKAN) {
       getKoin().get<DecoderPreferences>().useVulkan.set(false)
     }
+    // Before any UI: a device that cannot run Liquid Glass (or crashed in it) gets the classic UI.
+    app.infinity.mpvz.ui.theme.GlassDeviceSupport.enforceAtStartup(this) {
+      getKoin().get<app.infinity.mpvz.preferences.AppearancePreferences>().liquidGlassSurfaces.set(false)
+    }
     registerActivityLifecycleCallbacks(this)
     Thread.setDefaultUncaughtExceptionHandler(GlobalExceptionHandler(applicationContext, CrashActivity::class.java))
     startIdleMpvCoreReaper()

@@ -2,6 +2,8 @@
 package app.infinity.mpvz.ui.theme
 
 import java.io.File
+import app.infinity.mpvz.ui.theme.lens.LensGlassPolicy
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -17,8 +19,12 @@ class BrowserMaterialParityContractTest {
     val scene = source("BrowserGlassScene")
     val pane = scene.substring(scene.indexOf("internal fun Modifier.browserGlassPane("), scene.indexOf("private fun windowScreenOffset"))
     val nav = scene.substring(scene.indexOf("fun BrowserGlassSurface("), scene.indexOf("/** The shared pane path"))
-    // Same lens shader, sheen, rim and film as the navigation pill (owner's reference look).
-    for (token in listOf("RuntimeShaderSupport.browserLensEffectOrNull(", "film * (if (selected) 0.24f else 0.20f)",
+    // Each pane keeps its own lens handle while matching the navigation pill's material.
+    assertTrue("browser pane must use its per-pane lens handle",
+      pane.contains("RuntimeShaderSupport.browserLensHandleOrNull("))
+    assertTrue("nav pill reference changed: RuntimeShaderSupport.browserLensEffectOrNull(",
+      nav.contains("RuntimeShaderSupport.browserLensEffectOrNull("))
+    for (token in listOf("film * (if (selected) 0.24f else 0.20f)",
       "Color.White.copy(alpha = 0.20f + glow * 0.65f)", "Color.White.copy(alpha = 0.10f + glow * 0.35f)",
       "0.06f + glow * 0.10f", "0.16f + glow * 0.24f", "(if (selected) 7.dp else 12.dp) * tuning.depth")) {
       assertTrue("browser pane must match nav pill: $token", pane.contains(token))
@@ -42,6 +48,9 @@ class BrowserMaterialParityContractTest {
     assertTrue(pane.contains("tuning.refraction"))
     assertTrue(pane.contains("GlassSurfacePolicy.browserPopupFrostDp(tuning.frost)"))
     assertTrue(pane.contains("GlassSurfacePolicy.navigationFrostDp(tuning.frost"))
+    assertTrue(pane.contains("val blurFallback = if (Build.VERSION.SDK_INT >= 31 && scene != null && blurDp > 0f)"))
+    assertTrue(pane.contains("val effect = updatedEffect ?: blurFallback"))
+    assertTrue(pane.contains("if (lens.renderEffect !== effect) lens.renderEffect = effect"))
     val dispatch = source("LiquidGlassBackdrop").substringAfter("if (backdrop == null && hasBrowserGlassScene()) {").substringBefore("val tint =")
     assertTrue("Do not add a second frame to borderless controls", dispatch.contains("drawRim = drawRim"))
   }
@@ -79,6 +88,17 @@ class BrowserMaterialParityContractTest {
     assertTrue(GlassSurfacePolicy.navigationFrostDp(0f, refraction = true) == 0f)
   }
 
+  @Test fun fallbackLensRefractionUsesTheActualPaneCornerRadius() {
+    val liquid = source("LiquidGlassBackdrop")
+    assertTrue(liquid.contains("cornerRadius.toPx().coerceAtMost(size.minDimension / 2f)"))
+    assertTrue(liquid.contains("LensGlassPolicy.refractionHeightPx(24.dp.toPx(), minCornerRadiusPx, tuning.lensDepth)"))
+    assertTrue(liquid.contains("LensGlassPolicy.refractionAmountPx(16.dp.toPx(), size.minDimension, tuning.lensRefraction)"))
+    assertEquals(16f, LensGlassPolicy.refractionHeightPx(24f, 16f, 1f), 0.001f)
+    assertEquals(16f, LensGlassPolicy.refractionAmountPx(16f, 100f, 1f), 0.001f)
+    assertEquals(10f, LensGlassPolicy.refractionAmountPx(16f, 10f, 1f), 0.001f)
+    assertEquals(32f, LensGlassPolicy.refractionAmountPx(16f, 100f, 2f), 0.001f)
+  }
+
   @Test fun visibleStaticDepthDoesNotDependOnSuccessfulGpuRefraction() {
     for (depth in listOf(0f, 0.5f, 1f, 2f)) {
       val profile = GlassSurfacePolicy.depthOptics(depth, 0.18f)
@@ -95,7 +115,16 @@ class BrowserMaterialParityContractTest {
     val scene = source("BrowserGlassScene")
     val browser = scene.substring(scene.indexOf("fun BrowserGlassSurface("), scene.indexOf("/** The shared pane path"))
     assertTrue(browser.contains("RuntimeShaderSupport.browserLensEffectOrNull("))
+    assertTrue(browser.contains("val refractionEnabled = enabled && selected && lensEnabled && capabilities.refraction && RuntimeShaderSupport.available()"))
+    assertTrue(browser.contains("val browserLensShader = remember(refractionEnabled)"))
+    assertTrue(browser.contains("RuntimeShaderSupport.browserLensShaderOrNull()"))
+    assertTrue(browser.contains("shader = browserLensShader"))
     val shaders = source("AgslRuntimeShaders")
+    val effectBody = shaders.substringAfter("fun browserLensEffect(").substringBefore("private fun browserLensEffectUnchecked(")
+    assertTrue(effectBody.contains("val runtimeShader = shader as? RuntimeShader"))
+    assertFalse(effectBody.contains("browserLens()"))
+    assertTrue(browser.contains("val blurFallback = if (Build.VERSION.SDK_INT >= 31 && scene != null && tuning.frost > 0f)"))
+    assertTrue(browser.contains("lens.renderEffect = lensEffect ?: blurFallback"))
     assertTrue(shaders.contains("shader.setFloatUniform(\"bend\""))
     assertTrue(shaders.contains("shader.setFloatUniform(\"motion\""))
     assertTrue(browser.contains("film * (if (selected) 0.24f else 0.20f)"))

@@ -30,6 +30,8 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.dp
 import app.infinity.mpvz.ui.theme.spacing
+import app.infinity.mpvz.ui.components.SliderValueBadge
+import app.infinity.mpvz.ui.player.controls.components.GlassSlider
 import kotlin.math.roundToInt
 
 @Composable
@@ -44,8 +46,6 @@ fun SliderItem(
   enabled: Boolean = true,
   icon: @Composable () -> Unit = {},
 ) {
-  val haptic = LocalHapticFeedback.current
-
   Row(
     modifier =
       modifier
@@ -71,19 +71,15 @@ fun SliderItem(
           text = label,
           style = MaterialTheme.typography.bodyMedium,
         )
-        Text(
-          text = valueText,
-          style = MaterialTheme.typography.bodyMedium,
-        )
+        SliderValueBadge(valueText = valueText, minimumText = min.toString(), maximumText = max.toString())
       }
 
-      Slider(
+      GlassSlider(
         value = value.toFloat(),
         onValueChange = {
           val newValue = it.roundToInt()
           if (newValue != value) {
             onChange(newValue)
-            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
           }
         },
         modifier = Modifier.fillMaxWidth(),
@@ -108,8 +104,6 @@ fun SliderItem(
   enabled: Boolean = true,
   icon: @Composable () -> Unit = {},
 ) {
-  val haptic = LocalHapticFeedback.current
-
   Row(
     modifier =
       modifier
@@ -135,19 +129,15 @@ fun SliderItem(
           text = label,
           style = MaterialTheme.typography.bodyMedium,
         )
-        Text(
-          text = valueText,
-          style = MaterialTheme.typography.bodyMedium,
-        )
+        SliderValueBadge(valueText = valueText, minimumText = min.toString(), maximumText = max.toString())
       }
 
-      Slider(
+      GlassSlider(
         value = value,
         onValueChange = {
           val newValue = it
           if (newValue != value) {
             onChange(newValue)
-            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
           }
         },
         modifier = Modifier.fillMaxWidth(),

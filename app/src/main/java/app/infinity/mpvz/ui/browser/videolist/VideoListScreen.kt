@@ -152,7 +152,8 @@ data class VideoListScreen(
     val backstack = LocalBackStack.current
     val browserPreferences = koinInject<BrowserPreferences>()
     val appearancePreferences = koinInject<app.infinity.mpvz.preferences.AppearancePreferences>()
-    val showQuickPlayFab by appearancePreferences.showQuickPlayFab.collectAsState()
+    val showQuickPlayFabPreference by appearancePreferences.showQuickPlayFab.collectAsState()
+    val showQuickPlayFab = app.infinity.mpvz.ui.browser.fab.quickPlayFabAllowed(showQuickPlayFabPreference)
     val playerPreferences = koinInject<PlayerPreferences>()
     val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
     val navigationBarHeight = app.infinity.mpvz.ui.browser.LocalNavigationBarHeight.current

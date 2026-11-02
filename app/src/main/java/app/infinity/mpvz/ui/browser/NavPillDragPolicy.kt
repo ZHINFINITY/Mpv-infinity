@@ -4,8 +4,9 @@ package app.infinity.mpvz.ui.browser
 import kotlin.math.abs
 
 /** Pure hit-testing and snapping math for the browser navigation pill. */
-object NavPillDragPolicy {
+internal object NavPillDragPolicy {
   const val TouchSlopPx = 8f
+  const val FlingVelocityThresholdPx = 900f
 
   fun clampOffset(offset: Float, min: Float, max: Float): Float {
     val lo = min.coerceAtMost(max)
@@ -16,6 +17,48 @@ object NavPillDragPolicy {
   fun nearestTabIndex(position: Float, tabCount: Int): Int {
     if (tabCount <= 1) return 0
     return position.takeIf { it.isFinite() }?.roundToInt()?.coerceIn(0, tabCount - 1) ?: 0
+  }
+
+  fun hoveredTabIndex(position: Float, tabCount: Int): Int = nearestTabIndex(position, tabCount)
+
+  /** Converts a viewport-local touch x to logical content coordinates, including RTL scrolling. */
+  fun contentXFromViewport(
+    viewportX: Float,
+    scrollOffsetPx: Float,
+    viewportSizePx: Float,
+    isRtl: Boolean,
+  ): Float {
+    if (!viewportX.isFinite()) return 0f
+    val scroll = scrollOffsetPx.takeIf { it.isFinite() } ?: 0f
+    val viewport = viewportSizePx.takeIf { it.isFinite() } ?: 0f
+    val logicalViewportX = if (isRtl) viewport - viewportX else viewportX
+    return logicalViewportX + scroll
+  }
+
+  /** Converts a finger displacement in pixels into a clamped tab-centre position. */
+  fun positionAfterDrag(
+    startCenterPx: Float,
+    dragDeltaPx: Float,
+    tabCenters: List<Float>,
+    isRtl: Boolean = false,
+  ): Float {
+    if (tabCenters.isEmpty()) return 0f
+    val fingerCenter = startCenterPx + dragDeltaPx
+    return tabPositionAtX(fingerCenter, tabCenters, isRtl)
+  }
+
+  /** Applies a quick flick in physical screen coordinates, respecting RTL order. */
+  fun flingSnappedIndex(
+    position: Float,
+    velocityPxPerSecond: Float,
+    tabCount: Int,
+    isRtl: Boolean = false,
+    thresholdPxPerSecond: Float = FlingVelocityThresholdPx,
+  ): Int {
+    val nearest = nearestTabIndex(position, tabCount)
+    if (!velocityPxPerSecond.isFinite() || abs(velocityPxPerSecond) < thresholdPxPerSecond) return nearest
+    val direction = if (isRtl) -velocityPxPerSecond else velocityPxPerSecond
+    return (nearest + if (direction > 0f) 1 else -1).coerceIn(0, (tabCount - 1).coerceAtLeast(0))
   }
 
   fun tabIndexAtX(x: Float, tabCenters: List<Float>, isRtl: Boolean = false): Int {
@@ -36,6 +79,36 @@ object NavPillDragPolicy {
   }
 
   fun crossedTouchSlop(distance: Float): Boolean = distance.isFinite() && abs(distance) >= TouchSlopPx
+
+  enum class SlopDecision { Undecided, Horizontal, Vertical }
+
+  /**
+   * Decides a pill gesture from the finger's absolute travel since touch-down. Horizontal wins
+   * only when it crossed the slop and dominates the vertical travel; a mostly vertical move is
+   * handed back untouched (scrolling the page, pulling the system back gesture, etc.).
+   */
+  fun classifySlop(absDx: Float, absDy: Float, slopPx: Float): SlopDecision {
+    if (!absDx.isFinite() || !absDy.isFinite()) return SlopDecision.Vertical
+    val slop = slopPx.coerceAtLeast(1f)
+    return when {
+      absDx >= slop && absDx > absDy -> SlopDecision.Horizontal
+      absDy >= slop -> SlopDecision.Vertical
+      else -> SlopDecision.Undecided
+    }
+  }
+
+  /** Scroll needed so a lens centre at [lensCenter] stays [marginPx] inside the viewport. */
+  fun autoScrollDelta(lensCenter: Float, scroll: Float, viewport: Float, marginPx: Float = 56f): Float {
+    if (viewport <= 0f || !lensCenter.isFinite()) return 0f
+    val margin = marginPx.coerceAtMost(viewport / 2f)
+    val left = scroll + margin
+    val right = scroll + viewport - margin
+    return when {
+      lensCenter > right -> lensCenter - right
+      lensCenter < left -> lensCenter - left
+      else -> 0f
+    }
+  }
 
   private fun Float.roundToInt(): Int = kotlin.math.round(this).toInt()
 }

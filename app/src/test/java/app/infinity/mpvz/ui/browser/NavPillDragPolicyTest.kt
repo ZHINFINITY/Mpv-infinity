@@ -30,4 +30,94 @@ class NavPillDragPolicyTest {
     assertFalse(NavPillDragPolicy.crossedTouchSlop(7.9f))
     assertTrue(NavPillDragPolicy.crossedTouchSlop(8f))
   }
+
+  @Test fun dragDeltaFollowsFingerAndClampsAtEnds() {
+    val centers = listOf(20f, 80f, 140f)
+    // The pill follows the finger continuously: half way between tab 1 (80) and tab 2 (140).
+    assertEquals(1.5f, NavPillDragPolicy.positionAfterDrag(80f, 30f, centers), 0.001f)
+    assertEquals(1f, NavPillDragPolicy.positionAfterDrag(20f, 60f, centers), 0.001f)
+    assertEquals(0f, NavPillDragPolicy.positionAfterDrag(20f, -500f, centers), 0.001f)
+    assertEquals(2f, NavPillDragPolicy.positionAfterDrag(80f, 500f, centers), 0.001f)
+  }
+
+  @Test fun dragOriginTracksTouchedTabAndScrollOffsetInsteadOfSelectedTab() {
+    val centers = listOf(20f, 80f, 140f)
+    val touchInContent =
+      NavPillDragPolicy.contentXFromViewport(
+        viewportX = 50f,
+        scrollOffsetPx = 90f,
+        viewportSizePx = 200f,
+        isRtl = false,
+      )
+    assertEquals(2f, NavPillDragPolicy.positionAfterDrag(touchInContent, 0f, centers), 0.001f)
+  }
+
+  @Test fun rtlDragOriginUsesLogicalStartAndNonzeroScrollOffset() {
+    val centers = listOf(20f, 80f, 140f)
+    val touchInContent =
+      NavPillDragPolicy.contentXFromViewport(
+        viewportX = 60f,
+        scrollOffsetPx = 30f,
+        viewportSizePx = 160f,
+        isRtl = true,
+      )
+    assertEquals(130f, touchInContent, 0.001f)
+    assertEquals(1.8333333f, NavPillDragPolicy.positionAfterDrag(touchInContent, 0f, centers), 0.001f)
+  }
+
+  @Test fun stationaryFingerTracksContentAsAutoScrollAdvances() {
+    val beforeAutoScroll = NavPillDragPolicy.contentXFromViewport(
+      viewportX = 100f,
+      scrollOffsetPx = 10f,
+      viewportSizePx = 180f,
+      isRtl = false,
+    )
+    val afterAutoScroll = NavPillDragPolicy.contentXFromViewport(
+      viewportX = 100f,
+      scrollOffsetPx = 30f,
+      viewportSizePx = 180f,
+      isRtl = false,
+    )
+    assertEquals(20f, afterAutoScroll - beforeAutoScroll, 0.001f)
+  }
+
+  @Test fun directRtlTabMappingStillReflectsPhysicalCoordinates() {
+    val centers = listOf(20f, 80f, 140f)
+    assertEquals(
+      2f,
+      NavPillDragPolicy.positionAfterDrag(20f, 0f, centers, isRtl = true),
+      0.001f,
+    )
+  }
+
+  @Test fun hoveredTabUsesNearestPillPosition() {
+    assertEquals(1, NavPillDragPolicy.hoveredTabIndex(1.49f, 3))
+    assertEquals(2, NavPillDragPolicy.hoveredTabIndex(1.51f, 3))
+  }
+
+  @Test fun flingAdvancesOneTabAndMirrorsInRtl() {
+    assertEquals(2, NavPillDragPolicy.flingSnappedIndex(1f, 1200f, 4))
+    assertEquals(0, NavPillDragPolicy.flingSnappedIndex(1f, -1200f, 4))
+    assertEquals(0, NavPillDragPolicy.flingSnappedIndex(1f, 1200f, 4, isRtl = true))
+    assertEquals(1, NavPillDragPolicy.flingSnappedIndex(1f, 100f, 4))
+  }
+
+  @Test
+  fun slopIsDecidedOnceFromTotalTravelAndVerticalMovesAreReleased() {
+    val slop = 24f
+    assertEquals(NavPillDragPolicy.SlopDecision.Undecided, NavPillDragPolicy.classifySlop(10f, 4f, slop))
+    // 1942 needed the overshoot past the slop to exceed the slop again; one slop is enough now.
+    assertEquals(NavPillDragPolicy.SlopDecision.Horizontal, NavPillDragPolicy.classifySlop(25f, 3f, slop))
+    assertEquals(NavPillDragPolicy.SlopDecision.Vertical, NavPillDragPolicy.classifySlop(20f, 30f, slop))
+    assertEquals(NavPillDragPolicy.SlopDecision.Vertical, NavPillDragPolicy.classifySlop(30f, 30f, slop))
+    assertEquals(NavPillDragPolicy.SlopDecision.Vertical, NavPillDragPolicy.classifySlop(Float.NaN, 0f, slop))
+  }
+
+  @Test
+  fun overflowingPillScrollsToKeepTheLensVisible() {
+    assertEquals(0f, NavPillDragPolicy.autoScrollDelta(lensCenter = 150f, scroll = 0f, viewport = 300f), 0f)
+    assertEquals(36f, NavPillDragPolicy.autoScrollDelta(lensCenter = 280f, scroll = 0f, viewport = 300f), 0.001f)
+    assertEquals(-26f, NavPillDragPolicy.autoScrollDelta(lensCenter = 130f, scroll = 100f, viewport = 300f), 0.001f)
+    assertEquals(0f, NavPillDragPolicy.autoScrollDelta(lensCenter = 130f, scroll = 100f, viewport = 0f), 0f)
+  }
 }

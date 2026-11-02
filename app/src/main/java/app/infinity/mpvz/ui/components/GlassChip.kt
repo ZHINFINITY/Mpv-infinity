@@ -1,0 +1,131 @@
+/*
+ * SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+ * Copyright (c) 2026 ZHINFINITY. Mpv∞ Covered Code. See LICENSE for terms.
+ */
+package app.infinity.mpvz.ui.components
+
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
+import androidx.compose.foundation.layout.defaultMinSize
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
+import androidx.compose.material3.LocalContentColor
+import androidx.compose.material3.SelectableChipColors
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.unit.dp
+import app.infinity.mpvz.ui.player.controls.components.glassPressFeedback
+import app.infinity.mpvz.ui.preferences.components.settingsGlassEnabled
+import app.infinity.mpvz.ui.theme.glassRimLight
+
+@Composable
+fun GlassChip(
+  selected: Boolean,
+  onClick: () -> Unit,
+  label: @Composable () -> Unit,
+  modifier: Modifier = Modifier,
+  enabled: Boolean = true,
+  leadingIcon: (@Composable () -> Unit)? = null,
+  trailingIcon: (@Composable () -> Unit)? = null,
+  shape: Shape? = null,
+  colors: SelectableChipColors? = null,
+  glassContainerColor: Color? = null,
+  glassContentColor: Color? = null,
+) {
+  val glass = settingsGlassEnabled()
+  if (!glass) {
+    FilterChip(selected = selected, onClick = onClick, label = label, modifier = modifier, enabled = enabled, leadingIcon = leadingIcon, trailingIcon = trailingIcon, shape = shape ?: FilterChipDefaults.shape, colors = colors ?: FilterChipDefaults.filterChipColors())
+    return
+  }
+  val chipShape = shape ?: RoundedCornerShape(24.dp)
+  val source = remember { MutableInteractionSource() }
+  val scheme = MaterialTheme.colorScheme
+  // SelectableChipColors is opaque to callers; glass callers provide explicit palette overrides.
+  val customContainerColor = glassContainerColor?.takeIf { it != Color.Unspecified }
+  val customLabelColor = glassContentColor?.takeIf { it != Color.Unspecified }
+  val fill = GlassChipMaterial.fill(
+    selected = selected,
+    enabled = enabled,
+    accent = scheme.primary,
+    onSurface = scheme.onSurface,
+    customContainerColor = customContainerColor,
+  )
+  val borderColor = GlassChipMaterial.dimColor(
+    customContainerColor?.let { color ->
+      color.copy(alpha = color.alpha * if (selected) .76f else .22f)
+    } ?: if (selected) {
+      scheme.primary.copy(alpha = .76f)
+    } else {
+      scheme.onSurface.copy(alpha = .22f)
+    },
+    enabled,
+  )
+  Surface(
+    modifier = modifier.defaultMinSize(minWidth = 48.dp, minHeight = 48.dp)
+      // Keep the press indication inside the pill instead of the layout bounds.
+      .clip(chipShape)
+      // Frosted body (accent glow when selected), then the shared lit edge on top of it.
+      .background(Brush.verticalGradient(fill), chipShape)
+      .glassRimLight(chipShape, enabled = enabled, ambient = if (selected) ({ scheme.primary }) else null)
+      .glassPressFeedback(source, enabled, glass = true)
+      .semantics { this.selected = selected; this.role = Role.Checkbox }
+      .clickable(interactionSource = source, role = Role.Checkbox, enabled = enabled, onClick = onClick),
+    shape = chipShape,
+    color = Color.Transparent,
+    contentColor = GlassChipMaterial.dimColor(customLabelColor ?: LocalContentColor.current, enabled),
+    border = BorderStroke(1.dp, borderColor),
+  ) {
+    Row(
+      modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
+      horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(8.dp),
+      verticalAlignment = Alignment.CenterVertically,
+    ) {
+      leadingIcon?.invoke()
+      label()
+      trailingIcon?.invoke()
+    }
+  }
+}
+
+/** Glass chip body: a translucent frosted fill, lifted toward the accent when selected. */
+internal object GlassChipMaterial {
+  private const val DisabledAlpha = .5f
+
+  fun dimColor(color: Color, enabled: Boolean): Color =
+    color.copy(alpha = color.alpha * if (enabled) 1f else DisabledAlpha)
+
+  fun fill(
+    selected: Boolean,
+    enabled: Boolean,
+    accent: Color,
+    onSurface: Color,
+    customContainerColor: Color? = null,
+  ): List<Color> {
+    val dim = if (enabled) 1f else DisabledAlpha
+    val baseColor = customContainerColor ?: if (selected) accent else onSurface
+    val customAlpha = customContainerColor?.alpha ?: 1f
+    return if (selected) {
+      listOf(baseColor.copy(alpha = customAlpha * .34f * dim), baseColor.copy(alpha = customAlpha * .18f * dim))
+    } else {
+      listOf(baseColor.copy(alpha = customAlpha * .10f * dim), baseColor.copy(alpha = customAlpha * .05f * dim))
+    }
+  }
+}

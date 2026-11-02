@@ -58,6 +58,49 @@ object EmbeddedArtworkCandidates {
 }
 
 internal object EmbeddedArtworkResolver {
+  private const val ArtworkMaxEdge = 1024
+
+  private fun decodeBytesSampled(bytes: ByteArray): Bitmap? {
+    val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+    BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
+    if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null
+    return BitmapFactory.decodeByteArray(bytes, 0, bytes.size, BitmapFactory.Options().apply {
+      inSampleSize = ThumbnailDecodePolicy.sampleSize(bounds.outWidth, bounds.outHeight, ArtworkMaxEdge)
+      inPreferredConfig = Bitmap.Config.ARGB_8888
+    })
+  }
+
+  private fun decodeFileSampled(path: String): Bitmap? = runCatching {
+    // File-backed sidecars can be sampled directly without allocating the full compressed file
+    // or applying the smaller cap intended for remote/content streams.
+    val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+    BitmapFactory.decodeFile(path, bounds)
+    if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return@runCatching null
+    BitmapFactory.decodeFile(path, BitmapFactory.Options().apply {
+      inSampleSize = ThumbnailDecodePolicy.sampleSize(bounds.outWidth, bounds.outHeight, ArtworkMaxEdge)
+      inPreferredConfig = Bitmap.Config.ARGB_8888
+    })
+  }.getOrNull()
+
+  private fun decodeUriSampled(context: Context, uri: Uri): Bitmap? = runCatching {
+    val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+    context.contentResolver.openInputStream(uri)?.use { input ->
+      BitmapFactory.decodeStream(input, null, bounds)
+    }
+    if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return@runCatching null
+
+    val options = BitmapFactory.Options().apply {
+      inSampleSize = ThumbnailDecodePolicy.sampleSize(bounds.outWidth, bounds.outHeight, ArtworkMaxEdge)
+      inPreferredConfig = Bitmap.Config.ARGB_8888
+    }
+    context.contentResolver.openInputStream(uri)?.use { input ->
+      BitmapFactory.decodeStream(input, null, options)
+    }
+  }.getOrNull()
+
+  private fun decodeStreamSampled(input: java.io.InputStream): Bitmap? =
+    ThumbnailDecodePolicy.readEncodedImage(input)?.let(::decodeBytesSampled)
+
   fun decodeArtworkUri(
     context: Context,
     artworkUri: String?,
@@ -68,10 +111,10 @@ internal object EmbeddedArtworkResolver {
     return runCatching {
       val decoded =
         when (uri.scheme?.lowercase()) {
-          null, "" -> BitmapFactory.decodeFile(artworkUri)
-          "file" -> BitmapFactory.decodeFile(uri.path)
+          null, "" -> decodeFileSampled(artworkUri)
+          "file" -> uri.path?.let(::decodeFileSampled)
           "content", "android.resource" ->
-            context.contentResolver.openInputStream(uri)?.use { input -> BitmapFactory.decodeStream(input) }
+            decodeUriSampled(context, uri)
           "http", "https" -> {
             val connection = (java.net.URL(artworkUri).openConnection() as java.net.HttpURLConnection).apply {
               connectTimeout = 8000
@@ -79,9 +122,7 @@ internal object EmbeddedArtworkResolver {
               instanceFollowRedirects = true
               setRequestProperty("User-Agent", "Mozilla/5.0 (Android) MpvInfinity")
             }
-            connection.inputStream.use { input ->
-              BitmapFactory.decodeStream(input)
-            }
+            connection.inputStream.use(::decodeStreamSampled)
           }
           else -> null
         }
@@ -107,13 +148,13 @@ internal object EmbeddedArtworkResolver {
       ?.firstNotNullOfOrNull { candidate ->
         candidate
           .takeIf { it.isFile && it.canRead() }
-          ?.let { BitmapFactory.decodeFile(it.path) }
+          ?.let { decodeFileSampled(it.path) }
       }
 
   fun decodeRetrieverArtwork(retriever: MediaMetadataRetriever): Bitmap? {
     retriever.embeddedPicture
       ?.takeIf { it.isNotEmpty() }
-      ?.let { bytes -> BitmapFactory.decodeByteArray(bytes, 0, bytes.size) }
+      ?.let { bytes -> decodeBytesSampled(bytes) }
       ?.let { return it }
 
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {

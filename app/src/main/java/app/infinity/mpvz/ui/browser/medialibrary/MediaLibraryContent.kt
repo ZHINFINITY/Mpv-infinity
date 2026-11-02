@@ -129,7 +129,10 @@ fun MediaLibraryContent(forceAudio: Boolean = false) {
   val backstack = LocalBackStack.current
   val browserPreferences = koinInject<BrowserPreferences>()
   val appearancePreferences = koinInject<app.infinity.mpvz.preferences.AppearancePreferences>()
-  val showQuickPlayFab by appearancePreferences.showQuickPlayFab.collectAsState()
+  val showQuickPlayFabPreference by appearancePreferences.showQuickPlayFab.collectAsState()
+  val showQuickPlayFab = showQuickPlayFabPreference
+  val quickPlayFabDirect by appearancePreferences.quickPlayFabDirect.collectAsState()
+  val quickPlayFabDirectAllowed = app.infinity.mpvz.ui.browser.fab.quickPlayFabAllowed(showQuickPlayFabPreference)
   val playerPreferences = koinInject<PlayerPreferences>()
   val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
   val navigationBarHeight = LocalNavigationBarHeight.current
@@ -208,7 +211,7 @@ fun MediaLibraryContent(forceAudio: Boolean = false) {
   val addToPlaylistDialogOpen = rememberSaveable { mutableStateOf(false) }
   val isFabVisible = remember { mutableStateOf(true) }
   val isFabExpanded = remember { mutableStateOf(false) }
-  val quickPlayFabDirect by appearancePreferences.quickPlayFabDirect.collectAsState()
+  app.infinity.mpvz.ui.browser.fab.QuickPlayMenuVisibilityEffect(showQuickPlayFab && !quickPlayFabDirect) { isFabExpanded.value = false }
   var showFloatingBottomBar by remember { mutableStateOf(false) }
   val animationDuration = 300
   val lastPlayRequestIndex = remember { mutableIntStateOf(-1) }
@@ -496,6 +499,7 @@ fun MediaLibraryContent(forceAudio: Boolean = false) {
       val isFabShouldBeVisible =
         filteredVideosWithInfo.isNotEmpty() &&
           showQuickPlayFab &&
+          (!quickPlayFabDirect || quickPlayFabDirectAllowed) &&
           !selectionManager.isInSelectionMode &&
           isFabVisible.value &&
           !MainScreen.getPermissionDeniedState()

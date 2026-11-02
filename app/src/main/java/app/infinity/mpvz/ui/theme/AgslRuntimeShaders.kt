@@ -24,9 +24,24 @@ internal object AgslRuntimeShaders {
     GlassShaderCache.shared(GLASS_OPTICS) { RuntimeShader(GLASS_OPTICS) }
 
   fun browserLens(): RuntimeShader? =
-    GlassShaderCache.shared(BROWSER_LENS) { RuntimeShader(BROWSER_LENS) }
+    runCatching { RuntimeShader(BROWSER_LENS) }.getOrNull()
 
   fun browserLensEffect(
+    shader: Any?,
+    paneWidth: Float,
+    paneHeight: Float,
+    radius: Float,
+    bend: Float,
+    motion: Float,
+    frostPx: Float,
+  ): androidx.compose.ui.graphics.RenderEffect? = runCatching {
+    // Any driver/uniform failure falls back to the frosted pane instead of crashing the draw.
+    val runtimeShader = shader as? RuntimeShader ?: return@runCatching null
+    browserLensEffectUnchecked(runtimeShader, paneWidth, paneHeight, radius, bend, motion, frostPx)
+  }.getOrNull()
+
+  private fun browserLensEffectUnchecked(
+    shader: RuntimeShader,
     paneWidth: Float,
     paneHeight: Float,
     radius: Float,
@@ -34,11 +49,17 @@ internal object AgslRuntimeShaders {
     motion: Float,
     frostPx: Float,
   ): androidx.compose.ui.graphics.RenderEffect? {
-    val shader = browserLens() ?: return null
     shader.setFloatUniform("pane", paneWidth, paneHeight)
     shader.setFloatUniform("radius", radius)
     shader.setFloatUniform("bend", bend)
     shader.setFloatUniform("motion", motion)
+    return createBrowserLensComposeEffect(shader, frostPx)
+  }
+
+  private fun createBrowserLensComposeEffect(
+    shader: RuntimeShader,
+    frostPx: Float,
+  ): androidx.compose.ui.graphics.RenderEffect {
     val lensEffect = RenderEffect.createRuntimeShaderEffect(shader, "scene")
     val chained =
       if (frostPx > 0f) {
@@ -51,6 +72,27 @@ internal object AgslRuntimeShaders {
       }
     return chained.asComposeRenderEffect()
   }
+
+  fun browserLensHandle(
+    paneWidth: Float,
+    paneHeight: Float,
+    radius: Float,
+    bend: Float,
+    frostPx: Float,
+  ): BrowserLensEffectHandle? = runCatching {
+    val shader = browserLens() ?: return@runCatching null
+    shader.setFloatUniform("pane", paneWidth, paneHeight)
+    shader.setFloatUniform("radius", radius)
+    shader.setFloatUniform("bend", bend)
+    shader.setFloatUniform("motion", 0f)
+    val initialEffect = createBrowserLensComposeEffect(shader, frostPx)
+    BrowserLensEffectHandle(initialEffect) { motion ->
+      runCatching {
+        shader.setFloatUniform("motion", motion.coerceIn(0f, 1f))
+        createBrowserLensComposeEffect(shader, frostPx)
+      }.getOrNull()
+    }
+  }.getOrNull()
 
   fun bindGlassOptics(
     shader: Any,

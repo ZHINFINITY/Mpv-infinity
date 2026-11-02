@@ -7,8 +7,19 @@
 
 package app.infinity.mpvz.ui.preferences
 
+import androidx.compose.foundation.layout.Box
+import com.kyant.backdrop.backdrops.layerBackdrop
+import com.kyant.backdrop.drawBackdrop
+import com.kyant.backdrop.effects.blur
+import com.kyant.backdrop.effects.lens
+import androidx.compose.ui.platform.testTag
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.ui.draw.clip
+import androidx.compose.foundation.layout.Spacer
 import android.widget.Toast
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
@@ -18,6 +29,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.IconButton
@@ -39,6 +51,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.shape.RoundedCornerShape
 import app.infinity.mpvz.R
 import app.infinity.mpvz.domain.thumbnail.ThumbnailRepository
 import app.infinity.mpvz.preferences.AppearancePreferences
@@ -63,6 +76,8 @@ import app.infinity.mpvz.ui.preferences.components.ThemePicker
 import app.infinity.mpvz.ui.theme.DarkMode
 import app.infinity.mpvz.ui.theme.GlassSurface
 import app.infinity.mpvz.ui.theme.GlassSurfacePolicy
+import app.infinity.mpvz.ui.player.controls.components.GlassSwitch
+import app.infinity.mpvz.ui.player.controls.components.GlassSlider
 import app.infinity.mpvz.ui.theme.LocalThemeTransitionState
 import app.infinity.mpvz.ui.utils.LocalBackStack
 import app.infinity.mpvz.ui.utils.LocalShowSettingsBackArrow
@@ -335,13 +350,24 @@ object AppearancePreferencesScreen : Screen {
 
                   PreferenceDivider()
 
+                  val glassContext = androidx.compose.ui.platform.LocalContext.current
+                  val glassVerdict = remember(glassContext, liquidGlassSurfaces) {
+                    app.infinity.mpvz.ui.theme.GlassDeviceSupport.verdict(glassContext)
+                  }
                   SwitchPreference(
-                    value = liquidGlassSurfaces,
-                    onValueChange = preferences.liquidGlassSurfaces::set,
+                    value = liquidGlassSurfaces && !glassVerdict.hard,
+                    onValueChange = { on ->
+                      // Switching it back on after a recorded glass crash is the user's retry.
+                      if (on) app.infinity.mpvz.ui.theme.GlassDeviceSupport.clearCrashRecord(glassContext)
+                      preferences.liquidGlassSurfaces.set(on)
+                    },
                     title = { Text("Liquid glass surfaces") },
                     summary = {
-                      Text("Shared sampled video glass on player controls, toggles and sheets. Android 13+ adds lens refraction; older Android uses frosted samples. HDR, low memory and severe heat use a readable translucent fallback. Sampling stops when controls are hidden.")
+                      Text(
+                        app.infinity.mpvz.ui.theme.GlassDeviceSupportText.summary(glassVerdict),
+                      )
                     },
+                    enabled = !glassVerdict.hard,
                   )
 
                   PreferenceDivider()
@@ -352,6 +378,12 @@ object AppearancePreferencesScreen : Screen {
                   val refractionStrength by preferences.glassRefractionStrength.collectAsState()
                   val depthStrength by preferences.glassDepthStrength.collectAsState()
                   val motionIntensity by preferences.glassMotionIntensity.collectAsState()
+                  val glassRimStrength by preferences.glassRimStrength.collectAsState()
+                  val glassRimWidth by preferences.glassRimWidth.collectAsState()
+                  val glassRimSoftness by preferences.glassRimSoftness.collectAsState()
+                  val lensRefraction by preferences.lensRefraction.collectAsState()
+                  val lensDepth by preferences.lensDepth.collectAsState()
+                  val colourEdge by preferences.colourEdge.collectAsState()
                   GlassCustomizationPreference(
                     title = "Frost / blur strength", summary = "Smooth shared frost; lower settings use less work",
                     value = app.infinity.mpvz.ui.theme.GlassCustomizationPolicy.strength(frostStrength),
@@ -368,17 +400,38 @@ object AppearancePreferencesScreen : Screen {
                     enabled = liquidGlassSurfaces, onValueChange = preferences.glassDepthStrength::set,
                   )
                   GlassCustomizationPreference(
+                    title = stringResource(R.string.pref_glass_lens_refraction), summary = stringResource(R.string.pref_glass_lens_refraction_summary),
+                    value = lensRefraction, enabled = liquidGlassSurfaces, onValueChange = preferences.lensRefraction::set,
+                  )
+                  GlassCustomizationPreference(
+                    title = stringResource(R.string.pref_glass_lens_depth), summary = stringResource(R.string.pref_glass_lens_depth_summary),
+                    value = lensDepth, enabled = liquidGlassSurfaces, onValueChange = preferences.lensDepth::set,
+                  )
+                  SwitchPreference(value = colourEdge, onValueChange = preferences.colourEdge::set,
+                    title = { Text(stringResource(R.string.pref_glass_colour_edge)) },
+                    summary = { Text(stringResource(R.string.pref_glass_colour_edge_summary)) }, enabled = liquidGlassSurfaces)
+                  GlassCustomizationPreference(
                     title = "Glass motion", summary = "Navigation-lens stretch and bounce; system reduced motion takes priority",
                     value = app.infinity.mpvz.ui.theme.GlassCustomizationPolicy.motion(motionIntensity), maximum = 1f,
                     enabled = liquidGlassSurfaces, onValueChange = preferences.glassMotionIntensity::set,
                   )
+                  SliderPreference(value = glassRimStrength, onValueChange = { preferences.glassRimStrength.set(it) },
+                    sliderValue = glassRimStrength, onSliderValueChange = {}, title = { Text(stringResource(R.string.pref_glass_rim_strength)) },
+                    summary = { Text(stringResource(R.string.pref_glass_rim_strength_summary)) }, valueRange = 0f..2f, enabled = liquidGlassSurfaces)
+                  SliderPreference(value = glassRimWidth, onValueChange = { preferences.glassRimWidth.set(it) },
+                    sliderValue = glassRimWidth, onSliderValueChange = {}, title = { Text(stringResource(R.string.pref_glass_rim_width)) },
+                    summary = { Text(stringResource(R.string.pref_glass_rim_width_summary)) }, valueRange = 0.5f..3f, enabled = liquidGlassSurfaces)
+                  SliderPreference(value = glassRimSoftness, onValueChange = { preferences.glassRimSoftness.set(it) },
+                    sliderValue = glassRimSoftness, onSliderValueChange = {}, title = { Text(stringResource(R.string.pref_glass_rim_softness)) },
+                    summary = { Text(stringResource(R.string.pref_glass_rim_softness_summary)) }, valueRange = 0f..1f, enabled = liquidGlassSurfaces)
                   SliderPreference(
                     value = GlassSurfacePolicy.opacity(glassOpacity),
                     onValueChange = { preferences.glassSurfaceOpacity.set(GlassSurfacePolicy.opacity(it)) },
                     sliderValue = GlassSurfacePolicy.opacity(glassOpacity),
                     onSliderValueChange = {},
                     title = { Text("Surface opacity") },
-                    summary = { Text("${(GlassSurfacePolicy.opacity(glassOpacity) * 100).toInt()}% · keeps text readable") },
+                    summary = { app.infinity.mpvz.ui.components.SliderValueSummary("${(GlassSurfacePolicy.opacity(glassOpacity) * 100).toInt()}%",
+                      "${(GlassSurfacePolicy.MinOpacity * 100).toInt()}%", "${(GlassSurfacePolicy.MaxOpacity * 100).toInt()}%", "keeps text readable") },
                     valueRange = GlassSurfacePolicy.MinOpacity..GlassSurfacePolicy.MaxOpacity,
                     enabled = liquidGlassSurfaces,
                   )
@@ -388,18 +441,17 @@ object AppearancePreferencesScreen : Screen {
                     sliderValue = GlassSurfacePolicy.highlight(glassHighlight),
                     onSliderValueChange = {},
                     title = { Text("Highlight strength") },
-                    summary = { Text("${(GlassSurfacePolicy.highlight(glassHighlight) * 100).toInt()}% · edge reflections; text and icons stay sharp") },
+                    summary = { app.infinity.mpvz.ui.components.SliderValueSummary("${(GlassSurfacePolicy.highlight(glassHighlight) * 100).toInt()}%",
+                      "${(GlassSurfacePolicy.MinHighlight * 100).toInt()}%", "${(GlassSurfacePolicy.MaxHighlight * 100).toInt()}%", "edge reflections; text and icons stay sharp") },
                     valueRange = GlassSurfacePolicy.MinHighlight..GlassSurfacePolicy.MaxHighlight,
                     enabled = liquidGlassSurfaces,
                   )
-                  GlassSurface(
+                  GlassLivePreview(
                     enabled = liquidGlassSurfaces,
                     opacity = glassOpacity,
                     highlight = glassHighlight,
                     modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
-                  ) {
-                    Text("Preview", modifier = Modifier.padding(16.dp), style = MaterialTheme.typography.titleSmall)
-                  }
+                  )
                   PreferenceDivider()
                   val useSystemFont by preferences.useSystemFont.collectAsState()
                   SwitchPreference(
@@ -1136,7 +1188,118 @@ private fun GlassCustomizationPreference(
   SliderPreference(
     value = bounded, onValueChange = { onValueChange(it.coerceIn(0f, maximum)) },
     sliderValue = bounded, onSliderValueChange = {},
-    title = { Text(title) }, summary = { Text("${(bounded * 100).toInt()}% · $summary") },
+    title = { Text(title) }, summary = { app.infinity.mpvz.ui.components.SliderValueSummary("${(bounded * 100).toInt()}%", "0%", "${(maximum * 100).toInt()}%", summary) },
     valueRange = 0f..maximum, enabled = enabled,
   )
+}
+
+@Composable
+private fun GlassLivePreview(enabled: Boolean, opacity: Float, highlight: Float, modifier: Modifier = Modifier) {
+  val lens = enabled && app.infinity.mpvz.ui.theme.lens.LocalLensGlassEnabled.current
+  if (lens) {
+    LensGlassPreview(opacity, highlight, modifier)
+    return
+  }
+  // Frosted fallback: the checkerboard stays in GlassSurface's source layer so the pane frosts it.
+  GlassSurface(
+    enabled = enabled,
+    opacity = opacity,
+    highlight = highlight,
+    cornerRadius = 20.dp,
+    modifier = modifier,
+    backdrop = { GlassPreviewCheckerboard(Modifier.fillMaxSize()) },
+  ) {
+    GlassPreviewContent(Modifier.height(132.dp).fillMaxWidth().padding(16.dp))
+  }
+}
+
+/** Two-colour checkerboard; straight edges make refraction, magnification and colour edges visible. */
+@Composable
+internal fun GlassPreviewCheckerboard(modifier: Modifier = Modifier) {
+  Canvas(modifier) {
+    val cell = GlassPreviewPolicy.CellDp.dp.toPx()
+    val columns = kotlin.math.ceil(size.width / cell).toInt()
+    val rows = kotlin.math.ceil(size.height / cell).toInt()
+    drawRect(GlassPreviewPolicy.ColourB)
+    for (r in 0 until rows) for (c in 0 until columns) {
+      if (GlassPreviewPolicy.isColourA(r, c)) drawRect(
+        GlassPreviewPolicy.ColourA,
+        androidx.compose.ui.geometry.Offset(c * cell, r * cell),
+        androidx.compose.ui.geometry.Size(cell, cell),
+      )
+    }
+  }
+}
+
+@Composable
+private fun GlassPreviewContent(modifier: Modifier) {
+  Column(modifier, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+    Text(stringResource(R.string.pref_glass_preview), style = MaterialTheme.typography.titleSmall)
+    Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+      listOf("A", "B", "C").forEach { Text(it, Modifier.background(MaterialTheme.colorScheme.surface.copy(alpha = .42f), RoundedCornerShape(12.dp)).padding(horizontal = 10.dp, vertical = 4.dp)) }
+      Spacer(Modifier.weight(1f))
+      var on by remember { mutableStateOf(true) }
+      GlassSwitch(checked = on, onCheckedChange = { on = it })
+    }
+    var level by remember { mutableFloatStateOf(.65f) }
+    GlassSlider(value = level, onValueChange = { level = it }, modifier = Modifier.fillMaxWidth())
+  }
+}
+
+/**
+ * Lens preview: the checkerboard is recorded as a SIBLING layer, and an inset glass card above it
+ * refracts, magnifies and (optionally) colour-splits its edges with the live Liquid Glass settings.
+ */
+@Composable
+private fun LensGlassPreview(opacity: Float, highlight: Float, modifier: Modifier) {
+  val tuning = app.infinity.mpvz.ui.theme.LocalGlassCustomization.current
+  val checker = com.kyant.backdrop.backdrops.rememberLayerBackdrop()
+  val cardShape = RoundedCornerShape(GlassPreviewPolicy.CardRadiusDp.dp)
+  val surface = MaterialTheme.colorScheme.surface
+  val surfaceAlpha = GlassPreviewPolicy.surfaceAlpha(GlassSurfacePolicy.opacity(opacity))
+  val rimAlpha = GlassSurfacePolicy.highlight(highlight).coerceIn(0f, 1f)
+  Box(modifier.height(GlassPreviewPolicy.HeightDp.dp).clip(RoundedCornerShape(20.dp)).testTag("glass_preview_lens")) {
+    GlassPreviewCheckerboard(Modifier.matchParentSize().layerBackdrop(checker))
+    Box(
+      Modifier
+        .matchParentSize()
+        .padding(GlassPreviewPolicy.InsetDp.dp)
+        .drawBackdrop(
+          backdrop = checker,
+          shape = { cardShape },
+          effects = {
+            blur(GlassPreviewPolicy.blurDp(tuning.frost).dp.toPx())
+            lens(
+              refractionHeight = app.infinity.mpvz.ui.theme.lens.LensGlassPolicy.refractionHeightPx(
+                GlassPreviewPolicy.RefractionHeightDp.dp.toPx(), GlassPreviewPolicy.CardRadiusDp.dp.toPx(), tuning.lensDepth),
+              refractionAmount = app.infinity.mpvz.ui.theme.lens.LensGlassPolicy.refractionAmountPx(
+                GlassPreviewPolicy.RefractionAmountDp.dp.toPx(), size.minDimension, tuning.lensRefraction),
+              depthEffect = true,
+              chromaticAberration = tuning.colourEdge,
+            )
+          },
+          highlight = { com.kyant.backdrop.highlight.Highlight.Default.copy(alpha = rimAlpha) },
+          onDrawSurface = { drawRect(surface.copy(alpha = surfaceAlpha)) },
+        ),
+    ) {
+      GlassPreviewContent(Modifier.fillMaxSize().padding(14.dp))
+    }
+  }
+}
+
+/** Pure numbers for the live preview (unit-tested). */
+internal object GlassPreviewPolicy {
+  const val CellDp = 14f
+  const val HeightDp = 176f
+  const val InsetDp = 18f
+  const val CardRadiusDp = 24f
+  const val RefractionHeightDp = 18f
+  const val RefractionAmountDp = 30f
+  val ColourA = androidx.compose.ui.graphics.Color(0xFFE53935)
+  val ColourB = androidx.compose.ui.graphics.Color(0xFF1E63D6)
+  fun isColourA(row: Int, column: Int): Boolean = (row + column) % 2 == 0
+  /** Frost setting (0..2) to a modest blur, so the checker edges stay visible through the lens. */
+  fun blurDp(frost: Float): Float = (if (frost.isFinite()) frost else 1f).coerceIn(0f, 2f) * 1.5f
+  /** The tint keeps text readable but never hides the checkerboard. */
+  fun surfaceAlpha(opacity: Float): Float = ((if (opacity.isFinite()) opacity else .5f) * 0.35f).coerceIn(0.06f, 0.40f)
 }

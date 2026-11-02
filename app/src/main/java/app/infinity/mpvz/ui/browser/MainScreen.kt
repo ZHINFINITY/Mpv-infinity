@@ -28,7 +28,6 @@ import androidx.compose.animation.shrinkHorizontally
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
@@ -72,6 +71,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
@@ -85,7 +85,10 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.nestedscroll.nestedScroll
-import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInParent
 import androidx.compose.ui.platform.LocalDensity
@@ -117,10 +120,10 @@ import app.infinity.mpvz.ui.icons.Icons
 import app.infinity.mpvz.ui.theme.AppMotion
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.serialization.Serializable
 import org.koin.compose.koinInject
-import kotlin.math.roundToInt
 
 @Serializable
 object MainScreen : Screen {
@@ -625,13 +628,29 @@ private fun ExpressivePillNavigationBar(
   val spacing = 4.dp
   val startPadding = 6.dp
 
-  val tabWidths = remember(position, visibleTabs) {
+  // While the pill is dragged the hovered tab opens like it does during a pager swipe, so its
+  // label has room. The gesture itself maps the finger against centres frozen at drag start.
+  var dragPosition by remember { mutableStateOf<Float?>(null) }
+  var retainedFinalDragPosition by remember { mutableStateOf<Float?>(null) }
+  var retainedFinalDragTarget by remember { mutableStateOf<Int?>(null) }
+  var lensSyncedToRelease by remember { mutableStateOf(false) }
+  val glassMotion = app.infinity.mpvz.ui.theme.LocalGlassCustomization.current.motion
+  val motionAllowed = liquidGlassSurfaces && rememberBrowserGlassMotionAllowed()
+  val fingerDragging = pagerState?.interactionSource?.collectIsDraggedAsState()?.value == true
+  val lastIndex = (visibleTabs.size - 1).coerceAtLeast(0)
+  val targetIndex = visibleTabs.indexOf(selectedTab).coerceAtLeast(0).toFloat()
+  // A single finite spring owns the visual lens. Pager drags follow the finger without lag;
+  // programmatic tab changes keep a separate spring trajectory instead of snapping each frame.
+  val lensPosition = remember { Animatable(position) }
+  val synchronizedRelease = retainedFinalDragTarget != null && lensSyncedToRelease
+  val releaseVisualPosition = if (synchronizedRelease) lensPosition.value else retainedFinalDragPosition
+  val layoutPosition = dragPosition ?: releaseVisualPosition ?: position
+  val tabWidths = remember(layoutPosition, visibleTabs) {
     visibleTabs.mapIndexed { index, tab ->
-      val fraction = (1f - kotlin.math.abs(position - index)).coerceIn(0f, 1f)
+      val fraction = (1f - kotlin.math.abs(layoutPosition - index)).coerceIn(0f, 1f)
       androidx.compose.ui.unit.lerp(inactiveTabWidth, activeTabWidth(tab), fraction)
     }
   }
-
   val tabOffsets = remember(tabWidths) {
     var acc = startPadding
     tabWidths.map { w ->
@@ -641,24 +660,54 @@ private fun ExpressivePillNavigationBar(
     }
   }
 
-  val glassMotion = app.infinity.mpvz.ui.theme.LocalGlassCustomization.current.motion
-  val motionAllowed = liquidGlassSurfaces && rememberBrowserGlassMotionAllowed()
-  val fingerDragging = pagerState?.interactionSource?.collectIsDraggedAsState()?.value == true
-  val targetIndex = visibleTabs.indexOf(selectedTab).coerceAtLeast(0).toFloat()
-  // A single finite spring owns the visual lens. Pager drags follow the finger without lag;
-  // programmatic tab changes keep a separate spring trajectory instead of snapping each frame.
-  val lensPosition = remember { Animatable(position) }
-  LaunchedEffect(targetIndex, fingerDragging, if (fingerDragging) position else 0f, motionAllowed, glassMotion) {
+  LaunchedEffect(targetIndex, fingerDragging, if (fingerDragging) position else 0f, motionAllowed, glassMotion, retainedFinalDragTarget) {
     when {
+      retainedFinalDragTarget != null -> Unit
       !motionAllowed -> lensPosition.snapTo(targetIndex)
       fingerDragging -> lensPosition.snapTo(position)
       else -> lensPosition.animateTo(targetIndex, spring(stiffness = 440f, dampingRatio = 1f - 0.26f * glassMotion))
     }
   }
-  val lastIndex = (visibleTabs.size - 1).coerceAtLeast(0)
-  var dragPosition by remember { mutableStateOf<Float?>(null) }
-  val visualPosition = (dragPosition ?: if (!motionAllowed || fingerDragging) position else lensPosition.value)
-    .coerceIn(0f, lastIndex.toFloat())
+  LaunchedEffect(retainedFinalDragTarget, retainedFinalDragPosition, pagerState, motionAllowed, glassMotion, visibleTabs.size) {
+    val target = retainedFinalDragTarget ?: return@LaunchedEffect
+    val finalPosition = retainedFinalDragPosition ?: return@LaunchedEffect
+    val targetPosition = target.toFloat().coerceIn(0f, (visibleTabs.size - 1).coerceAtLeast(0).toFloat())
+    lensSyncedToRelease = false
+    lensPosition.snapTo(finalPosition)
+    lensSyncedToRelease = true
+    if (!motionAllowed) {
+      lensPosition.snapTo(targetPosition)
+    } else {
+      lensPosition.animateTo(targetPosition, spring(stiffness = 440f, dampingRatio = 1f - 0.26f * glassMotion))
+    }
+    val pager = pagerState
+    if (pager != null) {
+      snapshotFlow {
+        pager.settledPage == target &&
+          kotlin.math.abs(pager.currentPageOffsetFraction) < 0.001f &&
+          !pager.isScrollInProgress &&
+          !lensPosition.isRunning &&
+          kotlin.math.abs(lensPosition.value - targetPosition) < 0.001f
+      }.first { it }
+    }
+    retainedFinalDragPosition = null
+    retainedFinalDragTarget = null
+    lensSyncedToRelease = false
+  }
+  LaunchedEffect(fingerDragging) {
+    if (fingerDragging) {
+      retainedFinalDragPosition = null
+      retainedFinalDragTarget = null
+      lensSyncedToRelease = false
+    }
+  }
+  var hoveredTab by remember { mutableIntStateOf(targetIndex.toInt().coerceIn(0, lastIndex)) }
+  LaunchedEffect(targetIndex, lastIndex) {
+    hoveredTab = targetIndex.toInt().coerceIn(0, lastIndex)
+  }
+  val visualPosition = (
+    dragPosition ?: releaseVisualPosition ?: if (!motionAllowed || fingerDragging) position else lensPosition.value
+  ).coerceIn(0f, lastIndex.toFloat())
   val visualFloor = visualPosition.toInt().coerceIn(0, lastIndex)
   val visualCeil = (visualFloor + 1).coerceAtMost(lastIndex)
   val visualFraction = (visualPosition - visualFloor).coerceIn(0f, 1f)
@@ -674,28 +723,45 @@ private fun ExpressivePillNavigationBar(
   val tabCentersPx = remember(tabOffsets, tabWidths, density) {
     tabOffsets.mapIndexed { index, left -> with(density) { (left + tabWidths[index] / 2).toPx() } }
   }
-  val dragModifier = Modifier.pointerInput(visibleTabs, tabCentersPx, isRtl) {
-    detectHorizontalDragGestures(
-      onDragStart = { dragPosition = null },
-      onHorizontalDrag = { change, _ ->
-        change.consume()
-        dragPosition = NavPillDragPolicy.tabPositionAtX(change.position.x, tabCentersPx, isRtl)
-      },
-      onDragEnd = {
-        val target = dragPosition?.let { NavPillDragPolicy.nearestTabIndex(it, visibleTabs.size) }
-        dragPosition = null
-        if (target != null) visibleTabs.getOrNull(target)?.let(onTabSelected)
-      },
-      onDragCancel = { dragPosition = null },
-    )
-  }
+// Read, not keyed: tab centres move while the hovered tab opens, and restarting the
+  // pointerInput on every width change would cancel the drag mid-gesture.
+  val latestTabCenters by rememberUpdatedState(tabCentersPx)
+  val latestVisibleTabs by rememberUpdatedState(visibleTabs)
+  val latestOnTabSelected by rememberUpdatedState(onTabSelected)
+  val pillScroll = rememberScrollState()
+  val dragModifier = Modifier.navPillDragGesture(
+    tabCount = visibleTabs.size,
+    selectedIndex = targetIndex.toInt(),
+    isRtl = isRtl,
+    tabCenters = { latestTabCenters },
+    scrollState = pillScroll,
+    onDragPosition = {
+      if (it != null) {
+        retainedFinalDragPosition = null
+        retainedFinalDragTarget = null
+        lensSyncedToRelease = false
+      }
+      dragPosition = it
+    },
+    onHoverChanged = { index ->
+      if (index != hoveredTab && dragPosition != null) haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+      hoveredTab = index
+    },
+    onRelease = { target, releasePosition ->
+      latestVisibleTabs.getOrNull(target)?.let { tab ->
+        val finalPosition = releasePosition.coerceIn(0f, lastIndex.toFloat())
+        lensSyncedToRelease = false
+        retainedFinalDragPosition = finalPosition
+        retainedFinalDragTarget = target
+        latestOnTabSelected(tab)
+      }
+    },
+  )
   val lensGeometry = with(density) {
     if (motionAllowed) NavigationGlassMotionPolicy.dragGeometry(
       lensBaseLeft.toPx(), lensBaseWidth.toPx(), visualFraction, direction, glassMotion,
     ) else NavigationGlassMotionPolicy.settledGeometry(lensBaseLeft.toPx(), lensBaseWidth.toPx())
   }
-  val lensSquash = kotlin.math.abs(lensGeometry.deformation) * 4f
-
   BrowserGlassSurface(
     enabled = liquidGlassSurfaces,
     opacity = glassOpacity,
@@ -710,8 +776,8 @@ private fun ExpressivePillNavigationBar(
         Modifier
             .wrapContentWidth()
             .then(dragModifier)
-            .horizontalScroll(rememberScrollState())
-          .clipToBounds()
+            .horizontalScroll(pillScroll)
+            .clipToBounds()
           .padding(horizontal = startPadding, vertical = 6.dp),
     ) {
       // The selected lens is its own glass surface; icons and labels remain in the hit boxes.
@@ -723,9 +789,9 @@ private fun ExpressivePillNavigationBar(
         selected = true,
         deformation = kotlin.math.abs(lensGeometry.deformation),
         modifier = Modifier
-          .offset(x = with(density) { lensGeometry.left.toDp() } - startPadding, y = (lensSquash / 2f).dp)
+          .offset(x = with(density) { lensGeometry.left.toDp() } - startPadding, y = 0.dp)
           .width(with(density) { lensGeometry.width.toDp() })
-          .height((44f - lensSquash).dp),
+          .height(44.dp),
       ) {}
 
       // Tab buttons row positioned directly on top of the track
@@ -734,7 +800,11 @@ private fun ExpressivePillNavigationBar(
         verticalAlignment = Alignment.CenterVertically,
       ) {
         visibleTabs.forEachIndexed { index, tab ->
-          val tabFraction = (1f - kotlin.math.abs(position - index)).coerceIn(0f, 1f)
+          val tabFraction = if (dragPosition != null || retainedFinalDragTarget != null) {
+            (1f - kotlin.math.abs(visualPosition - index)).coerceIn(0f, 1f)
+          } else {
+            (1f - kotlin.math.abs(position - index)).coerceIn(0f, 1f)
+          }
           val tabWidth = tabWidths.getOrElse(index) { inactiveTabWidth }
 
           val contentColor =
@@ -746,14 +816,20 @@ private fun ExpressivePillNavigationBar(
 
           Box(
             modifier =
-              Modifier
+            Modifier
                 .width(tabWidth)
                 .height(44.dp)
                 .clip(CircleShape)
+                .semantics {
+                  role = Role.Tab
+                  selected = if (dragPosition != null || retainedFinalDragPosition != null) hoveredTab == index else index == targetIndex.toInt()
+                }
                 .clickable(
                   interactionSource = remember { MutableInteractionSource() },
                   indication = androidx.compose.material3.ripple(bounded = true),
                 ) {
+                  retainedFinalDragPosition = null
+                  retainedFinalDragTarget = null
                   haptics.performHapticFeedback(HapticFeedbackType.LongPress)
                   onTabSelected(tab)
                 },

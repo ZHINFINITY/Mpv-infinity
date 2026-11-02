@@ -3,6 +3,7 @@ package app.infinity.mpvz.ui.browser
 
 import java.io.File
 import java.security.MessageDigest
+import androidx.compose.ui.graphics.Color
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -14,28 +15,42 @@ class ReferenceUiRollbackContractTest {
   private fun read(path: String) = File(root, path).readText()
   private fun sha(value: String) = MessageDigest.getInstance("SHA-256")
     .digest(value.toByteArray()).joinToString("") { "%02x".format(it) }
+  private companion object {
+    const val ALPHA_8BIT_TOLERANCE = 1f / 255f
+  }
 
   @Test fun originalFolderCardSourceFingerprintIsPreserved() {
     assertEquals("18760196bbe09db6601592650ce9c243f8a8ff6ddba80e9e2bc0b4bab8fdb563",
       sha(read("app/src/main/java/app/infinity/mpvz/ui/browser/cards/FolderCard.kt")))
   }
 
-  @Test fun preservedPlayerSourcesKeepBaseline7eFingerprints() {
+  @Test fun preservedPlayerSourcesKeepPinnedFingerprints() {
     val expected = mapOf(
-      "app/src/main/java/app/infinity/mpvz/ui/player/controls/PlayerControls.kt" to "2219b79942125f0f6de4c1e543742605b6949a126d07fc4f05d32fc11240b27a" /* restore 7cd7e collectAsState on StateFlow snapshot getter */,
+      // Build 1910 smoothness: chapter index via derivedStateOf so position ticks do not recompose the whole overlay.
+      "app/src/main/java/app/infinity/mpvz/ui/player/controls/PlayerControls.kt" to "2219b79942125f0f6de4c1e543742605b6949a126d07fc4f05d32fc11240b27a" /* music entry hides stats via StatsLuaOverlay (no blind toggle, saved page kept); before that: 1901 (380a778b) stats overlay + music-entry stats hide restored; clean-room BrowserMusicSheetState replaces the mpvRx sheet type; outer-container preference now gates the track glass rail */,
+      // Owner follow-up: music uses its legacy visual rail while video retains the global-glass path.
       "app/src/main/java/app/infinity/mpvz/ui/player/controls/components/Seekbar.kt" to "b0d7ca11fdd2729871e052a0f6ea3b2cba64fb3e29039e5d3c42a7acf4d426c9",
-      // Build 1902: owner-approved contrasting switch colours (3D glass depth kept).
-      "app/src/main/java/app/infinity/mpvz/ui/player/controls/components/GlassControls.kt" to "ae873298a6b622bcdbe5c5366fc6d8fd37009ee395c3531c1df90f9dd31f6320",
-      "app/src/main/java/app/infinity/mpvz/presentation/components/PlayerSheet.kt" to "fdcf88d13735e1876059f0e7bdcc41088ecedd06d58fffde0283c9e32967e96a",
+      // Build 1910: shared rimLight/thick-surface routing is intentionally owned by this stream.
+      // Build 1910 integration: union of the rim-light routing and thickSurface stream edits.
+      // Owner follow-up: rounded player panes preserve the press shadow and inherit global glass tuning.
+      // Accessibility follow-up: shared press, slider, and lens feedback respects reduced motion.
+      // UI follow-up: density-aware tick-dot spacing keeps dense slider marks distinct.
+      "app/src/main/java/app/infinity/mpvz/ui/player/controls/components/GlassControls.kt" to "60ef062f4009e2add9d11799d37919b08b53090c65cb1bfee69dba71e4bc6463",
+      // Build 1910: player sheets opt into the centralized inner thickness bands.
+      // Build 1910 integration: edge-attached landscape sheets draw one rim on the asymmetric shape.
+      "app/src/main/java/app/infinity/mpvz/presentation/components/PlayerSheet.kt" to "7838a785e17d4bd1479a348a04c6f9ac7af0bacc0891ba817b165a1f53348c81",
       "app/src/main/java/app/infinity/mpvz/presentation/components/PlayerGlassOverlays.kt" to "82a115d195711b391235b5f32a4d7b2bac75e494aef0ff22be55251f9307b54f",
     )
     expected.forEach { (path, digest) -> assertEquals(path, digest, sha(read(path))) }
   }
 
-  /** Only the player-scoped ambient fallback guard and ambient film tint (builds 1896/1897) may differ. */
-  @Test fun liquidGlassBackdropDiffersFromBaselineOnlyByScopedAmbientGuard() {
+  /** Keep the player-scoped ambient guard and bound lens refraction to the pane's actual corner radius. */
+  @Test fun liquidGlassBackdropPreservesScopedAmbientAndBoundedRefraction() {
     val path = "app/src/main/java/app/infinity/mpvz/ui/theme/LiquidGlassBackdrop.kt"
     val current = read(path)
+    assertTrue(current.contains("val snapshot = immutableGlassSnapshot(bitmap)"))
+    assertTrue(current.contains("bitmap.copy(Bitmap.Config.ARGB_8888, false)"))
+    assertTrue(current.contains("pendingRetirements > MaxRetiredBitmapCount"))
     val guarded = """        // When video sampling is temporarily unavailable, the ambient video
         // presentation remains underneath this Compose layer. Do not cover it
         // with the theme's dark surface tint (which reads as a black control
@@ -58,7 +73,7 @@ class ReferenceUiRollbackContractTest {
     // Build 1899: adaptive see-through Regular film (593922 target). Each hunk is restored to its
     // 1898 text first, then the earlier scoped steps run unchanged.
     val adaptiveFilm = listOf(
-      """/** Immutable snapshot: window coordinates prevent every control showing the entire frame. */
+      """/** Immutable frame snapshot: window coordinates prevent every control showing the entire frame. */
 /** [underlayLuma] is the frosted sample's bright-percentile sRGB luma (1 = assume a white backdrop). */
 data class LiquidGlassFrame(
   val image: ImageBitmap,
@@ -92,13 +107,14 @@ data class LiquidGlassFrame(val image: ImageBitmap, val boundsInWindow: Rect, va
 """,
       """
 // Returns the frosted bitmap and its bright-percentile luma, measured on the same background pass.
-private suspend fun frostGlassFrame(bitmap: Bitmap, strength: Float): Pair<Bitmap, Float>? = try {
+private suspend fun frostGlassFrame(bitmap: Bitmap, strength: Float, pixels: IntArray, lumaBins: IntArray): Pair<Bitmap, Float>? = try {
 """ to
         """
 private suspend fun frostGlassFrame(bitmap: Bitmap, strength: Float): Bitmap? = try {
 """,
       """    bitmap.setPixels(frosted, 0, bitmap.width, 0, 0, bitmap.width, bitmap.height)
-    bitmap to GlassSurfacePolicy.underlayLuma(frosted)
+    val snapshot = immutableGlassSnapshot(bitmap) ?: return@withContext null
+    snapshot to GlassSurfacePolicy.underlayLuma(frosted, lumaBins)
 """ to
         """    bitmap.setPixels(frosted, 0, bitmap.width, 0, 0, bitmap.width, bitmap.height)
     bitmap
@@ -174,6 +190,61 @@ private suspend fun frostGlassFrame(bitmap: Bitmap, strength: Float): Bitmap? = 
         """runCatching { RuntimeShader(GLASS_OPTICS) }.getOrNull()""",
     )
     var film = current
+    // Capture reuses mutable scratch buffers and publishes immutable snapshots. Normalize only
+    // the sample callsite so older film/cadence contracts remain focused on their own changes.
+    val smoothness = listOf(
+      """  val frostPasses = GlassCustomizationPolicy.frostPasses(tuning.frost)
+  val frame = remember { mutableStateOf<LiquidGlassFrame?>(null) }
+  val captureBuffers = remember { GlassCaptureBuffers() }
+  DisposableEffect(Unit) { onDispose { captureBuffers.recycle() } }
+  val ready by rememberUpdatedState(isReady)
+  val playing by rememberUpdatedState(isPlaying)
+""" to
+        """  val frostPasses = GlassCustomizationPolicy.frostPasses(tuning.frost)
+  val frame = remember { mutableStateOf<LiquidGlassFrame?>(null) }
+  val ready by rememberUpdatedState(isReady)
+  val playing by rememberUpdatedState(isPlaying)
+""",
+      """        }
+        // Only the tiny UI copy is cropped/frosted. The actual video surface remains untouched.
+        val sampled = captureBuffers.sampleMutex.withLock {
+          val target = captureBuffers.acquire(dimensions.first, dimensions.second)
+          if (target == null) null
+          else try {
+            val copied = copyGlassFrame(source, crop, target, captureBuffers)
+            val frosted = copied?.let {
+              frostGlassFrame(target, tuning.frost, captureBuffers.pixels, captureBuffers.lumaBins)
+            }
+            if (frosted != null && captureBuffers.markPublished(target)) frosted else null
+          } finally {
+            captureBuffers.release(target)
+          }
+        }
+        val bitmap = sampled?.first
+        if (sampled == null || bitmap == null) {
+""" to
+        """        }
+        // Only the tiny UI copy is cropped/frosted. The actual video surface remains untouched.
+        val sampled = copyGlassFrame(source, crop, dimensions.first, dimensions.second)
+          ?.let { frostGlassFrame(it, tuning.frost) }
+        val bitmap = sampled?.first
+        if (sampled == null || bitmap == null) {
+""",
+      """            (location[0] + crop.left + crop.width).toFloat(), (location[1] + crop.top + crop.height).toFloat()),
+            underlayLuma = sampled.second)
+        }
+        // Recover after transient failures instead of permanently disabling glass after three errors.
+""" to
+        """            (location[0] + crop.left + crop.width).toFloat(), (location[1] + crop.top + crop.height).toFloat()),
+            underlayLuma = sampled.second)
+        }
+        // Recover after transient failures instead of permanently disabling glass after three errors.
+""",
+    )
+    smoothness.forEach { (now, before) ->
+      assertEquals(now, 1, film.split(now).size - 1)
+      film = film.replace(now, before)
+    }
     // Keep last frosted sample during ambience/interpolation; reverse before hashing.
     val frostRetention = listOf(
       """  // Visibility changes stop work, but do not flash the last good scene to black during sheet handoff.
@@ -339,13 +410,125 @@ import android.graphics.Shader
     return this.background(MaterialTheme.colorScheme.background.copy(alpha = GlassSurfacePolicy.EdgeChromeNoSceneFilmAlpha))
   }
 """ to "",
+      // Build 1908: unsupported or glass-crashed devices skip sampling (GlassDeviceSupport), and
+      // the startup sentinel watches the first glass frames. Optics and cadence are unchanged.
+      "canSample(enabled && GlassDeviceSupport.allowsGlass(context), true," to "canSample(enabled, true,",
+      "  val allowed = eligible && visible\n  GlassStartupWatch(active = allowed)\n" to
+        "  val allowed = eligible && visible\n",
     )
     var restored = film.replace(guarded, baseline)
     cadence.forEach { (now, before) ->
       assertEquals(now, 1, restored.split(now).size - 1)
       restored = restored.replace(now, before)
     }
-    assertEquals("f10a7bb20ca6e17e57f8500f5857cae1fc6d9ecf9f30c67512b8925ce2d9b7f3", sha(restored))
+    // Build 1910: centralized rim/depth bands replace the old pane-local contour; the integration
+    // keeps the bounded three-band lower-right exterior contact shadow (depth cue, no bitmap blur).
+    assertTrue(current.contains("val minCornerRadiusPx = cornerRadius.toPx().coerceAtMost(size.minDimension / 2f)"))
+    assertTrue(current.contains("refractionHeight = LensGlassPolicy.refractionHeightPx(24.dp.toPx(), minCornerRadiusPx, tuning.lensDepth)"))
+    assertTrue(current.contains("refractionAmount = LensGlassPolicy.refractionAmountPx(16.dp.toPx(), size.minDimension, tuning.lensRefraction)"))
+    val fixedRefraction =
+      "refractionAmount = LensGlassPolicy.refractionAmountPx(16.dp.toPx(), size.minDimension, tuning.lensRefraction)," to
+        "refractionAmount = LensGlassPolicy.refractionAmountPx(size.minDimension, size.minDimension, tuning.lensRefraction),"
+    assertEquals(1, restored.split(fixedRefraction.first).size - 1)
+    restored = restored.replace(fixedRefraction.first, fixedRefraction.second)
+    assertEquals("079687c78405e895058ef5d0666d0020c9cf9835cd0fa93e8ffc3775089e46f3", sha(restored))
+  }
+  @Test fun glassChipAndPlayerControlsRespectAccessibilityMotion() {
+    val chip = read("app/src/main/java/app/infinity/mpvz/ui/components/GlassChip.kt")
+    assertTrue(chip.contains("verticalAlignment = Alignment.CenterVertically"))
+    val controls = read("app/src/main/java/app/infinity/mpvz/ui/player/controls/components/GlassControls.kt")
+    assertTrue(controls.contains("reducedMotion: Boolean = AppMotion.shouldReduceMotion()"))
+    assertTrue(controls.contains(".glassWaterRipple(interactionSource, enabled, glass = glass && !reducedMotion)"))
+    assertTrue(controls.contains("if (reducedMotion) snap<Float>() else spring<Float>"))
+    assertEquals(2, controls.split("val reducedMotion = AppMotion.shouldReduceMotion()").size - 1)
+    assertTrue(controls.contains("!(refraction && GlassWaterRippleEffects.available())"))
+    assertTrue(controls.contains("if (lensEnabled && !reducedMotion && (switchPressed || switchDragged)) 1f else 0f"))
+    assertTrue(controls.contains("if (lensEnabled && !reducedMotion && (pressed || touched)) 1f else 0f"))
+    assertTrue(controls.contains("GlassSliderPolicy.stretch(pressed, reducedMotion)"))
+    assertTrue(controls.contains("GlassSliderPolicy.squash(pressed, reducedMotion)"))
+    assertTrue(controls.contains("The fade is the whole effect on fallback devices"))
+    assertEquals(1f, app.infinity.mpvz.ui.player.controls.components.GlassSliderPolicy.stretch(true, reducedMotion = true), 0f)
+    assertEquals(1f, app.infinity.mpvz.ui.player.controls.components.GlassSliderPolicy.squash(true, reducedMotion = true), 0f)
+    val pressEffect = controls.substring(controls.indexOf("fun Modifier.glassPressFeedback"), controls.indexOf("val feedbackSpec"))
+    assertTrue(pressEffect.contains("LaunchedEffect(interactionSource, enabled) {\n    pressed = false"))
+    val rippleEffect = controls.substring(controls.indexOf("fun Modifier.glassWaterRipple("), controls.indexOf("val refractive ="))
+    assertTrue(rippleEffect.contains("LaunchedEffect(interactionSource, enabled) {\n    progress.snapTo(1f)\n    origin = Offset.Unspecified"))
+    val switch = controls.substring(controls.indexOf("fun GlassSwitch("), controls.indexOf("fun GlassSlider("))
+    val switchThumb = switch.substring(switch.indexOf("val glassThumb"), switch.indexOf("if (lensEnabled) {", switch.indexOf("val glassThumb")))
+    val switchNonLens = switchThumb.substringAfter("else base")
+    assertTrue(switchNonLens.indexOf(".glassCapsuleBody") < switchNonLens.indexOf(".glassRimLight"))
+    val slider = controls.substring(controls.indexOf("fun GlassSlider("), controls.indexOf("private fun Modifier.glassTickDots"))
+    val sliderNonLens = slider.substringAfter("thumb = {").substringAfter("else base")
+    assertTrue(sliderNonLens.indexOf(".glassCapsuleBody") < sliderNonLens.indexOf(".glassRimLight"))
+    val backdrop = read("app/src/main/java/app/infinity/mpvz/ui/theme/LiquidGlassBackdrop.kt")
+    assertTrue(backdrop.contains("val snapshot = immutableGlassSnapshot(bitmap)"))
+    assertTrue(backdrop.contains("buffers.retain(bitmap)"))
+    assertTrue(backdrop.contains("retired.size + pendingRetirements > MaxRetiredBitmapCount"))
+  }
+  @Test fun glassChipUsesSuppliedColorsInGlassMode() {
+    val chip = read("app/src/main/java/app/infinity/mpvz/ui/components/GlassChip.kt")
+    assertTrue(chip.contains("glassContainerColor: Color? = null"))
+    assertTrue(chip.contains("glassContentColor: Color? = null"))
+    assertTrue(chip.contains("glassContainerColor?.takeIf { it != Color.Unspecified }"))
+    assertTrue(chip.contains("glassContentColor?.takeIf { it != Color.Unspecified }"))
+    assertTrue(chip.contains("val borderColor = GlassChipMaterial.dimColor("))
+    assertTrue(chip.contains(".glassRimLight(chipShape, enabled = enabled,"))
+    assertTrue(chip.contains("contentColor = GlassChipMaterial.dimColor(customLabelColor ?: LocalContentColor.current, enabled)"))
+    assertTrue(chip.contains("customContainerColor?.let"))
+    val customLabel = Color(0.2f, 0.4f, 0.6f, 0.8f)
+    val enabledLabel = app.infinity.mpvz.ui.components.GlassChipMaterial.dimColor(customLabel, enabled = true)
+    val disabledLabel = app.infinity.mpvz.ui.components.GlassChipMaterial.dimColor(customLabel, enabled = false)
+    assertEquals(customLabel.red, enabledLabel.red, 0.001f)
+    assertEquals(customLabel.alpha, enabledLabel.alpha, ALPHA_8BIT_TOLERANCE)
+    assertEquals(customLabel.red, disabledLabel.red, 0.001f)
+    assertEquals(customLabel.alpha * 0.5f, disabledLabel.alpha, ALPHA_8BIT_TOLERANCE)
+    assertTrue(chip.contains("colors = colors ?: FilterChipDefaults.filterChipColors()"))
+    val codecScreen = read("app/src/main/java/app/infinity/mpvz/ui/preferences/CodecCapabilitiesScreen.kt")
+    assertTrue(codecScreen.contains("glassContainerColor = MaterialTheme.colorScheme.primaryContainer"))
+    assertTrue(codecScreen.contains("glassContentColor = MaterialTheme.colorScheme.onPrimaryContainer"))
+    assertTrue(codecScreen.contains("glassContainerColor = MaterialTheme.colorScheme.tertiaryContainer"))
+    assertTrue(codecScreen.contains("glassContentColor = MaterialTheme.colorScheme.onTertiaryContainer"))
+
+    val customContainer = Color(0x80CC2244L)
+    val selectedFill = app.infinity.mpvz.ui.components.GlassChipMaterial.fill(
+      selected = true,
+      enabled = true,
+      accent = Color(0xFF0000FF),
+      onSurface = Color(0xFF000000),
+      customContainerColor = customContainer,
+    )
+    assertEquals(customContainer.red, selectedFill.first().red, 0.001f)
+    assertEquals(customContainer.alpha * 0.34f, selectedFill.first().alpha, ALPHA_8BIT_TOLERANCE)
+    assertEquals(customContainer.alpha * 0.18f, selectedFill.last().alpha, ALPHA_8BIT_TOLERANCE)
+
+    val unselectedFill = app.infinity.mpvz.ui.components.GlassChipMaterial.fill(
+      selected = false,
+      enabled = true,
+      accent = Color(0xFF0000FF),
+      onSurface = Color(0xFF000000),
+      customContainerColor = customContainer,
+    )
+    assertEquals(customContainer.red, unselectedFill.first().red, 0.001f)
+    assertEquals(customContainer.alpha * 0.10f, unselectedFill.first().alpha, ALPHA_8BIT_TOLERANCE)
+    assertEquals(customContainer.alpha * 0.05f, unselectedFill.last().alpha, ALPHA_8BIT_TOLERANCE)
+
+    val disabledFill = app.infinity.mpvz.ui.components.GlassChipMaterial.fill(
+      selected = true,
+      enabled = false,
+      accent = Color(0xFF0000FF),
+      onSurface = Color(0xFF000000),
+      customContainerColor = customContainer,
+    )
+    assertEquals(customContainer.alpha * 0.34f * 0.5f, disabledFill.first().alpha, ALPHA_8BIT_TOLERANCE)
+
+    val defaultFill = app.infinity.mpvz.ui.components.GlassChipMaterial.fill(
+      selected = false,
+      enabled = true,
+      accent = Color(0xFF0000FF),
+      onSurface = Color(0xFF224466),
+    )
+    assertEquals(Color(0xFF224466).red, defaultFill.first().red, 0.001f)
+    assertEquals(0.10f, defaultFill.first().alpha, ALPHA_8BIT_TOLERANCE)
   }
   @Test fun expressiveNavigationBodyAndBrowserLensMatchReference() {
     val navigation = read("app/src/main/java/app/infinity/mpvz/ui/browser/MainScreen.kt")
@@ -360,7 +543,24 @@ import android.graphics.Shader
       end++
     }
     // Build 1902: nav pill commits the lens frame before far page jumps and supports drag-to-select.
-    assertEquals("6dd01fe6826b20433d5073e6a41b45f2750f27f2b2ce2a6f0b6418263f8358f6", sha(navigation.substring(start, end)))
+    // Build 1943: the drag moved to the shared Initial-pass navPillDragGesture (1942's Main-pass
+    // slop detector never started on the phone).
+    // Owner follow-up: retain the normal 44dp selected outline/placement; the glass refraction
+    // follows finger-driven drag motion without an elevated pop or altered tab hit targets.
+    // Integration follow-up: hold the final drag position until the pager and lens finish settling.
+    // New drags clear retained release state and its lens-sync marker; keep the rest fingerprinted.
+    val navBody = navigation.substring(start, end)
+    val pagerDragCleanup = """
+      LaunchedEffect(fingerDragging) {
+        if (fingerDragging) {
+          retainedFinalDragPosition = null
+          retainedFinalDragTarget = null
+          lensSyncedToRelease = false
+        }
+      }
+    """.trimIndent().prependIndent("  ") + "\n"
+    assertEquals(1, navBody.split(pagerDragCleanup).size - 1)
+    assertEquals("c566a7d4050b6c7d8a92d7d3ee8b80aba81acf50676456df1e1f40aa9ff43efd", sha(navBody.replace(pagerDragCleanup, "")))
     val scene = read("app/src/main/java/app/infinity/mpvz/ui/theme/BrowserGlassScene.kt")
     val lensStart = scene.indexOf("internal const val BROWSER_LENS")
     val q = scene.indexOf("\"\"\"", lensStart)

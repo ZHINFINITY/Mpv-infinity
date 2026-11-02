@@ -112,9 +112,14 @@ object GlassSurfacePolicy {
    * Bright-percentile sRGB luma of a frosted ARGB sample (sparse, bounded). Using a high
    * percentile rather than the mean keeps text readable over local highlights.
    */
-  fun underlayLuma(pixels: IntArray, step: Int = 4, percentile: Float = 0.85f): Float {
+  fun underlayLuma(pixels: IntArray, step: Int = 4, percentile: Float = 0.85f): Float =
+    underlayLuma(pixels, IntArray(64), step, percentile)
+
+  /** Allocation-free variant for the capture loop; [bins] is cleared and reused. */
+  fun underlayLuma(pixels: IntArray, bins: IntArray, step: Int = 4, percentile: Float = 0.85f): Float {
     if (pixels.isEmpty()) return 1f
-    val bins = IntArray(64)
+    require(bins.size >= 64)
+    java.util.Arrays.fill(bins, 0)
     var count = 0
     var i = 0
     val stride = step.coerceAtLeast(1)

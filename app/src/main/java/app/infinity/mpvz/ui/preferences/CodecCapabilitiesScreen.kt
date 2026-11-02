@@ -7,6 +7,8 @@
 
 package app.infinity.mpvz.ui.preferences
 
+import app.infinity.mpvz.ui.components.GlassChip
+
 import android.content.Context
 import android.media.MediaCodecInfo
 import android.media.MediaCodecList
@@ -41,7 +43,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -813,39 +814,43 @@ object CodecCapabilitiesScreen : Screen {
               horizontalArrangement = Arrangement.spacedBy(8.dp),
               verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-              FilterChip(
+              GlassChip(
                 selected = selectedFilter == CodecFilter.ALL,
                 onClick = { selectedFilter = CodecFilter.ALL },
                 label = { Text(stringResource(R.string.pref_codecs_filter_all, codecs.size)) },
                 shape = RoundedCornerShape(12.dp),
               )
-              FilterChip(
+              GlassChip(
                 selected = selectedFilter == CodecFilter.HARDWARE,
                 onClick = { selectedFilter = CodecFilter.HARDWARE },
                 label = { Text(stringResource(R.string.pref_codecs_filter_hardware, hwCount)) },
                 shape = RoundedCornerShape(12.dp),
+                glassContainerColor = MaterialTheme.colorScheme.primaryContainer,
+                glassContentColor = MaterialTheme.colorScheme.onPrimaryContainer,
                 colors = FilterChipDefaults.filterChipColors(
                   selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
                   selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer,
                 ),
               )
-              FilterChip(
+              GlassChip(
                 selected = selectedFilter == CodecFilter.SOFTWARE,
                 onClick = { selectedFilter = CodecFilter.SOFTWARE },
                 label = { Text(stringResource(R.string.pref_codecs_filter_software, swCount)) },
                 shape = RoundedCornerShape(12.dp),
+                glassContainerColor = MaterialTheme.colorScheme.tertiaryContainer,
+                glassContentColor = MaterialTheme.colorScheme.onTertiaryContainer,
                 colors = FilterChipDefaults.filterChipColors(
                   selectedContainerColor = MaterialTheme.colorScheme.tertiaryContainer,
                   selectedLabelColor = MaterialTheme.colorScheme.onTertiaryContainer,
                 ),
               )
-              FilterChip(
+              GlassChip(
                 selected = selectedFilter == CodecFilter.VIDEO,
                 onClick = { selectedFilter = CodecFilter.VIDEO },
                 label = { Text(stringResource(R.string.pref_codecs_filter_video, videoCount)) },
                 shape = RoundedCornerShape(12.dp),
               )
-              FilterChip(
+              GlassChip(
                 selected = selectedFilter == CodecFilter.AUDIO,
                 onClick = { selectedFilter = CodecFilter.AUDIO },
                 label = { Text(stringResource(R.string.pref_codecs_filter_audio, audioCount)) },

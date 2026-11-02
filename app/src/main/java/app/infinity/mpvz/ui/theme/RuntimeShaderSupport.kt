@@ -8,6 +8,14 @@ import android.graphics.BitmapShader
 import android.os.Build
 import androidx.annotation.RequiresApi
 
+/** Retains the browser lens effect and exposes refreshed effects for animated motion. */
+internal class BrowserLensEffectHandle internal constructor(
+  val effect: androidx.compose.ui.graphics.RenderEffect,
+  private val motionUpdater: (Float) -> androidx.compose.ui.graphics.RenderEffect?,
+) {
+  fun updateMotion(value: Float): androidx.compose.ui.graphics.RenderEffect? = motionUpdater(value)
+}
+
 /**
  * Trampoline that never mentions [android.graphics.RuntimeShader]. ART verifies a
  * method when it first runs, so the API 33 class is only referenced from methods that
@@ -21,7 +29,13 @@ internal object RuntimeShaderSupport {
     return glassOpticsApi33()
   }
 
+  fun browserLensShaderOrNull(): Any? {
+    if (Build.VERSION.SDK_INT < 33) return null
+    return browserLensShaderApi33()
+  }
+
   fun browserLensEffectOrNull(
+    shader: Any?,
     paneWidth: Float,
     paneHeight: Float,
     radius: Float,
@@ -29,8 +43,19 @@ internal object RuntimeShaderSupport {
     motion: Float,
     frostPx: Float,
   ): androidx.compose.ui.graphics.RenderEffect? {
+    if (Build.VERSION.SDK_INT < 33 || shader == null) return null
+    return browserLensEffectApi33(shader, paneWidth, paneHeight, radius, bend, motion, frostPx)
+  }
+
+  fun browserLensHandleOrNull(
+    paneWidth: Float,
+    paneHeight: Float,
+    radius: Float,
+    bend: Float,
+    frostPx: Float,
+  ): BrowserLensEffectHandle? {
     if (Build.VERSION.SDK_INT < 33) return null
-    return browserLensEffectApi33(paneWidth, paneHeight, radius, bend, motion, frostPx)
+    return browserLensHandleApi33(paneWidth, paneHeight, radius, bend, frostPx)
   }
 
   fun bindGlassOpticsOrNull(
@@ -68,7 +93,11 @@ internal object RuntimeShaderSupport {
   private fun glassOpticsApi33(): Any? = AgslRuntimeShaders.glassOptics()
 
   @RequiresApi(33)
+  private fun browserLensShaderApi33(): Any? = AgslRuntimeShaders.browserLens()
+
+  @RequiresApi(33)
   private fun browserLensEffectApi33(
+    shader: Any,
     paneWidth: Float,
     paneHeight: Float,
     radius: Float,
@@ -76,7 +105,17 @@ internal object RuntimeShaderSupport {
     motion: Float,
     frostPx: Float,
   ): androidx.compose.ui.graphics.RenderEffect? =
-    AgslRuntimeShaders.browserLensEffect(paneWidth, paneHeight, radius, bend, motion, frostPx)
+    AgslRuntimeShaders.browserLensEffect(shader, paneWidth, paneHeight, radius, bend, motion, frostPx)
+
+  @RequiresApi(33)
+  private fun browserLensHandleApi33(
+    paneWidth: Float,
+    paneHeight: Float,
+    radius: Float,
+    bend: Float,
+    frostPx: Float,
+  ): BrowserLensEffectHandle? =
+    AgslRuntimeShaders.browserLensHandle(paneWidth, paneHeight, radius, bend, frostPx)
 
   @RequiresApi(33)
   private fun bindGlassOpticsApi33(
