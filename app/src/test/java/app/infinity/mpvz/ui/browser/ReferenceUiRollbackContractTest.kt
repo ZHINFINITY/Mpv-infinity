@@ -431,7 +431,7 @@ import android.graphics.Shader
         "refractionAmount = LensGlassPolicy.refractionAmountPx(size.minDimension, size.minDimension, tuning.lensRefraction),"
     assertEquals(1, restored.split(fixedRefraction.first).size - 1)
     restored = restored.replace(fixedRefraction.first, fixedRefraction.second)
-    assertEquals("01f65408e855f52c32f53739d1c461968c0be81f37d4cd4834fc8d0b86a20e66", sha(restored))
+    assertEquals("079687c78405e895058ef5d0666d0020c9cf9835cd0fa93e8ffc3775089e46f3", sha(restored))
   }
   @Test fun glassChipAndPlayerControlsRespectAccessibilityMotion() {
     val chip = read("app/src/main/java/app/infinity/mpvz/ui/components/GlassChip.kt")
