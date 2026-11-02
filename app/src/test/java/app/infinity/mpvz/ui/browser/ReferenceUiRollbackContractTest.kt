@@ -3,6 +3,7 @@ package app.infinity.mpvz.ui.browser
 
 import java.io.File
 import java.security.MessageDigest
+import androidx.compose.ui.graphics.Color
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -262,8 +263,10 @@ internal class GlassCaptureBuffers {
     published = bitmap
   }
   fun recycle() {
-    first?.recycle(); second?.recycle()
-    retired.forEach { it.recycle() }
+    val publishedBitmap = published
+    first?.let { if (it !== publishedBitmap) it.recycle() }
+    second?.let { if (it !== publishedBitmap) it.recycle() }
+    retired.forEach { if (it !== publishedBitmap) it.recycle() }
     retired.clear()
     first = null; second = null
     published = null
@@ -551,6 +554,54 @@ import android.graphics.Shader
     assertEquals(1f, app.infinity.mpvz.ui.player.controls.components.GlassSliderPolicy.stretch(true, reducedMotion = true), 0f)
     assertEquals(1f, app.infinity.mpvz.ui.player.controls.components.GlassSliderPolicy.squash(true, reducedMotion = true), 0f)
   }
+  @Test fun glassChipUsesSuppliedColorsInGlassMode() {
+    val chip = read("app/src/main/java/app/infinity/mpvz/ui/components/GlassChip.kt")
+    assertTrue(chip.contains("colors?.containerColor(enabled, selected)"))
+    assertTrue(chip.contains("colors?.labelColor(enabled, selected)"))
+    assertTrue(chip.contains("customContainerColor?.let"))
+    assertTrue(chip.contains("contentColor = customLabelColor ?: LocalContentColor.current"))
+
+    val customContainer = Color(0x80CC2244L)
+    val selectedFill = app.infinity.mpvz.ui.components.GlassChipMaterial.fill(
+      selected = true,
+      enabled = true,
+      accent = Color(0xFF0000FF),
+      onSurface = Color(0xFF000000),
+      customContainerColor = customContainer,
+    )
+    assertEquals(customContainer.red, selectedFill.first().red, 0.001f)
+    assertEquals(customContainer.alpha * 0.34f, selectedFill.first().alpha, 0.001f)
+    assertEquals(customContainer.alpha * 0.18f, selectedFill.last().alpha, 0.001f)
+
+    val unselectedFill = app.infinity.mpvz.ui.components.GlassChipMaterial.fill(
+      selected = false,
+      enabled = true,
+      accent = Color(0xFF0000FF),
+      onSurface = Color(0xFF000000),
+      customContainerColor = customContainer,
+    )
+    assertEquals(customContainer.red, unselectedFill.first().red, 0.001f)
+    assertEquals(customContainer.alpha * 0.10f, unselectedFill.first().alpha, 0.001f)
+    assertEquals(customContainer.alpha * 0.05f, unselectedFill.last().alpha, 0.001f)
+
+    val disabledFill = app.infinity.mpvz.ui.components.GlassChipMaterial.fill(
+      selected = true,
+      enabled = false,
+      accent = Color(0xFF0000FF),
+      onSurface = Color(0xFF000000),
+      customContainerColor = customContainer,
+    )
+    assertEquals(customContainer.alpha * 0.34f * 0.5f, disabledFill.first().alpha, 0.001f)
+
+    val defaultFill = app.infinity.mpvz.ui.components.GlassChipMaterial.fill(
+      selected = false,
+      enabled = true,
+      accent = Color(0xFF0000FF),
+      onSurface = Color(0xFF224466),
+    )
+    assertEquals(Color(0xFF224466).red, defaultFill.first().red, 0.001f)
+    assertEquals(0.10f, defaultFill.first().alpha, 0.001f)
+  }
   @Test fun expressiveNavigationBodyAndBrowserLensMatchReference() {
     val navigation = read("app/src/main/java/app/infinity/mpvz/ui/browser/MainScreen.kt")
     val start = navigation.indexOf("private fun ExpressivePillNavigationBar(")
@@ -569,18 +620,19 @@ import android.graphics.Shader
     // Owner follow-up: retain the normal 44dp selected outline/placement; the glass refraction
     // follows finger-driven drag motion without an elevated pop or altered tab hit targets.
     // Integration follow-up: hold the final drag position until the pager and lens finish settling.
-    // Pager interruption clears only its transient release state; keep the fingerprint for the rest.
+    // New drags clear retained release state and its lens-sync marker; keep the rest fingerprinted.
     val navBody = navigation.substring(start, end)
     val pagerDragCleanup = """
       LaunchedEffect(fingerDragging) {
         if (fingerDragging) {
           retainedFinalDragPosition = null
           retainedFinalDragTarget = null
+          lensSyncedToRelease = false
         }
       }
     """.trimIndent().prependIndent("  ") + "\n"
     assertEquals(1, navBody.split(pagerDragCleanup).size - 1)
-    assertEquals("a78810e070b39255b66d4a0091936bdeff86910ada4a44f14f86a4ece99a6738", sha(navBody.replace(pagerDragCleanup, "")))
+    assertEquals("c566a7d4050b6c7d8a92d7d3ee8b80aba81acf50676456df1e1f40aa9ff43efd", sha(navBody.replace(pagerDragCleanup, "")))
     val scene = read("app/src/main/java/app/infinity/mpvz/ui/theme/BrowserGlassScene.kt")
     val lensStart = scene.indexOf("internal const val BROWSER_LENS")
     val q = scene.indexOf("\"\"\"", lensStart)

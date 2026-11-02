@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.SelectableChipColors
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -55,7 +56,22 @@ fun GlassChip(
   val chipShape = shape ?: RoundedCornerShape(24.dp)
   val source = remember { MutableInteractionSource() }
   val scheme = MaterialTheme.colorScheme
-  val fill = GlassChipMaterial.fill(selected, enabled, scheme.primary, scheme.onSurface)
+  val customContainerColor = colors?.containerColor(enabled, selected)?.takeIf { it.isSpecified }
+  val customLabelColor = colors?.labelColor(enabled, selected)?.takeIf { it.isSpecified }
+  val fill = GlassChipMaterial.fill(
+    selected = selected,
+    enabled = enabled,
+    accent = scheme.primary,
+    onSurface = scheme.onSurface,
+    customContainerColor = customContainerColor,
+  )
+  val borderColor = customContainerColor?.let { color ->
+    color.copy(alpha = color.alpha * if (selected) .76f else .22f)
+  } ?: if (selected) {
+    scheme.primary.copy(alpha = .76f)
+  } else {
+    scheme.onSurface.copy(alpha = .22f)
+  }
   Surface(
     modifier = modifier.defaultMinSize(minWidth = 48.dp, minHeight = 48.dp)
       // Keep the press indication inside the pill instead of the layout bounds.
@@ -68,7 +84,8 @@ fun GlassChip(
       .clickable(interactionSource = source, role = Role.Checkbox, enabled = enabled, onClick = onClick),
     shape = chipShape,
     color = Color.Transparent,
-    border = BorderStroke(1.dp, if (selected) MaterialTheme.colorScheme.primary.copy(alpha = .76f) else MaterialTheme.colorScheme.onSurface.copy(alpha = .22f)),
+    contentColor = customLabelColor ?: LocalContentColor.current,
+    border = BorderStroke(1.dp, borderColor),
   ) {
     Row(
       modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
@@ -84,12 +101,20 @@ fun GlassChip(
 
 /** Glass chip body: a translucent frosted fill, lifted toward the accent when selected. */
 internal object GlassChipMaterial {
-  fun fill(selected: Boolean, enabled: Boolean, accent: Color, onSurface: Color): List<Color> {
+  fun fill(
+    selected: Boolean,
+    enabled: Boolean,
+    accent: Color,
+    onSurface: Color,
+    customContainerColor: Color? = null,
+  ): List<Color> {
     val dim = if (enabled) 1f else .5f
+    val baseColor = customContainerColor ?: if (selected) accent else onSurface
+    val customAlpha = customContainerColor?.alpha ?: 1f
     return if (selected) {
-      listOf(accent.copy(alpha = .34f * dim), accent.copy(alpha = .18f * dim))
+      listOf(baseColor.copy(alpha = customAlpha * .34f * dim), baseColor.copy(alpha = customAlpha * .18f * dim))
     } else {
-      listOf(onSurface.copy(alpha = .10f * dim), onSurface.copy(alpha = .05f * dim))
+      listOf(baseColor.copy(alpha = customAlpha * .10f * dim), baseColor.copy(alpha = customAlpha * .05f * dim))
     }
   }
 }
