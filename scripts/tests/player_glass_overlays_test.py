@@ -39,13 +39,17 @@ class PlayerGlassOverlayContracts(unittest.TestCase):
         self.assertIn("modifier = modifier.playerGlassOverlay()", call)
         self.assertIn("tonalElevation = 0.dp", call)
 
-    def test_bottom_sheet_surfaces_are_not_opaque_over_glass(self):
-        for relative in ("ui/player/controls/components/LyricsView.kt",):
-            source = self.source(relative)
-            host = source[source.index("ModalBottomSheet("):].split(") {", 1)[0]
-            self.assertIn(".playerGlassOverlay()", host, relative)
-            self.assertIn("containerColor =", host, relative)
-            self.assertIn("Color.Transparent", host, relative)
+    def test_lyrics_delay_is_in_place_not_an_empty_glass_sheet(self):
+        # The modal glass delay sheet rendered empty over the music player; the delay is now an
+        # in-place pill under the lyrics, so no sheet (opaque or transparent) may come back here.
+        source = self.source("ui/player/controls/components/LyricsView.kt")
+        self.assertNotIn("ModalBottomSheet", source)
+        self.assertNotIn("playerGlassOverlay", source)
+        self.assertIn("onClick = { isSyncExpanded = !isSyncExpanded }", source)
+        self.assertIn("AnimatedVisibility(visible = isSyncExpanded)", source)
+        pill = source.split("private fun LyricsDelayPill(", 1)[1].split("\n}\n", 1)[0]
+        for step in ("onAdjust(-500)", "onAdjust(-100)", "onClick = onReset", "onAdjust(100)", "onAdjust(500)"):
+            self.assertIn(step, pill)
 
     def test_owned_player_popups_use_one_glass_aware_root(self):
         for relative in ("ui/player/controls/components/sheets/AudioPropertiesSheet.kt",
@@ -113,7 +117,10 @@ class PlayerGlassOverlayContracts(unittest.TestCase):
 
     def test_audio_popup_siblings_share_the_actual_extracted_palette_provider(self):
         controls = self.source("ui/player/controls/PlayerControls.kt")
-        audio_branch = controls.split("if (useAudioPlayer) {", 1)[1].split("    return", 1)[0]
+        # The music branch delegates to AudioPlayerScreen, which the browser sheet also hosts.
+        branch = controls.split("if (useAudioPlayer) {", 1)[1].split("    return", 1)[0]
+        self.assertIn("AudioPlayerScreen(", branch)
+        audio_branch = controls.split("internal fun AudioPlayerScreen(", 1)[1].split("\n}\n", 1)[0]
         self.assertLess(audio_branch.index("AudioPaletteGlassScene("), audio_branch.index("AudioPlayerControls("))
         self.assertLess(audio_branch.index("AudioPlayerControls("), audio_branch.index("PlayerSheets("))
         self.assertIn("onGlassPaletteChanged = { top, bottom -> audioGlassPalette = top to bottom }", audio_branch)
