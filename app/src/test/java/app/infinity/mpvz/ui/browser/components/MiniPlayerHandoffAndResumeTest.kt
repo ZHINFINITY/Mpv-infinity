@@ -19,7 +19,9 @@ import app.infinity.mpvz.ui.player.PlaybackPhase
 import app.infinity.mpvz.ui.player.PlaybackQueueState
 import app.infinity.mpvz.ui.player.PlaybackResumePositionCapture
 import app.infinity.mpvz.ui.player.PlaybackResumeStateCapture
+import app.infinity.mpvz.ui.player.PlaybackSession
 import app.infinity.mpvz.ui.player.PlaybackSessionState
+import app.infinity.mpvz.ui.player.ShadowPlaybackMpvLib
 import app.infinity.mpvz.ui.player.RepeatMode
 import app.infinity.mpvz.ui.player.persistBeforePlaybackTeardown
 import app.infinity.mpvz.ui.player.resumePositionPhaseForSnapshot
@@ -533,6 +535,138 @@ class MiniPlayerHandoffAndResumeTest {
       )
     assertEquals(17.25, withRestore.positionSeconds, 0.0)
     assertTrue(withRestore.isKnown)
+  }
+}
+
+@RunWith(RobolectricTestRunner::class)
+@Config(
+  sdk = [35],
+  application = Application::class,
+  shadows = [ShadowPlaybackMpvLib::class],
+  instrumentedPackages = ["is.xyz.mpv"],
+)
+class DirectAudiobookRestorePathContractTest {
+  private val application: Application
+    get() = RuntimeEnvironment.getApplication()
+  private lateinit var preferences: SharedPreferences
+
+  @Before
+  fun setUp() {
+    preferences = application.getSharedPreferences("direct_audiobook_activity_restore_test", Context.MODE_PRIVATE)
+    preferences.edit().clear().commit()
+    AudioPlaybackResumeStore.setPreferencesForTests(preferences)
+    PlaybackSession.destroy()
+    ShadowPlaybackMpvLib.reset()
+  }
+
+  @After
+  fun tearDown() {
+    PlaybackSession.destroy()
+    AudioPlaybackResumeStore.clear(application)
+    preferences.edit().clear().commit()
+    AudioPlaybackResumeStore.setPreferencesForTests(null)
+  }
+
+  @Test
+  fun directAudiobookMarkerSurvivesActivityRestoreWiringAndSessionLoad() {
+    val sourcePath = "app/src/main/java/app/infinity/mpvz/ui/player/PlayerActivity.kt"
+    val root = generateSequence(File("").absoluteFile) { it.parentFile }
+      .first { File(it, sourcePath).isFile }
+    val activity = File(root, sourcePath).readText()
+    assertTrue(activity.contains("private fun restoreAudioPlaybackSessionIfNeeded()"))
+    assertTrue(activity.contains("private fun restoreAudioPlaybackQueue(snapshot: AudioPlaybackResumeSnapshot)"))
+    assertTrue(activity.contains("private fun startMediaLoad("))
+    assertTrue(activity.contains("private suspend fun issuePlaybackLoad("))
+
+    val onCreate = activity
+      .substringAfter("override fun onCreate(savedInstanceState: Bundle?)")
+      .substringBefore("private fun shouldPreflightExternalM3u(")
+    assertTrue(onCreate.contains("restoreAudioPlaybackSessionIfNeeded()"))
+    val restoreQueueCall = activity.indexOf("restoredAudioPlaybackSnapshot?.let(::restoreAudioPlaybackQueue)")
+    val firstMediaLoadAfterRestore = activity.indexOf("startMediaLoad(", restoreQueueCall)
+    assertTrue(restoreQueueCall >= 0 && firstMediaLoadAfterRestore > restoreQueueCall)
+
+    val restoreSnapshot = activity.substringAfter("private fun restoreAudioPlaybackSessionIfNeeded()")
+      .substringBefore("private fun restoreAudioPlaybackQueue(")
+    assertTrue(restoreSnapshot.contains("AudioPlaybackResumeStore.load(this)"))
+    assertTrue(restoreSnapshot.contains("restoredAudioPlaybackSnapshot = snapshot"))
+
+    val restoreQueue = activity
+      .substringAfter("private fun restoreAudioPlaybackQueue(snapshot: AudioPlaybackResumeSnapshot)")
+      .substringBefore("private fun AudioPlaybackResumeSnapshot.toPositionRestoreOverride()")
+    assertTrue(restoreQueue.contains("PlaybackSession.replaceQueue("))
+    assertTrue(restoreQueue.contains("items = savedQueue.items"))
+    assertTrue(restoreQueue.contains("currentIndex = savedQueue.currentIndex"))
+
+    val startMediaLoad = activity.substringAfter("private fun startMediaLoad(")
+      .substringBefore("private suspend fun issuePlaybackLoad(")
+    assertTrue(
+      startMediaLoad.contains(
+        "val requestedQueueItem = PlaybackSession.queue.value.items.getOrNull(requestedPlaylistIndex)",
+      ),
+    )
+    assertTrue(startMediaLoad.contains("requestedQueueItem?.copy("))
+    assertTrue(Regex("""issuePlaybackLoad\(\s*item\s*=\s*item,""").containsMatchIn(startMediaLoad))
+
+    val issuePlaybackLoad = activity.substringAfter("private suspend fun issuePlaybackLoad(")
+      .substringBefore("private fun armPlaybackLoadRecovery(")
+    val playbackItemTransform = issuePlaybackLoad.substringAfter("val playbackItem =")
+      .substringBefore("val playbackRequiresYtdlp")
+    assertTrue(playbackItemTransform.contains("item.copy("))
+    assertTrue(playbackItemTransform.contains("?: item"))
+    assertFalse(playbackItemTransform.contains("directAudiobook = null"))
+    assertTrue(
+      Regex("""PlaybackSession\.load\(\s*item\s*=\s*playbackItem,""")
+        .containsMatchIn(issuePlaybackLoad),
+    )
+
+    val firstMarker = DirectAudiobookPlaybackInfo("direct-folder", "chapter-one")
+    val currentMarker = DirectAudiobookPlaybackInfo("direct-folder", "chapter-two")
+    val queueState =
+      PlaybackQueueState(
+        items =
+          listOf(
+            PlaybackItem.fromUri("file:///chapter-one.mp3", stableId = "chapter-one", mimeType = "audio/mpeg")
+              .copy(directAudiobook = firstMarker),
+            PlaybackItem.fromUri("file:///chapter-two.mp3", stableId = "chapter-two", mimeType = "audio/mpeg")
+              .copy(directAudiobook = currentMarker),
+          ),
+        currentIndex = 1,
+        isExplicitQueue = true,
+      )
+    assertTrue(AudioPlaybackResumeStore.save(application, queueState, 44.5, paused = true))
+    val restored = requireNotNull(AudioPlaybackResumeStore.load(application))
+    assertEquals(listOf(firstMarker, currentMarker), restored.queueState.items.map { it.directAudiobook })
+
+    assertTrue(
+      PlaybackSession.initialize(
+        context = application,
+        configDir = "unused/direct-audiobook-config",
+        cacheDir = "unused/direct-audiobook-cache",
+        coreConfigurationKey = "direct-audiobook-restore-${System.nanoTime()}",
+        initOptions = {},
+        postInitOptions = {},
+        observeProperties = {},
+      ).getOrThrow(),
+    )
+    PlaybackSession.replaceQueue(
+      items = restored.queueState.items,
+      currentIndex = restored.queueState.currentIndex,
+      isExplicitQueue = restored.queueState.isExplicitQueue,
+      isM3u = restored.queueState.isM3u,
+    )
+    val requestedQueueItem =
+      requireNotNull(PlaybackSession.queue.value.items.getOrNull(restored.queueState.currentIndex))
+    val playbackItem =
+      requestedQueueItem.copy(
+        playableUri = requestedQueueItem.playableUri,
+        headers = requestedQueueItem.headers,
+        mimeType = requestedQueueItem.mimeType,
+      )
+
+    assertTrue(PlaybackSession.load(item = playbackItem) > 0L)
+    assertEquals(currentMarker, PlaybackSession.state.value.currentItem?.directAudiobook)
+    assertEquals(listOf(firstMarker, currentMarker), PlaybackSession.queue.value.items.map { it.directAudiobook })
   }
 }
 
