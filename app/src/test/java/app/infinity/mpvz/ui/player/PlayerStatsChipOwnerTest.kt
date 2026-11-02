@@ -63,6 +63,31 @@ class PlayerStatsChipOwnerTest {
   }
 
   @Test
+  fun runtimeMpvFlowControlsUseSettingsPolicyOutsideDebugBuilds() {
+    val file = File("src/main/java/app/infinity/mpvz/ui/player/MPVView.kt")
+      .takeIf { it.exists() }
+      ?: File("app/src/main/java/app/infinity/mpvz/ui/player/MPVView.kt")
+    val text = file.readText()
+    assertTrue(text.contains("Media3FlowDebugSettingsPolicy.mpvFlowFeatureEnabled("))
+    assertTrue(text.contains("requested = decoderPreferences.mpvFlowVisibilityResolverDebug.get()"))
+    assertTrue(text.contains("requested = decoderPreferences.mpvFlowSoftBlendDebug.get()"))
+    assertFalse(text.contains("BuildConfig.DEBUG &&\n        decoderPreferences.mpvFlowVisibilityResolverDebug.get()"))
+    assertFalse(text.contains("BuildConfig.DEBUG &&\n        decoderPreferences.mpvFlowSoftBlendDebug.get()"))
+  }
+
+  @Test
+  fun statsOverlayReadsThePolicyBackedLiveCoreState() {
+    val file = File("src/main/java/app/infinity/mpvz/ui/player/StatsLuaOverlay.kt")
+      .takeIf { it.exists() }
+      ?: File("app/src/main/java/app/infinity/mpvz/ui/player/StatsLuaOverlay.kt")
+    val text = file.readText()
+    assertTrue(text.contains("get() = PlayerStatsLuaCommandPolicy.isLuaShown()"))
+    assertTrue(text.contains("PlayerStatsLuaCommandPolicy.apply("))
+    assertTrue(text.contains("PlayerStatsLuaCommandPolicy.onCoreRecreated()"))
+    assertFalse(text.contains("var shown: Boolean"))
+  }
+
+  @Test
   fun nativeCollectorsMatchWorkingCueWiring() {
     val file = File("src/main/java/app/infinity/mpvz/ui/player/PlayerActivity.kt")
       .takeIf { it.exists() }

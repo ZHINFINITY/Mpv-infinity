@@ -2915,6 +2915,12 @@ class Media3FlowVideoSink(
       onDestroyed?.invoke()
       return
     }
+    if (windowSurface == EGL14.EGL_NO_SURFACE) {
+      eglSwapIntervalAttempted = false
+      eglSwapIntervalZeroApplied = false
+      onDestroyed?.invoke()
+      return
+    }
     if (!makePresentationPbufferCurrent()) {
       Log.e(logTag, "event=output_surface_release state=presentation_pbuffer_unavailable")
       return

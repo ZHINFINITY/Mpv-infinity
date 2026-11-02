@@ -583,8 +583,11 @@ class DirectAudiobookRestorePathContractTest {
       .substringAfter("override fun onCreate(savedInstanceState: Bundle?)")
       .substringBefore("private fun shouldPreflightExternalM3u(")
     assertTrue(onCreate.contains("restoreAudioPlaybackSessionIfNeeded()"))
-    val restoreQueueCall = activity.indexOf("restoredAudioPlaybackSnapshot?.let(::restoreAudioPlaybackQueue)")
-    val firstMediaLoadAfterRestore = activity.indexOf("startMediaLoad(", restoreQueueCall)
+    val continuePlayerInitialization = activity
+      .substringAfter("private fun continuePlayerInitialization()")
+      .substringBefore("\n  private ")
+    val restoreQueueCall = continuePlayerInitialization.indexOf("restoredAudioPlaybackSnapshot?.let(::restoreAudioPlaybackQueue)")
+    val firstMediaLoadAfterRestore = continuePlayerInitialization.indexOf("startMediaLoad(", restoreQueueCall)
     assertTrue(restoreQueueCall >= 0 && firstMediaLoadAfterRestore > restoreQueueCall)
 
     val restoreSnapshot = activity.substringAfter("private fun restoreAudioPlaybackSessionIfNeeded()")

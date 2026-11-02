@@ -43,7 +43,7 @@ internal object EdgeAttachedPanelPolicy {
     if (layoutDirection == LayoutDirection.Ltr) {
       setOf(SideSheetCorner.TopStart, SideSheetCorner.BottomStart)
     } else {
-      setOf(SideSheetCorner.TopEnd, SideSheetCorner.BottomEnd)
+      setOf(SideSheetCorner.TopStart, SideSheetCorner.BottomStart)
     }
 
   fun shape(layoutDirection: LayoutDirection): RoundedCornerShape =
@@ -56,10 +56,10 @@ internal object EdgeAttachedPanelPolicy {
       )
     } else {
       RoundedCornerShape(
-        topStart = 0.dp,
-        bottomStart = 0.dp,
-        topEnd = InnerCornerRadiusDp.dp,
-        bottomEnd = InnerCornerRadiusDp.dp,
+        topStart = InnerCornerRadiusDp.dp,
+        bottomStart = InnerCornerRadiusDp.dp,
+        topEnd = 0.dp,
+        bottomEnd = 0.dp,
       )
     }
 
