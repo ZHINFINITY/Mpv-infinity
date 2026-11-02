@@ -32,8 +32,12 @@ class EdgeAttachedPanelPolicyTest {
       EdgeAttachedPanelPolicy.innerCorners(LayoutDirection.Ltr),
     )
     assertEquals(
-      setOf(SideSheetCorner.TopEnd, SideSheetCorner.BottomEnd),
+      setOf(SideSheetCorner.TopStart, SideSheetCorner.BottomStart),
       EdgeAttachedPanelPolicy.innerCorners(LayoutDirection.Rtl),
+    )
+    assertEquals(
+      EdgeAttachedPanelPolicy.shape(LayoutDirection.Ltr),
+      EdgeAttachedPanelPolicy.shape(LayoutDirection.Rtl),
     )
   }
 

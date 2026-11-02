@@ -561,11 +561,12 @@ fun Modifier.playerGlassPane(enabled: Boolean, opacity: Float? = null, highlight
   val clipped = this.clip(shape)
   if (LocalPlayerGlassSurfaceOwner.current) return clipped
   val appearance = koinInject<AppearancePreferences>()
+  val context = LocalContext.current
   val preferenceEnabled by appearance.liquidGlassSurfaces.collectAsState()
   val preferredOpacity by appearance.glassSurfaceOpacity.collectAsState()
   val preferredHighlight by appearance.glassSurfaceHighlight.collectAsState()
   val frame = app.infinity.mpvz.ui.theme.LocalLiquidGlassBackdrop.current
-  val on = enabled && preferenceEnabled
+  val on = enabled && preferenceEnabled && GlassDeviceSupport.allowsGlass(context)
   // Pill/circle chips refract the player's single existing video sample through the lens engine
   // (API 33+, supported device). Sheets/panels and every fallback keep the frosted pane below.
   if (on && frame != null && LocalLensGlassEnabled.current && app.infinity.mpvz.ui.theme.lens.VideoLensPolicy.isLensChip(cornerRadius.value)) {

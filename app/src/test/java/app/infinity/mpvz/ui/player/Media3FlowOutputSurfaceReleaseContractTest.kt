@@ -35,6 +35,11 @@ class Media3FlowOutputSurfaceReleaseContractTest {
 
     assertTrue(destroy.contains("presentationQueue.hasPresenting()"))
     assertTrue(destroy.contains("destroyWindowSurfaceOnPresentationThread(onDestroyed)"))
+    val noWindowSurface = destroy.indexOf("if (windowSurface == EGL14.EGL_NO_SURFACE)")
+    val pbuffer = destroy.indexOf("makePresentationPbufferCurrent()")
+    assertTrue(noWindowSurface >= 0)
+    assertTrue(noWindowSurface < pbuffer)
+    assertTrue(destroy.substring(noWindowSurface, pbuffer).contains("onDestroyed?.invoke()"))
     assertTrue(eglDestroy >= 0)
     assertTrue(completed > eglDestroy)
   }
