@@ -15,6 +15,9 @@ class ReferenceUiRollbackContractTest {
   private fun read(path: String) = File(root, path).readText()
   private fun sha(value: String) = MessageDigest.getInstance("SHA-256")
     .digest(value.toByteArray()).joinToString("") { "%02x".format(it) }
+  private companion object {
+    const val ALPHA_8BIT_TOLERANCE = 1f / 255f
+  }
 
   @Test fun originalFolderCardSourceFingerprintIsPreserved() {
     assertEquals("18760196bbe09db6601592650ce9c243f8a8ff6ddba80e9e2bc0b4bab8fdb563",
@@ -563,6 +566,11 @@ import android.graphics.Shader
     assertTrue(chip.contains("customContainerColor?.let"))
     assertTrue(chip.contains("contentColor = customLabelColor ?: LocalContentColor.current"))
     assertTrue(chip.contains("colors = colors ?: FilterChipDefaults.filterChipColors()"))
+    val codecScreen = read("app/src/main/java/app/infinity/mpvz/ui/preferences/CodecCapabilitiesScreen.kt")
+    assertTrue(codecScreen.contains("glassContainerColor = MaterialTheme.colorScheme.primaryContainer"))
+    assertTrue(codecScreen.contains("glassContentColor = MaterialTheme.colorScheme.onPrimaryContainer"))
+    assertTrue(codecScreen.contains("glassContainerColor = MaterialTheme.colorScheme.tertiaryContainer"))
+    assertTrue(codecScreen.contains("glassContentColor = MaterialTheme.colorScheme.onTertiaryContainer"))
 
     val customContainer = Color(0x80CC2244L)
     val selectedFill = app.infinity.mpvz.ui.components.GlassChipMaterial.fill(
@@ -573,8 +581,8 @@ import android.graphics.Shader
       customContainerColor = customContainer,
     )
     assertEquals(customContainer.red, selectedFill.first().red, 0.001f)
-    assertEquals(customContainer.alpha * 0.34f, selectedFill.first().alpha, 0.001f)
-    assertEquals(customContainer.alpha * 0.18f, selectedFill.last().alpha, 0.001f)
+    assertEquals(customContainer.alpha * 0.34f, selectedFill.first().alpha, ALPHA_8BIT_TOLERANCE)
+    assertEquals(customContainer.alpha * 0.18f, selectedFill.last().alpha, ALPHA_8BIT_TOLERANCE)
 
     val unselectedFill = app.infinity.mpvz.ui.components.GlassChipMaterial.fill(
       selected = false,
@@ -584,8 +592,8 @@ import android.graphics.Shader
       customContainerColor = customContainer,
     )
     assertEquals(customContainer.red, unselectedFill.first().red, 0.001f)
-    assertEquals(customContainer.alpha * 0.10f, unselectedFill.first().alpha, 0.001f)
-    assertEquals(customContainer.alpha * 0.05f, unselectedFill.last().alpha, 0.001f)
+    assertEquals(customContainer.alpha * 0.10f, unselectedFill.first().alpha, ALPHA_8BIT_TOLERANCE)
+    assertEquals(customContainer.alpha * 0.05f, unselectedFill.last().alpha, ALPHA_8BIT_TOLERANCE)
 
     val disabledFill = app.infinity.mpvz.ui.components.GlassChipMaterial.fill(
       selected = true,
@@ -594,7 +602,7 @@ import android.graphics.Shader
       onSurface = Color(0xFF000000),
       customContainerColor = customContainer,
     )
-    assertEquals(customContainer.alpha * 0.34f * 0.5f, disabledFill.first().alpha, 0.001f)
+    assertEquals(customContainer.alpha * 0.34f * 0.5f, disabledFill.first().alpha, ALPHA_8BIT_TOLERANCE)
 
     val defaultFill = app.infinity.mpvz.ui.components.GlassChipMaterial.fill(
       selected = false,
@@ -603,7 +611,7 @@ import android.graphics.Shader
       onSurface = Color(0xFF224466),
     )
     assertEquals(Color(0xFF224466).red, defaultFill.first().red, 0.001f)
-    assertEquals(0.10f, defaultFill.first().alpha, 0.001f)
+    assertEquals(0.10f, defaultFill.first().alpha, ALPHA_8BIT_TOLERANCE)
   }
   @Test fun playbackSpeedChipsPassGlassPaletteOverrides() {
     val sheet = read("app/src/main/java/app/infinity/mpvz/ui/player/controls/components/sheets/PlaybackSpeedSheet.kt")
