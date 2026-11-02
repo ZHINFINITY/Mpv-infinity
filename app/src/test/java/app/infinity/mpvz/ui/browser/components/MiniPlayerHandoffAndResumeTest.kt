@@ -576,7 +576,12 @@ class AudioPlaybackResumeStorePersistenceTest {
       shuffleEnabled = items.size > 1,
     )
 
-  private fun awaitThreadCompletionOrBlockingState(thread: Thread): Thread.State {
+  private fun awaitThreadCompletionOrBlockingState(
+    thread: Thread,
+    timeoutMillis: Long = 5_000L,
+  ): Thread.State {
+    // Bound the coordination loop so a stuck worker fails instead of hanging the test suite.
+    val deadlineNanos = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(timeoutMillis)
     while (thread.isAlive) {
       val state = thread.state
       if (
@@ -584,9 +589,23 @@ class AudioPlaybackResumeStorePersistenceTest {
         state == Thread.State.WAITING ||
         state == Thread.State.TIMED_WAITING
       ) return state
+      if (System.nanoTime() >= deadlineNanos) return state
       Thread.yield()
     }
     return Thread.State.TERMINATED
+  }
+
+  private fun isWaitingInsideResumePersistenceLock(thread: Thread): Boolean {
+    if (thread.state !in setOf(Thread.State.WAITING, Thread.State.TIMED_WAITING)) return false
+    val stack = thread.stackTrace
+    val insideMarkerLock = stack.any {
+      it.className.endsWith("ClosedAudioSessionMarker") && it.methodName == "withResumePersistenceLock"
+    }
+    val parkedOnJavaLock = stack.any {
+      it.className.startsWith("java.util.concurrent.locks.") &&
+        it.methodName in setOf("lock", "acquire", "parkAndCheckInterrupt")
+    }
+    return insideMarkerLock && parkedOnJavaLock
   }
 
   @Test
@@ -760,7 +779,7 @@ class AudioPlaybackResumeStorePersistenceTest {
         assertTrue(
           marker.persistIfCloseIsCurrent(81L, outgoingItem) {
             closeEntered.countDown()
-            assertTrue(releaseClose.await(3, TimeUnit.SECONDS))
+            assertTrue(releaseClose.await(30, TimeUnit.SECONDS))
             val committed = AudioPlaybackResumeStore.save(
               application,
               queue(listOf(outgoingItem)),
@@ -776,64 +795,72 @@ class AudioPlaybackResumeStorePersistenceTest {
         closeFailure.set(error)
       }
     }
-    closeThread.start()
-    assertTrue(closeEntered.await(3, TimeUnit.SECONDS))
-
     val markerReadStarted = CountDownLatch(1)
     val markerReadResult = AtomicBoolean(false)
-    val markerReadThread = Thread {
-      markerReadStarted.countDown()
-      markerReadResult.set(marker.isClosePersistencePending(81L, outgoingItem))
-    }
-    markerReadThread.start()
-    assertTrue(markerReadStarted.await(3, TimeUnit.SECONDS))
-    // RUNNABLE means the scheduler has not run the reader yet; yield until it completes or the
-    // JVM reports it blocked on a monitor, rather than treating a short timeout as a lock failure.
-    val markerReadStateBeforeRelease = awaitThreadCompletionOrBlockingState(markerReadThread)
-    val markerReadReturnedBeforeRelease = markerReadStateBeforeRelease == Thread.State.TERMINATED
-
-    val incomingItem = item("close-race-new")
-    val incomingCapture =
-      PlaybackResumeStateCapture(
-        queueState = queue(listOf(incomingItem)),
-        sessionState = PlaybackSessionState(phase = PlaybackPhase.READY, generation = 82L, currentItem = incomingItem),
-        position = PlaybackResumePositionCapture(positionSeconds = 7.5, isKnown = true),
-        paused = false,
-      )
+    var markerReadThread: Thread? = null
     val activityStarted = CountDownLatch(1)
     val activityFailure = AtomicReference<Throwable?>(null)
     val activityResult = AtomicBoolean(false)
-    val activityThread = Thread {
-      activityStarted.countDown()
-      try {
-        activityResult.set(marker.persistActivitySnapshot(application, incomingCapture))
-      } catch (error: Throwable) {
-        activityFailure.set(error)
-      }
-    }
-    activityThread.start()
-    assertTrue(activityStarted.await(3, TimeUnit.SECONDS))
-    val activityStateBeforeRelease = awaitThreadCompletionOrBlockingState(activityThread)
-    val activityReturnedBeforeRelease = activityStateBeforeRelease == Thread.State.TERMINATED
+    var activityThread: Thread? = null
 
-    releaseClose.countDown()
-    closeThread.join(3_000)
-    activityThread.join(3_000)
-    markerReadThread.join(3_000)
+    try {
+      closeThread.isDaemon = true
+      closeThread.start()
+      assertTrue(closeEntered.await(5, TimeUnit.SECONDS))
+
+      val markerReader = Thread {
+        markerReadStarted.countDown()
+        markerReadResult.set(marker.isClosePersistencePending(81L, outgoingItem))
+      }
+      markerReader.isDaemon = true
+      markerReadThread = markerReader
+      markerReader.start()
+      assertTrue(markerReadStarted.await(5, TimeUnit.SECONDS))
+      val markerReadStateBeforeRelease = awaitThreadCompletionOrBlockingState(markerReader)
+      assertEquals(
+        "marker state query must complete while the close write is held",
+        Thread.State.TERMINATED,
+        markerReadStateBeforeRelease,
+      )
+
+      val incomingItem = item("close-race-new")
+      val incomingCapture =
+        PlaybackResumeStateCapture(
+          queueState = queue(listOf(incomingItem)),
+          sessionState = PlaybackSessionState(phase = PlaybackPhase.READY, generation = 82L, currentItem = incomingItem),
+          position = PlaybackResumePositionCapture(positionSeconds = 7.5, isKnown = true),
+          paused = false,
+        )
+      val activityWriter = Thread {
+        activityStarted.countDown()
+        try {
+          activityResult.set(marker.persistActivitySnapshot(application, incomingCapture))
+        } catch (error: Throwable) {
+          activityFailure.set(error)
+        }
+      }
+      activityWriter.isDaemon = true
+      activityThread = activityWriter
+      activityWriter.start()
+      assertTrue(activityStarted.await(5, TimeUnit.SECONDS))
+      val activityStateBeforeRelease = awaitThreadCompletionOrBlockingState(activityWriter)
+      assertTrue(
+        "Activity writer should be waiting inside the resume lock (state=$activityStateBeforeRelease)",
+        isWaitingInsideResumePersistenceLock(activityWriter),
+      )
+    } finally {
+      releaseClose.countDown()
+      closeThread.join(5_000)
+      markerReadThread?.join(5_000)
+      activityThread?.join(5_000)
+    }
+
     assertFalse(closeThread.isAlive)
-    assertFalse(activityThread.isAlive)
-    assertFalse(markerReadThread.isAlive)
+    assertFalse(requireNotNull(activityThread).isAlive)
+    assertFalse(requireNotNull(markerReadThread).isAlive)
     closeFailure.get()?.let { throw AssertionError("closed snapshot write failed", it) }
     activityFailure.get()?.let { throw AssertionError("Activity snapshot write failed", it) }
-    assertTrue(
-      "marker state queries do not wait for the store commit (state=$markerReadStateBeforeRelease)",
-      markerReadReturnedBeforeRelease,
-    )
     assertTrue(markerReadResult.get())
-    assertFalse(
-      "Activity writes remain ordered behind the in-flight close write (state=$activityStateBeforeRelease)",
-      activityReturnedBeforeRelease,
-    )
     assertTrue(activityResult.get())
 
     val restored = requireNotNull(AudioPlaybackResumeStore.load(application))
