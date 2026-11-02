@@ -171,10 +171,9 @@ internal class ClosedAudioSessionMarker {
     positionSeconds: Double,
     paused: Boolean,
   ) {
-    // A failed close pauses playback before its persistence retry; keep the original play intent.
-    if (isClosePersistencePending(generation, currentItem) ||
-      matchesSession(closedSnapshot, generation, currentItem)
-    ) return
+    // Keep the pre-pause snapshot only while this close's persistence is active. After an attempt
+    // finishes without teardown, a later user close must capture its current position and pause state.
+    if (isClosePersistencePending(generation, currentItem)) return
     closedSnapshot =
       ClosedAudioSessionSnapshot(
         generation = generation,

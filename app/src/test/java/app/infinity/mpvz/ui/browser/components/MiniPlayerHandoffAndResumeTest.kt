@@ -12,6 +12,7 @@ import app.infinity.mpvz.ui.player.AudiobookPlaybackInfo
 import app.infinity.mpvz.ui.player.AudioPlaybackResumeSnapshot
 import app.infinity.mpvz.ui.player.AudioPlaybackResumeStore
 import app.infinity.mpvz.ui.player.ClosedAudioSessionMarker
+import app.infinity.mpvz.ui.player.DirectAudiobookPlaybackInfo
 import app.infinity.mpvz.ui.player.MediaPlaybackService
 import app.infinity.mpvz.ui.player.PlaybackItem
 import app.infinity.mpvz.ui.player.PlaybackPhase
@@ -427,7 +428,7 @@ class MiniPlayerHandoffAndResumeTest {
   }
 
   @Test
-  fun repeatedCloseKeepsFirstSnapshotButFreshGenerationCapturesAgain() {
+  fun laterCloseAfterFinishedPersistenceRefreshesTheSameSessionSnapshot() {
     val current =
       PlaybackItem.fromUri(
         uri = "file:///retry-close.mp3",
@@ -437,12 +438,21 @@ class MiniPlayerHandoffAndResumeTest {
     val marker = ClosedAudioSessionMarker()
     marker.mark(generation = 7L, currentItem = current, positionSeconds = 29.5, paused = false)
 
-    // A failed close pauses playback; retrying must not replace the user's original play intent.
+    assertTrue(marker.beginClosePersistence(7L, current))
+    // Duplicate close delivery during an active write keeps the pre-pause capture.
     marker.mark(generation = 7L, currentItem = current, positionSeconds = 0.0, paused = true)
+    val pending = requireNotNull(marker.snapshotFor(current))
+    assertEquals(29.5, pending.positionSeconds, 0.0)
+    assertFalse(pending.paused)
+
+    // A failed persistence attempt leaves playback intact; a later user close must recapture it.
+    marker.finishClosePersistence(7L, current)
+    assertFalse(marker.isClosePersistencePending(7L, current))
+    marker.mark(generation = 7L, currentItem = current, positionSeconds = 35.25, paused = true)
     val retried = requireNotNull(marker.snapshotFor(current))
     assertEquals(7L, retried.generation)
-    assertEquals(29.5, retried.positionSeconds, 0.0)
-    assertFalse(retried.paused)
+    assertEquals(35.25, retried.positionSeconds, 0.0)
+    assertTrue(retried.paused)
 
     // PlaybackSession.load advances generation, so a later session for the item gets a fresh capture.
     marker.mark(generation = 8L, currentItem = current, positionSeconds = 4.5, paused = true)
@@ -565,6 +575,63 @@ class AudioPlaybackResumeStorePersistenceTest {
       repeatMode = RepeatMode.ALL,
       shuffleEnabled = items.size > 1,
     )
+
+  private fun awaitThreadCompletionOrBlockingState(thread: Thread): Thread.State {
+    while (thread.isAlive) {
+      val state = thread.state
+      if (
+        state == Thread.State.BLOCKED ||
+        state == Thread.State.WAITING ||
+        state == Thread.State.TIMED_WAITING
+      ) return state
+      Thread.yield()
+    }
+    return Thread.State.TERMINATED
+  }
+
+  @Test
+  fun directAudiobookMarkersRoundTripInTheAudioResumeQueue() {
+    val firstMarker =
+      DirectAudiobookPlaybackInfo(
+        queueIdentity = "direct-folder",
+        trackIdentity = "chapter-one",
+      )
+    val currentMarker =
+      DirectAudiobookPlaybackInfo(
+        queueIdentity = "direct-folder",
+        trackIdentity = "chapter-two",
+      )
+    val currentItem = item("direct-track-two").copy(directAudiobook = currentMarker)
+    val directQueue =
+      queue(
+        listOf(
+          item("direct-track-one").copy(directAudiobook = firstMarker),
+          currentItem,
+        ),
+        currentIndex = 1,
+      )
+
+    assertTrue(AudioPlaybackResumeStore.canPersistCurrentItem(currentItem))
+    assertTrue(shouldMarkClosedAudioSession(currentItem))
+    assertTrue(
+      AudioPlaybackResumeStore.save(
+        context = application,
+        queueState = directQueue,
+        positionSeconds = 44.5,
+        paused = true,
+        closedByUser = true,
+      ),
+    )
+
+    val restored = requireNotNull(AudioPlaybackResumeStore.load(application))
+    assertEquals(
+      listOf(firstMarker, currentMarker),
+      restored.queueState.items.map { it.directAudiobook },
+    )
+    assertEquals(currentMarker, restored.currentItem?.directAudiobook)
+    assertEquals(44.5, restored.positionSeconds, 0.0)
+    assertTrue(restored.closedByUser)
+  }
 
   @Test
   fun synchronousSaveHelperPersistsClosedAudioForNativeOwnerWithoutIdentifier() {
@@ -713,16 +780,17 @@ class AudioPlaybackResumeStorePersistenceTest {
     assertTrue(closeEntered.await(3, TimeUnit.SECONDS))
 
     val markerReadStarted = CountDownLatch(1)
-    val markerReadFinished = CountDownLatch(1)
     val markerReadResult = AtomicBoolean(false)
     val markerReadThread = Thread {
       markerReadStarted.countDown()
       markerReadResult.set(marker.isClosePersistencePending(81L, outgoingItem))
-      markerReadFinished.countDown()
     }
     markerReadThread.start()
     assertTrue(markerReadStarted.await(3, TimeUnit.SECONDS))
-    val markerReadReturnedBeforeRelease = markerReadFinished.await(2, TimeUnit.SECONDS)
+    // RUNNABLE means the scheduler has not run the reader yet; yield until it completes or the
+    // JVM reports it blocked on a monitor, rather than treating a short timeout as a lock failure.
+    val markerReadStateBeforeRelease = awaitThreadCompletionOrBlockingState(markerReadThread)
+    val markerReadReturnedBeforeRelease = markerReadStateBeforeRelease == Thread.State.TERMINATED
 
     val incomingItem = item("close-race-new")
     val incomingCapture =
@@ -733,7 +801,6 @@ class AudioPlaybackResumeStorePersistenceTest {
         paused = false,
       )
     val activityStarted = CountDownLatch(1)
-    val activityFinished = CountDownLatch(1)
     val activityFailure = AtomicReference<Throwable?>(null)
     val activityResult = AtomicBoolean(false)
     val activityThread = Thread {
@@ -742,13 +809,12 @@ class AudioPlaybackResumeStorePersistenceTest {
         activityResult.set(marker.persistActivitySnapshot(application, incomingCapture))
       } catch (error: Throwable) {
         activityFailure.set(error)
-      } finally {
-        activityFinished.countDown()
       }
     }
     activityThread.start()
     assertTrue(activityStarted.await(3, TimeUnit.SECONDS))
-    val activityReturnedBeforeRelease = activityFinished.await(100, TimeUnit.MILLISECONDS)
+    val activityStateBeforeRelease = awaitThreadCompletionOrBlockingState(activityThread)
+    val activityReturnedBeforeRelease = activityStateBeforeRelease == Thread.State.TERMINATED
 
     releaseClose.countDown()
     closeThread.join(3_000)
@@ -759,9 +825,15 @@ class AudioPlaybackResumeStorePersistenceTest {
     assertFalse(markerReadThread.isAlive)
     closeFailure.get()?.let { throw AssertionError("closed snapshot write failed", it) }
     activityFailure.get()?.let { throw AssertionError("Activity snapshot write failed", it) }
-    assertTrue("marker state queries do not wait for the store commit", markerReadReturnedBeforeRelease)
+    assertTrue(
+      "marker state queries do not wait for the store commit (state=$markerReadStateBeforeRelease)",
+      markerReadReturnedBeforeRelease,
+    )
     assertTrue(markerReadResult.get())
-    assertFalse("Activity writes remain ordered behind the in-flight close write", activityReturnedBeforeRelease)
+    assertFalse(
+      "Activity writes remain ordered behind the in-flight close write (state=$activityStateBeforeRelease)",
+      activityReturnedBeforeRelease,
+    )
     assertTrue(activityResult.get())
 
     val restored = requireNotNull(AudioPlaybackResumeStore.load(application))

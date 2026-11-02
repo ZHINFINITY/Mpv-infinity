@@ -465,6 +465,15 @@ internal object AudioPlaybackResumeStore {
           },
         )
       }
+      item.directAudiobook?.let { marker ->
+        put(
+          "directAudiobook",
+          JSONObject().apply {
+            put("queueIdentity", marker.queueIdentity)
+            put("trackIdentity", marker.trackIdentity)
+          },
+        )
+      }
     }
 
   private fun decodeItem(json: JSONObject?): PlaybackItem? {
@@ -490,6 +499,17 @@ internal object AudioPlaybackResumeStore {
           NetworkPlaybackSource(source.optLong("connectionId"), relativePath)
         }
       }
+    val directAudiobook =
+      if (json.has("directAudiobook")) {
+        val marker = json.optJSONObject("directAudiobook") ?: return null
+        val queueIdentity =
+          marker.optString("queueIdentity").takeIf { it.isNotBlank() && it != "null" } ?: return null
+        val trackIdentity =
+          marker.optString("trackIdentity").takeIf { it.isNotBlank() && it != "null" } ?: return null
+        DirectAudiobookPlaybackInfo(queueIdentity, trackIdentity)
+      } else {
+        null
+      }
     val stableId = json.optString("stableId").takeIf { it.isNotBlank() && it != "null" }
     return PlaybackItem.fromUri(
       uri = originalUri,
@@ -503,6 +523,6 @@ internal object AudioPlaybackResumeStore {
       playlistItemId = json.optInt("playlistItemId").takeIf { json.has("playlistItemId") },
       artworkUri = json.optString("artworkUri").takeIf { it.isNotBlank() && it != "null" },
       durationSeconds = json.optInt("durationSeconds").takeIf { json.has("durationSeconds") },
-    )
+    ).copy(directAudiobook = directAudiobook)
   }
 }
