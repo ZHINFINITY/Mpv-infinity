@@ -94,6 +94,15 @@ internal object AudioPlaybackResumeStore {
     cachedQueue = null
   }
 
+  internal fun canPersistCurrentItem(currentItem: PlaybackItem?): Boolean =
+    currentItem?.let { item ->
+      isValidAudioResumeUri(item.originalUri) &&
+        item.isDefinitelyAudioOnly() &&
+        item.audiobook == null &&
+        item.torrentFileIndex == null &&
+        !item.requiresTorrentResolution()
+    } == true
+
   @Synchronized
   fun save(
     context: Context,
@@ -103,11 +112,7 @@ internal object AudioPlaybackResumeStore {
     closedByUser: Boolean = false,
   ): Boolean {
     val currentItem = queueState.currentItem ?: return false
-    if (!currentItem.isDefinitelyAudioOnly() ||
-      currentItem.audiobook != null ||
-      currentItem.torrentFileIndex != null ||
-      currentItem.requiresTorrentResolution()
-    ) {
+    if (!canPersistCurrentItem(currentItem)) {
       clear(context)
       return false
     }
