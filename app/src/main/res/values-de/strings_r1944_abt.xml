@@ -1,5 +1,5 @@
 <resources>
-<string name="r1944_updates_title">Updates</string>
+<string name="r1944_updates_title">Aktualisierungen</string>
 <string name="r1944_auto_check_updates">Automatisch nach Updates suchen</string>
 <string name="r1944_check_on_startup">Beim Start nach Updates suchen</string>
 <string name="r1944_check_updates_now">Jetzt nach Updates suchen</string>
