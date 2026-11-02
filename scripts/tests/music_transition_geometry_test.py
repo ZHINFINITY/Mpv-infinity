@@ -89,7 +89,8 @@ class MusicTransitionGeometryContracts(unittest.TestCase):
 
     def test_release_and_programmatic_timing_follow_the_approved_spec(self):
         self.assertIn('MusicMinimizeTransitionPolicy.releaseTargetMiniProgress(', CONTROLS)
-        self.assertIn('settle = { velocityY -> releaseToTarget(velocityY) }', CONTROLS)
+        settle = CONTROLS.split('settle = { velocityY ->', 1)[1].split('},', 1)[0]
+        self.assertIn('releaseToTarget(velocityY)', settle)
         # Owner-approved respec: one critically damped spring from the release velocity (or a
         # programmatic kick) replaces the fixed tween durations.
         self.assertIn('androidx.compose.animation.core.spring(', CONTROLS)
