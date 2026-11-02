@@ -67,16 +67,20 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.repeatOnLifecycle
+import java.util.IdentityHashMap
+import java.util.concurrent.atomic.AtomicBoolean
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlin.coroutines.resume
 
-/** Immutable snapshot: window coordinates prevent every control showing the entire frame. */
+/** Immutable frame snapshot: window coordinates prevent every control showing the entire frame. */
 /** [underlayLuma] is the frosted sample's bright-percentile sRGB luma (1 = assume a white backdrop). */
 data class LiquidGlassFrame(
   val image: ImageBitmap,
@@ -209,9 +213,17 @@ fun LiquidGlassBackdropHost(
           continue
         }
         // Only the tiny UI copy is cropped/frosted. The actual video surface remains untouched.
-        val sampled = captureBuffers.acquire(dimensions.first, dimensions.second)?.let { target ->
-          copyGlassFrame(source, crop, target)?.let {
-            frostGlassFrame(target, tuning.frost, captureBuffers.pixels, captureBuffers.lumaBins)
+        val sampled = captureBuffers.sampleMutex.withLock {
+          val target = captureBuffers.acquire(dimensions.first, dimensions.second)
+          if (target == null) null
+          else try {
+            val copied = copyGlassFrame(source, crop, target, captureBuffers)
+            val frosted = copied?.let {
+              frostGlassFrame(target, tuning.frost, captureBuffers.pixels, captureBuffers.lumaBins)
+            }
+            if (frosted != null && captureBuffers.markPublished(target)) frosted else null
+          } finally {
+            captureBuffers.release(target)
           }
         }
         val bitmap = sampled?.first
@@ -227,7 +239,6 @@ fun LiquidGlassBackdropHost(
             (location[0] + crop.left).toFloat(), (location[1] + crop.top).toFloat(),
             (location[0] + crop.left + crop.width).toFloat(), (location[1] + crop.top + crop.height).toFloat()),
             underlayLuma = sampled.second)
-          captureBuffers.markPublished(bitmap)
         }
         // Recover after transient failures instead of permanently disabling glass after three errors.
         delay(if (failures > 0 && frame.value != null) GlassScenePolicy.TransientGraceMs
@@ -244,63 +255,146 @@ fun LiquidGlassBackdropHost(
 internal class GlassCaptureBuffers {
   private var first: Bitmap? = null
   private var second: Bitmap? = null
+  // Retired scratch buffers survive only while an asynchronous PixelCopy lease still uses them.
   private val retired = ArrayList<Bitmap>(2)
+  private val inFlight = IdentityHashMap<Bitmap, Int>()
+  private var disposed = false
   private var nextFirst = true
   private var published: Bitmap? = null
+  internal val sampleMutex = Mutex()
   var pixels: IntArray = IntArray(0)
     private set
   val lumaBins = IntArray(64)
+  @get:Synchronized
+  val retiredBitmapCount: Int get() = retired.size
+
+  @Synchronized
   fun acquire(width: Int, height: Int): Bitmap? {
+    if (disposed) return null
     if (width <= 0 || height <= 0) return null
     if (first?.width != width || first?.height != height) {
-      first?.let(retired::add); second?.let(retired::add)
+      val active = listOfNotNull(first, second)
+      val pendingRetirements = active.count { (inFlight[it] ?: 0) > 0 }
+      if (retired.size + pendingRetirements > MaxRetiredBitmapCount) return null
+      first = null; second = null; published = null
+      active.forEach(::retireOrRecycle)
       first = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
       second = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
       pixels = IntArray(width * height)
       nextFirst = true
     }
-    // The last bitmap handed to Compose remains drawable until the state swap is
-    // observed. Never let PixelCopy or frosting write into that published image.
+    // Compose receives a separate immutable snapshot; keep the latest scratch buffer out of
+    // immediate reuse while its sample is being published.
     val preferred = if (nextFirst) first else second
     val alternate = if (preferred === first) second else first
     val result = when {
-      preferred != null && preferred !== published -> preferred
-      alternate != null && alternate !== published -> alternate
+      preferred != null && preferred !== published && (inFlight[preferred] ?: 0) == 0 -> preferred
+      alternate != null && alternate !== published && (inFlight[alternate] ?: 0) == 0 -> alternate
       else -> null
     }
     nextFirst = !nextFirst
+    if (result != null) inFlight[result] = (inFlight[result] ?: 0) + 1
     return result
   }
-  fun markPublished(bitmap: Bitmap) {
-    check(bitmap === first || bitmap === second)
-    published = bitmap
+
+  @Synchronized
+  fun retain(bitmap: Bitmap): Boolean {
+    if (disposed || bitmap.isRecycled) return false
+    inFlight[bitmap] = (inFlight[bitmap] ?: 0) + 1
+    return true
   }
+
+  @Synchronized
+  fun release(bitmap: Bitmap) {
+    val leases = inFlight[bitmap] ?: return
+    if (leases > 1) {
+      inFlight[bitmap] = leases - 1
+      return
+    }
+    inFlight.remove(bitmap)
+    val retiredIndex = retired.indexOfFirst { it === bitmap }
+    if (retiredIndex >= 0) {
+      retired.removeAt(retiredIndex)
+      if (!bitmap.isRecycled) bitmap.recycle()
+    } else if (disposed && (bitmap === first || bitmap === second) && !bitmap.isRecycled) {
+      bitmap.recycle()
+    }
+  }
+
+  @Synchronized
+  fun markPublished(bitmap: Bitmap): Boolean {
+    if (disposed || bitmap.isRecycled || (bitmap !== first && bitmap !== second)) return false
+    published = bitmap
+    return true
+  }
+
+  @Synchronized
   fun recycle() {
-    val publishedBitmap = published
-    first?.let { if (it !== publishedBitmap) it.recycle() }
-    second?.let { if (it !== publishedBitmap) it.recycle() }
-    retired.forEach { if (it !== publishedBitmap) it.recycle() }
-    retired.clear()
+    if (disposed) return
+    disposed = true
+    val active = listOfNotNull(first, second)
     first = null; second = null
     published = null
     pixels = IntArray(0)
+    // Teardown is terminal: at most the final active pair may join the four-buffer resize
+    // cap while its PixelCopy leases drain. No further allocations are accepted after this.
+    active.forEach(::retireOrRecycle)
+  }
+
+  private fun retireOrRecycle(bitmap: Bitmap) {
+    if (bitmap.isRecycled) return
+    if ((inFlight[bitmap] ?: 0) > 0) {
+      if (retired.none { it === bitmap }) retired += bitmap
+    } else {
+      bitmap.recycle()
+    }
+  }
+
+  companion object {
+    const val MaxRetiredBitmapCount = 4
+    const val MaxRetiredBitmapCountOnDispose = MaxRetiredBitmapCount + 2
   }
 }
 
-private suspend fun copyGlassFrame(source: SurfaceView, crop: GlassScenePolicy.SourceRect, bitmap: Bitmap): Bitmap? =
+private suspend fun copyGlassFrame(
+  source: SurfaceView,
+  crop: GlassScenePolicy.SourceRect,
+  bitmap: Bitmap,
+  buffers: GlassCaptureBuffers,
+): Bitmap? =
   suspendCancellableCoroutine { continuation ->
+    if (!buffers.retain(bitmap)) {
+      continuation.resume(null)
+      return@suspendCancellableCoroutine
+    }
+    // PixelCopy exposes no cancellation token. A cancelled coroutine may still have a request
+    // writing into this bitmap, so keep its lease until the callback confirms completion.
+    val requestLeaseReleased = AtomicBoolean(false)
+    fun releaseRequestLease() {
+      if (requestLeaseReleased.compareAndSet(false, true)) buffers.release(bitmap)
+    }
     try {
       PixelCopy.request(source, AndroidRect(crop.left, crop.top, crop.left + crop.width, crop.top + crop.height), bitmap, { result ->
-        if (result == PixelCopy.SUCCESS && continuation.isActive) {
-          continuation.resume(bitmap)
-        } else {
-          if (continuation.isActive) continuation.resume(null)
+        try {
+          if (result == PixelCopy.SUCCESS && continuation.isActive) {
+            continuation.resume(bitmap)
+          } else if (continuation.isActive) {
+            continuation.resume(null)
+          }
+        } finally {
+          releaseRequestLease()
         }
       }, Handler(Looper.getMainLooper()))
     } catch (_: RuntimeException) {
+      releaseRequestLease()
       if (continuation.isActive) continuation.resume(null)
     }
   }
+
+internal fun immutableGlassSnapshot(bitmap: Bitmap): Bitmap? =
+  // Compose/RenderThread may still reference an older frame after state advances. Do not recycle
+  // these immutable copies; their native pixels live until the last frame/shader reference drops.
+  if (bitmap.isRecycled) null else bitmap.copy(Bitmap.Config.ARGB_8888, false)
 
 // Returns the frosted bitmap and its bright-percentile luma, measured on the same background pass.
 private suspend fun frostGlassFrame(bitmap: Bitmap, strength: Float, pixels: IntArray, lumaBins: IntArray): Pair<Bitmap, Float>? = try {
@@ -310,7 +404,8 @@ private suspend fun frostGlassFrame(bitmap: Bitmap, strength: Float, pixels: Int
     // shader and the older paint path both expect an already-frosted input (visual parity).
     val frosted = GlassFrostPolicy.frostArgb(pixels, bitmap.width, bitmap.height, strength)
     bitmap.setPixels(frosted, 0, bitmap.width, 0, 0, bitmap.width, bitmap.height)
-    bitmap to GlassSurfacePolicy.underlayLuma(frosted, lumaBins)
+    val snapshot = immutableGlassSnapshot(bitmap) ?: return@withContext null
+    snapshot to GlassSurfacePolicy.underlayLuma(frosted, lumaBins)
   }
 } catch (cancelled: CancellationException) {
   throw cancelled
