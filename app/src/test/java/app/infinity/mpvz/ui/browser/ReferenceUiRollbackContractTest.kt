@@ -35,7 +35,8 @@ class ReferenceUiRollbackContractTest {
       // Owner follow-up: rounded player panes preserve the press shadow and inherit global glass tuning.
       // Accessibility follow-up: shared press, slider, and lens feedback respects reduced motion.
       // UI follow-up: density-aware tick-dot spacing keeps dense slider marks distinct.
-      "app/src/main/java/app/infinity/mpvz/ui/player/controls/components/GlassControls.kt" to "60ef062f4009e2add9d11799d37919b08b53090c65cb1bfee69dba71e4bc6463",
+      // Device-support follow-up: shared player glass is disabled when the device cannot support it.
+      "app/src/main/java/app/infinity/mpvz/ui/player/controls/components/GlassControls.kt" to "e61a88b329c6b2b03e672247144905095b995f83f90ff297c9e06507dfd4fa02",
       // Build 1910: player sheets opt into the centralized inner thickness bands.
       // Build 1910 integration: edge-attached landscape sheets draw one rim on the asymmetric shape.
       "app/src/main/java/app/infinity/mpvz/presentation/components/PlayerSheet.kt" to "7838a785e17d4bd1479a348a04c6f9ac7af0bacc0891ba817b165a1f53348c81",
