@@ -4160,12 +4160,8 @@ class PlayerActivity :
     PlaybackPositionRestoreOverride(positionSeconds = positionSeconds, paused = paused)
 
   private fun persistAudioPlaybackSnapshot() {
-    val queueState = PlaybackSession.queue.value
-    if (queueState.currentItem == null) return
-    val positionSeconds = PlaybackSession.getPropertyDouble("time-pos") ?: 0.0
-    val paused = PlaybackSession.getPropertyBoolean("pause") ?: PlaybackSession.state.value.paused
-    val closedByUser = MediaPlaybackService.isAudioSessionClosedByUser()
-    AudioPlaybackResumeStore.save(applicationContext, queueState, positionSeconds, paused, closedByUser = closedByUser)
+    val playbackCapture = PlaybackSession.captureResumeState(fallbackPositionSeconds = 0.0)
+    MediaPlaybackService.persistActivityAudioResumeSnapshot(applicationContext, playbackCapture)
   }
 
   private fun attachToSavedPlaybackSessionIfValid(sourceIntent: Intent = intent): Boolean {

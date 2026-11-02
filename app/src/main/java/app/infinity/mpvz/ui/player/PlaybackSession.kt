@@ -54,6 +54,44 @@ data class PlaybackPositionRestoreOverride(
   val paused: Boolean,
 )
 
+internal data class PlaybackResumePositionCapture(
+  val positionSeconds: Double,
+  val isKnown: Boolean,
+)
+
+internal data class PlaybackResumeStateCapture(
+  val queueState: PlaybackQueueState,
+  val sessionState: PlaybackSessionState,
+  val position: PlaybackResumePositionCapture,
+  val paused: Boolean,
+)
+
+internal fun resumePositionPhaseForSnapshot(
+  phase: PlaybackPhase,
+  loadedItemMatchesQueue: Boolean,
+): PlaybackPhase =
+  if (!loadedItemMatchesQueue && phase in setOf(PlaybackPhase.READY, PlaybackPhase.BACKGROUND)) {
+    PlaybackPhase.LOADING
+  } else {
+    phase
+  }
+
+internal fun selectResumePositionForSnapshot(
+  phase: PlaybackPhase,
+  pendingRestoreSeconds: Double?,
+  nativePositionSeconds: Double?,
+  fallbackSeconds: Double,
+): PlaybackResumePositionCapture {
+  if (phase == PlaybackPhase.LOADING) {
+    val pending = pendingRestoreSeconds?.takeIf { it.isFinite() && it >= 0.0 }
+    return PlaybackResumePositionCapture(pending ?: 0.0, pending != null)
+  }
+  val nativePosition = nativePositionSeconds?.takeIf { it.isFinite() && it >= 0.0 }
+  if (nativePosition != null) return PlaybackResumePositionCapture(nativePosition, isKnown = true)
+  val fallback = fallbackSeconds.takeIf { it.isFinite() && it >= 0.0 } ?: 0.0
+  return PlaybackResumePositionCapture(fallback, isKnown = false)
+}
+
 /** A native-backed property that remains safe to access before the libmpv core exists. */
 class PlaybackProperty<T> internal constructor(
   internal val format: Int,
@@ -1024,6 +1062,49 @@ object PlaybackSession : MPVLib.EventObserver {
   fun positionRestoreOverride(generation: Long): PlaybackPositionRestoreOverride? =
     nativeLock.withLock {
       pendingPositionRestoreOverride?.takeIf { it.first == generation }?.second
+    }
+
+  /** Captures the queue identity and resume position under the replacement-load lock. */
+  internal fun captureResumeState(
+    fallbackPositionSeconds: Double,
+    allowNativePropertyReads: Boolean = true,
+  ): PlaybackResumeStateCapture =
+    nativeLock.withLock {
+      val currentState = _state.value
+      val queueState = _queue.value
+      val currentItem = queueState.currentItem
+      val loadedItemMatchesQueue =
+        currentItem != null &&
+          loadedGeneration == currentState.generation &&
+          loadedPlaybackItem?.stableId == currentItem.stableId &&
+          loadedPlaybackItem?.originalUri == currentItem.originalUri
+      val positionPhase = resumePositionPhaseForSnapshot(currentState.phase, loadedItemMatchesQueue)
+      val pendingRestorePosition =
+        pendingPositionRestoreOverride?.takeIf { it.first == currentState.generation }?.second?.positionSeconds
+      val nativePosition =
+        if (allowNativePropertyReads && positionPhase in setOf(PlaybackPhase.READY, PlaybackPhase.BACKGROUND) &&
+          initialized && nativeCoreReady
+        ) {
+          runCatching { MPVLib.getPropertyDouble("time-pos") }.getOrNull()
+        } else {
+          null
+        }
+      val position =
+        selectResumePositionForSnapshot(
+          phase = positionPhase,
+          pendingRestoreSeconds = pendingRestorePosition,
+          nativePositionSeconds = nativePosition,
+          fallbackSeconds = fallbackPositionSeconds,
+        )
+      val paused =
+        if (positionPhase == PlaybackPhase.LOADING) {
+          desiredPaused
+        } else if (!allowNativePropertyReads || !initialized || !nativeCoreReady) {
+          currentState.paused
+        } else {
+          runCatching { MPVLib.getPropertyBoolean("pause") }.getOrNull() ?: currentState.paused
+        }
+      PlaybackResumeStateCapture(queueState, currentState, position, paused)
     }
 
   fun wasInitialPositionApplied(generation: Long): Boolean =

@@ -32,6 +32,8 @@ internal data class AudioPlaybackResumeSnapshot(
     get() = queueState.currentItem
 }
 
+private fun isValidAudioResumeUri(uri: String): Boolean = uri.isNotBlank() && uri != "null"
+
 /**
  * PlaybackSession is deliberately process-local. Keep only audio resume data in encrypted app
  * preferences so PlayerActivity can reconstruct it after process death without changing video or
@@ -113,6 +115,11 @@ internal object AudioPlaybackResumeStore {
     val (windowStart, windowEnd) =
       queueWindow(queueState.items.size, queueState.currentIndex, MAX_PERSISTED_QUEUE_ITEMS)
     val windowItems = queueState.items.subList(windowStart, windowEnd)
+    // Do not let the fallback-to-current-item path silently discard a malformed neighbor.
+    if (windowItems.any { !isValidAudioResumeUri(it.originalUri) }) {
+      clear(context)
+      return false
+    }
     val canSaveQueue =
       windowItems.all { item ->
         item.isDefinitelyAudioOnly() &&
@@ -123,7 +130,7 @@ internal object AudioPlaybackResumeStore {
     val savedItems =
       (if (canSaveQueue) windowItems else listOf(currentItem))
         .map { item -> item.copy(headers = item.headers.toMap()) }
-    if (savedItems.any { it.originalUri.isBlank() }) {
+    if (savedItems.any { !isValidAudioResumeUri(it.originalUri) }) {
       clear(context)
       return false
     }
@@ -457,7 +464,7 @@ internal object AudioPlaybackResumeStore {
 
   private fun decodeItem(json: JSONObject?): PlaybackItem? {
     json ?: return null
-    val originalUri = json.optString("originalUri").takeIf { it.isNotBlank() && it != "null" } ?: return null
+    val originalUri = json.optString("originalUri").takeIf(::isValidAudioResumeUri) ?: return null
     val headersObject = json.optJSONObject("headers")
     val headers =
       buildMap {

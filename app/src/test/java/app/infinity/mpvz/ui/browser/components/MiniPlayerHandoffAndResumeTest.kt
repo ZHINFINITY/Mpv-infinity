@@ -10,18 +10,29 @@ import android.content.Intent
 import android.content.SharedPreferences
 import app.infinity.mpvz.ui.player.AudioPlaybackResumeSnapshot
 import app.infinity.mpvz.ui.player.AudioPlaybackResumeStore
+import app.infinity.mpvz.ui.player.ClosedAudioSessionMarker
 import app.infinity.mpvz.ui.player.MediaPlaybackService
 import app.infinity.mpvz.ui.player.PlaybackItem
 import app.infinity.mpvz.ui.player.PlaybackPhase
 import app.infinity.mpvz.ui.player.PlaybackQueueState
+import app.infinity.mpvz.ui.player.PlaybackResumePositionCapture
+import app.infinity.mpvz.ui.player.PlaybackResumeStateCapture
 import app.infinity.mpvz.ui.player.PlaybackSessionState
 import app.infinity.mpvz.ui.player.RepeatMode
 import app.infinity.mpvz.ui.player.persistBeforePlaybackTeardown
+import app.infinity.mpvz.ui.player.resumePositionPhaseForSnapshot
 import app.infinity.mpvz.ui.player.saveSynchronousAudioResumeSnapshotIfAllowed
+import app.infinity.mpvz.ui.player.selectResumePositionForSnapshot
 import app.infinity.mpvz.ui.player.shouldResetClosedAudioSessionForMetadata
 import app.infinity.mpvz.ui.player.shouldResetClosedAudioSessionForStartIntent
 import app.infinity.mpvz.ui.player.shouldSkipSynchronousPlaybackStateSave
+import app.infinity.mpvz.ui.player.shouldTransferPendingPlaybackStateSave
 import java.io.File
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicReference
+import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
@@ -151,28 +162,51 @@ class MiniPlayerHandoffAndResumeTest {
       .first { File(it, "app/src/main/java/app/infinity/mpvz/ui/player/MediaPlaybackService.kt").isFile }
     val service = File(root, "app/src/main/java/app/infinity/mpvz/ui/player/MediaPlaybackService.kt").readText()
     val saves = Regex("""AudioPlaybackResumeStore\.save\(([^)]*)\)""").findAll(service).map { it.groupValues[1] }.toList()
-    assertEquals("schedule, now and task-removal saves", 3, saves.size)
-    saves.forEach { args -> assertTrue("save must pass the captured user-closed flag: $args", "closedByUser = closedByUser" in args) }
+    assertTrue("service must retain testable Activity and close save seams", saves.isNotEmpty())
+    saves.forEach { args ->
+      assertTrue(
+        "save must pass the captured user-closed flag: $args",
+        "closedByUser = closedByUser" in args || "closedByUser = save.closedByUser" in args,
+      )
+    }
     val scheduledSave =
       service.substringAfter("private fun schedulePlaybackStateSave(")
         .substringBefore("private fun savePlaybackStateNow()")
-    val scheduledFlag = scheduledSave.indexOf("val closedByUser = userClosedSession")
+    val scheduledCapture = scheduledSave.indexOf("capturePendingPlaybackStateSave(playbackCapture, identifier)")
     val scheduledLaunch = scheduledSave.indexOf("serviceScope.launch")
-    assertTrue(scheduledFlag >= 0 && scheduledFlag < scheduledLaunch)
+    assertTrue(scheduledCapture >= 0 && scheduledCapture < scheduledLaunch)
+    assertTrue(scheduledSave.contains("isAudioClosePersistencePending()"))
     val immediateSave =
       service.substringAfter("private fun savePlaybackStateNow()")
         .substringBefore("private fun savePlaybackStateSynchronously()")
-    val immediateFlag = immediateSave.indexOf("val closedByUser = userClosedSession")
-    val persistenceLaunch = immediateSave.indexOf("persistenceScope.launch")
-    assertTrue(immediateFlag >= 0 && immediateFlag < persistenceLaunch)
+    val transferCheck = immediateSave.indexOf("shouldTransferPendingPlaybackStateSave(")
+    val cancelAfterTransfer = immediateSave.indexOf("previousSave?.cancel()")
+    assertTrue(transferCheck >= 0 && transferCheck < cancelAfterTransfer)
+    assertTrue(immediateSave.contains("persistPlaybackStateSave(pending)"))
+    assertTrue(immediateSave.contains("pending?.takeIf { phase in setOf(PlaybackPhase.STOPPING, PlaybackPhase.IDLE) }?.identifier"))
     assertTrue(immediateSave.contains("playbackStateSaveJob ="))
     val stopBody = service.substringAfter("private fun stopPlaybackAndService(").substringBefore("private fun stopDetachedPlaybackIfNeeded")
-    assertTrue(stopBody.contains("persistBeforePlaybackTeardown("))
-    assertTrue(stopBody.contains("persist = ::savePlaybackStateSynchronously"))
-    assertTrue(stopBody.indexOf("persistBeforePlaybackTeardown(") < stopBody.indexOf("PlaybackSession.stop(clearQueue = true)"))
+    assertTrue(stopBody.contains("stopClosedSessionAndService()"))
+    val closeStop = stopBody.substringAfter("private fun stopClosedSessionAndService()")
+    assertTrue(closeStop.contains("persistenceScope.launch"))
+    assertTrue(closeStop.contains("persistBeforePlaybackTeardown("))
+    assertTrue(closeStop.contains("pendingSave?.cancelAndJoin()"))
+    assertTrue(closeStop.contains("persistIfCloseIsCurrent("))
+    assertTrue(closeStop.contains("resetUserClosedSessionForNewPlayback(liveState"))
+    assertTrue(closeStop.contains("closedAudioSessionMarker.snapshotFor(null)"))
+    assertFalse("close persistence must not block the callback thread", closeStop.contains("runBlocking"))
+    val persistBlock = closeStop.substringAfter("persist = {").substringBefore("teardown = ::teardown")
+    assertTrue(persistBlock.contains("saveSynchronousAudioResumeSnapshotIfAllowed("))
+    assertTrue(closeStop.contains("teardown = ::teardown"))
     val closeBranch = service.substringAfter("ACTION_NOTIFICATION_CLOSE,\n        ACTION_NOTIFICATION_STOP,").substringBefore("return START_NOT_STICKY")
     assertTrue("mini player X / notification close records the closed session", "markUserClosedSession()" in closeBranch)
     assertTrue(closeBranch.contains("stopPlaybackAndService(force = true)"))
+    val closeStateGetter = service.substringAfter("internal fun isAudioSessionClosedByUser()")
+      .substringBefore("internal fun closedAudioSessionSnapshotFor")
+    assertTrue(closeStateGetter.contains("closedAudioSessionMarker.isClosed"))
+    assertFalse(closeStateGetter.contains("activeInstance"))
+    val newItemWiring = service.substringAfter("private fun applySessionItem(").substringBefore("val identity =")
+    assertTrue(newItemWiring.contains("resetUserClosedSessionForNewPlayback("))
 
     val store = File(root, "app/src/main/java/app/infinity/mpvz/ui/player/AudioPlaybackResumeStore.kt").readText()
     assertTrue("""put("closedByUser", snapshot.closedByUser)""" in store)
@@ -185,14 +219,18 @@ class MiniPlayerHandoffAndResumeTest {
     val activitySave =
       activity.substringAfter("private fun persistAudioPlaybackSnapshot()")
         .substringBefore("private fun attachToSavedPlaybackSessionIfValid")
-    assertTrue(activitySave.contains("MediaPlaybackService.isAudioSessionClosedByUser()"))
-    assertTrue(activitySave.contains("closedByUser = closedByUser"))
+    assertTrue(activitySave.contains("MediaPlaybackService.persistActivityAudioResumeSnapshot("))
+    assertFalse(activitySave.contains("MediaPlaybackService.isAudioSessionClosedByUser()"))
     val syncSave =
       service.substringAfter("private fun savePlaybackStateSynchronously()")
         .substringBefore("private suspend fun persistPlaybackState")
     assertTrue(syncSave.contains("shouldSkipSynchronousPlaybackStateSave("))
-    assertTrue(syncSave.contains("nativeRendererOwner || identifier.isBlank()"))
     assertTrue(syncSave.contains("saveSynchronousAudioResumeSnapshotIfAllowed("))
+    assertTrue(syncSave.contains("persistResumeSnapshotIfCurrent("))
+    val saveGuard =
+      service.substringAfter("internal fun shouldSkipSynchronousPlaybackStateSave(")
+        .substringBefore("internal fun saveSynchronousAudioResumeSnapshotIfAllowed(")
+    assertTrue(saveGuard.contains("nativeRendererOwner || identifier.isBlank()"))
   }
 
   @Test
@@ -348,6 +386,74 @@ class MiniPlayerHandoffAndResumeTest {
     assertTrue(resetPolicyIndex < metadataSync.indexOf("if (isCurrentRadioItem())"))
     assertTrue(metadataSync.contains("val currentItem = sessionState.currentItem"))
   }
+
+  @Test
+  fun closedMarkerSurvivesServiceInstanceLossUntilTheQueueClears() {
+    val current = PlaybackItem.fromUri(
+      uri = "file:///closed.mp3",
+      stableId = "closed",
+      mimeType = "audio/mpeg",
+    )
+    val marker = ClosedAudioSessionMarker()
+    marker.mark(generation = 7L, currentItem = current, positionSeconds = 29.5, paused = true)
+    val currentState = PlaybackSessionState(phase = PlaybackPhase.READY, generation = 7L, currentItem = current)
+
+    assertTrue(marker.isClosed(currentState, current))
+    assertTrue(marker.isCurrentClosedSession(7L, current))
+    assertEquals(29.5, marker.snapshotFor(current)?.positionSeconds ?: -1.0, 0.0)
+    val emptyState = PlaybackSessionState(phase = PlaybackPhase.IDLE, generation = 7L, currentItem = null)
+    assertFalse("the process marker clears only once the queue is empty", marker.isClosed(emptyState, null))
+    assertFalse(marker.isCurrentClosedSession(7L, current))
+  }
+
+  @Test
+  fun aReplacementSessionDuringStoppingGetsItsOwnClosePersistenceToken() {
+    val marker = ClosedAudioSessionMarker()
+    val outgoing = item("outgoing-stopping")
+    marker.mark(generation = 71L, currentItem = outgoing, positionSeconds = 19.0, paused = true)
+    assertTrue(marker.beginClosePersistence(71L, outgoing))
+    assertTrue(marker.isClosePersistencePending(71L, outgoing))
+
+    val incoming = item("incoming-stopping")
+    val incomingState = PlaybackSessionState(phase = PlaybackPhase.STOPPING, generation = 72L, currentItem = incoming)
+    assertTrue(marker.resetForNewPlayback(incomingState, incoming.stableId, incoming.originalUri))
+    assertFalse(marker.isClosePersistencePending(72L, incoming))
+    marker.mark(generation = 72L, currentItem = incoming, positionSeconds = 3.0, paused = false)
+    assertTrue(marker.beginClosePersistence(72L, incoming))
+
+    marker.finishClosePersistence(71L, outgoing)
+    assertTrue("the old close completion must not clear the replacement close token", marker.isClosePersistencePending(72L, incoming))
+    var staleCloseWrote = false
+    assertFalse(marker.persistIfCloseIsCurrent(71L, outgoing) { staleCloseWrote = true })
+    assertFalse(staleCloseWrote)
+    assertTrue(marker.persistIfCloseIsCurrent(72L, incoming) {})
+  }
+
+  @Test
+  fun replacementItemUsesPendingRestoreInsteadOfOutgoingMpvPosition() {
+    assertEquals(PlaybackPhase.LOADING, resumePositionPhaseForSnapshot(PlaybackPhase.READY, loadedItemMatchesQueue = false))
+    assertEquals(PlaybackPhase.READY, resumePositionPhaseForSnapshot(PlaybackPhase.READY, loadedItemMatchesQueue = true))
+
+    val withoutRestore =
+      selectResumePositionForSnapshot(
+        phase = PlaybackPhase.LOADING,
+        pendingRestoreSeconds = null,
+        nativePositionSeconds = 84.0,
+        fallbackSeconds = 0.0,
+      )
+    assertEquals(0.0, withoutRestore.positionSeconds, 0.0)
+    assertFalse(withoutRestore.isKnown)
+
+    val withRestore =
+      selectResumePositionForSnapshot(
+        phase = PlaybackPhase.LOADING,
+        pendingRestoreSeconds = 17.25,
+        nativePositionSeconds = 84.0,
+        fallbackSeconds = 0.0,
+      )
+    assertEquals(17.25, withRestore.positionSeconds, 0.0)
+    assertTrue(withRestore.isKnown)
+  }
 }
 
 @RunWith(RobolectricTestRunner::class)
@@ -408,6 +514,184 @@ class AudioPlaybackResumeStorePersistenceTest {
     assertTrue(restored.closedByUser)
     assertEquals(12.0, restored.positionSeconds, 0.0)
     assertTrue(restored.paused)
+  }
+
+  @Test
+  fun newQueueItemResetsClosedMarkerBeforeActivityPauseSnapshotSave() {
+    val marker = ClosedAudioSessionMarker()
+    val outgoingItem = item("outgoing-closed")
+    marker.mark(generation = 20L, currentItem = outgoingItem, positionSeconds = 41.0, paused = true)
+    val outgoingState = PlaybackSessionState(phase = PlaybackPhase.READY, generation = 20L, currentItem = outgoingItem)
+    assertTrue(marker.isClosed(outgoingState, outgoingItem))
+
+    val incomingItem = item("incoming-open")
+    val incomingState =
+      PlaybackSessionState(
+        phase = PlaybackPhase.STOPPING,
+        generation = 21L,
+        currentItem = outgoingItem,
+      )
+    val playbackCapture =
+      PlaybackResumeStateCapture(
+        queueState = queue(listOf(incomingItem)),
+        sessionState = incomingState,
+        position = PlaybackResumePositionCapture(positionSeconds = 6.75, isKnown = true),
+        paused = false,
+      )
+
+    assertTrue(marker.persistActivitySnapshot(application, playbackCapture))
+    assertNull("the Activity queue item replaces a stale state projection before writing", marker.snapshotFor(outgoingItem))
+    assertFalse(marker.isClosed(incomingState, incomingItem))
+
+    val restored = requireNotNull(AudioPlaybackResumeStore.load(application))
+    assertEquals("incoming-open", restored.queueState.currentItem?.stableId)
+    assertEquals(6.75, restored.positionSeconds, 0.0)
+    assertFalse(restored.closedByUser)
+  }
+
+  @Test
+  fun activitySaveAfterServiceLossKeepsTheClosedSnapshotPosition() {
+    val currentItem = item("closed-after-service")
+    val marker = ClosedAudioSessionMarker()
+    marker.mark(generation = 31L, currentItem = currentItem, positionSeconds = 32.5, paused = true)
+    val capture =
+      PlaybackResumeStateCapture(
+        queueState = queue(listOf(currentItem)),
+        sessionState =
+          PlaybackSessionState(
+            phase = PlaybackPhase.STOPPING,
+            generation = 31L,
+            currentItem = currentItem,
+          ),
+        position = PlaybackResumePositionCapture(positionSeconds = 0.0, isKnown = false),
+        paused = true,
+      )
+
+    assertTrue(marker.isClosed(capture.sessionState, currentItem))
+    assertTrue(marker.persistActivitySnapshot(application, capture))
+
+    val restored = requireNotNull(AudioPlaybackResumeStore.load(application))
+    assertEquals(32.5, restored.positionSeconds, 0.0)
+    assertTrue(restored.paused)
+    assertTrue(restored.closedByUser)
+  }
+
+  @Test
+  fun activityResetAndSaveCannotBeOvertakenByAnOlderClosedSnapshotWrite() {
+    val marker = ClosedAudioSessionMarker()
+    val outgoingItem = item("close-race-old")
+    marker.mark(generation = 81L, currentItem = outgoingItem, positionSeconds = 22.0, paused = true)
+    assertTrue(marker.beginClosePersistence(81L, outgoingItem))
+
+    val closeEntered = CountDownLatch(1)
+    val releaseClose = CountDownLatch(1)
+    val closeFailure = AtomicReference<Throwable?>(null)
+    val closeThread = Thread {
+      try {
+        assertTrue(
+          marker.persistIfCloseIsCurrent(81L, outgoingItem) {
+            closeEntered.countDown()
+            assertTrue(releaseClose.await(3, TimeUnit.SECONDS))
+            assertTrue(
+              AudioPlaybackResumeStore.save(
+                application,
+                queue(listOf(outgoingItem)),
+                22.0,
+                paused = true,
+                closedByUser = true,
+              ),
+            )
+          },
+        )
+      } catch (error: Throwable) {
+        closeFailure.set(error)
+      }
+    }
+    closeThread.start()
+    assertTrue(closeEntered.await(3, TimeUnit.SECONDS))
+
+    val incomingItem = item("close-race-new")
+    val incomingCapture =
+      PlaybackResumeStateCapture(
+        queueState = queue(listOf(incomingItem)),
+        sessionState = PlaybackSessionState(phase = PlaybackPhase.READY, generation = 82L, currentItem = incomingItem),
+        position = PlaybackResumePositionCapture(positionSeconds = 7.5, isKnown = true),
+        paused = false,
+      )
+    val activityStarted = CountDownLatch(1)
+    val activityFailure = AtomicReference<Throwable?>(null)
+    val activityResult = AtomicBoolean(false)
+    val activityThread = Thread {
+      activityStarted.countDown()
+      try {
+        activityResult.set(marker.persistActivitySnapshot(application, incomingCapture))
+      } catch (error: Throwable) {
+        activityFailure.set(error)
+      }
+    }
+    activityThread.start()
+    assertTrue(activityStarted.await(3, TimeUnit.SECONDS))
+    val blockedDeadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(3)
+    while (activityThread.state != Thread.State.BLOCKED && activityThread.isAlive && System.nanoTime() < blockedDeadline) {
+      Thread.yield()
+    }
+    assertEquals("Activity reset/save waits until the current close write commits", Thread.State.BLOCKED, activityThread.state)
+
+    releaseClose.countDown()
+    closeThread.join(3_000)
+    activityThread.join(3_000)
+    assertFalse(closeThread.isAlive)
+    assertFalse(activityThread.isAlive)
+    closeFailure.get()?.let { throw AssertionError("closed snapshot write failed", it) }
+    activityFailure.get()?.let { throw AssertionError("Activity snapshot write failed", it) }
+    assertTrue(activityResult.get())
+
+    val restored = requireNotNull(AudioPlaybackResumeStore.load(application))
+    assertEquals("close-race-new", restored.queueState.currentItem?.stableId)
+    assertEquals(7.5, restored.positionSeconds, 0.0)
+    assertFalse(restored.closedByUser)
+  }
+
+  @Test
+  fun pendingPlaybackSnapshotTransfersOnlyToItsMatchingTeardownSession() {
+    val current = item("pending-stop")
+    val replacement = item("replacement-stop")
+    assertTrue(
+      shouldTransferPendingPlaybackStateSave(
+        phase = PlaybackPhase.STOPPING,
+        currentIdentifier = "pending-stop",
+        currentItem = current,
+        pendingIdentifier = "pending-stop",
+        pendingItem = current,
+      ),
+    )
+    assertTrue(
+      shouldTransferPendingPlaybackStateSave(
+        phase = PlaybackPhase.IDLE,
+        currentIdentifier = "pending-stop",
+        currentItem = null,
+        pendingIdentifier = "pending-stop",
+        pendingItem = current,
+      ),
+    )
+    assertFalse(
+      shouldTransferPendingPlaybackStateSave(
+        phase = PlaybackPhase.READY,
+        currentIdentifier = "pending-stop",
+        currentItem = current,
+        pendingIdentifier = "pending-stop",
+        pendingItem = current,
+      ),
+    )
+    assertFalse(
+      shouldTransferPendingPlaybackStateSave(
+        phase = PlaybackPhase.STOPPING,
+        currentIdentifier = "replacement-stop",
+        currentItem = replacement,
+        pendingIdentifier = "pending-stop",
+        pendingItem = current,
+      ),
+    )
   }
 
   @Test
@@ -490,6 +774,63 @@ class AudioPlaybackResumeStorePersistenceTest {
   }
 
   @Test
+  fun literalNullOriginalUriIsRejectedBeforeSaving() {
+    val invalidItem =
+      PlaybackItem.fromUri(
+        uri = "null",
+        stableId = "null-uri",
+        title = "Audio",
+        mimeType = "audio/mpeg",
+      )
+
+    assertFalse(AudioPlaybackResumeStore.save(application, queue(listOf(invalidItem)), 5.0, paused = true))
+    assertNull(preferences.getString(AudioPlaybackResumeStore.QUEUE_KEY, null))
+    assertNull(preferences.getString(AudioPlaybackResumeStore.STATE_KEY, null))
+  }
+
+  @Test
+  fun blankNeighborClearsPriorSnapshotWhenCurrentItemIsValid() {
+    val priorQueue = queue(listOf(item("current"), item("next")), currentIndex = 0)
+    assertTrue(AudioPlaybackResumeStore.save(application, priorQueue, 3.0, paused = true))
+    assertNotNull(AudioPlaybackResumeStore.load(application))
+
+    val blankNeighbor =
+      PlaybackItem.fromUri(
+        uri = "",
+        stableId = "blank-neighbor",
+        title = "Audio",
+        mimeType = "audio/mpeg",
+      )
+    val mixedQueue = queue(listOf(item("current"), blankNeighbor), currentIndex = 0)
+
+    assertFalse(AudioPlaybackResumeStore.save(application, mixedQueue, 3.0, paused = true))
+    assertNull(AudioPlaybackResumeStore.load(application))
+    assertNull(preferences.getString(AudioPlaybackResumeStore.QUEUE_KEY, null))
+    assertNull(preferences.getString(AudioPlaybackResumeStore.STATE_KEY, null))
+  }
+
+  @Test
+  fun literalNullNeighborClearsPriorSnapshotWhenCurrentItemIsValid() {
+    val priorQueue = queue(listOf(item("current"), item("next")), currentIndex = 0)
+    assertTrue(AudioPlaybackResumeStore.save(application, priorQueue, 3.0, paused = true))
+    assertNotNull(AudioPlaybackResumeStore.load(application))
+
+    val literalNullNeighbor =
+      PlaybackItem.fromUri(
+        uri = "null",
+        stableId = "null-neighbor",
+        title = "Audio",
+        mimeType = "audio/mpeg",
+      )
+    val mixedQueue = queue(listOf(item("current"), literalNullNeighbor), currentIndex = 0)
+
+    assertFalse(AudioPlaybackResumeStore.save(application, mixedQueue, 3.0, paused = true))
+    assertNull(AudioPlaybackResumeStore.load(application))
+    assertNull(preferences.getString(AudioPlaybackResumeStore.QUEUE_KEY, null))
+    assertNull(preferences.getString(AudioPlaybackResumeStore.STATE_KEY, null))
+  }
+
+  @Test
   fun malformedSplitQueueRejectsWholeRecordInsteadOfShiftingCurrentIndex() {
     val originalQueue = queue(listOf(item("first"), item("current"), item("next")), currentIndex = 1)
     assertTrue(AudioPlaybackResumeStore.save(application, originalQueue, 9.0, paused = false))
@@ -508,18 +849,20 @@ class AudioPlaybackResumeStorePersistenceTest {
     var activeQueue = queue(listOf(item("closed")))
     var saveSucceeded = false
 
-    persistBeforePlaybackTeardown(
-      persist = {
-        saveSucceeded = AudioPlaybackResumeStore.save(
-          application,
-          activeQueue,
-          22.0,
-          paused = true,
-          closedByUser = true,
-        )
-      },
-      teardown = { activeQueue = queue(emptyList()) },
-    )
+    runBlocking {
+      persistBeforePlaybackTeardown(
+        persist = {
+          saveSucceeded = AudioPlaybackResumeStore.save(
+            application,
+            activeQueue,
+            22.0,
+            paused = true,
+            closedByUser = true,
+          )
+        },
+        teardown = { activeQueue = queue(emptyList()) },
+      )
+    }
 
     assertTrue(saveSucceeded)
     assertNull(activeQueue.currentItem)
