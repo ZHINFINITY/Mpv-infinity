@@ -1097,7 +1097,9 @@ object PlaybackSession : MPVLib.EventObserver {
           fallbackSeconds = fallbackPositionSeconds,
         )
       val paused =
-        if (positionPhase == PlaybackPhase.LOADING || !allowNativePropertyReads || !initialized || !nativeCoreReady) {
+        if (positionPhase == PlaybackPhase.LOADING) {
+          desiredPaused
+        } else if (!allowNativePropertyReads || !initialized || !nativeCoreReady) {
           currentState.paused
         } else {
           runCatching { MPVLib.getPropertyBoolean("pause") }.getOrNull() ?: currentState.paused

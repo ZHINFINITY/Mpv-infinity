@@ -4161,21 +4161,7 @@ class PlayerActivity :
 
   private fun persistAudioPlaybackSnapshot() {
     val playbackCapture = PlaybackSession.captureResumeState(fallbackPositionSeconds = 0.0)
-    val currentItem = playbackCapture.queueState.currentItem ?: return
-    MediaPlaybackService.resetClosedAudioSessionForNewPlayback(
-      playbackCapture.sessionState,
-      currentItem.stableId,
-      currentItem.originalUri,
-    )
-    val closedByUser = MediaPlaybackService.isAudioSessionClosedByUser()
-    val closedSnapshot =
-      if (closedByUser) MediaPlaybackService.closedAudioSessionSnapshotFor(currentItem) else null
-    persistAudioResumeSnapshotForActivity(
-      context = applicationContext,
-      playbackCapture = playbackCapture,
-      closedByUser = closedByUser,
-      closedSnapshot = closedSnapshot,
-    )
+    MediaPlaybackService.persistActivityAudioResumeSnapshot(applicationContext, playbackCapture)
   }
 
   private fun attachToSavedPlaybackSessionIfValid(sourceIntent: Intent = intent): Boolean {
