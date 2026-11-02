@@ -166,6 +166,7 @@ import kotlinx.coroutines.withContext
 import org.koin.android.ext.android.inject
 import okhttp3.OkHttpClient
 import java.io.File
+import java.lang.ref.WeakReference
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.math.abs
 import kotlin.math.pow
@@ -574,6 +575,36 @@ class PlayerActivity :
 
   private fun nativeEngineOrNull(): NativeMedia3Engine? =
     if (nativeEngineConfigured) nativeEngine else null
+
+  private fun currentNativeEngineForClosedSession(
+    generation: Long,
+    currentItem: PlaybackItem,
+  ): NativeMedia3Engine? {
+    if (isFinishing || isDestroyed || !ownsPlaybackSession() || !isNativeEngineActive()) return null
+    val liveItem = PlaybackSession.queue.value.currentItem ?: return null
+    if (PlaybackSession.state.value.generation != generation ||
+      liveItem.stableId != currentItem.stableId || liveItem.originalUri != currentItem.originalUri
+    ) return null
+    return nativeEngineOrNull()
+  }
+
+  private fun pauseNativePlaybackForClosedSessionIfCurrent(
+    generation: Long,
+    currentItem: PlaybackItem,
+  ): Boolean {
+    val engine = currentNativeEngineForClosedSession(generation, currentItem) ?: return false
+    engine.setPlaying(false)
+    return true
+  }
+
+  private fun stopNativePlaybackForClosedSessionIfCurrent(
+    generation: Long,
+    currentItem: PlaybackItem,
+  ): Boolean {
+    val engine = currentNativeEngineForClosedSession(generation, currentItem) ?: return false
+    engine.stop()
+    return true
+  }
 
   private fun configureNativeEngineIfNeeded(force: Boolean = false) {
     val isAudioLaunch =
@@ -1535,6 +1566,7 @@ class PlayerActivity :
   override fun onCreate(savedInstanceState: Bundle?) {
     enableEdgeToEdge()
     super.onCreate(savedInstanceState)
+    activeNativeCloseActivity = WeakReference(this)
     requestAudioOpenFromMini(intent)
     Log.i(
       "Mpv∞-BuildIdentity",
@@ -3097,6 +3129,7 @@ class PlayerActivity :
 
   override fun onDestroy() {
     Log.d(TAG, "PlayerActivity onDestroy")
+    if (activeNativeCloseActivity?.get() === this) activeNativeCloseActivity = null
     val ownsPlaybackSession = ownsPlaybackSession()
     val playbackWasInitialized = mpvInitialized
     val nativeWasActive =
@@ -10665,6 +10698,15 @@ class PlayerActivity :
   }
 
   companion object {
+    @Volatile
+    private var activeNativeCloseActivity: WeakReference<PlayerActivity>? = null
+
+    internal fun pauseNativePlaybackForClosedSession(generation: Long, currentItem: PlaybackItem): Boolean =
+      activeNativeCloseActivity?.get()?.pauseNativePlaybackForClosedSessionIfCurrent(generation, currentItem) == true
+
+    internal fun stopNativePlaybackForClosedSession(generation: Long, currentItem: PlaybackItem): Boolean =
+      activeNativeCloseActivity?.get()?.stopNativePlaybackForClosedSessionIfCurrent(generation, currentItem) == true
+
     /**
      * Intent action used to return playback result data to the calling activity.
      */
