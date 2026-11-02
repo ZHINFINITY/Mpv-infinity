@@ -611,7 +611,10 @@ class DirectAudiobookRestorePathContractTest {
 
     val issuePlaybackLoad = activity.substringAfter("private suspend fun issuePlaybackLoad(")
       .substringBefore("private fun armPlaybackLoadRecovery(")
-    assertTrue(issuePlaybackLoad.contains("preparePlaybackItemForLoad("))
+    assertTrue(
+      Regex("""preparePlaybackItemForLoad\(\s*item,\s*resolvedPageMediaUrl,\s*radioMimeType\)""")
+        .containsMatchIn(issuePlaybackLoad),
+    )
     val sharedLoadTransform = activity.substringAfter("internal fun preparePlaybackItemForLoad(")
       .substringBefore("\n\n/**")
     assertTrue(sharedLoadTransform.contains("radioMimeType?.let { item.copy(mimeType = it) } ?: item"))
