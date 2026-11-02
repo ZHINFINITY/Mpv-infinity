@@ -2610,14 +2610,15 @@ class PlayerActivity :
       val isAudioOnly by viewModel.isAudioOnly.collectAsState()
       val playbackState by PlaybackSession.state.collectAsState()
       val nativeSnapshot by nativePlaybackSnapshot.collectAsState()
+      val mpvVideoOutput by PlaybackSession.propString["vo"].collectAsState()
       val nativeFrameAvailable by nativeFirstFrame.collectAsState()
       val videoCrop by PlaybackSession.propString["video-crop"].collectAsState()
       val hdrScreenMode by viewModel.hdrScreenMode.collectAsState()
       val orientation = LocalConfiguration.current.orientation
+      val nativeActive = glassEngineMode == PlaybackEngineMode.NATIVE
       // A seek briefly leaves Media3 in BUFFERING/IDLE even though its video Surface is still
       // valid. Keep using the native surface after the first frame instead of tearing down the
       // ambient pipeline and exposing a black background during that transient state.
-      val nativeActive = nativeSnapshot.isReady || nativeSnapshot.isBuffering || nativeFrameAvailable
       // Position changes arrive every 250 ms. They must not restart the capture coroutine;
       // doing so clears the previous frame and produces visible ambient flicker. Duration and
       // video dimensions change when Native switches media and provide a stable source key.
@@ -2633,9 +2634,14 @@ class PlayerActivity :
       } else {
         playbackState.phase == PlaybackPhase.READY || playbackState.phase == PlaybackPhase.BACKGROUND
       }
-      // Native uses the frame-captured presentation even when the persisted MPV style is Glow.
-      // Keep the preference unchanged so returning to MPV restores the user’s selected style.
-      val effectiveAmbientStyle = if (nativeActive) AmbientStyle.YouTube else style
+      val usesFrameCapturedAmbient =
+        AmbientRendererPolicy.usesFrameCapturedAmbient(nativeActive, mpvVideoOutput)
+      LaunchedEffect(usesFrameCapturedAmbient) {
+        viewModel.setFrameCapturedAmbientFallback(usesFrameCapturedAmbient)
+      }
+      // Native, gpu-next, and not-yet-resolved MPV outputs use frame capture; keep the selection
+      // stored so switching back to the compatible MPV renderer restores the user's preference.
+      val effectiveAmbientStyle = AmbientRendererPolicy.effectiveStyle(style, usesFrameCapturedAmbient)
       val active =
         enabled &&
           lifecycleActive &&
@@ -7215,6 +7221,12 @@ class PlayerActivity :
     // Restore video zoom from saved state
     PlaybackSession.setPropertyDouble("video-zoom", state.videoZoom.toDouble())
     viewModel.setVideoZoom(state.videoZoom)
+
+    // handleFileLoaded applies the global/default fallback before this asynchronous state lookup.
+    // Reapply the media-specific choice here when per-video aspect memory is enabled.
+    if (playerPreferences.rememberVideoAspectPerVideo.get()) {
+      viewModel.restoreVideoAspect(state.videoAspect, state.customAspectRatio, showUpdate = false)
+    }
   }
 
   /** Restore common per-video settings on Native as well as MPV. MPV-only timing and

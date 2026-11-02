@@ -1017,6 +1017,7 @@ class MPVView(
 
   override fun observeProperties() {
     for ((name, format) in observedProps) PlaybackSession.observeProperty(name, format)
+    PlaybackSession.observeProperty("vo", MPVLib.MpvFormat.MPV_FORMAT_STRING)
   }
 
   override fun postInitOptions() {

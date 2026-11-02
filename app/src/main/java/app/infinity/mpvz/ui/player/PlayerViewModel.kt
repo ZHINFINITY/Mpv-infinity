@@ -1741,6 +1741,7 @@ class PlayerViewModel(
   private val ambientUpdateGeneration = AtomicLong()
   private val _isAmbientLifecycleActive = MutableStateFlow(false)
   val isAmbientLifecycleActive: StateFlow<Boolean> = _isAmbientLifecycleActive.asStateFlow()
+  @Volatile private var frameCapturedAmbientFallback = true
   private val ambientShaderSeq = AtomicLong()
   @Volatile private var ambientShaderFile: java.io.File? = null
 
@@ -6718,6 +6719,22 @@ class PlayerViewModel(
     }
   }
 
+  /** Use frame capture unless MPV explicitly confirms the legacy `gpu` output path. */
+  fun setFrameCapturedAmbientFallback(enabled: Boolean) {
+    if (frameCapturedAmbientFallback == enabled) {
+      if (enabled) disableAmbientShader()
+      return
+    }
+    frameCapturedAmbientFallback = enabled
+    if (enabled) {
+      disableAmbientShader()
+    } else if (isAmbientGlowRuntimeActive()) {
+      lastAmbientScaleX = -1.0
+      lastAmbientScaleY = -1.0
+      scheduleAmbientUpdate(0)
+    }
+  }
+
   private fun isAmbientRuntimeActive(): Boolean =
     _isAmbientLifecycleActive.value &&
       _isMpvCoreReady.value &&
@@ -6725,7 +6742,7 @@ class PlayerViewModel(
       !MpvConfigOverridePolicy.ownsAny(MpvConfigControlledFeatures.AMBIENT)
 
   private fun isAmbientGlowRuntimeActive(): Boolean =
-    isAmbientRuntimeActive() && _ambientStyle.value == AmbientStyle.Glow
+    isAmbientRuntimeActive() && _ambientStyle.value == AmbientStyle.Glow && !frameCapturedAmbientFallback
 
   fun toggleAmbientMode() {
     if (MpvConfigOverridePolicy.ownsAny(MpvConfigControlledFeatures.AMBIENT)) return

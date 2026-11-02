@@ -48,4 +48,17 @@ class MpvAspectSurfaceDiagnosticsContractTest {
     assertTrue(surfaceCreate.contains("event=surface_created"))
     assertTrue(surfaceDestroy.contains("event=surface_destroyed"))
   }
+
+  @Test fun mpvLoadRestoresTheSavedPerVideoAspectAfterItsGlobalFallback() {
+    val activity = source("ui/player/PlayerActivity.kt")
+    val applyPlaybackState = activity.substringAfter("private suspend fun applyPlaybackState(")
+      .substringBefore("private suspend fun applyNativePlaybackState(")
+
+    assertTrue(applyPlaybackState.contains("playerPreferences.rememberVideoAspectPerVideo.get()"))
+    assertTrue(
+      applyPlaybackState.contains(
+        "viewModel.restoreVideoAspect(state.videoAspect, state.customAspectRatio, showUpdate = false)",
+      ),
+    )
+  }
 }
