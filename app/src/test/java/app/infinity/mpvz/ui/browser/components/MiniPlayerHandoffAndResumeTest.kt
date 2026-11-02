@@ -22,6 +22,7 @@ import app.infinity.mpvz.ui.player.PlaybackResumeStateCapture
 import app.infinity.mpvz.ui.player.PlaybackSession
 import app.infinity.mpvz.ui.player.PlaybackSessionState
 import app.infinity.mpvz.ui.player.ShadowPlaybackMpvLib
+import app.infinity.mpvz.ui.player.preparePlaybackItemForLoad
 import app.infinity.mpvz.ui.player.RepeatMode
 import app.infinity.mpvz.ui.player.persistBeforePlaybackTeardown
 import app.infinity.mpvz.ui.player.resumePositionPhaseForSnapshot
@@ -610,11 +611,11 @@ class DirectAudiobookRestorePathContractTest {
 
     val issuePlaybackLoad = activity.substringAfter("private suspend fun issuePlaybackLoad(")
       .substringBefore("private fun armPlaybackLoadRecovery(")
-    val playbackItemTransform = issuePlaybackLoad.substringAfter("val playbackItem =")
-      .substringBefore("val playbackRequiresYtdlp")
-    assertTrue(playbackItemTransform.contains("item.copy("))
-    assertTrue(playbackItemTransform.contains("?: item"))
-    assertFalse(playbackItemTransform.contains("directAudiobook = null"))
+    assertTrue(issuePlaybackLoad.contains("preparePlaybackItemForLoad("))
+    val sharedLoadTransform = activity.substringAfter("internal fun preparePlaybackItemForLoad(")
+      .substringBefore("\n\n/**")
+    assertTrue(sharedLoadTransform.contains("radioMimeType?.let { item.copy(mimeType = it) } ?: item"))
+    assertFalse(sharedLoadTransform.contains("directAudiobook = null"))
     assertTrue(
       Regex("""PlaybackSession\.load\(\s*item\s*=\s*playbackItem,""")
         .containsMatchIn(issuePlaybackLoad),
@@ -658,12 +659,14 @@ class DirectAudiobookRestorePathContractTest {
     val requestedQueueItem =
       requireNotNull(PlaybackSession.queue.value.items.getOrNull(restored.queueState.currentIndex))
     val playbackItem =
-      requestedQueueItem.copy(
-        playableUri = requestedQueueItem.playableUri,
-        headers = requestedQueueItem.headers,
-        mimeType = requestedQueueItem.mimeType,
+      preparePlaybackItemForLoad(
+        item = requestedQueueItem,
+        resolvedPageMediaUrl = null,
+        radioMimeType = "audio/aac",
       )
 
+    assertEquals("audio/aac", playbackItem.mimeType)
+    assertEquals(currentMarker, playbackItem.directAudiobook)
     assertTrue(PlaybackSession.load(item = playbackItem) > 0L)
     assertEquals(currentMarker, PlaybackSession.state.value.currentItem?.directAudiobook)
     assertEquals(listOf(firstMarker, currentMarker), PlaybackSession.queue.value.items.map { it.directAudiobook })

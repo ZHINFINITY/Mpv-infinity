@@ -178,6 +178,23 @@ private enum class BackgroundPlaybackStartResult {
   Blocked,
 }
 
+internal fun preparePlaybackItemForLoad(
+  item: PlaybackItem,
+  resolvedPageMediaUrl: String?,
+  radioMimeType: String?,
+): PlaybackItem =
+  resolvedPageMediaUrl?.let { resolved ->
+    item.copy(
+      playableUri = resolved,
+      headers =
+        PlaybackHttpHeaders.withDefault(
+          item.headers,
+          "Referer",
+          HttpUtils.extractRefererDomain(Uri.parse(item.playableUri)),
+        ),
+    )
+  } ?: radioMimeType?.let { item.copy(mimeType = it) } ?: item
+
 /**
  * Main player activity that handles video playback using the MPV library.
  *
@@ -8068,17 +8085,7 @@ class PlayerActivity :
       } else {
         null
       }
-    val playbackItem =
-      resolvedPageMediaUrl?.let { resolved ->
-        item.copy(
-          playableUri = resolved,
-          headers = PlaybackHttpHeaders.withDefault(
-            item.headers,
-            "Referer",
-            HttpUtils.extractRefererDomain(Uri.parse(item.playableUri)),
-          ),
-        )
-      } ?: radioMimeType?.let { item.copy(mimeType = it) } ?: item
+    val playbackItem = preparePlaybackItemForLoad(item, resolvedPageMediaUrl, radioMimeType)
     val playbackRequiresYtdlp = radioMimeType == null && YtdlpManager.requiresYtdlp(playbackItem.playableUri)
     // Native Media3 is used for HDR-family video, while MPV remains the normal video/audio
     // pipeline. Auto keeps ordinary videos on MPV and routes HDR, HLG, and Dolby Vision to Native.
