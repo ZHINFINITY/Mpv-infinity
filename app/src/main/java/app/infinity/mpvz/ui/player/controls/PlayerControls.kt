@@ -1429,7 +1429,11 @@ fun PlayerControls(
                 .constrainAs(customButtonsPortraitRef) {
                   start.linkTo(parent.start, spacing.large)
                   end.linkTo(parent.end, spacing.large)
-                  bottom.linkTo(seekbar.top, spacing.medium)
+                  if (portraitPlaybackControlsPosition == PortraitPlaybackControlsPosition.BelowSeekbar) {
+                    bottom.linkTo(playerPauseButton.top, spacing.medium)
+                  } else {
+                    bottom.linkTo(bottomRightControls.top, spacing.medium)
+                  }
                   width = Dimension.fillToConstraints
                   height = Dimension.wrapContent
                 }.onGloballyPositioned { coordinates ->
@@ -1569,6 +1573,8 @@ fun PlayerControls(
                 end.linkTo(parent.absoluteRight)
                 if (isPortrait && portraitPlaybackControlsPosition == PortraitPlaybackControlsPosition.BelowSeekbar) {
                   bottom.linkTo(bottomRightControls.top, spacing.small)
+                } else if (isPortrait) {
+                  bottom.linkTo(customButtonsPortraitRef.top, spacing.small)
                 } else {
                   top.linkTo(parent.top)
                   bottom.linkTo(parent.bottom)
@@ -1650,6 +1656,8 @@ fun PlayerControls(
                 end.linkTo(parent.absoluteRight)
                 if (isPortrait && portraitPlaybackControlsPosition == PortraitPlaybackControlsPosition.BelowSeekbar) {
                   bottom.linkTo(bottomRightControls.top, spacing.small)
+                } else if (isPortrait) {
+                  bottom.linkTo(customButtonsPortraitRef.top, spacing.small)
                 } else {
                   top.linkTo(parent.top)
                   bottom.linkTo(parent.bottom)
@@ -1895,9 +1903,9 @@ fun PlayerControls(
                 ).constrainAs(seekbar) {
                   if (isPortrait) {
                     if (portraitPlaybackControlsPosition == PortraitPlaybackControlsPosition.BelowSeekbar) {
-                      bottom.linkTo(playerPauseButton.top, spacing.small)
+                      bottom.linkTo(customButtonsPortraitRef.top, spacing.small)
                     } else {
-                      bottom.linkTo(bottomRightControls.top, spacing.medium)
+                      bottom.linkTo(parent.bottom, spacing.medium)
                     }
                   } else {
                     bottom.linkTo(parent.bottom, spacing.medium)
@@ -2157,7 +2165,11 @@ fun PlayerControls(
                   },
                 ).constrainAs(bottomRightControls) {
                   if (isPortrait) {
-                    bottom.linkTo(parent.bottom, spacing.large) // Reduced from extraLarge
+                    if (portraitPlaybackControlsPosition == PortraitPlaybackControlsPosition.BelowSeekbar) {
+                      bottom.linkTo(parent.bottom, spacing.large)
+                    } else {
+                      bottom.linkTo(seekbar.top, spacing.medium)
+                    }
                     start.linkTo(parent.start, spacing.large)
                     end.linkTo(parent.end, spacing.large)
                     width = Dimension.fillToConstraints

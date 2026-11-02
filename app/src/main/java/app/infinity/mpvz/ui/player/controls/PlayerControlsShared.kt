@@ -93,6 +93,7 @@ import kotlin.math.abs
 import kotlin.math.roundToInt
 import app.infinity.mpvz.ui.icons.Icon as AppSymbolIcon
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun RenderPlayerButton(
   button: PlayerButton,
@@ -1207,8 +1208,12 @@ fun RenderPlayerButton(
     }
 
     PlayerButton.TIME_NETWORK -> {
+      val timeNetworkPillExpanded by appearancePreferences.timeNetworkPillExpanded.collectAsState()
       val clockFormat by playerPreferences.clockFormat.collectAsState()
       val stat by rememberTimeAndNetworkStat(clockFormat)
+      val toggleTimeNetworkPill = {
+        appearancePreferences.timeNetworkPillExpanded.set(!appearancePreferences.timeNetworkPillExpanded.get())
+      }
       val toggleTimeAndNetwork = {
         val nextPage = if (statisticsPage == 6) 0 else 6
         PlayerStatsLuaCommandPolicy.apply(
@@ -1222,70 +1227,88 @@ fun RenderPlayerButton(
         advancedPreferences.enabledStatisticsPage.set(nextPage)
         onOpenSheet(Sheets.None)
       }
-      if (compact) {
-        ControlsButton(
-          icon = Icons.RoundedFilled.AccessTime,
-          onClick = toggleTimeAndNetwork,
-          modifier = Modifier.size(buttonSize),
-        )
-      } else {
-        Surface(
-          shape = CircleShape,
-          color =
-            if (liquidGlassSurfaces || hideBackground) {
-              Color.Transparent
-            } else {
-              MaterialTheme.colorScheme.surfaceContainer.copy(
-                alpha = 0.55f,
-              )
-            },
-          contentColor = if (hideBackground) controlColor else MaterialTheme.colorScheme.onSurface,
-          border =
-            if (liquidGlassSurfaces || hideBackground) {
-              null
-            } else {
-              BorderStroke(
-                1.dp,
-                MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f),
-              )
-            },
-          modifier =
-            Modifier
-              .height(buttonSize)
-              .clip(CircleShape)
-              .clickable(
-                interactionSource = remember { MutableInteractionSource() },
-                indication = ripple(bounded = true),
-                onClick = {
-                  clickEvent()
-                  toggleTimeAndNetwork()
-                },
-              )
-              .playerGlassPane(enabled = liquidGlassSurfaces, cornerRadius = 999.dp),
-        ) {
-          Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(MaterialTheme.spacing.extraSmall),
+      AnimatedContent(
+        targetState = timeNetworkPillExpanded && !compact,
+        transitionSpec = {
+          (fadeIn(animationSpec = tween(200)) + expandHorizontally(animationSpec = tween(250)))
+            .togetherWith(fadeOut(animationSpec = tween(200)) + shrinkHorizontally(animationSpec = tween(250)))
+            .using(SizeTransform(clip = false))
+        },
+        label = "timeNetworkPillExpansion",
+      ) { expanded ->
+        if (expanded) {
+          Surface(
+            shape = CircleShape,
+            color =
+              if (liquidGlassSurfaces || hideBackground) {
+                Color.Transparent
+              } else {
+                MaterialTheme.colorScheme.surfaceContainer.copy(
+                  alpha = 0.55f,
+                )
+              },
+            contentColor = if (hideBackground) controlColor else MaterialTheme.colorScheme.onSurface,
+            border =
+              if (liquidGlassSurfaces || hideBackground) {
+                null
+              } else {
+                BorderStroke(
+                  1.dp,
+                  MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f),
+                )
+              },
             modifier =
               Modifier
-                .widthIn(min = 176.dp)
-                .padding(horizontal = MaterialTheme.spacing.small),
+                .height(buttonSize)
+                .clip(CircleShape)
+                .combinedClickable(
+                  interactionSource = remember { MutableInteractionSource() },
+                  indication = ripple(bounded = true),
+                  onClick = {
+                    clickEvent()
+                    toggleTimeNetworkPill()
+                  },
+                  onLongClick = {
+                    clickEvent()
+                    toggleTimeAndNetwork()
+                  },
+                )
+                .playerGlassPane(enabled = liquidGlassSurfaces, cornerRadius = 999.dp),
           ) {
-            AppSymbolIcon(
-              imageVector = Icons.RoundedFilled.AccessTime,
-              contentDescription =
-                androidx.compose.ui.res
-                  .stringResource(app.infinity.mpvz.R.string.ui_time_and_network),
-              tint = MaterialTheme.colorScheme.primary,
-              modifier = Modifier.size(18.dp),
-            )
-            Text(
-              text = "${stat.time} • ${stat.network}",
-              style = MaterialTheme.typography.bodySmall,
-              maxLines = 1,
-              overflow = TextOverflow.Ellipsis,
-            )
+            Row(
+              verticalAlignment = Alignment.CenterVertically,
+              horizontalArrangement = Arrangement.spacedBy(MaterialTheme.spacing.extraSmall),
+              modifier =
+                Modifier
+                  .widthIn(min = 176.dp)
+                  .padding(horizontal = MaterialTheme.spacing.small),
+            ) {
+              AppSymbolIcon(
+                imageVector = Icons.RoundedFilled.AccessTime,
+                contentDescription =
+                  androidx.compose.ui.res
+                    .stringResource(app.infinity.mpvz.R.string.ui_time_and_network),
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(18.dp),
+              )
+              Text(
+                text = "${stat.time} • ${stat.network}",
+                style = MaterialTheme.typography.bodySmall,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+              )
+            }
           }
+        } else {
+          ControlsButton(
+            icon = Icons.RoundedFilled.AccessTime,
+            onClick = {
+              if (compact) toggleTimeAndNetwork() else toggleTimeNetworkPill()
+            },
+            onLongClick = toggleTimeAndNetwork,
+            title = stringResource(R.string.ui_time_and_network),
+            modifier = Modifier.size(buttonSize),
+          )
         }
       }
     }

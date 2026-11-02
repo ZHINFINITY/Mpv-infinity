@@ -289,6 +289,12 @@ internal object PlayerLifecyclePolicy {
   fun resumePositionSeconds(positionSeconds: Double?): Double? =
     positionSeconds?.takeIf { it.isFinite() && it > 0.0 }
 
+  /** Prefer the active engine/service clock after a background handoff; use the stop snapshot only if unavailable. */
+  fun foregroundRecoveryPositionSeconds(livePositionSeconds: Double?, capturedSnapshotSeconds: Double?): Double? {
+    val livePosition = livePositionSeconds?.takeIf { it.isFinite() && it >= 0.0 }
+    return livePosition ?: resumePositionSeconds(capturedSnapshotSeconds)
+  }
+
   /**
    * Whether service-owned playback must pause because the whole app just left the foreground.
    *

@@ -96,6 +96,7 @@ fun MoreSheet(
   onEnterEqualizerSheet: (() -> Unit)? = null,
   anime4KUiState: Anime4KUiState,
   onAnime4KModeSelected: (Anime4KManager.Mode) -> Unit,
+  onAnime4KQualitySelected: (Anime4KManager.Quality) -> Unit,
   filtersEnabled: Boolean = true,
   equalizerEnabled: Boolean = true,
   anime4KEnabled: Boolean = true,
@@ -345,6 +346,27 @@ fun MoreSheet(
               enabled = anime4KEnabled && (anime4KUiState.allowHighRes || mode == Anime4KManager.Mode.OFF),
               leadingIcon = null,
               onClick = { onAnime4KModeSelected(mode) },
+            )
+          }
+        }
+
+        Text(
+          text = stringResource(R.string.pref_anime4k_quality_title),
+          style = MaterialTheme.typography.titleSmall,
+          color = MaterialTheme.colorScheme.primary,
+          modifier = Modifier.padding(top = MaterialTheme.spacing.small),
+        )
+
+        LazyRow(
+          horizontalArrangement = Arrangement.spacedBy(MaterialTheme.spacing.smaller),
+        ) {
+          items(Anime4KManager.Quality.entries, key = { it.name }) { quality ->
+            GlassChip(
+              label = { Text(stringResource(quality.titleRes)) },
+              selected = anime4KUiState.selectedQuality == quality,
+              enabled = anime4KEnabled,
+              leadingIcon = null,
+              onClick = { onAnime4KQualitySelected(quality) },
             )
           }
         }

@@ -161,6 +161,32 @@ class PlayerLifecyclePolicyTest {
     assertEquals(null, PlayerLifecyclePolicy.resumePositionSeconds(Double.NaN))
   }
 
+  @Test
+  fun foregroundRecoveryUsesPositionAdvancedByBackgroundService() {
+    val onStopSnapshot = 10.0
+    var liveServicePosition = onStopSnapshot
+    liveServicePosition += 32.0
+
+    assertEquals(
+      42.0,
+      PlayerLifecyclePolicy.foregroundRecoveryPositionSeconds(liveServicePosition, onStopSnapshot)!!,
+      0.0,
+    )
+  }
+
+  @Test
+  fun foregroundRecoveryUsesLivePositionWhenNoStopSnapshotExists() {
+    assertEquals(42.0, PlayerLifecyclePolicy.foregroundRecoveryPositionSeconds(42.0, null)!!, 0.0)
+  }
+
+  @Test
+  fun foregroundRecoveryFallsBackOnlyWhenLivePositionIsUnavailable() {
+    assertEquals(10.0, PlayerLifecyclePolicy.foregroundRecoveryPositionSeconds(null, 10.0)!!, 0.0)
+    assertEquals(10.0, PlayerLifecyclePolicy.foregroundRecoveryPositionSeconds(Double.NaN, 10.0)!!, 0.0)
+    assertEquals(0.0, PlayerLifecyclePolicy.foregroundRecoveryPositionSeconds(0.0, 10.0)!!, 0.0)
+    assertEquals(null, PlayerLifecyclePolicy.foregroundRecoveryPositionSeconds(null, null))
+  }
+
   // Owner report (build 1906): the first minimize after a fresh install stopped the song. Audio
   // background playback defaults to off, and onDestroy only kept the session for that preference,
   // so the Mini Player handoff was torn down and the queue cleared.

@@ -541,7 +541,8 @@ fun InAppMusicPlayerSheet(
   val density = LocalDensity.current
   val slidePx = with(density) { 24.dp.toPx() }
   val miniBackground = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.96f)
-  val fullBackground = MaterialTheme.colorScheme.surface
+  // Use the custom theme's panel tint as an opaque player-local cover; the root backdrop stays intact.
+  val fullBackground = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 1f)
   Box(
     modifier =
       modifier

@@ -21,6 +21,7 @@ import app.infinity.mpvz.ui.player.PlaybackItem
 import app.infinity.mpvz.ui.player.PlayerActivity
 import app.infinity.mpvz.ui.player.PlayerLookupHints
 import app.infinity.mpvz.ui.player.PreparedPlaybackLaunchStore
+import app.infinity.mpvz.ui.player.isHdrOrDolbyVisionMetadata
 import app.infinity.mpvz.ui.torrent.TorrentSelectionActivity
 import app.infinity.mpvz.utils.storage.FileTypeUtils
 import `is`.xyz.mpv.Utils
@@ -78,6 +79,14 @@ object MediaUtils {
           stableId = video.path.takeIf(String::isNotBlank)?.let(PlaybackIdentity::forLocalPath),
           title = video.displayName,
           mimeType = video.mimeType,
+          hdrMetadata =
+            isHdrOrDolbyVisionMetadata(
+              video.title,
+              video.displayName,
+              video.path,
+              video.videoCodec,
+              video.videoCodecMimeType,
+            ),
         )
       }
     val launchToken =
@@ -101,6 +110,16 @@ object MediaUtils {
         putExtra("local_media_path", selected.path)
         putExtra(PlayerActivity.EXTRA_VIDEO_WIDTH, selected.width)
         putExtra(PlayerActivity.EXTRA_VIDEO_HEIGHT, selected.height)
+        putExtra(
+          "is_hdr",
+          isHdrOrDolbyVisionMetadata(
+            selected.title,
+            selected.displayName,
+            selected.path,
+            selected.videoCodec,
+            selected.videoCodecMimeType,
+          ),
+        )
       }
     context.startActivity(intent)
   }
@@ -171,6 +190,16 @@ object MediaUtils {
           intent.putExtra("is_audio", source.isAudio)
           intent.putExtra(PlayerActivity.EXTRA_VIDEO_WIDTH, source.width)
           intent.putExtra(PlayerActivity.EXTRA_VIDEO_HEIGHT, source.height)
+          intent.putExtra(
+            "is_hdr",
+            isHdrOrDolbyVisionMetadata(
+              source.title,
+              source.displayName,
+              source.path,
+              source.videoCodec,
+              source.videoCodecMimeType,
+            ),
+          )
           applyPlaybackExtras(
             intent = intent,
             launchSource = launchSource,

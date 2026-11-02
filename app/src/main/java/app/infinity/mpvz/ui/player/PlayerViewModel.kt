@@ -222,6 +222,7 @@ class PlayerViewModel(
       Anime4KUiState(
         isEnabled = decoderPreferences.enableAnime4K.get(),
         selectedMode = decoderPreferences.anime4kMode.get(),
+        selectedQuality = decoderPreferences.anime4kQuality.get(),
         usesGpuNext = decoderPreferences.gpuNext.get(),
         usesVulkan = decoderPreferences.useVulkan.get(),
         enableIn4k = decoderPreferences.anime4kIn4k.get(),
@@ -242,6 +243,8 @@ class PlayerViewModel(
         usesVulkan = useVulkan,
         enableIn4k = enableIn4k,
       )
+    }.combine(decoderPreferences.anime4kQuality.changes()) { state, quality ->
+      state.copy(selectedQuality = quality)
     }
 
   val anime4KUiState =
@@ -6687,6 +6690,15 @@ class PlayerViewModel(
         Log.e(TAG, "Failed to apply Anime4K mode ${mode.name}", error)
       }
     }
+  }
+
+  fun selectAnime4KQuality(quality: Anime4KManager.Quality) {
+    if (MpvConfigOverridePolicy.ownsAny(MpvConfigControlledFeatures.ANIME4K)) return
+    decoderPreferences.anime4kQuality.set(quality)
+    val currentMode =
+      runCatching { Anime4KManager.Mode.valueOf(decoderPreferences.anime4kMode.get()) }
+        .getOrDefault(Anime4KManager.Mode.OFF)
+    selectAnime4KMode(currentMode)
   }
 
   /**

@@ -40,6 +40,18 @@ internal fun resolvePlaybackMimeType(intentMimeType: String?, mimeTypeExtra: Str
   intentMimeType?.trim()?.takeIf { it.isNotEmpty() }
     ?: mimeTypeExtra?.trim()?.takeIf { it.isNotEmpty() }
 
+internal fun mergePlaybackLaunchMetadata(
+  item: PlaybackItem,
+  videoWidth: Int?,
+  videoHeight: Int?,
+  hdrMetadata: Boolean?,
+): PlaybackItem =
+  item.copy(
+    videoWidth = item.videoWidth ?: videoWidth,
+    videoHeight = item.videoHeight ?: videoHeight,
+    hdrMetadata = if (item.hdrMetadata == true || hdrMetadata == true) true else item.hdrMetadata,
+  )
+
 data class AudiobookPlaybackInfo(
   val bookId: Long,
   val trackId: Long,
@@ -158,9 +170,11 @@ internal fun PlaybackItem.isDefinitelyAudioOnly(): Boolean =
  */
 internal fun PlaybackItem.isHdrOrDolbyVision(): Boolean {
   if (hdrMetadata == true) return true
-  val metadata = sequenceOf(title, mimeType, originalUri, playableUri).filterNotNull().joinToString(" ")
-  return HDR_MARKERS.any { marker -> metadata.contains(marker, ignoreCase = true) }
+  return isHdrOrDolbyVisionMetadata(title, mimeType, originalUri, playableUri)
 }
+
+internal fun isHdrOrDolbyVisionMetadata(vararg values: String?): Boolean =
+  values.filterNotNull().any { value -> HDR_MARKERS.any { marker -> value.contains(marker, ignoreCase = true) } }
 
 internal fun resolvePlaybackEngineMode(
   configuredEngine: PlaybackEngineMode,

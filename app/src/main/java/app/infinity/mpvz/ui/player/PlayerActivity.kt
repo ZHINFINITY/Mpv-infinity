@@ -1799,14 +1799,10 @@ class PlayerActivity :
               currentQueueItem?.isDefinitelyAudioOnly() == true ||
                 currentQueueItem?.declaredMediaKind() == DeclaredPlaybackMediaKind.AUDIO ->
                 PlaybackEngineMode.MPV
-              engine == PlaybackEngineMode.AUTO ->
-                if (currentQueueItem?.isHdrOrDolbyVision() == true &&
-                  currentQueueItem.requiresTorrentResolution().not()
-                ) {
-                  PlaybackEngineMode.NATIVE
-                } else {
-                  PlaybackEngineMode.MPV
-                }
+              engine == PlaybackEngineMode.AUTO && currentQueueItem?.requiresTorrentResolution() == true ->
+                PlaybackEngineMode.MPV
+              currentQueueItem != null -> resolvePlaybackEngineMode(engine, currentQueueItem)
+              engine == PlaybackEngineMode.AUTO -> PlaybackEngineMode.MPV
               else -> engine
             }
           // AUTO is a preference, not a renderer. Resolve it before comparing with the active
@@ -4347,11 +4343,19 @@ class PlayerActivity :
     val launch = acceptedPreparedPlaybackLaunch ?: return false
     acceptedPreparedPlaybackLaunch = null
     val requestedIndex = sourceIntent.getIntExtra("playlist_index", launch.currentIndex)
-    val currentItem = launch.items.getOrNull(requestedIndex) ?: return false
-    if (sourceIntent.data?.toString() != currentItem.originalUri) return false
+    val stagedCurrentItem = launch.items.getOrNull(requestedIndex) ?: return false
+    if (sourceIntent.data?.toString() != stagedCurrentItem.originalUri) return false
+    val currentItem =
+      mergePlaybackLaunchMetadata(
+        item = stagedCurrentItem,
+        videoWidth = intentVideoDimension(sourceIntent, "width"),
+        videoHeight = intentVideoDimension(sourceIntent, "height"),
+        hdrMetadata = intentHdrMetadata(sourceIntent),
+      )
+    val restoredItems = launch.items.toMutableList().also { it[requestedIndex] = currentItem }
 
     PlaybackSession.replaceQueue(
-      items = launch.items,
+      items = restoredItems,
       currentIndex = requestedIndex,
       isExplicitQueue = launch.isExplicitQueue,
       isM3u = launch.isM3u,
@@ -4361,14 +4365,14 @@ class PlayerActivity :
     playlistItems = emptyList()
     playlistEntity = null
     isM3uPlaylist = launch.isM3u
-    playlist = launch.items.map { item -> Uri.parse(NetworkPlaybackUri.normalize(item.originalUri)) }
+    playlist = restoredItems.map { item -> Uri.parse(NetworkPlaybackUri.normalize(item.originalUri)) }
     playlistIndex = requestedIndex
     playlistWindowOffset = 0
     playlistTotalCount = playlist.size
-    networkPlaylistPaths = launch.items.map { item -> item.networkSource?.relativePath.orEmpty() }
-    networkPlaylistTitles = launch.items.map { item -> item.title.orEmpty() }
-    networkPlaylistArtworkUrls = launch.items.map { item -> item.artworkUri.orEmpty() }
-    networkPlaylistHeaders = launch.items.map(PlaybackItem::headers)
+    networkPlaylistPaths = restoredItems.map { item -> item.networkSource?.relativePath.orEmpty() }
+    networkPlaylistTitles = restoredItems.map { item -> item.title.orEmpty() }
+    networkPlaylistArtworkUrls = restoredItems.map { item -> item.artworkUri.orEmpty() }
+    networkPlaylistHeaders = restoredItems.map(PlaybackItem::headers)
     networkPlaylistConnectionId = currentItem.networkSource?.connectionId ?: -1L
     return true
   }
@@ -5411,6 +5415,20 @@ class PlayerActivity :
     return true
   }
 
+  private fun currentForegroundRecoveryPositionSeconds(): Double? {
+    val session = PlaybackSession.state.value
+    if (
+      mediaIdentifier.isBlank() ||
+      session.phase !in setOf(PlaybackPhase.READY, PlaybackPhase.BACKGROUND) ||
+      session.currentItem?.stableId != mediaIdentifier
+    ) return null
+    if (isNativeEngineActive()) {
+      val positionMs = nativeEngineOrNull()?.positionForPersistenceMs() ?: return null
+      return positionMs.takeIf { it >= 0L }?.div(1000.0)
+    }
+    return PlaybackSession.getPropertyDouble("time-pos")
+  }
+
   private fun rebuildRendererAfterLongBackground() {
     val playable = currentPlayableUri?.takeIf { it.isNotBlank() } ?: intent?.dataString?.takeIf { it.isNotBlank() }
     if (playable.isNullOrBlank() || isFinishing || isDestroyed || !ownsPlaybackSession()) return
@@ -5422,9 +5440,10 @@ class PlayerActivity :
     val captured = pendingForegroundResumePositionSeconds
     pendingForegroundResumePositionSeconds = null
     val positionSeconds =
-      captured
-        ?: if (isNativeEngineActive()) nativePlaybackPositionSeconds()
-        else PlaybackSession.getPropertyDouble("time-pos") ?: 0.0
+      PlayerLifecyclePolicy.foregroundRecoveryPositionSeconds(
+        livePositionSeconds = currentForegroundRecoveryPositionSeconds(),
+        capturedSnapshotSeconds = captured,
+      ) ?: 0.0
     val restore = PlaybackPositionRestoreOverride(
       positionSeconds = positionSeconds.takeIf { it.isFinite() && it > 0.0 },
       paused = paused,
@@ -8183,10 +8202,8 @@ class PlayerActivity :
     val selectedEngine =
       when {
         playbackItem.isDefinitelyAudioOnly() -> PlaybackEngineMode.MPV
-        isStreamTabPlayback && !requiresYtdlp && item.declaredMediaKind() == DeclaredPlaybackMediaKind.VIDEO -> PlaybackEngineMode.NATIVE
-        configuredEngine == PlaybackEngineMode.AUTO ->
-          if (item.isHdrOrDolbyVision()) PlaybackEngineMode.NATIVE else PlaybackEngineMode.MPV
-        else -> configuredEngine
+        isStreamTabPlayback && !requiresYtdlp && playbackItem.declaredMediaKind() == DeclaredPlaybackMediaKind.VIDEO -> PlaybackEngineMode.NATIVE
+        else -> resolvePlaybackEngineMode(configuredEngine, playbackItem)
       }
     val nativeResolvedUri =
       if (selectedEngine == PlaybackEngineMode.NATIVE && requiresYtdlp) {
@@ -10782,8 +10799,13 @@ class PlayerActivity :
   }
 
   private fun restoreForegroundResumePositionIfNeeded() {
-    val seconds = PlayerLifecyclePolicy.resumePositionSeconds(pendingForegroundResumePositionSeconds) ?: return
+    val captured = PlayerLifecyclePolicy.resumePositionSeconds(pendingForegroundResumePositionSeconds)
     if (currentPlaybackIsAudioMedia() || isFinishing || isDestroyed || !ownsPlaybackSession()) return
+    val seconds =
+      PlayerLifecyclePolicy.foregroundRecoveryPositionSeconds(
+        livePositionSeconds = currentForegroundRecoveryPositionSeconds(),
+        capturedSnapshotSeconds = captured,
+      ) ?: return
     if (isNativeEngineActive()) {
       nativeEngineOrNull()?.seekTo((seconds * 1000.0).toLong())
     } else {

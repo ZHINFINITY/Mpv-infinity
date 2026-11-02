@@ -27,7 +27,7 @@ class ReferenceUiRollbackContractTest {
   @Test fun preservedPlayerSourcesKeepPinnedFingerprints() {
     val expected = mapOf(
       // Build 1910 smoothness: chapter index via derivedStateOf so position ticks do not recompose the whole overlay.
-      "app/src/main/java/app/infinity/mpvz/ui/player/controls/PlayerControls.kt" to "3ff3bd6e586f03fbded16e85c7d21042689e767362a1996d4d5a33fd3774e447" /* music entry hides stats via StatsLuaOverlay (no blind toggle, saved page kept); before that: 1901 (380a778b) stats overlay + music-entry stats hide restored; clean-room BrowserMusicSheetState replaces the mpvRx sheet type; outer-container preference now gates the track glass rail */,
+      "app/src/main/java/app/infinity/mpvz/ui/player/controls/PlayerControls.kt" to "759bb9517eed28aebbd29a427e611964f7af18e019260cec6569c324db08b57b" /* Owner-requested portrait layout moves the transport and player-control groups together above/below the seekbar; retains prior video and music control behavior */,
       // Owner follow-up: music uses its legacy visual rail while video retains the global-glass path.
       "app/src/main/java/app/infinity/mpvz/ui/player/controls/components/Seekbar.kt" to "5e3cbc03be3aa7b35f464e0ee313615192d8d1cdcfbc7e8a819b7a6c2331843c",
       // Build 1910: shared rimLight/thick-surface routing is intentionally owned by this stream.

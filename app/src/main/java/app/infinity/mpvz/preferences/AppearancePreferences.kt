@@ -76,7 +76,8 @@ class AppearancePreferences(
   val playerControlsTheme = preferenceStore.getEnum("player_controls_theme", PlayerControlsTheme.Classic)
   val showSeekbarOuterContainer = preferenceStore.getBoolean("show_seekbar_outer_container", false)
   val portraitPlaybackControlsPosition =
-    preferenceStore.getEnum("portrait_playback_controls_position", PortraitPlaybackControlsPosition.Center)
+    preferenceStore.getEnum("portrait_playback_controls_position", PortraitPlaybackControlsPosition.AboveSeekbar)
+  val timeNetworkPillExpanded = preferenceStore.getBoolean("time_network_pill_expanded", false)
   val showHomeTab = preferenceStore.getBoolean("show_home_tab", true)
   val showMusicTab = preferenceStore.getBoolean("show_music_tab", true)
   val showRecentsTab = preferenceStore.getBoolean("show_recents_tab", true)
@@ -177,8 +178,8 @@ class AppearancePreferences(
 enum class PortraitPlaybackControlsPosition(
   val displayName: String,
 ) {
-  Center("Center of screen"),
-  BelowSeekbar("Between seekbar and controls"),
+  AboveSeekbar("Above seekbar"),
+  BelowSeekbar("Below seekbar"),
 }
 
 @Composable

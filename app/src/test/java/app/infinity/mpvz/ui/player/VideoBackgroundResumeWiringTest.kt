@@ -103,17 +103,47 @@ class VideoBackgroundResumeWiringTest {
   }
 
   @Test
-  fun rebuildReloadsAtCapturedPositionAndKeepsPause() {
+  fun rebuildUsesLivePositionBeforeTheOnStopSnapshotAndKeepsPause() {
     assertInOrder(
       body("private fun rebuildRendererAfterLongBackground()"),
       "val captured = pendingForegroundResumePositionSeconds",
-      "if (isNativeEngineActive()) nativePlaybackPositionSeconds()",
-      "else PlaybackSession.getPropertyDouble(\"time-pos\")",
+      "pendingForegroundResumePositionSeconds = null",
+      "PlayerLifecyclePolicy.foregroundRecoveryPositionSeconds(",
+      "livePositionSeconds = currentForegroundRecoveryPositionSeconds()",
+      "capturedSnapshotSeconds = captured",
       "PlaybackPositionRestoreOverride(",
       "positionSeconds = positionSeconds.takeIf { it.isFinite() && it > 0.0 }",
       "paused = paused",
       "startMediaLoad(",
       "positionRestoreOverride = restore",
+    )
+  }
+
+  @Test
+  fun shortForegroundReturnUsesLivePositionFromTheCurrentRenderer() {
+    val restore = body("private fun restoreForegroundResumePositionIfNeeded()")
+    assertInOrder(
+      restore,
+      "val captured = PlayerLifecyclePolicy.resumePositionSeconds(pendingForegroundResumePositionSeconds)",
+      "PlayerLifecyclePolicy.foregroundRecoveryPositionSeconds(",
+      "livePositionSeconds = currentForegroundRecoveryPositionSeconds()",
+      "capturedSnapshotSeconds = captured",
+      "PlaybackSession.setPropertyDouble(\"time-pos\", seconds)",
+    )
+    assertTrue(
+      "missing stop snapshot must not short-circuit live position recovery",
+      !restore.contains("resumePositionSeconds(pendingForegroundResumePositionSeconds) ?: return"),
+    )
+
+    assertInOrder(
+      body("private fun currentForegroundRecoveryPositionSeconds()"),
+      "val session = PlaybackSession.state.value",
+      "mediaIdentifier.isBlank()",
+      "session.phase !in setOf(PlaybackPhase.READY, PlaybackPhase.BACKGROUND)",
+      "session.currentItem?.stableId != mediaIdentifier",
+      "if (isNativeEngineActive())",
+      "positionForPersistenceMs()",
+      "PlaybackSession.getPropertyDouble(\"time-pos\")",
     )
   }
 
