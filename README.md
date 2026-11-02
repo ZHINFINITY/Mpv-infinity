@@ -28,7 +28,7 @@ Mpv∞ includes a native **Jellyfin Client** for connecting to Jellyfin media se
 </p>
 
 > [!IMPORTANT]
-> **Mpv∞ v2.2.0, the Smooth Motion Update, is out.** [Download it from Releases](https://github.com/ZHINFINITY/Mpv-infinity/releases/tag/v2.2.0).
+> **Mpv∞ v2.2.3 is out.** [Download it from Releases](https://github.com/ZHINFINITY/Mpv-infinity/releases/tag/v2.2.3).
 >
 > For smooth motion (frame interpolation) in the MPV player, install the **arm64-v8a** APK, the right one for almost all modern phones. The other APKs don't include smooth motion for the MPV player.
 
