@@ -610,6 +610,19 @@ import android.graphics.Shader
     assertTrue(sheet.contains("glassContainerColor = if (!isDefault) MaterialTheme.colorScheme.tertiaryContainer else null"))
     assertTrue(sheet.contains("glassContentColor = if (!isDefault) MaterialTheme.colorScheme.tertiary else null"))
   }
+  @Test fun playerChipsPassSelectedMaterialColorsIntoGlassMode() {
+    val lyrics = read("app/src/main/java/app/infinity/mpvz/ui/player/controls/components/LyricsView.kt")
+    assertTrue(lyrics.contains("glassContainerColor = if (embeddedSelected) MaterialTheme.colorScheme.primaryContainer else null"))
+    assertTrue(lyrics.contains("glassContentColor = if (onlineSelected) MaterialTheme.colorScheme.onPrimaryContainer else null"))
+
+    val controls = read("app/src/main/java/app/infinity/mpvz/ui/player/controls/AudioPlayerControls.kt")
+    assertTrue(controls.contains("glassContainerColor = if (selectedTab == 0) MaterialTheme.colorScheme.primaryContainer else null"))
+    assertTrue(controls.contains("glassContentColor = if (selectedTab == 1) MaterialTheme.colorScheme.onPrimaryContainer else null"))
+
+    val translation = read("app/src/main/java/app/infinity/mpvz/ui/player/controls/components/sheets/LyricsTranslateDialog.kt")
+    assertTrue(translation.contains("glassContainerColor = if (displayMode == LyricsTranslationDisplayMode.DualLine) MaterialTheme.colorScheme.primaryContainer else null"))
+    assertTrue(translation.contains("glassContentColor = if (displayMode == LyricsTranslationDisplayMode.Replace) MaterialTheme.colorScheme.onPrimaryContainer else null"))
+  }
   @Test fun expressiveNavigationBodyAndBrowserLensMatchReference() {
     val navigation = read("app/src/main/java/app/infinity/mpvz/ui/browser/MainScreen.kt")
     val start = navigation.indexOf("private fun ExpressivePillNavigationBar(")

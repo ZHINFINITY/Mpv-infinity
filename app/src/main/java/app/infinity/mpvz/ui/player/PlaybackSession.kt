@@ -540,7 +540,7 @@ object PlaybackSession : MPVLib.EventObserver {
   }
 
   /** Stop only the still-current failed handoff while holding the session lock across cleanup. */
-  fun stopIfCurrentIdentity(
+  internal fun stopIfCurrentIdentity(
     expected: PlayerLifecyclePolicy.FailedForegroundPromotionIdentity,
     beforeStop: () -> Unit,
   ): Boolean =

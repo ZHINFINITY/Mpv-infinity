@@ -177,6 +177,8 @@ fun LyricsTranslateDialog(
               selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
               selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer,
             ),
+            glassContainerColor = if (displayMode == LyricsTranslationDisplayMode.DualLine) MaterialTheme.colorScheme.primaryContainer else null,
+            glassContentColor = if (displayMode == LyricsTranslationDisplayMode.DualLine) MaterialTheme.colorScheme.onPrimaryContainer else null,
           )
           GlassChip(
             selected = displayMode == LyricsTranslationDisplayMode.Replace,
@@ -187,6 +189,8 @@ fun LyricsTranslateDialog(
               selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
               selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer,
             ),
+            glassContainerColor = if (displayMode == LyricsTranslationDisplayMode.Replace) MaterialTheme.colorScheme.primaryContainer else null,
+            glassContentColor = if (displayMode == LyricsTranslationDisplayMode.Replace) MaterialTheme.colorScheme.onPrimaryContainer else null,
           )
         }
 
