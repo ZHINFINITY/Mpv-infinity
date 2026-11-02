@@ -18,11 +18,10 @@ import androidx.media3.exoplayer.drm.DrmSessionManagerProvider
 import androidx.media3.test.utils.FakeMediaSource
 import androidx.media3.exoplayer.source.MediaSource
 import androidx.media3.exoplayer.source.TrackGroupArray
-import androidx.media3.exoplayer.text.SubtitleDecoderFactory
-import androidx.media3.exoplayer.text.TextRenderer
 import androidx.media3.exoplayer.upstream.LoadErrorHandlingPolicy
 import androidx.media3.test.utils.FakeAudioRenderer
 import androidx.media3.test.utils.FakeClock
+import androidx.media3.test.utils.FakeRenderer
 import androidx.media3.test.utils.FakeTimeline
 import androidx.media3.test.utils.FakeVideoRenderer
 import androidx.media3.test.utils.FakeSampleStream.FakeSampleStreamItem
@@ -111,7 +110,8 @@ class NativeMedia3EngineReloadBehaviorTest {
               arrayOf<Renderer>(
                 FakeVideoRenderer(rendererHandler, videoListener),
                 FakeAudioRenderer(rendererHandler, audioListener),
-                TextRenderer(textOutput, eventHandler.looper, SubtitleDecoderFactory.DEFAULT),
+                // Track-selection coverage only; this test does not exercise legacy subtitle decoding.
+                FakeRenderer(C.TRACK_TYPE_TEXT),
               )
             },
           )
