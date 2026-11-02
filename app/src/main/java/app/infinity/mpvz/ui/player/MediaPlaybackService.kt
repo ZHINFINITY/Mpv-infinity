@@ -725,7 +725,7 @@ class MediaPlaybackService :
 
     val stoppedCurrentSession = PlaybackSession.stopIfCurrentIdentity(failedIdentity) {
       runCatching { torrentStreamingEngine.stopStream() }
-      .onFailure { error -> Log.e(TAG, "Error stopping torrent stream after failed foreground promotion", error) }
+        .onFailure { error -> Log.e(TAG, "Error stopping torrent stream after failed foreground promotion", error) }
     }
     if (!stoppedCurrentSession) {
       failedPromotionHandoffState.discardStaleFor(captureFailedPromotionIdentity())
