@@ -57,6 +57,27 @@ class NativeInterpolationRuntimePolicyTest {
     assertFalse(shouldRelease(previous = false, current = true, nativePassthrough = true))
   }
 
+  @Test fun restartFrameWaitAcceptsOnlyTheMatchingCurrentItemSignal() {
+    val expected = NativePlaybackErrorToken(mediaItemEpoch = 8L, playbackGeneration = 3L)
+    val stale = NativePlaybackErrorToken(mediaItemEpoch = 7L, playbackGeneration = 3L)
+    assertEquals(
+      NativeRestartFrameOutcome.RENDERED,
+      nativeRestartFrameOutcome(expected, null, expected, currentEpoch = 8L, currentPlaybackGeneration = 3L),
+    )
+    assertEquals(
+      NativeRestartFrameOutcome.ERROR,
+      nativeRestartFrameOutcome(null, expected, expected, currentEpoch = 8L, currentPlaybackGeneration = 3L),
+    )
+    assertEquals(
+      NativeRestartFrameOutcome.WAITING,
+      nativeRestartFrameOutcome(stale, null, expected, currentEpoch = 8L, currentPlaybackGeneration = 3L),
+    )
+    assertEquals(
+      NativeRestartFrameOutcome.WAITING,
+      nativeRestartFrameOutcome(null, stale, expected, currentEpoch = 8L, currentPlaybackGeneration = 3L),
+    )
+  }
+
   @Test fun actualSinkConstructionAndAcknowledgementUsePersistedStateAndEligibility() {
     val root = generateSequence(File(requireNotNull(System.getProperty("user.dir")))) { it.parentFile }
       .first { File(it, "app/src/main/java/app/infinity/mpvz").isDirectory }
@@ -99,9 +120,29 @@ class NativeInterpolationRuntimePolicyTest {
     val releaseIndex = apply.indexOf("flowSink.clearOutputSurfaceInfoAndAwait()")
     val reselectIndex = apply.indexOf("nativeTrackSelector.invalidateRendererEligibility()")
     assertTrue(releaseIndex >= 0 && reselectIndex >= 0 && releaseIndex < reselectIndex)
+    assertTrue(apply.contains("withContext(Dispatchers.IO) { flowSink.clearOutputSurfaceInfoAndAwait() }"))
+    val failedRelease = apply.indexOf("if (!withContext(Dispatchers.IO)")
+    val failedReturn = apply.indexOf(
+      "return NativeInterpolationRuntimeApplyOutcome.OUTPUT_SURFACE_RELEASE_FAILED",
+      failedRelease,
+    )
+    assertTrue(failedRelease >= 0 && failedReturn > failedRelease && failedReturn < reselectIndex)
+    assertTrue(engine.contains("combine(_renderedFirstFrameToken, _currentPlaybackErrorToken)"))
+    assertTrue(engine.contains("_renderedFirstFrameToken.value = itemToken"))
     val clearSurface = sink.substringAfter("internal fun clearOutputSurfaceInfoAndAwait()").substringBefore("\n  override fun")
     assertTrue(clearSurface.contains("destroyWindowSurface { releaseFence.countDown() }"))
     assertTrue(clearSurface.contains("releaseFence.await(GL_INIT_TIMEOUT_MS, TimeUnit.MILLISECONDS)"))
+  }
+
+  @Test fun nativeSnapshotsMarkKnownEmptyChaptersSoStaleMpvChaptersAreCleared() {
+    val root = generateSequence(File(requireNotNull(System.getProperty("user.dir")))) { it.parentFile }
+      .first { File(it, "app/src/main/java/app/infinity/mpvz").isDirectory }
+    val base = File(root, "app/src/main/java/app/infinity/mpvz/ui/player")
+    val engine = File(base, "NativeMedia3Engine.kt").readText()
+    val viewModel = File(base, "PlayerViewModel.kt").readText()
+    assertTrue(engine.contains("chaptersKnown = true"))
+    assertTrue(viewModel.contains("if (snapshot.chaptersKnown)"))
+    assertTrue(viewModel.contains("nativeChapters.value = snapshot.chapters.map"))
   }
 
   @Test fun startupUsesPersistedInterpolationStateBeforeRendererSelection() {

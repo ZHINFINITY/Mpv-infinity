@@ -29,30 +29,24 @@ object AudioLandscapeLayoutPolicy {
     val height = availableHeightDp.coerceAtLeast(0f)
     val header = 44f
     val seekbar = 40f
-    val gap = 4f
     val main = (height * 0.17f).coerceIn(48f, 72f)
     // Extras give up height first on short displays, but never below a usable target.
     val extras = (height * 0.12f).coerceIn(minTouchTargetDp, 48f)
-    val metadata = (height - header - seekbar - main - extras - gap * 4)
-      .coerceAtLeast(64f)
-      .coerceAtMost(112f)
-    val fixed = header + metadata + seekbar + main + extras + gap * 4
-    val overflow = (fixed - height).coerceAtLeast(0f)
-    val reducedMetadata = (metadata - overflow).coerceAtLeast(56f)
-    val finalFixed = header + reducedMetadata + seekbar + main + extras + gap * 4
-    val finalExtras = if (finalFixed > height) {
-      (extras - (finalFixed - height)).coerceAtLeast(minTouchTargetDp)
-    } else extras
+    val fixedRows = header + seekbar + main + extras
+    val gap = minOf(4f, ((height - fixedRows) / 4f).coerceAtLeast(0f))
+    // Metadata is the flexible row: it may collapse to zero instead of overflowing the safe
+    // viewport, while the seekbar and both essential control rows keep their minimum sizes.
+    val metadata = (height - fixedRows - gap * 4).coerceIn(0f, 112f)
     val artwork = (height - 8f).coerceAtLeast(minArtworkDp)
       .coerceAtMost(availableWidthDp * 0.40f)
 
     return Metrics(
       artworkDp = artwork,
       headerDp = header,
-      metadataDp = reducedMetadata,
+      metadataDp = metadata,
       seekbarDp = seekbar,
       mainRowDp = main,
-      extrasRowDp = finalExtras,
+      extrasRowDp = extras,
       gapDp = gap,
     )
   }

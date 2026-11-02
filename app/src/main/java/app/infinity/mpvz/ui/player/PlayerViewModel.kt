@@ -636,6 +636,7 @@ class PlayerViewModel(
   private var nativeAudioToggleListener: ((Int) -> Unit)? = null
   fun setNativeEngineActive(active: Boolean) {
     activePlaybackEngine.value = if (active) PlaybackEngineMode.NATIVE else PlaybackEngineMode.MPV
+    if (active) nativeChapters.value = emptyList()
   }
 
   fun setNativeTracks(snapshot: NativePlaybackSnapshot) {
@@ -688,7 +689,7 @@ class PlayerViewModel(
     }
     // Media3 does not expose Matroska Chapters for every extractor/source. Do not erase a chapter
     // list already obtained from mpv while the native engine is still preparing its tracks.
-    if (snapshot.chapters.isNotEmpty()) {
+    if (snapshot.chaptersKnown) {
       nativeChapters.value = snapshot.chapters.map { chapter ->
         Segment(chapter.title, chapter.startSeconds)
       }
@@ -786,8 +787,11 @@ class PlayerViewModel(
     }.stateIn(viewModelScope, SharingStarted.Eagerly, persistentListOf())
 
   val videoQualityTracks: StateFlow<List<TrackNode>> =
-    combine(allTracks, PlaybackSession.state) { tracks, session ->
+    combine(allTracks, PlaybackSession.state, activePlaybackEngine) { tracks, session, activeEngine ->
       val item = session.currentItem
+      if (activeEngine == PlaybackEngineMode.NATIVE) {
+        return@combine persistentListOf()
+      }
       val isNetworkStream =
         sequenceOf(item?.originalUri, item?.playableUri)
           .filterNotNull()
@@ -826,6 +830,7 @@ class PlayerViewModel(
       .stateIn(viewModelScope, SharingStarted.Eagerly, false)
 
   fun selectVideoQuality(track: TrackNode) {
+    if (activePlaybackEngine.value == PlaybackEngineMode.NATIVE) return
     if (currentItemRequiresYtdlp() && !MpvConfigOverridePolicy.isOwnedByMpvConf("ytdl-format")) {
       val selectedAudio = pairedYtdlTrack(track, TrackNode::isAudio)
         ?: allTracks.value.firstOrNull { candidate -> candidate.isAudio && candidate.isSelected }
@@ -851,6 +856,7 @@ class PlayerViewModel(
       nativeAudioToggleListener?.invoke(track.id)
       return
     }
+    if (track.id <= 0) return
     if (getTrackSelectionId("aid") == track.id) {
       setTrackSelectionId("aid", null)
       return
@@ -993,7 +999,7 @@ class PlayerViewModel(
           audiobookChapters.map { chapter ->
             Segment(chapter.title, chapter.bookStartMs / 1000f)
           }
-        activeEngine == PlaybackEngineMode.NATIVE && native.isNotEmpty() -> native
+        activeEngine == PlaybackEngineMode.NATIVE -> native
         else -> mpv
       }
     }.stateIn(viewModelScope, SharingStarted.Eagerly, persistentListOf())

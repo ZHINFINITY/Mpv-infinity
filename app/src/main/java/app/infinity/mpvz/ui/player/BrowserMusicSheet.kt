@@ -118,6 +118,7 @@ class BrowserMusicSheetState internal constructor(
     if (!isAvailable) return
     releaseContentJob?.cancel()
     isContentComposed = true
+    if (!isShowing) scheduleContentReleaseAfterCollapse()
   }
 
   /** Opens the full player. Safe to call while a collapse is still animating; it turns around. */
@@ -233,6 +234,10 @@ class BrowserMusicSheetState internal constructor(
   private fun onRested() {
     if (motion.phase != MusicSheetPhase.Collapsed) return
     releaseContentJob?.cancel()
+    scheduleContentReleaseAfterCollapse()
+  }
+
+  private fun scheduleContentReleaseAfterCollapse() {
     releaseContentJob =
       scope.launch {
         delay(keepContentAfterCollapseMs)
@@ -347,6 +352,13 @@ object MusicSheetInputPolicy {
   /** Only a showing sheet, or one mid-flight, is on screen and may take touches. */
   fun isOnScreen(isShowing: Boolean, progress: Float): Boolean = isShowing || progress > 0f
 
+  internal fun isAvailable(
+    serviceActive: Boolean,
+    phase: PlaybackPhase,
+    currentItemKind: DeclaredPlaybackMediaKind?,
+  ): Boolean = serviceActive && phase in SheetPhases &&
+    currentItemKind != DeclaredPlaybackMediaKind.VIDEO
+
   /** Mini-player drags may open an available sheet; full-page drags need a visible sheet. */
   fun mayBeginDrag(fromMiniPlayer: Boolean, isAvailable: Boolean, isShowing: Boolean): Boolean =
     if (fromMiniPlayer) isAvailable || isShowing else isShowing
@@ -370,7 +382,11 @@ fun Modifier.hiddenUnderBrowserMusicSheet(state: BrowserMusicSheetState): Modifi
 fun BrowserMusicSheet(state: BrowserMusicSheetState) {
   val session by PlaybackSession.state.collectAsStateWithLifecycle()
   val serviceActive by MediaPlaybackService.foregroundActive.collectAsStateWithLifecycle()
-  val available = serviceActive && session.phase in SheetPhases
+  val available = MusicSheetInputPolicy.isAvailable(
+    serviceActive = serviceActive,
+    phase = session.phase,
+    currentItemKind = session.currentItem?.declaredMediaKind(),
+  )
   LaunchedEffect(available) { state.updateAvailability(available) }
 
   BackHandler(enabled = state.isShowing) { state.collapse() }

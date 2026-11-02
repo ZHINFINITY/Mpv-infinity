@@ -58,7 +58,10 @@ import io.github.peerless2012.ass.media.kt.withAssSupport
 import io.github.peerless2012.ass.media.parser.AssSubtitleParserFactory
 import io.github.peerless2012.ass.media.type.AssRenderType
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -127,6 +130,7 @@ data class NativePlaybackSnapshot(
   val subtitleTracks: List<NativeTrack> = emptyList(),
   val audioTracks: List<NativeTrack> = emptyList(),
   val chapters: List<NativeChapter> = emptyList(),
+  val chaptersKnown: Boolean = false,
 )
 
 data class NativeTrack(
@@ -145,6 +149,27 @@ data class NativeTrack(
   val isForced: Boolean = false,
   val hearingImpaired: Boolean = false,
 )
+
+internal enum class NativeRestartFrameOutcome { WAITING, RENDERED, ERROR }
+
+internal fun nativeRestartFrameOutcome(
+  frameToken: NativePlaybackErrorToken?,
+  errorToken: NativePlaybackErrorToken?,
+  expectedToken: NativePlaybackErrorToken,
+  currentEpoch: Long,
+  currentPlaybackGeneration: Long,
+): NativeRestartFrameOutcome {
+  fun isCurrent(token: NativePlaybackErrorToken) = PlaybackItemEpochPolicy.isCurrent(
+    token,
+    currentEpoch = currentEpoch,
+    currentPlaybackGeneration = currentPlaybackGeneration,
+  )
+  return when {
+    frameToken != null && frameToken == expectedToken && isCurrent(frameToken) -> NativeRestartFrameOutcome.RENDERED
+    errorToken != null && errorToken == expectedToken && isCurrent(errorToken) -> NativeRestartFrameOutcome.ERROR
+    else -> NativeRestartFrameOutcome.WAITING
+  }
+}
 
 internal fun media3ContentAspectRatio(customRatio: Double?): Float =
   customRatio?.toFloat()?.takeIf { it.isFinite() && it > 0f } ?: 0f
@@ -434,6 +459,7 @@ class NativeMedia3Engine(
   private var selectedNativeSubtitleKey: Pair<Int, Int>? = null
   private val _hasRenderedFirstFrame = MutableStateFlow(false)
   val hasRenderedFirstFrame: StateFlow<Boolean> = _hasRenderedFirstFrame.asStateFlow()
+  private val _renderedFirstFrameToken = MutableStateFlow<NativePlaybackErrorToken?>(null)
   val currentPlayer: Player get() = player
   private val playbackMediaEpoch = AtomicLong(0L)
   internal val currentPlaybackMediaEpoch: Long get() = playbackMediaEpoch.get()
@@ -442,6 +468,9 @@ class NativeMedia3Engine(
       mediaItemEpoch = playbackMediaEpoch.incrementAndGet(),
       playbackGeneration = PlaybackSession.state.value.generation,
     )
+    _hasRenderedFirstFrame.value = false
+    _renderedFirstFrameToken.value = null
+    _currentPlaybackErrorToken.value = null
     return mediaItem.buildUpon().setTag(token).build()
   }
 
@@ -462,6 +491,13 @@ class NativeMedia3Engine(
     return PlaybackItemEpochPolicy.tokenFromMediaItemTag(mediaItem.localConfiguration?.tag)
   }
 
+  private fun isCurrentPlaybackToken(token: NativePlaybackErrorToken): Boolean =
+    PlaybackItemEpochPolicy.isCurrent(
+      token,
+      currentEpoch = currentPlaybackMediaEpoch,
+      currentPlaybackGeneration = PlaybackSession.state.value.generation,
+    )
+
   private fun invalidatePlaybackMediaItemToken() {
     playbackMediaEpoch.incrementAndGet()
   }
@@ -469,6 +505,7 @@ class NativeMedia3Engine(
   internal var onPlaybackError: ((PlaybackException, NativePlaybackErrorToken) -> Unit)? = null
   private var endedUri: Uri? = null
   private var metadataChapters: List<NativeChapter> = emptyList()
+  private val _currentPlaybackErrorToken = MutableStateFlow<NativePlaybackErrorToken?>(null)
   private var preparationStartedAtMs: Long = 0L
   private var preparationUri: Uri? = null
   private var sourceSizeBytes: Long = 0L
@@ -606,12 +643,36 @@ class NativeMedia3Engine(
       publishSnapshot()
     }
 
+    override fun onRenderedFirstFrame(
+      eventTime: AnalyticsListener.EventTime,
+      output: Any,
+      renderTimeMs: Long,
+    ) {
+      val itemToken = playbackErrorTokenFor(eventTime) ?: return
+      if (isCurrentPlaybackToken(itemToken)) _renderedFirstFrameToken.value = itemToken
+    }
+
     override fun onPlayerError(eventTime: AnalyticsListener.EventTime, error: PlaybackException) {
-      val itemToken = playbackErrorTokenFor(eventTime)
+      val itemToken = playbackErrorTokenFor(eventTime) ?: run {
+        // An initial error can arrive with an unusable EventTime. Only recover the current
+        // MediaItem token when Media3 identifies this exact exception as the player's current
+        // error; never reuse an arbitrary prior token.
+        val currentItem = player.currentMediaItem
+        val currentToken = PlaybackItemEpochPolicy.tokenFromMediaItemTag(
+          currentItem?.localConfiguration?.tag,
+        )
+        if (player.playerError === error && currentToken != null && PlaybackItemEpochPolicy.isCurrent(
+            currentToken,
+            currentEpoch = currentPlaybackMediaEpoch,
+            currentPlaybackGeneration = PlaybackSession.state.value.generation,
+          )
+        ) currentToken else null
+      }
       if (itemToken == null) {
-        Log.e(logTag, "Ignoring Native playback error without event-item identity", error)
+        Log.e(logTag, "Ignoring Native playback error without provable current-item identity", error)
         return
       }
+      _currentPlaybackErrorToken.value = itemToken
       Log.e(logTag, "player error itemEpoch=${itemToken.mediaItemEpoch}", error)
       onPlaybackError?.let { callback ->
         runCatching { callback(error, itemToken) }
@@ -633,6 +694,15 @@ class NativeMedia3Engine(
     }
 
     override fun onRenderedFirstFrame() {
+      val itemToken = PlaybackItemEpochPolicy.tokenFromMediaItemTag(
+        player.currentMediaItem?.localConfiguration?.tag,
+      )
+      if (itemToken == null || !PlaybackItemEpochPolicy.isCurrent(
+          itemToken,
+          currentEpoch = currentPlaybackMediaEpoch,
+          currentPlaybackGeneration = PlaybackSession.state.value.generation,
+        )
+      ) return
       val uri = player.currentMediaItem?.localConfiguration?.uri
       val elapsed = preparationStartedAtMs.takeIf { it > 0L }?.let { SystemClock.elapsedRealtime() - it }
       Log.d(logTag, "first frame rendered uri=$uri prepareElapsedMs=$elapsed")
@@ -778,12 +848,12 @@ class NativeMedia3Engine(
   }
 
   /** Applies interpolation controls and reselects the HDR renderer when its eligibility changes. */
-  suspend fun applyInterpolationRuntime(
+  internal suspend fun applyInterpolationRuntime(
     enabled: Boolean,
     targetFps: Int,
     allowRetryAfterResourceFailure: Boolean = false,
-  ): Boolean {
-    val flowSink = media3FlowSink ?: return false
+  ): NativeInterpolationRuntimeApplyOutcome {
+    val flowSink = media3FlowSink ?: return NativeInterpolationRuntimeApplyOutcome.FLOW_UNAVAILABLE
     val wasEnabled = flowSink.isInterpolationEnabled()
     val currentFormat = currentVideoFormat
     val requestedFormatEligible = currentFormat?.let {
@@ -795,7 +865,7 @@ class NativeMedia3Engine(
         requestedFormatEligible,
         allowRetryAfterResourceFailure,
       )
-    ) return false
+    ) return NativeInterpolationRuntimeApplyOutcome.FLOW_UNAVAILABLE
     val isEnabled = flowSink.isInterpolationEnabled()
     val requiresNativePassthrough = currentFormat?.let {
       Media3FlowVideoSink.requiresNativeHdrPassthrough(it)
@@ -815,15 +885,15 @@ class NativeMedia3Engine(
       ) {
         // Flow's EGL window surface shares PlayerView's BufferQueue; fence its release before the
         // stock MediaCodec renderer reconnects that surface.
-        if (!flowSink.clearOutputSurfaceInfoAndAwait()) {
+        if (!withContext(Dispatchers.IO) { flowSink.clearOutputSurfaceInfoAndAwait() }) {
           Log.e(logTag, "Flow output surface release was not confirmed; native renderer reselection canceled")
-          return false
+          return NativeInterpolationRuntimeApplyOutcome.OUTPUT_SURFACE_RELEASE_FAILED
         }
       }
       nativeTrackSelector.invalidateRendererEligibility()
       Log.i(logTag, "Native Flow renderer eligibility changed; reselecting HDR output path enabled=$isEnabled")
     }
-    return true
+    return NativeInterpolationRuntimeApplyOutcome.APPLIED
   }
 
   /**
@@ -853,13 +923,15 @@ class NativeMedia3Engine(
     var readinessListener: Player.Listener? = null
     player.playWhenReady = false
     try {
-      if (!applyInterpolationRuntime(
+      val applyOutcome = applyInterpolationRuntime(
           enabled = enabled,
           targetFps = targetFps,
           allowRetryAfterResourceFailure = true,
         )
-      ) {
-        return NativeInterpolationRestartResult.FLOW_UNAVAILABLE
+      val applyResult = NativeInterpolationRestartPolicy.resultForApplyOutcome(applyOutcome)
+      if (applyResult != NativeInterpolationRestartResult.APPLIED) {
+        reloadFailed = applyResult == NativeInterpolationRestartResult.PLAYBACK_FAILED
+        return applyResult
       }
       if (!isCurrent() || player.currentMediaItem != item ||
         player.currentMediaItem?.localConfiguration?.uri?.toString() != state.mediaUri
@@ -930,15 +1002,24 @@ class NativeMedia3Engine(
       // A paused item must stay paused; only an item that should be advancing can satisfy this
       // rendered-frame wait without changing the user's requested play state.
       if (hadVideo && state.playWhenReady) {
-        val firstFrameRendered = withTimeoutOrNull(30_000L) {
-          hasRenderedFirstFrame.first {
-            it || !isCurrent() || player.currentMediaItem != taggedItem
-          }
-        } == true
+        val expectedFrameToken = PlaybackItemEpochPolicy.tokenFromMediaItemTag(
+          taggedItem.localConfiguration?.tag,
+        ) ?: return NativeInterpolationRestartResult.PLAYBACK_FAILED
+        val frameOutcome = withTimeoutOrNull(30_000L) {
+          combine(_renderedFirstFrameToken, _currentPlaybackErrorToken) { frameToken, errorToken ->
+            nativeRestartFrameOutcome(
+              frameToken = frameToken,
+              errorToken = errorToken,
+              expectedToken = expectedFrameToken,
+              currentEpoch = currentPlaybackMediaEpoch,
+              currentPlaybackGeneration = PlaybackSession.state.value.generation,
+            )
+          }.first { it != NativeRestartFrameOutcome.WAITING }
+        }
         if (!isCurrent() || player.currentMediaItem != taggedItem) {
           return NativeInterpolationRestartResult.SUPERSEDED
         }
-        if (!firstFrameRendered || player.playerError != null) {
+        if (frameOutcome != NativeRestartFrameOutcome.RENDERED || player.playerError != null) {
           reloadFailed = true
           return NativeInterpolationRestartResult.PLAYBACK_FAILED
         }
@@ -1816,6 +1897,8 @@ class NativeMedia3Engine(
     pendingSeekDisplayPositionMs = null
     initialResumeTargetMs = null
     invalidatePlaybackMediaItemToken()
+    _currentPlaybackErrorToken.value = null
+    _renderedFirstFrameToken.value = null
     player.stop()
     player.clearMediaItems()
     currentVideoFormat = null
@@ -2129,6 +2212,7 @@ class NativeMedia3Engine(
       subtitleTracks = subtitles,
       audioTracks = audioTracks,
       chapters = chapters,
+      chaptersKnown = true,
     )
   }
 

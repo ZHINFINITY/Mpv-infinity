@@ -123,6 +123,93 @@ internal object PlayerLifecyclePolicy {
     miniPlayerHandoff: Boolean = false,
   ): Boolean = backgroundPlaybackSessionActive && (backgroundPlaybackEnabled || miniPlayerHandoff)
 
+  fun shouldStopPlaybackAfterFailedForegroundPromotion(
+    activityHandoffRequested: Boolean,
+    activityRelinquishedPlayback: Boolean,
+    foregroundPromotionFailed: Boolean,
+    foregroundReady: Boolean,
+  ): Boolean =
+    activityHandoffRequested && activityRelinquishedPlayback && foregroundPromotionFailed && !foregroundReady
+
+  data class FailedForegroundPromotionIdentity(
+    val generation: Long,
+    val stableId: String,
+    val originalUri: String,
+    val torrentFileIndex: Int?,
+  )
+
+  class FailedPromotionHandoffState {
+    private var pendingFailure: FailedForegroundPromotionIdentity? = null
+    private var pendingRelinquish: FailedForegroundPromotionIdentity? = null
+
+    @Synchronized
+    fun noteActivityRelinquished(identity: FailedForegroundPromotionIdentity?) {
+      if (identity == null) {
+        clear()
+        return
+      }
+      if (pendingFailure != null && pendingFailure != identity) pendingFailure = null
+      pendingRelinquish = identity
+    }
+
+    @Synchronized
+    fun recordFailure(identity: FailedForegroundPromotionIdentity?) {
+      if (identity == null) {
+        clear()
+        return
+      }
+      if (pendingRelinquish != null && pendingRelinquish != identity) pendingRelinquish = null
+      pendingFailure = identity
+    }
+
+    @Synchronized
+    fun wasRelinquished(identity: FailedForegroundPromotionIdentity?): Boolean =
+      identity != null && pendingRelinquish == identity
+
+    @Synchronized
+    fun pendingFailureFor(identity: FailedForegroundPromotionIdentity?): FailedForegroundPromotionIdentity? =
+      identity?.takeIf { pendingFailure == it }
+
+    @Synchronized
+    fun takeFailureForRelinquishedActivity(identity: FailedForegroundPromotionIdentity?): FailedForegroundPromotionIdentity? {
+      noteActivityRelinquished(identity)
+      val failure = pendingFailure
+      if (identity == null || failure != identity) return null
+      pendingFailure = null
+      if (pendingRelinquish == identity) pendingRelinquish = null
+      return failure
+    }
+
+    @Synchronized
+    fun discardStaleFor(identity: FailedForegroundPromotionIdentity?) {
+      if (pendingFailure != identity) pendingFailure = null
+      if (pendingRelinquish != identity) pendingRelinquish = null
+    }
+
+    @Synchronized
+    fun consume(identity: FailedForegroundPromotionIdentity) {
+      if (pendingFailure == identity) pendingFailure = null
+      if (pendingRelinquish == identity) pendingRelinquish = null
+    }
+
+    @Synchronized
+    fun clear() {
+      pendingFailure = null
+      pendingRelinquish = null
+    }
+  }
+
+  fun shouldApplyPendingFailedPromotionCleanup(
+    failedIdentity: FailedForegroundPromotionIdentity?,
+    currentIdentity: FailedForegroundPromotionIdentity?,
+    activityRelinquishedPlayback: Boolean,
+    foregroundReady: Boolean,
+  ): Boolean =
+    activityRelinquishedPlayback && !foregroundReady &&
+      failedIdentity != null && currentIdentity != null &&
+      failedIdentity == currentIdentity &&
+      failedIdentity.stableId.isNotBlank() && failedIdentity.originalUri.isNotBlank()
+
   /** Pause state belongs to the active renderer; the inactive MPV core may stay paused. */
   fun activeEnginePausedState(
     activeEngine: PlaybackEngineMode,
