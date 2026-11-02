@@ -19,6 +19,7 @@ import app.infinity.mpvz.ui.player.RepeatMode
 import app.infinity.mpvz.ui.player.persistBeforePlaybackTeardown
 import app.infinity.mpvz.ui.player.shouldResetClosedAudioSessionForMetadata
 import app.infinity.mpvz.ui.player.shouldResetClosedAudioSessionForStartIntent
+import app.infinity.mpvz.ui.player.shouldSkipSynchronousPlaybackStateSave
 import java.io.File
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -172,6 +173,66 @@ class MiniPlayerHandoffAndResumeTest {
         .substringBefore("private fun attachToSavedPlaybackSessionIfValid")
     assertTrue(activitySave.contains("MediaPlaybackService.isAudioSessionClosedByUser()"))
     assertTrue(activitySave.contains("closedByUser = closedByUser"))
+    val syncSave =
+      service.substringAfter("private fun savePlaybackStateSynchronously()")
+        .substringBefore("private suspend fun persistPlaybackState")
+    assertTrue(syncSave.contains("shouldSkipSynchronousPlaybackStateSave("))
+    assertTrue(syncSave.contains("nativeRendererOwner || identifier.isBlank()"))
+  }
+
+  @Test
+  fun explicitClosedAudioSaveSurvivesNativeOwnerAndMissingIdentifierGuards() {
+    val audioItem = PlaybackItem.fromUri(
+      uri = "file:///audio.mp3",
+      stableId = "audio",
+      mimeType = "audio/mpeg",
+    )
+    val videoItem = PlaybackItem.fromUri(
+      uri = "file:///video.mp4",
+      stableId = "video",
+      mimeType = "video/mp4",
+    )
+
+    assertFalse(
+      shouldSkipSynchronousPlaybackStateSave(
+        nativeRendererOwner = true,
+        identifier = "",
+        closedByUser = true,
+        currentItem = audioItem,
+      ),
+    )
+    assertFalse(
+      shouldSkipSynchronousPlaybackStateSave(
+        nativeRendererOwner = false,
+        identifier = "",
+        closedByUser = true,
+        currentItem = audioItem,
+      ),
+    )
+    assertTrue(
+      shouldSkipSynchronousPlaybackStateSave(
+        nativeRendererOwner = true,
+        identifier = "audio",
+        closedByUser = false,
+        currentItem = audioItem,
+      ),
+    )
+    assertTrue(
+      shouldSkipSynchronousPlaybackStateSave(
+        nativeRendererOwner = true,
+        identifier = "",
+        closedByUser = true,
+        currentItem = videoItem,
+      ),
+    )
+    assertFalse(
+      shouldSkipSynchronousPlaybackStateSave(
+        nativeRendererOwner = false,
+        identifier = "video",
+        closedByUser = true,
+        currentItem = videoItem,
+      ),
+    )
   }
 
   @Test

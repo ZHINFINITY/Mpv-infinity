@@ -114,6 +114,15 @@ internal fun persistBeforePlaybackTeardown(
   teardown()
 }
 
+internal fun shouldSkipSynchronousPlaybackStateSave(
+  nativeRendererOwner: Boolean,
+  identifier: String,
+  closedByUser: Boolean,
+  currentItem: PlaybackItem?,
+): Boolean =
+  (nativeRendererOwner || identifier.isBlank()) &&
+    !(closedByUser && currentItem?.isDefinitelyAudioOnly() == true)
+
 /**
  * Background playback service for mpv with MediaSession integration.
  * On Android 16+ (API 36), uses progress-centric notifications with chapter segment indicators.
@@ -2297,13 +2306,26 @@ class MediaPlaybackService :
   }
 
   private fun savePlaybackStateSynchronously() {
-    if (isNativeRendererOwner()) return
     val queueState = PlaybackSession.queue.value
     val identifier = mediaIdentifier.ifBlank { queueState.currentItem?.stableId.orEmpty() }
-    if (identifier.isBlank()) return
-    val snapshot = capturePlaybackStateSnapshot(identifier, oldState = null)
-    val resumePositionSeconds = PlaybackSession.getPropertyDouble("time-pos") ?: currentPositionSeconds
-    val resumePaused = PlaybackSession.getPropertyBoolean("pause") ?: paused
+    val nativeRendererOwner = isNativeRendererOwner()
+    val shouldSkipSave =
+      shouldSkipSynchronousPlaybackStateSave(
+        nativeRendererOwner = nativeRendererOwner,
+        identifier = identifier,
+        closedByUser = userClosedSession,
+        currentItem = queueState.currentItem,
+      )
+    if (shouldSkipSave) return
+    val snapshot =
+      if (nativeRendererOwner || identifier.isBlank()) null
+      else capturePlaybackStateSnapshot(identifier, oldState = null)
+    val resumePositionSeconds =
+      if (nativeRendererOwner) currentPositionSeconds
+      else PlaybackSession.getPropertyDouble("time-pos") ?: currentPositionSeconds
+    val resumePaused =
+      if (nativeRendererOwner) PlaybackSession.state.value.paused
+      else PlaybackSession.getPropertyBoolean("pause") ?: paused
 
     val pendingSave = playbackStateSaveJob
     runBlocking(Dispatchers.IO) {
