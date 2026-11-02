@@ -25,6 +25,7 @@ import androidx.media3.test.utils.FakeAudioRenderer
 import androidx.media3.test.utils.FakeClock
 import androidx.media3.test.utils.FakeTimeline
 import androidx.media3.test.utils.FakeVideoRenderer
+import androidx.media3.test.utils.FakeSampleStream.FakeSampleStreamItem
 import androidx.media3.test.utils.TestExoPlayerBuilder
 import androidx.media3.test.utils.robolectric.TestPlayerRunHelper
 import androidx.test.core.app.ApplicationProvider
@@ -66,6 +67,23 @@ class NativeMedia3EngineReloadBehaviorTest {
         return FakeMediaSource.Builder()
           .setTimeline(timeline)
           .setTrackGroupArray(tracks)
+          .setTrackDataFactory { format, _ ->
+            if (format.sampleMimeType == MimeTypes.TEXT_VTT) {
+              listOf(
+                FakeSampleStreamItem.sample(
+                  0L,
+                  C.BUFFER_FLAG_KEY_FRAME,
+                  "WEBVTT\n\n00:00:00.000 --> 00:00:01.000\ncaption\n".toByteArray(),
+                ),
+                FakeSampleStreamItem.END_OF_STREAM_ITEM,
+              )
+            } else {
+              listOf(
+                FakeSampleStreamItem.oneByteSample(0L, C.BUFFER_FLAG_KEY_FRAME),
+                FakeSampleStreamItem.END_OF_STREAM_ITEM,
+              )
+            }
+          }
           .build()
       }
 
