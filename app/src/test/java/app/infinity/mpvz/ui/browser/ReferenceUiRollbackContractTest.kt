@@ -556,10 +556,13 @@ import android.graphics.Shader
   }
   @Test fun glassChipUsesSuppliedColorsInGlassMode() {
     val chip = read("app/src/main/java/app/infinity/mpvz/ui/components/GlassChip.kt")
-    assertTrue(chip.contains("colors?.containerColor(enabled, selected)"))
-    assertTrue(chip.contains("colors?.labelColor(enabled, selected)"))
+    assertTrue(chip.contains("glassContainerColor: Color? = null"))
+    assertTrue(chip.contains("glassContentColor: Color? = null"))
+    assertTrue(chip.contains("glassContainerColor?.takeIf { it != Color.Unspecified }"))
+    assertTrue(chip.contains("glassContentColor?.takeIf { it != Color.Unspecified }"))
     assertTrue(chip.contains("customContainerColor?.let"))
     assertTrue(chip.contains("contentColor = customLabelColor ?: LocalContentColor.current"))
+    assertTrue(chip.contains("colors = colors ?: FilterChipDefaults.filterChipColors()"))
 
     val customContainer = Color(0x80CC2244L)
     val selectedFill = app.infinity.mpvz.ui.components.GlassChipMaterial.fill(

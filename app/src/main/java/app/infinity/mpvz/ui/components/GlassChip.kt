@@ -47,6 +47,8 @@ fun GlassChip(
   trailingIcon: (@Composable () -> Unit)? = null,
   shape: Shape? = null,
   colors: SelectableChipColors? = null,
+  glassContainerColor: Color? = null,
+  glassContentColor: Color? = null,
 ) {
   val glass = settingsGlassEnabled()
   if (!glass) {
@@ -56,8 +58,9 @@ fun GlassChip(
   val chipShape = shape ?: RoundedCornerShape(24.dp)
   val source = remember { MutableInteractionSource() }
   val scheme = MaterialTheme.colorScheme
-  val customContainerColor = colors?.containerColor(enabled, selected)?.takeIf { it.isSpecified }
-  val customLabelColor = colors?.labelColor(enabled, selected)?.takeIf { it.isSpecified }
+  // SelectableChipColors is opaque to callers; glass callers provide explicit palette overrides.
+  val customContainerColor = glassContainerColor?.takeIf { it != Color.Unspecified }
+  val customLabelColor = glassContentColor?.takeIf { it != Color.Unspecified }
   val fill = GlassChipMaterial.fill(
     selected = selected,
     enabled = enabled,
