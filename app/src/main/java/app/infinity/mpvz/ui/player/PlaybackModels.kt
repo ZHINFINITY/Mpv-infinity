@@ -170,26 +170,57 @@ internal fun PlaybackItem.isDefinitelyAudioOnly(): Boolean =
  */
 internal fun PlaybackItem.isHdrOrDolbyVision(): Boolean {
   if (hdrMetadata == true) return true
-  return isHdrOrDolbyVisionMetadata(title, mimeType, originalUri, playableUri)
+  return isHdrOrDolbyVisionMetadata(
+    title,
+    mimeType,
+    originalUri.mediaUriLeaf(),
+    playableUri.mediaUriLeaf(),
+  )
 }
 
 internal fun isHdrOrDolbyVisionMetadata(vararg values: String?): Boolean =
   values.filterNotNull().any { value -> HDR_MARKERS.any { marker -> value.contains(marker, ignoreCase = true) } }
 
+private fun String.mediaUriLeaf(): String =
+  substringBefore('?')
+    .substringBefore('#')
+    .substringAfterLast('/')
+
+/** Native cannot open a webpage URL as media; keep it on MPV until yt-dlp resolves a stream. */
+internal fun PlaybackItem.requiresWebPageResolutionBeforeNative(): Boolean {
+  if (requiresTorrentResolution()) return true
+  val url = playableUri.trim()
+  if (!url.startsWith("http://", ignoreCase = true) && !url.startsWith("https://", ignoreCase = true)) {
+    return false
+  }
+
+  val mime = mimeType?.trim()?.lowercase(Locale.ROOT)
+  if (mime?.startsWith("video/") == true && mime != "video/*") return false
+  if (mime in setOf("application/vnd.apple.mpegurl", "application/x-mpegurl", "application/dash+xml")) return false
+
+  val extension = url.substringBefore('?').substringBefore('#').fileExtension()
+  return extension !in FileTypeUtils.VIDEO_EXTENSIONS && extension !in setOf("m3u8", "mpd")
+}
+
 internal fun resolvePlaybackEngineMode(
   configuredEngine: PlaybackEngineMode,
   item: PlaybackItem,
-): PlaybackEngineMode =
-  when (configuredEngine) {
+): PlaybackEngineMode {
+  if (item.requiresWebPageResolutionBeforeNative()) return PlaybackEngineMode.MPV
+  return when (configuredEngine) {
     PlaybackEngineMode.AUTO -> if (item.isHdrOrDolbyVision()) PlaybackEngineMode.NATIVE else PlaybackEngineMode.MPV
     else -> configuredEngine
   }
+}
 
 /** AUTO keeps ordinary video on MPV and selects Native for identifiable 4K HDR media. */
 internal fun PlaybackItem.isAutoNativeCandidate(): Boolean {
   if (!isHdrOrDolbyVision()) return false
   if ((videoWidth ?: 0) >= UHD_MIN_DIMENSION || (videoHeight ?: 0) >= UHD_MIN_DIMENSION) return true
-  val metadata = sequenceOf(title, mimeType, originalUri, playableUri).filterNotNull().joinToString(" ")
+  val metadata =
+    sequenceOf(title, mimeType, originalUri.mediaUriLeaf(), playableUri.mediaUriLeaf())
+      .filterNotNull()
+      .joinToString(" ")
   return UHD_MARKERS.any { marker -> metadata.contains(marker, ignoreCase = true) }
 }
 

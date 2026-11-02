@@ -37,12 +37,17 @@ class PlayerFollowupUiContractTest {
     val preferences = read("app/src/main/java/app/infinity/mpvz/preferences/AppearancePreferences.kt")
     val settings = read("app/src/main/java/app/infinity/mpvz/ui/preferences/PlayerControlsPreferencesScreen.kt")
     val controls = read("app/src/main/java/app/infinity/mpvz/ui/player/controls/PlayerControls.kt")
+    val customButtons =
+      controls.substringAfter("constrainAs(customButtonsPortraitRef) {")
+        .substringBefore("width = Dimension.fillToConstraints")
 
     assertTrue(preferences.contains("portrait_playback_controls_position\", PortraitPlaybackControlsPosition.AboveSeekbar"))
     assertTrue(preferences.contains("PortraitPlaybackControlsPosition.AboveSeekbar"))
-    assertTrue(preferences.contains("PortraitPlaybackControlsPosition.BelowSeekbar"))
+    assertTrue(preferences.contains("BelowSeekbar(\"Below seekbar\")"))
     assertTrue(settings.contains("values = PortraitPlaybackControlsPosition.entries"))
-    assertTrue(controls.contains("bottom.linkTo(playerPauseButton.top"))
+    assertTrue(customButtons.contains("if (showBufferingIndicator)"))
+    assertTrue(customButtons.contains("bottom.linkTo(bufferingIndicator.top, spacing.medium)"))
+    assertTrue(customButtons.contains("bottom.linkTo(playerPauseButton.top, spacing.medium)"))
     assertTrue(controls.contains("bottom.linkTo(bottomRightControls.top"))
     assertTrue(controls.contains("bottom.linkTo(customButtonsPortraitRef.top"))
     assertTrue(controls.contains("bottom.linkTo(seekbar.top"))
@@ -63,6 +68,8 @@ class PlayerFollowupUiContractTest {
     assertTrue(sheets.contains("onAnime4KQualitySelected = viewModel::selectAnime4KQuality"))
     assertTrue(viewModel.contains("decoderPreferences.anime4kQuality.changes()"))
     assertTrue(viewModel.contains("decoderPreferences.anime4kQuality.set(quality)"))
+    val qualityHandler = viewModel.substringAfter("fun selectAnime4KQuality(").substringBefore("/**")
+    assertTrue(qualityHandler.contains("selectAnime4KMode(currentMode)"))
     assertTrue(state.contains("selectedQuality: Anime4KManager.Quality"))
     assertTrue(decoder.contains("preferences.anime4kQuality.set(it)"))
   }

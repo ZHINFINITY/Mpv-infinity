@@ -1430,7 +1430,11 @@ fun PlayerControls(
                   start.linkTo(parent.start, spacing.large)
                   end.linkTo(parent.end, spacing.large)
                   if (portraitPlaybackControlsPosition == PortraitPlaybackControlsPosition.BelowSeekbar) {
-                    bottom.linkTo(playerPauseButton.top, spacing.medium)
+                    if (showBufferingIndicator) {
+                      bottom.linkTo(bufferingIndicator.top, spacing.medium)
+                    } else {
+                      bottom.linkTo(playerPauseButton.top, spacing.medium)
+                    }
                   } else {
                     bottom.linkTo(bottomRightControls.top, spacing.medium)
                   }

@@ -1909,6 +1909,7 @@ class PlayerActivity :
                 headers = currentItem?.headers.orEmpty(),
                 mimeType = currentItem?.mimeType,
                 sourceUri = currentItem?.originalUri?.toUri(),
+                mediaId = currentItem?.stableId ?: mediaIdentifier,
               )
               applyNativePlaybackState(handoffState, handoffRequestGeneration)
               engineHandoffJob = lifecycleScope.launch {
@@ -5417,16 +5418,17 @@ class PlayerActivity :
 
   private fun currentForegroundRecoveryPositionSeconds(): Double? {
     val session = PlaybackSession.state.value
-    if (
-      mediaIdentifier.isBlank() ||
-      session.phase !in setOf(PlaybackPhase.READY, PlaybackPhase.BACKGROUND) ||
-      session.currentItem?.stableId != mediaIdentifier
-    ) return null
-    if (isNativeEngineActive()) {
-      val positionMs = nativeEngineOrNull()?.positionForPersistenceMs() ?: return null
-      return positionMs.takeIf { it >= 0L }?.div(1000.0)
-    }
-    return PlaybackSession.getPropertyDouble("time-pos")
+    val nativeActive = isNativeEngineActive()
+    val nativeEngine = nativeEngineOrNull().takeIf { nativeActive }
+    return PlayerLifecyclePolicy.liveForegroundRecoveryPositionSeconds(
+      activeEngine = if (nativeActive) PlaybackEngineMode.NATIVE else PlaybackEngineMode.MPV,
+      requestedMediaId = mediaIdentifier,
+      mpvSessionPhase = session.phase,
+      mpvSessionMediaId = session.currentItem?.stableId,
+      mpvLivePositionSeconds = if (nativeActive) null else PlaybackSession.getPropertyDouble("time-pos"),
+      nativeMediaId = nativeEngine?.currentPlayer?.currentMediaItem?.mediaId,
+      nativePositionMs = nativeEngine?.positionForPersistenceMs(),
+    )
   }
 
   private fun rebuildRendererAfterLongBackground() {
@@ -8202,7 +8204,10 @@ class PlayerActivity :
     val selectedEngine =
       when {
         playbackItem.isDefinitelyAudioOnly() -> PlaybackEngineMode.MPV
-        isStreamTabPlayback && !requiresYtdlp && playbackItem.declaredMediaKind() == DeclaredPlaybackMediaKind.VIDEO -> PlaybackEngineMode.NATIVE
+        isStreamTabPlayback &&
+          !requiresYtdlp &&
+          playbackItem.declaredMediaKind() == DeclaredPlaybackMediaKind.VIDEO &&
+          !playbackItem.requiresWebPageResolutionBeforeNative() -> PlaybackEngineMode.NATIVE
         else -> resolvePlaybackEngineMode(configuredEngine, playbackItem)
       }
     val nativeResolvedUri =
@@ -8254,6 +8259,7 @@ class PlayerActivity :
           headers = nativeItem.headers,
           mimeType = nativeItem.mimeType,
           sourceUri = nativeItem.originalUri.toUri(),
+          mediaId = nativeItem.stableId,
         )
         applyNativePlaybackState(savedPlaybackState, requestGeneration)
         viewModel.onVideoLoadCompleted()

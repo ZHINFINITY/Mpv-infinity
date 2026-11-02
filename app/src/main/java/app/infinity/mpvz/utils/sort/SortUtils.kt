@@ -169,11 +169,11 @@ object SortUtils {
       s: String,
       start: Int,
     ): ParsedNumber? {
-      if (start >= s.length || s[start] !in '0'..'9') return null
+      if (start >= s.length || Character.digit(s[start], 10) < 0) return null
       var i = start
-      while (i < s.length && s[i] in '0'..'9') i++
+      while (i < s.length && Character.digit(s[i], 10) >= 0) i++
       var significantStart = start
-      while (significantStart < i && s[significantStart] == '0') significantStart++
+      while (significantStart < i && Character.digit(s[significantStart], 10) == 0) significantStart++
       return ParsedNumber(significantStart, i)
     }
 
@@ -187,7 +187,8 @@ object SortUtils {
       if (lengthComparison != 0) return lengthComparison
       for (offset in 0 until numberA.significantLength) {
         val digitComparison =
-          a[numberA.significantStartIndex + offset].compareTo(b[numberB.significantStartIndex + offset])
+          Character.digit(a[numberA.significantStartIndex + offset], 10)
+            .compareTo(Character.digit(b[numberB.significantStartIndex + offset], 10))
         if (digitComparison != 0) return digitComparison
       }
       return 0

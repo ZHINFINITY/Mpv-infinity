@@ -289,6 +289,35 @@ internal object PlayerLifecyclePolicy {
   fun resumePositionSeconds(positionSeconds: Double?): Double? =
     positionSeconds?.takeIf { it.isFinite() && it > 0.0 }
 
+  /** Use a live clock only when it belongs to the current item and active playback engine. */
+  fun liveForegroundRecoveryPositionSeconds(
+    activeEngine: PlaybackEngineMode,
+    requestedMediaId: String,
+    mpvSessionPhase: PlaybackPhase,
+    mpvSessionMediaId: String?,
+    mpvLivePositionSeconds: Double?,
+    nativeMediaId: String?,
+    nativePositionMs: Long?,
+  ): Double? {
+    if (requestedMediaId.isBlank()) return null
+    return when (activeEngine) {
+      PlaybackEngineMode.NATIVE ->
+        if (nativeMediaId != requestedMediaId) {
+          null
+        } else {
+          nativePositionMs?.takeIf { it >= 0L }?.div(1000.0)
+        }
+      PlaybackEngineMode.AUTO,
+      PlaybackEngineMode.MPV,
+      ->
+        if (mpvSessionPhase !in setOf(PlaybackPhase.READY, PlaybackPhase.BACKGROUND) || mpvSessionMediaId != requestedMediaId) {
+          null
+        } else {
+          mpvLivePositionSeconds?.takeIf { it.isFinite() && it >= 0.0 }
+        }
+    }
+  }
+
   /** Prefer the active engine/service clock after a background handoff; use the stop snapshot only if unavailable. */
   fun foregroundRecoveryPositionSeconds(livePositionSeconds: Double?, capturedSnapshotSeconds: Double?): Double? {
     val livePosition = livePositionSeconds?.takeIf { it.isFinite() && it >= 0.0 }

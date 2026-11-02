@@ -7,6 +7,7 @@
 
 package app.infinity.mpvz.utils.sort
 
+import android.app.Application
 import android.net.Uri
 import app.infinity.mpvz.domain.media.model.Video
 import app.infinity.mpvz.preferences.SortOrder
@@ -19,7 +20,7 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [35])
+@Config(sdk = [35], application = Application::class)
 class SortUtilsNaturalOrderTest {
   private val comparator = SortUtils.NaturalOrderComparator.DEFAULT
 
@@ -28,6 +29,8 @@ class SortUtilsNaturalOrderTest {
     assertTrue(comparator.compare("9", "10") < 0)
     assertTrue(comparator.compare("10", "2147483648") < 0)
     assertTrue(comparator.compare("2147483648", "9") > 0)
+    assertTrue(comparator.compare("12", "19") < 0)
+    assertTrue(comparator.compare("Episode ٢", "Episode ١٠") < 0)
 
     assertEquals(
       listOf("9", "10", "2147483648", "999999999999999999999999"),
@@ -48,11 +51,16 @@ class SortUtilsNaturalOrderTest {
         video(1, "Clip 2147483648"),
         video(2, "Clip 10"),
         video(3, "Clip 9"),
+        video(4, "Episode ١٠"),
+        video(5, "Episode ٢"),
       )
 
     val sorted = SortUtils.sortVideos(videos, VideoSortType.Title, SortOrder.Ascending)
 
-    assertEquals(listOf("Clip 9", "Clip 10", "Clip 2147483648"), sorted.map(Video::displayName))
+    assertEquals(
+      listOf("Clip 9", "Clip 10", "Clip 2147483648", "Episode ٢", "Episode ١٠"),
+      sorted.map(Video::displayName),
+    )
   }
 
   private fun video(id: Long, displayName: String) =

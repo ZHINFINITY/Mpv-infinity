@@ -135,16 +135,23 @@ class VideoBackgroundResumeWiringTest {
       !restore.contains("resumePositionSeconds(pendingForegroundResumePositionSeconds) ?: return"),
     )
 
+    val liveRecovery = body("private fun currentForegroundRecoveryPositionSeconds()")
     assertInOrder(
-      body("private fun currentForegroundRecoveryPositionSeconds()"),
+      liveRecovery,
       "val session = PlaybackSession.state.value",
-      "mediaIdentifier.isBlank()",
-      "session.phase !in setOf(PlaybackPhase.READY, PlaybackPhase.BACKGROUND)",
-      "session.currentItem?.stableId != mediaIdentifier",
-      "if (isNativeEngineActive())",
-      "positionForPersistenceMs()",
-      "PlaybackSession.getPropertyDouble(\"time-pos\")",
+      "val nativeActive = isNativeEngineActive()",
+      "PlayerLifecyclePolicy.liveForegroundRecoveryPositionSeconds(",
+      "requestedMediaId = mediaIdentifier",
+      "mpvSessionPhase = session.phase",
+      "mpvSessionMediaId = session.currentItem?.stableId",
+      "nativeMediaId = nativeEngine?.currentPlayer?.currentMediaItem?.mediaId",
+      "nativePositionMs = nativeEngine?.positionForPersistenceMs()",
     )
+    val root = File("src/main/java").takeIf { it.exists() } ?: File("app/src/main/java")
+    val nativeEngine = File(root, "app/infinity/mpvz/ui/player/NativeMedia3Engine.kt").readText()
+    assertTrue(nativeEngine.contains(".setMediaId(mediaId?.takeIf(String::isNotBlank).orEmpty())"))
+    assertTrue(activity.contains("mediaId = nativeItem.stableId"))
+    assertTrue(activity.contains("mediaId = currentItem?.stableId ?: mediaIdentifier"))
   }
 
   @Test

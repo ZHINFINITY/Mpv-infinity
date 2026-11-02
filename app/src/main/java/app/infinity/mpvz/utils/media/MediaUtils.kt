@@ -83,7 +83,6 @@ object MediaUtils {
             isHdrOrDolbyVisionMetadata(
               video.title,
               video.displayName,
-              video.path,
               video.videoCodec,
               video.videoCodecMimeType,
             ),
@@ -115,7 +114,6 @@ object MediaUtils {
           isHdrOrDolbyVisionMetadata(
             selected.title,
             selected.displayName,
-            selected.path,
             selected.videoCodec,
             selected.videoCodecMimeType,
           ),
@@ -195,7 +193,6 @@ object MediaUtils {
             isHdrOrDolbyVisionMetadata(
               source.title,
               source.displayName,
-              source.path,
               source.videoCodec,
               source.videoCodecMimeType,
             ),

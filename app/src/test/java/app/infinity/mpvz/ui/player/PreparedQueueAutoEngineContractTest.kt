@@ -9,6 +9,7 @@ package app.infinity.mpvz.ui.player
 
 import java.io.File
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -55,6 +56,9 @@ class PreparedQueueAutoEngineContractTest {
     assertTrue(mediaUtils.contains("selected.videoCodecMimeType"))
     assertTrue(mediaUtils.contains("source.videoCodecMimeType"))
     assertTrue(mediaUtils.contains("\"is_hdr\""))
+    assertFalse(mediaUtils.contains("video.displayName,\n              video.path,\n              video.videoCodec"))
+    assertFalse(mediaUtils.contains("selected.displayName,\n            selected.path,\n            selected.videoCodec"))
+    assertFalse(mediaUtils.contains("source.displayName,\n              source.path,\n              source.videoCodec"))
   }
 
   @Test
@@ -80,6 +84,7 @@ class PreparedQueueAutoEngineContractTest {
       activity.substringAfter("val selectedEngine =")
         .substringBefore("val nativeResolvedUri =")
     assertTrue(load.contains("resolvePlaybackEngineMode(configuredEngine, playbackItem)"))
+    assertTrue(load.contains("!playbackItem.requiresWebPageResolutionBeforeNative()"))
   }
 
   private fun playerActivitySource(): String =
