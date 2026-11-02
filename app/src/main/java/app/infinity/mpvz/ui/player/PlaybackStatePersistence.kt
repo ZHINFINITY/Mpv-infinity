@@ -179,3 +179,8 @@ internal fun shouldApplyAspectRestoreForLoad(
 ): Boolean =
   loadGenerationIsCurrent &&
     !userAspectChangeOccurredForLoad
+
+internal fun requestGenerationForUserAspectChange(
+  visibleMediaRequestGeneration: Long?,
+  currentMediaRequestGeneration: Long,
+): Long = visibleMediaRequestGeneration ?: currentMediaRequestGeneration

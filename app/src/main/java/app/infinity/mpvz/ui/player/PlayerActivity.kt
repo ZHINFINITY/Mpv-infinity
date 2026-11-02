@@ -909,6 +909,7 @@ class PlayerActivity :
         val aspect = viewModel.videoAspect.value
         val customAspect = PlaybackSession.getPropertyDouble("video-aspect-override")
           ?.toFloat()?.takeIf { it > 0f } ?: 0f
+        val aspectChangeGenerationAtCapture = userAspectChangeGeneration
         var loadGeneration: Long? = null
         var coreReplacementStarted = false
         var appliedEnabled = enabled
@@ -1053,13 +1054,24 @@ class PlayerActivity :
                 mpvInterpolationNativeWork.execute {
                   if (stillCurrent()) {
                     state.doubleProperties.forEach { (key, value) -> PlaybackSession.setPropertyDouble(key, value) }
-                    state.stringProperties.forEach { (key, value) -> PlaybackSession.setPropertyString(key, value) }
+                    state.stringProperties.forEach { (key, value) ->
+                      if (key != "video-aspect-override") PlaybackSession.setPropertyString(key, value)
+                    }
                   }
                 }
                 if (!stillCurrent()) return false
-                state.doubleProperties["video-zoom"]?.let { viewModel.setVideoZoom(it.toFloat()) }
-                viewModel.restoreVideoAspect(aspect.name, customAspect, showUpdate = false)
-                viewModel.restoreABLoopState(loopState)
+                val aspectAndLoopRestored = withContext(Dispatchers.Main.immediate) {
+                  if (!stillCurrent()) return@withContext false
+                  val useCapturedAspect = userAspectChangeGeneration == aspectChangeGenerationAtCapture
+                  val aspectToRestore = if (useCapturedAspect) aspect else viewModel.videoAspect.value
+                  val customAspectToRestore =
+                    if (useCapturedAspect) customAspect else viewModel.currentAspectRatio.value.toFloat()
+                  state.doubleProperties["video-zoom"]?.let { viewModel.setVideoZoom(it.toFloat()) }
+                  viewModel.restoreVideoAspect(aspectToRestore.name, customAspectToRestore, showUpdate = false)
+                  viewModel.restoreABLoopState(loopState)
+                  true
+                }
+                if (!aspectAndLoopRestored || !stillCurrent()) return false
                 val positionRestored = withTimeoutOrNull(5_000L) {
                   var reissued = false
                   val started = android.os.SystemClock.uptimeMillis()
@@ -1393,6 +1405,9 @@ class PlayerActivity :
   )
   @Volatile private var userAspectChangeIntentToken =
     UserAspectChangeIntentToken(Long.MIN_VALUE, Long.MIN_VALUE)
+  @Volatile private var visibleMediaPlaybackGeneration = Long.MIN_VALUE
+  @Volatile private var visibleMediaRequestGeneration = Long.MIN_VALUE
+  @Volatile private var userAspectChangeGeneration = 0L
   private val mpvAspectLoadRequestGeneration = java.util.concurrent.ConcurrentHashMap<Long, Long>()
   private var eofAdvanceJob: Job? = null
 
@@ -1857,6 +1872,7 @@ class PlayerActivity :
 
           // Commit the outgoing renderer's complete state before changing ownership. Both
           // engines restore the same stable media record, not the frozen MPV properties.
+          val handoffRequestGeneration = mediaRequestGeneration
           saveVideoPlaybackState(fileName, immediate = true)?.join()
           val handoffState = withContext(Dispatchers.IO) {
             playbackStateRepository.getVideoDataByTitle(activeSaveMediaIdentifier.ifBlank { mediaIdentifier })
@@ -1898,7 +1914,7 @@ class PlayerActivity :
                 mimeType = currentItem?.mimeType,
                 sourceUri = currentItem?.originalUri?.toUri(),
               )
-              applyNativePlaybackState(handoffState)
+              applyNativePlaybackState(handoffState, handoffRequestGeneration)
               engineHandoffJob = lifecycleScope.launch {
                 // Some Android 13 devices need longer than 15 seconds to decode a local
                 // MediaStore/content URI before producing the first frame. Falling back while
@@ -4395,8 +4411,15 @@ class PlayerActivity :
     }
 
   internal fun noteUserAspectChange() {
+    userAspectChangeGeneration++
+    val visiblePlaybackGeneration =
+      visibleMediaPlaybackGeneration.takeIf { it != Long.MIN_VALUE } ?: PlaybackSession.state.value.generation
+    val visibleRequestGeneration = requestGenerationForUserAspectChange(
+      visibleMediaRequestGeneration.takeIf { it != Long.MIN_VALUE },
+      mediaRequestGeneration,
+    )
     userAspectChangeIntentToken =
-      UserAspectChangeIntentToken(PlaybackSession.state.value.generation, mediaRequestGeneration)
+      UserAspectChangeIntentToken(visiblePlaybackGeneration, visibleRequestGeneration)
   }
 
   private fun shouldApplyMpvAspectRestoreForLoad(loadGeneration: Long): Boolean {
@@ -6370,6 +6393,8 @@ class PlayerActivity :
    */
   private fun handleFileLoaded(loadGeneration: Long) {
     if (!PlaybackSession.isCurrentGeneration(loadGeneration)) return
+    visibleMediaPlaybackGeneration = loadGeneration
+    visibleMediaRequestGeneration = mpvAspectLoadRequestGeneration[loadGeneration] ?: mediaRequestGeneration
     val positionRestoreOverride = PlaybackSession.positionRestoreOverride(loadGeneration)
     val initialPositionApplied = PlaybackSession.wasInitialPositionApplied(loadGeneration)
     if (!initialPositionApplied) {
@@ -7179,13 +7204,16 @@ class PlayerActivity :
 
       if (!PlaybackSession.isCurrentGeneration(loadGeneration)) return@runCatching false
 
-      restorePerVideoAspectIfCurrent(
-        hasSavedState = state != null,
-        rememberVideoAspectPerVideo = playerPreferences.rememberVideoAspectPerVideo.get(),
-        loadGenerationIsCurrent = { shouldApplyMpvAspectRestoreForLoad(loadGeneration) },
-      ) {
-        val savedState = requireNotNull(state)
-        viewModel.restoreVideoAspect(savedState.videoAspect, savedState.customAspectRatio, showUpdate = false)
+      withContext(Dispatchers.Main.immediate) {
+        if (!PlaybackSession.isCurrentGeneration(loadGeneration)) return@withContext
+        restorePerVideoAspectIfCurrent(
+          hasSavedState = state != null,
+          rememberVideoAspectPerVideo = playerPreferences.rememberVideoAspectPerVideo.get(),
+          loadGenerationIsCurrent = { shouldApplyMpvAspectRestoreForLoad(loadGeneration) },
+        ) {
+          val savedState = requireNotNull(state)
+          viewModel.restoreVideoAspect(savedState.videoAspect, savedState.customAspectRatio, showUpdate = false)
+        }
       }
 
       withContext(Dispatchers.Main) {
@@ -7265,8 +7293,12 @@ class PlayerActivity :
    * track identifiers stay in the shared record untouched; they are not Media3 IDs. */
   private suspend fun applyNativePlaybackState(
     state: PlaybackStateEntity?,
-    requestGeneration: Long = mediaRequestGeneration,
+    requestGeneration: Long,
   ) {
+    if (requestGeneration == mediaRequestGeneration) {
+      visibleMediaPlaybackGeneration = PlaybackSession.state.value.generation
+      visibleMediaRequestGeneration = requestGeneration
+    }
     nativeEngineOrNull()?.restoreTrackSelections(state?.audioSelection, state?.subtitleSelection)
     nativeSetSpeed(state?.playbackSpeed?.toFloat() ?: DEFAULT_PLAYBACK_SPEED.toFloat())
     viewModel.setVideoZoom(state?.videoZoom ?: playerPreferences.defaultVideoZoom.get())
