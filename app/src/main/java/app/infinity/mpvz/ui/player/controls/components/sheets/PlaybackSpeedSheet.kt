@@ -174,6 +174,8 @@ fun PlaybackSpeedSheet(
                   androidx.compose.material3.FilterChipDefaults
                     .filterChipColors()
                 },
+              glassContainerColor = if (!isDefault) MaterialTheme.colorScheme.tertiaryContainer else null,
+              glassContentColor = if (!isDefault) MaterialTheme.colorScheme.tertiary else null,
             )
           }
         }
