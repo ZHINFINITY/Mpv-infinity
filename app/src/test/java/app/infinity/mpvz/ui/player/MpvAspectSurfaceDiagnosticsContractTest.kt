@@ -106,4 +106,41 @@ class MpvAspectSurfaceDiagnosticsContractTest {
     assertFalse(restorePerVideoAspectIfCurrent(false, true, { true }) { appliedAspects += "missing-state" })
     assertFalse(restorePerVideoAspectIfCurrent(true, false, { true }) { appliedAspects += "disabled-pref" })
   }
+
+  @Test fun userAspectChoiceDuringLoadingWinsOverSavedRestoreForBothEngines() {
+    val loadGeneration = 42L
+    var currentMpvGeneration = loadGeneration
+    var userChangedMpvGeneration: Long? = null
+    var currentNativeRequest = 9L
+    var userChangedNativeRequest: Long? = null
+
+    assertTrue(shouldApplyAspectRestoreForLoad(currentMpvGeneration == loadGeneration, userChangedMpvGeneration == loadGeneration))
+    userChangedMpvGeneration = currentMpvGeneration
+    assertFalse(shouldApplyAspectRestoreForLoad(currentMpvGeneration == loadGeneration, userChangedMpvGeneration == loadGeneration))
+
+    assertTrue(shouldApplyAspectRestoreForLoad(currentNativeRequest == 9L, userChangedNativeRequest == 9L))
+    userChangedNativeRequest = currentNativeRequest
+    assertFalse(shouldApplyAspectRestoreForLoad(currentNativeRequest == 9L, userChangedNativeRequest == 9L))
+
+    currentMpvGeneration++
+    assertFalse(shouldApplyAspectRestoreForLoad(currentMpvGeneration == loadGeneration, false))
+  }
+
+  @Test fun mpvAndNativeRestorePathsConsultThePerLoadUserIntentGuard() {
+    val activity = source("ui/player/PlayerActivity.kt")
+    val mpvLoad = activity.substringAfter("private suspend fun loadVideoPlaybackState(")
+      .substringBefore("private suspend fun applyPlaybackState(")
+    val mpvGuard = activity.substringAfter("private fun shouldApplyMpvAspectRestoreForLoad(")
+      .substringBefore("private fun isCurrentMediaRequest(")
+    val nativeRestore = activity.substringAfter("private suspend fun applyNativePlaybackState(")
+      .substringBefore("private fun restorePlaybackPosition(")
+
+    assertTrue(mpvLoad.contains("shouldApplyMpvAspectRestoreForLoad(loadGeneration)"))
+    assertTrue(mpvGuard.contains("shouldApplyAspectRestoreForLoad("))
+    assertTrue(mpvGuard.contains("aspectChangeIntent.playbackGeneration == loadGeneration"))
+    assertTrue(mpvGuard.contains("mpvAspectLoadRequestGeneration[loadGeneration]"))
+    assertTrue(activity.contains("if (shouldApplyMpvAspectRestoreForLoad(loadGeneration))"))
+    assertTrue(nativeRestore.contains("shouldApplyAspectRestoreForLoad("))
+    assertTrue(nativeRestore.contains("aspectChangeIntent.mediaRequestGeneration == requestGeneration"))
+  }
 }

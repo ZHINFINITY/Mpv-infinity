@@ -685,6 +685,7 @@ fun RenderPlayerButton(
             VideoAspect.Crop -> Icons.RoundedFilled.FitScreen
           },
         onClick = {
+          activity.noteUserAspectChange()
           when (aspect) {
             VideoAspect.Fit -> viewModel.changeVideoAspect(VideoAspect.Stretch)
             VideoAspect.Stretch -> viewModel.changeVideoAspect(VideoAspect.Crop)

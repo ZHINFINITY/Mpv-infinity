@@ -297,6 +297,7 @@ internal fun AudioPlayerScreen(
       onRemoveSubtitle = viewModel::removeSubtitle,
       audioTracks = audioTracks.toImmutableList(),
       onAddAudio = viewModel::addAudio,
+      onUserAspectChange = { activity?.noteUserAspectChange() },
       onSelectAudio = viewModel::selectAudioTrack,
       chapter = chapters.getOrNull(currentChapter ?: 0),
       chapters = chapters.toImmutableList(),
@@ -2271,6 +2272,7 @@ fun PlayerControls(
       subtitles = subtitles.toImmutableList(),
       // The ViewModel routes Native additions to Media3 and registers them in the sheet.
       onAddSubtitle = { uri -> viewModel.addSubtitle(uri) },
+      onUserAspectChange = { activity?.noteUserAspectChange() },
       onToggleSubtitle = viewModel::toggleSubtitle,
       isSubtitleSelected = viewModel::isSubtitleSelected,
       subtitleSelectionIndicator = viewModel::subtitleSelectionIndicator,

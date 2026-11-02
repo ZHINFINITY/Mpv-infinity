@@ -172,3 +172,10 @@ internal fun restorePerVideoAspectIfCurrent(
   restore()
   return true
 }
+
+internal fun shouldApplyAspectRestoreForLoad(
+  loadGenerationIsCurrent: Boolean,
+  userAspectChangeOccurredForLoad: Boolean,
+): Boolean =
+  loadGenerationIsCurrent &&
+    !userAspectChangeOccurredForLoad

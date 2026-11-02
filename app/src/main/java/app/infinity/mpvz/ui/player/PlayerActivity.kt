@@ -991,6 +991,7 @@ class PlayerActivity :
                     onGenerationReserved = { token ->
                       loadGeneration = token
                       mpvInterpolationReloadGeneration = token
+                      mpvAspectLoadRequestGeneration[token] = request
                     },
                     commit = { nativeLoad ->
                       if (!stillCurrent()) -1L
@@ -1385,6 +1386,13 @@ class PlayerActivity :
   private var playbackLoadWatchdogJob: Job? = null
   @Volatile private var pendingMediaLoadRecovery: PendingMediaLoadRecovery? = null
   @Volatile private var mediaRequestGeneration = 0L
+  private data class UserAspectChangeIntentToken(
+    val playbackGeneration: Long,
+    val mediaRequestGeneration: Long,
+  )
+  @Volatile private var userAspectChangeIntentToken =
+    UserAspectChangeIntentToken(Long.MIN_VALUE, Long.MIN_VALUE)
+  private val mpvAspectLoadRequestGeneration = java.util.concurrent.ConcurrentHashMap<Long, Long>()
   private var eofAdvanceJob: Job? = null
 
   @Volatile private var isAdvancingAtEof = false
@@ -4380,9 +4388,26 @@ class PlayerActivity :
   private fun beginMediaRequest(): Boolean =
     PlaybackActivityOwner.beginRequest(playbackOwnerToken) {
       mediaRequestGeneration++
+      mpvAspectLoadRequestGeneration.clear()
       glassMediaGeneration++
       manualOrientationOverride = false
     }
+
+  internal fun noteUserAspectChange() {
+    userAspectChangeIntentToken =
+      UserAspectChangeIntentToken(PlaybackSession.state.value.generation, mediaRequestGeneration)
+  }
+
+  private fun shouldApplyMpvAspectRestoreForLoad(loadGeneration: Long): Boolean {
+    val aspectChangeIntent = userAspectChangeIntentToken
+    return shouldApplyAspectRestoreForLoad(
+      loadGenerationIsCurrent = PlaybackSession.isCurrentGeneration(loadGeneration),
+      userAspectChangeOccurredForLoad = aspectChangeIntent.playbackGeneration == loadGeneration ||
+        mpvAspectLoadRequestGeneration[loadGeneration]?.let {
+          aspectChangeIntent.mediaRequestGeneration == it
+        } == true,
+    )
+  }
 
   private fun isCurrentMediaRequest(requestGeneration: Long): Boolean =
     ownsPlaybackSession() && requestGeneration == mediaRequestGeneration
@@ -6453,6 +6478,7 @@ class PlayerActivity :
           }
         }
       } finally {
+        mpvAspectLoadRequestGeneration.remove(loadGeneration)
         PlaybackSession.completePositionRestore(loadGeneration)
         if (ownsPlaybackSession() && activeEngineMode == PlaybackEngineMode.MPV &&
           PlaybackSession.isCurrentGeneration(loadGeneration)
@@ -6515,7 +6541,9 @@ class PlayerActivity :
 
     applySubtitlePreferences()
     applyVideoFilterPreferences()
-    viewModel.restoreSavedVideoAspect(showUpdate = false)
+    if (shouldApplyMpvAspectRestoreForLoad(loadGeneration)) {
+      viewModel.restoreSavedVideoAspect(showUpdate = false)
+    }
     binding.root.post(::updateVideoAmbientPlayerBounds)
 
     if (shouldForceCurrentMediaTitle()) {
@@ -7153,7 +7181,7 @@ class PlayerActivity :
       restorePerVideoAspectIfCurrent(
         hasSavedState = state != null,
         rememberVideoAspectPerVideo = playerPreferences.rememberVideoAspectPerVideo.get(),
-        loadGenerationIsCurrent = { PlaybackSession.isCurrentGeneration(loadGeneration) },
+        loadGenerationIsCurrent = { shouldApplyMpvAspectRestoreForLoad(loadGeneration) },
       ) {
         val savedState = requireNotNull(state)
         viewModel.restoreVideoAspect(savedState.videoAspect, savedState.customAspectRatio, showUpdate = false)
@@ -7234,14 +7262,24 @@ class PlayerActivity :
 
   /** Restore common per-video settings on Native as well as MPV. MPV-only timing and
    * track identifiers stay in the shared record untouched; they are not Media3 IDs. */
-  private suspend fun applyNativePlaybackState(state: PlaybackStateEntity?) {
+  private suspend fun applyNativePlaybackState(
+    state: PlaybackStateEntity?,
+    requestGeneration: Long = mediaRequestGeneration,
+  ) {
     nativeEngineOrNull()?.restoreTrackSelections(state?.audioSelection, state?.subtitleSelection)
     nativeSetSpeed(state?.playbackSpeed?.toFloat() ?: DEFAULT_PLAYBACK_SPEED.toFloat())
     viewModel.setVideoZoom(state?.videoZoom ?: playerPreferences.defaultVideoZoom.get())
-    if (playerPreferences.rememberVideoAspectPerVideo.get() && state != null) {
-      viewModel.restoreVideoAspect(state.videoAspect, state.customAspectRatio, showUpdate = false)
-    } else {
-      viewModel.restoreSavedVideoAspect(showUpdate = false)
+    val aspectChangeIntent = userAspectChangeIntentToken
+    if (shouldApplyAspectRestoreForLoad(
+        loadGenerationIsCurrent = requestGeneration == mediaRequestGeneration,
+        userAspectChangeOccurredForLoad = aspectChangeIntent.mediaRequestGeneration == requestGeneration,
+      )
+    ) {
+      if (playerPreferences.rememberVideoAspectPerVideo.get() && state != null) {
+        viewModel.restoreVideoAspect(state.videoAspect, state.customAspectRatio, showUpdate = false)
+      } else {
+        viewModel.restoreSavedVideoAspect(showUpdate = false)
+      }
     }
     state?.externalSubtitles.orEmpty().split("|").filter { it.isNotBlank() }.forEach { uri ->
       withContext(Dispatchers.IO) {
@@ -8167,7 +8205,7 @@ class PlayerActivity :
           mimeType = nativeItem.mimeType,
           sourceUri = nativeItem.originalUri.toUri(),
         )
-        applyNativePlaybackState(savedPlaybackState)
+        applyNativePlaybackState(savedPlaybackState, requestGeneration)
         viewModel.onVideoLoadCompleted()
       }
       return
@@ -8207,6 +8245,9 @@ class PlayerActivity :
               nativeLoad()
             }
           }
+        },
+        onGenerationReserved = { loadGeneration ->
+          mpvAspectLoadRequestGeneration[loadGeneration] = requestGeneration
         },
       )
     if (generation < 0L) {

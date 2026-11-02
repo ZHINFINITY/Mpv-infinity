@@ -2125,6 +2125,8 @@ class PlayerViewModel(
   }
 
   fun onMpvCoreInitialized() {
+    // The new core's observed `vo` has not arrived yet; never reuse the previous renderer's Glow state.
+    frameCapturedAmbientFallback = true
     _isMpvCoreReady.value = true
     scheduleAmbientUpdate(0)
     startMpvStateCollectors()

@@ -72,4 +72,22 @@ class AmbientRendererPolicyTest {
     assertTrue(fallbackSetter.contains("scheduleAmbientUpdate(0)"))
     assertTrue(viewModel.contains("if (enabled) {\n      disableAmbientShader()"))
   }
+
+  @Test
+  fun observedMpvOutputTransitionsDriveTheFrameCaptureFallback() {
+    val activity = source("ui/player/PlayerActivity.kt")
+    val outputs = listOf("gpu-next", "gpu")
+    val fallbackStates = outputs.map { output ->
+      AmbientRendererPolicy.usesFrameCapturedAmbient(nativeEngineActive = false, videoOutput = output)
+    }
+
+    assertEquals(listOf(true, false), fallbackStates)
+    assertTrue(activity.contains("PlaybackSession.propString[\"vo\"].collectAsState()"))
+    assertTrue(activity.contains("LaunchedEffect(usesFrameCapturedAmbient)"))
+    assertTrue(activity.contains("viewModel.setFrameCapturedAmbientFallback(usesFrameCapturedAmbient)"))
+    val coreInitialization = source("ui/player/PlayerViewModel.kt")
+      .substringAfter("fun onMpvCoreInitialized() {")
+      .substringBefore("isMpvReadyForCustomButtons = true")
+    assertTrue(coreInitialization.contains("frameCapturedAmbientFallback = true"))
+  }
 }
