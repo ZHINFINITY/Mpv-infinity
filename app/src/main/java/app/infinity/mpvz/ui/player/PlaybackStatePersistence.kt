@@ -155,3 +155,20 @@ internal object PlaybackStatePersistence {
       (oldState?.hasBeenWatched == true)
   }
 }
+
+internal fun shouldRestorePerVideoAspect(
+  hasSavedState: Boolean,
+  rememberVideoAspectPerVideo: Boolean,
+  loadGenerationIsCurrent: Boolean,
+): Boolean = hasSavedState && rememberVideoAspectPerVideo && loadGenerationIsCurrent
+
+internal fun restorePerVideoAspectIfCurrent(
+  hasSavedState: Boolean,
+  rememberVideoAspectPerVideo: Boolean,
+  loadGenerationIsCurrent: () -> Boolean,
+  restore: () -> Unit,
+): Boolean {
+  if (!shouldRestorePerVideoAspect(hasSavedState, rememberVideoAspectPerVideo, loadGenerationIsCurrent())) return false
+  restore()
+  return true
+}

@@ -20,6 +20,11 @@ internal object AmbientRendererPolicy {
   ): AmbientStyle =
     if (usesFrameCapture) AmbientStyle.YouTube else selectedStyle
 
+  fun shouldResumeGlowAfterFrameCaptureFallback(
+    fallbackEnabled: Boolean,
+    glowRuntimeActive: Boolean,
+  ): Boolean = !fallbackEnabled && glowRuntimeActive
+
   private fun String?.isLegacyGpuOutput(): Boolean =
     this?.trim()?.equals("gpu", ignoreCase = true) == true
 }

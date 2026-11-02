@@ -7150,6 +7150,15 @@ class PlayerActivity :
 
       if (!PlaybackSession.isCurrentGeneration(loadGeneration)) return@runCatching false
 
+      restorePerVideoAspectIfCurrent(
+        hasSavedState = state != null,
+        rememberVideoAspectPerVideo = playerPreferences.rememberVideoAspectPerVideo.get(),
+        loadGenerationIsCurrent = { PlaybackSession.isCurrentGeneration(loadGeneration) },
+      ) {
+        val savedState = requireNotNull(state)
+        viewModel.restoreVideoAspect(savedState.videoAspect, savedState.customAspectRatio, showUpdate = false)
+      }
+
       withContext(Dispatchers.Main) {
         if (!PlaybackSession.isCurrentGeneration(loadGeneration)) return@withContext
         applyDefaultSettings(state)
@@ -7221,12 +7230,6 @@ class PlayerActivity :
     // Restore video zoom from saved state
     PlaybackSession.setPropertyDouble("video-zoom", state.videoZoom.toDouble())
     viewModel.setVideoZoom(state.videoZoom)
-
-    // handleFileLoaded applies the global/default fallback before this asynchronous state lookup.
-    // Reapply the media-specific choice here when per-video aspect memory is enabled.
-    if (playerPreferences.rememberVideoAspectPerVideo.get()) {
-      viewModel.restoreVideoAspect(state.videoAspect, state.customAspectRatio, showUpdate = false)
-    }
   }
 
   /** Restore common per-video settings on Native as well as MPV. MPV-only timing and

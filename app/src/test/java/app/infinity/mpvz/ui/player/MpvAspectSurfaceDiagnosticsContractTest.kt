@@ -2,6 +2,7 @@
 package app.infinity.mpvz.ui.player
 
 import java.io.File
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -49,16 +50,60 @@ class MpvAspectSurfaceDiagnosticsContractTest {
     assertTrue(surfaceDestroy.contains("event=surface_destroyed"))
   }
 
-  @Test fun mpvLoadRestoresTheSavedPerVideoAspectAfterItsGlobalFallback() {
+  @Test fun mpvLoadRestoresTheSavedPerVideoAspectAfterItsCurrentGenerationCheck() {
     val activity = source("ui/player/PlayerActivity.kt")
+    val loadVideoPlaybackState = activity.substringAfter("private suspend fun loadVideoPlaybackState(")
+      .substringBefore("private suspend fun applyPlaybackState(")
     val applyPlaybackState = activity.substringAfter("private suspend fun applyPlaybackState(")
       .substringBefore("private suspend fun applyNativePlaybackState(")
-
-    assertTrue(applyPlaybackState.contains("playerPreferences.rememberVideoAspectPerVideo.get()"))
-    assertTrue(
-      applyPlaybackState.contains(
-        "viewModel.restoreVideoAspect(state.videoAspect, state.customAspectRatio, showUpdate = false)",
-      ),
+    val applyStateCall = loadVideoPlaybackState.indexOf(
+      "applyPlaybackState(state, restoreAudioTrack = positionRestoreOverride == null)",
     )
+    val generationCheck = loadVideoPlaybackState.indexOf(
+      "if (!PlaybackSession.isCurrentGeneration(loadGeneration)) return@runCatching false",
+      applyStateCall,
+    )
+    val aspectGate = loadVideoPlaybackState.indexOf("restorePerVideoAspectIfCurrent(", applyStateCall)
+    val aspectRestore = loadVideoPlaybackState.indexOf(
+      "viewModel.restoreVideoAspect(savedState.videoAspect, savedState.customAspectRatio, showUpdate = false)",
+      aspectGate,
+    )
+    val nextSuspension = loadVideoPlaybackState.indexOf("withContext(Dispatchers.Main)", aspectRestore)
+
+    assertTrue(applyStateCall >= 0)
+    assertTrue(generationCheck > applyStateCall)
+    assertTrue(aspectGate > generationCheck)
+    assertTrue(aspectRestore > aspectGate)
+    assertTrue(nextSuspension > aspectRestore)
+    assertTrue(loadVideoPlaybackState.contains("hasSavedState = state != null"))
+    assertTrue(loadVideoPlaybackState.contains("rememberVideoAspectPerVideo = playerPreferences.rememberVideoAspectPerVideo.get()"))
+    assertTrue(loadVideoPlaybackState.contains("loadGenerationIsCurrent = { PlaybackSession.isCurrentGeneration(loadGeneration) }"))
+    assertFalse(applyPlaybackState.contains("restoreVideoAspect("))
+  }
+
+  @Test fun staleOverlappingLoadCannotApplyPerVideoAspect() {
+    var currentGeneration = 41L
+    val previousMediaGeneration = currentGeneration
+    val appliedAspects = mutableListOf<String>()
+    currentGeneration = 42L
+
+    val previousMediaApplied =
+      restorePerVideoAspectIfCurrent(
+        hasSavedState = true,
+        rememberVideoAspectPerVideo = true,
+        loadGenerationIsCurrent = { currentGeneration == previousMediaGeneration },
+      ) { appliedAspects += "previous-media" }
+    val currentMediaApplied =
+      restorePerVideoAspectIfCurrent(
+        hasSavedState = true,
+        rememberVideoAspectPerVideo = true,
+        loadGenerationIsCurrent = { currentGeneration == 42L },
+      ) { appliedAspects += "current-media" }
+
+    assertFalse(previousMediaApplied)
+    assertTrue(currentMediaApplied)
+    assertEquals(listOf("current-media"), appliedAspects)
+    assertFalse(restorePerVideoAspectIfCurrent(false, true, { true }) { appliedAspects += "missing-state" })
+    assertFalse(restorePerVideoAspectIfCurrent(true, false, { true }) { appliedAspects += "disabled-pref" })
   }
 }

@@ -30,6 +30,8 @@ class AmbientRendererPolicyTest {
   @Test
   fun frameCaptureDoesNotOverwriteTheSelectedStyle() {
     val selectedStyle = AmbientStyle.Glow
+    val legacyGpuUsesFrameCapture =
+      AmbientRendererPolicy.usesFrameCapturedAmbient(nativeEngineActive = false, videoOutput = "gpu")
 
     assertEquals(AmbientStyle.YouTube, AmbientRendererPolicy.effectiveStyle(selectedStyle, usesFrameCapture = true))
     assertEquals(AmbientStyle.Glow, selectedStyle)
@@ -37,6 +39,19 @@ class AmbientRendererPolicyTest {
       AmbientStyle.Glow,
       AmbientRendererPolicy.effectiveStyle(AmbientStyle.Glow, usesFrameCapture = false),
     )
+    assertEquals(
+      AmbientStyle.YouTube,
+      AmbientRendererPolicy.effectiveStyle(AmbientStyle.YouTube, usesFrameCapture = false),
+    )
+    assertFalse(legacyGpuUsesFrameCapture)
+    assertEquals(AmbientStyle.YouTube, AmbientRendererPolicy.effectiveStyle(AmbientStyle.YouTube, legacyGpuUsesFrameCapture))
+  }
+
+  @Test
+  fun disablingFrameCaptureFallbackResumesOnlyAnActiveGlowSession() {
+    assertTrue(AmbientRendererPolicy.shouldResumeGlowAfterFrameCaptureFallback(fallbackEnabled = false, glowRuntimeActive = true))
+    assertFalse(AmbientRendererPolicy.shouldResumeGlowAfterFrameCaptureFallback(fallbackEnabled = false, glowRuntimeActive = false))
+    assertFalse(AmbientRendererPolicy.shouldResumeGlowAfterFrameCaptureFallback(fallbackEnabled = true, glowRuntimeActive = true))
   }
 
   @Test
@@ -44,6 +59,8 @@ class AmbientRendererPolicyTest {
     val activity = source("ui/player/PlayerActivity.kt")
     val viewModel = source("ui/player/PlayerViewModel.kt")
     val mpvView = source("ui/player/MPVView.kt")
+    val fallbackSetter = viewModel.substringAfter("fun setFrameCapturedAmbientFallback(")
+      .substringBefore("private fun isAmbientRuntimeActive()")
 
     assertTrue(activity.contains("val nativeActive = glassEngineMode == PlaybackEngineMode.NATIVE"))
     assertTrue(activity.contains("PlaybackSession.propString[\"vo\"]"))
@@ -51,6 +68,8 @@ class AmbientRendererPolicyTest {
     assertTrue(mpvView.contains("PlaybackSession.observeProperty(\"vo\", MPVLib.MpvFormat.MPV_FORMAT_STRING)"))
     assertTrue(viewModel.contains("&& !frameCapturedAmbientFallback"))
     assertTrue(viewModel.contains("@Volatile private var frameCapturedAmbientFallback = true"))
+    assertTrue(fallbackSetter.contains("AmbientRendererPolicy.shouldResumeGlowAfterFrameCaptureFallback(enabled, isAmbientGlowRuntimeActive())"))
+    assertTrue(fallbackSetter.contains("scheduleAmbientUpdate(0)"))
     assertTrue(viewModel.contains("if (enabled) {\n      disableAmbientShader()"))
   }
 }

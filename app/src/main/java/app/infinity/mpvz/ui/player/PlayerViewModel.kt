@@ -6728,7 +6728,9 @@ class PlayerViewModel(
     frameCapturedAmbientFallback = enabled
     if (enabled) {
       disableAmbientShader()
-    } else if (isAmbientGlowRuntimeActive()) {
+    } else if (
+      AmbientRendererPolicy.shouldResumeGlowAfterFrameCaptureFallback(enabled, isAmbientGlowRuntimeActive())
+    ) {
       lastAmbientScaleX = -1.0
       lastAmbientScaleY = -1.0
       scheduleAmbientUpdate(0)
