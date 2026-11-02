@@ -17,6 +17,7 @@ import app.infinity.mpvz.ui.player.PlaybackQueueState
 import app.infinity.mpvz.ui.player.PlaybackSessionState
 import app.infinity.mpvz.ui.player.RepeatMode
 import app.infinity.mpvz.ui.player.persistBeforePlaybackTeardown
+import app.infinity.mpvz.ui.player.saveSynchronousAudioResumeSnapshotIfAllowed
 import app.infinity.mpvz.ui.player.shouldResetClosedAudioSessionForMetadata
 import app.infinity.mpvz.ui.player.shouldResetClosedAudioSessionForStartIntent
 import app.infinity.mpvz.ui.player.shouldSkipSynchronousPlaybackStateSave
@@ -151,7 +152,20 @@ class MiniPlayerHandoffAndResumeTest {
     val service = File(root, "app/src/main/java/app/infinity/mpvz/ui/player/MediaPlaybackService.kt").readText()
     val saves = Regex("""AudioPlaybackResumeStore\.save\(([^)]*)\)""").findAll(service).map { it.groupValues[1] }.toList()
     assertEquals("schedule, now and task-removal saves", 3, saves.size)
-    saves.forEach { args -> assertTrue("save must pass the user-closed flag: $args", "closedByUser = userClosedSession" in args) }
+    saves.forEach { args -> assertTrue("save must pass the captured user-closed flag: $args", "closedByUser = closedByUser" in args) }
+    val scheduledSave =
+      service.substringAfter("private fun schedulePlaybackStateSave(")
+        .substringBefore("private fun savePlaybackStateNow()")
+    val scheduledFlag = scheduledSave.indexOf("val closedByUser = userClosedSession")
+    val scheduledLaunch = scheduledSave.indexOf("serviceScope.launch")
+    assertTrue(scheduledFlag >= 0 && scheduledFlag < scheduledLaunch)
+    val immediateSave =
+      service.substringAfter("private fun savePlaybackStateNow()")
+        .substringBefore("private fun savePlaybackStateSynchronously()")
+    val immediateFlag = immediateSave.indexOf("val closedByUser = userClosedSession")
+    val persistenceLaunch = immediateSave.indexOf("persistenceScope.launch")
+    assertTrue(immediateFlag >= 0 && immediateFlag < persistenceLaunch)
+    assertTrue(immediateSave.contains("playbackStateSaveJob ="))
     val stopBody = service.substringAfter("private fun stopPlaybackAndService(").substringBefore("private fun stopDetachedPlaybackIfNeeded")
     assertTrue(stopBody.contains("persistBeforePlaybackTeardown("))
     assertTrue(stopBody.contains("persist = ::savePlaybackStateSynchronously"))
@@ -178,10 +192,11 @@ class MiniPlayerHandoffAndResumeTest {
         .substringBefore("private suspend fun persistPlaybackState")
     assertTrue(syncSave.contains("shouldSkipSynchronousPlaybackStateSave("))
     assertTrue(syncSave.contains("nativeRendererOwner || identifier.isBlank()"))
+    assertTrue(syncSave.contains("saveSynchronousAudioResumeSnapshotIfAllowed("))
   }
 
   @Test
-  fun explicitClosedAudioSaveSurvivesNativeOwnerAndMissingIdentifierGuards() {
+  fun closedAudioSavePolicyAllowsOnlyExplicitAudioForNativeAndBlankIdentity() {
     val audioItem = PlaybackItem.fromUri(
       uri = "file:///audio.mp3",
       stableId = "audio",
@@ -201,17 +216,6 @@ class MiniPlayerHandoffAndResumeTest {
         currentItem = audioItem,
       )
     assertFalse(nativeBlankIdSaveIsSkipped)
-    val closedAudioQueue = PlaybackQueueState(items = listOf(audioItem), currentIndex = 0)
-    assertTrue(
-      AudioPlaybackResumeStore.save(
-        application,
-        closedAudioQueue,
-        positionSeconds = 12.0,
-        paused = true,
-        closedByUser = true,
-      ),
-    )
-    assertTrue(AudioPlaybackResumeStore.load(application)?.closedByUser == true)
     assertFalse(
       shouldSkipSynchronousPlaybackStateSave(
         nativeRendererOwner = false,
@@ -385,6 +389,26 @@ class AudioPlaybackResumeStorePersistenceTest {
       repeatMode = RepeatMode.ALL,
       shuffleEnabled = items.size > 1,
     )
+
+  @Test
+  fun synchronousSaveHelperPersistsClosedAudioForNativeOwnerWithoutIdentifier() {
+    val closedAudioQueue = queue(listOf(item("native-closed")))
+    assertTrue(
+      saveSynchronousAudioResumeSnapshotIfAllowed(
+        context = application,
+        nativeRendererOwner = true,
+        identifier = "",
+        queueState = closedAudioQueue,
+        positionSeconds = 12.0,
+        paused = true,
+        closedByUser = true,
+      ),
+    )
+    val restored = requireNotNull(AudioPlaybackResumeStore.load(application))
+    assertTrue(restored.closedByUser)
+    assertEquals(12.0, restored.positionSeconds, 0.0)
+    assertTrue(restored.paused)
+  }
 
   @Test
   fun positionOnlySavesUpdateSmallStateWithoutRewritingTheQueue() {
