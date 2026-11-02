@@ -275,7 +275,7 @@ fun MoreSheet(
       LazyRow(
         horizontalArrangement = Arrangement.spacedBy(MaterialTheme.spacing.smaller),
       ) {
-        items(8, key = { it }) { page ->
+        items(if (activeEngine == PlaybackEngineMode.NATIVE) 7 else 8, key = { it }) { page ->
           GlassChip(
             label = {
               Text(

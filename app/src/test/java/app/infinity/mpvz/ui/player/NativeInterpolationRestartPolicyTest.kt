@@ -9,6 +9,22 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class NativeInterpolationRestartPolicyTest {
+  @Test
+  fun failedFlowSurfaceReleaseUsesMpvFallbackWithoutChangingOrdinaryFlowUnavailable() {
+    assertEquals(
+      NativeInterpolationRestartResult.PLAYBACK_FAILED,
+      NativeInterpolationRestartPolicy.resultForApplyOutcome(
+        NativeInterpolationRuntimeApplyOutcome.OUTPUT_SURFACE_RELEASE_FAILED,
+      ),
+    )
+    assertEquals(
+      NativeInterpolationRestartResult.FLOW_UNAVAILABLE,
+      NativeInterpolationRestartPolicy.resultForApplyOutcome(
+        NativeInterpolationRuntimeApplyOutcome.FLOW_UNAVAILABLE,
+      ),
+    )
+  }
+
   @Test fun snapshotKeepsExactItemTimestampAndPriorPlayState() {
     val playing = NativeInterpolationRestartPolicy.capture(
       stableMediaId = "episode-17",
@@ -100,7 +116,9 @@ class NativeInterpolationRestartPolicyTest {
     assertTrue(reload.contains("hasLeftReadyState && it.isReady"))
     assertTrue(reload.contains("readinessListener?.let { player.removeListener(it) }"))
     assertTrue(reload.contains("snapshot.first"))
-    assertTrue(reload.contains("hasRenderedFirstFrame.first"))
+    assertTrue(reload.contains("combine(_renderedFirstFrameToken, _currentPlaybackErrorToken)"))
+    assertTrue(reload.contains("nativeRestartFrameOutcome("))
+    assertTrue(reload.contains("first { it != NativeRestartFrameOutcome.WAITING }"))
     val readyState = reload.indexOf("readySnapshot?.isReady")
     val playIntentRestore = reload.indexOf("player.playWhenReady = state.playWhenReady")
     val explicitPlay = reload.indexOf("if (state.playWhenReady) player.play()")

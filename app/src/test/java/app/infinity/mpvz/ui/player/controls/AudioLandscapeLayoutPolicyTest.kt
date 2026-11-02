@@ -9,7 +9,7 @@ import org.junit.Test
 class AudioLandscapeLayoutPolicyTest {
   @Test
   fun representativeHeightsFitWithinTheSafeHeight() {
-    for (height in listOf(320f, 360f, 411f, 480f)) {
+    for (height in listOf(180f, 240f, 320f, 360f, 411f, 480f)) {
       val m = AudioLandscapeLayoutPolicy.measure(height, 640f)
       assertTrue("$height: ${m.totalHeightDp}", m.totalHeightDp <= height + 0.01f)
       assertTrue(m.extrasRowDp >= AudioLandscapeLayoutPolicy.minTouchTargetDp)
@@ -22,8 +22,9 @@ class AudioLandscapeLayoutPolicyTest {
   fun artworkIsSquareAndWidthAware() {
     val narrow = AudioLandscapeLayoutPolicy.measure(411f, 480f)
     val wide = AudioLandscapeLayoutPolicy.measure(411f, 1280f)
-    assertEquals(narrow.artworkDp, narrow.artworkDp, 0.001f)
+    assertEquals(192f, narrow.artworkDp, 0.001f)
     assertTrue(wide.artworkDp > narrow.artworkDp)
+    assertEquals(256f, AudioLandscapeLayoutPolicy.measure(320f, 640f).artworkDp, 0.001f)
   }
 
   @Test
@@ -33,6 +34,16 @@ class AudioLandscapeLayoutPolicyTest {
     assertTrue(short.extrasRowDp <= tall.extrasRowDp)
     assertTrue(short.extrasRowDp >= AudioLandscapeLayoutPolicy.minTouchTargetDp)
     assertTrue(short.mainRowDp >= AudioLandscapeLayoutPolicy.minTouchTargetDp)
+  }
+
+  @Test
+  fun metadataYieldsBeforeEssentialRowsOnCompactLandscapeHeights() {
+    val compact = AudioLandscapeLayoutPolicy.measure(180f, 640f)
+    assertTrue(compact.totalHeightDp <= 180.01f)
+    assertEquals(0f, compact.metadataDp, 0.001f)
+    assertTrue(compact.seekbarDp >= AudioLandscapeLayoutPolicy.minTouchTargetDp)
+    assertTrue(compact.mainRowDp >= AudioLandscapeLayoutPolicy.minTouchTargetDp)
+    assertTrue(compact.extrasRowDp >= AudioLandscapeLayoutPolicy.minTouchTargetDp)
   }
 
   @Test
@@ -66,5 +77,26 @@ class AudioLandscapeLayoutPolicyTest {
     assertTrue(!row.contains("Modifier.size(64.dp)"))
     assertTrue(row.contains("Modifier.heightIn(max = 64.dp).fillMaxHeight().aspectRatio(1f)"))
     assertTrue(AudioLandscapeLayoutPolicy.measure(320f, 640f).mainRowDp >= 48f)
+  }
+
+  @Test
+  fun landscapeLyricsUseTheLeftPaneWithoutHidingTransportControls() {
+    val root = generateSequence(File(System.getProperty("user.dir"))) { it.parentFile }
+      .first { File(it, "app/src/main/java/app/infinity/mpvz").isDirectory }
+    val source = File(root, "app/src/main/java/app/infinity/mpvz/ui/player/controls/AudioPlayerControls.kt").readText()
+    val layout = source.substringAfter("val landscapeMetrics = AudioLandscapeLayoutPolicy.measure(")
+      .substringBefore("if (addToPlaylistDialogOpen")
+    assertTrue(layout.contains("if (showInPlaceLyrics) {\n              lyricsPanel(Modifier.fillMaxSize())"))
+    assertTrue(layout.indexOf("if (!showInPlaceLyrics)") < layout.indexOf("landscapePlaybackControlsRow()"))
+    assertTrue(layout.contains("landscapePlaybackControlsRow()"))
+    assertTrue(layout.contains("bottomActionRow()"))
+  }
+
+  @Test
+  fun flyingCoverUsesTheCurrentCoverOverride() {
+    val root = generateSequence(File(System.getProperty("user.dir"))) { it.parentFile }
+      .first { File(it, "app/src/main/java/app/infinity/mpvz").isDirectory }
+    val source = File(root, "app/src/main/java/app/infinity/mpvz/ui/player/controls/AudioPlayerControls.kt").readText()
+    assertTrue(source.contains("CoverArtCardImage(bitmap = activeCoverOverride ?: albumArtBitmap, artworkUrl = currentArtworkUri)"))
   }
 }

@@ -539,6 +539,27 @@ object PlaybackSession : MPVLib.EventObserver {
     }
   }
 
+  /** Stop only the still-current failed handoff while holding the session lock across cleanup. */
+  fun stopIfCurrentIdentity(
+    expected: PlayerLifecyclePolicy.FailedForegroundPromotionIdentity,
+    beforeStop: () -> Unit,
+  ): Boolean =
+    nativeLock.withLock {
+      val currentState = _state.value
+      val item = currentState.currentItem ?: return@withLock false
+      if (currentState.generation != expected.generation ||
+        item.stableId != expected.stableId ||
+        item.originalUri != expected.originalUri ||
+        item.torrentFileIndex != expected.torrentFileIndex
+      ) {
+        return@withLock false
+      }
+
+      beforeStop()
+      stop(clearQueue = false)
+      true
+    }
+
   suspend fun awaitStopCompletion(timeoutMillis: Long = 3_000L): Boolean {
     if (_state.value.phase != PlaybackPhase.STOPPING) return true
     return withTimeoutOrNull(timeoutMillis) {

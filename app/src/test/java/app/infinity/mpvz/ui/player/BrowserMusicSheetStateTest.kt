@@ -6,6 +6,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.yield
 import org.junit.Assert.assertEquals
@@ -25,10 +26,17 @@ class BrowserMusicSheetStateTest {
     }
   }
 
-  private fun <T> withSheet(block: suspend (BrowserMusicSheetState, CoroutineScope) -> T): T =
+  private fun <T> withSheet(
+    keepContentAfterCollapseMs: Long = BrowserMusicSheetState.KEEP_CONTENT_AFTER_COLLAPSE_MS,
+    block: suspend (BrowserMusicSheetState, CoroutineScope) -> T,
+  ): T =
     runBlocking {
       val scope = CoroutineScope(coroutineContext + SupervisorJob() + FakeFrameClock() + Dispatchers.Unconfined)
-      val sheet = BrowserMusicSheetState(scope, flingVelocityPx = 1_000f, keepContentAfterCollapseMs = 0L)
+      val sheet = BrowserMusicSheetState(
+        scope,
+        flingVelocityPx = 1_000f,
+        keepContentAfterCollapseMs = keepContentAfterCollapseMs,
+      )
       sheet.travelPx = 1_000f
       sheet.updateAvailability(true)
       try {
@@ -99,6 +107,40 @@ class BrowserMusicSheetStateTest {
     assertEquals(MusicSheetPhase.Collapsed, sheet.phase)
     assertFalse(sheet.isContentComposed)
     assertFalse(sheet.expand())
+  }
+
+  @Test
+  fun prewarmWithoutOpeningReleasesContentAfterTheQuietPeriod() =
+    withSheet(keepContentAfterCollapseMs = 100L) { sheet, _ ->
+      sheet.prewarm()
+      assertTrue(sheet.isContentComposed)
+      delay(150L)
+      assertFalse(sheet.isContentComposed)
+    }
+
+  @Test
+  fun declaredVideoCannotExposeTheServiceMusicSheet() {
+    assertTrue(
+      MusicSheetInputPolicy.isAvailable(
+        serviceActive = true,
+        phase = PlaybackPhase.READY,
+        currentItemKind = DeclaredPlaybackMediaKind.AUDIO,
+      ),
+    )
+    assertFalse(
+      MusicSheetInputPolicy.isAvailable(
+        serviceActive = true,
+        phase = PlaybackPhase.READY,
+        currentItemKind = DeclaredPlaybackMediaKind.VIDEO,
+      ),
+    )
+    assertFalse(
+      MusicSheetInputPolicy.isAvailable(
+        serviceActive = false,
+        phase = PlaybackPhase.READY,
+        currentItemKind = DeclaredPlaybackMediaKind.AUDIO,
+      ),
+    )
   }
 
   @Test

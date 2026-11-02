@@ -1270,6 +1270,7 @@ fun AudioPlayerControls(
     settleGeneration++
   }
   val releaseWatchdogScope = rememberCoroutineScope()
+  var releaseWatchdogJob by remember { mutableStateOf<kotlinx.coroutines.Job?>(null) }
   val nestedGestureController = remember {
     MiniPlayerDragController(
       state = { miniGesture },
@@ -1281,7 +1282,11 @@ fun AudioPlayerControls(
         miniGesture = next
       },
       extentPx = { morphTravelPx() },
-      settle = { velocityY -> releaseToTarget(velocityY) },
+      settle = { velocityY ->
+        releaseWatchdogJob?.cancel()
+        releaseWatchdogJob = null
+        releaseToTarget(velocityY)
+      },
     )
   }
   val liveSheetDrag =
@@ -1326,10 +1331,12 @@ fun AudioPlayerControls(
           // to dispatch, then settle from the current progress.
           awaitEachGesture {
             awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
+            releaseWatchdogJob?.cancel()
+            releaseWatchdogJob = null
             do {
               val event = awaitPointerEvent(PointerEventPass.Initial)
             } while (event.changes.any { it.pressed })
-            releaseWatchdogScope.launch {
+            releaseWatchdogJob = releaseWatchdogScope.launch {
               withFrameNanos { }
               withFrameNanos { }
               val progress = miniGesture.progress
@@ -1345,6 +1352,8 @@ fun AudioPlayerControls(
           val velocityTracker = VelocityTracker()
           detectVerticalDragGestures(
             onDragStart = {
+              releaseWatchdogJob?.cancel()
+              releaseWatchdogJob = null
               velocityTracker.resetTracking()
               transitionTranslucent = playerActivity?.setAudioTransitionTranslucent(true) == true
               nestedGestureController.onRootDragStart()
@@ -1362,6 +1371,8 @@ fun AudioPlayerControls(
               }
             },
             onDragEnd = {
+              releaseWatchdogJob?.cancel()
+              releaseWatchdogJob = null
               val velocityY = runCatching {
                 velocityTracker.calculateVelocity().y
               }.getOrDefault(0f)
@@ -1517,6 +1528,7 @@ fun AudioPlayerControls(
       )
     }
   }
+  var activeCoverOverride by remember { mutableStateOf<Bitmap?>(null) }
   Box(modifier = Modifier.fillMaxSize()) {
   AudioPaletteGlassScene(
     topArgb = visualizerPalette.primary,
@@ -1687,7 +1699,6 @@ fun AudioPlayerControls(
     val animatableOffsetX = remember { Animatable(0f) }
     val coroutineScope = rememberCoroutineScope()
     val haptic = LocalHapticFeedback.current
-    var activeCoverOverride by remember { mutableStateOf<Bitmap?>(null) }
 
     LaunchedEffect(currentItem?.stableId, mediaPath, currentArtworkUri, albumArtBitmap) {
       activeCoverOverride = null
@@ -2695,10 +2706,14 @@ fun AudioPlayerControls(
             modifier = Modifier.weight(0.9f).fillMaxHeight(),
             contentAlignment = Alignment.Center,
           ) {
-            centerVisualizerView(
-              Modifier.size(landscapeMetrics.artworkDp.dp),
-              true,
-            )
+            if (showInPlaceLyrics) {
+              lyricsPanel(Modifier.fillMaxSize())
+            } else {
+              centerVisualizerView(
+                Modifier.size(landscapeMetrics.artworkDp.dp),
+                true,
+              )
+            }
           }
           Column(
             modifier = Modifier.weight(1.1f).fillMaxHeight(),
@@ -2709,21 +2724,19 @@ fun AudioPlayerControls(
               headerBar()
               Box(modifier = Modifier.align(Alignment.BottomStart)) { losslessBadge() }
             }
-            if (showInPlaceLyrics) {
-              lyricsPanel(Modifier.weight(1f).fillMaxWidth())
-            } else {
+            if (!showInPlaceLyrics) {
               Box(modifier = Modifier.fillMaxWidth().height(landscapeMetrics.metadataDp.dp)) {
                 trackMetadataView()
               }
-              Box(modifier = Modifier.fillMaxWidth().height(landscapeMetrics.seekbarDp.dp)) {
-                seekbarView()
-              }
-              Box(modifier = Modifier.fillMaxWidth().height(landscapeMetrics.mainRowDp.dp)) {
-                landscapePlaybackControlsRow()
-              }
-              Box(modifier = Modifier.fillMaxWidth().height(landscapeMetrics.extrasRowDp.dp)) {
-                bottomActionRow()
-              }
+            }
+            Box(modifier = Modifier.fillMaxWidth().height(landscapeMetrics.seekbarDp.dp)) {
+              seekbarView()
+            }
+            Box(modifier = Modifier.fillMaxWidth().height(landscapeMetrics.mainRowDp.dp)) {
+              landscapePlaybackControlsRow()
+            }
+            Box(modifier = Modifier.fillMaxWidth().height(landscapeMetrics.extrasRowDp.dp)) {
+              bottomActionRow()
             }
           }
         }
@@ -2814,7 +2827,7 @@ fun AudioPlayerControls(
         alpha = 1f
       },
   ) {
-    CoverArtCardImage(bitmap = albumArtBitmap, artworkUrl = currentArtworkUri)
+    CoverArtCardImage(bitmap = activeCoverOverride ?: albumArtBitmap, artworkUrl = currentArtworkUri)
   }
   }
 }

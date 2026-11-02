@@ -109,6 +109,7 @@ class MediaPlaybackService :
     const val ACTION_NOTIFICATION_MEDIA_FAVORITE = "app.infinity.mpvz.action.NOTIFICATION_MEDIA_FAVORITE"
     const val ACTION_NOTIFICATION_CLOSE = "app.infinity.mpvz.action.NOTIFICATION_CLOSE"
     const val ACTION_NOTIFICATION_STOP = "app.infinity.mpvz.action.NOTIFICATION_STOP"
+    const val EXTRA_PLAYER_ACTIVITY_HANDOFF = "app.infinity.mpvz.extra.PLAYER_ACTIVITY_HANDOFF"
 
     @Volatile
     internal var thumbnail: Bitmap? = null
@@ -118,6 +119,8 @@ class MediaPlaybackService :
 
     @Volatile
     private var activeInstance: MediaPlaybackService? = null
+
+    private val failedPromotionHandoffState = PlayerLifecyclePolicy.FailedPromotionHandoffState()
 
     /** True while PlayerActivity's Native renderer owns the shared playback session. */
     @Volatile
@@ -177,7 +180,16 @@ class MediaPlaybackService :
       activeInstance?.deactivateMediaSession()
     }
 
-    internal fun takeAudioOwnershipForDetachedPlayback(): Boolean = activeInstance?.takeAudioOwnership() == true
+    internal fun takeAudioOwnershipForDetachedPlayback(): Boolean =
+      activeInstance?.let { service ->
+        val failedPromotion = PlayerLifecyclePolicy.shouldStopPlaybackAfterFailedForegroundPromotion(
+          activityHandoffRequested = service.playerActivityHandoffRequested,
+          activityRelinquishedPlayback = service.activityRelinquishedPlayback,
+          foregroundPromotionFailed = service.foregroundPromotionFailed,
+          foregroundReady = service.foregroundReady,
+        )
+        !failedPromotion && service.takeAudioOwnership()
+      } == true
 
     internal fun skipToNextFromApp(): Boolean = activeInstance?.playNextFromSession() == true
 
@@ -229,6 +241,30 @@ class MediaPlaybackService :
     }
 
     internal fun isActivityHandoffInProgress(): Boolean = activeInstance?.handingBackToActivity == true
+
+    private fun captureFailedPromotionIdentity(): PlayerLifecyclePolicy.FailedForegroundPromotionIdentity? {
+      val state = PlaybackSession.state.value
+      val item = state.currentItem ?: return null
+      return PlayerLifecyclePolicy.FailedForegroundPromotionIdentity(
+        generation = state.generation,
+        stableId = item.stableId,
+        originalUri = item.originalUri,
+        torrentFileIndex = item.torrentFileIndex,
+      )
+    }
+
+    internal fun notifyPlayerActivityRelinquishedPlayback(): PlayerLifecyclePolicy.FailedForegroundPromotionIdentity? {
+      val currentIdentity = captureFailedPromotionIdentity()
+      val service = activeInstance
+      if (service != null && !service.mpvAccessReleased) {
+        failedPromotionHandoffState.noteActivityRelinquished(currentIdentity)
+        service.activityRelinquishedPlayback = true
+        service.stopPlaybackAfterFailedPromotionIfReady()
+        return null
+      }
+
+      return failedPromotionHandoffState.takeFailureForRelinquishedActivity(currentIdentity)
+    }
 
     /** Releases every service-owned MPV access before an Activity destroys the global core. */
     internal fun prepareForMpvShutdown() {
@@ -343,6 +379,11 @@ class MediaPlaybackService :
   private var noisyReceiverRegistered = false
   @Volatile
   private var foregroundReady = false
+  private var playerActivityHandoffRequested = false
+  private var activityRelinquishedPlayback = false
+  private var foregroundPromotionFailed = false
+  private var stoppedForFailedPromotion = false
+  private var playerActivityHandoffIdentity: PlayerLifecyclePolicy.FailedForegroundPromotionIdentity? = null
   // Set once the request reached AudioManager; its listener stays in AudioManager's map until
   // abandoned, even when the request was refused or focus was lost later.
   private var audioFocusRequestSubmitted = false
@@ -507,10 +548,21 @@ class MediaPlaybackService :
   ): Int {
     Log.d(TAG, "Service starting with startId: $startId")
 
+    if (intent?.getBooleanExtra(EXTRA_PLAYER_ACTIVITY_HANDOFF, false) == true) {
+      playerActivityHandoffRequested = true
+      playerActivityHandoffIdentity = captureFailedPromotionIdentity()
+      failedPromotionHandoffState.discardStaleFor(playerActivityHandoffIdentity)
+      activityRelinquishedPlayback = failedPromotionHandoffState.wasRelinquished(playerActivityHandoffIdentity)
+      foregroundPromotionFailed = false
+      stoppedForFailedPromotion = false
+    }
+
     // MediaButtonReceiver launches us with startForegroundService(). Android 16 enforces the
     // promotion deadline even when there is no live playback session and this start will be
     // stopped immediately, so no validation or action branch may run before this call.
     if (!startForegroundNotification()) {
+      foregroundReady = false
+      recordForegroundPromotionFailure()
       stopSelf(startId)
       return START_NOT_STICKY
     }
@@ -625,16 +677,67 @@ class MediaPlaybackService :
     if (!startForegroundNotification()) {
       foregroundReady = false
       mediaSession.isActive = false
+      recordForegroundPromotionFailure()
       stopSelf(startId)
       publishForegroundActive()
       return START_NOT_STICKY
     }
     foregroundReady = true
+    failedPromotionHandoffState.clear()
+    playerActivityHandoffRequested = false
+    playerActivityHandoffIdentity = null
+    activityRelinquishedPlayback = false
+    foregroundPromotionFailed = false
+    stoppedForFailedPromotion = false
     syncMediaSessionVisibility()
     publishForegroundActive()
     Log.d(TAG, "Foreground service started successfully")
 
     return START_NOT_STICKY
+  }
+
+  private fun recordForegroundPromotionFailure() {
+    foregroundPromotionFailed = true
+    failedPromotionHandoffState.recordFailure(
+      if (playerActivityHandoffRequested) playerActivityHandoffIdentity else null,
+    )
+    stopPlaybackAfterFailedPromotionIfReady()
+  }
+
+  private fun stopPlaybackAfterFailedPromotionIfReady() {
+    val failedIdentity = failedPromotionHandoffState.pendingFailureFor(playerActivityHandoffIdentity)
+    val currentIdentity = captureFailedPromotionIdentity()
+    val shouldStop = PlayerLifecyclePolicy.shouldStopPlaybackAfterFailedForegroundPromotion(
+      activityHandoffRequested = playerActivityHandoffRequested,
+      activityRelinquishedPlayback = activityRelinquishedPlayback,
+      foregroundPromotionFailed = foregroundPromotionFailed,
+      foregroundReady = foregroundReady,
+    ) && PlayerLifecyclePolicy.shouldApplyPendingFailedPromotionCleanup(
+      failedIdentity = failedIdentity,
+      currentIdentity = currentIdentity,
+      activityRelinquishedPlayback = activityRelinquishedPlayback,
+      foregroundReady = foregroundReady,
+    )
+    if (failedIdentity != null && failedIdentity != currentIdentity) {
+      failedPromotionHandoffState.discardStaleFor(currentIdentity)
+    }
+    if (!shouldStop || failedIdentity == null || stoppedForFailedPromotion || mpvAccessReleased) return
+
+    val stoppedCurrentSession = PlaybackSession.stopIfCurrentIdentity(failedIdentity) {
+      runCatching { torrentStreamingEngine.stopStream() }
+      .onFailure { error -> Log.e(TAG, "Error stopping torrent stream after failed foreground promotion", error) }
+    }
+    if (!stoppedCurrentSession) {
+      failedPromotionHandoffState.discardStaleFor(captureFailedPromotionIdentity())
+      return
+    }
+
+    failedPromotionHandoffState.consume(failedIdentity)
+    stoppedForFailedPromotion = true
+    Log.w(TAG, "Stopping detached MPV playback after the Activity handoff lost foreground promotion")
+    paused = true
+    abandonAudioOwnership()
+    stopForegroundNotification()
   }
 
   @SuppressLint("ForegroundServiceType")
@@ -1345,6 +1448,8 @@ class MediaPlaybackService :
             }
 
             override fun onStop() {
+              // A system Stop is an explicit close even during a brief ownership handoff.
+              userClosedSession = true
               if (!canHandleTransportAction()) return
               Log.d(TAG, "onStop called")
               stopPlaybackAndService()
@@ -2262,6 +2367,7 @@ class MediaPlaybackService :
     try {
       Log.d(TAG, "Service destroyed")
 
+      stopPlaybackAfterFailedPromotionIfReady()
       releaseMpvAccessBeforeShutdown()
       foregroundReady = false
       abandonAudioOwnership()

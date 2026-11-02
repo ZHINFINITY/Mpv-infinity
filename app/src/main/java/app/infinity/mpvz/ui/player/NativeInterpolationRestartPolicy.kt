@@ -17,7 +17,21 @@ internal enum class NativeInterpolationRestartResult {
   PLAYBACK_FAILED,
 }
 
+internal enum class NativeInterpolationRuntimeApplyOutcome {
+  APPLIED,
+  FLOW_UNAVAILABLE,
+  OUTPUT_SURFACE_RELEASE_FAILED,
+}
+
 internal object NativeInterpolationRestartPolicy {
+  fun resultForApplyOutcome(outcome: NativeInterpolationRuntimeApplyOutcome): NativeInterpolationRestartResult =
+    when (outcome) {
+      NativeInterpolationRuntimeApplyOutcome.APPLIED -> NativeInterpolationRestartResult.APPLIED
+      NativeInterpolationRuntimeApplyOutcome.FLOW_UNAVAILABLE -> NativeInterpolationRestartResult.FLOW_UNAVAILABLE
+      NativeInterpolationRuntimeApplyOutcome.OUTPUT_SURFACE_RELEASE_FAILED ->
+        NativeInterpolationRestartResult.PLAYBACK_FAILED
+    }
+
   fun capture(
     stableMediaId: String?,
     mediaUri: String?,

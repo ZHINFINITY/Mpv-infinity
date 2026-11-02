@@ -20,7 +20,7 @@ class Media3FlowOutputSurfaceReleaseContractTest {
     assertTrue(clear.contains("val releaseFence = CountDownLatch(1)"))
     assertTrue(clear.contains("destroyWindowSurface { releaseFence.countDown() }"))
     assertTrue(clear.contains("releaseFence.await(GL_INIT_TIMEOUT_MS, TimeUnit.MILLISECONDS)"))
-    assertTrue(clear.indexOf("releaseFence.await") > clear.indexOf("val posted = if"))
+    assertTrue(clear.indexOf("releaseFence.await") > clear.indexOf("val posted = try"))
     assertTrue(clear.contains("event=output_surface_release state=complete"))
     assertTrue(clear.contains("val failureState = if (completed) \"release_failed\" else \"timeout\""))
     assertTrue(clear.contains("event=output_surface_release state=\$failureState"))

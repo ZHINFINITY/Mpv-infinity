@@ -3113,6 +3113,19 @@ class PlayerActivity :
         backgroundPlaybackSessionActive = isBackgroundPlaybackSessionActive,
         miniPlayerHandoff = (playbackWasInitialized || nativeWasActive) && miniPlayerHandoffRequested,
       )
+    val failedPromotionIdentity =
+      if (keepBackgroundPlaybackAlive) MediaPlaybackService.notifyPlayerActivityRelinquishedPlayback() else null
+    if (failedPromotionIdentity != null) {
+      val stoppedCurrentSession = PlaybackSession.stopIfCurrentIdentity(failedPromotionIdentity) {
+        runCatching { torrentStreamingEngine.stopStream() }
+          .onFailure { error -> Log.e(TAG, "Error stopping torrent stream after failed service promotion", error) }
+      }
+      if (stoppedCurrentSession) {
+        Log.w(TAG, "Stopped the relinquished session after its failed foreground service was destroyed")
+      } else {
+        Log.w(TAG, "Skipped failed-promotion cleanup because the active playback identity changed")
+      }
+    }
 
 
     runCatching {
@@ -5272,7 +5285,8 @@ class PlayerActivity :
         val nativePlayIntent = pendingNativeForegroundPlayIntent
         engine.refreshAfterConfigurationChange()
         val player = engine.currentPlayer
-        if ((nativePlayIntent ?: player.playWhenReady) &&
+        if (playerPreferences.autoplayAfterScreenUnlock.get() &&
+          (nativePlayIntent ?: player.playWhenReady) &&
           player.currentMediaItem != null &&
           player.playbackState != androidx.media3.common.Player.STATE_ENDED &&
           !player.isPlaying
@@ -9107,6 +9121,7 @@ class PlayerActivity :
         putExtra("media_uri", currentDurableMediaUri())
         putExtra("media_identifier", currentNotificationMediaIdentifier())
         putExtra("audio_background_playback", isCurrentPlaybackAudio())
+        putExtra(MediaPlaybackService.EXTRA_PLAYER_ACTIVITY_HANDOFF, bindToActivity)
       }
 
     try {

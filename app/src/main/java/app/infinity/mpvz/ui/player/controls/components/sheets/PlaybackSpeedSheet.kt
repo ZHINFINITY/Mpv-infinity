@@ -36,6 +36,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.scale
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -43,6 +44,7 @@ import app.infinity.mpvz.R
 import app.infinity.mpvz.preferences.AudioPreferences
 import app.infinity.mpvz.preferences.preference.collectAsState
 import app.infinity.mpvz.presentation.components.PlayerSheet
+import app.infinity.mpvz.ui.preferences.components.settingsGlassEnabled
 import app.infinity.mpvz.presentation.components.RepeatingIconButton
 import app.infinity.mpvz.ui.icons.Icon
 import app.infinity.mpvz.ui.icons.Icons
@@ -68,6 +70,7 @@ fun PlaybackSpeedSheet(
   pitchCorrectionEnabled: Boolean = true,
   modifier: Modifier = Modifier,
 ) {
+  val glassEnabled = settingsGlassEnabled()
   PlayerSheet(onDismissRequest = onDismissRequest) {
     Column(
       modifier
@@ -153,7 +156,12 @@ fun PlaybackSpeedSheet(
             GlassChip(
               selected = kotlin.math.abs(presetSpeed - speed) < 0.01f,
               onClick = { onSpeedChange(presetSpeed) },
-              label = { Text("${presetSpeed.toFixed(2)}") },
+              label = {
+                Text(
+                  "${presetSpeed.toFixed(2)}",
+                  color = if (glassEnabled && !isDefault) MaterialTheme.colorScheme.tertiary else Color.Unspecified,
+                )
+              },
               leadingIcon = null,
               enabled = speedControlEnabled,
               colors =

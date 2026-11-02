@@ -124,6 +124,13 @@ class PlayerLifecyclePolicyTest {
     )
     assertTrue(
       PlayerLifecyclePolicy.shouldRecoverNativePlayback(
+        hasCurrentMediaItem = false,
+        playbackIsIdle = false,
+        mediaLoadInProgress = false,
+      ),
+    )
+    assertTrue(
+      PlayerLifecyclePolicy.shouldRecoverNativePlayback(
         hasCurrentMediaItem = true,
         playbackIsIdle = true,
         mediaLoadInProgress = false,
@@ -190,6 +197,88 @@ class PlayerLifecyclePolicyTest {
         backgroundPlaybackSessionActive = true,
       ),
     )
+  }
+
+  @Test
+  fun failedForegroundPromotionStopsPlaybackOnlyAfterActivityRelinquishesIt() {
+    fun shouldStop(
+      handoffRequested: Boolean = true,
+      activityRelinquished: Boolean = true,
+      promotionFailed: Boolean = true,
+      foregroundReady: Boolean = false,
+    ) = PlayerLifecyclePolicy.shouldStopPlaybackAfterFailedForegroundPromotion(
+      activityHandoffRequested = handoffRequested,
+      activityRelinquishedPlayback = activityRelinquished,
+      foregroundPromotionFailed = promotionFailed,
+      foregroundReady = foregroundReady,
+    )
+
+    assertTrue(shouldStop())
+    assertFalse(shouldStop(activityRelinquished = false))
+    assertFalse(shouldStop(handoffRequested = false))
+    assertFalse(shouldStop(promotionFailed = false))
+    assertFalse(shouldStop(foregroundReady = true))
+  }
+
+  @Test
+  fun deferredFailedPromotionCleanupRequiresTheExactRelinquishedSession() {
+    val failed = PlayerLifecyclePolicy.FailedForegroundPromotionIdentity(
+      generation = 12L,
+      stableId = "episode-17",
+      originalUri = "magnet:?xt=urn:btih:episode-17",
+      torrentFileIndex = 4,
+    )
+    fun applies(
+      current: PlayerLifecyclePolicy.FailedForegroundPromotionIdentity? = failed,
+      relinquished: Boolean = true,
+      foregroundReady: Boolean = false,
+    ) = PlayerLifecyclePolicy.shouldApplyPendingFailedPromotionCleanup(
+      failedIdentity = failed,
+      currentIdentity = current,
+      activityRelinquishedPlayback = relinquished,
+      foregroundReady = foregroundReady,
+    )
+
+    assertTrue(applies())
+    assertFalse(applies(relinquished = false))
+    assertFalse(applies(foregroundReady = true))
+    assertFalse(applies(current = failed.copy(generation = 13L)))
+    assertFalse(applies(current = failed.copy(stableId = "episode-18")))
+    assertFalse(applies(current = failed.copy(originalUri = "magnet:?xt=urn:btih:other")))
+    assertFalse(applies(current = failed.copy(torrentFileIndex = 5)))
+    assertFalse(applies(current = null))
+  }
+
+  @Test
+  fun failedPromotionHandoffStateHandlesBothCallbackOrdersAndSuccessfulRecovery() {
+    val identity = PlayerLifecyclePolicy.FailedForegroundPromotionIdentity(
+      generation = 21L,
+      stableId = "episode-22",
+      originalUri = "magnet:?xt=urn:btih:episode-22",
+      torrentFileIndex = 2,
+    )
+
+    val failureFirst = PlayerLifecyclePolicy.FailedPromotionHandoffState()
+    failureFirst.recordFailure(identity)
+    assertEquals(identity, failureFirst.pendingFailureFor(identity))
+    assertEquals(identity, failureFirst.takeFailureForRelinquishedActivity(identity))
+    assertTrue(failureFirst.pendingFailureFor(identity) == null)
+
+    val relinquishFirst = PlayerLifecyclePolicy.FailedPromotionHandoffState()
+    relinquishFirst.noteActivityRelinquished(identity)
+    assertTrue(relinquishFirst.wasRelinquished(identity))
+    relinquishFirst.recordFailure(identity)
+    assertEquals(identity, relinquishFirst.pendingFailureFor(identity))
+    relinquishFirst.clear()
+    assertTrue(relinquishFirst.pendingFailureFor(identity) == null)
+    assertFalse(relinquishFirst.wasRelinquished(identity))
+
+    val staleFailure = PlayerLifecyclePolicy.FailedPromotionHandoffState()
+    staleFailure.recordFailure(identity)
+    val replacement = identity.copy(generation = 22L)
+    assertTrue(staleFailure.takeFailureForRelinquishedActivity(replacement) == null)
+    assertTrue(staleFailure.pendingFailureFor(identity) == null)
+    assertTrue(staleFailure.wasRelinquished(replacement))
   }
 
   private fun pausesDetachedOnLeave(

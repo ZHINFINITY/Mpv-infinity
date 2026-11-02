@@ -15,7 +15,18 @@ class PlayerControlsPositionSubscriptionTest {
   @Test fun videoControlsCollectPositionOnlyInsideSeekbarLeaf() {
     val text = source("app/src/main/java/app/infinity/mpvz/ui/player/controls/PlayerControls.kt")
     val body = text.substringAfter("fun PlayerControls(").substringBefore("fun AudioPlayerControls(")
-    assertFalse(body.contains("val precisePosition by viewModel.precisePosition.collectAsState()"))
-    assertTrue(body.contains("val precisePosition by viewModel.precisePosition.collectAsStateWithLifecycle()"))
+    val seekbarBoundary = body.indexOf(").constrainAs(seekbar)")
+    assertTrue(seekbarBoundary >= 0)
+    val beforeSeekbar = body.substring(0, seekbarBoundary)
+    val seekbarLeaf = body.substring(seekbarBoundary)
+    assertFalse(beforeSeekbar.contains("val precisePosition by viewModel.precisePosition.collectAsState"))
+    assertTrue(seekbarLeaf.contains("val precisePosition by viewModel.precisePosition.collectAsStateWithLifecycle()"))
+  }
+
+  @Test fun aNewGestureCancelsThePreviousReleaseWatchdog() {
+    val text = source("app/src/main/java/app/infinity/mpvz/ui/player/controls/AudioPlayerControls.kt")
+    assertTrue(text.contains("var releaseWatchdogJob by remember"))
+    assertTrue(text.contains("releaseWatchdogJob?.cancel()"))
+    assertTrue(text.contains("releaseWatchdogJob = releaseWatchdogScope.launch"))
   }
 }
