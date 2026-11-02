@@ -20,6 +20,7 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import java.io.File
 import java.lang.ref.WeakReference
+import java.lang.reflect.Modifier
 
 /**
  * LeakCanary (OnePlus, API 37), reported twice:
@@ -110,6 +111,12 @@ class AudioFocusLeakTest {
     assertTrue(AudioFocusRegistrationPolicy.releaseOnDestroy(changingConfigurations = false, holdsFocus = false))
     assertTrue(AudioFocusRegistrationPolicy.releaseOnDestroy(changingConfigurations = true, holdsFocus = false))
     assertFalse(AudioFocusRegistrationPolicy.releaseOnDestroy(changingConfigurations = true, holdsFocus = true))
+  }
+
+  @Test
+  fun serviceAudioFocusSubmissionFieldIsVolatileInBytecode() {
+    val field = MediaPlaybackService::class.java.getDeclaredField("audioFocusRequestSubmitted")
+    assertTrue("the callback and cleanup threads must see the same submission flag", Modifier.isVolatile(field.modifiers))
   }
 
   // PlayerActivity itself: every exit path (finish, Back, minimize handoff, engine switch, process

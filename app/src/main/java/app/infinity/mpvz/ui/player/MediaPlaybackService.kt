@@ -79,6 +79,33 @@ import kotlin.math.ceil
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 
+internal fun shouldResetClosedAudioSessionForStartIntent(
+  action: String?,
+  identifier: String?,
+  uri: String?,
+): Boolean =
+  (action == null || action == Intent.ACTION_VIEW) &&
+    (!identifier.isNullOrBlank() || !uri.isNullOrBlank())
+
+internal fun shouldResetClosedAudioSessionForMetadata(
+  sessionState: PlaybackSessionState,
+  closedSessionGeneration: Long?,
+  identifier: String?,
+  uri: String?,
+): Boolean {
+  if (closedSessionGeneration == null || sessionState.generation == closedSessionGeneration) return false
+  val resolvedIdentifier = identifier?.takeIf { it.isNotBlank() }
+  val resolvedUri = uri?.takeIf { it.isNotBlank() }
+  if (sessionState.phase != PlaybackPhase.LOADING &&
+    sessionState.phase != PlaybackPhase.READY &&
+    sessionState.phase != PlaybackPhase.BACKGROUND
+  ) return false
+  val item = sessionState.currentItem ?: return false
+  if (resolvedIdentifier == null && resolvedUri == null) return false
+  return MediaSessionItemIdentity(item.stableId, item.originalUri)
+    .acceptsMetadata(resolvedIdentifier, resolvedUri)
+}
+
 /**
  * Background playback service for mpv with MediaSession integration.
  * On Android 16+ (API 36), uses progress-centric notifications with chapter segment indicators.
@@ -386,12 +413,14 @@ class MediaPlaybackService :
   private var playerActivityHandoffIdentity: PlayerLifecyclePolicy.FailedForegroundPromotionIdentity? = null
   // Set once the request reached AudioManager; its listener stays in AudioManager's map until
   // abandoned, even when the request was refused or focus was lost later.
+  @Volatile
   private var audioFocusRequestSubmitted = false
 
   // The user closed this session (mini player X, notification close/swipe). Every later save of this
-  // service instance carries it, including the ones from stop and onDestroy, so the library does not
-  // pop the session straight back up as a resume card. A new service instance starts clear.
+  // service instance carries it, including stop and onDestroy saves. Only accepted metadata for a
+  // new live playback session clears it; notification and media-button actions do not.
   @Volatile private var userClosedSession = false
+  @Volatile private var userClosedSessionGeneration: Long? = null
 
   // Captures the service; AudioManager only sees the weak wrapper below (see WeakAudioFocusListener).
   private val audioFocusChangeHandler =
@@ -600,7 +629,7 @@ class MediaPlaybackService :
         ACTION_NOTIFICATION_CLOSE,
         ACTION_NOTIFICATION_STOP,
         -> {
-          userClosedSession = true
+          markUserClosedSession()
           stopPlaybackAndService(force = true)
           return START_NOT_STICKY
         }
@@ -611,6 +640,9 @@ class MediaPlaybackService :
       val artist = it.getStringExtra("media_artist")
       val uri = it.getStringExtra("media_uri")
       val identifier = it.getStringExtra("media_identifier")
+      if (shouldResetClosedAudioSessionForStartIntent(it.action, identifier, uri)) {
+        resetUserClosedSessionForNewPlayback(PlaybackSession.state.value, identifier, uri)
+      }
       if (it.hasExtra("audio_background_playback")) {
         val isAudio = it.getBooleanExtra("audio_background_playback", false)
         usesAudioBackgroundPlayback = isAudio
@@ -777,6 +809,11 @@ class MediaPlaybackService :
     identifier: String? = null,
   ) {
     serviceScope.launch {
+      val sessionState = PlaybackSession.state.value
+      val currentItem = sessionState.currentItem
+      // This handles PlayerActivity's already-bound-service path only after a new live generation;
+      // reopening the same notification session or syncing artwork cannot clear the close marker.
+      resetUserClosedSessionForNewPlayback(sessionState, identifier, uri)
       if (isCurrentRadioItem()) {
         refreshCurrentRadioMetadata()
         updateMediaSessionPlaybackState()
@@ -785,7 +822,6 @@ class MediaPlaybackService :
       }
       val resolvedTitle = FileTypeUtils.stripExtension(title)
       val resolvedIdentifier = identifier?.takeIf { it.isNotBlank() }
-      val currentItem = PlaybackSession.queue.value.currentItem
       if (currentItem != null &&
         !MediaSessionItemIdentity(currentItem.stableId, currentItem.originalUri)
           .acceptsMetadata(resolvedIdentifier, uri)
@@ -814,6 +850,25 @@ class MediaPlaybackService :
       updateMediaSessionPlaybackState()
       updateNotification()
     }
+  }
+
+  @Synchronized
+  private fun markUserClosedSession() {
+    userClosedSessionGeneration = PlaybackSession.state.value.generation
+    userClosedSession = true
+  }
+
+  @Synchronized
+  private fun resetUserClosedSessionForNewPlayback(
+    sessionState: PlaybackSessionState,
+    identifier: String?,
+    uri: String?,
+  ) {
+    if (!userClosedSession) return
+    val closedGeneration = userClosedSessionGeneration ?: return
+    if (!shouldResetClosedAudioSessionForMetadata(sessionState, closedGeneration, identifier, uri)) return
+    userClosedSession = false
+    userClosedSessionGeneration = null
   }
 
   private fun replaceOwnedThumbnail(source: Bitmap?): Boolean {
@@ -1449,7 +1504,7 @@ class MediaPlaybackService :
 
             override fun onStop() {
               // A system Stop is an explicit close even during a brief ownership handoff.
-              userClosedSession = true
+              markUserClosedSession()
               if (!canHandleTransportAction()) return
               Log.d(TAG, "onStop called")
               stopPlaybackAndService()
@@ -1500,7 +1555,7 @@ class MediaPlaybackService :
               when (action) {
                 ACTION_NOTIFICATION_MEDIA_FAVORITE -> toggleCurrentMediaNotificationFavorite()
                 ACTION_NOTIFICATION_CLOSE -> {
-                  userClosedSession = true
+                  markUserClosedSession()
                   stopPlaybackAndService(force = true)
                 }
               }
