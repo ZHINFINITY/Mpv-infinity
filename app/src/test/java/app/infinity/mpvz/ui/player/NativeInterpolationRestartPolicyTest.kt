@@ -122,7 +122,7 @@ class NativeInterpolationRestartPolicyTest {
     val readyState = reload.indexOf("readySnapshot?.isReady")
     val playIntentRestore = reload.indexOf("player.playWhenReady = state.playWhenReady")
     val explicitPlay = reload.indexOf("if (state.playWhenReady) player.play()")
-    val firstFrameWait = reload.indexOf("val firstFrameRendered")
+    val firstFrameWait = reload.indexOf("combine(_renderedFirstFrameToken, _currentPlaybackErrorToken)")
     assertTrue(readyState < playIntentRestore)
     assertTrue(playIntentRestore < explicitPlay)
     assertTrue(explicitPlay < firstFrameWait)
