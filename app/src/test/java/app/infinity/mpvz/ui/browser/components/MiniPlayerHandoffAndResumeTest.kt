@@ -8,6 +8,7 @@ import android.app.Application
 import android.content.Context
 import android.content.Intent
 import android.content.SharedPreferences
+import app.infinity.mpvz.ui.player.AudiobookPlaybackInfo
 import app.infinity.mpvz.ui.player.AudioPlaybackResumeSnapshot
 import app.infinity.mpvz.ui.player.AudioPlaybackResumeStore
 import app.infinity.mpvz.ui.player.ClosedAudioSessionMarker
@@ -255,6 +256,10 @@ class MiniPlayerHandoffAndResumeTest {
       stableId = "video",
       mimeType = "video/mp4",
     )
+    val audiobookItem =
+      audioItem.copy(
+        audiobook = AudiobookPlaybackInfo(bookId = 123L, trackId = 456L),
+      )
 
     val nativeBlankIdSaveIsSkipped =
       shouldSkipSynchronousPlaybackStateSave(
@@ -298,6 +303,8 @@ class MiniPlayerHandoffAndResumeTest {
     )
     assertTrue(shouldMarkClosedAudioSession(audioItem))
     assertFalse(shouldMarkClosedAudioSession(videoItem))
+    assertFalse(AudioPlaybackResumeStore.canPersistCurrentItem(audiobookItem))
+    assertFalse(shouldMarkClosedAudioSession(audiobookItem))
     assertFalse(shouldMarkClosedAudioSession(null))
   }
 
@@ -417,6 +424,32 @@ class MiniPlayerHandoffAndResumeTest {
     val emptyState = PlaybackSessionState(phase = PlaybackPhase.IDLE, generation = 7L, currentItem = null)
     assertFalse("the process marker clears only once the queue is empty", marker.isClosed(emptyState, null))
     assertFalse(marker.isCurrentClosedSession(7L, current))
+  }
+
+  @Test
+  fun repeatedCloseKeepsFirstSnapshotButFreshGenerationCapturesAgain() {
+    val current =
+      PlaybackItem.fromUri(
+        uri = "file:///retry-close.mp3",
+        stableId = "retry-close",
+        mimeType = "audio/mpeg",
+      )
+    val marker = ClosedAudioSessionMarker()
+    marker.mark(generation = 7L, currentItem = current, positionSeconds = 29.5, paused = false)
+
+    // A failed close pauses playback; retrying must not replace the user's original play intent.
+    marker.mark(generation = 7L, currentItem = current, positionSeconds = 0.0, paused = true)
+    val retried = requireNotNull(marker.snapshotFor(current))
+    assertEquals(7L, retried.generation)
+    assertEquals(29.5, retried.positionSeconds, 0.0)
+    assertFalse(retried.paused)
+
+    // PlaybackSession.load advances generation, so a later session for the item gets a fresh capture.
+    marker.mark(generation = 8L, currentItem = current, positionSeconds = 4.5, paused = true)
+    val resumed = requireNotNull(marker.snapshotFor(current))
+    assertEquals(8L, resumed.generation)
+    assertEquals(4.5, resumed.positionSeconds, 0.0)
+    assertTrue(resumed.paused)
   }
 
   @Test
@@ -689,7 +722,7 @@ class AudioPlaybackResumeStorePersistenceTest {
     }
     markerReadThread.start()
     assertTrue(markerReadStarted.await(3, TimeUnit.SECONDS))
-    val markerReadReturnedBeforeRelease = markerReadFinished.await(1, TimeUnit.SECONDS)
+    val markerReadReturnedBeforeRelease = markerReadFinished.await(2, TimeUnit.SECONDS)
 
     val incomingItem = item("close-race-new")
     val incomingCapture =

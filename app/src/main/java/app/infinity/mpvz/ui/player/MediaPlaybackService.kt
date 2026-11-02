@@ -171,7 +171,10 @@ internal class ClosedAudioSessionMarker {
     positionSeconds: Double,
     paused: Boolean,
   ) {
-    if (isClosePersistencePending(generation, currentItem)) return
+    // A failed close pauses playback before its persistence retry; keep the original play intent.
+    if (isClosePersistencePending(generation, currentItem) ||
+      matchesSession(closedSnapshot, generation, currentItem)
+    ) return
     closedSnapshot =
       ClosedAudioSessionSnapshot(
         generation = generation,
@@ -372,7 +375,7 @@ internal suspend fun persistBeforePlaybackTeardown(
 }
 
 internal fun shouldMarkClosedAudioSession(currentItem: PlaybackItem?): Boolean =
-  currentItem?.isDefinitelyAudioOnly() == true
+  AudioPlaybackResumeStore.canPersistCurrentItem(currentItem)
 
 internal fun shouldSkipSynchronousPlaybackStateSave(
   nativeRendererOwner: Boolean,
