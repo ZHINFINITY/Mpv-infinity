@@ -75,6 +75,30 @@ jobs:
           echo "VERSION_TAG=$version_tag" >> "$GITHUB_ENV"
           echo "version_tag=$version_tag" >> "$GITHUB_OUTPUT"
 
+      - name: Verify release tag matches app version
+        shell: bash
+        env:
+          VERSION_TAG: ${{ steps.release_tag.outputs.version_tag }}
+        run: |
+          set -euo pipefail
+          app_version="$(python3 - <<'PY_VERSION'
+          import re
+          from pathlib import Path
+
+          text = Path("app/build.gradle.kts").read_text(encoding="utf-8")
+          match = re.search(r'(?m)^\s*versionName\s*=\s*"([^"]+)"\s*(?://.*)?$', text)
+          if not match:
+              raise SystemExit("Could not find a literal app versionName in app/build.gradle.kts")
+          print(match.group(1))
+          PY_VERSION
+          )"
+          tag_version="${VERSION_TAG#v}"
+          if [[ "$tag_version" != "$app_version" ]]; then
+            echo "::error title=Release version mismatch::Release tag $VERSION_TAG does not match app versionName $app_version."
+            exit 1
+          fi
+          echo "Release tag $VERSION_TAG matches app versionName $app_version."
+
       - name: Make Gradle wrapper executable
         run: chmod +x ./gradlew
 
