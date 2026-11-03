@@ -120,7 +120,7 @@ class PlayerFollowupUiContractTest {
     assertTrue(controls.contains("val portraitControlsAboveGroupTop ="))
     assertTrue(controls.contains("bottom.linkTo(seekbar.top"))
     assertTrue(controls.contains("createTopBarrier(*landscapeSideControlBandRefs.toTypedArray())"))
-    assertTrue(controls.contains("bottom.linkTo(landscapeSideControlBandTop, spacing.medium)"))
+    assertTrue(controls.contains("bottom.linkTo(parent.bottom, spacing.large)"))
     assertTrue(controls.contains("createTopBarrier(*landscapeControlBandRefs.toTypedArray())"))
     assertTrue(controls.contains("bottom.linkTo(landscapeControlBandTop, spacing.medium)"))
     assertTrue(controls.contains("end.linkTo(playerPauseButton.start, spacing.small)"))
