@@ -1221,8 +1221,8 @@ fun RenderPlayerButton(
         if (statisticsPage == 6) {
           advancedPreferences.enabledStatisticsPage.set(0)
         } else {
-          advancedPreferences.enabledStatisticsPage.set(6)
           StatsLuaOverlay.hide()
+          advancedPreferences.enabledStatisticsPage.set(6)
         }
         onOpenSheet(Sheets.None)
       }

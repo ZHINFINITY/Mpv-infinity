@@ -206,10 +206,6 @@ class MPVView(
       mpvFlowDiagnosticsEnabled = false
       mpvFlowCaptureControlConfigured = false
     }
-    if (result.getOrNull() == true) {
-      PlayerStatsLuaRestorePolicy.onCoreRecreated()
-      StatsLuaOverlay.onCoreStarted()
-    }
     if (result.isSuccess && BuildConfig.DEBUG && BuildConfig.MPV_HAS_MPVFLOW) {
       // PlaybackSession may reuse a core and skip initOptions for this view.
       configureMpvFlowCaptureControl("after_initialize")
@@ -1030,22 +1026,12 @@ class MPVView(
       Debanding.GPU -> PlaybackSession.setOptionString("deband", "yes")
     }
 
-  }
-
-  fun applyStartupStatistics(force: Boolean = false) {
-    val isMusic =
-      PlaybackSession.queue.value.currentItem?.isDefinitelyAudioOnly() == true ||
-        PlaybackSession.queue.value.currentItem?.declaredMediaKind() == DeclaredPlaybackMediaKind.AUDIO
-    if (isMusic) return
-    // The native core survives Activity recreation and playlist loads. A toggle on every
-    // load would turn an already enabled statistics overlay off on the next file.
-    if (!force && PlaybackSession.getPropertyString(PlayerStatsLuaRestorePolicy.STARTUP_APPLIED_PROPERTY) ==
-      PlayerStatsLuaRestorePolicy.STARTUP_APPLIED_YES) return
-    PlaybackSession.setPropertyString(
-      PlayerStatsLuaRestorePolicy.STARTUP_APPLIED_PROPERTY,
-      PlayerStatsLuaRestorePolicy.STARTUP_APPLIED_YES,
-    )
-    StatsLuaOverlay.show(advancedPreferences.enabledStatisticsPage.get())
+    // Keep the MPV stats OSD video-only. Otherwise a music item can inherit the previous
+    // video's stats overlay when MPV is reused for audio playback.
+    StatsLuaOverlay.onCoreStarted()
+    if (PlaybackSession.queue.value.currentItem?.isDefinitelyAudioOnly() != true) {
+      StatsLuaOverlay.show(advancedPreferences.enabledStatisticsPage.get())
+    }
   }
 
   fun applyOsdSafeAreaMargins(insets: WindowInsetsCompat? = null) {

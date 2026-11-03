@@ -300,20 +300,31 @@ fun MoreSheet(
                 return@GlassChip
               }
               val isConsoleOpen = PlaybackSession.getPropertyBoolean("user-data/mpv/console/open") == true
-              advancedPreferences.enabledStatisticsPage.set(page)
+
+              // If we are choosing any page OTHER than Console, close the console if it's currently open
               if (page != 7 && isConsoleOpen) {
                 PlaybackSession.command("script-message-to", "console", "disable")
               }
+
               when (page) {
-                0, 6 -> StatsLuaOverlay.hide()
+                0 -> {
+                  StatsLuaOverlay.hide()
+                }
+                6 -> {
+                  StatsLuaOverlay.hide()
+                }
                 7 -> {
                   StatsLuaOverlay.hide()
+                  // Enable console only if it is not already open
                   if (!isConsoleOpen) {
                     PlaybackSession.command("script-message-to", "console", "enable")
                   }
                 }
-                else -> StatsLuaOverlay.show(page)
+                else -> {
+                  StatsLuaOverlay.show(page)
+                }
               }
+              advancedPreferences.enabledStatisticsPage.set(page)
             },
             selected = statisticsPage == page,
             leadingIcon = null,
