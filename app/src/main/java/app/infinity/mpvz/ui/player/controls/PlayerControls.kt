@@ -1246,6 +1246,15 @@ fun PlayerControls(
           val showLandscapeLeftCustomButtons = areButtonsVisible && !isPortrait && leftCustomButtons.isNotEmpty()
           val showLandscapeRightCustomButtons = areButtonsVisible && !isPortrait && rightCustomButtons.isNotEmpty()
           val showPortraitCustomButtons = areButtonsVisible && isPortrait && customButtons.isNotEmpty()
+          val portraitControlsAboveGroupTop =
+            if (showPortraitCustomButtons) customButtonsPortraitRef.top else bottomRightControls.top
+          val portraitBelowSeekbarAnchor =
+            when {
+              showPortraitCustomButtons -> customButtonsPortraitRef.top
+              showBufferingIndicator -> bufferingIndicator.top
+              areButtonsVisible -> playerPauseButton.top
+              else -> parent.bottom
+            }
           val landscapeSideControlBandRefs =
             mutableListOf(bottomLeftControls, bottomRightControls)
           if (showLandscapeLeftCustomButtons) {
@@ -1610,9 +1619,19 @@ fun PlayerControls(
                 start.linkTo(parent.absoluteLeft)
                 end.linkTo(parent.absoluteRight)
                 if (isPortrait && playbackControlsPosition == PlaybackControlsPosition.BelowSeekbar) {
-                  bottom.linkTo(bottomRightControls.top, spacing.small)
+                  if (areButtonsVisible) {
+                    bottom.linkTo(bottomRightControls.top, spacing.small)
+                  } else {
+                    top.linkTo(parent.top)
+                    bottom.linkTo(parent.bottom)
+                  }
                 } else if (isPortrait) {
-                  bottom.linkTo(customButtonsPortraitRef.top, spacing.small)
+                  if (areButtonsVisible) {
+                    bottom.linkTo(portraitControlsAboveGroupTop, spacing.small)
+                  } else {
+                    top.linkTo(parent.top)
+                    bottom.linkTo(parent.bottom)
+                  }
                 } else if (playbackControlsPosition == PlaybackControlsPosition.BelowSeekbar) {
                   bottom.linkTo(seekbar.top, spacing.medium)
                 } else {
@@ -1695,9 +1714,19 @@ fun PlayerControls(
                 start.linkTo(parent.absoluteLeft)
                 end.linkTo(parent.absoluteRight)
                 if (isPortrait && playbackControlsPosition == PlaybackControlsPosition.BelowSeekbar) {
-                  bottom.linkTo(bottomRightControls.top, spacing.small)
+                  if (areButtonsVisible) {
+                    bottom.linkTo(bottomRightControls.top, spacing.small)
+                  } else {
+                    top.linkTo(parent.top)
+                    bottom.linkTo(parent.bottom)
+                  }
                 } else if (isPortrait) {
-                  bottom.linkTo(customButtonsPortraitRef.top, spacing.small)
+                  if (areButtonsVisible) {
+                    bottom.linkTo(portraitControlsAboveGroupTop, spacing.small)
+                  } else {
+                    top.linkTo(parent.top)
+                    bottom.linkTo(parent.bottom)
+                  }
                 } else if (playbackControlsPosition == PlaybackControlsPosition.BelowSeekbar) {
                   bottom.linkTo(parent.bottom, spacing.large)
                 } else {
@@ -1944,7 +1973,7 @@ fun PlayerControls(
                 ).constrainAs(seekbar) {
                   if (isPortrait) {
                     if (playbackControlsPosition == PlaybackControlsPosition.BelowSeekbar) {
-                      bottom.linkTo(customButtonsPortraitRef.top, spacing.small)
+                      bottom.linkTo(portraitBelowSeekbarAnchor, spacing.small)
                     } else {
                       bottom.linkTo(parent.bottom, spacing.medium)
                     }

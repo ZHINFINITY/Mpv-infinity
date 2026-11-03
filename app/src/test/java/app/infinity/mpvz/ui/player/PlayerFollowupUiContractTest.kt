@@ -8,6 +8,7 @@
 package app.infinity.mpvz.ui.player
 
 import java.io.File
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -116,7 +117,8 @@ class PlayerFollowupUiContractTest {
     assertTrue(customButtons.contains("bottom.linkTo(bufferingIndicator.top, spacing.medium)"))
     assertTrue(customButtons.contains("bottom.linkTo(playerPauseButton.top, spacing.medium)"))
     assertTrue(controls.contains("bottom.linkTo(bottomRightControls.top"))
-    assertTrue(controls.contains("bottom.linkTo(customButtonsPortraitRef.top"))
+    assertTrue(controls.contains("val portraitControlsAboveGroupTop ="))
+    assertTrue(controls.contains("val portraitBelowSeekbarAnchor ="))
     assertTrue(controls.contains("bottom.linkTo(seekbar.top"))
     assertTrue(controls.contains("createTopBarrier(*landscapeSideControlBandRefs.toTypedArray())"))
     assertTrue(controls.contains("bottom.linkTo(landscapeSideControlBandTop, spacing.medium)"))
@@ -140,6 +142,18 @@ class PlayerFollowupUiContractTest {
     assertTrue(controls.contains(".padding(vertical = customButtonsRowVerticalPadding)\n                  .fillMaxWidth()\n                  .horizontalScroll(rememberScrollState())"))
     assertTrue(controls.contains(".padding(vertical = customButtonsRowVerticalPadding)\n                  .fillMaxWidth()\n                  .horizontalScroll(rememberScrollState(), reverseScrolling = true)"))
     assertTrue(landscape.contains("buttonSize = 45.dp"))
+  }
+
+  @Test
+  fun portraitControlsFallBackWhenCustomButtonRowIsAbsent() {
+    val controls = read("app/src/main/java/app/infinity/mpvz/ui/player/controls/PlayerControls.kt")
+
+    assertTrue(controls.contains("if (showPortraitCustomButtons) customButtonsPortraitRef.top else bottomRightControls.top"))
+    assertTrue(controls.contains("showPortraitCustomButtons -> customButtonsPortraitRef.top"))
+    assertTrue(controls.contains("showBufferingIndicator -> bufferingIndicator.top"))
+    assertTrue(controls.contains("areButtonsVisible -> playerPauseButton.top"))
+    assertTrue(controls.contains("bottom.linkTo(portraitBelowSeekbarAnchor, spacing.small)"))
+    assertFalse(controls.contains("bottom.linkTo(customButtonsPortraitRef.top, spacing.small)\n                    } else {"))
   }
 
   @Test
