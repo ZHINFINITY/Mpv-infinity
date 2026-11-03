@@ -7151,8 +7151,17 @@ class PlayerActivity :
     }
     if (restore(pendingSharedAudioSelection, "audio", "aid")) pendingSharedAudioSelection = null
     if (restore(pendingSharedSubtitleSelection, "sub", "sid")) pendingSharedSubtitleSelection = null
-    if (restore(pendingSharedSecondarySubtitleSelection, "sub", "secondary-sid")) {
+    val pendingSecondarySubtitleSelection = pendingSharedSecondarySubtitleSelection
+    if (pendingSecondarySubtitleSelection != null &&
+      restore(pendingSecondarySubtitleSelection, "sub", "secondary-sid")
+    ) {
       pendingSharedSecondarySubtitleSelection = null
+      applySubtitleLayout(
+        primaryPosition = subtitlesPreferences.subPos.get(),
+        forceAssOverride = subtitlesPreferences.overrideAssSubs.get(),
+        screenWidth = player.width.takeIf { it > 0 }?.toFloat(),
+        screenHeight = player.height.takeIf { it > 0 }?.toFloat(),
+      )
     }
   }
 

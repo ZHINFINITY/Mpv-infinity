@@ -35,6 +35,22 @@ class NativeResumeIntegrationTest(unittest.TestCase):
         self.assertIn("nativeEngineOrNull()?.captureAudioSelection()", capture)
         self.assertIn("nativeEngineOrNull()?.captureSubtitleSelection()", capture)
 
+    def test_secondary_subtitle_restore_resyncs_ass_layout_after_selection(self):
+        source = (PLAYER / "PlayerActivity.kt").read_text()
+        start = source.index("  private fun restorePendingMpvTrackSelections()")
+        restore = source[start:source.index("  private fun readMpvIntSeconds", start)]
+        secondary_restore = restore.index(
+            'restore(pendingSecondarySubtitleSelection, "sub", "secondary-sid")')
+        layout_sync = restore.index("applySubtitleLayout(", secondary_restore)
+        self.assertLess(
+            restore.index('setTrackSelectionId(property, tracks[index].id)'),
+            layout_sync,
+        )
+        self.assertIn(
+            "pendingSharedSecondarySubtitleSelection = null\n      applySubtitleLayout(",
+            restore,
+        )
+
     def test_native_drag_sends_scene_preview_before_release(self):
         controls = (PLAYER / "controls/PlayerControls.kt").read_text()
         start = controls.index("nativeSeekPreviewPosition = it")
