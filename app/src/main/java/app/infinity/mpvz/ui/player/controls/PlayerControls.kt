@@ -1248,13 +1248,6 @@ fun PlayerControls(
           val showPortraitCustomButtons = areButtonsVisible && isPortrait && customButtons.isNotEmpty()
           val portraitControlsAboveGroupTop =
             if (showPortraitCustomButtons) customButtonsPortraitRef.top else bottomRightControls.top
-          val portraitBelowSeekbarAnchor =
-            when {
-              showPortraitCustomButtons -> customButtonsPortraitRef.top
-              showBufferingIndicator -> bufferingIndicator.top
-              areButtonsVisible -> playerPauseButton.top
-              else -> parent.bottom
-            }
           val landscapeSideControlBandRefs =
             mutableListOf(bottomLeftControls, bottomRightControls)
           if (showLandscapeLeftCustomButtons) {
@@ -1973,7 +1966,12 @@ fun PlayerControls(
                 ).constrainAs(seekbar) {
                   if (isPortrait) {
                     if (playbackControlsPosition == PlaybackControlsPosition.BelowSeekbar) {
-                      bottom.linkTo(portraitBelowSeekbarAnchor, spacing.small)
+                      when {
+                        showPortraitCustomButtons -> bottom.linkTo(customButtonsPortraitRef.top, spacing.small)
+                        showBufferingIndicator -> bottom.linkTo(bufferingIndicator.top, spacing.small)
+                        areButtonsVisible -> bottom.linkTo(playerPauseButton.top, spacing.small)
+                        else -> bottom.linkTo(parent.bottom, spacing.medium)
+                      }
                     } else {
                       bottom.linkTo(parent.bottom, spacing.medium)
                     }
