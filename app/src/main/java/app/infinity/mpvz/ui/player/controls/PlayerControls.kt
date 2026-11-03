@@ -131,7 +131,7 @@ import app.infinity.mpvz.preferences.DEFAULT_SUBTITLE_FONT_FAMILY
 import app.infinity.mpvz.preferences.DecoderPreferences
 import app.infinity.mpvz.preferences.PlayerButton
 import app.infinity.mpvz.preferences.PlayerPreferences
-import app.infinity.mpvz.preferences.PortraitPlaybackControlsPosition
+import app.infinity.mpvz.preferences.PlaybackControlsPosition
 import app.infinity.mpvz.preferences.SubtitlesPreferences
 import app.infinity.mpvz.preferences.allPlayerButtons
 import app.infinity.mpvz.preferences.preference.collectAsState
@@ -376,8 +376,7 @@ fun PlayerControls(
   val playerControlsTheme by appearancePreferences.playerControlsTheme.collectAsState()
   val showSeekbarOuterContainer by appearancePreferences.showSeekbarOuterContainer.collectAsState()
   val liquidGlassSurfaces by appearancePreferences.liquidGlassSurfaces.collectAsState()
-  val portraitPlaybackControlsPosition by
-    appearancePreferences.portraitPlaybackControlsPosition.collectAsState()
+  val playbackControlsPosition by appearancePreferences.playbackControlsPosition.collectAsState()
   val playerPreferences = koinInject<PlayerPreferences>()
   val audioPreferences = koinInject<AudioPreferences>()
   val subtitlesPreferences = koinInject<SubtitlesPreferences>()
@@ -1249,6 +1248,20 @@ fun PlayerControls(
           val showLandscapeLeftCustomButtons = areButtonsVisible && !isPortrait && leftCustomButtons.isNotEmpty()
           val showLandscapeRightCustomButtons = areButtonsVisible && !isPortrait && rightCustomButtons.isNotEmpty()
           val showPortraitCustomButtons = areButtonsVisible && isPortrait && customButtons.isNotEmpty()
+          val landscapeSideControlBandRefs =
+            mutableListOf(bottomLeftControls, bottomRightControls)
+          if (showLandscapeLeftCustomButtons) {
+            landscapeSideControlBandRefs.add(customLeftButtonsRef)
+          }
+          if (showLandscapeRightCustomButtons) {
+            landscapeSideControlBandRefs.add(customRightButtonsRef)
+          }
+          val landscapeSideControlBandTop =
+            createTopBarrier(*landscapeSideControlBandRefs.toTypedArray())
+          val landscapeControlBandRefs =
+            landscapeSideControlBandRefs + playerPauseButton
+          val landscapeControlBandTop =
+            createTopBarrier(*landscapeControlBandRefs.toTypedArray())
           val customButtonsRowVerticalPadding = 2.dp
           val skipChipToButtonsSpacing = 4.dp
           val bottomControlsToSeekbarSpacing = spacing.smaller
@@ -1296,6 +1309,10 @@ fun PlayerControls(
             modifier =
               navigationStartPaddingModifier.constrainAs(customLeftButtonsRef) {
                 start.linkTo(parent.start, spacing.large)
+                if (playbackControlsPosition == PlaybackControlsPosition.BelowSeekbar) {
+                  end.linkTo(playerPauseButton.start, spacing.small)
+                  horizontalBias = 0f
+                }
                 bottom.linkTo(bottomLeftControls.top, spacing.medium)
                 width = Dimension.preferredWrapContent
                 height = Dimension.wrapContent
@@ -1360,7 +1377,13 @@ fun PlayerControls(
             modifier =
               navigationEndPaddingModifier
                 .constrainAs(customRightButtonsRef) {
-                  end.linkTo(parent.end, spacing.large)
+                  if (playbackControlsPosition == PlaybackControlsPosition.BelowSeekbar) {
+                    start.linkTo(playerPauseButton.end, spacing.small)
+                    end.linkTo(parent.end, spacing.large)
+                    horizontalBias = 1f
+                  } else {
+                    end.linkTo(parent.end, spacing.large)
+                  }
                   bottom.linkTo(bottomRightControls.top, spacing.medium)
                   width = Dimension.preferredWrapContent
                   height = Dimension.wrapContent
@@ -1429,7 +1452,7 @@ fun PlayerControls(
                 .constrainAs(customButtonsPortraitRef) {
                   start.linkTo(parent.start, spacing.large)
                   end.linkTo(parent.end, spacing.large)
-                  if (portraitPlaybackControlsPosition == PortraitPlaybackControlsPosition.BelowSeekbar) {
+                  if (playbackControlsPosition == PlaybackControlsPosition.BelowSeekbar) {
                     if (showBufferingIndicator) {
                       bottom.linkTo(bufferingIndicator.top, spacing.medium)
                     } else {
@@ -1575,10 +1598,12 @@ fun PlayerControls(
               Modifier.constrainAs(bufferingIndicator) {
                 start.linkTo(parent.absoluteLeft)
                 end.linkTo(parent.absoluteRight)
-                if (isPortrait && portraitPlaybackControlsPosition == PortraitPlaybackControlsPosition.BelowSeekbar) {
+                if (isPortrait && playbackControlsPosition == PlaybackControlsPosition.BelowSeekbar) {
                   bottom.linkTo(bottomRightControls.top, spacing.small)
                 } else if (isPortrait) {
                   bottom.linkTo(customButtonsPortraitRef.top, spacing.small)
+                } else if (playbackControlsPosition == PlaybackControlsPosition.BelowSeekbar) {
+                  bottom.linkTo(seekbar.top, spacing.medium)
                 } else {
                   top.linkTo(parent.top)
                   bottom.linkTo(parent.bottom)
@@ -1658,13 +1683,14 @@ fun PlayerControls(
               Modifier.constrainAs(playerPauseButton) {
                 start.linkTo(parent.absoluteLeft)
                 end.linkTo(parent.absoluteRight)
-                if (isPortrait && portraitPlaybackControlsPosition == PortraitPlaybackControlsPosition.BelowSeekbar) {
+                if (isPortrait && playbackControlsPosition == PlaybackControlsPosition.BelowSeekbar) {
                   bottom.linkTo(bottomRightControls.top, spacing.small)
                 } else if (isPortrait) {
                   bottom.linkTo(customButtonsPortraitRef.top, spacing.small)
+                } else if (playbackControlsPosition == PlaybackControlsPosition.BelowSeekbar) {
+                  bottom.linkTo(parent.bottom, spacing.large)
                 } else {
-                  top.linkTo(parent.top)
-                  bottom.linkTo(parent.bottom)
+                  bottom.linkTo(landscapeSideControlBandTop, spacing.medium)
                 }
               },
           ) {
@@ -1906,11 +1932,13 @@ fun PlayerControls(
                   },
                 ).constrainAs(seekbar) {
                   if (isPortrait) {
-                    if (portraitPlaybackControlsPosition == PortraitPlaybackControlsPosition.BelowSeekbar) {
+                    if (playbackControlsPosition == PlaybackControlsPosition.BelowSeekbar) {
                       bottom.linkTo(customButtonsPortraitRef.top, spacing.small)
                     } else {
                       bottom.linkTo(parent.bottom, spacing.medium)
                     }
+                  } else if (playbackControlsPosition == PlaybackControlsPosition.BelowSeekbar) {
+                    bottom.linkTo(landscapeControlBandTop, spacing.medium)
                   } else {
                     bottom.linkTo(parent.bottom, spacing.medium)
                   }
@@ -2169,7 +2197,7 @@ fun PlayerControls(
                   },
                 ).constrainAs(bottomRightControls) {
                   if (isPortrait) {
-                    if (portraitPlaybackControlsPosition == PortraitPlaybackControlsPosition.BelowSeekbar) {
+                    if (playbackControlsPosition == PlaybackControlsPosition.BelowSeekbar) {
                       bottom.linkTo(parent.bottom, spacing.large)
                     } else {
                       bottom.linkTo(seekbar.top, spacing.medium)
@@ -2177,6 +2205,11 @@ fun PlayerControls(
                     start.linkTo(parent.start, spacing.large)
                     end.linkTo(parent.end, spacing.large)
                     width = Dimension.fillToConstraints
+                  } else if (playbackControlsPosition == PlaybackControlsPosition.BelowSeekbar) {
+                    bottom.linkTo(parent.bottom, spacing.large)
+                    start.linkTo(playerPauseButton.end, spacing.small)
+                    end.linkTo(parent.end, spacing.large)
+                    horizontalBias = 1f
                   } else {
                     bottom.linkTo(seekbar.top, bottomControlsToSeekbarSpacing)
                     end.linkTo(parent.end, spacing.large)
@@ -2243,10 +2276,17 @@ fun PlayerControls(
                     Modifier
                   },
                 ).constrainAs(bottomLeftControls) {
-                  bottom.linkTo(seekbar.top, bottomControlsToSeekbarSpacing)
-                  start.linkTo(parent.start, spacing.large)
-                  width = Dimension.fillToConstraints
-                  end.linkTo(bottomRightControls.start, spacing.small)
+                  if (playbackControlsPosition == PlaybackControlsPosition.BelowSeekbar) {
+                    bottom.linkTo(parent.bottom, spacing.large)
+                    start.linkTo(parent.start, spacing.large)
+                    end.linkTo(playerPauseButton.start, spacing.small)
+                    width = Dimension.fillToConstraints
+                  } else {
+                    bottom.linkTo(seekbar.top, bottomControlsToSeekbarSpacing)
+                    start.linkTo(parent.start, spacing.large)
+                    width = Dimension.fillToConstraints
+                    end.linkTo(bottomRightControls.start, spacing.small)
+                  }
                 },
           ) {
             BottomLeftPlayerControlsLandscape(

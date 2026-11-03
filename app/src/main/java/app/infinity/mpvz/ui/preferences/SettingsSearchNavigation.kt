@@ -76,16 +76,17 @@ private val settingsSearchListAnchors: Map<Screen, List<SettingsSearchListAnchor
     PlayerControlsPreferencesScreen to
       listOf(
         SettingsSearchListAnchor(titleRes = R.string.pref_layout_title, itemIndex = 0),
-        SettingsSearchListAnchor(titleRes = R.string.pref_layout_top_right_controls, itemIndex = 1),
-        SettingsSearchListAnchor(titleRes = R.string.pref_layout_bottom_right_controls, itemIndex = 1),
-        SettingsSearchListAnchor(titleRes = R.string.pref_layout_bottom_left_controls, itemIndex = 1),
-        SettingsSearchListAnchor(titleRes = R.string.pref_layout_portrait_bottom_controls, itemIndex = 3),
-        SettingsSearchListAnchor(titleRes = R.string.pref_appearance_hide_player_buttons_background_title, itemIndex = 7),
+        SettingsSearchListAnchor(titleRes = R.string.ui_playback_controls_position, itemIndex = 0),
+        SettingsSearchListAnchor(titleRes = R.string.pref_layout_top_right_controls, itemIndex = 2),
+        SettingsSearchListAnchor(titleRes = R.string.pref_layout_bottom_right_controls, itemIndex = 2),
+        SettingsSearchListAnchor(titleRes = R.string.pref_layout_bottom_left_controls, itemIndex = 2),
+        SettingsSearchListAnchor(titleRes = R.string.pref_layout_portrait_bottom_controls, itemIndex = 4),
+        SettingsSearchListAnchor(titleRes = R.string.pref_appearance_hide_player_buttons_background_title, itemIndex = 8),
         SettingsSearchListAnchor(
           titleRes = R.string.pref_appearance_force_dark_player_buttons_background_title,
-          itemIndex = 7,
+          itemIndex = 8,
         ),
-        SettingsSearchListAnchor(titleRes = R.string.pref_player_display_hide_player_control_time, itemIndex = 7),
+        SettingsSearchListAnchor(titleRes = R.string.pref_player_display_hide_player_control_time, itemIndex = 8),
       ),
     PlayerPreferencesScreen to
       listOf(

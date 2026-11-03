@@ -759,8 +759,10 @@ static media_status_t acquire_latest_image(struct ra_hwdec_mapper *mapper,
     struct priv *p = mapper->priv;
     struct priv_owner *o = mapper->owner->priv;
     int64_t deadline = mp_time_ns() + MP_TIME_MS_TO_NS(100);
+    int attempts = 0;
 
     while (true) {
+        attempts++;
         *image = NULL;
         *acquire_fence = -1;
 
@@ -774,6 +776,11 @@ static media_status_t acquire_latest_image(struct ra_hwdec_mapper *mapper,
         {
             ret = o->AImageReader_acquireLatestImage(o->reader, image);
         }
+        MP_VERBOSE(mapper, "AIMAGE_ACQUIRE attempt=%d result=%d image=%p "
+                           "acquire_fence_fd=%d expected_ns=%" PRId64
+                           " check_timestamp=%d backend=%d\n",
+                   attempts, ret, (void *)*image, *acquire_fence,
+                   expected_timestamp_ns, check_timestamp, p->backend);
         if (ret == AMEDIA_OK && check_timestamp) {
             int64_t image_timestamp_ns;
             ret = o->AImage_getTimestamp(*image, &image_timestamp_ns);
@@ -787,6 +794,13 @@ static media_status_t acquire_latest_image(struct ra_hwdec_mapper *mapper,
 
             double delta_ns =
                 (double)image_timestamp_ns - expected_timestamp_ns;
+            MP_VERBOSE(mapper, "AIMAGE_TIMESTAMP pts=%.6f expected_ns=%" PRId64
+                               " actual_ns=%" PRId64 " delta_ns=%.0f "
+                               "within_tolerance=%d acquire_fence_fd=%d\n",
+                       mapper->src->pts, expected_timestamp_ns,
+                       image_timestamp_ns, delta_ns,
+                       fabs(delta_ns) <= IMAGE_TIMESTAMP_TOLERANCE_NS,
+                       *acquire_fence);
             // MediaCodec timestamps are in microseconds before Android
             // converts them to nanoseconds. Allow only rescaling noise.
             if (fabs(delta_ns) <= IMAGE_TIMESTAMP_TOLERANCE_NS)
@@ -821,6 +835,10 @@ static media_status_t acquire_latest_image(struct ra_hwdec_mapper *mapper,
         int64_t remaining = deadline - mp_time_ns();
         if (remaining <= 0) {
             p->stats.acquire_timeouts++;
+            MP_VERBOSE(mapper, "AIMAGE_TIMEOUT attempts=%d expected_ns=%" PRId64
+                               " check_timestamp=%d backend=%d\n",
+                       attempts, expected_timestamp_ns, check_timestamp,
+                       p->backend);
             return ret;
         }
 
@@ -862,8 +880,11 @@ static int mapper_map(struct ra_hwdec_mapper *mapper)
         return -1;
 #if HAVE_VULKAN
     if (p->backend == MAPPER_BACKEND_VULKAN &&
-        aimagereader_vk_reuse(p->vk, mapper->src))
+        aimagereader_vk_reuse(p->vk, mapper->src)) {
+        MP_VERBOSE(mapper, "AIMAGE_MAP_REUSE pts=%.6f buffer=%p backend=%d\n",
+                   mapper->src->pts, (void *)mapper->src->planes[3], p->backend);
         return 0;
+    }
 #endif
     if (p->backend == MAPPER_BACKEND_GL) {
         if (p->gl_source_frame &&
@@ -880,6 +901,10 @@ static int mapper_map(struct ra_hwdec_mapper *mapper)
         isfinite(mapper->src->pts) && pts_ns >= (long double)INT64_MIN &&
         pts_ns <= (long double)INT64_MAX;
     int64_t expected_timestamp_ns = check_timestamp ? llroundl(pts_ns) : 0;
+    MP_VERBOSE(mapper, "AIMAGE_MAP_BEGIN pts=%.6f buffer=%p expected_ns=%" PRId64
+                       " check_timestamp=%d backend=%d\n",
+               mapper->src->pts, (void *)buffer, expected_timestamp_ns,
+               check_timestamp, p->backend);
 
     AVMediaCodecBuffer *pending_buffer = p->pending_frame
         ? (AVMediaCodecBuffer *)p->pending_frame->planes[3]
@@ -894,6 +919,8 @@ static int mapper_map(struct ra_hwdec_mapper *mapper)
         expected_timestamp_ns = p->pending_timestamp_ns;
         check_timestamp = p->pending_check_timestamp;
     } else {
+        MP_VERBOSE(mapper, "AIMAGE_RENDER_REQUEST pts=%.6f buffer=%p\n",
+                   mapper->src->pts, (void *)buffer);
         if (av_mediacodec_release_buffer(buffer, 1) < 0) {
             MP_ERR(mapper, "Failed rendering MediaCodec output buffer\n");
             return -1;
@@ -911,7 +938,9 @@ static int mapper_map(struct ra_hwdec_mapper *mapper)
         acquire_latest_image(mapper, &image, &acquire_fence,
                              expected_timestamp_ns, check_timestamp);
     if (ret == AMEDIA_IMGREADER_NO_BUFFER_AVAILABLE) {
-        MP_VERBOSE(mapper, "Waiting for frame timed out\n");
+        MP_VERBOSE(mapper, "AIMAGE_MAP_RETRY pts=%.6f expected_ns=%" PRId64
+                           " Waiting for matching frame timed out\n",
+                   mapper->src->pts, expected_timestamp_ns);
         return RA_HWDEC_MAP_RETRY;
     }
     mp_image_unrefp(&p->pending_frame);
@@ -922,6 +951,8 @@ static int mapper_map(struct ra_hwdec_mapper *mapper)
     }
     mp_assert(image);
     p->stats.acquired_images++;
+    MP_VERBOSE(mapper, "AIMAGE_MAP_ACQUIRED pts=%.6f image=%p fence_fd=%d\n",
+               mapper->src->pts, (void *)image, acquire_fence);
 
     bool vulkan_mapping = false;
 #if HAVE_VULKAN
@@ -957,10 +988,16 @@ static int mapper_map(struct ra_hwdec_mapper *mapper)
     mp_assert(hwbuf);
 
     int32_t data_space = ADATASPACE_UNKNOWN;
-    if (o->AImage_getDataSpace &&
-        o->AImage_getDataSpace(image, &data_space) != AMEDIA_OK)
-        data_space = ADATASPACE_UNKNOWN;
+    media_status_t data_space_status = AMEDIA_OK;
+    bool data_space_available = o->AImage_getDataSpace != NULL;
+    if (data_space_available) {
+        data_space_status = o->AImage_getDataSpace(image, &data_space);
+        if (data_space_status != AMEDIA_OK)
+            data_space = ADATASPACE_UNKNOWN;
+    }
     log_data_space_mismatch(mapper, data_space);
+    MP_VERBOSE(mapper, "AIMAGE_DATASPACE getter_available=%d status=%d value=%d\n",
+               data_space_available, data_space_status, data_space);
 
 #if HAVE_VULKAN
     if (p->backend == MAPPER_BACKEND_VULKAN) {
@@ -972,9 +1009,20 @@ static int mapper_map(struct ra_hwdec_mapper *mapper)
             return -1;
         }
 
+        MP_VERBOSE(mapper, "AIMAGE_MAP_INPUT pts=%.6f buffer=%p image=%p "
+                           "hwbuffer=%p dataspace_status=%d dataspace=%d "
+                           "crop=[%d,%d,%d,%d] acquire_fence_fd=%d\n",
+                   mapper->src->pts, (void *)buffer, (void *)image,
+                   (void *)hwbuf, data_space_status, data_space,
+                   crop.left, crop.top, crop.right, crop.bottom,
+                   acquire_fence);
+
         int result = aimagereader_vk_map(
             p->vk, image, hwbuf, &crop, data_space, mapper->src,
             &acquire_fence);
+        MP_VERBOSE(mapper, "AIMAGE_MAP_RESULT pts=%.6f buffer=%p result=%d "
+                           "remaining_acquire_fence_fd=%d\n",
+                   mapper->src->pts, (void *)buffer, result, acquire_fence);
         if (result < 0)
             delete_image(o, image, acquire_fence);
         else

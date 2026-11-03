@@ -1658,6 +1658,8 @@
   <string name="ui_script_file_not_found">スクリプトファイルが見つかりません</string>
   <string name="ui_search_models">モデルを検索...</string>
   <string name="ui_portrait_playback_buttons">縦向き再生ボタン</string>
+  <string name="ui_playback_controls_position">再生コントロールの配置</string>
+  <string name="ui_playback_controls_position_summary">縦向き・横向きの両方で、再生操作と下部コントロールのグループをシークバーの上または下に配置します。</string>
   <string name="ui_time_network_clock">時刻 + ネットワーク時計</string>
   <string name="ui_show_media_info_in_chooser">選択画面にメディア情報を表示</string>
   <string name="ui_show_media_info_in_system">他のアプリのファイルを解析できるよう、システムの「アプリで開く」／共有メニューにメディア情報を表示します。</string>

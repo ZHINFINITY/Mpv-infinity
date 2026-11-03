@@ -1658,6 +1658,8 @@
   <string name="ui_script_file_not_found">لم يتم العثور على ملف البرنامج النصي</string>
   <string name="ui_search_models">البحث عن نماذج...</string>
   <string name="ui_portrait_playback_buttons">أزرار تشغيل الوضع العمودي</string>
+  <string name="ui_playback_controls_position">موضع عناصر التحكم في التشغيل</string>
+  <string name="ui_playback_controls_position_summary">ينقل مجموعة أزرار التشغيل ومجموعات عناصر التحكم السفلية إلى أعلى شريط التقدم أو أسفله في الوضعين العمودي والأفقي.</string>
   <string name="ui_time_network_clock">ساعة الوقت + الشبكة</string>
   <string name="ui_show_media_info_in_chooser">إظهار معلومات الوسائط في أداة الاختيار</string>
   <string name="ui_show_media_info_in_system">إظهار معلومات الوسائط في قوائم النظام "فتح باستخدام" / المشاركة لتحليل الملفات من التطبيقات الأخرى.</string>

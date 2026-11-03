@@ -1644,6 +1644,8 @@
   <string name="ui_script_file_not_found">Script கோப்பு not found</string>
   <string name="ui_search_models">தேடு models...</string>
   <string name="ui_portrait_playback_buttons">Portrait இயக்கம் buttons</string>
+  <string name="ui_playback_controls_position">இயக்கக் கட்டுப்பாடுகளின் இடம்</string>
+  <string name="ui_playback_controls_position_summary">நிமிர் மற்றும் கிடைமட்ட திரை நிலைகளில், இயக்கக் குழுவையும் கீழ்புறக் கட்டுப்பாடுகளையும் தேடல் பட்டியின் மேலே அல்லது கீழே நகர்த்தும்.</string>
   <string name="ui_time_network_clock">நேரம் + பிணையம் clock</string>
   <string name="ui_show_media_info_in_chooser">காட்டு Media Info இல் chooser</string>
   <string name="ui_show_media_info_in_system">காட்டு Media Info இல் கணினி \"திற உடன்\" / sharing menus க்கு analyze கோப்புகள் இருந்து மற்றவை apps.</string>

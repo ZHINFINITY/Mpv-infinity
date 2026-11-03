@@ -75,8 +75,9 @@ class AppearancePreferences(
   val seekbarStyle = preferenceStore.getEnum("seekbar_style", SeekbarStyle.Thick)
   val playerControlsTheme = preferenceStore.getEnum("player_controls_theme", PlayerControlsTheme.Classic)
   val showSeekbarOuterContainer = preferenceStore.getBoolean("show_seekbar_outer_container", false)
-  val portraitPlaybackControlsPosition =
-    preferenceStore.getEnum("portrait_playback_controls_position", PortraitPlaybackControlsPosition.AboveSeekbar)
+  // Keep the legacy key so saved placement choices from older versions remain intact.
+  val playbackControlsPosition =
+    preferenceStore.getEnum("portrait_playback_controls_position", PlaybackControlsPosition.AboveSeekbar)
   val timeNetworkPillExpanded = preferenceStore.getBoolean("time_network_pill_expanded", false)
   val showHomeTab = preferenceStore.getBoolean("show_home_tab", true)
   val showMusicTab = preferenceStore.getBoolean("show_music_tab", true)
@@ -175,7 +176,7 @@ class AppearancePreferences(
     }
 }
 
-enum class PortraitPlaybackControlsPosition(
+enum class PlaybackControlsPosition(
   val displayName: String,
 ) {
   AboveSeekbar("Above seekbar"),

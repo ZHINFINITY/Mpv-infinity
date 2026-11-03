@@ -1656,6 +1656,8 @@
   <string name="ui_script_file_not_found">Skrypt plik nie znaleziono</string>
   <string name="ui_search_models">Szukaj modele...</string>
   <string name="ui_portrait_playback_buttons">Portrait odtwarzanie przyciski</string>
+  <string name="ui_playback_controls_position">Położenie elementów sterowania odtwarzaniem</string>
+  <string name="ui_playback_controls_position_summary">Przenosi grupę transportu i dolne grupy sterowania nad lub pod paskiem przewijania w orientacji pionowej i poziomej.</string>
   <string name="ui_time_network_clock">Czas + Sieć clock</string>
   <string name="ui_show_media_info_in_chooser">Pokaż Multimedia Info w chooser</string>
   <string name="ui_show_media_info_in_system">Pokaż Multimedia Info w system \"Otwórz z\" / sharing menus do analyze pliki z inne apps.</string>

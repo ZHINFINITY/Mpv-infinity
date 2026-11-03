@@ -1644,6 +1644,8 @@
   <string name="ui_script_file_not_found">File skrip tidak ditemukan</string>
   <string name="ui_search_models">Telusuri model...</string>
   <string name="ui_portrait_playback_buttons">Tombol pemutaran potret</string>
+  <string name="ui_playback_controls_position">Posisi kontrol pemutaran</string>
+  <string name="ui_playback_controls_position_summary">Memindahkan grup transportasi dan kontrol bawah ke atas atau ke bawah bilah pencarian, dalam orientasi potret maupun lanskap.</string>
   <string name="ui_time_network_clock">Waktu + Jam jaringan</string>
   <string name="ui_show_media_info_in_chooser">Tampilkan Info Media di pemilih</string>
   <string name="ui_show_media_info_in_system">Tampilkan Info Media di sistem \"Buka dengan\" / menu berbagi untuk menganalisis file dari aplikasi lain.</string>
