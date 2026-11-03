@@ -156,6 +156,23 @@ class PlayerFollowupUiContractTest {
   }
 
   @Test
+  fun transportStaysCenteredForAboveAndPreservesBelowPlacement() {
+    val preferences = read("app/src/main/java/app/infinity/mpvz/preferences/AppearancePreferences.kt")
+    val controls = read("app/src/main/java/app/infinity/mpvz/ui/player/controls/PlayerControls.kt")
+    val transport = controls.substringAfter("Modifier.constrainAs(playerPauseButton) {")
+      .substringBefore("\n              },")
+    val aboveBranch = transport.substringAfterLast("} else {")
+
+    assertTrue(preferences.contains("preferenceStore.getEnum(\"portrait_playback_controls_position\", PlaybackControlsPosition.AboveSeekbar)"))
+    assertTrue(aboveBranch.contains("top.linkTo(parent.top)"))
+    assertTrue(aboveBranch.contains("bottom.linkTo(parent.bottom)"))
+    assertTrue(!transport.contains("portraitControlsAboveGroupTop"))
+    assertTrue(!transport.contains("landscapeSideControlBandTop"))
+    assertTrue(transport.contains("bottom.linkTo(bottomRightControls.top, spacing.small)"))
+    assertTrue(transport.contains("bottom.linkTo(parent.bottom, spacing.large)"))
+  }
+
+  @Test
   fun secondaryAssStylingAvoidsUnsupportedSecondaryFontProperties() {
     val mpvView = read("app/src/main/java/app/infinity/mpvz/ui/player/MPVView.kt")
     val playerActivity = read("app/src/main/java/app/infinity/mpvz/ui/player/PlayerActivity.kt")

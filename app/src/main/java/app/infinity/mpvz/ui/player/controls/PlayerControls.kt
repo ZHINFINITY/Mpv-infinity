@@ -1713,17 +1713,11 @@ fun PlayerControls(
                     top.linkTo(parent.top)
                     bottom.linkTo(parent.bottom)
                   }
-                } else if (isPortrait) {
-                  if (areButtonsVisible) {
-                    bottom.linkTo(portraitControlsAboveGroupTop, spacing.small)
-                  } else {
-                    top.linkTo(parent.top)
-                    bottom.linkTo(parent.bottom)
-                  }
                 } else if (playbackControlsPosition == PlaybackControlsPosition.BelowSeekbar) {
                   bottom.linkTo(parent.bottom, spacing.large)
                 } else {
-                  bottom.linkTo(landscapeSideControlBandTop, spacing.medium)
+                  top.linkTo(parent.top)
+                  bottom.linkTo(parent.bottom)
                 }
               },
           ) {
