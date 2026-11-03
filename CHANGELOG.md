@@ -1,8 +1,17 @@
 # Changelog
 
-## 2.2.3
+## 2.2.4
 
-- Small bug fixes.
+### ✨ UI improvements
+- Choose Anime4K quality from the player’s More menu, and use a compact time and network display that expands when needed and remembers your preference.
+- Player controls follow your selected seekbar layout more consistently in portrait mode, with refreshed player and media-details backgrounds.
+- Ambient visuals behave more consistently across playback engines while preserving your selected Glow style.
+
+### 🐛 Bug fixes
+- Saved per-video aspect settings restore reliably, and changes made while a video is loading are kept.
+- Playback recovery uses the current position when available, with saved progress as a fallback.
+- Natural sorting handles long number sequences correctly.
+- HDR metadata is preserved during playback launches to help automatic engine selection.
 
 ## 2.2.2
 
