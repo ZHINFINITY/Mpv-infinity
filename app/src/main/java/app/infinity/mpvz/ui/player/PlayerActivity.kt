@@ -473,7 +473,6 @@ class PlayerActivity :
       return
     }
     interpolationStatsVoReconfigReapplied = true
-    PlayerStatsLuaCommandPolicy.onVoReconfig()
     player.applyStartupStatistics(force = true)
   }
 

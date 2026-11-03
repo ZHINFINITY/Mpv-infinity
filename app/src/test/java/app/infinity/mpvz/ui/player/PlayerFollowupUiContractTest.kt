@@ -60,6 +60,20 @@ class PlayerFollowupUiContractTest {
   }
 
   @Test
+  fun mpvSubtitleTapRunsOnIoAndSerializesNativePropertyMutations() {
+    val playerViewModel = read("app/src/main/java/app/infinity/mpvz/ui/player/PlayerViewModel.kt")
+    val toggle = playerViewModel.substringAfter("fun toggleSubtitle(id: Int) {")
+      .substringBefore("fun isSubtitleSelected(id: Int): Boolean {")
+    val launchIndex = toggle.indexOf("viewModelScope.launch(Dispatchers.IO)")
+    val nativeReadIndex = toggle.indexOf("getTrackSelectionId(\"sid\")")
+
+    assertTrue(launchIndex >= 0)
+    assertTrue(toggle.contains("mpvSubtitleSelectionMutex.withLock"))
+    assertTrue(nativeReadIndex > launchIndex)
+    assertTrue(toggle.contains("PlaybackSession.isCurrentGeneration(generation)"))
+  }
+
+  @Test
   fun playerLayoutMovesTransportAndControlRowsTogetherAroundTheSeekbar() {
     val preferences = read("app/src/main/java/app/infinity/mpvz/preferences/AppearancePreferences.kt")
     val settings = read("app/src/main/java/app/infinity/mpvz/ui/preferences/PlayerControlsPreferencesScreen.kt")
@@ -112,12 +126,13 @@ class PlayerFollowupUiContractTest {
     assertTrue(controls.contains("start.linkTo(playerPauseButton.end, spacing.small)"))
     assertTrue(controls.contains("bottom.linkTo(seekbar.top, spacing.medium)"))
     assertTrue(landscapeRightBelow.contains("start.linkTo(playerPauseButton.end, spacing.small)"))
-    assertTrue(landscapeRightBelow.contains("width = Dimension.preferredWrapContent"))
+    assertTrue(landscapeRightBelow.contains("width = Dimension.fillToConstraints"))
     assertTrue(landscapeRightAbove.contains("start.linkTo(playerPauseButton.end, spacing.small)"))
     assertTrue(landscapeRightAbove.contains("end.linkTo(parent.end, spacing.large)"))
     assertTrue(landscapeRightAbove.contains("width = Dimension.preferredWrapContent"))
-    assertTrue(controls.contains("horizontalBias = 0f\n                    width = Dimension.preferredWrapContent"))
-    assertTrue(controls.contains("horizontalBias = 1f\n                    width = Dimension.preferredWrapContent"))
+    assertTrue(controls.contains("horizontalBias = 0f\n                    width = Dimension.fillToConstraints"))
+    assertTrue(controls.contains("horizontalBias = 1f\n                    width = Dimension.fillToConstraints"))
+    assertTrue(controls.contains("if (playbackControlsPosition == PlaybackControlsPosition.BelowSeekbar) {\n                    Dimension.fillToConstraints\n                  } else {\n                    Dimension.preferredWrapContent"))
     assertTrue(landscape.contains("buttons.forEach { button ->"))
     assertTrue(landscape.contains("RenderPlayerButton("))
     assertTrue(landscape.contains("Modifier.horizontalScroll(rememberScrollState())"))

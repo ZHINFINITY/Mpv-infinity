@@ -1643,6 +1643,8 @@ class PlayerViewModel(
 
   // Mutex to prevent race-condition duplicates when scan adds multiple subtitle URIs concurrently
   private val subtitleAddMutex = Mutex()
+  // MPV property reads/writes can block on native playback; serialize taps without blocking UI.
+  private val mpvSubtitleSelectionMutex = Mutex()
 
   // Mapping from mpv internal path/URI to the original source URI (resolves deletion issues)
   private val mpvPathToUriMap = mutableMapOf<String, String>()
@@ -4405,26 +4407,40 @@ class PlayerViewModel(
       nativeSubtitleToggleListener?.invoke(id)
       return
     }
-    val primarySid = getTrackSelectionId("sid")
-    val secondarySid = getTrackSelectionId("secondary-sid")
-
-    val wasOff = primarySid <= 0 && secondarySid <= 0
-    Log.i(TAG, "MPV subtitle toggle requested trackId=$id sid=$primarySid secondarySid=$secondarySid")
-    val nextSelection = toggleMpvSubtitleSelection(primarySid, secondarySid, id)
-    if (nextSelection.primaryId == primarySid && nextSelection.secondaryId == secondarySid) return
-    if (nextSelection.primaryId != primarySid) setTrackSelectionId("sid", nextSelection.primaryId)
-    if (nextSelection.secondaryId != secondarySid) setTrackSelectionId("secondary-sid", nextSelection.secondaryId)
-    Log.i(
-      TAG,
-      "MPV subtitle selection applied sid=${PlaybackSession.getPropertyString("sid")} " +
-        "secondarySid=${PlaybackSession.getPropertyString("secondary-sid")}",
-    )
-
-    if (wasOff && !subtitlesPreferences.autoEnableSubtitles.get()) {
-      subtitlesPreferences.autoEnableSubtitles.set(true)
+    val generation = PlaybackSession.state.value.generation
+    val queuedAt = SystemClock.elapsedRealtime()
+    viewModelScope.launch(Dispatchers.IO) {
+      mpvSubtitleSelectionMutex.withLock {
+        if (activePlaybackEngine.value != PlaybackEngineMode.MPV || !PlaybackSession.isCurrentGeneration(generation)) {
+          return@withLock
+        }
+        val operationStartedAt = SystemClock.elapsedRealtime()
+        val primarySid = getTrackSelectionId("sid")
+        val secondarySid = getTrackSelectionId("secondary-sid")
+        val wasOff = primarySid <= 0 && secondarySid <= 0
+        val nextSelection = toggleMpvSubtitleSelection(primarySid, secondarySid, id)
+        if (nextSelection.primaryId == primarySid && nextSelection.secondaryId == secondarySid) return@withLock
+        if (nextSelection.primaryId != primarySid) {
+          if (!PlaybackSession.isCurrentGeneration(generation)) return@withLock
+          setTrackSelectionId("sid", nextSelection.primaryId)
+        }
+        if (nextSelection.secondaryId != secondarySid) {
+          if (!PlaybackSession.isCurrentGeneration(generation)) return@withLock
+          setTrackSelectionId("secondary-sid", nextSelection.secondaryId)
+        }
+        if (!PlaybackSession.isCurrentGeneration(generation)) return@withLock
+        if (wasOff && !subtitlesPreferences.autoEnableSubtitles.get()) {
+          subtitlesPreferences.autoEnableSubtitles.set(true)
+        }
+        syncSubtitleLayout()
+        Log.i(
+          TAG,
+          "MPV subtitle selection applied trackId=$id sid=${nextSelection.primaryId} " +
+            "secondarySid=${nextSelection.secondaryId} queueMs=${operationStartedAt - queuedAt} " +
+            "operationMs=${SystemClock.elapsedRealtime() - operationStartedAt}",
+        )
+      }
     }
-
-    syncSubtitleLayout()
   }
 
   fun isSubtitleSelected(id: Int): Boolean {

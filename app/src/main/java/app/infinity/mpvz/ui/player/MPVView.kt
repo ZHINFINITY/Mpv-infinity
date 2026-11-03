@@ -1044,7 +1044,10 @@ class MPVView(
       PlayerStatsLuaCommandPolicy.STARTUP_APPLIED_PROPERTY,
       PlayerStatsLuaCommandPolicy.STARTUP_APPLIED_YES,
     )
-    PlayerStatsLuaCommandPolicy.forStartup(advancedPreferences.enabledStatisticsPage.get())?.let {
+    PlayerStatsLuaCommandPolicy.forStartup(
+      advancedPreferences.enabledStatisticsPage.get(),
+      luaShown = PlayerStatsLuaCommandPolicy.isLuaShown(),
+    )?.let {
       PlayerStatsLuaCommandPolicy.apply(it)
     }
   }

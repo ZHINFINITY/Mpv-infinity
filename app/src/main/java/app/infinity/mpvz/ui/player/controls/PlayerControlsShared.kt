@@ -1219,7 +1219,6 @@ fun RenderPlayerButton(
         PlayerStatsLuaCommandPolicy.apply(
           PlayerStatsLuaCommandPolicy.forChip(
             toPage = nextPage,
-            previousPage = statisticsPage,
             luaShown = PlayerStatsLuaCommandPolicy.isLuaShown(),
             consoleOpen = PlaybackSession.getPropertyBoolean("user-data/mpv/console/open") == true,
           ),

@@ -1314,7 +1314,12 @@ fun PlayerControls(
                   horizontalBias = 0f
                 }
                 bottom.linkTo(bottomLeftControls.top, spacing.medium)
-                width = Dimension.preferredWrapContent
+                width =
+                  if (playbackControlsPosition == PlaybackControlsPosition.BelowSeekbar) {
+                    Dimension.fillToConstraints
+                  } else {
+                    Dimension.preferredWrapContent
+                  }
                 height = Dimension.wrapContent
               },
           ) {
@@ -1385,7 +1390,12 @@ fun PlayerControls(
                     end.linkTo(parent.end, spacing.large)
                   }
                   bottom.linkTo(bottomRightControls.top, spacing.medium)
-                  width = Dimension.preferredWrapContent
+                  width =
+                    if (playbackControlsPosition == PlaybackControlsPosition.BelowSeekbar) {
+                      Dimension.fillToConstraints
+                    } else {
+                      Dimension.preferredWrapContent
+                    }
                   height = Dimension.wrapContent
                 }.onGloballyPositioned { coordinates ->
                   landscapeRightButtonsTopPx = coordinates.positionInParent().y.roundToInt()
@@ -2210,7 +2220,7 @@ fun PlayerControls(
                     start.linkTo(playerPauseButton.end, spacing.small)
                     end.linkTo(parent.end, spacing.large)
                     horizontalBias = 1f
-                    width = Dimension.preferredWrapContent
+                    width = Dimension.fillToConstraints
                   } else {
                     bottom.linkTo(seekbar.top, bottomControlsToSeekbarSpacing)
                     start.linkTo(playerPauseButton.end, spacing.small)
@@ -2285,7 +2295,7 @@ fun PlayerControls(
                     start.linkTo(parent.start, spacing.large)
                     end.linkTo(playerPauseButton.start, spacing.small)
                     horizontalBias = 0f
-                    width = Dimension.preferredWrapContent
+                    width = Dimension.fillToConstraints
                   } else {
                     bottom.linkTo(seekbar.top, bottomControlsToSeekbarSpacing)
                     start.linkTo(parent.start, spacing.large)

@@ -5,9 +5,9 @@
 package app.infinity.mpvz.ui.player
 
 /**
- * stats.lua starts hidden on a new core. [display-page-N] shows that page; if it is already shown,
- * the same binding hides it. Interpolation restore therefore sends only [display-page-N].
- * Off never uses a persisted page as proof that lua is visible.
+ * stats.lua starts hidden on a new core. `display-page-N` selects a page but does not toggle the
+ * persistent overlay; `display-stats-toggle` owns persistent visibility. The bundled script keeps
+ * its overlay across video reconfiguration, so only a newly created core resets our live state.
  */
 internal object PlayerStatsLuaCommandPolicy {
   const val VISIBLE_PROPERTY = "user-data/mpvrx/stats-lua-visible"
@@ -32,11 +32,7 @@ internal object PlayerStatsLuaCommandPolicy {
     PlaybackSession.setPropertyString(VISIBLE_PROPERTY, VISIBLE_NO)
   }
 
-  fun onVoReconfig() {
-    PlaybackSession.setPropertyString(VISIBLE_PROPERTY, VISIBLE_NO)
-  }
-
-  fun forChip(toPage: Int, previousPage: Int, luaShown: Boolean, consoleOpen: Boolean): Decision {
+  fun forChip(toPage: Int, luaShown: Boolean, consoleOpen: Boolean): Decision {
     val disableConsole = toPage != 7 && consoleOpen
     return when (toPage) {
       0, 6 -> Decision(
@@ -50,7 +46,7 @@ internal object PlayerStatsLuaCommandPolicy {
         enableConsole = !consoleOpen,
       )
       else -> Decision(
-        toggleLua = previousPage == 0 || previousPage == 6 || previousPage == 7,
+        toggleLua = !luaShown,
         displayPage = toPage,
         luaVisible = true,
         disableConsole = disableConsole,
@@ -58,14 +54,14 @@ internal object PlayerStatsLuaCommandPolicy {
     }
   }
 
-  fun forStartup(page: Int): Decision? =
-    if (page in 1..5) Decision(displayPage = page, luaVisible = true) else null
+  fun forStartup(page: Int, luaShown: Boolean): Decision? =
+    if (page in 1..5) Decision(toggleLua = !luaShown, displayPage = page, luaVisible = true) else null
 
   fun forVideoResume(page: Int, luaShown: Boolean): Decision? =
-    if (page in 1..5 && !luaShown) Decision(displayPage = page, luaVisible = true) else null
+    if (page in 1..5 && !luaShown) Decision(toggleLua = true, displayPage = page, luaVisible = true) else null
 
   fun forMusicHide(luaShown: Boolean, consoleOpen: Boolean): Decision =
-    forChip(toPage = 0, previousPage = 0, luaShown = luaShown, consoleOpen = consoleOpen)
+    forChip(toPage = 0, luaShown = luaShown, consoleOpen = consoleOpen)
 
   fun shouldWaitForPlaybackBeforeRestore(fileLoaded: Boolean, timePosFinite: Boolean): Boolean =
     fileLoaded && timePosFinite

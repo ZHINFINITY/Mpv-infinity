@@ -11,7 +11,6 @@ class PlayerStatsLuaCommandPolicyTest {
   fun offDoesNotToggleWhenLuaIsAlreadyHidden() {
     val off = PlayerStatsLuaCommandPolicy.forChip(
       toPage = 0,
-      previousPage = 1,
       luaShown = false,
       consoleOpen = false,
     )
@@ -21,72 +20,54 @@ class PlayerStatsLuaCommandPolicyTest {
   }
 
   @Test
-  fun offHidesVisibleLuaOnce() {
+  fun offHidesVisibleLuaAndClearsItsLiveState() {
     val off = PlayerStatsLuaCommandPolicy.forChip(
       toPage = 0,
-      previousPage = 2,
       luaShown = true,
       consoleOpen = false,
     )
     assertTrue(off.toggleLua)
+    assertNull(off.displayPage)
     assertEquals(false, off.luaVisible)
-    assertFalse(
-      PlayerStatsLuaCommandPolicy.forChip(
-        toPage = 0,
-        previousPage = 2,
-        luaShown = false,
-        consoleOpen = false,
-      ).toggleLua,
-    )
   }
 
   @Test
-  fun interpolationRestartRestoresLuaWithDisplayPageOnly() {
-    val restored = PlayerStatsLuaCommandPolicy.forStartup(1)!!
-    assertFalse(restored.toggleLua)
-    assertEquals(1, restored.displayPage)
-    assertEquals(true, restored.luaVisible)
-    val offAfterVanishedOverlay =
-      PlayerStatsLuaCommandPolicy.forChip(
-        toPage = 0,
-        previousPage = 1,
-        luaShown = false,
-        consoleOpen = false,
-      )
-    assertFalse(offAfterVanishedOverlay.toggleLua)
-    assertNull(offAfterVanishedOverlay.displayPage)
-  }
-
-  @Test
-  fun switchingLuaPagesDoesNotToggleAnAlreadyShownOverlay() {
-    val page = PlayerStatsLuaCommandPolicy.forChip(
+  fun choosingLuaPageUsesLiveVisibilityInsteadOfRememberedPage() {
+    val hidden = PlayerStatsLuaCommandPolicy.forChip(
       toPage = 3,
-      previousPage = 1,
-      luaShown = true,
-      consoleOpen = false,
-    )
-    assertFalse(page.toggleLua)
-    assertEquals(3, page.displayPage)
-    assertEquals(true, page.luaVisible)
-  }
-
-  @Test
-  fun enablingLuaFromOffUsesToggleThenDisplayPage() {
-    val page = PlayerStatsLuaCommandPolicy.forChip(
-      toPage = 1,
-      previousPage = 0,
       luaShown = false,
       consoleOpen = false,
     )
-    assertTrue(page.toggleLua)
-    assertEquals(1, page.displayPage)
+    assertTrue(hidden.toggleLua)
+    assertEquals(3, hidden.displayPage)
+    assertEquals(true, hidden.luaVisible)
+
+    val alreadyShown = PlayerStatsLuaCommandPolicy.forChip(
+      toPage = 3,
+      luaShown = true,
+      consoleOpen = false,
+    )
+    assertFalse(alreadyShown.toggleLua)
+    assertEquals(3, alreadyShown.displayPage)
+  }
+
+  @Test
+  fun startupRestoresPersistentOverlayOnlyWhenLiveCoreIsHidden() {
+    val restored = PlayerStatsLuaCommandPolicy.forStartup(1, luaShown = false)!!
+    assertTrue(restored.toggleLua)
+    assertEquals(1, restored.displayPage)
+    assertEquals(true, restored.luaVisible)
+
+    val alreadyShown = PlayerStatsLuaCommandPolicy.forStartup(1, luaShown = true)!!
+    assertFalse(alreadyShown.toggleLua)
+    assertEquals(1, alreadyShown.displayPage)
   }
 
   @Test
   fun musicAndComposePagesNeverAskStartupToShowLua() {
-    assertNull(PlayerStatsLuaCommandPolicy.forStartup(0))
-    assertNull(PlayerStatsLuaCommandPolicy.forStartup(6))
-    assertNull(PlayerStatsLuaCommandPolicy.forStartup(7))
+    assertNull(PlayerStatsLuaCommandPolicy.forStartup(0, luaShown = false))
+    assertNull(PlayerStatsLuaCommandPolicy.forStartup(6, luaShown = false))
+    assertNull(PlayerStatsLuaCommandPolicy.forStartup(7, luaShown = false))
   }
 
   @Test
@@ -101,9 +82,9 @@ class PlayerStatsLuaCommandPolicyTest {
   }
 
   @Test
-  fun videoResumeRestoresWithDisplayPageOnly() {
+  fun videoResumeRestoresPersistentOverlayOnlyWhenHidden() {
     val resume = PlayerStatsLuaCommandPolicy.forVideoResume(1, luaShown = false)!!
-    assertFalse(resume.toggleLua)
+    assertTrue(resume.toggleLua)
     assertEquals(1, resume.displayPage)
     assertEquals(true, resume.luaVisible)
     assertNull(PlayerStatsLuaCommandPolicy.forVideoResume(1, luaShown = true))
