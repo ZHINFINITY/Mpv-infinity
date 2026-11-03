@@ -86,7 +86,7 @@ jobs:
           from pathlib import Path
 
           text = Path("app/build.gradle.kts").read_text(encoding="utf-8")
-          match = re.search(r'(?m)^\s*versionName\s*=\s*"([^"]+)"\s*$', text)
+          match = re.search(r'(?m)^\s*versionName\s*=\s*"([^"]+)"\s*(?://.*)?$', text)
           if not match:
               raise SystemExit("Could not find a literal app versionName in app/build.gradle.kts")
           print(match.group(1))
