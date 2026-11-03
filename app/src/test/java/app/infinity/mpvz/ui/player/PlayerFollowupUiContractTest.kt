@@ -68,7 +68,7 @@ class PlayerFollowupUiContractTest {
     assertTrue(controls.contains("bottom.linkTo(landscapeSideControlBandTop, spacing.medium)"))
     assertTrue(controls.contains("createTopBarrier(*landscapeControlBandRefs.toTypedArray())"))
     assertTrue(controls.contains("bottom.linkTo(landscapeControlBandTop, spacing.medium)"))
-    assertTrue(controls.contains("bottom.linkTo(playerPauseButton.start, spacing.small)"))
+    assertTrue(controls.contains("end.linkTo(playerPauseButton.start, spacing.small)"))
     assertTrue(controls.contains("start.linkTo(playerPauseButton.end, spacing.small)"))
     assertTrue(controls.contains("top.linkTo(seekbar.bottom, spacing.medium)"))
     assertTrue(landscape.contains("buttons.forEach { button ->"))
