@@ -1027,6 +1027,26 @@ def main() -> None:
             check=True,
         )
         vo = vo_path.read_text()
+    gpu_video_path = mpv_dir / "video/out/gpu/video.c"
+    gpu_video_source = gpu_video_path.read_text(encoding="utf-8")
+    retry_marker = "if (map_result == RA_HWDEC_MAP_RETRY) {"
+    retry_start = gpu_video_source.find(retry_marker)
+    retry_end = gpu_video_source.find("\n        }", retry_start) if retry_start >= 0 else -1
+    retry_branch = gpu_video_source[retry_start:retry_end] if retry_end >= 0 else ""
+    fatal_marker = "Mapping hardware decoded surface failed."
+    fatal_index = gpu_video_source.find(fatal_marker)
+    if (
+        retry_start < 0
+        or retry_end < 0
+        or "unref_current_image(p);" not in retry_branch
+        or "return false;" not in retry_branch
+        or fatal_index < 0
+        or retry_start >= fatal_index
+    ):
+        raise SystemExit(
+            "Pinned MPV video.c is missing the non-fatal AImageReader retry guard "
+            "before the generic hardware-map fatal path"
+        )
     meson = enable_android_vulkan_dependency(meson_path.read_text())
     if mapper_marker not in hwdec_header_path.read_text() or "# MPVFLOW_AIMAGE_VULKAN_MAPPER" not in meson:
         raise SystemExit("Android MediaCodec/Vulkan mapper patch was not fully applied")

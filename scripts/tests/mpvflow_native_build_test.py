@@ -652,6 +652,12 @@ assert '"--input", str(required[2])' not in prepare_source, (
 )
 assert 'AIMAGE_VULKAN_PATCH = VENDOR / "mpvflow-aimagereader-vulkan.patch"' in prepare_source
 assert '"--input", str(AIMAGE_VULKAN_PATCH)' in prepare_source
+assert 'gpu_video_path = mpv_dir / "video/out/gpu/video.c"' in prepare_source
+assert 'retry_marker = "if (map_result == RA_HWDEC_MAP_RETRY) {"' in prepare_source
+assert '"unref_current_image(p);" not in retry_branch' in prepare_source
+assert '"return false;" not in retry_branch' in prepare_source
+assert 'retry_start >= fatal_index' in prepare_source
+assert "Pinned MPV video.c is missing the non-fatal AImageReader retry guard" in prepare_source
 assert "vulkan_context = enable_mailbox_suboptimal_tolerance(vulkan_context)" in prepare_source, (
     "the measured mailbox suboptimal fix must be applied by the pinned MPV preparation pipeline"
 )
