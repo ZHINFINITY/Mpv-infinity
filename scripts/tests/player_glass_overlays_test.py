@@ -99,7 +99,7 @@ class PlayerGlassOverlayContracts(unittest.TestCase):
 
     def test_cross_window_sampling_uses_a_common_screen_origin(self):
         source = self.source("ui/theme/LiquidGlassBackdrop.kt")
-        self.assertIn("source.getLocationOnScreen(location)", source)
+        self.assertIn("source.getLocationOnScreen(screenLocation)", source)
         self.assertIn("hostView.getLocationOnScreen(screenLocation)", source)
         self.assertIn("screenLocation[0] - windowLocation[0]", source)
 

@@ -137,8 +137,8 @@ object SortUtils {
 
         when {
           numA != null && numB != null -> {
-            // Both numeric
-            val cmp = numA.value.compareTo(numB.value)
+            // Compare arbitrary-length runs without integer parsing; leading zeroes remain ignored.
+            val cmp = compareNumbers(a, numA, b, numB)
             if (cmp != 0) return cmp
             // Numbers equal => advance past them and continue
             ia = numA.exclusiveEndIndex
@@ -158,36 +158,40 @@ object SortUtils {
     }
 
     private data class ParsedNumber(
-      val value: Int,
+      val significantStartIndex: Int,
       val exclusiveEndIndex: Int,
-    )
+    ) {
+      val significantLength: Int
+        get() = exclusiveEndIndex - significantStartIndex
+    }
 
     private fun parseNumber(
       s: String,
       start: Int,
     ): ParsedNumber? {
+      if (start >= s.length || Character.digit(s[start], 10) < 0) return null
       var i = start
+      while (i < s.length && Character.digit(s[i], 10) >= 0) i++
+      var significantStart = start
+      while (significantStart < i && Character.digit(s[significantStart], 10) == 0) significantStart++
+      return ParsedNumber(significantStart, i)
+    }
 
-      var hasDigit = false
-
-      while (i < s.length) {
-        val c = s[i]
-        if (c.isDigit()) {
-          hasDigit = true
-          i++
-        } else {
-          break
-        }
+    private fun compareNumbers(
+      a: String,
+      numberA: ParsedNumber,
+      b: String,
+      numberB: ParsedNumber,
+    ): Int {
+      val lengthComparison = numberA.significantLength.compareTo(numberB.significantLength)
+      if (lengthComparison != 0) return lengthComparison
+      for (offset in 0 until numberA.significantLength) {
+        val digitComparison =
+          Character.digit(a[numberA.significantStartIndex + offset], 10)
+            .compareTo(Character.digit(b[numberB.significantStartIndex + offset], 10))
+        if (digitComparison != 0) return digitComparison
       }
-
-      if (!hasDigit) return null
-
-      val numStr = s.substring(start, i)
-      return try {
-        ParsedNumber(numStr.toInt(), i)
-      } catch (_: Exception) {
-        null
-      }
+      return 0
     }
   }
 

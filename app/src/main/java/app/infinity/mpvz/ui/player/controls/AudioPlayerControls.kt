@@ -1565,7 +1565,7 @@ fun AudioPlayerControls(
         .background(
           // Opaque base: the browser under the sheet stops drawing once the sheet covers it,
           // so a transparent page would read as black. Liquid glass still frosts on top.
-          MaterialTheme.colorScheme.surface,
+          MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 1f),
         )
         .drawWithCache {
           if (audioPaletteBackground && ambientModeEnabled &&

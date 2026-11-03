@@ -43,6 +43,7 @@ internal data class PlaybackStateSnapshot(
   val playbackSettingsAreKnown: Boolean = positionIsKnown,
   val audioSelection: String? = null,
   val subtitleSelection: String? = null,
+  val secondarySubtitleSelection: String? = null,
   val captureSequence: Long = PlaybackStateSaveCoordinator.nextSequence(),
 )
 
@@ -98,6 +99,7 @@ internal object PlaybackStatePersistence {
         ),
       audioSelection = snapshot.audioSelection ?: oldState?.audioSelection,
       subtitleSelection = snapshot.subtitleSelection ?: oldState?.subtitleSelection,
+      secondarySubtitleSelection = snapshot.secondarySubtitleSelection ?: oldState?.secondarySubtitleSelection,
     )
   }
 
@@ -155,3 +157,32 @@ internal object PlaybackStatePersistence {
       (oldState?.hasBeenWatched == true)
   }
 }
+
+internal fun shouldRestorePerVideoAspect(
+  hasSavedState: Boolean,
+  rememberVideoAspectPerVideo: Boolean,
+  loadGenerationIsCurrent: Boolean,
+): Boolean = hasSavedState && rememberVideoAspectPerVideo && loadGenerationIsCurrent
+
+internal fun restorePerVideoAspectIfCurrent(
+  hasSavedState: Boolean,
+  rememberVideoAspectPerVideo: Boolean,
+  loadGenerationIsCurrent: () -> Boolean,
+  restore: () -> Unit,
+): Boolean {
+  if (!shouldRestorePerVideoAspect(hasSavedState, rememberVideoAspectPerVideo, loadGenerationIsCurrent())) return false
+  restore()
+  return true
+}
+
+internal fun shouldApplyAspectRestoreForLoad(
+  loadGenerationIsCurrent: Boolean,
+  userAspectChangeOccurredForLoad: Boolean,
+): Boolean =
+  loadGenerationIsCurrent &&
+    !userAspectChangeOccurredForLoad
+
+internal fun requestGenerationForUserAspectChange(
+  visibleMediaRequestGeneration: Long?,
+  currentMediaRequestGeneration: Long,
+): Long = visibleMediaRequestGeneration ?: currentMediaRequestGeneration

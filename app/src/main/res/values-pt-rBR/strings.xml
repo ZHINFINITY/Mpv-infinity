@@ -1658,6 +1658,8 @@ Reinicie o aplicativo para que todas as alterações entrem em vigor.</string>
   <string name="ui_script_file_not_found">Arquivo de script não encontrado</string>
   <string name="ui_search_models">Pesquisar modelos...</string>
   <string name="ui_portrait_playback_buttons">Botões de reprodução em retrato</string>
+  <string name="ui_playback_controls_position">Posição dos controles de reprodução</string>
+  <string name="ui_playback_controls_position_summary">Move o grupo de transporte e os controles inferiores para cima ou para baixo da barra de busca nos modos retrato e paisagem.</string>
   <string name="ui_time_network_clock">Relógio de hora + rede</string>
   <string name="ui_show_media_info_in_chooser">Mostrar informações da mídia no seletor</string>
   <string name="ui_show_media_info_in_system">Mostrar Informações da mídia nos menus do sistema "Abrir com" / compartilhamento para analisar arquivos de outros apps.</string>

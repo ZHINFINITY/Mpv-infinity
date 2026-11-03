@@ -2130,6 +2130,10 @@ bool aimagereader_vk_convert_retain_last(struct aimagereader_vk_convert *p,
     struct vk_output *output = &p->outputs[p->output_index];
     if (!output->ratex)
         return false;
+    if (!output->source_frame ||
+        !mp_image_params_static_equal(&output->source_frame->params,
+                                      &frame->params))
+        return false;
 
     struct mp_image *frame_ref = mp_image_new_ref(frame);
     if (!frame_ref)
@@ -2145,6 +2149,12 @@ static int map_image(struct aimagereader_vk_convert *p, AImage *image,
                      int32_t data_space, struct mp_image *frame,
                      int *acquire_fence)
 {
+    MP_VERBOSE(p->mapper, "HWPLUS_VK_MAP_BEGIN pts=%.6f buffer=%p "
+                          "output_index=%d acquire_fence_fd=%d "
+                          "acquire_sync_fd_enabled=%d "
+                          "release_sync_fd_enabled=%d\n",
+               frame->pts, (void *)buffer, p->output_index,
+               *acquire_fence, p->acquire_sync_fd, p->release_sync_fd);
     purge_removed_inputs(p);
 
     if (!p->release_sync_fd) {
@@ -2157,30 +2167,66 @@ static int map_image(struct aimagereader_vk_convert *p, AImage *image,
     VkAndroidHardwareBufferFormatPropertiesANDROID format_props;
     VkAndroidHardwareBufferPropertiesANDROID buffer_props;
     if (input) {
+        MP_VERBOSE(p->mapper, "HWPLUS_VK_MAP_INPUT_CACHE hit pts=%.6f "
+                              "buffer=%p users=%d removed=%d\n",
+                   frame->pts, (void *)buffer, input->users, input->removed);
         desc = input->desc;
         format_props = input->raw_format_props;
         buffer_props = input->buffer_props;
     } else if (!query_buffer_properties(p, buffer, &desc, &format_props,
                                         &buffer_props)) {
+        MP_VERBOSE(p->mapper, "HWPLUS_VK_MAP_FAIL stage=buffer-properties "
+                              "pts=%.6f buffer=%p\n",
+                   frame->pts, (void *)buffer);
         return -1;
+    } else {
+        MP_VERBOSE(p->mapper, "HWPLUS_VK_MAP_INPUT_CACHE miss pts=%.6f "
+                              "buffer=%p size=%ux%u stride=%u format=%u "
+                              "usage=0x%" PRIx64 " external_format=%" PRIu64 "\n",
+                   frame->pts, (void *)buffer, desc.width, desc.height,
+                   desc.stride, desc.format, desc.usage,
+                   format_props.externalFormat);
     }
 
     struct source_config source;
     if (!build_source_config(p, &desc, &format_props, crop, data_space,
-                             &source) ||
-        !ensure_conversion_resources(p, &source))
+                             &source)) {
+        MP_VERBOSE(p->mapper, "HWPLUS_VK_MAP_FAIL stage=source-config "
+                              "pts=%.6f buffer=%p dataspace=%d "
+                              "crop=[%d,%d,%d,%d]\n",
+                   frame->pts, (void *)buffer, data_space,
+                   crop->left, crop->top, crop->right, crop->bottom);
         return -1;
+    }
+    if (!ensure_conversion_resources(p, &source)) {
+        MP_VERBOSE(p->mapper, "HWPLUS_VK_MAP_FAIL stage=conversion-resources "
+                              "pts=%.6f buffer=%p source=%ux%u output=%dx%d\n",
+                   frame->pts, (void *)buffer, source.desc.width,
+                   source.desc.height, source.output_width,
+                   source.output_height);
+        return -1;
+    }
 
     input = find_input(p, buffer);
     if (!input)
         input = create_input(p, buffer, &source, &format_props, &buffer_props);
-    if (!input)
+    if (!input) {
+        MP_VERBOSE(p->mapper, "HWPLUS_VK_MAP_FAIL stage=AHardwareBuffer-import "
+                              "pts=%.6f buffer=%p\n",
+                   frame->pts, (void *)buffer);
         return -1;
+    }
 
     p->output_index = (p->output_index + 1) % OUTPUT_COUNT;
     struct vk_output *output = &p->outputs[p->output_index];
-    if (!finish_output(p, output, true))
+    if (!finish_output(p, output, true)) {
+        MP_VERBOSE(p->mapper, "HWPLUS_VK_MAP_FAIL stage=output-slot "
+                              "pts=%.6f buffer=%p slot=%d pending=%d "
+                              "released=%d\n",
+                   frame->pts, (void *)buffer, p->output_index,
+                   output->pending, output->has_been_released);
         return -1;
+    }
 
     bool needs_reclaim = output->has_been_released;
     if (needs_reclaim) {
@@ -2191,6 +2237,9 @@ static int map_image(struct aimagereader_vk_convert *p, AImage *image,
                 .semaphore = (pl_vulkan_sem){.sem = output->available},
             ))) {
             mp_err(p->log, "Failed reclaiming conversion output texture\n");
+            MP_VERBOSE(p->mapper, "HWPLUS_VK_MAP_FAIL stage=output-reclaim "
+                                  "pts=%.6f buffer=%p slot=%d\n",
+                       frame->pts, (void *)buffer, p->output_index);
             return -1;
         }
     }
@@ -2212,6 +2261,9 @@ static int map_image(struct aimagereader_vk_convert *p, AImage *image,
 
     struct mp_image *frame_ref = mp_image_new_ref(frame);
     if (!frame_ref) {
+        MP_VERBOSE(p->mapper, "HWPLUS_VK_MAP_FAIL stage=frame-reference "
+                              "pts=%.6f buffer=%p slot=%d\n",
+                   frame->pts, (void *)buffer, p->output_index);
         release_reclaimed_output(p, output, needs_reclaim);
         return -1;
     }
@@ -2229,7 +2281,11 @@ static int map_image(struct aimagereader_vk_convert *p, AImage *image,
     };
     int release_fence = -1;
     bool release_exported = false;
+    int incoming_acquire_fence_fd = *acquire_fence;
     if (!record_conversion(p, output, input, &push)) {
+        MP_VERBOSE(p->mapper, "HWPLUS_VK_MAP_FAIL stage=record-conversion "
+                              "pts=%.6f buffer=%p slot=%d input_users=%d\n",
+                   frame->pts, (void *)buffer, p->output_index, input->users);
         mp_image_unrefp(&frame_ref);
         release_reclaimed_output(p, output, needs_reclaim);
         return -1;
@@ -2238,6 +2294,13 @@ static int map_image(struct aimagereader_vk_convert *p, AImage *image,
                                        acquire_fence, &release_fence,
                                        &release_exported);
     if (!submitted) {
+        MP_VERBOSE(p->mapper, "HWPLUS_VK_MAP_FAIL stage=submit-conversion "
+                              "pts=%.6f buffer=%p slot=%d "
+                              "acquire_fence_in=%d acquire_fence_left=%d "
+                              "release_fence=%d release_exported=%d\n",
+                   frame->pts, (void *)buffer, p->output_index,
+                   incoming_acquire_fence_fd, *acquire_fence,
+                   release_fence, release_exported);
         mp_image_unrefp(&frame_ref);
         release_reclaimed_output(p, output, needs_reclaim);
         return -1;
@@ -2265,6 +2328,17 @@ static int map_image(struct aimagereader_vk_convert *p, AImage *image,
         .semaphore = (pl_vulkan_sem){.sem = output->ready},
     ));
     p->mapper->tex[0] = output->ratex;
+    MP_VERBOSE(p->mapper, "HWPLUS_VK_MAP_SUCCESS pts=%.6f buffer=%p image=%p "
+                          "slot=%d input_users=%d source=%ux%u "
+                          "crop=[%d,%d,%d,%d] dataspace=%d "
+                          "acquire_fence_in=%d acquire_fence_left=%d "
+                          "release_fence=%d release_exported=%d "
+                          "backend=%d pending=%d written=%d\n",
+               frame->pts, (void *)buffer, (void *)image, p->output_index,
+               input->users, source.desc.width, source.desc.height,
+               crop->left, crop->top, crop->right, crop->bottom, data_space,
+               incoming_acquire_fence_fd, *acquire_fence, release_fence,
+               release_exported, p->backend, output->pending, output->written);
     return 0;
 }
 

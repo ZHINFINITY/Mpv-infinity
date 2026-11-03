@@ -1644,6 +1644,8 @@
   <string name="ui_script_file_not_found">فایل Script پیدا نشد</string>
   <string name="ui_search_models">مدل های جستجو ...</string>
   <string name="ui_portrait_playback_buttons">دکمه های پخش پرتره</string>
+  <string name="ui_playback_controls_position">جایگاه کنترل‌های پخش</string>
+  <string name="ui_playback_controls_position_summary">گروه کنترل پخش و کنترل‌های پایینی را در حالت عمودی و افقی به بالا یا پایین نوار جست‌وجو منتقل می‌کند.</string>
   <string name="ui_time_network_clock">زمان + ساعت شبکه</string>
   <string name="ui_show_media_info_in_chooser">نشان دادن اطلاعات رسانه در انتخاب کننده</string>
   <string name="ui_show_media_info_in_system">Show Media Info in system \"Open with\" / به اشتراک گذاری منوها برای تجزیه و تحلیل فایل ها از برنامه های دیگر.</string>

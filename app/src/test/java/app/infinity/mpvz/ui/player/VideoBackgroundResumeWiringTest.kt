@@ -103,18 +103,55 @@ class VideoBackgroundResumeWiringTest {
   }
 
   @Test
-  fun rebuildReloadsAtCapturedPositionAndKeepsPause() {
+  fun rebuildUsesLivePositionBeforeTheOnStopSnapshotAndKeepsPause() {
     assertInOrder(
       body("private fun rebuildRendererAfterLongBackground()"),
       "val captured = pendingForegroundResumePositionSeconds",
-      "if (isNativeEngineActive()) nativePlaybackPositionSeconds()",
-      "else PlaybackSession.getPropertyDouble(\"time-pos\")",
+      "pendingForegroundResumePositionSeconds = null",
+      "PlayerLifecyclePolicy.foregroundRecoveryPositionSeconds(",
+      "livePositionSeconds = currentForegroundRecoveryPositionSeconds()",
+      "capturedSnapshotSeconds = captured",
       "PlaybackPositionRestoreOverride(",
       "positionSeconds = positionSeconds.takeIf { it.isFinite() && it > 0.0 }",
       "paused = paused",
       "startMediaLoad(",
       "positionRestoreOverride = restore",
     )
+  }
+
+  @Test
+  fun shortForegroundReturnUsesLivePositionFromTheCurrentRenderer() {
+    val restore = body("private fun restoreForegroundResumePositionIfNeeded()")
+    assertInOrder(
+      restore,
+      "val captured = PlayerLifecyclePolicy.resumePositionSeconds(pendingForegroundResumePositionSeconds)",
+      "PlayerLifecyclePolicy.foregroundRecoveryPositionSeconds(",
+      "livePositionSeconds = currentForegroundRecoveryPositionSeconds()",
+      "capturedSnapshotSeconds = captured",
+      "PlaybackSession.setPropertyDouble(\"time-pos\", seconds)",
+    )
+    assertTrue(
+      "missing stop snapshot must not short-circuit live position recovery",
+      !restore.contains("resumePositionSeconds(pendingForegroundResumePositionSeconds) ?: return"),
+    )
+
+    val liveRecovery = body("private fun currentForegroundRecoveryPositionSeconds()")
+    assertInOrder(
+      liveRecovery,
+      "val session = PlaybackSession.state.value",
+      "val nativeActive = isNativeEngineActive()",
+      "PlayerLifecyclePolicy.liveForegroundRecoveryPositionSeconds(",
+      "requestedMediaId = mediaIdentifier",
+      "mpvSessionPhase = session.phase",
+      "mpvSessionMediaId = session.currentItem?.stableId",
+      "nativeMediaId = nativeEngine?.currentPlayer?.currentMediaItem?.mediaId",
+      "nativePositionMs = nativeEngine?.positionForPersistenceMs()",
+    )
+    val root = File("src/main/java").takeIf { it.exists() } ?: File("app/src/main/java")
+    val nativeEngine = File(root, "app/infinity/mpvz/ui/player/NativeMedia3Engine.kt").readText()
+    assertTrue(nativeEngine.contains(".setMediaId(mediaId?.takeIf(String::isNotBlank).orEmpty())"))
+    assertTrue(activity.contains("mediaId = nativeItem.stableId"))
+    assertTrue(activity.contains("mediaId = currentItem?.stableId ?: mediaIdentifier"))
   }
 
   @Test

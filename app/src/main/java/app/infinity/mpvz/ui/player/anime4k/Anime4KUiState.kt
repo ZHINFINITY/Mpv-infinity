@@ -12,6 +12,7 @@ import app.infinity.mpvz.domain.anime4k.Anime4KManager
 data class Anime4KUiState(
   val isEnabled: Boolean = false,
   val selectedMode: String = Anime4KManager.Mode.OFF.name,
+  val selectedQuality: Anime4KManager.Quality = Anime4KManager.DEFAULT_QUALITY,
   val usesGpuNext: Boolean = false,
   val usesVulkan: Boolean = false,
   val enableIn4k: Boolean = false,

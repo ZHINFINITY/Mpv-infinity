@@ -222,6 +222,7 @@ class PlayerViewModel(
       Anime4KUiState(
         isEnabled = decoderPreferences.enableAnime4K.get(),
         selectedMode = decoderPreferences.anime4kMode.get(),
+        selectedQuality = decoderPreferences.anime4kQuality.get(),
         usesGpuNext = decoderPreferences.gpuNext.get(),
         usesVulkan = decoderPreferences.useVulkan.get(),
         enableIn4k = decoderPreferences.anime4kIn4k.get(),
@@ -242,6 +243,8 @@ class PlayerViewModel(
         usesVulkan = useVulkan,
         enableIn4k = enableIn4k,
       )
+    }.combine(decoderPreferences.anime4kQuality.changes()) { state, quality ->
+      state.copy(selectedQuality = quality)
     }
 
   val anime4KUiState =
@@ -1640,6 +1643,8 @@ class PlayerViewModel(
 
   // Mutex to prevent race-condition duplicates when scan adds multiple subtitle URIs concurrently
   private val subtitleAddMutex = Mutex()
+  // MPV property reads/writes can block on native playback; serialize taps without blocking UI.
+  private val mpvSubtitleSelectionMutex = Mutex()
 
   // Mapping from mpv internal path/URI to the original source URI (resolves deletion issues)
   private val mpvPathToUriMap = mutableMapOf<String, String>()
@@ -1741,6 +1746,7 @@ class PlayerViewModel(
   private val ambientUpdateGeneration = AtomicLong()
   private val _isAmbientLifecycleActive = MutableStateFlow(false)
   val isAmbientLifecycleActive: StateFlow<Boolean> = _isAmbientLifecycleActive.asStateFlow()
+  @Volatile private var frameCapturedAmbientFallback = true
   private val ambientShaderSeq = AtomicLong()
   @Volatile private var ambientShaderFile: java.io.File? = null
 
@@ -2124,6 +2130,8 @@ class PlayerViewModel(
   }
 
   fun onMpvCoreInitialized() {
+    // The new core's observed `vo` has not arrived yet; never reuse the previous renderer's Glow state.
+    frameCapturedAmbientFallback = true
     _isMpvCoreReady.value = true
     scheduleAmbientUpdate(0)
     startMpvStateCollectors()
@@ -4399,24 +4407,40 @@ class PlayerViewModel(
       nativeSubtitleToggleListener?.invoke(id)
       return
     }
-    val primarySid = getTrackSelectionId("sid")
-    val secondarySid = getTrackSelectionId("secondary-sid")
-
-    val wasOff = primarySid <= 0 && secondarySid <= 0
-
-    when {
-      id == primarySid -> setTrackSelectionId("sid", null)
-      id == secondarySid -> setTrackSelectionId("secondary-sid", null)
-      primarySid <= 0 -> setTrackSelectionId("sid", id)
-      secondarySid <= 0 -> setTrackSelectionId("secondary-sid", id)
-      else -> setTrackSelectionId("sid", id)
+    val generation = PlaybackSession.state.value.generation
+    val queuedAt = SystemClock.elapsedRealtime()
+    viewModelScope.launch(Dispatchers.IO) {
+      mpvSubtitleSelectionMutex.withLock {
+        if (activePlaybackEngine.value != PlaybackEngineMode.MPV || !PlaybackSession.isCurrentGeneration(generation)) {
+          return@withLock
+        }
+        val operationStartedAt = SystemClock.elapsedRealtime()
+        val primarySid = getTrackSelectionId("sid")
+        val secondarySid = getTrackSelectionId("secondary-sid")
+        val wasOff = primarySid <= 0 && secondarySid <= 0
+        val nextSelection = toggleMpvSubtitleSelection(primarySid, secondarySid, id)
+        if (nextSelection.primaryId == primarySid && nextSelection.secondaryId == secondarySid) return@withLock
+        if (nextSelection.primaryId != primarySid) {
+          if (!PlaybackSession.isCurrentGeneration(generation)) return@withLock
+          setTrackSelectionId("sid", nextSelection.primaryId)
+        }
+        if (nextSelection.secondaryId != secondarySid) {
+          if (!PlaybackSession.isCurrentGeneration(generation)) return@withLock
+          setTrackSelectionId("secondary-sid", nextSelection.secondaryId)
+        }
+        if (!PlaybackSession.isCurrentGeneration(generation)) return@withLock
+        if (wasOff && !subtitlesPreferences.autoEnableSubtitles.get()) {
+          subtitlesPreferences.autoEnableSubtitles.set(true)
+        }
+        syncSubtitleLayout()
+        Log.i(
+          TAG,
+          "MPV subtitle selection applied trackId=$id sid=${nextSelection.primaryId} " +
+            "secondarySid=${nextSelection.secondaryId} queueMs=${operationStartedAt - queuedAt} " +
+            "operationMs=${SystemClock.elapsedRealtime() - operationStartedAt}",
+        )
+      }
     }
-
-    if (wasOff && !subtitlesPreferences.autoEnableSubtitles.get()) {
-      subtitlesPreferences.autoEnableSubtitles.set(true)
-    }
-
-    syncSubtitleLayout()
   }
 
   fun isSubtitleSelected(id: Int): Boolean {
@@ -5152,7 +5176,10 @@ class PlayerViewModel(
       host.nativeSetCustomAspectRatio(ratio)
       if (persistGlobal) playerPreferences.lastCustomAspectRatio.set(ratio.toFloat())
       _currentAspectRatio.value = ratio
-      if (showUpdate) playerUpdate.value = PlayerUpdates.AspectRatio
+      if (showUpdate) {
+        playerUpdate.value = PlayerUpdates.AspectRatio
+        host.onVideoAspectChanged()
+      }
       return
     }
     if (MpvConfigOverridePolicy.ownsAny(MpvConfigControlledFeatures.VIDEO_ASPECT)) return
@@ -6683,6 +6710,15 @@ class PlayerViewModel(
     }
   }
 
+  fun selectAnime4KQuality(quality: Anime4KManager.Quality) {
+    if (MpvConfigOverridePolicy.ownsAny(MpvConfigControlledFeatures.ANIME4K)) return
+    decoderPreferences.anime4kQuality.set(quality)
+    val currentMode =
+      runCatching { Anime4KManager.Mode.valueOf(decoderPreferences.anime4kMode.get()) }
+        .getOrDefault(Anime4KManager.Mode.OFF)
+    selectAnime4KMode(currentMode)
+  }
+
   /**
    * Called after Anime4K or file changes so HDR remains layered with the rest of
    * the shader stack, then the ambient shader is moved back to the final pass.
@@ -6718,6 +6754,24 @@ class PlayerViewModel(
     }
   }
 
+  /** Use frame capture unless MPV explicitly confirms the legacy `gpu` output path. */
+  fun setFrameCapturedAmbientFallback(enabled: Boolean) {
+    if (frameCapturedAmbientFallback == enabled) {
+      if (enabled) disableAmbientShader()
+      return
+    }
+    frameCapturedAmbientFallback = enabled
+    if (enabled) {
+      disableAmbientShader()
+    } else if (
+      AmbientRendererPolicy.shouldResumeGlowAfterFrameCaptureFallback(enabled, isAmbientGlowRuntimeActive())
+    ) {
+      lastAmbientScaleX = -1.0
+      lastAmbientScaleY = -1.0
+      scheduleAmbientUpdate(0)
+    }
+  }
+
   private fun isAmbientRuntimeActive(): Boolean =
     _isAmbientLifecycleActive.value &&
       _isMpvCoreReady.value &&
@@ -6725,7 +6779,7 @@ class PlayerViewModel(
       !MpvConfigOverridePolicy.ownsAny(MpvConfigControlledFeatures.AMBIENT)
 
   private fun isAmbientGlowRuntimeActive(): Boolean =
-    isAmbientRuntimeActive() && _ambientStyle.value == AmbientStyle.Glow
+    isAmbientRuntimeActive() && _ambientStyle.value == AmbientStyle.Glow && !frameCapturedAmbientFallback
 
   fun toggleAmbientMode() {
     if (MpvConfigOverridePolicy.ownsAny(MpvConfigControlledFeatures.AMBIENT)) return

@@ -161,6 +161,77 @@ class PlayerLifecyclePolicyTest {
     assertEquals(null, PlayerLifecyclePolicy.resumePositionSeconds(Double.NaN))
   }
 
+  @Test
+  fun foregroundRecoveryUsesPositionAdvancedByBackgroundService() {
+    val onStopSnapshot = 10.0
+    var liveServicePosition = onStopSnapshot
+    liveServicePosition += 32.0
+
+    assertEquals(
+      42.0,
+      PlayerLifecyclePolicy.foregroundRecoveryPositionSeconds(liveServicePosition, onStopSnapshot)!!,
+      0.0,
+    )
+  }
+
+  @Test
+  fun foregroundRecoveryUsesLivePositionWhenNoStopSnapshotExists() {
+    assertEquals(42.0, PlayerLifecyclePolicy.foregroundRecoveryPositionSeconds(42.0, null)!!, 0.0)
+  }
+
+  @Test
+  fun foregroundRecoveryFallsBackOnlyWhenLivePositionIsUnavailable() {
+    assertEquals(10.0, PlayerLifecyclePolicy.foregroundRecoveryPositionSeconds(null, 10.0)!!, 0.0)
+    assertEquals(10.0, PlayerLifecyclePolicy.foregroundRecoveryPositionSeconds(Double.NaN, 10.0)!!, 0.0)
+    assertEquals(0.0, PlayerLifecyclePolicy.foregroundRecoveryPositionSeconds(0.0, 10.0)!!, 0.0)
+    assertEquals(null, PlayerLifecyclePolicy.foregroundRecoveryPositionSeconds(null, null))
+  }
+
+  @Test
+  fun directNativeRecoveryUsesTheMatchingMediaItemPositionWithoutAnMpvSession() {
+    val livePosition =
+      PlayerLifecyclePolicy.liveForegroundRecoveryPositionSeconds(
+        activeEngine = PlaybackEngineMode.NATIVE,
+        requestedMediaId = "episode-1",
+        mpvSessionPhase = PlaybackPhase.IDLE,
+        mpvSessionMediaId = null,
+        mpvLivePositionSeconds = null,
+        nativeMediaId = "episode-1",
+        nativePositionMs = 42_000L,
+      )
+
+    assertEquals(42.0, livePosition!!, 0.0)
+    assertEquals(42.0, PlayerLifecyclePolicy.foregroundRecoveryPositionSeconds(livePosition, 10.0)!!, 0.0)
+  }
+
+  @Test
+  fun foregroundRecoveryRejectsLivePositionsFromAnotherMediaItem() {
+    assertEquals(
+      null,
+      PlayerLifecyclePolicy.liveForegroundRecoveryPositionSeconds(
+        activeEngine = PlaybackEngineMode.NATIVE,
+        requestedMediaId = "episode-2",
+        mpvSessionPhase = PlaybackPhase.READY,
+        mpvSessionMediaId = "episode-2",
+        mpvLivePositionSeconds = 44.0,
+        nativeMediaId = "episode-1",
+        nativePositionMs = 42_000L,
+      ),
+    )
+    assertEquals(
+      null,
+      PlayerLifecyclePolicy.liveForegroundRecoveryPositionSeconds(
+        activeEngine = PlaybackEngineMode.MPV,
+        requestedMediaId = "episode-2",
+        mpvSessionPhase = PlaybackPhase.BACKGROUND,
+        mpvSessionMediaId = "episode-1",
+        mpvLivePositionSeconds = 42.0,
+        nativeMediaId = null,
+        nativePositionMs = null,
+      ),
+    )
+  }
+
   // Owner report (build 1906): the first minimize after a fresh install stopped the song. Audio
   // background playback defaults to off, and onDestroy only kept the session for that preference,
   // so the Mini Player handoff was torn down and the queue cleared.

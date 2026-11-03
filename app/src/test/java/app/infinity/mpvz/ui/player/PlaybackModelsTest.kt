@@ -1,6 +1,7 @@
 package app.infinity.mpvz.ui.player
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Test
 
@@ -45,6 +46,40 @@ class PlaybackModelsTest {
 
     assertEquals(PlaybackEngineMode.MPV, resolvePlaybackEngineMode(PlaybackEngineMode.AUTO, sdrItem))
     assertEquals(PlaybackEngineMode.NATIVE, resolvePlaybackEngineMode(PlaybackEngineMode.AUTO, hdrItem))
+  }
+
+  @Test
+  fun folderNamesDoNotTurnSdrMediaIntoHdr() {
+    val item =
+      PlaybackItem(
+        stableId = "sdr-in-hdr-folder",
+        originalUri = "file:///storage/Movies/HDR Projects/Episode 1.mkv",
+        title = "Episode 1",
+        mimeType = "video/x-matroska",
+      )
+
+    assertFalse(item.isHdrOrDolbyVision())
+    assertEquals(PlaybackEngineMode.MPV, resolvePlaybackEngineMode(PlaybackEngineMode.AUTO, item))
+  }
+
+  @Test
+  fun unresolvedWebPageStaysOnMpvUntilAPlayableHdrUrlIsAvailable() {
+    val page =
+      PlaybackItem(
+        stableId = "hdr-page",
+        originalUri = "https://video.example/watch?id=1",
+        title = "HDR episode",
+        hdrMetadata = true,
+      )
+    val resolved =
+      page.copy(
+        playableUri = "https://cdn.example/episode-hdr.mkv",
+        mimeType = "video/x-matroska",
+      )
+
+    assertEquals(PlaybackEngineMode.MPV, resolvePlaybackEngineMode(PlaybackEngineMode.AUTO, page))
+    assertEquals(PlaybackEngineMode.MPV, resolvePlaybackEngineMode(PlaybackEngineMode.NATIVE, page))
+    assertEquals(PlaybackEngineMode.NATIVE, resolvePlaybackEngineMode(PlaybackEngineMode.AUTO, resolved))
   }
 
   @Test

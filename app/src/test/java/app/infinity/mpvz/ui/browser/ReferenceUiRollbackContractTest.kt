@@ -27,7 +27,7 @@ class ReferenceUiRollbackContractTest {
   @Test fun preservedPlayerSourcesKeepPinnedFingerprints() {
     val expected = mapOf(
       // Build 1910 smoothness: chapter index via derivedStateOf so position ticks do not recompose the whole overlay.
-      "app/src/main/java/app/infinity/mpvz/ui/player/controls/PlayerControls.kt" to "3ff3bd6e586f03fbded16e85c7d21042689e767362a1996d4d5a33fd3774e447" /* music entry hides stats via StatsLuaOverlay (no blind toggle, saved page kept); before that: 1901 (380a778b) stats overlay + music-entry stats hide restored; clean-room BrowserMusicSheetState replaces the mpvRx sheet type; outer-container preference now gates the track glass rail */,
+      "app/src/main/java/app/infinity/mpvz/ui/player/controls/PlayerControls.kt" to "1b567bbe7fb20e0556df016d94057420151eb66810497a38effb25538989dab1" /* Owner-requested group placement and bounded Below landscape row viewports keep overflow horizontally scrollable */,
       // Owner follow-up: music uses its legacy visual rail while video retains the global-glass path.
       "app/src/main/java/app/infinity/mpvz/ui/player/controls/components/Seekbar.kt" to "5e3cbc03be3aa7b35f464e0ee313615192d8d1cdcfbc7e8a819b7a6c2331843c",
       // Build 1910: shared rimLight/thick-surface routing is intentionally owned by this stream.
@@ -99,8 +99,9 @@ data class LiquidGlassFrame(val image: ImageBitmap, val boundsInWindow: Rect, va
         """          ?.let { frostGlassFrame(it, tuning.frost) }
         if (bitmap == null) {
 """,
-      """            (location[0] + crop.left).toFloat(), (location[1] + crop.top).toFloat(),
-            (location[0] + crop.left + crop.width).toFloat(), (location[1] + crop.top + crop.height).toFloat()),
+      """            (screenLocation[0] + crop.left).toFloat(), (screenLocation[1] + crop.top).toFloat(),
+            (screenLocation[0] + crop.left + crop.width).toFloat(),
+            (screenLocation[1] + crop.top + crop.height).toFloat()),
             underlayLuma = sampled.second)
 """ to
         """            (location[0] + crop.left).toFloat(), (location[1] + crop.top).toFloat(),
@@ -108,7 +109,14 @@ data class LiquidGlassFrame(val image: ImageBitmap, val boundsInWindow: Rect, va
 """,
       """
 // Returns the frosted bitmap and its bright-percentile luma, measured on the same background pass.
-private suspend fun frostGlassFrame(bitmap: Bitmap, strength: Float, pixels: IntArray, lumaBins: IntArray): Pair<Bitmap, Float>? = try {
+private suspend fun frostGlassFrame(
+  bitmap: Bitmap,
+  strength: Float,
+  pixels: IntArray,
+  frostOutput: IntArray,
+  frostScratch: IntArray,
+  lumaBins: IntArray,
+): Pair<Bitmap, Float>? = try {
 """ to
         """
 private suspend fun frostGlassFrame(bitmap: Bitmap, strength: Float): Bitmap? = try {
@@ -213,8 +221,15 @@ private suspend fun frostGlassFrame(bitmap: Bitmap, strength: Float): Bitmap? = 
           if (target == null) null
           else try {
             val copied = copyGlassFrame(source, crop, target, captureBuffers)
-            val frosted = copied?.let {
-              frostGlassFrame(target, tuning.frost, captureBuffers.pixels, captureBuffers.lumaBins)
+            val frosted = copied?.let { copiedBitmap ->
+              frostGlassFrame(
+                copiedBitmap,
+                tuning.frost,
+                captureBuffers.pixels,
+                captureBuffers.frostOutput,
+                captureBuffers.frostScratch,
+                captureBuffers.lumaBins,
+              )
             }
             if (frosted != null && captureBuffers.markPublished(target)) frosted else null
           } finally {
@@ -231,12 +246,14 @@ private suspend fun frostGlassFrame(bitmap: Bitmap, strength: Float): Bitmap? = 
         val bitmap = sampled?.first
         if (sampled == null || bitmap == null) {
 """,
-      """            (location[0] + crop.left + crop.width).toFloat(), (location[1] + crop.top + crop.height).toFloat()),
+      """            (screenLocation[0] + crop.left + crop.width).toFloat(),
+            (screenLocation[1] + crop.top + crop.height).toFloat()),
             underlayLuma = sampled.second)
         }
         // Recover after transient failures instead of permanently disabling glass after three errors.
 """ to
-        """            (location[0] + crop.left + crop.width).toFloat(), (location[1] + crop.top + crop.height).toFloat()),
+        """            (screenLocation[0] + crop.left + crop.width).toFloat(),
+            (screenLocation[1] + crop.top + crop.height).toFloat()),
             underlayLuma = sampled.second)
         }
         // Recover after transient failures instead of permanently disabling glass after three errors.
@@ -432,7 +449,7 @@ import android.graphics.Shader
         "refractionAmount = LensGlassPolicy.refractionAmountPx(size.minDimension, size.minDimension, tuning.lensRefraction),"
     assertEquals(1, restored.split(fixedRefraction.first).size - 1)
     restored = restored.replace(fixedRefraction.first, fixedRefraction.second)
-    assertEquals("079687c78405e895058ef5d0666d0020c9cf9835cd0fa93e8ffc3775089e46f3", sha(restored))
+    assertEquals("8b670d82dfd57e3520e179baa1efafc6b4adb3d13d30195f6903e63b863d362b", sha(restored))
   }
   @Test fun glassChipAndPlayerControlsRespectAccessibilityMotion() {
     val chip = read("app/src/main/java/app/infinity/mpvz/ui/components/GlassChip.kt")

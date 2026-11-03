@@ -938,7 +938,7 @@ class AudioPlaybackResumeStorePersistenceTest {
         closeFailure.set(error)
       }
     }
-    val markerReadStarted = CountDownLatch(1)
+    val markerReadCompleted = CountDownLatch(1)
     val markerReadResult = AtomicBoolean(false)
     var markerReadThread: Thread? = null
     val activityStarted = CountDownLatch(1)
@@ -952,18 +952,19 @@ class AudioPlaybackResumeStorePersistenceTest {
       assertTrue(closeEntered.await(5, TimeUnit.SECONDS))
 
       val markerReader = Thread {
-        markerReadStarted.countDown()
-        markerReadResult.set(marker.isClosePersistencePending(81L, outgoingItem))
+        try {
+          markerReadResult.set(marker.isClosePersistencePending(81L, outgoingItem))
+        } finally {
+          markerReadCompleted.countDown()
+        }
       }
       markerReader.isDaemon = true
       markerReadThread = markerReader
       markerReader.start()
-      assertTrue(markerReadStarted.await(5, TimeUnit.SECONDS))
-      val markerReadStateBeforeRelease = awaitThreadCompletionOrBlockingState(markerReader)
       assertEquals(
         "marker state query must complete while the close write is held",
-        Thread.State.TERMINATED,
-        markerReadStateBeforeRelease,
+        true,
+        markerReadCompleted.await(5, TimeUnit.SECONDS),
       )
 
       val incomingItem = item("close-race-new")

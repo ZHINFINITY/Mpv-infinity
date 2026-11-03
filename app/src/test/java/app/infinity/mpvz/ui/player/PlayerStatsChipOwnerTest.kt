@@ -1,22 +1,28 @@
 package app.infinity.mpvz.ui.player
 
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.File
 
 class PlayerStatsChipOwnerTest {
   @Test
-  fun moreSheetMatchesMpvRxStatsChipCommands() {
+  fun moreSheetUsesKnownGoodStatsChipCommands() {
     val file = File("src/main/java/app/infinity/mpvz/ui/player/controls/components/sheets/MoreSheet.kt")
       .takeIf { it.exists() }
       ?: File("app/src/main/java/app/infinity/mpvz/ui/player/controls/components/sheets/MoreSheet.kt")
     val text = file.readText()
-    assertTrue(text.contains("PlayerStatsLuaCommandPolicy.apply("))
-    assertTrue(text.contains("PlayerStatsLuaCommandPolicy.forChip("))
-    assertTrue(text.contains("luaShown = PlayerStatsLuaCommandPolicy.isLuaShown()"))
-    assertTrue(text.contains("previousPage = statisticsPage"))
+    assertTrue(text.contains("StatsLuaOverlay.show(page)"))
+    assertEquals(3, Regex("StatsLuaOverlay\\.hide\\(\\)").findAll(text).count())
+    assertFalse(text.contains("stats/display-stats-toggle"))
+    assertTrue(text.contains("if (activeEngine == PlaybackEngineMode.NATIVE) {"))
     assertTrue(text.contains("advancedPreferences.enabledStatisticsPage.set(page)"))
+    assertFalse(text.contains("PlayerStatsLuaCommandPolicy"))
+    val statsBranch = text.substringAfter("val isConsoleOpen = PlaybackSession.getPropertyBoolean(\"user-data/mpv/console/open\") == true")
+    val pageSaved = statsBranch.indexOf("advancedPreferences.enabledStatisticsPage.set(page)")
+    val pageCommands = statsBranch.indexOf("when (page)")
+    assertTrue(pageCommands >= 0 && pageSaved > pageCommands)
     assertFalse(text.contains("if (statisticsPage in 1..5) PlaybackSession.command(\"script-binding\", \"stats/display-stats-toggle\")"))
     assertFalse(text.contains("PlayerStatsLuaOverlayPolicy"))
     assertFalse(text.contains("applyChip"))
@@ -29,16 +35,12 @@ class PlayerStatsChipOwnerTest {
       .takeIf { it.exists() }
       ?: File("app/src/main/java/app/infinity/mpvz/ui/player/PlayerActivity.kt")
     val text = file.readText()
-    assertTrue(text.contains("player.applyStartupStatistics()"))
-    assertTrue(text.contains("MPV reloaded; position, pause, tracks and options confirmed; synthesized frames not inferred"))
-    val reloadTail = text.substringAfter("MPV reloaded; position, pause, tracks and options confirmed; synthesized frames not inferred")
-    val reloadBlock = reloadTail.substringBefore("private fun handleNativePlaybackEnded")
-    assertTrue(reloadBlock.contains("scheduleInterpolationStatsRestore("))
-    assertFalse(reloadBlock.contains("player.applyStartupStatistics()"))
-    assertFalse(text.contains("applyStatsOverlayPolicy"))
-    assertFalse(text.contains("PlayerStatsLuaOverlayPolicy"))
-    assertFalse(text.contains("pendingStatsLuaReset"))
-    assertFalse(text.contains("mpvStatsVisible"))
+    assertFalse(text.contains("applyStartupStatistics"))
+    assertFalse(text.contains("scheduleInterpolationStatsRestore"))
+    assertFalse(text.contains("PlayerStatsLuaRestorePolicy"))
+    assertFalse(text.contains("restoreLuaAfterVideoSurfaceShown"))
+    assertFalse(text.contains("stats/display-stats-toggle"))
+    assertFalse(text.contains("stats/display-page-"))
     assertTrue(text.contains("configureNativeEngineIfNeeded"))
     assertTrue(text.contains("shouldInitializeNativeMedia3Engine"))
     assertTrue(text.contains("private val nativeEngine by lazy"))
@@ -49,16 +51,18 @@ class PlayerStatsChipOwnerTest {
   }
 
   @Test
-  fun mpvViewAppliesStartupStatisticsOncePerCore() {
+  fun mpvViewRestoresStatsOncePerCoreLikeKnownGoodBuild() {
     val file = File("src/main/java/app/infinity/mpvz/ui/player/MPVView.kt")
       .takeIf { it.exists() }
       ?: File("app/src/main/java/app/infinity/mpvz/ui/player/MPVView.kt")
     val text = file.readText()
-    assertTrue(text.contains("fun applyStartupStatistics(force: Boolean = false)"))
-    assertTrue(text.contains("PlayerStatsLuaCommandPolicy.STARTUP_APPLIED_PROPERTY"))
-    assertTrue(text.contains("PlayerStatsLuaCommandPolicy.forStartup"))
-    assertTrue(text.contains("PlayerStatsLuaCommandPolicy.apply"))
-    assertTrue(text.contains("PlayerStatsLuaCommandPolicy.onCoreRecreated()"))
+    val postInit = text.substringAfter("override fun postInitOptions()").substringBefore("\n  }\n")
+    assertTrue(postInit.contains("StatsLuaOverlay.onCoreStarted()"))
+    assertTrue(postInit.contains("isDefinitelyAudioOnly() != true"))
+    assertTrue(postInit.contains("StatsLuaOverlay.show(advancedPreferences.enabledStatisticsPage.get())"))
+    assertTrue(postInit.indexOf("onCoreStarted()") < postInit.indexOf("StatsLuaOverlay.show("))
+    assertFalse(text.contains("applyStartupStatistics"))
+    assertFalse(text.contains("PlayerStatsLuaRestorePolicy"))
     assertFalse(text.contains("stats/display-page-\$it"))
   }
 
@@ -76,15 +80,17 @@ class PlayerStatsChipOwnerTest {
   }
 
   @Test
-  fun statsOverlayReadsThePolicyBackedLiveCoreState() {
+  fun statsOverlayMatchesPublicV223InMemoryVisibilityState() {
     val file = File("src/main/java/app/infinity/mpvz/ui/player/StatsLuaOverlay.kt")
       .takeIf { it.exists() }
       ?: File("app/src/main/java/app/infinity/mpvz/ui/player/StatsLuaOverlay.kt")
     val text = file.readText()
-    assertTrue(text.contains("get() = PlayerStatsLuaCommandPolicy.isLuaShown()"))
-    assertTrue(text.contains("PlayerStatsLuaCommandPolicy.apply("))
-    assertTrue(text.contains("PlayerStatsLuaCommandPolicy.onCoreRecreated()"))
-    assertFalse(text.contains("var shown: Boolean"))
+    assertTrue(text.contains("@Volatile"))
+    assertTrue(text.contains("var shown: Boolean = false"))
+    assertTrue(text.contains("fun hide()"))
+    assertTrue(text.contains("PlaybackSession.command(\"script-binding\", \"stats/display-stats-toggle\")"))
+    assertFalse(text.contains("VISIBLE_PROPERTY"))
+    assertFalse(text.contains("PlayerStatsLuaCommandPolicy"))
   }
 
   @Test

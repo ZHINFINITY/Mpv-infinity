@@ -1658,6 +1658,8 @@ Reinicia la aplicación para que se apliquen todos los cambios.</string>
   <string name="ui_script_file_not_found">No se encontró el archivo del script</string>
   <string name="ui_search_models">Buscar modelos...</string>
   <string name="ui_portrait_playback_buttons">Botones de reproducción vertical</string>
+  <string name="ui_playback_controls_position">Posición de los controles de reproducción</string>
+  <string name="ui_playback_controls_position_summary">Mueve el grupo de transporte y los controles inferiores por encima o por debajo de la barra de búsqueda, en vertical y horizontal.</string>
   <string name="ui_time_network_clock">Reloj de hora + red</string>
   <string name="ui_show_media_info_in_chooser">Mostrar información multimedia en el selector</string>
   <string name="ui_show_media_info_in_system">Mostrar Información multimedia en los menús del sistema "Abrir con"/compartir para analizar archivos de otras aplicaciones.</string>

@@ -1658,6 +1658,8 @@
   <string name="ui_script_file_not_found">Файл скрипта не найден</string>
   <string name="ui_search_models">Поиск моделей...</string>
   <string name="ui_portrait_playback_buttons">Кнопки воспроизведения в портретном режиме</string>
+  <string name="ui_playback_controls_position">Положение элементов управления воспроизведением</string>
+  <string name="ui_playback_controls_position_summary">Перемещает группу управления воспроизведением и нижние элементы над или под полосой перемотки в портретной и альбомной ориентации.</string>
   <string name="ui_time_network_clock">Часы времени + сети</string>
   <string name="ui_show_media_info_in_chooser">Показывать информацию о медиа в окне выбора</string>
   <string name="ui_show_media_info_in_system">Показывать «Информацию о медиа» в системных меню "Открыть с помощью" / «Поделиться» для анализа файлов из других приложений.</string>

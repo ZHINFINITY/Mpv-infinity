@@ -814,6 +814,13 @@ val MIGRATION_23_24 =
     }
   }
 
+val MIGRATION_24_25 =
+  object : Migration(24, 25) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+      db.execSQL("ALTER TABLE `PlaybackStateEntity` ADD COLUMN `secondarySubtitleSelection` TEXT")
+    }
+  }
+
 val DatabaseModule =
   module {
     single<Json> {
@@ -852,7 +859,8 @@ val DatabaseModule =
 	          MIGRATION_21_22,
           MIGRATION_22_23,
           MIGRATION_23_24,
-	        ).build()
+          MIGRATION_24_25,
+        ).build()
     }
 
     singleOf(::PlaybackStateRepositoryImpl).bind(PlaybackStateRepository::class)

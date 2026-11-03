@@ -55,7 +55,7 @@ import app.infinity.mpvz.preferences.AppearancePreferences
 import app.infinity.mpvz.preferences.PlayerButton
 import app.infinity.mpvz.preferences.PlayerClockFormat
 import app.infinity.mpvz.preferences.PlayerPreferences
-import app.infinity.mpvz.preferences.PortraitPlaybackControlsPosition
+import app.infinity.mpvz.preferences.PlaybackControlsPosition
 import app.infinity.mpvz.preferences.SeekbarStyle
 import app.infinity.mpvz.preferences.preference.collectAsState
 import app.infinity.mpvz.presentation.Screen
@@ -272,8 +272,6 @@ object PlayerControlsPreferencesScreen : Screen {
             val forceDarkPlayerButtonsBackground by appearancePrefs.forceDarkPlayerButtonsBackground.collectAsState()
             val playerControlsTheme by appearancePrefs.playerControlsTheme.collectAsState()
             val showSeekbarOuterContainer by appearancePrefs.showSeekbarOuterContainer.collectAsState()
-            val portraitPlaybackControlsPosition by
-              appearancePrefs.portraitPlaybackControlsPosition.collectAsState()
             val playerTimeToDisappear by playerPrefs.playerTimeToDisappear.collectAsState()
             val clockFormat by playerPrefs.clockFormat.collectAsState()
             val predefinedTimeValues = listOf(500, 1000, 1500, 2000, 2500, 3000, 3500, 4000, 4500, 5000)
@@ -299,23 +297,6 @@ object PlayerControlsPreferencesScreen : Screen {
                 onValueChange = { appearancePrefs.showSeekbarOuterContainer.set(it) },
                 title = { Text("Show seekbar outer container") },
                 summary = { Text("Show a compact transparent/glass layer around the seekbar") },
-              )
-
-              PreferenceDivider()
-
-              ListPreference(
-                modifier = Modifier.settingsSearchTarget(R.string.ui_portrait_playback_buttons),
-                value = portraitPlaybackControlsPosition,
-                onValueChange = { appearancePrefs.portraitPlaybackControlsPosition.set(it) },
-                values = PortraitPlaybackControlsPosition.entries,
-                valueToText = { AnnotatedString(it.displayName) },
-                title = {
-                  Text(
-                    androidx.compose.ui.res
-                      .stringResource(app.infinity.mpvz.R.string.ui_portrait_playback_buttons),
-                  )
-                },
-                summary = { Text(portraitPlaybackControlsPosition.displayName) },
               )
 
               PreferenceDivider()
@@ -454,6 +435,20 @@ object PlayerControlsPreferencesScreen : Screen {
                     Text(stringResource(R.string.generic_cancel))
                   }
                 },)
+            }
+          }
+          item {
+            val playbackControlsPosition by appearancePrefs.playbackControlsPosition.collectAsState()
+            PreferenceCard(contentVerticalPadding = 0.dp) {
+              ListPreference(
+                modifier = Modifier.settingsSearchTarget(R.string.ui_playback_controls_position),
+                value = playbackControlsPosition,
+                onValueChange = { appearancePrefs.playbackControlsPosition.set(it) },
+                values = PlaybackControlsPosition.entries,
+                valueToText = { AnnotatedString(it.displayName) },
+                title = { Text(stringResource(R.string.ui_playback_controls_position)) },
+                summary = { Text(stringResource(R.string.ui_playback_controls_position_summary)) },
+              )
             }
           }
         }

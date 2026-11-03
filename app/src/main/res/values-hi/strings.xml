@@ -1644,6 +1644,8 @@
   <string name="ui_script_file_not_found">स्क्रिप्ट फाइल नहीं मिली</string>
   <string name="ui_search_models">मॉडल खोजें...</string>
   <string name="ui_portrait_playback_buttons">पोर्ट्रेट प्लेबैक बटन</string>
+  <string name="ui_playback_controls_position">प्लेबैक कंट्रोल की स्थिति</string>
+  <string name="ui_playback_controls_position_summary">पोर्ट्रेट और लैंडस्केप, दोनों में ट्रांसपोर्ट और निचले कंट्रोल समूहों को सीकबार के ऊपर या नीचे ले जाता है।</string>
   <string name="ui_time_network_clock">समय + नेटवर्क घड़ी</string>
   <string name="ui_show_media_info_in_chooser">चूज़र में मीडिया जानकारी दिखाएं</string>
   <string name="ui_show_media_info_in_system">दूसरे ऐप्स से फाइलें विश्लेषण करने के लिए सिस्टम \"Open with\" / शेयरिंग मेनू में मीडिया जानकारी दिखाएं।</string>

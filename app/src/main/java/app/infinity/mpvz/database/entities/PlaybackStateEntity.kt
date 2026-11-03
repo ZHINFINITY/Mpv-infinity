@@ -29,4 +29,5 @@ data class PlaybackStateEntity(
   val customAspectRatio: Float = -1f, // Per-video custom aspect ratio; negative means none
   val audioSelection: String? = null,
   val subtitleSelection: String? = null,
+  val secondarySubtitleSelection: String? = null,
 )

@@ -10,7 +10,7 @@ package app.infinity.mpvz.ui.player.controls.components.sheets
 import app.infinity.mpvz.presentation.components.playerGlassOverlay
 import app.infinity.mpvz.ui.components.GlassChip
 
-import app.infinity.mpvz.ui.player.PlayerStatsLuaCommandPolicy
+import app.infinity.mpvz.ui.player.StatsLuaOverlay
 import app.infinity.mpvz.ui.player.controls.components.playerGlassPane
 import app.infinity.mpvz.ui.player.NativePlaybackSnapshot
 import app.infinity.mpvz.ui.player.PlaybackEngineMode
@@ -96,6 +96,7 @@ fun MoreSheet(
   onEnterEqualizerSheet: (() -> Unit)? = null,
   anime4KUiState: Anime4KUiState,
   onAnime4KModeSelected: (Anime4KManager.Mode) -> Unit,
+  onAnime4KQualitySelected: (Anime4KManager.Quality) -> Unit,
   filtersEnabled: Boolean = true,
   equalizerEnabled: Boolean = true,
   anime4KEnabled: Boolean = true,
@@ -299,14 +300,30 @@ fun MoreSheet(
                 return@GlassChip
               }
               val isConsoleOpen = PlaybackSession.getPropertyBoolean("user-data/mpv/console/open") == true
-              PlayerStatsLuaCommandPolicy.apply(
-                PlayerStatsLuaCommandPolicy.forChip(
-                  toPage = page,
-                  previousPage = statisticsPage,
-                  luaShown = PlayerStatsLuaCommandPolicy.isLuaShown(),
-                  consoleOpen = isConsoleOpen,
-                ),
-              )
+
+              // If we are choosing any page OTHER than Console, close the console if it's currently open
+              if (page != 7 && isConsoleOpen) {
+                PlaybackSession.command("script-message-to", "console", "disable")
+              }
+
+              when (page) {
+                0 -> {
+                  StatsLuaOverlay.hide()
+                }
+                6 -> {
+                  StatsLuaOverlay.hide()
+                }
+                7 -> {
+                  StatsLuaOverlay.hide()
+                  // Enable console only if it is not already open
+                  if (!isConsoleOpen) {
+                    PlaybackSession.command("script-message-to", "console", "enable")
+                  }
+                }
+                else -> {
+                  StatsLuaOverlay.show(page)
+                }
+              }
               advancedPreferences.enabledStatisticsPage.set(page)
             },
             selected = statisticsPage == page,
@@ -345,6 +362,27 @@ fun MoreSheet(
               enabled = anime4KEnabled && (anime4KUiState.allowHighRes || mode == Anime4KManager.Mode.OFF),
               leadingIcon = null,
               onClick = { onAnime4KModeSelected(mode) },
+            )
+          }
+        }
+
+        Text(
+          text = stringResource(R.string.pref_anime4k_quality_title),
+          style = MaterialTheme.typography.titleSmall,
+          color = MaterialTheme.colorScheme.primary,
+          modifier = Modifier.padding(top = MaterialTheme.spacing.small),
+        )
+
+        LazyRow(
+          horizontalArrangement = Arrangement.spacedBy(MaterialTheme.spacing.smaller),
+        ) {
+          items(Anime4KManager.Quality.entries, key = { it.name }) { quality ->
+            GlassChip(
+              label = { Text(stringResource(quality.titleRes)) },
+              selected = anime4KUiState.selectedQuality == quality,
+              enabled = anime4KEnabled,
+              leadingIcon = null,
+              onClick = { onAnime4KQualitySelected(quality) },
             )
           }
         }

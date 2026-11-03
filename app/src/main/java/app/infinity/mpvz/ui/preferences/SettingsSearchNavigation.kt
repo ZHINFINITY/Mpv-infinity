@@ -76,6 +76,7 @@ private val settingsSearchListAnchors: Map<Screen, List<SettingsSearchListAnchor
     PlayerControlsPreferencesScreen to
       listOf(
         SettingsSearchListAnchor(titleRes = R.string.pref_layout_title, itemIndex = 0),
+        SettingsSearchListAnchor(titleRes = R.string.ui_playback_controls_position, itemIndex = 8),
         SettingsSearchListAnchor(titleRes = R.string.pref_layout_top_right_controls, itemIndex = 1),
         SettingsSearchListAnchor(titleRes = R.string.pref_layout_bottom_right_controls, itemIndex = 1),
         SettingsSearchListAnchor(titleRes = R.string.pref_layout_bottom_left_controls, itemIndex = 1),

@@ -1722,6 +1722,8 @@
   <string name="ui_script_file_not_found">Script file not found</string>
   <string name="ui_search_models">Search models...</string>
   <string name="ui_portrait_playback_buttons">Portrait playback buttons</string>
+  <string name="ui_playback_controls_position">Playback controls placement</string>
+  <string name="ui_playback_controls_position_summary">Moves the transport and bottom control groups above or below the seekbar in portrait and landscape.</string>
   <string name="ui_time_network_clock">Time + Network clock</string>
   <string name="ui_show_media_info_in_chooser">Show Media Info in chooser</string>
   <string name="ui_show_media_info_in_system">Show Media Info in system \"Open with\" / sharing menus to analyze files from other apps.</string>

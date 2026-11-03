@@ -102,6 +102,8 @@ import app.infinity.mpvz.domain.jellyfin.JellyfinServer
 import app.infinity.mpvz.presentation.components.RemoteImage
 import app.infinity.mpvz.ui.icons.Icon
 import app.infinity.mpvz.ui.icons.Icons
+import app.infinity.mpvz.ui.preferences.components.settingsGlassContainerColor
+import app.infinity.mpvz.ui.preferences.components.settingsGlassSurface
 import kotlin.math.roundToInt
 
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -1033,8 +1035,12 @@ fun JellyfinDetailSheet(
         if (item.videoCodec != null || item.audioCodec != null) {
           Card(
             shape = RoundedCornerShape(14.dp),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh),
-            modifier = Modifier.fillMaxWidth(),
+            colors =
+              CardDefaults.cardColors(
+                containerColor = settingsGlassContainerColor(MaterialTheme.colorScheme.surfaceContainerHigh),
+                contentColor = MaterialTheme.colorScheme.onSurface,
+              ),
+            modifier = Modifier.fillMaxWidth().settingsGlassSurface(cornerRadius = 14.dp, independent = true),
           ) {
             Column(
               modifier = Modifier.padding(14.dp),
@@ -1044,6 +1050,7 @@ fun JellyfinDetailSheet(
                 text = "Technical Details",
                 style = MaterialTheme.typography.titleSmall,
                 fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onSurface,
               )
 
               Row(
@@ -1061,6 +1068,7 @@ fun JellyfinDetailSheet(
                       text = "$it ${item.videoResolution ?: ""}",
                       style = MaterialTheme.typography.bodySmall,
                       fontWeight = FontWeight.SemiBold,
+                      color = MaterialTheme.colorScheme.onSurface,
                     )
                   }
                 }
@@ -1076,6 +1084,7 @@ fun JellyfinDetailSheet(
                       text = "$it ${item.audioChannels ?: ""}",
                       style = MaterialTheme.typography.bodySmall,
                       fontWeight = FontWeight.SemiBold,
+                      color = MaterialTheme.colorScheme.onSurface,
                     )
                   }
                 }
@@ -1091,6 +1100,7 @@ fun JellyfinDetailSheet(
                       text = it.uppercase(),
                       style = MaterialTheme.typography.bodySmall,
                       fontWeight = FontWeight.SemiBold,
+                      color = MaterialTheme.colorScheme.onSurface,
                     )
                   }
                 }

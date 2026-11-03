@@ -1510,6 +1510,7 @@ class NativeMedia3Engine internal constructor(
     headers: Map<String, String> = emptyMap(),
     mimeType: String? = null,
     sourceUri: Uri? = null,
+    mediaId: String? = null,
   ) {
     seekDispatcher.cancel()
     pendingSeekDisplayPositionMs = startPositionMs.coerceAtLeast(0L)
@@ -1555,6 +1556,7 @@ class NativeMedia3Engine internal constructor(
     httpDataSourceFactory.setDefaultRequestProperties(headers)
     val mediaItem =
       MediaItem.Builder()
+        .setMediaId(mediaId?.takeIf(String::isNotBlank).orEmpty())
         .setUri(mediaUri)
         .apply {
           // Database/network metadata may contain broad values such as video/*; passing those

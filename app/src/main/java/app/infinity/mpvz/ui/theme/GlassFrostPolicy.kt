@@ -13,10 +13,27 @@ object GlassFrostPolicy {
   fun frostArgb(pixels: IntArray, width: Int, height: Int, strength: Float = 1f): IntArray {
     require(width in 1..GlassSamplingPolicy.MaxSampleEdge && height in 1..GlassSamplingPolicy.MaxSampleEdge)
     require(pixels.size == width * height)
-    val result = pixels.copyOf()
+    val result = IntArray(pixels.size)
+    val scratch = IntArray(pixels.size)
+    return frostArgbInto(pixels, width, height, result, scratch, strength)
+  }
+
+  /** Same pixel math as [frostArgb], with caller-owned arrays for hot sampling paths. */
+  internal fun frostArgbInto(
+    pixels: IntArray,
+    width: Int,
+    height: Int,
+    result: IntArray,
+    scratch: IntArray,
+    strength: Float = 1f,
+  ): IntArray {
+    require(width in 1..GlassSamplingPolicy.MaxSampleEdge && height in 1..GlassSamplingPolicy.MaxSampleEdge)
+    require(pixels.size == width * height)
+    require(result.size == pixels.size && scratch.size == pixels.size)
+    require(result !== pixels && scratch !== pixels && result !== scratch)
+    pixels.copyInto(result)
     val passes = GlassCustomizationPolicy.frostPasses(strength)
     if (passes == 0) return result
-    val scratch = IntArray(pixels.size)
     repeat(passes) {
       boxPass(result, scratch, width, height, horizontal = true)
       boxPass(scratch, result, width, height, horizontal = false)

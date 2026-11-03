@@ -1644,6 +1644,8 @@
   <string name="ui_script_file_not_found">Không tìm thấy tập lệnh</string>
   <string name="ui_search_models">Tìm kiếm mô hình...</string>
   <string name="ui_portrait_playback_buttons">Các nút phát lại dọc</string>
+  <string name="ui_playback_controls_position">Vị trí điều khiển phát</string>
+  <string name="ui_playback_controls_position_summary">Di chuyển nhóm điều khiển phát và các nhóm điều khiển phía dưới lên trên hoặc xuống dưới thanh tua ở cả chế độ dọc và ngang.</string>
   <string name="ui_time_network_clock">Thời gian + Đồng hồ mạng</string>
   <string name="ui_show_media_info_in_chooser">Hiển thị thông tin phương tiện trong trình chọn</string>
   <string name="ui_show_media_info_in_system">Hiển thị Thông tin phương tiện trong menu hệ thống \"Mở bằng\" / chia sẻ để phân tích tệp từ các ứng dụng khác.</string>

@@ -283,3 +283,26 @@ index dd47f440f..48cb34057 100644
 +            .mr = (image.crop.x1 - source_bounds.x1) * rx,
 +            .mt = (source_bounds.y0 - image.crop.y0) * ry,
 +            .mb = (image.crop.y1 - source_bounds.y1) * ry,
+diff --git a/video/out/gpu/video.c b/video/out/gpu/video.c
+--- a/video/out/gpu/video.c
++++ b/video/out/gpu/video.c
+@@ -3867,5 +3867,6 @@
+         pass_describe(p, "map frame (hwdec)");
+         timer_pool_start(p->upload_timer);
+-        bool ok = ra_hwdec_mapper_map(p->hwdec_mapper, vimg->mpi) >= 0;
++        int map_result = ra_hwdec_mapper_map(p->hwdec_mapper, vimg->mpi);
++        bool ok = map_result >= 0;
+         vimg->hwdec_mapped = ok;
+         // The frame stays mapped and in use until it is replaced.
+@@ -3875,5 +3876,10 @@
+         struct mp_pass_perf perf = timer_pool_measure(p->upload_timer);
+         pass_record(p, &perf);
+-
++        // A transient external-image timeout is recoverable; do not mark the frame broken.
++        if (map_result == RA_HWDEC_MAP_RETRY) {
++            MP_DBG(p, "Skipping hardware frame until its external image is ready.\n");
++            unref_current_image(p);
++            return false;
++        }
+         if (ok) {
+             struct ra_tex **tex = p->hwdec_mapper->tex;
