@@ -4409,14 +4409,16 @@ class PlayerViewModel(
     val secondarySid = getTrackSelectionId("secondary-sid")
 
     val wasOff = primarySid <= 0 && secondarySid <= 0
-
-    when {
-      id == primarySid -> setTrackSelectionId("sid", null)
-      id == secondarySid -> setTrackSelectionId("secondary-sid", null)
-      primarySid <= 0 -> setTrackSelectionId("sid", id)
-      secondarySid <= 0 -> setTrackSelectionId("secondary-sid", id)
-      else -> setTrackSelectionId("sid", id)
-    }
+    Log.i(TAG, "MPV subtitle toggle requested trackId=$id sid=$primarySid secondarySid=$secondarySid")
+    val nextSelection = toggleMpvSubtitleSelection(primarySid, secondarySid, id)
+    if (nextSelection.primaryId == primarySid && nextSelection.secondaryId == secondarySid) return
+    if (nextSelection.primaryId != primarySid) setTrackSelectionId("sid", nextSelection.primaryId)
+    if (nextSelection.secondaryId != secondarySid) setTrackSelectionId("secondary-sid", nextSelection.secondaryId)
+    Log.i(
+      TAG,
+      "MPV subtitle selection applied sid=${PlaybackSession.getPropertyString("sid")} " +
+        "secondarySid=${PlaybackSession.getPropertyString("secondary-sid")}",
+    )
 
     if (wasOff && !subtitlesPreferences.autoEnableSubtitles.get()) {
       subtitlesPreferences.autoEnableSubtitles.set(true)

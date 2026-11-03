@@ -1421,6 +1421,7 @@ class PlayerActivity :
   @Volatile private var pendingSharedTrackGeneration = -1L
   @Volatile private var pendingSharedAudioSelection: String? = null
   @Volatile private var pendingSharedSubtitleSelection: String? = null
+  @Volatile private var pendingSharedSecondarySubtitleSelection: String? = null
 
   @Volatile private var playWhenFileLoaded = false
   private var pendingVideoParamRefreshRequiresShaderReload = false
@@ -7077,6 +7078,8 @@ class PlayerActivity :
         else captureMpvTrackSelection("audio", "aid", pendingSharedAudioSelection),
       subtitleSelection = if (nativeEngineActive) nativeEngineOrNull()?.captureSubtitleSelection()
         else captureMpvTrackSelection("sub", "sid", pendingSharedSubtitleSelection),
+      secondarySubtitleSelection = if (nativeEngineActive) null
+        else captureMpvTrackSelection("sub", "secondary-sid", pendingSharedSecondarySubtitleSelection),
     )
   }
 
@@ -7148,6 +7151,9 @@ class PlayerActivity :
     }
     if (restore(pendingSharedAudioSelection, "audio", "aid")) pendingSharedAudioSelection = null
     if (restore(pendingSharedSubtitleSelection, "sub", "sid")) pendingSharedSubtitleSelection = null
+    if (restore(pendingSharedSecondarySubtitleSelection, "sub", "secondary-sid")) {
+      pendingSharedSecondarySubtitleSelection = null
+    }
   }
 
   private fun readMpvIntSeconds(
@@ -7220,6 +7226,7 @@ class PlayerActivity :
         pendingSharedTrackGeneration = loadGeneration
         pendingSharedAudioSelection = state?.audioSelection
         pendingSharedSubtitleSelection = state?.subtitleSelection
+        pendingSharedSecondarySubtitleSelection = state?.secondarySubtitleSelection
       }
       applyPlaybackState(state, restoreAudioTrack = positionRestoreOverride == null)
 
@@ -7281,7 +7288,7 @@ class PlayerActivity :
       Log.d(TAG, "Restored primary subtitle track: ${state.sid} (user selection)")
     }
 
-    if (state.secondarySid > 0) {
+    if (state.secondarySubtitleSelection == null && state.secondarySid > 0) {
       player.secondarySid = state.secondarySid
       Log.d(TAG, "Restored secondary subtitle track: ${state.secondarySid} (user selection)")
     }

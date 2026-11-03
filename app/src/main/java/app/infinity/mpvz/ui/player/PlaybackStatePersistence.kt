@@ -43,6 +43,7 @@ internal data class PlaybackStateSnapshot(
   val playbackSettingsAreKnown: Boolean = positionIsKnown,
   val audioSelection: String? = null,
   val subtitleSelection: String? = null,
+  val secondarySubtitleSelection: String? = null,
   val captureSequence: Long = PlaybackStateSaveCoordinator.nextSequence(),
 )
 
@@ -98,6 +99,7 @@ internal object PlaybackStatePersistence {
         ),
       audioSelection = snapshot.audioSelection ?: oldState?.audioSelection,
       subtitleSelection = snapshot.subtitleSelection ?: oldState?.subtitleSelection,
+      secondarySubtitleSelection = snapshot.secondarySubtitleSelection ?: oldState?.secondarySubtitleSelection,
     )
   }
 

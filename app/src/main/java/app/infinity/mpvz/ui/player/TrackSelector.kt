@@ -109,6 +109,14 @@ class TrackSelector(
       if (!MpvConfigOverridePolicy.ownsAny(MpvConfigControlledFeatures.SUBTITLE_TRACK_SELECTION)) {
         ensureSubtitleTrackSelected(tracks, hasState)
       }
+      val sid = PlaybackSession.getPropertyString("sid") ?: "unknown"
+      val secondarySid = PlaybackSession.getPropertyString("secondary-sid") ?: "unknown"
+      val assOverride = PlaybackSession.getPropertyString("sub-ass-override") ?: "unknown"
+      val subtitleFormats = tracks.filter { it.type == "sub" }.joinToString("|") { track ->
+        "id=${track.id},lang=${track.lang.ifBlank { "und" }},codec=${track.codec.ifBlank { "unknown" }}," +
+          "codecDesc=${track.codecDesc.ifBlank { "unknown" }},selected=${track.id.toString() == sid || track.id.toString() == secondarySid}"
+      }.ifBlank { "none" }
+      Log.i(TAG, "MPV subtitle tracks sid=$sid secondarySid=$secondarySid assOverride=$assOverride tracks=$subtitleFormats")
     }
 
   internal suspend fun selectAudioTrackByFingerprint(preference: AudioTrackFingerprint): Boolean =
