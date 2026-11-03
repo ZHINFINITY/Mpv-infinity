@@ -2210,9 +2210,13 @@ fun PlayerControls(
                     start.linkTo(playerPauseButton.end, spacing.small)
                     end.linkTo(parent.end, spacing.large)
                     horizontalBias = 1f
+                    width = Dimension.preferredWrapContent
                   } else {
                     bottom.linkTo(seekbar.top, bottomControlsToSeekbarSpacing)
+                    start.linkTo(playerPauseButton.end, spacing.small)
                     end.linkTo(parent.end, spacing.large)
+                    horizontalBias = 1f
+                    width = Dimension.preferredWrapContent
                   }
                 }.onGloballyPositioned { coordinates ->
                   bottomRightControlsTopPx = coordinates.positionInParent().y.roundToInt()
@@ -2280,7 +2284,8 @@ fun PlayerControls(
                     bottom.linkTo(parent.bottom, spacing.large)
                     start.linkTo(parent.start, spacing.large)
                     end.linkTo(playerPauseButton.start, spacing.small)
-                    width = Dimension.fillToConstraints
+                    horizontalBias = 0f
+                    width = Dimension.preferredWrapContent
                   } else {
                     bottom.linkTo(seekbar.top, bottomControlsToSeekbarSpacing)
                     start.linkTo(parent.start, spacing.large)

@@ -8,6 +8,8 @@ import re
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 PATCH = (ROOT / "app/src/main/cpp/mpvflow/mpvflow-vo-gpu-next.patch").read_text(encoding="utf-8")
 AIMAGE_PATCH = (ROOT / "app/src/main/cpp/mpvflow/mpvflow-aimagereader-vulkan.patch").read_text(encoding="utf-8")
+AIMAGE_MAPPER = (ROOT / "app/src/main/cpp/mpvflow/mediacodec-vulkan/hwdec_aimagereader.c").read_text(encoding="utf-8")
+AIMAGE_VK_CONVERTER = (ROOT / "app/src/main/cpp/mpvflow/mediacodec-vulkan/hwdec_aimagereader_vk_convert.c").read_text(encoding="utf-8")
 PREPARE = (ROOT / "scripts/prepare-mpvflow.py").read_text(encoding="utf-8")
 MPV_VIEW = (ROOT / "app/src/main/java/app/infinity/mpvz/ui/player/MPVView.kt").read_text(encoding="utf-8")
 PLAYER_CONTROLS = (ROOT / "app/src/main/java/app/infinity/mpvz/ui/player/controls/PlayerControls.kt").read_text(encoding="utf-8")
@@ -335,6 +337,19 @@ require(mapper_hunk, "struct priv *mapper_priv = fp->vo->priv;", "AImage unmap c
 require(mapper_hunk, "mapper_priv->hwdec.mapper", "AImage unmap cleanup must use its locally declared mapper context")
 require(mapper_hunk, "mapper_priv->el_hwdec.mapper", "AImage enhancement-layer cleanup must use its locally declared mapper context")
 assert "p->hwdec.mapper" not in mapper_hunk, "AImage cleanup must not depend on an out-of-scope p variable"
+retry_map = AIMAGE_MAPPER.split("if (ret == AMEDIA_IMGREADER_NO_BUFFER_AVAILABLE)", 1)[1].split("if (ret != AMEDIA_OK)", 1)[0]
+require(retry_map, "if (retain_previous_frame(mapper))", "transient AImageReader timeouts must reuse a retained frame when it is compatible")
+require(retry_map, "AIMAGE_MAP_REUSE_LAST", "a retained-frame recovery must be visible in verbose diagnostics")
+assert retry_map.index("if (retain_previous_frame(mapper))") < retry_map.index("return RA_HWDEC_MAP_RETRY;"), "compatible retained output must be tried before returning a retry"
+gl_retention = AIMAGE_MAPPER.split("static bool retain_previous_frame(", 1)[1].split("static int mapper_map(", 1)[0]
+require(gl_retention, "mp_image_params_static_equal(&p->gl_source_frame->params", "GL last-frame reuse must refuse image-parameter changes")
+vk_retention = AIMAGE_VK_CONVERTER.split("bool aimagereader_vk_convert_retain_last(", 1)[1].split("static int map_image(", 1)[0]
+require(vk_retention, "mp_image_params_static_equal(&output->source_frame->params", "Vulkan last-frame reuse must refuse image-parameter changes")
+legacy_gpu_retry = AIMAGE_PATCH.split("diff --git a/video/out/gpu/video.c", 1)[1]
+require(legacy_gpu_retry, "if (map_result == RA_HWDEC_MAP_RETRY)", "legacy gpu must classify the AImageReader retry separately from a broken frame")
+require(legacy_gpu_retry, "unref_current_image(p);", "a skipped retry frame must release its temporary image reference")
+require(legacy_gpu_retry, "return false;", "a skipped retry frame must return before the fatal mapping path")
+assert legacy_gpu_retry.index("if (map_result == RA_HWDEC_MAP_RETRY)") < legacy_gpu_retry.index("if (ok) {"), "retry must short-circuit before legacy gpu's fatal branch"
 require(PREPARE, 'VENDOR / "mpvflow_capture_io.c"', "pinned MPV preparation must require the capture writer implementation")
 require(PREPARE, 'VENDOR / "mpvflow_capture_io.h"', "pinned MPV preparation must require the capture writer header")
 require(PREPARE, 'shutil.copy2(VENDOR / "mpvflow_capture_io.c", video_out_dir / "mpvflow_capture_io.c")', "pinned MPV preparation must stage the capture writer implementation beside the VO")

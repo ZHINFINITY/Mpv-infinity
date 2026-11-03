@@ -861,7 +861,9 @@ static bool retain_previous_frame(struct ra_hwdec_mapper *mapper)
         return aimagereader_vk_retain_last(p->vk, mapper->src);
 #endif
 
-    if (!p->egl_image)
+    if (!p->egl_image || !p->gl_source_frame ||
+        !mp_image_params_static_equal(&p->gl_source_frame->params,
+                                      &mapper->src->params))
         return false;
     struct mp_image *frame_ref = mp_image_new_ref(mapper->src);
     if (!frame_ref)
@@ -938,6 +940,12 @@ static int mapper_map(struct ra_hwdec_mapper *mapper)
         acquire_latest_image(mapper, &image, &acquire_fence,
                              expected_timestamp_ns, check_timestamp);
     if (ret == AMEDIA_IMGREADER_NO_BUFFER_AVAILABLE) {
+        if (retain_previous_frame(mapper)) {
+            MP_VERBOSE(mapper, "AIMAGE_MAP_REUSE_LAST pts=%.6f backend=%d\n",
+                       mapper->src->pts, p->backend);
+            mp_image_unrefp(&p->pending_frame);
+            return 0;
+        }
         MP_VERBOSE(mapper, "AIMAGE_MAP_RETRY pts=%.6f expected_ns=%" PRId64
                            " Waiting for matching frame timed out\n",
                    mapper->src->pts, expected_timestamp_ns);

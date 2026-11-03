@@ -154,7 +154,7 @@ object PlayerControlsPreferencesScreen : Screen {
         ) {
           item {
             val playbackControlsPosition by appearancePrefs.playbackControlsPosition.collectAsState()
-            PreferenceCard {
+            PreferenceCard(contentVerticalPadding = 0.dp) {
               ListPreference(
                 modifier = Modifier.settingsSearchTarget(R.string.ui_playback_controls_position),
                 value = playbackControlsPosition,

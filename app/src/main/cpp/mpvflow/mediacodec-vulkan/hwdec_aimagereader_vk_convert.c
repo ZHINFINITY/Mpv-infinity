@@ -2130,6 +2130,10 @@ bool aimagereader_vk_convert_retain_last(struct aimagereader_vk_convert *p,
     struct vk_output *output = &p->outputs[p->output_index];
     if (!output->ratex)
         return false;
+    if (!output->source_frame ||
+        !mp_image_params_static_equal(&output->source_frame->params,
+                                      &frame->params))
+        return false;
 
     struct mp_image *frame_ref = mp_image_new_ref(frame);
     if (!frame_ref)

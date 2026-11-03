@@ -40,14 +40,26 @@ class PlayerFollowupUiContractTest {
     val fallbackSearch = read("app/src/main/java/app/infinity/mpvz/ui/preferences/SettingsSearchNavigation.kt")
     val controls = read("app/src/main/java/app/infinity/mpvz/ui/player/controls/PlayerControls.kt")
     val landscape = read("app/src/main/java/app/infinity/mpvz/ui/player/controls/PlayerControlsLandscape.kt")
+    val settingsCard = read("app/src/main/java/app/infinity/mpvz/ui/preferences/CardPreferences.kt")
     val customButtons =
       controls.substringAfter("constrainAs(customButtonsPortraitRef) {")
         .substringBefore("width = Dimension.fillToConstraints")
+    val landscapeRight =
+      controls.substringAfter("constrainAs(bottomRightControls) {")
+        .substringBefore("}.onGloballyPositioned")
+    val landscapeRightBelow =
+      landscapeRight.substringAfter("} else if (playbackControlsPosition == PlaybackControlsPosition.BelowSeekbar) {")
+        .substringBefore("} else {")
+    val landscapeRightAbove =
+      landscapeRight.substringAfter("} else if (playbackControlsPosition == PlaybackControlsPosition.BelowSeekbar) {")
+        .substringAfter("} else {")
 
     assertTrue(preferences.contains("portrait_playback_controls_position\", PlaybackControlsPosition.AboveSeekbar"))
     assertTrue(preferences.contains("Keep the legacy key so saved placement choices from older versions remain intact."))
     assertTrue(settings.contains("values = PlaybackControlsPosition.entries"))
     assertTrue(settings.contains("ui_playback_controls_position_summary"))
+    assertTrue(settings.contains("PreferenceCard(contentVerticalPadding = 0.dp)"))
+    assertTrue(settingsCard.contains("contentVerticalPadding: Dp = 8.dp"))
     assertTrue(settings.indexOf("ui_playback_controls_position") < settings.indexOf("pref_section_landscape_controls"))
     assertTrue(!settings.contains("ui_portrait_playback_buttons"))
     assertTrue(search.contains("anchorItemIndex = 0,\n        SearchEntrySpec(\n          R.string.ui_playback_controls_position"))
@@ -71,8 +83,18 @@ class PlayerFollowupUiContractTest {
     assertTrue(controls.contains("end.linkTo(playerPauseButton.start, spacing.small)"))
     assertTrue(controls.contains("start.linkTo(playerPauseButton.end, spacing.small)"))
     assertTrue(controls.contains("bottom.linkTo(seekbar.top, spacing.medium)"))
+    assertTrue(landscapeRightBelow.contains("start.linkTo(playerPauseButton.end, spacing.small)"))
+    assertTrue(landscapeRightBelow.contains("width = Dimension.preferredWrapContent"))
+    assertTrue(landscapeRightAbove.contains("start.linkTo(playerPauseButton.end, spacing.small)"))
+    assertTrue(landscapeRightAbove.contains("end.linkTo(parent.end, spacing.large)"))
+    assertTrue(landscapeRightAbove.contains("width = Dimension.preferredWrapContent"))
+    assertTrue(controls.contains("horizontalBias = 0f\n                    width = Dimension.preferredWrapContent"))
+    assertTrue(controls.contains("horizontalBias = 1f\n                    width = Dimension.preferredWrapContent"))
     assertTrue(landscape.contains("buttons.forEach { button ->"))
     assertTrue(landscape.contains("RenderPlayerButton("))
+    assertTrue(landscape.contains("Modifier.horizontalScroll(rememberScrollState())"))
+    assertTrue(landscape.contains("Modifier.horizontalScroll(rememberScrollState(), reverseScrolling = true)"))
+    assertTrue(landscape.contains("buttonSize = 45.dp"))
   }
 
   @Test

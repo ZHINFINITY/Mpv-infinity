@@ -27,6 +27,7 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import app.infinity.mpvz.ui.theme.LocalEmphasizedTypography
 import app.infinity.mpvz.preferences.AppearancePreferences
@@ -41,6 +42,7 @@ import org.koin.compose.koinInject
 @Composable
 fun PreferenceCard(
   modifier: Modifier = Modifier,
+  contentVerticalPadding: Dp = 8.dp,
   content: @Composable ColumnScope.() -> Unit,
 ) {
   val appearance = koinInject<AppearancePreferences>()
@@ -63,7 +65,7 @@ fun PreferenceCard(
       ),
   ) {
     Column(
-      modifier = Modifier.padding(vertical = 8.dp),
+      modifier = Modifier.padding(vertical = contentVerticalPadding),
       verticalArrangement = Arrangement.spacedBy(0.dp),
     ) {
       CompositionLocalProvider(LocalSettingsGlassOwner provides true) {
