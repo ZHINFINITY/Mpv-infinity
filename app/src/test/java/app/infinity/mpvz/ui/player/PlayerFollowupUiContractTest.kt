@@ -33,6 +33,33 @@ class PlayerFollowupUiContractTest {
   }
 
   @Test
+  fun timeNetworkButtonRemainsSelectableAndRendersInItsOrientationRegion() {
+    val buttonEnum = read("app/src/main/java/app/infinity/mpvz/preferences/PlayerButton.kt")
+    val editor = read("app/src/main/java/app/infinity/mpvz/ui/preferences/ControlLayoutEditorScreen.kt")
+    val preferences = read("app/src/main/java/app/infinity/mpvz/preferences/AppearancePreferences.kt")
+    val controls = read("app/src/main/java/app/infinity/mpvz/ui/player/controls/PlayerControls.kt")
+    val landscape = read("app/src/main/java/app/infinity/mpvz/ui/player/controls/PlayerControlsLandscape.kt")
+    val portrait = read("app/src/main/java/app/infinity/mpvz/ui/player/controls/PlayerControlsPortrait.kt")
+    val renderer = read("app/src/main/java/app/infinity/mpvz/ui/player/controls/PlayerControlsShared.kt")
+
+    assertTrue(buttonEnum.contains("TIME_NETWORK"))
+    assertTrue(buttonEnum.contains("val allPlayerButtons ="))
+    assertTrue(buttonEnum.contains("PlayerButton.values().filter"))
+    assertTrue(editor.contains("allPlayerButtons"))
+    assertTrue(editor.contains("selectedButtons = selectedButtons + button"))
+    assertTrue(editor.contains("prefToEdit.set(selectedButtons.joinToString(\",\"))"))
+    assertTrue(preferences.contains("PlayerButton.valueOf(name)"))
+    assertTrue(controls.contains("parseButtons(topRightControlsPref, usedButtons)"))
+    assertTrue(controls.contains("parseButtons(portraitBottomControlsPref, mutableSetOf())"))
+    assertTrue(controls.contains("buttons = topRightButtons"))
+    assertTrue(controls.contains("buttons = portraitBottomButtons"))
+    assertTrue(controls.contains("visible = controlsShown && !areControlsLocked && !isPortrait"))
+    assertTrue(landscape.contains("buttons.forEach { button ->") && landscape.contains("RenderPlayerButton("))
+    assertTrue(portrait.contains("buttons.forEach { button ->") && portrait.contains("RenderPlayerButton("))
+    assertTrue(renderer.contains("PlayerButton.TIME_NETWORK ->"))
+  }
+
+  @Test
   fun playerLayoutMovesTransportAndControlRowsTogetherAroundTheSeekbar() {
     val preferences = read("app/src/main/java/app/infinity/mpvz/preferences/AppearancePreferences.kt")
     val settings = read("app/src/main/java/app/infinity/mpvz/ui/preferences/PlayerControlsPreferencesScreen.kt")
@@ -60,15 +87,16 @@ class PlayerFollowupUiContractTest {
     assertTrue(settings.contains("ui_playback_controls_position_summary"))
     assertTrue(settings.contains("PreferenceCard(contentVerticalPadding = 0.dp)"))
     assertTrue(settingsCard.contains("contentVerticalPadding: Dp = 8.dp"))
-    assertTrue(settings.indexOf("ui_playback_controls_position") < settings.indexOf("pref_section_landscape_controls"))
+    assertTrue(settings.indexOf("pref_section_player_controls_appearance") < settings.lastIndexOf("ui_playback_controls_position"))
+    assertTrue(settings.indexOf("ui_time_network_clock") < settings.lastIndexOf("ui_playback_controls_position"))
     assertTrue(!settings.contains("ui_portrait_playback_buttons"))
-    assertTrue(search.contains("anchorItemIndex = 0,\n        SearchEntrySpec(\n          R.string.ui_playback_controls_position"))
-    assertTrue(search.contains("anchorItemIndex = 6,\n        SearchEntrySpec(R.string.pref_section_seekbar_style"))
-    assertTrue(search.contains("anchorItemIndex = 8,\n        SearchEntrySpec(R.string.ui_time_network_clock"))
-    assertTrue(fallbackSearch.contains("titleRes = R.string.ui_playback_controls_position, itemIndex = 0"))
-    assertTrue(fallbackSearch.contains("titleRes = R.string.pref_layout_top_right_controls, itemIndex = 2"))
-    assertTrue(fallbackSearch.contains("titleRes = R.string.pref_layout_portrait_bottom_controls, itemIndex = 4"))
-    assertTrue(fallbackSearch.contains("titleRes = R.string.pref_player_display_hide_player_control_time, itemIndex = 8"))
+    assertTrue(search.contains("anchorItemIndex = 8,\n        SearchEntrySpec(\n          R.string.ui_playback_controls_position"))
+    assertTrue(search.contains("anchorItemIndex = 5,\n        SearchEntrySpec(R.string.pref_section_seekbar_style"))
+    assertTrue(search.contains("anchorItemIndex = 7,\n        SearchEntrySpec(R.string.ui_time_network_clock"))
+    assertTrue(fallbackSearch.contains("titleRes = R.string.ui_playback_controls_position, itemIndex = 8"))
+    assertTrue(fallbackSearch.contains("titleRes = R.string.pref_layout_top_right_controls, itemIndex = 1"))
+    assertTrue(fallbackSearch.contains("titleRes = R.string.pref_layout_portrait_bottom_controls, itemIndex = 3"))
+    assertTrue(fallbackSearch.contains("titleRes = R.string.pref_player_display_hide_player_control_time, itemIndex = 7"))
     assertTrue(preferences.contains("BelowSeekbar(\"Below seekbar\")"))
     assertTrue(customButtons.contains("if (showBufferingIndicator)"))
     assertTrue(customButtons.contains("bottom.linkTo(bufferingIndicator.top, spacing.medium)"))

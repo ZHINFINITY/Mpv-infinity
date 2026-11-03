@@ -34,6 +34,31 @@ class GlassCaptureBuffersTest {
     buffers.recycle()
   }
 
+  @Test fun frostWorkArraysAreReusedUntilSampleDimensionsChange() {
+    val buffers = GlassCaptureBuffers()
+    val first = buffers.acquire(16, 8)!!
+    val pixels = buffers.pixels
+    val frostOutput = buffers.frostOutput
+    val frostScratch = buffers.frostScratch
+    buffers.release(first)
+
+    val sameSize = buffers.acquire(16, 8)!!
+    assertSame(pixels, buffers.pixels)
+    assertSame(frostOutput, buffers.frostOutput)
+    assertSame(frostScratch, buffers.frostScratch)
+    buffers.release(sameSize)
+
+    val resized = buffers.acquire(32, 16)!!
+    assertNotSame(pixels, buffers.pixels)
+    assertNotSame(frostOutput, buffers.frostOutput)
+    assertNotSame(frostScratch, buffers.frostScratch)
+    assertEquals(32 * 16, buffers.frostOutput.size)
+    buffers.release(resized)
+    buffers.recycle()
+    assertEquals(0, buffers.frostOutput.size)
+    assertEquals(0, buffers.frostScratch.size)
+  }
+
   @Test fun resizeAllocatesNewPairAndOldPublishedBitmapIsNotReused() {
     val buffers = GlassCaptureBuffers()
     val old = buffers.acquire(8, 8)!!

@@ -1388,13 +1388,13 @@ object SearchablePreferences {
       addSearchEntries(
         category = "Appearance",
         screen = PlayerControlsPreferencesScreen,
-        anchorItemIndex = 6,
+        anchorItemIndex = 5,
         SearchEntrySpec(R.string.pref_section_seekbar_style, listOf("seekbar", "style", "thick", "thin", "squiggly", "wavy")),
       )
       addSearchEntries(
         category = "Player Layout",
         screen = PlayerControlsPreferencesScreen,
-        anchorItemIndex = 0,
+        anchorItemIndex = 8,
         SearchEntrySpec(
           R.string.ui_playback_controls_position,
           listOf("playback", "controls", "position", "above", "below", "seekbar", "portrait", "landscape"),
@@ -1404,7 +1404,7 @@ object SearchablePreferences {
       addSearchEntries(
         category = "Appearance",
         screen = PlayerControlsPreferencesScreen,
-        anchorItemIndex = 8,
+        anchorItemIndex = 7,
         SearchEntrySpec(R.string.ui_time_network_clock, listOf("clock", "time", "network", "format", "12 hour", "24 hour")),
       )
 

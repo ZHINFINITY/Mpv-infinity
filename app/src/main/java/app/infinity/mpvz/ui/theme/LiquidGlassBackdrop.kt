@@ -193,6 +193,7 @@ fun LiquidGlassBackdropHost(
           )
         ) frame.value = null
       }
+      val screenLocation = IntArray(2)
       while (currentCoroutineContext().isActive) {
         if (!ready() || !source.isAttachedToWindow || !source.holder.surface.isValid) {
           transientFailure()
@@ -218,8 +219,15 @@ fun LiquidGlassBackdropHost(
           if (target == null) null
           else try {
             val copied = copyGlassFrame(source, crop, target, captureBuffers)
-            val frosted = copied?.let {
-              frostGlassFrame(target, tuning.frost, captureBuffers.pixels, captureBuffers.lumaBins)
+            val frosted = copied?.let { copiedBitmap ->
+              frostGlassFrame(
+                copiedBitmap,
+                tuning.frost,
+                captureBuffers.pixels,
+                captureBuffers.frostOutput,
+                captureBuffers.frostScratch,
+                captureBuffers.lumaBins,
+              )
             }
             if (frosted != null && captureBuffers.markPublished(target)) frosted else null
           } finally {
@@ -233,11 +241,11 @@ fun LiquidGlassBackdropHost(
         } else {
           failures = 0
           unavailableSince = null
-          val location = IntArray(2)
-          source.getLocationOnScreen(location)
+          source.getLocationOnScreen(screenLocation)
           frame.value = LiquidGlassFrame(bitmap.asImageBitmap(), Rect(
-            (location[0] + crop.left).toFloat(), (location[1] + crop.top).toFloat(),
-            (location[0] + crop.left + crop.width).toFloat(), (location[1] + crop.top + crop.height).toFloat()),
+            (screenLocation[0] + crop.left).toFloat(), (screenLocation[1] + crop.top).toFloat(),
+            (screenLocation[0] + crop.left + crop.width).toFloat(),
+            (screenLocation[1] + crop.top + crop.height).toFloat()),
             underlayLuma = sampled.second)
         }
         // Recover after transient failures instead of permanently disabling glass after three errors.
@@ -264,6 +272,10 @@ internal class GlassCaptureBuffers {
   internal val sampleMutex = Mutex()
   var pixels: IntArray = IntArray(0)
     private set
+  var frostOutput: IntArray = IntArray(0)
+    private set
+  var frostScratch: IntArray = IntArray(0)
+    private set
   val lumaBins = IntArray(64)
   @get:Synchronized
   val retiredBitmapCount: Int get() = retired.size
@@ -281,6 +293,8 @@ internal class GlassCaptureBuffers {
       first = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
       second = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
       pixels = IntArray(width * height)
+      frostOutput = IntArray(width * height)
+      frostScratch = IntArray(width * height)
       nextFirst = true
     }
     // Compose receives a separate immutable snapshot; keep the latest scratch buffer out of
@@ -336,6 +350,8 @@ internal class GlassCaptureBuffers {
     first = null; second = null
     published = null
     pixels = IntArray(0)
+    frostOutput = IntArray(0)
+    frostScratch = IntArray(0)
     // Teardown is terminal: at most the final active pair may join the four-buffer resize
     // cap while its PixelCopy leases drain. No further allocations are accepted after this.
     active.forEach(::retireOrRecycle)
@@ -397,12 +413,21 @@ internal fun immutableGlassSnapshot(bitmap: Bitmap): Bitmap? =
   if (bitmap.isRecycled) null else bitmap.copy(Bitmap.Config.ARGB_8888, false)
 
 // Returns the frosted bitmap and its bright-percentile luma, measured on the same background pass.
-private suspend fun frostGlassFrame(bitmap: Bitmap, strength: Float, pixels: IntArray, lumaBins: IntArray): Pair<Bitmap, Float>? = try {
+private suspend fun frostGlassFrame(
+  bitmap: Bitmap,
+  strength: Float,
+  pixels: IntArray,
+  frostOutput: IntArray,
+  frostScratch: IntArray,
+  lumaBins: IntArray,
+): Pair<Bitmap, Float>? = try {
   withContext(Dispatchers.Default) {
     bitmap.getPixels(pixels, 0, bitmap.width, 0, 0, bitmap.width, bitmap.height)
     // Every API level keeps the same CPU frost on this tiny sample: the API 33+ refraction
     // shader and the older paint path both expect an already-frosted input (visual parity).
-    val frosted = GlassFrostPolicy.frostArgb(pixels, bitmap.width, bitmap.height, strength)
+    val frosted = GlassFrostPolicy.frostArgbInto(
+      pixels, bitmap.width, bitmap.height, frostOutput, frostScratch, strength,
+    )
     bitmap.setPixels(frosted, 0, bitmap.width, 0, 0, bitmap.width, bitmap.height)
     val snapshot = immutableGlassSnapshot(bitmap) ?: return@withContext null
     snapshot to GlassSurfacePolicy.underlayLuma(frosted, lumaBins)

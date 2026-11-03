@@ -152,21 +152,6 @@ object PlayerControlsPreferencesScreen : Screen {
               .padding(padding)
               .then(settingsHighlight),
         ) {
-          item {
-            val playbackControlsPosition by appearancePrefs.playbackControlsPosition.collectAsState()
-            PreferenceCard(contentVerticalPadding = 0.dp) {
-              ListPreference(
-                modifier = Modifier.settingsSearchTarget(R.string.ui_playback_controls_position),
-                value = playbackControlsPosition,
-                onValueChange = { appearancePrefs.playbackControlsPosition.set(it) },
-                values = PlaybackControlsPosition.entries,
-                valueToText = { AnnotatedString(it.displayName) },
-                title = { Text(stringResource(R.string.ui_playback_controls_position)) },
-                summary = { Text(stringResource(R.string.ui_playback_controls_position_summary)) },
-              )
-            }
-          }
-
           // Landscape Controls Section
           item {
             PreferenceSectionHeader(
@@ -450,6 +435,20 @@ object PlayerControlsPreferencesScreen : Screen {
                     Text(stringResource(R.string.generic_cancel))
                   }
                 },)
+            }
+          }
+          item {
+            val playbackControlsPosition by appearancePrefs.playbackControlsPosition.collectAsState()
+            PreferenceCard(contentVerticalPadding = 0.dp) {
+              ListPreference(
+                modifier = Modifier.settingsSearchTarget(R.string.ui_playback_controls_position),
+                value = playbackControlsPosition,
+                onValueChange = { appearancePrefs.playbackControlsPosition.set(it) },
+                values = PlaybackControlsPosition.entries,
+                valueToText = { AnnotatedString(it.displayName) },
+                title = { Text(stringResource(R.string.ui_playback_controls_position)) },
+                summary = { Text(stringResource(R.string.ui_playback_controls_position_summary)) },
+              )
             }
           }
         }
