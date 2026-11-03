@@ -6,7 +6,7 @@ import org.junit.Test
 class SubtitlePositioningPolicyTest {
   @Test
   fun secondarySubtitleActivationRespectsTheAssOverridePreference() {
-    assertEquals("scale", subtitleAssOverrideValue(forceAssOverride = false))
+    assertEquals("no", subtitleAssOverrideValue(forceAssOverride = false))
     assertEquals("force", subtitleAssOverrideValue(forceAssOverride = true))
   }
 }

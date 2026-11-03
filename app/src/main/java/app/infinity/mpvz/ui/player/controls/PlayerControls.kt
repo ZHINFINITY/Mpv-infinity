@@ -7,7 +7,7 @@
 
 package app.infinity.mpvz.ui.player.controls
 
-import app.infinity.mpvz.ui.player.PlayerStatsLuaCommandPolicy
+import app.infinity.mpvz.ui.player.StatsLuaOverlay
 import app.infinity.mpvz.ui.player.DeclaredPlaybackMediaKind
 import app.infinity.mpvz.ui.player.PlaybackPhase
 import app.infinity.mpvz.ui.player.PlaybackSession
@@ -621,12 +621,10 @@ fun PlayerControls(
   // core started for a video shows it again (MPVView.postInitOptions).
   LaunchedEffect(useAudioPlayer) {
     if (useAudioPlayer) {
-      PlayerStatsLuaCommandPolicy.apply(
-        PlayerStatsLuaCommandPolicy.forMusicHide(
-          luaShown = PlayerStatsLuaCommandPolicy.isLuaShown(),
-          consoleOpen = PlaybackSession.getPropertyBoolean("user-data/mpv/console/open") == true,
-        ),
-      )
+      if (PlaybackSession.getPropertyBoolean("user-data/mpv/console/open") == true) {
+        PlaybackSession.command("script-message-to", "console", "disable")
+      }
+      StatsLuaOverlay.hide()
     }
   }
   if (useAudioPlayer) {
@@ -1329,6 +1327,7 @@ fun PlayerControls(
               modifier =
                 Modifier
                   .padding(vertical = customButtonsRowVerticalPadding)
+                  .fillMaxWidth()
                   .horizontalScroll(rememberScrollState()),
             ) {
               leftCustomButtons.forEach { button ->
@@ -1407,6 +1406,7 @@ fun PlayerControls(
               modifier =
                 Modifier
                   .padding(vertical = customButtonsRowVerticalPadding)
+                  .fillMaxWidth()
                   .horizontalScroll(rememberScrollState(), reverseScrolling = true),
             ) {
               rightCustomButtons.forEach { button ->
@@ -1483,6 +1483,7 @@ fun PlayerControls(
               modifier =
                 Modifier
                   .padding(vertical = customButtonsRowVerticalPadding)
+                  .fillMaxWidth()
                   .horizontalScroll(rememberScrollState()),
             ) {
               customButtons.forEach { button ->

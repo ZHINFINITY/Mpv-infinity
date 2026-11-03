@@ -53,8 +53,7 @@ fun SubtitlesMiscellaneousCard(modifier: Modifier = Modifier) {
   val configOwnedOptions = currentMpvConfigOverrideOptions()
   val layoutOptions = setOf("sub-ass-override", "secondary-sub-ass-override", "sub-pos", "secondary-sub-pos")
   val scaleOptions = setOf("sub-scale", "secondary-sub-scale")
-  val scaleByWindowOptions =
-    setOf("sub-scale-by-window", "sub-use-margins", "secondary-sub-scale-by-window", "secondary-sub-use-margins")
+  val scaleByWindowOptions = setOf("sub-scale-by-window", "sub-use-margins")
   val blendOptions = setOf("blend-subtitles")
   val miscellaneousOptions = layoutOptions + scaleOptions + scaleByWindowOptions + blendOptions
   var isExpanded by remember { mutableStateOf(true) }

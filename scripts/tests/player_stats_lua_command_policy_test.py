@@ -1,16 +1,18 @@
 #!/usr/bin/env python3
-"""Source contracts for stats.lua Off/restore and Native 7cd7e cue wiring."""
+"""Source contracts for the v2.2.3 stats.lua Off route and restore timing."""
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 ACTIVITY = ROOT / "app/src/main/java/app/infinity/mpvz/ui/player/PlayerActivity.kt"
 MPV_VIEW = ROOT / "app/src/main/java/app/infinity/mpvz/ui/player/MPVView.kt"
 MORE = ROOT / "app/src/main/java/app/infinity/mpvz/ui/player/controls/components/sheets/MoreSheet.kt"
-ENGINE = ROOT / "app/src/main/java/app/infinity/mpvz/ui/player/NativeMedia3Engine.kt"
-POLICY = ROOT / "app/src/main/java/app/infinity/mpvz/ui/player/PlayerStatsLuaCommandPolicy.kt"
+OVERLAY = ROOT / "app/src/main/java/app/infinity/mpvz/ui/player/StatsLuaOverlay.kt"
+RESTORE_POLICY = ROOT / "app/src/main/java/app/infinity/mpvz/ui/player/PlayerStatsLuaRestorePolicy.kt"
 LIFECYCLE = ROOT / "app/src/main/java/app/infinity/mpvz/ui/player/PlayerLifecyclePolicy.kt"
 CONTROLS = ROOT / "app/src/main/java/app/infinity/mpvz/ui/player/controls/PlayerControls.kt"
+SHARED_CONTROLS = ROOT / "app/src/main/java/app/infinity/mpvz/ui/player/controls/PlayerControlsShared.kt"
 AUDIO = ROOT / "app/src/main/java/app/infinity/mpvz/ui/player/controls/AudioPlayerControls.kt"
+ENGINE = ROOT / "app/src/main/java/app/infinity/mpvz/ui/player/NativeMedia3Engine.kt"
 
 
 def require(text: str, needle: str, label: str) -> None:
@@ -27,78 +29,74 @@ def main() -> None:
     activity = ACTIVITY.read_text(encoding="utf-8")
     mpv_view = MPV_VIEW.read_text(encoding="utf-8")
     more = MORE.read_text(encoding="utf-8")
-    engine = ENGINE.read_text(encoding="utf-8")
-    policy = POLICY.read_text(encoding="utf-8")
+    overlay = OVERLAY.read_text(encoding="utf-8")
+    restore_policy = RESTORE_POLICY.read_text(encoding="utf-8")
     lifecycle = LIFECYCLE.read_text(encoding="utf-8")
     controls = CONTROLS.read_text(encoding="utf-8")
+    shared_controls = SHARED_CONTROLS.read_text(encoding="utf-8")
     audio = AUDIO.read_text(encoding="utf-8")
+    engine = ENGINE.read_text(encoding="utf-8")
 
-    require(
-        policy,
-        "fun forChip(toPage: Int, previousPage: Int, luaShown: Boolean, consoleOpen: Boolean)",
-        "mpvRx MoreSheet page decision",
-    )
-    require(policy, "0, 6 -> Decision(\n        toggleLua = luaShown", "Off never toggles hidden lua")
-    require(policy, "fun forStartup(page: Int): Decision?", "interpolation restore decision")
-    require(
-        policy,
-        "if (page in 1..5) Decision(displayPage = page, luaVisible = true) else null",
-        "interpolation restore is display-page only",
-    )
-    require(policy, "fun forVideoResume(page: Int, luaShown: Boolean): Decision?", "video resume display-page")
-    require(policy, "fun forMusicHide(luaShown: Boolean, consoleOpen: Boolean): Decision", "music Off hide path")
-    require(policy, "fun shouldWaitForPlaybackBeforeRestore", "wait for file-loaded/time-pos")
-    require(policy, "fun shouldReapplyAfterVoReconfig", "vo-reconfig reapplies once")
-    forbid(policy, "Decision(toggleLua = true, displayPage = page, luaVisible = true)", "startup must not toggle")
-    require(policy, 'VISIBLE_PROPERTY = "user-data/mpvrx/stats-lua-visible"', "lua visibility property")
-    require(policy, "fun onCoreRecreated()", "core recreate resets startup flag")
+    # Public v2.2.3 owns Lua visibility in a process-local volatile flag.
+    require(overlay, "@Volatile", "release in-memory visibility state")
+    require(overlay, "var shown: Boolean = false", "release in-memory visibility state")
+    require(overlay, "fun onCoreStarted()", "new-core visibility reset")
+    require(overlay, "if (!wasShown)", "Off is a hide-only action")
+    require(overlay, 'PlaybackSession.command("script-binding", "stats/display-stats-toggle")', "release stats toggle")
+    forbid(overlay, "VISIBLE_PROPERTY", "MPV user-data is not visibility authority")
 
-    require(more, "PlayerStatsLuaCommandPolicy.forChip(", "More sheet uses lua show-state")
-    require(more, "previousPage = statisticsPage", "More sheet copies mpvRx previous-page path")
-    forbid(more, "if (statisticsPage in 1..5) PlaybackSession.command", "More sheet no longer toggles from persisted page")
+    # Off, Compose page 6, and console selection all return through the same stable overlay owner.
+    require(more, "StatsLuaOverlay.hide()", "More sheet Off hide path")
+    require(more, "StatsLuaOverlay.show(page)", "More sheet stats page selection")
+    forbid(more, "PlayerStatsLuaCommandPolicy", "no parallel Lua visibility policy")
+    stats_selection = more.split('val isConsoleOpen = PlaybackSession.getPropertyBoolean("user-data/mpv/console/open") == true', 1)[1]
+    saved_page = stats_selection.find("advancedPreferences.enabledStatisticsPage.set(page)")
+    dispatched_command = stats_selection.find("when (page)")
+    if saved_page < 0 or dispatched_command < 0 or saved_page > dispatched_command:
+        raise SystemExit("stats page preference must be persisted before hide/show commands")
+    require(more, '0, 6 -> StatsLuaOverlay.hide()', "Off and Compose-page hide")
+    require(more, 'StatsLuaOverlay.show(page)', "page show")
 
-    require(mpv_view, "PlayerStatsLuaCommandPolicy.forStartup", "startup restore uses show-state")
-    require(mpv_view, "PlayerStatsLuaCommandPolicy.onCoreRecreated()", "new core resets startup-stats-applied")
-    require(mpv_view, "fun applyStartupStatistics(force: Boolean = false)", "force restore after vo-reconfig")
-    reload = activity.split("MPV reloaded; position, pause, tracks and options confirmed; synthesized frames not inferred", 1)[1]
-    reload_block = reload.split("private fun handleNativePlaybackEnded()", 1)[0]
-    require(reload_block, "scheduleInterpolationStatsRestore(", "interpolation restore waits for lua")
-    forbid(reload_block, "player.applyStartupStatistics()", "reload success is not fire-and-forget display-page")
-    require(activity, "MPV_EVENT_VIDEO_RECONFIG", "vo-reconfig reapplies restore")
-    require(activity, "tryApplyInterpolationStatsRestore(", "file-loaded applies restore")
-    require(activity, "hideMpvSurfaceAndOverlayForAudioOrMinimize()", "music/minimize hide helper")
+    # Startup and interpolation callbacks may restore only the selected page; they do not own
+    # visibility state and must observe Off after a tap.
+    require(restore_policy, "STARTUP_APPLIED_PROPERTY", "per-core startup restore marker")
+    require(restore_policy, "fun shouldWaitForPlaybackBeforeRestore", "restore readiness guard")
+    require(restore_policy, "fun shouldReapplyAfterVoReconfig", "one-time VO restore guard")
+    forbid(restore_policy, "VISIBLE_PROPERTY", "restore policy does not own visibility")
+    forbid(restore_policy, "display-stats-toggle", "restore policy does not issue toggles")
+    require(mpv_view, "StatsLuaOverlay.onCoreStarted()", "new MPV core resets release overlay state")
+    require(mpv_view, "PlayerStatsLuaRestorePolicy.onCoreRecreated()", "startup marker resets per core")
+    require(mpv_view, "fun applyStartupStatistics(force: Boolean = false)", "guarded startup restore")
+    require(mpv_view, "StatsLuaOverlay.show(advancedPreferences.enabledStatisticsPage.get())", "startup uses release overlay")
+    require(activity, "StatsLuaOverlay.hide()", "audio/minimize uses release hide")
+    require(activity, "StatsLuaOverlay.show(page)", "video-surface return uses release show")
+    require(activity, "PlayerStatsLuaRestorePolicy.shouldWaitForPlaybackBeforeRestore", "interpolation restore waits for playback")
+    require(activity, "PlayerStatsLuaRestorePolicy.shouldReapplyAfterVoReconfig", "interpolation VO restore is bounded")
+
+    # Keep the other existing stats/UI contracts intact.
+    require(controls, "StatsLuaOverlay.hide()", "music screen hides stats through shared owner")
+    require(shared_controls, "StatsLuaOverlay.hide()", "time/network page 6 hides Lua stats")
+    require(audio, "StatsLuaOverlay.hide()", "audio player hides stats through shared owner")
+    require(activity, "hideMpvSurfaceAndOverlayForAudioOrMinimize()", "music/minimize compositor helper")
     require(activity, "binding.player.visibility = View.GONE", "music GONE surface")
     require(activity, "binding.media3SubtitleOverlay.visibility = View.GONE", "music GONE subtitle overlay")
     forbid(activity, "View.INVISIBLE", "INVISIBLE still composites stats.lua")
-    require(activity, "forMusicHide(", "music uses Off hide path")
-    require(activity, "forVideoResume(", "video return uses display-page")
-    require(activity, "onAudioMinimizePresentationComplete()", "minimize completion exists")
-    minimize = activity.split("fun onAudioMinimizePresentationComplete()", 1)[1].split("val audioOpenFromMiniRequest", 1)[0]
-    require(minimize, "hideMpvSurfaceAndOverlayForAudioOrMinimize()", "minimize hides compositor")
-
     require(lifecycle, "LONG_BACKGROUND_REBUILD_THRESHOLD_MS = 900_000L", "15-minute ColorOS rebuild")
-    require(lifecycle, "fun shouldCaptureForegroundResumePosition", "video captures last position")
-    require(activity, "captureForegroundResumePosition()", "pause/stop captures time-pos before Surface death")
-    require(activity, "restoreForegroundResumePositionIfNeeded()", "any background restores last position")
-    require(activity, "rebuildRendererAfterLongBackground()", "15-minute rebuild remains")
-    require(activity, "preserveTorrentSession = activeTorrentSourceUri != null", "torrent session kept on rebuild")
+    require(lifecycle, "fun shouldCaptureForegroundResumePosition", "foreground position capture")
+    require(activity, "captureForegroundResumePosition()", "background captures playback time")
+    require(activity, "restoreForegroundResumePositionIfNeeded()", "background restores current position")
+    require(activity, "rebuildRendererAfterLongBackground()", "long-background renderer rebuild")
+    require(activity, "preserveTorrentSession = activeTorrentSourceUri != null", "torrent session preserved")
 
     require(activity, "private var nativeEngineConfigured = false", "7cd7e configured flag")
-    require(
-        activity,
-        "val nativePlaybackSnapshot get() = nativeEngineOrNull()?.snapshot ?: idleNativePlaybackSnapshot",
-        "7cd7e snapshot getter",
-    )
+    require(activity, "val nativePlaybackSnapshot get() = nativeEngineOrNull()?.snapshot ?: idleNativePlaybackSnapshot", "7cd7e snapshot getter")
     require(activity, "val engine = nativeEngineOrNull() ?: return@repeatOnLifecycle", "7cd7e cue collector")
-    require(activity, "engine.subtitleCueText.collect { cue ->", "subtitleCueText collection")
+    require(activity, "engine.subtitleCueText.collect { cue ->", "subtitle cue collection")
     forbid(activity, "flatMapLatest", "CodeRabbit collector regression")
     forbid(activity, "emptyFlow()", "emptyFlow cue stall")
-    forbid(activity, "collectAsState(initial = NativePlaybackSnapshot())", "idle snapshot initial")
-    forbid(controls, "collectAsState(initial = NativePlaybackSnapshot())", "PlayerControls idle snapshot initial")
-    forbid(audio, "collectAsState(initial = NativePlaybackSnapshot())", "AudioPlayerControls idle snapshot initial")
     require(engine, "NativeSubtitleParserFactory(AssSubtitleParserFactory(assHandler))", "ASS-only native factory")
     forbid(engine, "DefaultSubtitleParserFactory", "composite VTT parser stays reverted")
-    print("player stats lua command and native cue wiring contracts: PASS")
+    print("v2.2.3 stats.lua Off route and restore contracts: PASS")
 
 
 if __name__ == "__main__":

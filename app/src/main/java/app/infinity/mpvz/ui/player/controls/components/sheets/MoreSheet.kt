@@ -10,7 +10,7 @@ package app.infinity.mpvz.ui.player.controls.components.sheets
 import app.infinity.mpvz.presentation.components.playerGlassOverlay
 import app.infinity.mpvz.ui.components.GlassChip
 
-import app.infinity.mpvz.ui.player.PlayerStatsLuaCommandPolicy
+import app.infinity.mpvz.ui.player.StatsLuaOverlay
 import app.infinity.mpvz.ui.player.controls.components.playerGlassPane
 import app.infinity.mpvz.ui.player.NativePlaybackSnapshot
 import app.infinity.mpvz.ui.player.PlaybackEngineMode
@@ -300,14 +300,20 @@ fun MoreSheet(
                 return@GlassChip
               }
               val isConsoleOpen = PlaybackSession.getPropertyBoolean("user-data/mpv/console/open") == true
-              PlayerStatsLuaCommandPolicy.apply(
-                PlayerStatsLuaCommandPolicy.forChip(
-                  toPage = page,
-                  luaShown = PlayerStatsLuaCommandPolicy.isLuaShown(),
-                  consoleOpen = isConsoleOpen,
-                ),
-              )
               advancedPreferences.enabledStatisticsPage.set(page)
+              if (page != 7 && isConsoleOpen) {
+                PlaybackSession.command("script-message-to", "console", "disable")
+              }
+              when (page) {
+                0, 6 -> StatsLuaOverlay.hide()
+                7 -> {
+                  StatsLuaOverlay.hide()
+                  if (!isConsoleOpen) {
+                    PlaybackSession.command("script-message-to", "console", "enable")
+                  }
+                }
+                else -> StatsLuaOverlay.show(page)
+              }
             },
             selected = statisticsPage == page,
             leadingIcon = null,

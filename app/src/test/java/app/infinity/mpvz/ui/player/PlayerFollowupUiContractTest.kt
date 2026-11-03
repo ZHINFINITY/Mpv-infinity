@@ -135,9 +135,53 @@ class PlayerFollowupUiContractTest {
     assertTrue(controls.contains("if (playbackControlsPosition == PlaybackControlsPosition.BelowSeekbar) {\n                    Dimension.fillToConstraints\n                  } else {\n                    Dimension.preferredWrapContent"))
     assertTrue(landscape.contains("buttons.forEach { button ->"))
     assertTrue(landscape.contains("RenderPlayerButton("))
-    assertTrue(landscape.contains("Modifier.horizontalScroll(rememberScrollState())"))
-    assertTrue(landscape.contains("Modifier.horizontalScroll(rememberScrollState(), reverseScrolling = true)"))
+    assertTrue(landscape.contains("Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())"))
+    assertTrue(landscape.contains("Modifier.fillMaxWidth().horizontalScroll(rememberScrollState(), reverseScrolling = true)"))
+    assertTrue(controls.contains(".padding(vertical = customButtonsRowVerticalPadding)\n                  .fillMaxWidth()\n                  .horizontalScroll(rememberScrollState())"))
+    assertTrue(controls.contains(".padding(vertical = customButtonsRowVerticalPadding)\n                  .fillMaxWidth()\n                  .horizontalScroll(rememberScrollState(), reverseScrolling = true)"))
     assertTrue(landscape.contains("buttonSize = 45.dp"))
+  }
+
+  @Test
+  fun secondaryAssStylingAvoidsUnsupportedSecondaryFontProperties() {
+    val mpvView = read("app/src/main/java/app/infinity/mpvz/ui/player/MPVView.kt")
+    val playerActivity = read("app/src/main/java/app/infinity/mpvz/ui/player/PlayerActivity.kt")
+    val typographyCard = read("app/src/main/java/app/infinity/mpvz/ui/player/controls/components/panels/SubtitleSettingsTypographyCard.kt")
+    val miscellaneousCard = read("app/src/main/java/app/infinity/mpvz/ui/player/controls/components/panels/SubtitleSettingsMiscellaneousCard.kt")
+    val colorsCard = read("app/src/main/java/app/infinity/mpvz/ui/player/controls/components/panels/SubtitleSettingsColorsCard.kt")
+    val preferencesScreen = read("app/src/main/java/app/infinity/mpvz/ui/preferences/SubtitlesPreferencesScreen.kt")
+    val configOverride = read("app/src/main/java/app/infinity/mpvz/preferences/MpvConfigOverride.kt")
+    val subtitlePositioning = read("app/src/main/java/app/infinity/mpvz/ui/player/SubtitlePositioning.kt")
+    val unsupportedSecondaryOptions = listOf(
+      "secondary-sub-font",
+      "secondary-sub-font-size",
+      "secondary-sub-bold",
+      "secondary-sub-italic",
+      "secondary-sub-justify",
+      "secondary-sub-color",
+      "secondary-sub-back-color",
+      "secondary-sub-border-color",
+      "secondary-sub-shadow-color",
+      "secondary-sub-border-size",
+      "secondary-sub-outline-size",
+      "secondary-sub-border-style",
+      "secondary-sub-shadow-offset",
+      "secondary-sub-scale-by-window",
+      "secondary-sub-use-margins",
+    )
+    unsupportedSecondaryOptions.forEach { option ->
+      assertTrue(!mpvView.contains("\"$option\""))
+      assertTrue(!playerActivity.contains("\"$option\""))
+      assertTrue(!typographyCard.contains("\"$option\""))
+      assertTrue(!miscellaneousCard.contains("\"$option\""))
+      assertTrue(!colorsCard.contains("\"$option\""))
+      assertTrue(!preferencesScreen.contains("\"$option\""))
+      assertTrue(!configOverride.contains("\"$option\""))
+    }
+    assertTrue(colorsCard.contains("PlaybackSession.setPropertyString(currentColorType.property, hexColor)"))
+    assertFalse(colorsCard.contains("property.replace(\"sub-\", \"secondary-sub-\")"))
+    assertTrue(subtitlePositioning.contains("PlaybackSession.setPropertyString(\"secondary-sub-ass-override\""))
+    assertTrue(playerActivity.contains("forceAssOverride = subtitlesPreferences.overrideAssSubs.get()"))
   }
 
   @Test

@@ -376,12 +376,10 @@ class PlayerActivity :
   }
 
   private fun hideLuaForAudioOrMinimize() {
-    PlayerStatsLuaCommandPolicy.apply(
-      PlayerStatsLuaCommandPolicy.forMusicHide(
-        luaShown = PlayerStatsLuaCommandPolicy.isLuaShown(),
-        consoleOpen = PlaybackSession.getPropertyBoolean("user-data/mpv/console/open") == true,
-      ),
-    )
+    if (PlaybackSession.getPropertyBoolean("user-data/mpv/console/open") == true) {
+      PlaybackSession.command("script-message-to", "console", "disable")
+    }
+    StatsLuaOverlay.hide()
   }
 
   /** Keep MPV's compositor surface hidden for audio, including engine handoffs back to MPV. */
@@ -406,10 +404,8 @@ class PlayerActivity :
 
   private fun restoreLuaAfterVideoSurfaceShown() {
     if (isNativeEngineActive() || isAudioStatsRestoreSkipped()) return
-    PlayerStatsLuaCommandPolicy.forVideoResume(
-      advancedPreferences.enabledStatisticsPage.get(),
-      PlayerStatsLuaCommandPolicy.isLuaShown(),
-    )?.let { PlayerStatsLuaCommandPolicy.apply(it) }
+    val page = advancedPreferences.enabledStatisticsPage.get()
+    if (page in 1..5 && !StatsLuaOverlay.shown) StatsLuaOverlay.show(page)
   }
 
   private fun isAudioStatsRestoreSkipped(): Boolean =
@@ -449,7 +445,7 @@ class PlayerActivity :
       return true
     }
     val timePos = PlaybackSession.getPropertyDouble("time-pos")
-    if (!PlayerStatsLuaCommandPolicy.shouldWaitForPlaybackBeforeRestore(
+    if (!PlayerStatsLuaRestorePolicy.shouldWaitForPlaybackBeforeRestore(
         fileLoaded = isReady && PlaybackSession.isCurrentGeneration(generation),
         timePosFinite = timePos?.isFinite() == true,
       )
@@ -465,7 +461,7 @@ class PlayerActivity :
   private fun onInterpolationVoReconfig(generation: Long = PlaybackSession.state.value.generation) {
     if (interpolationStatsRestoreGeneration != generation) return
     if (isAudioStatsRestoreSkipped()) return
-    if (!PlayerStatsLuaCommandPolicy.shouldReapplyAfterVoReconfig(
+    if (!PlayerStatsLuaRestorePolicy.shouldReapplyAfterVoReconfig(
         luaRestored = interpolationStatsLuaRestored,
         alreadyReapplied = interpolationStatsVoReconfigReapplied,
       )
@@ -6849,24 +6845,25 @@ class PlayerActivity :
 
     PlaybackSession.setPropertyString("blend-subtitles", blendMode)
 
-    for (prefix in listOf("sub-", "secondary-sub-")) {
-      PlaybackSession.setPropertyString("${prefix}font", font)
-      PlaybackSession.setPropertyInt("${prefix}font-size", fontSize)
-      PlaybackSession.setPropertyBoolean("${prefix}bold", bold)
-      PlaybackSession.setPropertyBoolean("${prefix}italic", italic)
-      PlaybackSession.setPropertyString("${prefix}justify", justify)
-      PlaybackSession.setPropertyString("${prefix}border-style", borderStyle)
-      PlaybackSession.setPropertyInt("${prefix}border-size", borderSize)
-      PlaybackSession.setPropertyInt("${prefix}outline-size", borderSize)
-      PlaybackSession.setPropertyInt("${prefix}shadow-offset", shadowOffset)
-      PlaybackSession.setPropertyString("${prefix}color", textColor)
-      PlaybackSession.setPropertyString("${prefix}border-color", borderColor)
-      PlaybackSession.setPropertyString("${prefix}back-color", backgroundColor)
-      PlaybackSession.setPropertyString("${prefix}shadow-color", shadowColor)
-      PlaybackSession.setPropertyString("${prefix}scale-by-window", scaleValue)
-      PlaybackSession.setPropertyString("${prefix}use-margins", scaleValue)
-      PlaybackSession.setPropertyFloat("${prefix}scale", subScale)
-    }
+    // MPV uses shared typography options for both tracks. Secondary-specific font/color/outline
+    // properties are not exposed by this engine; don't send unsupported writes that return -3.
+    PlaybackSession.setPropertyString("sub-font", font)
+    PlaybackSession.setPropertyInt("sub-font-size", fontSize)
+    PlaybackSession.setPropertyBoolean("sub-bold", bold)
+    PlaybackSession.setPropertyBoolean("sub-italic", italic)
+    PlaybackSession.setPropertyString("sub-justify", justify)
+    PlaybackSession.setPropertyString("sub-border-style", borderStyle)
+    PlaybackSession.setPropertyInt("sub-border-size", borderSize)
+    PlaybackSession.setPropertyInt("sub-outline-size", borderSize)
+    PlaybackSession.setPropertyInt("sub-shadow-offset", shadowOffset)
+    PlaybackSession.setPropertyString("sub-color", textColor)
+    PlaybackSession.setPropertyString("sub-border-color", borderColor)
+    PlaybackSession.setPropertyString("sub-back-color", backgroundColor)
+    PlaybackSession.setPropertyString("sub-shadow-color", shadowColor)
+    PlaybackSession.setPropertyString("sub-scale-by-window", scaleValue)
+    PlaybackSession.setPropertyString("sub-use-margins", scaleValue)
+    PlaybackSession.setPropertyFloat("sub-scale", subScale)
+    PlaybackSession.setPropertyFloat("secondary-sub-scale", subScale)
 
     applySubtitleLayout(
       primaryPosition = subtitlesPreferences.subPos.get(),

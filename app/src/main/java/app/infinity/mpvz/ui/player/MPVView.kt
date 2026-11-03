@@ -207,7 +207,8 @@ class MPVView(
       mpvFlowCaptureControlConfigured = false
     }
     if (result.getOrNull() == true) {
-      PlayerStatsLuaCommandPolicy.onCoreRecreated()
+      PlayerStatsLuaRestorePolicy.onCoreRecreated()
+      StatsLuaOverlay.onCoreStarted()
     }
     if (result.isSuccess && BuildConfig.DEBUG && BuildConfig.MPV_HAS_MPVFLOW) {
       // PlaybackSession may reuse a core and skip initOptions for this view.
@@ -1038,18 +1039,13 @@ class MPVView(
     if (isMusic) return
     // The native core survives Activity recreation and playlist loads. A toggle on every
     // load would turn an already enabled statistics overlay off on the next file.
-    if (!force && PlaybackSession.getPropertyString(PlayerStatsLuaCommandPolicy.STARTUP_APPLIED_PROPERTY) ==
-      PlayerStatsLuaCommandPolicy.STARTUP_APPLIED_YES) return
+    if (!force && PlaybackSession.getPropertyString(PlayerStatsLuaRestorePolicy.STARTUP_APPLIED_PROPERTY) ==
+      PlayerStatsLuaRestorePolicy.STARTUP_APPLIED_YES) return
     PlaybackSession.setPropertyString(
-      PlayerStatsLuaCommandPolicy.STARTUP_APPLIED_PROPERTY,
-      PlayerStatsLuaCommandPolicy.STARTUP_APPLIED_YES,
+      PlayerStatsLuaRestorePolicy.STARTUP_APPLIED_PROPERTY,
+      PlayerStatsLuaRestorePolicy.STARTUP_APPLIED_YES,
     )
-    PlayerStatsLuaCommandPolicy.forStartup(
-      advancedPreferences.enabledStatisticsPage.get(),
-      luaShown = PlayerStatsLuaCommandPolicy.isLuaShown(),
-    )?.let {
-      PlayerStatsLuaCommandPolicy.apply(it)
-    }
+    StatsLuaOverlay.show(advancedPreferences.enabledStatisticsPage.get())
   }
 
   fun applyOsdSafeAreaMargins(insets: WindowInsetsCompat? = null) {
@@ -1253,7 +1249,6 @@ class MPVView(
 
     val preferredFont = subtitlesPreferences.font.get().ifBlank { DEFAULT_SUBTITLE_FONT_FAMILY }
     PlaybackSession.setOptionString("sub-font", preferredFont)
-    PlaybackSession.setOptionString("secondary-sub-font", preferredFont)
 
     if (subtitlesPreferences.overrideAssSubs.get()) {
       PlaybackSession.setOptionString("sub-ass-override", "force")
@@ -1264,7 +1259,7 @@ class MPVView(
       PlaybackSession.setOptionString("secondary-sub-ass-override", "no")
     }
 
-    // Typography and styling for both primary and secondary MPV subtitle tracks.
+    // Shared MPV typography options plus supported secondary position and scale options.
     val fontSize = subtitlesPreferences.fontSize.get().toString()
     val bold = if (subtitlesPreferences.bold.get()) "yes" else "no"
     val italic = if (subtitlesPreferences.italic.get()) "yes" else "no"
@@ -1290,26 +1285,29 @@ class MPVView(
         "video"
       } else {
         "no"
-      }
+    }
     PlaybackSession.setOptionString("blend-subtitles", blendMode)
 
-    for ((prefix, pos) in listOf("sub-" to subPos.toString(), "secondary-sub-" to secondarySubPos.toString())) {
-      PlaybackSession.setOptionString("${prefix}font-size", fontSize)
-      PlaybackSession.setOptionString("${prefix}bold", bold)
-      PlaybackSession.setOptionString("${prefix}italic", italic)
-      PlaybackSession.setOptionString("${prefix}justify", justify)
-      PlaybackSession.setOptionString("${prefix}color", textColor)
-      PlaybackSession.setOptionString("${prefix}back-color", backgroundColor)
-      PlaybackSession.setOptionString("${prefix}border-color", borderColor)
-      PlaybackSession.setOptionString("${prefix}shadow-color", shadowColor)
-      PlaybackSession.setOptionString("${prefix}border-size", borderSize)
-      PlaybackSession.setOptionString("${prefix}border-style", borderStyle)
-      PlaybackSession.setOptionString("${prefix}shadow-offset", shadowOffset)
-      PlaybackSession.setOptionString("${prefix}scale", subScale)
-      PlaybackSession.setOptionString("${prefix}pos", pos)
-      PlaybackSession.setOptionString("${prefix}scale-by-window", scaleByWindow)
-      PlaybackSession.setOptionString("${prefix}use-margins", scaleByWindow)
-    }
+    // MPV exposes subtitle typography globally; the secondary track has its own position and
+    // scale, but not a separate font/color/outline property namespace. Leave ASS styling to the
+    // embedded script unless the user's explicit ASS-override preference enables overrides.
+    PlaybackSession.setOptionString("sub-font-size", fontSize)
+    PlaybackSession.setOptionString("sub-bold", bold)
+    PlaybackSession.setOptionString("sub-italic", italic)
+    PlaybackSession.setOptionString("sub-justify", justify)
+    PlaybackSession.setOptionString("sub-color", textColor)
+    PlaybackSession.setOptionString("sub-back-color", backgroundColor)
+    PlaybackSession.setOptionString("sub-border-color", borderColor)
+    PlaybackSession.setOptionString("sub-shadow-color", shadowColor)
+    PlaybackSession.setOptionString("sub-border-size", borderSize)
+    PlaybackSession.setOptionString("sub-border-style", borderStyle)
+    PlaybackSession.setOptionString("sub-shadow-offset", shadowOffset)
+    PlaybackSession.setOptionString("sub-scale", subScale)
+    PlaybackSession.setOptionString("sub-pos", subPos.toString())
+    PlaybackSession.setOptionString("sub-scale-by-window", scaleByWindow)
+    PlaybackSession.setOptionString("sub-use-margins", scaleByWindow)
+    PlaybackSession.setOptionString("secondary-sub-scale", subScale)
+    PlaybackSession.setOptionString("secondary-sub-pos", secondarySubPos.toString())
   }
 
   fun applyAnime4KShaders() {
