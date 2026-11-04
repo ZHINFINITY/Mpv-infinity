@@ -1,8 +1,8 @@
 package app.infinity.mpvz.ui.player
 
 /**
- * Avoids parceling Bitmap-backed notification icons on Android 16 devices whose
- * NotificationManager bitmap serialization aborts while building the notification.
+ * Avoids publishing Bitmap-backed artwork to Android system media surfaces on Android 16 target
+ * devices where Binder/ashmem bitmap transfer has caused process aborts in fdsan.
  */
 internal object NotificationBitmapLargeIconPolicy {
   fun shouldOmitBitmapLargeIcon(

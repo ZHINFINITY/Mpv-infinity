@@ -2091,9 +2091,11 @@ class MediaPlaybackService :
           .putString(MediaMetadataCompat.METADATA_KEY_DISPLAY_TITLE, title)
           .putLong(MediaMetadataCompat.METADATA_KEY_DURATION, sanitizedDurationMs())
 
-      thumbnail?.let {
-        metadataBuilder.putBitmap(MediaMetadataCompat.METADATA_KEY_ALBUM_ART, it)
-        metadataBuilder.putBitmap(MediaMetadataCompat.METADATA_KEY_DISPLAY_ICON, it)
+      if (!shouldOmitBitmapArtworkFromSystemSurfaces()) {
+        thumbnail?.let {
+          metadataBuilder.putBitmap(MediaMetadataCompat.METADATA_KEY_ALBUM_ART, it)
+          metadataBuilder.putBitmap(MediaMetadataCompat.METADATA_KEY_DISPLAY_ICON, it)
+        }
       }
       mediaSession.setMetadata(metadataBuilder.build())
       mediaSession.setSessionActivity(buildContentIntent())
@@ -2175,18 +2177,15 @@ class MediaPlaybackService :
     }
   }
 
+  private fun shouldOmitBitmapArtworkFromSystemSurfaces(): Boolean =
+    NotificationBitmapLargeIconPolicy.shouldOmitBitmapLargeIcon(
+      apiLevel = Build.VERSION.SDK_INT,
+      manufacturer = Build.MANUFACTURER,
+      model = Build.MODEL,
+    )
+
   private fun notificationLargeIcon(): Bitmap? =
-    if (
-      NotificationBitmapLargeIconPolicy.shouldOmitBitmapLargeIcon(
-        apiLevel = Build.VERSION.SDK_INT,
-        manufacturer = Build.MANUFACTURER,
-        model = Build.MODEL,
-      )
-    ) {
-      null
-    } else {
-      thumbnail
-    }
+    if (shouldOmitBitmapArtworkFromSystemSurfaces()) null else thumbnail
 
   private fun sanitizedDurationMs(): Long {
     val queue = PlaybackSession.queue.value

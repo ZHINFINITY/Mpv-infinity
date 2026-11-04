@@ -45,19 +45,31 @@ class NotificationBitmapLargeIconPolicyTest {
   }
 
   @Test
-  fun bothNotificationStylesUseThePolicyWithoutDroppingMediaSessionArtwork() {
+  fun notificationAndMediaSessionArtworkUseTheSameDevicePolicy() {
     val root =
       generateSequence(File(requireNotNull(System.getProperty("user.dir")))) { it.parentFile }
         .first { File(it, "app/src/main/java/app/infinity/mpvz").isDirectory }
     val service =
       File(root, "app/src/main/java/app/infinity/mpvz/ui/player/MediaPlaybackService.kt").readText()
+    val metadataUpdate =
+      service
+        .substringAfter("private fun updateMediaSessionMetadata() {")
+        .substringBefore("private fun updateMediaSessionPlaybackState()")
+    val guardedArtwork =
+      metadataUpdate
+        .substringAfter("if (!shouldOmitBitmapArtworkFromSystemSurfaces()) {")
+        .substringBefore("
+      }")
     val largeIconCall = "setLargeIcon(notificationLargeIcon())"
-    val largeIconCallCount = service.split(largeIconCall).size - 1
 
-    assertEquals(2, largeIconCallCount)
-    assertTrue(service.contains("NotificationBitmapLargeIconPolicy.shouldOmitBitmapLargeIcon("))
+    assertTrue(metadataUpdate.contains("if (!shouldOmitBitmapArtworkFromSystemSurfaces()) {"))
     assertTrue(
-      service.contains("metadataBuilder.putBitmap(MediaMetadataCompat.METADATA_KEY_ALBUM_ART, it)"),
+      guardedArtwork.contains("metadataBuilder.putBitmap(MediaMetadataCompat.METADATA_KEY_ALBUM_ART, it)"),
     )
+    assertTrue(
+      guardedArtwork.contains("metadataBuilder.putBitmap(MediaMetadataCompat.METADATA_KEY_DISPLAY_ICON, it)"),
+    )
+    assertEquals(2, service.split(largeIconCall).size - 1)
+    assertTrue(service.contains("NotificationBitmapLargeIconPolicy.shouldOmitBitmapLargeIcon("))
   }
 }
