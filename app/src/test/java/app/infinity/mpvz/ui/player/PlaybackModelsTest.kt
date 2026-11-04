@@ -3,6 +3,7 @@ package app.infinity.mpvz.ui.player
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class PlaybackModelsTest {
@@ -80,6 +81,40 @@ class PlaybackModelsTest {
     assertEquals(PlaybackEngineMode.MPV, resolvePlaybackEngineMode(PlaybackEngineMode.AUTO, page))
     assertEquals(PlaybackEngineMode.MPV, resolvePlaybackEngineMode(PlaybackEngineMode.NATIVE, page))
     assertEquals(PlaybackEngineMode.NATIVE, resolvePlaybackEngineMode(PlaybackEngineMode.AUTO, resolved))
+  }
+
+  @Test
+  fun resolvedYouTubeGoogleVideoStreamAllowsExplicitNativeSelection() {
+    val resolved =
+      PlaybackItem(
+        stableId = "youtube-video",
+        originalUri = "https://youtu.be/jMkOo4Acdps?si=test",
+        playableUri = "https://r1---sn-a5mek.googlevideo.com/videoplayback?mime=video%2Fmp4",
+      )
+
+    assertTrue(resolved.isResolvedYouTubeVideo())
+    assertFalse(resolved.requiresWebPageResolutionBeforeNative())
+    assertEquals(
+      DeclaredPlaybackMediaKind.VIDEO,
+      resolved.declaredMediaKind(videoHint = resolved.isResolvedYouTubeVideo()),
+    )
+    assertEquals(PlaybackEngineMode.MPV, resolvePlaybackEngineMode(PlaybackEngineMode.AUTO, resolved))
+    assertEquals(PlaybackEngineMode.NATIVE, resolvePlaybackEngineMode(PlaybackEngineMode.NATIVE, resolved))
+  }
+
+  @Test
+  fun unrelatedExtensionlessPageIsNotMisclassifiedAsResolvedYouTubeVideo() {
+    val page =
+      PlaybackItem(
+        stableId = "unrelated-page",
+        originalUri = "https://video.example/watch?id=1",
+        playableUri = "https://r1---sn-a5mek.googlevideo.com/videoplayback",
+      )
+
+    assertFalse(page.isResolvedYouTubeVideo())
+    assertTrue(page.requiresWebPageResolutionBeforeNative())
+    assertEquals(DeclaredPlaybackMediaKind.UNKNOWN, page.declaredMediaKind(videoHint = page.isResolvedYouTubeVideo()))
+    assertEquals(PlaybackEngineMode.MPV, resolvePlaybackEngineMode(PlaybackEngineMode.NATIVE, page))
   }
 
   @Test

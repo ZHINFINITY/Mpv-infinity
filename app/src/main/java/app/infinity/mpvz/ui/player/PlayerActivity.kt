@@ -8121,7 +8121,10 @@ class PlayerActivity :
         null
       }
     val playbackItem = preparePlaybackItemForLoad(item, resolvedPageMediaUrl, radioMimeType)
-    val playbackRequiresYtdlp = radioMimeType == null && YtdlpManager.requiresYtdlp(playbackItem.playableUri)
+    val playbackRequiresYtdlp =
+      radioMimeType == null &&
+        !playbackItem.isResolvedYouTubeVideo() &&
+        YtdlpManager.requiresYtdlp(playbackItem.playableUri)
     // Native Media3 is used for HDR-family video, while MPV remains the normal video/audio
     // pipeline. Auto keeps ordinary videos on MPV and routes HDR, HLG, and Dolby Vision to Native.
     val configuredEngine =
@@ -8150,7 +8153,8 @@ class PlayerActivity :
       selectedEngine == PlaybackEngineMode.NATIVE &&
         // Native is video-only by policy. Do not let a URL with missing MIME/extension metadata
         // enter Media3: those ambiguous items are commonly music streams and must stay on MPV.
-        nativeItem.declaredMediaKind() == DeclaredPlaybackMediaKind.VIDEO &&
+        nativeItem.declaredMediaKind(videoHint = nativeItem.isResolvedYouTubeVideo()) ==
+          DeclaredPlaybackMediaKind.VIDEO &&
         // Media3 cannot open a magnet/torrent source. Leave unresolved torrent items on MPV,
         // which owns torrent resolution and can hand Media3 a real stream later.
         (!item.requiresTorrentResolution() || nativeSourceIsPlayable) &&
@@ -8219,7 +8223,7 @@ class PlayerActivity :
         positionRestoreOverride = positionRestoreOverride,
         initialPositionSeconds = initialPositionSeconds,
         flattenEditions = playbackRequiresYtdlp && !MpvConfigOverridePolicy.isOwnedByMpvConf("flatten-editions"),
-        disableWebExtraction = radioMimeType != null,
+        disableWebExtraction = radioMimeType != null || playbackItem.isResolvedYouTubeVideo(),
         commit = { nativeLoad ->
           PlaybackActivityOwner.runIfOwner(playbackOwnerToken, -1L) {
             if (requestGeneration != mediaRequestGeneration) {

@@ -407,38 +407,68 @@ object YtdlpManager {
       val cookiesFile = AndroidCookieJar.playbackCookieFile(context).takeIf(File::isFile)
       val sourceHost = Uri.parse(source).host?.lowercase().orEmpty()
       val isInstagram = sourceHost == "instagram.com" || sourceHost.endsWith(".instagram.com")
-      val command = buildList {
-        add(getExecutablePath(context))
-        add(ytdlFile.absolutePath)
-        add("--ignore-config")
-        add("--no-playlist")
-        add("--no-warnings")
-        add("--no-progress")
-        add("--get-url")
-        add("--format")
-        add("best[acodec!=none][vcodec!=none]/best")
-        if (isInstagram) {
-          // Instagram frequently rejects the default mobile/blank request headers.
-          add("--user-agent")
-          add(YtdlpOptionsBuilder.DEFAULT_USER_AGENT)
-          add("--referer")
-          add("https://www.instagram.com/")
-        }
-        cookiesFile?.let {
-          add("--cookies")
-          add(it.absolutePath)
-        }
-        add("--")
-        add(source)
-      }
+      val quickJsFile = File(context.applicationInfo.nativeLibraryDir, "libqjs.so").takeIf(File::isFile)
+      val command =
+        buildDirectMediaUrlCommand(
+          executablePath = getExecutablePath(context),
+          ytDlpScriptPath = ytdlFile.absolutePath,
+          source = source,
+          cookiesFile = cookiesFile,
+          quickJsFile = quickJsFile,
+          isInstagram = isInstagram,
+        )
       val completed = executePythonProcess(command, context) { line -> output.appendLine(line) }
-      if (!completed) return@withContext null
-      output.lineSequence()
+      if (!completed) {
+        onLog("yt-dlp direct URL extraction failed; player will fall back to webpage playback")
+        return@withContext null
+      }
+      val directMediaUrl = output.lineSequence()
         .map(String::trim)
         .firstOrNull { it.startsWith("http://") || it.startsWith("https://") }
-        ?.also { onLog("Resolved direct native media URL") }
-        ?: unwrapProviderMediaUrl(source, onLog)
-        ?: resolveKnownPageMediaUrl(source, onLog)
+      if (directMediaUrl != null) {
+        onLog("Resolved direct media URL")
+        return@withContext directMediaUrl
+      }
+      val fallbackUrl = unwrapProviderMediaUrl(source, onLog) ?: resolveKnownPageMediaUrl(source, onLog)
+      if (fallbackUrl == null) onLog("yt-dlp returned no direct URL; player will fall back to webpage playback")
+      fallbackUrl
+    }
+
+  internal fun buildDirectMediaUrlCommand(
+    executablePath: String,
+    ytDlpScriptPath: String,
+    source: String,
+    cookiesFile: File?,
+    quickJsFile: File?,
+    isInstagram: Boolean,
+  ): List<String> =
+    buildList {
+      add(executablePath)
+      add(ytDlpScriptPath)
+      add("--ignore-config")
+      add("--no-playlist")
+      add("--no-warnings")
+      add("--no-progress")
+      add("--get-url")
+      add("--format")
+      add("best[acodec!=none][vcodec!=none]/best")
+      if (isInstagram) {
+        // Instagram frequently rejects the default mobile/blank request headers.
+        add("--user-agent")
+        add(YtdlpOptionsBuilder.DEFAULT_USER_AGENT)
+        add("--referer")
+        add("https://www.instagram.com/")
+      }
+      quickJsFile?.let { quickJs ->
+        add("--js-runtimes")
+        add("quickjs:${quickJs.absolutePath}")
+      }
+      cookiesFile?.let {
+        add("--cookies")
+        add(it.absolutePath)
+      }
+      add("--")
+      add(source)
     }
 
   /** Unwraps common provider proxy forms such as /bulk?u=<direct-file-url>. */
