@@ -1480,6 +1480,19 @@ class MediaPlaybackService :
     }
   }
 
+  private fun notificationLargeIcon(): Bitmap? =
+    if (
+      NotificationBitmapLargeIconPolicy.shouldOmitBitmapLargeIcon(
+        apiLevel = Build.VERSION.SDK_INT,
+        manufacturer = Build.MANUFACTURER,
+        model = Build.MODEL,
+      )
+    ) {
+      null
+    } else {
+      thumbnail
+    }
+
   private fun sanitizedDurationMs(): Long {
     val queue = PlaybackSession.queue.value
     val item = queue.currentItem
@@ -1737,7 +1750,7 @@ class MediaPlaybackService :
         .setContentTitle(mediaTitle.ifBlank { getString(R.string.player_unknown_video) })
         .setContentText(chapterContentText())
         .setSubText(chapterLabel())
-        .setLargeIcon(thumbnail)
+        .setLargeIcon(notificationLargeIcon())
         .setContentIntent(buildContentIntent())
         .setDeleteIntent(buildTransportIntent(ACTION_NOTIFICATION_STOP, 1005))
         .setOngoing(!paused)
@@ -1784,7 +1797,7 @@ class MediaPlaybackService :
       .setContentText(chapterContentText())
       .setSubText(playbackTimeText())
       .setSmallIcon(R.drawable.ic_launcher_monochrome)
-      .setLargeIcon(thumbnail)
+      .setLargeIcon(notificationLargeIcon())
       .setContentIntent(buildContentIntent())
       .setDeleteIntent(buildTransportIntent(ACTION_NOTIFICATION_CLOSE, 1005))
       .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
