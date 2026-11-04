@@ -36,6 +36,13 @@ internal fun shouldClearKeepScreenOnForPause(
   keepScreenOnWhenPaused: Boolean,
 ): Boolean = !keepScreenOnWhenPaused && phase != PlaybackPhase.ERROR
 
+/**
+ * A terminal load failure clears the temporary screen-on flag unless the preference keeps it on.
+ */
+internal fun shouldClearKeepScreenOnAfterLoadFailure(
+  keepScreenOnWhenPaused: Boolean,
+): Boolean = !keepScreenOnWhenPaused
+
 /** Metadata needed to reopen a saved network item without putting credentials in a URI. */
 data class NetworkPlaybackSource(
   val connectionId: Long,

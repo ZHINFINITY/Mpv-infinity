@@ -15,6 +15,12 @@ class PlaybackModelsTest {
   }
 
   @Test
+  fun terminalLoadFailureClearsFlagOnlyWhenPreferenceIsDisabled() {
+    assertTrue(shouldClearKeepScreenOnAfterLoadFailure(keepScreenOnWhenPaused = false))
+    assertFalse(shouldClearKeepScreenOnAfterLoadFailure(keepScreenOnWhenPaused = true))
+  }
+
+  @Test
   fun nativePreferencePassesThroughForExtensionlessStreamVideo() {
     val item =
       PlaybackItem(
