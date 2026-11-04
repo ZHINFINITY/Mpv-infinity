@@ -66,6 +66,16 @@ class Arm64WorkflowTest(unittest.TestCase):
         self.assertLess(TEXT.index('- name: Run complete Kotlin compile and unit tests before APK packaging'), TEXT.index('- name: Assemble arm64-v8a debug APK after Kotlin checks'))
         self.assertNotIn('continue-on-error:', TEXT)
 
+    def test_native_build_scratch_is_reclaimed_before_gradle_packaging(self):
+        name = 'Reclaim native source and APT scratch before Gradle packaging'
+        cleanup = STEPS[name]
+        self.assertIn('rm -rf -- "$GITHUB_WORKSPACE/native-builder" "$GITHUB_WORKSPACE/mpv-source"', cleanup)
+        self.assertIn('sudo apt-get clean', cleanup)
+        self.assertIn('sudo rm -rf /var/lib/apt/lists/*', cleanup)
+        self.assertLess(TEXT.index('- name: Save verified Flow-only MPVFlow arm64 runtime'), TEXT.index('- name: ' + name))
+        self.assertLess(TEXT.index('- name: ' + name), TEXT.index('- name: Run complete Kotlin compile and unit tests before APK packaging'))
+        self.assertLess(TEXT.index('- name: ' + name), TEXT.index('- name: Assemble arm64-v8a debug APK after Kotlin checks'))
+
     def test_packaged_runtime_checks_precede_upload(self):
         upload = TEXT.index('- name: Upload arm64-v8a debug APK')
         for name, command in (
