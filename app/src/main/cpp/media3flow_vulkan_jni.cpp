@@ -535,6 +535,7 @@ bool holdImageForExternal(FlowContext *context, SharedImage *image,
             const EGLint attributes[] = {
                 EGL_SYNC_NATIVE_FENCE_FD_ANDROID, fd, EGL_NONE,
             };
+            // EGL takes ownership of fd as soon as it is passed, even if sync creation fails.
             EGLSyncKHR eglSync = context->createEglSync(
                 context->eglDisplay, EGL_SYNC_NATIVE_FENCE_ANDROID, attributes);
             if (eglSync != EGL_NO_SYNC_KHR) {
@@ -553,8 +554,6 @@ bool holdImageForExternal(FlowContext *context, SharedImage *image,
                     return true;
                 }
                 context->destroyEglSync(context->eglDisplay, eglSync);
-            } else {
-                close(fd);
             }
         } else if (fd >= 0) {
             close(fd);
