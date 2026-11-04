@@ -2,6 +2,7 @@
 """Source wiring guards complement behavioral JVM tests; these are not UI/device tests."""
 from pathlib import Path
 import unittest
+import xml.etree.ElementTree as ET
 
 ROOT = Path(__file__).resolve().parents[2]
 JAVA = ROOT / 'app/src/main/java/app/infinity/mpvz'
@@ -97,6 +98,22 @@ class PlayerRegressionWiringTest(unittest.TestCase):
         self.assertLess(method.index('.acceptsMetadata('), method.index('thumbnail?.let(::replaceOwnedThumbnail)'))
         self.assertLess(method.index('.acceptsMetadata('), method.index('mediaTitle = resolvedTitle'))
         self.assertIn('mediaIdentityTracker.isCurrent(', text)
+
+    def test_player_activity_uses_software_ui_renderer_without_disabling_app_acceleration(self):
+        manifest = ET.parse(ROOT / 'app/src/main/AndroidManifest.xml').getroot()
+        android = '{http://schemas.android.com/apk/res/android}'
+        application = manifest.find('application')
+        self.assertIsNotNone(application)
+        self.assertEqual(application.get(android + 'hardwareAccelerated'), 'true')
+        activities = {
+            activity.get(android + 'name'): activity
+            for activity in application.findall('activity')
+        }
+        self.assertEqual(
+            activities['.ui.player.PlayerActivity'].get(android + 'hardwareAccelerated'),
+            'false',
+        )
+        self.assertNotIn(android + 'hardwareAccelerated', activities['.MainActivity'].attrib)
 
 
 if __name__ == '__main__':

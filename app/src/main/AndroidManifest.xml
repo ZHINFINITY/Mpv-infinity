@@ -94,6 +94,7 @@
 
         <activity
             android:name=".ui.player.PlayerActivity"
+            android:hardwareAccelerated="false"
             android:windowSoftInputMode="adjustResize"
             android:enableOnBackInvokedCallback="false"
             android:autoRemoveFromRecents="true"
