@@ -3,9 +3,23 @@ package app.infinity.mpvz.ui.player
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class PlaybackModelsTest {
+  @Test
+  fun failedLoadPauseKeepsScreenOnButReadyUserPauseStillClearsIt() {
+    assertFalse(shouldClearKeepScreenOnForPause(PlaybackPhase.ERROR, keepScreenOnWhenPaused = false))
+    assertTrue(shouldClearKeepScreenOnForPause(PlaybackPhase.READY, keepScreenOnWhenPaused = false))
+    assertFalse(shouldClearKeepScreenOnForPause(PlaybackPhase.READY, keepScreenOnWhenPaused = true))
+  }
+
+  @Test
+  fun terminalLoadFailureClearsFlagOnlyWhenPreferenceIsDisabled() {
+    assertTrue(shouldClearKeepScreenOnAfterLoadFailure(keepScreenOnWhenPaused = false))
+    assertFalse(shouldClearKeepScreenOnAfterLoadFailure(keepScreenOnWhenPaused = true))
+  }
+
   @Test
   fun nativePreferencePassesThroughForExtensionlessStreamVideo() {
     val item =

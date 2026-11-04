@@ -121,6 +121,7 @@ def verify_mpv(
     require_vulkan: bool,
     forbid_vulkan: bool,
     placebo_path: Path | None = None,
+    require_fork_subprocess: bool = False,
 ) -> None:
     text = run_tool(["strings", "-a", str(path)])
     if re.search(r"--enable-gpl\b", text):
@@ -135,6 +136,11 @@ def verify_mpv(
         raise SystemExit(f"GPL-only Rubber Band feature is enabled in {abi}/libmpv.so")
     if re.search(r"dvdnav", features, re.IGNORECASE):
         raise SystemExit(f"GPL-only DVD navigation feature is enabled in {abi}/libmpv.so")
+    has_clone = bool(re.search(r"(?<![A-Za-z0-9_-])clone(?![A-Za-z0-9_-])", features, re.IGNORECASE))
+    has_rfork = bool(re.search(r"(?<![A-Za-z0-9_-])rfork(?![A-Za-z0-9_-])", features, re.IGNORECASE))
+    if require_fork_subprocess and (has_clone or has_rfork):
+        enabled = ", ".join(name for name, present in (("clone", has_clone), ("rfork", has_rfork)) if present)
+        raise SystemExit(f"Android {abi}/libmpv.so still enables shared-address subprocess feature(s): {enabled}")
     has_vulkan = bool(re.search(r"(?<![A-Za-z0-9_-])vulkan(?![A-Za-z0-9_-])", features, re.IGNORECASE))
     if require_vulkan and not has_vulkan:
         raise SystemExit(f"Standard {abi}/libmpv.so is missing its Vulkan feature")
@@ -174,6 +180,11 @@ def main() -> None:
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument("--require-vulkan", action="store_true")
     mode.add_argument("--forbid-vulkan", action="store_true")
+    parser.add_argument(
+        "--require-fork-subprocess",
+        action="store_true",
+        help="Fail if MPV enables clone or rfork shared-address subprocesses instead of fork/exec.",
+    )
     parser.add_argument(
         "--only-selected-abis",
         action="store_true",
@@ -229,6 +240,7 @@ def main() -> None:
                             args.require_vulkan,
                             args.forbid_vulkan,
                             paths.get("libplacebo.so"),
+                            args.require_fork_subprocess,
                         )
 
     print(f"Verified {args.aar}: FFmpeg is LGPL-only and MPV's GPL, Rubber Band, and DVD navigation features are disabled for {', '.join(abis)}.")
@@ -238,6 +250,8 @@ def main() -> None:
         print("The Standard profile retains MPV's Vulkan feature.")
     if args.forbid_vulkan:
         print("The No-Vulkan profile has MPV's Vulkan feature disabled.")
+    if args.require_fork_subprocess:
+        print("MPV uses the fork/exec subprocess path; shared-address clone/rfork features are disabled.")
 
 
 if __name__ == "__main__":
