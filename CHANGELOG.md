@@ -2,7 +2,7 @@
 
 ## 2.2.5
 
-UI improvements and bug fixes
+Jellyfin, Navidrome, and yt-dlp crash fixes
 
 ## 2.2.3
 
