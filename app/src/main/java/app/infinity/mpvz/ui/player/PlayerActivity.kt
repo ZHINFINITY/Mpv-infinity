@@ -6003,8 +6003,13 @@ class PlayerActivity :
    */
   private fun handlePauseStateChange(isPaused: Boolean) {
     if (isPaused) {
-      // Only clear keep-screen-on if the preference is NOT enabled
-      if (!playerPreferences.keepScreenOnWhenPaused.get()) {
+      // A failed load is paused without a user pause; leave the window unchanged so recovery can show its error.
+      if (
+        shouldClearKeepScreenOnForPause(
+          phase = PlaybackSession.state.value.phase,
+          keepScreenOnWhenPaused = playerPreferences.keepScreenOnWhenPaused.get(),
+        )
+      ) {
         window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
       }
     } else {
