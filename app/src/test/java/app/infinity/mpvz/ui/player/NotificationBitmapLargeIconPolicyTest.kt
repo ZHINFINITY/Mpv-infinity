@@ -58,8 +58,7 @@ class NotificationBitmapLargeIconPolicyTest {
     val guardedArtwork =
       metadataUpdate
         .substringAfter("if (!shouldOmitBitmapArtworkFromSystemSurfaces()) {")
-        .substringBefore("
-      }")
+        .substringBefore("\n      }")
     val largeIconCall = "setLargeIcon(notificationLargeIcon())"
 
     assertTrue(metadataUpdate.contains("if (!shouldOmitBitmapArtworkFromSystemSurfaces()) {"))
