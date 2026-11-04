@@ -30,6 +30,12 @@ enum class PlaybackPhase {
   ERROR,
 }
 
+/** A failed load is reported as paused, but it is not a user pause. */
+internal fun shouldClearKeepScreenOnForPause(
+  phase: PlaybackPhase,
+  keepScreenOnWhenPaused: Boolean,
+): Boolean = !keepScreenOnWhenPaused && phase != PlaybackPhase.ERROR
+
 /** Metadata needed to reopen a saved network item without putting credentials in a URI. */
 data class NetworkPlaybackSource(
   val connectionId: Long,

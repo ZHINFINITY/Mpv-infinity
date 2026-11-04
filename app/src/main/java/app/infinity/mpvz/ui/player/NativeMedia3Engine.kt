@@ -2065,9 +2065,9 @@ class NativeMedia3Engine internal constructor(
     player.removeListener(listener)
     player.removeAnalyticsListener(analyticsListener)
     attachedView?.player = null
+    subtitleOverlay?.setRenderer(null)
     libassRenderer?.close()
     libassRenderer = null
-    subtitleOverlay?.setRenderer(null)
     subtitleOverlay = null
     attachedView = null
     assHandler.release()

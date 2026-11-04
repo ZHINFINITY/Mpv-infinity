@@ -98,6 +98,16 @@ class PlayerRegressionWiringTest(unittest.TestCase):
         self.assertLess(method.index('.acceptsMetadata('), method.index('mediaTitle = resolvedTitle'))
         self.assertIn('mediaIdentityTracker.isCurrent(', text)
 
+    def test_failed_load_pause_skips_window_clear_and_keeps_error_recovery(self):
+        activity = source('ui/player/PlayerActivity.kt')
+        models = source('ui/player/PlaybackModels.kt')
+        handler = activity.split('private fun handlePauseStateChange(', 1)[1].split('\n  /**', 1)[0]
+        self.assertIn('shouldClearKeepScreenOnForPause(', handler)
+        self.assertIn('phase != PlaybackPhase.ERROR', models)
+        failure = activity.split('private fun finishPlaybackLoadFailure(', 1)[1].split('private fun cancelPlaybackLoadRecovery(', 1)[0]
+        self.assertIn('PlaybackSession.reportLoadTimeout', failure)
+        self.assertIn('viewModel.showToast(getString(R.string.toast_playback_load_failed))', failure)
+
 
 if __name__ == '__main__':
     unittest.main()

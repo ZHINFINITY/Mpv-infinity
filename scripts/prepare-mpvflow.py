@@ -32,6 +32,8 @@ ANDROID_VULKAN_DEPENDENCY = "vulkan = dependency('vulkan', required: vulkan_opt)
 PLACEBO_SPIRV_LIBRARY_LOOKUP = "spirv = cxx.find_library('SPIRV', required: required, static: static, dirs: vulkan_lib_dirs)"
 PLACEBO_GLSLANG_LIBRARY_LOOKUP = "cxx.find_library('glslang', required: required, static: static)"
 ANDROID_PLACEBO_GLSLANG_LIBRARY_LOOKUP = "cxx.find_library('glslang', required: required, static: static, dirs: vulkan_lib_dirs)"
+MPV_CLONE_FEATURE = "features += {'clone': cc.has_header_symbol('sched.h', 'clone', args: '-D_GNU_SOURCE')}"
+MPV_ANDROID_CLONE_FEATURE = "features += {'clone': host_machine.system() != 'android' and cc.has_header_symbol('sched.h', 'clone', args: '-D_GNU_SOURCE')}"
 NV_OPTICAL_FORMAT_MARKER = "/* MPVFLOW_NV_OPTICAL_FLOW_SFIXED5_FORMAT */"
 VULKAN_OPT_EXTENSION_LIST = "    const char *opt_extensions[] = {\n"
 ANDROID_AHB_EXTENSIONS = (
@@ -172,6 +174,19 @@ def enable_android_vulkan_dependency(meson: str) -> str:
     if old_count == 0 and new_count == 1:
         return meson
     raise SystemExit("Pinned MPV Vulkan dependency check changed; refusing an unverified Android Vulkan build")
+
+
+def prefer_fork_for_android_mpv_subprocesses(meson: str) -> str:
+    """Use MPV's existing fork/exec path instead of raw CLONE_VM on Android."""
+    old_count = meson.count(MPV_CLONE_FEATURE)
+    new_count = meson.count(MPV_ANDROID_CLONE_FEATURE)
+    if old_count == 1 and new_count == 0:
+        return meson.replace(MPV_CLONE_FEATURE, MPV_ANDROID_CLONE_FEATURE, 1)
+    if old_count == 0 and new_count == 1:
+        return meson
+    raise SystemExit(
+        "Pinned MPV clone feature detection changed; refusing an unverified Android subprocess configuration"
+    )
 
 
 def enable_android_glslang_library_search(meson: str) -> str:
@@ -1047,7 +1062,9 @@ def main() -> None:
             "Pinned MPV video.c is missing the non-fatal AImageReader retry guard "
             "before the generic hardware-map fatal path"
         )
-    meson = enable_android_vulkan_dependency(meson_path.read_text())
+    meson = prefer_fork_for_android_mpv_subprocesses(
+        enable_android_vulkan_dependency(meson_path.read_text())
+    )
     if mapper_marker not in hwdec_header_path.read_text() or "# MPVFLOW_AIMAGE_VULKAN_MAPPER" not in meson:
         raise SystemExit("Android MediaCodec/Vulkan mapper patch was not fully applied")
 
@@ -1070,9 +1087,9 @@ def main() -> None:
             f"{meson_marker}\n"
         )
         meson = meson[: close + 1] + block + meson[close + 1 :]
-        meson_path.write_text(meson)
     elif any(source not in meson for source in (gpu_source, capture_io_source, *opencl_sources)):
         raise SystemExit("GPU Flow Meson marker exists without every required Flow/capture/OpenCL/optical source")
+    meson_path.write_text(meson)
 
     vulkan_context_path.write_text(vulkan_context)
     glslang_meson_path.write_text(glslang_meson)
@@ -1093,6 +1110,7 @@ def main() -> None:
         f"the optional NV optical-flow vector format is registered with an extension-aware sampleability check; "
         f"the legacy CPU filter is not compiled or registered by this build."
     )
+    print("Android MPV subprocesses use the existing fork/exec fallback instead of raw CLONE_VM.")
 
 
 if __name__ == "__main__":

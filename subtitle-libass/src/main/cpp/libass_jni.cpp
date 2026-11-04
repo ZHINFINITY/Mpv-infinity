@@ -540,12 +540,17 @@ extern "C" JNIEXPORT void JNICALL
 Java_androidx_media3_subtitle_libass_LibassNative_nativeRelease(JNIEnv*, jclass, jlong handle) {
   auto* state = fromHandle(handle);
   if (!state) return;
-  std::lock_guard lock(state->mutex);
+  {
+    std::lock_guard lock(state->mutex);
 #if MEDIA3_LIBASS_HAS_NATIVE
-  for (auto& track : state->tracks) if (track.ass) ass_free_track(track.ass);
-  if (state->renderer) ass_renderer_done(state->renderer);
-  if (state->library) ass_library_done(state->library);
+    for (auto& track : state->tracks) if (track.ass) ass_free_track(track.ass);
+    if (state->renderer) ass_renderer_done(state->renderer);
+    if (state->library) ass_library_done(state->library);
 #endif
-  if (state->window) ANativeWindow_release(state->window);
+    if (state->window) {
+      ANativeWindow_release(state->window);
+      state->window = nullptr;
+    }
+  }
   delete state;
 }
