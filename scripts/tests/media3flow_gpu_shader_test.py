@@ -166,7 +166,8 @@ assert ".blit_src = blit_src" in GPU and ".blit_dst = blit_dst" in GPU and (
 ), (
     "full-resolution output must enable Vulkan transfer usage for OpenCL interop while retaining blit capabilities"
 )
-assert "nativeCreateContext(maxDimension, requestedComputeApi.nativeValue, searchRadius)" in SINK
+assert "Media3FlowVulkanNative.nativeCreateContext(" in SINK
+assert "nativeSyncFdInteropAllowed" in SINK
 assert "config.max_dimension = std::max(160, std::min(640, static_cast<int>(requestedMaxDimension)))" in JNI
 assert "requestedSearchRadius" in JNI and "config.search_radius = std::max(1, std::min(8" in JNI
 assert "EXTRA_ANALYSIS_PIXELS = 96" in MEDIA3_ANALYSIS_POLICY and "coerceAtMost(640)" in MEDIA3_ANALYSIS_POLICY, (
