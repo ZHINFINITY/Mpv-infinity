@@ -251,7 +251,7 @@ bool hasEglExtension(const char *extensions, const char *name) {
     return false;
 }
 
-void initializeExternalSync(FlowContext *context) {
+void initializeExternalSync(FlowContext *context, bool syncFdInteropPolicyAllowed) {
     if (!context || !context->vulkan)
         return;
     context->eglDisplay = eglGetCurrentDisplay();
@@ -305,18 +305,19 @@ void initializeExternalSync(FlowContext *context) {
         context->clientWaitEglSync && context->waitEglSync && context->dupNativeFenceFd;
     const bool oneQueue = context->vulkan->queue_graphics.index ==
                           context->vulkan->queue_compute.index;
-    context->syncFdInteropReady = context->eglDisplay != EGL_NO_DISPLAY &&
+    context->syncFdInteropReady = syncFdInteropPolicyAllowed &&
+        context->eglDisplay != EGL_NO_DISPLAY &&
         hasNativeFence && hasServerWait && eglFunctionsReady && vkSyncFdEnabled &&
         vkSyncFdSupported && context->importSemaphoreFd && context->getSemaphoreFd && oneQueue;
     logFlow(ANDROID_LOG_INFO,
             "MPVFLOW_DIAGNOSTIC component=native-media3 event=sync_capability state=%s "
             "mode=%s egl_native_fence=%d egl_server_wait=%d egl_functions=%d "
-            "vk_sync_fd_enabled=%d vk_import_export=%d graphics_queue_family=%u "
+            "vk_sync_fd_enabled=%d vk_import_export=%d sync_fd_policy_allowed=%d graphics_queue_family=%u "
             "compute_queue_family=%u same_queue=%d",
             context->syncFdInteropReady ? "ready" : "fallback",
             context->syncFdInteropReady ? "sync_fd_gpu_handoff" : "glFinish_pl_gpu_finish",
             hasNativeFence, hasServerWait, eglFunctionsReady, vkSyncFdEnabled,
-            vkSyncFdSupported, context->vulkan->queue_graphics.index,
+            vkSyncFdSupported, syncFdInteropPolicyAllowed, context->vulkan->queue_graphics.index,
             context->vulkan->queue_compute.index, oneQueue);
 }
 
@@ -1014,7 +1015,8 @@ SharedImage *createSharedImage(FlowContext *context, JNIEnv *env, jobject javaBu
 
 extern "C" JNIEXPORT jlong JNICALL
 Java_app_infinity_mpvz_ui_player_Media3FlowVulkanNative_nativeCreateContext(
-    JNIEnv *, jobject, jint requestedMaxDimension, jint requestedComputeApi, jint requestedSearchRadius) {
+    JNIEnv *, jobject, jint requestedMaxDimension, jint requestedComputeApi,
+    jint requestedSearchRadius, jboolean allowNativeSyncFdInterop) {
     if (requestedComputeApi < MPVFLOW_GPU_COMPUTE_AUTO ||
         requestedComputeApi > MPVFLOW_GPU_COMPUTE_VULKAN) {
         logFlow(ANDROID_LOG_ERROR,
@@ -1119,7 +1121,7 @@ Java_app_infinity_mpvz_ui_player_Media3FlowVulkanNative_nativeCreateContext(
     context->placeboLog = placeboLog;
     context->vulkan = vulkan;
     logQueueFamilyCapability(vulkan);
-    initializeExternalSync(context);
+    initializeExternalSync(context, allowNativeSyncFdInterop == JNI_TRUE);
     context->getBufferProperties = reinterpret_cast<PFN_vkGetAndroidHardwareBufferPropertiesANDROID>(
         vkGetDeviceProcAddr(vulkan->device, "vkGetAndroidHardwareBufferPropertiesANDROID"));
     if (!context->getBufferProperties) {

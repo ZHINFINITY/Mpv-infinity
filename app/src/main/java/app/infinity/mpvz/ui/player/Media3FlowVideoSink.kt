@@ -134,6 +134,11 @@ class Media3FlowVideoSink(
   private val onDiagnostics: (Media3FlowDiagnostics) -> Unit,
 ) : VideoSink {
   private val appContext = context.applicationContext
+  private val nativeSyncFdInteropAllowed = Media3FlowSyncFdInteropPolicy.allowNativeSyncFdInterop(
+    apiLevel = Build.VERSION.SDK_INT,
+    manufacturer = Build.MANUFACTURER,
+    model = Build.MODEL,
+  )
   private val isDebuggable =
     (appContext.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE) != 0
   private val logTag = "Mpv∞-Media3Flow"
@@ -384,8 +389,12 @@ class Media3FlowVideoSink(
           !ensureEgl() -> "egl_capture_setup_failed"
           !deviceSupportsVulkanFlow(appContext) -> "vulkan_compute_unavailable"
           else -> {
-            flowVulkanContext =
-              Media3FlowVulkanNative.nativeCreateContext(maxDimension, requestedComputeApi.nativeValue, searchRadius)
+            flowVulkanContext = Media3FlowVulkanNative.nativeCreateContext(
+              maxDimension,
+              requestedComputeApi.nativeValue,
+              searchRadius,
+              nativeSyncFdInteropAllowed,
+            )
             if (flowVulkanContext == 0L) {
               "vulkan_context_or_compute_setup_failed"
             } else {
@@ -2963,7 +2972,12 @@ class Media3FlowVideoSink(
     gridHeight = motionGridSize.height
     if (flowVulkanContext == 0L && deviceSupportsVulkanFlow(appContext)) {
       flowVulkanContext = runCatching {
-        Media3FlowVulkanNative.nativeCreateContext(maxDimension, requestedComputeApi.nativeValue, searchRadius)
+        Media3FlowVulkanNative.nativeCreateContext(
+          maxDimension,
+          requestedComputeApi.nativeValue,
+          searchRadius,
+          nativeSyncFdInteropAllowed,
+        )
       }.getOrDefault(0L)
     }
     var allSharedImagesReady = flowVulkanContext != 0L
