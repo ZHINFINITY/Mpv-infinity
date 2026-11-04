@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.2.5
+
+Jellyfin, Navidrome, and yt-dlp crash fixes
+
 ## 2.2.3
 
 - Small bug fixes.
