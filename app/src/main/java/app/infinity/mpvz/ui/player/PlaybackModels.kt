@@ -163,9 +163,30 @@ internal fun PlaybackItem.declaredMediaKind(videoHint: Boolean = false): Declare
 internal fun PlaybackItem.isDefinitelyAudioOnly(): Boolean =
   declaredMediaKind() == DeclaredPlaybackMediaKind.AUDIO
 
+internal fun PlaybackItem.isResolvedYouTubeVideo(): Boolean {
+  if (playableUri == originalUri) return false
+  val sourceUri = runCatching { URI(originalUri) }.getOrNull() ?: return false
+  val playable = runCatching { URI(playableUri) }.getOrNull() ?: return false
+  val sourceHost = sourceUri.host?.lowercase(Locale.ROOT) ?: return false
+  val sourcePath = sourceUri.path.orEmpty()
+  val isYouTubeVideoPage =
+    when {
+      sourceHost == "youtu.be" || sourceHost == "www.youtu.be" ->
+        sourcePath.trim('/').isNotEmpty()
+      sourceHost == "youtube.com" || sourceHost.endsWith(".youtube.com") ->
+        (sourcePath == "/watch" && sourceUri.rawQuery.orEmpty().split('&').any { parameter ->
+          parameter.substringBefore('=') == "v" && parameter.substringAfter('=', "").isNotBlank()
+        }) || listOf("/shorts/", "/live/", "/embed/", "/v/").any(sourcePath::startsWith)
+      else -> false
+    }
+  val playableHost = playable.host?.lowercase(Locale.ROOT) ?: return false
+  val isGoogleVideoStream = playableHost == "googlevideo.com" || playableHost.endsWith(".googlevideo.com")
+  return isYouTubeVideoPage && isGoogleVideoStream
+}
+
 /**
- * Auto engine uses Native for HDR-family video because Media3 preserves HDR/Dolby Vision output;
- * ordinary video continues to use MPV. The queued item carries the server/file metadata and title
+  * Auto engine uses Native for HDR-family video because Media3 preserves HDR/Dolby Vision output;
+  * ordinary video continues to use MPV. The queued item carries the server/file metadata and title
  * labels available before the decoder is started.
  */
 internal fun PlaybackItem.isHdrOrDolbyVision(): Boolean {
@@ -189,6 +210,7 @@ private fun String.mediaUriLeaf(): String =
 /** Native cannot open a webpage URL as media; keep it on MPV until yt-dlp resolves a stream. */
 internal fun PlaybackItem.requiresWebPageResolutionBeforeNative(): Boolean {
   if (requiresTorrentResolution()) return true
+  if (isResolvedYouTubeVideo()) return false
   val url = playableUri.trim()
   if (!url.startsWith("http://", ignoreCase = true) && !url.startsWith("https://", ignoreCase = true)) {
     return false

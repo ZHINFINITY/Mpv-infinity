@@ -8150,7 +8150,8 @@ class PlayerActivity :
       selectedEngine == PlaybackEngineMode.NATIVE &&
         // Native is video-only by policy. Do not let a URL with missing MIME/extension metadata
         // enter Media3: those ambiguous items are commonly music streams and must stay on MPV.
-        nativeItem.declaredMediaKind() == DeclaredPlaybackMediaKind.VIDEO &&
+        nativeItem.declaredMediaKind(videoHint = nativeItem.isResolvedYouTubeVideo()) ==
+          DeclaredPlaybackMediaKind.VIDEO &&
         // Media3 cannot open a magnet/torrent source. Leave unresolved torrent items on MPV,
         // which owns torrent resolution and can hand Media3 a real stream later.
         (!item.requiresTorrentResolution() || nativeSourceIsPlayable) &&
