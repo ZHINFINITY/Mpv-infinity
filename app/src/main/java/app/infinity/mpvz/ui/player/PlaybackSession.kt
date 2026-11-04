@@ -798,7 +798,11 @@ object PlaybackSession : MPVLib.EventObserver {
     positionRestoreOverride: PlaybackPositionRestoreOverride? = null,
     initialPositionSeconds: Double? = null,
     flattenEditions: Boolean = false,
-    disableWebExtraction: Boolean = app.infinity.mpvz.utils.media.RadioStreamProbe.cachedAudioMimeType(item.playableUri, item.headers) != null,
+    disableWebExtraction: Boolean =
+      MpvYtdlpPolicy.shouldDisableHook(
+        isDefinitelyAudioOnly = item.isDefinitelyAudioOnly(),
+        detectedAudioMimeType = app.infinity.mpvz.utils.media.RadioStreamProbe.cachedAudioMimeType(item.playableUri, item.headers),
+      ),
     commit: ((() -> Long) -> Long)? = null,
     verifyNativePathAfterRestart: Boolean = false,
     onGenerationReserved: ((Long) -> Unit)? = null,

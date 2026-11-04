@@ -15,6 +15,8 @@ import app.infinity.mpvz.network.AndroidCookieJar
 import app.infinity.mpvz.preferences.SubtitlesPreferences
 import app.infinity.mpvz.preferences.YtdlPreferences
 import app.infinity.mpvz.ui.player.PlaybackSession
+import app.infinity.mpvz.ui.player.JELLYFIN_STREAM_YTDL_HOOK_EXCLUDE
+import app.infinity.mpvz.ui.player.isJellyfinDirectVideoStreamUrl
 import app.infinity.mpvz.utils.media.HttpUtils
 import app.infinity.mpvz.utils.media.MediaUtils
 import kotlinx.coroutines.CancellationException
@@ -101,7 +103,7 @@ object YtdlpManager {
   // must never be routed through yt-dlp, extension or not.
   private val DIRECT_MEDIA_EXCLUDE =
     (
-      listOf("^127%.0%.0%.1:", "^localhost:") +
+      listOf("^127%.0%.0%.1:", "^localhost:", JELLYFIN_STREAM_YTDL_HOOK_EXCLUDE) +
         HttpUtils.directMediaExtensions
           .flatMap { extension ->
             listOf(
@@ -138,13 +140,8 @@ object YtdlpManager {
       uri.path.equals("/video-proxy", ignoreCase = true)
     ) return false
 
-    // Jellyfin's authenticated stream endpoint is an HTTP URL without a file extension. It is
-    // already a direct media stream and must not be sent through yt-dlp, otherwise Native playback
-    // is rejected and the load falls back to MPV.
-    val isJellyfinStream =
-      uri.pathSegments.any { it.equals("Videos", ignoreCase = true) } &&
-        uri.queryParameterNames.any { it.equals("api_key", ignoreCase = true) || it.equals("apikey", ignoreCase = true) }
-    if (isJellyfinStream) return false
+    // Jellyfin's extensionless video endpoint is a direct stream, not a webpage to extract.
+    if (isJellyfinDirectVideoStreamUrl(source)) return false
 
     return !HttpUtils.isDirectMediaUrl(uri)
   }

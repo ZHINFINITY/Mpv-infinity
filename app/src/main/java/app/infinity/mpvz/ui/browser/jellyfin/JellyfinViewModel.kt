@@ -35,6 +35,7 @@ import app.infinity.mpvz.preferences.AudioPreferences
 import app.infinity.mpvz.preferences.SubtitlesPreferences
 import app.infinity.mpvz.repository.JellyfinRepository
 import app.infinity.mpvz.ui.player.PlaybackIdentity
+import app.infinity.mpvz.ui.player.isHdrOrDolbyVisionMetadata
 import app.infinity.mpvz.utils.media.MediaUtils
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -1501,6 +1502,7 @@ class JellyfinViewModel(
       posterUrl = posterUrl,
       backdropUrl = backdropUrl,
       isAudio = item.isAudio,
+      hdrMetadata = isHdrOrDolbyVisionMetadata(item.videoHdrType),
     )
     return true
   }
@@ -1919,6 +1921,7 @@ class JellyfinViewModel(
           playlistArtists = playlistArtists,
           playlistArtworkUrls = playlistArtworkUrls,
           isAudio = isAudio,
+          hdrMetadata = isHdrOrDolbyVisionMetadata(freshItem.videoHdrType, targetItem.videoHdrType),
         )
       }
     }
@@ -2023,6 +2026,7 @@ class JellyfinViewModel(
           playlistArtists = if (isAudio) playable.map { it.seriesName.orEmpty() } else emptyList(),
           playlistArtworkUrls = playlistArtworks,
           isAudio = isAudio,
+          hdrMetadata = isHdrOrDolbyVisionMetadata(freshItem.videoHdrType, firstItem.videoHdrType),
         )
       }
     }

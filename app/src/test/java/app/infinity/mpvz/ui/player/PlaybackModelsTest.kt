@@ -3,6 +3,7 @@ package app.infinity.mpvz.ui.player
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class PlaybackModelsTest {
@@ -105,6 +106,39 @@ class PlaybackModelsTest {
   fun blankMimeTypesAreIgnored() {
     assertEquals("video/mp4", resolvePlaybackMimeType("  ", "video/mp4"))
     assertNull(resolvePlaybackMimeType(null, " "))
+  }
+
+  @Test
+  fun extensionlessJellyfinVideoStreamCanUseNativeAndAutoDetectsHdr() {
+    val uri = "https://media.example/Videos/item-1/stream?static=true&api_key=test-only"
+    val item =
+      PlaybackItem(
+        stableId = "jellyfin-item-1",
+        originalUri = uri,
+        title = "Episode 1",
+        hdrMetadata = true,
+      )
+
+    assertTrue(isJellyfinDirectVideoStreamUrl(uri))
+    assertEquals(DeclaredPlaybackMediaKind.VIDEO, item.declaredMediaKind())
+    assertFalse(item.requiresWebPageResolutionBeforeNative())
+    assertEquals(PlaybackEngineMode.NATIVE, resolvePlaybackEngineMode(PlaybackEngineMode.NATIVE, item))
+    assertEquals(PlaybackEngineMode.NATIVE, resolvePlaybackEngineMode(PlaybackEngineMode.AUTO, item))
+    assertFalse(isJellyfinDirectVideoStreamUrl("https://media.example/Audio/item-1/stream"))
+  }
+
+  @Test
+  fun jellyfinVideoWildcardDoesNotForceAnExtensionlessDirectStreamToMpv() {
+    val item =
+      PlaybackItem(
+        stableId = "jellyfin-item-2",
+        originalUri = "https://media.example/Videos/item-2/stream?static=true",
+        title = "Episode 2",
+        mimeType = "video/*",
+      )
+
+    assertFalse(item.requiresWebPageResolutionBeforeNative())
+    assertEquals(PlaybackEngineMode.NATIVE, resolvePlaybackEngineMode(PlaybackEngineMode.NATIVE, item))
   }
 
   @Test

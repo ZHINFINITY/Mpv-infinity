@@ -87,6 +87,18 @@ class PreparedQueueAutoEngineContractTest {
     assertTrue(load.contains("!playbackItem.requiresWebPageResolutionBeforeNative()"))
   }
 
+  @Test
+  fun jellyfinVideoLaunchCarriesHdrAndSkipsYtdlpForDirectStream() {
+    val jellyfin = jellyfinViewModelSource()
+    val mediaUtils = mediaUtilsSource()
+    val ytdlpManager = ytdlpManagerSource()
+
+    assertTrue(jellyfin.contains("hdrMetadata = isHdrOrDolbyVisionMetadata(freshItem.videoHdrType, targetItem.videoHdrType)"))
+    assertTrue(mediaUtils.contains("hdrMetadata = if (index == selectedIndex) hdrMetadata else null"))
+    assertTrue(ytdlpManager.contains("JELLYFIN_STREAM_YTDL_HOOK_EXCLUDE"))
+    assertTrue(ytdlpManager.contains("isJellyfinDirectVideoStreamUrl(source)"))
+  }
+
   private fun playerActivitySource(): String =
     sequenceOf(
       File("src/main/java/app/infinity/mpvz/ui/player/PlayerActivity.kt"),
@@ -97,5 +109,17 @@ class PreparedQueueAutoEngineContractTest {
     sequenceOf(
       File("src/main/java/app/infinity/mpvz/utils/media/MediaUtils.kt"),
       File("app/src/main/java/app/infinity/mpvz/utils/media/MediaUtils.kt"),
+    ).first(File::exists).readText()
+
+  private fun jellyfinViewModelSource(): String =
+    sequenceOf(
+      File("src/main/java/app/infinity/mpvz/ui/browser/jellyfin/JellyfinViewModel.kt"),
+      File("app/src/main/java/app/infinity/mpvz/ui/browser/jellyfin/JellyfinViewModel.kt"),
+    ).first(File::exists).readText()
+
+  private fun ytdlpManagerSource(): String =
+    sequenceOf(
+      File("src/main/java/app/infinity/mpvz/ui/player/ytdlp/YtdlpManager.kt"),
+      File("app/src/main/java/app/infinity/mpvz/ui/player/ytdlp/YtdlpManager.kt"),
     ).first(File::exists).readText()
 }

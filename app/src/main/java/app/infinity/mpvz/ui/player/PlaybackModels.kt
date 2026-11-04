@@ -138,9 +138,29 @@ internal enum class DeclaredPlaybackMediaKind {
   UNKNOWN,
 }
 
+/** Jellyfin serves direct media from extensionless /Videos/{id}/stream endpoints. */
+internal fun isJellyfinDirectVideoStreamUrl(source: String): Boolean {
+  val uri = runCatching { URI(source.trim()) }.getOrNull() ?: return false
+  if (!uri.scheme.equals("http", ignoreCase = true) && !uri.scheme.equals("https", ignoreCase = true)) {
+    return false
+  }
+  val segments = uri.path.orEmpty().split('/').filter(String::isNotBlank)
+  val videosIndex = segments.indexOfLast { it.equals("Videos", ignoreCase = true) }
+  return videosIndex >= 0 &&
+    segments.size > videosIndex + 2 &&
+    segments.last().equals("stream", ignoreCase = true)
+}
+
+/** Lua-pattern exclusion used by mpv's yt-dlp hook for extensionless Jellyfin video URLs. */
+internal const val JELLYFIN_STREAM_YTDL_HOOK_EXCLUDE =
+  "/[Vv][Ii][Dd][Ee][Oo][Ss]/[^?#]+/[Ss][Tt][Rr][Ee][Aa][Mm]"
+
 internal fun PlaybackItem.declaredMediaKind(videoHint: Boolean = false): DeclaredPlaybackMediaKind {
   if (mimeType?.startsWith("audio/", ignoreCase = true) == true) return DeclaredPlaybackMediaKind.AUDIO
   if (mimeType?.startsWith("video/", ignoreCase = true) == true) return DeclaredPlaybackMediaKind.VIDEO
+  if (sequenceOf(originalUri, playableUri).any(::isJellyfinDirectVideoStreamUrl)) {
+    return DeclaredPlaybackMediaKind.VIDEO
+  }
 
   val extensions =
     sequenceOf(originalUri, playableUri, title)
@@ -189,6 +209,7 @@ private fun String.mediaUriLeaf(): String =
 /** Native cannot open a webpage URL as media; keep it on MPV until yt-dlp resolves a stream. */
 internal fun PlaybackItem.requiresWebPageResolutionBeforeNative(): Boolean {
   if (requiresTorrentResolution()) return true
+  if (isJellyfinDirectVideoStreamUrl(originalUri) || isJellyfinDirectVideoStreamUrl(playableUri)) return false
   val url = playableUri.trim()
   if (!url.startsWith("http://", ignoreCase = true) && !url.startsWith("https://", ignoreCase = true)) {
     return false

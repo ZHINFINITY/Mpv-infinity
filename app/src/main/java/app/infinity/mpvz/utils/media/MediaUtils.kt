@@ -155,6 +155,7 @@ object MediaUtils {
     playlistArtworkUrls: List<String> = emptyList(),
     isAudio: Boolean = false,
     playlistDurationsSeconds: List<Int> = emptyList(),
+    hdrMetadata: Boolean? = null,
   ) {
     val uri =
       when (source) {
@@ -316,6 +317,7 @@ object MediaUtils {
       playlistArtworkUrls = playlistArtworkUrls,
       isAudio = isAudio,
       playlistDurationsSeconds = playlistDurationsSeconds,
+      hdrMetadata = hdrMetadata,
     )
     context.startActivity(intent)
   }
@@ -378,10 +380,14 @@ object MediaUtils {
     playlistArtworkUrls: List<String> = emptyList(),
     isAudio: Boolean = false,
     playlistDurationsSeconds: List<Int> = emptyList(),
+    hdrMetadata: Boolean? = null,
   ) {
     if (isAudio) {
       intent.putExtra("is_audio", true)
       intent.putExtra("media_library_audio", true)
+    }
+    if (playlist.isEmpty()) {
+      hdrMetadata?.let { intent.putExtra("is_hdr", it) }
     }
     if (playlist.isNotEmpty()) {
       val selectedIndex = playlistIndex.coerceIn(playlist.indices)
@@ -392,6 +398,7 @@ object MediaUtils {
             title = playlistTitles.getOrNull(index),
             artist = playlistArtists.getOrNull(index),
             mimeType = if (isAudio) "audio/*" else "video/*",
+            hdrMetadata = if (index == selectedIndex) hdrMetadata else null,
             headers = headers.orEmpty(),
             artworkUri =
               playlistArtworkUrls.getOrNull(index)?.takeIf(String::isNotBlank)
