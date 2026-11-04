@@ -51,10 +51,8 @@ class NotificationBitmapLargeIconPolicyTest {
         .first { File(it, "app/src/main/java/app/infinity/mpvz").isDirectory }
     val service =
       File(root, "app/src/main/java/app/infinity/mpvz/ui/player/MediaPlaybackService.kt").readText()
-    val largeIconCallCount =
-      Regex("setLargeIcon\(notificationLargeIcon\(\)\)")
-        .findAll(service)
-        .count()
+    val largeIconCall = "setLargeIcon(notificationLargeIcon())"
+    val largeIconCallCount = service.split(largeIconCall).size - 1
 
     assertEquals(2, largeIconCallCount)
     assertTrue(service.contains("NotificationBitmapLargeIconPolicy.shouldOmitBitmapLargeIcon("))
