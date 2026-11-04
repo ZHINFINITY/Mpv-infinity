@@ -172,7 +172,7 @@ public final class LibassSubtitleRenderer implements AutoCloseable {
     LibassNative.nativeSetSurface(nativeHandle, surface);
   }
 
-  public boolean renderSurface(long positionUs) {
+  public synchronized boolean renderSurface(long positionUs) {
     long handle = nativeHandle;
     if (handle == 0) return false;
     return LibassNative.nativeRenderSurface(handle, positionUs);
