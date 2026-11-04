@@ -8105,7 +8105,12 @@ class PlayerActivity :
       }
     ensureCurrentMediaRequest(requestGeneration)
     val initialPositionSeconds = candidateInitialPositionSeconds.takeIf { radioMimeType == null }
-    val requiresYtdlp = looksLikeWebSource && radioMimeType == null
+    val requiresYtdlp =
+      MpvYtdlpPolicy.requiresPageResolution(
+        looksLikeWebSource = looksLikeWebSource,
+        isDefinitelyAudioOnly = item.isDefinitelyAudioOnly(),
+        detectedAudioMimeType = radioMimeType,
+      )
     val ytdlpReady =
       !requiresYtdlp || YtdlpManager.prepareForPlayback(this, item.playableUri) { line ->
         line.trim().takeIf { it.isNotEmpty() }?.let { message -> Log.d(TAG, message) }
@@ -8121,7 +8126,12 @@ class PlayerActivity :
         null
       }
     val playbackItem = preparePlaybackItemForLoad(item, resolvedPageMediaUrl, radioMimeType)
-    val playbackRequiresYtdlp = radioMimeType == null && YtdlpManager.requiresYtdlp(playbackItem.playableUri)
+    val playbackRequiresYtdlp =
+      MpvYtdlpPolicy.requiresPageResolution(
+        looksLikeWebSource = YtdlpManager.requiresYtdlp(playbackItem.playableUri),
+        isDefinitelyAudioOnly = playbackItem.isDefinitelyAudioOnly(),
+        detectedAudioMimeType = radioMimeType,
+      )
     // Native Media3 is used for HDR-family video, while MPV remains the normal video/audio
     // pipeline. Auto keeps ordinary videos on MPV and routes HDR, HLG, and Dolby Vision to Native.
     val configuredEngine =
@@ -8219,7 +8229,11 @@ class PlayerActivity :
         positionRestoreOverride = positionRestoreOverride,
         initialPositionSeconds = initialPositionSeconds,
         flattenEditions = playbackRequiresYtdlp && !MpvConfigOverridePolicy.isOwnedByMpvConf("flatten-editions"),
-        disableWebExtraction = radioMimeType != null,
+        disableWebExtraction =
+          MpvYtdlpPolicy.shouldDisableHook(
+            isDefinitelyAudioOnly = playbackItem.isDefinitelyAudioOnly(),
+            detectedAudioMimeType = radioMimeType,
+          ),
         commit = { nativeLoad ->
           PlaybackActivityOwner.runIfOwner(playbackOwnerToken, -1L) {
             if (requestGeneration != mediaRequestGeneration) {
