@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.2.5
+
+UI improvements and bug fixes
+
 ## 2.2.3
 
 - Small bug fixes.
