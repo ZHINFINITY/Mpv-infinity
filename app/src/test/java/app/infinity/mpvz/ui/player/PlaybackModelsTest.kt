@@ -3,6 +3,7 @@ package app.infinity.mpvz.ui.player
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class PlaybackModelsTest {
@@ -80,6 +81,32 @@ class PlaybackModelsTest {
     assertEquals(PlaybackEngineMode.MPV, resolvePlaybackEngineMode(PlaybackEngineMode.AUTO, page))
     assertEquals(PlaybackEngineMode.MPV, resolvePlaybackEngineMode(PlaybackEngineMode.NATIVE, page))
     assertEquals(PlaybackEngineMode.NATIVE, resolvePlaybackEngineMode(PlaybackEngineMode.AUTO, resolved))
+  }
+
+  @Test
+  fun youtubePageSourcesKeepMpvYtdlpHookEvenWhenPlayableUriIsResolved() {
+    val youtubePage =
+      PlaybackItem(
+        stableId = "youtube-watch",
+        originalUri = "https://www.youtube.com/watch?v=abc123",
+      )
+    val shortLink =
+      PlaybackItem(
+        stableId = "youtube-short",
+        originalUri = "https://youtu.be/abc123",
+      )
+    val resolvedYoutube =
+      youtubePage.copy(playableUri = "https://r1.googlevideo.com/videoplayback?id=abc123")
+    val directCdn =
+      PlaybackItem(
+        stableId = "direct-cdn",
+        originalUri = "https://media.example/video.mp4",
+      )
+
+    assertTrue(youtubePage.shouldUseMpvYtdlpForYouTube())
+    assertTrue(shortLink.shouldUseMpvYtdlpForYouTube())
+    assertTrue(resolvedYoutube.shouldUseMpvYtdlpForYouTube())
+    assertFalse(directCdn.shouldUseMpvYtdlpForYouTube())
   }
 
   @Test

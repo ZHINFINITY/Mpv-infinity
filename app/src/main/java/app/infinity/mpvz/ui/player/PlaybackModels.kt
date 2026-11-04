@@ -163,6 +163,16 @@ internal fun PlaybackItem.declaredMediaKind(videoHint: Boolean = false): Declare
 internal fun PlaybackItem.isDefinitelyAudioOnly(): Boolean =
   declaredMediaKind() == DeclaredPlaybackMediaKind.AUDIO
 
+/** Keep YouTube page URLs on MPV's yt-dlp hook instead of switching to a direct googlevideo URL. */
+internal fun PlaybackItem.shouldUseMpvYtdlpForYouTube(): Boolean =
+  sequenceOf(originalUri, playableUri).any { source ->
+    val host = runCatching { URI(source).host?.lowercase(Locale.ROOT) }.getOrNull() ?: return@any false
+    host == "youtube.com" ||
+      host.endsWith(".youtube.com") ||
+      host == "youtu.be" ||
+      host == "www.youtu.be"
+  }
+
 /**
  * Auto engine uses Native for HDR-family video because Media3 preserves HDR/Dolby Vision output;
  * ordinary video continues to use MPV. The queued item carries the server/file metadata and title

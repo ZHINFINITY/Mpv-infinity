@@ -8112,8 +8112,12 @@ class PlayerActivity :
       }
     if (!ytdlpReady) throw IllegalStateException("yt-dlp could not be prepared for web playback")
     ensureCurrentMediaRequest(requestGeneration)
+    val useMpvYtdlpForYouTube = requiresYtdlp && item.shouldUseMpvYtdlpForYouTube()
+    if (useMpvYtdlpForYouTube) {
+      Log.i(TAG, "Keeping YouTube page URL on MPV's yt-dlp hook")
+    }
     val resolvedPageMediaUrl =
-      if (requiresYtdlp) {
+      if (requiresYtdlp && !useMpvYtdlpForYouTube) {
         YtdlpManager.resolveDirectMediaUrl(this, item.playableUri) { line ->
           line.trim().takeIf { it.isNotEmpty() }?.let { message -> Log.d(TAG, message) }
         }
