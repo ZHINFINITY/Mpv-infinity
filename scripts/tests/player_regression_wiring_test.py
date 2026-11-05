@@ -112,7 +112,59 @@ class PlayerRegressionWiringTest(unittest.TestCase):
             failure.index('PlaybackSession.reportLoadTimeout'),
             failure.index('shouldClearKeepScreenOnAfterLoadFailure('),
         )
-        self.assertIn('viewModel.showToast(getString(R.string.toast_playback_load_failed))', failure)
+        self.assertIn('playbackLoadFailureDialog = PlaybackLoadFailureDialogState(request, message)', failure)
+        self.assertNotIn('viewModel.showToast(getString(R.string.toast_playback_load_failed))', failure)
+
+    def test_terminal_load_failure_has_persistent_retry_and_return_actions(self):
+        activity = source('ui/player/PlayerActivity.kt')
+        controls = activity.split('private fun setupPlayerControls()', 1)[1].split('private fun setupVideoAmbientBackground()', 1)[0]
+        self.assertIn('AlertDialog(', controls)
+        self.assertIn('onDismissRequest = ::returnFromPlaybackLoadFailure', controls)
+        self.assertIn('title = { Text(stringResource(R.string.toast_playback_load_failed)) }', controls)
+        self.assertIn('text = { Text(stringResource(R.string.player_load_failure_message)) }', controls)
+        self.assertIn('TextButton(onClick = ::retryPlaybackLoadFromFailureDialog)', controls)
+        self.assertIn('Text(stringResource(R.string.player_load_failure_retry))', controls)
+        self.assertIn('TextButton(onClick = ::returnFromPlaybackLoadFailure)', controls)
+        self.assertIn('Text(stringResource(R.string.back))', controls)
+
+        retry = activity.split('private fun retryPlaybackLoadFromFailureDialog()', 1)[1].split(
+            'private fun returnFromPlaybackLoadFailure()', 1,
+        )[0]
+        self.assertIn('failure.request.copy(attempt = 0)', retry)
+        self.assertIn('retryOrFinishPlaybackLoad(retryRequest, failure.message)', retry)
+        returning = activity.split('private fun returnFromPlaybackLoadFailure()', 1)[1].split(
+            'private fun finishPlaybackLoadFailure(', 1,
+        )[0]
+        self.assertIn('isUserFinishing = true', returning)
+        self.assertIn('finish()', returning)
+
+    def test_new_request_and_successful_file_load_clear_failure_dialog(self):
+        activity = source('ui/player/PlayerActivity.kt')
+        begin = activity.split('private fun beginMediaRequest()', 1)[1].split(
+            'internal fun noteUserAspectChange()', 1,
+        )[0]
+        self.assertIn('if (began) playbackLoadFailureDialog = null', begin)
+        loaded = activity.split('MPV_EVENT_FILE_LOADED -> {', 1)[1].split(
+            'MPV_EVENT_PLAYBACK_RESTART -> {', 1,
+        )[0]
+        self.assertIn('playbackLoadFailureDialog = null', loaded)
+
+    def test_hubcloud_resolver_is_allowlisted_and_redacts_signed_stream_uris(self):
+        manager = source('ui/player/ytdlp/YtdlpManager.kt')
+        extractor = source('ui/player/ytdlp/HubCloudLinkExtractor.kt')
+        activity = source('ui/player/PlayerActivity.kt')
+        self.assertIn('HubCloudLinkExtractor.isHubCloudSourceHost(host)', manager)
+        self.assertIn('allowHubCloudRedirects = isHubCloud', manager)
+        self.assertIn('HubCloudLinkExtractor.isAllowedResolverUrl(url)', manager)
+        self.assertIn('HubCloudLinkExtractor.unwrapCryptonewzDownloadUrl(url)', manager)
+        self.assertIn('requestBuilder.header("Range", "bytes=0-0")', manager)
+        self.assertIn('if (isMediaContentType(contentType)', manager)
+        self.assertIn('video-downloads.googleusercontent.com', extractor)
+        self.assertIn('HubCloudLinkExtractor.shouldUseCryptonewzReferer(item.playableUri, resolved)', activity)
+        self.assertIn('existingReferer.equals(originalReferer, ignoreCase = true)', activity)
+        self.assertIn('PlaybackHttpHeaders.merge(item.headers, mapOf("Referer" to HubCloudLinkExtractor.MEDIA_REFERER))', activity)
+        self.assertIn('uri=${playbackUriForLog(nativeItem.playableUri)}', activity)
+        self.assertNotIn('uri=${nativeItem.playableUri}', activity)
 
 
 if __name__ == '__main__':

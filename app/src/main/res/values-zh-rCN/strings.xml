@@ -127,6 +127,8 @@
   <string name="player_video_quality_button">视频质量</string>
   <string name="ytdl_audio_quality_reload_summary">用于下一个链接，或重新加载当前链接时使用。</string>
   <string name="toast_playback_load_failed">无法加载此链接</string>
+  <string name="player_load_failure_message">无法打开此链接。它可能不受支持或暂时不可用。请重试，或返回选择其他链接。</string>
+  <string name="player_load_failure_retry">重试</string>
   <string name="video_label_new">新</string>
   <string name="theme_default">默认</string>
   <string name="theme_dynamic">动态</string>

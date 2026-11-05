@@ -128,6 +128,8 @@
   <string name="player_video_quality_button">Video quality</string>
   <string name="ytdl_audio_quality_reload_summary">Used for the next link or when the current link is reloaded.</string>
   <string name="toast_playback_load_failed">Could not load this link</string>
+  <string name="player_load_failure_message">The link could not be opened. It may be unsupported or temporarily unavailable. Retry, or go back to choose another link.</string>
+  <string name="player_load_failure_retry">Retry</string>
   <string name="video_label_new">NEW</string>
   <!-- Theme names -->
   <string name="theme_default">Default</string>

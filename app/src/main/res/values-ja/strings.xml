@@ -127,6 +127,8 @@
   <string name="player_video_quality_button">動画品質</string>
   <string name="ytdl_audio_quality_reload_summary">次のリンク、または現在のリンクを再読み込みしたときに使用されます。</string>
   <string name="toast_playback_load_failed">このリンクを読み込めませんでした</string>
+  <string name="player_load_failure_message">このリンクを開けませんでした。未対応または一時的に利用できない可能性があります。再試行するか、戻って別のリンクを選択してください。</string>
+  <string name="player_load_failure_retry">再試行</string>
   <string name="video_label_new">新着</string>
   <string name="theme_default">デフォルト</string>
   <string name="theme_dynamic">ダイナミック</string>

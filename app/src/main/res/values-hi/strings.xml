@@ -127,6 +127,8 @@
   <string name="player_video_quality_button">वीडियो गुणवत्ता</string>
   <string name="ytdl_audio_quality_reload_summary">अगले लिंक के लिए या मौजूदा लिंक रीलोड होने पर इस्तेमाल होता है।</string>
   <string name="toast_playback_load_failed">यह लिंक लोड नहीं हो सका</string>
+  <string name="player_load_failure_message">यह लिंक नहीं खुल सका। यह असमर्थित हो सकता है या अस्थायी रूप से उपलब्ध नहीं हो सकता। फिर से कोशिश करें या दूसरा लिंक चुनने के लिए वापस जाएँ।</string>
+  <string name="player_load_failure_retry">फिर से कोशिश करें</string>
   <string name="video_label_new">नया</string>
   <string name="theme_default">डिफ़ॉल्ट</string>
   <string name="theme_dynamic">डायनामिक</string>

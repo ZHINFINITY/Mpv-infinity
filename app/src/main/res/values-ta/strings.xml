@@ -127,6 +127,8 @@
   <string name="player_video_quality_button">வீடியோ தரம்</string>
   <string name="ytdl_audio_quality_reload_summary">பயன்படுத்தப்பட்டது க்காக அடுத்த இணைப்பு அல்லது எப்போது தற்போதைய இணைப்பு ஆகும் reloaded.</string>
   <string name="toast_playback_load_failed">முடியவில்லை இல்லை ஏற்று இந்த இணைப்பு</string>
+  <string name="player_load_failure_message">இந்த இணைப்பைத் திறக்க முடியவில்லை. இது ஆதரிக்கப்படாததாக அல்லது தற்காலிகமாக கிடைக்காததாக இருக்கலாம். மீண்டும் முயற்சிக்கவும் அல்லது வேறு இணைப்பைத் தேர்வுசெய்ய திரும்பவும்.</string>
+  <string name="player_load_failure_retry">மீண்டும் முயற்சி</string>
   <string name="video_label_new">புதிய</string>
   <string name="theme_default">இயல்புநிலை</string>
   <string name="theme_dynamic">இயங்கும்</string>

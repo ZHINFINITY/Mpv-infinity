@@ -127,6 +127,8 @@
   <string name="player_video_quality_button">Kualitas video</string>
   <string name="ytdl_audio_quality_reload_summary">Digunakan untuk tautan berikutnya atau ketika tautan saat ini dimuat ulang.</string>
   <string name="toast_playback_load_failed">Tidak dapat memuat tautan ini</string>
+  <string name="player_load_failure_message">Tautan ini tidak dapat dibuka. Mungkin tautan ini tidak didukung atau sementara tidak tersedia. Coba lagi, atau kembali untuk memilih tautan lain.</string>
+  <string name="player_load_failure_retry">Coba lagi</string>
   <string name="video_label_new">BARU</string>
   <string name="theme_default">Bawaan</string>
   <string name="theme_dynamic">Dinamis</string>

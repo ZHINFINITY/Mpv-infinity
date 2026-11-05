@@ -127,6 +127,8 @@
   <string name="player_video_quality_button">جودة الفيديو</string>
   <string name="ytdl_audio_quality_reload_summary">يُستخدم للرابط التالي أو عند إعادة تحميل الرابط الحالي.</string>
   <string name="toast_playback_load_failed">تعذر تحميل هذا الرابط</string>
+  <string name="player_load_failure_message">تعذّر فتح الرابط. قد يكون غير مدعوم أو غير متاح مؤقتًا. أعد المحاولة أو ارجع لاختيار رابط آخر.</string>
+  <string name="player_load_failure_retry">إعادة المحاولة</string>
   <string name="video_label_new">جديد</string>
   <string name="theme_default">افتراضي</string>
   <string name="theme_dynamic">ديناميكي</string>

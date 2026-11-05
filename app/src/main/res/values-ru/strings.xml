@@ -127,6 +127,8 @@
   <string name="player_video_quality_button">Качество видео</string>
   <string name="ytdl_audio_quality_reload_summary">Используется для следующей ссылки или после перезагрузки текущей.</string>
   <string name="toast_playback_load_failed">Не удалось загрузить эту ссылку</string>
+  <string name="player_load_failure_message">Не удалось открыть эту ссылку. Возможно, она не поддерживается или временно недоступна. Повторите попытку или вернитесь, чтобы выбрать другую ссылку.</string>
+  <string name="player_load_failure_retry">Повторить</string>
   <string name="video_label_new">НОВОЕ</string>
   <string name="theme_default">По умолчанию</string>
   <string name="theme_dynamic">Динамическая</string>

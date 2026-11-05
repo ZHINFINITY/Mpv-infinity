@@ -52,6 +52,9 @@ import androidx.activity.viewModels
 import androidx.appcompat.app.AppCompatActivity
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import app.infinity.mpvz.preferences.preference.collectAsState as collectPreferenceAsState
@@ -61,6 +64,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.ViewCompositionStrategy
+import androidx.compose.ui.res.stringResource
 import androidx.constraintlayout.widget.ConstraintLayout
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
@@ -118,6 +122,7 @@ import app.infinity.mpvz.ui.cast.CastPlaybackController
 import app.infinity.mpvz.ui.player.controls.PlayerControls
 import app.infinity.mpvz.ui.player.components.VideoAmbientBackground
 import app.infinity.mpvz.ui.player.components.rememberVideoAmbientFrame
+import app.infinity.mpvz.ui.player.ytdlp.HubCloudLinkExtractor
 import app.infinity.mpvz.ui.player.ytdlp.YtdlpManager
 import app.infinity.mpvz.ui.theme.MpvInfinityTheme
 import app.infinity.mpvz.ui.torrent.TorrentSelectionActivity
@@ -184,16 +189,30 @@ internal fun preparePlaybackItemForLoad(
   radioMimeType: String?,
 ): PlaybackItem =
   resolvedPageMediaUrl?.let { resolved ->
+    val useCryptonewzReferer =
+      HubCloudLinkExtractor.shouldUseCryptonewzReferer(item.playableUri, resolved)
+    val originalReferer = HttpUtils.extractRefererDomain(Uri.parse(item.playableUri))
+    val existingReferer = PlaybackHttpHeaders.value(item.headers, "Referer")
+    val headers =
+      if (useCryptonewzReferer &&
+        (existingReferer.isNullOrBlank() || existingReferer.equals(originalReferer, ignoreCase = true))
+      ) {
+        PlaybackHttpHeaders.merge(item.headers, mapOf("Referer" to HubCloudLinkExtractor.MEDIA_REFERER))
+      } else {
+        PlaybackHttpHeaders.withDefault(item.headers, "Referer", originalReferer)
+      }
     item.copy(
       playableUri = resolved,
-      headers =
-        PlaybackHttpHeaders.withDefault(
-          item.headers,
-          "Referer",
-          HttpUtils.extractRefererDomain(Uri.parse(item.playableUri)),
-        ),
+      headers = headers,
     )
   } ?: radioMimeType?.let { item.copy(mimeType = it) } ?: item
+
+private fun playbackUriForLog(value: String): String {
+  val uri = runCatching { Uri.parse(value) }.getOrNull() ?: return "<invalid>"
+  val scheme = uri.scheme ?: return "<redacted>"
+  val host = uri.host ?: return "$scheme:<redacted>"
+  return "$scheme://$host"
+}
 
 /**
  * Main player activity that handles video playback using the MPV library.
@@ -1236,6 +1255,11 @@ class PlayerActivity :
     val positionRestoreOverride: PlaybackPositionRestoreOverride? = null,
   )
 
+  private data class PlaybackLoadFailureDialogState(
+    val request: PendingMediaLoadRecovery,
+    val message: String,
+  )
+
   private var pendingSavedPlaylistSelection: SavedPlaylistSelection? = null
   private var acceptedPreparedPlaybackLaunch: PreparedPlaybackLaunch? = null
   private var restoredAudioPlaybackSnapshot: AudioPlaybackResumeSnapshot? = null
@@ -1315,6 +1339,7 @@ class PlayerActivity :
   private var playbackLoadRetryJob: Job? = null
   private var playbackLoadWatchdogJob: Job? = null
   @Volatile private var pendingMediaLoadRecovery: PendingMediaLoadRecovery? = null
+  private var playbackLoadFailureDialog by mutableStateOf<PlaybackLoadFailureDialogState?>(null)
   @Volatile private var mediaRequestGeneration = 0L
   private data class UserAspectChangeIntentToken(
     val playbackGeneration: Long,
@@ -2533,6 +2558,23 @@ class PlayerActivity :
               onGlassVisibilityChange = { glassDrawerVisible = it },
               modifier = Modifier,
             )
+            playbackLoadFailureDialog?.let {
+              AlertDialog(
+                onDismissRequest = ::returnFromPlaybackLoadFailure,
+                title = { Text(stringResource(R.string.toast_playback_load_failed)) },
+                text = { Text(stringResource(R.string.player_load_failure_message)) },
+                confirmButton = {
+                  TextButton(onClick = ::retryPlaybackLoadFromFailureDialog) {
+                    Text(stringResource(R.string.player_load_failure_retry))
+                  }
+                },
+                dismissButton = {
+                  TextButton(onClick = ::returnFromPlaybackLoadFailure) {
+                    Text(stringResource(R.string.back))
+                  }
+                },
+              )
+            }
           }
         }
       }
@@ -4325,13 +4367,16 @@ class PlayerActivity :
     PlaybackActivityOwner.runIfOwner(playbackOwnerToken, Unit, action)
   }
 
-  private fun beginMediaRequest(): Boolean =
-    PlaybackActivityOwner.beginRequest(playbackOwnerToken) {
+  private fun beginMediaRequest(): Boolean {
+    val began = PlaybackActivityOwner.beginRequest(playbackOwnerToken) {
       mediaRequestGeneration++
       mpvAspectLoadRequestGeneration.clear()
       glassMediaGeneration++
       manualOrientationOverride = false
     }
+    if (began) playbackLoadFailureDialog = null
+    return began
+  }
 
   internal fun noteUserAspectChange() {
     userAspectChangeGeneration++
@@ -6268,6 +6313,7 @@ class PlayerActivity :
       MPVLib.MpvEvent.MPV_EVENT_FILE_LOADED -> {
         val loadGeneration = PlaybackSession.state.value.activeGeneration
         if (!PlaybackSession.isCurrentGeneration(loadGeneration)) return
+        playbackLoadFailureDialog = null
         val recovery = pendingMediaLoadRecovery
         if (recovery?.generation == loadGeneration) cancelPlaybackLoadRecovery()
         eofAdvanceJob?.cancel()
@@ -8165,7 +8211,7 @@ class PlayerActivity :
       "Native eligibility engine=$selectedEngine canUse=$canUseNative " +
         "audioOnly=${nativeItem.isDefinitelyAudioOnly()} torrentUnresolved=${item.requiresTorrentResolution()} " +
         "sourcePlayable=$nativeSourceIsPlayable ytdlp=$requiresYtdlp resolved=${nativeResolvedUri != null} " +
-        "uri=${nativeItem.playableUri}",
+        "uri=${playbackUriForLog(nativeItem.playableUri)}",
     )
     if (canUseNative) {
       withContext(Dispatchers.Main) {
@@ -8357,6 +8403,20 @@ class PlayerActivity :
       }
   }
 
+  private fun retryPlaybackLoadFromFailureDialog() {
+    val failure = playbackLoadFailureDialog ?: return
+    playbackLoadFailureDialog = null
+    val retryRequest = failure.request.copy(attempt = 0)
+    pendingMediaLoadRecovery = retryRequest
+    retryOrFinishPlaybackLoad(retryRequest, failure.message)
+  }
+
+  private fun returnFromPlaybackLoadFailure() {
+    playbackLoadFailureDialog = null
+    isUserFinishing = true
+    finish()
+  }
+
   private fun finishPlaybackLoadFailure(
     request: PendingMediaLoadRecovery,
     error: String?,
@@ -8380,7 +8440,7 @@ class PlayerActivity :
       window.clearFlags(keepScreenOnFlag)
     }
     viewModel.onVideoLoadCompleted()
-    viewModel.showToast(getString(R.string.toast_playback_load_failed))
+    playbackLoadFailureDialog = PlaybackLoadFailureDialogState(request, message)
     Log.e(TAG, "Media load failed after recovery: $message")
   }
 

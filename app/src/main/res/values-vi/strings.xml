@@ -127,6 +127,8 @@
   <string name="player_video_quality_button">Chất lượng video</string>
   <string name="ytdl_audio_quality_reload_summary">Được sử dụng cho liên kết tiếp theo hoặc khi liên kết hiện tại được tải lại.</string>
   <string name="toast_playback_load_failed">Không thể tải liên kết này</string>
+  <string name="player_load_failure_message">Không thể mở liên kết này. Liên kết có thể không được hỗ trợ hoặc tạm thời không khả dụng. Hãy thử lại hoặc quay lại để chọn liên kết khác.</string>
+  <string name="player_load_failure_retry">Thử lại</string>
   <string name="video_label_new">MỚI</string>
   <string name="theme_default">Mặc định</string>
   <string name="theme_dynamic">Năng động</string>

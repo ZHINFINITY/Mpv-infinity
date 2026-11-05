@@ -461,10 +461,17 @@ object YtdlpManager {
    */
   private fun resolveKnownPageMediaUrl(source: String, onLog: (String) -> Unit): String? {
     val host = Uri.parse(source).host?.lowercase().orEmpty()
-    if (host != "gdflix.dev" && !host.endsWith(".gdflix.dev") && host != "gdflix.io" && !host.endsWith(".gdflix.io")) return null
-    val resolved = resolvePageUrl(source, source, 0, linkedSetOf())
-    if (resolved != null) onLog("Resolved GDFlix page to direct media URL")
-    else onLog("GDFlix page did not expose a playable media URL")
+    val isHubCloud = HubCloudLinkExtractor.isHubCloudSourceHost(host)
+    val isGdflix =
+      host == "gdflix.dev" ||
+        host.endsWith(".gdflix.dev") ||
+        host == "gdflix.io" ||
+        host.endsWith(".gdflix.io")
+    if (!isHubCloud && !isGdflix) return null
+    val resolved = resolvePageUrl(source, source, 0, linkedSetOf(), allowHubCloudRedirects = isHubCloud)
+    val provider = if (isHubCloud) "HubCloud" else "GDFlix"
+    if (resolved != null) onLog("Resolved $provider page to direct media URL")
+    else onLog("$provider page did not expose a playable media URL")
     return resolved
   }
 
@@ -473,29 +480,50 @@ object YtdlpManager {
     referer: String,
     depth: Int,
     visited: MutableSet<String>,
+    allowHubCloudRedirects: Boolean = false,
   ): String? {
     if (depth > MAX_PAGE_RESOLVE_DEPTH) return null
     val url = decodeHtmlEntities(source).trim()
     if (!url.startsWith("http://") && !url.startsWith("https://")) return null
+    val currentUri = Uri.parse(url)
+    val currentHost = currentUri.host?.lowercase().orEmpty()
+    if (allowHubCloudRedirects && !HubCloudLinkExtractor.isAllowedResolverUrl(url)) return null
     if (!visited.add(url)) return null
 
-    Uri.parse(url).getQueryParameter("url")?.takeIf { it.startsWith("http://") || it.startsWith("https://") }?.let { nested ->
-      resolvePageUrl(nested, url, depth + 1, visited)?.let { return it }
+    if (allowHubCloudRedirects) {
+      HubCloudLinkExtractor.unwrapCryptonewzDownloadUrl(url)?.let { directMediaUrl ->
+        return resolvePageUrl(
+          directMediaUrl,
+          HubCloudLinkExtractor.MEDIA_REFERER,
+          depth + 1,
+          visited,
+          allowHubCloudRedirects = true,
+        )
+      }
     }
 
-    val request =
+    currentUri
+      .getQueryParameter("url")
+      ?.takeIf { it.startsWith("http://") || it.startsWith("https://") }
+      ?.let { nested ->
+        resolvePageUrl(nested, url, depth + 1, visited, allowHubCloudRedirects)?.let { return it }
+      }
+
+    val requestBuilder =
       Request.Builder()
         .url(url)
         .header("User-Agent", YtdlpOptionsBuilder.DEFAULT_USER_AGENT)
         .header("Referer", referer)
-        .get()
-        .build()
+    if (allowHubCloudRedirects && currentHost == HubCloudLinkExtractor.MEDIA_HOST) {
+      requestBuilder.header("Range", "bytes=0-0")
+    }
+    val request = requestBuilder.get().build()
     val response = runCatching { pageResolverClient.newCall(request).execute() }.getOrNull() ?: return null
     response.use { current ->
       if (current.code in 300..399) {
         val location = current.header("Location") ?: return null
         val next = current.request.url.resolve(location)?.toString() ?: return null
-        return resolvePageUrl(next, url, depth + 1, visited)
+        return resolvePageUrl(next, url, depth + 1, visited, allowHubCloudRedirects)
       }
       if (!current.isSuccessful) return null
 
@@ -508,7 +536,7 @@ object YtdlpManager {
       val candidates = extractPageCandidates(body, finalUrl)
         .sortedByDescending(::pageCandidateScore)
       for (candidate in candidates) {
-        resolvePageUrl(candidate, finalUrl, depth + 1, visited)?.let { return it }
+        resolvePageUrl(candidate, finalUrl, depth + 1, visited, allowHubCloudRedirects)?.let { return it }
       }
       return null
     }
