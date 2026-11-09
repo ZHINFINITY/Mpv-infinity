@@ -152,6 +152,7 @@ import app.infinity.mpvz.ui.player.PlaybackEngineMode
 import app.infinity.mpvz.ui.player.AudiobookPlayback
 import app.infinity.mpvz.ui.player.Sheets
 import app.infinity.mpvz.ui.player.VideoOpenAnimationOverlay
+import app.infinity.mpvz.ui.components.horizontalScrollFadeEdges
 import app.infinity.mpvz.ui.player.buildControlsEnterH
 import app.infinity.mpvz.ui.player.buildControlsEnterV
 import app.infinity.mpvz.ui.player.buildControlsExitH
@@ -1307,20 +1308,14 @@ fun PlayerControls(
             modifier =
               navigationStartPaddingModifier.constrainAs(customLeftButtonsRef) {
                 start.linkTo(parent.start, spacing.large)
-                if (playbackControlsPosition == PlaybackControlsPosition.BelowSeekbar) {
-                  end.linkTo(playerPauseButton.start, spacing.small)
-                  horizontalBias = 0f
-                }
+                end.linkTo(playerPauseButton.start, spacing.small)
+                horizontalBias = 0f
                 bottom.linkTo(bottomLeftControls.top, spacing.medium)
-                width =
-                  if (playbackControlsPosition == PlaybackControlsPosition.BelowSeekbar) {
-                    Dimension.fillToConstraints
-                  } else {
-                    Dimension.preferredWrapContent
-                  }
+                width = Dimension.fillToConstraints
                 height = Dimension.wrapContent
               },
           ) {
+            val customButtonScrollState = rememberScrollState()
             Row(
               horizontalArrangement = Arrangement.spacedBy(12.dp),
               verticalAlignment = Alignment.CenterVertically,
@@ -1328,7 +1323,8 @@ fun PlayerControls(
                 Modifier
                   .padding(vertical = customButtonsRowVerticalPadding)
                   .fillMaxWidth()
-                  .horizontalScroll(rememberScrollState()),
+                  .horizontalScrollFadeEdges(customButtonScrollState, reverseScrolling = false)
+                  .horizontalScroll(customButtonScrollState),
             ) {
               leftCustomButtons.forEach { button ->
                 key(button.id) {
@@ -1381,25 +1377,17 @@ fun PlayerControls(
             modifier =
               navigationEndPaddingModifier
                 .constrainAs(customRightButtonsRef) {
-                  if (playbackControlsPosition == PlaybackControlsPosition.BelowSeekbar) {
-                    start.linkTo(playerPauseButton.end, spacing.small)
-                    end.linkTo(parent.end, spacing.large)
-                    horizontalBias = 1f
-                  } else {
-                    end.linkTo(parent.end, spacing.large)
-                  }
+                  start.linkTo(playerPauseButton.end, spacing.small)
+                  end.linkTo(parent.end, spacing.large)
+                  horizontalBias = 1f
                   bottom.linkTo(bottomRightControls.top, spacing.medium)
-                  width =
-                    if (playbackControlsPosition == PlaybackControlsPosition.BelowSeekbar) {
-                      Dimension.fillToConstraints
-                    } else {
-                      Dimension.preferredWrapContent
-                    }
+                  width = Dimension.fillToConstraints
                   height = Dimension.wrapContent
                 }.onGloballyPositioned { coordinates ->
                   landscapeRightButtonsTopPx = coordinates.positionInParent().y.roundToInt()
                 },
           ) {
+            val customButtonScrollState = rememberScrollState()
             Row(
               horizontalArrangement = Arrangement.spacedBy(12.dp),
               verticalAlignment = Alignment.CenterVertically,
@@ -1407,7 +1395,8 @@ fun PlayerControls(
                 Modifier
                   .padding(vertical = customButtonsRowVerticalPadding)
                   .fillMaxWidth()
-                  .horizontalScroll(rememberScrollState(), reverseScrolling = true),
+                  .horizontalScrollFadeEdges(customButtonScrollState, reverseScrolling = true)
+                  .horizontalScroll(customButtonScrollState, reverseScrolling = true),
             ) {
               rightCustomButtons.forEach { button ->
                 key(button.id) {
@@ -2264,7 +2253,6 @@ fun PlayerControls(
               BottomPlayerControlsPortrait(
                 buttons = portraitBottomButtons,
                 showVideoQualitySelector = showVideoQualitySelector && !portraitHasConfiguredQualityButton,
-                playbackControlsPosition = playbackControlsPosition,
                 chapters = chapters,
                 currentChapter = currentChapter,
                 isSpeedNonOne = isSpeedNonOne,
@@ -2284,7 +2272,6 @@ fun PlayerControls(
               BottomRightPlayerControlsLandscape(
                 buttons = bottomRightButtons,
                 showVideoQualitySelector = showVideoQualitySelector && !landscapeHasConfiguredQualityButton,
-                playbackControlsPosition = playbackControlsPosition,
                 chapters = chapters,
                 currentChapter = currentChapter,
                 isSpeedNonOne = isSpeedNonOne,
@@ -2322,21 +2309,17 @@ fun PlayerControls(
                 ).constrainAs(bottomLeftControls) {
                   if (playbackControlsPosition == PlaybackControlsPosition.BelowSeekbar) {
                     bottom.linkTo(parent.bottom, spacing.large)
-                    start.linkTo(parent.start, spacing.large)
-                    end.linkTo(playerPauseButton.start, spacing.small)
-                    horizontalBias = 0f
-                    width = Dimension.fillToConstraints
                   } else {
                     bottom.linkTo(seekbar.top, bottomControlsToSeekbarSpacing)
-                    start.linkTo(parent.start, spacing.large)
-                    width = Dimension.fillToConstraints
-                    end.linkTo(bottomRightControls.start, spacing.small)
                   }
+                  start.linkTo(parent.start, spacing.large)
+                  end.linkTo(playerPauseButton.start, spacing.small)
+                  horizontalBias = 0f
+                  width = Dimension.fillToConstraints
                 },
           ) {
             BottomLeftPlayerControlsLandscape(
               buttons = bottomLeftButtons,
-              playbackControlsPosition = playbackControlsPosition,
               chapters = chapters,
               currentChapter = currentChapter,
               isSpeedNonOne = isSpeedNonOne,

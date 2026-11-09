@@ -19,7 +19,6 @@ import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateDpAsState
-import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.expandHorizontally
 import androidx.compose.animation.fadeIn
@@ -328,59 +327,10 @@ object MainScreen : Screen {
     }
 
     val configuration = androidx.compose.ui.platform.LocalConfiguration.current
-    val screenWidth = configuration.screenWidthDp.dp
 
     val isPortrait = configuration.orientation == Configuration.ORIENTATION_PORTRAIT
     val isTablet = configuration.smallestScreenWidthDp >= 600
     val isLandscape = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
-
-    val selectedTabTitleLength =
-      when (selectedTab) {
-        MainTab.HOME -> 36.dp
-        MainTab.MUSIC -> 36.dp
-        MainTab.RECENTS -> 48.dp
-        MainTab.PLAYLISTS -> 52.dp
-        MainTab.NETWORK -> 50.dp
-        MainTab.STREAMS -> 54.dp
-        MainTab.JELLYFIN -> 44.dp
-        MainTab.NAVIDROME -> 56.dp
-        MainTab.AUDIOBOOKS -> 68.dp
-      }
-
-    val unselectedCount = (visibleTabs.size - 1).coerceAtLeast(0)
-    val targetNavBarWidth =
-      if (visibleTabs.isEmpty()) 0.dp
-      else (22.dp + 6.dp + selectedTabTitleLength + 28.dp) +
-        (42.dp * unselectedCount) +
-        (4.dp * unselectedCount) +
-        12.dp
-
-    val navBarWidth by animateDpAsState(
-      targetValue = targetNavBarWidth,
-      animationSpec =
-        spring(
-          dampingRatio = Spring.DampingRatioNoBouncy,
-          stiffness = Spring.StiffnessMedium,
-        ),
-      label = "nav_bar_width",
-    )
-
-    val targetOffsetFraction =
-      when {
-        isDualPaneFolderSelected && selectedTab == MainTab.HOME -> 0.2f
-        isMiniPlayerVisible && (isLandscape || isTablet) -> 0f
-        else -> 0.5f
-      }
-
-    val animatedOffsetFraction by animateFloatAsState(
-      targetValue = targetOffsetFraction,
-      animationSpec =
-        spring(
-          dampingRatio = Spring.DampingRatioNoBouncy,
-          stiffness = Spring.StiffnessMedium,
-        ),
-      label = "nav_bar_position",
-    )
 
     // On portrait phones the edge-to-edge mini player sits above the pill nav bar,
     // so screens/FABs must clear it.

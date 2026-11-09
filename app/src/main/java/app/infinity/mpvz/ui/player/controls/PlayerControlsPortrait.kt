@@ -12,8 +12,6 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -38,8 +36,8 @@ import androidx.compose.ui.unit.dp
 import app.infinity.mpvz.R
 import app.infinity.mpvz.preferences.AppearancePreferences
 import app.infinity.mpvz.preferences.PlayerButton
-import app.infinity.mpvz.preferences.PlaybackControlsPosition
 import app.infinity.mpvz.preferences.preference.collectAsState
+import app.infinity.mpvz.ui.components.horizontalScrollFadeEdges
 import app.infinity.mpvz.ui.icons.Icon
 import app.infinity.mpvz.ui.icons.Icons
 import app.infinity.mpvz.ui.player.Panels
@@ -222,12 +220,10 @@ fun TopPlayerControlsPortrait(
   }
 }
 
-@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun BottomPlayerControlsPortrait(
   buttons: List<PlayerButton>,
   showVideoQualitySelector: Boolean,
-  playbackControlsPosition: PlaybackControlsPosition,
   chapters: List<Segment>,
   currentChapter: Int?,
   isSpeedNonOne: Boolean,
@@ -275,26 +271,18 @@ fun BottomPlayerControlsPortrait(
         )
       }
     }
-    if (playbackControlsPosition == PlaybackControlsPosition.BelowSeekbar) {
-      Row(
-        modifier =
-          Modifier
-            .fillMaxWidth()
-            .horizontalScroll(rememberScrollState())
-            .padding(bottom = MaterialTheme.spacing.medium),
-        horizontalArrangement = Arrangement.spacedBy(MaterialTheme.spacing.medium, Alignment.CenterHorizontally),
-        verticalAlignment = Alignment.CenterVertically,
-      ) {
-        controlsContent()
-      }
-    } else {
-      FlowRow(
-        modifier = Modifier.fillMaxWidth().padding(bottom = MaterialTheme.spacing.medium),
-        horizontalArrangement = Arrangement.spacedBy(MaterialTheme.spacing.medium, Alignment.CenterHorizontally),
-        verticalArrangement = Arrangement.spacedBy(MaterialTheme.spacing.small),
-      ) {
-        controlsContent()
-      }
+    val scrollState = rememberScrollState()
+    Row(
+      modifier =
+        Modifier
+          .fillMaxWidth()
+          .padding(bottom = MaterialTheme.spacing.medium)
+          .horizontalScrollFadeEdges(scrollState)
+          .horizontalScroll(scrollState),
+      horizontalArrangement = Arrangement.spacedBy(MaterialTheme.spacing.medium, Alignment.CenterHorizontally),
+      verticalAlignment = Alignment.CenterVertically,
+    ) {
+      controlsContent()
     }
   }
 }

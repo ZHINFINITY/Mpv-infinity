@@ -14,8 +14,6 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -43,8 +41,8 @@ import androidx.compose.ui.unit.dp
 import app.infinity.mpvz.R
 import app.infinity.mpvz.preferences.AppearancePreferences
 import app.infinity.mpvz.preferences.PlayerButton
-import app.infinity.mpvz.preferences.PlaybackControlsPosition
 import app.infinity.mpvz.preferences.preference.collectAsState
+import app.infinity.mpvz.ui.components.horizontalScrollFadeEdges
 import app.infinity.mpvz.ui.icons.Icon
 import app.infinity.mpvz.ui.icons.Icons
 import app.infinity.mpvz.ui.player.Panels
@@ -251,7 +249,7 @@ fun TopRightPlayerControlsLandscape(
   activity: PlayerActivity,
 ) {
   PlayerButtonTheme(hideBackground) {
-    LandscapePlayerControlStrip(reverseScrolling = true, alignment = Alignment.End, scrollable = true) {
+    LandscapePlayerControlStrip(reverseScrolling = true, alignment = Alignment.End) {
       buttons.forEach { button ->
         RenderPlayerButton(
           button = button,
@@ -281,7 +279,6 @@ fun TopRightPlayerControlsLandscape(
 fun BottomRightPlayerControlsLandscape(
   buttons: List<PlayerButton>,
   showVideoQualitySelector: Boolean,
-  playbackControlsPosition: PlaybackControlsPosition,
   chapters: List<Segment>,
   currentChapter: Int?,
   isSpeedNonOne: Boolean,
@@ -301,7 +298,6 @@ fun BottomRightPlayerControlsLandscape(
     LandscapePlayerControlStrip(
       reverseScrolling = true,
       alignment = Alignment.End,
-      scrollable = playbackControlsPosition == PlaybackControlsPosition.BelowSeekbar,
     ) {
       buttons.forEach { button ->
         RenderPlayerButton(
@@ -339,7 +335,6 @@ fun BottomRightPlayerControlsLandscape(
 @Composable
 fun BottomLeftPlayerControlsLandscape(
   buttons: List<PlayerButton>,
-  playbackControlsPosition: PlaybackControlsPosition,
   chapters: List<Segment>,
   currentChapter: Int?,
   isSpeedNonOne: Boolean,
@@ -359,7 +354,6 @@ fun BottomLeftPlayerControlsLandscape(
     LandscapePlayerControlStrip(
       reverseScrolling = false,
       alignment = Alignment.Start,
-      scrollable = playbackControlsPosition == PlaybackControlsPosition.BelowSeekbar,
     ) {
       buttons.forEach { button ->
         RenderPlayerButton(
@@ -386,29 +380,22 @@ fun BottomLeftPlayerControlsLandscape(
   }
 }
 
-@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun LandscapePlayerControlStrip(
   reverseScrolling: Boolean,
   alignment: Alignment.Horizontal,
-  scrollable: Boolean,
   content: @Composable () -> Unit,
 ) {
-  if (scrollable) {
-    Row(
-      modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState(), reverseScrolling),
+  val scrollState = rememberScrollState()
+  Row(
+    modifier =
+      Modifier
+        .fillMaxWidth()
+        .horizontalScrollFadeEdges(scrollState, reverseScrolling)
+        .horizontalScroll(scrollState, reverseScrolling),
       verticalAlignment = Alignment.CenterVertically,
       horizontalArrangement = Arrangement.spacedBy(MaterialTheme.spacing.extraSmall, alignment),
-    ) {
-      content()
-    }
-  } else {
-    FlowRow(
-      modifier = Modifier.fillMaxWidth(),
-      horizontalArrangement = Arrangement.spacedBy(MaterialTheme.spacing.extraSmall, alignment),
-      verticalArrangement = Arrangement.spacedBy(MaterialTheme.spacing.extraSmall),
-    ) {
-      content()
-    }
+  ) {
+    content()
   }
 }
