@@ -146,6 +146,8 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.DelicateCoroutinesApi
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.collect
@@ -8082,13 +8084,74 @@ class PlayerActivity :
     // callback change visibility or playback state after this load has started.
     engineHandoffJob?.cancel()
     engineHandoffJob = null
-    immediatePlaybackStateSaveJob?.join()
-    val savedPlaybackState =
-      resolvePlaybackState(item.stableId, legacyMediaIdentifier)
-        ?: resolvePlaybackState(mediaIdentifier, legacyMediaIdentifier)
-        ?: playbackStateRepository.getVideoDataByTitle(PlaybackIdentity.forUri(item.playableUri))
-        ?: playbackStateRepository.getVideoDataByTitle(PlaybackIdentity.forLocalPath(item.playableUri))
     val restoreSavedPosition = playerPreferences.savePositionOnQuit.get()
+    val looksLikeWebSource = sequenceOf(item.originalUri, item.playableUri).any(YtdlpManager::requiresYtdlp)
+    val shouldProbeRadio =
+      (PlaybackSession.queue.value.isM3u || isM3uPlaylist ||
+        intent.getStringExtra("launch_source") == "m3u_playlist") &&
+        (looksLikeWebSource || item.isDefinitelyAudioOnly())
+    // Extensionless Icecast mounts are direct audio, not webpages. Probe them before yt-dlp so an
+    // endless radio response is never handed to the generic webpage extractor.
+    val (preflight, resolvedPageMediaUrl) =
+      coroutineScope {
+        val savedPlaybackStateJob =
+          async(Dispatchers.IO) {
+            immediatePlaybackStateSaveJob?.join()
+            resolvePlaybackState(item.stableId, legacyMediaIdentifier)
+              ?: resolvePlaybackState(mediaIdentifier, legacyMediaIdentifier)
+              ?: playbackStateRepository.getVideoDataByTitle(PlaybackIdentity.forUri(item.playableUri))
+              ?: playbackStateRepository.getVideoDataByTitle(PlaybackIdentity.forLocalPath(item.playableUri))
+          }
+        val radioMimeTypeJob =
+          if (shouldProbeRadio) {
+            async(Dispatchers.IO) {
+              app.infinity.mpvz.utils.media.RadioStreamProbe.detectAudioMimeType(item.playableUri, item.headers)
+            }
+          } else {
+            null
+          }
+        // Most web pages need no M3U probe. Start runtime readiness concurrently with the saved
+        // position lookup; the child job is canceled with this media request if the user switches.
+        val ytdlpPreparationJob =
+          if (looksLikeWebSource && !shouldProbeRadio) {
+            async(Dispatchers.IO) {
+              YtdlpManager.prepareForPlayback(this@PlayerActivity, item.playableUri) { line ->
+                line.trim().takeIf { it.isNotEmpty() }?.let { message -> Log.d(TAG, message) }
+              }
+            }
+          } else {
+            null
+          }
+        val radioMimeType = radioMimeTypeJob?.await()
+        ensureCurrentMediaRequest(requestGeneration)
+        val requiresYtdlpForPreflight = looksLikeWebSource && radioMimeType == null
+        val ytdlpReady =
+          when {
+            !requiresYtdlpForPreflight -> true
+            ytdlpPreparationJob != null -> ytdlpPreparationJob.await()
+            else ->
+              YtdlpManager.prepareForPlayback(this@PlayerActivity, item.playableUri) { line ->
+                line.trim().takeIf { it.isNotEmpty() }?.let { message -> Log.d(TAG, message) }
+              }
+          }
+        ensureCurrentMediaRequest(requestGeneration)
+        val resolvedPageMediaUrlJob =
+          if (requiresYtdlpForPreflight && ytdlpReady) {
+            async(Dispatchers.IO) {
+              YtdlpManager.resolveDirectMediaUrl(this@PlayerActivity, item.playableUri) { line ->
+                line.trim().takeIf { it.isNotEmpty() }?.let { message -> Log.d(TAG, message) }
+              }
+            }
+          } else {
+            null
+          }
+        Pair(
+          Triple(savedPlaybackStateJob.await(), radioMimeType, ytdlpReady),
+          resolvedPageMediaUrlJob?.await(),
+        )
+      }
+    val (savedPlaybackState, radioMimeType, ytdlpReady) = preflight
+    if (!ytdlpReady) throw IllegalStateException("yt-dlp could not be prepared for web playback")
     // Give mpv the resume point as a load-local option so the demuxer starts there instead of
     // decoding at zero and visibly seeking only after FILE_LOADED.
     val candidateInitialPositionSeconds =
@@ -8101,36 +8164,9 @@ class PlayerActivity :
       } else {
         null
       }
-    ensureCurrentMediaRequest(requestGeneration)
-    val looksLikeWebSource = sequenceOf(item.originalUri, item.playableUri).any(YtdlpManager::requiresYtdlp)
-    // Extensionless Icecast mounts are direct audio, not webpages. A bounded header probe
-    // avoids feeding an endless radio response to yt-dlp's generic webpage extractor.
-    val radioMimeType =
-      if ((PlaybackSession.queue.value.isM3u || isM3uPlaylist ||
-          intent.getStringExtra("launch_source") == "m3u_playlist") &&
-        (looksLikeWebSource || item.isDefinitelyAudioOnly())
-      ) {
-        app.infinity.mpvz.utils.media.RadioStreamProbe.detectAudioMimeType(item.playableUri, item.headers)
-      } else {
-        null
-      }
-    ensureCurrentMediaRequest(requestGeneration)
     val initialPositionSeconds = candidateInitialPositionSeconds.takeIf { radioMimeType == null }
     val requiresYtdlp = looksLikeWebSource && radioMimeType == null
-    val ytdlpReady =
-      !requiresYtdlp || YtdlpManager.prepareForPlayback(this, item.playableUri) { line ->
-        line.trim().takeIf { it.isNotEmpty() }?.let { message -> Log.d(TAG, message) }
-      }
-    if (!ytdlpReady) throw IllegalStateException("yt-dlp could not be prepared for web playback")
     ensureCurrentMediaRequest(requestGeneration)
-    val resolvedPageMediaUrl =
-      if (requiresYtdlp) {
-        YtdlpManager.resolveDirectMediaUrl(this, item.playableUri) { line ->
-          line.trim().takeIf { it.isNotEmpty() }?.let { message -> Log.d(TAG, message) }
-        }
-      } else {
-        null
-      }
     val playbackItem = preparePlaybackItemForLoad(item, resolvedPageMediaUrl, radioMimeType)
     val playbackRequiresYtdlp = radioMimeType == null && YtdlpManager.requiresYtdlp(playbackItem.playableUri)
     // A playable Stream result is already a direct media URL; yt-dlp's successful video-format

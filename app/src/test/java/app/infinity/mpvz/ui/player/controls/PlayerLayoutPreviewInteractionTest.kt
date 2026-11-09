@@ -43,17 +43,19 @@ class PlayerLayoutPreviewInteractionTest {
   }
 
   @Test
-  fun overflowStripsKeepHorizontalScrollAndViewportClipping() {
+  fun overflowStripsUseTheSharedBoundedPlayerViewport() {
     val controls = source("app/src/main/java/app/infinity/mpvz/ui/player/controls/PlayerControls.kt")
     val landscape = source("app/src/main/java/app/infinity/mpvz/ui/player/controls/PlayerControlsLandscape.kt")
     val portrait = source("app/src/main/java/app/infinity/mpvz/ui/player/controls/PlayerControlsPortrait.kt")
     val preview = source("app/src/main/java/app/infinity/mpvz/ui/preferences/PlayerLayoutPreview.kt")
+    val strip = source("app/src/main/java/app/infinity/mpvz/ui/player/controls/PlayerControlScrollStrip.kt")
 
     assertEquals(2, Regex("scrollable = playbackControlsPosition == PlaybackControlsPosition.BelowSeekbar").findAll(controls).count())
-    assertTrue(landscape.contains(".clipToBounds()"))
-    assertTrue(landscape.contains(".horizontalScroll(scrollState, reverseScrolling)"))
-    assertTrue(portrait.contains(".clipToBounds()"))
-    assertTrue(portrait.contains(".horizontalScroll(scrollState)"))
+    assertTrue(landscape.contains("PlayerControlScrollStrip("))
+    assertTrue(landscape.contains("reverseScrolling = reverseScrolling"))
+    assertTrue(portrait.contains("PlayerControlScrollStrip("))
+    assertTrue(strip.contains("modifier.fillMaxWidth().clipToBounds()"))
+    assertTrue(strip.contains("horizontalScroll(scrollState, reverseScrolling = reverseScrolling)"))
     assertTrue(preview.contains("LazyRow("))
     assertTrue(preview.contains("rememberLazyListState()"))
   }

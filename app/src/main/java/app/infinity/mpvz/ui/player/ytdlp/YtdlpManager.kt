@@ -394,11 +394,12 @@ object YtdlpManager {
 
     return withContext(Dispatchers.IO) {
       installMutex.withLock {
-        if (!prepareRuntimeAssets(context, onLog)) return@withLock false
         if (!requiresYtdlp(source) || isPlaybackRuntimeReady(context)) return@withLock true
+        if (!prepareRuntimeAssets(context, onLog)) return@withLock false
+        if (isPlaybackRuntimeReady(context)) return@withLock true
 
         onLog("Preparing the current yt-dlp web playback runtime.\n")
-        installYtdlp(context, onLog)
+        installYtdlpForPlayback(context, onLog)
       }
     }
   }
@@ -440,7 +441,7 @@ object YtdlpManager {
         add("--")
         add(source)
       }
-      val completed = executePythonProcess(command, context) { line -> output.appendLine(line) }
+      val completed = executePythonProcessCancellable(command, context) { line -> output.appendLine(line) }
       if (!completed) return@withContext null
       output.lineSequence()
         .map(String::trim)
@@ -946,6 +947,63 @@ object YtdlpManager {
     _installationInfo.value = readInstallationInfo(context)
     return installed
   }
+
+  private suspend fun installYtdlpForPlayback(
+    context: Context,
+    onLog: (String) -> Unit,
+  ): Boolean {
+    val ytdlDir = getYtdlDir(context)
+    val nativeLibDir = context.applicationInfo.nativeLibraryDir
+    val pythonBinary = getExecutablePath(context)
+    val setupPy = File(ytdlDir, "setup.py").absolutePath
+    val command = mutableListOf(pythonBinary, setupPy, nativeLibDir)
+    val installed =
+      runPythonProcessCancellable("Installing yt-dlp...", command, context, onLog) && isInstalled(context)
+    if (installed) markPlaybackRuntimeReady(context)
+    _installationInfo.value = readInstallationInfo(context)
+    return installed
+  }
+
+  private suspend fun runPythonProcessCancellable(
+    title: String,
+    command: List<String>,
+    context: Context,
+    onLog: (String) -> Unit,
+  ): Boolean {
+    onLog("$title\n")
+    return executePythonProcessCancellable(command, context) { line -> onLog("$line\n") }
+  }
+
+  private suspend fun executePythonProcessCancellable(
+    command: List<String>,
+    context: Context,
+    onOutput: (String) -> Unit,
+  ): Boolean =
+    coroutineScope {
+      val process = startPythonProcess(command, context)
+      val outputJob =
+        async(Dispatchers.IO) {
+          BufferedReader(InputStreamReader(process.inputStream)).use { reader ->
+            reader.lineSequence().forEach(onOutput)
+          }
+        }
+      val exitJob = async(Dispatchers.IO) { runInterruptible { process.waitFor() } }
+      try {
+        val exitCode = exitJob.await()
+        outputJob.await()
+        exitCode == 0
+      } catch (e: CancellationException) {
+        throw e
+      } catch (e: Exception) {
+        onOutput("Error: ${e.message}")
+        false
+      } finally {
+        if (process.isAlive) process.destroyForcibly()
+        runCatching { process.inputStream.close() }
+        outputJob.cancel()
+        exitJob.cancel()
+      }
+    }
 
   private fun runPythonProcess(
     title: String,

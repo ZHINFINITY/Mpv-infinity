@@ -595,9 +595,6 @@ fun Modifier.liquidGlassPane(
             val lensAllowed = scene.refractionEnabled &&
               if (materialRole == GlassSurfacePolicy.MaterialRole.Regular) size.maxDimension <= 1024.dp.toPx()
               else size.minDimension <= 128.dp.toPx() && size.maxDimension <= 512.dp.toPx()
-            val frostDp = if (materialRole == GlassSurfacePolicy.MaterialRole.Regular)
-              maxOf(GlassSurfacePolicy.RegularMinimumFrostDp, 10f * tuning.frost * material.frostMultiplier)
-            else 10f * tuning.frost * material.frostMultiplier
             val mapped = RuntimeShaderSupport.bindGlassOpticsOrNull(
               shader = shader,
               sourceShader = sourceShader,
@@ -620,7 +617,6 @@ fun Modifier.liquidGlassPane(
               fresnel = bevel.fresnel,
               strength = if (lensAllowed) 4.dp.toPx() * material.refractionMultiplier *
                 GlassSurfacePolicy.refractionStrength(tuning.refraction, reducedMotion, highContrast) else 0f,
-              frostPx = frostDp * density,
             )
             if (!mapped) {
               matrix.setScale(scene.boundsInWindow.width / scene.image.width,
@@ -715,7 +711,6 @@ uniform float2 light;
 uniform float specular;
 uniform float fresnel;
 uniform float strength;
-uniform float frost;
 half4 sampleAt(float2 windowPosition) {
   float2 uv = clamp((windowPosition - sceneOrigin) / sceneSize, float2(0.0), float2(1.0));
   // Pixel centres and explicit bilinear filtering avoid a magnified nearest-neighbour grid.
@@ -738,11 +733,9 @@ half4 main(float2 p) {
   float directionalReflection = (facing * specular + fresnelTerm) * bevelBand;
   float2 bent = origin + p - normal * strength * bevelBand * bevelBand;
   bent += light * strength * 0.35 * directionalReflection;
-  float2 blurX = float2(frost, 0.0);
-  float2 blurY = float2(0.0, frost);
-  half4 color = sampleAt(bent) * 0.40;
-  color += (sampleAt(bent + blurX) + sampleAt(bent - blurX) +
-            sampleAt(bent + blurY) + sampleAt(bent - blurY)) * 0.15;
+  // The shared frame is already frosted before publication; a second multi-tap blur here
+  // multiplies pane cost without improving the material.
+  half4 color = sampleAt(bent);
   return half4(color.rgb + directionalReflection * 0.12, 1.0);
 }
 """

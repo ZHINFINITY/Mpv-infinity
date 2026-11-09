@@ -463,12 +463,19 @@ fun PlayerControls(
 
   val isTorrentConnecting = torrentState is TorrentStreamingState.Connecting
   val isTorrentStreaming = torrentState is TorrentStreamingState.Streaming
+  val activity = LocalActivity.current as? PlayerActivity
+  val streamPlaybackHidesQuality = activity?.isStreamTabPlayback == true
+  val nativeSnapshot by activity?.nativePlaybackSnapshot?.collectAsState()
+    ?: remember { mutableStateOf(NativePlaybackSnapshot()) }
+  val nativeEngineActive = activity?.isNativeEngineActive() == true
   val bufferingState =
     rememberBufferingState(
-      enabled = showLoadingCircle,
+      enabled = showLoadingCircle && !nativeEngineActive,
       // A torrent that has not produced a playable range yet never reaches mpv, so the engine's own
       // connecting phase has to drive the spinner directly.
-      forceVisible = isTorrentConnecting || playbackSessionState.phase == PlaybackPhase.LOADING,
+      forceVisible =
+        !nativeEngineActive &&
+          (isTorrentConnecting || playbackSessionState.phase == PlaybackPhase.LOADING),
     )
   val isMpvBuffering = bufferingState.isCacheStall
   val safeAreaWindow by playerPreferences.safeAreaWindow.collectAsState()
@@ -488,14 +495,18 @@ fun PlayerControls(
   var nativeSeekPreviewPosition by remember { mutableStateOf<Float?>(null) }
   val mpvSeeking by PlaybackSession.propBoolean["seeking"].collectAsState()
   val isPlayerSeeking = isSeeking || (mpvSeeking ?: false)
-  val activity = LocalActivity.current as? PlayerActivity
-  val streamPlaybackHidesQuality = activity?.isStreamTabPlayback == true
-  val nativeSnapshot by activity?.nativePlaybackSnapshot?.collectAsState()
-    ?: remember { mutableStateOf(NativePlaybackSnapshot()) }
-  val nativeEngineActive = activity?.isNativeEngineActive() == true
-  val isNativeBuffering = nativeEngineActive && nativeSnapshot.isBuffering
   val showBufferingIndicator =
-    (bufferingState.visible || isNativeBuffering || playbackSessionState.phase == PlaybackPhase.LOADING) && !isPlayerSeeking
+    PlayerControlVisibilityPolicy.shouldShowBufferingIndicator(
+      nativeEngineActive = nativeEngineActive,
+      nativeReady = nativeSnapshot.isReady,
+      nativeLoading = nativeSnapshot.isLoading,
+      nativeBuffering = nativeSnapshot.isBuffering,
+      nativeEnded = nativeSnapshot.isEnded,
+      mpvLoading = playbackSessionState.phase == PlaybackPhase.LOADING,
+      mpvBuffering = bufferingState.visible,
+      torrentConnecting = isTorrentConnecting,
+      isSeeking = isPlayerSeeking,
+    )
   var stableDemuxerCacheTime by remember { mutableFloatStateOf(0f) }
   val currentDemuxerCacheTime =
     demuxerCacheTime
@@ -730,6 +741,7 @@ fun PlayerControls(
 
   LaunchedEffect(
     controlsShown,
+    showBufferingIndicator,
     paused,
     isSeeking,
     resetControlsTimestamp,
@@ -742,6 +754,7 @@ fun PlayerControls(
     if (!isAudioOnly &&
       controlsShown &&
       paused == false &&
+      !showBufferingIndicator &&
       !isSeeking &&
       !isUnlockSliderDragging &&
       !(showControlsDrawer && isPlayerDrawerShown)
@@ -1239,7 +1252,12 @@ fun PlayerControls(
             }
           }
 
-          val areButtonsVisible = (controlsShown || showBufferingIndicator) && !areControlsLocked && !areSlidersShown
+          val areButtonsVisible =
+            PlayerControlVisibilityPolicy.areButtonsVisible(
+              controlsShown = controlsShown || showBufferingIndicator,
+              controlsLocked = areControlsLocked,
+              slidersShown = areSlidersShown,
+            )
           val leftCustomButtons = remember(customButtons) { customButtons.filter { it.isLeft } }
           val rightCustomButtons = remember(customButtons) { customButtons.filterNot { it.isLeft } }
           val showLandscapeLeftCustomButtons = areButtonsVisible && !isPortrait && leftCustomButtons.isNotEmpty()
@@ -1708,7 +1726,7 @@ fun PlayerControls(
           }
 
           AnimatedVisibility(
-            visible = controlsShown && !areControlsLocked && !areSlidersShown && !showBufferingIndicator,
+            visible = areButtonsVisible,
             enter = buildControlsEnterV(controlsAnimStyle, reduceMotion, enterMs) { 0 },
             exit = buildControlsExitV(controlsAnimStyle, reduceMotion, exitMs) { 0 },
             modifier =
@@ -2117,7 +2135,7 @@ fun PlayerControls(
           }
 
           AnimatedVisibility(
-            visible = controlsShown && !areControlsLocked,
+            visible = areButtonsVisible,
             enter = buildControlsEnterH(controlsAnimStyle, reduceMotion, enterMs) { -it },
             exit = buildControlsExitH(controlsAnimStyle, reduceMotion, exitMs) { -it },
             modifier =

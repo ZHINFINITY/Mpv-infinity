@@ -2295,6 +2295,7 @@ class PlayerViewModel(
   }
 
   fun onVideoLoadStarted() {
+    showControls()
     introLookupJob?.cancel()
     autoCropJob?.cancel()
     autoCropJob = null

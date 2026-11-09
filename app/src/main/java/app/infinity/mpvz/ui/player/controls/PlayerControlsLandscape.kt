@@ -9,19 +9,18 @@ package app.infinity.mpvz.ui.player.controls
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -34,7 +33,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
@@ -43,7 +41,6 @@ import app.infinity.mpvz.R
 import app.infinity.mpvz.preferences.AppearancePreferences
 import app.infinity.mpvz.preferences.PlayerButton
 import app.infinity.mpvz.preferences.preference.collectAsState
-import app.infinity.mpvz.ui.components.horizontalScrollFadeEdges
 import app.infinity.mpvz.ui.icons.Icon
 import app.infinity.mpvz.ui.icons.Icons
 import app.infinity.mpvz.ui.player.Panels
@@ -393,23 +390,21 @@ private fun LandscapePlayerControlStrip(
   scrollable: Boolean,
   reverseScrolling: Boolean,
   alignment: Alignment.Horizontal,
-  content: @Composable () -> Unit,
+  content: @Composable RowScope.() -> Unit,
 ) {
-  val scrollState = rememberScrollState()
-  Row(
-    modifier =
-      if (scrollable) {
-        Modifier
-          .fillMaxWidth()
-          .clipToBounds()
-          .horizontalScrollFadeEdges(scrollState, reverseScrolling)
-          .horizontalScroll(scrollState, reverseScrolling)
-      } else {
-        Modifier
-      },
-    verticalAlignment = Alignment.CenterVertically,
-    horizontalArrangement = Arrangement.spacedBy(MaterialTheme.spacing.extraSmall, alignment),
-  ) {
-    content()
+  if (scrollable) {
+    PlayerControlScrollStrip(
+      gap = MaterialTheme.spacing.extraSmall,
+      alignment = alignment,
+      reverseScrolling = reverseScrolling,
+      showEdgeFades = true,
+      content = content,
+    )
+  } else {
+    Row(
+      verticalAlignment = Alignment.CenterVertically,
+      horizontalArrangement = Arrangement.spacedBy(MaterialTheme.spacing.extraSmall, alignment),
+      content = content,
+    )
   }
 }

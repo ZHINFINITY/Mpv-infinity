@@ -28,7 +28,7 @@ class ReferenceUiRollbackContractTest {
     val expected = mapOf(
       // Build 1910 smoothness: chapter index via derivedStateOf so position ticks do not recompose the whole overlay.
       // Player layout follow-up: side lanes stay bounded and scroll with edge fades.
-      "app/src/main/java/app/infinity/mpvz/ui/player/controls/PlayerControls.kt" to "19d75ac943cbf21664111ecf629dcbfd6d171fc2748909e495e5d1e36ec9f04b" /* Owner-requested Above Seekbar/title/playlist restoration plus compact center transport */,
+      "app/src/main/java/app/infinity/mpvz/ui/player/controls/PlayerControls.kt" to "509f3cca6e59f9a095d3bdbe4a7ff486d8b4eda8030d14efbaa959003348155b" /* Engine-aware startup visibility and shared center/control-group reveal */,
       // Owner follow-up: music uses its legacy visual rail while video retains the global-glass path.
       "app/src/main/java/app/infinity/mpvz/ui/player/controls/components/Seekbar.kt" to "5e3cbc03be3aa7b35f464e0ee313615192d8d1cdcfbc7e8a819b7a6c2331843c",
       // Build 1910: shared rimLight/thick-surface routing is intentionally owned by this stream.
@@ -335,9 +335,6 @@ import android.graphics.Shader
             val lensAllowed = scene.refractionEnabled &&
               if (materialRole == GlassSurfacePolicy.MaterialRole.Regular) size.maxDimension <= 1024.dp.toPx()
               else size.minDimension <= 128.dp.toPx() && size.maxDimension <= 512.dp.toPx()
-            val frostDp = if (materialRole == GlassSurfacePolicy.MaterialRole.Regular)
-              maxOf(GlassSurfacePolicy.RegularMinimumFrostDp, 10f * tuning.frost * material.frostMultiplier)
-            else 10f * tuning.frost * material.frostMultiplier
             val mapped = RuntimeShaderSupport.bindGlassOpticsOrNull(
               shader = shader,
               sourceShader = sourceShader,
@@ -360,7 +357,6 @@ import android.graphics.Shader
               fresnel = bevel.fresnel,
               strength = if (lensAllowed) 4.dp.toPx() * material.refractionMultiplier *
                 GlassSurfacePolicy.refractionStrength(tuning.refraction, reducedMotion, highContrast) else 0f,
-              frostPx = frostDp * density,
             )
 """ to
         """            val mapped = shader != null && Build.VERSION.SDK_INT >= 33 && runCatching {
@@ -394,6 +390,67 @@ import android.graphics.Shader
             }.isSuccess
 """,
       "internal const val GLASS_OPTICS" to "private const val GLASS_OPTICS",
+      """uniform float strength;
+half4 sampleAt(float2 windowPosition) {
+  float2 uv = clamp((windowPosition - sceneOrigin) / sceneSize, float2(0.0), float2(1.0));
+  // Pixel centres and explicit bilinear filtering avoid a magnified nearest-neighbour grid.
+  return scene.eval(clamp(uv * imageSize, float2(0.5), imageSize - float2(0.5)));
+}
+half4 main(float2 p) {
+  float2 center = pane * 0.5;
+  float2 delta = p - center;
+  float2 core = max(center - radius, float2(0.0));
+  float2 nearest = clamp(delta, -core, core);
+  float2 radial = delta - nearest;
+  float radialLength = length(radial);
+  // Rounded-rectangle SDF supplies one coherent body normal at corners and straight edges.
+  float2 normal = radial / max(radialLength, 0.001);
+  float edgeDistance = radius - radialLength;
+  float bevelBand = 1.0 - smoothstep(0.0, max(bevel, 0.001), max(edgeDistance, 0.0));
+  float grazing = 1.0 - abs(dot(normal, light));
+  float facing = max(dot(normal, light), 0.0);
+  float fresnelTerm = pow(clamp(grazing, 0.0, 1.0), 3.0) * fresnel;
+  float directionalReflection = (facing * specular + fresnelTerm) * bevelBand;
+  float2 bent = origin + p - normal * strength * bevelBand * bevelBand;
+  bent += light * strength * 0.35 * directionalReflection;
+  // The shared frame is already frosted before publication; a second multi-tap blur here
+  // multiplies pane cost without improving the material.
+  half4 color = sampleAt(bent);
+  return half4(color.rgb + directionalReflection * 0.12, 1.0);
+}
+""" to
+        """uniform float strength;
+uniform float frost;
+half4 sampleAt(float2 windowPosition) {
+  float2 uv = clamp((windowPosition - sceneOrigin) / sceneSize, float2(0.0), float2(1.0));
+  // Pixel centres and explicit bilinear filtering avoid a magnified nearest-neighbour grid.
+  return scene.eval(clamp(uv * imageSize, float2(0.5), imageSize - float2(0.5)));
+}
+half4 main(float2 p) {
+  float2 center = pane * 0.5;
+  float2 delta = p - center;
+  float2 core = max(center - radius, float2(0.0));
+  float2 nearest = clamp(delta, -core, core);
+  float2 radial = delta - nearest;
+  float radialLength = length(radial);
+  // Rounded-rectangle SDF supplies one coherent body normal at corners and straight edges.
+  float2 normal = radial / max(radialLength, 0.001);
+  float edgeDistance = radius - radialLength;
+  float bevelBand = 1.0 - smoothstep(0.0, max(bevel, 0.001), max(edgeDistance, 0.0));
+  float grazing = 1.0 - abs(dot(normal, light));
+  float facing = max(dot(normal, light), 0.0);
+  float fresnelTerm = pow(clamp(grazing, 0.0, 1.0), 3.0) * fresnel;
+  float directionalReflection = (facing * specular + fresnelTerm) * bevelBand;
+  float2 bent = origin + p - normal * strength * bevelBand * bevelBand;
+  bent += light * strength * 0.35 * directionalReflection;
+  float2 blurX = float2(frost, 0.0);
+  float2 blurY = float2(0.0, frost);
+  half4 color = sampleAt(bent) * 0.40;
+  color += (sampleAt(bent + blurX) + sampleAt(bent - blurX) +
+            sampleAt(bent + blurY) + sampleAt(bent - blurY)) * 0.15;
+  return half4(color.rgb + directionalReflection * 0.12, 1.0);
+}
+""",
       // After latency reverse, the isolated remember site still lacks origin/main's SDK 33 guard.
       """  val shader = remember {
     runCatching { RuntimeShader(GLASS_OPTICS) }.getOrNull()

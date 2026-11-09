@@ -8,7 +8,6 @@
 package app.infinity.mpvz.ui.player.controls
 
 import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -17,7 +16,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
@@ -29,7 +27,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
@@ -240,7 +237,12 @@ fun BottomPlayerControlsPortrait(
   activity: PlayerActivity,
 ) {
   PlayerButtonTheme(hideBackground) {
-    val controlsContent: @Composable () -> Unit = {
+    PlayerControlScrollStrip(
+      modifier = Modifier.padding(bottom = MaterialTheme.spacing.medium),
+      gap = MaterialTheme.spacing.medium,
+      alignment = Alignment.CenterHorizontally,
+      showEdgeFades = true,
+    ) {
       buttons.forEach { button ->
         RenderPlayerButton(
           button = button,
@@ -270,19 +272,6 @@ fun BottomPlayerControlsPortrait(
           modifier = Modifier.size(44.dp),
         )
       }
-    }
-    val scrollState = rememberScrollState()
-    Row(
-      modifier =
-        Modifier
-          .fillMaxWidth()
-          .clipToBounds()
-          .horizontalScroll(scrollState)
-          .padding(bottom = MaterialTheme.spacing.medium),
-      horizontalArrangement = Arrangement.spacedBy(MaterialTheme.spacing.medium, Alignment.CenterHorizontally),
-      verticalAlignment = Alignment.CenterVertically,
-    ) {
-      controlsContent()
     }
   }
 }

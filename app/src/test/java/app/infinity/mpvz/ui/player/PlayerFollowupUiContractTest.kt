@@ -28,7 +28,7 @@ class PlayerFollowupUiContractTest {
     assertTrue(branch.contains("timeNetworkPillExpanded.set(!appearancePreferences.timeNetworkPillExpanded.get())"))
     assertTrue(branch.contains("onClick = {"))
     assertTrue(branch.contains("toggleTimeNetworkPill()"))
-    assertTrue(branch.contains("using(SizeTransform(clip = false))"))
+    assertTrue(branch.contains("using(SizeTransform(clip = true))"))
     assertTrue(branch.contains("onLongClick = toggleTimeAndNetwork"))
     assertTrue(!branch.contains("resetFrameNavigationTimer"))
   }
@@ -144,8 +144,9 @@ class PlayerFollowupUiContractTest {
     assertTrue(landscape.contains("buttons.forEach { button ->"))
     assertTrue(landscape.contains("RenderPlayerButton("))
     assertTrue(landscape.contains("private fun LandscapePlayerControlStrip("))
-    assertTrue(landscape.contains(".horizontalScrollFadeEdges(scrollState, reverseScrolling)"))
-    assertTrue(landscape.contains(".horizontalScroll(scrollState, reverseScrolling)"))
+    assertTrue(landscape.contains("PlayerControlScrollStrip("))
+    assertTrue(landscape.contains("showEdgeFades = true"))
+    assertTrue(landscape.contains("reverseScrolling = reverseScrolling"))
     assertTrue(landscape.contains("if (scrollable)"))
     assertFalse(topRightButtons.contains("LandscapePlayerControlStrip"))
     assertTrue(controls.contains("scrollable = playbackControlsPosition == PlaybackControlsPosition.BelowSeekbar"))
@@ -186,8 +187,11 @@ class PlayerFollowupUiContractTest {
     assertTrue(preview.contains("PlaybackControlsPosition.BelowSeekbar"))
     assertFalse(preview.contains("Infinity layout"))
     assertFalse(preview.contains("cubicTo("))
-    assertTrue(controls.contains("(controlsShown || showBufferingIndicator) && !areControlsLocked && !areSlidersShown"))
-    assertTrue(controls.contains("(bufferingState.visible || isNativeBuffering || playbackSessionState.phase == PlaybackPhase.LOADING) && !isPlayerSeeking"))
+    assertTrue(controls.contains("PlayerControlVisibilityPolicy.shouldShowBufferingIndicator("))
+    assertTrue(controls.contains("PlayerControlVisibilityPolicy.areButtonsVisible("))
+    assertTrue(controls.contains("visible = areButtonsVisible"))
+    assertTrue(controls.contains("!showBufferingIndicator"))
+    assertFalse(controls.contains("isNativeBuffering"))
   }
 
   @Test
@@ -207,12 +211,16 @@ class PlayerFollowupUiContractTest {
     assertFalse(settings.contains("PlayerLayoutPreview("))
     assertTrue(controls.contains("top.linkTo(parent.top)\n                  bottom.linkTo(parent.bottom)"))
     assertTrue(controls.contains("bottom.linkTo(portraitControlsAboveGroupTop, spacing.small)"))
-    assertTrue(landscape.contains(".horizontalScrollFadeEdges(scrollState, reverseScrolling)"))
+    assertTrue(landscape.contains("PlayerControlScrollStrip("))
+    assertTrue(landscape.contains("showEdgeFades = true"))
     assertTrue(landscape.contains("if (scrollable)"))
     assertFalse(landscape.contains("FlowRow("))
-    assertFalse(portrait.contains("horizontalScrollFadeEdges"))
-    assertTrue(portrait.contains(".horizontalScroll(scrollState)"))
+    assertTrue(portrait.contains("PlayerControlScrollStrip("))
+    assertTrue(portrait.contains("showEdgeFades = true"))
     assertFalse(portrait.contains("FlowRow("))
+    val strip = read("app/src/main/java/app/infinity/mpvz/ui/player/controls/PlayerControlScrollStrip.kt")
+    assertTrue(strip.contains("Modifier.horizontalScroll(scrollState, reverseScrolling = reverseScrolling).widthIn(min = maxWidth)"))
+    assertTrue(strip.contains("modifier.fillMaxWidth().clipToBounds()"))
     assertTrue(preview.contains("AnimatedVisibility("))
     assertTrue(preview.contains("activeRegion == ControlRegion.PORTRAIT_BOTTOM"))
   }
@@ -305,6 +313,45 @@ class PlayerFollowupUiContractTest {
     assertFalse(newIntentPreflightBlock.contains("continuePlayerInitialization()"))
     assertTrue(dynamicLoad.contains("m3uPreflightJob?.join()"))
     assertTrue(dynamicLoad.contains("preflightM3uParse"))
+  }
+
+  @Test
+  fun onlineVideoStartupOverlapsReadyChecksAndRevealsAllControls() {
+    val activity = read("app/src/main/java/app/infinity/mpvz/ui/player/PlayerActivity.kt")
+    val viewModel = read("app/src/main/java/app/infinity/mpvz/ui/player/PlayerViewModel.kt")
+    val ytdlp = read("app/src/main/java/app/infinity/mpvz/ui/player/ytdlp/YtdlpManager.kt")
+    val geometry = read("app/src/main/java/app/infinity/mpvz/ui/player/controls/PlayerControlsGeometry.kt")
+    val shared = read("app/src/main/java/app/infinity/mpvz/ui/player/controls/PlayerControlsShared.kt")
+    val prepare = ytdlp.substringAfter("suspend fun prepareForPlayback(").substringBefore("/** Resolves a web page")
+    val resolve = ytdlp.substringAfter("suspend fun resolveDirectMediaUrl(").substringBefore("/** Unwraps common provider")
+    val cancellableProcess =
+      ytdlp.substringAfter("private suspend fun executePythonProcessCancellable(")
+        .substringBefore("private fun runPythonProcess(")
+    val playbackPreflight =
+      activity.substringAfter("val (preflight, resolvedPageMediaUrl) =")
+        .substringBefore("val (savedPlaybackState, radioMimeType, ytdlpReady) = preflight")
+    val loadStart =
+      viewModel.substringAfter("fun onVideoLoadStarted()")
+        .substringAfter("{")
+        .substringBefore("fun onVideoLoadCompleted()")
+
+    assertTrue(activity.contains("val savedPlaybackStateJob ="))
+    assertTrue(activity.contains("val ytdlpPreparationJob ="))
+    assertTrue(activity.contains("coroutineScope {"))
+    assertTrue(activity.contains("async(Dispatchers.IO)"))
+    assertTrue(playbackPreflight.indexOf("YtdlpManager.resolveDirectMediaUrl") < playbackPreflight.indexOf("savedPlaybackStateJob.await()"))
+    assertTrue(playbackPreflight.contains("resolvedPageMediaUrlJob?.await()"))
+    assertTrue(loadStart.trimStart().startsWith("showControls()"))
+    assertTrue(prepare.indexOf("isPlaybackRuntimeReady(context)") < prepare.indexOf("prepareRuntimeAssets(context, onLog)"))
+    assertTrue(prepare.contains("installYtdlpForPlayback(context, onLog)"))
+    assertTrue(resolve.contains("executePythonProcessCancellable(command, context)"))
+    assertTrue(cancellableProcess.contains("runInterruptible { process.waitFor() }"))
+    assertTrue(cancellableProcess.contains("process.destroyForcibly()"))
+    assertTrue(geometry.contains("buttonSize * 3f"))
+    assertTrue(geometry.contains("maxOf(buttonSize, 176.dp)"))
+    assertTrue(shared.contains("frameNavigationSlotWidth(buttonSize, compact)"))
+    assertTrue(shared.contains("timeNetworkSlotWidth(buttonSize, compact)"))
+    assertTrue(shared.contains("SizeTransform(clip = true)"))
   }
 
   @Test

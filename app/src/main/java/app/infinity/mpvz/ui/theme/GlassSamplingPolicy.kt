@@ -5,12 +5,11 @@ package app.infinity.mpvz.ui.theme
 object GlassSamplingPolicy {
   const val MaxSampleEdge = 192
   /**
-   * The frosted sample behind player sheets must move with the video above them, so playing
-   * frames are copied at display-like cadence. The copy is at most [MaxSampleEdge] px and the
-   * frost is a small box blur, so this stays cheap; warm devices halve it, severe heat stops it.
+   * SurfaceView samples use PixelCopy and an off-thread frost pass, not the reference app's shared
+   * TextureView GPU layer. Keep sheet capture to 15 fps; controls-only samples run at 10 fps.
    */
-  const val PlayingIntervalMs = 33L
-  const val WarmPlayingIntervalMs = 66L
+  const val PlayingIntervalMs = 66L
+  const val WarmPlayingIntervalMs = 120L
   const val PausedIntervalMs = 1000L
   const val RetryIntervalMs = 1200L
   const val FailureLimit = 3
@@ -29,7 +28,7 @@ object GlassSamplingPolicy {
   }
 
   /** Controls-only cadence: small buttons over the video do not need display rate. */
-  const val ControlsPlayingIntervalMs = 33L
+  const val ControlsPlayingIntervalMs = 100L
   /** Gaussian sigma equivalent of n separable box passes of radius r. */
   fun frostSigma(radius: Int = GlassFrostPolicy.Radius, passes: Int = GlassFrostPolicy.Passes): Float {
     require(radius >= 0 && passes >= 0)
