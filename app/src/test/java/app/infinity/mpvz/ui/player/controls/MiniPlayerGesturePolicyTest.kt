@@ -10,6 +10,18 @@ import org.junit.Assert.assertEquals
 import org.junit.Test
 
 class MiniPlayerGesturePolicyTest {
+  @Test fun horizontalDismissAcceptsEitherDirectionOrFastFlick() {
+    assertEquals(true, MiniPlayerDismissGesturePolicy.shouldDismissHorizontally(-65f, 0f, 64f, 800f))
+    assertEquals(true, MiniPlayerDismissGesturePolicy.shouldDismissHorizontally(0f, 900f, 64f, 800f))
+    assertEquals(false, MiniPlayerDismissGesturePolicy.shouldDismissHorizontally(40f, -500f, 64f, 800f))
+  }
+
+  @Test fun verticalDismissAcceptsDownwardMotionButNotUpwardExpansion() {
+    assertEquals(true, MiniPlayerDismissGesturePolicy.shouldDismissDownward(65f, 0f, 64f, 800f))
+    assertEquals(true, MiniPlayerDismissGesturePolicy.shouldDismissDownward(0f, 900f, 64f, 800f))
+    assertEquals(false, MiniPlayerDismissGesturePolicy.shouldDismissDownward(-100f, -900f, 64f, 800f))
+  }
+
   @Test fun dragMapsDistanceToBoundedProgress() {
     val state = MiniPlayerGesturePolicy.drag(MiniPlayerGestureState(), 240f, 800f)
     assertEquals(0.3f, state.progress, 0.0001f)

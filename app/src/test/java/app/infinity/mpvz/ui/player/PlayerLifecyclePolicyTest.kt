@@ -114,6 +114,13 @@ class PlayerLifecyclePolicyTest {
   }
 
   @Test
+  fun savedVideoTrackIsRestoredOnlyForItsMediaItem() {
+    assertTrue(PlayerLifecyclePolicy.shouldRestoreVideoTrack(savedMediaId = "video-1", currentMediaId = "video-1"))
+    assertFalse(PlayerLifecyclePolicy.shouldRestoreVideoTrack(savedMediaId = "video-1", currentMediaId = "video-2"))
+    assertTrue(PlayerLifecyclePolicy.shouldRestoreVideoTrack(savedMediaId = null, currentMediaId = "video-2"))
+  }
+
+  @Test
   fun nativeForegroundRecoveryReloadsMissingOrIdleMediaButNotAnActiveLoad() {
     assertTrue(
       PlayerLifecyclePolicy.shouldRecoverNativePlayback(

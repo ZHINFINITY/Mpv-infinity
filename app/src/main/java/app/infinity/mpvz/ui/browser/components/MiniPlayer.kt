@@ -112,6 +112,7 @@ import app.infinity.mpvz.ui.icons.Icon
 import app.infinity.mpvz.ui.icons.Icons
 import app.infinity.mpvz.ui.player.DeclaredPlaybackMediaKind
 import app.infinity.mpvz.ui.player.MediaPlaybackService
+import app.infinity.mpvz.ui.player.controls.MiniPlayerDismissGesturePolicy
 import app.infinity.mpvz.ui.player.PlaybackPhase
 import app.infinity.mpvz.ui.player.PlaybackSession
 import app.infinity.mpvz.ui.player.PlayerActivity
@@ -447,7 +448,8 @@ private fun MiniPlayerContent(
     )
   }
   val density = LocalDensity.current
-  val dismissThresholdPx = with(density) { 100.dp.toPx() }
+  val dismissThresholdPx = with(density) { 64.dp.toPx() }
+  val dismissVelocityThresholdPxPerSecond = with(density) { 800.dp.toPx() }
   val expandThresholdPx = with(density) { 48.dp.toPx() }
 
   val useInAppSheet = isAudioOnlyItem && musicSheet?.isAvailable == true
@@ -509,9 +511,19 @@ private fun MiniPlayerContent(
         }
       }
       .pointerInput(Unit) {
+        val velocityTracker = VelocityTracker()
         detectHorizontalDragGestures(
+          onDragStart = { velocityTracker.resetTracking() },
           onDragEnd = {
-            if (abs(offsetX) > dismissThresholdPx) {
+            val velocityX = runCatching { velocityTracker.calculateVelocity().x }.getOrDefault(0f)
+            if (MiniPlayerDismissGesturePolicy.shouldDismissHorizontally(
+                offsetX,
+                velocityX,
+                dismissThresholdPx,
+                dismissVelocityThresholdPxPerSecond,
+              )
+            ) {
+              offsetX = 0f
               dismissPlayer()
             } else {
               coroutineScope.launch {
@@ -528,7 +540,8 @@ private fun MiniPlayerContent(
               }
             }
           },
-          onHorizontalDrag = { _, dragAmount ->
+          onHorizontalDrag = { change, dragAmount ->
+            velocityTracker.addPosition(change.uptimeMillis, change.position)
             offsetX += dragAmount
           },
         )
@@ -539,6 +552,9 @@ private fun MiniPlayerContent(
             state = musicSheet,
             fromMiniPlayer = true,
             onDown = musicSheet::prewarm,
+            dismissThresholdPx = dismissThresholdPx,
+            dismissVelocityThresholdPxPerSecond = dismissVelocityThresholdPxPerSecond,
+            onDismissDown = dismissPlayer,
           )
         } else {
           Modifier.pointerInput(Unit) {
@@ -554,9 +570,20 @@ private fun MiniPlayerContent(
                 change.consume()
               },
               onDragEnd = {
-                val upwardVelocity = -runCatching { velocityTracker.calculateVelocity().y }.getOrDefault(0f)
+                val velocityY = runCatching { velocityTracker.calculateVelocity().y }.getOrDefault(0f)
+                val upwardVelocity = -velocityY
                 val expandVelocityPxPerSecond = with(density) { 300.dp.toPx() }
-                if (verticalDrag < -expandThresholdPx || upwardVelocity > expandVelocityPxPerSecond) launchPlayer()
+                if (MiniPlayerDismissGesturePolicy.shouldDismissDownward(
+                    verticalDrag,
+                    velocityY,
+                    dismissThresholdPx,
+                    dismissVelocityThresholdPxPerSecond,
+                  )
+                ) {
+                  dismissPlayer()
+                } else if (verticalDrag < -expandThresholdPx || upwardVelocity > expandVelocityPxPerSecond) {
+                  launchPlayer()
+                }
                 verticalDrag = 0f
               },
               onDragCancel = { verticalDrag = 0f },

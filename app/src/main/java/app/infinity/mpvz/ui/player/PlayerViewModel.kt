@@ -1960,35 +1960,6 @@ class PlayerViewModel(
       }
     }
 
-    // Update precise duration when the integer duration changes (avoid polling)
-    viewModelScope.launch(playbackStateDispatcher) {
-      _duration.collect { observedDuration ->
-        if (!_isMpvCoreReady.value) return@collect
-        if (observedDuration == null || observedDuration <= 0) {
-          _preciseDuration.value = 0f
-          return@collect
-        }
-        val dur = PlaybackSession.getPropertyDouble("duration")
-        if (dur != null && dur > 0) {
-          _preciseDuration.value = dur.toFloat()
-          // chapter-list and duration are independent mpv properties. A chapter list can arrive
-          // first (or be identical to the previous file), so always derive its markers again once
-          // the new duration is known.
-          refreshChapterDerivedSegments(chapters.value)
-          checkPendingIntroLookup()
-          syncplayManager.updateFileInfo(currentSyncplayFileInfo())
-
-          // --- AMBIENT FIX: Adapt shader to new file dimensions by @Chinna95P ---
-          if (_isAmbientEnabled.value) {
-            lastAmbientScaleX = -1.0 // Force a complete shader rewrite
-            // Slight delay ensures MPV's video-params (w/h/crop) are fully populated.
-            scheduleAmbientUpdate(250)
-          }
-          // --------------------------------------------------------
-        }
-      }
-    }
-
     viewModelScope.launch {
       val activeGeneration =
         PlaybackSession.state
@@ -2169,7 +2140,20 @@ class PlayerViewModel(
     detachedPlaybackJob =
       viewModelScope.launch(playbackStateDispatcher) {
         PlaybackSession.getPropertyDouble("time-pos")?.let { _precisePosition.value = it.toFloat() }
-        PlaybackSession.getPropertyDouble("duration")?.takeIf { it > 0.0 }?.let { _preciseDuration.value = it.toFloat() }
+        val currentItem = PlaybackSession.state.value.currentItem ?: PlaybackSession.queue.value.currentItem
+        val cachedDuration = MediaPlaybackService.durationSecondsForItem(currentItem)
+        val observedDuration = PlaybackSession.getPropertyDouble("duration")
+        val queueIsM3u = PlaybackSession.queue.value.isM3u
+        val resolvedDuration =
+          PlaybackDurationPolicy.resolve(
+            previousDurationSeconds = cachedDuration ?: 0.0,
+            observedDurationSeconds = observedDuration,
+            sameItem = cachedDuration != null,
+            preserveSameItemDuration = cachedDuration != null && currentItem?.isDefinitelyAudioOnly() == true && !queueIsM3u,
+          ).takeIf { it > 0.0 }
+            ?: currentItem?.durationSeconds?.takeIf { it > 0 }?.toDouble()
+            ?: 0.0
+        _preciseDuration.value = resolvedDuration.toFloat()
         _isMpvCoreReady.value = true
         startMpvStateCollectors()
         refreshPlaylistItems()
@@ -2199,11 +2183,49 @@ class PlayerViewModel(
 
   private fun startMpvStateCollectors() {
     if (mpvStateCollectorsJob?.isActive == true) return
-    mpvStateCollectorsJob =
+      mpvStateCollectorsJob =
       viewModelScope.launch(playbackStateDispatcher) {
         launch { PlaybackSession.propBoolean["pause"].collect { _paused.value = it } }
         launch { PlaybackSession.propInt["time-pos"].collect { _pos.value = it } }
         launch { PlaybackSession.propInt["duration"].collect { _duration.value = it } }
+        launch {
+          _duration.collect { observedDuration ->
+            if (!_isMpvCoreReady.value) return@collect
+            val sessionState = PlaybackSession.state.value
+            val currentItem = sessionState.currentItem ?: PlaybackSession.queue.value.currentItem
+            val queueIsM3u = PlaybackSession.queue.value.isM3u
+            val cachedDuration = MediaPlaybackService.durationSecondsForItem(currentItem)
+            if (sessionState.phase == PlaybackPhase.LOADING) {
+              _preciseDuration.value = cachedDuration?.toFloat() ?: 0f
+              return@collect
+            }
+            if (observedDuration == null || observedDuration <= 0) {
+              _preciseDuration.value = cachedDuration?.toFloat() ?: 0f
+              return@collect
+            }
+            val durationFromMpv = PlaybackSession.getPropertyDouble("duration") ?: observedDuration.toDouble()
+            val resolvedDuration =
+              PlaybackDurationPolicy.resolve(
+                previousDurationSeconds = cachedDuration ?: 0.0,
+                observedDurationSeconds = durationFromMpv,
+                sameItem = cachedDuration != null,
+                preserveSameItemDuration = cachedDuration != null && currentItem?.isDefinitelyAudioOnly() == true && !queueIsM3u,
+              )
+            if (resolvedDuration <= 0.0) return@collect
+            _preciseDuration.value = resolvedDuration.toFloat()
+            // Chapter-list and duration are independent MPV properties. A chapter list can arrive
+            // first (or be identical to the previous file), so derive its markers again whenever
+            // the active item's duration becomes available.
+            refreshChapterDerivedSegments(chapters.value)
+            checkPendingIntroLookup()
+            syncplayManager.updateFileInfo(currentSyncplayFileInfo())
+
+            if (_isAmbientEnabled.value) {
+              lastAmbientScaleX = -1.0
+              scheduleAmbientUpdate(250)
+            }
+          }
+        }
         launch { PlaybackSession.propInt["volume-max"].collect { _volumeBoostCap.value = it } }
         launch {
           PlaybackSession.queue

@@ -25,9 +25,11 @@ import app.infinity.mpvz.domain.navidrome.NavidromePlaylist
 import app.infinity.mpvz.domain.navidrome.NavidromeServer
 import app.infinity.mpvz.domain.navidrome.NavidromeSong
 import app.infinity.mpvz.repository.NavidromeRepository
+import app.infinity.mpvz.ui.player.PlaybackItem
 import app.infinity.mpvz.utils.media.MediaUtils
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -77,6 +79,8 @@ class NavidromeViewModel(
   private val navidromeRepository: NavidromeRepository by inject()
   private val navidromeClient: NavidromeClient by inject()
   private val browserPreferences: BrowserPreferences by inject()
+  private var playbackLaunchJob: Job? = null
+  private var playbackLaunchRequestId = 0L
 
   private val _uiState = MutableStateFlow(
     NavidromeUiState(
@@ -301,30 +305,82 @@ class NavidromeViewModel(
     startIndex: Int,
   ) {
     if (songs.isEmpty()) return
-    val currentSong = songs.getOrNull(startIndex) ?: songs.first()
-    val posterUrl = navidromeRepository.getSongCoverArtUrl(server, currentSong)
+    val selectedIndex = startIndex.coerceIn(songs.indices)
+    val selectedSong = songs[selectedIndex]
+    val requestId = ++playbackLaunchRequestId
+    playbackLaunchJob?.cancel()
+    playbackLaunchJob =
+      viewModelScope.launch {
+        val preparedQueue =
+          withContext(Dispatchers.Default) {
+            val tracks =
+              songs.map { song ->
+                val streamUrl = navidromeRepository.getStreamUrl(server, song.id)
+                val artworkUrl = navidromeRepository.getSongCoverArtUrl(server, song).orEmpty()
+                val uri = Uri.parse(streamUrl)
+                PreparedNavidromeTrack(
+                  uri = uri,
+                  artworkUrl = artworkUrl,
+                  item =
+                    PlaybackItem.fromUri(
+                      uri = uri.toString(),
+                      title = song.title,
+                      artist = song.artist,
+                      mimeType = "audio/*",
+                      artworkUri = artworkUrl.takeIf(String::isNotBlank),
+                      durationSeconds = song.durationSeconds.takeIf { it > 0 },
+                    ),
+                )
+              }
+            PreparedNavidromeQueue(
+              tracks = tracks,
+              playlistUris = tracks.map { it.uri },
+              playlistTitles = songs.map { it.title },
+              playlistArtists = songs.map { it.artist },
+              playlistArtworkUrls = tracks.map { it.artworkUrl },
+              playlistDurationsSeconds = songs.map { it.durationSeconds },
+              playbackItems = tracks.map { it.item },
+            )
+          }
+        if (requestId != playbackLaunchRequestId) return@launch
 
-    val playlistUris = songs.map { Uri.parse(navidromeRepository.getStreamUrl(server, it.id)) }
-    val streamUrl = playlistUris.getOrNull(startIndex)?.toString() ?: navidromeRepository.getStreamUrl(server, currentSong.id)
-    val playlistTitles = songs.map { it.title }
-    val playlistArtists = songs.map { it.artist }
-    val playlistArtworkUrls = songs.map { navidromeRepository.getSongCoverArtUrl(server, it) ?: "" }
-
-    MediaUtils.playFile(
-      source = streamUrl,
-      context = context,
-      launchSource = "navidrome_music",
-      title = currentSong.title,
-      posterUrl = posterUrl,
-      playlist = playlistUris,
-      playlistIndex = startIndex,
-      playlistTitles = playlistTitles,
-      playlistArtists = playlistArtists,
-      playlistArtworkUrls = playlistArtworkUrls,
-      isAudio = true,
-      playlistDurationsSeconds = songs.map { it.durationSeconds },
-    )
+        withContext(Dispatchers.Main.immediate) {
+          if (requestId != playbackLaunchRequestId) return@withContext
+          val current = preparedQueue.tracks.getOrNull(selectedIndex) ?: return@withContext
+          MediaUtils.playFile(
+            source = current.uri.toString(),
+            context = context,
+            launchSource = "navidrome_music",
+            title = selectedSong.title,
+            posterUrl = current.artworkUrl.takeIf(String::isNotBlank),
+            playlist = preparedQueue.playlistUris,
+            playlistIndex = selectedIndex,
+            playlistTitles = preparedQueue.playlistTitles,
+            playlistArtists = preparedQueue.playlistArtists,
+            playlistArtworkUrls = preparedQueue.playlistArtworkUrls,
+            isAudio = true,
+            playlistDurationsSeconds = preparedQueue.playlistDurationsSeconds,
+            preparedQueueItems = preparedQueue.playbackItems,
+          )
+        }
+      }
   }
+
+  private data class PreparedNavidromeTrack(
+    val uri: Uri,
+    val artworkUrl: String,
+    val item: PlaybackItem,
+  )
+
+  private data class PreparedNavidromeQueue(
+    val tracks: List<PreparedNavidromeTrack>,
+    val playlistUris: List<Uri>,
+    val playlistTitles: List<String>,
+    val playlistArtists: List<String>,
+    val playlistArtworkUrls: List<String>,
+    val playlistDurationsSeconds: List<Int>,
+    val playbackItems: List<PlaybackItem>,
+  )
 
   fun setSortField(field: MusicSortField) {
     browserPreferences.musicSortField.set(field)

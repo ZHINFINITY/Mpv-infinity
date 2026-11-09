@@ -200,8 +200,11 @@ private fun String.mediaUriLeaf(): String =
     .substringAfterLast('/')
 
 /** Native cannot open a webpage URL as media; keep it on MPV until yt-dlp resolves a stream. */
-internal fun PlaybackItem.requiresWebPageResolutionBeforeNative(): Boolean {
+internal fun PlaybackItem.requiresWebPageResolutionBeforeNative(videoHint: Boolean = false): Boolean {
   if (requiresTorrentResolution()) return true
+  // Only trusted, already-direct media paths may supply this hint (for example a playable Stream
+  // result or a yt-dlp-resolved video). Generic extensionless HTTP links remain webpages.
+  if (videoHint) return false
   val url = playableUri.trim()
   if (!url.startsWith("http://", ignoreCase = true) && !url.startsWith("https://", ignoreCase = true)) {
     return false
@@ -218,8 +221,9 @@ internal fun PlaybackItem.requiresWebPageResolutionBeforeNative(): Boolean {
 internal fun resolvePlaybackEngineMode(
   configuredEngine: PlaybackEngineMode,
   item: PlaybackItem,
+  videoHint: Boolean = false,
 ): PlaybackEngineMode {
-  if (item.requiresWebPageResolutionBeforeNative()) return PlaybackEngineMode.MPV
+  if (item.requiresWebPageResolutionBeforeNative(videoHint)) return PlaybackEngineMode.MPV
   return when (configuredEngine) {
     PlaybackEngineMode.AUTO -> if (item.isHdrOrDolbyVision()) PlaybackEngineMode.NATIVE else PlaybackEngineMode.MPV
     else -> configuredEngine

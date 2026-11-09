@@ -24,6 +24,22 @@ data class MediaSessionItemIdentity(
     (identifier == null || stableId == identifier) && (uri == null || originalUri == uri)
 }
 
+internal data class PlaybackPropertyCallbackIdentity(
+  val generation: Long,
+  val item: MediaSessionItemIdentity?,
+)
+
+internal object PlaybackPropertyCallbackPolicy {
+  fun isCurrent(
+    expected: PlaybackPropertyCallbackIdentity,
+    currentGeneration: Long,
+    currentItem: PlaybackItem?,
+  ): Boolean {
+    val currentIdentity = currentItem?.let { MediaSessionItemIdentity(it.stableId, it.originalUri) }
+    return expected.generation == currentGeneration && expected.item == currentIdentity
+  }
+}
+
 /**
  * Monotonic token for asynchronous notification work. Every current-item change invalidates all
  * artwork/favorite/metadata completions captured for the preceding item.

@@ -111,6 +111,35 @@ class PlaybackModelsTest {
   }
 
   @Test
+  fun trustedStreamVideoHintAllowsExtensionlessDirectHttpsUrlOnNative() {
+    val item =
+      PlaybackItem(
+        stableId = "trusted-stream",
+        originalUri = "https://cdn.example/live?id=opaque",
+        title = "Episode 1",
+      )
+
+    assertTrue(item.requiresWebPageResolutionBeforeNative())
+    assertFalse(item.requiresWebPageResolutionBeforeNative(videoHint = true))
+    assertEquals(PlaybackEngineMode.MPV, resolvePlaybackEngineMode(PlaybackEngineMode.NATIVE, item))
+    assertEquals(PlaybackEngineMode.NATIVE, resolvePlaybackEngineMode(PlaybackEngineMode.NATIVE, item, videoHint = true))
+  }
+
+  @Test
+  fun resolvedExtensionlessVideoCanUseNativeButUnresolvedWebPageCannot() {
+    val page =
+      PlaybackItem(
+        stableId = "external-page",
+        originalUri = "https://video.example/watch?id=opaque",
+        title = "Episode 1",
+      )
+    val resolved = page.copy(playableUri = "https://cdn.example/media?signature=opaque")
+
+    assertEquals(PlaybackEngineMode.MPV, resolvePlaybackEngineMode(PlaybackEngineMode.NATIVE, page))
+    assertEquals(PlaybackEngineMode.NATIVE, resolvePlaybackEngineMode(PlaybackEngineMode.NATIVE, resolved, videoHint = true))
+  }
+
+  @Test
   fun intentMimeTypeRemainsAuthoritativeWhenPresent() {
     assertEquals("video/webm", resolvePlaybackMimeType("video/webm", "video/mp4"))
   }

@@ -1236,7 +1236,7 @@ class AudioPlaybackResumeStorePersistenceTest {
   }
 
   @Test
-  fun failedCloseSnapshotDoesNotClearThePlaybackQueue() {
+  fun failedCloseSnapshotStillClearsThePlaybackQueue() {
     var activeQueue = queue(listOf(item("retry-close")))
     var teardownCalled = false
 
@@ -1251,8 +1251,8 @@ class AudioPlaybackResumeStorePersistenceTest {
     }
 
     assertFalse(persisted)
-    assertFalse(teardownCalled)
-    assertEquals("retry-close", activeQueue.currentItem?.stableId)
+    assertTrue(teardownCalled)
+    assertNull(activeQueue.currentItem)
   }
 
   @Test

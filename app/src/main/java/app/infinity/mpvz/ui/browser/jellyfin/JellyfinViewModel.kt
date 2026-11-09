@@ -997,12 +997,25 @@ class JellyfinViewModel(
             limit = 100,
           ).onSuccess { queryResult ->
             val combined = (currentList + queryResult.items).distinctBy { it.id }
+            val nextStartIndex = JellyfinPaginationPolicy.nextStartIndex(startIndex, queryResult.items.size)
+            val totalRecordCount =
+              JellyfinPaginationPolicy.estimatedTotalRecordCount(
+                totalRecordCount = queryResult.totalRecordCount,
+                startIndex = startIndex,
+                pageItemCount = queryResult.items.size,
+              )
             _uiState.update {
               it.copy(
                 currentItems = combined,
-                totalRecordCount = queryResult.totalRecordCount,
-                startIndex = combined.size,
-                hasMore = combined.size < queryResult.totalRecordCount,
+                totalRecordCount = totalRecordCount,
+                startIndex = nextStartIndex,
+                hasMore =
+                  JellyfinPaginationPolicy.hasMore(
+                    totalRecordCount = queryResult.totalRecordCount,
+                    startIndex = startIndex,
+                    pageItemCount = queryResult.items.size,
+                    pageSize = 100,
+                  ),
                 isLoading = false,
                 isLoadingMore = false,
                 error = null,

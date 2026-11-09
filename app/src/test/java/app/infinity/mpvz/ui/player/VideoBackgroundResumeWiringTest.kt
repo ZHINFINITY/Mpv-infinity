@@ -103,6 +103,30 @@ class VideoBackgroundResumeWiringTest {
   }
 
   @Test
+  fun longBackgroundRestoreWaitsForLoadedMediaAndReattachedSurface() {
+    val event = body("internal fun event(eventId: Int)")
+    assertInOrder(
+      event,
+      "MPV_EVENT_FILE_LOADED",
+      "handleFileLoaded(loadGeneration)",
+      "pendingVideoTrackRestoreAfterRebuild",
+      "enableVideoAfterBackground()",
+    )
+
+    val restore = body("private fun enableVideoAfterBackground()")
+    assertInOrder(
+      restore,
+      "MediaPlaybackService.activityForeground",
+      "if (!player.isSurfaceReady)",
+      "PlaybackSession.state.value.phase !in setOf(PlaybackPhase.READY, PlaybackPhase.BACKGROUND)",
+      "PlayerLifecyclePolicy.shouldRestoreVideoTrack(lastVidMediaId, currentMediaId)",
+      "PlaybackSession.setPropertyInt(\"vid\", lastVid)",
+    )
+    assertTrue(body("private fun rebuildRendererAfterLongBackground()")
+      .contains("pendingVideoTrackRestoreAfterRebuild = lastVid > 0"))
+  }
+
+  @Test
   fun rebuildUsesLivePositionBeforeTheOnStopSnapshotAndKeepsPause() {
     assertInOrder(
       body("private fun rebuildRendererAfterLongBackground()"),

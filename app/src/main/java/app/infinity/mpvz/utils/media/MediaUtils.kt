@@ -155,6 +155,7 @@ object MediaUtils {
     playlistArtworkUrls: List<String> = emptyList(),
     isAudio: Boolean = false,
     playlistDurationsSeconds: List<Int> = emptyList(),
+    preparedQueueItems: List<PlaybackItem> = emptyList(),
   ) {
     val uri =
       when (source) {
@@ -316,6 +317,7 @@ object MediaUtils {
       playlistArtworkUrls = playlistArtworkUrls,
       isAudio = isAudio,
       playlistDurationsSeconds = playlistDurationsSeconds,
+      preparedQueueItems = preparedQueueItems,
     )
     context.startActivity(intent)
   }
@@ -378,6 +380,7 @@ object MediaUtils {
     playlistArtworkUrls: List<String> = emptyList(),
     isAudio: Boolean = false,
     playlistDurationsSeconds: List<Int> = emptyList(),
+    preparedQueueItems: List<PlaybackItem> = emptyList(),
   ) {
     if (isAudio) {
       intent.putExtra("is_audio", true)
@@ -386,7 +389,9 @@ object MediaUtils {
     if (playlist.isNotEmpty()) {
       val selectedIndex = playlistIndex.coerceIn(playlist.indices)
       val queueItems =
-        playlist.mapIndexed { index, uri ->
+        preparedQueueItems.takeIf {
+          it.size == playlist.size && it.getOrNull(selectedIndex)?.playableUri == playlist[selectedIndex].toString()
+        } ?: playlist.mapIndexed { index, uri ->
           PlaybackItem.fromUri(
             uri = uri.toString(),
             title = playlistTitles.getOrNull(index),

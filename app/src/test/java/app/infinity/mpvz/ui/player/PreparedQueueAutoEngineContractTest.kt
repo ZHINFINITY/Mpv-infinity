@@ -78,13 +78,28 @@ class PreparedQueueAutoEngineContractTest {
   @Test
   fun loadAndPreferenceHandoffUseTheSharedAutoResolver() {
     val activity = playerActivitySource()
-    assertTrue(activity.contains("currentQueueItem != null -> resolvePlaybackEngineMode(engine, currentQueueItem)"))
+    assertTrue(activity.contains("val currentNativeVideoHint = currentQueueItem?.stableId == nativeVideoHintMediaId"))
+    assertTrue(activity.contains("currentQueueItem != null -> resolvePlaybackEngineMode(engine, currentQueueItem, videoHint = currentNativeVideoHint)"))
+    assertTrue(activity.contains("sourceIntent.getBooleanExtra(\"stream_direct_media\", false)"))
 
     val load =
       activity.substringAfter("val selectedEngine =")
         .substringBefore("val nativeResolvedUri =")
-    assertTrue(load.contains("resolvePlaybackEngineMode(configuredEngine, playbackItem)"))
-    assertTrue(load.contains("!playbackItem.requiresWebPageResolutionBeforeNative()"))
+    assertTrue(load.contains("resolvePlaybackEngineMode(configuredEngine, playbackItem, videoHint = nativeVideoHint)"))
+    assertTrue(load.contains("playbackItem.requiresWebPageResolutionBeforeNative(videoHint = nativeVideoHint)"))
+    assertTrue(load.contains("nativeItem.declaredMediaKind(videoHint = nativeVideoHint) == DeclaredPlaybackMediaKind.VIDEO"))
+  }
+
+  @Test
+  fun onlyValidatedPlayableStreamResultsReceiveDirectMediaProvenance() {
+    val streamScreen = streamScreenSource()
+    val playableBranch = streamScreen.substringAfter("} else if ((stream.url.startsWith(\"http://\"")
+      .substringBefore("viewModel.consumePlaybackStream()")
+
+    assertTrue(playableBranch.contains("stream.isPlayable"))
+    assertTrue(playableBranch.contains("putExtra(\"stream_tab_playback\", true)"))
+    assertTrue(playableBranch.contains("putExtra(\"stream_direct_media\", true)"))
+    assertTrue(!streamScreen.substringAfter("if (stream.isExternal)").substringBefore("} else if (").contains("stream_direct_media"))
   }
 
   private fun playerActivitySource(): String =
@@ -97,5 +112,11 @@ class PreparedQueueAutoEngineContractTest {
     sequenceOf(
       File("src/main/java/app/infinity/mpvz/utils/media/MediaUtils.kt"),
       File("app/src/main/java/app/infinity/mpvz/utils/media/MediaUtils.kt"),
+    ).first(File::exists).readText()
+
+  private fun streamScreenSource(): String =
+    sequenceOf(
+      File("src/main/java/app/infinity/mpvz/ui/browser/catalog/StreamScreen.kt"),
+      File("app/src/main/java/app/infinity/mpvz/ui/browser/catalog/StreamScreen.kt"),
     ).first(File::exists).readText()
 }

@@ -824,14 +824,14 @@ fun JellyfinContent(
                 )
 
                 val shouldLoadMore =
-                  remember {
+                  remember(listState, items.size) {
                     derivedStateOf {
                       val lastVisibleIndex = listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
                       items.isNotEmpty() && lastVisibleIndex >= items.size - 5
                     }
                   }
 
-                LaunchedEffect(shouldLoadMore.value) {
+                LaunchedEffect(shouldLoadMore.value, uiState.hasMore, uiState.isLoading, uiState.isLoadingMore, items.size) {
                   if (shouldLoadMore.value && uiState.hasMore && !uiState.isLoading && !uiState.isLoadingMore) {
                     viewModel.loadMoreItems()
                   }
@@ -927,14 +927,14 @@ fun JellyfinContent(
                 )
 
                 val shouldLoadMore =
-                  remember {
+                  remember(gridState, items.size) {
                     derivedStateOf {
                       val lastVisibleIndex = gridState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
                       items.isNotEmpty() && lastVisibleIndex >= items.size - 8
                     }
                   }
 
-                LaunchedEffect(shouldLoadMore.value) {
+                LaunchedEffect(shouldLoadMore.value, uiState.hasMore, uiState.isLoading, uiState.isLoadingMore, items.size) {
                   if (shouldLoadMore.value && uiState.hasMore && !uiState.isLoading && !uiState.isLoadingMore) {
                     viewModel.loadMoreItems()
                   }

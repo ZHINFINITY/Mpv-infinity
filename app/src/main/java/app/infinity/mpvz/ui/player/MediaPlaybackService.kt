@@ -64,7 +64,9 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.drop
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.sync.Mutex
@@ -368,9 +370,12 @@ internal suspend fun persistBeforePlaybackTeardown(
   persist: suspend () -> Boolean,
   teardown: suspend () -> Unit,
 ) : Boolean {
-  if (!persist()) return false
-  teardown()
-  return true
+  val persisted = try {
+    persist()
+  } finally {
+    withContext(kotlinx.coroutines.NonCancellable) { teardown() }
+  }
+  return persisted
 }
 
 internal fun shouldMarkClosedAudioSession(currentItem: PlaybackItem?): Boolean =
@@ -491,6 +496,19 @@ class MediaPlaybackService :
       activeInstance?.let { service ->
         service.foregroundReady && !activityForeground && !service.handingBackToActivity
       } == true
+
+    internal fun durationSecondsForItem(item: PlaybackItem?): Double? {
+      item ?: return null
+      val identity = MediaSessionItemIdentity(item.stableId, item.originalUri)
+    val service = activeInstance ?: return null
+    val sessionState = PlaybackSession.state.value
+    val currentItem = sessionState.currentItem ?: PlaybackSession.queue.value.currentItem
+    if (sessionState.generation != service.mediaDurationGeneration ||
+      service.mediaDurationIdentity != identity ||
+      currentItem?.stableId != identity.stableId || currentItem?.originalUri != identity.originalUri
+    ) return null
+      return service.mediaDurationSeconds.takeIf { it.isFinite() && it > 0.0 }
+    }
 
     internal fun isAudioSessionClosedByUser(): Boolean {
       val playbackCapture = PlaybackSession.captureResumeState(fallbackPositionSeconds = 0.0, allowNativePropertyReads = false)
@@ -717,7 +735,12 @@ class MediaPlaybackService :
   private var currentChapterIndex: Int = -1
   @Volatile
   private var currentPositionSeconds: Double = 0.0
+  @Volatile
   private var mediaDurationSeconds: Double = 0.0
+  @Volatile
+  private var mediaDurationIdentity: MediaSessionItemIdentity? = null
+  @Volatile
+  private var mediaDurationGeneration: Long = 0L
   private var accentColor: Int = DEFAULT_ACCENT_COLOR
   private var accentColorDim: Int = ColorUtils.setAlphaComponent(DEFAULT_ACCENT_COLOR, 90)
   private var accentColorDone: Int = ColorUtils.blendARGB(DEFAULT_ACCENT_COLOR, Color.BLACK, 0.28f)
@@ -870,6 +893,16 @@ class MediaPlaybackService :
     }
 
     serviceScope.launch {
+      PlaybackSession.state
+        .map { it.generation to it.phase }
+        .distinctUntilChanged()
+        .collect { (generation, phase) ->
+          if (phase != PlaybackPhase.READY && phase != PlaybackPhase.BACKGROUND) return@collect
+          if (PlaybackSession.state.value.generation == generation) syncMediaDurationForCurrentItem()
+        }
+    }
+
+    serviceScope.launch {
       advancedPreferences.notificationStyle.changes().drop(1).collect {
         if (!notificationsEnabled()) {
           stopDetachedPlaybackIfNeeded()
@@ -1016,7 +1049,7 @@ class MediaPlaybackService :
         ?.toFloat()
         ?.takeIf { it.isFinite() && it > 0f }
         ?: 1.0f
-    mediaDurationSeconds = runCatching { PlaybackSession.getPropertyDouble("duration") }.getOrNull() ?: 0.0
+    syncMediaDurationForCurrentItem()
     currentPositionSeconds = runCatching { PlaybackSession.getPropertyDouble("time-pos") }.getOrNull() ?: 0.0
     currentChapterIndex = runCatching { PlaybackSession.getPropertyInt("chapter") }.getOrNull() ?: -1
 
@@ -1374,6 +1407,8 @@ class MediaPlaybackService :
     val isAudio = resolveNotificationIsAudio(item, notificationIsAudio)
     notificationIsAudio = isAudio
     usesAudioBackgroundPlayback = isAudio
+    mediaDurationIdentity = identity
+    mediaDurationGeneration = sessionState.generation
     mediaIdentifier = item.stableId
     radioStreamTitle = null
     radioStreamArtist = null
@@ -1386,11 +1421,13 @@ class MediaPlaybackService :
     mediaArtist = item.artist.orEmpty()
     mediaUri = item.originalUri
     activeArtworkUri = item.artworkUri
-    currentPositionSeconds = 0.0
-    lastPublishedPositionSeconds = 0.0
-    mediaDurationSeconds = 0.0
-    paused = false
-    playbackSpeed = 1.0f
+    if (itemChanged) {
+      currentPositionSeconds = 0.0
+      lastPublishedPositionSeconds = 0.0
+      mediaDurationSeconds = PlaybackDurationPolicy.initialDurationSeconds(item.durationSeconds)
+      paused = false
+      playbackSpeed = 1.0f
+    }
     isCurrentFavorite = false
     if (itemChanged || artworkChanged) {
       chapters = emptyList()
@@ -1404,6 +1441,74 @@ class MediaPlaybackService :
     loadSessionArtwork(item, itemGeneration)
     refreshFavoriteState(item, itemGeneration)
     refreshCurrentRadioMetadata()
+  }
+
+  private fun captureMediaPropertyCallbackIdentity(): PlaybackPropertyCallbackIdentity {
+    val sessionState = PlaybackSession.state.value
+    val item = sessionState.currentItem ?: PlaybackSession.queue.value.currentItem
+    return PlaybackPropertyCallbackIdentity(
+      generation = sessionState.generation,
+      item = item?.let { MediaSessionItemIdentity(it.stableId, it.originalUri) },
+    )
+  }
+
+  private fun isCurrentMediaPropertyCallback(expected: PlaybackPropertyCallbackIdentity): Boolean {
+    val sessionState = PlaybackSession.state.value
+    if (sessionState.phase != PlaybackPhase.READY && sessionState.phase != PlaybackPhase.BACKGROUND) return false
+    val item = sessionState.currentItem ?: PlaybackSession.queue.value.currentItem
+    return PlaybackPropertyCallbackPolicy.isCurrent(expected, sessionState.generation, item)
+  }
+
+  private fun syncMediaDurationForCurrentItem() {
+    val sessionState = PlaybackSession.state.value
+    val item = sessionState.currentItem ?: PlaybackSession.queue.value.currentItem
+    val identity = item?.let { MediaSessionItemIdentity(it.stableId, it.originalUri) }
+    val sameItem = identity != null && identity == mediaDurationIdentity && sessionState.generation == mediaDurationGeneration
+    val canReadLiveDuration = sessionState.phase == PlaybackPhase.READY || sessionState.phase == PlaybackPhase.BACKGROUND
+    val observedDuration =
+      if (canReadLiveDuration) runCatching { PlaybackSession.getPropertyDouble("duration") }.getOrNull()
+      else null
+    val isFiniteAudio = item?.isDefinitelyAudioOnly() == true && !isCurrentRadioItem()
+    val previousDuration = if (sameItem) mediaDurationSeconds else 0.0
+    val resolved =
+      PlaybackDurationPolicy.resolve(
+        previousDurationSeconds = previousDuration,
+        observedDurationSeconds = observedDuration,
+        sameItem = sameItem,
+        preserveSameItemDuration = sameItem && isFiniteAudio,
+      )
+    mediaDurationIdentity = identity
+    mediaDurationGeneration = sessionState.generation
+    mediaDurationSeconds =
+      resolved.takeIf { it > 0.0 }
+        ?: item?.durationSeconds?.takeIf { it > 0 }?.toDouble()
+        ?: 0.0
+  }
+
+  private fun updateMediaDuration(
+    observedDuration: Double,
+    callbackIdentity: PlaybackPropertyCallbackIdentity,
+  ) {
+    if (!isCurrentMediaPropertyCallback(callbackIdentity)) return
+    val sessionState = PlaybackSession.state.value
+    val item = sessionState.currentItem ?: PlaybackSession.queue.value.currentItem ?: return
+    val identity = MediaSessionItemIdentity(item.stableId, item.originalUri)
+    val sameItem = identity == mediaDurationIdentity && sessionState.generation == mediaDurationGeneration
+    val finiteAudio = item.isDefinitelyAudioOnly() && !isCurrentRadioItem()
+    val resolved =
+      PlaybackDurationPolicy.resolve(
+        previousDurationSeconds = if (sameItem) mediaDurationSeconds else 0.0,
+        observedDurationSeconds = observedDuration,
+        sameItem = sameItem,
+        preserveSameItemDuration = sameItem && finiteAudio,
+      )
+    mediaDurationIdentity = identity
+    mediaDurationGeneration = sessionState.generation
+    if (mediaDurationSeconds == resolved) return
+    mediaDurationSeconds = resolved
+    updateMediaSessionMetadata()
+    updateMediaSessionPlaybackState()
+    updateNotification()
   }
 
   private fun refreshFavoriteState(
@@ -1880,6 +1985,8 @@ class MediaPlaybackService :
     persistenceScope.launch {
       var closeSnapshotPersisted = false
       try {
+        // A resume snapshot is best-effort; it must never keep a user-closed player/service alive.
+        allowCapturedSessionTeardown = true
         closeSnapshotPersisted = persistBeforePlaybackTeardown(
           persist = {
             pendingSave?.cancelAndJoin()
@@ -1906,7 +2013,6 @@ class MediaPlaybackService :
                 Log.e(TAG, "Error saving playback history after audio resume snapshot", error)
               }
             }
-            allowCapturedSessionTeardown = persistedClosedSession
             persistedClosedSession
           },
           teardown = ::teardown,
@@ -1916,12 +2022,17 @@ class MediaPlaybackService :
       } catch (error: Exception) {
         Log.e(TAG, "Error persisting playback state before user-close teardown", error)
       } finally {
-        teardown()
-        closedAudioSessionMarker.finishClosePersistence(closeGeneration, currentItem)
+        withContext(kotlinx.coroutines.NonCancellable) {
+          allowCapturedSessionTeardown = true
+          try {
+            teardown()
+          } finally {
+            closedAudioSessionMarker.finishClosePersistence(closeGeneration, currentItem)
+          }
+        }
       }
       if (!closeSnapshotPersisted) {
-        Log.e(TAG, "Audio resume snapshot was not committed; leaving the closed playback queue intact for retry")
-        withContext(Dispatchers.Main.immediate) { refreshTransportControls() }
+        Log.w(TAG, "Playback was stopped, but its resume snapshot could not be saved")
       }
     }
   }
@@ -2561,10 +2672,18 @@ class MediaPlaybackService :
     property: String,
     value: Long,
   ) {
-    if (property == "chapter") {
-      serviceScope.launch {
-        currentChapterIndex = value.takeIf { it in 0L..chapters.lastIndex.toLong() }?.toInt() ?: -1
-        updateNotification()
+    val callbackIdentity = captureMediaPropertyCallbackIdentity()
+    when (property) {
+      "chapter" -> {
+        serviceScope.launch {
+          if (!isCurrentMediaPropertyCallback(callbackIdentity)) return@launch
+          currentChapterIndex = value.takeIf { it in 0L..chapters.lastIndex.toLong() }?.toInt() ?: -1
+          updateNotification()
+        }
+      }
+      "duration" -> serviceScope.launch {
+        if (!isCurrentMediaPropertyCallback(callbackIdentity)) return@launch
+        updateMediaDuration(value.toDouble(), callbackIdentity)
       }
     }
   }
@@ -2598,18 +2717,26 @@ class MediaPlaybackService :
     property: String,
     value: String,
   ) {
+    val callbackIdentity = captureMediaPropertyCallbackIdentity()
+    if (callbackIdentity.item == null) return
+    val phase = PlaybackSession.state.value.phase
+    if (phase != PlaybackPhase.READY && phase != PlaybackPhase.BACKGROUND) return
     when (property) {
       "media-title" -> {
         if (isCurrentRadioItem()) {
           val item = PlaybackSession.queue.value.currentItem
           val headerStation = PlaybackSession.radioHeaders.value?.takeIf { it.first == item?.stableId }?.second?.icyName
           RadioMetadataPolicy.trackFromMediaTitle(value, radioStationName ?: headerStation ?: item?.title)?.let { title ->
-            serviceScope.launch { updateRadioMetadata("icy-title", title) }
+            serviceScope.launch {
+              if (!isCurrentMediaPropertyCallback(callbackIdentity)) return@launch
+              updateRadioMetadata("icy-title", title)
+            }
           }
           return
         }
         if (value.isNotBlank()) {
           serviceScope.launch {
+            if (!isCurrentMediaPropertyCallback(callbackIdentity)) return@launch
             if (mediaTitle == value) return@launch
             mediaTitle = value
             updateMediaSessionMetadata()
@@ -2619,10 +2746,14 @@ class MediaPlaybackService :
       }
       "metadata/artist" -> {
         if (isCurrentRadioItem()) {
-          serviceScope.launch { updateRadioMetadata(property, value) }
+          serviceScope.launch {
+            if (!isCurrentMediaPropertyCallback(callbackIdentity)) return@launch
+            updateRadioMetadata(property, value)
+          }
           return
         }
         serviceScope.launch {
+          if (!isCurrentMediaPropertyCallback(callbackIdentity)) return@launch
           if (mediaArtist == value) return@launch
           mediaArtist = value
           updateMediaSessionMetadata()
@@ -2633,7 +2764,10 @@ class MediaPlaybackService :
       "metadata/by-key/icy-name", "metadata/icy-name", "metadata/by-key/icy-logo", "metadata/icy-logo",
       "metadata/by-key/Artist", "metadata/by-key/ARTIST", "metadata/by-key/artist",
       "metadata/by-key/Artwork", "metadata/by-key/ARTWORK", "metadata/by-key/artwork", "metadata/artwork",
-      "metadata/by-key/METADATA_BLOCK_PICTURE", "metadata/by-key/metadata_block_picture" -> serviceScope.launch { updateRadioMetadata(property, value) }
+      "metadata/by-key/METADATA_BLOCK_PICTURE", "metadata/by-key/metadata_block_picture" -> serviceScope.launch {
+        if (!isCurrentMediaPropertyCallback(callbackIdentity)) return@launch
+        updateRadioMetadata(property, value)
+      }
     }
   }
 
@@ -2641,8 +2775,10 @@ class MediaPlaybackService :
     property: String,
     value: Double,
   ) {
+    val callbackIdentity = captureMediaPropertyCallbackIdentity()
     when (property) {
       "time-pos" -> {
+        if (!isCurrentMediaPropertyCallback(callbackIdentity)) return
         currentPositionSeconds = value.takeIf { it.isFinite() && it >= 0.0 } ?: 0.0
         val currentTime = SystemClock.elapsedRealtime()
         val updateInterval =
@@ -2658,6 +2794,7 @@ class MediaPlaybackService :
           lastNotificationUpdateTime = currentTime
           lastPublishedPositionSeconds = currentPositionSeconds
           serviceScope.launch {
+            if (!isCurrentMediaPropertyCallback(callbackIdentity)) return@launch
             schedulePlaybackStateSave()
             updateMediaSessionPlaybackState()
             updateNotification()
@@ -2666,16 +2803,13 @@ class MediaPlaybackService :
       }
       "duration" -> {
         serviceScope.launch {
-          val resolvedDuration = value.takeIf { it.isFinite() && it > 0.0 } ?: 0.0
-          if (mediaDurationSeconds == resolvedDuration) return@launch
-          mediaDurationSeconds = resolvedDuration
-          updateMediaSessionMetadata()
-          updateMediaSessionPlaybackState()
-          updateNotification()
+          if (!isCurrentMediaPropertyCallback(callbackIdentity)) return@launch
+          updateMediaDuration(value, callbackIdentity)
         }
       }
       "speed" -> {
         serviceScope.launch {
+          if (!isCurrentMediaPropertyCallback(callbackIdentity)) return@launch
           val resolvedSpeed = value.toFloat().takeIf { it.isFinite() && it > 0f } ?: 1.0f
           if (playbackSpeed == resolvedSpeed) return@launch
           playbackSpeed = resolvedSpeed

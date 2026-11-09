@@ -314,6 +314,7 @@ class PlayerActivity :
   private val idleNativeFirstFrame = MutableStateFlow(false)
   private var playerStoppedAtElapsedRealtime = 0L
   private var pendingRendererRebuildAfterBackground = false
+  private var pendingVideoTrackRestoreAfterRebuild = false
   val nativePlaybackSnapshot get() = nativeEngineOrNull()?.snapshot ?: idleNativePlaybackSnapshot
   private val nativeFirstFrame get() = nativeEngineOrNull()?.hasRenderedFirstFrame ?: idleNativeFirstFrame
   private var glassEngineMode by mutableStateOf(PlaybackEngineMode.MPV)
@@ -334,6 +335,7 @@ class PlayerActivity :
   private var pendingInterpolationRestore: PlaybackPositionRestoreOverride? = null
   private var pendingInterpolationEngine: Pair<String, PlaybackEngineMode>? = null
   private var manualEngineOverride: Pair<String, PlaybackEngineMode>? = null
+  @Volatile private var nativeVideoHintMediaId: String? = null
   private var manualOrientationOverride = false
   private val engineSelectionRequests = MutableSharedFlow<PlaybackEngineMode>(extraBufferCapacity = 1)
 
@@ -1290,6 +1292,7 @@ class PlayerActivity :
   private var miniPlayerHandoffRequested = false
   private var noisyReceiverRegistered = false
   private var lastVid = -1 // Track video track for background playback optimization
+  private var lastVidMediaId: String? = null
   private var isInBackgroundPlayback = false // Track if we are currently in background playback mode
   private var screenStateReceiverRegistered = false
   private var mpvInitialized = false // Track MPV initialization state
@@ -1709,6 +1712,7 @@ class PlayerActivity :
           engineSelectionRequests,
         ).collect { engine ->
           val currentQueueItem = PlaybackSession.queue.value.currentItem
+          val currentNativeVideoHint = currentQueueItem?.stableId == nativeVideoHintMediaId
           val effectiveEngine =
             when {
               // Music always plays on MPV, matching the load path. Without this, the preference
@@ -1719,7 +1723,7 @@ class PlayerActivity :
                 PlaybackEngineMode.MPV
               engine == PlaybackEngineMode.AUTO && currentQueueItem?.requiresTorrentResolution() == true ->
                 PlaybackEngineMode.MPV
-              currentQueueItem != null -> resolvePlaybackEngineMode(engine, currentQueueItem)
+              currentQueueItem != null -> resolvePlaybackEngineMode(engine, currentQueueItem, videoHint = currentNativeVideoHint)
               engine == PlaybackEngineMode.AUTO -> PlaybackEngineMode.MPV
               else -> engine
             }
@@ -5368,6 +5372,7 @@ class PlayerActivity :
       positionSeconds = positionSeconds.takeIf { it.isFinite() && it > 0.0 },
       paused = paused,
     )
+    pendingVideoTrackRestoreAfterRebuild = lastVid > 0
     if (isNativeEngineActive()) {
       nativeEngineOrNull()?.refreshAfterConfigurationChange()
     }
@@ -6279,6 +6284,9 @@ class PlayerActivity :
         }
         viewModel.onVideoLoadCompleted()
         handleFileLoaded(loadGeneration)
+        if (pendingVideoTrackRestoreAfterRebuild && MediaPlaybackService.activityForeground && !isDeviceScreenOffOrLocked()) {
+          enableVideoAfterBackground()
+        }
         scheduleDeferredUserMpvAssetRefresh()
         if (isBackgroundPlaybackEnabled()) {
           startBackgroundPlayback(allowUserPrompt = false)
@@ -7785,6 +7793,7 @@ class PlayerActivity :
       resolvePlaybackMimeType(sourceIntent.type, sourceIntent.getStringExtra("mime_type"))
     val streamVideoHint =
       sourceIntent.getBooleanExtra("stream_tab_playback", false) &&
+        sourceIntent.getBooleanExtra("stream_direct_media", false) &&
         !sourceIntent.getBooleanExtra("is_audio", false)
     val requestedFileName = fileName
     val isWebDavPlayback =
@@ -8127,6 +8136,10 @@ class PlayerActivity :
       }
     val playbackItem = preparePlaybackItemForLoad(item, resolvedPageMediaUrl, radioMimeType)
     val playbackRequiresYtdlp = radioMimeType == null && YtdlpManager.requiresYtdlp(playbackItem.playableUri)
+    // A playable Stream result is already a direct media URL; yt-dlp's successful video-format
+    // resolution is likewise a trusted hint. Do not infer video from arbitrary extensionless URLs.
+    val nativeVideoHint = streamVideoHint || (requiresYtdlp && resolvedPageMediaUrl != null)
+    nativeVideoHintMediaId = item.stableId.takeIf { nativeVideoHint }
     // Native Media3 is used for HDR-family video, while MPV remains the normal video/audio
     // pipeline. Auto keeps ordinary videos on MPV and routes HDR, HLG, and Dolby Vision to Native.
     val configuredEngine =
@@ -8139,9 +8152,9 @@ class PlayerActivity :
         playbackItem.isDefinitelyAudioOnly() -> PlaybackEngineMode.MPV
         isStreamTabPlayback &&
           !requiresYtdlp &&
-          playbackItem.declaredMediaKind() == DeclaredPlaybackMediaKind.VIDEO &&
-          !playbackItem.requiresWebPageResolutionBeforeNative() -> PlaybackEngineMode.NATIVE
-        else -> resolvePlaybackEngineMode(configuredEngine, playbackItem)
+          playbackItem.declaredMediaKind(videoHint = nativeVideoHint) == DeclaredPlaybackMediaKind.VIDEO &&
+          !playbackItem.requiresWebPageResolutionBeforeNative(videoHint = nativeVideoHint) -> PlaybackEngineMode.NATIVE
+        else -> resolvePlaybackEngineMode(configuredEngine, playbackItem, videoHint = nativeVideoHint)
       }
     val nativeResolvedUri =
       if (selectedEngine == PlaybackEngineMode.NATIVE && requiresYtdlp) {
@@ -8153,9 +8166,9 @@ class PlayerActivity :
     val nativeSourceIsPlayable = !isTorrentSource(nativeItem.playableUri, nativeItem.mimeType)
     val canUseNative =
       selectedEngine == PlaybackEngineMode.NATIVE &&
-        // Native is video-only by policy. Do not let a URL with missing MIME/extension metadata
-        // enter Media3: those ambiguous items are commonly music streams and must stay on MPV.
-        nativeItem.declaredMediaKind() == DeclaredPlaybackMediaKind.VIDEO &&
+        // Native remains video-only. Trust only direct Stream provenance or a successful video
+        // extraction when an otherwise valid CDN URL omits its filename extension/MIME.
+        nativeItem.declaredMediaKind(videoHint = nativeVideoHint) == DeclaredPlaybackMediaKind.VIDEO &&
         // Media3 cannot open a magnet/torrent source. Leave unresolved torrent items on MPV,
         // which owns torrent resolution and can hand Media3 a real stream later.
         (!item.requiresTorrentResolution() || nativeSourceIsPlayable) &&
@@ -10700,6 +10713,7 @@ class PlayerActivity :
     val currentVid = PlaybackSession.getPropertyInt("vid") ?: -1
     if (currentVid > 0) {
       lastVid = currentVid
+      lastVidMediaId = PlaybackSession.state.value.currentItem?.stableId
       PlaybackSession.setPropertyString("vid", "no")
       isInBackgroundPlayback = true
       Log.d(TAG, "Video disabled for background playback (saved vid: $lastVid)")
@@ -10710,8 +10724,27 @@ class PlayerActivity :
    * Restores video decoding when returning from background playback.
    */
   private fun enableVideoAfterBackground() {
-    if ((isInBackgroundPlayback || lastVid > 0) && !player.isSurfaceReady) {
+    val restorePending = isInBackgroundPlayback || lastVid > 0
+    if (!restorePending) return
+    if (!MediaPlaybackService.activityForeground || isDeviceScreenOffOrLocked()) {
+      Log.d(TAG, "Deferring video restoration until the player Activity is foreground and unlocked")
+      return
+    }
+    if (!player.isSurfaceReady) {
       Log.d(TAG, "Deferring video restoration until the playback surface is ready")
+      return
+    }
+    if (PlaybackSession.state.value.phase !in setOf(PlaybackPhase.READY, PlaybackPhase.BACKGROUND)) {
+      Log.d(TAG, "Deferring video restoration until the current media load is ready")
+      return
+    }
+    val currentMediaId = PlaybackSession.state.value.currentItem?.stableId
+    if (lastVid > 0 && !PlayerLifecyclePolicy.shouldRestoreVideoTrack(lastVidMediaId, currentMediaId)) {
+      Log.w(TAG, "Discarding saved video track because the active media item changed")
+      lastVid = -1
+      lastVidMediaId = null
+      pendingVideoTrackRestoreAfterRebuild = false
+      isInBackgroundPlayback = false
       return
     }
 
@@ -10727,6 +10760,8 @@ class PlayerActivity :
       }
       lastVid = -1
     }
+    lastVidMediaId = null
+    pendingVideoTrackRestoreAfterRebuild = false
   }
 
   private fun currentPlaybackIsAudioMedia(): Boolean =

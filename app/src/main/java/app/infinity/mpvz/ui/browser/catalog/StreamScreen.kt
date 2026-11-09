@@ -186,6 +186,7 @@ object StreamScreen : Screen {
           putExtra(MediaUtils.EXTRA_MEDIA_BACKDROP_URL, state.selectedItem?.backdropUrl)
           putExtra("is_audio", false)
           putExtra("stream_tab_playback", true)
+          putExtra("stream_direct_media", true)
           state.selectedItem?.let { selected ->
             putExtra(
               "stream_history_key",
