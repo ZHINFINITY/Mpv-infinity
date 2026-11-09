@@ -12,6 +12,8 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -36,6 +38,7 @@ import androidx.compose.ui.unit.dp
 import app.infinity.mpvz.R
 import app.infinity.mpvz.preferences.AppearancePreferences
 import app.infinity.mpvz.preferences.PlayerButton
+import app.infinity.mpvz.preferences.PlaybackControlsPosition
 import app.infinity.mpvz.preferences.preference.collectAsState
 import app.infinity.mpvz.ui.icons.Icon
 import app.infinity.mpvz.ui.icons.Icons
@@ -219,10 +222,12 @@ fun TopPlayerControlsPortrait(
   }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun BottomPlayerControlsPortrait(
   buttons: List<PlayerButton>,
   showVideoQualitySelector: Boolean,
+  playbackControlsPosition: PlaybackControlsPosition,
   chapters: List<Segment>,
   currentChapter: Int?,
   isSpeedNonOne: Boolean,
@@ -239,15 +244,7 @@ fun BottomPlayerControlsPortrait(
   activity: PlayerActivity,
 ) {
   PlayerButtonTheme(hideBackground) {
-    Row(
-      modifier =
-        Modifier
-          .fillMaxWidth()
-          .horizontalScroll(rememberScrollState())
-          .padding(bottom = MaterialTheme.spacing.medium),
-      horizontalArrangement = Arrangement.spacedBy(MaterialTheme.spacing.medium, Alignment.CenterHorizontally),
-      verticalAlignment = Alignment.CenterVertically,
-    ) {
+    val controlsContent: @Composable () -> Unit = {
       buttons.forEach { button ->
         RenderPlayerButton(
           button = button,
@@ -276,6 +273,27 @@ fun BottomPlayerControlsPortrait(
           title = stringResource(R.string.player_video_quality_button),
           modifier = Modifier.size(44.dp),
         )
+      }
+    }
+    if (playbackControlsPosition == PlaybackControlsPosition.BelowSeekbar) {
+      Row(
+        modifier =
+          Modifier
+            .fillMaxWidth()
+            .horizontalScroll(rememberScrollState())
+            .padding(bottom = MaterialTheme.spacing.medium),
+        horizontalArrangement = Arrangement.spacedBy(MaterialTheme.spacing.medium, Alignment.CenterHorizontally),
+        verticalAlignment = Alignment.CenterVertically,
+      ) {
+        controlsContent()
+      }
+    } else {
+      FlowRow(
+        modifier = Modifier.fillMaxWidth().padding(bottom = MaterialTheme.spacing.medium),
+        horizontalArrangement = Arrangement.spacedBy(MaterialTheme.spacing.medium, Alignment.CenterHorizontally),
+        verticalArrangement = Arrangement.spacedBy(MaterialTheme.spacing.small),
+      ) {
+        controlsContent()
       }
     }
   }

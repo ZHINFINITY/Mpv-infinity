@@ -13,17 +13,16 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.MaterialTheme
@@ -44,6 +43,7 @@ import androidx.compose.ui.unit.dp
 import app.infinity.mpvz.R
 import app.infinity.mpvz.preferences.AppearancePreferences
 import app.infinity.mpvz.preferences.PlayerButton
+import app.infinity.mpvz.preferences.PlaybackControlsPosition
 import app.infinity.mpvz.preferences.preference.collectAsState
 import app.infinity.mpvz.ui.icons.Icon
 import app.infinity.mpvz.ui.icons.Icons
@@ -251,7 +251,7 @@ fun TopRightPlayerControlsLandscape(
   activity: PlayerActivity,
 ) {
   PlayerButtonTheme(hideBackground) {
-    LandscapePlayerControlStrip(reverseScrolling = true, alignment = Alignment.End) {
+    LandscapePlayerControlStrip(reverseScrolling = true, alignment = Alignment.End, scrollable = true) {
       buttons.forEach { button ->
         RenderPlayerButton(
           button = button,
@@ -281,6 +281,7 @@ fun TopRightPlayerControlsLandscape(
 fun BottomRightPlayerControlsLandscape(
   buttons: List<PlayerButton>,
   showVideoQualitySelector: Boolean,
+  playbackControlsPosition: PlaybackControlsPosition,
   chapters: List<Segment>,
   currentChapter: Int?,
   isSpeedNonOne: Boolean,
@@ -297,7 +298,11 @@ fun BottomRightPlayerControlsLandscape(
   activity: PlayerActivity,
 ) {
   PlayerButtonTheme(hideBackground) {
-    LandscapePlayerControlStrip(reverseScrolling = true, alignment = Alignment.End) {
+    LandscapePlayerControlStrip(
+      reverseScrolling = true,
+      alignment = Alignment.End,
+      scrollable = playbackControlsPosition == PlaybackControlsPosition.BelowSeekbar,
+    ) {
       buttons.forEach { button ->
         RenderPlayerButton(
           button = button,
@@ -334,6 +339,7 @@ fun BottomRightPlayerControlsLandscape(
 @Composable
 fun BottomLeftPlayerControlsLandscape(
   buttons: List<PlayerButton>,
+  playbackControlsPosition: PlaybackControlsPosition,
   chapters: List<Segment>,
   currentChapter: Int?,
   isSpeedNonOne: Boolean,
@@ -350,7 +356,11 @@ fun BottomLeftPlayerControlsLandscape(
   activity: PlayerActivity,
 ) {
   PlayerButtonTheme(hideBackground) {
-    LandscapePlayerControlStrip(reverseScrolling = false, alignment = Alignment.Start) {
+    LandscapePlayerControlStrip(
+      reverseScrolling = false,
+      alignment = Alignment.Start,
+      scrollable = playbackControlsPosition == PlaybackControlsPosition.BelowSeekbar,
+    ) {
       buttons.forEach { button ->
         RenderPlayerButton(
           button = button,
@@ -376,18 +386,29 @@ fun BottomLeftPlayerControlsLandscape(
   }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun LandscapePlayerControlStrip(
   reverseScrolling: Boolean,
   alignment: Alignment.Horizontal,
-  content: @Composable RowScope.() -> Unit,
+  scrollable: Boolean,
+  content: @Composable () -> Unit,
 ) {
-  BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+  if (scrollable) {
     Row(
-      modifier = Modifier.horizontalScroll(rememberScrollState(), reverseScrolling).widthIn(min = maxWidth),
+      modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState(), reverseScrolling),
       verticalAlignment = Alignment.CenterVertically,
       horizontalArrangement = Arrangement.spacedBy(MaterialTheme.spacing.extraSmall, alignment),
-      content = content,
-    )
+    ) {
+      content()
+    }
+  } else {
+    FlowRow(
+      modifier = Modifier.fillMaxWidth(),
+      horizontalArrangement = Arrangement.spacedBy(MaterialTheme.spacing.extraSmall, alignment),
+      verticalArrangement = Arrangement.spacedBy(MaterialTheme.spacing.extraSmall),
+    ) {
+      content()
+    }
   }
 }

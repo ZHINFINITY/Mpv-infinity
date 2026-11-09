@@ -95,7 +95,6 @@ object PlayerControlsPreferencesScreen : Screen {
     val bottomRState by appearancePrefs.bottomRightControls.collectAsState()
     val bottomLState by appearancePrefs.bottomLeftControls.collectAsState()
     val portraitBottomState by appearancePrefs.portraitBottomControls.collectAsState()
-    val playbackControlsPosition by appearancePrefs.playbackControlsPosition.collectAsState()
 
     val topRightButtons =
       remember(topRState) {
@@ -153,15 +152,6 @@ object PlayerControlsPreferencesScreen : Screen {
               .padding(padding)
               .then(settingsHighlight),
         ) {
-          item {
-            PlayerLayoutPreview(
-              topRightButtons = topRightButtons,
-              bottomLeftButtons = bottomLeftButtons,
-              bottomRightButtons = bottomRightButtons,
-              position = playbackControlsPosition,
-            )
-          }
-
           // Landscape Controls Section
           item {
             PreferenceSectionHeader(

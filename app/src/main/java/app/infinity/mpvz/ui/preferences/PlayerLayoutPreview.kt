@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -27,6 +28,15 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.core.tween
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -52,6 +62,8 @@ fun PlayerLayoutPreview(
   bottomLeftButtons: List<PlayerButton>,
   bottomRightButtons: List<PlayerButton>,
   position: PlaybackControlsPosition,
+  activeRegion: ControlRegion? = null,
+  portraitBottomButtons: List<PlayerButton> = emptyList(),
   modifier: Modifier = Modifier,
 ) {
   val cardShape = RoundedCornerShape(24.dp)
@@ -118,6 +130,8 @@ fun PlayerLayoutPreview(
             buttons = topRightButtons,
             modifier = Modifier.widthIn(max = 88.dp),
             reverseScrolling = true,
+            scrollable = true,
+            highlighted = activeRegion == ControlRegion.TOP_RIGHT,
           )
         }
       }
@@ -145,8 +159,24 @@ fun PlayerLayoutPreview(
 
       Spacer(Modifier.weight(1f))
 
-      if (position == PlaybackControlsPosition.AboveSeekbar) {
-        PreviewShortcutRows(bottomLeftButtons, bottomRightButtons)
+      AnimatedVisibility(
+        visible = position == PlaybackControlsPosition.AboveSeekbar,
+        enter =
+          fadeIn(tween(190)) +
+            expandVertically(animationSpec = tween(190), expandFrom = Alignment.Bottom) +
+            slideInVertically(animationSpec = tween(190)) { it / 4 },
+        exit =
+          fadeOut(tween(140)) +
+            shrinkVertically(animationSpec = tween(140), shrinkTowards = Alignment.Top) +
+            slideOutVertically(animationSpec = tween(140)) { -it / 4 },
+      ) {
+        PreviewShortcutRows(
+          leftButtons = bottomLeftButtons,
+          rightButtons = bottomRightButtons,
+          portraitButtons = portraitBottomButtons,
+          activeRegion = activeRegion,
+          scrollable = false,
+        )
       }
       Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         Text("0:42", color = Color.White.copy(alpha = 0.82f), fontSize = 9.sp)
@@ -161,8 +191,24 @@ fun PlayerLayoutPreview(
         }
         Text("1:58", color = Color.White.copy(alpha = 0.82f), fontSize = 9.sp)
       }
-      if (position == PlaybackControlsPosition.BelowSeekbar) {
-        PreviewShortcutRows(bottomLeftButtons, bottomRightButtons)
+      AnimatedVisibility(
+        visible = position == PlaybackControlsPosition.BelowSeekbar,
+        enter =
+          fadeIn(tween(190)) +
+            expandVertically(animationSpec = tween(190), expandFrom = Alignment.Top) +
+            slideInVertically(animationSpec = tween(190)) { -it / 4 },
+        exit =
+          fadeOut(tween(140)) +
+            shrinkVertically(animationSpec = tween(140), shrinkTowards = Alignment.Bottom) +
+            slideOutVertically(animationSpec = tween(140)) { it / 4 },
+      ) {
+        PreviewShortcutRows(
+          leftButtons = bottomLeftButtons,
+          rightButtons = bottomRightButtons,
+          portraitButtons = portraitBottomButtons,
+          activeRegion = activeRegion,
+          scrollable = true,
+        )
       }
     }
   }
@@ -172,55 +218,98 @@ fun PlayerLayoutPreview(
 private fun PreviewShortcutRows(
   leftButtons: List<PlayerButton>,
   rightButtons: List<PlayerButton>,
+  portraitButtons: List<PlayerButton>,
+  activeRegion: ControlRegion?,
+  scrollable: Boolean,
 ) {
   BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
     val halfMaxWidth = maxWidth / 2
-    Row(
-      modifier = Modifier.fillMaxWidth(),
-      verticalAlignment = Alignment.CenterVertically,
-      horizontalArrangement = Arrangement.SpaceBetween,
-    ) {
-      if (leftButtons.isNotEmpty()) {
+    if (activeRegion == ControlRegion.PORTRAIT_BOTTOM) {
+      Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.Center,
+      ) {
         PreviewIconStrip(
-          buttons = leftButtons,
-          modifier = Modifier.widthIn(max = halfMaxWidth),
+          buttons = portraitButtons,
+          modifier = Modifier.widthIn(max = maxWidth),
           reverseScrolling = false,
+          scrollable = scrollable,
+          highlighted = true,
         )
       }
-      if (rightButtons.isNotEmpty()) {
-        PreviewIconStrip(
-          buttons = rightButtons,
-          modifier = Modifier.widthIn(max = halfMaxWidth),
-          reverseScrolling = true,
-        )
+    } else {
+      Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween,
+      ) {
+        if (leftButtons.isNotEmpty()) {
+          PreviewIconStrip(
+            buttons = leftButtons,
+            modifier = Modifier.widthIn(max = halfMaxWidth),
+            reverseScrolling = false,
+            scrollable = scrollable,
+            highlighted = activeRegion == ControlRegion.BOTTOM_LEFT,
+          )
+        }
+        if (rightButtons.isNotEmpty()) {
+          PreviewIconStrip(
+            buttons = rightButtons,
+            modifier = Modifier.widthIn(max = halfMaxWidth),
+            reverseScrolling = true,
+            scrollable = scrollable,
+            highlighted = activeRegion == ControlRegion.BOTTOM_RIGHT,
+          )
+        }
+      }
+    }
+  }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun PreviewIconStrip(
+  buttons: List<PlayerButton>,
+  modifier: Modifier = Modifier,
+  reverseScrolling: Boolean,
+  scrollable: Boolean,
+  highlighted: Boolean = false,
+) {
+  if (buttons.isEmpty()) return
+  if (scrollable) {
+    Row(
+      modifier = modifier.height(30.dp).horizontalScroll(rememberScrollState(), reverseScrolling).animateContentSize(tween(180)),
+      verticalAlignment = Alignment.CenterVertically,
+      horizontalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+      buttons.forEach { button ->
+        PreviewIconButton(button, highlighted)
+      }
+    }
+  } else {
+    androidx.compose.foundation.layout.FlowRow(
+      modifier = modifier.animateContentSize(tween(180)),
+      horizontalArrangement = Arrangement.spacedBy(4.dp),
+      verticalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+      buttons.forEach { button ->
+        PreviewIconButton(button, highlighted)
       }
     }
   }
 }
 
 @Composable
-private fun PreviewIconStrip(
-  buttons: List<PlayerButton>,
-  modifier: Modifier = Modifier,
-  reverseScrolling: Boolean,
-) {
-  if (buttons.isEmpty()) return
-  Row(
-    modifier = modifier.height(30.dp).horizontalScroll(rememberScrollState(), reverseScrolling),
-    verticalAlignment = Alignment.CenterVertically,
-    horizontalArrangement = Arrangement.spacedBy(4.dp),
+private fun PreviewIconButton(button: PlayerButton, highlighted: Boolean) {
+  val activeTint = Color(0xFF75D9FF)
+  Surface(
+    modifier = Modifier.size(28.dp),
+    shape = CircleShape,
+    color = if (highlighted) activeTint.copy(alpha = 0.32f) else Color.White.copy(alpha = 0.16f),
+    border = BorderStroke(0.8.dp, if (highlighted) activeTint.copy(alpha = 0.92f) else Color.White.copy(alpha = 0.28f)),
   ) {
-    buttons.forEach { button ->
-      Surface(
-        modifier = Modifier.size(28.dp),
-        shape = CircleShape,
-        color = Color.White.copy(alpha = 0.16f),
-        border = BorderStroke(0.6.dp, Color.White.copy(alpha = 0.28f)),
-      ) {
-        Box(contentAlignment = Alignment.Center) {
-          Icon(imageVector = button.icon, contentDescription = null, modifier = Modifier.size(15.dp), tint = Color.White)
-        }
-      }
+    Box(contentAlignment = Alignment.Center) {
+      Icon(imageVector = button.icon, contentDescription = null, modifier = Modifier.size(15.dp), tint = Color.White)
     }
   }
 }

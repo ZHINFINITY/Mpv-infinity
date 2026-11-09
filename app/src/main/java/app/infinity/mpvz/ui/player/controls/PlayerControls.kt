@@ -1711,11 +1711,17 @@ fun PlayerControls(
                     top.linkTo(parent.top)
                     bottom.linkTo(parent.bottom)
                   }
+                } else if (isPortrait) {
+                  if (areButtonsVisible) {
+                    bottom.linkTo(portraitControlsAboveGroupTop, spacing.small)
+                  } else {
+                    top.linkTo(parent.top)
+                    bottom.linkTo(parent.bottom)
+                  }
                 } else if (playbackControlsPosition == PlaybackControlsPosition.BelowSeekbar) {
                   bottom.linkTo(parent.bottom, spacing.large)
                 } else {
-                  top.linkTo(parent.top)
-                  bottom.linkTo(parent.bottom)
+                  bottom.linkTo(landscapeSideControlBandTop, spacing.medium)
                 }
               },
           ) {
@@ -2258,6 +2264,7 @@ fun PlayerControls(
               BottomPlayerControlsPortrait(
                 buttons = portraitBottomButtons,
                 showVideoQualitySelector = showVideoQualitySelector && !portraitHasConfiguredQualityButton,
+                playbackControlsPosition = playbackControlsPosition,
                 chapters = chapters,
                 currentChapter = currentChapter,
                 isSpeedNonOne = isSpeedNonOne,
@@ -2277,6 +2284,7 @@ fun PlayerControls(
               BottomRightPlayerControlsLandscape(
                 buttons = bottomRightButtons,
                 showVideoQualitySelector = showVideoQualitySelector && !landscapeHasConfiguredQualityButton,
+                playbackControlsPosition = playbackControlsPosition,
                 chapters = chapters,
                 currentChapter = currentChapter,
                 isSpeedNonOne = isSpeedNonOne,
@@ -2328,6 +2336,7 @@ fun PlayerControls(
           ) {
             BottomLeftPlayerControlsLandscape(
               buttons = bottomLeftButtons,
+              playbackControlsPosition = playbackControlsPosition,
               chapters = chapters,
               currentChapter = currentChapter,
               isSpeedNonOne = isSpeedNonOne,

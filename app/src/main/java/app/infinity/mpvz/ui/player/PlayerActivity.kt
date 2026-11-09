@@ -1578,11 +1578,11 @@ class PlayerActivity :
       val launchIntent = intent
       m3uPreflightJob = lifecycleScope.launch {
         preflightExternalM3u(launchIntent)
-        continuePlayerInitialization()
       }
-    } else {
-      continuePlayerInitialization()
     }
+    // M3U classification is shared with the load path, but must not keep player
+    // surface/engine initialization behind a remote provider or SAF read.
+    continuePlayerInitialization()
   }
 
   private fun shouldPreflightExternalM3u(sourceIntent: Intent = intent): Boolean {
@@ -2158,10 +2158,7 @@ class PlayerActivity :
       playerPreferences.playlistMode.get() &&
       !hasReusableSavedPlaybackSession
     ) {
-      val path = parsePathFromIntent(intent)
-      if (path != null) {
-        generatePlaylistFromFolder(path)
-      }
+      generatePlaylistFromFolder(intent)
     }
 
     // Extract fileName early so it's available when video loads
@@ -7499,16 +7496,20 @@ class PlayerActivity :
       isSecureFolderLaunch = intent.getStringExtra("launch_source") == "secure_folder"
       isStreamTabPlayback = intent.getBooleanExtra("stream_tab_playback", false)
       if (shouldPreflightExternalM3u(intent)) {
+        val launchIntent = intent
         m3uPreflightJob = lifecycleScope.launch {
-          preflightExternalM3u(intent)
-          continuePlayerInitialization()
+          preflightExternalM3u(launchIntent)
         }
-      } else continuePlayerInitialization()
+      }
+      // Do not let playlist classification delay attaching the player surface.
+      continuePlayerInitialization()
     } else if (shouldPreflightExternalM3u(intent)) {
       m3uPreflightJob = lifecycleScope.launch {
         preflightExternalM3u(intent)
-        if (!isFinishing && !isDestroyed) handleNewIntent(intent)
       }
+      // Install the incoming request immediately; the load path joins the
+      // shared preflight job when it needs the parsed playlist.
+      handleNewIntent(intent)
     } else handleNewIntent(intent)
   }
 
@@ -7704,10 +7705,7 @@ class PlayerActivity :
 
     // Auto-generate playlist from folder if playlist mode is enabled and no playlist_id
     if (playlist.isEmpty() && playlistId == null && playerPreferences.playlistMode.get()) {
-      val path = parsePathFromIntent(intent)
-      if (path != null) {
-        generatePlaylistFromFolder(path)
-      }
+      generatePlaylistFromFolder(intent)
     }
 
     // Extract the new fileName before loading the file
@@ -10140,7 +10138,9 @@ class PlayerActivity :
     val sourceUri = extractUriFromIntent(intent)
     val localPath =
       intent.getStringExtra("local_media_path")?.takeIf { it.isNotBlank() }
-        ?: sourceUri?.resolveLocalPath(this)
+        ?: sourceUri
+          ?.takeUnless { it.scheme.equals("content", ignoreCase = true) }
+          ?.resolveLocalPath(this)
     localPath?.let {
       return PlaybackIdentity.forLocalPath(it)
     }
@@ -10173,8 +10173,14 @@ class PlayerActivity :
     val explicitIdentifier = intent.getStringExtra("media_identifier")?.takeIf { it.isNotBlank() }
     val uri = extractUriFromIntent(intent)
     val hasLocalPath =
-      intent.getStringExtra("local_media_path")?.isNotBlank() == true || uri?.resolveLocalPath(this) != null
+      intent.getStringExtra("local_media_path")?.isNotBlank() == true ||
+        uri?.scheme.equals("file", ignoreCase = true)
     if (hasLocalPath) return uri?.toString()?.let(PlaybackIdentity::forUri) ?: explicitIdentifier
+    // A content URI is already a stable legacy key. Do not query its provider twice on the
+    // Activity thread just to discover a backing filesystem path before playback can start.
+    if (uri?.scheme.equals("content", ignoreCase = true)) {
+      return PlaybackIdentity.forUri(uri.toString())
+    }
     if (explicitIdentifier?.startsWith("media:v2:") == true) return null
     val networkFilePath = intent.getStringExtra("network_file_path")
     val connectionId = intent.getLongExtra("network_connection_id", -1L)
@@ -10570,22 +10576,24 @@ class PlayerActivity :
     }
   }
 
-  private fun generatePlaylistFromFolder(currentPath: String) {
+  private fun generatePlaylistFromFolder(sourceIntent: Intent) {
     val expectedGeneration = mediaRequestGeneration
     lifecycleScope.launch(Dispatchers.IO) {
-      generatePlaylistFromFolderInternal(currentPath, expectedGeneration)
+      val currentPath = parsePathFromIntent(sourceIntent) ?: return@launch
+      generatePlaylistFromFolderInternal(currentPath, sourceIntent, expectedGeneration)
     }
   }
 
   private suspend fun generatePlaylistFromFolderInternal(
     currentPath: String,
+    sourceIntent: Intent,
     expectedGeneration: Long = mediaRequestGeneration,
   ): Boolean =
     runCatching {
       val currentFile = File(currentPath)
       if (!currentFile.exists()) return@runCatching false
 
-      val launchSource = intent.getStringExtra("launch_source") ?: ""
+      val launchSource = sourceIntent.getStringExtra("launch_source") ?: ""
       val siblingFiles = resolveAutoPlaylistSiblingFiles(currentFile, launchSource)
       if (siblingFiles.size <= 1) return@runCatching false
 
@@ -10669,6 +10677,9 @@ class PlayerActivity :
         PlaybackHttpHeaders.fromFlatPairs(sourceIntent.extras?.getStringArray("headers")),
       )
     val userAgent = PlaybackHttpHeaders.userAgent(requestHeaders)
+    // Startup preflight runs concurrently with player initialization. Join it
+    // here to reuse its result and avoid a second network/provider read.
+    m3uPreflightJob?.join()
     val parseResult =
       preflightM3uParse
         ?.takeIf { it.first == uriString }

@@ -137,7 +137,9 @@ class PlayerFollowupUiContractTest {
     assertTrue(landscape.contains("buttons.forEach { button ->"))
     assertTrue(landscape.contains("RenderPlayerButton("))
     assertTrue(landscape.contains("private fun LandscapePlayerControlStrip("))
-    assertTrue(landscape.contains("Modifier.horizontalScroll(rememberScrollState(), reverseScrolling).widthIn(min = maxWidth)"))
+    assertTrue(landscape.contains("Modifier.fillMaxWidth().horizontalScroll(rememberScrollState(), reverseScrolling)"))
+    assertTrue(landscape.contains("scrollable = playbackControlsPosition == PlaybackControlsPosition.BelowSeekbar"))
+    assertTrue(landscape.contains("FlowRow("))
     assertTrue(landscape.contains("alignment = Alignment.End"))
     assertTrue(controls.contains(".padding(vertical = customButtonsRowVerticalPadding)\n                  .fillMaxWidth()\n                  .horizontalScroll(rememberScrollState())"))
     assertTrue(controls.contains(".padding(vertical = customButtonsRowVerticalPadding)\n                  .fillMaxWidth()\n                  .horizontalScroll(rememberScrollState(), reverseScrolling = true)"))
@@ -147,13 +149,14 @@ class PlayerFollowupUiContractTest {
   @Test
   fun layoutSettingsShowLiveInfinityMockupAndKeepShortcutsVisibleWhileBuffering() {
     val settings = read("app/src/main/java/app/infinity/mpvz/ui/preferences/PlayerControlsPreferencesScreen.kt")
+    val editor = read("app/src/main/java/app/infinity/mpvz/ui/preferences/ControlLayoutEditorScreen.kt")
     val preview = read("app/src/main/java/app/infinity/mpvz/ui/preferences/PlayerLayoutPreview.kt")
     val controls = read("app/src/main/java/app/infinity/mpvz/ui/player/controls/PlayerControls.kt")
 
-    assertTrue(settings.contains("PlayerLayoutPreview("))
-    assertTrue(settings.contains("topRightButtons = topRightButtons"))
-    assertTrue(settings.contains("bottomLeftButtons = bottomLeftButtons"))
-    assertTrue(settings.contains("position = playbackControlsPosition"))
+    assertTrue(editor.contains("PlayerLayoutPreview("))
+    assertTrue(editor.contains("previewTopRightButtons"))
+    assertTrue(editor.contains("previewBottomLeftButtons"))
+    assertTrue(editor.contains("position = playbackControlsPosition"))
     assertTrue(preview.contains("Infinity layout"))
     assertTrue(preview.contains("PlaybackControlsPosition.AboveSeekbar"))
     assertTrue(preview.contains("PlaybackControlsPosition.BelowSeekbar"))
@@ -163,10 +166,47 @@ class PlayerFollowupUiContractTest {
   }
 
   @Test
+  fun controlEditorPreviewTracksSectionsAndBelowSeekbarScrollsBothSides() {
+    val editor = read("app/src/main/java/app/infinity/mpvz/ui/preferences/ControlLayoutEditorScreen.kt")
+    val settings = read("app/src/main/java/app/infinity/mpvz/ui/preferences/PlayerControlsPreferencesScreen.kt")
+    val controls = read("app/src/main/java/app/infinity/mpvz/ui/player/controls/PlayerControls.kt")
+    val landscape = read("app/src/main/java/app/infinity/mpvz/ui/player/controls/PlayerControlsLandscape.kt")
+    val portrait = read("app/src/main/java/app/infinity/mpvz/ui/player/controls/PlayerControlsPortrait.kt")
+    val preview = read("app/src/main/java/app/infinity/mpvz/ui/preferences/PlayerLayoutPreview.kt")
+
+    assertTrue(editor.contains("PlayerLayoutPreview("))
+    assertTrue(editor.contains("previewTopRightButtons"))
+    assertTrue(editor.contains("activeRegion = region"))
+    assertTrue(editor.contains("portraitBottomButtons = previewPortraitBottomButtons"))
+    assertTrue(editor.contains("position = playbackControlsPosition"))
+    assertFalse(settings.contains("PlayerLayoutPreview("))
+    assertTrue(controls.contains("bottom.linkTo(landscapeSideControlBandTop, spacing.medium)"))
+    assertTrue(controls.contains("bottom.linkTo(portraitControlsAboveGroupTop, spacing.small)"))
+    assertTrue(landscape.contains("scrollable = playbackControlsPosition == PlaybackControlsPosition.BelowSeekbar"))
+    assertTrue(landscape.contains("Modifier.fillMaxWidth().horizontalScroll(rememberScrollState(), reverseScrolling)"))
+    assertTrue(landscape.contains("FlowRow("))
+    assertTrue(portrait.contains("playbackControlsPosition == PlaybackControlsPosition.BelowSeekbar"))
+    assertTrue(portrait.contains("horizontalScroll(rememberScrollState())"))
+    assertTrue(portrait.contains("FlowRow("))
+    assertTrue(preview.contains("AnimatedVisibility("))
+    assertTrue(preview.contains("activeRegion == ControlRegion.PORTRAIT_BOTTOM"))
+  }
+
+  @Test
   fun contentUriLaunchDefersProviderIoUntilPlaybackSessionLoad() {
     val activity = read("app/src/main/java/app/infinity/mpvz/ui/player/PlayerActivity.kt")
     val playableUri = activity.substringAfter("private fun getPlayableUri(intent: Intent): String? {")
       .substringBefore("override fun onConfigurationChanged(")
+    val launchIdentity = activity.substringAfter("private fun getMediaIdentifier(")
+      .substringBefore("private fun getLegacyMediaIdentifier(")
+    val legacyIdentity = activity.substringAfter("private fun getLegacyMediaIdentifier(")
+      .substringBefore("private fun loadNetworkPlaylistMetadata(")
+    val folderPlaylistLoader = activity.substringAfter("private fun generatePlaylistFromFolder(sourceIntent: Intent) {")
+      .substringBefore("private suspend fun generatePlaylistFromFolderInternal(")
+    val createPlaylistBranch = activity.substringAfter("// Only auto-generate playlist from folder")
+      .substringBefore("// Extract fileName early")
+    val newIntentPlaylistBranch = activity.substringAfter("// Auto-generate playlist from folder if playlist mode is enabled and no playlist_id")
+      .substringBefore("// Extract the new fileName")
     val fileName = activity.substringAfter("private fun getFileName(intent: Intent): String {")
       .substringBefore("private fun extractFileNameFromUri(")
 
@@ -174,7 +214,42 @@ class PlayerFollowupUiContractTest {
     assertTrue(playableUri.contains("return sourceUri.toString()"))
     assertTrue(playableUri.contains("intent.getStringExtra(\"local_media_path\")"))
     assertFalse("The launch path must not open a one-shot content descriptor", playableUri.contains("openContentFd"))
+    assertTrue(launchIdentity.contains("takeUnless { it.scheme.equals(\"content\", ignoreCase = true) }"))
+    assertTrue(launchIdentity.indexOf("takeUnless") < launchIdentity.indexOf("resolveLocalPath(this)"))
+    assertFalse("Content URI legacy identity must not query providers on the Activity thread", legacyIdentity.contains("resolveLocalPath(this)"))
+    assertTrue(folderPlaylistLoader.contains("lifecycleScope.launch(Dispatchers.IO)"))
+    assertTrue(folderPlaylistLoader.indexOf("parsePathFromIntent(sourceIntent)") > folderPlaylistLoader.indexOf("lifecycleScope.launch(Dispatchers.IO)"))
+    assertTrue(createPlaylistBranch.contains("generatePlaylistFromFolder(intent)"))
+    assertFalse(createPlaylistBranch.contains("parsePathFromIntent(intent)"))
+    assertTrue(newIntentPlaylistBranch.contains("generatePlaylistFromFolder(intent)"))
+    assertFalse(newIntentPlaylistBranch.contains("parsePathFromIntent(intent)"))
     assertFalse("Document-provider title queries must not block Activity launch", fileName.contains("getDisplayNameFromUri"))
+  }
+
+  @Test
+  fun externalM3uPreflightDoesNotGatePlayerStartupOrDuplicateParsing() {
+    val activity = read("app/src/main/java/app/infinity/mpvz/ui/player/PlayerActivity.kt")
+    val startup = activity.substringAfter("if (shouldPreflightExternalM3u()) {")
+      .substringBefore("private fun shouldPreflightExternalM3u")
+    val startupPreflightBlock = startup.substringAfter("m3uPreflightJob = lifecycleScope.launch {")
+      .substringBefore("\n      }")
+    val dynamicLoad = activity.substringAfter("private suspend fun loadDynamicM3uPlaylist(")
+      .substringBefore("private suspend fun")
+    val newIntent = activity.substringAfter("override fun onNewIntent(intent: Intent)")
+      .substringBefore("private fun handleNewIntent")
+    val pendingNewIntent = newIntent.substringAfter("if (!playerInitializationComplete) {")
+      .substringBefore("} else if (shouldPreflightExternalM3u(intent))")
+    val newIntentPreflightBlock = pendingNewIntent.substringAfter("m3uPreflightJob = lifecycleScope.launch {")
+      .substringBefore("\n        }")
+
+    assertTrue(startup.contains("m3uPreflightJob = lifecycleScope.launch"))
+    assertTrue(startup.contains("continuePlayerInitialization()"))
+    assertTrue(startup.indexOf("continuePlayerInitialization()") > startup.indexOf("preflightExternalM3u(launchIntent)"))
+    assertFalse(startupPreflightBlock.contains("continuePlayerInitialization()"))
+    assertTrue(pendingNewIntent.contains("continuePlayerInitialization()"))
+    assertFalse(newIntentPreflightBlock.contains("continuePlayerInitialization()"))
+    assertTrue(dynamicLoad.contains("m3uPreflightJob?.join()"))
+    assertTrue(dynamicLoad.contains("preflightM3uParse"))
   }
 
   @Test

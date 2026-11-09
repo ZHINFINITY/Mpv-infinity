@@ -47,6 +47,7 @@ import app.infinity.mpvz.preferences.AppearancePreferences
 import app.infinity.mpvz.preferences.PlayerButton
 import app.infinity.mpvz.preferences.allPlayerButtons
 import app.infinity.mpvz.preferences.preference.Preference
+import app.infinity.mpvz.preferences.preference.collectAsState
 import app.infinity.mpvz.presentation.Screen
 import app.infinity.mpvz.presentation.components.ConfirmDialog
 import app.infinity.mpvz.ui.icons.Icons
@@ -142,6 +143,16 @@ data class ControlLayoutEditorScreen(
           },
       )
     }
+
+    val playbackControlsPosition by preferences.playbackControlsPosition.collectAsState()
+    val previewTopRightButtons =
+      if (region == ControlRegion.TOP_RIGHT) selectedButtons else preferences.parseButtons(preferences.topRightControls.get(), mutableSetOf())
+    val previewBottomRightButtons =
+      if (region == ControlRegion.BOTTOM_RIGHT) selectedButtons else preferences.parseButtons(preferences.bottomRightControls.get(), mutableSetOf())
+    val previewBottomLeftButtons =
+      if (region == ControlRegion.BOTTOM_LEFT) selectedButtons else preferences.parseButtons(preferences.bottomLeftControls.get(), mutableSetOf())
+    val previewPortraitBottomButtons =
+      if (region == ControlRegion.PORTRAIT_BOTTOM) selectedButtons else preferences.parseButtons(preferences.portraitBottomControls.get(), mutableSetOf())
 
     DisposableEffect(Unit) {
       onDispose {
@@ -247,6 +258,18 @@ data class ControlLayoutEditorScreen(
               .fillMaxSize()
               .padding(padding),
         ) {
+          item(span = { GridItemSpan(maxLineSpan) }) {
+            PlayerLayoutPreview(
+              topRightButtons = previewTopRightButtons,
+              bottomLeftButtons = previewBottomLeftButtons,
+              bottomRightButtons = previewBottomRightButtons,
+              position = playbackControlsPosition,
+              activeRegion = region,
+              portraitBottomButtons = previewPortraitBottomButtons,
+              modifier = Modifier.padding(bottom = 4.dp),
+            )
+          }
+
           // --- 1. Header & Active Selected Zone ---
           item(span = { GridItemSpan(maxLineSpan) }) {
             androidx.compose.material3.Text(
