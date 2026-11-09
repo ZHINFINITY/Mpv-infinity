@@ -207,7 +207,8 @@ private fun PreviewShortcutRows(
   activeRegion: ControlRegion?,
 ) {
   BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
-    val halfMaxWidth = maxWidth / 2
+    val availableWidth = maxWidth
+    val halfMaxWidth = availableWidth / 2
     if (activeRegion == ControlRegion.PORTRAIT_BOTTOM) {
       Row(
         modifier = Modifier.fillMaxWidth(),
@@ -215,7 +216,7 @@ private fun PreviewShortcutRows(
       ) {
         PreviewIconStrip(
           buttons = portraitButtons,
-          modifier = Modifier.widthIn(max = maxWidth),
+          modifier = Modifier.widthIn(max = availableWidth),
           reverseScrolling = false,
           highlighted = true,
         )
