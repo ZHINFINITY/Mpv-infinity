@@ -8110,13 +8110,21 @@ class PlayerActivity :
           } else {
             null
           }
-        // Most web pages need no M3U probe. Start runtime readiness concurrently with the saved
-        // position lookup; the child job is canceled with this media request if the user switches.
+        // Start runtime readiness alongside saved-position lookup and any ambiguous M3U radio probe.
+        // If the probe confirms direct audio, cancel prep rather than waiting for it or installing
+        // yt-dlp unnecessarily; true web-video entries can use that probe time as preparation time.
         val ytdlpPreparationJob =
-          if (looksLikeWebSource && !shouldProbeRadio) {
+          if (looksLikeWebSource && !item.isDefinitelyAudioOnly()) {
             async(Dispatchers.IO) {
-              YtdlpManager.prepareForPlayback(this@PlayerActivity, item.playableUri) { line ->
-                line.trim().takeIf { it.isNotEmpty() }?.let { message -> Log.d(TAG, message) }
+              try {
+                YtdlpManager.prepareForPlayback(this@PlayerActivity, item.playableUri) { line ->
+                  line.trim().takeIf { it.isNotEmpty() }?.let { message -> Log.d(TAG, message) }
+                }
+              } catch (error: CancellationException) {
+                throw error
+              } catch (error: Exception) {
+                Log.w(TAG, "yt-dlp preflight failed", error)
+                false
               }
             }
           } else {
@@ -8125,6 +8133,7 @@ class PlayerActivity :
         val radioMimeType = radioMimeTypeJob?.await()
         ensureCurrentMediaRequest(requestGeneration)
         val requiresYtdlpForPreflight = looksLikeWebSource && radioMimeType == null
+        if (!requiresYtdlpForPreflight) ytdlpPreparationJob?.cancel()
         val ytdlpReady =
           when {
             !requiresYtdlpForPreflight -> true

@@ -34,8 +34,8 @@ object GlassSamplingPolicy {
     require(radius >= 0 && passes >= 0)
     return kotlin.math.sqrt(passes * (((2 * radius + 1) * (2 * radius + 1) - 1) / 12f))
   }
-  /** No new samples while a sheet/panel open or close animation runs. */
-  const val TransitionSettleMs = 320L
+  /** Cover the 350 ms sheet animation plus a small margin so captures do not compete with it. */
+  const val TransitionSettleMs = 450L
   const val ShaderWarmupDelayMs = 600L
 
   fun interval(playing: Boolean, failures: Int, thermalStatus: Int = 0, largeSurface: Boolean = true): Long = when {

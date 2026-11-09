@@ -22,7 +22,7 @@ class PopupGlassAndSheetLatencyPolicyTest {
     assertEquals(200L, GlassSamplingPolicy.settleDelay(now = 1_000L, settleUntil = 1_200L, hasFrame = true))
     assertEquals(0L, GlassSamplingPolicy.settleDelay(now = 1_000L, settleUntil = 1_200L, hasFrame = false))
     assertEquals(0L, GlassSamplingPolicy.settleDelay(now = 1_300L, settleUntil = 1_200L, hasFrame = true))
-    assertTrue(GlassSamplingPolicy.TransitionSettleMs in 200L..400L)
+    assertTrue(GlassSamplingPolicy.TransitionSettleMs in 400L..500L)
   }
 
   @Test

@@ -153,11 +153,35 @@ class PlayerFollowupUiContractTest {
     assertFalse(landscape.contains("scrollable = playbackControlsPosition == PlaybackControlsPosition.BelowSeekbar"))
     assertFalse(landscape.contains("FlowRow("))
     assertTrue(landscape.contains("alignment = Alignment.End"))
-    assertTrue(controls.contains(".horizontalScrollFadeEdges(customButtonScrollState, reverseScrolling = false)"))
-    assertTrue(controls.contains(".horizontalScrollFadeEdges(customButtonScrollState, reverseScrolling = true)"))
-    assertTrue(controls.contains(".horizontalScroll(customButtonScrollState)"))
-    assertTrue(controls.contains(".horizontalScroll(customButtonScrollState, reverseScrolling = true)"))
+    assertTrue(controls.contains("PlayerControlScrollStrip("))
+    assertTrue(controls.contains("alignment = Alignment.Start"))
+    assertTrue(controls.contains("alignment = Alignment.End"))
+    assertTrue(controls.contains("reverseScrolling = true"))
+    assertTrue(controls.contains("showEdgeFades = true"))
+    assertFalse(controls.contains("horizontalScroll(customButtonScrollState"))
     assertTrue(landscape.contains("buttonSize = 45.dp"))
+  }
+
+  @Test
+  fun videoStartupKeepsControlsVisibleAndPublishesCustomButtonsBeforeScriptWork() {
+    val controls = read("app/src/main/java/app/infinity/mpvz/ui/player/controls/PlayerControls.kt")
+    val viewModel = read("app/src/main/java/app/infinity/mpvz/ui/player/PlayerViewModel.kt")
+    val activity = read("app/src/main/java/app/infinity/mpvz/ui/player/PlayerActivity.kt")
+    val setup =
+      viewModel.substringAfter("private fun setupCustomButtons()")
+        .substringBefore("private fun reloadCustomButtonsScript")
+    val buttonPreflight =
+      activity.substringAfter("private suspend fun issuePlaybackLoad(")
+        .substringBefore("val (savedPlaybackState, radioMimeType, ytdlpReady)")
+    val uiPublishIndex = setup.indexOf("_customButtons.value = parseCustomButtonUiStates(jsonString)")
+    val backgroundSetupIndex = setup.indexOf("viewModelScope.launch(Dispatchers.IO)")
+
+    assertTrue(controls.contains("isWaitingForVideo,"))
+    assertTrue(controls.contains("!isWaitingForVideo"))
+    assertTrue(uiPublishIndex >= 0)
+    assertTrue(backgroundSetupIndex > uiPublishIndex)
+    assertTrue(buttonPreflight.contains("if (looksLikeWebSource && !item.isDefinitelyAudioOnly())"))
+    assertTrue(buttonPreflight.contains("if (!requiresYtdlpForPreflight) ytdlpPreparationJob?.cancel()"))
   }
 
   @Test

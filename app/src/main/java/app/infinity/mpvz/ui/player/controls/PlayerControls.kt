@@ -38,7 +38,6 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -458,6 +457,7 @@ fun PlayerControls(
   val showChapterIndicators by playerPreferences.showChapterIndicators.collectAsState()
   val torrentState by viewModel.torrentState.collectAsState()
   val videoOpenAnimState by viewModel.videoOpenAnimationState.collectAsState()
+  val isWaitingForVideo = videoOpenAnimState.isWaitingForVideo
   val showLoadingCircle by playerPreferences.showLoadingCircle.collectAsState()
   val embeddedTranslatedSubtitle by viewModel.embeddedTranslatedSubtitle.collectAsState()
 
@@ -748,10 +748,12 @@ fun PlayerControls(
     areControlsLocked,
     isUnlockSliderDragging,
     isAudioOnly,
+    isWaitingForVideo,
     isPlayerDrawerShown,
     showControlsDrawer,
   ) {
     if (!isAudioOnly &&
+      !isWaitingForVideo &&
       controlsShown &&
       paused == false &&
       !showBufferingIndicator &&
@@ -1326,34 +1328,19 @@ fun PlayerControls(
             modifier =
               navigationStartPaddingModifier.constrainAs(customLeftButtonsRef) {
                 start.linkTo(parent.start, spacing.large)
-                if (playbackControlsPosition == PlaybackControlsPosition.BelowSeekbar) {
-                  end.linkTo(playerPauseButton.start, spacing.small)
-                  horizontalBias = 0f
-                  width = Dimension.fillToConstraints
-                } else {
-                  width = Dimension.preferredWrapContent
-                }
+                end.linkTo(playerPauseButton.start, spacing.small)
+                horizontalBias = 0f
+                width = Dimension.fillToConstraints
                 bottom.linkTo(bottomLeftControls.top, spacing.medium)
                 height = Dimension.wrapContent
               },
           ) {
-            val customButtonScrollState = rememberScrollState()
-            Row(
-              horizontalArrangement = Arrangement.spacedBy(12.dp),
-              verticalAlignment = Alignment.CenterVertically,
-              modifier =
-                Modifier
-                  .padding(vertical = customButtonsRowVerticalPadding)
-                  .then(
-                    if (playbackControlsPosition == PlaybackControlsPosition.BelowSeekbar) {
-                      Modifier
-                        .fillMaxWidth()
-                        .horizontalScrollFadeEdges(customButtonScrollState, reverseScrolling = false)
-                    } else {
-                      Modifier
-                    },
-                  )
-                  .horizontalScroll(customButtonScrollState),
+            PlayerControlScrollStrip(
+              modifier = Modifier.padding(vertical = customButtonsRowVerticalPadding),
+              scrollState = rememberScrollState(),
+              gap = 12.dp,
+              alignment = Alignment.Start,
+              showEdgeFades = true,
             ) {
               leftCustomButtons.forEach { button ->
                 key(button.id) {
@@ -1406,13 +1393,9 @@ fun PlayerControls(
             modifier =
               navigationEndPaddingModifier
                 .constrainAs(customRightButtonsRef) {
-                  if (playbackControlsPosition == PlaybackControlsPosition.BelowSeekbar) {
-                    start.linkTo(playerPauseButton.end, spacing.small)
-                    horizontalBias = 1f
-                    width = Dimension.fillToConstraints
-                  } else {
-                    width = Dimension.preferredWrapContent
-                  }
+                  start.linkTo(playerPauseButton.end, spacing.small)
+                  horizontalBias = 1f
+                  width = Dimension.fillToConstraints
                   end.linkTo(parent.end, spacing.large)
                   bottom.linkTo(bottomRightControls.top, spacing.medium)
                   height = Dimension.wrapContent
@@ -1420,23 +1403,13 @@ fun PlayerControls(
                   landscapeRightButtonsTopPx = coordinates.positionInParent().y.roundToInt()
                 },
           ) {
-            val customButtonScrollState = rememberScrollState()
-            Row(
-              horizontalArrangement = Arrangement.spacedBy(12.dp),
-              verticalAlignment = Alignment.CenterVertically,
-              modifier =
-                Modifier
-                  .padding(vertical = customButtonsRowVerticalPadding)
-                  .then(
-                    if (playbackControlsPosition == PlaybackControlsPosition.BelowSeekbar) {
-                      Modifier
-                        .fillMaxWidth()
-                        .horizontalScrollFadeEdges(customButtonScrollState, reverseScrolling = true)
-                    } else {
-                      Modifier
-                    },
-                  )
-                  .horizontalScroll(customButtonScrollState, reverseScrolling = true),
+            PlayerControlScrollStrip(
+              modifier = Modifier.padding(vertical = customButtonsRowVerticalPadding),
+              scrollState = rememberScrollState(),
+              gap = 12.dp,
+              alignment = Alignment.End,
+              reverseScrolling = true,
+              showEdgeFades = true,
             ) {
               rightCustomButtons.forEach { button ->
                 key(button.id) {
@@ -1506,14 +1479,12 @@ fun PlayerControls(
                   portraitButtonsTopPx = coordinates.positionInParent().y.roundToInt()
                 },
           ) {
-            Row(
-              horizontalArrangement = Arrangement.spacedBy(12.dp),
-              verticalAlignment = Alignment.CenterVertically,
-              modifier =
-                Modifier
-                  .padding(vertical = customButtonsRowVerticalPadding)
-                  .fillMaxWidth()
-                  .horizontalScroll(rememberScrollState()),
+            PlayerControlScrollStrip(
+              modifier = Modifier.padding(vertical = customButtonsRowVerticalPadding),
+              scrollState = rememberScrollState(),
+              gap = 12.dp,
+              alignment = Alignment.CenterHorizontally,
+              showEdgeFades = true,
             ) {
               customButtons.forEach { button ->
                 key(button.id) {

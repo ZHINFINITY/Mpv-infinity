@@ -2405,12 +2405,13 @@ class PlayerViewModel(
 
   private fun setupCustomButtons() {
     customButtonsSetupJob?.cancel()
+    val jsonString = playerPreferences.customButtons.get()
+    _customButtons.value = parseCustomButtonUiStates(jsonString)
     customButtonsSetupJob =
       viewModelScope.launch(Dispatchers.IO) {
         try {
           val buttons = mutableListOf<CustomButtonState>()
           val scriptBodies = linkedMapOf<CustomButtonScriptLanguage, StringBuilder>()
-          val jsonString = playerPreferences.customButtons.get()
           if (jsonString.isNotBlank()) {
             try {
               // Try new slot-based format first
@@ -2461,8 +2462,6 @@ class PlayerViewModel(
               }
             }
           }
-
-          _customButtons.value = buttons
 
           val generatedPaths = mutableMapOf<CustomButtonScriptLanguage, String>()
           val scriptsDir = File(appContext.filesDir, "scripts")
@@ -2664,6 +2663,30 @@ class PlayerViewModel(
   fun callCustomButtonLongPress(id: String) {
     val safeId = id.replace("-", "_")
     PlaybackSession.command("script-message", "call_button_long_$safeId")
+  }
+
+  private fun parseCustomButtonUiStates(jsonString: String): List<CustomButtonState> {
+    if (jsonString.isBlank()) return emptyList()
+    val slotsData =
+      runCatching {
+        json.decodeFromString<app.infinity.mpvz.ui.preferences.CustomButtonSlots>(jsonString)
+      }.getOrNull()
+    if (slotsData != null) {
+      return slotsData.slots.mapIndexedNotNull { index, button ->
+        button
+          ?.takeIf { it.enabled && it.title.isNotBlank() }
+          ?.let { CustomButtonState(it.id, it.title, index < 4) }
+      }
+    }
+    return runCatching {
+      json
+        .decodeFromString<List<app.infinity.mpvz.ui.preferences.CustomButton>>(jsonString)
+        .mapIndexedNotNull { index, button ->
+          button.title
+            .takeIf(String::isNotBlank)
+            ?.let { CustomButtonState(button.id, it, index < 4) }
+        }
+    }.getOrDefault(emptyList())
   }
 
   private fun processButton(

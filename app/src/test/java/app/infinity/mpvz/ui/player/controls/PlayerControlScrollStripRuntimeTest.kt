@@ -8,7 +8,7 @@ import android.app.Application
 import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.size as modifierSize
 import androidx.compose.foundation.layout.width
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -50,7 +50,7 @@ class PlayerControlScrollStripRuntimeTest {
         alignment = Alignment.CenterHorizontally,
       ) {
         repeat(itemCount) { index ->
-          Box(Modifier.size(44.dp).testTag("action-$index"))
+          Box(Modifier.modifierSize(44.dp).testTag("action-$index"))
         }
       }
     }
@@ -68,8 +68,8 @@ class PlayerControlScrollStripRuntimeTest {
 
     composeRule.onNodeWithTag("control-strip").performTouchInput {
       swipe(
-        start = Offset(size.width * 0.82f, size.height * 0.5f),
-        end = Offset(size.width * 0.18f, size.height * 0.5f),
+        start = Offset(viewport.width * 0.82f, viewport.height * 0.5f),
+        end = Offset(viewport.width * 0.18f, viewport.height * 0.5f),
         durationMillis = 350,
       )
     }
@@ -79,8 +79,8 @@ class PlayerControlScrollStripRuntimeTest {
 
     composeRule.onNodeWithTag("control-strip").performTouchInput {
       swipe(
-        start = Offset(size.width * 0.18f, size.height * 0.5f),
-        end = Offset(size.width * 0.82f, size.height * 0.5f),
+        start = Offset(viewport.width * 0.18f, viewport.height * 0.5f),
+        end = Offset(viewport.width * 0.82f, viewport.height * 0.5f),
         durationMillis = 350,
       )
     }
@@ -101,17 +101,18 @@ class PlayerControlScrollStripRuntimeTest {
         reverseScrolling = true,
         showEdgeFades = true,
       ) {
-        repeat(6) { index -> Box(Modifier.size(44.dp).testTag("landscape-action-$index")) }
+        repeat(6) { index -> Box(Modifier.modifierSize(44.dp).testTag("landscape-action-$index")) }
       }
     }
     composeRule.waitForIdle()
     assertTrue("reversed overflow must have a scroll range", state.maxValue > 0)
     val initial = state.value
+    val viewport = composeRule.onNodeWithTag("landscape-strip").fetchSemanticsNode().boundsInRoot
 
     composeRule.onNodeWithTag("landscape-strip").performTouchInput {
       swipe(
-        start = Offset(size.width * 0.18f, size.height * 0.5f),
-        end = Offset(size.width * 0.82f, size.height * 0.5f),
+        start = Offset(viewport.width * 0.18f, viewport.height * 0.5f),
+        end = Offset(viewport.width * 0.82f, viewport.height * 0.5f),
         durationMillis = 350,
       )
     }
@@ -119,8 +120,8 @@ class PlayerControlScrollStripRuntimeTest {
     if (state.value == initial) {
       composeRule.onNodeWithTag("landscape-strip").performTouchInput {
         swipe(
-          start = Offset(size.width * 0.82f, size.height * 0.5f),
-          end = Offset(size.width * 0.18f, size.height * 0.5f),
+          start = Offset(viewport.width * 0.82f, viewport.height * 0.5f),
+          end = Offset(viewport.width * 0.18f, viewport.height * 0.5f),
           durationMillis = 350,
         )
       }
