@@ -87,7 +87,8 @@ class PreparedQueueAutoEngineContractTest {
         .substringBefore("val nativeResolvedUri =")
     assertTrue(load.contains("resolvePlaybackEngineMode(configuredEngine, playbackItem, videoHint = nativeVideoHint)"))
     assertTrue(load.contains("playbackItem.requiresWebPageResolutionBeforeNative(videoHint = nativeVideoHint)"))
-    assertTrue(load.contains("nativeItem.declaredMediaKind(videoHint = nativeVideoHint) == DeclaredPlaybackMediaKind.VIDEO"))
+    val nativeEligibility = activity.substringAfter("val canUseNative =").substringBefore("Log.i(")
+    assertTrue(nativeEligibility.contains("nativeItem.declaredMediaKind(videoHint = nativeVideoHint) == DeclaredPlaybackMediaKind.VIDEO"))
   }
 
   @Test
