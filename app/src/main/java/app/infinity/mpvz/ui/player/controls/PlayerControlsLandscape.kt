@@ -249,7 +249,10 @@ fun TopRightPlayerControlsLandscape(
   activity: PlayerActivity,
 ) {
   PlayerButtonTheme(hideBackground) {
-    LandscapePlayerControlStrip(reverseScrolling = true, alignment = Alignment.End) {
+    Row(
+      verticalAlignment = Alignment.CenterVertically,
+      horizontalArrangement = Arrangement.spacedBy(MaterialTheme.spacing.extraSmall),
+    ) {
       buttons.forEach { button ->
         RenderPlayerButton(
           button = button,
@@ -278,6 +281,7 @@ fun TopRightPlayerControlsLandscape(
 @Composable
 fun BottomRightPlayerControlsLandscape(
   buttons: List<PlayerButton>,
+  scrollable: Boolean,
   showVideoQualitySelector: Boolean,
   chapters: List<Segment>,
   currentChapter: Int?,
@@ -296,6 +300,7 @@ fun BottomRightPlayerControlsLandscape(
 ) {
   PlayerButtonTheme(hideBackground) {
     LandscapePlayerControlStrip(
+      scrollable = scrollable,
       reverseScrolling = true,
       alignment = Alignment.End,
     ) {
@@ -335,6 +340,7 @@ fun BottomRightPlayerControlsLandscape(
 @Composable
 fun BottomLeftPlayerControlsLandscape(
   buttons: List<PlayerButton>,
+  scrollable: Boolean,
   chapters: List<Segment>,
   currentChapter: Int?,
   isSpeedNonOne: Boolean,
@@ -352,6 +358,7 @@ fun BottomLeftPlayerControlsLandscape(
 ) {
   PlayerButtonTheme(hideBackground) {
     LandscapePlayerControlStrip(
+      scrollable = scrollable,
       reverseScrolling = false,
       alignment = Alignment.Start,
     ) {
@@ -382,6 +389,7 @@ fun BottomLeftPlayerControlsLandscape(
 
 @Composable
 private fun LandscapePlayerControlStrip(
+  scrollable: Boolean,
   reverseScrolling: Boolean,
   alignment: Alignment.Horizontal,
   content: @Composable () -> Unit,
@@ -389,12 +397,16 @@ private fun LandscapePlayerControlStrip(
   val scrollState = rememberScrollState()
   Row(
     modifier =
-      Modifier
-        .fillMaxWidth()
-        .horizontalScrollFadeEdges(scrollState, reverseScrolling)
-        .horizontalScroll(scrollState, reverseScrolling),
-      verticalAlignment = Alignment.CenterVertically,
-      horizontalArrangement = Arrangement.spacedBy(MaterialTheme.spacing.extraSmall, alignment),
+      if (scrollable) {
+        Modifier
+          .fillMaxWidth()
+          .horizontalScrollFadeEdges(scrollState, reverseScrolling)
+          .horizontalScroll(scrollState, reverseScrolling)
+      } else {
+        Modifier
+      },
+    verticalAlignment = Alignment.CenterVertically,
+    horizontalArrangement = Arrangement.spacedBy(MaterialTheme.spacing.extraSmall, alignment),
   ) {
     content()
   }

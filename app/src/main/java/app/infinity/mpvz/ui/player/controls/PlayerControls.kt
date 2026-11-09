@@ -1308,10 +1308,14 @@ fun PlayerControls(
             modifier =
               navigationStartPaddingModifier.constrainAs(customLeftButtonsRef) {
                 start.linkTo(parent.start, spacing.large)
-                end.linkTo(playerPauseButton.start, spacing.small)
-                horizontalBias = 0f
+                if (playbackControlsPosition == PlaybackControlsPosition.BelowSeekbar) {
+                  end.linkTo(playerPauseButton.start, spacing.small)
+                  horizontalBias = 0f
+                  width = Dimension.fillToConstraints
+                } else {
+                  width = Dimension.preferredWrapContent
+                }
                 bottom.linkTo(bottomLeftControls.top, spacing.medium)
-                width = Dimension.fillToConstraints
                 height = Dimension.wrapContent
               },
           ) {
@@ -1322,8 +1326,15 @@ fun PlayerControls(
               modifier =
                 Modifier
                   .padding(vertical = customButtonsRowVerticalPadding)
-                  .fillMaxWidth()
-                  .horizontalScrollFadeEdges(customButtonScrollState, reverseScrolling = false)
+                  .then(
+                    if (playbackControlsPosition == PlaybackControlsPosition.BelowSeekbar) {
+                      Modifier
+                        .fillMaxWidth()
+                        .horizontalScrollFadeEdges(customButtonScrollState, reverseScrolling = false)
+                    } else {
+                      Modifier
+                    },
+                  )
                   .horizontalScroll(customButtonScrollState),
             ) {
               leftCustomButtons.forEach { button ->
@@ -1377,11 +1388,15 @@ fun PlayerControls(
             modifier =
               navigationEndPaddingModifier
                 .constrainAs(customRightButtonsRef) {
-                  start.linkTo(playerPauseButton.end, spacing.small)
+                  if (playbackControlsPosition == PlaybackControlsPosition.BelowSeekbar) {
+                    start.linkTo(playerPauseButton.end, spacing.small)
+                    horizontalBias = 1f
+                    width = Dimension.fillToConstraints
+                  } else {
+                    width = Dimension.preferredWrapContent
+                  }
                   end.linkTo(parent.end, spacing.large)
-                  horizontalBias = 1f
                   bottom.linkTo(bottomRightControls.top, spacing.medium)
-                  width = Dimension.fillToConstraints
                   height = Dimension.wrapContent
                 }.onGloballyPositioned { coordinates ->
                   landscapeRightButtonsTopPx = coordinates.positionInParent().y.roundToInt()
@@ -1394,8 +1409,15 @@ fun PlayerControls(
               modifier =
                 Modifier
                   .padding(vertical = customButtonsRowVerticalPadding)
-                  .fillMaxWidth()
-                  .horizontalScrollFadeEdges(customButtonScrollState, reverseScrolling = true)
+                  .then(
+                    if (playbackControlsPosition == PlaybackControlsPosition.BelowSeekbar) {
+                      Modifier
+                        .fillMaxWidth()
+                        .horizontalScrollFadeEdges(customButtonScrollState, reverseScrolling = true)
+                    } else {
+                      Modifier
+                    },
+                  )
                   .horizontalScroll(customButtonScrollState, reverseScrolling = true),
             ) {
               rightCustomButtons.forEach { button ->
@@ -1710,7 +1732,8 @@ fun PlayerControls(
                 } else if (playbackControlsPosition == PlaybackControlsPosition.BelowSeekbar) {
                   bottom.linkTo(parent.bottom, spacing.large)
                 } else {
-                  bottom.linkTo(landscapeSideControlBandTop, spacing.medium)
+                  top.linkTo(parent.top)
+                  bottom.linkTo(parent.bottom)
                 }
               },
           ) {
@@ -2182,9 +2205,8 @@ fun PlayerControls(
                   },
                 ).constrainAs(topRightControls) {
                   top.linkTo(parent.top, spacing.small)
-                  start.linkTo(parent.start, spacing.large)
                   end.linkTo(parent.end, spacing.large)
-                  width = Dimension.fillToConstraints
+                  width = Dimension.preferredWrapContent
                 },
           ) {
             TopRightPlayerControlsLandscape(
@@ -2240,10 +2262,8 @@ fun PlayerControls(
                     width = Dimension.fillToConstraints
                   } else {
                     bottom.linkTo(seekbar.top, bottomControlsToSeekbarSpacing)
-                    start.linkTo(playerPauseButton.end, spacing.small)
                     end.linkTo(parent.end, spacing.large)
-                    horizontalBias = 1f
-                    width = Dimension.fillToConstraints
+                    width = Dimension.preferredWrapContent
                   }
                 }.onGloballyPositioned { coordinates ->
                   bottomRightControlsTopPx = coordinates.positionInParent().y.roundToInt()
@@ -2271,6 +2291,7 @@ fun PlayerControls(
             } else {
               BottomRightPlayerControlsLandscape(
                 buttons = bottomRightButtons,
+                scrollable = playbackControlsPosition == PlaybackControlsPosition.BelowSeekbar,
                 showVideoQualitySelector = showVideoQualitySelector && !landscapeHasConfiguredQualityButton,
                 chapters = chapters,
                 currentChapter = currentChapter,
@@ -2309,17 +2330,21 @@ fun PlayerControls(
                 ).constrainAs(bottomLeftControls) {
                   if (playbackControlsPosition == PlaybackControlsPosition.BelowSeekbar) {
                     bottom.linkTo(parent.bottom, spacing.large)
+                    start.linkTo(parent.start, spacing.large)
+                    end.linkTo(playerPauseButton.start, spacing.small)
+                    horizontalBias = 0f
+                    width = Dimension.fillToConstraints
                   } else {
                     bottom.linkTo(seekbar.top, bottomControlsToSeekbarSpacing)
+                    start.linkTo(parent.start, spacing.large)
+                    end.linkTo(bottomRightControls.start, spacing.small)
+                    width = Dimension.fillToConstraints
                   }
-                  start.linkTo(parent.start, spacing.large)
-                  end.linkTo(playerPauseButton.start, spacing.small)
-                  horizontalBias = 0f
-                  width = Dimension.fillToConstraints
                 },
           ) {
             BottomLeftPlayerControlsLandscape(
               buttons = bottomLeftButtons,
+              scrollable = playbackControlsPosition == PlaybackControlsPosition.BelowSeekbar,
               chapters = chapters,
               currentChapter = currentChapter,
               isSpeedNonOne = isSpeedNonOne,

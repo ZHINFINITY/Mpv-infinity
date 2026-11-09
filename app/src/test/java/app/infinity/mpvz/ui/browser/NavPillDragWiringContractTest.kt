@@ -1,6 +1,7 @@
 package app.infinity.mpvz.ui.browser
 
 import java.io.File
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -21,24 +22,10 @@ class NavPillDragWiringContractTest {
     assertTrue(drag in 0 until scroll)
     assertTrue(main.contains("val latestVisibleTabs by rememberUpdatedState(visibleTabs)"))
     assertTrue(main.contains("val latestOnTabSelected by rememberUpdatedState(onTabSelected)"))
-    assertTrue(main.contains("onRelease = { target, releasePosition ->"))
-    assertTrue(main.contains("retainedFinalDragPosition = finalPosition"))
-    assertTrue(main.contains("retainedFinalDragTarget = target"))
-    assertTrue(main.contains("lensPosition.snapTo(finalPosition)"))
-    assertTrue(main.contains("var lensSyncedToRelease by remember"))
-    assertTrue(main.contains("lensSyncedToRelease = true"))
-    assertTrue(main.contains("lensPosition.animateTo(targetPosition"))
-    assertTrue(main.contains("retainedFinalDragTarget != null -> Unit"))
-    assertTrue(main.contains("val layoutPosition = dragPosition ?: releaseVisualPosition ?: position"))
-    assertTrue(main.contains("pager.settledPage == target"))
-    assertTrue(main.contains("!pager.isScrollInProgress"))
-    assertTrue(main.contains("!lensPosition.isRunning"))
-    assertTrue(main.contains("retainedFinalDragPosition = null"))
-    val pagerDragCleanup =
-      main.substringAfter("LaunchedEffect(fingerDragging)").substringBefore("var hoveredTab by remember")
-    assertTrue(pagerDragCleanup.contains("if (fingerDragging)"))
-    assertTrue(pagerDragCleanup.contains("retainedFinalDragPosition = null"))
-    assertTrue(pagerDragCleanup.contains("retainedFinalDragTarget = null"))
+    assertTrue(main.contains("onRelease = { target, _ -> latestVisibleTabs.getOrNull(target)?.let(latestOnTabSelected) }"))
+    assertTrue(main.contains("val layoutPosition = dragPosition ?: position"))
+    assertTrue(main.contains("dragPosition ?: if (!motionAllowed || fingerDragging) position else lensPosition.value"))
+    assertFalse("released drag state must not latch the lens to an old tab", main.contains("retainedFinalDrag"))
     assertTrue(gesture.contains("onRelease: (Int, Float) -> Unit"))
     assertTrue(gesture.contains("onRelease(target, releasePosition)"))
     assertTrue(!main.contains("onRelease = { target -> visibleTabs.getOrNull(target)?.let(onTabSelected) }"))
@@ -60,10 +47,9 @@ class NavPillDragWiringContractTest {
     assertTrue(hoverSync.contains("LaunchedEffect(targetIndex, lastIndex)"))
     assertTrue(hoverSync.contains("hoveredTab = targetIndex.toInt().coerceIn(0, lastIndex)"))
     // Labels fade in with tabFraction; the hovered tab must widen with the drag or they clip.
-    assertTrue(source.contains("val releaseVisualPosition = if (synchronizedRelease) lensPosition.value else retainedFinalDragPosition"))
-    assertTrue(source.contains("dragPosition ?: releaseVisualPosition ?: position"))
-    assertTrue(source.contains("dragPosition ?: releaseVisualPosition ?: if"))
-    assertTrue(source.contains("val tabFraction = if (dragPosition != null || retainedFinalDragTarget != null)"))
+    assertTrue(source.contains("val tabFraction = if (dragPosition != null)"))
+    assertTrue(source.contains("selected = if (dragPosition != null) hoveredTab == index else index == targetIndex.toInt()"))
+    assertFalse(source.contains("retainedFinalDrag"))
     assertTrue(source.contains("remember(layoutPosition, visibleTabs)"))
     // Tab centres change while tabs widen; keying pointerInput on them would cancel the drag.
     val gesture = File(root, "app/src/main/java/app/infinity/mpvz/ui/browser/NavPillDragGesture.kt").readText()

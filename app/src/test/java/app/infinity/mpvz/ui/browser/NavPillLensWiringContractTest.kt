@@ -33,7 +33,8 @@ class NavPillLensWiringContractTest {
     assertTrue(main.contains("Modifier.navPillDragGesture("))
     assertTrue(main.contains(".horizontalScroll(pillScroll)"))
     assertTrue(main.contains("role = Role.Tab"))
-    assertTrue(main.contains("selected = if (dragPosition != null || retainedFinalDragPosition != null) hoveredTab == index"))
+    assertTrue(main.contains("selected = if (dragPosition != null) hoveredTab == index else index == targetIndex.toInt()"))
+    assertFalse(main.contains("retainedFinalDrag"))
 
     val scene = File(root, "app/src/main/java/app/infinity/mpvz/ui/theme/BrowserGlassScene.kt").readText()
     assertTrue(scene.contains("LocalLensGlassEnabled.current"))

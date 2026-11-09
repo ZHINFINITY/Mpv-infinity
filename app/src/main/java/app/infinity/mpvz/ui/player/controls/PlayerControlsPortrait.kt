@@ -37,7 +37,6 @@ import app.infinity.mpvz.R
 import app.infinity.mpvz.preferences.AppearancePreferences
 import app.infinity.mpvz.preferences.PlayerButton
 import app.infinity.mpvz.preferences.preference.collectAsState
-import app.infinity.mpvz.ui.components.horizontalScrollFadeEdges
 import app.infinity.mpvz.ui.icons.Icon
 import app.infinity.mpvz.ui.icons.Icons
 import app.infinity.mpvz.ui.player.Panels
@@ -276,9 +275,8 @@ fun BottomPlayerControlsPortrait(
       modifier =
         Modifier
           .fillMaxWidth()
-          .padding(bottom = MaterialTheme.spacing.medium)
-          .horizontalScrollFadeEdges(scrollState)
-          .horizontalScroll(scrollState),
+          .horizontalScroll(scrollState)
+          .padding(bottom = MaterialTheme.spacing.medium),
       horizontalArrangement = Arrangement.spacedBy(MaterialTheme.spacing.medium, Alignment.CenterHorizontally),
       verticalAlignment = Alignment.CenterVertically,
     ) {

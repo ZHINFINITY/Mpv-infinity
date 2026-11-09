@@ -28,7 +28,7 @@ class ReferenceUiRollbackContractTest {
     val expected = mapOf(
       // Build 1910 smoothness: chapter index via derivedStateOf so position ticks do not recompose the whole overlay.
       // Player layout follow-up: side lanes stay bounded and scroll with edge fades.
-      "app/src/main/java/app/infinity/mpvz/ui/player/controls/PlayerControls.kt" to "67f2841dce2f0109a3abaf1ef8fc0a9ae77cc1a72be8b26ef76d227dea3ecbab" /* Owner-requested Above Seekbar anchor rollback; Below placement retained */,
+      "app/src/main/java/app/infinity/mpvz/ui/player/controls/PlayerControls.kt" to "86228a5f739010c2a4e59b5ab710c396ceaa33a8bcdc6f38f2a3d575617c1960" /* Owner-requested Above Seekbar and title/playlist layout restoration */,
       // Owner follow-up: music uses its legacy visual rail while video retains the global-glass path.
       "app/src/main/java/app/infinity/mpvz/ui/player/controls/components/Seekbar.kt" to "5e3cbc03be3aa7b35f464e0ee313615192d8d1cdcfbc7e8a819b7a6c2331843c",
       // Build 1910: shared rimLight/thick-surface routing is intentionally owned by this stream.
@@ -592,20 +592,13 @@ import android.graphics.Shader
     // slop detector never started on the phone).
     // Owner follow-up: retain the normal 44dp selected outline/placement; the glass refraction
     // follows finger-driven drag motion without an elevated pop or altered tab hit targets.
-    // Integration follow-up: hold the final drag position until the pager and lens finish settling.
-    // New drags clear retained release state and its lens-sync marker; keep the rest fingerprinted.
+    // Owner follow-up: programmatic pager selection is authoritative after a drag releases.
     val navBody = navigation.substring(start, end)
-    val pagerDragCleanup = """
-      LaunchedEffect(fingerDragging) {
-        if (fingerDragging) {
-          retainedFinalDragPosition = null
-          retainedFinalDragTarget = null
-          lensSyncedToRelease = false
-        }
-      }
-    """.trimIndent().prependIndent("  ") + "\n"
-    assertEquals(1, navBody.split(pagerDragCleanup).size - 1)
-    assertEquals("c566a7d4050b6c7d8a92d7d3ee8b80aba81acf50676456df1e1f40aa9ff43efd", sha(navBody.replace(pagerDragCleanup, "")))
+    assertTrue(navBody.contains("LaunchedEffect(targetIndex, lastIndex)"))
+    assertTrue(navBody.contains("hoveredTab = targetIndex.toInt().coerceIn(0, lastIndex)"))
+    assertTrue(navBody.contains("onRelease = { target, _ -> latestVisibleTabs.getOrNull(target)?.let(latestOnTabSelected) }"))
+    assertTrue(!navBody.contains("retainedFinalDrag"))
+    assertEquals("3165f3985d71cdc72ec34a3be93b716289cadf57dcf707c7f56f8dd377819845", sha(navBody))
     val scene = read("app/src/main/java/app/infinity/mpvz/ui/theme/BrowserGlassScene.kt")
     val lensStart = scene.indexOf("internal const val BROWSER_LENS")
     val q = scene.indexOf("\"\"\"", lensStart)

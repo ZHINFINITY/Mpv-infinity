@@ -30,6 +30,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -61,139 +62,157 @@ fun PlayerLayoutPreview(
   modifier: Modifier = Modifier,
 ) {
   val cardShape = RoundedCornerShape(18.dp)
+  val isPortraitPreview = activeRegion == ControlRegion.PORTRAIT_BOTTOM
   Box(
     modifier =
       modifier
         .fillMaxWidth()
-        .padding(horizontal = 16.dp, vertical = 8.dp)
-        .height(172.dp)
-        .clip(cardShape)
-        .background(Brush.verticalGradient(listOf(Color(0xFF17212A), Color(0xFF090C10))))
-        .border(BorderStroke(1.dp, Color.White.copy(alpha = 0.14f)), cardShape),
+        .padding(horizontal = 16.dp, vertical = 8.dp),
+    contentAlignment = Alignment.Center,
   ) {
-    Column(
-      modifier = Modifier.fillMaxSize().padding(horizontal = 9.dp, vertical = 8.dp),
-      verticalArrangement = Arrangement.spacedBy(5.dp),
+    Box(
+      modifier =
+        Modifier
+          .then(
+            if (isPortraitPreview) {
+              Modifier.width(132.dp).height(226.dp)
+            } else {
+              Modifier.fillMaxWidth().height(172.dp)
+            },
+          )
+          .clip(cardShape)
+          .background(Brush.verticalGradient(listOf(Color(0xFF17212A), Color(0xFF090C10))))
+          .border(BorderStroke(1.dp, Color.White.copy(alpha = 0.14f)), cardShape),
     ) {
-      Row(
-        modifier = Modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.SpaceBetween,
+      Column(
+        modifier = Modifier.fillMaxSize().padding(horizontal = 9.dp, vertical = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(5.dp),
       ) {
         Row(
+          modifier = Modifier.fillMaxWidth(),
           verticalAlignment = Alignment.CenterVertically,
-          horizontalArrangement = Arrangement.spacedBy(5.dp),
+          horizontalArrangement = Arrangement.SpaceBetween,
         ) {
-          Text("‹", color = Color.White, fontSize = 20.sp, lineHeight = 20.sp)
-          Column(verticalArrangement = Arrangement.spacedBy(1.dp)) {
-            Text(
-              text = "VIDEO PLAYER",
-              color = Color.White.copy(alpha = 0.62f),
-              fontSize = 7.sp,
-              fontWeight = FontWeight.Bold,
-              letterSpacing = 0.7.sp,
-              maxLines = 1,
-            )
-            Text(
-              text = position.displayName.uppercase(),
-              color = Color.White.copy(alpha = 0.82f),
-              fontSize = 8.sp,
-              maxLines = 1,
+          Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(5.dp),
+          ) {
+            Text("‹", color = Color.White, fontSize = 20.sp, lineHeight = 20.sp)
+            Column(verticalArrangement = Arrangement.spacedBy(1.dp)) {
+              Text(
+                text = "VIDEO PLAYER",
+                color = Color.White.copy(alpha = 0.62f),
+                fontSize = 7.sp,
+                fontWeight = FontWeight.Bold,
+                letterSpacing = 0.7.sp,
+                maxLines = 1,
+              )
+              Text(
+                text = position.displayName.uppercase(),
+                color = Color.White.copy(alpha = 0.82f),
+                fontSize = 8.sp,
+                maxLines = 1,
+              )
+            }
+          }
+          if (!isPortraitPreview) {
+            PreviewIconStrip(
+              buttons = topRightButtons,
+              modifier = Modifier.widthIn(max = 78.dp),
+              reverseScrolling = true,
+              highlighted = activeRegion == ControlRegion.TOP_RIGHT,
+              scrollable = false,
             )
           }
         }
-        PreviewIconStrip(
-          buttons = topRightButtons,
-          modifier = Modifier.widthIn(max = 78.dp),
-          reverseScrolling = true,
-          highlighted = activeRegion == ControlRegion.TOP_RIGHT,
-        )
-      }
 
-      Spacer(Modifier.weight(1f))
+        Spacer(Modifier.weight(1f))
 
-      Row(
-        modifier = Modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.Center,
-      ) {
-        PreviewTransportControl("↶")
-        Surface(
-          modifier = Modifier.padding(horizontal = 10.dp).size(28.dp),
-          shape = CircleShape,
-          color = Color.White.copy(alpha = 0.16f),
-          border = BorderStroke(0.8.dp, Color.White.copy(alpha = 0.34f)),
+        Row(
+          modifier = Modifier.fillMaxWidth(),
+          verticalAlignment = Alignment.CenterVertically,
+          horizontalArrangement = Arrangement.Center,
         ) {
-          Box(contentAlignment = Alignment.Center) {
-            Text("▶", color = Color.White, fontSize = 11.sp, lineHeight = 12.sp)
+          PreviewTransportControl("↶")
+          Surface(
+            modifier = Modifier.padding(horizontal = 10.dp).size(28.dp),
+            shape = CircleShape,
+            color = Color.White.copy(alpha = 0.16f),
+            border = BorderStroke(0.8.dp, Color.White.copy(alpha = 0.34f)),
+          ) {
+            Box(contentAlignment = Alignment.Center) {
+              Text("▶", color = Color.White, fontSize = 11.sp, lineHeight = 12.sp)
+            }
           }
+          PreviewTransportControl("↷")
         }
-        PreviewTransportControl("↷")
-      }
 
-      Spacer(Modifier.weight(1f))
+        Spacer(Modifier.weight(1f))
 
-      AnimatedVisibility(
-        visible = position == PlaybackControlsPosition.AboveSeekbar,
-        enter =
-          fadeIn(tween(150)) +
-            expandVertically(animationSpec = tween(150), expandFrom = Alignment.Bottom) +
-            slideInVertically(animationSpec = tween(150)) { it / 5 },
-        exit =
-          fadeOut(tween(120)) +
-            shrinkVertically(animationSpec = tween(120), shrinkTowards = Alignment.Top) +
-            slideOutVertically(animationSpec = tween(120)) { -it / 5 },
-      ) {
-        PreviewShortcutRows(
-          leftButtons = bottomLeftButtons,
-          rightButtons = bottomRightButtons,
-          portraitButtons = portraitBottomButtons,
-          activeRegion = activeRegion,
-        )
-      }
-
-      Row(
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(6.dp),
-      ) {
-        Text("0:42", color = Color.White.copy(alpha = 0.80f), fontSize = 8.sp, maxLines = 1)
-        Box(
-          modifier =
-            Modifier
-              .weight(1f)
-              .height(2.dp)
-              .clip(CircleShape)
-              .background(Color.White.copy(alpha = 0.30f)),
+        AnimatedVisibility(
+          visible = position == PlaybackControlsPosition.AboveSeekbar,
+          enter =
+            fadeIn(tween(150)) +
+              expandVertically(animationSpec = tween(150), expandFrom = Alignment.Bottom) +
+              slideInVertically(animationSpec = tween(150)) { it / 5 },
+          exit =
+            fadeOut(tween(120)) +
+              shrinkVertically(animationSpec = tween(120), shrinkTowards = Alignment.Top) +
+              slideOutVertically(animationSpec = tween(120)) { -it / 5 },
         ) {
+          PreviewShortcutRows(
+            leftButtons = bottomLeftButtons,
+            rightButtons = bottomRightButtons,
+            portraitButtons = portraitBottomButtons,
+            activeRegion = activeRegion,
+            position = position,
+          )
+        }
+
+        Row(
+          verticalAlignment = Alignment.CenterVertically,
+          horizontalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+          Text("0:42", color = Color.White.copy(alpha = 0.80f), fontSize = 8.sp, maxLines = 1)
           Box(
             modifier =
               Modifier
-                .fillMaxWidth(0.38f)
-                .fillMaxSize()
+                .weight(1f)
+                .height(2.dp)
                 .clip(CircleShape)
-                .background(Brush.horizontalGradient(listOf(Color(0xFFB8D9F2), Color(0xFFECF3FA)))),
+                .background(Color.White.copy(alpha = 0.30f)),
+          ) {
+            Box(
+              modifier =
+                Modifier
+                  .fillMaxWidth(0.38f)
+                  .fillMaxSize()
+                  .clip(CircleShape)
+                  .background(Brush.horizontalGradient(listOf(Color(0xFFB8D9F2), Color(0xFFECF3FA)))),
+            )
+          }
+          Text("1:58", color = Color.White.copy(alpha = 0.80f), fontSize = 8.sp, maxLines = 1)
+        }
+
+        AnimatedVisibility(
+          visible = position == PlaybackControlsPosition.BelowSeekbar,
+          enter =
+            fadeIn(tween(150)) +
+              expandVertically(animationSpec = tween(150), expandFrom = Alignment.Top) +
+              slideInVertically(animationSpec = tween(150)) { -it / 5 },
+          exit =
+            fadeOut(tween(120)) +
+              shrinkVertically(animationSpec = tween(120), shrinkTowards = Alignment.Bottom) +
+              slideOutVertically(animationSpec = tween(120)) { it / 5 },
+        ) {
+          PreviewShortcutRows(
+            leftButtons = bottomLeftButtons,
+            rightButtons = bottomRightButtons,
+            portraitButtons = portraitBottomButtons,
+            activeRegion = activeRegion,
+            position = position,
           )
         }
-        Text("1:58", color = Color.White.copy(alpha = 0.80f), fontSize = 8.sp, maxLines = 1)
-      }
-
-      AnimatedVisibility(
-        visible = position == PlaybackControlsPosition.BelowSeekbar,
-        enter =
-          fadeIn(tween(150)) +
-            expandVertically(animationSpec = tween(150), expandFrom = Alignment.Top) +
-            slideInVertically(animationSpec = tween(150)) { -it / 5 },
-        exit =
-          fadeOut(tween(120)) +
-            shrinkVertically(animationSpec = tween(120), shrinkTowards = Alignment.Bottom) +
-            slideOutVertically(animationSpec = tween(120)) { it / 5 },
-      ) {
-        PreviewShortcutRows(
-          leftButtons = bottomLeftButtons,
-          rightButtons = bottomRightButtons,
-          portraitButtons = portraitBottomButtons,
-          activeRegion = activeRegion,
-        )
       }
     }
   }
@@ -205,6 +224,7 @@ private fun PreviewShortcutRows(
   rightButtons: List<PlayerButton>,
   portraitButtons: List<PlayerButton>,
   activeRegion: ControlRegion?,
+  position: PlaybackControlsPosition,
 ) {
   BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
     val availableWidth = maxWidth
@@ -219,6 +239,7 @@ private fun PreviewShortcutRows(
           modifier = Modifier.widthIn(max = availableWidth),
           reverseScrolling = false,
           highlighted = true,
+          scrollable = true,
         )
       }
     } else {
@@ -233,6 +254,8 @@ private fun PreviewShortcutRows(
             modifier = Modifier.widthIn(max = halfMaxWidth),
             reverseScrolling = false,
             highlighted = activeRegion == ControlRegion.BOTTOM_LEFT,
+            scrollable = position == PlaybackControlsPosition.BelowSeekbar,
+            fadeEdges = position == PlaybackControlsPosition.BelowSeekbar,
           )
         }
         if (rightButtons.isNotEmpty()) {
@@ -241,6 +264,8 @@ private fun PreviewShortcutRows(
             modifier = Modifier.widthIn(max = halfMaxWidth),
             reverseScrolling = true,
             highlighted = activeRegion == ControlRegion.BOTTOM_RIGHT,
+            scrollable = position == PlaybackControlsPosition.BelowSeekbar,
+            fadeEdges = position == PlaybackControlsPosition.BelowSeekbar,
           )
         }
       }
@@ -254,6 +279,8 @@ private fun PreviewIconStrip(
   modifier: Modifier = Modifier,
   reverseScrolling: Boolean,
   highlighted: Boolean = false,
+  scrollable: Boolean = true,
+  fadeEdges: Boolean = false,
 ) {
   if (buttons.isEmpty()) return
   val scrollState = rememberScrollState()
@@ -261,8 +288,14 @@ private fun PreviewIconStrip(
     modifier =
       modifier
         .height(22.dp)
-        .horizontalScrollFadeEdges(scrollState, reverseScrolling = reverseScrolling, fadeWidth = 10.dp)
-        .horizontalScroll(scrollState, reverseScrolling),
+        .then(
+          if (fadeEdges) {
+            Modifier.horizontalScrollFadeEdges(scrollState, reverseScrolling = reverseScrolling, fadeWidth = 10.dp)
+          } else {
+            Modifier
+          },
+        )
+        .then(if (scrollable) Modifier.horizontalScroll(scrollState, reverseScrolling) else Modifier),
     verticalAlignment = Alignment.CenterVertically,
     horizontalArrangement = Arrangement.spacedBy(4.dp),
   ) {
