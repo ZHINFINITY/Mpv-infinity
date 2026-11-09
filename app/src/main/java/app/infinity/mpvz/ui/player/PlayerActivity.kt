@@ -5622,10 +5622,8 @@ class PlayerActivity :
 
     val uri = extractUriFromIntent(intent) ?: return ""
 
-    // Try content resolver first for content:// URIs
-    getDisplayNameFromUri(uri)?.let { return it }
-
-    // Extract filename from URL/URI
+    // Avoid a document-provider query on the Activity launch path. MPV supplies
+    // the resolved title after loading; this is only the immediate fallback.
     return extractFileNameFromUri(uri)
   }
 
@@ -5896,10 +5894,19 @@ class PlayerActivity :
    * @return A playable URI string, or null if unable to resolve
    */
   private fun getPlayableUri(intent: Intent): String? {
-    extractUriFromIntent(intent)
+    val sourceUri = extractUriFromIntent(intent)
+    sourceUri
       ?.toString()
       ?.takeIf { source -> isTorrentSource(source, intent.type) }
       ?.let { return it }
+
+    intent.getStringExtra("local_media_path")
+      ?.takeIf(String::isNotBlank)
+      ?.let { return it }
+
+    // Keep provider URIs durable here. PlaybackSession opens a fresh descriptor
+    // on its media-load dispatcher; opening it here blocks the UI thread.
+    if (sourceUri?.scheme.equals("content", ignoreCase = true)) return sourceUri.toString()
 
     val uri = parsePathFromIntent(intent)
     if (uri == null) {
@@ -5908,14 +5915,7 @@ class PlayerActivity :
       viewModel.showToast(getString(R.string.toast_playback_load_failed))
       return null
     }
-    return if (uri.startsWith("content://")) {
-      // Resolve to a real path when possible, but never to a single-use fd:// here: this value is
-      // stored on the queue item, and a replay would reuse a descriptor mpv has already consumed.
-      // Unresolvable URIs stay content:// and get a fresh descriptor per load in PlaybackSession.
-      uri.toUri().openContentFd(this, allowFdFallback = false) ?: uri
-    } else {
-      uri
-    }
+    return uri
   }
 
   /**
@@ -9158,16 +9158,29 @@ class PlayerActivity :
     }
   }
 
+  private fun currentBackgroundPlaybackTitle(): String {
+    val currentItem = PlaybackSession.queue.value.currentItem
+    return currentItem?.title?.takeIf(String::isNotBlank)
+      ?: fileName.takeIf(String::isNotBlank)
+      ?: currentItem?.playableUri?.let { Uri.parse(it).lastPathSegment }.orEmpty()
+  }
+
+  private fun hasReadyBackgroundPlaybackSession(): Boolean {
+    val phase = PlaybackSession.state.value.phase
+    val mpvSessionReady = !isNativeEngineActive() &&
+      (phase == PlaybackPhase.READY || phase == PlaybackPhase.BACKGROUND)
+    return isReady || mpvSessionReady || nativeEngineOrNull()?.snapshot?.value?.isReady == true
+  }
+
   private fun startBackgroundPlaybackInternal(bindToActivity: Boolean): Boolean {
     // A reopened Activity reuses the live MPV core; its own isReady can lag behind the session
     // that is already playing. Minimizing in that window used to stop the song entirely.
-    val mpvSessionReady =
-      !isNativeEngineActive() &&
-        PlaybackSession.state.value.phase.let { it == PlaybackPhase.READY || it == PlaybackPhase.BACKGROUND }
-    if (fileName.isBlank() || (!isReady && !mpvSessionReady && nativeEngineOrNull()?.snapshot?.value?.isReady != true)) {
+    val mediaTitle = currentBackgroundPlaybackTitle()
+    if (mediaTitle.isBlank() || !hasReadyBackgroundPlaybackSession()) {
       Log.w(TAG, "Cannot start background playback: video not ready")
       return false
     }
+    if (fileName.isBlank()) fileName = mediaTitle
 
     if (isNativeEngineActive()) {
       // MediaPlaybackService is MPV-backed. Hand native playback to MPV before the service is
@@ -9213,7 +9226,7 @@ class PlayerActivity :
       return true
     }
 
-    Log.d(TAG, "Starting background playback for: $fileName")
+    Log.d(TAG, "Starting background playback for: $mediaTitle")
 
     // Ensure notification channel exists
     MediaPlaybackService.createNotificationChannel(this)
@@ -9224,7 +9237,7 @@ class PlayerActivity :
     // Pass media info via intent extras
     val intent =
       Intent(this, MediaPlaybackService::class.java).apply {
-        putExtra("media_title", FileTypeUtils.stripExtension(fileName))
+        putExtra("media_title", FileTypeUtils.stripExtension(mediaTitle))
         putExtra("media_artist", artist)
         putExtra("media_uri", currentDurableMediaUri())
         putExtra("media_identifier", currentNotificationMediaIdentifier())
@@ -9376,7 +9389,7 @@ class PlayerActivity :
       return
     }
 
-    if (fileName.isBlank() || !isReady) {
+    if (currentBackgroundPlaybackTitle().isBlank() || !hasReadyBackgroundPlaybackSession()) {
       Log.w(TAG, "Cannot start background playback: media not ready")
       viewModel.showToast("Background playback on")
       return
@@ -9422,7 +9435,7 @@ class PlayerActivity :
       viewModel.showToast("Audio background playback off")
       return
     }
-    if (fileName.isBlank() || !isReady) {
+    if (currentBackgroundPlaybackTitle().isBlank() || !hasReadyBackgroundPlaybackSession()) {
       viewModel.showToast("Audio background playback on")
       return
     }

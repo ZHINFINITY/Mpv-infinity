@@ -101,7 +101,12 @@ object YtdlpManager {
   // must never be routed through yt-dlp, extension or not.
   private val DIRECT_MEDIA_EXCLUDE =
     (
-      listOf("^127%.0%.0%.1:", "^localhost:") +
+      listOf(
+        "^127%.0%.0%.1:",
+        "^localhost:",
+        "^[^?#]*/rest/stream%.view$",
+        "^[^?#]*/rest/stream%.view[?#]",
+      ) +
         HttpUtils.directMediaExtensions
           .flatMap { extension ->
             listOf(
@@ -130,6 +135,10 @@ object YtdlpManager {
     }
     if (uri.host?.lowercase() in setOf("127.0.0.1", "localhost", "0.0.0.0")) return false
     if (uri.host?.lowercase() == "video-downloads.googleusercontent.com") return false
+
+    // Subsonic/Navidrome stream.view endpoints are authenticated direct audio streams. Running
+    // them through yt-dlp starts a needless Python subprocess before every track and delays open.
+    if (uri.path?.endsWith("/rest/stream.view", ignoreCase = true) == true) return false
 
     // HentaiStream's /video-proxy endpoint is already a direct MP4 stream. Sending it through
     // yt-dlp causes an extra URL rewrite and makes mpv reopen the CDN with a different range

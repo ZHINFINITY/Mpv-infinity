@@ -9,6 +9,7 @@ package app.infinity.mpvz.data.navidrome
 
 import android.net.Uri
 import android.util.Log
+import app.infinity.mpvz.data.network.ServerUrlUtils
 import app.infinity.mpvz.domain.navidrome.NavidromeAlbum
 import app.infinity.mpvz.domain.navidrome.NavidromeArtist
 import app.infinity.mpvz.domain.navidrome.NavidromePlaylist
@@ -88,7 +89,7 @@ class NavidromeClient(
     extraParams: Map<String, String> = emptyMap(),
     stableSalt: String? = null,
   ): String {
-    val cleanBase = server.serverUrl.trimEnd('/')
+    val cleanBase = normalizedServerUrl(server)
     val secret = if (server.authMode == app.infinity.mpvz.domain.navidrome.NavidromeAuthMode.TOKEN && server.token.isNotBlank()) {
       server.token
     } else {
@@ -122,9 +123,9 @@ class NavidromeClient(
       return coverArtId
     }
     if (coverArtId.startsWith("/")) {
-      return "${server.serverUrl.trimEnd('/')}$coverArtId"
+      return "${normalizedServerUrl(server)}$coverArtId"
     }
-    val stableSalt = md5("${server.serverUrl}|${server.username}|$coverArtId|$size").take(8)
+    val stableSalt = md5("${normalizedServerUrl(server)}|${server.username}|$coverArtId|$size").take(8)
     return buildSubsonicUrl(
       server,
       "getCoverArt.view",
@@ -132,6 +133,9 @@ class NavidromeClient(
       stableSalt = stableSalt,
     )
   }
+
+  private fun normalizedServerUrl(server: NavidromeServer): String =
+    ServerUrlUtils.normalizeUrl(server.serverUrl).trimEnd('/')
 
   fun getArtistImageUrl(server: NavidromeServer, artist: NavidromeArtist, size: Int = 500): String? {
     val urlOrId = artist.artistImageUrl?.takeIf { it.isNotBlank() }

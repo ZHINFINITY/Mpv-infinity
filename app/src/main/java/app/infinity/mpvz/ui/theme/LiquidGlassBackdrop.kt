@@ -214,24 +214,26 @@ fun LiquidGlassBackdropHost(
           continue
         }
         // Only the tiny UI copy is cropped/frosted. The actual video surface remains untouched.
-        val sampled = captureBuffers.sampleMutex.withLock {
-          val target = captureBuffers.acquire(dimensions.first, dimensions.second)
-          if (target == null) null
-          else try {
-            val copied = copyGlassFrame(source, crop, target, captureBuffers)
-            val frosted = copied?.let { copiedBitmap ->
-              frostGlassFrame(
-                copiedBitmap,
-                tuning.frost,
-                captureBuffers.pixels,
-                captureBuffers.frostOutput,
-                captureBuffers.frostScratch,
-                captureBuffers.lumaBins,
-              )
+        val sampled = withContext(Dispatchers.Default) {
+          captureBuffers.sampleMutex.withLock {
+            val target = captureBuffers.acquire(dimensions.first, dimensions.second)
+            if (target == null) null
+            else try {
+              val copied = copyGlassFrame(source, crop, target, captureBuffers)
+              val frosted = copied?.let { copiedBitmap ->
+                frostGlassFrame(
+                  copiedBitmap,
+                  tuning.frost,
+                  captureBuffers.pixels,
+                  captureBuffers.frostOutput,
+                  captureBuffers.frostScratch,
+                  captureBuffers.lumaBins,
+                )
+              }
+              if (frosted != null && captureBuffers.markPublished(target)) frosted else null
+            } finally {
+              captureBuffers.release(target)
             }
-            if (frosted != null && captureBuffers.markPublished(target)) frosted else null
-          } finally {
-            captureBuffers.release(target)
           }
         }
         val bitmap = sampled?.first
@@ -672,7 +674,9 @@ fun Modifier.liquidGlassPane(
         }
       }
     }
-    .then(if (LocalLensGlassEnabled.current && LocalPageBackdrop.current != null) {
+    // Player panes already render the sampled video through GLASS_OPTICS above.
+    // Applying the independent page blur/lens here would refract the same pane twice.
+    .then(if (backdrop == null && LocalLensGlassEnabled.current && LocalPageBackdrop.current != null) {
       val pageBackdrop = LocalPageBackdrop.current!!
       Modifier.drawBackdrop(
         backdrop = pageBackdrop,

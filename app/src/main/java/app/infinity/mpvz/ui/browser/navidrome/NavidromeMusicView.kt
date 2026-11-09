@@ -190,7 +190,7 @@ fun NavidromeMusicView(
         }
 
         NavidromeMusicTab.ALBUMS -> {
-          if (uiState.isLoading && uiState.albums.isEmpty()) {
+          if (uiState.isLoadingAlbums && uiState.albums.isEmpty()) {
             Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
               CircularProgressIndicator()
             }

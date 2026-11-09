@@ -54,7 +54,7 @@ class PlayerFollowupUiContractTest {
     assertTrue(controls.contains("parseButtons(portraitBottomControlsPref, mutableSetOf())"))
     assertTrue(controls.contains("buttons = topRightButtons"))
     assertTrue(controls.contains("buttons = portraitBottomButtons"))
-    assertTrue(controls.contains("visible = controlsShown && !areControlsLocked && !isPortrait"))
+    assertTrue(controls.contains("visible = areButtonsVisible && !isPortrait"))
     assertTrue(landscape.contains("buttons.forEach { button ->") && landscape.contains("RenderPlayerButton("))
     assertTrue(portrait.contains("buttons.forEach { button ->") && portrait.contains("RenderPlayerButton("))
     assertTrue(renderer.contains("PlayerButton.TIME_NETWORK ->"))
@@ -130,17 +130,62 @@ class PlayerFollowupUiContractTest {
     assertTrue(landscapeRightBelow.contains("width = Dimension.fillToConstraints"))
     assertTrue(landscapeRightAbove.contains("start.linkTo(playerPauseButton.end, spacing.small)"))
     assertTrue(landscapeRightAbove.contains("end.linkTo(parent.end, spacing.large)"))
-    assertTrue(landscapeRightAbove.contains("width = Dimension.preferredWrapContent"))
+    assertTrue(landscapeRightAbove.contains("width = Dimension.fillToConstraints"))
     assertTrue(controls.contains("horizontalBias = 0f\n                    width = Dimension.fillToConstraints"))
     assertTrue(controls.contains("horizontalBias = 1f\n                    width = Dimension.fillToConstraints"))
     assertTrue(controls.contains("if (playbackControlsPosition == PlaybackControlsPosition.BelowSeekbar) {\n                    Dimension.fillToConstraints\n                  } else {\n                    Dimension.preferredWrapContent"))
     assertTrue(landscape.contains("buttons.forEach { button ->"))
     assertTrue(landscape.contains("RenderPlayerButton("))
-    assertTrue(landscape.contains("Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())"))
-    assertTrue(landscape.contains("Modifier.fillMaxWidth().horizontalScroll(rememberScrollState(), reverseScrolling = true)"))
+    assertTrue(landscape.contains("private fun LandscapePlayerControlStrip("))
+    assertTrue(landscape.contains("Modifier.horizontalScroll(rememberScrollState(), reverseScrolling).widthIn(min = maxWidth)"))
+    assertTrue(landscape.contains("alignment = Alignment.End"))
     assertTrue(controls.contains(".padding(vertical = customButtonsRowVerticalPadding)\n                  .fillMaxWidth()\n                  .horizontalScroll(rememberScrollState())"))
     assertTrue(controls.contains(".padding(vertical = customButtonsRowVerticalPadding)\n                  .fillMaxWidth()\n                  .horizontalScroll(rememberScrollState(), reverseScrolling = true)"))
     assertTrue(landscape.contains("buttonSize = 45.dp"))
+  }
+
+  @Test
+  fun layoutSettingsShowLiveInfinityMockupAndKeepShortcutsVisibleWhileBuffering() {
+    val settings = read("app/src/main/java/app/infinity/mpvz/ui/preferences/PlayerControlsPreferencesScreen.kt")
+    val preview = read("app/src/main/java/app/infinity/mpvz/ui/preferences/PlayerLayoutPreview.kt")
+    val controls = read("app/src/main/java/app/infinity/mpvz/ui/player/controls/PlayerControls.kt")
+
+    assertTrue(settings.contains("PlayerLayoutPreview("))
+    assertTrue(settings.contains("topRightButtons = topRightButtons"))
+    assertTrue(settings.contains("bottomLeftButtons = bottomLeftButtons"))
+    assertTrue(settings.contains("position = playbackControlsPosition"))
+    assertTrue(preview.contains("Infinity layout"))
+    assertTrue(preview.contains("PlaybackControlsPosition.AboveSeekbar"))
+    assertTrue(preview.contains("PlaybackControlsPosition.BelowSeekbar"))
+    assertTrue(preview.contains("cubicTo("))
+    assertTrue(controls.contains("(controlsShown || showBufferingIndicator) && !areControlsLocked && !areSlidersShown"))
+    assertTrue(controls.contains("(bufferingState.visible || isNativeBuffering || playbackSessionState.phase == PlaybackPhase.LOADING) && !isPlayerSeeking"))
+  }
+
+  @Test
+  fun contentUriLaunchDefersProviderIoUntilPlaybackSessionLoad() {
+    val activity = read("app/src/main/java/app/infinity/mpvz/ui/player/PlayerActivity.kt")
+    val playableUri = activity.substringAfter("private fun getPlayableUri(intent: Intent): String? {")
+      .substringBefore("override fun onConfigurationChanged(")
+    val fileName = activity.substringAfter("private fun getFileName(intent: Intent): String {")
+      .substringBefore("private fun extractFileNameFromUri(")
+
+    assertTrue(playableUri.contains("sourceUri?.scheme.equals(\"content\", ignoreCase = true)"))
+    assertTrue(playableUri.contains("return sourceUri.toString()"))
+    assertTrue(playableUri.contains("intent.getStringExtra(\"local_media_path\")"))
+    assertFalse("The launch path must not open a one-shot content descriptor", playableUri.contains("openContentFd"))
+    assertFalse("Document-provider title queries must not block Activity launch", fileName.contains("getDisplayNameFromUri"))
+  }
+
+  @Test
+  fun sampledPlayerGlassDoesNotStackTheIndependentPageLensPass() {
+    val glass = read("app/src/main/java/app/infinity/mpvz/ui/theme/LiquidGlassBackdrop.kt")
+
+    assertTrue(glass.contains("backdrop == null && LocalLensGlassEnabled.current && LocalPageBackdrop.current != null"))
+    assertTrue(glass.contains("val sampled = withContext(Dispatchers.Default)"))
+    assertTrue(glass.contains("captureBuffers.sampleMutex.withLock"))
+    assertTrue(glass.contains(".glassRimLight(shape = shape"))
+    assertTrue(glass.contains("drawRoundRect(Brush.verticalGradient"))
   }
 
   @Test

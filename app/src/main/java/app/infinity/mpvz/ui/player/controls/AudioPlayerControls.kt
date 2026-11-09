@@ -15,6 +15,7 @@ import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.boundsInWindow
 import app.infinity.mpvz.ui.player.PlaybackSession
 import app.infinity.mpvz.ui.player.AudioPlayerSheetState
+import app.infinity.mpvz.ui.player.MediaPlaybackService
 import app.infinity.mpvz.ui.player.BrowserMusicSheetState
 import app.infinity.mpvz.ui.player.InAppMusicSheetState
 import app.infinity.mpvz.ui.player.browserMusicSheetDrag
@@ -938,6 +939,17 @@ fun AudioPlayerControls(
   val audioPaletteBackground by audioPreferences.audioPaletteBackground.collectAsState()
   val audioStandbyMode by audioPreferences.audioStandbyMode.collectAsState()
   val backgroundPlaybackEnabled by audioPreferences.audioBackgroundPlayback.collectAsState()
+  fun toggleAudioBackgroundPlayback() {
+    val activity = context as? PlayerActivity
+    if (activity != null) {
+      activity.toggleAudioBackgroundPlayback()
+    } else {
+      val enabled = !backgroundPlaybackEnabled
+      if (!MediaPlaybackService.setAudioBackgroundPlaybackPreference(enabled)) {
+        audioPreferences.audioBackgroundPlayback.set(enabled)
+      }
+    }
+  }
   val playerControlsTheme by appearancePreferences.playerControlsTheme.collectAsState()
   val liquidGlassSurfaces by appearancePreferences.liquidGlassSurfaces.collectAsState()
   val glassSurfaceOpacity by appearancePreferences.glassSurfaceOpacity.collectAsState()
@@ -2493,12 +2505,7 @@ fun AudioPlayerControls(
               }
               ReactiveIconButton(
                 onClick = {
-                  val act = context as? PlayerActivity
-                  if (act != null) {
-                    act.toggleAudioBackgroundPlayback()
-                  } else {
-                    audioPreferences.audioBackgroundPlayback.set(!backgroundPlaybackEnabled)
-                  }
+                  toggleAudioBackgroundPlayback()
                 },
                 modifier = Modifier.size(48.dp),
               ) {
@@ -2574,12 +2581,7 @@ fun AudioPlayerControls(
               }
               ReactiveIconButton(
                 onClick = {
-                  val act = context as? PlayerActivity
-                  if (act != null) {
-                    act.toggleAudioBackgroundPlayback()
-                  } else {
-                    audioPreferences.audioBackgroundPlayback.set(!backgroundPlaybackEnabled)
-                  }
+                  toggleAudioBackgroundPlayback()
                 },
                 modifier = Modifier.size(48.dp),
               ) {

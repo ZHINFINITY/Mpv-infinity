@@ -13,14 +13,17 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.MaterialTheme
@@ -248,10 +251,7 @@ fun TopRightPlayerControlsLandscape(
   activity: PlayerActivity,
 ) {
   PlayerButtonTheme(hideBackground) {
-    Row(
-      verticalAlignment = Alignment.CenterVertically,
-      horizontalArrangement = Arrangement.spacedBy(MaterialTheme.spacing.extraSmall),
-    ) {
+    LandscapePlayerControlStrip(reverseScrolling = true, alignment = Alignment.End) {
       buttons.forEach { button ->
         RenderPlayerButton(
           button = button,
@@ -297,11 +297,7 @@ fun BottomRightPlayerControlsLandscape(
   activity: PlayerActivity,
 ) {
   PlayerButtonTheme(hideBackground) {
-    Row(
-      modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState(), reverseScrolling = true),
-      verticalAlignment = Alignment.CenterVertically,
-      horizontalArrangement = Arrangement.spacedBy(MaterialTheme.spacing.extraSmall),
-    ) {
+    LandscapePlayerControlStrip(reverseScrolling = true, alignment = Alignment.End) {
       buttons.forEach { button ->
         RenderPlayerButton(
           button = button,
@@ -354,11 +350,7 @@ fun BottomLeftPlayerControlsLandscape(
   activity: PlayerActivity,
 ) {
   PlayerButtonTheme(hideBackground) {
-    Row(
-      modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-      verticalAlignment = Alignment.CenterVertically,
-      horizontalArrangement = Arrangement.spacedBy(MaterialTheme.spacing.extraSmall),
-    ) {
+    LandscapePlayerControlStrip(reverseScrolling = false, alignment = Alignment.Start) {
       buttons.forEach { button ->
         RenderPlayerButton(
           button = button,
@@ -381,5 +373,21 @@ fun BottomLeftPlayerControlsLandscape(
         )
       }
     }
+  }
+}
+
+@Composable
+private fun LandscapePlayerControlStrip(
+  reverseScrolling: Boolean,
+  alignment: Alignment.Horizontal,
+  content: @Composable RowScope.() -> Unit,
+) {
+  BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+    Row(
+      modifier = Modifier.horizontalScroll(rememberScrollState(), reverseScrolling).widthIn(min = maxWidth),
+      verticalAlignment = Alignment.CenterVertically,
+      horizontalArrangement = Arrangement.spacedBy(MaterialTheme.spacing.extraSmall, alignment),
+      content = content,
+    )
   }
 }

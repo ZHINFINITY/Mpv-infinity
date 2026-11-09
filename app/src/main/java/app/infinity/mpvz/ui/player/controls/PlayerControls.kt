@@ -494,9 +494,7 @@ fun PlayerControls(
   val nativeEngineActive = activity?.isNativeEngineActive() == true
   val isNativeBuffering = nativeEngineActive && nativeSnapshot.isBuffering
   val showBufferingIndicator =
-    (bufferingState.visible || isNativeBuffering) &&
-      (controlsShown || isNativeBuffering || playbackSessionState.phase == PlaybackPhase.LOADING) &&
-      !isPlayerSeeking
+    (bufferingState.visible || isNativeBuffering || playbackSessionState.phase == PlaybackPhase.LOADING) && !isPlayerSeeking
   var stableDemuxerCacheTime by remember { mutableFloatStateOf(0f) }
   val currentDemuxerCacheTime =
     demuxerCacheTime
@@ -1240,7 +1238,7 @@ fun PlayerControls(
             }
           }
 
-          val areButtonsVisible = controlsShown && !areControlsLocked && !areSlidersShown
+          val areButtonsVisible = (controlsShown || showBufferingIndicator) && !areControlsLocked && !areSlidersShown
           val leftCustomButtons = remember(customButtons) { customButtons.filter { it.isLeft } }
           val rightCustomButtons = remember(customButtons) { customButtons.filterNot { it.isLeft } }
           val showLandscapeLeftCustomButtons = areButtonsVisible && !isPortrait && leftCustomButtons.isNotEmpty()
@@ -2166,7 +2164,7 @@ fun PlayerControls(
           }
 
           AnimatedVisibility(
-            visible = controlsShown && !areControlsLocked && !isPortrait,
+            visible = areButtonsVisible && !isPortrait,
             enter = buildControlsEnterH(controlsAnimStyle, reduceMotion, enterMs) { it },
             exit = buildControlsExitH(controlsAnimStyle, reduceMotion, exitMs) { it },
             modifier =
@@ -2189,7 +2187,9 @@ fun PlayerControls(
                   },
                 ).constrainAs(topRightControls) {
                   top.linkTo(parent.top, spacing.small)
+                  start.linkTo(parent.start, spacing.large)
                   end.linkTo(parent.end, spacing.large)
+                  width = Dimension.fillToConstraints
                 },
           ) {
             TopRightPlayerControlsLandscape(
@@ -2212,7 +2212,7 @@ fun PlayerControls(
           }
 
           AnimatedVisibility(
-            visible = controlsShown && !areControlsLocked && !areSlidersShown,
+            visible = areButtonsVisible,
             enter = buildControlsEnterH(controlsAnimStyle, reduceMotion, enterMs) { it },
             exit = buildControlsExitH(controlsAnimStyle, reduceMotion, exitMs) { it },
             modifier =
@@ -2248,7 +2248,7 @@ fun PlayerControls(
                     start.linkTo(playerPauseButton.end, spacing.small)
                     end.linkTo(parent.end, spacing.large)
                     horizontalBias = 1f
-                    width = Dimension.preferredWrapContent
+                    width = Dimension.fillToConstraints
                   }
                 }.onGloballyPositioned { coordinates ->
                   bottomRightControlsTopPx = coordinates.positionInParent().y.roundToInt()
@@ -2296,7 +2296,7 @@ fun PlayerControls(
           }
 
           AnimatedVisibility(
-            visible = controlsShown && !areControlsLocked && !isPortrait && !areSlidersShown,
+            visible = areButtonsVisible && !isPortrait,
             enter = buildControlsEnterH(controlsAnimStyle, reduceMotion, enterMs) { -it },
             exit = buildControlsExitH(controlsAnimStyle, reduceMotion, exitMs) { -it },
             modifier =

@@ -70,11 +70,19 @@ class DetachedPlaybackBackgroundSettingWiringTest {
   }
 
   @Test
-  fun inAppSheetButtonStillWritesTheAudioPreferenceTheServiceReads() {
+  fun inAppSheetButtonTargetsTheCurrentServiceOwnedPlaybackSession() {
     val controls = source("app/infinity/mpvz/ui/player/controls/AudioPlayerControls.kt")
-    // The sheet lives in MainActivity, so the button falls through to the preference write; the
-    // app-leave hook above is what makes that write take effect on the current session.
-    assertTrue(controls.contains("audioPreferences.audioBackgroundPlayback.set(!backgroundPlaybackEnabled)"))
+    val service = source("app/infinity/mpvz/ui/player/MediaPlaybackService.kt")
+    val activity = source("app/infinity/mpvz/ui/player/PlayerActivity.kt")
+    assertTrue(controls.contains("MediaPlaybackService.setAudioBackgroundPlaybackPreference(enabled)"))
+    assertTrue(controls.contains("audioPreferences.audioBackgroundPlayback.set(enabled)"))
+    assertTrue(service.contains("internal fun setAudioBackgroundPlaybackPreference(enabled: Boolean): Boolean"))
+    assertTrue(service.contains("service.audioPreferences.audioBackgroundPlayback.set(enabled)"))
+    assertTrue(service.contains("if (enabled) service.takeAudioOwnership()"))
     assertTrue(controls.contains("val backgroundPlaybackEnabled by audioPreferences.audioBackgroundPlayback.collectAsState()"))
+    assertTrue(activity.contains("private fun currentBackgroundPlaybackTitle(): String"))
+    assertTrue(activity.contains("PlaybackSession.queue.value.currentItem"))
+    assertTrue(activity.contains("private fun hasReadyBackgroundPlaybackSession(): Boolean"))
+    assertTrue(activity.contains("PlaybackSession.state.value.phase"))
   }
 }

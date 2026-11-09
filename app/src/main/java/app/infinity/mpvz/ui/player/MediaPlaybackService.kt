@@ -608,6 +608,18 @@ class MediaPlaybackService :
     }
 
     /**
+     * Applies the music player's background preference to its current service owner.
+     * The Activity button handles permission prompts when it owns playback; this path
+     * keeps an in-app music sheet connected to the already-running detached session.
+     */
+    internal fun setAudioBackgroundPlaybackPreference(enabled: Boolean): Boolean {
+      val service = activeInstance ?: return false
+      service.audioPreferences.audioBackgroundPlayback.set(enabled)
+      if (enabled) service.takeAudioOwnership()
+      return true
+    }
+
+    /**
      * Called by the Application when its last started Activity stops (never for a configuration
      * change). This is the "stop once I leave" half of [setInAppPlayerVisible]: service-owned
      * playback that is not allowed to continue in the background pauses here. Returns whether
