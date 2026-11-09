@@ -68,18 +68,20 @@ def main():
     for component in ('PlaylistTrackListItem', 'PlaylistTrackGridItem'):
         rows = calls(function(playlist, component), 'Surface')
         assert len(rows) >= 1
-        assert '.playlistItemGlass()' in rows[0]['modifier'], component
+        assert '.playlistItemGlass(glassEnabled)' in rows[0]['modifier'], component
         assert 'RoundedCornerShape(12.dp)' in rows[0]['shape']
         assert '.clickable(onClick = onClick)' in rows[0]['modifier']
-    header = calls(function(playlist, 'PlaylistSheet'), 'IconButton')
+    sheet = function(playlist, 'PlaylistSheet')
+    header = calls(sheet, 'IconButton')
     assert len(header) == 2
-    assert all('.playlistItemGlass(999.dp)' in action['modifier'] for action in header)
+    assert all('.playlistItemGlass(liquidGlassSurfaces, 999.dp)' in action['modifier'] for action in header)
     helper = function(playlist, 'playlistItemGlass')
     panes = calls(helper, 'playerGlassPane')
     assert len(panes) == 1
     assert panes[0]['enabled'] == 'enabled'
     assert 0 < float(panes[0]['opacity'].removesuffix('f')) <= 0.45
-    assert 'appearance.liquidGlassSurfaces.collectAsState()' in helper
+    assert sheet.count('appearancePreferences.liquidGlassSurfaces.collectAsState()') == 1
+    assert 'appearancePreferences.liquidGlassSurfaces.collectAsState()' not in helper
     assert 'LocalLiquidGlassBackdrop provides' not in helper
     assert 'Bitmap' not in helper
     assert 'getThumbnailFromMemory(video, thumbWidth, thumbHeight)' in playlist
