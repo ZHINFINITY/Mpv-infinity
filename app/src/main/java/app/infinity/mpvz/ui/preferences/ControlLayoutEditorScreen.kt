@@ -267,6 +267,16 @@ data class ControlLayoutEditorScreen(
               activeRegion = region,
               portraitBottomButtons = previewPortraitBottomButtons,
               modifier = Modifier.padding(bottom = 4.dp),
+              onPreviewButtonTap = { button ->
+                if (button in selectedButtons) selectedButtons = selectedButtons - button
+              },
+              onPreviewReorder = { fromButton, toButton ->
+                val fromIndex = selectedButtons.indexOf(fromButton)
+                val toIndex = selectedButtons.indexOf(toButton)
+                if (fromIndex in selectedButtons.indices && toIndex in selectedButtons.indices && fromIndex != toIndex) {
+                  selectedButtons = selectedButtons.toMutableList().apply { add(toIndex, removeAt(fromIndex)) }
+                }
+              },
             )
           }
 

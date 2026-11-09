@@ -80,6 +80,8 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlin.coroutines.resume
 
+private val glassPixelCopyHandler = Handler(Looper.getMainLooper())
+
 /** Immutable frame snapshot: window coordinates prevent every control showing the entire frame. */
 /** [underlayLuma] is the frosted sample's bright-percentile sRGB luma (1 = assume a white backdrop). */
 data class LiquidGlassFrame(
@@ -402,7 +404,7 @@ private suspend fun copyGlassFrame(
         } finally {
           releaseRequestLease()
         }
-      }, Handler(Looper.getMainLooper()))
+      }, glassPixelCopyHandler)
     } catch (_: RuntimeException) {
       releaseRequestLease()
       if (continuation.isActive) continuation.resume(null)

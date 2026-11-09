@@ -91,12 +91,17 @@ object ServerUrlUtils {
     val hasExplicitHttps = trimmed.startsWith("https://", ignoreCase = true)
 
     if (hasExplicitHttp || hasExplicitHttps) {
-      val parsedUri = runCatching { URI(trimmed) }.getOrNull()
+      // URI schemes are case-insensitive, but downstream playback URI handling
+      // expects the conventional lowercase spelling. Preserve the remainder.
+      val schemeEnd = trimmed.indexOf("://")
+      val normalizedScheme = if (hasExplicitHttps) "https" else "http"
+      val normalized = normalizedScheme + trimmed.substring(schemeEnd)
+      val parsedUri = runCatching { URI(normalized) }.getOrNull()
       val hasPort = parsedUri?.port != null && parsedUri.port != -1
       return if (!hasPort && defaultPort != null && defaultPort > 0) {
-        listOf(trimmed, "$trimmed:$defaultPort")
+        listOf(normalized, "$normalized:$defaultPort")
       } else {
-        listOf(trimmed)
+        listOf(normalized)
       }
     }
 

@@ -82,4 +82,31 @@ class PopupGlassAndSheetLatencyPolicyTest {
     assertTrue(dialog.contains("selectedContainerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.20f)"))
     assertFalse("selected chips must be visible", dialog.contains("selectedContainerColor = Color.Transparent"))
   }
+
+  @Test
+  fun playlistKeepsItsGlassPanesAndHoistsTheEnableState() {
+    val playlist = source("src/main/java/app/infinity/mpvz/ui/player/controls/components/sheets/PlaylistSheet.kt")
+    assertEquals(1, Regex("appearancePreferences\\.liquidGlassSurfaces\\.collectAsState\\(\\)").findAll(playlist).count())
+    assertTrue(playlist.contains("glassEnabled = liquidGlassSurfaces"))
+
+    val helper = playlist.substringAfter("private fun Modifier.playlistItemGlass(")
+      .substringBefore("@Composable\nprivate fun DragHandle")
+    assertFalse("the playlist helper must not duplicate the sheet enable-state collector", helper.contains("collectAsState()"))
+    assertTrue(helper.contains("return playerGlassPane("))
+    assertTrue(helper.contains("opacity = 0.38f"))
+    assertTrue(helper.contains("highlight = 0.14f"))
+    assertTrue(helper.contains("cornerRadius = cornerRadius"))
+  }
+
+  @Test
+  fun pixelCopyReusesTheMainHandlerAndMoreSheetKeepsItsGlassPane() {
+    val backdrop = source("src/main/java/app/infinity/mpvz/ui/theme/LiquidGlassBackdrop.kt")
+    assertEquals(1, Regex("Handler\\(Looper\\.getMainLooper\\(\\)\\)").findAll(backdrop).count())
+    assertTrue(backdrop.contains("private val glassPixelCopyHandler"))
+    assertTrue(backdrop.contains("}, glassPixelCopyHandler)"))
+
+    val moreSheet = source("src/main/java/app/infinity/mpvz/ui/player/controls/components/sheets/MoreSheet.kt")
+    assertTrue("MoreSheet keeps its visible glass material", moreSheet.contains("playerGlassPane(enabled = true, cornerRadius = 16.dp)"))
+    assertTrue(moreSheet.contains("color = androidx.compose.ui.graphics.Color.Transparent"))
+  }
 }

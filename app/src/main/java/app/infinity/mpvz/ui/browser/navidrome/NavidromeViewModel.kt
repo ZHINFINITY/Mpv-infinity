@@ -697,6 +697,10 @@ class NavidromeViewModel(
             activeServer = savedServer,
           )
         }
+        // Start the first catalog load immediately; loadAllData retains the
+        // request-generation and active-server cancellation guards. The DB
+        // collector sees the same active server and therefore does not reload.
+        loadAllData()
         withContext(Dispatchers.Main) {
           onSuccess()
         }

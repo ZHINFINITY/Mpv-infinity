@@ -31,6 +31,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
@@ -168,7 +169,7 @@ fun TrackSheetRow(
   trailing: @Composable RowScope.() -> Unit = {},
   modifier: Modifier = Modifier,
 ) {
-  val chips = TrackMetadataFormatter.chips(track)
+  val chips = remember(track) { TrackMetadataFormatter.chips(track) }
   val shape = RoundedCornerShape(16.dp)
   Row(
     modifier = modifier

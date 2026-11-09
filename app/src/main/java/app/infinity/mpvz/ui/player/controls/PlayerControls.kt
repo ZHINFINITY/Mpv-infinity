@@ -1745,13 +1745,13 @@ fun PlayerControls(
 
             if (hasPlaylistControls) {
               androidx.compose.foundation.layout.Row(
-                horizontalArrangement = Arrangement.spacedBy(24.dp),
+                horizontalArrangement = Arrangement.spacedBy(PlayerControlsGeometry.PlaylistButtonGap),
                 verticalAlignment = Alignment.CenterVertically,
               ) {
                 Surface(
                   modifier =
                     Modifier
-                      .size(56.dp)
+                      .size(PlayerControlsGeometry.PlaylistSkipButtonSize)
                       .playerGlassPane(enabled = liquidGlassSurfaces, opacity = 0.88f, highlight = 0.18f, cornerRadius = 999.dp)
                       .clip(CircleShape)
                       .clickable(
@@ -1810,7 +1810,7 @@ fun PlayerControls(
                 Surface(
                   modifier =
                     Modifier
-                      .size(64.dp)
+                      .size(PlayerControlsGeometry.PlayPauseButtonSize)
                       .playerGlassPane(enabled = liquidGlassSurfaces, opacity = 0.88f, highlight = 0.20f, cornerRadius = 999.dp)
                       .clip(CircleShape)
                       .clickable(interaction, ripple(), onClick = {
@@ -1854,7 +1854,7 @@ fun PlayerControls(
                 Surface(
                   modifier =
                     Modifier
-                      .size(56.dp)
+                      .size(PlayerControlsGeometry.PlaylistSkipButtonSize)
                       .playerGlassPane(enabled = liquidGlassSurfaces, opacity = 0.88f, highlight = 0.18f, cornerRadius = 999.dp)
                       .clip(CircleShape)
                       .clickable(
@@ -1914,7 +1914,7 @@ fun PlayerControls(
               Surface(
                 modifier =
                   Modifier
-                    .size(64.dp)
+                    .size(PlayerControlsGeometry.PlayPauseButtonSize)
                     .playerGlassPane(enabled = liquidGlassSurfaces, opacity = 0.88f, highlight = 0.20f, cornerRadius = 999.dp)
                     .clip(CircleShape)
                     .clickable(interaction, ripple(), onClick = {

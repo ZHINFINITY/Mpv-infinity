@@ -416,7 +416,7 @@ fun PlaylistSheet(
           ) {
             IconButton(
               onClick = { showAddToPlaylistDialog = true },
-              modifier = Modifier.playlistItemGlass(999.dp),
+              modifier = Modifier.playlistItemGlass(liquidGlassSurfaces, 999.dp),
             ) {
               Icon(
                 imageVector = Icons.RoundedFilled.PlaylistAdd,
@@ -427,7 +427,7 @@ fun PlaylistSheet(
 
             IconButton(
               onClick = { isListMode = !isListMode },
-              modifier = Modifier.playlistItemGlass(999.dp),
+              modifier = Modifier.playlistItemGlass(liquidGlassSurfaces, 999.dp),
             ) {
               Icon(
                 imageVector = if (isListMode) Icons.RoundedFilled.GridView else Icons.RoundedFilled.ViewList,
@@ -492,6 +492,7 @@ fun PlaylistSheet(
                     skipThumbnail = false,
                     accentColor = accentColor,
                     isAudioOnly = isAudioOnly,
+                    glassEnabled = liquidGlassSurfaces,
                     dragHandle = {
                       DragHandle(scope = this, isDragging = isDragging)
                     },
@@ -505,6 +506,7 @@ fun PlaylistSheet(
                   skipThumbnail = false,
                   accentColor = accentColor,
                   isAudioOnly = isAudioOnly,
+                  glassEnabled = liquidGlassSurfaces,
                 )
               }
             }
@@ -532,6 +534,7 @@ fun PlaylistSheet(
                 },
                 skipThumbnail = false,
                 isAudioOnly = isAudioOnly,
+                glassEnabled = liquidGlassSurfaces,
               )
             }
           }
@@ -554,10 +557,9 @@ fun PlaylistSheet(
 /** One locally bounded material per row/card/action; artwork stays content, never a lens input. */
 @Composable
 private fun Modifier.playlistItemGlass(
+  enabled: Boolean,
   cornerRadius: androidx.compose.ui.unit.Dp = 12.dp,
 ): Modifier {
-  val appearance = koinInject<AppearancePreferences>()
-  val enabled by appearance.liquidGlassSurfaces.collectAsState()
   return playerGlassPane(
     enabled = enabled,
     opacity = 0.38f,
@@ -613,6 +615,7 @@ fun PlaylistTrackListItem(
   skipThumbnail: Boolean = false,
   accentColor: Color,
   isAudioOnly: Boolean = false,
+  glassEnabled: Boolean = true,
   modifier: Modifier = Modifier,
   dragHandle: @Composable () -> Unit = {},
 ) {
@@ -636,7 +639,7 @@ fun PlaylistTrackListItem(
         .padding(
           horizontal = MaterialTheme.spacing.medium,
           vertical = MaterialTheme.spacing.extraSmall,
-        ).playlistItemGlass()
+        ).playlistItemGlass(glassEnabled)
         .then(borderModifier)
         .clickable(onClick = onClick)
         .semantics {
@@ -845,6 +848,7 @@ fun PlaylistTrackGridItem(
   onClick: () -> Unit,
   skipThumbnail: Boolean = false,
   isAudioOnly: Boolean = false,
+  glassEnabled: Boolean = true,
   modifier: Modifier = Modifier,
 ) {
   val isAudioItem = item.isAudio
@@ -866,7 +870,7 @@ fun PlaylistTrackGridItem(
     modifier =
       modifier
         .width(200.dp)
-        .playlistItemGlass()
+        .playlistItemGlass(glassEnabled)
         .then(borderModifier)
         .clickable(onClick = onClick)
         .semantics {

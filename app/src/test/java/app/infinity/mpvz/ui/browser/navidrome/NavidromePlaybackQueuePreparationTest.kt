@@ -66,4 +66,21 @@ class NavidromePlaybackQueuePreparationTest {
     assertTrue(ytdlp.contains("uri.path?.endsWith(\"/rest/stream.view\", ignoreCase = true) == true"))
     assertTrue(ytdlp.contains("ytdl_hook-exclude=${'$'}DIRECT_MEDIA_EXCLUDE"))
   }
+
+  @Test
+  fun successfulConnectionActivatesSavedServerAndStartsInitialCatalogLoad() {
+    val root = File("src/main/java").takeIf { it.exists() } ?: File("app/src/main/java")
+    val viewModel = File(root, "app/infinity/mpvz/ui/browser/navidrome/NavidromeViewModel.kt").readText()
+    val successfulConnection = viewModel.substringAfter("if (successfulServer != null) {")
+      .substringBefore("val err = lastError")
+    val savedServer = successfulConnection.indexOf("val savedServer = successfulServer.copy(id = savedId)")
+    val stateActivation = successfulConnection.indexOf("activeServer = savedServer")
+    val initialLoad = successfulConnection.indexOf("loadAllData()")
+
+    assertTrue(savedServer >= 0)
+    assertTrue("The saved server must be activated before loading", stateActivation > savedServer)
+    assertTrue("Successful login must trigger the initial catalog load", initialLoad > stateActivation)
+    assertTrue(viewModel.contains("requestId == catalogLoadRequestId"))
+    assertTrue(viewModel.contains("catalogLoadJob?.cancel()"))
+  }
 }
