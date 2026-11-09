@@ -27,7 +27,7 @@ class ReferenceUiRollbackContractTest {
   @Test fun preservedPlayerSourcesKeepPinnedFingerprints() {
     val expected = mapOf(
       // Build 1910 smoothness: chapter index via derivedStateOf so position ticks do not recompose the whole overlay.
-      "app/src/main/java/app/infinity/mpvz/ui/player/controls/PlayerControls.kt" to "88a958a7efa522158f6cda8d147c89db406db6b5c0853fa10efc4e0fe0ec9dcf" /* Owner-requested above-seekbar scrolling, edge alignment, and buffering-visible shortcuts */,
+      "app/src/main/java/app/infinity/mpvz/ui/player/controls/PlayerControls.kt" to "b232da3bf3b3df66452f8001cf28eadd614d33cce5cb9b3d3c493eddc9588c3f" /* Owner-requested Above Seekbar anchor rollback; Below placement retained */,
       // Owner follow-up: music uses its legacy visual rail while video retains the global-glass path.
       "app/src/main/java/app/infinity/mpvz/ui/player/controls/components/Seekbar.kt" to "5e3cbc03be3aa7b35f464e0ee313615192d8d1cdcfbc7e8a819b7a6c2331843c",
       // Build 1910: shared rimLight/thick-surface routing is intentionally owned by this stream.

@@ -278,7 +278,7 @@ class PlayerFollowupUiContractTest {
   }
 
   @Test
-  fun transportStaysCenteredForAboveAndPreservesBelowPlacement() {
+  fun transportUsesAboveControlAnchorsAndPreservesBelowPlacement() {
     val preferences = read("app/src/main/java/app/infinity/mpvz/preferences/AppearancePreferences.kt")
     val controls = read("app/src/main/java/app/infinity/mpvz/ui/player/controls/PlayerControls.kt")
     val transport = controls.substringAfter("Modifier.constrainAs(playerPauseButton) {")
@@ -286,10 +286,10 @@ class PlayerFollowupUiContractTest {
     val aboveBranch = transport.substringAfterLast("} else {")
 
     assertTrue(preferences.contains("preferenceStore.getEnum(\"portrait_playback_controls_position\", PlaybackControlsPosition.AboveSeekbar)"))
-    assertTrue(aboveBranch.contains("top.linkTo(parent.top)"))
-    assertTrue(aboveBranch.contains("bottom.linkTo(parent.bottom)"))
-    assertTrue(!transport.contains("portraitControlsAboveGroupTop"))
-    assertTrue(!transport.contains("landscapeSideControlBandTop"))
+    assertTrue(aboveBranch.contains("bottom.linkTo(landscapeSideControlBandTop, spacing.medium)"))
+    assertTrue(transport.contains("bottom.linkTo(portraitControlsAboveGroupTop, spacing.small)"))
+    assertFalse(aboveBranch.contains("top.linkTo(parent.top)"))
+    assertFalse(aboveBranch.contains("bottom.linkTo(parent.bottom)"))
     assertTrue(transport.contains("bottom.linkTo(bottomRightControls.top, spacing.small)"))
     assertTrue(transport.contains("bottom.linkTo(parent.bottom, spacing.large)"))
   }
