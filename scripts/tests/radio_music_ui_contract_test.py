@@ -85,12 +85,13 @@ class RadioMusicUiContracts(unittest.TestCase):
     def test_raw_m3u_preflight_precedes_player_ui_and_is_reused(self):
         source = (JAVA / "ui/player/PlayerActivity.kt").read_text()
         on_create = source[source.index("override fun onCreate("):source.index("private fun shouldPreflightExternalM3u")]
-        self.assertIn("preflightExternalM3u(launchIntent)", on_create)
+        self.assertIn("preflightExternalM3u(launchIntent, preflightGeneration)", on_create)
         self.assertNotIn("setContentView", on_create)
-        self.assertIn("withTimeoutOrNull(4_000L)", source)
+        self.assertIn("withTimeoutOrNull(M3U_PREFLIGHT_TIMEOUT_MS)", source)
         self.assertIn('sourceIntent.putExtra("mime_type", "audio/x-mpegurl")', source)
-        self.assertIn("preflightM3uParse = playableUri to result", source)
-        self.assertIn("?.takeIf { it.first == uriString }", source)
+        self.assertIn("preflightM3uParse = ExternalM3uPreflight(generation, playableUri, result)", source)
+        self.assertIn("it.generation == m3uPreflightGeneration && it.sourceUri == uriString", source)
+        self.assertIn("shouldRetryM3uPreflightFailure(cachedResult)", source)
         self.assertIn("startInitializedPlayer()", source)
         self.assertIn("resumeInitializedPlayer()", source)
         new_intent = source[source.index("override fun onNewIntent("):source.index("private fun handleNewIntent(")]
