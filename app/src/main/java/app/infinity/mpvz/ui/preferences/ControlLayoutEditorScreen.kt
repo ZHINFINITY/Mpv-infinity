@@ -32,6 +32,7 @@ import androidx.compose.material3.Text
 import app.infinity.mpvz.ui.preferences.components.SettingsTopAppBar as TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -61,6 +62,7 @@ import org.koin.compose.koinInject
 import sh.calvin.reorderable.ReorderableItem
 import sh.calvin.reorderable.rememberReorderableLazyGridState
 import app.infinity.mpvz.ui.icons.Icon as AppSymbolIcon
+import kotlinx.coroutines.delay
 
 @Serializable
 data class ControlLayoutEditorScreen(
@@ -106,57 +108,60 @@ data class ControlLayoutEditorScreen(
 
     val prefToEdit: Preference<String> = prefs[0]
 
-    // State for buttons used in *other* regions
-    val disabledButtons by remember {
-      mutableStateOf(
-        if (region == ControlRegion.PORTRAIT_BOTTOM) {
-          emptySet()
-        } else {
-          val otherPref1: Preference<String> = prefs[1]
-          val otherPref2: Preference<String> = prefs[2]
-          val otherPref3: Preference<String> = prefs[3]
-          (otherPref1.get().split(',') + otherPref2.get().split(',') + otherPref3.get().split(','))
-            .filter(String::isNotBlank)
-            .mapNotNull {
-              try {
-                PlayerButton.valueOf(it)
-              } catch (_: Exception) {
-                null
-              }
-            }.toSet()
-        },
-      )
-    }
+    val topLeftControlsValue by preferences.topLeftControls.collectAsState()
+    val topRightControlsValue by preferences.topRightControls.collectAsState()
+    val bottomRightControlsValue by preferences.bottomRightControls.collectAsState()
+    val bottomLeftControlsValue by preferences.bottomLeftControls.collectAsState()
+    val portraitBottomControlsValue by preferences.portraitBottomControls.collectAsState()
+    val activeControlsValue by prefToEdit.collectAsState()
 
-    var selectedButtons by remember {
-      mutableStateOf(
-        prefToEdit
-          .get()
-          .split(',')
+    fun parseButtons(value: String): List<PlayerButton> =
+      value.split(',').filter(String::isNotBlank).mapNotNull { name ->
+        runCatching { PlayerButton.valueOf(name) }.getOrNull()
+      }
+
+    // State for buttons used in *other* regions
+    val otherControlValues =
+      when (region) {
+        ControlRegion.TOP_RIGHT -> listOf(topLeftControlsValue, bottomRightControlsValue, bottomLeftControlsValue)
+        ControlRegion.BOTTOM_RIGHT -> listOf(topLeftControlsValue, topRightControlsValue, bottomLeftControlsValue)
+        ControlRegion.BOTTOM_LEFT -> listOf(topLeftControlsValue, topRightControlsValue, bottomRightControlsValue)
+        ControlRegion.PORTRAIT_BOTTOM -> emptyList()
+      }
+    val disabledButtons =
+      remember(region, otherControlValues) {
+        otherControlValues.flatMap { it.split(',') }
           .filter(String::isNotBlank)
-          .mapNotNull {
-            try {
-              PlayerButton.valueOf(it)
-            } catch (_: Exception) {
-              null
-            }
-          },
-      )
+          .mapNotNull { name -> runCatching { PlayerButton.valueOf(name) }.getOrNull() }
+          .toSet()
+      }
+
+    var selectedButtons by remember(region, activeControlsValue) {
+      mutableStateOf(parseButtons(activeControlsValue))
     }
 
     val playbackControlsPosition by preferences.playbackControlsPosition.collectAsState()
     val previewTopRightButtons =
-      if (region == ControlRegion.TOP_RIGHT) selectedButtons else preferences.parseButtons(preferences.topRightControls.get(), mutableSetOf())
+      if (region == ControlRegion.TOP_RIGHT) selectedButtons else preferences.parseButtons(topRightControlsValue, mutableSetOf())
     val previewBottomRightButtons =
-      if (region == ControlRegion.BOTTOM_RIGHT) selectedButtons else preferences.parseButtons(preferences.bottomRightControls.get(), mutableSetOf())
+      if (region == ControlRegion.BOTTOM_RIGHT) selectedButtons else preferences.parseButtons(bottomRightControlsValue, mutableSetOf())
     val previewBottomLeftButtons =
-      if (region == ControlRegion.BOTTOM_LEFT) selectedButtons else preferences.parseButtons(preferences.bottomLeftControls.get(), mutableSetOf())
+      if (region == ControlRegion.BOTTOM_LEFT) selectedButtons else preferences.parseButtons(bottomLeftControlsValue, mutableSetOf())
     val previewPortraitBottomButtons =
-      if (region == ControlRegion.PORTRAIT_BOTTOM) selectedButtons else preferences.parseButtons(preferences.portraitBottomControls.get(), mutableSetOf())
+      if (region == ControlRegion.PORTRAIT_BOTTOM) selectedButtons else preferences.parseButtons(portraitBottomControlsValue, mutableSetOf())
 
-    DisposableEffect(Unit) {
+    // Coalesce rapid reorder updates, but apply the final layout while this editor remains open.
+    LaunchedEffect(region, activeControlsValue, selectedButtons) {
+      val serialized = selectedButtons.joinToString(",")
+      if (serialized == activeControlsValue) return@LaunchedEffect
+      delay(180)
+      if (prefToEdit.get() == activeControlsValue) prefToEdit.set(serialized)
+    }
+
+    DisposableEffect(region, prefToEdit) {
       onDispose {
-        prefToEdit.set(selectedButtons.joinToString(","))
+        val serialized = selectedButtons.joinToString(",")
+        if (prefToEdit.get() != serialized) prefToEdit.set(serialized)
       }
     }
 
@@ -178,18 +183,7 @@ data class ControlLayoutEditorScreen(
         subtitle = stringResource(R.string.controls_reset_default_summary),
         onConfirm = {
           prefToEdit.delete()
-          selectedButtons =
-            prefToEdit
-              .get()
-              .split(',')
-              .filter(String::isNotBlank)
-              .mapNotNull {
-                try {
-                  PlayerButton.valueOf(it)
-                } catch (_: Exception) {
-                  null
-                }
-              }
+          selectedButtons = parseButtons(prefToEdit.get())
           showResetDialog = false
         },
         onCancel = {

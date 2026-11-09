@@ -1523,8 +1523,15 @@ class PlayerActivity :
     }
   private val audioFocusChangeListener = WeakAudioFocusListener(audioFocusChangeHandler)
 
-  private var preflightM3uParse: Pair<String, M3UParseResult.Success>? = null
+  private data class ExternalM3uPreflight(
+    val generation: Long,
+    val sourceUri: String,
+    val result: M3UParseResult,
+  )
+
+  private var preflightM3uParse: ExternalM3uPreflight? = null
   private var m3uPreflightJob: Job? = null
+  private var m3uPreflightGeneration = 0L
   private var playerInitializationComplete = false
 
   override fun onCreate(savedInstanceState: Bundle?) {
@@ -1578,8 +1585,9 @@ class PlayerActivity :
     isStreamTabPlayback = intent.getBooleanExtra("stream_tab_playback", false)
     if (shouldPreflightExternalM3u()) {
       val launchIntent = intent
+      val preflightGeneration = ++m3uPreflightGeneration
       m3uPreflightJob = lifecycleScope.launch {
-        preflightExternalM3u(launchIntent)
+        preflightExternalM3u(launchIntent, preflightGeneration)
       }
     }
     // M3U classification is shared with the load path, but must not keep player
@@ -1617,19 +1625,20 @@ class PlayerActivity :
       File(playableUri).isFile)
   }
 
-  private suspend fun preflightExternalM3u(sourceIntent: Intent) {
+  private suspend fun preflightExternalM3u(sourceIntent: Intent, generation: Long) {
     val playableUri = getPlayableUri(sourceIntent) ?: return
-    val result = try {
+    val result: M3UParseResult = try {
       withContext(Dispatchers.IO) {
-        withTimeoutOrNull(4_000L) { parseM3uSource(playableUri, sourceIntent) }
-      }
+        withTimeoutOrNull(M3U_PREFLIGHT_TIMEOUT_MS) { parseM3uSource(playableUri, sourceIntent) }
+      } ?: M3UParseResult.Error("M3U preflight timed out")
     } catch (cancelled: CancellationException) {
       throw cancelled
     } catch (error: Exception) {
       Log.w(TAG, "M3U preflight unavailable; retaining the existing player route", error)
-      null
+      M3UParseResult.Error(error.message ?: "M3U preflight failed", error)
     }
-    if (result is M3UParseResult.Success) preflightM3uParse = playableUri to result
+    if (generation != m3uPreflightGeneration) return
+    preflightM3uParse = ExternalM3uPreflight(generation, playableUri, result)
     if (result is M3UParseResult.Success && result.items.isNotEmpty() &&
       M3URoutingPolicy.route(result) == M3URoute.MUSIC &&
       !M3UParser.shouldPlayHlsDirectly(result)
@@ -7487,6 +7496,7 @@ class PlayerActivity :
     requestAudioOpenFromMini(intent)
     m3uPreflightJob?.cancel()
     preflightM3uParse = null
+    val preflightGeneration = ++m3uPreflightGeneration
     if (!playerInitializationComplete) {
       if (!acceptPreparedPlaybackLaunch(intent) || !beginMediaRequest()) {
         finish()
@@ -7499,14 +7509,14 @@ class PlayerActivity :
       if (shouldPreflightExternalM3u(intent)) {
         val launchIntent = intent
         m3uPreflightJob = lifecycleScope.launch {
-          preflightExternalM3u(launchIntent)
+          preflightExternalM3u(launchIntent, preflightGeneration)
         }
       }
       // Do not let playlist classification delay attaching the player surface.
       continuePlayerInitialization()
     } else if (shouldPreflightExternalM3u(intent)) {
       m3uPreflightJob = lifecycleScope.launch {
-        preflightExternalM3u(intent)
+        preflightExternalM3u(intent, preflightGeneration)
       }
       // Install the incoming request immediately; the load path joins the
       // shared preflight job when it needs the parsed playlist.
@@ -8089,6 +8099,7 @@ class PlayerActivity :
     val shouldProbeRadio =
       (PlaybackSession.queue.value.isM3u || isM3uPlaylist ||
         intent.getStringExtra("launch_source") == "m3u_playlist") &&
+        !streamVideoHint &&
         (looksLikeWebSource || item.isDefinitelyAudioOnly())
     // Extensionless Icecast mounts are direct audio, not webpages. Probe them before yt-dlp so an
     // endless radio response is never handed to the generic webpage extractor.
@@ -8130,7 +8141,11 @@ class PlayerActivity :
           } else {
             null
           }
-        val radioMimeType = radioMimeTypeJob?.await()
+        val radioMimeType =
+          radioMimeTypeJob?.let { probeJob ->
+            withTimeoutOrNull(RADIO_PROBE_BUDGET_MS) { probeJob.await() }
+              .also { result -> if (result == null && probeJob.isActive) probeJob.cancel() }
+          }
         ensureCurrentMediaRequest(requestGeneration)
         val requiresYtdlpForPreflight = looksLikeWebSource && radioMimeType == null
         if (!requiresYtdlpForPreflight) ytdlpPreparationJob?.cancel()
@@ -10724,11 +10739,20 @@ class PlayerActivity :
     // Startup preflight runs concurrently with player initialization. Join it
     // here to reuse its result and avoid a second network/provider read.
     m3uPreflightJob?.join()
+    val cachedPreflight =
+      preflightM3uParse?.takeIf { it.generation == m3uPreflightGeneration && it.sourceUri == uriString }
     val parseResult =
-      preflightM3uParse
-        ?.takeIf { it.first == uriString }
-        ?.second
-        ?: parseM3uSource(uriString, sourceIntent)
+      when (val cachedResult = cachedPreflight?.result) {
+        is M3UParseResult.Success -> cachedResult
+        is M3UParseResult.Error ->
+          if (shouldRetryM3uPreflightFailure(cachedResult)) {
+            Log.w(TAG, "Retrying transient M3U preflight failure during playlist load: ${cachedResult.message}")
+            parseM3uSource(uriString, sourceIntent)
+          } else {
+            cachedResult
+          }
+        null -> parseM3uSource(uriString, sourceIntent)
+      }
     preflightM3uParse = null
     ensureCurrentMediaRequest(requestGeneration)
 
@@ -10786,6 +10810,13 @@ class PlayerActivity :
       isInBackgroundPlayback = true
       Log.d(TAG, "Video disabled for background playback (saved vid: $lastVid)")
     }
+  }
+
+  private fun shouldRetryM3uPreflightFailure(error: M3UParseResult.Error): Boolean {
+    val message = error.message.lowercase()
+    return message.contains("timeout") || message.contains("timed out") ||
+      message == "failed to load playlist" || message == "failed to read playlist" ||
+      message.startsWith("http error: 5")
   }
 
   /**
@@ -10925,6 +10956,8 @@ class PlayerActivity :
     /** Remote/proxied media gets enough time for authentication, connection and manifest resolution. */
     private const val NETWORK_PLAYBACK_LOAD_TIMEOUT_MS = 60_000L
 
+    private const val M3U_PREFLIGHT_TIMEOUT_MS = 4_000L
+    private const val RADIO_PROBE_BUDGET_MS = 2_000L
     private const val PLAYBACK_LOAD_RETRY_DELAY_MS = 200L
     private const val PLAYBACK_LOAD_ERROR_SETTLE_MS = 300L
     private const val MAX_PLAYBACK_LOAD_RETRIES = 1

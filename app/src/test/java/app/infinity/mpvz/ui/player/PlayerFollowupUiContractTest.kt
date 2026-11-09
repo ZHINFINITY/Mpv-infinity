@@ -48,7 +48,8 @@ class PlayerFollowupUiContractTest {
     assertTrue(buttonEnum.contains("PlayerButton.values().filter"))
     assertTrue(editor.contains("allPlayerButtons"))
     assertTrue(editor.contains("selectedButtons = selectedButtons + button"))
-    assertTrue(editor.contains("prefToEdit.set(selectedButtons.joinToString(\",\"))"))
+    assertTrue(editor.contains("val serialized = selectedButtons.joinToString(\",\")"))
+    assertTrue(editor.contains("prefToEdit.set(serialized)"))
     assertTrue(preferences.contains("PlayerButton.valueOf(name)"))
     assertTrue(controls.contains("parseButtons(topRightControlsPref, usedButtons)"))
     assertTrue(controls.contains("parseButtons(portraitBottomControlsPref, mutableSetOf())"))
@@ -99,6 +100,9 @@ class PlayerFollowupUiContractTest {
     val landscapeRightAbove =
       landscapeRight.substringAfter("} else if (playbackControlsPosition == PlaybackControlsPosition.BelowSeekbar) {")
         .substringAfter("} else {")
+    val landscapeLeft =
+      controls.substringAfter("constrainAs(bottomLeftControls) {").substringBefore("},")
+    val landscapeLeftAbove = landscapeLeft.substringAfter("} else {")
 
     assertTrue(preferences.contains("portrait_playback_controls_position\", PlaybackControlsPosition.AboveSeekbar"))
     assertTrue(preferences.contains("Keep the legacy key so saved placement choices from older versions remain intact."))
@@ -132,9 +136,11 @@ class PlayerFollowupUiContractTest {
     assertTrue(controls.contains("bottom.linkTo(seekbar.top, spacing.medium)"))
     assertTrue(landscapeRightBelow.contains("start.linkTo(playerPauseButton.end, spacing.small)"))
     assertTrue(landscapeRightBelow.contains("width = Dimension.fillToConstraints"))
-    assertFalse(landscapeRightAbove.contains("start.linkTo(playerPauseButton.end, spacing.small)"))
+    assertTrue(landscapeRightAbove.contains("start.linkTo(landscapeSideControlSplit, spacing.small)"))
     assertTrue(landscapeRightAbove.contains("end.linkTo(parent.end, spacing.large)"))
-    assertTrue(landscapeRightAbove.contains("width = Dimension.preferredWrapContent"))
+    assertTrue(landscapeRightAbove.contains("width = Dimension.fillToConstraints"))
+    assertTrue(landscapeLeftAbove.contains("end.linkTo(landscapeSideControlSplit, spacing.small)"))
+    assertTrue(landscapeLeftAbove.contains("width = Dimension.fillToConstraints"))
     assertTrue(topRightPlacement.contains("width = Dimension.preferredWrapContent"))
     assertFalse(topRightPlacement.contains("start.linkTo(parent.start"))
     assertTrue(controls.contains("end.linkTo(playerPauseButton.start, spacing.small)"))
@@ -149,7 +155,8 @@ class PlayerFollowupUiContractTest {
     assertTrue(landscape.contains("reverseScrolling = reverseScrolling"))
     assertTrue(landscape.contains("if (scrollable)"))
     assertFalse(topRightButtons.contains("LandscapePlayerControlStrip"))
-    assertTrue(controls.contains("scrollable = playbackControlsPosition == PlaybackControlsPosition.BelowSeekbar"))
+    assertTrue(controls.contains("scrollable = true"))
+    assertTrue(controls.contains("landscapeSideControlSplit = createGuidelineFromStart(0.5f)"))
     assertFalse(landscape.contains("scrollable = playbackControlsPosition == PlaybackControlsPosition.BelowSeekbar"))
     assertFalse(landscape.contains("FlowRow("))
     assertTrue(landscape.contains("alignment = Alignment.End"))
@@ -331,12 +338,17 @@ class PlayerFollowupUiContractTest {
 
     assertTrue(startup.contains("m3uPreflightJob = lifecycleScope.launch"))
     assertTrue(startup.contains("continuePlayerInitialization()"))
-    assertTrue(startup.indexOf("continuePlayerInitialization()") > startup.indexOf("preflightExternalM3u(launchIntent)"))
+    assertTrue(startup.indexOf("continuePlayerInitialization()") > startup.indexOf("preflightExternalM3u(launchIntent, preflightGeneration)"))
     assertFalse(startupPreflightBlock.contains("continuePlayerInitialization()"))
     assertTrue(pendingNewIntent.contains("continuePlayerInitialization()"))
     assertFalse(newIntentPreflightBlock.contains("continuePlayerInitialization()"))
     assertTrue(dynamicLoad.contains("m3uPreflightJob?.join()"))
     assertTrue(dynamicLoad.contains("preflightM3uParse"))
+    assertTrue(dynamicLoad.contains("it.generation == m3uPreflightGeneration && it.sourceUri == uriString"))
+    assertTrue(dynamicLoad.contains("shouldRetryM3uPreflightFailure(cachedResult)"))
+    assertTrue(activity.contains("message.startsWith(\"http error: 5\")"))
+    assertTrue(activity.contains("M3UParseResult.Error(\"M3U preflight timed out\")"))
+    assertTrue(activity.contains("if (generation != m3uPreflightGeneration) return"))
   }
 
   @Test
@@ -354,6 +366,8 @@ class PlayerFollowupUiContractTest {
     val playbackPreflight =
       activity.substringAfter("val (preflight, resolvedPageMediaUrl) =")
         .substringBefore("val (savedPlaybackState, radioMimeType, ytdlpReady) = preflight")
+    val radioProbeGate = activity.substringAfter("val shouldProbeRadio =").substringBefore("// Extensionless Icecast")
+    val radioProbeAwait = activity.substringAfter("val radioMimeType =").substringBefore("ensureCurrentMediaRequest(requestGeneration)")
     val loadStart =
       viewModel.substringAfter("fun onVideoLoadStarted()")
         .substringAfter("{")
@@ -368,9 +382,14 @@ class PlayerFollowupUiContractTest {
     assertTrue(loadStart.trimStart().startsWith("showControls()"))
     assertTrue(prepare.indexOf("isPlaybackRuntimeReady(context)") < prepare.indexOf("prepareRuntimeAssets(context, onLog)"))
     assertTrue(prepare.contains("installYtdlpForPlayback(context, onLog)"))
-    assertTrue(resolve.contains("executePythonProcessCancellable(command, context)"))
+    assertTrue(resolve.contains("timeoutMs = PLAYBACK_RESOLVE_TIMEOUT_MS"))
+    assertTrue(cancellableProcess.contains("withTimeoutOrNull(timeoutMs)"))
+    assertTrue(cancellableProcess.contains("yt-dlp process timed out after"))
     assertTrue(cancellableProcess.contains("runInterruptible { process.waitFor() }"))
     assertTrue(cancellableProcess.contains("process.destroyForcibly()"))
+    assertTrue(ytdlp.contains("PLAYBACK_RUNTIME_INSTALL_TIMEOUT_MS = 90_000L"))
+    assertTrue(radioProbeGate.contains("!streamVideoHint"))
+    assertTrue(radioProbeAwait.contains("withTimeoutOrNull(RADIO_PROBE_BUDGET_MS)"))
     assertTrue(geometry.contains("buttonSize * 3f"))
     assertTrue(geometry.contains("maxOf(buttonSize, 176.dp)"))
     assertTrue(shared.contains("frameNavigationSlotWidth(buttonSize, compact)"))
@@ -387,6 +406,22 @@ class PlayerFollowupUiContractTest {
     assertTrue(glass.contains("captureBuffers.sampleMutex.withLock"))
     assertTrue(glass.contains(".glassRimLight(shape = shape"))
     assertTrue(glass.contains("drawRoundRect(Brush.verticalGradient"))
+  }
+
+  @Test
+  fun sheetsUseOneSampledGlassPaneAndLightweightTintedInsets() {
+    val playlist = read("app/src/main/java/app/infinity/mpvz/ui/player/controls/components/sheets/PlaylistSheet.kt")
+    val more = read("app/src/main/java/app/infinity/mpvz/ui/player/controls/components/sheets/MoreSheet.kt")
+    val surface = read("app/src/main/java/app/infinity/mpvz/ui/theme/GlassSurface.kt")
+
+    assertTrue(playlist.contains("glassInsetSurface("))
+    assertFalse(playlist.contains(".playerGlassPane("))
+    assertTrue(playlist.contains("hasPositionedPlaylistViewport"))
+    assertTrue(playlist.contains("if (animate) lazyListState.animateScrollToItem(playingItemIndex)"))
+    assertTrue(playlist.contains("else lazyListState.scrollToItem(playingItemIndex)"))
+    assertTrue(more.contains("glassInsetSurface("))
+    assertFalse(more.contains(".playerGlassPane("))
+    assertTrue(surface.contains("fun Modifier.glassInsetSurface("))
   }
 
   @Test

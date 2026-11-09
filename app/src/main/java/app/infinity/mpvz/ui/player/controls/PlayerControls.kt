@@ -1265,6 +1265,7 @@ fun PlayerControls(
           val showLandscapeLeftCustomButtons = areButtonsVisible && !isPortrait && leftCustomButtons.isNotEmpty()
           val showLandscapeRightCustomButtons = areButtonsVisible && !isPortrait && rightCustomButtons.isNotEmpty()
           val showPortraitCustomButtons = areButtonsVisible && isPortrait && customButtons.isNotEmpty()
+          val landscapeSideControlSplit = createGuidelineFromStart(0.5f)
           val portraitControlsAboveGroupTop =
             if (showPortraitCustomButtons) customButtonsPortraitRef.top else bottomRightControls.top
           val landscapeSideControlBandRefs =
@@ -2251,8 +2252,10 @@ fun PlayerControls(
                     width = Dimension.fillToConstraints
                   } else {
                     bottom.linkTo(seekbar.top, bottomControlsToSeekbarSpacing)
+                    start.linkTo(landscapeSideControlSplit, spacing.small)
                     end.linkTo(parent.end, spacing.large)
-                    width = Dimension.preferredWrapContent
+                    horizontalBias = 1f
+                    width = Dimension.fillToConstraints
                   }
                 }.onGloballyPositioned { coordinates ->
                   bottomRightControlsTopPx = coordinates.positionInParent().y.roundToInt()
@@ -2280,7 +2283,7 @@ fun PlayerControls(
             } else {
               BottomRightPlayerControlsLandscape(
                 buttons = bottomRightButtons,
-                scrollable = playbackControlsPosition == PlaybackControlsPosition.BelowSeekbar,
+                scrollable = true,
                 showVideoQualitySelector = showVideoQualitySelector && !landscapeHasConfiguredQualityButton,
                 chapters = chapters,
                 currentChapter = currentChapter,
@@ -2326,14 +2329,14 @@ fun PlayerControls(
                   } else {
                     bottom.linkTo(seekbar.top, bottomControlsToSeekbarSpacing)
                     start.linkTo(parent.start, spacing.large)
-                    end.linkTo(bottomRightControls.start, spacing.small)
+                    end.linkTo(landscapeSideControlSplit, spacing.small)
                     width = Dimension.fillToConstraints
                   }
                 },
           ) {
             BottomLeftPlayerControlsLandscape(
               buttons = bottomLeftButtons,
-              scrollable = playbackControlsPosition == PlaybackControlsPosition.BelowSeekbar,
+              scrollable = true,
               chapters = chapters,
               currentChapter = currentChapter,
               isSpeedNonOne = isSpeedNonOne,

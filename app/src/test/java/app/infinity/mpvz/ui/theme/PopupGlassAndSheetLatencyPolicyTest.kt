@@ -84,7 +84,7 @@ class PopupGlassAndSheetLatencyPolicyTest {
   }
 
   @Test
-  fun playlistKeepsItsGlassPanesAndHoistsTheEnableState() {
+  fun playlistUsesOneSampledPaneAndHoistsTheInsetEnableState() {
     val playlist = source("src/main/java/app/infinity/mpvz/ui/player/controls/components/sheets/PlaylistSheet.kt")
     assertEquals(1, Regex("appearancePreferences\\.liquidGlassSurfaces\\.collectAsState\\(\\)").findAll(playlist).count())
     assertTrue(playlist.contains("glassEnabled = liquidGlassSurfaces"))
@@ -92,21 +92,22 @@ class PopupGlassAndSheetLatencyPolicyTest {
     val helper = playlist.substringAfter("private fun Modifier.playlistItemGlass(")
       .substringBefore("@Composable\nprivate fun DragHandle")
     assertFalse("the playlist helper must not duplicate the sheet enable-state collector", helper.contains("collectAsState()"))
-    assertTrue(helper.contains("return playerGlassPane("))
-    assertTrue(helper.contains("opacity = 0.38f"))
-    assertTrue(helper.contains("highlight = 0.14f"))
-    assertTrue(helper.contains("cornerRadius = cornerRadius"))
+    assertTrue(helper.contains("return glassInsetSurface("))
+    assertTrue(helper.contains("shape = RoundedCornerShape(cornerRadius)"))
+    assertTrue(helper.contains("fillAlpha = 0.30f"))
+    assertTrue(helper.contains("borderAlpha = 0.18f"))
   }
 
   @Test
-  fun pixelCopyReusesTheMainHandlerAndMoreSheetKeepsItsGlassPane() {
+  fun pixelCopyReusesTheMainHandlerAndMoreSheetUsesALightweightInset() {
     val backdrop = source("src/main/java/app/infinity/mpvz/ui/theme/LiquidGlassBackdrop.kt")
     assertEquals(1, Regex("Handler\\(Looper\\.getMainLooper\\(\\)\\)").findAll(backdrop).count())
     assertTrue(backdrop.contains("private val glassPixelCopyHandler"))
     assertTrue(backdrop.contains("}, glassPixelCopyHandler)"))
 
     val moreSheet = source("src/main/java/app/infinity/mpvz/ui/player/controls/components/sheets/MoreSheet.kt")
-    assertTrue("MoreSheet keeps its visible glass material", moreSheet.contains("playerGlassPane(enabled = true, cornerRadius = 16.dp)"))
+    assertTrue("MoreSheet keeps an inset material inside the sampled sheet", moreSheet.contains("glassInsetSurface("))
+    assertTrue(moreSheet.contains("appearancePreferences.liquidGlassSurfaces.collectAsState()"))
     assertTrue(moreSheet.contains("color = androidx.compose.ui.graphics.Color.Transparent"))
   }
 }

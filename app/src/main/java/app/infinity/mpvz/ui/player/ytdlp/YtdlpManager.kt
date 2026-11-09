@@ -61,6 +61,8 @@ object YtdlpManager {
   private const val MAX_PLAYLIST_OUTPUT_CHARS = 32L * 1024 * 1024
   private const val PLAYLIST_EXTRACTION_TIMEOUT_MS = 180_000L
   private const val PAGE_RESOLVE_TIMEOUT_MS = 20_000L
+  private const val PLAYBACK_RESOLVE_TIMEOUT_MS = 30_000L
+  private const val PLAYBACK_RUNTIME_INSTALL_TIMEOUT_MS = 90_000L
   private const val MAX_PAGE_RESOLVE_DEPTH = 5
   private const val MAX_PAGE_BODY_CHARS = 4 * 1024 * 1024
   private val installMutex = Mutex()
@@ -441,7 +443,11 @@ object YtdlpManager {
         add("--")
         add(source)
       }
-      val completed = executePythonProcessCancellable(command, context) { line -> output.appendLine(line) }
+      val completed = executePythonProcessCancellable(
+        command,
+        context,
+        timeoutMs = PLAYBACK_RESOLVE_TIMEOUT_MS,
+      ) { line -> output.appendLine(line) }
       if (!completed) return@withContext null
       output.lineSequence()
         .map(String::trim)
@@ -969,41 +975,50 @@ object YtdlpManager {
     command: List<String>,
     context: Context,
     onLog: (String) -> Unit,
+    timeoutMs: Long = PLAYBACK_RUNTIME_INSTALL_TIMEOUT_MS,
   ): Boolean {
     onLog("$title\n")
-    return executePythonProcessCancellable(command, context) { line -> onLog("$line\n") }
+    return executePythonProcessCancellable(command, context, timeoutMs = timeoutMs) { line -> onLog("$line\n") }
   }
 
   private suspend fun executePythonProcessCancellable(
     command: List<String>,
     context: Context,
+    timeoutMs: Long = PLAYBACK_RESOLVE_TIMEOUT_MS,
     onOutput: (String) -> Unit,
-  ): Boolean =
-    coroutineScope {
-      val process = startPythonProcess(command, context)
-      val outputJob =
-        async(Dispatchers.IO) {
-          BufferedReader(InputStreamReader(process.inputStream)).use { reader ->
-            reader.lineSequence().forEach(onOutput)
+  ): Boolean {
+    require(timeoutMs > 0L)
+    val completed =
+      withTimeoutOrNull(timeoutMs) {
+        coroutineScope {
+          val process = startPythonProcess(command, context)
+          val outputJob =
+            async(Dispatchers.IO) {
+              BufferedReader(InputStreamReader(process.inputStream)).use { reader ->
+                reader.lineSequence().forEach(onOutput)
+              }
+            }
+          val exitJob = async(Dispatchers.IO) { runInterruptible { process.waitFor() } }
+          try {
+            val exitCode = exitJob.await()
+            outputJob.await()
+            exitCode == 0
+          } catch (e: CancellationException) {
+            throw e
+          } catch (e: Exception) {
+            onOutput("Error: ${e.message}")
+            false
+          } finally {
+            if (process.isAlive) process.destroyForcibly()
+            runCatching { process.inputStream.close() }
+            outputJob.cancel()
+            exitJob.cancel()
           }
         }
-      val exitJob = async(Dispatchers.IO) { runInterruptible { process.waitFor() } }
-      try {
-        val exitCode = exitJob.await()
-        outputJob.await()
-        exitCode == 0
-      } catch (e: CancellationException) {
-        throw e
-      } catch (e: Exception) {
-        onOutput("Error: ${e.message}")
-        false
-      } finally {
-        if (process.isAlive) process.destroyForcibly()
-        runCatching { process.inputStream.close() }
-        outputJob.cancel()
-        exitJob.cancel()
       }
-    }
+    if (completed == null) onOutput("Error: yt-dlp process timed out after ${timeoutMs}ms")
+    return completed ?: false
+  }
 
   private fun runPythonProcess(
     title: String,

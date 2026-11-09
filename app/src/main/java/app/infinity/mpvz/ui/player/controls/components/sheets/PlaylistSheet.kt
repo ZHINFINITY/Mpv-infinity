@@ -79,9 +79,9 @@ import app.infinity.mpvz.presentation.components.RemoteImage
 import app.infinity.mpvz.ui.browser.dialogs.AddToPlaylistDialog
 import app.infinity.mpvz.ui.player.PlaybackSession
 import app.infinity.mpvz.ui.player.controls.components.MiniAudioVisualizer
-import app.infinity.mpvz.ui.player.controls.components.playerGlassPane
 import app.infinity.mpvz.ui.icons.Icon
 import app.infinity.mpvz.ui.icons.Icons
+import app.infinity.mpvz.ui.theme.glassInsetSurface
 import app.infinity.mpvz.ui.theme.spacing
 import kotlinx.collections.immutable.ImmutableList
 import kotlinx.collections.immutable.toImmutableList
@@ -290,6 +290,8 @@ fun PlaylistSheet(
   // Scroll state for the playlist
   val lazyListState = rememberLazyListState()
   val lazyGridState = rememberLazyGridState()
+  var hasPositionedPlaylistViewport by remember { mutableStateOf(false) }
+  var lastPositionedListMode by remember { mutableStateOf(isListMode) }
 
   // Find the currently playing item index - tracks changes in playlist items
   val playingItemIndex by remember {
@@ -298,11 +300,20 @@ fun PlaylistSheet(
     }
   }
 
-  // Scroll to the currently playing item when the playing item changes or when sheet opens
+  // Position immediately on open/mode changes so a long list animation does not compete with
+  // the sheet's entrance; animate only later playback-driven selection changes.
   LaunchedEffect(playingItemIndex, isListMode) {
     if (playingItemIndex >= 0) {
-      if (isListMode) lazyListState.animateScrollToItem(playingItemIndex)
-      else lazyGridState.animateScrollToItem(playingItemIndex)
+      val animate = hasPositionedPlaylistViewport && lastPositionedListMode == isListMode
+      if (isListMode) {
+        if (animate) lazyListState.animateScrollToItem(playingItemIndex)
+        else lazyListState.scrollToItem(playingItemIndex)
+      } else {
+        if (animate) lazyGridState.animateScrollToItem(playingItemIndex)
+        else lazyGridState.scrollToItem(playingItemIndex)
+      }
+      hasPositionedPlaylistViewport = true
+      lastPositionedListMode = isListMode
     }
   }
 
@@ -554,17 +565,17 @@ fun PlaylistSheet(
   }
 }
 
-/** One locally bounded material per row/card/action; artwork stays content, never a lens input. */
+/** Lightweight tinted inset; the containing sheet already owns the sampled scene/lens pass. */
 @Composable
 private fun Modifier.playlistItemGlass(
   enabled: Boolean,
   cornerRadius: androidx.compose.ui.unit.Dp = 12.dp,
 ): Modifier {
-  return playerGlassPane(
+  return glassInsetSurface(
     enabled = enabled,
-    opacity = 0.38f,
-    highlight = 0.14f,
-    cornerRadius = cornerRadius,
+    shape = RoundedCornerShape(cornerRadius),
+    fillAlpha = 0.30f,
+    borderAlpha = 0.18f,
   )
 }
 
