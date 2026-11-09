@@ -451,6 +451,12 @@ import android.graphics.Shader
         "refractionAmount = LensGlassPolicy.refractionAmountPx(size.minDimension, size.minDimension, tuning.lensRefraction),"
     assertEquals(1, restored.split(fixedRefraction.first).size - 1)
     restored = restored.replace(fixedRefraction.first, fixedRefraction.second)
+    val noDoublePlayerLens = """    // Player panes already render the sampled video through GLASS_OPTICS above.
+    // Applying the independent page blur/lens here would refract the same pane twice.
+    .then(if (backdrop == null && LocalLensGlassEnabled.current && LocalPageBackdrop.current != null) {"""
+    val baselinePlayerLens = """    .then(if (LocalLensGlassEnabled.current && LocalPageBackdrop.current != null) {"""
+    assertEquals(noDoublePlayerLens, 1, restored.split(noDoublePlayerLens).size - 1)
+    restored = restored.replace(noDoublePlayerLens, baselinePlayerLens)
     assertEquals("8b670d82dfd57e3520e179baa1efafc6b4adb3d13d30195f6903e63b863d362b", sha(restored))
   }
   @Test fun glassChipAndPlayerControlsRespectAccessibilityMotion() {
