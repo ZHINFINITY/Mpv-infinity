@@ -489,6 +489,7 @@ private fun MiniPlayerContent(
           MediaPlaybackService.ACTION_NOTIFICATION_STOP,
         ),
       )
+      Unit
     }
   }
 
