@@ -327,10 +327,6 @@ class NavidromeViewModel(
       songs = songs,
     )
 
-  private companion object {
-    const val FAVORITES_PLAYLIST_ID = "virtual_favorites_playlist"
-  }
-
   fun openAlbumDetail(album: NavidromeAlbum) {
     val server = _uiState.value.activeServer ?: return
     _uiState.update { it.copy(detailAlbum = album, detailArtist = null, detailPlaylist = null) }
@@ -714,6 +710,8 @@ class NavidromeViewModel(
   }
 
   companion object {
+    private const val FAVORITES_PLAYLIST_ID = "virtual_favorites_playlist"
+
     fun factory(application: Application): ViewModelProvider.Factory =
       viewModelFactory {
         initializer {

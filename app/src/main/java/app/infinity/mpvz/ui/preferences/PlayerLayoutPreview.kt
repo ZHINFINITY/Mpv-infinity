@@ -174,6 +174,7 @@ private fun PreviewShortcutRows(
   rightButtons: List<PlayerButton>,
 ) {
   BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+    val halfMaxWidth = maxWidth / 2
     Row(
       modifier = Modifier.fillMaxWidth(),
       verticalAlignment = Alignment.CenterVertically,
@@ -182,14 +183,14 @@ private fun PreviewShortcutRows(
       if (leftButtons.isNotEmpty()) {
         PreviewIconStrip(
           buttons = leftButtons,
-          modifier = Modifier.widthIn(max = maxWidth / 2),
+          modifier = Modifier.widthIn(max = halfMaxWidth),
           reverseScrolling = false,
         )
       }
       if (rightButtons.isNotEmpty()) {
         PreviewIconStrip(
           buttons = rightButtons,
-          modifier = Modifier.widthIn(max = maxWidth / 2),
+          modifier = Modifier.widthIn(max = halfMaxWidth),
           reverseScrolling = true,
         )
       }
