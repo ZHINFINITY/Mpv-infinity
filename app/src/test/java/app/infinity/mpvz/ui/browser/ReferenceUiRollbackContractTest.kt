@@ -27,7 +27,7 @@ class ReferenceUiRollbackContractTest {
   @Test fun preservedPlayerSourcesKeepPinnedFingerprints() {
     val expected = mapOf(
       // Build 1910 smoothness: chapter index via derivedStateOf so position ticks do not recompose the whole overlay.
-      "app/src/main/java/app/infinity/mpvz/ui/player/controls/PlayerControls.kt" to "1b567bbe7fb20e0556df016d94057420151eb66810497a38effb25538989dab1" /* Owner-requested group placement and bounded Below landscape row viewports keep overflow horizontally scrollable */,
+      "app/src/main/java/app/infinity/mpvz/ui/player/controls/PlayerControls.kt" to "88a958a7efa522158f6cda8d147c89db406db6b5c0853fa10efc4e0fe0ec9dcf" /* Owner-requested above-seekbar scrolling, edge alignment, and buffering-visible shortcuts */,
       // Owner follow-up: music uses its legacy visual rail while video retains the global-glass path.
       "app/src/main/java/app/infinity/mpvz/ui/player/controls/components/Seekbar.kt" to "5e3cbc03be3aa7b35f464e0ee313615192d8d1cdcfbc7e8a819b7a6c2331843c",
       // Build 1910: shared rimLight/thick-surface routing is intentionally owned by this stream.
@@ -199,8 +199,8 @@ private suspend fun frostGlassFrame(bitmap: Bitmap, strength: Float): Bitmap? = 
         """runCatching { RuntimeShader(GLASS_OPTICS) }.getOrNull()""",
     )
     var film = current
-    // Capture reuses mutable scratch buffers and publishes immutable snapshots. Normalize only
-    // the sample callsite so older film/cadence contracts remain focused on their own changes.
+    // Capture reuses mutable scratch buffers and now runs on a worker dispatcher. Normalize the
+    // sample callsite so older film/cadence contracts remain focused on their own changes.
     val smoothness = listOf(
       """  val frostPasses = GlassCustomizationPolicy.frostPasses(tuning.frost)
   val frame = remember { mutableStateOf<LiquidGlassFrame?>(null) }
@@ -216,24 +216,26 @@ private suspend fun frostGlassFrame(bitmap: Bitmap, strength: Float): Bitmap? = 
 """,
       """        }
         // Only the tiny UI copy is cropped/frosted. The actual video surface remains untouched.
-        val sampled = captureBuffers.sampleMutex.withLock {
-          val target = captureBuffers.acquire(dimensions.first, dimensions.second)
-          if (target == null) null
-          else try {
-            val copied = copyGlassFrame(source, crop, target, captureBuffers)
-            val frosted = copied?.let { copiedBitmap ->
-              frostGlassFrame(
-                copiedBitmap,
-                tuning.frost,
-                captureBuffers.pixels,
-                captureBuffers.frostOutput,
-                captureBuffers.frostScratch,
-                captureBuffers.lumaBins,
-              )
+        val sampled = withContext(Dispatchers.Default) {
+          captureBuffers.sampleMutex.withLock {
+            val target = captureBuffers.acquire(dimensions.first, dimensions.second)
+            if (target == null) null
+            else try {
+              val copied = copyGlassFrame(source, crop, target, captureBuffers)
+              val frosted = copied?.let { copiedBitmap ->
+                frostGlassFrame(
+                  copiedBitmap,
+                  tuning.frost,
+                  captureBuffers.pixels,
+                  captureBuffers.frostOutput,
+                  captureBuffers.frostScratch,
+                  captureBuffers.lumaBins,
+                )
+              }
+              if (frosted != null && captureBuffers.markPublished(target)) frosted else null
+            } finally {
+              captureBuffers.release(target)
             }
-            if (frosted != null && captureBuffers.markPublished(target)) frosted else null
-          } finally {
-            captureBuffers.release(target)
           }
         }
         val bitmap = sampled?.first
