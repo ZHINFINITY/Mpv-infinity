@@ -6085,23 +6085,22 @@ class PlayerActivity :
     }
 
     if (playerPreferences.playlistMode.get() && (autoplay || repeatAll)) {
-      val path = parsePathFromIntent(intent)
-      if (path != null) {
-        isAdvancingAtEof = true
-        eofAdvanceJob =
-          lifecycleScope.launch(Dispatchers.IO) {
-            generatePlaylistFromFolderInternal(path)
-            withContext(Dispatchers.Main) {
-              val hasNext = PlaybackSession.hasNext()
-              when {
-                (autoplay && hasNext) || (repeatAll && playlist.isNotEmpty()) -> playNextQueueItem()
-                repeatAll -> restartCurrentAtEof()
-                else -> finishAtEofIfRequested()
-              }
+      val sourceIntent = intent
+      isAdvancingAtEof = true
+      eofAdvanceJob =
+        lifecycleScope.launch(Dispatchers.IO) {
+          val path = parsePathFromIntent(sourceIntent)
+          if (path != null) generatePlaylistFromFolderInternal(path, sourceIntent)
+          withContext(Dispatchers.Main) {
+            val hasNext = PlaybackSession.hasNext()
+            when {
+              (autoplay && hasNext) || (repeatAll && playlist.isNotEmpty()) -> playNextQueueItem()
+              repeatAll -> restartCurrentAtEof()
+              else -> finishAtEofIfRequested()
             }
           }
-        return
-      }
+        }
+      return
     }
 
     if (repeatAll) restartCurrentAtEof() else finishAtEofIfRequested()
