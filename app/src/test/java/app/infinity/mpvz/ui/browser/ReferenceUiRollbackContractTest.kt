@@ -28,7 +28,7 @@ class ReferenceUiRollbackContractTest {
     val expected = mapOf(
       // Build 1910 smoothness: chapter index via derivedStateOf so position ticks do not recompose the whole overlay.
       // Player layout follow-up: side lanes stay bounded and scroll with edge fades.
-      "app/src/main/java/app/infinity/mpvz/ui/player/controls/PlayerControls.kt" to "86228a5f739010c2a4e59b5ab710c396ceaa33a8bcdc6f38f2a3d575617c1960" /* Owner-requested Above Seekbar and title/playlist layout restoration */,
+      "app/src/main/java/app/infinity/mpvz/ui/player/controls/PlayerControls.kt" to "19d75ac943cbf21664111ecf629dcbfd6d171fc2748909e495e5d1e36ec9f04b" /* Owner-requested Above Seekbar/title/playlist restoration plus compact center transport */,
       // Owner follow-up: music uses its legacy visual rail while video retains the global-glass path.
       "app/src/main/java/app/infinity/mpvz/ui/player/controls/components/Seekbar.kt" to "5e3cbc03be3aa7b35f464e0ee313615192d8d1cdcfbc7e8a819b7a6c2331843c",
       // Build 1910: shared rimLight/thick-surface routing is intentionally owned by this stream.
@@ -458,7 +458,7 @@ import android.graphics.Shader
     val baselinePlayerLens = """    .then(if (LocalLensGlassEnabled.current && LocalPageBackdrop.current != null) {"""
     assertEquals(noDoublePlayerLens, 1, restored.split(noDoublePlayerLens).size - 1)
     restored = restored.replace(noDoublePlayerLens, baselinePlayerLens)
-    assertEquals("8b670d82dfd57e3520e179baa1efafc6b4adb3d13d30195f6903e63b863d362b", sha(restored))
+    assertEquals("5ac68a7123e0156edbdfa68d44276c588c208dd51f47b568ef9921355ac206c9", sha(restored))
   }
   @Test fun glassChipAndPlayerControlsRespectAccessibilityMotion() {
     val chip = read("app/src/main/java/app/infinity/mpvz/ui/components/GlassChip.kt")
