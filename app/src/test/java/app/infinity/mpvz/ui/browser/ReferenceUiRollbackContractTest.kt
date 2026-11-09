@@ -27,8 +27,8 @@ class ReferenceUiRollbackContractTest {
   @Test fun preservedPlayerSourcesKeepPinnedFingerprints() {
     val expected = mapOf(
       // Build 1910 smoothness: chapter index via derivedStateOf so position ticks do not recompose the whole overlay.
-      // Player layout follow-up: side lanes stay bounded and scroll with edge fades.
-      "app/src/main/java/app/infinity/mpvz/ui/player/controls/PlayerControls.kt" to "509f3cca6e59f9a095d3bdbe4a7ff486d8b4eda8030d14efbaa959003348155b" /* Engine-aware startup visibility and shared center/control-group reveal */,
+      // Player layout follow-up: symmetric bounded lanes and scrollable custom controls stay visible through first frame.
+      "app/src/main/java/app/infinity/mpvz/ui/player/controls/PlayerControls.kt" to "288b76aeb41e79426a1d6abda8ca000400300652ffea0999aaa797508515f889" /* Engine-aware startup visibility and shared center/control-group reveal */,
       // Owner follow-up: music uses its legacy visual rail while video retains the global-glass path.
       "app/src/main/java/app/infinity/mpvz/ui/player/controls/components/Seekbar.kt" to "5e3cbc03be3aa7b35f464e0ee313615192d8d1cdcfbc7e8a819b7a6c2331843c",
       // Build 1910: shared rimLight/thick-surface routing is intentionally owned by this stream.
@@ -515,7 +515,8 @@ half4 main(float2 p) {
     val baselinePlayerLens = """    .then(if (LocalLensGlassEnabled.current && LocalPageBackdrop.current != null) {"""
     assertEquals(noDoublePlayerLens, 1, restored.split(noDoublePlayerLens).size - 1)
     restored = restored.replace(noDoublePlayerLens, baselinePlayerLens)
-    assertEquals("5ac68a7123e0156edbdfa68d44276c588c208dd51f47b568ef9921355ac206c9", sha(restored))
+    // Regular fallback surfaces retain their 12dp frost floor; Clear controls remain adjustable.
+    assertEquals("6fcfd8c05b8a7477edf6d8ec931bc2f160a26f06053dea7f3f1139bdbac59b2d", sha(restored))
   }
   @Test fun glassChipAndPlayerControlsRespectAccessibilityMotion() {
     val chip = read("app/src/main/java/app/infinity/mpvz/ui/components/GlassChip.kt")
