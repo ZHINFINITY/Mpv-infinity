@@ -83,6 +83,16 @@ for marker in (
 ):
     assert marker in runtime_builder, f"MPV build must preserve verified Blu-ray support: missing {marker!r}"
 
+for marker in (
+    '"$v_lua" != "5.2.4"',
+    "lua_sha256=b9e2e4aad6789b3b63a056d442f7b39f0ecfca3ae0f1fc0ae4e9614401b69f4b",
+    "https://www.lua.org/ftp/lua-$v_lua.tar.gz",
+    "https://ftp2.osuosl.org/pub/blfs/conglomeration/lua/lua-$v_lua.tar.gz",
+    "sha256sum --check",
+    "download.count(lua_source_original) != 1",
+):
+    assert marker in runtime_builder, f"Lua source fallback must remain checksum-pinned: missing {marker!r}"
+
 spec = importlib.util.spec_from_file_location("prepare_mpvflow", PREPARE)
 assert spec and spec.loader, "could not load MPVFlow preparation module"
 prepare = importlib.util.module_from_spec(spec)
@@ -1518,6 +1528,7 @@ with tempfile.TemporaryDirectory(prefix="mpvflow-builder-patch-test-") as tempor
     )
     depinfo.write_text(
         "v_libxml2=2.15.2\n"
+        "v_lua=5.2.4\n"
         "dep_libplacebo=()\n"
         "dep_mpv=(ffmpeg libass lua libplacebo qairt)\n"
         "v_ci_ffmpeg=n8.0.1\n"
@@ -1525,7 +1536,14 @@ with tempfile.TemporaryDirectory(prefix="mpvflow-builder-patch-test-") as tempor
         encoding="utf-8",
     )
     downloads.write_text(
-        "[ ! -d libplacebo ] && git clone --recursive https://github.com/haasn/libplacebo\n# mpv\n",
+        "[ ! -d libplacebo ] && git clone --recursive https://github.com/haasn/libplacebo\n"
+        "# lua\n"
+        "if [ ! -d lua ]; then\n"
+        "\tmkdir lua\n"
+        "\t$WGET https://www.lua.org/ftp/lua-$v_lua.tar.gz -O - | \\\n"
+        "\t\ttar -xz -C lua --strip-components=1\n"
+        "fi\n"
+        "# mpv\n",
         encoding="utf-8",
     )
     libplacebo.write_text(
@@ -1567,6 +1585,9 @@ with tempfile.TemporaryDirectory(prefix="mpvflow-builder-patch-test-") as tempor
     patched_downloads = downloads.read_text(encoding="utf-8")
     assert "0d043c7f6f79cd3687c023454bdacbe615e4d96f" in patched_downloads, "libplacebo pin was lost"
     assert "git -C glslang fetch --depth 1 origin 1062752a891c95b2bfeed9e356562d88f9df84ac" in patched_downloads
+    assert "lua_sha256=b9e2e4aad6789b3b63a056d442f7b39f0ecfca3ae0f1fc0ae4e9614401b69f4b" in patched_downloads
+    assert "https://ftp2.osuosl.org/pub/blfs/conglomeration/lua/lua-$v_lua.tar.gz" in patched_downloads
+    subprocess.run(["bash", "-n", str(downloads)], check=True)
     patched_ci = ci.read_text(encoding="utf-8")
     early_prepare = 'python3 "$MPVFLOW_ROOT/scripts/prepare-mpvflow.py" --mpv-dir deps/mpv --libplacebo-dir deps/libplacebo'
     assert early_prepare in patched_ci, "Flow preparation must be injected after source download"

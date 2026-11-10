@@ -98,8 +98,46 @@ glslang_download = (
     "git -C glslang submodule update --init --recursive --depth 1\n"
 )
 download = download.replace(glslang_insert_after, glslang_insert_after + glslang_download, 1)
+lua_source_original = (
+    "# lua\n"
+    "if [ ! -d lua ]; then\n"
+    "\tmkdir lua\n"
+    "\t$WGET https://www.lua.org/ftp/lua-$v_lua.tar.gz -O - | \\\n"
+    "\t\ttar -xz -C lua --strip-components=1\n"
+    "fi\n"
+)
+if download.count(lua_source_original) != 1:
+    raise SystemExit(f"Expected one pinned Lua source download block in {download_path}; refusing unverified fallback")
+lua_source_replacement = """# lua
+if [ ! -d lua ]; then
+	if [ "$v_lua" != "5.2.4" ]; then
+		echo "Unexpected Lua source version: $v_lua" >&2
+		exit 1
+	fi
+	lua_sha256=b9e2e4aad6789b3b63a056d442f7b39f0ecfca3ae0f1fc0ae4e9614401b69f4b
+	lua_archive=$(mktemp)
+	lua_primary_ok=0
+	if curl --fail --location --silent --show-error --retry 1 --retry-all-errors --connect-timeout 10 --max-time 45 "https://www.lua.org/ftp/lua-$v_lua.tar.gz" -o "$lua_archive"; then
+		if echo "$lua_sha256  $lua_archive" | sha256sum --check --status; then
+			lua_primary_ok=1
+		fi
+	fi
+	if [ "$lua_primary_ok" -ne 1 ]; then
+		echo "Official Lua source fetch failed or checksum mismatched; using verified OSUOSL mirror" >&2
+		rm -f "$lua_archive"
+		lua_archive=$(mktemp)
+		curl --fail --location --silent --show-error --retry 2 --retry-all-errors --connect-timeout 10 --max-time 60 "https://ftp2.osuosl.org/pub/blfs/conglomeration/lua/lua-$v_lua.tar.gz" -o "$lua_archive"
+	fi
+	echo "$lua_sha256  $lua_archive" | sha256sum --check -
+	mkdir lua
+	tar -xz -C lua --strip-components=1 -f "$lua_archive"
+	rm -f "$lua_archive"
+fi
+"""
+download = download.replace(lua_source_original, lua_source_replacement, 1)
 download_path.write_text(download)
 print(f"Pinned Android SPIR-V compiler glslang {glslang_revision}")
+print("Pinned Lua 5.2.4 with official-checksum verification and OSUOSL fallback")
 
 ffmpeg_script = ffmpeg_script_path.read_text()
 ffmpeg_gpl_switch = "--disable-static --enable-shared --enable-{gpl,version3}"

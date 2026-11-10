@@ -18,6 +18,9 @@ def test_manifests_match_and_cover_pins() -> None:
     for needle in (
         "build-mpv-lgpl-aar.sh",
         "build-mpvflow-mpv-runtime.sh",
+        "Lua 5.2.4",
+        "b9e2e4aad6789b3b63a056d442f7b39f0ecfca3ae0f1fc0ae4e9614401b69f4b",
+        "OSUOSL mirror",
         "f5bcfb195412e0ca733eac2e850879cd3b1ded18",
         "c1529642089bfebfc928a1c1664638a7a5d219ba",
         "hzw1199/Android-FFmpeg-Prebuilt",
