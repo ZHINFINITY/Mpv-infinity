@@ -18,12 +18,16 @@ from ffmpeg_runtime_config import (  # noqa: E402
 )
 
 
+FONGMI_SHA = "f2c5162b7c4b3e8835de270ff78cecc524decad1"
+FONGMI_VERSION = f"git-2026-11-10-f2c5162-mpvflow-fongmi-{FONGMI_SHA}"
 BASE_RUNTIME = """FFmpeg version n9.0.2
 --target-os=android --enable-version3 --disable-everything --enable-decoder=dca
 libavcodec license: LGPL version 3 or later
 DCA (DTS Coherent Acoustics)
 """
-FONGMI_RUNTIME = BASE_RUNTIME.replace("n9.0.2", "n9.1.0")
+FONGMI_RUNTIME = BASE_RUNTIME.replace("n9.0.2", FONGMI_VERSION).replace(
+    "--enable-version3", "--disable-gpl --disable-nonfree --enable-version3", 1
+)
 
 
 class EffectiveRuntimeConfigTest(unittest.TestCase):
@@ -52,17 +56,34 @@ class EffectiveRuntimeConfigTest(unittest.TestCase):
         flags = verify_runtime_evidence(BASE_RUNTIME)
         self.assertEqual({"CONFIG_GPL": 0, "CONFIG_NONFREE": 0}, flags)
 
-    def test_pinned_fongmi_n9_1_runtime_is_supported(self) -> None:
+    def test_pinned_fongmi_runtime_requires_the_exact_source_marker(self) -> None:
         flags = verify_runtime_evidence(FONGMI_RUNTIME)
-        self.assertEqual("n9.1.0", ffmpeg_runtime_version(FONGMI_RUNTIME))
+        self.assertEqual("n9.1-FongMi-f2c5162b", ffmpeg_runtime_version(FONGMI_RUNTIME))
         self.assertEqual({"CONFIG_GPL": 0, "CONFIG_NONFREE": 0}, flags)
 
-    def test_unsupported_ffmpeg_runtime_versions_are_rejected(self) -> None:
-        for version in ("n8.0.2", "n9.2.0", "n9.10.0"):
+    def test_unpinned_or_wrong_ffmpeg_markers_are_rejected(self) -> None:
+        for version in (
+            "n8.0.2",
+            "n9.1.0",
+            "n9.2.0",
+            "n9.10.0",
+            "9.1.git",
+            f"n8.0.2-mpvflow-fongmi-{FONGMI_SHA}",
+            f"n9.1.0-mpvflow-fongmi-{FONGMI_SHA}",
+            f"9.1.git-mpvflow-fongmi-{FONGMI_SHA}",
+            f"git-2026-11-10-deadbee-mpvflow-fongmi-{FONGMI_SHA}",
+            f"garbage-mpvflow-fongmi-{FONGMI_SHA}",
+            "git-2026-11-10-f2c5162-mpvflow-fongmi-wrongcommit",
+        ):
             with self.subTest(version=version):
                 runtime = BASE_RUNTIME.replace("n9.0.2", version)
-                with self.assertRaisesRegex(RuntimeEvidenceError, "n9.0 or n9.1"):
+                with self.assertRaisesRegex(RuntimeEvidenceError, "exact FongMi version marker"):
                     verify_runtime_evidence(runtime)
+
+    def test_runtime_requires_a_version_marker(self) -> None:
+        runtime = BASE_RUNTIME.replace("FFmpeg version n9.0.2\n", "")
+        with self.assertRaisesRegex(RuntimeEvidenceError, "found none"):
+            verify_runtime_evidence(runtime)
 
     def test_gpl_enabled_runtime_is_rejected(self) -> None:
         runtime = BASE_RUNTIME.replace(

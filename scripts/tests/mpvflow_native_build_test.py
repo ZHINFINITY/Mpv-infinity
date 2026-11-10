@@ -76,6 +76,8 @@ for marker in (
     'git -C "$MPV_BUILDER_DIR" rev-parse HEAD',
     'git -C "$MPV_SOURCE_DIR" rev-parse HEAD',
     "download.count(ffmpeg_clone) != 1",
+    'ffmpeg_version_suffix = f"mpvflow-fongmi-{ffmpeg_revision}"',
+    'if "--extra-version=" in ffmpeg_script:',
     'git -C ffmpeg fetch --depth=1 origin {ffmpeg_revision}',
     'git -C ffmpeg remote get-url origin',
     "dep_mpv=(ffmpeg libass lua libplacebo libbluray)",
@@ -1574,7 +1576,11 @@ with tempfile.TemporaryDirectory(prefix="mpvflow-builder-patch-test-") as tempor
         encoding="utf-8",
     )
     ffmpeg.write_text(
-        "--disable-static --enable-shared --enable-{gpl,version3}\n",
+        "#!/bin/bash -e\n"
+        "args=(\n"
+        "\t--disable-static --enable-shared --enable-{gpl,version3}\n"
+        ")\n"
+        '../configure "${args[@]}"\n',
         encoding="utf-8",
     )
     result = subprocess.run(
@@ -1642,12 +1648,16 @@ with tempfile.TemporaryDirectory(prefix="mpvflow-builder-patch-test-") as tempor
     for marker in ("-Dembed_udfread=false", "-Ddefault_library=static", "-Dlibxml2=enabled", "-ludfread"):
         assert marker in patched_libbluray, f"LGPL Blu-ray build is missing {marker!r}"
     patched_ffmpeg = ffmpeg.read_text(encoding="utf-8")
-    assert "--disable-gpl --enable-version3" in patched_ffmpeg, (
-        "FFmpeg must stay GPL-free while using LGPLv3 for Apache-2.0 mbedTLS"
+    assert "--disable-gpl --disable-nonfree --enable-version3" in patched_ffmpeg, (
+        "FFmpeg must stay GPL/nonfree-free while using LGPLv3 for Apache-2.0 mbedTLS"
     )
-    assert "--enable-gpl" not in patched_ffmpeg and "--disable-version3" not in patched_ffmpeg, (
-        "FFmpeg's GPL flags or incompatible LGPLv2.1 mode were not removed"
+    assert "--enable-gpl" not in patched_ffmpeg and "--enable-nonfree" not in patched_ffmpeg and "--disable-version3" not in patched_ffmpeg, (
+        "FFmpeg's GPL/nonfree flags or incompatible LGPLv2.1 mode were not removed"
     )
+    assert f"--extra-version=mpvflow-fongmi-{FFMPEG_SHA}" in patched_ffmpeg, (
+        "FFmpeg must embed a version marker bound to the exact pinned FongMi source commit"
+    )
+    subprocess.run(["bash", "-n", str(ffmpeg)], check=True)
     assert "--arch arm64" in ci.read_text(encoding="utf-8"), "native build must remain arm64-only"
 
 frame_priv_fixture = """\

@@ -192,12 +192,22 @@ ffmpeg_script = ffmpeg_script_path.read_text()
 ffmpeg_gpl_switch = "--disable-static --enable-shared --enable-{gpl,version3}"
 if ffmpeg_script.count(ffmpeg_gpl_switch) != 1:
     raise SystemExit(f"Expected one FFmpeg GPL configure switch in {ffmpeg_script_path}")
+if "--extra-version=" in ffmpeg_script:
+    raise SystemExit(f"Unexpected pre-existing FFmpeg version suffix in {ffmpeg_script_path}")
+ffmpeg_version_suffix = f"mpvflow-fongmi-{ffmpeg_revision}"
+ffmpeg_script_replacement = (
+    "--disable-static --enable-shared --disable-gpl --disable-nonfree --enable-version3\n"
+    f"\t--extra-version={ffmpeg_version_suffix}"
+)
 ffmpeg_script_path.write_text(ffmpeg_script.replace(
     ffmpeg_gpl_switch,
-    "--disable-static --enable-shared --disable-gpl --enable-version3",
+    ffmpeg_script_replacement,
     1,
 ))
-print("Configured FFmpeg as LGPLv3-or-later with GPL disabled to retain Apache-2.0 mbedTLS")
+print(
+    "Configured FFmpeg as LGPLv3-or-later with GPL/nonfree disabled and embedded "
+    f"{ffmpeg_version_suffix}"
+)
 
 libplacebo_script = libplacebo_path.read_text()
 libplacebo_setup = "unset CC CXX\nmeson setup $build --cross-file \"$prefix_dir\"/crossfile.txt \\\n\t-Dvulkan=enabled -Ddemos=false\n"

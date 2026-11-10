@@ -56,6 +56,7 @@ assert PLACEBO_SHA in BUILD
 assert 'https://github.com/FongMi/libplacebo.git' in BUILD
 assert f'libplacebo_revision = "{PLACEBO_SHA}"' in BUILD
 assert FFMPEG_SHA in BUILD
+assert 'ffmpeg_version_suffix = f"mpvflow-fongmi-{ffmpeg_revision}"' in BUILD
 assert 'EXPECTED_FFMPEG_REPOSITORY="https://github.com/FongMi/FFmpeg.git"' in BUILD
 assert 'git -C ffmpeg fetch --depth=1 origin {ffmpeg_revision}' in BUILD
 assert 'prepare-mpvflow-vulkan-headers.py' in BUILD
@@ -119,6 +120,7 @@ for text in (MANIFEST, PACKAGED):
     assert PLACEBO_SHA in text
     assert MPVLIB_ANDROID_SHA in text
     assert FFMPEG_SHA in text
+    assert f"mpvflow-fongmi-{FFMPEG_SHA}" in text
     assert VULKAN_HEADERS_SHA in text
     for patch_name, expected_hash in PATCH_HASHES.items():
         assert patch_name in text and expected_hash in text

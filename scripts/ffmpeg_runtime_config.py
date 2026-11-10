@@ -9,6 +9,12 @@ import re
 _SWITCH = re.compile(
     r"--(?P<action>enable|disable)-(?P<features>\{[^}]+\}|[A-Za-z0-9_.+-]+)(?:=[^\s]+)?"
 )
+_FFMPEG_VERSION_MARKER = re.compile(r"(?m)^FFmpeg version (?P<version>\S+)$")
+_FFMPEG_N90_VERSION = re.compile(r"n9\.0(?:\.\d+)?(?:[-+][A-Za-z0-9._-]+)?\Z")
+_FONGMI_FFMPEG_REVISION = "f2c5162b7c4b3e8835de270ff78cecc524decad1"
+_FONGMI_FFMPEG_BASE_VERSION = "git-2026-11-10-f2c5162"
+_FONGMI_FFMPEG_VERSION_SUFFIX = f"mpvflow-fongmi-{_FONGMI_FFMPEG_REVISION}"
+_FONGMI_FFMPEG_VERSION = f"{_FONGMI_FFMPEG_BASE_VERSION}-{_FONGMI_FFMPEG_VERSION_SUFFIX}"
 
 
 class RuntimeEvidenceError(ValueError):
@@ -46,14 +52,19 @@ def effective_ffmpeg_flags(configuration: str) -> dict[str, int]:
 
 
 def ffmpeg_runtime_version(text: str) -> str:
-    """Return the supported FFmpeg runtime series (n9.0 or n9.1), or fail closed."""
-    match = re.search(
-        r"(?m)^FFmpeg version (?P<version>n9\.(?:0|1)(?:\.\d+)?(?:[-+][A-Za-z0-9._-]+)?)(?=\s|$)",
-        text,
+    """Accept checked-in FFmpeg n9.0 or the exact commit-stamped FongMi build."""
+    versions = set(_FFMPEG_VERSION_MARKER.findall(text))
+    if len(versions) == 1:
+        version = next(iter(versions))
+        if _FFMPEG_N90_VERSION.fullmatch(version):
+            return version
+        if version == _FONGMI_FFMPEG_VERSION:
+            return f"n9.1-FongMi-{_FONGMI_FFMPEG_REVISION[:8]}"
+    found = ", ".join(sorted(versions)) if versions else "none"
+    raise RuntimeEvidenceError(
+        "expected FFmpeg n9.0 or the exact FongMi version marker "
+        f"{_FONGMI_FFMPEG_VERSION}; found {found}"
     )
-    if not match:
-        raise RuntimeEvidenceError("expected an FFmpeg n9.0 or n9.1 runtime version marker")
-    return match.group("version")
 
 
 def verify_runtime_evidence(text: str) -> dict[str, int]:
