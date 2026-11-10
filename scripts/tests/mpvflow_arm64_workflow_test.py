@@ -10,6 +10,7 @@ WORKFLOW = Path(sys.argv.pop()) if len(sys.argv) > 1 else DEFAULT
 TEXT = WORKFLOW.read_text(encoding="utf-8")
 STEPS = dict(re.findall(r"^      - name: ([^\n]+)\n(.*?)(?=^      - name: |\Z)", TEXT, re.M | re.S))
 CACHE_MISS = "if: ${{ steps.mpvflow-runtime-cache.outputs.cache-hit != 'true' }}"
+FFMPEG_SHA = "f2c5162b7c4b3e8835de270ff78cecc524decad1"
 
 
 class Arm64WorkflowTest(unittest.TestCase):
@@ -27,15 +28,16 @@ class Arm64WorkflowTest(unittest.TestCase):
     def test_runtime_cache_is_source_pinned_and_has_no_legacy_fallback(self):
         restore = STEPS["Restore verified Flow-only MPVFlow arm64 runtime"]
         for pin in (
-            "mpvflow-arm64-runtime-v4-builder-1efc82739f6f7034",
+            "mpvflow-arm64-runtime-v5-builder-1efc82739f6f7034",
             "mpv-fongmi-14b3999a1a3e322c217bc90ee4df5a8f1bc88f69",
             "libplacebo-fongmi-b89c10e1bdd5d7742ca576ebad94a906ddca91e8",
+            f"ffmpeg-fongmi-{FFMPEG_SHA}",
             "scripts/prepare-mpvflow.py",
             "scripts/patches/mpvlibandroid-fongmi/**",
             "app/src/main/cpp/**",
         ):
             self.assertIn(pin, restore)
-        for obsolete in ("runtime-legacy", "c1529642089bfebfc928a1c1664638a7a5d219ba", "restore-keys:"):
+        for obsolete in ("runtime-legacy", "mpvflow-arm64-runtime-v4", "c1529642089bfebfc928a1c1664638a7a5d219ba", "restore-keys:"):
             self.assertNotIn(obsolete, restore + TEXT)
         self.assertIn("id: mpvflow-runtime-cache", restore)
         self.assertEqual(TEXT.count("uses: actions/cache/restore@v4"), 1)

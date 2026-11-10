@@ -4,7 +4,8 @@ These notices cover the checked-in Standard and No-Vulkan MPV AARs (`app/libs/mp
 
 | Component | Version/source | License used for this build | Notice |
 |---|---|---|---|
-| FFmpeg native libraries | FFmpeg n9.0 | LGPL-3.0-or-later; built with `--disable-gpl --disable-nonfree --enable-version3` | `COPYING.LGPLv3` |
+| FFmpeg native libraries (checked-in AARs) | FFmpeg n9.0 | LGPL-3.0-or-later; built with `--disable-gpl --disable-nonfree --enable-version3` | `COPYING.LGPLv3` |
+| FFmpeg native libraries (experimental arm64 overlay) | FongMi/FFmpeg [`release-9.1-fongmi` commit `f2c5162b7c4b3e8835de270ff78cecc524decad1`](https://github.com/FongMi/FFmpeg/tree/f2c5162b7c4b3e8835de270ff78cecc524decad1) | LGPL-3.0-or-later; built with `--disable-gpl --disable-nonfree --enable-version3` | `COPYING.LGPLv3` |
 | mpv/libmpv (checked-in AARs) | `mpv-player/mpv` `f5bcfb195412e0ca733eac2e850879cd3b1ded18` | LGPL-2.1-or-later build with `-Dgpl=false` | `MPV-LICENSE.LGPL` and `MPV-Copyright` |
 | mpv/libmpv (experimental arm64 overlay) | FongMi/mpv `14b3999a1a3e322c217bc90ee4df5a8f1bc88f69` | LGPL-2.1-or-later build with `-Dgpl=false`; retain FongMi's GPL-2.0 source attribution and upstream notices | `MPV-LICENSE.LGPL`, `MPV-Copyright`, and `LICENSE.GPL` |
 | libplacebo | API-374 in checked-in AARs; FongMi/libplacebo `fongmi` branch commit `b89c10e1bdd5d7742ca576ebad94a906ddca91e8` in the experimental arm64 overlay | LGPL-2.1-or-later | `libplacebo-LICENSE` |
@@ -13,7 +14,7 @@ These notices cover the checked-in Standard and No-Vulkan MPV AARs (`app/libs/mp
 | Mbed TLS | 3.6.7 | Apache-2.0 selected from its Apache-2.0 OR GPL-2.0-or-later dual license | `mbedtls-LICENSE` |
 | mpvlibAndroid wrapper/build helpers | Standard/no-Vulkan profiles and FongMi AAR build source `d04217abe8e72e4a099269f045855bf69b87d53b` | MIT | `mpvlibAndroid-LICENSE-MIT` |
 
-The complete LGPL texts and the upstream GPLv2 license text are included alongside these notices. The separate arm64 FFmpeg helpers are documented in `app/src/main/assets/ffmpeg/README.txt` and `FFMPEG-LICENSE.md`; their LGPLv2.1-or-later mode is distinct from the MPV AAR's LGPLv3-or-later FFmpeg libraries.
+The complete LGPL texts and the upstream GPLv2 license text are included alongside these notices. The separate arm64 FFmpeg helpers are documented in `app/src/main/assets/ffmpeg/README.txt` and `FFMPEG-LICENSE.md`; their LGPLv2.1-or-later mode is distinct from the checked-in AARs' and experimental overlay's LGPLv3-or-later FFmpeg libraries.
 
 The FongMi patch hunks modify LGPL-licensed libbluray. The mpvlibAndroid MIT notice covers its wrapper/build-helper source; it does not relicense libbluray. Preserve libbluray's upstream notices and corresponding source as required by its license.
 

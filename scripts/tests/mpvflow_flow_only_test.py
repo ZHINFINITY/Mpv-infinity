@@ -8,7 +8,9 @@ ROOT = Path(__file__).resolve().parents[2]
 
 
 def test_standard_workflow_is_flow_only() -> None:
-    builder = (ROOT / "scripts/build-mpvflow-mpv-runtime.sh").read_text(encoding="utf-8")
+    builder_path = ROOT / "scripts/build-mpvflow-mpv-runtime.sh"
+    assert builder_path.stat().st_mode & 0o111, "the workflow-invoked runtime builder must remain executable"
+    builder = builder_path.read_text(encoding="utf-8")
     workflow = (ROOT / ".github/workflows/debug-apk.yml").read_text(encoding="utf-8")
     flow_workflow = (ROOT / ".github/workflows/mpvflow-debug-arm64.yml").read_text(encoding="utf-8")
     gradle = (ROOT / "app/build.gradle.kts").read_text(encoding="utf-8")
@@ -17,6 +19,7 @@ def test_standard_workflow_is_flow_only() -> None:
     builder_sha = "1efc82739f6f7034cd63e7ee8b3ec5431df27467"
     mpv_sha = "14b3999a1a3e322c217bc90ee4df5a8f1bc88f69"
     placebo_sha = "b89c10e1bdd5d7742ca576ebad94a906ddca91e8"
+    ffmpeg_sha = "f2c5162b7c4b3e8835de270ff78cecc524decad1"
 
     def runtime_cache_key(contents: str) -> str:
         restore_step = contents.split(cache_step_name, 1)[1].split("- name:", 1)[0]
@@ -38,7 +41,7 @@ def test_standard_workflow_is_flow_only() -> None:
     assert ".github/workflows/debug-apk.yml" not in manual_cache_key
     assert ".github/workflows/mpvflow-debug-arm64.yml" not in manual_cache_key
     for pin in (
-        f"mpvflow-arm64-runtime-v4-builder-{builder_sha[:16]}-mpv-fongmi-{mpv_sha}-libplacebo-fongmi-{placebo_sha}-cores2-",
+        f"mpvflow-arm64-runtime-v5-builder-{builder_sha[:16]}-mpv-fongmi-{mpv_sha}-libplacebo-fongmi-{placebo_sha}-ffmpeg-fongmi-{ffmpeg_sha}-cores2-",
         "mpvflow-runtime-cache.outputs.cache-hit",
     ):
         assert pin in manual_cache_key or all(pin in candidate for candidate in (workflow, flow_workflow)), (

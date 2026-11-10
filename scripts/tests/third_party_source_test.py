@@ -26,6 +26,8 @@ def test_manifests_match_and_cover_pins() -> None:
         "b89c10e1bdd5d7742ca576ebad94a906ddca91e8",
         "FongMi/libplacebo",
         "FongMi/mpv",
+        "FongMi/FFmpeg",
+        "f2c5162b7c4b3e8835de270ff78cecc524decad1",
         "hzw1199/Android-FFmpeg-Prebuilt",
         "Python-3.13.12.tar.xz",
         "debugging modifications",
@@ -63,6 +65,7 @@ def test_source_links_are_location_independent() -> None:
         )
         assert pinned_link or experimental_link, name
     assert any("/buildscripts/patches/mpv_video_shaders.patch" in target for target in targets)
+    assert any("github.com/FongMi/FFmpeg/tree/f2c5162b7c4b3e8835de270ff78cecc524decad1" in target for target in targets)
 
 
 if __name__ == "__main__":

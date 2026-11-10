@@ -17,12 +17,14 @@ PACKAGED = (ROOT / "app/src/main/assets/licenses/third-party-source.md").read_te
 LICENSES = (ROOT / "app/src/main/assets/mpv/licenses/README.md").read_text(encoding="utf-8")
 GPL_LICENSE = ROOT / "app/src/main/assets/mpv/licenses/LICENSE.GPL"
 MPV_VIEW = (ROOT / "app/src/main/java/app/infinity/mpvz/ui/player/MPVView.kt").read_text(encoding="utf-8")
+ABOUT = (ROOT / "app/src/main/java/app/infinity/mpvz/ui/preferences/AboutScreen.kt").read_text(encoding="utf-8")
 
 MPV_SHA = "14b3999a1a3e322c217bc90ee4df5a8f1bc88f69"
 BUILDER_SHA = "1efc82739f6f7034cd63e7ee8b3ec5431df27467"
 PLACEBO_SHA = "b89c10e1bdd5d7742ca576ebad94a906ddca91e8"
 GPL_SHA = "edaef632cbb643e4e7a221717a6c441a4c1a7c918e6e4d56debc3d8739b233f6"
 MPVLIB_ANDROID_SHA = "d04217abe8e72e4a099269f045855bf69b87d53b"
+FFMPEG_SHA = "f2c5162b7c4b3e8835de270ff78cecc524decad1"
 PATCH_DIR = ROOT / "scripts/patches/mpvlibandroid-fongmi"
 PATCHER = (PATCH_DIR / "patch-libbluray.sh").read_text(encoding="utf-8")
 PATCH_README = (PATCH_DIR / "README.md").read_text(encoding="utf-8")
@@ -51,6 +53,9 @@ assert 'mp.get_property_native("motion-interpolation-info")' in PREPARE
 assert PLACEBO_SHA in BUILD
 assert 'https://github.com/FongMi/libplacebo.git' in BUILD
 assert f'libplacebo_revision = "{PLACEBO_SHA}"' in BUILD
+assert FFMPEG_SHA in BUILD
+assert 'EXPECTED_FFMPEG_REPOSITORY="https://github.com/FongMi/FFmpeg.git"' in BUILD
+assert 'git -C ffmpeg fetch --depth=1 origin {ffmpeg_revision}' in BUILD
 assert f'EXPECTED_MPV_REVISION="{MPV_SHA}"' in BUILD
 assert f'EXPECTED_BUILDER_REVISION="{BUILDER_SHA}"' in BUILD
 assert 'git -C "$MPV_SOURCE_DIR" rev-parse HEAD' in BUILD
@@ -80,7 +85,8 @@ for workflow in WORKFLOWS:
     assert PLACEBO_SHA in workflow
     assert "scripts/patches/mpvlibandroid-fongmi/**" in workflow
     assert "repository: FongMi/mpv" in workflow
-    assert "runtime-v4-builder" in workflow
+    assert "runtime-v5-builder" in workflow
+    assert f"ffmpeg-fongmi-{FFMPEG_SHA}" in workflow
     assert "runtime-legacy" not in workflow
     assert "c1529642089bfebfc928a1c1664638a7a5d219ba" not in workflow
 
@@ -88,19 +94,25 @@ for text in (MANIFEST, PACKAGED):
     assert MPV_SHA in text
     assert PLACEBO_SHA in text
     assert MPVLIB_ANDROID_SHA in text
+    assert FFMPEG_SHA in text
     for patch_name, expected_hash in PATCH_HASHES.items():
         assert patch_name in text and expected_hash in text
     assert "https://github.com/FongMi/mpv" in text
     assert "https://github.com/FongMi/libplacebo" in text
+    assert "https://github.com/FongMi/FFmpeg" in text
     assert "GPL-2.0" in text
     assert "does not apply the obsolete local patch or duplicate source files" in text
 
 assert MPV_SHA in LICENSES
 assert PLACEBO_SHA in LICENSES
 assert MPVLIB_ANDROID_SHA in LICENSES
+assert FFMPEG_SHA in LICENSES
+assert "FongMi/FFmpeg" in LICENSES and "release-9.1-fongmi" in LICENSES
+assert FFMPEG_SHA in ABOUT
+assert f"https://github.com/FongMi/FFmpeg/commit/{FFMPEG_SHA}" in ABOUT
 assert "LICENSE.GPL" in LICENSES
 assert GPL_LICENSE.is_file()
 assert hashlib.sha256(GPL_LICENSE.read_bytes()).hexdigest() == GPL_SHA
 gpl_text = GPL_LICENSE.read_text(encoding="utf-8")
 assert "GNU GENERAL PUBLIC LICENSE" in gpl_text and "Version 2, June 1991" in gpl_text
-print("native FongMi MPV source, libplacebo pin, libbluray patch set, provenance, and cache guards passed")
+print("native FongMi MPV, libplacebo, FFmpeg pins, libbluray patch set, provenance, and cache guards passed")

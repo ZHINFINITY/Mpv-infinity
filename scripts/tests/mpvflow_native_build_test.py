@@ -48,6 +48,8 @@ POLICY = ROOT / "app/src/main/java/app/infinity/mpvz/ui/player/RendererBackendPo
 POLICY_TEST = ROOT / "app/src/test/java/app/infinity/mpvz/ui/player/RendererBackendPolicyTest.kt"
 DECODER_SCREEN = ROOT / "app/src/main/java/app/infinity/mpvz/ui/preferences/DecoderPreferencesScreen.kt"
 STRING_RESOURCES = ROOT / "app/src/main/res/values/strings.xml"
+FFMPEG_SHA = "f2c5162b7c4b3e8835de270ff78cecc524decad1"
+FFMPEG_REPOSITORY = "https://github.com/FongMi/FFmpeg.git"
 
 sys.dont_write_bytecode = True
 fongmi_motion = (FONGMI_DIR / "motion.c").read_text(encoding="utf-8")
@@ -68,8 +70,13 @@ runtime_builder = BUILD.read_text(encoding="utf-8")
 for marker in (
     'EXPECTED_BUILDER_REVISION="1efc82739f6f7034cd63e7ee8b3ec5431df27467"',
     'EXPECTED_MPV_REVISION="14b3999a1a3e322c217bc90ee4df5a8f1bc88f69"',
+    f'EXPECTED_FFMPEG_REVISION="{FFMPEG_SHA}"',
+    f'EXPECTED_FFMPEG_REPOSITORY="{FFMPEG_REPOSITORY}"',
     'git -C "$MPV_BUILDER_DIR" rev-parse HEAD',
     'git -C "$MPV_SOURCE_DIR" rev-parse HEAD',
+    "download.count(ffmpeg_clone) != 1",
+    'git -C ffmpeg fetch --depth=1 origin {ffmpeg_revision}',
+    'git -C ffmpeg remote get-url origin',
     "dep_mpv=(ffmpeg libass lua libplacebo libbluray)",
     "v_libbluray=1.4.1",
     "LIBBLURAY_SHA256=76b5dc40097f28dca4ebb009c98ed51321b2927453f75cc72cf74acd09b9f449",
@@ -1521,6 +1528,12 @@ with tempfile.TemporaryDirectory(prefix="mpvflow-builder-patch-test-") as tempor
     )
     downloads.write_text(
         "[ ! -d libplacebo ] && git clone --recursive https://github.com/haasn/libplacebo\n"
+        "# ffmpeg\n"
+        "if [ ! -d ffmpeg ]; then\n"
+        "\targs=()\n"
+        '\t[ $IN_CI -eq 1 ] && args+=(--depth=1 -b "$v_ci_ffmpeg")\n'
+        '\tgit clone https://github.com/FFmpeg/FFmpeg ffmpeg "${args[@]}"\n'
+        "fi\n"
         "# lua\n"
         "if [ ! -d lua ]; then\n"
         "\tmkdir lua\n"
@@ -1559,7 +1572,7 @@ with tempfile.TemporaryDirectory(prefix="mpvflow-builder-patch-test-") as tempor
         encoding="utf-8",
     )
     result = subprocess.run(
-        [sys.executable, "-", str(ci), str(depinfo), str(downloads), str(libplacebo), str(android_mk), str(mpv), str(ffmpeg), str(libbluray_script)],
+        [sys.executable, "-", str(ci), str(depinfo), str(downloads), str(libplacebo), str(android_mk), str(mpv), str(ffmpeg), str(libbluray_script), FFMPEG_SHA, FFMPEG_REPOSITORY],
         input=builder_patcher,
         check=False,
         capture_output=True,
@@ -1569,6 +1582,9 @@ with tempfile.TemporaryDirectory(prefix="mpvflow-builder-patch-test-") as tempor
     patched_downloads = downloads.read_text(encoding="utf-8")
     assert "https://github.com/FongMi/libplacebo.git" in patched_downloads, "FongMi libplacebo source was lost"
     assert "b89c10e1bdd5d7742ca576ebad94a906ddca91e8" in patched_downloads, "FongMi libplacebo pin was lost"
+    assert FFMPEG_REPOSITORY in patched_downloads, "FongMi FFmpeg source repository was lost"
+    assert f"git -C ffmpeg fetch --depth=1 origin {FFMPEG_SHA}" in patched_downloads, "FongMi FFmpeg commit pin was lost"
+    assert f'ffmpeg_actual" != "{FFMPEG_SHA}"' in patched_downloads, "FFmpeg checkout must be verified against the exact commit"
     assert "git -C glslang fetch --depth 1 origin 1062752a891c95b2bfeed9e356562d88f9df84ac" in patched_downloads
     assert "lua_sha256=b9e2e4aad6789b3b63a056d442f7b39f0ecfca3ae0f1fc0ae4e9614401b69f4b" in patched_downloads
     assert "https://ftp2.osuosl.org/pub/blfs/conglomeration/lua/lua-$v_lua.tar.gz" in patched_downloads
@@ -1612,6 +1628,7 @@ with tempfile.TemporaryDirectory(prefix="mpvflow-builder-patch-test-") as tempor
     assert "dep_mpv=(ffmpeg libass lua libplacebo libbluray)" in patched_depinfo
     assert "v_libbluray=1.4.1" in patched_depinfo and "dep_libbluray=()" in patched_depinfo
     assert "-libbluray-${v_libbluray}-fontconfig-" in patched_depinfo, "dependency cache key must include libbluray"
+    assert f"v_ci_ffmpeg={FFMPEG_SHA}" in patched_depinfo, "dependency-prefix identity must include the immutable FFmpeg source commit"
     patched_libbluray = libbluray_script.read_text(encoding="utf-8")
     assert libbluray_script.stat().st_mode & 0o111, "generated libbluray build script must be executable"
     for marker in ("-Dembed_udfread=false", "-Ddefault_library=static", "-Dlibxml2=enabled", "-ludfread"):

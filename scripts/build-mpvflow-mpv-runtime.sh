@@ -7,6 +7,8 @@ MPV_SOURCE_DIR="${MPV_SOURCE_DIR:-$ROOT/mpv-source}"
 BUILDSCRIPTS="$MPV_BUILDER_DIR/buildscripts"
 EXPECTED_BUILDER_REVISION="1efc82739f6f7034cd63e7ee8b3ec5431df27467"
 EXPECTED_MPV_REVISION="14b3999a1a3e322c217bc90ee4df5a8f1bc88f69"
+EXPECTED_FFMPEG_REVISION="f2c5162b7c4b3e8835de270ff78cecc524decad1"
+EXPECTED_FFMPEG_REPOSITORY="https://github.com/FongMi/FFmpeg.git"
 
 [[ -d "$BUILDSCRIPTS" ]] || { echo "Missing pinned Android MPV build tools: $BUILDSCRIPTS" >&2; exit 1; }
 actual_builder_revision="$(git -C "$MPV_BUILDER_DIR" rev-parse HEAD 2>/dev/null || true)"
@@ -38,11 +40,14 @@ python3 - \
   "$MPV_BUILDER_DIR/app/src/main/jni/Android.mk" \
   "$BUILDSCRIPTS/scripts/mpv.sh" \
   "$BUILDSCRIPTS/scripts/ffmpeg.sh" \
-  "$BUILDSCRIPTS/scripts/libbluray.sh" <<'PY'
+  "$BUILDSCRIPTS/scripts/libbluray.sh" \
+  "$EXPECTED_FFMPEG_REVISION" \
+  "$EXPECTED_FFMPEG_REPOSITORY" <<'PY'
 from pathlib import Path
 import sys
 
-ci_path, depinfo_path, download_path, libplacebo_path, android_mk_path, mpv_script_path, ffmpeg_script_path, libbluray_script_path = map(Path, sys.argv[1:])
+ci_path, depinfo_path, download_path, libplacebo_path, android_mk_path, mpv_script_path, ffmpeg_script_path, libbluray_script_path = map(Path, sys.argv[1:9])
+ffmpeg_revision, ffmpeg_repository = sys.argv[9:11]
 lines = ci_path.read_text().splitlines()
 expected = [
     'msg "Fetching mpv"',
@@ -82,6 +87,34 @@ ci_path.write_text(ci)
 print("Prepared the pinned Android MPV builder, FFmpeg probe, and MPVFlow sources before dependency compilation")
 
 download = download_path.read_text()
+ffmpeg_clone = (
+    "# ffmpeg\n"
+    "if [ ! -d ffmpeg ]; then\n"
+    "\targs=()\n"
+    '\t[ $IN_CI -eq 1 ] && args+=(--depth=1 -b "$v_ci_ffmpeg")\n'
+    '\tgit clone https://github.com/FFmpeg/FFmpeg ffmpeg "${args[@]}"\n'
+    "fi"
+)
+if download.count(ffmpeg_clone) != 1:
+    raise SystemExit(f"Expected one stock FFmpeg clone in {download_path}; refusing unpinned source")
+ffmpeg_fongmi_clone = (
+    "# ffmpeg\n"
+    "if [ ! -d ffmpeg ]; then\n"
+    "\tgit init ffmpeg\n"
+    f'\tgit -C ffmpeg remote add origin "{ffmpeg_repository}"\n'
+    f"\tgit -C ffmpeg fetch --depth=1 origin {ffmpeg_revision}\n"
+    "\tgit -C ffmpeg checkout --detach FETCH_HEAD\n"
+    "fi\n"
+    'ffmpeg_actual="$(git -C ffmpeg rev-parse HEAD)"\n'
+    'ffmpeg_origin="$(git -C ffmpeg remote get-url origin)"\n'
+    f'if [ "$ffmpeg_actual" != "{ffmpeg_revision}" ] || [ "$ffmpeg_origin" != "{ffmpeg_repository}" ]; then\n'
+    '\techo "Unexpected FFmpeg source: origin=$ffmpeg_origin revision=$ffmpeg_actual" >&2\n'
+    '\texit 1\n'
+    "fi"
+)
+download = download.replace(ffmpeg_clone, ffmpeg_fongmi_clone, 1)
+print(f"Pinned FongMi/FFmpeg {ffmpeg_revision} from {ffmpeg_repository}")
+
 libplacebo_clone = "[ ! -d libplacebo ] && git clone --recursive https://github.com/haasn/libplacebo"
 if download.count(libplacebo_clone) != 1:
     raise SystemExit(f"Expected one unpinned libplacebo clone in {download_path}")
@@ -249,7 +282,7 @@ if depinfo.count(placebo_dependency) != 1 or "dep_libbluray=" in depinfo:
 depinfo = depinfo.replace(placebo_dependency, placebo_dependency + "dep_libbluray=()\n", 1)
 if depinfo.count("v_ci_ffmpeg=n8.0.1") != 1:
     raise SystemExit(f"Expected the pinned FFmpeg 8.0.1 line in {depinfo_path}")
-depinfo = depinfo.replace("v_ci_ffmpeg=n8.0.1", "v_ci_ffmpeg=n9.0.2", 1)
+depinfo = depinfo.replace("v_ci_ffmpeg=n8.0.1", f"v_ci_ffmpeg={ffmpeg_revision}", 1)
 cache_marker = "-libxml2-${v_libxml2}-fontconfig-"
 if depinfo.count(cache_marker) != 1:
     raise SystemExit(f"Expected one dependency-cache key marker in {depinfo_path}")
@@ -258,7 +291,7 @@ depinfo_path.write_text(depinfo.replace(
     "-libxml2-${v_libxml2}-libbluray-${v_libbluray}-fontconfig-",
     1,
 ))
-print("Excluded unused QAIRT; pinned FFmpeg 9.0.2 and LGPL libbluray 1.4.1 for the arm64 AAR ABI")
+print(f"Excluded unused QAIRT; pinned FongMi FFmpeg {ffmpeg_revision} and LGPL libbluray 1.4.1 for the arm64 AAR ABI")
 
 libbluray_build_script = '''#!/bin/bash -e
 . ../../include/path.sh

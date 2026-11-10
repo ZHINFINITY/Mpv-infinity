@@ -132,7 +132,7 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: native-builder/app/build/outputs/apk
-          key: mpvflow-arm64-runtime-v4-builder-1efc82739f6f7034-mpv-fongmi-14b3999a1a3e322c217bc90ee4df5a8f1bc88f69-libplacebo-fongmi-b89c10e1bdd5d7742ca576ebad94a906ddca91e8-cores2-${{ hashFiles('scripts/build-mpvflow-mpv-runtime.sh', 'scripts/prepare-mpvflow.py', 'scripts/patch-ffmpeg-symver.py', 'scripts/patches/mpvlibandroid-fongmi/**', 'app/src/main/cpp/**', 'THIRD_PARTY_LICENSES/**', 'app/src/main/assets/mpv/licenses/**') }}
+          key: mpvflow-arm64-runtime-v5-builder-1efc82739f6f7034-mpv-fongmi-14b3999a1a3e322c217bc90ee4df5a8f1bc88f69-libplacebo-fongmi-b89c10e1bdd5d7742ca576ebad94a906ddca91e8-ffmpeg-fongmi-f2c5162b7c4b3e8835de270ff78cecc524decad1-cores2-${{ hashFiles('scripts/build-mpvflow-mpv-runtime.sh', 'scripts/prepare-mpvflow.py', 'scripts/patch-ffmpeg-symver.py', 'scripts/patches/mpvlibandroid-fongmi/**', 'app/src/main/cpp/**', 'THIRD_PARTY_LICENSES/**', 'app/src/main/assets/mpv/licenses/**') }}
 
       - name: Checkout pinned Android MPV build tools
         if: ${{ steps.mpvflow-runtime-cache.outputs.cache-hit != 'true' }}
