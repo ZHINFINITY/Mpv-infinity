@@ -7,6 +7,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 PREPARE = (ROOT / "scripts/prepare-mpvflow.py").read_text(encoding="utf-8")
 BUILD = (ROOT / "scripts/build-mpvflow-mpv-runtime.sh").read_text(encoding="utf-8")
+VULKAN_HEADERS = (ROOT / "scripts/prepare-mpvflow-vulkan-headers.py").read_text(encoding="utf-8")
 WORKFLOWS = [
     (ROOT / ".github/workflows/debug-apk.yml").read_text(encoding="utf-8"),
     (ROOT / ".github/workflows/mpvflow-debug-arm64.yml").read_text(encoding="utf-8"),
@@ -25,6 +26,7 @@ PLACEBO_SHA = "b89c10e1bdd5d7742ca576ebad94a906ddca91e8"
 GPL_SHA = "edaef632cbb643e4e7a221717a6c441a4c1a7c918e6e4d56debc3d8739b233f6"
 MPVLIB_ANDROID_SHA = "d04217abe8e72e4a099269f045855bf69b87d53b"
 FFMPEG_SHA = "f2c5162b7c4b3e8835de270ff78cecc524decad1"
+VULKAN_HEADERS_SHA = "a4f8ada9f4f97c45b8c89c57997be9cebaae65d2"
 PATCH_DIR = ROOT / "scripts/patches/mpvlibandroid-fongmi"
 PATCHER = (PATCH_DIR / "patch-libbluray.sh").read_text(encoding="utf-8")
 PATCH_README = (PATCH_DIR / "README.md").read_text(encoding="utf-8")
@@ -56,6 +58,26 @@ assert f'libplacebo_revision = "{PLACEBO_SHA}"' in BUILD
 assert FFMPEG_SHA in BUILD
 assert 'EXPECTED_FFMPEG_REPOSITORY="https://github.com/FongMi/FFmpeg.git"' in BUILD
 assert 'git -C ffmpeg fetch --depth=1 origin {ffmpeg_revision}' in BUILD
+assert 'prepare-mpvflow-vulkan-headers.py' in BUILD
+assert f'VULKAN_HEADERS_REVISION = "{VULKAN_HEADERS_SHA}"' in VULKAN_HEADERS
+assert 'VULKAN_HEADERS_REPOSITORY = "https://github.com/KhronosGroup/Vulkan-Headers.git"' in VULKAN_HEADERS
+for symbol in (
+    "VK_EXT_SHADER_REPLICATED_COMPOSITES_EXTENSION_NAME",
+    "VK_KHR_SHADER_EXPECT_ASSUME_EXTENSION_NAME",
+    "VK_KHR_SHADER_MAXIMAL_RECONVERGENCE_EXTENSION_NAME",
+    "VK_KHR_SHADER_RELAXED_EXTENDED_INSTRUCTION_EXTENSION_NAME",
+    "VK_KHR_SHADER_SUBGROUP_ROTATE_EXTENSION_NAME",
+    "VK_KHR_VIDEO_DECODE_AV1_EXTENSION_NAME",
+    "VK_KHR_VIDEO_MAINTENANCE_2_EXTENSION_NAME",
+    "VkPhysicalDeviceVideoMaintenance2FeaturesKHR",
+    "VkPhysicalDeviceShaderRelaxedExtendedInstructionFeaturesKHR",
+):
+    assert symbol in VULKAN_HEADERS, f"Vulkan header staging must require {symbol}"
+assert '"vulkan", "vk_video"' in VULKAN_HEADERS
+assert VULKAN_HEADERS.count("verify_clean_checkout(source_dir)") == 2
+assert '"--ignored=matching"' in VULKAN_HEADERS
+assert "reject_symlinks(include_dir" in VULKAN_HEADERS
+assert 'ensure_real_directory(destination, "Android arm64 include prefix")' in VULKAN_HEADERS
 assert f'EXPECTED_MPV_REVISION="{MPV_SHA}"' in BUILD
 assert f'EXPECTED_BUILDER_REVISION="{BUILDER_SHA}"' in BUILD
 assert 'git -C "$MPV_SOURCE_DIR" rev-parse HEAD' in BUILD
@@ -85,8 +107,10 @@ for workflow in WORKFLOWS:
     assert PLACEBO_SHA in workflow
     assert "scripts/patches/mpvlibandroid-fongmi/**" in workflow
     assert "repository: FongMi/mpv" in workflow
-    assert "runtime-v5-builder" in workflow
+    assert "runtime-v6-builder" in workflow
     assert f"ffmpeg-fongmi-{FFMPEG_SHA}" in workflow
+    assert f"vulkan-headers-khronos-{VULKAN_HEADERS_SHA}" in workflow
+    assert "scripts/prepare-mpvflow-vulkan-headers.py" in workflow
     assert "runtime-legacy" not in workflow
     assert "c1529642089bfebfc928a1c1664638a7a5d219ba" not in workflow
 
@@ -95,11 +119,15 @@ for text in (MANIFEST, PACKAGED):
     assert PLACEBO_SHA in text
     assert MPVLIB_ANDROID_SHA in text
     assert FFMPEG_SHA in text
+    assert VULKAN_HEADERS_SHA in text
     for patch_name, expected_hash in PATCH_HASHES.items():
         assert patch_name in text and expected_hash in text
     assert "https://github.com/FongMi/mpv" in text
     assert "https://github.com/FongMi/libplacebo" in text
     assert "https://github.com/FongMi/FFmpeg" in text
+    assert "https://github.com/KhronosGroup/Vulkan-Headers" in text
+    assert "vulkan-sdk-1.4.328.0" in text
+    assert "Apache-2.0" in text and "MIT" in text
     assert "GPL-2.0" in text
     assert "does not apply the obsolete local patch or duplicate source files" in text
 
@@ -115,4 +143,4 @@ assert GPL_LICENSE.is_file()
 assert hashlib.sha256(GPL_LICENSE.read_bytes()).hexdigest() == GPL_SHA
 gpl_text = GPL_LICENSE.read_text(encoding="utf-8")
 assert "GNU GENERAL PUBLIC LICENSE" in gpl_text and "Version 2, June 1991" in gpl_text
-print("native FongMi MPV, libplacebo, FFmpeg pins, libbluray patch set, provenance, and cache guards passed")
+print("native FongMi MPV, libplacebo, FFmpeg and Vulkan-Headers pins, libbluray patch set, provenance, and cache guards passed")

@@ -50,6 +50,7 @@ DECODER_SCREEN = ROOT / "app/src/main/java/app/infinity/mpvz/ui/preferences/Deco
 STRING_RESOURCES = ROOT / "app/src/main/res/values/strings.xml"
 FFMPEG_SHA = "f2c5162b7c4b3e8835de270ff78cecc524decad1"
 FFMPEG_REPOSITORY = "https://github.com/FongMi/FFmpeg.git"
+VULKAN_HEADERS_SHA = "a4f8ada9f4f97c45b8c89c57997be9cebaae65d2"
 
 sys.dont_write_bytecode = True
 fongmi_motion = (FONGMI_DIR / "motion.c").read_text(encoding="utf-8")
@@ -86,10 +87,15 @@ for marker in (
     "-Ddefault_library=static",
     "must statically link libbluray",
     "Shared library: [libudfread.so]",
+    "prepare-mpvflow-vulkan-headers.py",
     "LOCAL_MODULE := libudfread",
     "LOCAL_SHARED_LIBRARIES := swscale avcodec mpv udfread placebo",
 ):
     assert marker in runtime_builder, f"MPV build must preserve verified Blu-ray support: missing {marker!r}"
+
+vulkan_headers_helper = (ROOT / "scripts/prepare-mpvflow-vulkan-headers.py").read_text(encoding="utf-8")
+assert f'VULKAN_HEADERS_REVISION = "{VULKAN_HEADERS_SHA}"' in vulkan_headers_helper
+assert 'VULKAN_HEADERS_REPOSITORY = "https://github.com/KhronosGroup/Vulkan-Headers.git"' in vulkan_headers_helper
 
 for marker in (
     '"$v_lua" != "5.2.4"',
@@ -1591,10 +1597,12 @@ with tempfile.TemporaryDirectory(prefix="mpvflow-builder-patch-test-") as tempor
     subprocess.run(["bash", "-n", str(downloads)], check=True)
     patched_ci = ci.read_text(encoding="utf-8")
     early_prepare = 'python3 "$MPVFLOW_ROOT/scripts/prepare-mpvflow.py" --mpv-dir deps/mpv --libplacebo-dir deps/libplacebo'
+    headers_prepare = 'python3 "$MPVFLOW_ROOT/scripts/prepare-mpvflow-vulkan-headers.py" "$PWD"'
     assert early_prepare in patched_ci, "Flow preparation must be injected after source download"
-    assert patched_ci.index(early_prepare) < patched_ci.index('msg "Compiling"') < patched_ci.index(
+    assert headers_prepare in patched_ci, "Khronos Vulkan-Headers must be staged after source download"
+    assert patched_ci.index(early_prepare) < patched_ci.index(headers_prepare) < patched_ci.index('msg "Compiling"') < patched_ci.index(
         "./buildall.sh --arch arm64 --only-deps mpv"
-    ), "Flow Vulkan/glslang source fixes must run before the dependency prefix builds libplacebo"
+    ), "Flow source fixes and newer Khronos headers must run before the dependency prefix builds libplacebo"
     patched_placebo = libplacebo.read_text(encoding="utf-8")
     assert "-Dglslang=enabled" in patched_placebo and "-Dvulkan=enabled" in patched_placebo
     assert "cmake --install" in patched_placebo and "libSPIRV.a" in patched_placebo

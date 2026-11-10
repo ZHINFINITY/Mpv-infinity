@@ -8,6 +8,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 DOCS = (ROOT / "THIRD_PARTY_SOURCE.md", ROOT / "app/src/main/assets/licenses/third-party-source.md")
+VULKAN_HEADERS_SHA = "a4f8ada9f4f97c45b8c89c57997be9cebaae65d2"
 
 
 def test_manifests_match_and_cover_pins() -> None:
@@ -28,6 +29,14 @@ def test_manifests_match_and_cover_pins() -> None:
         "FongMi/mpv",
         "FongMi/FFmpeg",
         "f2c5162b7c4b3e8835de270ff78cecc524decad1",
+        "Vulkan-Headers",
+        VULKAN_HEADERS_SHA,
+        "vulkan-sdk-1.4.328.0",
+        "include/vulkan",
+        "include/vk_video",
+        "prepare-mpvflow-vulkan-headers.py",
+        "Apache-2.0",
+        "MIT",
         "hzw1199/Android-FFmpeg-Prebuilt",
         "Python-3.13.12.tar.xz",
         "debugging modifications",
@@ -66,6 +75,8 @@ def test_source_links_are_location_independent() -> None:
         assert pinned_link or experimental_link, name
     assert any("/buildscripts/patches/mpv_video_shaders.patch" in target for target in targets)
     assert any("github.com/FongMi/FFmpeg/tree/f2c5162b7c4b3e8835de270ff78cecc524decad1" in target for target in targets)
+    assert any(f"github.com/KhronosGroup/Vulkan-Headers/tree/{VULKAN_HEADERS_SHA}" in target for target in targets)
+    assert any(f"github.com/KhronosGroup/Vulkan-Headers/archive/{VULKAN_HEADERS_SHA}.tar.gz" in target for target in targets)
 
 
 if __name__ == "__main__":

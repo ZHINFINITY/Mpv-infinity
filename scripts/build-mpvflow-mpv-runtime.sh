@@ -82,7 +82,11 @@ if ci.count(download_marker) != 1:
     raise SystemExit(f"Expected one dependency download step in {ci_path}; refusing unsafe patch")
 symver_patch = 'python3 "$GITHUB_WORKSPACE/scripts/patch-ffmpeg-symver.py" deps/ffmpeg/configure\n'
 flow_prepare = 'python3 "$MPVFLOW_ROOT/scripts/prepare-mpvflow.py" --mpv-dir deps/mpv --libplacebo-dir deps/libplacebo\n'
+vulkan_headers_prepare = 'python3 "$MPVFLOW_ROOT/scripts/prepare-mpvflow-vulkan-headers.py" "$PWD"\n'
 ci = ci.replace(download_marker, download_marker + symver_patch + flow_prepare, 1)
+if ci.count(flow_prepare) != 1:
+    raise SystemExit(f"Expected exactly one Flow preparation call in {ci_path}; refusing to stage mismatched Vulkan headers")
+ci = ci.replace(flow_prepare, flow_prepare + vulkan_headers_prepare, 1)
 ci_path.write_text(ci)
 print("Prepared the pinned Android MPV builder, FFmpeg probe, and MPVFlow sources before dependency compilation")
 
