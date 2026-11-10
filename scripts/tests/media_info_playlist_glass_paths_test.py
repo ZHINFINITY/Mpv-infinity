@@ -76,10 +76,12 @@ def main():
     assert len(header) == 2
     assert all('.playlistItemGlass(liquidGlassSurfaces, 999.dp)' in action['modifier'] for action in header)
     helper = function(playlist, 'playlistItemGlass')
-    panes = calls(helper, 'playerGlassPane')
-    assert len(panes) == 1
-    assert panes[0]['enabled'] == 'enabled'
-    assert 0 < float(panes[0]['opacity'].removesuffix('f')) <= 0.45
+    insets = calls(helper, 'glassInsetSurface')
+    assert len(insets) == 1
+    assert insets[0]['enabled'] == 'enabled'
+    assert insets[0]['shape'] == 'RoundedCornerShape(cornerRadius)'
+    assert insets[0]['fillAlpha'] == '0.30f'
+    assert insets[0]['borderAlpha'] == '0.18f'
     assert sheet.count('appearancePreferences.liquidGlassSurfaces.collectAsState()') == 1
     assert 'appearancePreferences.liquidGlassSurfaces.collectAsState()' not in helper
     assert 'LocalLiquidGlassBackdrop provides' not in helper
