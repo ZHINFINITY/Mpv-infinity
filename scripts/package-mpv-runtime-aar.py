@@ -219,12 +219,13 @@ def main() -> None:
                 required_placebo_exports = {
                     "pl_vulkan_default_params", "pl_vulkan_create", "pl_vulkan_destroy",
                     "pl_vulkan_wrap", "pl_vulkan_hold_ex", "pl_vulkan_release_ex",
-                    "pl_shader_custom",
                 }
+                if abi == "arm64-v8a":
+                    required_placebo_exports.add("pl_shader_custom")
                 missing_placebo_exports = sorted(required_placebo_exports - dynamic_defined_symbols(placebo))
                 if missing_placebo_exports:
                     raise SystemExit(
-                        f"{abi} libplacebo.so is missing Vulkan API exports required by Media3 JNI: "
+                        f"{abi} libplacebo.so is missing Vulkan API exports required by Media3 JNI/FongMi synthesis: "
                         + ", ".join(missing_placebo_exports)
                     )
 
