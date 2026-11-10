@@ -20,7 +20,7 @@ MPV_VIEW = (ROOT / "app/src/main/java/app/infinity/mpvz/ui/player/MPVView.kt").r
 
 MPV_SHA = "14b3999a1a3e322c217bc90ee4df5a8f1bc88f69"
 BUILDER_SHA = "1efc82739f6f7034cd63e7ee8b3ec5431df27467"
-PLACEBO_SHA = "275f7dea27924cdd34ab2e6c20e448b6bc4fab65"
+PLACEBO_SHA = "b89c10e1bdd5d7742ca576ebad94a906ddca91e8"
 GPL_SHA = "edaef632cbb643e4e7a221717a6c441a4c1a7c918e6e4d56debc3d8739b233f6"
 MPVLIB_ANDROID_SHA = "d04217abe8e72e4a099269f045855bf69b87d53b"
 PATCH_DIR = ROOT / "scripts/patches/mpvlibandroid-fongmi"
@@ -49,6 +49,8 @@ for marker in (
 assert '{"motion-interpolation-info", mp_property_motion_info}' in PREPARE
 assert 'mp.get_property_native("motion-interpolation-info")' in PREPARE
 assert PLACEBO_SHA in BUILD
+assert 'https://github.com/FongMi/libplacebo.git' in BUILD
+assert f'libplacebo_revision = "{PLACEBO_SHA}"' in BUILD
 assert f'EXPECTED_MPV_REVISION="{MPV_SHA}"' in BUILD
 assert f'EXPECTED_BUILDER_REVISION="{BUILDER_SHA}"' in BUILD
 assert 'git -C "$MPV_SOURCE_DIR" rev-parse HEAD' in BUILD
@@ -78,7 +80,7 @@ for workflow in WORKFLOWS:
     assert PLACEBO_SHA in workflow
     assert "scripts/patches/mpvlibandroid-fongmi/**" in workflow
     assert "repository: FongMi/mpv" in workflow
-    assert "runtime-v3-builder" in workflow
+    assert "runtime-v4-builder" in workflow
     assert "runtime-legacy" not in workflow
     assert "c1529642089bfebfc928a1c1664638a7a5d219ba" not in workflow
 
@@ -89,6 +91,7 @@ for text in (MANIFEST, PACKAGED):
     for patch_name, expected_hash in PATCH_HASHES.items():
         assert patch_name in text and expected_hash in text
     assert "https://github.com/FongMi/mpv" in text
+    assert "https://github.com/FongMi/libplacebo" in text
     assert "GPL-2.0" in text
     assert "does not apply the obsolete local patch or duplicate source files" in text
 

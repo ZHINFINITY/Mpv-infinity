@@ -212,9 +212,16 @@ def validate_libplacebo_suboptimal_recovery(swapchain_c: str) -> None:
         "case VK_SUBOPTIMAL_KHR:\n        p->suboptimal = true;\n        // fall through\n    case VK_SUCCESS:\n        return true;",
         *acquire_out_of_date,
         "case VK_ERROR_OUT_OF_DATE_KHR:\n        // We can silently ignore this error, since the next start_frame will\n        // recreate the swapchain automatically.\n        return true;",
-        "if (p->suboptimal || p->needs_recreate || width_changed || height_changed)\n        ok = vk_sw_recreate(sw, *width, *height);",
     )
-    if not all(item in swapchain_c for item in required):
+    resize_recovery = (
+        "if (p->suboptimal || p->needs_recreate || width_changed || height_changed)\n"
+        "        ok = vk_sw_recreate(sw, *width, *height);" in swapchain_c
+        or (
+            "bool recreate = p->suboptimal || p->needs_recreate || width_changed || height_changed;" in swapchain_c
+            and "if (ok && recreate)\n        ok = vk_sw_recreate(sw, *width, *height);" in swapchain_c
+        )
+    )
+    if not all(item in swapchain_c for item in required) or not resize_recovery:
         raise SystemExit(
             "Pinned libplacebo suboptimal/out-of-date/resize recovery changed; refusing an unverified Mailbox tolerance policy"
         )
@@ -266,10 +273,16 @@ def instrument_libplacebo_swapchain(swapchain_c: str) -> str:
             raise SystemExit(f"Pinned libplacebo {name} changed; refusing unverified WSI instrumentation")
         return source.replace(old, new, 1)
 
-    swapchain_c = replace_once(
-        swapchain_c,
+    state_anchors = (
         "    bool has_swapchain_maintenance1;\n    struct pl_color_repr color_repr;",
-        "    bool has_swapchain_maintenance1;\n    atomic_bool flow_diagnostics;\n"
+        "    bool has_swapchain_maintenance1;\n    uint64_t generation;\n"
+        "    struct pl_color_repr color_repr;",
+    )
+    state_anchor = next((anchor for anchor in state_anchors if swapchain_c.count(anchor) == 1), None)
+    if state_anchor is None:
+        raise SystemExit("Pinned libplacebo swapchain diagnostic state changed; refusing unverified WSI instrumentation")
+    state_fields = (
+        "    atomic_bool flow_diagnostics;\n"
         "    VkPresentModeKHR flow_created_present_mode;\n"
         "    VkFormat flow_created_format;\n"
         "    VkColorSpaceKHR flow_created_color_space;\n"
@@ -284,8 +297,14 @@ def instrument_libplacebo_swapchain(swapchain_c: str) -> str:
         "    VkResult flow_diag_last_result[12];\n"
         "    uint64_t flow_diag_last_timeout_ns[12];\n"
         "    uint32_t flow_diag_last_image_index[12], flow_diag_image_index_valid[12];\n"
+    )
+    state_replacement = state_anchor.replace(
         "    struct pl_color_repr color_repr;",
-        "swapchain diagnostic state",
+        state_fields + "    struct pl_color_repr color_repr;",
+        1,
+    )
+    swapchain_c = replace_once(
+        swapchain_c, state_anchor, state_replacement, "swapchain diagnostic state"
     )
     swapchain_c = replace_once(
         swapchain_c,
@@ -400,8 +419,8 @@ static void flow_report_created_swapchain(struct priv *p)
 '''
     swapchain_c = replace_once(
         swapchain_c,
-        "static const struct pl_sw_fns vulkan_swapchain;\n\n\nstatic bool map_color_space(",
-        "static const struct pl_sw_fns vulkan_swapchain;\n" + helper + "static bool map_color_space(",
+        "static bool map_color_space(",
+        helper + "static bool map_color_space(",
         "diagnostic helpers",
     )
     swapchain_c = replace_once(
@@ -418,8 +437,7 @@ static void flow_report_created_swapchain(struct priv *p)
     )
     swapchain_c = replace_once(
         swapchain_c,
-        '    PL_VK_ASSERT(res, "vk->CreateSwapchainKHR(...)");\n\n    // Get the new swapchain images',
-        '    PL_VK_ASSERT(res, "vk->CreateSwapchainKHR(...)");\n\n'
+        "    // Get the new swapchain images",
         '    p->flow_created_present_mode = sinfo.presentMode;\n'
         '    p->flow_created_format = sinfo.imageFormat;\n'
         '    p->flow_created_color_space = sinfo.imageColorSpace;\n'
@@ -494,21 +512,29 @@ static void flow_report_created_swapchain(struct priv *p)
     )
     swapchain_c = replace_once(
         swapchain_c,
-        "    vk->lock_queue(vk->queue_ctx, pool->qf, qidx);\n"
-        "    VkResult res = vk->QueuePresentKHR(queue, &pinfo);\n"
-        "    vk->unlock_queue(vk->queue_ctx, pool->qf, qidx);",
+        "    vk->lock_queue(vk->queue_ctx, pool->qf, qidx);\n",
         "    pl_clock_t flow_queue_lock_start = atomic_load_explicit(&p->flow_diagnostics, memory_order_relaxed)\n"
         "        ? pl_clock_now() : 0;\n"
         "    vk->lock_queue(vk->queue_ctx, pool->qf, qidx);\n"
         "    pl_clock_t flow_present_start = flow_queue_lock_start ? pl_clock_now() : 0;\n"
         "    if (flow_queue_lock_start)\n"
-        "        flow_report_wsi_call(p, FLOW_WSI_PRESENT_QUEUE_LOCK, \"present_queue_lock\", flow_queue_lock_start, flow_present_start, VK_SUCCESS);\n"
+        "        flow_report_wsi_call(p, FLOW_WSI_PRESENT_QUEUE_LOCK, \"present_queue_lock\", flow_queue_lock_start, flow_present_start, VK_SUCCESS);\n",
+        "present queue-lock timing",
+    )
+    swapchain_c = replace_once(
+        swapchain_c,
+        "    VkResult res = vk->QueuePresentKHR(queue, &pinfo);\n",
         "    VkResult res = vk->QueuePresentKHR(queue, &pinfo);\n"
-        "    pl_clock_t flow_present_end = flow_queue_lock_start ? pl_clock_now() : 0;\n"
+        "    pl_clock_t flow_present_end = flow_queue_lock_start ? pl_clock_now() : 0;\n",
+        "vkQueuePresentKHR call timing",
+    )
+    swapchain_c = replace_once(
+        swapchain_c,
+        "    vk->unlock_queue(vk->queue_ctx, pool->qf, qidx);\n",
         "    vk->unlock_queue(vk->queue_ctx, pool->qf, qidx);\n"
         "    if (flow_queue_lock_start)\n"
-        "        flow_report_wsi_call(p, FLOW_WSI_PRESENT, \"vkQueuePresentKHR\", flow_present_start, flow_present_end, res);",
-        "vkQueuePresentKHR timing",
+        "        flow_report_wsi_call(p, FLOW_WSI_PRESENT, \"vkQueuePresentKHR\", flow_present_start, flow_present_end, res);\n",
+        "vkQueuePresentKHR duration report",
     )
     swapchain_c = replace_once(
         swapchain_c,

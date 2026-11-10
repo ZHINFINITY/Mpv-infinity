@@ -506,6 +506,40 @@ for bad_wsi_recovery in (
         raise AssertionError("unexpected pinned WSI recovery changes must fail closed")
 patched_wsi_source = prepare.instrument_libplacebo_swapchain(wsi_source)
 prepare.validate_libplacebo_suboptimal_recovery(patched_wsi_source)
+fongmi_wsi_source = wsi_source.replace(
+    "    bool has_swapchain_maintenance1;\n    struct pl_color_repr color_repr;",
+    "    bool has_swapchain_maintenance1;\n    uint64_t generation;\n    struct pl_color_repr color_repr;",
+    1,
+).replace(
+    "    if (p->suboptimal || p->needs_recreate || width_changed || height_changed)\n"
+    "        ok = vk_sw_recreate(sw, *width, *height);",
+    "    bool recreate = p->suboptimal || p->needs_recreate || width_changed || height_changed;\n"
+    "    if (ok && recreate)\n        ok = vk_sw_recreate(sw, *width, *height);",
+    1,
+).replace(
+    "    vk->lock_queue(vk->queue_ctx, pool->qf, qidx);\n"
+    "    VkResult res = vk->QueuePresentKHR(queue, &pinfo);\n"
+    "    vk->unlock_queue(vk->queue_ctx, pool->qf, qidx);",
+    "    vk->lock_queue(vk->queue_ctx, pool->qf, qidx);\n"
+    "    uint64_t begin = timing.presentID ? present_time(sw) : 0;\n"
+    "    VkResult res = vk->QueuePresentKHR(queue, &pinfo);\n"
+    "    vk_present_submit(history, timing.presentID, begin, res);\n"
+    "    vk->unlock_queue(vk->queue_ctx, pool->qf, qidx);",
+    1,
+)
+prepare.validate_libplacebo_suboptimal_recovery(fongmi_wsi_source)
+fongmi_patched_wsi_source = prepare.instrument_libplacebo_swapchain(fongmi_wsi_source)
+prepare.validate_libplacebo_suboptimal_recovery(fongmi_patched_wsi_source)
+assert "uint64_t generation;\n    atomic_bool flow_diagnostics;" in fongmi_patched_wsi_source
+assert "bool recreate = p->suboptimal || p->needs_recreate || width_changed || height_changed;" in fongmi_patched_wsi_source
+assert "vk_present_submit(history, timing.presentID, begin, res);" in fongmi_patched_wsi_source
+bad_fongmi_resize = fongmi_wsi_source.replace("width_changed || height_changed", "false", 1)
+try:
+    prepare.validate_libplacebo_suboptimal_recovery(bad_fongmi_resize)
+except SystemExit:
+    pass
+else:
+    raise AssertionError("FongMi resize recovery must fail closed if size-change handling is lost")
 bad_instrumented_recovery = patched_wsi_source.replace(
     "bool flow_retry_recreate_ok = vk_sw_recreate(sw, 0, 0);",
     "bool flow_retry_recreate_ok = false;",
@@ -1533,7 +1567,8 @@ with tempfile.TemporaryDirectory(prefix="mpvflow-builder-patch-test-") as tempor
     )
     assert result.returncode == 0, f"builder patcher fixture failed:\n{result.stdout}{result.stderr}"
     patched_downloads = downloads.read_text(encoding="utf-8")
-    assert "275f7dea27924cdd34ab2e6c20e448b6bc4fab65" in patched_downloads, "libplacebo pin was lost"
+    assert "https://github.com/FongMi/libplacebo.git" in patched_downloads, "FongMi libplacebo source was lost"
+    assert "b89c10e1bdd5d7742ca576ebad94a906ddca91e8" in patched_downloads, "FongMi libplacebo pin was lost"
     assert "git -C glslang fetch --depth 1 origin 1062752a891c95b2bfeed9e356562d88f9df84ac" in patched_downloads
     assert "lua_sha256=b9e2e4aad6789b3b63a056d442f7b39f0ecfca3ae0f1fc0ae4e9614401b69f4b" in patched_downloads
     assert "https://ftp2.osuosl.org/pub/blfs/conglomeration/lua/lua-$v_lua.tar.gz" in patched_downloads

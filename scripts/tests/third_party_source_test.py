@@ -23,7 +23,8 @@ def test_manifests_match_and_cover_pins() -> None:
         "OSUOSL mirror",
         "f5bcfb195412e0ca733eac2e850879cd3b1ded18",
         "14b3999a1a3e322c217bc90ee4df5a8f1bc88f69",
-        "275f7dea27924cdd34ab2e6c20e448b6bc4fab65",
+        "b89c10e1bdd5d7742ca576ebad94a906ddca91e8",
+        "FongMi/libplacebo",
         "FongMi/mpv",
         "hzw1199/Android-FFmpeg-Prebuilt",
         "Python-3.13.12.tar.xz",
@@ -53,9 +54,14 @@ def test_source_links_are_location_independent() -> None:
     targets = re.findall(r"\]\(([^)]+)\)", text)
     assert targets and all(target.startswith("https://") for target in targets)
     pin = "3c81ff6109d3f90f298d81805bbcc81824dbf735"
+    experimental_branch = "fix/playback-streaming-library-reliability-20261109"
     for name in ("build-mpv-lgpl-aar.sh", "build-mpvflow-mpv-runtime.sh",
                  "prepare-mpvflow.py", "verify-mpv-aar-lgpl.py"):
-        assert any(f"/blob/{pin}/scripts/{name}" in target for target in targets), name
+        pinned_link = any(f"/blob/{pin}/scripts/{name}" in target for target in targets)
+        experimental_link = name in ("build-mpvflow-mpv-runtime.sh", "prepare-mpvflow.py") and any(
+            f"/blob/{experimental_branch}/scripts/{name}" in target for target in targets
+        )
+        assert pinned_link or experimental_link, name
     assert any("/buildscripts/patches/mpv_video_shaders.patch" in target for target in targets)
 
 

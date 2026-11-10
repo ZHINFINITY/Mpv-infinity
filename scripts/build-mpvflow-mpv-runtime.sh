@@ -85,15 +85,16 @@ download = download_path.read_text()
 libplacebo_clone = "[ ! -d libplacebo ] && git clone --recursive https://github.com/haasn/libplacebo"
 if download.count(libplacebo_clone) != 1:
     raise SystemExit(f"Expected one unpinned libplacebo clone in {download_path}")
-libplacebo_revision = "275f7dea27924cdd34ab2e6c20e448b6bc4fab65"
+libplacebo_revision = "b89c10e1bdd5d7742ca576ebad94a906ddca91e8"
+libplacebo_fongmi_clone = "[ ! -d libplacebo ] && git clone --recursive https://github.com/FongMi/libplacebo.git"
 download = download.replace(
     libplacebo_clone,
-    libplacebo_clone + "\n" +
+    libplacebo_fongmi_clone + "\n" +
     f"git -C libplacebo checkout --detach {libplacebo_revision}\n" +
     "git -C libplacebo submodule update --init --recursive",
     1,
 )
-print(f"Pinned libplacebo {libplacebo_revision} (v7.387.0) for native FongMi prepared-view and shader-mixer APIs")
+print(f"Pinned FongMi/libplacebo {libplacebo_revision} for native FongMi MEMC renderer APIs")
 
 glslang_revision = "1062752a891c95b2bfeed9e356562d88f9df84ac"
 glslang_insert_after = "git -C libplacebo submodule update --init --recursive\n"

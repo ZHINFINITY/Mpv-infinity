@@ -27,9 +27,9 @@ class Arm64WorkflowTest(unittest.TestCase):
     def test_runtime_cache_is_source_pinned_and_has_no_legacy_fallback(self):
         restore = STEPS["Restore verified Flow-only MPVFlow arm64 runtime"]
         for pin in (
-            "mpvflow-arm64-runtime-v3-builder-1efc82739f6f7034",
+            "mpvflow-arm64-runtime-v4-builder-1efc82739f6f7034",
             "mpv-fongmi-14b3999a1a3e322c217bc90ee4df5a8f1bc88f69",
-            "libplacebo-275f7dea27924cdd34ab2e6c20e448b6bc4fab65",
+            "libplacebo-fongmi-b89c10e1bdd5d7742ca576ebad94a906ddca91e8",
             "scripts/prepare-mpvflow.py",
             "scripts/patches/mpvlibandroid-fongmi/**",
             "app/src/main/cpp/**",

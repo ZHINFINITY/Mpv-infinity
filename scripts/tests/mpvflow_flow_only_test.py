@@ -16,7 +16,7 @@ def test_standard_workflow_is_flow_only() -> None:
     cache_step_name = "- name: Restore verified Flow-only MPVFlow arm64 runtime"
     builder_sha = "1efc82739f6f7034cd63e7ee8b3ec5431df27467"
     mpv_sha = "14b3999a1a3e322c217bc90ee4df5a8f1bc88f69"
-    placebo_sha = "275f7dea27924cdd34ab2e6c20e448b6bc4fab65"
+    placebo_sha = "b89c10e1bdd5d7742ca576ebad94a906ddca91e8"
 
     def runtime_cache_key(contents: str) -> str:
         restore_step = contents.split(cache_step_name, 1)[1].split("- name:", 1)[0]
@@ -38,7 +38,7 @@ def test_standard_workflow_is_flow_only() -> None:
     assert ".github/workflows/debug-apk.yml" not in manual_cache_key
     assert ".github/workflows/mpvflow-debug-arm64.yml" not in manual_cache_key
     for pin in (
-        f"mpvflow-arm64-runtime-v3-builder-{builder_sha[:16]}-mpv-fongmi-{mpv_sha}-libplacebo-{placebo_sha}-cores2-",
+        f"mpvflow-arm64-runtime-v4-builder-{builder_sha[:16]}-mpv-fongmi-{mpv_sha}-libplacebo-fongmi-{placebo_sha}-cores2-",
         "mpvflow-runtime-cache.outputs.cache-hit",
     ):
         assert pin in manual_cache_key or all(pin in candidate for candidate in (workflow, flow_workflow)), (
