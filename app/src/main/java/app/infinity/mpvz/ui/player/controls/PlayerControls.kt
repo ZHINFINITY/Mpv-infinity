@@ -457,7 +457,6 @@ fun PlayerControls(
   val showChapterIndicators by playerPreferences.showChapterIndicators.collectAsState()
   val torrentState by viewModel.torrentState.collectAsState()
   val videoOpenAnimState by viewModel.videoOpenAnimationState.collectAsState()
-  val isWaitingForVideo = videoOpenAnimState.isWaitingForVideo
   val showLoadingCircle by playerPreferences.showLoadingCircle.collectAsState()
   val embeddedTranslatedSubtitle by viewModel.embeddedTranslatedSubtitle.collectAsState()
 
@@ -741,22 +740,18 @@ fun PlayerControls(
 
   LaunchedEffect(
     controlsShown,
-    showBufferingIndicator,
     paused,
     isSeeking,
     resetControlsTimestamp,
     areControlsLocked,
     isUnlockSliderDragging,
     isAudioOnly,
-    isWaitingForVideo,
     isPlayerDrawerShown,
     showControlsDrawer,
   ) {
     if (!isAudioOnly &&
-      !isWaitingForVideo &&
       controlsShown &&
       paused == false &&
-      !showBufferingIndicator &&
       !isSeeking &&
       !isUnlockSliderDragging &&
       !(showControlsDrawer && isPlayerDrawerShown)
@@ -1256,7 +1251,7 @@ fun PlayerControls(
 
           val areButtonsVisible =
             PlayerControlVisibilityPolicy.areButtonsVisible(
-              controlsShown = controlsShown || showBufferingIndicator,
+              controlsShown = controlsShown,
               controlsLocked = areControlsLocked,
               slidersShown = areSlidersShown,
             )

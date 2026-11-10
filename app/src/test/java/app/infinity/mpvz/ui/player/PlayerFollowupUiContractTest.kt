@@ -173,10 +173,11 @@ class PlayerFollowupUiContractTest {
   }
 
   @Test
-  fun videoStartupKeepsControlsVisibleAndPublishesCustomButtonsBeforeScriptWork() {
+  fun videoStartupAutoHideDoesNotWaitForBufferingOrFirstFrameAndPublishesCustomButtonsBeforeScriptWork() {
     val controls = read("app/src/main/java/app/infinity/mpvz/ui/player/controls/PlayerControls.kt")
     val viewModel = read("app/src/main/java/app/infinity/mpvz/ui/player/PlayerViewModel.kt")
     val activity = read("app/src/main/java/app/infinity/mpvz/ui/player/PlayerActivity.kt")
+    val autoHideEffect = controls.substringAfter("LaunchedEffect(\n    controlsShown,").substringBefore("\n  val videoOpenAnim")
     val setup =
       viewModel.substringAfter("private fun setupCustomButtons()")
         .substringBefore("private fun reloadCustomButtonsScript")
@@ -186,8 +187,10 @@ class PlayerFollowupUiContractTest {
     val uiPublishIndex = setup.indexOf("_customButtons.value = parseCustomButtonUiStates(jsonString)")
     val backgroundSetupIndex = setup.indexOf("viewModelScope.launch(Dispatchers.IO)")
 
-    assertTrue(controls.contains("isWaitingForVideo,"))
-    assertTrue(controls.contains("!isWaitingForVideo"))
+    assertFalse(autoHideEffect.contains("isWaitingForVideo"))
+    assertFalse(autoHideEffect.contains("showBufferingIndicator"))
+    assertTrue(controls.contains("controlsShown = controlsShown,"))
+    assertFalse(controls.contains("controlsShown = controlsShown || showBufferingIndicator"))
     assertTrue(uiPublishIndex >= 0)
     assertTrue(backgroundSetupIndex > uiPublishIndex)
     assertTrue(buttonPreflight.contains("if (looksLikeWebSource && !item.isDefinitelyAudioOnly())"))
@@ -195,7 +198,7 @@ class PlayerFollowupUiContractTest {
   }
 
   @Test
-  fun layoutSettingsShowCompactPlayerPreviewAndKeepShortcutsVisibleWhileBuffering() {
+  fun layoutSettingsShowCompactPreviewAndBufferingIndicatorStaysIndependentOfControls() {
     val settings = read("app/src/main/java/app/infinity/mpvz/ui/preferences/PlayerControlsPreferencesScreen.kt")
     val editor = read("app/src/main/java/app/infinity/mpvz/ui/preferences/ControlLayoutEditorScreen.kt")
     val preview = read("app/src/main/java/app/infinity/mpvz/ui/preferences/PlayerLayoutPreview.kt")
@@ -228,7 +231,8 @@ class PlayerFollowupUiContractTest {
     assertTrue(controls.contains("PlayerControlVisibilityPolicy.shouldShowBufferingIndicator("))
     assertTrue(controls.contains("PlayerControlVisibilityPolicy.areButtonsVisible("))
     assertTrue(controls.contains("visible = areButtonsVisible"))
-    assertTrue(controls.contains("!showBufferingIndicator"))
+    assertTrue(controls.contains("visible = showBufferingIndicator"))
+    assertFalse(controls.contains("controlsShown = controlsShown || showBufferingIndicator"))
     assertFalse(controls.contains("isNativeBuffering"))
   }
 
