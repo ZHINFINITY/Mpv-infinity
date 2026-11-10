@@ -48,6 +48,26 @@ assert "MAX_PRESENTATION_BUFFERS = 3" in SINK, "async presentation must stay wit
 assert "presentationQueue.acquireForWriteWithSnapshot()" in draw_texture and "presentationQueue.publish(lease)" in draw_texture, (
     "producer output must enter the bounded latest-wins presentation mailbox"
 )
+assert "var hardwareBuffer: HardwareBuffer? = null" in SINK and "var nativeImageHandle = 0L" in SINK, (
+    "each leased Media3 presentation slot must own its optional shared Vulkan output image"
+)
+synthesis_queue = SINK.split("  private fun synthesizeAndQueue(", 1)[1].split(
+    "\n  private fun dispatchSynthesis(", 1
+)[0]
+assert synthesis_queue.index("presentationQueue.acquireForWriteWithSnapshot()") < synthesis_queue.index("dispatchSynthesis("), (
+    "Media3 must reserve the bounded output slot before Vulkan writes into its image"
+)
+assert "reservedLease = lease" in synthesis_queue and "directOutputTarget = sharedTarget" in synthesis_queue
+assert "if (sharedTarget) slot.nativeImageHandle else outputImageHandle" in synthesis_queue
+assert "copy_elided=true" in SINK and "path=staging_copy" in SINK, (
+    "Media3 must diagnose direct output and retain a safe staging-copy fallback"
+)
+assert "nativeDestroyImage(flowVulkanContext, slot.nativeImageHandle)" in SINK and "slot.hardwareBuffer?.let" in SINK, (
+    "presentation-slot Vulkan images and HardwareBuffers must be released with the sink"
+)
+assert "if (directOutputTarget)" in draw_texture and "textureId == slot.textureId" in draw_texture, (
+    "direct synthesis output must be the exact leased image later published to the presenter"
+)
 assert "eglSwapBuffers" not in draw_texture, "the producer GL handler must not block on the window swap"
 presentation_consumer = SINK.split("  private fun presentNextQueuedFrame()", 1)[1].split(
     "\n  private fun resumePresentationDrain()", 1
@@ -86,7 +106,7 @@ for marker in (
 assert "private val visibilityResolverEnabled: Boolean" in SINK
 assert "private val softBlendEnabled: Boolean" in SINK
 assert "visibility_resolver=$visibilityResolverEnabled soft_blend=$softBlendEnabled" in SINK
-assert re.search(r"visibilityResolverEnabled,\s*softBlendEnabled,\s*outputImageHandle", SINK)
+assert re.search(r"visibilityResolverEnabled,\s*softBlendEnabled,\s*outputTargetHandle", SINK)
 assert "visibilityResolverEnabled: Boolean" in NATIVE and "softBlendEnabled: Boolean" in NATIVE
 assert "jboolean visibilityResolverEnabled, jboolean softBlendEnabled" in JNI
 assert re.search(

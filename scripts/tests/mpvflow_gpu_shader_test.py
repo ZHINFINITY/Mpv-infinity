@@ -124,7 +124,7 @@ require(visibility_resolver, "bool uniquelySupported=bestEnergy>0.012&&margin>ma
 require(visibility_resolver, "baselineCost-best>0.035&&baselineDistance>3.0", "resolver must materially improve on production and reject near-duplicate motions")
 require(visibility_resolver, "result=mix(fallback,mix(ca,cb,t),0.25)", "resolver correction must remain capped at 25 percent")
 require(SOURCE, '"mpvflow_visibility_resolver_shader.h"', "the native GPU implementation must include the validated embedded GLSL")
-require(SOURCE, "mpvflow_gpu_synthesize_internal(ctx, pair, source0, source1, t,\n                                           false, false, false, output)", "the public production synthesis API must keep the resolver and Media3 policy disabled")
+require(SOURCE, "mpvflow_gpu_synthesize_internal(ctx, pair, source0, source1, t,\n                                           false, false, false, NULL, output)", "the public production synthesis API must keep the resolver and Media3 policy disabled")
 require(SOURCE, "bool enable_soft_blend,\n    bool preserve_motion_blend_on_conflict, pl_tex *output)", "the policy API must keep the Media3 edge preference explicit")
 require(SOURCE, "*pass = make_pass(ctx->gpu, glsl, resolver_desc, 10)", "resolver pass must be initialized lazily only after explicit opt-in")
 require(SOURCE, "fallback=production_output", "resolver failure paths must retain the production result")

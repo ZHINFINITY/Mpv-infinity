@@ -677,22 +677,22 @@ index bd3d1aa..75ffbb1 100644
 +    return true;
 +}
 +
-+static void flow_release_frame(struct vo *vo, struct frame_priv *fp)
++static void flow_release_frame(struct vo *vo, struct frame_priv *fp, bool discard)
 +{
 +    struct priv *p = vo->priv;
-+    flow_release_pair_for_frame(p, fp->frame_id);
-+    if (fp->flow_source)
++    if (discard) flow_release_pair_for_frame(p, fp->frame_id);
++    if (discard && fp->flow_source)
 +        pl_tex_destroy(p->gpu, &fp->flow_source);
-+    if (fp->flow_input)
++    if (discard && fp->flow_input)
 +        pl_tex_destroy(p->gpu, &fp->flow_input);
-+    if (fp->flow_analysis_source)
++    if (discard && fp->flow_analysis_source)
 +        pl_tex_destroy(p->gpu, &fp->flow_analysis_source);
-+    fp->flow_w = fp->flow_h = 0;
-+    fp->flow_linear_hdr_source = false;
-+    fp->flow_source_w = fp->flow_source_h = 0;
-+    fp->flow_cap = 0;
-+    fp->flow_synthesis_cap = 0;
-+    fp->flow_synthesis_w = fp->flow_synthesis_h = 0;
++    if (discard) fp->flow_w = fp->flow_h = 0;
++    if (discard) fp->flow_linear_hdr_source = false;
++    if (discard) fp->flow_source_w = fp->flow_source_h = 0;
++    if (discard) fp->flow_cap = 0;
++    if (discard) fp->flow_synthesis_cap = 0;
++    if (discard) fp->flow_synthesis_w = fp->flow_synthesis_h = 0;
 +}
 +
 @@ -1109,0 +1737,3 @@ static bool map_frame(pl_gpu gpu, pl_tex *tex, const struct pl_source_frame *src,
@@ -700,10 +700,10 @@ index bd3d1aa..75ffbb1 100644
 +    flow_update_context(vo);
 +    flow_prepare_input(vo, frame, mpi, fp);
 @@ -1118,0 +1748,1 @@ static void unmap_frame(pl_gpu gpu, struct pl_frame *frame,
-+    flow_release_frame(fp->vo, fp);
++    flow_release_frame(fp->vo, fp, false);
 @@ -1135,0 +1766,2 @@ static void discard_frame(const struct pl_source_frame *src)
 +    struct frame_priv *fp = mpi->priv;
-+    flow_release_frame(fp->vo, fp);
++    flow_release_frame(fp->vo, fp, true);
 @@ -1341,0 +1977,504 @@ static void update_hook_opts_dynamic(struct priv *p, const struct pl_hook *hook,
 +static void flow_capture_terminal(struct priv *p, const char *base_dir,
 +                                  const char *session_id, const char *backend,

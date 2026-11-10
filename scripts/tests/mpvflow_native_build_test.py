@@ -51,6 +51,21 @@ DECODER_SCREEN = ROOT / "app/src/main/java/app/infinity/mpvz/ui/preferences/Deco
 STRING_RESOURCES = ROOT / "app/src/main/res/values/strings.xml"
 
 sys.dont_write_bytecode = True
+vo_patch = VO_PATCH.read_text(encoding="utf-8")
+assert "flow_release_frame(fp->vo, fp, false);" in vo_patch, (
+    "MPVFlow must retain prepared source textures and the active motion pair across temporary unmap"
+)
+assert "flow_release_frame(fp->vo, fp, true);" in vo_patch, (
+    "MPVFlow must still release prepared source textures and the active motion pair when a source frame is discarded"
+)
+release_frame = vo_patch.split("+static void flow_release_frame(", 1)[1].split("\n+}", 1)[0]
+assert "if (discard) flow_release_pair_for_frame(p, fp->frame_id);" in release_frame
+assert "if (discard && fp->flow_source)" in release_frame and "if (discard && fp->flow_input)" in release_frame, (
+    "temporary unmap must not destroy the prepared GPU source textures"
+)
+assert "flow_prepare_input(vo, frame, mpi, fp);" in vo_patch, (
+    "MPVFlow remapping must reuse the prepared frame cache through the existing renderer path"
+)
 runtime_builder = BUILD.read_text(encoding="utf-8")
 for marker in (
     "dep_mpv=(ffmpeg libass lua libplacebo libbluray)",
