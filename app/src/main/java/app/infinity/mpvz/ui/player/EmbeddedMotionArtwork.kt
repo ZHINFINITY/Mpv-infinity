@@ -20,9 +20,10 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import java.io.File
 import java.nio.ByteBuffer
 
-/** Strictly local embedded motion art; static bitmap callers remain the fallback. */
+/** Bounded motion art from the selected source; static bitmap callers remain the fallback. */
 internal object EmbeddedMotionArtwork {
   const val MaxEncodedBytes = 8 * 1024 * 1024
   const val MaxDecodedEdge = 1024
@@ -36,6 +37,41 @@ internal object EmbeddedMotionArtwork {
     val webp = bytes.asciiAt(0, "RIFF") && bytes.asciiAt(8, "WEBP") &&
       bytes.asciiAt(12, "VP8X") && (bytes[20].toInt() and 0x02) != 0
     return gif || webp
+  }
+
+  /** Follow the source that won static artwork resolution; do not animate a lower-priority cover. */
+  internal fun selectedEncodedBytes(
+    explicitArtworkSelected: Boolean,
+    explicitArtworkBytes: ByteArray?,
+    embeddedPictureBytes: ByteArray?,
+    sidecarPath: String?,
+  ): ByteArray? {
+    val selectedBytes =
+      if (explicitArtworkSelected) {
+        explicitArtworkBytes
+      } else {
+        embeddedPictureBytes ?: readSidecarBytes(sidecarPath)
+      }
+    return selectedBytes?.takeIf(::hasSupportedAnimationSignature)
+  }
+
+  fun selectedAnimatedBytes(
+    explicitArtworkSelected: Boolean,
+    explicitArtworkBytes: ByteArray?,
+    embeddedPictureBytes: ByteArray?,
+    sidecarPath: String?,
+  ): ByteArray? =
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+      selectedEncodedBytes(explicitArtworkSelected, explicitArtworkBytes, embeddedPictureBytes, sidecarPath)
+    } else {
+      null
+    }
+
+  private fun readSidecarBytes(path: String?): ByteArray? {
+    if (path.isNullOrBlank()) return null
+    val file = File(path)
+    if (!file.isFile || file.length() !in 1..MaxEncodedBytes.toLong()) return null
+    return runCatching { file.readBytes() }.getOrNull()?.let(::animatedBytes)
   }
 
   private fun ByteArray.asciiAt(offset: Int, value: String): Boolean =

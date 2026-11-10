@@ -181,6 +181,7 @@ import kotlin.math.roundToInt
 import app.infinity.mpvz.R
 import app.infinity.mpvz.domain.thumbnail.EmbeddedArtworkResolver
 import app.infinity.mpvz.presentation.components.RemoteImage
+import app.infinity.mpvz.presentation.components.RemoteImageLoader
 import app.infinity.mpvz.preferences.AppearancePreferences
 import app.infinity.mpvz.preferences.AudioPreferences
 import app.infinity.mpvz.preferences.AudioVisualizerStyle
@@ -219,6 +220,7 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import okhttp3.OkHttpClient
 import org.koin.compose.koinInject
 import java.util.Locale
 import java.util.concurrent.atomic.AtomicBoolean
@@ -272,6 +274,7 @@ private object AudioPresentationMetadataCache {
 
   suspend fun resolve(
     context: android.content.Context,
+    httpClient: OkHttpClient,
     pathOrUri: String,
     artworkUri: String?,
   ): AudioPresentationMetadata =
@@ -291,7 +294,12 @@ private object AudioPresentationMetadataCache {
             }
             else -> pathOrUri
           }
-        val explicitArtwork = EmbeddedArtworkResolver.decodeArtworkUri(context, artworkUri)
+        val explicitArtworkBytes = artworkUri?.let {
+          RemoteImageLoader.loadEncodedBytes(context, httpClient, it, EmbeddedMotionArtwork.MaxEncodedBytes)
+        }
+        val explicitArtwork = explicitArtworkBytes?.let(EmbeddedArtworkResolver::decodeArtworkBytes)
+          ?: EmbeddedArtworkResolver.decodeArtworkUri(context, artworkUri)
+        val explicitArtworkSelected = explicitArtwork != null || EmbeddedMotionArtwork.animatedBytes(explicitArtworkBytes) != null
         val isNetworkStream = pathOrUri.startsWith("http://", ignoreCase = true) || pathOrUri.startsWith("https://", ignoreCase = true)
         val retriever = if (!isNetworkStream) MediaMetadataRetriever() else null
         val loaded =
@@ -314,21 +322,38 @@ private object AudioPresentationMetadataCache {
             }
 
             val pictureBytes = retriever?.embeddedPicture
+            val embeddedArtwork = retriever?.let {
+              EmbeddedArtworkResolver.resolveEmbeddedArtwork(cleanPath ?: pathOrUri, it, pictureBytes)
+            }
             AudioPresentationMetadata(
-              artwork = explicitArtwork ?: retriever?.let { EmbeddedArtworkResolver.decodeEmbeddedArtwork(cleanPath ?: pathOrUri, it, pictureBytes) },
+              artwork = explicitArtwork ?: embeddedArtwork?.bitmap,
               artist = retriever?.let {
                 it.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ARTIST)
                   ?: it.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ALBUMARTIST)
                   ?: it.extractMetadata(MediaMetadataRetriever.METADATA_KEY_AUTHOR)
                   ?: it.extractMetadata(MediaMetadataRetriever.METADATA_KEY_COMPOSER)
               },
-              motionArtwork = EmbeddedMotionArtwork.animatedBytes(pictureBytes),
+              motionArtwork = EmbeddedMotionArtwork.selectedAnimatedBytes(
+                explicitArtworkSelected = explicitArtworkSelected,
+                explicitArtworkBytes = explicitArtworkBytes,
+                embeddedPictureBytes = embeddedArtwork?.embeddedPictureBytes,
+                sidecarPath = embeddedArtwork?.sidecarPath,
+              ),
             )
           } catch (_: Exception) {
             val fallbackArtwork = explicitArtwork ?: if (cleanPath != null && !isNetworkStream) {
               EmbeddedArtworkResolver.decodeSidecar(cleanPath)
             } else null
-            AudioPresentationMetadata(artwork = fallbackArtwork, artist = null)
+            AudioPresentationMetadata(
+              artwork = fallbackArtwork,
+              artist = null,
+              motionArtwork = EmbeddedMotionArtwork.selectedAnimatedBytes(
+                explicitArtworkSelected = explicitArtworkSelected,
+                explicitArtworkBytes = explicitArtworkBytes,
+                embeddedPictureBytes = null,
+                sidecarPath = null,
+              ),
+            )
           } finally {
             runCatching { retriever?.release() }
           }
@@ -345,6 +370,7 @@ private fun rememberAudioPresentationMetadata(
   artworkUri: String? = null,
 ): AudioPresentationMetadata? {
   val context = LocalContext.current
+  val httpClient = koinInject<OkHttpClient>()
   var metadata by remember(pathOrUri, artworkUri) {
     mutableStateOf(AudioPresentationMetadataCache.peek(pathOrUri, artworkUri))
   }
@@ -353,7 +379,7 @@ private fun rememberAudioPresentationMetadata(
       if (pathOrUri.isNullOrBlank()) {
         null
       } else {
-        AudioPresentationMetadataCache.resolve(context, pathOrUri, artworkUri)
+        AudioPresentationMetadataCache.resolve(context, httpClient, pathOrUri, artworkUri)
       }
   }
   return metadata

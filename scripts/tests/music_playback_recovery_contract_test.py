@@ -55,12 +55,13 @@ class MusicEngineSelectionTest(unittest.TestCase):
 class BackgroundStartTest(unittest.TestCase):
     def test_ready_mpv_session_allows_background_start(self):
         body = function_body(ACTIVITY, "private fun startBackgroundPlaybackInternal(")
-        self.assertIn("val mpvSessionReady =", body)
-        ready = body.split("val mpvSessionReady =", 1)[1].split("if (", 1)[0]
+        readiness = function_body(ACTIVITY, "private fun hasReadyBackgroundPlaybackSession(")
+        self.assertIn("val mpvSessionReady =", readiness)
+        ready = readiness.split("val mpvSessionReady =", 1)[1].split("return", 1)[0]
         self.assertIn("!isNativeEngineActive()", ready)
         self.assertIn("PlaybackPhase.READY", ready)
         self.assertIn("PlaybackPhase.BACKGROUND", ready)
-        self.assertIn("!isReady && !mpvSessionReady &&", body)
+        self.assertIn("!hasReadyBackgroundPlaybackSession()", body)
 
 
 class MinimizeAbortTest(unittest.TestCase):

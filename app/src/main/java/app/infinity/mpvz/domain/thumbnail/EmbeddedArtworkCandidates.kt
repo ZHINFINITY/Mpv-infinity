@@ -16,7 +16,7 @@ import android.os.Build
 import java.io.File
 
 object EmbeddedArtworkCandidates {
-  private val artworkExtensions = listOf("jpg", "jpeg", "png", "webp")
+  private val artworkExtensions = listOf("jpg", "jpeg", "png", "webp", "gif")
   private val genericArtworkNames = listOf("cover", "folder", "poster", "thumbnail")
 
   fun forVideoPath(path: String): List<String> {
@@ -60,6 +60,12 @@ object EmbeddedArtworkCandidates {
 internal object EmbeddedArtworkResolver {
   private const val ArtworkMaxEdge = 1024
 
+  internal data class ResolvedArtwork(
+    val bitmap: Bitmap?,
+    val embeddedPictureBytes: ByteArray? = null,
+    val sidecarPath: String? = null,
+  )
+
   private fun decodeBytesSampled(bytes: ByteArray): Bitmap? {
     val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
     BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
@@ -101,6 +107,9 @@ internal object EmbeddedArtworkResolver {
   private fun decodeStreamSampled(input: java.io.InputStream): Bitmap? =
     ThumbnailDecodePolicy.readEncodedImage(input)?.let(::decodeBytesSampled)
 
+  fun decodeArtworkBytes(bytes: ByteArray?): Bitmap? =
+    bytes?.takeIf { it.isNotEmpty() }?.let(::decodeBytesSampled)
+
   fun decodeArtworkUri(
     context: Context,
     artworkUri: String?,
@@ -136,12 +145,34 @@ internal object EmbeddedArtworkResolver {
     videoPath: String?,
     retriever: MediaMetadataRetriever,
     embeddedPicture: ByteArray? = null,
-  ): Bitmap? =
-    decodeRetrieverArtwork(retriever, embeddedPicture)
-      ?: MatroskaEmbeddedArtworkExtractor.decode(videoPath)
-      ?: decodeSidecar(videoPath)
+  ): Bitmap? = resolveEmbeddedArtwork(videoPath, retriever, embeddedPicture).bitmap
+
+  fun resolveEmbeddedArtwork(
+    videoPath: String?,
+    retriever: MediaMetadataRetriever,
+    embeddedPicture: ByteArray? = null,
+  ): ResolvedArtwork {
+    val pictureBytes = embeddedPicture ?: retriever.embeddedPicture
+    pictureBytes
+      ?.takeIf { it.isNotEmpty() }
+      ?.let(::decodeBytesSampled)
+      ?.let { return ResolvedArtwork(bitmap = it, embeddedPictureBytes = pictureBytes) }
+
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+      runCatching { retriever.getPrimaryImage() }
+        .getOrNull()
+        ?.let { return ResolvedArtwork(bitmap = it) }
+    }
+
+    MatroskaEmbeddedArtworkExtractor.decode(videoPath)?.let { return ResolvedArtwork(bitmap = it) }
+    val sidecar = decodeSidecarWithPath(videoPath)
+    return ResolvedArtwork(bitmap = sidecar?.first, sidecarPath = sidecar?.second)
+  }
 
   fun decodeSidecar(videoPath: String?): Bitmap? =
+    decodeSidecarWithPath(videoPath)?.first
+
+  private fun decodeSidecarWithPath(videoPath: String?): Pair<Bitmap, String>? =
     videoPath
       ?.let(EmbeddedArtworkCandidates::forVideoPath)
       ?.asSequence()
@@ -149,7 +180,7 @@ internal object EmbeddedArtworkResolver {
       ?.firstNotNullOfOrNull { candidate ->
         candidate
           .takeIf { it.isFile && it.canRead() }
-          ?.let { decodeFileSampled(it.path) }
+          ?.let { file -> decodeFileSampled(file.path)?.let { bitmap -> bitmap to file.path } }
       }
 
   fun decodeRetrieverArtwork(

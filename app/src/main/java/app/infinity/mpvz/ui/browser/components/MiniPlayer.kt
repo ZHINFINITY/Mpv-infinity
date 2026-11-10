@@ -16,6 +16,7 @@ import app.infinity.mpvz.ui.player.AudioPlaybackResumeSnapshot
 import app.infinity.mpvz.ui.player.EmbeddedMotionArtwork
 import app.infinity.mpvz.ui.player.MotionArtworkImage
 import app.infinity.mpvz.ui.player.rememberMotionArtworkDrawable
+import app.infinity.mpvz.presentation.components.RemoteImageLoader
 import android.app.Activity
 import android.content.Context
 import android.content.Intent
@@ -137,6 +138,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import org.koin.compose.koinInject
+import okhttp3.OkHttpClient
 import kotlin.math.abs
 import kotlin.math.roundToInt
 import app.infinity.mpvz.ui.player.browserMusicSheetDrag
@@ -962,7 +964,7 @@ private fun MiniPlayerGlassButton(
   }
 }
 
-/** Local static-cover fallback plus optional bounded embedded GIF/WebP bytes for the active track. */
+/** Resolved static-cover fallback plus optional bounded GIF/WebP bytes for the active track. */
 private data class MiniPlayerArtwork(
   val bitmap: Bitmap?,
   val motionArtwork: ByteArray?,
@@ -974,6 +976,7 @@ private fun rememberMiniPlayerCoverArt(
   artworkUri: String?,
 ): MiniPlayerArtwork? {
   val context = LocalContext.current
+  val httpClient = koinInject<OkHttpClient>()
   var artwork by remember { mutableStateOf<MiniPlayerArtwork?>(null) }
   LaunchedEffect(pathOrUri, artworkUri) {
     if (pathOrUri.isNullOrBlank()) {
@@ -983,7 +986,12 @@ private fun rememberMiniPlayerCoverArt(
     artwork = null
     withContext(Dispatchers.IO) {
       val loaded = runCatching {
-        val explicitArtwork = EmbeddedArtworkResolver.decodeArtworkUri(context, artworkUri)
+        val explicitArtworkBytes = artworkUri?.let {
+          RemoteImageLoader.loadEncodedBytes(context, httpClient, it, EmbeddedMotionArtwork.MaxEncodedBytes)
+        }
+        val explicitArtwork = explicitArtworkBytes?.let(EmbeddedArtworkResolver::decodeArtworkBytes)
+          ?: EmbeddedArtworkResolver.decodeArtworkUri(context, artworkUri)
+        val explicitArtworkSelected = explicitArtwork != null || EmbeddedMotionArtwork.animatedBytes(explicitArtworkBytes) != null
         val cleanPath =
           when {
             pathOrUri.startsWith("file://", ignoreCase = true) -> Uri.parse(pathOrUri).path
@@ -1000,9 +1008,15 @@ private fun rememberMiniPlayerCoverArt(
                 retriever.setDataSource(context, Uri.parse(pathOrUri))
               }
               val pictureBytes = retriever.embeddedPicture
+              val resolvedArtwork = EmbeddedArtworkResolver.resolveEmbeddedArtwork(cleanPath, retriever, pictureBytes)
               MiniPlayerArtwork(
-                bitmap = EmbeddedArtworkResolver.decodeEmbeddedArtwork(cleanPath, retriever, pictureBytes),
-                motionArtwork = EmbeddedMotionArtwork.animatedBytes(pictureBytes),
+                bitmap = resolvedArtwork.bitmap,
+                motionArtwork = EmbeddedMotionArtwork.selectedAnimatedBytes(
+                  explicitArtworkSelected = false,
+                  explicitArtworkBytes = null,
+                  embeddedPictureBytes = resolvedArtwork.embeddedPictureBytes,
+                  sidecarPath = resolvedArtwork.sidecarPath,
+                ),
               )
             } finally {
               runCatching { retriever.release() }
@@ -1011,7 +1025,16 @@ private fun rememberMiniPlayerCoverArt(
             .getOrNull()
         MiniPlayerArtwork(
           bitmap = explicitArtwork ?: embeddedArtwork?.bitmap,
-          motionArtwork = embeddedArtwork?.motionArtwork,
+          motionArtwork = if (explicitArtworkSelected) {
+            EmbeddedMotionArtwork.selectedAnimatedBytes(
+              explicitArtworkSelected = true,
+              explicitArtworkBytes = explicitArtworkBytes,
+              embeddedPictureBytes = null,
+              sidecarPath = null,
+            )
+          } else {
+            embeddedArtwork?.motionArtwork
+          },
         )
       }.getOrNull()
       artwork = loaded

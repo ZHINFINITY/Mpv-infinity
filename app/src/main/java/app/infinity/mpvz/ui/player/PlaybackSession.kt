@@ -2068,19 +2068,20 @@ object PlaybackSession : MPVLib.EventObserver {
         ownedFd = refreshedUri.takeIf { it.startsWith("fd://") }?.removePrefix("fd://")?.toIntOrNull())
     }
 
-    // Resolve a local path for native integrations that cannot consume content:// directly.
-    // Native Media3 uses resolvePlayableUriForNative above and deliberately retains content://.
+    // Resolve provider URIs off the Activity thread. A provider may expose a descriptor without a
+    // directly readable filesystem path; openContentFd returns a fresh fd:// in that case, which
+    // MPV consumes for this load while the queue retains its durable original content URI.
     val context = applicationContext
     if (context != null) {
-      val localPath = sequenceOf(item.playableUri, item.originalUri)
-        .mapNotNull { candidate ->
-          if (!candidate.startsWith("content://")) return@mapNotNull null
-          Uri.parse(candidate).resolveLocalPath(context)
+      val resolvedContentUri = sequenceOf(item.playableUri, item.originalUri)
+        .filter { candidate -> candidate.startsWith("content://") }
+        .firstNotNullOfOrNull { candidate ->
+          Uri.parse(NetworkPlaybackUri.normalize(candidate)).openContentFd(context)
         }
-        .firstOrNull()
-      if (localPath != null) {
-        Log.d(TAG, "Using direct local path for Native Media3: $localPath")
-        return ResolvedPlayable(localPath)
+      if (resolvedContentUri != null) {
+        val ownedFd = resolvedContentUri.takeIf { it.startsWith("fd://") }
+          ?.removePrefix("fd://")?.toIntOrNull()
+        return ResolvedPlayable(resolvedContentUri, ownedFd = ownedFd)
       }
     }
     if (item.playableUri.startsWith("content://")) return ResolvedPlayable(item.playableUri)
