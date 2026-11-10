@@ -23,6 +23,7 @@ extern "C" {
 
 typedef struct MPVFlowGPUContext MPVFlowGPUContext;
 typedef struct MPVFlowGPUPair MPVFlowGPUPair;
+struct pl_hook;
 
 #define MPVFLOW_GPU_MOTION_FINE_BLOCK_SIZE 4
 #define MPVFLOW_GPU_MOTION_BLOCK_SIZE 8
@@ -213,6 +214,21 @@ MPVFLOW_INTERNAL enum MPVFlowGPUResult mpvflow_gpu_synthesize_with_policy_to_tex
     pl_tex source0, pl_tex source1, float t,
     bool enable_visibility_resolver, bool enable_soft_blend,
     bool preserve_motion_blend_on_conflict, pl_tex output_target, pl_tex *output);
+
+/* Optional MPV renderer-fused path for the default hard-warp policy. The hook
+ * borrows the pair and source textures until end(); callers must retain them
+ * through pl_render_image(). Unsupported policies/backends use synthesis above. */
+MPVFLOW_INTERNAL bool mpvflow_gpu_renderer_hook_supported(
+    MPVFlowGPUContext *context, MPVFlowGPUPair *pair,
+    pl_tex source0, pl_tex source1);
+MPVFLOW_INTERNAL const struct pl_hook *mpvflow_gpu_renderer_hook_begin(
+    MPVFlowGPUContext *context, MPVFlowGPUPair *pair,
+    pl_tex source0, pl_tex source1, float t, int flags,
+    bool linear_hdr_source);
+MPVFLOW_INTERNAL bool mpvflow_gpu_renderer_hook_applied(
+    MPVFlowGPUContext *context);
+MPVFLOW_INTERNAL void mpvflow_gpu_renderer_hook_end(
+    MPVFlowGPUContext *context);
 
 /* Explicit, bounded diagnostic capture. Capture is inactive until start; the
  * selected Vulkan path performs synchronous capture-only readbacks into

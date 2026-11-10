@@ -8,12 +8,12 @@ index bd3d1aa..75ffbb1 100644
 +#include <stdio.h>
 +#include <string.h>
 +#include <libplacebo/vulkan.h>
-@@ -52,0 +56,4 @@
+@@ -52,0 +58,4 @@
 +#include "mpvflow_gpu.h"
 +#include "mpvflow_capture_io.h"
 +#include "mpvflow_rate_limit.h"
 +#include "mpvflow_synthesis_scale.h"
-@@ -157,0 +163,77 @@ struct priv {
+@@ -157,0 +167,79 @@ struct priv {
 +    // MPVFLOW_GPU_INTEGRATION
 +    MPVFlowGPUContext *flow_gpu;
 +    MPVFlowGPUPair *flow_pair;
@@ -41,6 +41,8 @@ index bd3d1aa..75ffbb1 100644
 +    uint64_t flow_pending_rate_limiter_timestamp_ns;
 +    struct mpvflow_rate_limiter flow_rate_limiter;
 +    pl_tex flow_cached_synthesis;
++    bool flow_cached_synthesis_hook;
++    bool flow_renderer_fusion_disabled;
 +    struct mpvflow_synthesis_identity flow_cached_synthesis_identity;
 +    struct pl_color_space flow_cached_synthesis_color;
 +    float flow_cached_synthesis_par;
@@ -91,9 +93,9 @@ index bd3d1aa..75ffbb1 100644
 +    bool flow_capture_paired;
 +    int64_t flow_capture_poll_ns;
 +
-@@ -184,0 +257,1 @@ static void update_lut(struct priv *p, struct user_lut *lut);
+@@ -184,0 +273,1 @@ static void update_lut(struct priv *p, struct user_lut *lut);
 +static void flow_update_context(struct vo *vo);
-@@ -186,0 +260,9 @@ struct gl_next_opts {
+@@ -186,0 +276,9 @@ struct gl_next_opts {
 +    bool mpvflow;
 +    bool mpvflow_visibility_resolver;
 +    bool mpvflow_soft_blend;
@@ -103,7 +105,7 @@ index bd3d1aa..75ffbb1 100644
 +    int mpvflow_quality;
 +    int mpvflow_compute_api;
 +    char *mpvflow_diagnostic_control_file;
-@@ -213,0 +294,9 @@ const struct m_sub_options gl_next_conf = {
+@@ -213,0 +312,9 @@ const struct m_sub_options gl_next_conf = {
 +        {"mpvflow", OPT_BOOL(mpvflow)},
 +        {"mpvflow-visibility-resolver", OPT_BOOL(mpvflow_visibility_resolver)},
 +        {"mpvflow-soft-blend", OPT_BOOL(mpvflow_soft_blend)},
@@ -113,7 +115,7 @@ index bd3d1aa..75ffbb1 100644
 +        {"mpvflow-quality", OPT_INT(mpvflow_quality), M_RANGE(0, 100)},
 +        {"mpvflow-compute-api", OPT_INT(mpvflow_compute_api), M_RANGE(0, 2)},
 +        {"mpvflow-diagnostic-control-file", OPT_STRING(mpvflow_diagnostic_control_file)},
-@@ -239,0 +327,8 @@ const struct m_sub_options gl_next_conf = {
+@@ -239,0 +347,8 @@ const struct m_sub_options gl_next_conf = {
 +        .mpvflow_max_dimension = 640,
 +        .mpvflow_synthesis_max_dimension = 1920,
 +        .mpvflow_target_fps = 60,
@@ -122,7 +124,7 @@ index bd3d1aa..75ffbb1 100644
 +        .mpvflow_visibility_resolver = false,
 +        .mpvflow_soft_blend = false,
 +        .mpvflow_diagnostic_control_file = NULL,
-@@ -560,0 +651,11 @@ struct frame_priv {
+@@ -560,0 +676,11 @@ struct frame_priv {
 +    uint64_t frame_id;
 +    pl_tex flow_source;
 +    pl_tex flow_input;
@@ -134,7 +136,7 @@ index bd3d1aa..75ffbb1 100644
 +    int flow_w, flow_h;
 +    int flow_source_w, flow_source_h;
 +    double pts;
-@@ -569,0 +665,560 @@ struct frame_priv {
+@@ -569,0 +696,563 @@ struct frame_priv {
 +static void flow_release_pair(struct priv *p)
 +{
 +    if (p->flow_pair)
@@ -144,6 +146,7 @@ index bd3d1aa..75ffbb1 100644
 +    p->flow_pair_ids[1] = 0;
 +    /* The output texture is pair-owned and may be destroyed on release. */
 +    p->flow_cached_synthesis = NULL;
++    p->flow_cached_synthesis_hook = false;
 +    p->flow_cached_synthesis_identity.valid = false;
 +}
 +
@@ -176,6 +179,7 @@ index bd3d1aa..75ffbb1 100644
 +        flow_release_pair(p);
 +        mpvflow_gpu_destroy(p->flow_gpu);
 +        p->flow_gpu = NULL;
++        p->flow_renderer_fusion_disabled = false;
 +        p->flow_input_fmt = NULL;
 +        p->flow_rgba16f_fmt = NULL;
 +        p->flow_max_dimension = 0;
@@ -239,6 +243,7 @@ index bd3d1aa..75ffbb1 100644
 +        flow_release_pair(p);
 +        mpvflow_gpu_destroy(p->flow_gpu);
 +        p->flow_gpu = NULL;
++        p->flow_renderer_fusion_disabled = false;
 +        p->flow_input_fmt = NULL;
 +        p->flow_rgba16f_fmt = NULL;
 +        p->flow_max_dimension = effective_dimension;
@@ -695,16 +700,16 @@ index bd3d1aa..75ffbb1 100644
 +    if (discard) fp->flow_synthesis_w = fp->flow_synthesis_h = 0;
 +}
 +
-@@ -1109,0 +1737,3 @@ static bool map_frame(pl_gpu gpu, pl_tex *tex, const struct pl_source_frame *src,
+@@ -1109,0 +1799,3 @@ static bool map_frame(pl_gpu gpu, pl_tex *tex, const struct pl_source_frame *src,
 +    fp->pts = src->pts;
 +    flow_update_context(vo);
 +    flow_prepare_input(vo, frame, mpi, fp);
-@@ -1118,0 +1748,1 @@ static void unmap_frame(pl_gpu gpu, struct pl_frame *frame,
+@@ -1118,0 +1811,1 @@ static void unmap_frame(pl_gpu gpu, struct pl_frame *frame,
 +    flow_release_frame(fp->vo, fp, false);
-@@ -1135,0 +1766,2 @@ static void discard_frame(const struct pl_source_frame *src)
+@@ -1135,0 +1829,2 @@ static void discard_frame(const struct pl_source_frame *src)
 +    struct frame_priv *fp = mpi->priv;
 +    flow_release_frame(fp->vo, fp, true);
-@@ -1341,0 +1977,504 @@ static void update_hook_opts_dynamic(struct priv *p, const struct pl_hook *hook,
+@@ -1341,0 +2037,654 @@ static void update_hook_opts_dynamic(struct priv *p, const struct pl_hook *hook,
 +static void flow_capture_terminal(struct priv *p, const char *base_dir,
 +                                  const char *session_id, const char *backend,
 +                                  const char *reason)
@@ -859,7 +864,14 @@ index bd3d1aa..75ffbb1 100644
 +struct flow_prepared_frame {
 +    int nearest;
 +    int before;
++    int after;
 +    pl_tex output;
++    MPVFlowGPUPair *pair;
++    float timestep;
++    double output_pts;
++    int64_t source_pts0_ns, source_pts1_ns, output_pts_ns;
++    bool temporal_identity_valid;
++    bool renderer_fusion;
 +    const char *bypass_reason;
 +    int bypass_status;
 +    bool prepared;
@@ -946,7 +958,7 @@ index bd3d1aa..75ffbb1 100644
 +        if (!allow_synthesis) {
 +            const bool cached_identity = temporal_identity_valid && metadata_compatible &&
 +                p->flow_pair &&
-+                p->flow_cached_synthesis &&
++                (p->flow_cached_synthesis || p->flow_cached_synthesis_hook) &&
 +                mpvflow_synthesis_identity_matches(
 +                    &p->flow_cached_synthesis_identity,
 +                    fp0->frame_id, fp1->frame_id,
@@ -961,7 +973,18 @@ index bd3d1aa..75ffbb1 100644
 +                 * temporal sample with the nearest source endpoint. Hold for
 +                 * less than one target interval, never across source pairs. */
 +                prepared->before = before;
++                prepared->after = after;
 +                prepared->output = p->flow_cached_synthesis;
++                if (p->flow_cached_synthesis_hook && !p->flow_renderer_fusion_disabled) {
++                    prepared->pair = p->flow_pair;
++                    prepared->timestep = t;
++                    prepared->output_pts = output_pts;
++                    prepared->source_pts0_ns = source_pts0_ns;
++                    prepared->source_pts1_ns = source_pts1_ns;
++                    prepared->output_pts_ns = output_pts_ns;
++                    prepared->temporal_identity_valid = temporal_identity_valid;
++                    prepared->renderer_fusion = true;
++                }
 +                prepared->bypass_reason = "synthesis_rate_limited_cached";
 +            } else {
 +                prepared->bypass_reason = "synthesis_rate_limited";
@@ -1031,6 +1054,27 @@ index bd3d1aa..75ffbb1 100644
 +
 +            if (p->flow_pair) {
 +                (void) flow_capture_start_for_pair(vo, image0, image1, fp0, fp1);
++                const bool renderer_fusion_eligible = temporal_identity_valid &&
++                    !p->flow_renderer_fusion_disabled &&
++                    !p->next_opts->mpvflow_soft_blend &&
++                    !p->next_opts->mpvflow_visibility_resolver &&
++                    !mpvflow_gpu_capture_active(p->flow_gpu) &&
++                    mpvflow_gpu_renderer_hook_supported(p->flow_gpu, p->flow_pair,
++                        fp0->flow_source, fp1->flow_source);
++                if (renderer_fusion_eligible) {
++                    prepared->before = before;
++                    prepared->after = after;
++                    prepared->pair = p->flow_pair;
++                    prepared->timestep = t;
++                    prepared->output_pts = output_pts;
++                    prepared->source_pts0_ns = source_pts0_ns;
++                    prepared->source_pts1_ns = source_pts1_ns;
++                    prepared->output_pts_ns = output_pts_ns;
++                    prepared->temporal_identity_valid = temporal_identity_valid;
++                    prepared->renderer_fusion = true;
++                    prepared->bypass_reason = "renderer_fusion_pending";
++                    return;
++                }
 +                pl_tex output = NULL;
 +                stats_time_start(p->stats, "mpvflow-synthesis");
 +                enum MPVFlowGPUResult status;
@@ -1066,6 +1110,7 @@ index bd3d1aa..75ffbb1 100644
 +                    prepared->before = before;
 +                    prepared->output = output;
 +                    p->flow_cached_synthesis = output;
++                    p->flow_cached_synthesis_hook = false;
 +                    p->flow_cached_synthesis_identity = (struct mpvflow_synthesis_identity) {
 +                        .pair_before = fp0->frame_id,
 +                        .pair_after = fp1->frame_id,
@@ -1085,6 +1130,47 @@ index bd3d1aa..75ffbb1 100644
 +            }
 +        }
 +    }
++}
++
++static bool flow_compute_fusion_fallback(struct vo *vo,
++                                         struct flow_prepared_frame *prepared,
++                                         struct pl_frame *image0,
++                                         struct frame_priv *fp0,
++                                         struct frame_priv *fp1)
++{
++    struct priv *p = vo->priv;
++    pl_tex output = NULL;
++    stats_time_start(p->stats, "mpvflow-synthesis");
++    enum MPVFlowGPUResult status = mpvflow_gpu_synthesize_with_policy(
++        p->flow_gpu, prepared->pair, fp0->flow_source, fp1->flow_source,
++        prepared->timestep, false, false, false, &output);
++    stats_time_end(p->stats, "mpvflow-synthesis");
++    if (status != MPVFLOW_GPU_OK || !output) {
++        prepared->bypass_reason = output ? "renderer_fusion_fallback_failed"
++                                         : "renderer_fusion_fallback_output_missing";
++        prepared->bypass_status = status;
++        flow_release_pair(p);
++        return false;
++    }
++
++    prepared->renderer_fusion = false;
++    prepared->output = output;
++    prepared->bypass_reason = "renderer_fusion_compute_fallback";
++    p->flow_cached_synthesis = output;
++    p->flow_cached_synthesis_hook = false;
++    p->flow_cached_synthesis_identity = (struct mpvflow_synthesis_identity) {
++        .pair_before = fp0->frame_id,
++        .pair_after = fp1->frame_id,
++        .source_pts_before_ns = prepared->source_pts0_ns,
++        .source_pts_after_ns = prepared->source_pts1_ns,
++        .output_pts_ns = prepared->output_pts_ns,
++        .valid = prepared->temporal_identity_valid,
++    };
++    p->flow_cached_synthesis_color = image0->color;
++    p->flow_cached_synthesis_par = image0->pixel_aspect_ratio > 0
++        ? image0->pixel_aspect_ratio : 1.0f;
++    p->flow_cached_synthesis_policy = 0;
++    return true;
 +}
 +
 +static bool flow_render_source_frame(struct vo *vo, const struct pl_frame *source,
@@ -1131,7 +1217,7 @@ index bd3d1aa..75ffbb1 100644
 +static bool flow_render_frame(struct vo *vo, const struct pl_frame_mix *mix,
 +                              struct pl_frame *target,
 +                              const struct pl_render_params *params,
-+                              const struct flow_prepared_frame *prepared,
++                              struct flow_prepared_frame *prepared,
 +                              bool *synthesized)
 +{
 +    struct priv *p = vo->priv;
@@ -1140,6 +1226,75 @@ index bd3d1aa..75ffbb1 100644
 +        flow_update_context(vo);
 +    const char *bypass_reason = prepared->bypass_reason ? prepared->bypass_reason : "no_temporal_pair";
 +    int bypass_status = prepared->bypass_status;
++
++    if (prepared->renderer_fusion && prepared->pair &&
++        prepared->before >= 0 && prepared->before < mix->num_frames &&
++        prepared->after >= 0 && prepared->after < mix->num_frames) {
++        struct pl_frame *image0 = (struct pl_frame *) mix->frames[prepared->before];
++        struct pl_frame *image1 = (struct pl_frame *) mix->frames[prepared->after];
++        struct mp_image *mpi0 = image0->user_data;
++        struct mp_image *mpi1 = image1->user_data;
++        struct frame_priv *fp0 = mpi0 ? mpi0->priv : NULL;
++        struct frame_priv *fp1 = mpi1 ? mpi1->priv : NULL;
++        bool hook_attempted = false;
++        if (fp0 && fp1 && params->num_hooks == 0 && !p->flow_renderer_fusion_disabled) {
++            const struct pl_hook *hook = mpvflow_gpu_renderer_hook_begin(
++                p->flow_gpu, prepared->pair, fp0->flow_source, fp1->flow_source,
++                prepared->timestep, 0, fp0->flow_linear_hdr_source);
++            if (hook) {
++                hook_attempted = true;
++                struct pl_render_params hook_params = *params;
++                const struct pl_hook *hooks[] = { hook };
++                hook_params.hooks = hooks;
++                hook_params.num_hooks = 1;
++                stats_time_start(p->stats, "mpvflow-render-fused");
++                bool rendered = pl_render_image(p->rr, image0, target, &hook_params);
++                bool applied = mpvflow_gpu_renderer_hook_applied(p->flow_gpu);
++                mpvflow_gpu_renderer_hook_end(p->flow_gpu);
++                stats_time_end(p->stats, "mpvflow-render-fused");
++                if (rendered && applied) {
++                    p->flow_cached_synthesis = NULL;
++                    p->flow_cached_synthesis_hook = true;
++                    p->flow_cached_synthesis_identity = (struct mpvflow_synthesis_identity) {
++                        .pair_before = fp0->frame_id,
++                        .pair_after = fp1->frame_id,
++                        .source_pts_before_ns = prepared->source_pts0_ns,
++                        .source_pts_after_ns = prepared->source_pts1_ns,
++                        .output_pts_ns = prepared->output_pts_ns,
++                        .valid = prepared->temporal_identity_valid,
++                    };
++                    p->flow_cached_synthesis_color = image0->color;
++                    p->flow_cached_synthesis_par = image0->pixel_aspect_ratio > 0
++                        ? image0->pixel_aspect_ratio : 1.0f;
++                    p->flow_cached_synthesis_policy = 0;
++                    if (!p->flow_active_logged) {
++                        MP_INFO(vo, "MPVFLOW_DIAGNOSTIC event=renderer_fusion state=applied "
++                                "render_path=libplacebo_rgb_hook target_fps=%d source=%dx%d "
++                                "motion_analysis=%dx%d temporal_identity=valid\n",
++                                p->next_opts->mpvflow_target_fps,
++                                fp0->flow_source_w, fp0->flow_source_h,
++                                fp0->flow_w, fp0->flow_h);
++                        p->flow_active_logged = true;
++                    }
++                    *synthesized = true;
++                    return true;
++                }
++            }
++        }
++
++        const bool rate_limited_cached = prepared->bypass_reason &&
++            !strcmp(prepared->bypass_reason, "synthesis_rate_limited_cached");
++        if (hook_attempted)
++            p->flow_renderer_fusion_disabled = true;
++        if (!rate_limited_cached && fp0 && fp1)
++            flow_compute_fusion_fallback(vo, prepared,
++                                         image0, fp0, fp1);
++        if (!prepared->output) {
++            bypass_reason = prepared->bypass_reason ? prepared->bypass_reason
++                                                    : "renderer_fusion_unavailable";
++            bypass_status = prepared->bypass_status;
++        }
++    }
 +
 +    if (prepared->output && prepared->before >= 0 && prepared->before < mix->num_frames) {
 +        struct pl_frame *image0 = (struct pl_frame *) mix->frames[prepared->before];
@@ -1209,7 +1364,7 @@ index bd3d1aa..75ffbb1 100644
 +    return ok;
 +}
 +
-@@ -1344,0 +2242,38 @@ static bool draw_frame(struct vo *vo, struct vo_frame *frame)
+@@ -1344,0 +2694,38 @@ static bool draw_frame(struct vo *vo, struct vo_frame *frame)
 +    p->flow_pending_synthesized = false;
 +    p->flow_pending_display_synced = false;
 +    p->flow_pending_source_batch = 0;
@@ -1248,15 +1403,15 @@ index bd3d1aa..75ffbb1 100644
 +        }
 +        p->flow_cadence_last_render_ns = flow_render_start_ns;
 +    }
-@@ -1354,1 +2287,2 @@ static bool draw_frame(struct vo *vo, struct vo_frame *frame)
+@@ -1354,1 +2741,2 @@ static bool draw_frame(struct vo *vo, struct vo_frame *frame)
 -                           !frame->still && frame->num_frames > 1 && !p->paused;
 +                           !frame->still &&
 +                           (frame->num_frames > 1 || p->next_opts->mpvflow) && !p->paused;
-@@ -1403,0 +2338,1 @@ static bool draw_frame(struct vo *vo, struct vo_frame *frame)
+@@ -1403,0 +2792,1 @@ static bool draw_frame(struct vo *vo, struct vo_frame *frame)
 +            flow_release_pair(p);
-@@ -1422,0 +2358,1 @@ static bool draw_frame(struct vo *vo, struct vo_frame *frame)
+@@ -1422,0 +2812,1 @@ static bool draw_frame(struct vo *vo, struct vo_frame *frame)
 +        fp->frame_id = id;
-@@ -1570,0 +2507,10 @@ static bool draw_frame(struct vo *vo, struct vo_frame *frame)
+@@ -1570,0 +2961,10 @@ static bool draw_frame(struct vo *vo, struct vo_frame *frame)
 +    struct pl_frame_mix mix = {0};
 +    struct pl_queue_params flow_qparams = {0};
 +    enum pl_queue_status flow_queue_status = PL_QUEUE_OK;
@@ -1267,7 +1422,7 @@ index bd3d1aa..75ffbb1 100644
 +        .bypass_reason = p->flow_gpu ? "no_temporal_pair" : "gpu_context_unavailable",
 +        .bypass_status = MPVFLOW_GPU_OK,
 +    };
-@@ -1572,1 +2518,116 @@ static bool draw_frame(struct vo *vo, struct vo_frame *frame)
+@@ -1572,1 +2972,116 @@ static bool draw_frame(struct vo *vo, struct vo_frame *frame)
 -    if (!should_draw || !pl_swapchain_start_frame(p->sw, &swframe)) {
 +    if (p->next_opts->mpvflow && gpu && should_draw && frame->current) {
 +        // Create and map the timestamped frame mix before a potentially blocking WSI acquire.
@@ -1385,7 +1540,7 @@ index bd3d1aa..75ffbb1 100644
 +        }
 +    }
 +    if (!should_draw || !swapchain_frame_started) {
-@@ -1574,8 +2635,14 @@ static bool draw_frame(struct vo *vo, struct vo_frame *frame)
+@@ -1574,8 +3089,14 @@ static bool draw_frame(struct vo *vo, struct vo_frame *frame)
 -            // Advance the queue state to the current PTS to discard unused frames
 -            struct pl_queue_params qparams = *pl_queue_params(
 -                .pts = frame->current->pts + pts_offset,
@@ -1408,16 +1563,16 @@ index bd3d1aa..75ffbb1 100644
 +                );
 +                pl_queue_update(p->queue, NULL, &qparams);
 +            }
-@@ -1654,2 +2721,3 @@ static bool draw_frame(struct vo *vo, struct vo_frame *frame)
+@@ -1654,2 +3175,3 @@ static bool draw_frame(struct vo *vo, struct vo_frame *frame)
 -    struct pl_frame_mix mix = {0};
 -    if (frame->current) {
 +    if (flow_queue_updated && flow_queue_status == PL_QUEUE_ERR)
 +        goto done;
 +    if (frame->current && !flow_queue_updated) {
-@@ -1693,0 +2762,2 @@ static bool draw_frame(struct vo *vo, struct vo_frame *frame)
+@@ -1693,0 +3216,2 @@ static bool draw_frame(struct vo *vo, struct vo_frame *frame)
 +    }
 +    if (frame->current) {
-@@ -1750,0 +2821,26 @@ static bool draw_frame(struct vo *vo, struct vo_frame *frame)
+@@ -1750,0 +3275,26 @@ static bool draw_frame(struct vo *vo, struct vo_frame *frame)
 +    if (p->next_opts->mpvflow) {
 +        const char *queue_state = p->paused ? "paused" :
 +            !frame->num_frames ? "redraw_without_source_batch" :
@@ -1444,13 +1599,13 @@ index bd3d1aa..75ffbb1 100644
 +    } else {
 +        p->flow_queue_state_logged = false;
 +    }
-@@ -1752,1 +2848,4 @@ static bool draw_frame(struct vo *vo, struct vo_frame *frame)
+@@ -1752,1 +3302,4 @@ static bool draw_frame(struct vo *vo, struct vo_frame *frame)
 -    bool render_ok = pl_render_image_mix(p->rr, &mix, &target, &params);
 +    bool flow_synthesized = false;
 +    bool render_ok = p->next_opts->mpvflow
 +        ? flow_render_frame(vo, &mix, &target, &params, &flow_prepared, &flow_synthesized)
 +        : pl_render_image_mix(p->rr, &mix, &target, &params);
-@@ -1780,1 +2879,23 @@ static bool draw_frame(struct vo *vo, struct vo_frame *frame)
+@@ -1780,1 +3333,23 @@ static bool draw_frame(struct vo *vo, struct vo_frame *frame)
 -    p->is_interpolated = pts_offset != 0 && mix.num_frames > 1;
 +    p->is_interpolated = p->next_opts->mpvflow
 +        ? flow_synthesized : pts_offset != 0 && mix.num_frames > 1;
@@ -1475,11 +1630,11 @@ index bd3d1aa..75ffbb1 100644
 +                p->flow_cadence_render_cpu_max_ns = render_ns;
 +        }
 +    }
-@@ -1797,1 +2918,2 @@ static void flip_page(struct vo *vo)
+@@ -1797,1 +3372,2 @@ static void flip_page(struct vo *vo)
 -
 +    const int64_t flip_start_ns = mp_time_ns();
 +    bool submitted = false;
-@@ -1799,1 +2921,6 @@ static void flip_page(struct vo *vo)
+@@ -1799,1 +3375,6 @@ static void flip_page(struct vo *vo)
 -        if (!pl_swapchain_submit_frame(p->sw))
 +        if (p->next_opts->mpvflow)
 +            p->flow_cadence_swap_attempts++;
@@ -1487,7 +1642,7 @@ index bd3d1aa..75ffbb1 100644
 +        if (!submitted && p->next_opts->mpvflow)
 +            p->flow_cadence_swap_failures++;
 +        if (!submitted)
-@@ -1803,0 +2931,139 @@ static void flip_page(struct vo *vo)
+@@ -1803,0 +3385,139 @@ static void flip_page(struct vo *vo)
 +    const int64_t now_ns = mp_time_ns();
 +    const uint64_t flip_wait_ns = now_ns > flip_start_ns
 +        ? (uint64_t) (now_ns - flip_start_ns) : 0;
@@ -1627,7 +1782,7 @@ index bd3d1aa..75ffbb1 100644
 +    p->flow_pending_mix_frames = 0;
 +    p->flow_pending_rate_limiter_eligible = false;
 +    const int64_t flow_swap_wait_start_ns = p->next_opts->mpvflow ? mp_time_ns() : 0;
-@@ -1804,0 +3071,18 @@ static void flip_page(struct vo *vo)
+@@ -1804,0 +3525,18 @@ static void flip_page(struct vo *vo)
 +    if (flow_swap_wait_start_ns > 0) {
 +        const int64_t now_ns = mp_time_ns();
 +        const uint64_t wait_ns = now_ns > flow_swap_wait_start_ns
@@ -1646,14 +1801,14 @@ index bd3d1aa..75ffbb1 100644
 +                    wait_ns / 1000000.0, p->next_opts->mpvflow_target_fps);
 +        }
 +    }
-@@ -2466,0 +3751,4 @@ static void uninit(struct vo *vo)
+@@ -2466,0 +4205,4 @@ static void uninit(struct vo *vo)
 +    flow_release_pair(p);
 +    mpvflow_gpu_destroy(p->flow_gpu);
 +    p->flow_gpu = NULL;
 +    p->flow_input_fmt = NULL;
-@@ -2846,0 +4135,1 @@ static void update_render_options(struct vo *vo)
+@@ -2846,0 +4589,1 @@ static void update_render_options(struct vo *vo)
 +    flow_update_context(vo);
-@@ -2878,1 +4167,2 @@ static void update_render_options(struct vo *vo)
+@@ -2878,1 +4621,2 @@ static void update_render_options(struct vo *vo)
 -    pars->params.frame_mixer = opts->interpolation ? map_scaler(p, SCALER_TSCALE) : NULL;
 +    pars->params.frame_mixer = opts->interpolation && !p->next_opts->mpvflow
 +        ? map_scaler(p, SCALER_TSCALE) : NULL;

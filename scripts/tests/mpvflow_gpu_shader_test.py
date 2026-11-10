@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import ast
+import math
 import pathlib
 import random
 import re
@@ -274,8 +275,14 @@ for fragment, message in (
     ("imageStore(seedMap, ivec2(g), vec4(vec2(displacement)", "QCOM output must contain only a coarse vector prior and SAD metadata"),
 ):
     require(QCOM_SHADER, fragment, message)
-require(flow, "refineAxis(p,bestVector,ivec2(1,0)", "GPU flow vectors must be fractionally refined")
-require(flow, "if(centerCost==0) return 0.0;", "an exact SAD winner must not be shifted by an asymmetric subpixel parabola")
+require(flow, "refineMotion(p,bestVector,sz,blockSize,best,uniqueness,colorAware)", "GPU flow vectors must use the guarded fractional motion refinement")
+require(flow, "vec2 fallback=vec2(dx,dy)", "ambiguous or unstable diagonal fits must retain the independent-axis refinement")
+require(flow, "uniqueness<0.12||float(centerCost)>0.10*float(blockSize*blockSize)*255.0", "coupled refinement must be restricted to distinctive low-residual matches")
+require(flow, "min(abs(dx),abs(dy))<0.05", "extra diagonal samples must be skipped unless both independent subpixel axes can benefit")
+require(flow, "!colorAware||blockSize!=4", "coupled refinement must not add work to coarse or luma-only levels")
+require(flow, "determinant<=max(1.0,curvature*0.10)||abs(hxy)/sqrt(curvature)>0.75", "near-singular or strongly correlated fits must fall back safely")
+require(flow, "greaterThan(abs(joint),vec2(0.5))", "coupled subpixel offsets must remain bounded to half a pixel")
+require(flow, "if(centerCost==0)return vec2(0.0);", "an exact integer winner must remain fixed in the coupled-refinement path")
 require(opencl_source, "if(center_cost==0)return 0.0f;", "OpenCL must preserve exact integer matches like Vulkan")
 require(flow, "center=clamp(center,-p,sz-block-p)", "coarse predictors must be clamped to the active block before border-local refinement")
 require(flow, "bool opticalSeed=(pc.cfg.w&2)!=0,qcomSeed=(pc.cfg.w&4)!=0,hasParent=(pc.cfg.w&1)!=0||opticalSeed||qcomSeed", "the encoded block support must remain distinct from optional parent, optical, and QCOM seed flags")
@@ -506,6 +513,82 @@ def confidence_guided_radius(base_radius, parent_residual, parent_uniqueness):
     if parent_residual > 0.12 and parent_uniqueness > 0.0005:
         return min(base_radius * 2, 16)
     return base_radius
+
+
+def parabolic_offset(minus_cost: float, center_cost: float, plus_cost: float) -> float:
+    curvature = minus_cost - 2.0 * center_cost + plus_cost
+    if center_cost > minus_cost or center_cost > plus_cost or curvature <= 0.0001:
+        return 0.0
+    return max(-0.5, min(0.5, 0.5 * (minus_cost - plus_cost) / curvature))
+
+
+def coupled_refinement(cost, uniqueness=1.0, block_size=4, color_aware=True):
+    center = cost(0, 0)
+    if center == 0:
+        return (0.0, 0.0)
+    cm, cp, cu, cd = cost(-1, 0), cost(1, 0), cost(0, -1), cost(0, 1)
+    dx = parabolic_offset(cm, center, cp)
+    dy = parabolic_offset(cu, center, cd)
+    fallback = (dx, dy)
+    if (
+        not color_aware
+        or block_size != 4
+        or uniqueness < 0.12
+        or center > 0.10 * block_size * block_size * 255.0
+        or min(abs(dx), abs(dy)) < 0.05
+    ):
+        return fallback
+    cmm, cmp, cpm, cpp = cost(-1, -1), cost(-1, 1), cost(1, -1), cost(1, 1)
+    hxx = cm - 2.0 * center + cp
+    hyy = cu - 2.0 * center + cd
+    hxy = 0.25 * (cpp - cpm - cmp + cmm)
+    curvature = hxx * hyy
+    determinant = curvature - hxy * hxy
+    if (
+        hxx <= 1.0
+        or hyy <= 1.0
+        or determinant <= max(1.0, curvature * 0.10)
+        or abs(hxy) / math.sqrt(curvature) > 0.75
+    ):
+        return fallback
+    gx, gy = 0.5 * (cp - cm), 0.5 * (cd - cu)
+    joint = (
+        (hxy * gy - hyy * gx) / determinant,
+        (hxy * gx - hxx * gy) / determinant,
+    )
+    if any(not math.isfinite(value) or abs(value) > 0.5 for value in joint):
+        return fallback
+    return joint
+
+
+x0, y0, hxx0, hyy0, hxy0 = 0.23, -0.31, 160.0, 120.0, 42.0
+def diagonal_cost(x, y):
+    return round(
+        0.5 * hxx0 * (x - x0) ** 2
+        + hxy0 * (x - x0) * (y - y0)
+        + 0.5 * hyy0 * (y - y0) ** 2
+    )
+
+
+independent = coupled_refinement(diagonal_cost, uniqueness=0.0)
+diagonal = coupled_refinement(diagonal_cost)
+assert math.dist(diagonal, (x0, y0)) < 0.02, "a stable coupled paraboloid must recover diagonal subpixel motion"
+assert math.dist(diagonal, (x0, y0)) < math.dist(independent, (x0, y0)) / 5.0, (
+    "diagonal stabilization must improve on independent-axis fitting when the measured cost basin is well-conditioned"
+)
+assert coupled_refinement(diagonal_cost, uniqueness=0.05) == independent, (
+    "ambiguous motion candidates must keep the existing independent-axis fallback"
+)
+assert coupled_refinement(diagonal_cost, block_size=8) == independent, (
+    "coarse levels must retain the existing refinement without extra diagonal samples"
+)
+assert coupled_refinement(lambda x, y: 9) == (0.0, 0.0), (
+    "a flat tied cost basin must not manufacture a diagonal subpixel vector"
+)
+assert coupled_refinement(lambda x, y: 0) == (0.0, 0.0), (
+    "an exact zero-SAD winner must remain an exact integer vector"
+)
+print("Diagonal refinement regression: coupled fit corrects reliable diagonal motion; ambiguous, flat and coarse cases retain the prior fallback")
 
 
 edge_rng = random.Random(0xED6E)
@@ -753,6 +836,64 @@ assert edge_decision(0.5, 0.0, 0.25, 0.0, 1.0, 1.0, 0.0, 0.35) == "frame1", "a v
 assert edge_decision(0.75, 0.0, 0.25, 0.10, 1.0, 1.0, 0.35, 0.35) == "frame1", "chroma-only hair, eye, and clothing boundaries must not mix even with distinctive vectors"
 assert edge_decision(0.25, 0.02, 0.08, 0.03, 1.0, 1.0, 0.35, 0.35) == "interpolate", "small chroma variation must not disable ordinary temporal synthesis"
 
+for marker in (
+    "struct FlowRendererHook",
+    "PL_HOOK_RGB",
+    "pl_shader_custom(params->sh, &custom)",
+    "pl_shader_is_compute(params->sh)",
+    "mpvflow_gpu_renderer_hook_supported",
+    "scene->params.sampleable",
+    "const bool hook_sampleable = i == 0",
+):
+    require(SOURCE, marker, f"renderer-fused MPV synthesis is missing {marker!r}")
+
+
+def renderer_hook_shader(stage: str) -> str:
+    hook = synthesis[synthesis.index("vec4 flowImageAt"):]
+    replacements = (
+        ("void main(){ FLOW_BEGIN ivec2 p=ivec2(gl_GlobalInvocationID.xy); ivec2 outSize=imageSize(outTex),motionSize=pc.cfg.zw;",
+         "void mpvflowSynthesizeAt(ivec2 p, out vec4 result){ ivec2 outSize=textureSize(frame0,0),motionSize=textureSize(luma0Tex,0);"),
+        ("if(any(greaterThanEqual(p,outSize))) return; ",
+         "if(any(greaterThanEqual(p,outSize))){ result=vec4(0.0); return; } "),
+        ("pc.timestep", "flowTimestep"),
+        ("pc.cfg.x", "flowFlags"),
+        ("imageLoad(", "flowLoad("),
+        ("imageSize(", "flowSize("),
+        ("imageStore(outTex,", "flowStore(outTex,"),
+    )
+    for index, (before, after) in enumerate(replacements):
+        count = hook.count(before)
+        assert count == 1 if index < 2 else count > 0, f"renderer-hook transformation has unexpected count {count} for {before!r}"
+        hook = hook.replace(before, after)
+    assert "void mpvflowSynthesizeAt(" in hook
+    assert not any(token in hook for token in ("gl_GlobalInvocationID", "pc.", "imageLoad(", "imageSize(", "imageStore(outTex,"))
+    prefix = """#version 450
+layout(set=0,binding=0) uniform sampler2D frame0;
+layout(set=0,binding=1) uniform sampler2D frame1;
+layout(set=0,binding=2) uniform sampler2D fwdTex;
+layout(set=0,binding=3) uniform sampler2D backTex;
+layout(set=0,binding=4) uniform sampler2D sceneTex;
+layout(set=0,binding=5) uniform sampler2D luma0Tex;
+layout(set=0,binding=6) uniform sampler2D luma1Tex;
+layout(push_constant) uniform FlowParams { float flowTimestep; int flowFlags; } fp;
+#define flowTimestep fp.flowTimestep
+#define flowFlags fp.flowFlags
+#define flowLoad(tex,pos) texelFetch(tex,pos,0)
+#define flowSize(tex) textureSize(tex,0)
+#define flowStore(tex,pos,value) result = value
+#define FLOW_BEGIN
+#define FLOW_REASON(bits)
+#define FLOW_RESULT(value,id,confidence,reasons) value
+"""
+    if stage == "frag":
+        ending = "layout(location=0) out vec4 colorOut;\nvoid main(){ mpvflowSynthesizeAt(ivec2(gl_FragCoord.xy), colorOut); }\n"
+    elif stage == "comp":
+        prefix += "layout(local_size_x=8,local_size_y=8) in;\n"
+        ending = "void main(){ vec4 colorOut; mpvflowSynthesizeAt(ivec2(gl_GlobalInvocationID.xy), colorOut); }\n"
+    else:
+        raise AssertionError(f"unexpected hook shader stage {stage}")
+    return prefix + hook + "\n" + ending
+
 validator = shutil.which("glslangValidator")
 if validator:
     rgba8_output = "layout(set=0,binding=7,rgba8) writeonly uniform image2D outTex;"
@@ -770,14 +911,17 @@ if validator:
         "layout(set=0,binding=8,rgba16f) writeonly uniform image2D outTex;",
         1,
     )
+    shaders_to_compile["renderer_hook_fragment"] = renderer_hook_shader("frag")
+    shaders_to_compile["renderer_hook_compute"] = renderer_hook_shader("comp")
     with tempfile.TemporaryDirectory(prefix="mpvflow-vulkan-shaders-") as temp_dir:
         temp_path = pathlib.Path(temp_dir)
         for name, shader in shaders_to_compile.items():
-            source_file = temp_path / f"{name}.comp"
+            stage = "frag" if name == "renderer_hook_fragment" else "comp"
+            source_file = temp_path / f"{name}.{stage}"
             output_file = temp_path / f"{name}.spv"
             source_file.write_text(shader, encoding="utf-8")
             result = subprocess.run(
-                [validator, "-V", "--target-env", "vulkan1.2", "-S", "comp", "-o", str(output_file), str(source_file)],
+                [validator, "-V", "--target-env", "vulkan1.2", "-S", stage, "-o", str(output_file), str(source_file)],
                 check=False,
                 capture_output=True,
                 text=True,
@@ -785,6 +929,16 @@ if validator:
             if result.returncode:
                 raise SystemExit(f"{name} Vulkan SPIR-V validation failed:\n{result.stdout}{result.stderr}")
             print(f"MPV Flow {name} Vulkan SPIR-V compiled")
+            spirv_val = shutil.which("spirv-val")
+            if spirv_val and name.startswith("renderer_hook_"):
+                validation = subprocess.run(
+                    [spirv_val, "--target-env", "vulkan1.2", str(output_file)],
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                )
+                if validation.returncode:
+                    raise SystemExit(f"{name} SPIR-V validation failed:\n{validation.stdout}{validation.stderr}")
 
     with tempfile.TemporaryDirectory(prefix="mpvflow-qcom-shader-") as temp_dir:
         output_file = pathlib.Path(temp_dir) / "mpvflow_qcom_seed.spv"

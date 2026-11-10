@@ -16,6 +16,7 @@
 #include "mpvflow_capture_io.h"
 
 #include <libplacebo/vulkan.h>
+#include <libplacebo/shaders/custom.h>
 
 #include <math.h>
 #include <limits.h>
@@ -58,6 +59,18 @@ struct FlowTimerStats {
     uint64_t samples;
     uint64_t total_ns;
     uint64_t max_ns;
+};
+
+struct FlowRendererHook {
+    struct pl_hook hook;
+    MPVFlowGPUContext *owner;
+    MPVFlowGPUPair *pair;
+    pl_tex source0, source1;
+    float timestep;
+    int flags;
+    bool linear_hdr_source;
+    bool active;
+    bool applied;
 };
 
 enum {
@@ -109,6 +122,9 @@ struct MPVFlowGPUContext {
     pl_pass pass_synthesize_rgba16f;
     pl_pass pass_visibility_resolver;
     pl_pass pass_visibility_resolver_rgba16f;
+    struct FlowRendererHook renderer_hook;
+    char *renderer_hook_shader;
+    bool renderer_hook_ready;
     bool visibility_resolver_attempted;
     bool visibility_resolver_rgba16f_attempted;
     bool visibility_resolver_active_logged;
@@ -875,10 +891,19 @@ static const char shader_flow[] =
     /* An exact integer match is already the minimum of nonnegative SAD. Fitting
      * a parabola to asymmetric neighboring costs can move it by half a pixel,
      * while retaining the old zero residual. Do not manufacture that error. */
-    "float refineAxis(ivec2 p,ivec2 v,ivec2 axis,ivec2 sz,int blockSize,int centerCost,bool colorAware){ if(centerCost==0) return 0.0; ivec2 m=v-axis,q=v+axis,block=ivec2(blockSize); if(any(lessThan(p+m,ivec2(0)))||any(lessThan(p+q,ivec2(0)))||any(greaterThan(p+m,sz-block))||any(greaterThan(p+q,sz-block))) return 0.0; int cm=sadAt(p,m,sz,2147483647,blockSize,colorAware),cp=sadAt(p,q,sz,2147483647,blockSize,colorAware); return subpixelOffset(float(cm),float(centerCost),float(cp)); }\n"
+    /* Keep the established per-axis fit unless the finest, distinctive SAD basin supports a stable coupled fit. */
+    "vec2 refineMotion(ivec2 p,ivec2 v,ivec2 sz,int blockSize,int centerCost,float uniqueness,bool colorAware){\n"
+    " if(centerCost==0)return vec2(0.0);ivec2 block=ivec2(blockSize),ax=ivec2(1,0),ay=ivec2(0,1);ivec2 xm=v-ax,xp=v+ax,ym=v-ay,yp=v+ay;\n"
+    " bool xValid=all(greaterThanEqual(p+xm,ivec2(0)))&&all(lessThanEqual(p+xm,sz-block))&&all(greaterThanEqual(p+xp,ivec2(0)))&&all(lessThanEqual(p+xp,sz-block));bool yValid=all(greaterThanEqual(p+ym,ivec2(0)))&&all(lessThanEqual(p+ym,sz-block))&&all(greaterThanEqual(p+yp,ivec2(0)))&&all(lessThanEqual(p+yp,sz-block));\n"
+    " float dx=0.0,dy=0.0;int cm=0,cp=0,cu=0,cd=0;if(xValid){cm=sadAt(p,xm,sz,2147483647,blockSize,colorAware);cp=sadAt(p,xp,sz,2147483647,blockSize,colorAware);dx=subpixelOffset(float(cm),float(centerCost),float(cp));}if(yValid){cu=sadAt(p,ym,sz,2147483647,blockSize,colorAware);cd=sadAt(p,yp,sz,2147483647,blockSize,colorAware);dy=subpixelOffset(float(cu),float(centerCost),float(cd));}vec2 fallback=vec2(dx,dy);\n"
+    " if(!colorAware||blockSize!=4||!xValid||!yValid||uniqueness<0.12||float(centerCost)>0.10*float(blockSize*blockSize)*255.0||min(abs(dx),abs(dy))<0.05)return fallback;\n"
+    " ivec2 mm=v+ivec2(-1,-1),mp=v+ivec2(-1,1),pm=v+ivec2(1,-1),pp=v+ivec2(1,1);if(any(lessThan(p+mm,ivec2(0)))||any(lessThan(p+mp,ivec2(0)))||any(lessThan(p+pm,ivec2(0)))||any(lessThan(p+pp,ivec2(0)))||any(greaterThan(p+mm,sz-block))||any(greaterThan(p+mp,sz-block))||any(greaterThan(p+pm,sz-block))||any(greaterThan(p+pp,sz-block)))return fallback;\n"
+    " int cmm=sadAt(p,mm,sz,2147483647,blockSize,colorAware),cmp=sadAt(p,mp,sz,2147483647,blockSize,colorAware),cpm=sadAt(p,pm,sz,2147483647,blockSize,colorAware),cpp=sadAt(p,pp,sz,2147483647,blockSize,colorAware);float hxx=float(cm-2*centerCost+cp),hyy=float(cu-2*centerCost+cd),hxy=0.25*float(cpp-cpm-cmp+cmm),curvature=hxx*hyy,determinant=curvature-hxy*hxy;\n"
+    " if(hxx<=1.0||hyy<=1.0||determinant<=max(1.0,curvature*0.10)||abs(hxy)/sqrt(curvature)>0.75)return fallback;float gx=0.5*float(cp-cm),gy=0.5*float(cd-cu);vec2 joint=vec2((hxy*gy-hyy*gx)/determinant,(hxy*gx-hxx*gy)/determinant);if(any(isnan(joint))||any(isinf(joint))||any(greaterThan(abs(joint),vec2(0.5))))return fallback;return joint;\n"
+    "}\n"
     "void main(){ ivec2 g=ivec2(gl_GlobalInvocationID.xy); ivec2 grid=imageSize(flowTex); if(any(greaterThanEqual(g,grid))) return; if(imageLoad(sceneTex,ivec2(0)).r>0.1882353){ imageStore(flowTex,g,vec4(0.0,0.0,1.0,0.0)); return; } ivec2 sz=pc.cfg.xy; int blockSize=(pc.cfg.w>>8); if(blockSize!=4) blockSize=8; ivec2 block=ivec2(blockSize),p=min(g*4,sz-block); bool opticalSeed=(pc.cfg.w&2)!=0,qcomSeed=(pc.cfg.w&4)!=0,hasParent=(pc.cfg.w&1)!=0||opticalSeed||qcomSeed,colorAware=(pc.cfg.w&8)!=0; ivec2 center=ivec2(0),qcomCandidate=ivec2(0); bool qcomCandidateValid=false; float parentResidual=0.0,parentUniqueness=1.0; if(qcomSeed){ vec4 qcomFlow=imageLoad(parentTex,g); qcomCandidate=ivec2(round(qcomFlow.rg)); } else if(hasParent){ vec4 parentFlow; if(opticalSeed){ parentFlow=imageLoad(parentTex,g); } else { ivec2 pg=imageSize(parentTex),parentSize=(sz+ivec2(1))/2; vec2 parentOrigin=vec2(float(blockSize)*0.25-4.0); vec2 parentPos=vec2(flowGridAxis(float(p.x)*0.5+parentOrigin.x,float(parentSize.x),8,pg.x),flowGridAxis(float(p.y)*0.5+parentOrigin.y,float(parentSize.y),8,pg.y)); ivec2 a=clamp(ivec2(floor(parentPos)),ivec2(0),pg-1); ivec2 b=min(a+1,pg-1); vec2 f=fract(parentPos); vec4 top=mix(imageLoad(parentTex,a),imageLoad(parentTex,ivec2(b.x,a.y)),f.x); vec4 bot=mix(imageLoad(parentTex,ivec2(a.x,b.y)),imageLoad(parentTex,b),f.x); parentFlow=mix(top,bot,f.y); } center=ivec2(round(parentFlow.rg*(opticalSeed?1.0:2.0))); parentResidual=parentFlow.b; parentUniqueness=parentFlow.a; } center=clamp(center,-p,sz-block-p); int radius=pc.cfg.z; if(hasParent&&!qcomSeed&&parentResidual>0.12&&parentUniqueness>0.0005)radius=min(radius*2,16); ivec2 lo=max(-p,center-ivec2(radius)); ivec2 hi=min(sz-block-p,center+ivec2(radius)); if(qcomSeed) qcomCandidateValid=all(greaterThanEqual(qcomCandidate,lo))&&all(lessThanEqual(qcomCandidate,hi)); ivec2 bestVector=center; int best=sadAt(p,bestVector,sz,2147483647,blockSize,colorAware),second=2147483647; bool stopOnCenterTie=false; if(qcomCandidateValid&&!all(equal(qcomCandidate,bestVector))){ int c=sadAt(p,qcomCandidate,sz,best==0?0:second,blockSize,colorAware); if(best==0){if(c==0){second=0; if(!all(equal(bestVector,center))&&(qcomCandidate.y<bestVector.y||(qcomCandidate.y==bestVector.y&&qcomCandidate.x<bestVector.x))) bestVector=qcomCandidate;} else if(second!=0) second=1;} else if(c<best){second=best;best=c;bestVector=qcomCandidate;} else if(c==best){if(second>c) second=c; if(!all(equal(bestVector,center))&&(qcomCandidate.y<bestVector.y||(qcomCandidate.y==bestVector.y&&qcomCandidate.x<bestVector.x))) bestVector=qcomCandidate;} else if(c<second) second=c; }\n"
     "for(int ring=1;ring<=radius&&!stopOnCenterTie;ring++) for(int dy=-ring;dy<=ring&&!stopOnCenterTie;dy++) for(int dx=-ring;dx<=ring&&!stopOnCenterTie;dx++){ if(max(abs(dx),abs(dy))!=ring) continue; ivec2 d=center+ivec2(dx,dy); if(any(lessThan(d,lo))||any(greaterThan(d,hi))) continue; if(all(equal(d,bestVector))) continue; if(qcomCandidateValid&&all(equal(d,qcomCandidate))) continue; if(best==0&&second==0){ if(all(equal(bestVector,center))){stopOnCenterTie=true;continue;} if(d.y>bestVector.y||(d.y==bestVector.y&&d.x>=bestVector.x)) continue; } int c=sadAt(p,d,sz,best==0?0:second,blockSize,colorAware); if(best==0){if(c==0){second=0; if(!all(equal(bestVector,center))&&(d.y<bestVector.y||(d.y==bestVector.y&&d.x<bestVector.x))) bestVector=d;} else if(second!=0) second=1;} else if(c<best){second=best;best=c;bestVector=d;} else if(c==best){if(second>c) second=c; if(!all(equal(bestVector,center))&&(d.y<bestVector.y||(d.y==bestVector.y&&d.x<bestVector.x))) bestVector=d;} else if(c<second) second=c; }\n"
-    "vec2 refined=vec2(bestVector); refined.x+=refineAxis(p,bestVector,ivec2(1,0),sz,blockSize,best,colorAware); refined.y+=refineAxis(p,bestVector,ivec2(0,1),sz,blockSize,best,colorAware); float uniqueness=second<2147483647?clamp(float(second-best)/max(float(second),1.0),0.0,1.0):0.0; imageStore(flowTex,g,vec4(refined,float(best)/(float(blockSize*blockSize)*255.0),uniqueness)); }\n"
+    "float uniqueness=second<2147483647?clamp(float(second-best)/max(float(second),1.0),0.0,1.0):0.0;vec2 refined=vec2(bestVector)+refineMotion(p,bestVector,sz,blockSize,best,uniqueness,colorAware);imageStore(flowTex,g,vec4(refined,float(best)/(float(blockSize*blockSize)*255.0),uniqueness)); }\n"
 ;
 
 /* Synthesis must solve and validate the SAME spatially continuous vector field.
@@ -1086,6 +1111,184 @@ static char *shader_replace_once(const char *source, const char *needle,
     return output;
 }
 
+static char *shader_replace_all(const char *source, const char *needle,
+                                const char *replacement)
+{
+    if (!source || !needle || !replacement || !needle[0])
+        return NULL;
+    const size_t source_len = strlen(source);
+    const size_t needle_len = strlen(needle);
+    const size_t replacement_len = strlen(replacement);
+    size_t matches = 0;
+    for (const char *p = source; (p = strstr(p, needle)); p += needle_len)
+        matches++;
+    size_t output_len = source_len;
+    if (replacement_len >= needle_len) {
+        const size_t growth = replacement_len - needle_len;
+        if (growth && matches > (SIZE_MAX - output_len) / growth)
+            return NULL;
+        output_len += matches * growth;
+    } else {
+        output_len -= matches * (needle_len - replacement_len);
+    }
+    char *output = malloc(output_len + 1);
+    if (!output)
+        return NULL;
+    const char *read = source;
+    char *write = output;
+    const char *match;
+    while ((match = strstr(read, needle))) {
+        size_t prefix = (size_t) (match - read);
+        memcpy(write, read, prefix);
+        write += prefix;
+        memcpy(write, replacement, replacement_len);
+        write += replacement_len;
+        read = match + needle_len;
+    }
+    strcpy(write, read);
+    return output;
+}
+
+static char *build_renderer_hook_shader(void)
+{
+    static const char *const replacements[][2] = {
+        { "void main(){ FLOW_BEGIN ivec2 p=ivec2(gl_GlobalInvocationID.xy); "
+          "ivec2 outSize=imageSize(outTex),motionSize=pc.cfg.zw;",
+          "void mpvflowSynthesizeAt(ivec2 p, out vec4 result){ "
+          "ivec2 outSize=textureSize(frame0,0),motionSize=textureSize(luma0Tex,0);" },
+        { "if(any(greaterThanEqual(p,outSize))) return; ",
+          "if(any(greaterThanEqual(p,outSize))){ result=vec4(0.0); return; } " },
+        { "pc.timestep", "flowTimestep" },
+        { "pc.cfg.x", "flowFlags" },
+        { "imageLoad(", "flowLoad(" },
+        { "imageSize(", "flowSize(" },
+        { "imageStore(outTex,", "flowStore(outTex," },
+    };
+    static const char prelude[] =
+        "#define flowLoad(tex,pos) texelFetch(tex,pos,0)\n"
+        "#define flowSize(tex) textureSize(tex,0)\n"
+        "#define flowStore(tex,pos,value) result = value\n"
+        "#define FLOW_BEGIN\n"
+        "#define FLOW_REASON(bits)\n"
+        "#define FLOW_RESULT(value,id,confidence,reasons) value\n";
+
+    const char *start = strstr(shader_synthesize, "vec4 flowImageAt");
+    if (!start)
+        return NULL;
+    const size_t start_len = strlen(start);
+    char *shader = malloc(start_len + 1);
+    if (!shader)
+        return NULL;
+    memcpy(shader, start, start_len + 1);
+    for (size_t i = 0; i < sizeof(replacements) / sizeof(replacements[0]); i++) {
+        char *next = shader_replace_all(shader, replacements[i][0], replacements[i][1]);
+        free(shader);
+        shader = next;
+        if (!shader)
+            return NULL;
+    }
+    if (!strstr(shader, "void mpvflowSynthesizeAt(") ||
+        strstr(shader, "gl_GlobalInvocationID") || strstr(shader, "pc.") ||
+        strstr(shader, "imageLoad(") || strstr(shader, "imageSize(") ||
+        strstr(shader, "imageStore(outTex,")) {
+        free(shader);
+        return NULL;
+    }
+    const size_t prelude_len = sizeof(prelude) - 1;
+    const size_t shader_len = strlen(shader);
+    if (prelude_len > SIZE_MAX - shader_len - 1) {
+        free(shader);
+        return NULL;
+    }
+    char *result = malloc(prelude_len + shader_len + 1);
+    if (result) {
+        memcpy(result, prelude, prelude_len);
+        memcpy(result + prelude_len, shader, shader_len + 1);
+    }
+    free(shader);
+    return result;
+}
+
+static struct pl_hook_res flow_renderer_hook(void *priv,
+                                              const struct pl_hook_params *params)
+{
+#ifndef MPVFLOW_HAVE_RENDERER_HOOK
+    (void) priv;
+    (void) params;
+    return (struct pl_hook_res) { .failed = true };
+#else
+    struct FlowRendererHook *state = priv;
+    if (!state || !state->active || !params || params->stage != PL_HOOK_RGB ||
+        !params->sh || !state->owner || !state->owner->renderer_hook_ready)
+        return (struct pl_hook_res) {0};
+
+    struct pl_shader_desc descs[] = {
+        { .desc = { .name = "frame0", .type = PL_DESC_SAMPLED_TEX },
+          .binding = { .object = state->source0, .address_mode = PL_TEX_ADDRESS_CLAMP,
+                       .sample_mode = PL_TEX_SAMPLE_LINEAR } },
+        { .desc = { .name = "frame1", .type = PL_DESC_SAMPLED_TEX },
+          .binding = { .object = state->source1, .address_mode = PL_TEX_ADDRESS_CLAMP,
+                       .sample_mode = PL_TEX_SAMPLE_LINEAR } },
+        { .desc = { .name = "fwdTex", .type = PL_DESC_SAMPLED_TEX },
+          .binding = { .object = state->pair->level[0].forward,
+                       .address_mode = PL_TEX_ADDRESS_CLAMP,
+                       .sample_mode = PL_TEX_SAMPLE_NEAREST } },
+        { .desc = { .name = "backTex", .type = PL_DESC_SAMPLED_TEX },
+          .binding = { .object = state->pair->level[0].backward,
+                       .address_mode = PL_TEX_ADDRESS_CLAMP,
+                       .sample_mode = PL_TEX_SAMPLE_NEAREST } },
+        { .desc = { .name = "sceneTex", .type = PL_DESC_SAMPLED_TEX },
+          .binding = { .object = state->pair->scene[state->pair->reductions - 1],
+                       .address_mode = PL_TEX_ADDRESS_CLAMP,
+                       .sample_mode = PL_TEX_SAMPLE_NEAREST } },
+        { .desc = { .name = "luma0Tex", .type = PL_DESC_SAMPLED_TEX },
+          .binding = { .object = state->pair->level[0].luma[0],
+                       .address_mode = PL_TEX_ADDRESS_CLAMP,
+                       .sample_mode = PL_TEX_SAMPLE_NEAREST } },
+        { .desc = { .name = "luma1Tex", .type = PL_DESC_SAMPLED_TEX },
+          .binding = { .object = state->pair->level[0].luma[1],
+                       .address_mode = PL_TEX_ADDRESS_CLAMP,
+                       .sample_mode = PL_TEX_SAMPLE_NEAREST } },
+    };
+    const struct pl_shader_var variables[] = {
+        { .var = pl_var_float("flowTimestep"), .data = &state->timestep,
+          .dynamic = true },
+        { .var = pl_var_int("flowFlags"), .data = &state->flags,
+          .dynamic = true },
+    };
+    const char *body = pl_shader_is_compute(params->sh)
+        ? "mpvflowSynthesizeAt(ivec2(gl_GlobalInvocationID.xy), color);"
+        : "mpvflowSynthesizeAt(ivec2(gl_FragCoord.xy), color);";
+    const struct pl_custom_shader custom = {
+        .header = state->owner->renderer_hook_shader,
+        .description = "MPVFlow renderer-fused synthesis",
+        .body = body,
+        .input = PL_SHADER_SIG_COLOR,
+        .output = PL_SHADER_SIG_COLOR,
+        .descriptors = descs,
+        .num_descriptors = (int) (sizeof(descs) / sizeof(descs[0])),
+        .variables = variables,
+        .num_variables = (int) (sizeof(variables) / sizeof(variables[0])),
+        .output_w = (int) state->source0->params.w,
+        .output_h = (int) state->source0->params.h,
+    };
+    if (!pl_shader_custom(params->sh, &custom))
+        return (struct pl_hook_res) { .failed = true };
+    state->applied = true;
+    struct pl_color_space output_color = params->color;
+    if (state->linear_hdr_source)
+        output_color.transfer = PL_COLOR_TRC_LINEAR;
+    return (struct pl_hook_res) {
+        .output = PL_HOOK_SIG_COLOR,
+        .sh = params->sh,
+        .repr = pl_color_repr_rgb,
+        .color = output_color,
+        .components = 4,
+        .rect = params->rect,
+    };
+#endif
+}
+
 static bool ensure_visibility_resolver_pass(MPVFlowGPUContext *ctx, bool rgba16f)
 {
     if (!ctx || ctx->compute_api != MPVFLOW_GPU_COMPUTE_VULKAN)
@@ -1217,7 +1420,7 @@ static bool analyze_pair_ghost(MPVFlowGPUContext *ctx, MPVFlowGPUPair *pair)
                                        "pair_ghost_tile_evidence");
     pair->pair_gate[1] = create_texture(ctx, 1, 2, ctx->fmt_rgba16f, false,
                                        "pair_ghost_pair_evidence");
-    pl_tex merged = create_texture(ctx, 1, 1, ctx->fmt_rgba16f, false,
+    pl_tex merged = create_texture(ctx, 1, 1, ctx->fmt_rgba16f, true,
                                    "pair_ghost_scene_metadata");
     if (!pair->pair_gate[0] || !pair->pair_gate[1] || !merged) {
         destroy_tex(ctx, &merged);
@@ -1261,15 +1464,20 @@ static bool allocate_pair_textures(MPVFlowGPUContext *ctx,
     for (int i = 0; i < FLOW_LEVELS && w >= FLOW_BLOCK && h >= FLOW_BLOCK; i++) {
         struct FlowLevel *lv = &pair->level[i];
         lv->w = w; lv->h = h;
-        lv->luma[0] = create_texture(ctx, w, h, ctx->fmt_rgba16f, false, "pyramid_luma_frame0");
-        lv->luma[1] = create_texture(ctx, w, h, ctx->fmt_rgba16f, false, "pyramid_luma_frame1");
+        const bool hook_sampleable = i == 0;
+        lv->luma[0] = create_texture(ctx, w, h, ctx->fmt_rgba16f,
+                                     hook_sampleable, "pyramid_luma_frame0");
+        lv->luma[1] = create_texture(ctx, w, h, ctx->fmt_rgba16f,
+                                     hook_sampleable, "pyramid_luma_frame1");
         const int block_size = i == 0 ? FLOW_FINE_BLOCK : FLOW_BLOCK;
         const int grid_w = (w - block_size + FLOW_STEP - 1) / FLOW_STEP + 1;
         const int grid_h = (h - block_size + FLOW_STEP - 1) / FLOW_STEP + 1;
         lv->forward = create_texture(ctx, grid_w, grid_h,
-                                     ctx->fmt_rgba16f, false, "motion_forward_field");
+                                     ctx->fmt_rgba16f, hook_sampleable,
+                                     "motion_forward_field");
         lv->backward = create_texture(ctx, grid_w, grid_h,
-                                      ctx->fmt_rgba16f, false, "motion_backward_field");
+                                      ctx->fmt_rgba16f, hook_sampleable,
+                                      "motion_backward_field");
         if (!lv->luma[0] || !lv->luma[1] || !lv->forward || !lv->backward)
             return false;
         pair->levels++;
@@ -1284,7 +1492,8 @@ static bool allocate_pair_textures(MPVFlowGPUContext *ctx,
     w = (pair->w + 15) / 16;
     h = (pair->h + 15) / 16;
     for (int i = 0; i < FLOW_REDUCTIONS; i++) {
-        pair->scene[i] = create_texture(ctx, w, h, ctx->fmt_rgba16f, false,
+        pair->scene[i] = create_texture(ctx, w, h, ctx->fmt_rgba16f,
+                                        w == 1 && h == 1,
                                         "scene_cut_reduction_texture");
         if (!pair->scene[i])
             return false;
@@ -1890,6 +2099,23 @@ MPVFlowGPUContext *mpvflow_gpu_create(pl_gpu gpu,
             free(rgba16f_shader);
         }
     }
+    if (ctx->compute_api == MPVFLOW_GPU_COMPUTE_VULKAN) {
+        ctx->renderer_hook_shader = build_renderer_hook_shader();
+        if (ctx->renderer_hook_shader) {
+            ctx->renderer_hook.owner = ctx;
+            ctx->renderer_hook.hook = (struct pl_hook) {
+                .stages = PL_HOOK_RGB,
+                .input = PL_HOOK_SIG_COLOR,
+                .priv = &ctx->renderer_hook,
+                .hook = flow_renderer_hook,
+                .signature = UINT64_C(0x4d5056464c4f5752),
+            };
+            ctx->renderer_hook_ready = true;
+        }
+        flow_log(gpu, ctx->renderer_hook_ready ? PL_LOG_INFO : PL_LOG_WARN,
+                 "MPVFLOW_DIAGNOSTIC event=renderer_fusion state=%s mode=libplacebo_rgb_hook fallback=compute_synthesis",
+                 ctx->renderer_hook_ready ? "ready" : "unavailable");
+    }
     if (ctx->optical || ctx->qcom) {
         ctx->pass_optical_luma = make_pass(gpu, shader_optical_luma,
                                            optical_luma_desc, 2);
@@ -2061,6 +2287,7 @@ void mpvflow_gpu_destroy(MPVFlowGPUContext *ctx)
     }
     if (ctx->opencl)
         mpvflow_opencl_destroy(ctx->opencl);
+    free(ctx->renderer_hook_shader);
     free(ctx);
 }
 
@@ -2088,6 +2315,73 @@ const char *mpvflow_gpu_get_compute_api_name(MPVFlowGPUContext *ctx)
     case MPVFLOW_GPU_COMPUTE_AUTO: break;
     }
     return "unresolved";
+}
+
+bool mpvflow_gpu_renderer_hook_supported(MPVFlowGPUContext *ctx,
+                                          MPVFlowGPUPair *pair,
+                                          pl_tex source0, pl_tex source1)
+{
+#ifndef MPVFLOW_HAVE_RENDERER_HOOK
+    (void) ctx;
+    (void) pair;
+    (void) source0;
+    (void) source1;
+    return false;
+#else
+    if (!ctx || !pair || pair->owner != ctx || pair->opencl_pair ||
+        ctx->compute_api != MPVFLOW_GPU_COMPUTE_VULKAN ||
+        !ctx->renderer_hook_ready || !source0 || !source1 ||
+        !source0->params.sampleable || !source1->params.sampleable ||
+        source0->params.w <= 0 || source0->params.h <= 0 ||
+        source0->params.w != source1->params.w ||
+        source0->params.h != source1->params.h ||
+        pair->levels < 1 || pair->reductions < 1 || pair->w <= 0 || pair->h <= 0)
+        return false;
+
+    const struct FlowLevel *level = &pair->level[0];
+    pl_tex scene = pair->scene[pair->reductions - 1];
+    return level->forward && level->backward && level->luma[0] && level->luma[1] &&
+        level->forward->params.sampleable && level->backward->params.sampleable &&
+        level->luma[0]->params.sampleable && level->luma[1]->params.sampleable &&
+        level->luma[0]->params.w == pair->w && level->luma[0]->params.h == pair->h &&
+        level->luma[1]->params.w == pair->w && level->luma[1]->params.h == pair->h &&
+        scene && scene->params.sampleable && scene->params.w == 1 && scene->params.h == 1;
+#endif
+}
+
+const struct pl_hook *mpvflow_gpu_renderer_hook_begin(
+    MPVFlowGPUContext *ctx, MPVFlowGPUPair *pair,
+    pl_tex source0, pl_tex source1, float t, int flags,
+    bool linear_hdr_source)
+{
+    if (!ctx || flags != 0 || !isfinite(t) || t <= 0.0f || t >= 1.0f ||
+        !mpvflow_gpu_renderer_hook_supported(ctx, pair, source0, source1) ||
+        ctx->renderer_hook.active)
+        return NULL;
+    ctx->renderer_hook.pair = pair;
+    ctx->renderer_hook.source0 = source0;
+    ctx->renderer_hook.source1 = source1;
+    ctx->renderer_hook.timestep = t;
+    ctx->renderer_hook.flags = flags;
+    ctx->renderer_hook.linear_hdr_source = linear_hdr_source;
+    ctx->renderer_hook.applied = false;
+    ctx->renderer_hook.active = true;
+    return &ctx->renderer_hook.hook;
+}
+
+bool mpvflow_gpu_renderer_hook_applied(MPVFlowGPUContext *ctx)
+{
+    return ctx && ctx->renderer_hook.active && ctx->renderer_hook.applied;
+}
+
+void mpvflow_gpu_renderer_hook_end(MPVFlowGPUContext *ctx)
+{
+    if (!ctx)
+        return;
+    ctx->renderer_hook.active = false;
+    ctx->renderer_hook.pair = NULL;
+    ctx->renderer_hook.source0 = NULL;
+    ctx->renderer_hook.source1 = NULL;
 }
 
 void mpvflow_gpu_get_timing_stats(MPVFlowGPUContext *ctx,

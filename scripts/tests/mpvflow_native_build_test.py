@@ -66,6 +66,25 @@ assert "if (discard && fp->flow_source)" in release_frame and "if (discard && fp
 assert "flow_prepare_input(vo, frame, mpi, fp);" in vo_patch, (
     "MPVFlow remapping must reuse the prepared frame cache through the existing renderer path"
 )
+for marker in (
+    "mpvflow_gpu_renderer_hook_supported",
+    "mpvflow_gpu_renderer_hook_begin",
+    "flow_compute_fusion_fallback",
+    "flow_cached_synthesis_hook",
+    "flow_renderer_fusion_disabled",
+    "params->num_hooks == 0",
+    "synthesis_rate_limited_cached",
+    "temporal_identity_valid",
+):
+    assert marker in vo_patch, f"MPV renderer-fusion integration must preserve safe fallbacks and exact PTS caching: missing {marker!r}"
+cmake_config = (ROOT / "app/src/main/cpp/CMakeLists.txt").read_text(encoding="utf-8")
+for marker in (
+    "MPVFLOW_HAS_CUSTOM_SHADER_API",
+    "MPVFLOW_HAS_SHADER_COMPUTE_QUERY",
+    "MPVFLOW_HAVE_RENDERER_HOOK=1",
+    "MPVFlow renderer-fused synthesis API",
+):
+    assert marker in cmake_config, f"renderer fusion must be capability-gated by AAR exports: missing {marker!r}"
 runtime_builder = BUILD.read_text(encoding="utf-8")
 for marker in (
     "dep_mpv=(ffmpeg libass lua libplacebo libbluray)",
