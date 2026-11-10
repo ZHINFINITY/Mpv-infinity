@@ -1,0 +1,517 @@
+--- a/src/libbluray/bluray.c
++++ b/src/libbluray/bluray.c
+@@ -65,10 +65,18 @@
+     title_bdj,
+ } BD_TITLE_TYPE;
+
++struct bd_read_source {
++    BLURAY    *owner;
++    BD_FILE_H *file;
++    BD_MUTEX   mutex;
++    unsigned   references;
++};
++
+ typedef struct {
+     /* current clip */
+     const NAV_CLIP *clip;
+     BD_FILE_H      *fp;
++    BD_READ_SOURCE *read_source;
+     uint64_t       clip_size;
+     uint64_t       clip_block_pos;
+     uint64_t       clip_pos;
+@@ -120,6 +128,9 @@
+
+     /* buffer for bd_read(): current aligned unit of main stream (st0) */
+     uint8_t        int_buf[6144];
++    uint8_t        original_buf[6144];
++    void          *read_origin_handle;
++    bd_read_origin_proc_f read_origin_proc;
+
+     /* seamless angle change request */
+     int            seamless_angle_change;
+@@ -638,7 +649,11 @@
+
+ static void _close_m2ts(BD_STREAM *st)
+ {
+-    if (st->fp != NULL) {
++    if (st->read_source) {
++        bd_release_read_source(st->read_source);
++        st->read_source = NULL;
++        st->fp = NULL;
++    } else if (st->fp != NULL) {
+         file_close(st->fp);
+         st->fp = NULL;
+     }
+@@ -646,6 +661,47 @@
+     m2ts_filter_close(&st->m2ts_filter);
+ }
+
++static void _init_main_clip(BLURAY *bd, BD_STREAM *st)
++{
++    const MPLS_PL *pl = st->clip->title->pl;
++    const MPLS_STN *stn = &pl->play_item[st->clip->ref].stn;
++
++    st->uo_mask = uo_mask_combine(pl->app_info.uo_mask,
++                                  pl->play_item[st->clip->ref].uo_mask);
++    _update_uo_mask(bd);
++
++    st->m2ts_filter = m2ts_filter_init((int64_t)st->clip->in_time << 1,
++                                       (int64_t)st->clip->out_time << 1,
++                                       stn->num_video, stn->num_audio,
++                                       stn->num_ig, stn->num_pg);
++
++    _update_clip_psrs(bd, st->clip);
++
++    _init_pg_stream(bd);
++
++    _init_textst_timer(bd);
++}
++
++static int _init_read_source(BLURAY *bd, BD_STREAM *st)
++{
++    if (!bd->read_origin_proc) {
++        return 1;
++    }
++    st->read_source = calloc(1, sizeof(*st->read_source));
++    if (!st->read_source) {
++        return 0;
++    }
++    st->read_source->owner = bd;
++    st->read_source->file = st->fp;
++    st->read_source->references = 1;
++    if (bd_mutex_init(&st->read_source->mutex) < 0) {
++        free(st->read_source);
++        st->read_source = NULL;
++        return 0;
++    }
++    return 1;
++}
++
+ static int _open_m2ts(BLURAY *bd, BD_STREAM *st)
+ {
+     _close_m2ts(st);
+@@ -655,6 +711,10 @@
+     }
+
+     st->fp = disc_open_stream(bd->disc, st->clip->name);
++    if (st->fp && st == &bd->st0 && !_init_read_source(bd, st)) {
++        _close_m2ts(st);
++        return 0;
++    }
+
+     st->clip_size = 0;
+     st->clip_pos = (uint64_t)st->clip->start_pkt * 192;
+@@ -676,23 +736,7 @@
+             st->int_buf_off = 6144;
+
+             if (st == &bd->st0) {
+-                const MPLS_PL *pl = st->clip->title->pl;
+-                const MPLS_STN *stn = &pl->play_item[st->clip->ref].stn;
+-
+-                st->uo_mask = uo_mask_combine(pl->app_info.uo_mask,
+-                                              pl->play_item[st->clip->ref].uo_mask);
+-                _update_uo_mask(bd);
+-
+-                st->m2ts_filter = m2ts_filter_init((int64_t)st->clip->in_time << 1,
+-                                                   (int64_t)st->clip->out_time << 1,
+-                                                   stn->num_video, stn->num_audio,
+-                                                   stn->num_ig, stn->num_pg);
+-
+-                _update_clip_psrs(bd, st->clip);
+-
+-                _init_pg_stream(bd);
+-
+-                _init_textst_timer(bd);
++                _init_main_clip(bd, st);
+             }
+
+             return 1;
+@@ -781,6 +825,10 @@
+                 }
+                 st->clip_block_pos += len;
+
++                if (st == &bd->st0 && bd->read_origin_proc) {
++                    memcpy(bd->original_buf, buf, len);
++                }
++
+                 if ((error = _validate_unit(bd, st, buf)) <= 0) {
+                     /* skip broken unit */
+                     BD_DEBUG(DBG_BLURAY | DBG_CRIT, "Skipping broken unit at %" PRId64 "\n", st->clip_block_pos - len);
+@@ -902,28 +950,55 @@
+ static int64_t _seek_stream(BLURAY *bd, BD_STREAM *st,
+                             const NAV_CLIP *clip, uint32_t clip_pkt)
+ {
++    uint64_t clip_pos = (uint64_t)clip_pkt * 192;
++    uint64_t block_pos = (clip_pos / 6144) * 6144;
++    BD_STREAM next = *st;
++    BD_STREAM *target = st;
++    int new_clip;
++
+     if (!clip)
+         return -1;
+
+-    if (!st->fp || !st->clip || clip->ref != st->clip->ref) {
+-        // The position is in a new clip
+-        st->clip = clip;
+-        if (!_open_m2ts(bd, st)) {
++    new_clip = !st->fp || !st->clip || clip->ref != st->clip->ref ||
++               (st == &bd->st0 && bd->seamless_angle_change);
++    if (new_clip) {
++        /* Keep the current file and filter until the target seek succeeds. */
++        next.fp = NULL;
++        next.read_source = NULL;
++        next.m2ts_filter = NULL;
++        next.clip = clip;
++        if (!_open_m2ts(bd, &next)) {
+             return -1;
+         }
+-    }
+-
++        if (st == &bd->st0 && !_init_read_source(bd, &next)) {
++            _close_m2ts(&next);
++            return -1;
++        }
++        target = &next;
++    }
++
++    if (file_seek(target->fp, block_pos, SEEK_SET) < 0) {
++        BD_DEBUG(DBG_BLURAY | DBG_CRIT, "Unable to seek clip %s!\n", clip->name);
++        if (new_clip) {
++            _close_m2ts(&next);
++        }
++        return -1;
++    }
++
++    if (new_clip) {
++        _close_m2ts(st);
++        *st = next;
++        if (st == &bd->st0) {
++            bd->seamless_angle_change = 0;
++            _init_main_clip(bd, st);
++        }
++    }
+     if (st->m2ts_filter) {
+         m2ts_filter_seek(st->m2ts_filter, 0, (int64_t)st->clip->in_time << 1);
+     }
+
+-    st->clip_pos = (uint64_t)clip_pkt * 192;
+-    st->clip_block_pos = (st->clip_pos / 6144) * 6144;
+-
+-    if (file_seek(st->fp, st->clip_block_pos, SEEK_SET) < 0) {
+-        BD_DEBUG(DBG_BLURAY | DBG_CRIT, "Unable to seek clip %s!\n", st->clip->name);
+-    }
+-
++    st->clip_pos = clip_pos;
++    st->clip_block_pos = block_pos;
+     st->int_buf_off = 6144;
+     st->seek_flag = 1;
+
+@@ -1282,7 +1357,7 @@
+     }
+ }
+
+-static int64_t _seek_time(BLURAY *bd, uint64_t tick, uint8_t is_uo_mask_checked);
++static int64_t _seek_time(BLURAY *bd, uint64_t tick, uint8_t is_uo_mask_checked, uint8_t report_errors);
+
+ int bd_bdj_seek(BLURAY *bd, int playitem, int playmark, int64_t time)
+ {
+@@ -1295,7 +1370,7 @@
+         bd_seek_mark(bd, playmark);
+     }
+     if (time >= 0) {
+-        _seek_time(bd, time, 0);
++        _seek_time(bd, time, 0, 0);
+     }
+
+     bd_mutex_unlock(&bd->mutex);
+@@ -1757,14 +1832,14 @@
+     }
+ }
+
+-static int64_t _seek_time(BLURAY *bd, uint64_t tick, uint8_t is_uo_mask_checked)
++static int64_t _seek_time(BLURAY *bd, uint64_t tick, uint8_t is_uo_mask_checked, uint8_t report_errors)
+ {
+     uint32_t clip_pkt, out_pkt;
+     const NAV_CLIP *clip;
+
+     if (tick >> 33) {
+         BD_DEBUG(DBG_BLURAY | DBG_CRIT, "bd_seek_time(%" PRIu64 ") failed: invalid timestamp\n", tick);
+-        return bd->s_pos;
++        return report_errors ? -1 : (int64_t)bd->s_pos;
+     }
+
+     tick /= 2; // Convert to 45kHz clock ticks
+@@ -1783,18 +1858,25 @@
+     if (bd->title &&
+         tick < bd->title->duration) {
+
+-        _change_angle(bd);
++        unsigned angle = bd->title->angle;
++        if (bd->seamless_angle_change) {
++            nav_set_angle(bd->title, bd->request_angle);
++        }
+
+         // Find the closest access unit to the requested position
+         clip = nav_time_search(bd->title, (uint32_t)tick, &clip_pkt, &out_pkt);
+
+-        _seek_internal(bd, clip, out_pkt, clip_pkt);
++        int64_t result = clip ? _seek_internal(bd, clip, out_pkt, clip_pkt) : -1;
++        if (result < 0 && bd->seamless_angle_change) {
++            nav_set_angle(bd->title, angle);
++        }
++        return report_errors ? result : (int64_t)bd->s_pos;
+
+     } else {
+         BD_DEBUG(DBG_BLURAY | DBG_CRIT, "bd_seek_time(%" PRIu64 ") failed\n", tick);
+     }
+
+-    return bd->s_pos;
++    return report_errors ? -1 : (int64_t)bd->s_pos;
+ }
+
+ int64_t bd_seek_time(BLURAY *bd, uint64_t tick)
+@@ -1803,11 +1885,24 @@
+
+     bd_mutex_lock(&bd->mutex);
+
+-    ret = _seek_time(bd, tick, BLURAY_PLAYER_SETTING_UO_RESTRICTION_SAFE <= bd->uo_restriction_level);
++    ret = _seek_time(bd, tick, BLURAY_PLAYER_SETTING_UO_RESTRICTION_SAFE <= bd->uo_restriction_level, 0);
+
+     bd_mutex_unlock(&bd->mutex);
+
+     return ret;
++}
++
++int bd_seek_time_checked(BLURAY *bd, uint64_t tick)
++{
++    int64_t ret;
++
++    bd_mutex_lock(&bd->mutex);
++
++    ret = _seek_time(bd, tick, BLURAY_PLAYER_SETTING_UO_RESTRICTION_SAFE <= bd->uo_restriction_level, 1);
++
++    bd_mutex_unlock(&bd->mutex);
++
++    return ret >= 0;
+ }
+
+ uint64_t bd_tell_time(BLURAY *bd)
+@@ -1833,22 +1928,19 @@
+     return ((uint64_t)out_time) * 2;
+ }
+
+-int64_t bd_seek_chapter(BLURAY *bd, unsigned chapter)
++static int64_t _seek_chapter(BLURAY *bd, unsigned chapter, uint8_t report_errors)
+ {
+     int is_uo_mask_checked;
+     uint32_t clip_pkt, out_pkt;
+     const NAV_CLIP *clip;
+     int64_t ret_pos;
+
+-    bd_mutex_lock(&bd->mutex);
+     is_uo_mask_checked = (BLURAY_PLAYER_SETTING_UO_RESTRICTION_SAFE < bd->uo_restriction_level);
+
+-    ret_pos = bd->s_pos; // Return current position by default
++    ret_pos = report_errors ? -1 : (int64_t)bd->s_pos;
+     if (bd->title && chapter < bd->title->chap_list.count) {
+         /* Check chapter jump direction for UO restriction */
+         const bd_uo_mask_index_e uo_mask_idx = UO_MASK_CHAPTER_SEARCH_INDEX;
+-
+-        _change_angle(bd);
+
+         if (is_uo_mask_checked && _is_uo_masked(bd, uo_mask_idx)) {
+             BD_DEBUG(DBG_BLURAY | DBG_CRIT, "bd_seek_chapter(%u) UO %d restricted\n", chapter, uo_mask_idx);
+@@ -1856,21 +1948,47 @@
+             ret_pos = -1;
+         } else {
+             /* Seek chapter */
+-            _change_angle(bd);
++            unsigned angle = bd->title->angle;
++            if (bd->seamless_angle_change) {
++                nav_set_angle(bd->title, bd->request_angle);
++            }
+
+             // Find the closest access unit to the requested position
+             clip = nav_chapter_search(bd->title, chapter, &clip_pkt, &out_pkt);
+
+-            _seek_internal(bd, clip, out_pkt, clip_pkt);
+-            ret_pos = bd->s_pos; // Update
++            int64_t result = clip ? _seek_internal(bd, clip, out_pkt, clip_pkt) : -1;
++            if (result < 0 && bd->seamless_angle_change) {
++                nav_set_angle(bd->title, angle);
++            }
++            ret_pos = report_errors ? result : (int64_t)bd->s_pos;
+         }
+     } else {
+         BD_DEBUG(DBG_BLURAY | DBG_CRIT, "bd_seek_chapter(%u) failed\n", chapter);
+     }
+
++    return ret_pos;
++}
++
++int64_t bd_seek_chapter(BLURAY *bd, unsigned chapter)
++{
++    int64_t ret;
++
++    bd_mutex_lock(&bd->mutex);
++    ret = _seek_chapter(bd, chapter, 0);
+     bd_mutex_unlock(&bd->mutex);
+
+-    return ret_pos;
++    return ret;
++}
++
++int bd_seek_chapter_checked(BLURAY *bd, unsigned chapter)
++{
++    int64_t ret;
++
++    bd_mutex_lock(&bd->mutex);
++    ret = _seek_chapter(bd, chapter, 1);
++    bd_mutex_unlock(&bd->mutex);
++
++    return ret >= 0;
+ }
+
+ int64_t bd_chapter_pos(BLURAY *bd, unsigned chapter)
+@@ -2174,6 +2292,13 @@
+             if (new_clip_pkt > st->clip->end_pkt) {
+                 BD_DEBUG(DBG_STREAM, "cut %d bytes at end of block\n", (new_clip_pkt - st->clip->end_pkt) * 192);
+                 size -= (new_clip_pkt - st->clip->end_pkt) * 192;
++            }
++
++            /* Record both sides of filtering while this exact source file is still owned. */
++            if (bd->read_origin_proc) {
++                bd->read_origin_proc(bd->read_origin_handle, st->read_source, st->clip_pos,
++                                     bd->original_buf + st->int_buf_off,
++                                     bd->int_buf + st->int_buf_off, size);
+             }
+
+             /* copy chunk */
+@@ -4100,6 +4225,60 @@
+     return result;
+ }
+
++int bd_register_read_origin_proc(BLURAY *bd, void *handle, bd_read_origin_proc_f proc)
++{
++    int result = 0;
++    bd_mutex_lock(&bd->mutex);
++    if (!bd->st0.fp) {
++        bd->read_origin_handle = handle;
++        bd->read_origin_proc = proc;
++        result = 1;
++    }
++    bd_mutex_unlock(&bd->mutex);
++    return result;
++}
++
++void bd_retain_read_source(BD_READ_SOURCE *source)
++{
++    bd_mutex_lock(&source->mutex);
++    source->references++;
++    bd_mutex_unlock(&source->mutex);
++}
++
++void bd_release_read_source(BD_READ_SOURCE *source)
++{
++    unsigned references;
++    bd_mutex_lock(&source->mutex);
++    references = --source->references;
++    bd_mutex_unlock(&source->mutex);
++    if (!references) {
++        file_close(source->file);
++        bd_mutex_destroy(&source->mutex);
++        free(source);
++    }
++}
++
++int64_t bd_read_source(BLURAY *bd, BD_READ_SOURCE *source, uint64_t position,
++                       uint8_t *buffer, uint32_t size)
++{
++    int64_t result = -1;
++    if (source->owner != bd || position > INT64_MAX) {
++        return -1;
++    }
++    bd_mutex_lock(&bd->mutex);
++    int64_t saved_position = file_tell(source->file);
++    if (saved_position >= 0) {
++        if (file_seek(source->file, (int64_t)position, SEEK_SET) == (int64_t)position) {
++            result = source->file->read(source->file, buffer, size);
++        }
++        if (file_seek(source->file, saved_position, SEEK_SET) != saved_position) {
++            result = -1;
++        }
++    }
++    bd_mutex_unlock(&bd->mutex);
++    return result;
++}
++
+ void bd_register_overlay_proc(BLURAY *bd, void *handle, bd_overlay_proc_f func)
+ {
+     if (!bd) {
+--- a/src/libbluray/bluray.h
++++ b/src/libbluray/bluray.h
+@@ -558,6 +558,19 @@
+
+ /**
+  *
++ *  Seek to specific time in 90Khz ticks and report whether the seek succeeded.
++ *
++ *  The timestamp must be less than 2^33 and within the currently selected title.
++ *  UO restrictions are handled in the same way as bd_seek_time().
++ *
++ * @param bd  BLURAY object
++ * @param tick tick count
++ * @return 1 on success, 0 on invalid request, UO restriction or seek failure
++ */
++BD_PUBLIC int bd_seek_time_checked(BLURAY *bd, uint64_t tick);
++
++/**
++ *
+  *  Seek to a chapter.
+  *
+  *  First chapter is 0.
+@@ -568,6 +581,19 @@
+  * @return <0 on UO mask restriction, current seek position otherwise
+  */
+ BD_PUBLIC int64_t bd_seek_chapter(BLURAY *bd, unsigned chapter);
++
++/**
++ *
++ *  Seek to a chapter and report whether the seek succeeded.
++ *
++ *  First chapter is 0. The chapter must exist in the currently selected title.
++ *  UO restrictions are handled in the same way as bd_seek_chapter().
++ *
++ * @param bd  BLURAY object
++ * @param chapter chapter to seek to
++ * @return 1 on success, 0 on invalid request, UO restriction or seek failure
++ */
++BD_PUBLIC int bd_seek_chapter_checked(BLURAY *bd, unsigned chapter);
+
+ /**
+  *
+@@ -1282,6 +1308,24 @@
+  */
+ BD_PUBLIC struct bd_file_s *bd_open_file_dec(BLURAY *bd, const char *path);
+
++
++/** Original file behind a recorded main-path read. The BLURAY object must outlive it. */
++typedef struct bd_read_source BD_READ_SOURCE;
++
++/** Called under the disc lock with each chunk's original file byte offset. */
++typedef void (*bd_read_origin_proc_f)(void *handle, BD_READ_SOURCE *source,
++                                     uint64_t position, const uint8_t *original,
++                                     const uint8_t *filtered, uint32_t size);
++
++/** Register before selecting a title. Returns zero if a main-path file is already open. */
++BD_PUBLIC int bd_register_read_origin_proc(BLURAY *bd, void *handle, bd_read_origin_proc_f proc);
++BD_PUBLIC void bd_retain_read_source(BD_READ_SOURCE *source);
++BD_PUBLIC void bd_release_read_source(BD_READ_SOURCE *source);
++
++/** Read original bytes without changing navigation or leaving the file cursor moved. */
++BD_PUBLIC int64_t bd_read_source(BLURAY *bd, BD_READ_SOURCE *source, uint64_t position,
++                                 uint8_t *buffer, uint32_t size);
++
+ #ifdef __cplusplus
+ }
+ #endif

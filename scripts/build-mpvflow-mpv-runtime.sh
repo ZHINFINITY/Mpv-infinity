@@ -305,6 +305,7 @@ mkdir -p "$BUILDSCRIPTS/deps" "$LIBBLURAY_SOURCE"
 curl -fsSL "https://downloads.videolan.org/pub/videolan/libbluray/$LIBBLURAY_VERSION/libbluray-$LIBBLURAY_VERSION.tar.xz" -o "$LIBBLURAY_ARCHIVE"
 echo "$LIBBLURAY_SHA256  $LIBBLURAY_ARCHIVE" | sha256sum -c -
 tar -xJf "$LIBBLURAY_ARCHIVE" -C "$LIBBLURAY_SOURCE" --strip-components=1
+"$ROOT/scripts/patches/mpvlibandroid-fongmi/patch-libbluray.sh" "$LIBBLURAY_SOURCE"
 rm -f "$LIBBLURAY_ARCHIVE"
 
 cd "$BUILDSCRIPTS"

@@ -31,6 +31,7 @@ class Arm64WorkflowTest(unittest.TestCase):
             "mpv-fongmi-14b3999a1a3e322c217bc90ee4df5a8f1bc88f69",
             "libplacebo-275f7dea27924cdd34ab2e6c20e448b6bc4fab65",
             "scripts/prepare-mpvflow.py",
+            "scripts/patches/mpvlibandroid-fongmi/**",
             "app/src/main/cpp/**",
         ):
             self.assertIn(pin, restore)

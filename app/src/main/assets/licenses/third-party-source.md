@@ -42,3 +42,13 @@ LGPL reverse-engineering permissions for **debugging modifications** and the abi
 * The CPython Android libraries/zip are labelled `3.13.12`, but no complete source-to-bundle Android recipe is checked in. CPython's permissive PSF licence requires its notices and applicable attribution to be preserved; it does not impose LGPL-style corresponding-source or relinking obligations. A missing CPython build recipe is a reproducibility limitation, not by itself a PolyForm incompatibility.
 
 This manifest is an acquisition and replacement guide—not a claim that every distributed binary is byte-for-byte reproducible or a legal certification of a particular release. The project's noncommercial restriction applies only to Covered Code; the independent third-party grants and recipients' rights under them remain intact.
+
+
+## MPV-RX FongMi libbluray compatibility patches
+
+The experimental arm64 FongMi runtime keeps the stock VideoLAN libbluray 1.4.1 archive and applies the four matching patches from the FongMi AAR build branch of [Riteshp2001/mpvlibAndroid commit `d04217abe8e72e4a099269f045855bf69b87d53b`](https://github.com/Riteshp2001/mpvlibAndroid/tree/d04217abe8e72e4a099269f045855bf69b87d53b), the `mpvlib 1.1.8` preparation commit used by MPV-RX's `mpvlib-fongmi:1.1.8` dependency. The patches and zero-fuzz/idempotent patcher are retained in `scripts/patches/mpvlibandroid-fongmi/`; source details and application order are in that directory's README.
+
+The upstream patch files and SHA-256 values are: `libbluray-1.4.1-still-eof.patch` (`cc0a15ee88b1ead665dadbc3ac363c2686e5184fc1e04a76713665cad57c0fc7`), `libbluray-1.4.1-checked-seek.patch` (`1055d99f0940b3077e9f7171a220f242396e6bf5196415f3fc987b316d51447c`), `libbluray-1.4.1-menu-info.patch` (`17a1b88c72c3b467ba6ac8d9419f003c93f694733b9214deee13bad5ebfedb5c`), and `libbluray-1.4.1-bdj-pointer.patch` (`232ce1e634335af5d69a705745a57ea5cd5da8d7160b9441b5ba154e7b3dec85`). Preserve the mpvlibAndroid MIT notice in `app/src/main/assets/mpv/licenses/mpvlibAndroid-LICENSE-MIT`, alongside libbluray's existing LGPL-2.1 notices.
+
+
+The mpvlibAndroid MIT notice covers its wrapper/build-helper source; it does not relicense the LGPL-2.1 libbluray code modified by these patches. Retain libbluray's original notices and corresponding source as required by its license.

@@ -1,0 +1,12 @@
+diff --git a/src/libbluray/bluray.c b/src/libbluray/bluray.c
+--- a/src/libbluray/bluray.c
++++ b/src/libbluray/bluray.c
+@@ -2241,6 +2241,8 @@ int bd_read_skip_still(BLURAY *bd)
+     if (st->clip) {
+         if (st->clip->still_mode == BLURAY_STILL_TIME) {
+             st->clip = nav_next_clip(bd->title, st->clip);
++            /* Reaching the end of the title also releases the still. */
++            ret = 1;
+             if (st->clip) {
+                 ret = _open_m2ts(bd, st);
+             }
