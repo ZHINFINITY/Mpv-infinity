@@ -14,6 +14,69 @@ class PlayerControlVisibilityPolicyTest {
   }
 
   @Test
+  fun bufferingOrFirstFrameWaitDoesNotPinControlsWhenPlaybackIsPausedOrUnknown() {
+    assertTrue(
+      PlayerControlVisibilityPolicy.shouldAutoHideControls(
+        isAudioOnly = false,
+        controlsShown = true,
+        paused = true,
+        bufferingOrWaiting = true,
+        isSeeking = false,
+        isUnlockSliderDragging = false,
+        drawerBlocksAutoHide = false,
+      ),
+    )
+    assertTrue(
+      PlayerControlVisibilityPolicy.shouldAutoHideControls(
+        isAudioOnly = false,
+        controlsShown = true,
+        paused = null,
+        bufferingOrWaiting = false,
+        isSeeking = false,
+        isUnlockSliderDragging = false,
+        drawerBlocksAutoHide = false,
+      ),
+    )
+  }
+
+  @Test
+  fun pausedReadyVideoAndActiveInteractionsKeepTheirExistingProtection() {
+    assertFalse(
+      PlayerControlVisibilityPolicy.shouldAutoHideControls(
+        isAudioOnly = false,
+        controlsShown = true,
+        paused = true,
+        bufferingOrWaiting = false,
+        isSeeking = false,
+        isUnlockSliderDragging = false,
+        drawerBlocksAutoHide = false,
+      ),
+    )
+    assertFalse(
+      PlayerControlVisibilityPolicy.shouldAutoHideControls(
+        isAudioOnly = false,
+        controlsShown = true,
+        paused = false,
+        bufferingOrWaiting = false,
+        isSeeking = true,
+        isUnlockSliderDragging = false,
+        drawerBlocksAutoHide = false,
+      ),
+    )
+    assertFalse(
+      PlayerControlVisibilityPolicy.shouldAutoHideControls(
+        isAudioOnly = true,
+        controlsShown = true,
+        paused = false,
+        bufferingOrWaiting = false,
+        isSeeking = false,
+        isUnlockSliderDragging = false,
+        drawerBlocksAutoHide = false,
+      ),
+    )
+  }
+
+  @Test
   fun nativeReadinessDoesNotInheritStaleMpvLoading() {
     assertTrue(
       PlayerControlVisibilityPolicy.shouldShowBufferingIndicator(

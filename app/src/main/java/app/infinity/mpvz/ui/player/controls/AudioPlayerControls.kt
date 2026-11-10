@@ -14,6 +14,9 @@ import app.infinity.mpvz.ui.player.StatsLuaOverlay
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.boundsInWindow
 import app.infinity.mpvz.ui.player.PlaybackSession
+import app.infinity.mpvz.ui.player.EmbeddedMotionArtwork
+import app.infinity.mpvz.ui.player.MotionArtworkImage
+import app.infinity.mpvz.ui.player.rememberMotionArtworkDrawable
 import app.infinity.mpvz.ui.player.AudioPlayerSheetState
 import app.infinity.mpvz.ui.player.MediaPlaybackService
 import app.infinity.mpvz.ui.player.BrowserMusicSheetState
@@ -223,6 +226,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 private data class AudioPresentationMetadata(
   val artwork: Bitmap?,
   val artist: String?,
+  val motionArtwork: ByteArray? = null,
 )
 
 /**
@@ -231,8 +235,8 @@ private data class AudioPresentationMetadata(
  * Previously each consumer created its own MediaMetadataRetriever (and the current track created a
  * second retriever just for artist fallback), so entering Now Playing could parse the same file
  * several times and hold several native retrievers concurrently. The cache is byte-sized by
- * artwork memory, metadata-only/missing-art entries still consume a small fixed weight, and the
- * mutex intentionally serializes cache misses to cap native decoder/retriever pressure.
+ * decoded bitmap and compressed motion-art bytes; metadata-only/missing-art entries still consume
+ * a small fixed weight, and the mutex intentionally serializes misses to cap decoder pressure.
  */
 private object AudioPresentationMetadataCache {
   private const val MAX_CACHE_KB = 16 * 1024
@@ -243,11 +247,14 @@ private object AudioPresentationMetadataCache {
       override fun sizeOf(
         key: String,
         value: AudioPresentationMetadata,
-      ): Int =
-        maxOf(
-          METADATA_ONLY_WEIGHT_KB,
-          (value.artwork?.byteCount ?: 0) / 1024,
-        )
+      ): Int {
+        val encodedAndDecodedBytes =
+          (value.artwork?.byteCount ?: 0).toLong() + (value.motionArtwork?.size ?: 0).toLong()
+        val kilobytes = (encodedAndDecodedBytes + 1023L) / 1024L
+        return maxOf(METADATA_ONLY_WEIGHT_KB.toLong(), kilobytes)
+          .coerceAtMost(Int.MAX_VALUE.toLong())
+          .toInt()
+      }
     }
 
   private fun cacheKey(
@@ -306,14 +313,16 @@ private object AudioPresentationMetadataCache {
               }
             }
 
+            val pictureBytes = retriever?.embeddedPicture
             AudioPresentationMetadata(
-              artwork = explicitArtwork ?: retriever?.let { EmbeddedArtworkResolver.decodeEmbeddedArtwork(cleanPath ?: pathOrUri, it) },
+              artwork = explicitArtwork ?: retriever?.let { EmbeddedArtworkResolver.decodeEmbeddedArtwork(cleanPath ?: pathOrUri, it, pictureBytes) },
               artist = retriever?.let {
                 it.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ARTIST)
                   ?: it.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ALBUMARTIST)
                   ?: it.extractMetadata(MediaMetadataRetriever.METADATA_KEY_AUTHOR)
                   ?: it.extractMetadata(MediaMetadataRetriever.METADATA_KEY_COMPOSER)
               },
+              motionArtwork = EmbeddedMotionArtwork.animatedBytes(pictureBytes),
             )
           } catch (_: Exception) {
             val fallbackArtwork = explicitArtwork ?: if (cleanPath != null && !isNetworkStream) {
@@ -578,9 +587,14 @@ private fun CanvasSpectrumCaptureEffect(
 private fun CoverArtCardImage(
   bitmap: Bitmap?,
   artworkUrl: String? = null,
+  motionArtwork: ByteArray? = null,
+  isPlaying: Boolean = false,
 ) {
+  val animatedDrawable = rememberMotionArtworkDrawable(motionArtwork)
   val imageBitmap = remember(bitmap) { bitmap?.asImageBitmap() }
-  if (imageBitmap != null) {
+  if (animatedDrawable != null) {
+    MotionArtworkImage(animatedDrawable, isPlaying, modifier = Modifier.fillMaxSize())
+  } else if (imageBitmap != null) {
     Image(
       bitmap = imageBitmap,
       contentDescription = null,
@@ -1929,7 +1943,12 @@ fun AudioPlayerControls(
                 shape = coverShape,
                 color = Color.Transparent,
               ) {
-                CoverArtCardImage(bitmap = activeCoverOverride ?: albumArtBitmap, artworkUrl = currentArtworkUri)
+                CoverArtCardImage(
+                  bitmap = activeCoverOverride ?: albumArtBitmap,
+                  artworkUrl = currentArtworkUri,
+                  motionArtwork = currentAudioPresentation?.motionArtwork?.takeIf { activeCoverOverride == null },
+                  isPlaying = paused != true && !coverShown,
+                )
               }
             }
           }

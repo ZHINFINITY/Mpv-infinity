@@ -58,7 +58,8 @@ class PlayerFollowupUiContractTest {
     assertTrue(controls.contains("parseButtons(portraitBottomControlsPref, mutableSetOf())"))
     assertTrue(controls.contains("buttons = topRightButtons"))
     assertTrue(controls.contains("buttons = portraitBottomButtons"))
-    assertTrue(controls.contains("visible = areButtonsVisible && !isPortrait"))
+    assertTrue(controls.contains("visible = { visibility -> visibility.first && !isPortrait }"))
+    assertTrue(controls.contains("controlVisibilityTransition.AnimatedVisibility("))
     assertTrue(landscape.contains("buttons.forEach { button ->") && landscape.contains("RenderPlayerButton("))
     assertTrue(portrait.contains("buttons.forEach { button ->") && portrait.contains("RenderPlayerButton("))
     assertTrue(renderer.contains("PlayerButton.TIME_NETWORK ->"))
@@ -173,7 +174,7 @@ class PlayerFollowupUiContractTest {
   }
 
   @Test
-  fun videoStartupAutoHideDoesNotWaitForBufferingOrFirstFrameAndPublishesCustomButtonsBeforeScriptWork() {
+  fun videoStartupAutoHidesDuringBufferingOrFirstFrameWaitAndPublishesCustomButtonsBeforeScriptWork() {
     val controls = read("app/src/main/java/app/infinity/mpvz/ui/player/controls/PlayerControls.kt")
     val viewModel = read("app/src/main/java/app/infinity/mpvz/ui/player/PlayerViewModel.kt")
     val activity = read("app/src/main/java/app/infinity/mpvz/ui/player/PlayerActivity.kt")
@@ -187,8 +188,10 @@ class PlayerFollowupUiContractTest {
     val uiPublishIndex = setup.indexOf("_customButtons.value = parseCustomButtonUiStates(jsonString)")
     val backgroundSetupIndex = setup.indexOf("viewModelScope.launch(Dispatchers.IO)")
 
-    assertFalse(autoHideEffect.contains("isWaitingForVideo"))
-    assertFalse(autoHideEffect.contains("showBufferingIndicator"))
+    assertTrue(autoHideEffect.contains("isWaitingForVideo,"))
+    assertTrue(autoHideEffect.contains("showBufferingIndicator,"))
+    assertTrue(autoHideEffect.contains("shouldAutoHideControls("))
+    assertTrue(autoHideEffect.contains("bufferingOrWaiting = showBufferingIndicator || isWaitingForVideo"))
     assertTrue(controls.contains("controlsShown = controlsShown,"))
     assertFalse(controls.contains("controlsShown = controlsShown || showBufferingIndicator"))
     assertTrue(uiPublishIndex >= 0)
@@ -230,7 +233,9 @@ class PlayerFollowupUiContractTest {
     assertFalse(preview.contains("cubicTo("))
     assertTrue(controls.contains("PlayerControlVisibilityPolicy.shouldShowBufferingIndicator("))
     assertTrue(controls.contains("PlayerControlVisibilityPolicy.areButtonsVisible("))
-    assertTrue(controls.contains("visible = areButtonsVisible"))
+    assertTrue(controls.contains("targetState = areButtonsVisible to seekBarControlsVisible"))
+    assertTrue(controls.contains("controlVisibilityTransition.AnimatedVisibility("))
+    assertTrue(controls.contains("visible = { visibility -> visibility.second }"))
     assertTrue(controls.contains("visible = showBufferingIndicator"))
     assertFalse(controls.contains("controlsShown = controlsShown || showBufferingIndicator"))
     assertFalse(controls.contains("isNativeBuffering"))
@@ -316,8 +321,9 @@ class PlayerFollowupUiContractTest {
     assertTrue(playableUri.contains("sourceUri?.scheme.equals(\"content\", ignoreCase = true)"))
     assertTrue(playableUri.contains("return sourceUri.toString()"))
     assertTrue(playableUri.contains("intent.getStringExtra(\"local_media_path\")"))
-    assertTrue(playableUri.contains("path.isNotBlank() && File(path).canRead()"))
-    assertTrue(playableUri.indexOf("File(path).canRead()") < playableUri.indexOf("if (sourceUri?.scheme.equals"))
+    assertTrue(playableUri.contains("path.isNotBlank()"))
+    assertFalse(playableUri.contains("File(path).canRead()"))
+    assertTrue(playableUri.indexOf("if (sourceUri?.scheme.equals") < playableUri.indexOf("intent.getStringExtra(\"local_media_path\")"))
     assertFalse("The launch path must not open a one-shot content descriptor", playableUri.contains("openContentFd"))
     assertTrue(launchIdentity.contains("takeUnless { it.scheme.equals(\"content\", ignoreCase = true) }"))
     assertTrue(launchIdentity.indexOf("takeUnless") < launchIdentity.indexOf("resolveLocalPath(this)"))
@@ -374,6 +380,42 @@ class PlayerFollowupUiContractTest {
     assertTrue(activity.contains("message.startsWith(\"http error: 5\")"))
     assertTrue(activity.contains("M3UParseResult.Error(\"M3U preflight timed out\")"))
     assertTrue(activity.contains("if (generation != m3uPreflightGeneration) return"))
+  }
+
+  @Test
+  fun initialMpvStartupMovesAssetAndCoreWorkOffMainWithoutChangingFlowSnapshotting() {
+    val activity = read("app/src/main/java/app/infinity/mpvz/ui/player/PlayerActivity.kt")
+    val mpvView = read("app/src/main/java/app/infinity/mpvz/ui/player/MPVView.kt")
+    val session = read("app/src/main/java/app/infinity/mpvz/ui/player/PlaybackSession.kt")
+    val initialization = activity.substringAfter("private fun continuePlayerInitialization()")
+      .substringBefore("\n  private fun completePlayerCreation(")
+    val assetPreparation = activity.substringAfter("private fun startMpvAssetPreparation()")
+      .substringBefore("\n  /** Runs after owner handoff")
+    val corePreparation = activity.substringAfter("private fun startMpvCorePreparation()")
+      .substringBefore("\n  private suspend fun initializeMpvCoreWithOwnerGuard()")
+    val playableUri = activity.substringAfter("private fun getPlayableUri(intent: Intent)")
+      .substringBefore("\n  /**")
+    val playerCompletion = activity.substringAfter("private fun completePlayerCreation(initError: String?)")
+      .substringBefore("\n  private ")
+
+    assertTrue(initialization.contains("playerInitializationStarted = true"))
+    assertFalse(initialization.contains("playerInitializationComplete = true"))
+    assertTrue(playerCompletion.contains("playerInitializationComplete = true"))
+    assertTrue(initialization.contains("startMpvAssetPreparation()"))
+    assertTrue(initialization.contains("releaseDetachedBackgroundPlaybackBeforeFreshLaunch()"))
+    assertTrue(initialization.indexOf("releaseDetachedBackgroundPlaybackBeforeFreshLaunch()") < initialization.indexOf("startMpvCorePreparation()"))
+    assertTrue(assetPreparation.contains("lifecycleScope.launch(Dispatchers.IO)"))
+    assertTrue(corePreparation.contains("lifecycleScope.async(Dispatchers.IO)"))
+    assertTrue(corePreparation.contains("mpvAssetPreparationJob?.join()"))
+    assertTrue(corePreparation.contains("snapshotDisplayRefreshRateOnMain()"))
+    assertTrue(activity.contains("initializePlayerWithRendererFallback(ownerIsActive)"))
+    assertTrue(activity.contains("finishMPVSetup(initError)"))
+    assertTrue(mpvView.contains("ownerIsActive = ownerIsActive"))
+    assertTrue(mpvView.contains("decoderPreferences.mpvFlowFrameInterpolation.get()"))
+    assertTrue(mpvView.contains("effectiveMpvFlowTargetFps("))
+    assertTrue(session.contains("ensureOwnerActive()"))
+    assertFalse(playableUri.contains("File(path).canRead()"))
+    assertTrue(playableUri.indexOf("sourceUri?.scheme.equals(\"content\"") < playableUri.indexOf("local_media_path"))
   }
 
   @Test

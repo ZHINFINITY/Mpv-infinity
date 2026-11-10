@@ -148,6 +148,7 @@ class MPVView(
   fun initializeSession(
     configDir: String,
     cacheDir: String,
+    ownerIsActive: () -> Boolean = { true },
   ): Result<Boolean> {
     // The libmpv core is process-wide, so returning to the player can reuse a core created with
     // older renderer preferences. Keep fallbacks stable for the lifetime of that preference
@@ -198,6 +199,7 @@ class MPVView(
         initOptions = ::initOptions,
         postInitOptions = ::postInitOptions,
         observeProperties = ::observeProperties,
+        ownerIsActive = ownerIsActive,
       )
     // Refresh from the process-wide owner even when initOptions was skipped on core reuse.
     interpolationOutputFrameRate = PlaybackSession.surfaceFrameRateHintHz()

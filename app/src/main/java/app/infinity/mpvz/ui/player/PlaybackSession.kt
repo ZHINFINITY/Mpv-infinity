@@ -21,6 +21,7 @@ import app.infinity.mpvz.preferences.MpvConfigOverridePolicy
 import app.infinity.mpvz.utils.media.RadioStreamProbe
 import `is`.xyz.mpv.MPVLib
 import `is`.xyz.mpv.MPVNode
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -339,13 +340,24 @@ object PlaybackSession : MPVLib.EventObserver {
     initOptions: () -> Unit,
     postInitOptions: () -> Unit,
     observeProperties: () -> Unit,
+    ownerIsActive: () -> Boolean = { true },
   ): Result<Boolean> = runCatching {
+    fun ensureOwnerActive() {
+      if (!ownerIsActive()) throw CancellationException("Playback owner changed during MPV initialization")
+    }
+
+    ensureOwnerActive()
     nativeLifecycleLock.lock()
     try {
+      ensureOwnerActive()
       val reuse = nativeLock.withLock {
         initialized && activeCoreConfigurationKey == coreConfigurationKey && !retiringCore
       }
-      if (reuse) return@runCatching false
+      if (reuse) {
+        ensureOwnerActive()
+        return@runCatching false
+      }
+      ensureOwnerActive()
       retireCoreForLifecycleChange()
       nativeCallbackGate.closeAndDrain()
       nativeLock.withLock {
@@ -373,18 +385,24 @@ object PlaybackSession : MPVLib.EventObserver {
         updateState { it.copy(phase = PlaybackPhase.INITIALIZING, error = null) }
       }
       try {
+        ensureOwnerActive()
         MPVLib.create(context.applicationContext)
+        ensureOwnerActive()
         MPVLib.setOptionString("config", "yes")
         MPVLib.setOptionString("config-dir", configDir)
         MPVLib.setOptionString("gpu-shader-cache-dir", cacheDir)
         MPVLib.setOptionString("icc-cache-dir", cacheDir)
         initOptions()
+        ensureOwnerActive()
         MPVLib.init()
+        ensureOwnerActive()
         nativeLock.withLock { nativeCoreReady = true }
         val userAgent = MPVLib.getPropertyString("user-agent")
         postInitOptions()
+        ensureOwnerActive()
         MPVLib.setOptionString("force-window", "no")
         MPVLib.setOptionString("idle", "yes")
+        ensureOwnerActive()
         nativeLock.withLock {
           defaultUserAgent = userAgent
           initialized = true
@@ -392,12 +410,16 @@ object PlaybackSession : MPVLib.EventObserver {
           activeCoreConfigurationKey = coreConfigurationKey
           updateState { it.copy(phase = PlaybackPhase.IDLE, paused = true, error = null) }
         }
+        ensureOwnerActive()
         nativeCallbackGate.open()
+        ensureOwnerActive()
         MPVLib.addObserver(this)
         // These calls issue JNI property observations and can synchronously produce callbacks;
         // never execute them while nativeLock is held.
         reobserveTrackedProperties()
+        ensureOwnerActive()
         observeProperties()
+        ensureOwnerActive()
         true
       } catch (error: Throwable) {
         nativeLock.withLock {

@@ -147,6 +147,8 @@ import kotlinx.coroutines.DelicateCoroutinesApi
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
+import kotlinx.coroutines.Deferred
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -1534,7 +1536,10 @@ class PlayerActivity :
   private var preflightM3uParse: ExternalM3uPreflight? = null
   private var m3uPreflightJob: Job? = null
   private var m3uPreflightGeneration = 0L
+  private var playerInitializationStarted = false
   private var playerInitializationComplete = false
+  private var mpvAssetPreparationJob: Job? = null
+  private var mpvCorePreparationJob: Deferred<String?>? = null
 
   override fun onCreate(savedInstanceState: Bundle?) {
     enableEdgeToEdge()
@@ -1656,11 +1661,14 @@ class PlayerActivity :
   }
 
   private fun continuePlayerInitialization() {
-    if (playerInitializationComplete || isFinishing || isDestroyed || !ownsPlaybackSession()) return
-    playerInitializationComplete = true
+    if (playerInitializationStarted || playerInitializationComplete || isFinishing || isDestroyed || !ownsPlaybackSession()) return
+    playerInitializationStarted = true
     applyInitialVideoOrientation(intent)
     setContentView(binding.root)
+    startMpvAssetPreparation()
     configureNativeEngineIfNeeded()
+    releaseDetachedBackgroundPlaybackBeforeFreshLaunch()
+    startMpvCorePreparation()
     lifecycleScope.launch {
       repeatOnLifecycle(Lifecycle.State.STARTED) {
         combine(
@@ -2087,16 +2095,22 @@ class PlayerActivity :
     setupSystemBarsAutoHide()
     setupPipHelper()
 
-    // A detached background session belongs to PlaybackSession, not to the old Activity.
-    // Notification re-entry attaches this new surface to that live core without reloading it.
-    releaseDetachedBackgroundPlaybackBeforeFreshLaunch()
-    val setupResult = setupMPV()
+    lifecycleScope.launch {
+      val initError = awaitMpvCorePreparation()
+      if (!ownsPlaybackSession() || isFinishing || isDestroyed) return@launch
+      completePlayerCreation(initError)
+    }
+  }
+
+  private fun completePlayerCreation(initError: String?) {
+    val setupResult = finishMPVSetup(initError)
     if (setupResult != null) {
       isUserFinishing = true
       Toast.makeText(this, getString(R.string.toast_playback_load_failed) + ": " + setupResult, Toast.LENGTH_LONG).show()
       finish()
       return
     }
+    playerInitializationComplete = true
     // Construct the Activity-scoped adapter only after the process-wide native core exists;
     // its StateFlow declarations register native properties during ViewModel initialization.
     viewModel.attachHost(this)
@@ -3108,6 +3122,8 @@ class PlayerActivity :
 
   override fun onDestroy() {
     Log.d(TAG, "PlayerActivity onDestroy")
+    mpvCorePreparationJob?.cancel()
+    mpvAssetPreparationJob?.cancel()
     if (activeNativeCloseActivity?.get() === this) activeNativeCloseActivity = null
     val ownsPlaybackSession = ownsPlaybackSession()
     val playbackWasInitialized = mpvInitialized
@@ -4397,22 +4413,14 @@ class PlayerActivity :
     if (!committed) throw CancellationException("Media request owner was replaced")
   }
 
-  /**
-   * Initializes the MPV player with the necessary paths and observers.
-   * CRITICAL: Must copy config and scripts BEFORE initializing MPV, as MPV loads scripts during init.
-   */
+  /** Synchronous path retained for an already-running Native-to-MPV background handoff. */
   private fun setupMPV(): String? {
-    // Prepare config and user MPV assets before initializing MPV.
-    runCatching {
-      val preparationStartedAt = android.os.SystemClock.elapsedRealtime()
-      syncBundledAssetsIfNeeded()
-      prepareUserMpvAssetsForStartup()
-      sanitizeInternalFontsDirectory()
-      Log.d(TAG, "MPV startup assets ready in ${android.os.SystemClock.elapsedRealtime() - preparationStartedAt} ms")
-    }.onFailure { e ->
-      Log.e(TAG, "Error copying MPV config and assets", e)
-    }
+    prepareMpvAssetsForStartup()
+    configureMpvSurfaceCallback()
+    return finishMPVSetup(initializePlayerWithRendererFallback())
+  }
 
+  private fun configureMpvSurfaceCallback() {
     player.onSurfaceReady = {
       if (pendingRendererRebuildAfterBackground) {
         pendingRendererRebuildAfterBackground = false
@@ -4424,23 +4432,80 @@ class PlayerActivity :
       viewModel.restartAmbientIfActive()
       binding.root.post(::updateVideoAmbientPlayerBounds)
     }
+  }
 
-    // NOW initialize MPV - it will find and load the scripts we just copied
-    val initError = initializePlayerWithRendererFallback()
+  /** Main-thread post-init work; the native core itself is prepared on the IO dispatcher. */
+  private fun finishMPVSetup(initError: String?): String? {
+    check(android.os.Looper.myLooper() == android.os.Looper.getMainLooper()) {
+      "MPV surface callbacks must be bound on Main"
+    }
     if (initError != null) return initError
     bindMpvSessionCallbacksOnMain()
     runCatching { PlaybackSession.setThumbnailJavaVM(applicationContext) }
     mpvInitialized = true
-    // Some Android audio devices repeatedly underrun the default MPV output buffer. Keep the
-    // existing decoder/video/subtitle pipeline unchanged and give AudioTrack enough headroom to
-    // avoid the pause/flush/start loop seen during Native-to-MPV handoff and playlist advance.
+    // Preserve the existing MPV audio buffer and playback/interpolation configuration.
     runCatching { PlaybackSession.setOptionString("audio-buffer", "1.0") }
       .onFailure { error -> Log.w(TAG, "Unable to increase MPV audio buffer", error) }
     Log.d(TAG, "MPV initialized")
-
-
     scheduleDeferredSubtitleFontsSync()
     return null
+  }
+
+  private fun prepareMpvAssetsForStartup() {
+    val preparationStartedAt = android.os.SystemClock.elapsedRealtime()
+    synchronized(MPV_ASSET_PREPARATION_LOCK) {
+      runCatching {
+        syncBundledAssetsIfNeeded()
+        prepareUserMpvAssetsForStartup()
+        sanitizeInternalFontsDirectory()
+      }.onFailure { error -> Log.e(TAG, "Error copying MPV config and assets", error) }
+    }
+    Log.d(TAG, "MPV startup assets ready in ${android.os.SystemClock.elapsedRealtime() - preparationStartedAt} ms")
+  }
+
+  private fun startMpvAssetPreparation() {
+    mpvAssetPreparationJob?.cancel()
+    mpvAssetPreparationJob = lifecycleScope.launch(Dispatchers.IO) {
+      prepareMpvAssetsForStartup()
+    }
+  }
+
+  /** Runs after owner handoff is decided and the display-rate inputs have been captured on Main. */
+  private fun startMpvCorePreparation() {
+    configureMpvSurfaceCallback()
+    // Flow's target FPS still uses the exact Main-thread display snapshot; no interpolation option,
+    // preference, default, or package setting is changed by moving MPVLib.init off Main.
+    player.snapshotDisplayRefreshRateOnMain()
+    mpvCorePreparationJob?.cancel()
+    val preparationStartedAt = android.os.SystemClock.elapsedRealtime()
+    mpvCorePreparationJob = lifecycleScope.async(Dispatchers.IO) {
+      mpvAssetPreparationJob?.join()
+      initializeMpvCoreWithOwnerGuard().also {
+        Log.d(TAG, "MPV core startup stage completed in ${android.os.SystemClock.elapsedRealtime() - preparationStartedAt} ms")
+      }
+    }
+  }
+
+  private suspend fun initializeMpvCoreWithOwnerGuard(): String? {
+    val initializationJob = currentCoroutineContext()[Job]
+    val ownerIsActive = {
+      initializationJob?.isActive == true && ownsPlaybackSession() && !isFinishing && !isDestroyed
+    }
+    if (!ownerIsActive()) throw CancellationException("Playback owner changed before MPV initialization")
+    return initializePlayerWithRendererFallback(ownerIsActive)
+  }
+
+  private suspend fun awaitMpvCorePreparation(): String? {
+    return try {
+      val preparation = mpvCorePreparationJob
+        ?: throw IllegalStateException("MPV core preparation was not started")
+      preparation.await()
+    } catch (error: CancellationException) {
+      throw error
+    } catch (error: Exception) {
+      Log.e(TAG, "Could not initialize MPV", error)
+      error.message ?: getString(R.string.toast_playback_load_failed)
+    }
   }
 
   private fun prepareUserMpvAssetsForStartup() {
@@ -4526,20 +4591,28 @@ class PlayerActivity :
     syncPreferences.edit().putString(USER_MPV_ASSET_SELECTION, currentUserMpvAssetSelection()).apply()
   }
 
-  private fun initializePlayerWithRendererFallback(): String? {
+  private fun initializePlayerWithRendererFallback(ownerIsActive: () -> Boolean = { true }): String? {
+    if (!ownerIsActive()) throw CancellationException("Playback owner changed before MPV initialization")
     player.forceOpenGlFallback = false
-    val firstAttempt = player.initializeSession(filesDir.path, cacheDir.path)
-    if (firstAttempt.isSuccess) return null
+    val firstAttempt = player.initializeSession(filesDir.path, cacheDir.path, ownerIsActive)
+    if (!ownerIsActive()) throw CancellationException("Playback owner changed during MPV initialization")
+    if (firstAttempt.isSuccess) {
+      if (!ownerIsActive()) throw CancellationException("Playback owner changed after MPV initialization")
+      return null
+    }
 
     val firstError = firstAttempt.exceptionOrNull()
+    if (firstError is CancellationException) throw firstError
     if (!decoderPreferences.useVulkan.get() || !VulkanCapabilities.isAvailable(this)) {
       Log.e(TAG, "Failed to initialize MPV", firstError)
       return firstError?.message ?: firstError?.toString() ?: "Unknown error"
     }
 
+    if (!ownerIsActive()) throw CancellationException("Playback owner changed before OpenGL fallback")
     Log.w(TAG, "MPV Vulkan init failed, retrying with OpenGL fallback for this session", firstError)
     player.forceOpenGlFallback = true
-    val fallbackAttempt = player.initializeSession(filesDir.path, cacheDir.path)
+    val fallbackAttempt = player.initializeSession(filesDir.path, cacheDir.path, ownerIsActive)
+    if (!ownerIsActive()) throw CancellationException("Playback owner changed after OpenGL fallback")
     fallbackAttempt.exceptionOrNull()?.let { error -> Log.e(TAG, "Failed to initialize MPV", error) }
     return if (fallbackAttempt.isSuccess) null else fallbackAttempt.exceptionOrNull()?.message ?: fallbackAttempt.exceptionOrNull()?.toString() ?: "Unknown fallback error"
   }
@@ -5919,13 +5992,14 @@ class PlayerActivity :
       ?.takeIf { source -> isTorrentSource(source, intent.type) }
       ?.let { return it }
 
-    intent.getStringExtra("local_media_path")
-      ?.takeIf { path -> path.isNotBlank() && File(path).canRead() }
-      ?.let { return it }
-
     // Keep provider URIs durable here. PlaybackSession opens a fresh descriptor
     // on its media-load dispatcher; opening it here blocks the UI thread.
     if (sourceUri?.scheme.equals("content", ignoreCase = true)) return sourceUri.toString()
+
+    // MPV opens the local path on its media-load dispatcher; do not stat it on Main.
+    intent.getStringExtra("local_media_path")
+      ?.takeIf { path -> path.isNotBlank() }
+      ?.let { return it }
 
     val uri = parsePathFromIntent(intent)
     if (uri == null) {
@@ -10964,6 +11038,7 @@ class PlayerActivity :
   }
 
   companion object {
+    private val MPV_ASSET_PREPARATION_LOCK = Any()
     @Volatile
     private var activeNativeCloseActivity: WeakReference<PlayerActivity>? = null
 

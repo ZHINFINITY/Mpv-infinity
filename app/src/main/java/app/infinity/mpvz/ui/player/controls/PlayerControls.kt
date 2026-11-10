@@ -29,6 +29,7 @@ import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.updateTransition
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.BorderStroke
@@ -457,6 +458,7 @@ fun PlayerControls(
   val showChapterIndicators by playerPreferences.showChapterIndicators.collectAsState()
   val torrentState by viewModel.torrentState.collectAsState()
   val videoOpenAnimState by viewModel.videoOpenAnimationState.collectAsState()
+  val isWaitingForVideo = videoOpenAnimState.isWaitingForVideo
   val showLoadingCircle by playerPreferences.showLoadingCircle.collectAsState()
   val embeddedTranslatedSubtitle by viewModel.embeddedTranslatedSubtitle.collectAsState()
 
@@ -741,6 +743,8 @@ fun PlayerControls(
   LaunchedEffect(
     controlsShown,
     paused,
+    showBufferingIndicator,
+    isWaitingForVideo,
     isSeeking,
     resetControlsTimestamp,
     areControlsLocked,
@@ -749,12 +753,15 @@ fun PlayerControls(
     isPlayerDrawerShown,
     showControlsDrawer,
   ) {
-    if (!isAudioOnly &&
-      controlsShown &&
-      paused == false &&
-      !isSeeking &&
-      !isUnlockSliderDragging &&
-      !(showControlsDrawer && isPlayerDrawerShown)
+    if (PlayerControlVisibilityPolicy.shouldAutoHideControls(
+        isAudioOnly = isAudioOnly,
+        controlsShown = controlsShown,
+        paused = paused,
+        bufferingOrWaiting = showBufferingIndicator || isWaitingForVideo,
+        isSeeking = isSeeking,
+        isUnlockSliderDragging = isUnlockSliderDragging,
+        drawerBlocksAutoHide = showControlsDrawer && isPlayerDrawerShown,
+      )
     ) {
       // Use 2 second delay when controls are locked, otherwise use user preference
       val delayTime = if (areControlsLocked) 2000L else playerTimeToDisappear.toLong()
@@ -1255,6 +1262,12 @@ fun PlayerControls(
               controlsLocked = areControlsLocked,
               slidersShown = areSlidersShown,
             )
+          val seekBarControlsVisible = (controlsShown || (!isPortrait && seekBarShown)) && !areControlsLocked
+          val controlVisibilityTransition =
+            updateTransition(
+              targetState = areButtonsVisible to seekBarControlsVisible,
+              label = "player_controls_visibility",
+            )
           val leftCustomButtons = remember(customButtons) { customButtons.filter { it.isLeft } }
           val rightCustomButtons = remember(customButtons) { customButtons.filterNot { it.isLeft } }
           val showLandscapeLeftCustomButtons = areButtonsVisible && !isPortrait && leftCustomButtons.isNotEmpty()
@@ -1317,8 +1330,8 @@ fun PlayerControls(
             label = "skip_chip_bottom_offset",
           )
 
-          AnimatedVisibility(
-            visible = showLandscapeLeftCustomButtons,
+          controlVisibilityTransition.AnimatedVisibility(
+            visible = { visibility -> visibility.first && !isPortrait && leftCustomButtons.isNotEmpty() },
             enter = buildControlsEnterH(controlsAnimStyle, reduceMotion, enterMs) { -it },
             exit = buildControlsExitH(controlsAnimStyle, reduceMotion, exitMs) { -it },
             modifier =
@@ -1382,8 +1395,8 @@ fun PlayerControls(
             }
           }
 
-          AnimatedVisibility(
-            visible = showLandscapeRightCustomButtons,
+          controlVisibilityTransition.AnimatedVisibility(
+            visible = { visibility -> visibility.first && !isPortrait && rightCustomButtons.isNotEmpty() },
             enter = buildControlsEnterH(controlsAnimStyle, reduceMotion, enterMs) { it },
             exit = buildControlsExitH(controlsAnimStyle, reduceMotion, exitMs) { it },
             modifier =
@@ -1451,8 +1464,8 @@ fun PlayerControls(
             }
           }
 
-          AnimatedVisibility(
-            visible = showPortraitCustomButtons,
+          controlVisibilityTransition.AnimatedVisibility(
+            visible = { visibility -> visibility.first && isPortrait && customButtons.isNotEmpty() },
             enter = buildControlsEnterV(controlsAnimStyle, reduceMotion, enterMs) { it },
             exit = buildControlsExitV(controlsAnimStyle, reduceMotion, exitMs) { it },
             modifier =
@@ -1692,8 +1705,8 @@ fun PlayerControls(
             }
           }
 
-          AnimatedVisibility(
-            visible = areButtonsVisible,
+          controlVisibilityTransition.AnimatedVisibility(
+            visible = { visibility -> visibility.first },
             enter = buildControlsEnterV(controlsAnimStyle, reduceMotion, enterMs) { 0 },
             exit = buildControlsExitV(controlsAnimStyle, reduceMotion, exitMs) { 0 },
             modifier =
@@ -1942,8 +1955,8 @@ fun PlayerControls(
             }
           }
 
-          AnimatedVisibility(
-            visible = (controlsShown || (!isPortrait && seekBarShown)) && !areControlsLocked,
+          controlVisibilityTransition.AnimatedVisibility(
+            visible = { visibility -> visibility.second },
             enter = buildControlsEnterV(controlsAnimStyle, reduceMotion, enterMs) { it },
             exit = buildControlsExitV(controlsAnimStyle, reduceMotion, exitMs) { it },
             modifier =
@@ -2101,8 +2114,8 @@ fun PlayerControls(
             }
           }
 
-          AnimatedVisibility(
-            visible = areButtonsVisible,
+          controlVisibilityTransition.AnimatedVisibility(
+            visible = { visibility -> visibility.first },
             enter = buildControlsEnterH(controlsAnimStyle, reduceMotion, enterMs) { -it },
             exit = buildControlsExitH(controlsAnimStyle, reduceMotion, exitMs) { -it },
             modifier =
@@ -2166,8 +2179,8 @@ fun PlayerControls(
             }
           }
 
-          AnimatedVisibility(
-            visible = areButtonsVisible && !isPortrait,
+          controlVisibilityTransition.AnimatedVisibility(
+            visible = { visibility -> visibility.first && !isPortrait },
             enter = buildControlsEnterH(controlsAnimStyle, reduceMotion, enterMs) { it },
             exit = buildControlsExitH(controlsAnimStyle, reduceMotion, exitMs) { it },
             modifier =
@@ -2213,8 +2226,8 @@ fun PlayerControls(
             )
           }
 
-          AnimatedVisibility(
-            visible = areButtonsVisible,
+          controlVisibilityTransition.AnimatedVisibility(
+            visible = { visibility -> visibility.first },
             enter = buildControlsEnterH(controlsAnimStyle, reduceMotion, enterMs) { it },
             exit = buildControlsExitH(controlsAnimStyle, reduceMotion, exitMs) { it },
             modifier =
@@ -2298,8 +2311,8 @@ fun PlayerControls(
             }
           }
 
-          AnimatedVisibility(
-            visible = areButtonsVisible && !isPortrait,
+          controlVisibilityTransition.AnimatedVisibility(
+            visible = { visibility -> visibility.first && !isPortrait },
             enter = buildControlsEnterH(controlsAnimStyle, reduceMotion, enterMs) { -it },
             exit = buildControlsExitH(controlsAnimStyle, reduceMotion, exitMs) { -it },
             modifier =
