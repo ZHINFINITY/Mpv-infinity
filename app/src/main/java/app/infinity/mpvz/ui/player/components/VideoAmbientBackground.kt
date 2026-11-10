@@ -52,12 +52,13 @@ import kotlin.math.pow
 
 private const val SAMPLE_WIDTH = 96
 private const val SAMPLE_HEIGHT = 54
-private const val DISPLAY_WIDTH = 32
-private const val DISPLAY_HEIGHT = 18
-private const val DECIMATION = 3
+private const val DISPLAY_WIDTH = 48
+private const val DISPLAY_HEIGHT = 27
+private const val DECIMATION = 2
 
 private const val CAPTURE_INTERVAL_MS = 350L
 private const val IDLE_INTERVAL_MS = 1000L
+private const val PALETTE_REFRESH_INTERVAL_MS = 1200L
 private const val SMOOTH_INTERVAL_MS = 60L
 private const val SMOOTH_IDLE_INTERVAL_MS = 200L
 private const val SMOOTH_TIME_CONSTANT_MS = 450f
@@ -72,8 +73,8 @@ private const val CAPTURE_OK = 0
 private const val CAPTURE_RETRY = 1
 private const val CAPTURE_UNSUPPORTED = 2
 
-private const val BLUR_RADIUS = 2
-private const val BLUR_PASSES = 3
+private const val BLUR_RADIUS = 1
+private const val BLUR_PASSES = 2
 private const val LINEAR_LUT_SIZE = 4096
 
 private const val MIN_COLOR_POPULATION = 3
@@ -210,6 +211,10 @@ private class VideoAmbientPipeline : AutoCloseable {
   private var hasPreviousSample = false
   private var hasTarget = false
   private var seeded = false
+  private var hasPaletteColors = false
+  private var lastPaletteRefreshMs = 0L
+  private var cachedBaseColor: Color? = null
+  private var cachedAccentColor: Color? = null
   private var supported = Build.VERSION.SDK_INT >= Build.VERSION_CODES.N
   private var consecutiveFailures = 0
   @Volatile private var closed = false
@@ -281,11 +286,18 @@ private class VideoAmbientPipeline : AutoCloseable {
     decimateToLinear(samplePixels, stagingGrid)
     ambientBoxBlur(stagingGrid, scratchGrid, DISPLAY_WIDTH, DISPLAY_HEIGHT, BLUR_RADIUS, BLUR_PASSES)
 
-    val (base, accent) = extractAmbientColors(sample)
+    val nowMs = SystemClock.elapsedRealtime()
+    if (!hasPaletteColors || nowMs - lastPaletteRefreshMs >= PALETTE_REFRESH_INTERVAL_MS) {
+      val (base, accent) = extractAmbientColors(sample)
+      cachedBaseColor = base
+      cachedAccentColor = accent
+      lastPaletteRefreshMs = nowMs
+      hasPaletteColors = true
+    }
     stagingBase.fill(0f)
     stagingAccent.fill(0f)
-    base?.let { colorToLinear(it, stagingBase) }
-    accent?.let { colorToLinear(it, stagingAccent) }
+    cachedBaseColor?.let { colorToLinear(it, stagingBase) }
+    cachedAccentColor?.let { colorToLinear(it, stagingAccent) }
     return true
   }
 
@@ -366,6 +378,10 @@ private class VideoAmbientPipeline : AutoCloseable {
     hasPreviousSample = false
     hasTarget = false
     seeded = false
+    hasPaletteColors = false
+    lastPaletteRefreshMs = 0L
+    cachedBaseColor = null
+    cachedAccentColor = null
   }
 
   override fun close() {

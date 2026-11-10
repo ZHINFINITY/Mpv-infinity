@@ -2846,11 +2846,27 @@ static enum MPVFlowGPUResult flow_opencl_synthesize(
     return MPVFLOW_GPU_OK;
 }
 
+static bool output_texture_matches(pl_tex texture, pl_fmt format,
+                                   int width, int height)
+{
+    if (!texture || !format || !texture->params.format)
+        return false;
+    const struct pl_tex_params *params = &texture->params;
+    const char *target_name = params->format->name;
+    const char *required_name = format->name;
+    return params->d == 0 && params->w == (unsigned int) width &&
+        params->h == (unsigned int) height && params->storable &&
+        params->format->num_planes == 0 && params->format->num_components >= 4 &&
+        (params->format->caps & PL_FMT_CAP_STORABLE) && target_name && required_name &&
+        !strcmp(target_name, required_name);
+}
+
 static bool run_visibility_resolver(MPVFlowGPUContext *ctx,
                                     MPVFlowGPUPair *pair,
                                     pl_tex source0, pl_tex source1,
                                     float t, pl_fmt output_fmt,
                                     int output_w, int output_h,
+                                    pl_tex output_target,
                                     pl_tex *resolved)
 {
     if (resolved)
@@ -2867,29 +2883,37 @@ static bool run_visibility_resolver(MPVFlowGPUContext *ctx,
     const bool rgba16f = output_fmt == ctx->fmt_rgba16f;
     if (!ensure_visibility_resolver_pass(ctx, rgba16f))
         return false;
-    if (!pair->visibility_output || !pair->visibility_mask ||
+    const bool target_compatible =
+        output_texture_matches(output_target, output_fmt, output_w, output_h);
+    if (output_target && !target_compatible)
+        return false;
+    if (target_compatible) {
+        destroy_tex(ctx, &pair->visibility_output);
+    } else if (!pair->visibility_output ||
         pair->visibility_output->params.w != (unsigned int) output_w ||
         pair->visibility_output->params.h != (unsigned int) output_h ||
-        pair->visibility_output->params.format != output_fmt ||
-        pair->visibility_mask->params.w != (unsigned int) output_w ||
-        pair->visibility_mask->params.h != (unsigned int) output_h ||
-        pair->visibility_mask->params.format != ctx->fmt_rgba8) {
+        pair->visibility_output->params.format != output_fmt) {
         destroy_tex(ctx, &pair->visibility_output);
-        destroy_tex(ctx, &pair->visibility_mask);
         pair->visibility_output = create_texture_ex(
             ctx, output_w, output_h, output_fmt, true, true, false,
             "visibility_resolver_output");
+    }
+    if (!pair->visibility_mask ||
+        pair->visibility_mask->params.h != (unsigned int) output_h ||
+        pair->visibility_mask->params.w != (unsigned int) output_w ||
+        pair->visibility_mask->params.format != ctx->fmt_rgba8) {
+        destroy_tex(ctx, &pair->visibility_mask);
         pair->visibility_mask = create_texture_ex(
             ctx, output_w, output_h, ctx->fmt_rgba8, false, false, false,
             "visibility_resolver_mask");
-        if (!pair->visibility_output || !pair->visibility_mask) {
-            destroy_tex(ctx, &pair->visibility_output);
-            destroy_tex(ctx, &pair->visibility_mask);
-            flow_log_once(ctx, FLOW_DIAG_VISIBILITY, PL_LOG_WARN,
-                          "MPVFLOW_DIAGNOSTIC event=visibility_resolver state=skipped "
-                          "reason=resolver_texture_allocation_failed fallback=production_output");
-            return false;
-        }
+    }
+    if ((!target_compatible && !pair->visibility_output) || !pair->visibility_mask) {
+        destroy_tex(ctx, &pair->visibility_output);
+        destroy_tex(ctx, &pair->visibility_mask);
+        flow_log_once(ctx, FLOW_DIAG_VISIBILITY, PL_LOG_WARN,
+                      "MPVFLOW_DIAGNOSTIC event=visibility_resolver state=skipped "
+                      "reason=resolver_texture_allocation_failed fallback=production_output");
+        return false;
     }
 
     struct FlowLevel *full = &pair->level[0];
@@ -2905,7 +2929,7 @@ static bool run_visibility_resolver(MPVFlowGPUContext *ctx,
           .sample_mode = PL_TEX_SAMPLE_LINEAR },
         { .object = pair->output, .address_mode = PL_TEX_ADDRESS_CLAMP,
           .sample_mode = PL_TEX_SAMPLE_NEAREST },
-        { .object = pair->visibility_output },
+        { .object = target_compatible ? output_target : pair->visibility_output },
         { .object = pair->visibility_mask },
     };
     int cfg[4] = { output_w, output_h, pair->w, pair->h };
@@ -2925,7 +2949,7 @@ static bool run_visibility_resolver(MPVFlowGPUContext *ctx,
                  output_w, output_h);
         ctx->visibility_resolver_active_logged = true;
     }
-    *resolved = pair->visibility_output;
+    *resolved = target_compatible ? output_target : pair->visibility_output;
     return true;
 }
 
@@ -2933,7 +2957,8 @@ static enum MPVFlowGPUResult mpvflow_gpu_synthesize_internal(
     MPVFlowGPUContext *ctx, MPVFlowGPUPair *pair,
     pl_tex source0, pl_tex source1, float t,
     bool enable_visibility_resolver, bool enable_soft_blend,
-    bool preserve_motion_blend_on_conflict, pl_tex *output)
+    bool preserve_motion_blend_on_conflict, pl_tex output_target,
+    pl_tex *output)
 {
     if (output)
         *output = NULL;
@@ -2996,8 +3021,24 @@ static enum MPVFlowGPUResult mpvflow_gpu_synthesize_internal(
 
     const int output_w = (int) p0->w;
     const int output_h = (int) p0->h;
-    if (!pair->output || pair->output_w != output_w || pair->output_h != output_h ||
-        pair->output->params.format != output_fmt) {
+    const bool use_visibility_resolver = enable_visibility_resolver && !enable_soft_blend;
+    if (output_target &&
+        (ctx->compute_api != MPVFLOW_GPU_COMPUTE_VULKAN || pair->opencl_pair ||
+         mpvflow_gpu_capture_active(ctx) ||
+         !output_texture_matches(output_target, output_fmt, output_w, output_h))) {
+        flow_log_once(ctx, FLOW_DIAG_SYNTHESIZE, PL_LOG_WARN,
+                      "MPVFLOW_DIAGNOSTIC event=synthesize_output_target state=fallback "
+                      "reason=target_not_storage_compatible backend=%s capture_active=%d "
+                      "target_present=%d dimensions=%dx%d format=%s",
+                      mpvflow_gpu_get_compute_api_name(ctx),
+                      mpvflow_gpu_capture_active(ctx), output_target != NULL,
+                      output_w, output_h, output_fmt->name);
+        return MPVFLOW_GPU_UNSUPPORTED_FORMAT;
+    }
+    const bool synthesize_to_target = output_target && !use_visibility_resolver;
+    if (!synthesize_to_target &&
+        (!pair->output || pair->output_w != output_w || pair->output_h != output_h ||
+         pair->output->params.format != output_fmt)) {
         destroy_tex(ctx, &pair->output);
         pair->output = create_texture_ex(ctx, output_w, output_h, output_fmt,
                                          true, true,
@@ -3054,15 +3095,16 @@ static enum MPVFlowGPUResult mpvflow_gpu_synthesize_internal(
         free(vulkan_pair);
         return mpvflow_gpu_synthesize_internal(ctx, pair, source0, source1, t,
                                                enable_visibility_resolver, enable_soft_blend,
-                                               preserve_motion_blend_on_conflict, output);
+                                               preserve_motion_blend_on_conflict,
+                                               output_target, output);
     }
-    pl_tex out = pair->output;
     struct FlowLevel *full = (struct FlowLevel *) &pair->level[0];
     int cfg[4] = { output_w, output_h, pair->w, pair->h };
     if (enable_soft_blend)
         cfg[0] |= 0x40000000;
     if (enable_soft_blend && preserve_motion_blend_on_conflict)
         cfg[0] |= 0x20000000;
+    pl_tex synth_output = synthesize_to_target ? output_target : pair->output;
     struct pl_desc_binding sb[8] = {
         { .object = source0, .address_mode = PL_TEX_ADDRESS_CLAMP,
           .sample_mode = PL_TEX_SAMPLE_LINEAR },
@@ -3073,7 +3115,7 @@ static enum MPVFlowGPUResult mpvflow_gpu_synthesize_internal(
         { .object = pair->scene[pair->reductions - 1] },
         { .object = full->luma[0] },
         { .object = full->luma[1] },
-        { .object = out },
+        { .object = synth_output },
     };
     if (!run_pass(ctx, synthesis_pass, sb, 8, cfg, t, output_w, output_h,
                   "synthesize_output")) {
@@ -3083,11 +3125,11 @@ static enum MPVFlowGPUResult mpvflow_gpu_synthesize_internal(
                       output_w, output_h, pair->w, pair->h, t, MPVFLOW_GPU_ERROR);
         return MPVFLOW_GPU_ERROR;
     }
-    *output = out;
-    if (enable_visibility_resolver && !enable_soft_blend) {
+    *output = synth_output;
+    if (use_visibility_resolver) {
         pl_tex resolved = NULL;
         if (run_visibility_resolver(ctx, pair, source0, source1, t, output_fmt,
-                                    output_w, output_h, &resolved) && resolved)
+                                    output_w, output_h, output_target, &resolved) && resolved)
             *output = resolved;
     }
     return MPVFLOW_GPU_OK;
@@ -3100,7 +3142,7 @@ enum MPVFlowGPUResult mpvflow_gpu_synthesize(MPVFlowGPUContext *ctx,
                                              float t, pl_tex *output)
 {
     return mpvflow_gpu_synthesize_internal(ctx, pair, source0, source1, t,
-                                           false, false, false, output);
+                                           false, false, false, NULL, output);
 }
 enum MPVFlowGPUResult mpvflow_gpu_synthesize_with_visibility(
     MPVFlowGPUContext *ctx, MPVFlowGPUPair *pair,
@@ -3109,7 +3151,7 @@ enum MPVFlowGPUResult mpvflow_gpu_synthesize_with_visibility(
 {
     return mpvflow_gpu_synthesize_internal(ctx, pair, source0, source1, t,
                                            enable_visibility_resolver, enable_soft_blend,
-                                           false, output);
+                                           false, NULL, output);
 }
 enum MPVFlowGPUResult mpvflow_gpu_synthesize_with_policy(
     MPVFlowGPUContext *ctx, MPVFlowGPUPair *pair,
@@ -3119,7 +3161,18 @@ enum MPVFlowGPUResult mpvflow_gpu_synthesize_with_policy(
 {
     return mpvflow_gpu_synthesize_internal(ctx, pair, source0, source1, t,
                                            enable_visibility_resolver, enable_soft_blend,
-                                           preserve_motion_blend_on_conflict, output);
+                                           preserve_motion_blend_on_conflict, NULL, output);
+}
+enum MPVFlowGPUResult mpvflow_gpu_synthesize_with_policy_to_texture(
+    MPVFlowGPUContext *ctx, MPVFlowGPUPair *pair,
+    pl_tex source0, pl_tex source1, float t,
+    bool enable_visibility_resolver, bool enable_soft_blend,
+    bool preserve_motion_blend_on_conflict, pl_tex output_target, pl_tex *output)
+{
+    return mpvflow_gpu_synthesize_internal(ctx, pair, source0, source1, t,
+                                           enable_visibility_resolver, enable_soft_blend,
+                                           preserve_motion_blend_on_conflict,
+                                           output_target, output);
 }
 static const char shader_capture_color[] =
     "#version 450\n"

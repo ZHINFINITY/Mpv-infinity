@@ -570,14 +570,36 @@ class Media3FlowVideoSink(
     return try {
       HardwareBuffer.create(width, height, HardwareBuffer.RGBA_8888, 1, usage)
     } catch (error: RuntimeException) {
+      if (!role.startsWith("output") || driverRequiredUsage == 0L) {
+        logFlowRecordOnce(
+          "ahb-allocation-$role",
+          Log.ERROR,
+          "event=ahb_import state=failed stage=AHardwareBuffer.create image_role=$role " +
+            "width=$width height=$height format=rgba8 usage=0x${usage.toString(16)}",
+          error,
+        )
+        throw error
+      }
       logFlowRecordOnce(
-        "ahb-allocation-$role",
-        Log.ERROR,
-        "event=ahb_import state=failed stage=AHardwareBuffer.create image_role=$role " +
-          "width=$width height=$height format=rgba8 usage=0x${usage.toString(16)}",
+        "ahb-allocation-output-storage-fallback",
+        Log.WARN,
+        "event=ahb_import state=fallback stage=AHardwareBuffer.create image_role=$role " +
+          "width=$width height=$height storage_usage=0x${driverRequiredUsage.toString(16)} " +
+          "fallback_usage=0x${baseUsage.toString(16)}",
         error,
       )
-      throw error
+      try {
+        HardwareBuffer.create(width, height, HardwareBuffer.RGBA_8888, 1, baseUsage)
+      } catch (fallbackError: RuntimeException) {
+        logFlowRecordOnce(
+          "ahb-allocation-$role",
+          Log.ERROR,
+          "event=ahb_import state=failed stage=AHardwareBuffer.create image_role=$role " +
+            "width=$width height=$height format=rgba8 fallback_usage=0x${baseUsage.toString(16)}",
+          fallbackError,
+        )
+        throw fallbackError
+      }
     }
   }
 

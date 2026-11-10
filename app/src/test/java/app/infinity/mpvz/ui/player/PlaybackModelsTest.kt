@@ -48,6 +48,44 @@ class PlaybackModelsTest {
   }
 
   @Test
+  fun trustedNetworkSourceAllowsExtensionlessVideoButNotAudio() {
+    val networkVideo =
+      PlaybackItem(
+        stableId = "network-video",
+        originalUri = "https://media.example/live?id=opaque",
+        title = "Live stream",
+        networkSource = NetworkPlaybackSource(connectionId = 7L, relativePath = "/Live/opaque"),
+      )
+    val networkAudio =
+      PlaybackItem(
+        stableId = "network-audio",
+        originalUri = "https://media.example/audio?id=opaque",
+        title = "Track",
+        mimeType = "audio/mpeg",
+        networkSource = NetworkPlaybackSource(connectionId = 7L, relativePath = "/Music/track.mp3"),
+      )
+
+    assertTrue(networkVideo.isTrustedNetworkVideoSource())
+    assertEquals(
+      PlaybackEngineMode.NATIVE,
+      resolvePlaybackEngineMode(
+        PlaybackEngineMode.NATIVE,
+        networkVideo,
+        videoHint = networkVideo.isTrustedNetworkVideoSource(),
+      ),
+    )
+    assertFalse(networkAudio.isTrustedNetworkVideoSource())
+    assertEquals(
+      PlaybackEngineMode.MPV,
+      resolvePlaybackEngineMode(
+        PlaybackEngineMode.NATIVE,
+        networkAudio,
+        videoHint = networkAudio.isTrustedNetworkVideoSource(),
+      ),
+    )
+  }
+
+  @Test
   fun autoStillUsesMpvForSdrAndNativeForHdr() {
     val sdrItem =
       PlaybackItem(

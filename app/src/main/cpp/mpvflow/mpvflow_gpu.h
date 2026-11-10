@@ -205,6 +205,14 @@ MPVFLOW_INTERNAL enum MPVFlowGPUResult mpvflow_gpu_synthesize_with_policy(
     pl_tex source0, pl_tex source1, float t,
     bool enable_visibility_resolver, bool enable_soft_blend,
     bool preserve_motion_blend_on_conflict, pl_tex *output);
+/* Optional direct-storage path for a compatible caller-owned full-resolution target.
+ * Returns UNSUPPORTED_FORMAT when the target cannot be written; callers should
+ * retain the ordinary synthesized-texture + blit fallback in that case. */
+MPVFLOW_INTERNAL enum MPVFlowGPUResult mpvflow_gpu_synthesize_with_policy_to_texture(
+    MPVFlowGPUContext *context, MPVFlowGPUPair *pair,
+    pl_tex source0, pl_tex source1, float t,
+    bool enable_visibility_resolver, bool enable_soft_blend,
+    bool preserve_motion_blend_on_conflict, pl_tex output_target, pl_tex *output);
 
 /* Explicit, bounded diagnostic capture. Capture is inactive until start; the
  * selected Vulkan path performs synchronous capture-only readbacks into

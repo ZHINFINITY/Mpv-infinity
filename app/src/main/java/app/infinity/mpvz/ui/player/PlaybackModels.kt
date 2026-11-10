@@ -176,6 +176,10 @@ internal fun PlaybackItem.declaredMediaKind(videoHint: Boolean = false): Declare
 internal fun PlaybackItem.isDefinitelyAudioOnly(): Boolean =
   declaredMediaKind() == DeclaredPlaybackMediaKind.AUDIO
 
+/** Internal network-browser items have trusted direct-media provenance even without MIME/extension. */
+internal fun PlaybackItem.isTrustedNetworkVideoSource(): Boolean =
+  networkSource != null && declaredMediaKind() != DeclaredPlaybackMediaKind.AUDIO
+
 /** The optional MKV tail-duration compatibility probe can add an EOF seek to HTTP playback. */
 internal fun shouldSkipRemoteMkvDurationProbe(playableUri: String): Boolean =
   playableUri.startsWith("http://", ignoreCase = true) || playableUri.startsWith("https://", ignoreCase = true)

@@ -7888,7 +7888,7 @@ class PlayerActivity :
     val sourceIntent = Intent(intent)
     val sourceMimeType =
       resolvePlaybackMimeType(sourceIntent.type, sourceIntent.getStringExtra("mime_type"))
-    val streamVideoHint =
+    val streamTabVideoHint =
       sourceIntent.getBooleanExtra("stream_tab_playback", false) &&
         sourceIntent.getBooleanExtra("stream_direct_media", false) &&
         !sourceIntent.getBooleanExtra("is_audio", false)
@@ -7900,6 +7900,11 @@ class PlayerActivity :
     val requestedLegacyMediaIdentifier = legacyMediaIdentifier
     val requestedPlaylistIndex = playlistIndex
     val requestedQueueItem = PlaybackSession.queue.value.items.getOrNull(requestedPlaylistIndex)
+    val networkStreamVideoHint =
+      sourceIntent.getStringExtra("launch_source") == "network_stream" &&
+        requestedQueueItem?.isTrustedNetworkVideoSource() == true &&
+        !isKnownAudioLaunch(sourceIntent)
+    val streamVideoHint = streamTabVideoHint || networkStreamVideoHint
     val requestGeneration = mediaRequestGeneration
     val incomingSource = originalUri ?: extractUriFromIntent(sourceIntent)?.toString() ?: playableUri
     // The torrent engine exposes a temporary localhost URL to the player. During an engine

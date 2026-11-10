@@ -102,6 +102,14 @@ mpv_synthesis_call = MPV_PATCH.split("mpvflow_gpu_synthesize_with_policy(", 1)[1
 assert mpv_synthesis_call.count("p->next_opts->mpvflow_soft_blend,") == 2, "MPV soft blend must explicitly enable both the source blend and conflict bias"
 assert "mpvflow_gpu_synthesize_with_visibility(" not in MPV_PATCH, "MPV must not bypass its opt-in conflict policy"
 assert "mpvflow_gpu_synthesize_with_policy(" in JNI, "Media3 must share the production Vulkan synthesis policy"
+assert "mpvflow_gpu_synthesize_with_policy_to_texture(" in JNI
+assert "outputStorageImageSupported" in JNI and "VK_IMAGE_USAGE_STORAGE_BIT" in JNI
+assert "!capturePaired && !captureActive" in JNI, "direct output must not bypass diagnostic capture ownership"
+assert 'directOutput ? "direct_storage_write" : "nearest_blit"' in JNI
+assert "PL_TEX_SAMPLE_NEAREST" in JNI, "fallback transfer must not soften equal-size synthesized output"
+assert "target_compatible ? output_target : pair->visibility_output" in GPU, (
+    "the optional visibility resolver should write directly to a compatible final output when available"
+)
 assert "return smoothstep(0.0,1.0,margin);" in GPU, "both engines must fade source/cycle boundary support instead of switching coordinate spaces abruptly"
 paired_helper = GPU.split("enum MPVFlowGPUResult mpvflow_gpu_capture_paired_sample(", 1)[1].split("\n}", 1)[0]
 assert "const bool blend_variants[MPVFLOW_CAPTURE_PAIRED_SAMPLES_PER_PAIR] = {\n        false, true," in paired_helper

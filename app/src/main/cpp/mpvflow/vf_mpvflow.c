@@ -63,10 +63,13 @@ struct priv {
     unsigned int outputs_in_gap;
     int process_width;
     int process_height;
-    size_t packed_bytes;
+    size_t packed_capacity_bytes;
     uint8_t *packed0;
     uint8_t *packed1;
     uint8_t *packed_out;
+    struct mp_image *rgb0;
+    struct mp_image *rgb1;
+    struct mp_image *rgb_out;
     int64_t analysis_ns;
     int64_t synthesis_ns;
     int64_t pair_work_ns;
@@ -139,13 +142,6 @@ static void clear_pair_cache(struct priv *p)
 {
     mpvflow_pair_destroy(p->motion);
     p->motion = NULL;
-    free(p->packed0);
-    free(p->packed1);
-    free(p->packed_out);
-    p->packed0 = NULL;
-    p->packed1 = NULL;
-    p->packed_out = NULL;
-    p->packed_bytes = 0;
     p->process_width = 0;
     p->process_height = 0;
     p->analysis_ns = 0;
@@ -155,6 +151,56 @@ static void clear_pair_cache(struct priv *p)
     p->timing_count = 0;
     p->prepared = false;
     p->pair_is_scene_cut = false;
+}
+static bool ensure_rgb_image(struct mp_image **image, int width, int height)
+{
+    if (*image && ((*image)->imgfmt != IMGFMT_RGB24 ||
+                   (*image)->w != width || (*image)->h != height)) {
+        talloc_free(*image);
+        *image = NULL;
+    }
+    if (!*image)
+        *image = mp_image_alloc(IMGFMT_RGB24, width, height);
+    return *image != NULL;
+}
+static bool ensure_packed_buffers(struct priv *p, size_t required_bytes)
+{
+    if (p->packed_capacity_bytes >= required_bytes && p->packed0 &&
+        p->packed1 && p->packed_out)
+        return true;
+    uint8_t *packed0 = malloc(required_bytes);
+    uint8_t *packed1 = malloc(required_bytes);
+    uint8_t *packed_out = malloc(required_bytes);
+    if (!packed0 || !packed1 || !packed_out) {
+        free(packed0);
+        free(packed1);
+        free(packed_out);
+        return false;
+    }
+    free(p->packed0);
+    free(p->packed1);
+    free(p->packed_out);
+    p->packed0 = packed0;
+    p->packed1 = packed1;
+    p->packed_out = packed_out;
+    p->packed_capacity_bytes = required_bytes;
+    return true;
+}
+static void destroy_scratch_buffers(struct priv *p)
+{
+    free(p->packed0);
+    free(p->packed1);
+    free(p->packed_out);
+    p->packed0 = NULL;
+    p->packed1 = NULL;
+    p->packed_out = NULL;
+    p->packed_capacity_bytes = 0;
+    talloc_free(p->rgb0);
+    talloc_free(p->rgb1);
+    talloc_free(p->rgb_out);
+    p->rgb0 = NULL;
+    p->rgb1 = NULL;
+    p->rgb_out = NULL;
 }
 static void clear_frames(struct priv *p)
 {
@@ -275,25 +321,17 @@ static bool prepare_pair(struct mp_filter *f, struct mp_image *a,
     if (width > SIZE_MAX / 3 || height > SIZE_MAX / (width * 3))
         return false;
     size_t row_bytes = width * 3;
-    p->packed_bytes = row_bytes * height;
-    p->packed0 = malloc(p->packed_bytes);
-    p->packed1 = malloc(p->packed_bytes);
-    p->packed_out = malloc(p->packed_bytes);
-    struct mp_image *rgb0 = mp_image_alloc(IMGFMT_RGB24, p->process_width,
-                                           p->process_height);
-    struct mp_image *rgb1 = mp_image_alloc(IMGFMT_RGB24, p->process_width,
-                                           p->process_height);
-    if (!p->packed0 || !p->packed1 || !p->packed_out || !rgb0 || !rgb1) {
-        talloc_free(rgb0);
-        talloc_free(rgb1);
+    size_t packed_bytes = row_bytes * height;
+    if (!ensure_packed_buffers(p, packed_bytes) ||
+        !ensure_rgb_image(&p->rgb0, p->process_width, p->process_height) ||
+        !ensure_rgb_image(&p->rgb1, p->process_width, p->process_height)) {
         clear_pair_cache(p);
         return false;
     }
-    bool converted = convert_to_rgb(p, a, rgb0) && convert_to_rgb(p, b, rgb1) &&
-        pack_rgb24(rgb0, p->packed0, row_bytes) &&
-        pack_rgb24(rgb1, p->packed1, row_bytes);
-    talloc_free(rgb0);
-    talloc_free(rgb1);
+    bool converted = convert_to_rgb(p, a, p->rgb0) &&
+        convert_to_rgb(p, b, p->rgb1) &&
+        pack_rgb24(p->rgb0, p->packed0, row_bytes) &&
+        pack_rgb24(p->rgb1, p->packed1, row_bytes);
     if (!converted) {
         clear_pair_cache(p);
         return false;
@@ -327,17 +365,13 @@ static struct mp_image *interpolate(struct mp_filter *f, struct mp_image *a,
         return NULL;
     }
     int64_t synthesis_work_start = mp_time_ns();
-    struct mp_image *rgb_out = mp_image_alloc(IMGFMT_RGB24,
-                                               p->process_width,
-                                               p->process_height);
-    if (!rgb_out)
+    if (!ensure_rgb_image(&p->rgb_out, p->process_width, p->process_height))
         return NULL;
+    struct mp_image *rgb_out = p->rgb_out;
     double span = b->pts - a->pts;
     double timestep = (pts - a->pts) / span;
-    if (!isfinite(timestep) || timestep <= 0.0 || timestep >= 1.0) {
-        talloc_free(rgb_out);
+    if (!isfinite(timestep) || timestep <= 0.0 || timestep >= 1.0)
         return NULL;
-    }
     int64_t start = mp_time_ns();
     struct MPVFlowStats stats = {0};
     int result = mpvflow_synthesize_rgb24(p->engine, p->motion,
@@ -349,15 +383,11 @@ static struct mp_image *interpolate(struct mp_filter *f, struct mp_image *a,
     p->timing_count++;
     if (result == MPVFLOW_ERROR ||
         !unpack_rgb24(p->packed_out, rgb_out,
-                      (size_t)p->process_width * 3)) {
-        talloc_free(rgb_out);
+                      (size_t)p->process_width * 3))
         return NULL;
-    }
     struct mp_image *out = mp_image_alloc(a->imgfmt, a->w, a->h);
-    if (!out) {
-        talloc_free(rgb_out);
+    if (!out)
         return NULL;
-    }
     mp_image_copy_attributes(out, a);
     mp_image_copy_attributes(rgb_out, a);
     if (mp_sws_scale(p->sws, out, rgb_out) < 0) {
@@ -366,7 +396,6 @@ static struct mp_image *interpolate(struct mp_filter *f, struct mp_image *a,
         return NULL;
     }
     out->pts = pts;
-    talloc_free(rgb_out);
     p->pair_work_ns += mp_time_ns() - synthesis_work_start;
     return out;
 }
@@ -599,6 +628,7 @@ static void f_destroy(struct mp_filter *f)
 {
     struct priv *p = f->priv;
     clear_frames(p);
+    destroy_scratch_buffers(p);
     mpvflow_destroy(p->engine);
     p->engine = NULL;
 }
