@@ -591,15 +591,9 @@ class MPVView(
           PlaybackSession.setOptionString("display-fps-override", "0")
         else -> null
       }
-    // FongMi MEMC consumes gpu-next's adjacent source frames and needs display-timed output ticks.
-    // Keep this scoped to the MPV motion path; the config-ownership gate above prevents
-    // overriding an explicit mpv.conf interpolation or video-sync choice.
-    val flowInterpolationRc =
-      if (mpvFlowFrameInterpolationCandidate) {
-        PlaybackSession.setOptionString("interpolation", "yes")
-      } else {
-        null
-      }
+    // FongMi MEMC replaces mpv's ordinary `interpolation` frame mixer. Match its MPV-RX
+    // contract: enable the motion option with display-synced ticks, without also enabling
+    // the separate built-in interpolation path.
     val flowVideoSyncRc =
       if (mpvFlowFrameInterpolationCandidate) {
         PlaybackSession.setOptionString("video-sync", "display-resample")
@@ -607,21 +601,18 @@ class MPVView(
         null
       }
     val flowTimingOptionsReady =
-      flowInterpolationRc == 0 &&
-        flowVideoSyncRc == 0 &&
-        flowDisplayFpsOverrideRc == 0 &&
-        displayRefreshRate != null
+      flowVideoSyncRc == 0 &&
+        (displayRefreshRate == null || flowDisplayFpsOverrideRc == 0)
     if (mpvFlowFrameInterpolationCandidate && !flowTimingOptionsReady) {
-      val resetInterpolationRc = PlaybackSession.setOptionString("interpolation", "no")
       val resetVideoSyncRc = PlaybackSession.setOptionString("video-sync", "audio")
       val resetDisplayFpsOverrideRc = PlaybackSession.setOptionString("display-fps-override", "0")
       Log.e(
         TAG,
         "MPVFLOW_DIAGNOSTIC event=timing_config state=failed " +
-          "interpolation_rc=$flowInterpolationRc video_sync_rc=$flowVideoSyncRc " +
+          "video_sync_rc=$flowVideoSyncRc " +
           "display_fps_override_rc=${flowDisplayFpsOverrideRc ?: "unavailable"} " +
           "display_refresh_hz=${displayRefreshRate?.hz ?: "unavailable"} " +
-          "rollback_interpolation_rc=$resetInterpolationRc rollback_video_sync_rc=$resetVideoSyncRc " +
+          "rollback_video_sync_rc=$resetVideoSyncRc " +
           "rollback_display_fps_override_rc=$resetDisplayFpsOverrideRc " +
           "fallback=source_passthrough",
       )
@@ -634,7 +625,7 @@ class MPVView(
       Log.i(
         TAG,
         "MPVFLOW_DIAGNOSTIC event=timing_config state=applied " +
-          "interpolation_rc=$flowInterpolationRc video_sync_rc=$flowVideoSyncRc " +
+          "video_sync_rc=$flowVideoSyncRc " +
           "display_fps_override_rc=$flowDisplayFpsOverrideRc " +
           "display_refresh_hz=${displayRefreshRate?.hz} " +
           "display_refresh_source=${displayRefreshRate?.source} video_sync=display-resample",
@@ -956,14 +947,8 @@ class MPVView(
     PlaybackSession.setOptionString("hr-seek", if (preciseSeek) "yes" else "no")
     PlaybackSession.setOptionString("hr-seek-framedrop", if (preciseSeek) "no" else "yes")
 
-    // FongMi MEMC needs gpu-next's display-synchronized temporal queue to synthesize at the
-    // presentation timestamp without a CPU filter queue. Keep the existing audio sync otherwise.
-    if (!MpvConfigOverridePolicy.isOwnedByMpvConf("interpolation")) {
-      PlaybackSession.setOptionString(
-        "interpolation",
-        if (mpvFlowFrameInterpolationEnabled) "yes" else "no",
-      )
-    }
+    // FongMi motion-interpolation replaces mpv's ordinary frame mixer; never enable the separate
+    // `interpolation` option here.
     if (!MpvConfigOverridePolicy.isOwnedByMpvConf("video-sync")) {
       PlaybackSession.setOptionString(
         "video-sync",

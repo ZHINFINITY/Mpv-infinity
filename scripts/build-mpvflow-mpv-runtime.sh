@@ -5,9 +5,20 @@ ROOT="${GITHUB_WORKSPACE:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
 MPV_BUILDER_DIR="${MPV_BUILDER_DIR:-$ROOT/native-builder}"
 MPV_SOURCE_DIR="${MPV_SOURCE_DIR:-$ROOT/mpv-source}"
 BUILDSCRIPTS="$MPV_BUILDER_DIR/buildscripts"
+EXPECTED_BUILDER_REVISION="1efc82739f6f7034cd63e7ee8b3ec5431df27467"
+EXPECTED_MPV_REVISION="14b3999a1a3e322c217bc90ee4df5a8f1bc88f69"
 
 [[ -d "$BUILDSCRIPTS" ]] || { echo "Missing pinned Android MPV build tools: $BUILDSCRIPTS" >&2; exit 1; }
-[[ -d "$MPV_SOURCE_DIR/.git" ]] || { echo "Missing pinned MPV checkout: $MPV_SOURCE_DIR" >&2; exit 1; }
+actual_builder_revision="$(git -C "$MPV_BUILDER_DIR" rev-parse HEAD 2>/dev/null || true)"
+[[ "$actual_builder_revision" == "$EXPECTED_BUILDER_REVISION" ]] || {
+  echo "Unexpected Android MPV builder revision: expected $EXPECTED_BUILDER_REVISION, got ${actual_builder_revision:-not-a-git-checkout}" >&2
+  exit 1
+}
+actual_mpv_revision="$(git -C "$MPV_SOURCE_DIR" rev-parse HEAD 2>/dev/null || true)"
+[[ "$actual_mpv_revision" == "$EXPECTED_MPV_REVISION" ]] || {
+  echo "Unexpected MPV source revision: expected FongMi $EXPECTED_MPV_REVISION, got ${actual_mpv_revision:-not-a-git-checkout}" >&2
+  exit 1
+}
 [[ -n "${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}" ]] || { echo "ANDROID_HOME/ANDROID_SDK_ROOT is required" >&2; exit 1; }
 export ANDROID_HOME="${ANDROID_HOME:-$ANDROID_SDK_ROOT}"
 export ANDROID_SDK_ROOT="$ANDROID_HOME"
@@ -74,7 +85,7 @@ download = download_path.read_text()
 libplacebo_clone = "[ ! -d libplacebo ] && git clone --recursive https://github.com/haasn/libplacebo"
 if download.count(libplacebo_clone) != 1:
     raise SystemExit(f"Expected one unpinned libplacebo clone in {download_path}")
-libplacebo_revision = "0d043c7f6f79cd3687c023454bdacbe615e4d96f"
+libplacebo_revision = "275f7dea27924cdd34ab2e6c20e448b6bc4fab65"
 download = download.replace(
     libplacebo_clone,
     libplacebo_clone + "\n" +
@@ -82,7 +93,7 @@ download = download.replace(
     "git -C libplacebo submodule update --init --recursive",
     1,
 )
-print(f"Pinned libplacebo {libplacebo_revision} to satisfy MPV and GPU Flow APIs")
+print(f"Pinned libplacebo {libplacebo_revision} (v7.387.0) for native FongMi prepared-view and shader-mixer APIs")
 
 glslang_revision = "1062752a891c95b2bfeed9e356562d88f9df84ac"
 glslang_insert_after = "git -C libplacebo submodule update --init --recursive\n"

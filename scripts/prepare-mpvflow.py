@@ -1,31 +1,13 @@
 #!/usr/bin/env python3
-"""Install FongMi GPU MEMC and Android Vulkan hardware mapping into pinned MPV source."""
+"""Validate and adapt the pinned native FongMi MPV runtime source."""
 from __future__ import annotations
 
 import argparse
 import os
 from pathlib import Path
-import shutil
-import subprocess
 
 ROOT = Path(__file__).resolve().parents[1]
 VENDOR = ROOT / "app/src/main/cpp/mpvflow"
-FONGMI_PATCH = VENDOR / "fongmi/mpv-fongmi-android.patch"
-MEDIACODEC_VULKAN_DIR = VENDOR / "mediacodec-vulkan"
-MEDIACODEC_VULKAN_FILES = (
-    "LICENSE.LGPL",
-    "hwdec_aimagereader.c",
-    "hwdec_aimagereader.comp",
-    "hwdec_aimagereader.frag",
-    "hwdec_aimagereader.vert",
-    "hwdec_aimagereader_comp.h",
-    "hwdec_aimagereader_frag.h",
-    "hwdec_aimagereader_vert.h",
-    "hwdec_aimagereader_vk.c",
-    "hwdec_aimagereader_vk.h",
-    "hwdec_aimagereader_vk_convert.c",
-    "hwdec_aimagereader_vk_private.h",
-)
 MPV_VULKAN_DEPENDENCY = "vulkan = dependency('vulkan', version: '>= 1.3.238', required: vulkan_opt)"
 ANDROID_VULKAN_DEPENDENCY = "vulkan = dependency('vulkan', required: vulkan_opt)"
 PLACEBO_SPIRV_LIBRARY_LOOKUP = "spirv = cxx.find_library('SPIRV', required: required, static: static, dirs: vulkan_lib_dirs)"
@@ -54,7 +36,7 @@ PLACEBO_TIMER_RING_NEW = (
 )
 
 
-def validate_hwdec_frame_priv_members(vo_source: str) -> None:
+def validate_fongmi_frame_priv_members(vo_source: str) -> None:
     start = vo_source.find("struct frame_priv {")
     if start < 0:
         raise SystemExit("Pinned MPV vo_gpu_next.c has no struct frame_priv")
@@ -63,15 +45,17 @@ def validate_hwdec_frame_priv_members(vo_source: str) -> None:
         raise SystemExit("Pinned MPV struct frame_priv is not closed")
     body = vo_source[start:end]
     required = (
-        "bool hwdec_preloaded;",
-        "bool el_hwdec_preloaded;",
+        "struct source_frame *source;",
+        "bool motion_capture;",
+        "pl_tex motion_texture;",
+        "struct mp_motion_frame motion_frame;",
         "bool mapped_coordinates;",
         "struct mp_image_params mapped_params;",
     )
     missing = [member for member in required if member not in body]
     if missing:
         raise SystemExit(
-            "Android Vulkan mapper fields must be members of struct frame_priv; "
+            "Pinned FongMi frame ownership/MEMC fields must be members of struct frame_priv; "
             "missing: " + ", ".join(missing)
         )
 
@@ -123,12 +107,23 @@ def configure_debug_capture_source(source: str, enabled: bool) -> str:
 def enable_android_vulkan_dependency(meson: str) -> str:
     if "vulkan/vulkan_core.h" not in meson or "VK_VERSION_1_3" not in meson:
         raise SystemExit("Pinned MPV Vulkan header-version guard is missing; refusing an unverified Android Vulkan build")
-    old_count = meson.count(MPV_VULKAN_DEPENDENCY)
-    new_count = meson.count(ANDROID_VULKAN_DEPENDENCY)
-    if old_count == 1 and new_count == 0:
-        return meson.replace(MPV_VULKAN_DEPENDENCY, ANDROID_VULKAN_DEPENDENCY, 1)
-    if old_count == 0 and new_count == 1:
-        return meson
+    lines = meson.splitlines(keepends=True)
+    dependency_lines = [
+        index for index, line in enumerate(lines)
+        if line.strip().startswith("vulkan = dependency('vulkan',")
+    ]
+    if len(dependency_lines) == 1:
+        index = dependency_lines[0]
+        line = lines[index]
+        if line.strip() == ANDROID_VULKAN_DEPENDENCY:
+            return meson
+        version_start = line.find(", version: '")
+        required_start = line.find(", required: vulkan_opt)", version_start + 1)
+        if version_start >= 0 and required_start > version_start:
+            version = line[version_start + len(", version: '"):line.find("'", version_start + len(", version: '"))]
+            if version.startswith(">= "):
+                lines[index] = line[:version_start] + line[required_start:]
+                return "".join(lines)
     raise SystemExit("Pinned MPV Vulkan dependency check changed; refusing an unverified Android Vulkan build")
 
 
@@ -861,9 +856,10 @@ def main() -> None:
     libplacebo_dir = args.libplacebo_dir.resolve()
     meson_path = mpv_dir / "meson.build"
     stats_lua_path = mpv_dir / "player/lua/stats.lua"
+    command_path = mpv_dir / "player/command.c"
     vo_path = mpv_dir / "video/out/vo_gpu_next.c"
+    motion_path = mpv_dir / "video/out/gpu_next/motion.c"
     hwdec_header_path = mpv_dir / "video/out/gpu/hwdec.h"
-    gpu_video_path = mpv_dir / "video/out/gpu/video.c"
     vulkan_context_path = mpv_dir / "video/out/vulkan/context.c"
     glslang_meson_path = libplacebo_dir / "src/glsl/meson.build"
     glslang_source_path = libplacebo_dir / "src/glsl/glslang.cc"
@@ -872,87 +868,66 @@ def main() -> None:
     placebo_vulkan_header_path = libplacebo_dir / "src/include/libplacebo/vulkan.h"
     placebo_stubs_path = libplacebo_dir / "src/vulkan/stubs.c"
     for path in (
-        meson_path, stats_lua_path, vo_path, hwdec_header_path, gpu_video_path,
+        meson_path, stats_lua_path, command_path, vo_path, motion_path, hwdec_header_path,
         vulkan_context_path, glslang_meson_path, glslang_source_path, gpu_timer_path,
         placebo_swapchain_path, placebo_vulkan_header_path, placebo_stubs_path,
     ):
         if not path.is_file():
             raise SystemExit(f"Pinned native source is missing required file {path}")
 
-    fongmi_dir = VENDOR / "fongmi"
-    fongmi_sources = (
-        "motion.c", "motion.h", "motion_clock.h",
-        "test/motion_clock.c", "test/gpu_motion.c", "test/gpu_motion.py",
-        "test/stats_motion.lua",
+    native_fongmi_markers = (
+        "version: '>=7.387.0'",
+        "video/out/gpu_next/motion.c",
+        "libmpv_motion = static_library('mpv-motion'",
+        "video/out/hwdec/hwdec_aimagereader.c",
+        "video/out/hwdec/hwdec_aimagereader_vk_direct.c",
+        "mp_motion_prepare_view",
+        "mp_motion_render_views",
     )
-    required = (
-        FONGMI_PATCH,
-        *(fongmi_dir / filename for filename in fongmi_sources),
-        *(MEDIACODEC_VULKAN_DIR / filename for filename in MEDIACODEC_VULKAN_FILES),
-    )
-    for path in required:
-        if not path.is_file():
-            raise SystemExit(f"FongMi motion or Android Vulkan mapper source is missing: {path}")
-
     meson = meson_path.read_text(encoding="utf-8")
+    stats_lua = stats_lua_path.read_text(encoding="utf-8")
+    command = command_path.read_text(encoding="utf-8")
     vo = vo_path.read_text(encoding="utf-8")
+    motion = motion_path.read_text(encoding="utf-8")
     motion_option_marker = '{"motion-interpolation", OPT_INT(motion_fps), M_RANGE(0, 240)}'
-    flow_marker = "MPVFLOW_GPU_INTEGRATION"
-    android_mapper_marker = "# MPVFLOW_AIMAGE_VULKAN_MAPPER"
-    if motion_option_marker not in vo:
-        if flow_marker in vo or android_mapper_marker in meson:
-            raise SystemExit(
-                "MPV source already contains the old MPVFlow/partial Android mapper patch; "
-                "prepare a fresh pinned source checkout before applying FongMi MEMC"
-            )
-        subprocess.run(
-            ["patch", "-p1", "--forward", "--fuzz=0", "--input", str(FONGMI_PATCH)],
-            cwd=mpv_dir,
-            check=True,
+    if not all(marker in (meson + vo) for marker in native_fongmi_markers):
+        raise SystemExit(
+            "Pinned MPV source is not the coordinated FongMi native source; "
+            "refusing to apply the obsolete mpv-fongmi-android.patch or copy duplicate motion/AImageReader files"
         )
-        meson = meson_path.read_text(encoding="utf-8")
-        vo = vo_path.read_text(encoding="utf-8")
     if (
         motion_option_marker not in vo
         or "mp_motion_capture" not in vo
         or "mp_motion_render" not in vo
-        or android_mapper_marker not in meson
+        or "mp_motion_prepare_view" not in motion
+        or "mp_motion_render_views" not in motion
         or "video/out/gpu_next/motion.c" not in meson
         or "libmpv_motion" not in meson
+        or '{"motion-interpolation-info", mp_property_motion_info}' not in command
+        or 'mp.get_property_native("motion-interpolation-info")' not in stats_lua
     ):
-        raise SystemExit("The combined FongMi MEMC and Android Vulkan patch is incomplete")
-
-    motion_dir = mpv_dir / "video/out/gpu_next"
-    test_dir = mpv_dir / "test"
-    motion_dir.mkdir(parents=True, exist_ok=True)
-    for filename in fongmi_sources[:3]:
-        shutil.copy2(fongmi_dir / filename, motion_dir / filename)
-    for filename in fongmi_sources[3:]:
-        shutil.copy2(fongmi_dir / filename, test_dir / Path(filename).name)
-
-    video_out_hwdec_dir = mpv_dir / "video/out/hwdec"
-    for filename in MEDIACODEC_VULKAN_FILES:
-        if filename != "LICENSE.LGPL":
-            shutil.copy2(MEDIACODEC_VULKAN_DIR / filename, video_out_hwdec_dir / filename)
-
-    validate_hwdec_frame_priv_members(vo)
+        raise SystemExit("The pinned native FongMi MEMC/Android/OSD source contract is incomplete")
+    validate_fongmi_frame_priv_members(vo)
+    mapper_sources = (
+        mpv_dir / "video/out/hwdec/hwdec_aimagereader.c",
+        mpv_dir / "video/out/hwdec/hwdec_aimagereader_vk.c",
+        mpv_dir / "video/out/hwdec/hwdec_aimagereader_vk_convert.c",
+        mpv_dir / "video/out/hwdec/hwdec_aimagereader_vk_direct.c",
+    )
+    missing_mapper_sources = [path for path in mapper_sources if not path.is_file()]
+    if missing_mapper_sources:
+        raise SystemExit(
+            "Pinned FongMi MPV source is missing native AImageReader/Vulkan mapper files: "
+            + ", ".join(str(path) for path in missing_mapper_sources)
+        )
     mapper_header = hwdec_header_path.read_text(encoding="utf-8")
-    if "#define RA_HWDEC_MAP_RETRY (-2)" not in mapper_header:
-        raise SystemExit("FongMi integration is missing the Android transient-map retry contract")
-    gpu_video = gpu_video_path.read_text(encoding="utf-8")
-    retry_marker = "if (map_result == RA_HWDEC_MAP_RETRY) {"
-    retry_start = gpu_video.find(retry_marker)
-    retry_end = gpu_video.find("\n        }", retry_start) if retry_start >= 0 else -1
-    retry_branch = gpu_video[retry_start:retry_end] if retry_end >= 0 else ""
-    fatal_marker = "Mapping hardware decoded surface failed."
-    fatal_index = gpu_video.find(fatal_marker)
     if (
-        retry_start < 0 or retry_end < 0
-        or "unref_current_image(p);" not in retry_branch
-        or "return false;" not in retry_branch
-        or fatal_index < 0 or retry_start >= fatal_index
+        "#define RA_HWDEC_MAP_RETRY (-2)" not in mapper_header
+        or "bool retry = result == RA_HWDEC_MAP_RETRY;" not in vo
+        or "p->hwdec_map_retry |= retry;" not in vo
+        or "fp->source->failed = ret != RA_HWDEC_MAP_RETRY;" not in vo
     ):
-        raise SystemExit("Pinned MPV video.c is missing its non-fatal Android mapper retry guard")
+        raise SystemExit("Pinned FongMi VO is missing the transient hwdec-map retry/ownership contract")
 
     vulkan_context = enable_android_external_memory_extensions(
         vulkan_context_path.read_text(encoding="utf-8")
@@ -996,7 +971,7 @@ def main() -> None:
     placebo_vulkan_header_path.write_text(placebo_vulkan_header, encoding="utf-8")
     placebo_stubs_path.write_text(placebo_stubs, encoding="utf-8")
     print(
-        f"Installed FongMi GPU MEMC and Android MediaCodec/Vulkan mapping into {mpv_dir}; "
+        f"Validated native FongMi GPU MEMC and Android MediaCodec/Vulkan mapping in {mpv_dir}; "
         f"kept SPIR-V optimization enabled and applied Android Vulkan synchronization and "
         f"swapchain stability fixes in {libplacebo_dir}."
     )

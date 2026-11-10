@@ -24,7 +24,6 @@
 #include <libplacebo/log.h>
 #include "mpvflow/mpvflow_gpu.h"
 #include "mpvflow/mpvflow_vulkan_optical.h"
-#include "mpvflow/fongmi/motion.h"
 
 #include <algorithm>
 #include <atomic>
@@ -36,7 +35,6 @@
 #include <cstring>
 #include <string>
 #include <mutex>
-#include <new>
 #include <unordered_set>
 #include <unistd.h>
 #include <vector>
@@ -57,21 +55,9 @@ struct SharedImage {
     pl_tex prepared = nullptr;
     int width = 0;
     int height = 0;
-    uint64_t motionId = 0;
-    uint32_t nativePairRefs = 0;
     bool output = false;
     bool heldByExternal = true;
     bool lastHoldUsedSyncFd = false;
-    bool destroyPending = false;
-};
-
-struct MotionPairHandle {
-    MPVFlowGPUPair *flowPair = nullptr;
-    SharedImage *source0 = nullptr;
-    SharedImage *source1 = nullptr;
-    uint64_t source0Id = 0;
-    uint64_t source1Id = 0;
-    bool fongmi = false;
 };
 
 struct PendingHoldFence {
@@ -89,7 +75,6 @@ struct FlowContext {
     pl_log placeboLog = nullptr;
     pl_vulkan vulkan = nullptr;
     MPVFlowGPUContext *flow = nullptr;
-    struct mp_motion *motion = nullptr;
     uint32_t computeQueueFamily = UINT32_MAX;
     uint32_t computeTimestampValidBits = 0;
     bool computeTimestampsSupported = false;
@@ -105,14 +90,13 @@ struct FlowContext {
     PFNEGLDUPNATIVEFENCEFDANDROIDPROC dupNativeFenceFd = nullptr;
     EGLDisplay eglDisplay = EGL_NO_DISPLAY;
     std::unordered_set<SharedImage *> images;
-    std::unordered_set<MotionPairHandle *> pairs;
+    std::unordered_set<MPVFlowGPUPair *> pairs;
     std::vector<PendingHoldFence> pendingHoldFences;
     std::vector<PendingReleaseSemaphore> pendingReleaseSemaphores;
     std::mutex mutex;
     uint64_t diagnosticMask = 0;
     uint64_t holdSequence = 0;
     uint64_t completedSequence = 0;
-    uint64_t nextMotionId = 0;
     uint64_t asyncHoldCount = 0;
     uint64_t asyncReleaseCount = 0;
     uint64_t fallbackHoldCount = 0;
@@ -123,7 +107,6 @@ struct FlowContext {
     uint32_t syncOperationsSinceSummary = 0;
     bool syncFdInteropReady = false;
     bool outputStorageImageSupported = false;
-    bool fongmiDirectOutputDisabled = false;
     std::string captureSessionId;
     bool captureFailureLogged = false;
 };
@@ -150,7 +133,6 @@ enum FlowDiagnosticBit : uint64_t {
     DIAG_SYNC_BACKPRESSURE = 1ull << 18,
     DIAG_OUTPUT_STORAGE_READY = 1ull << 19,
     DIAG_OUTPUT_STORAGE_FALLBACK = 1ull << 20,
-    DIAG_FONGMI_DIRECT_OUTPUT_FALLBACK = 1ull << 21,
 };
 
 enum EglDiagnosticBit : uint32_t {
@@ -702,20 +684,6 @@ void destroyImage(FlowContext *context, SharedImage *image) {
     delete image;
 }
 
-void destroyPendingImages(FlowContext *context) {
-    if (!context)
-        return;
-    for (auto it = context->images.begin(); it != context->images.end();) {
-        SharedImage *image = *it;
-        if (!image->destroyPending || image->nativePairRefs != 0) {
-            ++it;
-            continue;
-        }
-        it = context->images.erase(it);
-        destroyImage(context, image);
-    }
-}
-
 bool queryAhbImageSupport(FlowContext *context, VkImageUsageFlags usage,
                           const AHardwareBuffer_Desc *bufferDesc,
                           uint64_t *requiredAhbUsage, const char *imageRole,
@@ -1237,12 +1205,6 @@ Java_app_infinity_mpvz_ui_player_Media3FlowVulkanNative_nativeCreateContext(
         delete context;
         return 0;
     }
-    context->motion = mp_motion_create(vulkan->gpu, config.max_dimension);
-    logFlow(context->motion ? ANDROID_LOG_INFO : ANDROID_LOG_WARN,
-            "MPVFLOW_DIAGNOSTIC component=native-media3 event=fongmi_motion state=%s "
-            "engine=fongmi_gpu_next backend=libplacebo_vulkan analysis_max_dimension=%d "
-            "fallback=mpvflow",
-            context->motion ? "ready" : "unavailable", config.max_dimension);
     MPVFlowGPUTimingStats timingStats{};
     mpvflow_gpu_get_timing_stats(context->flow, &timingStats);
     context->computeQueueFamily = timingStats.compute_queue_family;
@@ -1531,13 +1493,11 @@ Java_app_infinity_mpvz_ui_player_Media3FlowVulkanNative_nativePrepareFrame(
         return JNI_FALSE;
     std::lock_guard<std::mutex> guard(context->mutex);
     const bool imageOwned = image && context->images.find(image) != context->images.end();
-    if (!imageOwned || image->destroyPending || !image->texture) {
+    if (!imageOwned || !image->texture) {
         logFlowOnce(context, DIAG_PREPARE_FAILURE, ANDROID_LOG_ERROR,
                     "MPVFLOW_DIAGNOSTIC component=native-media3 event=prepare_frame state=failed "
-                    "stage=shared_image_validation image_present=%d image_owned=%d "
-                    "destroy_pending=%d texture_present=%d",
-                    image != nullptr, imageOwned, imageOwned && image->destroyPending,
-                    imageOwned && image->texture);
+                    "stage=shared_image_validation image_present=%d image_owned=%d texture_present=%d",
+                    image != nullptr, imageOwned, imageOwned && image->texture);
         return JNI_FALSE;
     }
     if (image->prepared)
@@ -1562,9 +1522,6 @@ Java_app_infinity_mpvz_ui_player_Media3FlowVulkanNative_nativePrepareFrame(
                     image->prepared != nullptr);
         return JNI_FALSE;
     }
-    if (++context->nextMotionId == 0)
-        ++context->nextMotionId;
-    image->motionId = context->nextMotionId;
     logFlowOnce(context, DIAG_PREPARE_READY, ANDROID_LOG_INFO,
                 "MPVFLOW_DIAGNOSTIC component=native-media3 event=prepare_frame state=ready "
                 "renderer_api=vulkan flow_compute_api=%s preprocess_api=vulkan-libplacebo "
@@ -1618,66 +1575,35 @@ Java_app_infinity_mpvz_ui_player_Media3FlowVulkanNative_nativeAnalyzePair(
                     frame0 != nullptr, frame0Owned, frame1 != nullptr, frame1Owned);
         return 0;
     }
-    if (frame0 == frame1 || frame0->destroyPending || frame1->destroyPending ||
-        frame0->output || frame1->output ||
+    if (frame0 == frame1 || frame0->output || frame1->output ||
         !frame0->prepared || !frame1->prepared) {
         logFlowOnce(context, DIAG_ANALYZE_FAILURE, ANDROID_LOG_ERROR,
                     "MPVFLOW_DIAGNOSTIC component=native-media3 event=analyze_pair state=failed "
-                    "stage=prepared_frame_validation frame0_prepared=%d frame0_pending_destroy=%d "
-                    "frame0_role=%s frame1_prepared=%d frame1_pending_destroy=%d "
-                    "frame1_role=%s distinct_images=%d",
-                    frame0->prepared != nullptr, frame0->destroyPending,
-                    frame0->output ? "output" : "input",
-                    frame1->prepared != nullptr, frame1->destroyPending,
-                    frame1->output ? "output" : "input",
+                    "stage=prepared_frame_validation frame0_prepared=%d frame0_role=%s "
+                    "frame1_prepared=%d frame1_role=%s distinct_images=%d",
+                    frame0->prepared != nullptr, frame0->output ? "output" : "input",
+                    frame1->prepared != nullptr, frame1->output ? "output" : "input",
                     frame0 != frame1);
         return 0;
     }
-    auto *pair = new (std::nothrow) MotionPairHandle();
-    if (!pair)
-        return 0;
-    pair->source0 = frame0;
-    pair->source1 = frame1;
-    pair->source0Id = frame0->motionId;
-    pair->source1Id = frame1->motionId;
-    const bool captureRequiresFlow = mpvflow_gpu_capture_active(context->flow) ||
-                                     mpvflow_gpu_capture_is_paired(context->flow);
-    if (context->motion && frame0->motionId && frame1->motionId && !captureRequiresFlow &&
-        mp_motion_analyze_pair(context->motion, frame0->prepared, frame1->prepared,
-                               frame0->motionId, frame1->motionId)) {
-        pair->fongmi = true;
-    } else {
-        if (context->motion && !captureRequiresFlow) {
-            logFlowOnce(context, DIAG_ANALYZE_FAILURE, ANDROID_LOG_WARN,
-                        "MPVFLOW_DIAGNOSTIC component=native-media3 event=fongmi_motion state=fallback "
-                        "stage=analyze_pair reason=unsupported_input_or_motion_dispatch_failed");
-        }
-        const MPVFlowGPUResult result = mpvflow_gpu_analyze_pair(
-            context->flow, frame0->prepared, frame1->prepared, &pair->flowPair);
-        if (result != MPVFLOW_GPU_OK || !pair->flowPair) {
-            delete pair;
-            logFlowOnce(context, DIAG_ANALYZE_FAILURE, ANDROID_LOG_ERROR,
-                        "MPVFLOW_DIAGNOSTIC component=native-media3 event=analyze_pair state=failed "
-                        "stage=mpvflow_gpu_analyze_pair renderer_api=vulkan flow_compute_api=%s "
-                        "status=%d frame0=%ux%u frame1=%ux%u",
-                        mpvflow_gpu_get_compute_api_name(context->flow), result,
-                        frame0->prepared->params.w, frame0->prepared->params.h,
-                        frame1->prepared->params.w, frame1->prepared->params.h);
-            return 0;
-        }
-    }
-    if (!pair->fongmi && !pair->flowPair) {
-        delete pair;
+    MPVFlowGPUPair *pair = nullptr;
+    const MPVFlowGPUResult result = mpvflow_gpu_analyze_pair(
+        context->flow, frame0->prepared, frame1->prepared, &pair);
+    if (result != MPVFLOW_GPU_OK || !pair) {
+        logFlowOnce(context, DIAG_ANALYZE_FAILURE, ANDROID_LOG_ERROR,
+                    "MPVFLOW_DIAGNOSTIC component=native-media3 event=analyze_pair state=failed "
+                    "stage=mpvflow_gpu_analyze_pair renderer_api=vulkan flow_compute_api=%s "
+                    "status=%d frame0=%ux%u frame1=%ux%u",
+                    mpvflow_gpu_get_compute_api_name(context->flow), result,
+                    frame0->prepared->params.w, frame0->prepared->params.h,
+                    frame1->prepared->params.w, frame1->prepared->params.h);
         return 0;
     }
     context->pairs.insert(pair);
-    ++frame0->nativePairRefs;
-    ++frame1->nativePairRefs;
     logFlowOnce(context, DIAG_ANALYZE_READY, ANDROID_LOG_INFO,
                 "MPVFLOW_DIAGNOSTIC component=native-media3 event=analyze_pair state=ready "
-                "renderer_api=vulkan motion_engine=%s flow_compute_api=%s dimensions=%ux%u frames=2 "
+                "renderer_api=vulkan flow_compute_api=%s dimensions=%ux%u frames=2 "
                 "output=GPU-resident cpu_readback=no",
-                pair->fongmi ? "fongmi" : "mpvflow",
                 mpvflow_gpu_get_compute_api_name(context->flow),
                 frame0->prepared->params.w, frame0->prepared->params.h);
     return reinterpret_cast<jlong>(pair);
@@ -1691,46 +1617,47 @@ Java_app_infinity_mpvz_ui_player_Media3FlowVulkanNative_nativeSynthesize(
     jboolean visibilityResolverEnabled, jboolean softBlendEnabled,
     jlong outputHandle) {
     auto *context = reinterpret_cast<FlowContext *>(contextHandle);
-    auto *pair = reinterpret_cast<MotionPairHandle *>(pairHandle);
+    auto *pair = reinterpret_cast<MPVFlowGPUPair *>(pairHandle);
     auto *source0 = reinterpret_cast<SharedImage *>(source0Handle);
     auto *source1 = reinterpret_cast<SharedImage *>(source1Handle);
     auto *output = reinterpret_cast<SharedImage *>(outputHandle);
     if (!context)
         return JNI_FALSE;
     std::lock_guard<std::mutex> guard(context->mutex);
-    const bool pairOwned = pair && context->pairs.find(pair) != context->pairs.end();
-    const bool source0Owned = source0 && context->images.find(source0) != context->images.end();
-    const bool source1Owned = source1 && context->images.find(source1) != context->images.end();
-    const bool outputOwned = output && context->images.find(output) != context->images.end();
-    if (!pairOwned || !source0Owned || !source1Owned || !outputOwned ||
-        source0 == source1 || !std::isfinite(timestep) ||
+    if (!pair || !source0 || !source1 || source0 == source1 ||
+        !output || !output->texture || !std::isfinite(timestep) ||
         timestep <= 0.f || timestep >= 1.f) {
         logFlowOnce(context, DIAG_SYNTH_FAILURE, ANDROID_LOG_ERROR,
                     "MPVFLOW_DIAGNOSTIC component=native-media3 event=synthesize state=failed "
-                    "stage=handle_registration pair_present=%d pair_owned=%d "
-                    "source0_present=%d source0_owned=%d source1_present=%d source1_owned=%d "
-                    "output_present=%d output_owned=%d "
+                    "stage=arguments pair_present=%d source0_present=%d source1_present=%d "
+                    "output_present=%d output_texture_present=%d "
                     "timestep=%.9g reason=invalid_handle_or_timestep",
-                    pair != nullptr, pairOwned, source0 != nullptr, source0Owned,
-                    source1 != nullptr, source1Owned, output != nullptr, outputOwned, timestep);
+                    pair != nullptr, source0 != nullptr, source1 != nullptr,
+                    output != nullptr, output && output->texture, timestep);
         return JNI_FALSE;
     }
-    if (source0->output || !source0->texture || !source0->prepared ||
-        source1->output || !source1->texture || !source1->prepared ||
-        !output->output || !output->texture) {
+    if (context->pairs.find(pair) == context->pairs.end()) {
         logFlowOnce(context, DIAG_SYNTH_FAILURE, ANDROID_LOG_ERROR,
                     "MPVFLOW_DIAGNOSTIC component=native-media3 event=synthesize state=failed "
-                    "stage=image_validation source0_role=%s source1_role=%s output_role=%s",
-                    source0->output ? "output" : "input",
-                    source1->output ? "output" : "input",
-                    output->output ? "output" : "input");
+                    "stage=pair_registration reason=pair_not_owned_by_context timestep=%.9g",
+                    timestep);
         return JNI_FALSE;
     }
-    if (pair->source0 != source0 || pair->source1 != source1 ||
-        pair->source0Id != source0->motionId || pair->source1Id != source1->motionId) {
+    const bool source0Owned = context->images.find(source0) != context->images.end();
+    const bool source1Owned = context->images.find(source1) != context->images.end();
+    const bool outputOwned = context->images.find(output) != context->images.end();
+    if (!source0Owned || !source1Owned || !outputOwned ||
+        (source0Owned && (source0->output || !source0->texture || !source0->prepared)) ||
+        (source1Owned && (source1->output || !source1->texture || !source1->prepared)) ||
+        (outputOwned && !output->output)) {
         logFlowOnce(context, DIAG_SYNTH_FAILURE, ANDROID_LOG_ERROR,
                     "MPVFLOW_DIAGNOSTIC component=native-media3 event=synthesize state=failed "
-                    "stage=pair_source_identity reason=recycled_or_mismatched_frame_handle");
+                    "stage=image_registration source0_owned=%d source1_owned=%d output_owned=%d "
+                    "source0_role=%s source1_role=%s output_role=%s",
+                    source0Owned, source1Owned, outputOwned,
+                    source0Owned ? (source0->output ? "output" : "input") : "unregistered",
+                    source1Owned ? (source1->output ? "output" : "input") : "unregistered",
+                    outputOwned ? (output->output ? "output" : "input") : "unregistered");
         return JNI_FALSE;
     }
     if (!releaseImageToVulkan(context, source0) ||
@@ -1750,98 +1677,16 @@ Java_app_infinity_mpvz_ui_player_Media3FlowVulkanNative_nativeSynthesize(
         return JNI_FALSE;
     }
     pl_tex synthesized = nullptr;
-    MPVFlowGPUResult result = MPVFLOW_GPU_OK;
+    MPVFlowGPUResult result;
     const bool capturePaired = mpvflow_gpu_capture_is_paired(context->flow);
     const bool captureActive = mpvflow_gpu_capture_active(context->flow);
-    const bool needsFlowFeatures = capturePaired || captureActive ||
-                                   visibilityResolverEnabled == JNI_TRUE ||
-                                   softBlendEnabled == JNI_TRUE;
-    if (needsFlowFeatures && !pair->flowPair) {
-        result = mpvflow_gpu_analyze_pair(context->flow, source0->prepared,
-                                          source1->prepared, &pair->flowPair);
-        if (result != MPVFLOW_GPU_OK || !pair->flowPair) {
-            (void) holdImageForExternal(context, output, true);
-            logFlowOnce(context, DIAG_SYNTH_FAILURE, ANDROID_LOG_ERROR,
-                        "MPVFLOW_DIAGNOSTIC component=native-media3 event=synthesize state=failed "
-                        "stage=mpvflow_fallback_pair_analysis status=%d", result);
-            return JNI_FALSE;
-        }
-    }
-    bool useFongmi = pair->fongmi && !needsFlowFeatures;
-    const pl_fmt outputFormat = output->texture->params.format;
-    const bool fongmiDirectOutputEligible =
-        output->texture->params.storable && outputFormat &&
-        (outputFormat->caps & PL_FMT_CAP_STORABLE);
-    const bool flowDirectOutputEligible =
+    const bool directOutputEligible =
         !capturePaired && !captureActive && output->texture->params.storable &&
         mpvflow_gpu_get_compute_api(context->flow) == MPVFLOW_GPU_COMPUTE_VULKAN;
-    const bool directOutputEligible = useFongmi
-        ? fongmiDirectOutputEligible
-        : flowDirectOutputEligible;
-    if (useFongmi && !fongmiDirectOutputEligible) {
-        logFlowOnce(context, DIAG_FONGMI_DIRECT_OUTPUT_FALLBACK, ANDROID_LOG_INFO,
-                    "MPVFLOW_DIAGNOSTIC component=native-media3 event=fongmi_direct_output state=fallback "
-                    "reason=target_not_storage_writable path=mpvflow_fallback target_renderable=%d "
-                    "target_storable=%d format_caps=0x%x output=%dx%d",
-                    output->texture->params.renderable, output->texture->params.storable,
-                    outputFormat ? static_cast<unsigned int>(outputFormat->caps) : 0u,
-                    output->width, output->height);
-    }
     bool directOutput = false;
-    if (useFongmi) {
-        bool generated = false;
-        if (directOutputEligible && !context->fongmiDirectOutputDisabled) {
-            generated = mp_motion_render_sources_to(
-                context->motion, source0->prepared, source1->prepared,
-                source0->texture, source1->texture, pair->source0Id,
-                pair->source1Id, timestep, output->texture);
-            if (!generated) {
-                context->fongmiDirectOutputDisabled = true;
-                logFlowOnce(context, DIAG_FONGMI_DIRECT_OUTPUT_FALLBACK, ANDROID_LOG_WARN,
-                            "MPVFLOW_DIAGNOSTIC component=native-media3 event=fongmi_direct_output state=fallback "
-                            "reason=direct_target_render_failed path=mpvflow_fallback output=%dx%d",
-                            output->width, output->height);
-            }
-        }
-        if (generated) {
-            synthesized = output->texture;
-            directOutput = true;
-        } else {
-            result = mpvflow_gpu_analyze_pair(context->flow, source0->prepared,
-                                              source1->prepared, &pair->flowPair);
-            if (result == MPVFLOW_GPU_OK && pair->flowPair) {
-                useFongmi = false;
-                synthesized = nullptr;
-                if (flowDirectOutputEligible) {
-                    result = mpvflow_gpu_synthesize_with_policy_to_texture(
-                        context->flow, pair->flowPair, source0->texture, source1->texture,
-                        timestep, visibilityResolverEnabled == JNI_TRUE,
-                        softBlendEnabled == JNI_TRUE, softBlendEnabled == JNI_TRUE,
-                        output->texture, &synthesized);
-                    directOutput = result == MPVFLOW_GPU_OK && synthesized == output->texture;
-                    if (result == MPVFLOW_GPU_UNSUPPORTED_FORMAT) {
-                        synthesized = nullptr;
-                        directOutput = false;
-                        result = mpvflow_gpu_synthesize_with_policy(
-                            context->flow, pair->flowPair, source0->texture, source1->texture,
-                            timestep, visibilityResolverEnabled == JNI_TRUE,
-                            softBlendEnabled == JNI_TRUE, softBlendEnabled == JNI_TRUE,
-                            &synthesized);
-                    }
-                } else {
-                    result = mpvflow_gpu_synthesize_with_policy(
-                        context->flow, pair->flowPair, source0->texture, source1->texture,
-                        timestep, visibilityResolverEnabled == JNI_TRUE,
-                        softBlendEnabled == JNI_TRUE, softBlendEnabled == JNI_TRUE,
-                        &synthesized);
-                }
-            } else if (result == MPVFLOW_GPU_OK) {
-                result = MPVFLOW_GPU_ERROR;
-            }
-        }
-    } else if (capturePaired) {
-        result = mpvflow_gpu_capture_paired_sample(
-            context->flow, pair->flowPair, source0->texture, source1->texture, timestep,
+    if (capturePaired) {
+      result = mpvflow_gpu_capture_paired_sample(
+            context->flow, pair, source0->texture, source1->texture, timestep,
             static_cast<double>(sourcePts0Us) / 1000000.0,
             static_cast<double>(sourcePts1Us) / 1000000.0,
             static_cast<double>(outputPtsUs) / 1000000.0,
@@ -1852,26 +1697,26 @@ Java_app_infinity_mpvz_ui_player_Media3FlowVulkanNative_nativeSynthesize(
     } else {
         if (directOutputEligible) {
             result = mpvflow_gpu_synthesize_with_policy_to_texture(
-                context->flow, pair->flowPair, source0->texture, source1->texture, timestep,
+                context->flow, pair, source0->texture, source1->texture, timestep,
                 visibilityResolverEnabled == JNI_TRUE, softBlendEnabled == JNI_TRUE,
                 softBlendEnabled == JNI_TRUE, output->texture, &synthesized);
             directOutput = result == MPVFLOW_GPU_OK && synthesized == output->texture;
             if (result == MPVFLOW_GPU_UNSUPPORTED_FORMAT) {
                 synthesized = nullptr;
                 result = mpvflow_gpu_synthesize_with_policy(
-                    context->flow, pair->flowPair, source0->texture, source1->texture, timestep,
+                    context->flow, pair, source0->texture, source1->texture, timestep,
                     visibilityResolverEnabled == JNI_TRUE, softBlendEnabled == JNI_TRUE,
                     softBlendEnabled == JNI_TRUE, &synthesized);
             }
         } else {
             result = mpvflow_gpu_synthesize_with_policy(
-                context->flow, pair->flowPair, source0->texture, source1->texture, timestep,
+                context->flow, pair, source0->texture, source1->texture, timestep,
                 visibilityResolverEnabled == JNI_TRUE, softBlendEnabled == JNI_TRUE,
                 softBlendEnabled == JNI_TRUE, &synthesized);
         }
         if (result == MPVFLOW_GPU_OK && synthesized && captureActive) {
             const MPVFlowGPUResult captureResult = mpvflow_gpu_capture_sample(
-                context->flow, pair->flowPair, source0->texture, source1->texture, synthesized,
+                context->flow, pair, source0->texture, source1->texture, synthesized,
                 timestep, static_cast<double>(sourcePts0Us) / 1000000.0,
                 static_cast<double>(sourcePts1Us) / 1000000.0,
                 static_cast<double>(outputPtsUs) / 1000000.0,
@@ -1890,29 +1735,12 @@ Java_app_infinity_mpvz_ui_player_Media3FlowVulkanNative_nativeSynthesize(
         (void) holdImageForExternal(context, output, true);
         logFlowOnce(context, DIAG_SYNTH_FAILURE, ANDROID_LOG_ERROR,
                     "MPVFLOW_DIAGNOSTIC component=native-media3 event=synthesize state=failed "
-                    "stage=gpu_motion_synthesis motion_engine=%s status=%d synthesized_texture_present=%d "
+                    "stage=mpvflow_gpu_synthesize_with_policy status=%d synthesized_texture_present=%d "
                     "timestep=%.9g output=%dx%d",
-                    useFongmi ? "fongmi" : "mpvflow", result,
-                    synthesized != nullptr, timestep, output->width, output->height);
+                    result, synthesized != nullptr, timestep, output->width, output->height);
         return JNI_FALSE;
     }
     if (!directOutput) {
-        const pl_fmt sourceFormat = synthesized->params.format;
-        const pl_fmt targetFormat = output->texture->params.format;
-        if (!synthesized->params.blit_src || !output->texture->params.blit_dst ||
-            !sourceFormat || !targetFormat ||
-            sourceFormat->internal_size != targetFormat->internal_size) {
-            (void) holdImageForExternal(context, output, true);
-            logFlowOnce(context, DIAG_SYNTH_FAILURE, ANDROID_LOG_ERROR,
-                        "MPVFLOW_DIAGNOSTIC component=native-media3 event=synthesize state=failed "
-                        "stage=compatible_intermediate_output source_blit_src=%d target_blit_dst=%d "
-                        "source_internal_size=%d target_internal_size=%d output=%dx%d",
-                        synthesized->params.blit_src, output->texture->params.blit_dst,
-                        sourceFormat ? sourceFormat->internal_size : -1,
-                        targetFormat ? targetFormat->internal_size : -1,
-                        output->width, output->height);
-            return JNI_FALSE;
-        }
         struct pl_tex_blit_params blitParams{};
         blitParams.src = synthesized;
         blitParams.dst = output->texture;
@@ -1929,15 +1757,12 @@ Java_app_infinity_mpvz_ui_player_Media3FlowVulkanNative_nativeSynthesize(
     }
     logFlowOnce(context, DIAG_SYNTH_READY, ANDROID_LOG_INFO,
                 "MPVFLOW_DIAGNOSTIC component=native-media3 event=synthesize state=returned_to_display "
-                "renderer_api=vulkan motion_engine=%s flow_compute_api=%s timestep=%.9g output=%dx%d output_path=%s "
-                "command_completion=%s cpu_readback=no soft_blend=%s visibility_resolver=%s",
-                useFongmi ? "fongmi" : "mpvflow",
+                "renderer_api=vulkan flow_compute_api=%s timestep=%.9g output=%dx%d output_path=%s "
+                "command_completion=%s cpu_readback=no",
                 mpvflow_gpu_get_compute_api_name(context->flow),
                 timestep, output->width, output->height,
                 directOutput ? "direct_storage_write" : "nearest_blit",
-                output->lastHoldUsedSyncFd ? "sync_fd_handoff" : "pl_gpu_finish_fallback",
-                softBlendEnabled == JNI_TRUE ? "enabled" : "disabled",
-                visibilityResolverEnabled == JNI_TRUE ? "enabled" : "disabled");
+                output->lastHoldUsedSyncFd ? "sync_fd_handoff" : "pl_gpu_finish_fallback");
     return JNI_TRUE;
 }
 
@@ -1945,30 +1770,15 @@ extern "C" JNIEXPORT void JNICALL
 Java_app_infinity_mpvz_ui_player_Media3FlowVulkanNative_nativeReleasePair(
     JNIEnv *, jobject, jlong contextHandle, jlong pairHandle) {
     auto *context = reinterpret_cast<FlowContext *>(contextHandle);
-    auto *pair = reinterpret_cast<MotionPairHandle *>(pairHandle);
+    auto *pair = reinterpret_cast<MPVFlowGPUPair *>(pairHandle);
     if (!context || !pair)
         return;
     std::lock_guard<std::mutex> guard(context->mutex);
     if (context->pairs.erase(pair)) {
-        SharedImage *source0 = pair->source0;
-        SharedImage *source1 = pair->source1;
-        // libplacebo retires command-referenced resources on queue completion;
-        // avoid serializing every pair release with a device-wide CPU wait.
-        if (pair->flowPair)
-            mpvflow_gpu_pair_release(context->flow, pair->flowPair);
-        auto unretainSource = [context](SharedImage *image) {
-            if (!image)
-                return;
-            auto it = context->images.find(image);
-            if (it == context->images.end())
-                return;
-            if (image->nativePairRefs > 0)
-                --image->nativePairRefs;
-        };
-        unretainSource(source0);
-        if (source1 != source0)
-            unretainSource(source1);
-        delete pair;
+        // libplacebo retains command-referenced Vulkan textures until the queue
+        // completion callbacks drop their references; a device-wide finish here
+        // unnecessarily serialized every retired motion pair with the CPU.
+        mpvflow_gpu_pair_release(context->flow, pair);
     }
 }
 
@@ -1980,18 +1790,9 @@ Java_app_infinity_mpvz_ui_player_Media3FlowVulkanNative_nativeDestroyImage(
     if (!context || !image)
         return;
     std::lock_guard<std::mutex> guard(context->mutex);
-    auto it = context->images.find(image);
-    if (it == context->images.end())
-        return;
-    image->destroyPending = true;
-    if (image->nativePairRefs > 0) {
-        logFlowOnce(context, DIAG_SYNC_FAILURE, ANDROID_LOG_INFO,
-                    "MPVFLOW_DIAGNOSTIC component=native-media3 event=image_destroy state=deferred "
-                    "reason=motion_pair_retains_source pair_refs=%u", image->nativePairRefs);
-        return;
-    }
     pl_gpu_finish(context->vulkan->gpu);
-    destroyPendingImages(context);
+    if (context->images.erase(image))
+        destroyImage(context, image);
 }
 
 extern "C" JNIEXPORT jlongArray JNICALL
@@ -2009,7 +1810,7 @@ Java_app_infinity_mpvz_ui_player_Media3FlowVulkanNative_nativeGetVulkanTimingSta
     jlong values[valueCount]{};
     values[0] = 3; // JNI snapshot schema version
     values[1] = stats.compute_timestamps_supported ? 1 : 0;
-    values[2] = static_cast<jlong>(stats.timestamp_period_ns * 1000.0 + 0.5);
+    values[2] = static_cast<jlong>(stats.timestamp_period_ns * 1000.0 + 0.5); // picoseconds per tick
     values[3] = stats.timestamp_compute_and_graphics ? 1 : 0;
     values[4] = stats.compute_timestamp_valid_bits;
     values[5] = stats.compute_queue_family == UINT32_MAX
@@ -2041,16 +1842,12 @@ Java_app_infinity_mpvz_ui_player_Media3FlowVulkanNative_nativeDestroyContext(
         std::lock_guard<std::mutex> guard(context->mutex);
         drainPendingInterop(context);
         if (context->flow && mpvflow_gpu_capture_active(context->flow)) { mpvflow_gpu_capture_stop(context->flow); context->captureSessionId.clear(); }
-        for (MotionPairHandle *pair : context->pairs) {
-            if (pair->flowPair)
-                mpvflow_gpu_pair_release(context->flow, pair->flowPair);
-            delete pair;
-        }
+        for (MPVFlowGPUPair *pair : context->pairs)
+            mpvflow_gpu_pair_release(context->flow, pair);
         context->pairs.clear();
         for (SharedImage *image : context->images)
             destroyImage(context, image);
         context->images.clear();
-        mp_motion_destroy(&context->motion);
         mpvflow_gpu_destroy(context->flow);
         context->flow = nullptr;
         pl_vulkan_destroy(&context->vulkan);

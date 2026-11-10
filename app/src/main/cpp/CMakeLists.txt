@@ -131,8 +131,33 @@ if(MPVFLOW_ENABLE_VULKAN_BACKEND)
     endif()
     string(REPLACE "\r" "" MPVFLOW_PLACEBO_EXPORTS "${MPVFLOW_PLACEBO_EXPORTS}")
     string(REPLACE "\n" ";" MPVFLOW_PLACEBO_EXPORT_LINES "${MPVFLOW_PLACEBO_EXPORTS}")
+    # Select headers from the exact versioned logging ABI exported by this AAR.
+    # Legacy AARs keep API 374 while the FongMi arm64 runtime exports API 387.
+    set(MPVFLOW_PLACEBO_API_VERSIONS)
+    foreach(MPVFLOW_EXPORT_LINE IN LISTS MPVFLOW_PLACEBO_EXPORT_LINES)
+        if(MPVFLOW_EXPORT_LINE MATCHES "[ \t]pl_log_create_([0-9]+)(@[^ \t]+)?$")
+            list(APPEND MPVFLOW_PLACEBO_API_VERSIONS "${CMAKE_MATCH_1}")
+        endif()
+    endforeach()
+    list(REMOVE_DUPLICATES MPVFLOW_PLACEBO_API_VERSIONS)
+    list(LENGTH MPVFLOW_PLACEBO_API_VERSIONS MPVFLOW_PLACEBO_API_COUNT)
+    if(NOT MPVFLOW_PLACEBO_API_COUNT EQUAL 1)
+        message(FATAL_ERROR
+            "Selected MPV AAR must export exactly one pl_log_create_<API> symbol; found: ${MPVFLOW_PLACEBO_API_VERSIONS}")
+    endif()
+    list(GET MPVFLOW_PLACEBO_API_VERSIONS 0 MPVFLOW_DETECTED_PLACEBO_API_VER)
+    if(MPVFLOW_DETECTED_PLACEBO_API_VER STREQUAL "374")
+        set(MPVFLOW_PLACEBO_INCLUDE_DIR
+            "${CMAKE_CURRENT_SOURCE_DIR}/third_party/libplacebo/include")
+    elseif(MPVFLOW_DETECTED_PLACEBO_API_VER STREQUAL "387")
+        set(MPVFLOW_PLACEBO_INCLUDE_DIR
+            "${CMAKE_CURRENT_SOURCE_DIR}/third_party/libplacebo/include-api-387")
+    else()
+        message(FATAL_ERROR
+            "Unsupported libplacebo logging ABI pl_log_create_${MPVFLOW_DETECTED_PLACEBO_API_VER}; refusing to guess headers")
+    endif()
     set(MPVFLOW_PLACEBO_CONFIG_HEADER
-        "${CMAKE_CURRENT_SOURCE_DIR}/third_party/libplacebo/include/libplacebo/config.h")
+        "${MPVFLOW_PLACEBO_INCLUDE_DIR}/libplacebo/config.h")
     file(STRINGS "${MPVFLOW_PLACEBO_CONFIG_HEADER}" MPVFLOW_PLACEBO_API_LINE
         REGEX "^#define PL_API_VER [0-9]+$")
     string(REGEX MATCH "[0-9]+" MPVFLOW_EXPECTED_PLACEBO_API_VER
@@ -141,11 +166,14 @@ if(MPVFLOW_ENABLE_VULKAN_BACKEND)
         message(FATAL_ERROR
             "Cannot read PL_API_VER from ${MPVFLOW_PLACEBO_CONFIG_HEADER}")
     endif()
+    if(NOT MPVFLOW_EXPECTED_PLACEBO_API_VER STREQUAL MPVFLOW_DETECTED_PLACEBO_API_VER)
+        message(FATAL_ERROR
+            "libplacebo header/API mismatch: ${MPVFLOW_PLACEBO_CONFIG_HEADER} declares PL_API_VER ${MPVFLOW_EXPECTED_PLACEBO_API_VER}, but AAR exports pl_log_create_${MPVFLOW_DETECTED_PLACEBO_API_VER}")
+    endif()
     set(MPVFLOW_REQUIRED_PLACEBO_SYMBOLS
         pl_vulkan_default_params pl_vulkan_create pl_vulkan_destroy
         pl_vulkan_wrap pl_vulkan_hold_ex pl_vulkan_release_ex
-        pl_shader_custom
-        "pl_log_create_${MPVFLOW_EXPECTED_PLACEBO_API_VER}")
+        "pl_log_create_${MPVFLOW_DETECTED_PLACEBO_API_VER}")
     foreach(MPVFLOW_REQUIRED_PLACEBO_SYMBOL IN LISTS MPVFLOW_REQUIRED_PLACEBO_SYMBOLS)
         set(MPVFLOW_SYMBOL_EXPORTED FALSE)
         foreach(MPVFLOW_EXPORT_LINE IN LISTS MPVFLOW_PLACEBO_EXPORT_LINES)
@@ -181,7 +209,6 @@ if(MPVFLOW_ENABLE_VULKAN_BACKEND)
 
     add_library(media3flow_vulkan SHARED
         media3flow_vulkan_jni.cpp
-        mpvflow/fongmi/motion.c
         mpvflow/mpvflow_gpu.c
         mpvflow/mpvflow_capture_io.c
         mpvflow/mpvflow_vulkan_qcom.c
@@ -200,9 +227,8 @@ if(MPVFLOW_ENABLE_VULKAN_BACKEND)
         target_compile_definitions(media3flow_vulkan PRIVATE MPVFLOW_HAVE_RENDERER_HOOK=1)
     endif()
     target_include_directories(media3flow_vulkan PRIVATE
-        "${CMAKE_CURRENT_SOURCE_DIR}/third_party/libplacebo/include"
-        "${CMAKE_CURRENT_SOURCE_DIR}/mpvflow"
-        "${CMAKE_CURRENT_SOURCE_DIR}/mpvflow/fongmi")
+        "${MPVFLOW_PLACEBO_INCLUDE_DIR}"
+        "${CMAKE_CURRENT_SOURCE_DIR}/mpvflow")
     target_link_libraries(media3flow_vulkan PRIVATE
         mpvflow_placebo_api_from_aar
         android

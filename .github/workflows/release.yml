@@ -132,7 +132,7 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: native-builder/app/build/outputs/apk
-          key: mpvflow-arm64-runtime-v2-builder-1efc82739f6f7034-mpv-c1529642089bfebf-cores2-${{ hashFiles('scripts/build-mpvflow-mpv-runtime.sh', 'scripts/prepare-mpvflow.py', 'scripts/patch-ffmpeg-symver.py', 'app/src/main/cpp/**', 'THIRD_PARTY_LICENSES/**', 'app/src/main/assets/mpv/licenses/**') }}
+          key: mpvflow-arm64-runtime-v3-builder-1efc82739f6f7034-mpv-fongmi-14b3999a1a3e322c217bc90ee4df5a8f1bc88f69-libplacebo-275f7dea27924cdd34ab2e6c20e448b6bc4fab65-cores2-${{ hashFiles('scripts/build-mpvflow-mpv-runtime.sh', 'scripts/prepare-mpvflow.py', 'scripts/patch-ffmpeg-symver.py', 'app/src/main/cpp/**', 'THIRD_PARTY_LICENSES/**', 'app/src/main/assets/mpv/licenses/**') }}
 
       - name: Checkout pinned Android MPV build tools
         if: ${{ steps.mpvflow-runtime-cache.outputs.cache-hit != 'true' }}
@@ -146,8 +146,8 @@ jobs:
         if: ${{ steps.mpvflow-runtime-cache.outputs.cache-hit != 'true' }}
         uses: actions/checkout@v6
         with:
-          repository: mpv-player/mpv
-          ref: c1529642089bfebfc928a1c1664638a7a5d219ba
+          repository: FongMi/mpv
+          ref: 14b3999a1a3e322c217bc90ee4df5a8f1bc88f69
           path: mpv-source
 
       - name: Install native interpolation build dependencies

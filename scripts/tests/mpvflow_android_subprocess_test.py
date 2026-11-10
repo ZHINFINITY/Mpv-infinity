@@ -45,14 +45,12 @@ class AndroidSubprocessFallbackTest(unittest.TestCase):
 
     def test_fongmi_interpolation_code_and_target_fps_option_remain_registered(self):
         prepare_source = (ROOT / "scripts/prepare-mpvflow.py").read_text(encoding="utf-8")
-        vo_patch = (ROOT / "app/src/main/cpp/mpvflow/fongmi/mpv-fongmi-android.patch").read_text(encoding="utf-8")
         mpv_view = (ROOT / "app/src/main/java/app/infinity/mpvz/ui/player/MPVView.kt").read_text(encoding="utf-8")
-        self.assertIn('FONGMI_PATCH = VENDOR / "fongmi/mpv-fongmi-android.patch"', prepare_source)
-        self.assertIn("'video/out/gpu_next/motion.c'", vo_patch)
-        self.assertIn('"motion-interpolation", OPT_INT(motion_fps)', vo_patch)
-        self.assertIn("capture_motion_frame", vo_patch)
-        self.assertIn("MPVFLOW_AIMAGE_VULKAN_MAPPER", vo_patch)
-        self.assertNotIn("mpvflow_gpu.c", vo_patch)
+        self.assertNotIn("FONGMI_PATCH", prepare_source)
+        self.assertIn('"video/out/gpu_next/motion.c"', prepare_source)
+        self.assertIn('motion_option_marker = \'{"motion-interpolation", OPT_INT(motion_fps), M_RANGE(0, 240)}\'', prepare_source)
+        self.assertIn('"video/out/hwdec/hwdec_aimagereader_vk_direct.c"', prepare_source)
+        self.assertIn("prefer_fork_for_android_mpv_subprocesses", prepare_source)
         self.assertIn('PlaybackSession.setOptionString("motion-interpolation", targetFps.toString())', mpv_view)
 
     def test_packaged_runtime_verifier_rejects_shared_spawn_but_accepts_fork_profile(self):

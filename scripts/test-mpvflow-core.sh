@@ -25,6 +25,8 @@ else
   python3 "$ROOT/scripts/tests/mpvflow_gpu_synthesis_test.py" --decision-mode
 fi
 python3 "$ROOT/scripts/tests/mpvflow_capture_io_test.py"
+python3 "$ROOT/scripts/tests/mpvflow_fongmi_native_source_test.py"
+python3 "$ROOT/scripts/tests/mpvflow_placebo_api_headers_test.py"
 python3 "$ROOT/scripts/tests/media3flow_gpu_shader_test.py"
 python3 "$ROOT/scripts/tests/mpvflow_osd_stats_test.py"
 python3 "$ROOT/scripts/tests/mpvflow_diagnostics_test.py"

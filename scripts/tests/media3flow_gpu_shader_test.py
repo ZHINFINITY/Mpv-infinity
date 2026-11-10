@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Guard the shared Vulkan compute architecture used by MPV and Native Media3 Flow."""
+"""Guard Native Media3 Vulkan compute architecture and the separate FongMi MPV route."""
 from __future__ import annotations
 
 import pathlib
@@ -20,7 +20,7 @@ CMAKE = (ROOT / "app/src/main/cpp/CMakeLists.txt").read_text(encoding="utf-8")
 GPU = (ROOT / "app/src/main/cpp/mpvflow/mpvflow_gpu.c").read_text(encoding="utf-8")
 MPV_VIEW = (ROOT / "app/src/main/java/app/infinity/mpvz/ui/player/MPVView.kt").read_text(encoding="utf-8")
 POLICY = (ROOT / "app/src/main/java/app/infinity/mpvz/ui/player/RendererBackendPolicy.kt").read_text(encoding="utf-8")
-MPV_PATCH = (ROOT / "app/src/main/cpp/mpvflow/mpvflow-vo-gpu-next.patch").read_text(encoding="utf-8")
+MPV_PREPARE = (ROOT / "scripts/prepare-mpvflow.py").read_text(encoding="utf-8")
 RUNTIME_BUILD = (ROOT / "scripts/build-mpvflow-mpv-runtime.sh").read_text(encoding="utf-8")
 AAR_PACKAGE = (ROOT / "scripts/package-mpv-runtime-aar.py").read_text(encoding="utf-8")
 
@@ -97,7 +97,8 @@ for marker in (
 ):
     assert marker in SINK, f"GLES uniform must be cached after shader linking: {marker}"
 
-# Both routes dispatch through the same libplacebo-backed Vulkan flow implementation.
+# Native Media3 dispatches through MPVFlow's libplacebo-backed Vulkan core;
+# MPV uses FongMi's independent native gpu-next motion implementation.
 for marker in (
     "nativePrepareFrame(", "nativeAnalyzePair(", "nativeSynthesize(",
     "nativeCreateFrameImage(", "nativeHoldImageForExternal(",
@@ -117,10 +118,9 @@ assert re.search(
     r"visibilityResolverEnabled == JNI_TRUE,\s*softBlendEnabled == JNI_TRUE,\s*softBlendEnabled == JNI_TRUE\);",
     JNI,
 ), "capture metadata must record the effective Native Media3 synthesis settings"
-assert "mpvflow_gpu_synthesize_with_policy(" in MPV_PATCH, "MPV must use the shared continuous-motion policy"
-mpv_synthesis_call = MPV_PATCH.split("mpvflow_gpu_synthesize_with_policy(", 1)[1].split(");", 1)[0]
-assert mpv_synthesis_call.count("p->next_opts->mpvflow_soft_blend,") == 2, "MPV soft blend must explicitly enable both the source blend and conflict bias"
-assert "mpvflow_gpu_synthesize_with_visibility(" not in MPV_PATCH, "MPV must not bypass its opt-in conflict policy"
+assert 'PlaybackSession.setOptionString("motion-interpolation", targetFps.toString())' in MPV_VIEW
+assert '"motion-interpolation", OPT_INT(motion_fps)' in MPV_PREPARE
+assert "FONGMI_PATCH" not in MPV_PREPARE
 assert "mpvflow_gpu_synthesize_with_policy(" in JNI, "Media3 must share the production Vulkan synthesis policy"
 assert "mpvflow_gpu_synthesize_with_policy_to_texture(" in JNI
 assert "outputStorageImageSupported" in JNI and "VK_IMAGE_USAGE_STORAGE_BIT" in JNI
@@ -138,7 +138,7 @@ assert "ctx, pair, source0, source1, capture_timestep,\n                false, s
 assert "ctx, pair, source0, source1, variant_output, capture_timestep,\n            source_pts0, source_pts1, capture_pts,\n            false, soft_blend, preserve_motion_blend_on_conflict" in paired_helper
 assert "ctx, pair, source0, source1, timestep,\n        production_visibility_resolver" in paired_helper
 assert "production_visibility_resolver, production_soft_blend,\n        production_preserve_motion_blend_on_conflict, production_output" in paired_helper
-assert "mpvflow_gpu_capture_paired_sample(" in MPV_PATCH and "p->flow_pair, fp0->flow_source, fp1->flow_source, t," in MPV_PATCH
+assert "mp_motion_capture" in MPV_PREPARE and "mp_motion_render_views" in MPV_PREPARE
 assert "mpvflow_gpu_capture_paired_sample(" in JNI and "source0->texture, source1->texture, timestep," in JNI
 assert "Media3FlowDebugSettingsPolicy.effective(" in NATIVE_ENGINE
 assert "visibilityResolverEnabled || media3FlowDebugSettings.softBlendEnabled" in NATIVE_ENGINE
@@ -281,12 +281,8 @@ assert "eglSwapIntervalZeroApplied = EGL14.eglSwapInterval(eglDisplay, 0)" in SI
 assert "outputWallTimes.addLast(swapReturnedNs)" in SINK
 assert "outputWallTimes.addLast(frameTimeNanos" not in SINK
 assert "eglSwapReturnFps=" in SINK and "outputMetric=successful_eglSwapBuffers_return_not_scanout" in SINK
-assert "fp0->flow_source, fp1->flow_source" in MPV_PATCH, "MPV synthesis must use the high-precision pre-FRC source copies"
-assert "motion_analysis=%dx%d" in MPV_PATCH and "synthesis_processing=%dx%d" in MPV_PATCH
-assert "presentation_target=%dx%d video_params=%dx%d" in MPV_PATCH
-assert "event=runtime_cadence" in MPV_PATCH and "empty_batch_redraws=%llu" in MPV_PATCH
-assert "source_frame.overlays = NULL" in MPV_PATCH and "source_frame.num_overlays = 0" in MPV_PATCH
-assert ".crop = image0->crop" not in MPV_PATCH, "pre-FRC synthesis copies already bake the input crop"
+assert 'MpvConfigOverridePolicy.isOwnedByMpvConf("motion-interpolation")' in MPV_VIEW
+assert 'if (mpvFlowFrameInterpolationEnabled) "display-resample" else "audio"' in MPV_VIEW
 assert "external fun nativeCreateContext" in NATIVE
 assert "external fun nativeGetRequiredHardwareBufferUsage" in NATIVE
 assert "external fun nativeAnalyzePair" in NATIVE
@@ -353,8 +349,8 @@ assert 'gpuApi == "vulkan"' in POLICY
 assert '"requires_gpu_next_vulkan"' in MPV_VIEW
 assert "requires_gpu_next_opengl" not in MPV_VIEW
 assert "from=opencl-qcom to=vulkan-spirv" in GPU
-assert "renderer_api=vulkan compute_api=%s" in MPV_PATCH
-assert "backend=opengl-es" not in MPV_PATCH
+assert 'PlaybackSession.setVideoOutput(backend.vo)' in MPV_VIEW
+assert '"requires_gpu_next_vulkan"' in MPV_VIEW
 assert "gpu->glsl.vulkan" in GPU
 assert 'PlaybackSession.setOptionString("display-fps-override", displayRefreshRate.hz.toString())' in MPV_VIEW
 assert "display_refresh_source=" in MPV_VIEW

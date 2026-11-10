@@ -3922,10 +3922,6 @@ class Media3FlowVideoSink(
 
     val sourceFormat = currentFormat
     val inputSize = sourceFormat?.let { "${it.width}x${it.height}" } ?: "unknown"
-    val outputDecisions = outputDecisionCounters.snapshot().asLogFieldValue()
-    val outputTickGaps =
-      diagnostics.outputTickGapContexts.toSortedMap().entries.joinToString(",") { "${it.key}:${it.value}" }
-        .ifEmpty { "none" }
     Log.i(
       logTag,
       "flow_summary ${BuildIdentityDiagnostic.shaField(BuildConfig.GIT_SHA)} " +
@@ -3934,8 +3930,6 @@ class Media3FlowVideoSink(
         "targetFps=${diagnostics.targetFps} eglSwapReturnFps=${formatLogFloat(diagnostics.outputFps)} " +
         "generatedFps=${formatLogFloat(diagnostics.generatedFps)} " +
         "generatedFrames=${diagnostics.generatedFrames} droppedFrames=${diagnostics.droppedFrames} " +
-        "outputDecisions=$outputDecisions skippedOutputTicks=${diagnostics.skippedOutputTicks} " +
-        "lastOutputTickGapReason=${diagnostics.lastOutputTickGapReason} outputTickGaps=$outputTickGaps " +
         "submissionFailures=${diagnostics.outputSubmissionFailures} " +
         "eglSwapInterval=${if (eglSwapIntervalZeroApplied) 0 else "default"} " +
         "outputMetric=successful_eglSwapBuffers_return_not_scanout " +
