@@ -1770,17 +1770,18 @@ Java_app_infinity_mpvz_ui_player_Media3FlowVulkanNative_nativeSynthesize(
     bool useFongmi = pair->fongmi && !needsFlowFeatures;
     const pl_fmt outputFormat = output->texture->params.format;
     const bool fongmiDirectOutputEligible =
-        output->texture->params.renderable && output->texture->params.storable &&
-        outputFormat && (outputFormat->caps & PL_FMT_CAP_RENDERABLE) &&
+        output->texture->params.storable && outputFormat &&
         (outputFormat->caps & PL_FMT_CAP_STORABLE);
+    const bool flowDirectOutputEligible =
+        !capturePaired && !captureActive && output->texture->params.storable &&
+        mpvflow_gpu_get_compute_api(context->flow) == MPVFLOW_GPU_COMPUTE_VULKAN;
     const bool directOutputEligible = useFongmi
         ? fongmiDirectOutputEligible
-        : (!capturePaired && !captureActive && output->texture->params.storable &&
-           mpvflow_gpu_get_compute_api(context->flow) == MPVFLOW_GPU_COMPUTE_VULKAN);
+        : flowDirectOutputEligible;
     if (useFongmi && !fongmiDirectOutputEligible) {
         logFlowOnce(context, DIAG_FONGMI_DIRECT_OUTPUT_FALLBACK, ANDROID_LOG_INFO,
                     "MPVFLOW_DIAGNOSTIC component=native-media3 event=fongmi_direct_output state=fallback "
-                    "reason=target_not_dispatchable path=intermediate_blit target_renderable=%d "
+                    "reason=target_not_storage_writable path=mpvflow_fallback target_renderable=%d "
                     "target_storable=%d format_caps=0x%x output=%dx%d",
                     output->texture->params.renderable, output->texture->params.storable,
                     outputFormat ? static_cast<unsigned int>(outputFormat->caps) : 0u,
@@ -1798,7 +1799,7 @@ Java_app_infinity_mpvz_ui_player_Media3FlowVulkanNative_nativeSynthesize(
                 context->fongmiDirectOutputDisabled = true;
                 logFlowOnce(context, DIAG_FONGMI_DIRECT_OUTPUT_FALLBACK, ANDROID_LOG_WARN,
                             "MPVFLOW_DIAGNOSTIC component=native-media3 event=fongmi_direct_output state=fallback "
-                            "reason=direct_target_render_failed path=intermediate_blit output=%dx%d",
+                            "reason=direct_target_render_failed path=mpvflow_fallback output=%dx%d",
                             output->width, output->height);
             }
         }
@@ -1806,23 +1807,34 @@ Java_app_infinity_mpvz_ui_player_Media3FlowVulkanNative_nativeSynthesize(
             synthesized = output->texture;
             directOutput = true;
         } else {
-            generated = mp_motion_render_sources(
-                context->motion, source0->prepared, source1->prepared,
-                source0->texture, source1->texture, pair->source0Id,
-                pair->source1Id, timestep, &synthesized);
-        }
-        if (!generated) {
             result = mpvflow_gpu_analyze_pair(context->flow, source0->prepared,
                                               source1->prepared, &pair->flowPair);
             if (result == MPVFLOW_GPU_OK && pair->flowPair) {
                 useFongmi = false;
-                directOutput = false;
                 synthesized = nullptr;
-                result = mpvflow_gpu_synthesize_with_policy(
-                    context->flow, pair->flowPair, source0->texture, source1->texture,
-                    timestep, visibilityResolverEnabled == JNI_TRUE,
-                    softBlendEnabled == JNI_TRUE, softBlendEnabled == JNI_TRUE,
-                    &synthesized);
+                if (flowDirectOutputEligible) {
+                    result = mpvflow_gpu_synthesize_with_policy_to_texture(
+                        context->flow, pair->flowPair, source0->texture, source1->texture,
+                        timestep, visibilityResolverEnabled == JNI_TRUE,
+                        softBlendEnabled == JNI_TRUE, softBlendEnabled == JNI_TRUE,
+                        output->texture, &synthesized);
+                    directOutput = result == MPVFLOW_GPU_OK && synthesized == output->texture;
+                    if (result == MPVFLOW_GPU_UNSUPPORTED_FORMAT) {
+                        synthesized = nullptr;
+                        directOutput = false;
+                        result = mpvflow_gpu_synthesize_with_policy(
+                            context->flow, pair->flowPair, source0->texture, source1->texture,
+                            timestep, visibilityResolverEnabled == JNI_TRUE,
+                            softBlendEnabled == JNI_TRUE, softBlendEnabled == JNI_TRUE,
+                            &synthesized);
+                    }
+                } else {
+                    result = mpvflow_gpu_synthesize_with_policy(
+                        context->flow, pair->flowPair, source0->texture, source1->texture,
+                        timestep, visibilityResolverEnabled == JNI_TRUE,
+                        softBlendEnabled == JNI_TRUE, softBlendEnabled == JNI_TRUE,
+                        &synthesized);
+                }
             } else if (result == MPVFLOW_GPU_OK) {
                 result = MPVFLOW_GPU_ERROR;
             }
@@ -1885,6 +1897,22 @@ Java_app_infinity_mpvz_ui_player_Media3FlowVulkanNative_nativeSynthesize(
         return JNI_FALSE;
     }
     if (!directOutput) {
+        const pl_fmt sourceFormat = synthesized->params.format;
+        const pl_fmt targetFormat = output->texture->params.format;
+        if (!synthesized->params.blit_src || !output->texture->params.blit_dst ||
+            !sourceFormat || !targetFormat ||
+            sourceFormat->internal_size != targetFormat->internal_size) {
+            (void) holdImageForExternal(context, output, true);
+            logFlowOnce(context, DIAG_SYNTH_FAILURE, ANDROID_LOG_ERROR,
+                        "MPVFLOW_DIAGNOSTIC component=native-media3 event=synthesize state=failed "
+                        "stage=compatible_intermediate_output source_blit_src=%d target_blit_dst=%d "
+                        "source_internal_size=%d target_internal_size=%d output=%dx%d",
+                        synthesized->params.blit_src, output->texture->params.blit_dst,
+                        sourceFormat ? sourceFormat->internal_size : -1,
+                        targetFormat ? targetFormat->internal_size : -1,
+                        output->width, output->height);
+            return JNI_FALSE;
+        }
         struct pl_tex_blit_params blitParams{};
         blitParams.src = synthesized;
         blitParams.dst = output->texture;

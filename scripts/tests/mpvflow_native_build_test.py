@@ -64,14 +64,19 @@ assert "mpvflow_gpu.c" not in fongmi_patch, "MPV runtime must not install the ol
 assert 'pl_var_vec2("source_size")' in fongmi_motion
 assert 'pl_var_vec2("motion_size")' in fongmi_motion
 assert "mp_motion_render_sources_to" in fongmi_motion and "scaled_source_pair" in fongmi_test
-assert "mp_motion_render_sources_to(" in media3_native and "mp_motion_render_sources(" in media3_native
+assert "mp_motion_render_sources_to(" in media3_native and "mpvflow_gpu_synthesize_with_policy_to_texture(" in media3_native
 cmake_config = (ROOT / "app/src/main/cpp/CMakeLists.txt").read_text(encoding="utf-8")
 runtime_packager = (ROOT / "scripts/package-mpv-runtime-aar.py").read_text(encoding="utf-8")
 assert "pl_shader_custom" in cmake_config, "Media3 native builds must reject MPV AARs without the FongMi shader API"
 assert '"pl_shader_custom"' in runtime_packager, "the custom MPV runtime overlay must export the shader API required by Media3"
-assert "output->texture->params.renderable" in media3_native
-assert "PL_FMT_CAP_RENDERABLE" in media3_native
-assert "reason=target_not_dispatchable path=intermediate_blit" in media3_native
+fongmi_gate_start = media3_native.index("const bool fongmiDirectOutputEligible =")
+fongmi_gate_end = media3_native.index("const bool directOutputEligible", fongmi_gate_start)
+fongmi_output_gate = media3_native[fongmi_gate_start:fongmi_gate_end]
+assert "output->texture->params.storable" in fongmi_output_gate
+assert "PL_FMT_CAP_STORABLE" in fongmi_output_gate
+assert "params.renderable" not in fongmi_output_gate, "compute output eligibility must not require render-target support"
+assert "PL_FMT_CAP_RENDERABLE" not in fongmi_output_gate, "compute output eligibility must require storage-image support only"
+assert "reason=target_not_storage_writable path=mpvflow_fallback" in media3_native
 media3_sink = MEDIA3_SINK.read_text(encoding="utf-8")
 assert "outputDecisions=$outputDecisions" in media3_sink
 assert "lastOutputTickGapReason=${diagnostics.lastOutputTickGapReason}" in media3_sink

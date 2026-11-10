@@ -86,8 +86,12 @@ assert "shouldAnalyzeMotionPairAfterEglSwap" not in MEDIA3_SINK, "pair analysis 
 require(MEDIA3_NATIVE, "mp_motion_create(vulkan->gpu, config.max_dimension)", "Media3 must initialize the FongMi motion core")
 require(MEDIA3_NATIVE, "mp_motion_analyze_pair(context->motion", "Media3 must reuse cached GPU motion analysis")
 require(MEDIA3_NATIVE, "mp_motion_render_sources_to(", "Media3 must attempt full-resolution direct-to-target synthesis")
-require(MEDIA3_NATIVE, "mp_motion_render_sources(", "Media3 must retain the FongMi internal-output fallback")
+require(MEDIA3_NATIVE, "flowDirectOutputEligible", "FongMi failures must use MPVFlow's compatible direct-output capability check")
+require(MEDIA3_NATIVE, "mpvflow_gpu_synthesize_with_policy_to_texture(", "FongMi failures must fall back directly into the Media3 output when supported")
 require(MEDIA3_NATIVE, "fallback=mpvflow", "unsupported FongMi input must preserve a safe synthesis fallback")
+require(MEDIA3_NATIVE, "sourceFormat->internal_size != targetFormat->internal_size", "the intermediate blit must reject format-size mismatches")
+require(MEDIA3_NATIVE, "synthesized->params.blit_src", "the intermediate blit must verify source blit usage")
+require(MEDIA3_NATIVE, "output->texture->params.blit_dst", "the intermediate blit must verify destination blit usage")
 require(MEDIA3_NATIVE, "mp_motion_destroy(&context->motion)", "FongMi GPU resources must be released with the Media3 context")
 require(FLOW_GPU_CORE, "poll_policy=nonblocking_frame_operation_boundary", "Vulkan timing must not add per-dispatch CPU waits")
 
