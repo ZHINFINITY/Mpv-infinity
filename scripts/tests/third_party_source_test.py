@@ -29,6 +29,9 @@ def test_manifests_match_and_cover_pins() -> None:
         "FongMi/mpv",
         "FongMi/FFmpeg",
         "f2c5162b7c4b3e8835de270ff78cecc524decad1",
+        "Shared FFmpeg runtime in the experimental arm64 overlay",
+        "8852ac88cd5831b2e7cdb1a19e05bf9e458db63f",
+        "accepts only FFmpeg n9.0 or n9.1",
         "Vulkan-Headers",
         VULKAN_HEADERS_SHA,
         "vulkan-sdk-1.4.328.0",
@@ -79,8 +82,27 @@ def test_source_links_are_location_independent() -> None:
     assert any(f"github.com/KhronosGroup/Vulkan-Headers/archive/{VULKAN_HEADERS_SHA}.tar.gz" in target for target in targets)
 
 
+def test_media3_runtime_notices_match_fongmi_overlay() -> None:
+    """Keep source and packaged Media3 notices accurate for the experimental shared runtime."""
+    notices = (
+        ROOT / "app/src/main/assets/licenses/media3/NOTICE.txt",
+        ROOT / "media3-decoder-ffmpeg/NOTICE",
+    )
+    for path in notices:
+        text = path.read_text(encoding="utf-8")
+        assert "FFmpeg n9.0" in text
+        assert "release-9.1-fongmi" in text
+        assert "f2c5162b7c4b3e8835de270ff78cecc524decad1" in text
+        assert "https://github.com/FongMi/FFmpeg/tree/f2c5162b7c4b3e8835de270ff78cecc524decad1" in text
+        assert "MPVFlow arm64 overlay" in text
+        assert "MPVFlow arm64 build pins n9.0.2" not in text
+        assert "LGPL-3.0-or-later" in text
+        assert "DCA decoder" in text
+
+
 if __name__ == "__main__":
     test_manifests_match_and_cover_pins()
     test_manifest_hashes_match_files()
     test_source_links_are_location_independent()
+    test_media3_runtime_notices_match_fongmi_overlay()
     print("third-party source manifests verified")

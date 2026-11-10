@@ -1,6 +1,6 @@
 # MPV Android runtime licenses
 
-These notices cover the checked-in Standard and No-Vulkan MPV AARs (`app/libs/mpvlib.aar` and `app/libs/mpvlib-no-vulkun.aar`) and the experimental arm64 runtime overlay used by the MPVFlow Debug build. The checked-in AARs come from the separate `mpv-player/mpv` source pin; they are not FongMi builds. The experimental Standard arm64 overlay is rebuilt from the pinned FongMi source and replaces only the arm64 MPV runtime libraries at build time. Neither changes the license of Mpv∞-authored code or the separate FFmpeg helper executables under `app/src/main/jniLibs/arm64-v8a/`.
+These notices cover the checked-in Standard and No-Vulkan MPV AARs (`app/libs/mpvlib.aar` and `app/libs/mpvlib-no-vulkun.aar`) and the experimental arm64 runtime overlay used by the MPVFlow Debug build. The checked-in AARs come from the separate `mpv-player/mpv` source pin; they are not FongMi builds. The experimental Standard arm64 overlay is rebuilt from the pinned FongMi source and replaces the arm64 MPV and shared FFmpeg runtime libraries at build time; the shared FFmpeg libraries are also used by the existing Media3 DCA fallback. Neither changes the license of Mpv∞-authored code or the separate FFmpeg helper executables under `app/src/main/jniLibs/arm64-v8a/`.
 
 | Component | Version/source | License used for this build | Notice |
 |---|---|---|---|

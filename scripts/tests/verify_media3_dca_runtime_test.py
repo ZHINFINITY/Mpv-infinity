@@ -13,6 +13,7 @@ sys.path.insert(0, str(ROOT / "scripts"))
 from ffmpeg_runtime_config import (  # noqa: E402
     RuntimeEvidenceError,
     effective_ffmpeg_flags,
+    ffmpeg_runtime_version,
     verify_runtime_evidence,
 )
 
@@ -22,6 +23,7 @@ BASE_RUNTIME = """FFmpeg version n9.0.2
 libavcodec license: LGPL version 3 or later
 DCA (DTS Coherent Acoustics)
 """
+FONGMI_RUNTIME = BASE_RUNTIME.replace("n9.0.2", "n9.1.0")
 
 
 class EffectiveRuntimeConfigTest(unittest.TestCase):
@@ -49,6 +51,18 @@ class EffectiveRuntimeConfigTest(unittest.TestCase):
     def test_runtime_without_disable_nonfree_marker_passes_with_effective_defaults(self) -> None:
         flags = verify_runtime_evidence(BASE_RUNTIME)
         self.assertEqual({"CONFIG_GPL": 0, "CONFIG_NONFREE": 0}, flags)
+
+    def test_pinned_fongmi_n9_1_runtime_is_supported(self) -> None:
+        flags = verify_runtime_evidence(FONGMI_RUNTIME)
+        self.assertEqual("n9.1.0", ffmpeg_runtime_version(FONGMI_RUNTIME))
+        self.assertEqual({"CONFIG_GPL": 0, "CONFIG_NONFREE": 0}, flags)
+
+    def test_unsupported_ffmpeg_runtime_versions_are_rejected(self) -> None:
+        for version in ("n8.0.2", "n9.2.0", "n9.10.0"):
+            with self.subTest(version=version):
+                runtime = BASE_RUNTIME.replace("n9.0.2", version)
+                with self.assertRaisesRegex(RuntimeEvidenceError, "n9.0 or n9.1"):
+                    verify_runtime_evidence(runtime)
 
     def test_gpl_enabled_runtime_is_rejected(self) -> None:
         runtime = BASE_RUNTIME.replace(

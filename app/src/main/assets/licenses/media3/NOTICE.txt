@@ -7,8 +7,13 @@ License: Apache License 2.0; see Media3-FFmpeg-decoder-APACHE-2.0.txt.
 
 The adapter is a Native-engine audio fallback for formats the device cannot decode
 (DTS/DTS-HD, TrueHD, AC-3/E-AC-3, AAC, MP3, Vorbis, Opus, FLAC, ALAC, AMR, G.711, GSM),
-using FFmpeg's built-in LGPL decoders. It
-links dynamically to the existing FFmpeg 9.0-series shared libraries in the MPV
-runtime; the MPVFlow arm64 build pins n9.0.2. The runtime is built with GPL and
-nonfree support disabled, under LGPL-3.0-or-later. It adds no separate FFmpeg decoder
-binary.
+using FFmpeg's built-in LGPL decoders. It links dynamically to the shared FFmpeg
+libraries in the MPV runtime AAR. The checked-in Standard and No-Vulkan AARs use
+FFmpeg n9.0; the experimental MPVFlow arm64 overlay replaces the shared arm64 FFmpeg
+libraries with FongMi/FFmpeg `release-9.1-fongmi` at commit
+f2c5162b7c4b3e8835de270ff78cecc524decad1:
+https://github.com/FongMi/FFmpeg/tree/f2c5162b7c4b3e8835de270ff78cecc524decad1
+Both the n9.0 and FongMi n9.1 runtime builds disable GPL and nonfree support and are
+built under LGPL-3.0-or-later. The build-time Media3 verifier checks the DCA decoder,
+mapped audio-decoder inventory, JNI-required symbols, and dynamic dependencies. The
+adapter adds no separate FFmpeg decoder binary.

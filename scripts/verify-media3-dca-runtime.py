@@ -12,7 +12,11 @@ import zipfile
 from pathlib import Path
 
 from ffmpeg_decoder_inventory import InventoryError, verify_library
-from ffmpeg_runtime_config import RuntimeEvidenceError, verify_runtime_evidence
+from ffmpeg_runtime_config import (
+    RuntimeEvidenceError,
+    ffmpeg_runtime_version,
+    verify_runtime_evidence,
+)
 
 
 REQUIRED_LIBS = ("avcodec", "avutil", "swresample")
@@ -72,6 +76,7 @@ def verify(aar_path: Path, abis: list[str], readelf: str, strings: str) -> None:
             text = run(strings, "-a", str(avcodec))
             try:
                 effective_flags = verify_runtime_evidence(text)
+                version = ffmpeg_runtime_version(text)
             except RuntimeEvidenceError as error:
                 raise SystemExit(f"{abi}: {error}") from error
             try:
@@ -96,7 +101,7 @@ def verify(aar_path: Path, abis: list[str], readelf: str, strings: str) -> None:
                     raise SystemExit(f"{abi}: libavcodec is missing dynamic dependency {dependency}")
 
             print(
-                f"OK {abi}: FFmpeg n9.0; CONFIG_GPL={effective_flags['CONFIG_GPL']}, "
+                f"OK {abi}: FFmpeg {version}; CONFIG_GPL={effective_flags['CONFIG_GPL']}, "
                 f"CONFIG_NONFREE={effective_flags['CONFIG_NONFREE']}; LGPL-3.0-or-later; "
                 "DCA marker and all JNI-required dynamic symbols present; "
                 f"{len(decoders)} mapped audio decoders present"
