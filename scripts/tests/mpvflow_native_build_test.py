@@ -649,6 +649,12 @@ assert "event=logger_config" in mpv_view_source and "msg_level_apply_rc=" in mpv
 assert "motion-interpolation-info" in fongmi_patch
 assert "motion-interpolation" in fongmi_patch and "capture_motion_frame" in fongmi_patch
 assert "mp_motion_reset(p->motion)" in fongmi_patch and "mp_motion_destroy(&p->motion)" in fongmi_patch
+assert "capture_motion_frame(vo, mpi, frame);" in fongmi_patch
+assert "if (!capture_motion_frame(vo, mpi, frame))" not in fongmi_patch
+assert "hwdec_preloaded && p->hwdec.mapper" in fongmi_patch
+assert "retrying the standard frame mixer" in fongmi_patch
+assert "vo_report_backend_error" not in fongmi_patch
+assert "deferred_hwdec_path_active" not in fongmi_patch
 assert "if (qcom->dispatches == 1 || qcom->dispatches % 120 == 0)" in qcom_source
 assert "if (qcom->dispatches % 120 == 0)" in qcom_source, (
     "QCOM timing reports must remain periodic, not add per-dispatch log overhead"

@@ -2,18 +2,9 @@ diff --git a/meson.build b/meson.build
 index c49aa3c..cf7bf59 100644
 --- a/meson.build
 +++ b/meson.build
-@@ -267,6 +267,7 @@ sources = files(
-     'video/out/placebo/utils.c',
-     'video/out/vo_gpu_next.c',
-     'video/out/gpu_next/context.c',
+@@ -269,0 +270 @@ sources = files(
 +    'video/out/gpu_next/motion.c',
- 
-     ## osdep
-     'osdep/io.c',
-@@ -1422,6 +1423,14 @@ if features['android-media-ndk']
-     # header only, library is dynamically loaded
-     sources += files('video/out/hwdec/hwdec_aimagereader.c')
- endif
+@@ -1424,0 +1426,8 @@ endif
 +if features['android-media-ndk'] and features['vulkan']
 +    sources += files(
 +        'video/out/hwdec/hwdec_aimagereader_vk.c',
@@ -22,36 +13,18 @@ index c49aa3c..cf7bf59 100644
 +endif
 +# MPVFLOW_AIMAGE_VULKAN_MAPPER
 +
- 
- d3d_hwaccel = get_option('d3d-hwaccel').require(
-     win32,
-@@ -1838,6 +1847,10 @@ libmpv = library('mpv', sources, dependencies: dependencies, gnu_symbol_visibili
-                  version: client_api_version, install: get_option('libmpv'),
-                  build_by_default: get_option('libmpv'))
- 
+@@ -1840,0 +1850,4 @@ libmpv = library('mpv', sources, dependencies: dependencies, gnu_symbol_visibili
 +libmpv_motion = static_library('mpv-motion',
 +    objects: libmpv.extract_objects('video/out/gpu_next/motion.c'),
 +    install: get_option('libmpv'), build_by_default: get_option('libmpv'))
 +
- 
- if get_option('libmpv')
-     pkg = import('pkgconfig')
-@@ -1847,6 +1860,7 @@ if get_option('libmpv')
-     headers = ['include/mpv/client.h', 'include/mpv/render.h',
-                'include/mpv/render_gl.h', 'include/mpv/stream_cb.h']
-     install_headers(headers, subdir: 'mpv')
+@@ -1849,0 +1863 @@ if get_option('libmpv')
 +    install_headers('video/out/gpu_next/motion.h', subdir: 'mpv-motion')
- 
-     # Allow projects to build with libmpv by cloning into ./subprojects/mpv
-     libmpv_dep = declare_dependency(include_directories: incdir_public, link_with: libmpv)
 diff --git a/player/command.c b/player/command.c
 index da61e1c..d096066 100644
 --- a/player/command.c
 +++ b/player/command.c
-@@ -3102,6 +3102,57 @@ static int mp_property_vo_passes(void *ctx, struct m_property *prop,
-     return M_PROPERTY_OK;
- }
- 
+@@ -3104,0 +3105,51 @@ static int mp_property_vo_passes(void *ctx, struct m_property *prop,
 +static int mp_property_motion_info(void *ctx, struct m_property *p, int action,
 +                                   void *arg)
 +{
@@ -103,43 +76,19 @@ index da61e1c..d096066 100644
 +    return m_property_read_sub(props, action, arg);
 +}
 +
- static int mp_property_perf_info(void *ctx, struct m_property *p, int action,
-                                  void *arg)
- {
-@@ -4758,6 +4809,7 @@ static const struct m_property mp_properties_base[] = {
-     {"current-window-scale", mp_property_current_window_scale},
-     {"vo-configured", mp_property_vo_configured},
-     {"vo-passes", mp_property_vo_passes},
+@@ -4760,0 +4812 @@ static const struct m_property mp_properties_base[] = {
 +    {"motion-interpolation-info", mp_property_motion_info},
-     {"perf-info", mp_property_perf_info},
-     {"current-vo", mp_property_vo},
-     {"current-gpu-context", mp_property_gpu_context},
-@@ -4906,7 +4958,7 @@ static const char *const *const mp_event_property_change[] = {
-       "video-format", "video-codec", "video-bitrate", "dwidth", "dheight",
-       "width", "height", "container-fps", "aspect", "aspect-name", "vo-configured", "current-vo",
-       "video-dec-params", "osd-dimensions", "hwdec", "hwdec-current", "hwdec-interop",
+@@ -4909 +4961 @@ static const char *const *const mp_event_property_change[] = {
 -      "window-id", "track-list", "current-tracks"),
 +      "window-id", "track-list", "current-tracks", "motion-interpolation-info"),
-     E(MPV_EVENT_AUDIO_RECONFIG, "audio-format", "audio-codec", "audio-bitrate",
-       "samplerate", "channels", "audio", "volume", "volume-gain", "mute",
-       "current-ao", "audio-codec-name", "audio-params", "track-list", "current-tracks",
-@@ -4930,7 +4982,7 @@ static const char *const *const mp_event_property_change[] = {
-       "playlist-count", "playlist/count", "playlist-current-pos",
-       "playlist-playing-pos"),
-     E(MP_EVENT_INPUT_PROCESSED, "mouse-pos", "touch-pos", "tablet-pos", "dropped-files"),
+@@ -4933 +4985 @@ static const char *const *const mp_event_property_change[] = {
 -    E(MP_EVENT_CORE_IDLE, "core-idle", "eof-reached"),
 +    E(MP_EVENT_CORE_IDLE, "core-idle", "eof-reached", "motion-interpolation-info"),
- };
- #undef E
- 
 diff --git a/player/lua/stats.lua b/player/lua/stats.lua
 index 6796515..9972405 100644
 --- a/player/lua/stats.lua
 +++ b/player/lua/stats.lua
-@@ -1062,6 +1062,42 @@ local function add_video(s)
- end
- 
- 
+@@ -1064,0 +1065,36 @@ end
 +local motion_last
 +
 +local function add_motion(s)
@@ -176,25 +125,13 @@ index 6796515..9972405 100644
 +end
 +
 +
- local function add_audio(s)
-     local r = mp.get_property_native("audio-params")
-     -- in case of e.g. lavfi-complex there can be no input audio, only output
-@@ -1180,6 +1216,7 @@ local function default_stats()
-     add_file(stats, true, false)
-     add_video_out(stats)
-     add_video(stats)
+@@ -1182,0 +1219 @@ local function default_stats()
 +    add_motion(stats)
-     add_audio(stats)
-     return finalize_page({}, stats, false)
- end
 diff --git a/test/meson.build b/test/meson.build
 index e5b3800..3399d68 100644
 --- a/test/meson.build
 +++ b/test/meson.build
-@@ -73,6 +73,21 @@ img_utils = static_library('img-utils', 'img_utils.c', include_directories: incd
-                            dependencies: [libavcodec, libplacebo], objects: img_utils_objects)
- 
- # The actual tests.
+@@ -75,0 +76,15 @@ img_utils = static_library('img-utils', 'img_utils.c', include_directories: incd
 +motion_clock = executable('motion-clock', 'motion_clock.c',
 +                          include_directories: incdir, dependencies: libm)
 +test('motion-clock', motion_clock)
@@ -210,54 +147,30 @@ index e5b3800..3399d68 100644
 +        dependencies: [libplacebo, libm])
 +    test('gpu-motion', gpu_motion, suite: 'gpu')
 +endif
- chmap_files = [
-     'audio/chmap_avchannel.c',
-     'audio/chmap_sel.c',
 diff --git a/video/out/gpu/hwdec.c b/video/out/gpu/hwdec.c
 index 7212078..26ba958 100644
 --- a/video/out/gpu/hwdec.c
 +++ b/video/out/gpu/hwdec.c
-@@ -139,6 +139,7 @@ struct ra_hwdec_mapper *ra_hwdec_mapper_create(struct ra_hwdec *hwdec,
-         .priv = talloc_zero_size(mapper, hwdec->driver->mapper->priv_size),
-         .src_params = *params,
-         .dst_params = *params,
+@@ -141,0 +142 @@ struct ra_hwdec_mapper *ra_hwdec_mapper_create(struct ra_hwdec *hwdec,
 +        .dst_params_ready = true,
-     };
-     if (mapper->driver->init(mapper) < 0)
-         ra_hwdec_mapper_free(&mapper);
-@@ -169,10 +170,12 @@ int ra_hwdec_mapper_map(struct ra_hwdec_mapper *mapper, struct mp_image *img)
- {
-     ra_hwdec_mapper_unmap(mapper);
-     mp_image_setrefp(&mapper->src, img);
+@@ -172 +173,2 @@ int ra_hwdec_mapper_map(struct ra_hwdec_mapper *mapper, struct mp_image *img)
 -    if (mapper->driver->map(mapper) < 0) {
 +    int ret = mapper->driver->map(mapper);
 +    if (ret < 0) {
-         ra_hwdec_mapper_unmap(mapper);
+@@ -174 +176 @@ int ra_hwdec_mapper_map(struct ra_hwdec_mapper *mapper, struct mp_image *img)
 -        return -1;
 +        return ret;
-     }
+@@ -175,0 +178 @@ int ra_hwdec_mapper_map(struct ra_hwdec_mapper *mapper, struct mp_image *img)
 +    mapper->dst_params_ready = true;
-     return 0;
- }
- 
 diff --git a/video/out/gpu/hwdec.h b/video/out/gpu/hwdec.h
 index ea29b0d..55de256 100644
 --- a/video/out/gpu/hwdec.h
 +++ b/video/out/gpu/hwdec.h
-@@ -8,6 +8,9 @@
- #include "ra.h"
- #include "video/hwdec.h"
- 
+@@ -10,0 +11,3 @@
 +// The mapper has no output image yet; skip this frame and try again.
 +#define RA_HWDEC_MAP_RETRY (-2)
 +
- // Helper to organize/load hwdecs dynamically
- struct ra_hwdec_ctx {
-     // Set these before calling `ra_hwdec_ctx_init`
-@@ -60,6 +63,13 @@ struct ra_hwdec_mapper {
-     // Output frame parameters (represents the format the textures return). Must
-     // be set by init(), immutable afterwards,
-     struct mp_image_params dst_params;
+@@ -62,0 +66,7 @@ struct ra_hwdec_mapper {
 +    // Some external-image mappers discover their output parameters on first map.
 +    bool dst_params_ready;
 +    bool dst_params_preserve_repr;
@@ -265,27 +178,15 @@ index ea29b0d..55de256 100644
 +    bool dst_gl_external_yuv;
 +    int dst_num_components;
 +    int dst_component_mapping[4];
- 
-     // The currently mapped source image (or the image about to be mapped in
-     // ->map()). NULL if unmapped. The mapper can also clear this reference if
 diff --git a/video/out/gpu/video.c b/video/out/gpu/video.c
 index 4d90d44..3c544c3 100644
 --- a/video/out/gpu/video.c
 +++ b/video/out/gpu/video.c
-@@ -3866,7 +3866,8 @@ static bool pass_upload_image(struct gl_video *p, struct mp_image *mpi, uint64_t
- 
-         pass_describe(p, "map frame (hwdec)");
-         timer_pool_start(p->upload_timer);
+@@ -3869 +3869,2 @@ static bool pass_upload_image(struct gl_video *p, struct mp_image *mpi, uint64_t
 -        bool ok = ra_hwdec_mapper_map(p->hwdec_mapper, vimg->mpi) >= 0;
 +        int map_result = ra_hwdec_mapper_map(p->hwdec_mapper, vimg->mpi);
 +        bool ok = map_result >= 0;
-         vimg->hwdec_mapped = ok;
-         // The frame stays mapped and in use until it is replaced.
-         if (ok)
-@@ -3874,7 +3875,12 @@ static bool pass_upload_image(struct gl_video *p, struct mp_image *mpi, uint64_t
-         timer_pool_stop(p->upload_timer);
-         struct mp_pass_perf perf = timer_pool_measure(p->upload_timer);
-         pass_record(p, &perf);
+@@ -3877 +3878,6 @@ static bool pass_upload_image(struct gl_video *p, struct mp_image *mpi, uint64_t
 -
 +        // A transient external-image timeout is recoverable; do not mark the frame broken.
 +        if (map_result == RA_HWDEC_MAP_RETRY) {
@@ -293,26 +194,14 @@ index 4d90d44..3c544c3 100644
 +            unref_current_image(p);
 +            return false;
 +        }
-         if (ok) {
-             struct ra_tex **tex = p->hwdec_mapper->tex;
-             for (int n = 0; n < p->plane_count; n++) {
 diff --git a/video/out/vo.h b/video/out/vo.h
 index f24918d..42ab390 100644
 --- a/video/out/vo.h
 +++ b/video/out/vo.h
-@@ -133,6 +133,8 @@ enum mp_voctrl {
-     // Clipboard
-     VOCTRL_GET_CLIPBOARD,               // struct voctrl_clipboard*
-     VOCTRL_SET_CLIPBOARD,
+@@ -135,0 +136,2 @@ enum mp_voctrl {
 +
 +    VOCTRL_GET_MOTION_INFO,             // struct voctrl_motion_info*
- };
- 
- // Helper to expose what kind of content is currently playing to the VO.
-@@ -179,6 +181,20 @@ struct voctrl_performance_data {
-     struct mp_frame_perf fresh, redraw;
- };
- 
+@@ -181,0 +184,14 @@ struct voctrl_performance_data {
 +struct voctrl_motion_info {
 +    bool supported;
 +    int target_fps;
@@ -327,34 +216,16 @@ index f24918d..42ab390 100644
 +    int synthesis_width, synthesis_height;
 +};
 +
- struct voctrl_screenshot {
-     bool scaled, subs, osd, high_bit_depth, native_csp;
-     struct mp_image *res;
 diff --git a/video/out/vo_gpu_next.c b/video/out/vo_gpu_next.c
-index bd3d1aa..6bad0f0 100644
+index bd3d1aa..d913d95 100644
 --- a/video/out/vo_gpu_next.c
 +++ b/video/out/vo_gpu_next.c
-@@ -37,6 +37,7 @@
- #include "options/path.h"
- #include "osdep/io.h"
- #include "osdep/threads.h"
+@@ -39,0 +40 @@
 +#include "osdep/timer.h"
- #include "stream/stream.h"
- #include "sub/draw_bmp.h"
- #include "video/fmt-conversion.h"
-@@ -50,6 +51,8 @@
- #include "gpu/video_shaders.h"
- #include "sub/osd.h"
- #include "gpu_next/context.h"
+@@ -52,0 +54,2 @@
 +#include "gpu_next/motion.h"
 +#include "gpu_next/motion_clock.h"
- 
- #if HAVE_GL && defined(PL_HAVE_OPENGL)
- #include <libplacebo/opengl.h>
-@@ -115,6 +118,16 @@ struct hwdec_slot {
-     pl_tex tex[4];            // plane textures of the current mapping
- };
- 
+@@ -117,0 +121,10 @@ struct hwdec_slot {
 +enum motion_state {
 +    MOTION_DISABLED,
 +    MOTION_READY,
@@ -365,13 +236,7 @@ index bd3d1aa..6bad0f0 100644
 +    MOTION_ERROR,
 +};
 +
- struct priv {
-     struct mp_log *log;
-     struct mpv_global *global;
-@@ -137,6 +150,18 @@ struct priv {
-     pl_renderer rr;
-     pl_queue queue;
-     pl_swapchain sw;
+@@ -139,0 +153,12 @@ struct priv {
 +    struct mp_motion *motion;
 +    struct mp_motion_clock motion_clock;
 +    int motion_fps;
@@ -384,50 +249,20 @@ index bd3d1aa..6bad0f0 100644
 +    struct mp_motion_stats motion_last_stats;
 +    int64_t motion_epoch;
 +    int64_t motion_stats_time;
-     pl_fmt osd_fmt[SUBBITMAP_COUNT];
-     pl_tex *sub_tex;
-     int num_sub_tex;
-@@ -191,6 +216,7 @@ struct gl_next_opts {
-     float background_blur_radius;
-     float corner_rounding;
-     bool inter_preserve;
+@@ -193,0 +219 @@ struct gl_next_opts {
 +    int motion_fps;
-     struct user_lut lut;
-     struct user_lut image_lut;
-     struct user_lut target_lut;
-@@ -224,6 +250,7 @@ const struct m_sub_options gl_next_conf = {
-         {"background-blur-radius", OPT_FLOAT(background_blur_radius)},
-         {"corner-rounding", OPT_FLOAT(corner_rounding), M_RANGE(0, 1)},
-         {"interpolation-preserve", OPT_BOOL(inter_preserve)},
+@@ -226,0 +253 @@ const struct m_sub_options gl_next_conf = {
 +        {"motion-interpolation", OPT_INT(motion_fps), M_RANGE(0, 240)},
-         {"lut", OPT_STRING(lut.opt), .flags = M_OPT_FILE},
-         {"lut-type", OPT_CHOICE_C(lut.type, lut_types)},
-         {"image-lut", OPT_STRING(image_lut.opt), .flags = M_OPT_FILE},
-@@ -558,6 +585,10 @@ static void update_overlays(struct vo *vo, struct mp_osd_res res,
- 
- struct frame_priv {
-     struct vo *vo;
+@@ -560,0 +588,4 @@ struct frame_priv {
 +    bool hwdec_preloaded;
 +    bool mapped_coordinates;
 +    struct mp_image_params mapped_params;
 +    bool el_hwdec_preloaded;
-     struct osd_state subs;
-     uint64_t osd_sync;
-     struct ra_hwdec *hwdec;
-@@ -565,6 +596,9 @@ struct frame_priv {
-     struct ra_hwdec *el_hwdec;
-     pl_tex el_tex[4];
-     struct pl_frame el_frame;
+@@ -567,0 +599,3 @@ struct frame_priv {
 +    bool motion_capture;
 +    pl_tex motion_texture;
 +    uint64_t motion_id;
- };
- 
- static int plane_data_from_imgfmt(struct pl_plane_data out_data[4],
-@@ -764,8 +798,17 @@ static pl_tex hwdec_get_tex(struct priv *p, struct ra_hwdec_mapper *mapper, int
- // Fill `frame->num_planes` and per-plane component_mapping from an
- // hwdec-mapped imgfmt description.
- static void setup_hwdec_plane_mapping(struct pl_frame *frame,
+@@ -767,2 +801,11 @@ static void setup_hwdec_plane_mapping(struct pl_frame *frame,
 -                                      const struct mp_imgfmt_desc *desc)
 -{
 +                                      const struct mp_imgfmt_desc *desc,
@@ -441,13 +276,7 @@ index bd3d1aa..6bad0f0 100644
 +               sizeof(plane->component_mapping));
 +        return;
 +    }
-     frame->num_planes = desc->num_planes;
-     for (int n = 0; n < frame->num_planes; n++) {
-         struct pl_plane *plane = &frame->planes[n];
-@@ -797,18 +840,29 @@ static bool slot_acquire(struct priv *p, struct hwdec_slot *s,
-             MP_ERR(p, "Hardware frame of this role is still in use.\n");
-             return false;
-         }
+@@ -800,10 +843,22 @@ static bool slot_acquire(struct priv *p, struct hwdec_slot *s,
 -        slot_unmap(p, s);
 -
 -        stats_time_start(p->stats, "hwdec-map");
@@ -480,22 +309,16 @@ index bd3d1aa..6bad0f0 100644
 +                return false;
 +            }
 +            s->perf = timer_pool_measure(s->timer);
-         }
+@@ -811 +865,0 @@ static bool slot_acquire(struct priv *p, struct hwdec_slot *s,
 -        s->perf = timer_pool_measure(s->timer);
-         s->owner = owner;
-     }
- 
-@@ -976,6 +1030,59 @@ static bool upload_planes_sw(struct vo *vo, pl_gpu gpu, struct mp_image *mpi,
-     return true;
- }
- 
-+static bool capture_motion_frame(struct vo *vo, struct mp_image *mpi,
+@@ -978,0 +1033,52 @@ static bool upload_planes_sw(struct vo *vo, pl_gpu gpu, struct mp_image *mpi,
++static void capture_motion_frame(struct vo *vo, struct mp_image *mpi,
 +                                  struct pl_frame *frame)
 +{
 +    struct priv *p = vo->priv;
 +    struct frame_priv *fp = mpi->priv;
 +    if (!p->motion || !fp->motion_capture)
-+        return true;
++        return;
 +    if (pl_color_transfer_is_hdr(frame->color.transfer) ||
 +        frame->repr.sys == PL_COLOR_SYSTEM_DOLBYVISION ||
 +        (mpi->fields & MP_IMGFIELD_INTERLACED)) {
@@ -504,7 +327,7 @@ index bd3d1aa..6bad0f0 100644
 +                        "passing unsupported frames through.\n");
 +            p->motion_bypass_reported = true;
 +        }
-+        return true;
++        return;
 +    }
 +
 +    struct pl_frame input = *frame;
@@ -524,7 +347,7 @@ index bd3d1aa..6bad0f0 100644
 +        MP_WARN(vo, "GPU motion capture failed; passing source frames through.\n");
 +        p->motion_state = MOTION_ERROR;
 +        pl_tex_destroy(p->gpu, &fp->motion_texture);
-+        return true;
++        return;
 +    }
 +    *frame = (struct pl_frame) {
 +        .num_planes = 1,
@@ -539,27 +362,16 @@ index bd3d1aa..6bad0f0 100644
 +    };
 +    fp->mapped_coordinates = false;
 +    p->motion_captured++;
-+    return true;
 +}
 +
- static bool map_frame(pl_gpu gpu, pl_tex *tex, const struct pl_source_frame *src,
-                       struct pl_frame *frame)
- {
-@@ -987,19 +1094,38 @@ static bool map_frame(pl_gpu gpu, pl_tex *tex, const struct pl_source_frame *src
- 
-     fp->hwdec = ra_hwdec_get(&p->hwdec_ctx, mpi->imgfmt);
-     if (fp->hwdec) {
+@@ -990,4 +1096,2 @@ static bool map_frame(pl_gpu gpu, pl_tex *tex, const struct pl_source_frame *src
 -        // Note: We don't actually need the mapper to map the frame yet, we
 -        // only reconfig the mapper here (potentially creating it) to access
 -        // `dst_params`. In practice, though, this should not matter unless the
 -        // image format changes mid-stream.
 +        // Most mappers know dst_params at init. Android external images expose
 +        // their actual dimensions/crop only after the first decoder frame maps.
-         if (!slot_reconfig(p, &p->hwdec, fp->hwdec, &mpi->params)) {
-             talloc_free(mpi);
-             return false;
-         }
- 
+@@ -998,0 +1103,16 @@ static bool map_frame(pl_gpu gpu, pl_tex *tex, const struct pl_source_frame *src
 +        if (!p->hwdec.mapper->dst_params_ready) {
 +            stats_time_start(p->stats, "hwdec-map");
 +            timer_pool_start(p->hwdec.timer);
@@ -576,31 +388,18 @@ index bd3d1aa..6bad0f0 100644
 +            fp->hwdec_preloaded = true;
 +        }
 +
-         par = p->hwdec.mapper->dst_params;
+@@ -999,0 +1120,2 @@ static bool map_frame(pl_gpu gpu, pl_tex *tex, const struct pl_source_frame *src
 +        fp->mapped_coordinates = p->hwdec.mapper->dst_params_map_coordinates;
 +        fp->mapped_params = par;
-     }
- 
+@@ -1001,0 +1124 @@ static bool map_frame(pl_gpu gpu, pl_tex *tex, const struct pl_source_frame *src
 +    struct pl_color_repr mapped_repr = par.repr;
-     mp_image_params_guess_csp(&par);
+@@ -1002,0 +1126,2 @@ static bool map_frame(pl_gpu gpu, pl_tex *tex, const struct pl_source_frame *src
 +    if (fp->hwdec && p->hwdec.mapper->dst_params_preserve_repr)
 +        par.repr = mapped_repr;
- 
-     *frame = (struct pl_frame) {
-         .color = par.color,
-@@ -1029,7 +1155,7 @@ static bool map_frame(pl_gpu gpu, pl_tex *tex, const struct pl_source_frame *src
-         struct mp_imgfmt_desc desc = mp_imgfmt_get_desc(par.imgfmt);
-         frame->acquire = hwdec_acquire;
-         frame->release = hwdec_release;
+@@ -1032 +1157 @@ static bool map_frame(pl_gpu gpu, pl_tex *tex, const struct pl_source_frame *src
 -        setup_hwdec_plane_mapping(frame, &desc);
 +        setup_hwdec_plane_mapping(frame, &desc, p->hwdec.mapper);
-     } else { // swdec
-         p->hwdec.perf.count = 0;
- 
-@@ -1061,13 +1187,35 @@ static bool map_frame(pl_gpu gpu, pl_tex *tex, const struct pl_source_frame *src
-         bool el_ok = true;
-         if (fp->el_hwdec) {
-             if (slot_reconfig(p, &p->el_hwdec, fp->el_hwdec, &el->params)) {
+@@ -1063,0 +1189,19 @@ static bool map_frame(pl_gpu gpu, pl_tex *tex, const struct pl_source_frame *src
 +                if (!p->el_hwdec.mapper->dst_params_ready) {
 +                    stats_time_start(p->stats, "hwdec-map");
 +                    timer_pool_start(p->el_hwdec.timer);
@@ -620,72 +419,33 @@ index bd3d1aa..6bad0f0 100644
 +                    }
 +                    fp->el_hwdec_preloaded = true;
 +                }
-                 el_par = p->el_hwdec.mapper->dst_params;
-             } else {
-                 fp->el_hwdec = NULL;
-                 el_ok = false;
-             }
-         }
+@@ -1069,0 +1214 @@ static bool map_frame(pl_gpu gpu, pl_tex *tex, const struct pl_source_frame *src
 +        struct pl_color_repr mapped_el_repr = el_par.repr;
-         mp_image_params_guess_csp(&el_par);
+@@ -1070,0 +1216,2 @@ static bool map_frame(pl_gpu gpu, pl_tex *tex, const struct pl_source_frame *src
 +        if (fp->el_hwdec && p->el_hwdec.mapper->dst_params_preserve_repr)
 +            el_par.repr = mapped_el_repr;
- 
-         fp->el_frame = (struct pl_frame) {
-             .color = el_par.color,
-@@ -1079,7 +1227,7 @@ static bool map_frame(pl_gpu gpu, pl_tex *tex, const struct pl_source_frame *src
-             struct mp_imgfmt_desc desc = mp_imgfmt_get_desc(el_par.imgfmt);
-             fp->el_frame.acquire = hwdec_acquire_el;
-             fp->el_frame.release = hwdec_release_el;
+@@ -1082 +1229 @@ static bool map_frame(pl_gpu gpu, pl_tex *tex, const struct pl_source_frame *src
 -            setup_hwdec_plane_mapping(&fp->el_frame, &desc);
 +            setup_hwdec_plane_mapping(&fp->el_frame, &desc, p->el_hwdec.mapper);
-         } else if (el_ok) {
-             el_ok = upload_planes_sw(vo, gpu, el, &fp->el_frame, fp->el_tex);
-         }
-@@ -1107,8 +1255,26 @@ static bool map_frame(pl_gpu gpu, pl_tex *tex, const struct pl_source_frame *src
-     update_lut(p, &p->next_opts->image_lut);
-     frame->lut = p->next_opts->image_lut.lut;
-     frame->lut_type = p->next_opts->image_lut.type;
-+    if (!capture_motion_frame(vo, mpi, frame)) {
-+        vo_report_backend_error(vo);
-+        slot_release_owner(p, &p->hwdec, mpi);
-+        slot_release_owner(p, &p->el_hwdec, mpi);
-+        for (int n = 0; n < MP_ARRAY_SIZE(fp->el_tex); n++)
-+            pl_tex_destroy(gpu, &fp->el_tex[n]);
-+        talloc_free(mpi);
-+        return false;
-+    }
-     return true;
- }
-+    struct priv *mapper_priv = fp->vo->priv;
-+    if (fp->hwdec_preloaded && mapper_priv->hwdec.mapper &&
-+        mapper_priv->hwdec.mapper->src == mpi)
-+        ra_hwdec_mapper_unmap(mapper_priv->hwdec.mapper);
+@@ -1109,0 +1257 @@ static bool map_frame(pl_gpu gpu, pl_tex *tex, const struct pl_source_frame *src
++    capture_motion_frame(vo, mpi, frame);
+@@ -1118,0 +1267,8 @@ static void unmap_frame(pl_gpu gpu, struct pl_frame *frame,
++    if (fp->hwdec_preloaded && p->hwdec.mapper &&
++        p->hwdec.mapper->src == mpi)
++        ra_hwdec_mapper_unmap(p->hwdec.mapper);
 +    fp->hwdec_preloaded = false;
-+    if (fp->el_hwdec_preloaded && mapper_priv->el_hwdec.mapper &&
-+        mapper_priv->el_hwdec.mapper->src == mpi->enhancement_layer)
-+        ra_hwdec_mapper_unmap(mapper_priv->el_hwdec.mapper);
++    if (fp->el_hwdec_preloaded && p->el_hwdec.mapper && mpi->enhancement_layer &&
++        p->el_hwdec.mapper->src == mpi->enhancement_layer)
++        ra_hwdec_mapper_unmap(p->el_hwdec.mapper);
 +    fp->el_hwdec_preloaded = false;
- 
- static void unmap_frame(pl_gpu gpu, struct pl_frame *frame,
-                         const struct pl_source_frame *src)
-@@ -1125,6 +1291,7 @@ static void unmap_frame(pl_gpu gpu, struct pl_frame *frame,
-         if (fp->el_tex[i])
-             pl_tex_destroy(gpu, &fp->el_tex[i]);
-     }
+@@ -1127,0 +1284 @@ static void unmap_frame(pl_gpu gpu, struct pl_frame *frame,
 +    pl_tex_destroy(gpu, &fp->motion_texture);
-     slot_release_owner(p, &p->hwdec, mpi);
-     slot_release_owner(p, &p->el_hwdec, mpi);
-     talloc_free(mpi);
-@@ -1269,15 +1436,10 @@ static void apply_target_options(struct priv *p, struct pl_frame *target,
-     target->icc = p->icc_profile;
- }
- 
+@@ -1272,2 +1429,2 @@ static void apply_target_options(struct priv *p, struct pl_frame *target,
 -static void apply_crop(struct pl_frame *frame, struct mp_rect crop,
 -                       int width, int height)
 +static void apply_crop_rect(struct pl_frame *frame, struct pl_rect2df crop,
 +                            int width, int height)
- {
+@@ -1275,6 +1432 @@ static void apply_crop(struct pl_frame *frame, struct mp_rect crop,
 -    frame->crop = (struct pl_rect2df) {
 -        .x0 = crop.x0,
 -        .y0 = crop.y0,
@@ -693,13 +453,7 @@ index bd3d1aa..6bad0f0 100644
 -        .y1 = crop.y1,
 -    };
 +    frame->crop = crop;
- 
-     // mpv gives us rotated/flipped rects, libplacebo expects unrotated
-     pl_rect2df_rotate(&frame->crop, -frame->rotation);
-@@ -1292,6 +1454,68 @@ static void apply_crop(struct pl_frame *frame, struct mp_rect crop,
-     }
- }
- 
+@@ -1294,0 +1447,62 @@ static void apply_crop(struct pl_frame *frame, struct mp_rect crop,
 +static void apply_crop(struct pl_frame *frame, struct mp_rect crop,
 +                       int width, int height)
 +{
@@ -762,13 +516,7 @@ index bd3d1aa..6bad0f0 100644
 +                           width, height, fp);
 +}
 +
- static bool set_colorspace_hint(struct priv *p, struct pl_color_space *hint)
- {
-     struct ra_swapchain *sw = p->ra_ctx->swapchain;
-@@ -1339,23 +1563,110 @@ static void update_tm_viz(struct pl_color_map_params *params,
- static void update_hook_opts_dynamic(struct priv *p, const struct pl_hook *hook,
-                                      const struct mp_image *mpi);
- 
+@@ -1341,0 +1556,77 @@ static void update_hook_opts_dynamic(struct priv *p, const struct pl_hook *hook,
 +static int prepare_motion_frame(struct vo *vo, const struct pl_frame_mix *mix,
 +                                 struct pl_frame *output)
 +{
@@ -846,98 +594,50 @@ index bd3d1aa..6bad0f0 100644
 +    return mp_motion_clock_sample(&p->motion_clock, pts, speed, p->motion_fps);
 +}
 +
- static bool draw_frame(struct vo *vo, struct vo_frame *frame)
- {
-     struct priv *p = vo->priv;
-     pl_options pars = p->pars;
-     pl_gpu gpu = p->gpu;
-     update_options(vo);
+@@ -1347,0 +1639,2 @@ static bool draw_frame(struct vo *vo, struct vo_frame *frame)
 +    if (p->motion && p->motion_state != MOTION_ERROR)
 +        p->motion_state = frame->current ? MOTION_SOURCE : MOTION_IDLE;
- 
-     struct pl_render_params params = pars->params;
-     const struct gl_video_opts *opts = p->opts_cache->opts;
-     bool will_redraw = frame->display_synced && frame->num_vsyncs > 1;
-     bool cache_frame = will_redraw || frame->still || p->paused;
+@@ -1353 +1646,3 @@ static bool draw_frame(struct vo *vo, struct vo_frame *frame)
 -    bool can_interpolate = opts->interpolation && frame->display_synced &&
 +    bool motion = motion_interpolation_needed(p, frame);
 +    bool can_interpolate = (p->motion_fps ? motion : opts->interpolation) &&
 +                           frame->display_synced &&
-                            !frame->still && frame->num_frames > 1 && !p->paused;
+@@ -1354,0 +1650,2 @@ static bool draw_frame(struct vo *vo, struct vo_frame *frame)
 +    if (!can_interpolate)
 +        p->motion_clock = (struct mp_motion_clock) {0};
-     double pts_offset = can_interpolate ? frame->ideal_frame_vsync : 0;
-     params.info_callback = info_callback;
-     params.info_priv = vo;
-     params.skip_caching_single_frame = !cache_frame;
+@@ -1358,0 +1656,4 @@ static bool draw_frame(struct vo *vo, struct vo_frame *frame)
 +    if (p->motion_fps)
 +        params.frame_mixer = NULL;
 +    if (p->motion)
 +        params.skip_caching_single_frame = true;
-     params.preserve_mixing_cache = p->next_opts->inter_preserve && !frame->still;
-     if (frame->still || p->paused)
-         params.frame_mixer = NULL;
-@@ -1401,11 +1712,8 @@ static bool draw_frame(struct vo *vo, struct vo_frame *frame)
-         int id = frame->frame_id + n;
- 
-         if (p->want_reset) {
+@@ -1404,3 +1705 @@ static bool draw_frame(struct vo *vo, struct vo_frame *frame)
 -            pl_queue_reset(p->queue);
 -            p->last_pts = 0.0;
 -            p->last_id = 0;
 +            reset_frame_queue(p);
-             p->want_reset = false;
+@@ -1408 +1706,0 @@ static bool draw_frame(struct vo *vo, struct vo_frame *frame)
 -            p->flush_cache = true;
-         }
- 
-         if (p->flush_cache) {
-@@ -1420,6 +1728,8 @@ static bool draw_frame(struct vo *vo, struct vo_frame *frame)
-         struct frame_priv *fp = talloc_zero(mpi, struct frame_priv);
-         mpi->priv = fp;
-         fp->vo = vo;
+@@ -1422,0 +1721,2 @@ static bool draw_frame(struct vo *vo, struct vo_frame *frame)
 +        fp->motion_id = id;
 +        fp->motion_capture = motion;
- 
-         pl_queue_push(p->queue, &(struct pl_source_frame) {
-             .pts = mpi->pts,
-@@ -1574,7 +1884,7 @@ static bool draw_frame(struct vo *vo, struct vo_frame *frame)
-             // Advance the queue state to the current PTS to discard unused frames
-             struct pl_queue_params qparams = *pl_queue_params(
-                 .pts = frame->current->pts + pts_offset,
+@@ -1577 +1877 @@ static bool draw_frame(struct vo *vo, struct vo_frame *frame)
 -                .radius = pl_frame_mix_radius(&params),
 +                .radius = motion ? 1.0 : pl_frame_mix_radius(&params),
-                 .vsync_duration = can_interpolate ? frame->ideal_frame_vsync_duration : 0,
-                 .drift_compensation = 0,
-             );
-@@ -1654,9 +1964,12 @@ static bool draw_frame(struct vo *vo, struct vo_frame *frame)
-     struct pl_frame_mix mix = {0};
-     if (frame->current) {
-         // Update queue state
+@@ -1656,0 +1957,3 @@ static bool draw_frame(struct vo *vo, struct vo_frame *frame)
 +        double output_pts = frame->current->pts + pts_offset;
 +        if (can_interpolate)
 +            output_pts = motion_output_pts(p, frame, output_pts);
-         struct pl_queue_params qparams = *pl_queue_params(
+@@ -1658,2 +1961,2 @@ static bool draw_frame(struct vo *vo, struct vo_frame *frame)
 -            .pts = frame->current->pts + pts_offset,
 -            .radius = pl_frame_mix_radius(&params),
 +            .pts = output_pts,
 +            .radius = motion ? 1.0 : pl_frame_mix_radius(&params),
-             .vsync_duration = can_interpolate ? frame->ideal_frame_vsync_duration : 0,
-             .interpolation_threshold = opts->interpolation_threshold,
-             .drift_compensation = 0,
-@@ -1699,7 +2012,9 @@ static bool draw_frame(struct vo *vo, struct vo_frame *frame)
-             struct pl_frame *image = (struct pl_frame *) mix.frames[i];
-             struct mp_image *mpi = image->user_data;
-             struct frame_priv *fp = mpi->priv;
+@@ -1702 +2005,3 @@ static bool draw_frame(struct vo *vo, struct vo_frame *frame)
 -            apply_crop(image, p->src, vo->params->w, vo->params->h);
 +            struct pl_rect2df source_bounds =
 +                apply_source_crop(image, p->src, vo->params->w,
 +                                  vo->params->h, fp);
-             if (opts->blend_subs) {
-                 if (frame->redraw)
-                     p->osd_sync++;
-@@ -1711,10 +2026,10 @@ static bool draw_frame(struct vo *vo, struct vo_frame *frame)
-                     struct mp_osd_res res = {
-                         .w = w,
-                         .h = h,
+@@ -1714,4 +2019,4 @@ static bool draw_frame(struct vo *vo, struct vo_frame *frame)
 -                        .ml = -image->crop.x0 * rx,
 -                        .mr = (image->crop.x1 - vo->params->w) * rx,
 -                        .mt = -image->crop.y0 * ry,
@@ -946,17 +646,11 @@ index bd3d1aa..6bad0f0 100644
 +                        .mr = (image->crop.x1 - source_bounds.x1) * rx,
 +                        .mt = (source_bounds.y0 - image->crop.y0) * ry,
 +                        .mb = (image->crop.y1 - source_bounds.y1) * ry,
-                         .display_par = 1.0,
-                     };
-                     enum pl_overlay_coords rel = opts->blend_subs == BLEND_SUBS_VIDEO
-@@ -1747,12 +2062,26 @@ static bool draw_frame(struct vo *vo, struct vo_frame *frame)
-             update_hook_opts_dynamic(p, p->hooks[i], frame->current);
-     }
- 
+@@ -1750 +2055,2 @@ static bool draw_frame(struct vo *vo, struct vo_frame *frame)
 -    // Render frame
 +    // Render frame. Motion failures fall back to the original frame mixer;
 +    // interpolation must never turn an optional feature error into playback failure.
-     stats_time_start(p->stats, "render");
+@@ -1752 +2058,16 @@ static bool draw_frame(struct vo *vo, struct vo_frame *frame)
 -    bool render_ok = pl_render_image_mix(p->rr, &mix, &target, &params);
 +    struct pl_frame motion_frame;
 +    int motion_result = p->motion && can_interpolate
@@ -968,30 +662,20 @@ index bd3d1aa..6bad0f0 100644
 +    bool render_ok = motion_result > 0
 +                   ? pl_render_image(p->rr, &motion_frame, &target, &params)
 +                   : pl_render_image_mix(p->rr, &mix, &target, &params);
-     stats_time_end(p->stats, "render");
-     if (!render_ok) {
-         MP_ERR(vo, "Failed rendering frame!\n");
++    if (!render_ok && motion_result > 0) {
++        MP_WARN(vo, "GPU motion interpolation render failed; "
++                    "retrying the standard frame mixer.\n");
++        p->motion_state = MOTION_ERROR;
++        render_ok = pl_render_image_mix(p->rr, &mix, &target, &params);
++    }
+@@ -1755,0 +2077,2 @@ static bool draw_frame(struct vo *vo, struct vo_frame *frame)
 +        if (p->motion)
 +            p->motion_state = MOTION_ERROR;
-+        if (deferred_hwdec_path_active(p))
-+            vo_report_backend_error(vo);
-         goto done;
-     }
- 
-@@ -1777,7 +2106,8 @@ static bool draw_frame(struct vo *vo, struct vo_frame *frame)
-     }
-     mp_mutex_unlock(&vo->params_mutex);
- 
+@@ -1780 +2103,2 @@ static bool draw_frame(struct vo *vo, struct vo_frame *frame)
 -    p->is_interpolated = pts_offset != 0 && mix.num_frames > 1;
 +    p->is_interpolated = p->motion ? motion_result > 0
 +                                 : pts_offset != 0 && mix.num_frames > 1;
-     valid = true;
-     // fall through
- 
-@@ -1790,18 +2120,58 @@ done:
-     return VO_TRUE;
- }
- 
+@@ -1792,0 +2117,37 @@ done:
 +static void report_motion_stats(struct vo *vo, bool submitted)
 +{
 +    struct priv *p = vo->priv;
@@ -1029,48 +713,22 @@ index bd3d1aa..6bad0f0 100644
 +    p->motion_last_stats = stats;
 +}
 +
- static void flip_page(struct vo *vo)
- {
-     struct priv *p = vo->priv;
-     struct ra_swapchain *sw = p->ra_ctx->swapchain;
+@@ -1796,0 +2158 @@ static void flip_page(struct vo *vo)
 +    bool submitted = false;
- 
-     if (p->frame_pending) {
+@@ -1799 +2161,2 @@ static void flip_page(struct vo *vo)
 -        if (!pl_swapchain_submit_frame(p->sw))
 +        submitted = pl_swapchain_submit_frame(p->sw);
 +        if (!submitted)
-             MP_ERR(vo, "Failed presenting frame!\n");
-         p->frame_pending = false;
-     }
- 
-     sw->fns->swap_buffers(sw);
+@@ -1804,0 +2168 @@ static void flip_page(struct vo *vo)
 +    report_motion_stats(vo, submitted);
- }
- 
- static void get_vsync(struct vo *vo, struct vo_vsync_info *info)
-@@ -2042,7 +2412,9 @@ static void video_screenshot(struct vo *vo, struct voctrl_screenshot *args)
-         target.color.transfer = PL_COLOR_TRC_GAMMA22;
-     }
- 
+@@ -2045 +2409,3 @@ static void video_screenshot(struct vo *vo, struct voctrl_screenshot *args)
 -    apply_crop(&image, src, mpi->params.w, mpi->params.h);
 +    struct frame_priv *fp = mpi->priv;
 +    struct pl_rect2df source_bounds =
 +        apply_source_crop(&image, src, mpi->params.w, mpi->params.h, fp);
-     apply_crop(&target, dst, fbo->params.w, fbo->params.h);
-     update_tm_viz(&pars->color_map_params, &target);
- 
-@@ -2052,7 +2424,6 @@ static void video_screenshot(struct vo *vo, struct voctrl_screenshot *args)
-     if (!args->osd)
-         osd_flags |= OSD_DRAW_SUB_ONLY;
- 
+@@ -2055 +2420,0 @@ static void video_screenshot(struct vo *vo, struct voctrl_screenshot *args)
 -    struct frame_priv *fp = mpi->priv;
-     if (opts->blend_subs) {
-         float w = pl_rect_w(opts->blend_subs == BLEND_SUBS_VIDEO ? image.crop : target.crop);
-         float h = pl_rect_h(opts->blend_subs == BLEND_SUBS_VIDEO ? image.crop : target.crop);
-@@ -2061,10 +2432,10 @@ static void video_screenshot(struct vo *vo, struct voctrl_screenshot *args)
-         struct mp_osd_res res = {
-             .w = w,
-             .h = h,
+@@ -2064,4 +2429,4 @@ static void video_screenshot(struct vo *vo, struct voctrl_screenshot *args)
 -            .ml = -image.crop.x0 * rx,
 -            .mr = (image.crop.x1 - vo->params->w) * rx,
 -            .mt = -image.crop.y0 * ry,
@@ -1079,13 +737,7 @@ index bd3d1aa..6bad0f0 100644
 +            .mr = (image.crop.x1 - source_bounds.x1) * rx,
 +            .mt = (source_bounds.y0 - image.crop.y0) * ry,
 +            .mb = (image.crop.y1 - source_bounds.y1) * ry,
-             .display_par = 1.0,
-         };
-         enum pl_overlay_coords rel = opts->blend_subs == BLEND_SUBS_VIDEO
-@@ -2168,6 +2539,50 @@ static void update_ra_ctx_options(struct vo *vo, struct ra_ctx_opts *ctx_opts)
-                             border_alpha;
- }
- 
+@@ -2170,0 +2536,44 @@ static void update_ra_ctx_options(struct vo *vo, struct ra_ctx_opts *ctx_opts)
 +static const char *motion_state_name(enum motion_state state)
 +{
 +    static const char *const names[] = {
@@ -1130,32 +782,14 @@ index bd3d1aa..6bad0f0 100644
 +    };
 +}
 +
- static int control(struct vo *vo, uint32_t request, void *data)
- {
-     struct priv *p = vo->priv;
-@@ -2220,6 +2635,10 @@ static int control(struct vo *vo, uint32_t request, void *data)
-         return true;
-     }
- 
+@@ -2222,0 +2632,4 @@ static int control(struct vo *vo, uint32_t request, void *data)
 +    case VOCTRL_GET_MOTION_INFO:
 +        get_motion_info(p, data);
 +        return VO_TRUE;
 +
-     case VOCTRL_SCREENSHOT:
-         video_screenshot(vo, data);
-         return true;
-@@ -2464,6 +2883,7 @@ static void uninit(struct vo *vo)
-         pl_gpu_finish(p->gpu);
- 
-     pl_queue_destroy(&p->queue); // destroy this first
+@@ -2466,0 +2880 @@ static void uninit(struct vo *vo)
 +    mp_motion_destroy(&p->motion);
-     for (int i = 0; i < MP_ARRAY_SIZE(p->osd_state.entries); i++)
-         pl_tex_destroy(p->gpu, &p->osd_state.entries[i].tex);
-     for (int i = 0; i < p->num_sub_tex; i++)
-@@ -2839,9 +3259,43 @@ static void update_hook_opts(struct priv *p, char **opts, const char *shaderpath
-     }
- }
- 
+@@ -2841,0 +3256,33 @@ static void update_hook_opts(struct priv *p, char **opts, const char *shaderpath
 +static void update_motion_options(struct vo *vo)
 +{
 +    struct priv *p = vo->priv;
@@ -1189,20 +823,9 @@ index bd3d1aa..6bad0f0 100644
 +    }
 +}
 +
- static void update_render_options(struct vo *vo)
- {
-     struct priv *p = vo->priv;
+@@ -2844,0 +3292 @@ static void update_render_options(struct vo *vo)
 +    update_motion_options(vo);
-     pl_options pars = p->pars;
-     const struct gl_video_opts *opts = p->opts_cache->opts;
-     pars->params.background_color[0] = opts->background_color.r / 255.0;
-@@ -2875,7 +3329,8 @@ static void update_render_options(struct vo *vo)
-     pars->params.upscaler = map_scaler(p, SCALER_SCALE);
-     pars->params.downscaler = map_scaler(p, SCALER_DSCALE);
-     pars->params.plane_upscaler = map_scaler(p, SCALER_CSCALE);
+@@ -2878 +3326,2 @@ static void update_render_options(struct vo *vo)
 -    pars->params.frame_mixer = opts->interpolation ? map_scaler(p, SCALER_TSCALE) : NULL;
 +    pars->params.frame_mixer = p->motion || (!p->motion_fps && opts->interpolation)
 +                            ? map_scaler(p, SCALER_TSCALE) : NULL;
- 
-     // Request as many frames as required from the decoder, depending on the
-     // speed VPS/FPS ratio libplacebo may need more frames. Request frames up to
