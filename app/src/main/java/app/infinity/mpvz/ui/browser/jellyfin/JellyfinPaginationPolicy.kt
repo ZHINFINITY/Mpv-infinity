@@ -13,12 +13,13 @@ internal object JellyfinPaginationPolicy {
     startIndex: Int,
     pageItemCount: Int,
     pageSize: Int,
+    pageHasNewItems: Boolean,
   ): Boolean {
-    if (pageItemCount <= 0 || startIndex < 0 || pageSize <= 0) return false
+    if (!pageHasNewItems || pageItemCount <= 0 || startIndex < 0 || pageSize <= 0) return false
     return if (totalRecordCount > 0) {
       startIndex.toLong() + pageItemCount < totalRecordCount
     } else {
-      pageItemCount >= pageSize
+      true
     }
   }
 

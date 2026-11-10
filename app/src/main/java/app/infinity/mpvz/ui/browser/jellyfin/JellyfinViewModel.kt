@@ -82,6 +82,7 @@ data class JellyfinUiState(
   val servers: List<JellyfinServer> = emptyList(),
   val activeServer: JellyfinServer? = null,
   val libraries: List<JellyfinItem> = emptyList(),
+  val libraryCounts: Map<String, Int> = emptyMap(),
   val librarySections: List<JellyfinHomeSection> = emptyList(),
   val heroItems: List<JellyfinItem> = emptyList(),
   val resumeItems: List<JellyfinItem> = emptyList(),
@@ -236,6 +237,7 @@ class JellyfinViewModel(
         isLoading = true,
         isMusicLoading = false,
         openLibrary = null,
+        libraryCounts = emptyMap(),
         currentItems = emptyList(),
         resumeItems = emptyList(),
         heroItems = emptyList(),
@@ -286,6 +288,7 @@ class JellyfinViewModel(
         isLoading = true,
         isMusicLoading = false,
         openLibrary = null,
+        libraryCounts = emptyMap(),
         currentItems = emptyList(),
         resumeItems = emptyList(),
         heroItems = emptyList(),
@@ -306,7 +309,7 @@ class JellyfinViewModel(
     musicLoadJob?.cancel()
     loadDashboardJob =
       viewModelScope.launch {
-        _uiState.update { it.copy(isLoading = true, error = null) }
+        _uiState.update { it.copy(isLoading = true, error = null, libraryCounts = emptyMap()) }
 
         val libsDeferred = async { jellyfinRepository.getLibraries(server) }
         val resumeDeferred = async { jellyfinRepository.getResumeItems(server, limit = 16) }
@@ -344,6 +347,19 @@ class JellyfinViewModel(
           }
 
         val libsResult = libsDeferred.await()
+        val libs = sortJellyfinLibraries(libsResult.getOrDefault(emptyList()))
+        val libraryCountJobs = libs.mapNotNull { library ->
+          val itemType = JellyfinLibraryCountPolicy.itemTypeFor(library) ?: return@mapNotNull null
+          async {
+            val result = jellyfinRepository.getItems(
+              server = server,
+              parentId = library.id,
+              includeItemTypes = itemType,
+              limit = 1,
+            )
+            library.id to JellyfinLibraryCountPolicy.countFrom(result.getOrNull())
+          }
+        }
         val resumeResult = resumeDeferred.await()
         val latestResult = latestDeferred.await()
         val suggestionsResult = suggestionsDeferred.await()
@@ -351,7 +367,6 @@ class JellyfinViewModel(
         val musicResult = musicDeferred.await()
         val heroResult = heroDeferred.await()
 
-        val libs = sortJellyfinLibraries(libsResult.getOrDefault(emptyList()))
         val resumeRaw = resumeResult.getOrDefault(emptyList())
         val latestRaw = latestResult.getOrDefault(emptyList())
         val suggestionsRaw = suggestionsResult.getOrDefault(emptyList())
@@ -407,6 +422,9 @@ class JellyfinViewModel(
           }
         }
         val librarySections = librarySectionsDeferred.awaitAll().filterNotNull()
+        val libraryCounts = libraryCountJobs.awaitAll().mapNotNull { (libraryId, count) ->
+          count?.let { libraryId to it }
+        }.toMap()
 
         val legacyLatestMovies = latestRaw.filter { isVideoMedia(it) && (it.type == "Movie" || it.collectionType?.equals("movies", ignoreCase = true) == true) }
         val legacyLatestShows = resolveShowsAsSeries(
@@ -458,6 +476,7 @@ class JellyfinViewModel(
         _uiState.update {
           it.copy(
             libraries = libs,
+            libraryCounts = libraryCounts,
             librarySections = librarySections,
             resumeItems = resume,
             latestMovies = latestMovies,
@@ -996,6 +1015,8 @@ class JellyfinViewModel(
             startIndex = startIndex,
             limit = 100,
           ).onSuccess { queryResult ->
+            val knownItemIds = currentList.mapTo(mutableSetOf()) { it.id }
+            val pageHasNewItems = queryResult.items.any { knownItemIds.add(it.id) }
             val combined = (currentList + queryResult.items).distinctBy { it.id }
             val nextStartIndex = JellyfinPaginationPolicy.nextStartIndex(startIndex, queryResult.items.size)
             val totalRecordCount =
@@ -1015,6 +1036,7 @@ class JellyfinViewModel(
                     startIndex = startIndex,
                     pageItemCount = queryResult.items.size,
                     pageSize = 100,
+                    pageHasNewItems = pageHasNewItems,
                   ),
                 isLoading = false,
                 isLoadingMore = false,

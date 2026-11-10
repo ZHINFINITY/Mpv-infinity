@@ -1276,6 +1276,8 @@ class PlayerActivity :
   private lateinit var castPlaybackController: CastPlaybackController
 
   private var isReady = false // Single flag: true when video loaded and ready
+  private var startupControlsOrientationListener: View.OnLayoutChangeListener? = null
+  private var startupControlsTargetLandscape: Boolean? = null
   private var isUserFinishing = false
   private var audioMinimizePresentationCompleted = false
   private var isBackgroundPlaybackSessionActive = false
@@ -2104,7 +2106,6 @@ class PlayerActivity :
     setupAudio()
     setupBackPressHandler()
     setupVideoAmbientBackground()
-    setupPlayerControls()
     setupVideoTransformObserver()
     setupAudioPlayerViewObserver()
     setupMediaSession()
@@ -2201,6 +2202,9 @@ class PlayerActivity :
     }
     val awaitingRoomPlaylistRestore =
       !attachedToCurrentSession && pendingSavedPlaylistSelection != null && playlist.isEmpty() && playlistId != null
+    // Compose the player only after the launch title and restored queue are settled, avoiding a
+    // frame that uses the process-wide previous media title.
+    setupPlayerControls()
     if (!attachedToCurrentSession && restoredSavedPlaylistItem) {
       pendingSavedPlaylistSelection = null
       loadPlaylistItemInternal(playlistIndex, saveCurrentPlaybackState = false)
@@ -5628,6 +5632,13 @@ class PlayerActivity :
     intent.getStringExtra("title")?.let { return it }
     intent.getStringExtra("filename")?.let { return it }
 
+    // MediaStore launches already carry a local path; use its basename rather than showing a
+    // provider row ID while MPV is still opening the content URI.
+    intent.getStringExtra("local_media_path")
+      ?.takeIf { it.isNotBlank() }
+      ?.let { File(it).name.takeIf(String::isNotBlank) }
+      ?.let { return it }
+
     val uri = extractUriFromIntent(intent) ?: return ""
 
     // Avoid a document-provider query on the Activity launch path. MPV supplies
@@ -5909,7 +5920,7 @@ class PlayerActivity :
       ?.let { return it }
 
     intent.getStringExtra("local_media_path")
-      ?.takeIf(String::isNotBlank)
+      ?.takeIf { path -> path.isNotBlank() && File(path).canRead() }
       ?.let { return it }
 
     // Keep provider URIs durable here. PlaybackSession opens a fresh descriptor
@@ -5933,6 +5944,9 @@ class PlayerActivity :
    */
   override fun onConfigurationChanged(newConfig: Configuration) {
     super.onConfigurationChanged(newConfig)
+    startupControlsTargetLandscape?.let { targetLandscape ->
+      binding.root.post { revealStartupControlsWhenReady(targetLandscape) }
+    }
     viewModel.onOrientationChanged()
     if (isNativeEngineActive()) {
       nativeEngineOrNull()?.refreshAfterConfigurationChange()
@@ -8690,10 +8704,15 @@ class PlayerActivity :
   internal fun hasManualOrientationOverride(): Boolean = manualOrientationOverride
 
   private fun applyInitialVideoOrientation(sourceIntent: Intent) {
-    if (playerPreferences.orientation.get() != PlayerOrientation.Video || isKnownAudioLaunch(sourceIntent)) return
+    if (playerPreferences.orientation.get() != PlayerOrientation.Video || isKnownAudioLaunch(sourceIntent)) {
+      clearStartupControlsOrientationGate()
+      return
+    }
 
     val width = sourceIntent.getIntExtra(EXTRA_VIDEO_WIDTH, 0)
     val height = sourceIntent.getIntExtra(EXTRA_VIDEO_HEIGHT, 0)
+    val targetLandscape = width <= 0 || height <= 0 || width > height
+    gateControlsUntilInitialOrientationSettles(targetLandscape)
     if (width <= 0 || height <= 0) {
       // Network/Jellyfin/WebDAV launches often do not carry dimensions in the intent. Start the
       // video player in landscape, then the loaded source aspect corrects portrait videos.
@@ -8709,6 +8728,54 @@ class PlayerActivity :
       }
 
     if (requestedOrientation != initialOrientation) requestedOrientation = initialOrientation
+  }
+
+  private fun gateControlsUntilInitialOrientationSettles(targetLandscape: Boolean) {
+    val root = binding.root
+    val controls = binding.controls
+    startupControlsOrientationListener?.let(root::removeOnLayoutChangeListener)
+    startupControlsOrientationListener = null
+    startupControlsTargetLandscape = targetLandscape
+    controls.visibility = View.GONE
+    val listener =
+      View.OnLayoutChangeListener { _, _, _, _, _, _, _, _, _ ->
+        revealStartupControlsWhenReady(targetLandscape)
+      }
+    startupControlsOrientationListener = listener
+    root.addOnLayoutChangeListener(listener)
+    root.post { revealStartupControlsWhenReady(targetLandscape) }
+  }
+
+  private fun revealStartupControlsWhenReady(targetLandscape: Boolean) {
+    if (startupControlsTargetLandscape != targetLandscape || !hasStartupControlsOrientationSettled(targetLandscape)) return
+
+    // PlayerControls selects different button sets from LocalConfiguration. Give Compose one frame
+    // to process the matching configuration before showing the overlay.
+    binding.controls.postOnAnimation {
+      if (isDestroyed || startupControlsTargetLandscape != targetLandscape ||
+        !hasStartupControlsOrientationSettled(targetLandscape)
+      ) return@postOnAnimation
+      startupControlsOrientationListener?.let(binding.root::removeOnLayoutChangeListener)
+      startupControlsOrientationListener = null
+      startupControlsTargetLandscape = null
+      binding.controls.visibility = View.VISIBLE
+    }
+  }
+
+  private fun hasStartupControlsOrientationSettled(targetLandscape: Boolean): Boolean {
+    val root = binding.root
+    val expectedOrientation =
+      if (targetLandscape) Configuration.ORIENTATION_LANDSCAPE else Configuration.ORIENTATION_PORTRAIT
+    return root.width > 0 && root.height > 0 &&
+      (root.width > root.height) == targetLandscape &&
+      resources.configuration.orientation == expectedOrientation
+  }
+
+  private fun clearStartupControlsOrientationGate() {
+    startupControlsOrientationListener?.let(binding.root::removeOnLayoutChangeListener)
+    startupControlsOrientationListener = null
+    startupControlsTargetLandscape = null
+    if (binding.controls.visibility == View.GONE) binding.controls.visibility = View.VISIBLE
   }
 
   /** External players often provide a bare CDN URL, so preserve stream metadata separately. */

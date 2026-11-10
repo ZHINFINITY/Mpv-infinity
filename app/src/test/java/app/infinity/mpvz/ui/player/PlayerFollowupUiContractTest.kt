@@ -312,6 +312,8 @@ class PlayerFollowupUiContractTest {
     assertTrue(playableUri.contains("sourceUri?.scheme.equals(\"content\", ignoreCase = true)"))
     assertTrue(playableUri.contains("return sourceUri.toString()"))
     assertTrue(playableUri.contains("intent.getStringExtra(\"local_media_path\")"))
+    assertTrue(playableUri.contains("path.isNotBlank() && File(path).canRead()"))
+    assertTrue(playableUri.indexOf("File(path).canRead()") < playableUri.indexOf("if (sourceUri?.scheme.equals"))
     assertFalse("The launch path must not open a one-shot content descriptor", playableUri.contains("openContentFd"))
     assertTrue(launchIdentity.contains("takeUnless { it.scheme.equals(\"content\", ignoreCase = true) }"))
     assertTrue(launchIdentity.indexOf("takeUnless") < launchIdentity.indexOf("resolveLocalPath(this)"))
@@ -325,6 +327,18 @@ class PlayerFollowupUiContractTest {
     assertTrue(newIntentPlaylistBranch.contains("generatePlaylistFromFolder(intent)"))
     assertFalse(newIntentPlaylistBranch.contains("parsePathFromIntent(intent)"))
     assertFalse("Document-provider title queries must not block Activity launch", fileName.contains("getDisplayNameFromUri"))
+  }
+
+  @Test
+  fun remoteMkvProbeOverrideIsAttachedOnlyToTheCurrentLoadOptions() {
+    val models = read("app/src/main/java/app/infinity/mpvz/ui/player/PlaybackModels.kt")
+    val session = read("app/src/main/java/app/infinity/mpvz/ui/player/PlaybackSession.kt")
+    val loadOptions = session.substringAfter("val loadOptions =").substringBefore("MPVLib.command(\"loadfile\"")
+
+    assertTrue(models.contains("playableUri.startsWith(\"http://\", ignoreCase = true)"))
+    assertTrue(models.contains("playableUri.startsWith(\"https://\", ignoreCase = true)"))
+    assertTrue(loadOptions.contains("shouldSkipRemoteMkvDurationProbe(playableUri)"))
+    assertTrue(loadOptions.contains("add(\"demuxer-mkv-probe-video-duration=no\")"))
   }
 
   @Test
@@ -438,6 +452,22 @@ class PlayerFollowupUiContractTest {
     assertTrue(more.contains("glassInsetSurface("))
     assertFalse(more.contains(".playerGlassPane("))
     assertTrue(surface.contains("fun Modifier.glassInsetSurface("))
+  }
+
+  @Test
+  fun startupControlsWaitForTheRequestedLayoutAndUseTheCurrentLaunchTitle() {
+    val activity = read("app/src/main/java/app/infinity/mpvz/ui/player/PlayerActivity.kt")
+    val startupOrientation = activity.substringAfter("private fun applyInitialVideoOrientation(")
+      .substringBefore("/** External players often provide a bare CDN URL")
+
+    assertTrue(startupOrientation.contains("gateControlsUntilInitialOrientationSettles(targetLandscape)"))
+    assertTrue(startupOrientation.contains("controls.visibility = View.GONE"))
+    assertTrue(startupOrientation.contains("addOnLayoutChangeListener(listener)"))
+    assertTrue(startupOrientation.contains("resources.configuration.orientation == expectedOrientation"))
+    assertTrue(startupOrientation.contains("postOnAnimation"))
+    assertTrue(activity.contains("startupControlsTargetLandscape?.let"))
+    assertTrue(activity.contains("File(it).name.takeIf(String::isNotBlank)"))
+    assertTrue(activity.indexOf("    setupPlayerControls()") > activity.indexOf("restorePreparedPlaybackQueue(intent)"))
   }
 
   @Test

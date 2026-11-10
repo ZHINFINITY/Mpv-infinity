@@ -994,6 +994,10 @@ object PlaybackSession : MPVLib.EventObserver {
           add("pause=yes")
           add(if (selectVideoForNewFile) "vid=auto" else "vid=no")
           if (resolvedItem.isDefinitelyAudioOnly()) add("aid=auto")
+          if (shouldSkipRemoteMkvDurationProbe(playableUri)) {
+            // Avoid MPV's optional end-of-file duration compatibility scan on HTTP sources.
+            add("demuxer-mkv-probe-video-duration=no")
+          }
           // Confirmed radio mounts are already media; spawning the ytdl hook here can
           // fail on Android fdsan and is both unnecessary and slower than direct demuxing.
           if (disableWebExtraction) add("ytdl=no")

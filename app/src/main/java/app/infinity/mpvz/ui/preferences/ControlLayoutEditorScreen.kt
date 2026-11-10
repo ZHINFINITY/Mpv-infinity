@@ -36,6 +36,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -139,6 +140,7 @@ data class ControlLayoutEditorScreen(
     var selectedButtons by remember(region, activeControlsValue) {
       mutableStateOf(parseButtons(activeControlsValue))
     }
+    val latestSelectedButtons by rememberUpdatedState(selectedButtons)
 
     val playbackControlsPosition by preferences.playbackControlsPosition.collectAsState()
     val previewTopRightButtons =
@@ -160,7 +162,7 @@ data class ControlLayoutEditorScreen(
 
     DisposableEffect(region, prefToEdit) {
       onDispose {
-        val serialized = selectedButtons.joinToString(",")
+        val serialized = latestSelectedButtons.joinToString(",")
         if (prefToEdit.get() != serialized) prefToEdit.set(serialized)
       }
     }

@@ -14,16 +14,26 @@ import org.junit.Test
 
 class JellyfinPaginationPolicyTest {
   @Test fun knownTotalUsesServerPageBoundary() {
-    assertTrue(JellyfinPaginationPolicy.hasMore(totalRecordCount = 250, startIndex = 0, pageItemCount = 100, pageSize = 100))
-    assertTrue(JellyfinPaginationPolicy.hasMore(totalRecordCount = 250, startIndex = 100, pageItemCount = 100, pageSize = 100))
-    assertFalse(JellyfinPaginationPolicy.hasMore(totalRecordCount = 250, startIndex = 200, pageItemCount = 50, pageSize = 100))
+    assertTrue(JellyfinPaginationPolicy.hasMore(totalRecordCount = 250, startIndex = 0, pageItemCount = 100, pageSize = 100, pageHasNewItems = true))
+    assertTrue(JellyfinPaginationPolicy.hasMore(totalRecordCount = 250, startIndex = 100, pageItemCount = 100, pageSize = 100, pageHasNewItems = true))
+    assertFalse(JellyfinPaginationPolicy.hasMore(totalRecordCount = 250, startIndex = 200, pageItemCount = 50, pageSize = 100, pageHasNewItems = true))
   }
 
-  @Test fun unknownTotalContinuesOnlyAfterAFullPage() {
-    assertTrue(JellyfinPaginationPolicy.hasMore(totalRecordCount = 0, startIndex = 0, pageItemCount = 100, pageSize = 100))
-    assertTrue(JellyfinPaginationPolicy.hasMore(totalRecordCount = 0, startIndex = 100, pageItemCount = 100, pageSize = 100))
-    assertFalse(JellyfinPaginationPolicy.hasMore(totalRecordCount = 0, startIndex = 200, pageItemCount = 37, pageSize = 100))
-    assertFalse(JellyfinPaginationPolicy.hasMore(totalRecordCount = 0, startIndex = 200, pageItemCount = 0, pageSize = 100))
+  @Test fun unknownTotalContinuesUntilAnEmptyOrDuplicatePage() {
+    assertTrue(JellyfinPaginationPolicy.hasMore(totalRecordCount = 0, startIndex = 0, pageItemCount = 100, pageSize = 100, pageHasNewItems = true))
+    assertTrue(JellyfinPaginationPolicy.hasMore(totalRecordCount = 0, startIndex = 100, pageItemCount = 37, pageSize = 100, pageHasNewItems = true))
+    assertFalse(JellyfinPaginationPolicy.hasMore(totalRecordCount = 0, startIndex = 200, pageItemCount = 0, pageSize = 100, pageHasNewItems = false))
+    assertFalse(JellyfinPaginationPolicy.hasMore(totalRecordCount = 0, startIndex = 200, pageItemCount = 100, pageSize = 100, pageHasNewItems = false))
+  }
+
+  @Test fun jellyfinClientDoesNotTreatTheFirstPageAsTheWholeLibraryWhenTotalIsMissing() {
+    val root = File("src/main/java").takeIf { it.exists() } ?: File("app/src/main/java")
+    val client = File(root, "app/infinity/mpvz/data/jellyfin/JellyfinClient.kt").readText()
+      .substringAfter("suspend fun getItems(")
+      .substringBefore("suspend fun getArtists(")
+
+    assertTrue(client.contains("totalRecordCount = totalRecordCount"))
+    assertFalse(client.contains("if (totalRecordCount > 0) totalRecordCount else items.size"))
   }
 
   @Test fun nextOffsetUsesRemotePageSizeNotDeduplicatedItemCount() {

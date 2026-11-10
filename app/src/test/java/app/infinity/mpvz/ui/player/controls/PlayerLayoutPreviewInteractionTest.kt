@@ -41,9 +41,21 @@ class PlayerLayoutPreviewInteractionTest {
     assertTrue(editor.contains("preferences.topRightControls.collectAsState()"))
     assertTrue(editor.contains("LaunchedEffect(region, activeControlsValue, selectedButtons)"))
     assertTrue(editor.contains("delay(180)"))
+    assertTrue(editor.contains("val latestSelectedButtons by rememberUpdatedState(selectedButtons)"))
     assertFalse(preview.contains("PlayerViewModel"))
     assertFalse(preview.contains("PlaybackSession"))
     assertFalse(preview.contains("PlayerActivity"))
+  }
+
+  @Test
+  fun leavingControlLayoutEditorPersistsTheLatestSelection() {
+    val editor = source("app/src/main/java/app/infinity/mpvz/ui/preferences/ControlLayoutEditorScreen.kt")
+    val disposeEffect = editor.substringAfter("DisposableEffect(region, prefToEdit)").substringBefore("val title")
+
+    assertTrue(editor.contains("selectedButtons = selectedButtons + button"))
+    assertTrue(disposeEffect.contains("latestSelectedButtons.joinToString(\",\")"))
+    assertFalse(disposeEffect.contains("selectedButtons.joinToString(\",\")"))
+    assertTrue(disposeEffect.contains("if (prefToEdit.get() != serialized) prefToEdit.set(serialized)"))
   }
 
   @Test

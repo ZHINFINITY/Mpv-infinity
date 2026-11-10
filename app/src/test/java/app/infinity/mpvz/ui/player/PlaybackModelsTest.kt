@@ -151,6 +151,14 @@ class PlaybackModelsTest {
   }
 
   @Test
+  fun optionalMkvTailProbeIsSkippedOnlyForRemoteHttpSources() {
+    assertTrue(shouldSkipRemoteMkvDurationProbe("https://cdn.example/video.mkv"))
+    assertTrue(shouldSkipRemoteMkvDurationProbe("http://media.example/video.mkv"))
+    assertFalse(shouldSkipRemoteMkvDurationProbe("file:///storage/Movies/video.mkv"))
+    assertFalse(shouldSkipRemoteMkvDurationProbe("content://media/external/video/1"))
+  }
+
+  @Test
   fun rapidQueueAdvancesKeepCurrentItemAndIndexAligned() {
     val items = listOf(
       PlaybackItem("a", "file:///a", title = "A"),

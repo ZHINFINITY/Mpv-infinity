@@ -619,6 +619,7 @@ fun JellyfinContent(
                               JellyfinLibraryCard(
                                 item = library,
                                 server = server,
+                                count = uiState.libraryCounts[library.id],
                                 onClick = { viewModel.navigateToItem(library) },
                               )
                             }

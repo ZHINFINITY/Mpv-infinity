@@ -176,6 +176,10 @@ internal fun PlaybackItem.declaredMediaKind(videoHint: Boolean = false): Declare
 internal fun PlaybackItem.isDefinitelyAudioOnly(): Boolean =
   declaredMediaKind() == DeclaredPlaybackMediaKind.AUDIO
 
+/** The optional MKV tail-duration compatibility probe can add an EOF seek to HTTP playback. */
+internal fun shouldSkipRemoteMkvDurationProbe(playableUri: String): Boolean =
+  playableUri.startsWith("http://", ignoreCase = true) || playableUri.startsWith("https://", ignoreCase = true)
+
 /**
  * Auto engine uses Native for HDR-family video because Media3 preserves HDR/Dolby Vision output;
  * ordinary video continues to use MPV. The queued item carries the server/file metadata and title
