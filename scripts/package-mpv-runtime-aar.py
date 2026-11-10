@@ -219,6 +219,7 @@ def main() -> None:
                 required_placebo_exports = {
                     "pl_vulkan_default_params", "pl_vulkan_create", "pl_vulkan_destroy",
                     "pl_vulkan_wrap", "pl_vulkan_hold_ex", "pl_vulkan_release_ex",
+                    "pl_shader_custom",
                 }
                 missing_placebo_exports = sorted(required_placebo_exports - dynamic_defined_symbols(placebo))
                 if missing_placebo_exports:

@@ -43,6 +43,7 @@ FONGMI_PATCH = ROOT / "app/src/main/cpp/mpvflow/fongmi/mpv-fongmi-android.patch"
 FONGMI_DIR = ROOT / "app/src/main/cpp/mpvflow/fongmi"
 PLAYBACK_SESSION = ROOT / "app/src/main/java/app/infinity/mpvz/ui/player/PlaybackSession.kt"
 MPV_VIEW = ROOT / "app/src/main/java/app/infinity/mpvz/ui/player/MPVView.kt"
+MEDIA3_SINK = ROOT / "app/src/main/java/app/infinity/mpvz/ui/player/Media3FlowVideoSink.kt"
 MPVFLOW_LOG_CONFIG = ROOT / "app/src/main/java/app/infinity/mpvz/ui/player/MpvFlowLogConfig.kt"
 APP_BUILD = ROOT / "app/build.gradle.kts"
 MPV_CONF_POLICY = ROOT / "app/src/main/java/app/infinity/mpvz/preferences/MpvConfigOverride.kt"
@@ -65,6 +66,15 @@ assert 'pl_var_vec2("motion_size")' in fongmi_motion
 assert "mp_motion_render_sources_to" in fongmi_motion and "scaled_source_pair" in fongmi_test
 assert "mp_motion_render_sources_to(" in media3_native and "mp_motion_render_sources(" in media3_native
 cmake_config = (ROOT / "app/src/main/cpp/CMakeLists.txt").read_text(encoding="utf-8")
+runtime_packager = (ROOT / "scripts/package-mpv-runtime-aar.py").read_text(encoding="utf-8")
+assert "pl_shader_custom" in cmake_config, "Media3 native builds must reject MPV AARs without the FongMi shader API"
+assert '"pl_shader_custom"' in runtime_packager, "the custom MPV runtime overlay must export the shader API required by Media3"
+assert "output->texture->params.renderable" in media3_native
+assert "PL_FMT_CAP_RENDERABLE" in media3_native
+assert "reason=target_not_dispatchable path=intermediate_blit" in media3_native
+media3_sink = MEDIA3_SINK.read_text(encoding="utf-8")
+assert "outputDecisions=$outputDecisions" in media3_sink
+assert "lastOutputTickGapReason=${diagnostics.lastOutputTickGapReason}" in media3_sink
 assert 'mpvflow/fongmi/motion.c' in cmake_config, "Media3 must compile the shared FongMi GPU motion core"
 assert 'PlaybackSession.setOptionString("motion-interpolation", targetFps.toString())' in MPV_VIEW.read_text(encoding="utf-8")
 runtime_builder = BUILD.read_text(encoding="utf-8")

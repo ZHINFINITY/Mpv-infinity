@@ -76,9 +76,7 @@ import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.koin.android.ext.android.inject
-import java.io.BufferedReader
 import java.io.File
-import java.io.InputStreamReader
 
 class CrashActivity : AppCompatActivity() {
   private var logcat: String = ""
@@ -224,11 +222,13 @@ class CrashActivity : AppCompatActivity() {
         }.toString()
 
     fun collectLogcat(): String {
-      val process = Runtime.getRuntime()
-      val reader = BufferedReader(InputStreamReader(process.exec("logcat -d").inputStream))
+      val capture = DebugLogReader.readAllAccessibleLogcat()
       val logcat = StringBuilder()
-      // reader.lines() looks much nicer so why not use it on devices that support it?
-      reader.lines().forEach(logcat::appendLine)
+      logcat.appendLine("===== All accessible Logcat buffers =====")
+      capture.lines.forEach(logcat::appendLine)
+      if (capture.exitCode != 0) {
+        logcat.appendLine("Logcat collection exited with code ${capture.exitCode}.")
+      }
       val mpvFlowLines = selectMpvFlowDiagnosticLines(logcat.toString())
       logcat.appendLine()
       logcat.appendLine("===== MPVFlow interpolation diagnostics =====")
@@ -266,6 +266,7 @@ class CrashActivity : AppCompatActivity() {
               "Davey",
               "Janky",
               "RenderInspector",
+              "RenderPoller",
               "RenderThread",
               "OpenGLRenderer",
               "QueueBuffer",

@@ -144,6 +144,7 @@ if(MPVFLOW_ENABLE_VULKAN_BACKEND)
     set(MPVFLOW_REQUIRED_PLACEBO_SYMBOLS
         pl_vulkan_default_params pl_vulkan_create pl_vulkan_destroy
         pl_vulkan_wrap pl_vulkan_hold_ex pl_vulkan_release_ex
+        pl_shader_custom
         "pl_log_create_${MPVFLOW_EXPECTED_PLACEBO_API_VER}")
     foreach(MPVFLOW_REQUIRED_PLACEBO_SYMBOL IN LISTS MPVFLOW_REQUIRED_PLACEBO_SYMBOLS)
         set(MPVFLOW_SYMBOL_EXPORTED FALSE)

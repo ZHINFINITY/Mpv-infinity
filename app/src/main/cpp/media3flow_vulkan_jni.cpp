@@ -123,6 +123,7 @@ struct FlowContext {
     uint32_t syncOperationsSinceSummary = 0;
     bool syncFdInteropReady = false;
     bool outputStorageImageSupported = false;
+    bool fongmiDirectOutputDisabled = false;
     std::string captureSessionId;
     bool captureFailureLogged = false;
 };
@@ -149,6 +150,7 @@ enum FlowDiagnosticBit : uint64_t {
     DIAG_SYNC_BACKPRESSURE = 1ull << 18,
     DIAG_OUTPUT_STORAGE_READY = 1ull << 19,
     DIAG_OUTPUT_STORAGE_FALLBACK = 1ull << 20,
+    DIAG_FONGMI_DIRECT_OUTPUT_FALLBACK = 1ull << 21,
 };
 
 enum EglDiagnosticBit : uint32_t {
@@ -1766,16 +1768,40 @@ Java_app_infinity_mpvz_ui_player_Media3FlowVulkanNative_nativeSynthesize(
         }
     }
     bool useFongmi = pair->fongmi && !needsFlowFeatures;
+    const pl_fmt outputFormat = output->texture->params.format;
+    const bool fongmiDirectOutputEligible =
+        output->texture->params.renderable && output->texture->params.storable &&
+        outputFormat && (outputFormat->caps & PL_FMT_CAP_RENDERABLE) &&
+        (outputFormat->caps & PL_FMT_CAP_STORABLE);
     const bool directOutputEligible = useFongmi
-        ? output->texture->params.storable
+        ? fongmiDirectOutputEligible
         : (!capturePaired && !captureActive && output->texture->params.storable &&
            mpvflow_gpu_get_compute_api(context->flow) == MPVFLOW_GPU_COMPUTE_VULKAN);
+    if (useFongmi && !fongmiDirectOutputEligible) {
+        logFlowOnce(context, DIAG_FONGMI_DIRECT_OUTPUT_FALLBACK, ANDROID_LOG_INFO,
+                    "MPVFLOW_DIAGNOSTIC component=native-media3 event=fongmi_direct_output state=fallback "
+                    "reason=target_not_dispatchable path=intermediate_blit target_renderable=%d "
+                    "target_storable=%d format_caps=0x%x output=%dx%d",
+                    output->texture->params.renderable, output->texture->params.storable,
+                    outputFormat ? static_cast<unsigned int>(outputFormat->caps) : 0u,
+                    output->width, output->height);
+    }
     bool directOutput = false;
     if (useFongmi) {
-        bool generated = directOutputEligible && mp_motion_render_sources_to(
-            context->motion, source0->prepared, source1->prepared,
-            source0->texture, source1->texture, pair->source0Id,
-            pair->source1Id, timestep, output->texture);
+        bool generated = false;
+        if (directOutputEligible && !context->fongmiDirectOutputDisabled) {
+            generated = mp_motion_render_sources_to(
+                context->motion, source0->prepared, source1->prepared,
+                source0->texture, source1->texture, pair->source0Id,
+                pair->source1Id, timestep, output->texture);
+            if (!generated) {
+                context->fongmiDirectOutputDisabled = true;
+                logFlowOnce(context, DIAG_FONGMI_DIRECT_OUTPUT_FALLBACK, ANDROID_LOG_WARN,
+                            "MPVFLOW_DIAGNOSTIC component=native-media3 event=fongmi_direct_output state=fallback "
+                            "reason=direct_target_render_failed path=intermediate_blit output=%dx%d",
+                            output->width, output->height);
+            }
+        }
         if (generated) {
             synthesized = output->texture;
             directOutput = true;

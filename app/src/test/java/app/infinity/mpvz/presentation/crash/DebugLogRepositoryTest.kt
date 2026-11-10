@@ -136,11 +136,23 @@ class DebugLogRepositoryTest {
       }
 
     val retained = retainDebugLogEntries(flowEntries + recentEntries)
+    val nativeMedia3Logcat =
+      listOf(
+        "11-11 00:49:06.349 7939 13041 I Mpv∞-Media3Flow: media3_flow_route enabled=true state=ready",
+        "11-11 00:49:06.350 7939 13041 I Mpv∞-Media3Flow: event=source_pair state=ready target_fps=120",
+        "11-11 00:49:06.349 7939 13041 I Mpv∞-Media3Flow: flow_summary targetFps=120 generatedFps=109.13 " +
+          "generatedFrames=1988 droppedFrames=0 submissionFailures=0 " +
+          "outputMetric=successful_eglSwapBuffers_return_not_scanout",
+      ).joinToString("\n")
+    val curated = selectMpvFlowDiagnosticLines(nativeMedia3Logcat)
 
     assertEquals(2, flowEntries.count(DebugLogEntry::isNativeMedia3FlowDiagnostic))
     assertEquals(2, retained.count(DebugLogEntry::isNativeMedia3FlowDiagnostic))
     assertTrue(retained.any { it.id == "media3-flow-0" })
     assertTrue(retained.any { it.id == "media3-flow-1" })
+    assertTrue(curated.contains("media3_flow_route"))
+    assertTrue(curated.contains("event=source_pair state=ready"))
+    assertTrue(curated.contains("generatedFrames=1988"))
   }
 
   @Test
@@ -398,6 +410,26 @@ class DebugLogRepositoryTest {
     assertTrue(retained.size <= DEBUG_LOG_ENTRY_LIMIT)
     assertTrue(retained.any { it.id == latestRendererConfig.id })
     assertTrue(retained.any { it.id == "flow-noise-${DEBUG_LOG_ENTRY_LIMIT + 1_999}" })
+  }
+
+  @Test
+  fun capturesNativeMpvCountersAndXiaomiRenderHealthInTheMpvFlowFilter() {
+    val rawLogcat =
+      listOf(
+        "10-11 01:02:03.000 123 456 V mpv: [vo/gpu-next:info] Motion interpolation: target=120 source_captures=0.00/s synthesis_submits=0.00/s swapchain_submits=568.24/s analyzed_pairs=37 repeated_outputs=0",
+        "10-11 01:02:03.001 123 456 W RenderInspector: DequeueBuffer time out on app.infinity.mpvz.debug/app.infinity.mpvz.ui.player.PlayerActivity, count=3, avg=9 ms, max=9 ms.",
+        "10-11 01:02:03.002 123 456 I RenderPoller: [mId: 0] [video-debug-dec] render status from smooth to not smooth",
+        "10-11 01:02:03.003 123 456 I Playback: unrelated decoder detail remains outside the MPVFlow filter",
+      )
+
+    val parsed = DebugLogReader.parseForTesting(rawLogcat, expectedPid = 123, allowRawFallback = false)
+    val selected = selectMpvFlowDiagnosticLines(rawLogcat.joinToString("\n"))
+
+    assertEquals(3, parsed.count(DebugLogEntry::isMpvFlowDiagnostic))
+    assertTrue(selected.contains("source_captures=0.00/s synthesis_submits=0.00/s"))
+    assertTrue(selected.contains("DequeueBuffer time out"))
+    assertTrue(selected.contains("render status from smooth to not smooth"))
+    assertTrue(!selected.contains("unrelated decoder detail"))
   }
 
   @Test
