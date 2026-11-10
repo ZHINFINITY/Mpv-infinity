@@ -1706,7 +1706,12 @@ fun PlayerControls(
           }
 
           controlVisibilityTransition.AnimatedVisibility(
-            visible = { visibility -> visibility.first },
+            visible = { visibility ->
+              PlayerControlVisibilityPolicy.shouldShowPlaybackControls(
+                controlsVisible = visibility.first,
+                bufferingIndicatorVisible = showBufferingIndicator,
+              )
+            },
             enter = buildControlsEnterV(controlsAnimStyle, reduceMotion, enterMs) { 0 },
             exit = buildControlsExitV(controlsAnimStyle, reduceMotion, exitMs) { 0 },
             modifier =

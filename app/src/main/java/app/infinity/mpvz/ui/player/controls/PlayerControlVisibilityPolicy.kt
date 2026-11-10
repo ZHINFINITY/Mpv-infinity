@@ -12,6 +12,9 @@ internal object PlayerControlVisibilityPolicy {
   fun areButtonsVisible(controlsShown: Boolean, controlsLocked: Boolean, slidersShown: Boolean): Boolean =
     controlsShown && !controlsLocked && !slidersShown
 
+  fun shouldShowPlaybackControls(controlsVisible: Boolean, bufferingIndicatorVisible: Boolean): Boolean =
+    controlsVisible && !bufferingIndicatorVisible
+
   fun shouldAutoHideControls(
     isAudioOnly: Boolean,
     controlsShown: Boolean,

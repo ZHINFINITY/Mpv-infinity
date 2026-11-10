@@ -233,6 +233,8 @@ class PlayerFollowupUiContractTest {
     assertFalse(preview.contains("cubicTo("))
     assertTrue(controls.contains("PlayerControlVisibilityPolicy.shouldShowBufferingIndicator("))
     assertTrue(controls.contains("PlayerControlVisibilityPolicy.areButtonsVisible("))
+    assertTrue(controls.contains("PlayerControlVisibilityPolicy.shouldShowPlaybackControls("))
+    assertTrue(controls.contains("bufferingIndicatorVisible = showBufferingIndicator"))
     assertTrue(controls.contains("targetState = areButtonsVisible to seekBarControlsVisible"))
     assertTrue(controls.contains("controlVisibilityTransition.AnimatedVisibility("))
     assertTrue(controls.contains("visible = { visibility -> visibility.second }"))

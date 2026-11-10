@@ -14,6 +14,25 @@ class PlayerControlVisibilityPolicyTest {
   }
 
   @Test
+  fun bufferingHidesOnlyCenterPlaybackControls() {
+    val otherControlsVisible = PlayerControlVisibilityPolicy.areButtonsVisible(true, false, false)
+
+    assertTrue(otherControlsVisible)
+    assertFalse(
+      PlayerControlVisibilityPolicy.shouldShowPlaybackControls(
+        controlsVisible = otherControlsVisible,
+        bufferingIndicatorVisible = true,
+      ),
+    )
+    assertTrue(
+      PlayerControlVisibilityPolicy.shouldShowPlaybackControls(
+        controlsVisible = otherControlsVisible,
+        bufferingIndicatorVisible = false,
+      ),
+    )
+  }
+
+  @Test
   fun bufferingOrFirstFrameWaitDoesNotPinControlsWhenPlaybackIsPausedOrUnknown() {
     assertTrue(
       PlayerControlVisibilityPolicy.shouldAutoHideControls(
