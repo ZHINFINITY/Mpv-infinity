@@ -68,7 +68,7 @@ class PlayerLayoutPreviewInteractionTest {
   }
 
   @Test
-  fun transportButtonSizingIsSharedAndKeepsFortyEightDpSideTouchTargets() {
+  fun transportButtonSizingIsSharedAndTheWholePreviewSceneScalesUniformly() {
     assertEquals(48.dp, PlayerControlsGeometry.PlaylistSkipButtonSize)
     assertEquals(56.dp, PlayerControlsGeometry.PlayPauseButtonSize)
     assertEquals(16.dp, PlayerControlsGeometry.PlaylistButtonGap)
@@ -76,7 +76,12 @@ class PlayerLayoutPreviewInteractionTest {
     assertTrue(controls.contains(".size(PlayerControlsGeometry.PlaylistSkipButtonSize)"))
     assertTrue(controls.contains(".size(PlayerControlsGeometry.PlayPauseButtonSize)"))
     val preview = source("app/src/main/java/app/infinity/mpvz/ui/preferences/PlayerLayoutPreview.kt")
-    assertTrue(preview.contains("PlayerControlsGeometry.PlaylistSkipButtonSize * frameScale"))
-    assertTrue(preview.contains("PlayerControlsGeometry.PlayPauseButtonSize * frameScale"))
+    assertTrue(preview.contains("val skipVisualSize = PlayerControlsGeometry.PlaylistSkipButtonSize"))
+    assertTrue(preview.contains("val playVisualSize = PlayerControlsGeometry.PlayPauseButtonSize"))
+    assertTrue(preview.contains("Constraints.fixed(sceneWidth.roundToPx(), sceneHeight.roundToPx())"))
+    assertTrue(preview.contains("scaleX = frameScale"))
+    assertTrue(preview.contains("scaleY = frameScale"))
+    assertFalse(preview.contains(" * frameScale"))
+    assertFalse(preview.contains("maxOf(44.dp"))
   }
 }

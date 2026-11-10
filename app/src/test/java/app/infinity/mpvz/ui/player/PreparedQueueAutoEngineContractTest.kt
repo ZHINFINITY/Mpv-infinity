@@ -92,15 +92,20 @@ class PreparedQueueAutoEngineContractTest {
   }
 
   @Test
-  fun onlyValidatedPlayableStreamResultsReceiveDirectMediaProvenance() {
-    val streamScreen = streamScreenSource()
-    val playableBranch = streamScreen.substringAfter("} else if ((stream.url.startsWith(\"http://\"")
-      .substringBefore("viewModel.consumePlaybackStream()")
+  fun removingStreamTabKeepsSharedOnlinePlaybackAvailable() {
+    val streamScreenFiles =
+      sequenceOf(
+        File("src/main/java/app/infinity/mpvz/ui/browser/catalog/StreamScreen.kt"),
+        File("app/src/main/java/app/infinity/mpvz/ui/browser/catalog/StreamScreen.kt"),
+      )
+    val mainScreen = mainScreenSource()
+    val activity = playerActivitySource()
 
-    assertTrue(playableBranch.contains("stream.isPlayable"))
-    assertTrue(playableBranch.contains("putExtra(\"stream_tab_playback\", true)"))
-    assertTrue(playableBranch.contains("putExtra(\"stream_direct_media\", true)"))
-    assertTrue(!streamScreen.substringAfter("if (stream.isExternal)").substringBefore("} else if (").contains("stream_direct_media"))
+    assertFalse(streamScreenFiles.any(File::exists))
+    assertFalse(mainScreen.contains("MainTab.STREAMS"))
+    assertFalse(mainScreen.contains("StreamScreen"))
+    assertTrue(activity.contains("YtdlpManager.requiresYtdlp"))
+    assertTrue(activity.contains("YtdlpManager.resolveDirectMediaUrl"))
   }
 
   private fun playerActivitySource(): String =
@@ -115,9 +120,9 @@ class PreparedQueueAutoEngineContractTest {
       File("app/src/main/java/app/infinity/mpvz/utils/media/MediaUtils.kt"),
     ).first(File::exists).readText()
 
-  private fun streamScreenSource(): String =
+  private fun mainScreenSource(): String =
     sequenceOf(
-      File("src/main/java/app/infinity/mpvz/ui/browser/catalog/StreamScreen.kt"),
-      File("app/src/main/java/app/infinity/mpvz/ui/browser/catalog/StreamScreen.kt"),
+      File("src/main/java/app/infinity/mpvz/ui/browser/MainScreen.kt"),
+      File("app/src/main/java/app/infinity/mpvz/ui/browser/MainScreen.kt"),
     ).first(File::exists).readText()
 }

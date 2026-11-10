@@ -413,16 +413,14 @@ fun RenderPlayerButton(
       val isExpanded by viewModel.isFrameNavigationExpanded.collectAsState()
       val isSnapshotLoading by viewModel.isSnapshotLoading.collectAsState()
       val context = LocalContext.current
-      val slotWidth = PlayerControlsGeometry.frameNavigationSlotWidth(buttonSize, compact)
 
       AnimatedContent(
-        modifier = Modifier.width(slotWidth).height(buttonSize),
         targetState = isExpanded && !compact,
         contentAlignment = Alignment.Center,
         transitionSpec = {
           (fadeIn(animationSpec = tween(200)) + expandHorizontally(animationSpec = tween(250)))
             .togetherWith(fadeOut(animationSpec = tween(200)) + shrinkHorizontally(animationSpec = tween(250)))
-            .using(SizeTransform(clip = true))
+            .using(SizeTransform(clip = false))
         },
         label = "FrameNavExpandCollapse",
       ) { expanded ->
@@ -439,7 +437,7 @@ fun RenderPlayerButton(
                   MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f),
                 )
               },
-            modifier = Modifier.width(slotWidth).height(buttonSize).playerGlassPane(enabled = liquidGlassSurfaces, cornerRadius = 999.dp),
+            modifier = Modifier.height(buttonSize).playerGlassPane(enabled = liquidGlassSurfaces, cornerRadius = 999.dp),
           ) {
             Row(
               horizontalArrangement = Arrangement.spacedBy(2.dp),
@@ -1216,7 +1214,6 @@ fun RenderPlayerButton(
       val timeNetworkPillExpanded by appearancePreferences.timeNetworkPillExpanded.collectAsState()
       val clockFormat by playerPreferences.clockFormat.collectAsState()
       val stat by rememberTimeAndNetworkStat(clockFormat)
-      val slotWidth = PlayerControlsGeometry.timeNetworkSlotWidth(buttonSize, compact)
       val toggleTimeNetworkPill = {
         appearancePreferences.timeNetworkPillExpanded.set(!appearancePreferences.timeNetworkPillExpanded.get())
       }
@@ -1233,13 +1230,12 @@ fun RenderPlayerButton(
         onOpenSheet(Sheets.None)
       }
       AnimatedContent(
-        modifier = Modifier.width(slotWidth).height(buttonSize),
         targetState = timeNetworkPillExpanded && !compact,
         contentAlignment = Alignment.Center,
         transitionSpec = {
           (fadeIn(animationSpec = tween(200)) + expandHorizontally(animationSpec = tween(250)))
             .togetherWith(fadeOut(animationSpec = tween(200)) + shrinkHorizontally(animationSpec = tween(250)))
-            .using(SizeTransform(clip = true))
+            .using(SizeTransform(clip = false))
         },
         label = "timeNetworkPillExpansion",
       ) { expanded ->
@@ -1266,7 +1262,6 @@ fun RenderPlayerButton(
               },
             modifier =
               Modifier
-                .width(slotWidth)
                 .height(buttonSize)
                 .clip(CircleShape)
                 .combinedClickable(
@@ -1288,7 +1283,7 @@ fun RenderPlayerButton(
               horizontalArrangement = Arrangement.spacedBy(MaterialTheme.spacing.extraSmall),
               modifier =
                 Modifier
-                  .fillMaxWidth()
+                  .widthIn(min = 176.dp)
                   .padding(horizontal = MaterialTheme.spacing.small),
             ) {
               AppSymbolIcon(

@@ -62,6 +62,7 @@ object YtdlpManager {
   private const val PLAYLIST_EXTRACTION_TIMEOUT_MS = 180_000L
   private const val PAGE_RESOLVE_TIMEOUT_MS = 20_000L
   private const val PLAYBACK_RESOLVE_TIMEOUT_MS = 30_000L
+  private const val PLAYBACK_DIRECT_URL_RESOLVE_TIMEOUT_MS = 8_000L
   private const val PLAYBACK_RUNTIME_INSTALL_TIMEOUT_MS = 90_000L
   private const val MAX_PAGE_RESOLVE_DEPTH = 5
   private const val MAX_PAGE_BODY_CHARS = 4 * 1024 * 1024
@@ -394,7 +395,8 @@ object YtdlpManager {
     val isWebSource = uri.scheme.equals("http", true) || uri.scheme.equals("https", true)
     if (!isWebSource) return true
 
-    return withContext(Dispatchers.IO) {
+    val startedAtMs = android.os.SystemClock.elapsedRealtime()
+    val ready = withContext(Dispatchers.IO) {
       installMutex.withLock {
         if (!requiresYtdlp(source) || isPlaybackRuntimeReady(context)) return@withLock true
         if (!prepareRuntimeAssets(context, onLog)) return@withLock false
@@ -404,6 +406,11 @@ object YtdlpManager {
         installYtdlpForPlayback(context, onLog)
       }
     }
+    onLog(
+      "yt-dlp playback runtime ready=$ready " +
+        "elapsedMs=${android.os.SystemClock.elapsedRealtime() - startedAtMs}\n",
+    )
+    return ready
   }
 
   /** Resolves a web page to one combined audio/video URL that Media3 can play directly. */
@@ -414,6 +421,8 @@ object YtdlpManager {
   ): String? =
     withContext(Dispatchers.IO) {
       if (!requiresYtdlp(source) || !isPlaybackRuntimeReady(context)) return@withContext source
+      unwrapProviderMediaUrl(source, onLog)?.let { return@withContext it }
+      val startedAtMs = android.os.SystemClock.elapsedRealtime()
       val output = StringBuilder()
       val ytdlFile = File(getYtdlDir(context), "yt-dlp")
       val cookiesFile = AndroidCookieJar.playbackCookieFile(context).takeIf(File::isFile)
@@ -446,8 +455,12 @@ object YtdlpManager {
       val completed = executePythonProcessCancellable(
         command,
         context,
-        timeoutMs = PLAYBACK_RESOLVE_TIMEOUT_MS,
+        timeoutMs = PLAYBACK_DIRECT_URL_RESOLVE_TIMEOUT_MS,
       ) { line -> output.appendLine(line) }
+      onLog(
+        "yt-dlp direct URL resolve completed=$completed " +
+          "elapsedMs=${android.os.SystemClock.elapsedRealtime() - startedAtMs}\n",
+      )
       if (!completed) return@withContext null
       output.lineSequence()
         .map(String::trim)

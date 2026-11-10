@@ -27,7 +27,6 @@ import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -60,7 +59,9 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.semantics.ProgressBarRangeInfo
@@ -71,6 +72,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -100,8 +102,8 @@ fun PlayerLayoutPreview(
   val isPortraitPreview = activeRegion == ControlRegion.PORTRAIT_BOTTOM
   val shortScreenEdge = minOf(configuration.screenWidthDp, configuration.screenHeightDp).coerceAtLeast(1)
   val longScreenEdge = maxOf(configuration.screenWidthDp, configuration.screenHeightDp).coerceAtLeast(1)
-  val referenceWidth = if (isPortraitPreview) shortScreenEdge else longScreenEdge
-  val landscapeAspect = (longScreenEdge.toFloat() / shortScreenEdge).coerceIn(1.65f, 1.95f)
+  val sceneWidth = (if (isPortraitPreview) shortScreenEdge else longScreenEdge).dp
+  val sceneHeight = (if (isPortraitPreview) longScreenEdge else shortScreenEdge).dp
   val frameShape = RoundedCornerShape(18.dp)
   val previewProgress = remember { mutableFloatStateOf(0.38f) }
   var simulatedPlaying by remember { mutableStateOf(false) }
@@ -112,175 +114,189 @@ fun PlayerLayoutPreview(
     contentAlignment = Alignment.Center,
   ) {
     val frameWidth = minOf(maxWidth, if (isPortraitPreview) 190.dp else 540.dp)
-    val frameScale = (frameWidth.value / referenceWidth.toFloat()).coerceIn(0.32f, 0.72f)
-    val frameAspect = if (isPortraitPreview) 0.58f else landscapeAspect
-    val iconTouchSize = maxOf(44.dp, 46.dp * frameScale)
-    val iconVisualSize = maxOf(18.dp, 25.dp * frameScale)
-    val skipVisualSize = maxOf(20.dp, PlayerControlsGeometry.PlaylistSkipButtonSize * frameScale)
-    val playVisualSize = maxOf(24.dp, PlayerControlsGeometry.PlayPauseButtonSize * frameScale)
-    val transportTouchSize = maxOf(44.dp, playVisualSize + 10.dp)
-    val activeTint = Color(0xFFB9D9F1)
+    val frameHeight = frameWidth / (sceneWidth.value / sceneHeight.value)
+    val frameScale = frameWidth.value / sceneWidth.value
+    val iconTouchSize = 48.dp
+    val iconVisualSize = 24.dp
+    val skipVisualSize = PlayerControlsGeometry.PlaylistSkipButtonSize
+    val playVisualSize = PlayerControlsGeometry.PlayPauseButtonSize
 
     Box(
       modifier =
         Modifier
           .width(frameWidth)
-          .aspectRatio(frameAspect)
+          .height(frameHeight)
           .clip(frameShape)
           .background(Brush.verticalGradient(listOf(Color(0xFF17212A), Color(0xFF090C10))))
           .border(BorderStroke(1.dp, Color.White.copy(alpha = 0.18f)), frameShape),
     ) {
-      Column(
-        modifier = Modifier.fillMaxSize().padding(horizontal = 9.dp * frameScale, vertical = 7.dp * frameScale),
-        verticalArrangement = Arrangement.spacedBy(3.dp * frameScale),
-      ) {
-        Row(
-          modifier = Modifier.fillMaxWidth(),
-          verticalAlignment = Alignment.CenterVertically,
-          horizontalArrangement = Arrangement.SpaceBetween,
-        ) {
-          Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(5.dp * frameScale),
+      Layout(
+        modifier = Modifier.fillMaxSize(),
+        content = {
+          Column(
+            modifier = Modifier.fillMaxSize().padding(horizontal = 20.dp, vertical = 16.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
           ) {
-            Text("‹", color = Color.White, fontSize = 20.sp * frameScale, lineHeight = 20.sp * frameScale)
-            Column(verticalArrangement = Arrangement.spacedBy(1.dp * frameScale)) {
-              Text(
-                text = "VIDEO PLAYER",
-                color = Color.White.copy(alpha = 0.68f),
-                fontSize = maxSp(6f, 7f * frameScale),
-                fontWeight = FontWeight.Bold,
-                letterSpacing = 0.7.sp * frameScale,
-                maxLines = 1,
+            Row(
+              modifier = Modifier.fillMaxWidth(),
+              verticalAlignment = Alignment.CenterVertically,
+              horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
+              Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+              ) {
+                Text("‹", color = Color.White, fontSize = 20.sp, lineHeight = 20.sp)
+                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                  Text(
+                    text = "VIDEO PLAYER",
+                    color = Color.White.copy(alpha = 0.68f),
+                    fontSize = 9.sp,
+                    fontWeight = FontWeight.Bold,
+                    letterSpacing = 0.7.sp,
+                    maxLines = 1,
+                  )
+                  Text(
+                    text = position.displayName.uppercase(),
+                    color = Color.White.copy(alpha = 0.88f),
+                    fontSize = 12.sp,
+                    maxLines = 1,
+                  )
+                }
+              }
+              if (!isPortraitPreview) {
+                PreviewIconStrip(
+                  buttons = topRightButtons,
+                  modifier = Modifier.widthIn(max = sceneWidth * 0.38f),
+                  reverseScrolling = true,
+                  highlighted = activeRegion == ControlRegion.TOP_RIGHT,
+                  editable = activeRegion == ControlRegion.TOP_RIGHT && onPreviewButtonTap != null,
+                  touchSize = iconTouchSize,
+                  visualSize = iconVisualSize,
+                  simulatedActiveButtons = simulatedActiveButtons,
+                  onButtonTap = { button, editable ->
+                    if (editable) {
+                      onPreviewButtonTap?.invoke(button)
+                    } else {
+                      simulatedActiveButtons = togglePreviewButton(simulatedActiveButtons, button)
+                    }
+                  },
+                  onReorder = onPreviewReorder,
+                )
+              }
+            }
+
+            Spacer(Modifier.weight(1f))
+
+            Row(
+              modifier = Modifier.fillMaxWidth(),
+              verticalAlignment = Alignment.CenterVertically,
+              horizontalArrangement = Arrangement.Center,
+            ) {
+              PreviewTransportButton(
+                imageVector = Icons.RoundedFilled.SkipPrevious,
+                visualSize = skipVisualSize,
+                touchSize = skipVisualSize,
+                description = "Previous in simulated preview",
+                onClick = { previewProgress.floatValue = (previewProgress.floatValue - 0.12f).coerceAtLeast(0f) },
               )
-              Text(
-                text = position.displayName.uppercase(),
-                color = Color.White.copy(alpha = 0.88f),
-                fontSize = maxSp(6f, 8f * frameScale),
-                maxLines = 1,
+              Spacer(Modifier.width(PlayerControlsGeometry.PlaylistButtonGap))
+              PreviewTransportButton(
+                imageVector = if (simulatedPlaying) Icons.RoundedFilled.Pause else Icons.RoundedFilled.PlayArrow,
+                visualSize = playVisualSize,
+                touchSize = playVisualSize,
+                description = "Toggle simulated playback",
+                emphasized = true,
+                onClick = { simulatedPlaying = !simulatedPlaying },
+              )
+              Spacer(Modifier.width(PlayerControlsGeometry.PlaylistButtonGap))
+              PreviewTransportButton(
+                imageVector = Icons.RoundedFilled.SkipNext,
+                visualSize = skipVisualSize,
+                touchSize = skipVisualSize,
+                description = "Next in simulated preview",
+                onClick = { previewProgress.floatValue = (previewProgress.floatValue + 0.12f).coerceAtMost(1f) },
+              )
+            }
+
+            Spacer(Modifier.weight(1f))
+
+            AnimatedVisibility(
+              visible = position == PlaybackControlsPosition.AboveSeekbar,
+              enter =
+                fadeIn(tween(150)) +
+                  expandVertically(animationSpec = tween(150), expandFrom = Alignment.Bottom) +
+                  slideInVertically(animationSpec = tween(150)) { it / 5 },
+              exit =
+                fadeOut(tween(120)) +
+                  shrinkVertically(animationSpec = tween(120), shrinkTowards = Alignment.Top) +
+                  slideOutVertically(animationSpec = tween(120)) { -it / 5 },
+            ) {
+              PreviewShortcutRows(
+                leftButtons = bottomLeftButtons,
+                rightButtons = bottomRightButtons,
+                portraitButtons = portraitBottomButtons,
+                activeRegion = activeRegion,
+                iconTouchSize = iconTouchSize,
+                iconVisualSize = iconVisualSize,
+                simulatedActiveButtons = simulatedActiveButtons,
+                onButtonTap = { button, editable ->
+                  if (editable) {
+                    onPreviewButtonTap?.invoke(button)
+                  } else {
+                    simulatedActiveButtons = togglePreviewButton(simulatedActiveButtons, button)
+                  }
+                },
+                onReorder = onPreviewReorder,
+              )
+            }
+
+            PreviewSeekbar(
+              progress = previewProgress,
+            )
+
+            AnimatedVisibility(
+              visible = position == PlaybackControlsPosition.BelowSeekbar,
+              enter =
+                fadeIn(tween(150)) +
+                  expandVertically(animationSpec = tween(150), expandFrom = Alignment.Top) +
+                  slideInVertically(animationSpec = tween(150)) { -it / 5 },
+              exit =
+                fadeOut(tween(120)) +
+                  shrinkVertically(animationSpec = tween(120), shrinkTowards = Alignment.Bottom) +
+                  slideOutVertically(animationSpec = tween(120)) { it / 5 },
+            ) {
+              PreviewShortcutRows(
+                leftButtons = bottomLeftButtons,
+                rightButtons = bottomRightButtons,
+                portraitButtons = portraitBottomButtons,
+                activeRegion = activeRegion,
+                iconTouchSize = iconTouchSize,
+                iconVisualSize = iconVisualSize,
+                simulatedActiveButtons = simulatedActiveButtons,
+                onButtonTap = { button, editable ->
+                  if (editable) {
+                    onPreviewButtonTap?.invoke(button)
+                  } else {
+                    simulatedActiveButtons = togglePreviewButton(simulatedActiveButtons, button)
+                  }
+                },
+                onReorder = onPreviewReorder,
               )
             }
           }
-          if (!isPortraitPreview) {
-            PreviewIconStrip(
-              buttons = topRightButtons,
-              modifier = Modifier.widthIn(max = frameWidth * 0.38f),
-              reverseScrolling = true,
-              highlighted = activeRegion == ControlRegion.TOP_RIGHT,
-              editable = activeRegion == ControlRegion.TOP_RIGHT && onPreviewButtonTap != null,
-              touchSize = iconTouchSize,
-              visualSize = iconVisualSize,
-              simulatedActiveButtons = simulatedActiveButtons,
-              onButtonTap = { button, editable ->
-                if (editable) {
-                  onPreviewButtonTap?.invoke(button)
-                } else {
-                  simulatedActiveButtons = togglePreviewButton(simulatedActiveButtons, button)
-                }
-              },
-              onReorder = onPreviewReorder,
-            )
+        },
+      ) { measurables, constraints ->
+        val scene =
+          measurables.single().measure(
+            Constraints.fixed(sceneWidth.roundToPx(), sceneHeight.roundToPx()),
+          )
+        layout(constraints.maxWidth, constraints.maxHeight) {
+          scene.placeWithLayer(0, 0) {
+            scaleX = frameScale
+            scaleY = frameScale
+            transformOrigin = TransformOrigin(0f, 0f)
           }
-        }
-
-        Spacer(Modifier.weight(1f))
-
-        Row(
-          modifier = Modifier.fillMaxWidth(),
-          verticalAlignment = Alignment.CenterVertically,
-          horizontalArrangement = Arrangement.Center,
-        ) {
-          PreviewTransportButton(
-            imageVector = Icons.RoundedFilled.SkipPrevious,
-            visualSize = skipVisualSize,
-            touchSize = transportTouchSize,
-            description = "Previous in simulated preview",
-            onClick = { previewProgress.floatValue = (previewProgress.floatValue - 0.12f).coerceAtLeast(0f) },
-          )
-          Spacer(Modifier.width(PlayerControlsGeometry.PlaylistButtonGap * frameScale))
-          PreviewTransportButton(
-            imageVector = if (simulatedPlaying) Icons.RoundedFilled.Pause else Icons.RoundedFilled.PlayArrow,
-            visualSize = playVisualSize,
-            touchSize = transportTouchSize,
-            description = "Toggle simulated playback",
-            emphasized = true,
-            onClick = { simulatedPlaying = !simulatedPlaying },
-          )
-          Spacer(Modifier.width(PlayerControlsGeometry.PlaylistButtonGap * frameScale))
-          PreviewTransportButton(
-            imageVector = Icons.RoundedFilled.SkipNext,
-            visualSize = skipVisualSize,
-            touchSize = transportTouchSize,
-            description = "Next in simulated preview",
-            onClick = { previewProgress.floatValue = (previewProgress.floatValue + 0.12f).coerceAtMost(1f) },
-          )
-        }
-
-        Spacer(Modifier.weight(1f))
-
-        AnimatedVisibility(
-          visible = position == PlaybackControlsPosition.AboveSeekbar,
-          enter =
-            fadeIn(tween(150)) +
-              expandVertically(animationSpec = tween(150), expandFrom = Alignment.Bottom) +
-              slideInVertically(animationSpec = tween(150)) { it / 5 },
-          exit =
-            fadeOut(tween(120)) +
-              shrinkVertically(animationSpec = tween(120), shrinkTowards = Alignment.Top) +
-              slideOutVertically(animationSpec = tween(120)) { -it / 5 },
-        ) {
-          PreviewShortcutRows(
-            leftButtons = bottomLeftButtons,
-            rightButtons = bottomRightButtons,
-            portraitButtons = portraitBottomButtons,
-            activeRegion = activeRegion,
-            iconTouchSize = iconTouchSize,
-            iconVisualSize = iconVisualSize,
-            simulatedActiveButtons = simulatedActiveButtons,
-            onButtonTap = { button, editable ->
-              if (editable) {
-                onPreviewButtonTap?.invoke(button)
-              } else {
-                simulatedActiveButtons = togglePreviewButton(simulatedActiveButtons, button)
-              }
-            },
-            onReorder = onPreviewReorder,
-          )
-        }
-
-        PreviewSeekbar(
-          progress = previewProgress,
-          frameScale = frameScale,
-        )
-
-        AnimatedVisibility(
-          visible = position == PlaybackControlsPosition.BelowSeekbar,
-          enter =
-            fadeIn(tween(150)) +
-              expandVertically(animationSpec = tween(150), expandFrom = Alignment.Top) +
-              slideInVertically(animationSpec = tween(150)) { -it / 5 },
-          exit =
-            fadeOut(tween(120)) +
-              shrinkVertically(animationSpec = tween(120), shrinkTowards = Alignment.Bottom) +
-              slideOutVertically(animationSpec = tween(120)) { it / 5 },
-        ) {
-          PreviewShortcutRows(
-            leftButtons = bottomLeftButtons,
-            rightButtons = bottomRightButtons,
-            portraitButtons = portraitBottomButtons,
-            activeRegion = activeRegion,
-            iconTouchSize = iconTouchSize,
-            iconVisualSize = iconVisualSize,
-            simulatedActiveButtons = simulatedActiveButtons,
-            onButtonTap = { button, editable ->
-              if (editable) {
-                onPreviewButtonTap?.invoke(button)
-              } else {
-                simulatedActiveButtons = togglePreviewButton(simulatedActiveButtons, button)
-              }
-            },
-            onReorder = onPreviewReorder,
-          )
         }
       }
     }
@@ -531,25 +547,24 @@ private fun PreviewTransportButton(
 @Composable
 private fun PreviewSeekbar(
   progress: androidx.compose.runtime.MutableFloatState,
-  frameScale: Float,
 ) {
-  val thumbSize = maxOf(6.dp, 8.dp * frameScale)
+  val thumbSize = 8.dp
   var widthPx by remember { mutableFloatStateOf(1f) }
   Row(
     verticalAlignment = Alignment.CenterVertically,
-    horizontalArrangement = Arrangement.spacedBy(5.dp * frameScale),
+    horizontalArrangement = Arrangement.spacedBy(5.dp),
   ) {
     Text(
       text = formatPreviewTime(progress.floatValue),
       color = Color.White.copy(alpha = 0.86f),
-      fontSize = maxSp(6f, 8f * frameScale),
+      fontSize = 11.sp,
       maxLines = 1,
     )
     BoxWithConstraints(
       modifier =
         Modifier
           .weight(1f)
-          .height(maxOf(18.dp, 24.dp * frameScale))
+          .height(24.dp)
           .onSizeChanged { widthPx = it.width.toFloat().coerceAtLeast(1f) }
           .semantics {
             contentDescription = "Simulated playback position"
@@ -579,7 +594,7 @@ private fun PreviewSeekbar(
         modifier =
           Modifier
             .fillMaxWidth()
-            .height(maxOf(2.dp, 3.dp * frameScale))
+            .height(3.dp)
             .clip(CircleShape)
             .background(Color.White.copy(alpha = 0.28f)),
       )
@@ -587,7 +602,7 @@ private fun PreviewSeekbar(
         modifier =
           Modifier
             .width(progressWidth.coerceAtLeast(0.dp))
-            .height(maxOf(2.dp, 3.dp * frameScale))
+            .height(3.dp)
             .clip(CircleShape)
             .background(Brush.horizontalGradient(listOf(Color(0xFFB8D9F2), Color(0xFFECF3FA)))),
       )
@@ -602,7 +617,7 @@ private fun PreviewSeekbar(
     Text(
       text = "1:58",
       color = Color.White.copy(alpha = 0.86f),
-      fontSize = maxSp(6f, 8f * frameScale),
+      fontSize = 11.sp,
       maxLines = 1,
     )
   }
@@ -644,8 +659,6 @@ private fun togglePreviewButton(
   button: PlayerButton,
 ): Set<PlayerButton> =
   if (button in active) active - button else active + button
-
-private fun maxSp(minimumSp: Float, candidateSp: Float) = maxOf(minimumSp, candidateSp).sp
 
 private fun formatPreviewTime(progress: Float): String {
   val seconds = (progress.coerceIn(0f, 1f) * 118f).roundToInt()
