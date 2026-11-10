@@ -656,7 +656,8 @@ half4 main(float2 p) {
     assertTrue(navBody.contains("hoveredTab = targetIndex.toInt().coerceIn(0, lastIndex)"))
     assertTrue(navBody.contains("onRelease = { target, _ -> latestVisibleTabs.getOrNull(target)?.let(latestOnTabSelected) }"))
     assertTrue(!navBody.contains("retainedFinalDrag"))
-    assertEquals("3165f3985d71cdc72ec34a3be93b716289cadf57dcf707c7f56f8dd377819845", sha(navBody))
+    // Owner-requested removal of the Stream tab changes this navigation-only fingerprint.
+    assertEquals("b162c4662e64627ba2f4a7323c4fd614b1ee62a85316d93a47cf09118b37255b", sha(navBody))
     val scene = read("app/src/main/java/app/infinity/mpvz/ui/theme/BrowserGlassScene.kt")
     val lensStart = scene.indexOf("internal const val BROWSER_LENS")
     val q = scene.indexOf("\"\"\"", lensStart)
