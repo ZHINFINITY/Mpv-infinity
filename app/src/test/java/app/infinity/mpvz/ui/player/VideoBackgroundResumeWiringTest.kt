@@ -85,14 +85,9 @@ class VideoBackgroundResumeWiringTest {
       "restoreForegroundResumePositionIfNeeded()",
     )
     // MPV defers the rebuild until Android hands back a Surface (ColorOS black frame).
-    val surfaceReadyStart = activity.indexOf("player.onSurfaceReady = {")
-    assertTrue("missing player.onSurfaceReady callback", surfaceReadyStart >= 0)
-    val surfaceReadyEnd = activity.indexOf(
-      "\n    }\n\n    // NOW initialize MPV",
-      surfaceReadyStart,
-    )
-    assertTrue("unterminated player.onSurfaceReady callback", surfaceReadyEnd > surfaceReadyStart)
-    val surfaceReady = activity.substring(surfaceReadyStart, surfaceReadyEnd)
+    assertTrue(body("private fun setupMPV()").contains("configureMpvSurfaceCallback()"))
+    assertTrue(body("private fun startMpvCorePreparation()").contains("configureMpvSurfaceCallback()"))
+    val surfaceReady = body("private fun configureMpvSurfaceCallback()")
     assertInOrder(
       surfaceReady,
       "player.onSurfaceReady = {",
