@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Guard Android MPVFlow's yt-dlp subprocess fallback and interpolation path."""
+"""Guard Android MPV subprocess fallback and FongMi MEMC runtime wiring."""
 from __future__ import annotations
 
 import importlib.util
@@ -43,16 +43,17 @@ class AndroidSubprocessFallbackTest(unittest.TestCase):
         with self.assertRaises(SystemExit):
             prepare.prefer_fork_for_android_mpv_subprocesses(CLONE_LINE + "\n" + CLONE_LINE)
 
-    def test_flow_interpolation_code_and_target_fps_option_remain_registered(self):
+    def test_fongmi_interpolation_code_and_target_fps_option_remain_registered(self):
         prepare_source = (ROOT / "scripts/prepare-mpvflow.py").read_text(encoding="utf-8")
-        vo_patch = (ROOT / "app/src/main/cpp/mpvflow/mpvflow-vo-gpu-next.patch").read_text(encoding="utf-8")
+        vo_patch = (ROOT / "app/src/main/cpp/mpvflow/fongmi/mpv-fongmi-android.patch").read_text(encoding="utf-8")
         mpv_view = (ROOT / "app/src/main/java/app/infinity/mpvz/ui/player/MPVView.kt").read_text(encoding="utf-8")
-        self.assertIn('gpu_source = "video/out/mpvflow_gpu.c"', prepare_source)
-        self.assertIn('meson_marker = "# MPVFLOW_ANDROID_GPU"', prepare_source)
-        self.assertIn("MPVFLOW_GPU_INTEGRATION", vo_patch)
-        self.assertIn("flow_render_frame", vo_patch)
-        self.assertIn('"mpvflow-target-fps", OPT_INT(mpvflow_target_fps)', vo_patch)
-        self.assertIn('PlaybackSession.setOptionString("mpvflow-target-fps", mpvFlowTargetFps.toString())', mpv_view)
+        self.assertIn('FONGMI_PATCH = VENDOR / "fongmi/mpv-fongmi-android.patch"', prepare_source)
+        self.assertIn("'video/out/gpu_next/motion.c'", vo_patch)
+        self.assertIn('"motion-interpolation", OPT_INT(motion_fps)', vo_patch)
+        self.assertIn("capture_motion_frame", vo_patch)
+        self.assertIn("MPVFLOW_AIMAGE_VULKAN_MAPPER", vo_patch)
+        self.assertNotIn("mpvflow_gpu.c", vo_patch)
+        self.assertIn('PlaybackSession.setOptionString("motion-interpolation", targetFps.toString())', mpv_view)
 
     def test_packaged_runtime_verifier_rejects_shared_spawn_but_accepts_fork_profile(self):
         path = Path("unused-libmpv.so")

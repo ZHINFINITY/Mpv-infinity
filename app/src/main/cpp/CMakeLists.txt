@@ -180,6 +180,7 @@ if(MPVFLOW_ENABLE_VULKAN_BACKEND)
 
     add_library(media3flow_vulkan SHARED
         media3flow_vulkan_jni.cpp
+        mpvflow/fongmi/motion.c
         mpvflow/mpvflow_gpu.c
         mpvflow/mpvflow_capture_io.c
         mpvflow/mpvflow_vulkan_qcom.c
@@ -199,7 +200,8 @@ if(MPVFLOW_ENABLE_VULKAN_BACKEND)
     endif()
     target_include_directories(media3flow_vulkan PRIVATE
         "${CMAKE_CURRENT_SOURCE_DIR}/third_party/libplacebo/include"
-        "${CMAKE_CURRENT_SOURCE_DIR}/mpvflow")
+        "${CMAKE_CURRENT_SOURCE_DIR}/mpvflow"
+        "${CMAKE_CURRENT_SOURCE_DIR}/mpvflow/fongmi")
     target_link_libraries(media3flow_vulkan PRIVATE
         mpvflow_placebo_api_from_aar
         android
