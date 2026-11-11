@@ -31,8 +31,9 @@ source = "FongMi synthesis prefix\n" + PATCHER.ORIGINAL_TAPER + "\nFongMi synthe
 patched, changed = PATCHER.transform_source(source)
 assert changed
 assert PATCHER.MARKER in patched
-assert "smoothstep(0.03, 0.22," in patched
+assert "smoothstep(0.03, 0.30," in patched
 assert "smoothstep(0.03, 0.15," not in patched
+assert "smoothstep(0.03, 0.22," not in patched
 assert "FongMi synthesis prefix\n" in patched and "FongMi synthesis suffix\n" in patched
 again, changed_again = PATCHER.transform_source(patched)
 assert not changed_again and again == patched
@@ -49,21 +50,22 @@ for invalid in (
     else:
         raise AssertionError("the patcher must reject unknown or ambiguous source")
 
-# Synthetic high-trust texture-conflict ramp: widening the fade from .15 to .22
+# Synthetic high-trust texture-conflict ramp: widening the fade from .22 to .30
 # lowers its largest per-pixel trust step while retaining full trust at low error
 # and a complete fallback by the new upper edge. This is a shader-policy proxy,
 # not a claim of device-side visual improvement.
 errors = [i / 255.0 for i in range(256)]
-old = [trust_weight(0.15, value) for value in errors]
-new = [trust_weight(0.22, value) for value in errors]
+old = [trust_weight(0.22, value) for value in errors]
+new = [trust_weight(0.30, value) for value in errors]
 assert all(a >= b for a, b in zip(old, old[1:]))
 assert all(a >= b for a, b in zip(new, new[1:]))
 old_step = max(abs(a - b) for a, b in zip(old, old[1:]))
 new_step = max(abs(a - b) for a, b in zip(new, new[1:]))
 assert new_step < old_step, (old_step, new_step)
-assert math.isclose(trust_weight(0.22, 0.03), 1.0, abs_tol=1e-9)
-assert trust_weight(0.22, 0.22) == 0.0
-assert trust_weight(0.22, 0.15) > trust_weight(0.15, 0.15)
+assert math.isclose(trust_weight(0.30, 0.03), 1.0, abs_tol=1e-9)
+assert trust_weight(0.30, 0.30) == 0.0
+assert trust_weight(0.30, 0.15) > trust_weight(0.22, 0.15)
+assert trust_weight(0.30, 0.22) > trust_weight(0.22, 0.22)
 if args.source:
     active_source = args.source.read_text(encoding="utf-8")
     assert active_source.count(PATCHER.MARKER) == 1, "the active pinned FongMi shader must contain the patch marker once"

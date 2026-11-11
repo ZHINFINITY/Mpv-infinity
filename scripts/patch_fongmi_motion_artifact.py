@@ -10,14 +10,14 @@ import argparse
 from pathlib import Path
 
 SOURCE_RELATIVE = Path("video/out/gpu_next/motion.c")
-MARKER = "MPVFLOW_ARTIFACT_TRUST_TAPER_V1"
+MARKER = "MPVFLOW_ARTIFACT_TRUST_TAPER_V2"
 ORIGINAL_TAPER = (
     "            trust *= 1.0 - smoothstep(0.03, 0.15,\n"
     "                                      color_error);"
 )
 PATCHED_TAPER = (
     "            // " + MARKER + ": soften color-conflict fallback only when motion trust remains\n"
-    "            trust *= 1.0 - smoothstep(0.03, 0.22,\n"
+    "            trust *= 1.0 - smoothstep(0.03, 0.30,\n"
     "                                      color_error);"
 )
 

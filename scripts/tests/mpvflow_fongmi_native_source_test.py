@@ -87,8 +87,8 @@ assert 'git -C "$MPV_BUILDER_DIR" rev-parse HEAD' in BUILD
 motion_patch_call = 'python3 "$MPVFLOW_ROOT/scripts/patch_fongmi_motion_artifact.py" deps/mpv\\n'
 assert motion_patch_call in BUILD
 assert BUILD.index("motion_artifact_patch + flow_prepare") > BUILD.index("motion_artifact_patch = ")
-assert "MPVFLOW_ARTIFACT_TRUST_TAPER_V1" in MOTION_PATCHER
-assert "smoothstep(0.03, 0.22," in MOTION_PATCHER
+assert "MPVFLOW_ARTIFACT_TRUST_TAPER_V2" in MOTION_PATCHER
+assert "smoothstep(0.03, 0.30," in MOTION_PATCHER
 assert "-Dgpl=false" in BUILD and "-Ddvdnav=disabled" in BUILD
 assert "-Ddefault_library=static" in BUILD
 assert 'PlaybackSession.setOptionString("motion-interpolation", targetFps.toString())' in MPV_VIEW

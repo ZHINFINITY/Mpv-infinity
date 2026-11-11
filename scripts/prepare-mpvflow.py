@@ -927,7 +927,7 @@ def main() -> None:
         or "mp_motion_render" not in vo
         or "mp_motion_prepare_view" not in motion
         or "mp_motion_render_views" not in motion
-        or "MPVFLOW_ARTIFACT_TRUST_TAPER_V1" not in motion
+        or "MPVFLOW_ARTIFACT_TRUST_TAPER_V2" not in motion
         or "video/out/gpu_next/motion.c" not in meson
         or "libmpv_motion" not in meson
         or '{"motion-interpolation-info", mp_property_motion_info}' not in command
