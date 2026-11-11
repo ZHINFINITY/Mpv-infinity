@@ -563,10 +563,12 @@ static const char synthesis_header[] = GLSL(
 
 static const char warp_body[] = GLSL(
     vec2 uv = (vec2(gl_GlobalInvocationID.xy) + 0.5) / map_size;
+    vec2 initial_motion = textureLod(forward, uv, 0.0).xy;
     vec2 source = uv;
     for (int i = 0; i < 4; i++)
         source = uv - weight * textureLod(forward, source, 0.0).xy / map_size;
     vec4 f = textureLod(forward, source, 0.0);
+    vec2 motion_vector = f.xy;
     vec2 displacement = -weight * f.xy;
     f.xy /= map_size;
     vec4 reverse = textureLod(backward, source + f.xy, 0.0);
@@ -576,6 +578,12 @@ static const char warp_body[] = GLSL(
     float trust = quality(f);
     float reliable = 1.0 - smoothstep(0.001, 0.01, max(f.z, reverse.z));
     reliable *= 1.0 - smoothstep(0.1, 0.5, cycle);
+    // MPVFLOW_WARP_TRAJECTORY_COHERENCE_V1: gate uncertain recovery on path stability.
+    float trajectory_error = abs(weight) * length(motion_vector - initial_motion);
+    float trajectory_quality = 1.0 - smoothstep(0.125, 0.5, trajectory_error);
+    if (isnan(trajectory_quality) || isinf(trajectory_quality))
+        trajectory_quality = 0.0;
+    reliable *= trajectory_quality;
     float geometry = (1.0 - smoothstep(0.5, 1.5, cycle)) *
                      (1.0 - smoothstep(0.25, 1.0, residual));
     geometry *= min(support(source, map_size), support(source + f.xy, map_size));

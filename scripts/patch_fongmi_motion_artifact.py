@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """Apply app-owned artifact guards to the pinned FongMi motion shader.
 
-The patch is version-guarded and limited to the synthesis and reconstruction
-shader bodies in the pinned upstream ``video/out/gpu_next/motion.c``. It keeps
-the existing synthesis guards and adds a bounded local motion-softening term to
-the source-frame fallback; it does not change motion search or vector generation.
+The patch is version-guarded and limited to the synthesis, reconstruction, and
+inverse-warp shader bodies in pinned upstream ``video/out/gpu_next/motion.c``.
+It keeps bilinear field sampling and motion vectors, and gates uncertain warp
+recovery on inverse-path coherence without changing motion search.
 """
 from __future__ import annotations
 
@@ -18,6 +18,7 @@ PREVIOUS_MARKER = "MPVFLOW_ARTIFACT_GUARDS_V3"
 LEGACY_MARKER = "MPVFLOW_ARTIFACT_TRUST_TAPER_V2"
 LOCAL_SOFTENING_MARKER = "MPVFLOW_LOCAL_MOTION_SOFTENING_V1"
 RECONSTRUCTION_MARKER = "MPVFLOW_RECONSTRUCTION_POSITIVE_EVIDENCE_V1"
+WARP_TRAJECTORY_MARKER = "MPVFLOW_WARP_TRAJECTORY_COHERENCE_V1"
 
 RECONSTRUCTION_PATTERN = re.compile(
     r"(?m)^(?P<indent> *)" + re.escape(
@@ -27,6 +28,23 @@ RECONSTRUCTION_PATTERN = re.compile(
 RECONSTRUCTION_BLOCK = """// MPVFLOW_RECONSTRUCTION_POSITIVE_EVIDENCE_V1: only propagate measured motion.
 if (!(evidence > 0.0 &&
       (evidence > best || (evidence == best && distance < nearest))))"""
+
+WARP_START_PATTERN = re.compile(
+    r"(?m)^(?P<indent>[ \t]*)vec2 uv = \(vec2\(gl_GlobalInvocationID\.xy\) \+ 0\.5\) / map_size;\n"
+    r"(?P=indent)vec2 source = uv;$"
+)
+WARP_VECTOR_PATTERN = re.compile(
+    r"(?m)^(?P<indent>[ \t]*)vec2 displacement = -weight \* f\.xy;$"
+)
+WARP_RELIABILITY_PATTERN = re.compile(
+    r"(?m)^(?P<indent>[ \t]*)reliable \*= 1\.0 - smoothstep\(0\.1, 0\.5, cycle\);$"
+)
+WARP_TRAJECTORY_BLOCK = """// MPVFLOW_WARP_TRAJECTORY_COHERENCE_V1: gate uncertain recovery on path stability.
+float trajectory_error = abs(weight) * length(motion_vector - initial_motion);
+float trajectory_quality = 1.0 - smoothstep(0.125, 0.5, trajectory_error);
+if (isnan(trajectory_quality) || isinf(trajectory_quality))
+    trajectory_quality = 0.0;
+reliable *= trajectory_quality;"""
 
 PIXEL_HEADER_PATTERN = re.compile(
     r"(?m)^(?P<indent>[ \t]*)vec4 synthesize_pixel\(sampler2D source0, sampler2D source1, sampler2D warp0,"
@@ -251,8 +269,23 @@ def _has_reconstruction_guard(source: str) -> bool:
     )
 
 
+def _has_warp_trajectory_guard(source: str) -> bool:
+    return (
+        source.count(WARP_TRAJECTORY_MARKER) == 1
+        and source.count("vec2 initial_motion = textureLod(forward, uv, 0.0).xy;") == 1
+        and source.count("vec2 motion_vector = f.xy;") == 1
+        and source.count("float trajectory_error = abs(weight) * length(motion_vector - initial_motion);") == 1
+        and source.count("1.0 - smoothstep(0.125, 0.5, trajectory_error)") == 1
+        and source.count("reliable *= trajectory_quality;") == 1
+    )
+
+
 def _is_patched(source: str) -> bool:
-    return _is_synthesis_patched(source) and _has_reconstruction_guard(source)
+    return (
+        _is_synthesis_patched(source)
+        and _has_reconstruction_guard(source)
+        and _has_warp_trajectory_guard(source)
+    )
 
 
 def _patch_reconstruction(source: str) -> str:
@@ -268,6 +301,38 @@ def _patch_reconstruction(source: str) -> str:
     )
     if not _has_reconstruction_guard(source):
         raise ValueError("FongMi reconstruction evidence patch failed its postconditions")
+    return source
+
+
+def _patch_warp_trajectory(source: str) -> str:
+    if WARP_TRAJECTORY_MARKER in source:
+        if not _has_warp_trajectory_guard(source):
+            raise ValueError("FongMi warp trajectory marker/source mismatch")
+        return source
+    source = _replace_one(
+        WARP_START_PATTERN,
+        source,
+        lambda match: (
+            match.group("indent") + "vec2 uv = (vec2(gl_GlobalInvocationID.xy) + 0.5) / map_size;\n"
+            + match.group("indent") + "vec2 initial_motion = textureLod(forward, uv, 0.0).xy;\n"
+            + match.group("indent") + "vec2 source = uv;"
+        ),
+        "inverse-warp start",
+    )
+    source = _replace_one(
+        WARP_VECTOR_PATTERN,
+        source,
+        lambda match: match.group("indent") + "vec2 motion_vector = f.xy;\n" + match.group(0),
+        "inverse-warp solved vector",
+    )
+    source = _replace_one(
+        WARP_RELIABILITY_PATTERN,
+        source,
+        lambda match: match.group(0) + "\n" + _indent_block(WARP_TRAJECTORY_BLOCK, match.group("indent")),
+        "inverse-warp trajectory gate",
+    )
+    if not _has_warp_trajectory_guard(source):
+        raise ValueError("FongMi warp trajectory patch failed its postconditions")
     return source
 
 
@@ -305,17 +370,21 @@ def _patch_v3_synthesis(source: str) -> str:
 
 
 def transform_source(source: str) -> tuple[str, bool]:
-    """Apply the version-guarded synthesis guards and local softening."""
+    """Apply version-guarded synthesis, evidence, and inverse-path safeguards."""
     original = source
     if MARKER in source:
         if not _is_synthesis_patched(source):
             raise ValueError("FongMi motion artifact V4 marker/source mismatch")
         patched = _patch_reconstruction(source)
+        patched = _patch_warp_trajectory(patched)
+        if not _is_patched(patched):
+            raise ValueError("FongMi motion artifact postconditions failed")
         return patched, patched != original
 
     if PREVIOUS_MARKER in source:
         source = _patch_v3_synthesis(source)
         source = _patch_reconstruction(source)
+        source = _patch_warp_trajectory(source)
         if not _is_patched(source):
             raise ValueError("FongMi motion artifact V3-to-V4 patch failed its postconditions")
         return source, source != original
@@ -358,6 +427,7 @@ def transform_source(source: str) -> tuple[str, bool]:
     )
     source = _replace_output(source, "synthesis output")
     source = _patch_reconstruction(source)
+    source = _patch_warp_trajectory(source)
     if not _is_patched(source):
         raise ValueError("FongMi motion artifact V4 patch failed its postconditions")
     return source, True
@@ -369,7 +439,7 @@ def main() -> None:
     args = parser.parse_args()
     source_path = args.mpv_dir / SOURCE_RELATIVE
     if not source_path.is_file():
-        raise SystemExit(f"Pinned FongMi synthesis source is missing: {source_path}")
+        raise SystemExit(f"Pinned FongMi motion source is missing: {source_path}")
     source = source_path.read_text(encoding="utf-8")
     try:
         patched, changed = transform_source(source)
@@ -377,9 +447,9 @@ def main() -> None:
         raise SystemExit(str(error)) from error
     if changed:
         source_path.write_text(patched, encoding="utf-8")
-        print("Applied MPVFlow FongMi V4 artifact guards and bounded local motion softening")
+        print("Applied MPVFlow FongMi synthesis guards and inverse-path coherence gate")
     else:
-        print("MPVFlow FongMi V4 artifact guards and local motion softening are already applied")
+        print("MPVFlow FongMi synthesis guards and inverse-path coherence gate are already applied")
 
 
 if __name__ == "__main__":

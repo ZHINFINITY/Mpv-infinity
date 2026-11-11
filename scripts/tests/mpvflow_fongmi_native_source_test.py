@@ -93,8 +93,10 @@ motion_patch_call = 'python3 "$MPVFLOW_ROOT/scripts/patch_fongmi_motion_artifact
 assert motion_patch_call in BUILD
 assert BUILD.index("motion_artifact_patch + flow_prepare") > BUILD.index("motion_artifact_patch = ")
 assert "MPVFLOW_ARTIFACT_GUARDS_V4" in PREPARE
+assert "MPVFLOW_WARP_TRAJECTORY_COHERENCE_V1" in PREPARE
 assert "MPVFLOW_ARTIFACT_TRUST_TAPER_V2" not in PREPARE
 assert "MPVFLOW_ARTIFACT_GUARDS_V4" in MOTION_PATCHER
+assert "MPVFLOW_WARP_TRAJECTORY_COHERENCE_V1" in MOTION_PATCHER
 assert "MPVFLOW_LOCAL_MOTION_SOFTENING_V1" in MOTION_PATCHER
 assert "smoothstep(0.03, 0.30," in MOTION_PATCHER
 assert "neighborhood_quality(sampler2D field, vec2 uv, vec2 center)" in MOTION_PATCHER
@@ -113,8 +115,12 @@ assert "return mix(source_blend, mix(warped0, warped1, blend), clamp(trust, 0.0,
 assert "MPVFLOW_RECONSTRUCTION_POSITIVE_EVIDENCE_V1" in MOTION_PATCHER
 assert "evidence > 0.0 &&" in MOTION_PATCHER
 assert "MPVFLOW_ARTIFACT_GUARDS_V4" in MOTION_SNAPSHOT
+assert "MPVFLOW_WARP_TRAJECTORY_COHERENCE_V1" in MOTION_SNAPSHOT
 assert "MPVFLOW_LOCAL_MOTION_SOFTENING_V1" in MOTION_SNAPSHOT
 assert "local_motion_softness" in MOTION_SNAPSHOT
+assert "float trajectory_error = abs(weight) * length(motion_vector - initial_motion);" in MOTION_SNAPSHOT
+assert "reliable *= trajectory_quality;" in MOTION_SNAPSHOT
+assert "source = uv - weight * textureLod(forward, source, 0.0).xy / map_size;" in MOTION_SNAPSHOT
 assert "MPVFLOW_RECONSTRUCTION_POSITIVE_EVIDENCE_V1" in MOTION_SNAPSHOT
 assert "if (!(evidence > 0.0 &&" in MOTION_SNAPSHOT
 assert "if (!(evidence > best || (evidence == best && distance < nearest)))" not in MOTION_SNAPSHOT

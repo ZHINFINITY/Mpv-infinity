@@ -45,10 +45,29 @@ LEGACY_TRUST = BASE_TRUST.replace(
 BASE_RECONSTRUCTION = """    if (!(evidence > best || (evidence == best && distance < nearest)))
         continue;"""
 
+BASE_WARP = """static const char warp_body[] = GLSL(
+    vec2 uv = (vec2(gl_GlobalInvocationID.xy) + 0.5) / map_size;
+    vec2 source = uv;
+    for (int i = 0; i < 4; i++)
+        source = uv - weight * textureLod(forward, source, 0.0).xy / map_size;
+    vec4 f = textureLod(forward, source, 0.0);
+    vec2 displacement = -weight * f.xy;
+    f.xy /= map_size;
+    vec4 reverse = textureLod(backward, source + f.xy, 0.0);
+    reverse.xy /= map_size;
+    float cycle = length((f.xy + reverse.xy) * map_size);
+    float reliable = 1.0 - smoothstep(0.001, 0.01, max(f.z, reverse.z));
+    reliable *= 1.0 - smoothstep(0.1, 0.5, cycle);
+    float trust = quality(f);
+    float geometry = 1.0;
+    color = vec4(displacement, trust * geometry, reliable * geometry);
+);"""
+
 
 def fixture(trust: str = BASE_TRUST, output: str = BASE_OUTPUT, output_indent: str = "    ") -> str:
     return (
-        "FongMi reconstruction prefix\n"
+        BASE_WARP
+        + "\nFongMi reconstruction prefix\n"
         "static const char reconstruction_body[] = GLSL(\n"
         + BASE_RECONSTRUCTION
         + "\n);\n"
@@ -109,12 +128,28 @@ def local_motion_softness(
     )
 
 
+def trajectory_weight(
+    initial: tuple[float, float], solved: tuple[float, float], blend: float
+) -> float:
+    error = abs(blend) * math.dist(initial, solved)
+    return 1.0 - smoothstep(0.125, 0.5, error)
+
+
 original = fixture()
 patched, changed = PATCHER.transform_source(original)
 assert changed
 assert PATCHER.MARKER in patched
 assert PATCHER.LOCAL_SOFTENING_MARKER in patched
 assert PATCHER.RECONSTRUCTION_MARKER in patched
+assert PATCHER.WARP_TRAJECTORY_MARKER in patched
+assert "vec2 initial_motion = textureLod(forward, uv, 0.0).xy;" in patched
+assert "vec2 motion_vector = f.xy;" in patched
+assert "float trajectory_error = abs(weight) * length(motion_vector - initial_motion);" in patched
+assert "reliable *= trajectory_quality;" in patched
+assert "trust *= trajectory_quality;" not in patched, "path coherence must gate only uncertain recovery"
+assert "vec2 displacement = -weight * f.xy;" in patched
+assert "color = vec4(displacement, trust * geometry, reliable * geometry);" in patched
+assert "source = uv - weight * textureLod(forward, source, 0.0).xy / map_size;" in patched
 assert "if (!(evidence > 0.0 &&" in patched
 assert "if (!(evidence > best || (evidence == best && distance < nearest)))" not in patched
 assert "neighborhood_quality(sampler2D field, vec2 uv, vec2 center)" in patched
@@ -206,6 +241,7 @@ for invalid in (
     fixture(LEGACY_TRUST.replace("color-conflict fallback only when motion trust remains", "unexpected")),
     patched.replace("float chroma_error =", "float chroma_error_missing ="),
     patched.replace(PATCHER.LOCAL_SOFTENING_MARKER, "unexpected-local-softening-marker"),
+    patched.replace("reliable *= trajectory_quality;", "reliable *= 0.0;"),
 ):
     try:
         PATCHER.transform_source(invalid)
@@ -247,16 +283,37 @@ for quality in (i / 100.0 for i in range(101)):
         weight = local_motion_softness(0.0, 1.0, 1.0, quality, motion)
         assert 0.0 <= weight <= 0.24
 
+# Stable translation retains uncertain-motion recovery; a path crossing a
+# motion boundary loses only that recovery certificate.
+assert trajectory_weight((8.0, -2.0), (8.0, -2.0), 0.75) == 1.0
+assert trajectory_weight((8.0, -2.0), (8.1, -2.0), 1.0) == 1.0
+assert trajectory_weight((0.0, 0.0), (0.125, 0.0), 1.0) == 1.0
+assert trajectory_weight((0.0, 0.0), (0.5, 0.0), 1.0) == 0.0
+assert trajectory_weight((0.0, 0.0), (0.5, 0.0), -1.0) == 0.0
+assert math.isclose(trajectory_weight((0.0, 0.0), (0.3125, 0.0), 1.0), 0.5, abs_tol=1e-9)
+assert 0.0 < trajectory_weight((8.0, 0.0), (8.3, 0.0), 1.0) < 1.0
+assert trajectory_weight((12.0, 0.0), (-4.0, 0.0), 0.5) == 0.0
+base_trusted_support = 0.8 * 0.9
+base_uncertain_support = 0.7 * 0.9
+gated_uncertain_support = base_uncertain_support * trajectory_weight((12.0, 0.0), (-4.0, 0.0), 0.5)
+assert math.isclose(base_trusted_support, 0.72, abs_tol=1e-12)
+assert gated_uncertain_support == 0.0
+trajectory_values = [
+    trajectory_weight((0.0, 0.0), (delta, 0.0), 1.0)
+    for delta in (i / 100.0 for i in range(101))
+]
+assert all(a >= b for a, b in zip(trajectory_values, trajectory_values[1:]))
+
 retained_source = (ROOT / "app/src/main/cpp/mpvflow/fongmi/motion.c").read_text(encoding="utf-8")
 retained_result, retained_changed = PATCHER.transform_source(retained_source)
-assert not retained_changed and retained_result == retained_source, "retained snapshot should mirror active V4 and reconstruction safeguards"
+assert not retained_changed and retained_result == retained_source, "retained snapshot should mirror active synthesis, reconstruction, and warp safeguards"
 if args.source:
     active_source = args.source.read_text(encoding="utf-8")
     active_result, active_changed = PATCHER.transform_source(active_source)
-    assert not active_changed and active_result == active_source, "active pinned shader must contain the verified V4 patch exactly once"
-    print("Active pinned FongMi synthesis and reconstruction sources contain the verified V4 softening policy")
+    assert not active_changed and active_result == active_source, "active pinned shader must contain the verified synthesis, reconstruction, and warp patches exactly once"
+    print("Active pinned FongMi synthesis, reconstruction, and inverse-warp sources contain the verified policy")
 print(
     "FongMi artifact policy passed: max taper trust step "
     f"{old_step:.4f} -> {new_step:.4f}; local directional softness is capped at 0.24 "
-    "and gated by motion, bidirectional support, boundary and neighborhood coherence"
+    "and gated by motion, bidirectional support, boundary, neighborhood, and inverse-path coherence"
 )
