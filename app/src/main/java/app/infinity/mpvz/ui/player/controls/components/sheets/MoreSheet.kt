@@ -45,7 +45,6 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TimeInput
 import androidx.compose.material3.rememberTimePickerState
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState as collectStateFlow
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -57,7 +56,6 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
-import app.infinity.mpvz.BuildConfig
 import app.infinity.mpvz.R
 import app.infinity.mpvz.domain.anime4k.Anime4KManager
 import app.infinity.mpvz.preferences.AdvancedPreferences
@@ -66,9 +64,6 @@ import app.infinity.mpvz.preferences.preference.collectAsState
 import app.infinity.mpvz.presentation.components.PlayerSheet
 import app.infinity.mpvz.ui.icons.Icon
 import app.infinity.mpvz.ui.icons.Icons
-import app.infinity.mpvz.ui.player.FlowDiagnosticsCapturePhase
-import app.infinity.mpvz.ui.player.PlayerActivity
-import app.infinity.mpvz.ui.player.canShowFlowDiagnosticsCapture
 import app.infinity.mpvz.ui.player.anime4k.Anime4KUiState
 import app.infinity.mpvz.ui.theme.AppShapeScale
 import app.infinity.mpvz.ui.theme.glassInsetSurface
@@ -278,81 +273,6 @@ fun MoreSheet(
             )
           } else {
             Text("Output: MPV renderer", style = MaterialTheme.typography.bodySmall)
-          }
-        }
-      }
-      val playerActivity = androidx.activity.compose.LocalActivity.current as? PlayerActivity
-      val flowCaptureAvailable = playerActivity != null && canShowFlowDiagnosticsCapture(
-        debugBuild = BuildConfig.DEBUG,
-        engine = activeEngine,
-        mpvFlowAvailable = BuildConfig.MPV_HAS_MPVFLOW,
-      )
-      if (flowCaptureAvailable) {
-        val captureState by playerActivity.flowDiagnosticsCaptureState.collectStateFlow()
-        Surface(
-          modifier = Modifier.fillMaxWidth().glassInsetSurface(
-            enabled = liquidGlassSurfaces,
-            shape = MaterialTheme.shapes.medium,
-            fillAlpha = 0.30f,
-            borderAlpha = 0.18f,
-          ),
-          color = androidx.compose.ui.graphics.Color.Transparent,
-          tonalElevation = 0.dp,
-          shape = MaterialTheme.shapes.medium,
-        ) {
-          Column(
-            modifier = Modifier.fillMaxWidth().padding(MaterialTheme.spacing.small),
-            verticalArrangement = Arrangement.spacedBy(MaterialTheme.spacing.extraSmall),
-          ) {
-            Text(
-              text = stringResource(R.string.mpvflow_debug_capture_title),
-              style = MaterialTheme.typography.titleSmall,
-            )
-            Text(
-              text = stringResource(R.string.mpvflow_debug_capture_summary),
-              style = MaterialTheme.typography.bodySmall,
-              color = MaterialTheme.colorScheme.outline,
-            )
-            Row(
-              modifier = Modifier.fillMaxWidth(),
-              horizontalArrangement = Arrangement.SpaceBetween,
-              verticalAlignment = Alignment.CenterVertically,
-            ) {
-              Button(
-                onClick = {
-                  if (captureState.active) playerActivity.stopFlowDiagnosticsCapture()
-                  else playerActivity.startFlowDiagnosticsCapture(pairedOutput = true)
-                },
-                enabled = captureState.phase != FlowDiagnosticsCapturePhase.STOPPING,
-              ) {
-                Text(
-                  stringResource(
-                    if (captureState.active) R.string.mpvflow_debug_capture_stop
-                    else R.string.mpvflow_debug_capture_start,
-                  ),
-                )
-              }
-              if (captureState.pairs > 0 || captureState.phase == FlowDiagnosticsCapturePhase.COMPLETE ||
-                captureState.phase == FlowDiagnosticsCapturePhase.PARTIAL ||
-                captureState.phase == FlowDiagnosticsCapturePhase.FAILED
-              ) {
-                Text(
-                  text = stringResource(
-                    R.string.mpvflow_debug_capture_progress,
-                    captureState.pairs,
-                    captureState.synthesizedOutputs,
-                  ),
-                  style = MaterialTheme.typography.labelSmall,
-                  color = MaterialTheme.colorScheme.outline,
-                )
-              }
-            }
-            captureState.message?.let { message ->
-              Text(message, style = MaterialTheme.typography.bodySmall)
-            }
-            captureState.savedLocation?.let { location ->
-              Text(location, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
-            }
           }
         }
       }

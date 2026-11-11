@@ -70,16 +70,6 @@ internal fun canStartFlowDiagnosticsCapture(
   currentSessionId: String?,
 ): Boolean = !state.active && currentSessionId == null
 
-internal fun canShowFlowDiagnosticsCapture(
-  debugBuild: Boolean,
-  engine: PlaybackEngineMode,
-  mpvFlowAvailable: Boolean,
-): Boolean = debugBuild && when (engine) {
-  PlaybackEngineMode.MPV -> mpvFlowAvailable
-  PlaybackEngineMode.NATIVE -> true
-  PlaybackEngineMode.AUTO -> false
-}
-
 /** A short, user-started local capture; the native writer enforces the image/session bounds. */
 internal class FlowDiagnosticsCaptureManager(context: Context) {
   private val appContext = context.applicationContext

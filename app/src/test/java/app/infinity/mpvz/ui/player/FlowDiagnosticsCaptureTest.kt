@@ -21,15 +21,6 @@ class FlowDiagnosticsCaptureTest {
   private fun tempFile(prefix: String): File = File.createTempFile(prefix, ".tmp")
 
   @Test
-  fun motionEvidenceControlIsDebugOnlyAndRequiresTheMatchingEngine() {
-    assertFalse(canShowFlowDiagnosticsCapture(false, PlaybackEngineMode.MPV, mpvFlowAvailable = true))
-    assertFalse(canShowFlowDiagnosticsCapture(true, PlaybackEngineMode.MPV, mpvFlowAvailable = false))
-    assertTrue(canShowFlowDiagnosticsCapture(true, PlaybackEngineMode.MPV, mpvFlowAvailable = true))
-    assertTrue(canShowFlowDiagnosticsCapture(true, PlaybackEngineMode.NATIVE, mpvFlowAvailable = false))
-    assertFalse(canShowFlowDiagnosticsCapture(true, PlaybackEngineMode.AUTO, mpvFlowAvailable = true))
-  }
-
-  @Test
   fun archiveContainsOnlyCommittedFilesAndPreservesRelativeNames() {
     val root = tempDirectory("flow-capture-")
     val zip = File(root.parentFile, "${root.name}.zip")
