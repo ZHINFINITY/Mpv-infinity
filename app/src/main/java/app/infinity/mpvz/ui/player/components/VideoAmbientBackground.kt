@@ -50,10 +50,11 @@ import kotlin.math.abs
 import kotlin.math.exp
 import kotlin.math.pow
 
-private const val SAMPLE_WIDTH = 96
-private const val SAMPLE_HEIGHT = 54
-private const val DISPLAY_WIDTH = 48
-private const val DISPLAY_HEIGHT = 27
+// Keep the ambient layer soft, but avoid enlarging a 48x27 bitmap across the display.
+private const val SAMPLE_WIDTH = 384
+private const val SAMPLE_HEIGHT = 216
+private const val DISPLAY_WIDTH = 192
+private const val DISPLAY_HEIGHT = 108
 private const val DECIMATION = 2
 
 private const val CAPTURE_INTERVAL_MS = 350L

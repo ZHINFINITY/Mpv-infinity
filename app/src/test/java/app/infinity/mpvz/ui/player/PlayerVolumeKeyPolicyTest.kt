@@ -48,4 +48,11 @@ class PlayerVolumeKeyPolicyTest {
       ),
     )
   }
+
+  @Test
+  fun volumeCeilingClassificationFallsBackSafelyWhenHostIsMissing() {
+    assertFalse(PlayerVolumeKeyPolicy.isAudioForVolumeCeiling(isAudioOnly = false, hostKnowsAudio = null))
+    assertTrue(PlayerVolumeKeyPolicy.isAudioForVolumeCeiling(isAudioOnly = true, hostKnowsAudio = null))
+    assertTrue(PlayerVolumeKeyPolicy.isAudioForVolumeCeiling(isAudioOnly = false, hostKnowsAudio = true))
+  }
 }

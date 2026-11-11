@@ -5002,7 +5002,12 @@ class PlayerViewModel(
     change: Int,
     showUi: Boolean = false,
   ) {
-    val isAudio = host.isCurrentMediaKnownAudio() || isAudioOnly.value
+    val attachedHost = hostReference.get()
+    val isAudio =
+      PlayerVolumeKeyPolicy.isAudioForVolumeCeiling(
+        isAudioOnly = isAudioOnly.value,
+        hostKnowsAudio = attachedHost?.isCurrentMediaKnownAudio(),
+      )
     val currentSystemVolume = syncCurrentSystemVolume()
     val mpvVolume = PlaybackSession.getPropertyInt("volume") ?: 100
     // Audio playback must not apply gain boost (>100%). Boost is a video-only feature,

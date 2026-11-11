@@ -48,6 +48,19 @@ class AmbientRendererPolicyTest {
   }
 
   @Test
+  fun frameCapturedBackgroundKeepsMoreDetailWithoutRemovingItsSoftness() {
+    val ambient = source("ui/player/components/VideoAmbientBackground.kt")
+
+    assertTrue(ambient.contains("private const val SAMPLE_WIDTH = 384"))
+    assertTrue(ambient.contains("private const val SAMPLE_HEIGHT = 216"))
+    assertTrue(ambient.contains("private const val DISPLAY_WIDTH = 192"))
+    assertTrue(ambient.contains("private const val DISPLAY_HEIGHT = 108"))
+    assertTrue(ambient.contains("private const val DECIMATION = 2"))
+    assertTrue(ambient.contains("private const val BLUR_RADIUS = 1"))
+    assertTrue(ambient.contains("private const val BLUR_PASSES = 2"))
+  }
+
+  @Test
   fun disablingFrameCaptureFallbackResumesOnlyAnActiveGlowSession() {
     assertTrue(AmbientRendererPolicy.shouldResumeGlowAfterFrameCaptureFallback(fallbackEnabled = false, glowRuntimeActive = true))
     assertFalse(AmbientRendererPolicy.shouldResumeGlowAfterFrameCaptureFallback(fallbackEnabled = false, glowRuntimeActive = false))

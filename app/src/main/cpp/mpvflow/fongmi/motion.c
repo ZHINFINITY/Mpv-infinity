@@ -543,6 +543,20 @@ static const char synthesis_header[] = GLSL(
         return (1.0 - smoothstep(0.01, 0.08, vector.z)) *
                smoothstep(0.01, 0.15, vector.w);
     }
+
+    float neighborhood_quality(sampler2D field, vec2 uv, vec2 center)
+    {
+        ivec2 size = textureSize(field, 0);
+        ivec2 pixel = ivec2(uv * vec2(size));
+        ivec2 last = size - ivec2(1);
+        vec2 n0 = texelFetch(field, clamp(pixel + ivec2(-2, 0), ivec2(0), last), 0).xy;
+        vec2 n1 = texelFetch(field, clamp(pixel + ivec2(0, -2), ivec2(0), last), 0).xy;
+        vec2 n2 = texelFetch(field, clamp(pixel + ivec2(0, 2), ivec2(0), last), 0).xy;
+        vec2 n3 = texelFetch(field, clamp(pixel + ivec2(2, 0), ivec2(0), last), 0).xy;
+        float spread = 0.25 * (length(n0 - center) + length(n1 - center) +
+                               length(n2 - center) + length(n3 - center));
+        return 1.0 - smoothstep(0.65, 2.8, spread);
+    }
 );
 
 static const char warp_body[] = GLSL(
@@ -594,15 +608,39 @@ static const char synthesis_body[] = GLSL(
         vec2 scale = source_size / motion_size;
         vec4 warped0 = sample_rgba(first, source_position + f.xy * scale);
         vec4 warped1 = sample_rgba(second, source_position + r.xy * scale);
-        vec3 conflict = abs(warped0.rgb - warped1.rgb);
+        vec3 difference = warped0.rgb - warped1.rgb;
+        vec3 conflict = abs(difference);
         float color_error = max(conflict.r, max(conflict.g, conflict.b));
-        // An edge can constrain motion without a unique tangential match.
-        // Recover it only when both directions and full-size colors agree.
+        float luma_error = abs(dot(warped0.rgb, vec3(0.299, 0.587, 0.114)) -
+                               dot(warped1.rgb, vec3(0.299, 0.587, 0.114)));
+        float chroma_error = max(abs((warped0.r - warped0.g) - (warped1.r - warped1.g)),
+                                 abs((warped0.b - warped0.g) - (warped1.b - warped1.g)));
+        // Keep the old common-support certificate; boundary evidence only attenuates it.
         float reliable = min(f.w, r.w) *
                          (1.0 - smoothstep(0.002, 0.02, color_error));
         float trust = max(min(f.z, r.z), reliable);
-        trust *= 1.0 - smoothstep(0.03, 0.15,
-                                  color_error);
+        float boundary_trust = 1.0 - smoothstep(0.04, 0.08, luma_error);
+        boundary_trust *= 1.0 - smoothstep(0.08, 0.12, color_error) *
+                          smoothstep(0.03, 0.06, chroma_error);
+        boundary_trust *= 1.0 - (1.0 - smoothstep(0.04, 0.08, min(f.w, r.w))) *
+                          smoothstep(0.06, 0.10, color_error);
+        float boundary_activation = max(smoothstep(0.04, 0.06, luma_error),
+                                        smoothstep(0.06, 0.08, color_error));
+        float region3_local_trust = 1.0;
+        // Sample local vectors only where photometric disagreement makes a seam likely.
+        if (boundary_activation > 0.0) {
+            float local_quality = min(neighborhood_quality(forward, uv, f.xy),
+                                      neighborhood_quality(backward, uv, r.xy));
+            boundary_trust *= mix(1.0, smoothstep(0.45, 0.70, local_quality),
+                                  boundary_activation);
+            region3_local_trust = mix(1.0, smoothstep(0.30, 0.75, local_quality),
+                                      boundary_activation);
+        }
+        // Fade toward source-frame crossfade on conflict instead of forming block seams.
+        // MPVFLOW_ARTIFACT_GUARDS_V3 keeps the color taper continuous through 0.30.
+        trust *= 1.0 - smoothstep(0.03, 0.30,
+                                   color_error);
+        trust *= boundary_trust * region3_local_trust;
         if (isnan(trust) || isinf(trust))
             trust = 0.0;
         color = mix(mix(original0, original1, alpha),
