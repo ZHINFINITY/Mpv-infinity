@@ -87,6 +87,8 @@ assert 'git -C "$MPV_BUILDER_DIR" rev-parse HEAD' in BUILD
 motion_patch_call = 'python3 "$MPVFLOW_ROOT/scripts/patch_fongmi_motion_artifact.py" deps/mpv\\n'
 assert motion_patch_call in BUILD
 assert BUILD.index("motion_artifact_patch + flow_prepare") > BUILD.index("motion_artifact_patch = ")
+assert "MPVFLOW_ARTIFACT_GUARDS_V3" in PREPARE
+assert "MPVFLOW_ARTIFACT_TRUST_TAPER_V2" not in PREPARE
 assert "MPVFLOW_ARTIFACT_GUARDS_V3" in MOTION_PATCHER
 assert "smoothstep(0.03, 0.30," in MOTION_PATCHER
 assert "neighborhood_quality(sampler2D field, vec2 uv, vec2 center)" in MOTION_PATCHER
