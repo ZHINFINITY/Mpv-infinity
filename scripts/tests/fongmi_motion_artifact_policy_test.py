@@ -32,8 +32,10 @@ BASE_TRUST = """            vec3 conflict = abs(metric0 - metric1);
                                       color_error);
             if (isnan(trust) || isinf(trust))
                 trust = 0.0;"""
-BASE_OUTPUT = """    color = mix(mix(original0, original1, alpha),
-                     mix(warped0, warped1, alpha), clamp(trust, 0.0, 1.0));"""
+BASE_OUTPUT = """color = mix(mix(original0, original1, alpha),
+             mix(warped0, warped1, alpha), clamp(trust, 0.0, 1.0));"""
+PINNED_OUTPUT = """return mix(mix(original0, original1, blend),
+           mix(warped0, warped1, blend), clamp(trust, 0.0, 1.0));"""
 LEGACY_TRUST = BASE_TRUST.replace(
     "            trust *= 1.0 - smoothstep(0.03, 0.15,\n                                      color_error);",
     "            // MPVFLOW_ARTIFACT_TRUST_TAPER_V2: soften color-conflict fallback only when motion trust remains\n"
@@ -44,7 +46,7 @@ BASE_RECONSTRUCTION = """    if (!(evidence > best || (evidence == best && dista
         continue;"""
 
 
-def fixture(trust: str = BASE_TRUST) -> str:
+def fixture(trust: str = BASE_TRUST, output: str = BASE_OUTPUT, output_indent: str = "    ") -> str:
     return (
         "FongMi reconstruction prefix\n"
         "static const char reconstruction_body[] = GLSL(\n"
@@ -56,7 +58,7 @@ def fixture(trust: str = BASE_TRUST) -> str:
         + "\n"
         + trust
         + "\n"
-        + BASE_OUTPUT
+        + PATCHER._indent_block(output, output_indent)
         + "\n);\n"
         "FongMi synthesis suffix\n"
     )
@@ -138,6 +140,15 @@ assert "FongMi synthesis prefix\n" in patched and "FongMi synthesis suffix\n" in
 again, changed_again = PATCHER.transform_source(patched)
 assert not changed_again and again == patched
 
+pinned_patched, pinned_changed = PATCHER.transform_source(
+    fixture(output=PINNED_OUTPUT, output_indent="            ")
+)
+assert pinned_changed and PATCHER._is_patched(pinned_patched)
+assert "sample_rgba(source0, vec2(pixel) + f.xy * scale + local_motion_offset)" in pinned_patched
+assert "sample_rgba(source1, vec2(pixel) + r.xy * scale - local_motion_offset)" in pinned_patched
+assert "return mix(source_blend, mix(warped0, warped1, blend), clamp(trust, 0.0, 1.0));" in pinned_patched
+assert "color = mix(source_blend" not in pinned_patched
+
 # An existing V3 synthesis patch is upgraded in place, then remains idempotent.
 old_reconstruction = PATCHER._indent_block(PATCHER.RECONSTRUCTION_BLOCK, "    ")
 legacy_v3 = patched.replace(
@@ -147,7 +158,7 @@ legacy_v3 = patched.replace(
 )
 legacy_v3 = legacy_v3.replace(PATCHER.MARKER, PATCHER.PREVIOUS_MARKER, 1)
 legacy_v3 = legacy_v3.replace(
-    PATCHER._indent_block(PATCHER.SOFTENED_OUTPUT_BLOCK, "    "),
+    PATCHER._indent_block(PATCHER.LEGACY_SOFTENED_OUTPUT_BLOCK, "    "),
     PATCHER._indent_block(BASE_OUTPUT, "    "),
     1,
 )
@@ -163,6 +174,25 @@ upgraded_v3, upgraded_v3_changed = PATCHER.transform_source(legacy_v3)
 assert upgraded_v3_changed and PATCHER._is_patched(upgraded_v3)
 upgraded_v3_again, upgraded_v3_changed_again = PATCHER.transform_source(upgraded_v3)
 assert not upgraded_v3_changed_again and upgraded_v3_again == upgraded_v3
+
+# Existing V3 output in the pinned return-expression form upgrades as well.
+pinned_v3 = pinned_patched.replace(
+    PATCHER._indent_block(PATCHER.PINNED_SOFTENED_OUTPUT_BLOCK, "            "),
+    PATCHER._indent_block(PINNED_OUTPUT, "            "),
+    1,
+)
+pinned_v3 = pinned_v3.replace(PATCHER.MARKER, PATCHER.PREVIOUS_MARKER, 1)
+pinned_v3 = pinned_v3.replace(
+    PATCHER._indent_block(PATCHER.MOTION_SOFTNESS_CALC, "            ") + "\n",
+    "",
+    1,
+)
+pinned_v3 = pinned_v3.replace("            float local_quality = 1.0;\n", "", 1)
+pinned_v3 = pinned_v3.replace("            local_quality = min(", "            float local_quality = min(", 1)
+assert PATCHER._is_synthesis_patched_v3(pinned_v3)
+pinned_upgraded, pinned_upgraded_changed = PATCHER.transform_source(pinned_v3)
+assert pinned_upgraded_changed and PATCHER._is_patched(pinned_upgraded)
+assert "return mix(source_blend, mix(warped0, warped1, blend), clamp(trust, 0.0, 1.0));" in pinned_upgraded
 
 # An existing V2-only build tree is upgraded, not mistaken for stock source.
 upgraded_v2, upgraded_v2_changed = PATCHER.transform_source(fixture(LEGACY_TRUST))

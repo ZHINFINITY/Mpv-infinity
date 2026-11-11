@@ -31,9 +31,13 @@ if (!(evidence > 0.0 &&
 PIXEL_HEADER_PATTERN = re.compile(
     r"(?m)^(?P<indent>[ \t]*)vec4 synthesize_pixel\(sampler2D source0, sampler2D source1, sampler2D warp0,"
 )
-OUTPUT_PATTERN = re.compile(
+LEGACY_OUTPUT_PATTERN = re.compile(
     r"(?m)^(?P<indent>[ \t]*)color = mix\(mix\(original0, original1, alpha\),\n"
     r"[ \t]*mix\(warped0, warped1, alpha\), clamp\(trust, 0\.0, 1\.0\)\);"
+)
+PINNED_OUTPUT_PATTERN = re.compile(
+    r"(?m)^(?P<indent>[ \t]*)return mix\(mix\(original0, original1, blend\),\n"
+    r"[ \t]*mix\(warped0, warped1, blend\), clamp\(trust, 0\.0, 1\.0\)\);"
 )
 
 NEIGHBORHOOD_HELPER = """float neighborhood_quality(sampler2D field, vec2 uv, vec2 center)
@@ -109,7 +113,7 @@ trust *= 1.0 - smoothstep(0.03, 0.30,
                            color_error);
 trust *= boundary_trust * region3_local_trust;""" + "\n" + MOTION_SOFTNESS_CALC
 
-SOFTENED_OUTPUT_BLOCK = """// MPVFLOW_LOCAL_MOTION_SOFTENING_V1: two bounded directional taps soften only supported motion fallback.
+LEGACY_SOFTENED_OUTPUT_BLOCK = """// MPVFLOW_LOCAL_MOTION_SOFTENING_V1: two bounded directional taps soften only supported motion fallback.
 vec4 source_blend = mix(original0, original1, alpha);
 if (local_motion_softness > 0.001) {
     vec4 soft0 = sample_rgba(first, source_position + f.xy * scale + local_motion_offset);
@@ -119,6 +123,17 @@ if (local_motion_softness > 0.001) {
     source_blend = mix(source_blend, motion_blend, local_motion_softness);
 }
 color = mix(source_blend, mix(warped0, warped1, alpha), clamp(trust, 0.0, 1.0));"""
+
+PINNED_SOFTENED_OUTPUT_BLOCK = """// MPVFLOW_LOCAL_MOTION_SOFTENING_V1: two bounded directional taps soften only supported motion fallback.
+vec4 source_blend = mix(original0, original1, blend);
+if (local_motion_softness > 0.001) {
+    vec4 soft0 = sample_rgba(source0, vec2(pixel) + f.xy * scale + local_motion_offset);
+    vec4 soft1 = sample_rgba(source1, vec2(pixel) + r.xy * scale - local_motion_offset);
+    vec4 motion_blend = mix(mix(warped0, soft0, 0.5),
+                            mix(warped1, soft1, 0.5), blend);
+    source_blend = mix(source_blend, motion_blend, local_motion_softness);
+}
+return mix(source_blend, mix(warped0, warped1, blend), clamp(trust, 0.0, 1.0));"""
 
 LEGACY_TAPER_PATTERN = re.compile(
     r"(?m)^(?P<indent>[ \t]*)// MPVFLOW_ARTIFACT_TRUST_TAPER_V2: soften color-conflict fallback only when motion trust remains\n"
@@ -149,6 +164,25 @@ def _replace_one(pattern: re.Pattern[str], source: str, replacement, label: str)
     return pattern.sub(replacement, source, count=1)
 
 
+def _output_matches(source: str):
+    return [
+        (pattern, block, match)
+        for pattern, block in (
+            (LEGACY_OUTPUT_PATTERN, LEGACY_SOFTENED_OUTPUT_BLOCK),
+            (PINNED_OUTPUT_PATTERN, PINNED_SOFTENED_OUTPUT_BLOCK),
+        )
+        for match in pattern.finditer(source)
+    ]
+
+
+def _replace_output(source: str, label: str) -> str:
+    matches = _output_matches(source)
+    if len(matches) != 1:
+        raise ValueError(f"Pinned FongMi {label} anchor count is {len(matches)}; refusing an unverified patch")
+    pattern, block, _ = matches[0]
+    return pattern.sub(lambda match: _indent_block(block, match.group("indent")), source, count=1)
+
+
 def _is_synthesis_patched_v3(source: str) -> bool:
     return (
         source.count(PREVIOUS_MARKER) == 1
@@ -165,7 +199,7 @@ def _is_synthesis_patched_v3(source: str) -> bool:
         and source.count("trust *= 1.0 - smoothstep(0.03, 0.30,") == 1
         and source.count("trust *= boundary_trust * region3_local_trust;") == 1
         and source.count("float local_quality = min(neighborhood_quality(") == 1
-        and len(list(OUTPUT_PATTERN.finditer(source))) == 1
+        and len(_output_matches(source)) == 1
         and LEGACY_MARKER not in source
         and LOCAL_SOFTENING_MARKER not in source
         and "float motion_length =" not in source
@@ -190,10 +224,19 @@ def _is_synthesis_patched(source: str) -> bool:
         and source.count("trust *= boundary_trust * region3_local_trust;") == 1
         and source.count("vec2 local_motion_delta = (r.xy - f.xy) * scale;") == 1
         and source.count("float local_motion_softness = 0.24 * (1.0 - clamp(trust, 0.0, 1.0)) *") == 1
-        and source.count("sample_rgba(first, source_position + f.xy * scale + local_motion_offset)") == 1
-        and source.count("sample_rgba(second, source_position + r.xy * scale - local_motion_offset)") == 1
-        and source.count("color = mix(source_blend, mix(warped0, warped1, alpha), clamp(trust, 0.0, 1.0));") == 1
-        and len(list(OUTPUT_PATTERN.finditer(source))) == 0
+        and (
+            (
+                source.count("sample_rgba(first, source_position + f.xy * scale + local_motion_offset)") == 1
+                and source.count("sample_rgba(second, source_position + r.xy * scale - local_motion_offset)") == 1
+                and source.count("color = mix(source_blend, mix(warped0, warped1, alpha), clamp(trust, 0.0, 1.0));") == 1
+            )
+            or (
+                source.count("sample_rgba(source0, vec2(pixel) + f.xy * scale + local_motion_offset)") == 1
+                and source.count("sample_rgba(source1, vec2(pixel) + r.xy * scale - local_motion_offset)") == 1
+                and source.count("return mix(source_blend, mix(warped0, warped1, blend), clamp(trust, 0.0, 1.0));") == 1
+            )
+        )
+        and len(_output_matches(source)) == 0
         and LEGACY_MARKER not in source
         and PREVIOUS_MARKER not in source
     )
@@ -255,12 +298,7 @@ def _patch_v3_synthesis(source: str) -> str:
         lambda match: match.group(0) + "\n" + _indent_block(MOTION_SOFTNESS_CALC, match.group("indent")),
         "V3 local-softening insertion",
     )
-    source = _replace_one(
-        OUTPUT_PATTERN,
-        source,
-        lambda match: _indent_block(SOFTENED_OUTPUT_BLOCK, match.group("indent")),
-        "V3 synthesis output",
-    )
+    source = _replace_output(source, "V3 synthesis output")
     if not _is_synthesis_patched(source):
         raise ValueError("FongMi motion artifact V3-to-V4 upgrade failed its postconditions")
     return source
@@ -318,12 +356,7 @@ def transform_source(source: str) -> tuple[str, bool]:
         lambda match: _indent_block(TRUST_BLOCK, match.group("indent")),
         "synthesis trust",
     )
-    source = _replace_one(
-        OUTPUT_PATTERN,
-        source,
-        lambda match: _indent_block(SOFTENED_OUTPUT_BLOCK, match.group("indent")),
-        "synthesis output",
-    )
+    source = _replace_output(source, "synthesis output")
     source = _patch_reconstruction(source)
     if not _is_patched(source):
         raise ValueError("FongMi motion artifact V4 patch failed its postconditions")

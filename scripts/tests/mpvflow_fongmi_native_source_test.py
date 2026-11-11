@@ -106,6 +106,10 @@ assert "min(0.75, 0.08 * local_motion_length)" in MOTION_PATCHER
 assert "float local_motion_softness = 0.24 *" in MOTION_PATCHER
 assert "sample_rgba(first, source_position + f.xy * scale + local_motion_offset)" in MOTION_PATCHER
 assert "sample_rgba(second, source_position + r.xy * scale - local_motion_offset)" in MOTION_PATCHER
+assert "PINNED_OUTPUT_PATTERN" in MOTION_PATCHER
+assert "sample_rgba(source0, vec2(pixel) + f.xy * scale + local_motion_offset)" in MOTION_PATCHER
+assert "sample_rgba(source1, vec2(pixel) + r.xy * scale - local_motion_offset)" in MOTION_PATCHER
+assert "return mix(source_blend, mix(warped0, warped1, blend), clamp(trust, 0.0, 1.0));" in MOTION_PATCHER
 assert "MPVFLOW_RECONSTRUCTION_POSITIVE_EVIDENCE_V1" in MOTION_PATCHER
 assert "evidence > 0.0 &&" in MOTION_PATCHER
 assert "MPVFLOW_ARTIFACT_GUARDS_V4" in MOTION_SNAPSHOT
