@@ -14,6 +14,8 @@ These notices cover the checked-in Standard and No-Vulkan MPV AARs (`app/libs/mp
 | Mbed TLS | 3.6.7 | Apache-2.0 selected from its Apache-2.0 OR GPL-2.0-or-later dual license | `mbedtls-LICENSE` |
 | mpvlibAndroid wrapper/build helpers | Standard/no-Vulkan profiles and FongMi AAR build source `d04217abe8e72e4a099269f045855bf69b87d53b` | MIT | `mpvlibAndroid-LICENSE-MIT` |
 
+The experimental arm64 build applies one version-guarded, app-owned color-trust taper adjustment to the pinned FongMi `motion.c` using `scripts/patch_fongmi_motion_artifact.py`. This does not replace upstream source or change its license; FongMi's GPL-2.0 attribution, `LICENSE.GPL`, and all upstream per-file notices remain included.
+
 The complete LGPL texts and the upstream GPLv2 license text are included alongside these notices. The separate arm64 FFmpeg helpers are documented in `app/src/main/assets/ffmpeg/README.txt` and `FFMPEG-LICENSE.md`; their LGPLv2.1-or-later mode is distinct from the checked-in AARs' and experimental overlay's LGPLv3-or-later FFmpeg libraries.
 
 The FongMi patch hunks modify LGPL-licensed libbluray. The mpvlibAndroid MIT notice covers its wrapper/build-helper source; it does not relicense libbluray. Preserve libbluray's upstream notices and corresponding source as required by its license.

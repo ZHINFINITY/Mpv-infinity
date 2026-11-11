@@ -49,7 +49,7 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: native-builder/app/build/outputs/apk
-          key: mpvflow-arm64-runtime-v6-builder-1efc82739f6f7034-mpv-fongmi-14b3999a1a3e322c217bc90ee4df5a8f1bc88f69-libplacebo-fongmi-b89c10e1bdd5d7742ca576ebad94a906ddca91e8-ffmpeg-fongmi-f2c5162b7c4b3e8835de270ff78cecc524decad1-vulkan-headers-khronos-a4f8ada9f4f97c45b8c89c57997be9cebaae65d2-cores2-${{ hashFiles('scripts/build-mpvflow-mpv-runtime.sh', 'scripts/prepare-mpvflow.py', 'scripts/prepare-mpvflow-vulkan-headers.py', 'scripts/patch-ffmpeg-symver.py', 'scripts/patches/mpvlibandroid-fongmi/**', 'app/src/main/cpp/**', 'THIRD_PARTY_LICENSES/**', 'app/src/main/assets/mpv/licenses/**') }}
+          key: mpvflow-arm64-runtime-v6-builder-1efc82739f6f7034-mpv-fongmi-14b3999a1a3e322c217bc90ee4df5a8f1bc88f69-libplacebo-fongmi-b89c10e1bdd5d7742ca576ebad94a906ddca91e8-ffmpeg-fongmi-f2c5162b7c4b3e8835de270ff78cecc524decad1-vulkan-headers-khronos-a4f8ada9f4f97c45b8c89c57997be9cebaae65d2-cores2-${{ hashFiles('scripts/build-mpvflow-mpv-runtime.sh', 'scripts/patch_fongmi_motion_artifact.py', 'scripts/prepare-mpvflow.py', 'scripts/prepare-mpvflow-vulkan-headers.py', 'scripts/patch-ffmpeg-symver.py', 'scripts/patches/mpvlibandroid-fongmi/**', 'app/src/main/cpp/**', 'THIRD_PARTY_LICENSES/**', 'app/src/main/assets/mpv/licenses/**') }}
       - name: Checkout pinned Android MPV build tools
         if: ${{ steps.mpvflow-runtime-cache.outputs.cache-hit != 'true' }}
         uses: actions/checkout@v6
@@ -100,6 +100,9 @@ jobs:
         env:
           MPVFLOW_DEBUG_CAPTURE: '1'
           MPVFLOW_MPV_BUILD_CORES: '2'
+      - name: Verify patched FongMi motion source
+        if: ${{ steps.mpvflow-runtime-cache.outputs.cache-hit != 'true' }}
+        run: python3 scripts/tests/fongmi_motion_artifact_policy_test.py --source native-builder/buildscripts/deps/mpv/video/out/gpu_next/motion.c
       - name: Overlay MPVFlow MPV/FFmpeg arm64 runtime into MPV∞ AAR
         run: python3 scripts/package-mpv-runtime-aar.py --runtime-apk "$MPVFLOW_RUNTIME_APK" --mpv-aar app/libs/mpvlib.aar --abis arm64-v8a
       - name: Test Android NDK path resolver

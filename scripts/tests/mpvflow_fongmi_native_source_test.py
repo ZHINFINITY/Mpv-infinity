@@ -30,6 +30,7 @@ VULKAN_HEADERS_SHA = "a4f8ada9f4f97c45b8c89c57997be9cebaae65d2"
 PATCH_DIR = ROOT / "scripts/patches/mpvlibandroid-fongmi"
 PATCHER = (PATCH_DIR / "patch-libbluray.sh").read_text(encoding="utf-8")
 PATCH_README = (PATCH_DIR / "README.md").read_text(encoding="utf-8")
+MOTION_PATCHER = (ROOT / "scripts/patch_fongmi_motion_artifact.py").read_text(encoding="utf-8")
 PATCH_HASHES = {
     "libbluray-1.4.1-still-eof.patch": "cc0a15ee88b1ead665dadbc3ac363c2686e5184fc1e04a76713665cad57c0fc7",
     "libbluray-1.4.1-checked-seek.patch": "1055d99f0940b3077e9f7171a220f242396e6bf5196415f3fc987b316d51447c",
@@ -83,6 +84,11 @@ assert f'EXPECTED_MPV_REVISION="{MPV_SHA}"' in BUILD
 assert f'EXPECTED_BUILDER_REVISION="{BUILDER_SHA}"' in BUILD
 assert 'git -C "$MPV_SOURCE_DIR" rev-parse HEAD' in BUILD
 assert 'git -C "$MPV_BUILDER_DIR" rev-parse HEAD' in BUILD
+motion_patch_call = 'python3 "$MPVFLOW_ROOT/scripts/patch_fongmi_motion_artifact.py" deps/mpv\\n'
+assert motion_patch_call in BUILD
+assert BUILD.index("motion_artifact_patch + flow_prepare") > BUILD.index("motion_artifact_patch = ")
+assert "MPVFLOW_ARTIFACT_TRUST_TAPER_V1" in MOTION_PATCHER
+assert "smoothstep(0.03, 0.22," in MOTION_PATCHER
 assert "-Dgpl=false" in BUILD and "-Ddvdnav=disabled" in BUILD
 assert "-Ddefault_library=static" in BUILD
 assert 'PlaybackSession.setOptionString("motion-interpolation", targetFps.toString())' in MPV_VIEW
@@ -114,6 +120,7 @@ for workflow in WORKFLOWS:
     assert "scripts/prepare-mpvflow-vulkan-headers.py" in workflow
     assert "runtime-legacy" not in workflow
     assert "c1529642089bfebfc928a1c1664638a7a5d219ba" not in workflow
+    assert "scripts/patch_fongmi_motion_artifact.py" in workflow
 
 for text in (MANIFEST, PACKAGED):
     assert MPV_SHA in text
@@ -128,6 +135,7 @@ for text in (MANIFEST, PACKAGED):
     assert "https://github.com/FongMi/libplacebo" in text
     assert "https://github.com/FongMi/FFmpeg" in text
     assert "https://github.com/KhronosGroup/Vulkan-Headers" in text
+    assert "patch_fongmi_motion_artifact.py" in text
     assert "vulkan-sdk-1.4.328.0" in text
     assert "Apache-2.0" in text and "MIT" in text
     assert "GPL-2.0" in text
@@ -141,6 +149,7 @@ assert "FongMi/FFmpeg" in LICENSES and "release-9.1-fongmi" in LICENSES
 assert FFMPEG_SHA in ABOUT
 assert f"https://github.com/FongMi/FFmpeg/commit/{FFMPEG_SHA}" in ABOUT
 assert "LICENSE.GPL" in LICENSES
+assert "patch_fongmi_motion_artifact.py" in LICENSES
 assert GPL_LICENSE.is_file()
 assert hashlib.sha256(GPL_LICENSE.read_bytes()).hexdigest() == GPL_SHA
 gpl_text = GPL_LICENSE.read_text(encoding="utf-8")
