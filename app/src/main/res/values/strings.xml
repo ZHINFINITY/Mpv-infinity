@@ -321,6 +321,11 @@
   <string name="pref_decoder_mpvflow_summary">Creates in-between frames for smoother motion.</string>
   <string name="pref_decoder_mpvflow_visibility_resolver_debug_title">Visibility resolver</string>
   <string name="pref_decoder_mpvflow_soft_blend_debug_title">Soft blend</string>
+  <string name="mpvflow_debug_capture_title">Motion evidence (Debug)</string>
+  <string name="mpvflow_debug_capture_summary">Capture the next frame pair at alpha 0.5, with decision masks and a Soft Blend off/on comparison. Capture briefly interrupts playback; SDR only.</string>
+  <string name="mpvflow_debug_capture_start">Capture next pair</string>
+  <string name="mpvflow_debug_capture_stop">Stop capture</string>
+  <string name="mpvflow_debug_capture_progress">%1$d pairs · %2$d outputs</string>
   <string name="pref_decoder_mpvflow_target_fps_title">MPVFlow target frame rate</string>
   <string name="pref_decoder_mpvflow_target_fps_value">%1$d fps</string>
   <string name="pref_decoder_mpvflow_target_fps_warning_value">(!) %1$d fps</string>
