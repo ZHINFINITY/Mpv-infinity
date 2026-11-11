@@ -63,6 +63,42 @@ BASE_WARP = """static const char warp_body[] = GLSL(
     color = vec4(displacement, trust * geometry, reliable * geometry);
 );"""
 
+BASE_SCENE = """static const char scene_body[] = GLSL(
+    float hist0[8];
+    float hist1[8];
+    for (int i = 0; i < 8; i++) {
+        hist0[i] = 0.0;
+        hist1[i] = 0.0;
+    }
+    vec3 mean0 = vec3(0.0);
+    vec3 mean1 = vec3(0.0);
+    float residual = 0.0;
+    for (int y = 0; y < 16; y++) {
+        for (int x = 0; x < 16; x++) {
+            vec2 uv = (vec2(x, y) + 0.5) / 16.0;
+            vec3 a = textureLod(first, uv, 0.0).rgb;
+            vec3 b = textureLod(second, uv, 0.0).rgb;
+            int ia = clamp(int(dot(a, vec3(0.2126, 0.7152, 0.0722)) * 8.0), 0, 7);
+            int ib = clamp(int(dot(b, vec3(0.2126, 0.7152, 0.0722)) * 8.0), 0, 7);
+            hist0[ia] += 1.0;
+            hist1[ib] += 1.0;
+            mean0 += a;
+            mean1 += b;
+            residual += 0.5 * (textureLod(forward, uv, 0.0).z +
+                               textureLod(backward, uv, 0.0).z);
+        }
+    }
+    float histogram_distance = 0.0;
+    for (int i = 0; i < 8; i++)
+        histogram_distance += abs(hist0[i] - hist1[i]);
+    vec3 mean_distance = abs(mean0 - mean1) / 256.0;
+    float cut = max(histogram_distance / 512.0,
+                    max(mean_distance.r, max(mean_distance.g, mean_distance.b)));
+    float brightness_error = dot(mean_distance, vec3(0.25)) +
+        0.25 * abs(dot((mean0 - mean1) / 256.0, vec3(0.2126, 0.7152, 0.0722)));
+    color = vec4(cut, max(0.0, residual / 256.0 - brightness_error), 0.0, 1.0);
+);"""
+
 
 def fixture(trust: str = BASE_TRUST, output: str = BASE_OUTPUT, output_indent: str = "    ") -> str:
     return (
@@ -71,6 +107,8 @@ def fixture(trust: str = BASE_TRUST, output: str = BASE_OUTPUT, output_indent: s
         "static const char reconstruction_body[] = GLSL(\n"
         + BASE_RECONSTRUCTION
         + "\n);\n"
+        + BASE_SCENE
+        + "\n"
         "FongMi synthesis prefix\n"
         "static const char synthesis_pixel_header[] = GLSL(\n"
         + BASE_PIXEL_HEADER
@@ -135,6 +173,41 @@ def trajectory_weight(
     return 1.0 - smoothstep(0.125, 0.5, error)
 
 
+def global_scene_cut_score(first: list[list[float]], second: list[list[float]]) -> float:
+    hist0 = [0] * 8
+    hist1 = [0] * 8
+    sum0 = 0.0
+    sum1 = 0.0
+    for y in range(16):
+        for x in range(16):
+            a = first[y][x]
+            b = second[y][x]
+            hist0[min(7, int(a * 8.0))] += 1
+            hist1[min(7, int(b * 8.0))] += 1
+            sum0 += a
+            sum1 += b
+    histogram_distance = sum(abs(a - b) for a, b in zip(hist0, hist1)) / 512.0
+    mean_distance = abs(sum0 - sum1) / 256.0
+    return max(histogram_distance, mean_distance)
+
+
+def spatial_scene_cut_score(first: list[list[float]], second: list[list[float]]) -> float:
+    global_luma_delta = sum(
+        first[y][x] - second[y][x] for y in range(16) for x in range(16)
+    ) / 256.0
+    changed_tiles = 0
+    for tile_y in range(4):
+        for tile_x in range(4):
+            tile_delta = sum(
+                first[y][x] - second[y][x]
+                for y in range(tile_y * 4, tile_y * 4 + 4)
+                for x in range(tile_x * 4, tile_x * 4 + 4)
+            ) / 16.0
+            if abs(tile_delta - global_luma_delta) > 0.15:
+                changed_tiles += 1
+    return changed_tiles / 16.0
+
+
 original = fixture()
 patched, changed = PATCHER.transform_source(original)
 assert changed
@@ -142,6 +215,11 @@ assert PATCHER.MARKER in patched
 assert PATCHER.LOCAL_SOFTENING_MARKER in patched
 assert PATCHER.RECONSTRUCTION_MARKER in patched
 assert PATCHER.WARP_TRAJECTORY_MARKER in patched
+assert PATCHER.SCENE_CUT_MARKER in patched
+assert PATCHER._has_scene_cut_guard(patched)
+assert "int tile_index = (y / 4) * 4 + x / 4;" in patched
+assert "tile_luma_delta[tile_index] += dot(a - b, vec3(0.2126, 0.7152, 0.0722));" in patched
+assert "cut = max(cut, spatial_cut);" in patched
 assert "vec2 initial_motion = textureLod(forward, uv, 0.0).xy;" in patched
 assert "vec2 motion_vector = f.xy;" in patched
 assert "float trajectory_error = abs(weight) * length(motion_vector - initial_motion);" in patched
@@ -242,6 +320,7 @@ for invalid in (
     patched.replace("float chroma_error =", "float chroma_error_missing ="),
     patched.replace(PATCHER.LOCAL_SOFTENING_MARKER, "unexpected-local-softening-marker"),
     patched.replace("reliable *= trajectory_quality;", "reliable *= 0.0;"),
+    patched.replace("cut = max(cut, spatial_cut);", "cut = max(cut, cut);"),
 ):
     try:
         PATCHER.transform_source(invalid)
@@ -304,9 +383,29 @@ trajectory_values = [
 ]
 assert all(a >= b for a, b in zip(trajectory_values, trajectory_values[1:]))
 
+# In the uploaded comparison, the close-up cut changes 10/16 spatial tiles
+# after global-brightness correction, while adjacent ordinary motion changes 0/16.
+# Same-palette spatial rearrangement must trigger; one-tile motion must not.
+checker = [
+    [0.1 if ((y // 4 + x // 4) % 2 == 0) else 0.9 for x in range(16)]
+    for y in range(16)
+]
+inverted_checker = [[1.0 - value for value in row] for row in checker]
+assert global_scene_cut_score(checker, inverted_checker) == 0.0
+assert spatial_scene_cut_score(checker, inverted_checker) == 1.0
+assert max(global_scene_cut_score(checker, inverted_checker), spatial_scene_cut_score(checker, inverted_checker)) > 0.45
+one_tile_changed = [row[:] for row in checker]
+for y in range(4):
+    for x in range(4):
+        one_tile_changed[y][x] = inverted_checker[y][x]
+assert max(global_scene_cut_score(checker, one_tile_changed), spatial_scene_cut_score(checker, one_tile_changed)) < 0.45
+uniform_dark = [[0.2 for _ in range(16)] for _ in range(16)]
+uniform_bright = [[0.35 for _ in range(16)] for _ in range(16)]
+assert spatial_scene_cut_score(uniform_dark, uniform_bright) == 0.0
+
 retained_source = (ROOT / "app/src/main/cpp/mpvflow/fongmi/motion.c").read_text(encoding="utf-8")
 retained_result, retained_changed = PATCHER.transform_source(retained_source)
-assert not retained_changed and retained_result == retained_source, "retained snapshot should mirror active synthesis, reconstruction, and warp safeguards"
+assert not retained_changed and retained_result == retained_source, "retained snapshot should mirror active synthesis, reconstruction, warp, and scene-cut safeguards"
 if args.source:
     active_source = args.source.read_text(encoding="utf-8")
     active_result, active_changed = PATCHER.transform_source(active_source)
@@ -315,5 +414,6 @@ if args.source:
 print(
     "FongMi artifact policy passed: max taper trust step "
     f"{old_step:.4f} -> {new_step:.4f}; local directional softness is capped at 0.24 "
-    "and gated by motion, bidirectional support, boundary, neighborhood, and inverse-path coherence"
+    "and gated by motion, bidirectional support, boundary, neighborhood, and inverse-path coherence; "
+    "spatial cut detection flags palette-matched scene changes without firing on one-tile motion"
 )

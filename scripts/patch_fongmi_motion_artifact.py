@@ -19,6 +19,7 @@ LEGACY_MARKER = "MPVFLOW_ARTIFACT_TRUST_TAPER_V2"
 LOCAL_SOFTENING_MARKER = "MPVFLOW_LOCAL_MOTION_SOFTENING_V1"
 RECONSTRUCTION_MARKER = "MPVFLOW_RECONSTRUCTION_POSITIVE_EVIDENCE_V1"
 WARP_TRAJECTORY_MARKER = "MPVFLOW_WARP_TRAJECTORY_COHERENCE_V1"
+SCENE_CUT_MARKER = "MPVFLOW_SCENE_CUT_SPATIAL_V1"
 
 RECONSTRUCTION_PATTERN = re.compile(
     r"(?m)^(?P<indent> *)" + re.escape(
@@ -45,6 +46,32 @@ float trajectory_quality = 1.0 - smoothstep(0.125, 0.5, trajectory_error);
 if (isnan(trajectory_quality) || isinf(trajectory_quality))
     trajectory_quality = 0.0;
 reliable *= trajectory_quality;"""
+
+SCENE_INIT_PATTERN = re.compile(
+    r"(?m)^(?P<indent>[ \t]*)vec3 mean1 = vec3\(0\.0\);\n"
+    r"(?P=indent)float residual = 0\.0;$"
+)
+SCENE_SAMPLE_PATTERN = re.compile(
+    r"(?m)^(?P<indent>[ \t]*)mean0 \+= a;\n"
+    r"(?P=indent)mean1 \+= b;$"
+)
+SCENE_CUT_PATTERN = re.compile(
+    r"(?m)^(?P<indent>[ \t]*)float cut = max\(histogram_distance / 512\.0,\n"
+    r"(?P=indent)[ \t]+max\(mean_distance\.r, max\(mean_distance\.g, mean_distance\.b\)\)\);$"
+)
+SCENE_TILE_INIT_BLOCK = """float tile_luma_delta[16];
+for (int i = 0; i < 16; i++)
+    tile_luma_delta[i] = 0.0;"""
+SCENE_CUT_BLOCK = """// MPVFLOW_SCENE_CUT_SPATIAL_V1: detect spatially rearranged cuts with shared colors.
+float global_luma_delta = dot((mean0 - mean1) / 256.0,
+                              vec3(0.2126, 0.7152, 0.0722));
+float spatial_cut = 0.0;
+for (int i = 0; i < 16; i++) {
+    float local_luma_delta = abs(tile_luma_delta[i] / 16.0 - global_luma_delta);
+    if (local_luma_delta > 0.15)
+        spatial_cut += 1.0 / 16.0;
+}
+cut = max(cut, spatial_cut);"""
 
 PIXEL_HEADER_PATTERN = re.compile(
     r"(?m)^(?P<indent>[ \t]*)vec4 synthesize_pixel\(sampler2D source0, sampler2D source1, sampler2D warp0,"
@@ -280,11 +307,27 @@ def _has_warp_trajectory_guard(source: str) -> bool:
     )
 
 
+def _has_scene_cut_guard(source: str) -> bool:
+    return (
+        source.count(SCENE_CUT_MARKER) == 1
+        and source.count("float tile_luma_delta[16];") == 1
+        and source.count("int tile_index = (y / 4) * 4 + x / 4;") == 1
+        and source.count(
+            "tile_luma_delta[tile_index] += dot(a - b, vec3(0.2126, 0.7152, 0.0722));"
+        ) == 1
+        and source.count("float spatial_cut = 0.0;") == 1
+        and source.count("float local_luma_delta = abs(tile_luma_delta[i] / 16.0 - global_luma_delta);") == 1
+        and source.count("if (local_luma_delta > 0.15)") == 1
+        and source.count("cut = max(cut, spatial_cut);") == 1
+    )
+
+
 def _is_patched(source: str) -> bool:
     return (
         _is_synthesis_patched(source)
         and _has_reconstruction_guard(source)
         and _has_warp_trajectory_guard(source)
+        and _has_scene_cut_guard(source)
     )
 
 
@@ -336,6 +379,52 @@ def _patch_warp_trajectory(source: str) -> str:
     return source
 
 
+def _patch_scene_cut(source: str) -> str:
+    if SCENE_CUT_MARKER in source:
+        if not _has_scene_cut_guard(source):
+            raise ValueError("FongMi spatial scene-cut marker/source mismatch")
+        return source
+    if any(token in source for token in (
+        "float tile_luma_delta[16];",
+        "tile_luma_delta[tile_index] +=",
+        "float spatial_cut = 0.0;",
+    )):
+        raise ValueError("FongMi spatial scene-cut source contains a partial guard")
+    source = _replace_one(
+        SCENE_INIT_PATTERN,
+        source,
+        lambda match: (
+            match.group(0).splitlines()[0] + "\n"
+            + _indent_block(SCENE_TILE_INIT_BLOCK, match.group("indent")) + "\n"
+            + match.group("indent") + "float residual = 0.0;"
+        ),
+        "scene detector tile accumulator",
+    )
+    source = _replace_one(
+        SCENE_SAMPLE_PATTERN,
+        source,
+        lambda match: (
+            match.group(0) + "\n"
+            + match.group("indent") + "int tile_index = (y / 4) * 4 + x / 4;\n"
+            + match.group("indent")
+            + "tile_luma_delta[tile_index] += dot(a - b, vec3(0.2126, 0.7152, 0.0722));"
+        ),
+        "scene detector spatial samples",
+    )
+    source = _replace_one(
+        SCENE_CUT_PATTERN,
+        source,
+        lambda match: (
+            match.group(0) + "\n"
+            + _indent_block(SCENE_CUT_BLOCK, match.group("indent"))
+        ),
+        "scene detector spatial cut score",
+    )
+    if not _has_scene_cut_guard(source):
+        raise ValueError("FongMi spatial scene-cut patch failed its postconditions")
+    return source
+
+
 def _patch_v3_synthesis(source: str) -> str:
     """Upgrade an already-patched V3 tree without reapplying the raw-source patch."""
     if not _is_synthesis_patched_v3(source):
@@ -370,13 +459,14 @@ def _patch_v3_synthesis(source: str) -> str:
 
 
 def transform_source(source: str) -> tuple[str, bool]:
-    """Apply version-guarded synthesis, evidence, and inverse-path safeguards."""
+    """Apply version-guarded synthesis, evidence, inverse-path, and scene-cut safeguards."""
     original = source
     if MARKER in source:
         if not _is_synthesis_patched(source):
             raise ValueError("FongMi motion artifact V4 marker/source mismatch")
         patched = _patch_reconstruction(source)
         patched = _patch_warp_trajectory(patched)
+        patched = _patch_scene_cut(patched)
         if not _is_patched(patched):
             raise ValueError("FongMi motion artifact postconditions failed")
         return patched, patched != original
@@ -385,6 +475,7 @@ def transform_source(source: str) -> tuple[str, bool]:
         source = _patch_v3_synthesis(source)
         source = _patch_reconstruction(source)
         source = _patch_warp_trajectory(source)
+        source = _patch_scene_cut(source)
         if not _is_patched(source):
             raise ValueError("FongMi motion artifact V3-to-V4 patch failed its postconditions")
         return source, source != original
@@ -428,6 +519,7 @@ def transform_source(source: str) -> tuple[str, bool]:
     source = _replace_output(source, "synthesis output")
     source = _patch_reconstruction(source)
     source = _patch_warp_trajectory(source)
+    source = _patch_scene_cut(source)
     if not _is_patched(source):
         raise ValueError("FongMi motion artifact V4 patch failed its postconditions")
     return source, True
@@ -447,9 +539,9 @@ def main() -> None:
         raise SystemExit(str(error)) from error
     if changed:
         source_path.write_text(patched, encoding="utf-8")
-        print("Applied MPVFlow FongMi synthesis guards and inverse-path coherence gate")
+        print("Applied MPVFlow FongMi synthesis, inverse-path, and spatial scene-cut guards")
     else:
-        print("MPVFlow FongMi synthesis guards and inverse-path coherence gate are already applied")
+        print("MPVFlow FongMi synthesis, inverse-path, and spatial scene-cut guards are already applied")
 
 
 if __name__ == "__main__":

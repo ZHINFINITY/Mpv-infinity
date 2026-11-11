@@ -505,6 +505,9 @@ static const char scene_body[] = GLSL(
     }
     vec3 mean0 = vec3(0.0);
     vec3 mean1 = vec3(0.0);
+    float tile_luma_delta[16];
+    for (int i = 0; i < 16; i++)
+        tile_luma_delta[i] = 0.0;
     float residual = 0.0;
     for (int y = 0; y < 16; y++) {
         for (int x = 0; x < 16; x++) {
@@ -517,6 +520,8 @@ static const char scene_body[] = GLSL(
             hist1[ib] += 1.0;
             mean0 += a;
             mean1 += b;
+            int tile_index = (y / 4) * 4 + x / 4;
+            tile_luma_delta[tile_index] += dot(a - b, vec3(0.2126, 0.7152, 0.0722));
             residual += 0.5 * (textureLod(forward, uv, 0.0).z +
                                textureLod(backward, uv, 0.0).z);
         }
@@ -527,6 +532,16 @@ static const char scene_body[] = GLSL(
     vec3 mean_distance = abs(mean0 - mean1) / 256.0;
     float cut = max(histogram_distance / 512.0,
                     max(mean_distance.r, max(mean_distance.g, mean_distance.b)));
+    // MPVFLOW_SCENE_CUT_SPATIAL_V1: detect spatially rearranged cuts with shared colors.
+    float global_luma_delta = dot((mean0 - mean1) / 256.0,
+                                  vec3(0.2126, 0.7152, 0.0722));
+    float spatial_cut = 0.0;
+    for (int i = 0; i < 16; i++) {
+        float local_luma_delta = abs(tile_luma_delta[i] / 16.0 - global_luma_delta);
+        if (local_luma_delta > 0.15)
+            spatial_cut += 1.0 / 16.0;
+    }
+    cut = max(cut, spatial_cut);
     // A global brightness change contributes matching error without a cut.
     float brightness_error = dot(mean_distance, vec3(0.25)) +
         0.25 * abs(dot((mean0 - mean1) / 256.0, vec3(0.2126, 0.7152, 0.0722)));
