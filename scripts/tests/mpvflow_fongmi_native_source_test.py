@@ -92,17 +92,25 @@ assert 'git -C "$MPV_BUILDER_DIR" rev-parse HEAD' in BUILD
 motion_patch_call = 'python3 "$MPVFLOW_ROOT/scripts/patch_fongmi_motion_artifact.py" deps/mpv\\n'
 assert motion_patch_call in BUILD
 assert BUILD.index("motion_artifact_patch + flow_prepare") > BUILD.index("motion_artifact_patch = ")
-assert "MPVFLOW_ARTIFACT_GUARDS_V3" in PREPARE
+assert "MPVFLOW_ARTIFACT_GUARDS_V4" in PREPARE
 assert "MPVFLOW_ARTIFACT_TRUST_TAPER_V2" not in PREPARE
-assert "MPVFLOW_ARTIFACT_GUARDS_V3" in MOTION_PATCHER
+assert "MPVFLOW_ARTIFACT_GUARDS_V4" in MOTION_PATCHER
+assert "MPVFLOW_LOCAL_MOTION_SOFTENING_V1" in MOTION_PATCHER
 assert "smoothstep(0.03, 0.30," in MOTION_PATCHER
 assert "neighborhood_quality(sampler2D field, vec2 uv, vec2 center)" in MOTION_PATCHER
 assert "float luma_error = abs(dot(metric0" in MOTION_PATCHER
 assert "float chroma_error = max(abs((metric0.r - metric0.g)" in MOTION_PATCHER
 assert "boundary_trust *= mix(1.0, smoothstep(0.45, 0.70, local_quality)" in MOTION_PATCHER
 assert "region3_local_trust = mix(1.0, smoothstep(0.30, 0.75, local_quality)" in MOTION_PATCHER
+assert "min(0.75, 0.08 * local_motion_length)" in MOTION_PATCHER
+assert "float local_motion_softness = 0.24 *" in MOTION_PATCHER
+assert "sample_rgba(first, source_position + f.xy * scale + local_motion_offset)" in MOTION_PATCHER
+assert "sample_rgba(second, source_position + r.xy * scale - local_motion_offset)" in MOTION_PATCHER
 assert "MPVFLOW_RECONSTRUCTION_POSITIVE_EVIDENCE_V1" in MOTION_PATCHER
 assert "evidence > 0.0 &&" in MOTION_PATCHER
+assert "MPVFLOW_ARTIFACT_GUARDS_V4" in MOTION_SNAPSHOT
+assert "MPVFLOW_LOCAL_MOTION_SOFTENING_V1" in MOTION_SNAPSHOT
+assert "local_motion_softness" in MOTION_SNAPSHOT
 assert "MPVFLOW_RECONSTRUCTION_POSITIVE_EVIDENCE_V1" in MOTION_SNAPSHOT
 assert "if (!(evidence > 0.0 &&" in MOTION_SNAPSHOT
 assert "if (!(evidence > best || (evidence == best && distance < nearest)))" not in MOTION_SNAPSHOT

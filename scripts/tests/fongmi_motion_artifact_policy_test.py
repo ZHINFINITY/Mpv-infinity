@@ -32,6 +32,8 @@ BASE_TRUST = """            vec3 conflict = abs(metric0 - metric1);
                                       color_error);
             if (isnan(trust) || isinf(trust))
                 trust = 0.0;"""
+BASE_OUTPUT = """    color = mix(mix(original0, original1, alpha),
+                     mix(warped0, warped1, alpha), clamp(trust, 0.0, 1.0));"""
 LEGACY_TRUST = BASE_TRUST.replace(
     "            trust *= 1.0 - smoothstep(0.03, 0.15,\n                                      color_error);",
     "            // MPVFLOW_ARTIFACT_TRUST_TAPER_V2: soften color-conflict fallback only when motion trust remains\n"
@@ -53,6 +55,8 @@ def fixture(trust: str = BASE_TRUST) -> str:
         + BASE_PIXEL_HEADER
         + "\n"
         + trust
+        + "\n"
+        + BASE_OUTPUT
         + "\n);\n"
         "FongMi synthesis suffix\n"
     )
@@ -86,10 +90,28 @@ def boundary_weight(
     return boundary
 
 
+def local_motion_softness(
+    trust: float,
+    boundary_activation: float,
+    bidirectional_support: float,
+    local_quality: float,
+    motion_length: float,
+) -> float:
+    return (
+        0.24
+        * (1.0 - min(1.0, max(0.0, trust)))
+        * min(1.0, max(0.0, boundary_activation))
+        * min(1.0, max(0.0, bidirectional_support))
+        * smoothstep(0.45, 0.70, local_quality)
+        * smoothstep(0.75, 3.0, motion_length)
+    )
+
+
 original = fixture()
 patched, changed = PATCHER.transform_source(original)
 assert changed
 assert PATCHER.MARKER in patched
+assert PATCHER.LOCAL_SOFTENING_MARKER in patched
 assert PATCHER.RECONSTRUCTION_MARKER in patched
 assert "if (!(evidence > 0.0 &&" in patched
 assert "if (!(evidence > best || (evidence == best && distance < nearest)))" not in patched
@@ -103,32 +125,57 @@ assert "neighborhood_quality(warp1, uv, r.xy)" in patched
 assert "boundary_trust *= mix(1.0, smoothstep(0.45, 0.70, local_quality)" in patched
 assert "region3_local_trust = mix(1.0, smoothstep(0.30, 0.75, local_quality)" in patched
 assert "trust *= boundary_trust * region3_local_trust;" in patched
+assert "vec2 local_motion_delta = (r.xy - f.xy) * scale;" in patched
+assert "min(0.75, 0.08 * local_motion_length)" in patched
+assert "float local_motion_softness = 0.24 *" in patched
+assert "smoothstep(0.45, 0.70, local_quality)" in patched
+assert "smoothstep(0.75, 3.0, local_motion_length)" in patched
+assert "sample_rgba(first, source_position + f.xy * scale + local_motion_offset)" in patched
+assert "sample_rgba(second, source_position + r.xy * scale - local_motion_offset)" in patched
+assert "vec4 source_blend = mix(original0, original1, alpha);" in patched
+assert "color = mix(source_blend, mix(warped0, warped1, alpha), clamp(trust, 0.0, 1.0));" in patched
 assert "FongMi synthesis prefix\n" in patched and "FongMi synthesis suffix\n" in patched
 again, changed_again = PATCHER.transform_source(patched)
 assert not changed_again and again == patched
 
-# A source with the existing V3 synthesis patch gets the new reconstruction guard.
+# An existing V3 synthesis patch is upgraded in place, then remains idempotent.
 old_reconstruction = PATCHER._indent_block(PATCHER.RECONSTRUCTION_BLOCK, "    ")
 legacy_v3 = patched.replace(
     old_reconstruction,
     "    if (!(evidence > best || (evidence == best && distance < nearest)))",
     1,
 )
-assert legacy_v3 != patched and PATCHER._is_synthesis_patched(legacy_v3)
-repaired_v3, repaired_v3_changed = PATCHER.transform_source(legacy_v3)
-assert repaired_v3_changed and repaired_v3 == patched
+legacy_v3 = legacy_v3.replace(PATCHER.MARKER, PATCHER.PREVIOUS_MARKER, 1)
+legacy_v3 = legacy_v3.replace(
+    PATCHER._indent_block(PATCHER.SOFTENED_OUTPUT_BLOCK, "    "),
+    PATCHER._indent_block(BASE_OUTPUT, "    "),
+    1,
+)
+legacy_v3 = legacy_v3.replace(
+    PATCHER._indent_block(PATCHER.MOTION_SOFTNESS_CALC, "            ") + "\n",
+    "",
+    1,
+)
+legacy_v3 = legacy_v3.replace("            float local_quality = 1.0;\n", "", 1)
+legacy_v3 = legacy_v3.replace("            local_quality = min(", "            float local_quality = min(", 1)
+assert PATCHER._is_synthesis_patched_v3(legacy_v3)
+upgraded_v3, upgraded_v3_changed = PATCHER.transform_source(legacy_v3)
+assert upgraded_v3_changed and PATCHER._is_patched(upgraded_v3)
+upgraded_v3_again, upgraded_v3_changed_again = PATCHER.transform_source(upgraded_v3)
+assert not upgraded_v3_changed_again and upgraded_v3_again == upgraded_v3
 
 # An existing V2-only build tree is upgraded, not mistaken for stock source.
-upgraded, upgraded_changed = PATCHER.transform_source(fixture(LEGACY_TRUST))
-assert upgraded_changed and PATCHER.MARKER in upgraded
-assert PATCHER.LEGACY_MARKER not in upgraded
-assert "smoothstep(0.03, 0.30," in upgraded
+upgraded_v2, upgraded_v2_changed = PATCHER.transform_source(fixture(LEGACY_TRUST))
+assert upgraded_v2_changed and PATCHER.MARKER in upgraded_v2
+assert PATCHER.LEGACY_MARKER not in upgraded_v2
+assert PATCHER.LOCAL_SOFTENING_MARKER in upgraded_v2
 
 for invalid in (
     "unrecognized FongMi source",
     fixture() + fixture(),
     fixture(LEGACY_TRUST.replace("color-conflict fallback only when motion trust remains", "unexpected")),
     patched.replace("float chroma_error =", "float chroma_error_missing ="),
+    patched.replace(PATCHER.LOCAL_SOFTENING_MARKER, "unexpected-local-softening-marker"),
 ):
     try:
         PATCHER.transform_source(invalid)
@@ -158,15 +205,28 @@ divergent = boundary_weight(0.05, 0.07, 0.0, neighborhood_spread=2.8)
 assert 0.0 <= divergent < coherent <= 1.0, (coherent, divergent)
 assert math.isclose(taper_weight(0.15), 0.5829903978052126, abs_tol=1e-9)
 
+assert local_motion_softness(0.0, 1.0, 1.0, 1.0, 20.0) == 0.24
+assert local_motion_softness(0.5, 1.0, 1.0, 1.0, 20.0) == 0.12
+assert local_motion_softness(1.0, 1.0, 1.0, 1.0, 20.0) == 0.0
+assert local_motion_softness(0.0, 1.0, 1.0, 1.0, 0.0) == 0.0, "static content must not soften"
+assert local_motion_softness(0.0, 0.0, 1.0, 1.0, 20.0) == 0.0, "clean regions must not soften"
+assert local_motion_softness(0.0, 1.0, 0.0, 1.0, 20.0) == 0.0, "unsupported vectors must retain source fallback"
+assert local_motion_softness(0.0, 1.0, 1.0, 0.0, 20.0) == 0.0, "incoherent neighborhoods must not smear"
+for quality in (i / 100.0 for i in range(101)):
+    for motion in (i / 10.0 for i in range(51)):
+        weight = local_motion_softness(0.0, 1.0, 1.0, quality, motion)
+        assert 0.0 <= weight <= 0.24
+
 retained_source = (ROOT / "app/src/main/cpp/mpvflow/fongmi/motion.c").read_text(encoding="utf-8")
 retained_result, retained_changed = PATCHER.transform_source(retained_source)
-assert not retained_changed and retained_result == retained_source, "retained snapshot should mirror the active V3 and reconstruction safeguards"
+assert not retained_changed and retained_result == retained_source, "retained snapshot should mirror active V4 and reconstruction safeguards"
 if args.source:
     active_source = args.source.read_text(encoding="utf-8")
     active_result, active_changed = PATCHER.transform_source(active_source)
-    assert not active_changed and active_result == active_source, "active pinned shader must contain the verified V3 patch exactly once"
-    print("Active pinned FongMi synthesis and reconstruction sources contain the verified artifact guards")
+    assert not active_changed and active_result == active_source, "active pinned shader must contain the verified V4 patch exactly once"
+    print("Active pinned FongMi synthesis and reconstruction sources contain the verified V4 softening policy")
 print(
     "FongMi artifact policy passed: max taper trust step "
-    f"{old_step:.4f} -> {new_step:.4f}; local coherence and luma/chroma fallbacks are monotonic"
+    f"{old_step:.4f} -> {new_step:.4f}; local directional softness is capped at 0.24 "
+    "and gated by motion, bidirectional support, boundary and neighborhood coherence"
 )

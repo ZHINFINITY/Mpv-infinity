@@ -629,24 +629,44 @@ static const char synthesis_body[] = GLSL(
         float boundary_activation = max(smoothstep(0.04, 0.06, luma_error),
                                         smoothstep(0.06, 0.08, color_error));
         float region3_local_trust = 1.0;
+        float local_quality = 1.0;
         // Sample local vectors only where photometric disagreement makes a seam likely.
         if (boundary_activation > 0.0) {
-            float local_quality = min(neighborhood_quality(forward, uv, f.xy),
-                                      neighborhood_quality(backward, uv, r.xy));
+            local_quality = min(neighborhood_quality(forward, uv, f.xy),
+                                neighborhood_quality(backward, uv, r.xy));
             boundary_trust *= mix(1.0, smoothstep(0.45, 0.70, local_quality),
                                   boundary_activation);
             region3_local_trust = mix(1.0, smoothstep(0.30, 0.75, local_quality),
                                       boundary_activation);
         }
         // Fade toward source-frame crossfade on conflict instead of forming block seams.
-        // MPVFLOW_ARTIFACT_GUARDS_V3 keeps the color taper continuous through 0.30.
+        // MPVFLOW_ARTIFACT_GUARDS_V4 keeps the color taper continuous through 0.30.
         trust *= 1.0 - smoothstep(0.03, 0.30,
                                    color_error);
         trust *= boundary_trust * region3_local_trust;
+        vec2 local_motion_delta = (r.xy - f.xy) * scale;
+        float local_motion_length = length(local_motion_delta);
+        vec2 local_motion_offset = local_motion_delta /
+                                   max(local_motion_length, 0.0001) *
+                                   min(0.75, 0.08 * local_motion_length);
+        float local_motion_softness = 0.24 * (1.0 - clamp(trust, 0.0, 1.0)) *
+                                      boundary_activation * min(f.w, r.w) *
+                                      smoothstep(0.45, 0.70, local_quality) *
+                                      smoothstep(0.75, 3.0, local_motion_length);
+        if (isnan(local_motion_softness) || isinf(local_motion_softness))
+            local_motion_softness = 0.0;
         if (isnan(trust) || isinf(trust))
             trust = 0.0;
-        color = mix(mix(original0, original1, alpha),
-                     mix(warped0, warped1, alpha), clamp(trust, 0.0, 1.0));
+        // MPVFLOW_LOCAL_MOTION_SOFTENING_V1: two bounded directional taps soften only supported motion fallback.
+        vec4 source_blend = mix(original0, original1, alpha);
+        if (local_motion_softness > 0.001) {
+            vec4 soft0 = sample_rgba(first, source_position + f.xy * scale + local_motion_offset);
+            vec4 soft1 = sample_rgba(second, source_position + r.xy * scale - local_motion_offset);
+            vec4 motion_blend = mix(mix(warped0, soft0, 0.5),
+                                    mix(warped1, soft1, 0.5), alpha);
+            source_blend = mix(source_blend, motion_blend, local_motion_softness);
+        }
+        color = mix(source_blend, mix(warped0, warped1, alpha), clamp(trust, 0.0, 1.0));
     }
 );
 
