@@ -63,6 +63,10 @@ BASE_WARP = """static const char warp_body[] = GLSL(
     color = vec4(displacement, trust * geometry, reliable * geometry);
 );"""
 
+BASE_GRID = """static void fixture_analyze(int level) {
+        int spacing = level == LEVELS - 1 ? 4 : 8;
+}"""
+
 BASE_SCENE = """static const char scene_body[] = GLSL(
     float hist0[8];
     float hist1[8];
@@ -102,7 +106,9 @@ BASE_SCENE = """static const char scene_body[] = GLSL(
 
 def fixture(trust: str = BASE_TRUST, output: str = BASE_OUTPUT, output_indent: str = "    ") -> str:
     return (
-        BASE_WARP
+        BASE_GRID
+        + "\n"
+        + BASE_WARP
         + "\nFongMi reconstruction prefix\n"
         "static const char reconstruction_body[] = GLSL(\n"
         + BASE_RECONSTRUCTION
@@ -119,6 +125,21 @@ def fixture(trust: str = BASE_TRUST, output: str = BASE_OUTPUT, output_indent: s
         + "\n);\n"
         "FongMi synthesis suffix\n"
     )
+
+
+def vector_grid_shape(width: int, height: int, spacing: int) -> tuple[int, int]:
+    return ((width + spacing - 1) // spacing, (height + spacing - 1) // spacing)
+
+
+def bilinear_mixed_flow_band_pixels(
+    analysis_width: int, source_width: int, spacing: int
+) -> float:
+    cells = (analysis_width + spacing - 1) // spacing
+    centers = [(i + 0.5) * analysis_width / cells for i in range(cells)]
+    boundary = analysis_width / 2.0
+    left = max(center for center in centers if center < boundary)
+    right = min(center for center in centers if center >= boundary)
+    return (right - left) * source_width / analysis_width
 
 
 def smoothstep(edge0: float, edge1: float, value: float) -> float:
@@ -217,6 +238,8 @@ assert PATCHER.MARKER in patched
 assert PATCHER.LOCAL_SOFTENING_MARKER in patched
 assert PATCHER.RECONSTRUCTION_MARKER in patched
 assert PATCHER.WARP_TRAJECTORY_MARKER in patched
+assert PATCHER.FINE_GRID_MARKER in patched
+assert PATCHER.FINE_GRID_ASSIGNMENT in patched
 assert PATCHER.REJECTED_WARP_TRUST_MARKER not in patched
 assert PATCHER.SCENE_CUT_MARKER in patched
 assert PATCHER.REJECTED_INSHOT_FALLBACK_MARKER not in patched
@@ -257,6 +280,21 @@ assert "vec4 nearest_frame =" not in patched
 assert "source_blend = mix(source_blend, nearest_frame," not in patched
 assert "color = mix(source_blend, mix(warped0, warped1, alpha), clamp(trust, 0.0, 1.0));" in patched
 assert "FongMi synthesis prefix\n" in patched and "FongMi synthesis suffix\n" in patched
+coarse_grid = vector_grid_shape(480, 221, 8)
+fine_grid = vector_grid_shape(480, 221, 4)
+coarse_mix_band = bilinear_mixed_flow_band_pixels(480, 1920, 8)
+fine_mix_band = bilinear_mixed_flow_band_pixels(480, 1920, 4)
+assert coarse_grid == (60, 28)
+assert fine_grid == (120, 56)
+assert coarse_mix_band == 32.0 and fine_mix_band == 16.0
+assert fine_mix_band * 2 == coarse_mix_band
+broken_grid = patched.replace(PATCHER.FINE_GRID_ASSIGNMENT, "int spacing = 8;", 1)
+try:
+    PATCHER.transform_source(broken_grid)
+except ValueError:
+    pass
+else:
+    raise AssertionError("fine-grid marker must reject a mismatched assignment")
 again, changed_again = PATCHER.transform_source(patched)
 assert not changed_again and again == patched
 
@@ -264,6 +302,7 @@ pinned_patched, pinned_changed = PATCHER.transform_source(
     fixture(output=PINNED_OUTPUT, output_indent="            ")
 )
 assert pinned_changed and PATCHER._is_patched(pinned_patched)
+assert PATCHER.FINE_GRID_MARKER in pinned_patched
 assert "sample_rgba(source0, vec2(pixel) + f.xy * scale + local_motion_offset)" in pinned_patched
 assert "sample_rgba(source1, vec2(pixel) + r.xy * scale - local_motion_offset)" in pinned_patched
 assert "return mix(source_blend, mix(warped0, warped1, blend), clamp(trust, 0.0, 1.0));" in pinned_patched
@@ -475,7 +514,7 @@ assert spatial_scene_cut_score(uniform_dark, uniform_bright) == 0.0
 
 retained_source = (ROOT / "app/src/main/cpp/mpvflow/fongmi/motion.c").read_text(encoding="utf-8")
 retained_result, retained_changed = PATCHER.transform_source(retained_source)
-assert not retained_changed and retained_result == retained_source, "retained snapshot should mirror active synthesis, reconstruction, warp, and scene-cut safeguards"
+assert not retained_changed and retained_result == retained_source, "retained snapshot should mirror active grid, synthesis, reconstruction, warp, and scene-cut safeguards"
 assert "vec2 scene_change = texelFetch(scene, ivec2(0), 0).rg;" in retained_source
 assert "if (scene_change.r > 0.45 || scene_change.g > 0.08)" in retained_source
 assert "color = alpha < 0.5 ? original0 : original1;" in retained_source
@@ -483,11 +522,13 @@ assert "nearest_frame_weight" not in retained_source
 if args.source:
     active_source = args.source.read_text(encoding="utf-8")
     active_result, active_changed = PATCHER.transform_source(active_source)
-    assert not active_changed and active_result == active_source, "active pinned shader must contain the verified synthesis, reconstruction, and warp patches exactly once"
-    print("Active pinned FongMi synthesis, reconstruction, and inverse-warp sources contain the verified policy")
+    assert not active_changed and active_result == active_source, "active pinned shader must contain the verified grid, synthesis, reconstruction, and warp patches exactly once"
+    print("Active pinned FongMi grid, synthesis, reconstruction, and inverse-warp sources contain the verified policy")
 print(
     "FongMi artifact policy passed: max taper trust step "
     f"{old_step:.4f} -> {new_step:.4f}; local directional softness is capped at 0.24 "
     "with path coherence limited to uncertain recovery and no per-pixel temporal source switch; "
-    "spatial cut detection flags palette-matched scene changes without firing on one-tile motion"
+    "spatial cut detection flags palette-matched scene changes without firing on one-tile motion; "
+    f"the 480-cap grid changes {coarse_grid[0]}x{coarse_grid[1]} to {fine_grid[0]}x{fine_grid[1]}, "
+    f"halving the bilinear mixed-flow band {coarse_mix_band:.0f}px to {fine_mix_band:.0f}px in the supplied-resolution case"
 )

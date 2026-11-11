@@ -934,6 +934,8 @@ def main() -> None:
         or "trust *= trajectory_quality;" in motion
         or "nearest_frame_weight" in motion
         or "MPVFLOW_SCENE_CUT_SPATIAL_V1" not in motion
+        or "MPVFLOW_FINE_MOTION_GRID_V1" not in motion
+        or "int spacing = (level == LEVELS - 1 || level == 0) ? 4 : 8;" not in motion
         or "video/out/gpu_next/motion.c" not in meson
         or "libmpv_motion" not in meson
         or '{"motion-interpolation-info", mp_property_motion_info}' not in command

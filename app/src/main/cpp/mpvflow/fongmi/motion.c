@@ -806,7 +806,9 @@ static bool analyze(struct mp_motion *m, pl_tex first, pl_tex second,
     height = fmax(8, lround(height * scale));
     pl_tex inputs[2] = {first, second};
     for (int level = 0; level < LEVELS; level++) {
-        int spacing = level == LEVELS - 1 ? 4 : 8;
+        // MPVFLOW_FINE_MOTION_GRID_V1: halve finest-level vector-cell pitch
+        // without enlarging the analysis image.
+        int spacing = (level == LEVELS - 1 || level == 0) ? 4 : 8;
         for (int direction = 0; direction < 2; direction++) {
             if (!recreate(m, &m->images[level][direction], width, height) ||
                 !recreate(m, &m->vectors[level][direction],

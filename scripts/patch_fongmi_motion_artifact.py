@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
-"""Apply app-owned artifact guards to the pinned FongMi motion shader.
+"""Apply app-owned motion-grid and artifact guards to pinned FongMi motion.
 
-The patch is version-guarded and limited to the synthesis, reconstruction, and
-inverse-warp shader bodies in pinned upstream ``video/out/gpu_next/motion.c``.
-It keeps bilinear field sampling and motion vectors, gates uncertain recovery
-on inverse-path coherence, and retains whole-frame scene-cut handling.
+The patch is version-guarded and limited to the analysis grid plus synthesis,
+reconstruction, and inverse-warp logic in pinned upstream
+``video/out/gpu_next/motion.c``. It keeps bilinear field sampling and motion
+vectors, gates uncertain recovery on inverse-path coherence, and retains
+whole-frame scene-cut handling.
 """
 from __future__ import annotations
 
@@ -22,6 +23,8 @@ WARP_TRAJECTORY_MARKER = "MPVFLOW_WARP_TRAJECTORY_COHERENCE_V1"
 REJECTED_WARP_TRUST_MARKER = "MPVFLOW_WARP_TRAJECTORY_TRUST_V2"
 SCENE_CUT_MARKER = "MPVFLOW_SCENE_CUT_SPATIAL_V1"
 REJECTED_INSHOT_FALLBACK_MARKER = "MPVFLOW_INSHOT_NEAREST_SOURCE_FALLBACK_V1"
+FINE_GRID_MARKER = "MPVFLOW_FINE_MOTION_GRID_V1"
+FINE_GRID_ASSIGNMENT = "int spacing = (level == LEVELS - 1 || level == 0) ? 4 : 8;"
 
 RECONSTRUCTION_PATTERN = re.compile(
     r"(?m)^(?P<indent> *)" + re.escape(
@@ -75,6 +78,13 @@ for (int i = 0; i < 16; i++) {
         spatial_cut += 1.0 / 16.0;
 }
 cut = max(cut, spatial_cut);"""
+
+FINE_GRID_PATTERN = re.compile(
+    r"(?m)^(?P<indent>[ \t]*)int spacing = level == LEVELS - 1 \? 4 : 8;$"
+)
+FINE_GRID_BLOCK = """// MPVFLOW_FINE_MOTION_GRID_V1: halve finest-level vector-cell pitch
+// without enlarging the analysis image.
+int spacing = (level == LEVELS - 1 || level == 0) ? 4 : 8;"""
 
 PIXEL_HEADER_PATTERN = re.compile(
     r"(?m)^(?P<indent>[ \t]*)vec4 synthesize_pixel\(sampler2D source0, sampler2D source1, sampler2D warp0,"
@@ -343,12 +353,21 @@ def _has_scene_cut_guard(source: str) -> bool:
     )
 
 
+def _has_fine_motion_grid(source: str) -> bool:
+    return (
+        source.count(FINE_GRID_MARKER) == 1
+        and source.count(FINE_GRID_ASSIGNMENT) == 1
+        and "int spacing = level == LEVELS - 1 ? 4 : 8;" not in source
+    )
+
+
 def _is_patched(source: str) -> bool:
     return (
         _is_synthesis_patched(source)
         and _has_reconstruction_guard(source)
         and _has_warp_trajectory_guard(source)
         and _has_scene_cut_guard(source)
+        and _has_fine_motion_grid(source)
     )
 
 
@@ -447,6 +466,24 @@ def _patch_scene_cut(source: str) -> str:
     return source
 
 
+def _patch_fine_motion_grid(source: str) -> str:
+    if FINE_GRID_MARKER in source:
+        if not _has_fine_motion_grid(source):
+            raise ValueError("FongMi fine motion-grid marker/source mismatch")
+        return source
+    if FINE_GRID_ASSIGNMENT in source:
+        raise ValueError("FongMi fine motion-grid assignment is missing its marker")
+    source = _replace_one(
+        FINE_GRID_PATTERN,
+        source,
+        lambda match: _indent_block(FINE_GRID_BLOCK, match.group("indent")),
+        "finest motion-vector grid spacing",
+    )
+    if not _has_fine_motion_grid(source):
+        raise ValueError("FongMi fine motion-grid patch failed its postconditions")
+    return source
+
+
 def _patch_v3_synthesis(source: str) -> str:
     """Upgrade an already-patched V3 tree without reapplying the raw-source patch."""
     if not _is_synthesis_patched_v3(source):
@@ -481,7 +518,7 @@ def _patch_v3_synthesis(source: str) -> str:
 
 
 def transform_source(source: str) -> tuple[str, bool]:
-    """Apply version-guarded evidence, inverse-path, and scene-cut safeguards."""
+    """Apply version-guarded grid, evidence, inverse-path, and scene-cut safeguards."""
     original = source
     if MARKER in source:
         if _is_synthesis_patched(source):
@@ -491,6 +528,7 @@ def transform_source(source: str) -> tuple[str, bool]:
         patched = _patch_reconstruction(patched)
         patched = _patch_warp_trajectory(patched)
         patched = _patch_scene_cut(patched)
+        patched = _patch_fine_motion_grid(patched)
         if not _is_patched(patched):
             raise ValueError("FongMi motion artifact postconditions failed")
         return patched, patched != original
@@ -500,6 +538,7 @@ def transform_source(source: str) -> tuple[str, bool]:
         source = _patch_reconstruction(source)
         source = _patch_warp_trajectory(source)
         source = _patch_scene_cut(source)
+        source = _patch_fine_motion_grid(source)
         if not _is_patched(source):
             raise ValueError("FongMi motion artifact V3-to-V4 patch failed its postconditions")
         return source, source != original
@@ -544,6 +583,7 @@ def transform_source(source: str) -> tuple[str, bool]:
     source = _patch_reconstruction(source)
     source = _patch_warp_trajectory(source)
     source = _patch_scene_cut(source)
+    source = _patch_fine_motion_grid(source)
     if not _is_patched(source):
         raise ValueError("FongMi motion artifact V4 patch failed its postconditions")
     return source, True
@@ -563,9 +603,9 @@ def main() -> None:
         raise SystemExit(str(error)) from error
     if changed:
         source_path.write_text(patched, encoding="utf-8")
-        print("Applied MPVFlow FongMi synthesis, inverse-path, and spatial scene-cut guards")
+        print("Applied MPVFlow FongMi fine-grid, synthesis, inverse-path, and scene-cut guards")
     else:
-        print("MPVFlow FongMi synthesis, inverse-path, and spatial scene-cut guards are already applied")
+        print("MPVFlow FongMi fine-grid, synthesis, inverse-path, and scene-cut guards are already applied")
 
 
 if __name__ == "__main__":
