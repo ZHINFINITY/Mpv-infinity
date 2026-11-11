@@ -142,6 +142,15 @@ PL_LIBAV_API void pl_map_avdovi_metadata(struct pl_color_space *color,
                                          struct pl_dovi_metadata *dovi,
                                          const AVDOVIMetadata *metadata);
 
+// Checked AVFrame variant of `pl_map_avdovi_metadata`. This validates the
+// variable-sized Dolby Vision side data before following its internal offsets.
+// Returns false when the frame has no usable Dolby Vision metadata and leaves
+// all output structs unchanged.
+PL_LIBAV_API bool pl_map_avframe_dovi_metadata(struct pl_color_space *color,
+                                               struct pl_color_repr *repr,
+                                               struct pl_dovi_metadata *dovi,
+                                               const AVFrame *frame);
+
 // Helper function to check if Dolby Vision metadata can be mapped.
 // Always return `true`, as FEL is currently fully supported.
 PL_LIBAV_API bool pl_avdovi_metadata_supported(const AVDOVIMetadata *metadata);

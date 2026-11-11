@@ -22,6 +22,7 @@
 #else
 
 #include <assert.h>
+#include <math.h>
 
 #include <libplacebo/utils/dolbyvision.h>
 
@@ -249,6 +250,7 @@ PL_LIBAV_API enum AVColorTransferCharacteristic pl_transfer_to_av(enum pl_color_
     case PL_COLOR_TRC_S_LOG1:       return AVCOL_TRC_UNSPECIFIED; // missing
     case PL_COLOR_TRC_S_LOG2:       return AVCOL_TRC_UNSPECIFIED; // missing
     case PL_COLOR_TRC_SCRGB:        return AVCOL_TRC_UNSPECIFIED; // missing
+    case PL_COLOR_TRC_LINEAR_HDR:   return AVCOL_TRC_UNSPECIFIED; // working transfer
     case PL_COLOR_TRC_COUNT:        return AVCOL_TRC_UNSPECIFIED;
     }
 
@@ -347,8 +349,17 @@ PL_LIBAV_API void pl_map_hdr_metadata(struct pl_hdr_metadata *out,
     }
 
     if (data->dhp && data->dhp->application_version < 2) {
+        if (!data->dhp->num_windows ||
+            data->dhp->num_windows > FF_ARRAY_ELEMS(data->dhp->params))
+            return;
+
         const AVHDRPlusColorTransformParams *pars = &data->dhp->params[0];
-        assert(data->dhp->num_windows > 0);
+        if (pars->num_distribution_maxrgb_percentiles >
+                FF_ARRAY_ELEMS(pars->distribution_maxrgb) ||
+            pars->num_bezier_curve_anchors >
+                FF_ARRAY_ELEMS(pars->bezier_curve_anchors))
+            return;
+
         out->scene_max[0] = 10000 * av_q2d(pars->maxscl[0]);
         out->scene_max[1] = 10000 * av_q2d(pars->maxscl[1]);
         out->scene_max[2] = 10000 * av_q2d(pars->maxscl[2]);
@@ -401,7 +412,6 @@ PL_LIBAV_API void pl_map_hdr_metadata(struct pl_hdr_metadata *out,
             out->ootf.target_luma = av_q2d(data->dhp->targeted_system_display_maximum_luminance);
             out->ootf.knee_x = av_q2d(pars->knee_point_x);
             out->ootf.knee_y = av_q2d(pars->knee_point_y);
-            assert(pars->num_bezier_curve_anchors < 16);
             for (int i = 0; i < pars->num_bezier_curve_anchors; i++)
                 out->ootf.anchors[i] = av_q2d(pars->bezier_curve_anchors[i]);
             out->ootf.num_anchors = pars->num_bezier_curve_anchors;
@@ -410,11 +420,31 @@ PL_LIBAV_API void pl_map_hdr_metadata(struct pl_hdr_metadata *out,
 }
 #endif // PL_HAVE_LAV_HDR
 
-static inline void *pl_get_side_data_raw(const AVFrame *frame,
-                                         enum AVFrameSideDataType type)
+static bool pl_avframe_side_data_valid(const AVFrameSideData *data,
+                                       size_t minimum_size, size_t alignment)
 {
-    const AVFrameSideData *sd = av_frame_get_side_data(frame, type);
-    return sd ? (void *) sd->data : NULL;
+    if (!data || !data->data || data->size < minimum_size ||
+        !data->buf || !data->buf->data)
+        return false;
+
+    uintptr_t address = (uintptr_t) data->data;
+    uintptr_t buffer = (uintptr_t) data->buf->data;
+    if (address < buffer || (alignment && address % alignment))
+        return false;
+
+    size_t offset = address - buffer;
+    return offset <= data->buf->size &&
+           data->size <= data->buf->size - offset;
+}
+
+static inline void *pl_get_side_data_raw(const AVFrame *frame,
+                                         enum AVFrameSideDataType type,
+                                         size_t minimum_size,
+                                         size_t alignment)
+{
+    const AVFrameSideData *data = av_frame_get_side_data(frame, type);
+    return pl_avframe_side_data_valid(data, minimum_size, alignment)
+        ? (void *) data->data : NULL;
 }
 
 PL_LIBAV_API void pl_color_space_from_avframe(struct pl_color_space *out_csp,
@@ -427,9 +457,17 @@ PL_LIBAV_API void pl_color_space_from_avframe(struct pl_color_space *out_csp,
 
 #ifdef PL_HAVE_LAV_HDR
     pl_map_hdr_metadata(&out_csp->hdr, &(struct pl_av_hdr_metadata) {
-        .mdm = pl_get_side_data_raw(frame, AV_FRAME_DATA_MASTERING_DISPLAY_METADATA),
-        .clm = pl_get_side_data_raw(frame, AV_FRAME_DATA_CONTENT_LIGHT_LEVEL),
-        .dhp = pl_get_side_data_raw(frame, AV_FRAME_DATA_DYNAMIC_HDR_PLUS),
+        .mdm = pl_get_side_data_raw(
+            frame, AV_FRAME_DATA_MASTERING_DISPLAY_METADATA,
+            sizeof(AVMasteringDisplayMetadata),
+            _Alignof(AVMasteringDisplayMetadata)),
+        .clm = pl_get_side_data_raw(
+            frame, AV_FRAME_DATA_CONTENT_LIGHT_LEVEL,
+            sizeof(AVContentLightMetadata),
+            _Alignof(AVContentLightMetadata)),
+        .dhp = pl_get_side_data_raw(
+            frame, AV_FRAME_DATA_DYNAMIC_HDR_PLUS,
+            sizeof(AVDynamicHDRPlus), _Alignof(AVDynamicHDRPlus)),
     });
 #endif
 }
@@ -938,6 +976,116 @@ PL_LIBAV_API void pl_frame_copy_stream_props(struct pl_frame *out,
 #undef pl_av_stream_get_side_data
 
 #ifdef PL_HAVE_LAV_DOLBY_VISION
+static bool pl_avdovi_range_valid(const void *base, size_t offset,
+                                  size_t length, size_t size,
+                                  size_t alignment)
+{
+    uintptr_t address = (uintptr_t) base;
+    return offset <= size && length <= size - offset &&
+           offset <= UINTPTR_MAX - address &&
+           (!alignment || (address + offset) % alignment == 0);
+}
+
+static bool pl_avdovi_rational_valid(AVRational value)
+{
+    return value.den && isfinite(av_q2d(value));
+}
+
+static bool pl_avdovi_metadata_valid(const AVDOVIMetadata *data, size_t size,
+                                     int color_depth)
+{
+    if (!data || size < sizeof(*data) ||
+        !pl_avdovi_range_valid(data, data->header_offset,
+                               sizeof(AVDOVIRpuDataHeader), size,
+                               _Alignof(AVDOVIRpuDataHeader)) ||
+        !pl_avdovi_range_valid(data, data->mapping_offset,
+                               sizeof(AVDOVIDataMapping), size,
+                               _Alignof(AVDOVIDataMapping)) ||
+        !pl_avdovi_range_valid(data, data->color_offset,
+                               sizeof(AVDOVIColorMetadata), size,
+                               _Alignof(AVDOVIColorMetadata)))
+        return false;
+
+    const AVDOVIRpuDataHeader *header = av_dovi_get_header(data);
+    const AVDOVIDataMapping *mapping = av_dovi_get_mapping(data);
+    const AVDOVIColorMetadata *color = av_dovi_get_color(data);
+    if (header->bl_bit_depth < 8 || header->bl_bit_depth > 16 ||
+        (color_depth && header->bl_bit_depth != color_depth) ||
+        (!header->disable_residual_flag &&
+         (header->el_bit_depth < 8 || header->el_bit_depth > 16)) ||
+        header->coef_log2_denom > 63 ||
+        color->source_min_pq > 4095 || color->source_max_pq > 4095)
+        return false;
+
+    uint32_t maximum_pivot =
+        (UINT32_C(1) << header->bl_bit_depth) - 1;
+    for (int c = 0; c < 3; c++) {
+        const AVDOVIReshapingCurve *curve = &mapping->curves[c];
+        if (curve->num_pivots < 2 ||
+            curve->num_pivots > AV_DOVI_MAX_PIECES + 1)
+            return false;
+
+        uint16_t previous = 0;
+        for (int n = 0; n < curve->num_pivots; n++) {
+            if (curve->pivots[n] > maximum_pivot ||
+                (n && curve->pivots[n] <= previous))
+                return false;
+            previous = curve->pivots[n];
+        }
+        for (int n = 0; n < curve->num_pivots - 1; n++) {
+            switch (curve->mapping_idc[n]) {
+            case AV_DOVI_MAPPING_POLYNOMIAL:
+                if (curve->poly_order[n] < 1 || curve->poly_order[n] > 2)
+                    return false;
+                break;
+            case AV_DOVI_MAPPING_MMR:
+                if (curve->mmr_order[n] < 1 || curve->mmr_order[n] > 3)
+                    return false;
+                break;
+            default:
+                return false;
+            }
+        }
+    }
+
+    for (int n = 0; n < 3; n++) {
+        if (!pl_avdovi_rational_valid(color->ycc_to_rgb_offset[n]))
+            return false;
+    }
+    for (int n = 0; n < 9; n++) {
+        if (!pl_avdovi_rational_valid(color->ycc_to_rgb_matrix[n]) ||
+            !pl_avdovi_rational_valid(color->rgb_to_lms_matrix[n]))
+            return false;
+    }
+
+#if LIBAVUTIL_VERSION_INT >= AV_VERSION_INT(59, 12, 100)
+    if (data->num_ext_blocks < 0 ||
+        data->num_ext_blocks > AV_DOVI_MAX_EXT_BLOCKS)
+        return false;
+    if (data->num_ext_blocks) {
+        if (data->ext_block_size < sizeof(AVDOVIDmData) ||
+            data->ext_block_size % _Alignof(AVDOVIDmData) ||
+            (size_t) data->num_ext_blocks >
+                (SIZE_MAX - data->ext_block_offset) / data->ext_block_size)
+            return false;
+        size_t extension_size =
+            (size_t) data->num_ext_blocks * data->ext_block_size;
+        if (!pl_avdovi_range_valid(data, data->ext_block_offset,
+                                   extension_size, size,
+                                   _Alignof(AVDOVIDmData)))
+            return false;
+        for (int n = 0; n < data->num_ext_blocks; n++) {
+            const AVDOVIDmData *block = av_dovi_get_ext(data, n);
+            if (block->level == 1 &&
+                (block->l1.min_pq > 4095 || block->l1.max_pq > 4095 ||
+                 block->l1.avg_pq > 4095))
+                return false;
+        }
+    }
+#endif
+    return true;
+}
+
 static bool pl_avdovi_nlq_is_trivial(const AVDOVIRpuDataHeader *header,
                                      const AVDOVINLQParams *nlq)
 {
@@ -986,7 +1134,7 @@ PL_LIBAV_API void pl_map_dovi_metadata(struct pl_dovi_metadata *out,
             cdst->pivots[i] = scale * csrc->pivots[i];
         }
         for (int i = 0; i < csrc->num_pivots - 1; i++) {
-            const float scale = 1.0f / (1 << header->coef_log2_denom);
+            const float scale = 1.0f / (1ULL << header->coef_log2_denom);
             cdst->method[i] = csrc->mapping_idc[i];
             switch (csrc->mapping_idc[i]) {
             case AV_DOVI_MAPPING_POLYNOMIAL:
@@ -1040,6 +1188,7 @@ PL_LIBAV_API void pl_map_avdovi_metadata(struct pl_color_space *color,
                                          const AVDOVIMetadata *metadata)
 {
     const AVDOVIColorMetadata *dovi_color;
+    const AVDOVIRpuDataHeader *dovi_header;
 #if LIBAVUTIL_VERSION_INT >= AV_VERSION_INT(59, 12, 100)
     const AVDOVIDmData *dovi_ext;
 #endif
@@ -1047,16 +1196,24 @@ PL_LIBAV_API void pl_map_avdovi_metadata(struct pl_color_space *color,
         return;
 
     dovi_color = av_dovi_get_color(metadata);
+    dovi_header = av_dovi_get_header(metadata);
     pl_map_dovi_metadata(dovi, metadata);
 
     repr->dovi = dovi;
     repr->sys = PL_COLOR_SYSTEM_DOLBYVISION;
+    if (repr->levels == PL_COLOR_LEVELS_UNKNOWN) {
+        repr->levels = dovi_header->bl_video_full_range_flag
+            ? PL_COLOR_LEVELS_FULL
+            : PL_COLOR_LEVELS_LIMITED;
+    }
     color->primaries = PL_COLOR_PRIM_BT_2020;
     color->transfer = PL_COLOR_TRC_PQ;
     color->hdr.min_luma =
         pl_hdr_rescale(PL_HDR_PQ, PL_HDR_NITS, dovi_color->source_min_pq / 4095.0f);
     color->hdr.max_luma =
         pl_hdr_rescale(PL_HDR_PQ, PL_HDR_NITS, dovi_color->source_max_pq / 4095.0f);
+    if (color->hdr.max_luma <= color->hdr.min_luma)
+        color->hdr.min_luma = color->hdr.max_luma = 0.0f;
 
 #if LIBAVUTIL_VERSION_INT >= AV_VERSION_INT(59, 12, 100)
     if ((dovi_ext = av_dovi_find_level(metadata, 1))) {
@@ -1064,6 +1221,37 @@ PL_LIBAV_API void pl_map_avdovi_metadata(struct pl_color_space *color,
         color->hdr.avg_pq_y = dovi_ext->l1.avg_pq / 4095.0f;
     }
 #endif
+}
+
+PL_LIBAV_API bool pl_map_avframe_dovi_metadata(struct pl_color_space *color,
+                                               struct pl_color_repr *repr,
+                                               struct pl_dovi_metadata *dovi,
+                                               const AVFrame *frame)
+{
+    if (!color || !repr || !dovi || !frame)
+        return false;
+
+    const AVFrameSideData *sd =
+        av_frame_get_side_data(frame, AV_FRAME_DATA_DOVI_METADATA);
+    if (!pl_avframe_side_data_valid(sd, sizeof(AVDOVIMetadata),
+                                    _Alignof(AVDOVIMetadata)))
+        return false;
+
+    const AVPixFmtDescriptor *desc = av_pix_fmt_desc_get(frame->format);
+    if (desc && (desc->flags & AV_PIX_FMT_FLAG_HWACCEL) &&
+        frame->hw_frames_ctx)
+    {
+        const AVHWFramesContext *hwfc =
+            (const AVHWFramesContext *) frame->hw_frames_ctx->data;
+        desc = hwfc ? av_pix_fmt_desc_get(hwfc->sw_format) : NULL;
+    }
+    int color_depth = desc && desc->nb_components ? desc->comp[0].depth : 0;
+    const AVDOVIMetadata *metadata = (const AVDOVIMetadata *) sd->data;
+    if (!pl_avdovi_metadata_valid(metadata, sd->size, color_depth))
+        return false;
+
+    pl_map_avdovi_metadata(color, repr, dovi, metadata);
+    return true;
 }
 
 PL_LIBAV_API void pl_frame_map_avdovi_metadata(struct pl_frame *out_frame,
@@ -1419,10 +1607,9 @@ PL_LIBAV_API bool pl_map_avframe_ex(pl_gpu gpu, struct pl_frame *out,
 #ifdef PL_HAVE_LAV_DOLBY_VISION
     if (params->map_dovi) {
         AVFrameSideData *sd = av_frame_get_side_data(frame, AV_FRAME_DATA_DOVI_METADATA);
-        if (sd) {
-            const AVDOVIMetadata *metadata = (AVDOVIMetadata *) sd->data;
-            pl_map_avdovi_metadata(&out->color, &out->repr, &priv->dovi, metadata);
-        }
+        if (sd && !pl_map_avframe_dovi_metadata(
+                &out->color, &out->repr, &priv->dovi, frame))
+            goto error;
 
 #ifdef PL_HAVE_LIBDOVI
         sd = av_frame_get_side_data(frame, AV_FRAME_DATA_DOVI_RPU_BUFFER);
@@ -1589,6 +1776,7 @@ PL_LIBAV_API bool pl_download_avframe(pl_gpu gpu,
 static inline void pl_avalloc_free(void *opaque, uint8_t *data)
 {
     struct pl_avalloc *alloc = opaque;
+    (void) data;
     assert(alloc->magic[0] == PL_MAGIC0);
     assert(alloc->magic[1] == PL_MAGIC1);
     assert(alloc->buf->data == data);

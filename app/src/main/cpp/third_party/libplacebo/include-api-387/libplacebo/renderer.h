@@ -127,6 +127,8 @@ struct pl_render_info {
 
 // Represents the options used for rendering. These affect the quality of
 // the result.
+#define PL_HAVE_SOURCE_HOOK_PARAMETERS 1
+
 struct pl_render_params {
     // Configures the algorithms used for upscaling and downscaling,
     // respectively. If left as NULL, then libplacebo will only use inexpensive
@@ -234,6 +236,19 @@ struct pl_render_params {
     // See <libplacebo/shaders/custom.h> for more information.
     const struct pl_hook * const *hooks;
     int num_hooks;
+
+    // Hook parameters whose values are determined solely by the corresponding
+    // input signature in pl_frame_mix.signatures. The frame's acquire callback
+    // must set these values before its hooks execute. They do not invalidate
+    // other cached views when another source is acquired. All other parameter
+    // values remain part of the shared view-cache key.
+    //
+    // Entries must point into the parameter descriptors of hooks above;
+    // duplicates are harmless. The list is borrowed for the render call only.
+    // If an external change affects a listed value, change the affected input
+    // signatures or flush the renderer cache. NULL/0 preserves normal hashing.
+    const struct pl_hook_par * const *source_parameters;
+    int num_source_parameters;
 
     // Color mapping LUT. If present, this will be applied as part of the
     // image being rendered, in normalized RGB space.
@@ -586,9 +601,9 @@ struct pl_frame {
     // Note: For PL_COLOR_SYSTEM_XYZ, `color.primaries` denotes the RGB color
     // space that the XYZ tristimulus values are decoded into (or encoded
     // from), which decides the white point treated as neutral. Unless the
-    // frame is explicitly tagged as PL_COLOR_TRC_LINEAR, XYZ is assumed to be
-    // DCDM X'Y'Z' (SMPTE ST 428-1), i.e. ST 428-1 encoded DCI-P3, and any
-    // tagged primaries/transfer are ignored. Linear light XYZ honors the
+    // frame uses a normalized linear transfer (LINEAR or LINEAR_HDR), XYZ is
+    // assumed to be DCDM X'Y'Z' (SMPTE ST 428-1), i.e. ST 428-1 encoded DCI-P3.
+    // Tagged primaries/transfer are ignored. Linear light XYZ honors the
     // tagged primaries, defaulting to BT.2020 (D65) if unknown.
     struct pl_color_repr repr;
     struct pl_color_space color;
@@ -875,6 +890,212 @@ PL_API const struct pl_frame *pl_frame_mix_nearest(const struct pl_frame_mix *mi
 PL_API bool pl_render_image_mix(pl_renderer rr, const struct pl_frame_mix *images,
                                 const struct pl_frame *target,
                                 const struct pl_render_params *params);
+
+#define PL_HAVE_CUSTOM_FRAME_MIXER 1
+#define PL_HAVE_PREPARED_FIELD_MIXER 1
+
+struct pl_rendered_frame {
+    pl_tex texture;
+    // Identifies rendered pixels, not the source or texture allocation. Stable
+    // on cache hits, unique across re-renders and resets of the same renderer.
+    uint64_t signature;
+    double timestamp; // unchanged from pl_frame_mix.timestamps
+};
+
+struct pl_rendered_mix {
+    const struct pl_rendered_frame *frames;
+    int num_frames;
+    int reference; // nearest source frame, used for source overlays
+    // All textures are full-size RGBA FP32, with premultiplied alpha, in this
+    // common display-linear RGB space. 1.0 is PL_COLOR_SDR_WHITE cd/m2.
+    struct pl_color_space color;
+};
+
+struct pl_custom_frame_mixer {
+    void *priv;
+    // Inputs are borrowed, read-only, and valid only during this callback.
+    // Return a same-size, sampleable RGBA FP32 texture on the same GPU, in the
+    // same color/alpha representation, or NULL on failure. It may alias an
+    // input. The output must remain valid until pl_render_image_mix_custom
+    // returns. Do not re-enter or reset the renderer from this callback.
+    pl_tex (*mix)(void *priv, const struct pl_rendered_mix *images);
+};
+
+// Render every supplied source through scaling and display color adaptation,
+// then invoke a custom mixer on the resulting linear-light pixels. Source
+// overlays are excluded from these pixels; the nearest frame's overlays are
+// drawn once after mixing, followed by target overlays. The final pass encodes
+// the target transfer and applies output hooks, dithering and output geometry.
+// The reference source is acquired again for final output so overlays supplied
+// by acquire remain valid until they are drawn. Source views are mapped one at
+// a time, with any references required by the active deinterlacer.
+//
+// Accepts 1..16 frames with finite, strictly increasing timestamps and compatible
+// source rotations. All input signatures must be unique and must change when
+// source pixels, metadata or deinterlacing references change. Field views are
+// prepared as full frames and require a non-weave deinterlacer. Cropping and
+// scaling are already applied to the callback textures, whose coordinates are
+// [0,w) x [0,h).
+//
+// Requires renderable/sampleable RGBA FP32 support. Target ICC/profile/LUTs,
+// XYZ targets, forced low-bit FBOs, conversion render LUTs and peak detection
+// are unsupported.
+// Peak detection needs a source-time owner independent of view cache re-renders.
+// These configurations return false, as do acquisition, preparation, callback
+// and output failures. Dolby Vision sources that require an enhancement layer
+// must supply progressive base and enhancement views. There is no fallback
+// to ordinary frame mixing.
+// `frame_mixer`, `preserve_mixing_cache` and `skip_caching_single_frame` are
+// ignored. Other rendering parameters retain their usual meaning.
+PL_API bool pl_render_image_mix_custom(pl_renderer rr,
+                                       const struct pl_frame_mix *images,
+                                       const struct pl_frame *target,
+                                       const struct pl_render_params *params,
+                                       const struct pl_custom_frame_mixer *mixer);
+
+#define PL_HAVE_SOURCE_PEAK_TIMELINE 1
+#define PL_HAVE_SOURCE_PEAK_IMAGE 1
+
+// A source-time peak estimator, independent of renderer view caches. Keep it
+// alive until every renderer that rendered with it has been destroyed, reset
+// with pl_renderer_reset(), or had its cache flushed. Resetting only renderer
+// errors or the source state does not release those references. Destroy it
+// before its GPU. Not thread-safe; do not submit/reset/destroy it during a
+// render or source callback on the same state.
+typedef struct pl_source_peak_state_t *pl_source_peak_state;
+PL_API pl_source_peak_state pl_source_peak_state_create(pl_log log, pl_gpu gpu);
+PL_API void pl_source_peak_state_destroy(pl_source_peak_state *state);
+// Retire pending work/history immediately, including while no frames are ready.
+// Use for source discontinuities, not renderer view/FPS cache invalidation.
+PL_API bool pl_source_peak_state_reset(pl_source_peak_state state, uint64_t epoch);
+
+enum pl_source_peak_status {
+    PL_SOURCE_PEAK_UNSUPPORTED = -2,
+    PL_SOURCE_PEAK_ERROR = -1,
+    PL_SOURCE_PEAK_PENDING,
+    PL_SOURCE_PEAK_READY,
+};
+
+// Submit a native source before applying output crop or rendering filters.
+// IDs must be nonzero, stable and unique per source within an epoch. Smoothing
+// counts submitted sources in increasing ID order; skipped IDs are not invented.
+// Change epoch on seek/item/source-reference changes. View/FPS resets must keep
+// the same epoch.
+//
+// This estimates decoded-source metadata (including representation decoding,
+// RPU/FEL and frame LUT/ICC/grain), independently of rendering parameters and
+// the display. Rendering filters still apply normally in the final view.
+// For interlaced sources, submit the full native planes containing both
+// interleaved fields. Both field views share one measurement of the decoded
+// samples. Deinterlacing and its neighboring frames are outside that estimate.
+// HLG's display-dependent OOTF and interlaced Dolby Vision FEL are unsupported
+// here. SDR fields do not require a peak measurement.
+//
+// PENDING means accepted but not yet read back, READY also covers sources not
+// requiring detection. Repeating the same submission never reacquires its
+// source. Failures remain failed until the epoch or measurement policy changes.
+// UNSUPPORTED records form explicit non-measuring boundaries: they carry no
+// detected metadata and reset the source history for subsequent measurements.
+// ERROR records still prevent traversal of any prefix requiring that source.
+// params == NULL disables measurement without submitting GPU work; source may
+// then be NULL to register only the ID without preparing native pixels. Changing
+// measurement/smoothing policy starts a new history; changing only allow_delayed
+// selects before/after snapshots without smoothing the same source again.
+PL_API enum pl_source_peak_status pl_source_peak_submit(
+    pl_renderer rr, pl_source_peak_state state, uint64_t epoch, uint64_t id,
+    const struct pl_frame *source, const struct pl_peak_detect_params *params);
+
+struct pl_source_peak_context {
+    pl_source_peak_state state;
+    uint64_t epoch;
+    // One source ID per pl_frame_mix entry, or one ID for a direct image view,
+    // independent of rendering signatures (which may include dynamic overlays).
+    // Must be strictly increasing, except that a mix may use the same native
+    // ID for adjacent first and second field views of one source. Submit that
+    // source once. Each field keeps its own rendering signature and timestamp.
+    const uint64_t *ids;
+    // Source-time watermark for this render. It must have been submitted, but
+    // need not occur in ids. Keep its clock consistent across render modes;
+    // it is independent of the frames chosen for a view. Earlier sources are
+    // committed, future sources only contribute speculative prefixes.
+    uint64_t current_id;
+    // Oldest source that may still be used by a later render, including sources
+    // absent from this mix. After successful rendering, committed records below
+    // this ID can be retired. Must not exceed current_id or ids[0]. Zero retains
+    // all records until an explicit retirement boundary or state reset.
+    uint64_t retire_before_id;
+};
+
+// Render using per-source latched peak snapshots. Submit all available native
+// sources first, including lookahead, using the same peak parameters. A NULL
+// mixer uses ordinary rendering/mixing, without MEMC view preparation or flow.
+// A custom mixer has the same contract as pl_render_image_mix_custom, and may
+// now use peak detection. Existing untimed entry points retain their behavior.
+// An UNSUPPORTED source may be rendered normally using the renderer's original
+// peak path. Contiguous unsupported sources share that legacy history; a new
+// unsupported segment starts fresh. This legacy history remains view-based.
+// A custom mixer requiring an UNSUPPORTED source is rejected without fallback,
+// except when preparing HLG for an HDR target where the view does not need
+// peak detection.
+//
+// allow_delayed uses each source's before snapshot (empty on the first source);
+// otherwise its after snapshot is used. Readback/phase/redraw do not relatch it.
+// Failed rendering does not advance the supplied current_id. Renderer cache
+// flushes do not reset this state; explicit epochs control source continuity.
+// The renderer's detected-metadata query reports the current source snapshot,
+// which is empty for an UNSUPPORTED boundary, even if a different source is
+// visible or the ordinary renderer has detected legacy metadata.
+PL_API bool pl_render_image_mix_source(pl_renderer rr,
+                                       const struct pl_frame_mix *images,
+                                       const struct pl_frame *target,
+                                       const struct pl_render_params *params,
+                                       const struct pl_source_peak_context *source,
+                                       const struct pl_custom_frame_mixer *mixer);
+
+#define PL_HAVE_FRAME_SHADER_MIXER 1
+
+struct pl_frame_shader_mixer {
+    void *priv;
+    // Append a color-producing shader with no input signature to the supplied
+    // shader. Its output is full-size premultiplied display-linear RGBA in the
+    // same representation as the prepared views. Return false on failure.
+    // The renderer owns the shader. Do not dispatch, abort or reset it here.
+    // The prepared views are borrowed through final output.
+    bool (*mix)(void *priv, const struct pl_rendered_mix *images, pl_shader shader);
+};
+
+// Shader form of pl_render_image_mix_source with a required custom mixer.
+// It has the same source-time, geometry, overlay and failure semantics.
+// The renderer appends the final output stages without materializing a
+// full-size mixed texture. A declared shader output size must match the views.
+PL_API bool pl_render_image_mix_source_shader(pl_renderer rr,
+                                             const struct pl_frame_mix *images,
+                                             const struct pl_frame *target,
+                                             const struct pl_render_params *params,
+                                             const struct pl_source_peak_context *source,
+                                             const struct pl_frame_shader_mixer *mixer);
+
+// Direct single-image equivalent of pl_render_image_mix_source with no mixer.
+// source->ids points to one native source ID whose snapshot applies to image;
+// current_id may identify a different submitted source. The image may contain
+// newly materialized pixels on each call: no mixed-frame cache or rendering
+// signature is used. No custom view preparation or motion synthesis is performed.
+// UNSUPPORTED sources use the same ordinary legacy peak path described above.
+//
+// A NULL image (or an empty mix in pl_render_image_mix_source) draws only empty
+// overlays as in pl_render_image. It does not prepare, commit or retire sources,
+// ignores source IDs and epoch, and on success reports no detected metadata.
+// The source state must still be valid, on the same GPU, and not in active use.
+PL_API bool pl_render_image_source(pl_renderer rr, const struct pl_frame *image,
+                                   const struct pl_frame *target,
+                                   const struct pl_render_params *params,
+                                   const struct pl_source_peak_context *source);
+
+// Query an already selected snapshot without waiting or advancing history.
+// Only detected HDR fields are written. Returns false if none are available.
+PL_API bool pl_source_peak_get_hdr_metadata(pl_source_peak_state state,
+                                           uint64_t epoch, uint64_t id,
+                                           struct pl_hdr_metadata *metadata);
 
 // Analog of `pl_frame_infer` corresponding to `pl_render_image_mix`. This
 // function will *not* mutate the frames contained in `mix`, and instead

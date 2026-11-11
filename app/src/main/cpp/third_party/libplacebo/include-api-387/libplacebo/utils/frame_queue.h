@@ -246,7 +246,8 @@ PL_API int pl_queue_num_frames(pl_queue queue);
 PL_API double pl_queue_pts_offset(pl_queue queue);
 
 // Inspect the contents of the Nth queued frame. Returns false if `idx` is
-// out of range.
+// out of range. For an interlaced field, `pts` is the queued field timestamp
+// and the remaining members describe the original source frame.
 //
 // Warning: No guarantee is made to ensure validity of `out->frame_data`
 // after this call. In particular, pl_queue_* calls made from another thread

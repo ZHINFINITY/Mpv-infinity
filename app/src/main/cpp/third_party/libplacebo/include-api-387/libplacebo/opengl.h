@@ -201,6 +201,11 @@ struct pl_opengl_wrap_params {
 
     // The texture's GLint sized internal format (e.g. GL_RGBA16F). Required.
     int iformat;
+
+    // Sample a YUV GL_TEXTURE_EXTERNAL_OES without driver color conversion.
+    // Requires OpenGL ES 3.0, GL_OES_EGL_image_external and GL_EXT_YUV_target.
+    // The sampled components are returned as Y, U and V in R, G and B.
+    bool external_yuv;
 };
 
 #define pl_opengl_wrap_params(...) (&(struct pl_opengl_wrap_params) { __VA_ARGS__ })

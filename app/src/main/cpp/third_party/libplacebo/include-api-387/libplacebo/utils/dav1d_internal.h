@@ -179,6 +179,7 @@ PL_DAV1D_API enum Dav1dTransferCharacteristics pl_transfer_to_dav1d(enum pl_colo
     case PL_COLOR_TRC_S_LOG1:       return DAV1D_TRC_UNKNOWN; // missing
     case PL_COLOR_TRC_S_LOG2:       return DAV1D_TRC_UNKNOWN; // missing
     case PL_COLOR_TRC_SCRGB:        return DAV1D_TRC_UNKNOWN; // missing
+    case PL_COLOR_TRC_LINEAR_HDR:   return DAV1D_TRC_UNKNOWN; // working transfer
     case PL_COLOR_TRC_COUNT: abort();
     }
 
