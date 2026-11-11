@@ -10,7 +10,10 @@ import tempfile
 import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
-PLACEBO_CONFIG_HEADER = ROOT / "app/src/main/cpp/third_party/libplacebo/include/libplacebo/config.h"
+PLACEBO_CONFIG_HEADERS = {
+    "374": ROOT / "app/src/main/cpp/third_party/libplacebo/include/libplacebo/config.h",
+    "387": ROOT / "app/src/main/cpp/third_party/libplacebo/include-api-387/libplacebo/config.h",
+}
 
 ABI_ELF = {
     "arm64-v8a": ("ELF64", "AArch64"),
@@ -20,6 +23,7 @@ ABI_ELF = {
 }
 ANDROID_SYSTEM_LIBS = {
     "libEGL.so",
+    "libGLESv2.so",
     "libGLESv3.so",
     "libOpenSLES.so",
     "libandroid.so",
@@ -93,26 +97,45 @@ def verify_dependency_closure(abi: str, paths: dict[str, Path]) -> None:
             raise SystemExit(f"{abi}/libmpv.so no longer declares the expected libudfread dependency")
 
 
-def expected_placebo_api_ver() -> str:
-    if not PLACEBO_CONFIG_HEADER.is_file():
-        raise SystemExit(f"Cannot read app libplacebo API header: {PLACEBO_CONFIG_HEADER}")
-    text = PLACEBO_CONFIG_HEADER.read_text(encoding="utf-8")
+def expected_placebo_api_ver(api_ver: str) -> str:
+    config_header = PLACEBO_CONFIG_HEADERS.get(api_ver)
+    if config_header is None:
+        raise SystemExit(f"No supported app libplacebo header set for API v{api_ver}")
+    if not config_header.is_file():
+        raise SystemExit(f"Cannot read app libplacebo API header: {config_header}")
+    text = config_header.read_text(encoding="utf-8")
     match = re.search(r"^#define PL_API_VER\s+(\d+)\s*$", text, re.MULTILINE)
     if not match:
-        raise SystemExit(f"Cannot determine PL_API_VER from {PLACEBO_CONFIG_HEADER}")
+        raise SystemExit(f"Cannot determine PL_API_VER from {config_header}")
+    if match.group(1) != api_ver:
+        raise SystemExit(
+            f"App libplacebo header {config_header} declares API v{match.group(1)}, "
+            f"but the library exports API v{api_ver}"
+        )
     return match.group(1)
 
 
 def verify_placebo_logger_export(abi: str, path: Path, library_name: str = "libmpv.so") -> None:
-    api_ver = expected_placebo_api_ver()
-    expected_symbol = f"pl_log_create_{api_ver}"
     exports = run_tool(["nm", "-D", "--defined-only", str(path)])
-    if not re.search(rf"\b{re.escape(expected_symbol)}(?:@[^\s]+)?\b", exports):
-        found = sorted(set(re.findall(r"\bpl_log_create_\d+\b", exports)))
-        raise SystemExit(
-            f"Standard {abi}/{library_name} exports {found or 'no versioned logger symbol'}, "
-            f"but the app's libplacebo headers require {expected_symbol} (API v{api_ver})"
+    api_versions = sorted(
+        set(
+            re.findall(
+                r"[ \t]pl_log_create_([0-9]+)(?:@[^ \t\r\n]+)?$",
+                exports,
+                re.MULTILINE,
+            )
         )
+    )
+    if len(api_versions) != 1:
+        raise SystemExit(
+            f"Standard {abi}/{library_name} must export exactly one pl_log_create_<API> symbol; "
+            f"found {api_versions or 'none'}"
+        )
+    api_ver = api_versions[0]
+    expected_symbol = f"pl_log_create_{api_ver}"
+    expected_placebo_api_ver(api_ver)
+    if not re.search(rf"\b{re.escape(expected_symbol)}(?:@[^\s]+)?\b", exports):
+        raise SystemExit(f"Standard {abi}/{library_name} does not export {expected_symbol}")
 
 
 def verify_mpv(

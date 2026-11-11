@@ -61,10 +61,13 @@ class Arm64WorkflowTest(unittest.TestCase):
         self.assertIn("./scripts/test-mpvflow-core.sh", tests)
         self.assertIn("MPVFLOW_REQUIRE_VULKAN_PIXEL_TEST: '1'", tests)
         core_runner = Path(__file__).resolve().parents[2] / "scripts/test-mpvflow-core.sh"
+        self.assertTrue(core_runner.stat().st_mode & 0o111, "the workflow invokes the core runner directly")
         for script in (
             "scripts/tests/mpvflow_fongmi_native_source_test.py",
+            "scripts/tests/mpvflow_android_subprocess_test.py",
             "scripts/tests/mpvflow_vulkan_headers_prepare_test.py",
             "scripts/tests/mpvflow_placebo_api_headers_test.py",
+            "scripts/tests/verify_mpv_aar_lgpl_test.py",
         ):
             self.assertIn(script, core_runner.read_text(encoding="utf-8"))
         self.assertLess(TEXT.index("- name: Run MPVFlow core and GPU shader regression tests"), TEXT.index("- name: Assemble arm64-v8a debug APK after Kotlin checks"))

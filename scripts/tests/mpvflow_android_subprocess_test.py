@@ -62,6 +62,30 @@ class AndroidSubprocessFallbackTest(unittest.TestCase):
         with patch.object(verifier, "run_tool", return_value="List of enabled features: android vulkan"):
             verifier.verify_mpv("arm64-v8a", path, False, False, require_fork_subprocess=True)
 
+    def test_android_glesv2_dependency_is_allowed_and_unknown_dependency_is_rejected(self):
+        paths = {
+            "libmpv.so": Path("arm64-libmpv.so"),
+            "libudfread.so": Path("arm64-libudfread.so"),
+        }
+
+        def glesv2_dependencies(path):
+            if path.name == "arm64-libmpv.so":
+                return {"libudfread.so", "libGLESv2.so"}
+            return {"libc.so"}
+
+        self.assertIn("libGLESv2.so", verifier.ANDROID_SYSTEM_LIBS)
+        with patch.object(verifier, "needed_libraries", side_effect=glesv2_dependencies):
+            verifier.verify_dependency_closure("arm64-v8a", paths)
+
+        def unknown_dependencies(path):
+            if path.name == "arm64-libmpv.so":
+                return {"libudfread.so", "libvendor-private.so"}
+            return {"libc.so"}
+
+        with patch.object(verifier, "needed_libraries", side_effect=unknown_dependencies):
+            with self.assertRaisesRegex(SystemExit, "libvendor-private.so"):
+                verifier.verify_dependency_closure("arm64-v8a", paths)
+
     def test_debug_workflow_runs_regression_and_checks_overlaid_runtime(self):
         workflow = (ROOT / ".github/workflows/debug-apk.yml").read_text(encoding="utf-8")
         self.assertIn("python3 scripts/tests/mpvflow_android_subprocess_test.py", workflow)

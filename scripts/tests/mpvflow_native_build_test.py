@@ -94,6 +94,29 @@ for marker in (
     "LOCAL_SHARED_LIBRARIES := swscale avcodec mpv udfread placebo",
 ):
     assert marker in runtime_builder, f"MPV build must preserve verified Blu-ray support: missing {marker!r}"
+safe_bluray_check = r"""strings -a "$MPV_LIBRARY" | grep -F 'libbluray' >/dev/null"""
+unsafe_bluray_check = r"""strings -a "$MPV_LIBRARY" | grep -Fq 'libbluray'"""
+assert safe_bluray_check in runtime_builder, "the Blu-ray feature check must consume strings output to avoid pipefail/SIGPIPE false negatives"
+assert unsafe_bluray_check not in runtime_builder, "grep -q may close the strings pipe early under pipefail"
+safe_udfread_check = r"""readelf -d "$MPV_LIBRARY" | grep -F 'Shared library: [libudfread.so]' >/dev/null"""
+unsafe_udfread_check = r"""readelf -d "$MPV_LIBRARY" | grep -Fq 'Shared library: [libudfread.so]'"""
+assert safe_udfread_check in runtime_builder, "the libudfread dependency check must consume readelf output under pipefail"
+assert unsafe_udfread_check not in runtime_builder, "grep -q may close readelf's pipe early under pipefail"
+producer = "python3 -c 'import os; os.write(1,b\"libbluray\\n\"); os.write(1,b\"x\"*1048576)'"
+unsafe_pipeline = subprocess.run(
+    ["bash", "-c", f"set -o pipefail; {producer} | grep -Fq libbluray"],
+    capture_output=True,
+    text=True,
+    timeout=10,
+)
+assert unsafe_pipeline.returncode != 0, "the test payload must reproduce the grep -q/pipefail false negative"
+subprocess.run(
+    ["bash", "-c", f"set -o pipefail; {producer} | grep -F libbluray >/dev/null"],
+    check=True,
+    capture_output=True,
+    text=True,
+    timeout=10,
+)
 
 vulkan_headers_helper = (ROOT / "scripts/prepare-mpvflow-vulkan-headers.py").read_text(encoding="utf-8")
 assert f'VULKAN_HEADERS_REVISION = "{VULKAN_HEADERS_SHA}"' in vulkan_headers_helper

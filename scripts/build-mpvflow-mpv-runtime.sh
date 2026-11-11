@@ -400,7 +400,7 @@ if ! readelf -d "$MPV_LIBRARY" | grep -Eq 'Shared library: \[libplacebo\.so([.][
   echo "MPVFlow libmpv.so must dynamically use the shared libplacebo.so runtime" >&2
   exit 1
 fi
-if ! readelf -d "$MPV_LIBRARY" | grep -Fq 'Shared library: [libudfread.so]'; then
+if ! readelf -d "$MPV_LIBRARY" | grep -F 'Shared library: [libudfread.so]' >/dev/null; then
   echo "MPVFlow libmpv.so must retain its LGPL libudfread dependency through libbluray" >&2
   exit 1
 fi
@@ -408,7 +408,7 @@ if readelf -d "$MPV_LIBRARY" | grep -Eq 'Shared library: \[libbluray\.so([.][0-9
   echo "MPVFlow libmpv.so must statically link libbluray; the AAR does not bundle libbluray.so" >&2
   exit 1
 fi
-if ! strings -a "$MPV_LIBRARY" | grep -Fq 'libbluray'; then
+if ! strings -a "$MPV_LIBRARY" | grep -F 'libbluray' >/dev/null; then
   echo "MPVFlow libmpv.so is missing the required LGPL Blu-ray feature" >&2
   exit 1
 fi
