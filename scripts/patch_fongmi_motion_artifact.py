@@ -3,8 +3,8 @@
 
 The patch is version-guarded and limited to the synthesis, reconstruction, and
 inverse-warp shader bodies in pinned upstream ``video/out/gpu_next/motion.c``.
-It keeps bilinear field sampling and motion vectors, couples path coherence to
-primary warp trust, and avoids two-frame ghosts only at untrusted moving edges.
+It keeps bilinear field sampling and motion vectors, gates uncertain recovery
+on inverse-path coherence, and retains whole-frame scene-cut handling.
 """
 from __future__ import annotations
 
@@ -19,9 +19,9 @@ LEGACY_MARKER = "MPVFLOW_ARTIFACT_TRUST_TAPER_V2"
 LOCAL_SOFTENING_MARKER = "MPVFLOW_LOCAL_MOTION_SOFTENING_V1"
 RECONSTRUCTION_MARKER = "MPVFLOW_RECONSTRUCTION_POSITIVE_EVIDENCE_V1"
 WARP_TRAJECTORY_MARKER = "MPVFLOW_WARP_TRAJECTORY_COHERENCE_V1"
-WARP_TRUST_MARKER = "MPVFLOW_WARP_TRAJECTORY_TRUST_V2"
+REJECTED_WARP_TRUST_MARKER = "MPVFLOW_WARP_TRAJECTORY_TRUST_V2"
 SCENE_CUT_MARKER = "MPVFLOW_SCENE_CUT_SPATIAL_V1"
-INSHOT_FALLBACK_MARKER = "MPVFLOW_INSHOT_NEAREST_SOURCE_FALLBACK_V1"
+REJECTED_INSHOT_FALLBACK_MARKER = "MPVFLOW_INSHOT_NEAREST_SOURCE_FALLBACK_V1"
 
 RECONSTRUCTION_PATTERN = re.compile(
     r"(?m)^(?P<indent> *)" + re.escape(
@@ -48,11 +48,7 @@ float trajectory_quality = 1.0 - smoothstep(0.125, 0.5, trajectory_error);
 if (isnan(trajectory_quality) || isinf(trajectory_quality))
     trajectory_quality = 0.0;
 reliable *= trajectory_quality;"""
-WARP_TRUST_PATTERN = re.compile(
-    r"(?m)^(?P<indent>[ \t]*)reliable \*= trajectory_quality;$"
-)
-WARP_TRUST_BLOCK = """// MPVFLOW_WARP_TRAJECTORY_TRUST_V2: path instability must also attenuate primary match trust.
-trust *= trajectory_quality;"""
+
 
 SCENE_INIT_PATTERN = re.compile(
     r"(?m)^(?P<indent>[ \t]*)vec3 mean1 = vec3\(0\.0\);\n"
@@ -175,23 +171,8 @@ if (local_motion_softness > 0.001) {
     source_blend = mix(source_blend, motion_blend, local_motion_softness);
 }
 color = mix(source_blend, mix(warped0, warped1, alpha), clamp(trust, 0.0, 1.0));"""
-LEGACY_SOFTENED_OUTPUT_BLOCK = """// MPVFLOW_LOCAL_MOTION_SOFTENING_V1: two bounded directional taps soften only supported motion fallback.
-vec4 source_blend = mix(original0, original1, alpha);
-if (local_motion_softness > 0.001) {
-    vec4 soft0 = sample_rgba(first, source_position + f.xy * scale + local_motion_offset);
-    vec4 soft1 = sample_rgba(second, source_position + r.xy * scale - local_motion_offset);
-    vec4 motion_blend = mix(mix(warped0, soft0, 0.5),
-                            mix(warped1, soft1, 0.5), alpha);
-    source_blend = mix(source_blend, motion_blend, local_motion_softness);
-}
-// MPVFLOW_INSHOT_NEAREST_SOURCE_FALLBACK_V1: avoid a two-pose ghost only when moving-boundary warp trust is weak.
-float nearest_frame_weight = boundary_activation *
-                             (1.0 - clamp(trust, 0.0, 1.0)) *
-                             smoothstep(0.75, 3.0, local_motion_length);
-vec4 nearest_frame = alpha < 0.5 ? original0 : original1;
-source_blend = mix(source_blend, nearest_frame,
-                   clamp(nearest_frame_weight, 0.0, 1.0));
-color = mix(source_blend, mix(warped0, warped1, alpha), clamp(trust, 0.0, 1.0));"""
+LEGACY_SOFTENED_OUTPUT_BLOCK = LEGACY_SOFTENED_OUTPUT_BLOCK_V4
+
 PINNED_SOFTENED_OUTPUT_BLOCK_V4 = """// MPVFLOW_LOCAL_MOTION_SOFTENING_V1: two bounded directional taps soften only supported motion fallback.
 vec4 source_blend = mix(original0, original1, blend);
 if (local_motion_softness > 0.001) {
@@ -202,23 +183,7 @@ if (local_motion_softness > 0.001) {
     source_blend = mix(source_blend, motion_blend, local_motion_softness);
 }
 return mix(source_blend, mix(warped0, warped1, blend), clamp(trust, 0.0, 1.0));"""
-PINNED_SOFTENED_OUTPUT_BLOCK = """// MPVFLOW_LOCAL_MOTION_SOFTENING_V1: two bounded directional taps soften only supported motion fallback.
-vec4 source_blend = mix(original0, original1, blend);
-if (local_motion_softness > 0.001) {
-    vec4 soft0 = sample_rgba(source0, vec2(pixel) + f.xy * scale + local_motion_offset);
-    vec4 soft1 = sample_rgba(source1, vec2(pixel) + r.xy * scale - local_motion_offset);
-    vec4 motion_blend = mix(mix(warped0, soft0, 0.5),
-                            mix(warped1, soft1, 0.5), blend);
-    source_blend = mix(source_blend, motion_blend, local_motion_softness);
-}
-// MPVFLOW_INSHOT_NEAREST_SOURCE_FALLBACK_V1: avoid a two-pose ghost only when moving-boundary warp trust is weak.
-float nearest_frame_weight = boundary_activation *
-                             (1.0 - clamp(trust, 0.0, 1.0)) *
-                             smoothstep(0.75, 3.0, local_motion_length);
-vec4 nearest_frame = blend < 0.5 ? original0 : original1;
-source_blend = mix(source_blend, nearest_frame,
-                   clamp(nearest_frame_weight, 0.0, 1.0));
-return mix(source_blend, mix(warped0, warped1, blend), clamp(trust, 0.0, 1.0));"""
+PINNED_SOFTENED_OUTPUT_BLOCK = PINNED_SOFTENED_OUTPUT_BLOCK_V4
 
 LEGACY_TAPER_PATTERN = re.compile(
     r"(?m)^(?P<indent>[ \t]*)// MPVFLOW_ARTIFACT_TRUST_TAPER_V2: soften color-conflict fallback only when motion trust remains\n"
@@ -322,68 +287,18 @@ def _is_synthesis_patched_core(source: str) -> bool:
             )
         )
         and len(_output_matches(source)) == 0
+        and REJECTED_WARP_TRUST_MARKER not in source
+        and "trust *= trajectory_quality;" not in source
+        and REJECTED_INSHOT_FALLBACK_MARKER not in source
+        and "nearest_frame_weight" not in source
+        and "vec4 nearest_frame =" not in source
         and LEGACY_MARKER not in source
         and PREVIOUS_MARKER not in source
     )
 
 
-def _has_inshot_fallback(source: str) -> bool:
-    return (
-        source.count(INSHOT_FALLBACK_MARKER) == 1
-        and re.search(
-            r"float nearest_frame_weight = boundary_activation \*\s+"
-            r"\(1\.0 - clamp\(trust, 0\.0, 1\.0\)\) \*\s+"
-            r"smoothstep\(0\.75, 3\.0, local_motion_length\);",
-            source,
-        ) is not None
-        and source.count("source_blend = mix(source_blend, nearest_frame,") == 1
-        and (
-            source.count("vec4 nearest_frame = alpha < 0.5 ? original0 : original1;") == 1
-            or source.count("vec4 nearest_frame = blend < 0.5 ? original0 : original1;") == 1
-        )
-    )
-
-
-def _is_synthesis_patched_v4_base(source: str) -> bool:
-    return (
-        _is_synthesis_patched_core(source)
-        and INSHOT_FALLBACK_MARKER not in source
-        and "nearest_frame_weight" not in source
-    )
-
-
 def _is_synthesis_patched(source: str) -> bool:
-    return _is_synthesis_patched_core(source) and _has_inshot_fallback(source)
-
-
-def _patch_inshot_fallback(source: str) -> str:
-    if INSHOT_FALLBACK_MARKER in source:
-        if not _has_inshot_fallback(source):
-            raise ValueError("FongMi in-shot fallback marker/source mismatch")
-        return source
-    if any(token in source for token in ("nearest_frame_weight", "vec4 nearest_frame =")):
-        raise ValueError("FongMi in-shot fallback source contains a partial guard")
-    marker_pattern = re.compile(
-        r"(?m)^(?P<indent>[ \t]*)// " + re.escape(LOCAL_SOFTENING_MARKER) + r":"
-    )
-    matches = list(marker_pattern.finditer(source))
-    if len(matches) != 1:
-        raise ValueError("FongMi in-shot fallback anchor count changed; refusing an unverified patch")
-    indent = matches[0].group("indent")
-    for old_block, new_block in (
-        (LEGACY_SOFTENED_OUTPUT_BLOCK_V4, LEGACY_SOFTENED_OUTPUT_BLOCK),
-        (PINNED_SOFTENED_OUTPUT_BLOCK_V4, PINNED_SOFTENED_OUTPUT_BLOCK),
-    ):
-        old_text = _indent_block(old_block, indent)
-        if source.count(old_text) == 1:
-            source = source.replace(old_text, _indent_block(new_block, indent), 1)
-            break
-    else:
-        raise ValueError("FongMi in-shot fallback output block changed; refusing an unverified patch")
-    if not _has_inshot_fallback(source):
-        raise ValueError("FongMi in-shot fallback patch failed its postconditions")
-    return source
-
+    return _is_synthesis_patched_core(source)
 
 def _has_reconstruction_guard(source: str) -> bool:
     return (
@@ -408,8 +323,8 @@ def _has_warp_trajectory_v1_guard(source: str) -> bool:
 def _has_warp_trajectory_guard(source: str) -> bool:
     return (
         _has_warp_trajectory_v1_guard(source)
-        and source.count(WARP_TRUST_MARKER) == 1
-        and source.count("trust *= trajectory_quality;") == 1
+        and REJECTED_WARP_TRUST_MARKER not in source
+        and "trust *= trajectory_quality;" not in source
     )
 
 
@@ -454,48 +369,37 @@ def _patch_reconstruction(source: str) -> str:
 
 
 def _patch_warp_trajectory(source: str) -> str:
-    if WARP_TRUST_MARKER in source:
-        if not _has_warp_trajectory_guard(source):
-            raise ValueError("FongMi warp trajectory marker/source mismatch")
-        return source
+    if REJECTED_WARP_TRUST_MARKER in source or "trust *= trajectory_quality;" in source:
+        raise ValueError("FongMi source contains the rejected primary trajectory-trust multiplier")
     if WARP_TRAJECTORY_MARKER in source:
         if not _has_warp_trajectory_v1_guard(source):
             raise ValueError("FongMi warp trajectory V1 marker/source mismatch")
-    else:
-        source = _replace_one(
-            WARP_START_PATTERN,
-            source,
-            lambda match: (
-                match.group("indent") + "vec2 uv = (vec2(gl_GlobalInvocationID.xy) + 0.5) / map_size;\n"
-                + match.group("indent") + "vec2 initial_motion = textureLod(forward, uv, 0.0).xy;\n"
-                + match.group("indent") + "vec2 source = uv;"
-            ),
-            "inverse-warp start",
-        )
-        source = _replace_one(
-            WARP_VECTOR_PATTERN,
-            source,
-            lambda match: match.group("indent") + "vec2 motion_vector = f.xy;\n" + match.group(0),
-            "inverse-warp solved vector",
-        )
-        source = _replace_one(
-            WARP_RELIABILITY_PATTERN,
-            source,
-            lambda match: match.group(0) + "\n" + _indent_block(WARP_TRAJECTORY_BLOCK, match.group("indent")),
-            "inverse-warp trajectory gate",
-        )
-        if not _has_warp_trajectory_v1_guard(source):
-            raise ValueError("FongMi warp trajectory V1 patch failed its postconditions")
+        return source
     source = _replace_one(
-        WARP_TRUST_PATTERN,
+        WARP_START_PATTERN,
         source,
-        lambda match: match.group(0) + "\n" + _indent_block(WARP_TRUST_BLOCK, match.group("indent")),
-        "primary warp-trust trajectory gate",
+        lambda match: (
+            match.group("indent") + "vec2 uv = (vec2(gl_GlobalInvocationID.xy) + 0.5) / map_size;\n"
+            + match.group("indent") + "vec2 initial_motion = textureLod(forward, uv, 0.0).xy;\n"
+            + match.group("indent") + "vec2 source = uv;"
+        ),
+        "inverse-warp start",
     )
-    if not _has_warp_trajectory_guard(source):
-        raise ValueError("FongMi warp trajectory patch failed its postconditions")
+    source = _replace_one(
+        WARP_VECTOR_PATTERN,
+        source,
+        lambda match: match.group("indent") + "vec2 motion_vector = f.xy;\n" + match.group(0),
+        "inverse-warp solved vector",
+    )
+    source = _replace_one(
+        WARP_RELIABILITY_PATTERN,
+        source,
+        lambda match: match.group(0) + "\n" + _indent_block(WARP_TRAJECTORY_BLOCK, match.group("indent")),
+        "inverse-warp trajectory gate",
+    )
+    if not _has_warp_trajectory_v1_guard(source):
+        raise ValueError("FongMi inverse-path-only trajectory patch failed its postconditions")
     return source
-
 
 def _patch_scene_cut(source: str) -> str:
     if SCENE_CUT_MARKER in source:
@@ -577,15 +481,13 @@ def _patch_v3_synthesis(source: str) -> str:
 
 
 def transform_source(source: str) -> tuple[str, bool]:
-    """Apply version-guarded in-shot trust/fallback, evidence, inverse-path, and scene-cut safeguards."""
+    """Apply version-guarded evidence, inverse-path, and scene-cut safeguards."""
     original = source
     if MARKER in source:
         if _is_synthesis_patched(source):
             patched = source
-        elif _is_synthesis_patched_v4_base(source):
-            patched = _patch_inshot_fallback(source)
         else:
-            raise ValueError("FongMi motion artifact V4 marker/source mismatch")
+            raise ValueError("FongMi motion artifact V4 marker/source mismatch or rejected pixelwise output behavior")
         patched = _patch_reconstruction(patched)
         patched = _patch_warp_trajectory(patched)
         patched = _patch_scene_cut(patched)
@@ -661,9 +563,9 @@ def main() -> None:
         raise SystemExit(str(error)) from error
     if changed:
         source_path.write_text(patched, encoding="utf-8")
-        print("Applied MPVFlow FongMi in-shot trust/fallback, inverse-path, and spatial scene-cut guards")
+        print("Applied MPVFlow FongMi synthesis, inverse-path, and spatial scene-cut guards")
     else:
-        print("MPVFlow FongMi in-shot trust/fallback, inverse-path, and spatial scene-cut guards are already applied")
+        print("MPVFlow FongMi synthesis, inverse-path, and spatial scene-cut guards are already applied")
 
 
 if __name__ == "__main__":

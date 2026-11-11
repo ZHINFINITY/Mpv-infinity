@@ -94,14 +94,14 @@ assert motion_patch_call in BUILD
 assert BUILD.index("motion_artifact_patch + flow_prepare") > BUILD.index("motion_artifact_patch = ")
 assert "MPVFLOW_ARTIFACT_GUARDS_V4" in PREPARE
 assert "MPVFLOW_WARP_TRAJECTORY_COHERENCE_V1" in PREPARE
-assert "MPVFLOW_WARP_TRAJECTORY_TRUST_V2" in PREPARE
-assert "MPVFLOW_INSHOT_NEAREST_SOURCE_FALLBACK_V1" in PREPARE
+assert 'or "MPVFLOW_WARP_TRAJECTORY_TRUST_V2" in motion' in PREPARE
+assert 'or "MPVFLOW_INSHOT_NEAREST_SOURCE_FALLBACK_V1" in motion' in PREPARE
 assert "MPVFLOW_SCENE_CUT_SPATIAL_V1" in PREPARE
 assert "MPVFLOW_ARTIFACT_TRUST_TAPER_V2" not in PREPARE
 assert "MPVFLOW_ARTIFACT_GUARDS_V4" in MOTION_PATCHER
 assert "MPVFLOW_WARP_TRAJECTORY_COHERENCE_V1" in MOTION_PATCHER
-assert "MPVFLOW_WARP_TRAJECTORY_TRUST_V2" in MOTION_PATCHER
-assert "MPVFLOW_INSHOT_NEAREST_SOURCE_FALLBACK_V1" in MOTION_PATCHER
+assert "REJECTED_WARP_TRUST_MARKER" in MOTION_PATCHER
+assert "REJECTED_INSHOT_FALLBACK_MARKER" in MOTION_PATCHER
 assert "MPVFLOW_SCENE_CUT_SPATIAL_V1" in MOTION_PATCHER
 assert "MPVFLOW_LOCAL_MOTION_SOFTENING_V1" in MOTION_PATCHER
 assert "smoothstep(0.03, 0.30," in MOTION_PATCHER
@@ -122,16 +122,16 @@ assert "MPVFLOW_RECONSTRUCTION_POSITIVE_EVIDENCE_V1" in MOTION_PATCHER
 assert "evidence > 0.0 &&" in MOTION_PATCHER
 assert "MPVFLOW_ARTIFACT_GUARDS_V4" in MOTION_SNAPSHOT
 assert "MPVFLOW_WARP_TRAJECTORY_COHERENCE_V1" in MOTION_SNAPSHOT
-assert "MPVFLOW_WARP_TRAJECTORY_TRUST_V2" in MOTION_SNAPSHOT
-assert "MPVFLOW_INSHOT_NEAREST_SOURCE_FALLBACK_V1" in MOTION_SNAPSHOT
+assert "MPVFLOW_WARP_TRAJECTORY_TRUST_V2" not in MOTION_SNAPSHOT
+assert "MPVFLOW_INSHOT_NEAREST_SOURCE_FALLBACK_V1" not in MOTION_SNAPSHOT
 assert "MPVFLOW_SCENE_CUT_SPATIAL_V1" in MOTION_SNAPSHOT
 assert "MPVFLOW_LOCAL_MOTION_SOFTENING_V1" in MOTION_SNAPSHOT
 assert "local_motion_softness" in MOTION_SNAPSHOT
 assert "float trajectory_error = abs(weight) * length(motion_vector - initial_motion);" in MOTION_SNAPSHOT
 assert "reliable *= trajectory_quality;" in MOTION_SNAPSHOT
-assert "trust *= trajectory_quality;" in MOTION_SNAPSHOT
-assert "float nearest_frame_weight = boundary_activation *" in MOTION_SNAPSHOT
-assert "source_blend = mix(source_blend, nearest_frame," in MOTION_SNAPSHOT
+assert "trust *= trajectory_quality;" not in MOTION_SNAPSHOT
+assert "nearest_frame_weight" not in MOTION_SNAPSHOT
+assert "source_blend = mix(source_blend, nearest_frame," not in MOTION_SNAPSHOT
 assert "source = uv - weight * textureLod(forward, source, 0.0).xy / map_size;" in MOTION_SNAPSHOT
 assert "MPVFLOW_RECONSTRUCTION_POSITIVE_EVIDENCE_V1" in MOTION_SNAPSHOT
 assert "if (!(evidence > 0.0 &&" in MOTION_SNAPSHOT

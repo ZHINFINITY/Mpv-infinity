@@ -166,22 +166,6 @@ def local_motion_softness(
     )
 
 
-def nearest_source_fallback_weight(trust: float, boundary_activation: float, motion_length: float) -> float:
-    trust = min(1.0, max(0.0, trust))
-    boundary_activation = min(1.0, max(0.0, boundary_activation))
-    return boundary_activation * (1.0 - trust) * smoothstep(0.75, 3.0, motion_length)
-
-
-def fallback_source_blend(
-    frame0: list[float], frame1: list[float], alpha: float, nearest_weight: float
-) -> list[float]:
-    crossfade = [a * (1.0 - alpha) + b * alpha for a, b in zip(frame0, frame1)]
-    nearest = frame0 if alpha < 0.5 else frame1
-    return [a * (1.0 - nearest_weight) + b * nearest_weight for a, b in zip(crossfade, nearest)]
-
-
-def gated_warp_trust(match_trust: float, trajectory_quality: float) -> float:
-    return min(1.0, max(0.0, match_trust)) * min(1.0, max(0.0, trajectory_quality))
 
 
 def trajectory_weight(
@@ -233,9 +217,9 @@ assert PATCHER.MARKER in patched
 assert PATCHER.LOCAL_SOFTENING_MARKER in patched
 assert PATCHER.RECONSTRUCTION_MARKER in patched
 assert PATCHER.WARP_TRAJECTORY_MARKER in patched
-assert PATCHER.WARP_TRUST_MARKER in patched
+assert PATCHER.REJECTED_WARP_TRUST_MARKER not in patched
 assert PATCHER.SCENE_CUT_MARKER in patched
-assert PATCHER.INSHOT_FALLBACK_MARKER in patched
+assert PATCHER.REJECTED_INSHOT_FALLBACK_MARKER not in patched
 assert PATCHER._has_scene_cut_guard(patched)
 assert "int tile_index = (y / 4) * 4 + x / 4;" in patched
 assert "tile_luma_delta[tile_index] += dot(a - b, vec3(0.2126, 0.7152, 0.0722));" in patched
@@ -244,7 +228,7 @@ assert "vec2 initial_motion = textureLod(forward, uv, 0.0).xy;" in patched
 assert "vec2 motion_vector = f.xy;" in patched
 assert "float trajectory_error = abs(weight) * length(motion_vector - initial_motion);" in patched
 assert "reliable *= trajectory_quality;" in patched
-assert "trust *= trajectory_quality;" in patched, "path coherence must gate primary match trust too"
+assert "trust *= trajectory_quality;" not in patched, "path coherence only gates uncertain recovery"
 assert "vec2 displacement = -weight * f.xy;" in patched
 assert "color = vec4(displacement, trust * geometry, reliable * geometry);" in patched
 assert "source = uv - weight * textureLod(forward, source, 0.0).xy / map_size;" in patched
@@ -268,26 +252,13 @@ assert "smoothstep(0.75, 3.0, local_motion_length)" in patched
 assert "sample_rgba(first, source_position + f.xy * scale + local_motion_offset)" in patched
 assert "sample_rgba(second, source_position + r.xy * scale - local_motion_offset)" in patched
 assert "vec4 source_blend = mix(original0, original1, alpha);" in patched
-assert "float nearest_frame_weight = boundary_activation *" in patched
-assert "vec4 nearest_frame = alpha < 0.5 ? original0 : original1;" in patched
-assert "source_blend = mix(source_blend, nearest_frame," in patched
+assert "nearest_frame_weight" not in patched, "output must not switch temporal source independently per pixel"
+assert "vec4 nearest_frame =" not in patched
+assert "source_blend = mix(source_blend, nearest_frame," not in patched
 assert "color = mix(source_blend, mix(warped0, warped1, alpha), clamp(trust, 0.0, 1.0));" in patched
 assert "FongMi synthesis prefix\n" in patched and "FongMi synthesis suffix\n" in patched
 again, changed_again = PATCHER.transform_source(patched)
 assert not changed_again and again == patched
-
-# Upgrade the exact branch's prior V4/V1 state without reapplying its existing guards.
-legacy_v4 = patched.replace(
-    PATCHER._indent_block(PATCHER.LEGACY_SOFTENED_OUTPUT_BLOCK, "    "),
-    PATCHER._indent_block(PATCHER.LEGACY_SOFTENED_OUTPUT_BLOCK_V4, "    "),
-    1,
-)
-legacy_v4 = legacy_v4.replace(PATCHER._indent_block(PATCHER.WARP_TRUST_BLOCK, "    "), "", 1)
-assert PATCHER._is_synthesis_patched_v4_base(legacy_v4)
-upgraded_v4, upgraded_v4_changed = PATCHER.transform_source(legacy_v4)
-assert upgraded_v4_changed and PATCHER._is_patched(upgraded_v4)
-upgraded_v4_again, upgraded_v4_changed_again = PATCHER.transform_source(upgraded_v4)
-assert not upgraded_v4_changed_again and upgraded_v4_again == upgraded_v4
 
 pinned_patched, pinned_changed = PATCHER.transform_source(
     fixture(output=PINNED_OUTPUT, output_indent="            ")
@@ -296,7 +267,7 @@ assert pinned_changed and PATCHER._is_patched(pinned_patched)
 assert "sample_rgba(source0, vec2(pixel) + f.xy * scale + local_motion_offset)" in pinned_patched
 assert "sample_rgba(source1, vec2(pixel) + r.xy * scale - local_motion_offset)" in pinned_patched
 assert "return mix(source_blend, mix(warped0, warped1, blend), clamp(trust, 0.0, 1.0));" in pinned_patched
-assert "color = mix(source_blend" not in pinned_patched
+assert "nearest_frame_weight" not in pinned_patched
 
 # An existing V3 synthesis patch is upgraded in place, then remains idempotent.
 old_reconstruction = PATCHER._indent_block(PATCHER.RECONSTRUCTION_BLOCK, "    ")
@@ -349,6 +320,19 @@ assert upgraded_v2_changed and PATCHER.MARKER in upgraded_v2
 assert PATCHER.LEGACY_MARKER not in upgraded_v2
 assert PATCHER.LOCAL_SOFTENING_MARKER in upgraded_v2
 
+regressive_primary_trust = patched.replace(
+    "reliable *= trajectory_quality;",
+    "reliable *= trajectory_quality;\n    // MPVFLOW_WARP_TRAJECTORY_TRUST_V2: forbidden\n    trust *= trajectory_quality;",
+    1,
+)
+regressive_pixel_fallback = patched.replace(
+    "color = mix(source_blend, mix(warped0, warped1, alpha), clamp(trust, 0.0, 1.0));",
+    "// MPVFLOW_INSHOT_NEAREST_SOURCE_FALLBACK_V1: forbidden\nfloat nearest_frame_weight = 1.0;\ncolor = mix(source_blend, mix(warped0, warped1, alpha), clamp(trust, 0.0, 1.0));",
+    1,
+)
+assert regressive_primary_trust != patched
+assert regressive_pixel_fallback != patched
+
 for invalid in (
     "unrecognized FongMi source",
     fixture() + fixture(),
@@ -356,8 +340,8 @@ for invalid in (
     patched.replace("float chroma_error =", "float chroma_error_missing ="),
     patched.replace(PATCHER.LOCAL_SOFTENING_MARKER, "unexpected-local-softening-marker"),
     patched.replace("reliable *= trajectory_quality;", "reliable *= 0.0;"),
-    patched.replace("trust *= trajectory_quality;", "trust *= 0.0;"),
-    patched.replace("source_blend = mix(source_blend, nearest_frame,", "source_blend = mix(source_blend, original0,"),
+    regressive_primary_trust,
+    regressive_pixel_fallback,
     patched.replace("cut = max(cut, spatial_cut);", "cut = max(cut, cut);"),
 ):
     try:
@@ -400,21 +384,52 @@ for quality in (i / 100.0 for i in range(101)):
         weight = local_motion_softness(0.0, 1.0, 1.0, quality, motion)
         assert 0.0 <= weight <= 0.24
 
-assert gated_warp_trust(0.85, 1.0) == 0.85
-assert gated_warp_trust(0.85, 0.0) == 0.0, "high patch confidence must not bypass an unstable inverse path"
-assert nearest_source_fallback_weight(0.0, 1.0, 20.0) == 1.0
-assert nearest_source_fallback_weight(1.0, 1.0, 20.0) == 0.0
-assert nearest_source_fallback_weight(0.0, 0.0, 20.0) == 0.0
-assert nearest_source_fallback_weight(0.0, 1.0, 0.0) == 0.0
-frame0 = [0.0, 0.0, 1.0, 1.0, 1.0, 0.0, 0.0, 0.0, 0.0]
-frame1 = [0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 0.0, 0.0, 0.0]
-crossfade = fallback_source_blend(frame0, frame1, 0.5, 0.0)
-nearest = fallback_source_blend(frame0, frame1, 0.5, 1.0)
-assert sum(0.0 < value < 1.0 for value in crossfade) > 0, "source crossfade should expose the synthetic double edge"
-assert sum(0.0 < value < 1.0 for value in nearest) == 0, "nearest-source fallback must retain one crisp edge"
+# Regression: a spatially varying confidence field made the retired temporal
+# source selector jump between different frames on neighboring pixels.
+def retired_nearest_source_mask(boundary_activation: float, trust: float, motion_length: float) -> float:
+    return (
+        boundary_activation
+        * (1.0 - min(1.0, max(0.0, trust)))
+        * smoothstep(0.75, 3.0, motion_length)
+    )
 
-# Stable translation retains both trust channels; path instability attenuates
-# primary match trust and uncertain-motion recovery together.
+
+def mean_neighbor_variation(field: list[list[float]]) -> float:
+    jumps = [
+        abs(field[y][x] - field[y][x + 1])
+        for y in range(len(field))
+        for x in range(len(field[0]) - 1)
+    ]
+    jumps.extend(
+        abs(field[y][x] - field[y + 1][x])
+        for y in range(len(field) - 1)
+        for x in range(len(field[0]))
+    )
+    return sum(jumps) / len(jumps)
+
+
+trust_field = [
+    [0.95 if ((x // 2 + y // 2) % 2 == 0) else 0.05 for x in range(8)]
+    for y in range(8)
+]
+retired_selector = [
+    [retired_nearest_source_mask(1.0, trust, 4.0) for trust in row]
+    for row in trust_field
+]
+candidate_selector = [[0.0 for _ in row] for row in trust_field]
+alpha = 0.45
+retired_phase = [[alpha * (1.0 - weight) for weight in row] for row in retired_selector]
+candidate_phase = [[(1.0 - trust) * alpha + trust * alpha for trust in row] for row in trust_field]
+assert mean_neighbor_variation(retired_selector) > 0.35, "stress map must expose fragmented nearest-source selection"
+assert mean_neighbor_variation(candidate_selector) == 0.0, "candidate must use no spatially varying nearest-source mask"
+assert mean_neighbor_variation(retired_phase) > 0.15, "retired selector must create blocky frame-time islands"
+assert mean_neighbor_variation(candidate_phase) < 1e-12
+assert all(abs(value - alpha) < 1e-12 for row in candidate_phase for value in row)
+assert "nearest_frame_weight" not in patched
+assert "source_blend = mix(original0, original1, alpha);" in patched
+assert "color = mix(source_blend, mix(warped0, warped1, alpha), clamp(trust, 0.0, 1.0));" in patched
+
+# Path coherence remains limited to uncertain-motion recovery; primary match trust is unchanged.
 assert trajectory_weight((8.0, -2.0), (8.0, -2.0), 0.75) == 1.0
 assert trajectory_weight((8.0, -2.0), (8.1, -2.0), 1.0) == 1.0
 assert trajectory_weight((0.0, 0.0), (0.125, 0.0), 1.0) == 1.0
@@ -427,12 +442,10 @@ base_trusted_support = 0.8 * 0.9
 base_uncertain_support = 0.7 * 0.9
 stable_path = trajectory_weight((8.0, 0.0), (8.1, 0.0), 1.0)
 boundary_path = trajectory_weight((12.0, 0.0), (-4.0, 0.0), 0.5)
-gated_primary_trust = 0.8 * stable_path
 gated_uncertain_support = base_uncertain_support * boundary_path
 assert math.isclose(base_trusted_support, 0.72, abs_tol=1e-12)
-assert math.isclose(gated_primary_trust, 0.8, abs_tol=1e-12)
+assert math.isclose(stable_path, 1.0, abs_tol=1e-12)
 assert boundary_path == 0.0
-assert gated_warp_trust(0.8, boundary_path) == 0.0
 assert gated_uncertain_support == 0.0
 trajectory_values = [
     trajectory_weight((0.0, 0.0), (delta, 0.0), 1.0)
@@ -463,6 +476,10 @@ assert spatial_scene_cut_score(uniform_dark, uniform_bright) == 0.0
 retained_source = (ROOT / "app/src/main/cpp/mpvflow/fongmi/motion.c").read_text(encoding="utf-8")
 retained_result, retained_changed = PATCHER.transform_source(retained_source)
 assert not retained_changed and retained_result == retained_source, "retained snapshot should mirror active synthesis, reconstruction, warp, and scene-cut safeguards"
+assert "vec2 scene_change = texelFetch(scene, ivec2(0), 0).rg;" in retained_source
+assert "if (scene_change.r > 0.45 || scene_change.g > 0.08)" in retained_source
+assert "color = alpha < 0.5 ? original0 : original1;" in retained_source
+assert "nearest_frame_weight" not in retained_source
 if args.source:
     active_source = args.source.read_text(encoding="utf-8")
     active_result, active_changed = PATCHER.transform_source(active_source)
@@ -471,6 +488,6 @@ if args.source:
 print(
     "FongMi artifact policy passed: max taper trust step "
     f"{old_step:.4f} -> {new_step:.4f}; local directional softness is capped at 0.24 "
-    "with path coherence coupled to primary trust and nearest-source fallback only on untrusted moving boundaries; "
+    "with path coherence limited to uncertain recovery and no per-pixel temporal source switch; "
     "spatial cut detection flags palette-matched scene changes without firing on one-tile motion"
 )

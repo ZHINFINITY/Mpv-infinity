@@ -599,8 +599,6 @@ static const char warp_body[] = GLSL(
     if (isnan(trajectory_quality) || isinf(trajectory_quality))
         trajectory_quality = 0.0;
     reliable *= trajectory_quality;
-    // MPVFLOW_WARP_TRAJECTORY_TRUST_V2: path instability must also attenuate primary match trust.
-    trust *= trajectory_quality;
     float geometry = (1.0 - smoothstep(0.5, 1.5, cycle)) *
                      (1.0 - smoothstep(0.25, 1.0, residual));
     geometry *= min(support(source, map_size), support(source + f.xy, map_size));
@@ -691,13 +689,6 @@ static const char synthesis_body[] = GLSL(
                                     mix(warped1, soft1, 0.5), alpha);
             source_blend = mix(source_blend, motion_blend, local_motion_softness);
         }
-        // MPVFLOW_INSHOT_NEAREST_SOURCE_FALLBACK_V1: avoid a two-pose ghost only when moving-boundary warp trust is weak.
-        float nearest_frame_weight = boundary_activation *
-                                     (1.0 - clamp(trust, 0.0, 1.0)) *
-                                     smoothstep(0.75, 3.0, local_motion_length);
-        vec4 nearest_frame = alpha < 0.5 ? original0 : original1;
-        source_blend = mix(source_blend, nearest_frame,
-                           clamp(nearest_frame_weight, 0.0, 1.0));
         color = mix(source_blend, mix(warped0, warped1, alpha), clamp(trust, 0.0, 1.0));
     }
 );
