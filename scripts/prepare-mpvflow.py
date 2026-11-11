@@ -929,6 +929,8 @@ def main() -> None:
         or "mp_motion_render_views" not in motion
         or "MPVFLOW_ARTIFACT_GUARDS_V4" not in motion
         or "MPVFLOW_WARP_TRAJECTORY_COHERENCE_V1" not in motion
+        or "MPVFLOW_WARP_TRAJECTORY_TRUST_V2" not in motion
+        or "MPVFLOW_INSHOT_NEAREST_SOURCE_FALLBACK_V1" not in motion
         or "MPVFLOW_SCENE_CUT_SPATIAL_V1" not in motion
         or "video/out/gpu_next/motion.c" not in meson
         or "libmpv_motion" not in meson
