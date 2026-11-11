@@ -124,11 +124,22 @@ libplacebo_clone = "[ ! -d libplacebo ] && git clone --recursive https://github.
 if download.count(libplacebo_clone) != 1:
     raise SystemExit(f"Expected one unpinned libplacebo clone in {download_path}")
 libplacebo_revision = "b89c10e1bdd5d7742ca576ebad94a906ddca91e8"
-libplacebo_fongmi_clone = "[ ! -d libplacebo ] && git clone --recursive https://github.com/FongMi/libplacebo.git"
+libplacebo_fongmi_clone = (
+    "if [ ! -d libplacebo ]; then\n"
+    "\tgit clone https://github.com/FongMi/libplacebo.git libplacebo\n"
+    "fi"
+)
 download = download.replace(
     libplacebo_clone,
     libplacebo_fongmi_clone + "\n" +
-    f"git -C libplacebo checkout --detach {libplacebo_revision}\n" +
+    "git -C libplacebo remote set-url origin https://github.com/FongMi/libplacebo.git\n" +
+    f"git -C libplacebo fetch --depth=1 origin {libplacebo_revision}\n" +
+    "git -C libplacebo checkout --detach FETCH_HEAD\n" +
+    f'libplacebo_actual="$(git -C libplacebo rev-parse HEAD)"\n' +
+    f'if [ "$libplacebo_actual" != "{libplacebo_revision}" ]; then\n' +
+    '    echo "Unexpected FongMi libplacebo source: $libplacebo_actual" >&2\n' +
+    "    exit 1\n" +
+    "fi\n" +
     "git -C libplacebo submodule update --init --recursive",
     1,
 )

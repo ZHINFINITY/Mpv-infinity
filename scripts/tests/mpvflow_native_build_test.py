@@ -1617,6 +1617,10 @@ with tempfile.TemporaryDirectory(prefix="mpvflow-builder-patch-test-") as tempor
     patched_downloads = downloads.read_text(encoding="utf-8")
     assert "https://github.com/FongMi/libplacebo.git" in patched_downloads, "FongMi libplacebo source was lost"
     assert "b89c10e1bdd5d7742ca576ebad94a906ddca91e8" in patched_downloads, "FongMi libplacebo pin was lost"
+    assert "git -C libplacebo fetch --depth=1 origin b89c10e1bdd5d7742ca576ebad94a906ddca91e8" in patched_downloads
+    assert "git -C libplacebo checkout --detach FETCH_HEAD" in patched_downloads
+    assert 'libplacebo_actual" != "b89c10e1bdd5d7742ca576ebad94a906ddca91e8"' in patched_downloads
+    assert "git -C libplacebo submodule update --init --recursive" in patched_downloads
     assert FFMPEG_REPOSITORY in patched_downloads, "FongMi FFmpeg source repository was lost"
     assert f"git -C ffmpeg fetch --depth=1 origin {FFMPEG_SHA}" in patched_downloads, "FongMi FFmpeg commit pin was lost"
     assert f'ffmpeg_actual" != "{FFMPEG_SHA}"' in patched_downloads, "FFmpeg checkout must be verified against the exact commit"

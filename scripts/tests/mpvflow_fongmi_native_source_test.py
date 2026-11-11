@@ -57,6 +57,10 @@ assert 'mp.get_property_native("motion-interpolation-info")' in PREPARE
 assert PLACEBO_SHA in BUILD
 assert 'https://github.com/FongMi/libplacebo.git' in BUILD
 assert f'libplacebo_revision = "{PLACEBO_SHA}"' in BUILD
+assert 'git -C libplacebo remote set-url origin https://github.com/FongMi/libplacebo.git' in BUILD
+assert 'git -C libplacebo fetch --depth=1 origin {libplacebo_revision}' in BUILD
+assert 'git -C libplacebo checkout --detach FETCH_HEAD' in BUILD
+assert 'libplacebo_actual" != "{libplacebo_revision}"' in BUILD
 assert FFMPEG_SHA in BUILD
 assert 'ffmpeg_version_suffix = f"mpvflow-fongmi-{ffmpeg_revision}"' in BUILD
 assert 'EXPECTED_FFMPEG_REPOSITORY="https://github.com/FongMi/FFmpeg.git"' in BUILD
