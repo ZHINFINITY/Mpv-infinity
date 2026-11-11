@@ -68,6 +68,7 @@ class Arm64WorkflowTest(unittest.TestCase):
             "scripts/tests/mpvflow_vulkan_headers_prepare_test.py",
             "scripts/tests/mpvflow_placebo_api_headers_test.py",
             "scripts/tests/verify_mpv_aar_lgpl_test.py",
+            "scripts/tests/verify_region3_shader_apk_test.py",
         ):
             self.assertIn(script, core_runner.read_text(encoding="utf-8"))
         self.assertLess(TEXT.index("- name: Run MPVFlow core and GPU shader regression tests"), TEXT.index("- name: Assemble arm64-v8a debug APK after Kotlin checks"))
@@ -104,6 +105,8 @@ class Arm64WorkflowTest(unittest.TestCase):
                 self.assertIn(command, STEPS[name])
                 self.assertNotIn("        if:", STEPS[name])
                 self.assertLess(TEXT.index("- name: " + name), upload)
+        shader_step = STEPS["Verify arm64 DTS wrapper dynamically links the existing FFmpeg runtime"]
+        self.assertIn("scripts/verify-region3-shader-apk.py", shader_step)
         self.assertIn("if-no-files-found: error", STEPS["Upload arm64-v8a debug APK"])
 
 
