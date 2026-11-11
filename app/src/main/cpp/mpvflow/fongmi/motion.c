@@ -473,7 +473,9 @@ static const char reconstruction_body[] = GLSL(
                 ivec2 q = clamp(pixel + ivec2(x, y), ivec2(0), grid - 1);
                 float evidence = unpack_evidence(texelFetch(evidence_map, q, 0));
                 float distance = float(x * x + y * y);
-                if (!(evidence > best || (evidence == best && distance < nearest)))
+                // MPVFLOW_RECONSTRUCTION_POSITIVE_EVIDENCE_V1: only propagate measured motion.
+                if (!(evidence > 0.0 &&
+                      (evidence > best || (evidence == best && distance < nearest))))
                     continue;
                 vec2 position = (vec2(q) + 0.5) / vec2(grid);
                 vec4 value = texelFetch(forward, q, 0);

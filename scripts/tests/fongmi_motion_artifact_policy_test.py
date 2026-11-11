@@ -29,16 +29,25 @@ BASE_TRUST = """            vec3 conflict = abs(metric0 - metric1);
                              (1.0 - smoothstep(0.002, 0.02, color_error));
             float trust = max(min(f.z, r.z), reliable);
             trust *= 1.0 - smoothstep(0.03, 0.15,
-                                      color_error);"""
+                                      color_error);
+            if (isnan(trust) || isinf(trust))
+                trust = 0.0;"""
 LEGACY_TRUST = BASE_TRUST.replace(
     "            trust *= 1.0 - smoothstep(0.03, 0.15,\n                                      color_error);",
     "            // MPVFLOW_ARTIFACT_TRUST_TAPER_V2: soften color-conflict fallback only when motion trust remains\n"
     "            trust *= 1.0 - smoothstep(0.03, 0.30,\n                                      color_error);",
 )
 
+BASE_RECONSTRUCTION = """    if (!(evidence > best || (evidence == best && distance < nearest)))
+        continue;"""
+
 
 def fixture(trust: str = BASE_TRUST) -> str:
     return (
+        "FongMi reconstruction prefix\n"
+        "static const char reconstruction_body[] = GLSL(\n"
+        + BASE_RECONSTRUCTION
+        + "\n);\n"
         "FongMi synthesis prefix\n"
         "static const char synthesis_pixel_header[] = GLSL(\n"
         + BASE_PIXEL_HEADER
@@ -81,6 +90,9 @@ original = fixture()
 patched, changed = PATCHER.transform_source(original)
 assert changed
 assert PATCHER.MARKER in patched
+assert PATCHER.RECONSTRUCTION_MARKER in patched
+assert "if (!(evidence > 0.0 &&" in patched
+assert "if (!(evidence > best || (evidence == best && distance < nearest)))" not in patched
 assert "neighborhood_quality(sampler2D field, vec2 uv, vec2 center)" in patched
 assert "float luma_error = abs(dot(metric0," in patched
 assert "float chroma_error = max(abs((metric0.r - metric0.g)" in patched
@@ -94,6 +106,17 @@ assert "trust *= boundary_trust * region3_local_trust;" in patched
 assert "FongMi synthesis prefix\n" in patched and "FongMi synthesis suffix\n" in patched
 again, changed_again = PATCHER.transform_source(patched)
 assert not changed_again and again == patched
+
+# A source with the existing V3 synthesis patch gets the new reconstruction guard.
+old_reconstruction = PATCHER._indent_block(PATCHER.RECONSTRUCTION_BLOCK, "    ")
+legacy_v3 = patched.replace(
+    old_reconstruction,
+    "    if (!(evidence > best || (evidence == best && distance < nearest)))",
+    1,
+)
+assert legacy_v3 != patched and PATCHER._is_synthesis_patched(legacy_v3)
+repaired_v3, repaired_v3_changed = PATCHER.transform_source(legacy_v3)
+assert repaired_v3_changed and repaired_v3 == patched
 
 # An existing V2-only build tree is upgraded, not mistaken for stock source.
 upgraded, upgraded_changed = PATCHER.transform_source(fixture(LEGACY_TRUST))
@@ -137,12 +160,12 @@ assert math.isclose(taper_weight(0.15), 0.5829903978052126, abs_tol=1e-9)
 
 retained_source = (ROOT / "app/src/main/cpp/mpvflow/fongmi/motion.c").read_text(encoding="utf-8")
 retained_result, retained_changed = PATCHER.transform_source(retained_source)
-assert not retained_changed and retained_result == retained_source, "retained snapshot should mirror the active V3 safeguards"
+assert not retained_changed and retained_result == retained_source, "retained snapshot should mirror the active V3 and reconstruction safeguards"
 if args.source:
     active_source = args.source.read_text(encoding="utf-8")
     active_result, active_changed = PATCHER.transform_source(active_source)
     assert not active_changed and active_result == active_source, "active pinned shader must contain the verified V3 patch exactly once"
-    print("Active pinned FongMi synthesis source contains the verified V3 artifact guards")
+    print("Active pinned FongMi synthesis and reconstruction sources contain the verified artifact guards")
 print(
     "FongMi artifact policy passed: max taper trust step "
     f"{old_step:.4f} -> {new_step:.4f}; local coherence and luma/chroma fallbacks are monotonic"

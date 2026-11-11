@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """Apply app-owned artifact guards to the pinned FongMi motion shader.
 
-The patch is version-guarded and limited to the synthesis header/body in the
-pinned upstream ``video/out/gpu_next/motion.c``. It preserves FongMi's motion
-field and only attenuates synthesis trust before the existing source fallback.
+The patch is version-guarded and limited to the synthesis and reconstruction
+shader bodies in the pinned upstream ``video/out/gpu_next/motion.c``. It keeps
+the existing synthesis guards and rejects neighbor vectors without motion evidence.
 """
 from __future__ import annotations
 
@@ -14,6 +14,15 @@ from pathlib import Path
 SOURCE_RELATIVE = Path("video/out/gpu_next/motion.c")
 MARKER = "MPVFLOW_ARTIFACT_GUARDS_V3"
 LEGACY_MARKER = "MPVFLOW_ARTIFACT_TRUST_TAPER_V2"
+RECONSTRUCTION_MARKER = "MPVFLOW_RECONSTRUCTION_POSITIVE_EVIDENCE_V1"
+
+RECONSTRUCTION_PATTERN = re.compile(
+    r"(?m)^(?P<indent>[ \t]*)if \(!\(evidence > best \|\| "
+    r"\(evidence == best && distance < nearest\)\)\)$"
+)
+RECONSTRUCTION_BLOCK = """// MPVFLOW_RECONSTRUCTION_POSITIVE_EVIDENCE_V1: only propagate measured motion.
+if (!(evidence > 0.0 &&
+      (evidence > best || (evidence == best && distance < nearest))))"""
 
 PIXEL_HEADER_PATTERN = re.compile(
     r"(?m)^(?P<indent>[ \t]*)vec4 synthesize_pixel\(sampler2D source0, sampler2D source1, sampler2D warp0,"
@@ -97,7 +106,7 @@ def _replace_one(pattern: re.Pattern[str], source: str, replacement, label: str)
     return pattern.sub(replacement, source, count=1)
 
 
-def _is_patched(source: str) -> bool:
+def _is_synthesis_patched(source: str) -> bool:
     return (
         source.count(MARKER) == 1
         and source.count("float neighborhood_quality(sampler2D field, vec2 uv, vec2 center)") == 1
@@ -125,6 +134,35 @@ def _is_patched(source: str) -> bool:
     )
 
 
+def _has_reconstruction_guard(source: str) -> bool:
+    return (
+        source.count(RECONSTRUCTION_MARKER) == 1
+        and source.count("if (!(evidence > 0.0 &&") == 1
+        and source.count("(evidence > best || (evidence == best && distance < nearest))))") == 1
+        and RECONSTRUCTION_PATTERN.search(source) is None
+    )
+
+
+def _is_patched(source: str) -> bool:
+    return _is_synthesis_patched(source) and _has_reconstruction_guard(source)
+
+
+def _patch_reconstruction(source: str) -> str:
+    if RECONSTRUCTION_MARKER in source:
+        if not _has_reconstruction_guard(source):
+            raise ValueError("FongMi reconstruction evidence marker/source mismatch")
+        return source
+    source = _replace_one(
+        RECONSTRUCTION_PATTERN,
+        source,
+        lambda match: _indent_block(RECONSTRUCTION_BLOCK, match.group("indent")),
+        "reconstruction evidence selector",
+    )
+    if not _has_reconstruction_guard(source):
+        raise ValueError("FongMi reconstruction evidence patch failed its postconditions")
+    return source
+
+
 def transform_source(source: str) -> tuple[str, bool]:
     """Apply the exact V3 synthesis guards; return (source, changed).
 
@@ -132,9 +170,10 @@ def transform_source(source: str) -> tuple[str, bool]:
     source is rejected rather than partially modified.
     """
     if MARKER in source:
-        if not _is_patched(source):
+        if not _is_synthesis_patched(source):
             raise ValueError("FongMi motion artifact V3 marker/source mismatch")
-        return source, False
+        patched = _patch_reconstruction(source)
+        return patched, patched != source
 
     if LEGACY_MARKER in source:
         source = _replace_one(
@@ -172,6 +211,7 @@ def transform_source(source: str) -> tuple[str, bool]:
         lambda match: _indent_block(TRUST_BLOCK, match.group("indent")),
         "synthesis trust",
     )
+    source = _patch_reconstruction(source)
     if not _is_patched(source):
         raise ValueError("FongMi motion artifact patch failed its postconditions")
     return source, True
@@ -191,7 +231,7 @@ def main() -> None:
         raise SystemExit(str(error)) from error
     if changed:
         source_path.write_text(patched, encoding="utf-8")
-        print("Applied MPVFlow FongMi V3 local-coherence and luma/chroma artifact guards")
+        print("Applied MPVFlow FongMi V3 artifact guards and positive-evidence reconstruction")
     else:
         print("MPVFlow FongMi V3 artifact guards are already applied")
 
