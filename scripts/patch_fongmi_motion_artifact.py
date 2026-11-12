@@ -4,8 +4,8 @@
 The patch is version-guarded and limited to the analysis grid plus synthesis,
 reconstruction, and inverse-warp logic in pinned upstream
 ``video/out/gpu_next/motion.c``. It keeps bilinear field sampling and motion
-vectors, gates uncertain recovery on inverse-path coherence, and retains
-whole-frame scene-cut handling.
+vectors, selects the most self-consistent inverse-warp iterate, gates uncertain
+recovery on inverse-path coherence, and retains whole-frame scene-cut handling.
 """
 from __future__ import annotations
 
@@ -20,6 +20,7 @@ LEGACY_MARKER = "MPVFLOW_ARTIFACT_TRUST_TAPER_V2"
 LOCAL_SOFTENING_MARKER = "MPVFLOW_LOCAL_MOTION_SOFTENING_V1"
 RECONSTRUCTION_MARKER = "MPVFLOW_RECONSTRUCTION_POSITIVE_EVIDENCE_V1"
 WARP_TRAJECTORY_MARKER = "MPVFLOW_WARP_TRAJECTORY_COHERENCE_V1"
+WARP_BEST_RESIDUAL_MARKER = "MPVFLOW_WARP_BEST_INVERSE_RESIDUAL_V1"
 REJECTED_WARP_TRUST_MARKER = "MPVFLOW_WARP_TRAJECTORY_TRUST_V2"
 SCENE_CUT_MARKER = "MPVFLOW_SCENE_CUT_SPATIAL_V1"
 REJECTED_INSHOT_FALLBACK_MARKER = "MPVFLOW_INSHOT_NEAREST_SOURCE_FALLBACK_V1"
@@ -40,12 +41,46 @@ WARP_START_PATTERN = re.compile(
     r"(?m)^(?P<indent>[ \t]*)vec2 uv = \(vec2\(gl_GlobalInvocationID\.xy\) \+ 0\.5\) / map_size;\n"
     r"(?P=indent)vec2 source = uv;$"
 )
+WARP_INITIAL_MOTION_PATTERN = re.compile(
+    r"(?m)^(?P<indent>[ \t]*)vec2 initial_motion = textureLod\(forward, uv, 0\.0\)\.xy;$"
+)
 WARP_VECTOR_PATTERN = re.compile(
     r"(?m)^(?P<indent>[ \t]*)vec2 displacement = -weight \* f\.xy;$"
 )
 WARP_RELIABILITY_PATTERN = re.compile(
     r"(?m)^(?P<indent>[ \t]*)reliable \*= 1\.0 - smoothstep\(0\.1, 0\.5, cycle\);$"
 )
+WARP_ITERATION_PATTERN = re.compile(
+    r"(?m)^(?P<indent>[ \t]*)for \(int i = 0; i < 4; i\+\+\)\n"
+    r"(?P=indent)[ \t]+source = uv - weight \* textureLod\(forward, source, 0\.0\)\.xy / map_size;\n"
+    r"(?P=indent)vec4 f = textureLod\(forward, source, 0\.0\);$"
+)
+WARP_RESIDUAL_PATTERN = re.compile(
+    r"(?m)^(?P<indent>[ \t]*)float residual = length\(\(source \+ weight \* f\.xy - uv\) \* output_size\);$"
+)
+WARP_BEST_RESIDUAL_BLOCK = """// MPVFLOW_WARP_BEST_INVERSE_RESIDUAL_V1: keep the best closure among the initial and four solved positions.
+vec2 best_source = source;
+vec4 f = initial_field;
+vec4 best_field = f;
+float best_residual = 1e20;
+float initial_residual = length((source + weight * f.xy / map_size - uv) * output_size);
+if (!(any(isnan(f)) || any(isinf(f))) &&
+    !isnan(initial_residual) && !isinf(initial_residual))
+    best_residual = initial_residual;
+for (int i = 0; i < 4; i++) {
+    source = uv - weight * f.xy / map_size;
+    f = textureLod(forward, source, 0.0);
+    float candidate_residual = length((source + weight * f.xy / map_size - uv) * output_size);
+    if (!(any(isnan(f)) || any(isinf(f))) &&
+        !isnan(candidate_residual) && !isinf(candidate_residual) &&
+        candidate_residual < best_residual) {
+        best_source = source;
+        best_field = f;
+        best_residual = candidate_residual;
+    }
+}
+source = best_source;
+f = best_field;"""
 WARP_TRAJECTORY_BLOCK = """// MPVFLOW_WARP_TRAJECTORY_COHERENCE_V1: gate uncertain recovery on path stability.
 float trajectory_error = abs(weight) * length(motion_vector - initial_motion);
 float trajectory_quality = 1.0 - smoothstep(0.125, 0.5, trajectory_error);
@@ -449,7 +484,10 @@ def _has_reconstruction_guard(source: str) -> bool:
 def _has_warp_trajectory_v1_guard(source: str) -> bool:
     return (
         source.count(WARP_TRAJECTORY_MARKER) == 1
-        and source.count("vec2 initial_motion = textureLod(forward, uv, 0.0).xy;") == 1
+        and (
+            source.count("vec2 initial_motion = textureLod(forward, uv, 0.0).xy;") == 1
+            or source.count("vec2 initial_motion = initial_field.xy;") == 1
+        )
         and source.count("vec2 motion_vector = f.xy;") == 1
         and source.count("float trajectory_error = abs(weight) * length(motion_vector - initial_motion);") == 1
         and source.count("1.0 - smoothstep(0.125, 0.5, trajectory_error)") == 1
@@ -462,6 +500,23 @@ def _has_warp_trajectory_guard(source: str) -> bool:
         _has_warp_trajectory_v1_guard(source)
         and REJECTED_WARP_TRUST_MARKER not in source
         and "trust *= trajectory_quality;" not in source
+    )
+
+
+def _has_warp_best_residual_guard(source: str) -> bool:
+    return (
+        source.count(WARP_BEST_RESIDUAL_MARKER) == 1
+        and source.count("vec4 initial_field = textureLod(forward, uv, 0.0);") == 1
+        and source.count("vec2 best_source = source;") == 1
+        and source.count("vec4 best_field = f;") == 1
+        and source.count("float best_residual = 1e20;") == 1
+        and source.count("float candidate_residual = length((source + weight * f.xy / map_size - uv) * output_size);") == 1
+        and source.count("candidate_residual < best_residual") == 1
+        and source.count("source = best_source;") == 1
+        and source.count("f = best_field;") == 1
+        and source.count("float residual = best_residual;") == 1
+        and WARP_ITERATION_PATTERN.search(source) is None
+        and WARP_RESIDUAL_PATTERN.search(source) is None
     )
 
 
@@ -493,6 +548,7 @@ def _is_patched(source: str) -> bool:
         _is_synthesis_patched(source)
         and _has_reconstruction_guard(source)
         and _has_warp_trajectory_guard(source)
+        and _has_warp_best_residual_guard(source)
         and _has_scene_cut_guard(source)
         and _has_fine_motion_grid(source)
     )
@@ -526,7 +582,8 @@ def _patch_warp_trajectory(source: str) -> str:
         source,
         lambda match: (
             match.group("indent") + "vec2 uv = (vec2(gl_GlobalInvocationID.xy) + 0.5) / map_size;\n"
-            + match.group("indent") + "vec2 initial_motion = textureLod(forward, uv, 0.0).xy;\n"
+            + match.group("indent") + "vec4 initial_field = textureLod(forward, uv, 0.0);\n"
+            + match.group("indent") + "vec2 initial_motion = initial_field.xy;\n"
             + match.group("indent") + "vec2 source = uv;"
         ),
         "inverse-warp start",
@@ -545,6 +602,44 @@ def _patch_warp_trajectory(source: str) -> str:
     )
     if not _has_warp_trajectory_v1_guard(source):
         raise ValueError("FongMi inverse-path-only trajectory patch failed its postconditions")
+    return source
+
+
+def _patch_warp_best_residual(source: str) -> str:
+    if WARP_BEST_RESIDUAL_MARKER in source:
+        if not _has_warp_best_residual_guard(source):
+            raise ValueError("FongMi best inverse-residual marker/source mismatch")
+        return source
+    if any(token in source for token in (
+        "vec2 best_source = source;",
+        "vec4 best_field = f;",
+        "candidate_residual < best_residual",
+    )):
+        raise ValueError("FongMi inverse-warp source contains a partial best-residual guard")
+    if "vec4 initial_field = textureLod(forward, uv, 0.0);" not in source:
+        source = _replace_one(
+            WARP_INITIAL_MOTION_PATTERN,
+            source,
+            lambda match: (
+                match.group("indent") + "vec4 initial_field = textureLod(forward, uv, 0.0);\n"
+                + match.group("indent") + "vec2 initial_motion = initial_field.xy;"
+            ),
+            "initial inverse-warp field reuse",
+        )
+    source = _replace_one(
+        WARP_ITERATION_PATTERN,
+        source,
+        lambda match: _indent_block(WARP_BEST_RESIDUAL_BLOCK, match.group("indent")),
+        "best inverse-warp iterate selector",
+    )
+    source = _replace_one(
+        WARP_RESIDUAL_PATTERN,
+        source,
+        lambda match: match.group("indent") + "float residual = best_residual;",
+        "selected inverse-warp closure residual",
+    )
+    if not _has_warp_best_residual_guard(source):
+        raise ValueError("FongMi best inverse-residual warp patch failed its postconditions")
     return source
 
 def _patch_scene_cut(source: str) -> str:
@@ -657,6 +752,7 @@ def transform_source(source: str) -> tuple[str, bool]:
             raise ValueError("FongMi motion artifact V4 marker/source mismatch or rejected pixelwise output behavior")
         patched = _patch_reconstruction(patched)
         patched = _patch_warp_trajectory(patched)
+        patched = _patch_warp_best_residual(patched)
         patched = _patch_scene_cut(patched)
         patched = _patch_fine_motion_grid(patched)
         if not _is_patched(patched):
@@ -667,6 +763,7 @@ def transform_source(source: str) -> tuple[str, bool]:
         source = _patch_v3_synthesis(source)
         source = _patch_reconstruction(source)
         source = _patch_warp_trajectory(source)
+        source = _patch_warp_best_residual(source)
         source = _patch_scene_cut(source)
         source = _patch_fine_motion_grid(source)
         if not _is_patched(source):
@@ -713,6 +810,7 @@ def transform_source(source: str) -> tuple[str, bool]:
     source = _patch_spatial_trust(source)
     source = _patch_reconstruction(source)
     source = _patch_warp_trajectory(source)
+    source = _patch_warp_best_residual(source)
     source = _patch_scene_cut(source)
     source = _patch_fine_motion_grid(source)
     if not _is_patched(source):
@@ -734,9 +832,9 @@ def main() -> None:
         raise SystemExit(str(error)) from error
     if changed:
         source_path.write_text(patched, encoding="utf-8")
-        print("Applied MPVFlow FongMi fine-grid, synthesis, inverse-path, and scene-cut guards")
+        print("Applied MPVFlow FongMi fine-grid, synthesis, best-residual inverse-warp, and scene-cut guards")
     else:
-        print("MPVFlow FongMi fine-grid, synthesis, inverse-path, and scene-cut guards are already applied")
+        print("MPVFlow FongMi fine-grid, synthesis, best-residual inverse-warp, and scene-cut guards are already applied")
 
 
 if __name__ == "__main__":

@@ -733,12 +733,14 @@ static void warp_policy(pl_gpu gpu)
     pl_tex target = policy_target(gpu);
     pl_dispatch dispatch = pl_dispatch_create(gpu->log, gpu);
     assert(dispatch);
-    for (int test = 0; test < 6; test++) {
+    for (int test = 0; test < 7; test++) {
         for (int y = 0; y < HEIGHT; y++) {
             for (int x = 0; x < WIDTH; x++) {
                 int index = (y * WIDTH + x) * 4;
-                pixels[0][index] = test == 3 ? WIDTH * 2 : 8;
-                pixels[1][index] = test == 1 ? 8 : -8;
+                pixels[0][index] = test == 6
+                    ? 3.0f * (x - 63.9f) + 0.2f
+                    : (test == 3 ? WIDTH * 2 : 8);
+                pixels[1][index] = test == 6 ? -0.5f : (test == 1 ? 8 : -8);
                 if (test == 4)
                     pixels[0][index] = NAN;
                 if (test == 5) {
@@ -746,6 +748,8 @@ static void warp_policy(pl_gpu gpu)
                     pixels[1][index] = x + 0.5f - WIDTH * 0.5f;
                 }
                 pixels[0][index + 2] = test == 2 ? 0.1f : 0;
+                pixels[0][index + 3] = test == 6 ? 1 : 0;
+                pixels[1][index + 3] = test == 6 ? 1 : 0;
             }
         }
         pl_tex a = upload(gpu, pixels[0]);
@@ -773,13 +777,19 @@ static void warp_policy(pl_gpu gpu)
             .shader = &shader, .target = target,
         )));
         readback(gpu, target, output);
-        int index = ((HEIGHT / 2) * WIDTH + WIDTH / 4) * 4;
+        int sample_x = test == 6 ? WIDTH / 2 : WIDTH / 4;
+        int index = ((HEIGHT / 2) * WIDTH + sample_x) * 4;
         assert(isfinite(output[index + 2]) && isfinite(output[index + 3]));
-        assert(output[index + 2] == 0);
         if (test == 0) {
+            assert(output[index + 2] == 0);
             assert(fabs(output[index] + 4) < 0.001);
             assert(output[index + 3] > 0.99);
+        } else if (test == 6) {
+            assert(fabs(output[index] + 0.25f) < 0.01f);
+            assert(output[index + 2] > 0.99);
+            assert(output[index + 3] > 0.99);
         } else {
+            assert(output[index + 2] == 0);
             assert(output[index + 3] == 0);
         }
         printf("motion policy case=%d unique=%.3f recovered=%.3f\n",

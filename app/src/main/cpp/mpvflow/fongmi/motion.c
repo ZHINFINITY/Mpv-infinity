@@ -621,18 +621,39 @@ static const char synthesis_header[] = GLSL(
 
 static const char warp_body[] = GLSL(
     vec2 uv = (vec2(gl_GlobalInvocationID.xy) + 0.5) / map_size;
-    vec2 initial_motion = textureLod(forward, uv, 0.0).xy;
+    vec4 initial_field = textureLod(forward, uv, 0.0);
+    vec2 initial_motion = initial_field.xy;
     vec2 source = uv;
-    for (int i = 0; i < 4; i++)
-        source = uv - weight * textureLod(forward, source, 0.0).xy / map_size;
-    vec4 f = textureLod(forward, source, 0.0);
+    // MPVFLOW_WARP_BEST_INVERSE_RESIDUAL_V1: keep the best closure among the initial and four solved positions.
+    vec2 best_source = source;
+    vec4 f = initial_field;
+    vec4 best_field = f;
+    float best_residual = 1e20;
+    float initial_residual = length((source + weight * f.xy / map_size - uv) * output_size);
+    if (!(any(isnan(f)) || any(isinf(f))) &&
+        !isnan(initial_residual) && !isinf(initial_residual))
+        best_residual = initial_residual;
+    for (int i = 0; i < 4; i++) {
+        source = uv - weight * f.xy / map_size;
+        f = textureLod(forward, source, 0.0);
+        float candidate_residual = length((source + weight * f.xy / map_size - uv) * output_size);
+        if (!(any(isnan(f)) || any(isinf(f))) &&
+            !isnan(candidate_residual) && !isinf(candidate_residual) &&
+            candidate_residual < best_residual) {
+            best_source = source;
+            best_field = f;
+            best_residual = candidate_residual;
+        }
+    }
+    source = best_source;
+    f = best_field;
     vec2 motion_vector = f.xy;
     vec2 displacement = -weight * f.xy;
     f.xy /= map_size;
     vec4 reverse = textureLod(backward, source + f.xy, 0.0);
     reverse.xy /= map_size;
     float cycle = length((f.xy + reverse.xy) * map_size);
-    float residual = length((source + weight * f.xy - uv) * output_size);
+    float residual = best_residual;
     float trust = quality(f);
     float reliable = 1.0 - smoothstep(0.001, 0.01, max(f.z, reverse.z));
     reliable *= 1.0 - smoothstep(0.1, 0.5, cycle);

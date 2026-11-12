@@ -34,6 +34,7 @@ MOTION_PATCHER = (ROOT / "scripts/patch_fongmi_motion_artifact.py").read_text(en
 MOTION_DIAGNOSTICS = (ROOT / "scripts/patch_fongmi_motion_diagnostics.py").read_text(encoding="utf-8")
 VO_DIAGNOSTICS = (ROOT / "scripts/patch_fongmi_vo_diagnostics.py").read_text(encoding="utf-8")
 MOTION_SNAPSHOT = (ROOT / "app/src/main/cpp/mpvflow/fongmi/motion.c").read_text(encoding="utf-8")
+FONGMI_GPU_TEST = (ROOT / "app/src/main/cpp/mpvflow/fongmi/test/gpu_motion.c").read_text(encoding="utf-8")
 PATCH_HASHES = {
     "libbluray-1.4.1-still-eof.patch": "cc0a15ee88b1ead665dadbc3ac363c2686e5184fc1e04a76713665cad57c0fc7",
     "libbluray-1.4.1-checked-seek.patch": "1055d99f0940b3077e9f7171a220f242396e6bf5196415f3fc987b316d51447c",
@@ -152,8 +153,11 @@ assert "sample_rgba(source1, vec2(pixel) + r.xy * scale - local_motion_offset)" 
 assert "return mix(source_blend, mix(warped0, warped1, blend), clamp(trust, 0.0, 1.0));" in MOTION_PATCHER
 assert "MPVFLOW_RECONSTRUCTION_POSITIVE_EVIDENCE_V1" in MOTION_PATCHER
 assert "evidence > 0.0 &&" in MOTION_PATCHER
+assert "MPVFLOW_WARP_BEST_INVERSE_RESIDUAL_V1" in MOTION_PATCHER
 assert "MPVFLOW_ARTIFACT_GUARDS_V4" in MOTION_SNAPSHOT
 assert "MPVFLOW_WARP_TRAJECTORY_COHERENCE_V1" in MOTION_SNAPSHOT
+assert "MPVFLOW_WARP_BEST_INVERSE_RESIDUAL_V1" in MOTION_SNAPSHOT
+assert "candidate_residual < best_residual" in MOTION_SNAPSHOT
 assert "MPVFLOW_WARP_TRAJECTORY_TRUST_V2" not in MOTION_SNAPSHOT
 assert "MPVFLOW_INSHOT_NEAREST_SOURCE_FALLBACK_V1" not in MOTION_SNAPSHOT
 assert "MPVFLOW_SCENE_CUT_SPATIAL_V1" in MOTION_SNAPSHOT
@@ -168,7 +172,12 @@ assert "reliable *= trajectory_quality;" in MOTION_SNAPSHOT
 assert "trust *= trajectory_quality;" not in MOTION_SNAPSHOT
 assert "nearest_frame_weight" not in MOTION_SNAPSHOT
 assert "source_blend = mix(source_blend, nearest_frame," not in MOTION_SNAPSHOT
-assert "source = uv - weight * textureLod(forward, source, 0.0).xy / map_size;" in MOTION_SNAPSHOT
+assert "source = uv - weight * f.xy / map_size;" in MOTION_SNAPSHOT
+assert "float residual = best_residual;" in MOTION_SNAPSHOT
+assert "test == 6" in FONGMI_GPU_TEST
+assert "3.0f * (x - 63.9f) + 0.2f" in FONGMI_GPU_TEST
+assert "fabs(output[index] + 0.25f)" in FONGMI_GPU_TEST
+assert "output[index + 2] > 0.99" in FONGMI_GPU_TEST
 assert "MPVFLOW_RECONSTRUCTION_POSITIVE_EVIDENCE_V1" in MOTION_SNAPSHOT
 assert "if (!(evidence > 0.0 &&" in MOTION_SNAPSHOT
 assert "if (!(evidence > best || (evidence == best && distance < nearest)))" not in MOTION_SNAPSHOT

@@ -70,6 +70,7 @@ BASE_WARP = """static const char warp_body[] = GLSL(
     vec4 reverse = textureLod(backward, source + f.xy, 0.0);
     reverse.xy /= map_size;
     float cycle = length((f.xy + reverse.xy) * map_size);
+    float residual = length((source + weight * f.xy - uv) * output_size);
     float reliable = 1.0 - smoothstep(0.001, 0.01, max(f.z, reverse.z));
     reliable *= 1.0 - smoothstep(0.1, 0.5, cycle);
     float trust = quality(f);
@@ -210,6 +211,20 @@ def trajectory_weight(
     return 1.0 - smoothstep(0.125, 0.5, error)
 
 
+def inverse_warp_candidates(target: float, weight: float, field):
+    source = target
+    vector = field(source)
+    residual = abs(source + weight * vector - target)
+    best = (residual, source, vector)
+    for _ in range(4):
+        source = target - weight * vector
+        vector = field(source)
+        residual = abs(source + weight * vector - target)
+        if math.isfinite(residual) and residual < best[0]:
+            best = (residual, source, vector)
+    return best, (residual, source, vector)
+
+
 def global_scene_cut_score(first: list[list[float]], second: list[list[float]]) -> float:
     hist0 = [0] * 8
     hist1 = [0] * 8
@@ -262,14 +277,21 @@ assert PATCHER._has_scene_cut_guard(patched)
 assert "int tile_index = (y / 4) * 4 + x / 4;" in patched
 assert "tile_luma_delta[tile_index] += dot(a - b, vec3(0.2126, 0.7152, 0.0722));" in patched
 assert "cut = max(cut, spatial_cut);" in patched
-assert "vec2 initial_motion = textureLod(forward, uv, 0.0).xy;" in patched
+assert PATCHER.WARP_BEST_RESIDUAL_MARKER in patched
+assert "vec4 initial_field = textureLod(forward, uv, 0.0);" in patched
+assert "vec2 initial_motion = initial_field.xy;" in patched
+assert "vec4 best_field = f;" in patched
+assert "candidate_residual < best_residual" in patched
+assert "source = best_source;" in patched and "f = best_field;" in patched
+assert "float residual = best_residual;" in patched
+assert PATCHER.WARP_ITERATION_PATTERN.search(patched) is None
 assert "vec2 motion_vector = f.xy;" in patched
 assert "float trajectory_error = abs(weight) * length(motion_vector - initial_motion);" in patched
 assert "reliable *= trajectory_quality;" in patched
 assert "trust *= trajectory_quality;" not in patched, "path coherence only gates uncertain recovery"
 assert "vec2 displacement = -weight * f.xy;" in patched
 assert "color = vec4(displacement, trust * geometry, reliable * geometry);" in patched
-assert "source = uv - weight * textureLod(forward, source, 0.0).xy / map_size;" in patched
+assert "source = uv - weight * f.xy / map_size;" in patched
 assert "if (!(evidence > 0.0 &&" in patched
 assert "if (!(evidence > best || (evidence == best && distance < nearest)))" not in patched
 assert "neighborhood_quality(sampler2D field, vec2 uv, vec2 center)" in patched
@@ -298,6 +320,12 @@ assert "vec4 nearest_frame =" not in patched
 assert "source_blend = mix(source_blend, nearest_frame," not in patched
 assert "color = mix(source_blend, mix(warped0, warped1, alpha), clamp(trust, 0.0, 1.0));" in patched
 assert "FongMi synthesis prefix\n" in patched and "FongMi synthesis suffix\n" in patched
+unstable_field = lambda x: 3.0 * (x - 63.9) + 0.2
+best_candidate, final_candidate = inverse_warp_candidates(64.0, 0.5, unstable_field)
+assert abs(best_candidate[0] - 0.25) < 1e-9
+assert final_candidate[0] > 1.0 and best_candidate[0] < final_candidate[0]
+constant_candidate, constant_final = inverse_warp_candidates(64.0, 0.5, lambda _x: 8.0)
+assert constant_candidate[0] == 0.0 and constant_final[0] == 0.0
 coarse_grid = vector_grid_shape(480, 221, 8)
 fine_grid = vector_grid_shape(480, 221, 4)
 coarse_mix_band = bilinear_mixed_flow_band_pixels(480, 1920, 8)
