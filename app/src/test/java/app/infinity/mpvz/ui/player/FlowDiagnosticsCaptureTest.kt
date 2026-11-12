@@ -185,10 +185,18 @@ class FlowDiagnosticsCaptureTest {
     assertTrue(view.contains("fongmi-diagnostic-control-file"))
     assertFalse(view.contains("setIntegrationOptionString(\"mpvflow-diagnostic-control-file\""))
     assertTrue(
-      sheet.contains(
-        "BuildConfig.DEBUG && BuildConfig.MPV_HAS_FONGMI_DIAGNOSTICS && activeEngine == PlaybackEngineMode.MPV",
-      ),
+      Regex(
+        """
+          if\s*\(
+          \s*BuildConfig\.DEBUG\s*&&
+          \s*BuildConfig\.MPV_HAS_FONGMI_DIAGNOSTICS\s*&&
+          \s*activeEngine\s*==\s*PlaybackEngineMode\.MPV\s*&&
+          \s*activity\s*!=\s*null
+          \s*\)
+        """.trimIndent(),
+      ).containsMatchIn(sheet),
     )
+    assertTrue(sheet.contains("collectFlowAsState()"))
     assertTrue(sheet.contains("Capture one bad frame"))
     assertTrue(sheet.contains("nothing is uploaded"))
     assertTrue(sheet.contains("Saved: \$location"))
