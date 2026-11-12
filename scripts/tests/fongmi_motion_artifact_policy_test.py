@@ -554,6 +554,35 @@ assert "pl_color_transfer_is_hdr(source->color.transfer)" in motion_capture_patc
 assert "source->repr.sys == PL_COLOR_SYSTEM_DOLBYVISION" in motion_capture_patcher_source
 assert "pl_color_space_is_hdr(&source->color)" in motion_capture_patcher_source
 
+def diagnostic_capture_size(width: int, height: int) -> tuple[int, int] | None:
+    if width < 8 or height < 8 or width > 4096 or height > 4096 or width * height > 16777216:
+        return None
+    largest = max(width, height)
+    out_width, out_height = width, height
+    if largest > 1920:
+        out_width = (width * 1920 + largest // 2) // largest
+        out_height = (height * 1920 + largest // 2) // largest
+    while out_width * out_height > 2073600:
+        if out_width * height >= out_height * width:
+            out_width -= 1
+        else:
+            out_height -= 1
+    plane_bytes = out_width * out_height * 4
+    if out_width < 8 or out_height < 8 or out_width > 1920 or out_height > 1920:
+        return None
+    if plane_bytes * 7 > 64 * 1024 * 1024:
+        return None
+    return out_width, out_height
+
+
+assert diagnostic_capture_size(2275, 1280) == (1920, 1080)
+assert diagnostic_capture_size(4097, 1280) is None
+assert 1920 * 1080 * 4 * 7 <= 64 * 1024 * 1024
+assert "source_position = uv * source_extent - 0.5;" in motion_capture_patcher_source
+assert "vec2 scale = source_extent / motion_extent;" in motion_capture_patcher_source
+assert "plane_bytes * 7 > 64LL * 1024 * 1024" in motion_capture_patcher_source
+assert "capture_width = m->diagnostic_width" in motion_capture_patcher_source
+
 if args.source:
     active_source = args.source.read_text(encoding="utf-8")
     if MOTION_CAPTURE_PATCHER.SOURCE_MARKER in active_source:
@@ -582,6 +611,13 @@ if args.source:
         assert "mix(source_blend, raw_warped, applied_trust)" in active_source
         assert "m->diagnostic_hdr_rejected = m->diagnostic_source_hdr;" in active_source
         assert "m->diagnostic_hdr_rejected = m->linear_hdr;" not in active_source
+        assert "source_position = uv * source_extent - 0.5" in active_source
+        assert "sampling_position = diagnostic_mode == 0 ? vec2(pixel) : source_position" in active_source
+        assert "original0 = texelFetch(source0, source_pixel, 0)" in active_source
+        assert "sample_rgba(source0, sampling_position + f.xy * scale)" in active_source
+        assert "sample_rgba(source1, sampling_position + r.xy * scale - local_motion_offset)" in active_source
+        assert "vec2 scale = source_extent / motion_extent" in active_source
+        assert "plane_bytes * 7 > 64LL * 1024 * 1024" in active_source
         assert "m->diagnostic_requested = !source_hdr;" in active_source
         assert "m->diagnostic_attempted = source_hdr;" in active_source
         assert "m->diagnostic_hdr_rejected = source_hdr;" in active_source
@@ -594,9 +630,14 @@ if args.source:
         release_end = active_source.index("static void record_synthesis", release_start)
         assert "m->diagnostic_requested = false;" in active_source[release_start:release_end]
         assert "diagnostic_planes[6]" in active_source and "host_readable = true" in active_source
+        assert "m->diagnostic_width = capture_width;" in active_source
+        assert "m->diagnostic_height = capture_height;" in active_source
+        assert ".capture_width = m->diagnostic_width" in active_source
+        assert ".capture_height = m->diagnostic_height" in active_source
         header_result, header_changed = MOTION_CAPTURE_PATCHER.transform_header(active_header)
         assert not header_changed and header_result == active_header
         assert "bool hdr_rejected;" in active_header and "bool source_hdr;" in active_header
+        assert "int capture_width, capture_height;" in active_header
         assert "mp_motion_source_is_hdr(const struct pl_frame *source);" in active_header
         assert "mp_motion_request_diagnostic_capture(struct mp_motion *motion, bool source_hdr);" in active_header
         vo_result, vo_changed = VO_CAPTURE_PATCHER.transform_vo(active_vo)
@@ -611,12 +652,20 @@ if args.source:
         assert active_vo.count("fongmi_capture_arm(vo, mix, pair,") == 2
         assert active_vo.count("fongmi_capture_finish(vo)") == 2
         assert "int sample_index = i < 2 ? -1 : 0;" in active_vo
+        assert "source_dimensions" in active_vo and "captured_dimensions" in active_vo
+        assert "fongmi_capture_download(\n            p, capture.planes[i], capture.capture_width, capture.capture_height)" in active_vo
+        assert ".output_width = capture.capture_width" in active_vo
+        assert ".output_height = capture.capture_height" in active_vo
         expected_channels = (
             "source0", "source1", "pre_confidence_warp", "fallback_color", "trust_map", "synthesized"
         )
         assert all(f'"{channel}"' in active_vo for channel in expected_channels)
         active_writer = (mpv_dir / "video/out/gpu_next/mpvflow_capture_io.c").read_text(encoding="utf-8")
+        active_writer_header = (mpv_dir / "video/out/gpu_next/mpvflow_capture_io.h").read_text(encoding="utf-8")
         assert "is_single_output_channel" in active_writer
+        assert "MPVFLOW_CAPTURE_SINGLE_MAX_SOURCE_DIMENSION 4096" in active_writer_header
+        assert "MPVFLOW_CAPTURE_SINGLE_MAX_SOURCE_PIXELS 16777216" in active_writer_header
+        assert "shared aspect-preserving RGBA8 downscale; source and captured dimensions recorded" in active_writer
         assert all(f'"{channel}"' in active_writer for channel in expected_channels)
         assert ".source_width = capture.width" in active_vo
         assert ".source_height = capture.height" in active_vo
@@ -640,3 +689,7 @@ print(
     f"the 480-cap grid changes {coarse_grid[0]}x{coarse_grid[1]} to {fine_grid[0]}x{fine_grid[1]}, "
     f"halving the bilinear mixed-flow band {coarse_mix_band:.0f}px to {fine_mix_band:.0f}px in the supplied-resolution case"
 )
+assert "sampling_position = diagnostic_mode == 0 ? vec2(pixel) : source_position;" in motion_capture_patcher_source
+assert "original0 = texelFetch(source0, source_pixel, 0);" in motion_capture_patcher_source
+assert "sample_rgba(source0, sampling_position + f.xy * scale)" in motion_capture_patcher_source
+assert "sample_rgba(source1, sampling_position + r.xy * scale - local_motion_offset)" in motion_capture_patcher_source

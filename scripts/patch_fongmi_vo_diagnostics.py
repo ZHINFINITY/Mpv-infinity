@@ -44,6 +44,8 @@ static void fongmi_capture_settings(const struct priv *p, const char *reason,
     snprintf(settings, settings_size,
         "{\"capture_mode\":\"fongmi_one_shot\",\"pair_limit\":1,"
         "\"sample_limit\":1,\"resolution_limit\":[1920,1080],"
+        "\"source_dimension_limit\":[4096,4096],\"source_pixel_limit\":16777216,"
+        "\"capture_pixel_limit\":2073600,"
         "\"max_bytes\":67108864,\"local_only\":true,"
         "\"active_route\":\"%s\",\"source_is_hdr\":%s,"
         "\"refusal_reason\":\"%s\","
@@ -227,13 +229,16 @@ static void fongmi_capture_finish(struct vo *vo)
     char settings[1024];
     snprintf(settings, sizeof(settings),
         "{\"capture_mode\":\"fongmi_one_shot\",\"pair_limit\":1,"
-        "\"sample_limit\":1,\"route_frame_ids\":[%" PRIu64 ",%" PRIu64 "],"
+        "\"sample_limit\":1,\"resolution_limit\":[1920,1080],\"max_bytes\":67108864,"
+        "\"source_dimensions\":[%d,%d],\"captured_dimensions\":[%d,%d],"
+        "\"route_frame_ids\":[%" PRIu64 ",%" PRIu64 "],"
         "\"plane_order\":[\"source0\",\"source1\",\"pre_confidence_warp\","
         "\"fallback_color\",\"trust_map\",\"synthesized\"],"
         "\"transfer\":\"RGBA8; %s; trust scalar linear\","
         "\"trust_map_alpha\":\"0 on scene-cut branch; 255 on normal synthesis\","
         "\"fallback_semantics\":\"exact source_blend before trust weighting\","
         "\"local_only\":true}",
+        capture.width, capture.height, capture.capture_width, capture.capture_height,
         p->fongmi_capture_frame_id0, p->fongmi_capture_frame_id1,
         capture.srgb_encoded ? "renderer-linear SDR color planes sRGB-encoded"
                              : "exact FongMi input transfer domain");
@@ -250,8 +255,8 @@ static void fongmi_capture_finish(struct vo *vo)
         .backend = fongmi_capture_backend(p),
         .source_width = capture.width,
         .source_height = capture.height,
-        .output_width = capture.width,
-        .output_height = capture.height,
+        .output_width = capture.capture_width,
+        .output_height = capture.capture_height,
         .analysis_width = capture.analysis_width,
         .analysis_height = capture.analysis_height,
         .grid_width = capture.grid_width,
@@ -281,13 +286,14 @@ static void fongmi_capture_finish(struct vo *vo)
     };
     for (int i = 0; i < 6; i++) {
         int sample_index = i < 2 ? -1 : 0;
-        uint8_t *pixels = fongmi_capture_download(p, capture.planes[i], capture.width, capture.height);
+        uint8_t *pixels = fongmi_capture_download(
+            p, capture.planes[i], capture.capture_width, capture.capture_height);
         if (!pixels) {
             mpvflow_capture_io_missing(session, 0, sample_index, channels[i], "readback", "pl_tex_download_failed");
             continue;
         }
         if (mpvflow_capture_io_write(session, 0, sample_index, channels[i], &meta,
-                                     pixels, capture.width, capture.height,
+                                     pixels, capture.capture_width, capture.capture_height,
                                      reason, sizeof(reason)) < 0)
             mpvflow_capture_io_missing(session, 0, sample_index, channels[i], "writer", reason);
         free(pixels);
@@ -319,6 +325,9 @@ def transform_vo(source: str) -> tuple[str, bool]:
             "fongmi_diagnostic_actual_hdr_source_unsupported",
             "fongmi-diagnostic-control-file",
             "mpvflow_capture_io_write",
+            "capture.capture_width",
+            "capture.capture_height",
+            "captured_dimensions",
         )
         if source.count(MARKER) != 1 or any(item not in source for item in needed):
             raise ValueError("FongMi VO capture marker/source mismatch")

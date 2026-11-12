@@ -185,6 +185,47 @@ int main(int argc, char **argv) {
     assert(!mpvflow_capture_io_start(argv[2], "fongmi_single_oversized",
         &oversized_single, reason, sizeof(reason)));
 
+    struct MPVFlowCaptureMeta bounded_single_meta = single_meta;
+    bounded_single_meta.source_width = 2275;
+    bounded_single_meta.source_height = 1280;
+    bounded_single_meta.output_width = 1920;
+    bounded_single_meta.output_height = 1080;
+    bounded_single_meta.analysis_width = 1920;
+    bounded_single_meta.analysis_height = 1080;
+    bounded_single_meta.grid_width = 480;
+    bounded_single_meta.grid_height = 270;
+    const int capture_width = bounded_single_meta.output_width;
+    const int capture_height = bounded_single_meta.output_height;
+    const size_t capture_bytes = (size_t) capture_width * capture_height * 4;
+    assert((int64_t) capture_width * capture_height * 4 * 7 <= MPVFLOW_CAPTURE_MAX_BYTES);
+    uint8_t *bounded_pixels = calloc(1, capture_bytes);
+    assert(bounded_pixels);
+    session = mpvflow_capture_io_start(argv[2], "bounded_single", &bounded_single_meta,
+                                       reason, sizeof(reason));
+    assert(session);
+    const char *bounded_channels[] = {
+        "source0", "source1", "pre_confidence_warp", "fallback_color",
+        "trust_map", "synthesized"
+    };
+    for (size_t i = 0; i < sizeof(bounded_channels) / sizeof(bounded_channels[0]); i++) {
+        const int sample_index = i < 2 ? -1 : 0;
+        assert(!mpvflow_capture_io_write(session, 0, sample_index, bounded_channels[i],
+            &bounded_single_meta, bounded_pixels, capture_width, capture_height,
+            reason, sizeof(reason)));
+    }
+    assert(mpvflow_capture_io_write(session, 0, 1, "synthesized",
+        &bounded_single_meta, bounded_pixels, capture_width, capture_height,
+        reason, sizeof(reason)));
+    assert(mpvflow_capture_io_stop(session) == 0);
+    assert(!strcmp(mpvflow_capture_io_status(session), "complete"));
+    mpvflow_capture_io_destroy(session);
+    free(bounded_pixels);
+
+    struct MPVFlowCaptureMeta too_large_source = bounded_single_meta;
+    too_large_source.source_width = 4097;
+    assert(!mpvflow_capture_io_start(argv[2], "fongmi_single_source_too_large",
+        &too_large_source, reason, sizeof(reason)));
+
     struct MPVFlowCaptureMeta differing_dimensions = {
         "native-media3", "vulkan", 512, 288, 1920, 1080, 512, 288, 128, 72,
         20.0, 20.04, 20.02, .5, "{}", 0, 0, 0, 0, 0
@@ -321,7 +362,9 @@ with tempfile.TemporaryDirectory() as temp_dir:
     assert single_manifest["limits"]["pairs"] == 1
     assert single_manifest["limits"]["samples_per_pair"] == 1
     assert single_manifest["image_policy"]["max_dimension"] == 1920
-    assert single_manifest["image_policy"]["color_images"] == "native-resolution RGBA8; no resampling"
+    assert single_manifest["image_policy"]["color_images"] == (
+        "shared aspect-preserving RGBA8 downscale; source and captured dimensions recorded"
+    )
     assert single_manifest["single_output_capture"]["scope"] == "one FongMi source pair and one synthesized sample"
     assert {r["channel"] for r in single_manifest["records"]} == {
         "source0", "source1", "pre_confidence_warp", "fallback_color", "trust_map", "synthesized"
@@ -330,6 +373,17 @@ with tempfile.TemporaryDirectory() as temp_dir:
     assert all(r["sample_index"] == 0 for r in single_manifest["records"] if r["channel"] not in {"source0", "source1"})
     assert all(r["pts"] == {"source0": 30.0, "source1": 30.04, "output": 30.02, "timestep": 0.5}
                for r in single_manifest["records"])
+    bounded_manifest = json.loads((directory / "bounded_single" / "manifest.json").read_text())
+    assert bounded_manifest["status"] == "complete"
+    assert bounded_manifest["source_dimensions"] == [2275, 1280]
+    assert bounded_manifest["output_dimensions"] == [1920, 1080]
+    assert bounded_manifest["single_output_diagnostic"] is True
+    assert bounded_manifest["pair_count"] == 1 and bounded_manifest["sample_count"] == 1
+    assert bounded_manifest["limits"] == {"pairs": 1, "samples_per_pair": 1, "bytes": 64 * 1024 * 1024}
+    assert bounded_manifest["bytes_written"] <= 64 * 1024 * 1024
+    assert len(bounded_manifest["records"]) == 6
+    assert all(record["captured_dimensions"] == [1920, 1080] for record in bounded_manifest["records"])
+    assert all(record["source_dimensions"] == [2275, 1280] for record in bounded_manifest["records"])
     single_terminal = json.loads((directory / "single_terminal" / "manifest.json").read_text())
     assert single_terminal["single_output_diagnostic"] is True
     assert single_terminal["limits"]["pairs"] == 1 and single_terminal["limits"]["samples_per_pair"] == 1

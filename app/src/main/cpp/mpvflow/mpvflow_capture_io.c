@@ -501,11 +501,11 @@ static int valid_meta(const struct MPVFlowCaptureMeta *meta)
            valid_settings_object(meta->effective_settings_json) &&
            (!meta->single_output ||
             (!strcmp(meta->engine, "mpv") && !strcmp(meta->backend, "vulkan") &&
-             meta->source_width <= MPVFLOW_CAPTURE_DECISION_MAX_DIMENSION &&
-             meta->source_height <= MPVFLOW_CAPTURE_DECISION_MAX_DIMENSION &&
+             meta->source_width <= MPVFLOW_CAPTURE_SINGLE_MAX_SOURCE_DIMENSION &&
+             meta->source_height <= MPVFLOW_CAPTURE_SINGLE_MAX_SOURCE_DIMENSION &&
              meta->output_width <= MPVFLOW_CAPTURE_DECISION_MAX_DIMENSION &&
              meta->output_height <= MPVFLOW_CAPTURE_DECISION_MAX_DIMENSION &&
-             (int64_t) meta->source_width * meta->source_height <= MPVFLOW_CAPTURE_DECISION_MAX_PIXELS &&
+             (int64_t) meta->source_width * meta->source_height <= MPVFLOW_CAPTURE_SINGLE_MAX_SOURCE_PIXELS &&
              (int64_t) meta->output_width * meta->output_height <= MPVFLOW_CAPTURE_DECISION_MAX_PIXELS)) &&
            (!meta->paired_output ||
             (!meta->visibility_resolver_enabled && meta->timestep == 0.5f &&
@@ -601,8 +601,10 @@ static int write_manifest_json(FILE *file, const struct MPVFlowCaptureSession *s
                 session_max_samples(session), MPVFLOW_CAPTURE_MAX_BYTES,
                 (session->paired_output || session->single_output)
                     ? MPVFLOW_CAPTURE_DECISION_MAX_DIMENSION : MPVFLOW_CAPTURE_IMAGE_MAX_DIMENSION,
-                (session->paired_output || session->single_output)
-                    ? "native-resolution RGBA8; no resampling" : "aspect-preserving RGBA8 downscale") < 0)
+                session->single_output
+                    ? "shared aspect-preserving RGBA8 downscale; source and captured dimensions recorded"
+                    : (session->paired_output ? "native-resolution RGBA8; no resampling"
+                                              : "aspect-preserving RGBA8 downscale")) < 0)
         return -1;
 
     if (session->paired_output)
@@ -629,10 +631,11 @@ static int write_manifest_json(FILE *file, const struct MPVFlowCaptureSession *s
         fputs(",\"path\":", file);
         write_json_string(file, image->path);
         fprintf(file,
-                ",\"width\":%d,\"height\":%d,\"source_dimensions\":[%d,%d],"
+                ",\"width\":%d,\"height\":%d,\"captured_dimensions\":[%d,%d],\"source_dimensions\":[%d,%d],"
                 "\"output_dimensions\":[%d,%d],\"analysis_dimensions\":[%d,%d],\"grid_dimensions\":[%d,%d],\"pts\":{\"source0\":%.17g,"
                 "\"source1\":%.17g,\"output\":%.17g,\"timestep\":%.9g}",
-                image->width, image->height, image->source_width, image->source_height,
+                image->width, image->height, image->width, image->height,
+                image->source_width, image->source_height,
                 image->output_width, image->output_height, image->analysis_width, image->analysis_height,
                 image->grid_width, image->grid_height, image->pts0, image->pts1,
                 image->output_pts, image->timestep);
@@ -823,7 +826,7 @@ int mpvflow_capture_io_write(
           height > MPVFLOW_CAPTURE_DECISION_MAX_DIMENSION ||
           (int64_t) width * height > MPVFLOW_CAPTURE_DECISION_MAX_PIXELS ||
           ((!strcmp(channel, "source0") || !strcmp(channel, "source1")) ?
-           (sample_index != -1 || width != meta->source_width || height != meta->source_height) :
+           (sample_index != -1 || width != meta->output_width || height != meta->output_height) :
            (sample_index != 0 || width != meta->output_width || height != meta->output_height)))) ||
         (meta->paired_output &&
          ((!strcmp(channel, "synthesized") &&
@@ -1042,7 +1045,8 @@ static int write_terminal_manifest_mode(
                 (paired_output ? MPVFLOW_CAPTURE_PAIRED_SAMPLES_PER_PAIR : MPVFLOW_CAPTURE_MAX_SAMPLES_PER_PAIR),
             MPVFLOW_CAPTURE_MAX_BYTES,
             (paired_output || single_output) ? MPVFLOW_CAPTURE_DECISION_MAX_DIMENSION : MPVFLOW_CAPTURE_IMAGE_MAX_DIMENSION,
-            (paired_output || single_output) ? "native-resolution RGBA8; no resampling" : "aspect-preserving RGBA8 downscale");
+            single_output ? "shared aspect-preserving RGBA8 downscale; source and captured dimensions recorded" :
+                (paired_output ? "native-resolution RGBA8; no resampling" : "aspect-preserving RGBA8 downscale"));
     write_json_string(file, reason && *reason ? reason : "no_synthesized_samples");
     fputs("}]}", file);
     int failed = ferror(file);
