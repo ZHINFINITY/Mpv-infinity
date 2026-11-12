@@ -31,6 +31,8 @@ PATCH_DIR = ROOT / "scripts/patches/mpvlibandroid-fongmi"
 PATCHER = (PATCH_DIR / "patch-libbluray.sh").read_text(encoding="utf-8")
 PATCH_README = (PATCH_DIR / "README.md").read_text(encoding="utf-8")
 MOTION_PATCHER = (ROOT / "scripts/patch_fongmi_motion_artifact.py").read_text(encoding="utf-8")
+MOTION_DIAGNOSTICS = (ROOT / "scripts/patch_fongmi_motion_diagnostics.py").read_text(encoding="utf-8")
+VO_DIAGNOSTICS = (ROOT / "scripts/patch_fongmi_vo_diagnostics.py").read_text(encoding="utf-8")
 MOTION_SNAPSHOT = (ROOT / "app/src/main/cpp/mpvflow/fongmi/motion.c").read_text(encoding="utf-8")
 PATCH_HASHES = {
     "libbluray-1.4.1-still-eof.patch": "cc0a15ee88b1ead665dadbc3ac363c2686e5184fc1e04a76713665cad57c0fc7",
@@ -43,6 +45,19 @@ assert "FONGMI_PATCH" not in PREPARE
 assert PREPARE.count("subprocess.run([sys.executable, str(patcher), str(mpv_dir)], cwd=ROOT, check=True)") == 1
 assert "scripts/patch_fongmi_motion_diagnostics.py" in PREPARE
 assert "scripts/patch_fongmi_vo_diagnostics.py" in PREPARE
+for diagnostic_failure in (
+    '"source_dimensions_out_of_range"',
+    '"texture_unavailable"',
+    '"dispatch_failed"',
+    "diagnostic_failure_stage",
+    "diagnostic_failed_plane",
+):
+    assert diagnostic_failure in MOTION_DIAGNOSTICS, diagnostic_failure
+assert ".failure_stage = m->diagnostic_failure_stage" in MOTION_DIAGNOSTICS
+assert ".failed_plane = m->diagnostic_failed_plane" in MOTION_DIAGNOSTICS
+assert "capture.failure_stage" in VO_DIAGNOSTICS
+assert "capture.failed_plane" in VO_DIAGNOSTICS
+assert "capture.width, capture.height" in VO_DIAGNOSTICS
 assert 'debug_capture_enabled = os.environ.get("MPVFLOW_DEBUG_CAPTURE") == "1"' in PREPARE
 assert "if debug_capture_enabled:" in PREPARE
 assert 'if not debug_capture_enabled and any(marker in capture_source for marker in capture_markers)' in PREPARE

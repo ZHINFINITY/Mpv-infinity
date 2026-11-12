@@ -208,9 +208,20 @@ static void fongmi_capture_finish(struct vo *vo)
     if (!mp_motion_take_diagnostic_capture(p->motion, &capture))
         return;
     if (!capture.ready) {
-        fongmi_capture_terminal(vo, capture.hdr_rejected
-            ? "fongmi_diagnostic_actual_hdr_source_unsupported"
-            : "fongmi_diagnostic_planes_unavailable");
+        if (capture.hdr_rejected) {
+            fongmi_capture_terminal(vo, "fongmi_diagnostic_actual_hdr_source_unsupported");
+            return;
+        }
+        const char *stage = capture.failure_stage && capture.failure_stage[0]
+            ? capture.failure_stage : "planes_unavailable";
+        char failure[160];
+        if (capture.failed_plane >= 0)
+            snprintf(failure, sizeof(failure), "fongmi_diagnostic_%s_plane_%d_%dx%d",
+                     stage, capture.failed_plane, capture.width, capture.height);
+        else
+            snprintf(failure, sizeof(failure), "fongmi_diagnostic_%s_%dx%d",
+                     stage, capture.width, capture.height);
+        fongmi_capture_terminal(vo, failure);
         return;
     }
     char settings[1024];

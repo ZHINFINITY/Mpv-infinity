@@ -35,6 +35,8 @@ def transform_header(source: str) -> tuple[str, bool]:
             "mp_motion_request_diagnostic_capture",
             "mp_motion_take_diagnostic_capture",
             "mp_motion_release_diagnostic_capture",
+            "const char *failure_stage;",
+            "int failed_plane;",
         )
         if source.count(HEADER_MARKER) != 1 or any(item not in source for item in required):
             raise ValueError("FongMi diagnostic header marker/source mismatch")
@@ -56,6 +58,8 @@ struct mp_motion_diagnostic_capture {
     bool hdr_rejected;
     bool source_hdr;
     bool srgb_encoded;
+    const char *failure_stage;
+    int failed_plane;
 };
 
 struct mp_motion_stats {
@@ -92,6 +96,11 @@ def transform_source(source: str) -> tuple[str, bool]:
             "mp_motion_capture_diagnostic_planes",
             "diagnostic_planes[6]",
             "diagnostic_source_hdr",
+            "diagnostic_failure_stage",
+            "diagnostic_failed_plane",
+            "source_dimensions_out_of_range",
+            "texture_unavailable",
+            "dispatch_failed",
             "mp_motion_source_is_hdr",
             "diagnostic_hdr_rejected = m->diagnostic_source_hdr",
             "diagnostic_mode == 3",
@@ -138,6 +147,8 @@ bool mp_motion_source_is_hdr(const struct pl_frame *source)
     pl_tex diagnostic_planes[6];
     bool diagnostic_requested, diagnostic_attempted, diagnostic_ready;
     bool diagnostic_srgb_encoded, diagnostic_hdr_rejected, diagnostic_source_hdr;
+    const char *diagnostic_failure_stage;
+    int diagnostic_failed_plane;
     pl_dispatch_prepared pyramid_pass[LEVELS][2];""",
         "diagnostic texture ownership",
     )
@@ -288,22 +299,37 @@ static bool recreate(struct mp_motion *m, pl_tex *texture, int w, int h)
     m->diagnostic_attempted = true;
     m->diagnostic_ready = false;
     m->diagnostic_hdr_rejected = m->diagnostic_source_hdr;
-    if (m->diagnostic_hdr_rejected)
+    m->diagnostic_failure_stage = NULL;
+    m->diagnostic_failed_plane = -1;
+    if (m->diagnostic_hdr_rejected) {
+        m->diagnostic_failure_stage = "actual_hdr_source_unsupported";
         return false;
+    }
     int w = first->params.w, h = first->params.h;
-    if (w < 8 || h < 8 || w > 1920 || h > 1080 || (int64_t) w * h > 2073600)
+    if (w < 8 || h < 8 || w > 1920 || h > 1080 || (int64_t) w * h > 2073600) {
+        m->diagnostic_failure_stage = "source_dimensions_out_of_range";
         return false;
-    for (int i = 0; i < 6; i++)
-        if (!recreate_diagnostic(m, &m->diagnostic_planes[i], w, h))
+    }
+    for (int i = 0; i < 6; i++) {
+        if (!recreate_diagnostic(m, &m->diagnostic_planes[i], w, h)) {
+            m->diagnostic_failure_stage = "texture_unavailable";
+            m->diagnostic_failed_plane = i;
             return false;
+        }
+    }
     int encode_srgb = m->input_kind == MOTION_INPUT_VIEW;
     for (int mode = 1; mode <= 6; mode++) {
         if (!synthesize(m, first, second, alpha, NULL, 0, mode, encode_srgb,
-                        m->diagnostic_planes[mode - 1]))
+                        m->diagnostic_planes[mode - 1])) {
+            m->diagnostic_failure_stage = "dispatch_failed";
+            m->diagnostic_failed_plane = mode - 1;
             return false;
+        }
     }
     m->diagnostic_srgb_encoded = encode_srgb != 0;
     m->diagnostic_ready = true;
+    m->diagnostic_failure_stage = NULL;
+    m->diagnostic_failed_plane = -1;
     return true;
 }
 
@@ -316,6 +342,8 @@ void mp_motion_request_diagnostic_capture(struct mp_motion *m, bool source_hdr)
     m->diagnostic_ready = false;
     m->diagnostic_hdr_rejected = source_hdr;
     m->diagnostic_source_hdr = source_hdr;
+    m->diagnostic_failure_stage = source_hdr ? "actual_hdr_source_unsupported" : NULL;
+    m->diagnostic_failed_plane = -1;
 }
 
 bool mp_motion_take_diagnostic_capture(
@@ -334,6 +362,8 @@ bool mp_motion_take_diagnostic_capture(
         .hdr_rejected = m->diagnostic_hdr_rejected,
         .source_hdr = m->diagnostic_source_hdr,
         .srgb_encoded = m->diagnostic_srgb_encoded,
+        .failure_stage = m->diagnostic_failure_stage,
+        .failed_plane = m->diagnostic_failed_plane,
     };
     for (int i = 0; i < 6; i++)
         capture->planes[i] = m->diagnostic_planes[i];
@@ -354,6 +384,8 @@ void mp_motion_release_diagnostic_capture(struct mp_motion *m)
     m->diagnostic_hdr_rejected = false;
     m->diagnostic_source_hdr = false;
     m->diagnostic_srgb_encoded = false;
+    m->diagnostic_failure_stage = NULL;
+    m->diagnostic_failed_plane = -1;
 }
 
 static void record_synthesis(struct mp_motion *m)
