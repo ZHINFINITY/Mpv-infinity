@@ -83,6 +83,7 @@ for removed_capture_ui in (
 ):
     assert removed_capture_ui not in MORE_SHEET, f"the More sheet must not expose {removed_capture_ui}"
 require(MORE_SHEET, "One-shot FongMi diagnostic", "the FongMi one-shot action must be explicitly labeled")
+require(MORE_SHEET, "collectFlowAsState()", "capture state must use Compose's StateFlow collector")
 assert re.search(
     r"if\s*\(\s*BuildConfig\.DEBUG\s*&&\s*BuildConfig\.MPV_HAS_FONGMI_DIAGNOSTICS"
     r"\s*&&\s*activeEngine\s*==\s*PlaybackEngineMode\.MPV\s*&&\s*activity\s*!=\s*null\s*\)",

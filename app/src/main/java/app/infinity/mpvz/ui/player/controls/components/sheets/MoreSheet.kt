@@ -46,6 +46,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TimeInput
 import androidx.compose.material3.rememberTimePickerState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState as collectFlowAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -112,7 +113,7 @@ fun MoreSheet(
 ) {
   val activity = LocalActivity.current as? PlayerActivity
   val emptyCaptureState = remember { MutableStateFlow(FlowDiagnosticsCaptureUiState()) }
-  val captureState by (activity?.flowDiagnosticsCaptureState ?: emptyCaptureState).collectAsState()
+  val captureState by (activity?.flowDiagnosticsCaptureState ?: emptyCaptureState).collectFlowAsState()
   val appearancePreferences = koinInject<AppearancePreferences>()
   val liquidGlassSurfaces by appearancePreferences.liquidGlassSurfaces.collectAsState()
   val advancedPreferences = koinInject<AdvancedPreferences>()
