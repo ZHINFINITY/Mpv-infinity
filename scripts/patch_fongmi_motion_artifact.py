@@ -25,6 +25,7 @@ SCENE_CUT_MARKER = "MPVFLOW_SCENE_CUT_SPATIAL_V1"
 REJECTED_INSHOT_FALLBACK_MARKER = "MPVFLOW_INSHOT_NEAREST_SOURCE_FALLBACK_V1"
 FINE_GRID_MARKER = "MPVFLOW_FINE_MOTION_GRID_V1"
 FINE_GRID_ASSIGNMENT = "int spacing = (level == LEVELS - 1 || level == 0) ? 4 : 8;"
+SPATIAL_TRUST_MARKER = "MPVFLOW_SPATIAL_TRUST_ISLAND_GUARD_V1"
 
 RECONSTRUCTION_PATTERN = re.compile(
     r"(?m)^(?P<indent> *)" + re.escape(
@@ -111,6 +112,58 @@ NEIGHBORHOOD_HELPER = """float neighborhood_quality(sampler2D field, vec2 uv, ve
                            length(n2 - center) + length(n3 - center));
     return 1.0 - smoothstep(0.65, 2.8, spread);
 }"""
+
+NEIGHBORHOOD_END_PATTERN = re.compile(
+    r"(?m)^[ \t]*return 1\.0 - smoothstep\(0\.65, 2\.8, spread\);\n"
+    r"(?P<indent>[ \t]*)}$"
+)
+
+SPATIAL_TRUST_HELPER = """float spatial_trust_consensus(sampler2D warp0, sampler2D warp1,
+                              vec2 uv, vec4 f, vec4 r)
+{
+    vec2 texel_step = 1.0 / vec2(textureSize(warp0, 0));
+    vec4 f0 = textureLod(warp0, uv + vec2(-texel_step.x, 0.0), 0.0);
+    vec4 r0 = textureLod(warp1, uv + vec2(-texel_step.x, 0.0), 0.0);
+    vec4 f1 = textureLod(warp0, uv + vec2( texel_step.x, 0.0), 0.0);
+    vec4 r1 = textureLod(warp1, uv + vec2( texel_step.x, 0.0), 0.0);
+    vec4 f2 = textureLod(warp0, uv + vec2(0.0, -texel_step.y), 0.0);
+    vec4 r2 = textureLod(warp1, uv + vec2(0.0, -texel_step.y), 0.0);
+    vec4 f3 = textureLod(warp0, uv + vec2(0.0,  texel_step.y), 0.0);
+    vec4 r3 = textureLod(warp1, uv + vec2(0.0,  texel_step.y), 0.0);
+    float w0 = (any(isnan(f0)) || any(isinf(f0)) || any(isnan(r0)) || any(isinf(r0))) ? 0.0 :
+        1.0 - smoothstep(0.65, 2.8,
+        0.5 * (length(f0.xy - f.xy) + length(r0.xy - r.xy)));
+    float w1 = (any(isnan(f1)) || any(isinf(f1)) || any(isnan(r1)) || any(isinf(r1))) ? 0.0 :
+        1.0 - smoothstep(0.65, 2.8,
+        0.5 * (length(f1.xy - f.xy) + length(r1.xy - r.xy)));
+    float w2 = (any(isnan(f2)) || any(isinf(f2)) || any(isnan(r2)) || any(isinf(r2))) ? 0.0 :
+        1.0 - smoothstep(0.65, 2.8,
+        0.5 * (length(f2.xy - f.xy) + length(r2.xy - r.xy)));
+    float w3 = (any(isnan(f3)) || any(isinf(f3)) || any(isnan(r3)) || any(isinf(r3))) ? 0.0 :
+        1.0 - smoothstep(0.65, 2.8,
+        0.5 * (length(f3.xy - f.xy) + length(r3.xy - r.xy)));
+    float s0 = 0.0;
+    float s1 = 0.0;
+    float s2 = 0.0;
+    float s3 = 0.0;
+    if (!(any(isnan(f0)) || any(isinf(f0)) || any(isnan(r0)) || any(isinf(r0))))
+        s0 = max(min(f0.z, r0.z), min(f0.w, r0.w));
+    if (!(any(isnan(f1)) || any(isinf(f1)) || any(isnan(r1)) || any(isinf(r1))))
+        s1 = max(min(f1.z, r1.z), min(f1.w, r1.w));
+    if (!(any(isnan(f2)) || any(isinf(f2)) || any(isnan(r2)) || any(isinf(r2))))
+        s2 = max(min(f2.z, r2.z), min(f2.w, r2.w));
+    if (!(any(isnan(f3)) || any(isinf(f3)) || any(isnan(r3)) || any(isinf(r3))))
+        s3 = max(min(f3.z, r3.z), min(f3.w, r3.w));
+    float total = w0 + w1 + w2 + w3;
+    if (total < 0.25)
+        return clamp(max(min(f.z, r.z), min(f.w, r.w)), 0.0, 1.0);
+    return clamp((s0 * w0 + s1 * w1 + s2 * w2 + s3 * w3) / total,
+                 0.0, 1.0);
+}"""
+
+SPATIAL_TRUST_PATTERN = re.compile(
+    r"(?m)^(?P<indent>[ \t]*)trust \*= boundary_trust \* region3_local_trust;$"
+)
 
 TRUST_PATTERN = re.compile(
     r"(?m)^(?P<indent>[ \t]*)vec3 conflict = abs\(metric0 - metric1\);\n"
@@ -266,7 +319,7 @@ def _is_synthesis_patched_v3(source: str) -> bool:
     )
 
 
-def _is_synthesis_patched_core(source: str) -> bool:
+def _is_synthesis_patched_core(source: str, require_spatial: bool = True) -> bool:
     return (
         source.count(MARKER) == 1
         and source.count(LOCAL_SOFTENING_MARKER) == 1
@@ -282,6 +335,7 @@ def _is_synthesis_patched_core(source: str) -> bool:
         and source.count("float boundary_trust = 1.0 - smoothstep(0.04, 0.08, luma_error);") == 1
         and source.count("trust *= 1.0 - smoothstep(0.03, 0.30,") == 1
         and source.count("trust *= boundary_trust * region3_local_trust;") == 1
+        and (not require_spatial or _has_spatial_trust_guard(source))
         and source.count("vec2 local_motion_delta = (r.xy - f.xy) * scale;") == 1
         and source.count("float local_motion_softness = 0.24 * (1.0 - clamp(trust, 0.0, 1.0)) *") == 1
         and (
@@ -305,6 +359,79 @@ def _is_synthesis_patched_core(source: str) -> bool:
         and LEGACY_MARKER not in source
         and PREVIOUS_MARKER not in source
     )
+
+
+def _has_spatial_trust_guard(source: str) -> bool:
+    return (
+        source.count(SPATIAL_TRUST_MARKER) == 1
+        and source.count("float spatial_trust_consensus(sampler2D warp0, sampler2D warp1,") == 1
+        and source.count("spatial_trust_consensus(warp0, warp1, uv, f, r)") == 1
+        and source.count("float spatial_island = max(0.0, clamp(trust, 0.0, 1.0) - spatial_consensus);") == 1
+        and source.count("trust = mix(trust, min(trust, spatial_consensus),") == 1
+        and source.count("0.75 * boundary_activation *") == 1
+        and source.count("float s0 = 0.0;") == 1
+        and source.count("float s1 = 0.0;") == 1
+        and source.count("float s2 = 0.0;") == 1
+        and source.count("float s3 = 0.0;") == 1
+        and all(
+            source.count(
+                f"if (!(any(isnan(f{i})) || any(isinf(f{i})) || any(isnan(r{i})) || any(isinf(r{i}))))"
+            ) == 1
+            for i in range(4)
+        )
+        and re.search(
+            r"(?m)^[ \t]*if \(boundary_activation > 0\.0\) \{\n"
+            r"[ \t]+float spatial_consensus = spatial_trust_consensus\(warp0, warp1, uv, f, r\);",
+            source,
+        ) is not None
+    )
+
+
+def _patch_spatial_trust(source: str) -> str:
+    if SPATIAL_TRUST_MARKER in source:
+        if not _has_spatial_trust_guard(source):
+            raise ValueError("FongMi spatial trust marker/source mismatch")
+        return source
+    if any(token in source for token in (
+        "float spatial_trust_consensus(",
+        "float spatial_island =",
+        "spatial_trust_consensus(warp0, warp1, uv, f, r)",
+    )):
+        raise ValueError("FongMi spatial trust source contains a partial guard")
+    source = _replace_one(
+        NEIGHBORHOOD_END_PATTERN,
+        source,
+        lambda match: (
+            match.group(0)
+            + "\n\n"
+            + _indent_block(SPATIAL_TRUST_HELPER, match.group("indent"))
+        ),
+        "spatial trust consensus helper",
+    )
+    source = _replace_one(
+        SPATIAL_TRUST_PATTERN,
+        source,
+        lambda match: (
+            match.group(0)
+            + "\n"
+            + _indent_block(
+                "// " + SPATIAL_TRUST_MARKER + ": suppress isolated high-trust warp islands only across coherent motion.\n"
+                "if (boundary_activation > 0.0) {\n"
+                "    float spatial_consensus = spatial_trust_consensus(warp0, warp1, uv, f, r);\n"
+                "    float spatial_island = max(0.0, clamp(trust, 0.0, 1.0) - spatial_consensus);\n"
+                "    float spatial_guard_weight = 0.75 * boundary_activation *\n"
+                "                                 smoothstep(0.08, 0.35, spatial_island);\n"
+                "    trust = mix(trust, min(trust, spatial_consensus),\n"
+                "                clamp(spatial_guard_weight, 0.0, 0.75));\n"
+                "}",
+                match.group("indent"),
+            )
+        ),
+        "spatial trust transition cap",
+    )
+    if not _has_spatial_trust_guard(source):
+        raise ValueError("FongMi spatial trust island guard failed its postconditions")
+    return source
 
 
 def _is_synthesis_patched(source: str) -> bool:
@@ -512,6 +639,7 @@ def _patch_v3_synthesis(source: str) -> str:
         "V3 local-softening insertion",
     )
     source = _replace_output(source, "V3 synthesis output")
+    source = _patch_spatial_trust(source)
     if not _is_synthesis_patched(source):
         raise ValueError("FongMi motion artifact V3-to-V4 upgrade failed its postconditions")
     return source
@@ -523,6 +651,8 @@ def transform_source(source: str) -> tuple[str, bool]:
     if MARKER in source:
         if _is_synthesis_patched(source):
             patched = source
+        elif _is_synthesis_patched_core(source, require_spatial=False):
+            patched = _patch_spatial_trust(source)
         else:
             raise ValueError("FongMi motion artifact V4 marker/source mismatch or rejected pixelwise output behavior")
         patched = _patch_reconstruction(patched)
@@ -580,6 +710,7 @@ def transform_source(source: str) -> tuple[str, bool]:
         "synthesis trust",
     )
     source = _replace_output(source, "synthesis output")
+    source = _patch_spatial_trust(source)
     source = _patch_reconstruction(source)
     source = _patch_warp_trajectory(source)
     source = _patch_scene_cut(source)

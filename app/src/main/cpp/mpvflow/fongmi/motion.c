@@ -574,6 +574,49 @@ static const char synthesis_header[] = GLSL(
                                length(n2 - center) + length(n3 - center));
         return 1.0 - smoothstep(0.65, 2.8, spread);
     }
+
+    float spatial_trust_consensus(sampler2D warp0, sampler2D warp1,
+                                  vec2 uv, vec4 f, vec4 r)
+    {
+        vec2 texel_step = 1.0 / vec2(textureSize(warp0, 0));
+        vec4 f0 = textureLod(warp0, uv + vec2(-texel_step.x, 0.0), 0.0);
+        vec4 r0 = textureLod(warp1, uv + vec2(-texel_step.x, 0.0), 0.0);
+        vec4 f1 = textureLod(warp0, uv + vec2( texel_step.x, 0.0), 0.0);
+        vec4 r1 = textureLod(warp1, uv + vec2( texel_step.x, 0.0), 0.0);
+        vec4 f2 = textureLod(warp0, uv + vec2(0.0, -texel_step.y), 0.0);
+        vec4 r2 = textureLod(warp1, uv + vec2(0.0, -texel_step.y), 0.0);
+        vec4 f3 = textureLod(warp0, uv + vec2(0.0,  texel_step.y), 0.0);
+        vec4 r3 = textureLod(warp1, uv + vec2(0.0,  texel_step.y), 0.0);
+        float w0 = (any(isnan(f0)) || any(isinf(f0)) || any(isnan(r0)) || any(isinf(r0))) ? 0.0 :
+            1.0 - smoothstep(0.65, 2.8,
+            0.5 * (length(f0.xy - f.xy) + length(r0.xy - r.xy)));
+        float w1 = (any(isnan(f1)) || any(isinf(f1)) || any(isnan(r1)) || any(isinf(r1))) ? 0.0 :
+            1.0 - smoothstep(0.65, 2.8,
+            0.5 * (length(f1.xy - f.xy) + length(r1.xy - r.xy)));
+        float w2 = (any(isnan(f2)) || any(isinf(f2)) || any(isnan(r2)) || any(isinf(r2))) ? 0.0 :
+            1.0 - smoothstep(0.65, 2.8,
+            0.5 * (length(f2.xy - f.xy) + length(r2.xy - r.xy)));
+        float w3 = (any(isnan(f3)) || any(isinf(f3)) || any(isnan(r3)) || any(isinf(r3))) ? 0.0 :
+            1.0 - smoothstep(0.65, 2.8,
+            0.5 * (length(f3.xy - f.xy) + length(r3.xy - r.xy)));
+        float s0 = 0.0;
+        float s1 = 0.0;
+        float s2 = 0.0;
+        float s3 = 0.0;
+        if (!(any(isnan(f0)) || any(isinf(f0)) || any(isnan(r0)) || any(isinf(r0))))
+            s0 = max(min(f0.z, r0.z), min(f0.w, r0.w));
+        if (!(any(isnan(f1)) || any(isinf(f1)) || any(isnan(r1)) || any(isinf(r1))))
+            s1 = max(min(f1.z, r1.z), min(f1.w, r1.w));
+        if (!(any(isnan(f2)) || any(isinf(f2)) || any(isnan(r2)) || any(isinf(r2))))
+            s2 = max(min(f2.z, r2.z), min(f2.w, r2.w));
+        if (!(any(isnan(f3)) || any(isinf(f3)) || any(isnan(r3)) || any(isinf(r3))))
+            s3 = max(min(f3.z, r3.z), min(f3.w, r3.w));
+        float total = w0 + w1 + w2 + w3;
+        if (total < 0.25)
+            return clamp(max(min(f.z, r.z), min(f.w, r.w)), 0.0, 1.0);
+        return clamp((s0 * w0 + s1 * w1 + s2 * w2 + s3 * w3) / total,
+                     0.0, 1.0);
+    }
 );
 
 static const char warp_body[] = GLSL(
@@ -667,6 +710,15 @@ static const char synthesis_body[] = GLSL(
         trust *= 1.0 - smoothstep(0.03, 0.30,
                                    color_error);
         trust *= boundary_trust * region3_local_trust;
+        // MPVFLOW_SPATIAL_TRUST_ISLAND_GUARD_V1: suppress isolated high-trust warp islands only across coherent motion.
+        if (boundary_activation > 0.0) {
+            float spatial_consensus = spatial_trust_consensus(warp0, warp1, uv, f, r);
+            float spatial_island = max(0.0, clamp(trust, 0.0, 1.0) - spatial_consensus);
+            float spatial_guard_weight = 0.75 * boundary_activation *
+                                         smoothstep(0.08, 0.35, spatial_island);
+            trust = mix(trust, min(trust, spatial_consensus),
+                        clamp(spatial_guard_weight, 0.0, 0.75));
+        }
         vec2 local_motion_delta = (r.xy - f.xy) * scale;
         float local_motion_length = length(local_motion_delta);
         vec2 local_motion_offset = local_motion_delta /

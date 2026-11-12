@@ -249,6 +249,7 @@ original = fixture()
 patched, changed = PATCHER.transform_source(original)
 assert changed
 assert PATCHER.MARKER in patched
+assert PATCHER.SPATIAL_TRUST_MARKER in patched
 assert PATCHER.LOCAL_SOFTENING_MARKER in patched
 assert PATCHER.RECONSTRUCTION_MARKER in patched
 assert PATCHER.WARP_TRAJECTORY_MARKER in patched
@@ -272,6 +273,9 @@ assert "source = uv - weight * textureLod(forward, source, 0.0).xy / map_size;" 
 assert "if (!(evidence > 0.0 &&" in patched
 assert "if (!(evidence > best || (evidence == best && distance < nearest)))" not in patched
 assert "neighborhood_quality(sampler2D field, vec2 uv, vec2 center)" in patched
+assert "spatial_trust_consensus(sampler2D warp0, sampler2D warp1," in patched
+assert "1.0 / vec2(textureSize(warp0, 0))" in patched
+assert "0.75 * boundary_activation *" in patched
 assert "float luma_error = abs(dot(metric0," in patched
 assert "float chroma_error = max(abs((metric0.r - metric0.g)" in patched
 assert "smoothstep(0.03, 0.30," in patched
@@ -481,6 +485,51 @@ assert all(abs(value - alpha) < 1e-12 for row in candidate_phase for value in ro
 assert "nearest_frame_weight" not in patched
 assert "source_blend = mix(original0, original1, alpha);" in patched
 assert "color = mix(source_blend, mix(warped0, warped1, alpha), clamp(trust, 0.0, 1.0));" in patched
+
+# Regression: the warp-to-fallback cap suppresses isolated high-trust islands
+# only; it never raises uncertain trust or changes the shared temporal alpha.
+def spatial_trust_guard(center: float, consensus: float, boundary_activation: float) -> float:
+    island = max(0.0, min(1.0, center) - consensus)
+    guard = 0.75 * min(1.0, max(0.0, boundary_activation)) * smoothstep(0.08, 0.35, island)
+    return center + (min(center, consensus) - center) * min(0.75, max(0.0, guard))
+
+
+def cardinal_support_mean(field: list[list[float]], x: int, y: int) -> float:
+    height, width = len(field), len(field[0])
+    neighbors = (
+        field[y][max(0, x - 1)],
+        field[y][min(width - 1, x + 1)],
+        field[max(0, y - 1)][x],
+        field[min(height - 1, y + 1)][x],
+    )
+    return sum(neighbors) / 4.0
+
+
+island_trust = [
+    [0.95 if (x + y) % 2 == 0 else 0.05 for x in range(16)]
+    for y in range(16)
+]
+guarded_trust = [
+    [spatial_trust_guard(value, cardinal_support_mean(island_trust, x, y), 1.0)
+     for x, value in enumerate(row)]
+    for y, row in enumerate(island_trust)
+]
+interior_original = [row[2:14] for row in island_trust[2:14]]
+interior_guarded = [row[2:14] for row in guarded_trust[2:14]]
+assert mean_neighbor_variation(interior_guarded) < 0.30 * mean_neighbor_variation(interior_original)
+assert all(after <= before for old_row, new_row in zip(island_trust, guarded_trust)
+           for before, after in zip(old_row, new_row)), "the guard must never promote uncertain warp trust"
+assert min(value for row in guarded_trust for value in row) > 0.0
+assert max(value for row in guarded_trust for value in row) > 0.20
+assert math.isclose(spatial_trust_guard(0.7, 0.7, 1.0), 0.7)
+assert math.isclose(spatial_trust_guard(0.7, 0.95, 1.0), 0.7), "incoherent neighbors must not force trust upward"
+island_phase = [[alpha + 0.4 * trust for trust in row] for row in island_trust]
+guarded_phase = [[alpha + 0.4 * trust for trust in row] for row in guarded_trust]
+assert mean_neighbor_variation(guarded_phase[2:14]) < 0.30 * mean_neighbor_variation(island_phase[2:14])
+assert min(value for row in guarded_phase for value in row) > alpha
+assert max(value for row in guarded_phase for value in row) < 1.0
+assert "trust = mix(trust, min(trust, spatial_consensus)," in patched
+assert "trust = mix(trust, spatial_consensus," not in patched
 
 # Path coherence remains limited to uncertain-motion recovery; primary match trust is unchanged.
 assert trajectory_weight((8.0, -2.0), (8.0, -2.0), 0.75) == 1.0
