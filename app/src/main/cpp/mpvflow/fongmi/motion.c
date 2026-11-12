@@ -358,6 +358,8 @@ static const char refine_body[] = GLSL(
         }
         residual = patch_cost(second, p, vector);
         // Exact zero motion is already the unique closest zero-cost candidate.
+        bool aperture_ambiguous = false;
+        vec2 aperture_normal = vec2(0.0);
         if (any(notEqual(vector, vec2(0))) || residual != 0.0) {
             // Choose an equivalent lattice representative before interpolation mixes
             // tangentially ambiguous vectors. Sampled edges need not produce an
@@ -366,10 +368,18 @@ static const char refine_body[] = GLSL(
                 tensor = patch_tensor(first, p);
             float xx = tensor.x, xy = tensor.y, yy = tensor.z;
             float trace = xx + yy;
-            if (trace > 0.000001) {
-                vec2 axis = xx > yy ? vec2(1, 0) : vec2(0, 1);
-                float projected = xx > yy ? vector.x + xy / xx * vector.y
-                                          : vector.y + xy / yy * vector.x;
+            // MPVFLOW_REFINEMENT_APERTURE_NORMAL_V1: canonicalize only edge-ambiguous flow along the principal gradient normal.
+            float tensor_discriminant = sqrt(max((xx - yy) * (xx - yy) + 4.0 * xy * xy, 0.0));
+            float lambda_min = max(0.5 * (trace - tensor_discriminant), 0.0);
+            float lambda_max = max(0.5 * (trace + tensor_discriminant), 0.0);
+            aperture_ambiguous = trace > 0.000001 &&
+                                 lambda_max > 0.000001 &&
+                                 lambda_min < 0.12 * lambda_max;
+            if (aperture_ambiguous) {
+                aperture_normal = abs(xy) > 0.000001
+                    ? normalize(vec2(lambda_max - yy, xy))
+                    : (xx >= yy ? vec2(1, 0) : vec2(0, 1));
+                float projected = dot(vector, aperture_normal);
                 // Bound acceptance by the original minimum, then rank candidates.
                 float limit = residual + 0.000001;
                 float lowest = 1e20;
@@ -378,10 +388,10 @@ static const char refine_body[] = GLSL(
                 vec2 selected = vector;
                 bool unique = false;
                 for (int offset = -1; offset <= 1; offset++) {
-                    vec2 candidate = clamp(axis * (round(projected) + float(offset)),
+                    vec2 candidate = clamp(aperture_normal * (round(projected) + float(offset)),
                                            -p, size - 1.0 - p);
                     float cost = patch_cost(second, p, candidate);
-                    float delta = abs(dot(candidate, axis) - projected);
+                    float delta = abs(dot(candidate, aperture_normal) - projected);
                     float norm = dot(candidate, candidate);
                     if (cost > limit)
                         continue;
@@ -407,17 +417,15 @@ static const char refine_body[] = GLSL(
         }
         // Dense support can observe motion missed by central-difference tensors.
         // Resolve equivalent axis vectors without increasing the original cost.
-        if (all(equal(motion_scale, vec2(1))) && any(notEqual(vector, vec2(0)))) {
+        if (all(equal(motion_scale, vec2(1))) && any(notEqual(vector, vec2(0))) && aperture_ambiguous) {
             vec2 cost = dense_pair_cost(first, second, p, vector);
             if (cost.x > cost.y) {
                 float limit = cost.y + 0.000001;
                 vec2 original = vector;
                 float magnitude = dot(vector, vector);
                 float distance = 0.0;
-                for (int index = 0; index < 2 * (2 * settings.z + 1); index++) {
-                    int offset = index % (2 * settings.z + 1) - settings.z;
-                    vec2 axis = index < 2 * settings.z + 1 ? vec2(1, 0) : vec2(0, 1);
-                    vec2 candidate = clamp(axis * float(offset), -p, size - 1.0 - p);
+                for (int offset = -settings.z; offset <= settings.z; offset++) {
+                    vec2 candidate = clamp(aperture_normal * float(offset), -p, size - 1.0 - p);
                     float norm = dot(candidate, candidate);
                     float delta = dot(candidate - original, candidate - original);
                     if ((norm < magnitude || (norm == magnitude && delta < distance)) &&

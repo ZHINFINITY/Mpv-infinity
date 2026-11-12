@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-"""Apply app-owned motion-grid and artifact guards to pinned FongMi motion.
+"""Apply app-owned refinement, motion-grid, and artifact guards to pinned FongMi motion.
 
-The patch is version-guarded and limited to the analysis grid plus synthesis,
-reconstruction, and inverse-warp logic in pinned upstream
-``video/out/gpu_next/motion.c``. It keeps bilinear field sampling and motion
-vectors, selects the most self-consistent inverse-warp iterate, gates uncertain
-recovery on inverse-path coherence, and retains whole-frame scene-cut handling.
+The patch is version-guarded and limited to refinement, the analysis grid, and
+synthesis/reconstruction/inverse-warp logic in pinned upstream
+``video/out/gpu_next/motion.c``. It keeps bilinear field sampling, resolves
+aperture ambiguity along the measured gradient normal, selects the best
+inverse-warp closure, and retains whole-frame scene-cut handling.
 """
 from __future__ import annotations
 
@@ -27,6 +27,7 @@ REJECTED_INSHOT_FALLBACK_MARKER = "MPVFLOW_INSHOT_NEAREST_SOURCE_FALLBACK_V1"
 FINE_GRID_MARKER = "MPVFLOW_FINE_MOTION_GRID_V1"
 FINE_GRID_ASSIGNMENT = "int spacing = (level == LEVELS - 1 || level == 0) ? 4 : 8;"
 SPATIAL_TRUST_MARKER = "MPVFLOW_SPATIAL_TRUST_ISLAND_GUARD_V1"
+REFINEMENT_APERTURE_NORMAL_MARKER = "MPVFLOW_REFINEMENT_APERTURE_NORMAL_V1"
 
 RECONSTRUCTION_PATTERN = re.compile(
     r"(?m)^(?P<indent> *)" + re.escape(
@@ -121,6 +122,35 @@ FINE_GRID_PATTERN = re.compile(
 FINE_GRID_BLOCK = """// MPVFLOW_FINE_MOTION_GRID_V1: halve finest-level vector-cell pitch
 // without enlarging the analysis image.
 int spacing = (level == LEVELS - 1 || level == 0) ? 4 : 8;"""
+
+REFINEMENT_OUTER_PATTERN = re.compile(
+    r"(?m)^(?P<indent>[ \t]*)if \(any\(notEqual\(vector, vec2\(0\)\)\) \|\| residual != 0\.0\) \{$"
+)
+REFINEMENT_TENSOR_PATTERN = re.compile(
+    r"(?m)^(?P<indent>[ \t]*)float trace = xx \+ yy;\n"
+    r"(?P=indent)if \(trace > 0\.000001\) \{$"
+)
+REFINEMENT_AXIS_PATTERN = re.compile(
+    r"(?m)^(?P<indent>[ \t]*)vec2 axis = xx > yy \? vec2\(1, 0\) : vec2\(0, 1\);\n"
+    r"(?P=indent)float projected = xx > yy \? vector\.x \+ xy / xx \* vector\.y\n"
+    r"(?P=indent)[ \t]+: vector\.y \+ xy / yy \* vector\.x;$"
+)
+REFINEMENT_CANDIDATE_PATTERN = re.compile(
+    r"(?m)^(?P<indent>[ \t]*)vec2 candidate = clamp\(axis \* \(round\(projected\) \+ float\(offset\)\),\n"
+    r"(?P=indent)[ \t]+-p, size - 1\.0 - p\);$"
+)
+REFINEMENT_DELTA_PATTERN = re.compile(
+    r"(?m)^(?P<indent>[ \t]*)float delta = abs\(dot\(candidate, axis\) - projected\);$"
+)
+DENSE_CANONICALIZATION_PATTERN = re.compile(
+    r"(?m)^(?P<indent>[ \t]*)if \(all\(equal\(motion_scale, vec2\(1\)\)\) && any\(notEqual\(vector, vec2\(0\)\)\)\) \{$"
+)
+DENSE_AXIS_LOOP_PATTERN = re.compile(
+    r"(?m)^(?P<indent>[ \t]*)for \(int index = 0; index < 2 \* \(2 \* settings\.z \+ 1\); index\+\+\) \{\n"
+    r"(?P=indent)[ \t]+int offset = index % \(2 \* settings\.z \+ 1\) - settings\.z;\n"
+    r"(?P=indent)[ \t]+vec2 axis = index < 2 \* settings\.z \+ 1 \? vec2\(1, 0\) : vec2\(0, 1\);\n"
+    r"(?P=indent)[ \t]+vec2 candidate = clamp\(axis \* float\(offset\), -p, size - 1\.0 - p\);$"
+)
 
 PIXEL_HEADER_PATTERN = re.compile(
     r"(?m)^(?P<indent>[ \t]*)vec4 synthesize_pixel\(sampler2D source0, sampler2D source1, sampler2D warp0,"
@@ -543,6 +573,34 @@ def _has_fine_motion_grid(source: str) -> bool:
     )
 
 
+def _has_refinement_aperture_normal(source: str) -> bool:
+    return (
+        source.count(REFINEMENT_APERTURE_NORMAL_MARKER) == 1
+        and source.count("bool aperture_ambiguous = false;") == 1
+        and source.count("vec2 aperture_normal = vec2(0.0);") == 1
+        and source.count("float tensor_discriminant = sqrt(max(") == 1
+        and source.count("float lambda_min = max(0.5 * (trace - tensor_discriminant), 0.0);") == 1
+        and source.count("float lambda_max = max(0.5 * (trace + tensor_discriminant), 0.0);") == 1
+        and source.count("lambda_min < 0.12 * lambda_max;") == 1
+        and source.count("aperture_normal = abs(xy) > 0.000001") == 1
+        and source.count("float projected = dot(vector, aperture_normal);") == 1
+        and source.count("vec2 candidate = clamp(aperture_normal * (round(projected) + float(offset)),") == 1
+        and source.count("float delta = abs(dot(candidate, aperture_normal) - projected);") == 1
+        and source.count(
+            "if (all(equal(motion_scale, vec2(1))) && any(notEqual(vector, vec2(0))) && aperture_ambiguous) {"
+        ) == 1
+        and source.count("for (int offset = -settings.z; offset <= settings.z; offset++) {") == 1
+        and source.count("vec2 candidate = clamp(aperture_normal * float(offset), -p, size - 1.0 - p);") == 1
+        and source.count("if (aperture_ambiguous) {") == 1
+        and REFINEMENT_TENSOR_PATTERN.search(source) is None
+        and REFINEMENT_AXIS_PATTERN.search(source) is None
+        and REFINEMENT_CANDIDATE_PATTERN.search(source) is None
+        and REFINEMENT_DELTA_PATTERN.search(source) is None
+        and DENSE_CANONICALIZATION_PATTERN.search(source) is None
+        and DENSE_AXIS_LOOP_PATTERN.search(source) is None
+    )
+
+
 def _is_patched(source: str) -> bool:
     return (
         _is_synthesis_patched(source)
@@ -551,7 +609,99 @@ def _is_patched(source: str) -> bool:
         and _has_warp_best_residual_guard(source)
         and _has_scene_cut_guard(source)
         and _has_fine_motion_grid(source)
+        and _has_refinement_aperture_normal(source)
     )
+
+
+def _patch_refinement_aperture_normal(source: str) -> str:
+    if REFINEMENT_APERTURE_NORMAL_MARKER in source:
+        if not _has_refinement_aperture_normal(source):
+            raise ValueError("FongMi refinement aperture-normal marker/source mismatch")
+        return source
+    if any(token in source for token in (
+        "bool aperture_ambiguous = false;",
+        "float tensor_discriminant = sqrt(max(",
+        "aperture_normal = abs(xy) > 0.000001",
+    )):
+        raise ValueError("FongMi refinement source contains a partial aperture-normal guard")
+
+    source = _replace_one(
+        REFINEMENT_OUTER_PATTERN,
+        source,
+        lambda match: (
+            match.group("indent") + "bool aperture_ambiguous = false;\n"
+            + match.group("indent") + "vec2 aperture_normal = vec2(0.0);\n"
+            + match.group(0)
+        ),
+        "refinement aperture state",
+    )
+    source = _replace_one(
+        REFINEMENT_TENSOR_PATTERN,
+        source,
+        lambda match: (
+            match.group("indent") + "float trace = xx + yy;\n"
+            + match.group("indent") + "// " + REFINEMENT_APERTURE_NORMAL_MARKER
+            + ": canonicalize only edge-ambiguous flow along the principal gradient normal.\n"
+            + match.group("indent")
+            + "float tensor_discriminant = sqrt(max((xx - yy) * (xx - yy) + 4.0 * xy * xy, 0.0));\n"
+            + match.group("indent") + "float lambda_min = max(0.5 * (trace - tensor_discriminant), 0.0);\n"
+            + match.group("indent") + "float lambda_max = max(0.5 * (trace + tensor_discriminant), 0.0);\n"
+            + match.group("indent") + "aperture_ambiguous = trace > 0.000001 &&\n"
+            + match.group("indent") + "                     lambda_max > 0.000001 &&\n"
+            + match.group("indent") + "                     lambda_min < 0.12 * lambda_max;\n"
+            + match.group("indent") + "if (aperture_ambiguous) {\n"
+            + match.group("indent") + "    aperture_normal = abs(xy) > 0.000001\n"
+            + match.group("indent") + "        ? normalize(vec2(lambda_max - yy, xy))\n"
+            + match.group("indent") + "        : (xx >= yy ? vec2(1, 0) : vec2(0, 1));"
+        ),
+        "refinement tensor eigenvector",
+    )
+    source = _replace_one(
+        REFINEMENT_AXIS_PATTERN,
+        source,
+        lambda match: match.group("indent") + "float projected = dot(vector, aperture_normal);",
+        "refinement aperture projection",
+    )
+    source = _replace_one(
+        REFINEMENT_CANDIDATE_PATTERN,
+        source,
+        lambda match: (
+            match.group("indent")
+            + "vec2 candidate = clamp(aperture_normal * (round(projected) + float(offset)),\n"
+            + match.group("indent") + "                       -p, size - 1.0 - p);"
+        ),
+        "refinement normal-lattice candidate",
+    )
+    source = _replace_one(
+        REFINEMENT_DELTA_PATTERN,
+        source,
+        lambda match: match.group("indent")
+        + "float delta = abs(dot(candidate, aperture_normal) - projected);",
+        "refinement normal-projection ranking",
+    )
+    source = _replace_one(
+        DENSE_CANONICALIZATION_PATTERN,
+        source,
+        lambda match: (
+            match.group("indent")
+            + "if (all(equal(motion_scale, vec2(1))) && any(notEqual(vector, vec2(0))) && aperture_ambiguous) {"
+        ),
+        "dense aperture-normal guard",
+    )
+    source = _replace_one(
+        DENSE_AXIS_LOOP_PATTERN,
+        source,
+        lambda match: (
+            match.group("indent")
+            + "for (int offset = -settings.z; offset <= settings.z; offset++) {\n"
+            + match.group("indent")
+            + "    vec2 candidate = clamp(aperture_normal * float(offset), -p, size - 1.0 - p);"
+        ),
+        "dense normal-lattice candidate search",
+    )
+    if not _has_refinement_aperture_normal(source):
+        raise ValueError("FongMi aperture-normal refinement patch failed its postconditions")
+    return source
 
 
 def _patch_reconstruction(source: str) -> str:
@@ -741,7 +891,7 @@ def _patch_v3_synthesis(source: str) -> str:
 
 
 def transform_source(source: str) -> tuple[str, bool]:
-    """Apply version-guarded grid, evidence, inverse-path, and scene-cut safeguards."""
+    """Apply version-guarded aperture, grid, evidence, inverse-path, and scene-cut safeguards."""
     original = source
     if MARKER in source:
         if _is_synthesis_patched(source):
@@ -755,6 +905,7 @@ def transform_source(source: str) -> tuple[str, bool]:
         patched = _patch_warp_best_residual(patched)
         patched = _patch_scene_cut(patched)
         patched = _patch_fine_motion_grid(patched)
+        patched = _patch_refinement_aperture_normal(patched)
         if not _is_patched(patched):
             raise ValueError("FongMi motion artifact postconditions failed")
         return patched, patched != original
@@ -766,6 +917,7 @@ def transform_source(source: str) -> tuple[str, bool]:
         source = _patch_warp_best_residual(source)
         source = _patch_scene_cut(source)
         source = _patch_fine_motion_grid(source)
+        source = _patch_refinement_aperture_normal(source)
         if not _is_patched(source):
             raise ValueError("FongMi motion artifact V3-to-V4 patch failed its postconditions")
         return source, source != original
@@ -813,6 +965,7 @@ def transform_source(source: str) -> tuple[str, bool]:
     source = _patch_warp_best_residual(source)
     source = _patch_scene_cut(source)
     source = _patch_fine_motion_grid(source)
+    source = _patch_refinement_aperture_normal(source)
     if not _is_patched(source):
         raise ValueError("FongMi motion artifact V4 patch failed its postconditions")
     return source, True
@@ -832,9 +985,9 @@ def main() -> None:
         raise SystemExit(str(error)) from error
     if changed:
         source_path.write_text(patched, encoding="utf-8")
-        print("Applied MPVFlow FongMi fine-grid, synthesis, best-residual inverse-warp, and scene-cut guards")
+        print("Applied MPVFlow FongMi aperture-normal refinement, fine-grid, synthesis, inverse-warp, and scene-cut guards")
     else:
-        print("MPVFlow FongMi fine-grid, synthesis, best-residual inverse-warp, and scene-cut guards are already applied")
+        print("MPVFlow FongMi aperture-normal refinement, fine-grid, synthesis, inverse-warp, and scene-cut guards are already applied")
 
 
 if __name__ == "__main__":

@@ -585,6 +585,63 @@ static float bilinear(const float *pixels, int width, int height,
     return (a + (b - a) * fx) * (1 - fy) + (c + (d - c) * fx) * fy;
 }
 
+static void oblique_texture_translation(pl_gpu gpu, struct mp_motion *motion)
+{
+    const int shift_x = 8, shift_y = -6;
+    float *first = calloc(WIDTH * HEIGHT * 4, sizeof(float));
+    float *second = calloc(WIDTH * HEIGHT * 4, sizeof(float));
+    float *output = calloc(WIDTH * HEIGHT * 4, sizeof(float));
+    assert(first && second && output);
+    for (int y = 0; y < HEIGHT; y++) {
+        for (int x = 0; x < WIDTH; x++) {
+            int index = (y * WIDTH + x) * 4;
+            for (int c = 0; c < 4; c++) {
+                first[index + c] = c == 3 ? 1 : noise(x, y, c);
+                second[index + c] = c == 3 ? 1 :
+                    noise(x - shift_x, y - shift_y, c);
+            }
+        }
+    }
+    pl_tex a = upload(gpu, first);
+    pl_tex b = upload(gpu, second);
+    for (int step = 1; step <= 3; step++) {
+        float alpha = step * 0.25f;
+        pl_tex result;
+        assert(mp_motion_render(motion, a, b, 12, 13, alpha, &result));
+        readback(gpu, result, output);
+        double motion_error = 0, blend_error = 0;
+        int samples = 0;
+        for (int y = 24; y < HEIGHT - 24; y++) {
+            for (int x = 24; x < WIDTH - 24; x++) {
+                int index = (y * WIDTH + x) * 4;
+                for (int c = 0; c < 3; c++) {
+                    float expected = bilinear(first, WIDTH, HEIGHT,
+                        x - alpha * shift_x, y - alpha * shift_y, c);
+                    float blend = first[index + c] * (1 - alpha) +
+                                  second[index + c] * alpha;
+                    assert(isfinite(output[index + c]));
+                    motion_error += fabs(output[index + c] - expected);
+                    blend_error += fabs(blend - expected);
+                    samples++;
+                }
+            }
+        }
+        motion_error /= samples;
+        blend_error /= samples;
+        printf("oblique texture alpha=%.2f motion_error=%.6f blend_error=%.6f\n",
+               alpha, motion_error, blend_error);
+        fflush(stdout);
+        assert(motion_error < 0.08);
+        assert(motion_error < blend_error * 0.6);
+    }
+    mp_motion_reset(motion);
+    pl_tex_destroy(gpu, &a);
+    pl_tex_destroy(gpu, &b);
+    free(first);
+    free(second);
+    free(output);
+}
+
 static float matching_cost(const float *first, const float *second,
                            float x, float y, float dx, float dy)
 {
@@ -1599,6 +1656,7 @@ int main(void)
     pyramid_reuse(vulkan->gpu);
     padding_sizes(vulkan->gpu);
     translated_pair(vulkan->gpu, motion);
+    oblique_texture_translation(vulkan->gpu, motion);
     affine_pair(vulkan->gpu, motion, 129, 97, 1);
     scaled_source_pair(vulkan->gpu, motion);
     foreground_pair(vulkan->gpu, motion, WIDTH, HEIGHT, 1);

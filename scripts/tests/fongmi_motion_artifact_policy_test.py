@@ -82,6 +82,34 @@ BASE_GRID = """static void fixture_analyze(int level) {
         int spacing = level == LEVELS - 1 ? 4 : 8;
 }"""
 
+BASE_REFINEMENT = """static const char refine_body[] = GLSL(
+    residual = patch_cost(second, p, vector);
+    if (any(notEqual(vector, vec2(0))) || residual != 0.0) {
+        if (!tensor_valid)
+            tensor = patch_tensor(first, p);
+        float xx = tensor.x, xy = tensor.y, yy = tensor.z;
+        float trace = xx + yy;
+        if (trace > 0.000001) {
+            vec2 axis = xx > yy ? vec2(1, 0) : vec2(0, 1);
+            float projected = xx > yy ? vector.x + xy / xx * vector.y
+                                      : vector.y + xy / yy * vector.x;
+            for (int offset = -1; offset <= 1; offset++) {
+                vec2 candidate = clamp(axis * (round(projected) + float(offset)),
+                                       -p, size - 1.0 - p);
+                float delta = abs(dot(candidate, axis) - projected);
+            }
+        }
+    }
+    if (all(equal(motion_scale, vec2(1))) && any(notEqual(vector, vec2(0)))) {
+        for (int index = 0; index < 2 * (2 * settings.z + 1); index++) {
+            int offset = index % (2 * settings.z + 1) - settings.z;
+            vec2 axis = index < 2 * settings.z + 1 ? vec2(1, 0) : vec2(0, 1);
+            vec2 candidate = clamp(axis * float(offset), -p, size - 1.0 - p);
+            float norm = dot(candidate, candidate);
+        }
+    }
+);"""
+
 BASE_SCENE = """static const char scene_body[] = GLSL(
     float hist0[8];
     float hist1[8];
@@ -122,6 +150,8 @@ BASE_SCENE = """static const char scene_body[] = GLSL(
 def fixture(trust: str = BASE_TRUST, output: str = BASE_OUTPUT, output_indent: str = "    ") -> str:
     return (
         BASE_GRID
+        + "\n"
+        + BASE_REFINEMENT
         + "\n"
         + BASE_WARP
         + "\nFongMi reconstruction prefix\n"
@@ -260,6 +290,32 @@ def spatial_scene_cut_score(first: list[list[float]], second: list[list[float]])
     return changed_tiles / 16.0
 
 
+def aperture_normal(xx: float, xy: float, yy: float) -> tuple[float, float] | None:
+    trace = xx + yy
+    discriminant = math.sqrt(max((xx - yy) ** 2 + 4 * xy * xy, 0.0))
+    lambda_min = max(0.5 * (trace - discriminant), 0.0)
+    lambda_max = max(0.5 * (trace + discriminant), 0.0)
+    if trace <= 1e-6 or lambda_max <= 1e-6 or lambda_min >= 0.12 * lambda_max:
+        return None
+    if abs(xy) > 1e-6:
+        nx, ny = lambda_max - yy, xy
+    else:
+        nx, ny = (1.0, 0.0) if xx >= yy else (0.0, 1.0)
+    length = math.hypot(nx, ny)
+    return nx / length, ny / length
+
+
+def aperture_canonical_vector(
+    vector: tuple[float, float], tensor: tuple[float, float, float]
+) -> tuple[float, float]:
+    normal = aperture_normal(*tensor)
+    if normal is None:
+        return vector
+    projected = vector[0] * normal[0] + vector[1] * normal[1]
+    steps = round(projected)
+    return normal[0] * steps, normal[1] * steps
+
+
 original = fixture()
 patched, changed = PATCHER.transform_source(original)
 assert changed
@@ -272,6 +328,14 @@ assert PATCHER.FINE_GRID_MARKER in patched
 assert PATCHER.FINE_GRID_ASSIGNMENT in patched
 assert PATCHER.REJECTED_WARP_TRUST_MARKER not in patched
 assert PATCHER.SCENE_CUT_MARKER in patched
+assert PATCHER.REFINEMENT_APERTURE_NORMAL_MARKER in patched
+assert PATCHER._has_refinement_aperture_normal(patched)
+assert "lambda_min < 0.12 * lambda_max;" in patched
+assert "float projected = dot(vector, aperture_normal);" in patched
+assert "vec2 candidate = clamp(aperture_normal * (round(projected) + float(offset))," in patched
+assert "for (int offset = -settings.z; offset <= settings.z; offset++) {" in patched
+assert "vec2 axis = xx > yy ? vec2(1, 0) : vec2(0, 1);" not in patched
+assert "vec2 axis = index < 2 * settings.z + 1" not in patched
 assert PATCHER.REJECTED_INSHOT_FALLBACK_MARKER not in patched
 assert PATCHER._has_scene_cut_guard(patched)
 assert "int tile_index = (y / 4) * 4 + x / 4;" in patched
@@ -320,6 +384,20 @@ assert "vec4 nearest_frame =" not in patched
 assert "source_blend = mix(source_blend, nearest_frame," not in patched
 assert "color = mix(source_blend, mix(warped0, warped1, alpha), clamp(trust, 0.0, 1.0));" in patched
 assert "FongMi synthesis prefix\n" in patched and "FongMi synthesis suffix\n" in patched
+texture_flow = (3.25, -2.5)
+assert aperture_normal(1.0, 0.0, 1.0) is None
+assert aperture_canonical_vector(texture_flow, (1.0, 0.0, 1.0)) == texture_flow
+diagonal_edge_tensor = (1.0, 0.96, 1.0)
+diagonal_normal = aperture_normal(*diagonal_edge_tensor)
+assert diagonal_normal is not None
+assert abs(diagonal_normal[0] - math.sqrt(0.5)) < 1e-6
+assert abs(diagonal_normal[1] - math.sqrt(0.5)) < 1e-6
+diagonal_edge_vector = aperture_canonical_vector((2.8, 3.2), diagonal_edge_tensor)
+assert diagonal_edge_vector[0] > 0 and diagonal_edge_vector[1] > 0
+assert abs(diagonal_edge_vector[0] - diagonal_edge_vector[1]) < 1e-6
+horizontal_normal = aperture_normal(1.0, 0.0, 0.01)
+assert horizontal_normal == (1.0, 0.0)
+assert aperture_canonical_vector((2.2, -1.0), (1.0, 0.0, 0.01)) == (2.0, 0.0)
 unstable_field = lambda x: 3.0 * (x - 63.9) + 0.2
 best_candidate, final_candidate = inverse_warp_candidates(64.0, 0.5, unstable_field)
 assert abs(best_candidate[0] - 0.25) < 1e-9
@@ -605,7 +683,7 @@ assert spatial_scene_cut_score(uniform_dark, uniform_bright) == 0.0
 
 retained_source = (ROOT / "app/src/main/cpp/mpvflow/fongmi/motion.c").read_text(encoding="utf-8")
 retained_result, retained_changed = PATCHER.transform_source(retained_source)
-assert not retained_changed and retained_result == retained_source, "retained snapshot should mirror active grid, synthesis, reconstruction, warp, and scene-cut safeguards"
+assert not retained_changed and retained_result == retained_source, "retained snapshot should mirror active refinement, grid, synthesis, reconstruction, warp, and scene-cut safeguards"
 assert "vec2 scene_change = texelFetch(scene, ivec2(0), 0).rg;" in retained_source
 assert "if (scene_change.r > 0.45 || scene_change.g > 0.08)" in retained_source
 assert "color = alpha < 0.5 ? original0 : original1;" in retained_source
@@ -670,11 +748,12 @@ if args.source:
         assert PATCHER.RECONSTRUCTION_MARKER in active_source
         assert PATCHER.WARP_TRAJECTORY_MARKER in active_source
         assert PATCHER.FINE_GRID_MARKER in active_source
+        assert PATCHER.REFINEMENT_APERTURE_NORMAL_MARKER in active_source
         assert PATCHER.SCENE_CUT_MARKER in active_source
         assert "nearest_frame_weight" not in active_source
     else:
         active_result, active_changed = PATCHER.transform_source(active_source)
-        assert not active_changed and active_result == active_source, "active pinned shader must contain the verified grid, synthesis, reconstruction, and warp patches exactly once"
+        assert not active_changed and active_result == active_source, "active pinned shader must contain the verified refinement, grid, synthesis, reconstruction, and warp patches exactly once"
     mpv_dir = args.source.parents[3]
     active_header = args.source.with_name("motion.h").read_text(encoding="utf-8")
     active_vo_path = mpv_dir / "video/out/vo_gpu_next.c"

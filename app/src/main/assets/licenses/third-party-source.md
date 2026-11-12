@@ -66,3 +66,8 @@ The Native app's `app/src/main/cpp/third_party/libplacebo/include-api-387/` publ
 
 
 The pinned runtime ABI marker exports are `pl_vulkan_swapchain_set_diagnostics` and `pl_vulkan_swapchain_get_diagnostics`; both are required when API 387 headers are selected.
+
+
+## App-owned FongMi refinement aperture handling
+
+The pinned arm64 runtime's version-guarded motion patch also handles the aperture problem in flow refinement. It derives the principal gradient direction from the local 2×2 structure tensor and only canonicalizes candidates when the tensor is strongly anisotropic (`lambda_min < 0.12 * lambda_max`). Ambiguous flow candidates follow that measured direction instead of being restricted to horizontal or vertical axes; well-textured and corner patches keep their full two-component motion. The marker is required by `scripts/prepare-mpvflow.py`; the source snapshot, CPU policy regression, and GPU oblique-translation regression cover the change. This is an app-owned modification to the pinned FongMi source, not a replacement for it; preserve FongMi's GPL-2.0 attribution, upstream per-file notices, and corresponding source obligations.

@@ -125,6 +125,7 @@ assert 'or "MPVFLOW_WARP_TRAJECTORY_TRUST_V2" in motion' in PREPARE
 assert 'or "MPVFLOW_INSHOT_NEAREST_SOURCE_FALLBACK_V1" in motion' in PREPARE
 assert "MPVFLOW_SCENE_CUT_SPATIAL_V1" in PREPARE
 assert "MPVFLOW_FINE_MOTION_GRID_V1" in PREPARE
+assert "MPVFLOW_REFINEMENT_APERTURE_NORMAL_V1" in PREPARE
 assert "MPVFLOW_SPATIAL_TRUST_ISLAND_GUARD_V1" in PREPARE
 assert "int spacing = (level == LEVELS - 1 || level == 0) ? 4 : 8;" in PREPARE
 assert "MPVFLOW_ARTIFACT_TRUST_TAPER_V2" not in PREPARE
@@ -134,6 +135,7 @@ assert "REJECTED_WARP_TRUST_MARKER" in MOTION_PATCHER
 assert "REJECTED_INSHOT_FALLBACK_MARKER" in MOTION_PATCHER
 assert "MPVFLOW_SCENE_CUT_SPATIAL_V1" in MOTION_PATCHER
 assert "MPVFLOW_FINE_MOTION_GRID_V1" in MOTION_PATCHER
+assert "MPVFLOW_REFINEMENT_APERTURE_NORMAL_V1" in MOTION_PATCHER
 assert "MPVFLOW_SPATIAL_TRUST_ISLAND_GUARD_V1" in MOTION_PATCHER
 assert "int spacing = (level == LEVELS - 1 || level == 0) ? 4 : 8;" in MOTION_PATCHER
 assert "MPVFLOW_LOCAL_MOTION_SOFTENING_V1" in MOTION_PATCHER
@@ -162,6 +164,13 @@ assert "MPVFLOW_WARP_TRAJECTORY_TRUST_V2" not in MOTION_SNAPSHOT
 assert "MPVFLOW_INSHOT_NEAREST_SOURCE_FALLBACK_V1" not in MOTION_SNAPSHOT
 assert "MPVFLOW_SCENE_CUT_SPATIAL_V1" in MOTION_SNAPSHOT
 assert "MPVFLOW_FINE_MOTION_GRID_V1" in MOTION_SNAPSHOT
+assert "MPVFLOW_REFINEMENT_APERTURE_NORMAL_V1" in MOTION_SNAPSHOT
+assert "float tensor_discriminant = sqrt(max(" in MOTION_SNAPSHOT
+assert "lambda_min < 0.12 * lambda_max;" in MOTION_SNAPSHOT
+assert "normalize(vec2(lambda_max - yy, xy))" in MOTION_SNAPSHOT
+assert "float projected = dot(vector, aperture_normal);" in MOTION_SNAPSHOT
+assert "aperture_normal * float(offset)" in MOTION_SNAPSHOT
+assert "vec2 axis = xx > yy ? vec2(1, 0) : vec2(0, 1);" not in MOTION_SNAPSHOT
 assert "MPVFLOW_SPATIAL_TRUST_ISLAND_GUARD_V1" in MOTION_SNAPSHOT
 assert "spatial_trust_consensus(warp0, warp1, uv, f, r)" in MOTION_SNAPSHOT
 assert "int spacing = (level == LEVELS - 1 || level == 0) ? 4 : 8;" in MOTION_SNAPSHOT
@@ -246,4 +255,7 @@ assert GPL_LICENSE.is_file()
 assert hashlib.sha256(GPL_LICENSE.read_bytes()).hexdigest() == GPL_SHA
 gpl_text = GPL_LICENSE.read_text(encoding="utf-8")
 assert "GNU GENERAL PUBLIC LICENSE" in gpl_text and "Version 2, June 1991" in gpl_text
+assert "static void oblique_texture_translation(" in FONGMI_GPU_TEST
+assert "oblique texture alpha=%.2f motion_error=%.6f blend_error=%.6f" in FONGMI_GPU_TEST
+assert "oblique_texture_translation(vulkan->gpu, motion);" in FONGMI_GPU_TEST
 print("native FongMi MPV, libplacebo, FFmpeg and Vulkan-Headers pins, libbluray patch set, provenance, and cache guards passed")
