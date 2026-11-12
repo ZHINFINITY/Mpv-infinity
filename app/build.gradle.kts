@@ -13,6 +13,7 @@ val localProperties =
 val targetAbiProp = project.findProperty("targetAbi")?.toString() ?: localProperties.getProperty("targetAbi")
 val enableX86 = project.findProperty("enableX86") != "false"
 val requestedMpvFlowMpvRuntime = project.findProperty("mpvFlowMpvBuild")?.toString() == "true"
+val requestedMpvFlowFongmiDiagnostics = project.findProperty("mpvFlowFongmiDiagnosticCapture")?.toString() == "true"
 val x86Abis = if (enableX86) listOf("x86", "x86_64") else emptyList()
 val activeAbis =
   if (!targetAbiProp.isNullOrBlank()) {
@@ -21,6 +22,7 @@ val activeAbis =
     listOf("arm64-v8a", "armeabi-v7a") + x86Abis
   }
 val includeMpvFlowMpvRuntime = requestedMpvFlowMpvRuntime && activeAbis == listOf("arm64-v8a")
+val includeMpvFlowFongmiDiagnostics = includeMpvFlowMpvRuntime && requestedMpvFlowFongmiDiagnostics
 val universalOnlyDistributions = setOf("noVulkan")
 val releaseVersionCode = 264
 val versionCodeBandSize = 10_000
@@ -60,6 +62,7 @@ android {
     buildConfigField("int", "GIT_COUNT", getCommitCount())
     buildConfigField("boolean", "MPV_HAS_MPVFLOW", "false")
     buildConfigField("boolean", "MPV_HAS_FONGMI_MEMC", includeMpvFlowMpvRuntime.toString())
+    buildConfigField("boolean", "MPV_HAS_FONGMI_DIAGNOSTICS", includeMpvFlowFongmiDiagnostics.toString())
 
     externalNativeBuild {
       cmake {
@@ -101,6 +104,7 @@ android {
       buildConfigField("boolean", "MPV_SUPPORTS_VULKAN", "false")
       buildConfigField("boolean", "MPV_SUPPORTS_MEDIACODEC_VULKAN", "false")
       buildConfigField("boolean", "MPV_HAS_FONGMI_MEMC", "false")
+      buildConfigField("boolean", "MPV_HAS_FONGMI_DIAGNOSTICS", "false")
       externalNativeBuild {
         cmake {
           arguments += "-DMPVFLOW_ENABLE_VULKAN_BACKEND=OFF"

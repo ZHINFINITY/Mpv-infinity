@@ -13,6 +13,20 @@ SPEC = importlib.util.spec_from_file_location("patch_fongmi_motion_artifact", PA
 assert SPEC and SPEC.loader
 PATCHER = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(PATCHER)
+MOTION_CAPTURE_PATCHER_PATH = ROOT / "scripts/patch_fongmi_motion_diagnostics.py"
+MOTION_CAPTURE_SPEC = importlib.util.spec_from_file_location(
+    "patch_fongmi_motion_diagnostics", MOTION_CAPTURE_PATCHER_PATH
+)
+assert MOTION_CAPTURE_SPEC and MOTION_CAPTURE_SPEC.loader
+MOTION_CAPTURE_PATCHER = importlib.util.module_from_spec(MOTION_CAPTURE_SPEC)
+MOTION_CAPTURE_SPEC.loader.exec_module(MOTION_CAPTURE_PATCHER)
+VO_CAPTURE_PATCHER_PATH = ROOT / "scripts/patch_fongmi_vo_diagnostics.py"
+VO_CAPTURE_SPEC = importlib.util.spec_from_file_location(
+    "patch_fongmi_vo_diagnostics", VO_CAPTURE_PATCHER_PATH
+)
+assert VO_CAPTURE_SPEC and VO_CAPTURE_SPEC.loader
+VO_CAPTURE_PATCHER = importlib.util.module_from_spec(VO_CAPTURE_SPEC)
+VO_CAPTURE_SPEC.loader.exec_module(VO_CAPTURE_PATCHER)
 parser = argparse.ArgumentParser()
 parser.add_argument("--source", type=Path, help="active pinned FongMi motion.c built by the runtime workflow")
 args = parser.parse_args()
@@ -521,9 +535,60 @@ assert "color = alpha < 0.5 ? original0 : original1;" in retained_source
 assert "nearest_frame_weight" not in retained_source
 if args.source:
     active_source = args.source.read_text(encoding="utf-8")
-    active_result, active_changed = PATCHER.transform_source(active_source)
-    assert not active_changed and active_result == active_source, "active pinned shader must contain the verified grid, synthesis, reconstruction, and warp patches exactly once"
-    print("Active pinned FongMi grid, synthesis, reconstruction, and inverse-warp sources contain the verified policy")
+    if MOTION_CAPTURE_PATCHER.SOURCE_MARKER in active_source:
+        assert active_source.count(PATCHER.MARKER) == 1
+        assert PATCHER.LOCAL_SOFTENING_MARKER in active_source
+        assert PATCHER.RECONSTRUCTION_MARKER in active_source
+        assert PATCHER.WARP_TRAJECTORY_MARKER in active_source
+        assert PATCHER.FINE_GRID_MARKER in active_source
+        assert PATCHER.SCENE_CUT_MARKER in active_source
+        assert "nearest_frame_weight" not in active_source
+    else:
+        active_result, active_changed = PATCHER.transform_source(active_source)
+        assert not active_changed and active_result == active_source, "active pinned shader must contain the verified grid, synthesis, reconstruction, and warp patches exactly once"
+    mpv_dir = args.source.parents[3]
+    active_header = args.source.with_name("motion.h").read_text(encoding="utf-8")
+    active_vo_path = mpv_dir / "video/out/vo_gpu_next.c"
+    active_vo = active_vo_path.read_text(encoding="utf-8")
+    active_meson = (mpv_dir / "meson.build").read_text(encoding="utf-8")
+    if MOTION_CAPTURE_PATCHER.SOURCE_MARKER in active_source:
+        diagnostic_result, diagnostic_changed = MOTION_CAPTURE_PATCHER.transform_source(active_source)
+        assert not diagnostic_changed and diagnostic_result == active_source
+        for channel_branch in ("diagnostic_mode == 3", "diagnostic_mode == 4", "diagnostic_mode == 5", "diagnostic_mode == 6"):
+            assert channel_branch in active_source
+        assert "float applied_trust = clamp(trust, 0.0, 1.0);" in active_source
+        assert "vec4(applied_trust, applied_trust, applied_trust, 1.0)" in active_source
+        assert "mix(source_blend, raw_warped, applied_trust)" in active_source
+        assert "m->diagnostic_hdr_rejected = m->linear_hdr;" in active_source
+        assert "if (m->diagnostic_hdr_rejected)" in active_source
+        release_start = active_source.index("void mp_motion_release_diagnostic_capture")
+        release_end = active_source.index("static void record_synthesis", release_start)
+        assert "m->diagnostic_requested = false;" in active_source[release_start:release_end]
+        assert "diagnostic_planes[6]" in active_source and "host_readable = true" in active_source
+        header_result, header_changed = MOTION_CAPTURE_PATCHER.transform_header(active_header)
+        assert not header_changed and header_result == active_header
+        assert "bool hdr_rejected;" in active_header
+        vo_result, vo_changed = VO_CAPTURE_PATCHER.transform_vo(active_vo)
+        assert not vo_changed and vo_result == active_vo
+        assert "START_ONE_SHOT" in active_vo and "fongmi_capture_finish(vo)" in active_vo
+        assert "fongmi_diagnostic_hdr_unsupported" in active_vo
+        assert "int sample_index = i < 2 ? -1 : 0;" in active_vo
+        expected_channels = (
+            "source0", "source1", "pre_confidence_warp", "fallback_color", "trust_map", "synthesized"
+        )
+        assert all(f'"{channel}"' in active_vo for channel in expected_channels)
+        active_writer = (mpv_dir / "video/out/gpu_next/mpvflow_capture_io.c").read_text(encoding="utf-8")
+        assert "is_single_output_channel" in active_writer
+        assert all(f'"{channel}"' in active_writer for channel in expected_channels)
+        meson_result, meson_changed = VO_CAPTURE_PATCHER.transform_meson(active_meson)
+        assert not meson_changed and meson_result == active_meson
+        assert "video/out/gpu_next/mpvflow_capture_io.c" in active_meson
+        print("Debug FongMi runtime contains the complete one-shot six-plane capture mapping")
+    else:
+        assert "MPVFLOW_FONGMI_VO_SINGLE_OUTPUT_CAPTURE_V1" not in active_vo
+        assert "video/out/gpu_next/mpvflow_capture_io.c" not in active_meson
+        assert not (mpv_dir / "video/out/gpu_next/mpvflow_capture_io.c").exists()
+        print("Non-debug FongMi runtime is free of one-shot capture instrumentation")
 print(
     "FongMi artifact policy passed: max taper trust step "
     f"{old_step:.4f} -> {new_step:.4f}; local directional softness is capped at 0.24 "

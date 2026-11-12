@@ -40,7 +40,18 @@ PATCH_HASHES = {
 }
 
 assert "FONGMI_PATCH" not in PREPARE
-assert "subprocess.run" not in PREPARE
+assert PREPARE.count("subprocess.run([sys.executable, str(patcher), str(mpv_dir)], cwd=ROOT, check=True)") == 1
+assert "scripts/patch_fongmi_motion_diagnostics.py" in PREPARE
+assert "scripts/patch_fongmi_vo_diagnostics.py" in PREPARE
+assert 'debug_capture_enabled = os.environ.get("MPVFLOW_DEBUG_CAPTURE") == "1"' in PREPARE
+assert "if debug_capture_enabled:" in PREPARE
+assert 'if not debug_capture_enabled and any(marker in capture_source for marker in capture_markers)' in PREPARE
+assert "MPVFLOW_DEBUG_CAPTURE: '1'" in WORKFLOWS[1]
+assert "-PmpvFlowFongmiDiagnosticCapture=true" in WORKFLOWS[1]
+assert "fongmi-diagnostic-capture-v1" in WORKFLOWS[1]
+assert all("MPVFLOW_DEBUG_CAPTURE" not in workflow for i, workflow in enumerate(WORKFLOWS) if i != 1)
+assert all("mpvFlowFongmiDiagnosticCapture=true" not in workflow for i, workflow in enumerate(WORKFLOWS) if i != 1)
+assert all("fongmi-diagnostic-capture-v1" not in workflow for i, workflow in enumerate(WORKFLOWS) if i != 1)
 assert "shutil.copy" not in PREPARE
 for marker in (
     "version: '>=7.387.0'",

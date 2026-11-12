@@ -13,6 +13,8 @@
 #define MPVFLOW_CAPTURE_MAX_SAMPLES_PER_PAIR 4
 #define MPVFLOW_CAPTURE_PAIRED_MAX_PAIRS 1
 #define MPVFLOW_CAPTURE_PAIRED_SAMPLES_PER_PAIR 2
+#define MPVFLOW_CAPTURE_SINGLE_MAX_PAIRS 1
+#define MPVFLOW_CAPTURE_SINGLE_SAMPLES_PER_PAIR 1
 #define MPVFLOW_CAPTURE_MAX_BYTES (64u * 1024u * 1024u)
 #define MPVFLOW_CAPTURE_IMAGE_MAX_DIMENSION 640
 #define MPVFLOW_CAPTURE_DECISION_MAX_DIMENSION 1920
@@ -52,6 +54,7 @@ struct MPVFlowCaptureMeta {
     int soft_blend_enabled;
     int visibility_resolver_enabled;
     int preserve_motion_blend_on_conflict;
+    int single_output;
 };
 
 struct MPVFlowCaptureSession *mpvflow_capture_io_start(
@@ -89,6 +92,15 @@ int mpvflow_capture_io_write_terminal_manifest(
     const char *backend,
     const char *effective_settings_json,
     int paired_output,
+    const char *reason);
+
+/* One-shot FongMi capture stopped before its first eligible synthesized output. */
+int mpvflow_capture_io_write_single_terminal_manifest(
+    const char *base_dir,
+    const char *session_name,
+    const char *engine,
+    const char *backend,
+    const char *effective_settings_json,
     const char *reason);
 
 int mpvflow_capture_io_stop(struct MPVFlowCaptureSession *session);

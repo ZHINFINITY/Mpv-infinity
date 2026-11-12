@@ -111,10 +111,11 @@ class MPVView(
   private var interpolationOutputFrameRate: Double? = null
   private val mpvFlowDiagnosticsScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
   private var mpvFlowDiagnosticsJob: Job? = null
-  private val mpvFlowCaptureControlFile = java.io.File(context.cacheDir, "mpvflow-diagnostic-control.txt")
+  private val mpvFlowCaptureControlFile = java.io.File(context.cacheDir, "fongmi-diagnostic-control.txt")
   private var mpvFlowCaptureControlConfigured = false
   private var mpvFlowCaptureSessionId: String? = null
   private var mpvFlowDiagnosticsEnabled = false
+  private var fongmiDiagnosticCaptureEnabled = false
   private var mpvFlowOsdStatsEnabled = false
   @Volatile private var latestMpvFlowRuntimeSample: MpvFlowRuntimeCadenceSample? = null
 
@@ -186,6 +187,10 @@ class MPVView(
       if (mpvFlowSoftBlendDebugActive) MpvFlowComputeApi.VULKAN else requestedMpvFlowComputeApi
     mpvFlowOsdStatsEnabled = false
     mpvFlowDiagnosticsEnabled = BuildConfig.DEBUG && BuildConfig.MPV_HAS_MPVFLOW && mpvFlowFrameInterpolationActive
+    fongmiDiagnosticCaptureEnabled =
+      BuildConfig.DEBUG &&
+        BuildConfig.MPV_HAS_FONGMI_DIAGNOSTICS &&
+        mpvFlowFrameInterpolationActive
     val coreConfigurationKey =
       "${requestedBackend.configurationKey}|conf=${MpvConfigOverridePolicy.configurationKey()}|" +
         "motion=${if (mpvFlowFrameInterpolationActive) requestedMpvFlowTargetFps else "off"}"
@@ -205,9 +210,10 @@ class MPVView(
     if (result.isFailure) {
       mpvFlowOsdStatsEnabled = false
       mpvFlowDiagnosticsEnabled = false
+      fongmiDiagnosticCaptureEnabled = false
       mpvFlowCaptureControlConfigured = false
     }
-    if (result.isSuccess && BuildConfig.DEBUG && BuildConfig.MPV_HAS_MPVFLOW) {
+    if (result.isSuccess && BuildConfig.DEBUG && BuildConfig.MPV_HAS_FONGMI_DIAGNOSTICS) {
       // PlaybackSession may reuse a core and skip initOptions for this view.
       configureMpvFlowCaptureControl("after_initialize")
     }
@@ -330,16 +336,16 @@ class MPVView(
   }
 
   private fun configureMpvFlowCaptureControl(source: String): Int {
-    if (!BuildConfig.DEBUG || !BuildConfig.MPV_HAS_MPVFLOW) {
+    if (!BuildConfig.DEBUG || !BuildConfig.MPV_HAS_FONGMI_DIAGNOSTICS) {
       mpvFlowCaptureControlConfigured = false
       return -1
     }
-    val optionValue = if (mpvFlowDiagnosticsEnabled) mpvFlowCaptureControlFile.absolutePath else ""
+    val optionValue = if (fongmiDiagnosticCaptureEnabled) mpvFlowCaptureControlFile.absolutePath else ""
     val result =
-      PlaybackSession.setIntegrationOptionString("mpvflow-diagnostic-control-file", optionValue)
-    mpvFlowCaptureControlConfigured = mpvFlowDiagnosticsEnabled && result == 0
+      PlaybackSession.setIntegrationOptionString("fongmi-diagnostic-control-file", optionValue)
+    mpvFlowCaptureControlConfigured = fongmiDiagnosticCaptureEnabled && result == 0
     val state = when {
-      !mpvFlowDiagnosticsEnabled -> "disabled"
+      !fongmiDiagnosticCaptureEnabled -> "disabled"
       mpvFlowCaptureControlConfigured -> "ready"
       else -> "unavailable"
     }
@@ -355,9 +361,13 @@ class MPVView(
     sessionId: String,
     baseDirectory: String,
     pairedOutput: Boolean = false,
+    singleOutput: Boolean = false,
   ): String? {
-    if (!BuildConfig.DEBUG || !BuildConfig.MPV_HAS_MPVFLOW) return "debug_mpvflow_unavailable"
-    if (!mpvFlowDiagnosticsEnabled || !isSurfaceReady) return "mpvflow_not_active"
+    if (singleOutput && (!BuildConfig.DEBUG || !BuildConfig.MPV_HAS_FONGMI_DIAGNOSTICS)) {
+      return "fongmi_single_output_unavailable"
+    }
+    if (!BuildConfig.DEBUG || !BuildConfig.MPV_HAS_FONGMI_DIAGNOSTICS) return "debug_fongmi_unavailable"
+    if (!fongmiDiagnosticCaptureEnabled || !isSurfaceReady) return "fongmi_interpolation_not_active"
     if (!sessionId.matches(Regex("[A-Za-z0-9_-]{1,80}"))) return "invalid_session_id"
     val allowedRoot = java.io.File(context.cacheDir, "flow-diagnostics").canonicalFile
     val target = java.io.File(baseDirectory).canonicalFile
@@ -371,7 +381,12 @@ class MPVView(
         return "mpvflow_capture_control_unavailable"
       }
     }
-    val command = if (pairedOutput) "START_PAIRED" else "START"
+    val command =
+      when {
+        singleOutput -> "START_ONE_SHOT"
+        pairedOutput -> "START_PAIRED"
+        else -> "START"
+      }
     val error = writeFlowDiagnosticControl("$command\t$sessionId\t${target.path}\n")
     if (error != null) return error
     mpvFlowCaptureSessionId = sessionId

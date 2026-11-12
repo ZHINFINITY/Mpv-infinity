@@ -154,6 +154,10 @@ for marker in (
 capture_define = "#define MPVFLOW_DEBUG_CAPTURE 1\n"
 capture_default = prepare.configure_debug_capture_source(gpu_source, enabled=False)
 assert capture_define not in capture_default, "default MPV source preparation must not enable debug capture"
+prepare_source = PREPARE.read_text(encoding="utf-8")
+assert 'debug_capture_enabled = os.environ.get("MPVFLOW_DEBUG_CAPTURE") == "1"' in prepare_source
+assert "Enabled bounded one-shot FongMi diagnostics for this debug runtime" in prepare_source
+assert "FongMi one-shot diagnostics disabled; leaving motion/VO sources uninstrumented" in prepare_source
 capture_debug = prepare.configure_debug_capture_source(gpu_source, enabled=True)
 assert capture_debug.count(capture_define) == 1, "debug capture define must be injected exactly once"
 assert capture_debug.index("*/") < capture_debug.index(capture_define) < capture_debug.index("#include"), "debug capture define must follow the SPDX notice"
@@ -161,6 +165,10 @@ assert prepare.configure_debug_capture_source(capture_debug, enabled=True) == ca
 assert prepare.configure_debug_capture_source(capture_debug, enabled=False) == capture_default, "disabling debug capture must restore the default source"
 cmake_native = (ROOT / "app/src/main/cpp/CMakeLists.txt").read_text(encoding="utf-8")
 assert "target_compile_definitions(media3flow_vulkan PRIVATE\n        $<$<CONFIG:Debug>:MPVFLOW_DEBUG_CAPTURE=1>)" in cmake_native, "Media3 Vulkan capture define must be Debug-only"
+app_build = (ROOT / "app/build.gradle.kts").read_text(encoding="utf-8")
+assert 'project.findProperty("mpvFlowFongmiDiagnosticCapture")?.toString() == "true"' in app_build
+assert 'buildConfigField("boolean", "MPV_HAS_FONGMI_DIAGNOSTICS", includeMpvFlowFongmiDiagnostics.toString())' in app_build
+assert 'buildConfigField("boolean", "MPV_HAS_FONGMI_DIAGNOSTICS", "false")' in app_build
 
 old_dependency = "vulkan = dependency('vulkan', version: '>= 1.3.238', required: vulkan_opt)"
 new_dependency = "vulkan = dependency('vulkan', required: vulkan_opt)"
@@ -731,6 +739,9 @@ assert '"--input", str(FONGMI_PATCH)' not in prepare_source
 assert '"mpvflow-vo-gpu-next.patch"' not in prepare_source
 assert '"mpvflow-aimagereader-vulkan.patch"' not in prepare_source
 assert '"video/out/gpu_next/motion.c"' in prepare_source
+assert 'scripts/patch_fongmi_motion_diagnostics.py' in prepare_source
+assert 'scripts/patch_fongmi_vo_diagnostics.py' in prepare_source
+assert 'subprocess.run([sys.executable, str(patcher), str(mpv_dir)], cwd=ROOT, check=True)' in prepare_source
 assert '"motion-interpolation", OPT_INT(motion_fps)' in prepare_source
 assert '"video/out/hwdec/hwdec_aimagereader_vk_direct.c"' in prepare_source
 assert '"motion-interpolation-info", mp_property_motion_info' in prepare_source
@@ -747,6 +758,9 @@ assert "FONGMI_PATCH" not in prepare_source, "MPV runtime must compile the pinne
 assert "mpvflow_gpu.c" not in prepare_source, "MPV runtime preparation must not stage the retired Flow renderer"
 prepare_call = 'python3 "$ROOT/scripts/prepare-mpvflow.py" --mpv-dir "$BUILDSCRIPTS/deps/mpv" --libplacebo-dir "$BUILDSCRIPTS/deps/libplacebo"'
 assert prepare_call in build, "the native build must patch pinned libplacebo before compilation"
+workflow_source = (ROOT / ".github/workflows/mpvflow-debug-arm64.yml").read_text(encoding="utf-8")
+assert "scripts/patch_fongmi_motion_diagnostics.py" in workflow_source
+assert "scripts/patch_fongmi_vo_diagnostics.py" in workflow_source
 native_cmake = (ROOT / "app/src/main/cpp/CMakeLists.txt").read_text(encoding="utf-8")
 assert "target_compile_options(media3flow_vulkan PRIVATE -fvisibility=hidden)" in native_cmake
 assert "target_link_options(media3flow_vulkan PRIVATE -Wl,--strip-all)" in native_cmake

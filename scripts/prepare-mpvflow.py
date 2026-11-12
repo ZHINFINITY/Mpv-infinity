@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import argparse
 import os
+import subprocess
+import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -901,6 +903,19 @@ def main() -> None:
         if not path.is_file():
             raise SystemExit(f"Pinned native source is missing required file {path}")
 
+    debug_capture_enabled = os.environ.get("MPVFLOW_DEBUG_CAPTURE") == "1"
+    if debug_capture_enabled:
+        for patcher in (
+            ROOT / "scripts/patch_fongmi_motion_diagnostics.py",
+            ROOT / "scripts/patch_fongmi_vo_diagnostics.py",
+        ):
+            if not patcher.is_file():
+                raise SystemExit(f"FongMi one-shot diagnostic patcher is missing: {patcher}")
+            subprocess.run([sys.executable, str(patcher), str(mpv_dir)], cwd=ROOT, check=True)
+        print("Enabled bounded one-shot FongMi diagnostics for this debug runtime")
+    else:
+        print("FongMi one-shot diagnostics disabled; leaving motion/VO sources uninstrumented")
+
     native_fongmi_markers = (
         "version: '>=7.387.0'",
         "video/out/gpu_next/motion.c",
@@ -942,6 +957,17 @@ def main() -> None:
         or 'mp.get_property_native("motion-interpolation-info")' not in stats_lua
     ):
         raise SystemExit("The pinned native FongMi MEMC/Android/OSD source contract is incomplete")
+    capture_markers = (
+        "MPVFLOW_FONGMI_SINGLE_OUTPUT_CAPTURE_V1",
+        "MPVFLOW_FONGMI_VO_SINGLE_OUTPUT_CAPTURE_V1",
+        "video/out/gpu_next/mpvflow_capture_io.c",
+        "fongmi-diagnostic-control-file",
+    )
+    capture_source = motion + vo + meson
+    if debug_capture_enabled and not all(marker in capture_source for marker in capture_markers):
+        raise SystemExit("Debug runtime requested FongMi one-shot capture but its full source contract is missing")
+    if not debug_capture_enabled and any(marker in capture_source for marker in capture_markers):
+        raise SystemExit("FongMi one-shot capture unexpectedly present in a non-debug runtime")
     validate_fongmi_frame_priv_members(vo)
     mapper_sources = (
         mpv_dir / "video/out/hwdec/hwdec_aimagereader.c",

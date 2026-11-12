@@ -27,6 +27,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.activity.compose.LocalActivity
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyRow
@@ -56,6 +57,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import app.infinity.mpvz.BuildConfig
 import app.infinity.mpvz.R
 import app.infinity.mpvz.domain.anime4k.Anime4KManager
 import app.infinity.mpvz.preferences.AdvancedPreferences
@@ -64,10 +66,13 @@ import app.infinity.mpvz.preferences.preference.collectAsState
 import app.infinity.mpvz.presentation.components.PlayerSheet
 import app.infinity.mpvz.ui.icons.Icon
 import app.infinity.mpvz.ui.icons.Icons
+import app.infinity.mpvz.ui.player.FlowDiagnosticsCaptureUiState
+import app.infinity.mpvz.ui.player.PlayerActivity
 import app.infinity.mpvz.ui.player.anime4k.Anime4KUiState
 import app.infinity.mpvz.ui.theme.AppShapeScale
 import app.infinity.mpvz.ui.theme.glassInsetSurface
 import app.infinity.mpvz.ui.theme.spacing
+import kotlinx.coroutines.flow.MutableStateFlow
 import org.koin.compose.koinInject
 
 private fun nativeCodecLabel(mimeType: String?, codecs: String?): String {
@@ -105,6 +110,9 @@ fun MoreSheet(
   nativeSnapshot: NativePlaybackSnapshot = NativePlaybackSnapshot(),
   modifier: Modifier = Modifier,
 ) {
+  val activity = LocalActivity.current as? PlayerActivity
+  val emptyCaptureState = remember { MutableStateFlow(FlowDiagnosticsCaptureUiState()) }
+  val captureState by (activity?.flowDiagnosticsCaptureState ?: emptyCaptureState).collectAsState()
   val appearancePreferences = koinInject<AppearancePreferences>()
   val liquidGlassSurfaces by appearancePreferences.liquidGlassSurfaces.collectAsState()
   val advancedPreferences = koinInject<AdvancedPreferences>()
@@ -273,6 +281,45 @@ fun MoreSheet(
             )
           } else {
             Text("Output: MPV renderer", style = MaterialTheme.typography.bodySmall)
+          }
+        }
+      }
+      if (
+        BuildConfig.DEBUG &&
+        BuildConfig.MPV_HAS_FONGMI_DIAGNOSTICS &&
+        activeEngine == PlaybackEngineMode.MPV &&
+        activity != null
+      ) {
+        Surface(
+          modifier = Modifier.fillMaxWidth(),
+          color = androidx.compose.ui.graphics.Color.Transparent,
+          shape = MaterialTheme.shapes.medium,
+        ) {
+          Column(
+            modifier = Modifier.fillMaxWidth().padding(MaterialTheme.spacing.small),
+          ) {
+            Text("One-shot FongMi diagnostic", style = MaterialTheme.typography.titleSmall)
+            Text(
+              captureState.message
+                ?: "Opt-in only; one frame capture may briefly pause playback. " +
+                  "Saves to private cache, then archives to Downloads; nothing is uploaded.",
+              style = MaterialTheme.typography.bodySmall,
+            )
+            if (captureState.active) {
+              Text(
+                "Progress: ${captureState.synthesizedOutputs}/1 synthesized output · " +
+                  "${captureState.bytesWritten} bytes",
+                style = MaterialTheme.typography.bodySmall,
+              )
+              Button(onClick = { activity.stopFlowDiagnosticsCapture() }) { Text("Stop capture") }
+            } else {
+              captureState.savedLocation?.let { location ->
+                Text("Saved: $location", style = MaterialTheme.typography.bodySmall)
+              }
+              Button(onClick = { activity.startFlowDiagnosticsCapture(singleOutput = true) }) {
+                Text("Capture one bad frame")
+              }
+            }
           }
         }
       }

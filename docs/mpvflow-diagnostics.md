@@ -1,8 +1,15 @@
 # MPVFlow diagnostics and presentation checks
 
-The **Start marked capture** and **Start paired Soft Blend comparison** controls have been removed from the player's More sheet. Normal playback no longer exposes this capture panel. The capture implementation is retained for diagnostic tooling and existing captures; the legacy capture procedures below describe older debug builds, not controls available in the current player. For current on-device investigation, export **Debug Logs** for each engine playing the same scene. The separate Perfetto procedure below remains applicable.
+The dedicated diagnostic debug APK exposes one capture control: **One-shot FongMi diagnostic** in the player's **More** sheet. It appears only during active FongMi MPV playback; ordinary debug and release builds do not include the diagnostic capture UI or native shader instrumentation. Ordinary marked capture and paired Soft Blend comparison controls remain unavailable in the player.
 
-## Legacy debug builds: capture a marked moment from each engine
+## Current debug build: capture one FongMi output
+
+1. Install the diagnostic debug APK, open the video in **MPV**, and seek to just before the artifact. Open **More** and press **Capture one bad frame**.
+2. Play through the troublesome moment. The next eligible FongMi interpolation output is captured; the session automatically completes after that one sample. If no eligible output arrives, press **Stop capture** or let the bounded watchdog end the request.
+3. The local ZIP contains the exact two FongMi synthesis inputs (`source0`, `source1`), `pre_confidence_warp` (before confidence weighting), `fallback_color` (source blend), `trust_map` (the clamped trust value actually used by the compositor), and `synthesized` (the FongMi result before final display conversion). The manifest records source/output PTS, interpolation alpha, dimensions, motion-grid size, route IDs, color-transfer notes, and any missing channels.
+4. The one-shot writer permits one pair and one output, native-resolution RGBA8 planes up to 1920×1080, and at most 64 MiB. Vulkan readback is required; HDR input is refused rather than clipped or mislabeled. The ZIP is saved to `Downloads/Mpv∞/Flow Diagnostics/`; nothing is uploaded automatically. Captured images may contain video content, so keep the ZIP private unless you choose to share it.
+
+## Older debug builds: capture a marked moment from each engine
 
 Run the same SDR scene twice—once with **MPV** and once with **Media3**—so the two engines can be compared independently.
 

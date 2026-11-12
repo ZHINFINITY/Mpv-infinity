@@ -52,6 +52,7 @@ internal data class FlowDiagnosticsCaptureUiState(
   val synthesizedOutputs: Int = 0,
   val bytesWritten: Long = 0L,
   val pairedOutput: Boolean = false,
+  val singleOutput: Boolean = false,
   val missingChannels: List<String> = emptyList(),
   val message: String? = null,
   val savedLocation: String? = null,
@@ -91,6 +92,7 @@ internal class FlowDiagnosticsCaptureManager(context: Context) {
     stopRequest: (sessionId: String) -> String?,
     timingSnapshot: () -> JSONObject?,
     pairedOutput: Boolean = false,
+    singleOutput: Boolean = false,
   ): String? {
     if (engine !in setOf("mpv", "native-media3")) return "unsupported_engine"
     if (!canStartFlowDiagnosticsCapture(_state.value, sessionId)) return "capture_already_active"
@@ -105,6 +107,7 @@ internal class FlowDiagnosticsCaptureManager(context: Context) {
         phase = FlowDiagnosticsCapturePhase.FAILED,
         engine = engine,
         pairedOutput = pairedOutput,
+        singleOutput = singleOutput,
         message = "Capture could not start: $error",
       )
       return error
@@ -118,7 +121,10 @@ internal class FlowDiagnosticsCaptureManager(context: Context) {
       phase = FlowDiagnosticsCapturePhase.STARTING,
       engine = engine,
       pairedOutput = pairedOutput,
-      message = if (pairedOutput) {
+      singleOutput = singleOutput,
+      message = if (singleOutput) {
+        "One-shot capture armed. Play the bad frame; one synthesized output will be captured, then saved locally."
+      } else if (pairedOutput) {
         "Fixed-pair comparison armed: one pair at alpha 0.5, Soft Blend off/on and exact decision masks. Capture temporarily stalls playback; its timing is not normal playback performance."
       } else {
         "Capture armed. Replay the marked moment; it stops at the capture limit."
@@ -185,9 +191,12 @@ internal class FlowDiagnosticsCaptureManager(context: Context) {
             },
             pairs = status.pairs,
             synthesizedOutputs = status.outputs,
+            singleOutput = _state.value.singleOutput,
             bytesWritten = status.bytes,
             missingChannels = status.missing,
-            message = status.error ?: "Capturing decoded frames and interpolation diagnostics…",
+            message = status.error ?: if (_state.value.singleOutput) {
+              "Capturing one synthesized output (${status.outputs}/1)…"
+            } else { "Capturing decoded frames and interpolation diagnostics…" },
           )
           if (status.terminal) {
             val cleanup = stopRequest

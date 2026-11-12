@@ -28,7 +28,7 @@ def test_standard_workflow_is_flow_only() -> None:
 
     manual_cache_key = runtime_cache_key(workflow)
     push_cache_key = runtime_cache_key(flow_workflow)
-    assert manual_cache_key == push_cache_key, "manual and push builds must share the same verified native runtime cache"
+    assert manual_cache_key != push_cache_key, "the diagnostic build must not share its instrumented runtime with ordinary APK builds"
     for native_input in (
         "scripts/build-mpvflow-mpv-runtime.sh",
         "scripts/prepare-mpvflow.py",
@@ -40,6 +40,15 @@ def test_standard_workflow_is_flow_only() -> None:
         "app/src/main/assets/mpv/licenses/**",
     ):
         assert native_input in manual_cache_key, f"native cache key must include {native_input}"
+        assert native_input in push_cache_key, f"diagnostic native cache key must include {native_input}"
+    for diagnostic_input in (
+        "scripts/patch_fongmi_motion_diagnostics.py",
+        "scripts/patch_fongmi_vo_diagnostics.py",
+        "fongmi-diagnostic-capture-v1",
+    ):
+        assert diagnostic_input in push_cache_key, f"diagnostic cache must include {diagnostic_input}"
+    assert "scripts/patch_fongmi_motion_diagnostics.py" not in manual_cache_key
+    assert "scripts/patch_fongmi_vo_diagnostics.py" not in manual_cache_key
     assert ".github/workflows/debug-apk.yml" not in manual_cache_key
     assert ".github/workflows/mpvflow-debug-arm64.yml" not in manual_cache_key
     for pin in (

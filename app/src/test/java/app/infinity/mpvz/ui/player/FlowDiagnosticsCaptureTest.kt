@@ -172,4 +172,29 @@ class FlowDiagnosticsCaptureTest {
       ),
     )
   }
+  @Test
+  fun oneShotCaptureIsExplicitAndBoundToFongMiDebugMpv() {
+    val manager = read("app/infinity/mpvz/ui/player/FlowDiagnosticsCapture.kt")
+    val activity = read("app/infinity/mpvz/ui/player/PlayerActivity.kt")
+    val view = read("app/infinity/mpvz/ui/player/MPVView.kt")
+    val sheet = read("app/infinity/mpvz/ui/player/controls/components/sheets/MoreSheet.kt")
+    assertTrue(manager.contains("singleOutput: Boolean = false"))
+    assertTrue(manager.contains("one synthesized output will be captured"))
+    assertTrue(activity.contains("singleOutput = singleOutput"))
+    assertTrue(view.contains("START_ONE_SHOT"))
+    assertTrue(view.contains("fongmi-diagnostic-control-file"))
+    assertFalse(view.contains("setIntegrationOptionString(\"mpvflow-diagnostic-control-file\""))
+    assertTrue(
+      sheet.contains(
+        "BuildConfig.DEBUG && BuildConfig.MPV_HAS_FONGMI_DIAGNOSTICS && activeEngine == PlaybackEngineMode.MPV",
+      ),
+    )
+    assertTrue(sheet.contains("Capture one bad frame"))
+    assertTrue(sheet.contains("nothing is uploaded"))
+    assertTrue(sheet.contains("Saved: \$location"))
+  }
+  private fun read(path: String): String = java.io.File("src/main/java/$path").let { file ->
+    if (file.isFile) file.readText() else java.io.File("app/src/main/java/$path").readText()
+  }
+
 }
