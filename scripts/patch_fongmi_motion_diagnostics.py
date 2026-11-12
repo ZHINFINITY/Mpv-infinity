@@ -12,8 +12,8 @@ from pathlib import Path
 
 SOURCE = Path("video/out/gpu_next/motion.c")
 HEADER = Path("video/out/gpu_next/motion.h")
-SOURCE_MARKER = "MPVFLOW_FONGMI_SINGLE_OUTPUT_CAPTURE_V1"
-HEADER_MARKER = "MPVFLOW_FONGMI_DIAGNOSTIC_CAPTURE_API_V1"
+SOURCE_MARKER = "MPVFLOW_FONGMI_SINGLE_OUTPUT_CAPTURE_V2"
+HEADER_MARKER = "MPVFLOW_FONGMI_DIAGNOSTIC_CAPTURE_API_V2"
 PLANE_COUNT = 6
 
 
@@ -25,9 +25,13 @@ def replace_once(source: str, old: str, new: str, label: str) -> str:
 
 
 def transform_header(source: str) -> tuple[str, bool]:
+    if "MPVFLOW_FONGMI_DIAGNOSTIC_CAPTURE_API_V1" in source:
+        raise ValueError("Stale FongMi diagnostic header V1; rebuild from pinned source")
     if HEADER_MARKER in source:
         required = (
             "struct mp_motion_diagnostic_capture",
+            "bool source_hdr;",
+            "mp_motion_source_is_hdr",
             "mp_motion_request_diagnostic_capture",
             "mp_motion_take_diagnostic_capture",
             "mp_motion_release_diagnostic_capture",
@@ -40,7 +44,7 @@ def transform_header(source: str) -> tuple[str, bool]:
         raise ValueError("Pinned FongMi motion stats anchor changed; refusing an unverified header patch")
     source = source.replace(
         anchor,
-        """/* MPVFLOW_FONGMI_DIAGNOSTIC_CAPTURE_API_V1 */
+        """/* MPVFLOW_FONGMI_DIAGNOSTIC_CAPTURE_API_V2 */
 struct mp_motion_diagnostic_capture {
     // Borrowed textures in writer order: source0, source1, pre_confidence_warp,
     // fallback_color, trust_map, synthesized. All are RGBA8 UNORM.
@@ -50,6 +54,7 @@ struct mp_motion_diagnostic_capture {
     int grid_width, grid_height;
     bool ready;
     bool hdr_rejected;
+    bool source_hdr;
     bool srgb_encoded;
 };
 
@@ -62,9 +67,12 @@ struct mp_motion_stats {
         source,
         anchor,
         anchor
-        + """// Arm exactly one synthesis output. The next eligible pair render writes six
-// bounded RGBA8 planes; the caller must take and release the borrowed textures.
-void mp_motion_request_diagnostic_capture(struct mp_motion *motion);
+        + """// Classify original source metadata; a rendered linear-light view is not itself HDR.
+bool mp_motion_source_is_hdr(const struct pl_frame *source);
+// Arm one output, or immediately expose a source-HDR refusal. The next eligible
+// pair render writes six bounded RGBA8 planes for supported SDR sources.
+// The caller must take and release the borrowed textures.
+void mp_motion_request_diagnostic_capture(struct mp_motion *motion, bool source_hdr);
 // Returns true once for a completed attempt, including a failed allocation/dispatch.
 bool mp_motion_take_diagnostic_capture(
     struct mp_motion *motion, struct mp_motion_diagnostic_capture *capture);
@@ -76,11 +84,16 @@ void mp_motion_release_diagnostic_capture(struct mp_motion *motion);
 
 
 def transform_source(source: str) -> tuple[str, bool]:
+    if "MPVFLOW_FONGMI_SINGLE_OUTPUT_CAPTURE_V1" in source:
+        raise ValueError("Stale FongMi diagnostic source V1; rebuild from pinned source")
     if SOURCE_MARKER in source:
         required = (
-            "MPVFLOW_FONGMI_SINGLE_OUTPUT_CAPTURE_V1",
+            "MPVFLOW_FONGMI_SINGLE_OUTPUT_CAPTURE_V2",
             "mp_motion_capture_diagnostic_planes",
             "diagnostic_planes[6]",
+            "diagnostic_source_hdr",
+            "mp_motion_source_is_hdr",
+            "diagnostic_hdr_rejected = m->diagnostic_source_hdr",
             "diagnostic_mode == 3",
             "diagnostic_mode == 4",
             "diagnostic_mode == 5",
@@ -93,15 +106,38 @@ def transform_source(source: str) -> tuple[str, bool]:
     if source.count("MPVFLOW_ARTIFACT_GUARDS_V4") != 1:
         raise ValueError("FongMi V4 artifact patch is required before diagnostic capture")
 
+    source = replace_once(
+        source,
+        """static bool hdr_source(const struct pl_frame *input)
+{
+    return input->color.transfer == PL_COLOR_TRC_PQ ||
+           input->repr.sys == PL_COLOR_SYSTEM_DOLBYVISION;
+}""",
+        """static bool hdr_source(const struct pl_frame *input)
+{
+    return input->color.transfer == PL_COLOR_TRC_PQ ||
+           input->repr.sys == PL_COLOR_SYSTEM_DOLBYVISION;
+}
+
+bool mp_motion_source_is_hdr(const struct pl_frame *source)
+{
+    return source &&
+        (pl_color_transfer_is_hdr(source->color.transfer) ||
+         source->repr.sys == PL_COLOR_SYSTEM_DOLBYVISION ||
+         pl_color_space_is_hdr(&source->color));
+}""",
+        "diagnostic source HDR classifier",
+    )
+
     # Store only owned staging outputs; normal render textures are untouched.
     source = replace_once(
         source,
         "    pl_tex result;\n    pl_dispatch_prepared pyramid_pass[LEVELS][2];",
         """    pl_tex result;
-    // MPVFLOW_FONGMI_SINGLE_OUTPUT_CAPTURE_V1: allocated only for an armed one-shot.
+    // MPVFLOW_FONGMI_SINGLE_OUTPUT_CAPTURE_V2: allocated only for an armed one-shot.
     pl_tex diagnostic_planes[6];
     bool diagnostic_requested, diagnostic_attempted, diagnostic_ready;
-    bool diagnostic_srgb_encoded, diagnostic_hdr_rejected;
+    bool diagnostic_srgb_encoded, diagnostic_hdr_rejected, diagnostic_source_hdr;
     pl_dispatch_prepared pyramid_pass[LEVELS][2];""",
         "diagnostic texture ownership",
     )
@@ -251,7 +287,7 @@ static bool recreate(struct mp_motion *m, pl_tex *texture, int w, int h)
     m->diagnostic_requested = false;
     m->diagnostic_attempted = true;
     m->diagnostic_ready = false;
-    m->diagnostic_hdr_rejected = m->linear_hdr;
+    m->diagnostic_hdr_rejected = m->diagnostic_source_hdr;
     if (m->diagnostic_hdr_rejected)
         return false;
     int w = first->params.w, h = first->params.h;
@@ -271,14 +307,15 @@ static bool recreate(struct mp_motion *m, pl_tex *texture, int w, int h)
     return true;
 }
 
-void mp_motion_request_diagnostic_capture(struct mp_motion *m)
+void mp_motion_request_diagnostic_capture(struct mp_motion *m, bool source_hdr)
 {
     if (!m)
         return;
-    m->diagnostic_requested = true;
-    m->diagnostic_attempted = false;
+    m->diagnostic_requested = !source_hdr;
+    m->diagnostic_attempted = source_hdr;
     m->diagnostic_ready = false;
-    m->diagnostic_hdr_rejected = false;
+    m->diagnostic_hdr_rejected = source_hdr;
+    m->diagnostic_source_hdr = source_hdr;
 }
 
 bool mp_motion_take_diagnostic_capture(
@@ -295,6 +332,7 @@ bool mp_motion_take_diagnostic_capture(
         .grid_height = m->vectors[0][0] ? m->vectors[0][0]->params.h : 0,
         .ready = m->diagnostic_ready,
         .hdr_rejected = m->diagnostic_hdr_rejected,
+        .source_hdr = m->diagnostic_source_hdr,
         .srgb_encoded = m->diagnostic_srgb_encoded,
     };
     for (int i = 0; i < 6; i++)
@@ -314,6 +352,7 @@ void mp_motion_release_diagnostic_capture(struct mp_motion *m)
     m->diagnostic_ready = false;
     m->diagnostic_attempted = false;
     m->diagnostic_hdr_rejected = false;
+    m->diagnostic_source_hdr = false;
     m->diagnostic_srgb_encoded = false;
 }
 

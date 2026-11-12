@@ -533,6 +533,27 @@ assert "vec2 scene_change = texelFetch(scene, ivec2(0), 0).rg;" in retained_sour
 assert "if (scene_change.r > 0.45 || scene_change.g > 0.08)" in retained_source
 assert "color = alpha < 0.5 ? original0 : original1;" in retained_source
 assert "nearest_frame_weight" not in retained_source
+
+# The prepared view is always renderer-linear, but only source HDR is refused.
+def diagnostic_refuses_hdr_source(linear_working_view: bool, source_is_hdr: bool) -> bool:
+    return source_is_hdr
+
+
+for label, linear_view, source_hdr, expected in (
+    ("SDR source rendered into a linear prepared view", True, False, False),
+    ("SDR encoded source-frame route", False, False, False),
+    ("PQ source", True, True, True),
+    ("HLG source", True, True, True),
+    ("Dolby Vision source", True, True, True),
+):
+    assert diagnostic_refuses_hdr_source(linear_view, source_hdr) is expected, label
+motion_capture_patcher_source = MOTION_CAPTURE_PATCHER_PATH.read_text(encoding="utf-8")
+assert "m->diagnostic_hdr_rejected = m->diagnostic_source_hdr;" in motion_capture_patcher_source
+assert "m->diagnostic_hdr_rejected = m->linear_hdr;" not in motion_capture_patcher_source
+assert "pl_color_transfer_is_hdr(source->color.transfer)" in motion_capture_patcher_source
+assert "source->repr.sys == PL_COLOR_SYSTEM_DOLBYVISION" in motion_capture_patcher_source
+assert "pl_color_space_is_hdr(&source->color)" in motion_capture_patcher_source
+
 if args.source:
     active_source = args.source.read_text(encoding="utf-8")
     if MOTION_CAPTURE_PATCHER.SOURCE_MARKER in active_source:
@@ -559,7 +580,15 @@ if args.source:
         assert "float applied_trust = clamp(trust, 0.0, 1.0);" in active_source
         assert "vec4(applied_trust, applied_trust, applied_trust, 1.0)" in active_source
         assert "mix(source_blend, raw_warped, applied_trust)" in active_source
-        assert "m->diagnostic_hdr_rejected = m->linear_hdr;" in active_source
+        assert "m->diagnostic_hdr_rejected = m->diagnostic_source_hdr;" in active_source
+        assert "m->diagnostic_hdr_rejected = m->linear_hdr;" not in active_source
+        assert "m->diagnostic_requested = !source_hdr;" in active_source
+        assert "m->diagnostic_attempted = source_hdr;" in active_source
+        assert "m->diagnostic_hdr_rejected = source_hdr;" in active_source
+        assert "bool mp_motion_source_is_hdr(const struct pl_frame *source)" in active_source
+        assert "pl_color_transfer_is_hdr(source->color.transfer)" in active_source
+        assert "source->repr.sys == PL_COLOR_SYSTEM_DOLBYVISION" in active_source
+        assert "pl_color_space_is_hdr(&source->color)" in active_source
         assert "if (m->diagnostic_hdr_rejected)" in active_source
         release_start = active_source.index("void mp_motion_release_diagnostic_capture")
         release_end = active_source.index("static void record_synthesis", release_start)
@@ -567,11 +596,20 @@ if args.source:
         assert "diagnostic_planes[6]" in active_source and "host_readable = true" in active_source
         header_result, header_changed = MOTION_CAPTURE_PATCHER.transform_header(active_header)
         assert not header_changed and header_result == active_header
-        assert "bool hdr_rejected;" in active_header
+        assert "bool hdr_rejected;" in active_header and "bool source_hdr;" in active_header
+        assert "mp_motion_source_is_hdr(const struct pl_frame *source);" in active_header
+        assert "mp_motion_request_diagnostic_capture(struct mp_motion *motion, bool source_hdr);" in active_header
         vo_result, vo_changed = VO_CAPTURE_PATCHER.transform_vo(active_vo)
         assert not vo_changed and vo_result == active_vo
         assert "START_ONE_SHOT" in active_vo and "fongmi_capture_finish(vo)" in active_vo
-        assert "fongmi_diagnostic_hdr_unsupported" in active_vo
+        assert "fongmi_diagnostic_actual_hdr_source_unsupported" in active_vo
+        assert "direct ? \"prepared_view_shader\" : \"prepared_view_texture\"" in active_vo
+        assert "described_source_frames" in active_vo and "raw_source_textures" in active_vo
+        assert "mp_motion_source_is_hdr(mix->frames[pair[0]])" in active_vo
+        assert "mp_motion_source_is_hdr(mix->frames[pair[1]])" in active_vo
+        assert "active_route" in active_vo and "source_is_hdr" in active_vo and "refusal_reason" in active_vo
+        assert active_vo.count("fongmi_capture_arm(vo, mix, pair,") == 2
+        assert active_vo.count("fongmi_capture_finish(vo)") == 2
         assert "int sample_index = i < 2 ? -1 : 0;" in active_vo
         expected_channels = (
             "source0", "source1", "pre_confidence_warp", "fallback_color", "trust_map", "synthesized"
@@ -580,12 +618,17 @@ if args.source:
         active_writer = (mpv_dir / "video/out/gpu_next/mpvflow_capture_io.c").read_text(encoding="utf-8")
         assert "is_single_output_channel" in active_writer
         assert all(f'"{channel}"' in active_writer for channel in expected_channels)
+        assert ".source_width = capture.width" in active_vo
+        assert ".source_height = capture.height" in active_vo
+        assert ".pts0 = p->fongmi_capture_pts0" in active_vo
+        assert ".pts1 = p->fongmi_capture_pts1" in active_vo
+        assert ".output_pts = p->fongmi_capture_output_pts" in active_vo
         meson_result, meson_changed = VO_CAPTURE_PATCHER.transform_meson(active_meson)
         assert not meson_changed and meson_result == active_meson
         assert "video/out/gpu_next/mpvflow_capture_io.c" in active_meson
         print("Debug FongMi runtime contains the complete one-shot six-plane capture mapping")
     else:
-        assert "MPVFLOW_FONGMI_VO_SINGLE_OUTPUT_CAPTURE_V1" not in active_vo
+        assert "MPVFLOW_FONGMI_VO_SINGLE_OUTPUT_CAPTURE_V2" not in active_vo
         assert "video/out/gpu_next/mpvflow_capture_io.c" not in active_meson
         assert not (mpv_dir / "video/out/gpu_next/mpvflow_capture_io.c").exists()
         print("Non-debug FongMi runtime is free of one-shot capture instrumentation")

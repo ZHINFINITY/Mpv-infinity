@@ -8,7 +8,7 @@ from pathlib import Path
 
 VO = Path("video/out/vo_gpu_next.c")
 MESON = Path("meson.build")
-MARKER = "MPVFLOW_FONGMI_VO_SINGLE_OUTPUT_CAPTURE_V1"
+MARKER = "MPVFLOW_FONGMI_VO_SINGLE_OUTPUT_CAPTURE_V2"
 CHANNELS = (
     "source0", "source1", "pre_confidence_warp",
     "fallback_color", "trust_map", "synthesized",
@@ -22,25 +22,39 @@ def replace_once(source: str, old: str, new: str, label: str) -> str:
     return source.replace(old, new, 1)
 
 
-CAPTURE_HELPERS = r'''/* MPVFLOW_FONGMI_VO_SINGLE_OUTPUT_CAPTURE_V1 */
+CAPTURE_HELPERS = r'''/* MPVFLOW_FONGMI_VO_SINGLE_OUTPUT_CAPTURE_V2 */
 static const char *fongmi_capture_backend(const struct priv *p)
 {
     return p->ra_ctx && p->ra_ctx->fns && p->ra_ctx->fns->type
         ? p->ra_ctx->fns->type : "unknown";
 }
 
-static const char *fongmi_capture_settings(void)
+static void fongmi_capture_settings(const struct priv *p, const char *reason,
+                                   char *settings, size_t settings_size)
 {
-    return "{\"capture_mode\":\"fongmi_one_shot\",\"pair_limit\":1,"
-           "\"sample_limit\":1,\"resolution_limit\":[1920,1080],"
-           "\"max_bytes\":67108864,\"local_only\":true,"
-           "\"transfer\":\"route-specific; no planes when stopped before a sample\","
-           "\"plane_order\":[\"source0\",\"source1\","
-           "\"pre_confidence_warp\",\"fallback_color\",\"trust_map\","
-           "\"synthesized\"],\"trust_map_semantics\":"
-           "\"RGB=applied FongMi trust scalar; alpha=0 denotes scene-cut branch\","
-           "\"fallback_semantics\":\"exact source_blend before trust weighting\","
-           "\"warp_semantics\":\"bidirectional warped blend before confidence weighting\"}";
+    const char *route = p->fongmi_capture_route[0]
+        ? p->fongmi_capture_route : "not_selected";
+    const char *refusal = "see_terminal_reason";
+    if (!reason)
+        refusal = "none";
+    else if (!strcmp(reason, "fongmi_diagnostic_actual_hdr_source_unsupported"))
+        refusal = "actual_hdr_source_unsupported";
+    else if (!strcmp(reason, "fongmi_diagnostic_planes_unavailable"))
+        refusal = "diagnostic_planes_unavailable";
+    snprintf(settings, settings_size,
+        "{\"capture_mode\":\"fongmi_one_shot\",\"pair_limit\":1,"
+        "\"sample_limit\":1,\"resolution_limit\":[1920,1080],"
+        "\"max_bytes\":67108864,\"local_only\":true,"
+        "\"active_route\":\"%s\",\"source_is_hdr\":%s,"
+        "\"refusal_reason\":\"%s\","
+        "\"transfer\":\"route-specific; no planes when stopped before a sample\","
+        "\"plane_order\":[\"source0\",\"source1\","
+        "\"pre_confidence_warp\",\"fallback_color\",\"trust_map\","
+        "\"synthesized\"],\"trust_map_semantics\":"
+        "\"RGB=applied FongMi trust scalar; alpha=0 denotes scene-cut branch\","
+        "\"fallback_semantics\":\"exact source_blend before trust weighting\","
+        "\"warp_semantics\":\"bidirectional warped blend before confidence weighting\"}",
+        route, p->fongmi_capture_source_hdr ? "true" : "false", refusal);
 }
 
 static bool fongmi_capture_safe_id(const char *id)
@@ -57,11 +71,13 @@ static bool fongmi_capture_safe_id(const char *id)
 static void fongmi_capture_terminal(struct vo *vo, const char *reason)
 {
     struct priv *p = vo->priv;
+    char settings[1536];
+    fongmi_capture_settings(p, reason, settings, sizeof(settings));
     if (p->fongmi_capture_pending && p->fongmi_capture_base_dir[0] &&
         p->fongmi_capture_active_id[0]) {
         if (mpvflow_capture_io_write_single_terminal_manifest(
                 p->fongmi_capture_base_dir, p->fongmi_capture_active_id,
-                "mpv", fongmi_capture_backend(p), fongmi_capture_settings(), reason) < 0)
+                "mpv", fongmi_capture_backend(p), settings, reason) < 0)
             MP_WARN(vo, "FongMi diagnostic terminal manifest could not be written (%s).\n", reason);
     }
     if (p->motion)
@@ -69,6 +85,8 @@ static void fongmi_capture_terminal(struct vo *vo, const char *reason)
     p->fongmi_capture_pending = false;
     p->fongmi_capture_armed = false;
     p->fongmi_capture_active_id[0] = '\0';
+    p->fongmi_capture_route[0] = '\0';
+    p->fongmi_capture_source_hdr = false;
 }
 
 static void fongmi_capture_poll_control(struct vo *vo)
@@ -117,7 +135,7 @@ static void fongmi_capture_poll_control(struct vo *vo)
 
 static void fongmi_capture_arm(struct vo *vo, const struct pl_frame_mix *mix,
                                const int pair[2], float alpha,
-                               const uint64_t *frame_ids)
+                               const uint64_t *frame_ids, const char *route)
 {
     struct priv *p = vo->priv;
     if (!p->fongmi_capture_pending || p->fongmi_capture_armed || !p->motion ||
@@ -135,8 +153,26 @@ static void fongmi_capture_arm(struct vo *vo, const struct pl_frame_mix *mix,
     p->fongmi_capture_alpha = alpha;
     p->fongmi_capture_frame_id0 = frame_ids ? frame_ids[pair[0]] : 0;
     p->fongmi_capture_frame_id1 = frame_ids ? frame_ids[pair[1]] : 0;
-    mp_motion_request_diagnostic_capture(p->motion);
+    p->fongmi_capture_source_hdr =
+        mp_motion_source_is_hdr(mix->frames[pair[0]]) ||
+        mp_motion_source_is_hdr(mix->frames[pair[1]]);
+    snprintf(p->fongmi_capture_route, sizeof(p->fongmi_capture_route), "%s",
+             route ? route : "route_unknown");
+    mp_motion_request_diagnostic_capture(p->motion, p->fongmi_capture_source_hdr);
     p->fongmi_capture_armed = true;
+}
+
+static const char *fongmi_capture_source_frame_route(
+    const struct pl_frame_mix *mix, const int pair[2])
+{
+    const struct mp_image *mpi0 = mix->frames[pair[0]]->user_data;
+    const struct mp_image *mpi1 = mix->frames[pair[1]]->user_data;
+    if (!mpi0 || !mpi1 || !mpi0->priv || !mpi1->priv)
+        return "source_route_unknown";
+    const struct frame_priv *fp0 = mpi0->priv;
+    const struct frame_priv *fp1 = mpi1->priv;
+    return fp0->motion_frame.id && fp1->motion_frame.id
+        ? "described_source_frames" : "raw_source_textures";
 }
 
 static uint8_t *fongmi_capture_download(struct priv *p, pl_tex texture,
@@ -173,7 +209,7 @@ static void fongmi_capture_finish(struct vo *vo)
         return;
     if (!capture.ready) {
         fongmi_capture_terminal(vo, capture.hdr_rejected
-            ? "fongmi_diagnostic_hdr_unsupported"
+            ? "fongmi_diagnostic_actual_hdr_source_unsupported"
             : "fongmi_diagnostic_planes_unavailable");
         return;
     }
@@ -190,6 +226,14 @@ static void fongmi_capture_finish(struct vo *vo)
         p->fongmi_capture_frame_id0, p->fongmi_capture_frame_id1,
         capture.srgb_encoded ? "renderer-linear SDR color planes sRGB-encoded"
                              : "exact FongMi input transfer domain");
+    size_t settings_len = strlen(settings);
+    if (settings_len > 1 && settings[settings_len - 1] == '}') {
+        settings[settings_len - 1] = '\0';
+        snprintf(settings + settings_len - 1, sizeof(settings) - settings_len + 1,
+            ",\"active_route\":\"%s\",\"source_is_hdr\":%s,"
+            "\"refusal_reason\":\"none\"}",
+            p->fongmi_capture_route, capture.source_hdr ? "true" : "false");
+    }
     struct MPVFlowCaptureMeta meta = {
         .engine = "mpv",
         .backend = fongmi_capture_backend(p),
@@ -245,16 +289,23 @@ static void fongmi_capture_finish(struct vo *vo)
     p->fongmi_capture_pending = false;
     p->fongmi_capture_armed = false;
     p->fongmi_capture_active_id[0] = '\0';
+    p->fongmi_capture_route[0] = '\0';
+    p->fongmi_capture_source_hdr = false;
 }
 '''
 
 
 def transform_vo(source: str) -> tuple[str, bool]:
+    if "MPVFLOW_FONGMI_VO_SINGLE_OUTPUT_CAPTURE_V1" in source:
+        raise ValueError("Stale FongMi VO diagnostic capture V1; rebuild from pinned source")
     if MARKER in source:
         needed = (
             "fongmi_capture_poll_control(vo)",
-            "fongmi_capture_arm(vo, mix, pair, motion.alpha, source.ids)",
+            "direct ? \"prepared_view_shader\" : \"prepared_view_texture\"",
+            "fongmi_capture_source_frame_route(mix, pair)",
             "fongmi_capture_finish(vo)",
+            "active_route",
+            "fongmi_diagnostic_actual_hdr_source_unsupported",
             "fongmi-diagnostic-control-file",
             "mpvflow_capture_io_write",
         )
@@ -285,6 +336,8 @@ def transform_vo(source: str) -> tuple[str, bool]:
     int64_t fongmi_capture_poll_ns;
     char fongmi_capture_base_dir[PATH_MAX];
     char fongmi_capture_active_id[81], fongmi_capture_last_id[81];
+    char fongmi_capture_route[40];
+    bool fongmi_capture_source_hdr;
     double fongmi_capture_pts0, fongmi_capture_pts1, fongmi_capture_output_pts;
     float fongmi_capture_alpha;
     uint64_t fongmi_capture_frame_id0, fongmi_capture_frame_id1;
@@ -299,8 +352,15 @@ def transform_vo(source: str) -> tuple[str, bool]:
         "    *motion_result = 0;\n    fongmi_capture_poll_control(vo);\n    // A pre-seek redraw",
         "capture control polling")
     source = replace_once(source,
-        "            source.ids = ids;\n            // Quantized phases",
-        "            source.ids = ids;\n            fongmi_capture_arm(vo, mix, pair, motion.alpha, source.ids);\n            // Quantized phases",
+        "            bool direct = frame->vsync_interval > 0 && !frame->redraw &&\n"
+        "                          !motion_quantizes_output(p, frame) &&\n"
+        "                          mp_motion_shader_supported(p->motion);\n            bool ok;",
+        "            bool direct = frame->vsync_interval > 0 && !frame->redraw &&\n"
+        "                          !motion_quantizes_output(p, frame) &&\n"
+        "                          mp_motion_shader_supported(p->motion);\n"
+        "            fongmi_capture_arm(vo, mix, pair, motion.alpha, source.ids,\n"
+        "                               direct ? \"prepared_view_shader\" : \"prepared_view_texture\");\n"
+        "            bool ok;",
         "prepared-view capture arm")
     source = replace_once(source,
         "            *motion_result = ok && motion.synthesized ? 1 : -1;\n            return ok && motion.synthesized;",
@@ -313,7 +373,8 @@ def transform_vo(source: str) -> tuple[str, bool]:
         "    } else if (p->motion && can_interpolate) {\n"
         "        int pair[2];\n        float alpha;\n"
         "        if (select_motion_pair(mix, pair, &alpha) > 0)\n"
-        "            fongmi_capture_arm(vo, mix, pair, alpha, source.ids);\n"
+        "            fongmi_capture_arm(vo, mix, pair, alpha, source.ids,\n"
+        "                               fongmi_capture_source_frame_route(mix, pair));\n"
         "        struct pl_frame output;",
         "source-frame capture arm")
     source = replace_once(source,

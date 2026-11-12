@@ -38,6 +38,7 @@ jobs:
         run: |
           python3 scripts/tests/mpvflow_flow_only_test.py
           python3 scripts/tests/mpvflow_native_build_test.py
+          python3 scripts/tests/fongmi_motion_artifact_policy_test.py
       - name: Set up JDK 17
         uses: actions/setup-java@v5
         with:

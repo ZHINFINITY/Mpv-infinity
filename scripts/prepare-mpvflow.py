@@ -958,10 +958,16 @@ def main() -> None:
     ):
         raise SystemExit("The pinned native FongMi MEMC/Android/OSD source contract is incomplete")
     capture_markers = (
-        "MPVFLOW_FONGMI_SINGLE_OUTPUT_CAPTURE_V1",
-        "MPVFLOW_FONGMI_VO_SINGLE_OUTPUT_CAPTURE_V1",
+        "MPVFLOW_FONGMI_SINGLE_OUTPUT_CAPTURE_V2",
+        "MPVFLOW_FONGMI_VO_SINGLE_OUTPUT_CAPTURE_V2",
         "video/out/gpu_next/mpvflow_capture_io.c",
         "fongmi-diagnostic-control-file",
+        "mp_motion_source_is_hdr",
+        "diagnostic_hdr_rejected = m->diagnostic_source_hdr",
+        "fongmi_capture_source_frame_route(mix, pair)",
+        "active_route",
+        "source_is_hdr",
+        "fongmi_diagnostic_actual_hdr_source_unsupported",
     )
     capture_source = motion + vo + meson
     if debug_capture_enabled and not all(marker in capture_source for marker in capture_markers):
