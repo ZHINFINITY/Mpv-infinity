@@ -103,6 +103,7 @@ def transform_source(source: str) -> tuple[str, bool]:
             "diagnostic_width, diagnostic_height",
             "capture_width = m->diagnostic_width",
             "source_extent",
+            "pl_var_vec2(\"source_size\"), .data = source_size",
             "mp_motion_diagnostic_size",
             "source_position = uv * source_extent - 0.5",
             "sampling_position = diagnostic_mode == 0 ? vec2(pixel) : source_position",
@@ -346,7 +347,7 @@ static bool recreate(struct mp_motion *m, pl_tex *texture, int w, int h)
         source,
         "        {.var = pl_var_vec2(\"output_size\"), .data = size},\n        {.var = pl_var_vec2(\"motion_size\"), .data = map_size},",
         "        {.var = pl_var_vec2(\"output_size\"), .data = output_size},\n"
-        "        {.var = pl_var_vec2(\"source_extent\"), .data = source_size},\n"
+        "        {.var = pl_var_vec2(\"source_size\"), .data = source_size},\n"
         "        {.var = pl_var_vec2(\"motion_size\"), .data = map_size},",
         "source-space synthesis uniform",
     )

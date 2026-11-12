@@ -580,6 +580,8 @@ assert diagnostic_capture_size(4097, 1280) is None
 assert 1920 * 1080 * 4 * 7 <= 64 * 1024 * 1024
 assert "source_position = uv * source_extent - 0.5;" in motion_capture_patcher_source
 assert "vec2 scale = source_extent / motion_extent;" in motion_capture_patcher_source
+assert r'pl_var_vec2(\"source_size\"), .data = source_size' in motion_capture_patcher_source
+assert r'pl_var_vec2(\"source_extent\"), .data = source_size' not in motion_capture_patcher_source
 assert "plane_bytes * 7 > 64LL * 1024 * 1024" in motion_capture_patcher_source
 assert "capture_width = m->diagnostic_width" in motion_capture_patcher_source
 
@@ -612,6 +614,8 @@ if args.source:
         assert "m->diagnostic_hdr_rejected = m->diagnostic_source_hdr;" in active_source
         assert "m->diagnostic_hdr_rejected = m->linear_hdr;" not in active_source
         assert "source_position = uv * source_extent - 0.5" in active_source
+        assert 'pl_var_vec2("source_size"), .data = source_size' in active_source
+        assert 'pl_var_vec2("source_extent"), .data = source_size' not in active_source
         assert "sampling_position = diagnostic_mode == 0 ? vec2(pixel) : source_position" in active_source
         assert "original0 = texelFetch(source0, source_pixel, 0)" in active_source
         assert "sample_rgba(source0, sampling_position + f.xy * scale)" in active_source
