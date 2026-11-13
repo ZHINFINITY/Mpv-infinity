@@ -72,6 +72,10 @@ assert 'if not debug_capture_enabled and any(marker in capture_source for marker
 assert "MPVFLOW_DEBUG_CAPTURE: '1'" in WORKFLOWS[1]
 assert "-PmpvFlowFongmiDiagnosticCapture=true" in WORKFLOWS[1]
 assert "fongmi-diagnostic-capture-v1" in WORKFLOWS[1]
+assert "scripts/tests/fongmi_camera_pan_zoom_shader_test.py" in WORKFLOWS[1]
+assert WORKFLOWS[1].index("Install Vulkan and shader validation dependencies") < WORKFLOWS[1].index(
+    "scripts/tests/fongmi_camera_pan_zoom_shader_test.py"
+) < WORKFLOWS[1].index("Run MPVFlow core and GPU shader regression tests")
 assert all("MPVFLOW_DEBUG_CAPTURE" not in workflow for i, workflow in enumerate(WORKFLOWS) if i != 1)
 assert all("mpvFlowFongmiDiagnosticCapture=true" not in workflow for i, workflow in enumerate(WORKFLOWS) if i != 1)
 assert all("fongmi-diagnostic-capture-v1" not in workflow for i, workflow in enumerate(WORKFLOWS) if i != 1)
@@ -148,6 +152,10 @@ assert "MPVFLOW_SCENE_CUT_SPATIAL_V1" in PREPARE
 assert "MPVFLOW_FINE_MOTION_GRID_V1" in PREPARE
 assert "MPVFLOW_HIGH_RES_FINE_GRID_V1" in PREPARE
 assert "MPVFLOW_REFINEMENT_APERTURE_NORMAL_V1" in PREPARE
+assert "MPVFLOW_CAMERA_SIMILARITY_PRIOR_V1" in PREPARE
+assert "camera_prior.z * centered" in PREPARE
+assert "camera_cycle < 1.5" in PREPARE
+assert ".num_descriptors = 7," in PREPARE
 assert "MPVFLOW_SPATIAL_TRUST_DOWNWARD_CAP_V3" in PREPARE
 assert "MPVFLOW_SPATIAL_MEDOID_FALLBACK_V1" in PREPARE
 assert "int spacing = (level == LEVELS - 1 || level == 0) ? 4 : 8;" in PREPARE
@@ -160,6 +168,13 @@ assert "REJECTED_INSHOT_FALLBACK_MARKER" in MOTION_PATCHER
 assert "MPVFLOW_SCENE_CUT_SPATIAL_V1" in MOTION_PATCHER
 assert "MPVFLOW_FINE_MOTION_GRID_V1" in MOTION_PATCHER
 assert "MPVFLOW_REFINEMENT_APERTURE_NORMAL_V1" in MOTION_PATCHER
+assert "MPVFLOW_CAMERA_SIMILARITY_PRIOR_V1" in MOTION_PATCHER
+assert "CAMERA_SHARED_BYTES (64 * 2 * 16 + 16 + 4)" in MOTION_PATCHER
+assert "camera_accumulate(field, reverse, image_size, lane, true" in MOTION_PATCHER
+assert "float confidence = camera_base_weight > 0.001" in MOTION_PATCHER
+assert "camera_prior.w > 0.20" in MOTION_PATCHER
+assert "camera_score <= cost + 0.000001" in MOTION_PATCHER
+assert "camera_cycle < 1.5" in MOTION_PATCHER
 assert "MPVFLOW_SPATIAL_TRUST_DOWNWARD_CAP_V3" in MOTION_PATCHER
 assert "MPVFLOW_SPATIAL_MEDOID_FALLBACK_V1" in MOTION_PATCHER
 assert "if (total < 0.25)\n        return -1.0;" in MOTION_PATCHER

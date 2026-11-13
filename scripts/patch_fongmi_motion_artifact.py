@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
-"""Apply app-owned refinement, motion-grid, and artifact guards to pinned FongMi motion.
+"""Apply app-owned motion, synthesis, and camera-model guards to pinned FongMi motion.
 
 The patch is version-guarded and limited to refinement, the analysis grid, and
 synthesis/reconstruction/inverse-warp logic in pinned upstream
 ``video/out/gpu_next/motion.c``. It keeps bilinear field sampling, resolves
 aperture ambiguity along the measured gradient normal while preserving
-inherited tangential motion, selects the best inverse-warp closure, and retains
-whole-frame scene-cut handling.
+inherited tangential motion, selects the best inverse-warp closure, and fits a
+robust bidirectional pan/zoom prior that is accepted only with local image and
+reverse-flow support.
 """
 from __future__ import annotations
 
@@ -38,6 +39,7 @@ SOURCE_VISIBILITY_MARKER = "MPVFLOW_SOURCE_SPECIFIC_VISIBILITY_V1"
 SPATIAL_VISIBILITY_CAP_MARKER = "MPVFLOW_SPATIAL_VISIBILITY_CAP_V1"
 
 GLOBAL_TRANSLATION_CYCLE_MARKER = "MPVFLOW_GLOBAL_TRANSLATION_CYCLE_GUARD_V1"
+CAMERA_SIMILARITY_MARKER = "MPVFLOW_CAMERA_SIMILARITY_PRIOR_V1"
 
 RECONSTRUCTION_PATTERN = re.compile(
     r"(?m)^(?P<indent> *)" + re.escape(
@@ -69,6 +71,136 @@ if (!(any(isnan(translation_reverse)) || any(isinf(translation_reverse))) &&
     selected = vec4(vector, score, hypothesis.w);
     cost = score;
 }"""
+
+CAMERA_FIT_SHADER = r"""static const char camera_fit_header[] = GLSL(
+    shared vec4 camera_partial0[64];
+    shared vec4 camera_partial1[64];
+    shared vec4 camera_initial;
+    shared float camera_base_weight;
+
+    float camera_sample_weight(sampler2D field, sampler2D reverse,
+                               ivec2 pixel, ivec2 grid, vec2 image_size,
+                               out vec2 centered, out vec2 flow)
+    {
+        vec4 value = texelFetch(field, pixel, 0);
+        centered = ((vec2(pixel) + 0.5) / vec2(grid) - 0.5) * image_size;
+        flow = value.xy;
+        if (any(isnan(value)) || any(isinf(value)) || value.w <= 0.001)
+            return 0.0;
+        vec2 uv = (vec2(pixel) + 0.5) / vec2(grid);
+        vec2 reverse_uv = uv + flow / image_size;
+        if (any(lessThan(reverse_uv, vec2(0.0))) ||
+            any(greaterThanEqual(reverse_uv, vec2(1.0))))
+            return 0.0;
+        vec4 reverse_value = textureLod(reverse, reverse_uv, 0.0);
+        if (any(isnan(reverse_value)) || any(isinf(reverse_value)))
+            return 0.0;
+        float cycle = length(flow + reverse_value.xy);
+        return clamp(value.w, 0.0, 1.0) * (1.0 - smoothstep(1.0, 2.5, cycle));
+    }
+
+    void camera_accumulate(sampler2D field, sampler2D reverse, vec2 image_size,
+                           int lane, bool robust, out vec4 sum0, out vec4 sum1)
+    {
+        ivec2 grid = textureSize(field, 0);
+        sum0 = vec4(0.0);
+        sum1 = vec4(0.0);
+        for (int index = lane; index < grid.x * grid.y; index += 64) {
+            ivec2 pixel = ivec2(index % grid.x, index / grid.x);
+            vec2 centered, flow;
+            float weight = camera_sample_weight(field, reverse, pixel, grid,
+                                                image_size, centered, flow);
+            if (robust) {
+                if (camera_initial.w < 0.5) {
+                    weight = 0.0;
+                } else {
+                    vec2 predicted = camera_initial.xy + camera_initial.z * centered;
+                    weight *= 1.0 - smoothstep(1.5, 3.5, length(flow - predicted));
+                }
+            }
+            sum0 += vec4(weight, weight * centered.x, weight * centered.y,
+                         weight * flow.x);
+            sum1 += vec4(weight * flow.y, weight * dot(centered, centered),
+                         weight * dot(centered, flow), 0.0);
+        }
+    }
+
+    vec4 camera_solve(vec4 sum0, vec4 sum1)
+    {
+        float weight = sum0.x;
+        if (!(weight > 0.001))
+            return vec4(0.0);
+        vec2 position_sum = sum0.yz;
+        vec2 flow_sum = vec2(sum0.w, sum1.x);
+        float denominator = sum1.y - dot(position_sum, position_sum) / weight;
+        if (!(denominator > 0.001))
+            return vec4(0.0);
+        float zoom = (sum1.z - dot(position_sum, flow_sum) / weight) / denominator;
+        vec2 translation = flow_sum / weight - zoom * (position_sum / weight);
+        if (any(isnan(translation)) || any(isinf(translation)) ||
+            isnan(zoom) || isinf(zoom))
+            return vec4(0.0);
+        return vec4(translation, zoom, 1.0);
+    }
+
+    void fit_camera_direction(sampler2D field, sampler2D reverse,
+                              vec2 image_size, int lane, out vec4 result)
+    {
+        vec4 sum0, sum1;
+        camera_accumulate(field, reverse, image_size, lane, false, sum0, sum1);
+        camera_partial0[lane] = sum0;
+        camera_partial1[lane] = sum1;
+        barrier();
+        for (int offset = 32; offset > 0; offset >>= 1) {
+            if (lane < offset) {
+                camera_partial0[lane] += camera_partial0[lane + offset];
+                camera_partial1[lane] += camera_partial1[lane + offset];
+            }
+            barrier();
+        }
+        if (lane == 0) {
+            camera_initial = camera_solve(camera_partial0[0], camera_partial1[0]);
+            camera_base_weight = camera_partial0[0].x;
+        }
+        barrier();
+
+        camera_accumulate(field, reverse, image_size, lane, true, sum0, sum1);
+        camera_partial0[lane] = sum0;
+        camera_partial1[lane] = sum1;
+        barrier();
+        for (int offset = 32; offset > 0; offset >>= 1) {
+            if (lane < offset) {
+                camera_partial0[lane] += camera_partial0[lane + offset];
+                camera_partial1[lane] += camera_partial1[lane + offset];
+            }
+            barrier();
+        }
+        result = vec4(0.0);
+        if (lane == 0) {
+            vec4 fitted = camera_solve(camera_partial0[0], camera_partial1[0]);
+            float confidence = camera_base_weight > 0.001
+                ? clamp(camera_partial0[0].x / camera_base_weight, 0.0, 1.0) : 0.0;
+            if (camera_initial.w > 0.5 && fitted.w > 0.5 &&
+                abs(fitted.z) < 0.25 && confidence > 0.20)
+                result = vec4(fitted.xyz, confidence);
+        }
+        barrier();
+    }
+);
+
+static const char camera_fit_body[] = GLSL(
+    // MPVFLOW_CAMERA_SIMILARITY_PRIOR_V1: robust pan/zoom fit from bidirectional flow.
+    int lane = int(gl_LocalInvocationIndex);
+    int direction = int(gl_WorkGroupID.y);
+    vec2 image_size = vec2(textureSize(image, 0));
+    vec4 fitted = vec4(0.0);
+    if (direction == 0)
+        fit_camera_direction(forward, backward, image_size, lane, fitted);
+    else if (direction == 1)
+        fit_camera_direction(backward, forward, image_size, lane, fitted);
+    if (lane == 0 && direction < 2)
+        imageStore(out_camera, ivec2(0, direction), fitted);
+);"""
 
 WARP_START_PATTERN = re.compile(
     r"(?m)^(?P<indent>[ \t]*)vec2 uv = \(vec2\(gl_GlobalInvocationID\.xy\) \+ 0\.5\) / map_size;\n"
@@ -1025,6 +1157,180 @@ def _patch_global_translation_cycle_guard(source: str) -> str:
     return source
 
 
+def _has_camera_similarity_model(source: str) -> bool:
+    # The retained helper snapshot is not part of the active pinned runtime.
+    if MARKER in source and "static bool analysis_passes(" not in source:
+        return True
+    return (
+        source.count(CAMERA_SIMILARITY_MARKER) == 1
+        and source.count("static const char camera_fit_header[] = GLSL(") == 1
+        and source.count("static const char camera_fit_body[] = GLSL(") == 1
+        and source.count("static bool fit_camera_model(struct mp_motion *m,") == 1
+        and source.count("pl_tex camera_model;") == 1
+        and source.count("pl_dispatch_prepared camera_fit_pass;") == 1
+        and source.count("camera_accumulate(field, reverse, image_size, lane, true,") == 1
+        and source.count("float confidence = camera_base_weight > 0.001") == 1
+        and source.count("camera_prior.z * centered") == 1
+        and source.count("camera_prior.w > 0.20") == 1
+        and source.count("camera_cycle < 1.5") == 1
+        and "sampled(\"camera\", m->camera_model)" in source
+        and ".num_descriptors = 7," in source
+    )
+
+
+def _patch_camera_similarity(source: str) -> str:
+    if "static bool analysis_passes(" not in source:
+        return source
+    if CAMERA_SIMILARITY_MARKER in source:
+        if _has_camera_similarity_model(source):
+            return source
+        raise ValueError("FongMi camera-similarity marker/source mismatch")
+    if any(token in source for token in (
+        "camera_fit_header", "camera_fit_pass", "camera_prior.z * centered",
+    )):
+        raise ValueError("FongMi camera-similarity source contains a partial fit")
+
+    source = _replace_one(
+        re.compile(r"(?m)^(?P<indent>[ \t]*)#define MATCH_SHARED_BYTES \(49 \* 16 \+ 169 \* 4\)$"),
+        source,
+        lambda match: match.group(0) + "\n" + match.group("indent")
+        + "#define CAMERA_SHARED_BYTES (64 * 2 * 16 + 16 + 4)",
+        "camera-fit shared-memory budget",
+    )
+    source = _replace_one(
+        re.compile(r"(?m)^(?P<indent>[ \t]*)pl_tex translation_costs;$"),
+        source,
+        lambda match: match.group(0) + "\n" + match.group("indent") + "pl_tex camera_model;",
+        "camera model texture",
+    )
+    source = _replace_one(
+        re.compile(r"(?m)^(?P<indent>[ \t]*)pl_dispatch_prepared translation_pass, selection_pass, scene_pass;$"),
+        source,
+        lambda match: match.group(0) + "\n" + match.group("indent")
+        + "pl_dispatch_prepared camera_fit_pass;",
+        "camera fit prepared dispatch",
+    )
+    source = _replace_one(
+        re.compile(r"(?m)^(?P<indent>[ \t]*)static const char refine_header\[\] = GLSL\($"),
+        source,
+        lambda match: _indent_block(CAMERA_FIT_SHADER, match.group("indent"))
+        + "\n" + match.group(0),
+        "camera-fit shader declarations",
+    )
+    source = _replace_one(
+        re.compile(r"(?m)^(?P<indent>[ \t]*)custom->compute_shmem = matching \? MATCH_SHARED_BYTES : 0;$"),
+        source,
+        lambda match: match.group("indent") + "custom->compute_shmem = matching\n"
+        + match.group("indent") + "    ? (target->params.w == 1 && target->params.h == 2\n"
+        + match.group("indent") + "       ? CAMERA_SHARED_BYTES : MATCH_SHARED_BYTES) : 0;",
+        "camera-fit shared-memory dispatch selection",
+    )
+    source = _replace_one(
+        re.compile(r"(?m)^(?P<indent>[ \t]*)gpu->glsl.max_shmem_size < MATCH_SHARED_BYTES\)$"),
+        source,
+        lambda match: match.group("indent") + "gpu->glsl.max_shmem_size < CAMERA_SHARED_BYTES)",
+        "camera-fit GPU capability check",
+    )
+    source = _replace_one(
+        re.compile(r"(?m)^(?P<indent>[ \t]*)struct pl_desc_binding bindings\[6\];$"),
+        source,
+        lambda match: match.group("indent") + "struct pl_desc_binding bindings[8];",
+        "prepared-dispatch descriptor capacity",
+    )
+    source = _replace_one(
+        re.compile(r"(?m)^(?P<indent>[ \t]*)pl_dispatch_prepared_destroy\(&m->selection_pass\);$"),
+        source,
+        lambda match: match.group(0) + "\n" + match.group("indent")
+        + "pl_dispatch_prepared_destroy(&m->camera_fit_pass);",
+        "camera fit dispatch destruction",
+    )
+    source = _replace_one(
+        re.compile(r"(?m)^static bool analysis_passes\("),
+        source,
+        lambda match: """static bool fit_camera_model(struct mp_motion *m, enum motion_pass_mode mode)
+{
+    if (!recreate(m, &m->camera_model, 1, 2))
+        return false;
+    struct pl_shader_desc desc[] = {
+        sampled("forward", m->vectors[0][0]),
+        sampled("backward", m->vectors[0][1]),
+        sampled("image", m->images[0][0]),
+        {
+            .desc = {.name = "out_camera", .type = PL_DESC_STORAGE_IMG,
+                     .access = PL_DESC_ACCESS_WRITEONLY},
+            .binding.object = m->camera_model,
+        },
+    };
+    m->timing_stage = -1;
+    return dispatch_prepared(m, &m->camera_fit_pass, m->camera_model,
+        &(struct pl_custom_shader) {
+            .description = "motion camera similarity fit",
+            .header = camera_fit_header, .body = camera_fit_body,
+            .descriptors = desc, .num_descriptors = 4,
+        }, true, mode);
+}
+
+""" + match.group(0),
+        "bidirectional camera fit dispatch",
+    )
+    source = _replace_one(
+        re.compile(r"(?m)^(?P<indent>[ \t]*)pl_tex_destroy\(m->gpu, &m->translation_costs\);$"),
+        source,
+        lambda match: match.group(0) + "\n" + match.group("indent")
+        + "pl_tex_destroy(m->gpu, &m->camera_model);",
+        "camera model texture destruction",
+    )
+    source = _replace_one(
+        re.compile(r"(?m)^(?P<indent>[ \t]*)for \(int direction = 0; direction < 2; direction\+\+\) \{\n(?P=indent)    pl_tex vectors = m->vectors\[0\]\[direction\];$"),
+        source,
+        lambda match: match.group("indent") + "if (!fit_camera_model(m, mode))\n"
+        + match.group("indent") + "    return false;\n\n" + match.group(0),
+        "camera fit after bidirectional matching",
+    )
+    source = _replace_one(
+        re.compile(r"(?m)^(?P<indent>[ \t]*)sampled\(\"translation\", m->translation\),$"),
+        source,
+        lambda match: match.group(0) + "\n" + match.group("indent")
+        + "sampled(\"camera\", m->camera_model),",
+        "camera model reconstruction binding",
+    )
+    source = _replace_one(
+        re.compile(r"(?m)^(?P<indent>[ \t]*)\.description = \"motion field reconstruction\",\n"
+                   r"(?P=indent)\.header = refine_header, \.body = reconstruction_body,\n"
+                   r"(?P=indent)\.descriptors = desc, \.num_descriptors = 6,$"),
+        source,
+        lambda match: match.group(0).replace(".num_descriptors = 6,", ".num_descriptors = 7,"),
+        "camera model reconstruction descriptor count",
+    )
+    source = _replace_one(
+        re.compile(r"(?m)^(?P<indent>[ \t]*)color = vec4\(selected\.xy, cost, selected\.w\);$"),
+        source,
+        lambda match: _indent_block("""// Use pan/zoom only when local cost and reverse flow agree.
+vec4 camera_prior = texelFetch(camera, ivec2(0, direction), 0);
+if (camera_prior.w > 0.20 && abs(camera_prior.z) < 0.25 &&
+    !(any(isnan(camera_prior)) || any(isinf(camera_prior)))) {
+    vec2 centered = p - 0.5 * (size - 1.0);
+    vec2 camera_vector = clamp(camera_prior.xy + camera_prior.z * centered,
+                               -p, size - 1.0 - p);
+    float camera_score = patch_cost(second, p, camera_vector);
+    vec2 camera_uv = (vec2(pixel) + 0.5) / vec2(grid);
+    vec4 camera_reverse = textureLod(backward, camera_uv + camera_vector / size, 0.0);
+    float camera_cycle = length(camera_vector + camera_reverse.xy);
+    if (!(any(isnan(camera_reverse)) || any(isinf(camera_reverse))) &&
+        !isnan(camera_cycle) && !isinf(camera_cycle) && camera_cycle < 1.5 &&
+        camera_score <= cost + 0.000001 &&
+        (camera_score + 0.000001 < cost || selected.w < 0.75 * camera_prior.w)) {
+        selected = vec4(camera_vector, camera_score, camera_prior.w);
+        cost = camera_score;
+    }
+}""", match.group("indent")) + "\n" + match.group(0),
+        "camera model reconstruction candidate",
+    )
+    if not _has_camera_similarity_model(source):
+        raise ValueError("FongMi camera-similarity model failed its postconditions")
+    return source
+
+
 def _has_warp_trajectory_path_guard(source: str) -> bool:
     return (
         source.count(WARP_TRAJECTORY_MARKER) == 1
@@ -1163,6 +1469,7 @@ def _is_patched(source: str) -> bool:
         and _has_scene_cut_guard(source)
         and _has_fine_motion_grid(source)
         and _has_refinement_aperture_normal(source)
+        and _has_camera_similarity_model(source)
     )
 
 
@@ -1535,7 +1842,7 @@ def _patch_v3_synthesis(source: str) -> str:
 
 
 def transform_source(source: str) -> tuple[str, bool]:
-    """Apply version-guarded motion, global-translation, inverse-path, and synthesis safeguards."""
+    """Apply version-guarded motion, pan/zoom, inverse-path, and synthesis safeguards."""
     original = source
     if MARKER in source:
         if _is_synthesis_patched(source):
@@ -1554,6 +1861,7 @@ def transform_source(source: str) -> tuple[str, bool]:
         patched = _patch_spatial_medoid_fallback(patched)
         patched = _patch_spatial_visibility_scale(patched)
         patched = _patch_source_visibility(patched)
+        patched = _patch_camera_similarity(patched)
         if not _is_patched(patched):
             raise ValueError("FongMi motion artifact postconditions failed")
         return patched, patched != original
@@ -1568,6 +1876,7 @@ def transform_source(source: str) -> tuple[str, bool]:
         source = _patch_fine_motion_grid(source)
         source = _patch_refinement_aperture_normal(source)
         source = _patch_spatial_visibility_scale(source)
+        source = _patch_camera_similarity(source)
         if not _is_patched(source):
             raise ValueError("FongMi motion artifact V3-to-V4 patch failed its postconditions")
         return source, source != original
@@ -1622,6 +1931,7 @@ def transform_source(source: str) -> tuple[str, bool]:
     source = _patch_scene_cut(source)
     source = _patch_fine_motion_grid(source)
     source = _patch_refinement_aperture_normal(source)
+    source = _patch_camera_similarity(source)
     if not _is_patched(source):
         raise ValueError("FongMi motion artifact V4 patch failed its postconditions")
     return source, True
@@ -1641,9 +1951,9 @@ def main() -> None:
         raise SystemExit(str(error)) from error
     if changed:
         source_path.write_text(patched, encoding="utf-8")
-        print("Applied MPVFlow FongMi aperture-normal refinement, fine-grid, synthesis, inverse-warp, and scene-cut guards")
+        print("Applied MPVFlow FongMi camera pan/zoom, aperture-normal, fine-grid, synthesis, inverse-warp, and scene-cut guards")
     else:
-        print("MPVFlow FongMi aperture-normal refinement, fine-grid, synthesis, inverse-warp, and scene-cut guards are already applied")
+        print("MPVFlow FongMi camera pan/zoom, aperture-normal, fine-grid, synthesis, inverse-warp, and scene-cut guards are already applied")
 
 
 if __name__ == "__main__":

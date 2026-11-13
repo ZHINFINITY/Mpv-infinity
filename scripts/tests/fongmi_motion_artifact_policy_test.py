@@ -10,6 +10,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 PATCHER_PATH = ROOT / "scripts/patch_fongmi_motion_artifact.py"
+PATCHER_SOURCE = PATCHER_PATH.read_text(encoding="utf-8")
 SPEC = importlib.util.spec_from_file_location("patch_fongmi_motion_artifact", PATCHER_PATH)
 assert SPEC and SPEC.loader
 PATCHER = importlib.util.module_from_spec(SPEC)
@@ -514,6 +515,63 @@ assert abs(diagonal_refined[0] - diagonal_refined[1]) > 1e-3
 horizontal_normal = aperture_normal(1.0, 0.0, 0.01)
 assert horizontal_normal == (1.0, 0.0)
 assert aperture_refined_vector((2.2, -1.0), (1.0, 0.0, 0.01)) == (2.0, -1.0)
+
+
+def fit_camera_pan_zoom(samples: list[tuple[float, float, float, float, float]]):
+    def solve(weights: list[float]):
+        total = sum(weights)
+        if total <= 0.001:
+            return None
+        px = sum(w * sample[0] for w, sample in zip(weights, samples))
+        py = sum(w * sample[1] for w, sample in zip(weights, samples))
+        fx = sum(w * sample[2] for w, sample in zip(weights, samples))
+        fy = sum(w * sample[3] for w, sample in zip(weights, samples))
+        denominator = sum(
+            w * (sample[0] * sample[0] + sample[1] * sample[1])
+            for w, sample in zip(weights, samples)
+        ) - (px * px + py * py) / total
+        if denominator <= 0.001:
+            return None
+        cross = sum(
+            w * (sample[0] * sample[2] + sample[1] * sample[3])
+            for w, sample in zip(weights, samples)
+        ) - (px * fx + py * fy) / total
+        zoom = cross / denominator
+        return fx / total - zoom * px / total, fy / total - zoom * py / total, zoom
+
+    base_weights = [sample[4] for sample in samples]
+    initial = solve(base_weights)
+    assert initial is not None
+    robust_weights = []
+    for sample, weight in zip(samples, base_weights):
+        predicted = (initial[0] + initial[2] * sample[0],
+                     initial[1] + initial[2] * sample[1])
+        residual = math.hypot(sample[2] - predicted[0], sample[3] - predicted[1])
+        robust_weights.append(weight * (1.0 - smoothstep(1.5, 3.5, residual)))
+    fitted = solve(robust_weights)
+    assert fitted is not None
+    confidence = sum(robust_weights) / sum(base_weights)
+    return fitted, confidence
+
+
+camera_samples = []
+expected_camera = (2.5, -1.75, 0.035)
+for iy, y in enumerate(range(-60, 61, 20)):
+    for ix, x in enumerate(range(-80, 81, 20)):
+        flow_x = expected_camera[0] + expected_camera[2] * x + 0.03 * math.sin(ix + iy)
+        flow_y = expected_camera[1] + expected_camera[2] * y + 0.03 * math.cos(ix - iy)
+        if (ix + 2 * iy) % 6 == 0:
+            flow_x += 5.5
+            flow_y -= 4.0
+        camera_samples.append((float(x), float(y), flow_x, flow_y, 1.0))
+camera_fit, camera_confidence = fit_camera_pan_zoom(camera_samples)
+assert abs(camera_fit[0] - expected_camera[0]) < 0.10
+assert abs(camera_fit[1] - expected_camera[1]) < 0.10
+assert abs(camera_fit[2] - expected_camera[2]) < 0.001
+assert camera_confidence > 0.75, "the robust fit should reject local foreground motion, not the camera model"
+assert "camera_cycle < 1.5" in PATCHER_SOURCE
+assert "camera_score <= cost + 0.000001" in PATCHER_SOURCE
+
 unstable_field = lambda x: 3.0 * (x - 63.9) + 0.2
 best_candidate, final_candidate = inverse_warp_candidates(64.0, 0.5, unstable_field)
 assert abs(best_candidate[0] - 0.25) < 1e-9
@@ -1090,6 +1148,8 @@ assert "capture_width = m->diagnostic_width" in motion_capture_patcher_source
 
 if args.source:
     active_source = args.source.read_text(encoding="utf-8")
+    assert PATCHER.CAMERA_SIMILARITY_MARKER in active_source
+    assert PATCHER._has_camera_similarity_model(active_source)
     if MOTION_CAPTURE_PATCHER.SOURCE_MARKER in active_source:
         assert active_source.count(PATCHER.MARKER) == 1
         assert active_source.count(PATCHER.SOURCE_VISIBILITY_MARKER) == 1

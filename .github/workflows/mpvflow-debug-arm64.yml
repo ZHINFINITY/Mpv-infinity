@@ -69,6 +69,8 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y binutils ffmpeg glslang-tools libvulkan-dev mesa-vulkan-drivers
+      - name: Compile FongMi camera pan/zoom compute shader
+        run: python3 scripts/tests/fongmi_camera_pan_zoom_shader_test.py
       - name: Run MPVFlow core and GPU shader regression tests
         run: ./scripts/test-mpvflow-core.sh
         env:

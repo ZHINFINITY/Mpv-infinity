@@ -977,6 +977,11 @@ def main() -> None:
         or "visibility *= clamp(spatial_visibility_scale, 0.0, 1.0);" not in motion
         or not has_source_visibility_output_contract(motion)
         or "MPVFLOW_GLOBAL_TRANSLATION_CYCLE_GUARD_V1" not in motion
+        or "MPVFLOW_CAMERA_SIMILARITY_PRIOR_V1" not in motion
+        or "static bool fit_camera_model(struct mp_motion *m," not in motion
+        or "camera_prior.z * centered" not in motion
+        or "camera_cycle < 1.5" not in motion
+        or ".num_descriptors = 7," not in motion
         or "int spacing = (level == LEVELS - 1 || level == 0) ? 4 : 8;" not in motion
         or "if (level == 0 && scale < 0.333334)" not in motion
         or "spacing = 3;" not in motion
