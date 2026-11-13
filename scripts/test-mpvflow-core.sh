@@ -26,10 +26,10 @@ else
 fi
 python3 "$ROOT/scripts/tests/mpvflow_capture_io_test.py"
 python3 "$ROOT/scripts/tests/mpvflow_fongmi_native_source_test.py"
-if [[ -n "${MPVFLOW_MPV_SOURCE_DIR:-}" ]]; then
-  python3 "$ROOT/scripts/tests/fongmi_motion_artifact_policy_test.py" --source "$MPVFLOW_MPV_SOURCE_DIR/video/out/gpu_next/motion.c"
+if [[ -n "${MPVFLOW_MPV_SOURCE_DIR:-}" && -d "$MPVFLOW_MPV_SOURCE_DIR" ]]; then
+  python3 "$ROOT/scripts/tests/mpvrx_motion_source_test.py" --mpv-dir "$MPVFLOW_MPV_SOURCE_DIR"
 else
-  python3 "$ROOT/scripts/tests/fongmi_motion_artifact_policy_test.py"
+  echo "Skipping MPVRx source verification: no pinned MPV source checkout is available"
 fi
 python3 "$ROOT/scripts/tests/mpvflow_android_subprocess_test.py"
 python3 "$ROOT/scripts/tests/mpvflow_vulkan_headers_prepare_test.py"

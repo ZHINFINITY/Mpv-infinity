@@ -70,7 +70,7 @@ assert 'PlaybackSession.setOptionString("motion-interpolation", targetFps.toStri
 runtime_builder = BUILD.read_text(encoding="utf-8")
 for marker in (
     'EXPECTED_BUILDER_REVISION="1efc82739f6f7034cd63e7ee8b3ec5431df27467"',
-    'EXPECTED_MPV_REVISION="14b3999a1a3e322c217bc90ee4df5a8f1bc88f69"',
+    'EXPECTED_MPV_REVISION="95ec8e929f8ad2f97c8415c486971493a0b408df"',
     f'EXPECTED_FFMPEG_REVISION="{FFMPEG_SHA}"',
     f'EXPECTED_FFMPEG_REPOSITORY="{FFMPEG_REPOSITORY}"',
     'git -C "$MPV_BUILDER_DIR" rev-parse HEAD',
@@ -156,7 +156,8 @@ capture_default = prepare.configure_debug_capture_source(gpu_source, enabled=Fal
 assert capture_define not in capture_default, "default MPV source preparation must not enable debug capture"
 prepare_source = PREPARE.read_text(encoding="utf-8")
 assert 'debug_capture_enabled = os.environ.get("MPVFLOW_DEBUG_CAPTURE") == "1"' in prepare_source
-assert "Enabled bounded one-shot FongMi diagnostics for this debug runtime" in prepare_source
+assert "MPVFLOW_DEBUG_CAPTURE is unsupported with the MPVRx-pinned FongMi 95ec motion core" in prepare_source
+assert "Enabled bounded one-shot FongMi diagnostics for this debug runtime" not in prepare_source
 assert "FongMi one-shot diagnostics disabled; leaving motion/VO sources uninstrumented" in prepare_source
 capture_debug = prepare.configure_debug_capture_source(gpu_source, enabled=True)
 assert capture_debug.count(capture_define) == 1, "debug capture define must be injected exactly once"
@@ -739,9 +740,10 @@ assert '"--input", str(FONGMI_PATCH)' not in prepare_source
 assert '"mpvflow-vo-gpu-next.patch"' not in prepare_source
 assert '"mpvflow-aimagereader-vulkan.patch"' not in prepare_source
 assert '"video/out/gpu_next/motion.c"' in prepare_source
-assert 'scripts/patch_fongmi_motion_diagnostics.py' in prepare_source
-assert 'scripts/patch_fongmi_vo_diagnostics.py' in prepare_source
-assert 'subprocess.run([sys.executable, str(patcher), str(mpv_dir)], cwd=ROOT, check=True)' in prepare_source
+assert 'scripts/patch_fongmi_motion_diagnostics.py' not in prepare_source
+assert 'scripts/patch_fongmi_vo_diagnostics.py' not in prepare_source
+assert 'subprocess.run([sys.executable, str(patcher), str(mpv_dir)], cwd=ROOT, check=True)' not in prepare_source
+assert "MPVFLOW_DEBUG_CAPTURE is unsupported with the MPVRx-pinned FongMi 95ec motion core" in prepare_source
 assert '"motion-interpolation", OPT_INT(motion_fps)' in prepare_source
 assert '"video/out/hwdec/hwdec_aimagereader_vk_direct.c"' in prepare_source
 assert '"motion-interpolation-info", mp_property_motion_info' in prepare_source
@@ -759,8 +761,8 @@ assert "mpvflow_gpu.c" not in prepare_source, "MPV runtime preparation must not 
 prepare_call = 'python3 "$ROOT/scripts/prepare-mpvflow.py" --mpv-dir "$BUILDSCRIPTS/deps/mpv" --libplacebo-dir "$BUILDSCRIPTS/deps/libplacebo"'
 assert prepare_call in build, "the native build must patch pinned libplacebo before compilation"
 workflow_source = (ROOT / ".github/workflows/mpvflow-debug-arm64.yml").read_text(encoding="utf-8")
-assert "scripts/patch_fongmi_motion_diagnostics.py" in workflow_source
-assert "scripts/patch_fongmi_vo_diagnostics.py" in workflow_source
+assert "scripts/patch_fongmi_motion_diagnostics.py" not in workflow_source
+assert "scripts/patch_fongmi_vo_diagnostics.py" not in workflow_source
 native_cmake = (ROOT / "app/src/main/cpp/CMakeLists.txt").read_text(encoding="utf-8")
 assert "target_compile_options(media3flow_vulkan PRIVATE -fvisibility=hidden)" in native_cmake
 assert "target_link_options(media3flow_vulkan PRIVATE -Wl,--strip-all)" in native_cmake
@@ -1630,10 +1632,10 @@ with tempfile.TemporaryDirectory(prefix="mpvflow-builder-patch-test-") as tempor
     assert result.returncode == 0, f"builder patcher fixture failed:\n{result.stdout}{result.stderr}"
     patched_downloads = downloads.read_text(encoding="utf-8")
     assert "https://github.com/FongMi/libplacebo.git" in patched_downloads, "FongMi libplacebo source was lost"
-    assert "b89c10e1bdd5d7742ca576ebad94a906ddca91e8" in patched_downloads, "FongMi libplacebo pin was lost"
-    assert "git -C libplacebo fetch --depth=1 origin b89c10e1bdd5d7742ca576ebad94a906ddca91e8" in patched_downloads
+    assert "63659d96d1bff7d7a5a1368e9538056a193fc6fb" in patched_downloads, "MPVRx-provenance FongMi libplacebo pin was lost"
+    assert "git -C libplacebo fetch --depth=1 origin 63659d96d1bff7d7a5a1368e9538056a193fc6fb" in patched_downloads
     assert "git -C libplacebo checkout --detach FETCH_HEAD" in patched_downloads
-    assert 'libplacebo_actual" != "b89c10e1bdd5d7742ca576ebad94a906ddca91e8"' in patched_downloads
+    assert 'libplacebo_actual" != "63659d96d1bff7d7a5a1368e9538056a193fc6fb"' in patched_downloads
     assert "git -C libplacebo submodule update --init --recursive" in patched_downloads
     assert FFMPEG_REPOSITORY in patched_downloads, "FongMi FFmpeg source repository was lost"
     assert f"git -C ffmpeg fetch --depth=1 origin {FFMPEG_SHA}" in patched_downloads, "FongMi FFmpeg commit pin was lost"

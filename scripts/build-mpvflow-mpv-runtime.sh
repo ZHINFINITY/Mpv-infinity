@@ -6,7 +6,7 @@ MPV_BUILDER_DIR="${MPV_BUILDER_DIR:-$ROOT/native-builder}"
 MPV_SOURCE_DIR="${MPV_SOURCE_DIR:-$ROOT/mpv-source}"
 BUILDSCRIPTS="$MPV_BUILDER_DIR/buildscripts"
 EXPECTED_BUILDER_REVISION="1efc82739f6f7034cd63e7ee8b3ec5431df27467"
-EXPECTED_MPV_REVISION="14b3999a1a3e322c217bc90ee4df5a8f1bc88f69"
+EXPECTED_MPV_REVISION="95ec8e929f8ad2f97c8415c486971493a0b408df"
 EXPECTED_FFMPEG_REVISION="f2c5162b7c4b3e8835de270ff78cecc524decad1"
 EXPECTED_FFMPEG_REPOSITORY="https://github.com/FongMi/FFmpeg.git"
 
@@ -81,10 +81,9 @@ download_marker = "IN_CI=1 ./include/download-deps.sh\n"
 if ci.count(download_marker) != 1:
     raise SystemExit(f"Expected one dependency download step in {ci_path}; refusing unsafe patch")
 symver_patch = 'python3 "$GITHUB_WORKSPACE/scripts/patch-ffmpeg-symver.py" deps/ffmpeg/configure\n'
-motion_artifact_patch = 'python3 "$MPVFLOW_ROOT/scripts/patch_fongmi_motion_artifact.py" deps/mpv\n'
 flow_prepare = 'python3 "$MPVFLOW_ROOT/scripts/prepare-mpvflow.py" --mpv-dir deps/mpv --libplacebo-dir deps/libplacebo\n'
 vulkan_headers_prepare = 'python3 "$MPVFLOW_ROOT/scripts/prepare-mpvflow-vulkan-headers.py" "$PWD"\n'
-ci = ci.replace(download_marker, download_marker + symver_patch + motion_artifact_patch + flow_prepare, 1)
+ci = ci.replace(download_marker, download_marker + symver_patch + flow_prepare, 1)
 if ci.count(flow_prepare) != 1:
     raise SystemExit(f"Expected exactly one Flow preparation call in {ci_path}; refusing to stage mismatched Vulkan headers")
 ci = ci.replace(flow_prepare, flow_prepare + vulkan_headers_prepare, 1)
@@ -123,7 +122,7 @@ print(f"Pinned FongMi/FFmpeg {ffmpeg_revision} from {ffmpeg_repository}")
 libplacebo_clone = "[ ! -d libplacebo ] && git clone --recursive https://github.com/haasn/libplacebo"
 if download.count(libplacebo_clone) != 1:
     raise SystemExit(f"Expected one unpinned libplacebo clone in {download_path}")
-libplacebo_revision = "b89c10e1bdd5d7742ca576ebad94a906ddca91e8"
+libplacebo_revision = "63659d96d1bff7d7a5a1368e9538056a193fc6fb"
 libplacebo_fongmi_clone = (
     "if [ ! -d libplacebo ]; then\n"
     "\tgit clone https://github.com/FongMi/libplacebo.git libplacebo\n"
@@ -143,7 +142,7 @@ download = download.replace(
     "git -C libplacebo submodule update --init --recursive",
     1,
 )
-print(f"Pinned FongMi/libplacebo {libplacebo_revision} for native FongMi MEMC renderer APIs")
+print(f"Pinned MPVRx-provenance FongMi/libplacebo {libplacebo_revision}")
 
 glslang_revision = "1062752a891c95b2bfeed9e356562d88f9df84ac"
 glslang_insert_after = "git -C libplacebo submodule update --init --recursive\n"

@@ -8,7 +8,12 @@ import subprocess
 import sys
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[1]
+SCRIPT_DIR = Path(__file__).resolve().parent
+if str(SCRIPT_DIR) not in sys.path:
+    sys.path.insert(0, str(SCRIPT_DIR))
+from mpvrx_motion_source import verify_mpv_source
+
+ROOT = SCRIPT_DIR.parent
 VENDOR = ROOT / "app/src/main/cpp/mpvflow"
 MPV_VULKAN_DEPENDENCY = "vulkan = dependency('vulkan', version: '>= 1.3.238', required: vulkan_opt)"
 ANDROID_VULKAN_DEPENDENCY = "vulkan = dependency('vulkan', required: vulkan_opt)"
@@ -875,16 +880,6 @@ def enable_mailbox_suboptimal_tolerance(vulkan_context: str) -> str:
     return vulkan_context.replace(anchor, replacement, 1)
 
 
-def has_source_visibility_output_contract(motion: str) -> bool:
-    if "return source_blend * (1.0 - visibility_sum) +" in motion:
-        return True
-    return (
-        "float applied_trust = clamp(visibility_sum, 0.0, 1.0);" in motion
-        and "vec4 final_output = source_blend * (1.0 - applied_trust) +" in motion
-        and "warped0 * visibility.x + warped1 * visibility.y;" in motion
-    )
-
-
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--mpv-dir", required=True, type=Path)
@@ -897,8 +892,10 @@ def main() -> None:
     command_path = mpv_dir / "player/command.c"
     vo_path = mpv_dir / "video/out/vo_gpu_next.c"
     motion_path = mpv_dir / "video/out/gpu_next/motion.c"
+    motion_header_path = mpv_dir / "video/out/gpu_next/motion.h"
     hwdec_header_path = mpv_dir / "video/out/gpu/hwdec.h"
     vulkan_context_path = mpv_dir / "video/out/vulkan/context.c"
+    android_context_path = mpv_dir / "video/out/vulkan/context_android.c"
     glslang_meson_path = libplacebo_dir / "src/glsl/meson.build"
     glslang_source_path = libplacebo_dir / "src/glsl/glslang.cc"
     gpu_timer_path = libplacebo_dir / "src/vulkan/gpu.c"
@@ -906,8 +903,9 @@ def main() -> None:
     placebo_vulkan_header_path = libplacebo_dir / "src/include/libplacebo/vulkan.h"
     placebo_stubs_path = libplacebo_dir / "src/vulkan/stubs.c"
     for path in (
-        meson_path, stats_lua_path, command_path, vo_path, motion_path, hwdec_header_path,
-        vulkan_context_path, glslang_meson_path, glslang_source_path, gpu_timer_path,
+        meson_path, stats_lua_path, command_path, vo_path, motion_path, motion_header_path,
+        hwdec_header_path, vulkan_context_path, android_context_path, glslang_meson_path,
+        glslang_source_path, gpu_timer_path,
         placebo_swapchain_path, placebo_vulkan_header_path, placebo_stubs_path,
     ):
         if not path.is_file():
@@ -915,16 +913,16 @@ def main() -> None:
 
     debug_capture_enabled = os.environ.get("MPVFLOW_DEBUG_CAPTURE") == "1"
     if debug_capture_enabled:
-        for patcher in (
-            ROOT / "scripts/patch_fongmi_motion_diagnostics.py",
-            ROOT / "scripts/patch_fongmi_vo_diagnostics.py",
-        ):
-            if not patcher.is_file():
-                raise SystemExit(f"FongMi one-shot diagnostic patcher is missing: {patcher}")
-            subprocess.run([sys.executable, str(patcher), str(mpv_dir)], cwd=ROOT, check=True)
-        print("Enabled bounded one-shot FongMi diagnostics for this debug runtime")
-    else:
-        print("FongMi one-shot diagnostics disabled; leaving motion/VO sources uninstrumented")
+        raise SystemExit(
+            "MPVFLOW_DEBUG_CAPTURE is unsupported with the MPVRx-pinned FongMi 95ec motion core; "
+            "the retained diagnostic patchers target the older 14b source"
+        )
+    print("FongMi one-shot diagnostics disabled; leaving motion/VO sources uninstrumented")
+
+    try:
+        verify_mpv_source(mpv_dir)
+    except (OSError, ValueError) as exc:
+        raise SystemExit(f"MPVRx FongMi motion source verification failed: {exc}") from exc
 
     native_fongmi_markers = (
         "version: '>=7.387.0'",
@@ -940,6 +938,8 @@ def main() -> None:
     command = command_path.read_text(encoding="utf-8")
     vo = vo_path.read_text(encoding="utf-8")
     motion = motion_path.read_text(encoding="utf-8")
+    motion_header = motion_header_path.read_text(encoding="utf-8")
+    android_context = android_context_path.read_text(encoding="utf-8")
     motion_option_marker = '{"motion-interpolation", OPT_INT(motion_fps), M_RANGE(0, 240)}'
     if not all(marker in (meson + vo) for marker in native_fongmi_markers):
         raise SystemExit(
@@ -952,42 +952,13 @@ def main() -> None:
         or "mp_motion_render" not in vo
         or "mp_motion_prepare_view" not in motion
         or "mp_motion_render_views" not in motion
-        or "MPVFLOW_ARTIFACT_GUARDS_V4" not in motion
-        or "MPVFLOW_WARP_TRAJECTORY_COHERENCE_V1" not in motion
-        or "MPVFLOW_WARP_PRIMARY_TRUST_CAP_V1" not in motion
-        or "MPVFLOW_WARP_TRAJECTORY_TRUST_V2" in motion
-        or "MPVFLOW_INSHOT_NEAREST_SOURCE_FALLBACK_V1" in motion
-        or "trust *= trajectory_quality;" in motion
-        or "nearest_frame_weight" in motion
-        or "MPVFLOW_SCENE_CUT_SPATIAL_V1" not in motion
-        or "MPVFLOW_FINE_MOTION_GRID_V1" not in motion
-        or "MPVFLOW_HIGH_RES_FINE_GRID_V1" not in motion
-        or "MPVFLOW_ANALYSIS_DOWNSAMPLE_ANTIALIAS_V1" not in motion
-        or "vec2 tap_count = clamp(ceil(source_scale / 2.0), vec2(1.0), vec2(4.0));" not in motion
-        or "sampled += sample_color(source, p + subpixel * source_scale);" not in motion
-        or "MPVFLOW_REFINEMENT_APERTURE_NORMAL_V1" not in motion
-        or "MPVFLOW_SPATIAL_TRUST_DOWNWARD_CAP_V3" not in motion
-        or "MPVFLOW_SPATIAL_MEDOID_FALLBACK_V1" not in motion
-        or "MPVFLOW_SPATIAL_VISIBILITY_CAP_V1" not in motion
-        or "MPVFLOW_SOURCE_SPECIFIC_VISIBILITY_V1" not in motion
-        or "float relative_fit(float stationary_error, float warped_error)" not in motion
-        or "vec2 projection_ratio = vec2(phase_remaining / phase_alpha," not in motion
-        or "phase_alpha / phase_remaining);" not in motion
-        or "f.xy * scale * projection_ratio.x)" not in motion
-        or "r.xy * scale * projection_ratio.y)" not in motion
-        or "blend > 0.000001 && blend < 0.999999" not in motion
-        or "visibility += conflict_weight * phase * vec2(f.z, r.z) * evidence;" not in motion
-        or "visibility *= clamp(spatial_visibility_scale, 0.0, 1.0);" not in motion
-        or not has_source_visibility_output_contract(motion)
-        or "MPVFLOW_GLOBAL_TRANSLATION_CYCLE_GUARD_V1" not in motion
-        or "MPVFLOW_CAMERA_SIMILARITY_PRIOR_V1" not in motion
-        or "static bool fit_camera_model(struct mp_motion *m," not in motion
-        or "camera_prior.z * centered" not in motion
-        or "camera_cycle < 1.5" not in motion
-        or ".num_descriptors = 7," not in motion
-        or "int spacing = (level == LEVELS - 1 || level == 0) ? 4 : 8;" not in motion
-        or "if (level == 0 && scale < 0.333334)" not in motion
-        or "spacing = 3;" not in motion
+        or "MOTION_PASS_PREPARE" not in motion
+        or "pl_dispatch_prepare_compute" not in motion
+        or "mp_motion_render_owned" not in motion
+        or "mp_motion_capture_supported" not in motion_header
+        or "mp_motion_create(pl_gpu gpu, int max_dimension)" not in motion_header
+        or "mp_motion_create(p->gpu, 480);" not in vo
+        or "info->queue_display_time_only = true;" not in android_context
         or "video/out/gpu_next/motion.c" not in meson
         or "libmpv_motion" not in meson
         or '{"motion-interpolation-info", mp_property_motion_info}' not in command
