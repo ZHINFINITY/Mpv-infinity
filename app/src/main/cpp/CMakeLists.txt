@@ -132,7 +132,7 @@ if(MPVFLOW_ENABLE_VULKAN_BACKEND)
     string(REPLACE "\r" "" MPVFLOW_PLACEBO_EXPORTS "${MPVFLOW_PLACEBO_EXPORTS}")
     string(REPLACE "\n" ";" MPVFLOW_PLACEBO_EXPORT_LINES "${MPVFLOW_PLACEBO_EXPORTS}")
     # Select headers from the exact versioned logging ABI exported by this AAR.
-    # Legacy AARs keep API 374 while the FongMi arm64 runtime exports API 387.
+    # Legacy AARs keep API 374/387; MPVRx's FongMi arm64 runtime exports API 391.
     set(MPVFLOW_PLACEBO_API_VERSIONS)
     foreach(MPVFLOW_EXPORT_LINE IN LISTS MPVFLOW_PLACEBO_EXPORT_LINES)
         if(MPVFLOW_EXPORT_LINE MATCHES "[ \t]pl_log_create_([0-9]+)(@[^ \t]+)?$")
@@ -152,6 +152,9 @@ if(MPVFLOW_ENABLE_VULKAN_BACKEND)
     elseif(MPVFLOW_DETECTED_PLACEBO_API_VER STREQUAL "387")
         set(MPVFLOW_PLACEBO_INCLUDE_DIR
             "${CMAKE_CURRENT_SOURCE_DIR}/third_party/libplacebo/include-api-387")
+    elseif(MPVFLOW_DETECTED_PLACEBO_API_VER STREQUAL "391")
+        set(MPVFLOW_PLACEBO_INCLUDE_DIR
+            "${CMAKE_CURRENT_SOURCE_DIR}/third_party/libplacebo/include-api-391")
     else()
         message(FATAL_ERROR
             "Unsupported libplacebo logging ABI pl_log_create_${MPVFLOW_DETECTED_PLACEBO_API_VER}; refusing to guess headers")
@@ -174,7 +177,7 @@ if(MPVFLOW_ENABLE_VULKAN_BACKEND)
         pl_vulkan_default_params pl_vulkan_create pl_vulkan_destroy
         pl_vulkan_wrap pl_vulkan_hold_ex pl_vulkan_release_ex
         "pl_log_create_${MPVFLOW_DETECTED_PLACEBO_API_VER}")
-    if(MPVFLOW_DETECTED_PLACEBO_API_VER STREQUAL "387")
+    if(MPVFLOW_DETECTED_PLACEBO_API_VER MATCHES "^(387|391)$")
         # API version alone does not identify the FongMi fork's extended struct ABI.
         list(APPEND MPVFLOW_REQUIRED_PLACEBO_SYMBOLS
             pl_vulkan_swapchain_set_diagnostics

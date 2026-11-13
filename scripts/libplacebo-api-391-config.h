@@ -21,7 +21,8 @@
  * src/include/libplacebo/config.h.in at commit
  * 63659d96d1bff7d7a5a1368e9538056a193fc6fb, with Meson apiver=391.
  * This is not a complete header set, is not compiled or packaged, and is not
- * used by Native Media3. Native Media3 continues to use its separate API-387
- * FongMi header snapshot.
+ * used by Native Media3. Native Media3 uses the complete matching FongMi API-391
+ * header snapshot at app/src/main/cpp/third_party/libplacebo/include-api-391/.
+ * This file remains verifier-only.
  */
 #define PL_API_VER 391

@@ -35,8 +35,16 @@ def test_manifests_match_and_cover_pins() -> None:
         "FongMi/libplacebo",
         "FongMi libplacebo API-387 header snapshot",
         "MPVRx API-391 verifier-only marker",
+        "MPVRx FongMi libplacebo API-391 Native header snapshot",
         "scripts/libplacebo-api-391-config.h",
         "not a complete header set",
+        "MPVRX_SDK_HEADERS.sha256",
+        "include-api-391",
+        "49bfdf107bb3690f7235102f5cfc5ccd3b574bd0bd5113879d99fd377fa0d48a",
+        "pl_render_params=312",
+        "frame_interp_params` offset 48",
+        "-Dglslang=enabled",
+        "shaderc and LCMS remain undefined",
         "pl_log_create_391",
         "include-api-387",
         "pl_desc=40",
@@ -127,6 +135,7 @@ def test_source_links_are_location_independent() -> None:
         f"github.com/FongMi/libplacebo/blob/{PLACEBO_SHA}/src/include/libplacebo/config.h.in" in target
         for target in targets
     )
+    assert any("github.com/Riteshp2001/mpvlibAndroid/releases/tag/v1.1.8.2" in target for target in targets)
     assert any(f"github.com/FongMi/libplacebo/blob/{PLACEBO_SHA}/meson.build" in target for target in targets)
     experimental_branch = "mpvrx-interpolation-improvements-20261114"
     assert any(f"/blob/{experimental_branch}/scripts/libplacebo-api-391-config.h" in target for target in targets)
