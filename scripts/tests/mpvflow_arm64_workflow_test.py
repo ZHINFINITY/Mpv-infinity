@@ -51,6 +51,7 @@ class Arm64WorkflowTest(unittest.TestCase):
         for script in (
             "scripts/tests/mpvflow_flow_only_test.py",
             "scripts/tests/mpvflow_native_build_test.py",
+            "scripts/tests/fongmi_motion_resolution_patch_test.py",
         ):
             self.assertIn("python3 " + script, focused)
         self.assertLess(TEXT.index("- name: Test complete MPVFlow focused invariants"), TEXT.index("- name: Set up JDK 17"))
@@ -64,6 +65,7 @@ class Arm64WorkflowTest(unittest.TestCase):
         self.assertTrue(core_runner.stat().st_mode & 0o111, "the workflow invokes the core runner directly")
         for script in (
             "scripts/tests/mpvflow_fongmi_native_source_test.py",
+            "scripts/tests/fongmi_motion_resolution_patch_test.py",
             "scripts/tests/mpvflow_android_subprocess_test.py",
             "scripts/tests/mpvflow_vulkan_headers_prepare_test.py",
             "scripts/tests/mpvflow_placebo_api_headers_test.py",

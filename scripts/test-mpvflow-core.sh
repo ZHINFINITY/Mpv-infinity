@@ -26,6 +26,7 @@ else
 fi
 python3 "$ROOT/scripts/tests/mpvflow_capture_io_test.py"
 python3 "$ROOT/scripts/tests/mpvflow_fongmi_native_source_test.py"
+python3 "$ROOT/scripts/tests/fongmi_motion_resolution_patch_test.py"
 if [[ -n "${MPVFLOW_MPV_SOURCE_DIR:-}" ]]; then
   python3 "$ROOT/scripts/tests/fongmi_motion_artifact_policy_test.py" --source "$MPVFLOW_MPV_SOURCE_DIR/video/out/gpu_next/motion.c"
 else

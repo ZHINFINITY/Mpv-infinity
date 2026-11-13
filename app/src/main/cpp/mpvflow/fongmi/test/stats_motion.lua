@@ -66,13 +66,13 @@ no_rates(page("active", 3, 7e9, 100, 50))
 page("disabled", 0, 8e9, 0, 0, 0)
 no_rates(page("active", 3, 9e9, 200, 100))
 
-current["last-analysis-width"] = 480
-current["last-analysis-height"] = 270
+current["last-analysis-width"] = 960
+current["last-analysis-height"] = 540
 current["last-synthesis-width"] = 1920
 current["last-synthesis-height"] = 1080
 local resolution = {}
 add_motion(resolution)
-has(table.concat(resolution, "\n"), "Last motion resolution:480x270 ➜ 1920x1080")
+has(table.concat(resolution, "\n"), "Last motion resolution:960x540 ➜ 1920x1080")
 assert(source:match("add_video%(stats%)%s+add_motion%(stats%)%s+add_audio%(stats%)"))
 local exporter = assert(source:match("\n(local function default_stats%(_.-)\n" ..
                                     "%-%- Returns an ASS string with extended VO stats"))

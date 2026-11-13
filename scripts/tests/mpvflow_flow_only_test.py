@@ -31,6 +31,8 @@ def test_standard_workflow_is_flow_only() -> None:
     assert manual_cache_key != push_cache_key, "the diagnostic build must not share its instrumented runtime with ordinary APK builds"
     for native_input in (
         "scripts/build-mpvflow-mpv-runtime.sh",
+        "scripts/patch_fongmi_motion_artifact.py",
+        "scripts/patch_fongmi_motion_resolution.py",
         "scripts/prepare-mpvflow.py",
         "scripts/prepare-mpvflow-vulkan-headers.py",
         "scripts/patch-ffmpeg-symver.py",
@@ -74,6 +76,8 @@ def test_standard_workflow_is_flow_only() -> None:
         assert placebo_sha in runtime_restore
         for required_input in (
             "scripts/build-mpvflow-mpv-runtime.sh",
+            "scripts/patch_fongmi_motion_artifact.py",
+            "scripts/patch_fongmi_motion_resolution.py",
             "scripts/prepare-mpvflow.py",
             "scripts/patch-ffmpeg-symver.py",
             "scripts/patches/mpvlibandroid-fongmi/**",

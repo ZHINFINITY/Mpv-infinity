@@ -7,7 +7,8 @@
 
 #include "motion.h"
 
-#define LEVELS 3
+/* MPVFLOW_ANALYSIS_PYRAMID_LEVELS_V1: retain the 480-cap coarse search range. */
+#define LEVELS 4
 #define MATCH_GROUP_SIZE 64
 #define MATCH_SHARED_BYTES (49 * 16 + 169 * 4)
 #define GLSL(...) #__VA_ARGS__
@@ -1054,8 +1055,8 @@ static bool analyze(struct mp_motion *m, pl_tex first, pl_tex second,
         // without enlarging the analysis image.
         int spacing = (level == LEVELS - 1 || level == 0) ? 4 : 8;
         // MPVFLOW_HIGH_RES_FINE_GRID_V1: refine only the finest grid when the
-        // 480px analysis cap downsamples 1440px+ source frames.
-        if (level == 0 && scale < 0.333334)
+        // 960px cap downsamples source frames by at least 1.5x.
+        if (level == 0 && scale < 0.666667)
             spacing = 3;
         for (int direction = 0; direction < 2; direction++) {
             if (!recreate(m, &m->images[level][direction], width, height) ||

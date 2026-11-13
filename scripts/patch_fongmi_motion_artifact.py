@@ -31,7 +31,7 @@ REJECTED_INSHOT_FALLBACK_MARKER = "MPVFLOW_INSHOT_NEAREST_SOURCE_FALLBACK_V1"
 FINE_GRID_MARKER = "MPVFLOW_FINE_MOTION_GRID_V1"
 FINE_GRID_ASSIGNMENT = "int spacing = (level == LEVELS - 1 || level == 0) ? 4 : 8;"
 HIGH_RES_FINE_GRID_MARKER = "MPVFLOW_HIGH_RES_FINE_GRID_V1"
-HIGH_RES_FINE_GRID_CONDITION = "if (level == 0 && scale < 0.333334)"
+HIGH_RES_FINE_GRID_CONDITION = "if (level == 0 && scale < 0.666667)"
 SPATIAL_TRUST_MARKER = "MPVFLOW_SPATIAL_TRUST_DOWNWARD_CAP_V3"
 REFINEMENT_APERTURE_NORMAL_MARKER = "MPVFLOW_REFINEMENT_APERTURE_NORMAL_V1"
 REFINEMENT_APERTURE_TANGENT_MARKER = "MPVFLOW_REFINEMENT_APERTURE_TANGENT_V1"
@@ -294,8 +294,8 @@ FINE_GRID_ASSIGNMENT_PATTERN = re.compile(
     r"(?m)^(?P<indent>[ \t]*)" + re.escape(FINE_GRID_ASSIGNMENT) + r"$"
 )
 HIGH_RES_FINE_GRID_BLOCK = """// MPVFLOW_HIGH_RES_FINE_GRID_V1: refine only the finest analysis grid
-// when the 480px cap downsamples 1440px+ source frames.
-if (level == 0 && scale < 0.333334)
+// when the 960px cap downsamples source frames by at least 1.5x.
+if (level == 0 && scale < 0.666667)
     spacing = 3;"""
 FINE_GRID_BLOCK = """// MPVFLOW_FINE_MOTION_GRID_V1: retain 4px cells at levels 0 and last,
 // with 8px cells in the middle level, without enlarging the analysis image.

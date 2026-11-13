@@ -982,8 +982,10 @@ def main() -> None:
         or "camera_prior.z * centered" not in motion
         or "camera_cycle < 1.5" not in motion
         or ".num_descriptors = 7," not in motion
+        or "MPVFLOW_ANALYSIS_PYRAMID_LEVELS_V1" not in motion
+        or "#define LEVELS 4" not in motion
         or "int spacing = (level == LEVELS - 1 || level == 0) ? 4 : 8;" not in motion
-        or "if (level == 0 && scale < 0.333334)" not in motion
+        or "if (level == 0 && scale < 0.666667)" not in motion
         or "spacing = 3;" not in motion
         or "video/out/gpu_next/motion.c" not in meson
         or "libmpv_motion" not in meson

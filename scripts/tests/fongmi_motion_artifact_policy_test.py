@@ -188,8 +188,8 @@ def vector_grid_shape(width: int, height: int, spacing: int) -> tuple[int, int]:
     return ((width + spacing - 1) // spacing, (height + spacing - 1) // spacing)
 
 
-def motion_grid_spacing(level: int, scale: float, levels: int = 3) -> int:
-    if level == 0 and scale < 0.333334:
+def motion_grid_spacing(level: int, scale: float, levels: int = 4) -> int:
+    if level == 0 and scale < 0.666667:
         return 3
     return 4 if level in (0, levels - 1) else 8
 
@@ -578,28 +578,43 @@ assert abs(best_candidate[0] - 0.25) < 1e-9
 assert final_candidate[0] > 1.0 and best_candidate[0] < final_candidate[0]
 constant_candidate, constant_final = inverse_warp_candidates(64.0, 0.5, lambda _x: 8.0)
 assert constant_candidate[0] == 0.0 and constant_final[0] == 0.0
-coarse_grid = vector_grid_shape(480, 221, 8)
-previous_fine_grid = vector_grid_shape(480, 221, 4)
-previous_high_res_grid = vector_grid_shape(480, 221, 2)
-fine_grid = vector_grid_shape(480, 221, 3)
-coarse_mix_band = bilinear_mixed_flow_band_pixels(480, 1920, 8)
-previous_fine_mix_band = bilinear_mixed_flow_band_pixels(480, 1920, 4)
-fine_mix_band = bilinear_mixed_flow_band_pixels(480, 1920, 3)
-assert coarse_grid == (60, 28)
-assert previous_fine_grid == (120, 56)
-assert previous_high_res_grid == (240, 111)
-assert fine_grid == (160, 74)
-assert coarse_mix_band == 32.0 and previous_fine_mix_band == 16.0 and fine_mix_band == 12.0
-assert fine_mix_band < previous_fine_mix_band < coarse_mix_band
-assert math.isclose(
-    1.0 - (fine_grid[0] * fine_grid[1]) / (previous_high_res_grid[0] * previous_high_res_grid[1]),
-    5.0 / 9.0,
+previous_fine_grid = vector_grid_shape(480, 221, 3)
+fine_grid = vector_grid_shape(960, 442, 3)
+previous_fine_mix_band = bilinear_mixed_flow_band_pixels(480, 1920, 3)
+fine_mix_band = bilinear_mixed_flow_band_pixels(960, 1920, 3)
+assert previous_fine_grid == (160, 74)
+assert fine_grid == (320, 148)
+assert previous_fine_mix_band == 12.0 and fine_mix_band == 6.0
+assert fine_mix_band * 2 == previous_fine_mix_band
+
+previous_pyramid = [(480, 221), (240, 111), (120, 56)]
+candidate_pyramid = [(960, 442), (480, 221), (240, 111), (120, 56)]
+previous_scale = 480 / 1920
+candidate_scale = 960 / 1920
+previous_vector_samples = sum(
+    math.prod(vector_grid_shape(w, h, motion_grid_spacing(level, previous_scale, len(previous_pyramid))))
+    for level, (w, h) in enumerate(previous_pyramid)
 )
-assert motion_grid_spacing(0, 480 / 1920) == 3
-assert motion_grid_spacing(0, 480 / 1440) == 3
-assert motion_grid_spacing(0, 480 / 1280) == 4
-assert motion_grid_spacing(1, 480 / 1920) == 8
-assert motion_grid_spacing(2, 480 / 1920) == 4
+candidate_vector_samples = sum(
+    math.prod(vector_grid_shape(w, h, motion_grid_spacing(level, candidate_scale, len(candidate_pyramid))))
+    for level, (w, h) in enumerate(candidate_pyramid)
+)
+previous_pyramid_pixels = sum(w * h for w, h in previous_pyramid)
+candidate_pyramid_pixels = sum(w * h for w, h in candidate_pyramid)
+assert previous_vector_samples == 12680 and candidate_vector_samples == 49880
+assert previous_pyramid_pixels == 139440 and candidate_pyramid_pixels == 563760
+previous_coarse_range = (6 << (len(previous_pyramid) - 1)) * (1920 / 480)
+candidate_coarse_range = (6 << (len(candidate_pyramid) - 1)) * (1920 / 960)
+assert previous_coarse_range == candidate_coarse_range == 96.0
+previous_translation_samples = (2 * (6 << (len(previous_pyramid) - 1)) + 1) ** 2 * 64
+candidate_translation_samples = (2 * (6 << (len(candidate_pyramid) - 1)) + 1) ** 2 * 64
+assert previous_translation_samples == 153664 and candidate_translation_samples == 602176
+assert motion_grid_spacing(0, 960 / 1920) == 3
+assert motion_grid_spacing(0, 960 / 1440) == 3
+assert motion_grid_spacing(0, 960 / 1280) == 4
+assert motion_grid_spacing(1, 960 / 1920) == 8
+assert motion_grid_spacing(2, 960 / 1920) == 8
+assert motion_grid_spacing(3, 960 / 1920) == 4
 broken_grid = patched.replace(PATCHER.FINE_GRID_ASSIGNMENT, "int spacing = 8;", 1)
 try:
     PATCHER.transform_source(broken_grid)
@@ -1257,11 +1272,12 @@ print(
     f"{old_step:.4f} -> {new_step:.4f}; local directional softness is capped at 0.24 "
     "with trajectory stability capping primary warp confidence and no per-pixel temporal source switch; "
     "spatial cut detection flags palette-matched scene changes without firing on one-tile motion; "
-    f"the high-resolution 480-cap finest grid uses {fine_grid[0]}x{fine_grid[1]} cells instead of "
-    f"{previous_high_res_grid[0]}x{previous_high_res_grid[1]} "
-    f"({1.0 - (fine_grid[0] * fine_grid[1]) / (previous_high_res_grid[0] * previous_high_res_grid[1]):.1%} fewer matches), "
-    f"retaining a {fine_mix_band:.0f}px mixed-flow band versus {previous_fine_mix_band:.0f}px at the prior 4px grid; "
-    "mid/coarse levels remain unchanged"
+    f"the 960-cap finest grid is {fine_grid[0]}x{fine_grid[1]} with {fine_mix_band:.0f}px source support "
+    f"versus {previous_fine_grid[0]}x{previous_fine_grid[1]} and {previous_fine_mix_band:.0f}px at 480; "
+    f"the four-level pyramid preserves {candidate_coarse_range:.0f}px coarse search, with "
+    f"{previous_vector_samples:,}->{candidate_vector_samples:,} vector samples, "
+    f"{previous_pyramid_pixels:,}->{candidate_pyramid_pixels:,} pyramid pixels, and "
+    f"{previous_translation_samples:,}->{candidate_translation_samples:,} translation samples"
 )
 assert "sampling_position = diagnostic_mode == 0 ? vec2(pixel) : source_position;" in motion_capture_patcher_source
 assert "original0 = texelFetch(source0, source_pixel, 0);" in motion_capture_patcher_source
