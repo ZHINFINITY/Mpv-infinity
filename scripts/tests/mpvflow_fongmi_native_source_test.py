@@ -38,7 +38,6 @@ PATCH_DIR = ROOT / "scripts/patches/mpvlibandroid-fongmi"
 PATCHER = (PATCH_DIR / "patch-libbluray.sh").read_text(encoding="utf-8")
 PATCH_README = (PATCH_DIR / "README.md").read_text(encoding="utf-8")
 MOTION_PATCHER = (ROOT / "scripts/patch_fongmi_motion_artifact.py").read_text(encoding="utf-8")
-RESOLUTION_PATCHER = (ROOT / "scripts/patch_fongmi_motion_resolution.py").read_text(encoding="utf-8")
 MOTION_DIAGNOSTICS = (ROOT / "scripts/patch_fongmi_motion_diagnostics.py").read_text(encoding="utf-8")
 VO_DIAGNOSTICS = (ROOT / "scripts/patch_fongmi_vo_diagnostics.py").read_text(encoding="utf-8")
 MOTION_SNAPSHOT = (ROOT / "app/src/main/cpp/mpvflow/fongmi/motion.c").read_text(encoding="utf-8")
@@ -143,14 +142,7 @@ assert 'git -C "$MPV_SOURCE_DIR" rev-parse HEAD' in BUILD
 assert 'git -C "$MPV_BUILDER_DIR" rev-parse HEAD' in BUILD
 motion_patch_call = 'python3 "$MPVFLOW_ROOT/scripts/patch_fongmi_motion_artifact.py" deps/mpv\\n'
 assert motion_patch_call in BUILD
-resolution_patch_call = 'python3 "$MPVFLOW_ROOT/scripts/patch_fongmi_motion_resolution.py" deps/mpv\\n'
-assert resolution_patch_call in BUILD
-assert BUILD.index("motion_artifact_patch + motion_resolution_patch + flow_prepare") > BUILD.index("motion_resolution_patch = ")
-assert "MPVFLOW_ANALYSIS_RESOLUTION_V1" in RESOLUTION_PATCHER
-assert "MPVFLOW_ANALYSIS_PYRAMID_LEVELS_V1" in RESOLUTION_PATCHER
-assert "#define LEVELS 4" in RESOLUTION_PATCHER
-assert "mp_motion_create(p->gpu, 960)" in RESOLUTION_PATCHER
-assert "analysis<=960 pixels" in RESOLUTION_PATCHER
+assert BUILD.index("motion_artifact_patch + flow_prepare") > BUILD.index("motion_artifact_patch = ")
 assert "MPVFLOW_ARTIFACT_GUARDS_V4" in PREPARE
 assert "MPVFLOW_WARP_TRAJECTORY_COHERENCE_V1" in PREPARE
 assert "MPVFLOW_WARP_PRIMARY_TRUST_CAP_V1" in PREPARE
@@ -161,8 +153,6 @@ assert "MPVFLOW_FINE_MOTION_GRID_V1" in PREPARE
 assert "MPVFLOW_HIGH_RES_FINE_GRID_V1" in PREPARE
 assert "MPVFLOW_REFINEMENT_APERTURE_NORMAL_V1" in PREPARE
 assert "MPVFLOW_CAMERA_SIMILARITY_PRIOR_V1" in PREPARE
-assert "MPVFLOW_ANALYSIS_PYRAMID_LEVELS_V1" in PREPARE
-assert '"#define LEVELS 4"' in PREPARE
 assert "camera_prior.z * centered" in PREPARE
 assert "camera_cycle < 1.5" in PREPARE
 assert ".num_descriptors = 7," in PREPARE
@@ -189,7 +179,7 @@ assert "MPVFLOW_SPATIAL_TRUST_DOWNWARD_CAP_V3" in MOTION_PATCHER
 assert "MPVFLOW_SPATIAL_MEDOID_FALLBACK_V1" in MOTION_PATCHER
 assert "if (total < 0.25)\n        return -1.0;" in MOTION_PATCHER
 assert "MPVFLOW_HIGH_RES_FINE_GRID_V1" in MOTION_PATCHER
-assert "if (level == 0 && scale < 0.666667)" in MOTION_PATCHER
+assert "if (level == 0 && scale < 0.333334)" in MOTION_PATCHER
 assert "float spatial_island = max(0.0, clamp(trust, 0.0, 1.0) - spatial_consensus);" in MOTION_PATCHER
 assert "float spatial_guard_weight = 0.75 * boundary_activation *" in MOTION_PATCHER
 assert "trust = mix(trust, min(trust, spatial_consensus)," in MOTION_PATCHER
@@ -244,8 +234,6 @@ assert "MPVFLOW_SPATIAL_MEDOID_FALLBACK_V1" in MOTION_SNAPSHOT
 assert "spatial_trust_consensus(warp0, warp1, uv, f, r)" in MOTION_SNAPSHOT
 assert "MPVFLOW_SPATIAL_VISIBILITY_CAP_V1" in MOTION_SNAPSHOT
 assert "MPVFLOW_SOURCE_SPECIFIC_VISIBILITY_V1" in MOTION_SNAPSHOT
-assert "MPVFLOW_ANALYSIS_PYRAMID_LEVELS_V1" in MOTION_SNAPSHOT
-assert "#define LEVELS 4" in MOTION_SNAPSHOT
 assert "vec2 projection_ratio = vec2(phase_remaining / phase_alpha," in MOTION_SNAPSHOT
 assert "f.xy * scale * projection_ratio.x)" in MOTION_SNAPSHOT
 assert "r.xy * scale * projection_ratio.y)" in MOTION_SNAPSHOT
@@ -259,7 +247,7 @@ assert "trust = mix(trust, min(trust, spatial_consensus)," in MOTION_SNAPSHOT
 assert "trust = mix(trust, spatial_consensus," not in MOTION_SNAPSHOT
 assert "if (spatial_consensus >= 0.0) {" in MOTION_SNAPSHOT
 assert "int spacing = (level == LEVELS - 1 || level == 0) ? 4 : 8;" in MOTION_SNAPSHOT
-assert "if (level == 0 && scale < 0.666667)" in MOTION_SNAPSHOT
+assert "if (level == 0 && scale < 0.333334)" in MOTION_SNAPSHOT
 assert "spacing = 3;" in MOTION_SNAPSHOT
 assert "MPVFLOW_LOCAL_MOTION_SOFTENING_V1" in MOTION_SNAPSHOT
 assert "local_motion_softness" in MOTION_SNAPSHOT
@@ -311,7 +299,6 @@ for workflow in WORKFLOWS:
     assert "runtime-legacy" not in workflow
     assert "c1529642089bfebfc928a1c1664638a7a5d219ba" not in workflow
     assert "scripts/patch_fongmi_motion_artifact.py" in workflow
-    assert "scripts/patch_fongmi_motion_resolution.py" in workflow
 
 for text in (MANIFEST, PACKAGED):
     assert MPV_SHA in text
