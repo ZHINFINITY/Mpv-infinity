@@ -126,7 +126,7 @@ assert 'or "MPVFLOW_INSHOT_NEAREST_SOURCE_FALLBACK_V1" in motion' in PREPARE
 assert "MPVFLOW_SCENE_CUT_SPATIAL_V1" in PREPARE
 assert "MPVFLOW_FINE_MOTION_GRID_V1" in PREPARE
 assert "MPVFLOW_REFINEMENT_APERTURE_NORMAL_V1" in PREPARE
-assert "MPVFLOW_SPATIAL_TRUST_ISLAND_GUARD_V1" in PREPARE
+assert "MPVFLOW_SPATIAL_TRUST_CONSENSUS_V2" in PREPARE
 assert "int spacing = (level == LEVELS - 1 || level == 0) ? 4 : 8;" in PREPARE
 assert "MPVFLOW_ARTIFACT_TRUST_TAPER_V2" not in PREPARE
 assert "MPVFLOW_ARTIFACT_GUARDS_V4" in MOTION_PATCHER
@@ -136,7 +136,12 @@ assert "REJECTED_INSHOT_FALLBACK_MARKER" in MOTION_PATCHER
 assert "MPVFLOW_SCENE_CUT_SPATIAL_V1" in MOTION_PATCHER
 assert "MPVFLOW_FINE_MOTION_GRID_V1" in MOTION_PATCHER
 assert "MPVFLOW_REFINEMENT_APERTURE_NORMAL_V1" in MOTION_PATCHER
-assert "MPVFLOW_SPATIAL_TRUST_ISLAND_GUARD_V1" in MOTION_PATCHER
+assert "MPVFLOW_SPATIAL_TRUST_CONSENSUS_V2" in MOTION_PATCHER
+assert "if (total < 0.25)\n        return -1.0;" in MOTION_PATCHER
+assert "float spatial_gap = abs(clamp(trust, 0.0, 1.0) - spatial_consensus);" in MOTION_PATCHER
+assert "float spatial_guard_weight = 0.50 * boundary_activation *" in MOTION_PATCHER
+assert "trust = mix(trust, spatial_consensus," in MOTION_PATCHER
+assert "if (spatial_consensus >= 0.0) {" in MOTION_PATCHER
 assert "int spacing = (level == LEVELS - 1 || level == 0) ? 4 : 8;" in MOTION_PATCHER
 assert "MPVFLOW_LOCAL_MOTION_SOFTENING_V1" in MOTION_PATCHER
 assert "smoothstep(0.03, 0.30," in MOTION_PATCHER
@@ -174,8 +179,12 @@ assert "vec2 candidate = clamp(vector + aperture_normal *" in MOTION_SNAPSHOT
 assert "float(offset) - dot(vector, aperture_normal)" in MOTION_SNAPSHOT
 assert "aperture_normal * float(offset)" not in MOTION_SNAPSHOT
 assert "vec2 axis = xx > yy ? vec2(1, 0) : vec2(0, 1);" not in MOTION_SNAPSHOT
-assert "MPVFLOW_SPATIAL_TRUST_ISLAND_GUARD_V1" in MOTION_SNAPSHOT
+assert "MPVFLOW_SPATIAL_TRUST_CONSENSUS_V2" in MOTION_SNAPSHOT
 assert "spatial_trust_consensus(warp0, warp1, uv, f, r)" in MOTION_SNAPSHOT
+assert "if (total < 0.25)\n            return -1.0;" in MOTION_SNAPSHOT
+assert "float spatial_gap = abs(clamp(trust, 0.0, 1.0) - spatial_consensus);" in MOTION_SNAPSHOT
+assert "trust = mix(trust, spatial_consensus," in MOTION_SNAPSHOT
+assert "if (spatial_consensus >= 0.0) {" in MOTION_SNAPSHOT
 assert "int spacing = (level == LEVELS - 1 || level == 0) ? 4 : 8;" in MOTION_SNAPSHOT
 assert "MPVFLOW_LOCAL_MOTION_SOFTENING_V1" in MOTION_SNAPSHOT
 assert "local_motion_softness" in MOTION_SNAPSHOT

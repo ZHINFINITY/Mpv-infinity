@@ -365,7 +365,9 @@ assert "if (!(evidence > best || (evidence == best && distance < nearest)))" not
 assert "neighborhood_quality(sampler2D field, vec2 uv, vec2 center)" in patched
 assert "spatial_trust_consensus(sampler2D warp0, sampler2D warp1," in patched
 assert "1.0 / vec2(textureSize(warp0, 0))" in patched
-assert "0.75 * boundary_activation *" in patched
+assert re.search(r"(?m)^[ \t]*if \(total < 0\.25\)\n[ \t]+return -1\.0;", patched)
+assert "if (spatial_consensus >= 0.0) {" in patched
+assert "0.50 * boundary_activation *" in patched
 assert "float luma_error = abs(dot(metric0," in patched
 assert "float chroma_error = max(abs((metric0.r - metric0.g)" in patched
 assert "smoothstep(0.03, 0.30," in patched
@@ -635,12 +637,14 @@ assert "nearest_frame_weight" not in patched
 assert "source_blend = mix(original0, original1, alpha);" in patched
 assert "color = mix(source_blend, mix(warped0, warped1, alpha), clamp(trust, 0.0, 1.0));" in patched
 
-# Regression: the warp-to-fallback cap suppresses isolated high-trust islands
-# only; it never raises uncertain trust or changes the shared temporal alpha.
-def spatial_trust_guard(center: float, consensus: float, boundary_activation: float) -> float:
-    island = max(0.0, min(1.0, center) - consensus)
-    guard = 0.75 * min(1.0, max(0.0, boundary_activation)) * smoothstep(0.08, 0.35, island)
-    return center + (min(center, consensus) - center) * min(0.75, max(0.0, guard))
+# Regression: coherent neighboring motion regularizes the confidence mask in
+# both directions, removing islands and filling small holes in warped regions.
+def spatial_trust_regularize(center: float, consensus: float, boundary_activation: float) -> float:
+    if consensus < 0.0:
+        return center
+    gap = abs(min(1.0, max(0.0, center)) - consensus)
+    weight = 0.50 * min(1.0, max(0.0, boundary_activation)) * smoothstep(0.08, 0.35, gap)
+    return center + (consensus - center) * min(0.50, max(0.0, weight))
 
 
 def cardinal_support_mean(field: list[list[float]], x: int, y: int) -> float:
@@ -659,26 +663,38 @@ island_trust = [
     for y in range(16)
 ]
 guarded_trust = [
-    [spatial_trust_guard(value, cardinal_support_mean(island_trust, x, y), 1.0)
+    [spatial_trust_regularize(value, cardinal_support_mean(island_trust, x, y), 1.0)
      for x, value in enumerate(row)]
     for y, row in enumerate(island_trust)
 ]
 interior_original = [row[2:14] for row in island_trust[2:14]]
 interior_guarded = [row[2:14] for row in guarded_trust[2:14]]
 assert mean_neighbor_variation(interior_guarded) < 0.30 * mean_neighbor_variation(interior_original)
-assert all(after <= before for old_row, new_row in zip(island_trust, guarded_trust)
-           for before, after in zip(old_row, new_row)), "the guard must never promote uncertain warp trust"
-assert min(value for row in guarded_trust for value in row) > 0.0
-assert max(value for row in guarded_trust for value in row) > 0.20
-assert math.isclose(spatial_trust_guard(0.7, 0.7, 1.0), 0.7)
-assert math.isclose(spatial_trust_guard(0.7, 0.95, 1.0), 0.7), "incoherent neighbors must not force trust upward"
+assert min(value for row in guarded_trust for value in row) > 0.05
+assert max(value for row in guarded_trust for value in row) < 0.95
+assert math.isclose(spatial_trust_regularize(0.7, 0.7, 1.0), 0.7)
+assert math.isclose(spatial_trust_regularize(0.7, -1.0, 1.0), 0.7), "no coherent neighbor support must skip trust regularization"
+assert math.isclose(spatial_trust_regularize(0.7, 0.95, 0.0), 0.7), "regularization is disabled outside boundary-active pixels"
 island_phase = [[alpha + 0.4 * trust for trust in row] for row in island_trust]
 guarded_phase = [[alpha + 0.4 * trust for trust in row] for row in guarded_trust]
 assert mean_neighbor_variation(guarded_phase[2:14]) < 0.30 * mean_neighbor_variation(island_phase[2:14])
-assert min(value for row in guarded_phase for value in row) > alpha
-assert max(value for row in guarded_phase for value in row) < 1.0
-assert "trust = mix(trust, min(trust, spatial_consensus)," in patched
-assert "trust = mix(trust, spatial_consensus," not in patched
+confidence_hole = [[0.90 for _ in range(5)] for _ in range(5)]
+confidence_hole[2][2] = 0.05
+filled_hole = [
+    [spatial_trust_regularize(value, cardinal_support_mean(confidence_hole, x, y), 1.0)
+     for x, value in enumerate(row)]
+    for y, row in enumerate(confidence_hole)
+]
+hole_phase = [[alpha + 0.4 * trust for trust in row] for row in confidence_hole]
+filled_hole_phase = [[alpha + 0.4 * trust for trust in row] for row in filled_hole]
+assert filled_hole[2][2] > 0.40, "a small confidence hole in coherent motion must not remain a dark fallback pixel"
+assert mean_neighbor_variation(filled_hole_phase) < 0.70 * mean_neighbor_variation(hole_phase)
+assert min(value for row in filled_hole_phase for value in row) > alpha
+assert max(value for row in filled_hole_phase for value in row) < 1.0
+assert "float spatial_gap = abs(clamp(trust, 0.0, 1.0) - spatial_consensus);" in patched
+assert "float spatial_guard_weight = 0.50 * boundary_activation *" in patched
+assert "trust = mix(trust, spatial_consensus," in patched
+assert "trust = mix(trust, min(trust, spatial_consensus)," not in patched
 
 # Path coherence remains limited to uncertain-motion recovery; primary match trust is unchanged.
 assert trajectory_weight((8.0, -2.0), (8.0, -2.0), 0.75) == 1.0
