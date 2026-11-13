@@ -27,7 +27,7 @@ SCENE_CUT_MARKER = "MPVFLOW_SCENE_CUT_SPATIAL_V1"
 REJECTED_INSHOT_FALLBACK_MARKER = "MPVFLOW_INSHOT_NEAREST_SOURCE_FALLBACK_V1"
 FINE_GRID_MARKER = "MPVFLOW_FINE_MOTION_GRID_V1"
 FINE_GRID_ASSIGNMENT = "int spacing = (level == LEVELS - 1 || level == 0) ? 4 : 8;"
-SPATIAL_TRUST_MARKER = "MPVFLOW_SPATIAL_TRUST_CONSENSUS_V2"
+SPATIAL_TRUST_MARKER = "MPVFLOW_SPATIAL_TRUST_DOWNWARD_CAP_V3"
 REFINEMENT_APERTURE_NORMAL_MARKER = "MPVFLOW_REFINEMENT_APERTURE_NORMAL_V1"
 REFINEMENT_APERTURE_TANGENT_MARKER = "MPVFLOW_REFINEMENT_APERTURE_TANGENT_V1"
 
@@ -444,10 +444,10 @@ def _has_spatial_trust_guard(source: str) -> bool:
         and source.count("float spatial_trust_consensus(sampler2D warp0, sampler2D warp1,") == 1
         and source.count("spatial_trust_consensus(warp0, warp1, uv, f, r)") == 1
         and re.search(r"(?m)^[ \t]*if \(total < 0\.25\)\n[ \t]+return -1\.0;", source) is not None
-        and source.count("float spatial_gap = abs(clamp(trust, 0.0, 1.0) - spatial_consensus);") == 1
-        and source.count("float spatial_guard_weight = 0.50 * boundary_activation *") == 1
-        and source.count("trust = mix(trust, spatial_consensus,") == 1
-        and source.count("clamp(spatial_guard_weight, 0.0, 0.50)") == 1
+        and source.count("float spatial_island = max(0.0, clamp(trust, 0.0, 1.0) - spatial_consensus);") == 1
+        and source.count("float spatial_guard_weight = 0.75 * boundary_activation *") == 1
+        and source.count("trust = mix(trust, min(trust, spatial_consensus),") == 1
+        and source.count("clamp(spatial_guard_weight, 0.0, 0.75)") == 1
         and source.count("if (spatial_consensus >= 0.0) {") == 1
         and source.count("float s0 = 0.0;") == 1
         and source.count("float s1 = 0.0;") == 1
@@ -474,7 +474,7 @@ def _patch_spatial_trust(source: str) -> str:
         return source
     if any(token in source for token in (
         "float spatial_trust_consensus(",
-        "float spatial_gap =",
+        "float spatial_island =",
         "spatial_trust_consensus(warp0, warp1, uv, f, r)",
     )):
         raise ValueError("FongMi spatial trust source contains a partial guard")
@@ -495,15 +495,15 @@ def _patch_spatial_trust(source: str) -> str:
             match.group(0)
             + "\n"
             + _indent_block(
-                "// " + SPATIAL_TRUST_MARKER + ": regularize confidence both ways only across coherent motion.\n"
+                "// " + SPATIAL_TRUST_MARKER + ": never restore confidence rejected by this pixel's photometric checks.\n"
                 "if (boundary_activation > 0.0) {\n"
                 "    float spatial_consensus = spatial_trust_consensus(warp0, warp1, uv, f, r);\n"
                 "    if (spatial_consensus >= 0.0) {\n"
-                "        float spatial_gap = abs(clamp(trust, 0.0, 1.0) - spatial_consensus);\n"
-                "        float spatial_guard_weight = 0.50 * boundary_activation *\n"
-                "                                     smoothstep(0.08, 0.35, spatial_gap);\n"
-                "        trust = mix(trust, spatial_consensus,\n"
-                "                    clamp(spatial_guard_weight, 0.0, 0.50));\n"
+                "        float spatial_island = max(0.0, clamp(trust, 0.0, 1.0) - spatial_consensus);\n"
+                "        float spatial_guard_weight = 0.75 * boundary_activation *\n"
+                "                                     smoothstep(0.08, 0.35, spatial_island);\n"
+                "        trust = mix(trust, min(trust, spatial_consensus),\n"
+                "                    clamp(spatial_guard_weight, 0.0, 0.75));\n"
                 "    }\n"
                 "}",
                 match.group("indent"),

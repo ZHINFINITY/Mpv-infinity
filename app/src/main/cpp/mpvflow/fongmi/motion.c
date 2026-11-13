@@ -743,15 +743,15 @@ static const char synthesis_body[] = GLSL(
         trust *= 1.0 - smoothstep(0.03, 0.30,
                                    color_error);
         trust *= boundary_trust * region3_local_trust;
-        // MPVFLOW_SPATIAL_TRUST_CONSENSUS_V2: regularize confidence both ways only across coherent motion.
+        // MPVFLOW_SPATIAL_TRUST_DOWNWARD_CAP_V3: never restore confidence rejected by this pixel's photometric checks.
         if (boundary_activation > 0.0) {
             float spatial_consensus = spatial_trust_consensus(warp0, warp1, uv, f, r);
             if (spatial_consensus >= 0.0) {
-                float spatial_gap = abs(clamp(trust, 0.0, 1.0) - spatial_consensus);
-                float spatial_guard_weight = 0.50 * boundary_activation *
-                                             smoothstep(0.08, 0.35, spatial_gap);
-                trust = mix(trust, spatial_consensus,
-                            clamp(spatial_guard_weight, 0.0, 0.50));
+                float spatial_island = max(0.0, clamp(trust, 0.0, 1.0) - spatial_consensus);
+                float spatial_guard_weight = 0.75 * boundary_activation *
+                                             smoothstep(0.08, 0.35, spatial_island);
+                trust = mix(trust, min(trust, spatial_consensus),
+                            clamp(spatial_guard_weight, 0.0, 0.75));
             }
         }
         vec2 local_motion_delta = (r.xy - f.xy) * scale;
