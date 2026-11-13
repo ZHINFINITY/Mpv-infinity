@@ -108,6 +108,11 @@ def transform_source(source: str) -> tuple[str, bool]:
             "source_position = uv * source_extent - 0.5",
             "sampling_position = diagnostic_mode == 0 ? vec2(pixel) : source_position",
             "sample_rgba(source0, sampling_position + f.xy * scale)",
+            "visibility_position = sampling_position",
+            "vec2 projection_ratio = vec2(phase_remaining / phase_alpha,",
+            "f.xy * scale * projection_ratio.x)",
+            "r.xy * scale * projection_ratio.y)",
+            "applied_trust = clamp(visibility_sum, 0.0, 1.0)",
             "plane_bytes * 7 > 64LL * 1024 * 1024",
             "source_dimensions_out_of_range",
             "texture_unavailable",
@@ -234,6 +239,12 @@ bool mp_motion_source_is_hdr(const struct pl_frame *source)
         source = replace_once(source, old, new, label)
     source = replace_once(
         source,
+        "vec2 visibility_position = vec2(pixel);",
+        "vec2 visibility_position = sampling_position;",
+        "normalized trajectory-witness source coordinates",
+    )
+    source = replace_once(
+        source,
         """        vec2 scene_change = texelFetch(scene_map, ivec2(0), 0).rg;
         if (scene_change.r > 0.45 || scene_change.g > 0.08) {
             return blend < 0.5 ? original0 : original1;
@@ -258,16 +269,18 @@ bool mp_motion_source_is_hdr(const struct pl_frame *source)
     )
     source = replace_once(
         source,
-        """            return mix(source_blend, mix(warped0, warped1, blend), clamp(trust, 0.0, 1.0));""",
+        """            return source_blend * (1.0 - visibility_sum) +
+                   warped0 * visibility.x + warped1 * visibility.y;""",
         """            vec4 raw_warped = mix(warped0, warped1, blend);
             if (diagnostic_mode == 3)
                 return diagnostic_color(raw_warped, encode_srgb);
             if (diagnostic_mode == 4)
                 return diagnostic_color(source_blend, encode_srgb);
-            float applied_trust = clamp(trust, 0.0, 1.0);
+            float applied_trust = clamp(visibility_sum, 0.0, 1.0);
             if (diagnostic_mode == 5)
                 return vec4(applied_trust, applied_trust, applied_trust, 1.0);
-            vec4 final_output = mix(source_blend, raw_warped, applied_trust);
+            vec4 final_output = source_blend * (1.0 - applied_trust) +
+                                warped0 * visibility.x + warped1 * visibility.y;
             return diagnostic_mode == 6
                 ? diagnostic_color(final_output, encode_srgb) : final_output;""",
         "intermediate diagnostic outputs",

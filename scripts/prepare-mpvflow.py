@@ -951,11 +951,25 @@ def main() -> None:
         or "nearest_frame_weight" in motion
         or "MPVFLOW_SCENE_CUT_SPATIAL_V1" not in motion
         or "MPVFLOW_FINE_MOTION_GRID_V1" not in motion
+        or "MPVFLOW_HIGH_RES_FINE_GRID_V1" not in motion
         or "MPVFLOW_REFINEMENT_APERTURE_NORMAL_V1" not in motion
         or "MPVFLOW_SPATIAL_TRUST_DOWNWARD_CAP_V3" not in motion
         or "MPVFLOW_SPATIAL_MEDOID_FALLBACK_V1" not in motion
+        or "MPVFLOW_SPATIAL_VISIBILITY_CAP_V1" not in motion
+        or "MPVFLOW_SOURCE_SPECIFIC_VISIBILITY_V1" not in motion
+        or "float relative_fit(float stationary_error, float warped_error)" not in motion
+        or "vec2 projection_ratio = vec2(phase_remaining / phase_alpha," not in motion
+        or "phase_alpha / phase_remaining);" not in motion
+        or "f.xy * scale * projection_ratio.x)" not in motion
+        or "r.xy * scale * projection_ratio.y)" not in motion
+        or "blend > 0.000001 && blend < 0.999999" not in motion
+        or "visibility += conflict_weight * phase * vec2(f.z, r.z) * evidence;" not in motion
+        or "visibility *= clamp(spatial_visibility_scale, 0.0, 1.0);" not in motion
+        or "return source_blend * (1.0 - visibility_sum) +" not in motion
         or "MPVFLOW_GLOBAL_TRANSLATION_CYCLE_GUARD_V1" not in motion
         or "int spacing = (level == LEVELS - 1 || level == 0) ? 4 : 8;" not in motion
+        or "if (level == 0 && scale < 0.333334)" not in motion
+        or "spacing = 2;" not in motion
         or "video/out/gpu_next/motion.c" not in meson
         or "libmpv_motion" not in meson
         or '{"motion-interpolation-info", mp_property_motion_info}' not in command

@@ -187,6 +187,12 @@ def vector_grid_shape(width: int, height: int, spacing: int) -> tuple[int, int]:
     return ((width + spacing - 1) // spacing, (height + spacing - 1) // spacing)
 
 
+def motion_grid_spacing(level: int, scale: float, levels: int = 3) -> int:
+    if level == 0 and scale < 0.333334:
+        return 2
+    return 4 if level in (0, levels - 1) else 8
+
+
 def bilinear_mixed_flow_band_pixels(
     analysis_width: int, source_width: int, spacing: int
 ) -> float:
@@ -205,6 +211,49 @@ def smoothstep(edge0: float, edge1: float, value: float) -> float:
 
 def taper_weight(color_error: float) -> float:
     return 1.0 - smoothstep(0.03, 0.30, color_error)
+
+
+def relative_fit(stationary_error: float, warped_error: float) -> float:
+    return max(0.0, (stationary_error - warped_error) / stationary_error) if stationary_error > 0.0 else 0.0
+
+
+def source_visibility_weights(
+    blend: float,
+    forward_confidence: float,
+    reverse_confidence: float,
+    forward_certified: float,
+    reverse_certified: float,
+    color_error: float,
+    stationary_error: float,
+    paired_errors: tuple[float, float] | None = None,
+    boundary_support: float = 1.0,
+    spatial_cap: float = 1.0,
+) -> tuple[float, float]:
+    certified = min(forward_certified, reverse_certified)
+    unique = min(forward_confidence, reverse_confidence, certified)
+    aperture = certified * (1.0 - smoothstep(0.002, 0.02, color_error))
+    reliable = max(unique, aperture)
+    conflict = smoothstep(0.03, 0.15, color_error)
+    confidence = (
+        max(forward_confidence * relative_fit(stationary_error, color_error), reliable),
+        max(reverse_confidence * relative_fit(stationary_error, color_error), reliable),
+    )
+    phase = (1.0 - blend, blend)
+    visibility = [phase[i] * confidence[i] * (1.0 - conflict) * taper_weight(color_error) for i in range(2)]
+    boundary_scale = min(1.0, max(0.0, boundary_support))
+    visibility = [value * boundary_scale for value in visibility]
+    if conflict > 0.0 and stationary_error > 0.0 and paired_errors is not None:
+        for index, paired_error in enumerate(paired_errors):
+            support = 1.0 - smoothstep(0.03, 0.15, paired_error)
+            evidence = support * relative_fit(stationary_error, paired_error)
+            direction_confidence = forward_confidence if index == 0 else reverse_confidence
+            visibility[index] += conflict * phase[index] * direction_confidence * evidence
+    scale = min(1.0, max(0.0, spatial_cap))
+    visibility = [min(1.0, max(0.0, value * scale)) for value in visibility]
+    total = sum(visibility)
+    if total > 1.0:
+        visibility = [value / total for value in visibility]
+    return visibility[0], visibility[1]
 
 
 def boundary_weight(
@@ -347,13 +396,18 @@ original = fixture()
 patched, changed = PATCHER.transform_source(original)
 assert changed
 assert PATCHER.MARKER in patched
+assert PATCHER.SOURCE_VISIBILITY_MARKER in patched
+assert PATCHER.SPATIAL_VISIBILITY_CAP_MARKER in patched
 assert PATCHER.SPATIAL_TRUST_MARKER in patched
 assert PATCHER.LOCAL_SOFTENING_MARKER in patched
 assert PATCHER.SPATIAL_MEDOID_MARKER in patched
 assert PATCHER.GLOBAL_TRANSLATION_CYCLE_MARKER in patched
+assert PATCHER.HIGH_RES_FINE_GRID_MARKER in patched
 assert PATCHER._has_global_translation_cycle_guard(patched)
 assert "translation_position + vector / size, 0.0" in patched
 assert "translation_cycle < 1.5 &&" in patched
+assert PATCHER.HIGH_RES_FINE_GRID_CONDITION in patched
+assert "spacing = 2;" in patched
 # A camera-pan vector remains available on coherent background in both directions.
 pan = (4.0, -1.0)
 assert select_global_translation(pan, pan, (-4.0, 1.0), 0.02, 0.02) == pan
@@ -416,11 +470,12 @@ assert "if (spatial_consensus >= 0.0) {" in patched
 assert "float spatial_island = max(0.0, clamp(trust, 0.0, 1.0) - spatial_consensus);" in patched
 assert "0.75 * boundary_activation *" in patched
 assert "trust = mix(trust, min(trust, spatial_consensus)," in patched
+assert "spatial_visibility_scale = clamp(trust_after_spatial / trust_before_spatial, 0.0, 1.0);" in patched
 assert "trust = mix(trust, spatial_consensus," not in patched
 assert "float luma_error = abs(dot(metric0," in patched
 assert "float chroma_error = max(abs((metric0.r - metric0.g)" in patched
 assert "smoothstep(0.03, 0.30," in patched
-assert "smoothstep(0.03, 0.15," not in patched
+assert "smoothstep(0.03, 0.15, color_error)" in patched
 assert "neighborhood_quality(warp0, uv, f.xy)" in patched
 assert "neighborhood_quality(warp1, uv, r.xy)" in patched
 assert "boundary_trust *= mix(1.0, smoothstep(0.45, 0.70, local_quality)" in patched
@@ -437,7 +492,10 @@ assert "vec4 source_blend = mix(original0, original1, alpha);" in patched
 assert "nearest_frame_weight" not in patched, "output must not switch temporal source independently per pixel"
 assert "vec4 nearest_frame =" not in patched
 assert "source_blend = mix(source_blend, nearest_frame," not in patched
-assert "color = mix(source_blend, mix(warped0, warped1, alpha), clamp(trust, 0.0, 1.0));" in patched
+assert "color = source_blend * (1.0 - visibility_sum) +" in patched
+assert "visibility += conflict_weight * phase * vec2(f.z, r.z) * evidence;" in patched
+assert "visibility *= clamp(boundary_trust * region3_local_trust, 0.0, 1.0);" in patched
+assert "visibility *= clamp(spatial_visibility_scale, 0.0, 1.0);" in patched
 assert "FongMi synthesis prefix\n" in patched and "FongMi synthesis suffix\n" in patched
 texture_flow = (3.25, -2.5)
 assert aperture_normal(1.0, 0.0, 1.0) is None
@@ -463,13 +521,22 @@ assert final_candidate[0] > 1.0 and best_candidate[0] < final_candidate[0]
 constant_candidate, constant_final = inverse_warp_candidates(64.0, 0.5, lambda _x: 8.0)
 assert constant_candidate[0] == 0.0 and constant_final[0] == 0.0
 coarse_grid = vector_grid_shape(480, 221, 8)
-fine_grid = vector_grid_shape(480, 221, 4)
+previous_fine_grid = vector_grid_shape(480, 221, 4)
+fine_grid = vector_grid_shape(480, 221, 2)
 coarse_mix_band = bilinear_mixed_flow_band_pixels(480, 1920, 8)
-fine_mix_band = bilinear_mixed_flow_band_pixels(480, 1920, 4)
+previous_fine_mix_band = bilinear_mixed_flow_band_pixels(480, 1920, 4)
+fine_mix_band = bilinear_mixed_flow_band_pixels(480, 1920, 2)
 assert coarse_grid == (60, 28)
-assert fine_grid == (120, 56)
-assert coarse_mix_band == 32.0 and fine_mix_band == 16.0
-assert fine_mix_band * 2 == coarse_mix_band
+assert previous_fine_grid == (120, 56)
+assert fine_grid == (240, 111)
+assert coarse_mix_band == 32.0 and previous_fine_mix_band == 16.0 and fine_mix_band == 8.0
+assert fine_mix_band * 2 == previous_fine_mix_band
+assert fine_mix_band * 4 == coarse_mix_band
+assert motion_grid_spacing(0, 480 / 1920) == 2
+assert motion_grid_spacing(0, 480 / 1440) == 2
+assert motion_grid_spacing(0, 480 / 1280) == 4
+assert motion_grid_spacing(1, 480 / 1920) == 8
+assert motion_grid_spacing(2, 480 / 1920) == 4
 broken_grid = patched.replace(PATCHER.FINE_GRID_ASSIGNMENT, "int spacing = 8;", 1)
 try:
     PATCHER.transform_source(broken_grid)
@@ -479,6 +546,18 @@ else:
     raise AssertionError("fine-grid marker must reject a mismatched assignment")
 again, changed_again = PATCHER.transform_source(patched)
 assert not changed_again and again == patched
+
+# Upgrade the prior V1 grid patch without touching its unchanged coarse levels.
+old_high_res_grid = patched.replace(
+    PATCHER._indent_block(PATCHER.HIGH_RES_FINE_GRID_BLOCK, "        ") + "\n",
+    "",
+    1,
+)
+assert PATCHER.HIGH_RES_FINE_GRID_MARKER not in old_high_res_grid
+upgraded_grid, upgraded_grid_changed = PATCHER.transform_source(old_high_res_grid)
+assert upgraded_grid_changed and PATCHER._has_fine_motion_grid(upgraded_grid)
+upgraded_grid_again, upgraded_grid_changed_again = PATCHER.transform_source(upgraded_grid)
+assert not upgraded_grid_changed_again and upgraded_grid_again == upgraded_grid
 
 # Cached trees carrying the previous normal-only candidates upgrade in place.
 legacy_aperture = re.sub(
@@ -523,7 +602,7 @@ assert pinned_changed and PATCHER._is_patched(pinned_patched)
 assert PATCHER.FINE_GRID_MARKER in pinned_patched
 assert "sample_rgba(source0, vec2(pixel) + f.xy * scale + local_motion_offset)" in pinned_patched
 assert "sample_rgba(source1, vec2(pixel) + r.xy * scale - local_motion_offset)" in pinned_patched
-assert "return mix(source_blend, mix(warped0, warped1, blend), clamp(trust, 0.0, 1.0));" in pinned_patched
+assert "return source_blend * (1.0 - visibility_sum) +" in pinned_patched
 assert "nearest_frame_weight" not in pinned_patched
 
 # An existing V3 synthesis patch is upgraded in place, then remains idempotent.
@@ -535,8 +614,21 @@ legacy_v3 = patched.replace(
 )
 legacy_v3 = legacy_v3.replace(PATCHER.MARKER, PATCHER.PREVIOUS_MARKER, 1)
 legacy_v3 = legacy_v3.replace(
+    PATCHER._indent_block(PATCHER.SOURCE_VISIBILITY_OUTPUT_BLOCK_LEGACY, "    "),
+    PATCHER._indent_block(
+        "color = mix(source_blend, mix(warped0, warped1, alpha), clamp(trust, 0.0, 1.0));",
+        "    ",
+    ),
+    1,
+)
+legacy_v3 = legacy_v3.replace(
     PATCHER._indent_block(PATCHER.LEGACY_SOFTENED_OUTPUT_BLOCK, "    "),
     PATCHER._indent_block(BASE_OUTPUT, "    "),
+    1,
+)
+legacy_v3 = legacy_v3.replace(
+    PATCHER._indent_block(PATCHER.SOURCE_VISIBILITY_HELPER, "    ") + "\n\n",
+    "",
     1,
 )
 legacy_v3 = legacy_v3.replace(
@@ -554,8 +646,21 @@ assert not upgraded_v3_changed_again and upgraded_v3_again == upgraded_v3
 
 # Existing V3 output in the pinned return-expression form upgrades as well.
 pinned_v3 = pinned_patched.replace(
+    PATCHER._indent_block(PATCHER.SOURCE_VISIBILITY_OUTPUT_BLOCK_PINNED, "            "),
+    PATCHER._indent_block(
+        "return mix(source_blend, mix(warped0, warped1, blend), clamp(trust, 0.0, 1.0));",
+        "            ",
+    ),
+    1,
+)
+pinned_v3 = pinned_v3.replace(
     PATCHER._indent_block(PATCHER.PINNED_SOFTENED_OUTPUT_BLOCK, "            "),
     PATCHER._indent_block(PINNED_OUTPUT, "            "),
+    1,
+)
+pinned_v3 = pinned_v3.replace(
+    PATCHER._indent_block(PATCHER.SOURCE_VISIBILITY_HELPER, "    ") + "\n\n",
+    "",
     1,
 )
 pinned_v3 = pinned_v3.replace(PATCHER.MARKER, PATCHER.PREVIOUS_MARKER, 1)
@@ -569,7 +674,7 @@ pinned_v3 = pinned_v3.replace("            local_quality = min(", "            f
 assert PATCHER._is_synthesis_patched_v3(pinned_v3)
 pinned_upgraded, pinned_upgraded_changed = PATCHER.transform_source(pinned_v3)
 assert pinned_upgraded_changed and PATCHER._is_patched(pinned_upgraded)
-assert "return mix(source_blend, mix(warped0, warped1, blend), clamp(trust, 0.0, 1.0));" in pinned_upgraded
+assert "return source_blend * (1.0 - visibility_sum) +" in pinned_upgraded
 
 # An existing V2-only build tree is upgraded, not mistaken for stock source.
 upgraded_v2, upgraded_v2_changed = PATCHER.transform_source(fixture(LEGACY_TRUST))
@@ -583,8 +688,8 @@ regressive_primary_trust = patched.replace(
     1,
 )
 regressive_pixel_fallback = patched.replace(
-    "color = mix(source_blend, mix(warped0, warped1, alpha), clamp(trust, 0.0, 1.0));",
-    "// MPVFLOW_INSHOT_NEAREST_SOURCE_FALLBACK_V1: forbidden\nfloat nearest_frame_weight = 1.0;\ncolor = mix(source_blend, mix(warped0, warped1, alpha), clamp(trust, 0.0, 1.0));",
+    PATCHER.SOURCE_VISIBILITY_MARKER,
+    PATCHER.SOURCE_VISIBILITY_MARKER + "\nfloat nearest_frame_weight = 1.0;",
     1,
 )
 assert regressive_primary_trust != patched
@@ -628,6 +733,50 @@ coherent = boundary_weight(0.05, 0.07, 0.0, neighborhood_spread=0.0)
 divergent = boundary_weight(0.05, 0.07, 0.0, neighborhood_spread=2.8)
 assert 0.0 <= divergent < coherent <= 1.0, (coherent, divergent)
 assert math.isclose(taper_weight(0.15), 0.5829903978052126, abs_tol=1e-9)
+
+# Per-source visibility retains coherent motion and lets only the supported
+# direction contribute across a conflicting/occluded edge.
+def witness_projection_ratios(alpha: float) -> tuple[float, float]:
+    assert 0.0 < alpha < 1.0
+    remaining = 1.0 - alpha
+    return remaining / alpha, alpha / remaining
+
+
+ratio0, ratio1 = witness_projection_ratios(0.25)
+assert math.isclose(ratio0, 3.0) and math.isclose(ratio1, 1.0 / 3.0)
+output_x, displacement0, displacement1 = 10.0, -2.0, 6.0
+assert math.isclose(output_x - displacement0 * ratio0, output_x + displacement1)
+assert math.isclose(output_x - displacement1 * ratio1, output_x + displacement0)
+assert witness_projection_ratios(0.5) == (1.0, 1.0)
+
+coherent_pan = source_visibility_weights(
+    0.5, 0.82, 0.79, 0.92, 0.90, 0.10, 0.26, (0.01, 0.01), spatial_cap=0.9
+)
+unsupported_crossing = source_visibility_weights(
+    0.5, 0.82, 0.79, 0.92, 0.90, 0.10, 0.26, (0.22, 0.22), spatial_cap=0.9
+)
+assert coherent_pan[0] > 0.0 and coherent_pan[1] > 0.0
+assert sum(coherent_pan) > 0.4, "consistent pan evidence must not become a hard hold"
+assert sum(coherent_pan) > sum(unsupported_crossing), "paired color evidence must recover coherent moving content"
+one_sided_occlusion = source_visibility_weights(
+    0.5, 0.88, 0.12, 0.70, 0.70, 0.10, 0.26, (0.01, 0.22), boundary_support=0.9
+)
+assert one_sided_occlusion[0] > one_sided_occlusion[1]
+assert one_sided_occlusion[1] > 0.0, "the weaker direction should retain soft ghosting, not be hard-zeroed"
+assert 0.0 <= sum(one_sided_occlusion) <= 1.0
+high_contrast_motion = source_visibility_weights(
+    0.5, 0.9, 0.1, 0.7, 0.7, 0.22, 0.45, (0.01, 0.22), boundary_support=0.0
+)
+assert high_contrast_motion[0] > 0.0, "a paired witness may recover a supported path at a strong edge"
+assert high_contrast_motion[1] == 0.0, "an unsupported opposing path must not be restored"
+for blend in (0.1, 0.25, 0.5, 0.75, 0.9):
+    for forward in (0.0, 0.25, 0.5, 0.9, 1.0):
+        for reverse in (0.0, 0.25, 0.5, 0.9, 1.0):
+            weights = source_visibility_weights(
+                blend, forward, reverse, 0.8, 0.7, 0.1, 0.25, (0.02, 0.10)
+            )
+            assert all(math.isfinite(value) and 0.0 <= value <= 1.0 for value in weights)
+            assert sum(weights) <= 1.0 + 1e-9
 
 assert local_motion_softness(0.0, 1.0, 1.0, 1.0, 20.0) == 0.24
 assert local_motion_softness(0.5, 1.0, 1.0, 1.0, 20.0) == 0.12
@@ -684,7 +833,7 @@ assert mean_neighbor_variation(candidate_phase) < 1e-12
 assert all(abs(value - alpha) < 1e-12 for row in candidate_phase for value in row)
 assert "nearest_frame_weight" not in patched
 assert "source_blend = mix(original0, original1, alpha);" in patched
-assert "color = mix(source_blend, mix(warped0, warped1, alpha), clamp(trust, 0.0, 1.0));" in patched
+assert "color = source_blend * (1.0 - visibility_sum) +" in patched
 
 # Regression: neighboring support may cap an isolated high-confidence warp,
 # but it must never undo this pixel's photometric disagreement rejection.
@@ -931,6 +1080,8 @@ if args.source:
     active_source = args.source.read_text(encoding="utf-8")
     if MOTION_CAPTURE_PATCHER.SOURCE_MARKER in active_source:
         assert active_source.count(PATCHER.MARKER) == 1
+        assert active_source.count(PATCHER.SOURCE_VISIBILITY_MARKER) == 1
+        assert active_source.count(PATCHER.SPATIAL_VISIBILITY_CAP_MARKER) == 1
         assert PATCHER.LOCAL_SOFTENING_MARKER in active_source
         assert PATCHER.RECONSTRUCTION_MARKER in active_source
         assert PATCHER.WARP_TRAJECTORY_MARKER in active_source
@@ -951,9 +1102,10 @@ if args.source:
         assert not diagnostic_changed and diagnostic_result == active_source
         for channel_branch in ("diagnostic_mode == 3", "diagnostic_mode == 4", "diagnostic_mode == 5", "diagnostic_mode == 6"):
             assert channel_branch in active_source
-        assert "float applied_trust = clamp(trust, 0.0, 1.0);" in active_source
+        assert "float applied_trust = clamp(visibility_sum, 0.0, 1.0);" in active_source
         assert "vec4(applied_trust, applied_trust, applied_trust, 1.0)" in active_source
-        assert "mix(source_blend, raw_warped, applied_trust)" in active_source
+        assert "source_blend * (1.0 - applied_trust) +" in active_source
+        assert "warped0 * visibility.x + warped1 * visibility.y" in active_source
         assert "m->diagnostic_hdr_rejected = m->diagnostic_source_hdr;" in active_source
         assert "m->diagnostic_hdr_rejected = m->linear_hdr;" not in active_source
         assert "source_position = uv * source_extent - 0.5" in active_source
@@ -1033,8 +1185,9 @@ print(
     f"{old_step:.4f} -> {new_step:.4f}; local directional softness is capped at 0.24 "
     "with trajectory stability capping primary warp confidence and no per-pixel temporal source switch; "
     "spatial cut detection flags palette-matched scene changes without firing on one-tile motion; "
-    f"the 480-cap grid changes {coarse_grid[0]}x{coarse_grid[1]} to {fine_grid[0]}x{fine_grid[1]}, "
-    f"halving the bilinear mixed-flow band {coarse_mix_band:.0f}px to {fine_mix_band:.0f}px in the supplied-resolution case"
+    f"the high-resolution 480-cap finest grid changes {previous_fine_grid[0]}x{previous_fine_grid[1]} "
+    f"to {fine_grid[0]}x{fine_grid[1]}, halving the mixed-flow band "
+    f"{previous_fine_mix_band:.0f}px to {fine_mix_band:.0f}px while leaving mid/coarse levels unchanged"
 )
 assert "sampling_position = diagnostic_mode == 0 ? vec2(pixel) : source_position;" in motion_capture_patcher_source
 assert "original0 = texelFetch(source0, source_pixel, 0);" in motion_capture_patcher_source

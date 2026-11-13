@@ -29,9 +29,13 @@ SCENE_CUT_MARKER = "MPVFLOW_SCENE_CUT_SPATIAL_V1"
 REJECTED_INSHOT_FALLBACK_MARKER = "MPVFLOW_INSHOT_NEAREST_SOURCE_FALLBACK_V1"
 FINE_GRID_MARKER = "MPVFLOW_FINE_MOTION_GRID_V1"
 FINE_GRID_ASSIGNMENT = "int spacing = (level == LEVELS - 1 || level == 0) ? 4 : 8;"
+HIGH_RES_FINE_GRID_MARKER = "MPVFLOW_HIGH_RES_FINE_GRID_V1"
+HIGH_RES_FINE_GRID_CONDITION = "if (level == 0 && scale < 0.333334)"
 SPATIAL_TRUST_MARKER = "MPVFLOW_SPATIAL_TRUST_DOWNWARD_CAP_V3"
 REFINEMENT_APERTURE_NORMAL_MARKER = "MPVFLOW_REFINEMENT_APERTURE_NORMAL_V1"
 REFINEMENT_APERTURE_TANGENT_MARKER = "MPVFLOW_REFINEMENT_APERTURE_TANGENT_V1"
+SOURCE_VISIBILITY_MARKER = "MPVFLOW_SOURCE_SPECIFIC_VISIBILITY_V1"
+SPATIAL_VISIBILITY_CAP_MARKER = "MPVFLOW_SPATIAL_VISIBILITY_CAP_V1"
 
 GLOBAL_TRANSLATION_CYCLE_MARKER = "MPVFLOW_GLOBAL_TRANSLATION_CYCLE_GUARD_V1"
 
@@ -154,9 +158,16 @@ cut = max(cut, spatial_cut);"""
 FINE_GRID_PATTERN = re.compile(
     r"(?m)^(?P<indent>[ \t]*)int spacing = level == LEVELS - 1 \? 4 : 8;$"
 )
-FINE_GRID_BLOCK = """// MPVFLOW_FINE_MOTION_GRID_V1: halve finest-level vector-cell pitch
-// without enlarging the analysis image.
-int spacing = (level == LEVELS - 1 || level == 0) ? 4 : 8;"""
+FINE_GRID_ASSIGNMENT_PATTERN = re.compile(
+    r"(?m)^(?P<indent>[ \t]*)" + re.escape(FINE_GRID_ASSIGNMENT) + r"$"
+)
+HIGH_RES_FINE_GRID_BLOCK = """// MPVFLOW_HIGH_RES_FINE_GRID_V1: refine only the finest analysis grid
+// when the 480px cap downsamples 1440px+ source frames.
+if (level == 0 && scale < 0.333334)
+    spacing = 2;"""
+FINE_GRID_BLOCK = """// MPVFLOW_FINE_MOTION_GRID_V1: retain 4px cells at levels 0 and last,
+// with 8px cells in the middle level, without enlarging the analysis image.
+int spacing = (level == LEVELS - 1 || level == 0) ? 4 : 8;""" + "\n" + HIGH_RES_FINE_GRID_BLOCK
 
 REFINEMENT_OUTER_PATTERN = re.compile(
     r"(?m)^(?P<indent>[ \t]*)if \(any\(notEqual\(vector, vec2\(0\)\)\) \|\| residual != 0\.0\) \{$"
@@ -296,6 +307,12 @@ void motion_field_medoid(sampler2D warp0, sampler2D warp1, vec2 uv,
     selected1 = backward[best_index].xy;
     // Three supported samples are the smallest local majority in this five-sample cross.
     selected_support = best_support * clamp(agreeing_support / 3.0, 0.0, 1.0);
+}"""
+
+SOURCE_VISIBILITY_HELPER = """float relative_fit(float stationary_error, float warped_error)
+{
+    return stationary_error > warped_error
+        ? (stationary_error - warped_error) / stationary_error : 0.0;
 }"""
 
 NEIGHBORHOOD_END_PATTERN = re.compile(
@@ -465,6 +482,82 @@ if (trust < 0.999 && boundary_activation > 0.0 && local_quality < 0.70) {
 return mix(source_blend, mix(warped0, warped1, blend), clamp(trust, 0.0, 1.0));"""
 PINNED_SOFTENED_OUTPUT_BLOCK = PINNED_SOFTENED_OUTPUT_BLOCK_V4
 
+SOURCE_VISIBILITY_OUTPUT_BLOCK_PINNED = """// MPVFLOW_SOURCE_SPECIFIC_VISIBILITY_V1: preserve each source's own supported trajectory.
+vec2 phase = vec2(1.0 - blend, blend);
+float certified = clamp(min(f.w, r.w), 0.0, 1.0);
+float unique = min(min(f.z, r.z), certified);
+float strongest = max(f.z, r.z);
+float source_aperture = certified * (1.0 - smoothstep(0.002, 0.02, color_error));
+float source_reliable = max(unique, source_aperture);
+float conflict_weight = smoothstep(0.03, 0.15, color_error);
+float phase_alpha = clamp(blend, 0.000001, 0.999999);
+float phase_remaining = 1.0 - phase_alpha;
+vec2 projection_ratio = vec2(phase_remaining / phase_alpha,
+                             phase_alpha / phase_remaining);
+float stationary_error = 0.0;
+if ((strongest > source_reliable ||
+     (strongest > 0.0 && conflict_weight > 0.0)) &&
+    !all(equal(original0.rgb, original1.rgb))) {
+    vec3 stationary0 = hdr != 0 ? hdr_proxy(original0.rgb) : original0.rgb;
+    vec3 stationary1 = hdr != 0 ? hdr_proxy(original1.rgb) : original1.rgb;
+    vec3 stationary = abs(stationary0 - stationary1);
+    stationary_error = max(stationary.r, max(stationary.g, stationary.b));
+}
+vec2 source_confidence = max(vec2(f.z, r.z) *
+                             relative_fit(stationary_error, color_error),
+                             source_reliable);
+vec2 visibility = phase * source_confidence * (1.0 - conflict_weight);
+// Keep the V4 gradual conflict taper; a paired witness can recover only a supported direction.
+visibility *= 1.0 - smoothstep(0.03, 0.30, color_error);
+visibility *= clamp(boundary_trust * region3_local_trust, 0.0, 1.0);
+if (conflict_weight > 0.0 && stationary_error > 0.0 &&
+    blend > 0.000001 && blend < 0.999999) {
+    vec2 visibility_position = vec2(pixel);
+    vec4 paired1 = sample_rgba(source1, visibility_position -
+                               f.xy * scale * projection_ratio.x);
+    vec4 paired0 = sample_rgba(source0, visibility_position -
+                               r.xy * scale * projection_ratio.y);
+    vec3 predicted1 = hdr != 0 ? hdr_proxy(paired1.rgb) : paired1.rgb;
+    vec3 predicted0 = hdr != 0 ? hdr_proxy(paired0.rgb) : paired0.rgb;
+    vec3 error0 = abs(metric0 - predicted1);
+    vec3 error1 = abs(predicted0 - metric1);
+    vec2 paired_error = vec2(max(error0.r, max(error0.g, error0.b)),
+                             max(error1.r, max(error1.g, error1.b)));
+    vec2 support = vec2(1.0) - smoothstep(vec2(0.03), vec2(0.15), paired_error);
+    vec2 evidence = support * vec2(relative_fit(stationary_error, paired_error.x),
+                                   relative_fit(stationary_error, paired_error.y));
+    evidence = mix(vec2(0.0), evidence, greaterThan(vec2(f.z, r.z), vec2(0.0)));
+    visibility += conflict_weight * phase * vec2(f.z, r.z) * evidence;
+}
+visibility *= clamp(spatial_visibility_scale, 0.0, 1.0);
+if (any(isnan(visibility)) || any(isinf(visibility)))
+    visibility = vec2(0.0);
+visibility = clamp(visibility, vec2(0.0), vec2(1.0));
+float visibility_sum = visibility.x + visibility.y;
+if (visibility_sum > 1.0) {
+    visibility /= visibility_sum;
+    visibility_sum = 1.0;
+}
+return source_blend * (1.0 - visibility_sum) +
+       warped0 * visibility.x + warped1 * visibility.y;"""
+SOURCE_VISIBILITY_OUTPUT_BLOCK_LEGACY = SOURCE_VISIBILITY_OUTPUT_BLOCK_PINNED.replace(
+    "vec2 phase = vec2(1.0 - blend, blend);",
+    "vec2 phase = vec2(1.0 - alpha, alpha);",
+).replace(
+    "float phase_alpha = clamp(blend, 0.000001, 0.999999);",
+    "float phase_alpha = clamp(alpha, 0.000001, 0.999999);",
+).replace(
+    "blend > 0.000001 && blend < 0.999999",
+    "alpha > 0.000001 && alpha < 0.999999",
+).replace(
+    "return source_blend * (1.0 - visibility_sum) +\n       warped0 * visibility.x + warped1 * visibility.y;",
+    "color = source_blend * (1.0 - visibility_sum) +\n        warped0 * visibility.x + warped1 * visibility.y;",
+)
+SOURCE_VISIBILITY_OUTPUT_PATTERN = re.compile(
+    r"(?m)^(?P<indent>[ \t]*)(?:color = mix\(source_blend, mix\(warped0, warped1, alpha\), clamp\(trust, 0\.0, 1\.0\)\);|"
+    r"return mix\(source_blend, mix\(warped0, warped1, blend\), clamp\(trust, 0\.0, 1\.0\)\);)$"
+)
+
 LEGACY_TAPER_PATTERN = re.compile(
     r"(?m)^(?P<indent>[ \t]*)// MPVFLOW_ARTIFACT_TRUST_TAPER_V2: soften color-conflict fallback only when motion trust remains\n"
     r"(?P=indent)trust \*= 1\.0 - smoothstep\(0\.03, 0\.30,\n"
@@ -566,6 +659,7 @@ def _is_synthesis_patched_core(source: str, require_spatial: bool = True) -> boo
                 and source.count("sample_rgba(source1, vec2(pixel) + r.xy * scale - local_motion_offset)") == 1
                 and source.count("return mix(source_blend, mix(warped0, warped1, blend), clamp(trust, 0.0, 1.0));") == 1
             )
+            or _has_source_visibility(source)
         )
         and len(_output_matches(source)) == 0
         and REJECTED_WARP_TRUST_MARKER not in source
@@ -656,6 +750,65 @@ def _patch_spatial_trust(source: str) -> str:
     return source
 
 
+def _has_spatial_visibility_scale(source: str) -> bool:
+    return (
+        source.count(SPATIAL_VISIBILITY_CAP_MARKER) == 1
+        and source.count("float spatial_visibility_scale = 1.0;") == 1
+        and source.count("float trust_before_spatial = clamp(trust, 0.0, 1.0);") == 1
+        and source.count("float trust_after_spatial = clamp(trust, 0.0, 1.0);") == 1
+        and source.count("spatial_visibility_scale = clamp(trust_after_spatial / trust_before_spatial, 0.0, 1.0);") == 1
+    )
+
+
+def _patch_spatial_visibility_scale(source: str) -> str:
+    if SPATIAL_VISIBILITY_CAP_MARKER in source:
+        if not _has_spatial_visibility_scale(source):
+            raise ValueError("FongMi spatial visibility-cap marker/source mismatch")
+        return source
+    if not _has_spatial_trust_guard(source):
+        raise ValueError("FongMi spatial visibility cap requires the verified spatial trust guard")
+    start_pattern = re.compile(
+        r"(?m)^(?P<indent>[ \t]*)if \(boundary_activation > 0\.0\) \{\n"
+        r"(?P=indent)[ \t]+float spatial_consensus = spatial_trust_consensus\(warp0, warp1, uv, f, r\);$"
+    )
+    source = _replace_one(
+        start_pattern,
+        source,
+        lambda match: (
+            match.group("indent") + "// " + SPATIAL_VISIBILITY_CAP_MARKER + ": carry the existing downward-only cap into per-source visibility.\n"
+            + match.group("indent") + "float spatial_visibility_scale = 1.0;\n"
+            + match.group(0)
+        ),
+        "spatial visibility-cap scope",
+    )
+    trust_pattern = re.compile(
+        r"(?m)^(?P<indent>[ \t]*)float spatial_island = max\(0\.0, clamp\(trust, 0\.0, 1\.0\) - spatial_consensus\);\n"
+        r"(?P=indent)float spatial_guard_weight = 0\.75 \* boundary_activation \*\n"
+        r"(?P=indent)[ \t]+smoothstep\(0\.08, 0\.35, spatial_island\);\n"
+        r"(?P=indent)trust = mix\(trust, min\(trust, spatial_consensus\),\n"
+        r"(?P=indent)[ \t]+clamp\(spatial_guard_weight, 0\.0, 0\.75\)\);$"
+    )
+    source = _replace_one(
+        trust_pattern,
+        source,
+        lambda match: (
+            match.group("indent") + "float spatial_island = max(0.0, clamp(trust, 0.0, 1.0) - spatial_consensus);\n"
+            + match.group("indent") + "float spatial_guard_weight = 0.75 * boundary_activation *\n"
+            + match.group("indent") + "                             smoothstep(0.08, 0.35, spatial_island);\n"
+            + match.group("indent") + "float trust_before_spatial = clamp(trust, 0.0, 1.0);\n"
+            + match.group("indent") + "trust = mix(trust, min(trust, spatial_consensus),\n"
+            + match.group("indent") + "            clamp(spatial_guard_weight, 0.0, 0.75));\n"
+            + match.group("indent") + "float trust_after_spatial = clamp(trust, 0.0, 1.0);\n"
+            + match.group("indent") + "if (trust_before_spatial > 0.000001)\n"
+            + match.group("indent") + "    spatial_visibility_scale = clamp(trust_after_spatial / trust_before_spatial, 0.0, 1.0);"
+        ),
+        "spatial visibility downward-cap ratio",
+    )
+    if not _has_spatial_visibility_scale(source):
+        raise ValueError("FongMi spatial visibility-cap patch failed its postconditions")
+    return source
+
+
 def _has_spatial_medoid_fallback(source: str) -> bool:
     return (
         source.count(SPATIAL_MEDOID_MARKER) == 1
@@ -743,8 +896,85 @@ def _patch_spatial_medoid_fallback(source: str) -> str:
     return source
 
 
+def _has_source_visibility(source: str) -> bool:
+    return (
+        source.count(SOURCE_VISIBILITY_MARKER) == 1
+        and source.count("float relative_fit(float stationary_error, float warped_error)") == 1
+        and source.count("vec2 phase = vec2(1.0 - blend, blend);") + source.count("vec2 phase = vec2(1.0 - alpha, alpha);") == 1
+        and source.count("float source_aperture = certified * (1.0 - smoothstep(0.002, 0.02, color_error));") == 1
+        and source.count("float conflict_weight = smoothstep(0.03, 0.15, color_error);") == 1
+        and source.count("vec2 projection_ratio = vec2(phase_remaining / phase_alpha,") == 1
+        and source.count("phase_alpha / phase_remaining);") == 1
+        and (
+            (
+                "sample_rgba(source1, visibility_position -" in source
+                and "sample_rgba(source0, visibility_position -" in source
+            )
+            or (
+                "sample_rgba(second, source_position -" in source
+                and "sample_rgba(first, source_position -" in source
+            )
+        )
+        and source.count("f.xy * scale * projection_ratio.x)") == 1
+        and source.count("r.xy * scale * projection_ratio.y)") == 1
+        and (
+            "blend > 0.000001 && blend < 0.999999" in source
+            or "alpha > 0.000001 && alpha < 0.999999" in source
+        )
+        and source.count("visibility += conflict_weight * phase * vec2(f.z, r.z) * evidence;") == 1
+        and source.count("visibility *= clamp(boundary_trust * region3_local_trust, 0.0, 1.0);") == 1
+        and source.count("visibility *= clamp(spatial_visibility_scale, 0.0, 1.0);") == 1
+        and source.count("visibility /= visibility_sum;") == 1
+        and source.count("return source_blend * (1.0 - visibility_sum) +") +
+            source.count("color = source_blend * (1.0 - visibility_sum) +") == 1
+        and "nearest_frame_weight" not in source
+        and "vec4 nearest_frame =" not in source
+    )
+
+
+def _patch_source_visibility(source: str) -> str:
+    if SOURCE_VISIBILITY_MARKER in source:
+        if _has_source_visibility(source):
+            return source
+        raise ValueError("FongMi source-specific visibility marker/source mismatch")
+    if "float relative_fit(" in source:
+        raise ValueError("FongMi source-specific visibility helper is only partially present")
+    source = _replace_one(
+        PIXEL_HEADER_PATTERN,
+        source,
+        lambda match: (
+            _indent_block(SOURCE_VISIBILITY_HELPER, match.group("indent"))
+            + "\n\n"
+            + match.group(0)
+        ),
+        "source visibility helper",
+    )
+    matches = list(SOURCE_VISIBILITY_OUTPUT_PATTERN.finditer(source))
+    if len(matches) != 1:
+        raise ValueError(f"Pinned FongMi source visibility output anchor count is {len(matches)}")
+    match = matches[0]
+    block = (
+        SOURCE_VISIBILITY_OUTPUT_BLOCK_LEGACY
+        if match.group(0).lstrip().startswith("color =")
+        else SOURCE_VISIBILITY_OUTPUT_BLOCK_PINNED
+    )
+    source = SOURCE_VISIBILITY_OUTPUT_PATTERN.sub(
+        lambda current: _indent_block(block, current.group("indent")),
+        source,
+        count=1,
+    )
+    if not _has_source_visibility(source):
+        raise ValueError("FongMi source-specific visibility patch failed its postconditions")
+    return source
+
+
 def _is_synthesis_patched(source: str) -> bool:
-    return _is_synthesis_patched_core(source) and _has_spatial_medoid_fallback(source)
+    return (
+        _is_synthesis_patched_core(source)
+        and _has_spatial_medoid_fallback(source)
+        and _has_spatial_visibility_scale(source)
+        and _has_source_visibility(source)
+    )
 
 def _has_reconstruction_guard(source: str) -> bool:
     return (
@@ -874,6 +1104,9 @@ def _has_fine_motion_grid(source: str) -> bool:
     return (
         source.count(FINE_GRID_MARKER) == 1
         and source.count(FINE_GRID_ASSIGNMENT) == 1
+        and source.count(HIGH_RES_FINE_GRID_MARKER) == 1
+        and source.count(HIGH_RES_FINE_GRID_CONDITION) == 1
+        and source.count("spacing = 2;") == 1
         and "int spacing = level == LEVELS - 1 ? 4 : 8;" not in source
     )
 
@@ -1215,10 +1448,31 @@ def _patch_scene_cut(source: str) -> str:
 
 
 def _patch_fine_motion_grid(source: str) -> str:
+    if HIGH_RES_FINE_GRID_MARKER in source and FINE_GRID_MARKER not in source:
+        raise ValueError("FongMi high-resolution grid marker is missing its base-grid marker")
     if FINE_GRID_MARKER in source:
-        if not _has_fine_motion_grid(source):
-            raise ValueError("FongMi fine motion-grid marker/source mismatch")
-        return source
+        if _has_fine_motion_grid(source):
+            return source
+        if (
+            source.count(FINE_GRID_MARKER) == 1
+            and source.count(FINE_GRID_ASSIGNMENT) == 1
+            and HIGH_RES_FINE_GRID_MARKER not in source
+            and HIGH_RES_FINE_GRID_CONDITION not in source
+        ):
+            source = _replace_one(
+                FINE_GRID_ASSIGNMENT_PATTERN,
+                source,
+                lambda match: match.group(0) + "\n" + _indent_block(
+                    HIGH_RES_FINE_GRID_BLOCK, match.group("indent")
+                ),
+                "high-resolution finest motion-grid refinement",
+            )
+            if not _has_fine_motion_grid(source):
+                raise ValueError("FongMi high-resolution finest motion-grid upgrade failed its postconditions")
+            return source
+        raise ValueError("FongMi fine motion-grid marker/source mismatch")
+    if HIGH_RES_FINE_GRID_MARKER in source or HIGH_RES_FINE_GRID_CONDITION in source:
+        raise ValueError("FongMi high-resolution grid refinement is only partially present")
     if FINE_GRID_ASSIGNMENT in source:
         raise ValueError("FongMi fine motion-grid assignment is missing its marker")
     source = _replace_one(
@@ -1261,7 +1515,9 @@ def _patch_v3_synthesis(source: str) -> str:
     )
     source = _replace_output(source, "V3 synthesis output")
     source = _patch_spatial_trust(source)
+    source = _patch_spatial_visibility_scale(source)
     source = _patch_spatial_medoid_fallback(source)
+    source = _patch_source_visibility(source)
     if not _is_synthesis_patched(source):
         raise ValueError("FongMi motion artifact V3-to-V4 upgrade failed its postconditions")
     return source
@@ -1285,6 +1541,8 @@ def transform_source(source: str) -> tuple[str, bool]:
         patched = _patch_fine_motion_grid(patched)
         patched = _patch_refinement_aperture_normal(patched)
         patched = _patch_spatial_medoid_fallback(patched)
+        patched = _patch_spatial_visibility_scale(patched)
+        patched = _patch_source_visibility(patched)
         if not _is_patched(patched):
             raise ValueError("FongMi motion artifact postconditions failed")
         return patched, patched != original
@@ -1298,6 +1556,7 @@ def transform_source(source: str) -> tuple[str, bool]:
         source = _patch_scene_cut(source)
         source = _patch_fine_motion_grid(source)
         source = _patch_refinement_aperture_normal(source)
+        source = _patch_spatial_visibility_scale(source)
         if not _is_patched(source):
             raise ValueError("FongMi motion artifact V3-to-V4 patch failed its postconditions")
         return source, source != original
@@ -1342,7 +1601,9 @@ def transform_source(source: str) -> tuple[str, bool]:
     )
     source = _replace_output(source, "synthesis output")
     source = _patch_spatial_trust(source)
+    source = _patch_spatial_visibility_scale(source)
     source = _patch_spatial_medoid_fallback(source)
+    source = _patch_source_visibility(source)
     source = _patch_reconstruction(source)
     source = _patch_global_translation_cycle_guard(source)
     source = _patch_warp_trajectory(source)

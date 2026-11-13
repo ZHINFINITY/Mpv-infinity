@@ -126,6 +126,7 @@ assert 'or "MPVFLOW_WARP_TRAJECTORY_TRUST_V2" in motion' in PREPARE
 assert 'or "MPVFLOW_INSHOT_NEAREST_SOURCE_FALLBACK_V1" in motion' in PREPARE
 assert "MPVFLOW_SCENE_CUT_SPATIAL_V1" in PREPARE
 assert "MPVFLOW_FINE_MOTION_GRID_V1" in PREPARE
+assert "MPVFLOW_HIGH_RES_FINE_GRID_V1" in PREPARE
 assert "MPVFLOW_REFINEMENT_APERTURE_NORMAL_V1" in PREPARE
 assert "MPVFLOW_SPATIAL_TRUST_DOWNWARD_CAP_V3" in PREPARE
 assert "MPVFLOW_SPATIAL_MEDOID_FALLBACK_V1" in PREPARE
@@ -142,6 +143,8 @@ assert "MPVFLOW_REFINEMENT_APERTURE_NORMAL_V1" in MOTION_PATCHER
 assert "MPVFLOW_SPATIAL_TRUST_DOWNWARD_CAP_V3" in MOTION_PATCHER
 assert "MPVFLOW_SPATIAL_MEDOID_FALLBACK_V1" in MOTION_PATCHER
 assert "if (total < 0.25)\n        return -1.0;" in MOTION_PATCHER
+assert "MPVFLOW_HIGH_RES_FINE_GRID_V1" in MOTION_PATCHER
+assert "if (level == 0 && scale < 0.333334)" in MOTION_PATCHER
 assert "float spatial_island = max(0.0, clamp(trust, 0.0, 1.0) - spatial_consensus);" in MOTION_PATCHER
 assert "float spatial_guard_weight = 0.75 * boundary_activation *" in MOTION_PATCHER
 assert "trust = mix(trust, min(trust, spatial_consensus)," in MOTION_PATCHER
@@ -162,7 +165,13 @@ assert "sample_rgba(second, source_position + r.xy * scale - local_motion_offset
 assert "PINNED_OUTPUT_PATTERN" in MOTION_PATCHER
 assert "sample_rgba(source0, vec2(pixel) + f.xy * scale + local_motion_offset)" in MOTION_PATCHER
 assert "sample_rgba(source1, vec2(pixel) + r.xy * scale - local_motion_offset)" in MOTION_PATCHER
-assert "return mix(source_blend, mix(warped0, warped1, blend), clamp(trust, 0.0, 1.0));" in MOTION_PATCHER
+assert "MPVFLOW_SOURCE_SPECIFIC_VISIBILITY_V1" in MOTION_PATCHER
+assert "vec2 projection_ratio = vec2(phase_remaining / phase_alpha," in MOTION_PATCHER
+assert "f.xy * scale * projection_ratio.x)" in MOTION_PATCHER
+assert "r.xy * scale * projection_ratio.y)" in MOTION_PATCHER
+assert "blend > 0.000001 && blend < 0.999999" in MOTION_PATCHER
+assert "visibility += conflict_weight * phase * vec2(f.z, r.z) * evidence;" in MOTION_PATCHER
+assert "return source_blend * (1.0 - visibility_sum) +" in MOTION_PATCHER
 assert "MPVFLOW_RECONSTRUCTION_POSITIVE_EVIDENCE_V1" in MOTION_PATCHER
 assert "evidence > 0.0 &&" in MOTION_PATCHER
 assert "MPVFLOW_WARP_BEST_INVERSE_RESIDUAL_V1" in MOTION_PATCHER
@@ -174,6 +183,7 @@ assert "MPVFLOW_WARP_TRAJECTORY_TRUST_V2" not in MOTION_SNAPSHOT
 assert "MPVFLOW_INSHOT_NEAREST_SOURCE_FALLBACK_V1" not in MOTION_SNAPSHOT
 assert "MPVFLOW_SCENE_CUT_SPATIAL_V1" in MOTION_SNAPSHOT
 assert "MPVFLOW_FINE_MOTION_GRID_V1" in MOTION_SNAPSHOT
+assert "MPVFLOW_HIGH_RES_FINE_GRID_V1" in MOTION_SNAPSHOT
 assert "MPVFLOW_REFINEMENT_APERTURE_NORMAL_V1" in MOTION_SNAPSHOT
 assert "float tensor_discriminant = sqrt(max(" in MOTION_SNAPSHOT
 assert "lambda_min < 0.12 * lambda_max;" in MOTION_SNAPSHOT
@@ -187,12 +197,23 @@ assert "vec2 axis = xx > yy ? vec2(1, 0) : vec2(0, 1);" not in MOTION_SNAPSHOT
 assert "MPVFLOW_SPATIAL_TRUST_DOWNWARD_CAP_V3" in MOTION_SNAPSHOT
 assert "MPVFLOW_SPATIAL_MEDOID_FALLBACK_V1" in MOTION_SNAPSHOT
 assert "spatial_trust_consensus(warp0, warp1, uv, f, r)" in MOTION_SNAPSHOT
+assert "MPVFLOW_SPATIAL_VISIBILITY_CAP_V1" in MOTION_SNAPSHOT
+assert "MPVFLOW_SOURCE_SPECIFIC_VISIBILITY_V1" in MOTION_SNAPSHOT
+assert "vec2 projection_ratio = vec2(phase_remaining / phase_alpha," in MOTION_SNAPSHOT
+assert "f.xy * scale * projection_ratio.x)" in MOTION_SNAPSHOT
+assert "r.xy * scale * projection_ratio.y)" in MOTION_SNAPSHOT
+assert "alpha > 0.000001 && alpha < 0.999999" in MOTION_SNAPSHOT
+assert "visibility += conflict_weight * phase * vec2(f.z, r.z) * evidence;" in MOTION_SNAPSHOT
+assert "visibility *= clamp(spatial_visibility_scale, 0.0, 1.0);" in MOTION_SNAPSHOT
+assert "color = source_blend * (1.0 - visibility_sum) +" in MOTION_SNAPSHOT
 assert "if (total < 0.25)\n            return -1.0;" in MOTION_SNAPSHOT
 assert "float spatial_island = max(0.0, clamp(trust, 0.0, 1.0) - spatial_consensus);" in MOTION_SNAPSHOT
 assert "trust = mix(trust, min(trust, spatial_consensus)," in MOTION_SNAPSHOT
 assert "trust = mix(trust, spatial_consensus," not in MOTION_SNAPSHOT
 assert "if (spatial_consensus >= 0.0) {" in MOTION_SNAPSHOT
 assert "int spacing = (level == LEVELS - 1 || level == 0) ? 4 : 8;" in MOTION_SNAPSHOT
+assert "if (level == 0 && scale < 0.333334)" in MOTION_SNAPSHOT
+assert "spacing = 2;" in MOTION_SNAPSHOT
 assert "MPVFLOW_LOCAL_MOTION_SOFTENING_V1" in MOTION_SNAPSHOT
 assert "local_motion_softness" in MOTION_SNAPSHOT
 assert "float trajectory_error = abs(weight) * length(motion_vector - initial_motion);" in MOTION_SNAPSHOT

@@ -573,6 +573,12 @@ static const char synthesis_header[] = GLSL(
                smoothstep(0.01, 0.15, vector.w);
     }
 
+    float relative_fit(float stationary_error, float warped_error)
+    {
+        return stationary_error > warped_error
+            ? (stationary_error - warped_error) / stationary_error : 0.0;
+    }
+
     float neighborhood_quality(sampler2D field, vec2 uv, vec2 center)
     {
         ivec2 size = textureSize(field, 0);
@@ -821,14 +827,20 @@ static const char synthesis_body[] = GLSL(
                                    color_error);
         trust *= boundary_trust * region3_local_trust;
         // MPVFLOW_SPATIAL_TRUST_DOWNWARD_CAP_V3: never restore confidence rejected by this pixel's photometric checks.
+        // MPVFLOW_SPATIAL_VISIBILITY_CAP_V1: preserve the same downward-only attenuation for independent source weights.
+        float spatial_visibility_scale = 1.0;
         if (boundary_activation > 0.0) {
             float spatial_consensus = spatial_trust_consensus(warp0, warp1, uv, f, r);
             if (spatial_consensus >= 0.0) {
                 float spatial_island = max(0.0, clamp(trust, 0.0, 1.0) - spatial_consensus);
                 float spatial_guard_weight = 0.75 * boundary_activation *
                                              smoothstep(0.08, 0.35, spatial_island);
+                float trust_before_spatial = clamp(trust, 0.0, 1.0);
                 trust = mix(trust, min(trust, spatial_consensus),
                             clamp(spatial_guard_weight, 0.0, 0.75));
+                float trust_after_spatial = clamp(trust, 0.0, 1.0);
+                if (trust_before_spatial > 0.000001)
+                    spatial_visibility_scale = clamp(trust_after_spatial / trust_before_spatial, 0.0, 1.0);
             }
         }
         vec2 local_motion_delta = (r.xy - f.xy) * scale;
@@ -869,7 +881,59 @@ static const char synthesis_body[] = GLSL(
             source_blend = mix(source_blend, mix(coherent_warped0, coherent_warped1, alpha),
                                clamp(coherent_fallback, 0.0, 1.0));
         }
-        color = mix(source_blend, mix(warped0, warped1, alpha), clamp(trust, 0.0, 1.0));
+        // MPVFLOW_SOURCE_SPECIFIC_VISIBILITY_V1: retain each direction's supported trajectory through conflict.
+        vec2 phase = vec2(1.0 - alpha, alpha);
+        float certified = clamp(min(f.w, r.w), 0.0, 1.0);
+        float unique = min(min(f.z, r.z), certified);
+        float strongest = max(f.z, r.z);
+        float source_aperture = certified * (1.0 - smoothstep(0.002, 0.02, color_error));
+        float source_reliable = max(unique, source_aperture);
+        float conflict_weight = smoothstep(0.03, 0.15, color_error);
+        float phase_alpha = clamp(alpha, 0.000001, 0.999999);
+        float phase_remaining = 1.0 - phase_alpha;
+        vec2 projection_ratio = vec2(phase_remaining / phase_alpha,
+                                     phase_alpha / phase_remaining);
+        float stationary_error = 0.0;
+        if ((strongest > source_reliable ||
+             (strongest > 0.0 && conflict_weight > 0.0)) &&
+            !all(equal(original0.rgb, original1.rgb))) {
+            vec3 stationary = abs(original0.rgb - original1.rgb);
+            stationary_error = max(stationary.r, max(stationary.g, stationary.b));
+        }
+        vec2 source_confidence = max(vec2(f.z, r.z) *
+                                     relative_fit(stationary_error, color_error),
+                                     source_reliable);
+        vec2 visibility = phase * source_confidence * (1.0 - conflict_weight);
+        visibility *= 1.0 - smoothstep(0.03, 0.30, color_error);
+        visibility *= clamp(boundary_trust * region3_local_trust, 0.0, 1.0);
+        if (conflict_weight > 0.0 && stationary_error > 0.0 &&
+            alpha > 0.000001 && alpha < 0.999999) {
+            vec4 paired1 = sample_rgba(second, source_position -
+                                       f.xy * scale * projection_ratio.x);
+            vec4 paired0 = sample_rgba(first, source_position -
+                                       r.xy * scale * projection_ratio.y);
+            vec3 error0 = abs(warped0.rgb - paired1.rgb);
+            vec3 error1 = abs(paired0.rgb - warped1.rgb);
+            vec2 paired_error = vec2(max(error0.r, max(error0.g, error0.b)),
+                                     max(error1.r, max(error1.g, error1.b)));
+            vec2 support = vec2(1.0) - smoothstep(vec2(0.03), vec2(0.15), paired_error);
+            vec2 evidence = support * vec2(relative_fit(stationary_error, paired_error.x),
+                                           relative_fit(stationary_error, paired_error.y));
+            if (f.z <= 0.0) evidence.x = 0.0;
+            if (r.z <= 0.0) evidence.y = 0.0;
+            visibility += conflict_weight * phase * vec2(f.z, r.z) * evidence;
+        }
+        visibility *= clamp(spatial_visibility_scale, 0.0, 1.0);
+        if (any(isnan(visibility)) || any(isinf(visibility)))
+            visibility = vec2(0.0);
+        visibility = clamp(visibility, vec2(0.0), vec2(1.0));
+        float visibility_sum = visibility.x + visibility.y;
+        if (visibility_sum > 1.0) {
+            visibility /= visibility_sum;
+            visibility_sum = 1.0;
+        }
+        color = source_blend * (1.0 - visibility_sum) +
+                warped0 * visibility.x + warped1 * visibility.y;
     }
 );
 
@@ -989,6 +1053,10 @@ static bool analyze(struct mp_motion *m, pl_tex first, pl_tex second,
         // MPVFLOW_FINE_MOTION_GRID_V1: halve finest-level vector-cell pitch
         // without enlarging the analysis image.
         int spacing = (level == LEVELS - 1 || level == 0) ? 4 : 8;
+        // MPVFLOW_HIGH_RES_FINE_GRID_V1: refine only the finest grid when the
+        // 480px analysis cap downsamples 1440px+ source frames.
+        if (level == 0 && scale < 0.333334)
+            spacing = 2;
         for (int direction = 0; direction < 2; direction++) {
             if (!recreate(m, &m->images[level][direction], width, height) ||
                 !recreate(m, &m->vectors[level][direction],
