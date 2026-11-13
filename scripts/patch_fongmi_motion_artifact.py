@@ -32,6 +32,7 @@ FINE_GRID_MARKER = "MPVFLOW_FINE_MOTION_GRID_V1"
 FINE_GRID_ASSIGNMENT = "int spacing = (level == LEVELS - 1 || level == 0) ? 4 : 8;"
 HIGH_RES_FINE_GRID_MARKER = "MPVFLOW_HIGH_RES_FINE_GRID_V1"
 HIGH_RES_FINE_GRID_CONDITION = "if (level == 0 && scale < 0.333334)"
+ANALYSIS_DOWNSAMPLE_MARKER = "MPVFLOW_ANALYSIS_DOWNSAMPLE_ANTIALIAS_V1"
 SPATIAL_TRUST_MARKER = "MPVFLOW_SPATIAL_TRUST_DOWNWARD_CAP_V3"
 REFINEMENT_APERTURE_NORMAL_MARKER = "MPVFLOW_REFINEMENT_APERTURE_NORMAL_V1"
 REFINEMENT_APERTURE_TANGENT_MARKER = "MPVFLOW_REFINEMENT_APERTURE_TANGENT_V1"
@@ -297,6 +298,25 @@ HIGH_RES_FINE_GRID_BLOCK = """// MPVFLOW_HIGH_RES_FINE_GRID_V1: refine only the 
 // when the 480px cap downsamples 1440px+ source frames.
 if (level == 0 && scale < 0.333334)
     spacing = 3;"""
+ANALYSIS_DOWNSAMPLE_SAMPLE_PATTERN = re.compile(
+    r"(?m)^(?P<indent>[ \t]*)vec3 sampled = sample_color\(source, p\);$"
+)
+ANALYSIS_DOWNSAMPLE_BLOCK = """// MPVFLOW_ANALYSIS_DOWNSAMPLE_ANTIALIAS_V1: average bounded bilinear sub-block centers before motion matching.
+vec2 tap_count = clamp(ceil(source_scale / 2.0), vec2(1.0), vec2(4.0));
+vec3 sampled = vec3(0.0);
+float sample_weight = 0.0;
+for (int y = 0; y < 4; y++) {
+    if (float(y) >= tap_count.y)
+        continue;
+    for (int x = 0; x < 4; x++) {
+        if (float(x) >= tap_count.x)
+            continue;
+        vec2 subpixel = (vec2(x, y) + 0.5) / tap_count - 0.5;
+        sampled += sample_color(source, p + subpixel * source_scale);
+        sample_weight += 1.0;
+    }
+}
+sampled /= max(sample_weight, 1.0);"""
 FINE_GRID_BLOCK = """// MPVFLOW_FINE_MOTION_GRID_V1: retain 4px cells at levels 0 and last,
 // with 8px cells in the middle level, without enlarging the analysis image.
 int spacing = (level == LEVELS - 1 || level == 0) ? 4 : 8;""" + "\n" + HIGH_RES_FINE_GRID_BLOCK
@@ -1417,6 +1437,18 @@ def _has_fine_motion_grid(source: str) -> bool:
     )
 
 
+def _has_analysis_downsample_filter(source: str) -> bool:
+    return (
+        source.count(ANALYSIS_DOWNSAMPLE_MARKER) == 1
+        and source.count("vec2 tap_count = clamp(ceil(source_scale / 2.0), vec2(1.0), vec2(4.0));") == 1
+        and source.count("for (int y = 0; y < 4; y++) {") == 1
+        and source.count("for (int x = 0; x < 4; x++) {") == 1
+        and source.count("sampled += sample_color(source, p + subpixel * source_scale);") == 1
+        and source.count("sampled /= max(sample_weight, 1.0);") == 1
+        and source.count("vec3 sampled = sample_color(source, p);") == 0
+    )
+
+
 def _has_refinement_aperture_normal(source: str, require_tangent: bool = True) -> bool:
     common = (
         source.count(REFINEMENT_APERTURE_NORMAL_MARKER) == 1
@@ -1468,6 +1500,7 @@ def _is_patched(source: str) -> bool:
         and _has_warp_best_residual_guard(source)
         and _has_scene_cut_guard(source)
         and _has_fine_motion_grid(source)
+        and _has_analysis_downsample_filter(source)
         and _has_refinement_aperture_normal(source)
         and _has_camera_similarity_model(source)
     )
@@ -1754,6 +1787,22 @@ def _patch_scene_cut(source: str) -> str:
     return source
 
 
+def _patch_analysis_downsample(source: str) -> str:
+    if ANALYSIS_DOWNSAMPLE_MARKER in source:
+        if _has_analysis_downsample_filter(source):
+            return source
+        raise ValueError("FongMi analysis downsample marker/source mismatch")
+    source = _replace_one(
+        ANALYSIS_DOWNSAMPLE_SAMPLE_PATTERN,
+        source,
+        lambda match: _indent_block(ANALYSIS_DOWNSAMPLE_BLOCK, match.group("indent")),
+        "anti-aliased motion-analysis downsample",
+    )
+    if not _has_analysis_downsample_filter(source):
+        raise ValueError("FongMi analysis downsample filter failed its postconditions")
+    return source
+
+
 def _patch_fine_motion_grid(source: str) -> str:
     if HIGH_RES_FINE_GRID_MARKER in source and FINE_GRID_MARKER not in source:
         raise ValueError("FongMi high-resolution grid marker is missing its base-grid marker")
@@ -1857,6 +1906,7 @@ def transform_source(source: str) -> tuple[str, bool]:
         patched = _patch_warp_best_residual(patched)
         patched = _patch_scene_cut(patched)
         patched = _patch_fine_motion_grid(patched)
+        patched = _patch_analysis_downsample(patched)
         patched = _patch_refinement_aperture_normal(patched)
         patched = _patch_spatial_medoid_fallback(patched)
         patched = _patch_spatial_visibility_scale(patched)
@@ -1874,6 +1924,7 @@ def transform_source(source: str) -> tuple[str, bool]:
         source = _patch_warp_best_residual(source)
         source = _patch_scene_cut(source)
         source = _patch_fine_motion_grid(source)
+        source = _patch_analysis_downsample(source)
         source = _patch_refinement_aperture_normal(source)
         source = _patch_spatial_visibility_scale(source)
         source = _patch_camera_similarity(source)
@@ -1930,6 +1981,7 @@ def transform_source(source: str) -> tuple[str, bool]:
     source = _patch_warp_best_residual(source)
     source = _patch_scene_cut(source)
     source = _patch_fine_motion_grid(source)
+    source = _patch_analysis_downsample(source)
     source = _patch_refinement_aperture_normal(source)
     source = _patch_camera_similarity(source)
     if not _is_patched(source):
@@ -1951,9 +2003,9 @@ def main() -> None:
         raise SystemExit(str(error)) from error
     if changed:
         source_path.write_text(patched, encoding="utf-8")
-        print("Applied MPVFlow FongMi camera pan/zoom, aperture-normal, fine-grid, synthesis, inverse-warp, and scene-cut guards")
+        print("Applied MPVFlow FongMi camera pan/zoom, antialiased analysis downsample, aperture-normal, fine-grid, synthesis, inverse-warp, and scene-cut guards")
     else:
-        print("MPVFlow FongMi camera pan/zoom, aperture-normal, fine-grid, synthesis, inverse-warp, and scene-cut guards are already applied")
+        print("MPVFlow FongMi camera pan/zoom, antialiased analysis downsample, aperture-normal, fine-grid, synthesis, inverse-warp, and scene-cut guards are already applied")
 
 
 if __name__ == "__main__":

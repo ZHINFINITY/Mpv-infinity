@@ -1010,9 +1010,25 @@ static bool downsample(struct mp_motion *m, pl_tex source, pl_tex target)
     return dispatch(m, target, &(struct pl_custom_shader) {
         .description = "motion pyramid sampling",
         .body = GLSL(
-            vec2 p = (vec2(gl_GlobalInvocationID.xy) + 0.5) *
-                     vec2(textureSize(source, 0)) / output_size - 0.5;
-            color = vec4(sample_color(source, p), 1.0);
+            vec2 source_scale = vec2(textureSize(source, 0)) / output_size;
+            vec2 p = (vec2(gl_GlobalInvocationID.xy) + 0.5) * source_scale - 0.5;
+            // MPVFLOW_ANALYSIS_DOWNSAMPLE_ANTIALIAS_V1: average bounded bilinear sub-block centers before motion matching.
+            vec2 tap_count = clamp(ceil(source_scale / 2.0), vec2(1.0), vec2(4.0));
+            vec3 sampled = vec3(0.0);
+            float sample_weight = 0.0;
+            for (int y = 0; y < 4; y++) {
+                if (float(y) >= tap_count.y)
+                    continue;
+                for (int x = 0; x < 4; x++) {
+                    if (float(x) >= tap_count.x)
+                        continue;
+                    vec2 subpixel = (vec2(x, y) + 0.5) / tap_count - 0.5;
+                    sampled += sample_color(source, p + subpixel * source_scale);
+                    sample_weight += 1.0;
+                }
+            }
+            sampled /= max(sample_weight, 1.0);
+            color = vec4(sampled, 1.0);
         ),
         .descriptors = &desc, .num_descriptors = 1,
         .variables = &var, .num_variables = 1,

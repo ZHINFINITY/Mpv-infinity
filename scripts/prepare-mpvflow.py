@@ -962,6 +962,9 @@ def main() -> None:
         or "MPVFLOW_SCENE_CUT_SPATIAL_V1" not in motion
         or "MPVFLOW_FINE_MOTION_GRID_V1" not in motion
         or "MPVFLOW_HIGH_RES_FINE_GRID_V1" not in motion
+        or "MPVFLOW_ANALYSIS_DOWNSAMPLE_ANTIALIAS_V1" not in motion
+        or "vec2 tap_count = clamp(ceil(source_scale / 2.0), vec2(1.0), vec2(4.0));" not in motion
+        or "sampled += sample_color(source, p + subpixel * source_scale);" not in motion
         or "MPVFLOW_REFINEMENT_APERTURE_NORMAL_V1" not in motion
         or "MPVFLOW_SPATIAL_TRUST_DOWNWARD_CAP_V3" not in motion
         or "MPVFLOW_SPATIAL_MEDOID_FALLBACK_V1" not in motion

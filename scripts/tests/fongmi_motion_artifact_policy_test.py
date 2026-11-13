@@ -159,9 +159,19 @@ BASE_SCENE = """static const char scene_body[] = GLSL(
 );"""
 
 
+BASE_DOWNSAMPLE = """static void fixture_downsample(void) {
+    vec2 source_scale = vec2(4.0);
+    vec2 p = vec2(1.5);
+    vec3 sampled = sample_color(source, p);
+    color = vec4(sampled, 1.0);
+}"""
+
+
 def fixture(trust: str = BASE_TRUST, output: str = BASE_OUTPUT, output_indent: str = "    ") -> str:
     return (
-        BASE_GRID
+        BASE_DOWNSAMPLE
+        + "\n"
+        + BASE_GRID
         + "\n"
         + BASE_REFINEMENT
         + "\n"
@@ -203,6 +213,28 @@ def bilinear_mixed_flow_band_pixels(
     left = max(center for center in centers if center < boundary)
     right = min(center for center in centers if center >= boundary)
     return (right - left) * source_width / analysis_width
+
+
+def analysis_downsample_tap_count(scale: float) -> int:
+    return min(4, max(1, math.ceil(scale / 2.0)))
+
+
+def sample_linear_1d(values: list[float], position: float) -> float:
+    lower = math.floor(position)
+    upper = min(lower + 1, len(values) - 1)
+    fraction = position - lower
+    return values[lower] * (1.0 - fraction) + values[upper] * fraction
+
+
+def center_bilinear_sample(values: list[float], scale: float) -> float:
+    return sample_linear_1d(values, (scale - 1.0) / 2.0)
+
+
+def antialiased_downsample_sample(values: list[float], scale: float) -> float:
+    taps = analysis_downsample_tap_count(scale)
+    center = (scale - 1.0) / 2.0
+    positions = [center + ((i + 0.5) / taps - 0.5) * scale for i in range(taps)]
+    return sum(sample_linear_1d(values, position) for position in positions) / taps
 
 
 def smoothstep(edge0: float, edge1: float, value: float) -> float:
@@ -404,6 +436,8 @@ assert PATCHER.LOCAL_SOFTENING_MARKER in patched
 assert PATCHER.SPATIAL_MEDOID_MARKER in patched
 assert PATCHER.GLOBAL_TRANSLATION_CYCLE_MARKER in patched
 assert PATCHER.HIGH_RES_FINE_GRID_MARKER in patched
+assert PATCHER.ANALYSIS_DOWNSAMPLE_MARKER in patched
+assert PATCHER._has_analysis_downsample_filter(patched)
 assert PATCHER._has_global_translation_cycle_guard(patched)
 assert "translation_position + vector / size, 0.0" in patched
 assert "translation_cycle < 1.5 &&" in patched
@@ -595,6 +629,14 @@ assert math.isclose(
     1.0 - (fine_grid[0] * fine_grid[1]) / (previous_high_res_grid[0] * previous_high_res_grid[1]),
     5.0 / 9.0,
 )
+assert [analysis_downsample_tap_count(scale) for scale in (1.5, 2.0, 4.0, 8.0)] == [1, 1, 2, 4]
+line_patterns = [[float(index == line) for index in range(4)] for line in range(4)]
+center_line_response = [center_bilinear_sample(line, 4.0) for line in line_patterns]
+filtered_line_response = [antialiased_downsample_sample(line, 4.0) for line in line_patterns]
+assert center_line_response == [0.0, 0.5, 0.5, 0.0]
+assert all(math.isclose(value, 0.25, abs_tol=1e-9) for value in filtered_line_response)
+# At 1920x1080 -> 480x270, four bilinear sub-block samples read each source texel once.
+assert 480 * 270 * analysis_downsample_tap_count(4.0) ** 2 * 4 == 1920 * 1080
 assert motion_grid_spacing(0, 480 / 1920) == 3
 assert motion_grid_spacing(0, 480 / 1440) == 3
 assert motion_grid_spacing(0, 480 / 1280) == 4
