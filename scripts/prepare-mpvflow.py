@@ -979,7 +979,7 @@ def main() -> None:
         or "MPVFLOW_GLOBAL_TRANSLATION_CYCLE_GUARD_V1" not in motion
         or "int spacing = (level == LEVELS - 1 || level == 0) ? 4 : 8;" not in motion
         or "if (level == 0 && scale < 0.333334)" not in motion
-        or "spacing = 2;" not in motion
+        or "spacing = 3;" not in motion
         or "video/out/gpu_next/motion.c" not in meson
         or "libmpv_motion" not in meson
         or '{"motion-interpolation-info", mp_property_motion_info}' not in command

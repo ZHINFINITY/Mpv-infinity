@@ -164,7 +164,7 @@ FINE_GRID_ASSIGNMENT_PATTERN = re.compile(
 HIGH_RES_FINE_GRID_BLOCK = """// MPVFLOW_HIGH_RES_FINE_GRID_V1: refine only the finest analysis grid
 // when the 480px cap downsamples 1440px+ source frames.
 if (level == 0 && scale < 0.333334)
-    spacing = 2;"""
+    spacing = 3;"""
 FINE_GRID_BLOCK = """// MPVFLOW_FINE_MOTION_GRID_V1: retain 4px cells at levels 0 and last,
 // with 8px cells in the middle level, without enlarging the analysis image.
 int spacing = (level == LEVELS - 1 || level == 0) ? 4 : 8;""" + "\n" + HIGH_RES_FINE_GRID_BLOCK
@@ -1106,7 +1106,7 @@ def _has_fine_motion_grid(source: str) -> bool:
         and source.count(FINE_GRID_ASSIGNMENT) == 1
         and source.count(HIGH_RES_FINE_GRID_MARKER) == 1
         and source.count(HIGH_RES_FINE_GRID_CONDITION) == 1
-        and source.count("spacing = 2;") == 1
+        and source.count("spacing = 3;") == 1
         and "int spacing = level == LEVELS - 1 ? 4 : 8;" not in source
     )
 
@@ -1453,6 +1453,17 @@ def _patch_fine_motion_grid(source: str) -> str:
     if FINE_GRID_MARKER in source:
         if _has_fine_motion_grid(source):
             return source
+        if (
+            source.count(FINE_GRID_MARKER) == 1
+            and source.count(FINE_GRID_ASSIGNMENT) == 1
+            and source.count(HIGH_RES_FINE_GRID_MARKER) == 1
+            and source.count(HIGH_RES_FINE_GRID_CONDITION) == 1
+            and source.count("spacing = 2;") == 1
+        ):
+            source = source.replace("spacing = 2;", "spacing = 3;", 1)
+            if _has_fine_motion_grid(source):
+                return source
+            raise ValueError("FongMi high-resolution finest motion-grid adjustment failed its postconditions")
         if (
             source.count(FINE_GRID_MARKER) == 1
             and source.count(FINE_GRID_ASSIGNMENT) == 1

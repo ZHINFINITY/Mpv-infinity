@@ -1056,7 +1056,7 @@ static bool analyze(struct mp_motion *m, pl_tex first, pl_tex second,
         // MPVFLOW_HIGH_RES_FINE_GRID_V1: refine only the finest grid when the
         // 480px analysis cap downsamples 1440px+ source frames.
         if (level == 0 && scale < 0.333334)
-            spacing = 2;
+            spacing = 3;
         for (int direction = 0; direction < 2; direction++) {
             if (!recreate(m, &m->images[level][direction], width, height) ||
                 !recreate(m, &m->vectors[level][direction],

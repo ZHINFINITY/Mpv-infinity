@@ -233,7 +233,7 @@ assert "trust = mix(trust, spatial_consensus," not in MOTION_SNAPSHOT
 assert "if (spatial_consensus >= 0.0) {" in MOTION_SNAPSHOT
 assert "int spacing = (level == LEVELS - 1 || level == 0) ? 4 : 8;" in MOTION_SNAPSHOT
 assert "if (level == 0 && scale < 0.333334)" in MOTION_SNAPSHOT
-assert "spacing = 2;" in MOTION_SNAPSHOT
+assert "spacing = 3;" in MOTION_SNAPSHOT
 assert "MPVFLOW_LOCAL_MOTION_SOFTENING_V1" in MOTION_SNAPSHOT
 assert "local_motion_softness" in MOTION_SNAPSHOT
 assert "float trajectory_error = abs(weight) * length(motion_vector - initial_motion);" in MOTION_SNAPSHOT

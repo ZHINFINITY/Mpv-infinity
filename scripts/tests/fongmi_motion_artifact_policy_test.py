@@ -189,7 +189,7 @@ def vector_grid_shape(width: int, height: int, spacing: int) -> tuple[int, int]:
 
 def motion_grid_spacing(level: int, scale: float, levels: int = 3) -> int:
     if level == 0 and scale < 0.333334:
-        return 2
+        return 3
     return 4 if level in (0, levels - 1) else 8
 
 
@@ -407,7 +407,7 @@ assert PATCHER._has_global_translation_cycle_guard(patched)
 assert "translation_position + vector / size, 0.0" in patched
 assert "translation_cycle < 1.5 &&" in patched
 assert PATCHER.HIGH_RES_FINE_GRID_CONDITION in patched
-assert "spacing = 2;" in patched
+assert "spacing = 3;" in patched
 # A camera-pan vector remains available on coherent background in both directions.
 pan = (4.0, -1.0)
 assert select_global_translation(pan, pan, (-4.0, 1.0), 0.02, 0.02) == pan
@@ -522,18 +522,23 @@ constant_candidate, constant_final = inverse_warp_candidates(64.0, 0.5, lambda _
 assert constant_candidate[0] == 0.0 and constant_final[0] == 0.0
 coarse_grid = vector_grid_shape(480, 221, 8)
 previous_fine_grid = vector_grid_shape(480, 221, 4)
-fine_grid = vector_grid_shape(480, 221, 2)
+previous_high_res_grid = vector_grid_shape(480, 221, 2)
+fine_grid = vector_grid_shape(480, 221, 3)
 coarse_mix_band = bilinear_mixed_flow_band_pixels(480, 1920, 8)
 previous_fine_mix_band = bilinear_mixed_flow_band_pixels(480, 1920, 4)
-fine_mix_band = bilinear_mixed_flow_band_pixels(480, 1920, 2)
+fine_mix_band = bilinear_mixed_flow_band_pixels(480, 1920, 3)
 assert coarse_grid == (60, 28)
 assert previous_fine_grid == (120, 56)
-assert fine_grid == (240, 111)
-assert coarse_mix_band == 32.0 and previous_fine_mix_band == 16.0 and fine_mix_band == 8.0
-assert fine_mix_band * 2 == previous_fine_mix_band
-assert fine_mix_band * 4 == coarse_mix_band
-assert motion_grid_spacing(0, 480 / 1920) == 2
-assert motion_grid_spacing(0, 480 / 1440) == 2
+assert previous_high_res_grid == (240, 111)
+assert fine_grid == (160, 74)
+assert coarse_mix_band == 32.0 and previous_fine_mix_band == 16.0 and fine_mix_band == 12.0
+assert fine_mix_band < previous_fine_mix_band < coarse_mix_band
+assert math.isclose(
+    1.0 - (fine_grid[0] * fine_grid[1]) / (previous_high_res_grid[0] * previous_high_res_grid[1]),
+    5.0 / 9.0,
+)
+assert motion_grid_spacing(0, 480 / 1920) == 3
+assert motion_grid_spacing(0, 480 / 1440) == 3
 assert motion_grid_spacing(0, 480 / 1280) == 4
 assert motion_grid_spacing(1, 480 / 1920) == 8
 assert motion_grid_spacing(2, 480 / 1920) == 4
@@ -548,6 +553,13 @@ again, changed_again = PATCHER.transform_source(patched)
 assert not changed_again and again == patched
 
 # Upgrade the prior V1 grid patch without touching its unchanged coarse levels.
+legacy_two_pixel_grid = patched.replace("spacing = 3;", "spacing = 2;", 1)
+upgraded_two_pixel_grid, upgraded_two_pixel_grid_changed = PATCHER.transform_source(legacy_two_pixel_grid)
+assert upgraded_two_pixel_grid_changed and PATCHER._has_fine_motion_grid(upgraded_two_pixel_grid)
+assert "spacing = 3;" in upgraded_two_pixel_grid and "spacing = 2;" not in upgraded_two_pixel_grid
+upgraded_two_pixel_grid_again, upgraded_two_pixel_grid_changed_again = PATCHER.transform_source(upgraded_two_pixel_grid)
+assert not upgraded_two_pixel_grid_changed_again and upgraded_two_pixel_grid_again == upgraded_two_pixel_grid
+
 old_high_res_grid = patched.replace(
     PATCHER._indent_block(PATCHER.HIGH_RES_FINE_GRID_BLOCK, "        ") + "\n",
     "",
@@ -1185,9 +1197,11 @@ print(
     f"{old_step:.4f} -> {new_step:.4f}; local directional softness is capped at 0.24 "
     "with trajectory stability capping primary warp confidence and no per-pixel temporal source switch; "
     "spatial cut detection flags palette-matched scene changes without firing on one-tile motion; "
-    f"the high-resolution 480-cap finest grid changes {previous_fine_grid[0]}x{previous_fine_grid[1]} "
-    f"to {fine_grid[0]}x{fine_grid[1]}, halving the mixed-flow band "
-    f"{previous_fine_mix_band:.0f}px to {fine_mix_band:.0f}px while leaving mid/coarse levels unchanged"
+    f"the high-resolution 480-cap finest grid uses {fine_grid[0]}x{fine_grid[1]} cells instead of "
+    f"{previous_high_res_grid[0]}x{previous_high_res_grid[1]} "
+    f"({1.0 - (fine_grid[0] * fine_grid[1]) / (previous_high_res_grid[0] * previous_high_res_grid[1]):.1%} fewer matches), "
+    f"retaining a {fine_mix_band:.0f}px mixed-flow band versus {previous_fine_mix_band:.0f}px at the prior 4px grid; "
+    "mid/coarse levels remain unchanged"
 )
 assert "sampling_position = diagnostic_mode == 0 ? vec2(pixel) : source_position;" in motion_capture_patcher_source
 assert "original0 = texelFetch(source0, source_pixel, 0);" in motion_capture_patcher_source
