@@ -34,6 +34,10 @@ def test_manifests_match_and_cover_pins() -> None:
         "12fedd08063a540b69667a51e146d539ebae509b63c07964f573410a7d0ae427",
         "FongMi/libplacebo",
         "FongMi libplacebo API-387 header snapshot",
+        "MPVRx API-391 verifier-only marker",
+        "scripts/libplacebo-api-391-config.h",
+        "not a complete header set",
+        "pl_log_create_391",
         "include-api-387",
         "pl_desc=40",
         "pl_shader_desc=72",
@@ -119,6 +123,14 @@ def test_source_links_are_location_independent() -> None:
         for target in targets
     )
     assert any(f"github.com/FongMi/libplacebo/tree/{PLACEBO_SHA}" in target for target in targets)
+    assert any(
+        f"github.com/FongMi/libplacebo/blob/{PLACEBO_SHA}/src/include/libplacebo/config.h.in" in target
+        for target in targets
+    )
+    assert any(f"github.com/FongMi/libplacebo/blob/{PLACEBO_SHA}/meson.build" in target for target in targets)
+    experimental_branch = "mpvrx-interpolation-improvements-20261114"
+    assert any(f"/blob/{experimental_branch}/scripts/libplacebo-api-391-config.h" in target for target in targets)
+    assert any(f"/blob/{experimental_branch}/scripts/verify-mpv-aar-lgpl.py" in target for target in targets)
     assert any(f"github.com/KhronosGroup/Vulkan-Headers/tree/{VULKAN_HEADERS_SHA}" in target for target in targets)
     assert any(f"github.com/KhronosGroup/Vulkan-Headers/archive/{VULKAN_HEADERS_SHA}.tar.gz" in target for target in targets)
 

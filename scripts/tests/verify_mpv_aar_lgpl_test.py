@@ -23,12 +23,21 @@ def verify_mocked(exports: str) -> None:
         verifier.run_tool = original
 
 
-# Both supported profiles must use the exact matching vendored header snapshot.
+# Runtime APIs must map to their exact header configuration or verifier marker.
 assert verifier.expected_placebo_api_ver("374") == "374"
 assert verifier.expected_placebo_api_ver("387") == "387"
+assert verifier.expected_placebo_api_ver("391") == "391"
+api391_marker = verifier.PLACEBO_CONFIG_HEADERS["391"].read_text(encoding="utf-8")
+assert "63659d96d1bff7d7a5a1368e9538056a193fc6fb" in api391_marker
+assert "not a complete header set" in api391_marker
 verify_mocked("00000000 T pl_log_create_374\n")
 verify_mocked(
     "00000000 T pl_log_create_387@@LIBPLACEBO_7.387\n"
+    "00000000 T pl_vulkan_swapchain_set_diagnostics\n"
+    "00000000 T pl_vulkan_swapchain_get_diagnostics\n"
+)
+verify_mocked(
+    "00000000 T pl_log_create_391@@LIBPLACEBO_7.391\n"
     "00000000 T pl_vulkan_swapchain_set_diagnostics\n"
     "00000000 T pl_vulkan_swapchain_get_diagnostics\n"
 )
@@ -40,6 +49,8 @@ for exports in (
     "00000000 T pl_log_create_374.trailing\n",
     "00000000 T pl_log_create_374\n00000000 T pl_log_create_387\n",
     "00000000 T pl_log_create_387\n"
+    "00000000 T pl_vulkan_swapchain_set_diagnostics\n",
+    "00000000 T pl_log_create_391\n"
     "00000000 T pl_vulkan_swapchain_set_diagnostics\n",
 ):
     try:
@@ -64,4 +75,4 @@ with zipfile.ZipFile(aar) as archive:
         library.write_bytes(archive.read(entry))
         verifier.verify_placebo_logger_export("arm64-v8a", library, Path(entry).name)
 
-print("AAR libplacebo API 374/387 verifier profiles OK")
+print("AAR libplacebo API 374/387/391 verifier profiles OK")

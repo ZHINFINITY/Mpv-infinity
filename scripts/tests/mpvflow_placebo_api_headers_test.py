@@ -21,6 +21,7 @@ API_HEADERS = {
     374: PLACEBO / "include/libplacebo",
     387: PLACEBO / "include-api-387/libplacebo",
 }
+assert 391 not in API_HEADERS, "MPV runtime API-391 verifier marker must not enter Native Media3 header selection"
 
 
 def exported_apis(nm_output: str) -> list[int]:
