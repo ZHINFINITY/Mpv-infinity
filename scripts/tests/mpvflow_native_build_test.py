@@ -553,6 +553,38 @@ for bad_wsi_recovery in (
         raise AssertionError("unexpected pinned WSI recovery changes must fail closed")
 patched_wsi_source = prepare.instrument_libplacebo_swapchain(wsi_source)
 prepare.validate_libplacebo_suboptimal_recovery(patched_wsi_source)
+direct_submit_block = (
+    "    int qidx = cmd->qindex;\n"
+    "    if (!CMD_SUBMIT(&cmd)) {\n"
+    "        pl_mutex_unlock(&p->lock);\n"
+    "        return false;\n"
+    "    }\n"
+)
+vk_tex_hold_block = (
+    "    int qidx;\n"
+    "    bool held = vk_tex_hold(gpu, pl_vulkan_hold_params(\n"
+    "        .tex = current->images.elem[idx],\n"
+    "    ), &p->frames_in_flight, &qidx);\n"
+    "    if (!held) {\n"
+    "        pl_mutex_unlock(&p->lock);\n"
+    "        return false;\n"
+    "    }\n"
+)
+assert wsi_source.count(direct_submit_block) == 1
+vk_tex_hold_wsi_source = wsi_source.replace(direct_submit_block, vk_tex_hold_block, 1)
+patched_vk_tex_hold_wsi_source = prepare.instrument_libplacebo_swapchain(vk_tex_hold_wsi_source)
+prepare.validate_libplacebo_suboptimal_recovery(patched_vk_tex_hold_wsi_source)
+assert 'FLOW_WSI_COMMAND_SUBMIT, "vk_tex_hold"' in patched_vk_tex_hold_wsi_source
+assert patched_vk_tex_hold_wsi_source.index("pl_clock_t flow_submit_start") < patched_vk_tex_hold_wsi_source.index(
+    "bool held = vk_tex_hold("
+), "vk_tex_hold host timing must start before the wrapper call"
+hold_call_pos = patched_vk_tex_hold_wsi_source.index("bool held = vk_tex_hold(")
+hold_report_pos = patched_vk_tex_hold_wsi_source.index('FLOW_WSI_COMMAND_SUBMIT, "vk_tex_hold"')
+hold_failure_pos = patched_vk_tex_hold_wsi_source.index("if (!held)", hold_call_pos)
+assert hold_call_pos < hold_report_pos < hold_failure_pos, (
+    "vk_tex_hold timing must report the host call result before preserving its original failure handling"
+)
+assert prepare.instrument_libplacebo_swapchain(patched_vk_tex_hold_wsi_source) == patched_vk_tex_hold_wsi_source
 fongmi_wsi_source = wsi_source.replace(
     "    bool has_swapchain_maintenance1;\n    struct pl_color_repr color_repr;",
     "    bool has_swapchain_maintenance1;\n    uint64_t generation;\n    struct pl_color_repr color_repr;",
@@ -691,7 +723,11 @@ for call in (
 assert "VK_TRUE, UINT64_MAX" in patched_wsi_source and "vk->ResetFences(vk->dev, 1, pfence);" in patched_wsi_source, (
     "WSI instrumentation must preserve the original present-fence wait/reset sequence"
 )
-for bad_wsi_source in ("unrecognized Vulkan swapchain source\n", wsi_source + "\n" + wsi_source):
+for bad_wsi_source in (
+    "unrecognized Vulkan swapchain source\n",
+    wsi_source + "\n" + wsi_source,
+    vk_tex_hold_wsi_source.replace("bool held = vk_tex_hold(", "bool held = vk_tex_hold_unrecognized(", 1),
+):
     try:
         prepare.instrument_libplacebo_swapchain(bad_wsi_source)
     except SystemExit:

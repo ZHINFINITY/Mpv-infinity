@@ -265,13 +265,18 @@ def instrument_libplacebo_swapchain(swapchain_c: str) -> str:
             'FLOW_WSI_FENCE_WAIT, "present_fence_wait"',
             'FLOW_WSI_FENCE_RESET, "vkResetFences"',
             'FLOW_WSI_IMAGE_INIT, "vk_sw_image_init"',
-            'FLOW_WSI_COMMAND_SUBMIT, "vk_cmd_submit_path"',
             'FLOW_WSI_PRESENT_QUEUE_LOCK, "present_queue_lock"',
             'FLOW_WSI_PRESENT, "vkQueuePresentKHR"',
             "pl_vulkan_swapchain_set_diagnostics(pl_swapchain sw, bool enabled)",
             "pl_vulkan_swapchain_get_diagnostics(",
         )
-        if all(item in swapchain_c for item in required):
+        submit_timing_markers = (
+            'FLOW_WSI_COMMAND_SUBMIT, "vk_cmd_submit_path"',
+            'FLOW_WSI_COMMAND_SUBMIT, "vk_tex_hold"',
+        )
+        if all(item in swapchain_c for item in required) and any(
+            item in swapchain_c for item in submit_timing_markers
+        ):
             return swapchain_c
         raise SystemExit("Pinned libplacebo WSI diagnostic patch is incomplete")
 
@@ -600,22 +605,49 @@ static void flow_report_created_swapchain(struct priv *p)
         "            if (!flow_image_init_ok)\n                goto error;",
         "acquired swapchain image initialization timing",
     )
-    swapchain_c = replace_once(
-        swapchain_c,
-        "    int qidx = cmd->qindex;\n    if (!CMD_SUBMIT(&cmd)) {\n        pl_mutex_unlock(&p->lock);\n        return false;\n    }",
+    direct_submit = (
         "    int qidx = cmd->qindex;\n"
-        "    pl_clock_t flow_submit_start = atomic_load_explicit(&p->flow_diagnostics, memory_order_relaxed)\n"
-        "        ? pl_clock_now() : 0;\n"
-        "    bool flow_submit_ok = CMD_SUBMIT(&cmd);\n"
-        "    if (flow_submit_start)\n"
-        "        flow_report_wsi_call(p, FLOW_WSI_COMMAND_SUBMIT, \"vk_cmd_submit_path\", flow_submit_start, pl_clock_now(),\n"
-        "                             flow_submit_ok ? VK_SUCCESS : VK_ERROR_UNKNOWN);\n"
-        "    if (!flow_submit_ok) {\n"
+        "    if (!CMD_SUBMIT(&cmd)) {\n"
         "        pl_mutex_unlock(&p->lock);\n"
         "        return false;\n"
-        "    }",
-        "swapchain command-submit host timing",
+        "    }"
     )
+    if direct_submit in swapchain_c:
+        swapchain_c = replace_once(
+            swapchain_c,
+            direct_submit,
+            "    int qidx = cmd->qindex;\n"
+            "    pl_clock_t flow_submit_start = atomic_load_explicit(&p->flow_diagnostics, memory_order_relaxed)\n"
+            "        ? pl_clock_now() : 0;\n"
+            "    bool flow_submit_ok = CMD_SUBMIT(&cmd);\n"
+            "    if (flow_submit_start)\n"
+            "        flow_report_wsi_call(p, FLOW_WSI_COMMAND_SUBMIT, \"vk_cmd_submit_path\", flow_submit_start, pl_clock_now(),\n"
+            "                             flow_submit_ok ? VK_SUCCESS : VK_ERROR_UNKNOWN);\n"
+            "    if (!flow_submit_ok) {\n"
+            "        pl_mutex_unlock(&p->lock);\n"
+            "        return false;\n"
+            "    }",
+            "swapchain command-submit host timing",
+        )
+    else:
+        swapchain_c = replace_once(
+            swapchain_c,
+            "    int qidx;\n    bool held = vk_tex_hold(gpu, pl_vulkan_hold_params(\n",
+            "    int qidx;\n"
+            "    pl_clock_t flow_submit_start = atomic_load_explicit(&p->flow_diagnostics, memory_order_relaxed)\n"
+            "        ? pl_clock_now() : 0;\n"
+            "    bool held = vk_tex_hold(gpu, pl_vulkan_hold_params(\n",
+            "swapchain vk_tex_hold host timing start",
+        )
+        swapchain_c = replace_once(
+            swapchain_c,
+            "    ), &p->frames_in_flight, &qidx);\n",
+            "    ), &p->frames_in_flight, &qidx);\n"
+            "    if (flow_submit_start)\n"
+            "        flow_report_wsi_call(p, FLOW_WSI_COMMAND_SUBMIT, \"vk_tex_hold\", flow_submit_start, pl_clock_now(),\n"
+            "                             held ? VK_SUCCESS : VK_ERROR_UNKNOWN);\n",
+            "swapchain vk_tex_hold host timing result",
+        )
     swapchain_c = replace_once(
         swapchain_c,
         "bool pl_vulkan_swapchain_suboptimal(pl_swapchain sw)\n{\n"
