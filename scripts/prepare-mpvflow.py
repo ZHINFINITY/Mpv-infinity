@@ -875,6 +875,16 @@ def enable_mailbox_suboptimal_tolerance(vulkan_context: str) -> str:
     return vulkan_context.replace(anchor, replacement, 1)
 
 
+def has_source_visibility_output_contract(motion: str) -> bool:
+    if "return source_blend * (1.0 - visibility_sum) +" in motion:
+        return True
+    return (
+        "float applied_trust = clamp(visibility_sum, 0.0, 1.0);" in motion
+        and "vec4 final_output = source_blend * (1.0 - applied_trust) +" in motion
+        and "warped0 * visibility.x + warped1 * visibility.y;" in motion
+    )
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--mpv-dir", required=True, type=Path)
@@ -965,7 +975,7 @@ def main() -> None:
         or "blend > 0.000001 && blend < 0.999999" not in motion
         or "visibility += conflict_weight * phase * vec2(f.z, r.z) * evidence;" not in motion
         or "visibility *= clamp(spatial_visibility_scale, 0.0, 1.0);" not in motion
-        or "return source_blend * (1.0 - visibility_sum) +" not in motion
+        or not has_source_visibility_output_contract(motion)
         or "MPVFLOW_GLOBAL_TRANSLATION_CYCLE_GUARD_V1" not in motion
         or "int spacing = (level == LEVELS - 1 || level == 0) ? 4 : 8;" not in motion
         or "if (level == 0 && scale < 0.333334)" not in motion

@@ -1,10 +1,17 @@
 #!/usr/bin/env python3
 """Static checks for the coordinated native FongMi MPV runtime upgrade."""
 import hashlib
+import importlib.util
 import re
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
+PREPARE_SPEC = importlib.util.spec_from_file_location(
+    "prepare_mpvflow_contract", ROOT / "scripts/prepare-mpvflow.py"
+)
+assert PREPARE_SPEC is not None and PREPARE_SPEC.loader is not None
+PREPARE_MODULE = importlib.util.module_from_spec(PREPARE_SPEC)
+PREPARE_SPEC.loader.exec_module(PREPARE_MODULE)
 PREPARE = (ROOT / "scripts/prepare-mpvflow.py").read_text(encoding="utf-8")
 BUILD = (ROOT / "scripts/build-mpvflow-mpv-runtime.sh").read_text(encoding="utf-8")
 VULKAN_HEADERS = (ROOT / "scripts/prepare-mpvflow-vulkan-headers.py").read_text(encoding="utf-8")
@@ -81,6 +88,19 @@ for marker in (
     assert marker in PREPARE, marker
 assert '{"motion-interpolation-info", mp_property_motion_info}' in PREPARE
 assert 'mp.get_property_native("motion-interpolation-info")' in PREPARE
+assert "or not has_source_visibility_output_contract(motion)" in PREPARE
+assert PREPARE_MODULE.has_source_visibility_output_contract(
+    "return source_blend * (1.0 - visibility_sum) +\n"
+    "       warped0 * visibility.x + warped1 * visibility.y;"
+)
+assert PREPARE_MODULE.has_source_visibility_output_contract(
+    "float applied_trust = clamp(visibility_sum, 0.0, 1.0);\n"
+    "vec4 final_output = source_blend * (1.0 - applied_trust) +\n"
+    "                    warped0 * visibility.x + warped1 * visibility.y;"
+)
+assert not PREPARE_MODULE.has_source_visibility_output_contract(
+    "return mix(source_blend, warped_mix, clamp(trust, 0.0, 1.0));"
+)
 assert PLACEBO_SHA in BUILD
 assert 'https://github.com/FongMi/libplacebo.git' in BUILD
 assert f'libplacebo_revision = "{PLACEBO_SHA}"' in BUILD
