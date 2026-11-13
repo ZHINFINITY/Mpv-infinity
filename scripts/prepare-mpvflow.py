@@ -953,6 +953,7 @@ def main() -> None:
         or "MPVFLOW_FINE_MOTION_GRID_V1" not in motion
         or "MPVFLOW_REFINEMENT_APERTURE_NORMAL_V1" not in motion
         or "MPVFLOW_SPATIAL_TRUST_DOWNWARD_CAP_V3" not in motion
+        or "MPVFLOW_SPATIAL_MEDOID_FALLBACK_V1" not in motion
         or "int spacing = (level == LEVELS - 1 || level == 0) ? 4 : 8;" not in motion
         or "video/out/gpu_next/motion.c" not in meson
         or "libmpv_motion" not in meson

@@ -21,6 +21,7 @@ LEGACY_MARKER = "MPVFLOW_ARTIFACT_TRUST_TAPER_V2"
 LOCAL_SOFTENING_MARKER = "MPVFLOW_LOCAL_MOTION_SOFTENING_V1"
 RECONSTRUCTION_MARKER = "MPVFLOW_RECONSTRUCTION_POSITIVE_EVIDENCE_V1"
 WARP_TRAJECTORY_MARKER = "MPVFLOW_WARP_TRAJECTORY_COHERENCE_V1"
+SPATIAL_MEDOID_MARKER = "MPVFLOW_SPATIAL_MEDOID_FALLBACK_V1"
 PRIMARY_TRAJECTORY_TRUST_MARKER = "MPVFLOW_WARP_PRIMARY_TRUST_CAP_V1"
 WARP_BEST_RESIDUAL_MARKER = "MPVFLOW_WARP_BEST_INVERSE_RESIDUAL_V1"
 REJECTED_WARP_TRUST_MARKER = "MPVFLOW_WARP_TRAJECTORY_TRUST_V2"
@@ -198,6 +199,81 @@ NEIGHBORHOOD_HELPER = """float neighborhood_quality(sampler2D field, vec2 uv, ve
     return 1.0 - smoothstep(0.65, 2.8, spread);
 }"""
 
+SPATIAL_MEDOID_HELPER = """// MPVFLOW_SPATIAL_MEDOID_FALLBACK_V1: borrow only a supported neighboring motion pair when this pixel's path is weak.
+float motion_pair_distance(vec4 f0, vec4 r0, vec4 f1, vec4 r1)
+{
+    return 0.5 * (length(f0.xy - f1.xy) + length(r0.xy - r1.xy));
+}
+
+float motion_pair_support(vec4 f, vec4 r)
+{
+    if (any(isnan(f)) || any(isinf(f)) || any(isnan(r)) || any(isinf(r)))
+        return 0.0;
+    return clamp(max(min(f.z, r.z), min(f.w, r.w)), 0.0, 1.0);
+}
+
+void motion_field_medoid(sampler2D warp0, sampler2D warp1, vec2 uv,
+                         vec4 center0, vec4 center1,
+                         out vec2 selected0, out vec2 selected1,
+                         out float selected_support)
+{
+    ivec2 size = textureSize(warp0, 0);
+    ivec2 pixel = clamp(ivec2(uv * vec2(size)), ivec2(0), size - ivec2(1));
+    vec4 forward[5];
+    vec4 backward[5];
+    forward[0] = center0;
+    backward[0] = center1;
+    forward[1] = texelFetch(warp0, clamp(pixel + ivec2(-1, 0), ivec2(0), size - ivec2(1)), 0);
+    backward[1] = texelFetch(warp1, clamp(pixel + ivec2(-1, 0), ivec2(0), size - ivec2(1)), 0);
+    forward[2] = texelFetch(warp0, clamp(pixel + ivec2(1, 0), ivec2(0), size - ivec2(1)), 0);
+    backward[2] = texelFetch(warp1, clamp(pixel + ivec2(1, 0), ivec2(0), size - ivec2(1)), 0);
+    forward[3] = texelFetch(warp0, clamp(pixel + ivec2(0, -1), ivec2(0), size - ivec2(1)), 0);
+    backward[3] = texelFetch(warp1, clamp(pixel + ivec2(0, -1), ivec2(0), size - ivec2(1)), 0);
+    forward[4] = texelFetch(warp0, clamp(pixel + ivec2(0, 1), ivec2(0), size - ivec2(1)), 0);
+    backward[4] = texelFetch(warp1, clamp(pixel + ivec2(0, 1), ivec2(0), size - ivec2(1)), 0);
+
+    int best_index = 0;
+    float best_cost = 1e20;
+    float best_support = 0.0;
+    for (int i = 0; i < 5; i++) {
+        float candidate_support = motion_pair_support(forward[i], backward[i]);
+        if (candidate_support <= 0.0)
+            continue;
+        float total = 0.0;
+        float cost = 0.0;
+        for (int j = 0; j < 5; j++) {
+            float support = motion_pair_support(forward[j], backward[j]);
+            float distance = motion_pair_distance(forward[i], backward[i], forward[j], backward[j]);
+            if (support > 0.0 && !(isnan(distance) || isinf(distance))) {
+                cost += support * distance;
+                total += support;
+            }
+        }
+        if (total > 0.0)
+            cost /= total;
+        else
+            cost = 1e20;
+        if (cost < best_cost || (cost == best_cost && candidate_support > best_support)) {
+            best_index = i;
+            best_cost = cost;
+            best_support = candidate_support;
+        }
+    }
+
+    float agreeing_support = 0.0;
+    for (int i = 0; i < 5; i++) {
+        float support = motion_pair_support(forward[i], backward[i]);
+        float distance = motion_pair_distance(forward[best_index], backward[best_index],
+                                              forward[i], backward[i]);
+        if (support > 0.0 && !(isnan(distance) || isinf(distance)))
+            agreeing_support += support * (1.0 - smoothstep(0.65, 2.8, distance));
+    }
+    selected0 = forward[best_index].xy;
+    selected1 = backward[best_index].xy;
+    // Three supported samples are the smallest local majority in this five-sample cross.
+    selected_support = best_support * clamp(agreeing_support / 3.0, 0.0, 1.0);
+}"""
+
 NEIGHBORHOOD_END_PATTERN = re.compile(
     r"(?m)^[ \t]*return 1\.0 - smoothstep\(0\.65, 2\.8, spread\);\n"
     r"(?P<indent>[ \t]*)}$"
@@ -318,6 +394,22 @@ if (local_motion_softness > 0.001) {
                             mix(warped1, soft1, 0.5), alpha);
     source_blend = mix(source_blend, motion_blend, local_motion_softness);
 }
+if (trust < 0.999 && boundary_activation > 0.0 && local_quality < 0.70) {
+    vec2 coherent0, coherent1;
+    float coherent_support;
+    motion_field_medoid(warp0, warp1, uv, f, r, coherent0, coherent1, coherent_support);
+    float coherent_delta = 0.5 * (length(coherent0 - f.xy) + length(coherent1 - r.xy));
+    vec4 coherent_warped0 = sample_rgba(first, source_position + coherent0 * scale);
+    vec4 coherent_warped1 = sample_rgba(second, source_position + coherent1 * scale);
+    float coherent_error = max(max(abs(coherent_warped0.r - coherent_warped1.r),
+                                   abs(coherent_warped0.g - coherent_warped1.g)),
+                               abs(coherent_warped0.b - coherent_warped1.b));
+    float coherent_fallback = (1.0 - clamp(trust, 0.0, 1.0)) * coherent_support *
+                              smoothstep(0.5, 1.5, coherent_delta) *
+                              (1.0 - smoothstep(0.03, 0.30, coherent_error));
+    source_blend = mix(source_blend, mix(coherent_warped0, coherent_warped1, alpha),
+                       clamp(coherent_fallback, 0.0, 1.0));
+}
 color = mix(source_blend, mix(warped0, warped1, alpha), clamp(trust, 0.0, 1.0));"""
 LEGACY_SOFTENED_OUTPUT_BLOCK = LEGACY_SOFTENED_OUTPUT_BLOCK_V4
 
@@ -329,6 +421,22 @@ if (local_motion_softness > 0.001) {
     vec4 motion_blend = mix(mix(warped0, soft0, 0.5),
                             mix(warped1, soft1, 0.5), blend);
     source_blend = mix(source_blend, motion_blend, local_motion_softness);
+}
+if (trust < 0.999 && boundary_activation > 0.0 && local_quality < 0.70) {
+    vec2 coherent0, coherent1;
+    float coherent_support;
+    motion_field_medoid(warp0, warp1, uv, f, r, coherent0, coherent1, coherent_support);
+    float coherent_delta = 0.5 * (length(coherent0 - f.xy) + length(coherent1 - r.xy));
+    vec4 coherent_warped0 = sample_rgba(source0, vec2(pixel) + coherent0 * scale);
+    vec4 coherent_warped1 = sample_rgba(source1, vec2(pixel) + coherent1 * scale);
+    float coherent_error = max(max(abs(coherent_warped0.r - coherent_warped1.r),
+                                   abs(coherent_warped0.g - coherent_warped1.g)),
+                               abs(coherent_warped0.b - coherent_warped1.b));
+    float coherent_fallback = (1.0 - clamp(trust, 0.0, 1.0)) * coherent_support *
+                              smoothstep(0.5, 1.5, coherent_delta) *
+                              (1.0 - smoothstep(0.03, 0.30, coherent_error));
+    source_blend = mix(source_blend, mix(coherent_warped0, coherent_warped1, blend),
+                       clamp(coherent_fallback, 0.0, 1.0));
 }
 return mix(source_blend, mix(warped0, warped1, blend), clamp(trust, 0.0, 1.0));"""
 PINNED_SOFTENED_OUTPUT_BLOCK = PINNED_SOFTENED_OUTPUT_BLOCK_V4
@@ -524,8 +632,95 @@ def _patch_spatial_trust(source: str) -> str:
     return source
 
 
+def _has_spatial_medoid_fallback(source: str) -> bool:
+    return (
+        source.count(SPATIAL_MEDOID_MARKER) == 1
+        and source.count("void motion_field_medoid(sampler2D warp0, sampler2D warp1, vec2 uv,") == 1
+        and source.count("motion_field_medoid(warp0, warp1, uv, f, r, coherent0, coherent1, coherent_support);") == 1
+        and source.count("agreeing_support / 3.0") == 1
+        and source.count("if (candidate_support <= 0.0)") == 1
+        and source.count("if (support > 0.0 && !(isnan(distance) || isinf(distance)))") == 2
+        and source.count("if (trust < 0.999 && boundary_activation > 0.0 && local_quality < 0.70)") == 1
+        and source.count("float coherent_fallback = (1.0 - clamp(trust, 0.0, 1.0)) * coherent_support *") == 1
+        and source.count("coherent_warped0, coherent_warped1") == 1
+    )
+
+
+def _patch_spatial_medoid_fallback(source: str) -> str:
+    if SPATIAL_MEDOID_MARKER in source:
+        if source.count("void motion_field_medoid(sampler2D warp0, sampler2D warp1, vec2 uv,") != 1:
+            raise ValueError("FongMi spatial medoid helper marker/source mismatch")
+        if _has_spatial_medoid_fallback(source):
+            return source
+    else:
+        if "motion_field_medoid(" in source:
+            raise ValueError("FongMi spatial medoid source contains a partial fallback")
+        source = _replace_one(
+            NEIGHBORHOOD_END_PATTERN,
+            source,
+            lambda match: match.group(0) + "\n\n" + _indent_block(SPATIAL_MEDOID_HELPER, match.group("indent")),
+            "spatial motion medoid helper",
+        )
+
+    if source.count("motion_field_medoid(warp0, warp1, uv, f, r, coherent0, coherent1, coherent_support);"):
+        raise ValueError("FongMi spatial medoid output contains a partial fallback")
+    anchors = (
+        re.compile(r"(?m)^(?P<indent>[ \t]*)color = mix\(source_blend, mix\(warped0, warped1, alpha\), clamp\(trust, 0\.0, 1\.0\)\);$"),
+        re.compile(r"(?m)^(?P<indent>[ \t]*)return mix\(source_blend, mix\(warped0, warped1, blend\), clamp\(trust, 0\.0, 1\.0\)\);$"),
+    )
+    found = [(pattern, list(pattern.finditer(source))) for pattern in anchors]
+    matches = [(pattern, found_matches[0]) for pattern, found_matches in found if found_matches]
+    if len(matches) != 1 or len(matches[0][1:]) != 1:
+        counts = [len(items) for _, items in found]
+        raise ValueError(f"Pinned FongMi spatial medoid output anchor counts are {counts}")
+    pattern, match = matches[0]
+    indent = match.group("indent")
+    if pattern is anchors[0]:
+        insertion = """if (trust < 0.999 && boundary_activation > 0.0 && local_quality < 0.70) {
+    vec2 coherent0, coherent1;
+    float coherent_support;
+    motion_field_medoid(warp0, warp1, uv, f, r, coherent0, coherent1, coherent_support);
+    float coherent_delta = 0.5 * (length(coherent0 - f.xy) + length(coherent1 - r.xy));
+    vec4 coherent_warped0 = sample_rgba(first, source_position + coherent0 * scale);
+    vec4 coherent_warped1 = sample_rgba(second, source_position + coherent1 * scale);
+    float coherent_error = max(max(abs(coherent_warped0.r - coherent_warped1.r),
+                                   abs(coherent_warped0.g - coherent_warped1.g)),
+                               abs(coherent_warped0.b - coherent_warped1.b));
+    float coherent_fallback = (1.0 - clamp(trust, 0.0, 1.0)) * coherent_support *
+                              smoothstep(0.5, 1.5, coherent_delta) *
+                              (1.0 - smoothstep(0.03, 0.30, coherent_error));
+    source_blend = mix(source_blend, mix(coherent_warped0, coherent_warped1, alpha),
+                       clamp(coherent_fallback, 0.0, 1.0));
+}"""
+    else:
+        insertion = """if (trust < 0.999 && boundary_activation > 0.0 && local_quality < 0.70) {
+    vec2 coherent0, coherent1;
+    float coherent_support;
+    motion_field_medoid(warp0, warp1, uv, f, r, coherent0, coherent1, coherent_support);
+    float coherent_delta = 0.5 * (length(coherent0 - f.xy) + length(coherent1 - r.xy));
+    vec4 coherent_warped0 = sample_rgba(source0, vec2(pixel) + coherent0 * scale);
+    vec4 coherent_warped1 = sample_rgba(source1, vec2(pixel) + coherent1 * scale);
+    float coherent_error = max(max(abs(coherent_warped0.r - coherent_warped1.r),
+                                   abs(coherent_warped0.g - coherent_warped1.g)),
+                               abs(coherent_warped0.b - coherent_warped1.b));
+    float coherent_fallback = (1.0 - clamp(trust, 0.0, 1.0)) * coherent_support *
+                              smoothstep(0.5, 1.5, coherent_delta) *
+                              (1.0 - smoothstep(0.03, 0.30, coherent_error));
+    source_blend = mix(source_blend, mix(coherent_warped0, coherent_warped1, blend),
+                       clamp(coherent_fallback, 0.0, 1.0));
+}"""
+    source = pattern.sub(
+        lambda current: _indent_block(insertion, indent) + "\n" + current.group(0),
+        source,
+        count=1,
+    )
+    if not _has_spatial_medoid_fallback(source):
+        raise ValueError("FongMi spatial medoid fallback failed its postconditions")
+    return source
+
+
 def _is_synthesis_patched(source: str) -> bool:
-    return _is_synthesis_patched_core(source)
+    return _is_synthesis_patched_core(source) and _has_spatial_medoid_fallback(source)
 
 def _has_reconstruction_guard(source: str) -> bool:
     return (
@@ -1001,6 +1196,7 @@ def _patch_v3_synthesis(source: str) -> str:
     )
     source = _replace_output(source, "V3 synthesis output")
     source = _patch_spatial_trust(source)
+    source = _patch_spatial_medoid_fallback(source)
     if not _is_synthesis_patched(source):
         raise ValueError("FongMi motion artifact V3-to-V4 upgrade failed its postconditions")
     return source
@@ -1022,6 +1218,7 @@ def transform_source(source: str) -> tuple[str, bool]:
         patched = _patch_scene_cut(patched)
         patched = _patch_fine_motion_grid(patched)
         patched = _patch_refinement_aperture_normal(patched)
+        patched = _patch_spatial_medoid_fallback(patched)
         if not _is_patched(patched):
             raise ValueError("FongMi motion artifact postconditions failed")
         return patched, patched != original
@@ -1064,6 +1261,8 @@ def transform_source(source: str) -> tuple[str, bool]:
         lambda match: (
             _indent_block(NEIGHBORHOOD_HELPER, match.group("indent"))
             + "\n\n"
+            + _indent_block(SPATIAL_MEDOID_HELPER, match.group("indent"))
+            + "\n\n"
             + match.group(0)
         ),
         "synthesis pixel header",
@@ -1076,6 +1275,7 @@ def transform_source(source: str) -> tuple[str, bool]:
     )
     source = _replace_output(source, "synthesis output")
     source = _patch_spatial_trust(source)
+    source = _patch_spatial_medoid_fallback(source)
     source = _patch_reconstruction(source)
     source = _patch_warp_trajectory(source)
     source = _patch_warp_best_residual(source)

@@ -587,6 +587,81 @@ static const char synthesis_header[] = GLSL(
         return 1.0 - smoothstep(0.65, 2.8, spread);
     }
 
+    // MPVFLOW_SPATIAL_MEDOID_FALLBACK_V1: borrow only a supported neighboring motion pair when this pixel's path is weak.
+    float motion_pair_distance(vec4 f0, vec4 r0, vec4 f1, vec4 r1)
+    {
+        return 0.5 * (length(f0.xy - f1.xy) + length(r0.xy - r1.xy));
+    }
+
+    float motion_pair_support(vec4 f, vec4 r)
+    {
+        if (any(isnan(f)) || any(isinf(f)) || any(isnan(r)) || any(isinf(r)))
+            return 0.0;
+        return clamp(max(min(f.z, r.z), min(f.w, r.w)), 0.0, 1.0);
+    }
+
+    void motion_field_medoid(sampler2D warp0, sampler2D warp1, vec2 uv,
+                             vec4 center0, vec4 center1,
+                             out vec2 selected0, out vec2 selected1,
+                             out float selected_support)
+    {
+        ivec2 size = textureSize(warp0, 0);
+        ivec2 pixel = clamp(ivec2(uv * vec2(size)), ivec2(0), size - ivec2(1));
+        vec4 forward[5];
+        vec4 backward[5];
+        forward[0] = center0;
+        backward[0] = center1;
+        forward[1] = texelFetch(warp0, clamp(pixel + ivec2(-1, 0), ivec2(0), size - ivec2(1)), 0);
+        backward[1] = texelFetch(warp1, clamp(pixel + ivec2(-1, 0), ivec2(0), size - ivec2(1)), 0);
+        forward[2] = texelFetch(warp0, clamp(pixel + ivec2(1, 0), ivec2(0), size - ivec2(1)), 0);
+        backward[2] = texelFetch(warp1, clamp(pixel + ivec2(1, 0), ivec2(0), size - ivec2(1)), 0);
+        forward[3] = texelFetch(warp0, clamp(pixel + ivec2(0, -1), ivec2(0), size - ivec2(1)), 0);
+        backward[3] = texelFetch(warp1, clamp(pixel + ivec2(0, -1), ivec2(0), size - ivec2(1)), 0);
+        forward[4] = texelFetch(warp0, clamp(pixel + ivec2(0, 1), ivec2(0), size - ivec2(1)), 0);
+        backward[4] = texelFetch(warp1, clamp(pixel + ivec2(0, 1), ivec2(0), size - ivec2(1)), 0);
+
+        int best_index = 0;
+        float best_cost = 1e20;
+        float best_support = 0.0;
+        for (int i = 0; i < 5; i++) {
+            float candidate_support = motion_pair_support(forward[i], backward[i]);
+            if (candidate_support <= 0.0)
+                continue;
+            float total = 0.0;
+            float cost = 0.0;
+            for (int j = 0; j < 5; j++) {
+                float support = motion_pair_support(forward[j], backward[j]);
+                float distance = motion_pair_distance(forward[i], backward[i], forward[j], backward[j]);
+                if (support > 0.0 && !(isnan(distance) || isinf(distance))) {
+                    cost += support * distance;
+                    total += support;
+                }
+            }
+            if (total > 0.0)
+                cost /= total;
+            else
+                cost = 1e20;
+            if (cost < best_cost || (cost == best_cost && candidate_support > best_support)) {
+                best_index = i;
+                best_cost = cost;
+                best_support = candidate_support;
+            }
+        }
+
+        float agreeing_support = 0.0;
+        for (int i = 0; i < 5; i++) {
+            float support = motion_pair_support(forward[i], backward[i]);
+            float distance = motion_pair_distance(forward[best_index], backward[best_index],
+                                                  forward[i], backward[i]);
+            if (support > 0.0 && !(isnan(distance) || isinf(distance)))
+                agreeing_support += support * (1.0 - smoothstep(0.65, 2.8, distance));
+        }
+        selected0 = forward[best_index].xy;
+        selected1 = backward[best_index].xy;
+        // Three supported samples are the smallest local majority in this five-sample cross.
+        selected_support = best_support * clamp(agreeing_support / 3.0, 0.0, 1.0);
+    }
+
     float spatial_trust_consensus(sampler2D warp0, sampler2D warp1,
                                   vec2 uv, vec4 f, vec4 r)
     {
@@ -777,6 +852,22 @@ static const char synthesis_body[] = GLSL(
             vec4 motion_blend = mix(mix(warped0, soft0, 0.5),
                                     mix(warped1, soft1, 0.5), alpha);
             source_blend = mix(source_blend, motion_blend, local_motion_softness);
+        }
+        if (trust < 0.999 && boundary_activation > 0.0 && local_quality < 0.70) {
+            vec2 coherent0, coherent1;
+            float coherent_support;
+            motion_field_medoid(warp0, warp1, uv, f, r, coherent0, coherent1, coherent_support);
+            float coherent_delta = 0.5 * (length(coherent0 - f.xy) + length(coherent1 - r.xy));
+            vec4 coherent_warped0 = sample_rgba(first, source_position + coherent0 * scale);
+            vec4 coherent_warped1 = sample_rgba(second, source_position + coherent1 * scale);
+            float coherent_error = max(max(abs(coherent_warped0.r - coherent_warped1.r),
+                                           abs(coherent_warped0.g - coherent_warped1.g)),
+                                       abs(coherent_warped0.b - coherent_warped1.b));
+            float coherent_fallback = (1.0 - clamp(trust, 0.0, 1.0)) * coherent_support *
+                                      smoothstep(0.5, 1.5, coherent_delta) *
+                                      (1.0 - smoothstep(0.03, 0.30, coherent_error));
+            source_blend = mix(source_blend, mix(coherent_warped0, coherent_warped1, alpha),
+                               clamp(coherent_fallback, 0.0, 1.0));
         }
         color = mix(source_blend, mix(warped0, warped1, alpha), clamp(trust, 0.0, 1.0));
     }

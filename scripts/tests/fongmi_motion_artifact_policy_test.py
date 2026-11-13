@@ -323,6 +323,7 @@ assert changed
 assert PATCHER.MARKER in patched
 assert PATCHER.SPATIAL_TRUST_MARKER in patched
 assert PATCHER.LOCAL_SOFTENING_MARKER in patched
+assert PATCHER.SPATIAL_MEDOID_MARKER in patched
 assert PATCHER.RECONSTRUCTION_MARKER in patched
 assert PATCHER.WARP_TRAJECTORY_MARKER in patched
 assert PATCHER.FINE_GRID_MARKER in patched
@@ -358,6 +359,10 @@ assert "float trajectory_error = abs(weight) * length(motion_vector - initial_mo
 assert "reliable *= trajectory_quality;" in patched
 assert PATCHER.PRIMARY_TRAJECTORY_TRUST_MARKER in patched
 assert "trust = min(trust, trajectory_quality);" in patched
+assert "agreeing_support / 3.0" in patched
+assert "if (candidate_support <= 0.0)" in patched
+assert "if (trust < 0.999 && boundary_activation > 0.0 && local_quality < 0.70)" in patched
+assert "float coherent_fallback = (1.0 - clamp(trust, 0.0, 1.0)) * coherent_support *" in patched
 assert "trust *= trajectory_quality;" not in patched, "path stability caps trust instead of multiplying it"
 assert "vec2 displacement = -weight * f.xy;" in patched
 assert "color = vec4(displacement, trust * geometry, reliable * geometry);" in patched
@@ -693,6 +698,62 @@ assert math.isclose(spatial_trust_downward_cap(0.95, 0.05, 1.0), 0.275, abs_tol=
     "an isolated high-confidence warp may still be capped by coherent neighbors"
 )
 assert "float spatial_gap = abs(clamp(trust, 0.0, 1.0) - spatial_consensus);" not in patched
+
+# Spatial medoid fallback is unchanged on a coherent camera-pan field, can reject
+# one unsupported local path in favor of a supported majority, and is inactive
+# when no supported path cluster exists.
+def motion_pair_distance(a, b):
+    return 0.5 * (math.dist(a[0], b[0]) + math.dist(a[1], b[1]))
+
+
+def motion_medoid(samples):
+    best = None
+    best_cost = float("inf")
+    for candidate in samples:
+        total = sum(sample[2] for sample in samples)
+        cost = (sum(sample[2] * motion_pair_distance(candidate, sample) for sample in samples) / total
+                if total > 0.0 else float("inf"))
+        if best is None or cost < best_cost or (cost == best_cost and candidate[2] > best[2]):
+            best, best_cost = candidate, cost
+    agreement = sum(
+        sample[2] * (1.0 - smoothstep(0.65, 2.8, motion_pair_distance(best, sample)))
+        for sample in samples
+    )
+    selected_support = best[2] * min(1.0, max(0.0, agreement / 3.0))
+    return best, selected_support
+
+
+pan_forward = (-4.0, 0.5)
+pan_backward = (4.0, -0.5)
+stable_pan = [(pan_forward, pan_backward, 0.9)] * 5
+pan_medoid, pan_support = motion_medoid(stable_pan)
+assert pan_medoid == stable_pan[0]
+assert pan_support == 0.9
+assert motion_pair_distance(pan_medoid, stable_pan[0]) == 0.0
+
+def medoid_fallback_activation(trust, boundary_activation, local_quality):
+    return trust < 0.999 and boundary_activation > 0.0 and local_quality < 0.70
+
+
+assert not medoid_fallback_activation(0.9, 0.0, 0.0)
+assert not medoid_fallback_activation(1.0, 1.0, 0.0), "stable trusted pan does not run the fallback"
+assert not medoid_fallback_activation(0.2, 1.0, 0.9), "coherent local fields remain untouched"
+assert medoid_fallback_activation(0.05, 1.0, 0.2), "only a weak, inconsistent boundary enters consensus"
+
+stable_background_pair = ((-3.0, 0.0), (3.0, 0.0), 0.9)
+unstable_local_pair = ((8.0, -7.0), (-2.0, 5.0), 0.02)
+local_outlier = [unstable_local_pair] + [stable_background_pair] * 4
+local_medoid, local_support = motion_medoid(local_outlier)
+assert local_medoid == stable_background_pair
+assert local_support > 0.89
+fallback_weight = (1.0 - 0.05) * local_support * smoothstep(
+    0.5, 1.5, motion_pair_distance(unstable_local_pair, local_medoid)
+) * (1.0 - smoothstep(0.03, 0.30, 0.0))
+assert fallback_weight > 0.85
+no_supported_paths = [(pan_forward, pan_backward, 0.02)] * 5
+_, no_support = motion_medoid(no_supported_paths)
+assert no_support < 0.04
+assert no_support * 0.95 < 0.04, "unstable local paths cannot create a strong fallback"
 
 # Path stability caps primary trust only when the inverse path diverges; a stable
 # high-motion trajectory keeps the same warp contribution.
