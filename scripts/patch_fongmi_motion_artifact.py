@@ -4,8 +4,9 @@
 The patch is version-guarded and limited to refinement, the analysis grid, and
 synthesis/reconstruction/inverse-warp logic in pinned upstream
 ``video/out/gpu_next/motion.c``. It keeps bilinear field sampling, resolves
-aperture ambiguity along the measured gradient normal, selects the best
-inverse-warp closure, and retains whole-frame scene-cut handling.
+aperture ambiguity along the measured gradient normal while preserving
+inherited tangential motion, selects the best inverse-warp closure, and retains
+whole-frame scene-cut handling.
 """
 from __future__ import annotations
 
@@ -28,6 +29,7 @@ FINE_GRID_MARKER = "MPVFLOW_FINE_MOTION_GRID_V1"
 FINE_GRID_ASSIGNMENT = "int spacing = (level == LEVELS - 1 || level == 0) ? 4 : 8;"
 SPATIAL_TRUST_MARKER = "MPVFLOW_SPATIAL_TRUST_ISLAND_GUARD_V1"
 REFINEMENT_APERTURE_NORMAL_MARKER = "MPVFLOW_REFINEMENT_APERTURE_NORMAL_V1"
+REFINEMENT_APERTURE_TANGENT_MARKER = "MPVFLOW_REFINEMENT_APERTURE_TANGENT_V1"
 
 RECONSTRUCTION_PATTERN = re.compile(
     r"(?m)^(?P<indent> *)" + re.escape(
@@ -141,6 +143,16 @@ REFINEMENT_CANDIDATE_PATTERN = re.compile(
 )
 REFINEMENT_DELTA_PATTERN = re.compile(
     r"(?m)^(?P<indent>[ \t]*)float delta = abs\(dot\(candidate, axis\) - projected\);$"
+)
+REFINEMENT_PROJECTED_PATTERN = re.compile(
+    r"(?m)^(?P<indent>[ \t]*)float projected = dot\(vector, aperture_normal\);$"
+)
+LEGACY_REFINEMENT_CANDIDATE_PATTERN = re.compile(
+    r"(?m)^(?P<indent>[ \t]*)vec2 candidate = clamp\(aperture_normal \* \(round\(projected\) \+ float\(offset\)\),\n"
+    r"(?P=indent)[ \t]+-p, size - 1\.0 - p\);$"
+)
+LEGACY_DENSE_CANDIDATE_PATTERN = re.compile(
+    r"(?m)^(?P<indent>[ \t]*)vec2 candidate = clamp\(aperture_normal \* float\(offset\), -p, size - 1\.0 - p\);$"
 )
 DENSE_CANONICALIZATION_PATTERN = re.compile(
     r"(?m)^(?P<indent>[ \t]*)if \(all\(equal\(motion_scale, vec2\(1\)\)\) && any\(notEqual\(vector, vec2\(0\)\)\)\) \{$"
@@ -573,8 +585,8 @@ def _has_fine_motion_grid(source: str) -> bool:
     )
 
 
-def _has_refinement_aperture_normal(source: str) -> bool:
-    return (
+def _has_refinement_aperture_normal(source: str, require_tangent: bool = True) -> bool:
+    common = (
         source.count(REFINEMENT_APERTURE_NORMAL_MARKER) == 1
         and source.count("bool aperture_ambiguous = false;") == 1
         and source.count("vec2 aperture_normal = vec2(0.0);") == 1
@@ -584,13 +596,11 @@ def _has_refinement_aperture_normal(source: str) -> bool:
         and source.count("lambda_min < 0.12 * lambda_max;") == 1
         and source.count("aperture_normal = abs(xy) > 0.000001") == 1
         and source.count("float projected = dot(vector, aperture_normal);") == 1
-        and source.count("vec2 candidate = clamp(aperture_normal * (round(projected) + float(offset)),") == 1
         and source.count("float delta = abs(dot(candidate, aperture_normal) - projected);") == 1
         and source.count(
             "if (all(equal(motion_scale, vec2(1))) && any(notEqual(vector, vec2(0))) && aperture_ambiguous) {"
         ) == 1
         and source.count("for (int offset = -settings.z; offset <= settings.z; offset++) {") == 1
-        and source.count("vec2 candidate = clamp(aperture_normal * float(offset), -p, size - 1.0 - p);") == 1
         and source.count("if (aperture_ambiguous) {") == 1
         and REFINEMENT_TENSOR_PATTERN.search(source) is None
         and REFINEMENT_AXIS_PATTERN.search(source) is None
@@ -598,6 +608,22 @@ def _has_refinement_aperture_normal(source: str) -> bool:
         and REFINEMENT_DELTA_PATTERN.search(source) is None
         and DENSE_CANONICALIZATION_PATTERN.search(source) is None
         and DENSE_AXIS_LOOP_PATTERN.search(source) is None
+    )
+    if not common:
+        return False
+    if require_tangent:
+        return (
+            source.count(REFINEMENT_APERTURE_TANGENT_MARKER) == 1
+            and source.count("vec2 candidate = clamp(vector + aperture_normal *\n") == 2
+            and source.count("(round(projected) + float(offset) - projected),") == 1
+            and source.count("(float(offset) - dot(vector, aperture_normal)),") == 1
+            and "aperture_normal * (round(projected) + float(offset))" not in source
+            and "aperture_normal * float(offset), -p" not in source
+        )
+    return (
+        REFINEMENT_APERTURE_TANGENT_MARKER not in source
+        and source.count("vec2 candidate = clamp(aperture_normal * (round(projected) + float(offset)),") == 1
+        and source.count("vec2 candidate = clamp(aperture_normal * float(offset), -p, size - 1.0 - p);") == 1
     )
 
 
@@ -615,8 +641,42 @@ def _is_patched(source: str) -> bool:
 
 def _patch_refinement_aperture_normal(source: str) -> str:
     if REFINEMENT_APERTURE_NORMAL_MARKER in source:
-        if not _has_refinement_aperture_normal(source):
+        if _has_refinement_aperture_normal(source):
+            return source
+        if not _has_refinement_aperture_normal(source, require_tangent=False):
             raise ValueError("FongMi refinement aperture-normal marker/source mismatch")
+        source = _replace_one(
+            REFINEMENT_PROJECTED_PATTERN,
+            source,
+            lambda match: (
+                match.group("indent") + "// " + REFINEMENT_APERTURE_TANGENT_MARKER
+                + ": preserve inherited tangential flow; refine only its normal projection.\n"
+                + match.group(0)
+            ),
+            "legacy aperture tangential-flow preservation marker",
+        )
+        source = _replace_one(
+            LEGACY_REFINEMENT_CANDIDATE_PATTERN,
+            source,
+            lambda match: (
+                match.group("indent") + "vec2 candidate = clamp(vector + aperture_normal *\n"
+                + match.group("indent") + "                       (round(projected) + float(offset) - projected),\n"
+                + match.group("indent") + "                       -p, size - 1.0 - p);"
+            ),
+            "legacy normal-only refinement candidate",
+        )
+        source = _replace_one(
+            LEGACY_DENSE_CANDIDATE_PATTERN,
+            source,
+            lambda match: (
+                match.group("indent") + "vec2 candidate = clamp(vector + aperture_normal *\n"
+                + match.group("indent") + "                       (float(offset) - dot(vector, aperture_normal)),\n"
+                + match.group("indent") + "                       -p, size - 1.0 - p);"
+            ),
+            "legacy normal-only dense candidate",
+        )
+        if not _has_refinement_aperture_normal(source):
+            raise ValueError("FongMi tangent-preserving aperture upgrade failed its postconditions")
         return source
     if any(token in source for token in (
         "bool aperture_ambiguous = false;",
@@ -659,7 +719,11 @@ def _patch_refinement_aperture_normal(source: str) -> str:
     source = _replace_one(
         REFINEMENT_AXIS_PATTERN,
         source,
-        lambda match: match.group("indent") + "float projected = dot(vector, aperture_normal);",
+        lambda match: (
+            match.group("indent") + "// " + REFINEMENT_APERTURE_TANGENT_MARKER
+            + ": preserve inherited tangential flow; refine only its normal projection.\n"
+            + match.group("indent") + "float projected = dot(vector, aperture_normal);"
+        ),
         "refinement aperture projection",
     )
     source = _replace_one(
@@ -667,7 +731,8 @@ def _patch_refinement_aperture_normal(source: str) -> str:
         source,
         lambda match: (
             match.group("indent")
-            + "vec2 candidate = clamp(aperture_normal * (round(projected) + float(offset)),\n"
+            + "vec2 candidate = clamp(vector + aperture_normal *\n"
+            + match.group("indent") + "                       (round(projected) + float(offset) - projected),\n"
             + match.group("indent") + "                       -p, size - 1.0 - p);"
         ),
         "refinement normal-lattice candidate",
@@ -695,7 +760,11 @@ def _patch_refinement_aperture_normal(source: str) -> str:
             match.group("indent")
             + "for (int offset = -settings.z; offset <= settings.z; offset++) {\n"
             + match.group("indent")
-            + "    vec2 candidate = clamp(aperture_normal * float(offset), -p, size - 1.0 - p);"
+            + "    vec2 candidate = clamp(vector + aperture_normal *\n"
+            + match.group("indent")
+            + "                           (float(offset) - dot(vector, aperture_normal)),\n"
+            + match.group("indent")
+            + "                           -p, size - 1.0 - p);"
         ),
         "dense normal-lattice candidate search",
     )

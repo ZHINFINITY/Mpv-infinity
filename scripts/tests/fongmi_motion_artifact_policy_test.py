@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import importlib.util
 import math
+import re
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -305,15 +306,15 @@ def aperture_normal(xx: float, xy: float, yy: float) -> tuple[float, float] | No
     return nx / length, ny / length
 
 
-def aperture_canonical_vector(
+def aperture_refined_vector(
     vector: tuple[float, float], tensor: tuple[float, float, float]
 ) -> tuple[float, float]:
     normal = aperture_normal(*tensor)
     if normal is None:
         return vector
     projected = vector[0] * normal[0] + vector[1] * normal[1]
-    steps = round(projected)
-    return normal[0] * steps, normal[1] * steps
+    correction = round(projected) - projected
+    return vector[0] + normal[0] * correction, vector[1] + normal[1] * correction
 
 
 original = fixture()
@@ -329,10 +330,13 @@ assert PATCHER.FINE_GRID_ASSIGNMENT in patched
 assert PATCHER.REJECTED_WARP_TRUST_MARKER not in patched
 assert PATCHER.SCENE_CUT_MARKER in patched
 assert PATCHER.REFINEMENT_APERTURE_NORMAL_MARKER in patched
+assert PATCHER.REFINEMENT_APERTURE_TANGENT_MARKER in patched
 assert PATCHER._has_refinement_aperture_normal(patched)
 assert "lambda_min < 0.12 * lambda_max;" in patched
 assert "float projected = dot(vector, aperture_normal);" in patched
-assert "vec2 candidate = clamp(aperture_normal * (round(projected) + float(offset))," in patched
+assert "vec2 candidate = clamp(vector + aperture_normal *\n" in patched
+assert "(round(projected) + float(offset) - projected)," in patched
+assert "(float(offset) - dot(vector, aperture_normal))," in patched
 assert "for (int offset = -settings.z; offset <= settings.z; offset++) {" in patched
 assert "vec2 axis = xx > yy ? vec2(1, 0) : vec2(0, 1);" not in patched
 assert "vec2 axis = index < 2 * settings.z + 1" not in patched
@@ -386,18 +390,21 @@ assert "color = mix(source_blend, mix(warped0, warped1, alpha), clamp(trust, 0.0
 assert "FongMi synthesis prefix\n" in patched and "FongMi synthesis suffix\n" in patched
 texture_flow = (3.25, -2.5)
 assert aperture_normal(1.0, 0.0, 1.0) is None
-assert aperture_canonical_vector(texture_flow, (1.0, 0.0, 1.0)) == texture_flow
+assert aperture_refined_vector(texture_flow, (1.0, 0.0, 1.0)) == texture_flow
 diagonal_edge_tensor = (1.0, 0.96, 1.0)
 diagonal_normal = aperture_normal(*diagonal_edge_tensor)
 assert diagonal_normal is not None
 assert abs(diagonal_normal[0] - math.sqrt(0.5)) < 1e-6
 assert abs(diagonal_normal[1] - math.sqrt(0.5)) < 1e-6
-diagonal_edge_vector = aperture_canonical_vector((2.8, 3.2), diagonal_edge_tensor)
-assert diagonal_edge_vector[0] > 0 and diagonal_edge_vector[1] > 0
-assert abs(diagonal_edge_vector[0] - diagonal_edge_vector[1]) < 1e-6
+diagonal_edge_vector = (2.8, 3.2)
+diagonal_refined = aperture_refined_vector(diagonal_edge_vector, diagonal_edge_tensor)
+diagonal_tangent = (-diagonal_normal[1], diagonal_normal[0])
+assert abs(sum(a * b for a, b in zip(diagonal_refined, diagonal_tangent)) -
+           sum(a * b for a, b in zip(diagonal_edge_vector, diagonal_tangent))) < 1e-6
+assert abs(diagonal_refined[0] - diagonal_refined[1]) > 1e-3
 horizontal_normal = aperture_normal(1.0, 0.0, 0.01)
 assert horizontal_normal == (1.0, 0.0)
-assert aperture_canonical_vector((2.2, -1.0), (1.0, 0.0, 0.01)) == (2.0, 0.0)
+assert aperture_refined_vector((2.2, -1.0), (1.0, 0.0, 0.01)) == (2.0, -1.0)
 unstable_field = lambda x: 3.0 * (x - 63.9) + 0.2
 best_candidate, final_candidate = inverse_warp_candidates(64.0, 0.5, unstable_field)
 assert abs(best_candidate[0] - 0.25) < 1e-9
@@ -421,6 +428,42 @@ else:
     raise AssertionError("fine-grid marker must reject a mismatched assignment")
 again, changed_again = PATCHER.transform_source(patched)
 assert not changed_again and again == patched
+
+# Cached trees carrying the previous normal-only candidates upgrade in place.
+legacy_aperture = re.sub(
+    rf"(?m)^[ \t]*// {re.escape(PATCHER.REFINEMENT_APERTURE_TANGENT_MARKER)}:.*\n",
+    "",
+    patched,
+    count=1,
+)
+legacy_aperture, refinement_replacements = re.subn(
+    r"(?m)^(?P<indent>[ \t]*)vec2 candidate = clamp\(vector \+ aperture_normal \*\n"
+    r"(?P=indent)(?P<spaces>[ \t]+)\(round\(projected\) \+ float\(offset\) - projected\),\n"
+    r"(?P=indent)(?P=spaces)-p, size - 1\.0 - p\);$",
+    lambda match: (
+        match.group("indent")
+        + "vec2 candidate = clamp(aperture_normal * (round(projected) + float(offset)),\n"
+        + match.group("indent") + match.group("spaces") + "-p, size - 1.0 - p);"
+    ),
+    legacy_aperture,
+    count=1,
+)
+assert refinement_replacements == 1
+legacy_aperture, dense_replacements = re.subn(
+    r"(?m)^(?P<indent>[ \t]*)vec2 candidate = clamp\(vector \+ aperture_normal \*\n"
+    r"(?P=indent)(?P<spaces>[ \t]+)\(float\(offset\) - dot\(vector, aperture_normal\)\),\n"
+    r"(?P=indent)(?P=spaces)-p, size - 1\.0 - p\);$",
+    lambda match: (
+        match.group("indent")
+        + "vec2 candidate = clamp(aperture_normal * float(offset), -p, size - 1.0 - p);"
+    ),
+    legacy_aperture,
+    count=1,
+)
+assert dense_replacements == 1
+assert PATCHER._has_refinement_aperture_normal(legacy_aperture, require_tangent=False)
+upgraded_aperture, aperture_upgrade_changed = PATCHER.transform_source(legacy_aperture)
+assert aperture_upgrade_changed and PATCHER._has_refinement_aperture_normal(upgraded_aperture)
 
 pinned_patched, pinned_changed = PATCHER.transform_source(
     fixture(output=PINNED_OUTPUT, output_indent="            ")

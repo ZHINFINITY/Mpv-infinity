@@ -169,7 +169,10 @@ assert "float tensor_discriminant = sqrt(max(" in MOTION_SNAPSHOT
 assert "lambda_min < 0.12 * lambda_max;" in MOTION_SNAPSHOT
 assert "normalize(vec2(lambda_max - yy, xy))" in MOTION_SNAPSHOT
 assert "float projected = dot(vector, aperture_normal);" in MOTION_SNAPSHOT
-assert "aperture_normal * float(offset)" in MOTION_SNAPSHOT
+assert "MPVFLOW_REFINEMENT_APERTURE_TANGENT_V1" in MOTION_SNAPSHOT
+assert "vec2 candidate = clamp(vector + aperture_normal *" in MOTION_SNAPSHOT
+assert "float(offset) - dot(vector, aperture_normal)" in MOTION_SNAPSHOT
+assert "aperture_normal * float(offset)" not in MOTION_SNAPSHOT
 assert "vec2 axis = xx > yy ? vec2(1, 0) : vec2(0, 1);" not in MOTION_SNAPSHOT
 assert "MPVFLOW_SPATIAL_TRUST_ISLAND_GUARD_V1" in MOTION_SNAPSHOT
 assert "spatial_trust_consensus(warp0, warp1, uv, f, r)" in MOTION_SNAPSHOT

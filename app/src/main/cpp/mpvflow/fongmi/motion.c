@@ -368,7 +368,7 @@ static const char refine_body[] = GLSL(
                 tensor = patch_tensor(first, p);
             float xx = tensor.x, xy = tensor.y, yy = tensor.z;
             float trace = xx + yy;
-            // MPVFLOW_REFINEMENT_APERTURE_NORMAL_V1: canonicalize only edge-ambiguous flow along the principal gradient normal.
+            // MPVFLOW_REFINEMENT_APERTURE_NORMAL_V1: refine edge-ambiguous flow along the principal gradient normal.
             float tensor_discriminant = sqrt(max((xx - yy) * (xx - yy) + 4.0 * xy * xy, 0.0));
             float lambda_min = max(0.5 * (trace - tensor_discriminant), 0.0);
             float lambda_max = max(0.5 * (trace + tensor_discriminant), 0.0);
@@ -379,6 +379,7 @@ static const char refine_body[] = GLSL(
                 aperture_normal = abs(xy) > 0.000001
                     ? normalize(vec2(lambda_max - yy, xy))
                     : (xx >= yy ? vec2(1, 0) : vec2(0, 1));
+                // MPVFLOW_REFINEMENT_APERTURE_TANGENT_V1: preserve inherited tangential flow; refine only its normal projection.
                 float projected = dot(vector, aperture_normal);
                 // Bound acceptance by the original minimum, then rank candidates.
                 float limit = residual + 0.000001;
@@ -388,7 +389,8 @@ static const char refine_body[] = GLSL(
                 vec2 selected = vector;
                 bool unique = false;
                 for (int offset = -1; offset <= 1; offset++) {
-                    vec2 candidate = clamp(aperture_normal * (round(projected) + float(offset)),
+                    vec2 candidate = clamp(vector + aperture_normal *
+                                           (round(projected) + float(offset) - projected),
                                            -p, size - 1.0 - p);
                     float cost = patch_cost(second, p, candidate);
                     float delta = abs(dot(candidate, aperture_normal) - projected);
@@ -425,7 +427,9 @@ static const char refine_body[] = GLSL(
                 float magnitude = dot(vector, vector);
                 float distance = 0.0;
                 for (int offset = -settings.z; offset <= settings.z; offset++) {
-                    vec2 candidate = clamp(aperture_normal * float(offset), -p, size - 1.0 - p);
+                    vec2 candidate = clamp(vector + aperture_normal *
+                                           (float(offset) - dot(vector, aperture_normal)),
+                                           -p, size - 1.0 - p);
                     float norm = dot(candidate, candidate);
                     float delta = dot(candidate - original, candidate - original);
                     if ((norm < magnitude || (norm == magnitude && delta < distance)) &&
