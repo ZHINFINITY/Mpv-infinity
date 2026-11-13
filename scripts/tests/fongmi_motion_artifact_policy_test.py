@@ -58,7 +58,17 @@ LEGACY_TRUST = BASE_TRUST.replace(
 )
 
 BASE_RECONSTRUCTION = """    if (!(evidence > best || (evidence == best && distance < nearest)))
-        continue;"""
+        continue;
+    vec4 hypothesis = texelFetch(translation, ivec2(0), 0);
+    if (hypothesis.w > 0.0) {
+        vec2 vector = direction != 0 ? -hypothesis.xy : hypothesis.xy;
+        vector = clamp(vector, -p, size - 1.0 - p);
+        float score = patch_cost(second, p, vector);
+        if (score <= cost + 0.000001) {
+            selected = vec4(vector, score, hypothesis.w);
+            cost = score;
+        }
+    }"""
 
 BASE_WARP = """static const char warp_body[] = GLSL(
     vec2 uv = (vec2(gl_GlobalInvocationID.xy) + 0.5) / map_size;
@@ -291,6 +301,22 @@ def spatial_scene_cut_score(first: list[list[float]], second: list[list[float]])
     return changed_tiles / 16.0
 
 
+def select_global_translation(
+    local_vector: tuple[float, float],
+    global_vector: tuple[float, float],
+    reverse_at_global: tuple[float, float],
+    global_cost: float,
+    local_cost: float,
+) -> tuple[float, float]:
+    cycle = math.hypot(
+        global_vector[0] + reverse_at_global[0],
+        global_vector[1] + reverse_at_global[1],
+    )
+    if global_cost <= local_cost + 0.000001 and cycle < 1.5:
+        return global_vector
+    return local_vector
+
+
 def aperture_normal(xx: float, xy: float, yy: float) -> tuple[float, float] | None:
     trace = xx + yy
     discriminant = math.sqrt(max((xx - yy) ** 2 + 4 * xy * xy, 0.0))
@@ -324,6 +350,19 @@ assert PATCHER.MARKER in patched
 assert PATCHER.SPATIAL_TRUST_MARKER in patched
 assert PATCHER.LOCAL_SOFTENING_MARKER in patched
 assert PATCHER.SPATIAL_MEDOID_MARKER in patched
+assert PATCHER.GLOBAL_TRANSLATION_CYCLE_MARKER in patched
+assert PATCHER._has_global_translation_cycle_guard(patched)
+assert "translation_position + vector / size, 0.0" in patched
+assert "translation_cycle < 1.5 &&" in patched
+# A camera-pan vector remains available on coherent background in both directions.
+pan = (4.0, -1.0)
+assert select_global_translation(pan, pan, (-4.0, 1.0), 0.02, 0.02) == pan
+# A moving character's supported reverse flow must preserve its independent motion.
+character = (1.0, 1.0)
+assert select_global_translation(character, pan, (-1.0, -1.0), 0.02, 0.02) == character
+# A pose-changing character with a non-closing reverse path must not inherit the pan.
+deforming_character = (0.0, 3.0)
+assert select_global_translation(deforming_character, pan, (0.0, -3.0), 0.02, 0.02) == deforming_character
 assert PATCHER.RECONSTRUCTION_MARKER in patched
 assert PATCHER.WARP_TRAJECTORY_MARKER in patched
 assert PATCHER.FINE_GRID_MARKER in patched

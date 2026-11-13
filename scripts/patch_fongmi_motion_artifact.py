@@ -33,6 +33,8 @@ SPATIAL_TRUST_MARKER = "MPVFLOW_SPATIAL_TRUST_DOWNWARD_CAP_V3"
 REFINEMENT_APERTURE_NORMAL_MARKER = "MPVFLOW_REFINEMENT_APERTURE_NORMAL_V1"
 REFINEMENT_APERTURE_TANGENT_MARKER = "MPVFLOW_REFINEMENT_APERTURE_TANGENT_V1"
 
+GLOBAL_TRANSLATION_CYCLE_MARKER = "MPVFLOW_GLOBAL_TRANSLATION_CYCLE_GUARD_V1"
+
 RECONSTRUCTION_PATTERN = re.compile(
     r"(?m)^(?P<indent> *)" + re.escape(
         "if (!(evidence > best || (evidence == best && distance < nearest)))"
@@ -41,6 +43,28 @@ RECONSTRUCTION_PATTERN = re.compile(
 RECONSTRUCTION_BLOCK = """// MPVFLOW_RECONSTRUCTION_POSITIVE_EVIDENCE_V1: only propagate measured motion.
 if (!(evidence > 0.0 &&
       (evidence > best || (evidence == best && distance < nearest))))"""
+
+GLOBAL_TRANSLATION_PATTERN = re.compile(
+    r"(?m)^(?P<indent>[ \t]*)if \(score <= cost \+ 0\.000001\) \{\n"
+    r"(?P=indent)[ \t]+selected = vec4\(vector, score, hypothesis\.w\);\n"
+    r"(?P=indent)[ \t]+cost = score;\n"
+    r"(?P=indent)\}"
+)
+GLOBAL_TRANSLATION_CYCLE_BLOCK = """// MPVFLOW_GLOBAL_TRANSLATION_CYCLE_GUARD_V1:
+// A frame-wide motion prior may replace a local vector only when the local
+// reverse field closes the same path; this protects independently moving
+// or deforming foreground while keeping coherent camera-pan background.
+vec2 translation_position = (vec2(pixel) + 0.5) / vec2(grid);
+vec4 translation_reverse = textureLod(
+    backward, translation_position + vector / size, 0.0);
+float translation_cycle = length(vector + translation_reverse.xy);
+if (!(any(isnan(translation_reverse)) || any(isinf(translation_reverse))) &&
+    !isnan(translation_cycle) && !isinf(translation_cycle) &&
+    translation_cycle < 1.5 &&
+    score <= cost + 0.000001) {
+    selected = vec4(vector, score, hypothesis.w);
+    cost = score;
+}"""
 
 WARP_START_PATTERN = re.compile(
     r"(?m)^(?P<indent>[ \t]*)vec2 uv = \(vec2\(gl_GlobalInvocationID\.xy\) \+ 0\.5\) / map_size;\n"
@@ -731,6 +755,46 @@ def _has_reconstruction_guard(source: str) -> bool:
     )
 
 
+def _has_global_translation_cycle_guard(source: str) -> bool:
+    # The retained app snapshot has no frame-wide translation override; preserve it.
+    if (
+        MARKER in source
+        and "vec4 hypothesis = texelFetch(translation, ivec2(0), 0);" not in source
+        and GLOBAL_TRANSLATION_PATTERN.search(source) is None
+    ):
+        return True
+    return (
+        source.count(GLOBAL_TRANSLATION_CYCLE_MARKER) == 1
+        and source.count("vec2 translation_position = (vec2(pixel) + 0.5) / vec2(grid);") == 1
+        and source.count("backward, translation_position + vector / size, 0.0)") == 1
+        and source.count("float translation_cycle = length(vector + translation_reverse.xy);") == 1
+        and source.count("translation_cycle < 1.5 &&") == 1
+        and GLOBAL_TRANSLATION_PATTERN.search(source) is None
+    )
+
+
+def _patch_global_translation_cycle_guard(source: str) -> str:
+    if GLOBAL_TRANSLATION_CYCLE_MARKER in source:
+        if not _has_global_translation_cycle_guard(source):
+            raise ValueError("FongMi global-translation cycle marker/source mismatch")
+        return source
+    if (
+        MARKER in source
+        and "vec4 hypothesis = texelFetch(translation, ivec2(0), 0);" not in source
+        and GLOBAL_TRANSLATION_PATTERN.search(source) is None
+    ):
+        return source
+    source = _replace_one(
+        GLOBAL_TRANSLATION_PATTERN,
+        source,
+        lambda match: _indent_block(GLOBAL_TRANSLATION_CYCLE_BLOCK, match.group("indent")),
+        "global-translation reverse-cycle guard",
+    )
+    if not _has_global_translation_cycle_guard(source):
+        raise ValueError("FongMi global-translation cycle guard failed its postconditions")
+    return source
+
+
 def _has_warp_trajectory_path_guard(source: str) -> bool:
     return (
         source.count(WARP_TRAJECTORY_MARKER) == 1
@@ -860,6 +924,7 @@ def _is_patched(source: str) -> bool:
     return (
         _is_synthesis_patched(source)
         and _has_reconstruction_guard(source)
+        and _has_global_translation_cycle_guard(source)
         and _has_warp_trajectory_guard(source)
         and _has_warp_best_residual_guard(source)
         and _has_scene_cut_guard(source)
@@ -1203,7 +1268,7 @@ def _patch_v3_synthesis(source: str) -> str:
 
 
 def transform_source(source: str) -> tuple[str, bool]:
-    """Apply version-guarded aperture, grid, evidence, inverse-path, and scene-cut safeguards."""
+    """Apply version-guarded motion, global-translation, inverse-path, and synthesis safeguards."""
     original = source
     if MARKER in source:
         if _is_synthesis_patched(source):
@@ -1213,6 +1278,7 @@ def transform_source(source: str) -> tuple[str, bool]:
         else:
             raise ValueError("FongMi motion artifact V4 marker/source mismatch or rejected pixelwise output behavior")
         patched = _patch_reconstruction(patched)
+        patched = _patch_global_translation_cycle_guard(patched)
         patched = _patch_warp_trajectory(patched)
         patched = _patch_warp_best_residual(patched)
         patched = _patch_scene_cut(patched)
@@ -1226,6 +1292,7 @@ def transform_source(source: str) -> tuple[str, bool]:
     if PREVIOUS_MARKER in source:
         source = _patch_v3_synthesis(source)
         source = _patch_reconstruction(source)
+        source = _patch_global_translation_cycle_guard(source)
         source = _patch_warp_trajectory(source)
         source = _patch_warp_best_residual(source)
         source = _patch_scene_cut(source)
@@ -1277,6 +1344,7 @@ def transform_source(source: str) -> tuple[str, bool]:
     source = _patch_spatial_trust(source)
     source = _patch_spatial_medoid_fallback(source)
     source = _patch_reconstruction(source)
+    source = _patch_global_translation_cycle_guard(source)
     source = _patch_warp_trajectory(source)
     source = _patch_warp_best_residual(source)
     source = _patch_scene_cut(source)
