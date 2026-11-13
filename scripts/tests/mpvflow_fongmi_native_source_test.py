@@ -121,6 +121,7 @@ assert motion_patch_call in BUILD
 assert BUILD.index("motion_artifact_patch + flow_prepare") > BUILD.index("motion_artifact_patch = ")
 assert "MPVFLOW_ARTIFACT_GUARDS_V4" in PREPARE
 assert "MPVFLOW_WARP_TRAJECTORY_COHERENCE_V1" in PREPARE
+assert "MPVFLOW_WARP_PRIMARY_TRUST_CAP_V1" in PREPARE
 assert 'or "MPVFLOW_WARP_TRAJECTORY_TRUST_V2" in motion' in PREPARE
 assert 'or "MPVFLOW_INSHOT_NEAREST_SOURCE_FALLBACK_V1" in motion' in PREPARE
 assert "MPVFLOW_SCENE_CUT_SPATIAL_V1" in PREPARE
@@ -131,6 +132,7 @@ assert "int spacing = (level == LEVELS - 1 || level == 0) ? 4 : 8;" in PREPARE
 assert "MPVFLOW_ARTIFACT_TRUST_TAPER_V2" not in PREPARE
 assert "MPVFLOW_ARTIFACT_GUARDS_V4" in MOTION_PATCHER
 assert "MPVFLOW_WARP_TRAJECTORY_COHERENCE_V1" in MOTION_PATCHER
+assert "MPVFLOW_WARP_PRIMARY_TRUST_CAP_V1" in MOTION_PATCHER
 assert "REJECTED_WARP_TRUST_MARKER" in MOTION_PATCHER
 assert "REJECTED_INSHOT_FALLBACK_MARKER" in MOTION_PATCHER
 assert "MPVFLOW_SCENE_CUT_SPATIAL_V1" in MOTION_PATCHER
@@ -192,6 +194,8 @@ assert "MPVFLOW_LOCAL_MOTION_SOFTENING_V1" in MOTION_SNAPSHOT
 assert "local_motion_softness" in MOTION_SNAPSHOT
 assert "float trajectory_error = abs(weight) * length(motion_vector - initial_motion);" in MOTION_SNAPSHOT
 assert "reliable *= trajectory_quality;" in MOTION_SNAPSHOT
+assert "MPVFLOW_WARP_PRIMARY_TRUST_CAP_V1" in MOTION_SNAPSHOT
+assert "trust = min(trust, trajectory_quality);" in MOTION_SNAPSHOT
 assert "trust *= trajectory_quality;" not in MOTION_SNAPSHOT
 assert "nearest_frame_weight" not in MOTION_SNAPSHOT
 assert "source_blend = mix(source_blend, nearest_frame," not in MOTION_SNAPSHOT

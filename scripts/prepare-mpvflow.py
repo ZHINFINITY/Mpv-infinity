@@ -944,6 +944,7 @@ def main() -> None:
         or "mp_motion_render_views" not in motion
         or "MPVFLOW_ARTIFACT_GUARDS_V4" not in motion
         or "MPVFLOW_WARP_TRAJECTORY_COHERENCE_V1" not in motion
+        or "MPVFLOW_WARP_PRIMARY_TRUST_CAP_V1" not in motion
         or "MPVFLOW_WARP_TRAJECTORY_TRUST_V2" in motion
         or "MPVFLOW_INSHOT_NEAREST_SOURCE_FALLBACK_V1" in motion
         or "trust *= trajectory_quality;" in motion

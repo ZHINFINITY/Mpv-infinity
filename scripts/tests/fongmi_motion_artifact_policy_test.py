@@ -356,7 +356,9 @@ assert PATCHER.WARP_ITERATION_PATTERN.search(patched) is None
 assert "vec2 motion_vector = f.xy;" in patched
 assert "float trajectory_error = abs(weight) * length(motion_vector - initial_motion);" in patched
 assert "reliable *= trajectory_quality;" in patched
-assert "trust *= trajectory_quality;" not in patched, "path coherence only gates uncertain recovery"
+assert PATCHER.PRIMARY_TRAJECTORY_TRUST_MARKER in patched
+assert "trust = min(trust, trajectory_quality);" in patched
+assert "trust *= trajectory_quality;" not in patched, "path stability caps trust instead of multiplying it"
 assert "vec2 displacement = -weight * f.xy;" in patched
 assert "color = vec4(displacement, trust * geometry, reliable * geometry);" in patched
 assert "source = uv - weight * f.xy / map_size;" in patched
@@ -692,7 +694,24 @@ assert math.isclose(spatial_trust_downward_cap(0.95, 0.05, 1.0), 0.275, abs_tol=
 )
 assert "float spatial_gap = abs(clamp(trust, 0.0, 1.0) - spatial_consensus);" not in patched
 
-# Path coherence remains limited to uncertain-motion recovery; primary match trust is unchanged.
+# Path stability caps primary trust only when the inverse path diverges; a stable
+# high-motion trajectory keeps the same warp contribution.
+def cap_primary_trust(primary: float, path_quality: float) -> float:
+    return min(primary, path_quality)
+
+
+def warp_support(primary: float, path_quality: float, geometry: float = 1.0) -> float:
+    return cap_primary_trust(primary, path_quality) * geometry
+
+
+def reliable_support(reliable: float, path_quality: float, geometry: float = 1.0) -> float:
+    return reliable * path_quality * geometry
+
+
+def combined_synthesis_trust(primary0: float, primary1: float, reliable0: float, reliable1: float) -> float:
+    return max(min(primary0, primary1), min(reliable0, reliable1))
+
+
 assert trajectory_weight((8.0, -2.0), (8.0, -2.0), 0.75) == 1.0
 assert trajectory_weight((8.0, -2.0), (8.1, -2.0), 1.0) == 1.0
 assert trajectory_weight((0.0, 0.0), (0.125, 0.0), 1.0) == 1.0
@@ -706,10 +725,23 @@ base_uncertain_support = 0.7 * 0.9
 stable_path = trajectory_weight((8.0, 0.0), (8.1, 0.0), 1.0)
 boundary_path = trajectory_weight((12.0, 0.0), (-4.0, 0.0), 0.5)
 gated_uncertain_support = base_uncertain_support * boundary_path
+assert math.isclose(cap_primary_trust(0.92, stable_path), 0.92, abs_tol=1e-12)
+assert cap_primary_trust(0.92, boundary_path) == 0.0
+partial_path = trajectory_weight((0.0, 0.0), (0.3125, 0.0), 1.0)
+assert math.isclose(cap_primary_trust(0.92, partial_path), 0.5, abs_tol=1e-12)
 assert math.isclose(base_trusted_support, 0.72, abs_tol=1e-12)
 assert math.isclose(stable_path, 1.0, abs_tol=1e-12)
 assert boundary_path == 0.0
 assert gated_uncertain_support == 0.0
+unstable_forward = trajectory_weight((12.0, 0.0), (-4.0, 0.0), 0.5)
+stable_backward = trajectory_weight((8.0, 0.0), (8.1, 0.0), 1.0)
+primary_forward = warp_support(0.99, unstable_forward)
+primary_backward = warp_support(0.99, stable_backward)
+reliable_forward = reliable_support(0.99, unstable_forward)
+reliable_backward = reliable_support(0.99, stable_backward)
+assert combined_synthesis_trust(primary_forward, primary_backward, reliable_forward, reliable_backward) <= 0.001, (
+    "high local match confidence must not bypass an unstable inverse trajectory"
+)
 trajectory_values = [
     trajectory_weight((0.0, 0.0), (delta, 0.0), 1.0)
     for delta in (i / 100.0 for i in range(101))
@@ -899,7 +931,7 @@ if args.source:
 print(
     "FongMi artifact policy passed: max taper trust step "
     f"{old_step:.4f} -> {new_step:.4f}; local directional softness is capped at 0.24 "
-    "with path coherence limited to uncertain recovery and no per-pixel temporal source switch; "
+    "with trajectory stability capping primary warp confidence and no per-pixel temporal source switch; "
     "spatial cut detection flags palette-matched scene changes without firing on one-tile motion; "
     f"the 480-cap grid changes {coarse_grid[0]}x{coarse_grid[1]} to {fine_grid[0]}x{fine_grid[1]}, "
     f"halving the bilinear mixed-flow band {coarse_mix_band:.0f}px to {fine_mix_band:.0f}px in the supplied-resolution case"

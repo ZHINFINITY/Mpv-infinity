@@ -21,6 +21,7 @@ LEGACY_MARKER = "MPVFLOW_ARTIFACT_TRUST_TAPER_V2"
 LOCAL_SOFTENING_MARKER = "MPVFLOW_LOCAL_MOTION_SOFTENING_V1"
 RECONSTRUCTION_MARKER = "MPVFLOW_RECONSTRUCTION_POSITIVE_EVIDENCE_V1"
 WARP_TRAJECTORY_MARKER = "MPVFLOW_WARP_TRAJECTORY_COHERENCE_V1"
+PRIMARY_TRAJECTORY_TRUST_MARKER = "MPVFLOW_WARP_PRIMARY_TRUST_CAP_V1"
 WARP_BEST_RESIDUAL_MARKER = "MPVFLOW_WARP_BEST_INVERSE_RESIDUAL_V1"
 REJECTED_WARP_TRUST_MARKER = "MPVFLOW_WARP_TRAJECTORY_TRUST_V2"
 SCENE_CUT_MARKER = "MPVFLOW_SCENE_CUT_SPATIAL_V1"
@@ -53,6 +54,9 @@ WARP_VECTOR_PATTERN = re.compile(
 WARP_RELIABILITY_PATTERN = re.compile(
     r"(?m)^(?P<indent>[ \t]*)reliable \*= 1\.0 - smoothstep\(0\.1, 0\.5, cycle\);$"
 )
+WARP_PRIMARY_TRUST_PATTERN = re.compile(
+    r"(?m)^(?P<indent>[ \t]*)reliable \*= trajectory_quality;$"
+)
 WARP_ITERATION_PATTERN = re.compile(
     r"(?m)^(?P<indent>[ \t]*)for \(int i = 0; i < 4; i\+\+\)\n"
     r"(?P=indent)[ \t]+source = uv - weight \* textureLod\(forward, source, 0\.0\)\.xy / map_size;\n"
@@ -84,12 +88,16 @@ for (int i = 0; i < 4; i++) {
 }
 source = best_source;
 f = best_field;"""
-WARP_TRAJECTORY_BLOCK = """// MPVFLOW_WARP_TRAJECTORY_COHERENCE_V1: gate uncertain recovery on path stability.
+WARP_TRAJECTORY_BLOCK = """// MPVFLOW_WARP_TRAJECTORY_COHERENCE_V1: gate primary warp and uncertain recovery on path stability.
 float trajectory_error = abs(weight) * length(motion_vector - initial_motion);
 float trajectory_quality = 1.0 - smoothstep(0.125, 0.5, trajectory_error);
 if (isnan(trajectory_quality) || isinf(trajectory_quality))
     trajectory_quality = 0.0;
-reliable *= trajectory_quality;"""
+reliable *= trajectory_quality;
+// MPVFLOW_WARP_PRIMARY_TRUST_CAP_V1: unstable inverse paths cannot bypass the gate via primary match confidence.
+trust = min(trust, trajectory_quality);"""
+PRIMARY_TRAJECTORY_TRUST_BLOCK = """// MPVFLOW_WARP_PRIMARY_TRUST_CAP_V1: unstable inverse paths cannot bypass the gate via primary match confidence.
+trust = min(trust, trajectory_quality);"""
 
 
 SCENE_INIT_PATTERN = re.compile(
@@ -528,7 +536,7 @@ def _has_reconstruction_guard(source: str) -> bool:
     )
 
 
-def _has_warp_trajectory_v1_guard(source: str) -> bool:
+def _has_warp_trajectory_path_guard(source: str) -> bool:
     return (
         source.count(WARP_TRAJECTORY_MARKER) == 1
         and (
@@ -539,6 +547,27 @@ def _has_warp_trajectory_v1_guard(source: str) -> bool:
         and source.count("float trajectory_error = abs(weight) * length(motion_vector - initial_motion);") == 1
         and source.count("1.0 - smoothstep(0.125, 0.5, trajectory_error)") == 1
         and source.count("reliable *= trajectory_quality;") == 1
+    )
+
+
+def _has_warp_primary_trust_cap(source: str) -> bool:
+    return (
+        source.count(PRIMARY_TRAJECTORY_TRUST_MARKER) == 1
+        and source.count("trust = min(trust, trajectory_quality);") == 1
+        and re.search(
+            r"(?m)^[ \t]*reliable \*= trajectory_quality;\n"
+            r"[ \t]*// " + re.escape(PRIMARY_TRAJECTORY_TRUST_MARKER)
+            + r": unstable inverse paths cannot bypass the gate via primary match confidence\.\n"
+            r"[ \t]*trust = min\(trust, trajectory_quality\);$",
+            source,
+        ) is not None
+    )
+
+
+def _has_warp_trajectory_v1_guard(source: str) -> bool:
+    return (
+        _has_warp_trajectory_path_guard(source)
+        and _has_warp_primary_trust_cap(source)
     )
 
 
@@ -798,8 +827,21 @@ def _patch_warp_trajectory(source: str) -> str:
     if REJECTED_WARP_TRUST_MARKER in source or "trust *= trajectory_quality;" in source:
         raise ValueError("FongMi source contains the rejected primary trajectory-trust multiplier")
     if WARP_TRAJECTORY_MARKER in source:
-        if not _has_warp_trajectory_v1_guard(source):
+        if not _has_warp_trajectory_path_guard(source):
             raise ValueError("FongMi warp trajectory V1 marker/source mismatch")
+        if PRIMARY_TRAJECTORY_TRUST_MARKER in source and not _has_warp_primary_trust_cap(source):
+            raise ValueError("FongMi primary trajectory trust marker/source mismatch")
+        if PRIMARY_TRAJECTORY_TRUST_MARKER not in source:
+            source = _replace_one(
+                WARP_PRIMARY_TRUST_PATTERN,
+                source,
+                lambda match: match.group(0) + "\n" + _indent_block(
+                    PRIMARY_TRAJECTORY_TRUST_BLOCK, match.group("indent")
+                ),
+                "primary warp confidence trajectory cap",
+            )
+        if not _has_warp_trajectory_guard(source):
+            raise ValueError("FongMi primary trajectory trust cap failed its postconditions")
         return source
     source = _replace_one(
         WARP_START_PATTERN,
@@ -824,8 +866,8 @@ def _patch_warp_trajectory(source: str) -> str:
         lambda match: match.group(0) + "\n" + _indent_block(WARP_TRAJECTORY_BLOCK, match.group("indent")),
         "inverse-warp trajectory gate",
     )
-    if not _has_warp_trajectory_v1_guard(source):
-        raise ValueError("FongMi inverse-path-only trajectory patch failed its postconditions")
+    if not _has_warp_trajectory_guard(source):
+        raise ValueError("FongMi trajectory trust cap failed its postconditions")
     return source
 
 

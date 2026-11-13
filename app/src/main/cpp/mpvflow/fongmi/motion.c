@@ -669,12 +669,14 @@ static const char warp_body[] = GLSL(
     float trust = quality(f);
     float reliable = 1.0 - smoothstep(0.001, 0.01, max(f.z, reverse.z));
     reliable *= 1.0 - smoothstep(0.1, 0.5, cycle);
-    // MPVFLOW_WARP_TRAJECTORY_COHERENCE_V1: gate uncertain recovery on path stability.
+    // MPVFLOW_WARP_TRAJECTORY_COHERENCE_V1: gate primary warp and uncertain recovery on path stability.
     float trajectory_error = abs(weight) * length(motion_vector - initial_motion);
     float trajectory_quality = 1.0 - smoothstep(0.125, 0.5, trajectory_error);
     if (isnan(trajectory_quality) || isinf(trajectory_quality))
         trajectory_quality = 0.0;
     reliable *= trajectory_quality;
+    // MPVFLOW_WARP_PRIMARY_TRUST_CAP_V1: unstable inverse paths cannot bypass the gate via primary match confidence.
+    trust = min(trust, trajectory_quality);
     float geometry = (1.0 - smoothstep(0.5, 1.5, cycle)) *
                      (1.0 - smoothstep(0.25, 1.0, residual));
     geometry *= min(support(source, map_size), support(source + f.xy, map_size));
