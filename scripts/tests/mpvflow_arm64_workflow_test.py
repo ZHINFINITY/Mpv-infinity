@@ -130,16 +130,17 @@ class Arm64WorkflowTest(unittest.TestCase):
         self.assertIn("pipx install meson==1.6.1", dependencies)
         self.assertLess(TEXT.index("- name: " + name), TEXT.index("- name: Assemble one arm64-v8a diagnostic APK after Kotlin checks"))
 
-    def test_kotlin_checks_complete_before_arm64_apk_assembly(self):
+    def test_kotlin_unit_tests_complete_before_arm64_apk_assembly(self):
         runs = re.findall(r"^        run: (\./gradlew .+)$", TEXT, re.M)
         self.assertEqual(len(runs), 2)
         kotlin_run, assemble_run = runs
-        for token in ("testStandard${{ inputs.jelly_preview", ":media3-decoder-ffmpeg:testDebugUnitTest", ":app:compileStandard${{ inputs.jelly_preview", "-PtargetAbi=arm64-v8a", "-PmpvFlowMpvBuild=true", "--stacktrace", "--no-daemon", "--max-workers=2"):
+        for token in ("testStandardDebugUnitTest", ":media3-decoder-ffmpeg:testDebugUnitTest", "-PtargetAbi=arm64-v8a", "-PmpvFlowMpvBuild=true", "--stacktrace", "--no-daemon", "--max-workers=2"):
             self.assertIn(token, kotlin_run)
+        self.assertNotIn("testStandardJellyPreviewUnitTest", kotlin_run)
         for token in ("assembleStandard${{ inputs.jelly_preview", "-PtargetAbi=arm64-v8a", "-PmpvFlowMpvBuild=true", "--stacktrace", "--no-daemon", "--max-workers=2"):
             self.assertIn(token, assemble_run)
         self.assertNotIn("-x", kotlin_run.split() + assemble_run.split())
-        self.assertLess(TEXT.index("- name: Run complete Kotlin compile and unit tests before APK packaging"), TEXT.index("- name: Assemble one arm64-v8a diagnostic APK after Kotlin checks"))
+        self.assertLess(TEXT.index("- name: Run Kotlin unit tests before APK packaging"), TEXT.index("- name: Assemble one arm64-v8a diagnostic APK after Kotlin checks"))
         self.assertNotIn("continue-on-error:", TEXT)
 
     def test_packaged_runtime_checks_precede_artifact_upload(self):

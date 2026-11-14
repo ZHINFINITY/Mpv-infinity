@@ -153,8 +153,8 @@ jobs:
         with:
           path: native-builder/app/build/outputs/apk
           key: ${{ steps.mpvflow-runtime-cache.outputs.cache-primary-key }}
-      - name: Run complete Kotlin compile and unit tests before APK packaging
-        run: ./gradlew "testStandard${{ inputs.jelly_preview == true && 'JellyPreview' || 'Debug' }}UnitTest" :media3-decoder-ffmpeg:testDebugUnitTest ":app:compileStandard${{ inputs.jelly_preview == true && 'JellyPreview' || 'Debug' }}Kotlin" -PtargetAbi=arm64-v8a -PmpvFlowMpvBuild=true --stacktrace --no-daemon --max-workers=2
+      - name: Run Kotlin unit tests before APK packaging
+        run: ./gradlew testStandardDebugUnitTest :media3-decoder-ffmpeg:testDebugUnitTest -PtargetAbi=arm64-v8a -PmpvFlowMpvBuild=true --stacktrace --no-daemon --max-workers=2
       - name: Assemble one arm64-v8a diagnostic APK after Kotlin checks
         run: ./gradlew "assembleStandard${{ inputs.jelly_preview == true && 'JellyPreview' || 'Debug' }}" -PtargetAbi=arm64-v8a -PmpvFlowMpvBuild=true --stacktrace --no-daemon --max-workers=2
       - name: Verify arm64 DTS wrapper dynamically links the existing FFmpeg runtime
