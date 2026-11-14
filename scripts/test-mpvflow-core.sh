@@ -17,6 +17,11 @@ cc -std=c11 -O2 -Wall -Wextra -Werror \
 "$OUT_OPENCL_VALIDATION"
 python3 "$ROOT/scripts/tests/mpvflow_gpu_shader_test.py"
 python3 "$ROOT/scripts/tests/mpvflow_pair_ghost_test.py"
+if [[ -n "${MPVFLOW_MPV_SOURCE_DIR:-}" && -d "$MPVFLOW_MPV_SOURCE_DIR" ]]; then
+  python3 "$ROOT/scripts/tests/mpvrx_motion_downsample_test.py" --mpv-dir "$MPVFLOW_MPV_SOURCE_DIR"
+else
+  python3 "$ROOT/scripts/tests/mpvrx_motion_downsample_test.py"
+fi
 if [[ "${MPVFLOW_REQUIRE_VULKAN_PIXEL_TEST:-0}" == "1" ]]; then
   python3 "$ROOT/scripts/tests/mpvflow_gpu_motion_test.py" --require-vulkan
   python3 "$ROOT/scripts/tests/mpvflow_gpu_synthesis_test.py" --decision-mode --require-vulkan

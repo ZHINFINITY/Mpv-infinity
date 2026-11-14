@@ -12,6 +12,7 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
 from mpvrx_motion_source import verify_mpv_source
+from patch_fongmi_motion_downsample import apply_patch as apply_motion_downsample_patch
 
 ROOT = SCRIPT_DIR.parent
 VENDOR = ROOT / "app/src/main/cpp/mpvflow"
@@ -951,10 +952,22 @@ def main() -> None:
         )
     print("FongMi one-shot diagnostics disabled; leaving motion/VO sources uninstrumented")
 
+    downsample_antialias_enabled = os.environ.get("MPVFLOW_MPVRX_ANALYSIS_DOWNSAMPLE_AA") == "1"
     try:
         verify_mpv_source(mpv_dir)
+        downsample_patch_applied = apply_motion_downsample_patch(
+            motion_path, enabled=downsample_antialias_enabled
+        )
     except (OSError, ValueError) as exc:
-        raise SystemExit(f"MPVRx FongMi motion source verification failed: {exc}") from exc
+        raise SystemExit(f"MPVRx FongMi source/analysis verification failed: {exc}") from exc
+    if downsample_antialias_enabled:
+        print(
+            "Applied bounded MPVRx motion-analysis downsample antialiasing"
+            if downsample_patch_applied
+            else "Bounded MPVRx motion-analysis downsample antialiasing already present"
+        )
+    else:
+        print("MPVRx analysis-downsample antialias candidate disabled; preserving upstream motion shader")
 
     native_fongmi_markers = (
         "version: '>=7.387.0'",
@@ -1080,7 +1093,8 @@ def main() -> None:
     print(
         f"Validated native FongMi GPU MEMC and Android MediaCodec/Vulkan mapping in {mpv_dir}; "
         f"kept SPIR-V optimization enabled and applied Android Vulkan synchronization and "
-        f"swapchain stability fixes in {libplacebo_dir}."
+        f"swapchain stability fixes in {libplacebo_dir}. MPVRx analysis-downsample antialias "
+        f"candidate {'enabled' if downsample_antialias_enabled else 'disabled'}; 480px cap unchanged."
     )
 
 if __name__ == "__main__":

@@ -11,6 +11,8 @@ BUILD = (ROOT / "scripts/build-mpvflow-mpv-runtime.sh").read_text(encoding="utf-
 PREPARE = (ROOT / "scripts/prepare-mpvflow.py").read_text(encoding="utf-8")
 SOURCE_VERIFIER = (ROOT / "scripts/mpvrx_motion_source.py").read_text(encoding="utf-8")
 SOURCE_TEST = (ROOT / "scripts/tests/mpvrx_motion_source_test.py").read_text(encoding="utf-8")
+DOWNSAMPLE_PATCH = (ROOT / "scripts/patch_fongmi_motion_downsample.py").read_text(encoding="utf-8")
+DOWNSAMPLE_TEST = (ROOT / "scripts/tests/mpvrx_motion_downsample_test.py").read_text(encoding="utf-8")
 VULKAN_HEADERS = (ROOT / "scripts/prepare-mpvflow-vulkan-headers.py").read_text(encoding="utf-8")
 WORKFLOWS = [
     (ROOT / ".github/workflows/debug-apk.yml").read_text(encoding="utf-8"),
@@ -31,6 +33,7 @@ PATCH_README = (PATCH_DIR / "README.md").read_text(encoding="utf-8")
 MPV_SHA = "95ec8e929f8ad2f97c8415c486971493a0b408df"
 PLACEBO_SHA = "63659d96d1bff7d7a5a1368e9538056a193fc6fb"
 MOTION_SHA256 = "ca7870c21f7a499d03ab1f7d73f1b9bcbccee534398d8a6f01957556e7d61932"
+MOTION_ANTIALIAS_SHA256 = "db13147fd268ebe857e235a2ad066c0d34d9c35cab66f6fa93ed5767d61219a2"
 MOTION_HEADER_SHA256 = "12fedd08063a540b69667a51e146d539ebae509b63c07964f573410a7d0ae427"
 BUILDER_SHA = "1efc82739f6f7034cd63e7ee8b3ec5431df27467"
 MPVLIB_ANDROID_SHA = "d04217abe8e72e4a099269f045855bf69b87d53b"
@@ -52,14 +55,21 @@ assert 'python3 "$MPVFLOW_ROOT/scripts/prepare-mpvflow.py" --mpv-dir deps/mpv --
 assert "patch_fongmi_motion_artifact.py" not in BUILD
 assert "motion_artifact_patch" not in BUILD
 assert "verify_mpv_source(mpv_dir)" in PREPARE
+assert "apply_motion_downsample_patch(" in PREPARE and "enabled=downsample_antialias_enabled" in PREPARE
+assert 'os.environ.get("MPVFLOW_MPVRX_ANALYSIS_DOWNSAMPLE_AA") == "1"' in PREPARE
 assert "MOTION_PASS_PREPARE" in PREPARE and "pl_dispatch_prepare_compute" in PREPARE
 assert "mp_motion_render_owned" in PREPARE and "mp_motion_capture_supported" in PREPARE
 assert "MPVFLOW_DEBUG_CAPTURE is unsupported with the MPVRx-pinned FongMi 95ec motion core" in PREPARE
 assert MPV_SHA in SOURCE_VERIFIER and MOTION_SHA256 in SOURCE_VERIFIER
+assert "MOTION_ANTIALIAS_SHA256" in SOURCE_VERIFIER
 assert MOTION_HEADER_SHA256 in SOURCE_VERIFIER
 assert '"mp_motion_create(p->gpu, 480);" in vo' in SOURCE_VERIFIER
 assert '"info->queue_display_time_only = true;" in android_context' in SOURCE_VERIFIER
 assert "verify_mpv_source(args.mpv_dir)" in SOURCE_TEST
+assert "--require-analysis-downsample-aa" in SOURCE_TEST
+assert "MPVFLOW_MPVRX_ANALYSIS_DOWNSAMPLE_AA_V1" in DOWNSAMPLE_PATCH
+assert "ceil(source_scale / 2.0)" in DOWNSAMPLE_PATCH
+assert "tap_count(2.0) == 1" in DOWNSAMPLE_TEST
 
 for marker in (
     "MPVFLOW_MPV_BUILD_CORES",
@@ -89,6 +99,13 @@ for workflow in WORKFLOWS:
     assert "fongmi-diagnostic-capture-v1" not in workflow
     assert "runtime-legacy" not in workflow
     assert "c1529642089bfebfc928a1c1664638a7a5d219ba" not in workflow
+assert "scripts/patch_fongmi_motion_downsample.py" in WORKFLOWS[1]
+assert "MPVFLOW_MPVRX_ANALYSIS_DOWNSAMPLE_AA: '1'" in WORKFLOWS[1]
+assert "--require-analysis-downsample-aa" in WORKFLOWS[1]
+for workflow in (WORKFLOWS[0], WORKFLOWS[2]):
+    assert "scripts/patch_fongmi_motion_downsample.py" not in workflow
+    assert "MPVFLOW_MPVRX_ANALYSIS_DOWNSAMPLE_AA" not in workflow
+    assert "--require-analysis-downsample-aa" not in workflow
 assert "scripts/tests/mpvrx_motion_source_test.py" in WORKFLOWS[0]
 assert "scripts/tests/mpvrx_motion_source_test.py" in WORKFLOWS[1]
 
@@ -98,8 +115,8 @@ for text in (MANIFEST, LICENSES):
         assert marker in text, marker
     assert "FongMi/mpv" in text and "FongMi/libplacebo" in text
     assert "GPL-2.0" in text
-    assert "does not apply" in text or "No local" in text
-for marker in (MOTION_SHA256, MOTION_HEADER_SHA256):
+    assert "bounded, hash-guarded app-owned patch" in text
+for marker in (MOTION_SHA256, MOTION_ANTIALIAS_SHA256, MOTION_HEADER_SHA256):
     assert marker in MANIFEST
 for patch_name, expected_hash in PATCH_HASHES.items():
     patch_path = PATCH_DIR / patch_name

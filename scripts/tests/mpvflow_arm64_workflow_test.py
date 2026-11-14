@@ -37,6 +37,7 @@ class Arm64WorkflowTest(unittest.TestCase):
             f"ffmpeg-fongmi-{FFMPEG_SHA}",
             f"vulkan-headers-khronos-{VULKAN_HEADERS_SHA}",
             "scripts/mpvrx_motion_source.py",
+            "scripts/patch_fongmi_motion_downsample.py",
             "scripts/prepare-mpvflow-vulkan-headers.py",
             "scripts/prepare-mpvflow.py",
             "scripts/patches/mpvlibandroid-fongmi/**",
@@ -77,6 +78,7 @@ class Arm64WorkflowTest(unittest.TestCase):
         for script in (
             "scripts/tests/mpvflow_fongmi_native_source_test.py",
             "scripts/tests/mpvrx_motion_source_test.py",
+            "scripts/tests/mpvrx_motion_downsample_test.py",
             "scripts/tests/mpvflow_android_subprocess_test.py",
             "scripts/tests/mpvflow_vulkan_headers_prepare_test.py",
             "scripts/tests/mpvflow_placebo_api_headers_test.py",
@@ -86,6 +88,12 @@ class Arm64WorkflowTest(unittest.TestCase):
         ):
             self.assertIn(script, core_runner.read_text(encoding="utf-8"))
         self.assertLess(TEXT.index("- name: Run MPVFlow core and GPU shader regression tests"), TEXT.index("- name: Assemble arm64-v8a debug APK after Kotlin checks"))
+
+    def test_built_runtime_must_contain_the_pinned_downsample_patch(self):
+        verify = STEPS["Verify MPVRx FongMi motion source after preparation"]
+        self.assertIn("--require-analysis-downsample-aa", verify)
+        build = STEPS["Build MPVFlow-only MPV native arm64 debug package"]
+        self.assertIn("MPVFLOW_MPVRX_ANALYSIS_DOWNSAMPLE_AA: '1'", build)
 
     def test_android_build_tools_are_installed_even_on_runtime_cache_hits(self):
         name = "Install Android MPV native build dependencies"

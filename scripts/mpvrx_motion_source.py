@@ -6,8 +6,11 @@ import hashlib
 import subprocess
 from pathlib import Path
 
+from patch_fongmi_motion_downsample import has_antialias_filter
+
 MPV_REVISION = "95ec8e929f8ad2f97c8415c486971493a0b408df"
 MOTION_SHA256 = "ca7870c21f7a499d03ab1f7d73f1b9bcbccee534398d8a6f01957556e7d61932"
+MOTION_ANTIALIAS_SHA256 = "db13147fd268ebe857e235a2ad066c0d34d9c35cab66f6fa93ed5767d61219a2"
 MOTION_HEADER_SHA256 = "12fedd08063a540b69667a51e146d539ebae509b63c07964f573410a7d0ae427"
 
 
@@ -19,8 +22,11 @@ def _sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
-def verify_mpv_source(mpv_dir: Path) -> None:
-    """Fail closed unless motion.c/h and the 480px Android integration match the proven pin."""
+def verify_mpv_source(mpv_dir: Path) -> bool:
+    """Fail closed unless source matches the pin or its one exact MPV-only patch.
+
+    Return True when the bounded analysis-downsample antialias patch is present.
+    """
     root = mpv_dir.resolve()
     motion_path = root / "video/out/gpu_next/motion.c"
     header_path = root / "video/out/gpu_next/motion.h"
@@ -44,15 +50,19 @@ def verify_mpv_source(mpv_dir: Path) -> None:
                 f"Unexpected FongMi MPV revision: expected {MPV_REVISION}, got {revision or 'unavailable'}"
             )
 
-    for path, expected in (
-        (motion_path, MOTION_SHA256),
-        (header_path, MOTION_HEADER_SHA256),
-    ):
-        actual = _sha256(path)
-        if actual != expected:
-            raise ValueError(f"Unexpected MPVRx motion source hash for {path.name}: {actual}")
-
     motion = motion_path.read_text(encoding="utf-8")
+    motion_hash = _sha256(motion_path)
+    if motion_hash == MOTION_SHA256:
+        antialias_patched = False
+    elif motion_hash == MOTION_ANTIALIAS_SHA256 and has_antialias_filter(motion):
+        antialias_patched = True
+    else:
+        raise ValueError(f"Unexpected MPVRx motion source hash for {motion_path.name}: {motion_hash}")
+
+    header_hash = _sha256(header_path)
+    if header_hash != MOTION_HEADER_SHA256:
+        raise ValueError(f"Unexpected MPVRx motion source hash for {header_path.name}: {header_hash}")
+
     header = header_path.read_text(encoding="utf-8")
     vo = vo_path.read_text(encoding="utf-8")
     android_context = android_context_path.read_text(encoding="utf-8")
@@ -67,3 +77,4 @@ def verify_mpv_source(mpv_dir: Path) -> None:
     failed = [name for name, passed in contracts if not passed]
     if failed:
         raise ValueError("MPVRx FongMi integration contract is incomplete: " + ", ".join(failed))
+    return antialias_patched
