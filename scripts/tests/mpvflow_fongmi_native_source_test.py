@@ -62,7 +62,7 @@ assert 'os.environ.get("MPVFLOW_MPVRX_ANALYSIS_DOWNSAMPLE_AA") == "1"' in PREPAR
 assert 'os.environ.get("MPVFLOW_JELLY_EXPERIMENTAL") == "1"' in PREPARE
 assert "if jelly_experimental_enabled:" in PREPARE and "apply_motion_jelly_patch(motion_path)" in PREPARE
 assert "MOTION_ANTIALIAS_SHA256" in JELLY_PATCH and "MOTION_JELLY_SHA256" in JELLY_PATCH
-assert "MPVFLOW_JELLY_ZERO_MOTION_REGION_V1" in JELLY_PATCH
+assert "MPVFLOW_JELLY_MOTION_ALIGNED_MAJORITY_V2" in JELLY_PATCH
 assert "--require-glslang" in JELLY_TEST and "synthesize_pixel" in JELLY_TEST
 assert "MOTION_PASS_PREPARE" in PREPARE and "pl_dispatch_prepare_compute" in PREPARE
 assert "mp_motion_render_owned" in PREPARE and "mp_motion_capture_supported" in PREPARE

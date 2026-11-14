@@ -105,6 +105,7 @@ class Arm64WorkflowTest(unittest.TestCase):
         self.assertIn("default: false", TEXT)
         candidate = STEPS["Compile opt-in jelly candidate from pinned MPVRx shader"]
         self.assertIn("scripts/tests/mpvrx_motion_jelly_test.py --mpv-dir mpv-source --require-glslang", candidate)
+        self.assertIn("MOTION_ALIGNED_MAJORITY_V2", (Path(__file__).resolve().parents[2] / "scripts/patch_fongmi_motion_jelly.py").read_text(encoding="utf-8"))
         cache = STEPS["Restore verified Flow-only MPVFlow arm64 runtime"]
         self.assertIn("jelly-test-", cache)
         self.assertIn("baseline-", cache)

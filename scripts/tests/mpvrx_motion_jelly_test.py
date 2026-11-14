@@ -133,6 +133,15 @@ def check_patch_contract() -> None:
     assert patched.count(PATCHED_ZERO_FLOW) == 1
     assert patched.count(ORIGINAL_ZERO_FLOW) == 0
     assert patched.count(JELLY_MARKER) == 1
+    assert "for (int neighbor = 0; neighbor < 8; neighbor++)" in PATCHED_ZERO_FLOW
+    assert "jelly_count0 >= 5" in PATCHED_ZERO_FLOW
+    assert "jelly_count1 >= 5" in PATCHED_ZERO_FLOW
+    assert "MPVFLOW_JELLY_ZERO_MOTION_REGION_V1" not in PATCHED_ZERO_FLOW
+    assert "neighbor_f.xy * jelly_scale" in PATCHED_ZERO_FLOW
+    assert "neighbor_r.xy * jelly_scale" in PATCHED_ZERO_FLOW
+    majority = PATCHED_ZERO_FLOW.index("for (int neighbor = 0; neighbor < 8; neighbor++)")
+    fallback = PATCHED_ZERO_FLOW.index("if (all(equal(vec4(f.xy, r.xy), vec4(0.0)))) {")
+    assert majority < fallback, "the test candidate must be evaluated before the legacy zero-flow fallback"
     repeated, changed_again = transform_jelly(patched, verify_upstream_hash=False)
     assert not changed_again and repeated == patched
     with tempfile.TemporaryDirectory(prefix="mpvrx-jelly-disabled-") as temp:
@@ -192,7 +201,7 @@ def main() -> None:
     source = motion_path.read_text(encoding="utf-8")
     final_source = prepared_variant(source)
     compile_synthesis_shader(final_source, required=args.require_glslang)
-    print(f"Opt-in zero-motion jelly candidate verified ({MOTION_JELLY_SHA256})")
+    print(f"Opt-in motion-aligned majority jelly candidate verified ({MOTION_JELLY_SHA256})")
 
 
 if __name__ == "__main__":

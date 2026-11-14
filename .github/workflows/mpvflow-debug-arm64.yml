@@ -12,7 +12,7 @@ on:
   workflow_dispatch:
     inputs:
       jelly_test:
-        description: "Build the opt-in jelly-region shader test APK (not the regular runtime)"
+        description: "Build the opt-in motion-aligned majority jelly test APK (not the regular runtime)"
         required: false
         type: boolean
         default: false
