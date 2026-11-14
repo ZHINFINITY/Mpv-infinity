@@ -9,7 +9,10 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "scripts"))
 from mpvrx_motion_source import MPV_REVISION, verify_mpv_source  # noqa: E402
-from patch_fongmi_motion_jelly import has_jelly_region_patch  # noqa: E402
+from patch_fongmi_motion_jelly import (  # noqa: E402
+    has_jelly_preview_patch,
+    has_jelly_region_patch,
+)
 
 
 def main() -> None:
@@ -17,7 +20,10 @@ def main() -> None:
     parser.add_argument("--mpv-dir", required=True, type=Path)
     parser.add_argument("--require-analysis-downsample-aa", action="store_true")
     parser.add_argument("--require-jelly-experimental", action="store_true")
+    parser.add_argument("--require-jelly-preview", action="store_true")
     args = parser.parse_args()
+    if args.require_jelly_experimental and args.require_jelly_preview:
+        parser.error("Jelly synthesis and mask preview cannot both be required")
     try:
         antialias_patched = verify_mpv_source(args.mpv_dir)
     except (OSError, ValueError) as exc:
@@ -28,9 +34,15 @@ def main() -> None:
         motion = (args.mpv_dir.resolve() / "video/out/gpu_next/motion.c").read_text(encoding="utf-8")
         if not has_jelly_region_patch(motion):
             parser.exit(1, "opt-in MPVRx jelly-region patch is required but missing\n")
+    if args.require_jelly_preview:
+        motion = (args.mpv_dir.resolve() / "video/out/gpu_next/motion.c").read_text(encoding="utf-8")
+        if not has_jelly_preview_patch(motion):
+            parser.exit(1, "opt-in MPVRx Jelly mask-preview patch is required but missing\n")
     suffix = " with bounded analysis-downsample antialiasing" if antialias_patched else ""
     if args.require_jelly_experimental:
         suffix += " and opt-in jelly-region synthesis"
+    if args.require_jelly_preview:
+        suffix += " and opt-in Jelly mask preview (synthesis disabled)"
     print(f"MPVRx FongMi motion source {MPV_REVISION}{suffix} and 480px integration verified")
 
 

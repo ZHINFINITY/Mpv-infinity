@@ -170,6 +170,12 @@ app_build = (ROOT / "app/build.gradle.kts").read_text(encoding="utf-8")
 assert 'project.findProperty("mpvFlowFongmiDiagnosticCapture")?.toString() == "true"' in app_build
 assert 'buildConfigField("boolean", "MPV_HAS_FONGMI_DIAGNOSTICS", includeMpvFlowFongmiDiagnostics.toString())' in app_build
 assert 'buildConfigField("boolean", "MPV_HAS_FONGMI_DIAGNOSTICS", "false")' in app_build
+assert 'buildConfigField("boolean", "MPV_JELLY_MASK_PREVIEW", "false")' in app_build
+assert 'create("jellyPreview")' in app_build
+jelly_preview_type = app_build.split('create("jellyPreview")', 1)[1].split("\n    }", 1)[0]
+assert 'applicationIdSuffix = ".debug"' in jelly_preview_type
+assert 'buildConfigField("boolean", "MPV_JELLY_MASK_PREVIEW", "true")' in jelly_preview_type
+assert 'resValue("string", "app_name", "Mpv∞-Jelly Preview")' in jelly_preview_type
 
 old_dependency = "vulkan = dependency('vulkan', version: '>= 1.3.238', required: vulkan_opt)"
 new_dependency = "vulkan = dependency('vulkan', required: vulkan_opt)"

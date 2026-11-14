@@ -7,7 +7,12 @@ import subprocess
 from pathlib import Path
 
 from patch_fongmi_motion_downsample import has_antialias_filter
-from patch_fongmi_motion_jelly import MOTION_JELLY_SHA256, has_jelly_region_patch
+from patch_fongmi_motion_jelly import (
+    MOTION_JELLY_PREVIEW_SHA256,
+    MOTION_JELLY_SHA256,
+    has_jelly_preview_patch,
+    has_jelly_region_patch,
+)
 
 MPV_REVISION = "95ec8e929f8ad2f97c8415c486971493a0b408df"
 MOTION_SHA256 = "ca7870c21f7a499d03ab1f7d73f1b9bcbccee534398d8a6f01957556e7d61932"
@@ -59,6 +64,8 @@ def verify_mpv_source(mpv_dir: Path) -> bool:
     elif motion_hash == MOTION_ANTIALIAS_SHA256 and has_antialias_filter(motion):
         antialias_patched = True
     elif motion_hash == MOTION_JELLY_SHA256 and has_jelly_region_patch(motion):
+        antialias_patched = True
+    elif motion_hash == MOTION_JELLY_PREVIEW_SHA256 and has_jelly_preview_patch(motion):
         antialias_patched = True
     else:
         raise ValueError(f"Unexpected MPVRx motion source hash for {motion_path.name}: {motion_hash}")

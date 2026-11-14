@@ -19,11 +19,19 @@ from patch_fongmi_motion_downsample import (  # noqa: E402
 )
 from patch_fongmi_motion_jelly import (  # noqa: E402
     MARKER as JELLY_MARKER,
+    MOTION_JELLY_PREVIEW_SHA256,
     MOTION_JELLY_SHA256,
     ORIGINAL_ZERO_FLOW,
     PATCHED_ZERO_FLOW,
+    PATCHED_ZERO_FLOW_PREVIEW,
+    PREVIEW_MARKER,
+    PREVIEW_RETURN,
+    SYNTHESIS_RETURN,
     apply_patch,
+    apply_preview_patch,
     has_jelly_region_patch,
+    has_jelly_preview_patch,
+    transform_preview_source,
     transform_source as transform_jelly,
 )
 
@@ -166,7 +174,93 @@ def check_patch_contract() -> None:
     print("Jelly patch idempotence, fail-closed anchor, and opt-in marker checks passed")
 
 
-def prepared_variant(source: str) -> str:
+def _reference_preview_pixel(pixel: tuple[float, float, float, float], mask: bool, enabled: bool) -> tuple[float, float, float, float]:
+    if not enabled or not mask:
+        return pixel
+    alpha = 0.72
+    tint = (1.0, 0.0, 1.0)
+    return tuple((1.0 - alpha) * pixel[i] + alpha * tint[i] for i in range(3)) + (pixel[3],)
+
+
+def check_preview_contract() -> None:
+    fixture = f"/* {DOWNSAMPLE_MARKER} */\n" + ORIGINAL_ZERO_FLOW + "\n"
+    applied, applied_changed = transform_jelly(fixture, verify_upstream_hash=False)
+    preview, preview_changed = transform_preview_source(fixture, verify_upstream_hash=False)
+    assert applied_changed and preview_changed
+    assert has_jelly_region_patch(applied)
+    assert has_jelly_preview_patch(preview)
+    assert preview.count(PREVIEW_MARKER) == 1
+    assert preview.count(PREVIEW_RETURN) == 1
+    assert preview.count(SYNTHESIS_RETURN) == 0
+    assert "return mix(original, jelly_region, jelly_fill);" not in preview
+    assert "if (jelly_fill > 0.001)" in preview
+    assert preview.index("if (jelly_fill > 0.001)") < preview.index(PREVIEW_MARKER)
+    assert preview.replace(PATCHED_ZERO_FLOW_PREVIEW, PATCHED_ZERO_FLOW, 1) == applied
+    assert PATCHED_ZERO_FLOW_PREVIEW.replace(PREVIEW_RETURN, SYNTHESIS_RETURN, 1) == PATCHED_ZERO_FLOW
+
+    repeated, changed_again = transform_preview_source(preview, verify_upstream_hash=False)
+    assert not changed_again and repeated == preview
+
+    with tempfile.TemporaryDirectory(prefix="mpvrx-jelly-preview-disabled-") as temp:
+        disabled_path = Path(temp) / "motion.c"
+        disabled_path.write_text(fixture, encoding="utf-8")
+        assert not apply_preview_patch(disabled_path, enabled=False)
+        assert disabled_path.read_text(encoding="utf-8") == fixture
+        disabled_path.write_text(preview, encoding="utf-8")
+        try:
+            apply_preview_patch(disabled_path, enabled=False)
+        except ValueError:
+            pass
+        else:
+            raise AssertionError("regular source preparation silently accepted the Jelly preview patch")
+
+    # Preview-off and mask-off pixels are bit-identical; only mask-positive pixels receive tint.
+    pixels = (
+        (0.15, 0.55, 0.72, 1.0),
+        (0.40, 0.40, 0.40, 1.0),
+        (0.08, 0.12, 0.20, 0.8),
+    )
+    for pixel in pixels:
+        assert _reference_preview_pixel(pixel, mask=False, enabled=True) == pixel
+        assert _reference_preview_pixel(pixel, mask=True, enabled=False) == pixel
+    flags = (False, True, False)
+    for pixel, flag in zip(pixels, flags, strict=True):
+        result = _reference_preview_pixel(pixel, mask=flag, enabled=True)
+        assert (result != pixel) is flag
+        assert result[3] == pixel[3]
+
+    # The candidate and preview differ only at the selected pixel's final color return.
+    # Motion samples/warps, blend phase and all cadence inputs remain byte-for-byte unchanged.
+    assert preview.replace(PATCHED_ZERO_FLOW_PREVIEW, PATCHED_ZERO_FLOW, 1) == applied
+    for token in (
+        "vec4 neighbor_f = textureLod(warp0, neighbor_uv, 0.0);",
+        "vec4 neighbor_r = textureLod(warp1, neighbor_uv, 0.0);",
+        "neighbor_f.xy * jelly_scale",
+        "neighbor_r.xy * jelly_scale",
+        "float jelly_phase = 4.0 * blend * (1.0 - blend);",
+    ):
+        assert token in preview and token in applied
+    assert "motion_fps" not in PREVIEW_RETURN and "frame_duration" not in PREVIEW_RETURN
+    print("Jelly preview pixel identity, mask-only tint, unchanged motion inputs/cadence, and synthesis-off checks passed")
+
+
+def prepared_variant(source: str, *, preview_only: bool = False) -> str:
+    if preview_only:
+        if has_jelly_preview_patch(source):
+            if hashlib.sha256(source.encode()).hexdigest() != MOTION_JELLY_PREVIEW_SHA256:
+                raise SystemExit("Jelly preview marker is present but the final pinned-source hash is unexpected")
+            return source
+        if has_jelly_region_patch(source):
+            jelly_source = source
+        else:
+            jelly_source, _ = transform_downsample(source)
+        preview_source, _ = transform_preview_source(jelly_source)
+        digest = hashlib.sha256(preview_source.encode()).hexdigest()
+        if digest != MOTION_JELLY_PREVIEW_SHA256:
+            raise SystemExit(f"Unexpected opt-in Jelly preview source hash: {digest}")
+        return preview_source
+    if PREVIEW_MARKER in source:
+        raise SystemExit("Jelly preview source cannot be used as the synthesis candidate")
     if has_jelly_region_patch(source):
         if hashlib.sha256(source.encode()).hexdigest() != MOTION_JELLY_SHA256:
             raise SystemExit("Jelly marker is present but the final pinned-source hash is unexpected")
@@ -184,11 +278,13 @@ def main() -> None:
     parser.add_argument("--mpv-dir", type=Path, help="pinned MPV source checkout")
     parser.add_argument("--motion-source", type=Path, help="motion.c to transform or verify")
     parser.add_argument("--require-glslang", action="store_true")
+    parser.add_argument("--preview-only", action="store_true", help="compile the overlay-only mask preview shader")
     args = parser.parse_args()
     if bool(args.mpv_dir) == bool(args.motion_source):
         parser.error("provide exactly one of --mpv-dir or --motion-source")
 
     check_patch_contract()
+    check_preview_contract()
     if args.mpv_dir:
         mpv_dir = args.mpv_dir.resolve()
         try:
@@ -199,9 +295,11 @@ def main() -> None:
     else:
         motion_path = args.motion_source.resolve()
     source = motion_path.read_text(encoding="utf-8")
-    final_source = prepared_variant(source)
+    final_source = prepared_variant(source, preview_only=args.preview_only)
     compile_synthesis_shader(final_source, required=args.require_glslang)
-    print(f"Opt-in motion-aligned majority jelly candidate verified ({MOTION_JELLY_SHA256})")
+    mode_hash = MOTION_JELLY_PREVIEW_SHA256 if args.preview_only else MOTION_JELLY_SHA256
+    suffix = "; synthesis disabled" if args.preview_only else ""
+    print(f"Opt-in motion-aligned majority jelly {'mask preview' if args.preview_only else 'candidate'} verified ({mode_hash}){suffix}")
 
 
 if __name__ == "__main__":

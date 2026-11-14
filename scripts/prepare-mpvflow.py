@@ -14,6 +14,7 @@ if str(SCRIPT_DIR) not in sys.path:
 from mpvrx_motion_source import verify_mpv_source
 from patch_fongmi_motion_downsample import apply_patch as apply_motion_downsample_patch
 from patch_fongmi_motion_jelly import apply_patch as apply_motion_jelly_patch
+from patch_fongmi_motion_jelly import apply_preview_patch as apply_motion_jelly_preview_patch
 
 ROOT = SCRIPT_DIR.parent
 VENDOR = ROOT / "app/src/main/cpp/mpvflow"
@@ -955,6 +956,9 @@ def main() -> None:
 
     downsample_antialias_enabled = os.environ.get("MPVFLOW_MPVRX_ANALYSIS_DOWNSAMPLE_AA") == "1"
     jelly_experimental_enabled = os.environ.get("MPVFLOW_JELLY_EXPERIMENTAL") == "1"
+    jelly_preview_enabled = os.environ.get("MPVFLOW_JELLY_PREVIEW") == "1"
+    if jelly_experimental_enabled and jelly_preview_enabled:
+        raise SystemExit("MPVRx Jelly synthesis and mask-preview modes are mutually exclusive")
     try:
         verify_mpv_source(mpv_dir)
         downsample_patch_applied = apply_motion_downsample_patch(
@@ -971,7 +975,19 @@ def main() -> None:
     else:
         print("MPVRx analysis-downsample antialias candidate disabled; preserving upstream motion shader")
 
-    if jelly_experimental_enabled:
+    if jelly_preview_enabled:
+        if not downsample_antialias_enabled:
+            raise SystemExit("MPVRx Jelly preview requires the verified bounded analysis-downsample baseline")
+        try:
+            jelly_patch_applied = apply_motion_jelly_preview_patch(motion_path)
+        except (OSError, ValueError) as exc:
+            raise SystemExit(f"MPVRx Jelly mask-preview shader verification failed: {exc}") from exc
+        print(
+            "Applied opt-in MPVRx Jelly mask preview with synthesis blending disabled"
+            if jelly_patch_applied
+            else "Opt-in MPVRx Jelly mask preview already present; synthesis blending remains disabled"
+        )
+    elif jelly_experimental_enabled:
         if not downsample_antialias_enabled:
             raise SystemExit("MPVRx jelly test requires the verified bounded analysis-downsample baseline")
         try:

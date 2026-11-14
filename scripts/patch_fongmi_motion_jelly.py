@@ -9,6 +9,7 @@ from patch_fongmi_motion_downsample import MARKER as DOWNSAMPLE_MARKER
 
 MOTION_ANTIALIAS_SHA256 = "db13147fd268ebe857e235a2ad066c0d34d9c35cab66f6fa93ed5767d61219a2"
 MOTION_JELLY_SHA256 = "a21153eec66e0181ecb9631dc51fce95194b60c85621605580ae91f880a41de0"
+MOTION_JELLY_PREVIEW_SHA256 = "115ccb05ab915a16a9efdd559b3455047e52184162a7c41c259a6da80776f41b"
 MARKER = "MPVFLOW_JELLY_MOTION_ALIGNED_MAJORITY_V2"
 ORIGINAL_ZERO_FLOW = """            if (all(equal(vec4(f.xy, r.xy), vec4(0.0))))
                 return original;"""
@@ -97,6 +98,14 @@ PATCHED_ZERO_FLOW = """            {
                 }
             }"""
 
+SYNTHESIS_RETURN = "return mix(original, jelly_region, jelly_fill);"
+PREVIEW_MARKER = "MPVFLOW_JELLY_MASK_PREVIEW_V1"
+PREVIEW_RETURN = (
+    "// MPVFLOW_JELLY_MASK_PREVIEW_V1: visualize the selected mask; skip Jelly synthesis.\n"
+    "                            return mix(original, vec4(1.0, 0.0, 1.0, original.a), 0.72);"
+)
+PATCHED_ZERO_FLOW_PREVIEW = PATCHED_ZERO_FLOW.replace(SYNTHESIS_RETURN, PREVIEW_RETURN, 1)
+
 
 def _sha256(value: bytes) -> str:
     return hashlib.sha256(value).hexdigest()
@@ -106,6 +115,17 @@ def has_jelly_region_patch(source: str) -> bool:
     return (
         source.count(MARKER) == 1
         and source.count(PATCHED_ZERO_FLOW) == 1
+        and source.count(ORIGINAL_ZERO_FLOW) == 0
+        and source.count(DOWNSAMPLE_MARKER) == 1
+    )
+
+
+def has_jelly_preview_patch(source: str) -> bool:
+    return (
+        source.count(MARKER) == 1
+        and source.count(PREVIEW_MARKER) == 1
+        and source.count(PATCHED_ZERO_FLOW_PREVIEW) == 1
+        and source.count(PATCHED_ZERO_FLOW) == 0
         and source.count(ORIGINAL_ZERO_FLOW) == 0
         and source.count(DOWNSAMPLE_MARKER) == 1
     )
@@ -130,6 +150,22 @@ def transform_source(source: str, *, verify_upstream_hash: bool = True) -> tuple
     return patched, True
 
 
+def transform_preview_source(source: str, *, verify_upstream_hash: bool = True) -> tuple[str, bool]:
+    """Apply the unchanged Jelly mask but replace its synthesis result with a mask tint."""
+    if PREVIEW_MARKER in source:
+        if has_jelly_preview_patch(source):
+            return source, False
+        raise ValueError("MPVRx Jelly preview marker/source mismatch")
+
+    jelly_source, _ = transform_source(source, verify_upstream_hash=verify_upstream_hash)
+    if jelly_source.count(PATCHED_ZERO_FLOW) != 1:
+        raise ValueError("Jelly preview requires exactly one verified applied-mask shader")
+    preview_source = jelly_source.replace(PATCHED_ZERO_FLOW, PATCHED_ZERO_FLOW_PREVIEW, 1)
+    if not has_jelly_preview_patch(preview_source):
+        raise ValueError("MPVRx Jelly mask preview failed its postconditions")
+    return preview_source, True
+
+
 def apply_patch(path: Path, *, enabled: bool = True) -> bool:
     """Apply only when explicitly enabled; regular builds retain the AA baseline."""
     source = path.read_text(encoding="utf-8")
@@ -143,15 +179,40 @@ def apply_patch(path: Path, *, enabled: bool = True) -> bool:
     return changed
 
 
+def apply_preview_patch(path: Path, *, enabled: bool = True) -> bool:
+    """Apply only for the separately opted-in preview APK; never blend Jelly synthesis."""
+    source = path.read_text(encoding="utf-8")
+    if not enabled:
+        if PREVIEW_MARKER in source:
+            raise ValueError("Jelly preview patch found without explicit diagnostic-workflow opt-in")
+        return False
+    patched, changed = transform_preview_source(source)
+    if changed:
+        path.write_text(patched, encoding="utf-8")
+    return changed
+
+
 def main() -> None:
     import argparse
 
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("motion_source", type=Path)
     parser.add_argument("--disabled", action="store_true", help="verify the regular build has no jelly patch")
+    parser.add_argument("--preview-only", action="store_true", help="visualize the dynamic mask without Jelly synthesis")
     args = parser.parse_args()
-    changed = apply_patch(args.motion_source, enabled=not args.disabled)
+    if args.disabled and args.preview_only:
+        parser.error("--disabled and --preview-only cannot be combined")
+    changed = (
+        apply_preview_patch(args.motion_source, enabled=True)
+        if args.preview_only
+        else apply_patch(args.motion_source, enabled=not args.disabled)
+    )
     print(
+        "Applied opt-in MPVRx Jelly mask preview; synthesis blending is disabled"
+        if changed and args.preview_only
+        else "Opt-in MPVRx Jelly mask preview is already present; synthesis blending is disabled"
+        if args.preview_only
+        else
         "Applied opt-in MPVRx motion-aligned majority jelly-region test"
         if changed
         else "Opt-in MPVRx motion-aligned majority jelly-region test is already present"
