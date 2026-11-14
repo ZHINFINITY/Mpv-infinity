@@ -13,6 +13,7 @@ def test_standard_workflow_is_flow_only() -> None:
     builder = builder_path.read_text(encoding="utf-8")
     workflow = (ROOT / ".github/workflows/debug-apk.yml").read_text(encoding="utf-8")
     flow_workflow = (ROOT / ".github/workflows/mpvflow-debug-arm64.yml").read_text(encoding="utf-8")
+    release_workflow = (ROOT / ".github/workflows/release.yml").read_text(encoding="utf-8")
     gradle = (ROOT / "app/build.gradle.kts").read_text(encoding="utf-8")
 
     cache_step_name = "- name: Restore verified Flow-only MPVFlow arm64 runtime"
@@ -28,7 +29,11 @@ def test_standard_workflow_is_flow_only() -> None:
 
     manual_cache_key = runtime_cache_key(workflow)
     push_cache_key = runtime_cache_key(flow_workflow)
-    assert manual_cache_key == push_cache_key, "all MPV builds must reuse the same uninstrumented MPVRx runtime"
+    release_cache_key = runtime_cache_key(release_workflow)
+    assert manual_cache_key == release_cache_key, "normal debug and release builds must share the upstream MPVRx runtime"
+    assert manual_cache_key != push_cache_key, "the antialias test runtime must not reuse the normal MPVRx cache"
+    assert "scripts/patch_fongmi_motion_downsample.py" not in manual_cache_key
+    assert "scripts/patch_fongmi_motion_downsample.py" in push_cache_key
     for native_input in (
         "scripts/build-mpvflow-mpv-runtime.sh",
         "scripts/prepare-mpvflow.py",
@@ -41,7 +46,7 @@ def test_standard_workflow_is_flow_only() -> None:
         "app/src/main/assets/mpv/licenses/**",
     ):
         assert native_input in manual_cache_key, f"native cache key must include {native_input}"
-        assert native_input in push_cache_key, f"diagnostic native cache key must include {native_input}"
+        assert native_input in push_cache_key, f"test-only native cache key must include {native_input}"
     assert "scripts/patch_fongmi_motion_artifact.py" not in manual_cache_key
     assert "scripts/patch_fongmi_motion_artifact.py" not in push_cache_key
     assert ".github/workflows/debug-apk.yml" not in manual_cache_key
