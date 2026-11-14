@@ -161,6 +161,7 @@ android {
 
     create("jellyPreview") {
       initWith(getByName("debug"))
+      matchingFallbacks += listOf("debug")
       isDebuggable = true
       applicationIdSuffix = ".debug"
       versionNameSuffix = "-jelly-mask-preview-${getCommitCount()}"

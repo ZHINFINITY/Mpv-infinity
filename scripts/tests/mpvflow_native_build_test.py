@@ -174,6 +174,7 @@ assert 'buildConfigField("boolean", "MPV_JELLY_MASK_PREVIEW", "false")' in app_b
 assert 'create("jellyPreview")' in app_build
 jelly_preview_type = app_build.split('create("jellyPreview")', 1)[1].split("\n    }", 1)[0]
 assert 'applicationIdSuffix = ".debug"' in jelly_preview_type
+assert 'matchingFallbacks += listOf("debug")' in jelly_preview_type
 assert 'buildConfigField("boolean", "MPV_JELLY_MASK_PREVIEW", "true")' in jelly_preview_type
 assert 'resValue("string", "app_name", "Mpv∞-Jelly Preview")' in jelly_preview_type
 
