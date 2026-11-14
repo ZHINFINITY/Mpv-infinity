@@ -7,6 +7,7 @@ import subprocess
 from pathlib import Path
 
 from patch_fongmi_motion_downsample import has_antialias_filter
+from patch_fongmi_motion_jelly import MOTION_JELLY_SHA256, has_jelly_region_patch
 
 MPV_REVISION = "95ec8e929f8ad2f97c8415c486971493a0b408df"
 MOTION_SHA256 = "ca7870c21f7a499d03ab1f7d73f1b9bcbccee534398d8a6f01957556e7d61932"
@@ -23,9 +24,10 @@ def _sha256(path: Path) -> str:
 
 
 def verify_mpv_source(mpv_dir: Path) -> bool:
-    """Fail closed unless source matches the pin or its one exact MPV-only patch.
+    """Fail closed unless source matches the pin or an exact MPV-only patch state.
 
-    Return True when the bounded analysis-downsample antialias patch is present.
+    Return True when the bounded analysis-downsample AA baseline is present;
+    the opt-in jelly variant includes that baseline.
     """
     root = mpv_dir.resolve()
     motion_path = root / "video/out/gpu_next/motion.c"
@@ -55,6 +57,8 @@ def verify_mpv_source(mpv_dir: Path) -> bool:
     if motion_hash == MOTION_SHA256:
         antialias_patched = False
     elif motion_hash == MOTION_ANTIALIAS_SHA256 and has_antialias_filter(motion):
+        antialias_patched = True
+    elif motion_hash == MOTION_JELLY_SHA256 and has_jelly_region_patch(motion):
         antialias_patched = True
     else:
         raise ValueError(f"Unexpected MPVRx motion source hash for {motion_path.name}: {motion_hash}")

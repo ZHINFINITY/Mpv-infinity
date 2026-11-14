@@ -13,6 +13,8 @@ SOURCE_VERIFIER = (ROOT / "scripts/mpvrx_motion_source.py").read_text(encoding="
 SOURCE_TEST = (ROOT / "scripts/tests/mpvrx_motion_source_test.py").read_text(encoding="utf-8")
 DOWNSAMPLE_PATCH = (ROOT / "scripts/patch_fongmi_motion_downsample.py").read_text(encoding="utf-8")
 DOWNSAMPLE_TEST = (ROOT / "scripts/tests/mpvrx_motion_downsample_test.py").read_text(encoding="utf-8")
+JELLY_PATCH = (ROOT / "scripts/patch_fongmi_motion_jelly.py").read_text(encoding="utf-8")
+JELLY_TEST = (ROOT / "scripts/tests/mpvrx_motion_jelly_test.py").read_text(encoding="utf-8")
 VULKAN_HEADERS = (ROOT / "scripts/prepare-mpvflow-vulkan-headers.py").read_text(encoding="utf-8")
 WORKFLOWS = [
     (ROOT / ".github/workflows/debug-apk.yml").read_text(encoding="utf-8"),
@@ -57,6 +59,11 @@ assert "motion_artifact_patch" not in BUILD
 assert "verify_mpv_source(mpv_dir)" in PREPARE
 assert "apply_motion_downsample_patch(" in PREPARE and "enabled=downsample_antialias_enabled" in PREPARE
 assert 'os.environ.get("MPVFLOW_MPVRX_ANALYSIS_DOWNSAMPLE_AA") == "1"' in PREPARE
+assert 'os.environ.get("MPVFLOW_JELLY_EXPERIMENTAL") == "1"' in PREPARE
+assert "if jelly_experimental_enabled:" in PREPARE and "apply_motion_jelly_patch(motion_path)" in PREPARE
+assert "MOTION_ANTIALIAS_SHA256" in JELLY_PATCH and "MOTION_JELLY_SHA256" in JELLY_PATCH
+assert "MPVFLOW_JELLY_ZERO_MOTION_REGION_V1" in JELLY_PATCH
+assert "--require-glslang" in JELLY_TEST and "synthesize_pixel" in JELLY_TEST
 assert "MOTION_PASS_PREPARE" in PREPARE and "pl_dispatch_prepare_compute" in PREPARE
 assert "mp_motion_render_owned" in PREPARE and "mp_motion_capture_supported" in PREPARE
 assert "MPVFLOW_DEBUG_CAPTURE is unsupported with the MPVRx-pinned FongMi 95ec motion core" in PREPARE
@@ -102,9 +109,17 @@ for workflow in WORKFLOWS:
 assert "scripts/patch_fongmi_motion_downsample.py" in WORKFLOWS[1]
 assert "MPVFLOW_MPVRX_ANALYSIS_DOWNSAMPLE_AA: '1'" in WORKFLOWS[1]
 assert "--require-analysis-downsample-aa" in WORKFLOWS[1]
+assert "scripts/patch_fongmi_motion_jelly.py" in WORKFLOWS[1]
+assert "scripts/tests/mpvrx_motion_jelly_test.py" in WORKFLOWS[1]
+assert "jelly_test" in WORKFLOWS[1] and "default: false" in WORKFLOWS[1]
+assert "MPVFLOW_JELLY_EXPERIMENTAL" in WORKFLOWS[1]
+assert "--require-jelly-experimental" in WORKFLOWS[1]
 for workflow in (WORKFLOWS[0], WORKFLOWS[2]):
     assert "scripts/patch_fongmi_motion_downsample.py" not in workflow
     assert "MPVFLOW_MPVRX_ANALYSIS_DOWNSAMPLE_AA" not in workflow
+    assert "patch_fongmi_motion_jelly.py" not in workflow
+    assert "MPVFLOW_JELLY_EXPERIMENTAL" not in workflow
+    assert "jelly_test" not in workflow
     assert "--require-analysis-downsample-aa" not in workflow
 assert "scripts/tests/mpvrx_motion_source_test.py" in WORKFLOWS[0]
 assert "scripts/tests/mpvrx_motion_source_test.py" in WORKFLOWS[1]

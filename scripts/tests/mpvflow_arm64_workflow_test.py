@@ -20,13 +20,15 @@ class Arm64WorkflowTest(unittest.TestCase):
     def test_source_checkouts_and_native_compilation_require_runtime_cache_miss(self):
         names = (
             "Checkout pinned Android MPV build tools",
-            "Checkout pinned MPV source",
             "Build MPVFlow-only MPV native arm64 debug package",
         )
         for name in names:
             with self.subTest(step=name):
                 self.assertIn(CACHE_MISS, STEPS[name])
                 self.assertGreater(TEXT.index("- name: " + name), TEXT.index("- name: Restore verified Flow-only MPVFlow arm64 runtime"))
+        source_checkout = STEPS["Checkout pinned MPV source"]
+        self.assertNotIn(CACHE_MISS, source_checkout)
+        self.assertLess(TEXT.index("- name: Checkout pinned MPV source"), TEXT.index("- name: Compile opt-in jelly candidate from pinned MPVRx shader"))
 
     def test_runtime_cache_is_source_pinned_and_has_no_legacy_fallback(self):
         restore = STEPS["Restore verified Flow-only MPVFlow arm64 runtime"]
@@ -38,6 +40,7 @@ class Arm64WorkflowTest(unittest.TestCase):
             f"vulkan-headers-khronos-{VULKAN_HEADERS_SHA}",
             "scripts/mpvrx_motion_source.py",
             "scripts/patch_fongmi_motion_downsample.py",
+            "scripts/patch_fongmi_motion_jelly.py",
             "scripts/prepare-mpvflow-vulkan-headers.py",
             "scripts/prepare-mpvflow.py",
             "scripts/patches/mpvlibandroid-fongmi/**",
@@ -92,8 +95,21 @@ class Arm64WorkflowTest(unittest.TestCase):
     def test_built_runtime_must_contain_the_pinned_downsample_patch(self):
         verify = STEPS["Verify MPVRx FongMi motion source after preparation"]
         self.assertIn("--require-analysis-downsample-aa", verify)
+        self.assertIn("--require-jelly-experimental", verify)
         build = STEPS["Build MPVFlow-only MPV native arm64 debug package"]
         self.assertIn("MPVFLOW_MPVRX_ANALYSIS_DOWNSAMPLE_AA: '1'", build)
+        self.assertIn("MPVFLOW_JELLY_EXPERIMENTAL", build)
+
+    def test_jelly_candidate_is_compiled_and_artifact_is_distinct(self):
+        self.assertIn("jelly_test", TEXT)
+        self.assertIn("default: false", TEXT)
+        candidate = STEPS["Compile opt-in jelly candidate from pinned MPVRx shader"]
+        self.assertIn("scripts/tests/mpvrx_motion_jelly_test.py --mpv-dir mpv-source --require-glslang", candidate)
+        cache = STEPS["Restore verified Flow-only MPVFlow arm64 runtime"]
+        self.assertIn("jelly-test-", cache)
+        self.assertIn("baseline-", cache)
+        upload = STEPS["Upload arm64-v8a debug APK"]
+        self.assertIn("-jelly-test", upload)
 
     def test_android_build_tools_are_installed_even_on_runtime_cache_hits(self):
         name = "Install Android MPV native build dependencies"

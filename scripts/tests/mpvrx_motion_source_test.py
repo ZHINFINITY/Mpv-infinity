@@ -9,12 +9,14 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "scripts"))
 from mpvrx_motion_source import MPV_REVISION, verify_mpv_source  # noqa: E402
+from patch_fongmi_motion_jelly import has_jelly_region_patch  # noqa: E402
 
 
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--mpv-dir", required=True, type=Path)
     parser.add_argument("--require-analysis-downsample-aa", action="store_true")
+    parser.add_argument("--require-jelly-experimental", action="store_true")
     args = parser.parse_args()
     try:
         antialias_patched = verify_mpv_source(args.mpv_dir)
@@ -22,7 +24,13 @@ def main() -> None:
         parser.exit(1, f"MPVRx FongMi source verification failed: {exc}\n")
     if args.require_analysis_downsample_aa and not antialias_patched:
         parser.exit(1, "MPVRx motion-analysis downsample antialias patch is required but missing\n")
+    if args.require_jelly_experimental:
+        motion = (args.mpv_dir.resolve() / "video/out/gpu_next/motion.c").read_text(encoding="utf-8")
+        if not has_jelly_region_patch(motion):
+            parser.exit(1, "opt-in MPVRx jelly-region patch is required but missing\n")
     suffix = " with bounded analysis-downsample antialiasing" if antialias_patched else ""
+    if args.require_jelly_experimental:
+        suffix += " and opt-in jelly-region synthesis"
     print(f"MPVRx FongMi motion source {MPV_REVISION}{suffix} and 480px integration verified")
 
 
