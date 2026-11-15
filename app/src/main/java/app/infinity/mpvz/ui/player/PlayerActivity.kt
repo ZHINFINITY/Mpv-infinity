@@ -16,7 +16,6 @@ import android.content.BroadcastReceiver
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
-import androidx.core.content.FileProvider
 import kotlinx.coroutines.flow.asStateFlow
 import android.content.IntentFilter
 import android.content.ServiceConnection
@@ -289,9 +288,9 @@ class PlayerActivity :
       jellyProbeMutableState.value = "MPV playback surface is not ready"
       return jellyProbeMutableState.value
     }
-    val report = java.io.File(cacheDir, "jelly-probe-report.json")
-    if (report.exists() && !report.delete()) {
-      jellyProbeMutableState.value = "Could not remove the previous private report"
+    val report = runCatching { JellyProbeReportStore.newReportFile(this) }.getOrElse { error ->
+      Log.e(TAG, "Could not create a persistent Jelly probe report path", error)
+      jellyProbeMutableState.value = "Could not create a private probe report"
       return jellyProbeMutableState.value
     }
     val result = binding.player.armJellyProbe(report)
@@ -301,10 +300,12 @@ class PlayerActivity :
     }
     jellyProbeReport = report
     jellyProbeFinalizationRequested = false
+    JellyProbeReportStore.refresh(applicationContext)
     jellyProbeMutableState.value = "Armed; waiting for a Jelly activation…"
     lifecycleScope.launch {
       while (isActive && !isFinishing && !isDestroyed && !jellyProbeFinalizationRequested) {
         if (report.isFile && report.length() > 0L) {
+          JellyProbeReportStore.publish(report)
           jellyProbeMutableState.value = "Report ready to share (${report.length()} bytes)"
           break
         }
@@ -318,39 +319,38 @@ class PlayerActivity :
     if (!BuildConfig.DEBUG || !BuildConfig.MPV_HAS_JELLY_PROBE ||
       !jellyProbeMutableState.value.startsWith("Armed")
     ) return
+    val report = jellyProbeReport ?: return
     jellyProbeFinalizationRequested = true
     val result = binding.player.finalizeJellyProbe()
+    JellyProbeReportStore.awaitFinalized(applicationContext, report, result)
     if (result != 0) {
-      jellyProbeMutableState.value = "Could not finalize native probe (option result $result)"
-      return
+      jellyProbeMutableState.value = "Saving probe status report (native result $result)…"
+    } else {
+      jellyProbeMutableState.value = "Saving last Jelly probe sample…"
     }
-    jellyProbeMutableState.value = "Saving last Jelly probe sample…"
-    val report = jellyProbeReport ?: return
     lifecycleScope.launch {
-      repeat(20) {
-        if (report.isFile && report.length() > 0L) {
-          jellyProbeMutableState.value = "Report ready to share (${report.length()} bytes)"
+      repeat(24) {
+        val completedReport = JellyProbeReportStore.completedReportForCapture(report)
+        if (completedReport != null) {
+          JellyProbeReportStore.publish(completedReport)
+          jellyProbeMutableState.value = "Report ready to share (${completedReport.length()} bytes)"
           return@launch
         }
         delay(250L)
       }
       if (jellyProbeMutableState.value.startsWith("Saving")) {
-        jellyProbeMutableState.value = "Playback stopped; no eligible probe sample was captured"
+        val completedReport = JellyProbeReportStore.completedReportForCapture(report)
+        if (completedReport != null) {
+          JellyProbeReportStore.publish(completedReport)
+          jellyProbeMutableState.value = "Report ready to share (${completedReport.length()} bytes)"
+        } else {
+          jellyProbeMutableState.value = "Playback stopped; no probe report could be saved"
+        }
       }
     }
   }
 
-  internal fun shareJellyProbe(): Boolean {
-    val report = jellyProbeReport?.canonicalFile ?: return false
-    if (!report.isFile || report.parentFile != cacheDir.canonicalFile) return false
-    val uri = FileProvider.getUriForFile(this, "$packageName.provider", report)
-    startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).apply {
-      type = "application/json"
-      putExtra(Intent.EXTRA_STREAM, uri)
-      addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-    }, "Share Jelly probe report"))
-    return true
-  }
+  internal fun shareJellyProbe(): Boolean = JellyProbeReportStore.share(this, jellyProbeReport)
   private val flowDiagnosticsCaptureManager by lazy { FlowDiagnosticsCaptureManager(this) }
   internal val flowDiagnosticsCaptureState get() = flowDiagnosticsCaptureManager.state
 

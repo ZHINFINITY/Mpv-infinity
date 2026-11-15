@@ -54,6 +54,9 @@ jobs:
             echo "Choose at most one of jelly_test, jelly_preview, or jelly_probe" >&2
             exit 1
           fi
+      - name: Test persistent Jelly probe report delivery
+        if: ${{ inputs.jelly_probe == true }}
+        run: python3 scripts/tests/jelly_probe_report_delivery_test.py
       - name: Test arm64 workflow cache and validation invariants
         run: python3 scripts/tests/mpvflow_arm64_workflow_test.py
       - name: Test experimental region3 attenuation invariants
