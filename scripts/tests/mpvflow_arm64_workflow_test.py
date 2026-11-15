@@ -103,7 +103,7 @@ class Arm64WorkflowTest(unittest.TestCase):
         self.assertIn("MPVFLOW_JELLY_EXPERIMENTAL", build)
         self.assertIn("MPVFLOW_JELLY_PREVIEW", build)
 
-    def test_jelly_candidate_and_mask_preview_are_distinct_manual_diagnostics(self):
+    def test_jelly_candidate_and_blend_test_are_distinct_manual_diagnostics(self):
         self.assertIn("jelly_test", TEXT)
         self.assertIn("jelly_preview", TEXT)
         self.assertIn("default: false", TEXT)
@@ -117,7 +117,7 @@ class Arm64WorkflowTest(unittest.TestCase):
         self.assertIn("baseline-", cache)
         upload = STEPS["Upload single arm64-v8a diagnostic APK"]
         self.assertIn("'jelly-test'", upload)
-        self.assertIn("jelly-mask-preview", upload)
+        self.assertIn("jelly-blend-test", upload)
         self.assertIn("retention-days: 3", upload)
         self.assertIn("*arm64-v8a*.apk", upload)
 

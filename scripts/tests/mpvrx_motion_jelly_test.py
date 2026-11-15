@@ -22,8 +22,10 @@ from patch_fongmi_motion_jelly import (  # noqa: E402
     MOTION_JELLY_PREVIEW_SHA256,
     MOTION_JELLY_SHA256,
     ORIGINAL_ZERO_FLOW,
+    PHASE_RAMP,
     PATCHED_ZERO_FLOW,
     PATCHED_ZERO_FLOW_PREVIEW,
+    PREVIEW_PHASE_RAMP,
     PREVIEW_MARKER,
     PREVIEW_RETURN,
     SYNTHESIS_RETURN,
@@ -91,6 +93,10 @@ def compile_synthesis_shader(source: str, *, required: bool) -> None:
         return
     sample_header = extract_glsl(source, "sample_header")
     synthesis_header = extract_glsl(source, "synthesis_pixel_header")
+    bilinear_fetches = sample_header.count("texelFetch(")
+    if bilinear_fetches != 4:
+        raise SystemExit(f"Pinned bilinear sample helper changed: expected 4 texelFetch sites, got {bilinear_fetches}")
+    jelly_fetch_bound = 2 * bilinear_fetches + 8 * (2 + 2 * bilinear_fetches)
     wrapper = """#version 450
 layout(local_size_x = 8, local_size_y = 8) in;
 layout(set = 0, binding = 0) uniform sampler2D source0;
@@ -130,7 +136,11 @@ void main() {
             raise SystemExit("Patched FongMi synthesis GLSL failed to compile:\n" + result.stdout + result.stderr)
         if not output.is_file() or output.stat().st_size == 0:
             raise SystemExit("glslangValidator produced no jelly shader module")
-        print(f"Patched FongMi synthesis GLSL compiled: {output.stat().st_size} bytes SPIR-V")
+        print(
+            f"Patched FongMi synthesis GLSL compiled: {output.stat().st_size} bytes SPIR-V; "
+            f"Jelly path bound={jelly_fetch_bound} texture fetches/pixel "
+            f"(34 helper/warp calls), no added pass or image storage"
+        )
 
 
 def check_patch_contract() -> None:
@@ -174,12 +184,35 @@ def check_patch_contract() -> None:
     print("Jelly patch idempotence, fail-closed anchor, and opt-in marker checks passed")
 
 
-def _reference_preview_pixel(pixel: tuple[float, float, float, float], mask: bool, enabled: bool) -> tuple[float, float, float, float]:
-    if not enabled or not mask:
+def _phase_envelope(blend: float) -> float:
+    base = 4.0 * blend * (1.0 - blend)
+    return base * base
+
+
+def _reference_mask_positive(
+    center0: tuple[float, float, float],
+    center1: tuple[float, float, float],
+    support0: bool,
+    support1: bool,
+) -> bool:
+    change = max(abs(center0[i] - center1[i]) for i in range(3))
+    return change > 0.12 and (support0 or support1)
+
+
+def _reference_blend_pixel(
+    pixel: tuple[float, float, float, float],
+    jelly_region: tuple[float, float, float, float],
+    mask_positive: bool,
+    enabled: bool,
+    blend: float,
+    support: float = 1.0,
+) -> tuple[float, float, float, float]:
+    if not enabled or not mask_positive:
         return pixel
-    alpha = 0.72
-    tint = (1.0, 0.0, 1.0)
-    return tuple((1.0 - alpha) * pixel[i] + alpha * tint[i] for i in range(3)) + (pixel[3],)
+    fill = min(0.65, max(0.0, 0.65 * support * _phase_envelope(blend)))
+    if fill <= 0.001:
+        return pixel
+    return tuple((1.0 - fill) * pixel[i] + fill * jelly_region[i] for i in range(4))
 
 
 def check_preview_contract() -> None:
@@ -191,12 +224,18 @@ def check_preview_contract() -> None:
     assert has_jelly_preview_patch(preview)
     assert preview.count(PREVIEW_MARKER) == 1
     assert preview.count(PREVIEW_RETURN) == 1
-    assert preview.count(SYNTHESIS_RETURN) == 0
-    assert "return mix(original, jelly_region, jelly_fill);" not in preview
+    assert preview.count(SYNTHESIS_RETURN) == 1
+    assert "return mix(original, jelly_region, jelly_fill);" in PREVIEW_RETURN
+    assert "vec4(1.0, 0.0, 1.0" not in preview
+    assert "vec4(1.0,0.0,1.0" not in preview
     assert "if (jelly_fill > 0.001)" in preview
     assert preview.index("if (jelly_fill > 0.001)") < preview.index(PREVIEW_MARKER)
     assert preview.replace(PATCHED_ZERO_FLOW_PREVIEW, PATCHED_ZERO_FLOW, 1) == applied
-    assert PATCHED_ZERO_FLOW_PREVIEW.replace(PREVIEW_RETURN, SYNTHESIS_RETURN, 1) == PATCHED_ZERO_FLOW
+    assert (
+        PATCHED_ZERO_FLOW_PREVIEW.replace(PREVIEW_RETURN, SYNTHESIS_RETURN, 1)
+        .replace(PREVIEW_PHASE_RAMP, PHASE_RAMP, 1)
+        == PATCHED_ZERO_FLOW
+    )
 
     repeated, changed_again = transform_preview_source(preview, verify_upstream_hash=False)
     assert not changed_again and repeated == preview
@@ -214,34 +253,75 @@ def check_preview_contract() -> None:
         else:
             raise AssertionError("regular source preparation silently accepted the Jelly preview patch")
 
-    # Preview-off and mask-off pixels are bit-identical; only mask-positive pixels receive tint.
-    pixels = (
-        (0.15, 0.55, 0.72, 1.0),
-        (0.40, 0.40, 0.40, 1.0),
-        (0.08, 0.12, 0.20, 0.8),
-    )
-    for pixel in pixels:
-        assert _reference_preview_pixel(pixel, mask=False, enabled=True) == pixel
-        assert _reference_preview_pixel(pixel, mask=True, enabled=False) == pixel
-    flags = (False, True, False)
-    for pixel, flag in zip(pixels, flags, strict=True):
-        result = _reference_preview_pixel(pixel, mask=flag, enabled=True)
-        assert (result != pixel) is flag
-        assert result[3] == pixel[3]
-
-    # The candidate and preview differ only at the selected pixel's final color return.
-    # Motion samples/warps, blend phase and all cadence inputs remain byte-for-byte unchanged.
+    # The confirmed mask decision, motion samples, and 8-neighbor support remain identical.
     assert preview.replace(PATCHED_ZERO_FLOW_PREVIEW, PATCHED_ZERO_FLOW, 1) == applied
     for token in (
+        "if (jelly_change > 0.12 && blend > 0.000001 && blend < 0.999999)",
         "vec4 neighbor_f = textureLod(warp0, neighbor_uv, 0.0);",
         "vec4 neighbor_r = textureLod(warp1, neighbor_uv, 0.0);",
         "neighbor_f.xy * jelly_scale",
         "neighbor_r.xy * jelly_scale",
-        "float jelly_phase = 4.0 * blend * (1.0 - blend);",
+        "jelly_count0 >= 5 && jelly_weight0 >= 3.0",
+        "jelly_count1 >= 5 && jelly_weight1 >= 3.0",
+        "return mix(original, jelly_region, jelly_fill);",
     ):
         assert token in preview and token in applied
+    assert PHASE_RAMP in applied and PHASE_RAMP not in preview
+    assert PREVIEW_PHASE_RAMP in preview and PREVIEW_PHASE_RAMP not in applied
     assert "motion_fps" not in PREVIEW_RETURN and "frame_duration" not in PREVIEW_RETURN
-    print("Jelly preview pixel identity, mask-only tint, unchanged motion inputs/cadence, and synthesis-off checks passed")
+
+    # Mask-off and disabled pixels remain bit-identical; only selected pixels use the source-derived blend.
+    cases = (
+        ((0.15, 0.55, 0.72, 1.0), (0.45, 0.42, 0.50, 1.0)),
+        ((0.40, 0.40, 0.40, 1.0), (0.30, 0.52, 0.38, 1.0)),
+        ((0.08, 0.12, 0.20, 1.0), (0.22, 0.17, 0.29, 1.0)),
+    )
+    for pixel, region in cases:
+        assert _reference_blend_pixel(pixel, region, False, True, 0.5) == pixel
+        assert _reference_blend_pixel(pixel, region, True, False, 0.5) == pixel
+        result = _reference_blend_pixel(pixel, region, True, True, 0.5)
+        assert result != pixel
+        assert result != (1.0, 0.0, 1.0, pixel[3])
+        assert all(0.0 <= component <= 1.0 for component in result)
+
+    # The squared envelope preserves full peak strength and has zero slope at both pair boundaries.
+    epsilon = 1e-4
+    assert _phase_envelope(0.0) == _phase_envelope(1.0) == 0.0
+    assert _phase_envelope(0.5) == 1.0
+    assert abs(_phase_envelope(epsilon) - _phase_envelope(1.0 - epsilon)) < 1e-15
+    assert _phase_envelope(epsilon) / epsilon < 0.002
+    assert _phase_envelope(1.0 - epsilon) / epsilon < 0.002
+    samples = [_phase_envelope(i / 100.0) for i in range(101)]
+    assert all(a <= b for a, b in zip(samples[:50], samples[1:51], strict=True))
+    assert all(a >= b for a, b in zip(samples[50:100], samples[51:], strict=True))
+    base_pixel = (0.25, 0.40, 0.52, 1.0)
+    left_region, right_region = (0.9, 0.1, 0.2, 1.0), (0.1, 0.8, 0.3, 1.0)
+    left = _reference_blend_pixel(base_pixel, left_region, True, True, 1.0 - 1e-3)
+    right = _reference_blend_pixel(base_pixel, right_region, True, True, 1e-3)
+    assert max(abs(left[i] - right[i]) for i in range(4)) <= 0.65 * _phase_envelope(1e-3) + 1e-12
+
+    # Static pixels and pan-aligned background samples remain unselected and unchanged.
+    static = (0.31, 0.44, 0.57)
+    assert not _reference_mask_positive(static, static, True, True)
+    raw_pan_before, raw_pan_after = (0.12, 0.23, 0.34), (0.72, 0.63, 0.54)
+    assert raw_pan_before != raw_pan_after  # different screen coordinates during the camera move
+    aligned_background = (0.46, 0.51, 0.59)
+    assert not _reference_mask_positive(aligned_background, aligned_background, True, True)
+    assert _reference_blend_pixel((*static, 1.0), (0.8, 0.2, 0.1, 1.0), False, True, 0.5) == (*static, 1.0)
+    assert _reference_mask_positive((0.1, 0.2, 0.3), (0.8, 0.2, 0.3), True, False)
+
+    # The existing implementation remains one bounded 8-neighbor scan; no history texture/pass is added.
+    assert PATCHED_ZERO_FLOW_PREVIEW.count("for (int neighbor = 0; neighbor < 8; neighbor++)") == 1
+    assert PATCHED_ZERO_FLOW_PREVIEW.count("textureLod(warp0, neighbor_uv, 0.0)") == 1
+    assert PATCHED_ZERO_FLOW_PREVIEW.count("textureLod(warp1, neighbor_uv, 0.0)") == 1
+    assert PATCHED_ZERO_FLOW_PREVIEW.count("sample_rgba(source0,") == 2
+    assert PATCHED_ZERO_FLOW_PREVIEW.count("sample_rgba(source1,") == 2
+    extra_sample_calls = 2 + 8 * (2 + 2)  # centers + two warp and two source helpers per neighbor
+    texture_fetch_bound = 2 * 4 + 8 * (2 + 2 * 4)  # pinned sample_rgba uses four texelFetch operations
+    assert extra_sample_calls == 34 and texture_fetch_bound == 88
+    assert "float jelly_phase = jelly_phase_base * jelly_phase_base;" in PREVIEW_PHASE_RAMP
+    assert "imageStore(" not in PATCHED_ZERO_FLOW and "layout(set" not in PATCHED_ZERO_FLOW
+    print("Jelly mask invariance, phase continuity, no-purple blend, static/pan gate, and bounded 34-call/88-fetch shader-cost checks passed")
 
 
 def prepared_variant(source: str, *, preview_only: bool = False) -> str:
@@ -278,7 +358,7 @@ def main() -> None:
     parser.add_argument("--mpv-dir", type=Path, help="pinned MPV source checkout")
     parser.add_argument("--motion-source", type=Path, help="motion.c to transform or verify")
     parser.add_argument("--require-glslang", action="store_true")
-    parser.add_argument("--preview-only", action="store_true", help="compile the overlay-only mask preview shader")
+    parser.add_argument("--preview-only", action="store_true", help="compile the mask-gated Jelly blend test shader")
     args = parser.parse_args()
     if bool(args.mpv_dir) == bool(args.motion_source):
         parser.error("provide exactly one of --mpv-dir or --motion-source")
@@ -298,8 +378,8 @@ def main() -> None:
     final_source = prepared_variant(source, preview_only=args.preview_only)
     compile_synthesis_shader(final_source, required=args.require_glslang)
     mode_hash = MOTION_JELLY_PREVIEW_SHA256 if args.preview_only else MOTION_JELLY_SHA256
-    suffix = "; synthesis disabled" if args.preview_only else ""
-    print(f"Opt-in motion-aligned majority jelly {'mask preview' if args.preview_only else 'candidate'} verified ({mode_hash}){suffix}")
+    suffix = "; blend restricted to the confirmed mask" if args.preview_only else ""
+    print(f"Opt-in motion-aligned majority jelly {'blend test' if args.preview_only else 'candidate'} verified ({mode_hash}){suffix}")
 
 
 if __name__ == "__main__":

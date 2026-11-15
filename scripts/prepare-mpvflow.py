@@ -958,7 +958,7 @@ def main() -> None:
     jelly_experimental_enabled = os.environ.get("MPVFLOW_JELLY_EXPERIMENTAL") == "1"
     jelly_preview_enabled = os.environ.get("MPVFLOW_JELLY_PREVIEW") == "1"
     if jelly_experimental_enabled and jelly_preview_enabled:
-        raise SystemExit("MPVRx Jelly synthesis and mask-preview modes are mutually exclusive")
+        raise SystemExit("MPVRx Jelly synthesis and blend-test modes are mutually exclusive")
     try:
         verify_mpv_source(mpv_dir)
         downsample_patch_applied = apply_motion_downsample_patch(
@@ -977,15 +977,15 @@ def main() -> None:
 
     if jelly_preview_enabled:
         if not downsample_antialias_enabled:
-            raise SystemExit("MPVRx Jelly preview requires the verified bounded analysis-downsample baseline")
+            raise SystemExit("MPVRx Jelly blend test requires the verified bounded analysis-downsample baseline")
         try:
             jelly_patch_applied = apply_motion_jelly_preview_patch(motion_path)
         except (OSError, ValueError) as exc:
-            raise SystemExit(f"MPVRx Jelly mask-preview shader verification failed: {exc}") from exc
+            raise SystemExit(f"MPVRx Jelly blend-test shader verification failed: {exc}") from exc
         print(
-            "Applied opt-in MPVRx Jelly mask preview with synthesis blending disabled"
+            "Applied opt-in MPVRx Jelly blend test; synthesis is limited to the confirmed dynamic mask"
             if jelly_patch_applied
-            else "Opt-in MPVRx Jelly mask preview already present; synthesis blending remains disabled"
+            else "Opt-in MPVRx Jelly blend test already present; synthesis remains limited to the confirmed dynamic mask"
         )
     elif jelly_experimental_enabled:
         if not downsample_antialias_enabled:

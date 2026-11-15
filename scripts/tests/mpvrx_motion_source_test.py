@@ -23,7 +23,7 @@ def main() -> None:
     parser.add_argument("--require-jelly-preview", action="store_true")
     args = parser.parse_args()
     if args.require_jelly_experimental and args.require_jelly_preview:
-        parser.error("Jelly synthesis and mask preview cannot both be required")
+        parser.error("Jelly synthesis and blend test cannot both be required")
     try:
         antialias_patched = verify_mpv_source(args.mpv_dir)
     except (OSError, ValueError) as exc:
@@ -37,12 +37,12 @@ def main() -> None:
     if args.require_jelly_preview:
         motion = (args.mpv_dir.resolve() / "video/out/gpu_next/motion.c").read_text(encoding="utf-8")
         if not has_jelly_preview_patch(motion):
-            parser.exit(1, "opt-in MPVRx Jelly mask-preview patch is required but missing\n")
+            parser.exit(1, "opt-in MPVRx Jelly blend-test patch is required but missing\n")
     suffix = " with bounded analysis-downsample antialiasing" if antialias_patched else ""
     if args.require_jelly_experimental:
         suffix += " and opt-in jelly-region synthesis"
     if args.require_jelly_preview:
-        suffix += " and opt-in Jelly mask preview (synthesis disabled)"
+        suffix += " and opt-in Jelly blend test (confirmed mask retained)"
     print(f"MPVRx FongMi motion source {MPV_REVISION}{suffix} and 480px integration verified")
 
 

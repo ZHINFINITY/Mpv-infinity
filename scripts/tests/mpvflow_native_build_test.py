@@ -176,7 +176,7 @@ jelly_preview_type = app_build.split('create("jellyPreview")', 1)[1].split("\n  
 assert 'applicationIdSuffix = ".debug"' in jelly_preview_type
 assert 'matchingFallbacks += listOf("debug")' in jelly_preview_type
 assert 'buildConfigField("boolean", "MPV_JELLY_MASK_PREVIEW", "true")' in jelly_preview_type
-assert 'resValue("string", "app_name", "Mpv∞-Jelly Preview")' in jelly_preview_type
+assert 'resValue("string", "app_name", "Mpv∞-Jelly Blend Test")' in jelly_preview_type
 
 old_dependency = "vulkan = dependency('vulkan', version: '>= 1.3.238', required: vulkan_opt)"
 new_dependency = "vulkan = dependency('vulkan', required: vulkan_opt)"

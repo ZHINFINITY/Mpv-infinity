@@ -164,8 +164,8 @@ android {
       matchingFallbacks += listOf("debug")
       isDebuggable = true
       applicationIdSuffix = ".debug"
-      versionNameSuffix = "-jelly-mask-preview-${getCommitCount()}"
-      resValue("string", "app_name", "Mpv∞-Jelly Preview")
+      versionNameSuffix = "-jelly-blend-test-${getCommitCount()}"
+      resValue("string", "app_name", "Mpv∞-Jelly Blend Test")
       buildConfigField("boolean", "MPV_JELLY_MASK_PREVIEW", "true")
       ndk {
         debugSymbolLevel = "none"

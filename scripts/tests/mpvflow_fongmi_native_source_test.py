@@ -67,8 +67,9 @@ assert "if jelly_preview_enabled:" in PREPARE and "apply_motion_jelly_preview_pa
 assert "MOTION_ANTIALIAS_SHA256" in JELLY_PATCH and "MOTION_JELLY_SHA256" in JELLY_PATCH
 assert "MOTION_JELLY_PREVIEW_SHA256" in JELLY_PATCH
 assert "MPVFLOW_JELLY_MOTION_ALIGNED_MAJORITY_V2" in JELLY_PATCH
-assert "MPVFLOW_JELLY_MASK_PREVIEW_V1" in JELLY_PATCH
-assert "return mix(original, vec4(1.0, 0.0, 1.0, original.a), 0.72);" in JELLY_PATCH
+assert "MPVFLOW_JELLY_BLEND_TEST_V1" in JELLY_PATCH
+assert "return mix(original, jelly_region, jelly_fill);" in JELLY_PATCH
+assert "vec4(1.0, 0.0, 1.0, original.a)" not in JELLY_PATCH
 assert "--require-glslang" in JELLY_TEST and "synthesize_pixel" in JELLY_TEST
 assert "--preview-only" in JELLY_TEST and "check_preview_contract()" in JELLY_TEST
 assert "MOTION_PASS_PREPARE" in PREPARE and "pl_dispatch_prepare_compute" in PREPARE
@@ -124,7 +125,7 @@ assert "--require-jelly-experimental" in WORKFLOWS[1]
 assert "jelly_preview" in WORKFLOWS[1]
 assert "MPVFLOW_JELLY_PREVIEW" in WORKFLOWS[1]
 assert "--require-jelly-preview" in WORKFLOWS[1]
-assert "jelly-mask-preview" in WORKFLOWS[1]
+assert "jelly-blend-test" in WORKFLOWS[1]
 assert "retention-days: 3" in WORKFLOWS[1]
 for workflow in (WORKFLOWS[0], WORKFLOWS[2]):
     assert "scripts/patch_fongmi_motion_downsample.py" not in workflow
