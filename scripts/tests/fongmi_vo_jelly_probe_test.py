@@ -44,6 +44,9 @@ class JellyProbePatchTest(unittest.TestCase):
             patched = vo.read_text()
             self.assertIn('fongmi-jelly-probe-report-file', patched)
             self.assertIn('fongmi-jelly-probe-arm', patched)
+            self.assertIn('#include <errno.h>', patched)
+            self.assertIn('#include <math.h>', patched)
+            self.assertIn('#include <string.h>', patched)
             self.assertIn('UPDATE_VIDEO', patched)
             self.assertIn('mp_motion_render_frames_probe', patched)
             self.assertIn('mp_motion_render_probe', patched)
@@ -54,16 +57,25 @@ class JellyProbePatchTest(unittest.TestCase):
             self.assertIn(': NAN', patched)
             self.assertIn('selection_mode = target_probe_pair ? 1 : 2', patched)
             self.assertIn('pixel_x = 1352, .pixel_y = 224', patched)
-            self.assertIn('max_mapped_vram >= MPVRX_JELLY_PROBE_RECORD_BYTES', patched)
+            self.assertIn('max_mapped_vram < MPVRX_JELLY_PROBE_RECORD_BYTES', patched)
             self.assertIn('.initial_data = zero_record', patched)
-            self.assertIn('fongmi_jelly_probe_report_file) == 0 &&', patched)
+            self.assertIn('mpvrx_jelly_probe_writer_init(&p->jelly_probe_writer,', patched)
+            self.assertIn('d->writer_init_status = MPVRX_JELLY_STAGE_OK', patched)
+            self.assertIn('d->buffer_status = MPVRX_JELLY_STAGE_FAILED', patched)
             self.assertIn('pl_buf_poll(p->gpu, p->jelly_probe_buf, 0)', patched)
             self.assertIn('mpvrx_jelly_probe_record_is_activation', patched)
+            self.assertIn('mpvrx_jelly_probe_record_was_evaluated', patched)
+            self.assertIn('source_bounds_observed = 1', patched)
+            self.assertIn('pixel_in_bounds = mpi0->params.w > 1352 && mpi0->params.h > 224', patched)
+            self.assertIn('eligible_pair_count++', patched)
+            self.assertIn('gpu_submit_count++', patched)
+            self.assertIn('gpu_poll_count++', patched)
+            self.assertIn('mpvrx_jelly_probe_writer_finish', patched)
             candidate_dispatch = patched.split('if (probe_pair && result == MP_MOTION_OK)', 1)[1].split(
                 'if (probe_pair && ok)', 1
             )[0]
             self.assertNotIn('p->jelly_probe_armed = false;', candidate_dispatch)
-            self.assertIn('jelly_probe_last_record_valid = true;', patched)
+            self.assertIn('jelly_probe_last_record_valid = evaluated;', patched)
             self.assertNotIn('pl_buf_read', patched)
             self.assertEqual(patched.count('pl_shader'), original.count('pl_shader'))
             self.assertEqual(patched.count('background_color'), original.count('background_color'))
@@ -89,7 +101,7 @@ class JellyProbePatchTest(unittest.TestCase):
             for forbidden in ('request_stop', '_join(', '_destroy(&p->jelly_probe_writer'):
                 self.assertNotIn(forbidden, uninit)
             destructor = source.split('static void jelly_probe_priv_destroy', 1)[1].split('static void uninit', 1)[0]
-            self.assertLess(destructor.index('request_stop'), destructor.index('_join'))
+            self.assertLess(destructor.index('jelly_probe_finish(p)'), destructor.index('_join'))
             self.assertIn('talloc_set_destructor(p, jelly_probe_priv_destroy)', source)
 
     def test_disarm_on_playback_stop_flushes_and_saves_last_skip(self):

@@ -15,6 +15,8 @@ import app.infinity.mpvz.BuildConfig
 import java.io.File
 import java.io.FileOutputStream
 import java.io.IOException
+import org.json.JSONArray
+import org.json.JSONObject
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 import kotlinx.coroutines.CoroutineScope
@@ -30,7 +32,8 @@ import kotlinx.coroutines.flow.asStateFlow
 /** Keeps debug-only Jelly probe reports reachable after PlayerActivity has been destroyed. */
 internal object JellyProbeReportStore {
   private const val REPORT_DIRECTORY = "jelly-probe-reports"
-  private const val REPORT_PREFIX = "jelly-probe-"
+  private const val REPORT_PREFIX = "mpv-infinity-jelly-probe-"
+  private const val LEGACY_REPORT_PREFIX = "jelly-probe-"
   private const val FINALIZATION_POLL_COUNT = 20
   private const val FINALIZATION_POLL_MILLIS = 250L
 
@@ -71,7 +74,12 @@ internal object JellyProbeReportStore {
    * Waits independently of the player Activity for the native writer to finish. If it emitted no
    * sample, save an explicit status JSON so stop/EOF/exit still leaves something useful to share.
    */
-  fun awaitFinalized(context: Context, report: File, nativeFinalizeResult: Int) {
+  fun awaitFinalized(
+    context: Context,
+    report: File,
+    nativeFinalizeResult: Int,
+    nativeArmOptionResult: Int,
+  ) {
     val reportKey = report.absolutePath
     if (finalizationJobs[reportKey]?.isActive == true) return
     val appContext = context.applicationContext
@@ -91,7 +99,7 @@ internal object JellyProbeReportStore {
           return@launch
         }
 
-        val fallback = writeNoSampleReport(report, nativeFinalizeResult)
+        val fallback = writeNoSampleReport(report, nativeFinalizeResult, nativeArmOptionResult)
         fallback?.let { mutableLatestReport.value = it }
 
         // A queued native write may finish just after the no-sample status was saved. Prefer it
@@ -180,7 +188,7 @@ internal object JellyProbeReportStore {
   }
 
   private fun isProbeReportFile(file: File): Boolean =
-    file.name.startsWith(REPORT_PREFIX) &&
+    (file.name.startsWith(REPORT_PREFIX) || file.name.startsWith(LEGACY_REPORT_PREFIX)) &&
       (file.name.endsWith(".json") || file.name.endsWith(".no-sample.json"))
 
   private fun isComplete(file: File): Boolean = file.isFile && file.length() > 0L
@@ -188,7 +196,11 @@ internal object JellyProbeReportStore {
   private fun fallbackFile(report: File): File =
     File(report.parentFile, "${report.nameWithoutExtension}.no-sample.json")
 
-  private fun writeNoSampleReport(report: File, nativeFinalizeResult: Int): File? {
+  private fun writeNoSampleReport(
+    report: File,
+    nativeFinalizeResult: Int,
+    nativeArmOptionResult: Int,
+  ): File? {
     if (isComplete(report)) return report
     val fallback = fallbackFile(report)
     if (isComplete(fallback)) return fallback
@@ -197,13 +209,99 @@ internal object JellyProbeReportStore {
     val temporary = File(parent, "${fallback.name}.tmp")
     val status = if (nativeFinalizeResult == 0) "no_sample" else "finalization_error"
     val reason = if (nativeFinalizeResult == 0) {
-      "Native finalization completed without emitting a Jelly probe sample."
+      "The native disarm option call returned zero, but no native report arrived before this app fallback; native stage outcomes were not observed."
     } else {
-      "Native Jelly probe finalization returned an error; no native sample report was available."
+      "The native disarm option call returned $nativeFinalizeResult; no native report arrived before this app fallback, so capture outcomes were not observed."
     }
-    val json = """
-      {"report_type":"mpvrx-jelly-probe-finalization-status","status":"$status","reason":"$reason","native_finalize_result":$nativeFinalizeResult,"created_at_epoch_ms":${System.currentTimeMillis()}}
-    """.trimIndent() + "\n"
+    val unknown = JSONObject.NULL
+    val target = JSONObject()
+      .put("media_hint", "599740.mkv")
+      .put("current_file_verified", false)
+      .put("pts_window_seconds", JSONArray().put(1.46).put(1.63))
+      .put("pair_rule", "pair PTS interval overlaps [1.46,1.63]")
+      .put("pixel", JSONArray().put(1352).put(224))
+      .put("eligible_alpha_range", JSONArray().put(0.35).put(0.65))
+      .put(
+        "fallback_rule",
+        "If PTS is unavailable or an eligible pair is wholly later than 1.63s, probe eligible fallback pairs and stop on the first Jelly activation; if none activates, finalization saves the last evaluated skip.",
+      )
+    val sourceBounds = JSONObject()
+      .put("status", "not_observed")
+      .put("width", unknown)
+      .put("height", unknown)
+      .put("pixel_in_bounds", unknown)
+    val stages = JSONObject()
+      .put(
+        "arm_setup",
+        JSONObject()
+          .put("status", "unknown")
+          .put("app_arm_option_result", nativeArmOptionResult)
+          .put("native_renderer_setup", "not_observed")
+          .put("native_error_code", unknown)
+          .put("report_path", report.absolutePath)
+          .put("meaning", "The MPV option result does not prove renderer resources were initialized."),
+      )
+      .put(
+        "target_pixel",
+        JSONObject()
+          .put("status", "not_observed")
+          .put("evaluated", unknown)
+          .put("source_bounds", sourceBounds),
+      )
+      .put(
+        "eligible_frame_pairs",
+        JSONObject()
+          .put("status", "not_observed")
+          .put("eligible_count", unknown)
+          .put("last_pts", unknown)
+          .put("last_alpha", unknown),
+      )
+      .put(
+        "jelly",
+        JSONObject()
+          .put("status", "not_observed")
+          .put("activation", unknown)
+          .put("reason_code", unknown)
+          .put("reason", "not_observed"),
+      )
+      .put(
+        "gpu_readback",
+        JSONObject()
+          .put("status", "not_observed")
+          .put("submitted_count", unknown)
+          .put("poll_count", unknown)
+          .put("last_poll", "not_observed"),
+      )
+      .put(
+        "writer",
+        JSONObject()
+          .put("native_status", "not_observed")
+          .put("native_file_result", "not_observed")
+          .put("native_error_code", unknown)
+          .put("native_report_path", report.absolutePath)
+          .put("fallback_status", "complete")
+          .put("fallback_file_result", "success")
+          .put("fallback_error_code", 0)
+          .put("fallback_report_path", fallback.absolutePath),
+      )
+    val json = JSONObject()
+      .put("report_type", "mpv-infinity-jelly-probe-report")
+      .put("schema_version", 2)
+      .put("status", status)
+      .put("reason", reason)
+      .put("stage_snapshot", "not_observed")
+      .put("native_arm_option_result", nativeArmOptionResult)
+      .put("native_finalize_result", nativeFinalizeResult)
+      .put(
+        "native_finalize_result_semantics",
+        "The disarm-option update result only; zero means the property call succeeded, not that a capture was made.",
+      )
+      .put("report_path", report.absolutePath)
+      .put("fallback_report_path", fallback.absolutePath)
+      .put("target", target)
+      .put("stages", stages)
+      .put("created_at_epoch_ms", System.currentTimeMillis())
+      .toString() + "\n"
 
     return runCatching {
       FileOutputStream(temporary).use { output ->

@@ -57,6 +57,9 @@ jobs:
       - name: Test persistent Jelly probe report delivery
         if: ${{ inputs.jelly_probe == true }}
         run: python3 scripts/tests/jelly_probe_report_delivery_test.py
+      - name: Test native Jelly probe stage reports
+        if: ${{ inputs.jelly_probe == true }}
+        run: bash scripts/tests/run_mpvrx_jelly_probe_writer_test.sh
       - name: Test arm64 workflow cache and validation invariants
         run: python3 scripts/tests/mpvflow_arm64_workflow_test.py
       - name: Test experimental region3 attenuation invariants

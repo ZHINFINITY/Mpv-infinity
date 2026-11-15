@@ -36,14 +36,22 @@ def apply_patch(vo_source_path, meson_path, repo_writer_dir, probe_enabled):
 
     include_anchor = '#include "gpu/utils.h"\n'
     source = replace_once(source, include_anchor, include_anchor +
+        '#include <errno.h>\n#include <math.h>\n#include <string.h>\n'
         '#include "mpvrx_jelly_probe_writer.h"\n', "include")
+    forward_anchor = 'struct osd_entry {\n'
+    source = replace_once(source, forward_anchor,
+        'struct priv;\nstatic void jelly_probe_poll(struct priv *p);\n'
+        'static void jelly_probe_finish(struct priv *p);\n\n' + forward_anchor,
+        "probe helper declarations")
     struct_anchor = '    struct mp_motion_clock motion_clock;\n'
     struct_fields = '''    struct mp_motion_clock motion_clock;
     /* MPVFLOW_FONGMI_VO_JELLY_PROBE_V1 */
     bool jelly_probe_armed, jelly_probe_pending, jelly_probe_writer_ready;
-    bool jelly_probe_last_record_valid;
+    bool jelly_probe_last_record_valid, jelly_probe_setup_attempted;
+    bool jelly_probe_finalized;
     pl_buf jelly_probe_buf;
     struct mpvrx_jelly_probe_writer jelly_probe_writer;
+    struct mpvrx_jelly_probe_diagnostics jelly_probe_diagnostics;
 '''
     source = replace_once(source, struct_anchor, struct_fields, "priv fields")
     options_anchor = '    int motion_fps;\n    struct user_lut lut;\n'
@@ -58,10 +66,10 @@ def apply_patch(vo_source_path, meson_path, repo_writer_dir, probe_enabled):
     update_anchor = '    update_motion_options(vo);\n    publish_motion_info(vo);\n'
     setup = '''    update_motion_options(vo);
     publish_motion_info(vo);
-    /* Probe resources are initialized only on an explicit control-path update. */
+    /* Probe files, worker and GPU state are created only on this control path. */
     if (p->next_opts->fongmi_jelly_probe_arm &&
         p->next_opts->fongmi_jelly_probe_report_file &&
-        p->next_opts->fongmi_jelly_probe_report_file[0] && !p->jelly_probe_writer_ready) {
+        p->next_opts->fongmi_jelly_probe_report_file[0] && !p->jelly_probe_setup_attempted) {
         static const unsigned char zero_record[MPVRX_JELLY_PROBE_RECORD_BYTES] = {0};
         struct pl_buf_params bp = {
             .size = MPVRX_JELLY_PROBE_RECORD_BYTES, .storable = true,
@@ -69,54 +77,122 @@ def apply_patch(vo_source_path, meson_path, repo_writer_dir, probe_enabled):
             .memory_type = PL_BUF_MEM_DEVICE,
             .initial_data = zero_record,
         };
-        if (p->gpu &&
-            p->gpu->limits.max_buf_size >= MPVRX_JELLY_PROBE_RECORD_BYTES &&
-            p->gpu->limits.max_ssbo_size >= MPVRX_JELLY_PROBE_RECORD_BYTES &&
-            p->gpu->limits.max_mapped_size >= MPVRX_JELLY_PROBE_RECORD_BYTES &&
-            p->gpu->limits.max_mapped_vram >= MPVRX_JELLY_PROBE_RECORD_BYTES)
-            p->jelly_probe_buf = pl_buf_create(p->gpu, &bp);
-        if (p->jelly_probe_buf && p->jelly_probe_buf->data) {
-            if (mpvrx_jelly_probe_writer_init(&p->jelly_probe_writer,
-                    p->next_opts->fongmi_jelly_probe_report_file) == 0 &&
-                (p->jelly_probe_writer_ready = true) &&
-                mpvrx_jelly_probe_writer_arm(&p->jelly_probe_writer) == MPVRX_JELLY_CAPTURE_ACCEPTED) {
-                p->jelly_probe_writer_ready = true;
-                p->jelly_probe_armed = true;
+        struct mpvrx_jelly_probe_diagnostics *d = &p->jelly_probe_diagnostics;
+        p->jelly_probe_setup_attempted = true;
+        memset(d, 0, sizeof(*d));
+        d->setup_status = MPVRX_JELLY_STAGE_NOT_REACHED;
+        d->setup_error = d->writer_init_error = d->buffer_error = -1;
+        d->writer_init_status = MPVRX_JELLY_STAGE_NOT_REACHED;
+        d->buffer_status = MPVRX_JELLY_STAGE_NOT_REACHED;
+        d->pixel_x = 1352; d->pixel_y = 224;
+        d->source_width = d->source_height = d->pixel_in_bounds = -1;
+        d->last_pts_valid = d->last_selection_mode = -1;
+        d->gpu_last_poll_status = MPVRX_JELLY_READBACK_NOT_SUBMITTED;
+        d->pixel_evaluated = d->jelly_reason_code = d->activation = -1;
+        d->jelly_fill = NAN;
+        int writer_error = mpvrx_jelly_probe_writer_init(&p->jelly_probe_writer,
+            p->next_opts->fongmi_jelly_probe_report_file);
+        if (writer_error) {
+            d->writer_init_status = MPVRX_JELLY_STAGE_FAILED;
+            d->writer_init_error = writer_error;
+            d->setup_status = MPVRX_JELLY_STAGE_FAILED;
+            d->setup_error = writer_error;
+        } else {
+            p->jelly_probe_writer_ready = true;
+            d->writer_init_status = MPVRX_JELLY_STAGE_OK;
+            d->writer_init_error = 0;
+            int buffer_error = 0;
+            if (!p->gpu) {
+                buffer_error = ENODEV;
+            } else if (p->gpu->limits.max_buf_size < MPVRX_JELLY_PROBE_RECORD_BYTES ||
+                       p->gpu->limits.max_ssbo_size < MPVRX_JELLY_PROBE_RECORD_BYTES ||
+                       p->gpu->limits.max_mapped_size < MPVRX_JELLY_PROBE_RECORD_BYTES ||
+                       p->gpu->limits.max_mapped_vram < MPVRX_JELLY_PROBE_RECORD_BYTES) {
+                buffer_error = ENOTSUP;
             } else {
-                if (p->jelly_probe_writer_ready)
-                    mpvrx_jelly_probe_writer_request_stop(&p->jelly_probe_writer);
-                pl_buf_destroy(p->gpu, &p->jelly_probe_buf);
+                p->jelly_probe_buf = pl_buf_create(p->gpu, &bp);
+                if (!p->jelly_probe_buf)
+                    buffer_error = ENOMEM;
+                else if (!p->jelly_probe_buf->data)
+                    buffer_error = EFAULT;
             }
-        } else if (p->jelly_probe_buf) {
-            pl_buf_destroy(p->gpu, &p->jelly_probe_buf);
+            if (buffer_error) {
+                d->buffer_status = MPVRX_JELLY_STAGE_FAILED;
+                d->buffer_error = buffer_error;
+                d->setup_status = MPVRX_JELLY_STAGE_FAILED;
+                d->setup_error = buffer_error;
+                if (p->jelly_probe_buf)
+                    pl_buf_destroy(p->gpu, &p->jelly_probe_buf);
+            } else {
+                d->buffer_status = MPVRX_JELLY_STAGE_OK;
+                d->buffer_error = 0;
+                enum mpvrx_jelly_probe_capture_result arm_result =
+                    mpvrx_jelly_probe_writer_arm(&p->jelly_probe_writer);
+                if (arm_result == MPVRX_JELLY_CAPTURE_ACCEPTED) {
+                    p->jelly_probe_armed = true;
+                    d->setup_status = MPVRX_JELLY_STAGE_OK;
+                    d->setup_error = 0;
+                } else {
+                    d->setup_status = MPVRX_JELLY_STAGE_FAILED;
+                    d->setup_error = (int)arm_result;
+                }
+            }
         }
     }
     /* Clearing the one-shot arm option finalizes the last eligible skip. */
-    if (!p->next_opts->fongmi_jelly_probe_arm && p->jelly_probe_armed &&
-        p->jelly_probe_buf && p->jelly_probe_writer_ready) {
-        if (p->gpu)
+    if (!p->next_opts->fongmi_jelly_probe_arm && p->jelly_probe_writer_ready &&
+        !p->jelly_probe_finalized) {
+        if (p->gpu && p->jelly_probe_buf)
             pl_gpu_finish(p->gpu);
         jelly_probe_poll(p);
         if (p->jelly_probe_armed && p->jelly_probe_last_record_valid &&
+            p->jelly_probe_buf &&
             mpvrx_jelly_probe_writer_capture(&p->jelly_probe_writer,
                                               p->jelly_probe_buf->data) == MPVRX_JELLY_CAPTURE_ACCEPTED)
             p->jelly_probe_armed = false;
         p->jelly_probe_armed = false;
+        jelly_probe_finish(p);
     }
 '''
     source = replace_once(source, update_anchor, setup, "control update")
 
     # Callback-only poll: never wait, allocate, write files, or serialize JSON here.
     frame_anchor = 'static int prepare_motion_frame(struct vo *vo, const struct pl_frame_mix *mix,\n'
-    poll = '''static void jelly_probe_poll(struct priv *p)
+    poll = '''static void jelly_probe_finish(struct priv *p)
+{
+    if (!p->jelly_probe_writer_ready || p->jelly_probe_finalized)
+        return;
+    p->jelly_probe_finalized = true;
+    mpvrx_jelly_probe_writer_finish(&p->jelly_probe_writer,
+                                    &p->jelly_probe_diagnostics);
+    p->jelly_probe_armed = false;
+}
+
+static void jelly_probe_poll(struct priv *p)
 {
     if (!p->jelly_probe_pending || !p->jelly_probe_buf || !p->jelly_probe_writer_ready)
         return;
-    if (pl_buf_poll(p->gpu, p->jelly_probe_buf, 0))
+    p->jelly_probe_diagnostics.gpu_poll_count++;
+    if (!p->gpu) {
+        p->jelly_probe_diagnostics.gpu_last_poll_status = MPVRX_JELLY_READBACK_ERROR;
         return;
+    }
+    if (pl_buf_poll(p->gpu, p->jelly_probe_buf, 0)) {
+        p->jelly_probe_diagnostics.gpu_last_poll_status = MPVRX_JELLY_READBACK_PENDING;
+        return;
+    }
     p->jelly_probe_pending = false;
-    p->jelly_probe_last_record_valid = true;
-    if (mpvrx_jelly_probe_record_is_activation(p->jelly_probe_buf->data) &&
+    p->jelly_probe_diagnostics.gpu_last_poll_status = MPVRX_JELLY_READBACK_READY;
+    const float *record = p->jelly_probe_buf->data;
+    bool evaluated = mpvrx_jelly_probe_record_was_evaluated(record);
+    p->jelly_probe_diagnostics.pixel_evaluated = evaluated ? 1 : 0;
+    p->jelly_probe_last_record_valid = evaluated;
+    if (evaluated) {
+        p->jelly_probe_diagnostics.jelly_reason_code = isfinite(record[1]) ? (int)record[1] : -1;
+        p->jelly_probe_diagnostics.jelly_fill = record[57 * 4 + 3];
+        p->jelly_probe_diagnostics.activation = mpvrx_jelly_probe_record_is_activation(record) ? 1 : 0;
+    }
+    if (p->jelly_probe_diagnostics.activation == 1 &&
         mpvrx_jelly_probe_writer_capture(&p->jelly_probe_writer,
                                           p->jelly_probe_buf->data) == MPVRX_JELLY_CAPTURE_ACCEPTED)
         p->jelly_probe_armed = false;
@@ -137,9 +213,33 @@ def apply_patch(vo_source_path, meson_path, repo_writer_dir, probe_enabled):
     double probe_pts_max = valid_probe_pts ? fmax(mpi0->pts, mpi1->pts) : 0.0;
     bool target_probe_pair = valid_probe_pts && probe_pts_min <= 1.63 && probe_pts_max >= 1.46;
     bool fallback_probe_pair = !valid_probe_pts || probe_pts_min > 1.63;
-    bool probe_pair = p->jelly_probe_armed && !p->jelly_probe_pending &&
-        p->jelly_probe_buf && (target_probe_pair || fallback_probe_pair) &&
-        alpha >= 0.35f && alpha <= 0.65f;
+    struct mpvrx_jelly_probe_diagnostics *probe_diag = &p->jelly_probe_diagnostics;
+    bool probe_active = p->jelly_probe_armed && p->jelly_probe_writer_ready &&
+        !p->jelly_probe_finalized && p->jelly_probe_buf;
+    bool pixel_in_bounds = mpi0->params.w > 1352 && mpi0->params.h > 224;
+    if (probe_active) {
+        probe_diag->source_bounds_observed = 1;
+        probe_diag->source_width = mpi0->params.w;
+        probe_diag->source_height = mpi0->params.h;
+        probe_diag->pixel_in_bounds = pixel_in_bounds ? 1 : 0;
+    }
+    bool frame_pair_eligible = probe_active && pixel_in_bounds &&
+        (target_probe_pair || fallback_probe_pair) && alpha >= 0.35f && alpha <= 0.65f;
+    if (frame_pair_eligible) {
+        probe_diag->eligible_pair_count++;
+        if (target_probe_pair) probe_diag->target_pair_count++;
+        else probe_diag->fallback_pair_count++;
+    }
+    bool probe_pair = frame_pair_eligible && !p->jelly_probe_pending;
+    if (probe_pair) {
+        probe_diag->last_pair_observed = 1;
+        probe_diag->last_pts_valid = valid_probe_pts ? 1 : 0;
+        probe_diag->last_pts[0] = valid_probe_pts ? mpi0->pts : NAN;
+        probe_diag->last_pts[1] = valid_probe_pts ? mpi1->pts : NAN;
+        probe_diag->last_alpha = alpha;
+        probe_diag->last_selection_mode = target_probe_pair ? 1 : 2;
+        probe_diag->render_attempt_count++;
+    }
     struct mp_motion_probe_request probe_request = {
         .buffer = p->jelly_probe_buf, .pixel_x = 1352, .pixel_y = 224,
         .first_id = fp0->motion_id, .second_id = fp1->motion_id,
@@ -155,6 +255,10 @@ def apply_patch(vo_source_path, meson_path, repo_writer_dir, probe_enabled):
                 &fp1->motion_frame, alpha, output);
         if (probe_pair && result == MP_MOTION_OK) {
             p->jelly_probe_pending = true;
+            probe_diag->gpu_submit_count++;
+            probe_diag->gpu_last_poll_status = MPVRX_JELLY_READBACK_PENDING;
+        } else if (probe_pair) {
+            probe_diag->render_failure_count++;
         }
 '''
     source = replace_once(source, call_anchor, probe_call, "described motion call")
@@ -168,6 +272,10 @@ def apply_patch(vo_source_path, meson_path, repo_writer_dir, probe_enabled):
                 fp0->motion_id, fp1->motion_id, alpha, &texture);
         if (probe_pair && ok) {
             p->jelly_probe_pending = true;
+            probe_diag->gpu_submit_count++;
+            probe_diag->gpu_last_poll_status = MPVRX_JELLY_READBACK_PENDING;
+        } else if (probe_pair) {
+            probe_diag->render_failure_count++;
         }
 '''
     source = replace_once(source, raw_anchor, raw_new, "raw motion call")
@@ -178,7 +286,7 @@ def apply_patch(vo_source_path, meson_path, repo_writer_dir, probe_enabled):
     struct priv *p = opaque;
     if (!p->jelly_probe_writer_ready)
         return;
-    mpvrx_jelly_probe_writer_request_stop(&p->jelly_probe_writer);
+    jelly_probe_finish(p);
     mpvrx_jelly_probe_writer_join(&p->jelly_probe_writer);
     mpvrx_jelly_probe_writer_destroy(&p->jelly_probe_writer);
     p->jelly_probe_writer_ready = false;
@@ -196,6 +304,7 @@ def apply_patch(vo_source_path, meson_path, repo_writer_dir, probe_enabled):
                                           p->jelly_probe_buf->data) == MPVRX_JELLY_CAPTURE_ACCEPTED)
         p->jelly_probe_armed = false;
     p->jelly_probe_armed = false;
+    jelly_probe_finish(p);
     if (p->gpu)
         pl_buf_destroy(p->gpu, &p->jelly_probe_buf);
 '''

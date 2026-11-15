@@ -10,6 +10,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/types.h>
+#include <time.h>
 #include <unistd.h>
 
 #define PW_GATE_CLOSED UINT32_C(0x80000000)
@@ -28,6 +29,37 @@ int mpvrx_jelly_probe_record_is_activation(const void *mapped_record)
     memcpy(&reason, (const unsigned char *) mapped_record + sizeof(float),
            sizeof(reason));
     return isfinite(reason) && reason == 6.0f;
+}
+
+int mpvrx_jelly_probe_record_was_evaluated(const void *mapped_record)
+{
+    if (!mapped_record)
+        return 0;
+    float marker;
+    memcpy(&marker, mapped_record, sizeof(marker));
+    return isfinite(marker) && marker == 1.0f;
+}
+
+static void diagnostics_reset(struct mpvrx_jelly_probe_diagnostics *d)
+{
+    memset(d, 0, sizeof(*d));
+    d->setup_status = MPVRX_JELLY_STAGE_UNKNOWN;
+    d->setup_error = -1;
+    d->writer_init_status = MPVRX_JELLY_STAGE_UNKNOWN;
+    d->writer_init_error = -1;
+    d->buffer_status = MPVRX_JELLY_STAGE_UNKNOWN;
+    d->buffer_error = -1;
+    d->pixel_x = 1352;
+    d->pixel_y = 224;
+    d->source_width = d->source_height = -1;
+    d->pixel_in_bounds = -1;
+    d->last_pts_valid = -1;
+    d->last_selection_mode = -1;
+    d->gpu_last_poll_status = MPVRX_JELLY_READBACK_UNKNOWN;
+    d->pixel_evaluated = -1;
+    d->jelly_reason_code = -1;
+    d->activation = -1;
+    d->jelly_fill = NAN;
 }
 
 static void queue_signal(struct mpvrx_jelly_probe_queue *queue)
@@ -173,20 +205,96 @@ static int appendf(char *b, size_t cap, size_t *n, const char *fmt, ...)
 }
 static int num(char *b,size_t cap,size_t*n,float x){ return isfinite(x)?appendf(b,cap,n,"%.9g",(double)x):appendf(b,cap,n,"null"); }
 static int vec(char*b,size_t c,size_t*n,const float*v,int count){ int e=appendf(b,c,n,"["); for(int i=0;!e&&i<count;i++){if(i)e=appendf(b,c,n,",");if(!e)e=num(b,c,n,v[i]);}if(!e)e=appendf(b,c,n,"]");return e; }
-static int write_json_atomically(struct mpvrx_jelly_probe_writer *writer, const unsigned char record[MPVRX_JELLY_PROBE_RECORD_BYTES])
+static int append_json_string(char *b, size_t cap, size_t *n, const char *value)
 {
-    float values[256]; memcpy(values, record, sizeof values); const float *v=values; char json[16384]; size_t n=0; int e=0;
-    uint32_t u[4]; memcpy(u,record+58*16,sizeof u); uint64_t id0=(uint64_t)u[0]|((uint64_t)u[1]<<32), id1=(uint64_t)u[2]|((uint64_t)u[3]<<32);
-#define A(...) do { if(!e)e=appendf(json,sizeof json,&n,__VA_ARGS__); } while(0)
-#define V(i) do { if(!e)e=vec(json,sizeof json,&n,v+(i)*4,4); } while(0)
-    A("{\"schema_version\":1,\"capture\":{\"id0\":\"%llu\",\"id1\":\"%llu\",\"pts\":[",(unsigned long long)id0,(unsigned long long)id1); if(!e)e=num(json,sizeof json,&n,v[59*4]); A(","); if(!e)e=num(json,sizeof json,&n,v[59*4+1]); A("],\"alpha\":"); if(!e)e=num(json,sizeof json,&n,v[59*4+2]); A(",\"selection\":");if(!e)e=num(json,sizeof json,&n,v[59*4+3]);A(",\"pixel_source\":");V(60);A(",\"map\":");V(61);A("},\"decision\":");V(0);A(",\"center\":{");
-    const char *cn[]={"forward_warp","backward_warp","color0","color1","metric0","metric1","color_delta_change","neighbor_counts_weights"};
-    for(int i=0;i<8;i++){if(i)A(",");A("\"%s\":",cn[i]);V(i+1);} A("},\"neighbors\":[");
-    for(int i=0;i<8;i++){int b=9+i*6;if(i)A(",");A("{\"index\":%d,\"forward_warp\":",i);V(b);A(",\"backward_warp\":");V(b+1);A(",\"color0_error0\":");V(b+2);A(",\"color1_error1\":");V(b+3);A(",\"weights_votes\":");V(b+4);A(",\"rejection\":");if(!e)e=num(json,sizeof json,&n,v[(b+5)*4+2]);A("}");}
-    A("],\"support\":");V(57);A("}\n");
-#undef A
-#undef V
-    if (e) return e;
+    int e = appendf(b, cap, n, "\"");
+    for (const unsigned char *p = (const unsigned char *)value; !e && *p; p++) {
+        if (*p == '"' || *p == '\\')
+            e = appendf(b, cap, n, "\\%c", *p);
+        else if (*p < 0x20)
+            e = appendf(b, cap, n, "\\u%04x", (unsigned)*p);
+        else
+            e = appendf(b, cap, n, "%c", *p);
+    }
+    if (!e) e = appendf(b, cap, n, "\"");
+    return e;
+}
+
+static int append_nullable_int(char *b, size_t cap, size_t *n, int value)
+{
+    return value < 0 ? appendf(b, cap, n, "null") : appendf(b, cap, n, "%d", value);
+}
+
+static int append_nullable_double(char *b, size_t cap, size_t *n, double value)
+{
+    return isfinite(value) ? appendf(b, cap, n, "%.9g", value) : appendf(b, cap, n, "null");
+}
+
+static const char *stage_status_name(int status)
+{
+    switch (status) {
+    case MPVRX_JELLY_STAGE_NOT_REACHED: return "not_reached";
+    case MPVRX_JELLY_STAGE_OK: return "success";
+    case MPVRX_JELLY_STAGE_FAILED: return "failure";
+    case MPVRX_JELLY_STAGE_SKIPPED: return "skipped";
+    default: return "unknown";
+    }
+}
+
+static const char *readback_status_name(int status)
+{
+    switch (status) {
+    case MPVRX_JELLY_READBACK_NOT_SUBMITTED: return "not_submitted";
+    case MPVRX_JELLY_READBACK_PENDING: return "pending";
+    case MPVRX_JELLY_READBACK_READY: return "ready";
+    case MPVRX_JELLY_READBACK_ERROR: return "error";
+    default: return "unknown";
+    }
+}
+
+static const char *jelly_reason_name(int reason)
+{
+    switch (reason) {
+    case 0: return "decision_not_recorded";
+    case 1: return "center_delta_below_threshold";
+    case 2: return "phase_endpoint";
+    case 3: return "neighbor_scan_pending";
+    case 4: return "insufficient_neighbor_support";
+    case 5: return "fill_below_threshold";
+    case 6: return "jelly_applied";
+    case 7: return "zero_flow";
+    case 9: return "scene_cut";
+    default: return "unknown_reason_code";
+    }
+}
+
+static const char *diagnostic_reason(const struct mpvrx_jelly_probe_diagnostics *d)
+{
+    if (!d) return "stage_data_not_observed";
+    if (d->setup_status == MPVRX_JELLY_STAGE_FAILED) return "probe_setup_failed";
+    if (d->buffer_status == MPVRX_JELLY_STAGE_FAILED) return "gpu_buffer_setup_failed";
+    if (d->source_bounds_observed && d->pixel_in_bounds == 0) return "target_pixel_out_of_bounds";
+    if (d->eligible_pair_count == 0) return "no_eligible_frame_pair";
+    if (d->gpu_submit_count == 0) return "no_gpu_dispatch_observed";
+    if (d->gpu_last_poll_status == MPVRX_JELLY_READBACK_ERROR) return "gpu_readback_error";
+    if (d->gpu_last_poll_status == MPVRX_JELLY_READBACK_PENDING) return "gpu_readback_pending_at_finalize";
+    if (d->gpu_last_poll_status == MPVRX_JELLY_READBACK_READY && d->pixel_evaluated == 0)
+        return "target_pixel_not_evaluated";
+    if (d->activation == 0) return "jelly_rejected_or_skipped";
+    return "native_sample_not_available";
+}
+
+static unsigned long long report_timestamp_ms(void)
+{
+    struct timespec now;
+    if (clock_gettime(CLOCK_REALTIME, &now) != 0 || now.tv_sec < 0)
+        return 0;
+    return (unsigned long long)now.tv_sec * 1000ULL + (unsigned long long)now.tv_nsec / 1000000ULL;
+}
+
+static int write_json_payload(struct mpvrx_jelly_probe_writer *writer, const char *json, size_t n)
+{
+    int e = 0;
     int fd = mkstemp(writer->temp_template);
     if (fd < 0) return errno;
     e = write_all(fd, json, n);
@@ -197,6 +305,113 @@ static int write_json_atomically(struct mpvrx_jelly_probe_writer *writer, const 
         e = errno; unlink(writer->temp_template); return e;
     }
     return 0;
+}
+
+static int write_no_sample_json(struct mpvrx_jelly_probe_writer *writer,
+                                const struct mpvrx_jelly_probe_diagnostics *d,
+                                int snapshot_provided)
+{
+    char json[8192]; size_t n = 0; int e = 0;
+    const char *reason = snapshot_provided ? diagnostic_reason(d) : "stage_data_not_observed";
+#define A(...) do { if(!e)e=appendf(json,sizeof json,&n,__VA_ARGS__); } while(0)
+    A("{\"report_type\":\"mpv-infinity-jelly-probe-report\",\"schema_version\":2,\"status\":\"no_sample\",\"reason\":\"%s\",\"stage_snapshot\":\"%s\",\"created_at_epoch_ms\":%llu,\"report_path\":", reason, snapshot_provided ? "provided" : "not_observed", report_timestamp_ms());
+    if (!e) e = append_json_string(json, sizeof json, &n, writer->final_path);
+    A(",\"target\":{\"media_hint\":\"599740.mkv\",\"current_file_verified\":false,\"pts_window_seconds\":[1.46,1.63],\"pair_rule\":\"pair PTS interval overlaps [1.46,1.63]\",\"pixel\":[%d,%d],\"fallback_rule\":\"if PTS is unavailable or an eligible pair begins after 1.63s, probe fallback pairs until the first activation; if none activates, finalization saves the last evaluated skip\",\"eligible_alpha_range\":[0.35,0.65]},", d->pixel_x, d->pixel_y);
+    A("\"stages\":{\"arm_setup\":{\"status\":\"%s\",\"error_code\":", stage_status_name(d->setup_status));
+    if (!e) e = append_nullable_int(json, sizeof json, &n, d->setup_error);
+    A(",\"writer_init_status\":\"%s\",\"writer_init_error_code\":", stage_status_name(d->writer_init_status));
+    if (!e) e = append_nullable_int(json, sizeof json, &n, d->writer_init_error);
+    A(",\"gpu_buffer_status\":\"%s\",\"gpu_buffer_error_code\":", stage_status_name(d->buffer_status));
+    if (!e) e = append_nullable_int(json, sizeof json, &n, d->buffer_error);
+    A(",\"report_path\":");
+    if (!e) e = append_json_string(json, sizeof json, &n, writer->final_path);
+    A("},\"target_pixel\":{\"status\":\"%s\",\"evaluated\":", d->pixel_evaluated == 1 ? "evaluated" : d->pixel_evaluated == 0 ? "not_evaluated" : "not_observed");
+    if (d->pixel_evaluated < 0) A("null"); else A("%s", d->pixel_evaluated ? "true" : "false");
+    A(",\"source_bounds\":{\"status\":\"%s\",\"width\":", d->source_bounds_observed ? "observed" : "not_observed");
+    if (!e) e = append_nullable_int(json, sizeof json, &n, d->source_bounds_observed ? d->source_width : -1);
+    A(",\"height\":");
+    if (!e) e = append_nullable_int(json, sizeof json, &n, d->source_bounds_observed ? d->source_height : -1);
+    A(",\"pixel_in_bounds\":");
+    if (!e && d->pixel_in_bounds < 0) e = appendf(json, sizeof json, &n, "null");
+    else if (!e) e = appendf(json, sizeof json, &n, "%s", d->pixel_in_bounds ? "true" : "false");
+    A("}},\"eligible_frame_pairs\":{\"status\":\"%s\",\"eligible_count\":", d->setup_status == MPVRX_JELLY_STAGE_OK ? "observed" : "not_reached");
+    if (!e) e = d->setup_status == MPVRX_JELLY_STAGE_OK
+        ? appendf(json, sizeof json, &n, "%u", d->eligible_pair_count)
+        : appendf(json, sizeof json, &n, "null");
+    A(",\"target_window_count\":");
+    if (!e) e = d->setup_status == MPVRX_JELLY_STAGE_OK
+        ? appendf(json, sizeof json, &n, "%u", d->target_pair_count)
+        : appendf(json, sizeof json, &n, "null");
+    A(",\"fallback_count\":");
+    if (!e) e = d->setup_status == MPVRX_JELLY_STAGE_OK
+        ? appendf(json, sizeof json, &n, "%u", d->fallback_pair_count)
+        : appendf(json, sizeof json, &n, "null");
+    A(",\"last_pair\":");
+    if (d->last_pair_observed) {
+        A("{\"pts\":[");
+        if (!e) e = append_nullable_double(json, sizeof json, &n, d->last_pts_valid ? d->last_pts[0] : NAN);
+        A(",");
+        if (!e) e = append_nullable_double(json, sizeof json, &n, d->last_pts_valid ? d->last_pts[1] : NAN);
+        A("],\"alpha\":");
+        if (!e) e = append_nullable_double(json, sizeof json, &n, d->last_alpha);
+        A(",\"selection\":\"%s\"}", d->last_selection_mode == 1 ? "target_window" : d->last_selection_mode == 2 ? "fallback" : "unknown");
+    } else {
+        A("null");
+    }
+    A("},\"jelly\":{\"status\":\"%s\",\"reason_code\":", d->activation == 1 ? "activated" : d->activation == 0 ? "rejected_or_skipped" : "not_observed");
+    if (!e) e = append_nullable_int(json, sizeof json, &n, d->jelly_reason_code);
+    A(",\"reason\":\"%s\",\"fill\":", d->jelly_reason_code < 0 ? "not_observed" : jelly_reason_name(d->jelly_reason_code));
+    if (!e) e = append_nullable_double(json, sizeof json, &n, d->jelly_fill);
+    A("},\"gpu_readback\":{\"status\":\"%s\",\"submitted_count\":", d->setup_status == MPVRX_JELLY_STAGE_OK ? readback_status_name(d->gpu_last_poll_status) : "not_reached");
+    if (!e) e = d->setup_status == MPVRX_JELLY_STAGE_OK
+        ? appendf(json, sizeof json, &n, "%u", d->gpu_submit_count)
+        : appendf(json, sizeof json, &n, "null");
+    A(",\"poll_count\":");
+    if (!e) e = d->setup_status == MPVRX_JELLY_STAGE_OK
+        ? appendf(json, sizeof json, &n, "%u", d->gpu_poll_count)
+        : appendf(json, sizeof json, &n, "null");
+    A(",\"pixel_evaluated\":");
+    if (d->pixel_evaluated < 0) A("null"); else A("%s", d->pixel_evaluated ? "true" : "false");
+    A("},\"writer\":{\"status\":\"completed\",\"file_result\":\"success\",\"error_code\":0}}}\n");
+#undef A
+    if (e) return e;
+    return write_json_payload(writer, json, n);
+}
+
+static int write_capture_json(struct mpvrx_jelly_probe_writer *writer,
+                              const unsigned char record[MPVRX_JELLY_PROBE_RECORD_BYTES])
+{
+    float values[256]; memcpy(values, record, sizeof values); const float *v=values; char json[16384]; size_t n=0; int e=0;
+    uint32_t u[4]; memcpy(u,record+58*16,sizeof u); uint64_t id0=(uint64_t)u[0]|((uint64_t)u[1]<<32), id1=(uint64_t)u[2]|((uint64_t)u[3]<<32);
+    int evaluated = mpvrx_jelly_probe_record_was_evaluated(record);
+    int activation = evaluated && mpvrx_jelly_probe_record_is_activation(record);
+    int reason_code = isfinite(v[1]) ? (int)v[1] : -1;
+#define A(...) do { if(!e)e=appendf(json,sizeof json,&n,__VA_ARGS__); } while(0)
+#define V(i) do { if(!e)e=vec(json,sizeof json,&n,v+(i)*4,4); } while(0)
+    A("{\"report_type\":\"mpv-infinity-jelly-probe-report\",\"schema_version\":2,\"status\":\"%s\",\"reason\":\"%s\",\"created_at_epoch_ms\":%llu,\"report_path\":", activation ? "activated" : evaluated ? "rejected" : "no_sample", evaluated ? jelly_reason_name(reason_code) : "target_pixel_not_evaluated", report_timestamp_ms());
+    if (!e) e = append_json_string(json, sizeof json, &n, writer->final_path);
+    A(",\"capture\":{\"id0\":\"%llu\",\"id1\":\"%llu\",\"pts\":[",(unsigned long long)id0,(unsigned long long)id1); if(!e)e=num(json,sizeof json,&n,v[59*4]); A(","); if(!e)e=num(json,sizeof json,&n,v[59*4+1]); A("],\"alpha\":"); if(!e)e=num(json,sizeof json,&n,v[59*4+2]); A(",\"selection\":");if(!e)e=num(json,sizeof json,&n,v[59*4+3]);A(",\"pixel_source\":");V(60);A(",\"map\":");V(61);A("},\"decision\":");V(0);A(",\"center\":{");
+    const char *cn[]={"forward_warp","backward_warp","color0","color1","metric0","metric1","color_delta_change","neighbor_counts_weights"};
+    for(int i=0;i<8;i++){if(i)A(",");A("\"%s\":",cn[i]);V(i+1);} A("},\"neighbors\":[");
+    for(int i=0;i<8;i++){int b=9+i*6;if(i)A(",");A("{\"index\":%d,\"forward_warp\":",i);V(b);A(",\"backward_warp\":");V(b+1);A(",\"color0_error0\":");V(b+2);A(",\"color1_error1\":");V(b+3);A(",\"weights_votes\":");V(b+4);A(",\"rejection\":");if(!e)e=num(json,sizeof json,&n,v[(b+5)*4+2]);A("}");}
+    A("],\"support\":");V(57);A(",\"stages\":{\"target_pixel\":{\"status\":\"%s\",\"evaluated\":%s,\"pixel\":[", evaluated ? "evaluated" : "not_evaluated", evaluated ? "true" : "false");
+    if (!e) { e = num(json, sizeof json, &n, v[60*4]); }
+    A(",");
+    if (!e) { e = num(json, sizeof json, &n, v[60*4+1]); }
+    A("],\"source_width\":");
+    if (!e) { e = num(json, sizeof json, &n, v[60*4+2]); }
+    A(",\"source_height\":");
+    if (!e) { e = num(json, sizeof json, &n, v[60*4+3]); }
+    int bounds_known = isfinite(v[60*4+2]) && isfinite(v[60*4+3]);
+    int in_bounds = bounds_known && v[60*4] >= 0 && v[60*4+1] >= 0 && v[60*4] < v[60*4+2] && v[60*4+1] < v[60*4+3];
+    A(",\"pixel_in_bounds\":%s},\"jelly\":{\"status\":\"%s\",\"reason_code\":", bounds_known ? (in_bounds ? "true" : "false") : "null", activation ? "activated" : evaluated ? "rejected_or_skipped" : "not_observed");
+    if(reason_code < 0) A("null"); else A("%d", reason_code);
+    A(",\"reason\":\"%s\",\"fill\":", evaluated ? jelly_reason_name(reason_code) : "not_observed"); if(!e)e=num(json,sizeof json,&n,v[57*4+3]);
+    A("},\"gpu_readback\":{\"status\":\"ready\",\"poll_count\":null},\"writer\":{\"status\":\"completed\",\"file_result\":\"success\",\"error_code\":0}}}\n");
+#undef A
+#undef V
+    if (e) return e;
+    return write_json_payload(writer, json, n);
 }
 
 static void *mpvrx_jelly_probe_worker_main(void *opaque)
@@ -217,13 +432,26 @@ static void *mpvrx_jelly_probe_worker_main(void *opaque)
         mpvrx_jelly_probe_test_hook(MPVRX_JELLY_TEST_BEFORE_POP);
 #endif
         while (mpvrx_jelly_probe_queue_try_pop(&writer->queue, record) == MPVRX_JELLY_QUEUE_OK) {
-            int error = write_json_atomically(writer, record);
+            int error = write_capture_json(writer, record);
+            atomic_store_explicit(&writer->last_error, error, memory_order_release);
             pw_set_terminal_status(writer, error ? MPVRX_JELLY_PROBE_FAILED : MPVRX_JELLY_PROBE_COMPLETE);
             atomic_fetch_add_explicit(&writer->completion_count, 1, memory_order_relaxed);
         }
 
-        if (mpvrx_jelly_probe_queue_is_closed_and_drained(&writer->queue))
+        if (mpvrx_jelly_probe_queue_is_closed_and_drained(&writer->queue)) {
+            if (atomic_load_explicit(&writer->completion_count, memory_order_acquire) == 0) {
+                int snapshot_provided = atomic_load_explicit(&writer->diagnostics_ready,
+                                                              memory_order_acquire);
+                int error = write_no_sample_json(writer, &writer->diagnostics,
+                                                 snapshot_provided);
+                atomic_store_explicit(&writer->last_error, error, memory_order_release);
+                atomic_store_explicit(&writer->status,
+                    error ? MPVRX_JELLY_PROBE_FAILED : MPVRX_JELLY_PROBE_NO_SAMPLE,
+                    memory_order_release);
+                atomic_fetch_add_explicit(&writer->completion_count, 1, memory_order_relaxed);
+            }
             break;
+        }
     }
 
     atomic_store_explicit(&writer->worker_exited, 1, memory_order_release);
@@ -277,6 +505,9 @@ int mpvrx_jelly_probe_writer_init(struct mpvrx_jelly_probe_writer *writer, const
     atomic_init(&writer->status, MPVRX_JELLY_PROBE_IDLE);
     atomic_init(&writer->close_reason, MPVRX_JELLY_CLOSE_NONE);
     atomic_init(&writer->completion_count, 0);
+    atomic_init(&writer->diagnostics_ready, 0);
+    atomic_init(&writer->last_error, 0);
+    diagnostics_reset(&writer->diagnostics);
 
     error = pthread_create(&writer->worker, NULL, mpvrx_jelly_probe_worker_main, writer);
     if (error) {
@@ -373,6 +604,19 @@ static void writer_request_close(struct mpvrx_jelly_probe_writer *writer,
     mpvrx_jelly_probe_queue_close(&writer->queue);
 }
 
+void mpvrx_jelly_probe_writer_finish(
+    struct mpvrx_jelly_probe_writer *writer,
+    const struct mpvrx_jelly_probe_diagnostics *diagnostics)
+{
+    if (!writer || !writer->worker_started)
+        return;
+    if (diagnostics) {
+        writer->diagnostics = *diagnostics;
+        atomic_store_explicit(&writer->diagnostics_ready, 1, memory_order_release);
+    }
+    mpvrx_jelly_probe_writer_request_stop(writer);
+}
+
 void mpvrx_jelly_probe_writer_request_stop(struct mpvrx_jelly_probe_writer *writer)
 {
     writer_request_close(writer, MPVRX_JELLY_CLOSE_STOP, MPVRX_JELLY_PROBE_STOPPED);
@@ -412,4 +656,11 @@ enum mpvrx_jelly_probe_writer_status mpvrx_jelly_probe_writer_status(const struc
     if (!writer)
         return MPVRX_JELLY_PROBE_FAILED;
     return (enum mpvrx_jelly_probe_writer_status)atomic_load_explicit(&writer->status, memory_order_acquire);
+}
+
+int mpvrx_jelly_probe_writer_error(const struct mpvrx_jelly_probe_writer *writer)
+{
+    if (!writer)
+        return EINVAL;
+    return atomic_load_explicit(&writer->last_error, memory_order_acquire);
 }

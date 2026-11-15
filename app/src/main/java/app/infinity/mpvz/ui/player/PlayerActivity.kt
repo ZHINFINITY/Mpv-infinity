@@ -279,6 +279,7 @@ class PlayerActivity :
   internal val jellyProbeState = jellyProbeMutableState.asStateFlow()
   private var jellyProbeReport: java.io.File? = null
   private var jellyProbeFinalizationRequested = false
+  private var jellyProbeArmOptionResult = -1
   internal fun armJellyProbe(): String {
     if (!BuildConfig.DEBUG || !BuildConfig.MPV_HAS_JELLY_PROBE) {
       jellyProbeMutableState.value = "Diagnostic build required"
@@ -299,6 +300,7 @@ class PlayerActivity :
       return jellyProbeMutableState.value
     }
     jellyProbeReport = report
+    jellyProbeArmOptionResult = result
     jellyProbeFinalizationRequested = false
     JellyProbeReportStore.refresh(applicationContext)
     jellyProbeMutableState.value = "Armed; waiting for a Jelly activation…"
@@ -322,7 +324,12 @@ class PlayerActivity :
     val report = jellyProbeReport ?: return
     jellyProbeFinalizationRequested = true
     val result = binding.player.finalizeJellyProbe()
-    JellyProbeReportStore.awaitFinalized(applicationContext, report, result)
+    JellyProbeReportStore.awaitFinalized(
+      applicationContext,
+      report,
+      result,
+      jellyProbeArmOptionResult,
+    )
     if (result != 0) {
       jellyProbeMutableState.value = "Saving probe status report (native result $result)…"
     } else {
