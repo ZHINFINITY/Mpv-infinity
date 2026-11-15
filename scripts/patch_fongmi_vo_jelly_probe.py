@@ -91,6 +91,18 @@ def apply_patch(vo_source_path, meson_path, repo_writer_dir, probe_enabled):
             pl_buf_destroy(p->gpu, &p->jelly_probe_buf);
         }
     }
+    /* Clearing the one-shot arm option finalizes the last eligible skip. */
+    if (!p->next_opts->fongmi_jelly_probe_arm && p->jelly_probe_armed &&
+        p->jelly_probe_buf && p->jelly_probe_writer_ready) {
+        if (p->gpu)
+            pl_gpu_finish(p->gpu);
+        jelly_probe_poll(p);
+        if (p->jelly_probe_armed && p->jelly_probe_last_record_valid &&
+            mpvrx_jelly_probe_writer_capture(&p->jelly_probe_writer,
+                                              p->jelly_probe_buf->data) == MPVRX_JELLY_CAPTURE_ACCEPTED)
+            p->jelly_probe_armed = false;
+        p->jelly_probe_armed = false;
+    }
 '''
     source = replace_once(source, update_anchor, setup, "control update")
 

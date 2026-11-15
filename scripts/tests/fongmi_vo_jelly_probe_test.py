@@ -92,6 +92,21 @@ class JellyProbePatchTest(unittest.TestCase):
             self.assertLess(destructor.index('request_stop'), destructor.index('_join'))
             self.assertIn('talloc_set_destructor(p, jelly_probe_priv_destroy)', source)
 
+    def test_disarm_on_playback_stop_flushes_and_saves_last_skip(self):
+        temp, vo, meson, writer = self.fixture()
+        with temp:
+            PATCH.apply_patch(vo, meson, writer, True)
+            source = vo.read_text()
+            stop_start = source.index('if (!p->next_opts->fongmi_jelly_probe_arm')
+            stop = source[stop_start:stop_start + 1000]
+            self.assertIn('p->jelly_probe_armed && p->jelly_probe_last_record_valid', stop)
+            self.assertIn('pl_gpu_finish(p->gpu)', stop)
+            self.assertIn('jelly_probe_poll(p)', stop)
+            self.assertIn('mpvrx_jelly_probe_writer_capture', stop)
+            self.assertLess(stop.index('pl_gpu_finish'), stop.index('jelly_probe_poll'))
+            self.assertLess(stop.index('jelly_probe_poll'), stop.index('writer_capture'))
+            self.assertIn('p->jelly_probe_armed = false;', stop)
+
     def test_strict_anchor_failure_does_not_write(self):
         temp, vo, meson, writer = self.fixture()
         with temp:

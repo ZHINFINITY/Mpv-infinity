@@ -279,6 +279,7 @@ class PlayerActivity :
   private val jellyProbeMutableState = MutableStateFlow("Not armed")
   internal val jellyProbeState = jellyProbeMutableState.asStateFlow()
   private var jellyProbeReport: java.io.File? = null
+  private var jellyProbeFinalizationRequested = false
   internal fun armJellyProbe(): String {
     if (!BuildConfig.DEBUG || !BuildConfig.MPV_HAS_JELLY_PROBE) {
       jellyProbeMutableState.value = "Diagnostic build required"
@@ -299,9 +300,10 @@ class PlayerActivity :
       return jellyProbeMutableState.value
     }
     jellyProbeReport = report
+    jellyProbeFinalizationRequested = false
     jellyProbeMutableState.value = "Armed; waiting for a Jelly activation…"
     lifecycleScope.launch {
-      while (isActive && !isFinishing && !isDestroyed) {
+      while (isActive && !isFinishing && !isDestroyed && !jellyProbeFinalizationRequested) {
         if (report.isFile && report.length() > 0L) {
           jellyProbeMutableState.value = "Report ready to share (${report.length()} bytes)"
           break
@@ -311,6 +313,33 @@ class PlayerActivity :
     }
     return jellyProbeMutableState.value
   }
+
+  internal fun finalizeJellyProbe() {
+    if (!BuildConfig.DEBUG || !BuildConfig.MPV_HAS_JELLY_PROBE ||
+      !jellyProbeMutableState.value.startsWith("Armed")
+    ) return
+    jellyProbeFinalizationRequested = true
+    val result = binding.player.finalizeJellyProbe()
+    if (result != 0) {
+      jellyProbeMutableState.value = "Could not finalize native probe (option result $result)"
+      return
+    }
+    jellyProbeMutableState.value = "Saving last Jelly probe sample…"
+    val report = jellyProbeReport ?: return
+    lifecycleScope.launch {
+      repeat(20) {
+        if (report.isFile && report.length() > 0L) {
+          jellyProbeMutableState.value = "Report ready to share (${report.length()} bytes)"
+          return@launch
+        }
+        delay(250L)
+      }
+      if (jellyProbeMutableState.value.startsWith("Saving")) {
+        jellyProbeMutableState.value = "Playback stopped; no eligible probe sample was captured"
+      }
+    }
+  }
+
   internal fun shareJellyProbe(): Boolean {
     val report = jellyProbeReport?.canonicalFile ?: return false
     if (!report.isFile || report.parentFile != cacheDir.canonicalFile) return false
@@ -3176,6 +3205,7 @@ class PlayerActivity :
     mpvAssetPreparationJob?.cancel()
     if (activeNativeCloseActivity?.get() === this) activeNativeCloseActivity = null
     val ownsPlaybackSession = ownsPlaybackSession()
+    if (ownsPlaybackSession && !isChangingConfigurations) finalizeJellyProbe()
     val playbackWasInitialized = mpvInitialized
     val nativeWasActive =
       activeEngineMode == PlaybackEngineMode.NATIVE &&

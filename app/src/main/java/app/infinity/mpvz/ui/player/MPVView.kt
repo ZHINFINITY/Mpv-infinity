@@ -345,6 +345,13 @@ class MPVView(
     if (pathResult != 0) return pathResult
     return PlaybackSession.setIntegrationOptionString("fongmi-jelly-probe-arm", "yes")
   }
+
+  /** Disarms the one-shot probe so the VO can flush and save its last skip. */
+  fun finalizeJellyProbe(): Int {
+    if (!BuildConfig.DEBUG || !BuildConfig.MPV_HAS_JELLY_PROBE) return -1
+    return PlaybackSession.setIntegrationOptionString("fongmi-jelly-probe-arm", "no")
+  }
+
   private fun configureMpvFlowCaptureControl(source: String): Int {
     if (!BuildConfig.DEBUG || !BuildConfig.MPV_HAS_FONGMI_DIAGNOSTICS) {
       mpvFlowCaptureControlConfigured = false
