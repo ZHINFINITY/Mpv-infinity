@@ -99,7 +99,7 @@ class Arm64WorkflowTest(unittest.TestCase):
         self.assertLess(TEXT.index("- name: Run MPVFlow core and GPU shader regression tests"), TEXT.index("- name: Assemble one arm64-v8a diagnostic APK after Kotlin checks"))
 
     def test_built_runtime_must_contain_the_pinned_downsample_patch(self):
-        verify = STEPS["Verify MPVRx FongMi motion source after preparation"]
+        verify = STEPS["Verify MPV Infinity MPVRx motion source after preparation"]
         self.assertIn("--require-analysis-downsample-aa", verify)
         self.assertIn("--require-jelly-experimental", verify)
         self.assertIn("--require-jelly-preview", verify)
@@ -164,6 +164,11 @@ class Arm64WorkflowTest(unittest.TestCase):
         self.assertIn("jellyProbe", upload)
         self.assertIn("retention-days: 3", upload)
         self.assertEqual(TEXT.count("uses: actions/upload-artifact@v7"), 1)
+
+    def test_public_workflow_and_artifact_use_mpv_infinity_branding(self):
+        self.assertIn("name: MPV Infinity MPVRx arm64 Debug APK", TEXT.splitlines())
+        self.assertIn("name: Build MPV Infinity MPVRx arm64-v8a debug APK", TEXT)
+        self.assertIn("mpv-infinity-mpvrx-arm64-v8a-", STEPS["Upload single arm64-v8a diagnostic APK"])
 
     def test_packaged_runtime_checks_precede_artifact_upload(self):
         upload = TEXT.index("- name: Upload single arm64-v8a diagnostic APK")

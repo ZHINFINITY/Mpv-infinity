@@ -1,4 +1,4 @@
-name: MPVFlow MPVRx FongMi arm64 Debug APK
+name: MPV Infinity MPVRx arm64 Debug APK
 
 on:
   push:
@@ -36,7 +36,7 @@ concurrency:
 
 jobs:
   build-arm64-debug:
-    name: Build MPVFlow MPVRx arm64-v8a debug APK
+    name: Build MPV Infinity MPVRx arm64-v8a debug APK
     runs-on: ubuntu-latest
     timeout-minutes: 240
     steps:
@@ -90,7 +90,7 @@ jobs:
           repository: FongMi/mpv
           ref: 95ec8e929f8ad2f97c8415c486971493a0b408df
           path: mpv-source
-      - name: Verify exact MPVRx FongMi motion source and 480px integration
+      - name: Verify MPV Infinity MPVRx motion source and 480px integration
         if: ${{ steps.mpvflow-runtime-cache.outputs.cache-hit != 'true' }}
         run: python3 scripts/tests/mpvrx_motion_source_test.py --mpv-dir mpv-source
       - name: Install Vulkan and shader validation dependencies
@@ -141,7 +141,7 @@ jobs:
           MPVFLOW_JELLY_EXPERIMENTAL: ${{ (inputs.jelly_test == true || inputs.jelly_probe == true) && '1' || '0' }}
           MPVFLOW_JELLY_PREVIEW: ${{ inputs.jelly_preview == true && '1' || '0' }}
           MPVFLOW_JELLY_PROBE: ${{ inputs.jelly_probe == true && '1' || '0' }}
-      - name: Verify MPVRx FongMi motion source after preparation
+      - name: Verify MPV Infinity MPVRx motion source after preparation
         if: ${{ steps.mpvflow-runtime-cache.outputs.cache-hit != 'true' }}
         run: |
           args=(--mpv-dir native-builder/buildscripts/deps/mpv --require-analysis-downsample-aa)

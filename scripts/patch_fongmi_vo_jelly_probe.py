@@ -52,7 +52,7 @@ def apply_patch(vo_source_path, meson_path, repo_writer_dir, probe_enabled):
     table_anchor = '        {"motion-interpolation", OPT_INT(motion_fps), M_RANGE(0, 240)},\n'
     source = replace_once(source, table_anchor, table_anchor +
         '        {"fongmi-jelly-probe-report-file", OPT_STRING(fongmi_jelly_probe_report_file)},\n'
-        '        {"fongmi-jelly-probe-arm", OPT_FLAG(fongmi_jelly_probe_arm)},\n', "option table")
+        '        {"fongmi-jelly-probe-arm", OPT_BOOL(fongmi_jelly_probe_arm)},\n', "option table")
 
     # Keep all file and worker setup in the control/update path, never in rendering.
     update_anchor = '    update_motion_options(vo);\n    publish_motion_info(vo);\n'

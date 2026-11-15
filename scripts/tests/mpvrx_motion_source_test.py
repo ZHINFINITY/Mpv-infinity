@@ -62,6 +62,8 @@ def main() -> None:
             "mp_motion_render_frames_probe",
         )):
             parser.exit(1, "opt-in VO Jelly probe/readback integration is incomplete\n")
+        if "OPT_BOOL(fongmi_jelly_probe_arm)" not in vo or "OPT_FLAG(fongmi_jelly_probe_arm)" in vo:
+            parser.exit(1, "Jelly probe boolean option must use the pinned MPV OPT_BOOL macro\n")
         if "video/out/mpvrx_jelly_probe_writer.c" not in meson:
             parser.exit(1, "opt-in Jelly probe writer is not included in the native build\n")
     suffix = " with bounded analysis-downsample antialiasing" if antialias_patched else ""
