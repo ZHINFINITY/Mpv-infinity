@@ -169,7 +169,6 @@ android {
         isDebuggable = true
         applicationIdSuffix = ".debug.jellyprobe"
         versionNameSuffix = "-jelly-probe-${getCommitCount()}"
-        resValue("string", "app_name", "Mpv∞-Jelly Probe")
         buildConfigField("boolean", "MPV_HAS_JELLY_PROBE", "true")
         ndk { debugSymbolLevel = "none" }
       }
