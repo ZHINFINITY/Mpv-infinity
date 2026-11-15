@@ -8,6 +8,7 @@ PLAYER = ROOT / "app/src/main/java/app/infinity/mpvz/ui/player/PlayerActivity.kt
 STORE = ROOT / "app/src/main/java/app/infinity/mpvz/ui/player/JellyProbeReportStore.kt"
 MAIN_SCREEN = ROOT / "app/src/main/java/app/infinity/mpvz/ui/browser/MainScreen.kt"
 BUILD = ROOT / "app/build.gradle.kts"
+MPV_VIEW = ROOT / "app/src/main/java/app/infinity/mpvz/ui/player/MPVView.kt"
 
 
 class JellyProbeReportDeliveryTest(unittest.TestCase):
@@ -26,6 +27,17 @@ class JellyProbeReportDeliveryTest(unittest.TestCase):
         self.assertIn('File(context.cacheDir, "jelly-probe-report.json")', store)
         self.assertIn("legacy.copyTo(temporary", store)
         self.assertNotIn("legacy.delete()", store)
+
+    def test_arm_accepts_the_exact_persistent_report_directory_before_native_options(self):
+        view = MPV_VIEW.read_text()
+        store = STORE.read_text()
+        arm = view.split("fun armJellyProbe(reportFile:", 1)[1].split(
+            "fun finalizeJellyProbe()", 1
+        )[0]
+        self.assertIn("File(context.filesDir, REPORT_DIRECTORY)", store)
+        self.assertIn('java.io.File(context.filesDir, "jelly-probe-reports").canonicalFile', arm)
+        self.assertIn("target.parentFile == it", arm)
+        self.assertLess(arm.index("allowedRoots.none"), arm.index("setIntegrationOptionString"))
 
     def test_finalization_monitor_outlives_player_activity_and_emits_fallback_json(self):
         player = PLAYER.read_text()
