@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import os
 import subprocess
 import sys
@@ -11,7 +12,7 @@ from pathlib import Path
 SCRIPT_DIR = Path(__file__).resolve().parent
 if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
-from mpvrx_motion_source import verify_mpv_source
+from mpvrx_motion_source import MOTION_JELLY_PROBE_SHA256, verify_mpv_source
 from patch_fongmi_motion_downsample import apply_patch as apply_motion_downsample_patch
 from patch_fongmi_motion_jelly import apply_patch as apply_motion_jelly_patch
 from patch_fongmi_motion_jelly import apply_preview_patch as apply_motion_jelly_preview_patch
@@ -46,6 +47,16 @@ PLACEBO_TIMER_RING_NEW = (
     "atomic_uint_fast32_t pending; // bitmask of queries that are still running",
     "static inline uint_fast32_t timer_bit(int index)",
 )
+
+
+def apply_motion_jelly_experimental_patch(path: Path, *, probe_enabled: bool) -> bool:
+    """Reapply Jelly unless probe mode already produced its exact verified source."""
+    if probe_enabled and hashlib.sha256(path.read_bytes()).hexdigest() == MOTION_JELLY_PROBE_SHA256:
+        # The build wrapper prepares the source before and after dependency installation.
+        # The probe intentionally instruments the Jelly block, so the Jelly patcher's
+        # exact uninstrumented-block guard must not be run on this verified final state.
+        return False
+    return apply_motion_jelly_patch(path)
 
 
 def validate_fongmi_frame_priv_members(vo_source: str) -> None:
@@ -996,7 +1007,9 @@ def main() -> None:
         if not downsample_antialias_enabled:
             raise SystemExit("MPVRx jelly test requires the verified bounded analysis-downsample baseline")
         try:
-            jelly_patch_applied = apply_motion_jelly_patch(motion_path)
+            jelly_patch_applied = apply_motion_jelly_experimental_patch(
+                motion_path, probe_enabled=jelly_probe_enabled
+            )
         except (OSError, ValueError) as exc:
             raise SystemExit(f"MPVRx jelly-test shader verification failed: {exc}") from exc
         print(

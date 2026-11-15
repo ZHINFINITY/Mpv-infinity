@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import importlib.util
 import os
 from pathlib import Path
 import shutil
@@ -33,6 +34,12 @@ from mpvrx_motion_source import (  # noqa: E402
     MOTION_JELLY_PROBE_SHA256,
 )
 from mpvrx_motion_jelly_test import extract_glsl  # noqa: E402
+
+prepare_spec = importlib.util.spec_from_file_location("prepare_mpvflow", SCRIPTS / "prepare-mpvflow.py")
+assert prepare_spec and prepare_spec.loader
+prepare_module = importlib.util.module_from_spec(prepare_spec)
+prepare_spec.loader.exec_module(prepare_module)
+apply_motion_jelly_experimental_patch = prepare_module.apply_motion_jelly_experimental_patch
 
 MPV_DIR = Path(os.environ.get("MPVRX_JELLY_PROBE_MPV_DIR", "/workspace/mpvrx-pinned-mpv-95ec8e9"))
 MOTION_C = MPV_DIR / "video/out/gpu_next/motion.c"
@@ -147,6 +154,28 @@ class MotionProbeTest(unittest.TestCase):
             transform_motion("/* " + MARKER + " */")
         with self.assertRaises(ValueError):
             transform_motion("not pinned source")
+
+    def test_repeated_preparation_accepts_only_exact_probe_source(self):
+        with tempfile.TemporaryDirectory(prefix="mpvrx-jelly-prepare-repeat-") as temp:
+            motion_path = Path(temp) / "motion.c"
+            antialias, changed = transform_aa(MOTION_C.read_text(encoding="utf-8"))
+            self.assertTrue(changed)
+            motion_path.write_text(antialias, encoding="utf-8")
+
+            self.assertTrue(apply_motion_jelly_experimental_patch(motion_path, probe_enabled=True))
+            self.assertEqual(motion_path.read_text(encoding="utf-8"), self.baseline)
+            probe, changed = transform_motion(motion_path.read_text(encoding="utf-8"))
+            self.assertTrue(changed)
+            motion_path.write_text(probe, encoding="utf-8")
+            self.assertEqual(hashlib.sha256(probe.encode()).hexdigest(), MOTION_JELLY_PROBE_SHA256)
+
+            self.assertFalse(apply_motion_jelly_experimental_patch(motion_path, probe_enabled=True))
+            self.assertEqual(motion_path.read_text(encoding="utf-8"), probe)
+
+            malformed_probe = probe.replace("MPVFLOW_JELLY_PROBE_V1", "MPVFLOW_JELLY_PROBE_V0", 1)
+            motion_path.write_text(malformed_probe, encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "marker/source mismatch"):
+                apply_motion_jelly_experimental_patch(motion_path, probe_enabled=True)
 
     def test_request_api_header_and_layout(self):
         for item in (

@@ -62,7 +62,7 @@ assert 'os.environ.get("MPVFLOW_MPVRX_ANALYSIS_DOWNSAMPLE_AA") == "1"' in PREPAR
 assert 'os.environ.get("MPVFLOW_JELLY_EXPERIMENTAL") == "1"' in PREPARE
 assert 'os.environ.get("MPVFLOW_JELLY_PREVIEW") == "1"' in PREPARE
 assert "if jelly_experimental_enabled and jelly_preview_enabled:" in PREPARE
-assert "if jelly_experimental_enabled:" in PREPARE and "apply_motion_jelly_patch(motion_path)" in PREPARE
+assert "if jelly_experimental_enabled:" in PREPARE and "apply_motion_jelly_experimental_patch(" in PREPARE
 assert "if jelly_preview_enabled:" in PREPARE and "apply_motion_jelly_preview_patch(motion_path)" in PREPARE
 assert "MOTION_ANTIALIAS_SHA256" in JELLY_PATCH and "MOTION_JELLY_SHA256" in JELLY_PATCH
 assert "MOTION_JELLY_PREVIEW_SHA256" in JELLY_PATCH
