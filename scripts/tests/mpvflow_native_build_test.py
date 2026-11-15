@@ -158,7 +158,12 @@ prepare_source = PREPARE.read_text(encoding="utf-8")
 assert 'debug_capture_enabled = os.environ.get("MPVFLOW_DEBUG_CAPTURE") == "1"' in prepare_source
 assert "MPVFLOW_DEBUG_CAPTURE is unsupported with the MPVRx-pinned FongMi 95ec motion core" in prepare_source
 assert "Enabled bounded one-shot FongMi diagnostics for this debug runtime" not in prepare_source
-assert "FongMi one-shot diagnostics disabled; leaving motion/VO sources uninstrumented" in prepare_source
+assert "Broad FongMi one-shot diagnostics disabled; the isolated Jelly probe is separately gated" in prepare_source
+assert 'jelly_probe_enabled = os.environ.get("MPVFLOW_JELLY_PROBE") == "1"' in prepare_source
+assert 'if jelly_probe_enabled:' in prepare_source and "apply_motion_jelly_probe_patch" in prepare_source
+assert 'if jelly_probe_enabled and not jelly_experimental_enabled:' in prepare_source
+assert "mpvrx_jelly_probe_record_is_activation" in prepare_source
+assert "fallback_probe_pair = !valid_probe_pts || probe_pts_min > 1.63" in prepare_source
 capture_debug = prepare.configure_debug_capture_source(gpu_source, enabled=True)
 assert capture_debug.count(capture_define) == 1, "debug capture define must be injected exactly once"
 assert capture_debug.index("*/") < capture_debug.index(capture_define) < capture_debug.index("#include"), "debug capture define must follow the SPDX notice"
@@ -167,11 +172,17 @@ assert prepare.configure_debug_capture_source(capture_debug, enabled=False) == c
 cmake_native = (ROOT / "app/src/main/cpp/CMakeLists.txt").read_text(encoding="utf-8")
 assert "target_compile_definitions(media3flow_vulkan PRIVATE\n        $<$<CONFIG:Debug>:MPVFLOW_DEBUG_CAPTURE=1>)" in cmake_native, "Media3 Vulkan capture define must be Debug-only"
 app_build = (ROOT / "app/build.gradle.kts").read_text(encoding="utf-8")
+assert 'requestedMpvFlowJellyProbe = project.findProperty("mpvFlowJellyProbe")?.toString() == "true"' in app_build
+assert 'buildConfigField("boolean", "MPV_HAS_JELLY_PROBE", "false")' in app_build
 assert 'project.findProperty("mpvFlowFongmiDiagnosticCapture")?.toString() == "true"' in app_build
 assert 'buildConfigField("boolean", "MPV_HAS_FONGMI_DIAGNOSTICS", includeMpvFlowFongmiDiagnostics.toString())' in app_build
 assert 'buildConfigField("boolean", "MPV_HAS_FONGMI_DIAGNOSTICS", "false")' in app_build
 assert 'buildConfigField("boolean", "MPV_JELLY_MASK_PREVIEW", "false")' in app_build
 assert 'create("jellyPreview")' in app_build
+jelly_probe_type = app_build.split('create("jellyProbe")', 1)[1].split("\n    }", 1)[0]
+assert 'applicationIdSuffix = ".debug.jellyprobe"' in jelly_probe_type
+assert 'buildConfigField("boolean", "MPV_HAS_JELLY_PROBE", "true")' in jelly_probe_type
+assert 'if (requestedMpvFlowJellyProbe && includeMpvFlowMpvRuntime)' in app_build
 jelly_preview_type = app_build.split('create("jellyPreview")', 1)[1].split("\n    }", 1)[0]
 assert 'applicationIdSuffix = ".debug"' in jelly_preview_type
 assert 'matchingFallbacks += listOf("debug")' in jelly_preview_type

@@ -335,6 +335,16 @@ class MPVView(
       .put("actual_displayed_fps_source", "Perfetto FrameTimeline companion trace required for SurfaceView")
   }
 
+  /** Arms the native one-shot Jelly report using a strictly private report target. */
+  fun armJellyProbe(reportFile: java.io.File): Int {
+    if (!BuildConfig.DEBUG || !BuildConfig.MPV_HAS_JELLY_PROBE || !isSurfaceReady) return -1
+    val allowedRoots = listOf(context.cacheDir.canonicalFile, context.filesDir.canonicalFile)
+    val target = reportFile.canonicalFile
+    if (allowedRoots.none { target.parentFile == it }) return -1
+    val pathResult = PlaybackSession.setIntegrationOptionString("fongmi-jelly-probe-report-file", target.absolutePath)
+    if (pathResult != 0) return pathResult
+    return PlaybackSession.setIntegrationOptionString("fongmi-jelly-probe-arm", "yes")
+  }
   private fun configureMpvFlowCaptureControl(source: String): Int {
     if (!BuildConfig.DEBUG || !BuildConfig.MPV_HAS_FONGMI_DIAGNOSTICS) {
       mpvFlowCaptureControlConfigured = false

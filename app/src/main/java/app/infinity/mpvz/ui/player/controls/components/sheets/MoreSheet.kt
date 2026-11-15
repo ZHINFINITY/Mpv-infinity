@@ -114,6 +114,7 @@ fun MoreSheet(
   val activity = LocalActivity.current as? PlayerActivity
   val emptyCaptureState = remember { MutableStateFlow(FlowDiagnosticsCaptureUiState()) }
   val captureState by (activity?.flowDiagnosticsCaptureState ?: emptyCaptureState).collectFlowAsState()
+  val jellyProbeState by (activity as? PlayerActivity)?.jellyProbeState?.collectFlowAsState() ?: remember { mutableStateOf("Not armed") }
   val appearancePreferences = koinInject<AppearancePreferences>()
   val liquidGlassSurfaces by appearancePreferences.liquidGlassSurfaces.collectAsState()
   val advancedPreferences = koinInject<AdvancedPreferences>()
@@ -282,6 +283,27 @@ fun MoreSheet(
             )
           } else {
             Text("Output: MPV renderer", style = MaterialTheme.typography.bodySmall)
+          }
+        }
+      }
+      if (BuildConfig.DEBUG && BuildConfig.MPV_HAS_JELLY_PROBE && activeEngine == PlaybackEngineMode.MPV && activity is PlayerActivity) {
+        Surface(modifier = Modifier.fillMaxWidth(), color = androidx.compose.ui.graphics.Color.Transparent, shape = MaterialTheme.shapes.medium) {
+          Column(modifier = Modifier.fillMaxWidth().padding(MaterialTheme.spacing.small)) {
+            Text("Jelly one-shot diagnostic", style = MaterialTheme.typography.titleSmall)
+            Text(
+              "Arm during 599740.mkv playback. Targets (1352,224) at PTS 1.46–1.63s; " +
+                "if PTS is unavailable or the window passes without activation, it uses the first later activation. " +
+                "If none occurs, the last skip is saved when playback stops.",
+              style = MaterialTheme.typography.bodySmall,
+            )
+            Text(jellyProbeState, style = MaterialTheme.typography.bodySmall)
+            when {
+              jellyProbeState.startsWith("Report ready") -> {
+                Button(onClick = { activity.shareJellyProbe() }) { Text("Share JSON report") }
+              }
+              jellyProbeState.startsWith("Armed") -> Unit
+              else -> Button(onClick = { activity.armJellyProbe() }) { Text("Arm probe") }
+            }
           }
         }
       }
