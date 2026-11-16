@@ -66,7 +66,7 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: native-builder/app/build/outputs/apk
-          key: mpvflow-arm64-runtime-v7-builder-1efc82739f6f7034-mpv-fongmi-95ec8e929f8ad2f97c8415c486971493a0b408df-libplacebo-fongmi-63659d96d1bff7d7a5a1368e9538056a193fc6fb-ffmpeg-fongmi-f2c5162b7c4b3e8835de270ff78cecc524decad1-vulkan-headers-khronos-a4f8ada9f4f97c45b8c89c57997be9cebaae65d2-cores2-${{ inputs.jelly_preview == true && 'jelly-preview-' || inputs.jelly_test == true && 'jelly-test-' || 'baseline-' }}${{ hashFiles('scripts/build-mpvflow-mpv-runtime.sh', 'scripts/mpvrx_motion_source.py', 'scripts/patch_fongmi_motion_downsample.py', 'scripts/patch_fongmi_motion_jelly.py', 'scripts/prepare-mpvflow.py', 'scripts/prepare-mpvflow-vulkan-headers.py', 'scripts/patch-ffmpeg-symver.py', 'scripts/patches/mpvlibandroid-fongmi/**', 'app/src/main/cpp/**', 'THIRD_PARTY_LICENSES/**', 'app/src/main/assets/mpv/licenses/**') }}
+          key: mpvflow-arm64-runtime-v7-builder-1efc82739f6f7034-mpv-fongmi-95ec8e929f8ad2f97c8415c486971493a0b408df-libplacebo-fongmi-63659d96d1bff7d7a5a1368e9538056a193fc6fb-ffmpeg-fongmi-f2c5162b7c4b3e8835de270ff78cecc524decad1-vulkan-headers-khronos-a4f8ada9f4f97c45b8c89c57997be9cebaae65d2-cores2-${{ inputs.jelly_preview == true && 'jelly-preview-' || inputs.jelly_test == true && 'jelly-test-' || 'baseline-' }}${{ hashFiles('scripts/build-mpvflow-mpv-runtime.sh', 'scripts/mpvrx_motion_source.py', 'scripts/patch_fongmi_motion_downsample.py', 'scripts/patch_fongmi_motion_jelly.py', 'scripts/patch_fongmi_paired_color_mask.py', 'scripts/prepare-mpvflow.py', 'scripts/prepare-mpvflow-vulkan-headers.py', 'scripts/patch-ffmpeg-symver.py', 'scripts/patches/mpvlibandroid-fongmi/**', 'app/src/main/cpp/**', 'THIRD_PARTY_LICENSES/**', 'app/src/main/assets/mpv/licenses/**') }}
       - name: Checkout pinned Android MPV build tools
         if: ${{ steps.mpvflow-runtime-cache.outputs.cache-hit != 'true' }}
         uses: actions/checkout@v6
@@ -131,6 +131,7 @@ jobs:
         if: ${{ steps.mpvflow-runtime-cache.outputs.cache-hit != 'true' }}
         run: |
           args=(--mpv-dir native-builder/buildscripts/deps/mpv --require-analysis-downsample-aa)
+          args+=(--require-paired-color-mask)
           if [[ "${{ inputs.jelly_preview }}" == "true" ]]; then
             args+=(--require-jelly-preview)
           elif [[ "${{ inputs.jelly_test }}" == "true" ]]; then

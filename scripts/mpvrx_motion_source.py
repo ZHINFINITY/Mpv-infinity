@@ -13,6 +13,12 @@ from patch_fongmi_motion_jelly import (
     has_jelly_preview_patch,
     has_jelly_region_patch,
 )
+from patch_fongmi_paired_color_mask import (
+    MARKER as PAIRED_COLOR_MASK_MARKER,
+    PATCHED_SUPPORT as PAIRED_COLOR_MASK_SUPPORT,
+    has_paired_color_mask,
+    unpatch_source as unpatch_paired_color_mask,
+)
 
 MPV_REVISION = "95ec8e929f8ad2f97c8415c486971493a0b408df"
 MOTION_SHA256 = "ca7870c21f7a499d03ab1f7d73f1b9bcbccee534398d8a6f01957556e7d61932"
@@ -58,7 +64,11 @@ def verify_mpv_source(mpv_dir: Path) -> bool:
             )
 
     motion = motion_path.read_text(encoding="utf-8")
-    motion_hash = _sha256(motion_path)
+    if PAIRED_COLOR_MASK_MARKER in motion or PAIRED_COLOR_MASK_SUPPORT in motion:
+        if not has_paired_color_mask(motion):
+            raise ValueError("MPVRx paired-color mask marker/source mismatch")
+        motion = unpatch_paired_color_mask(motion)
+    motion_hash = hashlib.sha256(motion.encode("utf-8")).hexdigest()
     if motion_hash == MOTION_SHA256:
         antialias_patched = False
     elif motion_hash == MOTION_ANTIALIAS_SHA256 and has_antialias_filter(motion):

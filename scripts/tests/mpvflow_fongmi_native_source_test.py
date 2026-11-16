@@ -15,6 +15,9 @@ DOWNSAMPLE_PATCH = (ROOT / "scripts/patch_fongmi_motion_downsample.py").read_tex
 DOWNSAMPLE_TEST = (ROOT / "scripts/tests/mpvrx_motion_downsample_test.py").read_text(encoding="utf-8")
 JELLY_PATCH = (ROOT / "scripts/patch_fongmi_motion_jelly.py").read_text(encoding="utf-8")
 JELLY_TEST = (ROOT / "scripts/tests/mpvrx_motion_jelly_test.py").read_text(encoding="utf-8")
+PAIRED_COLOR_PATCH = (ROOT / "scripts/patch_fongmi_paired_color_mask.py").read_text(encoding="utf-8")
+PAIRED_COLOR_TEST = (ROOT / "scripts/tests/fongmi_paired_color_mask_test.py").read_text(encoding="utf-8")
+CORE_TEST = (ROOT / "scripts/test-mpvflow-core.sh").read_text(encoding="utf-8")
 VULKAN_HEADERS = (ROOT / "scripts/prepare-mpvflow-vulkan-headers.py").read_text(encoding="utf-8")
 WORKFLOWS = [
     (ROOT / ".github/workflows/debug-apk.yml").read_text(encoding="utf-8"),
@@ -58,6 +61,11 @@ assert "patch_fongmi_motion_artifact.py" not in BUILD
 assert "motion_artifact_patch" not in BUILD
 assert "verify_mpv_source(mpv_dir)" in PREPARE
 assert "apply_motion_downsample_patch(" in PREPARE and "enabled=downsample_antialias_enabled" in PREPARE
+assert "from patch_fongmi_paired_color_mask import apply_patch as apply_motion_paired_color_mask_patch" in PREPARE
+assert "apply_motion_paired_color_mask_patch(motion_path)" in PREPARE
+assert "MPVRX_PAIRED_COLOR_EVIDENCE_MASK_V1" in PAIRED_COLOR_PATCH
+assert "smoothstep(vec2(0.02), vec2(0.08), paired_error)" in PAIRED_COLOR_PATCH
+assert "near-exact witnesses are unchanged" in PAIRED_COLOR_TEST
 assert 'os.environ.get("MPVFLOW_MPVRX_ANALYSIS_DOWNSAMPLE_AA") == "1"' in PREPARE
 assert 'os.environ.get("MPVFLOW_JELLY_EXPERIMENTAL") == "1"' in PREPARE
 assert 'os.environ.get("MPVFLOW_JELLY_PREVIEW") == "1"' in PREPARE
@@ -103,6 +111,7 @@ for workflow in WORKFLOWS:
         FFMPEG_SHA,
         VULKAN_HEADERS_SHA,
         "scripts/mpvrx_motion_source.py",
+        "scripts/patch_fongmi_paired_color_mask.py",
         "scripts/prepare-mpvflow.py",
         "scripts/patches/mpvlibandroid-fongmi/**",
         "mpvflow-arm64-runtime-v7",
@@ -138,6 +147,15 @@ for workflow in (WORKFLOWS[0], WORKFLOWS[2]):
     assert "--require-analysis-downsample-aa" not in workflow
 assert "scripts/tests/mpvrx_motion_source_test.py" in WORKFLOWS[0]
 assert "scripts/tests/mpvrx_motion_source_test.py" in WORKFLOWS[1]
+assert "scripts/tests/fongmi_paired_color_mask_test.py" in WORKFLOWS[0]
+assert "--require-paired-color-mask" in WORKFLOWS[0]
+assert "--require-paired-color-mask" in WORKFLOWS[1]
+assert "--require-paired-color-mask" in WORKFLOWS[2]
+assert 'if [[ "${MPVFLOW_SKIP_CAPTURE_IO_TEST:-0}" == "1" ]]; then' in CORE_TEST
+assert "skip_unrelated_capture_test" in WORKFLOWS[0] and "default: false" in WORKFLOWS[0]
+assert "MPVFLOW_SKIP_CAPTURE_IO_TEST=1" in WORKFLOWS[0]
+assert "skip_unrelated_capture_test" not in WORKFLOWS[1]
+assert "skip_unrelated_capture_test" not in WORKFLOWS[2]
 
 assert MANIFEST == PACKAGED
 for text in (MANIFEST, LICENSES):

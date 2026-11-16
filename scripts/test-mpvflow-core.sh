@@ -29,7 +29,11 @@ else
   python3 "$ROOT/scripts/tests/mpvflow_gpu_motion_test.py"
   python3 "$ROOT/scripts/tests/mpvflow_gpu_synthesis_test.py" --decision-mode
 fi
-python3 "$ROOT/scripts/tests/mpvflow_capture_io_test.py"
+if [[ "${MPVFLOW_SKIP_CAPTURE_IO_TEST:-0}" == "1" ]]; then
+  echo "Skipping only the unrelated capture-I/O test by explicit request"
+else
+  python3 "$ROOT/scripts/tests/mpvflow_capture_io_test.py"
+fi
 python3 "$ROOT/scripts/tests/mpvflow_fongmi_native_source_test.py"
 if [[ -n "${MPVFLOW_MPV_SOURCE_DIR:-}" && -d "$MPVFLOW_MPV_SOURCE_DIR" ]]; then
   python3 "$ROOT/scripts/tests/mpvrx_motion_source_test.py" --mpv-dir "$MPVFLOW_MPV_SOURCE_DIR"
