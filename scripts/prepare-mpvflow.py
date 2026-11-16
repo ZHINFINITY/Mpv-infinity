@@ -15,6 +15,7 @@ from mpvrx_motion_source import verify_mpv_source
 from patch_fongmi_motion_downsample import apply_patch as apply_motion_downsample_patch
 from patch_fongmi_motion_jelly import apply_patch as apply_motion_jelly_patch
 from patch_fongmi_motion_jelly import apply_preview_patch as apply_motion_jelly_preview_patch
+from patch_fongmi_paired_color_mask import apply_patch as apply_motion_paired_color_mask_patch
 
 ROOT = SCRIPT_DIR.parent
 VENDOR = ROOT / "app/src/main/cpp/mpvflow"
@@ -1001,6 +1002,16 @@ def main() -> None:
         )
     else:
         print("Opt-in MPVRx jelly-region synthesis fallback disabled; preserving tested shader behavior")
+
+    try:
+        paired_color_mask_applied = apply_motion_paired_color_mask_patch(motion_path)
+    except (OSError, ValueError) as exc:
+        raise SystemExit(f"MPVRx paired-color mask verification failed: {exc}") from exc
+    print(
+        "Applied selective paired-color mismatch mask"
+        if paired_color_mask_applied
+        else "Selective paired-color mismatch mask already present"
+    )
 
     native_fongmi_markers = (
         "version: '>=7.387.0'",
