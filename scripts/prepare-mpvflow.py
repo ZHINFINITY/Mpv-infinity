@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import argparse
-import hashlib
 import os
 import subprocess
 import sys
@@ -12,12 +11,10 @@ from pathlib import Path
 SCRIPT_DIR = Path(__file__).resolve().parent
 if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
-from mpvrx_motion_source import MOTION_JELLY_PROBE_SHA256, verify_mpv_source
+from mpvrx_motion_source import verify_mpv_source
 from patch_fongmi_motion_downsample import apply_patch as apply_motion_downsample_patch
 from patch_fongmi_motion_jelly import apply_patch as apply_motion_jelly_patch
 from patch_fongmi_motion_jelly import apply_preview_patch as apply_motion_jelly_preview_patch
-from patch_fongmi_motion_jelly_probe import apply as apply_motion_jelly_probe_patch
-from patch_fongmi_vo_jelly_probe import apply_patch as apply_vo_jelly_probe_patch
 
 ROOT = SCRIPT_DIR.parent
 VENDOR = ROOT / "app/src/main/cpp/mpvflow"
@@ -47,16 +44,6 @@ PLACEBO_TIMER_RING_NEW = (
     "atomic_uint_fast32_t pending; // bitmask of queries that are still running",
     "static inline uint_fast32_t timer_bit(int index)",
 )
-
-
-def apply_motion_jelly_experimental_patch(path: Path, *, probe_enabled: bool) -> bool:
-    """Reapply Jelly unless probe mode already produced its exact verified source."""
-    if probe_enabled and hashlib.sha256(path.read_bytes()).hexdigest() == MOTION_JELLY_PROBE_SHA256:
-        # The build wrapper prepares the source before and after dependency installation.
-        # The probe intentionally instruments the Jelly block, so the Jelly patcher's
-        # exact uninstrumented-block guard must not be run on this verified final state.
-        return False
-    return apply_motion_jelly_patch(path)
 
 
 def validate_fongmi_frame_priv_members(vo_source: str) -> None:
@@ -965,16 +952,13 @@ def main() -> None:
             "MPVFLOW_DEBUG_CAPTURE is unsupported with the MPVRx-pinned FongMi 95ec motion core; "
             "the retained diagnostic patchers target the older 14b source"
         )
-    print("Broad FongMi one-shot diagnostics disabled; the isolated Jelly probe is separately gated")
+    print("FongMi one-shot diagnostics disabled; leaving motion/VO sources uninstrumented")
 
     downsample_antialias_enabled = os.environ.get("MPVFLOW_MPVRX_ANALYSIS_DOWNSAMPLE_AA") == "1"
     jelly_experimental_enabled = os.environ.get("MPVFLOW_JELLY_EXPERIMENTAL") == "1"
     jelly_preview_enabled = os.environ.get("MPVFLOW_JELLY_PREVIEW") == "1"
-    jelly_probe_enabled = os.environ.get("MPVFLOW_JELLY_PROBE") == "1"
     if jelly_experimental_enabled and jelly_preview_enabled:
         raise SystemExit("MPVRx Jelly synthesis and blend-test modes are mutually exclusive")
-    if jelly_probe_enabled and not jelly_experimental_enabled:
-        raise SystemExit("MPVRx Jelly probe requires MPVFLOW_JELLY_EXPERIMENTAL=1 and is incompatible with preview mode")
     try:
         verify_mpv_source(mpv_dir)
         downsample_patch_applied = apply_motion_downsample_patch(
@@ -1007,9 +991,7 @@ def main() -> None:
         if not downsample_antialias_enabled:
             raise SystemExit("MPVRx jelly test requires the verified bounded analysis-downsample baseline")
         try:
-            jelly_patch_applied = apply_motion_jelly_experimental_patch(
-                motion_path, probe_enabled=jelly_probe_enabled
-            )
+            jelly_patch_applied = apply_motion_jelly_patch(motion_path)
         except (OSError, ValueError) as exc:
             raise SystemExit(f"MPVRx jelly-test shader verification failed: {exc}") from exc
         print(
@@ -1019,20 +1001,6 @@ def main() -> None:
         )
     else:
         print("Opt-in MPVRx jelly-region synthesis fallback disabled; preserving tested shader behavior")
-
-    if jelly_probe_enabled:
-        try:
-            motion_probe_applied = apply_motion_jelly_probe_patch(motion_path, motion_header_path)
-            vo_probe_applied = apply_vo_jelly_probe_patch(
-                vo_path, meson_path, VENDOR, probe_enabled=True
-            )
-        except (OSError, ValueError) as exc:
-            raise SystemExit(f"MPVRx Jelly probe source verification failed: {exc}") from exc
-        print(
-            "Applied opt-in MPVRx Jelly shader probe"
-            if motion_probe_applied or vo_probe_applied
-            else "Opt-in MPVRx Jelly shader probe already present"
-        )
 
     native_fongmi_markers = (
         "version: '>=7.387.0'",
@@ -1092,29 +1060,6 @@ def main() -> None:
         raise SystemExit("Debug runtime requested FongMi one-shot capture but its full source contract is missing")
     if not debug_capture_enabled and any(marker in capture_source for marker in capture_markers):
         raise SystemExit("FongMi one-shot capture unexpectedly present in a non-debug runtime")
-    probe_markers = (
-        "MPVFLOW_JELLY_PROBE_V1",
-        "mp_motion_render_frames_probe",
-        "mp_motion_render_views_probe",
-        "MPVFLOW_FONGMI_VO_JELLY_PROBE_V1",
-        "pl_buf_poll(p->gpu, p->jelly_probe_buf, 0)",
-        "mpvrx_jelly_probe_record_is_activation",
-        "fallback_probe_pair = !valid_probe_pts || !target_probe_pair",
-        "motion_render_callback_count++",
-        "render_source_mix_callback_count++",
-        "motion_view_callback_count++",
-        "motion_view_shader_callback_count++",
-        "motion_view_texture_callback_count++",
-        "jelly_probe_shader_view(mix, images)",
-        "mp_motion_create(p->gpu, 480)",
-        "armed_render_callback_count++",
-        "last_candidate_rejection_mask = rejection_mask",
-        "video/out/mpvrx_jelly_probe_writer.c",
-    )
-    if jelly_probe_enabled and not all(marker in capture_source for marker in probe_markers):
-        raise SystemExit("Opt-in Jelly probe requested but its complete pinned-source contract is missing")
-    if not jelly_probe_enabled and any(marker in capture_source for marker in probe_markers):
-        raise SystemExit("Jelly probe source unexpectedly present in a non-probe runtime")
     validate_fongmi_frame_priv_members(vo)
     mapper_sources = (
         mpv_dir / "video/out/hwdec/hwdec_aimagereader.c",

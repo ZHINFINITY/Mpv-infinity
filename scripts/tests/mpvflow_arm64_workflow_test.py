@@ -28,7 +28,7 @@ class Arm64WorkflowTest(unittest.TestCase):
                 self.assertGreater(TEXT.index("- name: " + name), TEXT.index("- name: Restore verified Flow-only MPVFlow arm64 runtime"))
         source_checkout = STEPS["Checkout pinned MPV source"]
         self.assertNotIn(CACHE_MISS, source_checkout)
-        self.assertLess(TEXT.index("- name: Checkout pinned MPV source"), TEXT.index("- name: Compile selected opt-in Jelly shader for MPV Infinity"))
+        self.assertLess(TEXT.index("- name: Checkout pinned MPV source"), TEXT.index("- name: Compile selected opt-in Jelly shader from pinned MPVRx source"))
 
     def test_runtime_cache_is_source_pinned_and_has_no_legacy_fallback(self):
         restore = STEPS["Restore verified Flow-only MPVFlow arm64 runtime"]
@@ -41,9 +41,7 @@ class Arm64WorkflowTest(unittest.TestCase):
             "scripts/mpvrx_motion_source.py",
             "scripts/patch_fongmi_motion_downsample.py",
             "scripts/patch_fongmi_motion_jelly.py",
-            "scripts/patch_fongmi_vo_jelly_probe.py",
             "jelly-preview-",
-            "jelly-probe-",
             "scripts/prepare-mpvflow-vulkan-headers.py",
             "scripts/prepare-mpvflow.py",
             "scripts/patches/mpvlibandroid-fongmi/**",
@@ -62,9 +60,6 @@ class Arm64WorkflowTest(unittest.TestCase):
         ):
             self.assertNotIn(obsolete, restore + TEXT)
         self.assertIn("id: mpvflow-runtime-cache", restore)
-        self.assertIn("inputs.jelly_probe == true && 'mpvflow-arm64-runtime-v7-jelly-probe-builder-1efc82739f6f7034'", restore)
-        self.assertIn("scripts/patch_fongmi_motion_jelly_probe.py", restore)
-        self.assertIn("hashFiles('scripts/patch_fongmi_motion_jelly_probe.py', 'scripts/patch_fongmi_vo_jelly_probe.py')", restore)
         self.assertEqual(TEXT.count("uses: actions/cache/restore@v4"), 1)
         self.assertIn("steps.mpvflow-runtime-cache.outputs.cache-hit == 'true'", STEPS["Use cached Flow-only MPVFlow arm64 runtime"])
 
@@ -99,24 +94,21 @@ class Arm64WorkflowTest(unittest.TestCase):
         self.assertLess(TEXT.index("- name: Run MPVFlow core and GPU shader regression tests"), TEXT.index("- name: Assemble one arm64-v8a diagnostic APK after Kotlin checks"))
 
     def test_built_runtime_must_contain_the_pinned_downsample_patch(self):
-        verify = STEPS["Verify MPV Infinity motion source after preparation"]
+        verify = STEPS["Verify MPVRx FongMi motion source after preparation"]
         self.assertIn("--require-analysis-downsample-aa", verify)
         self.assertIn("--require-jelly-experimental", verify)
         self.assertIn("--require-jelly-preview", verify)
-        self.assertIn("--require-jelly-probe", verify)
         build = STEPS["Build MPVFlow-only MPV native arm64 debug package"]
         self.assertIn("MPVFLOW_MPVRX_ANALYSIS_DOWNSAMPLE_AA: '1'", build)
         self.assertIn("MPVFLOW_JELLY_EXPERIMENTAL", build)
         self.assertIn("MPVFLOW_JELLY_PREVIEW", build)
-        self.assertIn("MPVFLOW_JELLY_PROBE", build)
 
     def test_jelly_candidate_and_blend_test_are_distinct_manual_diagnostics(self):
         self.assertIn("jelly_test", TEXT)
         self.assertIn("jelly_preview", TEXT)
         self.assertIn("default: false", TEXT)
-        candidate = STEPS["Compile selected opt-in Jelly shader for MPV Infinity"]
+        candidate = STEPS["Compile selected opt-in Jelly shader from pinned MPVRx source"]
         self.assertIn("scripts/tests/mpvrx_motion_jelly_test.py", candidate)
-        self.assertIn("mpvrx_motion_jelly_probe_test.py --mpv-dir mpv-source --require-glslang", candidate)
         self.assertIn("--preview-only", candidate)
         self.assertIn("MOTION_ALIGNED_MAJORITY_V2", (Path(__file__).resolve().parents[2] / "scripts/patch_fongmi_motion_jelly.py").read_text(encoding="utf-8"))
         cache = STEPS["Restore verified Flow-only MPVFlow arm64 runtime"]
@@ -139,47 +131,17 @@ class Arm64WorkflowTest(unittest.TestCase):
         self.assertLess(TEXT.index("- name: " + name), TEXT.index("- name: Assemble one arm64-v8a diagnostic APK after Kotlin checks"))
 
     def test_kotlin_unit_tests_complete_before_arm64_apk_assembly(self):
-        kotlin_run = STEPS["Run Kotlin unit tests before APK packaging"]
-        assemble_run = STEPS["Assemble one arm64-v8a diagnostic APK after Kotlin checks"]
+        runs = re.findall(r"^        run: (\./gradlew .+)$", TEXT, re.M)
+        self.assertEqual(len(runs), 2)
+        kotlin_run, assemble_run = runs
         for token in ("testStandardDebugUnitTest", ":media3-decoder-ffmpeg:testDebugUnitTest", "-PtargetAbi=arm64-v8a", "-PmpvFlowMpvBuild=true", "--stacktrace", "--no-daemon", "--max-workers=2"):
             self.assertIn(token, kotlin_run)
-        self.assertIn(":app:testStandardDebugUnitTest", kotlin_run)
-        self.assertNotIn("testStandardJellyProbeUnitTest", kotlin_run)
         self.assertNotIn("testStandardJellyPreviewUnitTest", kotlin_run)
-        self.assertIn("inputs.jelly_probe == true && '-PmpvFlowJellyProbe=true'", kotlin_run)
-        for token in ("assembleStandard${{ inputs.jelly_probe", "inputs.jelly_preview == true && 'JellyPreview'", "-PtargetAbi=arm64-v8a", "-PmpvFlowMpvBuild=true", "--stacktrace", "--no-daemon", "--max-workers=2"):
+        for token in ("assembleStandard${{ inputs.jelly_preview", "-PtargetAbi=arm64-v8a", "-PmpvFlowMpvBuild=true", "--stacktrace", "--no-daemon", "--max-workers=2"):
             self.assertIn(token, assemble_run)
-        self.assertIn("inputs.jelly_probe == true && '-PmpvFlowJellyProbe=true'", assemble_run)
         self.assertNotIn("-x", kotlin_run.split() + assemble_run.split())
         self.assertLess(TEXT.index("- name: Run Kotlin unit tests before APK packaging"), TEXT.index("- name: Assemble one arm64-v8a diagnostic APK after Kotlin checks"))
         self.assertNotIn("continue-on-error:", TEXT)
-
-    def test_jelly_probe_is_exclusive_and_has_one_distinct_debug_artifact(self):
-        self.assertIn("      jelly_probe:", TEXT)
-        self.assertIn("inputs.jelly_probe", STEPS["Validate diagnostic selection"])
-        self.assertIn("MPVFLOW_JELLY_PROBE: ${{ inputs.jelly_probe == true && '1' || '0' }}", STEPS["Build MPVFlow-only MPV native arm64 debug package"])
-        self.assertIn("inputs.jelly_probe == true && 'JellyProbe'", STEPS["Assemble one arm64-v8a diagnostic APK after Kotlin checks"])
-        self.assertIn("app.infinity.mpvz.debug.jellyprobe", STEPS["Verify arm64 DTS wrapper dynamically links the existing FFmpeg runtime"])
-        upload = STEPS["Upload single arm64-v8a diagnostic APK"]
-        self.assertIn("jelly-probe", upload)
-        self.assertIn("jellyProbe", upload)
-        self.assertIn("retention-days: 3", upload)
-        self.assertEqual(TEXT.count("uses: actions/upload-artifact@v7"), 1)
-
-    def test_jelly_probe_inherits_the_debug_launcher_label(self):
-        app_gradle = Path(__file__).resolve().parents[2] / "app/build.gradle.kts"
-        app_text = app_gradle.read_text(encoding="utf-8")
-        probe = app_text.split('create("jellyProbe") {', 1)[1].split('create("jellyPreview")', 1)[0]
-        self.assertIn('initWith(getByName("debug"))', probe)
-        self.assertNotIn('resValue("string", "app_name"', probe)
-        self.assertIn('resValue("string", "app_name", "Mpv∞-Debug")', app_text)
-
-    def test_public_workflow_and_artifact_use_mpv_infinity_branding(self):
-        self.assertIn("name: MPV Infinity arm64 Debug APK", TEXT.splitlines())
-        self.assertIn("name: Build MPV Infinity arm64-v8a debug APK", TEXT)
-        self.assertIn("mpv-infinity-arm64-v8a-", STEPS["Upload single arm64-v8a diagnostic APK"])
-        labels = [line for line in TEXT.splitlines() if re.match(r"^\s*(?:- )?name:", line)]
-        self.assertFalse(any("MPVRx" in line for line in labels))
 
     def test_packaged_runtime_checks_precede_artifact_upload(self):
         upload = TEXT.index("- name: Upload single arm64-v8a diagnostic APK")

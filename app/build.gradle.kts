@@ -14,7 +14,6 @@ val targetAbiProp = project.findProperty("targetAbi")?.toString() ?: localProper
 val enableX86 = project.findProperty("enableX86") != "false"
 val requestedMpvFlowMpvRuntime = project.findProperty("mpvFlowMpvBuild")?.toString() == "true"
 val requestedMpvFlowFongmiDiagnostics = project.findProperty("mpvFlowFongmiDiagnosticCapture")?.toString() == "true"
-val requestedMpvFlowJellyProbe = project.findProperty("mpvFlowJellyProbe")?.toString() == "true"
 val x86Abis = if (enableX86) listOf("x86", "x86_64") else emptyList()
 val activeAbis =
   if (!targetAbiProp.isNullOrBlank()) {
@@ -64,7 +63,6 @@ android {
     buildConfigField("boolean", "MPV_HAS_MPVFLOW", "false")
     buildConfigField("boolean", "MPV_HAS_FONGMI_MEMC", includeMpvFlowMpvRuntime.toString())
     buildConfigField("boolean", "MPV_HAS_FONGMI_DIAGNOSTICS", includeMpvFlowFongmiDiagnostics.toString())
-    buildConfigField("boolean", "MPV_HAS_JELLY_PROBE", "false")
     buildConfigField("boolean", "MPV_JELLY_MASK_PREVIEW", "false")
 
     externalNativeBuild {
@@ -108,7 +106,6 @@ android {
       buildConfigField("boolean", "MPV_SUPPORTS_MEDIACODEC_VULKAN", "false")
       buildConfigField("boolean", "MPV_HAS_FONGMI_MEMC", "false")
       buildConfigField("boolean", "MPV_HAS_FONGMI_DIAGNOSTICS", "false")
-      buildConfigField("boolean", "MPV_HAS_JELLY_PROBE", "false")
       externalNativeBuild {
         cmake {
           arguments += "-DMPVFLOW_ENABLE_VULKAN_BACKEND=OFF"
@@ -162,17 +159,6 @@ android {
       }
     }
 
-    if (requestedMpvFlowJellyProbe && includeMpvFlowMpvRuntime) {
-      create("jellyProbe") {
-        initWith(getByName("debug"))
-        matchingFallbacks += listOf("debug")
-        isDebuggable = true
-        applicationIdSuffix = ".debug.jellyprobe"
-        versionNameSuffix = "-jelly-probe-${getCommitCount()}"
-        buildConfigField("boolean", "MPV_HAS_JELLY_PROBE", "true")
-        ndk { debugSymbolLevel = "none" }
-      }
-    }
     create("jellyPreview") {
       initWith(getByName("debug"))
       matchingFallbacks += listOf("debug")

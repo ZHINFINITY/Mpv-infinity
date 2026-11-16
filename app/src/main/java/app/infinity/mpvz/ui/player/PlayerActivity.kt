@@ -16,7 +16,6 @@ import android.content.BroadcastReceiver
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
-import kotlinx.coroutines.flow.asStateFlow
 import android.content.IntentFilter
 import android.content.ServiceConnection
 import android.content.pm.ActivityInfo
@@ -275,89 +274,6 @@ class PlayerActivity :
       nativeEngineBuilt.value = true
     }
   }
-  private val jellyProbeMutableState = MutableStateFlow("Not armed")
-  internal val jellyProbeState = jellyProbeMutableState.asStateFlow()
-  private var jellyProbeReport: java.io.File? = null
-  private var jellyProbeFinalizationRequested = false
-  private var jellyProbeArmOptionResult = -1
-  internal fun armJellyProbe(): String {
-    if (!BuildConfig.DEBUG || !BuildConfig.MPV_HAS_JELLY_PROBE) {
-      jellyProbeMutableState.value = "Diagnostic build required"
-      return jellyProbeMutableState.value
-    }
-    if (activeEngineMode != PlaybackEngineMode.MPV || !binding.player.isSurfaceReady) {
-      jellyProbeMutableState.value = "MPV playback surface is not ready"
-      return jellyProbeMutableState.value
-    }
-    val report = runCatching { JellyProbeReportStore.newReportFile(this) }.getOrElse { error ->
-      Log.e(TAG, "Could not create a persistent Jelly probe report path", error)
-      jellyProbeMutableState.value = "Could not create a private probe report"
-      return jellyProbeMutableState.value
-    }
-    val result = binding.player.armJellyProbe(report)
-    if (result != 0) {
-      jellyProbeMutableState.value = "Could not arm native probe (option result $result)"
-      return jellyProbeMutableState.value
-    }
-    jellyProbeReport = report
-    jellyProbeArmOptionResult = result
-    jellyProbeFinalizationRequested = false
-    JellyProbeReportStore.refresh(applicationContext)
-    jellyProbeMutableState.value = "Armed; waiting for a Jelly activation…"
-    lifecycleScope.launch {
-      while (isActive && !isFinishing && !isDestroyed && !jellyProbeFinalizationRequested) {
-        if (report.isFile && report.length() > 0L) {
-          JellyProbeReportStore.publish(report)
-          jellyProbeMutableState.value = "Report ready to share (${report.length()} bytes)"
-          break
-        }
-        delay(500)
-      }
-    }
-    return jellyProbeMutableState.value
-  }
-
-  internal fun finalizeJellyProbe() {
-    if (!BuildConfig.DEBUG || !BuildConfig.MPV_HAS_JELLY_PROBE ||
-      !jellyProbeMutableState.value.startsWith("Armed")
-    ) return
-    val report = jellyProbeReport ?: return
-    jellyProbeFinalizationRequested = true
-    val result = binding.player.finalizeJellyProbe()
-    JellyProbeReportStore.awaitFinalized(
-      applicationContext,
-      report,
-      result,
-      jellyProbeArmOptionResult,
-    )
-    if (result != 0) {
-      jellyProbeMutableState.value = "Saving probe status report (native result $result)…"
-    } else {
-      jellyProbeMutableState.value = "Saving last Jelly probe sample…"
-    }
-    lifecycleScope.launch {
-      repeat(24) {
-        val completedReport = JellyProbeReportStore.completedReportForCapture(report)
-        if (completedReport != null) {
-          JellyProbeReportStore.publish(completedReport)
-          jellyProbeMutableState.value = "Report ready to share (${completedReport.length()} bytes)"
-          return@launch
-        }
-        delay(250L)
-      }
-      if (jellyProbeMutableState.value.startsWith("Saving")) {
-        val completedReport = JellyProbeReportStore.completedReportForCapture(report)
-        if (completedReport != null) {
-          JellyProbeReportStore.publish(completedReport)
-          jellyProbeMutableState.value = "Report ready to share (${completedReport.length()} bytes)"
-        } else {
-          jellyProbeMutableState.value = "Playback stopped; no probe report could be saved"
-        }
-      }
-    }
-  }
-
-  internal fun shareJellyProbe(): Boolean = JellyProbeReportStore.share(this, jellyProbeReport)
   private val flowDiagnosticsCaptureManager by lazy { FlowDiagnosticsCaptureManager(this) }
   internal val flowDiagnosticsCaptureState get() = flowDiagnosticsCaptureManager.state
 
@@ -3212,7 +3128,6 @@ class PlayerActivity :
     mpvAssetPreparationJob?.cancel()
     if (activeNativeCloseActivity?.get() === this) activeNativeCloseActivity = null
     val ownsPlaybackSession = ownsPlaybackSession()
-    if (ownsPlaybackSession && !isChangingConfigurations) finalizeJellyProbe()
     val playbackWasInitialized = mpvInitialized
     val nativeWasActive =
       activeEngineMode == PlaybackEngineMode.NATIVE &&

@@ -114,7 +114,6 @@ fun MoreSheet(
   val activity = LocalActivity.current as? PlayerActivity
   val emptyCaptureState = remember { MutableStateFlow(FlowDiagnosticsCaptureUiState()) }
   val captureState by (activity?.flowDiagnosticsCaptureState ?: emptyCaptureState).collectFlowAsState()
-  val jellyProbeState by (activity as? PlayerActivity)?.jellyProbeState?.collectFlowAsState() ?: remember { mutableStateOf("Not armed") }
   val appearancePreferences = koinInject<AppearancePreferences>()
   val liquidGlassSurfaces by appearancePreferences.liquidGlassSurfaces.collectAsState()
   val advancedPreferences = koinInject<AdvancedPreferences>()
@@ -283,27 +282,6 @@ fun MoreSheet(
             )
           } else {
             Text("Output: MPV renderer", style = MaterialTheme.typography.bodySmall)
-          }
-        }
-      }
-      if (BuildConfig.DEBUG && BuildConfig.MPV_HAS_JELLY_PROBE && activeEngine == PlaybackEngineMode.MPV && activity is PlayerActivity) {
-        Surface(modifier = Modifier.fillMaxWidth(), color = androidx.compose.ui.graphics.Color.Transparent, shape = MaterialTheme.shapes.medium) {
-          Column(modifier = Modifier.fillMaxWidth().padding(MaterialTheme.spacing.small)) {
-            Text("Jelly one-shot diagnostic", style = MaterialTheme.typography.titleSmall)
-            Text(
-              "Arm while the original episode is playing. Samples the same scene-relative point (about 70% across, 21% down), " +
-                "scaled to the current video size, on every eligible frame pair (alpha 0.35–0.65). " +
-                "PTS is recorded for context, not used to restrict playback; the probe stops at the first activation or saves the last evaluated skip.",
-              style = MaterialTheme.typography.bodySmall,
-            )
-            Text(jellyProbeState, style = MaterialTheme.typography.bodySmall)
-            when {
-              jellyProbeState.startsWith("Report ready") -> {
-                Button(onClick = { activity.shareJellyProbe() }) { Text("Share JSON report") }
-              }
-              jellyProbeState.startsWith("Armed") -> Unit
-              else -> Button(onClick = { activity.armJellyProbe() }) { Text("Arm probe") }
-            }
           }
         }
       }
