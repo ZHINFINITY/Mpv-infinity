@@ -25,9 +25,11 @@ def support(value: float, low: float, high: float) -> float:
     return 1.0 - smoothstep(low, high, value)
 
 
-def conflict_opacity(conflict_weight: float) -> float:
-    """Mirror mix(1.0, 0.35, conflict_weight) in the active GLSL."""
-    return 1.0 + (0.35 - 1.0) * conflict_weight
+def conflict_opacity(conflict_weight: float, motion_length: float) -> float:
+    """Mirror the ordinary-conflict and bounded high-motion fade in the GLSL."""
+    rapid_motion_weight = smoothstep(0.5, 2.0, motion_length)
+    high_motion_opacity = 0.35 + (0.28 - 0.35) * rapid_motion_weight
+    return 1.0 + (high_motion_opacity - 1.0) * conflict_weight
 
 
 def compile_mask_statement(source: str) -> None:
@@ -41,6 +43,8 @@ def compile_mask_statement(source: str) -> None:
 layout(local_size_x = 1, local_size_y = 1) in;
 void main() {{
     vec2 paired_error = vec2(0.04, 0.06);
+    vec2 displacement0 = vec2(1.0, 0.0);
+    vec2 displacement1 = vec2(-1.0, 0.0);
 {PATCHER.PATCHED_BLOCK.rstrip()}
     float conflict_weight = 0.6;
     vec2 visibility = vec2(0.4);
@@ -108,6 +112,14 @@ def main() -> None:
     upgraded, upgraded_changed = PATCHER.transform_source(legacy)
     assert upgraded_changed and upgraded == patched, "the prior mask must upgrade to the opacity taper"
 
+    prior_strength = patched.replace(
+        PATCHER.ARTIFACT_STRENGTH_BLOCK, PATCHER.ARTIFACT_STRENGTH_V1_BLOCK, 1
+    )
+    assert PATCHER.has_paired_color_mask(prior_strength), "the previous opacity mask must remain recognized"
+    upgraded_strength, upgraded_strength_changed = PATCHER.transform_source(prior_strength)
+    assert upgraded_strength_changed and upgraded_strength == patched, "the prior opacity mask must upgrade in place"
+    assert PATCHER.unpatch_source(prior_strength) == expected_base
+
     unpatched = PATCHER.unpatch_source(patched)
     repatched, repatched_changed = PATCHER.transform_source(unpatched)
     assert repatched_changed and repatched == patched, "the patch must change only the supported source blocks"
@@ -122,26 +134,38 @@ def main() -> None:
     assert support(0.06, 0.02, 0.08) < support(0.06, 0.03, 0.15)
     assert support(0.08, 0.02, 0.08) == 0.0 < support(0.08, 0.03, 0.15)
 
-    # Clean pixels are byte-for-byte unchanged by this taper; maximum conflict
-    # leaves 35% of the prior warped-color contribution, a 65% local reduction.
-    assert math.isclose(conflict_opacity(0.0), 1.0, abs_tol=1e-12)
-    assert math.isclose(conflict_opacity(0.5), 0.675, abs_tol=1e-12)
-    assert math.isclose(conflict_opacity(1.0), 0.35, abs_tol=1e-12)
+    # Clean pixels are unchanged. Ordinary maximum conflict keeps the proven
+    # 35% opacity; only fast, conflicting motion reaches the modest 28% floor.
+    assert math.isclose(conflict_opacity(0.0, 0.0), 1.0, abs_tol=1e-12)
+    assert math.isclose(conflict_opacity(0.0, 4.0), 1.0, abs_tol=1e-12)
+    assert math.isclose(conflict_opacity(0.5, 0.5), 0.675, abs_tol=1e-12)
+    assert math.isclose(conflict_opacity(0.5, 2.0), 0.64, abs_tol=1e-12)
+    assert math.isclose(conflict_opacity(1.0, 0.5), 0.35, abs_tol=1e-12)
+    assert math.isclose(conflict_opacity(1.0, 2.0), 0.28, abs_tol=1e-12)
     for conflict in (i / 100.0 for i in range(101)):
-        assert 0.35 <= conflict_opacity(conflict) <= 1.0
+        previous_motion_opacity = 1.0
+        for motion in (i / 100.0 for i in range(401)):
+            opacity = conflict_opacity(conflict, motion)
+            assert 0.28 <= opacity <= 1.0
+            assert opacity <= previous_motion_opacity + 1e-12
+            previous_motion_opacity = opacity
         if conflict < 1.0:
-            assert conflict_opacity(conflict + 0.01) <= conflict_opacity(conflict)
+            for motion in (0.0, 0.5, 1.0, 2.0, 4.0):
+                assert conflict_opacity(conflict + 0.01, motion) <= conflict_opacity(conflict, motion)
     baseline, warped, visibility = 0.4, 0.95, 0.8
-    clean_result = baseline + (warped - baseline) * visibility * conflict_opacity(0.0)
-    conflicted_result = baseline + (warped - baseline) * visibility * conflict_opacity(1.0)
+    clean_result = baseline + (warped - baseline) * visibility * conflict_opacity(0.0, 4.0)
+    ordinary_conflicted_result = baseline + (warped - baseline) * visibility * conflict_opacity(1.0, 0.5)
+    rapid_conflicted_result = baseline + (warped - baseline) * visibility * conflict_opacity(1.0, 4.0)
     assert math.isclose(clean_result - baseline, (warped - baseline) * visibility, abs_tol=1e-12)
-    assert math.isclose(conflicted_result - baseline, 0.35 * (warped - baseline) * visibility, abs_tol=1e-12)
+    assert math.isclose(ordinary_conflicted_result - baseline, 0.35 * (warped - baseline) * visibility, abs_tol=1e-12)
+    assert math.isclose(rapid_conflicted_result - baseline, 0.28 * (warped - baseline) * visibility, abs_tol=1e-12)
 
     compile_mask_statement(patched)
     print(
         "FongMi mask passed: near-exact witnesses are unchanged; zero-conflict pixels are unchanged; "
         "paired mismatch recovery is tapered earlier; high-conflict warped-color "
-        "contribution is reduced by 65%; source upgrade and reprepare are idempotent"
+        "contribution is reduced by 65% in ordinary motion and 72% in fast motion; "
+        "source upgrade and reprepare are idempotent"
     )
 
 
