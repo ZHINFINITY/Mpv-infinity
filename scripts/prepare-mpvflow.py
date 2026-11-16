@@ -15,7 +15,10 @@ from mpvrx_motion_source import verify_mpv_source
 from patch_fongmi_motion_downsample import apply_patch as apply_motion_downsample_patch
 from patch_fongmi_motion_jelly import apply_patch as apply_motion_jelly_patch
 from patch_fongmi_motion_jelly import apply_preview_patch as apply_motion_jelly_preview_patch
-from patch_fongmi_paired_color_mask import apply_patch as apply_motion_paired_color_mask_patch
+from patch_fongmi_paired_color_mask import (
+    apply_patch as apply_motion_paired_color_mask_patch,
+    strip_patch as strip_motion_paired_color_mask_patch,
+)
 
 ROOT = SCRIPT_DIR.parent
 VENDOR = ROOT / "app/src/main/cpp/mpvflow"
@@ -962,6 +965,7 @@ def main() -> None:
         raise SystemExit("MPVRx Jelly synthesis and blend-test modes are mutually exclusive")
     try:
         verify_mpv_source(mpv_dir)
+        strip_motion_paired_color_mask_patch(motion_path)
         downsample_patch_applied = apply_motion_downsample_patch(
             motion_path, enabled=downsample_antialias_enabled
         )

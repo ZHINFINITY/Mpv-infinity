@@ -61,10 +61,16 @@ assert "patch_fongmi_motion_artifact.py" not in BUILD
 assert "motion_artifact_patch" not in BUILD
 assert "verify_mpv_source(mpv_dir)" in PREPARE
 assert "apply_motion_downsample_patch(" in PREPARE and "enabled=downsample_antialias_enabled" in PREPARE
-assert "from patch_fongmi_paired_color_mask import apply_patch as apply_motion_paired_color_mask_patch" in PREPARE
+assert "from patch_fongmi_paired_color_mask import (" in PREPARE
+assert "apply_patch as apply_motion_paired_color_mask_patch" in PREPARE
+assert "strip_patch as strip_motion_paired_color_mask_patch" in PREPARE
+assert PREPARE.index("strip_motion_paired_color_mask_patch(motion_path)") < PREPARE.index("apply_motion_downsample_patch(")
+assert PREPARE.index("apply_motion_downsample_patch(") < PREPARE.index("apply_motion_paired_color_mask_patch(motion_path)")
 assert "apply_motion_paired_color_mask_patch(motion_path)" in PREPARE
 assert "MPVRX_PAIRED_COLOR_EVIDENCE_MASK_V1" in PAIRED_COLOR_PATCH
 assert "smoothstep(vec2(0.02), vec2(0.08), paired_error)" in PAIRED_COLOR_PATCH
+assert "def verify_reprepare_cycle(source: str)" in PAIRED_COLOR_TEST
+assert "verify_reprepare_cycle(patched)" in PAIRED_COLOR_TEST
 assert "near-exact witnesses are unchanged" in PAIRED_COLOR_TEST
 assert 'os.environ.get("MPVFLOW_MPVRX_ANALYSIS_DOWNSAMPLE_AA") == "1"' in PREPARE
 assert 'os.environ.get("MPVFLOW_JELLY_EXPERIMENTAL") == "1"' in PREPARE
@@ -148,6 +154,7 @@ for workflow in (WORKFLOWS[0], WORKFLOWS[2]):
 assert "scripts/tests/mpvrx_motion_source_test.py" in WORKFLOWS[0]
 assert "scripts/tests/mpvrx_motion_source_test.py" in WORKFLOWS[1]
 assert "scripts/tests/fongmi_paired_color_mask_test.py" in WORKFLOWS[0]
+assert "fongmi_paired_color_mask_test.py --source" in WORKFLOWS[0]
 assert "--require-paired-color-mask" in WORKFLOWS[0]
 assert "--require-paired-color-mask" in WORKFLOWS[1]
 assert "--require-paired-color-mask" in WORKFLOWS[2]

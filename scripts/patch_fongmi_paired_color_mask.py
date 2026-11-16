@@ -61,6 +61,15 @@ def unpatch_source(source: str) -> str:
     return unpatched
 
 
+def strip_patch(path: Path) -> bool:
+    """Temporarily remove only a valid mask so earlier source patchers can rerun."""
+    source = path.read_text(encoding="utf-8")
+    if MARKER not in source and PATCHED_SUPPORT not in source:
+        return False
+    path.write_text(unpatch_source(source), encoding="utf-8")
+    return True
+
+
 def apply_patch(path: Path) -> bool:
     """Patch the verified active motion source in place; return whether it changed."""
     source = path.read_text(encoding="utf-8")
