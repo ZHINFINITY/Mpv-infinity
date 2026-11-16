@@ -25,23 +25,7 @@ def test_standard_workflow_is_flow_only() -> None:
 
     def runtime_cache_key(contents: str) -> str:
         restore_step = contents.split(cache_step_name, 1)[1].split("- name:", 1)[0]
-        lines = restore_step.splitlines()
-        for index, line in enumerate(lines):
-            stripped = line.strip()
-            if not stripped.startswith("key:"):
-                continue
-            value = stripped.split(":", 1)[1].strip()
-            if value in (">-", ">", "|-", "|"):
-                indent = len(line) - len(line.lstrip())
-                folded = []
-                for continuation in lines[index + 1 :]:
-                    if continuation.strip() and len(continuation) - len(continuation.lstrip()) <= indent:
-                        break
-                    if continuation.strip():
-                        folded.append(continuation.strip())
-                return " ".join(folded)
-            return value
-        raise AssertionError("runtime cache restore step is missing its key")
+        return next(line.strip()[len("key: ") :] for line in restore_step.splitlines() if line.strip().startswith("key: "))
 
     manual_cache_key = runtime_cache_key(workflow)
     push_cache_key = runtime_cache_key(flow_workflow)

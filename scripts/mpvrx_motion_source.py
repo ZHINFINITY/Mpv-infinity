@@ -18,8 +18,6 @@ MPV_REVISION = "95ec8e929f8ad2f97c8415c486971493a0b408df"
 MOTION_SHA256 = "ca7870c21f7a499d03ab1f7d73f1b9bcbccee534398d8a6f01957556e7d61932"
 MOTION_ANTIALIAS_SHA256 = "db13147fd268ebe857e235a2ad066c0d34d9c35cab66f6fa93ed5767d61219a2"
 MOTION_HEADER_SHA256 = "12fedd08063a540b69667a51e146d539ebae509b63c07964f573410a7d0ae427"
-MOTION_JELLY_PROBE_SHA256 = "fff42ae20a6f40fc548d55eddc1c887f33a07d1a96dcc7df7831eb1bb85a177d"
-MOTION_HEADER_JELLY_PROBE_SHA256 = "6f8d17d7be48ec7355c1a1f812c73a7d637c3301cfd8382f441d7c2fded54e16"
 
 
 def _sha256(path: Path) -> str:
@@ -69,20 +67,11 @@ def verify_mpv_source(mpv_dir: Path) -> bool:
         antialias_patched = True
     elif motion_hash == MOTION_JELLY_PREVIEW_SHA256 and has_jelly_preview_patch(motion):
         antialias_patched = True
-    elif (
-        motion_hash == MOTION_JELLY_PROBE_SHA256
-        and "MPVFLOW_JELLY_PROBE_V1" in motion
-    ):
-        antialias_patched = True
     else:
         raise ValueError(f"Unexpected MPVRx motion source hash for {motion_path.name}: {motion_hash}")
 
     header_hash = _sha256(header_path)
-    probe_header = header_hash == MOTION_HEADER_JELLY_PROBE_SHA256
-    probe_motion = motion_hash == MOTION_JELLY_PROBE_SHA256
-    if probe_header != probe_motion:
-        raise ValueError("MPVRx Jelly probe motion source and API header must be patched together")
-    if header_hash not in (MOTION_HEADER_SHA256, MOTION_HEADER_JELLY_PROBE_SHA256):
+    if header_hash != MOTION_HEADER_SHA256:
         raise ValueError(f"Unexpected MPVRx motion source hash for {header_path.name}: {header_hash}")
 
     header = header_path.read_text(encoding="utf-8")

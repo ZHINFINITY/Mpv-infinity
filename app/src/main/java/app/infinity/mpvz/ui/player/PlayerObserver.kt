@@ -89,11 +89,9 @@ class PlayerObserver(
     if (shouldIgnoreCallback()) return
     val token = activity.capturePlayerObserverCallbackToken()
     val naturalEnd = eventId == MPVLib.MpvEvent.MPV_EVENT_END_FILE && PlaybackSession.isNaturalEndFile(data)
-    val terminalEnd = eventId == MPVLib.MpvEvent.MPV_EVENT_END_FILE && PlaybackSession.isTerminalEndFile(data)
     activity.runOnUiThread {
       if (!activity.isPlayerObserverCallbackCurrent(token) || shouldIgnoreCallback()) return@runOnUiThread
       activity.event(eventId)
-      if (terminalEnd) activity.finalizeJellyProbe()
       if (eventId == MPVLib.MpvEvent.MPV_EVENT_FILE_LOADED) requestStretchVideoOrientationUpdate()
       if (naturalEnd) activity.onObserverEvent("eof-reached", true)
     }

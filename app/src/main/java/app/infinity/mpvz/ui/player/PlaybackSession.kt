@@ -1765,19 +1765,6 @@ object PlaybackSession : MPVLib.EventObserver {
   /** Only a matching END_FILE reason=eof may drive repeat, queue advance, or close-after-end. */
   internal fun isNaturalEndFile(data: MPVNode): Boolean = parseEndFileReason(data) == EndFileReason.EOF
 
-  /** Terminal end-file reasons stop the one-shot renderer diagnostic; redirects do not. */
-  internal fun isTerminalEndFile(data: MPVNode): Boolean =
-    when (parseEndFileReason(data)) {
-      EndFileReason.EOF,
-      EndFileReason.STOP,
-      EndFileReason.QUIT,
-      EndFileReason.ERROR,
-      -> true
-      EndFileReason.REDIRECT,
-      EndFileReason.UNKNOWN,
-      -> false
-    }
-
   private fun parseEndFileError(data: MPVNode): String? =
     sequenceOf(data["error"], data["file_error"])
       .mapNotNull { node -> node?.asString() ?: node?.asInt()?.toString() }

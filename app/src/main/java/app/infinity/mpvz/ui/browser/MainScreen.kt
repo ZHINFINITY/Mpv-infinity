@@ -11,7 +11,6 @@ import androidx.compose.foundation.interaction.collectIsDraggedAsState
 import app.infinity.mpvz.ui.theme.browserGlassSceneSource
 import android.annotation.SuppressLint
 import android.content.res.Configuration
-import app.infinity.mpvz.BuildConfig
 import app.infinity.mpvz.ui.theme.BrowserGlassSurface
 import app.infinity.mpvz.ui.theme.rememberBrowserGlassMotionAllowed
 import androidx.compose.animation.AnimatedVisibility
@@ -54,7 +53,6 @@ import androidx.compose.foundation.pager.PagerState
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -63,7 +61,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.derivedStateOf
@@ -118,7 +115,6 @@ import app.infinity.mpvz.ui.browser.playlist.PlaylistScreen
 import app.infinity.mpvz.ui.browser.recentlyplayed.RecentlyPlayedScreen
 import app.infinity.mpvz.ui.icons.Icon
 import app.infinity.mpvz.ui.icons.Icons
-import app.infinity.mpvz.ui.player.JellyProbeReportStore
 import app.infinity.mpvz.ui.theme.AppMotion
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.cancelAndJoin
@@ -335,10 +331,6 @@ object MainScreen : Screen {
     val miniPlayerNavClearance = if (isMiniPlayerVisible && isPortrait && !isTablet) 96.dp else 0.dp
     val contentBottomPadding = remember(miniPlayerNavClearance) { 88.dp + miniPlayerNavClearance }
     val context = androidx.compose.ui.platform.LocalContext.current
-    val latestJellyProbeReport by JellyProbeReportStore.latestReport.collectAsState()
-    LaunchedEffect(context.applicationContext) {
-      JellyProbeReportStore.refresh(context.applicationContext)
-    }
     val jellyfinViewModel: app.infinity.mpvz.ui.browser.jellyfin.JellyfinViewModel =
       androidx.lifecycle.viewmodel.compose.viewModel(
         key = "main-jellyfin",
@@ -369,20 +361,6 @@ object MainScreen : Screen {
     ) {
     Scaffold(
       modifier = Modifier.fillMaxSize(),
-      floatingActionButton = {
-        if (
-          BuildConfig.DEBUG &&
-          BuildConfig.MPV_HAS_JELLY_PROBE &&
-          latestJellyProbeReport?.let { it.isFile && it.length() > 0L } == true
-        ) {
-          ExtendedFloatingActionButton(
-            onClick = { JellyProbeReportStore.share(context.applicationContext) },
-            modifier = Modifier.padding(bottom = contentBottomPadding),
-          ) {
-            Text("Share JSON report")
-          }
-        }
-      },
     ) { paddingValues ->
       app.infinity.mpvz.ui.theme.BrowserGlassRouteContentHost(
         enabled = liquidGlassSurfacesForBrowser,

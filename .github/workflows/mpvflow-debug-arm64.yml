@@ -1,4 +1,4 @@
-name: MPV Infinity arm64 Debug APK
+name: MPVFlow MPVRx FongMi arm64 Debug APK
 
 on:
   push:
@@ -21,11 +21,6 @@ on:
         required: false
         type: boolean
         default: false
-      jelly_probe:
-        description: "Build a separate arm64 .debug.jelly-probe APK with opt-in one-shot report support"
-        required: false
-        type: boolean
-        default: false
 
 permissions:
   contents: read
@@ -36,7 +31,7 @@ concurrency:
 
 jobs:
   build-arm64-debug:
-    name: Build MPV Infinity arm64-v8a debug APK
+    name: Build MPVFlow MPVRx arm64-v8a debug APK
     runs-on: ubuntu-latest
     timeout-minutes: 240
     steps:
@@ -46,20 +41,10 @@ jobs:
           fetch-depth: 0
       - name: Validate diagnostic selection
         run: |
-          selected=0
-          for flag in "${{ inputs.jelly_test }}" "${{ inputs.jelly_preview }}" "${{ inputs.jelly_probe }}"; do
-            if [[ "$flag" == "true" ]]; then selected=$((selected + 1)); fi
-          done
-          if (( selected > 1 )); then
-            echo "Choose at most one of jelly_test, jelly_preview, or jelly_probe" >&2
+          if [[ "${{ inputs.jelly_test }}" == "true" && "${{ inputs.jelly_preview }}" == "true" ]]; then
+            echo "Choose either jelly_test or jelly_preview, not both" >&2
             exit 1
           fi
-      - name: Test persistent Jelly probe report delivery
-        if: ${{ inputs.jelly_probe == true }}
-        run: python3 scripts/tests/jelly_probe_report_delivery_test.py
-      - name: Test native Jelly probe stage reports
-        if: ${{ inputs.jelly_probe == true }}
-        run: bash scripts/tests/run_mpvrx_jelly_probe_writer_test.sh
       - name: Test arm64 workflow cache and validation invariants
         run: python3 scripts/tests/mpvflow_arm64_workflow_test.py
       - name: Test experimental region3 attenuation invariants
@@ -81,8 +66,7 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: native-builder/app/build/outputs/apk
-          key: >-
-            ${{ inputs.jelly_probe == true && 'mpvflow-arm64-runtime-v7-jelly-probe-builder-1efc82739f6f7034' || 'mpvflow-arm64-runtime-v7-builder-1efc82739f6f7034' }}-mpv-fongmi-95ec8e929f8ad2f97c8415c486971493a0b408df-libplacebo-fongmi-63659d96d1bff7d7a5a1368e9538056a193fc6fb-ffmpeg-fongmi-f2c5162b7c4b3e8835de270ff78cecc524decad1-vulkan-headers-khronos-a4f8ada9f4f97c45b8c89c57997be9cebaae65d2-cores2-${{ inputs.jelly_probe == true && 'jelly-probe-' || inputs.jelly_preview == true && 'jelly-preview-' || inputs.jelly_test == true && 'jelly-test-' || 'baseline-' }}${{ hashFiles('scripts/build-mpvflow-mpv-runtime.sh', 'scripts/mpvrx_motion_source.py', 'scripts/patch_fongmi_motion_downsample.py', 'scripts/patch_fongmi_motion_jelly.py', 'scripts/prepare-mpvflow.py', 'scripts/prepare-mpvflow-vulkan-headers.py', 'scripts/patch-ffmpeg-symver.py', 'scripts/patches/mpvlibandroid-fongmi/**', 'app/src/main/cpp/**', 'THIRD_PARTY_LICENSES/**', 'app/src/main/assets/mpv/licenses/**') }}${{ inputs.jelly_probe == true && format('-{0}', hashFiles('scripts/patch_fongmi_motion_jelly_probe.py', 'scripts/patch_fongmi_vo_jelly_probe.py')) || '' }}
+          key: mpvflow-arm64-runtime-v7-builder-1efc82739f6f7034-mpv-fongmi-95ec8e929f8ad2f97c8415c486971493a0b408df-libplacebo-fongmi-63659d96d1bff7d7a5a1368e9538056a193fc6fb-ffmpeg-fongmi-f2c5162b7c4b3e8835de270ff78cecc524decad1-vulkan-headers-khronos-a4f8ada9f4f97c45b8c89c57997be9cebaae65d2-cores2-${{ inputs.jelly_preview == true && 'jelly-preview-' || inputs.jelly_test == true && 'jelly-test-' || 'baseline-' }}${{ hashFiles('scripts/build-mpvflow-mpv-runtime.sh', 'scripts/mpvrx_motion_source.py', 'scripts/patch_fongmi_motion_downsample.py', 'scripts/patch_fongmi_motion_jelly.py', 'scripts/prepare-mpvflow.py', 'scripts/prepare-mpvflow-vulkan-headers.py', 'scripts/patch-ffmpeg-symver.py', 'scripts/patches/mpvlibandroid-fongmi/**', 'app/src/main/cpp/**', 'THIRD_PARTY_LICENSES/**', 'app/src/main/assets/mpv/licenses/**') }}
       - name: Checkout pinned Android MPV build tools
         if: ${{ steps.mpvflow-runtime-cache.outputs.cache-hit != 'true' }}
         uses: actions/checkout@v6
@@ -96,21 +80,18 @@ jobs:
           repository: FongMi/mpv
           ref: 95ec8e929f8ad2f97c8415c486971493a0b408df
           path: mpv-source
-      - name: Verify MPV Infinity motion source and 480px integration
+      - name: Verify exact MPVRx FongMi motion source and 480px integration
         if: ${{ steps.mpvflow-runtime-cache.outputs.cache-hit != 'true' }}
         run: python3 scripts/tests/mpvrx_motion_source_test.py --mpv-dir mpv-source
       - name: Install Vulkan and shader validation dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y binutils ffmpeg glslang-tools libvulkan-dev mesa-vulkan-drivers
-      - name: Compile selected opt-in Jelly shader for MPV Infinity
+      - name: Compile selected opt-in Jelly shader from pinned MPVRx source
         run: |
           args=(--mpv-dir mpv-source --require-glslang)
           if [[ "${{ inputs.jelly_preview }}" == "true" ]]; then args+=(--preview-only); fi
           python3 scripts/tests/mpvrx_motion_jelly_test.py "${args[@]}"
-          if [[ "${{ inputs.jelly_probe }}" == "true" ]]; then
-            python3 scripts/tests/mpvrx_motion_jelly_probe_test.py --mpv-dir mpv-source --require-glslang
-          fi
       - name: Run MPVFlow core and GPU shader regression tests
         run: ./scripts/test-mpvflow-core.sh
         env:
@@ -144,17 +125,14 @@ jobs:
         env:
           MPVFLOW_MPV_BUILD_CORES: '2'
           MPVFLOW_MPVRX_ANALYSIS_DOWNSAMPLE_AA: '1'
-          MPVFLOW_JELLY_EXPERIMENTAL: ${{ (inputs.jelly_test == true || inputs.jelly_probe == true) && '1' || '0' }}
+          MPVFLOW_JELLY_EXPERIMENTAL: ${{ inputs.jelly_test == true && '1' || '0' }}
           MPVFLOW_JELLY_PREVIEW: ${{ inputs.jelly_preview == true && '1' || '0' }}
-          MPVFLOW_JELLY_PROBE: ${{ inputs.jelly_probe == true && '1' || '0' }}
-      - name: Verify MPV Infinity motion source after preparation
+      - name: Verify MPVRx FongMi motion source after preparation
         if: ${{ steps.mpvflow-runtime-cache.outputs.cache-hit != 'true' }}
         run: |
           args=(--mpv-dir native-builder/buildscripts/deps/mpv --require-analysis-downsample-aa)
           if [[ "${{ inputs.jelly_preview }}" == "true" ]]; then
             args+=(--require-jelly-preview)
-          elif [[ "${{ inputs.jelly_probe }}" == "true" ]]; then
-            args+=(--require-jelly-experimental --require-jelly-probe)
           elif [[ "${{ inputs.jelly_test }}" == "true" ]]; then
             args+=(--require-jelly-experimental)
           fi
@@ -176,18 +154,13 @@ jobs:
           path: native-builder/app/build/outputs/apk
           key: ${{ steps.mpvflow-runtime-cache.outputs.cache-primary-key }}
       - name: Run Kotlin unit tests before APK packaging
-        run: |
-          set -euo pipefail
-          # AGP 9 creates unit-test components only for the tested build type (debug) by default.
-          # JellyProbe is an APK-only diagnostic variant; use the available StandardDebug tests.
-          tasks=(:app:testStandardDebugUnitTest :media3-decoder-ffmpeg:testDebugUnitTest)
-          ./gradlew "${tasks[@]}" -PtargetAbi=arm64-v8a -PmpvFlowMpvBuild=true ${{ inputs.jelly_probe == true && '-PmpvFlowJellyProbe=true' || '' }} --stacktrace --no-daemon --max-workers=2
+        run: ./gradlew testStandardDebugUnitTest :media3-decoder-ffmpeg:testDebugUnitTest -PtargetAbi=arm64-v8a -PmpvFlowMpvBuild=true --stacktrace --no-daemon --max-workers=2
       - name: Assemble one arm64-v8a diagnostic APK after Kotlin checks
-        run: ./gradlew "assembleStandard${{ inputs.jelly_probe == true && 'JellyProbe' || inputs.jelly_preview == true && 'JellyPreview' || 'Debug' }}" -PtargetAbi=arm64-v8a -PmpvFlowMpvBuild=true ${{ inputs.jelly_probe == true && '-PmpvFlowJellyProbe=true' || '' }} --stacktrace --no-daemon --max-workers=2
+        run: ./gradlew "assembleStandard${{ inputs.jelly_preview == true && 'JellyPreview' || 'Debug' }}" -PtargetAbi=arm64-v8a -PmpvFlowMpvBuild=true --stacktrace --no-daemon --max-workers=2
       - name: Verify arm64 DTS wrapper dynamically links the existing FFmpeg runtime
         run: |
           set -euo pipefail
-          apk_dir="app/build/outputs/apk/standard/${{ inputs.jelly_probe == true && 'jellyProbe' || inputs.jelly_preview == true && 'jellyPreview' || 'debug' }}"
+          apk_dir="app/build/outputs/apk/standard/${{ inputs.jelly_preview == true && 'jellyPreview' || 'debug' }}"
           mapfile -t apks < <(find "$apk_dir" -maxdepth 1 -type f -name '*.apk' -print)
           [[ "${#apks[@]}" -eq 1 ]] || { echo "Expected exactly one Standard arm64 APK in $apk_dir; found ${#apks[@]}" >&2; exit 1; }
           apk="${apks[0]}"
@@ -195,18 +168,11 @@ jobs:
           python3 scripts/verify-media3-dca-apk.py "$apk"
           python3 scripts/verify-region3-shader-apk.py "$apk"
           python3 scripts/verify-pair-ghost-apk.py "$apk"
-          if [[ "${{ inputs.jelly_probe }}" == "true" ]]; then
-            [[ "$apk" == *jellyProbe* ]] || { echo "Diagnostic APK filename missing jellyProbe: $apk" >&2; exit 1; }
-            sdk_root="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-/usr/local/lib/android/sdk}}"
-            aapt="$(find "$sdk_root/build-tools" -mindepth 2 -maxdepth 2 -type f -name aapt -print | sort -V | tail -n 1)"
-            [[ -n "$aapt" ]] || { echo "Android SDK aapt is unavailable" >&2; exit 1; }
-            "$aapt" dump badging "$apk" | grep -F "package: name='app.infinity.mpvz.debug.jellyprobe'" >/dev/null
-          fi
       - name: Upload single arm64-v8a diagnostic APK
         uses: actions/upload-artifact@v7
         with:
-          name: mpv-infinity-arm64-v8a-${{ inputs.jelly_probe == true && 'jelly-probe' || inputs.jelly_preview == true && 'jelly-blend-test' || inputs.jelly_test == true && 'jelly-test' || 'debug' }}-${{ github.sha }}
-          path: app/build/outputs/apk/standard/${{ inputs.jelly_probe == true && 'jellyProbe' || inputs.jelly_preview == true && 'jellyPreview' || 'debug' }}/*arm64-v8a*.apk
+          name: mpv-infinity-mpvrx-arm64-v8a-${{ inputs.jelly_preview == true && 'jelly-blend-test' || inputs.jelly_test == true && 'jelly-test' || 'debug' }}-${{ github.sha }}
+          path: app/build/outputs/apk/standard/${{ inputs.jelly_preview == true && 'jellyPreview' || 'debug' }}/*arm64-v8a*.apk
           if-no-files-found: error
           retention-days: 3
           compression-level: 0
