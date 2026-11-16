@@ -99,6 +99,8 @@ assert "--require-analysis-downsample-aa" in SOURCE_TEST
 assert "MPVFLOW_MPVRX_ANALYSIS_DOWNSAMPLE_AA_V1" in DOWNSAMPLE_PATCH
 assert "ceil(source_scale / 2.0)" in DOWNSAMPLE_PATCH
 assert "tap_count(2.0) == 1" in DOWNSAMPLE_TEST
+assert "PAIRED_COLOR_MASK_MARKER" in DOWNSAMPLE_TEST
+assert "unpatch_paired_color_mask(source)" in DOWNSAMPLE_TEST
 
 for marker in (
     "MPVFLOW_MPV_BUILD_CORES",

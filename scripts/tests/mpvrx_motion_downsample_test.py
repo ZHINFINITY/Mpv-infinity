@@ -21,6 +21,12 @@ from patch_fongmi_motion_downsample import (  # noqa: E402
     has_antialias_filter,
     transform_source,
 )
+from patch_fongmi_paired_color_mask import (  # noqa: E402
+    MARKER as PAIRED_COLOR_MASK_MARKER,
+    PATCHED_SUPPORT as PAIRED_COLOR_MASK_SUPPORT,
+    has_paired_color_mask,
+    unpatch_source as unpatch_paired_color_mask,
+)
 
 PATCHED_MOTION_SHA256 = "db13147fd268ebe857e235a2ad066c0d34d9c35cab66f6fa93ed5767d61219a2"
 
@@ -134,28 +140,45 @@ void main() {{
 def check_pinned_source(mpv_dir: Path) -> None:
     motion_path = mpv_dir / "video/out/gpu_next/motion.c"
     source = motion_path.read_text(encoding="utf-8")
+    if PAIRED_COLOR_MASK_MARKER in source or PAIRED_COLOR_MASK_SUPPORT in source:
+        assert has_paired_color_mask(source), "prepared source has an invalid paired-color mask"
+        source = unpatch_paired_color_mask(source)
     actual = hashlib.sha256(source.encode("utf-8")).hexdigest()
-    assert actual == UPSTREAM_MOTION_SHA256, f"unexpected pinned motion.c hash: {actual}"
+    already_patched = actual == PATCHED_MOTION_SHA256 and has_antialias_filter(source)
+    assert actual == UPSTREAM_MOTION_SHA256 or already_patched, f"unexpected pinned motion.c hash: {actual}"
     patched, changed = transform_source(source)
-    assert changed and has_antialias_filter(patched)
+    assert changed is not already_patched and has_antialias_filter(patched)
     patched_hash = hashlib.sha256(patched.encode("utf-8")).hexdigest()
     assert patched_hash == PATCHED_MOTION_SHA256, f"unexpected patched motion.c hash: {patched_hash}"
+    if already_patched:
+        assert patched == source, "the prepared downsample patch must remain unchanged"
     assert patched.count(PATCHED_BLOCK) == 1
     assert patched.count("mp_motion_create(p->gpu, 480);") == source.count("mp_motion_create(p->gpu, 480);")
     with tempfile.TemporaryDirectory(prefix="mpvrx-downsample-optin-") as tmp:
         candidate = Path(tmp) / "motion.c"
         candidate.write_text(source, encoding="utf-8")
-        assert not apply_patch(candidate, enabled=False)
-        assert candidate.read_text(encoding="utf-8") == source
-        assert apply_patch(candidate, enabled=True)
-        assert hashlib.sha256(candidate.read_bytes()).hexdigest() == PATCHED_MOTION_SHA256
-        assert not apply_patch(candidate, enabled=True)
-        try:
-            apply_patch(candidate, enabled=False)
-        except ValueError:
-            pass
+        if already_patched:
+            try:
+                apply_patch(candidate, enabled=False)
+            except ValueError:
+                pass
+            else:
+                raise AssertionError("prepared downsample shader was accepted without its opt-in")
+            assert candidate.read_text(encoding="utf-8") == source
+            assert not apply_patch(candidate, enabled=True)
+            assert candidate.read_text(encoding="utf-8") == source
         else:
-            raise AssertionError("patched shader was accepted without the test-workflow opt-in")
+            assert not apply_patch(candidate, enabled=False)
+            assert candidate.read_text(encoding="utf-8") == source
+            assert apply_patch(candidate, enabled=True)
+            assert hashlib.sha256(candidate.read_bytes()).hexdigest() == PATCHED_MOTION_SHA256
+            assert not apply_patch(candidate, enabled=True)
+            try:
+                apply_patch(candidate, enabled=False)
+            except ValueError:
+                pass
+            else:
+                raise AssertionError("patched shader was accepted without the test-workflow opt-in")
     print(f"Pinned MPVRx source transform verified: {actual} -> {patched_hash}")
 
 
