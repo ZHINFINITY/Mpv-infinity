@@ -139,7 +139,7 @@ def main() -> None:
 
     compile_mask_statement(patched)
     print(
-        "FongMi mask passed: clean witnesses and zero-conflict pixels are unchanged; "
+        "FongMi mask passed: near-exact witnesses are unchanged; zero-conflict pixels are unchanged; "
         "paired mismatch recovery is tapered earlier; high-conflict warped-color "
         "contribution is reduced by 65%; source upgrade and reprepare are idempotent"
     )
