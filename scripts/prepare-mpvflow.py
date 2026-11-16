@@ -1098,7 +1098,10 @@ def main() -> None:
         "MPVFLOW_FONGMI_VO_JELLY_PROBE_V1",
         "pl_buf_poll(p->gpu, p->jelly_probe_buf, 0)",
         "mpvrx_jelly_probe_record_is_activation",
-        "fallback_probe_pair = !valid_probe_pts || probe_pts_min > 1.63",
+        "fallback_probe_pair = !valid_probe_pts || !target_probe_pair",
+        "motion_render_callback_count++",
+        "armed_render_callback_count++",
+        "last_candidate_rejection_mask = rejection_mask",
         "video/out/mpvrx_jelly_probe_writer.c",
     )
     if jelly_probe_enabled and not all(marker in capture_source for marker in probe_markers):

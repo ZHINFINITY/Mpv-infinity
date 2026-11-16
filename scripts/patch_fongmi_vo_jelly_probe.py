@@ -212,19 +212,53 @@ static void jelly_probe_poll(struct priv *p)
     double probe_pts_min = valid_probe_pts ? fmin(mpi0->pts, mpi1->pts) : 0.0;
     double probe_pts_max = valid_probe_pts ? fmax(mpi0->pts, mpi1->pts) : 0.0;
     bool target_probe_pair = valid_probe_pts && probe_pts_min <= 1.63 && probe_pts_max >= 1.46;
-    bool fallback_probe_pair = !valid_probe_pts || probe_pts_min > 1.63;
+    bool fallback_probe_pair = !valid_probe_pts || !target_probe_pair;
     struct mpvrx_jelly_probe_diagnostics *probe_diag = &p->jelly_probe_diagnostics;
     bool probe_active = p->jelly_probe_armed && p->jelly_probe_writer_ready &&
         !p->jelly_probe_finalized && p->jelly_probe_buf;
+    if (probe_diag->setup_status == MPVRX_JELLY_STAGE_OK && !p->jelly_probe_finalized)
+        probe_diag->motion_render_callback_count++;
     bool pixel_in_bounds = mpi0->params.w > 1352 && mpi0->params.h > 224;
     if (probe_active) {
+        probe_diag->armed_render_callback_count++;
         probe_diag->source_bounds_observed = 1;
         probe_diag->source_width = mpi0->params.w;
         probe_diag->source_height = mpi0->params.h;
         probe_diag->pixel_in_bounds = pixel_in_bounds ? 1 : 0;
+        unsigned rejection_mask = 0;
+        if (!pixel_in_bounds) {
+            probe_diag->out_of_bounds_count++;
+            rejection_mask |= 1u;
+        }
+        if (!isfinite(alpha)) {
+            probe_diag->alpha_invalid_count++;
+            rejection_mask |= 8u;
+        } else if (alpha < 0.35f) {
+            probe_diag->alpha_below_count++;
+            rejection_mask |= 2u;
+        } else if (alpha > 0.65f) {
+            probe_diag->alpha_above_count++;
+            rejection_mask |= 4u;
+        }
+        probe_diag->last_candidate_observed = 1;
+        probe_diag->last_candidate_pts_valid = valid_probe_pts ? 1 : 0;
+        probe_diag->last_candidate_pts[0] = valid_probe_pts ? mpi0->pts : NAN;
+        probe_diag->last_candidate_pts[1] = valid_probe_pts ? mpi1->pts : NAN;
+        probe_diag->last_candidate_alpha = alpha;
+        probe_diag->last_candidate_selection_mode = target_probe_pair ? 1 : 2;
+        probe_diag->last_candidate_source_width = mpi0->params.w;
+        probe_diag->last_candidate_source_height = mpi0->params.h;
+        probe_diag->last_candidate_pixel_in_bounds = pixel_in_bounds ? 1 : 0;
+        probe_diag->last_candidate_rejection_mask = rejection_mask;
     }
     bool frame_pair_eligible = probe_active && pixel_in_bounds &&
         (target_probe_pair || fallback_probe_pair) && alpha >= 0.35f && alpha <= 0.65f;
+    if (probe_active) {
+        probe_diag->last_candidate_eligible = frame_pair_eligible ? 1 : 0;
+        probe_diag->last_candidate_pending = frame_pair_eligible && p->jelly_probe_pending ? 1 : 0;
+        if (frame_pair_eligible && p->jelly_probe_pending)
+            probe_diag->pending_readback_count++;
+    }
     if (frame_pair_eligible) {
         probe_diag->eligible_pair_count++;
         if (target_probe_pair) probe_diag->target_pair_count++;

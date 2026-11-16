@@ -273,7 +273,18 @@ static const char *diagnostic_reason(const struct mpvrx_jelly_probe_diagnostics 
     if (!d) return "stage_data_not_observed";
     if (d->setup_status == MPVRX_JELLY_STAGE_FAILED) return "probe_setup_failed";
     if (d->buffer_status == MPVRX_JELLY_STAGE_FAILED) return "gpu_buffer_setup_failed";
-    if (d->source_bounds_observed && d->pixel_in_bounds == 0) return "target_pixel_out_of_bounds";
+    if (d->setup_status == MPVRX_JELLY_STAGE_OK && d->motion_render_callback_count == 0)
+        return "no_motion_render_callback";
+    if (d->motion_render_callback_count > 0 && d->armed_render_callback_count == 0)
+        return "probe_not_armed_during_motion_callback";
+    if (d->eligible_pair_count == 0 && d->source_bounds_observed && d->pixel_in_bounds == 0)
+        return "target_pixel_out_of_bounds";
+    if (d->eligible_pair_count == 0 && d->out_of_bounds_count > 0 &&
+        d->alpha_below_count == 0 && d->alpha_above_count == 0 && d->alpha_invalid_count == 0)
+        return "target_pixel_out_of_bounds";
+    if (d->eligible_pair_count == 0 && d->out_of_bounds_count == 0 &&
+        (d->alpha_below_count > 0 || d->alpha_above_count > 0 || d->alpha_invalid_count > 0))
+        return "alpha_outside_probe_range";
     if (d->eligible_pair_count == 0) return "no_eligible_frame_pair";
     if (d->gpu_submit_count == 0) return "no_gpu_dispatch_observed";
     if (d->gpu_last_poll_status == MPVRX_JELLY_READBACK_ERROR) return "gpu_readback_error";
@@ -314,9 +325,9 @@ static int write_no_sample_json(struct mpvrx_jelly_probe_writer *writer,
     char json[8192]; size_t n = 0; int e = 0;
     const char *reason = snapshot_provided ? diagnostic_reason(d) : "stage_data_not_observed";
 #define A(...) do { if(!e)e=appendf(json,sizeof json,&n,__VA_ARGS__); } while(0)
-    A("{\"report_type\":\"mpv-infinity-jelly-probe-report\",\"schema_version\":2,\"status\":\"no_sample\",\"reason\":\"%s\",\"stage_snapshot\":\"%s\",\"created_at_epoch_ms\":%llu,\"report_path\":", reason, snapshot_provided ? "provided" : "not_observed", report_timestamp_ms());
+    A("{\"report_type\":\"mpv-infinity-jelly-probe-report\",\"schema_version\":3,\"status\":\"no_sample\",\"reason\":\"%s\",\"stage_snapshot\":\"%s\",\"created_at_epoch_ms\":%llu,\"report_path\":", reason, snapshot_provided ? "provided" : "not_observed", report_timestamp_ms());
     if (!e) e = append_json_string(json, sizeof json, &n, writer->final_path);
-    A(",\"target\":{\"media_hint\":\"599740.mkv\",\"current_file_verified\":false,\"pts_window_seconds\":[1.46,1.63],\"pair_rule\":\"pair PTS interval overlaps [1.46,1.63]\",\"pixel\":[%d,%d],\"fallback_rule\":\"if PTS is unavailable or an eligible pair begins after 1.63s, probe fallback pairs until the first activation; if none activates, finalization saves the last evaluated skip\",\"eligible_alpha_range\":[0.35,0.65]},", d->pixel_x, d->pixel_y);
+    A(",\"target\":{\"media_hint\":\"599740.mkv\",\"current_file_verified\":false,\"pts_window_seconds\":[1.46,1.63],\"pair_rule\":\"pair PTS interval overlaps [1.46,1.63]\",\"pixel\":[%d,%d],\"fallback_rule\":\"also probe eligible pairs outside [1.46,1.63] (including earlier or later pairs) until the first activation; if none activates, finalization saves the last evaluated skip\",\"eligible_alpha_range\":[0.35,0.65]},", d->pixel_x, d->pixel_y);
     A("\"stages\":{\"arm_setup\":{\"status\":\"%s\",\"error_code\":", stage_status_name(d->setup_status));
     if (!e) e = append_nullable_int(json, sizeof json, &n, d->setup_error);
     A(",\"writer_init_status\":\"%s\",\"writer_init_error_code\":", stage_status_name(d->writer_init_status));
@@ -334,7 +345,54 @@ static int write_no_sample_json(struct mpvrx_jelly_probe_writer *writer,
     A(",\"pixel_in_bounds\":");
     if (!e && d->pixel_in_bounds < 0) e = appendf(json, sizeof json, &n, "null");
     else if (!e) e = appendf(json, sizeof json, &n, "%s", d->pixel_in_bounds ? "true" : "false");
-    A("}},\"eligible_frame_pairs\":{\"status\":\"%s\",\"eligible_count\":", d->setup_status == MPVRX_JELLY_STAGE_OK ? "observed" : "not_reached");
+    A("}},\"render_callbacks\":{\"status\":\"%s\",\"count\":", d->setup_status == MPVRX_JELLY_STAGE_OK ? "observed" : "not_reached");
+    if (!e) e = d->setup_status == MPVRX_JELLY_STAGE_OK
+        ? appendf(json, sizeof json, &n, "%u", d->motion_render_callback_count)
+        : appendf(json, sizeof json, &n, "null");
+    A(",\"while_armed\":");
+    if (!e) e = d->setup_status == MPVRX_JELLY_STAGE_OK
+        ? appendf(json, sizeof json, &n, "%u", d->armed_render_callback_count)
+        : appendf(json, sizeof json, &n, "null");
+    A(",\"out_of_bounds_count\":");
+    if (!e) e = d->setup_status == MPVRX_JELLY_STAGE_OK
+        ? appendf(json, sizeof json, &n, "%u", d->out_of_bounds_count)
+        : appendf(json, sizeof json, &n, "null");
+    A(",\"alpha_below_range_count\":");
+    if (!e) e = d->setup_status == MPVRX_JELLY_STAGE_OK
+        ? appendf(json, sizeof json, &n, "%u", d->alpha_below_count)
+        : appendf(json, sizeof json, &n, "null");
+    A(",\"alpha_above_range_count\":");
+    if (!e) e = d->setup_status == MPVRX_JELLY_STAGE_OK
+        ? appendf(json, sizeof json, &n, "%u", d->alpha_above_count)
+        : appendf(json, sizeof json, &n, "null");
+    A(",\"alpha_invalid_count\":");
+    if (!e) e = d->setup_status == MPVRX_JELLY_STAGE_OK
+        ? appendf(json, sizeof json, &n, "%u", d->alpha_invalid_count)
+        : appendf(json, sizeof json, &n, "null");
+    A(",\"pending_readback_count\":");
+    if (!e) e = d->setup_status == MPVRX_JELLY_STAGE_OK
+        ? appendf(json, sizeof json, &n, "%u", d->pending_readback_count)
+        : appendf(json, sizeof json, &n, "null");
+    A(",\"rejection_mask_bits\":\"1=target_pixel_out_of_bounds,2=alpha_below_range,4=alpha_above_range,8=alpha_not_finite\"");
+    A(",\"last_candidate\":");
+    if (d->last_candidate_observed) {
+        A("{\"pts_valid\":%s,\"pts\":[", d->last_candidate_pts_valid ? "true" : "false");
+        if (!e) e = append_nullable_double(json, sizeof json, &n, d->last_candidate_pts_valid ? d->last_candidate_pts[0] : NAN);
+        A(",");
+        if (!e) e = append_nullable_double(json, sizeof json, &n, d->last_candidate_pts_valid ? d->last_candidate_pts[1] : NAN);
+        A("],\"alpha\":");
+        if (!e) e = append_nullable_double(json, sizeof json, &n, d->last_candidate_alpha);
+        A(",\"selection\":\"%s\",\"source_width\":%d,\"source_height\":%d,\"pixel_in_bounds\":%s,\"eligible\":%s,\"readback_pending\":%s,\"rejection_mask\":%u}",
+          d->last_candidate_selection_mode == 1 ? "target_window" : "fallback",
+          d->last_candidate_source_width, d->last_candidate_source_height,
+          d->last_candidate_pixel_in_bounds ? "true" : "false",
+          d->last_candidate_eligible ? "true" : "false",
+          d->last_candidate_pending ? "true" : "false",
+          d->last_candidate_rejection_mask);
+    } else {
+        A("null");
+    }
+    A("},\"eligible_frame_pairs\":{\"status\":\"%s\",\"eligible_count\":", d->setup_status == MPVRX_JELLY_STAGE_OK ? "observed" : "not_reached");
     if (!e) e = d->setup_status == MPVRX_JELLY_STAGE_OK
         ? appendf(json, sizeof json, &n, "%u", d->eligible_pair_count)
         : appendf(json, sizeof json, &n, "null");
@@ -388,7 +446,7 @@ static int write_capture_json(struct mpvrx_jelly_probe_writer *writer,
     int reason_code = isfinite(v[1]) ? (int)v[1] : -1;
 #define A(...) do { if(!e)e=appendf(json,sizeof json,&n,__VA_ARGS__); } while(0)
 #define V(i) do { if(!e)e=vec(json,sizeof json,&n,v+(i)*4,4); } while(0)
-    A("{\"report_type\":\"mpv-infinity-jelly-probe-report\",\"schema_version\":2,\"status\":\"%s\",\"reason\":\"%s\",\"created_at_epoch_ms\":%llu,\"report_path\":", activation ? "activated" : evaluated ? "rejected" : "no_sample", evaluated ? jelly_reason_name(reason_code) : "target_pixel_not_evaluated", report_timestamp_ms());
+    A("{\"report_type\":\"mpv-infinity-jelly-probe-report\",\"schema_version\":3,\"status\":\"%s\",\"reason\":\"%s\",\"created_at_epoch_ms\":%llu,\"report_path\":", activation ? "activated" : evaluated ? "rejected" : "no_sample", evaluated ? jelly_reason_name(reason_code) : "target_pixel_not_evaluated", report_timestamp_ms());
     if (!e) e = append_json_string(json, sizeof json, &n, writer->final_path);
     A(",\"capture\":{\"id0\":\"%llu\",\"id1\":\"%llu\",\"pts\":[",(unsigned long long)id0,(unsigned long long)id1); if(!e)e=num(json,sizeof json,&n,v[59*4]); A(","); if(!e)e=num(json,sizeof json,&n,v[59*4+1]); A("],\"alpha\":"); if(!e)e=num(json,sizeof json,&n,v[59*4+2]); A(",\"selection\":");if(!e)e=num(json,sizeof json,&n,v[59*4+3]);A(",\"pixel_source\":");V(60);A(",\"map\":");V(61);A("},\"decision\":");V(0);A(",\"center\":{");
     const char *cn[]={"forward_warp","backward_warp","color0","color1","metric0","metric1","color_delta_change","neighbor_counts_weights"};
