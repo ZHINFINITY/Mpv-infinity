@@ -163,7 +163,7 @@ assert 'jelly_probe_enabled = os.environ.get("MPVFLOW_JELLY_PROBE") == "1"' in p
 assert 'if jelly_probe_enabled:' in prepare_source and "apply_motion_jelly_probe_patch" in prepare_source
 assert 'if jelly_probe_enabled and not jelly_experimental_enabled:' in prepare_source
 assert "mpvrx_jelly_probe_record_is_activation" in prepare_source
-assert "fallback_probe_pair = !valid_probe_pts || probe_pts_min > 1.63" in prepare_source
+assert "fallback_probe_pair = !valid_probe_pts || !target_probe_pair" in prepare_source
 capture_debug = prepare.configure_debug_capture_source(gpu_source, enabled=True)
 assert capture_debug.count(capture_define) == 1, "debug capture define must be injected exactly once"
 assert capture_debug.index("*/") < capture_debug.index(capture_define) < capture_debug.index("#include"), "debug capture define must follow the SPDX notice"

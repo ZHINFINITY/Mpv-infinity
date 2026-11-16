@@ -80,6 +80,15 @@ struct mpvrx_jelly_probe_diagnostics {
     int pixel_x, pixel_y;
     int source_bounds_observed, source_width, source_height, pixel_in_bounds;
     unsigned eligible_pair_count, target_pair_count, fallback_pair_count;
+    unsigned motion_render_callback_count, armed_render_callback_count;
+    unsigned out_of_bounds_count, alpha_below_count, alpha_above_count;
+    unsigned alpha_invalid_count, pending_readback_count;
+    int last_candidate_observed, last_candidate_pts_valid;
+    double last_candidate_pts[2], last_candidate_alpha;
+    int last_candidate_selection_mode, last_candidate_source_width;
+    int last_candidate_source_height, last_candidate_pixel_in_bounds;
+    int last_candidate_eligible, last_candidate_pending;
+    unsigned last_candidate_rejection_mask;
     int last_pair_observed, last_pts_valid;
     double last_pts[2], last_alpha;
     int last_selection_mode;

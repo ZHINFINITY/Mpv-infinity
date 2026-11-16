@@ -223,7 +223,7 @@ internal object JellyProbeReportStore {
       .put("eligible_alpha_range", JSONArray().put(0.35).put(0.65))
       .put(
         "fallback_rule",
-        "If PTS is unavailable or an eligible pair is wholly later than 1.63s, probe eligible fallback pairs and stop on the first Jelly activation; if none activates, finalization saves the last evaluated skip.",
+        "Also probe eligible pairs outside [1.46,1.63] (including earlier or later pairs) and stop on the first Jelly activation; if none activates, finalization saves the last evaluated skip.",
       )
     val sourceBounds = JSONObject()
       .put("status", "not_observed")
@@ -257,6 +257,20 @@ internal object JellyProbeReportStore {
           .put("last_alpha", unknown),
       )
       .put(
+        "render_callbacks",
+        JSONObject()
+          .put("status", "not_observed")
+          .put("count", unknown)
+          .put("while_armed", unknown)
+          .put("out_of_bounds_count", unknown)
+          .put("alpha_below_range_count", unknown)
+          .put("alpha_above_range_count", unknown)
+          .put("alpha_invalid_count", unknown)
+          .put("pending_readback_count", unknown)
+          .put("rejection_mask_bits", "1=target_pixel_out_of_bounds,2=alpha_below_range,4=alpha_above_range,8=alpha_not_finite")
+          .put("last_candidate", unknown),
+      )
+      .put(
         "jelly",
         JSONObject()
           .put("status", "not_observed")
@@ -286,7 +300,7 @@ internal object JellyProbeReportStore {
       )
     val json = JSONObject()
       .put("report_type", "mpv-infinity-jelly-probe-report")
-      .put("schema_version", 2)
+      .put("schema_version", 3)
       .put("status", status)
       .put("reason", reason)
       .put("stage_snapshot", "not_observed")
