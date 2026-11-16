@@ -48,7 +48,12 @@ def main() -> None:
         motion_header = (root / "video/out/gpu_next/motion.h").read_text(encoding="utf-8")
         vo = (root / "video/out/vo_gpu_next.c").read_text(encoding="utf-8")
         meson = (root / "meson.build").read_text(encoding="utf-8")
-        if not all(marker in motion for marker in (JELLY_PROBE_MARKER, "synthesis_probe_header", "mp_motion_render_frames_probe")):
+        if not all(marker in motion for marker in (
+            JELLY_PROBE_MARKER,
+            "synthesis_probe_header",
+            "mp_motion_render_frames_probe",
+            "mp_motion_render_views_probe",
+        )):
             parser.exit(1, "opt-in motion Jelly probe patch is incomplete\n")
         if not all(marker in motion_header for marker in (JELLY_PROBE_MARKER, "struct mp_motion_probe_request", "pl_buf buffer;")):
             parser.exit(1, "opt-in motion Jelly probe API header is incomplete\n")
@@ -62,6 +67,13 @@ def main() -> None:
             "jelly_probe_last_record_valid",
             "max_mapped_vram",
             "mp_motion_render_frames_probe",
+            "mp_motion_render_views_probe",
+            "motion_view_callback_count++",
+            "motion_view_shader_callback_count++",
+            "motion_view_texture_callback_count++",
+            "jelly_probe_shader_view(mix, images)",
+            "mp_motion_create(p->gpu, 480)",
+            "bool direct = frame->vsync_interval > 0 && !frame->redraw",
         )):
             parser.exit(1, "opt-in VO Jelly probe/readback integration is incomplete\n")
         if "OPT_BOOL(fongmi_jelly_probe_arm)" not in vo or "OPT_FLAG(fongmi_jelly_probe_arm)" in vo:

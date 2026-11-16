@@ -174,7 +174,12 @@ def _inject_probe_shader(source: str) -> str:
 
 def transform_motion(source: str, *, verify_hash: bool = True) -> tuple[str, bool]:
     if MARKER in source:
-        required = ("synthesis_probe_header", "synthesis_probe_body", "mp_motion_render_frames_probe")
+        required = (
+            "synthesis_probe_header",
+            "synthesis_probe_body",
+            "mp_motion_render_frames_probe",
+            "mp_motion_render_views_probe",
+        )
         if all(item in source for item in required):
             return source, False
         raise ValueError("motion probe marker/source mismatch")
@@ -434,6 +439,29 @@ def transform_motion(source: str, *, verify_hash: bool = True) -> tuple[str, boo
         "alpha, MOTION_INPUT_VIEW, true, NULL, output))",
         "view render",
     )
+    view_api_anchor = "bool mp_motion_shader_supported(const struct mp_motion *m)\n"
+    view_api = """enum mp_motion_result mp_motion_render_views_probe(
+    struct mp_motion *m, const struct pl_rendered_frame *first,
+    const struct pl_rendered_frame *second, float alpha,
+    const struct mp_motion_probe_request *probe, pl_tex *output)
+{
+    if (output)
+        *output = NULL;
+    enum mp_motion_result result = validate_views(m, first, second, alpha);
+    if (result != MP_MOTION_OK)
+        return result;
+    if (!output)
+        return MP_MOTION_UNSUPPORTED;
+    if (!probe || !probe->buffer)
+        return MP_MOTION_ERROR;
+    if (!render(m, first->texture, second->texture, first->signature, second->signature,
+                alpha, MOTION_INPUT_VIEW, true, probe, output))
+        return MP_MOTION_ERROR;
+    return MP_MOTION_OK;
+}
+
+"""
+    out = _once(out, view_api_anchor, view_api + view_api_anchor, "view probe API")
     out = _once(
         out,
         "synthesize(m, view->texture, m->images[0][0], 0, shader, 1)",
@@ -454,6 +482,7 @@ def transform_header(source: str) -> tuple[str, bool]:
         if (
             "#define MP_MOTION_PROBE_RECORDS 64" in source
             and "mp_motion_render_frames_probe" in source
+            and "mp_motion_render_views_probe" in source
             and "mp_motion_render_probe" in source
         ):
             return source, False
@@ -475,11 +504,15 @@ struct mp_motion;"""
     struct mp_motion *motion, const struct mp_motion_frame *first,
     const struct mp_motion_frame *second, float alpha, struct pl_frame *output);"""
     extra = """
-enum mp_motion_result mp_motion_render_frames_probe(
-    struct mp_motion *motion, const struct mp_motion_frame *first,
-    const struct mp_motion_frame *second, float alpha,
-    const struct mp_motion_probe_request *probe, struct pl_frame *output);
-bool mp_motion_render_probe(
+	enum mp_motion_result mp_motion_render_frames_probe(
+	    struct mp_motion *motion, const struct mp_motion_frame *first,
+	    const struct mp_motion_frame *second, float alpha,
+	    const struct mp_motion_probe_request *probe, struct pl_frame *output);
+	enum mp_motion_result mp_motion_render_views_probe(
+	    struct mp_motion *motion, const struct pl_rendered_frame *first,
+	    const struct pl_rendered_frame *second, float alpha,
+	    const struct mp_motion_probe_request *probe, pl_tex *output);
+	bool mp_motion_render_probe(
     struct mp_motion *motion, pl_tex first, pl_tex second,
     uint64_t first_id, uint64_t second_id, float alpha,
     const struct mp_motion_probe_request *probe, pl_tex *output);"""

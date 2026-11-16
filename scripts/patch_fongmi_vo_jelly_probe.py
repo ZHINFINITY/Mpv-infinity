@@ -50,6 +50,7 @@ def apply_patch(vo_source_path, meson_path, repo_writer_dir, probe_enabled):
     bool jelly_probe_last_record_valid, jelly_probe_setup_attempted;
     bool jelly_probe_finalized;
     pl_buf jelly_probe_buf;
+    struct mp_motion *jelly_probe_motion;
     struct mpvrx_jelly_probe_writer jelly_probe_writer;
     struct mpvrx_jelly_probe_diagnostics jelly_probe_diagnostics;
 '''
@@ -86,6 +87,8 @@ def apply_patch(vo_source_path, meson_path, repo_writer_dir, probe_enabled):
         d->buffer_status = MPVRX_JELLY_STAGE_NOT_REACHED;
         d->pixel_x = 1352; d->pixel_y = 224;
         d->source_width = d->source_height = d->pixel_in_bounds = -1;
+        d->motion_views_enabled = -1;
+        d->last_candidate_view_width = d->last_candidate_view_height = -1;
         d->last_pts_valid = d->last_selection_mode = -1;
         d->gpu_last_poll_status = MPVRX_JELLY_READBACK_NOT_SUBMITTED;
         d->pixel_evaluated = d->jelly_reason_code = d->activation = -1;
@@ -126,12 +129,14 @@ def apply_patch(vo_source_path, meson_path, repo_writer_dir, probe_enabled):
             } else {
                 d->buffer_status = MPVRX_JELLY_STAGE_OK;
                 d->buffer_error = 0;
+                p->jelly_probe_motion = mp_motion_create(p->gpu, 480);
                 enum mpvrx_jelly_probe_capture_result arm_result =
                     mpvrx_jelly_probe_writer_arm(&p->jelly_probe_writer);
                 if (arm_result == MPVRX_JELLY_CAPTURE_ACCEPTED) {
-                    p->jelly_probe_armed = true;
-                    d->setup_status = MPVRX_JELLY_STAGE_OK;
-                    d->setup_error = 0;
+                    p->jelly_probe_armed = p->jelly_probe_motion != NULL;
+                    d->setup_status = p->jelly_probe_motion
+                        ? MPVRX_JELLY_STAGE_OK : MPVRX_JELLY_STAGE_FAILED;
+                    d->setup_error = p->jelly_probe_motion ? 0 : ENOMEM;
                 } else {
                     d->setup_status = MPVRX_JELLY_STAGE_FAILED;
                     d->setup_error = (int)arm_result;
@@ -152,6 +157,7 @@ def apply_patch(vo_source_path, meson_path, repo_writer_dir, probe_enabled):
             p->jelly_probe_armed = false;
         p->jelly_probe_armed = false;
         jelly_probe_finish(p);
+        mp_motion_destroy(&p->jelly_probe_motion);
     }
 '''
     source = replace_once(source, update_anchor, setup, "control update")
@@ -200,8 +206,308 @@ static void jelly_probe_poll(struct priv *p)
 
 '''
     source = replace_once(source, frame_anchor, poll + frame_anchor, "probe helpers insertion")
-    source = replace_once(source, '    struct priv *p = vo->priv;\n    int before = -1;\n',
-        '    struct priv *p = vo->priv;\n    jelly_probe_poll(p);\n    int before = -1;\n', "render poll")
+    render_mix_anchor = '''static bool render_source_mix(struct vo *vo, const struct vo_frame *frame,
+                               const struct pl_frame_mix *mix,
+                               const uint64_t *view_signatures,
+                               const struct pl_frame *target,
+                               const struct pl_render_params *params,
+                               bool can_interpolate, int *motion_result)
+{
+    struct priv *p = vo->priv;
+'''
+    render_mix_probe = render_mix_anchor + '''    jelly_probe_poll(p);
+    struct mpvrx_jelly_probe_diagnostics *probe_diag = &p->jelly_probe_diagnostics;
+    if (p->jelly_probe_writer_ready && !p->jelly_probe_finalized) {
+        probe_diag->render_source_mix_callback_count++;
+        probe_diag->motion_views_enabled = p->motion_views ? 1 : 0;
+    }
+    bool probe_active = p->jelly_probe_armed && p->jelly_probe_writer_ready &&
+        !p->jelly_probe_finalized && p->jelly_probe_buf && p->jelly_probe_motion;
+'''
+    source = replace_once(source, render_mix_anchor, render_mix_probe, "render-source-mix diagnostics")
+
+    motion_mix_anchor = '''struct motion_mix {
+    bool prepare_only;
+    struct mp_motion *motion;
+    float alpha;
+    bool synthesized;
+    int num_frames;
+    enum mp_motion_result result;
+};
+'''
+    motion_mix_probe = '''struct motion_mix {
+    bool prepare_only;
+    struct priv *probe_priv;
+    bool probe_active, probe_candidate;
+    struct mp_motion_probe_request probe_request;
+    struct mp_motion *motion;
+    float alpha;
+    bool synthesized;
+    int num_frames;
+    enum mp_motion_result result;
+};
+'''
+    source = replace_once(source, motion_mix_anchor, motion_mix_probe, "motion-view probe state")
+
+    view_helper = '''static void jelly_probe_shader_view(struct motion_mix *mix,
+                                   const struct pl_rendered_mix *images)
+{
+    struct priv *p = mix->probe_priv;
+    if (!p || !images || images->num_frames != 2)
+        return;
+    struct mpvrx_jelly_probe_diagnostics *d = &p->jelly_probe_diagnostics;
+    if (p->jelly_probe_writer_ready && !p->jelly_probe_finalized) {
+        d->motion_view_callback_count++;
+        d->motion_view_shader_callback_count++;
+        d->motion_render_callback_count++;
+        if (mix->probe_active)
+            d->armed_render_callback_count++;
+    }
+    if (!mix->synthesized)
+        return;
+    if (!mix->probe_active || !mix->probe_candidate || !p->jelly_probe_motion)
+        return;
+    const struct mp_motion_probe_request *probe = &mix->probe_request;
+    pl_tex view = images->frames[0].texture;
+    int width = view ? view->params.w : 0;
+    int height = view ? view->params.h : 0;
+    bool pixel_in_bounds = view && probe->pixel_x >= 0 && probe->pixel_y >= 0 &&
+        probe->pixel_x < width && probe->pixel_y < height;
+    bool alpha_valid = isfinite(probe->alpha);
+    unsigned rejection_mask = 0;
+    if (!pixel_in_bounds) {
+        d->out_of_bounds_count++;
+        rejection_mask |= 1u;
+    }
+    if (!alpha_valid) {
+        d->alpha_invalid_count++;
+        rejection_mask |= 8u;
+    } else if (probe->alpha < 0.35f) {
+        d->alpha_below_count++;
+        rejection_mask |= 2u;
+    } else if (probe->alpha > 0.65f) {
+        d->alpha_above_count++;
+        rejection_mask |= 4u;
+    }
+    d->last_candidate_view_width = width;
+    d->last_candidate_view_height = height;
+    d->last_candidate_pixel_in_bounds = pixel_in_bounds ? 1 : 0;
+    d->last_candidate_rejection_mask = rejection_mask;
+    bool eligible = pixel_in_bounds && alpha_valid && probe->alpha >= 0.35f &&
+        probe->alpha <= 0.65f;
+    d->last_candidate_eligible = eligible ? 1 : 0;
+    d->last_candidate_pending = eligible && p->jelly_probe_pending ? 1 : 0;
+    if (!eligible)
+        return;
+    d->eligible_pair_count++;
+    if (probe->selection_mode == 1)
+        d->target_pair_count++;
+    else
+        d->fallback_pair_count++;
+    if (p->jelly_probe_pending) {
+        d->pending_readback_count++;
+        return;
+    }
+    d->last_pair_observed = 1;
+    d->last_pts_valid = d->last_candidate_pts_valid;
+    d->last_pts[0] = probe->first_pts;
+    d->last_pts[1] = probe->second_pts;
+    d->last_alpha = probe->alpha;
+    d->last_selection_mode = probe->selection_mode;
+    d->render_attempt_count++;
+    pl_tex probe_output = NULL;
+    enum mp_motion_result result = mp_motion_render_views_probe(
+        p->jelly_probe_motion, &images->frames[0], &images->frames[1],
+        mix->alpha, probe, &probe_output);
+    if (result == MP_MOTION_OK) {
+        p->jelly_probe_pending = true;
+        d->motion_view_probe_dispatch_count++;
+        d->gpu_submit_count++;
+        d->gpu_last_poll_status = MPVRX_JELLY_READBACK_PENDING;
+    } else {
+        d->render_failure_count++;
+    }
+}
+
+'''
+    shader_anchor = 'static pl_tex mix_motion_views(void *priv, const struct pl_rendered_mix *images)\n'
+    source = replace_once(source, shader_anchor, view_helper + shader_anchor,
+                          "shader-path Jelly probe helper")
+
+    shader_view_anchor = '''    mix->result = mp_motion_append_view_shader(
+        mix->motion, &images->frames[0], &images->frames[1],
+        mix->alpha, shader);
+    mix->synthesized = mix->result == MP_MOTION_OK;
+    return mix->synthesized;
+'''
+    shader_view_probe = '''    mix->result = mp_motion_append_view_shader(
+        mix->motion, &images->frames[0], &images->frames[1],
+        mix->alpha, shader);
+    mix->synthesized = mix->result == MP_MOTION_OK;
+    jelly_probe_shader_view(mix, images);
+    return mix->synthesized;
+'''
+    source = replace_once(source, shader_view_anchor, shader_view_probe,
+                          "shader mixer diagnostic pass")
+
+    view_render_anchor = '''    pl_tex output;
+    mix->result = mp_motion_render_views(mix->motion, &images->frames[0],
+                                         &images->frames[1], mix->alpha, &output);
+    if (mix->result != MP_MOTION_OK)
+        return NULL;
+'''
+    view_render_probe = '''    struct priv *p = mix->probe_priv;
+    struct mpvrx_jelly_probe_diagnostics *d = p ? &p->jelly_probe_diagnostics : NULL;
+    if (d && p->jelly_probe_writer_ready && !p->jelly_probe_finalized) {
+        d->motion_view_callback_count++;
+        d->motion_view_texture_callback_count++;
+        d->motion_render_callback_count++;
+        if (mix->probe_active)
+            d->armed_render_callback_count++;
+    }
+    const struct mp_motion_probe_request *probe = mix->probe_active && mix->probe_candidate
+        ? &mix->probe_request : NULL;
+    bool dispatch_probe = false;
+    if (probe && d) {
+        pl_tex view = images->frames[0].texture;
+        int width = view ? view->params.w : 0;
+        int height = view ? view->params.h : 0;
+        bool pixel_in_bounds = view && probe->pixel_x >= 0 && probe->pixel_y >= 0 &&
+            probe->pixel_x < width && probe->pixel_y < height;
+        bool alpha_valid = isfinite(probe->alpha);
+        unsigned rejection_mask = 0;
+        if (!pixel_in_bounds) {
+            d->out_of_bounds_count++;
+            rejection_mask |= 1u;
+        }
+        if (!alpha_valid) {
+            d->alpha_invalid_count++;
+            rejection_mask |= 8u;
+        } else if (probe->alpha < 0.35f) {
+            d->alpha_below_count++;
+            rejection_mask |= 2u;
+        } else if (probe->alpha > 0.65f) {
+            d->alpha_above_count++;
+            rejection_mask |= 4u;
+        }
+        d->last_candidate_observed = 1;
+        d->last_candidate_pts_valid = isfinite(probe->first_pts) && isfinite(probe->second_pts);
+        d->last_candidate_pts[0] = probe->first_pts;
+        d->last_candidate_pts[1] = probe->second_pts;
+        d->last_candidate_alpha = probe->alpha;
+        d->last_candidate_selection_mode = probe->selection_mode;
+        d->last_candidate_view_width = width;
+        d->last_candidate_view_height = height;
+        d->last_candidate_pixel_in_bounds = pixel_in_bounds ? 1 : 0;
+        d->last_candidate_rejection_mask = rejection_mask;
+        bool eligible = pixel_in_bounds && alpha_valid && probe->alpha >= 0.35f &&
+            probe->alpha <= 0.65f;
+        d->last_candidate_eligible = eligible ? 1 : 0;
+        d->last_candidate_pending = eligible && p->jelly_probe_pending ? 1 : 0;
+        if (eligible) {
+            d->eligible_pair_count++;
+            if (probe->selection_mode == 1)
+                d->target_pair_count++;
+            else
+                d->fallback_pair_count++;
+            if (p->jelly_probe_pending) {
+                d->pending_readback_count++;
+            } else if (p->jelly_probe_armed) {
+                d->last_pair_observed = 1;
+                d->last_pts_valid = d->last_candidate_pts_valid;
+                d->last_pts[0] = probe->first_pts;
+                d->last_pts[1] = probe->second_pts;
+                d->last_alpha = probe->alpha;
+                d->last_selection_mode = probe->selection_mode;
+                d->render_attempt_count++;
+                dispatch_probe = true;
+            }
+        }
+    }
+    pl_tex output;
+    mix->result = mp_motion_render_views(mix->motion, &images->frames[0],
+        &images->frames[1], mix->alpha, &output);
+    if (dispatch_probe) {
+        pl_tex probe_output = NULL;
+        enum mp_motion_result probe_result = mp_motion_render_views_probe(
+            p->jelly_probe_motion, &images->frames[0], &images->frames[1],
+            mix->alpha, probe, &probe_output);
+        if (probe_result == MP_MOTION_OK) {
+            p->jelly_probe_pending = true;
+            d->motion_view_probe_dispatch_count++;
+            d->gpu_submit_count++;
+            d->gpu_last_poll_status = MPVRX_JELLY_READBACK_PENDING;
+        } else {
+            d->render_failure_count++;
+        }
+    }
+    if (mix->result != MP_MOTION_OK)
+        return NULL;
+'''
+    source = replace_once(source, view_render_anchor, view_render_probe, "motion-view probe dispatch")
+
+    pair_path_anchor = "        if (selected && motion_views_supported(p, mix, pair, target, params)) {\n"
+    pair_path_probe = '''        bool views_supported = selected && motion_views_supported(p, mix, pair, target, params);
+        if (selected && probe_diag->setup_status == MPVRX_JELLY_STAGE_OK &&
+            !p->jelly_probe_finalized) {
+            probe_diag->motion_view_pair_count++;
+            if (views_supported)
+                probe_diag->motion_view_supported_pair_count++;
+            else
+                probe_diag->motion_view_unsupported_pair_count++;
+        }
+        if (selected && probe_active) {
+            const struct mp_image *probe_mpi0 = mix->frames[pair[0]]->user_data;
+            const struct mp_image *probe_mpi1 = mix->frames[pair[1]]->user_data;
+            const struct frame_priv *probe_fp0 = probe_mpi0->priv;
+            const struct frame_priv *probe_fp1 = probe_mpi1->priv;
+            bool valid_probe_pts = isfinite(probe_mpi0->pts) && isfinite(probe_mpi1->pts) &&
+                probe_mpi0->pts != MP_NOPTS_VALUE && probe_mpi1->pts != MP_NOPTS_VALUE;
+            double probe_pts_min = valid_probe_pts ? fmin(probe_mpi0->pts, probe_mpi1->pts) : 0.0;
+            double probe_pts_max = valid_probe_pts ? fmax(probe_mpi0->pts, probe_mpi1->pts) : 0.0;
+            bool target_probe_pair = valid_probe_pts && probe_pts_min <= 1.63 && probe_pts_max >= 1.46;
+            bool fallback_probe_pair = !valid_probe_pts || !target_probe_pair;
+            bool source_pixel_in_bounds = probe_mpi0->params.w > 1352 && probe_mpi0->params.h > 224;
+            motion.probe_candidate = (target_probe_pair || fallback_probe_pair) && source_pixel_in_bounds;
+            motion.probe_request = (struct mp_motion_probe_request) {
+                .buffer = p->jelly_probe_buf, .pixel_x = 1352, .pixel_y = 224,
+                .first_id = probe_fp0->motion_id, .second_id = probe_fp1->motion_id,
+                .first_pts = valid_probe_pts ? probe_mpi0->pts : NAN,
+                .second_pts = valid_probe_pts ? probe_mpi1->pts : NAN,
+                .alpha = motion.alpha,
+                .selection_mode = target_probe_pair ? 1 : 2,
+            };
+            probe_diag->last_candidate_observed = 1;
+            probe_diag->last_candidate_pts_valid = valid_probe_pts ? 1 : 0;
+            probe_diag->last_candidate_pts[0] = valid_probe_pts ? probe_mpi0->pts : NAN;
+            probe_diag->last_candidate_pts[1] = valid_probe_pts ? probe_mpi1->pts : NAN;
+            probe_diag->last_candidate_alpha = motion.alpha;
+            probe_diag->last_candidate_selection_mode = target_probe_pair ? 1 : 2;
+            probe_diag->source_bounds_observed = 1;
+            probe_diag->source_width = probe_mpi0->params.w;
+            probe_diag->source_height = probe_mpi0->params.h;
+            probe_diag->pixel_in_bounds = source_pixel_in_bounds ? 1 : 0;
+            probe_diag->last_candidate_source_width = probe_mpi0->params.w;
+            probe_diag->last_candidate_source_height = probe_mpi0->params.h;
+            probe_diag->last_candidate_pixel_in_bounds = source_pixel_in_bounds ? 1 : 0;
+            probe_diag->last_candidate_view_width = -1;
+            probe_diag->last_candidate_view_height = -1;
+            probe_diag->last_candidate_eligible = 0;
+            probe_diag->last_candidate_pending = 0;
+            probe_diag->last_candidate_rejection_mask = source_pixel_in_bounds ? 0 : 1u;
+            if (!source_pixel_in_bounds)
+                probe_diag->out_of_bounds_count++;
+        }
+        if (views_supported) {
+'''
+    source = replace_once(source, pair_path_anchor, pair_path_probe, "motion-view pair diagnostics")
+    source = replace_once(source,
+        '        struct motion_mix motion = {.motion = p->motion, .num_frames = -1};\n',
+        '        struct motion_mix motion = {\n'
+        '            .probe_priv = p, .probe_active = probe_active,\n'
+        '            .motion = p->motion, .num_frames = -1,\n'
+        '        };\n',
+        "motion-view probe state initializer")
 
     call_anchor = '''    if (described) {
         enum mp_motion_result result = mp_motion_render_frames(
@@ -215,7 +521,7 @@ static void jelly_probe_poll(struct priv *p)
     bool fallback_probe_pair = !valid_probe_pts || !target_probe_pair;
     struct mpvrx_jelly_probe_diagnostics *probe_diag = &p->jelly_probe_diagnostics;
     bool probe_active = p->jelly_probe_armed && p->jelly_probe_writer_ready &&
-        !p->jelly_probe_finalized && p->jelly_probe_buf;
+        !p->jelly_probe_finalized && p->jelly_probe_buf && p->jelly_probe_motion;
     if (probe_diag->setup_status == MPVRX_JELLY_STAGE_OK && !p->jelly_probe_finalized)
         probe_diag->motion_render_callback_count++;
     bool pixel_in_bounds = mpi0->params.w > 1352 && mpi0->params.h > 224;
@@ -339,6 +645,7 @@ static void jelly_probe_poll(struct priv *p)
         p->jelly_probe_armed = false;
     p->jelly_probe_armed = false;
     jelly_probe_finish(p);
+    mp_motion_destroy(&p->jelly_probe_motion);
     if (p->gpu)
         pl_buf_destroy(p->gpu, &p->jelly_probe_buf);
 '''

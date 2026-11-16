@@ -18,8 +18,8 @@ MPV_REVISION = "95ec8e929f8ad2f97c8415c486971493a0b408df"
 MOTION_SHA256 = "ca7870c21f7a499d03ab1f7d73f1b9bcbccee534398d8a6f01957556e7d61932"
 MOTION_ANTIALIAS_SHA256 = "db13147fd268ebe857e235a2ad066c0d34d9c35cab66f6fa93ed5767d61219a2"
 MOTION_HEADER_SHA256 = "12fedd08063a540b69667a51e146d539ebae509b63c07964f573410a7d0ae427"
-MOTION_JELLY_PROBE_SHA256 = "fff42ae20a6f40fc548d55eddc1c887f33a07d1a96dcc7df7831eb1bb85a177d"
-MOTION_HEADER_JELLY_PROBE_SHA256 = "6f8d17d7be48ec7355c1a1f812c73a7d637c3301cfd8382f441d7c2fded54e16"
+MOTION_JELLY_PROBE_SHA256 = "43e11f85058e80756fce132eba0c10cc637f9fc38dd9e548b742dc8bb6cafb81"
+MOTION_HEADER_JELLY_PROBE_SHA256 = "1acf57556f307e034d8c6923d9441bbcb583de3bd3f8b4b0e63eb15fe37a20c8"
 
 
 def _sha256(path: Path) -> str:
@@ -96,6 +96,10 @@ def verify_mpv_source(mpv_dir: Path) -> bool:
         ("FongMi motion option", '{"motion-interpolation", OPT_INT(motion_fps), M_RANGE(0, 240)}' in vo),
         ("Android display-time presentation", "info->queue_display_time_only = true;" in android_context),
     )
+    if probe_motion:
+        contracts += (
+            ("Jelly view-probe API", "mp_motion_render_views_probe" in motion and "mp_motion_render_views_probe" in header),
+        )
     failed = [name for name, passed in contracts if not passed]
     if failed:
         raise ValueError("MPVRx FongMi integration contract is incomplete: " + ", ".join(failed))
