@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Regression checks for the active FongMi paired-color and directional warp gate."""
+"""Regression checks for FongMi's local contour ownership resolver."""
 from __future__ import annotations
 
 import argparse
@@ -21,46 +21,83 @@ def smoothstep(edge0: float, edge1: float, value: float) -> float:
     return t * t * (3.0 - 2.0 * t)
 
 
-def support(value: float, low: float, high: float) -> float:
-    return 1.0 - smoothstep(low, high, value)
+def patch_support(errors: list[float]) -> float:
+    return 1.0 - smoothstep(0.02, 0.08, sum(errors) / len(errors))
 
 
-def directional_visibility_scale(conflict_weight: float, paired_evidence: float, geometry: float) -> float:
-    """Mirror one source lane's conflict-only paired-color and cycle gate."""
-    local_support = paired_evidence * geometry
-    if not math.isfinite(local_support):
-        local_support = 0.0
-    local_support = min(1.0, max(0.0, local_support))
-    local_reliability = smoothstep(0.10, 0.60, local_support)
-    return 1.0 + (local_reliability - 1.0) * conflict_weight
+def path_resolve(displacement0: tuple[float, float], displacement1: tuple[float, float],
+                 projection: tuple[float, float]) -> float:
+    error0 = (displacement1[0] + displacement0[0] * projection[0],
+              displacement1[1] + displacement0[1] * projection[0])
+    error1 = (displacement0[0] + displacement1[0] * projection[1],
+              displacement0[1] + displacement1[1] * projection[1])
+    disagreement = max(math.hypot(*error0), math.hypot(*error1))
+    return smoothstep(0.5, 1.5, disagreement)
 
 
-def compile_mask_statement(source: str) -> None:
+def local_resolve_factor(path_weight: float, support0: float, support1: float,
+                         ownership0: float, ownership1: float) -> float:
+    directional_evidence = smoothstep(0.01, 0.10, abs(ownership0 - ownership1))
+    unsupported = 1.0 - max(support0, support1)
+    return path_weight * max(directional_evidence, unsupported)
+
+
+def select_owner(errors0: list[float], errors1: list[float], confidence0: float,
+                 confidence1: float, blend: float) -> int | None:
+    score0 = patch_support(errors0) * confidence0
+    score1 = patch_support(errors1) * confidence1
+    if not math.isfinite(score0) or not math.isfinite(score1):
+        return None
+    if max(score0, score1) <= 0.001:
+        return None
+    if score0 > score1:
+        return 0
+    if score1 > score0:
+        return 1
+    return 0 if blend < 0.5 else 1
+
+
+def compile_ownership_resolver(source: str) -> None:
     validator = shutil.which("glslangValidator")
     if validator is None:
-        print("Skipping paired-color mask GLSL compile: glslangValidator is unavailable")
+        print("Skipping local ownership GLSL compile: glslangValidator is unavailable")
         return
     if not PATCHER.has_paired_color_mask(source):
         raise AssertionError("GLSL compile requires the validated patched FongMi source")
     shader = f"""#version 450
 layout(local_size_x = 1, local_size_y = 1) in;
-void main() {{
-    vec2 paired_error = vec2(0.04, 0.06);
-    vec2 support = vec2(1.0) - smoothstep(vec2(0.02), vec2(0.08), paired_error);
-    vec2 evidence = vec2(0.25, 0.85);
-    vec4 f = vec4(0.0, 0.0, 0.0, 0.90);
-    vec4 r = vec4(0.0, 0.0, 0.0, 0.80);
-    float conflict_weight = 0.6;
-    vec2 visibility = vec2(0.4, 0.5);
-{PATCHER.ARTIFACT_STRENGTH_BLOCK.rstrip()}
-    if (any(isnan(support)) || any(isnan(visibility))) {{
-        return;
-    }}
+layout(set = 0, binding = 0) uniform sampler2D source0;
+layout(set = 0, binding = 1) uniform sampler2D source1;
+layout(set = 0, binding = 2, rgba32f) uniform writeonly image2D output_image;
+vec3 synthesis_pq(vec3 color) {{ return color; }}
+vec3 sample_witness(sampler2D image, vec2 p, vec2 extent, vec2 texel_size) {{
+    return textureLod(image, (clamp(p, vec2(0.0), extent - 1.0) + 0.5) * texel_size, 0.0).rgb;
 }}
+vec4 run_resolver() {{
+    vec2 output_extent = vec2(16.0);
+    vec2 pixel = vec2(8.0);
+    vec2 displacement0 = vec2(-3.0, 0.0);
+    vec2 displacement1 = vec2(1.0, 0.0);
+    vec2 projection = vec2(3.0, 0.3333333);
+    vec2 p0 = pixel + displacement0;
+    vec2 p1 = pixel + displacement1;
+    float blend = 0.5;
+    int hdr = 0;
+    vec4 original0 = textureLod(source0, vec2(0.5), 0.0);
+    vec4 original1 = textureLod(source1, vec2(0.5), 0.0);
+    vec4 original = mix(original0, original1, blend);
+    vec4 warped0 = textureLod(source0, vec2(0.5), 0.0);
+    vec4 warped1 = textureLod(source1, vec2(0.5), 0.0);
+    vec4 f = vec4(0.0, 0.0, 0.8, 0.9);
+    vec4 r = vec4(0.0, 0.0, 0.8, 0.9);
+    vec2 visibility = vec2(0.25, 0.25);
+{PATCHER.ARTIFACT_STRENGTH_BLOCK.rstrip()}
+}}
+void main() {{ imageStore(output_image, ivec2(0), run_resolver()); }}
 """
-    with tempfile.TemporaryDirectory(prefix="fongmi-paired-color-mask-") as tmp:
-        shader_path = Path(tmp) / "paired_color_mask.comp"
-        spirv_path = Path(tmp) / "paired_color_mask.spv"
+    with tempfile.TemporaryDirectory(prefix="mpv-infinity-contour-ownership-") as tmp:
+        shader_path = Path(tmp) / "local_contour_ownership.comp"
+        spirv_path = Path(tmp) / "local_contour_ownership.spv"
         shader_path.write_text(shader, encoding="utf-8")
         result = subprocess.run(
             [validator, "-V", "--target-env", "vulkan1.2", "-S", "comp", "-o", str(spirv_path), str(shader_path)],
@@ -69,148 +106,150 @@ void main() {{
             text=True,
         )
         if result.returncode != 0:
-            raise AssertionError(f"GLSL rejected the directional warp gate:\n{result.stdout}\n{result.stderr}")
+            raise AssertionError(f"GLSL rejected the local ownership resolver:\n{result.stdout}\n{result.stderr}")
         assert spirv_path.is_file() and spirv_path.stat().st_size > 0
-    print("FongMi paired-color and directional warp gate GLSL compiled to Vulkan SPIR-V")
+    print("FongMi local contour ownership GLSL compiled to Vulkan SPIR-V")
 
 
 def verify_reprepare_cycle(source: str) -> None:
     """Model the build script's second prepare call without changing synthesis."""
     base_source = PATCHER.unpatch_source(source)
     antialias_enabled = DOWNSAMPLE.has_antialias_filter(base_source)
-    with tempfile.TemporaryDirectory(prefix="fongmi-reprepare-cycle-") as tmp:
+    with tempfile.TemporaryDirectory(prefix="mpv-infinity-reprepare-cycle-") as tmp:
         motion_path = Path(tmp) / "motion.c"
         motion_path.write_text(source, encoding="utf-8")
         assert PATCHER.strip_patch(motion_path), "the prior prepare pass must be stripped"
         DOWNSAMPLE.apply_patch(motion_path, enabled=antialias_enabled)
-        assert PATCHER.apply_patch(motion_path), "the repeated prepare pass must reapply the gate"
-        assert motion_path.read_text(encoding="utf-8") == source, "reprepare must preserve the exact gate source"
+        assert PATCHER.apply_patch(motion_path), "the repeated prepare pass must reapply the resolver"
+        assert motion_path.read_text(encoding="utf-8") == source, "reprepare must preserve the exact resolver source"
+
+
+def make_base_source() -> str:
+    return (
+        PATCHER.CONFLICT_WEIGHT + "\n"
+        + PATCHER.PAIRED_ERROR_ANCHOR + "\n"
+        + PATCHER.ORIGINAL_BLOCK
+        + "                    vec2 evidence = support * vec2(relative_fit(stationary_error, paired_error.x),\n"
+        + PATCHER.VISIBILITY_ANCHOR
+        + PATCHER.FINAL_BLEND_ANCHOR
+    )
+
+
+def count_visible_copies(image: list[float], threshold: float = 0.1) -> int:
+    return sum(value > threshold for value in image)
 
 
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--source", type=Path, help="raw or prepared pinned FongMi motion.c")
     args = parser.parse_args()
-
-    if args.source:
-        original = args.source.read_text(encoding="utf-8")
-    else:
-        original = (
-            "float conflict_weight = smoothstep(0.03, 0.15, color_error);\n"
-            "                    vec2 paired_error = vec2(max(error0.r, max(error0.g, error0.b)),\n"
-            "                                             max(error1.r, max(error1.g, error1.b)));\n"
-            + PATCHER.ORIGINAL_BLOCK
-            + "                    vec2 evidence = support * vec2(relative_fit(stationary_error, paired_error.x),\n"
-            + PATCHER.VISIBILITY_ANCHOR
-        )
-
+    original = args.source.read_text(encoding="utf-8") if args.source else make_base_source()
     expected_base = PATCHER.unpatch_source(original) if PATCHER.MARKER in original else original
+
     patched, changed = PATCHER.transform_source(original)
+    assert changed or PATCHER.ARTIFACT_STRENGTH_MARKER in patched
     assert PATCHER.has_paired_color_mask(patched)
     assert patched.count(PATCHER.ARTIFACT_STRENGTH_BLOCK) == 1
-    assert "local_warp_support = evidence * vec2(f.w, r.w);" in patched
-    assert "visibility *= mix(vec2(1.0), local_warp_keep, conflict_weight);" in patched
-    assert "path_disagreement" not in PATCHER.ARTIFACT_STRENGTH_BLOCK
-    assert "local_motion_length = length(displacement1 - displacement0)" not in patched
-    assert "path_disagreement = length(displacement1 - displacement0)" not in patched
+    assert PATCHER.FINAL_BLEND_ANCHOR not in patched
+    assert "path_error0 = displacement1 + displacement0 * projection.x" in patched
+    assert "sample_witness(source0, p0 + offset" in patched
+    assert "sample_witness(source1, paired1_position + offset" in patched
+    assert "return mix(blended_output, local_owner, local_resolve);" in patched
+    assert "visibility *= mix(vec2(1.0), local_warp_keep, conflict_weight);" not in patched
     patched_again, changed_again = PATCHER.transform_source(patched)
-    assert not changed_again and patched_again == patched, "mask patch must be idempotent"
+    assert not changed_again and patched_again == patched, "the resolver patch must be idempotent"
 
-    legacy = patched.replace(PATCHER.ARTIFACT_STRENGTH_BLOCK, "", 1)
+    legacy = expected_base.replace(PATCHER.ORIGINAL_BLOCK, PATCHER.PATCHED_BLOCK, 1)
     assert PATCHER.has_legacy_paired_color_mask(legacy), "the paired-color-only mask must remain recognizable"
     upgraded, upgraded_changed = PATCHER.transform_source(legacy)
-    assert upgraded_changed and upgraded == patched, "the paired-color-only mask must upgrade to the directional gate"
+    assert upgraded_changed and upgraded == patched, "the paired-color-only mask must upgrade to local ownership"
     assert PATCHER.unpatch_source(legacy) == expected_base
 
     prior_blocks = (
         PATCHER.ARTIFACT_STRENGTH_V1_BLOCK,
         PATCHER.ARTIFACT_STRENGTH_V2_BLOCK,
         PATCHER.ARTIFACT_STRENGTH_V3_BLOCK,
+        PATCHER.ARTIFACT_STRENGTH_V4_BLOCK,
     )
     for prior_block in prior_blocks:
-        prior = patched.replace(PATCHER.ARTIFACT_STRENGTH_BLOCK, prior_block, 1)
-        assert PATCHER.has_paired_color_mask(prior), "each shipped prior gate must remain recognizable"
+        prior = legacy.replace(PATCHER.VISIBILITY_ANCHOR,
+                               PATCHER.VISIBILITY_ANCHOR + prior_block, 1)
+        assert PATCHER.has_paired_color_mask(prior), "each shipped prior patch must remain recognizable"
         upgraded_prior, changed_prior = PATCHER.transform_source(prior)
-        assert changed_prior and upgraded_prior == patched, "each prior gate must upgrade in place"
+        assert changed_prior and upgraded_prior == patched, "prior patches must upgrade to local ownership"
         assert PATCHER.unpatch_source(prior) == expected_base
 
     unpatched = PATCHER.unpatch_source(patched)
     repatched, repatched_changed = PATCHER.transform_source(unpatched)
-    assert repatched_changed and repatched == patched, "the patch must change only the supported source blocks"
+    assert repatched_changed and repatched == patched
     assert unpatched == expected_base, "unpatching must restore the exact pre-mask source"
     if args.source:
         verify_reprepare_cycle(patched)
 
-    # Keep close color witnesses, but attenuate their paired recovery sooner.
-    assert math.isclose(support(0.015, 0.03, 0.15), 1.0, abs_tol=1e-12)
-    assert math.isclose(support(0.015, 0.02, 0.08), 1.0, abs_tol=1e-12)
-    assert support(0.04, 0.02, 0.08) < support(0.04, 0.03, 0.15)
-    assert support(0.06, 0.02, 0.08) < support(0.06, 0.03, 0.15)
-    assert support(0.08, 0.02, 0.08) == 0.0 < support(0.08, 0.03, 0.15)
+    # A clean global pan has phase-consistent inverse paths and is left untouched.
+    assert path_resolve((-4.0, 0.0), (4.0, 0.0), (1.0, 1.0)) == 0.0
+    assert path_resolve((-1.0, 0.0), (3.0, 0.0), (3.0, 1.0 / 3.0)) == 0.0
+    for alpha in (0.1, 0.25, 0.5, 0.75, 0.9):
+        phase_projection = ((1.0 - alpha) / alpha, alpha / (1.0 - alpha))
+        camera_motion = (3.25, -2.5)
+        displacement0 = (-alpha * camera_motion[0], -alpha * camera_motion[1])
+        displacement1 = ((1.0 - alpha) * camera_motion[0],
+                         (1.0 - alpha) * camera_motion[1])
+        assert path_resolve(displacement0, displacement1, phase_projection) == 0.0
 
-    # Conflict-free samples are untouched; a reliable camera pan is not rejected
-    # just because its opposing displacement vectors are large.
-    assert directional_visibility_scale(0.0, 0.0, 0.0) == 1.0
-    assert directional_visibility_scale(0.0, 0.0, 1.0) == 1.0
-    assert directional_visibility_scale(1.0, 0.95, 0.95) == 1.0
+    # Same gold center pixels fool the prior color-conflict gate; neighboring
+    # source-patch context identifies which inverse lane tracks the contour.
+    same_gold_center_error = 0.0
+    prior_conflict_weight = smoothstep(0.03, 0.15, same_gold_center_error)
+    assert prior_conflict_weight == 0.0
+    assert path_resolve((-3.0, 0.0), (1.0, 0.0), (3.0, 1.0 / 3.0)) == 1.0
+    wrong_patch = [0.0, 0.40, 0.40]
+    matching_patch = [0.0, 0.005, 0.005]
+    assert patch_support(wrong_patch) == 0.0
+    assert patch_support(matching_patch) == 1.0
+    support0 = patch_support(wrong_patch)
+    support1 = patch_support(matching_patch)
+    owner0, owner1 = support0 * 0.9, support1 * 0.95
+    assert local_resolve_factor(1.0, support0, support1, owner0, owner1) == 1.0
+    assert select_owner(wrong_patch, matching_patch, 0.9, 0.95, 0.5) == 1
 
-    # Each direction is independently gated by its paired witness and cycle geometry.
-    weak_forward = directional_visibility_scale(1.0, 0.05, 1.0)
-    strong_reverse = directional_visibility_scale(1.0, 0.95, 0.95)
-    assert weak_forward == 0.0 and strong_reverse == 1.0
-    assert math.isclose(directional_visibility_scale(0.5, 0.0, 1.0), 0.5, abs_tol=1e-12)
-    assert math.isclose(directional_visibility_scale(1.0, 0.35, 1.0), 0.5, abs_tol=1e-12)
-    assert directional_visibility_scale(1.0, 1.0, 0.0) == 0.0
-    assert directional_visibility_scale(1.0, 2.0, 1.0) == 1.0
-    assert directional_visibility_scale(1.0, -1.0, 1.0) == 0.0
-    assert directional_visibility_scale(1.0, math.nan, 1.0) == 0.0
-    assert directional_visibility_scale(1.0, math.inf, 1.0) == 0.0
-    assert directional_visibility_scale(1.0, 1.0, math.inf) == 0.0
+    # Large path residual alone is not sufficient: equally supported local
+    # texture preserves the existing output instead of forcing an owner.
+    assert local_resolve_factor(1.0, 1.0, 1.0, 0.9, 0.9) == 0.0
 
-    # The asymmetric x/y inputs follow f.w/r.w without swapping source lanes.
-    forward_keep = directional_visibility_scale(1.0, 0.95, 0.95)
-    reverse_keep = directional_visibility_scale(1.0, 0.05, 0.95)
-    assert (forward_keep, reverse_keep) == (1.0, 0.0)
-    forward_keep = directional_visibility_scale(1.0, 0.05, 0.95)
-    reverse_keep = directional_visibility_scale(1.0, 0.95, 0.95)
-    assert (forward_keep, reverse_keep) == (0.0, 1.0)
+    # The production blend can retain a source crossfade plus two warp samples.
+    # The local owner path collapses that ambiguous contour to one supported lane.
+    original0 = [0.0] * 12
+    original1 = [0.0] * 12
+    warped0 = [0.0] * 12
+    warped1 = [0.0] * 12
+    original0[2] = 1.0
+    original1[4] = 1.0
+    warped0[4] = 1.0
+    warped1[9] = 1.0
+    vis0 = vis1 = 0.25
+    original = [(a + b) * 0.5 for a, b in zip(original0, original1)]
+    blended = [base * (1.0 - vis0 - vis1) + a * vis0 + b * vis1
+               for base, a, b in zip(original, warped0, warped1)]
+    assert count_visible_copies(blended) == 3
+    selected_owner = warped1
+    resolved = [(base * (1.0 - 1.0) + owner) for base, owner in zip(blended, selected_owner)]
+    assert count_visible_copies(resolved) == 1
 
-    for conflict in (i / 100.0 for i in range(101)):
-        previous_evidence_scale = -1.0
-        for evidence_value in (i / 100.0 for i in range(101)):
-            opacity = directional_visibility_scale(conflict, evidence_value, 0.9)
-            assert 0.0 <= opacity <= 1.0
-            assert opacity + 1e-12 >= previous_evidence_scale
-            previous_evidence_scale = opacity
-        for evidence_value in (0.0, 0.2, 0.6, 1.0):
-            previous_conflict_scale = 1.0
-            for conflict_value in (i / 100.0 for i in range(101)):
-                opacity = directional_visibility_scale(conflict_value, evidence_value, 0.9)
-                assert opacity <= previous_conflict_scale + 1e-12
-                previous_conflict_scale = opacity
-    for evidence_value in (0.0, 0.2, 0.6, 1.0):
-        previous_geometry_scale = -1.0
-        for geometry in (i / 100.0 for i in range(101)):
-            opacity = directional_visibility_scale(1.0, evidence_value, geometry)
-            assert opacity + 1e-12 >= previous_geometry_scale
-            previous_geometry_scale = opacity
+    # No local patch support falls back to one nearest source endpoint, not a
+    # three-layer blend; the selection remains local to the ambiguous pixel.
+    no_support = [1.0] * 3
+    assert select_owner(no_support, no_support, 0.9, 0.9, 0.25) is None
+    assert select_owner(no_support, no_support, 0.9, 0.9, 0.75) is None
+    assert local_resolve_factor(1.0, 0.0, 0.0, 0.0, 0.0) == 1.0
+    assert count_visible_copies(original0) == 1
+    assert count_visible_copies(original1) == 1
 
-    baseline, warped0, warped1 = 0.4, 0.95, 0.2
-    visibility0, visibility1 = 0.25, 0.25
-    gate0, gate1 = weak_forward, strong_reverse
-    result = (
-        baseline * (1.0 - visibility0 * gate0 - visibility1 * gate1)
-        + warped0 * visibility0 * gate0
-        + warped1 * visibility1 * gate1
-    )
-    expected_one_lane = baseline * (1.0 - visibility1) + warped1 * visibility1
-    assert math.isclose(result, expected_one_lane, abs_tol=1e-12)
-
-    compile_mask_statement(patched)
+    compile_ownership_resolver(patched)
     print(
-        "FongMi mask passed: clean and coherent camera motion are unchanged; "
-        "conflicting warp lanes are independently gated by paired evidence and cycle geometry; "
-        "V1/V2/V3 upgrades and source reprepare are idempotent"
+        "FongMi local ownership passed: three path-aligned patch samples resolve same-color contour ambiguity, "
+        "subpixel camera motion and equally supported local texture are unchanged, nearest-frame fallback is local, "
+        "and V1-V4/reprepare upgrades are reversible and idempotent"
     )
 
 
