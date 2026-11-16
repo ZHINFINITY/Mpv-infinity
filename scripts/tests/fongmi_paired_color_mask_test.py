@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Regression checks for the active FongMi paired-color evidence mask."""
+"""Regression checks for the active FongMi paired-color and artifact-strength mask."""
 from __future__ import annotations
 
 import argparse
@@ -25,6 +25,11 @@ def support(value: float, low: float, high: float) -> float:
     return 1.0 - smoothstep(low, high, value)
 
 
+def conflict_opacity(conflict_weight: float) -> float:
+    """Mirror mix(1.0, 0.35, conflict_weight) in the active GLSL."""
+    return 1.0 + (0.35 - 1.0) * conflict_weight
+
+
 def compile_mask_statement(source: str) -> None:
     validator = shutil.which("glslangValidator")
     if validator is None:
@@ -37,7 +42,10 @@ layout(local_size_x = 1, local_size_y = 1) in;
 void main() {{
     vec2 paired_error = vec2(0.04, 0.06);
 {PATCHER.PATCHED_BLOCK.rstrip()}
-    if (any(isnan(support))) {{
+    float conflict_weight = 0.6;
+    vec2 visibility = vec2(0.4);
+{PATCHER.ARTIFACT_STRENGTH_BLOCK.rstrip()}
+    if (any(isnan(support)) || any(isnan(visibility))) {{
         return;
     }}
 }}
@@ -55,7 +63,7 @@ void main() {{
         if result.returncode != 0:
             raise AssertionError(f"glslang rejected the paired-color mask:\n{result.stdout}\n{result.stderr}")
         assert spirv_path.is_file() and spirv_path.stat().st_size > 0
-    print("FongMi paired-color mask GLSL compiled to Vulkan SPIR-V")
+    print("FongMi paired-color and conflict-opacity GLSL compiled to Vulkan SPIR-V")
 
 
 def verify_reprepare_cycle(source: str) -> None:
@@ -85,33 +93,55 @@ def main() -> None:
             "                                             max(error1.r, max(error1.g, error1.b)));\n"
             + PATCHER.ORIGINAL_BLOCK
             + "                    vec2 evidence = support * vec2(relative_fit(stationary_error, paired_error.x),\n"
+            + PATCHER.VISIBILITY_ANCHOR
         )
 
+    expected_base = PATCHER.unpatch_source(original) if PATCHER.MARKER in original else original
     patched, changed = PATCHER.transform_source(original)
     assert PATCHER.has_paired_color_mask(patched)
+    assert patched.count(PATCHER.ARTIFACT_STRENGTH_BLOCK) == 1
     patched_again, changed_again = PATCHER.transform_source(patched)
     assert not changed_again and patched_again == patched, "mask patch must be idempotent"
+
+    legacy = patched.replace(PATCHER.ARTIFACT_STRENGTH_BLOCK, "", 1)
+    assert PATCHER.has_legacy_paired_color_mask(legacy), "the base-branch mask must remain recognizable"
+    upgraded, upgraded_changed = PATCHER.transform_source(legacy)
+    assert upgraded_changed and upgraded == patched, "the prior mask must upgrade to the opacity taper"
+
     unpatched = PATCHER.unpatch_source(patched)
     repatched, repatched_changed = PATCHER.transform_source(unpatched)
-    assert repatched_changed and repatched == patched, "the patch must change only the paired-color mask block"
-    if changed:
-        assert unpatched == original, "raw-source patching must change only the paired-color mask block"
+    assert repatched_changed and repatched == patched, "the patch must change only the supported source blocks"
+    assert unpatched == expected_base, "unpatching must restore the exact pre-mask source"
     if args.source:
         verify_reprepare_cycle(patched)
 
-    # Very close color witnesses retain their full support; moderate mismatch is
-    # attenuated sooner, and a mismatch of 0.08 or more cannot restore the warp.
+    # Keep close color witnesses, but attenuate their paired recovery sooner.
     assert math.isclose(support(0.015, 0.03, 0.15), 1.0, abs_tol=1e-12)
     assert math.isclose(support(0.015, 0.02, 0.08), 1.0, abs_tol=1e-12)
     assert support(0.04, 0.02, 0.08) < support(0.04, 0.03, 0.15)
     assert support(0.06, 0.02, 0.08) < support(0.06, 0.03, 0.15)
     assert support(0.08, 0.02, 0.08) == 0.0 < support(0.08, 0.03, 0.15)
 
+    # Clean pixels are byte-for-byte unchanged by this taper; maximum conflict
+    # leaves 35% of the prior warped-color contribution, a 65% local reduction.
+    assert math.isclose(conflict_opacity(0.0), 1.0, abs_tol=1e-12)
+    assert math.isclose(conflict_opacity(0.5), 0.675, abs_tol=1e-12)
+    assert math.isclose(conflict_opacity(1.0), 0.35, abs_tol=1e-12)
+    for conflict in (i / 100.0 for i in range(101)):
+        assert 0.35 <= conflict_opacity(conflict) <= 1.0
+        if conflict < 1.0:
+            assert conflict_opacity(conflict + 0.01) <= conflict_opacity(conflict)
+    baseline, warped, visibility = 0.4, 0.95, 0.8
+    clean_result = baseline + (warped - baseline) * visibility * conflict_opacity(0.0)
+    conflicted_result = baseline + (warped - baseline) * visibility * conflict_opacity(1.0)
+    assert math.isclose(clean_result - baseline, (warped - baseline) * visibility, abs_tol=1e-12)
+    assert math.isclose(conflicted_result - baseline, 0.35 * (warped - baseline) * visibility, abs_tol=1e-12)
+
     compile_mask_statement(patched)
     print(
-        "FongMi paired-color mask passed: near-exact witnesses are unchanged; "
-        "moderate color mismatch is attenuated earlier; unrelated synthesis and "
-        "the broad conflict-weight fallback remain unchanged"
+        "FongMi mask passed: clean witnesses and zero-conflict pixels are unchanged; "
+        "paired mismatch recovery is tapered earlier; high-conflict warped-color "
+        "contribution is reduced by 65%; source upgrade and reprepare are idempotent"
     )
 
 
