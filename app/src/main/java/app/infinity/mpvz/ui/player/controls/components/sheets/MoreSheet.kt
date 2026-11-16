@@ -291,9 +291,9 @@ fun MoreSheet(
           Column(modifier = Modifier.fillMaxWidth().padding(MaterialTheme.spacing.small)) {
             Text("Jelly one-shot diagnostic", style = MaterialTheme.typography.titleSmall)
             Text(
-              "Arm during 599740.mkv playback. Tests source pixel (1352,224) on frame pairs overlapping PTS 1.46–1.63s (alpha 0.35–0.65). " +
-                "If PTS is unavailable or eligible pairs begin after 1.63s, it uses fallback pairs until the first activation; " +
-                "if none occurs, finalization saves the last evaluated skip.",
+              "Arm while the original episode is playing. Samples the same scene-relative point (about 70% across, 21% down), " +
+                "scaled to the current video size, on every eligible frame pair (alpha 0.35–0.65). " +
+                "PTS is recorded for context, not used to restrict playback; the probe stops at the first activation or saves the last evaluated skip.",
               style = MaterialTheme.typography.bodySmall,
             )
             Text(jellyProbeState, style = MaterialTheme.typography.bodySmall)

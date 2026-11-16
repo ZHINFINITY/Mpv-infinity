@@ -215,15 +215,18 @@ internal object JellyProbeReportStore {
     }
     val unknown = JSONObject.NULL
     val target = JSONObject()
-      .put("media_hint", "599740.mkv")
+      .put("media_hint", "current_playback")
       .put("current_file_verified", false)
-      .put("pts_window_seconds", JSONArray().put(1.46).put(1.63))
-      .put("pair_rule", "pair PTS interval overlaps [1.46,1.63]")
-      .put("pixel", JSONArray().put(1352).put(224))
+      .put("pts_window_seconds", unknown)
+      .put("pair_rule", "probe every eligible frame pair; PTS is recorded for context")
+      .put("reference_pixel", JSONArray().put(1352).put(224))
+      .put("reference_frame_size", JSONArray().put(1920).put(1080))
+      .put("sample_position_fraction", JSONArray().put(1352.0 / 1920.0).put(224.0 / 1080.0))
+      .put("pixel", unknown)
       .put("eligible_alpha_range", JSONArray().put(0.35).put(0.65))
       .put(
         "fallback_rule",
-        "Also probe eligible pairs outside [1.46,1.63] (including earlier or later pairs) and stop on the first Jelly activation; if none activates, finalization saves the last evaluated skip.",
+        "Continue across every eligible pair until the first Jelly activation; if none activates, finalization saves the last evaluated skip.",
       )
     val sourceBounds = JSONObject()
       .put("status", "not_observed")
@@ -315,7 +318,7 @@ internal object JellyProbeReportStore {
       )
     val json = JSONObject()
       .put("report_type", "mpv-infinity-jelly-probe-report")
-      .put("schema_version", 4)
+      .put("schema_version", 5)
       .put("status", status)
       .put("reason", reason)
       .put("stage_snapshot", "not_observed")

@@ -234,7 +234,8 @@ def transform_motion(source: str, *, verify_hash: bool = True) -> tuple[str, boo
     };
     int probe_enabled = probe != NULL;
     int probe_pixel[2] = {probe ? probe->pixel_x : 0, probe ? probe->pixel_y : 0};
-    float probe_metadata[20] = {0};
+    /* Keep probe variables within Vulkan's minimum 128-byte push-constant limit. */
+    float probe_metadata[12] = {0};
     uint32_t probe_id_halves[4] = {0};
     if (probe) {
         probe_id_halves[0] = (uint32_t) probe->first_id;
@@ -285,7 +286,7 @@ def transform_motion(source: str, *, verify_hash: bool = True) -> tuple[str, boo
     };"""
     vars_new = vars_old + """
     struct pl_var metadata_var = pl_var_vec4("probe_metadata");
-    metadata_var.dim_a = 5;
+    metadata_var.dim_a = 3;
     struct pl_shader_var probe_vars[] = {
         {.var = pl_var_vec2("output_size"), .data = size},
         {.var = pl_var_vec2("motion_size"), .data = map_size},
@@ -296,7 +297,6 @@ def transform_motion(source: str, *, verify_hash: bool = True) -> tuple[str, boo
         {.var = pl_var_ivec2("probe_pixel"), .data = probe_pixel, .dynamic = true},
         {.var = metadata_var, .data = probe_metadata, .dynamic = true},
         {.var = pl_var_uvec4("probe_id_halves"), .data = probe_id_halves, .dynamic = true},
-        {.var = pl_var_int("source_only"), .data = &source_only, .dynamic = true},
     };"""
     out = _once(out, vars_old, vars_new, "probe variables")
 
@@ -330,7 +330,7 @@ def transform_motion(source: str, *, verify_hash: bool = True) -> tuple[str, boo
         "        .num_descriptors = 5 + (probe != NULL),\n"
         "        .variables = probe ? probe_vars : vars,\n"
         "        // The compute path does not bind source_only.\n"
-        "        .num_variables = probe ? sizeof(probe_vars) / sizeof(probe_vars[0]) - 1\n"
+        "        .num_variables = probe ? sizeof(probe_vars) / sizeof(probe_vars[0])\n"
         "                                : sizeof(vars) / sizeof(vars[0]) - 1,\n",
         "conditional probe shader",
     )

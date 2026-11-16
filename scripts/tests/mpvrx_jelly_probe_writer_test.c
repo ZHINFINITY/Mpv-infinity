@@ -125,6 +125,7 @@ int main(void)
     memcpy(rec + 58 * 16, ids, sizeof ids);
     memcpy(f + 59 * 4, (float[]){12.5f, 25.75f, .375f, 1.f}, 4 * sizeof(float));
     memcpy(f + 60 * 4, (float[]){1352.f, 224.f, 1920.f, 1080.f}, 4 * sizeof(float));
+    memcpy(f + 61 * 4, (float[]){480.f, 270.f, 1.f, 0.f}, 4 * sizeof(float));
     f[0] = 1;
     f[1] = 6;
     f[57 * 4 + 3] = NAN;
@@ -151,7 +152,7 @@ int main(void)
     char json[16384];
     read_report(path, json, sizeof json);
     assert(strstr(json, "\"report_type\":\"mpv-infinity-jelly-probe-report\""));
-    assert(strstr(json, "\"schema_version\":3"));
+    assert(strstr(json, "\"schema_version\":4"));
     assert(strstr(json, "\"status\":\"activated\""));
     assert(strstr(json, "\"id0\":\"18364758544493064720\""));
     assert(strstr(json, "\"id1\":\"1311768467463790320\""));
@@ -168,6 +169,26 @@ int main(void)
     unlink(path);
     puts("ok activation record, stage fields, IDs/PTS, NaN null, atomic report and safe join");
 
+    char invalid_metadata_path[512];
+    make_temp_path(invalid_metadata_path, sizeof invalid_metadata_path, "mpvrx-jelly-invalid-metadata");
+    struct mpvrx_jelly_probe_writer invalid_metadata;
+    assert(mpvrx_jelly_probe_writer_init(&invalid_metadata, invalid_metadata_path) == 0);
+    assert(mpvrx_jelly_probe_writer_arm(&invalid_metadata) == MPVRX_JELLY_CAPTURE_ACCEPTED);
+    unsigned char invalid_record[MPVRX_JELLY_PROBE_RECORD_BYTES] = {0};
+    float invalid_values[256] = {0};
+    invalid_values[0] = 1.0f;
+    invalid_values[1] = 5.0f;
+    memcpy(invalid_record, invalid_values, sizeof invalid_values);
+    assert(mpvrx_jelly_probe_writer_capture(&invalid_metadata, invalid_record) == MPVRX_JELLY_CAPTURE_ACCEPTED);
+    wait_for_status(&invalid_metadata, MPVRX_JELLY_PROBE_COMPLETE);
+    read_report(invalid_metadata_path, json, sizeof json);
+    assert(strstr(json, "\"status\":\"no_sample\""));
+    assert(strstr(json, "\"reason\":\"invalid_probe_metadata\""));
+    assert(mpvrx_jelly_probe_writer_join(&invalid_metadata) == 0);
+    mpvrx_jelly_probe_writer_destroy(&invalid_metadata);
+    unlink(invalid_metadata_path);
+    puts("ok invalid GPU metadata is not mislabeled as a Jelly rejection");
+
     char no_sample_path[512];
     make_temp_path(no_sample_path, sizeof(no_sample_path), "mpvrx-jelly-no-sample");
     struct mpvrx_jelly_probe_writer no_sample;
@@ -179,19 +200,21 @@ int main(void)
     assert(mpvrx_jelly_probe_writer_error(&no_sample) == 0);
     read_report(no_sample_path, json, sizeof json);
     assert(strstr(json, "\"status\":\"no_sample\""));
-    assert(strstr(json, "\"schema_version\":4"));
+    assert(strstr(json, "\"schema_version\":5"));
     assert(strstr(json, "\"reason\":\"jelly_rejected_or_skipped\""));
     assert(strstr(json, "\"stage_snapshot\":\"provided\""));
-    assert(strstr(json, "also probe eligible pairs outside [1.46,1.63] (including earlier or later pairs)"));
-    assert(strstr(json, "\"pts_window_seconds\":[1.46,1.63]"));
+    assert(strstr(json, "probe every eligible frame pair; PTS is recorded for context"));
+    assert(strstr(json, "\"pts_window_seconds\":null"));
+    assert(strstr(json, "\"sample_position_fraction\":[0.7041666667,0.2074074074]"));
     assert(strstr(json, "\"pixel\":[1352,224]"));
     assert(strstr(json, "\"eligible_count\":1"));
+    assert(strstr(json, "\"pts_available_count\":1"));
     assert(strstr(json, "\"render_callbacks\":{\"status\":\"observed\",\"count\":1,\"while_armed\":1"));
     assert(strstr(json, "\"last_candidate\":{\"pts_valid\":true,\"pts\":[1.47,1.61]"));
     assert(strstr(json, "\"view_width\":null,\"view_height\":null"));
     assert(strstr(json, "\"pts\":[1.47,1.61]"));
     assert(strstr(json, "\"alpha\":0.5"));
-    assert(strstr(json, "\"selection\":\"target_window\""));
+    assert(strstr(json, "\"selection\":\"pts_available\""));
     assert(strstr(json, "\"width\":1920") && strstr(json, "\"height\":1080"));
     assert(strstr(json, "\"pixel_in_bounds\":true"));
     assert(strstr(json, "\"reason_code\":5"));
@@ -395,7 +418,7 @@ int main(void)
     read_report(unknown_path, json, sizeof json);
     assert(strstr(json, "\"stage_snapshot\":\"not_observed\""));
     assert(strstr(json, "\"reason\":\"stage_data_not_observed\""));
-    assert(strstr(json, "\"pixel\":[1352,224]"));
+    assert(strstr(json, "\"pixel\":[null,null]"));
     assert(strstr(json, "\"source_bounds\":{\"status\":\"not_observed\""));
     assert(strstr(json, "\"eligible_count\":null"));
     assert(strstr(json, "\"gpu_readback\":{\"status\":\"not_reached\""));

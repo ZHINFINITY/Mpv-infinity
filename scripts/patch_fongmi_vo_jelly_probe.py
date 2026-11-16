@@ -85,7 +85,7 @@ def apply_patch(vo_source_path, meson_path, repo_writer_dir, probe_enabled):
         d->setup_error = d->writer_init_error = d->buffer_error = -1;
         d->writer_init_status = MPVRX_JELLY_STAGE_NOT_REACHED;
         d->buffer_status = MPVRX_JELLY_STAGE_NOT_REACHED;
-        d->pixel_x = 1352; d->pixel_y = 224;
+        d->pixel_x = d->pixel_y = -1;
         d->source_width = d->source_height = d->pixel_in_bounds = -1;
         d->motion_views_enabled = -1;
         d->last_candidate_view_width = d->last_candidate_view_height = -1;
@@ -235,7 +235,19 @@ static void jelly_probe_poll(struct priv *p)
     enum mp_motion_result result;
 };
 '''
-    motion_mix_probe = '''struct motion_mix {
+    motion_mix_probe = '''static bool jelly_probe_pixel_for_size(int width, int height,
+                                       int *pixel_x, int *pixel_y)
+{
+    if (width <= 0 || height <= 0 || !pixel_x || !pixel_y)
+        return false;
+    /* Preserve the clip's tested point as a fraction of a 1920x1080 source. */
+    *pixel_x = (int) ((double) width * 1352.0 / 1920.0);
+    *pixel_y = (int) ((double) height * 224.0 / 1080.0);
+    return *pixel_x >= 0 && *pixel_y >= 0 &&
+        *pixel_x < width && *pixel_y < height;
+}
+
+struct motion_mix {
     bool prepare_only;
     struct priv *probe_priv;
     bool probe_active, probe_candidate;
@@ -267,12 +279,13 @@ static void jelly_probe_poll(struct priv *p)
         return;
     if (!mix->probe_active || !mix->probe_candidate || !p->jelly_probe_motion)
         return;
-    const struct mp_motion_probe_request *probe = &mix->probe_request;
+    struct mp_motion_probe_request view_probe = mix->probe_request;
+    const struct mp_motion_probe_request *probe = &view_probe;
     pl_tex view = images->frames[0].texture;
     int width = view ? view->params.w : 0;
     int height = view ? view->params.h : 0;
-    bool pixel_in_bounds = view && probe->pixel_x >= 0 && probe->pixel_y >= 0 &&
-        probe->pixel_x < width && probe->pixel_y < height;
+    bool pixel_in_bounds = view && jelly_probe_pixel_for_size(
+        width, height, &view_probe.pixel_x, &view_probe.pixel_y);
     bool alpha_valid = isfinite(probe->alpha);
     unsigned rejection_mask = 0;
     if (!pixel_in_bounds) {
@@ -365,15 +378,16 @@ static void jelly_probe_poll(struct priv *p)
         if (mix->probe_active)
             d->armed_render_callback_count++;
     }
+    struct mp_motion_probe_request view_probe = mix->probe_request;
     const struct mp_motion_probe_request *probe = mix->probe_active && mix->probe_candidate
-        ? &mix->probe_request : NULL;
+        ? &view_probe : NULL;
     bool dispatch_probe = false;
     if (probe && d) {
         pl_tex view = images->frames[0].texture;
         int width = view ? view->params.w : 0;
         int height = view ? view->params.h : 0;
-        bool pixel_in_bounds = view && probe->pixel_x >= 0 && probe->pixel_y >= 0 &&
-            probe->pixel_x < width && probe->pixel_y < height;
+        bool pixel_in_bounds = view && jelly_probe_pixel_for_size(
+            width, height, &view_probe.pixel_x, &view_probe.pixel_y);
         bool alpha_valid = isfinite(probe->alpha);
         unsigned rejection_mask = 0;
         if (!pixel_in_bounds) {
@@ -463,14 +477,15 @@ static void jelly_probe_poll(struct priv *p)
             const struct frame_priv *probe_fp1 = probe_mpi1->priv;
             bool valid_probe_pts = isfinite(probe_mpi0->pts) && isfinite(probe_mpi1->pts) &&
                 probe_mpi0->pts != MP_NOPTS_VALUE && probe_mpi1->pts != MP_NOPTS_VALUE;
-            double probe_pts_min = valid_probe_pts ? fmin(probe_mpi0->pts, probe_mpi1->pts) : 0.0;
-            double probe_pts_max = valid_probe_pts ? fmax(probe_mpi0->pts, probe_mpi1->pts) : 0.0;
-            bool target_probe_pair = valid_probe_pts && probe_pts_min <= 1.63 && probe_pts_max >= 1.46;
-            bool fallback_probe_pair = !valid_probe_pts || !target_probe_pair;
-            bool source_pixel_in_bounds = probe_mpi0->params.w > 1352 && probe_mpi0->params.h > 224;
-            motion.probe_candidate = (target_probe_pair || fallback_probe_pair) && source_pixel_in_bounds;
+            bool target_probe_pair = valid_probe_pts;
+            bool fallback_probe_pair = !valid_probe_pts;
+            int probe_pixel_x = -1, probe_pixel_y = -1;
+            bool source_pixel_in_bounds = jelly_probe_pixel_for_size(
+                probe_mpi0->params.w, probe_mpi0->params.h,
+                &probe_pixel_x, &probe_pixel_y);
+            motion.probe_candidate = source_pixel_in_bounds;
             motion.probe_request = (struct mp_motion_probe_request) {
-                .buffer = p->jelly_probe_buf, .pixel_x = 1352, .pixel_y = 224,
+                .buffer = p->jelly_probe_buf, .pixel_x = probe_pixel_x, .pixel_y = probe_pixel_y,
                 .first_id = probe_fp0->motion_id, .second_id = probe_fp1->motion_id,
                 .first_pts = valid_probe_pts ? probe_mpi0->pts : NAN,
                 .second_pts = valid_probe_pts ? probe_mpi1->pts : NAN,
@@ -484,6 +499,8 @@ static void jelly_probe_poll(struct priv *p)
             probe_diag->last_candidate_alpha = motion.alpha;
             probe_diag->last_candidate_selection_mode = target_probe_pair ? 1 : 2;
             probe_diag->source_bounds_observed = 1;
+            probe_diag->pixel_x = probe_pixel_x;
+            probe_diag->pixel_y = probe_pixel_y;
             probe_diag->source_width = probe_mpi0->params.w;
             probe_diag->source_height = probe_mpi0->params.h;
             probe_diag->pixel_in_bounds = source_pixel_in_bounds ? 1 : 0;
@@ -515,19 +532,21 @@ static void jelly_probe_poll(struct priv *p)
 '''
     probe_call = '''    bool valid_probe_pts = isfinite(mpi0->pts) && isfinite(mpi1->pts) &&
         mpi0->pts != MP_NOPTS_VALUE && mpi1->pts != MP_NOPTS_VALUE;
-    double probe_pts_min = valid_probe_pts ? fmin(mpi0->pts, mpi1->pts) : 0.0;
-    double probe_pts_max = valid_probe_pts ? fmax(mpi0->pts, mpi1->pts) : 0.0;
-    bool target_probe_pair = valid_probe_pts && probe_pts_min <= 1.63 && probe_pts_max >= 1.46;
+    bool target_probe_pair = valid_probe_pts;
     bool fallback_probe_pair = !valid_probe_pts || !target_probe_pair;
     struct mpvrx_jelly_probe_diagnostics *probe_diag = &p->jelly_probe_diagnostics;
     bool probe_active = p->jelly_probe_armed && p->jelly_probe_writer_ready &&
         !p->jelly_probe_finalized && p->jelly_probe_buf && p->jelly_probe_motion;
     if (probe_diag->setup_status == MPVRX_JELLY_STAGE_OK && !p->jelly_probe_finalized)
         probe_diag->motion_render_callback_count++;
-    bool pixel_in_bounds = mpi0->params.w > 1352 && mpi0->params.h > 224;
+    int probe_pixel_x = -1, probe_pixel_y = -1;
+    bool pixel_in_bounds = jelly_probe_pixel_for_size(
+        mpi0->params.w, mpi0->params.h, &probe_pixel_x, &probe_pixel_y);
     if (probe_active) {
         probe_diag->armed_render_callback_count++;
         probe_diag->source_bounds_observed = 1;
+        probe_diag->pixel_x = probe_pixel_x;
+        probe_diag->pixel_y = probe_pixel_y;
         probe_diag->source_width = mpi0->params.w;
         probe_diag->source_height = mpi0->params.h;
         probe_diag->pixel_in_bounds = pixel_in_bounds ? 1 : 0;
@@ -581,7 +600,7 @@ static void jelly_probe_poll(struct priv *p)
         probe_diag->render_attempt_count++;
     }
     struct mp_motion_probe_request probe_request = {
-        .buffer = p->jelly_probe_buf, .pixel_x = 1352, .pixel_y = 224,
+        .buffer = p->jelly_probe_buf, .pixel_x = probe_pixel_x, .pixel_y = probe_pixel_y,
         .first_id = fp0->motion_id, .second_id = fp1->motion_id,
         .first_pts = isfinite(mpi0->pts) && mpi0->pts != MP_NOPTS_VALUE ? mpi0->pts : NAN,
         .second_pts = isfinite(mpi1->pts) && mpi1->pts != MP_NOPTS_VALUE ? mpi1->pts : NAN,

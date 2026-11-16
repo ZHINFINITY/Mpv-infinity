@@ -234,6 +234,20 @@ class MotionProbeTest(unittest.TestCase):
         compile_glsl(self.probe, probe=False)
         compile_glsl(self.probe, probe=True)
 
+    def test_probe_uniforms_fit_minimum_vulkan_push_constants(self):
+        self.assertIn("float probe_metadata[12] = {0};", self.probe)
+        self.assertIn("metadata_var.dim_a = 3;", self.probe)
+        # std430 packing for probe_vars: vec2, vec2, float, int, vec2, int,
+        # ivec2, vec4[3], uvec4. The final byte offset is 112, below 128.
+        fields = ((8, 8), (8, 8), (4, 4), (4, 4), (8, 8), (4, 4),
+                  (8, 8), (48, 16), (16, 16))
+        offset = 0
+        for size, alignment in fields:
+            offset = (offset + alignment - 1) // alignment * alignment
+            offset += size
+        self.assertEqual(offset, 112)
+        self.assertLessEqual(offset, 128)
+
 
 def configure_cli() -> None:
     global MPV_DIR, MOTION_C, MOTION_H, REQUIRE_GLSLANG
