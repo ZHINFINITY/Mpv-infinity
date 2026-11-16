@@ -1,4 +1,5 @@
-name: Build debug APK
+name: Build Mpv-infinity debug APK
+run-name: Mpv-infinity ${{ inputs.flavor }} ${{ inputs.target_abi }} Debug
 
 on:
   workflow_dispatch:
@@ -420,7 +421,7 @@ jobs:
       - name: Upload debug APKs
         uses: actions/upload-artifact@v4
         with:
-          name: mpv-infinity-${{ inputs.flavor }}-debug
+          name: mpv-infinity-${{ inputs.flavor }}-${{ inputs.target_abi }}-debug
           path: |
             app/build/outputs/apk/**/*.apk
             app/build/outputs/apk/**/*.verification.json

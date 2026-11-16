@@ -37,7 +37,7 @@ MPV_SHA = "645f8ecdd3c94379048e9ee3e7014e174de0bd02"
 PLACEBO_SHA = "63659d96d1bff7d7a5a1368e9538056a193fc6fb"
 MOTION_SHA256 = "756c1da75d274d81c2e84f988bae1785aa6b6a9a813d16d3b47d9656b31016d0"
 MOTION_ANTIALIAS_SHA256 = "793ac79e8243727bb58286ca6bb6a6b6e539ba3e8abae34c4dae7b6503c5cb2e"
-MOTION_MASKED_SHA256 = "93f24843eafde75ffb23ff7de0e2d06674224ac9c56b80290b84a6d7741d83f3"
+MOTION_MASKED_SHA256 = "bd3f542fde9db653c1ca8b3ac82848e93e33b84f80f985992bfe2434c80e45fd"
 MOTION_HEADER_SHA256 = "12fedd08063a540b69667a51e146d539ebae509b63c07964f573410a7d0ae427"
 BUILDER_SHA = "1efc82739f6f7034cd63e7ee8b3ec5431df27467"
 MPVLIB_ANDROID_SHA = "d04217abe8e72e4a099269f045855bf69b87d53b"
@@ -68,9 +68,12 @@ assert PREPARE.index("apply_motion_downsample_patch(") < PREPARE.index("apply_mo
 assert "apply_motion_paired_color_mask_patch(motion_path)" in PREPARE
 assert "MPVRX_PAIRED_COLOR_EVIDENCE_MASK_V1" in PAIRED_COLOR_PATCH
 assert "smoothstep(vec2(0.02), vec2(0.08), paired_error)" in PAIRED_COLOR_PATCH
+assert "MPV_INFINITY_DIRECTIONAL_WARP_EVIDENCE_V4" in PAIRED_COLOR_PATCH
+assert "local_warp_support = evidence * vec2(f.w, r.w);" in PAIRED_COLOR_PATCH
+assert "visibility *= mix(vec2(1.0), local_warp_keep, conflict_weight);" in PAIRED_COLOR_PATCH
 assert "def verify_reprepare_cycle(source: str)" in PAIRED_COLOR_TEST
 assert "verify_reprepare_cycle(patched)" in PAIRED_COLOR_TEST
-assert "near-exact witnesses are unchanged" in PAIRED_COLOR_TEST
+assert "clean and coherent camera motion are unchanged" in PAIRED_COLOR_TEST
 assert 'os.environ.get("MPVFLOW_ANALYSIS_DOWNSAMPLE_AA") == "1"' in PREPARE
 assert "Mpv-infinity FongMi 645 test does not enable Jelly variants" in PREPARE
 assert "apply_motion_jelly" not in PREPARE and "patch_fongmi_motion_jelly" not in PREPARE
@@ -119,6 +122,9 @@ for workflow in WORKFLOWS:
     assert "fongmi-diagnostic-capture-v1" not in workflow
     assert "runtime-legacy" not in workflow
     assert "c1529642089bfebfc928a1c1664638a7a5d219ba" not in workflow
+assert "name: Build Mpv-infinity debug APK" in WORKFLOWS[0]
+assert "run-name: Mpv-infinity ${{ inputs.flavor }} ${{ inputs.target_abi }} Debug" in WORKFLOWS[0]
+assert "mpv-infinity-${{ inputs.flavor }}-${{ inputs.target_abi }}-debug" in WORKFLOWS[0]
 assert "scripts/patch_fongmi_motion_downsample.py" in WORKFLOWS[1]
 assert "MPVFLOW_ANALYSIS_DOWNSAMPLE_AA: '1'" in WORKFLOWS[1]
 assert "--require-analysis-downsample-aa" in WORKFLOWS[1]
