@@ -1,4 +1,4 @@
-name: MPVFlow MPVRx FongMi arm64 Debug APK
+name: Mpv-infinity MPVFlow arm64 Debug APK
 
 on:
   push:
@@ -31,7 +31,7 @@ concurrency:
 
 jobs:
   build-arm64-debug:
-    name: Build MPVFlow MPVRx arm64-v8a debug APK
+    name: Build Mpv-infinity MPVFlow arm64-v8a Debug APK
     runs-on: ubuntu-latest
     timeout-minutes: 240
     steps:
