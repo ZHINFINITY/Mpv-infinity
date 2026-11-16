@@ -271,6 +271,21 @@ internal object JellyProbeReportStore {
           .put("last_candidate", unknown),
       )
       .put(
+        "motion_view_path",
+        JSONObject()
+          .put("status", "not_observed")
+          .put("motion_views_enabled", unknown)
+          .put("render_source_mix_callbacks", unknown)
+          .put("pair_count", unknown)
+          .put("supported_pair_count", unknown)
+          .put("unsupported_pair_count", unknown)
+          .put("mixer_callback_count", unknown)
+          .put("shader_callback_count", unknown)
+          .put("texture_callback_count", unknown)
+          .put("probe_output_path", "offscreen_compute_only")
+          .put("probe_dispatch_count", unknown),
+      )
+      .put(
         "jelly",
         JSONObject()
           .put("status", "not_observed")
@@ -300,7 +315,7 @@ internal object JellyProbeReportStore {
       )
     val json = JSONObject()
       .put("report_type", "mpv-infinity-jelly-probe-report")
-      .put("schema_version", 3)
+      .put("schema_version", 4)
       .put("status", status)
       .put("reason", reason)
       .put("stage_snapshot", "not_observed")

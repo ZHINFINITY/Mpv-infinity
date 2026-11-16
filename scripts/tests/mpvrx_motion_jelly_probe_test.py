@@ -144,6 +144,7 @@ class MotionProbeTest(unittest.TestCase):
         self.assertTrue(self.header_changed)
         self.assertIn("synthesis_probe_header", self.probe)
         self.assertIn("mp_motion_render_frames_probe", self.probe)
+        self.assertIn("mp_motion_render_views_probe", self.probe)
         same, changed = transform_motion(self.probe)
         self.assertFalse(changed)
         self.assertEqual(same, self.probe)
@@ -184,6 +185,7 @@ class MotionProbeTest(unittest.TestCase):
             "pl_buf buffer;",
             "uint64_t first_id, second_id",
             "mp_motion_render_frames_probe",
+            "mp_motion_render_views_probe",
             "mp_motion_render_probe",
         ):
             self.assertIn(item, self.header_probe)
@@ -217,6 +219,7 @@ class MotionProbeTest(unittest.TestCase):
         self.assertIn("probe ? synthesis_probe_header : synthesis_pixel_header", self.probe)
         self.assertIn("probe ? synthesis_probe_body : synthesis_body", self.probe)
         self.assertIn("alpha, NULL, 0, probe", self.probe)
+        self.assertIn("alpha, MOTION_INPUT_VIEW, true, probe, output", self.probe)
         self.assertIn("false, NULL, output", self.probe)
         self.assertIn("render_frames(m, first, second, alpha, false, NULL, output)", self.probe)
         self.assertIn("synthesize(m, view->texture, m->images[0][0], 0, shader, 1, NULL)", self.probe)

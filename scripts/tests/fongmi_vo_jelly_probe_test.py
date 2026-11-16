@@ -1,12 +1,13 @@
 from __future__ import annotations
 import importlib.util
+import os
 import shutil
 import tempfile
 import unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
-PINNED = Path('/workspace/mpvrx-pinned-mpv-95ec8e9')
+PINNED = Path(os.environ.get('MPVRX_JELLY_PROBE_MPV_DIR', '/workspace/mpvrx-pinned-mpv-95ec8e9'))
 SPEC = importlib.util.spec_from_file_location(
     'probe_patch', ROOT / 'scripts/patch_fongmi_vo_jelly_probe.py')
 PATCH = importlib.util.module_from_spec(SPEC)
@@ -49,7 +50,26 @@ class JellyProbePatchTest(unittest.TestCase):
             self.assertIn('#include <string.h>', patched)
             self.assertIn('UPDATE_VIDEO', patched)
             self.assertIn('mp_motion_render_frames_probe', patched)
+            self.assertIn('mp_motion_render_views_probe', patched)
             self.assertIn('mp_motion_render_probe', patched)
+            self.assertIn('render_source_mix_callback_count++', patched)
+            self.assertIn('motion_view_callback_count++', patched)
+            self.assertIn('motion_view_pair_count++', patched)
+            self.assertIn('motion_view_unsupported_pair_count++', patched)
+            self.assertIn('motion_view_shader_callback_count++', patched)
+            self.assertIn('motion_view_texture_callback_count++', patched)
+            self.assertIn('motion_view_probe_dispatch_count++', patched)
+            self.assertIn('mp_motion_create(p->gpu, 480)', patched)
+            self.assertIn('jelly_probe_shader_view(mix, images);', patched)
+            self.assertIn('jelly_probe_poll(p);', patched.split('static bool render_source_mix', 1)[1])
+            self.assertIn('mp_motion_render_views_probe(\n        p->jelly_probe_motion', patched)
+            self.assertIn('bool direct = frame->vsync_interval > 0 && !frame->redraw &&', patched)
+            self.assertNotIn('bool direct = !probe_active', patched)
+            self.assertNotIn('mp_motion_render_views_probe(mix->motion', patched)
+            self.assertLess(
+                patched.index('mix->result = mp_motion_render_views(mix->motion'),
+                patched.index('mp_motion_render_views_probe(\n            p->jelly_probe_motion'),
+            )
             self.assertIn('alpha >= 0.35f && alpha <= 0.65f', patched)
             self.assertIn('probe_pts_min <= 1.63 && probe_pts_max >= 1.46', patched)
             self.assertIn('fallback_probe_pair = !valid_probe_pts || !target_probe_pair', patched)
@@ -102,7 +122,9 @@ class JellyProbePatchTest(unittest.TestCase):
             uninit = source.split('static void uninit(struct vo *vo)', 1)[1].split('static ', 1)[0]
             self.assertIn('pl_gpu_finish(p->gpu)', uninit)
             self.assertIn('mpvrx_jelly_probe_writer_capture', uninit)
+            self.assertIn('mp_motion_destroy(&p->jelly_probe_motion)', uninit)
             self.assertIn('pl_buf_destroy', uninit)
+            self.assertLess(uninit.index('pl_gpu_finish(p->gpu)'), uninit.index('mp_motion_destroy'))
             for forbidden in ('request_stop', '_join(', '_destroy(&p->jelly_probe_writer'):
                 self.assertNotIn(forbidden, uninit)
             destructor = source.split('static void jelly_probe_priv_destroy', 1)[1].split('static void uninit', 1)[0]

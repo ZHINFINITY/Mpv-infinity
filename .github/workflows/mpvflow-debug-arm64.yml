@@ -110,6 +110,7 @@ jobs:
           python3 scripts/tests/mpvrx_motion_jelly_test.py "${args[@]}"
           if [[ "${{ inputs.jelly_probe }}" == "true" ]]; then
             python3 scripts/tests/mpvrx_motion_jelly_probe_test.py --mpv-dir mpv-source --require-glslang
+            MPVRX_JELLY_PROBE_MPV_DIR=mpv-source python3 scripts/tests/fongmi_vo_jelly_probe_test.py
           fi
       - name: Run MPVFlow core and GPU shader regression tests
         run: ./scripts/test-mpvflow-core.sh
