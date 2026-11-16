@@ -15,7 +15,7 @@ PLACEBO_SHA = "63659d96d1bff7d7a5a1368e9538056a193fc6fb"
 PLACEBO_API_387_SHA = "b89c10e1bdd5d7742ca576ebad94a906ddca91e8"
 MOTION_RAW_SHA256 = "756c1da75d274d81c2e84f988bae1785aa6b6a9a813d16d3b47d9656b31016d0"
 MOTION_DOWNSAMPLE_SHA256 = "793ac79e8243727bb58286ca6bb6a6b6e539ba3e8abae34c4dae7b6503c5cb2e"
-MOTION_PREPARED_SHA256 = "93f24843eafde75ffb23ff7de0e2d06674224ac9c56b80290b84a6d7741d83f3"
+MOTION_PREPARED_SHA256 = "bd3f542fde9db653c1ca8b3ac82848e93e33b84f80f985992bfe2434c80e45fd"
 
 
 def test_manifests_match_and_cover_pins() -> None:
@@ -41,9 +41,9 @@ def test_manifests_match_and_cover_pins() -> None:
         "FongMi libplacebo API-387 header snapshot",
         "FongMi libplacebo API-391 verifier-only marker",
         "FongMi libplacebo API-391 Native header snapshot",
-        "865fdc8a365ecd2b0021b02460af46de38f0a179",
+        "fc7190babf851b8744eac04efa29f733a1ad9c86",
         "shader-mixer API required by MPV 645",
-        "paired-color conflict mask/high-motion fade",
+        "paired-color conflict mask with per-direction paired-evidence and reverse-flow gating",
         "scripts/libplacebo-api-391-config.h",
         "not a complete header set",
         "MPVRX_SDK_HEADERS.sha256",
@@ -124,7 +124,7 @@ def test_source_links_are_location_independent() -> None:
     targets = re.findall(r"\]\(([^)]+)\)", text)
     assert targets and all(target.startswith("https://") for target in targets)
     pin = "3c81ff6109d3f90f298d81805bbcc81824dbf735"
-    experimental_branch = "experiment/Mpv-infinity-fongmi-bidirectional-20261116"
+    experimental_branch = "fix/Mpv-infinity-local-warp-trust-20261117"
     for name in ("build-mpv-lgpl-aar.sh", "build-mpvflow-mpv-runtime.sh",
                  "prepare-mpvflow.py", "verify-mpv-aar-lgpl.py"):
         pinned_link = any(f"/blob/{pin}/scripts/{name}" in target for target in targets)
@@ -146,7 +146,7 @@ def test_source_links_are_location_independent() -> None:
     )
     assert any("github.com/Riteshp2001/mpvlibAndroid/releases/tag/v1.1.8.2" in target for target in targets)
     assert any(f"github.com/FongMi/libplacebo/blob/{PLACEBO_SHA}/meson.build" in target for target in targets)
-    experimental_branch = "experiment/Mpv-infinity-fongmi-bidirectional-20261116"
+    experimental_branch = "fix/Mpv-infinity-local-warp-trust-20261117"
     assert any(f"/blob/{experimental_branch}/scripts/libplacebo-api-391-config.h" in target for target in targets)
     assert any(f"/blob/{experimental_branch}/scripts/verify-mpv-aar-lgpl.py" in target for target in targets)
     assert any(f"github.com/KhronosGroup/Vulkan-Headers/tree/{VULKAN_HEADERS_SHA}" in target for target in targets)
