@@ -13,8 +13,6 @@ if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
 from mpvrx_motion_source import verify_mpv_source
 from patch_fongmi_motion_downsample import apply_patch as apply_motion_downsample_patch
-from patch_fongmi_motion_jelly import apply_patch as apply_motion_jelly_patch
-from patch_fongmi_motion_jelly import apply_preview_patch as apply_motion_jelly_preview_patch
 from patch_fongmi_paired_color_mask import (
     apply_patch as apply_motion_paired_color_mask_patch,
     strip_patch as strip_motion_paired_color_mask_patch,
@@ -953,16 +951,14 @@ def main() -> None:
     debug_capture_enabled = os.environ.get("MPVFLOW_DEBUG_CAPTURE") == "1"
     if debug_capture_enabled:
         raise SystemExit(
-            "MPVFLOW_DEBUG_CAPTURE is unsupported with the MPVRx-pinned FongMi 95ec motion core; "
+            "MPVFLOW_DEBUG_CAPTURE is unsupported with the pinned FongMi 645 motion core; "
             "the retained diagnostic patchers target the older 14b source"
         )
     print("FongMi one-shot diagnostics disabled; leaving motion/VO sources uninstrumented")
 
-    downsample_antialias_enabled = os.environ.get("MPVFLOW_MPVRX_ANALYSIS_DOWNSAMPLE_AA") == "1"
-    jelly_experimental_enabled = os.environ.get("MPVFLOW_JELLY_EXPERIMENTAL") == "1"
-    jelly_preview_enabled = os.environ.get("MPVFLOW_JELLY_PREVIEW") == "1"
-    if jelly_experimental_enabled and jelly_preview_enabled:
-        raise SystemExit("MPVRx Jelly synthesis and blend-test modes are mutually exclusive")
+    downsample_antialias_enabled = os.environ.get("MPVFLOW_ANALYSIS_DOWNSAMPLE_AA") == "1"
+    if os.environ.get("MPVFLOW_JELLY_EXPERIMENTAL") == "1" or os.environ.get("MPVFLOW_JELLY_PREVIEW") == "1":
+        raise SystemExit("Mpv-infinity FongMi 645 test does not enable Jelly variants")
     try:
         verify_mpv_source(mpv_dir)
         strip_motion_paired_color_mask_patch(motion_path)
@@ -970,47 +966,20 @@ def main() -> None:
             motion_path, enabled=downsample_antialias_enabled
         )
     except (OSError, ValueError) as exc:
-        raise SystemExit(f"MPVRx FongMi source/analysis verification failed: {exc}") from exc
+        raise SystemExit(f"Mpv-infinity FongMi source/analysis verification failed: {exc}") from exc
     if downsample_antialias_enabled:
         print(
-            "Applied bounded MPVRx motion-analysis downsample antialiasing"
+            "Applied bounded Mpv-infinity motion-analysis downsample antialiasing"
             if downsample_patch_applied
-            else "Bounded MPVRx motion-analysis downsample antialiasing already present"
+            else "Bounded Mpv-infinity motion-analysis downsample antialiasing already present"
         )
     else:
-        print("MPVRx analysis-downsample antialias candidate disabled; preserving upstream motion shader")
-
-    if jelly_preview_enabled:
-        if not downsample_antialias_enabled:
-            raise SystemExit("MPVRx Jelly blend test requires the verified bounded analysis-downsample baseline")
-        try:
-            jelly_patch_applied = apply_motion_jelly_preview_patch(motion_path)
-        except (OSError, ValueError) as exc:
-            raise SystemExit(f"MPVRx Jelly blend-test shader verification failed: {exc}") from exc
-        print(
-            "Applied opt-in MPVRx Jelly blend test; synthesis is limited to the confirmed dynamic mask"
-            if jelly_patch_applied
-            else "Opt-in MPVRx Jelly blend test already present; synthesis remains limited to the confirmed dynamic mask"
-        )
-    elif jelly_experimental_enabled:
-        if not downsample_antialias_enabled:
-            raise SystemExit("MPVRx jelly test requires the verified bounded analysis-downsample baseline")
-        try:
-            jelly_patch_applied = apply_motion_jelly_patch(motion_path)
-        except (OSError, ValueError) as exc:
-            raise SystemExit(f"MPVRx jelly-test shader verification failed: {exc}") from exc
-        print(
-            "Applied opt-in MPVRx jelly-region synthesis fallback"
-            if jelly_patch_applied
-            else "Opt-in MPVRx jelly-region synthesis fallback already present"
-        )
-    else:
-        print("Opt-in MPVRx jelly-region synthesis fallback disabled; preserving tested shader behavior")
+        print("Mpv-infinity analysis-downsample antialias patch disabled; preserving pinned motion shader")
 
     try:
         paired_color_mask_applied = apply_motion_paired_color_mask_patch(motion_path)
     except (OSError, ValueError) as exc:
-        raise SystemExit(f"MPVRx paired-color mask verification failed: {exc}") from exc
+        raise SystemExit(f"Mpv-infinity paired-color mask verification failed: {exc}") from exc
     print(
         "Applied selective paired-color mismatch mask"
         if paired_color_mask_applied
@@ -1141,7 +1110,7 @@ def main() -> None:
     print(
         f"Validated native FongMi GPU MEMC and Android MediaCodec/Vulkan mapping in {mpv_dir}; "
         f"kept SPIR-V optimization enabled and applied Android Vulkan synchronization and "
-        f"swapchain stability fixes in {libplacebo_dir}. MPVRx analysis-downsample antialias "
+        f"swapchain stability fixes in {libplacebo_dir}. Mpv-infinity analysis-downsample antialias "
         f"candidate {'enabled' if downsample_antialias_enabled else 'disabled'}; 480px cap unchanged."
     )
 

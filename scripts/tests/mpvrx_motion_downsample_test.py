@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Focused tests for the MPVRx-pinned analysis downsample candidate."""
+"""Focused tests for the pinned FongMi analysis downsample candidate."""
 from __future__ import annotations
 
 import argparse
@@ -28,7 +28,7 @@ from patch_fongmi_paired_color_mask import (  # noqa: E402
     unpatch_source as unpatch_paired_color_mask,
 )
 
-PATCHED_MOTION_SHA256 = "db13147fd268ebe857e235a2ad066c0d34d9c35cab66f6fa93ed5767d61219a2"
+PATCHED_MOTION_SHA256 = "793ac79e8243727bb58286ca6bb6a6b6e539ba3e8abae34c4dae7b6503c5cb2e"
 
 
 def tap_count(scale: float) -> int:
@@ -122,7 +122,7 @@ void main() {{
     imageStore(target, ivec2(gl_GlobalInvocationID.xy), color);
 }}
 """
-    with tempfile.TemporaryDirectory(prefix="mpvrx-downsample-glsl-") as tmp:
+    with tempfile.TemporaryDirectory(prefix="mpv-infinity-downsample-glsl-") as tmp:
         shader_path = Path(tmp) / "downsample.comp"
         output_path = Path(tmp) / "downsample.spv"
         shader_path.write_text(shader, encoding="utf-8")
@@ -154,7 +154,7 @@ def check_pinned_source(mpv_dir: Path) -> None:
         assert patched == source, "the prepared downsample patch must remain unchanged"
     assert patched.count(PATCHED_BLOCK) == 1
     assert patched.count("mp_motion_create(p->gpu, 480);") == source.count("mp_motion_create(p->gpu, 480);")
-    with tempfile.TemporaryDirectory(prefix="mpvrx-downsample-optin-") as tmp:
+    with tempfile.TemporaryDirectory(prefix="mpv-infinity-downsample-optin-") as tmp:
         candidate = Path(tmp) / "motion.c"
         candidate.write_text(source, encoding="utf-8")
         if already_patched:
@@ -179,7 +179,7 @@ def check_pinned_source(mpv_dir: Path) -> None:
                 pass
             else:
                 raise AssertionError("patched shader was accepted without the test-workflow opt-in")
-    print(f"Pinned MPVRx source transform verified: {actual} -> {patched_hash}")
+    print(f"Pinned FongMi source transform verified: {actual} -> {patched_hash}")
 
 
 def main() -> None:
@@ -191,7 +191,7 @@ def main() -> None:
     check_glsl_compile()
     if args.mpv_dir:
         check_pinned_source(args.mpv_dir)
-    print("MPVRx downsample candidate passed bounded-tap, phase-stability, ramp/DC, shader-compile, idempotence, and source guards")
+    print("Mpv-infinity downsample candidate passed bounded-tap, phase-stability, ramp/DC, shader-compile, idempotence, and source guards")
 
 
 if __name__ == "__main__":
