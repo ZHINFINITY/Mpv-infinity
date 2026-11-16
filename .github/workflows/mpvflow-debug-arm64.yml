@@ -172,7 +172,7 @@ jobs:
       - name: Upload single arm64-v8a diagnostic APK
         uses: actions/upload-artifact@v7
         with:
-          name: mpv-infinity-mpvrx-arm64-v8a-${{ inputs.jelly_preview == true && 'jelly-blend-test' || inputs.jelly_test == true && 'jelly-test' || 'debug' }}-${{ github.sha }}
+          name: mpv-infinity-arm64-v8a-${{ inputs.jelly_preview == true && 'jelly-blend-test' || inputs.jelly_test == true && 'jelly-test' || 'debug' }}-${{ github.sha }}
           path: app/build/outputs/apk/standard/${{ inputs.jelly_preview == true && 'jellyPreview' || 'debug' }}/*arm64-v8a*.apk
           if-no-files-found: error
           retention-days: 3
