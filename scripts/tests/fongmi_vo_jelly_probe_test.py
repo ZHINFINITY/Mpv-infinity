@@ -98,6 +98,9 @@ class JellyProbePatchTest(unittest.TestCase):
             self.assertIn('d->writer_init_status = MPVRX_JELLY_STAGE_OK', patched)
             self.assertIn('d->buffer_status = MPVRX_JELLY_STAGE_FAILED', patched)
             self.assertIn('pl_buf_poll(p->gpu, p->jelly_probe_buf, 0)', patched)
+            self.assertEqual(patched.count('p->jelly_probe_diagnostics.gpu_poll_count) == MPVRX_JELLY_CAPTURE_ACCEPTED'), 3)
+            poll_body = patched.split('static void jelly_probe_poll', 1)[1].split('static int prepare_motion_frame', 1)[0]
+            self.assertLess(poll_body.index('gpu_last_poll_status = MPVRX_JELLY_READBACK_READY'), poll_body.index('writer_capture'))
             self.assertIn('mpvrx_jelly_probe_record_is_activation', patched)
             self.assertIn('mpvrx_jelly_probe_record_was_evaluated', patched)
             self.assertIn('source_bounds_observed = 1', patched)

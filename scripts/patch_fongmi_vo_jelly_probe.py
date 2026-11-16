@@ -153,7 +153,8 @@ def apply_patch(vo_source_path, meson_path, repo_writer_dir, probe_enabled):
         if (p->jelly_probe_armed && p->jelly_probe_last_record_valid &&
             p->jelly_probe_buf &&
             mpvrx_jelly_probe_writer_capture(&p->jelly_probe_writer,
-                                              p->jelly_probe_buf->data) == MPVRX_JELLY_CAPTURE_ACCEPTED)
+                p->jelly_probe_buf->data,
+                p->jelly_probe_diagnostics.gpu_poll_count) == MPVRX_JELLY_CAPTURE_ACCEPTED)
             p->jelly_probe_armed = false;
         p->jelly_probe_armed = false;
         jelly_probe_finish(p);
@@ -212,7 +213,8 @@ static void jelly_probe_poll(struct priv *p)
     }
     if (p->jelly_probe_diagnostics.activation == 1 &&
         mpvrx_jelly_probe_writer_capture(&p->jelly_probe_writer,
-                                          p->jelly_probe_buf->data) == MPVRX_JELLY_CAPTURE_ACCEPTED)
+            p->jelly_probe_buf->data,
+            p->jelly_probe_diagnostics.gpu_poll_count) == MPVRX_JELLY_CAPTURE_ACCEPTED)
         p->jelly_probe_armed = false;
 }
 
@@ -660,7 +662,8 @@ static void jelly_probe_poll(struct priv *p)
     if (p->jelly_probe_armed && p->jelly_probe_last_record_valid &&
         p->jelly_probe_buf && p->jelly_probe_writer_ready &&
         mpvrx_jelly_probe_writer_capture(&p->jelly_probe_writer,
-                                          p->jelly_probe_buf->data) == MPVRX_JELLY_CAPTURE_ACCEPTED)
+            p->jelly_probe_buf->data,
+            p->jelly_probe_diagnostics.gpu_poll_count) == MPVRX_JELLY_CAPTURE_ACCEPTED)
         p->jelly_probe_armed = false;
     p->jelly_probe_armed = false;
     jelly_probe_finish(p);

@@ -25,6 +25,7 @@ struct mpvrx_jelly_probe_queue {
     _Atomic uint32_t tail;
     _Atomic int notify_error;
     unsigned char slot[MPVRX_JELLY_PROBE_RECORD_BYTES];
+    uint32_t slot_readback_poll_count;
     sem_t wake;
     int initialized;
 };
@@ -139,10 +140,12 @@ int mpvrx_jelly_probe_record_was_evaluated(const void *mapped_record);
 int mpvrx_jelly_probe_writer_init(struct mpvrx_jelly_probe_writer *writer, const char *report_path);
 
 enum mpvrx_jelly_probe_capture_result mpvrx_jelly_probe_writer_arm(struct mpvrx_jelly_probe_writer *writer);
-/* Call only after the libplacebo buffer is ready/mapped. Copies exactly 1 KiB
- * before returning; it never retains the supplied pointer. SPSC producer only. */
+/* Call only after pl_buf_poll reports ready (or after GPU finish plus a ready
+ * poll). A positive poll count is required and copied with the 1 KiB record;
+ * the writer never retains the supplied pointer. SPSC producer only. */
 enum mpvrx_jelly_probe_capture_result mpvrx_jelly_probe_writer_capture(
-    struct mpvrx_jelly_probe_writer *writer, const void *mapped_record);
+    struct mpvrx_jelly_probe_writer *writer, const void *completed_mapped_record,
+    uint32_t completed_readback_poll_count);
 
 /* Owner/control thread only. Copies the final stage snapshot and closes without
  * waiting; the background worker writes either the sample or a no-sample report. */

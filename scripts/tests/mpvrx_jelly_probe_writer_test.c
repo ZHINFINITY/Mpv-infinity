@@ -24,7 +24,7 @@ static void *racer(void *opaque)
 {
     struct race *r = opaque;
     pthread_barrier_wait(r->barrier);
-    r->result = mpvrx_jelly_probe_writer_capture(r->writer, r->record);
+    r->result = mpvrx_jelly_probe_writer_capture(r->writer, r->record, 1);
     return NULL;
 }
 
@@ -60,6 +60,32 @@ static char *read_report(const char *path, char *json, size_t capacity)
     assert(length > 0 && (size_t)length < capacity);
     json[length] = '\0';
     return json;
+}
+
+static void assert_invalid_shader_record(const unsigned char record[MPVRX_JELLY_PROBE_RECORD_BYTES],
+                                         const char *prefix)
+{
+    char path[512], json[16384];
+    make_temp_path(path, sizeof path, prefix);
+    struct mpvrx_jelly_probe_writer writer;
+    assert(mpvrx_jelly_probe_writer_init(&writer, path) == 0);
+    assert(mpvrx_jelly_probe_writer_arm(&writer) == MPVRX_JELLY_CAPTURE_ACCEPTED);
+    assert(mpvrx_jelly_probe_writer_capture(&writer, record, 1) == MPVRX_JELLY_CAPTURE_ACCEPTED);
+    wait_for_status(&writer, MPVRX_JELLY_PROBE_COMPLETE);
+    read_report(path, json, sizeof json);
+    assert(strstr(json, "\"status\":\"no_sample\""));
+    assert(strstr(json, "\"reason\":\"invalid_probe_metadata\""));
+    assert(strstr(json, "\"status\":\"metadata_invalid\",\"evaluated\":false"));
+    assert(strstr(json, "\"gpu_readback\":{\"status\":\"ready\",\"poll_count\":1}"));
+    assert(mpvrx_jelly_probe_writer_join(&writer) == 0);
+    mpvrx_jelly_probe_writer_destroy(&writer);
+    unlink(path);
+}
+
+static void set_shader_float(unsigned char record[MPVRX_JELLY_PROBE_RECORD_BYTES],
+                             int vec4_index, int component, float value)
+{
+    memcpy(record + vec4_index * 16 + component * sizeof(value), &value, sizeof(value));
 }
 
 static struct mpvrx_jelly_probe_diagnostics observed_rejection(void)
@@ -143,24 +169,30 @@ int main(void)
     reason = 6.0f;
     memcpy(rec + sizeof(float), &reason, sizeof reason);
     assert(mpvrx_jelly_probe_record_is_activation(rec));
-    assert(mpvrx_jelly_probe_writer_capture(&w, rec) == MPVRX_JELLY_CAPTURE_NOT_ARMED);
+    assert(mpvrx_jelly_probe_writer_capture(&w, rec, 1) == MPVRX_JELLY_CAPTURE_NOT_ARMED);
     assert(mpvrx_jelly_probe_writer_arm(&w) == MPVRX_JELLY_CAPTURE_ACCEPTED);
     assert(mpvrx_jelly_probe_writer_arm(&w) == MPVRX_JELLY_CAPTURE_ALREADY_USED);
-    assert(mpvrx_jelly_probe_writer_capture(&w, rec) == MPVRX_JELLY_CAPTURE_ACCEPTED);
-    assert(mpvrx_jelly_probe_writer_capture(&w, rec) == MPVRX_JELLY_CAPTURE_ALREADY_USED);
+    assert(mpvrx_jelly_probe_writer_capture(&w, rec, 0) == MPVRX_JELLY_CAPTURE_INVALID);
+    assert(mpvrx_jelly_probe_writer_capture(&w, rec, 1) == MPVRX_JELLY_CAPTURE_ACCEPTED);
+    assert(mpvrx_jelly_probe_writer_capture(&w, rec, 1) == MPVRX_JELLY_CAPTURE_ALREADY_USED);
     wait_for_status(&w, MPVRX_JELLY_PROBE_COMPLETE);
     char json[16384];
     read_report(path, json, sizeof json);
     assert(strstr(json, "\"report_type\":\"mpv-infinity-jelly-probe-report\""));
     assert(strstr(json, "\"schema_version\":4"));
     assert(strstr(json, "\"status\":\"activated\""));
+    assert(strstr(json, "\"status\":\"evaluated\",\"evaluated\":true"));
     assert(strstr(json, "\"id0\":\"18364758544493064720\""));
     assert(strstr(json, "\"id1\":\"1311768467463790320\""));
+    assert(strstr(json, "\"pts\":[12.5,25.75]"));
     assert(strstr(json, "12.5") && strstr(json, "25.75"));
     assert(strstr(json, "\"neighbors\":["));
     assert(strstr(json, "\"rejection\":0"));
     assert(strstr(json, "\"pixel_in_bounds\":true"));
-    assert(strstr(json, "\"gpu_readback\":{\"status\":\"ready\""));
+    assert(strstr(json, "\"pixel_source\":[1352,224,1920,1080]"));
+    assert(strstr(json, "\"map\":[480,270,1,0]"));
+    assert(strstr(json, "\"source_width\":1920,\"source_height\":1080"));
+    assert(strstr(json, "\"gpu_readback\":{\"status\":\"ready\",\"poll_count\":1}"));
     assert(strstr(json, "\"file_result\":\"success\""));
     assert(strstr(json, "null"));
     assert(mpvrx_jelly_probe_writer_error(&w) == 0);
@@ -179,14 +211,33 @@ int main(void)
     invalid_values[0] = 1.0f;
     invalid_values[1] = 5.0f;
     memcpy(invalid_record, invalid_values, sizeof invalid_values);
-    assert(mpvrx_jelly_probe_writer_capture(&invalid_metadata, invalid_record) == MPVRX_JELLY_CAPTURE_ACCEPTED);
+    assert(mpvrx_jelly_probe_writer_capture(&invalid_metadata, invalid_record, 1) == MPVRX_JELLY_CAPTURE_ACCEPTED);
     wait_for_status(&invalid_metadata, MPVRX_JELLY_PROBE_COMPLETE);
     read_report(invalid_metadata_path, json, sizeof json);
     assert(strstr(json, "\"status\":\"no_sample\""));
     assert(strstr(json, "\"reason\":\"invalid_probe_metadata\""));
+    assert(strstr(json, "\"evaluation_marker_observed\":true"));
+    assert(strstr(json, "\"gpu_readback\":{\"status\":\"ready\",\"poll_count\":1}"));
     assert(mpvrx_jelly_probe_writer_join(&invalid_metadata) == 0);
     mpvrx_jelly_probe_writer_destroy(&invalid_metadata);
     unlink(invalid_metadata_path);
+    unsigned char invalid_field[MPVRX_JELLY_PROBE_RECORD_BYTES];
+    memcpy(invalid_field, rec, sizeof invalid_field);
+    memset(invalid_field + 58 * 16, 0, 16);
+    assert_invalid_shader_record(invalid_field, "mpvrx-jelly-missing-ids");
+    memcpy(invalid_field, rec, sizeof invalid_field);
+    float invalid_pts = NAN;
+    memcpy(invalid_field + 59 * 16, &invalid_pts, sizeof invalid_pts);
+    assert_invalid_shader_record(invalid_field, "mpvrx-jelly-missing-pts");
+    memcpy(invalid_field, rec, sizeof invalid_field);
+    set_shader_float(invalid_field, 60, 2, 0.0f);
+    assert_invalid_shader_record(invalid_field, "mpvrx-jelly-missing-dimensions");
+    memcpy(invalid_field, rec, sizeof invalid_field);
+    set_shader_float(invalid_field, 60, 0, 1920.0f);
+    assert_invalid_shader_record(invalid_field, "mpvrx-jelly-out-of-bounds-pixel");
+    memcpy(invalid_field, rec, sizeof invalid_field);
+    set_shader_float(invalid_field, 61, 0, 0.0f);
+    assert_invalid_shader_record(invalid_field, "mpvrx-jelly-missing-map");
     puts("ok invalid GPU metadata is not mislabeled as a Jelly rejection");
 
     char no_sample_path[512];

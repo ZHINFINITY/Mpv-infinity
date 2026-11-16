@@ -193,8 +193,12 @@ def transform_motion(source: str, *, verify_hash: bool = True) -> tuple[str, boo
     probe_body = _glsl_decl(source, "synthesis_body").replace(
         "synthesis_body", "synthesis_probe_body", 1
     )
-    body_anchor = "    ivec2 pixel = ivec2(gl_GlobalInvocationID.xy);"
-    body_metadata = """    ivec2 pixel = ivec2(gl_GlobalInvocationID.xy);
+    body_anchor = """    ivec2 pixel = ivec2(gl_GlobalInvocationID.xy);
+    color = synthesize_pixel(first, second, forward, backward, scene, pixel,
+                             output_size, motion_size, projection_ratio, alpha, linear_hdr);"""
+    body_metadata = body_anchor + """
+    // synthesize_pixel clears/writes the probe SSBO for this pixel. Preserve the
+    // per-dispatch capture metadata by writing it only after that helper returns.
     if (probe_enabled != 0 && all(equal(pixel, probe_pixel))) {
         probe_records[58] = uintBitsToFloat(probe_id_halves);
         probe_records[59] = probe_metadata[0];

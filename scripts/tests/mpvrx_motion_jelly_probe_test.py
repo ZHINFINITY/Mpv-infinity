@@ -239,6 +239,19 @@ class MotionProbeTest(unittest.TestCase):
         compile_glsl(self.probe, probe=False)
         compile_glsl(self.probe, probe=True)
 
+    def test_capture_metadata_is_written_after_the_pixel_helper_resets_records(self):
+        probe_header = extract_glsl(self.probe, "synthesis_probe_header")
+        probe_body = extract_glsl(self.probe, "synthesis_probe_body")
+        helper_reset = probe_header.index("probe_records[i] = vec4(0.0)")
+        helper_marker = probe_header.index("probe_records[0] = vec4(1.0, 0.0, blend, 0.0)")
+        helper_call = probe_body.index("color = synthesize_pixel(")
+        metadata_write = probe_body.index("probe_records[58] = uintBitsToFloat(probe_id_halves)")
+        self.assertLess(helper_reset, helper_marker)
+        self.assertLess(helper_call, metadata_write)
+        for record_index in range(59, 62):
+            metadata_store = f"probe_records[{record_index}] = probe_metadata[{record_index - 59}]"
+            self.assertGreater(probe_body.index(metadata_store), helper_call)
+
     def test_probe_uniforms_fit_minimum_vulkan_push_constants(self):
         self.assertIn("float probe_metadata[12] = {0};", self.probe)
         self.assertIn("metadata_var.dim_a = 3;", self.probe)

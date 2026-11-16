@@ -94,9 +94,10 @@ int mpvrx_jelly_probe_queue_init(struct mpvrx_jelly_probe_queue *queue)
 
 enum mpvrx_jelly_probe_queue_result mpvrx_jelly_probe_queue_try_push(
     struct mpvrx_jelly_probe_queue *queue,
-    const unsigned char record[MPVRX_JELLY_PROBE_RECORD_BYTES])
+    const unsigned char record[MPVRX_JELLY_PROBE_RECORD_BYTES],
+    uint32_t readback_poll_count)
 {
-    if (!queue || !queue->initialized || !record)
+    if (!queue || !queue->initialized || !record || !readback_poll_count)
         return MPVRX_JELLY_QUEUE_INVALID;
 
     /* fetch_add is constant-work. SPSC means at most one active producer. */
@@ -119,6 +120,7 @@ enum mpvrx_jelly_probe_queue_result mpvrx_jelly_probe_queue_try_push(
     }
 
     memcpy(queue->slot, record, MPVRX_JELLY_PROBE_RECORD_BYTES);
+    queue->slot_readback_poll_count = readback_poll_count;
     atomic_store_explicit(&queue->head, head + 1, memory_order_release);
     queue_signal(queue);
     queue_producer_leave(queue);
@@ -128,15 +130,17 @@ enum mpvrx_jelly_probe_queue_result mpvrx_jelly_probe_queue_try_push(
 
 enum mpvrx_jelly_probe_queue_result mpvrx_jelly_probe_queue_try_pop(
     struct mpvrx_jelly_probe_queue *queue,
-    unsigned char record[MPVRX_JELLY_PROBE_RECORD_BYTES])
+    unsigned char record[MPVRX_JELLY_PROBE_RECORD_BYTES],
+    uint32_t *readback_poll_count)
 {
-    if (!queue || !queue->initialized || !record)
+    if (!queue || !queue->initialized || !record || !readback_poll_count)
         return MPVRX_JELLY_QUEUE_INVALID;
     uint32_t tail = atomic_load_explicit(&queue->tail, memory_order_relaxed);
     uint32_t head = atomic_load_explicit(&queue->head, memory_order_acquire);
     if (tail == head)
         return MPVRX_JELLY_QUEUE_EMPTY;
     memcpy(record, queue->slot, MPVRX_JELLY_PROBE_RECORD_BYTES);
+    *readback_poll_count = queue->slot_readback_poll_count;
     atomic_store_explicit(&queue->tail, tail + 1, memory_order_release);
     return MPVRX_JELLY_QUEUE_OK;
 }
@@ -496,7 +500,8 @@ static int write_no_sample_json(struct mpvrx_jelly_probe_writer *writer,
 }
 
 static int write_capture_json(struct mpvrx_jelly_probe_writer *writer,
-                              const unsigned char record[MPVRX_JELLY_PROBE_RECORD_BYTES])
+                              const unsigned char record[MPVRX_JELLY_PROBE_RECORD_BYTES],
+                              uint32_t readback_poll_count)
 {
     float values[256]; memcpy(values, record, sizeof values); const float *v=values; char json[16384]; size_t n=0; int e=0;
     uint32_t u[4]; memcpy(u,record+58*16,sizeof u); uint64_t id0=(uint64_t)u[0]|((uint64_t)u[1]<<32), id1=(uint64_t)u[2]|((uint64_t)u[3]<<32);
@@ -509,9 +514,13 @@ static int write_capture_json(struct mpvrx_jelly_probe_writer *writer,
         v[61*4] > 0 && v[61*4+1] > 0;
     int alpha_valid = isfinite(v[59*4+2]) && v[59*4+2] > 0 && v[59*4+2] < 1;
     int selection_valid = v[59*4+3] == 1.0f || v[59*4+3] == 2.0f;
-    int metadata_valid = gpu_record_evaluated && id0 && id1 && dimensions_valid &&
-        pixel_in_bounds && map_valid && alpha_valid && selection_valid;
+    int pts_valid = isfinite(v[59*4]) && isfinite(v[59*4+1]);
+    int metadata_valid = readback_poll_count > 0 && gpu_record_evaluated && id0 && id1 &&
+        dimensions_valid && pixel_in_bounds && map_valid && alpha_valid &&
+        selection_valid && pts_valid;
     int evaluated = metadata_valid;
+    const char *target_pixel_status = evaluated ? "evaluated" :
+        gpu_record_evaluated ? "metadata_invalid" : "not_evaluated";
     int activation = evaluated && mpvrx_jelly_probe_record_is_activation(record);
     int reason_code = evaluated && isfinite(v[1]) ? (int)v[1] : -1;
 #define A(...) do { if(!e)e=appendf(json,sizeof json,&n,__VA_ARGS__); } while(0)
@@ -522,7 +531,7 @@ static int write_capture_json(struct mpvrx_jelly_probe_writer *writer,
     const char *cn[]={"forward_warp","backward_warp","color0","color1","metric0","metric1","color_delta_change","neighbor_counts_weights"};
     for(int i=0;i<8;i++){if(i)A(",");A("\"%s\":",cn[i]);V(i+1);} A("},\"neighbors\":[");
     for(int i=0;i<8;i++){int b=9+i*6;if(i)A(",");A("{\"index\":%d,\"forward_warp\":",i);V(b);A(",\"backward_warp\":");V(b+1);A(",\"color0_error0\":");V(b+2);A(",\"color1_error1\":");V(b+3);A(",\"weights_votes\":");V(b+4);A(",\"rejection\":");if(!e)e=num(json,sizeof json,&n,v[(b+5)*4+2]);A("}");}
-    A("],\"support\":");V(57);A(",\"stages\":{\"target_pixel\":{\"status\":\"%s\",\"evaluated\":%s,\"pixel\":[", evaluated ? "evaluated" : "not_evaluated", evaluated ? "true" : "false");
+    A("],\"support\":");V(57);A(",\"stages\":{\"target_pixel\":{\"status\":\"%s\",\"evaluated\":%s,\"pixel\":[", target_pixel_status, evaluated ? "true" : "false");
     if (!e) { e = num(json, sizeof json, &n, v[60*4]); }
     A(",");
     if (!e) { e = num(json, sizeof json, &n, v[60*4+1]); }
@@ -530,12 +539,12 @@ static int write_capture_json(struct mpvrx_jelly_probe_writer *writer,
     if (!e) { e = num(json, sizeof json, &n, v[60*4+2]); }
     A(",\"source_height\":");
     if (!e) { e = num(json, sizeof json, &n, v[60*4+3]); }
-    int bounds_known = isfinite(v[60*4+2]) && isfinite(v[60*4+3]);
+    int bounds_known = dimensions_valid;
     int in_bounds = bounds_known && v[60*4] >= 0 && v[60*4+1] >= 0 && v[60*4] < v[60*4+2] && v[60*4+1] < v[60*4+3];
-    A(",\"pixel_in_bounds\":%s},\"jelly\":{\"status\":\"%s\",\"reason_code\":", bounds_known ? (in_bounds ? "true" : "false") : "null", activation ? "activated" : evaluated ? "rejected_or_skipped" : "not_observed");
+    A(",\"pixel_in_bounds\":%s,\"evaluation_marker_observed\":%s},\"jelly\":{\"status\":\"%s\",\"reason_code\":", bounds_known ? (in_bounds ? "true" : "false") : "null", gpu_record_evaluated ? "true" : "false", activation ? "activated" : evaluated ? "rejected_or_skipped" : "not_observed");
     if(reason_code < 0) A("null"); else A("%d", reason_code);
     A(",\"reason\":\"%s\",\"fill\":", evaluated ? jelly_reason_name(reason_code) : "not_observed"); if(!e)e=num(json,sizeof json,&n,v[57*4+3]);
-    A("},\"gpu_readback\":{\"status\":\"ready\",\"poll_count\":null},\"writer\":{\"status\":\"completed\",\"file_result\":\"success\",\"error_code\":0}}}\n");
+    A("},\"gpu_readback\":{\"status\":\"%s\",\"poll_count\":%u},\"writer\":{\"status\":\"completed\",\"file_result\":\"success\",\"error_code\":0}}}\n", readback_poll_count ? "ready" : "not_completed", readback_poll_count);
 #undef A
 #undef V
     if (e) return e;
@@ -546,6 +555,7 @@ static void *mpvrx_jelly_probe_worker_main(void *opaque)
 {
     struct mpvrx_jelly_probe_writer *writer = opaque;
     unsigned char record[MPVRX_JELLY_PROBE_RECORD_BYTES];
+    uint32_t readback_poll_count;
 
     for (;;) {
         while (sem_wait(&writer->queue.wake) != 0) {
@@ -559,8 +569,9 @@ static void *mpvrx_jelly_probe_worker_main(void *opaque)
 #ifdef MPVRX_JELLY_PROBE_TEST_HOOKS
         mpvrx_jelly_probe_test_hook(MPVRX_JELLY_TEST_BEFORE_POP);
 #endif
-        while (mpvrx_jelly_probe_queue_try_pop(&writer->queue, record) == MPVRX_JELLY_QUEUE_OK) {
-            int error = write_capture_json(writer, record);
+        while (mpvrx_jelly_probe_queue_try_pop(&writer->queue, record,
+                                                &readback_poll_count) == MPVRX_JELLY_QUEUE_OK) {
+            int error = write_capture_json(writer, record, readback_poll_count);
             atomic_store_explicit(&writer->last_error, error, memory_order_release);
             pw_set_terminal_status(writer, error ? MPVRX_JELLY_PROBE_FAILED : MPVRX_JELLY_PROBE_COMPLETE);
             atomic_fetch_add_explicit(&writer->completion_count, 1, memory_order_relaxed);
@@ -667,9 +678,11 @@ enum mpvrx_jelly_probe_capture_result mpvrx_jelly_probe_writer_arm(struct mpvrx_
 
 enum mpvrx_jelly_probe_capture_result mpvrx_jelly_probe_writer_capture(
     struct mpvrx_jelly_probe_writer *writer,
-    const void *ready_mapped_record)
+    const void *completed_mapped_record,
+    uint32_t completed_readback_poll_count)
 {
-    if (!writer || !writer->worker_started || !ready_mapped_record)
+    if (!writer || !writer->worker_started || !completed_mapped_record ||
+        !completed_readback_poll_count)
         return MPVRX_JELLY_CAPTURE_INVALID;
 
     int expected = MPVRX_JELLY_PROBE_ARMED;
@@ -684,7 +697,8 @@ enum mpvrx_jelly_probe_capture_result mpvrx_jelly_probe_writer_capture(
     }
 
     enum mpvrx_jelly_probe_queue_result result = mpvrx_jelly_probe_queue_try_push(&writer->queue,
-                                                     ready_mapped_record);
+                                                     completed_mapped_record,
+                                                     completed_readback_poll_count);
     if (result == MPVRX_JELLY_QUEUE_FULL) {
         expected = MPVRX_JELLY_PROBE_CLAIMED;
         atomic_compare_exchange_strong_explicit(
