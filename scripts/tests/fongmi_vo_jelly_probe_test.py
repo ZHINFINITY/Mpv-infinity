@@ -78,6 +78,11 @@ class JellyProbePatchTest(unittest.TestCase):
             self.assertIn('jelly_probe_pixel_for_size', patched)
             self.assertIn('1352.0 / 1920.0', patched)
             self.assertIn('224.0 / 1080.0', patched)
+            helper_definition = patched.index('static bool jelly_probe_pixel_for_size')
+            self.assertEqual(
+                patched.index('jelly_probe_pixel_for_size('),
+                helper_definition + len('static bool '),
+            )
             self.assertIn('motion_render_callback_count++', patched)
             self.assertIn('armed_render_callback_count++', patched)
             self.assertIn('alpha_below_count++', patched)

@@ -164,7 +164,19 @@ def apply_patch(vo_source_path, meson_path, repo_writer_dir, probe_enabled):
 
     # Callback-only poll: never wait, allocate, write files, or serialize JSON here.
     frame_anchor = 'static int prepare_motion_frame(struct vo *vo, const struct pl_frame_mix *mix,\n'
-    poll = '''static void jelly_probe_finish(struct priv *p)
+    poll = '''static bool jelly_probe_pixel_for_size(int width, int height,
+                                       int *pixel_x, int *pixel_y)
+{
+    if (width <= 0 || height <= 0 || !pixel_x || !pixel_y)
+        return false;
+    /* Preserve the clip's tested point as a fraction of a 1920x1080 source. */
+    *pixel_x = (int) ((double) width * 1352.0 / 1920.0);
+    *pixel_y = (int) ((double) height * 224.0 / 1080.0);
+    return *pixel_x >= 0 && *pixel_y >= 0 &&
+        *pixel_x < width && *pixel_y < height;
+}
+
+static void jelly_probe_finish(struct priv *p)
 {
     if (!p->jelly_probe_writer_ready || p->jelly_probe_finalized)
         return;
@@ -189,7 +201,7 @@ static void jelly_probe_poll(struct priv *p)
     }
     p->jelly_probe_pending = false;
     p->jelly_probe_diagnostics.gpu_last_poll_status = MPVRX_JELLY_READBACK_READY;
-    const float *record = p->jelly_probe_buf->data;
+    const float *record = (const float *) p->jelly_probe_buf->data;
     bool evaluated = mpvrx_jelly_probe_record_was_evaluated(record);
     p->jelly_probe_diagnostics.pixel_evaluated = evaluated ? 1 : 0;
     p->jelly_probe_last_record_valid = evaluated;
@@ -235,19 +247,7 @@ static void jelly_probe_poll(struct priv *p)
     enum mp_motion_result result;
 };
 '''
-    motion_mix_probe = '''static bool jelly_probe_pixel_for_size(int width, int height,
-                                       int *pixel_x, int *pixel_y)
-{
-    if (width <= 0 || height <= 0 || !pixel_x || !pixel_y)
-        return false;
-    /* Preserve the clip's tested point as a fraction of a 1920x1080 source. */
-    *pixel_x = (int) ((double) width * 1352.0 / 1920.0);
-    *pixel_y = (int) ((double) height * 224.0 / 1080.0);
-    return *pixel_x >= 0 && *pixel_y >= 0 &&
-        *pixel_x < width && *pixel_y < height;
-}
-
-struct motion_mix {
+    motion_mix_probe = '''struct motion_mix {
     bool prepare_only;
     struct priv *probe_priv;
     bool probe_active, probe_candidate;
@@ -490,7 +490,7 @@ struct motion_mix {
                 .first_pts = valid_probe_pts ? probe_mpi0->pts : NAN,
                 .second_pts = valid_probe_pts ? probe_mpi1->pts : NAN,
                 .alpha = motion.alpha,
-                .selection_mode = target_probe_pair ? 1 : 2,
+                .selection_mode = target_probe_pair ? 1 : fallback_probe_pair ? 2 : 0,
             };
             probe_diag->last_candidate_observed = 1;
             probe_diag->last_candidate_pts_valid = valid_probe_pts ? 1 : 0;
