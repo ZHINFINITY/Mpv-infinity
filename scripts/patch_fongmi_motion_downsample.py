@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-"""Apply a bounded anti-alias filter to the pinned MPVRx FongMi analysis reduction."""
+"""Apply a bounded anti-alias filter to the pinned FongMi analysis reduction."""
 from __future__ import annotations
 
 import hashlib
 from pathlib import Path
 
-UPSTREAM_MOTION_SHA256 = "ca7870c21f7a499d03ab1f7d73f1b9bcbccee534398d8a6f01957556e7d61932"
+UPSTREAM_MOTION_SHA256 = "756c1da75d274d81c2e84f988bae1785aa6b6a9a813d16d3b47d9656b31016d0"
 MARKER = "MPVFLOW_MPVRX_ANALYSIS_DOWNSAMPLE_AA_V1"
 ORIGINAL_BLOCK = """            vec2 p = (vec2(gl_GlobalInvocationID.xy) + 0.5) * source_scale - 0.5;
             vec3 sampled = sample_color(source, p);
@@ -43,14 +43,14 @@ def has_antialias_filter(source: str) -> bool:
 
 
 def transform_source(source: str, *, verify_upstream_hash: bool = True) -> tuple[str, bool]:
-    """Transform exactly the MPVRx-pinned source; reject drift and partial patches."""
+    """Transform exactly the pinned source; reject drift and partial patches."""
     if MARKER in source:
         if has_antialias_filter(source) and source.count(PATCHED_BLOCK) == 1:
             return source, False
         raise ValueError("FongMi analysis-downsample marker/source mismatch")
 
     if verify_upstream_hash and _sha256(source.encode("utf-8")) != UPSTREAM_MOTION_SHA256:
-        raise ValueError("unexpected FongMi motion.c source; expected exact MPVRx-pinned source")
+        raise ValueError("unexpected FongMi motion.c source; expected exact pinned source")
     if source.count(ORIGINAL_BLOCK) != 1:
         raise ValueError("expected one exact FongMi motion-analysis downsample block")
 
@@ -67,7 +67,7 @@ def apply_patch(path: Path, *, enabled: bool = True) -> bool:
         if MARKER in source:
             raise ValueError("app-owned downsample patch found without explicit test-workflow opt-in")
         if _sha256(source.encode("utf-8")) != UPSTREAM_MOTION_SHA256:
-            raise ValueError("unmodified MPVRx-pinned FongMi source required when antialiasing is disabled")
+            raise ValueError("unmodified pinned FongMi source required when antialiasing is disabled")
         return False
     patched, changed = transform_source(source)
     if changed:
@@ -83,9 +83,9 @@ def main() -> None:
     args = parser.parse_args()
     changed = apply_patch(args.motion_source)
     print(
-        "Applied bounded MPVRx motion-analysis downsample antialiasing"
+        "Applied bounded Mpv-infinity motion-analysis downsample antialiasing"
         if changed
-        else "Bounded MPVRx motion-analysis downsample antialiasing is already applied"
+        else "Bounded Mpv-infinity motion-analysis downsample antialiasing is already applied"
     )
 
 

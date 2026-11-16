@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Static checks for the MPVRx-pinned MPV runtime and its source safeguards."""
+"""Static checks for the Mpv-infinity FongMi 645 runtime and its source safeguards."""
 from __future__ import annotations
 
 import hashlib
@@ -13,8 +13,6 @@ SOURCE_VERIFIER = (ROOT / "scripts/mpvrx_motion_source.py").read_text(encoding="
 SOURCE_TEST = (ROOT / "scripts/tests/mpvrx_motion_source_test.py").read_text(encoding="utf-8")
 DOWNSAMPLE_PATCH = (ROOT / "scripts/patch_fongmi_motion_downsample.py").read_text(encoding="utf-8")
 DOWNSAMPLE_TEST = (ROOT / "scripts/tests/mpvrx_motion_downsample_test.py").read_text(encoding="utf-8")
-JELLY_PATCH = (ROOT / "scripts/patch_fongmi_motion_jelly.py").read_text(encoding="utf-8")
-JELLY_TEST = (ROOT / "scripts/tests/mpvrx_motion_jelly_test.py").read_text(encoding="utf-8")
 PAIRED_COLOR_PATCH = (ROOT / "scripts/patch_fongmi_paired_color_mask.py").read_text(encoding="utf-8")
 PAIRED_COLOR_TEST = (ROOT / "scripts/tests/fongmi_paired_color_mask_test.py").read_text(encoding="utf-8")
 CORE_TEST = (ROOT / "scripts/test-mpvflow-core.sh").read_text(encoding="utf-8")
@@ -35,10 +33,11 @@ PATCH_DIR = ROOT / "scripts/patches/mpvlibandroid-fongmi"
 PATCHER = (PATCH_DIR / "patch-libbluray.sh").read_text(encoding="utf-8")
 PATCH_README = (PATCH_DIR / "README.md").read_text(encoding="utf-8")
 
-MPV_SHA = "95ec8e929f8ad2f97c8415c486971493a0b408df"
+MPV_SHA = "645f8ecdd3c94379048e9ee3e7014e174de0bd02"
 PLACEBO_SHA = "63659d96d1bff7d7a5a1368e9538056a193fc6fb"
-MOTION_SHA256 = "ca7870c21f7a499d03ab1f7d73f1b9bcbccee534398d8a6f01957556e7d61932"
-MOTION_ANTIALIAS_SHA256 = "db13147fd268ebe857e235a2ad066c0d34d9c35cab66f6fa93ed5767d61219a2"
+MOTION_SHA256 = "756c1da75d274d81c2e84f988bae1785aa6b6a9a813d16d3b47d9656b31016d0"
+MOTION_ANTIALIAS_SHA256 = "793ac79e8243727bb58286ca6bb6a6b6e539ba3e8abae34c4dae7b6503c5cb2e"
+MOTION_MASKED_SHA256 = "93f24843eafde75ffb23ff7de0e2d06674224ac9c56b80290b84a6d7741d83f3"
 MOTION_HEADER_SHA256 = "12fedd08063a540b69667a51e146d539ebae509b63c07964f573410a7d0ae427"
 BUILDER_SHA = "1efc82739f6f7034cd63e7ee8b3ec5431df27467"
 MPVLIB_ANDROID_SHA = "d04217abe8e72e4a099269f045855bf69b87d53b"
@@ -72,23 +71,12 @@ assert "smoothstep(vec2(0.02), vec2(0.08), paired_error)" in PAIRED_COLOR_PATCH
 assert "def verify_reprepare_cycle(source: str)" in PAIRED_COLOR_TEST
 assert "verify_reprepare_cycle(patched)" in PAIRED_COLOR_TEST
 assert "near-exact witnesses are unchanged" in PAIRED_COLOR_TEST
-assert 'os.environ.get("MPVFLOW_MPVRX_ANALYSIS_DOWNSAMPLE_AA") == "1"' in PREPARE
-assert 'os.environ.get("MPVFLOW_JELLY_EXPERIMENTAL") == "1"' in PREPARE
-assert 'os.environ.get("MPVFLOW_JELLY_PREVIEW") == "1"' in PREPARE
-assert "if jelly_experimental_enabled and jelly_preview_enabled:" in PREPARE
-assert "if jelly_experimental_enabled:" in PREPARE and "apply_motion_jelly_patch(motion_path)" in PREPARE
-assert "if jelly_preview_enabled:" in PREPARE and "apply_motion_jelly_preview_patch(motion_path)" in PREPARE
-assert "MOTION_ANTIALIAS_SHA256" in JELLY_PATCH and "MOTION_JELLY_SHA256" in JELLY_PATCH
-assert "MOTION_JELLY_PREVIEW_SHA256" in JELLY_PATCH
-assert "MPVFLOW_JELLY_MOTION_ALIGNED_MAJORITY_V2" in JELLY_PATCH
-assert "MPVFLOW_JELLY_BLEND_TEST_V1" in JELLY_PATCH
-assert "return mix(original, jelly_region, jelly_fill);" in JELLY_PATCH
-assert "vec4(1.0, 0.0, 1.0, original.a)" not in JELLY_PATCH
-assert "--require-glslang" in JELLY_TEST and "synthesize_pixel" in JELLY_TEST
-assert "--preview-only" in JELLY_TEST and "check_preview_contract()" in JELLY_TEST
+assert 'os.environ.get("MPVFLOW_ANALYSIS_DOWNSAMPLE_AA") == "1"' in PREPARE
+assert "Mpv-infinity FongMi 645 test does not enable Jelly variants" in PREPARE
+assert "apply_motion_jelly" not in PREPARE and "patch_fongmi_motion_jelly" not in PREPARE
 assert "MOTION_PASS_PREPARE" in PREPARE and "pl_dispatch_prepare_compute" in PREPARE
 assert "mp_motion_render_owned" in PREPARE and "mp_motion_capture_supported" in PREPARE
-assert "MPVFLOW_DEBUG_CAPTURE is unsupported with the MPVRx-pinned FongMi 95ec motion core" in PREPARE
+assert "MPVFLOW_DEBUG_CAPTURE is unsupported with the pinned FongMi 645 motion core" in PREPARE
 assert MPV_SHA in SOURCE_VERIFIER and MOTION_SHA256 in SOURCE_VERIFIER
 assert "MOTION_ANTIALIAS_SHA256" in SOURCE_VERIFIER
 assert MOTION_HEADER_SHA256 in SOURCE_VERIFIER
@@ -122,7 +110,7 @@ for workflow in WORKFLOWS:
         "scripts/patch_fongmi_paired_color_mask.py",
         "scripts/prepare-mpvflow.py",
         "scripts/patches/mpvlibandroid-fongmi/**",
-        "mpvflow-arm64-runtime-v7",
+        "mpvflow-arm64-runtime-v8",
     ):
         assert marker in workflow, marker
     assert "scripts/patch_fongmi_motion_artifact.py" not in workflow
@@ -132,21 +120,18 @@ for workflow in WORKFLOWS:
     assert "runtime-legacy" not in workflow
     assert "c1529642089bfebfc928a1c1664638a7a5d219ba" not in workflow
 assert "scripts/patch_fongmi_motion_downsample.py" in WORKFLOWS[1]
-assert "MPVFLOW_MPVRX_ANALYSIS_DOWNSAMPLE_AA: '1'" in WORKFLOWS[1]
+assert "MPVFLOW_ANALYSIS_DOWNSAMPLE_AA: '1'" in WORKFLOWS[1]
 assert "--require-analysis-downsample-aa" in WORKFLOWS[1]
-assert "scripts/patch_fongmi_motion_jelly.py" in WORKFLOWS[1]
-assert "scripts/tests/mpvrx_motion_jelly_test.py" in WORKFLOWS[1]
-assert "jelly_test" in WORKFLOWS[1] and "default: false" in WORKFLOWS[1]
-assert "MPVFLOW_JELLY_EXPERIMENTAL" in WORKFLOWS[1]
-assert "--require-jelly-experimental" in WORKFLOWS[1]
-assert "jelly_preview" in WORKFLOWS[1]
-assert "MPVFLOW_JELLY_PREVIEW" in WORKFLOWS[1]
-assert "--require-jelly-preview" in WORKFLOWS[1]
-assert "jelly-blend-test" in WORKFLOWS[1]
-assert "retention-days: 3" in WORKFLOWS[1]
+assert "scripts/patch_fongmi_motion_jelly.py" not in WORKFLOWS[1]
+assert "scripts/tests/mpvrx_motion_jelly_test.py" not in WORKFLOWS[1]
+assert "jelly_test" not in WORKFLOWS[1] and "jelly_preview" not in WORKFLOWS[1]
+assert "MPVFLOW_JELLY" not in WORKFLOWS[1]
+assert "MPVFLOW_ANALYSIS_DOWNSAMPLE_AA: '1'" in WORKFLOWS[1]
+assert "mpv-infinity-fongmi-645f8ec-arm64-v8a-debug" in WORKFLOWS[1]
+assert "MPVRx" not in "\n".join(WORKFLOWS)
 for workflow in (WORKFLOWS[0], WORKFLOWS[2]):
     assert "scripts/patch_fongmi_motion_downsample.py" not in workflow
-    assert "MPVFLOW_MPVRX_ANALYSIS_DOWNSAMPLE_AA" not in workflow
+    assert "MPVFLOW_ANALYSIS_DOWNSAMPLE_AA" not in workflow
     assert "patch_fongmi_motion_jelly.py" not in workflow
     assert "MPVFLOW_JELLY_EXPERIMENTAL" not in workflow
     assert "MPVFLOW_JELLY_PREVIEW" not in workflow
@@ -173,7 +158,7 @@ for text in (MANIFEST, LICENSES):
     assert "FongMi/mpv" in text and "FongMi/libplacebo" in text
     assert "GPL-2.0" in text
     assert "bounded, hash-guarded app-owned patch" in text
-for marker in (MOTION_SHA256, MOTION_ANTIALIAS_SHA256, MOTION_HEADER_SHA256):
+for marker in (MOTION_SHA256, MOTION_ANTIALIAS_SHA256, MOTION_MASKED_SHA256, MOTION_HEADER_SHA256):
     assert marker in MANIFEST
 for patch_name, expected_hash in PATCH_HASHES.items():
     patch_path = PATCH_DIR / patch_name
@@ -195,4 +180,4 @@ assert not re.search(r'PlaybackSession\.setOptionString\(\s*"interpolation"', MP
 assert "mp_motion_" not in MEDIA3_NATIVE
 assert "mpvflow_gpu_synthesize_with_policy_to_texture(" in MEDIA3_NATIVE
 assert "mpvflow/fongmi/motion.c" not in CMAKE
-print("MPVRx MPV motion source, 480px cap, build pins, MPV-only boundary, and source/licensing guards passed")
+print("Mpv-infinity FongMi 645 motion source, 480px cap, build pins, MPV-only boundary, and source/licensing guards passed")

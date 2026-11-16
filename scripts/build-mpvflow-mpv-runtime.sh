@@ -6,7 +6,7 @@ MPV_BUILDER_DIR="${MPV_BUILDER_DIR:-$ROOT/native-builder}"
 MPV_SOURCE_DIR="${MPV_SOURCE_DIR:-$ROOT/mpv-source}"
 BUILDSCRIPTS="$MPV_BUILDER_DIR/buildscripts"
 EXPECTED_BUILDER_REVISION="1efc82739f6f7034cd63e7ee8b3ec5431df27467"
-EXPECTED_MPV_REVISION="95ec8e929f8ad2f97c8415c486971493a0b408df"
+EXPECTED_MPV_REVISION="645f8ecdd3c94379048e9ee3e7014e174de0bd02"
 EXPECTED_FFMPEG_REVISION="f2c5162b7c4b3e8835de270ff78cecc524decad1"
 EXPECTED_FFMPEG_REPOSITORY="https://github.com/FongMi/FFmpeg.git"
 
@@ -142,7 +142,7 @@ download = download.replace(
     "git -C libplacebo submodule update --init --recursive",
     1,
 )
-print(f"Pinned MPVRx-provenance FongMi/libplacebo {libplacebo_revision}")
+print(f"Pinned Mpv-infinity FongMi/libplacebo {libplacebo_revision}")
 
 glslang_revision = "1062752a891c95b2bfeed9e356562d88f9df84ac"
 glslang_insert_after = "git -C libplacebo submodule update --init --recursive\n"

@@ -17,21 +17,22 @@ def test_standard_workflow_is_flow_only() -> None:
     gradle = (ROOT / "app/build.gradle.kts").read_text(encoding="utf-8")
 
     cache_step_name = "- name: Restore verified Flow-only MPVFlow arm64 runtime"
+    experiment_cache_step_name = "- name: Restore verified Mpv-infinity FongMi 645 arm64 runtime"
     builder_sha = "1efc82739f6f7034cd63e7ee8b3ec5431df27467"
-    mpv_sha = "95ec8e929f8ad2f97c8415c486971493a0b408df"
+    mpv_sha = "645f8ecdd3c94379048e9ee3e7014e174de0bd02"
     placebo_sha = "63659d96d1bff7d7a5a1368e9538056a193fc6fb"
     ffmpeg_sha = "f2c5162b7c4b3e8835de270ff78cecc524decad1"
     vulkan_headers_sha = "a4f8ada9f4f97c45b8c89c57997be9cebaae65d2"
 
-    def runtime_cache_key(contents: str) -> str:
-        restore_step = contents.split(cache_step_name, 1)[1].split("- name:", 1)[0]
+    def runtime_cache_key(contents: str, step_name: str) -> str:
+        restore_step = contents.split(step_name, 1)[1].split("- name:", 1)[0]
         return next(line.strip()[len("key: ") :] for line in restore_step.splitlines() if line.strip().startswith("key: "))
 
-    manual_cache_key = runtime_cache_key(workflow)
-    push_cache_key = runtime_cache_key(flow_workflow)
-    release_cache_key = runtime_cache_key(release_workflow)
-    assert manual_cache_key == release_cache_key, "normal debug and release builds must share the upstream MPVRx runtime"
-    assert manual_cache_key != push_cache_key, "the antialias test runtime must not reuse the normal MPVRx cache"
+    manual_cache_key = runtime_cache_key(workflow, cache_step_name)
+    push_cache_key = runtime_cache_key(flow_workflow, experiment_cache_step_name)
+    release_cache_key = runtime_cache_key(release_workflow, cache_step_name)
+    assert manual_cache_key == release_cache_key, "normal debug and release builds must share the upstream FongMi runtime"
+    assert manual_cache_key != push_cache_key, "the downsample test runtime must not reuse the normal FongMi cache"
     assert "scripts/patch_fongmi_motion_downsample.py" not in manual_cache_key
     assert "scripts/patch_fongmi_motion_downsample.py" in push_cache_key
     for native_input in (
@@ -52,15 +53,15 @@ def test_standard_workflow_is_flow_only() -> None:
     assert ".github/workflows/debug-apk.yml" not in manual_cache_key
     assert ".github/workflows/mpvflow-debug-arm64.yml" not in manual_cache_key
     for pin in (
-        f"mpvflow-arm64-runtime-v7-builder-{builder_sha[:16]}-mpv-fongmi-{mpv_sha}-libplacebo-fongmi-{placebo_sha}-ffmpeg-fongmi-{ffmpeg_sha}-vulkan-headers-khronos-{vulkan_headers_sha}-cores2-",
+        f"mpvflow-arm64-runtime-v8-builder-{builder_sha[:16]}-mpv-fongmi-{mpv_sha}-libplacebo-fongmi-{placebo_sha}-ffmpeg-fongmi-{ffmpeg_sha}-vulkan-headers-khronos-{vulkan_headers_sha}-cores2-",
         "mpvflow-runtime-cache.outputs.cache-hit",
     ):
         assert pin in manual_cache_key or all(pin in candidate for candidate in (workflow, flow_workflow)), (
             f"native runtime cache must keep {pin}"
         )
     assert "c1529642089bfebfc928a1c1664638a7a5d219ba" not in manual_cache_key
-    for candidate in (workflow, flow_workflow):
-        runtime_restore = candidate.split(cache_step_name, 1)[1].split("- name:", 1)[0]
+    for candidate, restore_name in ((workflow, cache_step_name), (flow_workflow, experiment_cache_step_name)):
+        runtime_restore = candidate.split(restore_name, 1)[1].split("- name:", 1)[0]
         assert "id: mpvflow-runtime-cache" in runtime_restore
         assert "restore-keys:" not in runtime_restore
         assert "mpvflow-runtime-legacy" not in candidate
@@ -84,7 +85,8 @@ def test_standard_workflow_is_flow_only() -> None:
             "MPVFLOW_MPV_BUILD_CORES: '2'",
         ):
             assert required_input in candidate
-        cached_runtime_step = candidate.split("- name: Use cached Flow-only MPVFlow arm64 runtime", 1)[1].split(
+        cached_name = "Use cached Flow-only MPVFlow arm64 runtime" if candidate is workflow else "Use cached Mpv-infinity FongMi 645 arm64 runtime"
+        cached_runtime_step = candidate.split("- name: " + cached_name, 1)[1].split(
             "- name:", 1
         )[0]
         assert "steps.mpvflow-runtime-cache.outputs.cache-hit == 'true'" in cached_runtime_step
@@ -92,8 +94,8 @@ def test_standard_workflow_is_flow_only() -> None:
         "- name: Save verified Flow-only MPVFlow arm64 runtime"
     ) < workflow.index("- name: Run focused interpolation regression tests")
     assert flow_workflow.index("- name: Run MPVFlow core and GPU shader regression tests") < flow_workflow.index(
-        "- name: Verify GPL-free MPVFlow arm64 runtime"
-    ) < flow_workflow.index("- name: Save verified Flow-only MPVFlow arm64 runtime")
+        "- name: Verify GPL-free Mpv-infinity arm64 runtime"
+    ) < flow_workflow.index("- name: Save verified Mpv-infinity FongMi 645 arm64 runtime")
 
     assert "MPVFLOW_INCLUDE_RIFE" not in builder
     assert "build-rife-native.sh" not in builder
@@ -119,7 +121,7 @@ def test_standard_workflow_is_flow_only() -> None:
     assert "steps.mpvflow-runtime-cache.outputs.cache-hit" not in native_dependencies_step
 
     push_build_step = flow_workflow.split(
-        "- name: Build MPVFlow-only MPV native arm64 debug package", 1
+        "- name: Build Mpv-infinity FongMi 645 MPV native arm64 Debug runtime", 1
     )[1].split("- name:", 1)[0]
     assert "./scripts/build-mpvflow-mpv-runtime.sh" in push_build_step
     assert "steps.mpvflow-runtime-cache.outputs.cache-hit != 'true'" in push_build_step
