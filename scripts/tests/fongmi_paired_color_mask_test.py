@@ -12,6 +12,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "scripts"))
+import patch_fongmi_motion_downsample as DOWNSAMPLE  # noqa: E402
 import patch_fongmi_paired_color_mask as PATCHER  # noqa: E402
 
 
@@ -57,6 +58,19 @@ void main() {{
     print("FongMi paired-color mask GLSL compiled to Vulkan SPIR-V")
 
 
+def verify_reprepare_cycle(source: str) -> None:
+    """Model the build script's second prepare call without changing synthesis."""
+    base_source = PATCHER.unpatch_source(source)
+    antialias_enabled = DOWNSAMPLE.has_antialias_filter(base_source)
+    with tempfile.TemporaryDirectory(prefix="fongmi-reprepare-cycle-") as tmp:
+        motion_path = Path(tmp) / "motion.c"
+        motion_path.write_text(source, encoding="utf-8")
+        assert PATCHER.strip_patch(motion_path), "the prior prepare pass must be stripped"
+        DOWNSAMPLE.apply_patch(motion_path, enabled=antialias_enabled)
+        assert PATCHER.apply_patch(motion_path), "the repeated prepare pass must reapply the mask"
+        assert motion_path.read_text(encoding="utf-8") == source, "reprepare must preserve the exact mask source"
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--source", type=Path, help="raw or prepared pinned FongMi motion.c")
@@ -82,6 +96,8 @@ def main() -> None:
     assert repatched_changed and repatched == patched, "the patch must change only the paired-color mask block"
     if changed:
         assert unpatched == original, "raw-source patching must change only the paired-color mask block"
+    if args.source:
+        verify_reprepare_cycle(patched)
 
     # Very close color witnesses retain their full support; moderate mismatch is
     # attenuated sooner, and a mismatch of 0.08 or more cannot restore the warp.
