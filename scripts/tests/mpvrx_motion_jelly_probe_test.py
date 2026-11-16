@@ -81,13 +81,13 @@ layout(std430, set = 0, binding = 6) buffer Result { vec4 result_color; };
 layout(push_constant) uniform Params {
     vec2 output_size;
     vec2 motion_size;
-    vec2 projection_ratio;
     float alpha;
     int linear_hdr;
+    vec2 projection_ratio;
     int probe_enabled;
     ivec2 probe_pixel;
+    vec4 probe_metadata[3];
     uvec4 probe_id_halves;
-    vec4 probe_metadata[5];
 } params;
 #define probe_enabled params.probe_enabled
 #define probe_pixel params.probe_pixel
@@ -229,8 +229,13 @@ class MotionProbeTest(unittest.TestCase):
 
     def test_record_layout_and_glsl_compile(self):
         self.assertIn("probe_records[57]", self.probe)
-        self.assertIn("probe_records[63]", self.probe)
         self.assertIn("records_var.dim_a = MP_MOTION_PROBE_RECORDS", self.probe)
+        probe_body = extract_glsl(self.probe, "synthesis_probe_body")
+        self.assertIn("probe_records[61] = probe_metadata[2]", probe_body)
+        self.assertNotIn("probe_records[62]", probe_body)
+        self.assertNotIn("probe_records[63]", probe_body)
+        self.assertNotIn("probe_metadata[3]", probe_body)
+        self.assertNotIn("probe_metadata[4]", probe_body)
         compile_glsl(self.probe, probe=False)
         compile_glsl(self.probe, probe=True)
 

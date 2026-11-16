@@ -200,8 +200,6 @@ def transform_motion(source: str, *, verify_hash: bool = True) -> tuple[str, boo
         probe_records[59] = probe_metadata[0];
         probe_records[60] = probe_metadata[1];
         probe_records[61] = probe_metadata[2];
-        probe_records[62] = probe_metadata[3];
-        probe_records[63] = probe_metadata[4];
     }"""
     probe_body = _once(probe_body, body_anchor, body_metadata, "metadata write")
 
