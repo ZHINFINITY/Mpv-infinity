@@ -474,8 +474,13 @@ fun PlayerControls(
     rememberDebouncedBufferingVisibility(
       enabled = showLoadingCircle && nativeEngineActive,
       stalled =
-        !nativeSnapshot.isEnded &&
-          (!nativeSnapshot.isReady || nativeSnapshot.isLoading || nativeSnapshot.isBuffering),
+        PlayerControlVisibilityPolicy.isNativePlaybackStalled(
+          isEnded = nativeSnapshot.isEnded,
+          hasError = nativeSnapshot.hasError,
+          isReady = nativeSnapshot.isReady,
+          isLoading = nativeSnapshot.isLoading,
+          isBuffering = nativeSnapshot.isBuffering,
+        ),
     )
   val bufferingState =
     rememberBufferingState(

@@ -6,6 +6,7 @@ import android.graphics.Canvas;
 import android.graphics.Color;
 import android.util.AttributeSet;
 import android.util.Log;
+import android.util.Size;
 import android.view.View;
 import androidx.annotation.Nullable;
 import java.util.concurrent.ExecutorService;
@@ -57,32 +58,35 @@ public final class LibassSubtitleView extends View {
           pendingPositionUs = -1L;
           if (framePositionUs < 0) break;
           byte[] rgba;
+          Size dimensions;
           try {
-            rgba = current.render(framePositionUs);
+            LibassSubtitleRenderer.RenderedFrameSnapshot frame = current.renderFrame(framePositionUs);
+            rgba = frame.getRgba();
+            dimensions = frame.getSize();
           } catch (IllegalStateException closed) {
             break;
           }
           if (generation != renderGeneration.get() || current != renderer) break;
-      int width = current.getWidth();
-      int height = current.getHeight();
-      int[] argb = rgba == null ? null : new int[width * height];
-      if (argb != null) {
-        for (int i = 0; i < argb.length; i++) {
-          int p = i * 4;
-          int r = rgba[p] & 0xff, g = rgba[p + 1] & 0xff, b = rgba[p + 2] & 0xff, a = rgba[p + 3] & 0xff;
-          argb[i] = (a << 24) | (r << 16) | (g << 8) | b;
-        }
-      }
+          int width = dimensions.getWidth();
+          int height = dimensions.getHeight();
+          int[] argb = rgba == null ? null : new int[width * height];
+          if (argb != null) {
+            for (int i = 0; i < argb.length; i++) {
+              int p = i * 4;
+              int r = rgba[p] & 0xff, g = rgba[p + 1] & 0xff, b = rgba[p + 2] & 0xff, a = rgba[p + 3] & 0xff;
+              argb[i] = (a << 24) | (r << 16) | (g << 8) | b;
+            }
+          }
           post(() -> {
-        if (generation != renderGeneration.get() || current != renderer) return;
-        lastPositionUs = framePositionUs;
-        if (argb == null) { bitmap = null; invalidate(); return; }
-        if (bitmap == null || bitmap.getWidth() != width || bitmap.getHeight() != height) {
-          bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888);
-        }
-        bitmap.setPixels(argb, 0, width, 0, 0, width, height);
-        invalidate();
-      });
+            if (generation != renderGeneration.get() || current != renderer) return;
+            lastPositionUs = framePositionUs;
+            if (argb == null) { bitmap = null; invalidate(); return; }
+            if (bitmap == null || bitmap.getWidth() != width || bitmap.getHeight() != height) {
+              bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888);
+            }
+            bitmap.setPixels(argb, 0, width, 0, 0, width, height);
+            invalidate();
+          });
           if (pendingPositionUs < 0) break;
         }
       } finally {

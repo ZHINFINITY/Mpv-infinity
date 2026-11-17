@@ -118,6 +118,28 @@ class PlayerControlVisibilityPolicyTest {
   }
 
   @Test
+  fun terminalNativeErrorIsNotClassifiedAsAnEndlessBufferingStall() {
+    assertFalse(
+      PlayerControlVisibilityPolicy.isNativePlaybackStalled(
+        isEnded = false,
+        hasError = true,
+        isReady = false,
+        isLoading = true,
+        isBuffering = true,
+      ),
+    )
+    assertTrue(
+      PlayerControlVisibilityPolicy.isNativePlaybackStalled(
+        isEnded = false,
+        hasError = false,
+        isReady = false,
+        isLoading = true,
+        isBuffering = true,
+      ),
+    )
+  }
+
+  @Test
   fun mpvUsesItsDebouncedBufferingStateAndSeekingSuppressesEitherEngine() {
     assertTrue(
       PlayerControlVisibilityPolicy.shouldShowBufferingIndicator(

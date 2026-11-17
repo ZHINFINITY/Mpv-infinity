@@ -1122,7 +1122,10 @@ class PlayerActivity :
       causeClassNames = causeClassNames,
       rendererName = rendererFailure?.rendererName,
       rendererMimeType = rendererFailure?.rendererFormat?.sampleMimeType,
-    ) ?: return
+    ) ?: run {
+      viewModel.onVideoLoadFailed()
+      return
+    }
 
     Log.w(
       "Mpv∞-PlayerActivity",
@@ -2819,8 +2822,8 @@ class PlayerActivity :
           // keeps native subtitle overlays and controls out of the video pan/zoom transform while
           // giving both engines the same pan/zoom state.
           binding.media3Player.videoSurfaceView?.apply {
-            scaleX = if (flips.isMirrored) -scale else scale
-            scaleY = if (flips.isVerticalFlipped) -scale else scale
+            this.scaleX = if (flips.isMirrored) -scale else scale
+            this.scaleY = if (flips.isVerticalFlipped) -scale else scale
             translationX = panX
             translationY = panY
           }
@@ -6998,6 +7001,9 @@ class PlayerActivity :
               watchedThreshold = watchedThreshold,
             )
           saveRepository.upsert(playbackState)
+          if (shouldRemoveRecentlyPlayedEntry(snapshot, playbackState)) {
+            RecentlyPlayedOps.onVideoFinished(snapshot.recentlyPlayedFilePath.orEmpty())
+          }
           if (playbackState.hasBeenWatched && oldState?.hasBeenWatched != true) {
             MediaFileRepository.invalidateTreeCache()
             MediaLibraryEvents.notifyChanged()
@@ -7056,6 +7062,9 @@ class PlayerActivity :
     // is written under the correct video's record.
     val saveIdentifier = activeSaveMediaIdentifier.ifBlank { mediaIdentifier }
     if (saveIdentifier.isBlank()) return null
+    val recentlyPlayedFilePath =
+      PlaybackSession.queue.value.items.firstOrNull { it.stableId == saveIdentifier }
+        ?.filePath?.takeIf(String::isNotBlank)
 
     val nativeSnapshot = nativeEngineOrNull()?.snapshot?.value
     val nativeEngineActive = activeEngineMode == PlaybackEngineMode.NATIVE
@@ -7089,6 +7098,7 @@ class PlayerActivity :
     return PlaybackStateSnapshot(
       mediaIdentifier = saveIdentifier,
       mediaTitle = mediaTitle,
+      recentlyPlayedFilePath = recentlyPlayedFilePath,
       currentPosition =
         // The live value wins after backward/zero seeks; max(snapshot, live) resurrects
         // the old position until the next 250ms snapshot tick.
