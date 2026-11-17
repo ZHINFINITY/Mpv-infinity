@@ -192,6 +192,11 @@ object PlaybackSession : MPVLib.EventObserver {
     val generation: Long,
   )
 
+  private data class RecoverableVideoTrack(
+    val id: Int,
+    val generation: Long,
+  )
+
   private val nativeLock = ReentrantLock(true)
   /** Serializes create/init/destroy, but is never held by native callbacks. */
   private val nativeLifecycleLock = ReentrantLock(true)
@@ -230,6 +235,7 @@ object PlaybackSession : MPVLib.EventObserver {
   private var activeNetworkStream: NetworkStreamRegistration? = null
   private val auxiliaryNetworkStreams = linkedMapOf<String, NetworkStreamRegistration>()
   private var suspendedVideoTrack: SuspendedVideoTrack? = null
+  @Volatile private var lastSelectedVideoTrackForRecovery: RecoverableVideoTrack? = null
   private var deferredVideoSelectionGeneration: Long? = null
   private var pendingStopClearQueue = false
   private var desiredPaused = true
@@ -290,6 +296,7 @@ object PlaybackSession : MPVLib.EventObserver {
       loadedAudiobookEnded = false
       loadedAudiobookDurationMs = 0L
       suspendedVideoTrack = null
+      lastSelectedVideoTrackForRecovery = null
       deferredVideoSelectionGeneration = null
       desiredPaused = true
       loadedGeneration = 0L
@@ -370,6 +377,7 @@ object PlaybackSession : MPVLib.EventObserver {
         activeSurfaceFrameRateHintHz = null
         observedProperties.clear()
         suspendedVideoTrack = null
+        lastSelectedVideoTrackForRecovery = null
         deferredVideoSelectionGeneration = null
         pendingStopClearQueue = false
         desiredPaused = true
@@ -919,6 +927,7 @@ object PlaybackSession : MPVLib.EventObserver {
 
       // A saved video-track id belongs to the outgoing file only. Never carry it into a new load.
       suspendedVideoTrack = null
+      lastSelectedVideoTrackForRecovery = null
       desiredPaused = positionRestoreOverride?.paused ?: false
       clearSeekAudioGuardLocked(restoreMute = true)
       // Activity teardown mutes the process-wide MPV core synchronously. The core is intentionally
@@ -1246,6 +1255,7 @@ object PlaybackSession : MPVLib.EventObserver {
       if (property == "vid" && value > 0) {
         suspendedVideoTrack = null
         deferredVideoSelectionGeneration = null
+        lastSelectedVideoTrackForRecovery = RecoverableVideoTrack(value, _state.value.generation)
       }
     }
   }
@@ -1398,6 +1408,34 @@ object PlaybackSession : MPVLib.EventObserver {
         activeAmbientShaderPaths.clear()
       }
       MPVLib.setPropertyString(property, value)
+    }
+  }
+
+  /** Cache the active MPV stream before a live aspect change can invalidate its video chain. */
+  fun rememberMpvVideoTrackForRecovery() {
+    withReadyCore(Unit) {
+      val current = _state.value
+      val trackId = MPVLib.getPropertyInt("vid")
+      if ((current.phase == PlaybackPhase.READY || current.phase == PlaybackPhase.BACKGROUND) &&
+        trackId != null && trackId > 0
+      ) {
+        lastSelectedVideoTrackForRecovery = RecoverableVideoTrack(trackId, current.generation)
+      }
+    }
+  }
+
+  /** Retry the last selected stream after a decoder policy change if MPV deselected its failed chain. */
+  fun setDecoderAndRecover(value: String) {
+    if (MpvConfigOverridePolicy.isOwnedByMpvConf("hwdec")) return
+    setPropertyString("hwdec", value)
+    if (getPropertyInt("vid") == -2) {
+      val current = _state.value
+      val rememberedTrack = lastSelectedVideoTrackForRecovery?.takeIf { it.generation == current.generation }
+      if (rememberedTrack != null) {
+        setPropertyInt("vid", rememberedTrack.id)
+      } else {
+        setPropertyString("vid", "auto")
+      }
     }
   }
 
