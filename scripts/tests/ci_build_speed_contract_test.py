@@ -77,7 +77,9 @@ class BuildSpeedContractTest(unittest.TestCase):
 
     def test_kotlin_compile_fails_fast_in_a_parallel_job_without_native_dependencies(self):
         test_job = JOBS['kotlin-tests']
-        self.assertEqual('Kotlin compile and full unit tests', test_job['name'])
+        job_name = test_job['name']
+        self.assertIn("Mpv-infinity {0} - Kotlin compile and full unit tests", job_name)
+        self.assertIn("'Kotlin compile and full unit tests'", job_name)
         self.assertNotIn('needs', test_job)
         self.assertNotIn('needs', JOBS['build-debug'])
         names = list(TESTS)
@@ -100,7 +102,7 @@ class BuildSpeedContractTest(unittest.TestCase):
     def test_apk_is_published_only_after_the_full_test_job_succeeds(self):
         names = list(BUILD)
         gate = BUILD['Wait for fail-fast compile and full unit tests before publishing APK']
-        self.assertIn('select(.name == "Kotlin compile and full unit tests")', gate['run'])
+        self.assertIn('select(.name | contains("Kotlin compile and full unit tests"))', gate['run'])
         self.assertIn('"completed success") break', gate['run'])
         self.assertNotIn('if', gate)
         self.assertLess(names.index('Verify APK package, ABI, integrity and signing identity'),
