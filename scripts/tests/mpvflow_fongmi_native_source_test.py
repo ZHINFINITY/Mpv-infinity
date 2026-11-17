@@ -130,8 +130,9 @@ for workflow in WORKFLOWS:
     assert "runtime-legacy" not in workflow
     assert "c1529642089bfebfc928a1c1664638a7a5d219ba" not in workflow
 assert "name: Build Mpv-infinity debug APK" in WORKFLOWS[0]
-assert "run-name: Mpv-infinity ${{ inputs.flavor }} ${{ inputs.target_abi }} Debug" in WORKFLOWS[0]
-assert "mpv-infinity-${{ inputs.flavor }}-${{ inputs.target_abi }}-debug" in WORKFLOWS[0]
+assert "run-name: Mpv-infinity${{ inputs.issue_label && format(' {0} - {1} {2} Debug', inputs.issue_label, inputs.flavor, inputs.target_abi) || format(' {0} {1} Debug', inputs.flavor, inputs.target_abi) }}" in WORKFLOWS[0]
+assert "format('mpv-infinity-{0}-{1}-{2}-debug', inputs.issue_label, inputs.flavor, inputs.target_abi)" in WORKFLOWS[0]
+assert "format('mpv-infinity-{0}-{1}-debug', inputs.flavor, inputs.target_abi)" in WORKFLOWS[0]
 assert "scripts/patch_fongmi_motion_downsample.py" in WORKFLOWS[1]
 assert "MPVFLOW_ANALYSIS_DOWNSAMPLE_AA: '1'" in WORKFLOWS[1]
 assert "--require-analysis-downsample-aa" in WORKFLOWS[1]
