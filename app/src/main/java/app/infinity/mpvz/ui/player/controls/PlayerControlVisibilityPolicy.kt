@@ -31,26 +31,14 @@ internal object PlayerControlVisibilityPolicy {
       !isUnlockSliderDragging &&
       !drawerBlocksAutoHide
 
-  /**
-   * Native playback owns its readiness/buffering state. Do not OR it with MPV's process-wide phase:
-   * that phase can remain LOADING after a native engine handoff.
-   */
+  /** Selects the active engine's debounced state; stale MPV phases never leak into Native playback. */
   fun shouldShowBufferingIndicator(
     nativeEngineActive: Boolean,
-    nativeReady: Boolean,
-    nativeLoading: Boolean,
-    nativeBuffering: Boolean,
-    nativeEnded: Boolean,
-    mpvLoading: Boolean,
-    mpvBuffering: Boolean,
-    torrentConnecting: Boolean,
+    nativeBufferingVisible: Boolean,
+    mpvBufferingVisible: Boolean,
     isSeeking: Boolean,
   ): Boolean {
     if (isSeeking) return false
-    return if (nativeEngineActive) {
-      !nativeEnded && (!nativeReady || nativeLoading || nativeBuffering)
-    } else {
-      mpvLoading || mpvBuffering || torrentConnecting
-    }
+    return if (nativeEngineActive) nativeBufferingVisible else mpvBufferingVisible
   }
 }

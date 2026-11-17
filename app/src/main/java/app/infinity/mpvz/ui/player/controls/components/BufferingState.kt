@@ -17,11 +17,33 @@ import androidx.compose.runtime.setValue
 import app.infinity.mpvz.ui.player.PlaybackSession
 import kotlinx.coroutines.delay
 
-/** A stall must persist this long before the spinner appears, so ordinary seeks never flash it. */
-private const val BUFFERING_SHOW_DELAY_MS = 350L
+internal object BufferingVisibilityDebouncePolicy {
+  const val SHOW_DELAY_MS = 350L
+  const val HIDE_DELAY_MS = 300L
 
-/** Once shown the spinner lingers this long, so a cache oscillating at mpv's threshold can't strobe. */
-private const val BUFFERING_HIDE_DELAY_MS = 300L
+  fun delayFor(shouldShow: Boolean): Long = if (shouldShow) SHOW_DELAY_MS else HIDE_DELAY_MS
+
+  fun isVisible(enabled: Boolean, debouncedVisible: Boolean): Boolean = enabled && debouncedVisible
+}
+
+/** Debounces short engine load/seek transitions without delaying a user disabling the indicator. */
+@Composable
+internal fun rememberDebouncedBufferingVisibility(
+  enabled: Boolean,
+  stalled: Boolean,
+): Boolean {
+  var visible by remember { mutableStateOf(false) }
+  LaunchedEffect(enabled, stalled) {
+    if (!enabled) {
+      visible = false
+      return@LaunchedEffect
+    }
+    if (visible == stalled) return@LaunchedEffect
+    delay(BufferingVisibilityDebouncePolicy.delayFor(stalled))
+    visible = stalled
+  }
+  return BufferingVisibilityDebouncePolicy.isVisible(enabled, visible)
+}
 
 /**
  * Resolved buffering state for the player overlay.
@@ -72,12 +94,7 @@ internal fun rememberBufferingState(
           )
       )
 
-  var visible by remember { mutableStateOf(false) }
-  LaunchedEffect(stalled) {
-    if (visible == stalled) return@LaunchedEffect
-    delay(if (stalled) BUFFERING_SHOW_DELAY_MS else BUFFERING_HIDE_DELAY_MS)
-    visible = stalled
-  }
+  val visible = rememberDebouncedBufferingVisibility(enabled = enabled, stalled = stalled)
 
   return BufferingState(
     visible = visible,
