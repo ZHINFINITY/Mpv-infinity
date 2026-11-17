@@ -9,7 +9,8 @@ LEGACY_ARTIFACT_STRENGTH_MARKER = "MPVRX_CONFLICT_PIXEL_STRENGTH_V1"
 PREVIOUS_ARTIFACT_STRENGTH_MARKER = "MPV_INFINITY_MOTION_CONFLICT_FADE_V2"
 UNCERTAIN_ARTIFACT_STRENGTH_MARKER = "MPV_INFINITY_UNCERTAIN_PIXEL_FALLBACK_V3"
 DIRECTIONAL_ARTIFACT_STRENGTH_MARKER = "MPV_INFINITY_DIRECTIONAL_WARP_EVIDENCE_V4"
-ARTIFACT_STRENGTH_MARKER = "MPV_INFINITY_SELECTIVE_CONTOUR_RESOLVER_V1"
+SELECTIVE_CONTOUR_V1_MARKER = "MPV_INFINITY_SELECTIVE_CONTOUR_RESOLVER_V1"
+ARTIFACT_STRENGTH_MARKER = "MPV_INFINITY_SELECTIVE_CONTOUR_RESOLVER_V2"
 CONFLICT_WEIGHT = "float conflict_weight = smoothstep(0.03, 0.15, color_error);"
 PAIRED_ERROR_ANCHOR = "vec2 paired_error = vec2(max(error0.r, max(error0.g, error0.b)),"
 ORIGINAL_BLOCK = (
@@ -62,11 +63,13 @@ ARTIFACT_STRENGTH_V4_BLOCK = (
 RESOLVER_CENTER_ERROR_START = 0.10
 RESOLVER_CENTER_ERROR_FULL = 0.15
 RESOLVER_CENTER_WEIGHT_MIN = 0.50
+RESOLVER_SOURCE_CHANGE_START = 0.06
+RESOLVER_SOURCE_CHANGE_FULL = 0.16
 RESOLVER_PATH_ERROR_START = 1.5
 RESOLVER_PATH_ERROR_FULL = 3.0
 RESOLVER_SUPPORT_GOOD = 0.85
 RESOLVER_SUPPORT_BAD = 0.15
-ARTIFACT_STRENGTH_BLOCK = (
+SELECTIVE_CONTOUR_V1_BLOCK = (
     "            // MPV_INFINITY_SELECTIVE_CONTOUR_RESOLVER_V1: suppress one locally unsupported warp only under strong center conflict and trajectory separation.\n"
     "            vec2 resolved_visibility = visibility;\n"
     "            vec2 path_error0 = displacement1 + displacement0 * projection.x;\n"
@@ -119,12 +122,76 @@ ARTIFACT_STRENGTH_BLOCK = (
     "            return original * (1.0 - resolved_visibility.x - resolved_visibility.y) +\n"
     "                   warped0 * resolved_visibility.x + warped1 * resolved_visibility.y;\n"
 )
+ARTIFACT_STRENGTH_BLOCK = (
+    "            // MPV_INFINITY_SELECTIVE_CONTOUR_RESOLVER_V2: require source change, separated trajectories and a decisive paired-support split.\n"
+    "            vec2 resolved_visibility = visibility;\n"
+    "            vec2 path_error0 = displacement1 + displacement0 * projection.x;\n"
+    "            vec2 path_error1 = displacement0 + displacement1 * projection.y;\n"
+    "            float path_disagreement = max(length(path_error0), length(path_error1));\n"
+    "            if (!fixed_weights && path_disagreement > 1.5) {\n"
+    "                vec3 center_metric0 = hdr != 0 ? synthesis_pq(warped0.rgb) : warped0.rgb;\n"
+    "                vec3 center_metric1 = hdr != 0 ? synthesis_pq(warped1.rgb) : warped1.rgb;\n"
+    "                vec3 center_delta = abs(center_metric0 - center_metric1);\n"
+    "                float center_color_error = max(center_delta.r, max(center_delta.g, center_delta.b));\n"
+    "                float center_conflict_weight = smoothstep(0.10, 0.15, center_color_error);\n"
+    "                vec3 source_metric0 = hdr != 0 ? synthesis_pq(original0.rgb) : original0.rgb;\n"
+    "                vec3 source_metric1 = hdr != 0 ? synthesis_pq(original1.rgb) : original1.rgb;\n"
+    "                vec3 source_delta = abs(source_metric0 - source_metric1);\n"
+    "                float source_change_error = max(source_delta.r, max(source_delta.g, source_delta.b));\n"
+    "                float source_change_weight = smoothstep(0.06, 0.16, source_change_error);\n"
+    "                float resolver_weight = max(center_conflict_weight, source_change_weight);\n"
+    "                if (resolver_weight >= 0.50) {\n"
+    "                    vec2 paired1_position = vec2(pixel) - displacement0 * projection.x;\n"
+    "                    vec2 paired0_position = vec2(pixel) - displacement1 * projection.y;\n"
+    "                    vec2 texel_size = 1.0 / output_extent;\n"
+    "                    vec2 patch_axis = length(path_error0) >= length(path_error1) ? path_error0 : path_error1;\n"
+    "                    patch_axis /= max(length(patch_axis), 0.000001);\n"
+    "                    const float patch_tap[3] = float[3](0.0, 1.0, -1.0);\n"
+    "                    float patch_error0 = 0.0;\n"
+    "                    float patch_error1 = 0.0;\n"
+    "                    for (int tap = 0; tap < 3; tap++) {\n"
+    "                        vec2 offset = patch_axis * patch_tap[tap];\n"
+    "                        vec3 a0 = sample_witness(source0, p0 + offset, output_extent, texel_size);\n"
+    "                        vec3 b0 = sample_witness(source1, paired1_position + offset, output_extent, texel_size);\n"
+    "                        vec3 a1 = sample_witness(source0, paired0_position + offset, output_extent, texel_size);\n"
+    "                        vec3 b1 = sample_witness(source1, p1 + offset, output_extent, texel_size);\n"
+    "                        if (hdr != 0) {\n"
+    "                            a0 = synthesis_pq(a0); b0 = synthesis_pq(b0);\n"
+    "                            a1 = synthesis_pq(a1); b1 = synthesis_pq(b1);\n"
+    "                        }\n"
+    "                        patch_error0 += max(max(abs(a0.r - b0.r), abs(a0.g - b0.g)), abs(a0.b - b0.b));\n"
+    "                        patch_error1 += max(max(abs(a1.r - b1.r), abs(a1.g - b1.g)), abs(a1.b - b1.b));\n"
+    "                    }\n"
+    "                    vec2 patch_support = vec2(1.0) - smoothstep(vec2(0.02), vec2(0.08),\n"
+    "                                                           vec2(patch_error0, patch_error1) / 3.0);\n"
+    "                    if (any(isnan(patch_support)) || any(isinf(patch_support)))\n"
+    "                        patch_support = vec2(0.0);\n"
+    "                    float best_support = max(patch_support.x, patch_support.y);\n"
+    "                    float worst_support = min(patch_support.x, patch_support.y);\n"
+    "                    if (best_support >= 0.85 && worst_support <= 0.15) {\n"
+    "                        float trajectory_weight = smoothstep(1.5, 3.0, path_disagreement);\n"
+    "                        float reject_weight = resolver_weight * trajectory_weight;\n"
+    "                        if (patch_support.x > patch_support.y)\n"
+    "                            resolved_visibility.y *= 1.0 - reject_weight;\n"
+    "                        else\n"
+    "                            resolved_visibility.x *= 1.0 - reject_weight;\n"
+    "                    }\n"
+    "                }\n"
+    "            }\n"
+    "            return original * (1.0 - resolved_visibility.x - resolved_visibility.y) +\n"
+    "                   warped0 * resolved_visibility.x + warped1 * resolved_visibility.y;\n"
+)
 ARTIFACT_STRENGTH_VERSIONS = (
     (ARTIFACT_STRENGTH_MARKER, ARTIFACT_STRENGTH_BLOCK),
+    (SELECTIVE_CONTOUR_V1_MARKER, SELECTIVE_CONTOUR_V1_BLOCK),
     (DIRECTIONAL_ARTIFACT_STRENGTH_MARKER, ARTIFACT_STRENGTH_V4_BLOCK),
     (UNCERTAIN_ARTIFACT_STRENGTH_MARKER, ARTIFACT_STRENGTH_V3_BLOCK),
     (PREVIOUS_ARTIFACT_STRENGTH_MARKER, ARTIFACT_STRENGTH_V2_BLOCK),
     (LEGACY_ARTIFACT_STRENGTH_MARKER, ARTIFACT_STRENGTH_V1_BLOCK),
+)
+RESOLVER_ARTIFACT_STRENGTH_MARKERS = (
+    ARTIFACT_STRENGTH_MARKER,
+    SELECTIVE_CONTOUR_V1_MARKER,
 )
 
 
@@ -167,7 +234,7 @@ def has_paired_color_mask(source: str) -> bool:
         for marker, block in ARTIFACT_STRENGTH_VERSIONS
     ):
         return False
-    if active_pair == (ARTIFACT_STRENGTH_MARKER, ARTIFACT_STRENGTH_BLOCK):
+    if active_pair[0] in RESOLVER_ARTIFACT_STRENGTH_MARKERS:
         return source.count(FINAL_BLEND_ANCHOR) == 0
     return source.count(FINAL_BLEND_ANCHOR) == 1
 
@@ -211,7 +278,7 @@ def unpatch_source(source: str) -> str:
         marker, strength_block = next(
             pair for pair in ARTIFACT_STRENGTH_VERSIONS if pair[0] in source
         )
-        replacement = FINAL_BLEND_ANCHOR if marker == ARTIFACT_STRENGTH_MARKER else ""
+        replacement = FINAL_BLEND_ANCHOR if marker in RESOLVER_ARTIFACT_STRENGTH_MARKERS else ""
         source = source.replace(strength_block, replacement, 1)
     elif not has_legacy_paired_color_mask(source):
         raise ValueError("Mpv-infinity paired-color mask marker/source mismatch")
