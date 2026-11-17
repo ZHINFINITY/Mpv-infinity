@@ -32,8 +32,8 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
-import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -59,6 +59,19 @@ internal fun videoProgressPercentage(
   val progress =
     playbackState.lastPosition.coerceAtLeast(0).toFloat() / durationSeconds.toFloat()
   return progress.coerceIn(0f, 1f).takeIf { it in 0.01f..0.99f }
+}
+
+internal fun mostRecentUnwatchedFilePath(
+  recentlyPlayedFilePaths: List<String>,
+  folderPath: String,
+  watchedFilePaths: Set<String>,
+): String? {
+  val normalizedFolderPath = File(folderPath).absolutePath
+  val normalizedWatchedPaths = watchedFilePaths.mapTo(mutableSetOf()) { File(it).absolutePath }
+  return recentlyPlayedFilePaths.firstOrNull { path ->
+    val file = File(path)
+    file.absoluteFile.parent == normalizedFolderPath && file.absolutePath !in normalizedWatchedPaths
+  }
 }
 
 internal fun videoPlaybackIdentifiers(video: Video): Set<String> =
@@ -171,23 +184,27 @@ class VideoListViewModel(
   val videosWereDeletedOrMoved: StateFlow<Boolean> = _videosWereDeletedOrMoved.asStateFlow()
 
   val lastPlayedInFolderPath: StateFlow<String?> =
-    RecentlyPlayedOps
-      .observeRecentlyPlayed(limit = 100)
-      .map { recentlyPlayedList ->
+    combine(
+      RecentlyPlayedOps.observeRecentlyPlayed(limit = 100),
+      _videosWithPlaybackInfo,
+    ) { recentlyPlayedList, videosWithInfo ->
         val folderPath =
           _videos.value
             .firstOrNull()
             ?.path
             ?.let { File(it).parent }
         if (folderPath != null) {
-          recentlyPlayedList
-            .firstOrNull { entity ->
-              try {
-                File(entity.filePath).parent == folderPath
-              } catch (_: Exception) {
-                false
-              }
-            }?.filePath
+          val watchedFilePaths =
+            videosWithInfo
+              .asSequence()
+              .filter { it.isWatched }
+              .map { File(it.video.path).absolutePath }
+              .toSet()
+          mostRecentUnwatchedFilePath(
+            recentlyPlayedFilePaths = recentlyPlayedList.map { it.filePath },
+            folderPath = folderPath,
+            watchedFilePaths = watchedFilePaths,
+          )
         } else {
           null
         }
