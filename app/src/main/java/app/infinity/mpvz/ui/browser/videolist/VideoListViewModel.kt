@@ -50,6 +50,10 @@ data class VideoWithPlaybackInfo(
   val isOldAndUnplayed: Boolean = false, // true while the NEW badge is eligible
   val isWatched: Boolean = false, // true once the configured watched threshold is reached
 )
+internal fun shouldShowNewBadge(
+  isWatched: Boolean,
+  isWithinNewLabelWindow: Boolean,
+): Boolean = !isWatched && isWithinNewLabelWindow
 
 internal fun videoProgressPercentage(
   playbackState: PlaybackStateEntity?,
@@ -116,7 +120,7 @@ internal fun buildVideoWithPlaybackInfo(
     video = video,
     timeRemaining = playbackState?.timeRemaining?.toLong(),
     progressPercentage = videoProgressPercentage(playbackState, durationSeconds, isWatched),
-    isOldAndUnplayed = !isWatched && isWithinNewLabelWindow,
+    isOldAndUnplayed = shouldShowNewBadge(isWatched, isWithinNewLabelWindow),
     isWatched = isWatched,
   )
 }

@@ -230,6 +230,7 @@ object Icons {
     val SkipPrevious by lazy(LazyThreadSafetyMode.NONE) { AppIcon(MaterialSymbols.RoundedFilled.Skip_previous) }
     val Slideshow by lazy(LazyThreadSafetyMode.NONE) { AppIcon(MaterialSymbols.RoundedFilled.Slideshow) }
     val Speed by lazy(LazyThreadSafetyMode.NONE) { AppIcon(MaterialSymbols.RoundedFilled.Speed) }
+    val TargetFps by lazy(LazyThreadSafetyMode.NONE) { AppIcon(TargetFpsVector) }
     val Subtitles by lazy(LazyThreadSafetyMode.NONE) { AppIcon(MaterialSymbols.RoundedFilled.Subtitles) }
     val SwapVert by lazy(LazyThreadSafetyMode.NONE) { AppIcon(MaterialSymbols.RoundedFilled.Swap_vert) }
     val SystemUpdate by lazy(LazyThreadSafetyMode.NONE) { AppIcon(MaterialSymbols.RoundedFilled.System_update) }
@@ -446,6 +447,7 @@ object Icons {
     val SkipPrevious get() = Shared.SkipPrevious
     val Slideshow get() = Shared.Slideshow
     val Speed get() = Shared.Speed
+    val TargetFps get() = Shared.TargetFps
     val Subtitles get() = Shared.Subtitles
     val SwapVert get() = Shared.SwapVert
     val SystemUpdate get() = Shared.SystemUpdate
@@ -642,6 +644,70 @@ private val LyricsVector: ImageVector by lazy(LazyThreadSafetyMode.NONE) {
       curveTo(12.9f, 12.3f, 13.5f, 11.0f, 13.2f, 9.7f)
       curveTo(12.8f, 9.7f, 12.5f, 9.2f, 12.5f, 8.5f)
       curveTo(12.5f, 7.3f, 13.3f, 6.5f, 14.5f, 6.5f)
+      close()
+    }
+  }.build()
+}
+
+private val TargetFpsVector: ImageVector by lazy(LazyThreadSafetyMode.NONE) {
+  ImageVector.Builder(
+    name = "TargetFps",
+    defaultWidth = 24.dp,
+    defaultHeight = 24.dp,
+    viewportWidth = 24f,
+    viewportHeight = 24f,
+  ).apply {
+    path(
+      fill = SolidColor(Color.Black),
+      pathFillType = PathFillType.EvenOdd,
+    ) {
+      // Film strip body; the inner contour and sprocket holes remain transparent.
+      moveTo(5.0f, 2.0f)
+      horizontalLineTo(19.0f)
+      curveTo(20.66f, 2.0f, 22.0f, 3.34f, 22.0f, 5.0f)
+      verticalLineTo(19.0f)
+      curveTo(22.0f, 20.66f, 20.66f, 22.0f, 19.0f, 22.0f)
+      horizontalLineTo(5.0f)
+      curveTo(3.34f, 22.0f, 2.0f, 20.66f, 2.0f, 19.0f)
+      verticalLineTo(5.0f)
+      curveTo(2.0f, 3.34f, 3.34f, 2.0f, 5.0f, 2.0f)
+      close()
+
+      moveTo(5.0f, 7.0f)
+      horizontalLineTo(19.0f)
+      verticalLineTo(17.0f)
+      horizontalLineTo(5.0f)
+      close()
+
+      listOf(4.0f, 10.75f, 17.5f).forEach { x ->
+        moveTo(x, 3.75f)
+        horizontalLineTo(x + 2.5f)
+        verticalLineTo(5.75f)
+        horizontalLineTo(x)
+        close()
+        moveTo(x, 18.25f)
+        horizontalLineTo(x + 2.5f)
+        verticalLineTo(20.25f)
+        horizontalLineTo(x)
+        close()
+      }
+    }
+    path(fill = SolidColor(Color.Black)) {
+      // Stepped cadence bars distinguish frame rate from the adjacent playback-speed gauge.
+      moveTo(7.0f, 13.0f)
+      horizontalLineTo(9.5f)
+      verticalLineTo(16.0f)
+      horizontalLineTo(7.0f)
+      close()
+      moveTo(10.75f, 10.0f)
+      horizontalLineTo(13.25f)
+      verticalLineTo(16.0f)
+      horizontalLineTo(10.75f)
+      close()
+      moveTo(14.5f, 7.0f)
+      horizontalLineTo(17.0f)
+      verticalLineTo(16.0f)
+      horizontalLineTo(14.5f)
       close()
     }
   }.build()

@@ -9,6 +9,7 @@ package app.infinity.mpvz.ui.player
 
 import app.infinity.mpvz.database.entities.PlaybackStateEntity
 import app.infinity.mpvz.ui.browser.videolist.mostRecentUnwatchedFilePath
+import app.infinity.mpvz.ui.browser.videolist.shouldShowNewBadge
 import app.infinity.mpvz.ui.browser.videolist.videoProgressPercentage
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -28,6 +29,16 @@ class PlaybackStatusPolicyTest {
 
     assertTrue(isPlaybackStateWatched(state, durationSeconds = 600L, watchedThreshold = 95))
     assertNull(videoProgressPercentage(state, durationSeconds = 600L, isWatched = true))
+  }
+
+  @Test
+  fun recentVideoLosesNewBadgeOnceSavedPlaybackCrossesWatchedThreshold() {
+    val state = playbackState(lastPosition = 570, timeRemaining = 30, hasBeenWatched = false)
+    val watched = isPlaybackStateWatched(state, durationSeconds = 600L, watchedThreshold = 95)
+
+    assertTrue(watched)
+    assertFalse(shouldShowNewBadge(isWatched = watched, isWithinNewLabelWindow = true))
+    assertTrue(shouldShowNewBadge(isWatched = false, isWithinNewLabelWindow = true))
   }
 
   @Test
