@@ -9,6 +9,7 @@ package app.infinity.mpvz.ui.player.controls
 
 import app.infinity.mpvz.ui.player.StatsLuaOverlay
 import app.infinity.mpvz.ui.player.PlaybackSession
+import app.infinity.mpvz.ui.player.DecoderUiPolicy
 
 import android.content.Context
 import android.content.Intent
@@ -361,7 +362,10 @@ fun RenderPlayerButton(
                 ),
           ) {
             Text(
-              text = if (activity.isNativeEngineActive()) "Native" else decoder.title,
+              text = DecoderUiPolicy.activeEngineAndDecoderLabel(
+                isNativeActive = activity.isNativeEngineActive(),
+                decoderTitle = decoder.title,
+              ),
               maxLines = 1,
               overflow = TextOverflow.Ellipsis,
               style = MaterialTheme.typography.bodyMedium,

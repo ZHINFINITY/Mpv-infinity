@@ -20,8 +20,10 @@ class MpvAspectSurfaceDiagnosticsContractTest {
     val fongmiInterpolationOptions = mpvView.substringAfter("val mpvFlowRendererOptionResult =")
       .substringBefore("val appVideoFilters =")
 
-    assertTrue(transition.contains("video-aspect-override"))
-    assertTrue(transition.contains("panscan"))
+    assertTrue(transition.contains("setMpvAspectOverrideIfChanged"))
+    assertTrue(transition.contains("setMpvAspectPanscanIfChanged"))
+    assertTrue(viewModel.contains("PlaybackSession.getPropertyDouble(\"video-aspect-override\")"))
+    assertTrue(viewModel.contains("PlaybackSession.getPropertyDouble(\"panscan\")"))
     assertFalse(transition.contains("bindSurface("))
     assertFalse(transition.contains("unbindSurface("))
     assertFalse(transition.contains("initializeSession("))
