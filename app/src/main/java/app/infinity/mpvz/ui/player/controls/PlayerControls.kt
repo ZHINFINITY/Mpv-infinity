@@ -314,7 +314,7 @@ internal fun AudioPlayerScreen(
         }
       },
       decoder = decoder,
-      onUpdateDecoder = { PlaybackSession.setPropertyString("hwdec", it.value) },
+      onUpdateDecoder = { PlaybackSession.setDecoderAndRecover(it.value) },
       selectedEngine = if (nativeEngineActive) PlaybackEngineMode.NATIVE else PlaybackEngineMode.MPV,
       onSelectEngine = onSelectEngine ?: { decoderPreferences.playbackEngine.set(it) },
       speed = playbackSpeed ?: playerPreferences.defaultSpeed.get(),
@@ -2416,7 +2416,7 @@ fun PlayerControls(
         }
       },
       decoder = decoder,
-      onUpdateDecoder = { PlaybackSession.setPropertyString("hwdec", it.value) },
+      onUpdateDecoder = { PlaybackSession.setDecoderAndRecover(it.value) },
       selectedEngine = if (nativeEngineActive) PlaybackEngineMode.NATIVE else PlaybackEngineMode.MPV,
       onSelectEngine = onSelectEngine ?: { decoderPreferences.playbackEngine.set(it) },
       speed = playbackSpeed ?: playerPreferences.defaultSpeed.get(),
