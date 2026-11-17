@@ -983,6 +983,12 @@ object PlaybackSession : MPVLib.EventObserver {
       MPVLib.setPropertyString("user-agent", userAgent ?: defaultUserAgent.orEmpty())
       MPVLib.setPropertyString("http-header-fields", headerFields)
       MPVLib.setPropertyString("force-media-title", "")
+      // Cache starvation pausing is for remote streams, not local files: keep the global streaming
+      // safeguard but avoid its brief wait on every local open. Respect an explicit mpv.conf value.
+      if (!MpvConfigOverridePolicy.isOwnedByMpvConf("cache-pause")) {
+        val cachePause = if (shouldPauseForCache(resolvedItem, playableUri)) "yes" else "no"
+        MPVLib.setPropertyString("cache-pause", cachePause)
+      }
       val stationHeaders = RadioStreamProbe.cachedMetadata(resolvedItem.playableUri, resolvedItem.headers)
         ?: RadioStreamProbe.cachedMetadata(resolvedItem.originalUri, resolvedItem.headers)
       _radioHeaders.value = stationHeaders?.let { resolvedItem.stableId to it }

@@ -356,6 +356,11 @@ class NativeMedia3Engine internal constructor(
   }
   private val mediaSourceFactory = DefaultMediaSourceFactory(dataSourceFactory, extractorsFactory)
     .setSubtitleParserFactory(assSubtitleParserFactory)
+  private val localMediaSourceFactory =
+    DefaultMediaSourceFactory(
+      DefaultDataSource.Factory(context.applicationContext),
+      extractorsFactory,
+    ).setSubtitleParserFactory(assSubtitleParserFactory)
   private val nativeTrackSelector = NativeRendererTrackSelector(appContext)
   private val player = playerFactoryForTesting?.invoke(appContext, nativeTrackSelector)
     ?: ExoPlayer.Builder(context.applicationContext)
@@ -383,6 +388,9 @@ class NativeMedia3Engine internal constructor(
     .setRenderersFactory(createRenderersFactory())
     .build()
   private var attachedView: PlayerView? = null
+  private var videoZoom = 0f
+  private var horizontalFlip = false
+  private var verticalFlip = false
   private val videoAspect = Media3AspectModeState()
   private var customAspectRatio: Float? = null
   private var subtitleOverlay: LibassSubtitleSurfaceView? = null
@@ -1088,9 +1096,24 @@ class NativeMedia3Engine internal constructor(
   }
 
   fun setZoom(zoom: Float) {
-    val scale = 2f.pow(zoom.coerceIn(-1f, 3f))
-    attachedView?.scaleX = scale
-    attachedView?.scaleY = scale
+    videoZoom = zoom.coerceIn(-1f, 3f)
+    applyVideoScale()
+  }
+
+  fun setHorizontalFlip(enabled: Boolean) {
+    horizontalFlip = enabled
+    applyVideoScale()
+  }
+
+  fun setVerticalFlip(enabled: Boolean) {
+    verticalFlip = enabled
+    applyVideoScale()
+  }
+
+  private fun applyVideoScale() {
+    val scale = videoScaleFactors(videoZoom, horizontalFlip, verticalFlip)
+    attachedView?.scaleX = scale.x
+    attachedView?.scaleY = scale.y
   }
 
   fun setPan(x: Float, y: Float) {
@@ -1585,7 +1608,14 @@ class NativeMedia3Engine internal constructor(
     metadataChapters = emptyList()
     Log.d(logTag, "prepare begin uri=$preparationUri")
     val taggedMediaItem = tagMediaItemForNextPlayback(mediaItem)
-    player.setMediaItem(taggedMediaItem, startPositionMs.coerceAtLeast(0L))
+    if (shouldBypassNativeReadCache(mediaUri.toString())) {
+      player.setMediaSource(
+        localMediaSourceFactory.createMediaSource(taggedMediaItem),
+        startPositionMs.coerceAtLeast(0L),
+      )
+    } else {
+      player.setMediaItem(taggedMediaItem, startPositionMs.coerceAtLeast(0L))
+    }
     // The PlayerView is attached once during Activity creation. Preparing immediately here is
     // required for local HDR files; deferring this through View.post can leave Media3 in BUFFERING
     // without ever starting the local data pipeline on Xiaomi devices.

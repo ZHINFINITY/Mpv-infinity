@@ -110,6 +110,7 @@ import app.infinity.mpvz.preferences.MpvConfigOverridePolicy
 import app.infinity.mpvz.preferences.PlayerPreferences
 import app.infinity.mpvz.preferences.SubtitlesPreferences
 import app.infinity.mpvz.preferences.VideoSortType
+import app.infinity.mpvz.repository.MediaFileRepository
 import app.infinity.mpvz.ui.browser.playlist.ALL_VIDEOS_PLAYLIST_ID
 import app.infinity.mpvz.ui.browser.playlist.buildAllVideosPlaylistEntity
 import app.infinity.mpvz.ui.browser.playlist.isAllVideosPlaylist
@@ -132,6 +133,7 @@ import app.infinity.mpvz.utils.media.M3UParseResult
 import app.infinity.mpvz.utils.media.M3URoute
 import app.infinity.mpvz.utils.media.M3URoutingPolicy
 import app.infinity.mpvz.utils.media.M3UParser
+import app.infinity.mpvz.utils.media.MediaLibraryEvents
 import app.infinity.mpvz.utils.media.PlaybackStateEvents
 import app.infinity.mpvz.utils.media.SharedUrlExtractor
 import app.infinity.mpvz.utils.media.SubtitleOps
@@ -576,6 +578,8 @@ class PlayerActivity :
       )
       nativeEngine.setSubtitleScale(subtitlesPreferences.subScale.get())
       nativeEngine.setSubtitlePosition(subtitlesPreferences.subPos.get())
+      nativeEngine.setHorizontalFlip(viewModel.transformState.value.isMirrored)
+      nativeEngine.setVerticalFlip(viewModel.transformState.value.isVerticalFlipped)
     }
   }
 
@@ -1137,6 +1141,14 @@ class PlayerActivity :
 
   override fun nativeSetPan(x: Float, y: Float) {
     nativeEngineOrNull()?.setPan(x, y)
+  }
+
+  override fun nativeSetHorizontalFlip(enabled: Boolean) {
+    nativeEngineOrNull()?.setHorizontalFlip(enabled)
+  }
+
+  override fun nativeSetVerticalFlip(enabled: Boolean) {
+    nativeEngineOrNull()?.setVerticalFlip(enabled)
   }
 
   override fun nativeSetSubtitleScale(scale: Float) {
@@ -1847,6 +1859,8 @@ class PlayerActivity :
               binding.player.visibility = View.GONE
               viewModel.clearNativeExternalSubtitles()
               configureNativeEngineIfNeeded(force = true)
+              nativeEngine.setHorizontalFlip(viewModel.transformState.value.isMirrored)
+              nativeEngine.setVerticalFlip(viewModel.transformState.value.isVerticalFlipped)
               nativeEngine.play(
                 nativeUri,
                 outgoingPositionMs,
@@ -6980,6 +6994,10 @@ class PlayerActivity :
               watchedThreshold = watchedThreshold,
             )
           saveRepository.upsert(playbackState)
+          if (playbackState.hasBeenWatched && oldState?.hasBeenWatched != true) {
+            MediaFileRepository.invalidateTreeCache()
+            MediaLibraryEvents.notifyChanged()
+          }
           PlaybackStateEvents.notifyChanged(snapshot.mediaIdentifier)
           directAudiobook?.let { DirectAudiobookResumeStore.recordPlaying(appContext, it) }
           persistStreamHistoryProgress(appContext, snapshot, streamHistoryKey)

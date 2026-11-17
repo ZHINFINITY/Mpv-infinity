@@ -6590,11 +6590,12 @@ class PlayerViewModel(
     val newMirrorState = !_transformState.value.isMirrored
     _transformState.update { it.copy(isMirrored = newMirrorState) }
 
-    // Use labeled video filter for mirroring to avoid state desync
-    if (newMirrorState) {
-      PlaybackSession.command("vf", "add", "@Mpv∞_hflip:hflip")
+    if (host.isNativeEngineActive()) {
+      host.nativeSetHorizontalFlip(newMirrorState)
+    } else if (newMirrorState) {
+      PlaybackSession.command("vf", "add", "@mpvinfinity_hflip:hflip")
     } else {
-      PlaybackSession.command("vf", "remove", "@Mpv∞_hflip")
+      PlaybackSession.command("vf", "remove", "@mpvinfinity_hflip")
     }
     playerUpdate.value =
       PlayerUpdates.ShowText(
@@ -6608,11 +6609,12 @@ class PlayerViewModel(
     val newState = !_transformState.value.isVerticalFlipped
     _transformState.update { it.copy(isVerticalFlipped = newState) }
 
-    // Use labeled video filter for vflip to avoid state desync
-    if (newState) {
-      PlaybackSession.command("vf", "add", "@Mpv∞_vflip:vflip")
+    if (host.isNativeEngineActive()) {
+      host.nativeSetVerticalFlip(newState)
+    } else if (newState) {
+      PlaybackSession.command("vf", "add", "@mpvinfinity_vflip:vflip")
     } else {
-      PlaybackSession.command("vf", "remove", "@Mpv∞_vflip")
+      PlaybackSession.command("vf", "remove", "@mpvinfinity_vflip")
     }
 
     playerUpdate.value =
