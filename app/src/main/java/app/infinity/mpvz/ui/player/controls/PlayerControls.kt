@@ -172,6 +172,7 @@ import app.infinity.mpvz.ui.player.controls.components.playerButtonBorderColor
 import app.infinity.mpvz.ui.player.controls.components.playerButtonContainerColor
 import app.infinity.mpvz.ui.player.controls.components.playerButtonContentColor
 import app.infinity.mpvz.ui.player.controls.components.playerGlassPane
+import app.infinity.mpvz.ui.player.controls.components.rememberDebouncedBufferingVisibility
 import app.infinity.mpvz.ui.player.controls.components.rememberBufferingState
 import app.infinity.mpvz.ui.player.controls.components.sheets.toFixed
 import app.infinity.mpvz.ui.theme.controlColor
@@ -469,6 +470,13 @@ fun PlayerControls(
   val nativeSnapshot by activity?.nativePlaybackSnapshot?.collectAsState()
     ?: remember { mutableStateOf(NativePlaybackSnapshot()) }
   val nativeEngineActive = activity?.isNativeEngineActive() == true
+  val nativeBufferingVisible =
+    rememberDebouncedBufferingVisibility(
+      enabled = showLoadingCircle && nativeEngineActive,
+      stalled =
+        !nativeSnapshot.isEnded &&
+          (!nativeSnapshot.isReady || nativeSnapshot.isLoading || nativeSnapshot.isBuffering),
+    )
   val bufferingState =
     rememberBufferingState(
       enabled = showLoadingCircle && !nativeEngineActive,
@@ -499,13 +507,8 @@ fun PlayerControls(
   val showBufferingIndicator =
     PlayerControlVisibilityPolicy.shouldShowBufferingIndicator(
       nativeEngineActive = nativeEngineActive,
-      nativeReady = nativeSnapshot.isReady,
-      nativeLoading = nativeSnapshot.isLoading,
-      nativeBuffering = nativeSnapshot.isBuffering,
-      nativeEnded = nativeSnapshot.isEnded,
-      mpvLoading = playbackSessionState.phase == PlaybackPhase.LOADING,
-      mpvBuffering = bufferingState.visible,
-      torrentConnecting = isTorrentConnecting,
+      nativeBufferingVisible = nativeBufferingVisible,
+      mpvBufferingVisible = bufferingState.visible,
       isSeeking = isPlayerSeeking,
     )
   var stableDemuxerCacheTime by remember { mutableFloatStateOf(0f) }
