@@ -5142,6 +5142,25 @@ class PlayerViewModel(
 
   // ==================== Video Aspect ====================
 
+  /** Avoid redundant MPV property writes during live aspect changes. */
+  private fun setMpvAspectOverrideIfChanged(value: Double?) {
+    val target = value ?: MpvAspectPropertyUpdatePolicy.NO_ASPECT_OVERRIDE
+    val current = PlaybackSession.getPropertyDouble("video-aspect-override")
+    if (!MpvAspectPropertyUpdatePolicy.needsUpdate(current, target)) return
+    if (value == null) {
+      PlaybackSession.setPropertyString("video-aspect-override", "no")
+    } else {
+      PlaybackSession.setPropertyDouble("video-aspect-override", value)
+    }
+  }
+
+  private fun setMpvAspectPanscanIfChanged(value: Double) {
+    val current = PlaybackSession.getPropertyDouble("panscan")
+    if (MpvAspectPropertyUpdatePolicy.needsUpdate(current, value)) {
+      PlaybackSession.setPropertyDouble("panscan", value)
+    }
+  }
+
   fun changeVideoAspect(
     aspect: VideoAspect,
     showUpdate: Boolean = true,
@@ -5165,13 +5184,13 @@ class PlayerViewModel(
     when (aspect) {
       VideoAspect.Fit -> {
         // To FIT: Reset both properties to their defaults.
-        PlaybackSession.setPropertyDouble("panscan", 0.0)
-        PlaybackSession.setPropertyString("video-aspect-override", "no")
+        setMpvAspectPanscanIfChanged(0.0)
+        setMpvAspectOverrideIfChanged(null)
       }
       VideoAspect.Crop -> {
         // To CROP: Reset aspect override first, then set panscan
-        PlaybackSession.setPropertyString("video-aspect-override", "no")
-        PlaybackSession.setPropertyDouble("panscan", 1.0)
+        setMpvAspectOverrideIfChanged(null)
+        setMpvAspectPanscanIfChanged(1.0)
       }
       VideoAspect.Stretch -> {
         // To STRETCH: Calculate screen ratio accounting for video rotation
@@ -5196,11 +5215,8 @@ class PlayerViewModel(
 
         // Set aspect override first, then reset panscan
         // This prevents the brief flash of Fit mode
-        PlaybackSession.setPropertyDouble(
-          "video-aspect-override",
-          VideoAspectGeometry.stretchAspectOverride(screenRatio),
-        )
-        PlaybackSession.setPropertyDouble("panscan", 0.0)
+        setMpvAspectOverrideIfChanged(VideoAspectGeometry.stretchAspectOverride(screenRatio))
+        setMpvAspectPanscanIfChanged(0.0)
       }
     }
 
@@ -5235,8 +5251,8 @@ class PlayerViewModel(
       return
     }
     if (MpvConfigOverridePolicy.ownsAny(MpvConfigControlledFeatures.VIDEO_ASPECT)) return
-    PlaybackSession.setPropertyDouble("panscan", 0.0)
-    PlaybackSession.setPropertyDouble("video-aspect-override", ratio)
+    setMpvAspectPanscanIfChanged(0.0)
+    setMpvAspectOverrideIfChanged(ratio)
     if (persistGlobal) playerPreferences.lastCustomAspectRatio.set(ratio.toFloat())
     _currentAspectRatio.value = ratio
     if (showUpdate) {
