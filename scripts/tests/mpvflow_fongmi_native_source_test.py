@@ -68,12 +68,16 @@ assert PREPARE.index("apply_motion_downsample_patch(") < PREPARE.index("apply_mo
 assert "apply_motion_paired_color_mask_patch(motion_path)" in PREPARE
 assert "MPVRX_PAIRED_COLOR_EVIDENCE_MASK_V1" in PAIRED_COLOR_PATCH
 assert "smoothstep(vec2(0.02), vec2(0.08), paired_error)" in PAIRED_COLOR_PATCH
-assert "MPV_INFINITY_DIRECTIONAL_WARP_EVIDENCE_V4" in PAIRED_COLOR_PATCH
-assert "local_warp_support = evidence * vec2(f.w, r.w);" in PAIRED_COLOR_PATCH
-assert "visibility *= mix(vec2(1.0), local_warp_keep, conflict_weight);" in PAIRED_COLOR_PATCH
+assert "MPV_INFINITY_SELECTIVE_CONTOUR_RESOLVER_V1" in PAIRED_COLOR_PATCH
+assert "if (!fixed_weights && path_disagreement > 1.5)" in PAIRED_COLOR_PATCH
+assert "if (center_conflict_weight >= 0.50)" in PAIRED_COLOR_PATCH
+assert "best_support >= 0.85 && worst_support <= 0.15" in PAIRED_COLOR_PATCH
+assert "resolved_visibility.y *= 1.0 - reject_weight;" in PAIRED_COLOR_PATCH
+assert "resolved_visibility.x *= 1.0 - reject_weight;" in PAIRED_COLOR_PATCH
 assert "def verify_reprepare_cycle(source: str)" in PAIRED_COLOR_TEST
 assert "verify_reprepare_cycle(patched)" in PAIRED_COLOR_TEST
-assert "clean and coherent camera motion are unchanged" in PAIRED_COLOR_TEST
+assert "zero-conflict 0.03/0.035 stays on the old blend" in PAIRED_COLOR_TEST
+assert "balanced texture" in PAIRED_COLOR_TEST
 assert 'os.environ.get("MPVFLOW_ANALYSIS_DOWNSAMPLE_AA") == "1"' in PREPARE
 assert "Mpv-infinity FongMi 645 test does not enable Jelly variants" in PREPARE
 assert "apply_motion_jelly" not in PREPARE and "patch_fongmi_motion_jelly" not in PREPARE
