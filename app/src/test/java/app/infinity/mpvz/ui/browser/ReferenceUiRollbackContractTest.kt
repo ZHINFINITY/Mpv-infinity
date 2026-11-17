@@ -29,7 +29,8 @@ class ReferenceUiRollbackContractTest {
       // Build 1910 smoothness: chapter index via derivedStateOf so position ticks do not recompose the whole overlay.
       // Auto-hide follow-up: loading does not pin controls; seekbar and button rows share one visibility transition.
       // Center transport hides during buffering, matching v2.2.2 and MPV-RX without hiding other control groups.
-      "app/src/main/java/app/infinity/mpvz/ui/player/controls/PlayerControls.kt" to "6585e8af04bbceb13087b46a9d1c22f397f8d8b3b7bbc0c892de25f9f8668a1a" /* Bounded landscape lanes scroll in both seekbar positions */,
+      // Mpv-infinity aspect-recovery follow-up: decoder changes can retry the remembered failed video track.
+      "app/src/main/java/app/infinity/mpvz/ui/player/controls/PlayerControls.kt" to "eeaf878a561c0c5d1a1810e0a05240154c5e39a70b059550ba18a5d513e5b84a" /* Bounded landscape lanes scroll in both seekbar positions */,
       // Owner follow-up: music uses its legacy visual rail while video retains the global-glass path.
       "app/src/main/java/app/infinity/mpvz/ui/player/controls/components/Seekbar.kt" to "5e3cbc03be3aa7b35f464e0ee313615192d8d1cdcfbc7e8a819b7a6c2331843c",
       // Build 1910: shared rimLight/thick-surface routing is intentionally owned by this stream.

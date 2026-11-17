@@ -1,5 +1,5 @@
 name: Build Mpv-infinity debug APK
-run-name: Mpv-infinity ${{ inputs.flavor }} ${{ inputs.target_abi }} Debug
+run-name: Mpv-infinity${{ inputs.issue_label && format(' {0} - {1} {2} Debug', inputs.issue_label, inputs.flavor, inputs.target_abi) || format(' {0} {1} Debug', inputs.flavor, inputs.target_abi) }}
 
 on:
   workflow_dispatch:
@@ -25,13 +25,18 @@ on:
         required: false
         default: false
         type: boolean
+      issue_label:
+        description: Optional Mpv-infinity issue slug for the run title, jobs, and artifacts
+        required: false
+        default: ''
+        type: string
 
 permissions:
   contents: read
 
 jobs:
   kotlin-tests:
-    name: Kotlin compile and full unit tests
+    name: ${{ inputs.issue_label && format('Mpv-infinity {0} - Kotlin compile and full unit tests', inputs.issue_label) || 'Kotlin compile and full unit tests' }}
     runs-on: ubuntu-latest
     timeout-minutes: 90
     permissions:
@@ -119,7 +124,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: combined-radio-ui-validation-evidence
+          name: ${{ inputs.issue_label && format('mpv-infinity-{0}-{1}-{2}-validation-evidence', inputs.issue_label, inputs.flavor, inputs.target_abi) || 'combined-radio-ui-validation-evidence' }}
           path: |
             app/schemas/**/23.json
             app/schemas/**/24.json
@@ -132,7 +137,7 @@ jobs:
         run: gh run cancel "$GITHUB_RUN_ID" -R "$GITHUB_REPOSITORY" || true
 
   build-debug:
-    name: Build ${{ inputs.flavor }} debug APK
+    name: ${{ inputs.issue_label && format('Mpv-infinity {0} - {1} {2} debug APK', inputs.issue_label, inputs.flavor, inputs.target_abi) || format('Build {0} debug APK', inputs.flavor) }}
     runs-on: ubuntu-latest
     timeout-minutes: 360
     permissions:
@@ -266,7 +271,7 @@ jobs:
         run: ./scripts/build-mpvflow-mpv-runtime.sh
         env:
           MPVFLOW_MPV_BUILD_CORES: '2'
-      - name: Verify Mpv-infinity FongMi motion source after preparation
+      - name: Verify Mpv-infinity motion interpolation source after preparation
         if: ${{ inputs.flavor == 'standard' && inputs.target_abi == 'arm64-v8a' && steps.mpvflow-runtime-cache.outputs.cache-hit != 'true' }}
         run: python3 scripts/tests/mpvrx_motion_source_test.py --mpv-dir native-builder/buildscripts/deps/mpv --require-paired-color-mask
       - name: Overlay Flow-only runtime into Standard MPV AAR
@@ -409,7 +414,7 @@ jobs:
           deadline=$((SECONDS + 3600))
           while :; do
             state="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}/attempts/${GITHUB_RUN_ATTEMPT}/jobs" \
-              --jq '.jobs[] | select(.name == "Kotlin compile and full unit tests") | "\(.status) \(.conclusion)"')"
+              --jq '.jobs[] | select(.name | contains("Kotlin compile and full unit tests")) | "\(.status) \(.conclusion)"')"
             echo "Kotlin compile and full unit tests: ${state:-not visible yet}"
             case "$state" in
               "completed success") break ;;
@@ -421,7 +426,7 @@ jobs:
       - name: Upload debug APKs
         uses: actions/upload-artifact@v4
         with:
-          name: mpv-infinity-${{ inputs.flavor }}-${{ inputs.target_abi }}-debug
+          name: ${{ inputs.issue_label && format('mpv-infinity-{0}-{1}-{2}-debug', inputs.issue_label, inputs.flavor, inputs.target_abi) || format('mpv-infinity-{0}-{1}-debug', inputs.flavor, inputs.target_abi) }}
           path: |
             app/build/outputs/apk/**/*.apk
             app/build/outputs/apk/**/*.verification.json
