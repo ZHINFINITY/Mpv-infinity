@@ -9,6 +9,7 @@ package app.infinity.mpvz.ui.browser.videolist
 
 import android.net.Uri
 import app.infinity.mpvz.domain.media.model.Video
+import app.infinity.mpvz.utils.history.RecentlyPlayedOps
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -43,6 +44,24 @@ class ManualVideoWatchedOverrideTest {
     assertEquals(false, override)
     assertTrue(status.isOldAndUnplayed)
     assertFalse(status.isWatched)
+  }
+
+  @Test
+  fun recentlyPlayedResolverMatchesStoredPathForFileUrisAndPreservesWebUris() {
+    assertEquals(
+      "/storage/movies/movie.mkv",
+      RecentlyPlayedOps.resolveRecentlyPlayedFilePath(
+        context,
+        Uri.parse("file:///storage/movies/movie.mkv"),
+      ),
+    )
+    assertEquals(
+      "https://cdn.example/movie.mkv",
+      RecentlyPlayedOps.resolveRecentlyPlayedFilePath(
+        context,
+        Uri.parse("https://cdn.example/movie.mkv"),
+      ),
+    )
   }
 
   @Test
