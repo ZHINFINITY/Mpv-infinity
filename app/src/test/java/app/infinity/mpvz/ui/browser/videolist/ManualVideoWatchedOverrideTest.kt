@@ -7,6 +7,7 @@
 
 package app.infinity.mpvz.ui.browser.videolist
 
+import android.app.Application
 import android.net.Uri
 import app.infinity.mpvz.domain.media.model.Video
 import app.infinity.mpvz.utils.history.RecentlyPlayedOps
@@ -20,7 +21,7 @@ import org.robolectric.RuntimeEnvironment
 import org.robolectric.annotation.Config
 
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [35])
+@Config(sdk = [35], application = Application::class)
 class ManualVideoWatchedOverrideTest {
   private val context by lazy { RuntimeEnvironment.getApplication() }
 

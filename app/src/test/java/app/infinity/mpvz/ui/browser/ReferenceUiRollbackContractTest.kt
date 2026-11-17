@@ -31,7 +31,8 @@ class ReferenceUiRollbackContractTest {
       // Center transport hides during buffering, matching v2.2.2 and MPV-RX without hiding other control groups.
       // Mpv-infinity aspect-recovery follow-up: decoder changes can retry the remembered failed video track.
       // Local playback follow-up: use the release buffering debounce for Native and MPV loading.
-      "app/src/main/java/app/infinity/mpvz/ui/player/controls/PlayerControls.kt" to "79f1736d07498f07addc4e46e3472a1b10524e8c83afd89c9ef40166d7144490" /* Debounced engine buffering state */,
+      // Media3 follow-up: ignore stale MPV loading and suppress terminal Native errors from buffering.
+      "app/src/main/java/app/infinity/mpvz/ui/player/controls/PlayerControls.kt" to "d12d0dba3b173ff58143843626fa9aae2d709c51380bdfe61170ce6a3097e2b0" /* Debounced and error-aware engine buffering state */,
       // Owner follow-up: music uses its legacy visual rail while video retains the global-glass path.
       "app/src/main/java/app/infinity/mpvz/ui/player/controls/components/Seekbar.kt" to "5e3cbc03be3aa7b35f464e0ee313615192d8d1cdcfbc7e8a819b7a6c2331843c",
       // Build 1910: shared rimLight/thick-surface routing is intentionally owned by this stream.
