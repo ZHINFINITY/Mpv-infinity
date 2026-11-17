@@ -2996,6 +2996,16 @@ class Media3FlowVideoSink(
   }
 
   private fun destroyPresentationContextOnThread() {
+    if (presentationQueue.hasPresenting()) {
+      if (!presentationHandler.postDelayed(
+          { destroyPresentationContextOnThread() },
+          PRESENTATION_FENCE_POLL_DELAY_MS,
+        )
+      ) {
+        Log.e(logTag, "event=presentation_context_release state=presentation_fence_unavailable")
+      }
+      return
+    }
     destroyWindowSurfaceOnPresentationThread()
     if (presentationBlitProgram != 0) GLES20.glDeleteProgram(presentationBlitProgram)
     presentationBlitProgram = 0
