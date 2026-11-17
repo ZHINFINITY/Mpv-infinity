@@ -2343,6 +2343,13 @@ class PlayerViewModel(
     scheduleAutoCropAnalysis()
   }
 
+  fun onVideoLoadFailed() {
+    showControls()
+    _videoOpenAnimationState.update { current ->
+      if (current.isWaitingForVideo) current.copy(isWaitingForVideo = false) else current
+    }
+  }
+
   fun updateTorrentState(state: TorrentStreamingState) {
     _torrentState.value = state
   }

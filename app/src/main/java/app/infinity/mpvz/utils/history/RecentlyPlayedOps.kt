@@ -221,6 +221,13 @@ object RecentlyPlayedOps {
     }
   }
 
+  suspend fun onVideoFinished(filePath: String) {
+    if (filePath.isBlank()) return
+    withContext(Dispatchers.IO) {
+      kotlin.runCatching { repository.deleteByFilePath(filePath) }
+    }
+  }
+
   suspend fun onVideoRenamed(
     context: Context,
     oldPath: String,

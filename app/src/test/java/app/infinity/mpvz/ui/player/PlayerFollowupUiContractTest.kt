@@ -749,7 +749,8 @@ class PlayerFollowupUiContractTest {
     assertTrue(fileSystem.contains("browserPreferences.watchedThreshold.changes()"))
     assertTrue(mediaLibrary.contains("browserPreferences.watchedThreshold.changes()"))
     assertTrue(folders.contains("browserPreferences.watchedThreshold.changes()"))
-    assertTrue(folders.contains("val isWatched = explicitlyWatched ||"))
+    assertTrue(folders.contains("isVideoCountedAsNew("))
+    assertTrue(folders.contains("explicitlyMarkedWatched = explicitlyWatched"))
   }
 
   @Test

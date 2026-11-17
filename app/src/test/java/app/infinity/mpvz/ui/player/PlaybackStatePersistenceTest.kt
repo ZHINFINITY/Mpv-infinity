@@ -8,6 +8,7 @@ package app.infinity.mpvz.ui.player
 
 import app.infinity.mpvz.database.entities.PlaybackStateEntity
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -286,8 +287,81 @@ class PlaybackStatePersistenceTest {
         watchedThreshold = 95,
       )
 
-    assertEquals(100, persisted.lastPosition)
+    assertEquals(0, persisted.lastPosition)
+    assertEquals(0, persisted.timeRemaining)
     assertTrue(persisted.hasBeenWatched)
+  }
+
+  @Test
+  fun belowWatchedThresholdRetainsResumeProgress() {
+    val persisted =
+      PlaybackStatePersistence.buildEntity(
+        oldState = entity(lastPosition = 100),
+        snapshot = snapshot(currentPosition = 564, duration = 600),
+        savePositionOnQuit = true,
+        watchedThreshold = 95,
+      )
+
+    assertEquals(564, persisted.lastPosition)
+    assertEquals(36, persisted.timeRemaining)
+    assertTrue(!persisted.hasBeenWatched)
+  }
+
+  @Test
+  fun finishedThresholdClearsLastPlayedButAReplayDoesNot() {
+    val finishedSnapshot =
+      snapshot(currentPosition = 570, duration = 600)
+        .copy(recentlyPlayedUri = "file:///videos/movie.mp4")
+    val finishedState =
+      PlaybackStatePersistence.buildEntity(
+        oldState = entity(lastPosition = 564),
+        snapshot = finishedSnapshot,
+        savePositionOnQuit = true,
+        watchedThreshold = 95,
+      )
+
+    assertTrue(shouldRemoveRecentlyPlayedEntry(finishedSnapshot, finishedState))
+
+    val replaySnapshot = finishedSnapshot.copy(currentPosition = 10)
+    val replayState =
+      PlaybackStatePersistence.buildEntity(
+        oldState = finishedState,
+        snapshot = replaySnapshot,
+        savePositionOnQuit = true,
+        watchedThreshold = 95,
+      )
+
+    assertTrue(!shouldRemoveRecentlyPlayedEntry(replaySnapshot, replayState))
+  }
+
+  @Test
+  fun unknownOrPendingPositionCannotFinishFromOldSavedProgress() {
+    val oldState = entity(lastPosition = 570)
+    val unknownSnapshot = snapshot(currentPosition = 0, duration = 600, positionIsKnown = false)
+      .copy(recentlyPlayedUri = "file:///videos/movie.mp4")
+    val unknownPersisted = PlaybackStatePersistence.buildEntity(
+      oldState = oldState,
+      snapshot = unknownSnapshot,
+      savePositionOnQuit = true,
+      watchedThreshold = 95,
+    )
+
+    assertEquals(570, unknownPersisted.lastPosition)
+    assertEquals(30, unknownPersisted.timeRemaining)
+    assertFalse(unknownPersisted.hasBeenWatched)
+    assertFalse(shouldRemoveRecentlyPlayedEntry(unknownSnapshot, unknownPersisted))
+
+    val pendingSnapshot = snapshot(currentPosition = 0, duration = 600)
+      .copy(isPositionRestorePending = true)
+    val pendingPersisted = PlaybackStatePersistence.buildEntity(
+      oldState = oldState,
+      snapshot = pendingSnapshot,
+      savePositionOnQuit = true,
+      watchedThreshold = 95,
+    )
+
+    assertEquals(570, pendingPersisted.lastPosition)
+    assertFalse(pendingPersisted.hasBeenWatched)
   }
 
   @Test

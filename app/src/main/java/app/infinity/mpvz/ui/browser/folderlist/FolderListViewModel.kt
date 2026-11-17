@@ -167,6 +167,16 @@ class FolderListViewModel(
       }
     }
 
+    viewModelScope.launch(Dispatchers.IO) {
+      combine(
+        browserPreferences.watchedThreshold.changes(),
+        appearancePreferences.showUnplayedOldVideoLabel.changes(),
+        appearancePreferences.unplayedOldVideoDays.changes(),
+      ) { _, _, _ -> Unit }
+        .drop(1)
+        .collectLatest { calculateNewVideoCounts(_videoFolders.value) }
+    }
+
     // Filter folders based on blacklist (video vs audio scope)
     val blacklistFlow = if (audioOnly) {
       foldersPreferences.blacklistedAudioFolders.changes()

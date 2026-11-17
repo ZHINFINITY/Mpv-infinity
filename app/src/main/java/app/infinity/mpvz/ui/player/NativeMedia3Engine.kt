@@ -89,6 +89,7 @@ data class NativePlaybackSnapshot(
   val isLocalSource: Boolean = false,
   val hasRenderedFirstFrame: Boolean = false,
   val isEnded: Boolean = false,
+  val hasError: Boolean = false,
   val positionMs: Long = 0L,
   val durationMs: Long = 0L,
   val totalBufferedDurationMs: Long = 0L,
@@ -689,6 +690,7 @@ class NativeMedia3Engine internal constructor(
       }
       _currentPlaybackErrorToken.value = itemToken
       Log.e(logTag, "player error itemEpoch=${itemToken.mediaItemEpoch}", error)
+      publishPlaybackSnapshot()
       onPlaybackError?.let { callback ->
         runCatching { callback(error, itemToken) }
           .onFailure { Log.e(logTag, "Native playback error callback failed", it) }
@@ -1499,7 +1501,7 @@ class NativeMedia3Engine internal constructor(
       // getWidth/getHeight synchronize with renderSurface. That renderer may hold its monitor
       // while rasterizing a 4K subtitle, so never query its dimensions from this UI-thread path.
       if (libassRendererSize != (width to height)) {
-        it.setSize(width, height)
+        view.requestRendererSize(width, height)
         libassRendererSize = width to height
       }
       return it
@@ -2234,6 +2236,7 @@ class NativeMedia3Engine internal constructor(
       isLocalSource = isPreparedSourceLocal(),
       hasRenderedFirstFrame = _hasRenderedFirstFrame.value,
       isEnded = player.playbackState == Player.STATE_ENDED,
+      hasError = player.playerError != null,
       positionMs = (pendingSeekDisplayPositionMs ?: player.currentPosition).coerceAtLeast(0L),
       durationMs = reportedDurationMs,
       totalBufferedDurationMs = player.totalBufferedDuration.coerceAtLeast(0L),
@@ -2306,6 +2309,7 @@ class NativeMedia3Engine internal constructor(
       isLocalSource = isPreparedSourceLocal(),
       hasRenderedFirstFrame = _hasRenderedFirstFrame.value,
       isEnded = player.playbackState == Player.STATE_ENDED,
+      hasError = player.playerError != null,
       positionMs = (pendingSeekDisplayPositionMs ?: player.currentPosition).coerceAtLeast(0L),
       durationMs = reportedDurationMs,
       totalBufferedDurationMs = player.totalBufferedDuration.coerceAtLeast(0L),
