@@ -20,6 +20,7 @@ import app.infinity.mpvz.preferences.BrowserPreferences
 import app.infinity.mpvz.repository.MediaFileRepository
 import app.infinity.mpvz.ui.browser.base.BaseBrowserViewModel
 import app.infinity.mpvz.ui.player.PlaybackIdentity
+import app.infinity.mpvz.ui.player.isPlaybackStateWatched
 import app.infinity.mpvz.utils.media.MediaLibraryEvents
 import app.infinity.mpvz.utils.media.MetadataRetrieval
 import app.infinity.mpvz.utils.media.PlaybackStateEvents
@@ -555,27 +556,24 @@ class FileSystemBrowserViewModel(
     videoFiles.forEach { videoFile ->
       val video = videoFile.video
       val playbackIdentifiers =
-        linkedSetOf(
-          PlaybackIdentity.forLocalPath(video.path),
-          PlaybackIdentity.forUri(video.uri.toString()),
-          PlaybackIdentity.forUri(video.path),
-          PlaybackIdentity.forUri("file://${video.path}"),
-        )
+        linkedSetOf<String>().apply {
+          addAll(PlaybackIdentity.localPathAliases(video.path))
+          add(PlaybackIdentity.forUri(video.uri.toString()))
+          add(video.path)
+          add(video.displayName)
+        }
       val playbackState = playbackIdentifiers.firstNotNullOfOrNull { playbackStates[it] }
+      val durationSeconds = video.duration / 1000L
       val progressValue =
-        if (playbackState != null && video.duration > 0) {
-          val durationSeconds = video.duration / 1000
-          val watched = durationSeconds - playbackState.timeRemaining.toLong()
-          (watched.toFloat() / durationSeconds.toFloat()).coerceIn(0f, 1f)
+        if (playbackState != null && durationSeconds > 0L) {
+          playbackState.lastPosition.coerceAtLeast(0).toFloat() / durationSeconds.toFloat()
         } else {
           0f
         }
-      val isWatched =
-        playbackState?.hasBeenWatched == true ||
-          (watchedThreshold > 0 && progressValue >= watchedThreshold / 100f)
+      val isWatched = isPlaybackStateWatched(playbackState, durationSeconds, watchedThreshold)
       if (isWatched) watchedIds += video.id
 
-      if (playbackState != null && progressValue in 0.01f..0.99f) {
+      if (!isWatched && playbackState != null && progressValue in 0.01f..0.99f) {
         playbackMap[video.id] = progressValue
       }
 
@@ -596,12 +594,12 @@ class FileSystemBrowserViewModel(
     viewModelScope.launch(Dispatchers.IO) {
       val durationSeconds = (video.duration / 1000L).coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
       val identifiers =
-        linkedSetOf(
-          PlaybackIdentity.forLocalPath(video.path),
-          PlaybackIdentity.forUri(video.uri.toString()),
-          PlaybackIdentity.forUri(video.path),
-          PlaybackIdentity.forUri("file://${video.path}"),
-        )
+        linkedSetOf<String>().apply {
+          addAll(PlaybackIdentity.localPathAliases(video.path))
+          add(PlaybackIdentity.forUri(video.uri.toString()))
+          add(video.path)
+          add(video.displayName)
+        }
       val existing = playbackStateRepository.getAllPlaybackStates().firstNotNullOfOrNull { state ->
         if (state.mediaTitle in identifiers) state else null
       }
@@ -626,6 +624,7 @@ class FileSystemBrowserViewModel(
         ),
       )
       PlaybackStateEvents.notifyChanged(PlaybackIdentity.forLocalPath(video.path))
+      MediaLibraryEvents.notifyChanged()
     }
   }
 }

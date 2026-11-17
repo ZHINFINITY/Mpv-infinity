@@ -7,11 +7,13 @@
 
 package app.infinity.mpvz.ui.player
 
+import app.infinity.mpvz.database.entities.PlaybackStateEntity
 import app.infinity.mpvz.utils.media.fileExtension
 import app.infinity.mpvz.utils.storage.FileTypeUtils
 import java.net.URI
 import java.security.MessageDigest
 import java.util.Locale
+import kotlin.math.pow
 
 enum class RepeatMode {
   OFF,
@@ -183,6 +185,36 @@ internal fun PlaybackItem.isTrustedNetworkVideoSource(): Boolean =
 /** The optional MKV tail-duration compatibility probe can add an EOF seek to HTTP playback. */
 internal fun shouldSkipRemoteMkvDurationProbe(playableUri: String): Boolean =
   playableUri.startsWith("http://", ignoreCase = true) || playableUri.startsWith("https://", ignoreCase = true)
+
+/** Local files should not wait for a network-cache pause before playback starts. */
+internal fun shouldPauseForCache(item: PlaybackItem, playableUri: String = item.playableUri): Boolean {
+  if (item.networkSource != null || item.torrentFileIndex != null) return true
+  val localSchemes = setOf("file", "content", "fd")
+  return sequenceOf(item.originalUri, item.playableUri, playableUri).any { candidate ->
+    val scheme = runCatching { URI(candidate.trim()).scheme?.lowercase(Locale.ROOT) }.getOrNull()
+    scheme != null && scheme !in localSchemes
+  }
+}
+
+internal fun shouldBypassNativeReadCache(uri: String): Boolean {
+  if (uri.isBlank()) return false
+  val scheme = runCatching { URI(uri.trim()).scheme?.lowercase(Locale.ROOT) }.getOrNull()
+  return scheme == null || scheme == "file" || scheme == "content"
+}
+
+internal data class VideoScaleFactors(val x: Float, val y: Float)
+
+internal fun videoScaleFactors(
+  zoom: Float,
+  horizontalFlip: Boolean,
+  verticalFlip: Boolean,
+): VideoScaleFactors {
+  val scale = 2f.pow(zoom.coerceIn(-1f, 3f))
+  return VideoScaleFactors(
+    x = if (horizontalFlip) -scale else scale,
+    y = if (verticalFlip) -scale else scale,
+  )
+}
 
 /**
  * Auto engine uses Native for HDR-family video because Media3 preserves HDR/Dolby Vision output;
@@ -511,6 +543,18 @@ internal object PlaybackQueueReducer {
   }
 }
 
+internal fun isPlaybackStateWatched(
+  playbackState: PlaybackStateEntity?,
+  durationSeconds: Long,
+  watchedThreshold: Int,
+): Boolean {
+  if (playbackState?.hasBeenWatched == true) return true
+  if (playbackState == null || durationSeconds <= 0L || watchedThreshold <= 0) return false
+  val progress =
+    playbackState.lastPosition.coerceAtLeast(0).toFloat() / durationSeconds.toFloat()
+  return progress >= watchedThreshold / 100f
+}
+
 object PlaybackIdentity {
   private const val VERSION_PREFIX = "media:v2:"
 
@@ -523,6 +567,14 @@ object PlaybackIdentity {
 
   /** Gives every URI representation of the same local file one playback-state key. */
   fun forLocalPath(path: String): String = digest("local\u0000${normalizeLocalPath(path)}")
+
+  /** All persisted v2 keys that older launches may have used for the same local file. */
+  fun localPathAliases(path: String): Set<String> =
+    if (path.isBlank()) {
+      emptySet()
+    } else {
+      linkedSetOf(forLocalPath(path), forUri(path), forUri("file://$path"))
+    }
 
   fun forTorrent(
     infoHash: String,

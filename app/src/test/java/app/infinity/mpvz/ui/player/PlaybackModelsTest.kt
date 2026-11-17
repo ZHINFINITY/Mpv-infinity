@@ -197,6 +197,49 @@ class PlaybackModelsTest {
   }
 
   @Test
+  fun localFilesDoNotWaitForNetworkCacheButRemoteSourcesStillDo() {
+    assertFalse(shouldPauseForCache(PlaybackItem("local", "file:///storage/Movies/video.mkv")))
+    assertFalse(shouldPauseForCache(PlaybackItem("media-store", "content://media/external/video/1")))
+    assertTrue(shouldPauseForCache(PlaybackItem("remote", "https://cdn.example/video.mkv")))
+    assertTrue(
+      shouldPauseForCache(
+        PlaybackItem(
+          stableId = "network-browser",
+          originalUri = "content://provider/item/1",
+          networkSource = NetworkPlaybackSource(connectionId = 7L, relativePath = "/Movies/video.mkv"),
+        ),
+      ),
+    )
+  }
+
+  @Test
+  fun nativeMedia3BypassesReadCacheOnlyForLocalSources() {
+    assertTrue(shouldBypassNativeReadCache("file:///storage/Movies/av1-2160p.mkv"))
+    assertTrue(shouldBypassNativeReadCache("content://media/external/video/1"))
+    assertFalse(shouldBypassNativeReadCache("https://cdn.example/video.mkv"))
+    assertFalse(shouldBypassNativeReadCache("fd://42"))
+    assertFalse(shouldBypassNativeReadCache(""))
+  }
+
+  @Test
+  fun localPathAliasesCoverCurrentAndLegacyUriIdentifiers() {
+    val path = "/storage/emulated/0/Movies/video with spaces.mkv"
+    val aliases = PlaybackIdentity.localPathAliases(path)
+
+    assertTrue(PlaybackIdentity.forLocalPath(path) in aliases)
+    assertTrue(PlaybackIdentity.forUri(path) in aliases)
+    assertTrue(PlaybackIdentity.forUri("file://$path") in aliases)
+  }
+
+  @Test
+  fun nativeFlipsInvertOnlyTheirAxisAndPreserveZoom() {
+    assertEquals(VideoScaleFactors(x = 2f, y = 2f), videoScaleFactors(1f, false, false))
+    assertEquals(VideoScaleFactors(x = -2f, y = 2f), videoScaleFactors(1f, true, false))
+    assertEquals(VideoScaleFactors(x = 2f, y = -2f), videoScaleFactors(1f, false, true))
+    assertEquals(VideoScaleFactors(x = -1f, y = -1f), videoScaleFactors(0f, true, true))
+  }
+
+  @Test
   fun rapidQueueAdvancesKeepCurrentItemAndIndexAligned() {
     val items = listOf(
       PlaybackItem("a", "file:///a", title = "A"),

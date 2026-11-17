@@ -19,6 +19,7 @@ import app.infinity.mpvz.domain.playbackstate.repository.PlaybackStateRepository
 import app.infinity.mpvz.repository.MediaFileRepository
 import app.infinity.mpvz.ui.browser.base.BaseBrowserViewModel
 import app.infinity.mpvz.ui.player.PlaybackIdentity
+import app.infinity.mpvz.ui.player.isPlaybackStateWatched
 import app.infinity.mpvz.utils.history.RecentlyPlayedOps
 import app.infinity.mpvz.utils.media.MediaLibraryEvents
 import app.infinity.mpvz.utils.media.MetadataRetrieval
@@ -49,13 +50,24 @@ data class VideoWithPlaybackInfo(
   val isWatched: Boolean = false, // true once the configured watched threshold is reached
 )
 
+internal fun videoProgressPercentage(
+  playbackState: PlaybackStateEntity?,
+  durationSeconds: Long,
+  isWatched: Boolean,
+): Float? {
+  if (playbackState == null || durationSeconds <= 0L || isWatched) return null
+  val progress =
+    playbackState.lastPosition.coerceAtLeast(0).toFloat() / durationSeconds.toFloat()
+  return progress.coerceIn(0f, 1f).takeIf { it in 0.01f..0.99f }
+}
+
 internal fun videoPlaybackIdentifiers(video: Video): Set<String> =
-  linkedSetOf(
-    PlaybackIdentity.forLocalPath(video.path),
-    PlaybackIdentity.forUri(video.uri.toString()),
-    PlaybackIdentity.forUri(video.path),
-    PlaybackIdentity.forUri("file://${video.path}"),
-  )
+  linkedSetOf<String>().apply {
+    addAll(PlaybackIdentity.localPathAliases(video.path))
+    add(PlaybackIdentity.forUri(video.uri.toString()))
+    add(video.path)
+    add(video.displayName)
+  }
 
 internal fun buildVideoWithPlaybackInfo(
   video: Video,
@@ -69,40 +81,33 @@ internal fun buildVideoWithPlaybackInfo(
   explicitlyMarkedWatched: Boolean = false,
 ): VideoWithPlaybackInfo {
   val durationSeconds = video.duration / 1000L
-  val progressValue =
-    if (playbackState != null && durationSeconds > 0L) {
-      val watchedSeconds = durationSeconds - playbackState.timeRemaining.toLong()
-      (watchedSeconds.toFloat() / durationSeconds.toFloat()).coerceIn(0f, 1f)
-    } else {
-      null
-    }
   // A manual swipe-to-unwatched writes a reset playback state (position 0, full time remaining,
   // hasBeenWatched=false). Keep that explicit child override visible even when its parent folder
   // is marked watched and the file is older than the automatic NEW-label age window.
-  val persistedUnwatched = explicitlyMarkedUnwatched || (playbackState != null &&
-      !playbackState.hasBeenWatched &&
-      playbackState.lastPosition <= 0 &&
-      playbackState.timeRemaining >= durationSeconds - 1)
+  val persistedUnwatched =
+    explicitlyMarkedUnwatched ||
+      (playbackState != null &&
+        !playbackState.hasBeenWatched &&
+        playbackState.lastPosition <= 0 &&
+        playbackState.timeRemaining >= durationSeconds - 1)
   val newLabelWindowMillis = newLabelDays.toLong() * 24L * 60L * 60L * 1000L
   val videoAgeMillis = currentTimeMillis - video.dateModified * 1000L
   val isWithinNewLabelWindow =
-    folderMarkedUnwatched || persistedUnwatched || newLabelDays == 0 || videoAgeMillis <= newLabelWindowMillis
-  // The swipe action toggles from this value. An old video with no playback row has no NEW tag
-  // and is therefore watched for toggle purposes; otherwise the first swipe is inverted.
+    folderMarkedUnwatched ||
+      persistedUnwatched ||
+      newLabelDays == 0 ||
+      videoAgeMillis <= newLabelWindowMillis
+  // Age controls eligibility for the NEW badge; it must never imply that a video was watched.
+  // A saved watched flag or threshold-reaching position takes precedence over a stale NEW override.
   val isWatched =
     explicitlyMarkedWatched ||
-      (!explicitlyMarkedUnwatched &&
-        (folderMarkedWatched ||
-          (!folderMarkedUnwatched &&
-            (!isWithinNewLabelWindow ||
-              playbackState?.hasBeenWatched == true ||
-              (watchedThreshold > 0 && progressValue != null && progressValue >= watchedThreshold / 100f))))
-      )
+      isPlaybackStateWatched(playbackState, durationSeconds, watchedThreshold) ||
+      (!persistedUnwatched && folderMarkedWatched)
 
   return VideoWithPlaybackInfo(
     video = video,
     timeRemaining = playbackState?.timeRemaining?.toLong(),
-    progressPercentage = progressValue?.takeIf { it in 0.01f..0.99f },
+    progressPercentage = videoProgressPercentage(playbackState, durationSeconds, isWatched),
     isOldAndUnplayed = !isWatched && isWithinNewLabelWindow,
     isWatched = isWatched,
   )

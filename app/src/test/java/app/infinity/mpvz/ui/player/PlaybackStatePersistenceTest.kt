@@ -241,6 +241,20 @@ class PlaybackStatePersistenceTest {
   }
 
   @Test
+  fun reachedWatchThresholdPersistsFinishedStateWhenResumeSavingIsOff() {
+    val persisted =
+      PlaybackStatePersistence.buildEntity(
+        oldState = entity(lastPosition = 100),
+        snapshot = snapshot(currentPosition = 570, duration = 600),
+        savePositionOnQuit = false,
+        watchedThreshold = 95,
+      )
+
+    assertEquals(100, persisted.lastPosition)
+    assertTrue(persisted.hasBeenWatched)
+  }
+
+  @Test
   fun snapshotHelperSupportsCopyForUpdatedState() {
     val updated = snapshot(currentPosition = 600, duration = 1200)
       .copy(playbackSpeed = 1.5, videoZoom = 0.4f, videoAspect = "Fill")

@@ -51,7 +51,9 @@ import app.infinity.mpvz.preferences.AudioPreferences
 import app.infinity.mpvz.preferences.BrowserPreferences
 import app.infinity.mpvz.preferences.GesturePreferences
 import app.infinity.mpvz.preferences.PlayerPreferences
+import app.infinity.mpvz.repository.MediaFileRepository
 import app.infinity.mpvz.ui.icons.Icons
+import app.infinity.mpvz.utils.media.MediaLibraryEvents
 import app.infinity.mpvz.utils.media.PlaybackStateEvents
 import app.infinity.mpvz.utils.storage.FileTypeUtils
 import `is`.xyz.mpv.MPVLib
@@ -3069,6 +3071,10 @@ class MediaPlaybackService :
             watchedThreshold = browserPreferences.watchedThreshold.get(),
           )
         playbackStateRepository.upsert(playbackState)
+        if (playbackState.hasBeenWatched && oldState?.hasBeenWatched != true) {
+          MediaFileRepository.invalidateTreeCache()
+          MediaLibraryEvents.notifyChanged()
+        }
         PlaybackStateEvents.notifyChanged(identifier)
       }
     } catch (error: kotlinx.coroutines.CancellationException) {

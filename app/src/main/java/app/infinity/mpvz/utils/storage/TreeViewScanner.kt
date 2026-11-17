@@ -11,6 +11,7 @@ import android.content.Context
 import android.os.Environment
 import android.provider.MediaStore
 import android.util.Log
+import app.infinity.mpvz.ui.player.PlaybackIdentity
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -49,6 +50,7 @@ object TreeViewScanner {
 
   private data class VideoInfo(
     val displayName: String,
+    val path: String,
     val size: Long,
     val duration: Long,
     val dateModified: Long,
@@ -300,6 +302,7 @@ object TreeViewScanner {
             aggregate.videos.add(
               VideoInfo(
                 displayName = cursor.getString(displayNameColumn) ?: file.name,
+                path = videoPath,
                 size = cursor.getLong(sizeColumn),
                 duration = cursor.getLong(durationColumn),
                 dateModified = cursor.getLong(dateColumn),
@@ -333,6 +336,7 @@ object TreeViewScanner {
         videos.count { video ->
           isVideoNew(
             displayName = video.displayName,
+            filePath = video.path,
             dateModifiedSeconds = video.dateModified,
             currentTimeMs = currentTimeMs,
             newBadgeConfig = newBadgeConfig,
@@ -396,6 +400,7 @@ object TreeViewScanner {
             audioByFolder.getOrPut(folderKey) { FolderAggregate(folderPath) }.videos +=
               VideoInfo(
                 displayName = cursor.getString(nameColumn) ?: file.name,
+                path = file.absolutePath,
                 size = cursor.getLong(sizeColumn),
                 duration = duration,
                 dateModified = cursor.getLong(dateColumn),
@@ -426,6 +431,7 @@ object TreeViewScanner {
 
   private fun isVideoNew(
     displayName: String,
+    filePath: String,
     dateModifiedSeconds: Long,
     currentTimeMs: Long,
     newBadgeConfig: NewBadgeConfig,
@@ -434,7 +440,9 @@ object TreeViewScanner {
       return false
     }
 
-    if (displayName in newBadgeConfig.playedMediaTitles) {
+    val playbackAliases =
+      PlaybackIdentity.localPathAliases(filePath) + filePath + displayName
+    if (playbackAliases.any { it in newBadgeConfig.playedMediaTitles }) {
       return false
     }
 
@@ -541,6 +549,7 @@ object TreeViewScanner {
             mediaFiles.count { file ->
               isVideoNew(
                 displayName = file.name,
+                filePath = file.absolutePath,
                 dateModifiedSeconds = file.lastModified() / 1000L,
                 currentTimeMs = currentTimeMs,
                 newBadgeConfig = newBadgeConfig,
