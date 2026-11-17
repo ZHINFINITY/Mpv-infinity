@@ -44,7 +44,7 @@ internal data class PlaybackStateSnapshot(
   val audioSelection: String? = null,
   val subtitleSelection: String? = null,
   val secondarySubtitleSelection: String? = null,
-  val recentlyPlayedFilePath: String? = null,
+  val recentlyPlayedUri: String? = null,
   val captureSequence: Long = PlaybackStateSaveCoordinator.nextSequence(),
 )
 
@@ -55,7 +55,7 @@ internal fun shouldRemoveRecentlyPlayedEntry(
   snapshot.duration > 0 &&
     snapshot.positionIsKnown &&
     !snapshot.isPositionRestorePending &&
-    !snapshot.recentlyPlayedFilePath.isNullOrBlank() &&
+    !snapshot.recentlyPlayedUri.isNullOrBlank() &&
     persistedState.hasBeenWatched &&
     persistedState.lastPosition == 0 &&
     persistedState.timeRemaining == 0

@@ -7002,7 +7002,7 @@ class PlayerActivity :
             )
           saveRepository.upsert(playbackState)
           if (shouldRemoveRecentlyPlayedEntry(snapshot, playbackState)) {
-            RecentlyPlayedOps.onVideoFinished(snapshot.recentlyPlayedFilePath.orEmpty())
+            RecentlyPlayedOps.onVideoFinished(appContext, snapshot.recentlyPlayedUri.orEmpty())
           }
           if (playbackState.hasBeenWatched && oldState?.hasBeenWatched != true) {
             MediaFileRepository.invalidateTreeCache()
@@ -7062,9 +7062,11 @@ class PlayerActivity :
     // is written under the correct video's record.
     val saveIdentifier = activeSaveMediaIdentifier.ifBlank { mediaIdentifier }
     if (saveIdentifier.isBlank()) return null
-    val recentlyPlayedFilePath =
-      PlaybackSession.queue.value.items.firstOrNull { it.stableId == saveIdentifier }
-        ?.filePath?.takeIf(String::isNotBlank)
+    val recentlyPlayedUri =
+      PlaybackSession.queue.value.currentItem
+        ?.takeIf { it.stableId == saveIdentifier }
+        ?.originalUri
+        ?.takeIf { it.isNotBlank() }
 
     val nativeSnapshot = nativeEngineOrNull()?.snapshot?.value
     val nativeEngineActive = activeEngineMode == PlaybackEngineMode.NATIVE
@@ -7098,7 +7100,7 @@ class PlayerActivity :
     return PlaybackStateSnapshot(
       mediaIdentifier = saveIdentifier,
       mediaTitle = mediaTitle,
-      recentlyPlayedFilePath = recentlyPlayedFilePath,
+      recentlyPlayedUri = recentlyPlayedUri,
       currentPosition =
         // The live value wins after backward/zero seeks; max(snapshot, live) resurrects
         // the old position until the next 250ms snapshot tick.
@@ -7461,34 +7463,7 @@ class PlayerActivity :
         return@runCatching
       }
 
-      val filePath =
-        when (uri.scheme) {
-          "file" -> {
-            uri.path ?: uri.toString()
-          }
-
-          "content" -> {
-            contentResolver
-              .query(
-                uri,
-                arrayOf(MediaStore.MediaColumns.DATA),
-                null,
-                null,
-                null,
-              )?.use { cursor ->
-                if (cursor.moveToFirst()) {
-                  val columnIndex = cursor.getColumnIndex(MediaStore.MediaColumns.DATA)
-                  if (columnIndex != -1) cursor.getString(columnIndex) else null
-                } else {
-                  null
-                }
-              } ?: uri.toString()
-          }
-
-          else -> {
-            uri.toString()
-          }
-        }
+      val filePath = RecentlyPlayedOps.resolveRecentlyPlayedFilePath(applicationContext, uri)
 
       val launchSource =
         when {
@@ -10234,34 +10209,7 @@ class PlayerActivity :
     name: String,
   ) {
     runCatching {
-      val filePath =
-        when (uri.scheme) {
-          "file" -> {
-            uri.path ?: uri.toString()
-          }
-
-          "content" -> {
-            contentResolver
-              .query(
-                uri,
-                arrayOf(MediaStore.MediaColumns.DATA),
-                null,
-                null,
-                null,
-              )?.use { cursor ->
-                if (cursor.moveToFirst()) {
-                  val columnIndex = cursor.getColumnIndex(MediaStore.MediaColumns.DATA)
-                  if (columnIndex != -1) cursor.getString(columnIndex) else null
-                } else {
-                  null
-                }
-              } ?: uri.toString()
-          }
-
-          else -> {
-            uri.toString()
-          }
-        }
+      val filePath = RecentlyPlayedOps.resolveRecentlyPlayedFilePath(applicationContext, uri)
 
       val isGenericStream =
         name.isBlank() ||

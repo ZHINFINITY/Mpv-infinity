@@ -3073,7 +3073,7 @@ class MediaPlaybackService :
           )
         playbackStateRepository.upsert(playbackState)
         if (shouldRemoveRecentlyPlayedEntry(capturedSnapshot, playbackState)) {
-          RecentlyPlayedOps.onVideoFinished(capturedSnapshot.recentlyPlayedFilePath.orEmpty())
+          RecentlyPlayedOps.onVideoFinished(applicationContext, capturedSnapshot.recentlyPlayedUri.orEmpty())
         }
         if (playbackState.hasBeenWatched && oldState?.hasBeenWatched != true) {
           MediaFileRepository.invalidateTreeCache()
@@ -3099,9 +3099,11 @@ class MediaPlaybackService :
     oldState: PlaybackStateEntity?,
   ): PlaybackStateSnapshot? {
     if (identifier.isBlank()) return null
-    val recentlyPlayedFilePath =
-      PlaybackSession.queue.value.items.firstOrNull { it.stableId == identifier }
-        ?.filePath?.takeIf(String::isNotBlank)
+    val recentlyPlayedUri =
+      PlaybackSession.queue.value.currentItem
+        ?.takeIf { it.stableId == identifier }
+        ?.originalUri
+        ?.takeIf { it.isNotBlank() }
 
     val mpvPosition = readMpvIntSecondsOrNull("time-pos")
     fun nullableDouble(property: String) = runCatching { PlaybackSession.getPropertyDouble(property) }.getOrNull()
@@ -3123,7 +3125,7 @@ class MediaPlaybackService :
     return PlaybackStateSnapshot(
       mediaIdentifier = identifier,
       mediaTitle = mediaTitle.ifBlank { identifier },
-      recentlyPlayedFilePath = recentlyPlayedFilePath,
+      recentlyPlayedUri = recentlyPlayedUri,
       currentPosition = mpvPosition ?: currentPositionSeconds.toInt(),
       duration = readMpvIntSeconds("duration", mediaDurationSeconds.toInt()),
       isPositionRestorePending =

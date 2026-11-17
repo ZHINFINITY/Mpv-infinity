@@ -275,7 +275,7 @@ class PlaybackStatePersistenceTest {
   fun finishedThresholdClearsLastPlayedButAReplayDoesNot() {
     val finishedSnapshot =
       snapshot(currentPosition = 570, duration = 600)
-        .copy(recentlyPlayedFilePath = "/videos/movie.mp4")
+        .copy(recentlyPlayedUri = "file:///videos/movie.mp4")
     val finishedState =
       PlaybackStatePersistence.buildEntity(
         oldState = entity(lastPosition = 564),
@@ -302,7 +302,7 @@ class PlaybackStatePersistenceTest {
   fun unknownOrPendingPositionCannotFinishFromOldSavedProgress() {
     val oldState = entity(lastPosition = 570)
     val unknownSnapshot = snapshot(currentPosition = 0, duration = 600, positionIsKnown = false)
-      .copy(recentlyPlayedFilePath = "/videos/movie.mp4")
+      .copy(recentlyPlayedUri = "file:///videos/movie.mp4")
     val unknownPersisted = PlaybackStatePersistence.buildEntity(
       oldState = oldState,
       snapshot = unknownSnapshot,
