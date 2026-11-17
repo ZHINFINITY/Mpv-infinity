@@ -37,7 +37,7 @@ MPV_SHA = "645f8ecdd3c94379048e9ee3e7014e174de0bd02"
 PLACEBO_SHA = "63659d96d1bff7d7a5a1368e9538056a193fc6fb"
 MOTION_SHA256 = "756c1da75d274d81c2e84f988bae1785aa6b6a9a813d16d3b47d9656b31016d0"
 MOTION_ANTIALIAS_SHA256 = "793ac79e8243727bb58286ca6bb6a6b6e539ba3e8abae34c4dae7b6503c5cb2e"
-MOTION_MASKED_SHA256 = "bd3f542fde9db653c1ca8b3ac82848e93e33b84f80f985992bfe2434c80e45fd"
+MOTION_MASKED_SHA256 = "1c0931fd519176ef6280079fb95ded0a6b58d9384f2067166d9bc5e86f4a6c8a"
 MOTION_HEADER_SHA256 = "12fedd08063a540b69667a51e146d539ebae509b63c07964f573410a7d0ae427"
 BUILDER_SHA = "1efc82739f6f7034cd63e7ee8b3ec5431df27467"
 MPVLIB_ANDROID_SHA = "d04217abe8e72e4a099269f045855bf69b87d53b"
@@ -68,9 +68,12 @@ assert PREPARE.index("apply_motion_downsample_patch(") < PREPARE.index("apply_mo
 assert "apply_motion_paired_color_mask_patch(motion_path)" in PREPARE
 assert "MPVRX_PAIRED_COLOR_EVIDENCE_MASK_V1" in PAIRED_COLOR_PATCH
 assert "smoothstep(vec2(0.02), vec2(0.08), paired_error)" in PAIRED_COLOR_PATCH
-assert "MPV_INFINITY_SELECTIVE_CONTOUR_RESOLVER_V1" in PAIRED_COLOR_PATCH
+assert "MPV_INFINITY_SELECTIVE_CONTOUR_RESOLVER_V2" in PAIRED_COLOR_PATCH
 assert "if (!fixed_weights && path_disagreement > 1.5)" in PAIRED_COLOR_PATCH
-assert "if (center_conflict_weight >= 0.50)" in PAIRED_COLOR_PATCH
+assert "source_change_weight = smoothstep(0.06, 0.16, source_change_error)" in PAIRED_COLOR_PATCH
+assert "resolver_weight = max(center_conflict_weight, source_change_weight)" in PAIRED_COLOR_PATCH
+assert "if (resolver_weight >= 0.50)" in PAIRED_COLOR_PATCH
+assert "reject_weight = resolver_weight * trajectory_weight" in PAIRED_COLOR_PATCH
 assert "best_support >= 0.85 && worst_support <= 0.15" in PAIRED_COLOR_PATCH
 assert "resolved_visibility.y *= 1.0 - reject_weight;" in PAIRED_COLOR_PATCH
 assert "resolved_visibility.x *= 1.0 - reject_weight;" in PAIRED_COLOR_PATCH
@@ -167,7 +170,8 @@ for text in (MANIFEST, LICENSES):
         assert marker in text, marker
     assert "FongMi/mpv" in text and "FongMi/libplacebo" in text
     assert "GPL-2.0" in text
-    assert "bounded, hash-guarded app-owned patch" in text
+    assert "source-to-analysis" in text
+    assert "source change" in text or "source-change" in text
 for marker in (MOTION_SHA256, MOTION_ANTIALIAS_SHA256, MOTION_MASKED_SHA256, MOTION_HEADER_SHA256):
     assert marker in MANIFEST
 for patch_name, expected_hash in PATCH_HASHES.items():

@@ -15,6 +15,9 @@ sys.path.insert(0, str(ROOT / "scripts"))
 import patch_fongmi_motion_downsample as DOWNSAMPLE  # noqa: E402
 import patch_fongmi_paired_color_mask as PATCHER  # noqa: E402
 
+TARGET_FPS_OPTIONS = (48, 60, 72, 90, 96, 120, 144)
+DISPLAY_FPS_OPTIONS = (60, 90, 120, 144)
+
 
 def smoothstep(edge0: float, edge1: float, value: float) -> float:
     t = min(1.0, max(0.0, (value - edge0) / (edge1 - edge0)))
@@ -23,6 +26,18 @@ def smoothstep(edge0: float, edge1: float, value: float) -> float:
 
 def patch_support(errors: list[float]) -> float:
     return 1.0 - smoothstep(0.02, 0.08, sum(errors) / len(errors))
+
+
+def cadence_phases(
+    source_fps: int, target_fps: int, display_fps: int
+) -> tuple[float, ...]:
+    effective_fps = min(target_fps, display_fps)
+    cycle_length = effective_fps // math.gcd(source_fps, effective_fps)
+    phases = {
+        (index * source_fps / effective_fps) % 1.0
+        for index in range(1, cycle_length)
+    }
+    return tuple(sorted(phases))
 
 
 def path_disagreement(
@@ -49,6 +64,7 @@ def selective_visibility(
     visibility: tuple[float, float],
     *,
     fixed_weights: bool = False,
+    source_change_error: float = 0.0,
 ) -> tuple[float, float]:
     """CPU mirror of the strict, downward-only GLSL resolver gate."""
     resolved = [visibility[0], visibility[1]]
@@ -57,9 +73,15 @@ def selective_visibility(
         PATCHER.RESOLVER_CENTER_ERROR_FULL,
         center_color_error,
     )
+    source_change_weight = smoothstep(
+        PATCHER.RESOLVER_SOURCE_CHANGE_START,
+        PATCHER.RESOLVER_SOURCE_CHANGE_FULL,
+        source_change_error,
+    )
+    resolver_weight = max(center_weight, source_change_weight)
     if fixed_weights or trajectory_disagreement <= PATCHER.RESOLVER_PATH_ERROR_START:
         return tuple(resolved)
-    if center_weight < PATCHER.RESOLVER_CENTER_WEIGHT_MIN:
+    if resolver_weight < PATCHER.RESOLVER_CENTER_WEIGHT_MIN:
         return tuple(resolved)
 
     support0 = patch_support(errors0)
@@ -74,7 +96,7 @@ def selective_visibility(
         PATCHER.RESOLVER_PATH_ERROR_FULL,
         trajectory_disagreement,
     )
-    reject_weight = center_weight * path_weight
+    reject_weight = resolver_weight * path_weight
     if support0 > support1:
         resolved[1] *= 1.0 - reject_weight
     else:
@@ -120,6 +142,8 @@ vec4 run_resolver() {{
     vec2 projection = vec2(1.0, 1.0);
     vec2 p0 = vec2(pixel) + displacement0;
     vec2 p1 = vec2(pixel) + displacement1;
+    vec4 original0 = vec4(0.3, 0.3, 0.3, 1.0);
+    vec4 original1 = vec4(0.6, 0.6, 0.6, 1.0);
     vec4 original = vec4(0.4, 0.4, 0.4, 1.0);
     vec4 warped0 = vec4(0.9, 0.9, 0.9, 1.0);
     vec4 warped1 = vec4(0.1, 0.1, 0.1, 1.0);
@@ -184,7 +208,9 @@ def main() -> None:
     assert patched.count(PATCHER.ARTIFACT_STRENGTH_BLOCK) == 1
     block = PATCHER.ARTIFACT_STRENGTH_BLOCK
     assert f"path_disagreement > {PATCHER.RESOLVER_PATH_ERROR_START:.1f}" in block
-    assert f"center_conflict_weight >= {PATCHER.RESOLVER_CENTER_WEIGHT_MIN:.2f}" in block
+    assert f"source_change_weight = smoothstep({PATCHER.RESOLVER_SOURCE_CHANGE_START:.2f}, {PATCHER.RESOLVER_SOURCE_CHANGE_FULL:.2f}, source_change_error)" in block
+    assert "resolver_weight = max(center_conflict_weight, source_change_weight)" in block
+    assert f"resolver_weight >= {PATCHER.RESOLVER_CENTER_WEIGHT_MIN:.2f}" in block
     assert f"best_support >= {PATCHER.RESOLVER_SUPPORT_GOOD:.2f}" in block
     assert f"worst_support <= {PATCHER.RESOLVER_SUPPORT_BAD:.2f}" in block
     assert f"smoothstep({PATCHER.RESOLVER_CENTER_ERROR_START:.2f}, {PATCHER.RESOLVER_CENTER_ERROR_FULL:.2f}, center_color_error)" in block
@@ -204,6 +230,7 @@ def main() -> None:
     assert PATCHER.unpatch_source(legacy) == expected_base
 
     prior_blocks = (
+        PATCHER.SELECTIVE_CONTOUR_V1_BLOCK,
         PATCHER.ARTIFACT_STRENGTH_V4_BLOCK,
         PATCHER.ARTIFACT_STRENGTH_V3_BLOCK,
         PATCHER.ARTIFACT_STRENGTH_V2_BLOCK,
@@ -211,7 +238,10 @@ def main() -> None:
     )
     for prior_block in prior_blocks:
         prior = expected_base.replace(PATCHER.ORIGINAL_BLOCK, PATCHER.PATCHED_BLOCK, 1)
-        prior = prior.replace(PATCHER.VISIBILITY_ANCHOR, PATCHER.VISIBILITY_ANCHOR + prior_block, 1)
+        if prior_block == PATCHER.SELECTIVE_CONTOUR_V1_BLOCK:
+            prior = prior.replace(PATCHER.FINAL_BLEND_ANCHOR, prior_block, 1)
+        else:
+            prior = prior.replace(PATCHER.VISIBILITY_ANCHOR, PATCHER.VISIBILITY_ANCHOR + prior_block, 1)
         assert PATCHER.has_paired_color_mask(prior), "each supported prior gate must remain recognizable"
         upgraded_prior, changed_prior = PATCHER.transform_source(prior)
         assert changed_prior and upgraded_prior == patched, "each prior gate must upgrade to the selective resolver"
@@ -239,10 +269,74 @@ def main() -> None:
     original_blend = blend_pixel(0.4, 0.95, 0.2, old_visibility)
     assert blend_pixel(0.4, 0.95, 0.2, counterexample_visibility) == original_blend
 
+    # Repeated contours can make both warped center colors agree even when the
+    # source endpoints changed. With a decisive paired-support split, reject only
+    # the unsupported trajectory; this is the targeted failure the old gate missed.
+    color_agreeing_contour = selective_visibility(
+        0.0, 3.5, [0.01] * 3, [0.12] * 3, (0.20, 0.30), source_change_error=0.20
+    )
+    assert color_agreeing_contour == (0.20, 0.0)
+
+    # Cover every app target at every representative display cap, with the
+    # 120-fps default tested on both direct and clock-quantized display paths.
+    phase_cases = 0
+    for source_fps in (24, 30):
+        for target_fps in TARGET_FPS_OPTIONS:
+            for display_fps in DISPLAY_FPS_OPTIONS:
+                phases = cadence_phases(source_fps, target_fps, display_fps)
+                assert phases, (source_fps, target_fps, display_fps)
+                for alpha in phases:
+                    phase_cases += 1
+                    projection = ((1.0 - alpha) / alpha, alpha / (1.0 - alpha))
+                    displacement0 = (-4.0 * alpha, 0.0)
+
+                    # Moderate trajectory separation attenuates only the weak lane.
+                    moderate_displacement1 = (4.0 * (1.0 - alpha) + 2.0, 0.0)
+                    moderate_error = path_disagreement(
+                        displacement0, moderate_displacement1, projection
+                    )
+                    assert moderate_error > PATCHER.RESOLVER_PATH_ERROR_START
+                    moderate = selective_visibility(
+                        0.0, moderate_error, [0.01] * 3, [0.12] * 3,
+                        (0.20, 0.30), source_change_error=0.20,
+                    )
+                    assert moderate[0] == 0.20 and moderate[1] < 0.30, (
+                        source_fps, target_fps, display_fps, alpha, moderate
+                    )
+
+                    # Severe separation fully removes only the unsupported lane.
+                    severe_displacement1 = (4.0 * (1.0 - alpha) + 3.5, 0.0)
+                    severe_error = path_disagreement(
+                        displacement0, severe_displacement1, projection
+                    )
+                    severe = selective_visibility(
+                        0.0, severe_error, [0.01] * 3, [0.12] * 3,
+                        (0.20, 0.30), source_change_error=0.20,
+                    )
+                    assert severe == (0.20, 0.0), (
+                        source_fps, target_fps, display_fps, alpha, severe
+                    )
+
+                    coherent_displacement1 = (4.0 * (1.0 - alpha), 0.0)
+                    coherent_error = path_disagreement(
+                        displacement0, coherent_displacement1, projection
+                    )
+                    assert coherent_error < 1e-12
+                    coherent = selective_visibility(
+                        0.0, coherent_error, [0.01] * 3, [0.12] * 3,
+                        old_visibility, source_change_error=0.20,
+                    )
+                    assert coherent == old_visibility, (
+                        source_fps, target_fps, display_fps, alpha, coherent
+                    )
+
     # A coherent quarter-phase pan has near-zero trajectory residual even when patch support differs.
     pan_disagreement = path_disagreement((-0.75, 0.0), (2.25, 0.0), (3.0, 1.0 / 3.0))
     assert pan_disagreement < 1e-12
-    pan_visibility = selective_visibility(0.20, pan_disagreement, [0.01] * 3, [0.12] * 3, old_visibility)
+    pan_visibility = selective_visibility(
+        0.20, pan_disagreement, [0.01] * 3, [0.12] * 3, old_visibility,
+        source_change_error=0.20,
+    )
     assert pan_visibility == old_visibility
 
     # High conflict and separated paths are still unchanged when local texture supports both candidates.
@@ -298,8 +392,8 @@ def main() -> None:
     compile_resolver(patched)
     print(
         "Mpv-infinity selective contour checks passed: zero-conflict 0.03/0.035 stays on the old blend; "
-        "clean pans, balanced texture, partial support and clean regions are unchanged; "
-        "only strong conflict plus separated paths and a clear local support split suppress one lane"
+        f"all targets {TARGET_FPS_OPTIONS} passed {phase_cases} source/display phase cases with local support splits; "
+        "severe false contours are suppressed and clean pans, balanced texture, partial support and unchanged pixels are preserved"
     )
 
 

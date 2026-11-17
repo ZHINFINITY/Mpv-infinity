@@ -37,6 +37,7 @@ fi
 python3 "$ROOT/scripts/tests/mpvflow_fongmi_native_source_test.py"
 if [[ -n "${MPVFLOW_MPV_SOURCE_DIR:-}" && -d "$MPVFLOW_MPV_SOURCE_DIR" ]]; then
   python3 "$ROOT/scripts/tests/mpvrx_motion_source_test.py" --mpv-dir "$MPVFLOW_MPV_SOURCE_DIR"
+  python3 "$ROOT/scripts/tests/fongmi_motion_phase_test.py" --mpv-dir "$MPVFLOW_MPV_SOURCE_DIR"
 else
   echo "Skipping Mpv-infinity FongMi source verification: no pinned MPV source checkout is available"
 fi
