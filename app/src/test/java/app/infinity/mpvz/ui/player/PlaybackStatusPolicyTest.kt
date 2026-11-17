@@ -8,6 +8,7 @@
 package app.infinity.mpvz.ui.player
 
 import app.infinity.mpvz.database.entities.PlaybackStateEntity
+import app.infinity.mpvz.ui.browser.videolist.mostRecentUnwatchedFilePath
 import app.infinity.mpvz.ui.browser.videolist.videoProgressPercentage
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -48,6 +49,34 @@ class PlaybackStatusPolicyTest {
 
     assertFalse(isPlaybackStateWatched(inProgress, durationSeconds = 600L, watchedThreshold = 0))
     assertTrue(isPlaybackStateWatched(finished, durationSeconds = 600L, watchedThreshold = 0))
+  }
+
+  @Test
+  fun lastPlayedMarkerMovesToTheMostRecentUnfinishedVideo() {
+    val finished = "/videos/finished.mp4"
+    val previous = "/videos/previous.mp4"
+
+    assertEquals(
+      previous,
+      mostRecentUnwatchedFilePath(
+        recentlyPlayedFilePaths = listOf(finished, previous),
+        folderPath = "/videos",
+        watchedFilePaths = setOf(finished),
+      ),
+    )
+  }
+
+  @Test
+  fun lastPlayedMarkerIsEmptyWhenAllRecentVideosAreFinished() {
+    val finished = "/videos/finished.mp4"
+
+    assertNull(
+      mostRecentUnwatchedFilePath(
+        recentlyPlayedFilePaths = listOf(finished),
+        folderPath = "/videos",
+        watchedFilePaths = setOf(finished),
+      ),
+    )
   }
 
   private fun playbackState(
