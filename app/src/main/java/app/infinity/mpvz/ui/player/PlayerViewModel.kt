@@ -5180,6 +5180,7 @@ class PlayerViewModel(
       return
     }
     if (MpvConfigOverridePolicy.ownsAny(MpvConfigControlledFeatures.VIDEO_ASPECT)) return
+    PlaybackSession.rememberMpvVideoTrackForRecovery()
     when (aspect) {
       VideoAspect.Fit -> {
         // To FIT: Reset both properties to their defaults.
@@ -5250,6 +5251,7 @@ class PlayerViewModel(
       return
     }
     if (MpvConfigOverridePolicy.ownsAny(MpvConfigControlledFeatures.VIDEO_ASPECT)) return
+    PlaybackSession.rememberMpvVideoTrackForRecovery()
     setMpvAspectPanscanIfChanged(0.0)
     setMpvAspectOverrideIfChanged(ratio)
     if (persistGlobal) playerPreferences.lastCustomAspectRatio.set(ratio.toFloat())

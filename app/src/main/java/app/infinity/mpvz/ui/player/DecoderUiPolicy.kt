@@ -22,11 +22,6 @@ object DecoderUiPolicy {
   /** The in-player sheet deliberately exposes only concrete engines. */
   fun playerEngineTabs(): List<PlaybackEngineMode> =
     PlaybackEngineMode.entries.filterNot { it == PlaybackEngineMode.AUTO }
-
-  /** Keep the renderer explicit while preserving the decoder detail shown by this chip. */
-  fun activeEngineAndDecoderLabel(isNativeActive: Boolean, decoderTitle: String): String =
-    if (isNativeActive) PlaybackEngineMode.NATIVE.title
-    else "${PlaybackEngineMode.MPV.title} · $decoderTitle"
 }
 
 private fun Float.roundToInt(): Int = kotlin.math.round(this).toInt()
