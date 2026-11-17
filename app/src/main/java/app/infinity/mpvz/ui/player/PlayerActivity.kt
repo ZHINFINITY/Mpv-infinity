@@ -2803,20 +2803,24 @@ class PlayerActivity :
           viewModel.videoZoom,
           viewModel.videoPanX,
           viewModel.videoPanY,
-        ) { zoom, panX, panY ->
-          Triple(zoom, panX, panY)
-        }.collect { (zoom, panX, panY) ->
+          viewModel.transformState,
+        ) { zoom, panX, panY, flips ->
+          Triple(zoom, panX, panY) to flips
+        }.collect { (position, flips) ->
+          val (zoom, panX, panY) = position
           val scale = 2f.pow(zoom)
-          binding.player.scaleX = scale
-          binding.player.scaleY = scale
+          val scaleX = if (flips.isMirrored) -scale else scale
+          val scaleY = if (flips.isVerticalFlipped) -scale else scale
+          binding.player.scaleX = scaleX
+          binding.player.scaleY = scaleY
           binding.player.translationX = panX
           binding.player.translationY = panY
           // Transform only the native video surface, not the Media3 PlayerView container. This
           // keeps native subtitle overlays and controls out of the video pan/zoom transform while
           // giving both engines the same pan/zoom state.
           binding.media3Player.videoSurfaceView?.apply {
-            scaleX = scale
-            scaleY = scale
+            scaleX = if (flips.isMirrored) -scale else scale
+            scaleY = if (flips.isVerticalFlipped) -scale else scale
             translationX = panX
             translationY = panY
           }

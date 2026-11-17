@@ -119,7 +119,7 @@ internal fun FrameInterpolationPlayerButton(
     )
   } else if (compact) {
     ControlsButton(
-      icon = Icons.RoundedFilled.Speed,
+      icon = Icons.RoundedFilled.TargetFps,
       onClick = { onOpenSheet(Sheets.FrameInterpolationFps) },
       enabled = available,
       title = stringResource(R.string.pref_decoder_mpvflow_target_fps_value, targetFps),

@@ -637,5 +637,56 @@ class PlayerFollowupUiContractTest {
     assertTrue(decoder.contains("preferences.anime4kQuality.set(it)"))
   }
 
+  @Test
+  fun nativeLoadingCompletionPublishesFreshBufferingState() {
+    val engine = read("app/src/main/java/app/infinity/mpvz/ui/player/NativeMedia3Engine.kt")
+    val loadingCallback = engine.substringAfter("override fun onIsLoadingChanged(isLoading: Boolean) {")
+      .substringBefore("override fun onMetadata(metadata: Metadata)")
+
+    assertTrue(loadingCallback.contains("publishSnapshot()"))
+  }
+
+  @Test
+  fun nativeSubtitleSizingDoesNotWaitOnRendererDimensionGetters() {
+    val engine = read("app/src/main/java/app/infinity/mpvz/ui/player/NativeMedia3Engine.kt")
+    val sizing = engine.substringAfter("private fun ensureLibassRenderer(): LibassSubtitleRenderer?")
+      .substringBefore("private fun configureSubtitleView()")
+
+    assertTrue(sizing.contains("libassRendererSize != (width to height)"))
+    assertTrue(sizing.contains("it.setSize(width, height)"))
+    assertFalse(sizing.contains("it.getWidth()"))
+    assertFalse(sizing.contains("it.getHeight()"))
+  }
+
+  @Test
+  fun nativeFlipsReachTheVideoSurfaceAndTargetFpsUsesItsOwnIcon() {
+    val engine = read("app/src/main/java/app/infinity/mpvz/ui/player/NativeMedia3Engine.kt")
+    val activity = read("app/src/main/java/app/infinity/mpvz/ui/player/PlayerActivity.kt")
+    val button = read("app/src/main/java/app/infinity/mpvz/preferences/PlayerButton.kt")
+    val controls = read("app/src/main/java/app/infinity/mpvz/ui/player/controls/components/FrameInterpolationControls.kt")
+    val icons = read("app/src/main/java/app/infinity/mpvz/ui/icons/Icons.kt")
+
+    assertTrue(engine.contains("attachedView?.videoSurfaceView?.apply"))
+    assertTrue(engine.contains("scaleX = scale.x"))
+    assertTrue(engine.contains("scaleY = scale.y"))
+    assertTrue(activity.contains("viewModel.transformState"))
+    assertTrue(activity.contains("scaleX = if (flips.isMirrored) -scale else scale"))
+    assertTrue(activity.contains("scaleY = if (flips.isVerticalFlipped) -scale else scale"))
+    assertTrue(button.contains("FRAME_INTERPOLATION_FPS(Icons.RoundedFilled.TargetFps)"))
+    assertTrue(controls.contains("icon = Icons.RoundedFilled.TargetFps"))
+    assertTrue(icons.contains("private val TargetFpsVector: ImageVector"))
+  }
+
+  @Test
+  fun playbackSaveEventsRefreshTheFolderNewBadgeWithoutChangingItsThreshold() {
+    val videoList = read("app/src/main/java/app/infinity/mpvz/ui/browser/videolist/VideoListViewModel.kt")
+    val activity = read("app/src/main/java/app/infinity/mpvz/ui/player/PlayerActivity.kt")
+
+    assertTrue(videoList.contains("PlaybackStateEvents.changes.collectLatest"))
+    assertTrue(videoList.contains("updatePlaybackInfo(mediaIdentifier)"))
+    assertTrue(videoList.contains("isOldAndUnplayed = shouldShowNewBadge(isWatched, isWithinNewLabelWindow)"))
+    assertTrue(activity.contains("PlaybackStateEvents.notifyChanged(snapshot.mediaIdentifier)"))
+  }
+
   private fun read(path: String): String = File(root, path).readText()
 }
