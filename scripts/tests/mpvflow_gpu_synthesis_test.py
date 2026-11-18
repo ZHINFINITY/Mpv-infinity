@@ -47,7 +47,6 @@ def embedded_synthesis_shader(source: str | None = None) -> str:
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--require-vulkan", action="store_true")
-    parser.add_argument("--decision-mode", action="store_true")
     parser.add_argument("--soft-blend-baseline-revision", help="prove Soft Blend threshold fixtures fail this git revision")
     parser.add_argument("--baseline-revision", help="also prove the full-frame regressions fail this git revision")
     parser.add_argument("--aperture-baseline-revision", help="prove the tied-outline regression fails this git revision")
@@ -97,7 +96,13 @@ def main() -> None:
             environment["VK_ICD_FILENAMES"] = str(icds[0])
 
         def run(program: Path, spirv: Path, flags: tuple[str, ...], label: str, failure: str | None = None) -> None:
-            result = subprocess.run([str(program), str(spirv), *flags], capture_output=True, text=True, env=environment)
+            # Drop the obsolete third fixture slot retained in older tuples.
+            args = tuple(flags)
+            if len(args) >= 4:
+                if args[2] != "0":
+                    raise SystemExit(f"Unexpected obsolete synthesis fixture slot: {args}")
+                args = args[:2] + args[3:]
+            result = subprocess.run([str(program), str(spirv), *args], capture_output=True, text=True, env=environment)
             if failure is None:
                 if result.returncode:
                     raise SystemExit(f"Pixel oracle failed ({label}):\n" + result.stdout + result.stderr)
@@ -110,9 +115,6 @@ def main() -> None:
         production = compile_variant(shader_source, "production")
         for flags, label in ((("0", "0"), "default-off production"), (("1", "0"), "opt-in soft blend"), (("1", "1"), "opt-in continuous soft blend")):
             run(normal, production, flags, label)
-        if args.decision_mode:
-            decision_shader = shader_source.replace("#version 450\n", "#version 450\n#define MPVFLOW_CAPTURE_DECISIONS 1\n", 1)
-            run(normal, compile_variant(decision_shader, "decisions"), ("0", "0", "1"), "decision-mask capture")
         run(large, production, ("0", "0"), "whole-frame 4x upscaling / 32px motion")
         run(large, production, ("0", "0", "0", "bounds"), "constant-translation smooth support boundaries")
         rescue_anchor = "bool oneSidedRescue=cycleSamplesFinite&&min(valid0,valid1)>0.75&&f.w>=0.20&&f.z<=0.05&&max(cycleError0,cycleError1)<1.0;"

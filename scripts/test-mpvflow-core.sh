@@ -24,10 +24,10 @@ else
 fi
 if [[ "${MPVFLOW_REQUIRE_VULKAN_PIXEL_TEST:-0}" == "1" ]]; then
   python3 "$ROOT/scripts/tests/mpvflow_gpu_motion_test.py" --require-vulkan
-  python3 "$ROOT/scripts/tests/mpvflow_gpu_synthesis_test.py" --decision-mode --require-vulkan
+  python3 "$ROOT/scripts/tests/mpvflow_gpu_synthesis_test.py" --require-vulkan
 else
   python3 "$ROOT/scripts/tests/mpvflow_gpu_motion_test.py"
-  python3 "$ROOT/scripts/tests/mpvflow_gpu_synthesis_test.py" --decision-mode
+  python3 "$ROOT/scripts/tests/mpvflow_gpu_synthesis_test.py"
 fi
 python3 "$ROOT/scripts/tests/mpvflow_fongmi_native_source_test.py"
 if [[ -n "${MPVFLOW_MPV_SOURCE_DIR:-}" && -d "$MPVFLOW_MPV_SOURCE_DIR" ]]; then
