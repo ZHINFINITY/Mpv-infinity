@@ -38,14 +38,17 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
+import app.infinity.mpvz.R
 import app.infinity.mpvz.ui.icons.Icon
 import app.infinity.mpvz.ui.icons.Icons
 import app.infinity.mpvz.ui.theme.AppMotion
 import app.infinity.mpvz.ui.theme.AppShapeScale
 import app.infinity.mpvz.ui.theme.LocalMotionPolicy
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlin.math.abs
 import kotlin.math.roundToInt
@@ -58,11 +61,12 @@ fun SwipeableVideoActions(
   onWatchedChange: (Boolean) -> Unit,
   onRename: () -> Unit,
   onDelete: () -> Unit,
+  onMarkAs: (() -> Unit)? = null,
   content: @Composable () -> Unit,
 ) {
   val actionWidth = 88.dp
   val density = LocalDensity.current
-  val leftRevealPx = with(density) { actionWidth.toPx() }
+  val leftRevealPx = with(density) { (actionWidth * if (onMarkAs != null) 2 else 1).toPx() }
   // Two actions are rendered on the right; reveal their combined width so Rename is not clipped.
   val rightRevealPx = with(density) { (actionWidth * 2).toPx() }
   val thresholdPx = with(density) { 56.dp.toPx() }
@@ -70,8 +74,11 @@ fun SwipeableVideoActions(
   val reduceMotion = LocalMotionPolicy.current.reduceMotion
   val currentIsWatched by rememberUpdatedState(isWatched)
   val currentOnWatchedChange by rememberUpdatedState(onWatchedChange)
+  val currentOnMarkAs by rememberUpdatedState(onMarkAs)
   var offsetX by remember(itemKey) { mutableFloatStateOf(0f) }
   var settleJob by remember(itemKey) { androidx.compose.runtime.mutableStateOf<Job?>(null) }
+  var markHoldJob by remember(itemKey) { androidx.compose.runtime.mutableStateOf<Job?>(null) }
+  var markHoldTriggered by remember(itemKey) { androidx.compose.runtime.mutableStateOf(false) }
 
   fun settle(
     target: Float,
@@ -108,12 +115,13 @@ fun SwipeableVideoActions(
         .clip(shape)
         .background(MaterialTheme.colorScheme.surface),
   ) {
-    // Swipe right → reveal left action (Watched/Unwatch)
+    // Swipe right → reveal the quick watched toggle and, on video lists, Mark as.
     if (offsetX > 0f) {
       val progress = (offsetX / leftRevealPx).coerceIn(0f, 1f)
-      Box(
+      Row(
         modifier = Modifier.matchParentSize(),
-        contentAlignment = Alignment.CenterStart,
+        horizontalArrangement = Arrangement.Start,
+        verticalAlignment = Alignment.CenterVertically,
       ) {
         SwipePillAction(
           label = if (isWatched) "Unwatch" else "Watched",
@@ -122,8 +130,24 @@ fun SwipeableVideoActions(
           contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
           width = actionWidth,
           progress = progress,
-          onClick = null,
+          onClick =
+            if (currentOnMarkAs != null) {
+              { settle(0f) { currentOnWatchedChange(!currentIsWatched) } }
+            } else {
+              null
+            },
         )
+        if (currentOnMarkAs != null) {
+          SwipePillAction(
+            label = stringResource(R.string.video_mark_as_action),
+            icon = Icons.RoundedFilled.MoreVert,
+            background = MaterialTheme.colorScheme.secondaryContainer,
+            contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+            width = actionWidth,
+            progress = progress,
+            onClick = { settle(0f, currentOnMarkAs) },
+          )
+        }
       }
     }
 
@@ -164,24 +188,55 @@ fun SwipeableVideoActions(
           .background(MaterialTheme.colorScheme.surface)
           .then(
             if (enabled) {
-              Modifier.pointerInput(itemKey, leftRevealPx, rightRevealPx) {
+              Modifier.pointerInput(itemKey, leftRevealPx, rightRevealPx, thresholdPx, onMarkAs != null) {
                 detectHorizontalDragGestures(
-                  onDragStart = { settleJob?.cancel() },
+                  onDragStart = {
+                    settleJob?.cancel()
+                    markHoldJob?.cancel()
+                    markHoldJob = null
+                    markHoldTriggered = false
+                  },
                   onHorizontalDrag = { change, dragAmount ->
                     change.consume()
                     offsetX = (offsetX + dragAmount).coerceIn(-leftRevealPx, rightRevealPx)
+                    if (currentOnMarkAs != null && offsetX >= thresholdPx && markHoldJob == null && !markHoldTriggered) {
+                      markHoldJob =
+                        scope.launch {
+                          delay(MARK_SHEET_HOLD_MILLIS)
+                          if (offsetX >= thresholdPx) {
+                            markHoldTriggered = true
+                            currentOnMarkAs?.invoke()
+                          }
+                        }
+                    } else if (offsetX < thresholdPx) {
+                      markHoldJob?.cancel()
+                      markHoldJob = null
+                    }
                   },
                   onDragEnd = {
+                    markHoldJob?.cancel()
+                    markHoldJob = null
                     when {
+                      markHoldTriggered -> settle(0f)
                       offsetX >= thresholdPx -> {
-                        val targetWatched = !currentIsWatched
-                        settle(0f) { currentOnWatchedChange(targetWatched) }
+                        if (currentOnMarkAs != null) {
+                          settle(leftRevealPx)
+                        } else {
+                          val targetWatched = !currentIsWatched
+                          settle(0f) { currentOnWatchedChange(targetWatched) }
+                        }
                       }
                       offsetX <= -thresholdPx -> settle(-rightRevealPx)
                       else -> settle(0f)
                     }
+                    markHoldTriggered = false
                   },
-                  onDragCancel = { settle(0f) },
+                  onDragCancel = {
+                    markHoldJob?.cancel()
+                    markHoldJob = null
+                    markHoldTriggered = false
+                    settle(0f)
+                  },
                 )
               }
             } else {
@@ -193,6 +248,8 @@ fun SwipeableVideoActions(
     }
   }
 }
+
+private const val MARK_SHEET_HOLD_MILLIS = 350L
 
 @Composable
 private fun SwipePillAction(

@@ -50,7 +50,6 @@ internal fun playbackStateForMarkAs(
 
 @Composable
 fun MarkAsBottomSheet(
-  videoName: String,
   onDismiss: () -> Unit,
   onMarkAs: (VideoMarkAs) -> Unit,
 ) {
@@ -60,10 +59,6 @@ fun MarkAsBottomSheet(
     dragHandle = { BottomSheetDefaults.DragHandle() },
   ) {
     Column(modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp)) {
-      Text(
-        text = stringResource(R.string.video_mark_as_title, videoName),
-        modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp),
-      )
       MarkAsBottomSheetItem(R.string.video_mark_as_new, Icons.RoundedFilled.NewReleases) {
         onMarkAs(VideoMarkAs.New)
       }

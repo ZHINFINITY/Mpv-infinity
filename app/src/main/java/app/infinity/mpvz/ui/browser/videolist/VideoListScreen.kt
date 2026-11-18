@@ -608,7 +608,6 @@ data class VideoListScreen(
 
       markAsVideo?.let { video ->
         MarkAsBottomSheet(
-          videoName = video.displayName,
           onDismiss = { markAsVideo = null },
           onMarkAs = { mark ->
             markAsVideo = null
@@ -1248,6 +1247,7 @@ internal fun VideoListContent(
                     onWatchedChange = { watched -> onWatchedChange?.invoke(videoWithInfo.video, watched) },
                     onRename = { onRename?.invoke(videoWithInfo.video) },
                     onDelete = { onDelete?.invoke(videoWithInfo.video) },
+                    onMarkAs = onMarkAs?.let { callback -> { callback(videoWithInfo.video) } },
                   ) {
                     VideoCard(
                       video = videoWithInfo.video,
@@ -1258,7 +1258,6 @@ internal fun VideoListContent(
                       isWatched = videoWithInfo.isWatched,
                       onClick = { onVideoClick(videoWithInfo.video) },
                       onLongClick = { onVideoLongClick(videoWithInfo.video) },
-                      onMarkAsClick = onMarkAs?.let { callback -> { callback(videoWithInfo.video) } },
                       onThumbClick =
                         if (tapThumbnailToSelect) {
                           { selectionManager.toggle(videoWithInfo.video) }
@@ -1324,6 +1323,7 @@ internal fun VideoListContent(
                     onWatchedChange = { watched -> onWatchedChange?.invoke(videoWithInfo.video, watched) },
                     onRename = { onRename?.invoke(videoWithInfo.video) },
                     onDelete = { onDelete?.invoke(videoWithInfo.video) },
+                    onMarkAs = onMarkAs?.let { callback -> { callback(videoWithInfo.video) } },
                   ) {
                     VideoCard(
                       video = videoWithInfo.video,
@@ -1334,7 +1334,6 @@ internal fun VideoListContent(
                       isWatched = videoWithInfo.isWatched,
                       onClick = { onVideoClick(videoWithInfo.video) },
                       onLongClick = { onVideoLongClick(videoWithInfo.video) },
-                      onMarkAsClick = onMarkAs?.let { callback -> { callback(videoWithInfo.video) } },
                       onThumbClick =
                         if (tapThumbnailToSelect) {
                           { selectionManager.toggle(videoWithInfo.video) }
