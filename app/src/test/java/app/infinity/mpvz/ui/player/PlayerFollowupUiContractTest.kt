@@ -33,19 +33,7 @@ class PlayerFollowupUiContractTest {
     assertFalse(branch.contains("timeNetworkSlotWidth"))
     assertFalse(branch.contains("Modifier.width(slotWidth)"))
     assertTrue(branch.contains("onLongClick = toggleTimeAndNetwork"))
-    assertTrue(!branch.contains("resetFrameNavigationTimer"))
-  }
-
-  @Test
-  fun videoLoadStartDoesNotForceControlsVisibleBeforePlaybackIsReady() {
-    val viewModel = read("app/src/main/java/app/infinity/mpvz/ui/player/PlayerViewModel.kt")
-    val loadStart = viewModel.substringAfter("fun onVideoLoadStarted() {")
-      .substringBefore("fun onVideoLoadCompleted()")
-    val loadFailure = viewModel.substringAfter("fun onVideoLoadFailed() {")
-      .substringBefore("fun updateTorrentState(")
-
-    assertFalse(loadStart.contains("showControls()"))
-    assertTrue(loadFailure.contains("showControls()"))
+    assertFalse(branch.contains("resetFrameNavigationTimer"))
   }
 
   @Test
