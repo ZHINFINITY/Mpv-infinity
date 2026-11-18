@@ -9,7 +9,6 @@ package app.infinity.mpvz.ui.player.controls
 
 import app.infinity.mpvz.ui.player.StatsLuaOverlay
 import app.infinity.mpvz.ui.player.DeclaredPlaybackMediaKind
-import app.infinity.mpvz.ui.player.PlaybackPhase
 import app.infinity.mpvz.ui.player.PlaybackSession
 import app.infinity.mpvz.ui.player.declaredMediaKind
 import app.infinity.mpvz.domain.torrent.TorrentStreamingState
@@ -474,17 +473,20 @@ fun PlayerControls(
     rememberDebouncedBufferingVisibility(
       enabled = showLoadingCircle && nativeEngineActive,
       stalled =
-        !nativeSnapshot.isEnded &&
-          (!nativeSnapshot.isReady || nativeSnapshot.isLoading || nativeSnapshot.isBuffering),
+        PlayerControlVisibilityPolicy.isNativePlaybackStalled(
+          isEnded = nativeSnapshot.isEnded,
+          hasError = nativeSnapshot.hasError,
+          isBuffering = nativeSnapshot.isBuffering,
+        ),
     )
   val bufferingState =
     rememberBufferingState(
       enabled = showLoadingCircle && !nativeEngineActive,
       // A torrent that has not produced a playable range yet never reaches mpv, so the engine's own
       // connecting phase has to drive the spinner directly.
-      forceVisible =
-        !nativeEngineActive &&
-          (isTorrentConnecting || playbackSessionState.phase == PlaybackPhase.LOADING),
+      // Local opens and saved-position restores are not proof of a cache stall; MPV core state
+      // below drives the indicator once playback is actually waiting for output.
+      forceVisible = !nativeEngineActive && isTorrentConnecting,
     )
   val isMpvBuffering = bufferingState.isCacheStall
   val safeAreaWindow by playerPreferences.safeAreaWindow.collectAsState()

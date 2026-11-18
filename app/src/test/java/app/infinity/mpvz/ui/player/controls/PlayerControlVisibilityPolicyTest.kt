@@ -118,6 +118,38 @@ class PlayerControlVisibilityPolicyTest {
   }
 
   @Test
+  fun nativeIndicatorRequiresActualBufferingAndIgnoresTerminalStates() {
+    assertFalse(
+      PlayerControlVisibilityPolicy.isNativePlaybackStalled(
+        isEnded = false,
+        hasError = false,
+        isBuffering = false,
+      ),
+    )
+    assertTrue(
+      PlayerControlVisibilityPolicy.isNativePlaybackStalled(
+        isEnded = false,
+        hasError = false,
+        isBuffering = true,
+      ),
+    )
+    assertFalse(
+      PlayerControlVisibilityPolicy.isNativePlaybackStalled(
+        isEnded = true,
+        hasError = false,
+        isBuffering = true,
+      ),
+    )
+    assertFalse(
+      PlayerControlVisibilityPolicy.isNativePlaybackStalled(
+        isEnded = false,
+        hasError = true,
+        isBuffering = true,
+      ),
+    )
+  }
+
+  @Test
   fun mpvUsesItsDebouncedBufferingStateAndSeekingSuppressesEitherEngine() {
     assertTrue(
       PlayerControlVisibilityPolicy.shouldShowBufferingIndicator(

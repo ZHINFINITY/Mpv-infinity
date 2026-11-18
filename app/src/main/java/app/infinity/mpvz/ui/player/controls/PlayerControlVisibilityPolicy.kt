@@ -41,4 +41,10 @@ internal object PlayerControlVisibilityPolicy {
     if (isSeeking) return false
     return if (nativeEngineActive) nativeBufferingVisible else mpvBufferingVisible
   }
+
+  fun isNativePlaybackStalled(
+    isEnded: Boolean,
+    hasError: Boolean,
+    isBuffering: Boolean,
+  ): Boolean = !isEnded && !hasError && isBuffering
 }
