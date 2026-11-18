@@ -1228,6 +1228,7 @@
   <string name="player_horizontal_flip_off">Balik horizontal</string>
   <string name="player_vertical_flip_on">Balik vertikal</string>
   <string name="player_vertical_flip_off">Balik vertikal</string>
+  <string name="player_flip_requires_hw_or_sw">Flip memerlukan decoding HW atau SW; HW+ tidak didukung.</string>
   <string name="btn_label_back">Panah Kembali</string>
   <string name="btn_label_title">Judul Video</string>
   <string name="btn_label_bookmarks">Bab / Bookmark</string>
