@@ -86,6 +86,8 @@ data class NativePlaybackSnapshot(
   val isReady: Boolean = false,
   val isBuffering: Boolean = false,
   val isLoading: Boolean = false,
+  val isLocalSource: Boolean = false,
+  val hasRenderedFirstFrame: Boolean = false,
   val isEnded: Boolean = false,
   val positionMs: Long = 0L,
   val durationMs: Long = 0L,
@@ -717,6 +719,7 @@ class NativeMedia3Engine internal constructor(
       val elapsed = preparationStartedAtMs.takeIf { it > 0L }?.let { SystemClock.elapsedRealtime() - it }
       Log.d(logTag, "first frame rendered uri=$uri prepareElapsedMs=$elapsed")
       _hasRenderedFirstFrame.value = true
+      publishPlaybackSnapshot()
       attachedView?.post {
         ensureLibassRenderer()
         configureSubtitleView()
@@ -2105,6 +2108,9 @@ class NativeMedia3Engine internal constructor(
     media3FlowSink?.release()
   }
 
+  private fun isPreparedSourceLocal(): Boolean =
+    preparationUri?.toString()?.let { shouldBypassNativeReadCache(it) } == true
+
   private fun publishSnapshot() {
     val groups = player.currentTracks.groups
     val trackChapters = groups.flatMap { group ->
@@ -2194,6 +2200,8 @@ class NativeMedia3Engine internal constructor(
       isReady = player.playbackState == Player.STATE_READY,
       isBuffering = player.playbackState == Player.STATE_BUFFERING,
       isLoading = player.isLoading,
+      isLocalSource = isPreparedSourceLocal(),
+      hasRenderedFirstFrame = _hasRenderedFirstFrame.value,
       isEnded = player.playbackState == Player.STATE_ENDED,
       positionMs = (pendingSeekDisplayPositionMs ?: player.currentPosition).coerceAtLeast(0L),
       durationMs = reportedDurationMs,
@@ -2264,6 +2272,8 @@ class NativeMedia3Engine internal constructor(
       isReady = player.playbackState == Player.STATE_READY,
       isBuffering = player.playbackState == Player.STATE_BUFFERING,
       isLoading = player.isLoading,
+      isLocalSource = isPreparedSourceLocal(),
+      hasRenderedFirstFrame = _hasRenderedFirstFrame.value,
       isEnded = player.playbackState == Player.STATE_ENDED,
       positionMs = (pendingSeekDisplayPositionMs ?: player.currentPosition).coerceAtLeast(0L),
       durationMs = reportedDurationMs,

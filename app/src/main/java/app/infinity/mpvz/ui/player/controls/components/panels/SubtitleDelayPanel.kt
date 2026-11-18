@@ -44,9 +44,12 @@ import app.infinity.mpvz.ui.icons.Icon
 import app.infinity.mpvz.ui.icons.Icons
 import app.infinity.mpvz.ui.theme.spacing
 import app.infinity.mpvz.ui.utils.currentMpvConfigOverrideOptions
+import java.util.Locale
 import kotlinx.coroutines.delay
 import org.koin.compose.koinInject
 import kotlin.math.roundToInt
+
+internal fun formatDelaySeconds(value: Float): String = String.format(Locale.US, "%.2f", value)
 
 @Composable
 fun SubtitleDelayPanel(
@@ -189,7 +192,7 @@ fun DelayCardContent( // Renamed from DelayCard and removed the Card wrapper
       },
       increaseIcon = Icons.RoundedFilled.Add,
       decreaseIcon = Icons.RoundedFilled.Remove,
-      valueFormatter = { "%.1f".format(it) },
+      valueFormatter = { formatDelaySeconds(it) },
       enabled = delayControlEnabled,
     )
     Column(

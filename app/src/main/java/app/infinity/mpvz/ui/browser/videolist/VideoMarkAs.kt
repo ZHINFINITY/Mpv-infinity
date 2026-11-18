@@ -7,9 +7,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.BottomSheetDefaults
 import androidx.compose.material3.ListItem
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
@@ -18,6 +16,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import app.infinity.mpvz.R
 import app.infinity.mpvz.database.entities.PlaybackStateEntity
+import app.infinity.mpvz.ui.components.GlassModalBottomSheet
 import app.infinity.mpvz.ui.icons.AppIcon
 import app.infinity.mpvz.ui.icons.Icon
 import app.infinity.mpvz.ui.icons.Icons
@@ -53,10 +52,9 @@ fun MarkAsBottomSheet(
   onDismiss: () -> Unit,
   onMarkAs: (VideoMarkAs) -> Unit,
 ) {
-  ModalBottomSheet(
+  GlassModalBottomSheet(
     onDismissRequest = onDismiss,
     sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
-    dragHandle = { BottomSheetDefaults.DragHandle() },
   ) {
     Column(modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp)) {
       MarkAsBottomSheetItem(R.string.video_mark_as_new, Icons.RoundedFilled.NewReleases) {

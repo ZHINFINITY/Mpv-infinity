@@ -12,6 +12,7 @@ import app.infinity.mpvz.ui.player.DeclaredPlaybackMediaKind
 import app.infinity.mpvz.ui.player.PlaybackPhase
 import app.infinity.mpvz.ui.player.PlaybackSession
 import app.infinity.mpvz.ui.player.declaredMediaKind
+import app.infinity.mpvz.ui.player.shouldPauseForCache
 import app.infinity.mpvz.domain.torrent.TorrentStreamingState
 import app.infinity.mpvz.domain.torrent.formatTorrentBytes
 import app.infinity.mpvz.domain.torrent.formatTorrentSpeed
@@ -460,6 +461,9 @@ fun PlayerControls(
   val torrentState by viewModel.torrentState.collectAsState()
   val videoOpenAnimState by viewModel.videoOpenAnimationState.collectAsState()
   val isWaitingForVideo = videoOpenAnimState.isWaitingForVideo
+  val isLocalPlaybackStartup =
+    playbackSessionState.currentItem?.let { !shouldPauseForCache(it) } == true &&
+      (playbackSessionState.phase == PlaybackPhase.LOADING || isWaitingForVideo)
   val showLoadingCircle by playerPreferences.showLoadingCircle.collectAsState()
   val embeddedTranslatedSubtitle by viewModel.embeddedTranslatedSubtitle.collectAsState()
 
@@ -470,23 +474,34 @@ fun PlayerControls(
   val nativeSnapshot by activity?.nativePlaybackSnapshot?.collectAsState()
     ?: remember { mutableStateOf(NativePlaybackSnapshot()) }
   val nativeEngineActive = activity?.isNativeEngineActive() == true
+  // Keep a remote-backed content URI eligible for real buffering even when its DataSource is local.
+  val isLocalNativeSource =
+    nativeSnapshot.isLocalSource &&
+      (playbackSessionState.currentItem?.let { !shouldPauseForCache(it) } ?: true)
   val nativeBufferingVisible =
     rememberDebouncedBufferingVisibility(
       enabled = showLoadingCircle && nativeEngineActive,
-      stalled =
-        !nativeSnapshot.isEnded &&
-          (!nativeSnapshot.isReady || nativeSnapshot.isLoading || nativeSnapshot.isBuffering),
+      stalled = PlayerControlVisibilityPolicy.isNativePlaybackStalled(
+        isEnded = nativeSnapshot.isEnded,
+        isReady = nativeSnapshot.isReady,
+        isLoading = nativeSnapshot.isLoading,
+        isBuffering = nativeSnapshot.isBuffering,
+        isLocalSource = isLocalNativeSource,
+        hasRenderedFirstFrame = nativeSnapshot.hasRenderedFirstFrame,
+      ),
     )
   val bufferingState =
     rememberBufferingState(
       enabled = showLoadingCircle && !nativeEngineActive,
       // A torrent that has not produced a playable range yet never reaches mpv, so the engine's own
       // connecting phase has to drive the spinner directly.
-      forceVisible =
-        !nativeEngineActive &&
-          (isTorrentConnecting || playbackSessionState.phase == PlaybackPhase.LOADING),
+      forceVisible = PlayerControlVisibilityPolicy.shouldForceMpvBufferingIndicator(
+        nativeEngineActive = nativeEngineActive,
+        torrentConnecting = isTorrentConnecting,
+      ),
+      suppressStartupStalls = isLocalPlaybackStartup,
     )
-  val isMpvBuffering = bufferingState.isCacheStall
+  val isMpvBuffering = bufferingState.isCacheStall && !isLocalPlaybackStartup
   val safeAreaWindow by playerPreferences.safeAreaWindow.collectAsState()
   val safeAreaInsetModifier =
     if (safeAreaWindow) {

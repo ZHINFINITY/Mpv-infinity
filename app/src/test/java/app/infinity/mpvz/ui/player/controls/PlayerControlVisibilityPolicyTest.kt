@@ -1,6 +1,7 @@
 package app.infinity.mpvz.ui.player.controls
 
 import app.infinity.mpvz.ui.player.controls.components.BufferingVisibilityDebouncePolicy
+import app.infinity.mpvz.ui.player.controls.components.MpvBufferingVisibilityPolicy
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -133,6 +134,102 @@ class PlayerControlVisibilityPolicyTest {
         nativeBufferingVisible = true,
         mpvBufferingVisible = true,
         isSeeking = true,
+      ),
+    )
+  }
+
+  @Test
+  fun nativeLocalStartupWaitIsNotBufferingButRemoteAndPostFirstFrameStallsAre() {
+    assertFalse(
+      PlayerControlVisibilityPolicy.isNativePlaybackStalled(
+        isEnded = false,
+        isReady = false,
+        isLoading = true,
+        isBuffering = true,
+        isLocalSource = true,
+        hasRenderedFirstFrame = false,
+      ),
+    )
+    assertTrue(
+      PlayerControlVisibilityPolicy.isNativePlaybackStalled(
+        isEnded = false,
+        isReady = false,
+        isLoading = true,
+        isBuffering = false,
+        isLocalSource = false,
+        hasRenderedFirstFrame = false,
+      ),
+    )
+    assertTrue(
+      PlayerControlVisibilityPolicy.isNativePlaybackStalled(
+        isEnded = false,
+        isReady = true,
+        isLoading = false,
+        isBuffering = true,
+        isLocalSource = true,
+        hasRenderedFirstFrame = true,
+      ),
+    )
+    assertFalse(
+      PlayerControlVisibilityPolicy.isNativePlaybackStalled(
+        isEnded = true,
+        isReady = false,
+        isLoading = true,
+        isBuffering = true,
+        isLocalSource = false,
+        hasRenderedFirstFrame = true,
+      ),
+    )
+  }
+
+  @Test
+  fun localMpvStartupCoreIdleIsSuppressedButNetworkAndTorrentStallsRemainVisible() {
+    val localStartupStall = MpvBufferingVisibilityPolicy.isStalled(
+      enabled = true,
+      forceVisible = false,
+      suppressStartupStalls = true,
+      paused = false,
+      eofReached = false,
+      idleActive = false,
+      isCacheStall = false,
+      coreIdle = true,
+    )
+    assertFalse(localStartupStall)
+
+    val networkCacheStall = MpvBufferingVisibilityPolicy.isStalled(
+      enabled = true,
+      forceVisible = false,
+      suppressStartupStalls = false,
+      paused = false,
+      eofReached = false,
+      idleActive = false,
+      isCacheStall = true,
+      coreIdle = false,
+    )
+    assertTrue(networkCacheStall)
+
+    assertTrue(
+      MpvBufferingVisibilityPolicy.isStalled(
+        enabled = true,
+        forceVisible = true,
+        suppressStartupStalls = true,
+        paused = true,
+        eofReached = true,
+        idleActive = true,
+        isCacheStall = false,
+        coreIdle = false,
+      ),
+    )
+    assertFalse(
+      PlayerControlVisibilityPolicy.shouldForceMpvBufferingIndicator(
+        nativeEngineActive = true,
+        torrentConnecting = true,
+      ),
+    )
+    assertTrue(
+      PlayerControlVisibilityPolicy.shouldForceMpvBufferingIndicator(
+        nativeEngineActive = false,
+        torrentConnecting = true,
       ),
     )
   }
