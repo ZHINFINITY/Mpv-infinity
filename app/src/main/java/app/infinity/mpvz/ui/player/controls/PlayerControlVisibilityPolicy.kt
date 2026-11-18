@@ -45,8 +45,6 @@ internal object PlayerControlVisibilityPolicy {
   fun isNativePlaybackStalled(
     isEnded: Boolean,
     hasError: Boolean,
-    isReady: Boolean,
-    isLoading: Boolean,
     isBuffering: Boolean,
-  ): Boolean = !isEnded && !hasError && (!isReady || isLoading || isBuffering)
+  ): Boolean = !isEnded && !hasError && isBuffering
 }

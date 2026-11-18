@@ -1094,6 +1094,8 @@ class PlayerActivity :
   }
   private fun handleNativePlaybackEnded() {
     if (!isNativeEngineActive()) return
+    // Commit the ended item's final position/watched state before repeat or queue advancement.
+    saveVideoPlaybackState(fileName, immediate = true)
     val autoplay = playerPreferences.autoplayNextVideo.get()
     when {
       viewModel.shouldRepeatCurrentFile() -> {
@@ -2812,10 +2814,9 @@ class PlayerActivity :
         }.collect { (position, flips) ->
           val (zoom, panX, panY) = position
           val scale = 2f.pow(zoom)
-          val scaleX = if (flips.isMirrored) -scale else scale
-          val scaleY = if (flips.isVerticalFlipped) -scale else scale
-          binding.player.scaleX = scaleX
-          binding.player.scaleY = scaleY
+          // MPV applies flips with its hflip/vflip filters; a second negative view scale cancels them.
+          binding.player.scaleX = scale
+          binding.player.scaleY = scale
           binding.player.translationX = panX
           binding.player.translationY = panY
           // Transform only the native video surface, not the Media3 PlayerView container. This

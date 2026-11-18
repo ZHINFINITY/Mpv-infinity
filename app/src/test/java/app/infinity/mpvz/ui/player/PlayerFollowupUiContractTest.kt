@@ -705,6 +705,9 @@ class PlayerFollowupUiContractTest {
     assertTrue(fileSystemScreen.contains("videoFilesWithPlayback = searchVideoFilesWithPlayback"))
     assertTrue(fileSystemScreen.contains("newVideoIds = searchNewVideoIds"))
     assertTrue(fileSystemViewModel.contains("setExplicitVideoWatchedOverride(getApplication(), video.path, watched)"))
+    assertTrue(fileSystemViewModel.contains("val manualOverride = explicitVideoWatchedOverride(getApplication(), video.path)"))
+    assertTrue(fileSystemViewModel.contains("explicitlyMarkedUnwatched = manualOverride == false"))
+    assertTrue(fileSystemViewModel.contains("explicitlyMarkedWatched = manualOverride == true"))
     assertTrue(mediaLibraryViewModel.contains("setExplicitVideoWatchedOverride(getApplication(), video.path, watched)"))
     assertTrue(mediaLibraryViewModel.contains("MediaLibraryEvents.notifyChanged()"))
   }
@@ -736,6 +739,35 @@ class PlayerFollowupUiContractTest {
     assertTrue(mediaLibrary.contains("browserPreferences.watchedThreshold.changes()"))
     assertTrue(folders.contains("browserPreferences.watchedThreshold.changes()"))
     assertTrue(folders.contains("val isWatched = explicitlyWatched ||"))
+  }
+
+  @Test
+  fun localLoadingIsNotForcedAsBufferingAndNativeFinishAndFlipsStayWired() {
+    val controls = read("app/src/main/java/app/infinity/mpvz/ui/player/controls/PlayerControls.kt")
+    val activity = read("app/src/main/java/app/infinity/mpvz/ui/player/PlayerActivity.kt")
+    val viewModel = read("app/src/main/java/app/infinity/mpvz/ui/player/PlayerViewModel.kt")
+    val nativeStallInputs = controls
+      .substringAfter("PlayerControlVisibilityPolicy.isNativePlaybackStalled(")
+      .substringBefore("),")
+    val mpvForceInputs = controls.substringAfter("forceVisible =").substringBefore(")")
+    val nativeEndHandler = activity
+      .substringAfter("private fun handleNativePlaybackEnded()")
+      .substringBefore("private fun handleNativePlaybackError")
+    val transformObserver = activity
+      .substringAfter("val scale = 2f.pow(zoom)")
+      .substringBefore("if (canIssueMpvCommands())")
+
+    assertTrue(nativeStallInputs.contains("isBuffering = nativeSnapshot.isBuffering"))
+    assertFalse(nativeStallInputs.contains("nativeSnapshot.isLoading"))
+    assertTrue(mpvForceInputs.contains("isTorrentConnecting"))
+    assertFalse(mpvForceInputs.contains("PlaybackPhase.LOADING"))
+    assertTrue(nativeEndHandler.indexOf("saveVideoPlaybackState(fileName, immediate = true)") in 0 until nativeEndHandler.indexOf("when {"))
+    assertTrue(transformObserver.contains("binding.player.scaleX = scale"))
+    assertTrue(transformObserver.contains("binding.player.scaleY = scale"))
+    assertFalse(transformObserver.contains("binding.player.scaleX = if (flips.isMirrored)"))
+    assertTrue(transformObserver.contains("this.scaleX = if (flips.isMirrored) -scale else scale"))
+    assertTrue(viewModel.contains("@mpvinfinity_hflip:hflip"))
+    assertTrue(viewModel.contains("@mpvinfinity_vflip:vflip"))
   }
 
   @Test
