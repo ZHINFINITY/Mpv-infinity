@@ -480,6 +480,7 @@ class FileSystemBrowserViewModel(
               getApplication(),
               path,
               showAllFileTypes = false,
+              useFastCount = true,
               forceFileSystemCheck = forceFileSystemCheck,
             ).onSuccess { items ->
               // Get previous count for this path

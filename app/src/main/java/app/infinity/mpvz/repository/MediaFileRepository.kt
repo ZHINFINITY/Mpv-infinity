@@ -624,26 +624,36 @@ object MediaFileRepository : KoinComponent {
 
         val items = mutableListOf<FileSystemItem>()
 
-        // A leaf directory cannot contain child folders, so avoid rebuilding the complete
-        // recursive tree just to discover an empty folder list. This keeps video-only folders
-        // responsive even when the storage volume contains a large media tree.
         val scanOptions = currentScanOptions()
-        val hasDirectSubdirectories = directory.listFiles()?.any { it.isDirectory } == true
         val folders =
-          if (!hasDirectSubdirectories) {
-            emptyList()
-          } else {
+          if (useFastCount) {
             val (showNewLabels, thresholdDays, playedMediaTitles) = getTreeViewNewBadgeParams()
-            TreeViewScanner.getFoldersInDirectory(
-              context = context,
+            TreeViewScanner.getFoldersInDirectoryFast(
               parentPath = path,
               options = scanOptions,
-              forceFileSystemCheck = forceFileSystemCheck,
               playedMediaTitles = playedMediaTitles,
               showNewLabels = showNewLabels,
               thresholdDays = thresholdDays,
               maxAutoFlattenLevels = browserPreferences.treeFlattenDepth.get().maxLevels,
             )
+          } else {
+            // Preserve recursive counts/flattening for callers that request the complete tree.
+            val hasDirectSubdirectories = directory.listFiles()?.any { it.isDirectory } == true
+            if (!hasDirectSubdirectories) {
+              emptyList()
+            } else {
+              val (showNewLabels, thresholdDays, playedMediaTitles) = getTreeViewNewBadgeParams()
+              TreeViewScanner.getFoldersInDirectory(
+                context = context,
+                parentPath = path,
+                options = scanOptions,
+                forceFileSystemCheck = forceFileSystemCheck,
+                playedMediaTitles = playedMediaTitles,
+                showNewLabels = showNewLabels,
+                thresholdDays = thresholdDays,
+                maxAutoFlattenLevels = browserPreferences.treeFlattenDepth.get().maxLevels,
+              )
+            }
           }
         folders.forEach { folderData ->
           items.add(
@@ -683,85 +693,48 @@ object MediaFileRepository : KoinComponent {
       }
     }
 
-  /**
-   * Gets all storage volume roots with recursive video counts
-   */
+  /** Enumerates mounted roots without recursively scanning their contents. */
   suspend fun getStorageRoots(
     context: Context,
-    forceFileSystemCheck: Boolean = false,
+    @Suppress("UNUSED_PARAMETER") forceFileSystemCheck: Boolean = false,
   ): List<FileSystemItem.Folder> =
     withContext(Dispatchers.IO) {
       val roots = mutableListOf<FileSystemItem.Folder>()
 
       try {
-        val (showNewLabels, thresholdDays, playedMediaTitles) = getTreeViewNewBadgeParams()
-
-        // Primary storage (internal)
+        // Root selection and the single-volume auto-entry check need paths, not recursive counts.
+        // Leave counts at zero so FolderCard hides the chip until the user opens the volume.
         val primaryStorage = Environment.getExternalStorageDirectory()
         if (primaryStorage.exists() && primaryStorage.canRead()) {
-          val primaryPath = primaryStorage.absolutePath
-
-          // Get recursive count for this storage root
-          val folderData =
-            TreeViewScanner.getFolderDataRecursive(
-              context,
-              primaryPath,
-              currentScanOptions(),
-              forceFileSystemCheck,
-              playedMediaTitles,
-              showNewLabels,
-              thresholdDays,
-            )
-
-          roots.add(
+          roots +=
             FileSystemItem.Folder(
               name = "Internal Storage",
-              path = primaryPath,
+              path = primaryStorage.absolutePath,
               lastModified = primaryStorage.lastModified(),
-              videoCount = folderData?.videoCount ?: 0,
-              totalSize = folderData?.totalSize ?: 0L,
-              totalDuration = folderData?.totalDuration ?: 0L,
+              videoCount = 0,
+              totalSize = 0L,
+              totalDuration = 0L,
               hasSubfolders = true,
-              newCount = folderData?.newCount ?: 0,
-            ),
-          )
+              newCount = 0,
+            )
         }
 
-        // External volumes (SD cards, USB OTG)
-        val externalVolumes = StorageVolumeUtils.getExternalStorageVolumes(context)
-        for (volume in externalVolumes) {
-          val volumePath = StorageVolumeUtils.getVolumePath(volume)
-          if (volumePath != null) {
-            val volumeDir = File(volumePath)
-            if (volumeDir.exists() && volumeDir.canRead()) {
-              val volumeName = volume.getDescription(context)
+        for (volume in StorageVolumeUtils.getExternalStorageVolumes(context)) {
+          val volumePath = StorageVolumeUtils.getVolumePath(volume) ?: continue
+          val volumeDir = File(volumePath)
+          if (!volumeDir.exists() || !volumeDir.canRead()) continue
 
-              // Get recursive count for this storage root
-              val folderData =
-                TreeViewScanner.getFolderDataRecursive(
-                  context,
-                  volumePath,
-                  currentScanOptions(),
-                  forceFileSystemCheck,
-                  playedMediaTitles,
-                  showNewLabels,
-                  thresholdDays,
-                )
-
-              roots.add(
-                FileSystemItem.Folder(
-                  name = volumeName,
-                  path = volumeDir.absolutePath,
-                  lastModified = volumeDir.lastModified(),
-                  videoCount = folderData?.videoCount ?: 0,
-                  totalSize = folderData?.totalSize ?: 0L,
-                  totalDuration = folderData?.totalDuration ?: 0L,
-                  hasSubfolders = true,
-                  newCount = folderData?.newCount ?: 0,
-                ),
-              )
-            }
-          }
+          roots +=
+            FileSystemItem.Folder(
+              name = volume.getDescription(context),
+              path = volumeDir.absolutePath,
+              lastModified = volumeDir.lastModified(),
+              videoCount = 0,
+              totalSize = 0L,
+              totalDuration = 0L,
+              hasSubfolders = true,
+              newCount = 0,
+            )
         }
       } catch (e: Exception) {
         Log.e(TAG, "Error getting storage roots", e)
