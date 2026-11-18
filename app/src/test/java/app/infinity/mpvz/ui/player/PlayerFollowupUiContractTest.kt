@@ -770,7 +770,9 @@ class PlayerFollowupUiContractTest {
       .substringBefore("if (canIssueMpvCommands())")
 
     assertTrue(nativeStallInputs.contains("isBuffering = nativeSnapshot.isBuffering"))
-    assertFalse(nativeStallInputs.contains("nativeSnapshot.isLoading"))
+    assertTrue(nativeStallInputs.contains("isLoading = nativeSnapshot.isLoading"))
+    assertTrue(nativeStallInputs.contains("isLocalSource = isLocalNativeSource"))
+    assertTrue(nativeStallInputs.contains("hasRenderedFirstFrame = nativeSnapshot.hasRenderedFirstFrame"))
     assertTrue(mpvForceInputs.contains("isTorrentConnecting"))
     assertFalse(mpvForceInputs.contains("PlaybackPhase.LOADING"))
     assertTrue(nativeEndHandler.indexOf("saveVideoPlaybackState(fileName, immediate = true)") in 0 until nativeEndHandler.indexOf("when {"))
