@@ -362,7 +362,6 @@ private fun retainPinnedFlowDiagnostics(
       .takeLast(FLOW_RENDERER_CONFIG_PIN_COUNT)
   val failures = entries.filter(DebugLogEntry::isFlowFailureRecord).takeLast(FLOW_FAILURE_ENTRY_PIN_COUNT)
   val latestPresentMode = entries.filter { it.message.contains("event=present_mode", ignoreCase = true) }.takeLast(1)
-      .mapNotNull { it.lastOrNull() }
   val latestQcomCapabilities = entries.filter { it.message.contains("event=qcom_gpu_timing", ignoreCase = true) }.takeLast(1)
   val latestQcomDispatchTiming = entries.filter { it.message.contains("event=qcom_dispatch_timing", ignoreCase = true) }.takeLast(1)
   val latestQcomBlockMatchCapability =
