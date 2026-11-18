@@ -35,6 +35,26 @@ class PlayerControlVisibilityPolicyTest {
   }
 
   @Test
+  fun sharedLandscapeRowKeepsPlaybackControlsVisibleWhileBuffering() {
+    val controlsVisible = PlayerControlVisibilityPolicy.areButtonsVisible(true, false, false)
+
+    assertTrue(
+      PlayerControlVisibilityPolicy.shouldShowPlaybackControls(
+        controlsVisible = controlsVisible,
+        bufferingIndicatorVisible = true,
+        sharedLandscapeRow = true,
+      ),
+    )
+    assertFalse(
+      PlayerControlVisibilityPolicy.shouldShowPlaybackControls(
+        controlsVisible = false,
+        bufferingIndicatorVisible = true,
+        sharedLandscapeRow = true,
+      ),
+    )
+  }
+
+  @Test
   fun bufferingOrFirstFrameWaitDoesNotPinControlsWhenPlaybackIsPausedOrUnknown() {
     assertTrue(
       PlayerControlVisibilityPolicy.shouldAutoHideControls(
