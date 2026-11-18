@@ -16,6 +16,7 @@ import androidx.lifecycle.viewModelScope
 import app.infinity.mpvz.database.entities.PlaybackStateEntity
 import app.infinity.mpvz.domain.media.model.Video
 import app.infinity.mpvz.domain.playbackstate.repository.PlaybackStateRepository
+import app.infinity.mpvz.domain.recentlyplayed.repository.RecentlyPlayedRepository
 import app.infinity.mpvz.repository.MediaFileRepository
 import app.infinity.mpvz.ui.browser.base.BaseBrowserViewModel
 import app.infinity.mpvz.ui.player.PlaybackIdentity
@@ -94,15 +95,9 @@ internal fun buildVideoWithPlaybackInfo(
   explicitlyMarkedWatched: Boolean = false,
 ): VideoWithPlaybackInfo {
   val durationSeconds = video.duration / 1000L
-  // A manual swipe-to-unwatched writes a reset playback state (position 0, full time remaining,
-  // hasBeenWatched=false). Keep that explicit child override visible even when its parent folder
-  // is marked watched and the file is older than the automatic NEW-label age window.
-  val persistedUnwatched =
-    explicitlyMarkedUnwatched ||
-      (playbackState != null &&
-        !playbackState.hasBeenWatched &&
-        playbackState.lastPosition <= 0 &&
-        playbackState.timeRemaining >= durationSeconds - 1)
+  // Only the explicit override is allowed to force NEW. A reset playback row (including Mark as
+  // None) must not become a stale NEW override and must remain governed by the age window.
+  val persistedUnwatched = explicitlyMarkedUnwatched
   val newLabelWindowMillis = newLabelDays.toLong() * 24L * 60L * 60L * 1000L
   val videoAgeMillis = currentTimeMillis - video.dateModified * 1000L
   val isWithinNewLabelWindow =
@@ -133,6 +128,7 @@ class VideoListViewModel(
 ) : BaseBrowserViewModel(application),
   KoinComponent {
   private val playbackStateRepository: PlaybackStateRepository by inject()
+  private val recentlyPlayedRepository: RecentlyPlayedRepository by inject()
   private val appearancePreferences: app.infinity.mpvz.preferences.AppearancePreferences by inject()
   private val browserPreferences: app.infinity.mpvz.preferences.BrowserPreferences by inject()
 
@@ -476,6 +472,59 @@ class VideoListViewModel(
         MediaLibraryEvents.notifyChanged()
       }.onFailure { error ->
         Log.e(tag, "Failed to update watched state for ${video.displayName}", error)
+        loadPlaybackInfo(_videos.value)
+      }
+    }
+  }
+
+  /** Applies the local VideoListScreen-only Mark as action. */
+  fun markAs(video: Video, markAs: VideoMarkAs) {
+    viewModelScope.launch(Dispatchers.IO) {
+      val durationSeconds = (video.duration / 1000L).coerceIn(0L, Int.MAX_VALUE.toLong()).toInt()
+      val canonicalIdentifier = canonicalPlaybackIdentifier(video)
+      runCatching {
+        val current = findPlaybackState(video) ?: emptyPlaybackState(video, durationSeconds)
+        playbackStateRepository.upsert(
+          playbackStateForMarkAs(current, markAs, durationSeconds).copy(mediaTitle = canonicalIdentifier),
+        )
+
+        val overrides = getApplication<Application>()
+          .getSharedPreferences("video_watched_overrides", android.content.Context.MODE_PRIVATE)
+        val values = overrides.getStringSet("values", emptySet())?.toMutableSet() ?: mutableSetOf()
+        values.removeIf { it.startsWith("${video.path}\u001f") }
+        when (markAs) {
+          VideoMarkAs.New -> values.add("${video.path}\u001f0")
+          VideoMarkAs.Finished -> values.add("${video.path}\u001f1")
+          VideoMarkAs.LastPlayed, VideoMarkAs.None -> Unit
+        }
+        overrides.edit().putStringSet("values", values).apply()
+
+        when (markAs) {
+          VideoMarkAs.New, VideoMarkAs.None -> recentlyPlayedRepository.deleteByFilePath(video.path)
+          VideoMarkAs.LastPlayed -> {
+            recentlyPlayedRepository.deleteByFilePath(video.path)
+            RecentlyPlayedOps.addRecentlyPlayed(
+              context = getApplication(), filePath = video.path, fileName = video.displayName,
+              videoTitle = video.title, duration = video.duration, fileSize = video.size,
+              width = video.width, height = video.height, launchSource = "video_list",
+            )
+          }
+          VideoMarkAs.Finished -> {
+            // Manual finish is retained in history but excluded from the active highlight query.
+            recentlyPlayedRepository.deleteByFilePath(video.path)
+            RecentlyPlayedOps.addRecentlyPlayed(
+              context = getApplication(), filePath = video.path, fileName = video.displayName,
+              videoTitle = video.title, duration = video.duration, fileSize = video.size,
+              width = video.width, height = video.height, launchSource = "manual_finished",
+            )
+          }
+        }
+
+        PlaybackStateEvents.notifyChanged(canonicalIdentifier)
+        MediaLibraryEvents.notifyChanged()
+        loadPlaybackInfo(_videos.value)
+      }.onFailure { error ->
+        Log.e(tag, "Failed to mark ${video.displayName} as $markAs", error)
         loadPlaybackInfo(_videos.value)
       }
     }

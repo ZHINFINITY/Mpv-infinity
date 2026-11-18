@@ -237,6 +237,7 @@ data class VideoListScreen(
     val compressorDialogOpen = rememberSaveable { mutableStateOf(false) }
     var swipeRenameVideo by remember { mutableStateOf<Video?>(null) }
     var swipeDeleteVideo by remember { mutableStateOf<Video?>(null) }
+    var markAsVideo by remember { mutableStateOf<Video?>(null) }
 
     // Copy/Move state
     val folderPickerOpen = rememberSaveable { mutableStateOf(false) }
@@ -558,6 +559,7 @@ data class VideoListScreen(
             }
           },
           onVideoLongClick = { video -> selectionManager.handleLongClick(video) },
+          onMarkAs = if (!isAudio) ({ video -> markAsVideo = video }) else null,
           onWatchedChange = viewModel::setWatched,
           onRename = { video -> swipeRenameVideo = video },
           onDelete = { video -> swipeDeleteVideo = video },
@@ -602,6 +604,17 @@ data class VideoListScreen(
                 .padding(bottom = 0.dp),
           )
         }
+      }
+
+      markAsVideo?.let { video ->
+        MarkAsBottomSheet(
+          videoName = video.displayName,
+          onDismiss = { markAsVideo = null },
+          onMarkAs = { mark ->
+            markAsVideo = null
+            viewModel.markAs(video, mark)
+          },
+        )
       }
 
       // Sort Dialog
@@ -898,6 +911,7 @@ internal fun VideoListContent(
   selectionManager: SelectionManager<Video, Long>,
   onVideoClick: (Video) -> Unit,
   onVideoLongClick: (Video) -> Unit,
+  onMarkAs: ((Video) -> Unit)? = null,
   onWatchedChange: ((Video, Boolean) -> Unit)? = null,
   onRename: ((Video) -> Unit)? = null,
   onDelete: ((Video) -> Unit)? = null,
@@ -1244,6 +1258,7 @@ internal fun VideoListContent(
                       isWatched = videoWithInfo.isWatched,
                       onClick = { onVideoClick(videoWithInfo.video) },
                       onLongClick = { onVideoLongClick(videoWithInfo.video) },
+                      onMarkAsClick = onMarkAs?.let { callback -> { callback(videoWithInfo.video) } },
                       onThumbClick =
                         if (tapThumbnailToSelect) {
                           { selectionManager.toggle(videoWithInfo.video) }
@@ -1319,6 +1334,7 @@ internal fun VideoListContent(
                       isWatched = videoWithInfo.isWatched,
                       onClick = { onVideoClick(videoWithInfo.video) },
                       onLongClick = { onVideoLongClick(videoWithInfo.video) },
+                      onMarkAsClick = onMarkAs?.let { callback -> { callback(videoWithInfo.video) } },
                       onThumbClick =
                         if (tapThumbnailToSelect) {
                           { selectionManager.toggle(videoWithInfo.video) }

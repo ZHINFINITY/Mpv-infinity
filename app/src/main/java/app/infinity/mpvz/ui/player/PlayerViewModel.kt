@@ -4466,11 +4466,16 @@ class PlayerViewModel(
         val wasOff = primarySid <= 0 && secondarySid <= 0
         val nextSelection = toggleMpvSubtitleSelection(primarySid, secondarySid, id)
         if (nextSelection.primaryId == primarySid && nextSelection.secondaryId == secondarySid) return@withLock
+        val promotingSecondary = nextSelection.primaryId == secondarySid && secondarySid > 0 && nextSelection.secondaryId <= 0
+        if (promotingSecondary) {
+          if (!PlaybackSession.isCurrentGeneration(generation)) return@withLock
+          setTrackSelectionId("secondary-sid", 0)
+        }
         if (nextSelection.primaryId != primarySid) {
           if (!PlaybackSession.isCurrentGeneration(generation)) return@withLock
           setTrackSelectionId("sid", nextSelection.primaryId)
         }
-        if (nextSelection.secondaryId != secondarySid) {
+        if (nextSelection.secondaryId != secondarySid && !promotingSecondary) {
           if (!PlaybackSession.isCurrentGeneration(generation)) return@withLock
           setTrackSelectionId("secondary-sid", nextSelection.secondaryId)
         }
@@ -5081,8 +5086,14 @@ class PlayerViewModel(
     volumeSliderTimestamp.value = System.currentTimeMillis()
   }
 
-  fun changeSubtitlePositionTo(position: Int) {
+  fun changeSubtitlePositionTo(position: Int, lane: SubtitleLane = SubtitleLane.Primary) {
     val newPosition = clampSubtitlePosition(position)
+    if (lane == SubtitleLane.Secondary && !host.isNativeEngineActive()) {
+      subtitlesPreferences.secondarySubPos.set(newPosition)
+      PlaybackSession.setPropertyInt("secondary-sub-pos", newPosition)
+      playerUpdate.value = PlayerUpdates.ShowText(appContext.getString(R.string.subtitle_position_update, newPosition))
+      return
+    }
     subtitlesPreferences.subPos.set(newPosition)
     if (host.isNativeEngineActive()) {
       host.nativeSetSubtitlePosition(newPosition)
@@ -5093,8 +5104,13 @@ class PlayerViewModel(
     playerUpdate.value = PlayerUpdates.ShowText(appContext.getString(R.string.subtitle_position_update, newPosition))
   }
 
-  fun setSubtitleScale(scale: Float) {
+  fun setSubtitleScale(scale: Float, lane: SubtitleLane = SubtitleLane.Primary) {
     val clamped = scale.coerceIn(0.1f, 5f)
+    if (lane == SubtitleLane.Secondary && !host.isNativeEngineActive()) {
+      PlaybackSession.setPropertyFloat("secondary-sub-scale", clamped)
+      playerUpdate.value = PlayerUpdates.SubtitleZoom(clamped)
+      return
+    }
     if (host.isNativeEngineActive()) host.nativeSetSubtitleScale(clamped)
     else PlaybackSession.setPropertyFloat("sub-scale", clamped)
     playerUpdate.value = PlayerUpdates.SubtitleZoom(clamped)

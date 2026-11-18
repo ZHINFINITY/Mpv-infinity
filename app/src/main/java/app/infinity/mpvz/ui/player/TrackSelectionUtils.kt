@@ -34,7 +34,8 @@ internal fun toggleMpvSubtitleSelection(
   val secondary = currentSecondaryId.coerceAtLeast(0)
   if (tappedId <= 0) return MpvSubtitleSelectionIds(primary, secondary)
   return when {
-    tappedId == primary -> MpvSubtitleSelectionIds(0, secondary)
+    tappedId == primary && secondary > 0 -> MpvSubtitleSelectionIds(secondary, 0)
+    tappedId == primary -> MpvSubtitleSelectionIds(0, 0)
     tappedId == secondary -> MpvSubtitleSelectionIds(primary, 0)
     primary <= 0 -> MpvSubtitleSelectionIds(tappedId, secondary)
     secondary <= 0 -> MpvSubtitleSelectionIds(primary, tappedId)

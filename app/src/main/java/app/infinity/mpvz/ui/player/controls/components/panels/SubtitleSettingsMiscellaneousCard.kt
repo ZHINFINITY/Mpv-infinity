@@ -8,6 +8,7 @@
 package app.infinity.mpvz.ui.player.controls.components.panels
 
 import app.infinity.mpvz.ui.player.PlaybackSession
+import app.infinity.mpvz.ui.player.SubtitleLane
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -37,9 +38,11 @@ import app.infinity.mpvz.presentation.components.SliderItem
 import app.infinity.mpvz.ui.icons.Icon
 import app.infinity.mpvz.ui.icons.Icons
 import app.infinity.mpvz.ui.player.applySubtitleLayout
+import app.infinity.mpvz.ui.player.calculateSecondarySubtitlePosition
 import app.infinity.mpvz.ui.player.controls.CARDS_MAX_WIDTH
 import app.infinity.mpvz.ui.player.controls.components.sheets.toFixed
 import app.infinity.mpvz.ui.player.controls.panelCardsColors
+import app.infinity.mpvz.ui.player.resolveSecondarySubtitlePosition
 import app.infinity.mpvz.ui.preferences.components.SwitchPreference
 import app.infinity.mpvz.ui.theme.spacing
 import app.infinity.mpvz.ui.utils.currentMpvConfigOverrideOptions
@@ -118,18 +121,40 @@ fun SubtitlesMiscellaneousCard(modifier: Modifier = Modifier) {
           title = { Text(stringResource(R.string.player_sheets_sub_blend_with_video)) },
           summary = { Text(stringResource(R.string.player_sheets_sub_blend_with_video_summary)) },
         )
+        var selectedLane by remember { mutableStateOf(SubtitleLane.Primary) }
+        SubtitleLaneSelector(selected = selectedLane, onSelected = { selectedLane = it })
         val subScale by PlaybackSession.propFloat["sub-scale"].collectAsState()
+        val secondarySubScale by PlaybackSession.propFloat["secondary-sub-scale"].collectAsState()
         val subPos by PlaybackSession.propInt["sub-pos"].collectAsState()
+        val secondarySubPos by PlaybackSession.propInt["secondary-sub-pos"].collectAsState()
+        val isPrimaryLane = selectedLane == SubtitleLane.Primary
+        val scaleProperty = if (isPrimaryLane) "sub-scale" else "secondary-sub-scale"
+        val positionProperty = if (isPrimaryLane) "sub-pos" else "secondary-sub-pos"
+        val scaleFallback =
+          if (isPrimaryLane) {
+            preferences.subScale.get()
+          } else {
+            preferences.secondarySubScale.get().takeIf { it > 0f } ?: preferences.subScale.get()
+          }
+        val automaticSecondaryPosition = calculateSecondarySubtitlePosition(preferences.subPos.get())
+        val positionFallback =
+          if (isPrimaryLane) {
+            preferences.subPos.get()
+          } else {
+            resolveSecondarySubtitlePosition(automaticSecondaryPosition, preferences.secondarySubPos.get())
+          }
+        val currentScale = if (isPrimaryLane) subScale else secondarySubScale
+        val currentPosition = if (isPrimaryLane) subPos else secondarySubPos
         SliderItem(
           label = stringResource(R.string.player_sheets_sub_scale),
-          value = subScale ?: preferences.subScale.get(),
-          valueText = (subScale ?: preferences.subScale.get()).toFixed(2).toString(),
+          value = currentScale ?: scaleFallback,
+          valueText = (currentScale ?: scaleFallback).toFixed(2).toString(),
           onChange = {
-            preferences.subScale.set(it)
-            PlaybackSession.setPropertyFloat("sub-scale", it)
+            if (isPrimaryLane) preferences.subScale.set(it) else preferences.secondarySubScale.set(it)
+            PlaybackSession.setPropertyFloat(scaleProperty, it)
           },
           max = 5f,
-          enabled = scaleOptions.none(configOwnedOptions::contains),
+          enabled = scaleProperty !in configOwnedOptions,
           icon = {
             Icon(
               Icons.RoundedFilled.FormatSize,
@@ -139,14 +164,19 @@ fun SubtitlesMiscellaneousCard(modifier: Modifier = Modifier) {
         )
         SliderItem(
           label = stringResource(R.string.player_sheets_sub_position),
-          value = subPos ?: preferences.subPos.get(),
-          valueText = (subPos ?: preferences.subPos.get()).toString(),
+          value = currentPosition ?: positionFallback,
+          valueText = (currentPosition ?: positionFallback).toString(),
           onChange = {
-            preferences.subPos.set(it)
-            applySubtitleLayout(it, preferences.overrideAssSubs.get())
+            if (isPrimaryLane) {
+              preferences.subPos.set(it)
+              applySubtitleLayout(it, preferences.overrideAssSubs.get())
+            } else {
+              preferences.secondarySubPos.set(it)
+              PlaybackSession.setPropertyInt("secondary-sub-pos", it)
+            }
           },
           max = 150,
-          enabled = layoutOptions.none(configOwnedOptions::contains),
+          enabled = positionProperty !in configOwnedOptions,
           icon = {
             Icon(
               Icons.RoundedFilled.AlignVerticalCenter,
@@ -165,9 +195,11 @@ fun SubtitlesMiscellaneousCard(modifier: Modifier = Modifier) {
             enabled = miscellaneousOptions.none(configOwnedOptions::contains),
             onClick = {
               val defaultSubPos = preferences.subPos.deleteAndGet()
-              preferences.subScale.deleteAndGet().let {
-                PlaybackSession.setPropertyFloat("sub-scale", it)
-              }
+              val defaultSubScale = preferences.subScale.deleteAndGet()
+              preferences.secondarySubPos.deleteAndGet()
+              preferences.secondarySubScale.deleteAndGet()
+              PlaybackSession.setPropertyFloat("sub-scale", defaultSubScale)
+              PlaybackSession.setPropertyFloat("secondary-sub-scale", defaultSubScale)
               val defaultOverride = preferences.overrideAssSubs.deleteAndGet()
               overrideAssSubs = defaultOverride
               applySubtitleLayout(defaultSubPos, defaultOverride)

@@ -8,6 +8,7 @@
 package app.infinity.mpvz.ui.player.controls.components.panels
 
 import app.infinity.mpvz.ui.player.PlaybackSession
+import app.infinity.mpvz.ui.player.SubtitleLane
 
 import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.layout.Arrangement
@@ -54,8 +55,25 @@ fun SubtitleDelayPanel(
 ) {
   val preferences = koinInject<SubtitlesPreferences>()
   val configOwnedOptions = currentMpvConfigOverrideOptions()
-  val delayEnabled = "sub-delay" !in configOwnedOptions
-  val speedEnabled = "sub-speed" !in configOwnedOptions
+  var selectedLane by remember { mutableStateOf(SubtitleLane.Primary) }
+  val delayProperty = if (selectedLane == SubtitleLane.Primary) "sub-delay" else "secondary-sub-delay"
+  val speedProperty = if (selectedLane == SubtitleLane.Primary) "sub-speed" else "secondary-sub-speed"
+  val delayEnabled = delayProperty !in configOwnedOptions
+  val speedEnabled = speedProperty !in configOwnedOptions
+  val defaultDelayMs =
+    if (selectedLane == SubtitleLane.Primary) {
+      preferences.defaultSubDelay.get()
+    } else {
+      preferences.defaultSecondarySubDelay.get().takeUnless { it == Int.MIN_VALUE }
+        ?: preferences.defaultSubDelay.get()
+    }
+  val defaultSpeed =
+    if (selectedLane == SubtitleLane.Primary) {
+      preferences.defaultSubSpeed.get()
+    } else {
+      preferences.defaultSecondarySubSpeed.get().takeIf { it in 0.1f..10f }
+        ?: preferences.defaultSubSpeed.get()
+    }
 
   DraggablePanel(
     modifier = modifier,
@@ -63,31 +81,42 @@ fun SubtitleDelayPanel(
       SubtitleDelayTitle(onClose = onDismissRequest)
     },
   ) {
-    val delay by PlaybackSession.propDouble["sub-delay"].collectAsState()
-    val delayFloat by remember { derivedStateOf { (delay ?: 0.0).toFloat() } }
-    val speed by PlaybackSession.propDouble["sub-speed"].collectAsState()
-    val speedFloat by remember { derivedStateOf { (speed ?: 1.0).toFloat() } }
+    val delay by PlaybackSession.propDouble[delayProperty].collectAsState()
+    val delayFloat by remember(delay, defaultDelayMs) {
+      derivedStateOf { (delay ?: defaultDelayMs / 1000.0).toFloat() }
+    }
+    val speed by PlaybackSession.propDouble[speedProperty].collectAsState()
+    val speedFloat by remember(speed, defaultSpeed) {
+      derivedStateOf { (speed ?: defaultSpeed.toDouble()).toFloat() }
+    }
 
     // We unwrap the card content here because DraggablePanel already provides the card
-    SubtitleDelayCardContent(
-      delay = delayFloat,
-      onDelayChange = {
-        PlaybackSession.setPropertyDouble("sub-delay", it.toDouble())
-      },
-      speed = speedFloat,
-      onSpeedChange = { PlaybackSession.setPropertyDouble("sub-speed", it.toDouble()) },
-      onApply = {
-        if (delayEnabled) preferences.defaultSubDelay.set((delayFloat * 1000).roundToInt())
-        val currentSpeed = speed ?: 1.0
-        if (speedEnabled && currentSpeed in 0.1..10.0) preferences.defaultSubSpeed.set(currentSpeed.toFloat())
-      },
-      onReset = {
-        if (delayEnabled) PlaybackSession.setPropertyDouble("sub-delay", preferences.defaultSubDelay.get() / 1000.0)
-        if (speedEnabled) PlaybackSession.setPropertyDouble("sub-speed", preferences.defaultSubSpeed.get().toDouble())
-      },
-      delayEnabled = delayEnabled,
-      speedEnabled = speedEnabled,
-    )
+    Column(verticalArrangement = Arrangement.spacedBy(MaterialTheme.spacing.smaller)) {
+      SubtitleLaneSelector(selected = selectedLane, onSelected = { selectedLane = it })
+      SubtitleDelayCardContent(
+        delay = delayFloat,
+        onDelayChange = { PlaybackSession.setPropertyDouble(delayProperty, it.toDouble()) },
+        speed = speedFloat,
+        onSpeedChange = { PlaybackSession.setPropertyDouble(speedProperty, it.toDouble()) },
+        onApply = {
+          if (delayEnabled) {
+            val value = (delayFloat * 1000).roundToInt()
+            if (selectedLane == SubtitleLane.Primary) preferences.defaultSubDelay.set(value)
+            else preferences.defaultSecondarySubDelay.set(value)
+          }
+          if (speedEnabled && speedFloat in 0.1f..10f) {
+            if (selectedLane == SubtitleLane.Primary) preferences.defaultSubSpeed.set(speedFloat)
+            else preferences.defaultSecondarySubSpeed.set(speedFloat)
+          }
+        },
+        onReset = {
+          if (delayEnabled) PlaybackSession.setPropertyDouble(delayProperty, defaultDelayMs / 1000.0)
+          if (speedEnabled) PlaybackSession.setPropertyDouble(speedProperty, defaultSpeed.toDouble())
+        },
+        delayEnabled = delayEnabled,
+        speedEnabled = speedEnabled,
+      )
+    }
   }
 }
 

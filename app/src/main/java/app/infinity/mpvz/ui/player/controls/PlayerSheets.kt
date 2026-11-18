@@ -209,7 +209,9 @@ fun PlayerSheets(
         onRemoveSubtitle = onRemoveSubtitle,
         onOpenSubtitleSettings = { onOpenPanel(Panels.SubtitleSettings) },
         onOpenSubtitleDelay = { onOpenPanel(Panels.SubtitleDelay) },
-        delayControlEnabled = setOf("sub-delay", "sub-speed").any { it !in configOwnedOptions },
+        delayControlEnabled =
+          setOf("sub-delay", "secondary-sub-delay", "sub-speed", "secondary-sub-speed")
+            .any { it !in configOwnedOptions },
         onOpenOnlineSearch = { onShowSheet(Sheets.OnlineSubtitleSearch) },
         onDismissRequest = onDismissRequest,
         onTranslateSubtitle = { track, lang -> viewModel.translateSubtitle(track, lang) },
