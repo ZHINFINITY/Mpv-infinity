@@ -120,7 +120,11 @@ assert "FONGMI_PATCH" not in MPV_PREPARE
 assert "mpvflow_gpu_synthesize_with_policy(" in JNI, "Media3 must share the production Vulkan synthesis policy"
 assert "mpvflow_gpu_synthesize_with_policy_to_texture(" in JNI
 assert "outputStorageImageSupported" in JNI and "VK_IMAGE_USAGE_STORAGE_BIT" in JNI
-assert 'directOutput ? "direct_storage_write" : "nearest_blit"' in JNI
+assert "if (directOutputEligible)" in JNI
+assert "directOutput = result == MPVFLOW_GPU_OK && synthesized == output->texture;" in JNI
+assert "if (!directOutput)" in JNI, "non-direct synthesis must use the nearest-blit fallback"
+assert "DIAG_SYNTH_READY" not in JNI
+assert "event=synthesize state=returned_to_display" not in JNI
 assert "PL_TEX_SAMPLE_NEAREST" in JNI, "fallback transfer must not soften equal-size synthesized output"
 assert "target_compatible ? output_target : pair->visibility_output" in GPU, (
     "the optional visibility resolver should write directly to a compatible final output when available"
