@@ -209,8 +209,8 @@ internal fun resolveSecondarySubtitlePosition(
   automaticPosition: Int,
   manualPosition: Int,
 ): Int =
-  if (manualPosition in MIN_SUBTITLE_POSITION..MAX_SUBTITLE_POSITION) {
-    manualPosition
+  if (manualPosition >= MIN_SUBTITLE_POSITION) {
+    clampSubtitlePosition(manualPosition)
   } else {
     clampSubtitlePosition(automaticPosition)
   }
