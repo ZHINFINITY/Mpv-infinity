@@ -57,7 +57,9 @@ class GlassDepthNoReloadWiringTest(unittest.TestCase):
         for forbidden in ('PlaybackSession.load(', 'startMediaLoad(', 'setupMPV(', 'nativeEngine.stop('):
             self.assertNotIn(forbidden, native_restart)
         sheet = source('ui/player/controls/components/sheets/FrameInterpolationFpsSheet.kt')
-        self.assertIn('interpolationApplyTimingNote(activity)', sheet)
+        self.assertNotIn('interpolationApplyTimingNote', sheet)
+        self.assertIn('interpolation_feedback_saved_state', sheet)
+        self.assertIn('MPVFLOW_TARGET_FPS_OPTIONS.forEach', sheet)
         controls = source('ui/player/controls/components/FrameInterpolationControls.kt')
         self.assertIn('nextPlaybackNote = interpolationApplyTimingNote(activity)', controls)
         for timing in ('interpolation_feedback_native', 'interpolation_feedback_mpv_config', 'interpolation_feedback_mpv'):
