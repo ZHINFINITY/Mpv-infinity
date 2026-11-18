@@ -120,7 +120,6 @@ enum FlowDiagnosticBit : uint64_t {
     DIAG_ANALYZE_FAILURE = 1ull << 7,
     DIAG_ANALYZE_READY = 1ull << 8,
     DIAG_SYNTH_FAILURE = 1ull << 9,
-    DIAG_SYNTH_READY = 1ull << 10,
     DIAG_OWNERSHIP_FAILURE = 1ull << 11,
     DIAG_INPUT_FORMAT_READY = 1ull << 12,
     DIAG_OUTPUT_FORMAT_READY = 1ull << 13,
@@ -1644,7 +1643,6 @@ Java_app_infinity_mpvz_ui_player_Media3FlowVulkanNative_nativeSynthesize(
                 visibilityResolverEnabled == JNI_TRUE, softBlendEnabled == JNI_TRUE,
                 softBlendEnabled == JNI_TRUE, &synthesized);
         }
-    }
     if (result != MPVFLOW_GPU_OK || !synthesized) {
         (void) holdImageForExternal(context, output, true);
         logFlowOnce(context, DIAG_SYNTH_FAILURE, ANDROID_LOG_ERROR,
@@ -1669,14 +1667,6 @@ Java_app_infinity_mpvz_ui_player_Media3FlowVulkanNative_nativeSynthesize(
                     output->width, output->height, timestep);
         return JNI_FALSE;
     }
-    logFlowOnce(context, DIAG_SYNTH_READY, ANDROID_LOG_INFO,
-                "MPVFLOW_DIAGNOSTIC component=native-media3 event=synthesize state=returned_to_display "
-                "renderer_api=vulkan flow_compute_api=%s timestep=%.9g output=%dx%d output_path=%s "
-                "command_completion=%s cpu_readback=no",
-                mpvflow_gpu_get_compute_api_name(context->flow),
-                timestep, output->width, output->height,
-                directOutput ? "direct_storage_write" : "nearest_blit",
-                output->lastHoldUsedSyncFd ? "sync_fd_handoff" : "pl_gpu_finish_fallback");
     return JNI_TRUE;
 }
 
