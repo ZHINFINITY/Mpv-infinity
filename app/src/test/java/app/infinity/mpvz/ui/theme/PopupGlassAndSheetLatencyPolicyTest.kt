@@ -26,9 +26,11 @@ class PopupGlassAndSheetLatencyPolicyTest {
   }
 
   @Test
-  fun sheetsKeepDisplayCadenceAndControlsOnlyHalveIt() {
+  fun largeSheetsRetainHigherBackdropCadenceThanControlsOnlyGlass() {
     assertEquals(GlassSamplingPolicy.PlayingIntervalMs, GlassSamplingPolicy.interval(true, 0, 0, largeSurface = true))
     assertEquals(GlassSamplingPolicy.ControlsPlayingIntervalMs, GlassSamplingPolicy.interval(true, 0, 0, largeSurface = false))
+    assertEquals(66L, GlassSamplingPolicy.interval(true, 0, 0, largeSurface = true))
+    assertEquals(100L, GlassSamplingPolicy.interval(true, 0, 0, largeSurface = false))
     assertEquals(GlassSamplingPolicy.PausedIntervalMs, GlassSamplingPolicy.interval(false, 0, 0, largeSurface = true))
     assertEquals(GlassSamplingPolicy.PlayingIntervalMs, GlassSamplingPolicy.interval(true, 0))
   }

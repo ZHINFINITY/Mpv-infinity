@@ -56,6 +56,8 @@ jobs:
         run: python3 scripts/tests/native_playback_control_contract_test.py
       - name: Test combined radio and music UI contracts
         run: python3 scripts/tests/radio_music_ui_contract_test.py
+      - name: Test Mark-as, delay, buffering and glass performance wiring
+        run: python3 scripts/tests/player_mark_as_delay_buffering_contract_test.py
       - name: Test independent liquid-glass rendering and coverage contracts
         run: python3 scripts/tests/liquid_glass_contract_test.py
       - name: Test player ambient glass fallback contract

@@ -26,6 +26,28 @@ internal object BufferingVisibilityDebouncePolicy {
   fun isVisible(enabled: Boolean, debouncedVisible: Boolean): Boolean = enabled && debouncedVisible
 }
 
+/** Local opens are not cache stalls; explicit pre-MPV torrent waits remain visible. */
+internal object MpvBufferingVisibilityPolicy {
+  fun isStalled(
+    enabled: Boolean,
+    forceVisible: Boolean,
+    suppressStartupStalls: Boolean,
+    paused: Boolean?,
+    eofReached: Boolean?,
+    idleActive: Boolean?,
+    isCacheStall: Boolean,
+    coreIdle: Boolean?,
+  ): Boolean {
+    if (!enabled) return false
+    if (forceVisible) return true
+    if (suppressStartupStalls) return false
+    return paused != true &&
+      eofReached != true &&
+      idleActive != true &&
+      (isCacheStall || coreIdle == true)
+  }
+}
+
 /** Debounces short engine load/seek transitions without delaying a user disabling the indicator. */
 @Composable
 internal fun rememberDebouncedBufferingVisibility(
@@ -72,6 +94,7 @@ internal data class BufferingState(
 internal fun rememberBufferingState(
   enabled: Boolean,
   forceVisible: Boolean = false,
+  suppressStartupStalls: Boolean = false,
 ): BufferingState {
   val paused by PlaybackSession.propBoolean["pause"].collectAsState()
   val coreIdle by PlaybackSession.propBoolean["core-idle"].collectAsState()
@@ -82,17 +105,16 @@ internal fun rememberBufferingState(
   val demuxerCacheDuration by PlaybackSession.propDouble["demuxer-cache-duration"].collectAsState()
 
   val isCacheStall = pausedForCache == true
-  val stalled =
-    enabled &&
-      (
-        forceVisible ||
-          (
-            paused != true &&
-              eofReached != true &&
-              idleActive != true &&
-              (isCacheStall || coreIdle == true)
-          )
-      )
+  val stalled = MpvBufferingVisibilityPolicy.isStalled(
+    enabled = enabled,
+    forceVisible = forceVisible,
+    suppressStartupStalls = suppressStartupStalls,
+    paused = paused,
+    eofReached = eofReached,
+    idleActive = idleActive,
+    isCacheStall = isCacheStall,
+    coreIdle = coreIdle,
+  )
 
   val visible = rememberDebouncedBufferingVisibility(enabled = enabled, stalled = stalled)
 
