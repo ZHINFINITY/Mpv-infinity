@@ -2295,7 +2295,8 @@ class PlayerViewModel(
   }
 
   fun onVideoLoadStarted() {
-    showControls()
+    // Do not force the overlay open during media startup: buffering may intentionally suppress
+    // the center transport while side controls remain independently composed.
     introLookupJob?.cancel()
     autoCropJob?.cancel()
     autoCropJob = null

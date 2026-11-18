@@ -1547,6 +1547,20 @@ class NativeMedia3Engine internal constructor(
     return mime.contains("ssa") || mime.contains("ass") || codecs.contains("ssa") || codecs.contains("ass")
   }
 
+  /** Clears the outgoing item's libass state without waiting on the UI thread's renderer lock. */
+  suspend fun clearPreviousSubtitleTracks() {
+    val renderer = libassRenderer ?: return
+    withContext(Dispatchers.IO) {
+      try {
+        renderer.getTrackIds().keys.toList().forEach(renderer::removeTrack)
+      } catch (cancelled: CancellationException) {
+        throw cancelled
+      } catch (failure: IllegalStateException) {
+        Log.w(logTag, "Could not clear previous libass tracks before playback", failure)
+      }
+    }
+  }
+
   fun play(
     uri: Uri,
     startPositionMs: Long = 0L,
@@ -1585,9 +1599,6 @@ class NativeMedia3Engine internal constructor(
     audioSelectionRestored = false
     subtitleSelectionRestored = false
     externalAssEnabled.clear()
-    libassRenderer?.getTrackIds()?.keys?.toList()?.forEach { id ->
-      libassRenderer?.removeTrack(id)
-    }
     // Uri.parse("/storage/...") has no scheme. Make local paths explicit so Media3 selects
     // FileDataSource instead of treating the original MediaStore URI as the playable source.
     val mediaUri =

@@ -401,6 +401,24 @@ class PlayerActivity :
     binding.player.visibility = View.VISIBLE
   }
 
+  /** Keep the paused MPV frame visible while Native prepares a decoder and attaches its surface. */
+  private fun prepareNativeVideoSurfaceForHandoff() {
+    if (isCurrentPlaybackAudio()) {
+      setNativeVideoSurfaceVisible(true)
+      hideMpvSurfaceForMusic()
+      return
+    }
+    // SurfaceView must stay attached for Media3 to render; alpha keeps its empty buffer from
+    // covering MPV until the first Native frame is ready to take over.
+    binding.media3Player.videoSurfaceView?.apply {
+      alpha = 0f
+      visibility = View.VISIBLE
+    }
+    binding.media3Player.alpha = 0f
+    binding.media3Player.visibility = View.VISIBLE
+    showMpvSurfaceUnlessMusic()
+  }
+
   private fun restoreMpvSurfaceForVideo() {
     binding.player.clipToOutline = false
     binding.player.alpha = 1f
@@ -1859,11 +1877,10 @@ class PlayerActivity :
               // not leave controls and engine state on MPV while Media3 is opening the source.
               activeEngineMode = PlaybackEngineMode.NATIVE
               viewModel.setNativeEngineActive(true)
-              setNativeVideoSurfaceVisible(true)
-              binding.player.alpha = 0f
-              binding.player.visibility = View.GONE
+              prepareNativeVideoSurfaceForHandoff()
               viewModel.clearNativeExternalSubtitles()
               configureNativeEngineIfNeeded(force = true)
+              nativeEngine.clearPreviousSubtitleTracks()
               nativeEngine.setHorizontalFlip(viewModel.transformState.value.isMirrored)
               nativeEngine.setVerticalFlip(viewModel.transformState.value.isVerticalFlipped)
               nativeEngine.play(
@@ -8350,6 +8367,7 @@ class PlayerActivity :
         setNativeVideoSurfaceVisible(true)
         viewModel.clearNativeExternalSubtitles()
         configureNativeEngineIfNeeded(force = true)
+        nativeEngine.clearPreviousSubtitleTracks()
         val nativePlayableUri = PlaybackSession.resolvePlayableUriForNative(nativeItem)
         nativeEngine.setRepeatMode(viewModel.repeatMode.value)
         Log.d(
