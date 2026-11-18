@@ -1228,6 +1228,7 @@
   <string name="player_horizontal_flip_off">हॉरिजॉन्टल फ्लिप ऑफ</string>
   <string name="player_vertical_flip_on">वर्टिकल फ्लिप ऑन</string>
   <string name="player_vertical_flip_off">वर्टिकल फ्लिप ऑफ</string>
+  <string name="player_flip_requires_hw_or_sw">Flip के लिए HW या SW डिकोडिंग आवश्यक है; HW+ समर्थित नहीं है।</string>
   <string name="btn_label_back">बैक एरो</string>
   <string name="btn_label_title">वीडियो टाइटल</string>
   <string name="btn_label_bookmarks">चैप्टर / बुकमार्क</string>

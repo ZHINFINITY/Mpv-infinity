@@ -1228,6 +1228,7 @@
   <string name="player_horizontal_flip_off">Tắt ngang</string>
   <string name="player_vertical_flip_on">Bật dọc</string>
   <string name="player_vertical_flip_off">Tắt dọc</string>
+  <string name="player_flip_requires_hw_or_sw">Lật yêu cầu giải mã bằng HW hoặc SW; không hỗ trợ HW+.</string>
   <string name="btn_label_back">Mũi tên quay lại</string>
   <string name="btn_label_title">Tiêu đề video</string>
   <string name="btn_label_bookmarks">Chương / Dấu trang</string>

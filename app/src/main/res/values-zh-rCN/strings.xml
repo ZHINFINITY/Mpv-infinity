@@ -1240,6 +1240,7 @@
   <string name="player_horizontal_flip_off">水平翻转已关闭</string>
   <string name="player_vertical_flip_on">垂直翻转已开启</string>
   <string name="player_vertical_flip_off">垂直翻转已关闭</string>
+  <string name="player_flip_requires_hw_or_sw">翻转需要 HW 或 SW 解码；不支持 HW+。</string>
   <string name="btn_label_back">返回箭头</string>
   <string name="btn_label_title">视频标题</string>
   <string name="btn_label_bookmarks">章节/书签</string>

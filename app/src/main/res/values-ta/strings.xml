@@ -1228,6 +1228,7 @@
   <string name="player_horizontal_flip_off">Horizontal flip முடக்கம்</string>
   <string name="player_vertical_flip_on">Vertical flip இயக்கம்</string>
   <string name="player_vertical_flip_off">Vertical flip முடக்கம்</string>
+  <string name="player_flip_requires_hw_or_sw">Flip-க்கு HW அல்லது SW டிகோடிங் தேவை; HW+ ஆதரிக்கப்படாது.</string>
   <string name="btn_label_back">பின் Arrow</string>
   <string name="btn_label_title">வீடியோ தலைப்பு</string>
   <string name="btn_label_bookmarks">அத்தியாயங்கள் / புத்தகக்குறிகள்</string>

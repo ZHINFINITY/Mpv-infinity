@@ -1240,6 +1240,7 @@
   <string name="player_horizontal_flip_off">Horizontal flip Wyłączone</string>
   <string name="player_vertical_flip_on">Odwróć w pionie Włączone</string>
   <string name="player_vertical_flip_off">Odwróć w pionie Wyłączone</string>
+  <string name="player_flip_requires_hw_or_sw">Odwracanie wymaga dekodowania HW lub SW; HW+ nie jest obsługiwane.</string>
   <string name="btn_label_back">Z powrotem Arrow</string>
   <string name="btn_label_title">Film Tytuł</string>
   <string name="btn_label_bookmarks">Rozdziały / Bookmarks</string>
