@@ -34,7 +34,7 @@ fun clampSubtitlePosition(position: Int): Int = position.coerceIn(MIN_SUBTITLE_P
  * Accounts for sub-text content, font size, sub-scale, and screen width to handle
  * multi-line wrapping in both portrait and landscape.
  */
-fun getSubtitleHitboxBounds(
+internal fun getSubtitleHitboxBounds(
   screenWidth: Float,
   screenHeight: Float,
   lane: SubtitleLane = SubtitleLane.Primary,

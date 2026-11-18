@@ -5087,7 +5087,7 @@ class PlayerViewModel(
     volumeSliderTimestamp.value = System.currentTimeMillis()
   }
 
-  fun changeSubtitlePositionTo(position: Int, lane: SubtitleLane = SubtitleLane.Primary) {
+  internal fun changeSubtitlePositionTo(position: Int, lane: SubtitleLane = SubtitleLane.Primary) {
     val newPosition = clampSubtitlePosition(position)
     if (lane == SubtitleLane.Secondary && !host.isNativeEngineActive()) {
       subtitlesPreferences.secondarySubPos.set(newPosition)
@@ -5105,7 +5105,7 @@ class PlayerViewModel(
     playerUpdate.value = PlayerUpdates.ShowText(appContext.getString(R.string.subtitle_position_update, newPosition))
   }
 
-  fun setSubtitleScale(scale: Float, lane: SubtitleLane = SubtitleLane.Primary) {
+  internal fun setSubtitleScale(scale: Float, lane: SubtitleLane = SubtitleLane.Primary) {
     val clamped = scale.coerceIn(0.1f, 5f)
     if (lane == SubtitleLane.Secondary && !host.isNativeEngineActive()) {
       PlaybackSession.setPropertyFloat("secondary-sub-scale", clamped)
