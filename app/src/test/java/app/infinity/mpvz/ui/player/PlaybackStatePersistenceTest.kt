@@ -220,6 +220,42 @@ class PlaybackStatePersistenceTest {
   }
 
   @Test
+  fun secondaryTimingIsSavedIndependentlyAndSurvivesUnknownRendererSnapshots() {
+    val mpvState = PlaybackStatePersistence.buildEntity(
+      oldState = null,
+      snapshot = snapshot(
+        currentPosition = 30,
+        duration = 600,
+        subDelayMs = 120,
+        secondarySubDelayMs = 850,
+        subSpeed = 0.9,
+        secondarySubSpeed = 1.15,
+      ),
+      savePositionOnQuit = true,
+      watchedThreshold = 80,
+    )
+    val nativeState = PlaybackStatePersistence.buildEntity(
+      oldState = mpvState,
+      snapshot = snapshot(currentPosition = 40, duration = 600, mpvSettingsAreKnown = false),
+      savePositionOnQuit = true,
+      watchedThreshold = 80,
+    )
+
+    assertEquals(120, nativeState.subDelay)
+    assertEquals(850, nativeState.secondarySubDelay)
+    assertEquals(0.9, nativeState.subSpeed, 0.0)
+    assertEquals(1.15, nativeState.secondarySubSpeed, 0.0)
+  }
+
+  @Test
+  fun legacySecondaryTimingFollowsPrimaryUntilASeparateValueExists() {
+    assertEquals(420, secondarySubtitleDelayForRestore(-1, 420))
+    assertEquals(850, secondarySubtitleDelayForRestore(850, 420))
+    assertEquals(1.25, secondarySubtitleSpeedForRestore(-1.0, 1.25), 0.0)
+    assertEquals(0.85, secondarySubtitleSpeedForRestore(0.85, 1.25), 0.0)
+  }
+
+  @Test
   fun positionSavePreferenceOffStillUpdatesKnownSettings() {
     val persisted = PlaybackStatePersistence.buildEntity(
       oldState = entity(lastPosition = 600),
@@ -274,7 +310,9 @@ class PlaybackStatePersistenceTest {
     sid: Int = -1,
     secondarySid: Int = -1,
     subDelayMs: Int = 0,
+    secondarySubDelayMs: Int? = null,
     subSpeed: Double = 1.0,
+    secondarySubSpeed: Double? = null,
     aid: Int = -1,
     audioDelayMs: Int = 0,
     positionIsKnown: Boolean = true,
@@ -294,7 +332,9 @@ class PlaybackStatePersistenceTest {
     sid = sid,
     secondarySid = secondarySid,
     subDelayMs = subDelayMs,
+    secondarySubDelayMs = secondarySubDelayMs,
     subSpeed = subSpeed,
+    secondarySubSpeed = secondarySubSpeed,
     aid = aid,
     audioDelayMs = audioDelayMs,
     externalSubtitles = externalSubtitles,

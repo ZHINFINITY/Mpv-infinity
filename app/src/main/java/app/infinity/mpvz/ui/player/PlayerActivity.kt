@@ -842,7 +842,8 @@ class PlayerActivity :
               captureMpvTrackSelection(type, property, null)?.let { property to it }
             }.toMap(),
           doubleProperties = listOf("speed", "audio-delay", "sub-delay", "sub-speed", "volume",
-            "video-zoom", "video-pan-x", "video-pan-y", "sub-scale", "sub-pos", "secondary-sub-pos", "secondary-sub-delay")
+            "video-zoom", "video-pan-x", "video-pan-y", "sub-scale", "sub-pos", "secondary-sub-pos",
+            "secondary-sub-delay", "secondary-sub-speed")
             .mapNotNull { key -> PlaybackSession.getPropertyDouble(key)?.takeIf { it.isFinite() }?.let { key to it } }.toMap(),
           stringProperties = listOf("video-aspect-override", "video-unscaled", "video-rotate", "keepaspect", "vf", "loop-file", "ab-loop-a", "ab-loop-b")
             .mapNotNull { key -> PlaybackSession.getPropertyString(key)?.let { key to it } }.toMap(),
@@ -2849,19 +2850,28 @@ class PlayerActivity :
           if (canIssueMpvCommands()) {
             val scaleByWindow = subtitlesPreferences.scaleByWindow.get()
             val baseSubScale = subtitlesPreferences.subScale.get()
+            val baseSecondarySubScale = subtitlesPreferences.secondarySubScale.get().takeIf { it > 0f } ?: baseSubScale
             val baseSubPos = subtitlesPreferences.subPos.get()
             val w = player.width.takeIf { it > 0 }?.toFloat()
               ?: resources.displayMetrics.widthPixels.toFloat()
             val h = player.height.takeIf { it > 0 }?.toFloat()
               ?: resources.displayMetrics.heightPixels.toFloat()
+            val baseSecondarySubPos =
+              resolveSecondarySubtitlePosition(
+                calculateSecondarySubtitlePosition(baseSubPos, w, h),
+                subtitlesPreferences.secondarySubPos.get(),
+              )
 
             if (scaleByWindow && (scale != 1f || panX != 0f || panY != 0f)) {
               val compensatedSubScale = (baseSubScale / scale).coerceIn(0.05f, 10f)
+              val compensatedSecondarySubScale = (baseSecondarySubScale / scale).coerceIn(0.05f, 10f)
               PlaybackSession.setPropertyFloat("sub-scale", compensatedSubScale)
-              PlaybackSession.setPropertyFloat("secondary-sub-scale", compensatedSubScale)
+              PlaybackSession.setPropertyFloat("secondary-sub-scale", compensatedSecondarySubScale)
 
               val compensatedSubPos =
                 (50f + ((baseSubPos - 50f) - (panY / h) * 100f) / scale).roundToInt().coerceIn(0, 150)
+              val compensatedSecondarySubPos =
+                (50f + ((baseSecondarySubPos - 50f) - (panY / h) * 100f) / scale).roundToInt().coerceIn(0, 150)
 
               val baseMarginX = 25f
               val extraMarginX = if (scale > 1f) (w * (1f - 1f / scale) / 2f + abs(panX) / scale) else 0f
@@ -2871,15 +2881,15 @@ class PlayerActivity :
                 PlaybackSession.setPropertyInt("secondary-sub-margin-x", compensatedMarginX)
               }
 
-              applySubtitlePositions(compensatedSubPos, w, h)
+              applySubtitlePositions(compensatedSubPos, w, h, secondaryPositionOverride = compensatedSecondarySubPos)
             } else {
               PlaybackSession.setPropertyFloat("sub-scale", baseSubScale)
-              PlaybackSession.setPropertyFloat("secondary-sub-scale", baseSubScale)
+              PlaybackSession.setPropertyFloat("secondary-sub-scale", baseSecondarySubScale)
               PlaybackSession.setPropertyInt("sub-margin-x", 25)
               if (supportsSecondarySubMarginX()) {
                 PlaybackSession.setPropertyInt("secondary-sub-margin-x", 25)
               }
-              applySubtitlePositions(baseSubPos, w, h)
+              applySubtitlePositions(baseSubPos, w, h, secondaryPositionOverride = baseSecondarySubPos)
             }
           }
         }
@@ -7113,7 +7123,9 @@ class PlayerActivity :
     val secondarySid = mpvTrack("secondary-sid")
     val aid = mpvTrack("aid")
     val subDelay = mpvDouble("sub-delay")
+    val secondarySubDelay = mpvDouble("secondary-sub-delay")
     val subSpeed = mpvDouble("sub-speed")
+    val secondarySubSpeed = mpvDouble("secondary-sub-speed")
     val audioDelay = mpvDouble("audio-delay")
     return PlaybackStateSnapshot(
       mediaIdentifier = saveIdentifier,
@@ -7135,7 +7147,9 @@ class PlayerActivity :
         },
       positionIsKnown = if (nativeEngineActive) nativePositionIsKnown else mpvPosition != null,
       externalSubtitlesAreKnown = if (nativeEngineActive) nativePositionIsKnown else mpvPosition != null,
-      mpvSettingsAreKnown = listOf(sid, secondarySid, aid, subDelay, subSpeed, audioDelay).all { it != null },
+      mpvSettingsAreKnown =
+        listOf(sid, secondarySid, aid, subDelay, subSpeed, audioDelay)
+          .all { it != null },
       playbackSettingsAreKnown = if (nativeEngineActive) nativePositionIsKnown else speed != null && zoom != null,
       playbackSpeed = if (nativeEngineActive) nativePlaybackSpeed().toDouble() else speed ?: DEFAULT_PLAYBACK_SPEED,
       videoZoom = if (nativeEngineActive) viewModel.videoZoom.value else zoom?.toFloat() ?: viewModel.videoZoom.value,
@@ -7144,7 +7158,9 @@ class PlayerActivity :
       sid = sid ?: -1,
       secondarySid = secondarySid ?: -1,
       subDelayMs = ((subDelay ?: 0.0) * MILLISECONDS_TO_SECONDS).toInt(),
+      secondarySubDelayMs = secondarySubDelay?.let { (it * MILLISECONDS_TO_SECONDS).toInt() },
       subSpeed = subSpeed ?: DEFAULT_SUB_SPEED,
+      secondarySubSpeed = secondarySubSpeed,
       aid = aid ?: -1,
       audioDelayMs = ((audioDelay ?: 0.0) * MILLISECONDS_TO_SECONDS).toInt(),
       externalSubtitles = viewModel.externalSubtitles.joinToString("|"),
@@ -7352,6 +7368,8 @@ class PlayerActivity :
     if (state == null) return
 
     val subDelay = state.subDelay / DELAY_DIVISOR
+    val secondarySubDelay = secondarySubtitleDelayForRestore(state.secondarySubDelay, state.subDelay) / DELAY_DIVISOR
+    val secondarySubSpeed = secondarySubtitleSpeedForRestore(state.secondarySubSpeed, state.subSpeed)
     val audioDelay = state.audioDelay / DELAY_DIVISOR
 
     // Restore external subtitles first
@@ -7389,11 +7407,13 @@ class PlayerActivity :
     }
 
     PlaybackSession.setPropertyDouble("sub-delay", subDelay)
+    PlaybackSession.setPropertyDouble("secondary-sub-delay", secondarySubDelay.toDouble())
     PlaybackSession.setPropertyDouble("speed", state.playbackSpeed)
     // Re-apply audio-pitch-correction after speed change, as mpv resets it to default
     PlaybackSession.setPropertyBoolean("audio-pitch-correction", audioPreferences.audioPitchCorrection.get())
     PlaybackSession.setPropertyDouble("audio-delay", audioDelay)
     PlaybackSession.setPropertyDouble("sub-speed", state.subSpeed)
+    PlaybackSession.setPropertyDouble("secondary-sub-speed", secondarySubSpeed)
 
     // Restore video zoom from saved state
     PlaybackSession.setPropertyDouble("video-zoom", state.videoZoom.toDouble())

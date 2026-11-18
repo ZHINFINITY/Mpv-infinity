@@ -14,6 +14,16 @@ internal const val PLAYBACK_STATE_MILLISECONDS_TO_SECONDS = 1000
 internal const val DEFAULT_PLAYBACK_STATE_SPEED = 1.0
 internal const val DEFAULT_PLAYBACK_STATE_SUB_SPEED = 1.0
 
+internal fun secondarySubtitleDelayForRestore(
+  savedDelayMs: Int,
+  primaryDelayMs: Int,
+): Int = savedDelayMs.takeIf { it >= 0 } ?: primaryDelayMs
+
+internal fun secondarySubtitleSpeedForRestore(
+  savedSpeed: Double,
+  primarySpeed: Double,
+): Double = savedSpeed.takeIf { it in 0.1..10.0 } ?: primarySpeed
+
 internal data class PlaybackStateSnapshot(
   val mediaIdentifier: String,
   val mediaTitle: String,
@@ -44,6 +54,8 @@ internal data class PlaybackStateSnapshot(
   val audioSelection: String? = null,
   val subtitleSelection: String? = null,
   val secondarySubtitleSelection: String? = null,
+  val secondarySubDelayMs: Int? = null,
+  val secondarySubSpeed: Double? = null,
   val captureSequence: Long = PlaybackStateSaveCoordinator.nextSequence(),
 )
 
@@ -84,7 +96,19 @@ internal object PlaybackStatePersistence {
       sid = if (snapshot.mpvSettingsAreKnown) snapshot.sid else oldState?.sid ?: snapshot.sid,
       secondarySid = if (snapshot.mpvSettingsAreKnown) snapshot.secondarySid else oldState?.secondarySid ?: snapshot.secondarySid,
       subDelay = if (snapshot.mpvSettingsAreKnown) snapshot.subDelayMs else oldState?.subDelay ?: snapshot.subDelayMs,
+      secondarySubDelay =
+        if (snapshot.mpvSettingsAreKnown) {
+          snapshot.secondarySubDelayMs ?: oldState?.secondarySubDelay ?: -1
+        } else {
+          oldState?.secondarySubDelay ?: snapshot.secondarySubDelayMs ?: -1
+        },
       subSpeed = if (snapshot.mpvSettingsAreKnown) snapshot.subSpeed else oldState?.subSpeed ?: snapshot.subSpeed,
+      secondarySubSpeed =
+        if (snapshot.mpvSettingsAreKnown) {
+          snapshot.secondarySubSpeed ?: oldState?.secondarySubSpeed ?: -1.0
+        } else {
+          oldState?.secondarySubSpeed ?: snapshot.secondarySubSpeed ?: -1.0
+        },
       aid = if (snapshot.mpvSettingsAreKnown) snapshot.aid else oldState?.aid ?: snapshot.aid,
       audioDelay = if (snapshot.mpvSettingsAreKnown) snapshot.audioDelayMs else oldState?.audioDelay ?: snapshot.audioDelayMs,
       timeRemaining = timeRemaining,

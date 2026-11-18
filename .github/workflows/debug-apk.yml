@@ -123,6 +123,7 @@ jobs:
           path: |
             app/schemas/**/23.json
             app/schemas/**/24.json
+            app/schemas/**/26.json
             app/build/test-results/testStandardDebugUnitTest/*.xml
           if-no-files-found: warn
       - name: Cancel the parallel APK build after a test or compile failure
