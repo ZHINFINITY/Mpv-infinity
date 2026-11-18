@@ -29,7 +29,6 @@ import app.infinity.mpvz.preferences.MPVFLOW_TARGET_FPS_OPTIONS
 import app.infinity.mpvz.preferences.preference.collectAsState
 import app.infinity.mpvz.presentation.components.PlayerSheet
 import app.infinity.mpvz.ui.player.PlayerActivity
-import app.infinity.mpvz.ui.player.controls.components.interpolationApplyTimingNote
 import app.infinity.mpvz.ui.player.controls.components.interpolationControlsAvailable
 import org.koin.compose.koinInject
 
@@ -48,12 +47,6 @@ fun FrameInterpolationFpsSheet(activity: PlayerActivity, onDismissRequest: () ->
         stringResource(R.string.pref_decoder_mpvflow_target_fps_title),
         modifier = Modifier.padding(horizontal = 24.dp, vertical = 12.dp),
         style = MaterialTheme.typography.titleMedium,
-      )
-      Text(
-        interpolationApplyTimingNote(activity),
-        modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp),
-        style = MaterialTheme.typography.bodySmall,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
       )
       Text(
         stringResource(R.string.interpolation_feedback_saved_state,

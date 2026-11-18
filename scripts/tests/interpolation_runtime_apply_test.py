@@ -83,7 +83,10 @@ def main() -> None:
     require(timing, "activity.isNativeEngineActive()", "actual engine timing")
     require(timing, "interpolation_feedback_mpv_config", "config override explanation")
     require(timing, "interpolation_feedback_mpv", "MPV explicit controlled-restart timing")
-    require(sheet, "interpolationApplyTimingNote(activity)", "FPS sheet engine-specific timing")
+    if "interpolationApplyTimingNote" in sheet:
+        raise SystemExit("Target FPS sheet should omit its explanatory timing paragraph")
+    require(sheet, "interpolation_feedback_saved_state", "saved interpolation state on FPS sheet")
+    require(sheet, "MPVFLOW_TARGET_FPS_OPTIONS.forEach", "target-FPS choices on FPS sheet")
     require(sheet, "if (!interpolationEnabled)", "FPS selection does not imply enabled interpolation")
     require(sheet, "interpolation_feedback_target_hint", "explicit enable-first hint")
     require(callback, "requestGeneration != interpolationControlRequestGeneration", "stale request ACK suppression")

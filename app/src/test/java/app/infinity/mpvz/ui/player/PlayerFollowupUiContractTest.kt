@@ -37,6 +37,29 @@ class PlayerFollowupUiContractTest {
   }
 
   @Test
+  fun videoLoadStartDoesNotForceControlsVisibleBeforePlaybackIsReady() {
+    val viewModel = read("app/src/main/java/app/infinity/mpvz/ui/player/PlayerViewModel.kt")
+    val loadStart = viewModel.substringAfter("fun onVideoLoadStarted() {")
+      .substringBefore("fun onVideoLoadCompleted()")
+    val loadFailure = viewModel.substringAfter("fun onVideoLoadFailed() {")
+      .substringBefore("fun updateTorrentState(")
+
+    assertFalse(loadStart.contains("showControls()"))
+    assertTrue(loadFailure.contains("showControls()"))
+  }
+
+  @Test
+  fun targetFpsSheetKeepsItsPreferenceAndOptionsWithoutTheTimingParagraph() {
+    val sheet = read("app/src/main/java/app/infinity/mpvz/ui/player/controls/components/sheets/FrameInterpolationFpsSheet.kt")
+
+    assertFalse(sheet.contains("interpolationApplyTimingNote"))
+    assertTrue(sheet.contains("pref_decoder_mpvflow_target_fps_title"))
+    assertTrue(sheet.contains("interpolation_feedback_saved_state"))
+    assertTrue(sheet.contains("MPVFLOW_TARGET_FPS_OPTIONS.forEach"))
+    assertTrue(sheet.contains("applyInterpolationPreferencesFromControls()"))
+  }
+
+  @Test
   fun timeNetworkButtonRemainsSelectableAndRendersInItsOrientationRegion() {
     val buttonEnum = read("app/src/main/java/app/infinity/mpvz/preferences/PlayerButton.kt")
     val editor = read("app/src/main/java/app/infinity/mpvz/ui/preferences/ControlLayoutEditorScreen.kt")
