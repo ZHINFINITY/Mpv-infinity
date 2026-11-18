@@ -1268,6 +1268,10 @@ fun PlayerControls(
               slidersShown = areSlidersShown,
             )
           val seekBarControlsVisible = (controlsShown || (!isPortrait && seekBarShown)) && !areControlsLocked
+          // BelowSeekbar landscape transport shares the bottom action band and stays clear of
+          // the centered loading indicator, matching MPV-RX's sharedLandscapeRow behavior.
+          val sharedLandscapeRow =
+            !isPortrait && playbackControlsPosition == PlaybackControlsPosition.BelowSeekbar
           val controlVisibilityTransition =
             updateTransition(
               targetState = areButtonsVisible to seekBarControlsVisible,
@@ -1715,6 +1719,7 @@ fun PlayerControls(
               PlayerControlVisibilityPolicy.shouldShowPlaybackControls(
                 controlsVisible = visibility.first,
                 bufferingIndicatorVisible = showBufferingIndicator,
+                sharedLandscapeRow = sharedLandscapeRow,
               )
             },
             enter = buildControlsEnterV(controlsAnimStyle, reduceMotion, enterMs) { 0 },
