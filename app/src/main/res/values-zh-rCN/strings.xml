@@ -2268,4 +2268,14 @@
 <string name="pref_glass_rim_width_summary">高光边缘的粗细（dp）</string>
 <string name="pref_glass_rim_softness">边缘柔和度</string>
 <string name="pref_glass_rim_softness_summary">边缘光线淡出的柔和程度</string>
+  <string name="player_sheets_sub_primary">主字幕</string>
+  <string name="player_sheets_sub_secondary">次字幕</string>
+  <string name="player_move_primary_subtitles_hint">向上或向下拖动以移动主字幕</string>
+  <string name="player_move_secondary_subtitles_hint">向上或向下拖动以移动次字幕</string>
+  <string name="video_mark_as_action">标记为</string>
+  <string name="video_mark_as_title">将“%1$s”标记为</string>
+  <string name="video_mark_as_new">新</string>
+  <string name="video_mark_as_last_played">上次播放</string>
+  <string name="video_mark_as_finished">已完成</string>
+  <string name="video_mark_as_none">无</string>
 </resources>

@@ -2265,4 +2265,14 @@
 <string name="pref_glass_rim_width_summary">Grubość podświetlonej krawędzi w dp</string>
 <string name="pref_glass_rim_softness">Miękkość krawędzi</string>
 <string name="pref_glass_rim_softness_summary">Jak łagodnie zanika światło krawędzi</string>
+  <string name="player_sheets_sub_primary">Główne</string>
+  <string name="player_sheets_sub_secondary">Drugorzędne</string>
+  <string name="player_move_primary_subtitles_hint">Przeciągnij w górę lub w dół, aby przesunąć główne napisy</string>
+  <string name="player_move_secondary_subtitles_hint">Przeciągnij w górę lub w dół, aby przesunąć dodatkowe napisy</string>
+  <string name="video_mark_as_action">Oznacz jako</string>
+  <string name="video_mark_as_title">Oznacz „%1$s” jako</string>
+  <string name="video_mark_as_new">Nowe</string>
+  <string name="video_mark_as_last_played">Ostatnio odtwarzane</string>
+  <string name="video_mark_as_finished">Ukończone</string>
+  <string name="video_mark_as_none">Brak</string>
 </resources>

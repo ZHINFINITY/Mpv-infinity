@@ -2253,4 +2253,14 @@
 <string name="pref_glass_rim_width_summary">Ketebalan tepi bercahaya dalam dp</string>
 <string name="pref_glass_rim_softness">Kelembutan tepi</string>
 <string name="pref_glass_rim_softness_summary">Seberapa lembut cahaya tepi memudar</string>
+  <string name="player_sheets_sub_primary">Utama</string>
+  <string name="player_sheets_sub_secondary">Sekunder</string>
+  <string name="player_move_primary_subtitles_hint">Geser ke atas/bawah untuk memindahkan subtitle utama</string>
+  <string name="player_move_secondary_subtitles_hint">Geser ke atas/bawah untuk memindahkan subtitle sekunder</string>
+  <string name="video_mark_as_action">Tandai sebagai</string>
+  <string name="video_mark_as_title">Tandai “%1$s” sebagai</string>
+  <string name="video_mark_as_new">Baru</string>
+  <string name="video_mark_as_last_played">Terakhir diputar</string>
+  <string name="video_mark_as_finished">Selesai</string>
+  <string name="video_mark_as_none">Tanpa tanda</string>
 </resources>

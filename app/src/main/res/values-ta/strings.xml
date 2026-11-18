@@ -2253,4 +2253,14 @@
 <string name="pref_glass_rim_width_summary">ஒளிரும் விளிம்பின் தடிமன் (dp)</string>
 <string name="pref_glass_rim_softness">விளிம்பு மென்மை</string>
 <string name="pref_glass_rim_softness_summary">விளிம்பு ஒளி எவ்வளவு மென்மையாக மங்குகிறது</string>
+  <string name="player_sheets_sub_primary">முதன்மை</string>
+  <string name="player_sheets_sub_secondary">இரண்டாம் நிலை</string>
+  <string name="player_move_primary_subtitles_hint">முதன்மை வசனங்களை நகர்த்த மேலே/கீழே இழுக்கவும்</string>
+  <string name="player_move_secondary_subtitles_hint">இரண்டாம் நிலை வசனங்களை நகர்த்த மேலே/கீழே இழுக்கவும்</string>
+  <string name="video_mark_as_action">இவ்வாறு குறிக்கவும்</string>
+  <string name="video_mark_as_title">“%1$s” என்பதை இவ்வாறு குறிக்கவும்</string>
+  <string name="video_mark_as_new">புதியது</string>
+  <string name="video_mark_as_last_played">கடைசியாக இயக்கப்பட்டது</string>
+  <string name="video_mark_as_finished">முடிந்தது</string>
+  <string name="video_mark_as_none">எதுவுமில்லை</string>
 </resources>

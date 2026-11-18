@@ -2253,4 +2253,14 @@
 <string name="pref_glass_rim_width_summary">Độ dày của viền sáng tính bằng dp</string>
 <string name="pref_glass_rim_softness">Độ mềm viền</string>
 <string name="pref_glass_rim_softness_summary">Mức độ mềm mại khi ánh sáng viền mờ dần</string>
+  <string name="player_sheets_sub_primary">Chính</string>
+  <string name="player_sheets_sub_secondary">Phụ</string>
+  <string name="player_move_primary_subtitles_hint">Kéo lên/xuống để di chuyển phụ đề chính</string>
+  <string name="player_move_secondary_subtitles_hint">Kéo lên/xuống để di chuyển phụ đề phụ</string>
+  <string name="video_mark_as_action">Đánh dấu là</string>
+  <string name="video_mark_as_title">Đánh dấu “%1$s” là</string>
+  <string name="video_mark_as_new">Mới</string>
+  <string name="video_mark_as_last_played">Phát gần đây nhất</string>
+  <string name="video_mark_as_finished">Đã xem xong</string>
+  <string name="video_mark_as_none">Không có</string>
 </resources>

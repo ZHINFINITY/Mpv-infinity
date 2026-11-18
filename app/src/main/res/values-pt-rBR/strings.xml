@@ -2268,4 +2268,14 @@ Reinicie o aplicativo para que todas as alterações entrem em vigor.</string>
 <string name="pref_glass_rim_width_summary">Espessura da borda iluminada em dp</string>
 <string name="pref_glass_rim_softness">Suavidade da borda</string>
 <string name="pref_glass_rim_softness_summary">Quão suavemente a luz da borda se desvanece</string>
+  <string name="player_sheets_sub_primary">Principal</string>
+  <string name="player_sheets_sub_secondary">Secundária</string>
+  <string name="player_move_primary_subtitles_hint">Arraste para cima/baixo para mover as legendas principais</string>
+  <string name="player_move_secondary_subtitles_hint">Arraste para cima/baixo para mover as legendas secundárias</string>
+  <string name="video_mark_as_action">Marcar como</string>
+  <string name="video_mark_as_title">Marcar “%1$s” como</string>
+  <string name="video_mark_as_new">Novo</string>
+  <string name="video_mark_as_last_played">Reproduzido por último</string>
+  <string name="video_mark_as_finished">Concluído</string>
+  <string name="video_mark_as_none">Nenhum</string>
 </resources>
